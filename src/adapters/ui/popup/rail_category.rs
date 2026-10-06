@@ -1,5 +1,5 @@
 //! 접힌 사이드바의 카테고리 버튼 오른쪽에 여는 메뉴.
-//! 머리줄은 이름과 오른쪽 끝의 워크스페이스 수(mono · micro · text-muted)다(시안 RailCategoryFrame).
+//! 머리줄은 이름과 오른쪽 끝의 워크스페이스 수(mono · micro · text-muted)이고 둘의 baseline 을 맞춘다(시안 RailCategoryFrame).
 //! 시안 이름의 semibold 는 egui UI 에 굵은 글꼴을 등록하지 않아 재현하지 않는다(`popup_title_font` 와 같다).
 //! 이름 아래에 워크스페이스 추가와 접기·펼치기를 표시한다.
 //! 기본 카테고리가 아니면 이름 변경·삭제도 제공하며 대상이 없으면 닫는다.
@@ -95,6 +95,14 @@ fn menu_row(
     resp.clicked()
 }
 
+/// galley 첫 줄의 baseline(galley 위쪽 기준 y). 글리프가 없으면 galley 높이.
+fn first_baseline(g: &egui::Galley) -> f32 {
+    g.rows
+        .first()
+        .and_then(|r| r.glyphs.first())
+        .map_or(g.rect.height(), |gl| gl.pos.y)
+}
+
 /// PopupDef::on_close entry point — 어떤 경로로 닫히든 대상 카테고리 참조를 비운다.
 pub fn on_close_rail_category_popup(
     _ctx: &egui::Context,
@@ -125,29 +133,33 @@ pub fn draw_rail_category_popup(
         egui::vec2(width, HEADER_HEIGHT.value()),
         egui::Sense::hover(),
     );
-    // 수를 먼저 그리고, 이름은 시안 gap(space-sm)을 두고 수 앞에서 자른다.
-    let count_rect = ui.painter().text(
-        egui::pos2(
-            header_rect.max.x - th.spacing_sm.value(),
-            header_rect.center().y,
-        ),
-        egui::Align2::RIGHT_CENTER,
+    // 이름은 머리줄 세로 가운데, 수는 이름과 첫 줄 baseline 을 맞춘다(시안 alignItems: baseline).
+    // 이름은 시안 gap(space-sm)을 두고 수 앞에서 자른다.
+    let name = ui.painter().layout_no_wrap(
+        target.label.clone(),
+        egui::FontId::proportional(th.font_size_body.value()),
+        th.text_primary().into(),
+    );
+    let count = ui.painter().layout_no_wrap(
         target.count.to_string(),
         egui::FontId::monospace(th.font_size_micro.value()),
         th.text_muted().into(),
     );
-    let mut label_clip = header_rect;
-    label_clip.max.x = count_rect.min.x - th.spacing_sm.value();
-    ui.painter().with_clip_rect(label_clip).text(
-        egui::pos2(
-            header_rect.min.x + th.spacing_sm.value(),
-            header_rect.center().y,
-        ),
-        egui::Align2::LEFT_CENTER,
-        &target.label,
-        egui::FontId::proportional(th.font_size_body.value()),
-        th.text_primary().into(),
+    let name_pos = egui::pos2(
+        header_rect.min.x + th.spacing_sm.value(),
+        header_rect.center().y - name.rect.height() * 0.5,
     );
+    let count_pos = egui::pos2(
+        header_rect.max.x - th.spacing_sm.value() - count.rect.width(),
+        name_pos.y + first_baseline(&name) - first_baseline(&count),
+    );
+    let mut label_clip = header_rect;
+    label_clip.max.x = count_pos.x - th.spacing_sm.value();
+    ui.painter()
+        .galley(count_pos, count, th.text_muted().into());
+    ui.painter()
+        .with_clip_rect(label_clip)
+        .galley(name_pos, name, th.text_primary().into());
     let border = egui::Rect::from_min_size(
         egui::pos2(
             header_rect.min.x,
