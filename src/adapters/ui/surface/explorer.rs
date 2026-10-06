@@ -886,8 +886,17 @@ fn content(
                     title: t("explorer.state.no_permission"),
                     sub: Some(t("explorer.state.no_permission_sub")),
                 }),
-                // 읽기 오류는 지금처럼 빈 폴더 화면으로 보인다. 시안에 탐색기 오류 상태가 없다.
-                LoadState::Error(_) => Some(empty),
+                // 읽을 수 없음을 빈 폴더로 떨어뜨리지 않는다(시안 ssh config Note 의 원칙).
+                // 탐색기 시안에 오류 상태가 없어 회신 전까지 공용 CenterState error 를 쓴다.
+                LoadState::Error(msg) => {
+                    let rect = ui
+                        .allocate_exact_size(ui.available_size(), egui::Sense::hover())
+                        .0;
+                    tasty_ui_widgets::CenterState::error(t("explorer.state.read_error"))
+                        .sub_line(Some(msg))
+                        .show_in(ui, theme, rect);
+                    return;
+                }
                 LoadState::Loading => Some(StateScreen {
                     glyph: StateGlyph::Spinner,
                     warning: false,

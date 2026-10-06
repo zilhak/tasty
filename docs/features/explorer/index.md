@@ -26,7 +26,9 @@ OS 파일 관리자에 의존하지 않고 tasty surface 안에서 디렉토리�
 
 - **엔트리 캐시**: `sync(panel)` 이 활성 탭의 `(root, sort_column, sort_dir)` 키를 보고 디렉토리/정렬이 바뀌었거나 새로고침이 요청됐을 때만 디스크에서 다시 읽는다. 디렉토리가 바뀌면 선택을 초기화한다. 읽기 실패는 `LoadState::NoPermission`(권한 거부) / `LoadState::Error(msg)` 로 분류해 콘텐츠 중앙 상태 화면으로 표현한다.
 - **상태 화면**: 내용 영역이 목록 대신 가운데 정렬한 글리프 · 제목 · 선택 보조 줄을 보여 준다(`explorer/state_screen.rs`, 시안 `ExpState`).
-  - 빈 폴더(`Ok`이고 항목 0개)와 읽기 오류(`Error`): `folderOpen` 글리프(text-muted) + "This folder is empty"(text-secondary).
+  - 빈 폴더(`Ok`이고 항목 0개): `folderOpen` 글리프(text-muted) + "This folder is empty"(text-secondary). 시안 탐색기 Spec 은 항목 0개와 빈 폴더를 구분하지 않는다.
+  - 읽기 오류(`Error`, 권한 거부 밖의 로컬 IO 오류와 원격 응답 시간 초과 등): 공용 `CenterState` error(`alertTriangle` · center-state-error-fg) + "Can't read this folder", 보조 줄에 받은 오류 문구(원격 시간 초과면 `explorer.state.error_conn_timeout`).
+    - Note: 탐색기 시안에는 오류 상태가 없다. 시안 ssh config Note(`site/vendor/gallery/overlays-windows.jsx`의 “an undecodable file must not fall through to the empty line”)의 원칙대로 읽을 수 없음을 빈 상태로 떨어뜨리지 않으려고, 디자인 회신(요청 `explorer-read-error-state`) 전까지 잠정으로 공용 부품을 쓴다.
   - 권한 거부(`NoPermission`): `lock` 글리프와 제목 "Permission denied"를 accent-warning으로 칠하고, 보조 줄(caption, text-muted, 최대 폭 200)에 이유를 적는다.
   - 불러오는 중(`Loading`): 글리프 자리에 Spinner + "Loading…".
   - 글리프 배치 크기는 `icon-glyph-size-md`이고 그림만 그 칸 가운데에서 1.6배로 그린다(시안 `transform: scale(1.6)`은 배치에 영향이 없다). 줄 간격은 `space-sm`이다.
