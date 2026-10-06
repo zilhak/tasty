@@ -390,6 +390,7 @@ impl Drop for ControlProbe {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
 
     /// 통과한 시험의 측정값도 기록한다. libtest에서는 --show-output 또는 --nocapture로 확인한다.
     /// 시험 이름은 함수 경로에서 얻고 [latency-control] 접두사는 로그 수집에 사용한다.
@@ -428,22 +429,26 @@ mod tests {
     enum RoundOutcome {
         /// 주입 뒤 표본이 변이 문턱 아래다. 이 회차에서 대조군은 측정 경로를 지나지 않았다.
         Independent,
-        /// 주입 뒤 표본이 문턱 이상이지만 앞이나 뒤 표본도 정상 구간을 벗어났다.
+        /// 주입 뒤 표본이 문턱 이상이고 앞이나 뒤 표본이 정상 구간과 변이 문턱 사이에 있다.
         /// 부하와 측정 경로의 영향을 구분할 수 없다.
         Undecidable(String),
-        /// 앞뒤 표본은 정상 구간인데 주입 뒤 표본만 문턱 이상이다.
+        /// 앞뒤 표본은 정상 구간인데 주입 뒤 표본만 문턱 이상이거나,
+        /// 주입의 영향이 뒤 표본(또는 다음 회차의 주입 전 표본)까지 문턱 이상으로 남았다.
         Traversed(String),
     }
 
     /// 주입 전(`before`)·주입 뒤(`after`)·그 직후 재측정(`post`) 표본으로 회차를 판정한다.
-    /// 주입은 `after` 직전에만 있으므로 경로를 지나는 대조군은 `after`만 크게 늘어난다.
-    /// 부하는 보통 이웃 표본도 정상 구간 밖으로 민다. `after` 하나의 측정 시간 안에만
-    /// 머무른 부하는 이 방법으로 배제하지 못한다.
+    /// 주입은 `after` 직전에만 있으므로 경로를 지나는 대조군은 `after`가 크게 늘어난다.
+    /// 부하는 보통 이웃 표본도 정상 구간 밖으로 밀지만, 부하 측정에서 이웃 표본은 기준선의
+    /// 3.3배를 넘지 않았다. 그래서 이웃 표본이 변이 문턱 이상이면 부하가 아니라 주입의 영향이
+    /// 남은 결함으로 본다. `before_follows_injection`은 직전 회차에서 주입한 뒤 잰 `before`인지다.
+    /// `after` 하나의 측정 시간 안에만 머무른 부하는 이 방법으로 배제하지 못한다.
     fn judge_round(
         before: &ControlSample,
         after: &ControlSample,
         post: &ControlSample,
         injected: Duration,
+        before_follows_injection: bool,
     ) -> RoundOutcome {
         if control_stayed_out_of_the_path(after) {
             return RoundOutcome::Independent;
@@ -455,6 +460,16 @@ mod tests {
             after.cost(),
             post.ratio(),
         );
+        if !control_stayed_out_of_the_path(post) {
+            return RoundOutcome::Traversed(format!(
+                "{ratios}. 주입 뒤 표본과 직후 재측정이 모두 변이 문턱({MUTATION_MARGIN}배) 이상이다. 부하로는 이웃 표본이 이 문턱에 이르지 않았으므로 주입의 영향이 대조군에 남은 것으로 본다. 대조군이 측정 대상 경로를 지난다."
+            ));
+        }
+        if before_follows_injection && !control_stayed_out_of_the_path(before) {
+            return RoundOutcome::Traversed(format!(
+                "{ratios}. 직전 회차의 주입 뒤에 잰 주입 전 표본도 변이 문턱({MUTATION_MARGIN}배) 이상이다. 부하로는 이웃 표본이 이 문턱에 이르지 않았으므로 주입의 영향이 대조군에 남은 것으로 본다. 대조군이 측정 대상 경로를 지난다."
+            ));
+        }
         if before.is_inflated() || post.is_inflated() {
             return RoundOutcome::Undecidable(format!(
                 "{ratios}. 주입 뒤 표본 주변의 대조군도 정상 구간을 벗어났다. 측정 대상 경로의 영향과 그 시간의 부하를 구분할 수 없으므로 이 회차는 측정하지 않은 것으로 처리한다."
@@ -478,11 +493,13 @@ mod tests {
     /// 보정한 기준선과 비교한다.
     ///
     /// 판단할 수 없는 회차는 실패로 두지 않고 다시 잰다. 모든 회차가 판단 불가이면
-    /// 측정 생략을 출력하고 통과한다. 결함 판정 회차는 다시 재지 않고 바로 실패한다.
+    /// 측정 생략을 표준 오류에 직접 써서 통과한다. libtest가 캡처하지 않으므로 기본 실행에서도 보인다.
+    /// 회차별 판단 불가 사유는 `--show-output`이나 `--nocapture`로 실행할 때만 보인다.
+    /// 결함 판정 회차는 다시 재지 않고 바로 실패한다.
     ///
-    /// 시험 도중 시작해 계속되는 부하에서는 주입 전후 표본도 정상 구간을 벗어나므로
-    /// 대조군이 측정 경로를 지나는 결함도 판단 불가 회차가 되어 측정 생략으로 끝난다.
-    /// 이 조건에서는 결함을 검출하지 못한다. 측정 생략 출력이 그 사실을 알린다.
+    /// 이웃 표본을 기준선의 2배 이상 변이 문턱 미만으로 흔드는 부하에서는 대조군이 측정 경로를
+    /// 지나는 결함도 판단 불가 회차가 되어 측정 생략으로 끝날 수 있다. 시험 도중 시작해 계속되는
+    /// 부하가 대표적인 예다. 이 조건에서는 그 결함을 검출하지 못한다.
     #[test]
     fn an_artificial_delay_in_the_measured_path_does_not_move_the_control() {
         let control = CpuControl::calibrate();
@@ -510,7 +527,7 @@ mod tests {
 
         let mut undecidable = 0usize;
         let mut last = None;
-        for _ in 0..INDEPENDENCE_ROUNDS {
+        for round in 0..INDEPENDENCE_ROUNDS {
             let before = control.sample();
             let elapsed = inject(injected);
             let after = control.sample();
@@ -519,9 +536,9 @@ mod tests {
                 elapsed >= injected,
                 "주입한 지연이 흐르지 않았다: 요청 {injected:?}, 실제 {elapsed:?}. 지연이 없으면 대조군의 독립성을 검사하지 않는다"
             );
-            match judge_round(&before, &after, &post, injected) {
+            match judge_round(&before, &after, &post, injected, round > 0) {
                 RoundOutcome::Independent => {
-                    last = Some((before, after, elapsed));
+                    last = Some((before, after, post, elapsed));
                     break;
                 }
                 RoundOutcome::Undecidable(why) => {
@@ -532,10 +549,14 @@ mod tests {
             }
         }
 
-        let Some((before, after, elapsed)) = last else {
-            eprintln!(
-                "[latency-control] 측정 생략: {INDEPENDENCE_ROUNDS}회 모두 판단할 수 없어 대조군의 독립성을 재지 못했다. 조용한 조건에서 다시 실행한다."
+        let Some((before, after, post, elapsed)) = last else {
+            // libtest는 eprintln!을 캡처하므로 통과한 시험에서도 보이도록 표준 오류에 직접 쓴다.
+            let line = format!(
+                "[latency-control] 측정 생략: {INDEPENDENCE_ROUNDS}회 모두 판단할 수 없어 대조군의 독립성을 재지 못했다. 조용한 조건에서 다시 실행한다.\n"
             );
+            if let Err(e) = std::io::stderr().write_all(line.as_bytes()) {
+                eprintln!("[latency-control] 측정 생략 출력 실패: {e}");
+            }
             observe!(
                 rounds = undecidable,
                 undecidable = undecidable,
@@ -554,6 +575,7 @@ mod tests {
             skipped = false,
             before = n(before.ratio()),
             after = n(after.ratio()),
+            post = n(post.ratio()),
             margin = n(MUTATION_MARGIN),
             baseline_ms = n(control.baseline().as_secs_f64() * 1e3),
             injected_ms = n(injected.as_secs_f64() * 1e3),
@@ -562,45 +584,121 @@ mod tests {
         );
     }
 
-    /// 세 판정의 경계를 부하 없이 확인한다.
-    #[test]
-    fn a_round_fails_only_when_the_neighbours_stay_quiet() {
-        let base = Duration::from_micros(170);
-        let injected = base * 20;
-        let quiet = ControlSample::from_parts(base, base);
-        let loaded = ControlSample::from_parts(base * 5 / 2, base);
-        let jumped = ControlSample::from_parts(base * 21, base);
+    /// 판정 경계 시험의 합성 표본.
+    struct RoundFixture {
+        injected: Duration,
+        quiet: ControlSample,
+        loaded: ControlSample,
+        below_margin: ControlSample,
+        over_margin: ControlSample,
+        jumped: ControlSample,
+    }
 
-        assert_eq!(
-            judge_round(&loaded, &quiet, &loaded, injected),
-            RoundOutcome::Independent
-        );
-        assert_eq!(
-            judge_round(
-                &quiet,
-                &ControlSample::from_parts(base * 10 - Duration::from_nanos(1), base),
-                &quiet,
-                injected
-            ),
-            RoundOutcome::Independent
-        );
-
-        for (before, post) in [(&loaded, &quiet), (&quiet, &loaded), (&loaded, &loaded)] {
-            match judge_round(before, &jumped, post, injected) {
-                RoundOutcome::Undecidable(why) => {
-                    assert!(why.contains("구분할 수 없으므로"), "{why}");
-                    assert!(why.contains("측정하지 않은 것으로"), "{why}");
-                }
-                other => panic!("이웃 표본이 정상 구간을 벗어났는데 {other:?}로 판정했다"),
+    impl RoundFixture {
+        fn new() -> Self {
+            let base = Duration::from_micros(170);
+            Self {
+                injected: base * 20,
+                quiet: ControlSample::from_parts(base, base),
+                loaded: ControlSample::from_parts(base * 5 / 2, base),
+                below_margin: ControlSample::from_parts(base * 10 - Duration::from_nanos(1), base),
+                // 170µs의 10배는 부동소수 비율이 10 바로 아래로 나올 수 있어 1ns를 더한다.
+                over_margin: ControlSample::from_parts(base * 10 + Duration::from_nanos(1), base),
+                jumped: ControlSample::from_parts(base * 21, base),
             }
         }
+    }
 
-        match judge_round(&quiet, &jumped, &quiet, injected) {
+    /// 측정하지 않은 것으로 처리하는 경계를 부하 없이 확인한다.
+    #[test]
+    fn a_round_is_not_judged_while_the_neighbours_stay_below_the_margin() {
+        let RoundFixture {
+            injected,
+            quiet,
+            loaded,
+            below_margin,
+            over_margin,
+            jumped,
+        } = RoundFixture::new();
+
+        for follows in [false, true] {
+            assert_eq!(
+                judge_round(&loaded, &quiet, &loaded, injected, follows),
+                RoundOutcome::Independent
+            );
+            assert_eq!(
+                judge_round(&quiet, &below_margin, &quiet, injected, follows),
+                RoundOutcome::Independent
+            );
+            // 주입 뒤 표본이 문턱 아래면 이웃 표본이 커도 결함으로 보지 않는다.
+            assert_eq!(
+                judge_round(&jumped, &quiet, &jumped, injected, follows),
+                RoundOutcome::Independent
+            );
+        }
+
+        // 이웃 표본이 정상 구간을 벗어났지만 변이 문턱 아래다.
+        for (before, post) in [
+            (&loaded, &quiet),
+            (&quiet, &loaded),
+            (&loaded, &loaded),
+            (&below_margin, &below_margin),
+        ] {
+            for follows in [false, true] {
+                match judge_round(before, &jumped, post, injected, follows) {
+                    RoundOutcome::Undecidable(why) => {
+                        assert!(why.contains("구분할 수 없으므로"), "{why}");
+                        assert!(why.contains("측정하지 않은 것으로"), "{why}");
+                    }
+                    other => panic!("이웃 표본이 정상 구간을 벗어났는데 {other:?}로 판정했다"),
+                }
+            }
+        }
+        // 첫 회차의 주입 전 표본은 앞선 주입이 없으므로 문턱 이상이어도 부하로 본다.
+        assert!(matches!(
+            judge_round(&over_margin, &jumped, &quiet, injected, false),
+            RoundOutcome::Undecidable(_)
+        ));
+    }
+
+    /// 결함으로 판정하는 경계를 부하 없이 확인한다.
+    #[test]
+    fn a_round_fails_when_only_the_injection_can_explain_the_samples() {
+        let RoundFixture {
+            injected,
+            quiet,
+            loaded,
+            over_margin,
+            jumped,
+            ..
+        } = RoundFixture::new();
+
+        match judge_round(&quiet, &jumped, &quiet, injected, false) {
             RoundOutcome::Traversed(why) => {
                 assert!(why.contains("측정 대상 경로를 지난다"), "{why}");
                 assert!(!why.contains("구분할 수 없"), "{why}");
             }
             other => panic!("주입 뒤 표본만 문턱을 넘었는데 {other:?}로 판정했다"),
+        }
+
+        // 주입의 영향이 직후 재측정까지 남는 결함.
+        for before in [&quiet, &loaded] {
+            match judge_round(before, &jumped, &over_margin, injected, false) {
+                RoundOutcome::Traversed(why) => {
+                    assert!(why.contains("직후 재측정이 모두"), "{why}");
+                    assert!(why.contains("측정 대상 경로를 지난다"), "{why}");
+                }
+                other => panic!("직후 재측정이 문턱 이상인데 {other:?}로 판정했다"),
+            }
+        }
+
+        // 직전 회차 주입의 영향이 다음 회차의 주입 전 표본까지 남는 결함.
+        match judge_round(&over_margin, &jumped, &loaded, injected, true) {
+            RoundOutcome::Traversed(why) => {
+                assert!(why.contains("직전 회차의 주입 뒤"), "{why}");
+                assert!(why.contains("측정 대상 경로를 지난다"), "{why}");
+            }
+            other => panic!("직전 주입 뒤 표본이 문턱 이상인데 {other:?}로 판정했다"),
         }
     }
 
