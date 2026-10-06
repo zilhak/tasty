@@ -11,6 +11,7 @@ use crate::stall_watchdog::{self, Site};
 use crate::view::ui::View;
 use crate::view::{RepaintSource, ViewAction, ViewCtx};
 use crate::{App, AppEvent};
+use tasty_ipc::stream_hub::{PumpOutcome, StreamHub};
 
 impl ApplicationHandler<AppEvent> for App {
     #[allow(clippy::cognitive_complexity)] // complexity-exempt: 이벤트별 핸들러에 위임하는 평면 match이며 플랫폼 cfg를 포함한다. 분기를 한곳에서 볼 수 있도록 유지한다.
@@ -1441,27 +1442,16 @@ impl App {
         }
     }
 
-    pub(crate) fn apply_stream_outcome(&mut self, outcome: tasty_ipc::stream_hub::PumpOutcome) {
+    pub(crate) fn apply_stream_outcome(&mut self, mut outcome: PumpOutcome) {
         let hub = self.stream_hub.clone();
 
         // 같은 배치의 재attach가 곧 해제될 holder 때문에 거절되지 않게 먼저 끊김을 표시한다.
         self.mark_disconnected_clients(&outcome.disconnected);
-        self.apply_attach_requests_batch(outcome.attach_requests, &hub);
-        self.apply_workspace_attach_requests_batch(outcome.workspace_attach_requests, &hub);
-        self.apply_input_frames_batch(outcome.input_frames);
-        self.apply_structural_ops_batch(outcome.structural_ops, &hub);
-        self.apply_resize_requests_batch(outcome.resize_requests);
-        self.apply_attention_clear_requests_batch(outcome.attention_clear_requests);
-        self.apply_mesh_context_requests_batch(outcome.mesh_context_requests, &hub);
-        self.apply_mesh_full_resend_requests_batch(outcome.mesh_full_resend_requests, &hub);
-        self.apply_mesh_input_events_batch(outcome.mesh_input_events, &hub);
-
-        self.apply_capture_uploads_batch(outcome.capture_uploads, &hub);
-        self.apply_list_dir_requests_batch(outcome.list_dir_requests, &hub);
-        self.apply_git_query_requests_batch(outcome.git_query_requests, &hub);
-        self.apply_markdown_content_requests_batch(outcome.markdown_content_requests, &hub);
-        // begin보다 chunk가 먼저 처리되지 않도록 bulk 이벤트는 도착 순서를 유지한다.
-        self.apply_bulk_events_batch(outcome.bulk_events, &hub);
+        self.apply_attach_requests_batch(&mut outcome, &hub);
+        self.apply_input_frames_batch(outcome.input_frames.drain(..));
+        self.apply_forwarded_batch(&mut outcome, &hub);
+        self.apply_mesh_batch(&mut outcome, &hub);
+        self.apply_content_batch(&mut outcome, &hub);
 
         if !outcome.disconnected.is_empty() {
             self.release_attach_for_disconnected(&outcome.disconnected);
@@ -1483,30 +1473,122 @@ impl App {
         }
     }
 
-    fn apply_attach_requests_batch(
-        &mut self,
-        requests: impl IntoIterator<Item = (u32, u32)>,
-        hub: &tasty_ipc::stream_hub::StreamHub,
-    ) {
-        for (client_id, surface_id) in requests {
-            if !self.attach_on_owning_engine(surface_id, client_id, hub) {
+    fn apply_attach_requests_batch(&mut self, outcome: &mut PumpOutcome, hub: &StreamHub) {
+        use crate::app::attach_activation::Target;
+        for (client_id, surface_id) in outcome.attach_requests.drain(..) {
+            if !self.attach_on_owning_engine(Target::Surface(surface_id), client_id, hub) {
                 crate::remote::server::reject_attach(hub, client_id, "not_found", None);
             }
         }
-    }
-
-    fn apply_workspace_attach_requests_batch(
-        &mut self,
-        requests: impl IntoIterator<Item = (u32, u32)>,
-        hub: &tasty_ipc::stream_hub::StreamHub,
-    ) {
-        for (client_id, workspace_id) in requests {
-            if !self.attach_workspace_on_owning_engine(workspace_id, client_id, hub) {
+        for (client_id, workspace_id) in outcome.workspace_attach_requests.drain(..) {
+            if !self.attach_on_owning_engine(Target::Workspace(workspace_id), client_id, hub) {
                 crate::remote::server::reject_attach(hub, client_id, "workspace_not_found", None);
             }
         }
     }
 
+    fn apply_forwarded_batch(&mut self, outcome: &mut PumpOutcome, hub: &StreamHub) {
+        for (client_id, op_id, op, origin) in outcome.structural_ops.drain(..) {
+            self.apply_forwarded_structural_op(client_id, op_id, &op, origin, hub);
+        }
+        // 점유를 확인해 PTY 크기를 바꾼다. 변화가 있으면 tap이 Resize를 전송한다.
+        // 대상·점유 불일치는 별도 오류 회신이 없어 echo 부재만으로 원인을 알 수 없다.
+        for (client_id, remote_surface_id, cols, rows) in outcome.resize_requests.drain(..) {
+            self.apply_on_first_engine(|engine| {
+                engine.apply_attached_workspace_resize(client_id, remote_surface_id, cols, rows)
+            });
+        }
+        // attention 해제는 저장 대상이 아니므로 레이아웃 저장은 예약하지 않는다.
+        for (client_id, remote_surface_id) in outcome.attention_clear_requests.drain(..) {
+            self.apply_on_first_engine(|engine| {
+                engine.apply_attached_attention_clear(client_id, remote_surface_id)
+            });
+        }
+    }
+
+    /// mesh 구독·표시 정보와 입력은 대상과 점유를 가진 engine에 반영하고, 없으면 MeshError를 회신한다.
+    /// 헤드리스·GUI parked는 쌓인 입력을 공용 구동 경로가 소비한다.
+    /// 창이 살아 있는 GUI 서버는 이 입력 큐를 플러그인에 전달하는 경로가 아직 없다.
+    fn apply_mesh_batch(&mut self, outcome: &mut PumpOutcome, hub: &StreamHub) {
+        for (client_id, surface_id, width_px, height_px, pixels_per_point, theme, focused) in
+            outcome.mesh_context_requests.drain(..)
+        {
+            let ok = self.any_engine(|engine| {
+                engine.apply_attached_mesh_context(
+                    surface_id,
+                    client_id,
+                    width_px,
+                    height_px,
+                    pixels_per_point,
+                    theme.clone(),
+                    focused,
+                )
+            });
+            if !ok {
+                reply_mesh_error(hub, client_id, surface_id, "not_attached");
+            }
+        }
+        for (client_id, surface_id) in outcome.mesh_full_resend_requests.drain(..) {
+            if !self
+                .any_engine(|engine| engine.apply_attached_mesh_full_resend(surface_id, client_id))
+            {
+                reply_mesh_error(hub, client_id, surface_id, "not_attached");
+            }
+        }
+        for (client_id, surface_id, input) in outcome.mesh_input_events.drain(..) {
+            if !self.any_engine(|engine| {
+                engine.apply_attached_mesh_input(surface_id, client_id, input.clone())
+            }) {
+                reply_mesh_error(hub, client_id, surface_id, "not_attached");
+            }
+        }
+    }
+
+    fn apply_content_batch(&mut self, outcome: &mut PumpOutcome, hub: &StreamHub) {
+        for (client_id, msg) in outcome.capture_uploads.drain(..) {
+            self.apply_capture_upload_msg(client_id, msg, hub);
+        }
+        for (client_id, msg) in outcome.list_dir_requests.drain(..) {
+            self.apply_list_dir_request_msg(client_id, msg, hub);
+        }
+        for (client_id, msg) in outcome.git_query_requests.drain(..) {
+            self.apply_git_query_request_msg(client_id, msg, hub);
+        }
+        for (client_id, msg) in outcome.markdown_content_requests.drain(..) {
+            self.apply_markdown_content_request_msg(client_id, msg, hub);
+        }
+        // begin보다 chunk가 먼저 처리되지 않도록 bulk 이벤트는 도착 순서를 유지한다.
+        for (client_id, event) in outcome.bulk_events.drain(..) {
+            match hub.bulk_workspace(client_id) {
+                Some(ws) => self.apply_bulk_event(client_id, event, ws, hub),
+                None => tracing::warn!(
+                    "bulk transfer: event from non-bulk client {client_id} — ignoring"
+                ),
+            }
+        }
+    }
+
+    /// 창 → parked 순서로 처음 받아들인 engine에서 멈춘다. 창 engine이면 다시 그리도록 표시한다.
+    fn apply_on_first_engine(&mut self, mut apply: impl FnMut(&mut EngineMut<'_>) -> bool) {
+        for (_, main, mut engine) in self.engines_mut().window_pairs() {
+            if apply(&mut engine) {
+                main.mark_dirty();
+                return;
+            }
+        }
+        for mut engine in self.engines_mut().parked() {
+            if apply(&mut engine) {
+                return;
+            }
+        }
+    }
+
+    /// 창·parked engine 중 하나가 받아들이면 true다. 첫 engine에서 멈춘다.
+    fn any_engine(&mut self, mut apply: impl FnMut(&mut EngineMut<'_>) -> bool) -> bool {
+        self.engines_mut()
+            .windowed_and_parked()
+            .any(|mut engine| apply(&mut engine))
+    }
     fn apply_input_frames_batch(&mut self, frames: impl IntoIterator<Item = (u32, Vec<u8>)>) {
         for (client_id, bytes) in frames {
             if self
@@ -1542,183 +1624,20 @@ impl App {
         }
     }
 
-    fn apply_structural_ops_batch(
-        &mut self,
-        ops: impl IntoIterator<
-            Item = (
-                u32,
-                u64,
-                crate::ipc::stream::StructuralOp,
-                crate::ipc::stream::ForwardOrigin,
-            ),
-        >,
-        hub: &tasty_ipc::stream_hub::StreamHub,
-    ) {
-        for (client_id, op_id, op, origin) in ops {
-            self.apply_forwarded_structural_op(client_id, op_id, &op, origin, hub);
-        }
-    }
-
-    fn apply_resize_requests_batch(
-        &mut self,
-        requests: impl IntoIterator<Item = (u32, u32, usize, usize)>,
-    ) {
-        for (client_id, remote_surface_id, cols, rows) in requests {
-            self.apply_forwarded_resize(client_id, remote_surface_id, cols, rows);
-        }
-    }
-
-    fn apply_attention_clear_requests_batch(
-        &mut self,
-        requests: impl IntoIterator<Item = (u32, u32)>,
-    ) {
-        for (client_id, remote_surface_id) in requests {
-            self.apply_forwarded_attention_clear(client_id, remote_surface_id);
-        }
-    }
-
-    /// 점유를 확인해 attention을 해제한다. 저장 대상이 아니므로 레이아웃 저장은 예약하지 않는다.
-    fn apply_forwarded_attention_clear(&mut self, client_id: u32, remote_surface_id: u32) {
-        for (_, main, mut engine) in self.engines_mut().window_pairs() {
-            if engine.apply_attached_attention_clear(client_id, remote_surface_id) {
-                main.mark_dirty();
-                return;
-            }
-        }
-        for mut engine in self.engines_mut().parked() {
-            if engine.apply_attached_attention_clear(client_id, remote_surface_id) {
-                return;
-            }
-        }
-    }
-
-    /// 소유 engine에 mesh 구독·표시 정보를 반영한다. 대상이나 점유가 없으면 MeshError를 회신한다.
-    fn apply_mesh_context_requests_batch(
-        &mut self,
-        requests: impl IntoIterator<
-            Item = (
-                u32,
-                u32,
-                u32,
-                u32,
-                f32,
-                Option<tasty_plugin_protocol::protocol::ThemeWire>,
-                bool,
-            ),
-        >,
-        hub: &tasty_ipc::stream_hub::StreamHub,
-    ) {
-        for (client_id, surface_id, width_px, height_px, pixels_per_point, theme, focused) in
-            requests
-        {
-            let ok = self.apply_mesh_context_on_owning_engine(
-                surface_id,
-                client_id,
-                width_px,
-                height_px,
-                pixels_per_point,
-                theme,
-                focused,
-            );
-            if !ok {
-                reply_mesh_error(hub, client_id, surface_id, "not_attached");
-            }
-        }
-    }
-
-    fn apply_mesh_full_resend_requests_batch(
-        &mut self,
-        requests: impl IntoIterator<Item = (u32, u32)>,
-        hub: &tasty_ipc::stream_hub::StreamHub,
-    ) {
-        for (client_id, surface_id) in requests {
-            let ok = self.apply_mesh_full_resend_on_owning_engine(surface_id, client_id);
-            if !ok {
-                reply_mesh_error(hub, client_id, surface_id, "not_attached");
-            }
-        }
-    }
-
-    /// 입력을 소유 engine에 쌓는다. 헤드리스·GUI parked는 공용 구동 경로가 소비한다.
-    /// 창이 살아 있는 GUI 서버는 이 입력 큐를 플러그인에 전달하는 경로가 아직 없다.
-    fn apply_mesh_input_events_batch(
-        &mut self,
-        events: impl IntoIterator<Item = (u32, u32, tasty_plugin_protocol::protocol::RawInputWire)>,
-        hub: &tasty_ipc::stream_hub::StreamHub,
-    ) {
-        for (client_id, surface_id, input) in events {
-            let ok = self.apply_mesh_input_on_owning_engine(surface_id, client_id, input);
-            if !ok {
-                reply_mesh_error(hub, client_id, surface_id, "not_attached");
-            }
-        }
-    }
-
-    fn apply_capture_uploads_batch(
-        &mut self,
-        uploads: impl IntoIterator<Item = (u32, tasty_ipc::stream_hub::CaptureUploadMsg)>,
-        hub: &tasty_ipc::stream_hub::StreamHub,
-    ) {
-        for (client_id, msg) in uploads {
-            self.apply_capture_upload_msg(client_id, msg, hub);
-        }
-    }
-
-    fn apply_list_dir_requests_batch(
-        &mut self,
-        requests: impl IntoIterator<Item = (u32, tasty_ipc::stream_hub::ListDirRequestMsg)>,
-        hub: &tasty_ipc::stream_hub::StreamHub,
-    ) {
-        for (client_id, msg) in requests {
-            self.apply_list_dir_request_msg(client_id, msg, hub);
-        }
-    }
-
-    fn apply_git_query_requests_batch(
-        &mut self,
-        requests: impl IntoIterator<Item = (u32, tasty_ipc::stream_hub::GitQueryRequestMsg)>,
-        hub: &tasty_ipc::stream_hub::StreamHub,
-    ) {
-        for (client_id, msg) in requests {
-            self.apply_git_query_request_msg(client_id, msg, hub);
-        }
-    }
-
-    fn apply_markdown_content_requests_batch(
-        &mut self,
-        requests: impl IntoIterator<Item = (u32, tasty_ipc::stream_hub::MarkdownContentRequestMsg)>,
-        hub: &tasty_ipc::stream_hub::StreamHub,
-    ) {
-        for (client_id, msg) in requests {
-            self.apply_markdown_content_request_msg(client_id, msg, hub);
-        }
-    }
-
-    fn apply_bulk_events_batch(
-        &mut self,
-        events: impl IntoIterator<Item = (u32, tasty_ipc::stream_hub::BulkEvent)>,
-        hub: &tasty_ipc::stream_hub::StreamHub,
-    ) {
-        for (client_id, event) in events {
-            match hub.bulk_workspace(client_id) {
-                Some(ws) => self.apply_bulk_event(client_id, event, ws, hub),
-                None => tracing::warn!(
-                    "bulk transfer: event from non-bulk client {client_id} — ignoring"
-                ),
-            }
-        }
-    }
-
     fn attach_on_owning_engine(
         &mut self,
-        surface: u32,
+        target: crate::app::attach_activation::Target,
         client: u32,
         hub: &tasty_ipc::stream_hub::StreamHub,
     ) -> bool {
+        use crate::app::attach_activation::Target;
         let Some(session) = self
             .engines
             .all_sessions_mut()
-            .find(|session| session.core_state.has_surface(surface))
+            .find(|session| match target {
+                Target::Surface(surface) => session.core_state.has_surface(surface),
+                Target::Workspace(workspace) => session.core_state.has_workspace(workspace),
+            })
         else {
             return false;
         };
@@ -1728,32 +1647,7 @@ impl App {
             &self.journal,
             id,
             &mut session.borrow_mut(),
-            crate::app::attach_activation::Target::Surface(surface),
-            client,
-            hub,
-        );
-        true
-    }
-    fn attach_workspace_on_owning_engine(
-        &mut self,
-        workspace: u32,
-        client: u32,
-        hub: &tasty_ipc::stream_hub::StreamHub,
-    ) -> bool {
-        let Some(session) = self
-            .engines
-            .all_sessions_mut()
-            .find(|session| session.core_state.has_workspace(workspace))
-        else {
-            return false;
-        };
-        let id = session.id;
-        crate::app::attach_activation::begin(
-            &mut self.pending_server_attaches,
-            &self.journal,
-            id,
-            &mut session.borrow_mut(),
-            crate::app::attach_activation::Target::Workspace(workspace),
+            target,
             client,
             hub,
         );
@@ -1767,7 +1661,7 @@ impl App {
                 return Self::demux_workspace_input(&mut engine, client_id, bytes);
             }
         }
-        self.feed_input_on_owning_engine(client_id, bytes)
+        self.any_engine(|engine| engine.feed_attached_input(client_id, bytes))
     }
 
     fn demux_workspace_input(engine: &mut EngineMut<'_>, client_id: u32, bytes: &[u8]) -> bool {
@@ -1775,66 +1669,6 @@ impl App {
             Some((sid, payload)) => engine.feed_attached_workspace_input(client_id, sid, payload),
             None => false,
         }
-    }
-
-    fn feed_input_on_owning_engine(&mut self, client_id: u32, bytes: &[u8]) -> bool {
-        for mut engine in self.engines_mut().windowed_and_parked() {
-            if engine.feed_attached_input(client_id, bytes) {
-                return true;
-            }
-        }
-        false
-    }
-
-    /// 창·parked engine에서 대상과 점유를 확인해 mesh 구독을 갱신한다.
-    #[allow(clippy::too_many_arguments)]
-    fn apply_mesh_context_on_owning_engine(
-        &mut self,
-        surface_id: u32,
-        client_id: u32,
-        width_px: u32,
-        height_px: u32,
-        pixels_per_point: f32,
-        theme: Option<tasty_plugin_protocol::protocol::ThemeWire>,
-        focused: bool,
-    ) -> bool {
-        for mut engine in self.engines_mut().windowed_and_parked() {
-            if engine.apply_attached_mesh_context(
-                surface_id,
-                client_id,
-                width_px,
-                height_px,
-                pixels_per_point,
-                theme.clone(),
-                focused,
-            ) {
-                return true;
-            }
-        }
-        false
-    }
-
-    fn apply_mesh_input_on_owning_engine(
-        &mut self,
-        surface_id: u32,
-        client_id: u32,
-        input: tasty_plugin_protocol::protocol::RawInputWire,
-    ) -> bool {
-        for mut engine in self.engines_mut().windowed_and_parked() {
-            if engine.apply_attached_mesh_input(surface_id, client_id, input.clone()) {
-                return true;
-            }
-        }
-        false
-    }
-
-    fn apply_mesh_full_resend_on_owning_engine(&mut self, surface_id: u32, client_id: u32) -> bool {
-        for mut engine in self.engines_mut().windowed_and_parked() {
-            if engine.apply_attached_mesh_full_resend(surface_id, client_id) {
-                return true;
-            }
-        }
-        false
     }
 
     /// 구조 변경은 점유한 workspace를 가진 MainView에서만 실행한다.
@@ -1894,28 +1728,6 @@ impl App {
         }
     }
 
-    /// 점유를 확인해 PTY 크기를 바꾼다. 변화가 있으면 tap이 Resize를 전송한다.
-    /// 대상·점유 불일치는 별도 오류 회신이 없어 echo 부재만으로 원인을 알 수 없다.
-    fn apply_forwarded_resize(
-        &mut self,
-        client_id: u32,
-        remote_surface_id: u32,
-        cols: usize,
-        rows: usize,
-    ) {
-        for (_, main, mut engine) in self.engines_mut().window_pairs() {
-            if engine.apply_attached_workspace_resize(client_id, remote_surface_id, cols, rows) {
-                main.mark_dirty();
-                return;
-            }
-        }
-        for mut engine in self.engines_mut().parked() {
-            if engine.apply_attached_workspace_resize(client_id, remote_surface_id, cols, rows) {
-                return;
-            }
-        }
-    }
-
     /// workspace 점유자를 찾아 캡처 청크를 누적하거나 파일 저장·클립보드 갱신을 완료한다.
     fn apply_capture_upload_msg(
         &mut self,
@@ -1967,19 +1779,11 @@ impl App {
                             &file_name,
                         );
                     }
-                    None => {
-                        let payload = serde_json::json!({
-                            "event": "capture_result",
-                            "upload_id": upload_id,
-                            "ok": false,
-                            "reason": "client does not hold a workspace attach",
-                        });
-                        let frame = crate::ipc::stream::StreamFrame::new(
-                            crate::ipc::stream::StreamTag::Control,
-                            serde_json::to_vec(&payload).unwrap_or_default(),
-                        );
-                        let _ = hub.push(client_id, frame); // 회신 전송 실패는 여기서 재시도하지 않는다.
-                    }
+                    None => reply_without_workspace_attach(
+                        hub,
+                        client_id,
+                        serde_json::json!({ "event": "capture_result", "upload_id": upload_id }),
+                    ),
                 }
             }
         }
@@ -2003,17 +1807,11 @@ impl App {
             );
             return;
         }
-        let payload = serde_json::json!({
-            "event": "list_dir_result",
-            "request_id": request_id,
-            "ok": false,
-            "reason": "client does not hold a workspace attach",
-        });
-        let frame = crate::ipc::stream::StreamFrame::new(
-            crate::ipc::stream::StreamTag::Control,
-            serde_json::to_vec(&payload).unwrap_or_default(),
+        reply_without_workspace_attach(
+            hub,
+            client_id,
+            serde_json::json!({ "event": "list_dir_result", "request_id": request_id }),
         );
-        let _ = hub.push(client_id, frame); // 회신 전송 실패는 여기서 재시도하지 않는다.
     }
 
     fn apply_markdown_content_request_msg(
@@ -2037,18 +1835,15 @@ impl App {
             );
             return;
         }
-        let payload = serde_json::json!({
-            "event": "markdown_content_result",
-            "request_id": request_id,
-            "surface_id": surface_id,
-            "ok": false,
-            "reason": "client does not hold a workspace attach",
-        });
-        let frame = crate::ipc::stream::StreamFrame::new(
-            crate::ipc::stream::StreamTag::Control,
-            serde_json::to_vec(&payload).unwrap_or_default(),
+        reply_without_workspace_attach(
+            hub,
+            client_id,
+            serde_json::json!({
+                "event": "markdown_content_result",
+                "request_id": request_id,
+                "surface_id": surface_id,
+            }),
         );
-        let _ = hub.push(client_id, frame); // 회신 전송 실패는 여기서 재시도하지 않는다.
     }
 
     fn apply_git_query_request_msg(
@@ -2078,18 +1873,15 @@ impl App {
             );
             return;
         }
-        let payload = serde_json::json!({
-            "event": "git_query_result",
-            "request_id": request_id,
-            "ok": false,
-            "kind": kind.as_wire_str(),
-            "reason": "client does not hold a workspace attach",
-        });
-        let frame = crate::ipc::stream::StreamFrame::new(
-            crate::ipc::stream::StreamTag::Control,
-            serde_json::to_vec(&payload).unwrap_or_default(),
+        reply_without_workspace_attach(
+            hub,
+            client_id,
+            serde_json::json!({
+                "event": "git_query_result",
+                "request_id": request_id,
+                "kind": kind.as_wire_str(),
+            }),
         );
-        let _ = hub.push(client_id, frame); // 회신 전송 실패는 여기서 재시도하지 않는다.
     }
 
     /// bulk 연결은 직접 점유자가 아니므로 결속된 workspace의 소유 engine으로 전달한다.
@@ -2174,6 +1966,22 @@ impl App {
             .find(|engine| engine.find_workspace_index_for_id(bulk_ws).is_some())
             .map(|mut engine| f(&mut engine))
     }
+}
+
+/// workspace를 점유하지 않은 클라이언트의 요청에 실패 결과를 회신한다.
+/// `fields`는 event와 요청 식별 필드를 담은 객체다. 회신 전송 실패는 여기서 재시도하지 않는다.
+fn reply_without_workspace_attach(
+    hub: &tasty_ipc::stream_hub::StreamHub,
+    client_id: u32,
+    mut fields: serde_json::Value,
+) {
+    fields["ok"] = false.into();
+    fields["reason"] = "client does not hold a workspace attach".into();
+    let frame = crate::ipc::stream::StreamFrame::new(
+        crate::ipc::stream::StreamTag::Control,
+        serde_json::to_vec(&fields).unwrap_or_default(),
+    );
+    let _ = hub.push(client_id, frame); // 회신 전송 실패는 여기서 재시도하지 않는다.
 }
 
 /// 창 → parked 순서로 workspace 점유자를 찾는다.
