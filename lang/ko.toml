@@ -880,7 +880,7 @@ rename = "이름 변경"
 [explorer.state]
 operation_failed = "파일 작업 실패: {}"
 empty = "이 폴더는 비어 있습니다"
-no_permission = "권한이 없습니다"
+no_permission = "접근 거부"
 no_permission_sub = "이 폴더를 읽을 권한이 없습니다."
 read_error = "이 폴더를 읽을 수 없습니다"
 loading = "불러오는 중…"
