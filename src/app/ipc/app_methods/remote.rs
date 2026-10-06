@@ -99,14 +99,7 @@ impl App {
         match target {
             RemoteAttachTarget::Existing(remote_ws) => {
                 if let Err(error) = self.remote.spawn_attempt(attempt.clone(), move || {
-                    let result = conn.resolve_endpoint().and_then(|(tunnel, port)| {
-                        tasty_remote::self_instance::refuse_this_instance(
-                            tunnel.is_some(),
-                            port,
-                            Some(&attempt),
-                        )?;
-                        Ok((tunnel, port))
-                    });
+                    let result = resolve_existing_endpoint(&attempt, || conn.resolve_endpoint());
                     send_attach_outcome(&tx, &proxy, attempt, remote_ws, result);
                 }) {
                     send_response(
@@ -251,6 +244,69 @@ fn send_attach_outcome(
     let _ = proxy.send_event(AppEvent::AutoAttachReady); // event loop 종료 시에만 실패 — 무시
 }
 
+/// 기존 workspace attach의 엔드포인트를 해석하고 SSH 너머의 자기 자신을 거절한다.
+/// 해석은 시험에서 SSH 없이 바꿔 끼울 수 있게 받는다.
+fn resolve_existing_endpoint<T>(
+    attempt: &tasty_remote::outbound::AttemptToken,
+    resolve: impl FnOnce() -> anyhow::Result<(Option<T>, u16)>,
+) -> anyhow::Result<(Option<T>, u16)> {
+    let (tunnel, port) = resolve()?;
+    tasty_remote::self_instance::refuse_this_instance(tunnel.is_some(), port, Some(attempt))?;
+    Ok((tunnel, port))
+}
+
+/// 새 workspace를 만들기 전에 엔드포인트를 준비한다. 실패하면 호출자에게 보낼 응답과
+/// 시도 결과로 남길 오류를 함께 돌려준다. 해석은 시험에서 바꿔 끼울 수 있게 받는다.
+fn prepare_create_endpoint<T>(
+    rpc_id: &serde_json::Value,
+    attempt: &tasty_remote::outbound::AttemptToken,
+    resolve: impl FnOnce() -> anyhow::Result<(Option<T>, u16)>,
+) -> Result<(Option<T>, u16), (host_ipc::protocol::JsonRpcResponse, anyhow::Error)> {
+    let (tunnel, port) = resolve().map_err(|e| {
+        (
+            host_ipc::protocol::JsonRpcResponse::error(
+                rpc_id.clone(),
+                -32050,
+                // 중첩 오류의 접속 실패 원인도 응답에 포함한다.
+                format!("remote endpoint resolve failed: {e:#}"),
+            ),
+            anyhow::anyhow!("remote attach preparation failed: {e:#}"),
+        )
+    })?;
+    if !attempt.is_active() {
+        return Err((
+            host_ipc::protocol::JsonRpcResponse::error(
+                rpc_id.clone(),
+                -32050,
+                "remote connection attempt cancelled",
+            ),
+            anyhow::anyhow!("remote connection attempt cancelled"),
+        ));
+    }
+    // 호스트명·LAN IP로 자기 머신을 가리킨 SSH 대상은 원격(=자기)에 workspace를 만들기 전에 거절한다.
+    if let Err(e) =
+        tasty_remote::self_instance::refuse_this_instance(tunnel.is_some(), port, Some(attempt))
+    {
+        let response = if e
+            .downcast_ref::<tasty_remote::self_instance::ThisInstance>()
+            .is_some()
+        {
+            host_ipc::protocol::JsonRpcResponse::invalid_params(rpc_id.clone(), e.to_string())
+        } else {
+            host_ipc::protocol::JsonRpcResponse::error(
+                rpc_id.clone(),
+                -32050,
+                format!("remote system.info failed: {e:#}"),
+            )
+        };
+        return Err((
+            response,
+            anyhow::anyhow!("remote attach preparation failed: {e:#}"),
+        ));
+    }
+    Ok((tunnel, port))
+}
+
 /// 새 workspace의 생성 결과를 응답하고 attach를 요청한다. 실패하면 attach 요청은 보내지 않는다.
 #[allow(clippy::too_many_arguments)] // reason: spawn_attempt 클로저가 move 로 잡은 값을 그대로 펼친 워커 진입점이다 — 묶으면 캡처를 한 번 더 옮기는 구조체만 생긴다
 fn remote_attach_create_worker(
@@ -263,72 +319,15 @@ fn remote_attach_create_worker(
     proxy: &winit::event_loop::EventLoopProxy<AppEvent>,
     attempt: tasty_remote::outbound::AttemptToken,
 ) {
-    let (tunnel, port) = match conn.resolve_endpoint() {
-        Ok(v) => v,
-        Err(e) => {
-            send_response(
-                response_tx,
-                host_ipc::protocol::JsonRpcResponse::error(
-                    rpc_id,
-                    -32050,
-                    // 중첩 오류의 접속 실패 원인도 응답에 포함한다.
-                    format!("remote endpoint resolve failed: {e:#}"),
-                ),
-            );
-            send_attach_outcome(
-                tx,
-                proxy,
-                attempt,
-                0,
-                Err(anyhow::anyhow!("remote attach preparation failed: {e:#}")),
-            );
-            return;
-        }
-    };
-    if !attempt.is_active() {
-        send_response(
-            response_tx,
-            host_ipc::protocol::JsonRpcResponse::error(
-                rpc_id,
-                -32050,
-                "remote connection attempt cancelled",
-            ),
-        );
-        send_attach_outcome(
-            tx,
-            proxy,
-            attempt,
-            0,
-            Err(anyhow::anyhow!("remote connection attempt cancelled")),
-        );
-        return;
-    }
-    // 호스트명·LAN IP로 자기 머신을 가리킨 SSH 대상은 원격(=자기)에 workspace를 만들기 전에 거절한다.
-    if let Err(e) =
-        tasty_remote::self_instance::refuse_this_instance(tunnel.is_some(), port, Some(&attempt))
-    {
-        let response = if e
-            .downcast_ref::<tasty_remote::self_instance::ThisInstance>()
-            .is_some()
-        {
-            host_ipc::protocol::JsonRpcResponse::invalid_params(rpc_id, e.to_string())
-        } else {
-            host_ipc::protocol::JsonRpcResponse::error(
-                rpc_id,
-                -32050,
-                format!("remote system.info failed: {e:#}"),
-            )
+    let (tunnel, port) =
+        match prepare_create_endpoint(&rpc_id, &attempt, || conn.resolve_endpoint()) {
+            Ok(v) => v,
+            Err((response, error)) => {
+                send_response(response_tx, response);
+                send_attach_outcome(tx, proxy, attempt, 0, Err(error));
+                return;
+            }
         };
-        send_response(response_tx, response);
-        send_attach_outcome(
-            tx,
-            proxy,
-            attempt,
-            0,
-            Err(anyhow::anyhow!("remote attach preparation failed: {e:#}")),
-        );
-        return;
-    }
     let created = match tasty_remote::create::create_via_port(port, name.as_deref(), cwd.as_deref())
     {
         Ok(c) => c,
@@ -366,4 +365,76 @@ fn remote_attach_create_worker(
         ),
     );
     send_attach_outcome(tx, proxy, attempt, created.id, Ok((tunnel, port)));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::auto_attach::fake_peer;
+
+    fn attempt() -> (
+        tasty_remote::outbound::Remote,
+        tasty_remote::outbound::AttemptToken,
+    ) {
+        let mut remote = tasty_remote::outbound::Remote::new();
+        let attempt = remote.begin_attempt(None, None).expect("attempt");
+        (remote, attempt)
+    }
+
+    fn this_instance() -> serde_json::Value {
+        serde_json::json!({ "instance_id": tasty_ipc::instance::instance_id() })
+    }
+
+    #[test]
+    fn an_existing_workspace_attach_asks_a_tunnel_peer() {
+        let (port, server) = fake_peer::serve_once(this_instance());
+        let (_remote, attempt) = attempt();
+        let error =
+            resolve_existing_endpoint(&attempt, || Ok((Some(()), port))).expect_err("refused");
+        assert!(server.join().expect("server").contains("\"system.info\""));
+        assert!(
+            error
+                .downcast_ref::<tasty_remote::self_instance::ThisInstance>()
+                .is_some(),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn an_existing_workspace_attach_does_not_ask_a_direct_endpoint() {
+        let (_remote, attempt) = attempt();
+        let port = fake_peer::free_port();
+        let resolved = resolve_existing_endpoint(&attempt, || Ok((None::<()>, port)));
+        assert_eq!(resolved.expect("direct endpoint").1, port);
+    }
+
+    #[test]
+    fn a_new_workspace_is_refused_with_invalid_params_before_creation() {
+        let (port, server) = fake_peer::serve_once(this_instance());
+        let (_remote, attempt) = attempt();
+        let rpc_id = serde_json::json!(7);
+        let Err((response, _)) =
+            prepare_create_endpoint(&rpc_id, &attempt, || Ok((Some(()), port)))
+        else {
+            panic!("this instance must be refused");
+        };
+        assert!(server.join().expect("server").contains("\"system.info\""));
+        let error = response.error.expect("error response");
+        assert_eq!(error.code, -32602);
+        assert!(
+            error.message.contains("attaching to itself is refused"),
+            "{}",
+            error.message
+        );
+        assert_eq!(response.id, rpc_id);
+    }
+
+    #[test]
+    fn a_new_workspace_on_a_direct_endpoint_is_not_asked() {
+        let (_remote, attempt) = attempt();
+        let port = fake_peer::free_port();
+        let prepared =
+            prepare_create_endpoint(&serde_json::json!(1), &attempt, || Ok((None::<()>, port)));
+        assert_eq!(prepared.map(|(_, p)| p).ok(), Some(port));
+    }
 }

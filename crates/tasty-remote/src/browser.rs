@@ -52,6 +52,33 @@ impl Default for Browsers {
         }
     }
 }
+/// 엔드포인트를 해석하고 원격 workspace 목록을 받는다. 해석은 시험에서 바꿔 끼울 수 있게 받는다.
+fn list_endpoint<T>(
+    resolve: impl FnOnce() -> anyhow::Result<(Option<T>, u16)>,
+    token: &AttemptToken,
+) -> anyhow::Result<(Option<T>, u16, Vec<RemoteWorkspace>)> {
+    let (tunnel, port) = resolve()?;
+    if !token.is_active() {
+        anyhow::bail!("remote browser cancelled");
+    }
+    // 연결과 원격 workspace 생성이 모두 이 엔드포인트를 쓰므로 목록을 받기 전에 판정한다.
+    crate::self_instance::refuse_this_instance(tunnel.is_some(), port, Some(token))?;
+    let rows = crate::browse::browse_via_port_bound(port, Some(token))?;
+    Ok((tunnel, port, rows))
+}
+
+/// 팝업에 보일 실패 문구. 자기 자신 거절은 번역한 안내로 바꾼다.
+fn browser_error_text(error: anyhow::Error) -> String {
+    if error
+        .downcast_ref::<crate::self_instance::ThisInstance>()
+        .is_some()
+    {
+        tasty_i18n::t("remote_attach.self_instance").to_owned()
+    } else {
+        error.to_string()
+    }
+}
+
 impl Remote {
     pub fn begin_browser(
         &mut self,
@@ -80,29 +107,16 @@ impl Remote {
         );
         let result = self.spawn_attempt(attempt, move || {
             let _scope = cancel.scope();
-            let result = (|| -> anyhow::Result<ResultValue> {
-                let (target, tasty, mode, file) =
-                    crate::browse::resolve_connection_spec(Some(&profile), None, "", "")?;
-                let (tunnel, port) =
-                    crate::browse::resolve_endpoint(&target, &tasty, &mode, file.as_deref())?;
-                if !token.is_active() {
-                    anyhow::bail!("remote browser cancelled");
-                }
-                // 연결과 원격 workspace 생성이 모두 이 엔드포인트를 쓰므로 목록을 받기 전에 판정한다.
-                crate::self_instance::refuse_this_instance(tunnel.is_some(), port, Some(&token))?;
-                let rows = crate::browse::browse_via_port_bound(port, Some(&token))?;
-                Ok(ResultValue::Listed { port, tunnel, rows })
-            })()
-            .map_err(|error| {
-                if error
-                    .downcast_ref::<crate::self_instance::ThisInstance>()
-                    .is_some()
-                {
-                    tasty_i18n::t("remote_attach.self_instance").to_owned()
-                } else {
-                    error.to_string()
-                }
-            });
+            let result = list_endpoint(
+                || {
+                    let (target, tasty, mode, file) =
+                        crate::browse::resolve_connection_spec(Some(&profile), None, "", "")?;
+                    crate::browse::resolve_endpoint(&target, &tasty, &mode, file.as_deref())
+                },
+                &token,
+            )
+            .map(|(tunnel, port, rows)| ResultValue::Listed { port, tunnel, rows })
+            .map_err(browser_error_text);
             crate::outbound::send_attempt_result(
                 &tx,
                 &token,
@@ -302,5 +316,40 @@ impl Remote {
         while let Ok(outcome) = self.browsers.rx.try_recv() {
             self.discard_browser_outcome(outcome);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::self_instance::serve_once;
+
+    fn token() -> (crate::outbound::Remote, AttemptToken) {
+        let mut remote = crate::outbound::Remote::new();
+        let token = remote.begin_attempt(None, None).expect("attempt");
+        (remote, token)
+    }
+
+    #[test]
+    fn the_popup_asks_a_tunnel_peer_before_listing_and_shows_the_notice() {
+        let (port, server) =
+            serve_once(serde_json::json!({ "instance_id": tasty_ipc::instance::instance_id() }));
+        let (_remote, token) = token();
+        let error = list_endpoint(|| Ok((Some(()), port)), &token).expect_err("this instance");
+        assert!(server.join().expect("server").contains("\"system.info\""));
+        assert_eq!(
+            browser_error_text(error),
+            tasty_i18n::t("remote_attach.self_instance")
+        );
+    }
+
+    #[test]
+    fn the_popup_lists_a_direct_endpoint_without_asking() {
+        let (port, server) = serve_once(serde_json::json!([]));
+        let (_remote, token) = token();
+        let listed = list_endpoint(|| Ok((None::<()>, port)), &token);
+        let first = server.join().expect("server");
+        assert!(first.contains("\"workspace.list\""), "{first}");
+        assert!(listed.is_ok(), "{listed:?}", listed = listed.err());
     }
 }

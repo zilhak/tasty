@@ -584,12 +584,20 @@ fn resolve_endpoint_bound(
     target: &WorkspaceAttachTarget,
     attempt: &tasty_remote::outbound::AttemptToken,
 ) -> anyhow::Result<(Option<SshTunnel>, u16)> {
+    resolve_endpoint_bound_with(attempt, || resolve_endpoint(target))
+}
+
+/// 해석 함수를 받아 취소 등록·자기 판정을 붙인다. 시험은 SSH 없이 해석 결과를 넣는다.
+fn resolve_endpoint_bound_with<T>(
+    attempt: &tasty_remote::outbound::AttemptToken,
+    resolve: impl FnOnce() -> anyhow::Result<(Option<T>, u16)>,
+) -> anyhow::Result<(Option<T>, u16)> {
     let cancel = tasty_ssh::SshCancel::new();
     attempt
         .register_ssh(cancel.clone())
         .map_err(anyhow::Error::msg)?;
     let _scope = cancel.scope();
-    let result = resolve_endpoint(target)?;
+    let result = resolve()?;
     if !attempt.is_active() {
         anyhow::bail!("remote endpoint attempt cancelled");
     }
@@ -837,11 +845,68 @@ mod tests {
     }
 
     #[test]
+    fn automatic_attach_asks_a_tunnel_peer_and_refuses_this_instance() {
+        let (port, server) = fake_peer::serve_once(
+            serde_json::json!({ "instance_id": tasty_ipc::instance::instance_id() }),
+        );
+        let mut remote = tasty_remote::outbound::Remote::new();
+        let attempt = remote.begin_attempt(None, None).expect("attempt");
+        let error = resolve_endpoint_bound_with(&attempt, || Ok((Some(()), port)))
+            .expect_err("this instance");
+        assert!(server.join().expect("server").contains("\"system.info\""));
+        assert!(
+            error
+                .downcast_ref::<tasty_remote::self_instance::ThisInstance>()
+                .is_some(),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn automatic_attach_does_not_ask_a_direct_endpoint() {
+        let mut remote = tasty_remote::outbound::Remote::new();
+        let attempt = remote.begin_attempt(None, None).expect("attempt");
+        // 아무도 듣지 않는 포트라도 터널이 아니면 묻지 않는다.
+        let port = fake_peer::free_port();
+        let resolved = resolve_endpoint_bound_with(&attempt, || Ok((None::<()>, port)));
+        assert_eq!(resolved.expect("direct endpoint").1, port);
+    }
+
+    #[test]
     fn a_past_retry_time_arms_no_timer() {
         let t0 = Instant::now();
         let mut retry = tasty_remote::outbound::AttachRetry::new(profile_mapping("p"));
         retry.record_failure(t0, 1.0);
         assert_eq!(first_attach_wakeup_at(&retry, t0), Some(retry.next_attempt));
         assert_eq!(first_attach_wakeup_at(&retry, retry.next_attempt), None);
+    }
+}
+
+/// SSH 경로의 자기 판정 배선을 시험하는 가짜 `system.info` 상대.
+#[cfg(test)]
+pub(crate) mod fake_peer {
+    use std::io::{BufRead, BufReader, Write};
+
+    /// 요청 한 줄을 읽고 주어진 결과 한 줄을 돌려준다. 받은 요청 줄을 돌려준다.
+    pub(crate) fn serve_once(result: serde_json::Value) -> (u16, std::thread::JoinHandle<String>) {
+        let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("bind");
+        let port = listener.local_addr().expect("addr").port();
+        let handle = std::thread::spawn(move || {
+            let (stream, _) = listener.accept().expect("accept");
+            let mut line = String::new();
+            BufReader::new(&stream).read_line(&mut line).expect("read");
+            let reply = serde_json::json!({ "jsonrpc": "2.0", "id": 1, "result": result });
+            writeln!(&stream, "{reply}").expect("write");
+            line
+        });
+        (port, handle)
+    }
+
+    /// 바인드했다 놓은 포트. 묻지 않는 경로가 연결하면 거절돼 드러난다.
+    pub(crate) fn free_port() -> u16 {
+        std::net::TcpListener::bind(("127.0.0.1", 0))
+            .and_then(|listener| listener.local_addr())
+            .expect("free port")
+            .port()
     }
 }

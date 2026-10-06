@@ -49,25 +49,26 @@ fn reports_this_instance(info: &serde_json::Value) -> bool {
         == Some(tasty_ipc::instance::instance_id())
 }
 
+/// 요청 한 줄을 읽고 주어진 결과 한 줄을 돌려주는 가짜 서버. 받은 요청 줄을 돌려준다.
+#[cfg(test)]
+pub(crate) fn serve_once(result: serde_json::Value) -> (u16, std::thread::JoinHandle<String>) {
+    use std::io::{BufRead, BufReader, Write};
+    let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("bind");
+    let port = listener.local_addr().expect("addr").port();
+    let handle = std::thread::spawn(move || {
+        let (stream, _) = listener.accept().expect("accept");
+        let mut line = String::new();
+        BufReader::new(&stream).read_line(&mut line).expect("read");
+        let reply = serde_json::json!({ "jsonrpc": "2.0", "id": 1, "result": result });
+        writeln!(&stream, "{reply}").expect("write");
+        line
+    });
+    (port, handle)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::{BufRead, BufReader, Write};
-
-    /// 요청 한 줄을 읽고 `system.info` 결과 한 줄을 돌려주는 가짜 서버.
-    fn serve_once(result: serde_json::Value) -> (u16, std::thread::JoinHandle<String>) {
-        let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("bind");
-        let port = listener.local_addr().expect("addr").port();
-        let handle = std::thread::spawn(move || {
-            let (stream, _) = listener.accept().expect("accept");
-            let mut line = String::new();
-            BufReader::new(&stream).read_line(&mut line).expect("read");
-            let reply = serde_json::json!({ "jsonrpc": "2.0", "id": 1, "result": result });
-            writeln!(&stream, "{reply}").expect("write");
-            line
-        });
-        (port, handle)
-    }
 
     #[test]
     fn a_peer_reporting_this_process_id_is_refused() {
