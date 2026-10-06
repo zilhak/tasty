@@ -1,4 +1,10 @@
-/* Use shared color, radius and elevation tokens, with site-specific spacing and type sizes. */
+/* Use shared color, radius and elevation tokens, with site-specific spacing and type sizes.
+
+   Every rule here is the site's own (docs/dev-guide/site.md), so spacing uses the
+   site scale. Literal values left without a line comment belong to axes the site
+   scale does not have: font sizes, element sizes, pill radii (999px) and the
+   1-2px hover nudges. Media query conditions stay literal because a query
+   condition cannot read a custom property. */
 
 .landing {
   --gutter: var(--sp-6);
@@ -53,7 +59,7 @@
   display: inline-flex;
   align-items: center;
   gap: var(--sp-2);
-  padding: 6px var(--sp-3);
+  padding: 6px var(--sp-3); /* no site step: --sp-* has no 6 */
   border: var(--border-soft);
   border-radius: 999px;
   font-family: var(--font-mono);
@@ -189,10 +195,10 @@
   flex: none;
   font-family: var(--font-mono);
   font-size: 12px;
-  padding-top: 3px;
+  padding-top: 3px; /* no site step: --sp-* has no 3 */
   color: var(--brand);
 }
-.feature-list .v { display: flex; flex-direction: column; gap: 6px; }
+.feature-list .v { display: flex; flex-direction: column; gap: 6px; } /* no site step: --sp-* has no 6 */
 .feature-list strong { font-size: 1rem; letter-spacing: -0.01em; }
 .feature-list .v > span { font-size: 0.93rem; line-height: 1.7; color: var(--tasty-text-secondary); }
 
@@ -264,7 +270,7 @@
   font-size: 12px;
   color: var(--tasty-text-muted);
 }
-.term__dots { display: flex; gap: 6px; }
+.term__dots { display: flex; gap: 6px; } /* no site step: --sp-* has no 6 */
 .term__dots i { width: 10px; height: 10px; border-radius: 999px; background: var(--tasty-color-neutral-500); }
 .term pre {
   margin: 0;
@@ -312,7 +318,7 @@
 .stat {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--sp-1);
   padding: var(--sp-6);
   background: var(--tasty-bg-panel);
 }
