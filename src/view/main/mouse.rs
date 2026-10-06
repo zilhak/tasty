@@ -139,6 +139,7 @@ impl MainView {
         self.cursor_position = Some(position);
         let overlay_open = self.mouse_overlay_open();
         if cursor_moved_should_short_circuit(
+            self.dragging_divider.is_some(),
             egui_consumed,
             overlay_open,
             self.state.popup_hovered,
@@ -1404,14 +1405,23 @@ fn resize_should_yield_to_content(
 
 /// 커서 이동을 오버레이나 egui가 처리했으면 mesh 조회를 생략한다.
 /// 호출자는 반환 전에 update_mesh_hover(None)으로 이전 hover를 해제한다.
+/// host 분할선 드래그 중이면 생략하지 않는다. 분할선 띠의 press 를 egui 위젯도 클릭 후보로
+/// 잡으면(`is_using_pointer`) 이후 이동을 egui 가 소비했다고 알린다. 배율 2 에서 html pane 아래
+/// 분할선을 잡을 때 관측했다. 그 이동을 건너뛰면 드래그한 분할선이 움직이지 않는다.
 fn cursor_moved_should_short_circuit(
+    dragging_divider: bool,
     egui_consumed: bool,
     overlay_open: bool,
     popup_hovered: bool,
     banner_hovered: bool,
     modifier_hint_hovered: bool,
 ) -> bool {
-    egui_consumed || overlay_open || popup_hovered || banner_hovered || modifier_hint_hovered
+    !dragging_divider
+        && (egui_consumed
+            || overlay_open
+            || popup_hovered
+            || banner_hovered
+            || modifier_hint_hovered)
 }
 
 /// 메뉴를 닫는 클릭의 press와 release를 모두 소비한다.
@@ -1886,7 +1896,7 @@ mod cursor_moved_early_return_tests {
         // Case A: mesh surface 에서 host UI chrome(사이드바 등)으로 넘어가는 전환
         // 이벤트 자체가 egui_consumed=true 다.
         assert!(cursor_moved_should_short_circuit(
-            true, false, false, false, false
+            false, true, false, false, false, false
         ));
     }
 
@@ -1894,27 +1904,34 @@ mod cursor_moved_early_return_tests {
     fn case_b_overlay_open_short_circuits() {
         // Case B: 설정창 등 오버레이가 열려 있는 동안은 좌표와 무관하게 항상 참.
         assert!(cursor_moved_should_short_circuit(
-            false, true, false, false, false
+            false, false, true, false, false, false
         ));
     }
 
     #[test]
     fn popup_banner_modifier_hint_each_short_circuit() {
         assert!(cursor_moved_should_short_circuit(
-            false, false, true, false, false
+            false, false, false, true, false, false
         ));
         assert!(cursor_moved_should_short_circuit(
-            false, false, false, true, false
+            false, false, false, false, true, false
         ));
         assert!(cursor_moved_should_short_circuit(
-            false, false, false, false, true
+            false, false, false, false, false, true
+        ));
+    }
+
+    #[test]
+    fn a_divider_drag_keeps_moves_even_when_egui_claims_them() {
+        assert!(!cursor_moved_should_short_circuit(
+            true, true, false, false, false, false
         ));
     }
 
     #[test]
     fn no_flag_set_does_not_short_circuit() {
         assert!(!cursor_moved_should_short_circuit(
-            false, false, false, false, false
+            false, false, false, false, false, false
         ));
     }
 
@@ -1922,7 +1939,7 @@ mod cursor_moved_early_return_tests {
     fn short_circuit_frame_transitions_hovered_mesh_target_to_none_with_pointer_gone() {
         // early-return 전에 hover를 해제하면 이전 대상에 PointerGone을 한 번 보낸다.
         assert!(cursor_moved_should_short_circuit(
-            true, false, false, false, false
+            false, true, false, false, false, false
         ));
         let (next, gone) = mesh_hover_transition(
             Some(MeshHoverTarget::Local(7)),
