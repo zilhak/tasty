@@ -79,6 +79,16 @@ fn window_size() -> (f64, f64) {
     }
 }
 
+/// `TASTY_GALLERY_THEME=mocha|latte`로 시작 테마를 지정한다. 없거나 모르는 값이면 Mocha다.
+fn start_theme() -> Option<host_shell::ThemeId> {
+    let raw = std::env::var("TASTY_GALLERY_THEME").ok()?;
+    let id = host_shell::ThemeId::from_name(&raw);
+    if id.is_none() {
+        tracing::warn!("TASTY_GALLERY_THEME={raw:?} is not mocha or latte; starting with Mocha");
+    }
+    id
+}
+
 #[derive(Default)]
 struct App {
     runtime: Option<Runtime>,
@@ -109,6 +119,9 @@ impl ApplicationHandler for App {
         let window = Arc::new(event_loop.create_window(attrs).expect("create window"));
 
         let mut rt = pollster::block_on(init_runtime(window)).expect("gallery runtime init");
+        if let Some(theme) = start_theme() {
+            rt.gallery.select_theme(theme);
+        }
         if let Some(plan) = &self.shot
             && let Some(&(idx, y, _)) = plan.items.first()
         {

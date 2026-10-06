@@ -40,7 +40,7 @@ tab="attach"` / `RemoteFormFrame` variant `attach-ref`·`attach-inline`)를 전�
 
 **셸은 공유하지 않고 사본으로 둔다.** `draw_remote_tool_popup`은 MainViewState·CoreState를 받으므로 갤러리의 `(ui, &Theme)` 콜백에서 직접 호출할 수 없다. 프로필·Passkey 읽기, 폼 상태, `FILTER_MEMORY_ID`·`FILTER_POPUP_ID`, 배치는 본체가 맡는다. 셸을 props 로 떼어 내면 이 상태 전부를 갤러리 쪽 가짜 값으로 다시 만들어야 하므로, 공유 범위는 상태 없이 그릴 수 있는 내부 위젯(탭 스트립, 로컬 SSH 섹션, 필터 버튼·드롭다운, 버튼·배지·텍스트 헬퍼)으로 한정한다. 이 함수들은 `crates/tasty-ui-widgets/src/remote_tool.rs`에서 props를 받아 본체와 갤러리가 공유한다.
 
-사본인 셸과 행은 캡처를 맞대어 비교한다. 격리한 debug 인스턴스에서 `tasty debug host-popup open --popup-id remote_tool`로 본체 팝업을 열고 `tasty screenshot --window <id>`로 Profiles·Attach·Passkeys 탭을 Mocha·Latte 각각 찍는다. 갤러리는 `TASTY_GALLERY_SHOT`으로 Overlays 페이지의 `remote`·`remote-attach` 카드를 찍는다. 두 캡처에서 프레임 여백, add-bar 구성, 행 높이, 행 동작 버튼의 아이콘·순서·비활성 표시가 같은지 본다. 셸을 바꾸는 커밋은 같은 방법으로 변경 전후를 비교한다.
+사본인 셸과 행은 캡처를 맞대어 비교한다. 격리한 debug 인스턴스에서 `tasty debug host-popup open --popup-id remote_tool`로 본체 팝업을 열고 `tasty screenshot --window <id>`로 Profiles·Attach·Passkeys 탭을 Mocha·Latte 각각 찍는다. 갤러리는 `TASTY_GALLERY_SHOT`으로 Overlays 페이지의 `remote`·`remote-attach` 카드를 찍고, Latte는 `TASTY_GALLERY_THEME=latte`를 함께 준다. 두 캡처에서 프레임 여백, add-bar 구성, 행 높이, 행 동작 버튼의 아이콘·순서·비활성 표시가 같은지 본다. 셸을 바꾸는 커밋은 같은 방법으로 변경 전후를 비교한다.
 
 필터 예제는 닫힘과 열림 모습을 나란히 보여 준다. 열림 전이를 재현하지 않으며 목록 높이를 먼저 확보한다. 본체 팝업과 달리 갤러리 카드의 남은 높이가 작으면 같은 ScrollArea도 마지막 행을 자르기 때문이다.
 

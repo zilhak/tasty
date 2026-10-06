@@ -14,6 +14,7 @@
 
 - **토큰 정합**: 색·간격·치수·보더는 모두 Theme 토큰에서 가져온다([theme UI 규칙](../design/systems/theme.md#ui-디자인-규칙-필수)). 보편 이름이 붙는 부품(버튼/입력/표 등)은 [공용 위젯](../architecture/ui-widgets-crate.md#무엇을-공용-위젯으로)을 호출한다.
 - **구조 전사(structural transcription)**: 디자인의 **레이아웃 구조**(grid·컬럼·패딩·정렬·요소 경계)를 egui 소스에 **1:1 전사**한다 — egui flow 로 눈대중 흉내 내지 않는다. 토큰만 맞고 구조가 어긋나면 specimen이 디자인과 달라진다(전사 절차·함정은 [`design-parity-notes`](../design/systems/design-parity-notes.md) 의 "구조 전사" 원칙, 매핑은 [`design-gallery-mapping`](../design/systems/design-gallery-mapping.md)).
+- **캡처 대조**: specimen 은 `TASTY_GALLERY_SHOT` 으로 찍고, 시작 테마는 `TASTY_GALLERY_THEME=mocha|latte` 로 골라 두 테마를 각각 찍는다. 형식과 예시는 [갤러리 캡처](../ai-verification/screenshot-methods.md#tasty-gallery-캡처-tasty_gallery_shot).
 
 ### 2. 본체 반영
 그 후 본체 앱에 넣는다(팝업이면 [popup-implementation](popup-implementation.md) 의 `PopupDef` 3단계).  본체와 갤러리가 **같은 view-only 함수**를 호출하도록 props 를 분리한다([model-view-split](model-view-split.md)). 새로 그리지 말고 1 단계에서 만든 함수를 본체에서 호출한다.

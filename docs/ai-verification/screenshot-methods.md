@@ -327,6 +327,7 @@ WebView surface(html·markdown)와 Tasty 가 그리는 surface(터미널·image 
 - `idx` 는 **페이지(Category) index**(0-base, `catalog::pages()` 순서 = Foundations 0 · Components 1 · Icons 2 · Overlays 3 · Layouts 4 · Plugins 5 · Chrome 6).
 - `@<y>` 는 본문 **스크롤 오프셋(px)** 이다. 한 페이지에 섹션이 여러 개 쌓이면 상단 뷰포트만으로는 아래쪽 specimen 을 찍을 수 없으므로 그 자리로 강제 스크롤한다 — 임시 섹션을 꽂았다 되돌리는 우회가 필요 없다. 정확한 y 를 모르면 여러 오프셋을 한 배치로 훑고 맞는 컷을 고른다.
 - 창 크기는 `TASTY_GALLERY_SIZE=<w>x<h>` 로 덮어쓴다(기본 1100×720). 문서 컬럼이 최대 1080 이라 기본 창에서는 우측이 잘린다 — specimen 전폭을 담으려면 넓혀서 찍는다.
+- 시작 테마는 `TASTY_GALLERY_THEME=mocha|latte` 로 고른다(대소문자 무시, 기본 Mocha). 모르는 값은 경고 로그를 남기고 Mocha 로 시작한다. 툴바의 Theme 세그먼트를 누른 것과 같으며, 테마를 고정해 그리는 예제(Latte 전용 카드 등)는 이 값과 관계없다.
 - 갤러리는 캡처 후 스스로 종료하므로 `timeout` 불필요(macOS 엔 `timeout` 명령도 없다).
 
 ```bash
@@ -337,6 +338,9 @@ TASTY_GALLERY_SHOT="1:$B/components.png,3:$B/overlays.png,6:$B/chrome.png" ./tar
 # 페이지 중간 섹션(Layouts 페이지의 Task DAG)을 전폭으로
 TASTY_GALLERY_SIZE=1360x1000 \
   TASTY_GALLERY_SHOT="4@5200:$B/dag-canvas.png,4@11000:$B/dag-surface.png" ./target/debug/tasty-gallery
+
+# 같은 페이지를 Latte 로
+TASTY_GALLERY_THEME=latte TASTY_GALLERY_SHOT="3:$B/overlays-latte.png" ./target/debug/tasty-gallery
 # 윈도우 1100x720, 1:1(논-레티나) → 좌측 사이드바 ~240px, 우측이 specimen 패널
 ```
 

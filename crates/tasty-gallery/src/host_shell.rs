@@ -22,6 +22,15 @@ pub enum ThemeId {
 }
 
 impl ThemeId {
+    /// `mocha`·`latte`(대소문자 무시). 다른 값은 None이다.
+    pub fn from_name(name: &str) -> Option<Self> {
+        match name.trim().to_ascii_lowercase().as_str() {
+            "mocha" => Some(ThemeId::Mocha),
+            "latte" => Some(ThemeId::Latte),
+            _ => None,
+        }
+    }
+
     /// 해당 id 의 색상 세트와 테마가 정한 밝기로 Theme 을 만든다.
     /// 밝기를 따로 고르는 토글은 없으므로 직전 테마의 밝기를 이어받지 않는다.
     fn build(self) -> Theme {
@@ -93,6 +102,11 @@ impl GalleryState {
             shot_scroll: None,
             brand_logo: None,
         }
+    }
+
+    /// 툴바 밖 진입점(시작 env 등)에서 테마를 고른다.
+    pub fn select_theme(&mut self, id: ThemeId) {
+        self.switch_theme(id);
     }
 
     /// 테마를 바꾸고 다음 frame 에 egui 에 다시 적용하게 한다. 같은 테마면 아무것도 하지 않는다.
@@ -645,6 +659,15 @@ fn seg(ui: &mut egui::Ui, s: &SegStyle, items: &[(&str, bool)]) -> Option<usize>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_theme_name_picks_the_builtin_theme_and_anything_else_none() {
+        assert_eq!(ThemeId::from_name("latte"), Some(ThemeId::Latte));
+        assert_eq!(ThemeId::from_name(" Latte "), Some(ThemeId::Latte));
+        assert_eq!(ThemeId::from_name("MOCHA"), Some(ThemeId::Mocha));
+        assert_eq!(ThemeId::from_name("frappe"), None);
+        assert_eq!(ThemeId::from_name(""), None);
+    }
 
     /// Mocha 에서 Latte 로 바꾸면 Latte 의 밝기(light)와 그 밝기의 accent 위 잉크를 쓴다.
     /// 되돌리면 다시 Mocha 의 dark 다.
