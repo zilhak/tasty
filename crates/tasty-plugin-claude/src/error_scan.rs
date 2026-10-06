@@ -357,6 +357,33 @@ impl ErrorScanner {
             return;
         };
         let quiet = now.saturating_duration_since(w.last_change);
+        // 플러그인이 다시 시작되면 메모리의 대기 기록은 사라지고 surface meta 는 남는다. 알림 문구는 meta 를
+        // 읽으므로, 일반 기준으로 알리기 전에 meta 에서 기록을 되살려 기준과 문구가 같은 대기를 가리키게 한다.
+        if !self.background_wait.contains_key(&surface_id)
+            && stall_pre_gate(
+                quiet,
+                w.stall_notified,
+                self.last_stall_notify
+                    .get(&surface_id)
+                    .map(|t| now.saturating_duration_since(*t)),
+                stall_threshold(w.saw_error, false),
+            )
+            && let Some(since_ms) = background_wait_since_from_meta(host, surface_id)
+        {
+            tracing::info!(
+                "claude stall s{surface_id}: restored the background wait from its surface meta"
+            );
+            self.background_wait.insert(
+                surface_id,
+                BackgroundWait {
+                    since_ms,
+                    notified: false,
+                },
+            );
+        }
+        let Some(w) = self.watch.get(&surface_id) else {
+            return;
+        };
         let wait = self.background_wait.get(&surface_id);
         // 대기 한 번에 한 번만 알린다. 출력 변화로 stall_notified가 풀려도 다시 알리지 않는다.
         let already_notified = w.stall_notified || wait.is_some_and(|b| b.notified);
@@ -407,6 +434,27 @@ impl ErrorScanner {
         }
         self.last_stall_notify.insert(surface_id, now);
     }
+}
+
+/// surface meta `claude-background-wait` 의 대기 시작 시각. 없거나 읽을 수 없으면 `None` 이다.
+fn background_wait_since_from_meta<H: HostCall>(host: &H, surface_id: u32) -> Option<u64> {
+    let reply = host
+        .call(
+            "surface.meta.get",
+            json!({ "surface_id": surface_id, "key": crate::hook::BACKGROUND_WAIT_META_KEY }),
+        )
+        .inspect_err(|e| {
+            tracing::warn!(
+                "claude stall s{surface_id}: reading the background wait meta failed: {e}"
+            )
+        })
+        .ok()?;
+    let raw = reply.get("value")?.as_str()?;
+    serde_json::from_str::<serde_json::Value>(raw)
+        .inspect_err(|e| tracing::warn!("claude background wait meta is not JSON ({e}): {raw}"))
+        .ok()?
+        .get("since_ms")?
+        .as_u64()
 }
 
 /// 폴링 중 추적 유지 여부를 확인한다. 조회 오류는 추적을 유지하도록 true로 처리한다.
@@ -661,6 +709,8 @@ mod tests {
         text: std::cell::RefCell<String>,
         state: std::cell::RefCell<&'static str>,
         fired: std::cell::RefCell<Vec<String>>,
+        /// surface meta `claude-background-wait` 값. 없으면 meta 가 없는 것이다.
+        wait_meta: Option<String>,
     }
 
     impl ScanHost {
@@ -669,6 +719,7 @@ mod tests {
                 text: std::cell::RefCell::new(text.to_string()),
                 state: std::cell::RefCell::new(state),
                 fired: std::cell::RefCell::new(Vec::new()),
+                wait_meta: None,
             }
         }
         fn set_text(&self, text: &str) {
@@ -694,6 +745,12 @@ mod tests {
                     Ok(json!({ "text": delta }))
                 }
                 "terminal.state" => Ok(json!({ "state": *self.state.borrow() })),
+                "surface.meta.get" if params["key"] == crate::hook::BACKGROUND_WAIT_META_KEY => {
+                    Ok(match &self.wait_meta {
+                        Some(v) => json!({ "value": v }),
+                        None => json!({}),
+                    })
+                }
                 "surface.fire_hook" => {
                     let event = params["event"].as_str().unwrap_or_default().to_string();
                     self.fired.borrow_mut().push(event);
@@ -874,6 +931,37 @@ mod tests {
         assert_eq!(host.stalled_count(), 0);
         s.scan_one_at(&host, 1, t0 + STALL_QUIET_BACKGROUND_WAIT);
         assert_eq!(host.stalled_count(), 1, "대기 기준에 도달하면 한 번 알린다");
+    }
+
+    /// 플러그인이 다시 시작돼 메모리 기록이 없어도 대기 meta 가 남아 있으면 대기 기준을 쓴다.
+    /// 알림 문구도 meta 를 읽으므로 기준과 문구가 같은 대기를 가리킨다.
+    #[test]
+    fn a_wait_left_in_the_surface_meta_is_restored_before_the_normal_notice() {
+        let mut host = ScanHost::new("❯ \n⏵⏵ 1 shell\n", "active");
+        host.wait_meta = Some(r#"{"since_ms":1000,"tasks":1,"types":["shell"]}"#.to_string());
+        let mut s = ErrorScanner::new();
+        let t0 = Instant::now();
+        s.scan_one_at(&host, 1, t0);
+        s.scan_one_at(&host, 1, t0 + STALL_QUIET_NO_ERROR + Duration::from_secs(1));
+        assert_eq!(host.stalled_count(), 0, "일반 기준에서는 알리지 않는다");
+        assert!(s.is_waiting_on_background_work(1));
+        s.scan_one_at(&host, 1, t0 + STALL_QUIET_BACKGROUND_WAIT);
+        assert_eq!(host.stalled_count(), 1, "대기 기준에 도달하면 한 번 알린다");
+    }
+
+    /// 대기 meta 가 없거나 읽을 수 없으면 일반 기준으로 알린다.
+    #[test]
+    fn without_a_readable_wait_meta_the_normal_notice_stays() {
+        for meta in [None, Some("not json".to_string()), Some("{}".to_string())] {
+            let mut host = ScanHost::new("thinking…\n", "active");
+            host.wait_meta = meta.clone();
+            let mut s = ErrorScanner::new();
+            let t0 = Instant::now();
+            s.scan_one_at(&host, 1, t0);
+            s.scan_one_at(&host, 1, t0 + STALL_QUIET_NO_ERROR);
+            assert_eq!(host.stalled_count(), 1, "{meta:?}");
+            assert!(!s.is_waiting_on_background_work(1));
+        }
     }
 
     /// 대기 한 번에 한 번만 알린다. 출력이 바뀌고 쿨다운이 지나도 다시 알리지 않는다.
