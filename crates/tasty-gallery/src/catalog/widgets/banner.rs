@@ -226,22 +226,29 @@ pub(super) fn mouse_capture_banner_body(
     more: MoreTriggerState,
     body: Option<&str>,
 ) {
+    // ⋯/× 열은 본문 흐름 밖에 고정한다(시안 absolute top banner-padding-y, right space-sm).
+    let avail = ui.max_rect();
     ui.horizontal_top(|ui| {
         ui.spacing_mut().item_spacing.x = theme.spacing_md.value();
-        glyph(
-            ui,
-            icons::MOUSE,
-            theme.icon_glyph_size_md.value(),
-            theme.banner_icon_fg().to_egui(),
-        );
-        // 본문 컬럼 — 우상단 ⋯/× 자리(2×item_height)를 비워두고 남는 폭을 채운다.
-        let body_w = (ui.available_width()
-            - theme.item_height_interactive.value() * 2.0
-            - theme.spacing_md.value())
-        .max(0.0);
+        // 앞 글리프는 banner-glyph-offset 만큼 내려 제목 줄에 맞춘다.
+        let size = theme.icon_glyph_size_md.value();
+        let offset = theme.banner_glyph_offset().value();
+        let (slot, _) =
+            ui.allocate_exact_size(egui::vec2(size, size + offset), egui::Sense::hover());
+        icons::MOUSE
+            .image(size, theme.banner_icon_fg().to_egui())
+            .paint_at(
+                ui,
+                egui::Rect::from_min_size(
+                    egui::pos2(slot.left(), slot.top() + offset),
+                    egui::vec2(size, size),
+                ),
+            );
+        // 본문 컬럼 — 오른쪽에 banner-more-reserve 를 비워 ⋯/× 열 자리를 남긴다.
+        let body_w = (ui.available_width() - theme.banner_more_reserve().value()).max(0.0);
         ui.vertical(|ui| {
             ui.set_width(body_w);
-            ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
+            ui.spacing_mut().item_spacing.y = theme.banner_text_gap().value();
             title_line(ui, theme, "Mouse input captured");
             if let Some(text) = body {
                 body_line(ui, theme, text);
@@ -256,14 +263,22 @@ pub(super) fn mouse_capture_banner_body(
                 body_line(ui, theme, "+Right-click for the tasty menu.");
             });
         });
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| {
-            ui.spacing_mut().item_spacing.x = theme.spacing_xs.value();
-            if more != MoreTriggerState::Hidden {
-                dismiss_x(ui, theme);
-                more_trigger(ui, theme, more == MoreTriggerState::Open);
-            }
-        });
     });
+    if more != MoreTriggerState::Hidden {
+        let right = avail.right() + theme.banner_padding_x().value() - theme.spacing_sm.value();
+        let column = egui::Rect::from_min_max(
+            egui::pos2(right - theme.banner_more_reserve().value(), avail.top()),
+            egui::pos2(right, avail.top() + ControlSize::Sm.height(theme)),
+        );
+        let mut column_ui = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(column)
+                .layout(egui::Layout::right_to_left(egui::Align::Center)),
+        );
+        column_ui.spacing_mut().item_spacing.x = theme.banner_more_column_gap().value();
+        dismiss_x(&mut column_ui, theme);
+        more_trigger(&mut column_ui, theme, more == MoreTriggerState::Open);
+    }
 }
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Solo, |ui| {

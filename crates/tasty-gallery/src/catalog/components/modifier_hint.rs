@@ -410,14 +410,15 @@ fn section_body(ui: &mut egui::Ui, theme: &Theme, sections: &[Section], label: R
             if is_empty {
                 empty_row(ui, theme);
             } else {
+                // 시안 순서: 조합 헤더 → 역할 행 → 단축키 행.
+                for (desc, glyph) in sec.roles {
+                    role_row(ui, theme, desc, *glyph);
+                }
                 for (text, binding, plugin) in sec.rows {
                     // 조합 헤더에 보조 키가 있으므로 행 키캡에서는 같은 접두어를 뺀다.
                     let prefix = format!("{}+", sec.chord);
                     let leaf = binding.strip_prefix(&prefix).unwrap_or(binding);
                     hint_row(ui, theme, text, leaf, *plugin, label);
-                }
-                for (desc, glyph) in sec.roles {
-                    role_row(ui, theme, desc, *glyph);
                 }
             }
             ui.spacing_mut().item_spacing.y = theme.modhint_section_gap().value();
