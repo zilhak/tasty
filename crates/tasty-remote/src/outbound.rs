@@ -13,6 +13,36 @@ pub struct ReconnectSlot {
     pub given_up: bool,
 }
 
+/// 첫 자동 attach가 실패한 매핑의 다음 시도 시각. 실패마다 간격을 늘려 SSH 접속이 몰리지 않게 한다.
+/// 매핑이 바뀌면 이 기록을 적용하지 않는다.
+pub struct AttachRetry {
+    pub backoff: Backoff,
+    pub next_attempt: Instant,
+    pub mapping: tasty_model::WorkspaceAttachMapping,
+}
+
+impl AttachRetry {
+    pub fn new(mapping: tasty_model::WorkspaceAttachMapping) -> Self {
+        Self {
+            backoff: Backoff::new(),
+            next_attempt: Instant::now(),
+            mapping,
+        }
+    }
+
+    /// 실패를 하나 더 반영한다. `jitter`는 간격에 곱할 비율이다.
+    pub fn record_failure(&mut self, now: Instant, jitter: f64) {
+        let base = self.backoff.current();
+        self.backoff.advance();
+        self.next_attempt = now + base.mul_f64(jitter);
+    }
+
+    /// 같은 매핑을 아직 다시 시도할 수 없는지.
+    pub fn holds(&self, mapping: &tasty_model::WorkspaceAttachMapping, now: Instant) -> bool {
+        self.mapping == *mapping && now < self.next_attempt
+    }
+}
+
 /// AppEvent에 넣을 수 없는 터널 핸들을 별도 결과 채널로 전달한다.
 pub struct AutoAttachOutcome {
     pub attempt: AttemptToken,
@@ -45,6 +75,8 @@ pub struct Remote {
     pub last_active_ws: Option<u32>,
     pub pending_reactivation: std::collections::HashSet<u32>,
     pub reconnect: std::collections::HashMap<u32, ReconnectSlot>,
+    /// 첫 자동 attach 실패의 재시도 간격(anchor별). 재연결은 `reconnect`가 맡는다.
+    pub attach_retry: std::collections::HashMap<u32, AttachRetry>,
     pub refusals: crate::refusal::Refusals,
     next_attempt_id: u64,
     pub tx: std::sync::mpsc::Sender<AutoAttachOutcome>,
@@ -75,6 +107,7 @@ impl Remote {
             last_active_ws: None,
             pending_reactivation: Default::default(),
             reconnect: Default::default(),
+            attach_retry: Default::default(),
             refusals: Default::default(),
             next_attempt_id: 1,
             tx,

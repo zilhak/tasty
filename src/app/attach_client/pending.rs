@@ -256,6 +256,7 @@ impl App {
                     }
                     if let Some(anchor) = target.anchor {
                         self.remote.reconnect.remove(&anchor);
+                        self.remote.attach_retry.remove(&anchor);
                     }
                 }
                 Err(error) => self.fail_pending_mirror(ticket, &target, error.to_string()),

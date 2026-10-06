@@ -67,7 +67,7 @@ impl App {
 
     /// 타이머만 등록·해제한다. 중단 상태를 담은 재연결 슬롯은 보존한다.
     pub(crate) fn sync_reconnect_timers(&mut self, now: Instant) {
-        let wakeups: Vec<(u32, Instant)> = self
+        let mut wakeups: Vec<(u32, Instant)> = self
             .remote
             .sessions
             .iter()
@@ -79,6 +79,19 @@ impl App {
                 reconnect_wakeup_at(self.remote.reconnect.get(&anchor)).map(|at| (anchor, at))
             })
             .collect();
+        // 첫 attach의 재시도도 같은 타이머로 깨운다. 한 anchor는 둘 중 이른 시각을 쓴다.
+        for (anchor, retry) in &self.remote.attach_retry {
+            if self.remote.active.contains(anchor) {
+                continue;
+            }
+            let Some(at) = first_attach_wakeup_at(retry, now) else {
+                continue;
+            };
+            match wakeups.iter_mut().find(|(a, _)| a == anchor) {
+                Some((_, existing)) => *existing = (*existing).min(at),
+                None => wakeups.push((*anchor, at)),
+            }
+        }
         crate::app::timers::sync_reconnect_timers(&mut self.timers, &wakeups, now);
     }
 
@@ -115,6 +128,17 @@ impl App {
             return None;
         }
         if self.remote.refusals.holds(anchor, &mapping) {
+            return None;
+        }
+        // 해석에 실패한 매핑은 간격을 두고 다시 시도한다. 사용자가 이 워크스페이스로 돌아오면 바로 시도한다.
+        let edge_now =
+            current_ws_id == Some(anchor) && is_reactivation_edge(current_ws_id, prev_active);
+        if first_attach_waits(
+            self.remote.attach_retry.get(&anchor),
+            &mapping,
+            Instant::now(),
+            edge_now,
+        ) {
             return None;
         }
         let remote_ws = mapping.remote_workspace?;
@@ -409,6 +433,8 @@ impl App {
                     self.remote.active.remove(&anchor);
                     if is_reconnect {
                         self.on_reconnect_attempt_failed(anchor, &e);
+                    } else {
+                        self.on_first_attach_failed(anchor, accepted.mapping.as_ref());
                     }
                 }
             }
@@ -443,6 +469,8 @@ impl App {
                     self.remote.active.remove(&anchor);
                     if is_reconnect {
                         self.on_reconnect_attempt_failed(anchor, &e);
+                    } else {
+                        self.on_first_attach_failed(anchor, accepted.mapping.as_ref());
                     }
                 }
             }
@@ -483,6 +511,29 @@ impl App {
         } else {
             self.remote.pending_reactivation.insert(anchor);
         }
+    }
+
+    /// 첫 자동 attach가 실패하면 같은 매핑의 다음 시도를 재연결과 같은 지수 백오프(0.5초에서
+    /// 두 배씩, 상한 30초, jitter 0.8~1.2)로 미룬다. 자동 재시도 상한은 두지 않는다.
+    fn on_first_attach_failed(
+        &mut self,
+        anchor: u32,
+        mapping: Option<&crate::model::WorkspaceAttachMapping>,
+    ) {
+        let Some(mapping) = mapping else {
+            return;
+        };
+        let retry = self
+            .remote
+            .attach_retry
+            .entry(anchor)
+            .or_insert_with(|| tasty_remote::outbound::AttachRetry::new(mapping.clone()));
+        if retry.mapping != *mapping {
+            *retry = tasty_remote::outbound::AttachRetry::new(mapping.clone());
+        }
+        use rand::Rng;
+        let jitter = 0.8 + rand::rng().random::<f64>() * 0.4;
+        retry.record_failure(Instant::now(), jitter);
     }
 
     /// already_attached는 긴 고정 간격, 나머지 실패는 지수 백오프로 재시도한다.
@@ -593,6 +644,25 @@ fn resolve_endpoint(target: &WorkspaceAttachTarget) -> anyhow::Result<(Option<Ss
     let tunnel = SshTunnel::establish(&ssh, &ssh_target, remote_port, verify)?;
     let local_port = tunnel.local_port;
     Ok((Some(tunnel), local_port))
+}
+
+/// 첫 자동 attach를 아직 미뤄야 하는지. 재활성화 직후에는 기다리지 않는다.
+fn first_attach_waits(
+    retry: Option<&tasty_remote::outbound::AttachRetry>,
+    mapping: &crate::model::WorkspaceAttachMapping,
+    now: Instant,
+    edge_now: bool,
+) -> bool {
+    !edge_now && retry.is_some_and(|retry| retry.holds(mapping, now))
+}
+
+/// 아직 오지 않은 재시도 시각만 예약한다. 지난 시각을 예약하면 다른 워크스페이스에 있는 동안
+/// 루프를 계속 깨운다.
+fn first_attach_wakeup_at(
+    retry: &tasty_remote::outbound::AttachRetry,
+    now: Instant,
+) -> Option<Instant> {
+    (retry.next_attempt > now).then_some(retry.next_attempt)
 }
 
 fn is_reactivation_edge(current: Option<u32>, previous: Option<u32>) -> bool {
@@ -723,5 +793,55 @@ mod tests {
         slot.given_up = false;
         assert!(!should_reset_given_up(Some(&slot), true));
         assert!(!should_reset_given_up(None, true));
+    }
+
+    fn profile_mapping(name: &str) -> crate::model::WorkspaceAttachMapping {
+        crate::model::WorkspaceAttachMapping {
+            target: WorkspaceAttachTarget::Profile { name: name.into() },
+            remote_workspace: Some(1),
+        }
+    }
+
+    #[test]
+    fn first_attach_failures_space_out_until_the_cap() {
+        let t0 = Instant::now();
+        let mut retry = tasty_remote::outbound::AttachRetry::new(profile_mapping("p"));
+        let mut gaps = Vec::new();
+        for _ in 0..9 {
+            retry.record_failure(t0, 1.0);
+            gaps.push((retry.next_attempt - t0).as_millis());
+        }
+        assert_eq!(
+            gaps,
+            [500, 1000, 2000, 4000, 8000, 16000, 30000, 30000, 30000]
+        );
+    }
+
+    #[test]
+    fn a_failed_mapping_waits_unless_the_user_returns_or_it_changes() {
+        let t0 = Instant::now();
+        let mapping = profile_mapping("p");
+        let mut retry = tasty_remote::outbound::AttachRetry::new(mapping.clone());
+        retry.record_failure(t0, 1.0);
+        assert!(first_attach_waits(Some(&retry), &mapping, t0, false));
+        assert!(!first_attach_waits(Some(&retry), &mapping, t0, true));
+        assert!(!first_attach_waits(
+            Some(&retry),
+            &profile_mapping("other"),
+            t0,
+            false
+        ));
+        let later = t0 + std::time::Duration::from_millis(500);
+        assert!(!first_attach_waits(Some(&retry), &mapping, later, false));
+        assert!(!first_attach_waits(None, &mapping, t0, false));
+    }
+
+    #[test]
+    fn a_past_retry_time_arms_no_timer() {
+        let t0 = Instant::now();
+        let mut retry = tasty_remote::outbound::AttachRetry::new(profile_mapping("p"));
+        retry.record_failure(t0, 1.0);
+        assert_eq!(first_attach_wakeup_at(&retry, t0), Some(retry.next_attempt));
+        assert_eq!(first_attach_wakeup_at(&retry, retry.next_attempt), None);
     }
 }
