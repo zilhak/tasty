@@ -5,7 +5,9 @@ use crate::runtime::engine_access::{EngineMut, EngineRef};
 use serde_json::{Value, json};
 
 use crate::app::services::AppServices;
-use tasty_agent::task::{TaskCreateOpts, TaskDeleteOpts, TaskPurgeFilter};
+use tasty_agent::task::{
+    Completion, CompletionOutcome, TaskCreateOpts, TaskDeleteOpts, TaskPurgeFilter,
+};
 use tasty_agent::{
     AgentError, DispatchHandle, OnFailure, PollSpecRef, ReducerStrategy, Task, TaskCommand,
     TaskGraph, TaskId, TaskResult, TaskState, extract_paths, reduce_with_custom, run_custom_shell,
@@ -816,7 +818,11 @@ pub fn handle_task_run(
     JsonRpcResponse::success(id, runner_status_value(&status))
 }
 
-/// 외부에서 작업 결과를 보고하는 진입점. 러너는 이 IPC 대신 RunnerContext로 저장소를 직접 갱신한다.
+/// 외부에서 작업 결과를 보고하는 진입점. 러너도 같은 완료 경로([`TaskStore::complete`])를 쓴다.
+/// 결과와 종결을 한 번에 기록하므로 인자가 틀리면 아무것도 쓰지 않는다. 같은 회차에 같은 보고를
+/// 다시 내면 `duplicate: true` 로 같은 응답을 돌려준다.
+///
+/// [`TaskStore::complete`]: tasty_agent::TaskStore::complete
 pub fn handle_task_set_result(
     core: &AppServices,
     engine: &mut EngineMut<'_>,
@@ -847,24 +853,15 @@ pub fn handle_task_set_result(
         .get("error")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
-
-    let result = TaskResult {
-        exit_code,
-        output,
-        error: error.clone(),
+    let attempt_id = match params.get("attempt_id") {
+        None | Some(Value::Null) => None,
+        Some(Value::String(a)) => Some(a.clone()),
+        Some(_) => return JsonRpcResponse::invalid_params(id, "'attempt_id' must be a string"),
     };
-
-    if let Err(e) = core
-        .tasks
-        .task_set_result(engine.task_scope, workspace_id, &task_id, result)
-    {
-        return agent_err_to_response(id, e);
-    }
-
-    let new_state = match state_str.as_str() {
-        "succeeded" => TaskState::Succeeded,
-        "failed" => TaskState::Failed {
-            error: error.unwrap_or_else(|| "(unspecified)".to_string()),
+    let outcome = match state_str.as_str() {
+        "succeeded" => CompletionOutcome::Succeeded,
+        "failed" => CompletionOutcome::Failed {
+            error: error.clone().unwrap_or_else(|| "(unspecified)".to_string()),
         },
         other => {
             return JsonRpcResponse::invalid_params(
@@ -873,22 +870,32 @@ pub fn handle_task_set_result(
             );
         }
     };
+    let completion = Completion {
+        attempt_id,
+        result: TaskResult {
+            exit_code,
+            output,
+            error,
+        },
+        outcome,
+    };
 
     mark_durability(
         core,
-        match core.tasks.task_set_state(
+        match core.tasks.task_complete(
             engine.task_scope,
             workspace_id,
             &task_id,
-            new_state,
+            completion,
             now_ms(),
         ) {
             Err(e) => agent_err_to_response(id, e),
-            Ok((task, cascaded)) => JsonRpcResponse::success(
+            Ok(receipt) => JsonRpcResponse::success(
                 id,
                 json!({
-                    "task": task,
-                    "cascaded": cascaded,
+                    "task": receipt.task,
+                    "cascaded": receipt.transitioned,
+                    "duplicate": receipt.duplicate,
                 }),
             ),
         },
@@ -1214,6 +1221,7 @@ mod graph_edge_tests {
             typed_result: None,
             graph_id: None,
             input_snapshot: None,
+            attempt: None,
         }
     }
 
@@ -1387,6 +1395,7 @@ mod state_filter_tests {
             typed_result: None,
             graph_id: None,
             input_snapshot: None,
+            attempt: None,
         }
     }
 

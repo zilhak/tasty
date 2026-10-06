@@ -428,11 +428,15 @@ fn tick_with_store<E: TaskExecutor>(
             }
             Ok(())
         },
-        |_ws, id, r| {
+        |_ws, id, c, _now| {
             let mut s = staged.borrow_mut();
+            let st = c.outcome.state();
             match s.iter_mut().find(|(i, _, _)| i == id) {
-                Some((_, slot, _)) => *slot = Some(r),
-                None => s.push((id.clone(), Some(r), None)),
+                Some((_, slot, st_slot)) => {
+                    *slot = Some(c.result);
+                    *st_slot = Some(st);
+                }
+                None => s.push((id.clone(), Some(c.result), Some(st))),
             }
             Ok(())
         },
@@ -561,11 +565,15 @@ fn tick_semaphore_exec(
             }
             Ok(())
         },
-        |_ws, id, r| {
+        |_ws, id, c, _now| {
             let mut s = staged.borrow_mut();
+            let st = c.outcome.state();
             match s.iter_mut().find(|(i, _, _)| i == id) {
-                Some((_, slot, _)) => *slot = Some(r),
-                None => s.push((id.clone(), Some(r), None)),
+                Some((_, slot, st_slot)) => {
+                    *slot = Some(c.result);
+                    *st_slot = Some(st);
+                }
+                None => s.push((id.clone(), Some(c.result), Some(st))),
             }
             Ok(())
         },
@@ -751,11 +759,15 @@ fn tick_barrier_exec(
             }
             Ok(())
         },
-        |_ws, id, r| {
+        |_ws, id, c, _now| {
             let mut s = staged.borrow_mut();
+            let st = c.outcome.state();
             match s.iter_mut().find(|(i, _, _)| i == id) {
-                Some((_, slot, _)) => *slot = Some(r),
-                None => s.push((id.clone(), Some(r), None)),
+                Some((_, slot, st_slot)) => {
+                    *slot = Some(c.result);
+                    *st_slot = Some(st);
+                }
+                None => s.push((id.clone(), Some(c.result), Some(st))),
             }
             Ok(())
         },
@@ -954,11 +966,15 @@ fn tick_lease_exec(
             }
             Ok(())
         },
-        |_ws, id, r| {
+        |_ws, id, c, _now| {
             let mut s = staged.borrow_mut();
+            let st = c.outcome.state();
             match s.iter_mut().find(|(i, _, _)| i == id) {
-                Some((_, slot, _)) => *slot = Some(r),
-                None => s.push((id.clone(), Some(r), None)),
+                Some((_, slot, st_slot)) => {
+                    *slot = Some(c.result);
+                    *st_slot = Some(st);
+                }
+                None => s.push((id.clone(), Some(c.result), Some(st))),
             }
             Ok(())
         },

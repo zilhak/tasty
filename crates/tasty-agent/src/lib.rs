@@ -70,6 +70,17 @@ pub enum AgentError {
     /// v2 task 계약 위반. 실패 단계와 타입 오류(task·경로·기대·실제)를 싣는다.
     #[error("task contract: {0}")]
     TypeContract(Box<task::contract::TaskFailure>),
+    /// 완료 보고를 적용하지 않았다. 다른 회차의 보고이거나, 이미 끝난 회차에 다른 보고가
+    /// 왔거나, 회차 지문 없이 이미 끝난 task 다.
+    #[error(
+        "completion for task {task_id} was rejected ({reason:?}): reported attempt {attempt_id:?}, current attempt {current_attempt_id:?}"
+    )]
+    CompletionRejected {
+        task_id: TaskId,
+        attempt_id: Option<String>,
+        current_attempt_id: Option<String>,
+        reason: CompletionRejection,
+    },
     /// 그래프 레코드를 쓴 뒤 readiness 반영 중 실패했다. 그래프는 활성이고 일부 task 는
     /// 이미 Ready 이거나 실행됐을 수 있다. 같은 id 로 다시 제출하면 거절된다.
     #[error("task graph {graph_id} is active but readiness was not fully applied: {source}")]
@@ -84,6 +95,18 @@ pub enum AgentError {
 }
 
 pub type Result<T> = std::result::Result<T, AgentError>;
+
+/// [`AgentError::CompletionRejected`] 의 사유.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CompletionRejection {
+    /// 보고의 회차가 지금 회차가 아니다.
+    StaleAttempt,
+    /// 이미 끝난 회차에 다른 내용의 보고가 왔다.
+    DifferentReport,
+    /// 회차 지문 없이 이미 종결된 task 다.
+    AlreadyTerminal,
+}
 
 /// 호출자 값으로 memory 키를 만들고 입력 오류를 InvalidArgument로 반환한다.
 /// 접두사가 붙은 내부 키 대신 호출자 값의 문자 위치를 오류에 표시한다.

@@ -88,7 +88,7 @@ regular(`put/get/delete/list/exists/count/scopes/stats/query/export/import`) · 
 | 메서드 | 로컬로 제한하는 이유 |
 |---|---|
 | `task_await` | 완료까지 호출을 대기시킨다. `approval.await`와 마찬가지로 플러그인 SDK의 단일 워커를 막지 않도록 제한한다. 기본 timeout은 10분이고 `timeout_ms:0`은 무한 대기다. |
-| `task_set_result` | 외부에서 작업 완료를 알린다. 플러그인의 Custom task는 러너가 상태를 관리하므로 플러그인이 직접 완료 상태를 바꾸지 않고 완료 판정 전략을 선언한다. |
+| `task_set_result` | 외부에서 작업 완료를 알린다. 결과와 종결 상태를 함께 기록하며, 타입을 정한 작업은 `attempt_id` 로 보고할 실행 회차를 지정한다. 플러그인의 Custom task는 러너가 상태를 관리하므로 플러그인이 직접 완료 상태를 바꾸지 않고 완료 판정 전략을 선언한다. |
 
 `task_delete`와 `task_purge`는 `depends_on`, `Fallback.task`, `Reduce.inputs` 참조를 검사한다. 참조가 남으면 기본적으로 거절하고 참조자 목록을 반환한다. `--cascade`는 연쇄 삭제, `--force`는 참조 검사만 우회한다. **`running` 상태의 제약은 `--force`로 우회할 수 없다.**
 

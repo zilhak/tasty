@@ -5372,6 +5372,9 @@ help = "Optional error message (recommended for state=failed)"
 [cli.help._root.agent.task-set-result.arg.exit_code]
 help = "Optional process exit code"
 
+[cli.help._root.agent.task-set-result.arg.attempt_id]
+help = "Optional attempt id of a typed task run; a report for another attempt is rejected"
+
 [cli.help._root.agent.task-delete]
 about = "Delete a task. Rejected by default if other tasks still reference it (depends_on / on_failure.fallback.task / reduce.inputs) — the referencing task IDs are returned. `Running` tasks are always rejected regardless of `--cascade`/`--force` (cancel first)"
 

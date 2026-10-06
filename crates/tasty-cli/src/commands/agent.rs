@@ -212,6 +212,9 @@ pub enum AgentCommands {
         /// Optional process exit code.
         #[arg(long)]
         exit_code: Option<i32>,
+        /// Optional attempt id of a typed task run; a report for another attempt is rejected.
+        #[arg(long)]
+        attempt_id: Option<String>,
     },
     /// Delete a task. Rejected by default if other tasks still reference it
     /// (depends_on / on_failure.fallback.task / reduce.inputs) — the

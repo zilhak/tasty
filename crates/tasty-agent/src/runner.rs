@@ -5,8 +5,9 @@
 //! 구현에 위임한다 — 테스트는 mock executor 로 검증.
 //!
 //! 한 번의 `tick()` 호출이 다음을 수행:
-//! 1. Running task 에 대해 `executor.poll(handle)` — Done / Failed 면 set_result
-//!    + set_state(Succeeded/Failed) 로 종결.
+//! 1. Running task 에 대해 `executor.poll(handle)` — Done / Failed 면 완료 보고
+//!    ([`Completion`]) 하나로 결과와 종결을 함께 기록한다. 기록이 실패하면 보고를 보관해
+//!    다음 tick 에 다시 내고, 그동안 핸들과 permit 을 유지한다.
 //! 2. Ready task 에 대해 `executor.dispatch(task)` — handle 보관 + set_state(Running).
 //!
 //! tick 호출 주기와 핸들 저장·복원은 호스트가 관리한다.
@@ -16,7 +17,7 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::task::{Task, TaskId, TaskResult, TaskState};
+use crate::task::{Completion, Task, TaskId, TaskResult, TaskState};
 use crate::{AgentError, Result};
 
 /// dispatch / poll 결과를 묶는 핸들. variant 별 의미:
@@ -113,6 +114,20 @@ pub trait TaskExecutor {
 pub struct RunnerLoop<E: TaskExecutor> {
     pub executor: E,
     pub running: HashMap<TaskId, DispatchHandle>,
+    /// 기록하지 못한 완료 보고. 다음 tick 에 같은 보고를 다시 낸다.
+    pub pending: HashMap<TaskId, Completion>,
+}
+
+/// 다시 내도 결과가 달라지지 않는 오류인가. 저장소 오류는 다시 시도한다. 보고 자체가
+/// 받아들여지지 않는 오류(다른 회차, 이미 끝남, 없는 task)는 다시 내지 않는다.
+pub fn completion_retryable(e: &AgentError) -> bool {
+    !matches!(
+        e,
+        AgentError::CompletionRejected { .. }
+            | AgentError::InvalidTransition { .. }
+            | AgentError::TaskNotFound(_)
+            | AgentError::AlreadyTerminal(_)
+    )
 }
 
 impl<E: TaskExecutor> RunnerLoop<E> {
@@ -120,32 +135,72 @@ impl<E: TaskExecutor> RunnerLoop<E> {
         Self {
             executor,
             running: HashMap::new(),
+            pending: HashMap::new(),
         }
     }
 
-    /// 한 tick. state 전이는 `set_state`/`set_result` 클로저로 호출자가 위임.
+    /// 완료 보고를 기록한다. 다시 시도할 오류면 보고를 보관하고 `false` 를 돌려준다.
+    fn report<FC>(
+        &mut self,
+        workspace_id: u32,
+        task_id: &TaskId,
+        completion: Completion,
+        now_ms: u64,
+        complete: &mut FC,
+    ) -> bool
+    where
+        FC: FnMut(u32, &TaskId, Completion, u64) -> Result<()>,
+    {
+        match complete(workspace_id, task_id, completion.clone(), now_ms) {
+            Ok(()) => {
+                self.pending.remove(task_id);
+                true
+            }
+            Err(e) if completion_retryable(&e) => {
+                tracing::warn!(
+                    "runner: {task_id} completion not recorded, retrying next tick: {e}"
+                );
+                self.pending.insert(task_id.clone(), completion);
+                false
+            }
+            Err(e) => {
+                tracing::warn!("runner: {task_id} completion rejected: {e}");
+                self.pending.remove(task_id);
+                true
+            }
+        }
+    }
+
+    /// 한 tick. 상태 기록은 `set_state`/`complete` 클로저로 호출자가 위임.
     ///
     /// `tasks`: 현재 workspace 의 task snapshot (보통 직전 `task_list` 결과).
     /// `set_state`: `(workspace_id, &task_id, new_state, now_ms)` → `Result<(), AgentError>`.
-    /// `set_result`: `(workspace_id, &task_id, result)` → `Result<(), AgentError>`.
+    /// `complete`: `(workspace_id, &task_id, completion, now_ms)` → `Result<(), AgentError>`.
+    /// 결과와 종결을 함께 기록한다([`crate::task::TaskStore::complete`]).
     ///
     /// 에러는 tracing::warn 으로 흡수하고 다음 task 로 진행 (runner thread 가 죽지
     /// 않게 — 사용자가 cancel/retry 로 정리 가능).
-    #[allow(clippy::cognitive_complexity)] // complexity-exempt: 한 tick 안의 순차 3단계(외부 terminal 흡수 → Running poll → Ready dispatch)가 self.running·set_state·set_result 클로저를 공유해, 쪼개면 세 함수에 동일 매개변수만 나열되고 흐름 추적이 어려워진다. 중첩은 얕음.
-    pub fn tick<FS, FR>(
+    #[allow(clippy::cognitive_complexity)] // complexity-exempt: 한 tick 안의 순차 3단계(외부 terminal 흡수 → Running poll → Ready dispatch)가 self.running·self.pending·set_state·complete 클로저를 공유해, 쪼개면 세 함수에 동일 매개변수만 나열되고 흐름 추적이 어려워진다. 중첩은 얕음.
+    pub fn tick<FS, FC>(
         &mut self,
         workspace_id: u32,
         now_ms: u64,
         tasks: &[Task],
         mut set_state: FS,
-        mut set_result: FR,
+        mut complete: FC,
     ) where
         FS: FnMut(u32, &TaskId, TaskState, u64) -> Result<()>,
-        FR: FnMut(u32, &TaskId, TaskResult) -> Result<()>,
+        FC: FnMut(u32, &TaskId, Completion, u64) -> Result<()>,
     {
         // 외부에서 종결된 작업도 poll 전에 정리해야 permit이 남지 않는다.
+        // 결과는 기록됐지만 후속 효과가 끊긴 보고는 같은 보고를 다시 내 마무리한다.
         for task in tasks {
             if !task.state.is_terminal() {
+                continue;
+            }
+            if let Some(c) = self.pending.get(&task.id).cloned()
+                && !self.report(workspace_id, &task.id, c, now_ms, &mut complete)
+            {
                 continue;
             }
             if self.running.remove(&task.id).is_some() {
@@ -164,42 +219,21 @@ impl<E: TaskExecutor> RunnerLoop<E> {
                     continue;
                 }
             };
-            match self.executor.poll(&handle) {
-                PollOutcome::Active => {}
-                PollOutcome::Done(result) => {
-                    log_err(set_result(workspace_id, &task.id, result), &task.id);
-                    log_err(
-                        set_state(workspace_id, &task.id, TaskState::Succeeded, now_ms),
-                        &task.id,
-                    );
-                    self.running.remove(&task.id);
-                    self.executor.release_permit(&task.id);
+            // 기록하지 못한 보고가 있으면 다시 poll 하지 않고 그 보고를 다시 낸다.
+            let completion = match self.pending.get(&task.id) {
+                Some(c) => c.clone(),
+                None => {
+                    let attempt = task.attempt.as_ref().map(|a| a.id.clone());
+                    match self.executor.poll(&handle) {
+                        PollOutcome::Active => continue,
+                        PollOutcome::Done(result) => Completion::succeeded(attempt, result),
+                        PollOutcome::Failed(err) => Completion::failed(attempt, err),
+                    }
                 }
-                PollOutcome::Failed(err) => {
-                    log_err(
-                        set_result(
-                            workspace_id,
-                            &task.id,
-                            TaskResult {
-                                exit_code: None,
-                                output: None,
-                                error: Some(err.clone()),
-                            },
-                        ),
-                        &task.id,
-                    );
-                    log_err(
-                        set_state(
-                            workspace_id,
-                            &task.id,
-                            TaskState::Failed { error: err },
-                            now_ms,
-                        ),
-                        &task.id,
-                    );
-                    self.running.remove(&task.id);
-                    self.executor.release_permit(&task.id);
-                }
+            };
+            if self.report(workspace_id, &task.id, completion, now_ms, &mut complete) {
+                self.running.remove(&task.id);
+                self.executor.release_permit(&task.id);
             }
         }
 
@@ -228,14 +262,11 @@ impl<E: TaskExecutor> RunnerLoop<E> {
     }
 }
 
-fn log_err<T>(r: Result<T>, task_id: &str) {
-    if let Err(e) = r {
-        tracing::warn!("runner: {task_id} state op failed: {e}");
-    }
-}
-
 // ImmediateFail은 호스트 executor의 poll이 Failed로 반환해야 한다.
 fn _agent_error_link(_e: AgentError) {}
+
+#[cfg(test)]
+mod pending_tests;
 
 #[cfg(test)]
 mod tests {
@@ -310,6 +341,7 @@ mod tests {
             typed_result: None,
             graph_id: None,
             input_snapshot: None,
+            attempt: None,
         }
     }
 
@@ -332,6 +364,10 @@ mod tests {
                 }
             }
             Err(AgentError::TaskNotFound(id.clone()))
+        }
+        fn complete(&mut self, ws: u32, id: &TaskId, c: Completion, now: u64) -> Result<()> {
+            self.set_result(ws, id, c.result)?;
+            self.set_state(ws, id, c.outcome.state(), now)
         }
         fn set_result(&mut self, _ws: u32, id: &TaskId, r: TaskResult) -> Result<()> {
             for t in self.tasks.iter_mut() {
@@ -357,7 +393,7 @@ mod tests {
             100,
             &snapshot,
             |ws, id, st, now| store.borrow_mut().set_state(ws, id, st, now),
-            |ws, id, r| store.borrow_mut().set_result(ws, id, r),
+            |ws, id, c, now| store.borrow_mut().complete(ws, id, c, now),
         );
 
         let tasks = &store.borrow().tasks;
@@ -394,7 +430,7 @@ mod tests {
             200,
             &snapshot,
             |ws, id, st, now| store.borrow_mut().set_state(ws, id, st, now),
-            |ws, id, r| store.borrow_mut().set_result(ws, id, r),
+            |ws, id, c, now| store.borrow_mut().complete(ws, id, c, now),
         );
 
         let tasks = &store.borrow().tasks;
@@ -429,7 +465,7 @@ mod tests {
             100,
             &snap1,
             |ws, id, st, now| store.borrow_mut().set_state(ws, id, st, now),
-            |ws, id, r| store.borrow_mut().set_result(ws, id, r),
+            |ws, id, c, now| store.borrow_mut().complete(ws, id, c, now),
         );
         assert_eq!(store.borrow().tasks[0].state, TaskState::Running);
         assert!(matches!(
@@ -444,7 +480,7 @@ mod tests {
             200,
             &snap2,
             |ws, id, st, now| store.borrow_mut().set_state(ws, id, st, now),
-            |ws, id, r| store.borrow_mut().set_result(ws, id, r),
+            |ws, id, c, now| store.borrow_mut().complete(ws, id, c, now),
         );
         assert!(matches!(
             store.borrow().tasks[0].state,
@@ -484,7 +520,7 @@ mod tests {
             100,
             &snap1,
             |ws, id, st, now| store.borrow_mut().set_state(ws, id, st, now),
-            |ws, id, r| store.borrow_mut().set_result(ws, id, r),
+            |ws, id, c, now| store.borrow_mut().complete(ws, id, c, now),
         );
         assert_eq!(store.borrow().tasks[0].state, TaskState::Ready);
         assert!(!runner.running.contains_key("t-1"));
@@ -496,7 +532,7 @@ mod tests {
             200,
             &snap2,
             |ws, id, st, now| store.borrow_mut().set_state(ws, id, st, now),
-            |ws, id, r| store.borrow_mut().set_result(ws, id, r),
+            |ws, id, c, now| store.borrow_mut().complete(ws, id, c, now),
         );
         assert_eq!(store.borrow().tasks[0].state, TaskState::Running);
         assert!(runner.running.contains_key("t-1"));
@@ -603,7 +639,7 @@ mod tests {
             100,
             &snap1,
             |ws, id, st, now| store.borrow_mut().set_state(ws, id, st, now),
-            |ws, id, r| store.borrow_mut().set_result(ws, id, r),
+            |ws, id, c, now| store.borrow_mut().complete(ws, id, c, now),
         );
         assert_eq!(store.borrow().tasks[0].state, TaskState::Running);
         assert!(matches!(
@@ -619,7 +655,7 @@ mod tests {
                 now,
                 &snap,
                 |ws, id, st, n| store.borrow_mut().set_state(ws, id, st, n),
-                |ws, id, r| store.borrow_mut().set_result(ws, id, r),
+                |ws, id, c, now| store.borrow_mut().complete(ws, id, c, now),
             );
             assert_eq!(store.borrow().tasks[0].state, TaskState::Running);
             assert!(runner.running.contains_key("t-1"));
@@ -653,7 +689,7 @@ mod tests {
             400,
             &snap4,
             |ws, id, st, now| store.borrow_mut().set_state(ws, id, st, now),
-            |ws, id, r| store.borrow_mut().set_result(ws, id, r),
+            |ws, id, c, now| store.borrow_mut().complete(ws, id, c, now),
         );
         assert!(!runner.running.contains_key("t-1"));
         assert_eq!(
@@ -698,7 +734,7 @@ mod tests {
             300,
             &snap,
             |ws, id, st, now| store.borrow_mut().set_state(ws, id, st, now),
-            |ws, id, r| store.borrow_mut().set_result(ws, id, r),
+            |ws, id, c, now| store.borrow_mut().complete(ws, id, c, now),
         );
         assert!(!runner.running.contains_key("t-1"));
         let released = runner.executor.released.borrow().clone();
@@ -741,7 +777,7 @@ mod tests {
             300,
             &snap,
             |ws, id, st, now| store.borrow_mut().set_state(ws, id, st, now),
-            |ws, id, r| store.borrow_mut().set_result(ws, id, r),
+            |ws, id, c, now| store.borrow_mut().complete(ws, id, c, now),
         );
         assert!(!runner.running.contains_key("t-1"));
         assert_eq!(
@@ -773,7 +809,7 @@ mod tests {
             300,
             &snap,
             |ws, id, st, now| store.borrow_mut().set_state(ws, id, st, now),
-            |ws, id, r| store.borrow_mut().set_result(ws, id, r),
+            |ws, id, c, now| store.borrow_mut().complete(ws, id, c, now),
         );
         assert!(!runner.running.contains_key("t-1"));
         assert_eq!(
@@ -801,7 +837,7 @@ mod tests {
             300,
             &snap,
             |ws, id, st, now| store.borrow_mut().set_state(ws, id, st, now),
-            |ws, id, r| store.borrow_mut().set_result(ws, id, r),
+            |ws, id, c, now| store.borrow_mut().complete(ws, id, c, now),
         );
         assert!(runner.executor.released.borrow().is_empty());
     }

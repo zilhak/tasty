@@ -1,7 +1,8 @@
 //! TaskService의 작업 API. 원본은 memory의 TaskStore이며 engine별 순번·허브는 TaskScope로 받는다.
 
 use tasty_agent::task::{
-    TaskCreateOpts, TaskDeleteOpts, TaskDeleteReport, TaskGraphSpec, TaskPurgeFilter, TaskSweepPlan,
+    Completion, CompletionOutcome, CompletionReceipt, TaskCreateOpts, TaskDeleteOpts,
+    TaskDeleteReport, TaskGraphSpec, TaskPurgeFilter, TaskSweepPlan,
 };
 use tasty_agent::{
     AgentError, DagSummary, ReducerInput, Task, TaskId, TaskResult, TaskState, TaskStore,
@@ -197,23 +198,24 @@ impl TaskService {
         result
     }
 
-    pub fn task_set_result(
+    /// 외부 완료 보고. 결과와 종결을 한 번에 기록하고 이 보고로 종결된 task 의 대기자를 깨운다
+    /// ([`TaskStore::complete`]).
+    pub fn task_complete(
         &self,
         scope: &TaskScope,
         workspace_id: u32,
         task_id: &TaskId,
-        result: TaskResult,
-    ) -> Result<Task, AgentError> {
-        let seq = scope.agent_seq().clone();
-        self.with_memory(|mem| {
-            let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
-            store.set_result(workspace_id, task_id, result)
-        })
+        completion: Completion,
+        now_ms: u64,
+    ) -> Result<CompletionReceipt, AgentError> {
+        self.runner_context(scope)
+            .complete_task(workspace_id, task_id, completion, now_ms)
     }
 
     /// 훅 매핑을 소비해 exit code가 0 또는 없으면 성공, 나머지는 실패로 처리한다.
     /// 등록된 원 hub/agent_seq를 사용한다. 소유 정보 없는 legacy 등록만 호출 scope를 사용한다.
-    /// 매핑은 저장 전에 제거하며 저장 실패 때 다시 등록하지 않는다.
+    /// 매핑은 저장 전에 제거하며 저장 실패 때 다시 등록하지 않는다. 훅을 건 회차가 이미
+    /// 끝났거나 바뀌었으면 보고를 적용하지 않는다.
     pub fn resolve_hook_task_wait(
         &self,
         scope: &TaskScope,
@@ -221,51 +223,32 @@ impl TaskService {
         exit_code: Option<i32>,
         now_ms: u64,
     ) {
-        let Some((workspace_id, task_id, owner)) = self.hook_task_waits().resolve_owned(hook_id)
-        else {
+        let Some(wait) = self.hook_task_waits().resolve_owned(hook_id) else {
             return;
         };
         let mut context = self.runner_context(scope);
-        if let Some(owner) = owner {
+        if let Some(owner) = wait.owner {
             context.agent_seq = owner.agent_seq;
             context.task_waker_hub = owner.completion;
         }
-        let result = TaskResult {
-            exit_code,
-            output: None,
-            error: None,
-        };
-        if let Err(e) = context.with_memory(|memory| {
-            TaskStore::new(memory, HOST_OWNER, context.agent_seq.as_ref()).set_result(
-                workspace_id,
-                &task_id,
-                result,
-            )
-        }) {
-            tracing::warn!("resolve_hook_task_wait: set_result {task_id} failed: {e}");
-            return;
-        }
-        let new_state = match exit_code {
-            Some(code) if code != 0 => TaskState::Failed {
+        let outcome = match exit_code {
+            Some(code) if code != 0 => CompletionOutcome::Failed {
                 error: format!("command exited with code {code}"),
             },
-            _ => TaskState::Succeeded,
+            _ => CompletionOutcome::Succeeded,
         };
-        let transitioned = context.with_memory(|memory| {
-            TaskStore::new(memory, HOST_OWNER, context.agent_seq.as_ref()).set_state(
-                workspace_id,
-                &task_id,
-                new_state,
-                now_ms,
-            )
-        });
-        match transitioned {
-            Ok((task, downstream)) => {
-                context.fire_terminal_tasks(workspace_id, std::iter::once(task).chain(downstream))
-            }
-            Err(error) => {
-                tracing::warn!(%error,%task_id,"resolve_hook_task_wait state change failed")
-            }
+        let completion = Completion {
+            attempt_id: wait.attempt,
+            result: TaskResult {
+                exit_code,
+                output: None,
+                error: None,
+            },
+            outcome,
+        };
+        let task_id = wait.task;
+        if let Err(error) = context.complete_task(wait.workspace, &task_id, completion, now_ms) {
+            tracing::warn!(%error, %task_id, "resolve_hook_task_wait completion not recorded");
         }
     }
 

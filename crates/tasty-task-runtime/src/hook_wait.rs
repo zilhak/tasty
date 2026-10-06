@@ -23,6 +23,8 @@ struct HookWait {
     task: TaskId,
     deadline: u64,
     owner: Option<HookWaitOwner>,
+    /// 훅을 건 회차. 늦게 온 훅이 다음 회차를 끝내지 않게 완료 보고에 싣는다.
+    attempt: Option<String>,
 }
 
 /// A global sweep can run in another engine; fallback IDs and notifications retain their owner.
@@ -35,6 +37,15 @@ pub(crate) struct ExpiredWait {
     pub(crate) workspace: u32,
     pub(crate) task: TaskId,
     pub(crate) owner: Option<HookWaitOwner>,
+    pub(crate) attempt: Option<String>,
+}
+
+/// 훅으로 찾은 대기 하나.
+pub(crate) struct ResolvedWait {
+    pub(crate) workspace: u32,
+    pub(crate) task: TaskId,
+    pub(crate) owner: Option<HookWaitOwner>,
+    pub(crate) attempt: Option<String>,
 }
 
 impl HookTaskWaits {
@@ -47,26 +58,26 @@ impl HookTaskWaits {
     /// 같은 hook ID는 마지막 등록으로 바꾼다. deadline_ms는 Unix epoch 기준 절대 밀리초다.
     /// 러너는 메인 스레드의 Core를 직접 사용하지 않고 공유 Arc로 등록한다.
     pub fn register(&self, hook_id: u64, workspace_id: u32, task_id: TaskId, deadline_ms: u64) {
-        self.insert(hook_id, workspace_id, task_id, deadline_ms, None);
+        self.insert(hook_id, workspace_id, task_id, deadline_ms, None, None);
     }
 
     /// 한 번 반환한 매핑은 지워 같은 훅의 재발생이 끝난 작업과 다시 연결되지 않게 한다.
     pub fn resolve(&self, hook_id: u64) -> Option<(u32, TaskId)> {
         self.resolve_owned(hook_id)
-            .map(|(workspace, task, _)| (workspace, task))
+            .map(|wait| (wait.workspace, wait.task))
     }
-    pub(crate) fn resolve_owned(
-        &self,
-        hook_id: u64,
-    ) -> Option<(u32, TaskId, Option<HookWaitOwner>)> {
+    pub(crate) fn resolve_owned(&self, hook_id: u64) -> Option<ResolvedWait> {
         let mut guard = tasty_utils::poison::recover_mutex(
             self.inner.lock(),
             HOOK_WAIT_WHAT,
             &HOOK_WAIT_POISONED,
         );
-        guard
-            .remove(&hook_id)
-            .map(|wait| (wait.workspace, wait.task, wait.owner))
+        guard.remove(&hook_id).map(|wait| ResolvedWait {
+            workspace: wait.workspace,
+            task: wait.task,
+            owner: wait.owner,
+            attempt: wait.attempt,
+        })
     }
 
     /// Another workspace's runner may expire this wait even after its own runner stopped.
@@ -77,8 +88,9 @@ impl HookTaskWaits {
         task: TaskId,
         deadline: u64,
         owner: HookWaitOwner,
+        attempt: Option<String>,
     ) {
-        self.insert(hook_id, workspace, task, deadline, Some(owner));
+        self.insert(hook_id, workspace, task, deadline, Some(owner), attempt);
     }
 
     fn insert(
@@ -88,6 +100,7 @@ impl HookTaskWaits {
         task: TaskId,
         deadline: u64,
         owner: Option<HookWaitOwner>,
+        attempt: Option<String>,
     ) {
         let mut guard = tasty_utils::poison::recover_mutex(
             self.inner.lock(),
@@ -101,6 +114,7 @@ impl HookTaskWaits {
                 task,
                 deadline,
                 owner,
+                attempt,
             },
         );
     }
@@ -130,6 +144,7 @@ impl HookTaskWaits {
                 workspace: wait.workspace,
                 task: wait.task,
                 owner: wait.owner,
+                attempt: wait.attempt,
             })
             .collect()
     }
@@ -172,7 +187,7 @@ mod tests {
             agent_seq: agent_seq.clone(),
             completion: completion.clone(),
         };
-        waits.register_owned(1, 7, "original".into(), 100, owner());
+        waits.register_owned(1, 7, "original".into(), 100, owner(), None);
         let expired = waits.take_expired(100).pop().unwrap();
         assert_eq!((expired.workspace, expired.task.as_str()), (7, "original"));
         let original = expired.owner.unwrap();
@@ -181,12 +196,12 @@ mod tests {
         assert!(waits.take_expired(100).is_empty());
         drop(original);
 
-        waits.register_owned(1, 7, "resolved".into(), 100, owner());
+        waits.register_owned(1, 7, "resolved".into(), 100, owner(), None);
         assert_eq!(waits.resolve(1), Some((7, "resolved".into())));
         assert_eq!(Arc::strong_count(&completion), 1);
         assert_eq!(Arc::strong_count(&agent_seq), 1);
 
-        waits.register_owned(1, 7, "replaced".into(), 100, owner());
+        waits.register_owned(1, 7, "replaced".into(), 100, owner(), None);
         waits.register(1, 8, "legacy".into(), 100);
         assert_eq!(Arc::strong_count(&completion), 1);
         assert_eq!(Arc::strong_count(&agent_seq), 1);

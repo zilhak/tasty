@@ -50,6 +50,22 @@ pub(super) fn agent_err_to_response(id: Value, err: AgentError) -> JsonRpcRespon
             serde_json::json!({ "referenced_by": referenced_by }),
         ),
         TaskRunning(_) => JsonRpcResponse::error(id, -32011, msg),
+        // 보고를 적용하지 않았다. 사유와 두 회차 id 로 호출자가 다시 낼지 정한다.
+        CompletionRejected {
+            attempt_id,
+            current_attempt_id,
+            reason,
+            ..
+        } => JsonRpcResponse::error_with_data(
+            id,
+            -32014,
+            msg,
+            serde_json::json!({
+                "reason": reason,
+                "attempt_id": attempt_id,
+                "current_attempt_id": current_attempt_id,
+            }),
+        ),
         // 실패 단계와 타입 오류(task·경로·기대·실제)를 error.data 로 돌려준다.
         TypeContract(failure) => JsonRpcResponse::error_with_data(
             id,
@@ -97,3 +113,27 @@ pub use ratelimit::*;
 pub use semaphore::*;
 pub use task::*;
 pub use task_graph_submit::*;
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+    use tasty_agent::CompletionRejection;
+
+    use super::*;
+
+    #[test]
+    fn a_rejected_completion_answers_with_its_reason_and_both_attempts() {
+        let err = AgentError::CompletionRejected {
+            task_id: "p".into(),
+            attempt_id: Some("p#1".into()),
+            current_attempt_id: Some("p#2".into()),
+            reason: CompletionRejection::StaleAttempt,
+        };
+        let e = agent_err_to_response(json!(1), err).error.expect("error");
+        assert_eq!(e.code, -32014);
+        let data = e.data.expect("data");
+        assert_eq!(data["reason"], json!("stale_attempt"));
+        assert_eq!(data["attempt_id"], json!("p#1"));
+        assert_eq!(data["current_attempt_id"], json!("p#2"));
+    }
+}

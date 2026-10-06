@@ -558,7 +558,22 @@ task 는 선택적으로 타입 계약(`TaskContract`)을 가진다. 계약이 �
 
 결과는 `typed_result` 에 저장한다: `has_output`·`output`(최종 출력), `raw`(`exit_code`, `execution`), `artifacts`, `error`(`stage`: `input`·`execution`·`postprocess`·`output_validation`·`persistence`), `provenance`(`contract_version`, `kind`, `output_source`). `has_output: true` 이고 `output: null` 이면 unit 또는 nullable 출력이 확정된 것이고, `has_output: false` 는 출력이 없다는 뜻이다. v1 호환을 위해 `result` 에는 최종 출력이 `output` 으로 투영된다.
 
-저장소의 `set_result` 가 보고된 결과를 계약에 맞춰 확정하고, `set_state` 는 유효한 출력 없이 성공으로 가려는 v2 task 를 Failed 로 바꾼다. 러너·재시작 복구·훅 완료·IPC `task_set_result` 가 모두 이 두 메서드를 지나므로 완료 경로마다 따로 검사하지 않는다. 비즈니스 값(`"revise"`, `false`)은 정상 출력이다. 출력 타입에 맞지 않는 값만 `output_validation` 실패가 된다. `retry` 는 `typed_result` 를 지운다.
+보고된 결과는 계약에 맞춰 확정하고, 유효한 출력 없이 성공으로 가려는 v2 task 는 Failed 로 끝낸다. 러너·재시작 복구·훅 완료·훅 만료·IPC `task_set_result` 가 모두 같은 완료 경로(아래 §실행 회차와 완료)를 지나므로 완료 경로마다 따로 검사하지 않는다. 비즈니스 값(`"revise"`, `false`)은 정상 출력이다. 출력 타입에 맞지 않는 값만 `output_validation` 실패가 된다. `retry` 는 `typed_result` 를 지운다.
+
+### 실행 회차와 완료
+
+v2 task 는 Running 이 될 때마다 새 회차(`attempt`: `id` 는 `<task id>#<번호>`, `number`, `started_at`)를 받는다. `retry` 는 회차를 지우지 않으므로 다음 실행은 번호를 이어 간다. v1 task 에는 회차가 없다.
+
+완료 보고(`Completion`: 회차 id·결과·성공/실패)는 저장소의 `complete` 하나로 기록한다(근거 ADR-0071).
+
+- v2 는 결과 확정(출력 검증 포함)과 종결 상태를 레코드 한 번의 쓰기로 저장한다. 쓰기가 실패하면 상태·결과가 그대로이고 하류 readiness·fallback 도 움직이지 않는다. 그 쓰기가 끝난 뒤에야 하류를 평가하고 대기자에게 종결을 알린다.
+- 보고의 회차가 지금 회차와 다르면 적용하지 않는다(`stale_attempt`). 회차 id 를 생략하면 지금 회차로 본다.
+- 이미 끝난 회차에 같은 내용(결과·종결 종류)의 보고가 다시 오면 같은 레코드를 `duplicate: true` 로 돌려주고 하류 반영만 다시 시도한다. 다른 내용이면 거절한다(`different_report`). 회차를 끝낸 보고의 지문은 `attempt.completion.digest` 에 남는다. 보고 없이 끝난 task(취소·건너뜀)에 온 보고는 `already_terminal` 로 거절한다.
+- 거절은 IPC 에서 `-32014` 이고 `error.data` 에 `reason`·`attempt_id`(보고한 회차)·`current_attempt_id` 를 싣는다.
+- 러너는 기록하지 못한 보고를 보관하고 다음 tick 에 같은 보고를 다시 낸다. 그동안 그 task 를 다시 poll 하지 않고 handle 과 permit 을 유지한다. 거절된 보고는 다시 내지 않는다.
+- 재시작 복구(죽은 pid, 저장된 실행 결과)도 기록에 실패하면 handle 을 남겨 다음 reload 가 다시 보고한다.
+- push 완료 전략의 훅 대기는 dispatch 한 회차 id 를 함께 저장한다. 늦게 온 훅이나 만료가 다음 회차를 끝내지 않는다.
+- v1 task 는 결과를 쓴 뒤 상태를 전이한다. 상태 전이가 맞지 않는 보고는 결과를 쓰기 전에 거절한다.
 
 v1 이 v2 결과를 읽는 경로는 `-32602`(`error.data.task_id` 에 참조 대상)로 거절한다. 대상은 v1 출력 placeholder(`${task.<id>.output…}`)로 v2 task 를 참조하는 생성, `inputs` 에 v2 task 가 든 v1 `Reduce` 생성, v2 task 를 입력으로 준 단발 `agent.task_reduce` 다. 이미 저장된 v1 task 가 v2 를 가리키면 실행 직전 치환·reduce 수집이 실패로 끝낸다. 허용 범위는 입력 binding 이 정한다.
 
@@ -582,7 +597,7 @@ inline fallback 은 v2 에서 거절한다.
 
 #### 실행할 때
 
-러너는 dispatch 직전에(lease 와 v1 placeholder 치환 뒤) binding 을 해석해 입력 값을 만들고 입력 스키마로 검사한다. 결과는 task 의 `input_snapshot` 에 저장한다: `resolved_at`, `value`(선언 타입대로 직렬화), `sources`(읽은 원본마다 필드·task·포인터와 그 실행의 `started_at`·`finished_at`), `execution`(실제로 넘긴 argv 요소·stdin 여부·custom params), 실패 시 `failure`. 원본을 나중에 다시 실행해도 snapshot 은 바뀌지 않는다. `retry` 는 snapshot 을 지운다. 해석이나 검사에 실패하면 실행하지 않고 실패 단계 `input` 으로 끝난다(`error.location` 은 `/bindings/<필드>`).
+러너는 dispatch 직전에(lease 와 v1 placeholder 치환 뒤) binding 을 해석해 입력 값을 만들고 입력 스키마로 검사한다. 결과는 task 의 `input_snapshot` 에 저장한다: `resolved_at`, `value`(선언 타입대로 직렬화), `sources`(읽은 원본마다 필드·task·포인터와 값을 낸 원본 회차 `producer_attempt`), `execution`(실제로 넘긴 argv 요소·stdin 여부·custom params), 실패 시 `failure`. 원본을 나중에 다시 실행해도 snapshot 은 바뀌지 않는다. `retry` 는 snapshot 을 지운다. 해석이나 검사에 실패하면 실행하지 않고 실패 단계 `input` 으로 끝난다(`error.location` 은 `/bindings/<필드>`).
 
 입력은 `input_mapping` 이 정한 자리에만 값으로 들어간다. 원본 command 는 바꾸지 않으며 값 안의 `${...}`·`$(...)`·공백을 다시 해석하지 않는다.
 

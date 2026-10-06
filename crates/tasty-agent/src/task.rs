@@ -285,6 +285,9 @@ pub struct Task {
     /// 마지막 실행 직전에 해석한 v2 입력. 원본 정의(계약·command)와 따로 둔다.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub input_snapshot: Option<InputSnapshot>,
+    /// v2 task 의 마지막 실행 회차. Running 전이마다 새 회차를 만든다.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attempt: Option<TaskAttempt>,
 }
 
 impl Task {
@@ -360,6 +363,7 @@ pub(super) fn apply_on_failure(task: &Task, _all: &[Task]) -> Option<TaskState> 
     }
 }
 
+pub mod attempt;
 pub mod binding;
 pub mod contract;
 pub mod dag;
@@ -368,6 +372,7 @@ mod record;
 mod store;
 pub mod types;
 
+pub use attempt::{Completion, CompletionOutcome, CompletionReceipt, TaskAttempt};
 pub use binding::{InputBinding, InputMapping, InputSnapshot};
 pub use contract::{TaskContract, TypedResult};
 pub use dag::{DagStateCounts, DagSummary, group_tasks_into_dags};
@@ -385,3 +390,7 @@ mod typed_store_tests;
 #[cfg(test)]
 #[path = "task/graph_submit_tests.rs"]
 mod graph_submit_tests;
+
+#[cfg(test)]
+#[path = "task/completion_tests.rs"]
+mod completion_tests;

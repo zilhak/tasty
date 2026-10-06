@@ -2,6 +2,8 @@
 //! 각 tick의 저장소 접근은 락 안에서, IPC 실행·poll은 락 밖에서 수행한다.
 //! run_loop의 패닉을 잡아 crashed로 표시하며 다음 start가 재시작할 수 있다.
 
+#[cfg(test)]
+mod attempt_tests;
 mod restart_holders;
 use restart_holders::{purge_stale_lease_holders, purge_stale_semaphore_holders};
 
@@ -12,8 +14,9 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use tasty_agent::runner::{DispatchHandle, RunnerLoop};
-use tasty_agent::{TaskId, TaskResult, TaskState, TaskStore};
+use tasty_agent::runner::{DispatchHandle, RunnerLoop, completion_retryable};
+use tasty_agent::task::Completion;
+use tasty_agent::{TaskId, TaskState, TaskStore};
 use tasty_memory::{HOST_OWNER, ListOpts, MemoryValue, Scope};
 
 use super::runner_host::{
@@ -562,49 +565,43 @@ fn mark_dead_tasks(
     now: u64,
     dead: &[(TaskId, String)],
 ) {
-    if dead.is_empty() {
-        return;
+    for (task_id, err) in dead {
+        let completion = Completion::failed(None, err.clone());
+        if record_reload_completion(ctx, workspace_id, task_id, completion, now) {
+            evict_handle(ctx, scope, task_id);
+        }
     }
-    let transitioned = ctx.with_memory(|mem| {
-        let mut transitioned = Vec::new();
-        let seq = ctx.agent_seq.clone();
-        {
-            let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
-            for (task_id, err) in dead {
-                if let Err(e) = store.set_result(
-                    workspace_id,
-                    task_id,
-                    TaskResult {
-                        exit_code: None,
-                        output: None,
-                        error: Some(err.clone()),
-                    },
-                ) {
-                    tracing::warn!("reload mark failed set_result {task_id}: {e}");
-                }
-                match store.set_state(
-                    workspace_id,
-                    task_id,
-                    TaskState::Failed { error: err.clone() },
-                    now,
-                ) {
-                    Ok((task, downstream)) => {
-                        transitioned.push(task);
-                        transitioned.extend(downstream);
-                    }
-                    Err(e) => tracing::warn!("reload mark failed set_state {task_id}: {e}"),
-                }
-            }
+}
+
+/// 재시작 복구의 완료 보고를 기록한다. 기록하지 못했으면 handle 을 남겨 다음 reload 가 다시
+/// 보고하게 `false` 를 돌려준다. 받아들여지지 않는 보고는 다시 내도 같아 handle 을 지운다.
+fn record_reload_completion(
+    ctx: &RunnerContext,
+    workspace_id: u32,
+    task_id: &TaskId,
+    completion: Completion,
+    now: u64,
+) -> bool {
+    match ctx.complete_task(workspace_id, task_id, completion, now) {
+        Ok(_) => true,
+        Err(e) if completion_retryable(&e) => {
+            tracing::warn!("reload completion for {task_id} not recorded; kept for retry: {e}");
+            false
         }
-        for (task_id, _) in dead {
-            mem.delete(HOST_OWNER, scope, &handle_key(task_id), None)
-                .unwrap_or_else(|error| {
-                    tracing::warn!(%error, "failed to evict a dead task handle; reload will retry");
-                });
+        Err(e) => {
+            tracing::warn!("reload completion for {task_id} rejected: {e}");
+            true
         }
-        transitioned
+    }
+}
+
+fn evict_handle(ctx: &RunnerContext, scope: &Scope, task_id: &TaskId) {
+    ctx.with_memory(|mem| {
+        mem.delete(HOST_OWNER, scope, &handle_key(task_id), None)
+            .unwrap_or_else(|error| {
+                tracing::warn!(%error, "failed to evict a finished task handle; reload will retry");
+            });
     });
-    ctx.fire_terminal_tasks(workspace_id, transitioned);
 }
 
 fn finalize_precise_tasks(
@@ -614,73 +611,19 @@ fn finalize_precise_tasks(
     now: u64,
     precise: &[(TaskId, PollOutcome)],
 ) {
-    if precise.is_empty() {
-        return;
-    }
-    let transitioned = ctx.with_memory(|mem| {
-        let mut transitioned = Vec::new();
-        let seq = ctx.agent_seq.clone();
-        {
-            let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
-            for (task_id, outcome) in precise {
-                transitioned.extend(apply_precise_outcome(
-                    &mut store,
-                    workspace_id,
-                    task_id,
-                    outcome,
-                    now,
-                ));
+    for (task_id, outcome) in precise {
+        let completion = match outcome {
+            PollOutcome::Done(r) => Completion::succeeded(None, r.clone()),
+            PollOutcome::Failed(err) => Completion::failed(None, err.clone()),
+            // 저장된 결과가 종결이 아니면 이전처럼 handle 만 지운다.
+            PollOutcome::Active => {
+                evict_handle(ctx, scope, task_id);
+                continue;
             }
-        }
-        evict_precise_handles(mem, scope, precise);
-        transitioned
-    });
-    ctx.fire_terminal_tasks(workspace_id, transitioned);
-    for (task_id, _) in precise {
-        evict_run_result(ctx, workspace_id, task_id);
-    }
-}
-
-/// 저장된 종료 결과로 상태를 갱신한다. 각 저장 실패는 경고하며 Active 결과는 처리하지 않는다.
-fn apply_precise_outcome(
-    store: &mut TaskStore,
-    workspace_id: u32,
-    task_id: &TaskId,
-    outcome: &PollOutcome,
-    now: u64,
-) -> Vec<tasty_agent::Task> {
-    let (result, next_state) = match outcome {
-        PollOutcome::Done(r) => (r.clone(), TaskState::Succeeded),
-        PollOutcome::Failed(err) => (
-            TaskResult {
-                exit_code: None,
-                output: None,
-                error: Some(err.clone()),
-            },
-            TaskState::Failed { error: err.clone() },
-        ),
-        PollOutcome::Active => return Vec::new(),
-    };
-    if let Err(e) = store.set_result(workspace_id, task_id, result) {
-        tracing::warn!("reload precise set_result {task_id}: {e}");
-    }
-    match store.set_state(workspace_id, task_id, next_state, now) {
-        Ok((task, downstream)) => std::iter::once(task).chain(downstream).collect(),
-        Err(e) => {
-            tracing::warn!("reload precise set_state {task_id}: {e}");
-            Vec::new()
-        }
-    }
-}
-
-fn evict_precise_handles(
-    mem: &mut dyn tasty_memory::MemoryStorage,
-    scope: &Scope,
-    precise: &[(TaskId, PollOutcome)],
-) {
-    for (task_id, _) in precise {
-        if let Err(e) = mem.delete(HOST_OWNER, scope, &handle_key(task_id), None) {
-            tracing::warn!("reload precise evict handle {task_id}: {e}");
+        };
+        if record_reload_completion(ctx, workspace_id, task_id, completion, now) {
+            evict_handle(ctx, scope, task_id);
+            evict_run_result(ctx, workspace_id, task_id);
         }
     }
 }
@@ -693,55 +636,16 @@ fn expire_overdue_hook_waits(ctx: &RunnerContext, now_ms: u64) {
     for wait in overdue {
         let workspace_id = wait.workspace;
         let task_id = wait.task;
-        let owner = wait
-            .owner
-            .unwrap_or_else(|| crate::hook_wait::HookWaitOwner {
-                agent_seq: ctx.agent_seq.clone(),
-                completion: ctx.task_waker_hub.clone(),
-            });
+        // 다른 engine 이 건 대기는 그 engine 의 id 발급기와 대기자 hub 로 끝낸다.
+        let mut owner_ctx = ctx.clone();
+        if let Some(owner) = wait.owner {
+            owner_ctx.agent_seq = owner.agent_seq;
+            owner_ctx.task_waker_hub = owner.completion;
+        }
         let error = "push completion strategy timed out waiting for external report".to_string();
-        let fire_target = ctx.with_memory(|mem| {
-            let seq = owner.agent_seq.clone();
-            let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
-            let result = TaskResult {
-                exit_code: None,
-                output: None,
-                error: Some(error.clone()),
-            };
-            if let Err(e) = store.set_result(workspace_id, &task_id, result) {
-                tracing::warn!("hook wait timeout: set_result {task_id} failed: {e}");
-                return None;
-            }
-            match store.set_state(
-                workspace_id,
-                &task_id,
-                TaskState::Failed {
-                    error: error.clone(),
-                },
-                now_ms,
-            ) {
-                Ok((task, downstream)) => {
-                    Some(std::iter::once(task).chain(downstream).collect::<Vec<_>>())
-                }
-                Err(e) => {
-                    tracing::warn!("hook wait timeout: set_state {task_id} failed: {e}");
-                    None
-                }
-            }
-        });
-        if let Some(tasks) = fire_target {
-            for task in tasks {
-                if task.state.is_terminal() {
-                    owner.completion.fire(
-                        workspace_id,
-                        &task.id,
-                        crate::task_waker::TerminalSnapshot {
-                            state: task.state,
-                            result: task.result,
-                        },
-                    );
-                }
-            }
+        let completion = Completion::failed(wait.attempt, error);
+        if let Err(e) = owner_ctx.complete_task(workspace_id, &task_id, completion, now_ms) {
+            tracing::warn!("hook wait timeout: completion for {task_id} not recorded: {e}");
         }
         tracing::warn!(
             "agent task {task_id} (ws {workspace_id}): push completion strategy timed out \
@@ -934,13 +838,7 @@ fn run_loop(
                 ctx_for_set.fire_terminal_tasks(ws, fire_target);
                 res
             },
-            move |ws, id, r| {
-                ctx_for_res.with_memory(|mem| {
-                    let seq = ctx_for_res.agent_seq.clone();
-                    let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
-                    store.set_result(ws, id, r).map(|_| ())
-                })
-            },
+            move |ws, id, c, n| ctx_for_res.complete_task(ws, id, c, n).map(|_| ()),
         );
 
         match stop_rx.recv_timeout(TICK_INTERVAL) {
@@ -1717,6 +1615,7 @@ mod tests {
                 agent_seq: origin.agent_seq.clone(),
                 completion: origin.task_waker_hub.clone(),
             },
+            None,
         );
         // No origin runner is running. A process-wide sweep still expires its wait.
         expire_overdue_hook_waits(&sweeping, 5000);

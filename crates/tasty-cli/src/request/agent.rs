@@ -128,23 +128,19 @@ pub(super) fn agent_command_to_method_params(
             output,
             error,
             exit_code,
-        } => {
-            let mut p = serde_json::json!({
-                "workspace_id": *workspace_id,
-                "id": id,
-                "state": state,
-            });
-            if let Some(o) = output {
-                p["output"] = parse_inline_or_file_json(o, "--output");
-            }
-            if let Some(e) = error {
-                p["error"] = serde_json::json!(e);
-            }
-            if let Some(c) = exit_code {
-                p["exit_code"] = serde_json::json!(*c);
-            }
-            ("agent.task_set_result", p)
-        }
+            attempt_id,
+        } => (
+            "agent.task_set_result",
+            task_set_result_params(
+                *workspace_id,
+                id,
+                state,
+                output.as_deref(),
+                error.as_deref(),
+                *exit_code,
+                attempt_id.as_deref(),
+            ),
+        ),
         TaskDelete {
             workspace_id,
             id,
@@ -554,6 +550,36 @@ fn apply_concurrency_limit(
     }
     obj.insert("semaphore".to_string(), serde_json::json!({ "name": name }));
     serde_json::Value::Object(obj)
+}
+
+/// 선택 인자는 준 것만 싣는다.
+fn task_set_result_params(
+    workspace_id: u32,
+    id: &str,
+    state: &str,
+    output: Option<&str>,
+    error: Option<&str>,
+    exit_code: Option<i32>,
+    attempt_id: Option<&str>,
+) -> serde_json::Value {
+    let mut p = serde_json::json!({
+        "workspace_id": workspace_id,
+        "id": id,
+        "state": state,
+    });
+    if let Some(o) = output {
+        p["output"] = parse_inline_or_file_json(o, "--output");
+    }
+    if let Some(e) = error {
+        p["error"] = serde_json::json!(e);
+    }
+    if let Some(c) = exit_code {
+        p["exit_code"] = serde_json::json!(c);
+    }
+    if let Some(a) = attempt_id {
+        p["attempt_id"] = serde_json::json!(a);
+    }
+    p
 }
 
 /// `--on-failure` 인자 파싱:

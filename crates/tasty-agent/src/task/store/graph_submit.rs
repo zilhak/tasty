@@ -188,6 +188,7 @@ impl TaskStore<'_> {
                 typed_result: None,
                 graph_id: Some(graph_id.clone()),
                 input_snapshot: None,
+                attempt: None,
             });
         }
 

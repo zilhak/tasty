@@ -35,7 +35,7 @@ fn tick(ctx: &RunnerContext, runner: &mut RunnerLoop<HostExecutor>, now: u64) {
         now,
         &snapshot,
         move |ws, id, st, n| store_op(&set_ctx, |s| s.set_state(ws, id, st, n).map(|_| ())),
-        move |ws, id, r| store_op(&res_ctx, |s| s.set_result(ws, id, r).map(|_| ())),
+        move |ws, id, c, n| store_op(&res_ctx, |s| s.complete(ws, id, c, n).map(|_| ())),
     );
 }
 

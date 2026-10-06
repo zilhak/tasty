@@ -120,6 +120,29 @@ impl RunnerContext {
         }
     }
 
+    /// 완료 보고를 기록하고, 락을 놓은 뒤 이 보고로 종결된 task 의 대기자를 깨운다.
+    /// runner·훅·만료·재시작 복구가 모두 이 경로를 쓴다.
+    pub(crate) fn complete_task(
+        &self,
+        workspace_id: u32,
+        task_id: &TaskId,
+        completion: tasty_agent::task::Completion,
+        now_ms: u64,
+    ) -> Result<tasty_agent::task::CompletionReceipt, AgentError> {
+        let receipt =
+            self.with_memory(|mem| {
+                tasty_agent::task::TaskStore::new(mem, HOST_OWNER, self.agent_seq.as_ref())
+                    .complete(workspace_id, task_id, completion, now_ms)
+            })?;
+        // 같은 보고의 재전송은 이미 알린 종결을 다시 알리지 않는다.
+        let own = (!receipt.duplicate).then(|| receipt.task.clone());
+        self.fire_terminal_tasks(
+            workspace_id,
+            own.into_iter().chain(receipt.transitioned.iter().cloned()),
+        );
+        Ok(receipt)
+    }
+
     /// poison은 로그로 알리고 남은 저장소를 계속 사용한다. 임의 MemoryStorage 호출의 중간 실패를 복구하는 것은 아니다.
     pub(crate) fn with_memory<R>(&self, f: impl FnOnce(&mut dyn MemoryStorage) -> R) -> R {
         let mut guard = tasty_utils::poison::recover_mutex(
@@ -833,6 +856,8 @@ impl HostExecutor {
                 agent_seq: self.ctx.agent_seq.clone(),
                 completion: self.ctx.task_waker_hub.clone(),
             },
+            // dispatch 직후 Running 전이가 만들 회차다.
+            tasty_agent::task::attempt::next_attempt(task, 0).map(|a| a.id),
         );
         // 훅 매핑은 재시작 때 사라져도 handle의 기한으로 reload에서 만료를 판단할 수 있게 한다.
         Ok(DispatchHandle::AwaitExternal {
@@ -1094,6 +1119,7 @@ mod tests {
             typed_result: None,
             graph_id: None,
             input_snapshot: None,
+            attempt: None,
             result: None,
             created_at: 0,
             started_at: None,
@@ -1191,6 +1217,7 @@ mod tests {
             typed_result: None,
             graph_id: None,
             input_snapshot: None,
+            attempt: None,
             result: None,
             created_at: 0,
             started_at: None,
@@ -1635,6 +1662,7 @@ mod tests {
             typed_result: None,
             graph_id: None,
             input_snapshot: None,
+            attempt: None,
             result: None,
             created_at: 0,
             started_at: None,
@@ -1710,6 +1738,7 @@ mod tests {
             typed_result: None,
             graph_id: None,
             input_snapshot: None,
+            attempt: None,
             result: None,
             created_at: 0,
             started_at: None,
@@ -1796,6 +1825,7 @@ mod tests {
             typed_result: None,
             graph_id: None,
             input_snapshot: None,
+            attempt: None,
             result: None,
             created_at: 0,
             started_at: None,
@@ -1891,6 +1921,7 @@ mod tests {
             typed_result: None,
             graph_id: None,
             input_snapshot: None,
+            attempt: None,
             result: None,
             created_at: 0,
             started_at: None,
@@ -1977,6 +2008,7 @@ mod tests {
             typed_result: None,
             graph_id: None,
             input_snapshot: None,
+            attempt: None,
             result: None,
             created_at: 0,
             started_at: None,
@@ -2036,6 +2068,7 @@ mod tests {
             typed_result: None,
             graph_id: None,
             input_snapshot: None,
+            attempt: None,
             result: None,
             created_at: 0,
             started_at: None,
@@ -2114,6 +2147,7 @@ mod tests {
             typed_result: None,
             graph_id: None,
             input_snapshot: None,
+            attempt: None,
             result: None,
             created_at: 0,
             started_at: None,
@@ -2607,6 +2641,7 @@ mod tests {
             typed_result: None,
             graph_id: None,
             input_snapshot: None,
+            attempt: None,
         };
 
         let handle = match exec.dispatch(&task) {
@@ -2680,6 +2715,7 @@ mod tests {
             typed_result: None,
             graph_id: None,
             input_snapshot: None,
+            attempt: None,
         };
         let handle = match exec.dispatch(&task) {
             DispatchOutcome::Started(h) => h,

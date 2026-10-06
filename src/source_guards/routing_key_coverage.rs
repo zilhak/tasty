@@ -23,6 +23,7 @@ const MIN_HANDLER_FILES: usize = 50;
 /// id 형태이지만 요청의 라우팅 대상이 아닌 키와 그 사유.
 pub(super) const NOT_A_ROUTING_TARGET: &[(&str, &str)] = &[
     ("agent_id", "session.* 의 agent 이름(문자열)"),
+    ("attempt_id", "agent task 실행 회차 이름(문자열)"),
     ("banner_id", "debug 배너 식별자(문자열)"),
     ("caller_id", "audit 행의 호출자 표기(문자열)"),
     ("extension_id", "plugin extension 식별자(문자열)"),

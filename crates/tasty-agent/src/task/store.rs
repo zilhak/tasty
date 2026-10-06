@@ -260,6 +260,7 @@ impl<'a> TaskStore<'a> {
             typed_result: None,
             graph_id: None,
             input_snapshot: None,
+            attempt: None,
         };
         contract::check_task(&new_task, "", |id| existing.iter().find(|t| &t.id == id))
             .map_err(|f| AgentError::TypeContract(Box::new(f)))?;
@@ -337,6 +338,9 @@ impl<'a> TaskStore<'a> {
         match new_state {
             TaskState::Running => {
                 task.started_at = Some(now_ms);
+                if let Some(attempt) = super::attempt::next_attempt(&task, now_ms) {
+                    task.attempt = Some(attempt);
+                }
             }
             TaskState::Succeeded
             | TaskState::Failed { .. }
@@ -346,10 +350,23 @@ impl<'a> TaskStore<'a> {
             }
             _ => {}
         }
-        let became = task.state.clone();
         task.state = new_state.clone();
         self.put(&task)?;
+        let transitioned = self.propagate_transition(workspace_id, &task, now_ms)?;
+        Ok((task, transitioned))
+    }
 
+    /// 저장을 마친 상태 전이의 후속 효과: fallback 승격·정리, 하류 readiness, 이 task 를
+    /// fallback 으로 둔 main 의 하류 재평가. 같은 전이로 다시 불러도 결과가 같다(이미 옮긴
+    /// task 는 Waiting 이 아니라 건너뛴다).
+    fn propagate_transition(
+        &mut self,
+        workspace_id: WorkspaceId,
+        task: &Task,
+        now_ms: u64,
+    ) -> Result<Vec<Task>> {
+        let id = &task.id;
+        let new_state = task.state.clone();
         let mut transitioned = Vec::new();
 
         if matches!(new_state, TaskState::Failed { .. })
@@ -365,7 +382,7 @@ impl<'a> TaskStore<'a> {
             }
             if let Some(spec) = inline_opt
                 && let Some(new_fb) =
-                    self.materialize_inline_fallback(workspace_id, &task, *spec, now_ms)?
+                    self.materialize_inline_fallback(workspace_id, task, *spec, now_ms)?
             {
                 transitioned.push(new_fb);
             }
@@ -427,8 +444,7 @@ impl<'a> TaskStore<'a> {
                 transitioned.extend(self.cascade_downstream(workspace_id, &main_id, now_ms)?);
             }
         }
-        let _ = became; // 이전 state 스냅샷 — 현재 미사용(향후 전이 로그 후보). 값 drop, Result 아님.
-        Ok((task, transitioned))
+        Ok(transitioned)
     }
 
     /// `set_state`의 Failed→Fallback 분기 중 "케이스 1: existing fallback" 처리.
@@ -514,20 +530,7 @@ impl<'a> TaskStore<'a> {
         let mut task = self
             .get(workspace_id, id)?
             .ok_or_else(|| AgentError::TaskNotFound(id.clone()))?;
-        if let Some(c) = &task.contract {
-            // v2 는 보고된 결과를 계약으로 확정하고, v1 형식 필드에는 그 투영을 둔다.
-            let mut typed = contract::finalize_result(&task, c, &result);
-            // 입력 해석에 실패해 실행하지 않았다면 실패 단계는 input 이다.
-            if result.error.is_some()
-                && let Some(failure) = task.input_snapshot.as_ref().and_then(|s| s.failure.clone())
-            {
-                typed.error = Some(failure);
-            }
-            task.result = Some(contract::project_v1(&typed));
-            task.typed_result = Some(typed);
-        } else {
-            task.result = Some(result);
-        }
+        record_result(&mut task, result);
         self.put(&task)?;
         Ok(task)
     }
@@ -895,6 +898,9 @@ pub(super) fn graph_key(graph_id: &str) -> Result<String> {
     crate::component_key(super::TASK_GRAPH_KEY_PREFIX, "graph id", graph_id)
 }
 
+mod complete;
+#[cfg(test)]
+pub(super) use complete::FAIL_COMPLETION_PUT;
 mod graph_submit;
 pub use graph_submit::*;
 
@@ -939,6 +945,23 @@ fn decode_typed_record(value: MemoryValue, label: &str) -> Result<Task> {
 
 /// v2 task 의 종결 전이를 결과와 맞춘다. 확정된 유효 출력이 없으면 성공으로 끝내지
 /// 않고 실패로 바꾼다. 실패로 끝나는데 결과가 없으면 실패 사유를 결과로 남긴다.
+/// 보고된 결과를 task 에 기록한다. v2 는 계약으로 확정하고 v1 형식 필드에는 그 투영을 둔다.
+fn record_result(task: &mut Task, result: TaskResult) {
+    let Some(c) = &task.contract else {
+        task.result = Some(result);
+        return;
+    };
+    let mut typed = contract::finalize_result(task, c, &result);
+    // 입력 해석에 실패해 실행하지 않았다면 실패 단계는 input 이다.
+    if result.error.is_some()
+        && let Some(failure) = task.input_snapshot.as_ref().and_then(|s| s.failure.clone())
+    {
+        typed.error = Some(failure);
+    }
+    task.result = Some(contract::project_v1(&typed));
+    task.typed_result = Some(typed);
+}
+
 fn settle_typed_terminal(task: &mut Task, requested: TaskState) -> TaskState {
     if !task.is_typed() {
         return requested;

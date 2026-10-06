@@ -195,17 +195,15 @@ pub struct InputSnapshot {
     pub failure: Option<TaskFailure>,
 }
 
-/// binding 이 읽은 producer 하나. 회차 식별이 생기기 전까지는 producer 의 시작·종결
-/// 시각으로 어느 실행의 결과인지 고정한다.
+/// binding 이 읽은 producer 하나. producer 의 회차 id 로 어느 실행의 결과인지 고정한다.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourcePin {
     pub field: String,
     pub from_task: TaskId,
     pub pointer: String,
+    /// 값을 읽은 producer 회차([`super::TaskAttempt::id`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub producer_started_at: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub producer_finished_at: Option<u64>,
+    pub producer_attempt: Option<String>,
 }
 
 /// 입력에서 만든 실행 인자.
@@ -845,8 +843,7 @@ fn resolve_value(
                     field: name.clone(),
                     from_task: s.from_task.clone(),
                     pointer: s.pointer.clone(),
-                    producer_started_at: producer.started_at,
-                    producer_finished_at: producer.finished_at,
+                    producer_attempt: producer.attempt.as_ref().map(|a| a.id.clone()),
                 });
                 let tokens = pointer_tokens(&s.pointer).map_err(|m| fail(m, loc.clone()))?;
                 let mut cur = &output;

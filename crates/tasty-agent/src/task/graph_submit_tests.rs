@@ -162,7 +162,10 @@ fn an_int64_field_feeds_an_int64_input_and_a_string_input_only_with_a_conversion
         TypedValue::Object([("n".to_string(), TypedValue::Int64(3))].into())
     );
     assert_eq!(snap.sources[0].from_task, "producer");
-    assert_eq!(snap.sources[0].producer_finished_at, Some(2));
+    assert_eq!(
+        snap.sources[0].producer_attempt.as_deref(),
+        Some("producer#1")
+    );
     let snap = resolve_inputs(
         &label_user,
         label_user.contract.as_ref().unwrap(),
@@ -487,7 +490,7 @@ fn a_retried_producer_does_not_change_a_stored_snapshot() {
         stored.value.to_internal(),
         json!({"text": "${task.p.output} $(rm -rf /)"})
     );
-    assert_eq!(stored.sources[0].producer_finished_at, Some(2));
+    assert_eq!(stored.sources[0].producer_attempt.as_deref(), Some("p#1"));
     // 저장된 레코드를 다시 읽어도 같다(int64 가 아닌 값도 스키마로 읽힌다).
     assert_eq!(get(&store, "c").input_snapshot, Some(stored));
 }

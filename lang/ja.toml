@@ -5366,6 +5366,9 @@ help = "任意のエラーメッセージ（state=failed なら勧める）"
 [cli.help._root.agent.task-set-result.arg.exit_code]
 help = "任意のプロセス終了コード"
 
+[cli.help._root.agent.task-set-result.arg.attempt_id]
+help = "任意の typed task 実行回の id。別の実行回の報告は拒否する"
+
 [cli.help._root.agent.task-delete]
 about = "タスクを削除します。depends_on / on_failure.fallback.task / reduce.inputs から参照されていれば既定では拒否し、参照元のタスク ID を返します。`Running` のタスクは `--cascade` や `--force` があっても削除できません。先にキャンセルしてください。"
 

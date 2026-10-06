@@ -27,6 +27,7 @@ fn task(id: &str, command: TaskCommand, contract: Option<TaskContract>) -> Task 
         typed_result: None,
         graph_id: None,
         input_snapshot: None,
+        attempt: None,
     }
 }
 
