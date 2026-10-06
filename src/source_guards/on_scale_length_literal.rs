@@ -124,7 +124,8 @@ const AREAS: &[(&str, usize, &str)] = &[
         // 스케일에 size-10이 들어오면서 기존 값 10이 새로 집계됐다.
         // 사이드바 접기 버튼이 공용 IconButton sm 을 쓰면서 24×24 두 자리가 빠졌다.
         // 탐색기 상태 화면 보조 줄 최대 폭 200은 시안 ExpState 의 raw maxWidth 라 대응 토큰이 없다.
-        52,
+        // 마우스 캡처 배너 메뉴 폭은 banner-more-menu 토큰으로 옮겨 빠졌다.
+        51,
         "나머지 host chrome(사이드바·타이틀바·서피스 장식)",
     ),
     (

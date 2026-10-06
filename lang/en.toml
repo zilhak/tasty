@@ -1015,7 +1015,7 @@ more_button = "More options"
 
 [popup.mouse_capture_banner_menu]
 title = "Mouse capture notification options"
-suppress_prefix = "Turn off this notification for "
+suppress_prefix = "Turn off this notice for "
 suppress_suffix = ""
 disable_prefix = "Disable mouse capture for "
 disable_suffix = ""

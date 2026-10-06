@@ -384,7 +384,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 fullscreen_stage: None,
                 title_fn: None,
                 default_size: crate::adapters::ui::mouse_capture_menu::menu_default_size(),
-                sizer: None,
+                sizer: Some(crate::adapters::ui::mouse_capture_menu::menu_sizer),
                 default_scope: PopupScope::Window,
                 close_on_outside_click: true,
                 headless: true,

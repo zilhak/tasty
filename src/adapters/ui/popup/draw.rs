@@ -54,6 +54,15 @@ fn popup_bg_fill(popup_id: PopupId, th: &tasty_type_appearance::theme::Theme) ->
     }
 }
 
+/// 셸 테두리 색. 마우스 캡처 배너 메뉴는 시안의 `banner-more-menu-border`(border-strong)를 쓴다.
+fn popup_border(popup_id: PopupId, th: &tasty_type_appearance::theme::Theme) -> egui::Color32 {
+    if popup_id == crate::adapters::ui::mouse_capture_menu::MOUSE_CAPTURE_BANNER_MENU_POPUP_ID {
+        th.banner_more_menu_border().into()
+    } else {
+        th.border_frame().into()
+    }
+}
+
 /// 타이틀바 아래 선 색. 안내 모달은 디자인의 info modal 셸 규칙(`info-modal-title-edge`)을
 /// 따르고 나머지는 공통 값을 쓴다.
 fn popup_title_edge(popup_id: PopupId, th: &tasty_type_appearance::theme::Theme) -> egui::Color32 {
@@ -437,7 +446,7 @@ impl PopupManager {
             painter.rect_stroke(
                 popup_rect,
                 th.corner_radius.value(),
-                egui::Stroke::new(th.border_width.value(), th.border_frame()),
+                egui::Stroke::new(th.border_width.value(), popup_border(popup_id, &th)),
                 egui::StrokeKind::Outside,
             );
 

@@ -109,13 +109,17 @@ mouse-capture 배너(`defs::BANNER_MOUSE_CAPTURE`)에 한해, X 왼쪽에 "더�
   않도록, hover 전에도 예약 폭은 고정이다(다른 배너는 기존 1 슬롯 28px 그대로).
 - **트리거 아이콘**: SVG `icons::MORE` — 수평 3-dot(`M5 12h.01M12 12h.01M19 12h.01`).
 - **메뉴**: host `PopupDef` 의 `headless: true` 컨텍스트 메뉴(`popup-implementation.md`).
-  앵커는 트리거 버튼 아래 4px, 우측 정렬 — 뷰포트 하단 공간이 없으면 위로 flip. outside
+  앵커는 트리거 버튼 아래 `banner-more-menu-offset`(4), 우측 정렬 — 뷰포트 하단 공간이 없으면 위로 flip. outside
   click/Esc 로 닫힘(scrim 없음), ↑↓/Enter/Esc 키보드 내비게이션은 기존 headless 메뉴와 동일.
-  min-width 200px / max-width 288px, 내부 패딩 4px, 배경·보더·radius·그림자는 다른 메뉴
-  (Tools menu 등)와 같은 토큰을 재사용한다.
+- **폭**: 테두리까지 포함한 폭(시안의 border-box)이 두 행 중 넓은 쪽의 내용 폭(좌우 행 패딩 + 아이콘 + 간격 +
+  고정 문구 + 프로그램 이름)에 메뉴 패딩·테두리를 더한 값이다. `banner-more-menu-min-width`(200)와
+  `banner-more-menu-max-width`(288) 사이로 제한하며, 상한에 걸리면 프로그램 이름만 줄인다. 폭은 메뉴를 열 때
+  포그라운드 프로그램 이름으로 한 번 잰다.
+- **셸**: 내부 패딩 `banner-more-menu-padding`(4), 배경 `banner-more-menu-bg`(surface-raised), 테두리
+  `banner-more-menu-border`(border-strong), radius·그림자는 다른 headless 메뉴와 같다.
 - **항목 2개(순서 고정)**, 클릭 시 즉시 실행 + 메뉴 닫힘, 둘 다 neutral 톤(danger 아님 —
   파괴/유실 없고 Settings 에서 되돌릴 수 있음):
-  1. **"{app}에 대해 이 알림 끄기"**(`icons::BELL`) — `mouse_capture_banner_blacklist` 에
+  1. **"{app}에 대해 이 알림 끄기"**(en "Turn off this notice for {app}")(`icons::BELL`) — `mouse_capture_banner_blacklist` 에
      foreground 프로그램 이름 추가 + **배너도 즉시 함께 닫힘**.
   2. **"{app}에 대해 마우스 캡처 비활성화"**(`icons::MOUSE`) — `mouse_capture_blacklist` 에
      추가. **배너는 남는다** — 캡처가 이미 풀렸음을 사용자가 읽고 직접 닫도록.

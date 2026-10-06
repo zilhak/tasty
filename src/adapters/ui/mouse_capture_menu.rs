@@ -10,21 +10,98 @@ use crate::intent::{OpenPopupMode, UiIntent};
 use crate::state::MainViewState;
 use crate::theme::{self, Theme};
 use tasty_icons::Icon;
+use tasty_type_geometry::length::LogicalPx;
 
 pub const MOUSE_CAPTURE_BANNER_MENU_POPUP_ID: crate::adapters::ui::popup::PopupId =
     "mouse_capture_banner_menu";
 
-/// 고정된 두 항목의 높이와 패딩으로 메뉴 크기를 정한다.
+/// 셸 크기. 폭은 테두리를 뺀 안쪽 폭이다(셸 테두리는 바깥으로 그린다). 높이는 두 행과 위아래 패딩이다.
+fn menu_size_for(th: &Theme, inner_width: LogicalPx) -> egui::Vec2 {
+    let row = th.menu_item_height().value();
+    let pad = th.banner_more_menu_padding().value();
+    egui::vec2(inner_width.value(), pad * 2.0 + row * 2.0)
+}
+
+/// 시안의 메뉴 폭은 테두리까지 포함한 border-box다. 두 행 중 넓은 내용에 맞추고
+/// `banner-more-menu-min-width`..`banner-more-menu-max-width` 로 제한한 뒤 테두리를 뺀 셸 폭을 돌려준다.
+/// 상한에 걸리면 프로그램 이름만 줄인다(`draw_menu_row`).
+fn menu_inner_width(th: &Theme, widest_row: f32) -> LogicalPx {
+    let pad = th.banner_more_menu_padding().value();
+    let bw = th.border_width.value();
+    let outer = (widest_row + pad * 2.0 + bw * 2.0).clamp(
+        th.banner_more_menu_min_width().value(),
+        th.banner_more_menu_max_width().value(),
+    );
+    LogicalPx(outer - bw * 2.0)
+}
+
+/// 등록 시점의 크기. 대상이 정해지기 전이라 하한 폭을 쓴다.
 pub fn menu_default_size() -> egui::Vec2 {
     let th = theme::theme();
-    let row = th.menu_item_height().value();
-    let pad = th.spacing_xs.value();
-    egui::vec2(240.0, pad * 2.0 + row * 2.0)
+    let min = th.banner_more_menu_min_width().value() - th.border_width.value() * 2.0;
+    menu_size_for(&th, LogicalPx(min))
+}
+
+/// `PopupDef.sizer` — 열 때 잰 폭을 쓴다. 매 프레임 호출되므로 글꼴 측정은 열 때 한 번만 한다.
+pub fn menu_sizer(
+    state: &MainViewState,
+    _engine: &crate::runtime::engine_read::EngineRead<'_>,
+) -> egui::Vec2 {
+    let th = theme::theme();
+    match state.dialogs.mouse_capture_banner_menu_width {
+        Some(width) => menu_size_for(&th, width),
+        None => menu_default_size(),
+    }
+}
+
+/// 한 행을 줄이지 않고 그리는 데 필요한 폭. `draw_menu_row` 와 같은 배치를 잰다.
+fn row_content_width(
+    ctx: &egui::Context,
+    th: &Theme,
+    prefix: &str,
+    app_name: &str,
+    suffix: &str,
+) -> f32 {
+    let body = th.font_size_body.value();
+    let text_w = ctx.fonts(|f| {
+        let w = |text: &str, font: egui::FontId| {
+            f.layout_no_wrap(text.to_owned(), font, egui::Color32::PLACEHOLDER)
+                .rect
+                .width()
+        };
+        w(prefix, egui::FontId::proportional(body))
+            + w(app_name, egui::FontId::monospace(body))
+            + w(suffix, egui::FontId::proportional(body))
+    });
+    th.menu_item_padding_x().value() * 2.0
+        + th.icon_glyph_size_md.value()
+        + th.spacing_sm.value()
+        + text_w
+}
+
+/// 두 행 중 넓은 쪽의 내용 폭.
+fn widest_row(ctx: &egui::Context, th: &Theme, app_name: &str) -> f32 {
+    let suppress = row_content_width(
+        ctx,
+        th,
+        t("popup.mouse_capture_banner_menu.suppress_prefix"),
+        app_name,
+        t("popup.mouse_capture_banner_menu.suppress_suffix"),
+    );
+    let disable = row_content_width(
+        ctx,
+        th,
+        t("popup.mouse_capture_banner_menu.disable_prefix"),
+        app_name,
+        t("popup.mouse_capture_banner_menu.disable_suffix"),
+    );
+    suppress.max(disable)
 }
 
 /// 배너의 더보기 버튼에 맞춰 팝업을 연다. 아래 공간이 부족하면 위에 배치한다.
 pub fn open(
     state: &mut MainViewState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
     ctx: &egui::Context,
     scope: &BannerScope,
     trigger_rect: egui::Rect,
@@ -34,15 +111,21 @@ pub fn open(
     };
     state.dialogs.mouse_capture_banner_menu_target = Some(*surface_id);
 
-    let size = menu_default_size();
-    let offset = 4.0;
+    let th = theme::theme();
+    let app_name = engine.foreground_name(*surface_id).unwrap_or("");
+    let width = menu_inner_width(&th, widest_row(ctx, &th, app_name));
+    state.dialogs.mouse_capture_banner_menu_width = Some(width);
+    let size = menu_size_for(&th, width);
+    // 셸 테두리는 바깥으로 그리므로 border-box 의 오른쪽 끝이 트리거 오른쪽에 맞도록 테두리만큼 당긴다.
+    let bw = th.border_width.value();
+    let offset = th.banner_more_menu_offset().value();
     let mut pos = egui::pos2(
-        trigger_rect.right() - size.x,
-        trigger_rect.bottom() + offset,
+        trigger_rect.right() - bw - size.x,
+        trigger_rect.bottom() + offset + bw,
     );
     let screen = ctx.screen_rect();
-    if pos.y + size.y > screen.bottom() {
-        pos.y = trigger_rect.top() - size.y - offset;
+    if pos.y + size.y + bw > screen.bottom() {
+        pos.y = trigger_rect.top() - offset - bw - size.y;
     }
 
     state.dispatch_intent(
@@ -214,5 +297,56 @@ fn draw_menu_row(
         resp.on_hover_text(app_name.to_string())
     } else {
         resp
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 테두리까지 포함한 바깥 폭. 셸 폭에 바깥으로 그리는 테두리 두 줄을 더한다.
+    fn outer(th: &Theme, widest: f32) -> f32 {
+        menu_inner_width(th, widest).value() + th.border_width.value() * 2.0
+    }
+
+    #[test]
+    fn a_short_row_takes_the_min_width() {
+        let th = theme::theme();
+        assert_eq!(outer(&th, 0.0), th.banner_more_menu_min_width().value());
+    }
+
+    #[test]
+    fn a_long_row_stops_at_the_max_width() {
+        let th = theme::theme();
+        let past_max = th.banner_more_menu_max_width().value() * 2.0;
+        assert_eq!(
+            outer(&th, past_max),
+            th.banner_more_menu_max_width().value()
+        );
+    }
+
+    #[test]
+    fn a_row_between_the_bounds_adds_the_padding_and_border() {
+        let th = theme::theme();
+        let min = th.banner_more_menu_min_width().value();
+        let max = th.banner_more_menu_max_width().value();
+        let widest = (min + max) * 0.5;
+        let expected =
+            widest + th.banner_more_menu_padding().value() * 2.0 + th.border_width.value() * 2.0;
+        assert!(expected < max, "the sample row must stay under the cap");
+        assert_eq!(outer(&th, widest), expected);
+    }
+
+    #[test]
+    fn the_shell_keeps_the_width_and_fits_two_rows_and_the_padding() {
+        let th = theme::theme();
+        let width =
+            LogicalPx(th.banner_more_menu_max_width().value() - th.border_width.value() * 2.0);
+        let size = menu_size_for(&th, width);
+        assert_eq!(size.x, width.value());
+        assert_eq!(
+            size.y,
+            th.banner_more_menu_padding().value() * 2.0 + th.menu_item_height().value() * 2.0
+        );
     }
 }

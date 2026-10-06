@@ -54,7 +54,7 @@ pub(crate) fn draw_overlays(
     state.banner_hovered = banner_result.hovered;
     state.banner_layer = Some(banner_result.layer);
     if let Some((scope, trigger_rect)) = banner_result.more_clicked {
-        crate::adapters::ui::mouse_capture_menu::open(state, ctx, &scope, trigger_rect);
+        crate::adapters::ui::mouse_capture_menu::open(state, engine, ctx, &scope, trigger_rect);
     }
 
     // 단축키 도움말은 키보드 포커스를 받지 않으며, 홀드 조합에 따라 표시 지연이 다르다.

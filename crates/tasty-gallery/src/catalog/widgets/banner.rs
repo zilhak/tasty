@@ -829,7 +829,7 @@ fn mouse_capture_menu(ui: &mut egui::Ui, theme: &Theme, app: &str, width: f32) {
                 ui,
                 theme,
                 icons::BELL,
-                "Turn off this notification for ",
+                "Turn off this notice for ",
                 app,
                 "",
                 true,
