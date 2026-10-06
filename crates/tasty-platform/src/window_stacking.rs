@@ -273,9 +273,12 @@ mod imp {
             return Ok(());
         };
         let dpy = xlib_display(window)?;
+        // 트레이로 숨긴(unmap) 기준 창은 restack 형제로 쓰지 않는다. openbox 3.6.1은 unmap된 형제를
+        // 가리키는 `_NET_RESTACK_WINDOW`를 받으면 SIGSEGV로 죽는다(실측). 보이지 않는 창 아래에
+        // 둔다는 요청은 의미도 없으므로 기준 없이 보이기만 한다.
         let sibling = match anchor {
-            Some(a) => xlib_window(a)?,
-            None => None,
+            Some(a) if a.is_visible() != Some(false) => xlib_window(a)?,
+            _ => None,
         };
         let x = xlib::Xlib::open().map_err(|e| format!("Xlib::open: {e}"))?;
         set_zero_user_time(&x, dpy, win);
