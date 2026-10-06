@@ -217,13 +217,15 @@ kind 소스로 쓴다. 설정 화면(`draw_settings_detail`)도 같은 캐시 �
 | `chrome.jsx` `RailCategoryBtn` | `sidebar/view.rs::draw_rail_category_button` | `sidebar` "Categories · rail" (`sidebar.rs::rail_categories`) |
 | `chrome.jsx` `CollapsedSidebar`(grouped) | `sidebar/view.rs::draw_collapsed_sidebar_view` | `sidebar` "Categories · rail" |
 | `overlays/sidebar_context_menu.jsx` `RailCategoryPopup` | `popup/rail_category.rs::draw_rail_category_popup` | `workspace-categories` "Rail popup" (`category_dialogs.rs::rail_popup`) |
-| `overlays/sidebar_context_menu.jsx` `SidebarContextMenu` | `view/main/redraw.rs`(native menu: Workspace/WorkspaceCategoryHeader/SidebarBackground) | ✗ native OS 메뉴 — 갤러리 미대상 |
+| `overlays/sidebar_context_menu.jsx` `SidebarContextMenu` | `view/main/redraw.rs`(native menu: Workspace/WorkspaceCategoryHeader/SidebarBackground) | `sidebar-context-menu` 대상별 네 메뉴(`sidebar_context_menu.rs`, 시안 정적 사본) |
 | `overlays-dialogs.jsx` `CategoryEditFrame` | `dialog.rs::draw_rename_popup`(+`RenameTarget::NewCategory`/`CategoryName`, 라이브 검증) | `workspace-categories` "Create / rename" · "Validation error" (`category_dialogs.rs::edit_dialog`) |
 | `overlays-dialogs.jsx` `CategoryDeleteFrame` | `popup/confirm_delete_category.rs::draw_confirm_delete_category` | `workspace-categories` "Delete confirm" (`category_dialogs.rs::delete_confirm`) |
 
-**갤러리 vs 본체 차이**: 컨텍스트 메뉴는 OS native(`show_context_menu`) 라 갤러리 정적 재현 대상이
-아니다(서브메뉴 미지원 → "카테고리로 이동" 은 평면 나열, 선택지 B). 나머지는 Theme 토큰으로 시각만
-재현하며 상태(접힘/빈 카테고리/검증 에러)는 mock 데이터로 주입한다.
+**갤러리 vs 본체 차이**: 본체 컨텍스트 메뉴는 OS native(`show_context_menu`)라 같은 함수를 호출할 수 없다.
+갤러리 `sidebar-context-menu`는 시안의 대상별 네 메뉴를 공용 메뉴 항목으로 옮긴 정적 사본이다. 시안은
+"카테고리로 이동"을 하위 메뉴로 그리지만 native 메뉴는 하위 메뉴를 지원하지 않아 본체는 비활성 머리글
+아래에 대상 카테고리를 평면 나열한다(선택지 B). 나머지는 Theme 토큰으로 시각만 재현하며 상태(접힘/빈
+카테고리/검증 에러)는 mock 데이터로 주입한다.
 
 ## 이미 갤러리에 있는 관련 항목 (참고)
 

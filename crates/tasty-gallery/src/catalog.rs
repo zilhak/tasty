@@ -1210,14 +1210,24 @@ pub fn pages() -> Vec<Page> {
                 section(
                     "workspace-categories",
                     "Workspace categories",
-                    vec![spec(
-                        "workspace-categories",
-                        "Sidebar folders — dialogs & rail popup",
-                        Some(
-                            "Create/rename (360px + inline validation) · delete confirm (380px danger) · rail popup (176px)",
+                    vec![
+                        spec(
+                            "sidebar-context-menu",
+                            "Sidebar context menu — target resolves under the cursor",
+                            Some(
+                                "background · category header · reserved · workspace row · 176px min",
+                            ),
+                            components::sidebar_context_menu::draw,
                         ),
-                        components::category_dialogs::draw,
-                    )],
+                        spec(
+                            "workspace-categories",
+                            "Sidebar folders — dialogs & rail popup",
+                            Some(
+                                "Create/rename (360px + inline validation) · delete confirm (380px danger) · rail popup (176px)",
+                            ),
+                            components::category_dialogs::draw,
+                        ),
+                    ],
                 ),
                 section(
                     "switch",

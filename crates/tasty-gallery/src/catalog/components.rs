@@ -76,6 +76,7 @@ pub mod settings_macos_permissions;
 pub mod settings_number;
 pub mod settings_remote_transfer;
 pub mod sidebar;
+pub mod sidebar_context_menu;
 pub mod status_bar;
 pub mod surface_highlights;
 pub mod switch_overlay;
