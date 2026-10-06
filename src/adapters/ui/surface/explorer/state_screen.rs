@@ -8,7 +8,9 @@ use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::Spinner;
 
-use crate::adapters::ui::icons::Icon;
+use super::view::{ExplorerView, LoadState};
+use crate::adapters::ui::icons::{self, Icon};
+use crate::i18n::t;
 
 /// 시안 글리프 확대 비율(`transform: scale(1.6)`). 대응 토큰이 없다.
 const GLYPH_SCALE: f32 = 1.6;
@@ -17,22 +19,60 @@ const SUB_MAX_W: LogicalPx = LogicalPx(200.0);
 
 /// 상태 화면의 글리프 — 아이콘 또는 Spinner.
 #[derive(Clone, Copy)]
-pub(super) enum StateGlyph {
+enum StateGlyph {
     Icon(Icon),
     Spinner,
 }
 
 /// 상태 화면 하나의 내용.
-pub(super) struct StateScreen<'a> {
-    pub glyph: StateGlyph,
+struct StateScreen<'a> {
+    glyph: StateGlyph,
     /// 권한 거부처럼 경고 톤으로 칠하는 상태.
-    pub warning: bool,
-    pub title: &'a str,
-    pub sub: Option<&'a str>,
+    warning: bool,
+    title: &'a str,
+    sub: Option<&'a str>,
+}
+
+/// 목록 대신 상태 화면을 그려야 하면 받은 영역에 그리고 true 를 돌려준다.
+pub(super) fn show_for(ui: &mut egui::Ui, theme: &Theme, view: &ExplorerView) -> bool {
+    let screen = match &view.state {
+        LoadState::NoPermission => StateScreen {
+            glyph: StateGlyph::Icon(icons::LOCK),
+            warning: true,
+            title: t("explorer.state.no_permission"),
+            sub: Some(t("explorer.state.no_permission_sub")),
+        },
+        // 읽을 수 없음을 빈 폴더로 떨어뜨리지 않는다(시안 ssh config Note 의 원칙).
+        // 탐색기 시안에 오류 상태가 없어 회신 전까지 공용 CenterState error 를 쓴다.
+        LoadState::Error(msg) => {
+            let rect = ui
+                .allocate_exact_size(ui.available_size(), egui::Sense::hover())
+                .0;
+            tasty_ui_widgets::CenterState::error(t("explorer.state.read_error"))
+                .sub_line(Some(msg))
+                .show_in(ui, theme, rect);
+            return true;
+        }
+        LoadState::Loading => StateScreen {
+            glyph: StateGlyph::Spinner,
+            warning: false,
+            title: t("explorer.state.loading"),
+            sub: None,
+        },
+        LoadState::Ok if view.entries.is_empty() => StateScreen {
+            glyph: StateGlyph::Icon(icons::FOLDER_OPEN),
+            warning: false,
+            title: t("explorer.state.empty"),
+            sub: None,
+        },
+        LoadState::Ok => return false,
+    };
+    show(ui, theme, &screen);
+    true
 }
 
 /// 받은 영역 전체를 차지하고 그 가운데에 상태 블록을 그린다. 그린 블록의 사각형을 돌려준다.
-pub(super) fn show(ui: &mut egui::Ui, theme: &Theme, s: &StateScreen<'_>) -> egui::Rect {
+fn show(ui: &mut egui::Ui, theme: &Theme, s: &StateScreen<'_>) -> egui::Rect {
     let (rect, _) = ui.allocate_exact_size(
         egui::vec2(ui.available_width(), ui.available_height()),
         egui::Sense::hover(),

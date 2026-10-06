@@ -2,6 +2,8 @@
 //! Connect는 BrowserRequest로 App에 전달하고 원 engine/View에 사용자 활성화 의도를 고정한다.
 //! App의 연결 입구는 조회 터널을 재사용하며 자기 인스턴스로의 연결을 거절한다.
 
+mod nav;
+
 use tasty_remote::browser::BROWSE_DEADLINE;
 use tasty_type_geometry::length::LogicalPx;
 
@@ -93,33 +95,6 @@ impl UiState {
     fn create_mode(&self) -> bool {
         self.ws_sel == Some(WsSel::New)
     }
-}
-
-/// 방향키 이동 순서 — 새 행이 1번이고, 이미 attach 된(고를 수 없는) 행은 건너뛴다.
-fn nav_order(ws: &[RemoteWorkspace]) -> Vec<WsSel> {
-    std::iter::once(WsSel::New)
-        .chain(
-            ws.iter()
-                .filter(|w| !w.attached)
-                .map(|w| WsSel::Existing(w.id)),
-        )
-        .collect()
-}
-
-/// 한 칸 이동한 선택. 다른 목록 popup(convert·preset_apply)처럼 양 끝에서 반대쪽으로 돈다.
-/// 선택이 없으면 아래는 첫 행, 위는 마지막 행이다.
-fn step_sel(order: &[WsSel], cur: Option<WsSel>, down: bool) -> Option<WsSel> {
-    let n = order.len();
-    if n == 0 {
-        return cur;
-    }
-    let i = match cur.and_then(|c| order.iter().position(|o| *o == c)) {
-        Some(i) if down => (i + 1) % n,
-        Some(i) => (i + n - 1) % n,
-        None if down => 0,
-        None => n - 1,
-    };
-    Some(order[i])
 }
 
 fn read_ui(ctx: &egui::Context) -> UiState {
@@ -347,30 +322,8 @@ pub fn draw_remote_attach_popup(
     if let Some(name) = draw_left_pane(ui, &th, left_rect, &summaries, st.attach_sel.as_deref()) {
         connect(state, &mut st, name);
     }
-    // 목록이 있을 때 방향키로 행을 옮기고 Enter 로 footer 와 같이 확정한다. 생성 중에는 목록이 멈춘다.
-    let mut scroll_to_sel = false;
-    if let Conn::Loaded(ws) = &st.conn
-        && !st.creating()
-    {
-        let (up, down, enter) = ctx.input(|i| {
-            (
-                i.key_pressed(egui::Key::ArrowUp),
-                i.key_pressed(egui::Key::ArrowDown),
-                i.key_pressed(egui::Key::Enter),
-            )
-        });
-        if up != down {
-            let next = step_sel(&nav_order(ws), st.ws_sel, down);
-            if next == Some(WsSel::New) && matches!(st.phase, NewWsPhase::Failed(_)) {
-                st.phase = NewWsPhase::Rest;
-            }
-            st.ws_sel = next;
-            scroll_to_sel = true;
-        }
-        if enter {
-            do_connect = true;
-        }
-    }
+    let (scroll_to_sel, enter) = nav::handle_keys(&ctx, &mut st);
+    do_connect |= enter;
     match draw_right_pane(ui, &th, right_rect, &mut st, scroll_to_sel) {
         RightAction::RetryBrowse => {
             if let Some(name) = st.attach_sel.clone() {
@@ -731,21 +684,11 @@ fn draw_ws_list(
         .drag_to_scroll(false)
         .show(&mut list, |ui| {
             ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
-            // 방향키로 옮긴 행이 보이도록 그 행 영역으로 스크롤한다.
-            let scroll_if = |ui: &mut egui::Ui, top: f32, selected: bool| {
-                if scroll_to_sel && selected {
-                    let r = egui::Rect::from_x_y_ranges(
-                        ui.max_rect().x_range(),
-                        top..=ui.cursor().top(),
-                    );
-                    ui.scroll_to_rect(r, None);
-                }
-            };
             let top = ui.cursor().top();
             if let Some(a) = new_ws_row(ui, th, phase, ws_sel == Some(WsSel::New)) {
                 action = Some(a);
             }
-            scroll_if(ui, top, ws_sel == Some(WsSel::New));
+            nav::scroll_to_row(ui, top, scroll_to_sel && ws_sel == Some(WsSel::New));
             if ws.is_empty() {
                 empty_line(ui, th, profile_name);
                 return;
@@ -763,7 +706,7 @@ fn draw_ws_list(
                     if ws_row(ui, th, w, selected, !creating) {
                         action = Some(ListAction::Select(WsSel::Existing(w.id)));
                     }
-                    scroll_if(ui, top, selected);
+                    nav::scroll_to_row(ui, top, scroll_to_sel && selected);
                 }
             });
         });
@@ -1203,51 +1146,4 @@ fn badge(
         galley,
         color,
     );
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn ws(id: u32, attached: bool) -> RemoteWorkspace {
-        RemoteWorkspace {
-            id,
-            name: format!("ws{id}"),
-            subtitle: None,
-            description: None,
-            pane_count: 1,
-            busy_count: 0,
-            attached,
-            holder: None,
-        }
-    }
-
-    #[test]
-    fn the_new_row_is_first_and_attached_rows_are_skipped() {
-        let order = nav_order(&[ws(1, false), ws(2, true), ws(3, false)]);
-        assert_eq!(
-            order,
-            vec![WsSel::New, WsSel::Existing(1), WsSel::Existing(3)]
-        );
-        assert_eq!(nav_order(&[]), vec![WsSel::New]);
-    }
-
-    #[test]
-    fn arrows_start_at_the_ends_and_wrap() {
-        let order = nav_order(&[ws(1, false), ws(3, false)]);
-        assert_eq!(step_sel(&order, None, true), Some(WsSel::New));
-        assert_eq!(step_sel(&order, None, false), Some(WsSel::Existing(3)));
-        assert_eq!(
-            step_sel(&order, Some(WsSel::New), true),
-            Some(WsSel::Existing(1))
-        );
-        assert_eq!(
-            step_sel(&order, Some(WsSel::Existing(3)), true),
-            Some(WsSel::New)
-        );
-        assert_eq!(
-            step_sel(&order, Some(WsSel::New), false),
-            Some(WsSel::Existing(3))
-        );
-    }
 }
