@@ -2141,6 +2141,14 @@ pub fn pages() -> Vec<Page> {
                             ),
                             components::explorer_view_toggle::draw,
                         ),
+                        spec(
+                            "explorer-states",
+                            "Empty / permission / loading · favorite + rename popups",
+                            Some(
+                                "Status screens fill the content area; the two small editors reuse the Popup/rename visual language.",
+                            ),
+                            components::explorer_states::draw,
+                        ),
                     ],
                 ),
                 section(
