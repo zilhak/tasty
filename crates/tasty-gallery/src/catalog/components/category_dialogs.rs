@@ -71,19 +71,50 @@ fn delete_confirm(ui: &mut egui::Ui, theme: &Theme) {
 }
 
 /// 사이드바 버튼에 붙는 팝업이므로 배경을 어둡게 하지 않고 popover 그림자를 쓴다.
+/// 시안 `RailCategoryPopup`: 머리줄(위 space-xs · 좌우·아래 space-sm, 이름 + 오른쪽 끝 워크스페이스 수,
+/// 아래 구분선, 그 아래 space-xs), 간격 없이 붙은 행, 위아래 space-xs 를 둔 구분선.
 fn rail_popup(ui: &mut egui::Ui, theme: &Theme) {
     kit::frame_card_popover(ui, theme, POPUP_WIDTH, kit::raised_fill(theme), |ui| {
         kit::region_sym(ui, theme.spacing_sm, theme.spacing_sm, |ui| {
-            ui.label(
-                egui::RichText::new("Services")
-                    .color(theme.text_primary().to_egui())
-                    .size(theme.font_size_body.value())
-                    .strong(),
+            ui.spacing_mut().item_spacing.y = 0.0;
+            let (sm, xs) = (
+                theme.spacing_sm.value() as i8,
+                theme.spacing_xs.value() as i8,
+            );
+            kit::region(
+                ui,
+                egui::Margin {
+                    left: sm,
+                    right: sm,
+                    top: xs,
+                    bottom: sm,
+                },
+                |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            egui::RichText::new("Services")
+                                .color(theme.text_primary().to_egui())
+                                .size(theme.font_size_body.value())
+                                .strong(),
+                        );
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.label(
+                                egui::RichText::new("3")
+                                    .monospace()
+                                    .color(theme.text_muted().to_egui())
+                                    .size(theme.font_size_micro.value()),
+                            );
+                        });
+                    });
+                },
             );
             kit::hsep(ui, theme);
+            ui.add_space(theme.spacing_xs.value());
             popup_row(ui, theme, PLUS, "Add workspace", false);
             popup_row(ui, theme, CHEVRON_DOWN, "Collapse", false);
+            ui.add_space(theme.spacing_xs.value());
             kit::hsep(ui, theme);
+            ui.add_space(theme.spacing_xs.value());
             popup_row(ui, theme, EDIT, "Rename category", false);
             popup_row(ui, theme, TRASH, "Delete category", true);
         });
