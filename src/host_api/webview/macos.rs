@@ -184,6 +184,7 @@ define_class!(
                 self.ivars().surface_id
             );
             self.ivars().nav_state.set(NavState::Failed);
+            self.ivars().gate_failed();
             self.ivars().gate_finished();
         }
 

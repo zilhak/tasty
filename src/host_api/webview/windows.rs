@@ -393,6 +393,9 @@ impl PlatformWebView {
                         return Ok(());
                     }
                     nav_failed.set(NavState::Failed);
+                    if let Some(gate) = gate_failed.borrow().as_ref() {
+                        gate.failed();
+                    }
                     if let (Some(js), Some(wv)) = (
                         gate_failed.borrow().as_ref().and_then(|g| g.finished()),
                         &sender,
