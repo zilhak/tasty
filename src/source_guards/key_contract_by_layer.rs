@@ -451,6 +451,7 @@ fn journal_key_declarations_match_the_connected_structural_resolver() {
         ("src/app/journal/commands/category.rs", "fn resolve("),
         ("src/app/journal/commands/workspace.rs", "fn resolve("),
         ("src/app/journal/commands.rs", "fn resolve_ipc_for_engine("),
+        ("src/app/journal/commands/close.rs", "fn is_close_method("),
         (
             "src/app/journal/commands/headless.rs",
             "fn resolve_headless_requests(",
@@ -488,6 +489,7 @@ fn journal_key_declarations_match_the_connected_structural_resolver() {
             "src/app/journal/commands.rs",
             "fn resolve_ipc_for_engine(",
             &[
+                "close::is_close_method(",
                 "resolve_close(",
                 "resolve_wake(",
                 "tab::move_public(",
