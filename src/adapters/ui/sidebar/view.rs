@@ -827,7 +827,13 @@ fn draw_sidebar_header(ui: &mut egui::Ui, th: &Theme, collapse_hover: &str) -> (
     let mut hovered = false;
     ui.horizontal(|ui| {
         hspace(ui, th.spacing_md);
-        brand::draw_wordmark(ui, th, th.sidebar_logo_size, th.sidebar_wordmark_font_size);
+        brand::draw_wordmark(
+            ui,
+            th,
+            th.sidebar_logo_size,
+            th.sidebar_wordmark_font_size,
+            th.sidebar_wordmark_tracking(th.sidebar_wordmark_font_size),
+        );
 
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             hspace(ui, th.spacing_md);

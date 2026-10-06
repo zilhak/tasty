@@ -1,7 +1,7 @@
 //! 펼친 사이드바와 접힌 레일의 정적 예제. 워크스페이스·카테고리·상태 배지를 비교한다.
 
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::{TagVariant, tag_caps};
+use tasty_ui_widgets::{TagVariant, brand, tag_caps};
 
 use crate::catalog::icons::{
     CHEVRON_DOWN, CHEVRON_RIGHT, FOLDER, MockGlyph, PLUG, REMOTE, SETTINGS, TERMINAL,
@@ -194,20 +194,21 @@ fn full(ui: &mut egui::Ui, theme: &Theme) {
     let mut y = rect.min.y + pad;
 
     let logo = theme.sidebar_logo_size.value(); // 22
-    let logo_c = egui::pos2(rect.min.x + pad + logo * 0.5, y + logo * 0.5);
-    paint_icon(
-        ui,
-        TERMINAL,
-        logo_c,
-        logo,
-        egui::Color32::from(theme.accent_primary()),
+    // 본체 사이드바 머리와 같은 공용 워드마크(로고 + mono `tasty.`, sidebar-wordmark-tracking).
+    let mut head = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(egui::Rect::from_min_size(
+                egui::pos2(rect.min.x + pad, y),
+                egui::vec2(w - pad * 2.0, logo),
+            ))
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
     );
-    p.text(
-        egui::pos2(logo_c.x + logo * 0.5 + theme.spacing_sm.value(), logo_c.y),
-        egui::Align2::LEFT_CENTER,
-        "Tasty",
-        egui::FontId::proportional(theme.sidebar_wordmark_font_size.value()),
-        egui::Color32::from(theme.text_primary()),
+    brand::draw_wordmark(
+        &mut head,
+        theme,
+        theme.sidebar_logo_size,
+        theme.sidebar_wordmark_font_size,
+        theme.sidebar_wordmark_tracking(theme.sidebar_wordmark_font_size),
     );
     y += logo + theme.spacing_xs.value() + theme.spacing_md.value();
 

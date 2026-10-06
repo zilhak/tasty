@@ -14,8 +14,15 @@ pub const LOGO_PNG: &[u8] = include_bytes!("../../../assets/icons/icon_256.png")
 /// 위 PNG 의 egui bytes-loader URI(캐시 키). 본체·갤러리 공통.
 pub const LOGO_URI: &str = "bytes://tasty_brand_logo_256.png";
 
-/// 수박 마크와 tasty. 글자를 가로로 배치한다. 호출자가 크기와 정렬 위치를 정한다.
-pub fn draw_wordmark(ui: &mut egui::Ui, theme: &Theme, icon_size: LogicalPx, font_size: LogicalPx) {
+/// 수박 마크와 tasty. 글자를 가로로 배치한다. 호출자가 크기·자간과 정렬 위치를 정한다.
+/// 자간은 사이드바가 `sidebar_wordmark_tracking`, 로딩·셸 설정 화면이 `loading_lockup_tracking`이다.
+pub fn draw_wordmark(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    icon_size: LogicalPx,
+    font_size: LogicalPx,
+    tracking: LogicalPx,
+) {
     let icon_vec = egui::vec2(icon_size.value(), icon_size.value());
     let gap = theme.spacing_sm.value();
 
@@ -26,7 +33,7 @@ pub fn draw_wordmark(ui: &mut egui::Ui, theme: &Theme, icon_size: LogicalPx, fon
         0.0,
         egui::TextFormat {
             font_id: font.clone(),
-            extra_letter_spacing: -0.5,
+            extra_letter_spacing: tracking.value(),
             color: theme.text_primary().into(),
             ..Default::default()
         },
@@ -36,7 +43,7 @@ pub fn draw_wordmark(ui: &mut egui::Ui, theme: &Theme, icon_size: LogicalPx, fon
         0.0,
         egui::TextFormat {
             font_id: font,
-            extra_letter_spacing: -0.5,
+            extra_letter_spacing: tracking.value(),
             color: MELON_FLESH.into(),
             ..Default::default()
         },

@@ -43,6 +43,7 @@ fn draw_frame(ui: &mut egui::Ui, theme: &Theme, canvas: egui::Vec2, phase_text: 
         theme,
         theme.loading_screen_wordmark_icon_size(),
         theme.loading_screen_wordmark_font_size(),
+        theme.loading_lockup_tracking(),
     );
     child.add_space(theme.spacing_xl.value());
     Spinner::new()

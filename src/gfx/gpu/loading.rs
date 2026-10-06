@@ -50,6 +50,7 @@ impl GpuState {
                             &th,
                             th.loading_screen_wordmark_icon_size(),
                             th.loading_screen_wordmark_font_size(),
+                            th.loading_lockup_tracking(),
                         );
                         ui.add_space(th.spacing_xl.value());
                         tasty_ui_widgets::Spinner::new()

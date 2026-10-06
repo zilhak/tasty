@@ -78,7 +78,9 @@ hidden 창은 `RedrawRequested` 를 못 받을 수 있으므로 첫 프레임은
 - **워드마크** — 수박 마크(64px) + `tasty.` mono(38px, `.` 는 `--tasty-brand-melon-flesh`)
   브랜드 락업(`guidelines/brand-logo.html` verbatim, 14px UI 폰트 상한의 sanctioned
   예외). `src/adapters/ui/brand.rs::draw_wordmark` — 사이드바 헤더(22px/17px)와
-  같은 함수를 크기만 다르게 호출해 공유한다.
+  같은 함수를 크기와 자간만 다르게 호출해 공유한다. 자간은 락업이
+  `loading_lockup_tracking`(−1px, UI 배율을 따른다), 사이드바가
+  `sidebar_wordmark_tracking`(0)이다.
 - **스피너** — `tasty-ui-widgets::Spinner`(공용 위젯) 재사용, 크기 32(기본
   16→boot hero), 색 `accent_primary()` 명시 지정(미지정 시 기본은
   `text_muted()`). 부팅 시작 `Instant` 가 아니라 egui `ctx().input(|i| i.time)`

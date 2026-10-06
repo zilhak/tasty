@@ -983,7 +983,7 @@ attention 상태에 연결되지 않음, 다른 surfaces specimen과 동일 관�
 
 | 디자인 요소 | 공용 view | 비고 |
 |---|---|---|
-| 부팅 화면 채움(bg-app) + `Lockup` | `shell_setup_screen` — `brand::draw_wordmark`(로딩 화면과 같은 `loading_screen_wordmark_*` 크기) | 락업과 폼 묶음을 세로 가운데에 둔다. 높이는 지난 패스에서 잰 값을 쓰고 바뀌면 패스를 다시 돈다 |
+| 부팅 화면 채움(bg-app) + `Lockup` | `shell_setup_screen` — `brand::draw_wordmark`(로딩 화면과 같은 `loading_screen_wordmark_*` 크기와 `loading_lockup_tracking` 자간) | 락업과 폼 묶음을 세로 가운데에 둔다. 높이는 지난 패스에서 잰 값을 쓰고 바뀌면 패스를 다시 돈다 |
 | 폼(`size-360` 폭, 항목 gap `space-sm`, 락업과 `space-xl`) | `draw_form` | 폭은 이름 붙은 상수 `SHELL_SETUP_FORM_WIDTH`(역할 토큰 없음) |
 | 제목 14/600 text-primary · 부제 body text-muted line-height-ui | `draw_form` | 600 굵기는 크기와 색으로 근사([디자인 정합 지침 §타이포그래피](design-parity-notes.md)) |
 | Windows Git Bash 안내(caption, accent-warning, `alertTriangle` icon-size-sm, 글리프 위 `size-1`, gap space-xs) | `notice_line` | 호출부가 Windows에서만 문구를 넘긴다 |

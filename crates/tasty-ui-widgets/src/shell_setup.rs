@@ -84,6 +84,7 @@ pub fn shell_setup_screen(
         theme,
         theme.loading_screen_wordmark_icon_size(),
         theme.loading_screen_wordmark_font_size(),
+        theme.loading_lockup_tracking(),
     );
     content.add_space(theme.spacing_xl.value());
     let width = SHELL_SETUP_FORM_WIDTH.value().min(area.width());
