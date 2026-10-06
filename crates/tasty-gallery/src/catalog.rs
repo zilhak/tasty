@@ -11,6 +11,7 @@ pub mod foundations_settled;
 pub mod foundations_shape;
 pub mod foundations_uiscale;
 pub mod icons;
+pub mod icons_keys;
 pub mod layouts_settled;
 pub mod overlays_resize;
 pub mod overlays_settled;
@@ -747,6 +748,18 @@ pub fn pages() -> Vec<Page> {
                             "24×24 viewBox · 2px stroke round · no fill · currentColor — sized via prop (26/20/16/14/12)",
                         ),
                         icons::draw_system_rules,
+                    )],
+                ),
+                section(
+                    "keys-in-use",
+                    "Modifier symbols in use",
+                    vec![spec(
+                        "keys-in-use",
+                        "Keycap chip · settings display style",
+                        Some(
+                            "Keycap chip: the glyph replaces the key text inside the same Kbd cap at 14px · Settings dropdown: glyph alone on the closed trigger, glyph + text label on each open row",
+                        ),
+                        icons_keys::draw,
                     )],
                 ),
                 section(
