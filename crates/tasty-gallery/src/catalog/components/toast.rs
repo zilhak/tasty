@@ -7,7 +7,9 @@ use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::vspace;
 
 use tasty_ui_widgets::tokens::STRUCT_GAP_2;
-use tasty_ui_widgets::{ToastEntryView, ToastScopeView, ToastViewProps, draw_toast_scopes};
+use tasty_ui_widgets::{
+    ToastEntryView, ToastScopeView, ToastStackBottom, ToastViewProps, draw_toast_scopes,
+};
 
 use crate::catalog::toast_card::ToastKind;
 
@@ -65,6 +67,7 @@ fn frame_case(
 
     let scopes = vec![ToastScopeView {
         scope_rect: rect,
+        bottom: ToastStackBottom::ScopeMargin,
         entries,
     }];
     let props = ToastViewProps {

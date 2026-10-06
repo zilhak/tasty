@@ -29,10 +29,21 @@ pub struct ToastEntryView {
     pub alpha: f32,
 }
 
+/// 스택 맨 아래 카드를 스코프 하단에서 띄우는 기준.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ToastStackBottom {
+    /// pane·surface처럼 화면 일부를 덮는 스코프. 가장자리 여백(space-md)만 둔다.
+    #[default]
+    ScopeMargin,
+    /// 창 전체를 덮는 스코프. 창 하단에서 `toast-stack-offset-bottom`만큼 띄워 상태바 위에 쌓는다.
+    Window,
+}
+
 /// 생성 순서(ID 오름차순)의 토스트 목록. 역순으로 그려 최신 항목을 오른쪽 아래에 놓는다.
 #[derive(Clone, Debug)]
 pub struct ToastScopeView {
     pub scope_rect: egui::Rect,
+    pub bottom: ToastStackBottom,
     pub entries: Vec<ToastEntryView>,
 }
 
@@ -80,7 +91,11 @@ pub fn draw_toast_scopes(painter: &egui::Painter, props: &ToastViewProps<'_>) {
         let scope_rect = scope.scope_rect;
         // 토스트가 이웃 영역을 덮지 않도록 스코프 경계로 자른다.
         let painter = painter.with_clip_rect(scope_rect);
-        let mut cursor_y = scope_rect.max.y - SCOPE_MARGIN;
+        let bottom_offset = match scope.bottom {
+            ToastStackBottom::ScopeMargin => SCOPE_MARGIN,
+            ToastStackBottom::Window => th.toast_stack_offset_bottom().value(),
+        };
+        let mut cursor_y = scope_rect.max.y - bottom_offset;
 
         // 새것부터 그리며 위로 올라간다 (id 오름차순으로 받았으므로 reverse).
         for entry in scope.entries.iter().rev() {

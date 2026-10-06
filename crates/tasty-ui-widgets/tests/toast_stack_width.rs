@@ -1,14 +1,16 @@
 //! 스택의 카드가 공유 폭 없이 자기 내용 폭을 쓰고, 넓은 스코프에서도 `toast_max_width`를
 //! 넘지 않으며, 오른쪽 끝이 앵커에 맞는지 검사한다. 좌측 강조 막대가 `toast_accent_width`
 //! 두께인지도 검사한다. hint 키캡이 카드 오른쪽 끝 첫 줄에 놓이고 줄지 않으며 본문이 먼저
-//! 줄바꿈되는지도 검사한다.
+//! 줄바꿈되는지도 검사한다. 맨 아래 카드가 스코프 하단에서 떨어지는 거리도 검사한다. 창 범위는
+//! `toast-stack-offset-bottom`(UI 배율 적용), 영역 범위는 가장자리 여백이다.
 
 use egui::{Pos2, RawInput, Rect, vec2};
 use tasty_type_appearance::theme::Theme;
 use tasty_type_appearance::toast_kind::ToastKind;
-use tasty_ui_widgets::tokens::{TOAST_HINT_GAP, TOAST_PADDING_X};
+use tasty_ui_widgets::tokens::{TOAST_HINT_GAP, TOAST_PADDING_X, TOAST_SCOPE_MARGIN};
 use tasty_ui_widgets::{
-    KbdKey, ToastEntryView, ToastScopeView, ToastViewProps, draw_toast_scopes, kbd_parts_width,
+    KbdKey, ToastEntryView, ToastScopeView, ToastStackBottom, ToastViewProps, draw_toast_scopes,
+    kbd_parts_width,
 };
 
 const LONG: &str = "This is a long notice that keeps going well past the width a single toast \
@@ -23,6 +25,7 @@ fn filled_rects(theme: &Theme, fill: impl Fn(&Theme) -> egui::Color32) -> Vec<Re
     let scope_rect = Rect::from_min_size(Pos2::ZERO, vec2(1280.0, 800.0));
     let scopes = [ToastScopeView {
         scope_rect,
+        bottom: ToastStackBottom::ScopeMargin,
         entries: vec![
             ToastEntryView {
                 kind: ToastKind::Warning,
@@ -140,6 +143,7 @@ fn draw(theme: &Theme, message: &str, hint: Vec<String>) -> (Rect, Vec<Rect>) {
     let scope_rect = Rect::from_min_size(Pos2::ZERO, vec2(1280.0, 800.0));
     let scopes = [ToastScopeView {
         scope_rect,
+        bottom: ToastStackBottom::ScopeMargin,
         entries: vec![ToastEntryView {
             kind: ToastKind::Success,
             message: message.into(),
@@ -254,5 +258,86 @@ fn a_long_body_wraps_before_the_hint_shrinks() {
         "hint {} is not on the first line of card {:?}",
         caps[0].center().y,
         card
+    );
+}
+
+const SCOPE_H: f32 = 800.0;
+
+/// 짧은 카드 한 장을 그려 카드 배경 사각형을 돌려준다.
+fn bottom_card_rect(theme: &Theme, bottom: ToastStackBottom) -> Rect {
+    let ctx = egui::Context::default();
+    let scope_rect = Rect::from_min_size(Pos2::ZERO, vec2(1280.0, SCOPE_H));
+    let scopes = [ToastScopeView {
+        scope_rect,
+        bottom,
+        entries: vec![ToastEntryView {
+            kind: ToastKind::Info,
+            message: "Settings applied".into(),
+            hint: Vec::new(),
+            alpha: 1.0,
+        }],
+    }];
+    let mut shapes = Vec::new();
+    // 첫 프레임은 폰트 준비 전이라 두 번 돌린다.
+    for _ in 0..2 {
+        let out = ctx.run(
+            RawInput {
+                screen_rect: Some(scope_rect),
+                ..Default::default()
+            },
+            |ctx| {
+                let painter = ctx.layer_painter(egui::LayerId::new(
+                    egui::Order::Tooltip,
+                    egui::Id::new("toast_stack_bottom"),
+                ));
+                draw_toast_scopes(
+                    &painter,
+                    &ToastViewProps {
+                        theme,
+                        scopes: &scopes,
+                    },
+                );
+            },
+        );
+        shapes = out.shapes;
+    }
+    let card_bg = tasty_ui_widgets::toast_card_colors(theme, ToastKind::Info, 1.0).bg;
+    let cards: Vec<Rect> = shapes
+        .iter()
+        .filter_map(|c| match &c.shape {
+            egui::epaint::Shape::Rect(r) if r.fill == card_bg => Some(r.rect),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(cards.len(), 1, "one card: {cards:?}");
+    cards[0]
+}
+
+fn theme_at(zoom: f32) -> Theme {
+    let base = tasty_themes::mocha_fallback();
+    Theme::with_colors_and_zoom(base.to_colors(), base.is_light, zoom)
+}
+
+#[test]
+fn a_window_scope_stack_sits_the_offset_token_above_the_window_bottom() {
+    for (zoom, offset) in [(0.85_f32, 31.0), (1.0, 36.0), (1.2, 43.0)] {
+        let theme = theme_at(zoom);
+        assert_eq!(theme.toast_stack_offset_bottom().value(), offset);
+        let card = bottom_card_rect(&theme, ToastStackBottom::Window);
+        assert!(
+            (SCOPE_H - card.bottom() - offset).abs() <= 0.01,
+            "zoom {zoom}: card bottom {} should be {offset} above {SCOPE_H}",
+            card.bottom()
+        );
+    }
+}
+
+#[test]
+fn a_region_scope_stack_keeps_the_scope_margin() {
+    let card = bottom_card_rect(&theme_at(1.0), ToastStackBottom::ScopeMargin);
+    assert!(
+        (SCOPE_H - card.bottom() - TOAST_SCOPE_MARGIN).abs() <= 0.01,
+        "card bottom {} should be {TOAST_SCOPE_MARGIN} above {SCOPE_H}",
+        card.bottom()
     );
 }

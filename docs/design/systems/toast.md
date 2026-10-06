@@ -55,7 +55,7 @@ rg -n 'toasts|report_apply_error|push_toast' src/adapters/ipc src/app/ipc src/ap
 
 ## 스코프
 
-`ToastScope`는 알림을 놓을 영역을 지정한다. `ToastScope`: `Window` / `Workspace(usize)` / `Pane(u32)` / `Surface(u32)`. 기본은 `Surface`(어디서 일어난 일인지 모르면 `Window`). 같은 스코프 내 여럿이면 오른쪽 아래 모서리에서 위로 쌓는다. 가장 새 토스트가 맨 아래에 오고 오래된 것이 위로 밀린다. 스코프가 화면에서 사라지면 즉시 제거.
+`ToastScope`는 알림을 놓을 영역을 지정한다. `ToastScope`: `Window` / `Workspace(usize)` / `Pane(u32)` / `Surface(u32)`. 기본은 `Surface`(어디서 일어난 일인지 모르면 `Window`). 같은 스코프 내 여럿이면 오른쪽 아래 모서리에서 위로 쌓는다. 가장 새 토스트가 맨 아래에 오고 오래된 것이 위로 밀린다. 맨 아래 카드는 스코프 하단에서 띄워 놓는다. `Window`·`Workspace`처럼 창 전체를 덮는 스코프는 창 하단에서 `toast-stack-offset-bottom`(→ `size-36`, UI 배율 적용)만큼 띄워 하단 상태바 위에 둔다. `Pane`·`Surface`는 가장자리 여백 `space-md`(12)를 둔다. 공용 위젯은 이 구분을 `ToastStackBottom`(`Window` / `ScopeMargin`)으로 받는다. 스코프가 화면에서 사라지면 즉시 제거.
 
 ## 시각 / 레이아웃
 

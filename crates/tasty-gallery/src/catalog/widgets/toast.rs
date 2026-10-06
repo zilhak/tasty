@@ -202,6 +202,10 @@ pub fn draw_stack(ui: &mut egui::Ui, theme: &Theme) {
                 "width",
                 "content width per card, cap toast-max-width (320) · right edges align",
             ),
+            (
+                "window-scope offset",
+                "toast-stack-offset-bottom (→ size-36) from the window bottom",
+            ),
         ],
         &[
             TokenChip::without_color("space-sm", "card gap"),

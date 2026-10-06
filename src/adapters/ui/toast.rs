@@ -32,7 +32,7 @@ const MAX_PER_SCOPE: usize = 5;
 /// 번역문을 만들 때와 같은 TOAST_MAX_CHARS를 사용한다.
 const MAX_MESSAGE_CHARS: usize = crate::i18n::TOAST_MAX_CHARS;
 use tasty_ui_widgets::{TOAST_FADE_OUT_MS as FADE_OUT_MS, toast_fade_alpha};
-pub use tasty_ui_widgets::{ToastEntryView, ToastScopeView, ToastViewProps};
+pub use tasty_ui_widgets::{ToastEntryView, ToastScopeView, ToastStackBottom, ToastViewProps};
 
 /// 공용 위젯에 Tooltip 레이어 painter를 전달해 다른 UI 위에 토스트를 그린다.
 pub fn draw_toast_view(ctx: &egui::Context, props: &ToastViewProps<'_>) {
@@ -190,8 +190,14 @@ impl ToastManager {
                     alpha: compute_alpha(t, now, reduced_motion),
                 })
                 .collect();
+            // 창 전체를 덮는 스코프는 상태바를 피해 창 하단의 스택 거리 위에 쌓는다.
+            let bottom = match scope {
+                ToastScope::Window | ToastScope::Workspace(_) => ToastStackBottom::Window,
+                ToastScope::Pane(_) | ToastScope::Surface(_) => ToastStackBottom::ScopeMargin,
+            };
             scopes.push(ToastScopeView {
                 scope_rect,
+                bottom,
                 entries,
             });
         }
@@ -390,6 +396,7 @@ mod tests {
     fn view_with_entries_does_not_panic() {
         let scopes = vec![ToastScopeView {
             scope_rect: egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(800.0, 600.0)),
+            bottom: ToastStackBottom::ScopeMargin,
             entries: vec![
                 ToastEntryView {
                     kind: ToastKind::Info,
@@ -412,6 +419,7 @@ mod tests {
     fn view_skips_zero_alpha_entries() {
         let scopes = vec![ToastScopeView {
             scope_rect: egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(800.0, 600.0)),
+            bottom: ToastStackBottom::ScopeMargin,
             entries: vec![ToastEntryView {
                 kind: ToastKind::Warning,
                 message: "invisible".into(),
