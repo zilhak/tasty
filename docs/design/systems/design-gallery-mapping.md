@@ -45,6 +45,8 @@ tab="attach"` / `RemoteFormFrame` variant `attach-ref`·`attach-inline`)를 전�
 
 필터 드롭다운 폭은 `remote-filter-dropdown-width`(240) 토큰이며 테두리를 포함한 폭(border-box)이다. 공용 `filter_dropdown_content_width`가 호출자의 프레임 좌우 합(테두리 + 안쪽 여백)을 빼 안쪽 최소 폭을 낸다. 본체는 egui popup 프레임(`Frame::popup`)의 `total_margin`을, 갤러리 카드는 좌우 테두리 두 개를 뺀다. 그래서 두 구현의 바깥 테두리 폭이 모두 토큰 값과 같다.
 
+드롭다운 안쪽은 kit `ProtocolFilter`의 네 구획(제목 · 목록 · 일괄 선택 링크 · Reset/Apply)을 공용 `draw_protocol_filter_body`가 그린다. 구획마다 위아래 `space-sm`, 좌우 `space-md` 여백을 두고 구획 사이에 `separator` 1px 선을 프레임 폭 전체에 긋는다. 그래서 호출자는 안쪽 여백이 없는 프레임에 담는다. 본체는 popup을 띄우는 scope의 `menu_margin`을 0으로 두고, popup 안쪽 Ui는 컨텍스트 스타일을 받으므로 프레임 여백은 그 scope에서 잰다. 갤러리 카드는 `frame_card_popover`에 그대로 담는다. 목록 스크롤은 `min_scrolled_height`도 상한 168로 두어, 가로로 감싸는 갤러리 행처럼 바깥 높이가 좁은 자리에서도 내용 높이(최대 168)까지 자란다. 제목은 대문자 mono `font-size-micro`, 자간 `letter-spacing-caps`(0.04em, Theme에 자간 토큰이 없어 공용 위젯 상수), 링크는 `font-size-caption` accent 글자 버튼과 separator 색 `·`이다. 체크박스 라벨은 공용 checkbox의 body 크기 proportional 글꼴로 남아 있고, 시안의 mono 12와 다르다.
+
 ## remote_attach — RA02 "Add remote workspace" (Overlays)
 
 디자인 `ui_kits/terminal/overlays/remote_attach.jsx` `RemoteAttach` (+ 갤러리 미러

@@ -858,25 +858,22 @@ pub fn draw_filter(ui: &mut egui::Ui, theme: &Theme) {
                 ),
                 kit::raised_fill(theme),
                 |ui| {
-                    kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
-                        // 내용에 맞춰 크기가 정해지는 카드에서도 목록 높이를 먼저 확보한다.
-                        ui.set_min_height(tasty_ui_widgets::FILTER_DROPDOWN_MAX_HEIGHT.value());
-                        draw_protocol_filter_body(
-                            ui,
-                            theme,
-                            &items,
-                            &ProtocolFilterLabels {
-                                title: "Filter by protocol",
-                                select_all: "Select all",
-                                deselect_all: "Deselect all",
-                                reset: "Reset",
-                                apply: "Apply",
-                                unknown: "unknown",
-                                unknown_hint: "tasty has no dedicated form for this protocol.",
-                            },
-                            &mut draft,
-                        );
-                    });
+                    // 구획 여백과 구분선은 공용 본문이 그린다. 카드는 안쪽 여백 없이 담는다.
+                    draw_protocol_filter_body(
+                        ui,
+                        theme,
+                        &items,
+                        &ProtocolFilterLabels {
+                            title: "Filter by protocol",
+                            select_all: "Select all",
+                            deselect_all: "Deselect all",
+                            reset: "Reset",
+                            apply: "Apply",
+                            unknown: "unknown",
+                            unknown_hint: "tasty has no dedicated form for this protocol.",
+                        },
+                        &mut draft,
+                    );
                 },
             );
         });

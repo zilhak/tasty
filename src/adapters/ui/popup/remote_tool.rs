@@ -756,27 +756,32 @@ fn draw_protocol_filter(
         unknown_hint: t("remote_tool.type_unknown_hint"),
     };
     let mut applied: Option<HashSet<String>> = None;
-    egui::popup::popup_above_or_below_widget(
-        ui,
-        popup_id,
-        &btn,
-        egui::AboveOrBelow::Below,
-        egui::PopupCloseBehavior::CloseOnClickOutside,
-        |ui| {
-            // 토큰은 테두리를 포함한 폭이다. egui popup 프레임의 테두리와 안쪽 여백을 뺀다.
-            let frame_x = egui::Frame::popup(ui.style()).total_margin().sum().x;
-            ui.set_min_width(filter_dropdown_content_width(th, LogicalPx(frame_x)).value());
-            if draw_protocol_filter_body(ui, th, &items, &labels, &mut st.filter_draft) {
-                applied = Some(
-                    st.filter_draft
-                        .iter()
-                        .filter(|p| protocols.iter().any(|x| x == *p))
-                        .cloned()
-                        .collect(),
-                );
-            }
-        },
-    );
+    // 본문의 구획이 프레임 끝까지 닿도록 popup 프레임의 안쪽 여백을 없앤다.
+    ui.scope(|ui| {
+        ui.spacing_mut().menu_margin = egui::Margin::ZERO;
+        // 프레임은 이 scope 의 스타일로 그려지고 popup 안쪽 Ui 는 컨텍스트 스타일을 받으므로,
+        // 테두리 + 안쪽 여백은 여기서 잰다. 토큰은 테두리를 포함한 폭이다.
+        let frame_x = egui::Frame::popup(ui.style()).total_margin().sum().x;
+        egui::popup::popup_above_or_below_widget(
+            ui,
+            popup_id,
+            &btn,
+            egui::AboveOrBelow::Below,
+            egui::PopupCloseBehavior::CloseOnClickOutside,
+            |ui| {
+                ui.set_min_width(filter_dropdown_content_width(th, LogicalPx(frame_x)).value());
+                if draw_protocol_filter_body(ui, th, &items, &labels, &mut st.filter_draft) {
+                    applied = Some(
+                        st.filter_draft
+                            .iter()
+                            .filter(|p| protocols.iter().any(|x| x == *p))
+                            .cloned()
+                            .collect(),
+                    );
+                }
+            },
+        );
+    });
     // 부모 밖으로 나온 드롭다운도 안쪽 클릭으로 인식하도록 영역을 보고한다.
     let overlay_rect = ui
         .memory(|m| m.is_popup_open(popup_id))

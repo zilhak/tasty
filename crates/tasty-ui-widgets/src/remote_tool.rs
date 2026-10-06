@@ -519,9 +519,17 @@ pub fn draw_protocol_filter_button(
     )
 }
 
+/// 필터 드롭다운 제목의 자간 비율 — 디자인 `--tasty-letter-spacing-caps`(0.04em).
+/// Theme 에 자간 토큰이 없어 글꼴 크기에 곱해 논리 픽셀로 바꾼다.
+const FILTER_TITLE_TRACKING_EM: f32 = 0.04;
+
 /// 프로토콜 제외 집합 draft를 편집한다. 체크된 항목은 제외되지 않은 항목이다.
 /// 전체 선택·해제·초기화는 draft를 즉시 바꾸며 적용 버튼만 true를 반환한다.
 /// 팝업 배치·폭([`filter_dropdown_content_width`])과 실제 필터 적용은 호출자가 처리한다.
+///
+/// 시안 `ProtocolFilter` 처럼 제목 · 목록 · 일괄 선택 · Reset/Apply 네 구획을 위아래
+/// space-sm, 좌우 space-md 여백으로 그리고 구획 사이에 separator 선을 둔다. 구획이 프레임
+/// 끝까지 닿으므로 호출자는 안쪽 여백이 없는 프레임에 담는다.
 pub fn draw_protocol_filter_body(
     ui: &mut egui::Ui,
     th: &Theme,
@@ -530,52 +538,123 @@ pub fn draw_protocol_filter_body(
     draft: &mut HashSet<String>,
 ) -> bool {
     let mut applied = false;
-    selectable_label(
-        ui,
-        labels.title,
-        th.text_muted(),
-        th.font_size_caption.value(),
-        true,
-    );
-    ui.add_space(th.spacing_xs.value());
-    egui::ScrollArea::vertical()
-        .max_height(FILTER_DROPDOWN_MAX_HEIGHT.value())
-        .drag_to_scroll(false)
-        .show(ui, |ui| {
-            for item in items {
-                ui.horizontal(|ui| {
-                    let mut checked = !draft.contains(item.name);
-                    if crate::checkbox(ui, th, &mut checked, item.name, true).changed() {
-                        if checked {
-                            draft.remove(item.name);
-                        } else {
-                            draft.insert(item.name.to_string());
+    ui.spacing_mut().item_spacing.y = 0.0;
+    filter_section(ui, th, |ui| {
+        // 목록·링크와 같은 왼쪽 선에서 시작하도록 TextEdit 여백이 없는 일반 라벨로 그린다.
+        let size = th.font_size_micro.value();
+        let mut job = egui::text::LayoutJob::default();
+        job.append(
+            &labels.title.to_uppercase(),
+            0.0,
+            egui::TextFormat {
+                font_id: egui::FontId::monospace(size),
+                color: th.text_muted().into(),
+                extra_letter_spacing: size * FILTER_TITLE_TRACKING_EM,
+                ..Default::default()
+            },
+        );
+        ui.add(egui::Label::new(job).selectable(false));
+    });
+    filter_rule(ui, th);
+    filter_section(ui, th, |ui| {
+        // 바깥 높이가 좁은 자리(가로로 감싸는 행 등)에서도 상한까지 자라고, 내용이 짧으면 줄어든다.
+        egui::ScrollArea::vertical()
+            .max_height(FILTER_DROPDOWN_MAX_HEIGHT.value())
+            .min_scrolled_height(FILTER_DROPDOWN_MAX_HEIGHT.value())
+            .drag_to_scroll(false)
+            .show(ui, |ui| {
+                ui.spacing_mut().item_spacing.y = th.spacing_sm.value();
+                for item in items {
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
+                        let mut checked = !draft.contains(item.name);
+                        if crate::checkbox(ui, th, &mut checked, item.name, true).changed() {
+                            if checked {
+                                draft.remove(item.name);
+                            } else {
+                                draft.insert(item.name.to_string());
+                            }
                         }
-                    }
-                    if item.unknown {
-                        warn_badge(ui, th, labels.unknown, labels.unknown_hint);
-                    }
-                });
+                        if item.unknown {
+                            warn_badge(ui, th, labels.unknown, labels.unknown_hint);
+                        }
+                    });
+                }
+            });
+    });
+    filter_rule(ui, th);
+    filter_section(ui, th, |ui| {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
+            if filter_link(ui, th, labels.select_all).clicked() {
+                draft.clear();
+            }
+            ui.label(
+                egui::RichText::new("·")
+                    .color(th.separator.to_egui_premultiplied())
+                    .size(th.font_size_caption.value()),
+            );
+            if filter_link(ui, th, labels.deselect_all).clicked() {
+                *draft = items.iter().map(|i| i.name.to_string()).collect();
             }
         });
-    hsep(ui, th);
-    ui.horizontal(|ui| {
-        if ghost_button(ui, th, labels.select_all).clicked() {
-            draft.clear();
-        }
-        if ghost_button(ui, th, labels.deselect_all).clicked() {
-            *draft = items.iter().map(|i| i.name.to_string()).collect();
-        }
     });
-    ui.horizontal(|ui| {
-        if ghost_button(ui, th, labels.reset).clicked() {
-            draft.clear();
-        }
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if primary_button(ui, th, labels.apply).clicked() {
-                applied = true;
+    filter_rule(ui, th);
+    filter_section(ui, th, |ui| {
+        ui.horizontal(|ui| {
+            if crate::Button::new(labels.reset)
+                .variant(crate::ButtonVariant::Ghost)
+                .size(crate::ControlSize::Sm)
+                .show(ui, th)
+                .clicked()
+            {
+                draft.clear();
             }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if crate::Button::new(labels.apply)
+                    .variant(crate::ButtonVariant::Primary)
+                    .size(crate::ControlSize::Sm)
+                    .show(ui, th)
+                    .clicked()
+                {
+                    applied = true;
+                }
+            });
         });
     });
     applied
+}
+
+/// 필터 드롭다운의 한 구획 — 위아래 space-sm, 좌우 space-md.
+fn filter_section(ui: &mut egui::Ui, th: &Theme, add: impl FnOnce(&mut egui::Ui)) {
+    egui::Frame::NONE
+        .inner_margin(crate::margin_sym(th.spacing_md, th.spacing_sm))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            add(ui);
+        });
+}
+
+/// 구획 사이의 separator 선. 드롭다운 폭 전체에 걸친다.
+fn filter_rule(ui: &mut egui::Ui, th: &Theme) {
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(ui.available_width(), th.border_width.value()),
+        egui::Sense::hover(),
+    );
+    ui.painter()
+        .rect_filled(rect, 0.0, th.separator.to_egui_premultiplied());
+}
+
+/// 시안 `rtLinkBtn` — 테두리·배경·여백 없는 accent 캡션 글자 버튼.
+fn filter_link(ui: &mut egui::Ui, th: &Theme, label: &str) -> egui::Response {
+    ui.add(
+        egui::Label::new(
+            egui::RichText::new(label)
+                .color(th.accent_primary())
+                .size(th.font_size_caption.value()),
+        )
+        .selectable(false)
+        .sense(egui::Sense::click()),
+    )
+    .on_hover_cursor(egui::CursorIcon::PointingHand)
 }
