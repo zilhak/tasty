@@ -225,6 +225,8 @@ tasty surface-meta list --surface 42
 tasty surface-meta unset --key role --surface 42
 ```
 
+메모는 열려 있는 서피스에만 붙일 수 있습니다. 닫은 서피스 ID를 주면 오류로 거절하고, 서피스를 닫으면 그 서피스의 메모도 함께 지워집니다.
+
 ## 서피스끼리 메시지 주고받기 (큐)
 
 터미널 입력을 건드리지 않고 서피스 간에 메시지를 전달하는 큐입니다.

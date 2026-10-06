@@ -60,6 +60,7 @@ plugin caller 는 메서드별 권한 토큰이 필요하다(`method_meta`). Loc
   - **N 보다 적게 왔을 때 왜인지 물을 수 있다.** 응답에 `is_terminal`(그 surface 뒤에 터미널이 있는가) · `scrollback_len`(현재 스크롤백 줄 수) · `alt_screen`(대체 화면인가)이 함께 실린다. `scrollback_len: 0` 이면 **받은 것이 가진 전부**이고(정상 포화), 0 이 아닌데 N 보다 적게 왔다면 그건 결함이다. 터미널이 아닌 surface(markdown/html/explorer/image)나 없는 surface 는 `is_terminal: false` 와 두 필드 `null` 로 나온다 — **`0` 이 아니다**(0 은 "스크롤백이 비었다" 라는 다른 사실이다). 같은 필드가 `pty.read` 응답에도 실린다.
 - 명령(OSC 133): `surface.{commands,last_command,command_at}`
 - 메타: `surface.meta.{set,get,unset,list}` · `surface.set_cwd`
+  - 지금 열린 surface 에만 쓰고 읽는다. 닫혔거나 없는 `surface_id` 는 다른 surface 대상 요청과 같은 `-32602`(`no live surface <id> (named by 'surface.meta.set')`)로 거절하고 저장소에 항목을 만들지 않는다. surface 를 닫으면 그 surface 의 metadata 도 함께 지운다.
 - 주의 환기(attention): `surface.completion`(발동) · `surface.attention.{get,clear}`(조회·해제). 해제는 `kind` 선택 필터를 받고, 하드 점유 중인 surface 와 mirror surface 는 거절한다(그 상태의 소유자가 다른 인스턴스다) — [surface-highlight](../features/surface-highlight/index.md)
 - 출력 옵저버: `output.observe_{start,stop,list,info}`
 - 동작·파서는 [terminal-output](../features/terminal-output/index.md), 파서 카탈로그 [output-parsers](output-parsers.md). (IME `surface.ime_*` 는 debug 빌드 전용 local-only — release 표면에 없다.)

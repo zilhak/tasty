@@ -1,4 +1,4 @@
-<!-- source-hash: 06ae06bfa6ce -->
+<!-- source-hash: e5be350950a3 -->
 # Driving terminals with the tasty CLI
 
 Use the `tasty` CLI to create terminals, send commands, and read results. Control a running Tasty from a script, or let an AI agent set up the terminals it needs.
@@ -224,6 +224,8 @@ tasty surface-meta get --key role --surface 42
 tasty surface-meta list --surface 42
 tasty surface-meta unset --key role --surface 42
 ```
+
+Notes can only be attached to an open Surface. A closed Surface ID is rejected with an error, and closing a Surface removes its notes as well.
 
 ## Passing messages between Surfaces (queue)
 
