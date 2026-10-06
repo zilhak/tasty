@@ -876,7 +876,14 @@ C 프레임보더) 중 **A 배지가 사용자 확정**되어 갤러리는 A만 
 53자 두 성분은 `/ › … › 부모(64) › 현재` 에서 멈추며, 440×300 의 UNC root 는 180 상한에서 말줄임될 뿐 접히지 않는다.
 카드 라벨은 갤러리가 실제로 그린 단계를 적는다. `…` 메뉴 예제는 깊은 경로가 접히는 피커 바닥 폭(`fp-popup-min-width`)
 카드에 둔다. 갤러리 카드는 크기가 고정이라 직전 단계(히스테리시스)를 넘기지 않는다. 디자인 path bar 는 refresh 하나뿐이고
-갤러리도 그렇다. 본체는 위로 이동 버튼도 있어 같은 피커 폭에서 경로 가용 폭이 그만큼 좁다. 색·간격은 전부 기존 semantic 접근자
+갤러리도 그렇다. 본체는 위로 이동 버튼도 있어 같은 피커 폭에서 경로 가용 폭이 그만큼 좁다. `…` 메뉴(`FpCrumbMenu`) 행은
+갤러리와 본체 모두 공용 `menu_item` 을 쓴다. 시안 행은 높이 28 · 좌우 padding 8 · 아이콘 14 · 간격 8 · 글자 13 ·
+`text-secondary` 이고, 공용 위젯은 padding `menu-item-padding-x`(12) · 아이콘 `icon-size-md`(16) · 글자색 `text-primary` 다.
+갤러리 캡처(Mocha·배율 1)에서 아이콘은 메뉴 테두리 안쪽 18px, 글자는 42px 에서 시작하고, 시안 값으로 계산하면 13·35 다.
+메뉴 폭은 시안이 `box-sizing: border-box` 라 180~320 밴드가 테두리를 포함한 바깥 폭인데, 갤러리는 밴드 안 폭에 1px 테두리를
+더 그려 최소 밴드에서 바깥 폭이 182 다. 현재 폴더 crumb 은 시안이 `fontWeight: 600` 이지만 egui 가 semibold 를 고르지 못해
+보통 굵기로 그린다. crumb 글자는 시안 raw 12 대신 `font-size-caption`(11) 토큰이다. 이 차이들은 디자인 회신을 기다리며 본체와
+같게 둔다. 색·간격은 전부 기존 semantic 접근자
 (`accent_info`/`surface_active`/`accent_primary`/`text_placeholder`/`bg_sidebar` 등)와
 기존 위젯(`kit::field`/`checkbox`/`Spinner`/`Button`/`IconButton`)으로 해소.
 
