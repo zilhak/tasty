@@ -596,7 +596,7 @@ inline fallback 은 v2 에서 거절한다.
 
 ### 후처리 CLI (`postprocess`)
 
-run·custom task 는 본 작업 뒤 CLI 하나를 실행해 그 stdout 을 최종 출력으로 삼을 수 있다. 모델 접속·인증·질문 작성은 CLI 의 일이고, Tasty 는 명령 실행·입출력·타입 검증·실패 처리만 한다. CLI 는 호스트 프로세스의 환경변수를 그대로 받으므로 인증은 기존 환경을 쓴다. 근거는 [ADR-0073](../adr/0073-typed-task-postprocess-runs-inside-the-attempt.md).
+run·custom task 는 본 작업 뒤 CLI 하나를 실행해 그 stdout 을 최종 출력으로 삼을 수 있다. 모델 접속·인증·질문 작성은 CLI 의 일이고, Tasty 는 명령 실행·입출력·타입 검증·실패 처리만 한다. 인증은 기존 환경을 쓴다. 근거는 [ADR-0073](../adr/0073-typed-task-postprocess-runs-inside-the-attempt.md).
 
 ```json
 {"id": "judge",
@@ -613,6 +613,7 @@ run·custom task 는 본 작업 뒤 CLI 하나를 실행해 그 stdout 을 최�
 ```
 
 - `command`: 실행 파일과 인자. 셸을 거치지 않고 직접 실행한다. 셸이 필요하면 `["sh", "-c", ...]` 처럼 셸을 명시한다. 입력 값은 명령 문자열에 끼워 넣지 않고 stdin 으로만 간다. TTY 가 없는 CLI 만 지원한다.
+- 환경변수: Tasty 프로세스의 환경을 받는다. 바깥 Claude Code 세션의 표지·비밀(터미널 셸에서도 지우는 `CLAUDECODE`·`CLAUDE_CODE_SESSION_ID`·`CLAUDE_CODE_ENTRYPOINT`·`CLAUDE_CODE_MESSAGING_TOKEN` 등의 고정 목록, `CLAUDE_PLUGIN_OPTION_*`·`CMUX_*`, `claude-code_`·`claude-code/` 로 시작하는 `AI_AGENT`)만 지운다. 목록은 `tasty_utils::process` 의 `STRIPPED_ENV_*` 다. `CLAUDE_CODE_OAUTH_TOKEN`·`ANTHROPIC_API_KEY` 같은 사용자 설정·인증과, Tasty 프로세스에 있는 `TASTY_*`(예: `TASTY_HOME`, 부팅 때 정한 `TASTY_LOCALE`)는 그대로 넘긴다. Tasty 는 task 별 변수(`TASTY_SURFACE_ID` 등)를 더하지 않는다.
 - `cwd`: 생략하면 run 의 `cwd`, 그것도 없으면 호스트 프로세스의 디렉터리.
 - `stdin`: stdin 에 쓸 JSON object 의 필드별 출처. `from` 은 `input`(이 회차의 입력 snapshot, wire 형식), `raw`(본 작업 원본 `{exit_code?, execution?}`), `artifacts` 이고 `pointer` 로 그 안의 위치를 고른다. 위치에 값이 없으면 실행하지 않고 `stdin_mapping` 실패다. 생략하면 `{}` 를 쓴다. 문서 하나를 쓰고 stdin 을 닫는다.
 - `stdout.format`: `json`(기본)은 JSON 값 정확히 하나, `text` 는 UTF-8 문자열 그대로. json 형식이 실패해도 text 로 바꾸지 않는다. `stdout.pointer` 는 json 형식에서만 쓰며 그 위치의 값을 출력 후보로 고른다. 생략하면 값 전체다.
@@ -652,6 +653,8 @@ stdout 해석과 성공 판정:
 
 출력 후보가 출력 타입에 맞지 않으면 `output_validation` 실패이고 재시도하지 않는다.
 
+재시도하지 않는 이유: `output_validation` 은 CLI 와 계약이 어긋난 것이라 같은 입력으로 다시 실행해도 고쳐질 근거가 없다. `stdin_mapping` 은 재시도도 같은 본 작업 결과를 쓰므로 바뀌지 않는다. `cancelled` 는 사용자·러너의 중단 의도이고, `outcome_unknown` 은 다시 실행하면 같은 후처리가 두 번 실행될 수 있다. 상한(stdout 256 KiB, stderr 16 KiB, 24시간, 재시도 10번·대기 1시간)의 근거는 ADR-0073 에 있다.
+
 결과:
 
 - `raw.exit_code`·`raw.execution` 은 본 작업 원본 그대로다. `raw.postprocess` 에 `command`, 회차 안의 실행 번호 `run`, `exit_code`, `stderr`(tail)·`stderr_truncated`, 실패면 `cause`, pointer 를 썼으면 stdout 전체(`stdout`), 재시도로 넘어간 앞선 실행(`failed_runs`: 번호·원인·종료 코드·메시지)이 있다.
@@ -663,7 +666,7 @@ stdout 해석과 성공 판정:
 - 시간 초과·취소는 그 실행이 만든 프로세스 그룹(Unix, 자식을 새 그룹 리더로 띄운다)이나 job(Windows)만 종료한다. 직접 자식이 끝난 뒤에도 자손이 파이프를 쥐고 있으면 EOF 를 기다리다 시간 초과로 그룹을 종료한다. Linux 는 끝난 리더를 회수하지 않고 관찰해 그룹을 종료할 때까지 그룹 id 가 재사용되지 않는다. 다른 Unix 는 리더를 회수한 뒤에는 그룹을 종료하지 않는다. 스스로 새 세션·그룹으로 옮긴 프로세스나 Windows 에서 job 에 넣기 전에 만든 프로세스는 종료 대상에 들지 않는다.
 - 취소된 task 의 permit 은 실행이 끝난 것을 확인한 다음 tick 에 놓는다.
 - 각 실행 보고는 `tasty.agent.postprocess_result.<task id>` 에 회차 id 와 함께 저장한다. 재시작하면 `phase` 로 복원한다. `pending` 은 예약대로 실행하고, `started` 는 같은 회차·번호의 저장된 보고가 있으면 그것으로 확정하며 없으면 `outcome_unknown` 으로 끝낸다. 결과 불명인 실행은 재시도 예산이 남아도 다시 실행하지 않는다. 다시 실행하려면 `retry` 로 새 회차를 연다(본 작업부터 실행한다).
-- 러너가 멈추면(workspace 정리·앱 종료) 진행 중인 후처리를 `cancelled` 로 중단한다.
+- 러너가 멈추면(workspace 정리·앱 종료) 진행 중인 후처리를 `cancelled` 로 중단하고 보고를 저장한다. 재시작 뒤 그 task 는 이 보고로 실패하며 재시도 예산이 남아도 다시 실행하지 않는다. 보고를 저장하기 전에 호스트가 끝났으면 `outcome_unknown` 이다.
 
 ### 입력 binding
 

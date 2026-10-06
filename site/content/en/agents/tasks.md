@@ -1,4 +1,4 @@
-<!-- source-hash: 77d2887982b7 -->
+<!-- source-hash: 83d9c3d6ef91 -->
 <a id="task-dag"></a>
 
 # Task workflows (DAG)
@@ -104,13 +104,13 @@ To run a task's result through another command (a judge or summary tool, say) an
                  "retry": {"max_retries": 1}}}
 ```
 
-- The command runs as is, without a shell. If you need one, write it out, as in `["sh", "-c", "..."]`. Sign-in uses the environment Tasty was started from.
+- The command runs as is, without a shell. If you need one, write it out, as in `["sh", "-c", "..."]`. Sign-in uses the environment Tasty was started from. If you started Tasty inside Claude Code, the variables that point at that session are not passed on (the same as in the terminal).
 - `stdin` sets the fields of the JSON written to standard input. `from` is `input` (the task's input), `raw` (the main work's result) or `artifacts`, and `pointer` picks a value inside it.
 - By default standard output must be exactly one JSON value. With `"stdout": {"format": "text"}` the text is taken as is. Progress logs sent to standard error stay out of the result.
 - `timeout_ms` is required. When it runs out or the task is cancelled, the command and the processes it started are stopped.
 - With `retry`, a failure reruns only the postprocess that many times; the main work does not run again.
 - Until the postprocess finishes, the task shows as running (`phase` in `task-get`) and the next tasks wait. The reason for a failure is in the task result's `raw.postprocess`.
-- If Tasty restarts while a postprocess runs, that postprocess is not run again and the task fails. To try again, rerun the task with `task-retry`.
+- If Tasty quits or restarts while a postprocess runs, that postprocess is not run again and the task fails. To try again, rerun the task with `task-retry`.
 
 While Tasty runs on [temporary memory](cli.md#memory-shared-between-agents) because it could not open its memory file, a graph would not survive a restart, so sending it as is gets refused. For a graph that may be lost on restart, add `"durability": "best_effort"`.
 

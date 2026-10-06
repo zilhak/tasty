@@ -26,7 +26,18 @@
 - 재시도가 남은 실패 보고는 다음 실행을 `Pending` 으로 예약하고 task 를 Running 으로 둔다. 마지막 보고에서만 결과를 확정하고 종결하므로 `on_failure` 와 하류 반영은 한 번 일어난다. permit 은 그 종결 때 놓는다.
 - 재시작 때 `Started` 인데 저장된 보고가 없으면 `outcome_unknown` 실패로 끝내고 재시도 예산이 남아도 다시 실행하지 않는다. 살아 있는 PID 는 같은 프로세스라는 증거가 아니므로 쓰지 않는다. 저장된 보고가 있으면 그것으로 확정하고, `Pending` 이면 예약대로 실행한다.
 - 취소·시간 초과는 그 실행이 만든 프로세스 그룹(Windows 는 job)만 종료하고, 종료를 확인한 뒤에 permit 을 놓는다.
-- 출력 검증 실패(`output_validation`)·취소·결과 불명·stdin 매핑 오류는 재시도하지 않는다. 같은 입력으로 다시 실행해도 달라질 근거가 없거나 중복 실행이 될 수 있기 때문이다.
+- 재시도 대상에서 넷을 뺀다. 나머지 실패(시작 실패·0 이 아닌 종료·신호·시간 초과·stdin 쓰기·stdout 수집과 형식 오류)는 CLI 의 일시적 상태로 달라질 수 있어 예산 안에서 다시 실행한다.
+  - `output_validation`: CLI 가 형식에 맞는 값을 냈지만 선언한 타입이 아니다. 계약과 CLI 가 어긋난 것이라 같은 입력으로 다시 실행해 고쳐질 근거가 없고, 다시 실행하면 비용만 반복된다.
+  - `stdin_mapping`: 저장한 본 작업 결과에 선언한 위치가 없다. 재시도도 같은 결과로 하므로 결과가 바뀌지 않는다.
+  - `cancelled`: 사용자가 취소했거나 러너가 멈췄다. 다시 실행하면 취소한 의도를 거스른다.
+  - `outcome_unknown`: 실행이 끝났는지 모른다. 다시 실행하면 같은 후처리가 두 번 실행될 수 있다.
+- 러너가 멈추면(workspace 정리·앱 종료) 진행 중인 후처리를 `cancelled` 로 중단하고 그 보고를 저장한다. 재시작 뒤에는 그 보고로 실패가 확정되며 다시 실행하지 않는다. 멈춘 시점에 프로세스를 끝냈으므로 결과가 불명인 것이 아니라 중단된 것이고, 재시작 뒤 자동으로 다시 실행하면 사용자가 모르는 사이에 외부 CLI 가 다시 불린다. 보고를 저장하기 전에 호스트가 끝나면 `outcome_unknown` 이 된다.
+- 상한은 다음과 같다. 계약 검사가 범위 밖 값을 생성 때 거절한다.
+  - stdout 수집 256 KiB(`MAX_POSTPROCESS_STDOUT_BYTES`): 출력은 task 레코드의 `typed_result.output` 과 v1 투영 `result.output` 에 두 번 들어가고, pointer 를 쓰면 `raw.postprocess.stdout` 에도 들어간다. 레코드 하나가 memory 값 상한 1 MiB 안에 남도록 그 3분의 1 아래로 잡았다. 넘으면 잘린 값으로 성공시키지 않고 실패한다.
+  - stderr 16 KiB tail(`POSTPROCESS_STDERR_TAIL_BYTES`): 진단용이며 같은 레코드에 들어간다. 마지막 실행의 것만 남긴다.
+  - `timeout_ms` 1 ms ~ 24시간(`MAX_POSTPROCESS_TIMEOUT_MS`): 무기한 대기는 받지 않는다. 모델 호출 같은 긴 작업을 담되 permit 을 하루 넘게 쥐지 않게 한다.
+  - `max_retries` 1 ~ 10(`MAX_POSTPROCESS_RETRIES`), `delay_ms` 최대 1시간(`MAX_POSTPROCESS_RETRY_DELAY_MS`): 재시도 동안 permit 을 쥐므로 횟수와 대기를 유한하게 묶는다. 재시도로 넘어간 실행의 요약도 레코드에 쌓인다.
+- 후처리 자식은 Tasty 프로세스의 환경을 받되, 바깥 Claude Code 세션이 남긴 표지·비밀(`CLAUDECODE`, `CLAUDE_CODE_SESSION_ID` 등 세션 식별 변수, `CLAUDE_PLUGIN_OPTION_*`, Claude Code 가 넣은 `AI_AGENT` 값)은 지운다. 목록은 터미널 셸이 쓰는 것과 같다(`tasty_utils::process::is_stripped_inherited_env`). 이 값이 남으면 후처리가 부르는 Claude Code 가 자신을 바깥 세션의 자식으로 오인하고 세션 비밀이 무관한 프로세스로 샌다. 사용자가 넣는 설정·인증(`CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY` 등)과 `TASTY_*` 는 그대로 넘긴다. Tasty 가 task 별 변수를 더하지는 않는다.
 
 계약 형식, stdout 해석, 실패 원인 목록은 [agent runner 가이드](../dev-guide/agent-runner.md)의 "후처리 CLI" 절에 있다.
 
