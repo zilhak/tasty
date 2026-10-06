@@ -462,6 +462,12 @@ default_hint = "Applied to Terminal, Markdown and Explorer alike. Each sub-tab c
 override_heading = "Font override"
 override_hint = "Uncheck \"Use default\" on a row to set a surface-specific value."
 use_default_label = "Use default"
+# 글꼴 override 행 라벨 — 행 형태라 콜론이 없다. 기본 글꼴 격자는 콜론 붙은 기존 키를 쓴다.
+override_family_label = "Font family"
+override_custom_font_label = "Custom font file"
+override_size_label = "Font size"
+override_line_height_label = "Line height"
+override_scale_mode_label = "Font DPI scaling"
 
 [settings.notifications]
 heading = "Notifications"

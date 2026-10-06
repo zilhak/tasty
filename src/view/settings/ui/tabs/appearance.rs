@@ -1775,9 +1775,12 @@ fn font_override_grid(
             th.field_width_lg,
             use_default,
             |ui, cell| match cell {
-                OverrideCell::Label => {
-                    override_label(ui, &th, t("settings.appearance.font_family_label"), None)
-                }
+                OverrideCell::Label => override_label(
+                    ui,
+                    &th,
+                    t("settings.appearance.font.override_family_label"),
+                    None,
+                ),
                 OverrideCell::Control => {
                     let mut family_value = ov
                         .font_family
@@ -1808,9 +1811,12 @@ fn font_override_grid(
             th.field_width_lg,
             use_default,
             |ui, cell| match cell {
-                OverrideCell::Label => {
-                    override_label(ui, &th, t("settings.appearance.custom_font_label"), None)
-                }
+                OverrideCell::Label => override_label(
+                    ui,
+                    &th,
+                    t("settings.appearance.font.override_custom_font_label"),
+                    None,
+                ),
                 OverrideCell::Control => {
                     let mut path_value = ov
                         .custom_font_path
@@ -1838,9 +1844,12 @@ fn font_override_grid(
             th.field_width_xs,
             use_default,
             |ui, cell| match cell {
-                OverrideCell::Label => {
-                    override_label(ui, &th, t("settings.appearance.font_size_label"), None)
-                }
+                OverrideCell::Label => override_label(
+                    ui,
+                    &th,
+                    t("settings.appearance.font.override_size_label"),
+                    None,
+                ),
                 OverrideCell::Control => {
                     let mut size_value = ov.font_size.unwrap_or(default.font_size) as f64;
                     super::number::number_field(
@@ -1870,7 +1879,7 @@ fn font_override_grid(
                 OverrideCell::Label => override_label(
                     ui,
                     &th,
-                    t("settings.appearance.line_height_label"),
+                    t("settings.appearance.font.override_line_height_label"),
                     Some(t("settings.appearance.line_height_tooltip")),
                 ),
                 OverrideCell::Control => {
@@ -1902,7 +1911,7 @@ fn font_override_grid(
                 OverrideCell::Label => override_label(
                     ui,
                     &th,
-                    t("settings.appearance.font_scale_mode_label"),
+                    t("settings.appearance.font.override_scale_mode_label"),
                     Some(t("settings.appearance.font_scale_mode_tooltip")),
                 ),
                 OverrideCell::Control => {

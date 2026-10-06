@@ -462,6 +462,12 @@ default_hint = "ターミナル、マークダウン、エクスプローラー�
 override_heading = "個別のフォント設定"
 override_hint = "各項目で「デフォルトを使用」をオフにすると、このサーフェス専用の値を指定できます。"
 use_default_label = "デフォルトを使用"
+# 글꼴 override 행 라벨 — 행 형태라 콜론이 없다. 기본 글꼴 격자는 콜론 붙은 기존 키를 쓴다.
+override_family_label = "フォント"
+override_custom_font_label = "カスタムフォントファイル"
+override_size_label = "フォントサイズ"
+override_line_height_label = "行の高さ"
+override_scale_mode_label = "フォントDPIスケーリング"
 
 [settings.notifications]
 heading = "通知"

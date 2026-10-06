@@ -462,6 +462,12 @@ default_hint = "터미널, 마크다운, 탐색기에 공통으로 적용합니�
 override_heading = "개별 폰트 설정"
 override_hint = "항목의 \"기본값 사용\"을 끄면 이 서피스에만 적용할 값을 지정할 수 있습니다."
 use_default_label = "기본값 사용"
+# 글꼴 override 행 라벨 — 행 형태라 콜론이 없다. 기본 글꼴 격자는 콜론 붙은 기존 키를 쓴다.
+override_family_label = "폰트"
+override_custom_font_label = "커스텀 폰트 파일"
+override_size_label = "글자 크기"
+override_line_height_label = "줄 높이"
+override_scale_mode_label = "폰트 DPI 스케일링"
 
 [settings.notifications]
 heading = "알림"
