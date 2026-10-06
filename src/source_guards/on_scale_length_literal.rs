@@ -167,7 +167,8 @@ const AREAS: &[(&str, usize, &str)] = &[
         // 원격 도구 Passkeys 예제의 경고 배지 높이 16은 디자인 `WarnBadge`의 height 16이며 역할 토큰이 없다.
         // transfer 예제의 여백 상수는 본체와 같은 transfer-* 토큰으로 옮겨 집계에서 빠졌다.
         // HTML 로드 실패 예제의 surface 높이 220은 디자인 `HtmlSurfaceG`의 `height={220}`이며 역할 토큰이 없다.
-        142,
+        // 파일 선택 필터 칩 예제의 카드 높이 300은 디자인 Spec의 `--tasty-size-300`이며 역할 토큰이 없다.
+        143,
         "갤러리 specimen은 배율 검사에서 제외돼도 스케일 검사는 받는다(ADR-0039). 이름 붙은 치수와 인라인 값, 전시 목적을 별도로 분류한다.",
     ),
     (
@@ -627,7 +628,7 @@ fn the_gallery_share_is_one_question_or_it_is_not() {
     );
     assert_eq!(
         (named_cited, named_plain, inline_cited, inline_plain),
-        (58, 76, 0, 13),
+        (59, 76, 0, 13),
         "갤러리 후보의 (이름 있음/없음, 디자인 언급 있음/없음) 분류 수가 바뀌었다. 해당 선언과 주석을 확인하고 기록을 갱신한다."
     );
 }
@@ -757,7 +758,8 @@ fn the_blind_spots_are_still_the_size_they_say() {
         // 첫 실행 셸 설정 화면이 공용 view로 옮겨 가며 카드 배치의 0 리터럴이 하나 줄었다.
         // 플러그인 추가 프리뷰의 공용 view가 카드 안 세로 간격만 주는 0 리터럴 하나를 더한다.
         // webview chrome과 갤러리 html chrome 타일의 좌우 전용 여백이 세로 0 두 개를 더한다.
-        (187, 410),
+        // The file picker filter chip clamps its text cap and the gallery name field's chip share at zero (2 literals).
+        (189, 410),
         "제외한 0과 test 전용 코드의 수가 달라졌다. 실제 사용과 수집 범위의 변경을 확인하고 기록을 갱신한다."
     );
     let roster: usize = UNIT_SPACE_SITES.iter().map(|(.., n, _)| n).sum();

@@ -1,11 +1,11 @@
 //! 파일 선택 예제의 이름 입력, 안내, 확인·취소 버튼.
 
 use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::{Button, ButtonVariant};
-
-use super::{
-    CRUMB_GLYPH, FOLDER_SEL, FOOTER_CHIP_W, FRAME_W, FpState, MULTI_PICKED, Mode, Variant,
+use tasty_ui_widgets::{
+    Button, ButtonVariant, filter_readout, filter_readout_label, filter_readout_width,
 };
+
+use super::{CRUMB_GLYPH, FOLDER_SEL, FpState, MULTI_PICKED, Mode, Variant};
 use crate::catalog::icons;
 use crate::catalog::widgets::dialog as kit;
 use tasty_type_appearance::theme::Theme;
@@ -31,7 +31,7 @@ pub(super) fn footer_height(ui: &egui::Ui, theme: &Theme, v: Variant) -> Logical
 
 pub(super) fn footer(ui: &mut egui::Ui, theme: &Theme, v: Variant, footer_h: LogicalPx) {
     let (rect, _) = ui.allocate_exact_size(
-        egui::vec2(FRAME_W.value(), footer_h.value()),
+        egui::vec2(v.w.value(), footer_h.value()),
         egui::Sense::hover(),
     );
     ui.painter().hline(
@@ -87,9 +87,13 @@ pub(super) fn footer(ui: &mut egui::Ui, theme: &Theme, v: Variant, footer_h: Log
                 );
             },
         );
-        let remaining = ui.available_width();
-        let input_w =
-            (LogicalPx(remaining) - FOOTER_CHIP_W - theme.fp_section_gap()).max(LogicalPx(0.0));
+        // 필터 칩은 내용 폭이라 먼저 재고, 이름 칸이 나머지를 갖는다. 필터가 없으면 칩도 없다.
+        let filter = filter_readout_label(v.filters);
+        let chip_w = filter
+            .as_deref()
+            .map(|label| filter_readout_width(ui, theme, label) + theme.fp_section_gap())
+            .unwrap_or(LogicalPx(0.0));
+        let input_w = (LogicalPx(ui.available_width()) - chip_w).max(LogicalPx(0.0));
         kit::field(
             ui,
             theme,
@@ -102,7 +106,9 @@ pub(super) fn footer(ui: &mut egui::Ui, theme: &Theme, v: Variant, footer_h: Log
             placeholder,
             false,
         );
-        type_filter_chip(ui, theme);
+        if let Some(label) = filter.as_deref() {
+            filter_readout(ui, theme, label, &format!("Showing {label}"));
+        }
     });
 
     if v.folder_sel {
@@ -197,40 +203,4 @@ fn overwrite_line(ui: &mut egui::Ui, theme: &Theme, name: &str) {
         );
         ui.label(job);
     });
-}
-
-/// "All files ▾" 타입 필터 칩 — 정적(팝오버 미열림) specimen.
-fn type_filter_chip(ui: &mut egui::Ui, theme: &Theme) {
-    let h = theme.fp_filter_height().value();
-    let (rect, _) =
-        ui.allocate_exact_size(egui::vec2(FOOTER_CHIP_W.value(), h), egui::Sense::hover());
-    ui.painter().rect_filled(
-        rect,
-        theme.corner_radius.value(),
-        theme.bg_panel().to_egui(),
-    );
-    ui.painter().rect_stroke(
-        rect,
-        theme.corner_radius.value(),
-        egui::Stroke::new(theme.border_width.value(), theme.border_strong().to_egui()),
-        egui::StrokeKind::Inside,
-    );
-    let pad = theme.spacing_sm.value();
-    ui.painter().text(
-        egui::pos2(rect.left() + pad, rect.center().y),
-        egui::Align2::LEFT_CENTER,
-        "All files",
-        egui::FontId::proportional(theme.font_size_caption.value()),
-        theme.text_secondary().to_egui(),
-    );
-    let ir = egui::Rect::from_min_size(
-        egui::pos2(
-            rect.right() - pad - CRUMB_GLYPH.value(),
-            rect.center().y - CRUMB_GLYPH.value() * 0.5,
-        ),
-        egui::vec2(CRUMB_GLYPH.value(), CRUMB_GLYPH.value()),
-    );
-    icons::CHEVRON_DOWN
-        .image(CRUMB_GLYPH.value(), theme.text_muted().to_egui())
-        .paint_at(ui, ir);
 }

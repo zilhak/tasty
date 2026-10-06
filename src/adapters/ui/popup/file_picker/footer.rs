@@ -1,7 +1,9 @@
 //! 이름·안내·확정 버튼을 표시하는 푸터. 목록보다 먼저 높이를 확보한다.
 
 use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::{Button, ButtonVariant, Input};
+use tasty_ui_widgets::{
+    Button, ButtonVariant, Input, filter_readout, filter_readout_label, filter_readout_width,
+};
 
 use super::{
     CRUMB_GLYPH, FilePickerAction, FilePickerMode, FilePickerProps, FpViewState, selected_folder,
@@ -77,7 +79,13 @@ pub(super) fn draw_footer(
         label,
         th.text_muted().into(),
     );
-    let field_w = row.available_width().max(0.0);
+    // 필터 칩은 내용 폭이라 먼저 재고, 이름 칸이 나머지를 갖는다. 필터가 없으면 칩도 없다.
+    let filter = filter_readout_label(props.filters);
+    let chip_w = filter
+        .as_deref()
+        .map(|label| filter_readout_width(&row, th, label).value() + gap)
+        .unwrap_or(0.0);
+    let field_w = (row.available_width() - chip_w).max(0.0);
     match props.mode {
         FilePickerMode::Open { selection_text } => {
             read_only_field(
@@ -99,6 +107,10 @@ pub(super) fn draw_footer(
                 *action = FilePickerAction::EditName(buf);
             }
         }
+    }
+    if let Some(label) = filter.as_deref() {
+        let tooltip = props.filter_showing.replace("{list}", label);
+        filter_readout(&mut row, th, label, &tooltip);
     }
 
     if let Some(folder) = selected_folder(props) {

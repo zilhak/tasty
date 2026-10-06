@@ -1,4 +1,4 @@
-<!-- source-hash: 240c587d99ba -->
+<!-- source-hash: 65ecdfb1b83d -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -28,6 +28,8 @@ A Surface opened from a file is split · moved · closed · restored on restart 
 Drag the file chooser by its top row, the one with the title and ✕. Closing it with ✕, **Cancel**, or `Esc` opens nothing.
 
 In the file chooser, the list has a row of column names for name, size and modification date, and the selected row carries a coloured bar on its left edge. Long file names end with `…` so they do not overlap the size and modification date. This only changes the display; selecting or opening an entry still uses its full name.
+
+When the chooser was opened for certain file types only (for example, importing key bindings shows only `.toml`), a box to the right of the name field lists those extensions, such as `*.toml`. A long list ends with `…`; hover over it to see the whole list. The box only tells you what is shown — you cannot click it to change the filter. A chooser opened without a file type has no such box.
 
 In the list, a single click selects the row, file or folder; a double click enters a folder or opens a file. Pressing **Open** with a folder selected enters that folder — the way down by keyboard. When choosing where to save, a folder cannot be the target, so selecting one leaves the name field as it is and shows a grey line below saying so. When saving, double-clicking a file only fills in its name and does not save — this leaves you the chance to read the overwrite warning.
 

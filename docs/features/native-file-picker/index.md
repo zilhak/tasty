@@ -195,6 +195,13 @@ markdown의 Browse처럼 plugin이 호스트의 파일 선택 창을 열어야 �
 직전 `matches_filters` 로 파일 엔트리만 걸러낸다(디렉토리는 필터와 무관하게 항상 표시 —
 내비게이션 대상이라 숨기면 하위로 못 들어간다).
 
+**필터 칩**: `filters` 가 있으면 footer 이름 행의 오른쪽 끝에 그 목록을 읽기 전용 칩으로
+보여 준다(`tasty_ui_widgets::filter_readout`). 글자는 `*.toml, *.json` 처럼 호출자 순서·소문자로
+mono caption 이며, 칩은 내용 폭이다. `fp-filter-max-width` 를 넘으면 끝을 `…` 로 줄이고, hover 툴팁
+(`filepicker.filter_showing`, "Showing {list}")이 전체 목록을 보여 준다. 메뉴·chevron·채움·hover·
+포커스가 없다 — 바꿀 수 있는 것이 없기 때문이다. 필터가 없으면 칩이 없고 이름 칸이 그 폭을 갖는다.
+메인 피커와 설정 창의 파일 선택, 열기·저장 모드 모두 같다. 저장 모드에서 이름에 확장자를 덧붙이지 않는다.
+
 **시작 위치 — `start_dir?: string` · `origin_surface_id?: u32`**: 피커는 그것을 띄운 surface 의
 폴더에서 출발한다(`FilePickerStart`, `src/adapters/ui/popup/file_picker.rs`). 두 필드 모두
 옵셔널이라 기존 호출자는 그대로 동작한다.
@@ -306,8 +313,8 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
 - **멀티 셀렉트 / 메인 피커의 파일명 직접 입력** — 현재는 단일 선택만 지원(`FilePickerData::selected`
   는 매번 교체). 메인 피커는 열기 전용이라 footer 이름 칸이 읽기 전용이다 — 편집 가능한 이름 칸은
   설정 창의 저장 모드에만 있다.
-- **타입 필터 칩** — 디자인 footer 의 "All files ▾" 칩은 구현되지 않았다. 필터는 호출처가 정하는
-  `filters` 뿐이다. 디자인에는 칩을 눌렀을 때의 동작과 필터가 있을 때의 문구가 없다.
+- **필터 선택** — 사용자가 필터를 바꾸는 선택기는 없다. 필터는 호출처가 정하는 `filters` 뿐이고
+  footer 칩은 그것을 보여 주기만 한다.
 - **`StreamControl` enum 확장** — capture 패턴과 동일하게 그 enum 을 건드리지 않고 별도 `event`
   태그를 같은 채널에 얹었다.
 - **대형 원격 디렉토리의 페이지네이션** — 700KiB 예산을 넘는 나머지는 truncation 으로만
@@ -377,6 +384,10 @@ view 는 `FilePickerProps` 만 받고 `FilePickerAction` 만 돌려주므로 상
   응답한다.
 - Given 설정 창 파일 선택이 `lua` 필터로 열림 Then `.lua` 가 아닌 파일은 목록에 없고 디렉토리는
   보이며, 디렉토리나 필터 밖 파일은 확정되지 않는다.
+- Given 피커가 `filters: ["toml", "json"]` 으로 열림 Then footer 이름 행 오른쪽 끝에 `*.toml, *.json`
+  칩이 있고, 칩에 마우스를 올리면 "Showing *.toml, *.json" 툴팁이 뜬다. 칩을 눌러도 아무것도 열리지 않는다.
+- Given 피커가 필터 없이 열림 Then footer 에 필터 칩이 없고 이름 칸이 행 끝까지 간다.
+- Given 확장자가 많아 목록이 `fp-filter-max-width` 보다 김 Then 칩은 그 폭에서 끝이 `…` 로 줄고 툴팁은 전체 목록이다.
 - Given 설정 창 파일 선택에서 파일을 확정 Then 그 절대 경로가 연 쪽(`consumer`)으로 돌아간다
   (스크립트 Add card 는 파일 경로와, 비어 있으면 표시 이름을 채운다).
 - Given 설정 창 파일 선택이 Esc 또는 헤더 ✕ 로 닫힘 Then 결과는 `Cancelled` 이고 연 쪽의

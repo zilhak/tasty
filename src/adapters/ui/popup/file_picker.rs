@@ -142,6 +142,10 @@ pub struct FilePickerProps<'a> {
     pub col_name: &'a str,
     pub col_size: &'a str,
     pub col_modified: &'a str,
+    /// 호출자가 넘긴 확장자 필터(점 없음, 호출자 순서). 비면 footer 에 필터 칩을 그리지 않는다.
+    pub filters: &'a [String],
+    /// 필터 칩 툴팁. `{list}` 자리에 줄이지 않은 확장자 목록이 들어간다.
+    pub filter_showing: &'a str,
 }
 
 /// 선택한 폴더 하나의 이름. 푸터 안내와 확정 버튼이 같은 판정을 쓴다.
@@ -774,6 +778,8 @@ pub fn draw_file_picker(
         col_name: t("filepicker.column.name"),
         col_size: t("filepicker.column.size"),
         col_modified: t("filepicker.column.modified"),
+        filters: &data.filters,
+        filter_showing: t("filepicker.filter_showing"),
     };
 
     let out = draw_file_picker_view(ui, &props);

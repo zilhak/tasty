@@ -1038,6 +1038,14 @@ pub fn pages() -> Vec<Page> {
                             ),
                             components::file_picker::draw_gesture_table,
                         ),
+                        spec(
+                            "filepicker-filter-chip",
+                            "File-type filter chip — a read-only readout",
+                            Some(
+                                "caller's extensions in mono · hidden without a filter · capped at fp-filter-max-width, then ellipsis + tooltip",
+                            ),
+                            components::file_picker::draw_filter_chip,
+                        ),
                     ],
                 ),
                 section(

@@ -103,6 +103,21 @@ fn painted_frames(
     frames: usize,
     events: &dyn Fn(usize, egui::Rect) -> Vec<egui::Event>,
 ) -> (egui::Rect, Vec<egui::epaint::ClippedShape>) {
+    painted_frames_filtered(popup, crumbs, mode, entries, selection, frames, events, &[])
+}
+
+/// [`painted_frames`] 에 호출자 확장자 필터를 더한 것.
+#[allow(clippy::too_many_arguments)] // reason: 시험 하네스가 뷰 props 의 축을 그대로 받는다
+fn painted_frames_filtered(
+    popup: &crate::adapters::ui::popup::PopupState,
+    crumbs: &[CrumbView],
+    mode: FilePickerMode<'_>,
+    entries: &[FilePickerEntryView],
+    selection: &str,
+    frames: usize,
+    events: &dyn Fn(usize, egui::Rect) -> Vec<egui::Event>,
+    filters: &[String],
+) -> (egui::Rect, Vec<egui::epaint::ClippedShape>) {
     let th = crate::theme::theme();
     let ctx = egui::Context::default();
     let content = popup.content_rect();
@@ -137,6 +152,8 @@ fn painted_frames(
         col_name: "Name",
         col_size: "Size",
         col_modified: "Modified",
+        filters,
+        filter_showing: "Showing {list}",
     };
     let mut out = Vec::new();
     // 첫 프레임은 폰트가 확정되지 않아 galley 가 비는 경우가 있어 두 번 이상 돈다.
@@ -794,5 +811,74 @@ fn the_last_row_is_fully_visible_after_scrolling_to_the_end() {
     assert!(
         last_rect.bottom() <= footer_label.top(),
         "마지막 행 {last_rect:?} 이 푸터 라벨 {footer_label:?} 과 겹친다"
+    );
+}
+
+/// 필터 칩의 (문자열, 화면 사각형) 과 이름 칸 오른쪽 끝. 칩 글자는 mono 로 칠해진다.
+fn painted_filter_chip(filters: &[&str]) -> (egui::Rect, Vec<(String, egui::Rect)>) {
+    let filters: Vec<String> = filters.iter().map(|f| f.to_string()).collect();
+    let (content, shapes) = painted_frames_filtered(
+        &picker_state(egui::vec2(640.0, 480.0)),
+        &deep_crumbs(1, "d"),
+        FilePickerMode::Open {
+            selection_text: "file-1.toml",
+        },
+        &entries(),
+        "file-1.toml",
+        2,
+        &|_, _| Vec::new(),
+        &filters,
+    );
+    let texts = shapes
+        .iter()
+        .filter_map(|c| match &c.shape {
+            egui::epaint::Shape::Text(t) if t.galley.text().starts_with("*.") => Some((
+                t.galley.text().to_string(),
+                egui::Rect::from_min_size(t.pos, t.galley.size()),
+            )),
+            _ => None,
+        })
+        .collect();
+    (content, texts)
+}
+
+/// 필터가 없으면 칩을 그리지 않는다.
+#[test]
+fn no_filter_draws_no_chip() {
+    let (_, chips) = painted_filter_chip(&[]);
+    assert!(chips.is_empty(), "{chips:?}");
+}
+
+/// 필터가 있으면 호출자 순서·소문자로 칩을 그리고, 칩은 footer 이름 줄의 오른쪽 끝에 붙는다.
+#[test]
+fn a_filter_draws_one_chip_at_the_right_end_of_the_name_row() {
+    let th = crate::theme::theme();
+    let (content, chips) = painted_filter_chip(&["TOML", "json"]);
+    assert_eq!(chips.len(), 1, "{chips:?}");
+    assert_eq!(chips[0].0, "*.toml, *.json");
+    let right_inset = th.fp_inset_end().value().max(th.fp_inset_start().value());
+    assert!(
+        chips[0].1.right() <= content.right() - th.spacing_sm.value(),
+        "칩 글자가 콘텐츠 밖으로 나갔다: {:?} / {content:?}",
+        chips[0].1
+    );
+    assert!(
+        chips[0].1.right() >= content.right() - right_inset - th.spacing_sm.value() - 1.0,
+        "칩이 이름 줄 오른쪽 끝에 붙지 않았다: {:?} / {content:?}",
+        chips[0].1
+    );
+}
+
+/// 긴 목록은 fp-filter-max-width 안에서 끝이 줄어든다.
+#[test]
+fn a_long_filter_list_is_capped_at_the_max_width() {
+    let th = crate::theme::theme();
+    let (_, chips) = painted_filter_chip(&["png", "jpg", "jpeg", "gif", "webp", "svg"]);
+    assert_eq!(chips.len(), 1, "{chips:?}");
+    let text_max = th.fp_filter_max_width().value() - 2.0 * th.spacing_sm.value();
+    assert!(
+        chips[0].1.width() <= text_max + 0.5,
+        "칩 글자 폭 {} 이 상한 {text_max} 를 넘었다",
+        chips[0].1.width()
     );
 }

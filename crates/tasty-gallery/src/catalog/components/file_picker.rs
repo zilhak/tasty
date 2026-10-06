@@ -1,8 +1,11 @@
 //! 로컬·원격 파일 선택과 저장 화면의 정적 예제. 본체의 디렉터리 조회를 실행하지 않는다.
 //! 원격 대상은 호스트 배지로 구분한다. 선택·저장 상태와 긴 경로 표시를 비교한다.
 
+mod filter_chip;
 mod footer;
 mod path_bar;
+
+pub use filter_chip::draw_filter_chip;
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
@@ -20,7 +23,6 @@ const MOD_COL_W: LogicalPx = LogicalPx(108.0);
 /// 브레드크럼 한 성분의 최대 폭(디자인 `FpCrumbs` span `maxWidth:180`, 넘치면 말줄임).
 /// 대응 Theme 토큰이 없는 구조 폭이다.
 const CRUMB_MAX_W: LogicalPx = LogicalPx(180.0);
-const FOOTER_CHIP_W: LogicalPx = LogicalPx(92.0); // "All files ▾" 타입필터 칩
 /// 폴더 선택 갈래에서 고른 행 — 디자인 seed(`overlays-shared.jsx` `folderSel`).
 const FOLDER_SEL: &str = "configs";
 
@@ -177,6 +179,11 @@ struct Variant {
     /// 고른 행이 **폴더**다 — 디자인 `FilePickerFrame folderSel`. 두 모드에서 뜻이 다르다:
     /// 저장은 "이것은 저장 대상이 아니다", 열기는 "확정하면 들어간다".
     folder_sel: bool,
+    /// 호출자가 넘긴 확장자 필터 — 디자인 `FilePickerFrame filters`. 비면 칩을 그리지 않는다.
+    filters: &'static [&'static str],
+    /// 카드 크기 — 디자인 `FilePickerFrame w`/`h`.
+    w: LogicalPx,
+    h: LogicalPx,
 }
 
 impl Variant {
@@ -188,6 +195,9 @@ impl Variant {
             mode: Mode::Open,
             deep: false,
             folder_sel: false,
+            filters: &[],
+            w: FRAME_W,
+            h: FRAME_H,
         }
     }
 
@@ -199,12 +209,26 @@ impl Variant {
             mode: Mode::Save(save),
             deep,
             folder_sel: false,
+            filters: &[],
+            w: FRAME_W,
+            h: FRAME_H,
         }
     }
 
     /// 목록에서 고른 것이 폴더인 갈래 — 두 모드 모두 단일 클릭이 선택이므로 둘 다 성립한다.
     const fn folder_selected(mut self) -> Self {
         self.folder_sel = true;
+        self
+    }
+
+    const fn filtered(mut self, filters: &'static [&'static str]) -> Self {
+        self.filters = filters;
+        self
+    }
+
+    const fn sized(mut self, w: LogicalPx, h: LogicalPx) -> Self {
+        self.w = w;
+        self.h = h;
         self
     }
 
@@ -472,7 +496,7 @@ pub fn draw_gesture_table(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
-/// 640×480 카드 한 장.
+/// 카드 한 장. 크기는 변형이 정한다(기본 640×480).
 fn card(ui: &mut egui::Ui, theme: &Theme, v: Variant) {
     egui::Frame::new()
         .fill(theme.bg_panel().to_egui())
@@ -483,10 +507,10 @@ fn card(ui: &mut egui::Ui, theme: &Theme, v: Variant) {
         .corner_radius(theme.corner_radius.value())
         .shadow(theme.shadow_modal().to_egui())
         .show(ui, |ui| {
-            ui.set_width(FRAME_W.value());
+            ui.set_width(v.w.value());
             ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
             ui.vertical(|ui| {
-                ui.set_width(FRAME_W.value());
+                ui.set_width(v.w.value());
                 ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
                 header(ui, theme, v);
                 path_bar::path_bar(ui, theme, v);
@@ -497,7 +521,7 @@ fn card(ui: &mut egui::Ui, theme: &Theme, v: Variant) {
                     ui,
                     theme,
                     v,
-                    FRAME_H - header_height(theme) - path_bar_height(theme) - footer_h,
+                    v.h - header_height(theme) - path_bar_height(theme) - footer_h,
                 );
                 footer::footer(ui, theme, v, footer_h);
             });
@@ -506,7 +530,7 @@ fn card(ui: &mut egui::Ui, theme: &Theme, v: Variant) {
 
 fn header(ui: &mut egui::Ui, theme: &Theme, v: Variant) {
     let (rect, _) = ui.allocate_exact_size(
-        egui::vec2(FRAME_W.value(), header_height(theme).value()),
+        egui::vec2(v.w.value(), header_height(theme).value()),
         egui::Sense::hover(),
     );
     ui.painter().hline(
@@ -660,9 +684,9 @@ fn elide(ui: &egui::Ui, text: &str, font: egui::FontId, max_w: LogicalPx) -> Str
     "…".to_owned()
 }
 
-fn list_header(ui: &mut egui::Ui, theme: &Theme, multi: bool) {
+fn list_header(ui: &mut egui::Ui, theme: &Theme, w: LogicalPx, multi: bool) {
     let (rect, _) = ui.allocate_exact_size(
-        egui::vec2(FRAME_W.value(), list_head_height(theme).value()),
+        egui::vec2(w.value(), list_head_height(theme).value()),
         egui::Sense::hover(),
     );
     ui.painter().hline(
@@ -787,10 +811,10 @@ fn body(ui: &mut egui::Ui, theme: &Theme, v: Variant, body_h: LogicalPx) {
     let multi = v.multi;
     match v.state {
         FpState::Loaded => {
-            list_header(ui, theme, multi);
+            list_header(ui, theme, v.w, multi);
             let (rect, _) = ui.allocate_exact_size(
                 egui::vec2(
-                    FRAME_W.value(),
+                    v.w.value(),
                     (body_h - list_head_height(theme)).value(),
                 ),
                 egui::Sense::hover(),
@@ -821,18 +845,21 @@ fn body(ui: &mut egui::Ui, theme: &Theme, v: Variant, body_h: LogicalPx) {
         FpState::Loading => center(
             ui,
             theme,
+            v.w,
             body_h,
             CenterState::loading("Loading folder…").sub_line(Some("Reading the directory over SSH.")),
         ),
         FpState::Empty => center(
             ui,
             theme,
+            v.w,
             body_h,
             CenterState::empty(icons::FOLDER_OPEN, "This folder is empty"),
         ),
         FpState::ErrorPerm => center(
             ui,
             theme,
+            v.w,
             body_h,
             CenterState::error("Permission denied")
                 .sub_line(Some(
@@ -843,6 +870,7 @@ fn body(ui: &mut egui::Ui, theme: &Theme, v: Variant, body_h: LogicalPx) {
         FpState::ErrorConn => center(
             ui,
             theme,
+            v.w,
             body_h,
             CenterState::error("Remote connection lost")
                 .sub_line(Some(
@@ -854,10 +882,14 @@ fn body(ui: &mut egui::Ui, theme: &Theme, v: Variant, body_h: LogicalPx) {
 }
 
 /// 목록 자리에 공용 CenterState 를 본체와 같은 폭으로 그린다.
-fn center(ui: &mut egui::Ui, theme: &Theme, body_h: LogicalPx, state: CenterState<'_>) {
-    let (rect, _) = ui.allocate_exact_size(
-        egui::vec2(FRAME_W.value(), body_h.value()),
-        egui::Sense::hover(),
-    );
+fn center(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    w: LogicalPx,
+    body_h: LogicalPx,
+    state: CenterState<'_>,
+) {
+    let (rect, _) =
+        ui.allocate_exact_size(egui::vec2(w.value(), body_h.value()), egui::Sense::hover());
     state.show_in(ui, theme, rect);
 }

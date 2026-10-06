@@ -440,6 +440,8 @@ fn draw_view(
         col_name: t("filepicker.column.name"),
         col_size: t("filepicker.column.size"),
         col_modified: t("filepicker.column.modified"),
+        filters: &s.filters,
+        filter_showing: t("filepicker.filter_showing"),
     };
     let out = draw_file_picker_view(ui, &props);
     crate::adapters::ui::popup::report_header_drag_rect(

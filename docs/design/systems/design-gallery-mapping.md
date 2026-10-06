@@ -828,7 +828,7 @@ General L1 에 5번째 L2 서브탭 "Remote transfer" 추가 — 원격 mirror �
 ## 파일 피커 (Overlays)
 
 디자인 `gallery/overlays-shared.jsx` `FilePickerFrame`/`FpRow`/`FpCrumbs`/`FpHostBadge`
-+ `gallery/overlays-windows.jsx` `#filepicker` Section(스펙 3개) ↔ 갤러리
++ `gallery/overlays-windows.jsx` `#filepicker` Section ↔ 갤러리
 `catalog/components/file_picker.rs`.
 본체는 `src/adapters/ui/popup/file_picker.rs`의 `draw_file_picker`를 사용한다. `FILE_PICKER_POPUP_ID = "file_picker"`인 egui `PopupDef`가 `defs.rs`에 등록돼 있다. 디자인처럼 헤더는 하나다 — `PopupDef`가 `headless`라 셸 타이틀바가 없고, 뷰가 그린 헤더 줄을 이동 손잡이(`DragHandle::Region`)로 보고한다. 셸 공통 내부 여백을 두지 않는 popup 이라 구역의 배경·구분선(path bar 의 `bg-sidebar` 띠 포함)은 창 좌우 끝까지 닿는다.
 
@@ -838,9 +838,9 @@ General L1 에 5번째 L2 서브탭 "Remote transfer" 추가 — 원격 mirror �
 - 구역 안 간격은 `fp-section-gap`(8)이다.
 - 헤더에는 고정 높이가 없다. `fp-header-pad-y`(8) + sm IconButton(24) + 8 = 40이고, 원격 host 배지(22)는 이 안에 들어간다. path bar 는 `fp-path-pad-y`(4) + 24 + 4 = 32다.
 - 목록 머리는 `fp-list-head-pad-y`(4)와 `font-size-micro` 라벨 한 줄, 행은 `fp-row-pad-y`(4)와 아이콘(16)·이름 줄 중 높은 쪽으로 높이가 정해진다. 줄 높이는 디자인 기본 줄 높이 `line-height-ui`(1.4)를 글꼴 크기에 곱한 값이라 행은 4 + 13 × 1.4 + 4 = 26.2다. 글꼴 행 높이로 재지 않으므로 갤러리와 본체의 글꼴 구성이 달라도 높이가 같다.
-- 푸터는 위아래 `fp-footer-pad-y`(8)다. 라벨 폭은 `fp-footer-label-width`(64)다. 갤러리의 타입 필터 칩 높이는 `fp-filter-height`(28)다.
+- 푸터는 위아래 `fp-footer-pad-y`(8)다. 라벨 폭은 `fp-footer-label-width`(64)다. 필터 칩 높이는 `fp-filter-height`(28), 최대 폭은 `fp-filter-max-width`(160)다.
 
-본체도 목록 머리(NAME/SIZE/MODIFIED)와 선택 행 좌측 bar를 그린다. 열 위치는 행과 목록 머리가 같은 계산(`cols`)을 쓴다. 선택 bar 폭은 `selection-edge-width`, 색은 `accent-primary`다. 헤더 제목은 `font-size-max`(14)에 `strong`이다(egui는 semibold를 고르지 못한다). 본체는 타입 필터 칩을 그리지 않는다. 칩의 동작과 필터가 있을 때의 문구가 디자인에 없다.
+본체도 목록 머리(NAME/SIZE/MODIFIED)와 선택 행 좌측 bar를 그린다. 열 위치는 행과 목록 머리가 같은 계산(`cols`)을 쓴다. 선택 bar 폭은 `selection-edge-width`, 색은 `accent-primary`다. 헤더 제목은 `font-size-max`(14)에 `strong`이다(egui는 semibold를 고르지 못한다). 필터 칩은 본체와 갤러리가 공용 `tasty_ui_widgets::filter_readout`(`filter_readout_label` · `filter_readout_width`)을 부른다. 호출자 필터가 없으면 칩을 그리지 않고, 이름 칸이 칩 폭과 간격을 뺀 나머지를 갖는다.
 
 640×480 단일 컴포넌트가 로컬/원격 두 모드를 겸한다 — 차이는 헤더 host indicator 와
 브레드크럼 root 뿐, 레이아웃은 불변. §6.1 열린 결정(원격 표시 A 배지 / B 글리프 /
@@ -856,7 +856,8 @@ C 프레임보더) 중 **A 배지가 사용자 확정**되어 갤러리는 A만 
 | list header(NAME/SIZE/MODIFIED) | `list_header` | loaded/multi 상태만, `cols()` 좌표 공유 |
 | `FpRow` | `row` | selected=surface-active+2px accent 좌측바, focus=1px accent outline(선택과 구분) |
 | 로딩/빈폴더/에러(권한·연결끊김) | `body` → `center` → 공용 `CenterState` | Spinner · folderOpen · 부품 소유 오류 글리프(alertTriangle). Retry/Reconnect 는 refresh 아이콘을 단 위젯 액션으로, 가운데 정렬 밖 보조 슬롯 아래에 매달린다 |
-| footer(name field+type filter+Cancel/Open) | `footer` + `type_filter_chip` | `kit::field` 재사용, Open 은 loaded 상태에서만 활성. 라벨·칩·버튼 flex:none, 이름 칸만 준다 |
+| footer(name field+filter chip+Cancel/Open) | `footer` + 공용 `filter_readout` | `kit::field` 재사용, Open 은 loaded 상태에서만 활성. 라벨·칩·버튼 flex:none, 이름 칸만 준다 |
+| `FilePickerFrame filters` prop · `overlays-windows.jsx` "File-type filter chip — a read-only readout" | `Variant::filtered` · `Variant::sized` · `draw_filter_chip`(Spec `filepicker-filter-chip`) | 4 프레임(필터 없음 · 하나 · 둘+저장 · 여섯=상한 말줄임), 디자인과 같은 480×300 카드. 읽기 전용 표시라 chevron·채움·hover 없음, 툴팁 "Showing …" |
 | footer overwrite line(`save="picked"`) | `overwrite_line` · `footer_height` | alertTriangle + 이름 mono · `accent-warning`. footer 가 커지면 본문이 준다 |
 | `FilePickerFrame mode/save/deep` prop | `Variant` · `Mode` · `SaveState` | Save file 제목 · Save/Overwrite 라벨 · 저장 모드 선택 행 |
 | `FilePickerFrame folderSel` prop | `Variant::folder_selected` · `footer::folder_line`(Spec `filepicker-gesture-table`) | 고른 것이 폴더인 상태 — 저장은 "저장 대상이 아니다", 열기는 "확정하면 들어간다". 톤 없는 muted caption + `folder` 글리프, 열기 문구는 확정 버튼 이름을 부른다. 본체는 `file_picker::selected_folder` · `footer::folder_line` |

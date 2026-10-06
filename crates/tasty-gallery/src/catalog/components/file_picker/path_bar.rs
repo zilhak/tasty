@@ -3,14 +3,14 @@
 use tasty_ui_widgets::tokens::STRUCT_GAP_2;
 use tasty_ui_widgets::{ControlSize, IconButton, IconButtonVariant};
 
-use super::{CRUMB_GLYPH, CRUMB_MAX_W, FRAME_W, HOST, Variant, elide, path_bar_height};
+use super::{CRUMB_GLYPH, CRUMB_MAX_W, HOST, Variant, elide, path_bar_height};
 use crate::catalog::icons;
 use crate::catalog::widgets::dialog as kit;
 use tasty_type_appearance::theme::Theme;
 
 pub(super) fn path_bar(ui: &mut egui::Ui, theme: &Theme, v: Variant) {
     let (rect, _) = ui.allocate_exact_size(
-        egui::vec2(FRAME_W.value(), path_bar_height(theme).value()),
+        egui::vec2(v.w.value(), path_bar_height(theme).value()),
         egui::Sense::hover(),
     );
     ui.painter()

@@ -18,6 +18,7 @@ mod control;
 pub mod crumb_alloc;
 mod drilldown;
 pub mod file_handler;
+mod filter_readout;
 mod help_hint;
 mod horizontal_tab_bar;
 mod html_script_banner;
@@ -71,6 +72,7 @@ pub use clipboard_viewer::{
 };
 pub use control::ControlSize;
 pub use drilldown::{DrillDown, DrillDownActions, DrillDownOutput, DrillDownView};
+pub use filter_readout::{filter_readout, filter_readout_label, filter_readout_width};
 pub use help_hint::HelpHint;
 pub use horizontal_tab_bar::{
     TabScrollArrowInk, TabScrollArrowSide, horizontal_tab_bar_with_arrows, paint_tab_scroll_arrow,
