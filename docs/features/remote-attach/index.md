@@ -312,6 +312,7 @@ Remote는 원 attempt의 SSH 취소와 터널 회수를 요청하고 worker의 �
 
 - **버튼이 아니라 목록 행**이다. 이웃 ws 행과 같은 select-then-confirm 을 따르고 확정은 footer 가 한다 — 그때 primary 라벨이 `Connect` → `Create & connect` 로 바뀐다. 목록 안의 행인데 혼자만 클릭 즉시 실행되면 그 자체가 상호작용 불일치이고, 원격을 **변경하는** 동작 직전의 되돌릴 수 있는 순간도 사라진다.
 - **구분은 세 채널 동시** — `plus` 글리프 · accent 라벨 · 행 아래 1px 구분선. 색 하나로만 구분하지 않는다. 글리프는 ws 행의 status-dot 과 **같은 폭 슬롯** 안에서 center 되어, 이름 열의 좌측 정렬선이 아래 행들과 픽셀 동일하다.
+- **키보드**: 목록이 뜬 뒤 ↑/↓ 가 새 행을 1번으로 삼아 행을 옮기고, 이미 attach 된(고를 수 없는) 행은 건너뛴다. 양 끝에서는 반대쪽 끝으로 돈다(convert·preset 목록 popup 과 같은 관례). 선택이 없을 때 ↓ 는 첫 행, ↑ 는 마지막 행을 고르고, 옮긴 행이 보이도록 스크롤한다. Enter 는 footer 확정과 같다. 생성 중에는 키도 받지 않는다. 목록 안 탐색 키라 `KeybindingSettings` 대상이 아니다.
 - **원격 ws 가 0개여도 이 행은 나온다.** loaded 렌더 경로가 하나라서, 목록이 비면 caps 헤더 + 이 행 하나 + muted 한 줄로 degrade 한다(전용 center-state 는 없다). 그때는 이 행이 **미리 선택**돼 있어 pane 이 뜬 순간부터 확정 버튼이 살아 있다 — 빈 원격이 막다른 길이 아니다.
 - **생성 왕복 중 / 실패는 행 안에서** 표현한다. 팝업의 `start_create`는 생성 중이거나 준비되지 않았으면 요청을 추가하지 않고, 준비된 요청 ID로 `BrowserRequest::Create`를 큐에 넣는다. App은 원 engine·window·View identity를 확인한 뒤 Remote에 실행을 맡긴다. 터널과 진행 중 attempt는 팝업이 아니라 `tasty_remote::browser`의 세션이 소유하며, 생성 워커에는 포트와 원 attempt token을 넘긴다. Remote도 진행 중 attempt가 있으면 새 생성을 오류로 거절한다.
   생성 대기는 Remote의 `poll_browsers`가 10초 경과 시 취소하고 실패 값으로 돌린다. 소켓의 5초 `PROBE_TIMEOUT`은 개별 read/write 제한이며, 연결과 여러 부분 읽기를 합친 전체 호출의 절대 상한은 아니다. 취소 요청을 worker 종료·회수 완료로 간주하지 않는다.

@@ -95,6 +95,33 @@ impl UiState {
     }
 }
 
+/// 방향키 이동 순서 — 새 행이 1번이고, 이미 attach 된(고를 수 없는) 행은 건너뛴다.
+fn nav_order(ws: &[RemoteWorkspace]) -> Vec<WsSel> {
+    std::iter::once(WsSel::New)
+        .chain(
+            ws.iter()
+                .filter(|w| !w.attached)
+                .map(|w| WsSel::Existing(w.id)),
+        )
+        .collect()
+}
+
+/// 한 칸 이동한 선택. 다른 목록 popup(convert·preset_apply)처럼 양 끝에서 반대쪽으로 돈다.
+/// 선택이 없으면 아래는 첫 행, 위는 마지막 행이다.
+fn step_sel(order: &[WsSel], cur: Option<WsSel>, down: bool) -> Option<WsSel> {
+    let n = order.len();
+    if n == 0 {
+        return cur;
+    }
+    let i = match cur.and_then(|c| order.iter().position(|o| *o == c)) {
+        Some(i) if down => (i + 1) % n,
+        Some(i) => (i + n - 1) % n,
+        None if down => 0,
+        None => n - 1,
+    };
+    Some(order[i])
+}
+
 fn read_ui(ctx: &egui::Context) -> UiState {
     ctx.memory(|m| {
         m.data
@@ -320,7 +347,31 @@ pub fn draw_remote_attach_popup(
     if let Some(name) = draw_left_pane(ui, &th, left_rect, &summaries, st.attach_sel.as_deref()) {
         connect(state, &mut st, name);
     }
-    match draw_right_pane(ui, &th, right_rect, &mut st) {
+    // 목록이 있을 때 방향키로 행을 옮기고 Enter 로 footer 와 같이 확정한다. 생성 중에는 목록이 멈춘다.
+    let mut scroll_to_sel = false;
+    if let Conn::Loaded(ws) = &st.conn
+        && !st.creating()
+    {
+        let (up, down, enter) = ctx.input(|i| {
+            (
+                i.key_pressed(egui::Key::ArrowUp),
+                i.key_pressed(egui::Key::ArrowDown),
+                i.key_pressed(egui::Key::Enter),
+            )
+        });
+        if up != down {
+            let next = step_sel(&nav_order(ws), st.ws_sel, down);
+            if next == Some(WsSel::New) && matches!(st.phase, NewWsPhase::Failed(_)) {
+                st.phase = NewWsPhase::Rest;
+            }
+            st.ws_sel = next;
+            scroll_to_sel = true;
+        }
+        if enter {
+            do_connect = true;
+        }
+    }
+    match draw_right_pane(ui, &th, right_rect, &mut st, scroll_to_sel) {
         RightAction::RetryBrowse => {
             if let Some(name) = st.attach_sel.clone() {
                 connect(state, &mut st, name);
@@ -571,6 +622,7 @@ fn draw_right_pane(
     th: &Theme,
     rect: egui::Rect,
     st: &mut UiState,
+    scroll_to_sel: bool,
 ) -> RightAction {
     let sel_name = st.attach_sel.clone().unwrap_or_default();
     match &st.conn {
@@ -604,7 +656,16 @@ fn draw_right_pane(
         Conn::Loaded(ws) => {
             let ws = ws.clone();
             let phase = st.phase.clone();
-            match draw_ws_list(ui, th, rect, &ws, &sel_name, st.ws_sel, &phase) {
+            match draw_ws_list(
+                ui,
+                th,
+                rect,
+                &ws,
+                &sel_name,
+                st.ws_sel,
+                &phase,
+                scroll_to_sel,
+            ) {
                 Some(ListAction::Select(sel)) => {
                     st.ws_sel = Some(sel);
                     if sel == WsSel::New && matches!(st.phase, NewWsPhase::Failed(_)) {
@@ -630,6 +691,7 @@ enum ListAction {
     RetryCreate,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn draw_ws_list(
     ui: &mut egui::Ui,
     th: &Theme,
@@ -638,6 +700,7 @@ fn draw_ws_list(
     profile_name: &str,
     ws_sel: Option<WsSel>,
     phase: &NewWsPhase,
+    scroll_to_sel: bool,
 ) -> Option<ListAction> {
     let mut action = None;
     let mut col = ui.new_child(
@@ -668,9 +731,21 @@ fn draw_ws_list(
         .drag_to_scroll(false)
         .show(&mut list, |ui| {
             ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
+            // 방향키로 옮긴 행이 보이도록 그 행 영역으로 스크롤한다.
+            let scroll_if = |ui: &mut egui::Ui, top: f32, selected: bool| {
+                if scroll_to_sel && selected {
+                    let r = egui::Rect::from_x_y_ranges(
+                        ui.max_rect().x_range(),
+                        top..=ui.cursor().top(),
+                    );
+                    ui.scroll_to_rect(r, None);
+                }
+            };
+            let top = ui.cursor().top();
             if let Some(a) = new_ws_row(ui, th, phase, ws_sel == Some(WsSel::New)) {
                 action = Some(a);
             }
+            scroll_if(ui, top, ws_sel == Some(WsSel::New));
             if ws.is_empty() {
                 empty_line(ui, th, profile_name);
                 return;
@@ -683,9 +758,12 @@ fn draw_ws_list(
                     ui.set_opacity(th.state_dim_opacity());
                 }
                 for w in ws {
-                    if ws_row(ui, th, w, ws_sel == Some(WsSel::Existing(w.id)), !creating) {
+                    let top = ui.cursor().top();
+                    let selected = ws_sel == Some(WsSel::Existing(w.id));
+                    if ws_row(ui, th, w, selected, !creating) {
                         action = Some(ListAction::Select(WsSel::Existing(w.id)));
                     }
+                    scroll_if(ui, top, selected);
                 }
             });
         });
@@ -1125,4 +1203,51 @@ fn badge(
         galley,
         color,
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ws(id: u32, attached: bool) -> RemoteWorkspace {
+        RemoteWorkspace {
+            id,
+            name: format!("ws{id}"),
+            subtitle: None,
+            description: None,
+            pane_count: 1,
+            busy_count: 0,
+            attached,
+            holder: None,
+        }
+    }
+
+    #[test]
+    fn the_new_row_is_first_and_attached_rows_are_skipped() {
+        let order = nav_order(&[ws(1, false), ws(2, true), ws(3, false)]);
+        assert_eq!(
+            order,
+            vec![WsSel::New, WsSel::Existing(1), WsSel::Existing(3)]
+        );
+        assert_eq!(nav_order(&[]), vec![WsSel::New]);
+    }
+
+    #[test]
+    fn arrows_start_at_the_ends_and_wrap() {
+        let order = nav_order(&[ws(1, false), ws(3, false)]);
+        assert_eq!(step_sel(&order, None, true), Some(WsSel::New));
+        assert_eq!(step_sel(&order, None, false), Some(WsSel::Existing(3)));
+        assert_eq!(
+            step_sel(&order, Some(WsSel::New), true),
+            Some(WsSel::Existing(1))
+        );
+        assert_eq!(
+            step_sel(&order, Some(WsSel::Existing(3)), true),
+            Some(WsSel::New)
+        );
+        assert_eq!(
+            step_sel(&order, Some(WsSel::New), false),
+            Some(WsSel::Existing(3))
+        );
+    }
 }
