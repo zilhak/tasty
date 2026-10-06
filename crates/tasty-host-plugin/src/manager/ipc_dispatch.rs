@@ -689,9 +689,10 @@ impl PluginManager {
                 );
             }
             match removed.map(|p| p.kind) {
-                Some(PendingRequestKind::SurfaceRetire { completion, .. }) => {
-                    completion.finish(Err(msg))
-                }
+                Some(PendingRequestKind::SurfaceRetire {
+                    completion,
+                    process_binding,
+                }) => self.settle_lost_retire_ack(plugin_id, &process_binding, completion, msg),
                 Some(PendingRequestKind::NamespaceInvoke {
                     response_tx,
                     original_id,

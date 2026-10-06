@@ -258,7 +258,7 @@ impl PluginManager {
                             })
                             .collect();
                         for id in ids {
-                            self.pending_requests.remove(&id);
+                            self.settle_removed_retire_ack(id);
                         }
                         break;
                     }
@@ -309,7 +309,7 @@ impl PluginManager {
             })
             .collect();
         for id in obsolete {
-            self.pending_requests.remove(&id);
+            self.settle_removed_retire_ack(id);
         }
         // 관측이 멈춘 동안 pump 의 Retire 틱이 돌지 않으므로 여기서 끝난 회수를 거둔다.
         self.settle_finished_retirements_in_place();

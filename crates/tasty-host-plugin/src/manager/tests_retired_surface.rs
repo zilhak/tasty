@@ -191,3 +191,70 @@ fn reaped_generations_keep_a_generation_a_mesh_bootstrap_points_at() {
     retire_and_reap(&mut mgr);
     assert!(!holds(&mgr, &meshed), "bootstrap 이 사라지면 지운다");
 }
+
+/// 요청 수신단을 살려 둔 채 surface 7 을 게시한다. 파괴 요청이 실제로 원 프로세스 큐에 들어간다.
+fn manager_with_listening_surface() -> (PluginManager, SurfaceHandles, crate::process::RequestTap) {
+    let mut mgr = PluginManager::new(Arc::new(NoopWakerFactory));
+    let (process, requests) = PluginProcess::stub_with_request_rx(PLUGIN);
+    mgr.processes.insert(PLUGIN.into(), process);
+    let surface = handles();
+    mgr.host_cmd_tx
+        .send(HostCmd::RemoteSurfaceCreated {
+            surface_id: 7,
+            plugin_id: PLUGIN.into(),
+            kind: "document".into(),
+            cwd: None,
+            params: json!({}),
+            handles: surface.clone(),
+        })
+        .unwrap();
+    mgr.drain_host_cmds();
+    (mgr, surface, requests)
+}
+
+/// 살아 있는 원 프로세스에 파괴 요청을 보낸 뒤 그 프로세스를 회수한다(먼저 닫고 뒤에 disable).
+fn close_then_retire(
+    mgr: &mut PluginManager,
+    surface: &SurfaceHandles,
+) -> crate::host_cmd::RemoteRetirementReceipt {
+    let receipt = close(mgr, surface);
+    assert_eq!(receipt.observation(), None, "원 프로세스의 응답을 기다린다");
+    let process = mgr.processes.remove(PLUGIN).expect("running stub");
+    mgr.retire_process(PLUGIN, process, false);
+    receipt
+}
+
+#[test]
+fn a_sent_destroy_settles_when_disable_retires_its_process() {
+    let (mut mgr, surface, _tap) = manager_with_listening_surface();
+    let receipt = close_then_retire(&mut mgr, &surface);
+    mgr.cancel_pending_namespace_calls(PLUGIN, "plugin disabled");
+    assert_eq!(receipt.observation(), None, "회수가 끝날 때 확정한다");
+    assert!(!mgr.wait_retired(PLUGIN), "재시작 예약이 없는 회수다");
+    assert_eq!(receipt.observation(), Some(Ok(())));
+}
+
+#[test]
+fn a_sent_destroy_settles_through_the_paused_poll_after_its_process_retired() {
+    let (mut mgr, surface, _tap) = manager_with_listening_surface();
+    let receipt = close_then_retire(&mut mgr, &surface);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while receipt.observation().is_none() && std::time::Instant::now() < deadline {
+        mgr.poll_publication_retirements().unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert_eq!(receipt.observation(), Some(Ok(())));
+}
+
+#[test]
+fn a_lost_destroy_of_a_process_that_was_not_retired_stays_a_failure() {
+    let (mut mgr, surface, _tap) = manager_with_listening_surface();
+    let receipt = close(&mut mgr, &surface);
+    mgr.cancel_pending_namespace_calls(PLUGIN, "plugin crashed");
+    assert_eq!(
+        receipt.observation(),
+        Some(Err(
+            "plugin 'com.test.document' unavailable: plugin crashed".into()
+        ))
+    );
+}

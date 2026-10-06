@@ -385,6 +385,44 @@ impl PluginManager {
         }
     }
 
+    /// 이미 보낸 파괴 요청의 응답을 더 받을 수 없을 때 부른다(원 프로세스 회수, 채널 끊김,
+    /// 플러그인 정리). 그 세대가 회수 중이거나 회수됐으면 회수를 소멸 증거로 확정하고, 아니면
+    /// `reason` 으로 실패시킨다 — 끊긴 연결만으로는 플러그인이 surface 를 없앴다고 볼 수 없다.
+    pub(super) fn settle_lost_retire_ack(
+        &mut self,
+        plugin_id: &str,
+        process_binding: &std::sync::Weak<()>,
+        completion: RemoteRetirementCompletion,
+        reason: String,
+    ) {
+        if let Some(completion) =
+            self.settle_on_retired_generation(plugin_id, process_binding, completion)
+        {
+            completion.finish(Err(reason));
+        }
+    }
+
+    /// 응답을 더 받을 수 없는 파괴 대기 요청 `id` 를 지우고 [`Self::settle_lost_retire_ack`] 로 확정한다.
+    pub(super) fn settle_removed_retire_ack(&mut self, id: u64) {
+        if let Some(super::PendingRequest {
+            to,
+            kind:
+                super::PendingRequestKind::SurfaceRetire {
+                    completion,
+                    process_binding,
+                },
+            ..
+        }) = self.pending_requests.remove(&id)
+        {
+            self.settle_lost_retire_ack(
+                &to,
+                &process_binding,
+                completion,
+                "remote retirement acknowledgement was lost".into(),
+            );
+        }
+    }
+
     /// 이 세대가 회수 중이거나 회수를 마쳤는가.
     pub(super) fn is_retired_generation(
         &self,
