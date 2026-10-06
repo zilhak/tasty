@@ -7,6 +7,8 @@ export interface TagProps extends React.HTMLAttributes<HTMLSpanElement> {
   dot?: boolean;
   /** Disabled ink rule — neutral box + text-disabled for every variant (accent fill / tint edge drop out). Automatic inside a disabled ListCtrl row. */
   disabled?: boolean;
+  /** Uppercase label (e.g. REMOTE). Always draws letter-spacing-caps with it — an uppercase Tag never goes untracked (2026-10-06). */
+  caps?: boolean;
   children?: React.ReactNode;
 }
 

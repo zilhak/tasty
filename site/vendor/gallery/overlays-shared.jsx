@@ -585,7 +585,36 @@ function RemoteFrame({ tab = "profiles", ssh = "hosts" }) {
       <div style={{ display: "flex", gap: 2, padding: "0 8px", flex: "none", borderBottom: "1px solid var(--tasty-separator)", background: "var(--tasty-bg-sidebar)" }}>
         <TabBtn on={tab === "profiles"}>Remote profiles</TabBtn><TabBtn on={tab === "attach"}>Attach</TabBtn><TabBtn on={tab === "passkeys"}>Passkeys</TabBtn>
       </div>
-      {tab === "attach" ? (
+      {tab === "passkeys" ? (
+        <>
+          <div style={{ display: "flex", alignItems: "center", padding: "10px 14px 6px", flex: "none" }}>
+            <Button variant="secondary" size="sm" leadingIcon={ic.plus}>Add passkey</Button>
+          </div>
+          <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "0 14px 8px" }}>
+            {[{ name: "ed25519-main", kind: "file", value: "~/.ssh/id_ed25519" },
+              { name: "deploy-key-with-a-very-long-name", kind: "file", value: "/Users/hyunjun/Library/Application Support/tasty/keys/deploy/ci-runner/id_ed25519_deploy", revealed: true },
+              { name: "vault-token", kind: "secret", value: "••••••••" },
+              { name: "legacy", kind: "agent-x", value: "••••••••", unknown: true }].map((k) => (
+              <div key={k.name} style={{ display: "flex", alignItems: "flex-start", gap: "var(--tasty-space-sm)", padding: "var(--tasty-space-md) var(--tasty-space-xs)", borderBottom: "var(--tasty-border-width) solid var(--tasty-separator)" }}>
+                <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", minWidth: 0 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{k.name}</span>
+                    {k.unknown
+                      ? <span title="Unknown kind." style={{ flex: "none", display: "inline-flex", alignItems: "center", gap: 3, height: 16, padding: "0 6px", borderRadius: "var(--tasty-radius-sm)", fontFamily: "var(--tasty-font-mono)", fontSize: 10, fontWeight: 500, color: "var(--tasty-accent-warning)", border: "1px solid color-mix(in srgb, var(--tasty-accent-warning) 40%, transparent)", background: "color-mix(in srgb, var(--tasty-accent-warning) 12%, transparent)" }}>{k.kind}</span>
+                      : <span style={{ flex: "none", display: "inline-flex" }}><Tag>{k.kind}</Tag></span>}
+                  </div>
+                  <span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: 11, color: "var(--tasty-text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{k.kind} · {k.revealed ? k.value : "••••••••"}</span>
+                </div>
+                <div style={{ display: "flex", gap: 1, flex: "none" }}>
+                  <IconButton size="sm" active={!!k.revealed} aria-label={k.revealed ? "Hide value" : "Show value (local only)"}><Icon name={k.revealed ? "eyeOff" : "eye"} /></IconButton>
+                  <IconButton size="sm" aria-label="Edit">{ic.edit}</IconButton>
+                  <IconButton size="sm" aria-label="Delete"><Icon name="trash" /></IconButton>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      ) : tab === "attach" ? (
         <>
           <div style={{ display: "flex", alignItems: "center", padding: "10px 14px 6px", flex: "none" }}>
             <Button variant="secondary" size="sm" leadingIcon={ic.plus}>Add attach</Button>
@@ -603,14 +632,14 @@ function RemoteFrame({ tab = "profiles", ssh = "hosts" }) {
         <div style={{ position: "relative" }}>
           <Button variant="primary" size="sm" leadingIcon={ic.funnel}>Filter · 3/4</Button>
           <div role="dialog" aria-label="Filter by protocol" style={{ position: "absolute", top: "calc(100% + 4px)", right: 0, zIndex: 5, width: "var(--tasty-remote-filter-menu-width)",
-            background: "var(--tasty-surface-raised)", border: "1px solid var(--tasty-border-strong)", borderRadius: "var(--tasty-radius)",
+            background: "var(--tasty-menu-bg)", border: "var(--tasty-border-width) solid var(--tasty-menu-border)", borderRadius: "var(--tasty-menu-radius)",
             boxShadow: "var(--tasty-shadow-popover)", overflow: "hidden" }}>
             <div style={{ padding: "8px 12px", borderBottom: "1px solid var(--tasty-separator)", fontFamily: "var(--tasty-font-mono)",
               fontSize: 10, textTransform: "uppercase", letterSpacing: ".06em", color: "var(--tasty-text-muted)" }}>Filter by protocol</div>
             <div style={{ padding: "8px 12px", display: "flex", flexDirection: "column", gap: 8 }}>
               {[["ssh", true, false], ["smb", true, false], ["http", true, false], ["snb", false, true]].map(([p, on, unknown]) => (
                 <div key={p} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <Checkbox checked={on} readOnly label={<span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: 12 }}>{p}</span>} />
+                  <Checkbox checked={on} readOnly label={p} />
                   {unknown && <span style={{ display: "inline-flex", alignItems: "center", gap: 3, height: 16, padding: "0 6px", borderRadius: "var(--tasty-radius-sm)",
                     fontFamily: "var(--tasty-font-mono)", fontSize: 10, fontWeight: 500, color: "var(--tasty-accent-warning)",
                     border: "1px solid color-mix(in srgb, var(--tasty-accent-warning) 40%, transparent)",

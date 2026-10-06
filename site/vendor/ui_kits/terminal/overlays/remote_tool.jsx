@@ -578,7 +578,7 @@ function ProtocolFilter({ protocols, hidden, onApply }) {
         <>
           <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
           <div role="dialog" aria-label="Filter by protocol" style={{ position: "absolute", top: "calc(100% + var(--tasty-space-xs))", right: 0, zIndex: 41,
-            width: "var(--tasty-remote-filter-dropdown-width)", boxSizing: "border-box", background: "var(--tasty-surface-raised)", border: "var(--tasty-border-width) solid var(--tasty-border-strong)",
+            width: "var(--tasty-remote-filter-dropdown-width)", boxSizing: "border-box", background: "var(--tasty-menu-bg)", border: "var(--tasty-border-width) solid var(--tasty-menu-border)", /* 2026-10-06: every anchored popover = menu container tokens */
             borderRadius: "var(--tasty-radius)", boxShadow: "var(--tasty-shadow-popover)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
             <div style={{ padding: "var(--tasty-space-sm) var(--tasty-space-md)", borderBottom: "var(--tasty-border-width) solid var(--tasty-separator)",
               fontFamily: "var(--tasty-font-mono)", fontSize: 10, textTransform: "uppercase",
@@ -590,7 +590,7 @@ function ProtocolFilter({ protocols, hidden, onApply }) {
               ) : protocols.map((proto) => (
                 <div key={proto} style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)" }}>
                   <Checkbox checked={!draft.has(proto)} onChange={() => toggle(proto)}
-                    label={<span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: 12 }}>{proto}</span>} />
+                    label={proto} /* 2026-10-06: shared Checkbox label (body, UI font) */ />
                   {isUnknownType(proto) && <WarnBadge title="Unknown type — no core feature or plugin handles it.">unknown</WarnBadge>}
                 </div>
               ))}
@@ -636,7 +636,7 @@ function LocalSshSection({ state = "hosts", hosts = SSH_CONFIG_HOSTS, profileTar
   return (
     <div style={{ marginTop: "var(--tasty-space-md)", paddingTop: "var(--tasty-space-sm)", borderTop: "var(--tasty-border-width) solid var(--tasty-border-frame)" }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: "var(--tasty-space-sm)", padding: "var(--tasty-size-2) var(--tasty-space-xs) var(--tasty-space-xs)" }}>
-        <span style={{ fontSize: "var(--tasty-font-size-caption)", letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--tasty-text-secondary)" }}>From ssh config</span>
+        <span style={{ fontSize: "var(--tasty-font-size-caption)", letterSpacing: "var(--tasty-letter-spacing-caps)", textTransform: "uppercase", color: "var(--tasty-text-secondary)" }}>From ssh config</span>
         <span style={caption}>~/.ssh/config</span>
         <div style={{ flex: 1 }} />
         {state === "hosts" && <span style={caption}>{hosts.length}</span>}

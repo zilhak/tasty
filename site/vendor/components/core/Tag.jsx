@@ -33,6 +33,7 @@ const CSS = `
 .tasty-tag--attention{ color: var(--tasty-accent-attention); border-color: color-mix(in srgb, var(--tasty-accent-attention) 40%, transparent); }
 .tasty-tag--danger { color: var(--tasty-accent-danger);  border-color: color-mix(in srgb, var(--tasty-accent-danger) 40%, transparent); }
 .tasty-tag--info   { color: var(--tasty-accent-info);    border-color: color-mix(in srgb, var(--tasty-accent-info) 40%, transparent); }
+.tasty-tag--caps { text-transform: uppercase; letter-spacing: var(--tasty-letter-spacing-caps); }
 .tasty-tag--disabled { background: var(--tasty-tag-disabled-bg); border-color: var(--tasty-tag-disabled-border); color: var(--tasty-tag-disabled-fg); }
 .tasty-tag__dot { width: var(--tasty-tag-dot-size); height: var(--tasty-tag-dot-size); border-radius: var(--tasty-radius-pill); background: currentColor; flex: none; }
 `;
@@ -47,12 +48,13 @@ function ensureCss() {
   injected = true;
 }
 
-export function Tag({ variant = "default", dot = false, disabled = false, className = "", children, ...rest }) {
+export function Tag({ variant = "default", dot = false, disabled = false, caps = false, className = "", children, ...rest }) {
   ensureCss();
   const cls = [
     "tasty-tag",
     variant !== "default" ? `tasty-tag--${variant}` : "",
     disabled ? "tasty-tag--disabled" : "",
+    caps ? "tasty-tag--caps" : "",
     className,
   ].filter(Boolean).join(" ");
   return (

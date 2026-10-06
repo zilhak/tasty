@@ -222,7 +222,7 @@ function App() {
         onConfigure={() => setOverlay("settings")} />}
 
       {toast && (
-        <div style={{ position: "absolute", bottom: "var(--tasty-size-36)", left: "50%", transform: "translateX(-50%)", zIndex: 60 }}>
+        <div style={{ position: "absolute", bottom: "var(--tasty-toast-stack-offset-bottom)", left: "50%", transform: "translateX(-50%)", zIndex: 60 }}>
           {React.createElement(window.TastyDesignSystem_41fd3f.Toast, { variant: "info" }, toast)}
         </div>
       )}

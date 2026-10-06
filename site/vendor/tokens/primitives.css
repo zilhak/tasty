@@ -132,6 +132,9 @@
   --tasty-size-560: 560px;
   --tasty-size-600: 600px; /* explorer sidebar "small surface" threshold */
   --tasty-size-620: 620px; /* settings content column max width */
+  --tasty-size-540: 540px; /* command palette card width (2026-10-06) */
+  --tasty-size-700: 700px; /* settings window height (2026-10-06) */
+  --tasty-size-1100: 1100px; /* settings window width (2026-10-06) */
 
   /* ── Radius scale ─────────────────────────────────────────── */
   --tasty-radius-2:    2px;
@@ -171,6 +174,8 @@
   /* ── Letter-spacing scale ─────────────────────────────────── */
   --tasty-letter-spacing-0:  0;
   --tasty-letter-spacing-04: 0.04em;
+  --tasty-letter-spacing-07: 0.07em;  /* wide caps — mono 10 headings keep a 1px column gap after integer advance (2026-10-06) */
+  --tasty-letter-spacing-n1px: -1px;  /* brand lockup (38px loading screen) only (2026-10-06) */
 
   /* ── Motion ───────────────────────────────────────────────── */
   --tasty-duration-0:   0ms; /* @kind other */

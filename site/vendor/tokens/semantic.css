@@ -265,6 +265,7 @@
 
   --tasty-letter-spacing-ui:   var(--tasty-letter-spacing-0);
   --tasty-letter-spacing-caps: var(--tasty-letter-spacing-04); /* uppercase micro-labels */
+  --tasty-letter-spacing-caps-wide: var(--tasty-letter-spacing-07); /* uppercase MONO 10 section headings (sidebar) — 0.04em quantises to 0 there (2026-10-06) */
 
   /* ── Motion ───────────────────────────────────────────────── */
   --tasty-motion-term:    var(--tasty-duration-0);   /* terminal content NEVER animates */

@@ -307,20 +307,20 @@ a { color: inherit; }
 .dl dd .tok { color: var(--tasty-accent-info); }
 
 /* token chips */
-.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chips { display: flex; flex-wrap: wrap; gap: var(--tasty-space-xs); }
 .chip {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--tasty-space-xs);
   font-family: var(--tasty-font-mono);
-  font-size: 11px;
-  padding: 3px 8px;
+  font-size: var(--tasty-font-size-caption);
+  padding: var(--tasty-space-xs) var(--tasty-space-sm);
   border: 1px solid var(--tasty-border-default);
   border-radius: var(--tasty-radius-sm);
   background: var(--tasty-surface-raised);
   color: var(--tasty-text-secondary);
 }
-.chip .sw { width: 11px; height: 11px; border-radius: 2px; border: 1px solid var(--tasty-border-strong); flex: none; }
+.chip .sw { width: var(--tasty-icon-size-xs); height: var(--tasty-icon-size-xs); border-radius: 2px; border: 1px solid var(--tasty-border-strong); flex: none; }
 .chip b { color: var(--tasty-text-primary); font-weight: 500; }
 .chip .use { color: var(--tasty-text-muted); }
 
@@ -371,8 +371,8 @@ a { color: inherit; }
 .note code, .ic { font-family: var(--tasty-font-mono); font-size: 0.92em; color: var(--tasty-text-secondary);
   background: var(--tasty-surface-raised); border: 1px solid var(--tasty-border-default); border-radius: var(--tasty-radius-sm); padding: 1px 5px; }
 .dont, .do { font-size: 12.5px; line-height: 1.5; padding: 9px 13px; border-radius: var(--tasty-radius-sm); margin-top: 8px; }
-.do  { background: color-mix(in srgb, var(--tasty-accent-success) 12%, transparent); color: var(--tasty-text-secondary); border-left: var(--tasty-tint-edge-width) solid var(--tasty-accent-success); }
-.dont { background: color-mix(in srgb, var(--tasty-accent-danger) 12%, transparent); color: var(--tasty-text-secondary); border-left: var(--tasty-tint-edge-width) solid var(--tasty-accent-danger); }
+.do  { background: color-mix(in srgb, var(--tasty-accent-success) calc(var(--tasty-tint-fill-alpha) * 100%), transparent); color: var(--tasty-text-secondary); border-left: var(--tasty-tint-edge-width) solid var(--tasty-accent-success); }
+.dont { background: color-mix(in srgb, var(--tasty-accent-danger) calc(var(--tasty-tint-fill-alpha) * 100%), transparent); color: var(--tasty-text-secondary); border-left: var(--tasty-tint-edge-width) solid var(--tasty-accent-danger); }
 .do b { color: var(--tasty-accent-success); } .dont b { color: var(--tasty-accent-danger); }
 
 /* ============================================================

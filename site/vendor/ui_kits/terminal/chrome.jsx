@@ -296,7 +296,7 @@ function CollapsedSidebar({ workspaces, activeWs, onWs, onSettings, onPlugins, o
 function Sidebar({ workspaces, activeWs, onWs, onSettings, onPlugins, onTools, collapsed, onToggle, pluginAlert = 0, categories = null, workspacesHeading = "Workspaces" }) {
   const Heading = ({ children }) => (
     <div style={{ fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-micro)", textTransform: "uppercase",
-      letterSpacing: "var(--tasty-letter-spacing-caps)", color: "var(--tasty-text-muted)", padding: "var(--tasty-space-md) var(--tasty-space-sm) var(--tasty-space-xs)" }}>{children}</div>
+      letterSpacing: "var(--tasty-sidebar-section-heading-tracking)", color: "var(--tasty-text-muted)", padding: "var(--tasty-space-md) var(--tasty-space-sm) var(--tasty-space-xs)" }}>{children}</div>
   );
   const { isCollapsed, toggle } = useCategoryCollapse(categories);
   const [menu, setMenu] = React.useState(null); // { x, y, target }
@@ -324,8 +324,8 @@ function Sidebar({ workspaces, activeWs, onWs, onSettings, onPlugins, onTools, c
       background: "var(--tasty-bg-sidebar)", borderRight: "var(--tasty-border-width) solid var(--tasty-separator)" }}>
       <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", padding: "var(--tasty-space-md) var(--tasty-space-md) var(--tasty-space-xs)" }}>
         <img src="../../assets/icons/icon_256.png" width="22" height="22" alt="Tasty" />
-        <span style={{ fontFamily: "var(--tasty-font-mono)", fontWeight: "var(--tasty-font-weight-bold)", fontSize: "var(--tasty-font-size-max)", color: "var(--tasty-text-primary)",
-          letterSpacing: "var(--tasty-letter-spacing-ui)" }}>tasty<span style={{ color: "var(--tasty-brand-melon-flesh)" }}>.</span></span>
+        <span style={{ fontFamily: "var(--tasty-font-mono)", fontWeight: "var(--tasty-font-weight-bold)", fontSize: "var(--tasty-sidebar-wordmark-font-size)", color: "var(--tasty-text-primary)",
+          letterSpacing: "var(--tasty-sidebar-wordmark-tracking)" }}>tasty<span style={{ color: "var(--tasty-brand-melon-flesh)" }}>.</span></span>
         <span style={{ marginLeft: "auto" }}>
           <IconButton size="sm" aria-label="Collapse" onClick={onToggle}>{ic.chevrons}</IconButton>
         </span>

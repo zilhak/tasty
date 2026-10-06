@@ -44,7 +44,7 @@ function Dim({ children, style }) {
 }
 
 const railHead = (txt) => (
-  <div style={{ fontFamily: "var(--tasty-font-mono)", fontSize: 10, textTransform: "uppercase", letterSpacing: ".07em",
+  <div style={{ fontFamily: "var(--tasty-font-mono)", fontSize: 10, textTransform: "uppercase", letterSpacing: "var(--tasty-sidebar-section-heading-tracking)",
     color: "var(--tasty-text-muted)", padding: "12px 10px 6px" }}>{txt}</div>
 );
 
@@ -73,7 +73,7 @@ function FullSidebar() {
       <Dim style={{ top: -9, left: "50%", transform: "translateX(-50%)" }}>212px</Dim>
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 12px 4px" }}>
         <img src="../assets/icons/icon_256.png" width="22" height="22" alt="" />
-        <span style={{ fontFamily: "var(--tasty-font-mono)", fontWeight: 700, fontSize: 17, letterSpacing: "-.5px" }}>tasty<span style={{ color: "var(--tasty-brand-melon-flesh)" }}>.</span></span>
+        <span style={{ fontFamily: "var(--tasty-font-mono)", fontWeight: 700, fontSize: "var(--tasty-sidebar-wordmark-font-size)", letterSpacing: "var(--tasty-sidebar-wordmark-tracking)" }}>tasty<span style={{ color: "var(--tasty-brand-melon-flesh)" }}>.</span></span>
         <span style={{ marginLeft: "auto" }}><IconButton size="sm" aria-label="Collapse">{ic.chevrons}</IconButton></span>
       </div>
       {railHead("Workspaces")}
@@ -161,7 +161,7 @@ function catHeader(label, collapsed, cap, count) {
       borderBottom: "1px solid var(--tasty-sidebar-category-header-border)" }}>
       <span style={{ display: "inline-flex", width: 12, justifyContent: "center", color: "var(--tasty-sidebar-category-header-fg)",
         transform: collapsed ? "none" : "rotate(90deg)" }}>{ic.chevR}</span>
-      <span style={{ flex: 1, fontFamily: "var(--tasty-font-mono)", fontSize: 10, textTransform: "uppercase", letterSpacing: ".07em",
+      <span style={{ flex: 1, fontFamily: "var(--tasty-font-mono)", fontSize: 10, textTransform: "uppercase", letterSpacing: "var(--tasty-sidebar-section-heading-tracking)",
         fontWeight: "var(--tasty-sidebar-category-header-weight)", color: "var(--tasty-sidebar-category-header-fg)" }}>{label}</span>
       {cap && <SwitchCap n={cap.n} active={cap.active} />}
       {!cap && typeof count === "number" && (
@@ -199,7 +199,7 @@ function CategoryFullSidebar({ held }) {
       <Dim style={{ top: -9, left: "50%", transform: "translateX(-50%)" }}>{held ? "Alt+Shift held" : "categories on"}</Dim>
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 12px 4px" }}>
         <img src="../assets/icons/icon_256.png" width="22" height="22" alt="" />
-        <span style={{ fontFamily: "var(--tasty-font-mono)", fontWeight: 700, fontSize: 17, letterSpacing: "-.5px" }}>tasty<span style={{ color: "var(--tasty-brand-melon-flesh)" }}>.</span></span>
+        <span style={{ fontFamily: "var(--tasty-font-mono)", fontWeight: 700, fontSize: "var(--tasty-sidebar-wordmark-font-size)", letterSpacing: "var(--tasty-sidebar-wordmark-tracking)" }}>tasty<span style={{ color: "var(--tasty-brand-melon-flesh)" }}>.</span></span>
         <span style={{ marginLeft: "auto" }}><IconButton size="sm" aria-label="Collapse">{ic.chevrons}</IconButton></span>
       </div>
       {catHeader("Workspaces", false, held && { n: "1", active: true }, 2)}
@@ -332,7 +332,7 @@ function AttentionScale() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
       <div style={{ display: "grid", gridTemplateColumns: "44px 120px 1fr 150px 60px", gap: 10, padding: "0 8px 6px",
-        fontFamily: "var(--tasty-font-mono)", fontSize: 10, textTransform: "uppercase", letterSpacing: ".07em", color: "var(--tasty-text-muted)" }}>
+        fontFamily: "var(--tasty-font-mono)", fontSize: 10, textTransform: "uppercase", letterSpacing: "var(--tasty-sidebar-section-heading-tracking)", color: "var(--tasty-text-muted)" }}>
         <span>rank</span><span>kind</span><span>meaning</span><span>role borrowed</span><span>fill</span>
       </div>
       {[{ id: "error", name: "Error", rank: 40, tok: "(reserved)", role: "accent-danger", what: "failed and unrecovered", live: false }].concat(ATT_KINDS).map((k) => (
@@ -490,7 +490,7 @@ function DrillDownDemo() {
   const items = DD_PRESETS.map((p) => ({ id: p.id, label: p.name, description: p.desc,
     trailing: p.id === active ? <Tag variant="success" dot>Active</Tag> : null }));
   const head = { fontFamily: "var(--tasty-font-mono)", fontSize: 10, textTransform: "uppercase",
-    letterSpacing: ".07em", color: "var(--tasty-text-muted)", padding: "0 12px 6px", borderBottom: "1px solid var(--tasty-separator)" };
+    letterSpacing: "var(--tasty-sidebar-section-heading-tracking)", color: "var(--tasty-text-muted)", padding: "0 12px 6px", borderBottom: "1px solid var(--tasty-separator)" };
   const cell = { padding: "6px 12px", borderBottom: "1px solid var(--tasty-separator)", fontSize: 13, display: "flex", alignItems: "center" };
   return (
     <div style={{ width: 560, height: 320, display: "flex", flexDirection: "column", background: "var(--tasty-bg-panel)",

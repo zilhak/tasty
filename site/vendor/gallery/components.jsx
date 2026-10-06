@@ -529,7 +529,7 @@ function Components() {
             </div>
           </Stage>
           <Meta
-            specs={[["anchor", "one corner (bottom-right)"], ["order", "newest bottom"], ["gap", <>8px <span className="tok">--tasty-space-sm</span></>], ["cap", "5 per scope → oldest dropped"], ["width", <>content width per card, cap <span className="tok">--tasty-toast-max-width</span> (320) · right edges align</>]]}
+            specs={[["anchor", "one corner (bottom-right)"], ["order", "newest bottom"], ["gap", <>8px <span className="tok">--tasty-space-sm</span></>], ["cap", "5 per scope → oldest dropped"], ["width", <>content width per card, cap <span className="tok">--tasty-toast-max-width</span> (320) · right edges align</>], ["window-scope offset (b2)", <><span className="tok">--tasty-toast-stack-offset-bottom</span> (→ size-36) from the window bottom</>], ["link menu Copy hint (b2)", "own action copy_link ('Copy link'), unbound by default → no hint until the user binds it; never borrow the copy binding"], ["over a native WebView (b2)", "while a toast card's rect intersects a WebView, only THAT WebView is hidden for the card's life (its tile shows plain); others stay; keyboard focus is not reclaimed (a toast never takes focus)"]]}
             tokens={[{ tok: "--tasty-space-sm", use: "stack gap" }, { tok: "--tasty-surface-raised", use: "each card", color: "var(--tasty-surface-raised)" }]} />
           <Dont><b>Don’t</b> let the stack grow unbounded, and don’t fold the tail into a “+N more” row either. Hold the cap by dropping the oldest card — a wall of toasts buries the newest signal, and an overflow counter is one more thing to read instead of the notice itself.</Dont>
         <Spec title="The dot family — 8 generic, 6 in dense chrome, and the attached ring"

@@ -118,6 +118,12 @@ const SAMPLE_MANIFEST = {
 
 // Fingerprint line (2026-09-29): mono text + IconButton sm `copy` right after it — the copy
 // action lives with the value, not in the action bar. No fingerprint → no line, no button.
+// 2026-10-06: a long colon-hex fingerprint (> 16 bytes, e.g. SHA-256 = 95 chars) shows the first 8 and last 8
+// bytes joined by " … "; tooltip and copy carry the full value. Short forms show as given.
+function shortFingerprint(v) {
+  const parts = String(v).split(":");
+  return parts.length > 16 ? parts.slice(0, 8).join(":") + " … " + parts.slice(-8).join(":") : v;
+}
 function FingerprintLine({ value, onCopy }) {
   const DsIcon = window.TastyDesignSystem_41fd3f.Icon;
   if (!value) return null;
@@ -125,7 +131,7 @@ function FingerprintLine({ value, onCopy }) {
     <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", fontFamily: "var(--tasty-font-mono)",
       fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>
       <span style={{ color: "var(--tasty-text-secondary)" }}>fingerprint</span>
-      <span>{value}</span>
+      <span title={value} style={{ whiteSpace: "nowrap" }}>{shortFingerprint(value)}</span>
       <IconButton size="sm" aria-label="Copy fingerprint" title="Copy fingerprint" onClick={onCopy}><DsIcon name="copy" /></IconButton>
     </div>
   );
@@ -269,7 +275,7 @@ function AddPluginForm({ onAdded, onCancel }) {
       <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", padding: "var(--tasty-space-md) var(--tasty-size-14)",
         borderTop: "var(--tasty-border-width) solid var(--tasty-separator)", flex: "none" }}>
         {manifest && (
-          <span style={{ fontSize: 12, color: "var(--tasty-text-muted)" }}>
+          <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>
             {manifest.blocked ? ADD_BLOCKED[manifest.blocked] : grantsLabel(manifest.perms.length)}
           </span>
         )}
@@ -405,6 +411,9 @@ function AttentionPanel({ items, onFlash, onConfigure }) {
             <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-sm)" }}>
               <Mono>Signature</Mono>
               <FingerprintLine value={sel.detail.fingerprint} onCopy={() => onFlash && onFlash("Fingerprint copied")} />
+              {!sel.detail.note && sel.reason === "signature-invalid" && <p style={{ margin: 0, fontSize: "var(--tasty-font-size-term-sm)", lineHeight: "var(--tasty-line-height-ui)",
+                color: "var(--tasty-text-muted)", maxWidth: "var(--tasty-measure-lg)" }}>The signature does not match this plugin's files.</p>}
+              {sel.detail.cause && <span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>{sel.detail.cause}</span>}
               {sel.detail.note && <p style={{ margin: 0, fontSize: "var(--tasty-font-size-term-sm)", lineHeight: "var(--tasty-line-height-ui)",
                 color: "var(--tasty-text-muted)", maxWidth: "var(--tasty-measure-lg)" }}>{sel.detail.note}</p>}
             </div>

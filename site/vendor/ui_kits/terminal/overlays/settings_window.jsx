@@ -1123,7 +1123,7 @@ function SettingsWindow({ theme, onTheme, uiScale, onUiScale, onClose }) {
 
   return (
     <Scrim onClose={onClose}>
-      <div style={{ width: 1100, height: 700, display: "flex", flexDirection: "column", background: "var(--tasty-bg-panel)",
+      <div style={{ width: "var(--tasty-settings-window-width)", height: "var(--tasty-settings-window-height)", display: "flex", flexDirection: "column", background: "var(--tasty-bg-panel)",
         border: "var(--tasty-border-width) solid var(--tasty-border-strong)", borderRadius: "var(--tasty-radius)", overflow: "hidden",
         boxShadow: "var(--tasty-shadow-modal)" }}>
         {/* L1 — small fixed set of top tabs */}

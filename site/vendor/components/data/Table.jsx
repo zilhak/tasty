@@ -21,7 +21,7 @@ const CSS = `
   padding: 0 var(--tasty-space-md);
   background: var(--tasty-bg-sidebar);
   color: var(--tasty-text-muted);
-  font-family: var(--tasty-font-mono); font-size: var(--tasty-table-header-font-size); font-weight: var(--tasty-table-header-font-weight);
+  font-family: var(--tasty-font-ui); font-size: var(--tasty-table-header-font-size); /* 2026-10-06: UI font (was mono) — matches the app; caps tracking renders on it */ font-weight: var(--tasty-table-header-font-weight);
   text-transform: uppercase; letter-spacing: var(--tasty-table-header-tracking);
   text-align: left; white-space: nowrap; user-select: none;
   border-bottom: var(--tasty-border-width) solid var(--tasty-separator);

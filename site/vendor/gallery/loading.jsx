@@ -26,7 +26,7 @@ function Lockup() {
     <div style={{ display: "flex", alignItems: "center" }}>
       <img src="../assets/icons/icon_256.png" alt="tasty"
         style={{ width: 64, height: 64, imageRendering: "-webkit-optimize-contrast" }} />
-      <span style={{ fontFamily: "var(--tasty-font-mono)", fontWeight: 700, fontSize: 38, letterSpacing: "-1px", marginLeft: -10, color: "var(--tasty-text-primary)" }}>
+      <span style={{ fontFamily: "var(--tasty-font-mono)", fontWeight: 700, fontSize: 38, letterSpacing: "var(--tasty-loading-lockup-tracking)", marginLeft: -10, color: "var(--tasty-text-primary)" }}>
         tasty<span style={{ color: "var(--tasty-brand-melon-flesh)" }}>.</span>
       </span>
     </div>
@@ -205,7 +205,7 @@ function Page() {
       </Section>
       <Section id="shellsetup" title="First-run shell setup — 2026-09-29">
         <Spec title="Shell path form — Cancel / Use this shell"
-          when={<>Shown on the boot surface when no usable shell is configured (<code>render_shell_setup</code>). Same fill and lockup as the loading screen, then a 360-wide form: title, one-line sub, mono path <b>Input</b>, a validation line (glyph + word), and a right-aligned button row. The confirm moves to the shared <b>Button primary</b> (md) — the hand-painted accent-success fill goes, there is no success variant — and is labelled by what it does, <b>Use this shell</b> (the untranslated "OK" goes; i18n key). <b>Quit</b> (was Cancel — it exits the app) is Button secondary. The validation line has one message per host verdict, and on <b>Windows</b> a warning caption names the missing Git Bash (2026-10-06). While the path is not an executable, the primary is <b>disabled</b> with the shared ink rule; the validation line says why.</>}>
+          when={<>Shown on the boot surface when no usable shell is configured (<code>render_shell_setup</code>). Same fill and lockup as the loading screen, then a 360-wide form: title, a sub that may wrap to two lines (body, line-height-ui; never truncated), mono path <b>Input</b>, a validation line (glyph + word), and a right-aligned button row. The confirm moves to the shared <b>Button primary</b> (md) — the hand-painted accent-success fill goes, there is no success variant — and is labelled by what it does, <b>Use this shell</b> (the untranslated "OK" goes; i18n key). <b>Quit</b> (was Cancel — it exits the app) is Button secondary. The validation line has one message per host verdict, and on <b>Windows</b> a warning caption names the missing Git Bash (2026-10-06). While the path is not an executable, the primary is <b>disabled</b> with the shared ink rule; the validation line says why.</>}>
           <Stage variant="solo" style={{ display: "flex", flexWrap: "wrap", gap: "var(--tasty-space-lg)", padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-app)" }} eager>
             <ShellSetupFrame os="win" check="empty" />
             <ShellSetupFrame os="win" check="missing" />

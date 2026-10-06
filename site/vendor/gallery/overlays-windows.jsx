@@ -71,11 +71,16 @@ function FontOverrideG({ long = false }) {
     ["Line height", <span style={{ display: "flex", width: "var(--tasty-field-width-xs)" }}><Input block mono readOnly defaultValue="1.2" /></span>, true],
     ["Font DPI scaling", <WSelect options={["Follow display"]} style={{ width: "var(--tasty-field-width-md)" }} />, true],
   ];
+  // 2026-10-06 (b2) — preview content: the surface's EFFECTIVE background + effective font, four sample lines
+  // (latin · hangul · digits · kana), inside the kit box edge. bg-app / bg-panel are stand-ins for the runtime
+  // surface colours (Terminal default: Focused #000000, Unfocused = base).
   const pv = (focused) => (
-    <div style={{ flex: "1 1 0", minWidth: 0, display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)" }}>
+    <div style={{ flex: "1 1 var(--tasty-font-preview-min-width)", minWidth: "var(--tasty-font-preview-min-width)", display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)" }}>
       <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>{focused ? "Focused" : "Unfocused"}</span>
-      <div style={{ padding: "var(--tasty-space-sm) var(--tasty-space-md)", background: "var(--tasty-bg-app)", border: "var(--tasty-border-width) solid " + (focused ? "var(--tasty-border-strong)" : "var(--tasty-separator)"), borderRadius: "var(--tasty-radius)",
-        fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-body)", color: focused ? "var(--tasty-text-primary)" : "var(--tasty-text-muted)", whiteSpace: "nowrap", overflow: "hidden" }}>~/tasty ❯ cargo build</div>
+      <div style={{ display: "flex", flexDirection: "column", padding: "var(--tasty-font-preview-padding-y) var(--tasty-font-preview-padding-x)", background: focused ? "var(--tasty-bg-app)" : "var(--tasty-bg-panel)", border: "var(--tasty-border-width) solid " + (focused ? "var(--tasty-border-strong)" : "var(--tasty-separator)"), borderRadius: "var(--tasty-radius)",
+        fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-term)", lineHeight: "var(--tasty-font-preview-line-height)", color: "var(--tasty-text-primary)", whiteSpace: "nowrap", overflow: "hidden" }}>
+        <span>AaBbCcDdEeFfGg</span><span>가나다라마바사</span><span>1234567890</span><span>アカサタナハマラヤワ</span>
+      </div>
     </div>
   );
   return (
@@ -97,7 +102,10 @@ function FontOverrideG({ long = false }) {
     </div>
   );
 }
-function ExtMapG({ draft = "", detectors = true, custom = false, missing = false, long = false }) {
+function ExtMapG({ draft = "", detectors = true, custom = false, missing = false, long = false, pendingRemove = false, pendingReset = false }) {
+  // 2026-10-06 (b2) — pending (draft) state: the button that changed the draft becomes Undo in the same slot,
+  // and a disabled Tag says what Save will do. Remove-pending also strikes the .ext label.
+  const P = long ? { undo: "Rückgängig", removed: "保存時に削除", reset: "Se restablece al guardar" } : { undo: "Undo", removed: "removed on save", reset: "reset on save" };
   // 2026-10-06 — Reset (custom order) and Remove (not installed) live at the RIGHT END of the group header,
   // ghost Button sm; header min-height = button-height-sm so the row does not jump when Reset appears.
   const L = long ? { reset: "Restablecer orden", remove: "Entfernen", ni: "インストールされていません" } : { reset: "Reset", remove: "Remove", ni: "not installed" };
@@ -113,11 +121,12 @@ function ExtMapG({ draft = "", detectors = true, custom = false, missing = false
         return (
           <div key={g.ext} style={{ display: "flex", flexDirection: "column" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", minHeight: "var(--tasty-button-height-sm)", padding: "var(--tasty-space-xs) 0", borderBottom: g.missing ? "var(--tasty-border-width) solid var(--tasty-separator)" : undefined }}>
-              <span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-caption)", color: g.missing ? "var(--tasty-text-disabled)" : "var(--tasty-text-secondary)" }}>{g.ext}</span>
-              {g.missing && <WTag disabled>{L.ni}</WTag>}
+              <span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-caption)", color: g.missing ? "var(--tasty-text-disabled)" : "var(--tasty-text-secondary)", textDecoration: g.missing && pendingRemove ? "line-through" : undefined }}>{g.ext}</span>
+              {g.missing && <WTag disabled>{pendingRemove ? P.removed : L.ni}</WTag>}
+              {g.custom && pendingReset && <WTag disabled>{P.reset}</WTag>}
               <span style={{ flex: 1 }} />
-              {g.custom && <span title="Remove the custom priority for this extension (revert to install order)."><Button variant="ghost" size="sm">{L.reset}</Button></span>}
-              {g.missing && <Button variant="ghost" size="sm">{L.remove}</Button>}
+              {g.custom && (pendingReset ? <Button variant="ghost" size="sm">{P.undo}</Button> : <span title="Remove the custom priority for this extension (revert to install order)."><Button variant="ghost" size="sm">{L.reset}</Button></span>)}
+              {g.missing && <Button variant="ghost" size="sm">{pendingRemove ? P.undo : L.remove}</Button>}
             </div>
             {g.rows.map(([name, c], i) => (
               <div key={name} style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", minHeight: "var(--tasty-settings-row-min-height)", borderBottom: "var(--tasty-border-width) solid var(--tasty-separator)" }}>
@@ -141,6 +150,38 @@ const ThemePair = ({ children }) => (
     </div>
   ))}</>
 );
+// 2026-10-06 — Hook Handlers IpcSequence inline editor (normal · error · empty)
+function HookSeqEditorG({ state = "normal" }) {
+  const WCodeArea = window.TastyDesignSystem_41fd3f.CodeArea;
+  const text = { normal: 'system.info\nnotification.send {"body":"${body.branch}","title":"Build ${body.status}"}\nworkspace.create {"name":"ci-${body.run}"}', error: '# notify\nsystem.info\nnotification.send {"title": "Build", body: 1}', empty: "" }[state];
+  const cap = { fontSize: "var(--tasty-font-size-caption)", lineHeight: "var(--tasty-line-height-ui)" };
+  return (
+    <div style={{ width: "var(--tasty-size-460)", maxWidth: "100%", background: "var(--tasty-bg-panel)", border: "var(--tasty-border-width) solid var(--tasty-border-frame)", borderRadius: "var(--tasty-radius)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", padding: "var(--tasty-space-sm) var(--tasty-space-md) 0" }}>
+        <span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-term-sm)", color: "var(--tasty-text-secondary)" }}>on_webhook</span>
+        <span style={{ flex: 1, fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-term-sm)", color: "var(--tasty-text-primary)" }}>ci-notify</span>
+        <WTag>you</WTag>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)", padding: "var(--tasty-space-sm) var(--tasty-space-md) var(--tasty-space-md)" }}>
+        {WCodeArea && <WCodeArea minRows={4} defaultValue={text} errorLine={state === "error" ? 3 : null} placeholder="system.info" />}
+        {state === "error"
+          ? <div style={{ ...cap, display: "flex", alignItems: "baseline", gap: "var(--tasty-space-xs)", flexWrap: "wrap" }}>
+              <span style={{ display: "inline-flex", alignSelf: "center", color: "var(--tasty-accent-danger)" }}><WIcon name="alertCircle" size={12} /></span>
+              <span style={{ color: "var(--tasty-accent-danger)" }}>Line 3, column 38: invalid params JSON.</span>
+              <span style={{ fontFamily: "var(--tasty-font-mono)", color: "var(--tasty-text-muted)" }}>key must be a string</span>
+            </div>
+          : state === "empty"
+            ? <span style={{ ...cap, color: "var(--tasty-text-muted)" }}>No calls. The handler does nothing.</span>
+            : null}
+        <span style={{ ...cap, color: "var(--tasty-text-muted)" }}>One call per line: method, then optional JSON params. Lines starting with # are skipped and are not kept.</span>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: "var(--tasty-space-sm)", paddingTop: "var(--tasty-space-xs)" }}>
+          <Button variant="ghost" size="sm">Cancel</Button>
+          <Button variant="secondary" size="sm" disabled={state === "error"}>Apply</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const NAV = [
   { id: "palette", label: "Command palette" },
@@ -732,6 +773,16 @@ function Page() {
           <Do><b>Do</b> keep secrets in the Passkey store and reference them by name. A profile never holds a secret inline.</Do>
           <Note>The protocol filter is <b>Profiles-only</b> (Passkeys has no filter) and <b>session-only</b> — never persisted; Tasty restarts with every protocol selected. The button reads <span className="ic">Filter</span> when off and turns accent with a <span className="ic">selected/total</span> count when a filter is applied.</Note>
         </Spec>
+        <Spec title="Passkeys tab — rows, reveal, unknown kind (2026-10-06)"
+          when={<>The <b>third tab</b>, same 520-wide frame. Each row: <b>name</b> (600) + kind <b>Tag</b> — or the warning badge when the stored kind is unknown — then a mono line <span className="ic">kind · value</span>, masked until revealed. Actions on the right: <b>reveal</b>, <b>edit</b>, <b>delete</b> (<code>trash</code>, as on the other two tabs), IconButton sm. Revealed = IconButton <b>active</b> and the glyph swaps <code>eye</code> → <code>eyeOff</code>. The value line <b>ellipsizes, revealed or not</b>; the action cluster is <code>flex: none</code> and is never pushed out of the row.</>}>
+          <Stage variant="solo center" style={{ padding: 20, background: "var(--tasty-bg-app)", gap: 20, flexWrap: "wrap" }}>
+            <RemoteFrame tab="passkeys" />
+            <div data-theme="latte"><RemoteFrame tab="passkeys" /></div>
+          </Stage>
+          <Meta
+            specs={[["row", "name 600 + Tag / warn badge · mono caption kind · value"], ["mask", "fixed 8-dot mask while hidden"], ["revealed", "IconButton active + eyeOff"], ["long value", "ellipsis at the end · actions flex none, never pushed out"], ["actions", "reveal · edit · trash · IconButton sm, gap 1"], ["add-bar", "Add passkey (Button secondary sm) · no filter"]]}
+            tokens={[{ tok: "--tasty-accent-warning", use: "unknown kind", color: "var(--tasty-accent-warning)" }, { tok: "--tasty-text-muted", use: "value line", color: "var(--tasty-text-muted)" }]} />
+        </Spec>
         <Spec title="Attach tab — tasty-attach targets"
           when={<>The <b>middle tab</b>. An <b>Attach</b> holds everything needed to attach to a <b>remote tasty instance</b> — it either <b>references</b> an ssh profile (<span className="ic">→ prod-web</span>) or carries <b>inline</b> ssh info, plus a <b>remote tasty</b> executable path and a <b>port discovery</b> mode. Splitting this off the ssh profile keeps ssh profiles pure connection info. Rows show name + (label), the reference/host summary, remote-tasty + port-mode captions, and an <b>inactive</b> badge when the referenced profile or inline shell isn't reachable.</>}>
           <Stage variant="solo center" style={{ padding: 20, background: "var(--tasty-bg-app)" }}><RemoteFrame tab="attach" /></Stage>
@@ -1085,7 +1136,8 @@ function Page() {
               {[{ ev: "on_open", act: "open_markdown_preview", origin: "host" },
                 { ev: "on_open", act: "run: code -g {path}:{line}", origin: "you" },
                 { ev: "on_paste", act: "imgview.stash", origin: "dev.imgview" },
-                { ev: "on_exit", act: "ipc: focus → save → close", origin: "you", seq: true }].map((r, i) => {
+                { ev: "on_exit", act: "ipc: focus → save → close", origin: "you", seq: true },
+                { ev: "on_webhook", act: "ipc: system.info → … (2 steps)", origin: "you", seq: true, cli: true }].map((r, i) => {
                 const user = r.origin === "you";
                 const plugin = r.origin !== "host" && !user;
                 return (
@@ -1093,7 +1145,8 @@ function Page() {
                     <span style={{ flex: "none", width: 88, fontFamily: "var(--tasty-font-mono)", fontSize: 12, color: "var(--tasty-text-secondary)" }}>{r.ev}</span>
                     <span style={{ flex: 1, minWidth: 0, fontFamily: "var(--tasty-font-mono)", fontSize: 12, color: "var(--tasty-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.act}</span>
                     <span style={{ flex: "none", color: plugin ? "var(--tasty-accent-agent)" : undefined }}><WTag>{r.origin}</WTag></span>
-                    {r.seq && <span title="tasty hook-handler upsert" style={{ flex: "none", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>Edit with CLI</span>}{r.seq && <IconButton size="sm" aria-label="Copy edit command"><WIcon name="copy" size={13} /></IconButton>}
+                    {r.seq && !r.cli && <Button variant="ghost" size="sm">Edit</Button>}
+                    {r.cli && <span title="tasty hook-handler get --id ci-notify" style={{ flex: "none", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>Edit with CLI</span>}{r.cli && <IconButton size="sm" aria-label="Copy edit command"><WIcon name="copy" size={13} /></IconButton>}
                     <span style={{ flex: "none", width: 24, display: "inline-flex", justifyContent: "center" }}>
                       {user
                         ? <IconButton size="sm" aria-label="Remove"><WIcon name="trash" size={13} /></IconButton>
@@ -1105,9 +1158,24 @@ function Page() {
             </div>
           </Stage>
           <Meta
-            specs={[["origin", <>Tag: <b>host</b> · <b>you</b> · plugin id (<span className="tok">--tasty-accent-agent</span>)</>], ["remove", "user rows only"], ["not removable", <>lock glyph, <span className="tok">--tasty-glyph-dim</span>, with tooltip</>], ["not a disabled button", "nothing is pending — an affordance would lie"], ["IpcSequence", "mono one-line summary, steps joined by →"], ["sequence editing (2026-10-06)", "no GUI editor yet → caption \"Edit with CLI\" (text-muted) + IconButton sm copy: copies tasty hook-handler get <event> <id>. No Edit button until the editor exists"], ["when the editor lands", "the caption + copy pair is replaced by Edit (ghost sm) in the same slot — separate design request"], ["registry", "unchanged — defaults re-seed on start"]]}
+            specs={[["origin", <>Tag: <b>host</b> · <b>you</b> · plugin id (<span className="tok">--tasty-accent-agent</span>)</>], ["remove", "user rows only"], ["not removable", <>lock glyph, <span className="tok">--tasty-glyph-dim</span>, with tooltip</>], ["not a disabled button", "nothing is pending — an affordance would lie"], ["IpcSequence", "mono one-line summary, steps joined by →"], ["sequence editing (2026-10-06 b2)", "Edit (ghost sm) on EVERY IpcSequence row (host / plugin edits save as a user override, like ShellCommand) → opens the inline text editor below"], ["not text-representable", "a stored method name the line format cannot carry → the row keeps caption \"Edit with CLI\" + copy; copies tasty hook-handler get --id <id>"], ["registry", "unchanged — defaults re-seed on start"]]}
             tokens={[{ tok: "--tasty-glyph-dim", use: "lock glyph", color: "var(--tasty-glyph-dim)" }, { tok: "--tasty-accent-agent", use: "plugin origin", color: "var(--tasty-accent-agent)" }, { tok: "--tasty-font-mono", use: "event · action · sequence" }]} />
           <Note>The design's earlier “remove on every row” is dropped: the registry policy wins, and the lock is the honest reading of it.</Note>
+        </Spec>
+        <Spec title="Hook Handlers — IpcSequence text editor (2026-10-06)"
+          when={<>Edit expands the row <b>inline</b>: the one-line summary is replaced by a <b>CodeArea</b> (mono, line-number gutter) holding the sequence as text, one IPC call per line — <code>method</code>, a space, then optional one-line JSON params. A help line under the field states the format. The text is parsed <b>on every change</b>; the <b>first</b> error shows on its own line under the field (glyph + translated sentence with line / column, then the untranslated parser reason in mono muted), the line is marked in the gutter, and <b>Apply</b> is disabled while an error stands. Apply writes the <b>tab draft</b>; Settings <b>Save</b> commits it, Cancel in the footer reverts it, like every other row. An empty sequence is allowed with a muted note. <b>Mod+Enter</b> = Apply, <b>Esc</b> = Cancel; Enter is a newline. Adding a new IpcSequence handler from the Add card is out of scope this round.</>}>
+          <Stage variant="solo" style={{ padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-app)", gap: "var(--tasty-space-lg)", flexWrap: "wrap", alignItems: "flex-start" }}>
+            <ThemePair><HookSeqEditorG state="normal" /></ThemePair>
+          </Stage>
+          <Stage variant="solo" style={{ padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-app)", gap: "var(--tasty-space-lg)", flexWrap: "wrap", alignItems: "flex-start" }}>
+            <ThemePair><HookSeqEditorG state="error" /></ThemePair>
+          </Stage>
+          <Stage variant="solo" style={{ padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-app)", gap: "var(--tasty-space-lg)", flexWrap: "wrap", alignItems: "flex-start" }}>
+            <ThemePair><HookSeqEditorG state="empty" /></ThemePair>
+          </Stage>
+          <Meta
+            specs={[["placement", "inline — the row's second line becomes the editor; one row open at a time"], ["field", "CodeArea · minRows 4 · grows to codearea-max-height 200, then scrolls · no wrap"], ["help", "text-muted caption: One call per line: method, then optional JSON params. Lines starting with # are skipped and are not kept."], ["parse", "every change · first error only"], ["error line", "alertCircle + sentence in accent-danger caption · parser reason after it, mono caption text-muted (untranslated) · gutter number danger + tinted band"], ["error copy", "Line {line}: a method name is required before the params. · Line {line}: the method name contains a control character. · Line {line}, column {column}: invalid params JSON."], ["empty", "allowed · note: No calls. The handler does nothing."], ["buttons", "right-aligned · Cancel ghost sm · Apply secondary sm (disabled while an error stands)"], ["save flow", "Apply → tab draft → Settings Save"], ["keys", "Mod+Enter Apply · Esc Cancel · Enter newline"], ["reopen", "comments / blank lines are gone, JSON compact with sorted keys — the help line says so; no extra notice"]]}
+            tokens={[{ tok: "--tasty-codearea-gutter-bg", use: "→ bg-sidebar", color: "var(--tasty-codearea-gutter-bg)" }, { tok: "--tasty-codearea-gutter-fg", use: "→ text-muted", color: "var(--tasty-codearea-gutter-fg)" }, { tok: "--tasty-codearea-error-fg", use: "→ accent-danger", color: "var(--tasty-codearea-error-fg)" }, { tok: "--tasty-codearea-max-height", use: "→ size-200" }]} />
         </Spec>
         <Spec title="Appearance › colour rows — the Default hex is read-only, not disabled (2026-09-29)"
           when={<>With <b>Default</b> checked, a colour row has no override and its hex field cannot be edited. The field still carries the <b>base value in use</b>, the only text value on the row, so it is <b>read-only</b>, not disabled: the same neutral box as a disabled Input, with the value in <span className="tok">--tasty-input-readonly-fg</span> (text-secondary) instead of the disabled ink. The value can be selected and copied; the field takes focus (1px focus edge, no ring). Unchecking Default starts the override and the field becomes a normal Input. Applies to the Tasty colour rows, the terminal surface background row and the Colors group.</>}>
@@ -1138,7 +1206,7 @@ function Page() {
             <ThemePair><div style={{ width: "var(--tasty-size-360)" }}><FontOverrideG long /></div></ThemePair>
           </Stage>
           <Meta
-            specs={[["row", "label 150 · control · Use default — gap space-lg, min-h settings-row 32 (same as Settings Row)"], ["Font family", "searchable combo · field-width-lg 200"], ["Custom font file", "path Input mono · field-width-lg 200"], ["Font size · Line height", "number Input · field-width-xs 90"], ["DPI scaling", "Select · field-width-md 160"], ["Use default", "Checkbox + label, trailing, never truncated"], ["narrow", "row wraps: the checkbox drops under the control (row-gap space-xs)"], ["preview", "below the grid · space-lg above · Focused / Unfocused flex 1 each, wrap"], ["summary", "mono caption · text-muted"]]}
+            specs={[["row", "label 150 · control · Use default — gap space-lg, min-h settings-row 32 (same as Settings Row)"], ["Font family", "searchable combo · field-width-lg 200"], ["Custom font file", "path Input mono · field-width-lg 200"], ["Font size · Line height", "number Input · field-width-xs 90"], ["DPI scaling", "Select · field-width-md 160"], ["Use default", "Checkbox + label, trailing, never truncated"], ["narrow", "row wraps: the checkbox drops under the control (row-gap space-xs)"], ["preview", "below the grid · space-lg above · Focused / Unfocused flex 1 each"], ["preview box (b2)", "the surface's effective bg (runtime colour, not a token) + effective font & size · 4 lines: latin · hangul · digits · kana · ink = surface focused fg · edge Focused border-strong / Unfocused separator · radius"], ["padding", "font-preview-padding-y space-sm · -x space-md"], ["line height", "font-preview-line-height → line-height-ui 1.4 × effective size; box height follows (no height token)"], ["stack", "a box narrower than font-preview-min-width (→ field-width-lg 200) wraps under the other — content width < 2 × 200 + space-md"], ["summary", "mono caption · text-muted"]]}
             tokens={[{ tok: "--tasty-settings-label-width", use: "150 label column (new name)" }, { tok: "--tasty-field-width-lg", use: "family · file" }, { tok: "--tasty-field-width-md", use: "DPI" }, { tok: "--tasty-field-width-xs", use: "numbers" }, { tok: "--tasty-settings-row-min-height", use: "row" }]} />
         </Spec>
         <Spec title="FileHandler › File Extension Mapping — order + Add (2026-09-29)"
@@ -1151,8 +1219,12 @@ function Page() {
             <ThemePair><ExtMapG custom missing /></ThemePair>
             <ThemePair><ExtMapG custom missing long /></ThemePair>
           </Stage>
+          <Stage variant="solo" style={{ padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-app)", gap: "var(--tasty-space-lg)", flexWrap: "wrap", alignItems: "flex-start" }}>
+            <ThemePair><ExtMapG custom missing pendingRemove pendingReset /></ThemePair>
+            <ThemePair><ExtMapG custom missing pendingRemove pendingReset long /></ThemePair>
+          </Stage>
           <Meta
-            specs={[["add", "Button secondary sm · disabled: empty input or no detector"], ["order", "IconButton sm chevronUp / chevronDown"], ["top / last row", "▲ / ▼ disabled"], ["non-candidate row", "both disabled · name text-disabled · Tag disabled \"off\""], ["hide instead?", "no — slots stay put"], ["Reset (2026-10-06)", "ghost Button sm · header right end · only when the extension has a custom order · tooltip kept · draft only"], ["not installed", "the group header alone: .ext text-disabled · Tag disabled · Remove ghost Button sm; no detector rows; separator under it"], ["header", "min-height button-height-sm — Reset appearing never moves the rows"], ["long copy", "Tag and button never truncate; .ext label is the shrinking item"], ["confirm", "none — both edit the draft, Cancel reverts"]]}
+            specs={[["add", "Button secondary sm · disabled: empty input or no detector"], ["order", "IconButton sm chevronUp / chevronDown"], ["top / last row", "▲ / ▼ disabled"], ["non-candidate row", "both disabled · name text-disabled · Tag disabled \"off\""], ["hide instead?", "no — slots stay put"], ["Reset (2026-10-06)", "ghost Button sm · header right end · only when the extension has a custom order · tooltip kept · draft only"], ["not installed", "the group header alone: .ext text-disabled · Tag disabled · Remove ghost Button sm; no detector rows; separator under it"], ["header", "min-height button-height-sm — Reset appearing never moves the rows"], ["long copy", "Tag and button never truncate; .ext label is the shrinking item"], ["confirm", "none — both edit the draft, Cancel reverts"], ["pending (2026-10-06 b2)", "after Remove / Reset, before Save: the header stays; the pressed button becomes Undo (ghost sm, same slot); a Tag disabled says what Save does — \"removed on save\" / \"reset on save\""], ["pending remove", ".ext label line-through (text-disabled kept)"], ["pending reset", "rows already show install order; Reset → Undo"], ["Undo", "drops that one draft change; pressing it again is not a toggle back — Remove / Reset return"], ["Save / Cancel", "Save applies (removed group disappears, Reset button disappears); Cancel reverts every pending header"]]}
             tokens={[{ tok: "--tasty-state-disabled-fg", use: "disabled ink", color: "var(--tasty-state-disabled-fg)" }, { tok: "--tasty-settings-row-min-height", use: "row" }]} />
         </Spec>
       </Section>
@@ -1235,7 +1307,7 @@ function Page() {
             </ThemePair>
           </Stage>
           <Meta
-            specs={[["tone", "success add · warning add + trust · danger blocked"], ["box", "tint-fill + tint-border of the tone · pad space-md / 14 · radius"], ["title", "glyph 16 + 13/600 in the tone"], ["body", "term-sm · text-secondary"], ["fingerprint", "after the body · absent for signature-error"], ["installed", "trust box as judged · bar reason 'Already installed' only (no second notice)"], ["Attention › signature invalid", "no fingerprint line (the signature it would identify is the broken part)"], ["homepage", "mono caption row 'Homepage' under Source · link text, opens the default browser"], ["authors", "id · first author · +N (tooltip lists all)"], ["empty lists", "Permissions / Surface kinds: 'None' in text-muted, no Tag"]]}
+            specs={[["tone", "success add · warning add + trust · danger blocked"], ["box", "tint-fill + tint-border of the tone · pad space-md / 14 · radius"], ["title", "glyph 16 + 13/600 in the tone"], ["body", "term-sm · text-secondary"], ["fingerprint", "after the body · absent for signature-error"], ["installed", "trust box as judged · bar reason 'Already installed' only (no second notice)"], ["Attention › signature invalid", "no fingerprint line (the signature it would identify is the broken part)"], ["homepage", "mono caption row 'Homepage' under Source · link text, opens the default browser"], ["homepage link (b2)", "text-secondary · 1px underline always · hover text-primary · focus = focus ring · pointer cursor (no accent: the row sits on surface-raised and text-secondary already clears 4.5:1)"], ["authors", "id · first author · +N (tooltip lists all)"], ["empty lists", "Permissions / Surface kinds: 'None' in text-muted, no Tag · font-size-caption (same as the mono caption rows it replaces)"], ["long fingerprint (b2)", "colon-hex over 16 bytes → first 8 + ' … ' + last 8 bytes, one line; tooltip + copy = full value"], ["Signature invalid (b2)", "header kept · fixed note 'The signature does not match this plugin's files.' · cause (key missing / mismatch …) as a mono caption text-muted line under it"], ["action-bar left text (b2)", "font-size-caption — the kit's 12 is corrected"], ["flow (b2)", "kit structure: path input, preview card directly under it, no 'Plugin information' title / second step"]]}
             tokens={[{ tok: "--tasty-tint-fill-alpha", use: "box fill" }, { tok: "--tasty-tint-border-alpha", use: "box edge" }, { tok: "--tasty-accent-warning", use: "add + trust", color: "var(--tasty-accent-warning)" }, { tok: "--tasty-accent-danger", use: "blocked", color: "var(--tasty-accent-danger)" }, { tok: "--tasty-accent-success", use: "trusted", color: "var(--tasty-accent-success)" }]} />
         </Spec>
       </Section>

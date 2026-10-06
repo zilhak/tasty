@@ -908,7 +908,8 @@
   --tasty-sidebar-wordmark-font:              var(--tasty-font-mono);
   --tasty-sidebar-wordmark-font-size:         var(--tasty-font-size-brand-wordmark); /* 17 — "tasty." wordmark; BRANDING exception to the 14px UI cap */
   --tasty-sidebar-section-heading-font-size:  var(--tasty-font-size-micro);       /* 10 — "WORKSPACES" caps section heading */
-  --tasty-sidebar-section-heading-tracking:   var(--tasty-letter-spacing-caps);
+  --tasty-sidebar-section-heading-tracking:   var(--tasty-letter-spacing-caps-wide); /* 0.07em (was caps 0.04em) — 2026-10-06 */
+  --tasty-sidebar-wordmark-tracking:          var(--tasty-letter-spacing-ui); /* 0 — 2026-10-06 */
   --tasty-sidebar-button-label-font-size:     var(--tasty-font-size-caption);     /* 11 — Tools/Plugins/Settings ghost-button labels (snapped from source 12 → the 11px caption step; UI type scale stays 10/11/13/14) */
   --tasty-sidebar-collapsed-slot-width:       var(--tasty-size-32); /* collapsed icon / workspace slot width */
   --tasty-sidebar-collapsed-icon-height:      var(--tasty-size-22); /* collapsed icon slot height */
@@ -1073,4 +1074,25 @@
   /* 2026-10-06 — command palette list cap · remote protocol filter */
   --tasty-palette-list-max-height:     var(--tasty-size-320); /* list grows to 11 rows then scrolls; ON-SCALE with control-height. List padding = space-sm on all four sides (no extra footer gap) */
   --tasty-remote-filter-dropdown-width: var(--tasty-size-240); /* BORDER-BOX width (includes the 1px border) of the protocol-filter popover; content = 240 − 2 */
+
+  /* 2026-10-06 (batch 2) — palette width · settings window · toast offset · brand lockup · font preview · CodeArea */
+  --tasty-palette-width:               var(--tasty-size-540);  /* command palette card; ON-SCALE (× UI zoom) */
+  --tasty-settings-window-width:       var(--tasty-size-1100); /* settings window inner + min size */
+  --tasty-settings-window-height:      var(--tasty-size-700);
+  --tasty-toast-stack-offset-bottom:   var(--tasty-size-36);   /* window-scope stack: distance from the window bottom edge */
+  --tasty-loading-lockup-tracking:     var(--tasty-letter-spacing-n1px); /* "tasty." 38px loading lockup */
+  --tasty-font-preview-min-width:      var(--tasty-field-width-lg); /* one preview box narrower than this → Focused / Unfocused stack */
+  --tasty-font-preview-padding-y:      var(--tasty-space-sm);
+  --tasty-font-preview-padding-x:      var(--tasty-space-md);
+  --tasty-font-preview-line-height:    var(--tasty-line-height-ui); /* 1.4 × the surface's effective font size */
+  --tasty-codearea-font-size:          var(--tasty-font-size-caption); /* same as Input mono */
+  --tasty-codearea-line-height:        var(--tasty-line-height-ui);
+  --tasty-codearea-padding-y:          var(--tasty-space-xs);
+  --tasty-codearea-padding-x:          var(--tasty-space-sm);
+  --tasty-codearea-gutter-width:       var(--tasty-space-xl);  /* 24 — two-digit line numbers */
+  --tasty-codearea-gutter-bg:          var(--tasty-bg-sidebar);
+  --tasty-codearea-gutter-fg:          var(--tasty-text-muted);
+  --tasty-codearea-gutter-border:      var(--tasty-separator);
+  --tasty-codearea-error-fg:           var(--tasty-accent-danger); /* gutter number + message glyph on the error line */
+  --tasty-codearea-max-height:         var(--tasty-size-200);  /* then scrolls */
 }

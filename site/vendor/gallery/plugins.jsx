@@ -311,7 +311,7 @@ function DetailHeader() {
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 80px 132px 92px", alignItems: "center", height: "var(--tasty-table-cell-height)", padding: "0 10px",
       background: "var(--tasty-table-header-bg)", borderBottom: "1px solid var(--tasty-separator)",
-      fontFamily: "var(--tasty-font-mono)", fontSize: 10, textTransform: "uppercase", letterSpacing: ".06em", color: "var(--tasty-text-muted)" }}>
+      fontFamily: "var(--tasty-font-mono)", fontSize: 10, textTransform: "uppercase", letterSpacing: "var(--tasty-table-header-tracking)", color: "var(--tasty-text-muted)" }}>
       {cols.map(([c, sorted], i) => (
         <span key={c} style={{ display: "flex", alignItems: "center", gap: 3, justifyContent: i === 1 ? "flex-end" : "flex-start",
           paddingRight: i === 1 ? 8 : 0, color: sorted ? "var(--tasty-text-secondary)" : "var(--tasty-text-muted)" }}>
@@ -591,6 +591,15 @@ function MarkdownDoc({ editing = false }) {
         Quoted text reads one tone down (muted) with a left bar.
         <div style={{ borderLeft: "var(--tasty-md-quote-bar-width) solid var(--tasty-md-quote-bar)", paddingLeft: 12, marginTop: 6 }}>Nested quote, one level deeper.</div>
       </div>
+      <MdH level={3}>Callouts</MdH>
+      {/* 2026-10-06: GitHub alerts / Obsidian callouts — both forms (blockquote and collapsible details) read md-quote-bar-width; colour per alert type */}
+      {[["Note", "var(--tasty-accent-info)", "Non-collapsible: > [!note]", false], ["Warning", "var(--tasty-accent-warning)", "Collapsible: > [!warning]- (closed until clicked)", true]].map(([t, c, body, fold]) => (
+        <div key={t} style={{ borderLeft: "var(--tasty-md-quote-bar-width) solid " + c, paddingLeft: 12, margin: "0 0 12px", fontSize: 13, lineHeight: 1.6, color: "var(--tasty-md-quote-fg)" }}>
+          <div style={{ color: c, fontWeight: 600 }}>{fold ? "▸ " : ""}{t}</div>
+          {!fold && <div>{body}</div>}
+          {fold && <div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>{body}</div>}
+        </div>
+      ))}
       <div style={{ height: 1, background: "var(--tasty-md-rule)", margin: "16px 0" }} />
       <div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>Horizontal rule above · trailing space below.</div>
       </div>
@@ -680,7 +689,7 @@ function HtmlTile({ state }) {
     </div>
   );
   const body = {
-    boundary: center(ic.globe, "var(--tasty-text-muted)", "WebView region", "var(--tasty-text-muted)", "https://docs.tasty.sh"),
+    boundary: <div style={{ flex: 1 }} />, /* 2026-10-06: plain tile while an egui overlay hides the loaded WebView — no glyph, no text */
     placeholder: center(ic.globe, "var(--tasty-text-disabled)", "No page loaded", "var(--tasty-text-muted)"),
     loading: center(<Spinner />, "var(--tasty-spinner-indicator)", "Loading…", "var(--tasty-text-muted)"),
     error: center(ic.alert, "var(--tasty-accent-danger)", "Failed to load", "var(--tasty-accent-danger)", "https://offline.example"),
@@ -1101,8 +1110,8 @@ function Page() {
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}><div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>error</div><HtmlTile state="error" /></div>
           </Stage>
           <Meta
-            specs={[["content", "native OS WebView (token-agnostic)"], ["tile", <><span className="tok">--tasty-bg-panel</span> + 1px <span className="tok">--tasty-border-default</span></>], ["boundary", "GLOBE + region label + URL"], ["placeholder", "GLOBE (disabled) + 'No page loaded'"], ["loading", "Spinner + 'Loading…'"], ["error", "ALERT (danger) + URL"]]}
-            tokens={[{ tok: "--tasty-text-muted", use: "boundary glyph/label", color: "var(--tasty-text-muted)" }, { tok: "--tasty-text-disabled", use: "placeholder / URL", color: "var(--tasty-text-disabled)" }, { tok: "--tasty-spinner-indicator", use: "loading", color: "var(--tasty-spinner-indicator)" }, { tok: "--tasty-accent-danger", use: "error", color: "var(--tasty-accent-danger)" }]} />
+            specs={[["content", "native OS WebView (token-agnostic)"], ["tile", <><span className="tok">--tasty-bg-panel</span> + 1px <span className="tok">--tasty-border-default</span></>], ["boundary (2026-10-06)", "plain tile only (bg-panel + 1px border) — shown only while an egui overlay hides a loaded page; no glyph, label or URL / path"], ["placeholder", "GLOBE (disabled) + 'No page loaded'"], ["loading", "Spinner + 'Loading…'"], ["error", "ALERT (danger) + URL"]]}
+            tokens={[{ tok: "--tasty-text-muted", use: "placeholder / loading label", color: "var(--tasty-text-muted)" }, { tok: "--tasty-text-disabled", use: "placeholder / URL", color: "var(--tasty-text-disabled)" }, { tok: "--tasty-spinner-indicator", use: "loading", color: "var(--tasty-spinner-indicator)" }, { tok: "--tasty-accent-danger", use: "error", color: "var(--tasty-accent-danger)" }]} />
         </Spec>
         <Spec title="HTML — settings (Appearance › HTML viewer)">
           <Stage variant="solo center" style={{ padding: 20, background: "var(--tasty-bg-app)" }}>
