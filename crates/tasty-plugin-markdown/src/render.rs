@@ -1684,7 +1684,7 @@ tr:nth-child(even){{background:var(--md-zebra);}}
 blockquote{{border-left:var(--md-quote-bar-w) solid var(--md-quote-bar);margin:0.5em 0;padding:0.1em var(--md-space-md);opacity:0.9;}}
 blockquote[class^="markdown-alert-"]{{opacity:1;border-radius:var(--md-radius);padding:var(--md-space-sm) var(--md-space-md);}}
 blockquote[class^="markdown-alert-"]::before{{content:attr(data-label);display:block;font-weight:600;margin-bottom:var(--md-space-xs);padding-left:22px;background-repeat:no-repeat;background-position:left center;background-size:16px 16px;}}
-details[class^="markdown-alert-"]{{border-radius:var(--md-radius);padding:var(--md-space-sm) var(--md-space-md);border-left:calc(var(--md-border-w) * 3) solid;}}
+details[class^="markdown-alert-"]{{border-radius:var(--md-radius);padding:var(--md-space-sm) var(--md-space-md);border-left:var(--md-quote-bar-w) solid;}}
 details[class^="markdown-alert-"]>summary{{cursor:pointer;font-weight:600;}}
 details[class^="markdown-alert-"]>summary::before{{content:"";display:inline-block;width:16px;height:16px;margin-right:6px;vertical-align:middle;background-repeat:no-repeat;background-position:center;background-size:16px 16px;}}
 details[class^="markdown-alert-"][open]>summary{{margin-bottom:var(--md-space-xs);}}
@@ -3247,6 +3247,19 @@ mod tests {
             css.contains("blockquote{border-left:var(--md-quote-bar-w) solid"),
             "인용문 왼쪽 막대는 --md-quote-bar-w 를 읽어야 한다"
         );
+    }
+
+    /// 접히는 콜아웃(details)도 인용문과 같은 md-quote-bar-width 막대를 그린다.
+    #[test]
+    fn foldable_callout_bar_reads_the_quote_bar_width_token() {
+        let css = stylesheet_of_a_rendered_document();
+        assert!(
+            css.contains(
+                r#"details[class^="markdown-alert-"]{border-radius:var(--md-radius);padding:var(--md-space-sm) var(--md-space-md);border-left:var(--md-quote-bar-w) solid;}"#
+            ),
+            "접히는 콜아웃의 왼쪽 막대는 --md-quote-bar-w 를 읽어야 한다"
+        );
+        assert!(!css.contains("calc(var(--md-border-w) * 3)"));
     }
 
     #[test]

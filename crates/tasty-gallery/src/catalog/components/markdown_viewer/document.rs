@@ -4,9 +4,8 @@
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::checkbox;
 
-use crate::catalog::icons;
-
 use super::{DOC_W, rich};
+use crate::catalog::icons;
 
 pub(super) fn document(ui: &mut egui::Ui, theme: &Theme) {
     egui::Frame::new()
@@ -76,8 +75,8 @@ pub(super) fn document(ui: &mut egui::Ui, theme: &Theme) {
             heading(ui, theme, 3, "Blockquote");
             blockquote(ui, theme);
 
-            heading(ui, theme, 3, "Alerts (GFM)");
-            alerts(ui, theme);
+            heading(ui, theme, 3, "Callouts");
+            callouts(ui, theme);
 
             heading(ui, theme, 4, "Subsection (h4)");
             heading(ui, theme, 5, "Minor note (h5)");
@@ -495,7 +494,7 @@ fn blockquote(ui: &mut egui::Ui, theme: &Theme) {
     });
 }
 
-/// left bar + 들여쓴 content. content 를 자식 ui 로 측정한 뒤 바를 그 높이만큼 칠한다.
+/// left bar(border-strong) + 들여쓴 content.
 fn quote_block(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -503,16 +502,86 @@ fn quote_block(
     gap: f32,
     add: impl FnOnce(&mut egui::Ui),
 ) {
+    callout_block(ui, bar_w, gap, theme.border_strong().to_egui(), add);
+}
+
+/// 콜아웃 표본의 강조색·제목·본문·접힘 여부.
+type CalloutSpec = (
+    fn(&Theme) -> tasty_type_appearance::color::HexColor,
+    &'static str,
+    &'static str,
+    bool,
+);
+
+/// GitHub alert·Obsidian callout 두 형태(blockquote · 접히는 details) — 시안 `Callouts`.
+/// 둘 다 왼쪽 막대가 md-quote-bar-width 이고 색만 종류별로 다르다. 접힌 형태는 제목 앞에
+/// ▸(chevron) 를 두고 본문 대신 caption 설명을 단다.
+fn callouts(ui: &mut egui::Ui, theme: &Theme) {
+    let items: [CalloutSpec; 2] = [
+        (
+            Theme::accent_primary,
+            "Note",
+            "Non-collapsible: > [!note]",
+            false,
+        ),
+        (
+            Theme::accent_warning,
+            "Warning",
+            "Collapsible: > [!warning]- (closed until clicked)",
+            true,
+        ),
+    ];
+    let bar_w = theme.md_quote_bar_width().value();
+    let gap = theme.spacing_md.value();
+    for (accent, title, body, fold) in items {
+        let color = accent(theme).to_egui();
+        callout_block(ui, bar_w, gap, color, |ui| {
+            ui.horizontal(|ui| {
+                if fold {
+                    // 시안의 ▸ 글자는 egui 글꼴에 없어 같은 모양의 chevron 아이콘으로 그린다.
+                    let sz = theme.icon_glyph_size_xs.value();
+                    let (rect, _) =
+                        ui.allocate_exact_size(egui::vec2(sz, sz), egui::Sense::hover());
+                    icons::CHEVRON_RIGHT.image(sz, color).paint_at(ui, rect);
+                }
+                ui.label(rich(theme, title, theme.font_size_body.value(), color).strong());
+            });
+            if fold {
+                ui.label(rich(
+                    theme,
+                    body,
+                    theme.font_size_caption.value(),
+                    theme.text_muted().to_egui(),
+                ));
+            } else {
+                ui.label(rich(
+                    theme,
+                    body,
+                    theme.font_size_body.value(),
+                    theme.md_quote_fg().to_egui(),
+                ));
+            }
+        });
+        ui.add_space(theme.spacing_md.value());
+    }
+}
+
+/// 색이 있는 왼쪽 막대 + 들여쓴 content. content 를 자식 ui 로 측정한 뒤 막대를 그 높이만큼 칠한다.
+fn callout_block(
+    ui: &mut egui::Ui,
+    bar_w: f32,
+    gap: f32,
+    color: egui::Color32,
+    add: impl FnOnce(&mut egui::Ui),
+) {
     let top = ui.cursor().min.y;
     let left = ui.min_rect().left();
     let avail = ui.available_width();
-    let content_x = left + bar_w + gap;
-    let content_w = (avail - bar_w - gap).max(1.0);
     let mut child = ui.new_child(
         egui::UiBuilder::new()
             .max_rect(egui::Rect::from_min_size(
-                egui::pos2(content_x, top),
-                egui::vec2(content_w, f32::INFINITY),
+                egui::pos2(left + bar_w + gap, top),
+                egui::vec2((avail - bar_w - gap).max(1.0), f32::INFINITY),
             ))
             .layout(egui::Layout::top_down(egui::Align::Min)),
     );
@@ -525,98 +594,8 @@ fn quote_block(
     ui.painter().rect_filled(
         egui::Rect::from_min_max(egui::pos2(left, top), egui::pos2(left + bar_w, bottom)),
         0.0,
-        theme.border_strong().to_egui(),
+        color,
     );
-}
-
-/// GFM 알림의 아이콘·색·라벨·본문. 브라우저의 왼쪽 선은 egui Frame의 네 면 보더로 근사한다.
-type AlertSpec = (
-    icons::MockGlyph,
-    fn(&Theme) -> tasty_type_appearance::color::HexColor,
-    &'static str,
-    &'static str,
-);
-
-fn alerts(ui: &mut egui::Ui, theme: &Theme) {
-    let items: [AlertSpec; 5] = [
-        (
-            icons::ALERT_CIRCLE,
-            Theme::accent_primary,
-            "Note",
-            "Highlights information users should take into account, even when skimming.",
-        ),
-        (
-            icons::STAR_FILL,
-            Theme::accent_success,
-            "Tip",
-            "Optional information to help a user be more successful.",
-        ),
-        (
-            icons::BELL,
-            Theme::accent_agent,
-            "Important",
-            "Crucial information necessary for users to succeed.",
-        ),
-        (
-            icons::ALERT_TRIANGLE,
-            Theme::accent_warning,
-            "Warning",
-            "Critical content demanding immediate user attention due to possible risks.",
-        ),
-        (
-            icons::CLOSE,
-            Theme::accent_danger,
-            "Caution",
-            "Negative potential consequences of an action.",
-        ),
-    ];
-    for (icon, accent, label, body) in items {
-        alert_box(ui, theme, icon, accent(theme), label, body);
-        ui.add_space(theme.spacing_xs.value());
-    }
-}
-
-/// accent 12% 배경(`render.rs::alert_css`의 `BG_ALPHA = 31` 과 동일 비율) + accent 보더 +
-/// 아이콘(`tasty_icons`, accent tint)+굵은 label 헤더 + muted 본문.
-fn alert_box(
-    ui: &mut egui::Ui,
-    theme: &Theme,
-    icon: icons::MockGlyph,
-    color: tasty_type_appearance::color::HexColor,
-    label: &str,
-    body: &str,
-) {
-    // callout 배경 — accent 저알파. 대응 토큰 없음.
-    const CALLOUT_BG_ALPHA: u8 = 31;
-    egui::Frame::new()
-        .fill(color.with_alpha(CALLOUT_BG_ALPHA).to_egui())
-        .stroke(egui::Stroke::new(
-            theme.border_width.value(),
-            color.to_egui(),
-        ))
-        .corner_radius(theme.corner_radius.value())
-        .inner_margin(egui::Margin::symmetric(
-            theme.spacing_md.value() as i8,
-            theme.spacing_sm.value() as i8,
-        ))
-        .show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            ui.horizontal(|ui| {
-                let sz = theme.font_size_body.value();
-                let (rect, _) = ui.allocate_exact_size(egui::vec2(sz, sz), egui::Sense::hover());
-                icon.image(sz, color.to_egui()).paint_at(ui, rect);
-                ui.label(
-                    rich(theme, label, theme.font_size_body.value(), color.to_egui()).strong(),
-                );
-            });
-            ui.add_space(theme.spacing_xs.value() * 0.5);
-            ui.label(rich(
-                theme,
-                body,
-                theme.font_size_body.value(),
-                theme.text_secondary().to_egui(),
-            ));
-        });
 }
 
 fn hr(ui: &mut egui::Ui, theme: &Theme) {

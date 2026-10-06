@@ -130,8 +130,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("table", "real <table> — header band + zebra + padding"),
             ("states", "failed=accent-danger · empty=muted"),
             (
-                "alerts",
-                "5× GFM `[!NOTE]`.. — accent 12% bg + border + icon/label header",
+                "callouts",
+                "blockquote + collapsible details — md-quote-bar-width bar · colour per alert type",
             ),
         ],
         &[
@@ -410,7 +410,7 @@ fn toc_chrome(ui: &mut egui::Ui, theme: &Theme) {
                     (3, "Image"),
                     (3, "Table"),
                     (3, "Blockquote"),
-                    (3, "Alerts (GFM)"),
+                    (3, "Callouts"),
                     (4, "Subsection (h4)"),
                 ] {
                     toc_row(ui, theme, level, label);
