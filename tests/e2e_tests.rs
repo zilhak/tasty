@@ -2024,6 +2024,52 @@ fn an_unowned_target_is_rejected_for_every_resource_kind() {
     }
 }
 
+/// 닫힌 surface에는 metadata를 쓸 수 없다. 닫기 전에 쓴 값도 닫기와 함께 지워진다.
+/// metadata 저장소는 surface 소유 검사를 거치지 않는 `memory.list`로 직접 확인한다.
+#[test]
+fn a_closed_surface_takes_no_metadata() {
+    let _lane = lane();
+    let tasty = common::shared();
+    let anchor = tasty.first_surface_id();
+    let split = tasty.call(
+        "split",
+        json!({ "level": "surface", "target_surface": anchor, "direction": "horizontal" }),
+    );
+    let closed = split["new_surface_id"]
+        .as_u64()
+        .expect("split 이 새 surface 를 만든다");
+    tasty.call(
+        "surface.meta.set",
+        json!({ "surface_id": closed, "key": "role", "value": "live" }),
+    );
+    tasty.call("surface.close", json!({ "surface_id": closed }));
+
+    let resp = tasty.call_raw(
+        "surface.meta.set",
+        json!({ "surface_id": closed, "key": "role", "value": "after-close" }),
+    );
+    assert_eq!(
+        resp["error"]["code"].as_i64(),
+        Some(-32602),
+        "닫힌 surface 에 쓰기가 다른 surface 를 못 찾은 거절과 같은 코드로 거절돼야 한다: {resp}"
+    );
+    let msg = resp["error"]["message"].as_str().unwrap_or_default();
+    assert!(
+        msg.contains(&closed.to_string()) && msg.contains("surface"),
+        "거절이 어느 surface 를 못 찾았는지 말해야 한다: {resp}"
+    );
+
+    let left = tasty.call(
+        "memory.list",
+        json!({ "scope": format!("surface:{closed}"), "prefix": "role" }),
+    );
+    assert_eq!(
+        left["count"].as_u64(),
+        Some(0),
+        "닫힌 surface 의 metadata 가 저장소에 남았다: {left}"
+    );
+}
+
 /// 창을 사용하지 않는 debug 메서드의 라우팅을 확인한다. 이 debug 실행으로 release 격리까지 검증하지는 않는다.
 #[test]
 fn debug_surfaces_that_read_no_window_answer_in_both_combos() {
