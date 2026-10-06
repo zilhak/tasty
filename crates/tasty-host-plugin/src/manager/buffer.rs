@@ -54,6 +54,7 @@ impl PluginManager {
     /// stale frame 이 남지 않게 호출한다.
     pub fn drop_egui_mesh_frame(&mut self, surface_id: u32) {
         self.egui_mesh_frames.remove(&surface_id);
+        self.fresh_frame_surfaces.remove(&surface_id);
     }
 
     /// popup의 최근 프레임 메타데이터. 아직 받지 않았거나 닫혔으면 None이다.

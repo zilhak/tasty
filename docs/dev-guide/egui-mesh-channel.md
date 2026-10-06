@@ -162,7 +162,9 @@ IPC 메서드나 파일 변경 등으로 **자기 상태를 out-of-band 로 바�
   재-forward 왕복은 필요 없다(1-hop). plugin 줄을 읽은 수신 스레드가 이벤트 루프를 깨우지만,
   그 깨움의 redraw 는 `pump` 가 프레임을 넣기 전에 끝날 수 있다. 그래서 `pump` 는 새
   `PaintFrame` 을 받은 surface 를 `take_fresh_frame_surfaces` 로 넘기고, App 이 그 surface 가
-  보이는 창에 redraw 를 다시 요청한다(`mark_plugin_surfaces_dirty`). surface 전용이다 —
+  보이는 창에 redraw 를 다시 요청한다(`mark_plugin_surfaces_dirty`). 창이 없는 headless 는 pump
+  직후 기록을 비우고, surface 를 닫거나 frame 을 버리거나 plugin 이 끊기면 그 surface 의 기록도
+  지운다. surface 전용이다 —
   popup/banner 의 `*PaintFrame` 은 이 표시를 쓰지 않는다.
 - 첫 set_context 도착 전(캐시 없음)이면 no-op, 출력 무변화면 `last_hash` dedup 으로 생략.
 

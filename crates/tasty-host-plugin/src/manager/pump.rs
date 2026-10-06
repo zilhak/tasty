@@ -625,6 +625,14 @@ impl PluginManager {
             self.popup_mesh_frames.retain(|_, f| &f.plugin_id != dead);
             self.banner_mesh_frames.retain(|_, f| &f.plugin_id != dead);
         }
+        self.forget_fresh_frames_without_a_frame();
+    }
+
+    /// 프레임을 지운 surface의 새 frame 기록도 지운다. 기록은 프레임이 남은 surface만 가리킨다.
+    fn forget_fresh_frames_without_a_frame(&mut self) {
+        let frames = &self.egui_mesh_frames;
+        self.fresh_frame_surfaces
+            .retain(|sid| frames.contains_key(sid));
     }
 
     /// hello 수신 로그. 대조는 [`Self::warn_hello_drift`] 가 한다 — 뿌리는 일과
@@ -799,6 +807,7 @@ impl PluginManager {
             self.egui_mesh_frames.retain(|_, f| f.plugin_id != id);
             self.popup_mesh_frames.retain(|_, f| f.plugin_id != id);
             self.banner_mesh_frames.retain(|_, f| f.plugin_id != id);
+            self.forget_fresh_frames_without_a_frame();
             self.banner_instances.retain(|_, inst| inst.plugin_id != id);
             if !retired
                 && let Some(pkg) = self.packages.iter().find(|p| p.manifest.id == id).cloned()
@@ -1174,6 +1183,54 @@ mod tests {
         assert!(
             mgr.take_fresh_frame_surfaces().is_empty(),
             "드레인은 1회여야 한다"
+        );
+    }
+
+    fn record_fresh_frames(mgr: &mut PluginManager, plugin: &str, surfaces: &[u32]) {
+        let mut out = CollectedPluginEvents::default();
+        for &surface_id in surfaces {
+            mgr.classify_event(
+                plugin,
+                PluginEvent::PaintFrame {
+                    surface_id,
+                    buffer_id: SharedBufferId(u64::from(surface_id)),
+                    generation: 1,
+                    frame_seq: 1,
+                    full_textures: true,
+                    byte_len: 0,
+                    ime_cursor: None,
+                },
+                &mut out,
+            );
+        }
+        mgr.apply_collected_events(out);
+    }
+
+    /// 프레임을 지운 surface는 소비되지 않은 새 frame 기록에도 남지 않는다.
+    #[test]
+    fn closing_a_surface_leaves_no_fresh_frame_record() {
+        let mut mgr = mgr();
+        record_fresh_frames(&mut mgr, "com.tasty.image", &[5, 6]);
+        record_fresh_frames(&mut mgr, "com.tasty.git-viewer", &[7]);
+
+        let left = |mgr: &PluginManager| {
+            let mut v: Vec<u32> = mgr.fresh_frame_surfaces.iter().copied().collect();
+            v.sort_unstable();
+            v
+        };
+        mgr.destroy_remote_surface(5, None);
+        assert_eq!(left(&mgr), vec![6, 7], "닫은 surface 5의 기록이 남았다");
+        mgr.drop_egui_mesh_frame(6);
+        assert_eq!(
+            left(&mgr),
+            vec![7],
+            "프레임을 버린 surface 6의 기록이 남았다"
+        );
+        mgr.clear_dead_plugin_frames(&["com.tasty.git-viewer".to_string()]);
+        assert_eq!(
+            left(&mgr),
+            Vec::<u32>::new(),
+            "끊긴 plugin의 surface 7 기록이 남았다"
         );
     }
 

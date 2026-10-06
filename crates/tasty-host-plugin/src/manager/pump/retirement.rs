@@ -130,6 +130,7 @@ impl PluginManager {
         if let Some(frame) = self.egui_mesh_frames.remove(&surface_id) {
             self.release_plugin_buffer(&frame.plugin_id, frame.buffer_id);
         }
+        self.fresh_frame_surfaces.remove(&surface_id);
         self.surfaces.remove(&surface_id);
         let Some(process_binding) = process_binding else {
             completion.finish(Ok(()));
@@ -199,6 +200,7 @@ impl PluginManager {
         // 해제한다 — plugin 은 해제를 알릴 프로토콜 메시지가 없어 여기서 안 지우면
         // plugin 수명 내내 누적된다 (`release_plugin_buffer` 문서 참조).
         let frame = self.egui_mesh_frames.remove(&surface_id);
+        self.fresh_frame_surfaces.remove(&surface_id);
         if let Some(f) = &frame {
             let (pid, bid) = (f.plugin_id.clone(), f.buffer_id);
             self.release_plugin_buffer(&pid, bid);

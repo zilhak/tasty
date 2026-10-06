@@ -62,7 +62,10 @@ pub(crate) fn pump_plugins(app: &mut App, state: &mut RequestContext, engine: &m
     }
     let hello_pairs = {
         let mgr = app.plugin_manager.as_mut().expect("checked Some above");
-        mgr.pump(std::time::Instant::now())
+        let hello_pairs = mgr.pump(std::time::Instant::now());
+        // headless에는 다시 그릴 창이 없다. 기록을 비워 쌓이지 않게 한다.
+        drop(mgr.take_fresh_frame_surfaces());
+        hello_pairs
     };
     if !hello_pairs.is_empty() {
         finalize_plugin_hello_headless(app, &engine.as_ref(), hello_pairs);
