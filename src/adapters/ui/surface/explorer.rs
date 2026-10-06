@@ -1,6 +1,7 @@
 //! 파일 탐색기 렌더링. 모델의 탐색 상태와 ExplorerView의 목록·선택으로 화면을 그린다.
 //! 렌더 중에는 engine을 다시 가변 대여할 수 없어 사용자 동작을 모아 호출부에서 처리한다.
 
+mod state_screen;
 pub mod type_ahead;
 pub mod view;
 
@@ -871,23 +872,33 @@ fn content(
         egui::vec2(ui.available_width(), body_h),
         egui::Layout::top_down(egui::Align::Min),
         |ui| {
-            match &view.state {
-                LoadState::NoPermission => {
-                    centered_state(ui, theme, t("explorer.state.no_permission"));
-                    return;
-                }
-                LoadState::Error(_) => {
-                    centered_state(ui, theme, t("explorer.state.empty"));
-                    return;
-                }
-                LoadState::Loading => {
-                    centered_state(ui, theme, t("explorer.state.loading"));
-                    return;
-                }
-                LoadState::Ok => {}
-            }
-            if view.entries.is_empty() {
-                centered_state(ui, theme, t("explorer.state.no_items"));
+            use state_screen::{StateGlyph, StateScreen};
+            let empty = StateScreen {
+                glyph: StateGlyph::Icon(icons::FOLDER_OPEN),
+                warning: false,
+                title: t("explorer.state.empty"),
+                sub: None,
+            };
+            let screen = match &view.state {
+                LoadState::NoPermission => Some(StateScreen {
+                    glyph: StateGlyph::Icon(icons::LOCK),
+                    warning: true,
+                    title: t("explorer.state.no_permission"),
+                    sub: Some(t("explorer.state.no_permission_sub")),
+                }),
+                // 읽기 오류는 지금처럼 빈 폴더 화면으로 보인다. 시안에 탐색기 오류 상태가 없다.
+                LoadState::Error(_) => Some(empty),
+                LoadState::Loading => Some(StateScreen {
+                    glyph: StateGlyph::Spinner,
+                    warning: false,
+                    title: t("explorer.state.loading"),
+                    sub: None,
+                }),
+                LoadState::Ok if view.entries.is_empty() => Some(empty),
+                LoadState::Ok => None,
+            };
+            if let Some(screen) = screen {
+                state_screen::show(ui, theme, &screen);
                 return;
             }
             egui::ScrollArea::vertical()
@@ -922,21 +933,6 @@ fn content(
         handle_background_context(ui, view, body.response.rect, &root, action);
     }
     status_line(ui, theme, view);
-}
-
-fn centered_state(ui: &mut egui::Ui, theme: &Theme, text: &str) {
-    let h = (ui.available_height() - theme.item_height_interactive.value()).max(0.0);
-    ui.allocate_ui_with_layout(
-        egui::vec2(ui.available_width(), h),
-        egui::Layout::centered_and_justified(egui::Direction::TopDown),
-        |ui| {
-            ui.label(
-                egui::RichText::new(text)
-                    .size(theme.font_size_body.value())
-                    .color(theme.text_muted().to_egui()),
-            );
-        },
-    );
 }
 
 fn status_line(ui: &mut egui::Ui, theme: &Theme, view: &ExplorerView) {

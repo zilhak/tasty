@@ -123,7 +123,8 @@ const AREAS: &[(&str, usize, &str)] = &[
         // 알림 popup 기본 높이 400은 대응 토큰이 없어 notification.rs 의 sizer 에 남는다(폭은 토큰).
         // 스케일에 size-10이 들어오면서 기존 값 10이 새로 집계됐다.
         // 사이드바 접기 버튼이 공용 IconButton sm 을 쓰면서 24×24 두 자리가 빠졌다.
-        51,
+        // 탐색기 상태 화면 보조 줄 최대 폭 200은 시안 ExpState 의 raw maxWidth 라 대응 토큰이 없다.
+        52,
         "나머지 host chrome(사이드바·타이틀바·서피스 장식)",
     ),
     (

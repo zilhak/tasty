@@ -24,7 +24,12 @@ OS 파일 관리자에 의존하지 않고 tasty surface 안에서 디렉토리�
 
 디렉토리 엔트리 캐시·선택 집합·트리 펼침 같은 무거운 GUI 상태는 모델이 아니라 per-surface 뷰 스토어에 둔다.
 
-- **엔트리 캐시**: `sync(panel)` 이 활성 탭의 `(root, sort_column, sort_dir)` 키를 보고 디렉토리/정렬이 바뀌었거나 새로고침이 요청됐을 때만 디스크에서 다시 읽는다. 디렉토리가 바뀌면 선택을 초기화한다. 읽기 실패는 `LoadState::NoPermission`(권한 거부) / `LoadState::Error(msg)` 로 분류해 콘텐츠 중앙 상태 텍스트로 표현한다.
+- **엔트리 캐시**: `sync(panel)` 이 활성 탭의 `(root, sort_column, sort_dir)` 키를 보고 디렉토리/정렬이 바뀌었거나 새로고침이 요청됐을 때만 디스크에서 다시 읽는다. 디렉토리가 바뀌면 선택을 초기화한다. 읽기 실패는 `LoadState::NoPermission`(권한 거부) / `LoadState::Error(msg)` 로 분류해 콘텐츠 중앙 상태 화면으로 표현한다.
+- **상태 화면**: 내용 영역이 목록 대신 가운데 정렬한 글리프 · 제목 · 선택 보조 줄을 보여 준다(`explorer/state_screen.rs`, 시안 `ExpState`).
+  - 빈 폴더(`Ok`이고 항목 0개)와 읽기 오류(`Error`): `folderOpen` 글리프(text-muted) + "This folder is empty"(text-secondary).
+  - 권한 거부(`NoPermission`): `lock` 글리프와 제목 "Permission denied"를 accent-warning으로 칠하고, 보조 줄(caption, text-muted, 최대 폭 200)에 이유를 적는다.
+  - 불러오는 중(`Loading`): 글리프 자리에 Spinner + "Loading…".
+  - 글리프는 `icon-glyph-size-md` × 1.6, 줄 간격은 `space-sm`이다.
 - **주소창 편집 상태**: `addr_buffer`(편집 텍스트) / `addr_editing`(포커스=편집모드) / `addr_active`(후보 드롭다운 keyboard-active 행)를 뷰가 소유한다(PathField 계약 — 상태는 호출측 소유). `sync()` 는 **비편집 시** 버퍼를 활성 탭 current(`root`) 로 재동기화하고, 편집 중이면 사용자 입력을 보존한다. 내부 탭은 surface 단위 `ExplorerView` 를 공유하므로, cwd/내부 탭을 바꾸는 액션(`Navigate/GoBack/GoForward/GoUp/NewTab/CloseTab/SelectTab`) 적용 시 `cancel_addr_edit()` 로 편집을 취소해 버퍼가 다른 탭/경로로 새지 않게 하고(다음 `sync()` 가 새 current 로 맞춘다), id_salt 는 surface+내부탭 index 로 고유화한다.
 - **타입어헤드 상태**: `type_ahead`(입력 버퍼와 마지막 입력 시각)와 `scroll_to: Option<PathBuf>`(이번 프레임에 화면에 보이게 할 항목). `scroll_to`는 한 프레임만 유지한다. 남겨두면 매 프레임 다시 스크롤해서 사용자가 휠로 다른 곳을 보는 동안 화면이 끌려간다. 순환 시작 위치, 접두사 확장, 입력 되돌리기 같은 규칙은 egui와 파일시스템에 의존하지 않는 `explorer/type_ahead.rs`에 있고, 그리는 쪽은 그 결과를 선택과 스크롤로 옮기는 일만 한다.
 - **선택**: `selected: HashSet<PathBuf>` + `anchor`(shift 범위 기준). `select_all()` 은 현재 디렉토리 전체를 선택, `selected_paths_text()` 는 선택 경로를 정렬·개행 결합한 클립보드 페이로드를 만든다.
