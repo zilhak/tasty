@@ -24,15 +24,17 @@ task에 선택적 계약 `contract_version: 2`를 둔다. 계약이 없으면 v1
 - 결과는 최종 출력(`has_output`, `output`)과 원시 응답·artifact·실패 단계·출처를 나눠 `typed_result`에 둔다.
   v1 필드 `result`에는 최종 출력을 투영한다.
 - 결과 확정은 저장소의 `set_result`·`set_state`가 맡는다. 모든 완료 경로가 이 두 메서드를 지난다.
-- int64는 JSON 정수 토큰으로 주고받으며 문자열로 감싸지 않는다. Tasty의 Rust 경로(저장소, IPC, CLI)는 정수 토큰을 정확히 유지한다.
-- 암묵 변환은 하지 않는다. 형식과 규칙은 [작업 러너 §v2 타입 계약](../dev-guide/agent-runner.md#v2-타입-계약-contract_version-2)에 있다.
+- 검증된 int64 값은 wire(저장, IPC, CLI JSON 출력)에서 10진 문자열로 쓴다(proto3 JSON 관례). 입력은 문자열과 JSON 정수 토큰을 모두 받고, 범위 초과와 소수는 거절한다. 스키마가 int64를 알려 주므로 string 타입과 혼동되지 않는다.
+- v1 출력 placeholder(`${task.<id>.output}`)가 v2 task를 가리키면 생성에서 거절한다. v2 결과의 의미(종료 코드, 문자열 int64)가 v1 참조로 조용히 바뀌어 넘어가지 않게 하기 위해서다. v2 값 전달은 입력 binding이 맡는다.
+- 값 한도는 스키마 깊이 32, 값 깊이 64, 직렬화 크기 256KiB로 시작한다(`MAX_SCHEMA_DEPTH`·`MAX_VALUE_DEPTH`·`MAX_VALUE_BYTES`). memory 값 하나의 한도가 1MiB이고 v2 레코드에는 출력 외에 계약·raw 응답(run은 stdout·stderr 각 64KiB tail)·v1 투영이 함께 실리므로, 출력 하나를 그 4분의 1로 두었다. 깊이는 검증·직렬화가 재귀하는 깊이를 막는 값이며 사람이 쓰는 스키마·결과에 충분한 여유를 둔 초기값이다.
+- 그 밖의 암묵 변환은 하지 않는다. 형식과 규칙은 [작업 러너 §v2 타입 계약](../dev-guide/agent-runner.md#v2-타입-계약-contract_version-2)에 있다.
 
 ## Consequences
 
 구버전 앱이 v2 데이터를 실행하거나 v1 목록 조회에 실패하지 않는다. v1 레코드는 다시 저장해도 같은 JSON으로 남는다.
 
 task 조회·삭제는 두 키를 확인해야 하고, 목록은 두 접두사를 읽는다. memory의 호스트 키 공간이 하나 늘었다.
-JavaScript처럼 숫자를 f64로 읽는 외부 소비자는 2^53을 넘는 int64를 정확히 읽지 못한다.
+int64 출력은 JavaScript를 지나도 정확하지만, Rust 소비자도 숫자가 아니라 문자열을 받으므로 `int64_of`로 읽어야 한다. 같은 task라도 `raw.exit_code`는 숫자, `output`은 문자열이다.
 계약 형식을 바꿀 때는 `record_format`과 `contract_version`을 함께 올리고 새 namespace를 검토해야 한다.
 
 ## Alternatives Considered
@@ -40,11 +42,14 @@ JavaScript처럼 숫자를 f64로 읽는 외부 소비자는 2^53을 넘는 int6
 - 같은 namespace에 버전 필드만 추가: 구버전이 계약을 무시하고 v2 task를 v1로 실행한다. 시험 `typed_tasks_live_outside_the_v1_namespace_and_old_readers_cannot_run_them`이 envelope 없는 레코드를 구버전 모델이 run으로 읽는 것을 보인다.
 - 같은 namespace에 envelope: 구버전 목록 조회가 그 레코드를 해석하지 못해 그 workspace의 v1 task 목록 전체가 실패한다.
 - 기존 v1 레코드를 v2로 이전: 저장된 DAG의 의미가 소급해 바뀌고, 이전 후에는 구버전으로 돌아갈 수 없다.
-- int64를 문자열로 전송: JavaScript 소비자는 안전하지만 Tasty의 다른 정수 필드와 표기가 달라지고 모든 소비자가 변환해야 한다. Tasty 자체 경로는 이미 정확해 채택하지 않았다.
+- int64를 JSON 정수 토큰으로 유지: Tasty의 Rust 경로는 정확하지만 JavaScript 도구를 지나면 2^53을 넘는 값이 바뀐다. 설계 요구(최소·최대·9007199254740993의 복원)를 어겨 채택하지 않았다.
+- int64를 문자열로만 입력받기: 정수 토큰을 보내는 기존 도구가 모두 바뀌어야 한다. 읽을 때는 두 형식을 받고 쓸 때만 문자열로 정했다.
 
 ## Reconsideration Triggers
 
-- IPC·CLI로 v2 task를 만들게 되어 f64로 숫자를 읽는 외부 소비자가 int64 값을 다루게 될 때 문자열 표기를 다시 검토한다.
+- JSON 숫자를 정확히 다루는 표준 수단(예: 대상 소비자 전부의 BigInt 대응)이 생기면 int64 문자열 표기를 다시 검토한다.
+- 실제 결과가 256KiB 한도에 걸린다는 보고가 나오거나, raw를 별도 키로 옮겨 레코드 여유가 바뀌면 크기 한도를 다시 정한다. 깊이 한도는 정상 스키마가 걸릴 때 올린다.
+- 입력 binding이 v1 placeholder를 대신하면 v1 참조 거절 규칙을 binding 규칙으로 옮긴다.
 - 구버전 앱과 같은 데이터 폴더를 공유할 필요가 사라지면 v1 레코드를 v2로 이전하고 namespace를 합칠지 검토한다.
 - memory 값 크기 한도(현재 1MiB)나 계약 형식이 바뀌어 envelope 버전을 올릴 때.
 

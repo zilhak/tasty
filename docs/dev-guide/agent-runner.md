@@ -532,19 +532,24 @@ task 는 선택적으로 타입 계약(`TaskContract`)을 가진다. 계약이 �
 - 타입: `boolean`, `int64`, `float64`(`min`·`max`, 양끝 포함), `string`(`max_len`, 문자 수), `enum`(`values`, 비어 있지 않고 중복 없음), `object`(`fields`), `list`(`items`, `max_len`), `unit`, `json`, `{"ref": "<이름>"}`.
 - 이름 붙은 타입은 `types` 에 선언하며 재귀를 허용하지 않는다.
 - `nullable` 은 값 자리에 null 을 허용한다. `unit`·`json` 에는 쓸 수 없다. 필드 전용 키는 `optional`(생략 가능)과 `default`(생략 시 채울 값)다. 기본값은 선언할 때 그 필드 타입으로 검사한다.
-- 선언하지 않은 필드는 오류다. 암묵 변환은 없다. `"42"`·`42.0` 은 int64 가 아니고 정수는 float64 로 바꾸지 않는다.
-- 한도: 스키마 깊이 32, 값 깊이 64, 값의 직렬화 크기 256KiB.
+- 선언하지 않은 필드는 오류다. int64 의 10진 문자열(아래) 외에는 암묵 변환이 없다. `42.0` 은 int64 가 아니고 정수는 float64 로 바꾸지 않는다.
+- 한도: 스키마 깊이 32, 값 깊이 64, 값의 직렬화 크기 256KiB(`types.rs` 의 `MAX_SCHEMA_DEPTH`·`MAX_VALUE_DEPTH`·`MAX_VALUE_BYTES`). 근거는 ADR-0068.
 - 오류(`TypeError`)는 종류, JSON Pointer 경로, 기대 타입, 실제 값 요약을 가진다. 결과 검증 실패는 task id 도 싣는다. IPC 는 `AgentError::TypeContract` 를 `-32602` 로 돌려주고 `error.data` 에 실패 단계와 타입 오류를 싣는다.
 
 ### int64 와 JSON 숫자
 
-int64 는 JSON 정수 토큰만 받는다. `serde_json` 은 정수 토큰을 i64/u64 그대로 보관하므로 i64 최솟값·최댓값과 2^53+1 같은 값이 저장소·IPC 응답·CLI 출력에서 정확히 유지된다. 범위를 넘는 정수와 |값| ≥ 2^63 인 정수형 실수는 `out_of_range`, 그 밖의 실수 토큰은 `not_integer` 다. float64 는 f64 로 정확히 표현되는 정수 토큰만 받는다(9007199254740993 은 거절). NaN·Infinity 는 `not_finite` 다. 숫자를 f64 로 읽는 JSON 소비자(JavaScript 의 `JSON.parse` 등)는 2^53 을 넘는 값을 정확히 읽지 못한다.
+검증을 통과한 int64 값은 wire(저장, IPC 응답, CLI JSON 출력)에서 10진 문자열이다(proto3 JSON 과 같은 관례). 숫자를 f64 로 읽는 소비자(JavaScript 의 `JSON.parse` 등)를 지나도 i64 최솟값·최댓값과 9007199254740993 이 같은 정수로 돌아온다. 스키마가 int64 를 알려 주므로 문자열과 string 타입이 섞이지 않는다.
+
+- 입력으로는 JSON 정수 토큰과 10진 문자열을 모두 받는다. 문자열은 `-?(0|[1-9][0-9]*)` 꼴만 받고 `-0`·앞자리 0·`+`·공백·지수 표기는 `type_mismatch` 다.
+- 범위를 넘는 값(토큰·문자열)과 |값| ≥ 2^63 인 정수형 실수는 `out_of_range`, 소수(`1.5`, `"1.5"`, `42.0`)는 `not_integer` 다.
+- 기본값도 같은 정규화를 거친다. Rust 쪽 소비자는 `types::int64_of` 로 읽는다.
+- `json` 타입 안의 숫자는 바꾸지 않는다. float64 는 f64 로 정확히 표현되는 정수 토큰만 받는다(9007199254740993 은 거절). NaN·Infinity 는 `not_finite` 다.
 
 ### 종류별 기본 출력과 결과
 
 | command | 기본 출력 타입 | 출력 값 |
 |---|---|---|
-| `run` | `int64`(다시 선언 불가) | 종료 코드. `allowed_exit_codes`(기본 `[0]`)에 든 코드면 성공. stdout·stderr 는 `raw.execution` |
+| `run` | `int64`(다시 선언 불가) | 종료 코드(wire 는 `"0"` 같은 문자열). `allowed_exit_codes`(기본 `[0]`)에 든 코드면 성공. stdout·stderr 는 `raw.execution`, 숫자 종료 코드는 `raw.exit_code` |
 | `custom` | `json` | IPC 응답(최종 응답) |
 | `wait_barrier` | `unit`(다시 선언 불가) | 확정된 null |
 | `reduce` | 전략별(아래) | reducer 값 |
@@ -552,6 +557,8 @@ int64 는 JSON 정수 토큰만 받는다. `serde_json` 은 정수 토큰을 i64
 결과는 `typed_result` 에 저장한다: `has_output`·`output`(최종 출력), `raw`(`exit_code`, `execution`), `artifacts`, `error`(`stage`: `input`·`execution`·`postprocess`·`output_validation`·`persistence`), `provenance`(`contract_version`, `kind`, `output_source`). `has_output: true` 이고 `output: null` 이면 unit 또는 nullable 출력이 확정된 것이고, `has_output: false` 는 출력이 없다는 뜻이다. v1 호환을 위해 `result` 에는 최종 출력이 `output` 으로 투영된다.
 
 저장소의 `set_result` 가 보고된 결과를 계약에 맞춰 확정하고, `set_state` 는 유효한 출력 없이 성공으로 가려는 v2 task 를 Failed 로 바꾼다. 러너·재시작 복구·훅 완료·IPC `task_set_result` 가 모두 이 두 메서드를 지나므로 완료 경로마다 따로 검사하지 않는다. 비즈니스 값(`"revise"`, `false`)은 정상 출력이다. 출력 타입에 맞지 않는 값만 `output_validation` 실패가 된다. `retry` 는 `typed_result` 를 지운다.
+
+v1 출력 placeholder(`${task.<id>.output…}`)로 v2 task 를 참조하는 생성은 `-32602`(`error.data.task_id` 에 참조 대상)로 거절한다. 실행 직전 치환도 v2 결과를 읽지 않고 실패한다. v2 결과를 넘기는 방법은 입력 binding 이 정한다.
 
 생성할 때 바인딩이 없는 입력은 `{}`(object) 또는 null 로 검증되어야 한다. 즉 필수 입력이 있는 계약은 아직 만들 수 없다. 입력 바인딩은 아직 구현하지 않았다. inline fallback 은 v2 에서 거절한다.
 
