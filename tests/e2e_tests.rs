@@ -2433,26 +2433,56 @@ fn webview_page_viewport_fills_its_native_window_under_gtk_scale_two() {
 #[test]
 #[ignore = "Linux X11 디스플레이와 번들 markdown plugin 이 필요해 기본 실행·CI 에서 돌리지 않는다"]
 fn webview_edge_inset_shows_no_chrome_text() {
-    let display = x11_harness_display()
-        .expect("X11 디스플레이가 필요하다(inherit + Wayland 는 측정하지 않는다)");
     let tasty = TastyInstance::spawn_with_env(&[]);
     let doc = tasty.tasty_home().join("webview-inset.md");
     std::fs::write(&doc, "# Title\n\nhello world\n").expect("markdown doc");
+    assert_webview_inset_shows_no_chrome_text(
+        &tasty,
+        json!({ "type": "markdown", "file": doc.display().to_string() }),
+    );
+}
+
+/// 같은 측정을 URL 라벨이 surface 폭보다 긴 배치에서 한다. html chrome 은 공백 없는 긴 URL 을
+/// 한 줄로 가운데 정렬해 그리므로 라벨이 좌우로 넘친다 — 아래 여백만 보는 markdown 배치가
+/// 재지 못하는 좌우 여백의 누출을 잰다. 실행: 격리 Xvfb 와 번들 plugin(html) 준비 뒤
+/// `TASTY_E2E_DISPLAY=:<n> cargo test --locked --test e2e_tests -- --ignored --exact webview_edge_inset_shows_no_chrome_text_beside_a_long_url`.
+#[cfg(all(target_os = "linux", feature = "gui"))]
+#[test]
+#[ignore = "Linux X11 디스플레이와 번들 html plugin 이 필요해 기본 실행·CI 에서 돌리지 않는다"]
+fn webview_edge_inset_shows_no_chrome_text_beside_a_long_url() {
+    let tasty = TastyInstance::spawn_with_env(&[]);
+    let page = tasty
+        .tasty_home()
+        .join(format!("webview-inset-{}.html", "long".repeat(50)));
+    std::fs::write(
+        &page,
+        "<!doctype html><html><body style=\"margin:0;background:#000080\">\
+         <p style=\"color:#ffffff\">marker</p></body></html>",
+    )
+    .expect("html page");
+    assert_webview_inset_shows_no_chrome_text(
+        &tasty,
+        json!({ "type": "html", "url": format!("file://{}", page.display()) }),
+    );
+}
+
+/// 첫 surface 오른쪽에 `surface` 로 pane 을 나누고, 그 WebView 창 둘레 여백이 한 가지 색인지
+/// 확인한다. `surface` 는 split 의 `type` 과 그 종류의 내용 인자다.
+#[cfg(all(target_os = "linux", feature = "gui"))]
+fn assert_webview_inset_shows_no_chrome_text(tasty: &TastyInstance, surface: serde_json::Value) {
+    let display = x11_harness_display()
+        .expect("X11 디스플레이가 필요하다(inherit + Wayland 는 측정하지 않는다)");
     let sid = tasty.first_surface_id();
-    let split = tasty.call(
-        "split",
-        json!({
-            "level": "pane",
-            "target_surface": sid.to_string(),
-            "direction": "vertical",
-            "type": "markdown",
-            "file": doc.display().to_string(),
-        }),
-    );
-    assert!(
-        split["new_surface_id"].as_u64().is_some(),
-        "markdown split: {split}"
-    );
+    let mut params = json!({
+        "level": "pane",
+        "target_surface": sid.to_string(),
+        "direction": "vertical",
+    });
+    for (k, v) in surface.as_object().expect("surface 인자는 객체다") {
+        params[k] = v.clone();
+    }
+    let split = tasty.call("split", params);
+    assert!(split["new_surface_id"].as_u64().is_some(), "split: {split}");
     let window = tasty
         .call("window.list", json!({}))
         .as_array()
@@ -2467,7 +2497,7 @@ fn webview_edge_inset_shows_no_chrome_text() {
             Ok(_) if start.elapsed() < Duration::from_secs(30) => {
                 std::thread::sleep(Duration::from_millis(250));
             }
-            Ok(_) => panic!("30 초 안에 markdown 페이지가 그려지지 않았다"),
+            Ok(_) => panic!("30 초 안에 페이지가 그려지지 않았다"),
             Err(e) => panic!("WebView 창을 읽지 못했다: {e}"),
         }
     }

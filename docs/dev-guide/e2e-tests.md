@@ -371,6 +371,8 @@ TASTY_E2E_DISPLAY=:<n> cargo test --locked --test e2e_tests -- --ignored --exact
   webview_edge_inset_shows_no_chrome_text
 ```
 
+`webview_edge_inset_shows_no_chrome_text_beside_a_long_url`는 같은 측정을 파일 이름이 200자 넘는 html surface에서 한다. chrome은 공백 없는 긴 URL을 한 줄로 가운데 정렬해 그리므로 라벨이 surface 폭을 넘어 좌우 여백으로 넘친다. markdown 배치는 글자가 아래로만 넘쳐 좌우 여백을 재지 못하므로 이 배치가 그 범위를 맡는다. 번들 plugin(html)이 필요하다.
+
 ## VTE 시뮬레이터 (`tasty-tui-simulator`)
 
 터미널 동작 검증용 도구 — 고수준 명령을 raw VTE escape 시퀀스로 변환해 출력한다(터미널 입장에선 실제 TUI 앱과 같은 바이트 스트림). **인터랙티브 모드**(stdin REPL — 외부에서 `surface.send` 로 명령 단계 전송, 명령마다 `OK` 동기화)와 원샷 시나리오를 제공한다. 명령: cursor/print/sgr/fg·bg/altscreen/scroll-region/erase/raw/esc 등, 종료 제어 `quit`/`exit-code N`/`crash`(SIGABRT)/`panic`. debug 의 `debug.cell_info`/`debug.screen_attrs`([debug-ipc](debug-ipc.md))와 조합하면 셀 속성을 결정적으로 자동 검증할 수 있다.
