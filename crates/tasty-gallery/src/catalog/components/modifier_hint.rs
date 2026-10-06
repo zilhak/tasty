@@ -646,6 +646,12 @@ pub fn draw_hold(ui: &mut egui::Ui, theme: &Theme) {
          hold completes. The bound modifier set is read from the same keybindings source the \
          shortcuts use (Win/Linux: Ctrl / Alt / Shift; macOS adds Cmd / Option).",
     );
+    spec::note(
+        ui,
+        theme,
+        "The faux terminal area uses the theme terminal background, as the body terminal does; \
+         the kit paints a raw #000.",
+    );
 }
 
 /// 가짜 앱(사이드바 + 터미널 표면) 위에 누른 홀드 컨트롤과 왼쪽 아래 패널을 그린다.
