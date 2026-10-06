@@ -185,18 +185,7 @@ impl GlobalHookManager {
 
 /// 전역 훅 명령의 셸 프로세스 생성을 요청한다. 실패는 로그에 남기며 자식 완료·종료 코드는 기다리지 않는다.
 pub(super) fn spawn_command(command: &str) {
-    #[cfg(windows)]
-    let mut cmd = {
-        let mut c = std::process::Command::new("cmd");
-        c.args(["/C", command]);
-        c
-    };
-    #[cfg(not(windows))]
-    let mut cmd = {
-        let mut c = std::process::Command::new("sh");
-        c.args(["-c", command]);
-        c
-    };
+    let mut cmd = global_hook_command(command, tasty_utils::process::process_env_keys_to_strip());
     let result = tasty_utils::process::hide_console(&mut cmd).spawn();
     if let Err(e) = result {
         tracing::warn!("global hook command spawn failed: {e}; cmd: {command}");
@@ -209,9 +198,56 @@ fn file_mtime(path: &std::path::Path) -> Option<SystemTime> {
     std::fs::metadata(path).and_then(|m| m.modified()).ok()
 }
 
+/// 전역 훅 명령을 sh/cmd로 감싼 Command를 만든다. `strip` 키는 터미널 셸과 같은 목록으로
+/// 상속 환경에서 지운다(`tasty_utils::process::is_stripped_inherited_env`).
+fn global_hook_command(command: &str, strip: Vec<std::ffi::OsString>) -> std::process::Command {
+    #[cfg(windows)]
+    let mut cmd = {
+        let mut c = std::process::Command::new("cmd");
+        c.args(["/C", command]);
+        c
+    };
+    #[cfg(not(windows))]
+    let mut cmd = {
+        let mut c = std::process::Command::new("sh");
+        c.args(["-c", command]);
+        c
+    };
+    for key in strip {
+        cmd.env_remove(key);
+    }
+    cmd
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 전역 훅도 터미널 셸과 같은 목록으로 Claude Code 세션 키와 CMUX_* 를 지우고 나머지는 남긴다.
+    #[test]
+    fn global_hook_strips_claude_session_and_cmux_env() {
+        use tasty_utils::process::env_keys_to_strip;
+        use tasty_utils::process::strip_test_keys::{KEPT, STRIPPED};
+        let strip = env_keys_to_strip(STRIPPED.iter().chain(KEPT).map(std::ffi::OsString::from));
+        let cmd = global_hook_command("true", strip);
+        let removed: Vec<_> = cmd
+            .get_envs()
+            .filter(|(_, v)| v.is_none())
+            .map(|(k, _)| k.to_owned())
+            .collect();
+        for key in STRIPPED {
+            assert!(
+                removed.iter().any(|k| k == std::ffi::OsStr::new(key)),
+                "{key} 는 지워져야 한다"
+            );
+        }
+        for key in KEPT {
+            assert!(
+                !removed.iter().any(|k| k == std::ffi::OsStr::new(key)),
+                "{key} 는 남아야 한다"
+            );
+        }
+    }
 
     #[test]
     fn parse_accepts_interval_and_once() {

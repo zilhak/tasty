@@ -146,6 +146,8 @@ surface 무관 — `condition` 으로 트리거:
   자동 삭제되지 않고, 다시 생기면 재감지한다. 파일 하나만 지원 — 디렉토리 경로도
   `metadata`가 mtime을 반환하므로 동작은 하지만 공식 지원 범위 밖이다.
 
+전역 훅 명령(`sh -c` / `cmd /C`)도 surface 훅과 같은 목록으로 상속한 `CMUX_*` 와 Claude Code 세션 표지·비밀 변수를 지운다([터미널 자식 셸 환경변수](../terminal/index.md#pty-셸)).
+
 ## 인터페이스
 
 - **사용자/AI Agent/CLI**:
