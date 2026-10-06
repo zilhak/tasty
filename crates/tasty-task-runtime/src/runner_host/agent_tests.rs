@@ -90,16 +90,27 @@ fn contract(v: Value) -> TaskContract {
 
 /// Ready 인 v2 agent task 를 만든다.
 fn create(ctx: &RunnerContext, session: AgentSession, c: TaskContract) -> Task {
+    create_in(ctx, 1, 1, session, c)
+}
+
+/// workspace `ws` 에 task 를 만든다. 세션은 workspace `session_ws` 에 뜬다.
+fn create_in(
+    ctx: &RunnerContext,
+    ws: u32,
+    session_ws: u32,
+    session: AgentSession,
+    c: TaskContract,
+) -> Task {
     let seq = ctx.agent_seq.clone();
     ctx.with_memory(|mem| {
         TaskStore::new(mem, HOST_OWNER, seq.as_ref())
             .create_typed(
                 TaskCreateOpts {
-                    workspace_id: 1,
+                    workspace_id: ws,
                     name: "review".into(),
                     command: TaskCommand::Agent {
                         provider: "claude".into(),
-                        workspace_id: 1,
+                        workspace_id: session_ws,
                         session,
                         instruction: "review".into(),
                         timeout_ms: None,
@@ -123,7 +134,7 @@ fn dispatch(exec: &mut HostExecutor, ctx: &RunnerContext, task: &Task) -> Dispat
     let seq = ctx.agent_seq.clone();
     ctx.with_memory(|mem| {
         TaskStore::new(mem, HOST_OWNER, seq.as_ref())
-            .set_state(1, &task.id, TaskState::Running, 1)
+            .set_state(task.workspace_id, &task.id, TaskState::Running, 1)
             .expect("running")
     });
     h
@@ -276,6 +287,92 @@ fn a_structured_output_needs_a_submission_and_the_new_session_is_told_how() {
 }
 
 /// spawn 은 일반 호출의 응답 대기(5초)보다 늦게 답할 수 있다. 그래도 회차에 묶는다.
+/// 같은 이름의 task 가 두 workspace 에서 돈다. 한쪽이 끝나 풀려도 다른 쪽의 턴은 이어지고,
+/// 각자 자기 세션의 턴으로 끝난다.
+#[test]
+fn the_same_task_name_in_two_workspaces_keeps_its_own_turn() {
+    let (_td, ctx) = fresh_ctx();
+    let fake = FakeProvider::install(&ctx, "idle");
+    let mut exec1 = HostExecutor::new(ctx.clone());
+    let mut exec2 = HostExecutor::new(ctx.clone());
+    let t1 = create_in(&ctx, 1, 1, existing(), v2());
+    let mut t2 = t1.clone();
+    t2.workspace_id = 2;
+    t2.command = TaskCommand::Agent {
+        provider: "claude".into(),
+        workspace_id: 2,
+        session: AgentSession::Existing { surface_id: 9 },
+        instruction: "review".into(),
+        timeout_ms: None,
+    };
+    let seq = ctx.agent_seq.clone();
+    ctx.with_memory(|mem| TaskStore::new(mem, HOST_OWNER, seq.as_ref()).put(&t2))
+        .expect("put");
+    assert_eq!(t1.id, t2.id);
+    let h1 = dispatch(&mut exec1, &ctx, &t1);
+    let h2 = dispatch(&mut exec2, &ctx, &t2);
+    assert!(matches!(exec1.poll(&h1), PollOutcome::Active));
+    assert!(matches!(exec2.poll(&h2), PollOutcome::Active));
+    assert_eq!(fake.sent(".tell").len(), 2);
+    for (surface, answer) in [(7, "one"), (9, "two")] {
+        ctx.agent_turns
+            .report(surface, "claude", TurnEvent::Started);
+        ctx.agent_turns.report(
+            surface,
+            "claude",
+            TurnEvent::Ended(TurnEnd::Answer(Some(answer.into()))),
+        );
+    }
+    let PollOutcome::Done(r1) = exec1.poll(&h1) else {
+        panic!("ws1 should finish");
+    };
+    assert_eq!(r1.output.unwrap()[report::FINAL_ANSWER], "one");
+    exec1.release_permit(&t1.id);
+    assert!(ctx.agent_turns.get(7).is_none());
+    let PollOutcome::Done(r2) = exec2.poll(&h2) else {
+        panic!("ws2 should still have its turn after ws1 released");
+    };
+    let out = r2.output.unwrap();
+    assert_eq!(out[report::FINAL_ANSWER], "two");
+    assert_eq!(out[report::SURFACE_ID], 9);
+    assert_eq!(fake.sent(".tell").len(), 2, "다시 보내지 않는다");
+}
+
+/// 세션이 다른 workspace 에 떠도 제출 안내와 회차 기록은 task 자신의 workspace 를 쓴다.
+#[test]
+fn a_session_in_another_workspace_submits_to_the_task_workspace() {
+    let (_td, ctx) = fresh_ctx();
+    let fake = FakeProvider::install(&ctx, "active");
+    let mut exec = HostExecutor::new(ctx.clone());
+    let c = contract(json!({
+        "contract_version": 2,
+        "output_schema": { "type": "enum", "values": ["approve", "revise"] }
+    }));
+    let new = AgentSession::New {
+        parent_surface: 3,
+        cwd: None,
+    };
+    let task = create_in(&ctx, 1, 5, new, c);
+    let h = dispatch(&mut exec, &ctx, &task);
+    let spawned = fake.sent(".spawn");
+    assert_eq!(spawned[0]["workspace"], "5");
+    let prompt = spawned[0]["prompt"].as_str().unwrap();
+    assert!(prompt.contains("--workspace-id 1 "), "{prompt}");
+    let DispatchHandle::AgentTurn { workspace_id, .. } = &h else {
+        panic!("agent handle");
+    };
+    assert_eq!(*workspace_id, 1);
+    assert!(ctx.agent_turns.find(1, &task.id).is_some());
+    assert!(matches!(exec.poll(&h), PollOutcome::Active));
+    let seq = ctx.agent_seq.clone();
+    let stored = ctx
+        .with_memory(|mem| TaskStore::new(mem, HOST_OWNER, seq.as_ref()).get(1, &task.id))
+        .expect("get")
+        .expect("task");
+    let link = stored.attempt.and_then(|a| a.agent).expect("session link");
+    assert_eq!(link.surface_id, 42);
+}
+
 #[test]
 fn a_slow_spawn_still_binds_the_new_session() {
     let (_td, ctx) = fresh_ctx();

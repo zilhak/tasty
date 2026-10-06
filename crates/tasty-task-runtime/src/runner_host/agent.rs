@@ -54,15 +54,17 @@ impl HostExecutor {
                 .map_err(|e| unavailable(e.to_string()))?;
             text.push_str("\n\n");
             text.push_str(&agent::submission_instructions(
-                *workspace_id,
+                task.workspace_id,
                 &task.id,
                 &attempt_id,
                 &schema,
             ));
         }
         let deadline_ms = timeout_ms.map(|t| now_ms().saturating_add(t));
+        // 회차 기록·제출·턴 표는 task 자신의 workspace 를 쓴다. 명령의 workspace_id 는 새 세션이
+        // 뜨는 곳일 뿐이다.
         let handle = |surface_id: u32, pending: Option<String>| DispatchHandle::AgentTurn {
-            workspace_id: *workspace_id,
+            workspace_id: task.workspace_id,
             task_id: task.id.clone(),
             attempt_id: attempt_id.clone(),
             provider: provider.clone(),
@@ -116,6 +118,7 @@ impl HostExecutor {
                     .map_err(|other| {
                         unavailable(format!("surface {surface} is bound to {other}"))
                     })?;
+                self.held_turns.insert(task.id.clone(), task.workspace_id);
                 Ok(handle(surface, None))
             }
         }
@@ -137,7 +140,7 @@ impl HostExecutor {
         };
         let now = now_ms();
         let state = self.provider_state(provider, *surface_id);
-        let binding = match self.ctx.agent_turns.find(task_id) {
+        let binding = match self.ctx.agent_turns.find(*workspace_id, task_id) {
             Some((_, b)) if b.attempt == *attempt_id => b,
             Some(_) => return PollOutcome::Failed("agent turn bound to another attempt".into()),
             None => {
@@ -162,7 +165,7 @@ impl HostExecutor {
                 if let Some(since) =
                     self.ctx
                         .agent_turns
-                        .note_awaiting(task_id, awaiting_input, now)
+                        .note_awaiting(*workspace_id, task_id, awaiting_input, now)
                 {
                     self.record_link(
                         *workspace_id,
@@ -234,12 +237,17 @@ impl HostExecutor {
             json!({ "surface_id": surface_id, "message": text }),
         );
         if let Err(e) = sent {
-            self.ctx.agent_turns.release(task_id);
+            self.ctx.agent_turns.release(*workspace_id, task_id);
             return PollOutcome::Failed(
                 FailureCode::AgentUnavailable.message(format!("{method}: {e}")),
             );
         }
-        if let Some(since) = self.ctx.agent_turns.note_awaiting(task_id, false, now) {
+        self.held_turns.insert(task_id.clone(), *workspace_id);
+        if let Some(since) = self
+            .ctx
+            .agent_turns
+            .note_awaiting(*workspace_id, task_id, false, now)
+        {
             self.record_link(
                 *workspace_id,
                 task_id,

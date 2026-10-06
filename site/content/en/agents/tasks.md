@@ -1,4 +1,4 @@
-<!-- source-hash: cf336d39af9e -->
+<!-- source-hash: 19076bb05a78 -->
 <a id="task-dag"></a>
 
 # Task workflows (DAG)
@@ -153,6 +153,7 @@ An `agent` task sends one instruction to a Claude or Codex session and takes the
  "output_schema": {"type": "enum", "values": ["approve", "revise"]}}
 ```
 
+- The `workspace_id` in `command` is the workspace a new session opens in. `task-submit` hands the value to the workspace the task lives in, and the guidance appended to the instruction carries that number.
 - With `session` set to `{"kind": "new", "parent_surface": <surface>}`, a new session starts under that surface and gets the instruction. With `{"kind": "existing", "surface_id": <surface>}`, the instruction goes to a session that is already open.
 - An open session gets the instruction only when it is idle. If you are talking to it, the task waits until you finish, so the conversations do not mix. Tasks that use the same session run one after another.
 - Without a result type, the last answer of the turn becomes a string result.

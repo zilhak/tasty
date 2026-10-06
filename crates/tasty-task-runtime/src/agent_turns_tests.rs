@@ -15,7 +15,7 @@ fn a_second_task_cannot_bind_a_bound_surface() {
     assert_eq!(t.bind(7, binding("b", "b#1", false)), Err("a".to_string()));
     // 같은 회차를 다시 묶는 것은 허용한다.
     t.bind(7, binding("a", "a#1", false)).unwrap();
-    t.release(&"a".to_string());
+    t.release(1, &"a".to_string());
     t.bind(7, binding("b", "b#1", false)).unwrap();
     assert_eq!(t.holder(7).as_deref(), Some("b"));
 }
@@ -66,7 +66,7 @@ fn another_provider_and_unbound_surfaces_do_not_apply() {
 fn a_released_binding_takes_no_late_report() {
     let t = AgentTurns::new();
     t.bind(7, binding("a", "a#1", true)).unwrap();
-    t.release(&"a".to_string());
+    t.release(1, &"a".to_string());
     assert_eq!(
         t.report(7, "claude", answer("late")),
         ReportOutcome::Unbound
@@ -77,34 +77,70 @@ fn a_released_binding_takes_no_late_report() {
 fn submissions_are_tied_to_the_current_attempt_and_keep_the_first_value() {
     let t = AgentTurns::new();
     assert_eq!(
-        t.submit(&"a".into(), "a#1", json!(1)),
+        t.submit(1, &"a".into(), "a#1", json!(1)),
         Err((SubmissionRejection::NotRunning, None))
     );
     t.bind(7, binding("a", "a#2", true)).unwrap();
     assert_eq!(
-        t.submit(&"a".into(), "a#1", json!(1)),
+        t.submit(1, &"a".into(), "a#1", json!(1)),
         Err((SubmissionRejection::StaleAttempt, Some("a#2".into())))
     );
     assert_eq!(
-        t.submit(&"b".into(), "a#2", json!(1)),
+        t.submit(1, &"b".into(), "a#2", json!(1)),
         Err((SubmissionRejection::NotRunning, None))
     );
     assert_eq!(
-        t.submit(&"a".into(), "a#2", json!({"v": 1})),
+        t.submit(1, &"a".into(), "a#2", json!({"v": 1})),
         Ok(SubmitOutcome::Accepted)
     );
     assert_eq!(
-        t.submit(&"a".into(), "a#2", json!({"v": 1})),
+        t.submit(1, &"a".into(), "a#2", json!({"v": 1})),
         Ok(SubmitOutcome::Duplicate)
     );
     assert_eq!(
-        t.submit(&"a".into(), "a#2", json!({"v": 2})),
+        t.submit(1, &"a".into(), "a#2", json!({"v": 2})),
         Err((SubmissionRejection::Conflict, Some("a#2".into())))
     );
     t.report(7, "claude", answer("done"));
     assert_eq!(
-        t.submit(&"a".into(), "a#2", json!({"v": 1})),
+        t.submit(1, &"a".into(), "a#2", json!({"v": 1})),
         Err((SubmissionRejection::TurnEnded, Some("a#2".into())))
+    );
+}
+
+/// task id 는 workspace 마다 정해진다. 다른 workspace 의 같은 이름 task 를 풀거나 찾거나
+/// 그 회차에 제출하지 않는다.
+#[test]
+fn the_same_task_name_in_two_workspaces_stays_apart() {
+    let t = AgentTurns::new();
+    let in_ws = |ws: u32| {
+        TurnBinding::new(
+            ws,
+            "review".into(),
+            "review#1".into(),
+            "claude".into(),
+            true,
+        )
+    };
+    t.bind(7, in_ws(1)).unwrap();
+    t.bind(8, in_ws(2)).unwrap();
+    let review: TaskId = "review".into();
+    assert_eq!(t.find(1, &review).map(|(s, _)| s), Some(7));
+    assert_eq!(t.find(2, &review).map(|(s, _)| s), Some(8));
+    assert_eq!(
+        t.submit(2, &review, "review#1", json!("from ws2")),
+        Ok(SubmitOutcome::Accepted)
+    );
+    assert!(t.get(7).unwrap().submitted.is_none());
+    assert_eq!(t.note_awaiting(2, &review, true, 5), Some(Some(5)));
+    assert_eq!(t.get(7).unwrap().awaiting_since, None);
+    // 한쪽이 끝나 풀려도 다른 workspace 의 묶음은 남는다.
+    t.release(1, &review);
+    assert!(t.get(7).is_none());
+    assert_eq!(t.find(2, &review).map(|(s, _)| s), Some(8));
+    assert_eq!(
+        t.submit(1, &review, "review#1", json!("x")),
+        Err((SubmissionRejection::NotRunning, None))
     );
 }
 
@@ -208,13 +244,13 @@ fn awaiting_input_is_recorded_once_per_change() {
     let t = AgentTurns::new();
     let a: TaskId = "a".into();
     t.bind(7, binding("a", "a#1", true)).unwrap();
-    assert_eq!(t.note_awaiting(&a, false, 5), Some(None), "첫 기록");
-    assert_eq!(t.note_awaiting(&a, false, 6), None);
-    assert_eq!(t.note_awaiting(&a, true, 7), Some(Some(7)));
+    assert_eq!(t.note_awaiting(1, &a, false, 5), Some(None), "첫 기록");
+    assert_eq!(t.note_awaiting(1, &a, false, 6), None);
+    assert_eq!(t.note_awaiting(1, &a, true, 7), Some(Some(7)));
     assert_eq!(
-        t.note_awaiting(&a, true, 9),
+        t.note_awaiting(1, &a, true, 9),
         None,
         "대기 시작 시각은 유지한다"
     );
-    assert_eq!(t.note_awaiting(&a, false, 10), Some(None));
+    assert_eq!(t.note_awaiting(1, &a, false, 10), Some(None));
 }

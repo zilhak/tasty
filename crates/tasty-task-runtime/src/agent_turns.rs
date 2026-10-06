@@ -16,7 +16,8 @@ use tasty_agent::{SubmissionRejection, TaskId, TaskResult};
 const WHAT: &str = "agent turn registry";
 static POISONED: AtomicBool = AtomicBool::new(false);
 
-/// surface 하나에 묶인 회차 하나.
+/// surface 하나에 묶인 회차 하나. task id 는 workspace 마다 따로 정해지므로 회차는
+/// (workspace, task) 로 찾는다.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TurnBinding {
     pub workspace: u32,
@@ -53,6 +54,10 @@ impl TurnBinding {
             awaiting_since: None,
             linked: false,
         }
+    }
+
+    fn is(&self, workspace: u32, task: &TaskId) -> bool {
+        self.workspace == workspace && self.task == *task
     }
 }
 
@@ -112,7 +117,9 @@ impl AgentTurns {
     pub fn bind(&self, surface: u32, binding: TurnBinding) -> Result<(), TaskId> {
         let mut g = self.lock();
         match g.get(&surface) {
-            Some(b) if b.task == binding.task && b.attempt == binding.attempt => Ok(()),
+            Some(b) if b.is(binding.workspace, &binding.task) && b.attempt == binding.attempt => {
+                Ok(())
+            }
             Some(b) => Err(b.task.clone()),
             None => {
                 g.insert(surface, binding);
@@ -127,8 +134,8 @@ impl AgentTurns {
     }
 
     /// task 의 회차가 묶은 surface 를 푼다. 늦게 온 보고는 이후 적용되지 않는다.
-    pub fn release(&self, task: &TaskId) {
-        self.lock().retain(|_, b| b.task != *task);
+    pub fn release(&self, workspace: u32, task: &TaskId) {
+        self.lock().retain(|_, b| !b.is(workspace, task));
     }
 
     pub fn get(&self, surface: u32) -> Option<TurnBinding> {
@@ -136,18 +143,24 @@ impl AgentTurns {
     }
 
     /// task 가 묶은 surface 와 그 상태.
-    pub fn find(&self, task: &TaskId) -> Option<(u32, TurnBinding)> {
+    pub fn find(&self, workspace: u32, task: &TaskId) -> Option<(u32, TurnBinding)> {
         self.lock()
             .iter()
-            .find(|(_, b)| b.task == *task)
+            .find(|(_, b)| b.is(workspace, task))
             .map(|(s, b)| (*s, b.clone()))
     }
 
     /// 입력 대기 여부를 반영한다. 회차 기록을 다시 써야 하면(처음이거나 대기가 바뀜)
     /// 기록할 대기 시작 시각을 돌려준다.
-    pub fn note_awaiting(&self, task: &TaskId, awaiting: bool, now_ms: u64) -> Option<Option<u64>> {
+    pub fn note_awaiting(
+        &self,
+        workspace: u32,
+        task: &TaskId,
+        awaiting: bool,
+        now_ms: u64,
+    ) -> Option<Option<u64>> {
         let mut g = self.lock();
-        let b = g.values_mut().find(|b| b.task == *task)?;
+        let b = g.values_mut().find(|b| b.is(workspace, task))?;
         let next = match (awaiting, b.awaiting_since) {
             (true, Some(t)) => Some(t),
             (true, None) => Some(now_ms),
@@ -190,12 +203,13 @@ impl AgentTurns {
     /// 거절한다. 턴이 끝난 뒤의 제출은 받지 않는다(확정할 결과가 바뀌지 않게).
     pub fn submit(
         &self,
+        workspace: u32,
         task: &TaskId,
         attempt: &str,
         value: Value,
     ) -> Result<SubmitOutcome, (SubmissionRejection, Option<String>)> {
         let mut g = self.lock();
-        let Some(b) = g.values_mut().find(|b| b.task == *task) else {
+        let Some(b) = g.values_mut().find(|b| b.is(workspace, task)) else {
             return Err((SubmissionRejection::NotRunning, None));
         };
         if b.attempt != attempt {

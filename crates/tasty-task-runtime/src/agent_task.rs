@@ -50,7 +50,7 @@ impl TaskService {
         if current.as_deref() != Some(attempt_id) {
             return Err(reject(SubmissionRejection::StaleAttempt, current));
         }
-        let Some((surface, _)) = self.agent_turns().find(task_id) else {
+        let Some((surface, _)) = self.agent_turns().find(workspace_id, task_id) else {
             return Err(reject(SubmissionRejection::NotRunning, current));
         };
         if matches!(submitter, Submitter::Session(s) if s != surface) {
@@ -68,7 +68,7 @@ impl TaskService {
                 )))
             })?;
         self.agent_turns()
-            .submit(task_id, attempt_id, typed.to_wire())
+            .submit(workspace_id, task_id, attempt_id, typed.to_wire())
             .map_err(|(reason, current)| reject(reason, current))
     }
 

@@ -146,6 +146,8 @@ pub(crate) struct HostExecutor {
     held_leases: HashMap<TaskId, (u32, String, String)>,
     /// workspace가 없는 handle도 삭제할 수 있도록 저장 시 task별 workspace를 기억한다.
     held_handles: HashMap<TaskId, u32>,
+    /// 이 executor가 턴 표에 묶은 agent 회차의 workspace. 턴 표는 workspace 사이에 공유된다.
+    held_turns: HashMap<TaskId, u32>,
     /// workspace executor의 모든 PolledDispatch가 공유한다. 한 poll이라도 성공하면 유예를 초기화한다.
     injector_grace_deadline_ms: Option<u64>,
     postprocess: postprocess::PostprocessRuns,
@@ -159,6 +161,7 @@ impl HostExecutor {
             held_permits: HashMap::new(),
             held_leases: HashMap::new(),
             held_handles: HashMap::new(),
+            held_turns: HashMap::new(),
             injector_grace_deadline_ms: None,
             postprocess: Default::default(),
         }
@@ -533,7 +536,9 @@ impl HostExecutor {
             }
         }
         self.release_lease(task_id);
-        self.ctx.agent_turns.release(task_id);
+        if let Some(ws) = self.held_turns.remove(task_id) {
+            self.ctx.agent_turns.release(ws, task_id);
+        }
         self.evict_handle(task_id);
     }
 }
