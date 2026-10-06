@@ -70,95 +70,6 @@ fn delete_confirm(ui: &mut egui::Ui, theme: &Theme) {
     });
 }
 
-/// 사이드바 버튼에 붙는 팝업이므로 배경을 어둡게 하지 않고 popover 그림자를 쓴다.
-/// 시안 `RailCategoryPopup`: 머리줄(위 space-xs · 좌우·아래 space-sm, 이름 + 오른쪽 끝 워크스페이스 수,
-/// 아래 구분선, 그 아래 space-xs), 간격 없이 붙은 행, 위아래 space-xs 를 둔 구분선.
-fn rail_popup(ui: &mut egui::Ui, theme: &Theme) {
-    kit::frame_card_popover(ui, theme, POPUP_WIDTH, kit::raised_fill(theme), |ui| {
-        kit::region_sym(ui, theme.spacing_sm, theme.spacing_sm, |ui| {
-            ui.spacing_mut().item_spacing.y = 0.0;
-            let (sm, xs) = (
-                theme.spacing_sm.value() as i8,
-                theme.spacing_xs.value() as i8,
-            );
-            kit::region(
-                ui,
-                egui::Margin {
-                    left: sm,
-                    right: sm,
-                    top: xs,
-                    bottom: sm,
-                },
-                |ui| {
-                    ui.horizontal(|ui| {
-                        ui.label(
-                            egui::RichText::new("Services")
-                                .color(theme.text_primary().to_egui())
-                                .size(theme.font_size_body.value())
-                                .strong(),
-                        );
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            ui.label(
-                                egui::RichText::new("3")
-                                    .monospace()
-                                    .color(theme.text_muted().to_egui())
-                                    .size(theme.font_size_micro.value()),
-                            );
-                        });
-                    });
-                },
-            );
-            kit::hsep(ui, theme);
-            ui.add_space(theme.spacing_xs.value());
-            popup_row(ui, theme, PLUS, "Add workspace", false);
-            popup_row(ui, theme, CHEVRON_DOWN, "Collapse", false);
-            ui.add_space(theme.spacing_xs.value());
-            kit::hsep(ui, theme);
-            ui.add_space(theme.spacing_xs.value());
-            popup_row(ui, theme, EDIT, "Rename category", false);
-            popup_row(ui, theme, TRASH, "Delete category", true);
-        });
-    });
-}
-
-/// 팝업 메뉴 행 1개 — 아이콘 + 라벨(28px). `danger` 면 accent-danger.
-fn popup_row(
-    ui: &mut egui::Ui,
-    theme: &Theme,
-    glyph: crate::catalog::icons::MockGlyph,
-    label: &str,
-    danger: bool,
-) {
-    let color = if danger {
-        theme.accent_danger().to_egui()
-    } else {
-        theme.text_secondary().to_egui()
-    };
-    let (rect, _) = ui.allocate_exact_size(
-        egui::vec2(ui.available_width(), theme.item_height_interactive.value()),
-        egui::Sense::hover(),
-    );
-    let icon_size = theme.icon_glyph_size_md.value();
-    let icon_c = egui::pos2(
-        rect.min.x + theme.spacing_sm.value() + icon_size * 0.5,
-        rect.center().y,
-    );
-    glyph.image(icon_size, color).paint_at(
-        ui,
-        egui::Rect::from_center_size(icon_c, egui::vec2(icon_size, icon_size)),
-    );
-    ui.painter().text(
-        egui::pos2(
-            icon_c.x + icon_size * 0.5 + theme.spacing_sm.value(),
-            rect.center().y,
-        ),
-        egui::Align2::LEFT_CENTER,
-        label,
-        egui::FontId::proportional(theme.font_size_body.value()),
-        color,
-    );
-}
-
 /// 시안 `RailCategoryFrame` 치수. 레일 52 × 380, 위아래 안쪽 여백 10, 항목 간격 4.
 const RAIL_W: LogicalPx = LogicalPx(52.0);
 const RAIL_H: LogicalPx = LogicalPx(380.0);
@@ -433,7 +344,15 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             )
         });
         spec::cluster(ui, theme, "Delete confirm", |ui| delete_confirm(ui, theme));
-        spec::cluster(ui, theme, "Rail popup", |ui| rail_popup(ui, theme));
+        spec::cluster(ui, theme, "Rail popup", |ui| {
+            // 줄바꿈 줄은 가로 배치라 팝업 폭이 행 남은 폭으로 늘어난다. 레일 예제처럼
+            // 팝업 폭의 세로 칸 안에 그린다.
+            ui.allocate_ui_with_layout(
+                egui::vec2(POPUP_WIDTH.value(), 0.0),
+                egui::Layout::top_down(egui::Align::Min),
+                |ui| rail_category_menu(ui, theme),
+            );
+        });
     });
 
     spec::meta(
