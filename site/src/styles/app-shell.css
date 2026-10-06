@@ -3,11 +3,10 @@
    Dimensions follow the two sources in docs/dev-guide/site.md. Rules that reproduce
    the kit's app chrome (.shell, .shell__*, .shell-overlays*) use --tasty-* tokens.
    Guide labels (.anat*) and guide composition (.workflow-diagram*) are the site's
-   own and use the site scale. Literal values left without a line comment belong
-   to axes neither scale has here: font sizes, element and page sizes (how large the
-   window is shown on the page), and stroke widths. Spacing written in rem follows
-   the reader's font size and stays relative rather than moving to the pixel site
-   scale. Container and media query conditions stay literal because a query
+   own and use the site scale, including the gaps around and inside figures. Literal
+   values left without a line comment belong to axes neither scale has here: font
+   sizes, element and page sizes (how large the window is shown on the page), and
+   stroke widths. Container and media query conditions stay literal because a query
    condition cannot read a custom property. */
 
 /* Keep the kit text size; change the visible columns instead of scaling the shell. */
@@ -130,10 +129,10 @@
 }
 
 /* Guide-only composition; component visuals come from the design kit. */
-.workflow-diagram { margin: 1.5rem 0; }
+.workflow-diagram { margin: var(--sp-6) 0; }
 .workflow-diagram__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-2); }
 .workflow-diagram__pane { display: flex; flex-direction: column; min-width: 0; min-height: 190px; }
-.workflow-diagram figcaption { margin-top: .75rem; font-size: .85rem; }
+.workflow-diagram figcaption { margin-top: var(--sp-3); font-size: .85rem; }
 @media (max-width: 600px) { .workflow-diagram__grid { grid-template-columns: minmax(0, 1fr); } }
 
 /* Keep both surface kinds visible in the landing's mixed-layout example. */
