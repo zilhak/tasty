@@ -88,7 +88,7 @@ agent
 
 ## 안정성 등급
 
-- **Stable** — major 전까지 키·필수 필드 불변, 옵션 필드 추가만.
+- **Stable** — 키·필수 필드는 바꾸지 않고 옵션 필드만 추가하는 것이 기본이다. 깨야 할 때는 아래 [후속 변경 정책](#후속-변경-정책)을 따른다.
 - **Experimental** — minor 마다 변경 가능. **경고일 뿐 구독 조건이 아니다** — 구독 조건은 등급과 무관하게 매니페스트 `event_subscribe` 패턴이 요청 패턴을 덮는가 하나다. 근거는 [ADR-0033](../adr/0033-event-feed-delivery.md).
 - **Internal** — debug 빌드 전용.
 
@@ -214,7 +214,7 @@ scope=global command 단축키는 조합키만, scope=surface 는 단일 키도 
 
 ## 후속 변경 정책
 
-Stable 키/필수 필드 제거 → major bump. 옵션 필드 추가·새 이벤트 추가·Experimental→Stable 승격 → minor 이하(plugin 호환 유지). 새 예약 네임스페이스 추가는 충돌 가능 → major/마이그레이션 안내.
+Stable 키/필수 필드 제거는 깨지는 변경이다. 0.x 에서는 버전을 올리거나 유예를 두지 않고 `CHANGELOG.md` 에 `(BREAK)` 로 적어 바로 낸다([ADR-0066](../adr/0066-pre-1-0-breaking-changes-ship-without-deprecation-period.md)). 안정선 이후 정책은 안정선에 진입할 때 정한다. 옵션 필드 추가·새 이벤트 추가·Experimental→Stable 승격 → minor 이하(plugin 호환 유지). 새 예약 네임스페이스 추가는 충돌 가능 → `(BREAK)` 와 마이그레이션 안내.
 
 ## 관련
 

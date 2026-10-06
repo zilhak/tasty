@@ -360,7 +360,7 @@ Codex는 대응 훅에서 `codex notify-caller`를 호출한다([Codex](../plugi
 | fallback 없는 enum variant 추가 · 컬렉션 정렬/페이지네이션 의미 변화 | **major** |
 | 비동기 이벤트(`command.invoke`/`ipc.result`/`event.dispatch`) 의미 변화 · handshake/env(`TASTY_HOST_API_VERSION`/auth token) 계약 변경 · 예약 namespace·권한 토큰 정책 변경 | **major** |
 
-이 표를 기본 분류로 사용한다. 새 분류가 필요하면 PR 에 명시하고 표에 추가한다.
+이 표를 기본 분류로 사용한다. 새 분류가 필요하면 PR 에 명시하고 표에 추가한다. **major** 는 깨지는 변경이라는 분류다 — 0.x 에서는 major 버전을 올리지 않고 위 버전 단계 표대로 `(BREAK)` 로 바로 낸다.
 
 ### 호환 협상 — 무엇을 할 줄 아는지 묻는 자리
 
