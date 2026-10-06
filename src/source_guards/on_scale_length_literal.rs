@@ -744,7 +744,7 @@ fn the_blind_spots_are_still_the_size_they_say() {
         // The icon button state table test adds its 24x24 anchor rect at the origin (4 literals).
         // The clipboard type segments are drawn once in tasty-ui-widgets instead of three
         // copies in the plugin and the gallery, which drops four zero literals.
-        // size-10 joining the scale makes the existing test literals of 10 count as well.
+        // 스케일에 size-10이 들어오면서 test 코드의 기존 값 10도 새로 집계됐다.
         (183, 389),
         "제외한 0과 test 전용 코드의 수가 달라졌다. 실제 사용과 수집 범위의 변경을 확인하고 기록을 갱신한다."
     );
