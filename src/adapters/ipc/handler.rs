@@ -595,18 +595,10 @@ fn route_engine_handler(
             tab::handle_tab_list(window.presentation(), &engine.as_ref(), id, &request.params)
         }
         // terminal: child-terminal 관리와 점유 검사 (ADR-0021)
-        "terminal.spawn" => JsonRpcResponse::internal_error(
-            id,
-            "terminal.spawn requires committed structure admission",
-        ),
         "terminal.tell" => terminal::handle_tell(engine, id, &request.params),
         "terminal.children" => terminal::handle_children(engine, id, &request.params),
         "terminal.parent" => terminal::handle_parent(engine, id, &request.params),
         "terminal.state" => terminal::handle_state(engine, id, &request.params),
-        "terminal.kill" => JsonRpcResponse::internal_error(
-            id,
-            "terminal.kill requires committed structure admission",
-        ),
         "terminal.respawn" => terminal::handle_respawn(core, engine, id, &request.params),
         "terminal.broadcast" => terminal::handle_broadcast(core, engine, id, &request.params),
         "terminal.set_state" => terminal::handle_set_state(engine, id, &request.params),
@@ -619,10 +611,6 @@ fn route_engine_handler(
         "pty.wait" => pty::handle_wait(engine, id, &request.params),
         "pty.kill" => pty::handle_kill(engine, id, &request.params),
         "pty.list" => pty::handle_list(engine, id),
-        "pty.attach_surface" => JsonRpcResponse::internal_error(
-            id,
-            "pty.attach_surface requires committed structure admission",
-        ),
         // preset (layout preset CRUD + apply)
         "preset.list" => preset::handle_list(core, id, &request.params),
         "preset.get" => preset::handle_get(core, id, &request.params),
@@ -635,10 +623,6 @@ fn route_engine_handler(
             &engine.as_ref(),
             id,
             &request.params,
-        ),
-        "preset.apply" => JsonRpcResponse::internal_error(
-            id,
-            "preset application bypassed the journal command boundary",
         ),
         "surface.list" => surface::handle_surface_list(&engine.as_ref(), id),
         "surface.kinds" => surface::handle_surface_kinds(&engine.read(), id),
@@ -681,10 +665,6 @@ fn route_engine_handler(
             surface::handle_foreground_process(&engine.as_ref(), id, &request.params)
         }
         "surface.locate" => surface::handle_surface_locate(engine, id, &request.params),
-        "surface.respawn_terminal" => JsonRpcResponse::internal_error(
-            id,
-            "surface.respawn_terminal requires committed structure admission",
-        ),
         "surface.is_typing" => handle_is_typing(&engine.as_ref(), id, &request.params),
         "surface.send_wait_idle" => handle_send_wait_idle(engine, id, &request.params),
         "surface.fire_hook" => {

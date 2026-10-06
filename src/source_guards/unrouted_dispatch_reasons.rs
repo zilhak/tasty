@@ -40,31 +40,6 @@ const ROSTER: &[(&str, Why, &str)] = &[
         "journal create_spec가 surface_id를 읽어 conversion 대상을 고정한다. handler의 journal-only 거절 경로에는 키 읽기가 없다.",
     ),
     (
-        "preset.apply",
-        RoutedOutsideRequestTarget,
-        "journal assembly::resolve_preset이 target_pane_id/target_workspace_id 및 원 completion view를 해석한다. handler 함수만 따라가는 검색 범위 밖이다.",
-    ),
-    (
-        "pty.attach_surface",
-        RoutedOutsideRequestTarget,
-        "journal create_spec이 pane_id와 standalone id를 읽어 원 pane 및 PTY generation을 고정한다. handler는 journal admission 우회를 거절한다.",
-    ),
-    (
-        "surface.respawn_terminal",
-        RoutedOutsideRequestTarget,
-        "journal create_spec이 surface_id를 읽어 기존 surface의 replacement 대상을 고정한다.",
-    ),
-    (
-        "terminal.kill",
-        RoutedOutsideRequestTarget,
-        "journal close::Request::resolve가 surface/child 또는 단일 parent를 해석하고 surface.close로 정규화한다.",
-    ),
-    (
-        "terminal.spawn",
-        RoutedOutsideRequestTarget,
-        "journal child::resolve_spawn이 parent/surface와 workspace/pane을 읽어 원 부모와 생성 대상을 고정한다.",
-    ),
-    (
         "memory.count",
         NotWindowOwned,
         "모든 engine이 new_with_ids로 같은 memory store Arc를 받는다. 핸들러는 core.with_memory를 사용하고 state·engine 인자는 사용하지 않는다.",
