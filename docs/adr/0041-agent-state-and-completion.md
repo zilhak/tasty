@@ -62,7 +62,7 @@ Claude `Notification`은 `notification_type`으로 이 세션이 입력을 기�
 
 Stop 게이트가 `block`으로 턴을 이어 가게 한 Stop은 턴 종료가 아니다. 게이트가 붙은 세션의 Stop은 idle 처리를
 보류하고 `active`를 보낸 뒤, 같은 `session_id`·`prompt_id`의 게이트 판정을 플러그인 메모리에서 짝짓는다.
-게이트 수는 Stop마다 지금 실행 중인 Claude의 settings(`claude-settings-file` meta)에서 다시 센다. 이 meta는 플러그인이 Claude를 실행하거나 `--resume`으로 복원할 때 기록하고 Claude 프로세스가 끝나는 SessionEnd에서 지운다. 판정이 모두 통과하면 보류한 idle 처리를 실행하고, 하나라도
+게이트 수는 Stop마다 지금 실행 중인 Claude의 settings(`claude-settings-file` meta)에서 다시 센다. 이 meta는 플러그인이 Claude를 실행하거나 `--resume`으로 복원할 때 기록하고, 기록 뒤 처음 시작한 세션(`claude-settings-session`)의 프로세스가 끝나는 SessionEnd에서 지운다. 이전 세션의 늦은 SessionEnd가 respawn·reboot가 새로 기록한 경로를 지우지 않게 하기 위해서다. 판정이 모두 통과하면 보류한 idle 처리를 실행하고, 하나라도
 block이면 `active`를 유지한다. 판정이 5초 안에 다 오지 않으면 온 판정만으로 확정하고 오지 않은 판정은 통과로 본다.
 Claude Code의 연속 block 상한(기본 8, `CLAUDE_CODE_STOP_HOOK_BLOCK_CAP`)에 닿은 block은 통과로 본다.
 보류 중에 새 턴이 오면 보류한 Stop을 idle로 확정한 뒤 새 턴을 처리한다. 세부는

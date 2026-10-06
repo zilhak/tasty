@@ -66,6 +66,24 @@ impl BackgroundTasks {
         }
     }
 
+    /// 훅 이벤트에 맞춰 기록을 갱신한다. `Stop` 은 남은 작업 목록을 주고, `<task-notification>` prompt 는
+    /// 끝난 작업을 알린다. 세션이 바뀌거나 끝나면 이전 작업은 이어지지 않는다.
+    pub fn track(&mut self, event: &str, surface_id: u32, params: &Value) {
+        match event {
+            "stop" => self.sync_with_stop(surface_id, params.get("background_tasks")),
+            "prompt-submit" => {
+                let ended = self.notified(surface_id, params.get("prompt").and_then(Value::as_str));
+                if ended > 0 {
+                    tracing::info!(
+                        "claude hook s{surface_id}: {ended} background task(s) reported finished"
+                    );
+                }
+            }
+            "session-start" | "session-end" => self.clear(surface_id),
+            _ => {}
+        }
+    }
+
     /// 새 세션이나 세션 종료에서 기록을 버린다.
     pub fn clear(&mut self, surface_id: u32) {
         self.by_surface.remove(&surface_id);

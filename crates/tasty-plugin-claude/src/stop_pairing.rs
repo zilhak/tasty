@@ -14,6 +14,8 @@ use std::time::{Duration, Instant};
 use serde_json::{Value, json};
 use tasty_plugin_agent_common::host_call::HostCall;
 
+use crate::hook::HostCall as PlannedCall;
+
 /// 게이트 판정을 기다리는 상한. 격리 debug 인스턴스(부하 평균 18~24, 20코어)에서
 /// `tasty claude checklist-hook` 한 번의 CLI 왕복은 80회 중 최대 115ms(중앙값 99ms)였다.
 /// 게이트가 없어 판정이 오지 않는 경우에만 이 시간만큼 idle 이 늦어지므로 수십 배 여유를 둔다.
@@ -27,6 +29,12 @@ pub(crate) const DEFAULT_BLOCK_CAP: u32 = 8;
 /// surface meta 키 — 플러그인이 Claude 를 실행할 때 붙인 `--settings` 파일 경로.
 /// spawn·respawn·launch·reboot 가 쓰고, 파일 없이 실행하면 지운다. Stop 이 게이트 수를 셀 때 읽는다.
 pub(crate) const SETTINGS_FILE_META_KEY: &str = "claude-settings-file";
+
+/// surface meta 키 — settings 경로를 기록한 뒤 처음 시작한 Claude 세션의 id. SessionStart 가 쓰고,
+/// 실행 기록([`record_settings_file`])이 지운다. 이 세션의 SessionEnd 만 settings 경로를 지운다.
+/// respawn·reboot 는 새 경로를 기록한 뒤 이전 Claude 를 끝내므로, 이전 세션의 SessionEnd 가
+/// 새 경로를 지우지 않게 한다.
+pub(crate) const SETTINGS_SESSION_META_KEY: &str = "claude-settings-session";
 
 /// 게이트 명령을 알아보는 문자열. 게이트 부착은 이 명령을 Stop 훅으로 넣는다.
 const GATE_COMMAND: &str = "tasty claude checklist-hook";
@@ -400,6 +408,60 @@ pub(crate) fn record_settings_file<H: HostCall>(host: &H, surface_id: u32, path:
     if let Err(e) = result {
         tracing::warn!("claude s{surface_id}: failed to record the attached settings file: {e}");
     }
+    // 새 경로는 아직 어느 세션의 것도 아니다. 다음 SessionStart 가 소유 세션을 기록한다.
+    if let Err(e) = host.call(
+        "surface.meta.unset",
+        json!({ "surface_id": surface_id, "key": SETTINGS_SESSION_META_KEY }),
+    ) {
+        tracing::warn!("claude s{surface_id}: failed to reset the settings owner session: {e}");
+    }
+}
+
+/// settings 경로를 소유한 세션 id. 없으면 `None` 이다.
+pub(crate) fn settings_owner_session<H: HostCall>(host: &H, surface_id: u32) -> Option<String> {
+    meta_value(host, surface_id, SETTINGS_SESSION_META_KEY)
+}
+
+/// `--resume` 으로 다시 연 세션은 복원 명령이 붙인 `--settings` 로 실행됐다고 보고 그 경로를
+/// 게이트 수를 셀 settings meta 로 기록한다. 플러그인이 실행하지 않은 Claude 에는 다른 기록 경로가 없다.
+/// 새로 시작한 세션(`startup`)은 플러그인이 실행할 때 기록한 meta 를 그대로 쓴다.
+pub(crate) fn settings_file_for_resumed_session(
+    surface_id: u32,
+    source: Option<&str>,
+    profile_file: Option<&str>,
+) -> Option<PlannedCall> {
+    let path = profile_file.filter(|_| source == Some("resume"))?;
+    Some(PlannedCall::MetaSet {
+        surface_id,
+        key: SETTINGS_FILE_META_KEY,
+        value: path.to_string(),
+    })
+}
+
+/// Claude 프로세스가 끝나면 그 프로세스의 settings meta 를 지운다. 같은 surface 에서 다음에 실행한
+/// Claude 의 게이트로 세지 않기 위해서다. `/clear`·`/resume` 의 SessionEnd(`clear`·`resume`)는
+/// 같은 프로세스가 이어지므로 남긴다. 값이 없거나 다른 값이면 종료로 본다(공식 hooks 문서의 SessionEnd reason).
+/// 경로를 소유한 세션(`owner`)이 끝날 때만 지운다. respawn·reboot 가 새 경로를 기록한 뒤 도착한
+/// 이전 세션의 SessionEnd 는 소유 세션이 아니므로 새 경로를 남긴다.
+pub(crate) fn settings_file_after_session_end(
+    surface_id: u32,
+    reason: Option<&str>,
+    session: Option<&str>,
+    owner: Option<&str>,
+) -> Vec<PlannedCall> {
+    if matches!(reason, Some("clear" | "resume")) || session.is_none() || session != owner {
+        return Vec::new();
+    }
+    vec![
+        PlannedCall::MetaUnset {
+            surface_id,
+            key: SETTINGS_FILE_META_KEY,
+        },
+        PlannedCall::MetaUnset {
+            surface_id,
+            key: SETTINGS_SESSION_META_KEY,
+        },
+    ]
 }
 
 fn meta_value<H: HostCall>(host: &H, surface_id: u32, key: &str) -> Option<String> {
@@ -657,6 +719,57 @@ mod tests {
             "세션 종료도 세대를 올린다"
         );
         assert!(a.is_current_turn("other", 0));
+    }
+
+    /// `--resume` 으로 다시 연 세션은 복원 명령이 붙인 settings 를 게이트 수를 셀 meta 로 기록한다.
+    /// 새로 시작한 세션은 플러그인이 실행할 때 기록한 meta 를 건드리지 않는다.
+    #[test]
+    fn a_resumed_session_records_the_settings_it_was_restored_with() {
+        let plan = Some("/p/merged.json");
+        assert_eq!(
+            settings_file_for_resumed_session(7, Some("resume"), plan),
+            Some(PlannedCall::MetaSet {
+                surface_id: 7,
+                key: SETTINGS_FILE_META_KEY,
+                value: "/p/merged.json".to_string(),
+            })
+        );
+        for source in [Some("startup"), Some("clear"), Some("compact"), None] {
+            assert_eq!(
+                settings_file_for_resumed_session(7, source, plan),
+                None,
+                "{source:?}"
+            );
+        }
+        assert_eq!(
+            settings_file_for_resumed_session(7, Some("resume"), None),
+            None
+        );
+    }
+
+    /// 실행 기록은 settings 경로와 함께 소유 세션을 지운다. 다음 SessionStart 가 새로 기록한다.
+    #[test]
+    fn recording_the_settings_resets_the_owner_session() {
+        struct Calls(std::cell::RefCell<Vec<(String, String)>>);
+        impl HostCall for Calls {
+            fn call(
+                &self,
+                method: &str,
+                params: Value,
+            ) -> Result<Value, tasty_plugin_sdk::PluginError> {
+                let key = params["key"].as_str().unwrap_or("").to_string();
+                self.0.borrow_mut().push((method.to_string(), key));
+                Ok(json!({}))
+            }
+        }
+        for path in [Some("/p/s.json"), None] {
+            let host = Calls(Default::default());
+            record_settings_file(&host, 3, path);
+            assert!(host.0.borrow().contains(&(
+                "surface.meta.unset".to_string(),
+                SETTINGS_SESSION_META_KEY.to_string()
+            )));
+        }
     }
 
     /// surface meta 조회만 답하는 mock 호스트.

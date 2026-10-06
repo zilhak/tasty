@@ -269,7 +269,9 @@ pub(crate) fn handle_claude_hook<H: HostCallSink>(
             "host_call_failures": 0,
         }));
     }
-    track_background_tasks(state, event, surface_id, params);
+    lock_state(state)
+        .background
+        .track(event, surface_id, params);
 
     if event == "stop-failure"
         && let Some(response) = stop_failure_with_background_work(&tail, surface_id, error, now_ms)
@@ -437,35 +439,6 @@ fn background_wait_calls<H>(
                 .to_string(),
         },
     ]
-}
-
-/// 메인 턴이 띄운 백그라운드 작업의 기록을 이벤트에 맞춰 갱신한다.
-/// `Stop` 은 남은 작업 목록을 주고, `<task-notification>` prompt 는 끝난 작업을 알린다.
-/// 세션이 바뀌거나 끝나면 이전 작업은 이어지지 않는다.
-fn track_background_tasks(
-    state: &Mutex<ClaudeState>,
-    event: &str,
-    surface_id: u32,
-    params: &Value,
-) {
-    let mut s = lock_state(state);
-    match event {
-        "stop" => s
-            .background
-            .sync_with_stop(surface_id, params.get("background_tasks")),
-        "prompt-submit" => {
-            let ended = s
-                .background
-                .notified(surface_id, params.get("prompt").and_then(Value::as_str));
-            if ended > 0 {
-                tracing::info!(
-                    "claude hook s{surface_id}: {ended} background task(s) reported finished"
-                );
-            }
-        }
-        "session-start" | "session-end" => s.background.clear(surface_id),
-        _ => {}
-    }
 }
 
 /// 백그라운드 작업이 남은 채 API 오류로 끝난 턴. 작업이 끝나면 Claude Code 가 새 턴을 열므로
@@ -1057,11 +1030,16 @@ fn session_lifecycle_calls<H: HostCallSink>(
         let meta = crate::reboot::attached_profile_summary(host, surface_id);
         let plan = plan_session_start_profile(session_id, &meta, data_dir, tr);
         apply_session_start_profile(calls, surface_id, session_id, &plan);
-        calls.extend(settings_file_for_resumed_session(
+        calls.extend(crate::stop_pairing::settings_file_for_resumed_session(
             surface_id,
             params.get("source").and_then(Value::as_str),
-            &plan,
+            plan.profile_file.as_deref(),
         ));
+        calls.push(HostCall::MetaSet {
+            surface_id,
+            key: crate::stop_pairing::SETTINGS_SESSION_META_KEY,
+            value: session_id.to_string(),
+        });
         // reboot 중 session-end가 남긴 종료 표시를 새 session-start 기록으로 갱신한다.
         if let Some(record) = &plan.restamp {
             profile_attach::store(data_dir, session_id, record);
@@ -1069,46 +1047,14 @@ fn session_lifecycle_calls<H: HostCallSink>(
         // 종료 훅이 오지 않은 세션의 오래된 기록도 정리한다.
         profile_attach::sweep(data_dir);
     }
-    if event == "session-end"
-        && let Some(call) = settings_file_after_session_end(
+    if event == "session-end" {
+        calls.extend(crate::stop_pairing::settings_file_after_session_end(
             surface_id,
             params.get("reason").and_then(Value::as_str),
-        )
-    {
-        calls.push(call);
+            session,
+            crate::stop_pairing::settings_owner_session(host, surface_id).as_deref(),
+        ));
     }
-}
-
-/// `--resume` 으로 다시 연 세션은 복원 명령이 붙인 `--settings` 로 실행됐다고 보고 그 경로를
-/// 게이트 수를 셀 settings meta 로 기록한다. 플러그인이 실행하지 않은 Claude 에는 다른 기록 경로가 없다.
-/// 새로 시작한 세션(`startup`)은 플러그인이 실행할 때 기록한 meta 를 그대로 쓴다.
-fn settings_file_for_resumed_session(
-    surface_id: u32,
-    source: Option<&str>,
-    plan: &SessionStartProfile,
-) -> Option<HostCall> {
-    let path = plan
-        .profile_file
-        .as_ref()
-        .filter(|_| source == Some("resume"))?;
-    Some(HostCall::MetaSet {
-        surface_id,
-        key: crate::stop_pairing::SETTINGS_FILE_META_KEY,
-        value: path.clone(),
-    })
-}
-
-/// Claude 프로세스가 끝나면 그 프로세스의 settings meta 를 지운다. 같은 surface 에서 다음에 실행한
-/// Claude 의 게이트로 세지 않기 위해서다. `/clear`·`/resume` 의 SessionEnd(`clear`·`resume`)는
-/// 같은 프로세스가 이어지므로 남긴다. 값이 없거나 다른 값이면 종료로 본다(공식 hooks 문서의 SessionEnd reason).
-fn settings_file_after_session_end(surface_id: u32, reason: Option<&str>) -> Option<HostCall> {
-    if matches!(reason, Some("clear" | "resume")) {
-        return None;
-    }
-    Some(HostCall::MetaUnset {
-        surface_id,
-        key: crate::stop_pairing::SETTINGS_FILE_META_KEY,
-    })
 }
 
 /// 복원 명령에 settings를 반영하고 기록에서 복구할 메타데이터 호출을 덧붙인다.
@@ -1283,10 +1229,12 @@ mod tests {
 
     /// 호출한 메서드와 인자를 모두 기록하는 mock 호스트. 모든 호출이 성공한다.
     /// `settings_file` 이 있으면 부착 settings 경로 meta 조회에 그 값을 돌려준다.
+    /// `settings_session` 은 그 경로를 소유한 세션 id meta 다.
     #[derive(Default)]
     struct RecordingHost {
         seen: std::cell::RefCell<Vec<(String, Value)>>,
         settings_file: Option<String>,
+        settings_session: Option<String>,
     }
 
     impl HostCallSink for RecordingHost {
@@ -1302,6 +1250,14 @@ mod tests {
                     Some(crate::stop_pairing::SETTINGS_FILE_META_KEY),
                 ) => {
                     json!({ "value": path })
+                }
+                _ if method == "surface.meta.get"
+                    && params["key"] == crate::stop_pairing::SETTINGS_SESSION_META_KEY =>
+                {
+                    match &self.settings_session {
+                        Some(id) => json!({ "value": id }),
+                        None => json!({}),
+                    }
                 }
                 _ => json!({}),
             };
@@ -1774,6 +1730,7 @@ mod tests {
             (Some("resume"), false),
         ] {
             let mut rig = HookRig::new();
+            rig.host.settings_session = Some("s-1".to_string());
             let mut params =
                 json!({ "event": "session-end", "surface": HookRig::SURFACE, "session": "s-1" });
             if let Some(r) = reason {
@@ -1784,33 +1741,39 @@ mod tests {
         }
     }
 
-    /// `--resume` 으로 다시 연 세션은 복원 명령이 붙인 settings 를 게이트 수를 셀 meta 로 기록한다.
-    /// 새로 시작한 세션은 플러그인이 실행할 때 기록한 meta 를 건드리지 않는다.
+    /// respawn·reboot 는 새 settings 를 기록한 뒤 이전 Claude 를 끝낸다. 이전 세션의 SessionEnd 는
+    /// 경로를 소유하지 않으므로 새 경로를 지우지 않는다(2.1.290 에서 reason `other` 로 도착했다).
     #[test]
-    fn a_resumed_session_records_the_settings_it_was_restored_with() {
-        let plan = SessionStartProfile {
-            profile_file: Some("/p/merged.json".to_string()),
-            ..SessionStartProfile::default()
-        };
-        assert_eq!(
-            settings_file_for_resumed_session(7, Some("resume"), &plan),
-            Some(HostCall::MetaSet {
-                surface_id: 7,
-                key: crate::stop_pairing::SETTINGS_FILE_META_KEY,
-                value: "/p/merged.json".to_string(),
-            })
-        );
-        for source in [Some("startup"), Some("clear"), Some("compact"), None] {
-            assert_eq!(
-                settings_file_for_resumed_session(7, source, &plan),
-                None,
-                "{source:?}"
-            );
+    fn a_session_end_of_a_session_that_does_not_own_the_settings_keeps_them() {
+        let key = crate::stop_pairing::SETTINGS_FILE_META_KEY.to_string();
+        for owner in [None, Some("s-new")] {
+            let mut rig = HookRig::new();
+            rig.host.settings_session = owner.map(String::from);
+            rig.run(json!({ "event": "session-end", "surface": HookRig::SURFACE,
+                "session": "s-old", "reason": "other" }));
+            assert!(!rig.host.unset_keys().contains(&key), "{owner:?}");
         }
-        assert_eq!(
-            settings_file_for_resumed_session(7, Some("resume"), &SessionStartProfile::default()),
-            None
+        // 세션 id 가 없는 SessionEnd 는 소유를 가릴 수 없어 남긴다.
+        let mut rig = HookRig::new();
+        rig.host.settings_session = Some("s-1".to_string());
+        rig.run(json!({ "event": "session-end", "surface": HookRig::SURFACE }));
+        assert!(!rig.host.unset_keys().contains(&key));
+    }
+
+    /// SessionStart 는 그 세션을 settings 경로의 소유 세션으로 기록한다.
+    #[test]
+    fn a_session_start_claims_the_settings_for_its_session() {
+        let mut rig = HookRig::new();
+        rig.run(
+            json!({ "event": "session-start", "surface": HookRig::SURFACE,
+            "session": "s-9", "source": "startup" }),
         );
+        let owner = rig.host.seen.borrow().iter().any(|(m, p)| {
+            m == "surface.meta.set"
+                && p["key"] == crate::stop_pairing::SETTINGS_SESSION_META_KEY
+                && p["value"] == "s-9"
+        });
+        assert!(owner);
     }
 
     /// 2.1.290 실측 `PostToolUse` 처럼 Bash 를 백그라운드로 띄운 도구 호출을 알린다.

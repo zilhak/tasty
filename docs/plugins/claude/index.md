@@ -241,10 +241,10 @@ if [ -n "$TASTY_SURFACE_ID" ]; then tasty claude hook <token> || true; fi
 | `Stop` | `""`(전체) | `stop` | `idle`. 단 백그라운드 작업을 기다리는 Stop(아래)은 `active`, Stop 게이트가 붙은 세션은 판정이 모일 때까지 `active`(아래 "Stop 게이트와 idle") | `claude-idle`(대기 Stop은 없음) | 대기 Stop은 `claude-background-wait` **set**, 그 밖의 Stop은 **unset** | `completion`(대기 Stop은 없음) |
 | `SubagentStop` | `""`(전체) | `subagent-stop` | — (로그만) | — | — | — |
 | `StopFailure` | `""`(전체) | `stop-failure` | `idle`. 단 메인 턴이 띄운 백그라운드 작업이 남아 있으면 `active`(아래) | `claude-idle` + `claude-stop-failure`(백그라운드 작업이 남은 경우는 없음) | `claude-last-stop-failure` = stdin `error`(없으면 `unknown`) **set**. `claude-background-wait` **unset**. 백그라운드 작업이 남은 경우는 `claude-background-wait` **set**만 한다 | `completion`(백그라운드 작업이 남은 경우는 없음) |
-| `SessionEnd` | `""`(전체) | `session-end` | `idle` | `claude-idle` | `claude-session-id`·`restore.command`·`claude-last-stop-failure`·`claude-background-wait` **unset**. stdin `reason`이 `clear`·`resume`이 아니면(값이 없을 때 포함) `claude-settings-file`도 **unset** (프로필 meta 2키는 건드리지 않는다. 프로필 **부착 기록**에는 종료 표시만 하고 유예 뒤 회수 — 아래 "복원을 건너 프로필이 유지되는 방식") | `completion` |
+| `SessionEnd` | `""`(전체) | `session-end` | `idle` | `claude-idle` | `claude-session-id`·`restore.command`·`claude-last-stop-failure`·`claude-background-wait` **unset**. stdin `reason`이 `clear`·`resume`이 아니고(값이 없을 때 포함) 이 세션이 `claude-settings-session`과 같으면 `claude-settings-file`·`claude-settings-session`도 **unset** (프로필 meta 2키는 건드리지 않는다. 프로필 **부착 기록**에는 종료 표시만 하고 유예 뒤 회수 — 아래 "복원을 건너 프로필이 유지되는 방식") | `completion` |
 | `Notification` | `""`(전체) | `notification` | `notification_type`별(아래 "Notification 유형별 상태"). `needs_input`·`active`·변경 없음 | `needs-input`(`needs_input` 유형만) | — | `needs_input`(`needs_input` 유형만) |
 | `UserPromptSubmit` | `""`(전체) | `prompt-submit` | `active` | — | `claude-last-stop-failure`·`claude-background-wait` **unset** | — |
-| `SessionStart` | `""`(전체) | `session-start` | `active` | — | `claude-last-stop-failure`·`claude-background-wait` **unset**. `claude-session-id` = 세션 ID, `restore.command` = `claude -r <id>` **set**(stdin JSON에 `session_id`가 없으면 건너뜀). 프로필이 부착돼 있으면 `claude -r <id> --settings "<경로>"` 로 쓰고, stdin `source`가 `resume`이면 그 경로를 `claude-settings-file`에 **set**하며, 복원으로 프로필 meta 가 사라졌으면 부착 기록에서 **복구**한다(아래 "복원을 건너 프로필이 유지되는 방식") | — |
+| `SessionStart` | `""`(전체) | `session-start` | `active` | — | `claude-last-stop-failure`·`claude-background-wait` **unset**. `claude-session-id`·`claude-settings-session` = 세션 ID, `restore.command` = `claude -r <id>` **set**(stdin JSON에 `session_id`가 없으면 건너뜀). 프로필이 부착돼 있으면 `claude -r <id> --settings "<경로>"` 로 쓰고, stdin `source`가 `resume`이면 그 경로를 `claude-settings-file`에 **set**하며, 복원으로 프로필 meta 가 사라졌으면 부착 기록에서 **복구**한다(아래 "복원을 건너 프로필이 유지되는 방식") | — |
 | `PreToolUse` | `AskUserQuestion` | `pre-tool-use` | `needs_input` | `needs-input` | — | `needs_input` |
 | `PostToolUse` | `AskUserQuestion` | `post-tool-use` | `active` | — | — | — |
 | `PostToolUse` | `Bash\|Agent\|Task` | `background-start` | — (백그라운드 작업 기록만) | — | — | — |
@@ -342,7 +342,9 @@ Claude Code는 한 Stop의 훅을 병렬로 실행하므로 상태 훅(`claude h
 - 게이트 수: Stop마다 지금 실행 중인 Claude의 settings 파일에서 `hooks.Stop`의 `tasty claude checklist-hook` 명령 수를 센다.
   경로는 surface meta `claude-settings-file`에서만 읽는다. `launch`·`spawn`·`respawn`·`reboot`가 Claude를 실행할 때 기록하고(프로필 없이 실행하면 지운다),
   `--resume`으로 다시 연 세션(SessionStart `source: resume`)은 복원 명령에 붙인 프로필 경로를 기록한다.
-  Claude 프로세스가 끝나면(SessionEnd의 `reason`이 `clear`·`resume`이 아니면) 지운다. 그래서 같은 surface에서 사용자가 직접 실행한
+  실행 기록은 `claude-settings-session`을 지우고, 그 뒤 처음 시작한 세션의 SessionStart가 이 meta에 세션 id를 적어 경로의 소유 세션이 된다.
+  소유 세션의 Claude 프로세스가 끝나면(SessionEnd의 `reason`이 `clear`·`resume`이 아니면) 두 meta를 지운다.
+  respawn·reboot는 새 경로를 기록한 뒤 이전 Claude를 끝내므로 이전 세션의 SessionEnd가 늦게 와도(2.1.290에서 `reason: other`) 새 경로를 지우지 않는다. 그래서 같은 surface에서 사용자가 직접 실행한
   `claude`는 게이트가 없는 것으로 세고 idle이 늦어지지 않는다. 프로필 meta 2키(`claude-session-profile`·`claude-session-profile-names`)는
   다음 실행에 다시 붙일 프로필이라 게이트 수에 쓰지 않는다. 사용자가 직접 `--settings`를 붙여 실행한 Claude는 알 수 없어 게이트가 없는 것으로 센다.
   SessionEnd 없이 끝난 Claude(강제 종료 등)의 meta는 다음 실행 기록이나 SessionEnd까지 남는다. 프로필이 붙은 surface에서 사용자가 `--settings` 없이
