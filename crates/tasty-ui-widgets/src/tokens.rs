@@ -76,10 +76,6 @@ pub const TUTORIAL_STEP_GAP_X: f32 = 10.0;
 /// 부팅 화면 버튼·안쪽 프레임의 반경. 대응 토큰 없이 쓰는 고정값이다.
 pub const BOOT_CHROME_CORNER_RADIUS: f32 = 6.0;
 
-/// 부팅 셸 카드의 코너 반경. **스케일 밖 12px.** 떠 있는 패널용 토큰
-/// `corner_radius_lg`(8 = `primitive.radius-8`)보다 크다.
-pub const BOOT_CARD_CORNER_RADIUS: f32 = 12.0;
-
 /// accent tag pill 의 코너 반경. **스케일 밖 3px.** 디자인의
 /// `component.badge-radius` 는 `semantic.radius-sm`(2)다.
 pub const TAG_PILL_CORNER_RADIUS: f32 = 3.0;

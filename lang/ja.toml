@@ -40,6 +40,14 @@ title = "ウィンドウを開けません"
 body = "最初のウィンドウを作成できませんでした。詳細: {}"
 hint = "ディスプレイ/コンポジタとグラフィックドライバを確認してから、もう一度起動してください。"
 
+[boot.shell_setup]
+title = "シェルを選択"
+subtitle = "新しいターミナルはこのシェルで起動します。あとで設定から変更できます。"
+git_bash_missing = "Git Bashが見つかりません。Git for Windowsをインストールするか、bash.exeのパスを入力してください。"
+check_missing = "このパスにファイルがありません"
+check_not_shell = "bashまたはzshの実行ファイルではありません"
+check_valid = "シェルが見つかりました"
+
 [window_error.new_window]
 title = "新しいウィンドウを開けません"
 body = "新しいウィンドウを開けませんでした。他のウィンドウの作業はそのまま続行します。原因: {}"
@@ -325,10 +333,7 @@ input_notice = "オンの場合はLFを送信し、オフの場合はプラッ�
 heading = "ターミナル"
 shell_label = "シェル:"
 shell_not_found = "⚠ Git Bashが見つかりません。Git for Windowsをインストールするか、bashのパスを手動で設定してください。"
-shell_invalid_path = "✗  パスが見つからないか、bash/zsh実行ファイルではありません"
-shell_valid = "✓  有効なシェルが検出されました"
 shell_confirm = "このシェルを使用"
-setup_subtitle = "ターミナル設定"
 shell_mode_label = "シェルモード:"
 shell_mode_default = "デフォルト (フルrc)"
 shell_mode_tasty = "Tasty (Tasty rc)"

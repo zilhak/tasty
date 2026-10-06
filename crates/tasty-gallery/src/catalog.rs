@@ -1956,12 +1956,12 @@ pub fn pages() -> Vec<Page> {
                     "shell-setup",
                     "First-run shell setup",
                     vec![spec(
-                        "shell-setup-buttons",
-                        "Button row — Cancel / Use this shell",
+                        "shell-setup-form",
+                        "Shell path form — Quit / Use this shell",
                         Some(
-                            "Shared Button secondary + primary md, confirm disabled while invalid",
+                            "Lockup + 360 form · one validation line per host verdict · Git Bash notice on Windows only",
                         ),
-                        chrome_loading::draw_shell_setup_buttons,
+                        chrome_loading::draw_shell_setup,
                     )],
                 ),
                 section(

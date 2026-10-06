@@ -37,6 +37,7 @@ mod popup_title;
 mod remote_tool;
 mod segmented;
 mod select;
+mod shell_setup;
 mod spacing;
 mod spinner;
 mod status_bar;
@@ -114,6 +115,9 @@ pub use remote_tool::{
 };
 pub use segmented::segmented;
 pub use select::{select, select_or_placeholder};
+pub use shell_setup::{
+    SHELL_SETUP_FORM_WIDTH, ShellSetupCheck, ShellSetupOutput, ShellSetupView, shell_setup_screen,
+};
 pub use spacing::{hspace, margin_all, margin_sym, vspace};
 pub use spinner::Spinner;
 pub use status_bar::{StatusBarAction, StatusBarData, StatusBarDrawResult, draw_status_bar_view};

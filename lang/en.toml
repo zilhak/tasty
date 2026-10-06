@@ -40,6 +40,14 @@ title = "Could not open the window"
 body = "Tasty could not create its first window. Details: {}"
 hint = "Check your display/compositor and graphics drivers, then start Tasty again."
 
+[boot.shell_setup]
+title = "Choose a shell"
+subtitle = "New terminals start this shell. You can change it later in Settings."
+git_bash_missing = "Git Bash was not found. Install Git for Windows, or enter the path to bash.exe."
+check_missing = "No file at this path"
+check_not_shell = "Not a bash or zsh executable"
+check_valid = "Shell found"
+
 [window_error.new_window]
 title = "Could not open a new window"
 body = "The new window could not be opened. Your other windows keep running. Cause: {}"
@@ -325,10 +333,7 @@ input_notice = "On: send LF. Off: use the platform's key encoding. Matches execu
 heading = "Terminal"
 shell_label = "Shell:"
 shell_not_found = "⚠ Git Bash not found. Please install Git for Windows or set the path to bash manually."
-shell_invalid_path = "✗  Path not found or not a bash/zsh executable"
-shell_valid = "✓  Valid shell detected"
 shell_confirm = "Use this shell"
-setup_subtitle = "Terminal Setup"
 shell_mode_label = "Shell mode:"
 shell_mode_default = "Default (full rc)"
 shell_mode_tasty = "Tasty (Tasty rc)"

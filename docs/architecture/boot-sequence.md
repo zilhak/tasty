@@ -105,12 +105,20 @@ hidden 창은 `RedrawRequested` 를 못 받을 수 있으므로 첫 프레임은
   [shutdown-sequence "종료 화면"](shutdown-sequence.md) · [ADR-0016](../adr/0016-window-platform-and-shutdown.md).
 - 갤러리 specimen: `crates/tasty-gallery/src/catalog/chrome_loading.rs`
   (Chrome 카테고리) — 부팅 5종(기본/최소창/phase 문구 3종/문구 없음/Latte) +
-  종료 2종(기본/phase 문구 4종) + 첫 실행 셸 설정 버튼 줄 1종.
-- **첫 실행 셸 설정 버튼** — `render_shell_setup` 의 버튼 줄은 오른쪽 정렬이고
-  간격은 `spacing_sm` 이다. 취소는 공용 `Button` Secondary, 확인은 Primary(md,
-  `settings.terminal.shell_confirm` "Use this shell")다. 경로가 bash/zsh 실행 파일이
-  아니면 확인을 disabled 로 그린다. 모양은 공용 disabled 규칙(중립 상자와 disabled ink)을
-  따르고 별도 성공 채움은 없다. Enter 확인도 같은 조건을 따른다.
+  종료 2종(기본/phase 문구 4종) + 첫 실행 셸 설정 화면 8장(Windows 판정 4종, macOS 2종, Latte 2장).
+- **첫 실행 셸 설정 화면** — `render_shell_setup` 은 공용 view
+  `tasty_ui_widgets::shell_setup_screen` 을 부르고 갤러리도 같은 함수를 그린다. 부팅 화면과
+  같은 `bg-app` 채움(GPU clear 색 포함)과 락업 아래에 `size-360` 폭 폼을 세로 가운데에 쌓는다.
+  카드는 없다. 폼은 제목 "Choose a shell", 부제, Windows 전용 Git Bash 안내 줄(상자 없는
+  경고색 caption, `alertTriangle`), mono 경로 `Input`, 검증 줄, 오른쪽 정렬 버튼 줄이며
+  간격은 `spacing_sm` 이고 버튼 줄 위에 `spacing_sm` 을 한 번 더 둔다.
+  - 검증 줄은 호스트 판정마다 한 문구다. 빈 경로는 문구 없이 caption 한 줄 높이만 잡고,
+    파일이 없으면 "No file at this path", 파일은 있지만 이름에 bash·zsh가 없으면
+    "Not a bash or zsh executable"(둘 다 `alertCircle`·accent-danger), 쓸 수 있으면
+    "Shell found"(`check`·accent-success)다. 판정은 모든 OS에서 같다.
+  - 버튼은 공용 `Button` Secondary "Quit"(앱 종료)과 Primary "Use this shell"(md)이다.
+    판정이 유효할 때만 확인이 활성이며 Enter 확인도 같은 조건을 따른다. disabled 모양은
+    공용 규칙(중립 상자와 disabled ink)을 따른다.
 
 ## 부팅 계측 (target: `tasty::boot`)
 

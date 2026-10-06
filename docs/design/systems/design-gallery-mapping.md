@@ -932,6 +932,22 @@ kind](design-token-mapping.md#attention-kind--needsinputcompletion-surface-highl
 기준이다. 갤러리는 본체 바이너리에 의존하지 않아 동일 우선순위·색을 정적 데모 데이터로 미러한다(라이브
 attention 상태에 연결되지 않음, 다른 surfaces specimen과 동일 관례).
 
+## 첫 실행 셸 설정 (Chrome)
+
+디자인 `gallery/loading.jsx` Section `shellsetup`의 `ShellSetupFrame` ↔ 갤러리 `catalog/chrome_loading.rs::draw_shell_setup`(Chrome › First-run shell setup, `shell-setup-form` spec) ↔ 본체 `src/gfx/gpu/shell_setup.rs` `render_shell_setup`. 본체와 갤러리는 공용 view `tasty_ui_widgets::shell_setup_screen`을 함께 호출한다. 동작은 [부팅 순서 §첫 실행 셸 설정 화면](../../architecture/boot-sequence.md)에 있다.
+
+| 디자인 요소 | 공용 view | 비고 |
+|---|---|---|
+| 부팅 화면 채움(bg-app) + `Lockup` | `shell_setup_screen` — `brand::draw_wordmark`(로딩 화면과 같은 `loading_screen_wordmark_*` 크기) | 락업과 폼 묶음을 세로 가운데에 둔다. 높이는 지난 패스에서 잰 값을 쓰고 바뀌면 패스를 다시 돈다 |
+| 폼(`size-360` 폭, 항목 gap `space-sm`, 락업과 `space-xl`) | `draw_form` | 폭은 이름 붙은 상수 `SHELL_SETUP_FORM_WIDTH`(역할 토큰 없음) |
+| 제목 14/600 text-primary · 부제 body text-muted line-height-ui | `draw_form` | 600 굵기는 크기와 색으로 근사([디자인 정합 지침 §타이포그래피](design-parity-notes.md)) |
+| Windows Git Bash 안내(caption, accent-warning, `alertTriangle` icon-size-sm, 글리프 위 `size-1`, gap space-xs) | `notice_line` | 호출부가 Windows에서만 문구를 넘긴다 |
+| mono 경로 `Input`(block, control-height) | 공용 `Input` | |
+| 검증 줄(caption, gap space-xs, 높이 = caption × line-height-ui 예약) | `check_line` — `ShellSetupCheck` 4판정 | 판정은 본체 `shell_check`가 한다 |
+| 버튼 줄(오른쪽 정렬, gap space-sm, 위 `space-sm` 추가) Quit secondary · Use this shell primary md | `draw_form` | 확인은 판정이 유효할 때만 활성 |
+
+갤러리는 시안 Stage의 8장(Windows empty·missing·notShell·valid, macOS notShell·valid, Latte Windows missing·macOS valid)을 640×480 창에 그리고 Meta 행과 토큰 칩은 시안 문구를 옮긴다.
+
 ## 탭 스트립 툴팁 — 네이티브 콘텐츠 위로 (Layouts)
 
 디자인 `gallery/layouts-tabstrip.jsx` Spec "Tooltips in the strip open upward — native content below" ↔ 갤러리 `catalog/widgets/html_script_banner.rs::draw_strip_tooltips`(Layouts › Tab strips, `tab-strip-tooltips` spec) ↔ 본체 `src/adapters/ui/tab_bar/tab.rs`의 표지 툴팁. 규칙은 [배너 시스템 §탭 스트립 툴팁](banner.md#탭-스트립-툴팁)에 있다.

@@ -133,7 +133,7 @@ const AREAS: &[(&str, usize, &str)] = &[
     ),
     (
         "src/",
-        9,
+        7,
         "그 밖의 본체 gfx·state·app 치수. 역할에 맞는 토큰과 외부 API 경계 여부를 위치별로 검토한다.",
     ),
     (
@@ -175,7 +175,8 @@ const AREAS: &[(&str, usize, &str)] = &[
         // FH_TARGET_MONO_ADVANCE는 한 글자를 더할 때 잰 폭 증가분이므로 폰트가 바뀌면 다시 측정한다.
         // 스케일 밖 값은 이 집계에 포함되지 않는다.
         // 스케일에 size-10이 들어오면서 상태바 여백 10 등 기존 값 10이 새로 집계됐다.
-        19,
+        // 첫 실행 셸 설정 폼 폭 360은 디자인 `ShellSetupFrame`의 `--tasty-size-360`이며 역할 토큰이 없다.
+        20,
         "공용 위젯",
     ),
     (
@@ -751,7 +752,8 @@ fn the_blind_spots_are_still_the_size_they_say() {
         // tint_edge_width의 배율 무관 단언이 test 코드에 값 2를 하나 더한다.
         // 원격 도구 Passkeys 예제의 행 영역 세로 여백과 텍스트 열 높이 하한이 0 두 개를 더한다.
         // 명령 팔레트 행 라벨 위치 시험이 카드 원점 pos2(0.0, 0.0)으로 두 개를 더한다.
-        (185, 410),
+        // 첫 실행 셸 설정 화면이 공용 view로 옮겨 가며 카드 배치의 0 리터럴이 하나 줄었다.
+        (184, 410),
         "제외한 0과 test 전용 코드의 수가 달라졌다. 실제 사용과 수집 범위의 변경을 확인하고 기록을 갱신한다."
     );
     let roster: usize = UNIT_SPACE_SITES.iter().map(|(.., n, _)| n).sum();

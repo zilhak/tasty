@@ -3,7 +3,7 @@
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::brand::{self};
-use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, Spinner};
+use tasty_ui_widgets::{ShellSetupCheck, ShellSetupView, Spinner, shell_setup_screen};
 
 use crate::catalog::spec::{TokenChip, meta, note};
 
@@ -224,60 +224,138 @@ pub fn draw_shutdown_default(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
-/// 첫 실행 셸 설정의 버튼 줄. 확인은 공용 Button primary, 취소는 secondary이고
-/// 경로가 실행 파일이 아니면 확인을 disabled ink로 그린다.
-fn draw_shell_setup_row(ui: &mut egui::Ui, theme: &Theme, valid: bool) {
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-        Button::new("Cancel")
-            .variant(ButtonVariant::Secondary)
-            .size(ControlSize::Md)
-            .show(ui, theme);
-        Button::new("Use this shell")
-            .variant(ButtonVariant::Primary)
-            .size(ControlSize::Md)
-            .enabled(valid)
-            .show(ui, theme);
-    });
+/// 셸 설정 예제 한 장의 OS. Windows만 Git Bash 안내 줄과 Windows 경로를 쓴다.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SetupOs {
+    Win,
+    Mac,
 }
 
-fn draw_shell_setup_pair(ui: &mut egui::Ui, theme: &Theme) {
-    // 가운데 정렬 줄 안에 줄을 넣으면 두 번째 줄이 아래로 밀리므로 위쪽에 맞춘다.
-    ui.horizontal_top(|ui| {
-        ui.spacing_mut().item_spacing.x = theme.spacing_xl.value();
-        draw_shell_setup_row(ui, theme, true);
-        draw_shell_setup_row(ui, theme, false);
-    });
+/// 디자인 `ShellSetupFrame`의 판정별 입력값.
+fn setup_value(os: SetupOs, check: ShellSetupCheck) -> &'static str {
+    match (os, check) {
+        (_, ShellSetupCheck::Empty) => "",
+        (SetupOs::Win, ShellSetupCheck::Missing) => "C:/Program Files/Git/bin/bash.exe",
+        (SetupOs::Mac, ShellSetupCheck::Missing) => "/usr/local/bin/zsh",
+        (SetupOs::Win, ShellSetupCheck::NotShell) => "C:/Windows/System32/cmd.exe",
+        (SetupOs::Mac, ShellSetupCheck::NotShell) => "/usr/bin/fish",
+        (SetupOs::Win, ShellSetupCheck::Valid) => "D:/Tools/Git/bin/bash.exe",
+        (SetupOs::Mac, ShellSetupCheck::Valid) => "/bin/zsh",
+    }
 }
 
-pub fn draw_shell_setup_buttons(ui: &mut egui::Ui, theme: &Theme) {
-    draw_shell_setup_pair(ui, theme);
-    ui.add_space(theme.spacing_lg.value());
+/// 셸 설정 예제 창 한 장. 본체와 같은 `shell_setup_screen`을 최소 크기 창에 그린다.
+fn draw_shell_setup_frame(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    index: usize,
+    os: SetupOs,
+    check: ShellSetupCheck,
+) {
+    let bw = theme.border_width.value();
+    let size = egui::vec2(CANVAS_MIN.0 + bw * 2.0, CANVAS_MIN.1 + bw * 2.0);
+    let (outer, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+    let radius = theme.corner_radius_lg.value();
+    ui.painter()
+        .rect_filled(outer, radius, theme.border_strong().to_egui());
+    let inner = outer.shrink(bw);
+    let mut path = setup_value(os, check).to_owned();
+    let win = os == SetupOs::Win;
+    let view = ShellSetupView {
+        title: "Choose a shell",
+        subtitle: "New terminals start this shell. You can change it later in Settings.",
+        git_bash_notice: win.then_some(
+            "Git Bash was not found. Install Git for Windows, or enter the path to bash.exe.",
+        ),
+        placeholder: if win {
+            "C:/Program Files/Git/bin/bash.exe"
+        } else {
+            "/bin/zsh"
+        },
+        missing: "No file at this path",
+        not_shell: "Not a bash or zsh executable",
+        valid: "Shell found",
+        quit: "Quit",
+        confirm: "Use this shell",
+        check,
+    };
+    let mut frame = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(inner)
+            .id_salt(("shell_setup_frame", index)),
+    );
+    frame.set_clip_rect(inner.intersect(ui.clip_rect()));
+    // 예제는 판정을 고정해 보이므로 입력과 눌림을 버린다.
+    let _output = shell_setup_screen(&mut frame, theme, &view, &mut path);
+}
+
+/// 디자인 Stage의 8장: Windows 4판정, macOS 2판정, Latte 2장.
+pub fn draw_shell_setup(ui: &mut egui::Ui, theme: &Theme) {
     let latte = crate::host_shell::latte_theme();
-    egui::Frame::new()
-        .fill(latte.bg_app().to_egui())
-        .inner_margin(theme.spacing_md.value())
-        .show(ui, |ui| draw_shell_setup_pair(ui, &latte));
+    let frames = [
+        (theme, SetupOs::Win, ShellSetupCheck::Empty),
+        (theme, SetupOs::Win, ShellSetupCheck::Missing),
+        (theme, SetupOs::Win, ShellSetupCheck::NotShell),
+        (theme, SetupOs::Win, ShellSetupCheck::Valid),
+        (theme, SetupOs::Mac, ShellSetupCheck::NotShell),
+        (theme, SetupOs::Mac, ShellSetupCheck::Valid),
+        (&latte, SetupOs::Win, ShellSetupCheck::Missing),
+        (&latte, SetupOs::Mac, ShellSetupCheck::Valid),
+    ];
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing =
+            egui::vec2(theme.spacing_lg.value(), theme.spacing_lg.value());
+        for (index, (th, os, check)) in frames.into_iter().enumerate() {
+            draw_shell_setup_frame(ui, th, index, os, check);
+        }
+    });
     meta(
         ui,
         theme,
         &[
+            ("form width", "360 · --tasty-size-360"),
+            (
+                "stack",
+                "lockup → (space-xl) → title · sub · input · validation · buttons (space-sm)",
+            ),
+            ("title", "14 / 600 · text-primary"),
+            (
+                "validation (2026-10-06)",
+                "empty → blank line, height reserved · No file at this path · Not a bash or zsh executable (danger) · Shell found (success)",
+            ),
+            (
+                "Git Bash notice",
+                "Windows only · caption line alertTriangle + warning ink · between sub and Input · no box",
+            ),
             (
                 "confirm",
-                "Button primary md · Use this shell · disabled while invalid",
+                "Button primary md · Use this shell · disabled unless valid · Enter = confirm when valid",
             ),
-            ("cancel", "Button secondary md"),
-            ("row", "right-aligned · gap space-sm"),
+            (
+                "cancel → Quit",
+                "Button secondary md · labelled Quit because it exits the app",
+            ),
+            (
+                "no card",
+                "the host's 440 card, 12px literal and 32 input go: control-height Input, caption type, size-360 form",
+            ),
         ],
-        &[TokenChip::new(
-            "state-disabled-fg",
-            "disabled confirm ink",
-            egui::Color32::from(theme.state_disabled_fg()),
-        )],
-    );
-    note(
-        ui,
-        theme,
-        "Left: a valid path. Right: no usable shell at the path — the confirm keeps its slot and takes the shared disabled ink; there is no success fill.",
+        &[
+            TokenChip::new(
+                "accent-success",
+                "valid line",
+                theme.accent_success().to_egui(),
+            ),
+            TokenChip::new(
+                "accent-danger",
+                "invalid line",
+                theme.accent_danger().to_egui(),
+            ),
+            TokenChip::new(
+                "state-disabled-fg",
+                "disabled confirm ink",
+                egui::Color32::from(theme.state_disabled_fg()),
+            ),
+        ],
     );
 }

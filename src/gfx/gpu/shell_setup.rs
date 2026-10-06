@@ -1,26 +1,39 @@
 use winit::window::Window;
 
-/// 입력·경고용 primitive 글꼴 크기. 대응 semantic role이 없어 별도로 사용한다.
-const SETUP_PRIMITIVE_12: LogicalPx = LogicalPx(12.0);
-
 use crate::i18n::t;
-use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, margin_all, margin_sym, vspace};
+use tasty_ui_widgets::{ShellSetupCheck, ShellSetupView, shell_setup_screen};
 
 use super::{GpuState, ShellSetupAction};
-use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::tokens::STRUCT_GAP_2;
 
-/// 검증 문구가 없을 때도 같은 높이를 확보해 입력 아래 레이아웃이 움직이지 않게 한다.
-const RESERVE_LABEL_H: LogicalPx = LogicalPx(14.0);
+/// 경로를 판정한다. 파일이 있고 이름에 bash 또는 zsh가 들어 있어야 쓸 수 있는 셸이다.
+fn shell_check(path: &str) -> ShellSetupCheck {
+    if path.is_empty() {
+        return ShellSetupCheck::Empty;
+    }
+    let path_obj = std::path::Path::new(path);
+    if !path_obj.exists() {
+        return ShellSetupCheck::Missing;
+    }
+    let file_name = path_obj
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if file_name.contains("bash") || file_name.contains("zsh") {
+        ShellSetupCheck::Valid
+    } else {
+        ShellSetupCheck::NotShell
+    }
+}
 
 impl GpuState {
-    /// Render the shell setup dialog (no terminal, just egui).
+    /// 첫 실행 셸 설정 화면을 그린다. 터미널 없이 egui만 사용한다.
     pub fn render_shell_setup(
         &mut self,
         window: &Window,
         shell_path: &mut String,
     ) -> Result<ShellSetupAction, wgpu::SurfaceError> {
-        let _th = crate::theme::theme();
+        let th = crate::theme::theme();
         let output = self.surface.get_current_texture()?;
         let view = output
             .texture
@@ -29,154 +42,44 @@ impl GpuState {
         let raw_input = self.egui_state.take_egui_input(window);
         let mut action = ShellSetupAction::None;
 
+        let title = t("boot.shell_setup.title");
+        let subtitle = t("boot.shell_setup.subtitle");
+        // 이 화면은 설정 셸이 무효이고 bash 자동 탐지가 실패했을 때 뜬다. Git Bash 안내는 Windows에만 해당한다.
+        let git_bash_notice = cfg!(windows).then(|| t("boot.shell_setup.git_bash_missing"));
+        let missing = t("boot.shell_setup.check_missing");
+        let not_shell = t("boot.shell_setup.check_not_shell");
+        let valid = t("boot.shell_setup.check_valid");
+        let quit = t("button.quit");
+        let confirm = t("settings.terminal.shell_confirm");
+        let placeholder = if cfg!(windows) {
+            "C:/Program Files/Git/bin/bash.exe"
+        } else {
+            "/bin/zsh"
+        };
+
         let full_output = self.egui_ctx.run(raw_input, |ctx| {
-            let path_obj = std::path::Path::new(shell_path.as_str());
-            let file_name = path_obj
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("")
-                .to_ascii_lowercase();
-            let is_valid = !shell_path.is_empty()
-                && path_obj.exists()
-                && (file_name.contains("bash") || file_name.contains("zsh"));
-            let show_error = !shell_path.is_empty() && !is_valid;
-
-            let th = crate::theme::theme();
             tasty_egui_theme::apply_theme_to_egui(&th, ctx);
-
-            let bg_panel = th.bg_app();
-            let bg_card = th.bg_sidebar();
-            let border = th.border_default();
-            let text_dim = th.text_muted();
-            let amber = th.accent_warning();
-            let red_err = th.accent_danger();
-            let accent_ok = th.accent_success();
-
+            let setup = ShellSetupView {
+                title,
+                subtitle,
+                git_bash_notice,
+                placeholder,
+                missing,
+                not_shell,
+                valid,
+                quit,
+                confirm,
+                check: shell_check(shell_path),
+            };
             egui::CentralPanel::default()
-                .frame(egui::Frame::new().fill(bg_panel.into()))
-                .show(ctx, |_| {});
-
-            let content_w = 440.0;
-            egui::Window::new("shell_setup")
-                .title_bar(false)
-                .resizable(false)
-                .collapsible(false)
-                .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
-                .fixed_size(egui::vec2(content_w, 0.0))
-                .frame(
-                    egui::Frame::new()
-                        .fill(bg_card.into())
-                        .stroke(egui::Stroke::new(th.border_width.value(), border))
-                        .corner_radius(tasty_ui_widgets::tokens::BOOT_CARD_CORNER_RADIUS)
-                        .inner_margin(margin_all(th.spacing_xl))
-                        // 화면 중앙의 설정 카드에 모달 그림자를 사용한다.
-                        .shadow(th.shadow_modal().to_egui()),
-                )
+                .frame(egui::Frame::new().fill(th.bg_app().into()))
                 .show(ctx, |ui| {
-                    ui.vertical_centered(|ui| {
-                        ui.label(
-                            egui::RichText::new("Tasty")
-                                .size(th.font_size_brand_display.value())
-                                .strong()
-                                .color(th.text_primary()),
-                        );
-                        vspace(ui, STRUCT_GAP_2);
-                        ui.label(
-                            egui::RichText::new(t("settings.terminal.setup_subtitle"))
-                                .size(th.font_size_caption.value())
-                                .color(text_dim),
-                        );
-                    });
-
-                    vspace(ui, th.spacing_lg);
-                    ui.separator();
-                    vspace(ui, th.spacing_md);
-
-                    egui::Frame::new()
-                        .fill(th.surface_raised().into())
-                        .stroke(egui::Stroke::new(
-                            th.border_width.value(),
-                            th.border_strong(),
-                        ))
-                        .corner_radius(tasty_ui_widgets::tokens::BOOT_CHROME_CORNER_RADIUS)
-                        .inner_margin(margin_sym(th.spacing_md, th.spacing_sm))
-                        .show(ui, |ui| {
-                            ui.add(
-                                egui::Label::new(
-                                    egui::RichText::new(t("settings.terminal.shell_not_found"))
-                                        .size(SETUP_PRIMITIVE_12.value())
-                                        .color(amber),
-                                )
-                                .wrap(),
-                            );
-                        });
-
-                    vspace(ui, th.spacing_lg);
-
-                    ui.label(
-                        egui::RichText::new(t("settings.terminal.shell_label"))
-                            .size(SETUP_PRIMITIVE_12.value())
-                            .color(text_dim),
-                    );
-                    vspace(ui, th.spacing_xs);
-
-                    let response = ui.add_sized(
-                        [ui.available_width(), 32.0],
-                        egui::TextEdit::singleline(shell_path)
-                            .hint_text(tasty_egui_theme::hint_text(
-                                &th,
-                                "C:/Program Files/Git/bin/bash.exe",
-                            ))
-                            .font(egui::TextStyle::Monospace),
-                    );
-
-                    vspace(ui, th.spacing_xs);
-                    if show_error {
-                        ui.label(
-                            egui::RichText::new(t("settings.terminal.shell_invalid_path"))
-                                .size(th.font_size_caption.value())
-                                .color(red_err),
-                        );
-                    } else if is_valid {
-                        ui.label(
-                            egui::RichText::new(t("settings.terminal.shell_valid"))
-                                .size(th.font_size_caption.value())
-                                .color(accent_ok),
-                        );
-                    } else {
-                        vspace(ui, RESERVE_LABEL_H); // 라벨 부재 시 높이 예약
+                    let out = shell_setup_screen(ui, &th, &setup, shell_path);
+                    if out.confirm {
+                        action = ShellSetupAction::Confirmed;
+                    } else if out.quit {
+                        action = ShellSetupAction::Exit;
                     }
-
-                    vspace(ui, th.spacing_lg);
-
-                    // 시안: 오른쪽 정렬 버튼 줄, Cancel = secondary, 확인 = primary(md).
-                    // 확인 버튼의 disabled는 공용 Button의 ink 규칙으로 그린다.
-                    let row_h = ControlSize::Md.height(&th);
-                    ui.allocate_ui_with_layout(
-                        egui::vec2(ui.available_width(), row_h),
-                        egui::Layout::right_to_left(egui::Align::Center),
-                        |ui| {
-                            ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
-                            let confirm = Button::new(t("settings.terminal.shell_confirm"))
-                                .variant(ButtonVariant::Primary)
-                                .enabled(is_valid)
-                                .show(ui, &th);
-                            if confirm.clicked()
-                                || (response.lost_focus()
-                                    && ui.input(|i| i.key_pressed(egui::Key::Enter))
-                                    && is_valid)
-                            {
-                                action = ShellSetupAction::Confirmed;
-                            }
-                            if Button::new(t("button.cancel"))
-                                .variant(ButtonVariant::Secondary)
-                                .show(ui, &th)
-                                .clicked()
-                            {
-                                action = ShellSetupAction::Exit;
-                            }
-                        },
-                    );
                 });
         });
 
@@ -215,6 +118,8 @@ impl GpuState {
                 label: Some("shell_setup_encoder"),
             });
         {
+            // 부팅 화면과 같이 화면 채움인 bg-app을 GPU clear 색으로도 쓴다.
+            let gpu_bg = th.bg_app().to_gpu_rgba();
             let render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("shell_setup_pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -222,9 +127,9 @@ impl GpuState {
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.12,
-                            g: 0.12,
-                            b: 0.14,
+                            r: gpu_bg.r() as f64,
+                            g: gpu_bg.g() as f64,
+                            b: gpu_bg.b() as f64,
                             a: 1.0,
                         }),
                         store: wgpu::StoreOp::Store,
