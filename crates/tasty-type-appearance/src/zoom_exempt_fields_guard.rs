@@ -56,6 +56,8 @@ const EXEMPT: &[(&str, Reason)] = &[
     ("icon_stroke_width", Reason::Hairline),
     ("selection_edge_width", Reason::Hairline),
     ("tint_edge_width", Reason::Hairline),
+    ("border_dash", Reason::Hairline),
+    ("border_dash_gap", Reason::Hairline),
     ("tab_width", Reason::TabBar),
     ("tab_bar_height", Reason::TabBar),
     ("tab_bar_label_font_size", Reason::TabBar),

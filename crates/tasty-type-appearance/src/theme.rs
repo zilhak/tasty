@@ -354,6 +354,10 @@ pub struct ThemeSizing {
     pub selection_edge_width: LogicalPx,
     /// tinted 강조 상자(Do / Don't 콜아웃 등)의 앞쪽 한 변 두께 (2px).
     pub tint_edge_width: LogicalPx,
+    /// 1px 점선 테두리의 대시 길이 (4px).
+    pub border_dash: LogicalPx,
+    /// 1px 점선 테두리의 대시 사이 간격 (4px).
+    pub border_dash_gap: LogicalPx,
     /// 상단 정렬 모달(command palette) 상단 gap (88px).
     pub overlay_top_offset: LogicalPx,
     /// 한 글 묶음 안에서 라벨 줄과 그 부연 줄 사이 간격 (2px).
@@ -423,6 +427,8 @@ pub const SIZING: ThemeSizing = ThemeSizing {
     toast_accent_width: LogicalPx(3.0),
     selection_edge_width: LogicalPx(2.0),
     tint_edge_width: LogicalPx(2.0),
+    border_dash: LogicalPx(4.0),
+    border_dash_gap: LogicalPx(4.0),
     overlay_top_offset: LogicalPx(88.0),
     label_detail_gap: LogicalPx(2.0),
 };
@@ -946,6 +952,11 @@ pub struct Theme {
     /// tinted 강조 상자의 앞쪽 한 변(Do / Don't 콜아웃). design `--tasty-tint-edge-width`.
     /// hairline 띠이므로 UI zoom 제외.
     pub tint_edge_width: LogicalPx,
+    /// 1px 점선 테두리(Add plugin 빈 안내 상자·Scripts Add trigger…)의 대시 길이.
+    /// hairline 테두리의 무늬라 border_width와 같이 UI zoom 제외.
+    pub border_dash: LogicalPx,
+    /// 1px 점선 테두리의 대시 사이 간격. hairline 테두리의 무늬라 UI zoom 제외.
+    pub border_dash_gap: LogicalPx,
     pub overlay_top_offset: LogicalPx,
     /// 라벨 줄 ↔ 부연 줄 간격. 글자와 함께 커지므로 UI zoom 적용.
     pub label_detail_gap: LogicalPx,
@@ -1114,6 +1125,8 @@ impl Theme {
             toast_accent_width: zoomed(SIZING.toast_accent_width),
             selection_edge_width: SIZING.selection_edge_width,
             tint_edge_width: SIZING.tint_edge_width,
+            border_dash: SIZING.border_dash,
+            border_dash_gap: SIZING.border_dash_gap,
             overlay_top_offset: zoomed(SIZING.overlay_top_offset),
             label_detail_gap: zoomed(SIZING.label_detail_gap),
             ui_zoom,
@@ -2073,6 +2086,16 @@ mod tests {
             );
             assert_eq!(t.tab_indicator_width(), LogicalPx(2.0), "배율 {z}");
             assert_eq!(t.listctrl_selected_bar_width(), LogicalPx(2.0), "배율 {z}");
+        }
+    }
+
+    /// 점선 무늬는 1px 테두리와 같이 배율과 무관하게 4 / 4다.
+    #[test]
+    fn border_dash_pattern_stays_four_at_every_zoom() {
+        for z in [0.85, 1.0, 1.2, 1.5, 2.0] {
+            let t = Theme::with_colors_and_zoom(dummy_colors(), false, z);
+            assert_eq!(t.border_dash, LogicalPx(4.0), "배율 {z}");
+            assert_eq!(t.border_dash_gap, LogicalPx(4.0), "배율 {z}");
         }
     }
 
