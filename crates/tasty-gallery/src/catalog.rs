@@ -1014,7 +1014,14 @@ pub fn pages() -> Vec<Page> {
                             "banner-more-elastic",
                             "Elastic width — the interpolated program name",
                             Some(
-                                "Row label = fixed text (never truncates) + mono program name (shrinks, ellipsises) · menu content-sized between 200 and 288 · full name as tooltip",
+                                "Every row interpolates a program name of arbitrary length, and \
+                                 word order differs by locale (en: name last; ko/ja: name first). \
+                                 So a row's label is two parts: the fixed text (never truncates) \
+                                 and the program name in mono / text-primary, which is the part \
+                                 that shrinks and ellipsises. The menu grows with the content \
+                                 between 200px and 288px — the fixed Tools-menu 160px is too \
+                                 narrow for these strings — and the full name is available as the \
+                                 row's tooltip.",
                             ),
                             widgets::banner_mouse_capture::draw_elastic,
                         ),
