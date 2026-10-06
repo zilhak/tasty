@@ -703,9 +703,7 @@ mod tests {
     /// Claude Code 세션 키와 CMUX_* 는 지우고 TASTY_*·일반 키는 남긴다.
     #[test]
     fn claude_session_and_cmux_env_are_stripped_but_tasty_env_is_kept() {
-        use tasty_utils::process::{
-            KEPT_KEYS_FOR_TEST as KEPT, STRIPPED_KEYS_FOR_TEST as STRIPPED,
-        };
+        use tasty_utils::process::strip_test_keys::{KEPT, STRIPPED};
         let mut cmd = CommandBuilder::new("/bin/sh");
         for key in STRIPPED.iter().chain(KEPT) {
             cmd.env(key, "1");

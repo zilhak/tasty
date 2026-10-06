@@ -28,5 +28,10 @@ windows = { version = "0.61", features = [
     "Win32_System_Diagnostics_ToolHelp",
 ] }
 
+[dev-dependencies]
+# 의존 크레이트에는 호출자의 cfg(test)가 적용되지 않아 test-support를 명시한다.
+# 상속 환경변수 제거 시험이 tasty-utils의 공용 키 목록을 읽기 위한 설정이다.
+tasty-utils = { path = "../tasty-utils", features = ["test-support"] }
+
 [lints]
 workspace = true

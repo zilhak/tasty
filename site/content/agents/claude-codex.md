@@ -49,7 +49,7 @@ Codex 는 `--approval untrusted|on-request|never`, `--sandbox read-only|workspac
 
 Claude Code 는 `--permission-mode` 로 권한 모드를 지정할 수 있습니다 (아래 "Claude 권한 모드").
 
-Claude Code 세션 안에서 Tasty 를 실행해도 Tasty 터미널의 셸에는 그 세션의 환경변수(`CLAUDECODE`, `CLAUDE_CODE_*` 등)가 넘어가지 않습니다. 그 터미널에서 실행한 Claude Code 는 독립된 세션으로 동작하고 대화 기록도 저장합니다.
+Claude Code 세션 안에서 Tasty 를 실행해도 Tasty 터미널의 셸과 훅 명령에는 그 세션을 가리키는 환경변수(`CLAUDECODE`, `CLAUDE_CODE_CHILD_SESSION`, `CLAUDE_CODE_MESSAGING_TOKEN` 등)가 넘어가지 않습니다. 그 터미널에서 실행한 Claude Code 는 독립된 세션으로 동작하고 대화 기록도 저장합니다. `CLAUDE_CODE_GIT_BASH_PATH` 처럼 직접 설정한 Claude Code 환경변수는 그대로 전달됩니다.
 
 <a id="3-자식-에이전트-부리기-spawn--tell"></a>
 

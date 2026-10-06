@@ -171,9 +171,8 @@ mod tests {
     /// 훅 셸은 터미널 셸과 같은 목록으로 Claude Code 세션 키와 CMUX_* 를 지우고 나머지는 남긴다.
     #[test]
     fn hook_shell_strips_claude_session_and_cmux_env() {
-        use tasty_utils::process::{
-            KEPT_KEYS_FOR_TEST as KEPT, STRIPPED_KEYS_FOR_TEST as STRIPPED, env_keys_to_strip,
-        };
+        use tasty_utils::process::env_keys_to_strip;
+        use tasty_utils::process::strip_test_keys::{KEPT, STRIPPED};
         let env = KEPT
             .iter()
             .map(|k| ((*k).to_owned(), "1".to_owned()))
