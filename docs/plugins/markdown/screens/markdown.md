@@ -541,11 +541,14 @@ debounce, `compositionend` 시 즉시)마다 이전 `<mark>` 를 먼저 원문�
 로 **손으로 근사**한다(픽셀 동일성은 비목표) — 헤딩/문단/링크/리스트/코드블록/표(격자+zebra)/캡션
 대표 문서 + 주소창 chrome 의 정적 근사 + TOC chrome 의 정적 근사(`toc_chrome` — 접기/펼치기·클릭
 스크롤 같은 라이브 상태는 없고 항상-펼침 스냅샷 하나, 레벨별 들여쓰기만 CSS `.tasty-toc-l<N>` 과
-동일 비율로 미러) + GFM alert 5종(accent 배경/보더 + 아이콘 + 굵은 레이블, 실제 CSS 는 좌측 바만
-쓰지만 specimen 은 egui `Frame` 표준 paint-order 를 살려 4변 보더로 근사) + 코드블록(`code_block` —
+동일 비율로 미러) + 시안 `Callouts` 표본 두 개(note · 접힌 warning, 종류별 색의 `md_quote_bar_width`
+막대) + 코드블록(`code_block` —
 `fn main() { format!("hi from tasty"); }` 를 highlight.js 의 rust 문법이 나눌 토큰 그대로 손으로
 분할해 `hljs-*` scope 별 `Theme` hue 색을 입힌 `CodeToken` 런, 라이브 highlight.js 실행 결과의
 정적 근사).
+같은 섹션의 `Markdown callout kinds` 카드(`markdown_viewer/callout_kinds.rs`)는 렌더러가 그리는
+콜아웃 다섯 종을 본체 모양 그대로 보인다 — 종류별 색 약 12% 채움, 왼쪽 `md_quote_bar_width` 막대,
+아이콘과 굵은 라벨. 시안 `Callouts` 에는 채움·아이콘이 없어 본체 전용 견본으로 표시한다.
 디자인·갤러리·제품 구현의 대응표: [design-gallery-mapping.md](../../../design/systems/design-gallery-mapping.md#surface-viewers-plugins).
 
 ## 시각 소스
