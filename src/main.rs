@@ -1,4 +1,8 @@
-#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+// 헤드리스 빌드는 창이 없으므로 콘솔 서브시스템으로 남겨 셸이 종료를 기다리고 출력을 받게 한다.
+#![cfg_attr(
+    all(windows, not(debug_assertions), feature = "gui"),
+    windows_subsystem = "windows"
+)]
 
 use anyhow::Result;
 

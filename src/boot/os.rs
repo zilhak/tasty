@@ -7,7 +7,8 @@ use winit::event_loop::EventLoopProxy;
 use crate::AppEvent;
 
 pub(crate) fn attach_windows_console_if_needed() {
-    #[cfg(all(windows, not(debug_assertions)))]
+    // GUI 서브시스템으로 링크하는 조합(src/main.rs)만 부모 콘솔에 붙는다.
+    #[cfg(all(windows, not(debug_assertions), feature = "gui"))]
     {
         use windows::Win32::System::Console::{ATTACH_PARENT_PROCESS, AttachConsole};
         // SAFETY: 유효한 ATTACH_PARENT_PROCESS 상수로 부모 콘솔 연결을 요청한다.

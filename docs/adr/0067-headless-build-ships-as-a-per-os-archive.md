@@ -30,12 +30,15 @@ GUI 바이너리에 `--headless`를 붙여도 창 없이 실행되지 않는다.
 
 서버 사용자가 소스 빌드 없이 헤드리스 빌드를 받는다. 랜딩의 헤드리스 소개가 배포본 기준으로도 참이 된다.
 
-릴리스 러너마다 같은 프로필 빌드가 한 번 더 돈다. 별도 target 디렉터리라 GUI 빌드의 의존성 산출물을 공유하지 않는다.
+릴리스 러너마다 같은 프로필 빌드가 한 번 더 돌아 릴리스 빌드 시간이 늘어난다. 별도 target 디렉터리라 GUI 빌드의 의존성 산출물을 공유하지 않는다.
+압축 파일은 번들 plugin 7종을 모두 담는다. 마크다운·HTML·이미지 뷰어처럼 표시용 plugin은 헤드리스 단독으로는 쓰임이 적지만,
+plugin마다 헤드리스 포함 여부를 따로 관리하지 않으려고 GUI 산출물과 같은 묶음을 쓴다.
 실행 파일 이름이 같아서 GUI 판과 같은 폴더에 풀면 덮어쓴다. 설치 가이드는 다른 폴더에 풀도록 안내한다.
 
-Windows release 바이너리는 feature와 관계없이 `windows_subsystem = "windows"`로 링크된다(`src/main.rs`).
-헤드리스판도 부모 콘솔에 붙어 출력한다(`src/boot/os.rs`의 `attach_windows_console_if_needed`).
-헤드리스판을 콘솔 서브시스템으로 바꿀지는 이 결정에 포함하지 않았다.
+Windows 헤드리스판은 콘솔 서브시스템으로 링크한다. 창이 없는 빌드라 GUI 서브시스템일 이유가 없고,
+콘솔에서 실행하면 셸이 종료를 기다리고 출력과 종료 코드를 그대로 받는다.
+`src/main.rs`의 `windows_subsystem = "windows"`는 release이면서 `gui` feature일 때만 적용하고,
+부모 콘솔에 붙는 `src/boot/os.rs`의 `attach_windows_console_if_needed`도 같은 조합에서만 동작한다. GUI 빌드의 동작은 그대로다.
 macOS 헤드리스 바이너리는 앱 번들과 같은 identity로 단독 서명하고 공증하지 않는다.
 
 ## Alternatives Considered
@@ -51,7 +54,7 @@ macOS 헤드리스 바이너리는 앱 번들과 같은 identity로 단독 서�
 코드와 설정에서 확인:
 
 - `gui` 구분이 빌드 feature가 아니라 실행 시 선택으로 바뀌면 산출물을 하나로 합친다.
-- Windows 헤드리스판의 서브시스템을 콘솔로 바꾸기로 하면 `src/main.rs`의 `windows_subsystem` 조건과 이 문서를 함께 고친다.
+- Windows GUI·헤드리스 구분이 `gui` feature가 아니게 되면 `src/main.rs`의 `windows_subsystem` 조건과 `attach_windows_console_if_needed` 조건을 함께 고친다.
 
 실행 결과로 확인:
 
