@@ -577,7 +577,7 @@ pub fn draw_status_cluster(ui: &mut egui::Ui, theme: &Theme) {
             ("scriptFile", "tooltip only"),
             (
                 "tooltip placement",
-                "top → bottom → inside the strip → top clamped (see next spec)",
+                "top → bottom → inside the strip (1px border-width tolerance) · none clears → inside the strip (see next spec)",
             ),
         ],
         &[

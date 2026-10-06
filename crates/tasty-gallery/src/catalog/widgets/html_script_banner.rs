@@ -673,7 +673,7 @@ pub fn draw_markers(ui: &mut egui::Ui, theme: &Theme) {
             ("kept on", "#fragment moves"),
             (
                 "tooltip placement",
-                "top → bottom → inside the strip; none clears → inside the strip (Tab strips › Tooltips in the strip open upward)",
+                "top → bottom → inside the strip (1px border-width tolerance) · none clears → inside the strip (Tab strips › Tooltips in the strip open upward)",
             ),
             (
                 "no banner when",
