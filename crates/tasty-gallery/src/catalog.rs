@@ -1250,6 +1250,14 @@ pub fn pages() -> Vec<Page> {
                             components::sidebar_context_menu::draw,
                         ),
                         spec(
+                            "rail-category",
+                            "Collapsed rail — `---` category button + anchored popup",
+                            Some(
+                                "52px rail · each boundary is a --- button · popup to its right · name header + actions",
+                            ),
+                            components::category_dialogs::draw_rail,
+                        ),
+                        spec(
                             "workspace-categories",
                             "Sidebar folders — dialogs & rail popup",
                             Some(
