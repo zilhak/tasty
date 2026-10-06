@@ -238,6 +238,14 @@ fn every_memory_write_reports_a_fallback_store_as_not_durable() {
             "agent.task_reduce",
             "저장된 결과를 모아 계산해 돌려줄 뿐 쓰지 않는다",
         ),
+        (
+            "agent.task_submit_result",
+            "제출 값을 메모리의 턴 표에만 둔다. 저장은 턴이 끝날 때 러너의 완료 기록이 한다",
+        ),
+        (
+            "agent.task_turn_report",
+            "턴 경계를 메모리의 턴 표에만 적는다. 저장소에 쓰지 않는다",
+        ),
     ];
     let router = include_str!("../../handler.rs");
     let sources = [
