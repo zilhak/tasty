@@ -958,29 +958,30 @@ i18n 6키(`transfer.progress.{title,cancel}` · `transfer.error.{title,body_suff
 ## Attention kind — NeedsInput 배지/dot/테두리/탭 제목
 
 디자인 `components/core/Badge.jsx`(variant `warning`) + `components/feedback/StatusDot.jsx`
-(status `needs-input`/`completion`) ↔ 본체 `src/adapters/ui/{divider,tab_bar,sidebar/view}.rs`
-↔ 갤러리 `catalog/components/{occupancy_borders,sidebar,tab_bar}.rs`(surfaces 섹션 기존
-specimen 확장 — 신규 파일 없음). 요청·확정 절차는 [ADR-0024](../../adr/0024-attention-ownership-and-clear.md)
+(status `needs-input`/`completion`), 시안 `gallery/layouts.jsx` Section `attention` ↔ 본체
+`src/adapters/ui/{divider,egui_panels,tab_bar/tab,sidebar/view}.rs` ↔ 갤러리 Layouts ›
+Attention kinds(`catalog/layouts_attention.rs`). 순위와 색 토큰의 판정은 공용
+`tasty_ui_widgets` attention 함수(`crates/tasty-ui-widgets/src/attention.rs`)에 있고 본체와 갤러리가
+같은 함수를 부른다. 요청·확정 절차는 [ADR-0024](../../adr/0024-attention-ownership-and-clear.md)
 가 정한 kind-aware 모델을 그대로 따르며, 토큰 값은 [design-token-mapping §attention
 kind](design-token-mapping.md#attention-kind--needsinputcompletion-surface-highlight-adr-0062)
 참조.
 
-| 디자인 컴포넌트/variant | 본체 함수 | 갤러리 함수 | 비고 |
+| 시안 Spec / 컴포넌트 | 공용 함수 | 본체 호출부 | 갤러리 spec |
 |---|---|---|---|
-| `Badge variant="warning"` | `sidebar/view.rs::paint_workspace_count_badge` → 공용 `tasty_ui_widgets::badge`(`BadgeVariant::Warning`) | `sidebar.rs::paint_ws_badge_pair`/`paint_ws_count_badge_at` | NeedsInput 개수 배지(좌측 슬롯) |
-| `Badge variant="primary"`(기존) | 동 함수(`BadgeVariant::Primary`) | 동 | Completion 개수 배지(우측, 기존 자리) — 색 로직만 variant 분기로 리팩터, 렌더 값 불변 |
-| `BadgeGroup`(gap) | `right_to_left` 레이아웃 + `ui.add_space(spacing_xs)` | `paint_ws_badge_pair` offset 계산 | `badge-group-gap` 전사, 위젯화하지 않고 인라인 |
-| `StatusDot status="needs-input"` | `sidebar/view.rs::draw_collapsed_avatar` 우상단 dot 분기 | `sidebar.rs::attention_rail_demo` | collapsed rail — kind 우선순위로 대표색 1개 |
-| `StatusDot status="completion"`(기존 notif) | 동 | 동 | 값 불변(파랑), 분기 순서만 needs-input 다음으로 |
-| surface border(occPane 확장) | `divider.rs::highlight_stroke_color`/`regions_from_state` | `occupancy_borders.rs::occ_pane`(`Kind::NeedsInput`) | 우선순위: NeedsInput > 점유 > Completion |
-| 탭 제목 색(위계) | `tab_bar/tab.rs` `text_color` match(kind) | `tab_bar.rs::attention_strip` | Completion은 파란색으로 표시 |
+| The scale — kind → color → rank | — | `src/core/state/attention.rs` `AttentionLevel` | `attention-scale` (`layouts_settled::draw_attention_scale`) |
+| Workspace row — `BadgeGroup` + `Badge variant="warning"`/`"primary"` | `workspace_attention_badges` · `attention_count_label`(99+) | `sidebar/view.rs::draw_workspace_card` 행 끝 right-to-left 칸 | `attention-rows` — 시안 다섯 경우(Completion only · NeedsInput only · Both · Overflow 99+ · Quiet). 행 카드의 여백·점 슬롯은 본체 카드 구조를 갤러리에서 다시 쌓는다 |
+| Collapsed rail — `StatusDot` 점 하나 | `RailDot::resolve` · `paint_rail_dot` | `sidebar/view.rs::draw_collapsed_avatar` | `attention-rail` — 시안 여섯 경우(busy · completion · needs-input · completion+busy · needs-input+completion · all three) |
+| Tab title — 제목 색 사다리 | `tab_title_color` | `tab_bar/tab.rs` `text_color` | `attention-ladder` 탭 줄 — needs-input · completion · active · rest 네 탭(활성 탭에는 attention 색을 얹지 않는다) |
+| Surface border — 한 선만 남기는 사다리 | `surface_edge_attention` · `attention_edge_stroke` · `occupancy_edge_stroke` | `divider.rs::regions_from_state`/`draw_surface_highlights_view` · `egui_panels.rs` 점유 테두리 | `attention-ladder` 테두리 줄 — needs-input 2px · occupied soft 1px · completed 2px |
 
-**별도 Theme 필드 없음** — 전부 기존 semantic 접근자(`accent_warning`/`accent_primary`/
-`text_on_accent`/`focus_ring_width`/`spacing_xs`)로 해소([design-token-mapping
+**별도 Theme 필드 없음** — 전부 기존 component 접근자(`tab_fg*`·`surface_highlight_*`·
+`surface_occupied_*`·`status_dot_*`·`badge_group_gap`)로 해소([design-token-mapping
 §attention kind](design-token-mapping.md#attention-kind--needsinputcompletion-surface-highlight-adr-0062)
-참조). `AttentionKind`/`AttentionLevel`(host, `src/core/state/attention.rs`)이 색 선택의
-기준이다. 갤러리는 본체 바이너리에 의존하지 않아 동일 우선순위·색을 정적 데모 데이터로 미러한다(라이브
-attention 상태에 연결되지 않음, 다른 surfaces specimen과 동일 관례).
+참조). `AttentionKind`(host, `src/core/state/attention.rs`)는 `divider.rs`의 `From` 변환으로 공용
+`Attention`이 된다. 갤러리는 라이브 attention 상태에 연결되지 않고 경우 데이터를 공용 함수에 넘긴다.
+레일 점은 본체가 그리는 compact 지름(`status-dot-size-compact`)이고 실행 중 점에는 배경 고리가 없다.
+시안 무대는 8px 점(`status-dot-size`)에 모든 점을 고리로 두르므로 이 두 값은 시안과 다르다.
 
 ## 첫 실행 셸 설정 (Chrome)
 

@@ -1,4 +1,4 @@
-//! 페인 탭바의 활성 표시와 응답 대기·완료 알림 색을 비교하는 정적 예제.
+//! 페인 탭바의 활성 표시 정적 예제. 응답 대기·완료 제목 색은 Layouts › Attention kinds 에서 보인다.
 
 mod kit_strip;
 
@@ -13,19 +13,6 @@ use crate::catalog::spec::{self, StageVariant, TokenChip};
 pub use kit_strip::{draw_move_cue, draw_scroll_shape, draw_status_cluster};
 
 const TABS: &[(&str, bool)] = &[("README.md", false), ("build.rs", true), ("run.rs", false)];
-
-/// 응답 대기 > 완료 > 활성 > 평상시 순서의 제목 색을 보여주는 예제.
-const ATTENTION_TABS: &[(&str, bool, Option<Kind>)] = &[
-    ("waiting.rs", false, Some(Kind::NeedsInput)),
-    ("done.rs", true, Some(Kind::Completion)),
-    ("idle.rs", false, None),
-];
-
-#[derive(Clone, Copy)]
-enum Kind {
-    NeedsInput,
-    Completion,
-}
 
 fn strip(ui: &mut egui::Ui, theme: &Theme) {
     let bar_h = theme.tab_bar_height.value(); // 24 — 본체와 같은 토큰(zoom 비적용)
@@ -123,71 +110,9 @@ fn paint_icon(
     glyph.image(size, color).paint_at(ui, icon_rect);
 }
 
-/// 탭 제목 색 위계 데모 — 본체 `tab_bar/tab.rs` 의 `text_color` 분기(NeedsInput → \
-/// Completion → active → 평상시)를 3탭으로 재현.
-fn attention_strip(ui: &mut egui::Ui, theme: &Theme) {
-    let bar_h = theme.tab_bar_height.value();
-    let tab_w = theme.tab_width.value();
-    let w = ui.available_width().min(theme.measure_xl.value());
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, bar_h), egui::Sense::hover());
-    let p = ui.painter_at(rect);
-
-    p.rect_filled(rect, 0.0, egui::Color32::from(theme.bg_sidebar()));
-    p.hline(
-        rect.x_range(),
-        rect.max.y - theme.border_width.value() * 0.5,
-        egui::Stroke::new(
-            theme.border_width.value(),
-            egui::Color32::from(theme.border_default()),
-        ),
-    );
-
-    let font = egui::FontId::proportional(theme.tab_bar_label_font_size.value());
-    let mut x = rect.min.x;
-    for (i, (name, active, kind)) in ATTENTION_TABS.iter().enumerate() {
-        let tab = egui::Rect::from_min_size(egui::pos2(x, rect.min.y), egui::vec2(tab_w, bar_h));
-        if *active {
-            p.rect_filled(tab, 0.0, egui::Color32::from(theme.bg_panel()));
-            let bar = egui::Rect::from_min_size(
-                tab.min,
-                egui::vec2(tab_w, theme.tab_indicator_width().value()),
-            );
-            p.rect_filled(bar, 0.0, egui::Color32::from(theme.accent_primary()));
-        }
-        if i > 0 {
-            p.vline(
-                x,
-                rect.y_range(),
-                egui::Stroke::new(
-                    theme.border_width.value(),
-                    // 이미 premultiply된 구분선 색에 알파를 다시 곱하지 않는다.
-                    theme.tab_separator().to_egui_premultiplied(),
-                ),
-            );
-        }
-        let text_color = match kind {
-            Some(Kind::NeedsInput) => theme.accent_warning(),
-            Some(Kind::Completion) => theme.accent_primary(),
-            None if *active => theme.text_primary(),
-            None => theme.text_muted(),
-        };
-        p.text(
-            egui::pos2(tab.min.x + theme.spacing_sm.value(), tab.center().y),
-            egui::Align2::LEFT_CENTER,
-            *name,
-            font.clone(),
-            egui::Color32::from(text_color),
-        );
-        x += tab_w;
-    }
-}
-
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Solo, |ui| {
         strip(ui, theme);
-    });
-    spec::stage(ui, theme, StageVariant::Solo, |ui| {
-        attention_strip(ui, theme);
     });
 
     spec::meta(
@@ -201,7 +126,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("controls", "+ · Split · Search"),
             (
                 "title color order",
-                "needs-input(yellow) → completion(blue) → active(text-primary) → text-muted",
+                "needs-input → completion → active → rest (Attention kinds › priority ladder)",
             ),
         ],
         &[

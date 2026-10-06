@@ -12,6 +12,7 @@ pub mod foundations_shape;
 pub mod foundations_uiscale;
 pub mod icons;
 pub mod icons_keys;
+pub mod layouts_attention;
 pub mod layouts_settled;
 pub mod overlays_resize;
 pub mod overlays_settled;
@@ -1972,16 +1973,9 @@ pub fn pages() -> Vec<Page> {
                             ),
                             components::occupancy_borders::draw,
                         ),
-                        spec(
-                            "attention-scale",
-                            "The scale — kind → color → rank",
-                            Some(
-                                "needs-input 30 · completion 10 · error 40 and approval 20 reserved",
-                            ),
-                            layouts_settled::draw_attention_scale,
-                        ),
                     ],
                 ),
+                layouts_attention::section(),
                 single(
                     "movesource",
                     "Move source highlight",
