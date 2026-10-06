@@ -405,6 +405,12 @@ impl HostExecutor {
                     .get(ws, &tid)
                     .map_err(|e| e.to_string())?
                     .ok_or_else(|| format!("task output reference '{tid}': task not found"))?;
+                // 생성 단계에서 막지만, 저장된 레코드가 v2 를 가리키면 실행하지 않는다.
+                if t.is_typed() {
+                    return Err(format!(
+                        "task output reference '{tid}': typed v2 results cannot be read by output placeholders"
+                    ));
+                }
                 // 결과가 아직 없으면 null을 넣지 않고 참조 해석 실패로 알린다.
                 let output = t.result.and_then(|r| r.output).ok_or_else(|| {
                     format!("task output reference '{tid}': upstream task has no result output yet")

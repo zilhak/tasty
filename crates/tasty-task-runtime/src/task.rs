@@ -23,6 +23,12 @@ impl TaskService {
         let seq = scope.agent_seq().clone();
         self.with_memory(|mem| {
             let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+            reject_output_refs_to_typed(
+                &store,
+                opts.workspace_id,
+                &opts.command,
+                &opts.on_failure,
+            )?;
             if reserved_for_fallback {
                 store.create_reserved_for_fallback(opts)
             } else {
@@ -343,4 +349,37 @@ pub fn dag_list_from_state(
         )?));
     }
     Ok(out)
+}
+
+/// `${task.<id>.output…}` 는 v1 결과(`result.output`)를 읽는다. v2 task 의 결과는 타입이 있는
+/// wire 값(int64 는 10진 문자열, run 은 종료 코드)이라 v1 참조로 넘기면 의미가 조용히 바뀐다.
+/// 입력 binding 이 그 경로를 정하기 전까지 생성 단계에서 거절한다.
+pub(crate) fn reject_output_refs_to_typed(
+    store: &TaskStore,
+    workspace_id: u32,
+    command: &tasty_agent::TaskCommand,
+    on_failure: &tasty_agent::OnFailure,
+) -> Result<(), AgentError> {
+    use tasty_agent::task::contract::{FailureStage, TaskFailure};
+    // 문법 오류는 IPC 검사와 실행 직전 치환이 보고한다.
+    for tid in crate::task_output_ref::referenced_tasks(command).unwrap_or_default() {
+        if store.get(workspace_id, &tid)?.is_some_and(|t| t.is_typed()) {
+            let mut failure = TaskFailure::new(
+                FailureStage::Input,
+                format!(
+                    "task output reference '{tid}' points to a typed v2 task; \
+                     ${{task.<id>.output}} placeholders read v1 results only"
+                ),
+            );
+            failure.task_id = Some(tid);
+            return Err(AgentError::TypeContract(Box::new(failure)));
+        }
+    }
+    if let tasty_agent::OnFailure::Fallback {
+        inline: Some(spec), ..
+    } = on_failure
+    {
+        reject_output_refs_to_typed(store, workspace_id, &spec.command, &spec.on_failure)?;
+    }
+    Ok(())
 }

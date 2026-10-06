@@ -2800,24 +2800,79 @@ fn webview_lets_the_first_press_drag_the_pane_divider_below_it_at_scale_two() {
 
 const ROUNDTRIP_INTS: [i64; 3] = [i64::MIN, i64::MAX, 9_007_199_254_740_993];
 
-fn exact_ints(v: &serde_json::Value) -> Vec<i64> {
+/// v2 int64 wire 값(10진 문자열)을 읽는다. 정수 토큰도 받아, 문자열화가 빠졌을 때
+/// 값이 바뀌어서 실패하도록 한다(형식만 달라서 실패하지 않게).
+fn wire_int64s(v: &serde_json::Value) -> Vec<Option<i64>> {
     v.as_array()
         .unwrap_or_else(|| panic!("not an array: {v}"))
         .iter()
-        .map(|x| {
-            // f64 로 거쳐 온 값이면 as_i64 가 None 이거나 다른 값이 된다.
-            x.as_i64()
-                .unwrap_or_else(|| panic!("not an exact i64: {x}"))
+        .map(|x| match x {
+            serde_json::Value::String(s) => s.parse().ok(),
+            serde_json::Value::Number(n) => n.as_i64(),
+            _ => None,
         })
         .collect()
 }
 
-/// CLI 의 `metadata:` 블록(다음 최상위 항목 전까지)을 JSON 으로 읽는다.
-fn cli_metadata_block(stdout: &str) -> serde_json::Value {
+/// JavaScript 소비자처럼 숫자를 f64 로 읽고 다시 쓴다. node 가 있으면 `JSON.parse` →
+/// `JSON.stringify` 를 그대로 거치고, 없으면 같은 IEEE double 변환을 Rust 로 흉내 낸다.
+fn through_javascript(v: &serde_json::Value) -> serde_json::Value {
+    use std::io::Write;
+    let text = serde_json::to_string(v).expect("serialize");
+    let spawned = std::process::Command::new("node")
+        .args([
+            "-e",
+            "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>process.stdout.write(JSON.stringify(JSON.parse(s))))",
+        ])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn();
+    match spawned {
+        Ok(mut child) => {
+            child
+                .stdin
+                .take()
+                .expect("stdin")
+                .write_all(text.as_bytes())
+                .expect("write node stdin");
+            let out = child.wait_with_output().expect("node");
+            assert!(out.status.success(), "node failed: {}", out.status);
+            serde_json::from_slice(&out.stdout).expect("node output is json")
+        }
+        Err(e) => {
+            tracing::warn!("node unavailable ({e}); emulating JSON.parse number handling");
+            fn as_double(v: &serde_json::Value) -> serde_json::Value {
+                match v {
+                    serde_json::Value::Number(n) => {
+                        let f = n.as_f64().expect("finite");
+                        // JSON.stringify 는 정수 모양의 double 을 소수점 없이 쓴다.
+                        if f.fract() == 0.0 && f.abs() < 1e21 {
+                            serde_json::from_str(&format!("{f:.0}")).expect("number")
+                        } else {
+                            serde_json::Value::from(f)
+                        }
+                    }
+                    serde_json::Value::Array(a) => a.iter().map(as_double).collect(),
+                    serde_json::Value::Object(o) => o
+                        .iter()
+                        .map(|(k, v)| (k.clone(), as_double(v)))
+                        .collect::<serde_json::Map<_, _>>()
+                        .into(),
+                    other => other.clone(),
+                }
+            }
+            as_double(v)
+        }
+    }
+}
+
+/// CLI 출력에서 `<label>: ` 로 시작하는 블록(다음 최상위 항목 전까지)을 JSON 으로 읽는다.
+fn cli_json_block(stdout: &str, label: &str) -> serde_json::Value {
+    let marker = format!("\n{label}: ");
     let start = stdout
-        .find("metadata: ")
-        .unwrap_or_else(|| panic!("no metadata block:\n{stdout}"));
-    let rest = &stdout[start + "metadata: ".len()..];
+        .find(&marker)
+        .unwrap_or_else(|| panic!("no {label} block:\n{stdout}"));
+    let rest = &stdout[start + marker.len()..];
     let end = rest
         .lines()
         .scan(0usize, |offset, line| {
@@ -2832,28 +2887,52 @@ fn cli_metadata_block(stdout: &str) -> serde_json::Value {
     serde_json::from_str(rest[..end].trim()).unwrap_or_else(|e| panic!("{e}:\n{stdout}"))
 }
 
-/// task 자료에 담긴 int64 경계값과 2^53 을 넘는 정수가 IPC 요청 → 저장소 → IPC 응답,
-/// 그리고 CLI 출력까지 같은 정수로 돌아오는지 본다. 화면 문자열 비교로 대신하지 않고
-/// 응답·출력을 다시 JSON 으로 읽어 정수 값을 비교한다.
+/// v2 task 의 int64 출력(최소·최대·2^53+1)이 IPC 응답과 CLI 출력에서 JavaScript 의
+/// `JSON.parse` 를 지나도 같은 정수로 복원되는지 본다. v2 를 IPC 로 만드는 경로가 아직
+/// 없어 레코드는 memory 로 심고, 결과 확정은 실제 `agent.task_set_result` 경로를 쓴다.
+/// 같은 v2 task 를 v1 출력 placeholder 로 참조하는 생성은 거절돼야 한다.
 #[test]
-fn int64_extremes_round_trip_exactly_through_ipc_and_cli() {
+fn typed_int64_outputs_survive_javascript_through_ipc_and_cli() {
     let _lane = lane();
     let tasty = common::shared();
-    let ws = tasty.create_workspace("int64-roundtrip");
-    let created = tasty.call(
-        "agent.task_create",
+    let ws = tasty.create_workspace("int64-wire");
+    let id = "t-int64-wire";
+    tasty.call(
+        "memory.put",
         json!({
-            "workspace_id": ws.id,
-            "name": "int64-roundtrip",
-            "command": {"kind": "wait_barrier", "name": "int64-roundtrip-never-closed"},
-            "metadata": {"ints": ROUNDTRIP_INTS},
+            "scope": format!("workspace:{}", ws.id),
+            "key": format!("tasty.agent.typed_task.{id}"),
+            "value": {"record_format": "tasty.task/v2", "task": {
+                "id": id, "workspace_id": ws.id, "name": "int64-wire",
+                "command": {"kind": "custom", "ipc_method": "system.ping"},
+                "depends_on": [], "state": {"kind": "running"},
+                "created_at": 0, "started_at": 0,
+                "on_failure": {"kind": "abort"}, "metadata": null,
+                "reserved_for_fallback": false,
+                "contract": {"contract_version": 2,
+                    "output_schema": {"type": "list", "items": {"type": "int64"}}}
+            }}
         }),
     );
-    let id = created["id"].as_str().expect("task id").to_string();
-    assert_eq!(exact_ints(&created["metadata"]["ints"]), ROUNDTRIP_INTS);
+    // 제출은 JSON 정수 토큰으로 한다. 확정된 wire 값은 문자열이어야 한다.
+    let settled = tasty.call(
+        "agent.task_set_result",
+        json!({"workspace_id": ws.id, "id": id, "state": "succeeded",
+               "output": ROUNDTRIP_INTS}),
+    );
+    assert_eq!(
+        settled["task"]["state"]["kind"],
+        json!("succeeded"),
+        "{settled}"
+    );
+    let expected: Vec<Option<i64>> = ROUNDTRIP_INTS.iter().copied().map(Some).collect();
 
     let fetched = tasty.call("agent.task_get", json!({"workspace_id": ws.id, "id": id}));
-    assert_eq!(exact_ints(&fetched["metadata"]["ints"]), ROUNDTRIP_INTS);
+    let output = &fetched["typed_result"]["output"];
+    assert_eq!(wire_int64s(output), expected, "{fetched}");
+    let via_js = through_javascript(&fetched);
+    assert_eq!(wire_int64s(&via_js["typed_result"]["output"]), expected);
+    assert_eq!(wire_int64s(&via_js["result"]["output"]), expected);
 
     // CLI 전용 TASTY_HOME 에 하네스 인스턴스의 port 를 적어 같은 인스턴스에 붙인다.
     // 인스턴스를 새로 띄우지 않으므로 부팅용 port 파일 인자는 쓰지 않는다.
@@ -2870,7 +2949,7 @@ fn int64_extremes_round_trip_exactly_through_ipc_and_cli() {
             "--workspace-id",
             &ws.id.to_string(),
             "--id",
-            &id,
+            id,
         ])
         .stdin(std::process::Stdio::null())
         .output()
@@ -2882,16 +2961,31 @@ fn int64_extremes_round_trip_exactly_through_ipc_and_cli() {
         out.status,
         String::from_utf8_lossy(&out.stderr)
     );
+    let cli_result = cli_json_block(&stdout, "result");
+    assert_eq!(wire_int64s(&cli_result["output"]), expected);
     assert_eq!(
-        exact_ints(&cli_metadata_block(&stdout)["ints"]),
-        ROUNDTRIP_INTS
+        wire_int64s(&through_javascript(&cli_result)["output"]),
+        expected
     );
 
-    // 러너가 돌고 있으면 이미 종결됐을 수 있어 취소 응답은 검사하지 않는다.
-    tasty.call_raw(
-        "agent.task_cancel",
-        json!({"workspace_id": ws.id, "id": id}),
+    // v1 출력 placeholder 는 v2 결과를 읽지 못한다.
+    let rejected = tasty.call_raw(
+        "agent.task_create",
+        json!({
+            "workspace_id": ws.id,
+            "name": "v1-reads-v2",
+            "command": {"kind": "custom", "ipc_method": "system.ping",
+                        "params": {"x": format!("${{task.{id}.output}}")}},
+            "depends_on": [id],
+        }),
     );
+    assert_eq!(rejected["error"]["code"], json!(-32602), "{rejected}");
+    assert_eq!(
+        rejected["error"]["data"]["task_id"],
+        json!(id),
+        "{rejected}"
+    );
+
     tasty.call_raw(
         "agent.task_delete",
         json!({"workspace_id": ws.id, "id": id, "force": true}),
