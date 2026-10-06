@@ -115,6 +115,7 @@ Terminal·Pty 분리와 터미널 호환성, 입력·포커스, 점유와 원격
 | 0043 | [CLI 오류 정보는 보존하고 진단 로그는 기록 주체를 나눈다](0043-cli-errors-and-diagnostic-logs.md) | Accepted | 2026-09-24 | cli, errors, logging, hooks |
 | 0044 | [에이전트 응답은 transcript에서 수집해 별도 SSE로 중계한다](0044-agent-transcript-stream.md) | Accepted | 2026-09-24 | agents, transcript, sse, recovery |
 | 0062 | [작업 실행은 TaskService가, 훅 감시와 실행은 HookRuntime이 소유한다](0062-task-service-and-hook-runtime.md) | Accepted | 2026-09-30 | agents, tasks, hooks, ownership, architecture |
+| 0068 | [타입 계약을 가진 task는 별도 저장 namespace에 버전 envelope로 둔다](0068-typed-task-contracts-live-in-a-separate-record-namespace.md) | Accepted | 2026-10-06 | agents, tasks, types, compatibility, storage |
 <!-- adr-rows:end agents -->
 
 ## 개발·검증·문서·배포

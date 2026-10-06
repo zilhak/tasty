@@ -508,6 +508,70 @@ tasty agent task-delete --workspace-id 1 --id t-... --cascade    # 참조자까�
 tasty agent task-purge --workspace-id 1 --states succeeded,failed --older-than-ms 604800000 --dry-run
 ```
 
+## v2 타입 계약 (`contract_version: 2`)
+
+task 는 선택적으로 타입 계약(`TaskContract`)을 가진다. 계약이 없는 task 가 v1 이며, 결과 형식·reducer 동작·저장 형식이 바뀌지 않는다. 계약은 Rust API `TaskStore::create_typed` 로만 만든다. IPC·CLI 의 `task_create` 는 아직 계약을 받지 않는다. 결정 근거는 [ADR-0068](../adr/0068-typed-task-contracts-live-in-a-separate-record-namespace.md).
+
+코드: 타입 `crates/tasty-agent/src/task/types.rs`, 계약·결과 `crates/tasty-agent/src/task/contract.rs`, v2 reduce `crates/tasty-agent/src/reducer.rs::reduce_typed`.
+
+### 계약 형식
+
+```json
+{"contract_version": 2,
+ "types": {"Verdict": {"type": "enum", "values": ["pass", "revise", "review"]}},
+ "input_schema": {"type": "object", "fields": {"retries": {"type": "int64", "default": 2}}},
+ "output_schema": {"type": "object", "fields": {
+   "verdict": {"ref": "Verdict"},
+   "reviewer": {"type": "string", "nullable": true},
+   "note": {"type": "string", "optional": true}}},
+ "allowed_exit_codes": [0],
+ "merge_conflict": "error"}
+```
+
+- 모르는 키는 계약·스키마 어디서든 거절한다. `contract_version` 은 2 만 받는다.
+- 타입: `boolean`, `int64`, `float64`(`min`·`max`, 양끝 포함), `string`(`max_len`, 문자 수), `enum`(`values`, 비어 있지 않고 중복 없음), `object`(`fields`), `list`(`items`, `max_len`), `unit`, `json`, `{"ref": "<이름>"}`.
+- 이름 붙은 타입은 `types` 에 선언하며 재귀를 허용하지 않는다.
+- `nullable` 은 값 자리에 null 을 허용한다. `unit`·`json` 에는 쓸 수 없다. 필드 전용 키는 `optional`(생략 가능)과 `default`(생략 시 채울 값)다. 기본값은 선언할 때 그 필드 타입으로 검사한다.
+- 선언하지 않은 필드는 오류다. 암묵 변환은 없다. `"42"`·`42.0` 은 int64 가 아니고 정수는 float64 로 바꾸지 않는다.
+- 한도: 스키마 깊이 32, 값 깊이 64, 값의 직렬화 크기 256KiB.
+- 오류(`TypeError`)는 종류, JSON Pointer 경로, 기대 타입, 실제 값 요약을 가진다. 결과 검증 실패는 task id 도 싣는다. IPC 는 `AgentError::TypeContract` 를 `-32602` 로 돌려주고 `error.data` 에 실패 단계와 타입 오류를 싣는다.
+
+### int64 와 JSON 숫자
+
+int64 는 JSON 정수 토큰만 받는다. `serde_json` 은 정수 토큰을 i64/u64 그대로 보관하므로 i64 최솟값·최댓값과 2^53+1 같은 값이 저장소·IPC 응답·CLI 출력에서 정확히 유지된다. 범위를 넘는 정수와 |값| ≥ 2^63 인 정수형 실수는 `out_of_range`, 그 밖의 실수 토큰은 `not_integer` 다. float64 는 f64 로 정확히 표현되는 정수 토큰만 받는다(9007199254740993 은 거절). NaN·Infinity 는 `not_finite` 다. 숫자를 f64 로 읽는 JSON 소비자(JavaScript 의 `JSON.parse` 등)는 2^53 을 넘는 값을 정확히 읽지 못한다.
+
+### 종류별 기본 출력과 결과
+
+| command | 기본 출력 타입 | 출력 값 |
+|---|---|---|
+| `run` | `int64`(다시 선언 불가) | 종료 코드. `allowed_exit_codes`(기본 `[0]`)에 든 코드면 성공. stdout·stderr 는 `raw.execution` |
+| `custom` | `json` | IPC 응답(최종 응답) |
+| `wait_barrier` | `unit`(다시 선언 불가) | 확정된 null |
+| `reduce` | 전략별(아래) | reducer 값 |
+
+결과는 `typed_result` 에 저장한다: `has_output`·`output`(최종 출력), `raw`(`exit_code`, `execution`), `artifacts`, `error`(`stage`: `input`·`execution`·`postprocess`·`output_validation`·`persistence`), `provenance`(`contract_version`, `kind`, `output_source`). `has_output: true` 이고 `output: null` 이면 unit 또는 nullable 출력이 확정된 것이고, `has_output: false` 는 출력이 없다는 뜻이다. v1 호환을 위해 `result` 에는 최종 출력이 `output` 으로 투영된다.
+
+저장소의 `set_result` 가 보고된 결과를 계약에 맞춰 확정하고, `set_state` 는 유효한 출력 없이 성공으로 가려는 v2 task 를 Failed 로 바꾼다. 러너·재시작 복구·훅 완료·IPC `task_set_result` 가 모두 이 두 메서드를 지나므로 완료 경로마다 따로 검사하지 않는다. 비즈니스 값(`"revise"`, `false`)은 정상 출력이다. 출력 타입에 맞지 않는 값만 `output_validation` 실패가 된다. `retry` 는 `typed_result` 를 지운다.
+
+생성할 때 바인딩이 없는 입력은 `{}`(object) 또는 null 로 검증되어야 한다. 즉 필수 입력이 있는 계약은 아직 만들 수 없다. 입력 바인딩은 아직 구현하지 않았다. inline fallback 은 v2 에서 거절한다.
+
+### v2 reduce
+
+| 전략 | 출력 타입 | 규칙 |
+|---|---|---|
+| `all` | `list<{task_id, state, has_output, output?}>` 고정 | 실패한 입력의 출력을 만들어 넣지 않는다 |
+| `first_success` | 선언한 공통 타입 T(기본 json) | 모든 입력이 T 에 대입 가능해야 생성된다. v1 입력은 json 으로 본다. 성공 출력이 하나도 없으면 실패 |
+| `merge_json` | object 또는 json | 모든 입력이 object 출력을 가져야 한다. 같은 경로의 다른 값은 기본 오류, `merge_conflict: "overwrite"` 면 뒤 입력이 이긴다. 같은 값은 충돌이 아니다 |
+| `concat_text` | string | 모든 입력이 string 출력을 가져야 한다. 다른 타입은 명시적으로 변환하라는 오류 |
+| `custom` | 선언 타입(기본 json) | stdin 은 `all` 과 같은 레코드 배열. stdout 은 JSON 값 하나여야 하며 문자열로 대신하지 않는다 |
+
+v1 reduce 는 기존 동작(`reduce_with_custom`) 그대로다.
+
+### 저장 형식
+
+v2 task 는 `tasty.agent.typed_task.<id>` 키에 `{"record_format": "tasty.task/v2", "task": {...}}` envelope 로 저장한다. v1 키(`tasty.agent.task.<id>`)와 접두사가 겹치지 않아 v1 목록 조회(구버전 앱 포함)는 v2 레코드를 보지 않는다. 구버전 `Task` 모델은 envelope 를 task 로 읽지 못하므로 v2 레코드를 실행하지 않는다. 현재 저장소는 v1 namespace 에서 계약을 가진 레코드와 모르는 `record_format` 을 오류로 보고한다.
+
+
 ## 한계
 
 호스트가 ShellProcess spawn 과 watcher 완료 영속 사이에 죽으면 자식이 init(1) reparent 되어 exit_code 손실 → reload 시 `Failed("exit_code unknown")`. (cross-platform 으로 회피 불가.)

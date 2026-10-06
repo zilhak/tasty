@@ -60,6 +60,12 @@ fallback을 후속 작업에 설정해도 의존성 실패로 인한 Skipped에�
 
 `Reduce.inputs`도 그래프 엣지와 사이클 검사에 포함한다. 다만 reducer는 실패 결과도 모으므로 입력 하나가 실패했다고 skipped로 처리하지 않는다. 입력이 모두 종결될 때까지 waiting을 유지한 뒤 ready가 된다.
 
+#### 타입 계약 (v2)
+
+task 는 선택적으로 `contract_version: 2` 계약을 가진다. 계약은 입력·출력 타입(boolean·int64·float64·string·enum·object·list·unit·json·이름 붙은 타입)을 선언하고, 저장소가 보고된 결과를 그 타입으로 확정한다. 출력이 타입에 맞지 않거나 없으면 성공이 아니라 실패로 끝난다. 결과는 최종 출력(`has_output`·`output`)과 원시 응답·artifact·실패 단계·출처를 나눠 담는다. 기본 출력은 `run` 이 종료 코드(int64), `custom` 이 json, `wait_barrier` 가 unit, `reduce` 가 전략별 타입이다.
+
+계약이 없는 task(v1)의 결과와 reducer 동작은 그대로다. v2 task 는 별도 저장 namespace 에 envelope 로 저장해 구버전이 실행하지 않는다. 지금은 Rust API(`TaskStore::create_typed`)로만 만들 수 있고 IPC·CLI 생성과 입력 바인딩은 아직 없다. 형식과 규칙은 [작업 러너 §v2 타입 계약](../../dev-guide/agent-runner.md#v2-타입-계약-contract_version-2).
+
 #### 작업·DAG 조회
 
 `task_get`의 CLI 출력에는 command 종류, `depends_on`, `on_failure`, `metadata`가 포함된다. `task_graph`의 노드는 `command_kind`·`on_failure_kind`를, 엣지는 `depends_on`·`fallback`·`reduce` 종류를 제공한다. dot에서는 각각 실선·주황 점선·파랑 점선으로 표시한다.
@@ -107,7 +113,7 @@ TTL이 있는 협조적 자원 점유 표시이며 OS 잠금은 아니다. 충�
 
 #### Reducer
 
-여러 작업의 결과를 `first_success`·`all`·`merge_json`·`concat_text`·`custom`의 5가지 방식으로 합친다. custom은 호스트 셸에 결과 배열 JSON을 stdin으로 보낸다. 단발 `agent.task_reduce` 또는 DAG의 `TaskCommand::Reduce`로 사용하며 후자의 inputs는 의존성에도 포함한다.
+여러 작업의 결과를 `first_success`·`all`·`merge_json`·`concat_text`·`custom`의 5가지 방식으로 합친다. custom은 호스트 셸에 결과 배열 JSON을 stdin으로 보낸다. 단발 `agent.task_reduce` 또는 DAG의 `TaskCommand::Reduce`로 사용하며 후자의 inputs는 의존성에도 포함한다. v2 계약을 가진 `Reduce`는 전략별 타입 규칙을 따른다(`all`은 상태·출력 유무 레코드, `merge_json` 충돌은 기본 오류, `concat_text`는 문자열만, `custom` stdout은 JSON 값 하나).
 
 #### Rate-limit
 
