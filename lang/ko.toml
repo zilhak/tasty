@@ -5070,7 +5070,7 @@ help = "숫자 값"
 help = "연산: set | inc | dec. 기본값: inc"
 
 [cli.help._root.telemetry.record.arg.agent]
-help = "에이전트 id (기본값: 호출자 — 환경변수 `TASTY_AGENT_ID` 또는 `_host`)"
+help = "에이전트 id (기본값: 호출자 — 세션의 에이전트 id, 토큰이 없으면 `_host`)"
 
 [cli.help._root.telemetry.record.arg.workspace_id]
 help = "묶을 워크스페이스 id (기본값: 활성 워크스페이스)"

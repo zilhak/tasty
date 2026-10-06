@@ -5076,7 +5076,7 @@ help = "Numeric value"
 help = "Operation: set | inc | dec. Default: inc"
 
 [cli.help._root.telemetry.record.arg.agent]
-help = "Agent id (defaults to caller — env `TASTY_AGENT_ID` or `_host`)"
+help = "Agent id (defaults to the caller — the session agent id, or `_host` without a token)"
 
 [cli.help._root.telemetry.record.arg.workspace_id]
 help = "Workspace id binding (defaults to active workspace)"

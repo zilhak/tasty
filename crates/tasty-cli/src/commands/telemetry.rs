@@ -24,7 +24,7 @@ pub enum TelemetryCommands {
         /// Operation: set | inc | dec. Default: inc.
         #[arg(long, default_value = "inc")]
         op: String,
-        /// Agent id (defaults to caller — env `TASTY_AGENT_ID` or `_host`).
+        /// Agent id (defaults to the caller — the session agent id, or `_host` without a token).
         #[arg(long)]
         agent: Option<String>,
         /// Workspace id binding (defaults to active workspace).

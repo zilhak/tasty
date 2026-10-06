@@ -15,7 +15,7 @@ AI 에이전트 활동을 도메인 메트릭으로 **기록·집계·차단**�
 
 ### 모델
 
-Metric(`input_tokens`/`ipc_calls`/…) × Agent(plugin 은 id 의 비허용 문자를 `_` 로 바꾼 값 — 예 `com_tasty_claude`, Local 은 `TASTY_AGENT_ID` 없으면 `_host`, 미명시 시 CallerContext 자동) × Workspace(없으면 `global`) × Op(`Set`/`Inc`/`Dec`, 집계에서 `Inc`·`Dec` 는 sum 누적·`Set` 은 덮어쓰기) × Window(`1m/1h/1d`) × Tags. 이벤트는 `tasty.telemetry.event.{ts}.{seq}` 로 영속, 조회는 prefix scan + 순수 집계(재시작 후 누적 보존).
+Metric(`input_tokens`/`ipc_calls`/…) × Agent(plugin 은 id 의 비허용 문자를 `_` 로 바꾼 값 — 예 `com_tasty_claude`, Local 은 `_host`, 미명시 시 CallerContext 자동) × Workspace(없으면 `global`) × Op(`Set`/`Inc`/`Dec`, 집계에서 `Inc`·`Dec` 는 sum 누적·`Set` 은 덮어쓰기) × Window(`1m/1h/1d`) × Tags. 이벤트는 `tasty.telemetry.event.{ts}.{seq}` 로 영속, 조회는 prefix scan + 순수 집계(재시작 후 누적 보존).
 
 **집계본은 영속되지 않는다.** bucket 은 조회할 때마다 raw event 로부터 새로 만들어지고 버려진다 — 주기 rollup task 도, `tasty.telemetry.bucket.*` 키도 없다. 따라서 **raw event 보존량이 곧 조회 가능 범위**이며, 그 상한은 관측 로그 3종 공통 정책(`store::log_retention`)이 정하는 **최근 20,000 이벤트**다. 조용한 인스턴스에서는 수일치, 폴링이 도는 인스턴스에서는 수십 분치가 되므로 조회 범위가 데이터 양에 종속된다. 롤업을 신설하지 않기로 한 근거와 재검토 조건은 [ADR-0009](../../adr/0009-state-storage-and-retention.md).
 
@@ -31,11 +31,11 @@ Metric(`input_tokens`/`ipc_calls`/…) × Agent(plugin 은 id 의 비허용 문�
 |--------|----------|
 | Agent (session token 동반) | 호스트가 `session.issue` 때 기록한 `agent_id`(토큰 검증 통과) |
 | Plugin process | 매니페스트 `plugin_id`(매니페스트 등록으로 인증됨) |
-| Local CLI/사용자 | env `TASTY_AGENT_ID`, 없으면 sentinel `_host` |
+| Local CLI/사용자 | sentinel `_host` |
 
 ```rust
 caller.agent_id()                  // CallerContext (crates/tasty-ipc/src/caller.rs)
-tasty_telemetry::AgentId::from_env()  // 라이브러리 크레이트가 자기 caller 식별
+tasty_telemetry::AgentId::from_env()  // 같은 프로세스의 env TASTY_AGENT_ID, 없으면 _host
 ```
 
 - `AgentId::HOST` = `"_host"` (빈 문자열도 HOST 로 대체), env key = `AgentId::ENV_KEY` (`"TASTY_AGENT_ID"`).
@@ -58,13 +58,13 @@ $ TASTY_SURFACE_ID=<surface_id> TASTY_AGENT_ID=claude_s<surface_id> TASTY_SESSIO
 | `AgentId::HOST` | `"_host"` |
 | `tasty_memory::HOST_OWNER` | `"_host"` (memory.db `owner` 컬럼) |
 | `CallerContext::owner()` | Local → `_host`, Plugin → `plugin_id`, Agent → `agent_id` |
-| `CallerContext::agent_id()` | Local → env 또는 `_host`, Plugin → `plugin_id`, Agent → `agent_id` |
+| `CallerContext::agent_id()` | Local → `_host`, Plugin → `plugin_id`, Agent → `agent_id` |
 
-`agent_id()` 는 Local 분기에서 env 를 본다는 점이 `owner()` 와 다르다 — memory `owner` 는 plugin 간 데이터 격리용이라 `_host` 로 일괄 묶고, telemetry `agent_id` 는 child agent 까지 분리해야 해 env 를 추가로 본다.
+Local 분기는 `owner()` 와 `agent_id()` 모두 `_host` 다. 호스트는 요청 봉투에서 호출자의 `TASTY_AGENT_ID` 를 받지 않으므로 Local 호출자의 env 를 알 수 없다. 호스트 프로세스 자신의 `TASTY_AGENT_ID` 는 이 Tasty 를 띄운 바깥 인스턴스에서 상속한 값이라 읽지 않는다. child agent 는 `session.issue` 토큰으로 Agent 가 되어 자기 ID 로 분리된다.
 
 #### 보안 한계
 
-토큰 없는 Local 호출의 env `TASTY_AGENT_ID` 는 **위조 가능**하다 — 적대적 agent 가 다른 id 를 사칭해 cap/budget 우회 가능. 이 모델은 **악의보다 버그** 영역으로 처리한다 — *정직한 agent 의 폭주를 막는 안전망*. 적대적 agent 방어는 OS 권한·plugin 매니페스트가 우선.
+토큰 없는 Local 호출은 모두 `_host` 로 묶인다 — 토큰 없이 띄운 agent 는 사용자와 구분되지 않고, `telemetry record --agent` 로 다른 id 를 적어 넣을 수 있다. 이 모델은 **악의보다 버그** 영역으로 처리한다 — *정직한 agent 의 폭주를 막는 안전망*. 적대적 agent 방어는 OS 권한·plugin 매니페스트가 우선.
 
 검증 가능한 신원: claude plugin 은 child 기동 때 `issue_session_token`(`crates/tasty-plugin-claude/src/handlers.rs`)으로 `session.issue` 토큰을 받아 `TASTY_SESSION_TOKEN` 으로 싣고, CLI 가 그 env 를 envelope 에 실으면 `resolve_caller_from_envelope`(`crates/tasty-ipc/src/caller.rs`)가 `CallerContext::Agent` 로 해석한다. 토큰이 잘못됐거나 만료면 Local 로 떨어지지 않고 거부된다.
 

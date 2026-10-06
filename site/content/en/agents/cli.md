@@ -1,4 +1,4 @@
-<!-- source-hash: 4a91e7a7821f -->
+<!-- source-hash: d5f1aa52f566 -->
 # Driving terminals with the tasty CLI
 
 Use the `tasty` CLI to create terminals, send commands, and read results. Control a running Tasty from a script, or let an AI agent set up the terminals it needs.
@@ -312,7 +312,7 @@ tasty telemetry top --by agent --metric tokens    # top by agent
 tasty telemetry timeseries --metric tokens --window 1h
 ```
 
-Without `--agent`, `record` uses the caller ID identified by Tasty. An agent using a session token uses that session’s ID. A local call without a token uses `TASTY_AGENT_ID` from the running Tasty process, or `_host` if unset. To insert several values at once with their order preserved, use `tasty telemetry record-batch`.
+Without `--agent`, `record` uses the caller ID identified by Tasty. An agent using a session token uses that session’s ID. A local call without a token is recorded as `_host`. To insert several values at once with their order preserved, use `tasty telemetry record-batch`.
 
 ## Other queries and settings
 

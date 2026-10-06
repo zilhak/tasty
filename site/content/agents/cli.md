@@ -329,7 +329,7 @@ tasty telemetry top --by agent --metric tokens    # 에이전트별 상위
 tasty telemetry timeseries --metric tokens --window 1h
 ```
 
-`record`의 `--agent`를 생략하면 Tasty가 확인한 호출자 ID로 기록합니다. 세션 토큰을 쓰는 에이전트는 그 세션의 ID를 사용합니다. 토큰 없는 로컬 호출은 실행 중인 Tasty의 `TASTY_AGENT_ID`를 사용하고, 그 값도 없으면 `_host`로 기록합니다. 여러 값을 순서까지 지켜
+`record`의 `--agent`를 생략하면 Tasty가 확인한 호출자 ID로 기록합니다. 세션 토큰을 쓰는 에이전트는 그 세션의 ID를 사용합니다. 토큰 없는 로컬 호출은 `_host`로 기록합니다. 여러 값을 순서까지 지켜
 한 번에 넣으려면 `tasty telemetry record-batch` 를 씁니다.
 
 ## 그 밖의 조회·설정

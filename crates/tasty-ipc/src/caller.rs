@@ -173,10 +173,12 @@ impl CallerContext {
     }
 
     /// 텔레메트리에 쓸 호출자 ID. Agent는 세션에서 확인한 에이전트 ID, Plugin은 매니페스트 ID를
-    /// 허용 문자로 변환한 값, Local은 TASTY_AGENT_ID 또는 _host다.
+    /// 허용 문자로 변환한 값, Local은 _host다. 요청 봉투에는 호출자의 `TASTY_AGENT_ID` 가 없으므로
+    /// Local 을 호스트 프로세스 자신의 env 로 판정하지 않는다. 그 값은 이 Tasty 를 띄운 바깥
+    /// 인스턴스에서 상속한 것이라 호출자와 관계가 없다.
     pub fn agent_id(&self) -> tasty_telemetry::AgentId {
         match self {
-            CallerContext::Local => tasty_telemetry::AgentId::from_env(),
+            CallerContext::Local => tasty_telemetry::AgentId::host(),
             CallerContext::Plugin { plugin_id, .. } => {
                 tasty_telemetry::AgentId::from_plugin_id(plugin_id)
             }
@@ -305,6 +307,33 @@ pub fn resolve_caller_from_envelope(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 호스트 프로세스가 바깥 인스턴스의 `TASTY_AGENT_ID` 를 상속했어도 Local 호출자는 `_host` 다.
+    /// 이 시험만 `TASTY_AGENT_ID` 를 둔 자식 프로세스로 다시 실행한다.
+    #[test]
+    fn local_caller_ignores_the_host_inherited_agent_id() {
+        const CHILD: &str = "TASTY_TEST_INHERITED_AGENT_ID_CHILD";
+        if std::env::var_os(CHILD).is_none() {
+            let status = std::process::Command::new(std::env::current_exe().expect("exe"))
+                .args([
+                    "--exact",
+                    "caller::tests::local_caller_ignores_the_host_inherited_agent_id",
+                    "--nocapture",
+                    "--test-threads=1",
+                ])
+                .env(CHILD, "1")
+                .env("TASTY_AGENT_ID", "outer_agent")
+                .status()
+                .expect("child");
+            assert!(status.success(), "child run failed: {status}");
+            return;
+        }
+        assert_eq!(
+            std::env::var("TASTY_AGENT_ID").expect("inherited"),
+            "outer_agent"
+        );
+        assert!(CallerContext::Local.agent_id().is_host());
+    }
 
     fn plugin_with(perms: &[Permission]) -> CallerContext {
         CallerContext::Plugin {
