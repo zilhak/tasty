@@ -164,7 +164,7 @@ pub fn draw_command_palette_view(
         .show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.set_min_height(theme.input_height().value()); // 디자인 Input control-height
-                let icon_size = 16.0;
+                let icon_size = theme.icon_glyph_size_md.value(); // 디자인 Input icon-size-md
                 let (icon_rect, _) =
                     ui.allocate_exact_size(egui::vec2(icon_size, icon_size), egui::Sense::hover());
                 icons::SEARCH
@@ -210,6 +210,11 @@ pub fn draw_command_palette_view(
                 return;
             }
             let row_height = palette_row_height(theme);
+            // 행 치수는 디자인 MenuItem과 같은 토큰이다(갤러리 `menu_item_kbd`와 공용).
+            let pad_x = theme.menu_item_padding_x().value();
+            let icon_size = theme.icon_glyph_size_md.value();
+            let icon_gap = theme.spacing_sm.value();
+            let radius = theme.menu_item_radius().value();
             let selected_idx = props.selected_index;
             let list_h =
                 (footer_top - ui.cursor().top() - theme.spacing_sm.value()).max(row_height);
@@ -227,13 +232,13 @@ pub fn draw_command_palette_view(
                         if is_selected {
                             ui.painter().rect_filled(
                                 rect,
-                                2.0,
+                                radius,
                                 theme.active_overlay.to_egui_premultiplied(),
                             );
                         } else if resp.hovered() {
                             ui.painter().rect_filled(
                                 rect,
-                                2.0,
+                                radius,
                                 theme.hover_overlay.to_egui_premultiplied(),
                             );
                         }
@@ -243,9 +248,6 @@ pub fn draw_command_palette_view(
                             theme.text_muted().into()
                         };
 
-                        let pad_x = 12.0;
-                        let icon_size = 15.0;
-                        let icon_gap = 8.0;
                         if let Some(icon) = item.icon {
                             let icon_rect = egui::Rect::from_min_size(
                                 egui::pos2(rect.min.x + pad_x, rect.center().y - icon_size / 2.0),
@@ -712,6 +714,62 @@ mod view_tests {
                 palette_height(&th, 12),
                 palette_height(&th, 1000),
                 "zoom {zoom}: the cap should stop the card at 12 rows"
+            );
+        }
+    }
+
+    /// 행 라벨의 시작 x는 목록 여백 + MenuItem 토큰(padding-x · icon-size-md · space-sm)이고
+    /// 배율과 함께 커진다.
+    #[test]
+    fn row_label_starts_after_the_menu_item_tokens_at_every_ui_scale() {
+        fn walk(shape: &egui::epaint::Shape, out: &mut Vec<(String, f32)>) {
+            match shape {
+                egui::epaint::Shape::Text(t) => out.push((t.galley.text().to_owned(), t.pos.x)),
+                egui::epaint::Shape::Vec(v) => v.iter().for_each(|s| walk(s, out)),
+                _ => {}
+            }
+        }
+        for zoom in [0.85_f32, 1.0, 1.2] {
+            let th = Theme::with_colors_and_zoom(mocha_fallback().to_colors(), false, zoom);
+            let ctx = egui::Context::default();
+            let mut buf = String::new();
+            let mut items = Some(make_items(1));
+            let out = ctx.run(egui::RawInput::default(), |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    let rect = egui::Rect::from_min_size(
+                        egui::pos2(0.0, 0.0),
+                        egui::vec2(zoomed(&th, PALETTE_WIDTH), palette_height(&th, 1)),
+                    );
+                    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
+                    let mut props = CommandPaletteProps {
+                        placeholder: "Search…".to_string(),
+                        no_results_text: "No matches".to_string(),
+                        items: items.take().unwrap_or_default(),
+                        selected_index: 0,
+                        query_buffer: &mut buf,
+                        hint_navigate: "navigate".to_string(),
+                        hint_run: "run".to_string(),
+                        hint_close: "close".to_string(),
+                    };
+                    draw_command_palette_view(&mut child, &th, &mut props);
+                });
+            });
+            let mut texts = Vec::new();
+            for clipped in &out.shapes {
+                walk(&clipped.shape, &mut texts);
+            }
+            let x = texts
+                .iter()
+                .find(|(t, _)| t == "Item 0")
+                .map(|(_, x)| *x)
+                .expect("row label painted");
+            let want = th.spacing_sm.value()
+                + th.menu_item_padding_x().value()
+                + th.icon_glyph_size_md.value()
+                + th.spacing_sm.value();
+            assert!(
+                (x - want).abs() < 0.5,
+                "zoom {zoom}: label x {x}, want {want}"
             );
         }
     }

@@ -64,7 +64,7 @@ egui는 위젯 사이에 `item_spacing`을 추가하므로 명시한 간격과 �
 
 `popup::frame::draw_popup_layer`는 매 프레임 `PopupDef.sizer`를 호출한다. 사용자가 직접 크기를 바꾸지 않은 팝업(`size_user_overridden`이 아님)에 결과를 적용한다.
 
-`command_palette_sizer`는 현재 검색의 매칭 개수만 세어 `palette_height(theme, n)`을 계산한다. 라벨·아이콘·키캡을 만드는 처리를 중복 호출하지 않는다. 그리기와 크기 계산은 같은 `palette_footer_height`·`palette_row_height`·`palette_chrome_height`와 목록 상한 `Theme::palette_list_max_height()`(`palette-list-max-height` = size-320)를 사용한다. 행 높이는 `Theme.item_height_interactive`다. 크롬 높이는 검색 구역(사방 `space-md`) + 목록 위아래 여백(`space-sm` × 2) + footer이며, 목록과 footer 사이 별도 간격은 없다.
+`command_palette_sizer`는 현재 검색의 매칭 개수만 세어 `palette_height(theme, n)`을 계산한다. 라벨·아이콘·키캡을 만드는 처리를 중복 호출하지 않는다. 그리기와 크기 계산은 같은 `palette_footer_height`·`palette_row_height`·`palette_chrome_height`와 목록 상한 `Theme::palette_list_max_height()`(`palette-list-max-height` = size-320)를 사용한다. 행 높이는 `Theme.item_height_interactive`다. 크롬 높이는 검색 구역(사방 `space-md`) + 목록 위아래 여백(`space-sm` × 2) + footer이며, 목록과 footer 사이 별도 간격은 없다. 행 안 치수는 디자인 MenuItem과 같은 토큰이다. 좌우 여백 `menu_item_padding_x()`, 아이콘 `icon_glyph_size_md`, 아이콘–라벨 간격 `spacing_sm`, 강조 배경 반경 `menu_item_radius()`이며 갤러리의 `menu_item_kbd`와 같다. 검색 아이콘도 디자인 Input과 같은 `icon_glyph_size_md`다.
 
 sizer가 있는 팝업은 등록 시 default_size에 UI 배율을 곱하지 않는다. 폭·footer 크롬 상수는 `zoomed_px`를 거치고, 목록 상한과 여백처럼 이미 배율이 적용된 Theme 값에는 다시 곱하지 않는다. 카드는 열 때 `request_center`로 중앙에 놓고 이후 높이가 바뀌어도 위쪽 위치를 유지해 검색창이 움직이지 않게 한다.
 

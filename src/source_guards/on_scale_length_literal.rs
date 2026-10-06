@@ -750,7 +750,8 @@ fn the_blind_spots_are_still_the_size_they_say() {
         // 툴팁의 스트립 안 후보 시험이 칸·앵커·창 rect 리터럴을 더한다.
         // tint_edge_width의 배율 무관 단언이 test 코드에 값 2를 하나 더한다.
         // 원격 도구 Passkeys 예제의 행 영역 세로 여백과 텍스트 열 높이 하한이 0 두 개를 더한다.
-        (185, 408),
+        // 명령 팔레트 행 라벨 위치 시험이 카드 원점 pos2(0.0, 0.0)으로 두 개를 더한다.
+        (185, 410),
         "제외한 0과 test 전용 코드의 수가 달라졌다. 실제 사용과 수집 범위의 변경을 확인하고 기록을 갱신한다."
     );
     let roster: usize = UNIT_SPACE_SITES.iter().map(|(.., n, _)| n).sum();
