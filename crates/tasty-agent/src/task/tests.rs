@@ -2041,6 +2041,36 @@ fn groups_disconnected_graphs_into_separate_dags() {
     assert_eq!(dags[1].root_task_ids, vec!["t-c".to_string()]);
 }
 
+/// fallback 은 main 이 참조하지만 흐름은 main 에서 fallback 으로 간다(`task_graph` 의 fallback
+/// 간선 방향). 그래프의 시작점은 main 이다.
+#[test]
+fn a_task_with_a_fallback_stays_a_dag_root() {
+    let mut main = dag_task("main", &[], 1000);
+    main.on_failure = OnFailure::Fallback {
+        task: Some("fb".to_string()),
+        inline: None,
+    };
+    let tasks = vec![
+        main,
+        dag_task("fb", &[], 1001),
+        dag_task("use", &["main"], 1002),
+    ];
+    let dags = group_tasks_into_dags(&tasks);
+    assert_eq!(dags.len(), 1);
+    assert_eq!(dags[0].root_task_ids, vec!["main".to_string()]);
+}
+
+/// 실패 뒤 만든 inline fallback 은 `metadata.fallback_of` 로 main 을 가리킨다. 이것도 시작점이 아니다.
+#[test]
+fn a_materialized_inline_fallback_is_not_a_dag_root() {
+    let mut fb = dag_task("fb", &[], 1001);
+    fb.metadata = serde_json::json!({"fallback_of": "main"});
+    let tasks = vec![dag_task("main", &[], 1000), fb];
+    let dags = group_tasks_into_dags(&tasks);
+    assert_eq!(dags.len(), 1);
+    assert_eq!(dags[0].root_task_ids, vec!["main".to_string()]);
+}
+
 #[test]
 fn dag_id_is_deterministic_across_calls() {
     let tasks = two_disconnected_pairs();

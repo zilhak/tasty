@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use serde::Serialize;
 use tasty_utils::id::WorkspaceId;
 
-use super::{Task, TaskGraph, TaskId, TaskState, referenced_task_ids};
+use super::{OnFailure, Task, TaskGraph, TaskId, TaskState, referenced_task_ids};
 use crate::AgentError;
 
 /// `DagSummary::id` 접두 — explicit(=`metadata.dag`) 그룹.
@@ -215,6 +215,18 @@ fn weakly_connected_components<'a>(pool: &[&'a Task]) -> Vec<Vec<&'a Task>> {
     components.into_values().collect()
 }
 
+/// task 가 참조하지만 흐름은 task 에서 그쪽으로 가는 id: 전이 대상과 fallback task.
+fn forward_refs(task: &Task) -> Vec<&str> {
+    let mut out: Vec<&str> = super::route::transition_targets(task)
+        .into_iter()
+        .map(String::as_str)
+        .collect();
+    if let OnFailure::Fallback { task: Some(fb), .. } = &task.on_failure {
+        out.push(fb.as_str());
+    }
+    out
+}
+
 fn summarize(
     workspace_id: WorkspaceId,
     id: String,
@@ -256,19 +268,31 @@ fn summarize(
         .unwrap_or_default();
 
     let member_ids: BTreeSet<&str> = sorted.iter().map(|t| t.id.as_str()).collect();
-    // 전이는 생산자가 대상을 참조하지만 흐름은 생산자에서 대상으로 간다. 대상은 source 가 아니다.
-    let selected_by_member: BTreeSet<&TaskId> = sorted
+    // 전이와 fallback 은 앞 task 가 뒤 task 를 참조하지만 흐름은 앞에서 뒤로 간다
+    // (`task_graph` 의 transition·fallback 간선 방향). 뒤 task 는 source 가 아니다.
+    let flows_from_member: BTreeSet<&str> = sorted
         .iter()
-        .flat_map(|t| super::route::transition_targets(t))
+        .flat_map(|t| forward_refs(t))
+        .chain(
+            sorted
+                .iter()
+                .filter(|t| {
+                    t.metadata
+                        .get("fallback_of")
+                        .and_then(|v| v.as_str())
+                        .is_some_and(|main| member_ids.contains(main))
+                })
+                .map(|t| t.id.as_str()),
+        )
         .collect();
     let root_task_ids: Vec<TaskId> = sorted
         .iter()
         .filter(|t| {
-            let targets = super::route::transition_targets(t);
-            !selected_by_member.contains(&t.id)
+            let forward = forward_refs(t);
+            !flows_from_member.contains(t.id.as_str())
                 && !referenced_task_ids(t)
                     .iter()
-                    .any(|r| member_ids.contains(r.as_str()) && !targets.contains(&r))
+                    .any(|r| member_ids.contains(r.as_str()) && !forward.contains(&r.as_str()))
         })
         .map(|t| t.id.clone())
         .collect();
