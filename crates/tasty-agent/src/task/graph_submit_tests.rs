@@ -553,3 +553,52 @@ fn a_one_of_with_no_succeeded_source_skips_a_required_input() {
     let snap = resolve_inputs(&d, d.contract.as_ref().unwrap(), None, 3, &lookup);
     assert_eq!(snap.value.to_internal(), json!({}));
 }
+
+#[test]
+fn a_graph_above_the_task_limit_is_refused_and_one_at_the_limit_is_stored() {
+    let (_td, mut mem, seq) = fresh();
+    let mut store = TaskStore::new(&mut mem, "_host", &seq);
+    let tasks = |n: usize| -> Vec<Value> {
+        (0..n)
+            .map(|i| json!({"id": format!("t{i}"), "command": custom(json!({}))}))
+            .collect()
+    };
+    let over = json!({"contract_version": 2, "tasks": tasks(MAX_GRAPH_TASKS + 1)});
+    let f = failure(store.submit_graph(1, spec(over), 0).unwrap_err());
+    assert_eq!(f.location.as_deref(), Some("/tasks"));
+    assert!(
+        f.message.contains(&MAX_GRAPH_TASKS.to_string()),
+        "{}",
+        f.message
+    );
+    assert!(store.list(1).unwrap().is_empty());
+
+    let at = json!({"contract_version": 2, "tasks": tasks(MAX_GRAPH_TASKS)});
+    let (_, stored) = store.submit_graph(1, spec(at), 0).unwrap();
+    assert_eq!(stored.len(), MAX_GRAPH_TASKS);
+}
+
+#[test]
+fn a_readiness_failure_after_the_record_reports_an_active_graph_without_rollback() {
+    let (_td, mut mem, seq) = fresh();
+    let mut store = TaskStore::new(&mut mem, "_host", &seq);
+    let graph = json!({"contract_version": 2, "tasks": [
+        {"id": "a", "command": custom(json!({}))},
+        {"id": "b", "command": custom(json!({})), "depends_on": ["a"]}]});
+    let plan = store.plan_graph(1, spec(graph.clone()), 0).unwrap();
+    store.stage_graph(&plan).unwrap();
+    super::store::FAIL_ACTIVATION_PUT.with(|f| f.set(true));
+    match store.activate_graph(&plan, 1) {
+        Err(AgentError::GraphPartiallyActivated { graph_id, source }) => {
+            assert_eq!(graph_id, plan.graph_id);
+            assert!(source.to_string().contains("injected"), "{source}");
+        }
+        other => panic!("expected GraphPartiallyActivated, got {other:?}"),
+    }
+    // 레코드는 남아 그래프가 활성이고, task 는 지우지 않는다.
+    assert_eq!(mem_keys(&store, TASK_GRAPH_KEY_PREFIX).len(), 1);
+    assert_eq!(store.list(1).unwrap().len(), 2);
+    // 같은 id 로 다시 내면 거절된다(복구는 남은 task 를 지우고 다른 id 로).
+    let f = failure(store.submit_graph(1, spec(graph), 2).unwrap_err());
+    assert_eq!(f.location.as_deref(), Some("/tasks/0/id"));
+}

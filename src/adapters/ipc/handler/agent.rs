@@ -57,6 +57,17 @@ pub(super) fn agent_err_to_response(id: Value, err: AgentError) -> JsonRpcRespon
             msg,
             serde_json::to_value(&*failure).unwrap_or(Value::Null),
         ),
+        // 레코드는 이미 써서 그래프가 활성일 수 있다. 호출자가 남은 task 를 찾을 수 있게 graph_id 를 싣는다.
+        GraphPartiallyActivated { graph_id, source } => JsonRpcResponse::error_with_data(
+            id,
+            -32603,
+            msg,
+            serde_json::json!({
+                "graph_id": graph_id,
+                "possibly_active": true,
+                "cause": source.to_string(),
+            }),
+        ),
         Memory(_) | Serde(_) => JsonRpcResponse::error(id, -32603, msg),
     }
 }

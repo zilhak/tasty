@@ -24,6 +24,16 @@ use super::super::{
 use super::{TaskStore, graph_key};
 use crate::{AgentError, Result};
 
+/// 그래프 하나에 담을 수 있는 task 수의 상한. 제출은 memory 잠금을 쥔 채 활성화하고
+/// 활성화 비용이 task 수의 제곱으로 늘어난다. 200 개에서 약 430ms 를 실측했다(ADR-0069).
+pub const MAX_GRAPH_TASKS: usize = 200;
+
+#[cfg(test)]
+thread_local! {
+    /// 시험 전용: 활성화 3단계(readiness 반영)의 첫 저장을 실패시킨다.
+    pub(crate) static FAIL_ACTIVATION_PUT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
 /// 한 번에 제출하는 v2 task 그래프. 모든 task 는 같은 `types` 를 쓴다.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -99,6 +109,15 @@ impl TaskStore<'_> {
         if spec.tasks.is_empty() {
             return Err(graph_error(
                 "a task graph needs at least one task",
+                "/tasks",
+            ));
+        }
+        if spec.tasks.len() > MAX_GRAPH_TASKS {
+            return Err(graph_error(
+                format!(
+                    "a task graph holds at most {MAX_GRAPH_TASKS} tasks, got {}; split it into smaller graphs",
+                    spec.tasks.len()
+                ),
                 "/tasks",
             ));
         }
@@ -273,7 +292,17 @@ impl TaskStore<'_> {
             self.rollback_staged(ws, &plan.tasks);
             return Err(e);
         }
+        // 레코드를 쓴 뒤에는 그래프가 활성이다. 이후 실패는 롤백하지 않고 그 사실을 오류에 싣는다.
+        self.apply_graph_readiness(plan, now_ms)
+            .map_err(|e| AgentError::GraphPartiallyActivated {
+                graph_id: plan.graph_id.clone(),
+                source: Box::new(e),
+            })
+    }
 
+    /// 활성화 3단계. 그래프 task 의 readiness 를 평가해 저장하고 하류로 전파한다.
+    fn apply_graph_readiness(&mut self, plan: &GraphPlan, now_ms: u64) -> Result<Vec<Task>> {
+        let ws = plan.workspace_id;
         let mut settled = Vec::new();
         for planned in &plan.tasks {
             let all = self.list(ws)?;
@@ -296,6 +325,12 @@ impl TaskStore<'_> {
                     t.finished_at = Some(now_ms);
                 }
                 t.state = next;
+                #[cfg(test)]
+                if FAIL_ACTIVATION_PUT.with(|f| f.replace(false)) {
+                    return Err(AgentError::InvalidArgument(
+                        "injected activation failure".into(),
+                    ));
+                }
                 self.put(&t)?;
                 if t.state.is_terminal() {
                     settled.push(t.id.clone());

@@ -590,7 +590,7 @@ inline fallback 은 v2 에서 거절한다.
 |---|---|---|
 | `args` | `run` | 입력 포인터 목록. 각 값을 argv 끝에 요소 하나로 붙인다. string·enum·int64·boolean 만 받는다(int64 는 10진, boolean 은 `true`/`false`) |
 | `stdin` | `run` | `true` 면 입력 전체를 wire 형식 JSON 한 문서로 stdin 에 쓴다(int64 는 10진 문자열) |
-| `params` | `custom` | params 포인터 → 입력 포인터. params 의 그 자리에 값을 넣는다. 부모 object 는 원래 params 에 있어야 한다. 값은 내부 표현이라 int64 가 JSON 정수다 |
+| `params` | `custom` | params 포인터 → 입력 포인터. params 의 그 자리에 값을 넣는다. 부모 object 는 원래 params 에 있어야 한다. 값은 내부 표현이라 int64 가 JSON 정수다. snapshot 의 `execution.params` 도 같은 JSON 정수라, 2^53 을 넘는 값은 JavaScript 같은 f64 소비자가 읽으면 바뀐다(정확한 값은 `input_snapshot.value` 의 10진 문자열) |
 
 매핑하는 입력 위치는 항상 값이 있어야 한다. `reduce`·`wait_barrier` 는 입력을 받지 않으므로 입력 스키마가 unit 이어야 한다.
 
@@ -612,8 +612,9 @@ inline fallback 은 v2 에서 거절한다.
 
 - task 키: `id`(필수, 호출자가 정하는 task id), `name`, `command`, `depends_on`, `on_failure`, `metadata`, `input_schema`, `output_schema`, `bindings`, `input_mapping`, `allowed_exit_codes`, `merge_conflict`. 모르는 키는 거절한다. `types` 는 모든 task 가 함께 쓴다.
 - 검증: id 형식과 중복(그래프 안·workspace), `depends_on`·fallback·reduce 입력·binding 원본의 존재, 계약과 binding 의 타입, 매핑, 위 조합 규칙, 순환. 그래프 task 의 command 에 v1 출력 placeholder(`${task.…}`)가 있으면 거절하고 binding 을 쓰라고 안내한다.
+- 그래프 하나에는 task 를 200 개(`MAX_GRAPH_TASKS`)까지 담는다. 제출이 memory 잠금을 쥔 채 활성화하기 때문이다(근거 ADR-0069). 초과하면 `location: /tasks` 로 거절한다.
 - 실패하면 아무것도 저장하지 않고 `-32602` 로 답한다. `error.data` 는 실패 단계·task id·타입 오류와 함께 `location`(제출한 그래프 안의 JSON Pointer, 예: `/tasks/1/bindings/label`, 순환은 `/tasks`)을 싣는다.
-- 통과하면 task 를 활성화 전 상태로 모두 저장한 뒤 그래프 레코드(`tasty.agent.task_graph.<그래프 id>`, `tasty.task_graph/v1`) 하나를 쓰고 readiness 를 평가한다. 그래프 레코드가 없는 task 는 Ready 가 되지 않으므로 저장 도중 러너가 돌아도 실행되지 않는다. 저장 중 실패하면 저장한 task 를 지운다. 응답은 `{valid, activated, graph_id, tasks}` 다.
+- 통과하면 task 를 활성화 전 상태로 모두 저장한 뒤 그래프 레코드(`tasty.agent.task_graph.<그래프 id>`, `tasty.task_graph/v1`) 하나를 쓰고 readiness 를 평가한다. 그래프 레코드가 없는 task 는 Ready 가 되지 않으므로 저장 도중 러너가 돌아도 실행되지 않는다. task 나 그래프 레코드를 쓰다 실패하면 저장한 task 를 지운다. 레코드를 쓴 뒤 readiness 반영이 실패하면 지우지 않고 `-32603` 으로 답하며 `error.data` 에 `graph_id`·`possibly_active: true`·`cause` 를 싣는다(복구는 아래 §한계). 응답은 `{valid, activated, graph_id, tasks}` 다.
 - 그래프 id 는 `g-<ms>-<순번>` 이며 task 의 `graph_id` 에 기록한다. `metadata.dag` 가 없으면 그래프 id 를 넣어 DAG 로 묶는다. 그래프의 task 가 모두 삭제되면 그래프 레코드도 지운다.
 - `agent.task_graph_validate` 는 같은 검증만 하고 저장하지 않는다(`{valid, activated: false, tasks}`). CLI 는 `--dry-run` 이다.
 - 러너는 켜지 않는다. 정지한 러너에서는 활성화된 task 가 Ready 로 남는다.
@@ -639,9 +640,15 @@ v2 task 는 `tasty.agent.typed_task.<id>` 키에 `{"record_format": "tasty.task/
 
 호스트가 ShellProcess spawn 과 watcher 완료 영속 사이에 죽으면 자식이 init(1) reparent 되어 exit_code 손실 → reload 시 `Failed("exit_code unknown")`. (cross-platform 으로 회피 불가.)
 
-그래프 제출에서 그래프 레코드를 쓴 뒤 readiness 평가를 마치기 전에 호스트가 죽으면, 의존이 없는 task 가 Waiting 으로 남는다. 재시작은 readiness 를 다시 평가하지 않는다. 그래프 레코드를 쓰기 전에 죽으면 활성화 전 task 가 남지만 실행되지 않으며 `task_delete`·`task_purge` 로 지운다.
-
 같은 이유로 **캡처한 stdout/stderr 도 유실된다** — 자식은 호스트 재시작 후에도 살아남지만(수명 계약은 그대로 유지), 파이프를 들고 있던 드레인 스레드는 호스트와 함께 사라지므로 그 사이의 출력은 다시 읽을 방법이 없다. 장시간 작업(빌드/배포)의 결과 보존이 중요해지면 `pty.*` 기반 별도 경로가 더 맞다.
+
+그래프 제출에서 그래프 레코드를 쓴 뒤 readiness 반영을 마치기 전에 호스트가 죽거나 저장이 실패하면(응답 `-32603`, `error.data.possibly_active: true`), 그래프는 활성이고 일부 task 는 이미 실행됐을 수 있다. 반영하지 못한 의존 없는 task 는 Waiting 으로 남고, 재시작은 readiness 를 다시 평가하지 않는다. 복구는 다음 순서로 한다.
+
+1. `task_list` 로 그 그래프(`graph_id`)의 task 상태를 확인한다.
+2. 남은 Waiting task 를 `task_purge`(`states: ["waiting"]`)나 `task_delete` 로 지운다.
+3. 지운 task 를 담은 그래프를 다시 제출한다. 새 그래프 id 가 붙는다. 이미 성공해 남아 있는 task 와 id 가 겹치면 거절되므로, 그런 task 를 다시 실행하려면 다른 id 를 쓴다. 남아 있는 task 를 원본으로 읽는 binding 은 그 id 를 그대로 참조할 수 있다.
+
+그래프 레코드를 쓰기 전에 죽으면 활성화 전 task 가 남지만 실행되지 않으며 `task_delete`·`task_purge` 로 지운다.
 
 ## 관련
 

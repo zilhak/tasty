@@ -74,3 +74,26 @@ fn submit(
         .map_err(|e| JsonRpcResponse::error(id.clone(), -32603, format!("serialize: {e}")))?;
     Ok((outcome.graph_id, tasks))
 }
+
+#[cfg(test)]
+mod tests {
+    use tasty_agent::AgentError;
+
+    use super::*;
+
+    #[test]
+    fn a_partially_activated_graph_answers_with_its_graph_id() {
+        let err = AgentError::GraphPartiallyActivated {
+            graph_id: "g-1-000003".into(),
+            source: Box::new(AgentError::InvalidArgument("disk".into())),
+        };
+        let resp = agent_err_to_response(json!(7), err);
+        let e = resp.error.expect("error");
+        assert_eq!(e.code, -32603);
+        assert!(e.message.contains("g-1-000003"), "{}", e.message);
+        let data = e.data.expect("data");
+        assert_eq!(data["graph_id"], json!("g-1-000003"));
+        assert_eq!(data["possibly_active"], json!(true));
+        assert!(data["cause"].as_str().unwrap().contains("disk"), "{data}");
+    }
+}

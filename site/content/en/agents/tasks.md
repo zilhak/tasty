@@ -1,4 +1,4 @@
-<!-- source-hash: bb4f02a87460 -->
+<!-- source-hash: d1a335c236d2 -->
 <a id="task-dag"></a>
 
 # Task workflows (DAG)
@@ -72,7 +72,7 @@ The real value goes in that spot when the task is dispatched. Use it for values 
 
 ## Sending a typed group of tasks at once
 
-To fix the types of results too, bundle tasks into one graph and send it. The whole graph is checked first, so if anything is wrong no task is created and the error says which spot in which task is wrong. No task runs before every task exists.
+To fix the types of results too, bundle tasks into one graph and send it. The whole graph is checked first, so if anything is wrong no task is created and the error says which spot in which task is wrong. No task runs before every task exists. One graph holds up to 200 tasks; split larger sets into several graphs.
 
 ```sh
 tasty agent task-graph-submit --workspace-id 2 --graph @graph.json --dry-run   # check only
