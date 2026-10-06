@@ -64,11 +64,13 @@ const EDIT_BOX: (f32, f32) = (300.0, 240.0);
 const DIRECT_BOX: (f32, f32) = (320.0, 200.0);
 
 #[derive(Clone, Copy)]
-enum Kind {
+pub(super) enum Kind {
     Terminal,
     Markdown,
     Editor,
     Log,
+    /// 플러그인 kind 예 — 시안 `plugin:portscan`.
+    PortScan,
 }
 
 impl Kind {
@@ -78,6 +80,7 @@ impl Kind {
             Kind::Markdown => icons::MARKDOWN,
             Kind::Editor => icons::EDIT,
             Kind::Log => icons::LOG,
+            Kind::PortScan => icons::PORT,
         }
     }
     fn label(self) -> &'static str {
@@ -86,6 +89,7 @@ impl Kind {
             Kind::Markdown => "Markdown",
             Kind::Editor => "Editor",
             Kind::Log => "Log",
+            Kind::PortScan => "Port scanner",
         }
     }
     /// 디자인 KINDS accent 매핑 (terminal→success / markdown→primary / editor→agent / log→warning).
@@ -95,6 +99,7 @@ impl Kind {
             Kind::Markdown => theme.accent_primary().to_egui(),
             Kind::Editor => theme.accent_agent().to_egui(),
             Kind::Log => theme.accent_warning().to_egui(),
+            Kind::PortScan => theme.accent_attention().to_egui(),
         }
     }
 }
@@ -109,13 +114,13 @@ struct SummaryCell {
 }
 
 /// surface leaf — kind + 값 요약(비지 않은 필드 행). 요약이 비면 아이콘 + kind명만.
-struct DemoLeaf {
+pub(super) struct DemoLeaf {
     kind: Kind,
     summary: Vec<SummaryCell>,
 }
 
 /// 하위 레이아웃(surface split) 트리.
-enum Surf {
+pub(super) enum Surf {
     Leaf(DemoLeaf),
     Split {
         row: bool,
@@ -125,13 +130,13 @@ enum Surf {
     },
 }
 
-struct DemoTab {
+pub(super) struct DemoTab {
     name: &'static str,
     layout: Surf,
 }
 
 /// 상위 레이아웃(pane split) 트리.
-enum Pane {
+pub(super) enum Pane {
     Leaf {
         tabs: Vec<DemoTab>,
         active: usize,
@@ -145,12 +150,12 @@ enum Pane {
 }
 
 /// scope variant — workspace/pane 은 pane 트리, tab 은 단일 surface-split 트리(프레임).
-enum Scope {
+pub(super) enum Scope {
     PaneTree(Pane),
     TabFrame(Surf),
 }
 
-fn leaf(k: Kind) -> Surf {
+pub(super) fn leaf(k: Kind) -> Surf {
     Surf::Leaf(DemoLeaf {
         kind: k,
         summary: Vec::new(),
@@ -163,7 +168,7 @@ fn cell(label: &'static str, value: &'static str, front_elide: bool) -> SummaryC
         front_elide,
     }
 }
-fn ssplit(row: bool, ratio: f32, a: Surf, b: Surf) -> Surf {
+pub(super) fn ssplit(row: bool, ratio: f32, a: Surf, b: Surf) -> Surf {
     Surf::Split {
         row,
         ratio,
@@ -171,13 +176,13 @@ fn ssplit(row: bool, ratio: f32, a: Surf, b: Surf) -> Surf {
         second: Box::new(b),
     }
 }
-fn tab(name: &'static str, layout: Surf) -> DemoTab {
+pub(super) fn tab(name: &'static str, layout: Surf) -> DemoTab {
     DemoTab { name, layout }
 }
-fn pleaf(tabs: Vec<DemoTab>, active: usize) -> Pane {
+pub(super) fn pleaf(tabs: Vec<DemoTab>, active: usize) -> Pane {
     Pane::Leaf { tabs, active }
 }
-fn psplit(row: bool, ratio: f32, a: Pane, b: Pane) -> Pane {
+pub(super) fn psplit(row: bool, ratio: f32, a: Pane, b: Pane) -> Pane {
     Pane::Split {
         row,
         ratio,
@@ -186,7 +191,7 @@ fn psplit(row: bool, ratio: f32, a: Pane, b: Pane) -> Pane {
     }
 }
 
-fn build_workspace() -> Scope {
+pub(super) fn build_workspace() -> Scope {
     Scope::PaneTree(psplit(
         true,
         0.6,
@@ -212,7 +217,7 @@ fn build_workspace() -> Scope {
         ),
     ))
 }
-fn build_tab() -> Scope {
+pub(super) fn build_tab() -> Scope {
     Scope::TabFrame(ssplit(
         true,
         0.5,
@@ -220,7 +225,7 @@ fn build_tab() -> Scope {
         ssplit(false, 0.5, leaf(Kind::Terminal), leaf(Kind::Log)),
     ))
 }
-fn build_pane() -> Scope {
+pub(super) fn build_pane() -> Scope {
     Scope::PaneTree(pleaf(
         vec![
             tab("server", leaf(Kind::Terminal)),
@@ -693,7 +698,7 @@ fn draw_scope_body_edit(
     );
 }
 
-fn draw_scope_body(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, scope: &Scope) {
+pub(super) fn draw_scope_body(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, scope: &Scope) {
     match scope {
         Scope::PaneTree(p) => draw_pane_tree(ui, theme, rect, p),
         Scope::TabFrame(s) => {

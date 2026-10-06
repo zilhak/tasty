@@ -1487,6 +1487,14 @@ pub fn pages() -> Vec<Page> {
                     "Preset editor",
                     vec![
                         spec(
+                            "presetview",
+                            "PresetView — list → toolbar + live preview",
+                            Some(
+                                "Tools › Presets modeless window — L1 scope tabs (Workspace / Tab / Pane) · saved preset list · toolbar (rename · duplicate · delete · Edit) over a live demo-layout preview",
+                            ),
+                            components::preset_view::draw,
+                        ),
+                        spec(
                             "preseteditor",
                             "Demo-layout preview — view and edit",
                             Some(

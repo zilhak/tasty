@@ -154,7 +154,8 @@ held-full / released-rail / held-rail cluster.
 | `Pane` (mini tab strip + 활성 탭 본문) | `draw_pane_card` | `draw_pane_card` — strip **클릭 가능**(live) |
 | `PaneTree` (상위 pane split, `space-xs` bg-app gap) | `draw_pane_tree` | `draw_pane_tree` (`PaneNode`) |
 | `PreviewBody` (scope 분기) | `draw_scope_body` | `DemoLayout::show` (`Root::Panes`/`TabFrame`) |
-| `KINDS`(아이콘/accent) | `Kind::{icon,accent}` (정적 4종) | `kind_icon`/`kind_accent` (kind str→`icons::Icon`, plugin kind 중립 fallback) |
+| `KINDS`(아이콘/accent) | `Kind::{icon,accent}` (정적 5종 — terminal·markdown·editor·log·plugin:portscan) | `kind_icon`/`kind_accent` (kind str→`icons::Icon`, plugin kind 중립 fallback) |
+| `PresetWindow` (제목줄 · L1 범위 탭 · 196 목록 · 44 도구줄 · 미리보기) | `preset_view.rs` `draw` (범위 탭·목록 선택·Edit 토글만 동작) | `src/adapters/ui/preset.rs` `draw_preset_panel` |
 | `activeKind`(탭 대표 kind) | `tab_kind` | `SurfNode::rep_kind` |
 | `SurfaceBox` edit 핸들(`MiniHandle` 설정 · remove) | `draw_handle_cluster_mock` | `draw_handle_cluster` (톱니 → `Act::OpenSettings`, remove → `Act::Remove` · split-right/down 제거 — 경계 존이 대체) |
 | `SurfaceBox` `onDoubleClick` → `openCfg` | — (정적) | `draw_surface_box` 의 `double_clicked()`(존 밖) → `Act::OpenSettings` → `ShowOutcome::OpenSettings` |
