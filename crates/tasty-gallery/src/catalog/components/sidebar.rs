@@ -212,12 +212,11 @@ fn full(ui: &mut egui::Ui, theme: &Theme) {
     );
     y += logo + theme.spacing_xs.value() + theme.spacing_md.value();
 
-    p.text(
+    let heading = section_heading_galley(ui, theme, "Workspaces", theme.text_muted().into());
+    p.galley(
         egui::pos2(rect.min.x + pad, y),
-        egui::Align2::LEFT_TOP,
-        "WORKSPACES",
-        egui::FontId::proportional(theme.sidebar_section_heading_font_size.value()),
-        egui::Color32::from(theme.text_muted()),
+        heading,
+        egui::Color32::PLACEHOLDER,
     );
     y += theme.spacing_lg.value();
 
@@ -321,6 +320,28 @@ fn rail(ui: &mut egui::Ui, theme: &Theme) {
         );
         y += slot + theme.spacing_sm.value();
     }
+}
+
+/// 사이드바 섹션·카테고리 머리글 — mono 대문자, `sidebar_section_heading_tracking` 자간(본체와 같다).
+fn section_heading_galley(
+    ui: &egui::Ui,
+    theme: &Theme,
+    text: &str,
+    color: egui::Color32,
+) -> std::sync::Arc<egui::Galley> {
+    let size = theme.sidebar_section_heading_font_size;
+    let mut job = egui::text::LayoutJob::default();
+    job.append(
+        &text.to_uppercase(),
+        0.0,
+        egui::TextFormat {
+            font_id: egui::FontId::monospace(size.value()),
+            extra_letter_spacing: theme.sidebar_section_heading_tracking(size).value(),
+            color,
+            ..Default::default()
+        },
+    );
+    ui.painter().layout_job(job)
 }
 
 /// 행 배경 상태. hover는 비활성 행 위에 겹치는 overlay다.
@@ -534,12 +555,12 @@ fn full_categories(ui: &mut egui::Ui, theme: &Theme) {
         let fg = egui::Color32::from(theme.sidebar_category_header_fg());
         let ch_c = egui::pos2(rect.min.x + pad_x + ch_size * 0.5, y + ch_size * 0.5);
         paint_icon(ui, chevron, ch_c, ch_size, fg);
-        p.text(
-            egui::pos2(ch_c.x + ch_size * 0.5 + theme.spacing_xs.value(), ch_c.y),
-            egui::Align2::LEFT_CENTER,
-            label,
-            egui::FontId::proportional(theme.sidebar_section_heading_font_size.value()),
-            fg,
+        let heading = section_heading_galley(ui, theme, label, fg);
+        let heading_y = ch_c.y - heading.size().y * 0.5;
+        p.galley(
+            egui::pos2(ch_c.x + ch_size * 0.5 + theme.spacing_xs.value(), heading_y),
+            heading,
+            egui::Color32::PLACEHOLDER,
         );
         p.text(
             egui::pos2(rect.max.x - pad_x, ch_c.y),

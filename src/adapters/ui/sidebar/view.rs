@@ -860,7 +860,7 @@ fn draw_sidebar_header(ui: &mut egui::Ui, th: &Theme, collapse_hover: &str) -> (
     (collapse, hovered)
 }
 
-/// ui_kit 섹션 헤딩 — 모노 대문자, muted, 좌측 패딩. 트래킹 0.07em (=0.7px @ 10px).
+/// ui_kit 섹션 헤딩 — 모노 대문자, muted, 좌측 패딩. 자간은 `sidebar_section_heading_tracking`(caps-wide 0.07em).
 fn draw_section_heading(ui: &mut egui::Ui, th: &Theme, text: &str) {
     let (rect, _) =
         ui.allocate_exact_size(egui::vec2(ui.available_width(), 18.0), egui::Sense::hover());
@@ -870,7 +870,9 @@ fn draw_section_heading(ui: &mut egui::Ui, th: &Theme, text: &str) {
         0.0,
         egui::TextFormat {
             font_id: egui::FontId::monospace(th.sidebar_section_heading_font_size.value()),
-            extra_letter_spacing: 0.7,
+            extra_letter_spacing: th
+                .sidebar_section_heading_tracking(th.sidebar_section_heading_font_size)
+                .value(),
             color: th.text_muted().into(),
             ..Default::default()
         },
@@ -949,7 +951,9 @@ fn draw_category_header(
         0.0,
         egui::TextFormat {
             font_id: egui::FontId::monospace(th.sidebar_section_heading_font_size.value()),
-            extra_letter_spacing: 0.7,
+            extra_letter_spacing: th
+                .sidebar_section_heading_tracking(th.sidebar_section_heading_font_size)
+                .value(),
             color: fg.into(),
             ..Default::default()
         },
