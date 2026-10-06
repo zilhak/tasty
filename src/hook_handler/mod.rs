@@ -6,6 +6,8 @@ pub mod config;
 pub mod env;
 pub mod exec;
 pub mod registry;
+// 텍스트 편집기는 설정 창(gui)에서만 쓴다.
+#[cfg(feature = "gui")]
 pub mod sequence_text;
 pub mod types;
 
