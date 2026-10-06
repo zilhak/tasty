@@ -343,6 +343,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("toggle band", "4/12 · this workspace only"),
             ("footer", "8/12 · count + Close"),
             ("detail", "back bar + canvas + 220 sheet"),
+            ("detail header", "none — the back bar is the chrome"),
+            ("back bar actions", "compact zoom cluster + runner badge"),
+            ("DAG selector", "hidden in detail"),
+            ("back", "restores the list, keeps the selection"),
         ],
         &[
             TokenChip::without_color("--tasty-dag-popup-width", "560"),
@@ -375,6 +379,14 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         "Detail replaces the whole area rather than opening beside it. At 560px there is no room \
          for a side-by-side split that keeps both readable, and the back bar makes the swap \
          cheap to undo.",
+    );
+    spec::note(
+        ui,
+        theme,
+        "Detail has no second header. The back bar's actions slot carries the compact zoom \
+         cluster and the runner badge; the DAG selector is hidden because the back-bar title \
+         already names the DAG. If a future detail view needs no zoom, the slot goes back to \
+         empty.",
     );
 }
 
