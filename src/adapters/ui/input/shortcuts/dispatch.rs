@@ -542,6 +542,12 @@ impl MainView {
             return true;
         }
 
+        if matches_any_binding(&engine.settings.keybindings.copy_link, key, mods)
+            && self.run_copy_link(engine)
+        {
+            return true;
+        }
+
         if self.handle_explorer_shortcut(engine, key, mods) {
             self.base.state.dirty = true;
             return true;

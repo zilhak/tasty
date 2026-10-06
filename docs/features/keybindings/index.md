@@ -304,9 +304,12 @@ tasty 는 4개 프리셋을 제공한다. 각 프리셋은 **바인딩 문자열
 |------|-------|-----|---------|-------|
 | copy | ctrl+c, alt+c, ctrl+shift+c | alt+c | ctrl+c | ctrl+shift+c |
 | paste | ctrl+v, alt+v, ctrl+shift+v | alt+v | ctrl+v | ctrl+shift+v |
+| copy_link | (없음) | (없음) | (없음) | (없음) |
 | zoom_in/out/reset | ctrl/alt 계열 다중 | alt 계열 | ctrl 계열 | ctrl 계열 |
 
 > Tasty 프리셋 copy 는 세 관례를 다 바인딩 — `ctrl+c` 는 선택 있으면 복사, 없으면 SIGINT([clipboard](../clipboard/index.md)).
+>
+> `copy_link` 는 마우스 포인터 아래 터미널 링크를 복사한다([terminal-link](../terminal-link/index.md)). 모든 프리셋에서 비어 있다. 대상이 포인터 위치라 명령 팔레트에서는 제외한다.
 
 ##### UI 토글 / 종료 / 변환
 | 필드 | Tasty | Mac | Windows | Linux |

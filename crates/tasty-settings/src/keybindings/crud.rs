@@ -129,6 +129,7 @@ impl KeybindingSettings {
         ("find", "settings.keybindings.find_label"),
         ("copy", "settings.keybindings.copy_label"),
         ("copy_path", "settings.keybindings.copy_path_label"),
+        ("copy_link", "settings.keybindings.copy_link_label"),
         ("cut", "settings.keybindings.cut_label"),
         ("select_all", "settings.keybindings.select_all_label"),
         (
@@ -228,6 +229,7 @@ impl KeybindingSettings {
             "find" => self.find.as_slice(),
             "copy" => self.copy.as_slice(),
             "copy_path" => self.copy_path.as_slice(),
+            "copy_link" => self.copy_link.as_slice(),
             "cut" => self.cut.as_slice(),
             "select_all" => self.select_all.as_slice(),
             "enter_copy_mode" => self.enter_copy_mode.as_slice(),
@@ -295,6 +297,7 @@ impl KeybindingSettings {
             "find" => &mut self.find,
             "copy" => &mut self.copy,
             "copy_path" => &mut self.copy_path,
+            "copy_link" => &mut self.copy_link,
             "cut" => &mut self.cut,
             "select_all" => &mut self.select_all,
             "enter_copy_mode" => &mut self.enter_copy_mode,

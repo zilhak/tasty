@@ -1,4 +1,4 @@
-<!-- source-hash: b5881fc12921 -->
+<!-- source-hash: 09e19ebb8afa -->
 # Keybindings
 
 Use Tasty with shortcuts that feel familiar. Choose a preset or assign your preferred keys to actions you use often. Open **Settings** > **Keybindings** to get started.
@@ -67,12 +67,15 @@ Category keybindings work only when **Settings** > **General** > **Workspace cat
 | vi copy mode | `Ctrl+Shift+Space` | `Ctrl+Shift+Space` |
 | Screenshot to clipboard | `Ctrl+Alt+S` | `Ctrl+Cmd+S` |
 | Copy path (explorer) | `Alt+Shift+C` | `Cmd+Shift+C` |
+| Copy link (link under the mouse) | None | None |
 | Cut (explorer) | `Ctrl+X` · `Alt+X` | `Ctrl+X` · `Cmd+X` |
 | Select all (explorer) | `Ctrl+A` · `Alt+A` | `Ctrl+A` · `Cmd+A` |
 | Refresh · go to parent folder (explorer) | `F5` · `Alt+↑` | `F5` · `Cmd+↑` |
 | Zoom in · zoom out · reset zoom | `Ctrl+=` · `Ctrl+-` · `Ctrl+0` (`Alt` also works) | `Ctrl+=` · `Ctrl+-` · `Ctrl+0` (`Cmd` also works) |
 
 `Ctrl+C` copies when there is selected text; otherwise it interrupts the running program as usual.
+
+**Copy link** has no default key. Once you assign one, hover a terminal link and press it to copy the link text right away. It does not appear in the command palette.
 
 ### Window · tools
 

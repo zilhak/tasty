@@ -23,7 +23,12 @@ pub enum PaletteCommand {
 }
 
 // 팔레트 자체 열기와, 팔레트와 동시에 사용할 수 없는 무대 종료 명령은 제외한다.
-const PALETTE_EXCLUDED: &[&str] = &["toggle_command_palette", "fullscreen_stage_exit"];
+// copy_link의 대상은 마우스 포인터 아래 링크라서 팔레트가 열린 동안에는 대상이 없다.
+const PALETTE_EXCLUDED: &[&str] = &[
+    "toggle_command_palette",
+    "fullscreen_stage_exit",
+    "copy_link",
+];
 
 /// 호스트 단축키와 활성 플러그인의 전역 명령을 합치고 제외 목록을 적용한다.
 pub fn all_commands(

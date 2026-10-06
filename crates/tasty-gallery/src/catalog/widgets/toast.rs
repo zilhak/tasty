@@ -206,6 +206,10 @@ pub fn draw_stack(ui: &mut egui::Ui, theme: &Theme) {
                 "window-scope offset",
                 "toast-stack-offset-bottom (→ size-36) from the window bottom",
             ),
+            (
+                "link menu Copy hint",
+                "own action copy_link ('Copy link'), unbound by default → no hint until the user binds it; never borrow the copy binding",
+            ),
         ],
         &[
             TokenChip::without_color("space-sm", "card gap"),

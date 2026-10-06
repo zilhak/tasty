@@ -28,6 +28,7 @@
 - `Ctrl`/`Alt`: 설정 수식키 조건이 맞으면 hover 하이라이트와 PointingHand 커서가 나타나고, 좌클릭으로 링크를 연다. 수식키+클릭이 링크 위가 아니면 no-op이며 selection을 시작/변경하지 않는다.
 - `좌클릭 열기 끄기`(`LinkModifier::None`, 저장값 `none`): 수식키 상태와 무관하게 좌클릭 링크 열기는 실행하지 않는다. 기존 포커스/selection 경로로 진행하며, 링크 위 우클릭 메뉴는 사용할 수 있다.
 - `None`에서 항상 참인 것은 **hover의 수식키 조건만**이다. 설정/전체화면 무대 같은 마우스 오버레이, popup·banner hover 차단과 터미널 영역·surface·실제 링크 hit-test는 그대로 적용한다. 따라서 모든 위치에서 hover 표시가 항상 켜지는 모드가 아니다.
+- `copy_link` 단축키(기본 키 없음): 마우스 포인터 아래 링크의 화면 텍스트를 메뉴 없이 복사하고 `toast.copied` 를 그 surface 범위로 띄운다. 링크 클릭 수식키는 요구하지 않지만 마우스 오버레이·popup·banner hover 차단, hard 점유 배제, 링크 hit-test 는 hover 와 같다. 포인터 아래 링크가 없으면 키를 소비하지 않고 다음 단축키·터미널 입력 경로로 넘긴다. 키로 실행했으므로 토스트에 hint 를 붙이지 않는다.
 
 ### 링크 위 우클릭 → 링크 메뉴
 
@@ -41,7 +42,7 @@ hover 가 판정해 둔 링크(`hovered_link`) 위에서 우클릭하면 기존 
 | 항목 | 동작 |
 |------|------|
 | 선택 | 스냅샷 범위로 `text_selection`을 설정한다. 메뉴가 떠 있는 동안 화면이 바뀌어 같은 범위가 다른 텍스트를 가리키면 아무것도 안 한다 |
-| 복사 | 스냅샷 텍스트를 클립보드로(+토스트). OSC 8 이면 대상 URI 가 아니라 표시 라벨 |
+| 복사 | 스냅샷 텍스트를 클립보드로(+토스트). OSC 8 이면 대상 URI 가 아니라 표시 라벨. 토스트 hint 는 `copy_link` binding 이다(비어 있으면 hint 없음, `copy` 는 빌리지 않는다) |
 | 연결 동작 | 자동 1순위 실행을 건너뛰고 [핸들러 picker](../file-handler/index.md) 를 연다 — 식별 없이 전체 핸들러가 fallback 후보. 경로 링크와 `http(s)` 링크에서 노출, 그 밖의 scheme(mailto 등)은 항목 없음. 원격(mirror) surface 의 경로 링크는 후보도 recent 도 없는 빈 picker |
 
 picker 에서 고른 핸들러는 focused pane 에 연다(좌클릭 링크와 같다).
@@ -71,7 +72,7 @@ hover+수식키 클릭과는 별개 입력 경로 — 사용자가 드래그(또
 
 ## 인터페이스
 
-- **사용자**: 수식키 + hover/클릭, hover 링크 위 우클릭 → 선택 / 복사 / 연결 동작, 또는 드래그/더블클릭 선택 후 우클릭 → "경로 열기".
+- **사용자**: 수식키 + hover/클릭, hover 링크 위 우클릭 → 선택 / 복사 / 연결 동작, 링크 위에서 `copy_link` 키, 또는 드래그/더블클릭 선택 후 우클릭 → "경로 열기".
 - **AI Agent**: **없음(비노출)** — 사용자 입력 재현 금지([identity](../../identity.md) §1). 링크/경로 *데이터* 가 필요하면 읽기 전용 [terminal-output](../terminal-output/index.md) 의 `path`/`url`/`osc_link` 파서([reference/output-parsers](../../reference/output-parsers.md)).
 
 ## 비-목표

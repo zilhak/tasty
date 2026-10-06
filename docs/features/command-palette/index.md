@@ -16,7 +16,7 @@ VS Code 스타일 명령 팔레트. 모든 단축키 명령을 쿼리로 검색�
 
 두 출처를 합친다(`PaletteCommand::Host` / `PaletteCommand::Plugin`):
 
-- 호스트: `KeybindingSettings::GENERAL_BINDING_FIELDS` (단축키 설정 탭에 나타나는 모든 명령). `toggle_command_palette` 자신(이미 팔레트 안이므로)과 `fullscreen_stage_exit`(팔레트를 열 수 있는 시점엔 no-op)는 제외(`PALETTE_EXCLUDED`).
+- 호스트: `KeybindingSettings::GENERAL_BINDING_FIELDS` (단축키 설정 탭에 나타나는 모든 명령). `toggle_command_palette` 자신(이미 팔레트 안이므로)과 `fullscreen_stage_exit`(팔레트를 열 수 있는 시점엔 no-op), `copy_link`(대상이 마우스 포인터 아래 링크라 팔레트가 열린 동안 대상이 없다)는 제외(`PALETTE_EXCLUDED`).
 - Plugin: `MainViewState.palette_plugin_commands` — `PluginManager::plugin_palette_commands()` 스냅샷. `[[contributes.commands]]` 로 선언된 명령 중 **`scope = "global"`만** 노출한다 — `surface` scope 는 owner plugin surface 가 포커스되어 있을 때만 의미가 있는데, 팔레트 실행 시점엔 그 컨텍스트를 보장할 수 없다(포커스 없이 매칭되는 키보드 단축키 경로 `match_global_shortcut` 과 동일 판단). 비활성 plugin 의 명령은 제외된다(`plugin_tool_items` = Tools 메뉴와 동일 필터 — 설정 UI 의 사전 키 바인딩 목적과 달리 팔레트는 "지금 실행 가능한" 명령만 보여줘야 하는 실행 UI).
 
 ### 매칭

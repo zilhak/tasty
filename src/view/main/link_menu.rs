@@ -39,20 +39,7 @@ impl MainView {
             return None;
         }
         let hovered = hovered?;
-        let (start, end) =
-            link_selection_bounds(&hovered.highlight.segments, hovered.highlight.epoch)?;
-        let terminal = engine.visible_terminal(surface_id)?;
-        let text = terminal.with_content(|view| {
-            if view.cut().epoch != hovered.highlight.epoch
-                || view.cut().revision != hovered.revision
-            {
-                return None;
-            }
-            Some(crate::selection::extract_selected_text_from_view(
-                &view,
-                &link_selection(surface_id, start, end),
-            ))
-        })?;
+        let (start, end, text) = hovered_link_text(engine, hovered)?;
         // 자식 PTY 가 없는 terminal 은 원격 attach mirror 다 — 화면 경로가 원격 호스트 경로.
         let is_mirror =
             engine.terminals.contains(surface_id) && !engine.terminals.has_pty(surface_id);
@@ -65,6 +52,33 @@ impl MainView {
             open_with,
             remote_path,
         })
+    }
+
+    /// copy_link 단축키: 마우스 포인터 아래 링크를 복사한다. 링크 클릭 수식키는 요구하지 않는다.
+    /// 메뉴·팝업·배너가 포인터를 덮고 있거나 링크가 없으면 false를 반환해 키를 다음 경로로 넘긴다.
+    /// 키보드에서 실행했으므로 toast에 단축키 hint를 붙이지 않는다.
+    pub(crate) fn run_copy_link(&mut self, engine: &EngineRead<'_>) -> bool {
+        if self.mouse_overlay_open() || self.state.popup_hovered || self.state.banner_hovered {
+            return false;
+        }
+        let Some(hovered) = self.compute_hovered_link(engine) else {
+            return false;
+        };
+        let Some((_, _, text)) = hovered_link_text(engine, &hovered) else {
+            return false;
+        };
+        if text.is_empty() {
+            return false;
+        }
+        if let Some(cb) = &mut self.clipboard {
+            cb.set_text(&text);
+        }
+        self.state.toasts.push_info(
+            crate::i18n::t("toast.copied"),
+            crate::adapters::ui::ToastScope::Surface(hovered.surface_id),
+        );
+        self.mark_dirty();
+        true
     }
 
     /// 링크 메뉴에 사용한 press와 release를 모두 로컬에서 소비한다.
@@ -114,8 +128,12 @@ impl MainView {
                     if let Some(cb) = &mut this.clipboard {
                         cb.set_text(&link.text);
                     }
-                    this.state.toasts.push_info(
+                    // 메뉴에서 실행했으므로 copy_link에 묶인 키가 있으면 hint로 알린다.
+                    // copy 바인딩은 링크를 복사하지 않으므로 빌리지 않는다.
+                    this.state.toasts.push_with_hint(
                         crate::i18n::t("toast.copied"),
+                        crate::adapters::ui::ToastKind::Info,
+                        crate::adapters::ui::toast::binding_hint(engine.settings, "copy_link"),
                         crate::adapters::ui::ToastScope::Surface(link.surface_id),
                     );
                 }
@@ -171,6 +189,26 @@ impl MainView {
         }
         self.mark_dirty();
     }
+}
+
+/// hover 링크의 선택 양끝과 화면 문자열. 화면 내용이 hover 계산 뒤 바뀌었으면 None이다.
+fn hovered_link_text(
+    engine: &EngineRead<'_>,
+    hovered: &super::HoveredLink,
+) -> Option<(SelectionPoint, SelectionPoint, String)> {
+    let surface_id = hovered.surface_id;
+    let (start, end) = link_selection_bounds(&hovered.highlight.segments, hovered.highlight.epoch)?;
+    let terminal = engine.visible_terminal(surface_id)?;
+    let text = terminal.with_content(|view| {
+        if view.cut().epoch != hovered.highlight.epoch || view.cut().revision != hovered.revision {
+            return None;
+        }
+        Some(crate::selection::extract_selected_text_from_view(
+            &view,
+            &link_selection(surface_id, start, end),
+        ))
+    })?;
+    Some((start, end, text))
 }
 
 /// hover 링크가 우클릭한 surface에 속하고 hard 점유 mirror가 아닐 때 허용한다.

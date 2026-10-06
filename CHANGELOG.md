@@ -18,6 +18,7 @@
 
 ### Added
 
+- **단축키 설정에 "링크 복사"(`copy_link`)가 추가됐다.** 기본 키는 없다. 키를 지정하면 터미널 링크 위에 마우스를 올린 채 그 키를 눌러 링크 텍스트를 메뉴 없이 복사한다. 링크 우클릭 메뉴의 Copy가 띄우는 "Copied" 알림에는 이 키가 hint로 보이며, 키를 지정하지 않으면 hint가 없다. 명령 팔레트에는 나오지 않는다.
 - **릴리스에 헤드리스 빌드 압축 파일이 함께 올라온다.** 창 없이 서버에서 실행하는 헤드리스 빌드를 소스에서 직접 빌드하지 않고 받을 수 있다. 파일은 `tasty-headless-<버전>-linux-x64.tar.gz` · `tasty-headless-<버전>-linux-arm64.tar.gz` · `tasty-headless-<버전>-macos-arm64.tar.gz` · `tasty-headless-<버전>-windows-x64.zip` 이고, 압축만 풀어 쓴다. 실행 파일 이름은 GUI 판과 같은 `tasty` 이며 번들 플러그인이 `plugins/` 에 함께 들어 있다. Windows 헤드리스 `tasty.exe` 는 콘솔 프로그램이라 명령 프롬프트·PowerShell 에서 실행하면 셸이 종료를 기다리고 출력을 그대로 받는다. 설치 파일(`.deb` · `.rpm` · `.AppImage` · `.dmg` · `.msi`)은 여전히 GUI 빌드만 담는다. 각 OS 의 `SHA256SUMS-*.txt` 에 새 파일의 체크섬도 들어간다.
 - **`tasty debug toast "<문구>" --scope window|workspace|pane|surface`(debug 빌드)가 토스트를 띄운다.** IPC `debug.toast`. `--target-id`로 워크스페이스·pane·surface를, `--window-id`로 메인 창이나 Settings·Preset·Plugins 창을 고른다. 메인 창이 여럿이면 `--window-id`가 필요하다. `--kind`(info·success·warning·error)와 `--hint`(키캡, 반복 지정)를 받는다. release에는 없다.
 - **`tasty debug surface-rect --surface <id>`(debug 빌드)가 서피스의 화면 사각형을 물리 픽셀로 보여 준다.** IPC `debug.surface_rect`. 터미널이 아닌 서피스에도 쓸 수 있고, 활성 탭에 없으면 `rect`가 null이다. 조회만 한다.

@@ -152,7 +152,7 @@ fn set_field_unknown_returns_false() {
 
 #[test]
 fn general_binding_fields_count() {
-    assert_eq!(KeybindingSettings::GENERAL_BINDING_FIELDS.len(), 61);
+    assert_eq!(KeybindingSettings::GENERAL_BINDING_FIELDS.len(), 62);
 }
 
 #[test]
@@ -620,7 +620,7 @@ fn quick_switch_fields_not_in_general_bindings() {
         );
     }
     // count 는 여전히 전체 개수와 같다.
-    assert_eq!(KeybindingSettings::GENERAL_BINDING_FIELDS.len(), 61);
+    assert_eq!(KeybindingSettings::GENERAL_BINDING_FIELDS.len(), 62);
 }
 
 /// 네 프리셋의 카테고리 다음·이전 기본값을 확인한다.
@@ -970,5 +970,17 @@ fn switch_axis_modifier_fields_are_outside_the_combo_system() {
                 .any(|(f, _)| *f == id),
             "{id}"
         );
+    }
+}
+
+#[test]
+fn copy_link_is_unbound_in_every_preset() {
+    for kb in [
+        KeybindingSettings::preset_tasty(),
+        KeybindingSettings::preset_mac(),
+        KeybindingSettings::preset_windows(),
+        KeybindingSettings::preset_linux(),
+    ] {
+        assert_eq!(kb.get_bindings("copy_link"), Some(&[][..]));
     }
 }

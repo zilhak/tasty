@@ -101,6 +101,9 @@ pub struct KeybindingSettings {
     pub copy: Vec<String>,
     /// Copy selected file paths as text (Explorer only).
     pub copy_path: Vec<String>,
+    /// Copy the terminal link under the mouse pointer. Unbound by default;
+    /// the link menu's Copy toast shows this binding as its hint once bound.
+    pub copy_link: Vec<String>,
     /// Cut selected files (Explorer only).
     pub cut: Vec<String>,
     /// Select all files (Explorer only).

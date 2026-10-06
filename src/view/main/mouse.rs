@@ -112,8 +112,8 @@ impl MainView {
     }
 
     /// 전체화면 무대는 좌표에 관계없이 배경 마우스 입력을 막는다.
-    /// 이동·클릭·휠과 click-to-activate가 같은 판정을 사용한다.
-    fn mouse_overlay_open(&self) -> bool {
+    /// 이동·클릭·휠, click-to-activate, copy_link 단축키가 같은 판정을 사용한다.
+    pub(super) fn mouse_overlay_open(&self) -> bool {
         self.state.settings_open_requested || self.state.fullscreen_stage_active()
     }
 

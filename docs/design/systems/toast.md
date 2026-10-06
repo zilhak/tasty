@@ -74,14 +74,17 @@ rg -n 'toasts|report_apply_error|push_toast' src/adapters/ipc src/app/ipc src/ap
 
 **hint**: 알림을 낸 동작의 단축키를 카드 오른쪽 끝에 키캡(`kbd_text_parts_painted`, Kbd와 같은 토큰)으로 그린다. 그 동작을 **메뉴나 마우스로** 실행했고 binding이 비어 있지 않을 때만 붙인다. 키로 실행했다면 사용자가 이미 키를 알고, binding이 빈 동작에는 붙이지 않는다. 키캡 표기는 단축키 설정의 표시 방식(`KeybindingSettings::format_display_parts`)을 따르며 binding의 첫 값만 쓴다. hint는 본문 첫 줄의 세로 중심에 맞추고 줄어들지 않는다. 본문 줄바꿈 폭에서 키캡 폭과 간격(`TOAST_HINT_GAP` = `space-sm`)을 먼저 빼므로 긴 본문이 먼저 줄바꿈된다. 키캡 색에도 카드와 같은 불투명도를 곱한다.
 
-hint를 붙이는 호출부는 다음 둘이다. 호출부는 `ToastManager::push_with_hint`에 `toast::binding_hint(settings, <binding id>)`의 결과를 넘긴다.
+hint를 붙이는 호출부는 다음 셋이다. 호출부는 `ToastManager::push_with_hint`에 `toast::binding_hint(settings, <binding id>)`의 결과를 넘긴다.
 
 | 알림 | 경로 | binding |
 |---|---|---|
 | `toast.copied` | 터미널 우클릭 메뉴의 Copy | `copy` |
 | `toast.copied_path` | 탐색기 우클릭 메뉴의 Copy path(선택한 항목이 있을 때) | `copy_path` |
+| `toast.copied` | 터미널 링크 우클릭 메뉴의 Copy | `copy_link` |
 
-같은 알림이라도 키보드 단축키·vi 복사 모드·링크 메뉴의 Copy·surface ID 복사·빈 곳을 눌러 현재 폴더를 복사하는 메뉴는 hint가 없다. 앞의 둘은 키로 실행한 동작이고, 뒤의 셋은 대응하는 binding이 없다. 마우스 드래그 선택만으로 복사하는 동작은 본체에 없다.
+`copy_link`는 기본 키가 없으므로 사용자가 키를 묶기 전까지 링크 메뉴의 Copy에는 hint가 없다. 링크 복사는 선택 영역 복사와 다른 동작이므로 `copy` binding을 빌려 쓰지 않는다.
+
+같은 알림이라도 키보드 단축키·vi 복사 모드·surface ID 복사·빈 곳을 눌러 현재 폴더를 복사하는 메뉴는 hint가 없다. 앞의 둘은 키로 실행한 동작이고, 뒤의 둘은 대응하는 binding이 없다. 마우스 드래그 선택만으로 복사하는 동작은 본체에 없다.
 
 > 페이드(등장/소멸 알파만, 위치 이동 없음)는 적용된다 — theme.md 의 "터미널 콘텐츠 애니메이션 0ms" 규칙은 **터미널 콘텐츠** 한정이라 비-터미널 알림 UI 에는 적용되지 않는다.
 
