@@ -580,6 +580,60 @@ impl crate::theme::Theme {
         LogicalPx((16.0 * self.ui_zoom).round())
     }
 
+    /// `component.codearea-error-fg` → `{semantic.accent-danger}`
+    #[inline]
+    pub fn codearea_error_fg(&self) -> HexColor {
+        self.accent_danger()
+    }
+
+    /// `component.codearea-font-size` → `{semantic.font-size-caption}` = 11px
+    #[inline]
+    pub fn codearea_font_size(&self) -> LogicalPx {
+        self.font_size_caption
+    }
+
+    /// `component.codearea-gutter-bg` → `{semantic.bg-sidebar}`
+    #[inline]
+    pub fn codearea_gutter_bg(&self) -> HexColor {
+        self.bg_sidebar()
+    }
+
+    /// `component.codearea-gutter-border` → `{semantic.separator}`
+    #[inline]
+    pub fn codearea_gutter_border(&self) -> PremulColor {
+        self.separator
+    }
+
+    /// `component.codearea-gutter-fg` → `{semantic.text-muted}`
+    #[inline]
+    pub fn codearea_gutter_fg(&self) -> HexColor {
+        self.text_muted()
+    }
+
+    /// `component.codearea-gutter-width` → `{semantic.space-xl}` = 24px
+    #[inline]
+    pub fn codearea_gutter_width(&self) -> LogicalPx {
+        self.spacing_xl
+    }
+
+    /// `component.codearea-max-height` → `{primitive.size-200}` = 200px
+    #[inline]
+    pub fn codearea_max_height(&self) -> LogicalPx {
+        LogicalPx((200.0 * self.ui_zoom).round())
+    }
+
+    /// `component.codearea-padding-x` → `{semantic.space-sm}` = 8px
+    #[inline]
+    pub fn codearea_padding_x(&self) -> LogicalPx {
+        self.spacing_sm
+    }
+
+    /// `component.codearea-padding-y` → `{semantic.space-xs}` = 4px
+    #[inline]
+    pub fn codearea_padding_y(&self) -> LogicalPx {
+        self.spacing_xs
+    }
+
     /// `component.convert-popup-width` → `{primitive.size-240}` = 240px
     #[inline]
     pub fn convert_popup_width(&self) -> LogicalPx {
@@ -1198,6 +1252,24 @@ impl crate::theme::Theme {
         LogicalPx((56.0 * self.ui_zoom).round())
     }
 
+    /// `component.font-preview-min-width` → `{semantic.field-width-lg}` = 200px
+    #[inline]
+    pub fn font_preview_min_width(&self) -> LogicalPx {
+        self.field_width_lg
+    }
+
+    /// `component.font-preview-padding-x` → `{semantic.space-md}` = 12px
+    #[inline]
+    pub fn font_preview_padding_x(&self) -> LogicalPx {
+        self.spacing_md
+    }
+
+    /// `component.font-preview-padding-y` → `{semantic.space-sm}` = 8px
+    #[inline]
+    pub fn font_preview_padding_y(&self) -> LogicalPx {
+        self.spacing_sm
+    }
+
     /// `component.fp-bar-hysteresis` → `{primitive.size-8}` = 8px
     #[inline]
     pub fn fp_bar_hysteresis(&self) -> LogicalPx {
@@ -1732,6 +1804,12 @@ impl crate::theme::Theme {
         self.selection_edge_width
     }
 
+    /// `component.loading-lockup-tracking` → `{primitive.letter-spacing-n1px}` = -1px
+    #[inline]
+    pub fn loading_lockup_tracking(&self) -> LogicalPx {
+        LogicalPx((-(1.0 * self.ui_zoom)).round())
+    }
+
     /// `component.md-code-bg` → `{semantic.surface-raised}`
     #[inline]
     pub fn md_code_bg(&self) -> HexColor {
@@ -2152,6 +2230,12 @@ impl crate::theme::Theme {
         LogicalPx((320.0 * self.ui_zoom).round())
     }
 
+    /// `component.palette-width` → `{primitive.size-540}` = 540px
+    #[inline]
+    pub fn palette_width(&self) -> LogicalPx {
+        LogicalPx((540.0 * self.ui_zoom).round())
+    }
+
     /// `component.perm-granted-fg` → `{semantic.accent-success}`
     #[inline]
     pub fn perm_granted_fg(&self) -> HexColor {
@@ -2534,6 +2618,18 @@ impl crate::theme::Theme {
     #[inline]
     pub fn settings_sidebar_width(&self) -> LogicalPx {
         LogicalPx((200.0 * self.ui_zoom).round())
+    }
+
+    /// `component.settings-window-height` → `{primitive.size-700}` = 700px
+    #[inline]
+    pub fn settings_window_height(&self) -> LogicalPx {
+        LogicalPx((700.0 * self.ui_zoom).round())
+    }
+
+    /// `component.settings-window-width` → `{primitive.size-1100}` = 1100px
+    #[inline]
+    pub fn settings_window_width(&self) -> LogicalPx {
+        LogicalPx((1100.0 * self.ui_zoom).round())
     }
 
     /// `component.sidebar-button-label-font-size` → `{semantic.font-size-caption}` = 11px
@@ -3356,6 +3452,12 @@ impl crate::theme::Theme {
     #[inline]
     pub fn toast_radius(&self) -> LogicalPx {
         self.corner_radius
+    }
+
+    /// `component.toast-stack-offset-bottom` → `{primitive.size-36}` = 36px
+    #[inline]
+    pub fn toast_stack_offset_bottom(&self) -> LogicalPx {
+        LogicalPx((36.0 * self.ui_zoom).round())
     }
 
     /// `component.tooltip-bg` → `{semantic.surface-raised}`

@@ -14,16 +14,28 @@ impl crate::theme::Theme {
         LogicalPx(0.04 * font_size.value())
     }
 
+    /// `semantic.letter-spacing-caps-wide` → `{primitive.letter-spacing-07}` = 0.07em
+    #[inline]
+    pub fn letter_spacing_caps_wide(&self, font_size: LogicalPx) -> LogicalPx {
+        LogicalPx(0.07 * font_size.value())
+    }
+
     /// `semantic.letter-spacing-ui` → `{primitive.letter-spacing-0}` = 0
     #[inline]
     pub fn letter_spacing_ui(&self, font_size: LogicalPx) -> LogicalPx {
         LogicalPx(0.0 * font_size.value())
     }
 
-    /// `component.sidebar-section-heading-tracking` → `{semantic.letter-spacing-caps}` = 0.04em
+    /// `component.sidebar-section-heading-tracking` → `{semantic.letter-spacing-caps-wide}` = 0.07em
     #[inline]
     pub fn sidebar_section_heading_tracking(&self, font_size: LogicalPx) -> LogicalPx {
-        self.letter_spacing_caps(font_size)
+        self.letter_spacing_caps_wide(font_size)
+    }
+
+    /// `component.sidebar-wordmark-tracking` → `{semantic.letter-spacing-ui}` = 0
+    #[inline]
+    pub fn sidebar_wordmark_tracking(&self, font_size: LogicalPx) -> LogicalPx {
+        self.letter_spacing_ui(font_size)
     }
 
     /// `component.table-header-tracking` → `{semantic.letter-spacing-caps}` = 0.04em

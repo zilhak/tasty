@@ -2432,8 +2432,11 @@ mod tests {
         assert!((at(&zoomed) - 0.6).abs() < 1e-6);
         assert_eq!(
             zoomed.sidebar_section_heading_tracking(zoomed.font_size_micro),
-            zoomed.letter_spacing_caps(zoomed.font_size_micro)
+            zoomed.letter_spacing_caps_wide(zoomed.font_size_micro)
         );
+        let wide = |t: &Theme| t.letter_spacing_caps_wide(t.font_size_micro).value();
+        assert!((wide(&base) - 0.7).abs() < 1e-6);
+        assert!((wide(&zoomed) - 1.05).abs() < 1e-6);
         assert_eq!(
             zoomed.table_header_tracking(zoomed.font_size_caption),
             zoomed.letter_spacing_caps(zoomed.font_size_caption)

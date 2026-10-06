@@ -426,6 +426,11 @@ fn emit_dim_accessor(set: &TokenSet, token: &Token, acc: &DimAccessor) -> String
     let body = match acc {
         DimAccessor::Field(field) => format!("self.{field}"),
         DimAccessor::Chain(target_fn) => format!("self.{target_fn}()"),
+        // 음수는 부호를 밖에 둔다. `-1.0 * x` 는 clippy neg_multiply 에 걸리고, round() 는
+        // 0 기준 대칭이라 값은 같다.
+        DimAccessor::RawZoom(v) if *v < 0.0 => {
+            format!("LogicalPx((-({:?} * self.ui_zoom)).round())", -v)
+        }
         DimAccessor::RawZoom(v) => format!("LogicalPx(({v:?} * self.ui_zoom).round())"),
     };
     format!(
@@ -467,6 +472,15 @@ pub(super) fn generate_component_accessors(set: &TokenSet) -> (String, Vec<Strin
                 if EXISTING_THEME_DIM_ACCESSOR_NAMES.contains(&fn_name.as_str()) {
                     skips.push(format!(
                         "{}: theme.rs 기존 수기 접근자 `{fn_name}` 과 이름 충돌 — 생성 스킵",
+                        token.path()
+                    ));
+                    continue;
+                }
+                // 자간 토큰(em, 또는 자간 계열 이름의 단위 없는 0)은 글자 크기를 받는 접근자로
+                // `generated_tracking.rs`에 같은 이름으로 생성된다.
+                if super::tracking_accessor::terminal_em(set, token).is_some() {
+                    skips.push(format!(
+                        "{}: 자간 토큰 — 접근자는 generated_tracking.rs 에 생성",
                         token.path()
                     ));
                     continue;

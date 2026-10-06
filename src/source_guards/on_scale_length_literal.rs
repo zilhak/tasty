@@ -62,7 +62,8 @@ const EGUI_LENGTH_HEADS: &[&str] = &[
 const DECLARATION_SITES: &[(&str, usize, &str)] = &[
     (
         "crates/tasty-design-tokens/src/generated/",
-        56,
+        // size-540·700·1100 선언과 letter-spacing-n1px 의 LogicalPx(-1.0)(값 1로 읽힌다)이 네 자리를 더한다.
+        60,
         "스케일 자신 — 이 파일이 곧 size-* 의 정본이다",
     ),
     (
@@ -107,7 +108,8 @@ fn is_in_unit_space(hit: &Hit) -> bool {
 const AREAS: &[(&str, usize, &str)] = &[
     (
         "src/adapters/ui/popup/",
-        44,
+        // 스케일에 size-540이 들어오면서 명령 팔레트 폭(정의와 기본 크기표) 두 자리가 새로 집계됐다.
+        46,
         // popup의 기본 크기·열 최소폭·스크롤 상한 중 대응하는 역할의 토큰이 없는 값이 남아 있다.
         // 같은 숫자의 폭·점 크기 토큰을 높이·간격에 대신 쓰지 않는다.
         // 스케일에 size-140·360·440·620이 들어오면서 기존 popup 크기표의 360·440·140이 새로 집계됐다.
@@ -170,7 +172,8 @@ const AREAS: &[(&str, usize, &str)] = &[
         // 파일 선택 필터 칩 예제의 카드 높이 300은 디자인 Spec의 `--tasty-size-300`이며 역할 토큰이 없다.
         // Font override 예제의 좁은 짝 폭 360은 디자인 Spec의 `--tasty-size-360`이며 역할 토큰이 없다.
         // 파일 선택 path bar 예제의 카드 400×360·440×300은 디자인 Spec `FilePickerFrame w/h`이며 역할 토큰이 없다.
-        147,
+        // 스케일에 size-540·700·1100이 들어오면서 팔레트 폭과 설정 창 크기 세 자리가 새로 집계됐다.
+        150,
         "갤러리 specimen은 배율 검사에서 제외돼도 스케일 검사는 받는다(ADR-0039). 이름 붙은 치수와 인라인 값, 전시 목적을 별도로 분류한다.",
     ),
     (
@@ -630,7 +633,9 @@ fn the_gallery_share_is_one_question_or_it_is_not() {
     );
     assert_eq!(
         (named_cited, named_plain, inline_cited, inline_plain),
-        (61, 78, 0, 13),
+        // size-540·700·1100 추가로 이름 있는 갤러리 치수 세 자리(디자인 언급 1, 없음 2)가 들어왔다.
+        // 파일 선택 path bar 예제 카드 치수의 이름 있는 자리도 같은 분류로 세 자리(언급 1, 없음 2)를 더한다.
+        (62, 80, 0, 13),
         "갤러리 후보의 (이름 있음/없음, 디자인 언급 있음/없음) 분류 수가 바뀌었다. 해당 선언과 주석을 확인하고 기록을 갱신한다."
     );
 }
@@ -765,7 +770,8 @@ fn the_blind_spots_are_still_the_size_they_say() {
         // The shared table header mode test adds its 140 column width.
         // The import diff truncated() passes zero tracking to truncated_tracked in the app and the gallery (2 literals).
         // WebView 입력 띠 시험이 창 리사이즈 밴드로 PhysicalPx(8) 다섯 개와 PhysicalPx(0) 세 개를 넘긴다.
-        (191, 420),
+        // 스케일에 size-700이 들어오면서 test 코드의 기존 값 700 세 자리가 새로 집계됐다.
+        (191, 423),
         "제외한 0과 test 전용 코드의 수가 달라졌다. 실제 사용과 수집 범위의 변경을 확인하고 기록을 갱신한다."
     );
     let roster: usize = UNIT_SPACE_SITES.iter().map(|(.., n, _)| n).sum();

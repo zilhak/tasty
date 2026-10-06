@@ -18,7 +18,7 @@ enum TrackingAccessor {
 /// 자간 토큰이면 em 수치를 돌려준다. 최종 값이 em 인 dimension 이거나, 이름이 자간 계열
 /// (`letter-spacing-*`, `*-tracking`)이고 최종 값이 단위 없는 0 인 토큰이다. CSS 자간 0 은
 /// 단위와 무관하므로 0em 으로 읽는다.
-fn terminal_em(set: &TokenSet, token: &Token) -> Option<f32> {
+pub(super) fn terminal_em(set: &TokenSet, token: &Token) -> Option<f32> {
     if token.ty != "dimension" {
         return None;
     }

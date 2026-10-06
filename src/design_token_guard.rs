@@ -475,6 +475,8 @@ fn theme_path_table() -> Vec<(String, String, Option<String>)> {
         "{theme}\n{}",
         read("crates/tasty-type-appearance/src/generated_component.rs")
     );
+    // 자간 토큰은 글자 크기를 받는 생성 접근자가 Theme 경로다.
+    let tracking = read("crates/tasty-type-appearance/src/generated_tracking.rs");
     let theme_struct = theme_struct_body(&theme);
     assert!(
         theme_struct.contains("pub spacing_xs: LogicalPx"),
@@ -518,14 +520,20 @@ fn theme_path_table() -> Vec<(String, String, Option<String>)> {
                     tasty_design_tokens::dtcg::SEMANTIC_DIM_TO_THEME_FIELD,
                     theme_struct,
                 );
-                let accessor = tok
-                    .strip_prefix("component.")
-                    .map(|n| n.replace('-', "_"))
+                let component_fn = tok.strip_prefix("component.").map(|n| n.replace('-', "_"));
+                let accessor = component_fn
+                    .as_ref()
                     .filter(|f| accessors.contains(&format!("pub fn {f}(&self) -> LogicalPx")));
-                let via = match (field, accessor) {
-                    (Some(f), _) => Some(format!("th.{f}")),
-                    (None, Some(f)) => Some(format!("th.{f}()")),
-                    (None, None) => None,
+                let tracking_accessor = component_fn.as_ref().filter(|f| {
+                    tracking.contains(&format!(
+                        "pub fn {f}(&self, font_size: LogicalPx) -> LogicalPx"
+                    ))
+                });
+                let via = match (field, accessor, tracking_accessor) {
+                    (Some(f), ..) => Some(format!("th.{f}")),
+                    (None, Some(f), _) => Some(format!("th.{f}()")),
+                    (None, None, Some(f)) => Some(format!("th.{f}(font_size)")),
+                    (None, None, None) => None,
                 };
                 out.push((path, tok, via));
             }

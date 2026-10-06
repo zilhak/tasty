@@ -170,6 +170,28 @@ pub mod checkbox {
     pub const SIZE: LogicalPx = crate::generated::primitive::SIZE_16;
 }
 
+pub mod codearea {
+    use tasty_type_geometry::length::LogicalPx;
+
+    /// `component.codearea-font-size` → `{semantic.font-size-caption}` = 11px
+    pub const FONT_SIZE: LogicalPx = crate::generated::semantic::FONT_SIZE_CAPTION;
+
+    /// `component.codearea-gutter-width` → `{semantic.space-xl}` = 24px
+    pub const GUTTER_WIDTH: LogicalPx = crate::generated::semantic::SPACE_XL;
+
+    /// `component.codearea-line-height` → `{semantic.line-height-ui}` = 1.4
+    pub const LINE_HEIGHT: f32 = crate::generated::semantic::LINE_HEIGHT_UI;
+
+    /// `component.codearea-max-height` → `{primitive.size-200}` = 200px
+    pub const MAX_HEIGHT: LogicalPx = crate::generated::primitive::SIZE_200;
+
+    /// `component.codearea-padding-x` → `{semantic.space-sm}` = 8px
+    pub const PADDING_X: LogicalPx = crate::generated::semantic::SPACE_SM;
+
+    /// `component.codearea-padding-y` → `{semantic.space-xs}` = 4px
+    pub const PADDING_Y: LogicalPx = crate::generated::semantic::SPACE_XS;
+}
+
 pub mod convert {
     use tasty_type_geometry::length::LogicalPx;
 
@@ -356,6 +378,22 @@ pub mod fh {
 
     /// `component.fh-when-width` → `{primitive.size-56}` = 56px
     pub const WHEN_WIDTH: LogicalPx = crate::generated::primitive::SIZE_56;
+}
+
+pub mod font {
+    use tasty_type_geometry::length::LogicalPx;
+
+    /// `component.font-preview-line-height` → `{semantic.line-height-ui}` = 1.4
+    pub const PREVIEW_LINE_HEIGHT: f32 = crate::generated::semantic::LINE_HEIGHT_UI;
+
+    /// `component.font-preview-min-width` → `{semantic.field-width-lg}` = 200px
+    pub const PREVIEW_MIN_WIDTH: LogicalPx = crate::generated::semantic::FIELD_WIDTH_LG;
+
+    /// `component.font-preview-padding-x` → `{semantic.space-md}` = 12px
+    pub const PREVIEW_PADDING_X: LogicalPx = crate::generated::semantic::SPACE_MD;
+
+    /// `component.font-preview-padding-y` → `{semantic.space-sm}` = 8px
+    pub const PREVIEW_PADDING_Y: LogicalPx = crate::generated::semantic::SPACE_SM;
 }
 
 pub mod fp {
@@ -563,6 +601,13 @@ pub mod listctrl {
     pub const SELECTED_BAR_WIDTH: LogicalPx = crate::generated::semantic::SELECTION_EDGE_WIDTH;
 }
 
+pub mod loading {
+    use tasty_type_geometry::length::LogicalPx;
+
+    /// `component.loading-lockup-tracking` → `{primitive.letter-spacing-n1px}` = -1px
+    pub const LOCKUP_TRACKING: LogicalPx = crate::generated::primitive::LETTER_SPACING_N1PX;
+}
+
 pub mod md {
     use tasty_type_geometry::length::LogicalPx;
 
@@ -706,6 +751,9 @@ pub mod palette {
 
     /// `component.palette-list-max-height` → `{primitive.size-320}` = 320px
     pub const LIST_MAX_HEIGHT: LogicalPx = crate::generated::primitive::SIZE_320;
+
+    /// `component.palette-width` → `{primitive.size-540}` = 540px
+    pub const WIDTH: LogicalPx = crate::generated::primitive::SIZE_540;
 }
 
 pub mod perm {
@@ -881,6 +929,12 @@ pub mod settings {
 
     /// `component.settings-sidebar-width` → `{primitive.size-200}` = 200px
     pub const SIDEBAR_WIDTH: LogicalPx = crate::generated::primitive::SIZE_200;
+
+    /// `component.settings-window-height` → `{primitive.size-700}` = 700px
+    pub const WINDOW_HEIGHT: LogicalPx = crate::generated::primitive::SIZE_700;
+
+    /// `component.settings-window-width` → `{primitive.size-1100}` = 1100px
+    pub const WINDOW_WIDTH: LogicalPx = crate::generated::primitive::SIZE_1100;
 }
 
 pub mod sidebar {
@@ -922,6 +976,9 @@ pub mod sidebar {
 
     /// `component.sidebar-wordmark-font-size` → `{semantic.font-size-brand-wordmark}` = 17px
     pub const WORDMARK_FONT_SIZE: LogicalPx = crate::generated::semantic::FONT_SIZE_BRAND_WORDMARK;
+
+    /// `component.sidebar-wordmark-tracking` → `{semantic.letter-spacing-ui}` = 0
+    pub const WORDMARK_TRACKING: LogicalPx = crate::generated::semantic::LETTER_SPACING_UI;
 }
 
 pub mod spinner {
@@ -1150,6 +1207,9 @@ pub mod toast {
 
     /// `component.toast-radius` → `{semantic.radius}` = 4px
     pub const RADIUS: LogicalPx = crate::generated::semantic::RADIUS;
+
+    /// `component.toast-stack-offset-bottom` → `{primitive.size-36}` = 36px
+    pub const STACK_OFFSET_BOTTOM: LogicalPx = crate::generated::primitive::SIZE_36;
 }
 
 pub mod tooltip {
