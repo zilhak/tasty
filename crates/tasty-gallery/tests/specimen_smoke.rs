@@ -239,6 +239,9 @@ fn layout_shell_specimen_은_헤드리스로_렌더된다() {
     run_frames(|ui| prim_layout_shell::draw(ui, &theme));
 }
 
+/// 갤러리 Spec 그리기 함수의 형태.
+type SpecFn = fn(&mut egui::Ui, &tasty_type_appearance::theme::Theme);
+
 #[test]
 fn 시안에서_옮긴_결정_specimen_은_id_충돌_없이_렌더된다() {
     use tasty_gallery::catalog::components::{dag, file_picker, remote};
@@ -246,10 +249,7 @@ fn 시안에서_옮긴_결정_specimen_은_id_충돌_없이_렌더된다() {
         components_settled, foundations_settled, layouts_settled, overlays_settled, plugins_settled,
     };
     let theme = tasty_themes::mocha_fallback();
-    let specs: [(
-        &str,
-        fn(&mut egui::Ui, &tasty_type_appearance::theme::Theme),
-    ); 20] = [
+    let specs: [(&str, SpecFn); 20] = [
         ("shadows", foundations_settled::draw_shadows),
         ("half-pixel", foundations_settled::draw_half_pixel),
         ("tint", foundations_settled::draw_tint),
