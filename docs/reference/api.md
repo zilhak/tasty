@@ -233,3 +233,9 @@ SSH 너머의 attach 상대가 자기 자신인지 판정하는 데 쓴다. `sys
 들어간다. parked engine은 OS 창 ID가 없어 목록에 포함하지 않는다. `workspace.list`는
 parked engine까지 포함한 전체 workspace 목록이며 그 길이가 전체 개수다.
 이 조회를 위해 포커스를 바꿀 필요는 없다.
+
+헤드리스 빌드에는 창이 없어 `window.list`·`view.list`·`window.create`를 제공하지 않는다.
+호출하면 빈 목록이 아니라 `-32017`(이 빌드 조합에 없는 메서드) 오류로 답하고 `result`는 싣지 않는다.
+빈 목록은 "창이 0개인 GUI"로 읽혀 호출자가 창을 만들려 하기 때문이다. 헤드리스에서 engine을
+조회할 때는 `system.info`를 쓴다(`scope="engine"`). 메서드별 분류는
+[헤드리스 IPC 표면](../dev-guide/headless-ipc-surface.md)에 있다.

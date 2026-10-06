@@ -1398,6 +1398,34 @@ fn file_dispatch_is_refused_rather_than_accepted_in_a_headless_daemon() {
     );
 }
 
+/// 헤드리스에는 창이라는 개념이 없다. 빈 목록은 "창이 0개인 GUI"로 읽혀 호출자가 창을 만들려 하므로
+/// 창 조회·생성은 조합에 없는 메서드(-32017)로 답하고, engine 조회는 system.info가 맡는다.
+#[cfg(not(feature = "gui"))]
+#[test]
+fn window_methods_are_absent_rather_than_empty_in_a_headless_daemon() {
+    let _lane = lane();
+    let tasty = common::shared();
+    for method in ["window.list", "view.list", "window.create"] {
+        let resp = tasty.call_raw(method, json!({}));
+        assert_eq!(
+            resp.get("error")
+                .and_then(|e| e.get("code"))
+                .and_then(|c| c.as_i64()),
+            Some(-32017),
+            "헤드리스에서 {method} 는 조합에 없는 메서드로 답해야 한다. 빈 목록이나              `-32601` 이면 호출자가 창이 없는 GUI 나 이름 오타로 읽는다: {resp}"
+        );
+        assert!(
+            resp.get("result").is_none(),
+            "거절 응답에 result 가 같이 실리면 호출자가 성공으로 읽는다: {resp}"
+        );
+    }
+    let info = tasty.call("system.info", json!({}));
+    assert_eq!(
+        info["scope"], "engine",
+        "창 없이 engine 을 조회하는 경로는 system.info 다: {info}"
+    );
+}
+
 /// 헤드리스에는 mirror 요청 큐를 attach로 보내는 GUI 경로가 없어 수락하면 결과를 돌려줄 수 없다.
 /// mirror 구조 변경 거절은 core::attach_runtime의 별도 단위 시험에서 확인한다.
 #[cfg(not(feature = "gui"))]
