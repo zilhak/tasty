@@ -781,7 +781,10 @@ pub const DEBUG_METHODS: &[(&str, MethodMeta)] = &[
     ("debug.selection", local_only(MethodEffect::Read)),
     ("debug.pending_menu", local_only(MethodEffect::Read)),
     // native 메뉴 항목 선택 재현(사용자 우클릭 조작) — inject_* 와 같은 debug 격리.
-    ("debug.native_menu.answer", local_only(MethodEffect::Mutate)),
+    (
+        "debug.native_menu.answer",
+        local_only(MethodEffect::Mutate).kept_on_every_host_path(),
+    ),
     ("debug.pending_move", local_only(MethodEffect::Read)),
     ("debug.focused_surface", local_only(MethodEffect::Read)),
     ("debug.surface_rect", local_only(MethodEffect::Read)),
