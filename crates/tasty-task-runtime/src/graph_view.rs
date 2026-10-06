@@ -39,6 +39,17 @@ pub fn collect_graph_edges(tasks: &[Task]) -> Vec<GraphEdge<'_>> {
                 });
             }
         }
+        // v2 입력 binding 은 값을 전달하는 데이터 엣지다. 같은 source 를 여러 필드가 읽어도 한 번만 그린다.
+        let mut sources: Vec<&TaskId> = tasty_agent::task::binding_task_ids(t);
+        sources.sort();
+        sources.dedup();
+        for source in sources {
+            edges.push(GraphEdge {
+                from: source,
+                to: &t.id,
+                kind: "binding",
+            });
+        }
     }
     for fb in tasks {
         let Some(main_id) = fb.metadata.get("fallback_of").and_then(|v| v.as_str()) else {

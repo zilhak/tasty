@@ -3,6 +3,7 @@
 
 mod command_inputs;
 mod run_result;
+mod typed_inputs;
 #[cfg(test)]
 use run_result::{
     CAPTURE_TAIL_CAP, POLL_FAILURE_SUMMARY_CAP, run_outcome_from_value, run_outcome_to_value,
@@ -479,7 +480,9 @@ impl TaskExecutor for HostExecutor {
                 } else if changed {
                     self.persist_substituted_command(task.workspace_id, &substituted);
                 }
-                self.dispatch_command(&substituted)
+                // v2 입력은 치환을 마친 뒤 해석해 값이 다시 해석되지 않게 한다.
+                self.resolve_typed_inputs(&mut substituted)
+                    .and_then(|()| self.dispatch_command(&substituted))
             }
             Err(e) => Err(format!("task output substitution: {e}")),
         };
@@ -598,7 +601,9 @@ impl HostExecutor {
                 if command.is_empty() {
                     return Err("Run: empty command".to_string());
                 }
-                let (program, args) = command.split_first().expect("non-empty");
+                let argv = typed_inputs::run_argv(task, command);
+                let stdin_payload = typed_inputs::run_stdin(task);
+                let (program, args) = argv.split_first().expect("non-empty");
                 let mut cmd = std::process::Command::new(program);
                 tasty_utils::process::hide_console(&mut cmd);
                 cmd.args(args);
@@ -607,10 +612,25 @@ impl HostExecutor {
                 }
                 cmd.stdout(std::process::Stdio::piped());
                 cmd.stderr(std::process::Stdio::piped());
+                if stdin_payload.is_some() {
+                    cmd.stdin(std::process::Stdio::piped());
+                }
                 let mut child = cmd
                     .spawn()
                     .map_err(|e| format!("Run spawn '{program}': {e}"))?;
                 let pid = child.id();
+                if let (Some(payload), Some(mut pipe)) = (stdin_payload, child.stdin.take()) {
+                    // 자식이 stdin 을 읽지 않아도 실행이 막히지 않도록 별도 스레드에서 쓰고 닫는다.
+                    thread::Builder::new()
+                        .name(format!("agent-shell-stdin-pid{pid}"))
+                        .spawn(move || {
+                            use std::io::Write;
+                            if let Err(e) = pipe.write_all(&payload) {
+                                tracing::warn!("Run stdin write for pid {pid}: {e}");
+                            }
+                        })
+                        .map_err(|e| format!("Run stdin writer spawn '{program}': {e}"))?;
+                }
                 // 자식이 파이프를 채운 채 종료를 기다리지 않도록 stdout·stderr를 wait와 동시에 읽는다.
                 let stdout_pipe = child.stdout.take().expect("stdout piped");
                 let stderr_pipe = child.stderr.take().expect("stderr piped");
@@ -677,6 +697,7 @@ impl HostExecutor {
                 params,
                 poll,
             } => {
+                let params = &typed_inputs::custom_params(task, params);
                 // IPC를 먼저 실행한 뒤 완료 전략을 해석한다. 전략 해석 실패가 이미 실행한 요청을 되돌리지는 않는다.
                 // poll 미지정 시 기본 전략을 사용하고 그것도 없으면 응답으로 즉시 끝낸다.
                 let value = self
@@ -941,6 +962,10 @@ fn now_ms() -> u64 {
 #[cfg(test)]
 #[path = "runner_host/typed_tests.rs"]
 mod typed_tests;
+
+#[cfg(test)]
+#[path = "runner_host/binding_tests.rs"]
+mod binding_tests;
 
 #[cfg(test)]
 // 이유: 시험의 반환값 무시는 허용하되 제품 코드의 검사는 유지한다.

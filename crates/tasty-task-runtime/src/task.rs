@@ -1,7 +1,7 @@
 //! TaskService의 작업 API. 원본은 memory의 TaskStore이며 engine별 순번·허브는 TaskScope로 받는다.
 
 use tasty_agent::task::{
-    TaskCreateOpts, TaskDeleteOpts, TaskDeleteReport, TaskPurgeFilter, TaskSweepPlan,
+    TaskCreateOpts, TaskDeleteOpts, TaskDeleteReport, TaskGraphSpec, TaskPurgeFilter, TaskSweepPlan,
 };
 use tasty_agent::{
     AgentError, DagSummary, ReducerInput, Task, TaskId, TaskResult, TaskState, TaskStore,
@@ -30,6 +30,46 @@ impl TaskService {
                 store.create(opts)
             }
         })
+    }
+
+    /// v2 task 그래프를 전체 검증하고, `dry_run` 이 아니면 저장·활성화한다. 검증에 실패하면
+    /// 아무것도 저장하지 않는다. 활성화 전에는 그래프의 어떤 task 도 실행 대상이 아니다.
+    pub fn task_graph_submit(
+        &self,
+        scope: &TaskScope,
+        workspace_id: u32,
+        spec: TaskGraphSpec,
+        dry_run: bool,
+        now_ms: u64,
+    ) -> Result<GraphSubmitOutcome, AgentError> {
+        let seq = scope.agent_seq().clone();
+        let outcome = self.with_memory(|mem| {
+            let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+            let plan = store.plan_graph(workspace_id, spec, now_ms)?;
+            for (i, t) in plan.tasks.iter().enumerate() {
+                reject_output_placeholders(i, t)?;
+            }
+            if dry_run {
+                return Ok(GraphSubmitOutcome {
+                    graph_id: plan.graph_id,
+                    activated: false,
+                    tasks: plan.tasks,
+                });
+            }
+            store.stage_graph(&plan)?;
+            let tasks = store.activate_graph(&plan, now_ms)?;
+            Ok(GraphSubmitOutcome {
+                graph_id: plan.graph_id,
+                activated: true,
+                tasks,
+            })
+        });
+        if let Ok(o) = &outcome {
+            for t in &o.tasks {
+                self.fire_waker_if_terminal(scope, workspace_id, t);
+            }
+        }
+        outcome
     }
 
     pub fn task_list(&self, scope: &TaskScope, workspace_id: u32) -> Result<Vec<Task>, AgentError> {
@@ -391,9 +431,71 @@ pub(crate) fn reject_v1_reads_of_typed(
     Ok(())
 }
 
+/// [`TaskService::task_graph_submit`] 의 결과. `dry_run` 이면 `activated` 가 false 이고
+/// `tasks` 는 저장하지 않은 검증 결과다.
+#[derive(Debug, Clone)]
+pub struct GraphSubmitOutcome {
+    pub graph_id: String,
+    pub activated: bool,
+    pub tasks: Vec<Task>,
+}
+
+/// 그래프로 제출한 v2 task 는 값을 binding 으로만 받는다. 문자열 placeholder 는 값을 다시
+/// 해석하는 경로라 받지 않는다.
+fn reject_output_placeholders(index: usize, task: &Task) -> Result<(), AgentError> {
+    use tasty_agent::task::contract::{FailureStage, TaskFailure};
+    let refs = crate::task_output_ref::referenced_tasks(&task.command);
+    let message = match refs {
+        Ok(ids) if ids.is_empty() => return Ok(()),
+        Ok(ids) => format!(
+            "task {}: output placeholders (${{task.<id>.output}}) are not read in a typed graph; \
+             bind {} through 'bindings' and 'input_mapping'",
+            task.id,
+            ids.into_iter().collect::<Vec<_>>().join(", ")
+        ),
+        Err(e) => format!("task {}: {}", task.id, e.0),
+    };
+    let mut failure = TaskFailure::new(FailureStage::Input, message);
+    failure.task_id = Some(task.id.clone());
+    failure.location = Some(format!("/tasks/{index}/command"));
+    Err(AgentError::TypeContract(Box::new(failure)))
+}
+
 fn typed_read_refused(tid: &TaskId, why: &str) -> AgentError {
     use tasty_agent::task::contract::{FailureStage, TaskFailure};
     let mut failure = TaskFailure::new(FailureStage::Input, format!("task '{tid}' {why}"));
     failure.task_id = Some(tid.clone());
     AgentError::TypeContract(Box::new(failure))
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    fn task(command: serde_json::Value) -> Task {
+        serde_json::from_value(json!({
+            "id": "c", "workspace_id": 1, "name": "c", "command": command,
+            "state": {"kind": "waiting"}, "created_at": 0
+        }))
+        .expect("task")
+    }
+
+    #[test]
+    fn typed_graph_tasks_refuse_output_placeholders_with_a_location() {
+        let ok = task(json!({"kind": "custom", "ipc_method": "system.ping",
+                             "params": {"cwd": "${lease.resource}"}}));
+        assert!(reject_output_placeholders(0, &ok).is_ok());
+        let bad = task(json!({"kind": "run", "workspace_id": 1,
+                              "command": ["echo", "${task.p.output/x}"]}));
+        let Err(AgentError::TypeContract(f)) = reject_output_placeholders(3, &bad) else {
+            panic!("expected a refusal");
+        };
+        assert_eq!(f.location.as_deref(), Some("/tasks/3/command"));
+        assert!(f.message.contains("bindings"), "{}", f.message);
+        let malformed = task(json!({"kind": "run", "workspace_id": 1,
+                                    "command": ["echo", "${task.x}"]}));
+        assert!(reject_output_placeholders(0, &malformed).is_err());
+    }
 }
