@@ -58,11 +58,13 @@ const EXT_LOG_ROWS: &[(&str, bool)] = &[("Log viewer", true)];
 
 /// 시안 `ExtMapG` prop — `custom`은 `.md`에 사용자 순서가 있어 Reset이 보이는 갈래,
 /// `missing`은 미설치 `.ipynb` 묶음을 더하는 갈래, `long`은 긴 번역 문구 갈래다.
+/// `pending`은 시안 `pendingRemove`·`pendingReset` — Remove·Reset을 누른 뒤 Save 전 초안 상태다.
 #[derive(Clone, Copy, Default)]
 struct ExtMapSeed {
     custom: bool,
     missing: bool,
     long: bool,
+    pending: bool,
 }
 
 impl ExtMapSeed {
@@ -78,11 +80,38 @@ impl ExtMapSeed {
             ("Reset", "Remove", "not installed")
         }
     }
+
+    /// (Undo, removed on save, reset on save) 문구 — 시안 `P`.
+    fn pending_labels(self) -> (&'static str, &'static str, &'static str) {
+        if self.long {
+            ("Rückgängig", "保存時に削除", "Se restablece al guardar")
+        } else {
+            ("Undo", "removed on save", "reset on save")
+        }
+    }
+}
+
+/// 확장자 머리줄 한 줄의 내용.
+#[derive(Clone, Copy, Default)]
+struct ExtHeader<'a> {
+    /// 오른쪽 끝 ghost Button sm 의 문구(Reset · Remove · Undo).
+    button: Option<&'a str>,
+    /// `.ext` 뒤 Tag disabled 의 문구(not installed · removed on save · reset on save).
+    tag: Option<&'a str>,
+    /// 켜진 detector 가 없다 — `.ext` text-disabled · 아래 구분선.
+    not_installed: bool,
+    /// Save 하면 지워진다 — `.ext` 취소선(색은 그대로).
+    struck: bool,
 }
 
 thread_local! {
-    // 네 패널 짝(빈 입력 · ".toml" · custom+missing · custom+missing+long)의 Mocha·Latte 입력 버퍼.
-    static EXT_DRAFTS: RefCell<[String; 8]> = RefCell::new([
+    // 여섯 패널 짝(빈 입력 · ".toml" · custom+missing · custom+missing+long · pending · pending+long)의
+    // Mocha·Latte 입력 버퍼.
+    static EXT_DRAFTS: RefCell<[String; 12]> = RefCell::new([
+        String::new(),
+        String::new(),
+        String::new(),
+        String::new(),
         String::new(),
         String::new(),
         ".toml".to_string(),
@@ -94,16 +123,10 @@ thread_local! {
     ]);
 }
 
-/// 확장자 머리줄 — `.ext` · (미설치면 Tag disabled) · 빈 칸 · 오른쪽 끝 ghost Button sm.
+/// 확장자 머리줄 — `.ext` · (Tag disabled) · 빈 칸 · 오른쪽 끝 ghost Button sm.
 /// 위·아래 space-xs 여백 안의 높이는 button-height-sm 이상이라 Reset이 나타나도 행이 움직이지 않는다.
 /// 미설치 묶음은 머리줄만 남고 그 아래에 구분선 하나를 둔다.
-fn ext_group_header(
-    ui: &mut egui::Ui,
-    theme: &Theme,
-    ext: &str,
-    button: Option<&str>,
-    not_installed: Option<&str>,
-) {
+fn ext_group_header(ui: &mut egui::Ui, theme: &Theme, ext: &str, head: ExtHeader<'_>) {
     let head_y = theme.spacing_xs.value().round() as i8;
     let resp = egui::Frame::new()
         .inner_margin(egui::Margin {
@@ -115,21 +138,23 @@ fn ext_group_header(
             ui.horizontal(|ui| {
                 ui.set_min_height(theme.button_height_sm().value());
                 ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-                let ext_fg = if not_installed.is_some() {
+                let ext_fg = if head.not_installed {
                     theme.text_disabled()
                 } else {
                     theme.text_secondary()
                 };
-                ui.label(
-                    egui::RichText::new(ext)
-                        .monospace()
-                        .size(theme.font_size_caption.value())
-                        .color(ext_fg.to_egui()),
-                );
-                if let Some(tag_label) = not_installed {
+                let mut label = egui::RichText::new(ext)
+                    .monospace()
+                    .size(theme.font_size_caption.value())
+                    .color(ext_fg.to_egui());
+                if head.struck {
+                    label = label.strikethrough();
+                }
+                ui.label(label);
+                if let Some(tag_label) = head.tag {
                     tag_disabled(ui, theme, tag_label, false);
                 }
-                if let Some(label) = button {
+                if let Some(label) = head.button {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         Button::new(label)
                             .variant(ButtonVariant::Ghost)
@@ -140,7 +165,7 @@ fn ext_group_header(
             });
         })
         .response;
-    if not_installed.is_some() {
+    if head.not_installed {
         row_separator(ui, theme, resp.rect);
     }
 }
@@ -238,15 +263,43 @@ fn ext_map_panel(ui: &mut egui::Ui, theme: &Theme, draft: &mut String, seed: Ext
                 });
             });
             let (reset, remove, not_installed) = seed.labels();
-            let md_button = seed.custom.then_some(reset);
-            ext_group(ui, theme, ".md", EXT_MD_ROWS, md_button);
+            let (undo, removed_on_save, reset_on_save) = seed.pending_labels();
+            // 누른 버튼은 같은 자리의 Undo 가 되고, Tag 가 Save 가 할 일을 적는다.
+            let md_head = match (seed.custom, seed.pending) {
+                (false, _) => ExtHeader::default(),
+                (true, false) => ExtHeader {
+                    button: Some(reset),
+                    ..ExtHeader::default()
+                },
+                (true, true) => ExtHeader {
+                    button: Some(undo),
+                    tag: Some(reset_on_save),
+                    ..ExtHeader::default()
+                },
+            };
+            ext_group(ui, theme, ".md", EXT_MD_ROWS, md_head);
             if seed.missing {
                 ui.vertical(|ui| {
                     ui.spacing_mut().item_spacing.y = 0.0;
-                    ext_group_header(ui, theme, ".ipynb", Some(remove), Some(not_installed));
+                    let head = if seed.pending {
+                        ExtHeader {
+                            button: Some(undo),
+                            tag: Some(removed_on_save),
+                            not_installed: true,
+                            struck: true,
+                        }
+                    } else {
+                        ExtHeader {
+                            button: Some(remove),
+                            tag: Some(not_installed),
+                            not_installed: true,
+                            struck: false,
+                        }
+                    };
+                    ext_group_header(ui, theme, ".ipynb", head);
                 });
             }
-            ext_group(ui, theme, ".log", EXT_LOG_ROWS, None);
+            ext_group(ui, theme, ".log", EXT_LOG_ROWS, ExtHeader::default());
         });
     });
 }
@@ -257,11 +310,11 @@ fn ext_group(
     theme: &Theme,
     ext: &str,
     rows: &[(&str, bool)],
-    button: Option<&str>,
+    head: ExtHeader<'_>,
 ) {
     ui.vertical(|ui| {
         ui.spacing_mut().item_spacing.y = 0.0;
-        ext_group_header(ui, theme, ext, button, None);
+        ext_group_header(ui, theme, ext, head);
         let last = rows.iter().rposition(|(_, c)| *c);
         for (i, (name, candidate)) in rows.iter().enumerate() {
             ext_detector_row(ui, theme, i, name, *candidate, Some(i) == last);
@@ -314,22 +367,33 @@ pub fn draw_extension_mapping(ui: &mut egui::Ui, theme: &Theme) {
         custom: true,
         missing: true,
         long: false,
+        pending: false,
     };
     let custom_missing_long = ExtMapSeed {
         long: true,
         ..custom_missing
+    };
+    let pending = ExtMapSeed {
+        pending: true,
+        ..custom_missing
+    };
+    let pending_long = ExtMapSeed {
+        pending: true,
+        ..custom_missing_long
     };
     let seeds = [
         ExtMapSeed::default(),
         ExtMapSeed::default(),
         custom_missing,
         custom_missing_long,
+        pending,
+        pending_long,
     ];
     EXT_DRAFTS.with(|d| {
         let drafts = &mut *d.borrow_mut();
         let mut pairs = drafts.chunks_mut(2).zip(seeds).enumerate();
-        // 시안은 기본 두 짝과 Reset·Remove 두 짝을 서로 다른 Stage에 둔다.
-        for _ in 0..2 {
+        // 시안은 기본 두 짝, Reset·Remove 두 짝, Save 전 초안 두 짝을 서로 다른 Stage에 둔다.
+        for _ in 0..3 {
             spec::stage(ui, theme, StageVariant::Column, |ui| {
                 ui.spacing_mut().item_spacing.y = theme.spacing_lg.value();
                 for (pair, (buf, seed)) in pairs.by_ref().take(2) {
@@ -370,6 +434,26 @@ pub fn draw_extension_mapping(ui: &mut egui::Ui, theme: &Theme) {
                 "Tag and button never truncate; .ext label is the shrinking item",
             ),
             ("confirm", "none — both edit the draft, Cancel reverts"),
+            (
+                "pending (2026-10-06 b2)",
+                "after Remove / Reset, before Save: the header stays; the pressed button becomes Undo (ghost sm, same slot); a Tag disabled says what Save does — \"removed on save\" / \"reset on save\"",
+            ),
+            (
+                "pending remove",
+                ".ext label line-through (text-disabled kept)",
+            ),
+            (
+                "pending reset",
+                "rows already show install order; Reset → Undo",
+            ),
+            (
+                "Undo",
+                "drops that one draft change; pressing it again is not a toggle back — Remove / Reset return",
+            ),
+            (
+                "Save / Cancel",
+                "Save applies (removed group disappears, Reset button disappears); Cancel reverts every pending header",
+            ),
             ("row height", "settings-row-min-height"),
         ],
         &[

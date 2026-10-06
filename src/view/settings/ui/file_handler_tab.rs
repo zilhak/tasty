@@ -99,6 +99,7 @@ pub(crate) fn draw_file_handler_tab(
     ui: &mut egui::Ui,
     sub_tab: FileHandlerSubTab,
     draft: &mut Option<BTreeMap<String, Vec<DetectorId>>>,
+    pending: &mut BTreeMap<String, Option<Vec<DetectorId>>>,
     new_ext_input: &mut String,
     fh_draft: &mut FileHandlerEditDraft,
     hh_draft: &mut HookHandlerEditDraft,
@@ -107,7 +108,7 @@ pub(crate) fn draw_file_handler_tab(
 ) {
     match sub_tab {
         FileHandlerSubTab::ExtensionMapping => {
-            draw_extension_mapping(ui, draft, new_ext_input, file_format)
+            draw_extension_mapping(ui, draft, pending, new_ext_input, file_format)
         }
         FileHandlerSubTab::Detectors => draw_detectors(ui, fh_draft, file_format),
         FileHandlerSubTab::Handlers => draw_handlers(ui, fh_draft, file_format, file_handler),

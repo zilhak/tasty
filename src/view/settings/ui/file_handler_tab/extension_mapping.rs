@@ -15,6 +15,7 @@ use tasty_ui_widgets::{
 pub(super) fn draw_extension_mapping(
     ui: &mut egui::Ui,
     draft: &mut Option<BTreeMap<String, Vec<DetectorId>>>,
+    pending: &mut BTreeMap<String, Option<Vec<DetectorId>>>,
     new_ext_input: &mut String,
     file_format: &FileFormatRegistry,
 ) {
@@ -88,7 +89,7 @@ pub(super) fn draw_extension_mapping(
         ui.label(t("settings.file_handler.extension_mapping.no_conflicts"));
     } else {
         for ext in &visible {
-            draw_extension_row(ui, ext, draft_map, file_format);
+            draw_extension_row(ui, ext, draft_map, pending, file_format);
             vspace(ui, th.spacing_md);
         }
     }
@@ -99,14 +100,21 @@ fn draw_extension_row(
     ui: &mut egui::Ui,
     ext: &str,
     draft_map: &mut BTreeMap<String, Vec<DetectorId>>,
+    pending: &mut BTreeMap<String, Option<Vec<DetectorId>>>,
     file_format: &FileFormatRegistry,
 ) {
     let th = crate::theme::theme();
     let candidates = file_format.detectors_for_extension(ext);
+    let is_pending = pending.contains_key(ext);
     if candidates.is_empty() {
         // 미설치 확장자는 머리줄만 남는다 — detector 행 없이 아래 구분선 하나.
-        if group_header(ui, &th, ext, GroupHeader::NotInstalled) {
-            draft_map.insert(ext.to_string(), Vec::new());
+        let kind = if is_pending {
+            GroupHeader::RemovePending
+        } else {
+            GroupHeader::NotInstalled
+        };
+        if group_header(ui, &th, ext, kind) {
+            toggle_pending(ext, draft_map, pending);
         }
         return;
     }
@@ -123,13 +131,15 @@ fn draw_extension_row(
         candidates.clone()
     };
 
-    let header = if draft_map.contains_key(ext) {
+    let header = if is_pending {
+        GroupHeader::ResetPending
+    } else if draft_map.contains_key(ext) {
         GroupHeader::Custom
     } else {
         GroupHeader::Default
     };
     if group_header(ui, &th, ext, header) {
-        draft_map.insert(ext.to_string(), Vec::new());
+        toggle_pending(ext, draft_map, pending);
     }
     // 후보 = 켜져 있고 이 확장자를 지원하는 detector. 비후보(꺼짐·미설치) 행은 자리를 지키고
     // ▲▼를 모두 disabled로 둔다. ▼는 뒤에 후보가 더 없으면 disabled다.
@@ -156,14 +166,36 @@ fn draw_extension_row(
             }
         }
     });
-    if let Some(i) = move_up {
+    let swap = move_up
+        .map(|i| (i - 1, i))
+        .or(move_down.map(|i| (i, i + 1)));
+    if let Some((a, b)) = swap {
         let mut new_order = order.clone();
-        new_order.swap(i - 1, i);
+        new_order.swap(a, b);
         draft_map.insert(ext.to_string(), new_order);
-    } else if let Some(i) = move_down {
-        let mut new_order = order.clone();
-        new_order.swap(i, i + 1);
-        draft_map.insert(ext.to_string(), new_order);
+        // 순서를 다시 바꾸면 Reset 대기는 끝나고 새 사용자 순서가 된다.
+        pending.remove(ext);
+    }
+}
+
+/// Remove·Reset 은 draft 를 비우고 누르기 전 값을 `pending` 에 맡긴다. 같은 자리의 Undo 는
+/// 맡긴 값으로 그 확장자 하나만 되돌린다.
+fn toggle_pending(
+    ext: &str,
+    draft_map: &mut BTreeMap<String, Vec<DetectorId>>,
+    pending: &mut BTreeMap<String, Option<Vec<DetectorId>>>,
+) {
+    match pending.remove(ext) {
+        Some(Some(before)) => {
+            draft_map.insert(ext.to_string(), before);
+        }
+        Some(None) => {
+            draft_map.remove(ext);
+        }
+        None => {
+            let before = draft_map.insert(ext.to_string(), Vec::new());
+            pending.insert(ext.to_string(), before);
+        }
     }
 }
 
@@ -176,6 +208,16 @@ enum GroupHeader {
     Custom,
     /// 켜진 detector 가 없다 — `.ext` 흐림 · Tag disabled · Remove · 아래 구분선.
     NotInstalled,
+    /// Reset 을 눌러 Save 를 기다린다 — Tag disabled "reset on save" · Undo.
+    ResetPending,
+    /// Remove 를 눌러 Save 를 기다린다 — `.ext` 흐림·취소선 · Tag disabled "removed on save" · Undo.
+    RemovePending,
+}
+
+impl GroupHeader {
+    fn not_installed(self) -> bool {
+        matches!(self, Self::NotInstalled | Self::RemovePending)
+    }
 }
 
 /// 확장자 머리줄 — `.ext` · (미설치면 Tag disabled) · 빈 칸 · 오른쪽 끝 ghost Button sm.
@@ -199,24 +241,33 @@ fn group_header(
             ui.horizontal(|ui| {
                 ui.set_min_height(th.button_height_sm().value());
                 ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
-                let ext_fg = if kind == GroupHeader::NotInstalled {
+                let ext_fg = if kind.not_installed() {
                     th.text_disabled()
                 } else {
                     th.text_secondary()
                 };
-                ui.label(
-                    egui::RichText::new(format!(".{ext}"))
-                        .monospace()
-                        .size(th.font_size_caption.value())
-                        .color(ext_fg.to_egui()),
-                );
-                if kind == GroupHeader::NotInstalled {
-                    tag_disabled(
-                        ui,
-                        th,
-                        t("settings.file_handler.extension_mapping.unregistered"),
-                        false,
-                    );
+                let mut label = egui::RichText::new(format!(".{ext}"))
+                    .monospace()
+                    .size(th.font_size_caption.value())
+                    .color(ext_fg.to_egui());
+                if kind == GroupHeader::RemovePending {
+                    label = label.strikethrough();
+                }
+                ui.label(label);
+                let tag = match kind {
+                    GroupHeader::NotInstalled => {
+                        Some(t("settings.file_handler.extension_mapping.unregistered"))
+                    }
+                    GroupHeader::RemovePending => {
+                        Some(t("settings.file_handler.extension_mapping.removed_on_save"))
+                    }
+                    GroupHeader::ResetPending => {
+                        Some(t("settings.file_handler.extension_mapping.reset_on_save"))
+                    }
+                    GroupHeader::Default | GroupHeader::Custom => None,
+                };
+                if let Some(tag) = tag {
+                    tag_disabled(ui, th, tag, false);
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let (label, tooltip) = match kind {
@@ -227,6 +278,9 @@ fn group_header(
                         ),
                         GroupHeader::NotInstalled => {
                             (t("settings.file_handler.extension_mapping.clear"), None)
+                        }
+                        GroupHeader::ResetPending | GroupHeader::RemovePending => {
+                            (t("settings.file_handler.extension_mapping.undo"), None)
                         }
                     };
                     let resp = Button::new(label)
@@ -243,7 +297,7 @@ fn group_header(
             });
         })
         .response;
-    if kind == GroupHeader::NotInstalled {
+    if kind.not_installed() {
         ui.painter().hline(
             resp.rect.x_range(),
             resp.rect.bottom(),
@@ -378,5 +432,35 @@ mod tests {
             .map(|(i, d)| arrows_enabled(i, candidates.contains(d), last))
             .collect();
         assert_eq!(rows, [(false, true), (false, false), (true, false)]);
+    }
+
+    /// Remove·Reset 은 draft 를 비우고 이전 값을 맡긴다. Undo 는 그 확장자 하나만 원래 값으로
+    /// 되돌리고(draft 에 없던 것은 다시 없앤다), 다른 확장자의 대기는 그대로 둔다.
+    #[test]
+    fn undo_restores_only_that_extensions_draft_value() {
+        let id = |s: &str| DetectorId::new(s);
+        let mut draft = BTreeMap::from([
+            ("md".to_string(), vec![id("editor"), id("markdown")]),
+            ("ipynb".to_string(), vec![id("gone")]),
+        ]);
+        let mut pending = BTreeMap::new();
+
+        toggle_pending("md", &mut draft, &mut pending);
+        toggle_pending("ipynb", &mut draft, &mut pending);
+        assert_eq!(draft["md"], Vec::<DetectorId>::new());
+        assert_eq!(draft["ipynb"], Vec::<DetectorId>::new());
+        assert_eq!(pending.len(), 2);
+
+        toggle_pending("md", &mut draft, &mut pending);
+        assert_eq!(draft["md"], vec![id("editor"), id("markdown")]);
+        assert!(!pending.contains_key("md"));
+        assert_eq!(draft["ipynb"], Vec::<DetectorId>::new());
+        assert!(pending.contains_key("ipynb"));
+
+        // draft 에 없던 확장자는 Undo 뒤에도 draft 에 남지 않는다.
+        toggle_pending("log", &mut draft, &mut pending);
+        assert!(draft.contains_key("log"));
+        toggle_pending("log", &mut draft, &mut pending);
+        assert!(!draft.contains_key("log"));
     }
 }

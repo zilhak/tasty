@@ -190,6 +190,10 @@ pub struct SettingsUiState {
     /// 키 = 확장자 (소문자, 점 없음), 값 = 정렬된 detector id 리스트 (빈 리스트 = 클리어).
     pub(crate) extension_priority_draft:
         Option<std::collections::BTreeMap<String, Vec<DetectorId>>>,
+    /// Remove·Reset 을 눌러 Save 를 기다리는 확장자와 누르기 전 draft 값(`None` = draft 에 없었다).
+    /// Undo 는 이 값으로 그 확장자 하나만 되돌린다. Save·Cancel 때 draft 와 함께 비운다.
+    pub(crate) extension_priority_pending:
+        std::collections::BTreeMap<String, Option<Vec<DetectorId>>>,
     /// 사용자가 새 확장자 추가 시 입력하는 텍스트 (Extension Mapping sub-tab).
     pub(crate) extension_priority_new_input: String,
     /// FileHandler 탭의 Detectors/Handlers sub-tab 편집 draft. Save 시 registry 에 commit +
@@ -444,6 +448,7 @@ impl SettingsUiState {
             l2_filter: String::new(),
             file_handler_sub_tab: FileHandlerSubTab::ExtensionMapping,
             extension_priority_draft: None,
+            extension_priority_pending: Default::default(),
             extension_priority_new_input: String::new(),
             fh_edit_draft: file_handler_tab::FileHandlerEditDraft::default(),
             hook_edit_draft: file_handler_tab::HookHandlerEditDraft::default(),
@@ -1673,6 +1678,7 @@ impl SettingsUiState {
     ) -> crate::app::settings_edit::SettingsEdits {
         use crate::app::settings_edit::{RegistryEdit, SettingsEdits};
         let mut registry = Vec::new();
+        self.extension_priority_pending.clear();
         if let Some(draft) = self.extension_priority_draft.take() {
             registry.extend(
                 draft
@@ -1698,6 +1704,7 @@ fn discard_settings_draft(ui_state: &mut SettingsUiState, result: &mut Option<bo
     // plugin 단축키 초안도 취소한다. App은 Save로 닫았을 때만 초안을 적용한다.
     ui_state.plugin_shortcuts_draft.clear();
     ui_state.extension_priority_draft = None;
+    ui_state.extension_priority_pending.clear();
     ui_state.fh_edit_draft = file_handler_tab::FileHandlerEditDraft::default();
     ui_state.hook_edit_draft = file_handler_tab::HookHandlerEditDraft::default();
     *result = Some(false);
@@ -1798,6 +1805,7 @@ fn draw_active_content(
             ui,
             ui_state.file_handler_sub_tab,
             &mut ui_state.extension_priority_draft,
+            &mut ui_state.extension_priority_pending,
             &mut ui_state.extension_priority_new_input,
             &mut ui_state.fh_edit_draft,
             &mut ui_state.hook_edit_draft,
