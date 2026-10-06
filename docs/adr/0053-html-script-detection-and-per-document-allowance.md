@@ -147,6 +147,7 @@ OS별 구현은 다음과 같다.
   - Windows는 `NavigationStarting`의 `NavigationId`를 로드 세대로 기록하고, `NavigationCompleted`는 자기 `NavigationId`가 현재 세대일 때만 복원한다. 앞 로드의 늦은 종료는 무시한다(순서 자체는 미측정).
   - macOS는 `WKNavigation`을 로드 세대로 쓴다. 정책 결정(`decidePolicyForNavigationAction`)에는 `WKNavigation`이 없으므로, 게이트가 로드를 시작한 정책 결정 뒤 첫 `didStartProvisionalNavigation`의 `WKNavigation`을 세대로 기록한다. `didFinishNavigation`·`didFailNavigation`·`didFailProvisionalNavigation`은 자기 `WKNavigation`이 현재 세대일 때만 복원한다. 판정은 Windows와 같은 함수(`load_generation::is_current_load`)이며, 어느 쪽이든 `WKNavigation`을 알 수 없으면 현재 로드로 본다.
     - 정책 결정부터 provisional 시작까지는 세대를 비워 둔다. 이 사이에 온 종료는 모두 현재 로드로 본다. 앞 로드의 종료가 이 구간에 오면 새 로드의 대기 값을 지울 수 있다. 이 순서가 실제로 생기는지는 측정하지 않았다.
+    - 게이트 로드가 끝나면(`gate_finished`) provisional 시작 대기 표시도 내린다. provisional 시작 없이 끝난 로드 뒤에 오는 다른 provisional 시작을 세대로 기록하지 않기 위해서다. 그래서 위 구간에 앞 로드의 종료가 오면 새 로드는 세대 없이 진행하고, 그 로드의 종료는 모두 현재 로드로 본다.
     - 기록한 `WKNavigation`은 다음 로드가 시작할 때까지 붙잡아 둔다. 같은 주소가 다른 navigation에 다시 쓰여 앞 로드의 종료가 현재 세대로 보이는 일을 막는다.
     - 실기 측정 없이 구현했다. 이 머신에는 macOS용 C 컴파일러가 없어 macOS 코드를 컴파일하지 못했다.
 

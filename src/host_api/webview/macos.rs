@@ -61,7 +61,10 @@ impl NavDelegateIvars {
     }
 
     /// 로드가 commit 없이 끝났을 때 게이트 상태를 되돌린다. 화면 문서의 JS는 탐색 단위라 그대로다.
+    /// provisional 시작 없이 끝난 로드의 대기 표시도 내려, 뒤에 오는 무관한 provisional 시작을
+    /// 게이트 로드의 세대로 기록하지 않게 한다.
     fn gate_finished(&self) {
+        self.gate_load_pending.set(false);
         if let Some(js) = self
             .script_gate
             .borrow()
