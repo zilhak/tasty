@@ -142,7 +142,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         &[
             (
                 "trigger",
-                "Select language — 28px --tasty-multiselect-height · 12 left · 28 chevron room",
+                "Select language — 28px multiselect-height · 12 left · 28 chevron room",
             ),
             (
                 "open trigger",
@@ -154,13 +154,13 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ),
             (
                 "menu",
-                "4 below the trigger · min-width = trigger · grows to content up to --tasty-multiselect-menu-max-width (320)",
+                "4 below the trigger · min-width = trigger · grows to content up to multiselect-menu-max-width (320)",
             ),
             ("row", "28px · 12 padding-x · 8 box→label · Checkbox 16px"),
             ("checked row", "checkmark only — no background"),
             (
                 "overflow",
-                "scrolls past 220 --tasty-multiselect-menu-max-height · .tasty-scroll",
+                "scrolls past 220 multiselect-menu-max-height · .tasty-scroll",
             ),
             (
                 "bulk row",
@@ -237,12 +237,20 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
          need an indeterminate state this system doesn't have. Menu may outgrow the trigger up \
          to 320, because the trigger holds a short summary while the rows hold real labels. \
          Per-option disabled is supported (a status with no runs, a permission-gated option) — \
-         row keeps --tasty-state-disabled-opacity and is not togglable. Count is plain text, not \
+         row keeps state-disabled-opacity and is not togglable. Count is plain text, not \
          a Badge: badges live on tabs and rails, not inside form controls. Zero selected is \
          allowed — for a filter, nothing checked should mean no filter (show all) rather than an \
          empty view; forcing a minimum is consumer policy, not a control rule. Row labels are \
-         --tasty-text-primary (never muted) so Latte stays ≥4.5:1 on --tasty-surface-raised. \
-         First consumer: the DAG list status filter — 6 statuses, allToggle off.",
+         text-primary (never muted) so Latte stays ≥4.5:1 on surface-raised. First consumer: \
+         the DAG list status filter (ui_kits/terminal/overlays/dag_view.jsx) — 6 statuses, \
+         allToggle off.",
+    );
+    note(
+        ui,
+        theme,
+        "The live cells open the shared multi_select widget \
+         (crates/tasty-ui-widgets/src/multi_select.rs), whose menu rows are checkbox height with \
+         no pointer hover fill, not the kit 28px rows with a hover background.",
     );
 }
 
@@ -679,7 +687,8 @@ fn form_pair(ui: &mut egui::Ui, theme: &Theme, st: &mut MsState) -> f32 {
             PAIR_PAD_Y.value() as i8,
         ))
         .show(ui, |ui| {
-            ui.horizontal_top(|ui| {
+            // 시안 `alignItems: "flex-end"` — 두 칸을 아래쪽에 맞춘다.
+            ui.with_layout(egui::Layout::left_to_right(egui::Align::Max), |ui| {
                 ui.spacing_mut().item_spacing.x = theme.spacing_lg.value();
                 pair_field(ui, theme, "Sort by — Select (one value)", |ui| {
                     select(
@@ -735,7 +744,7 @@ fn live_regressions(ui: &mut egui::Ui, theme: &Theme, st: &mut MsState) {
         ui.spacing_mut().item_spacing = egui::vec2(GRID_GAP.value(), GRID_GAP.value());
         cluster(ui, theme, "live widget — long labels", |ui| {
             let labels = MultiSelectLabels {
-                none: "No pipeline",
+                none: "None",
                 some: "{} pipelines selected — very long summary",
                 all: "All",
             };
