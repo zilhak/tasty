@@ -51,6 +51,7 @@ Popup은 독립 기능, Banner는 안내와 조치, Toast는 짧은 정보 표�
 - margin: **상 8px / 좌 8px / 우 8px**, **하단 margin 없음**(`spacing_sm`).
 - border-radius: **8px**(약간 둥근 사각형 패널) — `corner_radius_lg`(= `--tasty-radius-8`, 시스템 기본 4px 의 의도적 2배). 기본 반경과 구분된 토큰을 사용한다.
 - 높이: **콘텐츠에 따라 가변** — 각 배너 구현체가 자체 결정. 시스템은 "프레임/셸"(`banner_shell`) 과 내부 패딩(좌우 `spacing_md` 12 / 상하 `spacing_sm` 8) 규칙만 정의.
+- host 배너의 본문(제목 + 설명 두 줄)은 줄 사이를 `banner_text_gap()`(2)로 두고, 앞 글리프는 `banner_glyph_offset()`(1)만큼 내려 제목 줄에 맞춘다.
 - 배경 / 보더 / 그림자: **Theme 토큰** — `banner_bg()`(→ `surface_raised`/surface0) 배경 + 1px `banner_border()`(→ `border_strong`) 보더 + `shadow_popover()`(= `--tasty-shadow-popover`) 그림자. 본문 색은 `banner_fg()`(→ text_primary), leading 글리프 기본색은 `banner_icon_fg()`(→ text_muted, 심각도 배너는 override), 카운트다운은 `banner_countdown_fg()`(→ text_muted). 하위 스코프 디밍은 `opacity_recessed()`(0.4), 페이드 모션은 없다(`banner_fade()` 는 생성만 되고 소비처가 없다).
 
 ### 배너 위 버튼
@@ -104,9 +105,10 @@ mouse-capture 배너(`defs::BANNER_MOUSE_CAPTURE`)에 한해, X 왼쪽에 "더�
 
 - **노출 조건**: X 와 동일 — 배너 hover 시에만. 단 ⋯ 의 컨텍스트 메뉴가 열려 있는 동안은
   hover 여부와 무관하게 **계속 표시 + active(강조) 상태 유지** — 재사용하려면 ⋯ 재클릭.
-- **배치**: ⋯ 가 X 왼쪽, 사이 4px gap(`spacing_xs`). 이 배너는 항상 2 슬롯 몫(56px =
-  2×24 + gap 4 + gap 4)을 본문 우측에 예약한다 — hover 진입/이탈로 본문 폭이 흔들리지
-  않도록, hover 전에도 예약 폭은 고정이다(다른 배너는 기존 1 슬롯 28px 그대로).
+- **배치**: ⋯ 가 X 왼쪽, 사이 `banner_more_column_gap()`(4). 두 버튼(Sm 24)의 열은 본문 흐름 밖에
+  고정되어 셸 안쪽 위에서 `banner_padding_y()`(8), 오른쪽에서 `spacing_sm`(8) 떨어진다. 본문은 항상
+  `banner_more_reserve()`(56 = 2×24 + gap 4 + gap 4)를 오른쪽에 예약한다 — hover 진입/이탈로 본문 폭이
+  흔들리지 않도록, hover 전에도 예약 폭은 고정이다(다른 배너는 기존 1 슬롯 28px 흐름 배치 그대로).
 - **트리거 아이콘**: SVG `icons::MORE` — 수평 3-dot(`M5 12h.01M12 12h.01M19 12h.01`).
 - **메뉴**: host `PopupDef` 의 `headless: true` 컨텍스트 메뉴(`popup-implementation.md`).
   앵커는 트리거 버튼 아래 `banner-more-menu-offset`(4), 우측 정렬 — 뷰포트 하단 공간이 없으면 위로 flip. outside

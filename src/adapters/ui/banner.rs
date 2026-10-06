@@ -544,24 +544,35 @@ impl BannerManager {
                         // mouse-capture는 더보기·닫기 두 버튼의 폭을 항상 비워 hover 때 본문이 흔들리지 않게 한다.
                         let show_more = slot.id == defs::BANNER_MOUSE_CAPTURE;
                         let more_active = more_menu_open_for == Some(&slot.scope);
-                        let reserve = if show_more {
-                            theme.item_height_interactive.value() * 2.0
-                        } else {
-                            theme.item_height_interactive.value()
-                        };
                         let avail = ui.max_rect();
-                        let corner = egui::Rect::from_min_max(
-                            egui::pos2(avail.right() - reserve, avail.top()),
-                            egui::pos2(
-                                avail.right(),
-                                avail.top() + theme.item_height_interactive.value(),
-                            ),
-                        );
+                        let corner = if show_more {
+                            // 시안의 ⋯/× 열은 본문 흐름 밖에 고정된다. 셸 안쪽 위 `banner-padding-y`,
+                            // 오른쪽 `space-sm` 자리이며, 본문은 `banner-more-reserve`만큼 비워 둔다.
+                            let right = avail.right() + theme.banner_padding_x().value()
+                                - theme.spacing_sm.value();
+                            egui::Rect::from_min_max(
+                                egui::pos2(
+                                    right - theme.banner_more_reserve().value(),
+                                    avail.top(),
+                                ),
+                                egui::pos2(right, avail.top() + ControlSize::Sm.height(theme)),
+                            )
+                        } else {
+                            let reserve = theme.item_height_interactive.value();
+                            egui::Rect::from_min_max(
+                                egui::pos2(avail.right() - reserve, avail.top()),
+                                egui::pos2(
+                                    avail.right(),
+                                    avail.top() + theme.item_height_interactive.value(),
+                                ),
+                            )
+                        };
                         let mut corner_ui = ui.new_child(egui::UiBuilder::new().max_rect(corner));
                         corner_ui.with_layout(
                             egui::Layout::right_to_left(egui::Align::Center),
                             |ui| {
-                                ui.spacing_mut().item_spacing.x = theme.spacing_xs.value();
+                                ui.spacing_mut().item_spacing.x =
+                                    theme.banner_more_column_gap().value();
                                 if banner_hovered {
                                     // 폰트에 없는 문자 대신 공용 SVG 닫기 버튼을 사용한다.
                                     if IconButton::new()
@@ -733,23 +744,34 @@ pub mod defs {
     use crate::i18n::t;
     use crate::theme::Theme;
 
+    /// 앞 글리프 자리. 시안처럼 `banner-glyph-offset`만큼 내려 제목의 대문자 선에 맞춘다.
+    fn leading_glyph_rect(ui: &mut egui::Ui, theme: &Theme) -> egui::Rect {
+        let glyph = theme.icon_glyph_size_md.value();
+        let offset = theme.banner_glyph_offset().value();
+        let (slot, _) =
+            ui.allocate_exact_size(egui::vec2(glyph, glyph + offset), egui::Sense::hover());
+        egui::Rect::from_min_size(
+            egui::pos2(slot.left(), slot.top() + offset),
+            egui::vec2(glyph, glyph),
+        )
+    }
+
     /// 마우스를 캡처한 TUI에서 사용자가 드래그 선택을 시도했을 때 표시한다.
     pub const BANNER_MOUSE_CAPTURE: BannerId = "mouse-capture";
 
     fn content_mouse_capture(ui: &mut egui::Ui, theme: &Theme) {
         ui.horizontal_top(|ui| {
             ui.spacing_mut().item_spacing.x = theme.spacing_md.value();
-            let glyph = theme.icon_glyph_size_md.value();
-            let (rect, _) = ui.allocate_exact_size(egui::vec2(glyph, glyph), egui::Sense::hover());
+            let rect = leading_glyph_rect(ui, theme);
             icons::MOUSE
-                .image(glyph, theme.banner_icon_fg().to_egui())
+                .image(rect.height(), theme.banner_icon_fg().to_egui())
                 .paint_at(ui, rect);
             ui.vertical(|ui| {
-                // draw의 우측 버튼 두 개와 같은 폭을 비워 본문 크기를 유지한다.
+                // draw의 ⋯/× 열 자리(`banner-more-reserve`)를 비워 본문 크기를 유지한다.
                 ui.set_max_width(
-                    (ui.available_width() - theme.item_height_interactive.value() * 2.0).max(0.0),
+                    (ui.available_width() - theme.banner_more_reserve().value()).max(0.0),
                 );
-                ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
+                ui.spacing_mut().item_spacing.y = theme.banner_text_gap().value();
                 ui.label(
                     egui::RichText::new(t("banner.mouse_capture.title"))
                         .size(theme.font_size_body.value())
@@ -771,16 +793,15 @@ pub mod defs {
     fn content_shell_integration_missing(ui: &mut egui::Ui, theme: &Theme) {
         ui.horizontal_top(|ui| {
             ui.spacing_mut().item_spacing.x = theme.spacing_md.value();
-            let glyph = theme.icon_glyph_size_md.value();
-            let (rect, _) = ui.allocate_exact_size(egui::vec2(glyph, glyph), egui::Sense::hover());
+            let rect = leading_glyph_rect(ui, theme);
             icons::TERM
-                .image(glyph, theme.banner_icon_fg().to_egui())
+                .image(rect.height(), theme.banner_icon_fg().to_egui())
                 .paint_at(ui, rect);
             ui.vertical(|ui| {
                 ui.set_max_width(
                     (ui.available_width() - theme.item_height_interactive.value()).max(0.0),
                 );
-                ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
+                ui.spacing_mut().item_spacing.y = theme.banner_text_gap().value();
                 ui.label(
                     egui::RichText::new(t("banner.shell_integration_missing.title"))
                         .size(theme.font_size_body.value())
