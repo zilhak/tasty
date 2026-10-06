@@ -1521,7 +1521,14 @@ pub fn pages() -> Vec<Page> {
                             "presetview",
                             "PresetView — list → toolbar + live preview",
                             Some(
-                                "Tools › Presets modeless window — L1 scope tabs (Workspace / Tab / Pane) · saved preset list · toolbar (rename · duplicate · delete · Edit) over a live demo-layout preview",
+                                "The modeless window behind Tools › Presets. L1 tabs pick the scope \
+                                 (Workspace / Tab / Pane); a left list of saved presets for that \
+                                 scope feeds a right detail = a toolbar (rename · duplicate · \
+                                 delete · Edit) over a live demo-layout preview. The selected row \
+                                 uses the surface-fill + 2px accent left-bar (the file-handler / \
+                                 sidebar idiom). Click a preset, switch its mini tabs, then hit \
+                                 Edit — structure edits happen on the preview, a leaf's gear opens \
+                                 its settings screen in this same column.",
                             ),
                             components::preset_view::draw,
                         ),
