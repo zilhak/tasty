@@ -545,7 +545,7 @@ task 는 선택적으로 타입 계약(`TaskContract`)을 가진다. 계약이 �
 - 기본값도 같은 경로로 내부 표현이 된다.
 - `json` 타입 값은 무타입 JSON 이라 안의 숫자를 JSON 숫자 그대로 쓴다. 그래서 2^53 을 넘는 정수는 JavaScript 도구에서 정밀도를 잃을 수 있다. 정밀도가 필요하면 그 값을 `int64` 로 선언한다.
 - v1 투영 `result.output` 은 무타입 JSON 이라 메모리에서도 wire 형식(int64 는 문자열)으로 둔다.
-- float64 는 f64 로 정확히 표현되는 정수 토큰만 받는다(9007199254740993 은 거절). NaN·Infinity 는 `not_finite` 다.
+- float64 는 f64 로 정확히 표현되는 정수 토큰만 받는다(9007199254740993 은 거절). JSON 에는 NaN·Infinity 를 쓸 수 없어 IPC 요청은 파싱 단계에서 `-32700` 이 되고(`1e400` 처럼 f64 범위를 넘는 수도 같다) 결과가 기록되지 않는다. Rust API 에서도 serde_json 이 비유한 f64 를 null 로 바꾸므로 `null_not_allowed`(nullable 이면 null)가 된다. `not_finite` 는 이런 값이 `Value` 숫자로 들어오는 경우를 막는 방어 검사로, 현재 경로에서는 도달하지 않는다.
 
 ### 종류별 기본 출력과 결과
 
@@ -570,7 +570,7 @@ v1 이 v2 결과를 읽는 경로는 `-32602`(`error.data.task_id` 에 참조 �
 |---|---|---|
 | `all` | `list<{task_id, state, has_output, output?}>` 고정 | 실패한 입력의 출력을 만들어 넣지 않는다. `output` 은 입력마다 타입이 달라 json 으로 선언되며, 각 입력의 선언 타입대로 직렬화한 값을 넣는다(int64 입력은 10진 문자열, json 입력은 그대로) |
 | `first_success` | 선언한 공통 타입 T(기본 json) | 모든 입력이 T 에 대입 가능해야 생성된다. v1 입력은 json 으로 본다. 성공 출력이 하나도 없으면 실패 |
-| `merge_json` | object 또는 json | 모든 입력이 object 출력을 가져야 한다. 같은 경로의 다른 값은 기본 오류, `merge_conflict: "overwrite"` 면 뒤 입력이 이긴다. 같은 값은 충돌이 아니다 |
+| `merge_json` | object 또는 json | 모든 입력이 object 출력을 가져야 한다. 같은 경로의 다른 값은 기본 오류, `merge_conflict: "overwrite"` 면 뒤 입력이 이긴다. 같은 값은 충돌이 아니다. 숫자끼리는 표기가 아니라 수치로 비교한다(`1` 과 `1.0` 은 같고, 정수는 f64 로 바꾸지 않고 정확히 비교한다) |
 | `concat_text` | string | 모든 입력이 string 출력을 가져야 한다. 다른 타입은 명시적으로 변환하라는 오류 |
 | `custom` | 선언 타입(기본 json) | stdin 은 `all` 과 같은 레코드 배열(같은 직렬화 규칙). stdout 은 JSON 값 하나여야 하며 문자열로 대신하지 않는다 |
 
