@@ -138,41 +138,53 @@ pub fn draw_explorer(
             egui::Stroke::new(theme.border_width.value(), theme.border_strong().to_egui()),
         );
 
-        ui.allocate_ui_with_layout(
+        // 아래 행을 칸에 남은 높이의 고정 사각형으로 나눈다. 사이드바는 즐겨찾기 최소 높이 때문에
+        // 낮은 칸에서 남은 높이보다 커질 수 있다. 그 높이가 행을 늘리면 내용 열과 상태줄이 칸 밖으로
+        // 밀리므로, 각 열을 자기 사각형에 가두고 넘치는 부분은 잘라 낸다.
+        let (row, _) = ui.allocate_exact_size(
             egui::vec2(ui.available_width(), ui.available_height()),
-            egui::Layout::left_to_right(egui::Align::Min),
-            |ui| {
-                ui.allocate_ui_with_layout(
-                    egui::vec2(SIDEBAR_W.value(), ui.available_height()),
-                    egui::Layout::top_down(egui::Align::Min),
-                    |ui| sidebar(ui, theme, panel, view, favorites, &mut action, mirror_ws_id),
-                );
-                let (vrect, _) = ui.allocate_exact_size(
-                    egui::vec2(theme.border_width.value(), ui.available_height()),
-                    egui::Sense::hover(),
-                );
-                ui.painter().vline(
-                    vrect.center().x,
-                    vrect.y_range(),
-                    egui::Stroke::new(theme.border_width.value(), theme.border_strong().to_egui()),
-                );
-                ui.allocate_ui_with_layout(
-                    egui::vec2(ui.available_width(), ui.available_height()),
-                    egui::Layout::top_down(egui::Align::Min),
-                    |ui| {
-                        content(
-                            ui,
-                            theme,
-                            panel,
-                            view,
-                            font,
-                            id_suffix,
-                            cut_pending,
-                            &mut action,
-                        )
-                    },
-                );
-            },
+            egui::Sense::hover(),
+        );
+        let side = egui::Rect::from_min_size(row.min, egui::vec2(SIDEBAR_W.value(), row.height()));
+        let line = egui::Rect::from_min_size(
+            egui::pos2(side.max.x, row.min.y),
+            egui::vec2(theme.border_width.value(), row.height()),
+        );
+        let body = egui::Rect::from_min_max(egui::pos2(line.max.x, row.min.y), row.max);
+        let column = |ui: &mut egui::Ui, rect: egui::Rect| {
+            let mut child = ui.new_child(
+                egui::UiBuilder::new()
+                    .max_rect(rect)
+                    .layout(egui::Layout::top_down(egui::Align::Min)),
+            );
+            child.set_clip_rect(rect.intersect(ui.clip_rect()));
+            child
+        };
+        let mut side_ui = column(ui, side);
+        sidebar(
+            &mut side_ui,
+            theme,
+            panel,
+            view,
+            favorites,
+            &mut action,
+            mirror_ws_id,
+        );
+        ui.painter().vline(
+            line.center().x,
+            line.y_range(),
+            egui::Stroke::new(theme.border_width.value(), theme.border_strong().to_egui()),
+        );
+        let mut body_ui = column(ui, body);
+        content(
+            &mut body_ui,
+            theme,
+            panel,
+            view,
+            font,
+            id_suffix,
+            cut_pending,
+            &mut action,
         );
     });
 
@@ -902,6 +914,8 @@ fn content(
             egui::ScrollArea::vertical()
                 .id_salt(format!("explorer_content_{id_suffix}"))
                 .auto_shrink([false, false])
+                // 기본 최소 높이(64)는 낮은 칸에서 본문을 늘려 상태줄을 칸 밖으로 민다.
+                .min_scrolled_height(0.0)
                 .drag_to_scroll(false)
                 .show(ui, |ui| match mode {
                     ExplorerViewMode::Grid => {
@@ -1629,6 +1643,95 @@ fn type_label(e: &DirEntryInfo) -> String {
 mod tests {
     use super::{favorites_pin_height, navigate_target};
     use std::path::PathBuf;
+
+    /// 낮은 칸에 탐색기를 한 번 그리고 상태줄 글자의 사각형과 그 글자를 자르는 사각형을 돌려준다.
+    fn status_rect_in_short_cell(
+        state: super::LoadState,
+        entries: usize,
+        cell_h: f32,
+    ) -> Option<(egui::Rect, egui::Rect)> {
+        let ctx = egui::Context::default();
+        let cell = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1100.0, cell_h));
+        let panel = tasty_model::ExplorerPanel::new(1, PathBuf::from("/tasty-test-no-such-dir"));
+        let mut view = super::ExplorerView::new();
+        view.state = state;
+        view.entries = (0..entries)
+            .map(|i| super::DirEntryInfo {
+                path: PathBuf::from(format!("/tasty-test-no-such-dir/file-{i}.txt")),
+                name: format!("file-{i}.txt"),
+                is_dir: false,
+                size: 0,
+                modified: None,
+                ext: "txt".into(),
+            })
+            .collect();
+        let font = crate::settings::EffectiveFont {
+            font_family: String::new(),
+            font_size: 13.0,
+            custom_font_path: String::new(),
+            line_height: 1.0,
+            font_scale_mode: String::new(),
+        };
+        let shortcut_chars = std::collections::HashSet::new();
+        let input = super::ExplorerInput {
+            focused: false,
+            overlay_open: false,
+            shortcut_chars: &shortcut_chars,
+        };
+        let out = ctx.run(
+            egui::RawInput {
+                screen_rect: Some(cell),
+                ..Default::default()
+            },
+            |ctx| {
+                egui::CentralPanel::default()
+                    .frame(egui::Frame::NONE)
+                    .show(ctx, |ui| {
+                        super::draw_explorer(
+                            ui,
+                            &panel,
+                            &mut view,
+                            &font,
+                            "short",
+                            &[],
+                            &std::collections::HashSet::new(),
+                            &[],
+                            None,
+                            &input,
+                        );
+                    });
+            },
+        );
+        let status = crate::i18n::t_fmt("explorer.status.items", &entries.to_string());
+        out.shapes.iter().find_map(|clipped| match &clipped.shape {
+            egui::Shape::Text(text) if text.galley.text() == status => {
+                Some((text.visual_bounding_rect(), clipped.clip_rect))
+            }
+            _ => None,
+        })
+    }
+
+    /// 사이드바가 칸보다 커지는 낮은 칸에서도 상태줄은 칸 안에 보인다.
+    #[test]
+    fn a_short_cell_keeps_the_status_line_inside() {
+        // 목록이 있으면 ScrollArea 가 본문을 채운다. 없으면 상태 화면이 채운다.
+        // 120 은 본문이 ScrollArea 기본 최소 높이(64)보다 낮아지는 칸이다.
+        for cell_h in [157.0, 120.0] {
+            for (state, entries) in [
+                (super::LoadState::NoPermission, 0),
+                (super::LoadState::Ok, 0),
+                (super::LoadState::Ok, 30),
+            ] {
+                let label = format!("{cell_h} {state:?} {entries}");
+                let (rect, clip) = status_rect_in_short_cell(state, entries, cell_h)
+                    .unwrap_or_else(|| panic!("{label}: 상태줄을 그리지 않았다"));
+                assert!(
+                    rect.max.y <= cell_h && clip.contains_rect(rect),
+                    "{label}: 상태줄이 칸 밖에 있거나 잘린다: {rect:?} clip {clip:?}"
+                );
+            }
+        }
+    }
 
     /// design 시안 pin 높이 사다리: 본문 높이 → 고정 높이.
     #[test]

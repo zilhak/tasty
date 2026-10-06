@@ -30,6 +30,7 @@ OS 파일 관리자에 의존하지 않고 tasty surface 안에서 디렉토리�
 - **선택**: `selected: HashSet<PathBuf>` + `anchor`(shift 범위 기준). `select_all()` 은 현재 디렉토리 전체를 선택, `selected_paths_text()` 는 선택 경로를 정렬·개행 결합한 클립보드 페이로드를 만든다.
 - **사이드바 트리**: `expanded` 펼침 집합 + `tree_children` lazy 하위 디렉토리 캐시. 폭 196(design `ExpSidebar`). 사이드바는 **2-region 고정 분할**이다 — 상단 **Files**(트리, cwd 루트 고정)는 사이드바 본문 남는 공간 전부를 차지하며 자체 스크롤되고, 하단 **Favorites**는 계산된 고정 높이 영역에서 독립적으로 스크롤된다(Files 를 아무리 스크롤해도 Favorites 위치는 움직이지 않고, 반대도 마찬가지). 두 영역 사이 1px 구분선은 **하단 고정 영역의 상단 경계**에 고정 좌표로 그려진다 — 트리 길이와 무관하며, 트리가 짧아도 그 위 빈 공간은 배경만 남고 구분선이 따라 올라오지 않는다. 트리에서 **현재 폴더(current)** 노드는 surface-active 배경 + text-primary 로 하이라이트되고, 폴더 아이콘은 text-muted. 섹션 캡션은 monospace·micro·uppercase(design `SideHead`).
 - **Favorites 고정 높이 계산**(design `favPinHeight`): 사이드바 본문 높이가 600px 이상이면 240px 고정. 600px 미만이면 `round(본문높이 × 0.4 / 4) × 4`(4px 그리드 스냅)와 120px(하한) 중 큰 값. 임계값 전환은 보간 없는 하드 전환이다. 본체 구현은 `favorites_pin_height`(`src/adapters/ui/surface/explorer.rs`).
+- **낮은 칸**: 툴바 아래 행은 칸에 남은 높이의 고정 사각형이고, 사이드바 열과 내용 열은 각자 자기 사각형 안에서만 그린다. Favorites 하한(120px)과 Files 영역 때문에 사이드바가 남은 높이보다 커지면 사이드바만 아래가 잘리고, 내용 열과 상태줄은 칸 안에 남는다. 내용 목록의 ScrollArea 는 최소 높이를 0 으로 두어 본문이 낮아도 상태줄을 밀어내지 않는다.
 
 ### 뷰 모드 / 정렬
 
