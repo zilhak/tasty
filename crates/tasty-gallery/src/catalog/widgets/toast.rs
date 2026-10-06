@@ -210,6 +210,10 @@ pub fn draw_stack(ui: &mut egui::Ui, theme: &Theme) {
                 "link menu Copy hint",
                 "own action copy_link ('Copy link'), unbound by default → no hint until the user binds it; never borrow the copy binding",
             ),
+            (
+                "over a native WebView",
+                "while a toast card's rect intersects a WebView, only that WebView is hidden for the card's life (its tile shows plain); others stay; a WebView receiving keys is not hidden, so the card stays under it; keyboard focus is not reclaimed (a toast never takes focus)",
+            ),
         ],
         &[
             TokenChip::without_color("space-sm", "card gap"),

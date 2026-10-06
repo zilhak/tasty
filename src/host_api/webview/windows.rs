@@ -505,6 +505,12 @@ impl PlatformWebView {
         self.focus_is_inside()
     }
 
+    /// 지금 키를 치면 이 WebView가 받는지. Windows의 키는 포커스 창으로만 가므로
+    /// [`Self::holds_keyboard_focus`]와 같다.
+    pub fn receives_keyboard_input(&self) -> bool {
+        self.focus_is_inside()
+    }
+
     fn focus_is_inside(&self) -> bool {
         // SAFETY: 호출은 main thread(winit event loop). GetFocus 는 인자가 없고, 이
         // 스레드 메시지 큐가 활성이 아니면 널 HWND 를 돌려준다 — 다른 앱이 포커스를

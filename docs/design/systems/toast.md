@@ -96,6 +96,22 @@ hint를 붙이는 호출부는 다음 셋이다. 호출부는 `ToastManager::pus
 
 Toast 위에서 마우스 클릭/드래그해도 토스트는 무시하고 이벤트가 아래 레이어(터미널/popup/divider)로 통과한다. `popup_hovered` 도 토스트 영역에선 false. 키보드 포커스도 받지 않아 `has_focused()` 와 무관.
 
+## native WebView 위의 토스트
+
+토스트는 egui가 그리므로 OS 자식 창인 WebView(`html` · `markdown`)가 그 위를 덮는다. 카드 사각형과 겹치는 WebView만 그 카드가 그려지는 동안(페이드 포함) 숨기고, 그 자리에는 html surface의 boundary 빈 타일이 보인다. 겹치지 않는 WebView는 그대로 보인다.
+
+**지금 키를 받는 WebView는 숨기지 않는다.** 숨긴 WebView에는 키가 가지 않고 호스트도 그 키를 쓰지 않아, 사용자가 치던 입력이 토스트가 떠 있는 동안 조용히 사라진다. 그래서 그 WebView는 그대로 두고 카드는 이전처럼 그 아래에 가린다. 판정은 백엔드의 `receives_keyboard_input`이다.
+
+| 플랫폼 | 키를 받는 WebView |
+|--------|-------------------|
+| Linux(X11) | X 포커스가 WebView 안에 있거나, 포커스 창이 WebView의 조상(또는 PointerRoot)이고 포인터가 WebView 위에 있다. X 서버는 포커스 창의 자손 위에 포인터가 있으면 키를 그 자손에 보낸다 |
+| macOS | `holds_keyboard_focus`와 같다(first responder) |
+| Windows | `holds_keyboard_focus`와 같다(GetFocus) |
+
+포커스 조회는 OS 호출이므로 카드와 겹치는 WebView에만 한다. 토스트는 포커스를 받지 않으므로 숨긴 WebView의 키보드 포커스를 회수하지 않는다.
+
+`draw_toast_scopes`가 그린 카드의 사각형(스코프 경계로 자른 값)을 돌려주고 `ToastManager::card_rects`가 마지막 프레임의 값을 보관한다. 토스트가 없으면 비어 있다. WebView 동기화는 이 영역을 물리 좌표로 바꿔 WebView 사각형과 면적을 공유하는지 비교한다. 변이 맞닿기만 하면 겹침이 아니다. 전체 WebView를 숨기는 방식은 토스트마다 모든 페이지가 깜박이고, 카드를 WebView 밖으로 옮기는 방식은 pane마다 WebView가 아닌 영역이 없을 수 있어 채택하지 않았다. 키를 받는 WebView 위의 카드를 보이게 할 방법은 디자인 요청으로 남아 있다.
+
 ## 합치기 / 제한
 
 같은 스코프에서 같은 메시지가 짧은 시간(기본 500ms) 내 다시 발생하면 새로 만들지 않고 **기존 토스트 수명만 갱신**(연속 Ctrl+C 깜빡임 방지). 스코프당 최대 동시 5개, 초과 시 가장 오래된(맨 위) 것 즉시 제거. 넘친 토스트를 `+N more` 같은 요약 행으로 접지 않는다. 쉬는 카드는 나이와 관계없이 모두 불투명(alpha 1)이고 불투명도는 등장·소멸 페이드에만 쓴다.

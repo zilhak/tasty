@@ -83,9 +83,12 @@ pub fn fade_alpha(age: Duration, lifetime: Duration, reduced_motion: bool) -> f3
 }
 
 /// 호출자가 선택한 레이어의 painter에 토스트를 그린다. 사용자 입력이나 동작은 처리하지 않는다.
-pub fn draw_toast_scopes(painter: &egui::Painter, props: &ToastViewProps<'_>) {
+/// 그린 카드의 사각형을 스코프 경계로 자른 값으로 돌려준다. 호출자는 이 영역과 겹치는
+/// native 화면을 카드가 떠 있는 동안 숨길 수 있다.
+pub fn draw_toast_scopes(painter: &egui::Painter, props: &ToastViewProps<'_>) -> Vec<egui::Rect> {
     let th = props.theme;
     let ctx = painter.ctx().clone();
+    let mut drawn = Vec::new();
 
     for scope in props.scopes {
         let scope_rect = scope.scope_rect;
@@ -133,10 +136,12 @@ pub fn draw_toast_scopes(painter: &egui::Painter, props: &ToastViewProps<'_>) {
                 &entry.hint,
                 alpha,
             );
+            drawn.push(rect.intersect(scope_rect));
 
             cursor_y = top_y - TOAST_GAP;
         }
     }
+    drawn
 }
 
 /// 배경·테두리·본문색은 alpha를 적용한 뒤 egui 색으로 변환한다. 강조색은 변환 후 곱한다.
@@ -276,4 +281,109 @@ pub fn draw_card(
         );
     }
     painter.galley(text_pos, galley, colors.text);
+}
+
+/// 반환한 사각형이 실제로 그린 카드와 같고, 그리지 않은 카드(alpha 0)는 빠지며, 모든 값이
+/// 스코프 안에 있는지 검사한다. 호스트는 이 값으로 카드와 겹치는 native WebView만 숨긴다.
+#[cfg(test)]
+mod card_rect_tests {
+    use super::{
+        ToastEntryView, ToastScopeView, ToastStackBottom, ToastViewProps, card_colors,
+        draw_toast_scopes,
+    };
+    use egui::{Pos2, RawInput, Rect, vec2};
+    use tasty_type_appearance::toast_kind::ToastKind;
+
+    fn entry(message: &str, alpha: f32) -> ToastEntryView {
+        ToastEntryView {
+            kind: ToastKind::Info,
+            message: message.into(),
+            hint: Vec::new(),
+            alpha,
+        }
+    }
+
+    /// 두 프레임을 그려 마지막 프레임의 반환값과 카드 배경 사각형을 돌려준다.
+    fn draw(scope_rect: Rect, entries: Vec<ToastEntryView>) -> (Vec<Rect>, Vec<Rect>) {
+        let theme = tasty_themes::mocha_fallback();
+        let bg = card_colors(&theme, ToastKind::Info, 1.0).bg;
+        let ctx = egui::Context::default();
+        let scopes = [ToastScopeView {
+            scope_rect,
+            bottom: ToastStackBottom::ScopeMargin,
+            entries,
+        }];
+        let screen = Rect::from_min_size(Pos2::ZERO, vec2(1280.0, 800.0));
+        let mut returned = Vec::new();
+        let mut shapes = Vec::new();
+        // 첫 프레임은 폰트 준비 전이라 두 번 돌린다.
+        for _ in 0..2 {
+            let out = ctx.run(
+                RawInput {
+                    screen_rect: Some(screen),
+                    ..Default::default()
+                },
+                |ctx| {
+                    let painter = ctx.layer_painter(egui::LayerId::new(
+                        egui::Order::Tooltip,
+                        egui::Id::new("toast_card_rects"),
+                    ));
+                    returned = draw_toast_scopes(
+                        &painter,
+                        &ToastViewProps {
+                            theme: &theme,
+                            scopes: &scopes,
+                        },
+                    );
+                },
+            );
+            shapes = out.shapes;
+        }
+        let painted: Vec<Rect> = shapes
+            .iter()
+            .filter_map(|c| match &c.shape {
+                egui::epaint::Shape::Rect(r) if r.fill == bg => Some(r.rect),
+                _ => None,
+            })
+            .collect();
+        (returned, painted)
+    }
+
+    fn sorted(mut rects: Vec<Rect>) -> Vec<Rect> {
+        rects.sort_by(|a, b| a.top().total_cmp(&b.top()));
+        rects
+    }
+
+    #[test]
+    fn returned_rects_match_the_painted_cards() {
+        let scope = Rect::from_min_size(Pos2::ZERO, vec2(1280.0, 800.0));
+        let (returned, painted) = draw(scope, vec![entry("first", 1.0), entry("second", 1.0)]);
+        assert_eq!(returned.len(), 2, "{returned:?}");
+        assert_eq!(sorted(returned), sorted(painted));
+    }
+
+    #[test]
+    fn faded_out_cards_are_not_returned() {
+        let scope = Rect::from_min_size(Pos2::ZERO, vec2(1280.0, 800.0));
+        let (returned, _) = draw(scope, vec![entry("gone", 0.0), entry("shown", 1.0)]);
+        assert_eq!(returned.len(), 1, "{returned:?}");
+    }
+
+    #[test]
+    fn returned_rects_stay_inside_the_scope() {
+        // 카드 최소 폭보다 좁은 스코프라 자르지 않으면 카드가 왼쪽 경계 밖으로 나간다.
+        let scope = Rect::from_min_size(egui::pos2(600.0, 60.0), vec2(40.0, 400.0));
+        let (returned, _) = draw(scope, vec![entry("ok", 1.0)]);
+        assert!(!returned.is_empty());
+        for r in &returned {
+            assert!(scope.contains_rect(*r), "{r:?} not inside {scope:?}");
+        }
+    }
+
+    #[test]
+    fn no_entries_return_nothing() {
+        let scope = Rect::from_min_size(Pos2::ZERO, vec2(1280.0, 800.0));
+        let (returned, _) = draw(scope, Vec::new());
+        assert!(returned.is_empty());
+    }
 }

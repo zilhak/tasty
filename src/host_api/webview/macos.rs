@@ -573,6 +573,12 @@ impl PlatformWebView {
             && view_holds_first_responder(&self.webview)
     }
 
+    /// 지금 키를 치면 이 WebView가 받는지. macOS의 키는 first responder로만 가므로
+    /// [`Self::holds_keyboard_focus`]와 같다.
+    pub fn receives_keyboard_input(&self) -> bool {
+        self.holds_keyboard_focus()
+    }
+
     pub fn set_visible(&self, visible: bool) {
         self.webview.setHidden(!visible);
     }

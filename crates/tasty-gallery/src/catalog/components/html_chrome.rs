@@ -100,8 +100,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
          tasty's to theme — only the chrome is. This specimen is deliberately thin: the \
          tile boundary where the overlay attaches, plus the placeholder / loading / error \
          states the host paints before or instead of a live page. The boundary tile is \
-         plain: it shows only while a menu or popup hides a loaded page, so it carries no \
-         glyph, label or URL.",
+         plain: it shows only while a menu, a popup or an overlapping toast card hides a \
+         loaded page, so it carries no glyph, label or URL.",
     );
 }
 

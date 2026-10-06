@@ -186,7 +186,7 @@ host popup을 위에 배치한다. 이 호출은 parent와 child를 모두 `Area
 |------|------|-----------|
 | `MainViewState::keyboard_overlay_open()` (`src/state.rs`, 순수 술어는 같은 파일 하단) | settings + input dialog + focused host popup + plugin popup | 키/IME 를 host egui 로 들여보낼지(= 터미널 포워딩을 막을지) |
 | `MainView::mouse_overlay_open()` (`src/view/main/mouse.rs`) | settings + **무대** | 메인 화면의 좌표로 마우스를 처리할지 |
-| `MainViewState::has_egui_overlay_open()` (`src/state.rs`) | dialog + plugin popup + popup(visible) + **무대** + tutorial | WebView(OS 네이티브 자식 뷰)를 숨길지 |
+| `MainViewState::has_egui_overlay_open()` (`src/state.rs`) | dialog + plugin popup + popup(visible) + **무대** + tutorial | WebView(OS 네이티브 자식 뷰)를 모두 숨길지. 토스트는 여기에 들어가지 않고 카드와 겹치는 WebView 중 키를 받지 않는 것만 숨긴다([토스트](../design/systems/toast.md#native-webview-위의-토스트)) |
 
 왜 조합이 다른가:
 

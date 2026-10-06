@@ -35,14 +35,15 @@ use tasty_ui_widgets::{TOAST_FADE_OUT_MS as FADE_OUT_MS, toast_fade_alpha};
 pub use tasty_ui_widgets::{ToastEntryView, ToastScopeView, ToastStackBottom, ToastViewProps};
 
 /// 공용 위젯에 Tooltip 레이어 painter를 전달해 다른 UI 위에 토스트를 그린다.
-pub fn draw_toast_view(ctx: &egui::Context, props: &ToastViewProps<'_>) {
+/// 그린 카드의 egui 사각형을 돌려준다.
+pub fn draw_toast_view(ctx: &egui::Context, props: &ToastViewProps<'_>) -> Vec<egui::Rect> {
     if props.scopes.is_empty() {
-        return;
+        return Vec::new();
     }
 
     let layer_id = egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("toast_layer"));
     let painter = ctx.layer_painter(layer_id);
-    tasty_ui_widgets::draw_toast_scopes(&painter, props);
+    tasty_ui_widgets::draw_toast_scopes(&painter, props)
 }
 
 /// 토스트 hint에 넣을 `binding_id` 동작의 첫 단축키 키캡. binding이 비었으면 빈 목록이다.
@@ -62,6 +63,9 @@ pub struct ToastManager {
     /// 새 토스트/coalesce 갱신에 부여할 수명. `Settings.overlay.toast_duration_ms`
     /// 에서 매 프레임 동기화된다(설정 미로드 시 [`DEFAULT_LIFETIME`]).
     lifetime: Duration,
+    /// 마지막 draw에서 그린 카드 영역(egui 논리 좌표). 토스트가 없으면 비어 있다.
+    /// WebView 동기화가 이 영역과 겹치는 native 화면만 숨긴다.
+    card_rects: Vec<crate::model::LogicalRect>,
 }
 
 impl ToastManager {
@@ -70,7 +74,13 @@ impl ToastManager {
             toasts: Vec::new(),
             next_id: 1,
             lifetime: DEFAULT_LIFETIME,
+            card_rects: Vec::new(),
         }
+    }
+
+    /// 마지막 draw에서 그린 카드 영역. 카드가 떠 있는 동안만 비어 있지 않다.
+    pub fn card_rects(&self) -> &[crate::model::LogicalRect] {
+        &self.card_rects
     }
 
     /// 토스트 수명을 설정값(ms)으로 동기화한다. 이미 떠 있는 토스트에는 소급하지
@@ -159,6 +169,7 @@ impl ToastManager {
             .retain(|t| Self::scope_rect(&t.scope, draw_ctx, ctx).is_some());
 
         if self.toasts.is_empty() {
+            self.card_rects.clear();
             return;
         }
 
@@ -202,7 +213,15 @@ impl ToastManager {
             theme: &th,
             scopes: &scopes,
         };
-        draw_toast_view(ctx, &props);
+        self.card_rects = draw_toast_view(ctx, &props)
+            .into_iter()
+            .map(|r| crate::model::LogicalRect {
+                x: crate::model::LogicalPx(r.min.x),
+                y: crate::model::LogicalPx(r.min.y),
+                width: crate::model::LogicalPx(r.width()),
+                height: crate::model::LogicalPx(r.height()),
+            })
+            .collect();
     }
 
     /// 스코프의 rect를 얻는다. Window/Workspace는 screen rect를 사용한다.

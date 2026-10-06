@@ -171,7 +171,7 @@ host가 webview를 가릴 때 host 창이 활성이고 실제 focus가 해당 �
   숨기기 전에 회수한다. 숨긴 뒤에는 backend가 focus가 이미 자식 밖에 있다고 판정할 수 있다.
   창이 비활성이면 창이 활성이 될 때까지 미루고, 그 사이 다시 활성 탭에 들어오거나 닫힌 surface는 뺀다.
 
-탐색이 끝나지 않아 활성 탭의 webview를 숨기는 경우와 surface를 닫는 경우는 회수하지 않는다.
+탐색이 끝나지 않아 활성 탭의 webview를 숨기는 경우, 토스트 카드와 겹쳐 그 webview만 숨기는 경우([토스트](toast.md#native-webview-위의-토스트), 키를 받는 webview는 숨기지 않는다), surface를 닫는 경우는 회수하지 않는다.
 다시 보이거나 overlay가 닫혀도 native 자식 focus를 자동 복원하지 않는다.
 
 | 플랫폼 | 자식 focus 확인 | 회수 대상 |

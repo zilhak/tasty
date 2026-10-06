@@ -88,7 +88,7 @@ surface 는 트리에선 `RemoteSurface` marker. 네이티브 WebView 의 naviga
 - **Idle** — URL 미지정. placeholder(`GLOBE` · "No page loaded").
 - **Loading** — 탐색 중. WebView overlay 를 숨기고 `Spinner` + "Loading…" chrome.
 - **Done** — 성공. WebView overlay 가 페이지를 그린다. 메뉴/팝업으로 overlay 가 일시
-  숨겨지면 그 동안 boundary 타일이 보인다. boundary 는 `bg-panel` 배경과 1px `border-default`
+  숨겨지거나, 토스트 카드가 이 surface 와 겹쳐 이 WebView 만 숨겨지면(지금 키를 받는 WebView 는 숨기지 않는다) 그 동안 boundary 타일이 보인다. boundary 는 `bg-panel` 배경과 1px `border-default`
   테두리만 있는 빈 타일이며 글리프·라벨·URL 을 그리지 않는다.
 - **Failed** — 실패. overlay 를 숨긴 채 `ALERT_CIRCLE`(`accent-danger`) + "Failed to load"
   + URL chrome. 실패 사유는 화면 대신 `tracing::warn!` 로그로만 남긴다. 이 상태에서는 스크립트

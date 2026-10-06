@@ -687,6 +687,104 @@ impl PlatformWebView {
         self.x11_focus_is_inside()
     }
 
+    /// 지금 키를 치면 이 WebView가 받는지. X 포커스가 자식 안에 있거나, 포커스 창이 이
+    /// WebView의 조상(또는 PointerRoot)이고 포인터가 WebView 위에 있으면 참이다. X 서버는
+    /// 포커스 창의 자손 위에 포인터가 있으면 키를 그 자손에 보내므로, X 포커스가 메인 창에
+    /// 있어도 키가 페이지로 갈 수 있다.
+    pub fn receives_keyboard_input(&self) -> bool {
+        self.assert_origin_thread();
+        self.x11_focus_is_inside()
+            || (self.x11_focus_routes_by_pointer() && self.x11_pointer_is_inside())
+    }
+
+    /// 포커스 창이 PointerRoot이거나 이 WebView 창의 조상이면 참이다.
+    fn x11_focus_routes_by_pointer(&self) -> bool {
+        let mut focus: std::os::raw::c_ulong = 0;
+        let mut revert: std::os::raw::c_int = 0;
+        // SAFETY: display 는 valid(호출부가 origin thread 를 확인). 두 out 파라미터는
+        // 살아있는 스택 변수의 주소다.
+        unsafe {
+            (self.xlib.XGetInputFocus)(self.x11_display as _, &mut focus, &mut revert);
+        }
+        // 0은 None(키가 버려짐), 1은 PointerRoot(포인터 아래 창이 받음)다.
+        match focus {
+            0 => return false,
+            1 => return true,
+            _ => {}
+        }
+        let mut w = self.x11_window;
+        // 손상된 부모 관계에서 무한 순회하지 않도록 깊이를 제한한다.
+        for _ in 0..32 {
+            let Some(parent) = self.x11_parent_of(w) else {
+                return false;
+            };
+            if parent == 0 || parent == w {
+                return false;
+            }
+            if parent == focus {
+                return true;
+            }
+            w = parent;
+        }
+        false
+    }
+
+    /// 포인터가 이 WebView 창의 사각형 안에 있는지. 숨겨진 창도 마지막 위치로 판정한다.
+    fn x11_pointer_is_inside(&self) -> bool {
+        let (mut root, mut child): (std::os::raw::c_ulong, std::os::raw::c_ulong) = (0, 0);
+        let (mut root_x, mut root_y, mut x, mut y): (
+            std::os::raw::c_int,
+            std::os::raw::c_int,
+            std::os::raw::c_int,
+            std::os::raw::c_int,
+        ) = (0, 0, 0, 0);
+        let mut mask: std::os::raw::c_uint = 0;
+        // SAFETY: display 는 valid(호출부가 origin thread 를 확인), out 파라미터는 전부
+        // 살아있는 스택 변수의 주소다.
+        let same_screen = unsafe {
+            (self.xlib.XQueryPointer)(
+                self.x11_display as _,
+                self.x11_window,
+                &mut root,
+                &mut child,
+                &mut root_x,
+                &mut root_y,
+                &mut x,
+                &mut y,
+                &mut mask,
+            )
+        };
+        if same_screen == 0 {
+            return false;
+        }
+        let (mut geo_root, mut gx, mut gy): (
+            std::os::raw::c_ulong,
+            std::os::raw::c_int,
+            std::os::raw::c_int,
+        ) = (0, 0, 0);
+        let (mut width, mut height, mut border, mut depth): (
+            std::os::raw::c_uint,
+            std::os::raw::c_uint,
+            std::os::raw::c_uint,
+            std::os::raw::c_uint,
+        ) = (0, 0, 0, 0);
+        // SAFETY: 위와 같다.
+        let ok = unsafe {
+            (self.xlib.XGetGeometry)(
+                self.x11_display as _,
+                self.x11_window,
+                &mut geo_root,
+                &mut gx,
+                &mut gy,
+                &mut width,
+                &mut height,
+                &mut border,
+                &mut depth,
+            )
+        };
+        ok != 0 && x >= 0 && y >= 0 && (x as u32) < width && (y as u32) < height
+    }
+
     fn x11_focus_is_inside(&self) -> bool {
         let mut focus: std::os::raw::c_ulong = 0;
         let mut revert: std::os::raw::c_int = 0;

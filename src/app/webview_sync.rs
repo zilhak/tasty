@@ -528,6 +528,17 @@ fn sync_webviews(
     }
     view.webview_prev_active = now_active;
 
+    // 토스트 카드는 egui가 그리므로 native 페이지가 덮는다. 카드와 겹치는 WebView만
+    // 카드가 떠 있는 동안 숨긴다. 키보드 포커스를 가진 WebView는 숨기지 않는다.
+    // 숨기면 사용자가 치던 키가 페이지에도 터미널에도 가지 않고 사라진다.
+    let toast_rects: Vec<crate::model::PhysicalRect> = view
+        .state
+        .toasts
+        .card_rects()
+        .iter()
+        .map(|r| r.to_physical(scale_factor as f32))
+        .collect();
+
     // navigation이 Done일 때만 native 페이지를 표시한다. 그 전에는 egui의
     // 로딩·오류 표시가 native 페이지에 가려지지 않도록 숨긴다.
     let mut any_visible = false;
@@ -542,7 +553,10 @@ fn sync_webviews(
         let nav = wv.nav_state();
         // 드러나야 할 자리에 있는데(활성 tab · overlay 없음) nav 가 Done 이 아니면
         // 그 프레임의 그 surface 는 "만들어졌지만 안 보이는" 상태다.
-        let wants_reveal = !overlay_open && active_html.contains_key(sid);
+        let under_toast = hidden_under_toast(active_physical.get(sid), &toast_rects, || {
+            wv.receives_keyboard_input()
+        });
+        let wants_reveal = reveal_wanted(overlay_open, active_html.contains_key(sid), under_toast);
         let reveal = wants_reveal && nav == crate::webview::NavState::Done;
         if wants_reveal && !reveal {
             reveal_pending.push((*sid, nav));
@@ -810,4 +824,129 @@ fn update_html_script_banner(
         );
     }
     Some(phase)
+}
+
+/// 드러나야 할 자리(활성 탭)에 있고 overlay도, 이 WebView를 숨기는 토스트도 없을 때 참이다.
+fn reveal_wanted(overlay_open: bool, active: bool, under_toast: bool) -> bool {
+    !overlay_open && active && !under_toast
+}
+
+/// 토스트 카드 때문에 이 WebView를 숨길지. 카드와 겹치고 키보드 포커스가 없을 때만 참이다.
+/// 포커스 조회는 OS 호출이므로 겹칠 때만 한다.
+fn hidden_under_toast(
+    webview: Option<&crate::model::PhysicalRect>,
+    cards: &[crate::model::PhysicalRect],
+    receives_keyboard_input: impl FnOnce() -> bool,
+) -> bool {
+    webview.is_some_and(|rect| covered_by_any(rect, cards)) && !receives_keyboard_input()
+}
+
+/// WebView 사각형이 토스트 카드 하나와라도 면적을 공유하면 참이다. 변이 맞닿기만 하면 거짓이다.
+fn covered_by_any(
+    webview: &crate::model::PhysicalRect,
+    cards: &[crate::model::PhysicalRect],
+) -> bool {
+    cards.iter().any(|card| {
+        card.x < webview.x + webview.width
+            && webview.x < card.x + card.width
+            && card.y < webview.y + webview.height
+            && webview.y < card.y + card.height
+    })
+}
+
+#[cfg(test)]
+mod toast_cover_tests {
+    use super::{covered_by_any, hidden_under_toast, reveal_wanted};
+    use crate::model::{PhysicalPx, PhysicalRect};
+
+    fn rect(x: f32, y: f32, w: f32, h: f32) -> PhysicalRect {
+        PhysicalRect {
+            x: PhysicalPx(x),
+            y: PhysicalPx(y),
+            width: PhysicalPx(w),
+            height: PhysicalPx(h),
+        }
+    }
+
+    #[test]
+    fn card_inside_webview_covers_it() {
+        let webview = rect(600.0, 60.0, 680.0, 640.0);
+        assert!(covered_by_any(
+            &webview,
+            &[rect(1000.0, 640.0, 260.0, 40.0)]
+        ));
+    }
+
+    #[test]
+    fn card_in_another_pane_leaves_webview_visible() {
+        let webview = rect(600.0, 60.0, 680.0, 640.0);
+        assert!(!covered_by_any(
+            &webview,
+            &[rect(300.0, 640.0, 200.0, 40.0)]
+        ));
+    }
+
+    #[test]
+    fn touching_edge_is_not_overlap() {
+        let webview = rect(600.0, 60.0, 680.0, 640.0);
+        assert!(!covered_by_any(
+            &webview,
+            &[rect(400.0, 640.0, 200.0, 40.0)]
+        ));
+        assert!(!covered_by_any(
+            &webview,
+            &[rect(700.0, 700.0, 200.0, 40.0)]
+        ));
+    }
+
+    #[test]
+    fn touching_the_other_two_edges_is_not_overlap() {
+        let webview = rect(600.0, 60.0, 680.0, 640.0);
+        // 카드 왼쪽 변이 WebView 오른쪽 변에 닿는다(오른쪽 이웃 pane의 토스트).
+        assert!(!covered_by_any(
+            &webview,
+            &[rect(1280.0, 640.0, 200.0, 40.0)]
+        ));
+        // 카드 아래 변이 WebView 위 변에 닿는다.
+        assert!(!covered_by_any(&webview, &[rect(700.0, 20.0, 200.0, 40.0)]));
+    }
+
+    #[test]
+    fn a_focused_webview_under_a_card_stays_visible() {
+        let webview = rect(600.0, 60.0, 680.0, 640.0);
+        let card = [rect(1000.0, 640.0, 260.0, 40.0)];
+        assert!(!hidden_under_toast(Some(&webview), &card, || true));
+        assert!(hidden_under_toast(Some(&webview), &card, || false));
+    }
+
+    #[test]
+    fn focus_is_not_queried_without_overlap() {
+        let webview = rect(600.0, 60.0, 680.0, 640.0);
+        let card = [rect(300.0, 640.0, 200.0, 40.0)];
+        assert!(!hidden_under_toast(Some(&webview), &card, || {
+            panic!("포커스를 조회했다")
+        }));
+        assert!(!hidden_under_toast(None, &card, || panic!(
+            "포커스를 조회했다"
+        )));
+    }
+
+    #[test]
+    fn a_webview_hidden_under_a_toast_is_not_revealed() {
+        assert!(reveal_wanted(false, true, false));
+        assert!(!reveal_wanted(false, true, true));
+        assert!(!reveal_wanted(true, true, false));
+        assert!(!reveal_wanted(false, false, false));
+    }
+
+    #[test]
+    fn partial_overlap_across_the_boundary_covers() {
+        let webview = rect(600.0, 60.0, 680.0, 640.0);
+        assert!(covered_by_any(&webview, &[rect(590.0, 640.0, 20.0, 40.0)]));
+    }
+
+    #[test]
+    fn no_cards_cover_nothing() {
+        assert!(!covered_by_any(&rect(0.0, 0.0, 10.0, 10.0), &[]));
+    }
 }
