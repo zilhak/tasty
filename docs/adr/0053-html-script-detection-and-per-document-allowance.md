@@ -199,6 +199,8 @@ OS별 구현은 다음과 같다.
   - Windows는 `NavigationStarting` 안에서 정한 `IsScriptEnabled`가 같은 navigation에 적용되는지 측정하지 않았다. API 문서가 근거다.
   - macOS는 delegate 시그니처가 바뀌고, 실제 Mac에서 확인하기 전까지 미검증이다.
   - 앞 로드의 종료가 새 로드 시작 뒤에 오면 새 문서가 지문 없이 기록될 수 있다. 그 문서는 스크립트가 있어도 배너가 뜨지 않고 허용할 수 없으며, 허용된 문서의 재로드였다면 허용이 풀린다. Windows는 `NavigationId`, macOS는 `WKNavigation` 세대로 이 경우를 막는다. macOS는 정책 결정과 provisional 시작 사이에 온 종료를 막지 못한다. 두 OS 모두 순서를 측정하지 않았다.
+  - commit 신호(Windows `ContentLoading`, macOS `didCommitNavigation`)는 세대를 보지 않는다. 종료 신호와 달리 commit은 어느 로드의 것이든 화면 문서를 기록한다. 앞 로드의 늦은 commit이 새 로드의 응답 단계 결과를 소비할 수 있는지는 측정하지 않았다.
+    - 고치지 않는 이유: commit은 그 문서가 실제로 화면에 올라왔다는 신호다. 늦은 commit을 무시하면 화면에 있는 문서가 현재 문서로 기록되지 않는다. 또 Windows와 macOS의 세대 규칙을 함께 정해야 해서 한 OS만 먼저 바꾸지 않는다.
   - macOS의 `decidePolicyForNavigationAction`은 서브프레임 navigation에 main frame 문서에 대한 판단을 preferences로 돌려준다. WebKit이 서브프레임에서 이 값을 쓰는지는 확인하지 않았다(미측정). 쓰지 않는다면 차단 문서의 iframe 스크립트가 실행될 수 있다.
   - Windows와 macOS의 bfcache 복원 동작도 미측정이다.
 - 에이전트는 release에서 스크립트 문서를 자동으로 실행할 수 없다. 자동화에는 debug 빌드나 전역 설정이 필요하다.
@@ -250,6 +252,7 @@ OS별 구현은 다음과 같다.
 
 - Windows에서 `NavigationStarting` 안의 설정이 같은 navigation에 적용되지 않으면 해제 시점을 다시 정한다.
 - macOS에서 앞 로드의 종료가 정책 결정과 provisional 시작 사이에 오는 것이 측정되면 세대를 기록하는 시점을 다시 정한다.
+- Windows나 macOS에서 앞 로드의 commit 신호가 새 로드 시작 뒤에 오는 것이 측정되면 commit 신호에도 세대 판정을 둘지 두 OS를 함께 다시 정한다.
 - macOS에서 서브프레임 navigation의 preferences를 main frame 문서의 판단에 맞췄는데도 차단 문서의 iframe 스크립트가 실행되면 서브프레임의 차단 방법을 다시 정한다.
 - macOS에서 `allowsContentJavaScript`를 설정한 navigation의 첫 로드에 스크립트가 실행되면 해제 시점을 다시 정한다.
 - Windows나 macOS의 bfcache 복원에서 허용되지 않은 문서의 스크립트가 다시 실행되면 복원 경로의 차단을 추가한다.
