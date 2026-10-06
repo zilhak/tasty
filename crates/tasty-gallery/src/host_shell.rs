@@ -165,7 +165,7 @@ fn header_ui(ui: &mut egui::Ui, state: &mut GalleryState) {
             egui::Color32::from(t.border_default()),
             egui::Color32::from(t.surface_raised()),
             egui::Color32::from(t.surface_active()),
-            egui::Color32::from(t.separator),
+            t.separator.to_egui_premultiplied(),
         )
     };
     let seg = SegStyle {
@@ -334,7 +334,7 @@ fn nav_ui(ui: &mut egui::Ui, state: &mut GalleryState) {
             egui::Color32::from(t.text_muted()),
             egui::Color32::from(t.text_secondary()),
             egui::Color32::from(t.surface_active()),
-            egui::Color32::from(t.separator),
+            t.separator.to_egui_premultiplied(),
         )
     };
     let f_heading = state.theme.font_size_micro.value();
@@ -496,7 +496,7 @@ fn page_head(ui: &mut egui::Ui, theme: &Theme, category: Category) {
             .fill(egui::Color32::from(theme.bg_panel()))
             .stroke(egui::Stroke::new(
                 theme.border_width.value(),
-                egui::Color32::from(theme.separator),
+                theme.separator.to_egui_premultiplied(),
             ))
             .corner_radius(theme.corner_radius.value())
             .inner_margin(egui::Margin::same(theme.spacing_md.value() as i8))

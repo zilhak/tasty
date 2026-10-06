@@ -119,7 +119,10 @@ fn surface(ui: &mut egui::Ui, theme: &Theme, loaded: bool) {
         p.hline(
             rect.x_range(),
             canvas_top,
-            egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+            egui::Stroke::new(
+                theme.border_width.value(),
+                theme.separator.to_egui_premultiplied(),
+            ),
         );
 
         let canvas = egui::Rect::from_min_max(

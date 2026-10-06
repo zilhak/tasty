@@ -171,7 +171,10 @@ fn header(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, tab: Tab) {
     p.hline(
         rect.x_range(),
         rect.bottom() - 0.5,
-        egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+        egui::Stroke::new(
+            theme.border_width.value(),
+            theme.separator.to_egui_premultiplied(),
+        ),
     );
 
     let cy = rect.center().y;
@@ -206,7 +209,7 @@ fn header(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, tab: Tab) {
             egui::vec2(theme.border_width.value(), div_h),
         ),
         0.0,
-        theme.separator.to_egui(),
+        theme.separator.to_egui_premultiplied(),
     );
     x += theme.border_width.value() + theme.spacing_sm.value();
 
@@ -331,7 +334,10 @@ fn window(ui: &mut egui::Ui, theme: &Theme, tab: Tab) {
         ui.painter().vline(
             x,
             egui::Rangef::new(body_top, body.max.y),
-            egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+            egui::Stroke::new(
+                theme.border_width.value(),
+                theme.separator.to_egui_premultiplied(),
+            ),
         );
     };
 

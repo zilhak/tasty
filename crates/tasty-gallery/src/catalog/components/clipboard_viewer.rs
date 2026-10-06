@@ -195,7 +195,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "active segment / badge",
                 theme.accent_primary().to_egui(),
             ),
-            TokenChip::new("separator", "row divider", theme.separator.to_egui()),
+            TokenChip::new(
+                "separator",
+                "row divider",
+                theme.separator.to_egui_premultiplied(),
+            ),
             TokenChip::new(
                 "accent-danger",
                 "read-failed tone",
@@ -383,7 +387,10 @@ fn files_body_row(ui: &mut egui::Ui, theme: &Theme) {
         well,
         theme.corner_radius.value(),
         theme.bg_app().to_egui(),
-        egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+        egui::Stroke::new(
+            theme.border_width.value(),
+            theme.separator.to_egui_premultiplied(),
+        ),
         egui::StrokeKind::Inside,
     );
 
@@ -426,7 +433,10 @@ fn image_body_row(ui: &mut egui::Ui, theme: &Theme) {
         well,
         theme.corner_radius.value(),
         theme.bg_app().to_egui(),
-        egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+        egui::Stroke::new(
+            theme.border_width.value(),
+            theme.separator.to_egui_premultiplied(),
+        ),
         egui::StrokeKind::Inside,
     );
 
@@ -525,7 +535,10 @@ fn other_body_row(ui: &mut egui::Ui, theme: &Theme) {
         well,
         theme.corner_radius.value(),
         theme.bg_app().to_egui(),
-        egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+        egui::Stroke::new(
+            theme.border_width.value(),
+            theme.separator.to_egui_premultiplied(),
+        ),
         egui::StrokeKind::Inside,
     );
 
@@ -541,7 +554,10 @@ fn other_body_row(ui: &mut egui::Ui, theme: &Theme) {
             p.hline(
                 egui::Rangef::new(well.left(), well.right()),
                 ty,
-                egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+                egui::Stroke::new(
+                    theme.border_width.value(),
+                    theme.separator.to_egui_premultiplied(),
+                ),
             );
             ty += theme.spacing_sm.value();
         }
@@ -752,7 +768,10 @@ fn body_row(ui: &mut egui::Ui, theme: &Theme) {
         well,
         theme.corner_radius.value(),
         theme.bg_app().to_egui(),
-        egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+        egui::Stroke::new(
+            theme.border_width.value(),
+            theme.separator.to_egui_premultiplied(),
+        ),
         egui::StrokeKind::Inside,
     );
 
@@ -786,7 +805,10 @@ fn body_row_text(ui: &mut egui::Ui, theme: &Theme, content: &str) {
         well,
         theme.corner_radius.value(),
         theme.bg_app().to_egui(),
-        egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+        egui::Stroke::new(
+            theme.border_width.value(),
+            theme.separator.to_egui_premultiplied(),
+        ),
         egui::StrokeKind::Inside,
     );
 
@@ -828,7 +850,10 @@ fn footer_row(ui: &mut egui::Ui, theme: &Theme, mime: impl ToString) {
     ui.painter().hline(
         rect.x_range(),
         rect.top() + theme.border_width.value() * 0.5,
-        egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+        egui::Stroke::new(
+            theme.border_width.value(),
+            theme.separator.to_egui_premultiplied(),
+        ),
     );
 
     ui.painter().text(
@@ -922,6 +947,9 @@ fn hline(ui: &mut egui::Ui, theme: &Theme, y: f32) {
     ui.painter().hline(
         rect.x_range(),
         y - theme.border_width.value() * 0.5,
-        egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+        egui::Stroke::new(
+            theme.border_width.value(),
+            theme.separator.to_egui_premultiplied(),
+        ),
     );
 }

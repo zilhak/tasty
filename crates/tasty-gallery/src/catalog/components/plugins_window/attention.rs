@@ -255,7 +255,7 @@ fn reason_detail(ui: &mut egui::Ui, theme: &Theme, kind: Kind) {
                 .fill(theme.bg_panel().to_egui())
                 .stroke(egui::Stroke::new(
                     theme.border_width.value(),
-                    theme.separator.to_egui(),
+                    theme.separator.to_egui_premultiplied(),
                 ))
                 .corner_radius(theme.corner_radius.value())
                 .inner_margin(margin_all(theme.spacing_sm))

@@ -41,7 +41,10 @@ fn faux_sidebar_w(r: egui::Rect) -> f32 {
 }
 
 fn paint_faux_app(p: &egui::Painter, r: egui::Rect, theme: &Theme) {
-    let sep = egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui());
+    let sep = egui::Stroke::new(
+        theme.border_width.value(),
+        theme.separator.to_egui_premultiplied(),
+    );
     let inset = theme.spacing_sm.value(); // 8 — 행 좌우 인셋
     let cap = theme.font_size_caption.value(); // 11 — faux 앱 라벨 폰트
     let tab_h = theme.tab_bar_height.value();
@@ -515,7 +518,10 @@ fn hsep(ui: &mut egui::Ui, theme: &Theme) {
     ui.painter().hline(
         rect.x_range(),
         rect.center().y,
-        egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+        egui::Stroke::new(
+            theme.border_width.value(),
+            theme.separator.to_egui_premultiplied(),
+        ),
     );
 }
 /// 예제 영역을 확보하고 그 안에 그린다.
@@ -533,7 +539,10 @@ fn demo_box(
     p.rect_stroke(
         rect,
         theme.corner_radius.value(),
-        egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+        egui::Stroke::new(
+            theme.border_width.value(),
+            theme.separator.to_egui_premultiplied(),
+        ),
         egui::StrokeKind::Inside,
     );
 }
@@ -729,7 +738,10 @@ fn topic_stage(ui: &mut egui::Ui, theme: &Theme, scaled: bool) {
     ui.painter().rect_stroke(
         rect,
         theme.corner_radius.value(),
-        egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+        egui::Stroke::new(
+            theme.border_width.value(),
+            theme.separator.to_egui_premultiplied(),
+        ),
         egui::StrokeKind::Inside,
     );
 }

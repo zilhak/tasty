@@ -156,7 +156,10 @@ fn migrate_row(
         ui.painter().hline(
             sep.x_range(),
             sep.center().y,
-            egui::Stroke::new(th.border_width.value(), th.separator.to_egui()),
+            egui::Stroke::new(
+                th.border_width.value(),
+                th.separator.to_egui_premultiplied(),
+            ),
         );
         vspace(ui, th.spacing_sm);
         ui.horizontal(|ui| {

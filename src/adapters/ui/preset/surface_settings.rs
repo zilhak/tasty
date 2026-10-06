@@ -110,7 +110,7 @@ pub(super) fn draw_surface_settings(
 
     let painter = ui.painter_at(rect);
     painter.rect_filled(rect, 0.0, theme.bg_panel().to_egui());
-    let sep = egui::Stroke::new(bw, theme.separator.to_egui());
+    let sep = egui::Stroke::new(bw, theme.separator.to_egui_premultiplied());
     painter.hline(header.x_range(), header.max.y, sep);
     painter.hline(footer.x_range(), footer.min.y, sep);
 

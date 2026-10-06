@@ -47,7 +47,7 @@ pub fn segmented(
                             rect.y_range(),
                             egui::Stroke::new(
                                 theme.border_width.value(),
-                                theme.separator.to_egui(),
+                                theme.separator.to_egui_premultiplied(),
                             ),
                         );
                     }

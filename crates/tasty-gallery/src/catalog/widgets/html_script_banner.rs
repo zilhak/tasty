@@ -173,7 +173,10 @@ fn tab(
     painter.vline(
         rect.right(),
         rect.y_range(),
-        egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+        egui::Stroke::new(
+            theme.border_width.value(),
+            theme.separator.to_egui_premultiplied(),
+        ),
     );
     marker_rect
 }
@@ -199,7 +202,7 @@ fn tab_strip(
     ui.painter().hline(
         strip.x_range(),
         strip.bottom() + bw / 2.0,
-        egui::Stroke::new(bw, theme.separator.to_egui()),
+        egui::Stroke::new(bw, theme.separator.to_egui_premultiplied()),
     );
     egui::Rect::from_min_max(egui::pos2(rect.left(), strip.bottom() + bw), rect.max)
 }
@@ -829,7 +832,7 @@ fn strip_tooltip_window(ui: &mut egui::Ui, theme: &Theme, id: &str, stacked: boo
         painter.hline(
             above.x_range(),
             above.bottom() - bw / 2.0,
-            egui::Stroke::new(bw, theme.separator.to_egui()),
+            egui::Stroke::new(bw, theme.separator.to_egui_premultiplied()),
         );
         native.push(upper);
     } else {
@@ -864,7 +867,7 @@ fn strip_tooltip_window(ui: &mut egui::Ui, theme: &Theme, id: &str, stacked: boo
     painter.hline(
         strip.x_range(),
         strip.bottom() + bw / 2.0,
-        egui::Stroke::new(bw, theme.separator.to_egui()),
+        egui::Stroke::new(bw, theme.separator.to_egui_premultiplied()),
     );
 
     let webview =

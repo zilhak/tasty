@@ -10,8 +10,8 @@ use tasty_doc_guards::repo_root;
 const THEME_SRC: &str = "crates/tasty-type-appearance/src/theme.rs";
 const RUNTIME_SRC: &str = "crates/tasty-themes/src/state.rs";
 
-/// 이 타입으로 직접 선언한 필드를 색·길이로 분류한다.
-const VISUAL_TYPES: &[&str] = &["HexColor", "LogicalPx"];
+/// 이 타입으로 직접 선언한 필드를 색·길이로 분류한다. PremulColor는 알파를 미리 곱해 저장한 색이다.
+const VISUAL_TYPES: &[&str] = &["HexColor", "PremulColor", "LogicalPx"];
 
 /// Theme의 나머지 필드와 해당 타입을 사용하는 이유.
 const NON_VISUAL_ROSTER: &[(&str, &str)] = &[
@@ -190,6 +190,7 @@ pub struct Bravo {
 #[test]
 fn the_visual_test_reads_the_head_of_the_type() {
     assert!(is_visual("HexColor"));
+    assert!(is_visual("PremulColor"));
     assert!(is_visual("LogicalPx"));
     assert!(!is_visual("BTreeMap<String, HexColor>"));
     assert!(!is_visual("bool"));

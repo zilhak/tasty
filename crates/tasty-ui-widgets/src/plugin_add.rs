@@ -398,7 +398,10 @@ pub fn plugin_add_bar(
     ui.painter().hline(
         rect.x_range(),
         rect.top(),
-        egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+        egui::Stroke::new(
+            theme.border_width.value(),
+            theme.separator.to_egui_premultiplied(),
+        ),
     );
     clicks
 }

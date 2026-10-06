@@ -207,7 +207,10 @@ fn draw_preset_diff_table(
     let col_w = [col1, col, col];
     let pad_x = th.spacing_md.value();
     let pad_y = th.spacing_sm.value();
-    let hairline = egui::Stroke::new(th.border_width.value(), th.separator.to_egui());
+    let hairline = egui::Stroke::new(
+        th.border_width.value(),
+        th.separator.to_egui_premultiplied(),
+    );
 
     ui.scope(|ui| {
         ui.spacing_mut().item_spacing.y = 0.0;

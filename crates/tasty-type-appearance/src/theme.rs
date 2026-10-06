@@ -2,7 +2,7 @@
 //! 파일 읽기·전역 상태·테마 선택은 tasty-themes가 담당한다.
 //! ThemeColors/PartialColors는 저장·병합용이고 Theme는 그리기에 사용할 값을 담는다.
 
-use crate::color::{GpuRgb, HexColor};
+use crate::color::{GpuRgb, HexColor, PremulColor};
 use crate::motion::Millis;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -824,12 +824,13 @@ pub struct Theme {
     pub ansi_bright_white: HexColor,
 
     // ── `is_light` 에서 자동 도출 (premultiplied 바이트) ──
-    /// 호버 시 배경 오버레이 (~8%). `to_egui_premultiplied()` 로 변환할 것.
-    pub hover_overlay: HexColor,
-    /// 눌림 시 배경 오버레이 (~12%). `to_egui_premultiplied()` 로 변환할 것.
-    pub active_overlay: HexColor,
-    /// 구분선 (~8%). `to_egui_premultiplied()` 로 변환할 것.
-    pub separator: HexColor,
+    // 타입이 PremulColor라 알파를 한 번 더 곱하는 일반 to_egui()는 컴파일되지 않는다.
+    /// 호버 시 배경 오버레이 (~8%).
+    pub hover_overlay: PremulColor,
+    /// 눌림 시 배경 오버레이 (~12%).
+    pub active_overlay: PremulColor,
+    /// 구분선 (~8%).
+    pub separator: PremulColor,
 
     // ── 모든 테마 공통 sizing (SIZING 에서 복사) ──
     /// 서브-caption micro-label (kbd / badge / tag / tree·menu meta) — 10px.
@@ -965,21 +966,19 @@ pub struct Theme {
     pub surface_themes: BTreeMap<String, SurfaceTheme>,
 }
 
-/// `is_light` 에 따른 hover/active/separator 도출.
-/// premultiplied sRGB 바이트로 저장 — 변환 시 `to_egui_premultiplied()` 사용.
-#[allow(clippy::disallowed_methods)] // reason: 도출 overlay 색 정의 본거지
-const fn derive_overlays(is_light: bool) -> (HexColor, HexColor, HexColor) {
+/// `is_light` 에 따른 hover/active/separator 도출. premultiplied sRGB 바이트다.
+const fn derive_overlays(is_light: bool) -> (PremulColor, PremulColor, PremulColor) {
     if is_light {
         (
-            HexColor::from_rgba(0, 0, 0, 20), // black ~8%
-            HexColor::from_rgba(0, 0, 0, 31), // black ~12%
-            HexColor::from_rgba(0, 0, 0, 20), // black ~8%
+            PremulColor::from_premultiplied(0, 0, 0, 20), // black ~8%
+            PremulColor::from_premultiplied(0, 0, 0, 31), // black ~12%
+            PremulColor::from_premultiplied(0, 0, 0, 20), // black ~8%
         )
     } else {
         (
-            HexColor::from_rgba(20, 20, 20, 20), // white-ish ~8%
-            HexColor::from_rgba(31, 31, 31, 31), // white-ish ~12%
-            HexColor::from_rgba(20, 20, 20, 20), // white-ish ~8%
+            PremulColor::from_premultiplied(20, 20, 20, 20), // white ~8%
+            PremulColor::from_premultiplied(31, 31, 31, 31), // white ~12%
+            PremulColor::from_premultiplied(20, 20, 20, 20), // white ~8%
         )
     }
 }
@@ -1323,11 +1322,11 @@ impl Theme {
 
     // ── 오버레이 (overlay-*) — is_light 에서 도출된 필드를 semantic 이름으로 ──
     #[inline]
-    pub fn overlay_hover(&self) -> HexColor {
+    pub fn overlay_hover(&self) -> PremulColor {
         self.hover_overlay
     }
     #[inline]
-    pub fn overlay_active(&self) -> HexColor {
+    pub fn overlay_active(&self) -> PremulColor {
         self.active_overlay
     }
 
@@ -1475,7 +1474,7 @@ impl Theme {
     }
     /// 타이틀바 하단 1px 보더. `--tasty-titlebar-border` → `separator`.
     #[inline]
-    pub fn titlebar_border(&self) -> HexColor {
+    pub fn titlebar_border(&self) -> PremulColor {
         self.separator
     }
     /// 타이틀바 전경 (active/focused). `--tasty-titlebar-fg` → `text-secondary`.
@@ -1685,7 +1684,7 @@ impl Theme {
     }
     /// 스트립 하단 / 조합 헤더 하단 구분선. `--tasty-modhint-separator` → `separator`.
     #[inline]
-    pub fn modhint_separator(&self) -> HexColor {
+    pub fn modhint_separator(&self) -> PremulColor {
         self.separator
     }
     /// 드래그 스트립 "held" 라벨 색. `--tasty-modhint-held-fg` → `text-muted`.
@@ -2431,7 +2430,7 @@ mod tests {
         assert!(t.is_light);
         assert_ne!(t.hover_overlay, dark_hover);
         // 라이트 오버레이는 RGB 가 0
-        assert_eq!(t.hover_overlay.r, 0);
+        assert_eq!(t.hover_overlay.premultiplied_bytes()[0], 0);
     }
 
     #[test]

@@ -200,7 +200,7 @@ mod tests {
         ctx.is_light = true;
         let t = resolve(&ctx);
         assert!(t.is_light);
-        assert_eq!(t.hover_overlay.r, 0);
+        assert_eq!(t.hover_overlay.premultiplied_bytes()[0], 0);
     }
 
     // apply_theme의 전역 스캔 캐시는 이 단위 검사에서 실제 디스크와 격리하지 않는다.

@@ -160,7 +160,7 @@ fn draw_screen(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, d: &Demo, sal
 
     let p = ui.painter_at(rect);
     p.rect_filled(rect, 0.0, theme.bg_panel().to_egui());
-    let sep = egui::Stroke::new(bw, theme.separator.to_egui());
+    let sep = egui::Stroke::new(bw, theme.separator.to_egui_premultiplied());
     p.hline(header.x_range(), header.max.y, sep);
     p.hline(footer.x_range(), footer.min.y, sep);
 
@@ -383,7 +383,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::new(
                 "separator",
                 "header / footer rule",
-                theme.separator.to_egui(),
+                theme.separator.to_egui_premultiplied(),
             ),
         ],
     );

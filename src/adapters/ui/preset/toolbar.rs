@@ -229,7 +229,7 @@ pub(super) fn draw_toolbar_view(
             egui::Sense::hover(),
         );
         ui.painter()
-            .rect_filled(sep_rect, 0.0, theme.separator.to_egui());
+            .rect_filled(sep_rect, 0.0, theme.separator.to_egui_premultiplied());
         ui.add_space(theme.spacing_xs.value());
 
         if IconButton::new()

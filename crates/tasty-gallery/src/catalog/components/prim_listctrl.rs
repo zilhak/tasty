@@ -76,7 +76,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::new(
                 "overlay-hover",
                 "hover row",
-                egui::Color32::from(theme.listctrl_row_bg_hover()),
+                theme.listctrl_row_bg_hover().to_egui_premultiplied(),
             ),
             TokenChip::new(
                 "text-muted",
@@ -86,7 +86,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::new(
                 "listctrl-row-bg-hover",
                 "row hover",
-                egui::Color32::from(theme.listctrl_row_bg_hover()),
+                theme.listctrl_row_bg_hover().to_egui_premultiplied(),
             ),
             TokenChip::new(
                 "listctrl-row-bg-selected",

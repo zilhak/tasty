@@ -238,7 +238,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "filled star",
                 egui::Color32::from(theme.accent_warning()),
             ),
-            TokenChip::new("separator", "split border", theme.separator.into()),
+            TokenChip::new(
+                "separator",
+                "split border",
+                theme.separator.to_egui_premultiplied(),
+            ),
             TokenChip::new(
                 "text-placeholder",
                 "empty hint",
@@ -275,7 +279,7 @@ fn panel(
         .fill(egui::Color32::from(theme.bg_sidebar()))
         .stroke(egui::Stroke::new(
             theme.border_width.value(),
-            egui::Color32::from(theme.separator),
+            theme.separator.to_egui_premultiplied(),
         ))
         .show(ui, |ui| {
             ui.set_width(SIDEBAR_W.value());
@@ -440,7 +444,7 @@ fn section_separator(ui: &mut egui::Ui, theme: &Theme) {
         sep.center().y,
         egui::Stroke::new(
             theme.border_width.value(),
-            egui::Color32::from(theme.separator),
+            theme.separator.to_egui_premultiplied(),
         ),
     );
 }

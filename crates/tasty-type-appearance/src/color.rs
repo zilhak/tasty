@@ -121,18 +121,6 @@ impl HexColor {
         egui::Color32::from_rgba_unmultiplied(self.r, self.g, self.b, self.a)
     }
 
-    /// Convert to `egui::Color32` treating `(r, g, b, a)` as **already
-    /// premultiplied sRGB bytes**.
-    ///
-    /// 거의 쓸 일이 없지만, egui 0.31의 `from_rgba_premultiplied`와 비트 단위로
-    /// 동일한 결과가 필요할 때(예: 과거 시각 결과를 정확히 재현해야 하는 회귀
-    /// 케이스) 사용한다.
-    #[cfg(feature = "egui-compat")]
-    #[allow(clippy::disallowed_methods)] // reason: HexColor → egui premultiplied 변환 헬퍼의 정의 본거지
-    pub fn to_egui_premultiplied(self) -> egui::Color32 {
-        egui::Color32::from_rgba_premultiplied(self.r, self.g, self.b, self.a)
-    }
-
     /// Serialize to `#RRGGBB` (alpha=255) or `#RRGGBBAA` (otherwise).
     pub fn to_hex(self) -> String {
         if self.a == 255 {
@@ -280,6 +268,74 @@ impl<'de> Deserialize<'de> for HexColor {
         let s = String::deserialize(deserializer)?;
         Self::from_hex(&s)
             .ok_or_else(|| serde::de::Error::custom(format!("invalid hex color: {s}")))
+    }
+}
+
+// ============================================================================
+//  PremulColor — 알파가 이미 곱해진 테마 색
+// ============================================================================
+
+/// 알파를 RGB에 이미 곱해 둔 sRGB 바이트 색. `is_light`에서 도출하는 overlay·separator 색이다.
+///
+/// 일반 [`HexColor::to_egui`]는 알파를 한 번 더 곱해 어두운 테마에서 흰 반투명 색이 어두운 회색이
+/// 된다. 이 타입은 `to_egui()`를 제공하지 않아 그 변환을 컴파일 단계에서 막는다. egui로 보낼 때는
+/// [`Self::to_egui_premultiplied`]만 쓸 수 있다. 값은 이 크레이트 안에서만 만든다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct PremulColor(HexColor);
+
+impl PremulColor {
+    /// premultiplied sRGB 바이트로 만든다. 도출 규칙이 있는 `theme.rs`에서만 부른다.
+    pub(crate) const fn from_premultiplied(r: u8, g: u8, b: u8, a: u8) -> Self {
+        Self(HexColor { r, g, b, a })
+    }
+
+    /// premultiplied 바이트를 그대로 egui 색으로 넘긴다.
+    #[cfg(feature = "egui-compat")]
+    #[allow(clippy::disallowed_methods)] // reason: premultiplied 테마 색 → egui 변환 헬퍼의 정의 본거지
+    pub fn to_egui_premultiplied(self) -> egui::Color32 {
+        let HexColor { r, g, b, a } = self.0;
+        egui::Color32::from_rgba_premultiplied(r, g, b, a)
+    }
+
+    /// 알파 채널.
+    #[inline]
+    pub const fn a(self) -> u8 {
+        self.0.a
+    }
+
+    /// 알파를 나눈 straight 색. CSS 문자열처럼 straight rgba를 받는 곳에 넘길 때 쓴다.
+    /// 어두운 테마의 (20,20,20,20)은 흰색 8%인 (255,255,255,20)이 된다.
+    pub const fn unpremultiplied(self) -> HexColor {
+        let HexColor { r, g, b, a } = self.0;
+        if a == 0 {
+            return HexColor {
+                r: 0,
+                g: 0,
+                b: 0,
+                a: 0,
+            };
+        }
+        const fn div(c: u8, a: u8) -> u8 {
+            let v = (c as u32 * 255 + a as u32 / 2) / a as u32;
+            if v > 255 { 255 } else { v as u8 }
+        }
+        HexColor {
+            r: div(r, a),
+            g: div(g, a),
+            b: div(b, a),
+            a,
+        }
+    }
+
+    /// 저장된 premultiplied 바이트 `[r, g, b, a]`. 진단 출력과 시험에서 값을 비교할 때 쓴다.
+    #[inline]
+    pub const fn premultiplied_bytes(self) -> [u8; 4] {
+        [self.0.r, self.0.g, self.0.b, self.0.a]
+    }
+
+    /// 저장된 바이트를 `#RRGGBBAA`로 직렬화한다. 바이트는 premultiplied 값이다.
+    pub fn to_premultiplied_hex(self) -> String {
+        self.0.to_hex()
     }
 }
 
@@ -489,10 +545,26 @@ mod tests {
         assert_eq!(opaque.a(), 255);
     }
 
+    #[test]
+    fn premul_color_unpremultiplies_to_the_straight_color() {
+        assert_eq!(
+            PremulColor::from_premultiplied(20, 20, 20, 20).unpremultiplied(),
+            HexColor::from_rgba(255, 255, 255, 20)
+        );
+        assert_eq!(
+            PremulColor::from_premultiplied(0, 0, 0, 31).unpremultiplied(),
+            HexColor::from_rgba(0, 0, 0, 31)
+        );
+        assert_eq!(
+            PremulColor::from_premultiplied(0, 0, 0, 0).unpremultiplied(),
+            HexColor::from_rgba(0, 0, 0, 0)
+        );
+    }
+
     #[cfg(feature = "egui-compat")]
     #[test]
-    fn to_egui_premultiplied_bypasses_gamma() {
-        let c = HexColor::from_rgba(20, 20, 20, 20);
+    fn premul_color_bypasses_gamma() {
+        let c = PremulColor::from_premultiplied(20, 20, 20, 20);
         let e = c.to_egui_premultiplied();
         assert_eq!(e.r(), 20);
         assert_eq!(e.g(), 20);

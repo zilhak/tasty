@@ -5,7 +5,7 @@
 //! 치수는 배율을 적용한 필드를 쓰거나 ui_zoom을 곱한다.
 //! 색은 연결된 접근자로 읽고, 시간은 배율 없이 Millis로 반환한다.
 
-use crate::color::HexColor;
+use crate::color::{HexColor, PremulColor};
 use crate::motion::Millis;
 use tasty_type_geometry::length::LogicalPx;
 
@@ -54,7 +54,7 @@ impl crate::theme::Theme {
 
     /// `component.autocomplete-row-bg-hover` → `{semantic.overlay-hover}`
     #[inline]
-    pub fn autocomplete_row_bg_hover(&self) -> HexColor {
+    pub fn autocomplete_row_bg_hover(&self) -> PremulColor {
         self.overlay_hover()
     }
 
@@ -432,13 +432,13 @@ impl crate::theme::Theme {
 
     /// `component.button-overlay-active` → `{semantic.overlay-active}`
     #[inline]
-    pub fn button_overlay_active(&self) -> HexColor {
+    pub fn button_overlay_active(&self) -> PremulColor {
         self.overlay_active()
     }
 
     /// `component.button-overlay-hover` → `{semantic.overlay-hover}`
     #[inline]
-    pub fn button_overlay_hover(&self) -> HexColor {
+    pub fn button_overlay_hover(&self) -> PremulColor {
         self.overlay_hover()
     }
 
@@ -828,7 +828,7 @@ impl crate::theme::Theme {
 
     /// `component.dag-node-hover-bg` → `{semantic.overlay-hover}`
     #[inline]
-    pub fn dag_node_hover_bg(&self) -> HexColor {
+    pub fn dag_node_hover_bg(&self) -> PremulColor {
         self.overlay_hover()
     }
 
@@ -1122,7 +1122,7 @@ impl crate::theme::Theme {
 
     /// `component.drilldown-backbar-border` → `{semantic.separator}`
     #[inline]
-    pub fn drilldown_backbar_border(&self) -> HexColor {
+    pub fn drilldown_backbar_border(&self) -> PremulColor {
         self.separator
     }
 
@@ -1188,7 +1188,7 @@ impl crate::theme::Theme {
 
     /// `component.explorer-split-border` → `{semantic.separator}`
     #[inline]
-    pub fn explorer_split_border(&self) -> HexColor {
+    pub fn explorer_split_border(&self) -> PremulColor {
         self.separator
     }
 
@@ -1362,7 +1362,7 @@ impl crate::theme::Theme {
 
     /// `component.html-script-marker-hover-bg` → `{semantic.overlay-hover}`
     #[inline]
-    pub fn html_script_marker_hover_bg(&self) -> HexColor {
+    pub fn html_script_marker_hover_bg(&self) -> PremulColor {
         self.overlay_hover()
     }
 
@@ -1374,7 +1374,7 @@ impl crate::theme::Theme {
 
     /// `component.icon-button-bg-active` → `{semantic.overlay-active}`
     #[inline]
-    pub fn icon_button_bg_active(&self) -> HexColor {
+    pub fn icon_button_bg_active(&self) -> PremulColor {
         self.overlay_active()
     }
 
@@ -1392,7 +1392,7 @@ impl crate::theme::Theme {
 
     /// `component.icon-button-overlay-hover` → `{semantic.overlay-hover}`
     #[inline]
-    pub fn icon_button_overlay_hover(&self) -> HexColor {
+    pub fn icon_button_overlay_hover(&self) -> PremulColor {
         self.overlay_hover()
     }
 
@@ -1650,7 +1650,7 @@ impl crate::theme::Theme {
 
     /// `component.listctrl-divider` → `{semantic.separator}`
     #[inline]
-    pub fn listctrl_divider(&self) -> HexColor {
+    pub fn listctrl_divider(&self) -> PremulColor {
         self.separator
     }
 
@@ -1686,7 +1686,7 @@ impl crate::theme::Theme {
 
     /// `component.listctrl-row-bg-hover` → `{semantic.overlay-hover}`
     #[inline]
-    pub fn listctrl_row_bg_hover(&self) -> HexColor {
+    pub fn listctrl_row_bg_hover(&self) -> PremulColor {
         self.overlay_hover()
     }
 
@@ -1740,7 +1740,7 @@ impl crate::theme::Theme {
 
     /// `component.md-code-border` → `{semantic.separator}`
     #[inline]
-    pub fn md_code_border(&self) -> HexColor {
+    pub fn md_code_border(&self) -> PremulColor {
         self.separator
     }
 
@@ -1770,7 +1770,7 @@ impl crate::theme::Theme {
 
     /// `component.md-rule` → `{semantic.separator}`
     #[inline]
-    pub fn md_rule(&self) -> HexColor {
+    pub fn md_rule(&self) -> PremulColor {
         self.separator
     }
 
@@ -1836,7 +1836,7 @@ impl crate::theme::Theme {
 
     /// `component.menu-item-bg-hover` → `{semantic.overlay-hover}`
     #[inline]
-    pub fn menu_item_bg_hover(&self) -> HexColor {
+    pub fn menu_item_bg_hover(&self) -> PremulColor {
         self.overlay_hover()
     }
 
@@ -2094,7 +2094,7 @@ impl crate::theme::Theme {
 
     /// `component.multiselect-row-bg-hover` → `{semantic.overlay-hover}`
     #[inline]
-    pub fn multiselect_row_bg_hover(&self) -> HexColor {
+    pub fn multiselect_row_bg_hover(&self) -> PremulColor {
         self.overlay_hover()
     }
 
@@ -2124,7 +2124,7 @@ impl crate::theme::Theme {
 
     /// `component.multiselect-separator` → `{semantic.separator}`
     #[inline]
-    pub fn multiselect_separator(&self) -> HexColor {
+    pub fn multiselect_separator(&self) -> PremulColor {
         self.separator
     }
 
@@ -2274,7 +2274,7 @@ impl crate::theme::Theme {
 
     /// `component.port-favorites-border` → `{semantic.separator}`
     #[inline]
-    pub fn port_favorites_border(&self) -> HexColor {
+    pub fn port_favorites_border(&self) -> PremulColor {
         self.separator
     }
 
@@ -2550,7 +2550,7 @@ impl crate::theme::Theme {
 
     /// `component.sidebar-category-header-border` → `{semantic.separator}`
     #[inline]
-    pub fn sidebar_category_header_border(&self) -> HexColor {
+    pub fn sidebar_category_header_border(&self) -> PremulColor {
         self.separator
     }
 
@@ -2994,7 +2994,7 @@ impl crate::theme::Theme {
 
     /// `component.tab-scroll-arrow-hover-bg` → `{semantic.overlay-hover}`
     #[inline]
-    pub fn tab_scroll_arrow_hover_bg(&self) -> HexColor {
+    pub fn tab_scroll_arrow_hover_bg(&self) -> PremulColor {
         self.overlay_hover()
     }
 
@@ -3012,7 +3012,7 @@ impl crate::theme::Theme {
 
     /// `component.tab-separator` → `{semantic.separator}`
     #[inline]
-    pub fn tab_separator(&self) -> HexColor {
+    pub fn tab_separator(&self) -> PremulColor {
         self.separator
     }
 
@@ -3030,7 +3030,7 @@ impl crate::theme::Theme {
 
     /// `component.table-border` → `{semantic.separator}`
     #[inline]
-    pub fn table_border(&self) -> HexColor {
+    pub fn table_border(&self) -> PremulColor {
         self.separator
     }
 
@@ -3078,7 +3078,7 @@ impl crate::theme::Theme {
 
     /// `component.table-row-bg-hover` → `{semantic.overlay-hover}`
     #[inline]
-    pub fn table_row_bg_hover(&self) -> HexColor {
+    pub fn table_row_bg_hover(&self) -> PremulColor {
         self.overlay_hover()
     }
 
@@ -3168,7 +3168,7 @@ impl crate::theme::Theme {
 
     /// `component.titlebar-button-active-bg` → `{semantic.overlay-active}`
     #[inline]
-    pub fn titlebar_button_active_bg(&self) -> HexColor {
+    pub fn titlebar_button_active_bg(&self) -> PremulColor {
         self.overlay_active()
     }
 
@@ -3186,7 +3186,7 @@ impl crate::theme::Theme {
 
     /// `component.titlebar-button-hover-bg` → `{semantic.overlay-hover}`
     #[inline]
-    pub fn titlebar_button_hover_bg(&self) -> HexColor {
+    pub fn titlebar_button_hover_bg(&self) -> PremulColor {
         self.overlay_hover()
     }
 
@@ -3468,7 +3468,7 @@ impl crate::theme::Theme {
 
     /// `component.tree-row-bg-hover` → `{semantic.overlay-hover}`
     #[inline]
-    pub fn tree_row_bg_hover(&self) -> HexColor {
+    pub fn tree_row_bg_hover(&self) -> PremulColor {
         self.overlay_hover()
     }
 

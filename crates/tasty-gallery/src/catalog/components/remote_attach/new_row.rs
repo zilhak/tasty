@@ -57,7 +57,7 @@ pub fn draw_new_row(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::new(
                 "overlay-hover",
                 "hover fill",
-                theme.overlay_hover().to_egui(),
+                theme.overlay_hover().to_egui_premultiplied(),
             ),
             TokenChip::new(
                 "surface-active",
@@ -138,7 +138,7 @@ pub(super) fn new_ws_row(ui: &mut egui::Ui, theme: &Theme, state: NewRow) {
         selected_bar(ui, theme, rect);
     } else if state == NewRow::Hover {
         ui.painter()
-            .rect_filled(rect, 0.0, theme.overlay_hover().to_egui());
+            .rect_filled(rect, 0.0, theme.overlay_hover().to_egui_premultiplied());
     }
     let inner = egui::Rect::from_min_max(
         egui::pos2(rect.left() + theme.spacing_md.value(), rect.top()),
@@ -260,6 +260,6 @@ fn row_separator(ui: &mut egui::Ui, theme: &Theme) {
     ui.painter().hline(
         rect.x_range(),
         rect.top() + m + t * 0.5,
-        egui::Stroke::new(t, theme.separator.to_egui()),
+        egui::Stroke::new(t, theme.separator.to_egui_premultiplied()),
     );
 }

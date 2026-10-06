@@ -345,6 +345,30 @@ fn resolve_dim_accessor<'a>(set: &TokenSet, token: &'a Token) -> Result<DimAcces
     }
 }
 
+/// premultiplied 바이트로 저장되는 semantic 색. 이 색에 닿는 접근자는 `PremulColor`를 반환해
+/// 알파를 한 번 더 곱하는 `to_egui()`를 컴파일 단계에서 막는다.
+pub const PREMULTIPLIED_SEMANTIC_COLORS: &[&str] = &[
+    "semantic.overlay-hover",
+    "semantic.overlay-active",
+    "semantic.separator",
+];
+
+/// alias 체인이 premultiplied semantic 색에 닿는지.
+fn chain_reaches_premultiplied(set: &TokenSet, token: &Token) -> bool {
+    let mut cur = token;
+    // alias 체인은 짧다. 순환이 있어도 멈추도록 단계 수를 제한한다.
+    for _ in 0..16 {
+        if PREMULTIPLIED_SEMANTIC_COLORS.contains(&cur.path().as_str()) {
+            return true;
+        }
+        let Some(next) = alias_target(&cur.value).and_then(|p| set.get(p)) else {
+            return false;
+        };
+        cur = next;
+    }
+    false
+}
+
 /// 색 component 접근자의 본문 형태.
 enum ColorAccessor {
     /// alias 체인이 semantic 색에 닿고, 표에 대응 `theme.rs` 접근자가 있음.
@@ -412,14 +436,19 @@ fn emit_dim_accessor(set: &TokenSet, token: &Token, acc: &DimAccessor) -> String
 }
 
 /// 색 접근자 하나의 `impl Theme` 메서드 텍스트.
-fn emit_color_accessor(token: &Token, acc: &ColorAccessor) -> String {
+fn emit_color_accessor(set: &TokenSet, token: &Token, acc: &ColorAccessor) -> String {
     let fn_name = accessor_fn_name(&token.name);
     let body = match acc {
         ColorAccessor::SemanticExpr(expr) => format!("self.{expr}"),
         ColorAccessor::Chain(target_fn) => format!("self.{target_fn}()"),
     };
+    let ret = if chain_reaches_premultiplied(set, token) {
+        "PremulColor"
+    } else {
+        "HexColor"
+    };
     format!(
-        "\n    /// `{}` → `{}`\n    #[inline]\n    pub fn {fn_name}(&self) -> HexColor {{\n        {body}\n    }}\n",
+        "\n    /// `{}` → `{}`\n    #[inline]\n    pub fn {fn_name}(&self) -> {ret} {{\n        {body}\n    }}\n",
         token.path(),
         token.value,
     )
@@ -457,7 +486,7 @@ pub(super) fn generate_component_accessors(set: &TokenSet) -> (String, Vec<Strin
                     continue;
                 }
                 match resolve_color_accessor(set, token) {
-                    Ok(acc) => body.push_str(&emit_color_accessor(token, &acc)),
+                    Ok(acc) => body.push_str(&emit_color_accessor(set, token, &acc)),
                     Err(reason) => skips.push(reason),
                 }
             }
@@ -489,7 +518,7 @@ pub(super) fn generate_component_accessors(set: &TokenSet) -> (String, Vec<Strin
                   //! Component 치수·색·시간을 Theme를 통해 읽는다.\n\
                   //! 치수는 배율을 적용한 필드를 쓰거나 ui_zoom을 곱한다.\n\
                   //! 색은 연결된 접근자로 읽고, 시간은 배율 없이 Millis로 반환한다.\n\n\
-                  use crate::color::HexColor;\n\
+                  use crate::color::{HexColor, PremulColor};\n\
                   use crate::motion::Millis;\n\
                   use tasty_type_geometry::length::LogicalPx;\n\n\
                   impl crate::theme::Theme {";

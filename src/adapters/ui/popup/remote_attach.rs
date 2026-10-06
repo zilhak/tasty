@@ -311,7 +311,10 @@ pub fn draw_remote_attach_popup(
     ui.painter().vline(
         left_rect.right(),
         left_rect.y_range(),
-        egui::Stroke::new(th.border_width.value(), th.separator.to_egui()),
+        egui::Stroke::new(
+            th.border_width.value(),
+            th.separator.to_egui_premultiplied(),
+        ),
     );
 
     if let Some(name) = draw_left_pane(ui, &th, left_rect, &summaries, st.attach_sel.as_deref()) {
@@ -369,7 +372,10 @@ fn draw_header(ui: &mut egui::Ui, th: &Theme, rect: egui::Rect) -> bool {
     ui.painter().hline(
         rect.x_range(),
         rect.bottom(),
-        egui::Stroke::new(th.border_width.value(), th.separator.to_egui()),
+        egui::Stroke::new(
+            th.border_width.value(),
+            th.separator.to_egui_premultiplied(),
+        ),
     );
     let inner = egui::Rect::from_min_max(
         egui::pos2(rect.left() + HEADER_PAD_L.value(), rect.top()),
@@ -896,7 +902,7 @@ fn row_separator(ui: &mut egui::Ui, th: &Theme) {
     ui.painter().hline(
         rect.x_range(),
         rect.top() + m + w * 0.5,
-        egui::Stroke::new(w, th.separator.to_egui()),
+        egui::Stroke::new(w, th.separator.to_egui_premultiplied()),
     );
 }
 
@@ -1004,7 +1010,10 @@ fn draw_footer(
     ui.painter().hline(
         rect.x_range(),
         rect.top(),
-        egui::Stroke::new(th.border_width.value(), th.separator.to_egui()),
+        egui::Stroke::new(
+            th.border_width.value(),
+            th.separator.to_egui_premultiplied(),
+        ),
     );
     let inner = egui::Rect::from_min_max(
         egui::pos2(rect.left() + th.spacing_lg.value(), rect.top()),

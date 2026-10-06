@@ -460,7 +460,10 @@ fn draw_local_ssh_row(
     ui.painter().hline(
         ui.max_rect().x_range(),
         ui.cursor().top(),
-        egui::Stroke::new(th.border_width.value(), th.separator),
+        egui::Stroke::new(
+            th.border_width.value(),
+            th.separator.to_egui_premultiplied(),
+        ),
     );
     clicked
 }

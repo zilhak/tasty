@@ -537,7 +537,7 @@ fn compute_panel_rects(ui: &egui::Ui, theme: &Theme) -> PresetPanelRects {
     painter.vline(
         body.min.x + LIST_WIDTH.value(),
         body.y_range(),
-        egui::Stroke::new(bw, theme.separator.to_egui()),
+        egui::Stroke::new(bw, theme.separator.to_egui_premultiplied()),
     );
 
     let toolbar_rect = egui::Rect::from_min_size(
@@ -551,7 +551,7 @@ fn compute_panel_rects(ui: &egui::Ui, theme: &Theme) -> PresetPanelRects {
     ui.painter().hline(
         toolbar_rect.x_range(),
         toolbar_rect.max.y,
-        egui::Stroke::new(bw, theme.separator.to_egui()),
+        egui::Stroke::new(bw, theme.separator.to_egui_premultiplied()),
     );
 
     PresetPanelRects {

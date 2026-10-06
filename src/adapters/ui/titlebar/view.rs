@@ -156,7 +156,10 @@ pub fn draw_titlebar_view(ctx: &egui::Context, props: &TitlebarProps) -> Titleba
             ui.painter().hline(
                 rect.x_range(),
                 rect.bottom() - 0.5,
-                egui::Stroke::new(th.border_width.value(), th.titlebar_border().to_egui()),
+                egui::Stroke::new(
+                    th.border_width.value(),
+                    th.titlebar_border().to_egui_premultiplied(),
+                ),
             );
         });
 
@@ -213,21 +216,21 @@ fn draw_window_buttons(
         let is_close = matches!(button, WindowButton::Close);
         let bg = if resp.is_pointer_button_down_on() {
             if is_close {
-                Some(th.accent_window_close())
+                Some(th.accent_window_close().to_egui())
             } else {
-                Some(th.active_overlay)
+                Some(th.active_overlay.to_egui_premultiplied())
             }
         } else if resp.hovered() {
             if is_close {
-                Some(th.accent_window_close())
+                Some(th.accent_window_close().to_egui())
             } else {
-                Some(th.hover_overlay)
+                Some(th.hover_overlay.to_egui_premultiplied())
             }
         } else {
             None
         };
         if let Some(bg) = bg {
-            ui.painter().circle_filled(center, d * 0.5, bg.to_egui());
+            ui.painter().circle_filled(center, d * 0.5, bg);
         }
 
         let fg = if is_close && resp.hovered() {

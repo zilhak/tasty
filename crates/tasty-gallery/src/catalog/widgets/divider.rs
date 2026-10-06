@@ -18,7 +18,7 @@ fn split(ui: &mut egui::Ui, theme: &Theme, vertical: bool, hover: bool) {
     let line = if hover {
         egui::Color32::from(theme.accent_primary())
     } else {
-        egui::Color32::from(theme.separator)
+        theme.separator.to_egui_premultiplied()
     };
     const HIT_BAND_ALPHA: u8 = 36;
     let band = theme.accent_primary().with_alpha(HIT_BAND_ALPHA).to_egui();

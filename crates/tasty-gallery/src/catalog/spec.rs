@@ -61,7 +61,7 @@ pub fn section(ui: &mut egui::Ui, theme: &Theme, title: &str) {
             .color(col(theme.text_muted())),
     );
     ui.add_space(theme.spacing_sm.value());
-    hline(ui, theme, col(theme.separator));
+    hline(ui, theme, col(theme.separator.to_egui_premultiplied()));
     ui.add_space(theme.spacing_sm.value());
 }
 
@@ -159,7 +159,7 @@ pub fn meta(ui: &mut egui::Ui, theme: &Theme, specs: &[(&str, &str)], tokens: &[
             .fill(col(theme.bg_panel()))
             .stroke(egui::Stroke::new(
                 theme.border_width.value(),
-                col(theme.separator),
+                col(theme.separator.to_egui_premultiplied()),
             ))
             .corner_radius(theme.corner_radius_sm.value())
             .inner_margin(egui::Margin::same(theme.spacing_md.value() as i8))

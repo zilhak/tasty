@@ -119,7 +119,7 @@ fn col_block(ui: &mut egui::Ui, theme: &Theme, label: &str) {
         .fill(ec(theme.bg_panel()))
         .stroke(egui::Stroke::new(
             theme.border_width.value(),
-            ec(theme.separator),
+            ec(theme.separator.to_egui_premultiplied()),
         ))
         .corner_radius(theme.corner_radius_sm.value())
         .inner_margin(egui::Margin::same(theme.spacing_sm.value() as i8))

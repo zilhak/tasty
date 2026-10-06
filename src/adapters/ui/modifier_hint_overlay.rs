@@ -489,7 +489,10 @@ fn draw_content(
         strip_rect.bottom() - bw * 0.5,
         egui::Stroke::new(
             bw,
-            theme.modhint_separator().to_egui().gamma_multiply(alpha),
+            theme
+                .modhint_separator()
+                .to_egui_premultiplied()
+                .gamma_multiply(alpha),
         ),
     );
 
@@ -596,7 +599,7 @@ fn draw_section(
         hr.center().y,
         egui::Stroke::new(
             theme.border_width.value(),
-            theme.modhint_separator().to_egui(),
+            theme.modhint_separator().to_egui_premultiplied(),
         ),
     );
     // 빈 섹션의 내부 간격만 좁혀 불필요한 높이를 줄인다.

@@ -309,7 +309,7 @@ fn draw_header_divider(ui: &mut egui::Ui, th: &theme::Theme) {
     let w = th.border_width.value();
     let (rect, _) = ui.allocate_exact_size(egui::vec2(w, 20.0), egui::Sense::hover());
     ui.painter()
-        .rect_filled(rect, 0.0, egui::Color32::from(th.separator));
+        .rect_filled(rect, 0.0, th.separator.to_egui_premultiplied());
 }
 
 /// 헤더 우측 X 닫기 버튼 (IconButton). 클릭 시 true.

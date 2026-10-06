@@ -248,7 +248,10 @@ fn tab_strip(
             ui.painter().vline(
                 x,
                 tab_rect.y_range(),
-                egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+                egui::Stroke::new(
+                    theme.border_width.value(),
+                    theme.separator.to_egui_premultiplied(),
+                ),
             );
         }
 
@@ -620,7 +623,10 @@ fn sidebar(
     ui.painter().hline(
         sep.x_range(),
         sep.center().y,
-        egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+        egui::Stroke::new(
+            theme.border_width.value(),
+            theme.separator.to_egui_premultiplied(),
+        ),
     );
 
     ui.allocate_ui_with_layout(

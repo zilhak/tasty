@@ -155,7 +155,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::new(
                 "separator",
                 "border-top",
-                egui::Color32::from(theme.separator),
+                theme.separator.to_egui_premultiplied(),
             ),
             TokenChip::new(
                 "statusbar-glyph",

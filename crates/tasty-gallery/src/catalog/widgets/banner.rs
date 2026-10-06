@@ -119,7 +119,10 @@ fn faux_chrome(
     painter.hline(
         tab_rect.x_range(),
         tab_rect.bottom(),
-        egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+        egui::Stroke::new(
+            theme.border_width.value(),
+            theme.separator.to_egui_premultiplied(),
+        ),
     );
     let mut x = tab_rect.left();
     for (i, label) in tabs.iter().enumerate() {
@@ -157,7 +160,10 @@ fn faux_chrome(
         painter.vline(
             x,
             tab_rect.y_range(),
-            egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+            egui::Stroke::new(
+                theme.border_width.value(),
+                theme.separator.to_egui_premultiplied(),
+            ),
         );
     }
 
@@ -388,7 +394,7 @@ pub fn draw_blacklist(ui: &mut egui::Ui, theme: &Theme) {
 /// 블랙리스트 한 행 — 패턴(mono) + 우측 × 제거. hover 행은 overlay-hover 배경.
 fn blacklist_row(ui: &mut egui::Ui, theme: &Theme, pattern: &str, hover: bool) {
     let fill = if hover {
-        theme.overlay_hover().to_egui()
+        theme.overlay_hover().to_egui_premultiplied()
     } else {
         egui::Color32::TRANSPARENT
     };
@@ -455,7 +461,7 @@ fn blacklist_editor(ui: &mut egui::Ui, theme: &Theme, empty: bool) {
                 egui::Sense::hover(),
             );
             ui.painter()
-                .rect_filled(sep, 0.0, theme.separator.to_egui());
+                .rect_filled(sep, 0.0, theme.separator.to_egui_premultiplied());
 
             ui.label(
                 egui::RichText::new("Disable capture for these programs")
@@ -725,12 +731,12 @@ pub fn draw_more_menu(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::new(
                 "menu-item-bg-hover",
                 "row hover",
-                theme.menu_item_bg_hover().to_egui(),
+                theme.menu_item_bg_hover().to_egui_premultiplied(),
             ),
             TokenChip::new(
                 "icon-button-bg-active",
                 "⋯ active tint",
-                theme.icon_button_bg_active().to_egui(),
+                theme.icon_button_bg_active().to_egui_premultiplied(),
             ),
             TokenChip::new(
                 "border-strong",
@@ -742,7 +748,7 @@ pub fn draw_more_menu(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::new(
                 "overlay-active",
                 "open-trigger wash",
-                theme.overlay_active().to_egui(),
+                theme.overlay_active().to_egui_premultiplied(),
             ),
             TokenChip::new(
                 "accent-primary",

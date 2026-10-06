@@ -98,7 +98,10 @@ pub fn draw_status_bar_view(
     ui.painter().hline(
         rect.x_range(),
         rect.top(),
-        egui::Stroke::new(th.border_width.value(), th.separator),
+        egui::Stroke::new(
+            th.border_width.value(),
+            th.separator.to_egui_premultiplied(),
+        ),
     );
 
     let mut bar = ui.new_child(

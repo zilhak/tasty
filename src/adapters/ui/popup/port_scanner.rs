@@ -1482,8 +1482,11 @@ fn draw_port_star(ui: &mut egui::Ui, th: &Theme, on: bool) -> egui::Response {
     let side = th.item_height_tree.value();
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(side, side), egui::Sense::click());
     if resp.hovered() {
-        ui.painter()
-            .rect_filled(rect, th.corner_radius_sm.value(), th.overlay_hover());
+        ui.painter().rect_filled(
+            rect,
+            th.corner_radius_sm.value(),
+            th.overlay_hover().to_egui_premultiplied(),
+        );
     }
     let glyph = th.icon_glyph_size_sm.value();
     let icon_rect = egui::Rect::from_center_size(rect.center(), egui::vec2(glyph, glyph));
@@ -1596,7 +1599,10 @@ fn draw_favorites_section(
     ui.painter().hline(
         full.x_range(),
         ir.response.rect.bottom(),
-        egui::Stroke::new(th.border_width.value(), th.separator),
+        egui::Stroke::new(
+            th.border_width.value(),
+            th.separator.to_egui_premultiplied(),
+        ),
     );
     out
 }

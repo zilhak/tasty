@@ -254,7 +254,10 @@ fn body(ui: &mut egui::Ui, theme: &Theme, state: &mut ViewerState, tr: &Translat
     ui.painter().vline(
         avail.min.x + RAIL_W,
         rail_rect.y_range(),
-        Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+        Stroke::new(
+            theme.border_width.value(),
+            theme.separator.to_egui_premultiplied(),
+        ),
     );
 
     draw_rail(ui, theme, state, tr, rail_rect);
@@ -456,7 +459,10 @@ fn draw_right(
     ui.painter().hline(
         area.x_range(),
         area.top() + half,
-        Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+        Stroke::new(
+            theme.border_width.value(),
+            theme.separator.to_egui_premultiplied(),
+        ),
     );
 
     draw_changes(ui, theme, state, tr, top);
@@ -823,7 +829,10 @@ fn bottom_separator(ui: &mut egui::Ui, theme: &Theme, rect: Rect) {
     ui.painter().hline(
         rect.x_range(),
         rect.bottom() - theme.border_width.value() * 0.5,
-        Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+        Stroke::new(
+            theme.border_width.value(),
+            theme.separator.to_egui_premultiplied(),
+        ),
     );
 }
 

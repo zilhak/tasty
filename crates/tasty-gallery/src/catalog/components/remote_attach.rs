@@ -175,7 +175,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::new(
                 "separator",
                 "1px rule closing the new-row group",
-                theme.separator.to_egui(),
+                theme.separator.to_egui_premultiplied(),
             ),
             TokenChip::new(
                 "accent-attached",
@@ -300,7 +300,10 @@ fn header(ui: &mut egui::Ui, theme: &Theme) {
     ui.painter().hline(
         rect.x_range(),
         rect.bottom(),
-        egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+        egui::Stroke::new(
+            theme.border_width.value(),
+            theme.separator.to_egui_premultiplied(),
+        ),
     );
     // 디자인 padding 위 10 · 오른쪽 10 · 아래 10 · 왼쪽 14.
     let inner = egui::Rect::from_min_max(
@@ -350,7 +353,10 @@ fn body(ui: &mut egui::Ui, theme: &Theme, state: RaState) {
     ui.painter().vline(
         left.right(),
         left.y_range(),
-        egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+        egui::Stroke::new(
+            theme.border_width.value(),
+            theme.separator.to_egui_premultiplied(),
+        ),
     );
     left_pane(ui, theme, left, state);
     right_pane(ui, theme, right, state);
@@ -364,7 +370,10 @@ fn footer(ui: &mut egui::Ui, theme: &Theme, state: RaState) {
     ui.painter().hline(
         rect.x_range(),
         rect.top(),
-        egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+        egui::Stroke::new(
+            theme.border_width.value(),
+            theme.separator.to_egui_premultiplied(),
+        ),
     );
     let inner = egui::Rect::from_min_max(
         egui::pos2(rect.left() + theme.spacing_lg.value(), rect.top()),

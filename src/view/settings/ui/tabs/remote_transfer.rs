@@ -129,7 +129,10 @@ fn row_separator(ui: &mut egui::Ui, th: &tasty_type_appearance::theme::Theme) {
     ui.painter().hline(
         rect.x_range(),
         rect.center().y,
-        egui::Stroke::new(th.border_width.value(), th.separator.to_egui()),
+        egui::Stroke::new(
+            th.border_width.value(),
+            th.separator.to_egui_premultiplied(),
+        ),
     );
     vspace(ui, th.spacing_sm);
 }

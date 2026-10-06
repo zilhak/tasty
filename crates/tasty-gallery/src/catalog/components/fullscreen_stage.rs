@@ -171,7 +171,7 @@ pub fn draw_titlebar(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::new(
                 "overlay-hover",
                 "button hover",
-                theme.hover_overlay.to_egui(),
+                theme.hover_overlay.to_egui_premultiplied(),
             ),
         ],
     );

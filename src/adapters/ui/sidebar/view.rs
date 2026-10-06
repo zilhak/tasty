@@ -938,7 +938,7 @@ fn draw_category_header(
     let border_w = th.border_width.value();
     ui.painter()
         .rect_filled(rect, 0.0, th.sidebar_category_header_bg().to_egui());
-    let border = th.sidebar_category_header_border().to_egui();
+    let border = th.sidebar_category_header_border().to_egui_premultiplied();
     ui.painter().hline(
         rect.x_range(),
         rect.min.y,

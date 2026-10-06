@@ -349,7 +349,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::new(
                 "separator",
                 "all-toggle divider",
-                egui::Color32::from(theme.separator),
+                theme.separator.to_egui_premultiplied(),
             ),
         ],
     );
@@ -419,7 +419,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::new(
                 "multiselect-row-bg-hover",
                 "pointer hover",
-                egui::Color32::from(theme.multiselect_row_bg_hover()),
+                theme.multiselect_row_bg_hover().to_egui_premultiplied(),
             ),
             TokenChip::new(
                 "multiselect-row-bg-active",

@@ -100,7 +100,7 @@ fn tab_strip(ui: &mut egui::Ui, theme: &Theme, held: bool) {
             p.vline(
                 x.value(),
                 rect.y_range(),
-                egui::Stroke::new(bw, egui::Color32::from(theme.separator)),
+                egui::Stroke::new(bw, theme.separator.to_egui_premultiplied()),
             );
         }
         let slot_c = egui::pos2(
@@ -142,7 +142,7 @@ fn tab_strip(ui: &mut egui::Ui, theme: &Theme, held: bool) {
     p.rect_stroke(
         rect,
         theme.corner_radius.value(),
-        egui::Stroke::new(bw, egui::Color32::from(theme.separator)),
+        egui::Stroke::new(bw, theme.separator.to_egui_premultiplied()),
         egui::StrokeKind::Inside,
     );
 }
@@ -276,7 +276,7 @@ fn full_ws(ui: &mut egui::Ui, theme: &Theme, held: bool) {
             p.hline(
                 (rect.min.x + text_x_off.value())..=rect.max.x,
                 row.min.y,
-                egui::Stroke::new(bw, egui::Color32::from(theme.separator)),
+                egui::Stroke::new(bw, theme.separator.to_egui_premultiplied()),
             );
         }
 
@@ -322,7 +322,7 @@ fn full_ws(ui: &mut egui::Ui, theme: &Theme, held: bool) {
     p.rect_stroke(
         rect,
         theme.corner_radius.value(),
-        egui::Stroke::new(bw, egui::Color32::from(theme.separator)),
+        egui::Stroke::new(bw, theme.separator.to_egui_premultiplied()),
         egui::StrokeKind::Inside,
     );
 }
@@ -591,7 +591,7 @@ fn full_cat(ui: &mut egui::Ui, theme: &Theme, held: bool) {
                 p.hline(
                     (rect.min.x + text_x_off.value())..=rect.max.x,
                     row.min.y,
-                    egui::Stroke::new(bw, egui::Color32::from(theme.separator)),
+                    egui::Stroke::new(bw, theme.separator.to_egui_premultiplied()),
                 );
             }
             let cy = row.center().y;
@@ -619,7 +619,7 @@ fn full_cat(ui: &mut egui::Ui, theme: &Theme, held: bool) {
     p.rect_stroke(
         rect,
         theme.corner_radius.value(),
-        egui::Stroke::new(bw, egui::Color32::from(theme.separator)),
+        egui::Stroke::new(bw, theme.separator.to_egui_premultiplied()),
         egui::StrokeKind::Inside,
     );
 }
@@ -676,7 +676,7 @@ fn rail_cat(ui: &mut egui::Ui, theme: &Theme, held: bool) {
                     keycap_at(ui, theme, c, d, *active);
                 } else {
                     let line = egui::Rect::from_center_size(c, egui::vec2(line_w, bw));
-                    p.rect_filled(line, 0.0, egui::Color32::from(theme.separator));
+                    p.rect_filled(line, 0.0, theme.separator.to_egui_premultiplied());
                 }
                 y += bound_h + gap;
             }

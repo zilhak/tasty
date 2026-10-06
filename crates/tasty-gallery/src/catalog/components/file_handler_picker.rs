@@ -110,7 +110,11 @@ pub fn draw_recent(ui: &mut egui::Ui, theme: &Theme) {
             ("selection", "one row across BOTH groups"),
         ],
         &[
-            TokenChip::new("separator", "group rule", theme.separator.to_egui()),
+            TokenChip::new(
+                "separator",
+                "group rule",
+                theme.separator.to_egui_premultiplied(),
+            ),
             TokenChip::new(
                 "text-secondary",
                 "group label",
@@ -313,7 +317,7 @@ pub fn draw_long(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::new(
                 "separator",
                 "header / footer rules",
-                theme.separator.to_egui(),
+                theme.separator.to_egui_premultiplied(),
             ),
         ],
     );
@@ -348,7 +352,11 @@ pub fn draw_headless(ui: &mut egui::Ui, theme: &Theme) {
                 "titlebar fill (the rejected option)",
                 theme.bg_sidebar().to_egui(),
             ),
-            TokenChip::new("separator", "header rule", theme.separator.to_egui()),
+            TokenChip::new(
+                "separator",
+                "header rule",
+                theme.separator.to_egui_premultiplied(),
+            ),
         ],
     );
     spec::dont(
@@ -375,7 +383,11 @@ pub fn draw_footer(ui: &mut egui::Ui, theme: &Theme) {
             ("Open", "disabled until a row is selected"),
         ],
         &[
-            TokenChip::new("separator", "footer rule", theme.separator.to_egui()),
+            TokenChip::new(
+                "separator",
+                "footer rule",
+                theme.separator.to_egui_premultiplied(),
+            ),
             TokenChip::new("accent-primary", "Open", theme.accent_primary().to_egui()),
         ],
     );

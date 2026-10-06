@@ -52,7 +52,7 @@ fn scaled_sidebar_row(ui: &mut egui::Ui, theme: &Theme, scale: f32) {
         .fill(ec(theme.bg_sidebar()))
         .stroke(egui::Stroke::new(
             theme.border_width.value(),
-            ec(theme.separator),
+            ec(theme.separator.to_egui_premultiplied()),
         ))
         .corner_radius(theme.corner_radius_sm.value())
         .inner_margin(egui::Margin {

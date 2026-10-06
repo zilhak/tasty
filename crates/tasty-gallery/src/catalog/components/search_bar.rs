@@ -82,7 +82,10 @@ fn bar(ui: &mut egui::Ui, theme: &Theme, count: &str, no_match: bool) {
                 ui.painter().vline(
                     r.center().x,
                     r.y_range(),
-                    egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+                    egui::Stroke::new(
+                        theme.border_width.value(),
+                        theme.separator.to_egui_premultiplied(),
+                    ),
                 );
                 icon_btn(ui, theme, icons::CLOSE, false);
             });

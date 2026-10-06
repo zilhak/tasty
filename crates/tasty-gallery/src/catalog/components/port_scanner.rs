@@ -542,7 +542,10 @@ fn draw_favorites_section(ui: &mut egui::Ui, theme: &Theme, favorites: &[Favorit
     ui.painter().hline(
         fav_ir.response.rect.x_range(),
         fav_ir.response.rect.bottom(),
-        egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+        egui::Stroke::new(
+            theme.border_width.value(),
+            theme.separator.to_egui_premultiplied(),
+        ),
     );
 }
 

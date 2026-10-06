@@ -44,7 +44,10 @@ pub(crate) fn draw(ctx: &egui::Context, theme: &Theme, tr: &Translator, doc: &mu
         ui.painter().hline(
             ui.max_rect().x_range(),
             sep_y,
-            egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+            egui::Stroke::new(
+                theme.border_width.value(),
+                theme.separator.to_egui_premultiplied(),
+            ),
         );
 
         draw_canvas(ui, theme, tr, doc);

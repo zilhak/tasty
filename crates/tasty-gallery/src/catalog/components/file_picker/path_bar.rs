@@ -18,7 +18,10 @@ pub(super) fn path_bar(ui: &mut egui::Ui, theme: &Theme, v: Variant) {
     ui.painter().hline(
         rect.x_range(),
         rect.bottom(),
-        egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+        egui::Stroke::new(
+            theme.border_width.value(),
+            theme.separator.to_egui_premultiplied(),
+        ),
     );
     let inner = egui::Rect::from_min_max(
         egui::pos2(

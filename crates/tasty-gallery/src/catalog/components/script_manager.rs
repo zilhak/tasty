@@ -209,7 +209,10 @@ fn script_row(ui: &mut egui::Ui, theme: &Theme, s: &Seed) {
     ui.painter().hline(
         rect.x_range(),
         rect.center().y,
-        egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+        egui::Stroke::new(
+            theme.border_width.value(),
+            theme.separator.to_egui_premultiplied(),
+        ),
     );
 }
 
@@ -313,7 +316,11 @@ fn meta_note(ui: &mut egui::Ui, theme: &Theme) {
             ),
             TokenChip::new("text-disabled", "Unbound", theme.text_disabled().to_egui()),
             TokenChip::without_color("font-mono", "path · trigger chips"),
-            TokenChip::new("separator", "row divider", theme.separator.to_egui()),
+            TokenChip::new(
+                "separator",
+                "row divider",
+                theme.separator.to_egui_premultiplied(),
+            ),
         ],
     );
     spec::note(

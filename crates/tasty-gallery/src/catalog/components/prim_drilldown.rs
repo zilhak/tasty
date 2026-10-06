@@ -146,7 +146,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::new(
                 "separator",
                 "backbar hairline",
-                egui::Color32::from(theme.drilldown_backbar_border()),
+                theme.drilldown_backbar_border().to_egui_premultiplied(),
             ),
             TokenChip::new(
                 "text-primary",

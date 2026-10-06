@@ -58,9 +58,9 @@ pub fn draw_caption_buttons(
         if is_close && btn_hovered {
             painter.rect_filled(cell, 0.0, th.accent_window_close().to_egui());
         } else if pressed {
-            painter.rect_filled(cell, 0.0, th.overlay_active().to_egui());
+            painter.rect_filled(cell, 0.0, th.overlay_active().to_egui_premultiplied());
         } else if btn_hovered {
-            painter.rect_filled(cell, 0.0, th.overlay_hover().to_egui());
+            painter.rect_filled(cell, 0.0, th.overlay_hover().to_egui_premultiplied());
         }
 
         let glyph_color = if is_close && btn_hovered {

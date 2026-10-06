@@ -238,7 +238,7 @@ pub fn draw_keys(ui: &mut egui::Ui, theme: &Theme) {
 /// (`.icongrid` gap 1px on `--tasty-separator`, solo stage padding 0).
 fn icongrid(ui: &mut egui::Ui, theme: &Theme, icons: &[Entry]) {
     egui::Frame::new()
-        .fill(ec(theme.separator))
+        .fill(ec(theme.separator.to_egui_premultiplied()))
         .stroke(egui::Stroke::new(
             theme.border_width.value(),
             ec(theme.border_default()),
@@ -263,7 +263,7 @@ fn tile(ui: &mut egui::Ui, theme: &Theme, g: MockGlyph, name: &str, role: &str) 
     let painter = ui.painter_at(rect);
 
     let bg = if resp.hovered() {
-        ec(theme.overlay_hover())
+        ec(theme.overlay_hover().to_egui_premultiplied())
     } else {
         ec(theme.bg_panel())
     };

@@ -95,7 +95,7 @@ fn l2_tail(ui: &mut egui::Ui, theme: &Theme, filter_active: bool) {
         .fill(theme.bg_sidebar().to_egui())
         .stroke(egui::Stroke::new(
             theme.border_width.value(),
-            theme.separator.to_egui(),
+            theme.separator.to_egui_premultiplied(),
         ))
         .corner_radius(theme.corner_radius.value())
         .inner_margin(tasty_ui_widgets::margin_all(theme.spacing_sm))
@@ -123,7 +123,10 @@ fn l2_separator(ui: &mut egui::Ui, theme: &Theme) {
     ui.painter().hline(
         (rect.left() + m)..=(rect.right() - m),
         rect.center().y,
-        egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+        egui::Stroke::new(
+            theme.border_width.value(),
+            theme.separator.to_egui_premultiplied(),
+        ),
     );
 }
 

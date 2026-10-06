@@ -35,7 +35,10 @@ pub(super) fn diff_table(
     let col_w = [SELECT_COL_W.value(), action_w, value_w, value_w];
     let pad_x = th.spacing_md.value();
     let pad_y = th.spacing_sm.value();
-    let hairline = egui::Stroke::new(th.border_width.value(), th.separator.to_egui());
+    let hairline = egui::Stroke::new(
+        th.border_width.value(),
+        th.separator.to_egui_premultiplied(),
+    );
 
     ui.scope(|ui| {
         ui.spacing_mut().item_spacing.y = 0.0;
@@ -233,7 +236,10 @@ fn group_header(
     ui.painter().hline(
         rect.x_range(),
         rect.bottom() - th.border_width.value() * 0.5,
-        egui::Stroke::new(th.border_width.value(), th.separator.to_egui()),
+        egui::Stroke::new(
+            th.border_width.value(),
+            th.separator.to_egui_premultiplied(),
+        ),
     );
 }
 

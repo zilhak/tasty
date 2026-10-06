@@ -371,7 +371,11 @@ pub fn draw_save_mode(ui: &mut egui::Ui, theme: &Theme) {
                 "empty name",
                 theme.text_placeholder().to_egui(),
             ),
-            TokenChip::new("separator", "footer rule", theme.separator.to_egui()),
+            TokenChip::new(
+                "separator",
+                "footer rule",
+                theme.separator.to_egui_premultiplied(),
+            ),
         ],
     );
 
@@ -445,7 +449,7 @@ pub fn draw_gesture_table(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::new(
                 "overlay-active",
                 "selected row bed",
-                theme.overlay_active().to_egui(),
+                theme.overlay_active().to_egui_premultiplied(),
             ),
             TokenChip::without_color("fp-crumb-menu-max-width", "320 — … menu ceiling (NEW)"),
             TokenChip::without_color("fp-crumb-menu-min-width", "180 — … menu floor (NEW)"),
@@ -508,7 +512,10 @@ fn header(ui: &mut egui::Ui, theme: &Theme, v: Variant) {
     ui.painter().hline(
         rect.x_range(),
         rect.bottom(),
-        egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+        egui::Stroke::new(
+            theme.border_width.value(),
+            theme.separator.to_egui_premultiplied(),
+        ),
     );
     let inner = egui::Rect::from_min_max(
         egui::pos2(
@@ -661,7 +668,10 @@ fn list_header(ui: &mut egui::Ui, theme: &Theme, multi: bool) {
     ui.painter().hline(
         rect.x_range(),
         rect.bottom(),
-        egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+        egui::Stroke::new(
+            theme.border_width.value(),
+            theme.separator.to_egui_premultiplied(),
+        ),
     );
     let c = cols(rect, theme, multi);
     let font = egui::FontId::monospace(theme.font_size_micro.value());

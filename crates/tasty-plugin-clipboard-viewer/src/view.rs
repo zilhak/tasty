@@ -466,7 +466,10 @@ fn other_body(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, entries: &[Othe
                 ui.painter().hline(
                     rect.x_range(),
                     rect.center().y,
-                    egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+                    egui::Stroke::new(
+                        theme.border_width.value(),
+                        theme.separator.to_egui_premultiplied(),
+                    ),
                 );
                 ui.add_space(theme.spacing_sm.value());
             }
@@ -565,7 +568,7 @@ fn well_frame(theme: &Theme) -> egui::Frame {
         .fill(theme.bg_app().to_egui())
         .stroke(egui::Stroke::new(
             theme.border_width.value(),
-            theme.separator.to_egui(),
+            theme.separator.to_egui_premultiplied(),
         ))
         .corner_radius(theme.corner_radius.value())
         .inner_margin(egui::Margin::symmetric(
@@ -618,7 +621,10 @@ fn footer(
     ui.painter().hline(
         rect.x_range(),
         rect.top() + theme.border_width.value() * 0.5,
-        egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+        egui::Stroke::new(
+            theme.border_width.value(),
+            theme.separator.to_egui_premultiplied(),
+        ),
     );
 
     if let Some(ty) = ty {
@@ -767,7 +773,10 @@ fn bottom_separator(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
     ui.painter().hline(
         rect.x_range(),
         rect.bottom() - theme.border_width.value() * 0.5,
-        egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+        egui::Stroke::new(
+            theme.border_width.value(),
+            theme.separator.to_egui_premultiplied(),
+        ),
     );
 }
 

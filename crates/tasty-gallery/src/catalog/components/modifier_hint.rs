@@ -315,7 +315,7 @@ fn drag_strip(ui: &mut egui::Ui, theme: &Theme, w: f32, held: &str) {
     ui.painter().hline(
         rect.x_range(),
         rect.bottom() - bw * 0.5,
-        egui::Stroke::new(bw, theme.modhint_separator().to_egui()),
+        egui::Stroke::new(bw, theme.modhint_separator().to_egui_premultiplied()),
     );
 
     let pad_l = theme.modhint_pad().value();
@@ -412,7 +412,7 @@ fn chord_head(ui: &mut egui::Ui, theme: &Theme, chord: &str) {
         rect.center().y,
         egui::Stroke::new(
             theme.border_width.value(),
-            theme.modhint_separator().to_egui(),
+            theme.modhint_separator().to_egui_premultiplied(),
         ),
     );
 }

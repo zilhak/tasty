@@ -631,7 +631,10 @@ fn hline(ui: &egui::Ui, th: &Theme, x: egui::Rangef, y: f32) {
     ui.painter().hline(
         x,
         y,
-        egui::Stroke::new(th.border_width.value(), th.separator),
+        egui::Stroke::new(
+            th.border_width.value(),
+            th.separator.to_egui_premultiplied(),
+        ),
     );
 }
 

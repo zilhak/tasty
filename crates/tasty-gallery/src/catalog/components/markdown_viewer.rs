@@ -162,7 +162,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "code bg",
                 theme.surface_raised().to_egui(),
             ),
-            TokenChip::new("separator", "hr", theme.separator.to_egui()),
+            TokenChip::new("separator", "hr", theme.separator.to_egui_premultiplied()),
             TokenChip::new(
                 "border-strong",
                 "blockquote · table grid",

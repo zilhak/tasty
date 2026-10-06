@@ -513,7 +513,7 @@ fn full_categories(ui: &mut egui::Ui, theme: &Theme) {
         p.rect_filled(
             header_rect,
             0.0,
-            theme.sidebar_category_header_bg().to_egui_premultiplied(),
+            theme.sidebar_category_header_bg().to_egui(),
         );
         let border = theme
             .sidebar_category_header_border()

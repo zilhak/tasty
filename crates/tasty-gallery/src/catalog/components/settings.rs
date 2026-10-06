@@ -201,7 +201,10 @@ fn l1_band(ui: &mut egui::Ui, theme: &Theme, band_h: LogicalPx) {
                 ui.painter().vline(
                     vr.center().x,
                     vr.y_range(),
-                    egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+                    egui::Stroke::new(
+                        theme.border_width.value(),
+                        theme.separator.to_egui_premultiplied(),
+                    ),
                 );
                 ui.add_space(theme.spacing_sm.value());
                 // 닫기는 푸터 Cancel과 OS 타이틀바를 사용한다.
@@ -320,7 +323,10 @@ fn vsep(ui: &mut egui::Ui, theme: &Theme, mid_h: LogicalPx) {
     ui.painter().vline(
         r.center().x,
         r.y_range(),
-        egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+        egui::Stroke::new(
+            theme.border_width.value(),
+            theme.separator.to_egui_premultiplied(),
+        ),
     );
 }
 

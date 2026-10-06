@@ -445,7 +445,7 @@ fn draw_pane_card(
 ) {
     let radius = theme.corner_radius.value();
     let bw = theme.border_width.value();
-    let sep = theme.separator.to_egui();
+    let sep = theme.separator.to_egui_premultiplied();
     let p = ui.painter_at(rect);
     p.rect_filled(rect, radius, theme.bg_app().to_egui());
 
@@ -614,7 +614,7 @@ fn draw_surface_box_edit(
         ui.painter_at(rect).rect_stroke(
             rect,
             0.0,
-            egui::Stroke::new(bw, theme.separator.to_egui()),
+            egui::Stroke::new(bw, theme.separator.to_egui_premultiplied()),
             egui::StrokeKind::Inside,
         );
     }
@@ -838,7 +838,7 @@ fn scope_demo_edit(
 fn draw_edit_direct_mock(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
     let radius = theme.corner_radius.value();
     let bw = theme.border_width.value();
-    let sep = theme.separator.to_egui();
+    let sep = theme.separator.to_egui_premultiplied();
     let p = ui.painter_at(rect);
     p.rect_filled(rect, radius, theme.bg_app().to_egui());
 
@@ -913,7 +913,7 @@ fn draw_edit_direct_mock(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
             ui.painter_at(strip).rect_filled(
                 close_rect,
                 theme.corner_radius_sm.value(),
-                theme.overlay_active().to_egui(),
+                theme.overlay_active().to_egui_premultiplied(),
             );
             theme.text_primary().to_egui()
         } else {
@@ -935,7 +935,7 @@ fn draw_edit_direct_mock(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
         egui::vec2(ADD_TAB_W.value(), STRIP_H.value()),
     );
     ui.painter_at(strip)
-        .rect_filled(add, 0.0, theme.overlay_hover().to_egui());
+        .rect_filled(add, 0.0, theme.overlay_hover().to_egui_premultiplied());
     paint_glyph(
         ui,
         icons::PLUS,

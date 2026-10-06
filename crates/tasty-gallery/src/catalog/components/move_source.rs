@@ -255,7 +255,7 @@ fn paint_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, pane: &PaneCfg
     let sep = theme.border_width.value();
     let content = egui::Rect::from_min_max(egui::pos2(rect.min.x, strip.max.y), rect.max);
     ui.painter_at(rect)
-        .rect_filled(content, 0.0, c(theme.separator));
+        .rect_filled(content, 0.0, c(theme.separator.to_egui_premultiplied()));
     let n = pane.surfaces.len().max(1) as f32;
     let w = (content.width() - sep * (n - 1.0)) / n;
     for (i, s) in pane.surfaces.iter().enumerate() {
@@ -322,7 +322,7 @@ fn screen(ui: &mut egui::Ui, theme: &Theme, wss: &[WsCfg], panes: &[PaneCfg<'_>]
     let (rect, _) = ui.allocate_exact_size(egui::vec2(w, SCREEN_H.value()), egui::Sense::hover());
     let p = ui.painter_at(rect);
     let sep = theme.border_width.value();
-    p.rect_filled(rect, 0.0, c(theme.separator));
+    p.rect_filled(rect, 0.0, c(theme.separator.to_egui_premultiplied()));
     let side = egui::Rect::from_min_size(rect.min, egui::vec2(SIDEBAR_W.value(), rect.height()));
     p.rect_filled(side, 0.0, c(theme.bg_sidebar()));
     let mut y = side.min.y + theme.spacing_sm.value();

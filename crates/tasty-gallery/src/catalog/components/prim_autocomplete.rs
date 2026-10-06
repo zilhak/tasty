@@ -294,7 +294,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::new(
                 "autocomplete-row-bg-hover",
                 "pointer hover",
-                egui::Color32::from(theme.autocomplete_row_bg_hover()),
+                theme.autocomplete_row_bg_hover().to_egui_premultiplied(),
             ),
             TokenChip::new(
                 "autocomplete-row-bg-active",

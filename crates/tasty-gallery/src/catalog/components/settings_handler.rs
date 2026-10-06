@@ -36,7 +36,10 @@ fn row_separator(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
     ui.painter().hline(
         rect.x_range(),
         rect.bottom(),
-        egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+        egui::Stroke::new(
+            theme.border_width.value(),
+            theme.separator.to_egui_premultiplied(),
+        ),
     );
 }
 
@@ -255,7 +258,11 @@ pub fn draw_extension_mapping(ui: &mut egui::Ui, theme: &Theme) {
                 "disabled ink",
                 theme.state_disabled_fg().to_egui(),
             ),
-            TokenChip::new("separator", "row divider", theme.separator.to_egui()),
+            TokenChip::new(
+                "separator",
+                "row divider",
+                theme.separator.to_egui_premultiplied(),
+            ),
             TokenChip::without_color("settings-row-min-height", "row"),
         ],
     );
@@ -537,7 +544,11 @@ pub fn draw_hook_handlers(ui: &mut egui::Ui, theme: &Theme) {
             ),
             TokenChip::without_color("font-mono", "event · action · sequence"),
             TokenChip::new("glyph-dim", "자물쇠 글리프", theme.glyph_dim().to_egui()),
-            TokenChip::new("separator", "row divider", theme.separator.to_egui()),
+            TokenChip::new(
+                "separator",
+                "row divider",
+                theme.separator.to_egui_premultiplied(),
+            ),
             TokenChip::new(
                 "surface-raised",
                 "add-draft card",

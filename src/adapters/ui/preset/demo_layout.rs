@@ -1604,7 +1604,7 @@ fn draw_surface_box(
         ui.painter_at(rect).rect_stroke(
             rect,
             0.0,
-            egui::Stroke::new(w, theme.separator.to_egui()),
+            egui::Stroke::new(w, theme.separator.to_egui_premultiplied()),
             egui::StrokeKind::Inside,
         );
     }
@@ -1980,7 +1980,7 @@ fn draw_pane_card(
 ) {
     let radius = theme.corner_radius.value();
     let bw = theme.border_width.value();
-    let sep = theme.separator.to_egui();
+    let sep = theme.separator.to_egui_premultiplied();
     let p = ui.painter_at(rect);
     p.rect_filled(rect, radius, theme.bg_app().to_egui());
 
@@ -2086,7 +2086,7 @@ fn draw_pane_card(
                     ui.painter_at(strip).rect_filled(
                         close_rect,
                         theme.corner_radius_sm.value(),
-                        theme.overlay_active().to_egui(),
+                        theme.overlay_active().to_egui_premultiplied(),
                     );
                     ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
                 }
@@ -2133,8 +2133,11 @@ fn draw_pane_card(
             egui::Sense::click(),
         );
         if resp.hovered() {
-            ui.painter_at(strip)
-                .rect_filled(add, 0.0, theme.overlay_hover().to_egui());
+            ui.painter_at(strip).rect_filled(
+                add,
+                0.0,
+                theme.overlay_hover().to_egui_premultiplied(),
+            );
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
         }
         let col = if resp.hovered() {

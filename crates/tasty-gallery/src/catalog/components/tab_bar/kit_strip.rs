@@ -253,7 +253,10 @@ fn strip(ui: &mut egui::Ui, theme: &Theme, cfg: StripCfg) {
     ui.painter().hline(
         rect.x_range(),
         rect.max.y - theme.border_width.value() * 0.5,
-        egui::Stroke::new(theme.border_width.value(), c(theme.separator)),
+        egui::Stroke::new(
+            theme.border_width.value(),
+            c(theme.separator.to_egui_premultiplied()),
+        ),
     );
 }
 

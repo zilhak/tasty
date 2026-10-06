@@ -42,7 +42,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "row hover",
                 theme.overlay_hover().to_egui_premultiplied(),
             ),
-            TokenChip::new("separator", "group divide", theme.separator.to_egui()),
+            TokenChip::new(
+                "separator",
+                "group divide",
+                theme.separator.to_egui_premultiplied(),
+            ),
         ],
     );
 

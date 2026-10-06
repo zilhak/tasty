@@ -109,7 +109,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ],
         &[
             TokenChip::without_color("settings-row-min-height", "row height"),
-            TokenChip::new("separator", "row divider", theme.separator.to_egui()),
+            TokenChip::new(
+                "separator",
+                "row divider",
+                theme.separator.to_egui_premultiplied(),
+            ),
             TokenChip::new(
                 "text-muted",
                 "descriptions + unit",
@@ -176,6 +180,9 @@ fn separator_line(ui: &mut egui::Ui, theme: &Theme) {
     ui.painter().hline(
         rect.x_range(),
         rect.center().y,
-        egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+        egui::Stroke::new(
+            theme.border_width.value(),
+            theme.separator.to_egui_premultiplied(),
+        ),
     );
 }

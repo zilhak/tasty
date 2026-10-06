@@ -136,7 +136,7 @@ fn bar(ui: &mut egui::Ui, theme: &Theme, active: bool, hovered_close: bool) {
         rect.bottom() - 0.5,
         egui::Stroke::new(
             theme.border_width.value(),
-            theme.titlebar_border().to_egui(),
+            theme.titlebar_border().to_egui_premultiplied(),
         ),
     );
 }
@@ -178,7 +178,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::new(
                 "titlebar-border",
                 "bottom hairline",
-                theme.titlebar_border().to_egui(),
+                theme.titlebar_border().to_egui_premultiplied(),
             ),
             TokenChip::new(
                 "accent-window-close",

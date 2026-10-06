@@ -787,7 +787,10 @@ fn hline(ui: &mut egui::Ui, theme: &Theme, x0: LogicalPx, x1: LogicalPx, y: Logi
     ui.painter().hline(
         x0.value()..=x1.value(),
         y.value(),
-        egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+        egui::Stroke::new(
+            theme.border_width.value(),
+            theme.separator.to_egui_premultiplied(),
+        ),
     );
 }
 
@@ -795,6 +798,9 @@ fn vline(ui: &mut egui::Ui, theme: &Theme, x: LogicalPx, y0: LogicalPx, y1: Logi
     ui.painter().vline(
         x.value(),
         y0.value()..=y1.value(),
-        egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+        egui::Stroke::new(
+            theme.border_width.value(),
+            theme.separator.to_egui_premultiplied(),
+        ),
     );
 }

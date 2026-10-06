@@ -81,7 +81,7 @@ fn window(ui: &mut egui::Ui, theme: &Theme) {
                 tier2.y_range(),
                 egui::Stroke::new(
                     theme.border_width.value(),
-                    egui::Color32::from(theme.separator),
+                    theme.separator.to_egui_premultiplied(),
                 ),
             );
         }

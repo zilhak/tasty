@@ -1570,7 +1570,10 @@ fn l2_separator(ui: &mut egui::Ui, th: &Theme) {
     ui.painter().hline(
         (rect.left() + m)..=(rect.right() - m),
         rect.center().y,
-        egui::Stroke::new(th.border_width.value(), th.separator.to_egui()),
+        egui::Stroke::new(
+            th.border_width.value(),
+            th.separator.to_egui_premultiplied(),
+        ),
     );
 }
 

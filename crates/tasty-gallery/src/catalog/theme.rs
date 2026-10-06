@@ -513,7 +513,7 @@ fn faux_terminal(ui: &mut egui::Ui, theme: &Theme) {
         .fill(ec(theme.bg_app()))
         .stroke(egui::Stroke::new(
             theme.border_width.value(),
-            ec(theme.separator),
+            ec(theme.separator.to_egui_premultiplied()),
         ))
         .corner_radius(theme.corner_radius.value())
         .inner_margin(egui::Margin::same(theme.spacing_md.value() as i8))

@@ -718,7 +718,7 @@ fn the_list_head_has_one_separator_along_its_bottom() {
         .iter()
         .filter_map(|c| match &c.shape {
             egui::epaint::Shape::LineSegment { points, stroke }
-                if stroke.color == egui::Color32::from(th.separator)
+                if stroke.color == th.separator.to_egui_premultiplied()
                     && (points[0].y - head_bottom).abs() < 1.0
                     && (points[1].y - head_bottom).abs() < 1.0 =>
             {

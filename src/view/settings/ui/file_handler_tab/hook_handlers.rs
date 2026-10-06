@@ -432,7 +432,10 @@ fn row_separator(ui: &mut egui::Ui, th: &tasty_type_appearance::theme::Theme, re
     ui.painter().hline(
         rect.x_range(),
         rect.bottom(),
-        egui::Stroke::new(th.border_width.value(), th.separator.to_egui()),
+        egui::Stroke::new(
+            th.border_width.value(),
+            th.separator.to_egui_premultiplied(),
+        ),
     );
 }
 

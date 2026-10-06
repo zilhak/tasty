@@ -324,7 +324,7 @@ fn draw_reason_detail(ui: &mut egui::Ui, th: &theme::Theme, entry: &AttentionEnt
                     .fill(egui::Color32::from(th.bg_panel()))
                     .stroke(egui::Stroke::new(
                         th.border_width.value(),
-                        egui::Color32::from(th.separator),
+                        th.separator.to_egui_premultiplied(),
                     ))
                     .corner_radius(th.corner_radius.value())
                     .inner_margin(margin_sym(th.spacing_md, th.spacing_sm))

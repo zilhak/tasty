@@ -318,7 +318,10 @@ fn migrate_row(
         ui.painter().hline(
             sep.x_range(),
             sep.center().y,
-            egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+            egui::Stroke::new(
+                theme.border_width.value(),
+                theme.separator.to_egui_premultiplied(),
+            ),
         );
         tasty_ui_widgets::vspace(ui, theme.spacing_sm);
         ui.horizontal(|ui| {
