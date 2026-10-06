@@ -1,4 +1,4 @@
-<!-- source-hash: 6de630c48d41 -->
+<!-- source-hash: 1a06905ad4d8 -->
 # Troubleshooting
 
 If something is not working, find the matching symptom below. Check installation, permissions, terminal connections, and notifications, or use the reporting steps at the end if you still need help.
@@ -138,7 +138,7 @@ If that still does not help, look at `~/.tasty/hook-failures.log` and `tasty plu
 
 ## Finding the port of a development server
 
-Open **Listening ports...** from the **Tools** menu in the sidebar. It shows the TCP ports opened by processes started from Tasty terminals, together with the port · process · Workspace · Tab.
+Open **Listening ports…** from the **Tools** menu in the sidebar. It shows the TCP ports opened by processes started from Tasty terminals, together with the port · process · Workspace · Tab.
 
 - By default only the LISTEN state is shown. If the list is empty and "No ports match the state filter" is displayed, ports in other states may still exist — use the **State** button on the right of the filter row to turn on other states and click **Apply**.
 - To include processes outside Tasty, turn on **Show all (system-wide)**.
