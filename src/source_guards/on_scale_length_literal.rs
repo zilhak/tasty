@@ -775,7 +775,8 @@ fn the_blind_spots_are_still_the_size_they_say() {
         // WebView 입력 띠 시험이 창 리사이즈 밴드로 PhysicalPx(8) 다섯 개와 PhysicalPx(0) 세 개를 넘긴다.
         // 스케일에 size-700이 들어오면서 test 코드의 기존 값 700 세 자리가 새로 집계됐다.
         // 시안에서 옮긴 결정 기록 Spec의 여백·간격·원점 0 리터럴이 아홉 개를 더한다.
-        (200, 423),
+        // 탭 스트립 툴팁의 border-width 허용치·최후 배치 시험이 창·칸·버블 치수 14개를 더한다.
+        (200, 437),
         "제외한 0과 test 전용 코드의 수가 달라졌다. 실제 사용과 수집 범위의 변경을 확인하고 기록을 갱신한다."
     );
     let roster: usize = UNIT_SPACE_SITES.iter().map(|(.., n, _)| n).sum();

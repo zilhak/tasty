@@ -215,7 +215,7 @@ Tier-3 블록. 위젯 `crates/tasty-ui-widgets/src/tooltip.rs`(`Tooltip`) + `hel
 | `--tasty-tooltip-font-size` | → `font-size-caption` (11) | `font_size_caption` | 11px 텍스트 |
 | `--tasty-tooltip-line-height` | → `line-height-ui` (1.4) | `line_height_ui: f32 = 1.4` (무차원 비율, zoom 무관) | UI 줄간격 배수 |
 | `--tasty-tooltip-max-width` | → `size-240` (240px) | `tooltip_max_width: LogicalPx(240)` (zoom 적용 — `toast_max_width` 전례) | 초과 시 wrap |
-| `--tasty-tooltip-offset` | → `space-xs` (4) | `spacing_xs` · `tooltip_offset()` | 앵커와 간격. 탭 스트립 규칙(`placement_clear_of_native`)에서는 스트립 안 후보의 칸과 간격, 창 가장자리 가로·세로 clamp 여백도 된다 |
+| `--tasty-tooltip-offset` | → `space-xs` (4) | `spacing_xs` · `tooltip_offset()` | 앵커와 간격. 탭 스트립 규칙(`placement_clear_of_native`)에서는 스트립 안 후보의 칸과 간격, 창 가장자리 가로·세로 clamp 여백도 된다. 스트립 안 후보의 네이티브 영역 겹침 허용치는 `border-width`(1)다 |
 | `--tasty-tooltip-delay` | → `motion-ui-med` → duration-150 (150ms) | `tooltip_delay()` (생성, `Millis`) | hover delay. 종전에는 위젯 상수 `HOVER_DELAY_SECONDS: f64 = 0.15` 였다. fade 는 immediate-mode snap 으로 생략 |
 | `--tasty-help-hint-size` | → `icon-size-sm` (14) | `icon_glyph_size_sm` | (?) 글리프 14px |
 | `--tasty-help-hint-gap` | → `space-xs` (4) | `spacing_xs` | 라벨과 gap |

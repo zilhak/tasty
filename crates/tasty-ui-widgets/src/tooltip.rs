@@ -76,8 +76,13 @@ impl<'a> Tooltip<'a> {
     /// 첫 후보를 쓴다. `native`는 egui보다 위에 그려지는 네이티브 콘텐츠(WebView) 영역이며 호출자가 넘긴다.
     /// `cell`은 앵커가 속한 스트립 칸이고 세로 범위가 스트립 행이다. 있으면 "스트립 안" 후보를 시도한다.
     /// 그 후보는 행 세로 가운데, 칸 오른쪽(다음 왼쪽)에 `tooltip-offset`만큼 띄운다. 이웃 탭을 덮을 수 있다.
-    /// 모두 안 되면 위에 두고 창 안으로 당기며, 세로도 창 가장자리에서 `tooltip-offset`만큼 띄운다.
-    /// 가로는 위·아래 후보와 최후 배치 모두 창 가장자리에서 `tooltip-offset`만큼 안쪽으로 당긴다.
+    /// 스트립 안 후보는 네이티브 영역과 변마다 `border-width`까지 겹쳐도 통과한다. 한 줄 버블(25)이 24 행보다
+    /// 1px 남짓 크기 때문이다.
+    /// 모두 안 되면 `cell`이 있으면 스트립 안 배치(오른쪽, 창을 벗어나면 왼쪽, 둘 다 벗어나면 가로를 창 안으로
+    /// 당긴 오른쪽)를 쓴다. `cell`이 없으면 위에 두고 창 안으로 당기며, 세로도 창 가장자리에서 `tooltip-offset`만큼 띄운다.
+    /// 디자인의 최후 배치 "스트립 안"과 다른 이 동작은 놓을 행이 없는 호출에만 남긴 의도된 차이이며, 버블이
+    /// WebView에 일부 가려질 수 있다.
+    /// 가로는 위·아래 후보와 위 최후 배치 모두 창 가장자리에서 `tooltip-offset`만큼 안쪽으로 당긴다.
     pub fn placement_clear_of_native(
         self,
         ctx: &egui::Context,
@@ -231,8 +236,13 @@ fn native_clear_rect(
     native: &[egui::Rect],
 ) -> (TooltipPlacement, egui::Rect) {
     let offset = theme.tooltip_offset().value();
-    let clears = |rect: &egui::Rect| {
-        window.contains_rect(*rect) && native.iter().all(|n| !rect.intersect(*n).is_positive())
+    let tolerance = theme.border_width.value();
+    // `tolerance`만큼 줄인 사각형으로 네이티브 영역과 겹치는지 본다. 위·아래 후보는 0이다.
+    let clears = |rect: &egui::Rect, tolerance: f32| {
+        window.contains_rect(*rect)
+            && native
+                .iter()
+                .all(|n| !rect.shrink(tolerance).intersect(*n).is_positive())
     };
     let vertical = [TooltipPlacement::Top, TooltipPlacement::Bottom]
         .map(|p| (p, bubble_rect(p, anchor, size, theme, window)));
@@ -249,21 +259,39 @@ fn native_clear_rect(
             ),
         ]
     });
-    vertical
-        .into_iter()
-        .chain(in_strip.into_iter().flatten())
-        .find(|(_, rect)| clears(rect))
-        .unwrap_or_else(|| {
-            let rect = bubble_rect(TooltipPlacement::Top, anchor, size, theme, window);
-            let top = rect
-                .top()
-                .min(window.bottom() - offset - size.y)
-                .max(window.top() + offset);
-            (
-                TooltipPlacement::Top,
-                egui::Rect::from_min_size(egui::pos2(rect.left(), top), size),
-            )
-        })
+    if let Some(found) = vertical.into_iter().find(|(_, rect)| clears(rect, 0.0)) {
+        return found;
+    }
+    if let Some(strip) = in_strip {
+        if let Some(found) = strip.into_iter().find(|(_, rect)| clears(rect, tolerance)) {
+            return found;
+        }
+        // 최후 배치도 스트립 안이다. Tasty가 그리는 행이라 버블이 보인다.
+        return strip
+            .into_iter()
+            .find(|(_, rect)| rect.left() >= window.left() && rect.right() <= window.right())
+            .unwrap_or_else(|| {
+                let (_, right) = strip[0];
+                let left = right
+                    .left()
+                    .min(window.right() - offset - size.x)
+                    .max(window.left() + offset);
+                (
+                    TooltipPlacement::Right,
+                    egui::Rect::from_min_size(egui::pos2(left, right.top()), size),
+                )
+            });
+    }
+    // 칸 없는 호출: 놓을 스트립 행이 없어 디자인의 스트립 안 최후 배치 대신 위 clamp를 쓴다.
+    let rect = bubble_rect(TooltipPlacement::Top, anchor, size, theme, window);
+    let top = rect
+        .top()
+        .min(window.bottom() - offset - size.y)
+        .max(window.top() + offset);
+    (
+        TooltipPlacement::Top,
+        egui::Rect::from_min_size(egui::pos2(rect.left(), top), size),
+    )
 }
 
 /// `hovered`가 이어진 시간이 `tooltip-delay`를 넘었는지 판정한다. 벗어나면 초기화한다.
@@ -441,16 +469,122 @@ mod tests {
         assert_eq!(placement, TooltipPlacement::Top);
     }
 
+    /// 위·아래 WebView가 스트립 행에 바로 붙어 있어도 한 줄 버블(25 남짓)은 변마다 `border-width`까지의 겹침이
+    /// 허용돼 스트립 안 후보로 통과한다. 오른쪽 이웃 pane의 WebView가 오른쪽 후보를 막으면 왼쪽 후보가 통과한다.
     #[test]
-    fn a_bubble_taller_than_the_strip_falls_back_to_top_with_a_vertical_margin() {
+    fn a_one_line_bubble_passes_the_strip_row_within_the_border_width() {
         let theme = theme();
         let offset = theme.tooltip_offset().value();
-        // 창 맨 위 스트립: 위 후보는 창 밖, 아래·스트립 안 후보는 자기 WebView와 겹친다.
+        let (cell, [above, below]) = stacked(300.0, 300.0);
+        let neighbour =
+            egui::Rect::from_min_max(egui::pos2(cell.right() + offset + 10.0, 0.0), WINDOW.max);
+        let size = egui::vec2(120.0, 25.4);
+        let (placement, rect) = native_clear_rect(
+            marker_in(cell),
+            Some(cell),
+            size,
+            &theme,
+            WINDOW,
+            &[above, below, neighbour],
+        );
+        assert_eq!(placement, TooltipPlacement::Left);
+        assert_eq!(rect.right(), cell.left() - offset);
+        assert_eq!(rect.center().y, cell.center().y);
+    }
+
+    /// 앱 기하: html pane 위에 html pane이 쌓이고 두 WebView가 스트립 행 위·아래에 간격 없이 붙는다.
+    /// 실제 표지 문안의 한 줄 버블은 스트립 행보다 크지만 스트립 안 오른쪽에 놓인다. 허용치와 최후 배치가 같은
+    /// 자리를 주므로 두 규칙의 구분은 위·아래 시험이 맡는다.
+    #[test]
+    fn app_geometry_marker_tooltip_opens_inside_the_strip() {
+        let theme = theme();
+        let offset = theme.tooltip_offset().value();
+        let (cell, native) = stacked(100.0, 300.0);
+        let ctx = egui::Context::default();
+        let mut placed = None;
+        let _output = ctx.run(egui::RawInput::default(), |ctx| {
+            let t = Tooltip::new("Scripts blocked. Click to show the notice again.");
+            let size = t.bubble_size(ctx, &theme);
+            let t = t.placement_clear_of_native(
+                ctx,
+                &theme,
+                marker_in(cell),
+                Some(cell),
+                WINDOW,
+                &native,
+            );
+            placed = Some((t.placement, t.resolved, size));
+        });
+        let (placement, rect, size) = placed.expect("frame ran");
+        let rect = rect.expect("resolved");
+        assert!(
+            size.y > cell.height(),
+            "bubble {} vs strip {}",
+            size.y,
+            cell.height()
+        );
+        assert!(size.y <= cell.height() + 2.0 * theme.border_width.value());
+        assert_eq!(placement, TooltipPlacement::Right);
+        assert_eq!(rect.left(), cell.right() + offset);
+        assert_eq!(rect.center().y, cell.center().y);
+    }
+
+    /// 겹침이 `border-width`를 넘으면 그 후보는 통과하지 않는다. 모두 막히면 최후 배치로 스트립 안 오른쪽을 쓴다.
+    #[test]
+    fn when_every_candidate_fails_the_bubble_stays_inside_the_strip() {
+        let theme = theme();
+        let offset = theme.tooltip_offset().value();
+        // 창 맨 위 스트립: 위 후보는 창 밖, 아래·스트립 안 후보는 자기 WebView와 1px 넘게 겹친다.
+        let (cell, [above, below]) = stacked(300.0, 2.0);
+        let neighbour =
+            egui::Rect::from_min_max(egui::pos2(cell.right() + offset + 10.0, 0.0), WINDOW.max);
+        let size = egui::vec2(200.0, 40.0);
+        let (placement, rect) = native_clear_rect(
+            marker_in(cell),
+            Some(cell),
+            size,
+            &theme,
+            WINDOW,
+            &[above, below, neighbour],
+        );
+        assert_eq!(placement, TooltipPlacement::Right);
+        assert_eq!(rect.left(), cell.right() + offset);
+        assert_eq!(rect.center().y, cell.center().y);
+        assert_eq!(rect.size(), size);
+    }
+
+    /// 최후 배치에서 양옆이 모두 창을 벗어나면 오른쪽 배치를 창 안으로 당긴다.
+    #[test]
+    fn the_last_strip_placement_is_clamped_into_a_narrow_window() {
+        let theme = theme();
+        let offset = theme.tooltip_offset().value();
+        let window = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(300.0, 600.0));
+        let cell = egui::Rect::from_min_size(egui::pos2(80.0, 300.0), egui::vec2(140.0, 24.0));
+        let above = egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(300.0, cell.top()));
+        let below = egui::Rect::from_min_max(egui::pos2(0.0, cell.bottom()), window.max);
+        let size = egui::vec2(200.0, 40.0);
+        let (placement, rect) = native_clear_rect(
+            marker_in(cell),
+            Some(cell),
+            size,
+            &theme,
+            window,
+            &[above, below],
+        );
+        assert_eq!(placement, TooltipPlacement::Right);
+        assert_eq!(rect.right(), window.right() - offset);
+        assert_eq!(rect.center().y, cell.center().y);
+    }
+
+    /// 스트립 칸이 없으면 예전처럼 위에 두고 창 안으로 당기며 세로도 `tooltip-offset`만큼 띄운다.
+    #[test]
+    fn without_a_cell_the_last_resort_is_top_with_a_vertical_margin() {
+        let theme = theme();
+        let offset = theme.tooltip_offset().value();
         let (cell, [_, below]) = stacked(100.0, 2.0);
         let size = egui::vec2(200.0, 40.0);
-        let anchor = marker_in(cell);
         let (placement, rect) =
-            native_clear_rect(anchor, Some(cell), size, &theme, WINDOW, &[below]);
+            native_clear_rect(marker_in(cell), None, size, &theme, WINDOW, &[below]);
         assert_eq!(placement, TooltipPlacement::Top);
         assert_eq!(rect.top(), WINDOW.top() + offset);
         assert_eq!(rect.size(), size);
