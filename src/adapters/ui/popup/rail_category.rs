@@ -112,6 +112,8 @@ pub fn draw_rail_category_popup(
     };
     let cat_id = state.dialogs.rail_category_popup.expect("resolved above");
     let th = theme::theme();
+    // 시안 RailCategoryPopup 의 행은 간격 없이 붙는다. 간격은 아래에서 add_space 로만 둔다.
+    ui.spacing_mut().item_spacing.y = 0.0;
 
     let width = ui.available_width();
     let (header_rect, _) = ui.allocate_exact_size(
@@ -207,7 +209,8 @@ pub fn draw_rail_category_popup(
 }
 
 /// PopupDef.sizer — 헤더 + 행 수로 height 계산. normal 은 Add/Collapse 2행, 비-normal 은
-/// separator + Rename/Delete 를 더한 4행.
+/// separator + Rename/Delete 를 더한 4행. 그리는 순서와 같게 머리줄 아래 space-xs, 붙은 행들,
+/// 구분선 위아래 space-xs 를 더한다.
 pub fn rail_category_sizer(
     state: &MainViewState,
     engine: &crate::runtime::engine_read::EngineRead<'_>,
@@ -217,10 +220,8 @@ pub fn rail_category_sizer(
         .map(|t| t.is_reserved)
         .unwrap_or(true);
     let rows = if reserved { 2u32 } else { 4u32 };
-    let mut content_h = HEADER_HEIGHT
-        + th.spacing_xs
-        + th.item_height_interactive.scaled(rows as f32)
-        + th.spacing_xs.scaled((rows.saturating_sub(1)) as f32);
+    let mut content_h =
+        HEADER_HEIGHT + th.spacing_xs + th.item_height_interactive.scaled(rows as f32);
     if !reserved {
         content_h += th.border_width + th.spacing_xs.scaled(2.0);
     }

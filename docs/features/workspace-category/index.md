@@ -62,6 +62,8 @@
 | 축소 레일 `---` | Add workspace / Collapse / Rename / Delete 팝업 |
 | 다른 카테고리에 드롭 | 워크스페이스 소속 변경 |
 
+축소 레일 팝업은 시안 `RailCategoryPopup`처럼 머리줄 아래 `space-xs`를 두고 행을 간격 없이 붙인다. 이름 변경·삭제 앞 구분선은 위아래로 `space-xs`를 둔다. 팝업 높이(`rail_category_sizer`)는 이 순서대로 더해 마지막 행이 잘리지 않는다.
+
 프리셋 적용은 + 버튼 메뉴와 같은 popup을 사용하되 선택한 카테고리에 적용한다.
 `new_workspace`(기본 `Alt+N`), Command Palette, 더블탭으로 만든 workspace도 현재 활성
 workspace의 카테고리를 이어받는다. parked 상태나 workspace가 없을 때만 normal을 쓴다.
