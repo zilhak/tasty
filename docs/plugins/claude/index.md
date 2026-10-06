@@ -222,7 +222,7 @@ SessionEnd는 모든 게이트에서 해당 세션의 반복 파일을 지우고
 
 훅은 호스트 호출에 실패해도 뒤의 로컬 정리를 계속한다. 응답의 `host_call_failures`에 실패한 호출 수를 넣고, 0이 아니면 `<tasty_home>/hook-failures.log`에도 기록을 시도한다. 따라서 응답의 `ok`만으로 모든 호출이 성공했다고 판단하지 않는다. [오류 처리](../../dev-guide/error-handling.md)와 [훅 실행 설계](../../adr/0027-lua-and-hook-execution.md)를 참고한다.
 
-`tasty claude install`이 `~/.claude/settings.json`의 `hooks`에 아래 10개 항목을 심는다. 이벤트는 9개이며 `PostToolUse`에는 matcher가 다른 항목이 둘이다. 모든 항목이 같은 형태의 명령 문자열을 쓴다:
+`tasty claude install`이 `~/.claude/settings.json`의 `hooks`에 아래 10개 항목을 심는다. 이벤트는 9개이며 `PostToolUse`에는 matcher가 다른 항목이 둘이다. `background-start`를 뺀 모든 항목이 같은 형태의 명령 문자열을 쓴다(`background-start`는 아래 "백그라운드 작업이 남은 `StopFailure`"의 셸 판정 명령):
 
 ```
 if [ -n "$TASTY_SURFACE_ID" ]; then tasty claude hook <token> || true; fi
@@ -232,7 +232,7 @@ if [ -n "$TASTY_SURFACE_ID" ]; then tasty claude hook <token> || true; fi
 
 명령 문자열 생성은 `install.rs::tasty_guarded_command` 한 곳뿐이다 — 세션 프로필(`continue-checklist`)의 hook 명령도 같은 함수를 쓴다.
 
-> **기존 사용자는 `tasty claude install` 재실행이 필요하다.** 명령 문자열은 사용자의 `settings.json` 에 이미 기록돼 있어, plugin 을 업데이트해도 옛 문자열 그대로다. 재실행하면 marker(`tasty claude hook <token>`) 가 일치하는 기존 entry 를 찾아 **제자리 갱신**하므로 entry 가 중복되지 않는다.
+> **기존 사용자는 `tasty claude install` 재실행이 필요하다.** 명령 문자열은 사용자의 `settings.json` 에 이미 기록돼 있어, plugin 을 업데이트해도 옛 문자열 그대로다. 재실행하면 marker(`tasty claude hook <token>`) 가 일치하는 기존 entry 를 찾아 **제자리 갱신**하므로 entry 가 중복되지 않는다. 새로 넣은 항목이 없어도 기존 entry 의 matcher 나 명령이 현재 값과 다르면 파일을 다시 쓰며, 응답의 `installed` 에 새로 넣은 이벤트, `updated` 에 갱신한 이벤트를 적는다. 바뀐 것이 없으면 파일을 쓰지 않는다.
 
 `session_id`/`prompt_id`/`message`/`notification_type`/`error`/`agent_id`/`background_tasks`/`tool_name`/`tool_response`/`prompt`/`source`/`reason` 같은 이벤트별 가변 데이터는 명령 인자가 아니라 **stdin JSON**으로 들어온다 — 매니페스트 `hook` cli 항목이 `stdin_json = true`를 선언하고, `--session`/`--prompt-id`/`--message`/`--notification-type`/`--error`/`--agent-id`/`--background-tasks`/`--waiting-on-background-work`/`--tool-name`/`--tool-response`/`--prompt`/`--source`/`--reason` 플래그가 각각 `stdin_field`로 stdin JSON에서 자동 채워진다. 공식 hooks 문서와 실측 payload에는 없지만 `waiting_on_background_work`도 `--waiting-on-background-work`로 방어적으로 읽는다. `--background-tasks`·`--tool-response`와 이 인자는 문자열로 선언해 stdin의 배열·객체·bool 값을 그대로 넘긴다(Claude Code가 hook 실행 시 stdin으로 JSON payload를 준다). POSIX 셸 구문 1종만 발행한다 — [codex](../codex/index.md)처럼 Windows PowerShell 분기는 없다.
 

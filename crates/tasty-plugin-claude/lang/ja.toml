@@ -172,7 +172,7 @@ description = "サーフェスのClaudeを再起動し同じセッションを�
 description = "子インスタンスに永続的なClaudeセッションプロファイルを適用（--childのサーフェスを解決し 'claude reboot --profile' と同じ手順を実行）。子だけを再起動するためrebootと異なり呼び出し元のターンは中断しません。子がidle/needs_inputへ移行した時と終了時に呼び出し元へ通知します。"
 
 [claude.cli.sub.install]
-description = "~/.claude/settings.jsonにtastyフックをインストール"
+description = "~/.claude/settings.json に tasty フックを設定するか、matcher やコマンドが現在の値と異なる既存の Tasty 項目を更新します。応答の installed に追加したイベント、updated に更新したイベントが入ります。"
 
 [claude.cli.sub.uninstall]
 description = "~/.claude/settings.jsonからtastyフックを削除"

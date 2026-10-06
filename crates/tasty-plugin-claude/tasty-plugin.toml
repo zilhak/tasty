@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.claude"
 name = "Claude Code"
-version = "0.1.153"
+version = "0.1.154"
 description = "Claude Code CLI integration for Tasty"
 api_version = "1"
 permissions = [
@@ -72,7 +72,7 @@ subcommands = [
     { name = "reboot",    ipc_method = "claude.reboot",    args = "reboot_args",    description = "Restart the Claude instance in a surface and resume the same session (delayed kill + claude -r). Call this as the LAST action of a turn — anything after the delay is cut off.", description_i18n_key = "claude.cli.sub.reboot.description" },
     # 자식에게 프로필을 적용한다. --child가 필요하며 해당 자식의 reboot 경로를 사용한다.
     { name = "child-profile", ipc_method = "claude.child_profile", args = "child_profile_args", description = "Attach a persistent Claude session profile to a CHILD instance (resolves --child to its surface, then runs the same sequence as 'claude reboot --profile' on it). Unlike reboot, this does NOT cut off the caller's turn — only the child restarts. A notification is delivered to the caller surface when the child transitions to idle/needs_input, and once more when it exits.", description_i18n_key = "claude.cli.sub.child-profile.description" },
-    { name = "install",   ipc_method = "claude.install",   args = "no_args",        description = "Install tasty hooks into ~/.claude/settings.json", description_i18n_key = "claude.cli.sub.install.description" },
+    { name = "install",   ipc_method = "claude.install",   args = "no_args",        description = "Install tasty hooks into ~/.claude/settings.json, or update existing Tasty entries whose matcher or command is out of date. The reply lists added events under installed and updated ones under updated.", description_i18n_key = "claude.cli.sub.install.description" },
     { name = "uninstall", ipc_method = "claude.uninstall", args = "no_args",        description = "Uninstall tasty hooks from ~/.claude/settings.json", description_i18n_key = "claude.cli.sub.uninstall.description" },
     { name = "hook",      ipc_method = "claude.hook",      args = "hook_args",      stdin_json = true, description = "Claude Code hook integration. Reads JSON payload from stdin (session_id, cwd, prompt_id, message, notification_type, error, agent_id, background_tasks, tool_name, tool_response, prompt, source, reason) when invoked by Claude Code's hook system. Also reads waiting_on_background_work defensively, although neither the official hooks documentation nor observed payloads include it.", description_i18n_key = "claude.cli.sub.hook.description" },
     # 전역 훅에 넣지 않고 게이트를 적용한 세션에서만 등록한다.

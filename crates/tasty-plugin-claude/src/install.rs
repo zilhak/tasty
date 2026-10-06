@@ -113,11 +113,22 @@ pub(crate) fn is_tasty_stop_hook_installed(tr: &Translator) -> Result<bool> {
     Ok(is_marker_installed_in_value(&root, "Stop", &marker))
 }
 
+/// install 이 바꾼 이벤트. `added` 는 새로 넣은 항목, `updated` 는 기존 Tasty 항목의 matcher 나 명령을
+/// 현재 값으로 바꾼 항목이다. 둘 다 비면 설정 파일을 다시 쓰지 않는다.
+#[derive(Debug, Default, PartialEq)]
+pub(crate) struct InstallChanges {
+    pub added: Vec<&'static str>,
+    pub updated: Vec<&'static str>,
+}
+
+impl InstallChanges {
+    pub fn is_empty(&self) -> bool {
+        self.added.is_empty() && self.updated.is_empty()
+    }
+}
+
 /// settings.json 루트 값에 hook을 idempotent하게 추가.
-pub(crate) fn install_hooks_in_value(
-    root: &mut Value,
-    tr: &Translator,
-) -> Result<Vec<&'static str>> {
+pub(crate) fn install_hooks_in_value(root: &mut Value, tr: &Translator) -> Result<InstallChanges> {
     let root_obj = root.as_object_mut().ok_or_else(|| {
         anyhow::anyhow!(tr.t("claude.install.settings_root_not_object").to_string())
     })?;
@@ -128,7 +139,7 @@ pub(crate) fn install_hooks_in_value(
         .as_object_mut()
         .ok_or_else(|| anyhow::anyhow!(tr.t("claude.install.hooks_not_object").to_string()))?;
 
-    let mut added: Vec<&'static str> = Vec::new();
+    let mut changes = InstallChanges::default();
 
     for (event_name, event_token, matcher) in MANAGED_HOOKS {
         let marker = tasty_hook_marker(event_token);
@@ -144,6 +155,7 @@ pub(crate) fn install_hooks_in_value(
 
         // 기존 Tasty 항목은 중복 추가하지 않고 matcher와 명령을 현재 값으로 갱신한다.
         let mut upgraded = false;
+        let mut changed = false;
         for entry in arr.iter_mut() {
             if !entry_matches_marker(entry, &marker) {
                 continue;
@@ -157,6 +169,7 @@ pub(crate) fn install_hooks_in_value(
                     .unwrap_or(true);
                 if matcher_needs_update {
                     obj.insert("matcher".into(), Value::String((*matcher).to_string()));
+                    changed = true;
                 }
             }
             if let Some(hooks) = entry.get_mut("hooks").and_then(|h| h.as_array_mut()) {
@@ -168,11 +181,15 @@ pub(crate) fn install_hooks_in_value(
                         .unwrap_or(false);
                     if needs_update && let Some(obj) = h.as_object_mut() {
                         obj.insert("command".into(), Value::String(command.clone()));
+                        changed = true;
                     }
                 }
             }
         }
         if upgraded {
+            if changed {
+                changes.updated.push(*event_name);
+            }
             continue;
         }
 
@@ -185,10 +202,10 @@ pub(crate) fn install_hooks_in_value(
                 }
             ]
         }));
-        added.push(*event_name);
+        changes.added.push(*event_name);
     }
 
-    Ok(added)
+    Ok(changes)
 }
 
 /// settings.json 루트 값에서 tasty hook entry를 제거.
@@ -236,27 +253,30 @@ pub(crate) fn uninstall_hooks_from_value(root: &mut Value) -> Vec<&'static str> 
 }
 
 /// `claude.install` IPC 핸들러. ~/.claude/settings.json을 idempotent하게 갱신.
-pub(crate) fn run_install(tr: &Translator) -> Result<Vec<&'static str>> {
-    let path = claude_settings_path(tr)?;
+pub(crate) fn run_install(tr: &Translator) -> Result<InstallChanges> {
+    install_into_file(&claude_settings_path(tr)?, tr)
+}
 
+/// 설정 파일에 hook 을 넣거나 기존 Tasty 항목을 현재 형식으로 바꾼다. 바뀐 것이 없으면 파일을 쓰지 않는다.
+fn install_into_file(path: &std::path::Path, tr: &Translator) -> Result<InstallChanges> {
     let mut root: Value = if path.exists() {
-        let content = std::fs::read_to_string(&path)?;
+        let content = std::fs::read_to_string(path)?;
         serde_json::from_str(&content)?
     } else {
         json!({})
     };
 
-    let added = install_hooks_in_value(&mut root, tr)?;
-    if added.is_empty() {
-        return Ok(added);
+    let changes = install_hooks_in_value(&mut root, tr)?;
+    if changes.is_empty() {
+        return Ok(changes);
     }
 
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
     let output = serde_json::to_string_pretty(&root)?;
-    std::fs::write(&path, output)?;
-    Ok(added)
+    std::fs::write(path, output)?;
+    Ok(changes)
 }
 
 /// `claude.uninstall` IPC 핸들러. 파일이 없으면 빈 목록 반환.
@@ -303,7 +323,9 @@ mod tests {
     #[test]
     fn install_in_empty_value_adds_all_events() {
         let mut root = json!({});
-        let added = install_hooks_in_value(&mut root, &test_translator()).expect("install");
+        let added = install_hooks_in_value(&mut root, &test_translator())
+            .expect("install")
+            .added;
         assert_eq!(added.len(), MANAGED_HOOKS.len());
         for (event_name, token, _matcher) in MANAGED_HOOKS {
             let marker = tasty_hook_marker(token);
@@ -342,7 +364,9 @@ mod tests {
                 ]
             }
         });
-        let added = install_hooks_in_value(&mut root, &test_translator()).expect("install");
+        let added = install_hooks_in_value(&mut root, &test_translator())
+            .expect("install")
+            .added;
         // 신규 추가가 아니라 in-place upgrade 라서 added 에 SessionStart 는 없다.
         assert!(!added.contains(&"SessionStart"));
         let arr = root["hooks"]["SessionStart"].as_array().unwrap();
@@ -363,6 +387,68 @@ mod tests {
         let cmd = arr[0]["hooks"][0]["command"].as_str().unwrap();
         assert_eq!(cmd, tasty_hook_command("session-start"));
         assert!(!cmd.contains("${CLAUDE_SESSION_ID}"));
+    }
+
+    /// 모든 항목이 이미 있어도 명령이 옛 형식이면 바꾼 이벤트를 `updated` 로 알린다. 다시 설치하면 둘 다 비어 있다.
+    /// 옛 형식은 셸 판정 이전의 background-start 명령과 `[ … ] && … || true` 꼴의 명령이다.
+    #[test]
+    fn existing_entries_with_an_old_command_are_reported_as_updated() {
+        let mut root = json!({});
+        install_hooks_in_value(&mut root, &test_translator()).expect("install");
+        let old_background =
+            r#"if [ -n "$TASTY_SURFACE_ID" ]; then tasty claude hook background-start || true; fi"#;
+        let old_stop = r#"[ -n "$TASTY_SURFACE_ID" ] && tasty claude hook stop || true"#;
+        for (event, old) in [("Stop", old_stop), ("PostToolUse", old_background)] {
+            for entry in root["hooks"][event].as_array_mut().unwrap() {
+                let cmd = entry["hooks"][0]["command"].as_str().unwrap().to_string();
+                let token = if event == "Stop" {
+                    "hook stop"
+                } else {
+                    "hook background-start"
+                };
+                if cmd.contains(token) {
+                    entry["hooks"][0]["command"] = json!(old);
+                }
+            }
+        }
+        let changes = install_hooks_in_value(&mut root, &test_translator()).expect("reinstall");
+        assert!(changes.added.is_empty(), "{changes:?}");
+        assert_eq!(changes.updated, vec!["Stop", "PostToolUse"]);
+        let commands: Vec<&str> = root["hooks"]["PostToolUse"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|e| e["hooks"][0]["command"].as_str())
+            .collect();
+        assert!(commands.contains(&tasty_hook_command("background-start").as_str()));
+        let again = install_hooks_in_value(&mut root, &test_translator()).expect("again");
+        assert!(again.is_empty(), "{again:?}");
+    }
+
+    /// 설정 파일은 바뀐 것이 있을 때만 다시 쓴다. 옛 명령만 바뀐 경우에도 쓴다.
+    #[test]
+    fn the_settings_file_is_rewritten_only_when_something_changed() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("nested").join("settings.json");
+        let tr = test_translator();
+        assert!(!install_into_file(&path, &tr).unwrap().added.is_empty());
+        let installed = std::fs::read_to_string(&path).unwrap();
+        // 사용자가 손댄 공백은 아무것도 바뀌지 않으면 그대로 남는다.
+        let hand_edited = format!("{installed}\n\n");
+        std::fs::write(&path, &hand_edited).unwrap();
+        assert!(install_into_file(&path, &tr).unwrap().is_empty());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), hand_edited);
+        let old =
+            r#"if [ -n "$TASTY_SURFACE_ID" ]; then tasty claude hook background-start || true; fi"#;
+        let current = serde_json::to_string(&tasty_hook_command("background-start")).unwrap();
+        std::fs::write(
+            &path,
+            installed.replace(&current, &serde_json::to_string(old).unwrap()),
+        )
+        .unwrap();
+        let changes = install_into_file(&path, &tr).unwrap();
+        assert_eq!(changes.updated, vec!["PostToolUse"]);
+        assert!(std::fs::read_to_string(&path).unwrap().contains(&current));
     }
 
     #[test]
@@ -404,7 +490,9 @@ mod tests {
                 ]
             }
         });
-        let added = install_hooks_in_value(&mut root, &test_translator()).expect("install");
+        let added = install_hooks_in_value(&mut root, &test_translator())
+            .expect("install")
+            .added;
         assert!(
             !added.contains(&"PreToolUse"),
             "in-place upgrade, not a fresh add"
@@ -418,7 +506,9 @@ mod tests {
     fn install_is_idempotent() {
         let mut root = json!({});
         install_hooks_in_value(&mut root, &test_translator()).expect("install 1");
-        let added2 = install_hooks_in_value(&mut root, &test_translator()).expect("install 2");
+        let added2 = install_hooks_in_value(&mut root, &test_translator())
+            .expect("install 2")
+            .added;
         assert!(added2.is_empty(), "second install should add nothing");
         for (event_name, token, _matcher) in MANAGED_HOOKS {
             let marker = tasty_hook_marker(token);
@@ -554,7 +644,9 @@ mod tests {
                 }]
             }
         });
-        let added = install_hooks_in_value(&mut root, &test_translator()).expect("install");
+        let added = install_hooks_in_value(&mut root, &test_translator())
+            .expect("install")
+            .added;
         assert!(
             !added.contains(&"Stop"),
             "신규 추가가 아니라 upgrade 여야 한다"

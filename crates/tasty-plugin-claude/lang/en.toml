@@ -172,7 +172,7 @@ description = "Restart the Claude instance in a surface and resume the same sess
 description = "Attach a persistent Claude session profile to a CHILD instance (resolves --child to its surface, then runs the same sequence as 'claude reboot --profile' on it). Unlike reboot, this does NOT cut off the caller's turn — only the child restarts. A notification is delivered to the caller surface when the child transitions to idle/needs_input, and once more when it exits."
 
 [claude.cli.sub.install]
-description = "Install tasty hooks into ~/.claude/settings.json"
+description = "Install tasty hooks into ~/.claude/settings.json, or update existing Tasty entries whose matcher or command is out of date. The reply lists added events under installed and updated ones under updated."
 
 [claude.cli.sub.uninstall]
 description = "Uninstall tasty hooks from ~/.claude/settings.json"

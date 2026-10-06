@@ -172,7 +172,7 @@ description = "서피스의 Claude를 재시작하고 같은 세션 재개(지�
 description = "자식 인스턴스에 지속되는 Claude 세션 프로필 부착(--child의 서피스를 찾아 'claude reboot --profile'과 같은 순서 실행). 자식만 재시작하므로 reboot와 달리 호출자의 턴은 중단하지 않습니다. 자식이 idle/needs_input으로 전환하거나 종료하면 호출자 서피스에 알립니다."
 
 [claude.cli.sub.install]
-description = "~/.claude/settings.json에 tasty 훅 설치"
+description = "~/.claude/settings.json 에 tasty 훅을 설치하거나, matcher 나 명령이 현재 값과 다른 기존 Tasty 항목을 갱신합니다. 응답의 installed 에 추가한 이벤트, updated 에 갱신한 이벤트가 나옵니다."
 
 [claude.cli.sub.uninstall]
 description = "~/.claude/settings.json에서 tasty 훅 제거"

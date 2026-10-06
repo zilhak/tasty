@@ -176,7 +176,9 @@ impl Plugin for ClaudePlugin {
                 &self.translator,
             ),
             "claude.install" => match install::run_install(&self.translator) {
-                Ok(added) => Ok(json!({ "installed": added })),
+                Ok(changes) => {
+                    Ok(json!({ "installed": changes.added, "updated": changes.updated }))
+                }
                 Err(e) => Err(IpcMethodError::new(
                     self.translator
                         .t_fmt("claude.install.install_failed", &e.to_string()),
