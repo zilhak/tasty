@@ -1,7 +1,16 @@
 use super::*;
 
+const TOKEN: &str = "tok";
+
 fn binding(task: &str, attempt: &str, armed: bool) -> TurnBinding {
-    TurnBinding::new(1, task.into(), attempt.into(), "claude".into(), armed)
+    TurnBinding::new(
+        1,
+        task.into(),
+        attempt.into(),
+        "claude".into(),
+        TOKEN.into(),
+        armed,
+    )
 }
 
 fn answer(s: &str) -> TurnEvent {
@@ -77,33 +86,38 @@ fn a_released_binding_takes_no_late_report() {
 fn submissions_are_tied_to_the_current_attempt_and_keep_the_first_value() {
     let t = AgentTurns::new();
     assert_eq!(
-        t.submit(1, &"a".into(), "a#1", json!(1)),
+        t.submit(1, &"a".into(), "a#1", TOKEN, json!(1)),
         Err((SubmissionRejection::NotRunning, None))
     );
     t.bind(7, binding("a", "a#2", true)).unwrap();
     assert_eq!(
-        t.submit(1, &"a".into(), "a#1", json!(1)),
+        t.submit(1, &"a".into(), "a#1", TOKEN, json!(1)),
         Err((SubmissionRejection::StaleAttempt, Some("a#2".into())))
     );
     assert_eq!(
-        t.submit(1, &"b".into(), "a#2", json!(1)),
+        t.submit(1, &"b".into(), "a#2", TOKEN, json!(1)),
         Err((SubmissionRejection::NotRunning, None))
     );
     assert_eq!(
-        t.submit(1, &"a".into(), "a#2", json!({"v": 1})),
+        t.submit(1, &"a".into(), "a#2", TOKEN, json!({"v": 1})),
         Ok(SubmitOutcome::Accepted)
     );
     assert_eq!(
-        t.submit(1, &"a".into(), "a#2", json!({"v": 1})),
+        t.submit(1, &"a".into(), "a#2", TOKEN, json!({"v": 1})),
         Ok(SubmitOutcome::Duplicate)
     );
     assert_eq!(
-        t.submit(1, &"a".into(), "a#2", json!({"v": 2})),
+        t.submit(1, &"a".into(), "a#2", TOKEN, json!({"v": 2})),
         Err((SubmissionRejection::Conflict, Some("a#2".into())))
+    );
+    // 토큰이 다르면 같은 회차라도 받지 않는다.
+    assert_eq!(
+        t.submit(1, &"a".into(), "a#2", "other", json!({"v": 1})),
+        Err((SubmissionRejection::WrongToken, Some("a#2".into())))
     );
     t.report(7, "claude", answer("done"));
     assert_eq!(
-        t.submit(1, &"a".into(), "a#2", json!({"v": 1})),
+        t.submit(1, &"a".into(), "a#2", TOKEN, json!({"v": 1})),
         Err((SubmissionRejection::TurnEnded, Some("a#2".into())))
     );
 }
@@ -119,6 +133,7 @@ fn the_same_task_name_in_two_workspaces_stays_apart() {
             "review".into(),
             "review#1".into(),
             "claude".into(),
+            TOKEN.into(),
             true,
         )
     };
@@ -128,7 +143,7 @@ fn the_same_task_name_in_two_workspaces_stays_apart() {
     assert_eq!(t.find(1, &review).map(|(s, _)| s), Some(7));
     assert_eq!(t.find(2, &review).map(|(s, _)| s), Some(8));
     assert_eq!(
-        t.submit(2, &review, "review#1", json!("from ws2")),
+        t.submit(2, &review, "review#1", TOKEN, json!("from ws2")),
         Ok(SubmitOutcome::Accepted)
     );
     assert!(t.get(7).unwrap().submitted.is_none());
@@ -139,7 +154,7 @@ fn the_same_task_name_in_two_workspaces_stays_apart() {
     assert!(t.get(7).is_none());
     assert_eq!(t.find(2, &review).map(|(s, _)| s), Some(8));
     assert_eq!(
-        t.submit(1, &review, "review#1", json!("x")),
+        t.submit(1, &review, "review#1", TOKEN, json!("x")),
         Err((SubmissionRejection::NotRunning, None))
     );
 }

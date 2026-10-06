@@ -33,6 +33,8 @@ pub struct TurnBinding {
     pub awaiting_since: Option<u64>,
     /// 회차에 세션 연결을 기록했다.
     pub linked: bool,
+    /// 지시에 실어 보낸 회차 토큰. 제출은 이 값을 함께 내야 받는다.
+    pub token: String,
 }
 
 impl TurnBinding {
@@ -41,6 +43,7 @@ impl TurnBinding {
         task: TaskId,
         attempt: String,
         provider: String,
+        token: String,
         armed: bool,
     ) -> Self {
         Self {
@@ -53,6 +56,7 @@ impl TurnBinding {
             submitted: None,
             awaiting_since: None,
             linked: false,
+            token,
         }
     }
 
@@ -206,6 +210,7 @@ impl AgentTurns {
         workspace: u32,
         task: &TaskId,
         attempt: &str,
+        token: &str,
         value: Value,
     ) -> Result<SubmitOutcome, (SubmissionRejection, Option<String>)> {
         let mut g = self.lock();
@@ -214,6 +219,9 @@ impl AgentTurns {
         };
         if b.attempt != attempt {
             return Err((SubmissionRejection::StaleAttempt, Some(b.attempt.clone())));
+        }
+        if b.token != token {
+            return Err((SubmissionRejection::WrongToken, Some(b.attempt.clone())));
         }
         if b.ended.is_some() {
             return Err((SubmissionRejection::TurnEnded, Some(b.attempt.clone())));

@@ -815,8 +815,9 @@ DAG 요약(`agent.dag_list`·`agent.dag_get`)의 `state_counts.not_selected` 는
 결과:
 
 - 출력 타입이 `string`(기본)이면 최종 답변이 출력이다(`provenance.output_source`: `agent.final_answer`).
-- 그 밖의 타입은 같은 회차에 명시 제출한 값이 출력이다(`agent.submitted`). 지시문 끝에 제출 방법(`tasty agent task-submit --workspace-id … --id … --attempt-id … --output '<JSON>'`)과 출력 스키마를 붙인다. 후처리가 있으면 제출이 필요 없고 후처리가 받는 실행 결과에 최종 답변이 든다.
-- `agent.task_submit_result` 는 값이 도착할 때 출력 타입으로 검사하고(실패하면 `-32602` 와 `output_validation`) 턴이 끝날 때 결과로 확정한다. 응답 `final: false` 는 task 가 아직 끝나지 않았다는 뜻이다. 같은 값을 다시 내면 `duplicate: true`, 거절은 `-32018` 과 `error.data.reason`: `not_running`·`stale_attempt`·`conflict`(같은 회차의 다른 값)·`turn_ended`·`not_the_session`(세션 토큰의 agent 가 그 task 의 세션이 아님).
+- 그 밖의 타입은 같은 회차에 명시 제출한 값이 출력이다(`agent.submitted`). 지시문 끝에 제출 방법(`tasty agent task-submit --workspace-id … --id … --attempt-id … --token … --output '<JSON>'`)과 출력 스키마를 붙인다. 후처리가 있으면 제출이 필요 없고 후처리가 받는 실행 결과에 최종 답변이 든다.
+- `agent.task_submit_result` 는 값이 도착할 때 출력 타입으로 검사하고(실패하면 `-32602` 와 `output_validation`) 턴이 끝날 때 결과로 확정한다. 응답 `final: false` 는 task 가 아직 끝나지 않았다는 뜻이다. 같은 값을 다시 내면 `duplicate: true`, 거절은 `-32018` 과 `error.data.reason`: `not_running`·`stale_attempt`·`conflict`(같은 회차의 다른 값)·`turn_ended`·`not_the_session`(세션 토큰의 agent 가 그 task 의 세션이 아님)·`wrong_token`(회차 토큰이 다름).
+- 회차마다 예측할 수 없는 회차 토큰(16바이트 난수, 16진수 32자)을 새로 만들어 지시의 제출 안내에 싣고(`--token`), 제출은 `token` 이 그 회차의 것과 같아야 받는다. 회차 id(`<task id>#<n>`)는 짐작할 수 있어 다른 회차나 다른 호출자가 실수로 낸 값을 막지 못하기 때문이다. 로컬 IPC 가 신뢰 경계라는 원칙은 그대로이고, 토큰은 보안 경계가 아니다(같은 컴퓨터의 호출자는 세션 화면이나 handle 기록에서 토큰을 읽을 수 있다).
 - 원본 보고(`provider`·`surface_id`·`final_answer`·`submitted`)는 `raw.execution` 에 남는다.
 
 | 상황 | 결과 |

@@ -16,6 +16,14 @@ use crate::agent_turns::{TurnBinding, TurnPoll, decide};
 /// 넉넉히 기다린다.
 const SPAWN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
+/// 회차 토큰. 회차 id 와 달리 예측할 수 없다.
+fn new_attempt_token() -> String {
+    use rand::RngCore;
+    let mut bytes = [0u8; 16];
+    rand::rng().fill_bytes(&mut bytes);
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
 impl HostExecutor {
     /// 새 세션은 spawn 으로 지시를 보내고 바로 회차에 묶는다. 기존 세션은 handle 에 지시를 담아
     /// 두고 poll 에서 세션이 비었을 때 보낸다.
@@ -44,6 +52,7 @@ impl HostExecutor {
         let attempt_id = super::dispatch_attempt(task)
             .ok_or_else(|| unavailable(agent::AGENT_NEEDS_CONTRACT.into()))?;
         let needs_submission = agent::needs_submission(contract, &task.command);
+        let attempt_token = new_attempt_token();
         let mut text = task
             .input_snapshot
             .as_ref()
@@ -57,6 +66,7 @@ impl HostExecutor {
                 task.workspace_id,
                 &task.id,
                 &attempt_id,
+                &attempt_token,
                 &schema,
             ));
         }
@@ -72,6 +82,7 @@ impl HostExecutor {
             needs_submission,
             deadline_ms,
             pending_instruction: pending,
+            attempt_token: attempt_token.clone(),
         };
         match session {
             AgentSession::Existing { surface_id } => Ok(handle(*surface_id, Some(text))),
@@ -110,6 +121,7 @@ impl HostExecutor {
                     task.id.clone(),
                     attempt_id.clone(),
                     provider.clone(),
+                    attempt_token.clone(),
                     true,
                 );
                 self.ctx
@@ -134,6 +146,7 @@ impl HostExecutor {
             needs_submission,
             deadline_ms,
             pending_instruction,
+            ..
         } = handle
         else {
             return PollOutcome::Failed("poll_agent: not an agent handle".into());
@@ -199,6 +212,7 @@ impl HostExecutor {
             provider,
             surface_id,
             deadline_ms,
+            attempt_token,
             ..
         } = handle
         else {
@@ -226,6 +240,7 @@ impl HostExecutor {
             task_id.clone(),
             attempt_id.clone(),
             provider.clone(),
+            attempt_token.clone(),
             false,
         );
         if self.ctx.agent_turns.bind(*surface_id, binding).is_err() {

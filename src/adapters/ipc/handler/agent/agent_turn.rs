@@ -4,7 +4,7 @@
 use serde_json::{Value, json};
 use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
-use tasty_task_runtime::agent_task::Submitter;
+use tasty_task_runtime::agent_task::{AttemptRef, Submitter};
 use tasty_task_runtime::agent_turns::{ReportOutcome, SubmitOutcome, TurnEnd, TurnEvent};
 
 use crate::app::services::AppServices;
@@ -45,6 +45,10 @@ pub fn task_submit(
         Ok(a) => a.to_string(),
         Err(e) => return e,
     };
+    let token = match required_str(params, "token", &id) {
+        Ok(t) => t.to_string(),
+        Err(e) => return e,
+    };
     let Some(output) = params.get("output") else {
         return JsonRpcResponse::invalid_params(id, "Missing required 'output'");
     };
@@ -65,7 +69,10 @@ pub fn task_submit(
         engine.task_scope,
         workspace_id,
         &task_id,
-        &attempt_id,
+        AttemptRef {
+            id: &attempt_id,
+            token: &token,
+        },
         output,
         submitter,
     ) {

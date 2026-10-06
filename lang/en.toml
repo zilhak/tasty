@@ -5415,6 +5415,9 @@ help = "Agent task id"
 [cli.help._root.agent.task-submit.arg.attempt_id]
 help = "Attempt id the instruction named; a submission for another attempt is rejected"
 
+[cli.help._root.agent.task-submit.arg.token]
+help = "Attempt token the instruction named; a submission with another token is rejected"
+
 [cli.help._root.agent.task-submit.arg.output]
 help = "Result JSON. Accepts inline JSON or `@path/to/file.json`"
 

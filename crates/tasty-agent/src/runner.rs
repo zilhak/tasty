@@ -105,6 +105,10 @@ pub enum DispatchHandle {
         /// 보내지 않고 다음 poll 에서 다시 본다(같은 세션의 회차를 직렬화한다).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pending_instruction: Option<String>,
+        /// 회차마다 새로 만드는 예측할 수 없는 토큰. 지시에 실어 보내고 제출을 받을 때 대조한다.
+        /// 다른 회차·다른 호출자의 실수 제출을 막는 값이고 보안 경계가 아니다.
+        #[serde(default)]
+        attempt_token: String,
     },
 }
 

@@ -18,6 +18,14 @@ pub enum Submitter {
     Session(u32),
 }
 
+/// 제출이 가리키는 회차. 토큰은 지시에 실린 회차 토큰이고, 다른 회차·다른 호출자의 실수
+/// 제출을 막는다(보안 경계가 아니다).
+#[derive(Debug, Clone, Copy)]
+pub struct AttemptRef<'a> {
+    pub id: &'a str,
+    pub token: &'a str,
+}
+
 impl TaskService {
     /// agent task 회차에 결과를 제출한다. 출력 타입으로 바로 검증하고, 받은 값은 턴이 끝날 때
     /// 러너가 결과로 확정한다. 제출 성공은 task 의 성공이 아니다.
@@ -26,10 +34,11 @@ impl TaskService {
         scope: &TaskScope,
         workspace_id: u32,
         task_id: &TaskId,
-        attempt_id: &str,
+        attempt: AttemptRef<'_>,
         output: &Value,
         submitter: Submitter,
     ) -> Result<SubmitOutcome, AgentError> {
+        let attempt_id = attempt.id;
         let seq = scope.agent_seq().clone();
         let task = self
             .with_memory(|mem| {
@@ -68,7 +77,13 @@ impl TaskService {
                 )))
             })?;
         self.agent_turns()
-            .submit(workspace_id, task_id, attempt_id, typed.to_wire())
+            .submit(
+                workspace_id,
+                task_id,
+                attempt_id,
+                attempt.token,
+                typed.to_wire(),
+            )
             .map_err(|(reason, current)| reject(reason, current))
     }
 

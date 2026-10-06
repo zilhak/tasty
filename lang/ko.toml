@@ -5409,6 +5409,9 @@ help = "agent 작업 ID"
 [cli.help._root.agent.task-submit.arg.attempt_id]
 help = "지시에 적힌 회차 ID. 다른 회차의 제출은 거절됩니다"
 
+[cli.help._root.agent.task-submit.arg.token]
+help = "지시에 적힌 회차 토큰. 다른 토큰으로 낸 제출은 거절됩니다"
+
 [cli.help._root.agent.task-submit.arg.output]
 help = "결과 JSON. 인라인 JSON 또는 `@path/to/file.json`"
 

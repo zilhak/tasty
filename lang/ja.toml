@@ -5409,6 +5409,9 @@ help = "agent タスク ID"
 [cli.help._root.agent.task-submit.arg.attempt_id]
 help = "指示に書かれた試行 ID。別の試行への提出は拒否されます"
 
+[cli.help._root.agent.task-submit.arg.token]
+help = "指示に書かれた試行トークン。別のトークンでの提出は拒否されます"
+
 [cli.help._root.agent.task-submit.arg.output]
 help = "結果 JSON。インライン JSON または `@path/to/file.json`"
 

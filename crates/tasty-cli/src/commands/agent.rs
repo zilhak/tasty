@@ -231,6 +231,9 @@ pub enum AgentCommands {
         /// Attempt id the instruction named; a submission for another attempt is rejected.
         #[arg(long)]
         attempt_id: String,
+        /// Attempt token the instruction named; a submission with another token is rejected.
+        #[arg(long)]
+        token: String,
         /// Result JSON. Accepts inline JSON or `@path/to/file.json`.
         #[arg(long)]
         output: String,

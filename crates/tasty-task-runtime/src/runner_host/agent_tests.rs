@@ -271,6 +271,11 @@ fn a_structured_output_needs_a_submission_and_the_new_session_is_told_how() {
     let prompt = spawned[0]["prompt"].as_str().unwrap();
     assert!(prompt.contains("tasty agent task-submit"), "{prompt}");
     assert!(prompt.contains(&format!("{}#1", task.id)), "{prompt}");
+    // 회차 토큰은 회차 id 에서 짐작할 수 없는 값이고 턴 표의 토큰과 같다.
+    let token = ctx.agent_turns.get(42).expect("bound").token;
+    assert_eq!(token.len(), 32, "{token}");
+    assert!(prompt.contains(&format!("--token '{token}'")), "{prompt}");
+    assert!(!token.contains(&task.id), "{token}");
     // 새 세션의 첫 턴은 spawn 의 지시다. 시작 보고 없이도 종료를 받는다.
     ctx.agent_turns.report(
         42,
@@ -404,6 +409,7 @@ fn a_restored_handle_without_a_binding_cannot_be_attributed() {
         needs_submission: false,
         deadline_ms: None,
         pending_instruction: None,
+        attempt_token: "tok".into(),
     };
     let PollOutcome::Failed(e) = exec.poll(&h) else {
         panic!("expected failure");
@@ -428,5 +434,16 @@ fn an_unsupported_provider_is_refused_at_dispatch() {
     assert_eq!(
         FailureCode::parse_message(&e),
         Some(FailureCode::AgentUnavailable)
+    );
+}
+
+#[test]
+fn attempt_tokens_are_fresh_for_every_attempt() {
+    let a = super::new_attempt_token();
+    let b = super::new_attempt_token();
+    assert_ne!(a, b);
+    assert!(
+        a.len() == 32 && a.chars().all(|c| c.is_ascii_hexdigit()),
+        "{a}"
     );
 }

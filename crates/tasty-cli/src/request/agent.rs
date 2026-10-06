@@ -145,6 +145,7 @@ pub(super) fn agent_command_to_method_params(
             workspace_id,
             id,
             attempt_id,
+            token,
             output,
         } => (
             "agent.task_submit_result",
@@ -152,6 +153,7 @@ pub(super) fn agent_command_to_method_params(
                 "workspace_id": *workspace_id,
                 "id": id,
                 "attempt_id": attempt_id,
+                "token": token,
                 "output": parse_inline_or_file_json(output, "--output"),
             }),
         ),

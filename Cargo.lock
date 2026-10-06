@@ -6466,6 +6466,7 @@ name = "tasty-task-runtime"
 version = "0.1.0"
 dependencies = [
  "libc",
+ "rand 0.9.4",
  "serde",
  "serde_json",
  "tasty-agent",

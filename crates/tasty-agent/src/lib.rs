@@ -139,6 +139,8 @@ pub enum SubmissionRejection {
     TurnEnded,
     /// 제출한 세션이 그 회차가 지시를 보낸 세션이 아니다.
     NotTheSession,
+    /// 제출 토큰이 그 회차가 지시에 실은 토큰이 아니다.
+    WrongToken,
 }
 
 /// 호출자 값으로 memory 키를 만들고 입력 오류를 InvalidArgument로 반환한다.
