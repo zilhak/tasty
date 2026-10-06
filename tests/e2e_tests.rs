@@ -2797,3 +2797,104 @@ fn webview_lets_the_first_press_drag_the_pane_divider_below_it_at_scale_two() {
         "분할선 hit 띠의 press 가 포커스를 바꿨다"
     );
 }
+
+const ROUNDTRIP_INTS: [i64; 3] = [i64::MIN, i64::MAX, 9_007_199_254_740_993];
+
+fn exact_ints(v: &serde_json::Value) -> Vec<i64> {
+    v.as_array()
+        .unwrap_or_else(|| panic!("not an array: {v}"))
+        .iter()
+        .map(|x| {
+            // f64 로 거쳐 온 값이면 as_i64 가 None 이거나 다른 값이 된다.
+            x.as_i64()
+                .unwrap_or_else(|| panic!("not an exact i64: {x}"))
+        })
+        .collect()
+}
+
+/// CLI 의 `metadata:` 블록(다음 최상위 항목 전까지)을 JSON 으로 읽는다.
+fn cli_metadata_block(stdout: &str) -> serde_json::Value {
+    let start = stdout
+        .find("metadata: ")
+        .unwrap_or_else(|| panic!("no metadata block:\n{stdout}"));
+    let rest = &stdout[start + "metadata: ".len()..];
+    let end = rest
+        .lines()
+        .scan(0usize, |offset, line| {
+            let at = *offset;
+            *offset += line.len() + 1;
+            Some((at, line))
+        })
+        .skip(1)
+        .find(|(_, line)| !line.starts_with(' ') && !line.starts_with('}'))
+        .map(|(at, _)| at)
+        .unwrap_or(rest.len());
+    serde_json::from_str(rest[..end].trim()).unwrap_or_else(|e| panic!("{e}:\n{stdout}"))
+}
+
+/// task 자료에 담긴 int64 경계값과 2^53 을 넘는 정수가 IPC 요청 → 저장소 → IPC 응답,
+/// 그리고 CLI 출력까지 같은 정수로 돌아오는지 본다. 화면 문자열 비교로 대신하지 않고
+/// 응답·출력을 다시 JSON 으로 읽어 정수 값을 비교한다.
+#[test]
+fn int64_extremes_round_trip_exactly_through_ipc_and_cli() {
+    let _lane = lane();
+    let tasty = common::shared();
+    let ws = tasty.create_workspace("int64-roundtrip");
+    let created = tasty.call(
+        "agent.task_create",
+        json!({
+            "workspace_id": ws.id,
+            "name": "int64-roundtrip",
+            "command": {"kind": "wait_barrier", "name": "int64-roundtrip-never-closed"},
+            "metadata": {"ints": ROUNDTRIP_INTS},
+        }),
+    );
+    let id = created["id"].as_str().expect("task id").to_string();
+    assert_eq!(exact_ints(&created["metadata"]["ints"]), ROUNDTRIP_INTS);
+
+    let fetched = tasty.call("agent.task_get", json!({"workspace_id": ws.id, "id": id}));
+    assert_eq!(exact_ints(&fetched["metadata"]["ints"]), ROUNDTRIP_INTS);
+
+    // CLI 전용 TASTY_HOME 에 하네스 인스턴스의 port 를 적어 같은 인스턴스에 붙인다.
+    // 인스턴스를 새로 띄우지 않으므로 부팅용 port 파일 인자는 쓰지 않는다.
+    let cli_home = tempfile::tempdir().expect("cli home");
+    std::fs::write(cli_home.path().join("tasty.port"), tasty.port().to_string())
+        .expect("write port file");
+    let out = std::process::Command::new(common::spawn_diag::instance_bin())
+        .env("TASTY_HOME", cli_home.path())
+        .env_remove("TASTY_SURFACE_ID")
+        .env_remove("TASTY_SESSION_TOKEN")
+        .args([
+            "agent",
+            "task-get",
+            "--workspace-id",
+            &ws.id.to_string(),
+            "--id",
+            &id,
+        ])
+        .stdin(std::process::Stdio::null())
+        .output()
+        .expect("run tasty cli");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "cli failed: {}\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        exact_ints(&cli_metadata_block(&stdout)["ints"]),
+        ROUNDTRIP_INTS
+    );
+
+    // 러너가 돌고 있으면 이미 종결됐을 수 있어 취소 응답은 검사하지 않는다.
+    tasty.call_raw(
+        "agent.task_cancel",
+        json!({"workspace_id": ws.id, "id": id}),
+    );
+    tasty.call_raw(
+        "agent.task_delete",
+        json!({"workspace_id": ws.id, "id": id, "force": true}),
+    );
+    tasty.call("workspace.close", json!({"id": ws.id}));
+}
