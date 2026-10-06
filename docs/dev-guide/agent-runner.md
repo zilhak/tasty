@@ -512,7 +512,7 @@ tasty agent task-purge --workspace-id 1 --states succeeded,failed --older-than-m
 
 task 는 선택적으로 타입 계약(`TaskContract`)을 가진다. 계약이 없는 task 가 v1 이며, 결과 형식·reducer 동작·저장 형식이 바뀌지 않는다. v2 task 는 IPC `agent.task_graph_submit`(CLI `tasty agent task-graph-submit`)으로 그래프 단위로 만들거나 Rust API `TaskStore::create_typed` 로 하나씩 만든다. `task_create` 는 계약을 받지 않는다. 결정 근거는 [ADR-0068](../adr/0068-typed-task-contracts-live-in-a-separate-record-namespace.md).
 
-코드: 타입 `crates/tasty-agent/src/task/types.rs`, 계약·결과 `crates/tasty-agent/src/task/contract.rs`, 입력 binding `crates/tasty-agent/src/task/binding.rs`, 그래프 제출 `crates/tasty-agent/src/task/store/graph_submit.rs`, 실행 시 입력 해석 `crates/tasty-task-runtime/src/runner_host/typed_inputs.rs`, v2 reduce `crates/tasty-agent/src/reducer.rs::reduce_typed`.
+코드: 타입 `crates/tasty-agent/src/task/types.rs`, 계약·결과 `crates/tasty-agent/src/task/contract.rs`, 입력 binding `crates/tasty-agent/src/task/binding.rs`, 그래프 제출 `crates/tasty-agent/src/task/store/graph_submit.rs`, 실행 시 입력 해석 `crates/tasty-task-runtime/src/runner_host/typed_inputs.rs`, 회차 완료 기록과 handle 의 회차 `crates/tasty-task-runtime/src/runner_host/attempt_record.rs`, v2 reduce `crates/tasty-agent/src/reducer.rs::reduce_typed`.
 
 ### 계약 형식
 

@@ -1,6 +1,7 @@
 //! 러너 스레드에서 작업을 실행한다. Run은 자식 프로세스, Custom은 IPC와 완료 전략을 사용한다.
 //! lease·작업 출력 치환, 실행 handle 보존, 폴링 결과 수집도 담당한다.
 
+mod attempt_record;
 mod command_inputs;
 mod run_result;
 mod typed_inputs;
@@ -14,6 +15,7 @@ pub(crate) use run_result::{
     shell_outcome_from_status,
 };
 
+pub(crate) use attempt_record::{HANDLE_ATTEMPT_FIELD, dispatch_attempt, handle_value};
 use command_inputs::{substitute_lease_resource, substitute_task_outputs};
 
 use std::collections::HashMap;
@@ -33,9 +35,6 @@ use tasty_memory::{HOST_OWNER, MemoryStorage, MemoryValue, PutOpts, Scope};
 
 /// 재시작 뒤 실행 중인 작업을 복원할 workspace별 handle 키. 즉시 끝나는 handle은 저장하지 않는다.
 pub(crate) const HANDLE_KEY_PREFIX: &str = "tasty.agent.handle.";
-
-/// 저장한 handle 레코드에서 dispatch 회차 id 를 담는 키. handle 의 `kind`·`data` 옆에 둔다.
-pub(crate) const HANDLE_ATTEMPT_FIELD: &str = "attempt_id";
 
 pub(crate) fn handle_key(task_id: &str) -> String {
     format!("{HANDLE_KEY_PREFIX}{task_id}")
@@ -121,29 +120,6 @@ impl RunnerContext {
                 );
             }
         }
-    }
-
-    /// 완료 보고를 기록하고, 락을 놓은 뒤 이 보고로 종결된 task 의 대기자를 깨운다.
-    /// runner·훅·만료·재시작 복구가 모두 이 경로를 쓴다.
-    pub(crate) fn complete_task(
-        &self,
-        workspace_id: u32,
-        task_id: &TaskId,
-        completion: tasty_agent::task::Completion,
-        now_ms: u64,
-    ) -> Result<tasty_agent::task::CompletionReceipt, AgentError> {
-        let receipt =
-            self.with_memory(|mem| {
-                tasty_agent::task::TaskStore::new(mem, HOST_OWNER, self.agent_seq.as_ref())
-                    .complete(workspace_id, task_id, completion, now_ms)
-            })?;
-        // 같은 보고의 재전송은 이미 알린 종결을 다시 알리지 않는다.
-        let own = (!receipt.duplicate).then(|| receipt.task.clone());
-        self.fire_terminal_tasks(
-            workspace_id,
-            own.into_iter().chain(receipt.transitioned.iter().cloned()),
-        );
-        Ok(receipt)
     }
 
     /// poison은 로그로 알리고 남은 저장소를 계속 사용한다. 임의 MemoryStorage 호출의 중간 실패를 복구하는 것은 아니다.
@@ -363,12 +339,7 @@ impl HostExecutor {
             return;
         }
         let value = match serde_json::to_value(handle) {
-            Ok(mut v) => {
-                if let (Some(attempt), Some(obj)) = (attempt, v.as_object_mut()) {
-                    obj.insert(HANDLE_ATTEMPT_FIELD.into(), attempt.into());
-                }
-                MemoryValue::Json(v)
-            }
+            Ok(v) => handle_value(v, attempt),
             Err(e) => {
                 tracing::warn!("persist handle {task_id} serialize: {e}");
                 return;
@@ -526,8 +497,7 @@ impl TaskExecutor for HostExecutor {
         };
         let result = match dispatch_result {
             Ok(h) => {
-                // dispatch 직후 Running 전이가 만들 회차다.
-                let attempt = tasty_agent::task::attempt::next_attempt(task, 0).map(|a| a.id);
+                let attempt = dispatch_attempt(task);
                 self.persist_handle(task.workspace_id, &task.id, &h, attempt.as_deref());
                 DispatchOutcome::Started(h)
             }
@@ -873,8 +843,7 @@ impl HostExecutor {
                 agent_seq: self.ctx.agent_seq.clone(),
                 completion: self.ctx.task_waker_hub.clone(),
             },
-            // dispatch 직후 Running 전이가 만들 회차다.
-            tasty_agent::task::attempt::next_attempt(task, 0).map(|a| a.id),
+            dispatch_attempt(task),
         );
         // 훅 매핑은 재시작 때 사라져도 handle의 기한으로 reload에서 만료를 판단할 수 있게 한다.
         Ok(DispatchHandle::AwaitExternal {

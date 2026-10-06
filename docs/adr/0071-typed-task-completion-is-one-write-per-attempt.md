@@ -67,7 +67,7 @@ v2 task 는 Ready → Running 전이마다 새 실행 회차를 받는다(`Task.
 - `crates/tasty-agent/src/task/attempt.rs` — 회차, `Completion`, 지문.
 - `crates/tasty-agent/src/task/store/complete.rs` — `TaskStore::complete`.
 - `crates/tasty-agent/src/runner.rs` — `RunnerLoop::pending`, `completion_retryable`.
-- `crates/tasty-task-runtime/src/runner_host.rs` — `RunnerContext::complete_task`, handle 의 회차 저장(`persist_handle`).
+- `crates/tasty-task-runtime/src/runner_host/attempt_record.rs` — `RunnerContext::complete_task`, 저장 handle 의 회차(`attempt_id` 키).
 - `crates/tasty-task-runtime/src/runner_thread.rs` — 재시작 복구 보고(`mark_dead_tasks`·`finalize_precise_tasks`).
 - [ADR-0068](0068-typed-task-contracts-live-in-a-separate-record-namespace.md) — v2 레코드 형식.
 - [ADR-0069](0069-typed-task-graphs-activate-through-a-graph-record.md) — 그래프 활성화와 readiness.
