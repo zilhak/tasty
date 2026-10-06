@@ -21,6 +21,7 @@ pub mod explorer_surface;
 pub mod explorer_tab_bar;
 pub mod explorer_toolbar;
 pub mod explorer_view_cells;
+pub mod explorer_view_toggle;
 pub mod file_handler_picker;
 pub mod file_picker;
 pub mod fullscreen_stage;

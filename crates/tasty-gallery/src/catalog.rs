@@ -2124,14 +2124,24 @@ pub fn pages() -> Vec<Page> {
                 section(
                     "explorer",
                     "Explorer — the file-manager surface",
-                    vec![spec(
-                        "explorer-surface",
-                        "Explorer surface — full layout (Detail view)",
-                        Some(
-                            "internal tabs · toolbar (nav · path field · view toggle) · 196px sidebar · Detail content",
+                    vec![
+                        spec(
+                            "explorer-surface",
+                            "Explorer surface — full layout (Detail view)",
+                            Some(
+                                "internal tabs · toolbar (nav · path field · view toggle) · 196px sidebar · Detail content",
+                            ),
+                            components::explorer_surface::draw,
                         ),
-                        components::explorer_surface::draw,
-                    )],
+                        spec(
+                            "explorer-view-toggle",
+                            "View toggle (SegToggle) — a segment, so it fills (settled)",
+                            Some(
+                                "grid / list / detail picks a value · accent fill + on-accent ink · Mocha and Latte",
+                            ),
+                            components::explorer_view_toggle::draw,
+                        ),
+                    ],
                 ),
                 section(
                     "markdown-viewer",
