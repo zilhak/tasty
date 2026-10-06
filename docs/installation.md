@@ -14,6 +14,9 @@ Tasty는 GitHub Releases 에서 OS·아키텍처·설치 형태별 산출물로 
 | macOS | arm64 | `Tasty-{ver}-macos-arm64.dmg` | App Bundle 드래그 설치 (Apple Silicon 전용) |
 | Windows | x86_64 | `tasty-{ver}-windows-x64.zip` | 바이너리만 압축 |
 | Windows | x86_64 | `tasty-{ver}-windows-x64.msi` | 시작 메뉴/제거 등록 인스톨러 |
+| Linux | x86_64 · aarch64 | `tasty-headless-{ver}-linux-{x64,arm64}.tar.gz` | 헤드리스 빌드(`gui` feature 없음) · 번들 plugin 포함 |
+| macOS | arm64 | `tasty-headless-{ver}-macos-arm64.tar.gz` | 헤드리스 빌드 |
+| Windows | x86_64 | `tasty-headless-{ver}-windows-x64.zip` | 헤드리스 빌드 |
 
 ## Linux
 
@@ -77,7 +80,7 @@ Authenticode 서명이 없어 첫 실행 시 "Windows의 PC 보호" 경고가 �
 
 ## GPU 요구사항
 
-Tasty는 GPU 가속 렌더링(wgpu, Vulkan/DX12/Metal)을 쓴다. 하드웨어 GPU 어댑터가 없으면(GPU 미탑재 서버·VM·컨테이너 등) 소프트웨어 렌더러로 한 번 더 시도하고, 그마저 없으면 안내 메시지를 낸 뒤 종료한다. 위 배포 산출물은 모두 GUI 빌드다 — `--headless` 플래그는 받지만 GUI 빌드에서는 효과가 없어 경고 한 줄을 남기고 평소처럼 GUI 로 실행된다. 헤드리스 여부는 플래그가 아니라 빌드가 정하므로, GPU 없이 IPC/CLI 만 쓰려면 소스에서 `cargo build --no-default-features` 로 headless 빌드해야 한다([dev-guide/build](dev-guide/build.md)).
+Tasty는 GPU 가속 렌더링(wgpu, Vulkan/DX12/Metal)을 쓴다. 하드웨어 GPU 어댑터가 없으면(GPU 미탑재 서버·VM·컨테이너 등) 소프트웨어 렌더러로 한 번 더 시도하고, 그마저 없으면 안내 메시지를 낸 뒤 종료한다. 이름에 `headless` 가 없는 산출물은 모두 GUI 빌드다 — `--headless` 플래그는 받지만 GUI 빌드에서는 효과가 없어 경고 한 줄을 남기고 평소처럼 GUI 로 실행된다. 헤드리스 여부는 플래그가 아니라 빌드가 정하므로, GPU 없이 IPC/CLI 만 쓰려면 `tasty-headless-*` 압축 파일을 받는다. 압축 파일이 없는 환경(예: Intel Mac)은 소스에서 `cargo build --no-default-features` 로 빌드한다([dev-guide/build](dev-guide/build.md), 산출물 상세는 [release](dev-guide/release.md#헤드리스-산출물)).
 
 ## 검증
 

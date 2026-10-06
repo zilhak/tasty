@@ -69,6 +69,10 @@ cargo check --workspace --no-default-features   # headless 컴파일 검증
 cargo build --workspace --no-default-features   # headless 빌드
 ```
 
+릴리스 빌드 스크립트(`scripts/build-linux.sh` · `scripts/build-macos-dmg.sh` · `scripts/build-windows.ps1`)는 GUI 산출물을 만든 뒤
+`CARGO_TARGET_DIR=target/headless` 로 같은 프로필의 루트 패키지를 `--no-default-features` 로 한 번 더 빌드해 헤드리스 압축 파일을 만든다.
+GUI 패키지가 읽는 `target/<프로필>/tasty` 를 덮지 않으려고 target 디렉터리를 나눈다. 산출물 이름과 검증은 [릴리스 절차](release.md#헤드리스-산출물).
+
 <a id="컴파일된다-와-그래프에-안-들어온다-는-다른-좌변이다"></a>
 
 #### 컴파일 성공과 GUI 의존성 제외는 따로 확인한다
@@ -277,9 +281,9 @@ just link-plugins                 # cp 대신 symlink (rebuild 즉시 반영)
 ## 배포 패키징
 
 ```bash
-./scripts/build-macos-dmg.sh    # .app + .dmg (자동 --profile dist)
-./scripts/build-linux.sh        # tar.gz + .deb + .rpm + .AppImage (uname -m 자동 감지)
-./scripts/build-windows.ps1     # zip + .msi (cargo-wix + WiX 3.x)
+./scripts/build-macos-dmg.sh    # .app + .dmg + 헤드리스 tar.gz (자동 --profile dist)
+./scripts/build-linux.sh        # tar.gz + .deb + .rpm + .AppImage + 헤드리스 tar.gz (uname -m 자동 감지)
+./scripts/build-windows.ps1     # zip + .msi + 헤드리스 zip (cargo-wix + WiX 3.x)
 ```
 
 - **macOS** `.app` 은 ad-hoc 코드 서명(`codesign --sign -`). 번들 plugin 은 **`Contents/Resources/plugins/<id>/`** 에 staging 한다 — `Contents/MacOS/` 하위에 두면 codesign 이 그 디렉터리를 nested code 로 간주해 번들로 파싱하려다 `bundle format unrecognized` 로 **서명 자체가 실패**한다. `tests/macos_bundle_codesign.rs` 가 이 레이아웃을 강제하고, 런타임 탐색은 `bundle_root()`(`crates/tasty-host-plugin/src/builtin.rs`)가 담당한다.
@@ -333,7 +337,7 @@ cargo build --profile dist        # 워크스페이스 컴파일
 ./scripts/build-macos-dmg.sh      # .app 번들 + .dmg
 ```
 
-산출물: `dist/Tasty.app/...`(`CFBundleVersion` = Cargo version) · `dist/Tasty-{version}-macos.dmg`. `build-macos-dmg.sh` 마지막에 자동 sanity check(`tasty --version` / Mach-O / `CFBundleVersion` 일치 / DMG 존재) — 실패 시 빌드 fail. 고지 세트는 `Contents/Resources/` 에 codesign **전에** 스테이징되고(`scripts/lib/notice-set.sh`), `.app` · DMG 스테이징 트리 · 만든 DMG 를 읽기 전용으로 붙인 트리 세 곳에서 저장소 사본과 바이트 대조한다. 이 확인 코드는 구현돼 있지만 macOS 빌더에서 돈 적은 아직 없다(미측정). `dist` 는 `release` 상속(`strip=true`)이라 `nm` 이 거의 빈 건 정상.
+산출물: `dist/Tasty.app/...`(`CFBundleVersion` = Cargo version) · `dist/Tasty-{version}-macos.dmg`. `build-macos-dmg.sh` 마지막에 자동 sanity check(`tasty --version` / Mach-O / `CFBundleVersion` 일치 / DMG 존재) — 실패 시 빌드 fail. 고지 세트는 `Contents/Resources/` 에 codesign **전에** 스테이징되고(`scripts/lib/notice-set.sh`), `.app` · DMG 스테이징 트리 · 만든 DMG 를 읽기 전용으로 붙인 트리 세 곳에서 저장소 사본과 바이트 대조한다. 이 확인 코드는 구현돼 있지만 macOS 빌더에서 돈 적은 아직 없다(미측정). DMG 다음에 헤드리스 `tasty-headless-{version}-macos-arm64.tar.gz` 를 만든다(`NO_DMG=1` 이면 생략, [헤드리스 산출물](release.md#헤드리스-산출물)). 이 단계도 macOS 빌더에서 돈 적이 없다(미측정). `dist` 는 `release` 상속(`strip=true`)이라 `nm` 이 거의 빈 건 정상.
 
 **서명은 ad-hoc, 공증은 범위 밖** — `build-macos-dmg.sh` 가 `codesign --sign -` 로 ad-hoc 서명한다(Apple Silicon 의 "손상됨" 하드 블록 완화). 인증서 서명이 아니라 Gatekeeper 는 여전히 rejected 이므로(`spctl -a` 로 확인) 사용자는 Finder 우클릭→열기로 우회. 번들 plugin 은 `Contents/Resources/plugins/` 에 staging 해야 서명이 통과한다 — `Contents/MacOS/` 하위면 codesign 이 그 디렉터리를 nested bundle 로 파싱하려다 실패한다([build.md](#배포-패키징)). 산출물은 **Apple Silicon(arm64) 전용**이다 — dist 는 full LTO 라 타깃을 하나 더 얹으면 빌드 시간이 배로 늘고, Intel Mac 은 macOS 26 이 마지막 지원 릴리스라 배포 대상에서 뺐다. Intel 에서 쓰려면 `--target x86_64-apple-darwin` 으로 직접 빌드한다.
 
@@ -347,7 +351,7 @@ cargo install cargo-wix; winget install WiXToolset.WiXToolset   # 1회
 .\scripts\build-windows.ps1 -SkipMsi   # ZIP 만
 ```
 
-산출물: `tasty-{v}-windows-x64.{zip,msi}` + `SHA256SUMS-windows.txt`. `build-windows.ps1` 이 MSI 단계에서 `$env:WIX\bin` 을 자동 PATH prepend. 자동 sanity check(ZIP 풀어 `tasty.exe --version`, MSI 존재). 고지 세트는 ZIP 최상단과 MSI 설치 디렉토리에 들어가고, 스크립트가 ZIP 을 푼 트리와 MSI 를 관리 설치(`msiexec /a`)로 푼 트리에서 저장소 사본과 바이트 대조한다. `wix/main.wxs` 는 파일마다 이름을 적어야 해서, MSI 빌드 전에 `LICENSES/` 의 파일마다 대응 `Source` 가 있는지 먼저 본다. 이 확인 코드들은 구현돼 있지만 Windows 빌더에서 돈 적은 아직 없다(미측정). 검증 포인트: MSI UpgradeCode 유지(`wix/main.wxs`), 설치→시작메뉴→제거.
+산출물: `tasty-{v}-windows-x64.{zip,msi}` · 헤드리스 `tasty-headless-{v}-windows-x64.zip` + `SHA256SUMS-windows.txt`. 헤드리스 ZIP 도 같은 방식(`tasty.exe --version`, `plugins/`, 고지 세트)으로 확인하며 Windows 빌더에서 돈 적이 없다(미측정). `build-windows.ps1` 이 MSI 단계에서 `$env:WIX\bin` 을 자동 PATH prepend. 자동 sanity check(ZIP 풀어 `tasty.exe --version`, MSI 존재). 고지 세트는 ZIP 최상단과 MSI 설치 디렉토리에 들어가고, 스크립트가 ZIP 을 푼 트리와 MSI 를 관리 설치(`msiexec /a`)로 푼 트리에서 저장소 사본과 바이트 대조한다. `wix/main.wxs` 는 파일마다 이름을 적어야 해서, MSI 빌드 전에 `LICENSES/` 의 파일마다 대응 `Source` 가 있는지 먼저 본다. 이 확인 코드들은 구현돼 있지만 Windows 빌더에서 돈 적은 아직 없다(미측정). 검증 포인트: MSI UpgradeCode 유지(`wix/main.wxs`), 설치→시작메뉴→제거.
 
 #### Linux
 
@@ -358,7 +362,7 @@ just dist-setup-linux              # 또는 수동 (아래)
 
 수동 사전 도구: `sudo apt install cmake pkg-config libfreetype6-dev libfontconfig1-dev` + `cargo install cargo-deb cargo-generate-rpm` + `linuxdeploy`(GitHub continuous, `~/.local/bin`). 도구 역할은 위 [배포 패키징](#배포-패키징) 의 Linux 항목.
 
-산출물: `tar.gz` · `.deb` · `.rpm` · `.AppImage` + `SHA256SUMS-linux-{x64|arm64}.txt`. 자동 sanity check(tar.gz `tasty --version`, `dpkg-deb -I`, `rpm -qpi`, AppImage ELF 확인 — 실행은 안 함, GUI hang 회피).
+산출물: `tar.gz` · `.deb` · `.rpm` · `.AppImage` · 헤드리스 `tasty-headless-{version}-linux-{x64|arm64}.tar.gz` + `SHA256SUMS-linux-{x64|arm64}.txt`. 헤드리스 tar.gz 는 `--debug` 에서도 만든다. 자동 sanity check(tar.gz `tasty --version`, `dpkg-deb -I`, `rpm -qpi`, AppImage ELF 확인 — 실행은 안 함, GUI hang 회피).
 
 넷 다 고지 세트(`LICENSE` · `THIRD_PARTY_LICENSES.md` · `LICENSES/` 의 모든 파일)를 함께 나른다 — 생성 단계는 없고 저장소의 파일을 그대로 스테이징한다. `LICENSES/` 는 파일 이름이 아니라 디렉토리로 읽는다(`scripts/lib/notice-set.sh` 의 `notice_set_files`, deb/rpm 은 `Cargo.toml` asset 의 glob). 자리는 산출물마다 다르고(`tar.gz` 는 최상단, deb 은 `/usr/share/doc/tasty/`, rpm 과 AppImage 는 `usr/share/licenses/tasty/`) 정본 표는 [`THIRD_PARTY_LICENSES.md`](../../THIRD_PARTY_LICENSES.md) 에 있다. sanity check 가 tar.gz · deb · rpm 리스팅과 AppImage 의 AppDir 에서 세트의 파일 **전부**를 함께 보는데, **rpm 쪽 확인은 `rpm` 명령이 있는 빌더에서만 돈다** — 없으면 그 갈래는 통과가 아니라 미측정이다.
 
@@ -366,9 +370,9 @@ just dist-setup-linux              # 또는 수동 (아래)
 
 | 플랫폼 | 명령 | 산출물 |
 |--------|------|--------|
-| macOS (arm64) | `./scripts/build-macos-dmg.sh` | `Tasty-{v}-macos.dmg` |
-| Windows (x64) | `.\scripts\build-windows.ps1` | `{zip,msi}` |
-| Linux | `./scripts/build-linux.sh` | `{tar.gz,deb,rpm,AppImage}` |
+| macOS (arm64) | `./scripts/build-macos-dmg.sh` | `Tasty-{v}-macos.dmg` · 헤드리스 `tar.gz` |
+| Windows (x64) | `.\scripts\build-windows.ps1` | `{zip,msi}` · 헤드리스 `zip` |
+| Linux | `./scripts/build-linux.sh` | `{tar.gz,deb,rpm,AppImage}` · 헤드리스 `tar.gz` |
 
 #### 관련
 

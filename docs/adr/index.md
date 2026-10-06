@@ -133,4 +133,5 @@ Terminal·Pty 분리와 터미널 호환성, 입력·포커스, 점유와 원격
 | 0049 | [문서는 현재 동작을 설명하고 근거를 다시 확인할 수 있게 쓴다](0049-documentation-structure-and-evidence.md) | Accepted | 2026-09-24 | documentation, architecture, evidence |
 | 0050 | [ADR은 중요한 선택을 기록하고 현재 규칙은 가이드에서 관리한다](0050-architecture-decision-records.md) | Accepted | 2026-09-24 | documentation, adr, architecture |
 | 0051 | [릴리스는 서명과 고지문을 갖춘 번들로 만들고 내용 변경에 버전을 올린다](0051-release-artifacts-and-versioning.md) | Accepted | 2026-09-24 | release, plugins, versioning |
+| 0066 | [헤드리스 빌드를 OS별 압축 파일로 릴리스에 함께 올린다](0066-headless-build-ships-as-a-per-os-archive.md) | Accepted | 2026-10-06 | release, headless, packaging |
 <!-- adr-rows:end rules -->

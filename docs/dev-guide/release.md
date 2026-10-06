@@ -68,7 +68,7 @@ git push origin main --tags
 ### 5. 워크플로 (release.yml)
 
 1. **create-release** — 버전 검증 → draft release 생성(body = 릴리스 노트).
-2. **build-macos / build-windows / build-linux-x64 / build-linux-arm64** — 각 빌드 스크립트가 로컬 키를 준비해(Linux·macOS 는 `ensure-sign-key.sh`, Windows 는 `build-windows.ps1` 이 직접) plugin 재서명 → 빌드(`--profile dist`) → 아티팩트 업로드. GitHub Secret 관여 없음(배경은 [plugin-packaging](plugin-packaging.md) "영구 release 키를 두지 않는 이유").
+2. **build-macos / build-windows / build-linux-x64 / build-linux-arm64** — 각 빌드 스크립트가 로컬 키를 준비해(Linux·macOS 는 `ensure-sign-key.sh`, Windows 는 `build-windows.ps1` 이 직접) plugin 재서명 → 빌드(`--profile dist`) → GUI 패키징 → 헤드리스 압축 파일(아래 "헤드리스 산출물") → 아티팩트 업로드. GitHub Secret 관여 없음(배경은 [plugin-packaging](plugin-packaging.md) "영구 release 키를 두지 않는 이유").
 3. **publish-release** — draft 해제(공개).
 
 ### 6. 검증
@@ -76,6 +76,7 @@ git push origin main --tags
 GitHub Releases 에서 노트 + 플랫폼별 아티팩트 확인:
 
 - macOS `*.dmg` / Windows `*.zip`·`*.msi` / Linux x64·arm64 각 `.tar.gz`·`.deb`·`.rpm`·`.AppImage`
+- 헤드리스 압축 파일 4종: `tasty-headless-X.Y.Z-linux-x64.tar.gz`·`-linux-arm64.tar.gz`·`-macos-arm64.tar.gz`·`-windows-x64.zip`
 - `SHA256SUMS-{macos,windows,linux-x64,linux-arm64}.txt` 4종 (다운로드 무결성 수동 검증용)
 
 > **사용자 업그레이드**: publish 되면 사용자는 GitHub Releases 에서 새 아티팩트를 직접 내려받아 SHA256SUMS 로 검증한 뒤 수동 설치한다.
@@ -170,6 +171,23 @@ cd ~/actions-runner && ./config.sh remove --token <REMOVAL_TOKEN>   # token: Set
 
 - [commit-convention.md](commit-convention.md) — bump 커밋 형식
 - [build.md](build.md) — `--profile dist` 배포 빌드·패키징 스크립트
+
+## 헤드리스 산출물
+
+릴리스는 GUI 산출물과 함께 `gui` feature를 끈 헤드리스 빌드를 OS별 압축 파일로 올린다.
+선택 근거와 대안은 [ADR-0066](../adr/0066-headless-build-ships-as-a-per-os-archive.md)에 있다.
+
+| OS | 파일 | 만드는 스크립트 |
+|---|---|---|
+| Linux x64·arm64 | `tasty-headless-<버전>-linux-{x64,arm64}.tar.gz` | `scripts/build-linux.sh` |
+| macOS Apple Silicon | `tasty-headless-<버전>-macos-arm64.tar.gz` | `scripts/build-macos-dmg.sh` (`NO_DMG=1`이면 만들지 않는다) |
+| Windows x64 | `tasty-headless-<버전>-windows-x64.zip` | `scripts/build-windows.ps1` |
+
+- 각 스크립트가 GUI 패키징을 마친 뒤 `CARGO_TARGET_DIR=target/headless`로 같은 프로필의 `cargo build --no-default-features`를 실행한다. GUI 패키지가 읽는 `target/<프로필>/tasty`를 덮지 않도록 target 디렉터리를 나눈다.
+- 압축 파일 안에는 실행 파일 `tasty`(Windows `tasty.exe`), GUI 산출물과 같은 서명된 번들 plugin(`plugins/`), 고지 파일이 들어간다. Linux는 GUI `.tar.gz`와 같은 launcher 스크립트가 `tasty.bin`을 실행한다. macOS 헤드리스 바이너리는 앱 번들과 같은 identity로 단독 서명한다.
+- 검증: 압축 파일에서 `tasty --version` 실행, `plugins/`와 고지 파일 포함, GUI 바이너리와 같은 파일이 아님을 확인한다. macOS는 `codesign --verify`와 arm64 Mach-O도 확인한다.
+- 체크섬은 OS별 `SHA256SUMS-*.txt`에 GUI 산출물과 함께 들어간다.
+- 설치 형식(`.deb`·`.rpm`·`.AppImage`·`.dmg`·`.msi`)에는 헤드리스를 넣지 않는다.
 
 ## 배포 범위와 번들 서명
 
