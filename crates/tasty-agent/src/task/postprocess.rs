@@ -17,11 +17,11 @@ use super::types::TypedValue;
 use super::{Task, TaskResult};
 
 /// `timeout_ms` 상한(24시간). 유한한 제한만 받는다.
-pub const MAX_POSTPROCESS_TIMEOUT_MS: u64 = 24 * 60 * 60 * 1000;
+pub const MAX_POSTPROCESS_TIMEOUT_MS: u64 = 86_400_000;
 /// 자동 재시도 횟수 상한.
 pub const MAX_POSTPROCESS_RETRIES: u32 = 10;
 /// 재시도 대기 상한(1시간).
-pub const MAX_POSTPROCESS_RETRY_DELAY_MS: u64 = 60 * 60 * 1000;
+pub const MAX_POSTPROCESS_RETRY_DELAY_MS: u64 = 3_600_000;
 /// stdout 수집 상한. 넘으면 잘린 값으로 성공시키지 않고 실패한다. 수집한 값은 task 레코드에
 /// 저장되며 레코드 하나는 memory 값 상한(1 MiB) 안에 들어야 한다.
 pub const MAX_POSTPROCESS_STDOUT_BYTES: usize = 256 * 1024;
@@ -114,7 +114,7 @@ impl PostprocessSpec {
     }
 }
 
-/// 생성 시 선언을 검사한다. 오류 위치는 계약 기준 `/postprocess/...` 다.
+/// 생성 시 선언을 검사한다. 오류 위치는 task 기준 상대 위치(`/postprocess/...`)다.
 pub fn check_spec(spec: &PostprocessSpec) -> Result<(), TaskFailure> {
     let err = |loc: &str, message: String| {
         let mut f = TaskFailure::new(FailureStage::Input, message);
@@ -460,6 +460,18 @@ impl PostprocessProgress {
             PostprocessPhase::Pending { run, .. } if run > 1 => "retry_wait",
             _ => "postprocessing",
         }
+    }
+}
+
+impl Task {
+    /// Running 인 v2 task 가 후처리 단계에 있으면 그 이름(`postprocessing`·`retry_wait`).
+    pub fn postprocess_phase(&self) -> Option<&'static str> {
+        if !matches!(self.state, super::TaskState::Running) {
+            return None;
+        }
+        let progress = self.attempt.as_ref()?.postprocess.as_ref()?;
+        (!matches!(progress.phase, PostprocessPhase::Finished { .. }))
+            .then(|| progress.phase_name())
     }
 }
 

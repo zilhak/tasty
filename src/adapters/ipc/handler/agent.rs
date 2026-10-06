@@ -122,6 +122,10 @@ pub use task::*;
 pub use task_graph_submit::*;
 
 #[cfg(test)]
+#[path = "agent/postprocess_ipc_tests.rs"]
+mod postprocess_ipc_tests;
+
+#[cfg(test)]
 mod tests {
     use serde_json::json;
     use tasty_agent::CompletionRejection;

@@ -421,8 +421,11 @@ pub fn check_task<'a>(
         }
         f
     };
-    check_contract(contract, &task.command, &task.on_failure, &lookup)
-        .map_err(|f| locate(f, ""))?;
+    // 계약 검사의 위치는 task 기준 상대 위치다(없으면 task 자체).
+    check_contract(contract, &task.command, &task.on_failure, &lookup).map_err(|mut f| {
+        let relative = f.location.take().unwrap_or_default();
+        locate(f, &relative)
+    })?;
     super::binding::check_inputs(&task.id, contract, &task.command, at, &lookup)?;
 
     let data_sources: Vec<&TaskId> = contract
