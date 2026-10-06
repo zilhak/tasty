@@ -163,9 +163,16 @@ fn v2_reduce_dispatch_uses_typed_inputs_and_v1_reduce_is_unchanged() {
             store
                 .create_typed(opts("concat", reduce(ReducerStrategy::ConcatText)), v2)
                 .unwrap(),
-            store
-                .create(opts("legacy", reduce(ReducerStrategy::All)))
-                .unwrap(),
+            {
+                // v1 reduce 는 v1 입력만 받는다.
+                let c = finished_custom(&mut store, "c", None, json!("x"));
+                let d = finished_custom(&mut store, "d", None, json!("y"));
+                let legacy = TaskCommand::Reduce {
+                    inputs: vec![c.id, d.id],
+                    strategy: ReducerStrategy::All,
+                };
+                store.create(opts("legacy", legacy)).unwrap()
+            },
         )
     });
     let immediate = |exec: &mut HostExecutor, t: &Task| match exec.dispatch(t) {
@@ -218,12 +225,7 @@ fn output_placeholders_cannot_read_typed_results() {
         .with_memory(|mem| {
             let seq = ctx.agent_seq.clone();
             let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
-            crate::task::reject_output_refs_to_typed(
-                &store,
-                1,
-                &ref_to(&typed.id),
-                &OnFailure::Abort,
-            )
+            crate::task::reject_v1_reads_of_typed(&store, 1, &ref_to(&typed.id), &OnFailure::Abort)
         })
         .unwrap_err();
     let tasty_agent::AgentError::TypeContract(f) = err else {
@@ -233,12 +235,58 @@ fn output_placeholders_cannot_read_typed_results() {
     let ok = ctx.with_memory(|mem| {
         let seq = ctx.agent_seq.clone();
         let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
-        crate::task::reject_output_refs_to_typed(&store, 1, &ref_to(&legacy.id), &OnFailure::Abort)
+        crate::task::reject_v1_reads_of_typed(&store, 1, &ref_to(&legacy.id), &OnFailure::Abort)
     });
     assert!(ok.is_ok(), "v1 producers stay readable: {ok:?}");
 
     match exec.dispatch(&stored_ref) {
         DispatchOutcome::PermanentFail(e) => assert!(e.contains("typed v2"), "{e}"),
+        other => panic!("expected PermanentFail, got {other:?}"),
+    }
+}
+
+#[test]
+fn v1_reduce_cannot_take_typed_inputs() {
+    let (_td, ctx) = fresh_ctx();
+    let mut exec = HostExecutor::new(ctx.clone());
+    let (typed, legacy, stored_reduce) = ctx.with_memory(|mem| {
+        let seq = ctx.agent_seq.clone();
+        let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+        let v2 = contract(json!({"contract_version": 2}));
+        let typed = finished_custom(&mut store, "v2", Some(v2), json!(1));
+        let legacy = finished_custom(&mut store, "v1", None, json!(2));
+        // 생성 검사를 거치지 않고 저장된 v1 reduce 도 실행 직전에 막히는지 본다.
+        let reduce = TaskCommand::Reduce {
+            inputs: vec![legacy.id.clone(), typed.id.clone()],
+            strategy: ReducerStrategy::All,
+        };
+        let stored_reduce = store.create(opts("stored", reduce)).unwrap();
+        (typed, legacy, stored_reduce)
+    });
+    let check = |inputs: Vec<String>| {
+        ctx.with_memory(|mem| {
+            let seq = ctx.agent_seq.clone();
+            let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+            crate::task::reject_v1_reads_of_typed(
+                &store,
+                1,
+                &TaskCommand::Reduce {
+                    inputs,
+                    strategy: ReducerStrategy::All,
+                },
+                &OnFailure::Abort,
+            )
+        })
+    };
+    let err = check(vec![legacy.id.clone(), typed.id.clone()]).unwrap_err();
+    let tasty_agent::AgentError::TypeContract(f) = err else {
+        panic!("expected a type contract error");
+    };
+    assert_eq!(f.task_id.as_deref(), Some(typed.id.as_str()));
+    assert!(check(vec![legacy.id.clone()]).is_ok());
+
+    match exec.dispatch(&stored_reduce) {
+        DispatchOutcome::PermanentFail(e) => assert!(e.contains("v1 reduce"), "{e}"),
         other => panic!("expected PermanentFail, got {other:?}"),
     }
 }

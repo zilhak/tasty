@@ -565,6 +565,12 @@ impl HostExecutor {
                             .get(task.workspace_id, tid)
                             .map_err(|e| e.to_string())?
                             .ok_or_else(|| format!("input task not found: {tid}"))?;
+                        // 생성 단계에서 막지만, 저장된 v1 reduce 가 v2 를 가리키면 실행하지 않는다.
+                        if t.is_typed() {
+                            return Err(format!(
+                                "reduce input '{tid}': typed v2 results cannot be read by a v1 reduce"
+                            ));
+                        }
                         let succeeded = matches!(t.state, TaskState::Succeeded);
                         let output = t
                             .result

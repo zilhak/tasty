@@ -2890,7 +2890,7 @@ fn cli_json_block(stdout: &str, label: &str) -> serde_json::Value {
 /// v2 task 의 int64 출력(최소·최대·2^53+1)이 IPC 응답과 CLI 출력에서 JavaScript 의
 /// `JSON.parse` 를 지나도 같은 정수로 복원되는지 본다. v2 를 IPC 로 만드는 경로가 아직
 /// 없어 레코드는 memory 로 심고, 결과 확정은 실제 `agent.task_set_result` 경로를 쓴다.
-/// 같은 v2 task 를 v1 출력 placeholder 로 참조하는 생성은 거절돼야 한다.
+/// 같은 v2 task 를 v1 출력 placeholder 나 v1 reduce 입력으로 쓰는 요청은 거절돼야 한다.
 #[test]
 fn typed_int64_outputs_survive_javascript_through_ipc_and_cli() {
     let _lane = lane();
@@ -2984,6 +2984,36 @@ fn typed_int64_outputs_survive_javascript_through_ipc_and_cli() {
         rejected["error"]["data"]["task_id"],
         json!(id),
         "{rejected}"
+    );
+
+    // v1 reduce 도 v2 결과를 입력으로 받지 않는다. 생성과 단발 reduce 모두 거절한다.
+    let reduce_rejected = tasty.call_raw(
+        "agent.task_create",
+        json!({
+            "workspace_id": ws.id,
+            "name": "v1-reduce-of-v2",
+            "command": {"kind": "reduce", "inputs": [id], "strategy": {"kind": "all"}},
+        }),
+    );
+    assert_eq!(
+        reduce_rejected["error"]["code"],
+        json!(-32602),
+        "{reduce_rejected}"
+    );
+    assert_eq!(
+        reduce_rejected["error"]["data"]["task_id"],
+        json!(id),
+        "{reduce_rejected}"
+    );
+    let one_shot = tasty.call_raw(
+        "agent.task_reduce",
+        json!({"workspace_id": ws.id, "inputs": [id], "strategy": {"kind": "all"}}),
+    );
+    assert_eq!(one_shot["error"]["code"], json!(-32602), "{one_shot}");
+    assert_eq!(
+        one_shot["error"]["data"]["task_id"],
+        json!(id),
+        "{one_shot}"
     );
 
     tasty.call_raw(
