@@ -612,15 +612,20 @@ client 가 mirror 를 걷어내면 원격에 `Detach` 를 보내 원격 점유(h
 
 ## Self-attach 거절 검증
 
-GUI의 IPC/user dispatch 두 경로는 `attach_client/dispatch.rs::dispatch_attach`를 공유한다.
-자기 포트면 `RejectedSelf`로 반환하고 connector를 호출하지 않는다. 다른 포트면 connector를
-정확히 한 번 호출하며 성공값/오류를 그대로 돌려준다. IPC는 성공해도 포커스를 옮기지 않고,
-사용자 경로만 기존처럼 새 mirror를 포커스한다. 이 분기는 raw stream client의 정상 로컬
+GUI가 mirror를 만드는 네 경로는 `attach_client/dispatch.rs::dispatch_attach`를 공유한다.
+source는 셋이다. `User`는 원격 연결 팝업, `Ipc`는 IPC `attach.into_gui`, `Endpoint`는 IPC
+`remote.attach`와 자동 attach다. 자기 포트면 `RejectedSelf`로 반환하고 connector를 호출하지
+않는다. 다른 포트면 connector를 정확히 한 번 호출하며 성공값/오류를 그대로 돌려준다.
+`Ipc`와 `Endpoint`는 성공해도 포커스를 옮기지 않고(설치 대상의 `activate=false`), 사용자
+경로 `User`만 기존처럼 새 mirror를 포커스한다. 이 분기는 raw stream client의 정상 로컬
 attach와 별개다.
 
-정확성 시험은 connector 진입 횟수와 결과를 직접 단언한다. debug GUI의 통합시험은
-`attach_dispatch_completed` 로그에서 자기 port/workspace/source에 대응하는 **완료**와
-`connector_entries=0`, `outcome=rejected_self`를 확인한다. 이 기록은 dispatcher 반환 뒤에
+정확성 시험은 세 source 모두에 대해 connector 진입 횟수와 결과를 직접 단언한다. debug GUI의
+통합시험은 `attach_dispatch_completed` 로그에서 자기 port/workspace와 source 값에 대응하는
+**완료**와 `connector_entries=0`, `outcome=rejected_self`를 확인한다. source 별로 따로 본다.
+`attach.into_gui` 요청은 source `attach.into_gui` 기록을, 자기 포트로 보낸 `remote.attach`
+요청은 source `remote.attach/auto-attach` 기록을 찾는다. 자동 attach는 같은 `Endpoint`
+source를 쓰지만 통합시험이 직접 실행하지 않는다. 이 기록은 dispatcher 반환 뒤에
 생기며, connector에 들어갔으면 실패해 돌아와도 진입 횟수가 남는다. 기록 구현은 모듈 선언에
 `cfg(debug_assertions)`가 붙은 별도 `dispatch/debug_completion.rs`에 있다. 새 IPC나 전역
 진행 카운터는 없다.
