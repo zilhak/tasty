@@ -9,6 +9,16 @@
 3. 논리 projection의 batch 적용과 ACK 뒤, cleanup effect의 원 attempt를 claim하여 실행한다. `ResourceRetirement`는 숫자 ID로 후속 자원을 다시 찾아 파괴하지 않고 이미 보유한 원 owner를 처리한다.
 4. PTY retirement receipt와 원 plugin process·surface instance에 묶인 ACK/retirement receipt를 관측한다. metadata 정리와 회수 결과를 확정하고 명령의 모든 member 결과를 집계한다. 필요한 batch publication까지 완료한 뒤 응답을 공개한다.
 
+## 관측 일시정지 범위
+
+App은 journal 사실을 게시하는 동안 관측을 멈춘다. 이 동안 IPC·창 입력을 보류하고 plugin pump를 돌리지 않는다. 닫기에서는 다음 구간만 멈춘다([ADR-0073](../adr/0073-close-receipt-wait-does-not-pause-observation.md)).
+
+- 커밋 전(대상·cleanup 의무 확정과 batch 게시).
+- 정리 항목의 claim 단계와 결과 확정 단계.
+- 결과 확정 이후 응답까지.
+
+3·4단계 사이의 receipt 대기에서는 관측을 멈추지 않는다. 닫히는 surface는 이미 구조와 View에서 빠졌으므로, 이때의 조회와 입력은 닫기가 반영된 구조를 본다. 닫힘 이벤트와 닫기 응답은 결과 확정 뒤에 나간다. receipt 대기로 넘어가는 즉시 plugin 회수 게시를 적용하므로, 관측 재개 직후 처리되는 enable이 파괴 중인 surface를 새 프로세스에 다시 게시하지 않는다.
+
 생산 경로는 `src/app/journal/commands/close.rs`, `src/runtime/resource_retirement.rs`, `src/app/journal/resource_cleanup.rs`다. GUI의 cache·선택 보정과 toast는 이 실행 원본을 대신하지 않는다.
 
 ## 실패와 불명 결과
@@ -17,7 +27,7 @@
 |---|---|
 | 요청 접수·Running claim | 실행할 권한과 원 attempt를 고정했다. 회수 완료가 아니다 |
 | 실제 child reap 또는 원 plugin receipt 완료 | 해당 물리 자원의 회수 증거다. 별도 metadata·명령 완료 의무가 남을 수 있다 |
-| surface 를 만든 원 plugin 프로세스의 회수 완료 | 그 프로세스 안의 surface 인스턴스도 남지 않았다는 증거다. disable·무응답 재시작·교체로 원 프로세스가 회수된 뒤 그 surface 를 닫으면 파괴 요청 없이 성공으로 확정한다. 회수 중이면 회수가 끝날 때 확정한다. 닫기 정리로 관측이 멈춘 동안에는 pump가 돌지 않으므로, 정리 폴링이 끝난 회수를 거둬 확정하고 다시 띄우기는 관측이 재개된 뒤로 미룬다. 회수한 세대는 등록된 surface나 mesh bootstrap이 가리키는 동안만 기록에 남고, 다음 회수 때 가리키는 것이 없는 세대를 지운다. 새 프로세스가 뜨면 남은 surface 를 다시 게시하므로([플러그인 개발](../dev-guide/plugin-development.md)의 Surface kind 절) 그 뒤의 닫기는 새 프로세스에 파괴 요청을 보낸다. 다시 게시되지 않은 surface 만 옛 세대의 회수로 확정한다. 먼저 보낸 파괴 요청의 응답을 원 프로세스 회수(disable·교체·무응답 재시작·채널 끊김 뒤 회수) 때문에 더 받을 수 없게 되면, 그 요청도 같은 세대 회수 증거로 확정한다. 다만 닫기 정리로 관측이 멈춘 동안에는 disable 같은 IPC도 보류되므로, 회수가 닫기 응답 시한 뒤에 일어나면 응답은 `Uncertain`이고 이후 재조정에서 성공으로 확정된다 |
+| surface 를 만든 원 plugin 프로세스의 회수 완료 | 그 프로세스 안의 surface 인스턴스도 남지 않았다는 증거다. disable·무응답 재시작·교체로 원 프로세스가 회수된 뒤 그 surface 를 닫으면 파괴 요청 없이 성공으로 확정한다. 회수 중이면 회수가 끝날 때 확정한다. 닫기 정리의 짧은 게시 단계로 관측이 멈춘 동안에는 pump가 돌지 않으므로, 정리 폴링이 끝난 회수를 거둬 확정하고 다시 띄우기는 관측이 재개된 뒤로 미룬다. 회수한 세대는 등록된 surface나 mesh bootstrap이 가리키는 동안만 기록에 남고, 다음 회수 때 가리키는 것이 없는 세대를 지운다. 새 프로세스가 뜨면 남은 surface 를 다시 게시하므로([플러그인 개발](../dev-guide/plugin-development.md)의 Surface kind 절) 그 뒤의 닫기는 새 프로세스에 파괴 요청을 보낸다. 다시 게시되지 않은 surface 만 옛 세대의 회수로 확정한다. 먼저 보낸 파괴 요청의 응답을 원 프로세스 회수(disable·교체·무응답 재시작·채널 끊김 뒤 회수) 때문에 더 받을 수 없게 되면, 그 요청도 같은 세대 회수 증거로 확정한다. receipt 대기 중에는 관측이 멈추지 않으므로 닫기를 기다리는 동안 보낸 disable도 바로 처리되고, 그 회수가 시한 안에 닫기를 확정한다. 회수가 닫기 응답 시한 뒤에 일어나면 응답은 `Uncertain`이고 이후 재조정에서 성공으로 확정된다 |
 | timeout·연결 유실·원 plugin 응답 부재(회수 기록이 없는 원 프로세스 부재 포함) | 성공 또는 알려진 실패로 단정하지 않는다. operation의 `Uncertain`과 receipt의 불명 관측을 유지한다 |
 | 뒤늦게 도착한 정확한 원 receipt | 같은 attempt의 reconciliation 근거다. 새 자원에 cleanup을 다시 실행하는 근거가 아니다 |
 

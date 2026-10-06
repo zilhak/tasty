@@ -1,4 +1,4 @@
-<!-- source-hash: 7710827bfb71 -->
+<!-- source-hash: 6db578691f90 -->
 # Plugins
 
 Use plugins for tools such as Markdown and image viewers or AI agent integrations. Explore the bundled plugins, add new ones, and manage which tools run and what permissions they have.
@@ -126,6 +126,8 @@ Use it from a terminal while Tasty is running. The output is JSON.
 `enable` and `disable` require an installed plugin ID. An ID that is not installed returns an error and leaves settings unchanged. Use `tasty plugin list` to find installed IDs.
 
 `disable` starts shutdown, normally in the background. If the plugin has not exited after a 2-second grace period, Tasty attempts to force-stop it. Those 2 seconds are not a limit on the entire operation; waiting for the OS to finish the process can take longer. An `enable` during shutdown waits for the previous process to finish before starting a new one. It does not wait for the new plugin to finish connecting. Requests may wait for that connection; check the logs if startup or connection fails.
+
+While closing a Surface of a stuck plugin takes time, other commands and input are still handled as usual. If you `disable` that plugin while the close is waiting, the close succeeds as soon as the process exits.
 
 ```sh
 tasty plugin list

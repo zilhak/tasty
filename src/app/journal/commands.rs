@@ -114,6 +114,9 @@ struct Pending {
     replacing: Option<replacement::Request>,
     close_cause: close::Cause,
     waiting_command: Option<String>,
+    /// Operations a committed close is still retiring. While every one of them only awaits its
+    /// resource receipts, the close no longer pauses observation.
+    closing_operations: Vec<tasty_core::OperationId>,
     activation_wait: Option<super::creation::ActivationReceipt>,
     created: Option<create::Completed>,
     bytes: usize,
@@ -136,6 +139,21 @@ impl Pending {
         self.retry_counted = true;
         Some(outcome)
     }
+}
+
+/// Whether one pending command pauses observation. A replacement always does. A close does until
+/// it is committed, and again once any of its operations leaves the receipt wait (Finish, or the
+/// gap before its reply), so its final facts and reply stay ordered before later inputs.
+fn close_pauses(
+    closing: bool,
+    replacing: bool,
+    committed: bool,
+    operations: &[tasty_core::OperationId],
+    awaiting_receipts: impl Fn(&tasty_core::OperationId) -> bool,
+) -> bool {
+    replacing
+        || (closing
+            && !(committed && !operations.is_empty() && operations.iter().all(awaiting_receipts)))
 }
 
 #[derive(Default)]
@@ -170,10 +188,22 @@ impl Commands {
                 .iter()
                 .any(|(remote, _)| remote.engine == engine)
     }
-    pub(super) fn has_closing(&self) -> bool {
-        self.pending
-            .values()
-            .any(|pending| pending.closing.is_some() || pending.replacing.is_some())
+    /// A close pauses observation until it is committed and after its retirements finish. In
+    /// between, while `awaiting_receipts` holds for every operation it prepared, its structure is
+    /// already published and only resource receipts remain, so other inputs may proceed.
+    pub(super) fn has_closing(
+        &self,
+        awaiting_receipts: impl Fn(&tasty_core::OperationId) -> bool,
+    ) -> bool {
+        self.pending.values().any(|pending| {
+            close_pauses(
+                pending.closing.is_some(),
+                pending.replacing.is_some(),
+                pending.waiting_command.is_some(),
+                &pending.closing_operations,
+                &awaiting_receipts,
+            )
+        })
     }
     #[cfg(feature = "gui")]
     pub(super) fn has_resource_request(&self, engine: EngineId) -> bool {
@@ -361,6 +391,7 @@ impl JournalApplication {
                 replacing: None,
                 close_cause: Default::default(),
                 waiting_command: None,
+                closing_operations: Vec::new(),
                 activation_wait: None,
                 created: None,
                 bytes,
@@ -867,6 +898,8 @@ fn reply_weight(_reply: &Reply) -> usize {
     0
 }
 
+#[cfg(test)]
+mod close_pause_tests;
 #[cfg(test)]
 mod tests;
 

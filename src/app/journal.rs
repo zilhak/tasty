@@ -242,7 +242,8 @@ impl JournalApplication {
     }
 
     pub(crate) fn pauses_observation(&self) -> bool {
-        self.commands.has_closing()
+        self.commands
+            .has_closing(|operation| self.cleanup_awaits_receipts(operation))
             || self.cleanup_pauses_observation()
             || self
                 .creations

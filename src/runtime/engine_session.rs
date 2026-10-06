@@ -16,6 +16,11 @@ impl EngineId {
         static NEXT: AtomicU32 = AtomicU32::new(1);
         Self(NEXT.fetch_add(1, Ordering::Relaxed))
     }
+
+    #[cfg(test)]
+    pub(crate) fn for_test() -> Self {
+        Self::issue()
+    }
 }
 
 /// 엔진 수명 원본. 창 연결은 App registry에 있고 실행 자원은 이 객체와 함께 산다.

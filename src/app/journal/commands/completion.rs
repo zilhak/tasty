@@ -188,6 +188,30 @@ impl JournalApplication {
                 if executed.status == tasty_event_store::CommandStatus::InProgress =>
             {
                 pending.waiting_command = Some(executed.command_id.clone());
+                if pending.closing.is_some() {
+                    pending.closing_operations = executed
+                        .response
+                        .as_deref()
+                        .and_then(|bytes| {
+                            serde_json::from_slice::<
+                                crate::runtime::journal_product::ResponseProgress,
+                            >(bytes)
+                            .ok()
+                        })
+                        .map(|progress| {
+                            progress
+                                .results
+                                .into_iter()
+                                .filter_map(|result| match result {
+                                    tasty_core::StructuralResult::Pending { operation } => {
+                                        Some(operation)
+                                    }
+                                    _ => None,
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                }
                 #[cfg(feature = "gui")]
                 let mut forward_start = None;
                 #[cfg(feature = "gui")]

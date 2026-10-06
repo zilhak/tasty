@@ -17,10 +17,18 @@ pub(super) struct Cleanup {
     next_reconcile: std::time::Instant,
 }
 impl JournalApplication {
+    /// Claim and Finish publish journal facts and pause observation. Running only awaits the
+    /// receipts of owners that were already removed from the published structure, so it does not.
     pub(super) fn cleanup_pauses_observation(&self) -> bool {
         self.resource_cleanups
             .values()
-            .any(|entry| !matches!(entry.phase, Phase::Reconcile | Phase::Reconciled))
+            .any(|entry| matches!(entry.phase, Phase::Claim | Phase::Finish { .. }))
+    }
+    /// The retirement of `operation` only awaits its resource receipts.
+    pub(super) fn cleanup_awaits_receipts(&self, operation: &OperationId) -> bool {
+        self.resource_cleanups
+            .values()
+            .any(|entry| entry.operation == *operation && matches!(entry.phase, Phase::Running))
     }
     pub(super) fn resource_cleanup_deadline(&self) -> Option<std::time::Instant> {
         self.resource_cleanups
@@ -162,7 +170,7 @@ impl JournalApplication {
         ticket: u64,
         result: &Result<ResultValue, String>,
         sessions: &mut [&mut EngineSession],
-        plugins: Option<&mut crate::plugin::PluginManager>,
+        mut plugins: Option<&mut crate::plugin::PluginManager>,
     ) -> Result<bool, String> {
         let Some(entry) = self.resource_cleanups.get_mut(&ticket) else {
             return Ok(false);
@@ -185,7 +193,11 @@ impl JournalApplication {
                     .pending_resource_retirements
                     .remove(&entry.operation)
                     .ok_or("retirement resources missing")?;
-                let start = owner.start(claim.clone(), &mut session.borrow_mut(), plugins);
+                let start = owner.start(
+                    claim.clone(),
+                    &mut session.borrow_mut(),
+                    plugins.as_deref_mut(),
+                );
                 let has_lease = owner.lease().is_some();
                 session
                     .pending_resource_retirements
@@ -202,6 +214,12 @@ impl JournalApplication {
                     });
                 } else {
                     entry.phase = Phase::Running;
+                    // Running no longer pauses observation, and the first resumed turn replays held
+                    // inputs before the plugin pump. Apply the remote retirements now so a held
+                    // enable cannot republish a surface that is being destroyed.
+                    if let Some(plugins) = plugins {
+                        plugins.poll_publication_retirements()?;
+                    }
                 }
                 (self.wake)();
             }
@@ -250,3 +268,6 @@ impl JournalApplication {
         Ok(true)
     }
 }
+
+#[cfg(test)]
+mod tests;

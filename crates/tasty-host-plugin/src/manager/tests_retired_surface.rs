@@ -258,3 +258,29 @@ fn a_lost_destroy_of_a_process_that_was_not_retired_stays_a_failure() {
         ))
     );
 }
+
+/// 닫기 정리가 receipt 대기로 넘어가면 관측이 재개된다. 재개 첫 턴은 보류한 enable 을 pump
+/// 보다 먼저 실행할 수 있으므로, 회수 게시를 먼저 적용해 둔 surface 는 새 프로세스에 다시
+/// 게시되지 않아야 한다.
+#[test]
+fn an_applied_retirement_is_not_republished_to_a_restarted_process() {
+    for applied in [true, false] {
+        let (mut mgr, surface) = manager_with_surface();
+        retire(&mut mgr);
+        assert!(!mgr.wait_retired(PLUGIN), "재시작 예약이 없는 회수다");
+        let _receipt = mgr
+            .enqueue_observed_remote_retirement(7, surface.binding())
+            .unwrap();
+        if applied {
+            mgr.poll_publication_retirements().unwrap();
+        }
+        let (fresh, requests) = PluginProcess::stub_with_request_rx(PLUGIN);
+        mgr.processes.insert(PLUGIN.into(), fresh);
+        mgr.reattach_orphan_surfaces(PLUGIN);
+        assert_eq!(
+            requests.try_recv().is_ok(),
+            !applied,
+            "회수 게시를 적용했으면 재게시하지 않고, 적용 전이면 재게시한다(대조)"
+        );
+    }
+}
