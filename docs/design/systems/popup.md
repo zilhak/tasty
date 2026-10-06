@@ -151,7 +151,9 @@ plugin popup(`[[contributes.popup]]`)은 매니페스트 `scope` 로 범위의 *
 선언 + 대상이 있는 이벤트 popup 을 대기열에 두고, 앱이 같은 frame 에 꺼내 대상 surface
 (webview 또는 egui-mesh plugin surface)의 소유 plugin 을 대조한다. 발행자 대조는 매니저가
 대상 유무와 관계없이 먼저 한다 — 다른 plugin 이 발행한 이벤트로는 `surface` 선언 popup 을
-창 범위로도 열지 않는다. 거절하면 popup 을 열지 않고 경고 로그만 남긴다. 발행 자체는 성공한다. `window` 로 낮춰 열지 않는다 — 지목한 대상이 조용히
+창 범위로도 열지 않는다. 이 발행자 검사는 `surface` 선언 popup 에만 적용한다. `window` 선언
+popup 은 다른 plugin 이 발행한 이벤트로도 지금처럼 열린다 — 소유를 확인할 대상이 없고, 신뢰
+경계는 surface 를 지목하는 popup 에 둔다. 거절하면 popup 을 열지 않고 경고 로그만 남긴다. 발행 자체는 성공한다. `window` 로 낮춰 열지 않는다 — 지목한 대상이 조용히
 무시되고 창 scrim 이 다른 surface 를 덮기 때문이다.
 
 | 진입점 | 바인딩되는 대상 |
