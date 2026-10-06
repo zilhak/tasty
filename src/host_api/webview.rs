@@ -112,6 +112,34 @@ impl WebViewBounds {
 }
 
 #[cfg(test)]
+mod navigable_url_tests {
+    use super::is_navigable_url;
+
+    #[test]
+    fn file_and_http_schemes_open_as_addresses() {
+        for url in [
+            "file:///tmp/a.html",
+            "http://localhost:8080",
+            "https://tasty.dev",
+        ] {
+            assert!(is_navigable_url(url), "{url}");
+        }
+    }
+
+    #[test]
+    fn anything_else_loads_as_raw_html() {
+        for url in [
+            "<!doctype html><html></html>",
+            "about:blank",
+            "data:text/html,x",
+            "",
+        ] {
+            assert!(!is_navigable_url(url), "{url}");
+        }
+    }
+}
+
+#[cfg(test)]
 mod bounds_tests {
     use super::{PhysicalWebViewBounds, WebViewBounds};
 
@@ -189,6 +217,12 @@ impl Default for HtmlWebViewSettings {
             color_scheme: ColorScheme::Follow,
         }
     }
+}
+
+/// `webview.set_url`의 url을 주소로 열지(true) raw HTML로 실을지(false) 정한다.
+/// 로드 분기와 host chrome의 URL 줄 표시가 같은 판정을 쓰도록 한 곳에 둔다.
+pub fn is_navigable_url(url: &str) -> bool {
+    url.starts_with("file://") || url.starts_with("http://") || url.starts_with("https://")
 }
 
 /// 같은 plugin 설정을 읽고 수정하도록 surface 종류를 설정 소유 plugin에 연결한다.

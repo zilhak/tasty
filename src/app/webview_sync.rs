@@ -317,7 +317,7 @@ fn load_initial_url(
         return;
     };
     note_host_webview_load(view, engine, sid);
-    if url.starts_with("file://") || url.starts_with("http://") || url.starts_with("https://") {
+    if crate::webview::is_navigable_url(url) {
         wv.load_url(url);
     } else {
         wv.load_html(url);
@@ -362,10 +362,7 @@ fn resync_webview_urls(
         }
         if let Some(wv) = view.webviews.get(&sid) {
             note_host_webview_load(view, engine, sid);
-            if url.starts_with("file://")
-                || url.starts_with("http://")
-                || url.starts_with("https://")
-            {
+            if crate::webview::is_navigable_url(&url) {
                 wv.load_url(&url);
             } else {
                 wv.load_html(&url);

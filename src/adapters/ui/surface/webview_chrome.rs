@@ -9,11 +9,7 @@ use crate::webview::NavState;
 /// URL 줄에 보일 문자열을 고른다. `label`이 있으면 그것을, 없으면 탐색 가능한 URL만 보인다.
 /// raw HTML을 url로 보내는 surface(markdown 등)는 원문 대신 label을 보이거나 줄을 비운다.
 pub fn chrome_caption<'a>(url: Option<&'a str>, label: Option<&'a str>) -> Option<&'a str> {
-    label.or_else(|| {
-        url.filter(|u| {
-            u.starts_with("file://") || u.starts_with("http://") || u.starts_with("https://")
-        })
-    })
+    label.or_else(|| url.filter(|u| crate::webview::is_navigable_url(u)))
 }
 
 /// webview-kind surface 의 host chrome 을 패널에 그린다. `nav` 가 Loading/Failed 면
