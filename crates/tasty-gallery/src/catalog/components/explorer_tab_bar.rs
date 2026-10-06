@@ -8,7 +8,8 @@ use crate::catalog::spec::{self, StageVariant, TokenChip};
 /// (label, active)
 const TABS: &[(&str, bool)] = &[("Downloads", true), ("src", false), ("target", false)];
 
-fn strip(ui: &mut egui::Ui, theme: &Theme) {
+/// 내부 탭 줄 하나. `tabs` 는 (라벨, 활성) 목록이고 `w` 는 줄의 폭이다.
+pub(super) fn strip(ui: &mut egui::Ui, theme: &Theme, w: f32, tabs: &[(&str, bool)]) {
     let bar_h = theme.item_height_tab.value(); // 24
     let pad_x = theme.spacing_sm.value();
     let gap = theme.spacing_xs.value();
@@ -16,7 +17,6 @@ fn strip(ui: &mut egui::Ui, theme: &Theme) {
     let body = theme.font_size_body.value();
     let font = egui::FontId::proportional(body);
 
-    let w = ui.available_width().min(theme.measure_lg.value());
     let (rect, _) = ui.allocate_exact_size(egui::vec2(w, bar_h), egui::Sense::hover());
     let p = ui.painter_at(rect);
 
@@ -31,7 +31,7 @@ fn strip(ui: &mut egui::Ui, theme: &Theme) {
     );
 
     let mut x = rect.min.x;
-    for (i, (label, active)) in TABS.iter().enumerate() {
+    for (i, (label, active)) in tabs.iter().enumerate() {
         let galley = ui
             .fonts(|f| f.layout_no_wrap((*label).to_string(), font.clone(), egui::Color32::WHITE));
         let tab_w = pad_x + icon_xs + gap + galley.size().x + gap + icon_xs + pad_x;
@@ -147,7 +147,8 @@ fn paint_glyph(ui: &mut egui::Ui, g: MockGlyph, rect: egui::Rect, size: f32, col
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Solo, |ui| {
-        strip(ui, theme);
+        let w = ui.available_width().min(theme.measure_lg.value());
+        strip(ui, theme, w, TABS);
     });
 
     spec::meta(

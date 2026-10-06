@@ -80,7 +80,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             .show(ui, |ui| {
                 SEG_SEL.with(|s| {
                     let mut sel = s.borrow_mut();
-                    if let Some(i) = seg_toggle(ui, theme, *sel) {
+                    if let Some(i) = seg_toggle(ui, theme, *sel, None) {
                         *sel = i;
                     }
                 });
@@ -134,14 +134,28 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
+/// 토글의 총 폭. 본체 `seg_toggle_width` 와 같은 식(pad·세 칸·두 간격·양쪽 테두리)이다.
+pub(super) fn seg_toggle_width(theme: &Theme) -> f32 {
+    let pad = theme.spacing_xs.value();
+    let gap = theme.spacing_xs.value();
+    let seg_w = theme.icon_glyph_size_md.value() + theme.spacing_sm.value();
+    pad * 2.0 + seg_w * 3.0 + gap * 2.0 + theme.border_width.value() * 2.0
+}
+
 /// grid/list/detail 아이콘 토글. 클릭된 세그먼트 index 반환(없으면 None).
-fn seg_toggle(ui: &mut egui::Ui, theme: &Theme, selected: usize) -> Option<usize> {
+/// `hover` 는 포인터와 관계없이 hover 배경을 칠할 칸이다(정적 예제용).
+pub(super) fn seg_toggle(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    selected: usize,
+    hover: Option<usize>,
+) -> Option<usize> {
     let pad = theme.spacing_xs.value();
     let gap = theme.spacing_xs.value();
     let h = theme.item_height_interactive.value();
     let seg_w = theme.icon_glyph_size_md.value() + theme.spacing_sm.value();
     let icon = theme.icon_glyph_size_md.value();
-    let total_w = pad * 2.0 + seg_w * 3.0 + gap * 2.0 + theme.border_width.value() * 2.0;
+    let total_w = seg_toggle_width(theme);
     let (rect, _) = ui.allocate_exact_size(egui::vec2(total_w, h), egui::Sense::hover());
     ui.painter().rect(
         rect,
@@ -170,7 +184,7 @@ fn seg_toggle(ui: &mut egui::Ui, theme: &Theme, selected: usize) -> Option<usize
                 theme.corner_radius_sm.value(),
                 egui::Color32::from(theme.segtoggle_on_bg()),
             );
-        } else if resp.hovered() {
+        } else if resp.hovered() || hover == Some(i) {
             ui.painter().rect_filled(
                 seg_rect,
                 theme.corner_radius_sm.value(),

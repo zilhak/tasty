@@ -10,7 +10,7 @@ use crate::catalog::spec::{StageVariant, TokenChip, body_column, cluster, meta, 
 
 /// 시안 `TreeNode` 의 chevron 자리: 펼침 · 접힘 · 없음(leaf).
 #[derive(Clone, Copy)]
-enum Fold {
+pub(super) enum Fold {
     Open,
     Closed,
     Leaf,
@@ -18,10 +18,10 @@ enum Fold {
 use Fold::{Closed, Leaf, Open};
 
 /// (label, depth, fold, active)
-type Node = (&'static str, u16, Fold, bool);
+pub(super) type Node = (&'static str, u16, Fold, bool);
 
 /// 짧은 트리(시안 `TREE_SHORT`), 스크롤 없이 상단 영역에 빈 공간을 남긴다.
-const TREE_SHORT: &[Node] = &[
+pub(super) const TREE_SHORT: &[Node] = &[
     ("Home", 0, Open, false),
     ("Downloads", 1, Open, true),
     ("mockup-exports", 2, Leaf, false),
@@ -56,7 +56,7 @@ const TREE_LONG: &[Node] = &[
 ];
 
 /// (label, active) — 소수 즐겨찾기(시안 `FAVS_DEFAULT`), 고정 영역 안에 전부 들어간다.
-const FAVS_FEW: &[(&str, bool)] = &[
+pub(super) const FAVS_FEW: &[(&str, bool)] = &[
     ("tasty", true),
     ("Documents", false),
     ("screenshots", false),
@@ -77,7 +77,7 @@ const FAVS_MANY: &[(&str, bool)] = &[
 ];
 
 /// design ExpSidebar width 196.
-const SIDEBAR_W: LogicalPx = LogicalPx(196.0);
+pub(super) const SIDEBAR_W: LogicalPx = LogicalPx(196.0);
 /// 시안 2-region Spec 네 예제의 body 높이(`ExpSidebar height={620}`). pin 240.
 const SPLIT_BODY_H: LogicalPx = LogicalPx(620.0);
 /// 시안 Favorites populated/empty Spec의 body 높이(`ExpSidebar height={300}`). pin 120.
@@ -291,7 +291,7 @@ fn panel(
 
 /// 2-region 분할 — 본체 `explorer.rs::sidebar()` 구조 전사: 상단 Files(flex+스크롤),
 /// 고정 좌표 구분선, 하단 Favorites(고정 높이+스크롤).
-fn two_region(
+pub(super) fn two_region(
     ui: &mut egui::Ui,
     theme: &Theme,
     id_salt: &str,

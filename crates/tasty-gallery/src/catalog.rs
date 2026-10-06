@@ -2122,6 +2122,18 @@ pub fn pages() -> Vec<Page> {
                     ],
                 ),
                 section(
+                    "explorer",
+                    "Explorer — the file-manager surface",
+                    vec![spec(
+                        "explorer-surface",
+                        "Explorer surface — full layout (Detail view)",
+                        Some(
+                            "internal tabs · toolbar (nav · path field · view toggle) · 196px sidebar · Detail content",
+                        ),
+                        components::explorer_surface::draw,
+                    )],
+                ),
+                section(
                     "markdown-viewer",
                     "Markdown surface",
                     vec![

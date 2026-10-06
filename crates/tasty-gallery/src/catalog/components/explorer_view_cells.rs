@@ -14,7 +14,7 @@ const CELL_W: LogicalPx = LogicalPx(80.0);
 
 /// 샘플 항목의 종류. 이미지는 accent-info 로 칠한다(본체 explorer 와 같은 규칙).
 #[derive(Clone, Copy)]
-enum Kind {
+pub(super) enum Kind {
     Folder,
     File,
     Image,
@@ -78,12 +78,14 @@ const LIST: &[Entry] = &[
     entry(Kind::File, "archive.zip", Mark::Cut),
 ];
 
-struct DetailRow {
-    kind: Kind,
-    name: &'static str,
-    size: &'static str,
-    modified: &'static str,
-    kind_label: &'static str,
+pub(super) struct DetailRow {
+    pub(super) kind: Kind,
+    pub(super) name: &'static str,
+    pub(super) size: &'static str,
+    pub(super) modified: &'static str,
+    pub(super) kind_label: &'static str,
+    /// 잘라내기 대기 행 — 전경을 `cut_pending_opacity` 로 낮춘다.
+    pub(super) cut: bool,
 }
 
 /// 시안 View modes 의 Detail 열. 선택 초기값은 diagram.png(DETAIL_SEL).
@@ -94,6 +96,7 @@ const DETAIL: &[DetailRow] = &[
         size: "—",
         modified: "06-20 14:30",
         kind_label: "Folder",
+        cut: false,
     },
     DetailRow {
         kind: Kind::File,
@@ -101,6 +104,7 @@ const DETAIL: &[DetailRow] = &[
         size: "2.4 MB",
         modified: "06-24 09:12",
         kind_label: "PDF",
+        cut: false,
     },
     DetailRow {
         kind: Kind::Image,
@@ -108,6 +112,7 @@ const DETAIL: &[DetailRow] = &[
         size: "488 KB",
         modified: "06-26 18:05",
         kind_label: "PNG",
+        cut: false,
     },
 ];
 
@@ -211,131 +216,15 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         theme,
         "detail — sortable columns (Table reuse)",
         |ui| {
-            let columns = vec![
-                TableColumn {
-                    title: "Name",
-                    width: TableColumnWidth::Remainder {
-                        at_least: LogicalPx(140.0),
-                        clip: true,
-                    },
-                    align: TableAlign::Left,
-                    sort_id: Some(0_usize),
-                },
-                // design DetailRow gridTemplateColumns: 1fr 80px 132px 92px.
-                TableColumn {
-                    title: "Size",
-                    width: TableColumnWidth::Initial {
-                        initial: LogicalPx(80.0),
-                        at_least: LogicalPx(64.0),
-                    },
-                    align: TableAlign::Right,
-                    sort_id: Some(1_usize),
-                },
-                TableColumn {
-                    title: "Date modified",
-                    width: TableColumnWidth::Initial {
-                        initial: LogicalPx(132.0),
-                        at_least: LogicalPx(108.0),
-                    },
-                    align: TableAlign::Left,
-                    sort_id: Some(2_usize),
-                },
-                TableColumn {
-                    title: "Type",
-                    width: TableColumnWidth::Initial {
-                        initial: LogicalPx(92.0),
-                        at_least: LogicalPx(72.0),
-                    },
-                    align: TableAlign::Left,
-                    sort_id: Some(3_usize),
-                },
-            ];
-
             // 페이지 본문은 가로 폭 제한이 없어 Remainder 열이 남은 폭을 모두 차지한다.
             // 설명과 같은 본문 컬럼 폭의 세로 배치 안에 두어 네 열이 본문 안에 들어오게 한다.
             body_column(ui, |ui| {
                 DETAIL_SEL.with(|s| {
                     let mut sel = s.borrow_mut();
-                    let selected = *sel;
-                    let out = Table::new(columns)
-                        .active_sort(0_usize, TableSortDir::Asc)
-                        // 상세 머리글 자간은 시안 출처끼리 갈린다(디자인 갤러리 .06em, 공용 Table 토큰).
-                        // 디자인 회신 전까지 기존 모양을 유지한다.
-                        .header_as_given()
-                        .header_fill(egui::Color32::from(theme.table_header_bg()))
-                        // design DetailHeader: Size 제목 paddingRight 8, 본문 Size 셀과 같은 여백.
-                        .header_pad_right(theme.spacing_sm)
-                        .selectable(true)
-                        .max_scroll_height(theme.overlay_top_offset * 2.0)
-                        .id_salt("explorer_detail_demo")
-                        .show(
-                            ui,
-                            theme,
-                            DETAIL,
-                            |row: &DetailRow| {
-                                DETAIL.iter().position(|r| r.name == row.name) == Some(selected)
-                            },
-                            |ui, th, row, col| match col {
-                                0 => {
-                                    ui.horizontal(|ui| {
-                                        ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
-                                        let sz = th.icon_glyph_size_md.value();
-                                        let (rect, _) = ui.allocate_exact_size(
-                                            egui::vec2(sz, sz),
-                                            egui::Sense::hover(),
-                                        );
-                                        row.kind
-                                            .glyph()
-                                            .image(
-                                                sz,
-                                                row.kind
-                                                    .tint(th, egui::Color32::from(th.text_muted())),
-                                            )
-                                            .paint_at(ui, rect);
-                                        // 선택 행 이름만 text-primary, 나머지는 `table-row-fg`로 그린다.
-                                        let is_sel = DETAIL.iter().position(|r| r.name == row.name)
-                                            == Some(selected);
-                                        let name_fg = if is_sel {
-                                            th.text_primary()
-                                        } else {
-                                            th.table_row_fg()
-                                        };
-                                        ui.label(
-                                            egui::RichText::new(row.name)
-                                                .size(th.font_size_body.value())
-                                                .color(egui::Color32::from(name_fg)),
-                                        );
-                                    });
-                                }
-                                1 => {
-                                    ui.add_space(th.spacing_sm.value());
-                                    ui.label(
-                                        egui::RichText::new(row.size)
-                                            .font(egui::FontId::monospace(
-                                                th.font_size_caption.value(),
-                                            ))
-                                            .color(egui::Color32::from(th.text_muted())),
-                                    );
-                                }
-                                2 => {
-                                    ui.label(
-                                        egui::RichText::new(row.modified)
-                                            .font(egui::FontId::monospace(
-                                                th.font_size_caption.value(),
-                                            ))
-                                            .color(egui::Color32::from(th.text_muted())),
-                                    );
-                                }
-                                _ => {
-                                    ui.label(
-                                        egui::RichText::new(row.kind_label)
-                                            .size(th.font_size_caption.value())
-                                            .color(egui::Color32::from(th.text_muted())),
-                                    );
-                                }
-                            },
-                        );
-                    if let Some(i) = out.clicked_row {
+                    let height = theme.overlay_top_offset * 2.0;
+                    if let Some(i) =
+                        detail_table(ui, theme, DETAIL, *sel, height, "explorer_detail_demo")
+                    {
                         *sel = i;
                     }
                 });
@@ -487,6 +376,131 @@ fn grid_cell(ui: &mut egui::Ui, theme: &Theme, e: &Entry, selected: bool, cut: b
     );
 
     resp.clicked()
+}
+
+/// 상세 보기 표. 공용 `Table` 로 그리며 클릭한 행 번호를 돌려준다.
+/// `cut` 행은 본체처럼 전경(글리프 + 글자)을 `cut_pending_opacity` 로 낮춘다.
+pub(super) fn detail_table(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    rows: &'static [DetailRow],
+    selected: usize,
+    max_height: LogicalPx,
+    id_salt: &str,
+) -> Option<usize> {
+    let columns = vec![
+        TableColumn {
+            title: "Name",
+            width: TableColumnWidth::Remainder {
+                at_least: LogicalPx(140.0),
+                clip: true,
+            },
+            align: TableAlign::Left,
+            sort_id: Some(0_usize),
+        },
+        // design DetailRow gridTemplateColumns: 1fr 80px 132px 92px.
+        TableColumn {
+            title: "Size",
+            width: TableColumnWidth::Initial {
+                initial: LogicalPx(80.0),
+                at_least: LogicalPx(64.0),
+            },
+            align: TableAlign::Right,
+            sort_id: Some(1_usize),
+        },
+        TableColumn {
+            title: "Date modified",
+            width: TableColumnWidth::Initial {
+                initial: LogicalPx(132.0),
+                at_least: LogicalPx(108.0),
+            },
+            align: TableAlign::Left,
+            sort_id: Some(2_usize),
+        },
+        TableColumn {
+            title: "Type",
+            width: TableColumnWidth::Initial {
+                initial: LogicalPx(92.0),
+                at_least: LogicalPx(72.0),
+            },
+            align: TableAlign::Left,
+            sort_id: Some(3_usize),
+        },
+    ];
+
+    let is_sel = |row: &DetailRow| rows.iter().position(|r| r.name == row.name) == Some(selected);
+    let out = Table::new(columns)
+        .active_sort(0_usize, TableSortDir::Asc)
+        // 상세 머리글 자간은 시안 출처끼리 갈린다(디자인 갤러리 .06em, 공용 Table 토큰).
+        // 디자인 회신 전까지 기존 모양을 유지한다.
+        .header_as_given()
+        .header_fill(egui::Color32::from(theme.table_header_bg()))
+        // design DetailHeader: Size 제목 paddingRight 8, 본문 Size 셀과 같은 여백.
+        .header_pad_right(theme.spacing_sm)
+        .selectable(true)
+        .max_scroll_height(max_height)
+        .id_salt(id_salt)
+        .show(ui, theme, rows, is_sel, |ui, th, row, col| {
+            let dim = |c: egui::Color32| {
+                if row.cut {
+                    c.gamma_multiply(th.cut_pending_opacity())
+                } else {
+                    c
+                }
+            };
+            let muted = dim(egui::Color32::from(th.text_muted()));
+            match col {
+                0 => {
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
+                        let sz = th.icon_glyph_size_md.value();
+                        let (rect, _) =
+                            ui.allocate_exact_size(egui::vec2(sz, sz), egui::Sense::hover());
+                        row.kind
+                            .glyph()
+                            .image(
+                                sz,
+                                dim(row.kind.tint(th, egui::Color32::from(th.text_muted()))),
+                            )
+                            .paint_at(ui, rect);
+                        // 선택 행 이름만 text-primary, 나머지는 `table-row-fg`로 그린다.
+                        let name_fg = if is_sel(row) {
+                            th.text_primary()
+                        } else {
+                            th.table_row_fg()
+                        };
+                        ui.label(
+                            egui::RichText::new(row.name)
+                                .size(th.font_size_body.value())
+                                .color(dim(egui::Color32::from(name_fg))),
+                        );
+                    });
+                }
+                1 => {
+                    ui.add_space(th.spacing_sm.value());
+                    ui.label(
+                        egui::RichText::new(row.size)
+                            .font(egui::FontId::monospace(th.font_size_caption.value()))
+                            .color(muted),
+                    );
+                }
+                2 => {
+                    ui.label(
+                        egui::RichText::new(row.modified)
+                            .font(egui::FontId::monospace(th.font_size_caption.value()))
+                            .color(muted),
+                    );
+                }
+                _ => {
+                    ui.label(
+                        egui::RichText::new(row.kind_label)
+                            .size(th.font_size_caption.value())
+                            .color(muted),
+                    );
+                }
+            }
+        });
+    out.clicked_row
 }
 
 /// 시안이 hover 상태로 보여 주는 목록 행의 배경. 다음 `tree_row` 자리에 먼저 칠한다.
