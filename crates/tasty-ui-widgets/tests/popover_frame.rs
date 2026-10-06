@@ -31,11 +31,8 @@ fn tooltips_use_tooltip_tokens_and_popovers_use_menu_tokens_only_inside_the_wrap
     );
     // 래퍼 앞의 부모 스타일. 메뉴 틀과 세 값이 모두 달라야 넣기·되돌리기를 구별한다.
     let parent = (
-        egui::Color32::from_rgb(1, 2, 3),
-        egui::Stroke::new(
-            th.border_width.value() + 2.0,
-            egui::Color32::from_rgb(4, 5, 6),
-        ),
+        th.accent_danger().to_egui(),
+        egui::Stroke::new(th.border_width.value() + 2.0, th.accent_primary().to_egui()),
         egui::CornerRadius::same(th.menu_radius().value() as u8 + 3),
     );
     assert!(parent.0 != menu.0 && parent.1 != menu.1 && parent.2 != menu.2);
