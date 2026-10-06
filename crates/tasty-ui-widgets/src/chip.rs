@@ -25,7 +25,10 @@ pub enum TagVariant {
 pub enum BadgeVariant {
     /// 채움 danger (기본 — unread count).
     Danger,
+    /// Completion attention 개수(파랑).
     Primary,
+    /// NeedsInput attention 개수(노랑).
+    Warning,
     Agent,
     Success,
     Neutral,
@@ -263,6 +266,10 @@ fn badge_colors(theme: &Theme, variant: BadgeVariant) -> (egui::Color32, egui::C
             theme.accent_primary().to_egui(),
             theme.text_on_accent().to_egui(),
         ),
+        BadgeVariant::Warning => (
+            theme.badge_warning_bg().to_egui(),
+            theme.badge_warning_fg().to_egui(),
+        ),
         BadgeVariant::Agent => (
             theme.accent_agent().to_egui(),
             theme.text_on_accent().to_egui(),
@@ -327,6 +334,7 @@ pub fn paint_badge_dot(
     let fill = match variant {
         BadgeVariant::Danger => theme.accent_danger().to_egui(),
         BadgeVariant::Primary => theme.accent_primary().to_egui(),
+        BadgeVariant::Warning => theme.badge_warning_bg().to_egui(),
         BadgeVariant::Agent => theme.accent_agent().to_egui(),
         BadgeVariant::Success => theme.accent_success().to_egui(),
         BadgeVariant::Neutral => theme.surface_active().to_egui(),

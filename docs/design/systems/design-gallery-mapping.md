@@ -935,7 +935,7 @@ kind](design-token-mapping.md#attention-kind--needsinputcompletion-surface-highl
 
 | 디자인 컴포넌트/variant | 본체 함수 | 갤러리 함수 | 비고 |
 |---|---|---|---|
-| `Badge variant="warning"` | `sidebar/view.rs::paint_workspace_count_badge`(`BadgeVariant::Warning`) | `sidebar.rs::paint_ws_badge_pair`/`paint_ws_count_badge_at` | NeedsInput 개수 배지(좌측 슬롯) |
+| `Badge variant="warning"` | `sidebar/view.rs::paint_workspace_count_badge` → 공용 `tasty_ui_widgets::badge`(`BadgeVariant::Warning`) | `sidebar.rs::paint_ws_badge_pair`/`paint_ws_count_badge_at` | NeedsInput 개수 배지(좌측 슬롯) |
 | `Badge variant="primary"`(기존) | 동 함수(`BadgeVariant::Primary`) | 동 | Completion 개수 배지(우측, 기존 자리) — 색 로직만 variant 분기로 리팩터, 렌더 값 불변 |
 | `BadgeGroup`(gap) | `right_to_left` 레이아웃 + `ui.add_space(spacing_xs)` | `paint_ws_badge_pair` offset 계산 | `badge-group-gap` 전사, 위젯화하지 않고 인라인 |
 | `StatusDot status="needs-input"` | `sidebar/view.rs::draw_collapsed_avatar` 우상단 dot 분기 | `sidebar.rs::attention_rail_demo` | collapsed rail — kind 우선순위로 대표색 1개 |

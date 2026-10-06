@@ -15,11 +15,24 @@ pub fn draw_badge(ui: &mut egui::Ui, theme: &Theme) {
             badge(ui, theme, "3", BadgeVariant::Danger);
             badge(ui, theme, "99+", BadgeVariant::Danger);
             badge(ui, theme, "12", BadgeVariant::Primary);
+            badge(ui, theme, "2", BadgeVariant::Warning);
             badge(ui, theme, "new", BadgeVariant::Agent);
             badge(ui, theme, "ok", BadgeVariant::Success);
         });
+        // 시안 BadgeGroup — NeedsInput이 앞, Completion이 뒤, 사이는 badge-group-gap.
+        cluster(ui, theme, "attention kinds", |ui| {
+            for (needs_input, completion) in [("2", "5"), ("99+", "99+")] {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = theme.badge_group_gap().value();
+                    badge(ui, theme, needs_input, BadgeVariant::Warning);
+                    badge(ui, theme, completion, BadgeVariant::Primary);
+                });
+            }
+        });
         cluster(ui, theme, "dot", |ui| {
             badge_dot(ui, theme, BadgeVariant::Danger);
+            badge_dot(ui, theme, BadgeVariant::Warning);
+            badge_dot(ui, theme, BadgeVariant::Primary);
             badge_dot(ui, theme, BadgeVariant::Agent);
             badge_dot(ui, theme, BadgeVariant::Success);
         });
@@ -41,6 +54,8 @@ pub fn draw_badge(ui: &mut egui::Ui, theme: &Theme) {
             ("radius", "pill (full)"),
             ("font", "caption 11px"),
             ("dot", "status-dot-size"),
+            ("group gap", "badge-group-gap"),
+            ("overflow", "99+"),
         ],
         &[
             TokenChip::new(

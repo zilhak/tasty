@@ -340,9 +340,10 @@ text-gap(버튼 하나 32, 둘 60).
 `yellow`·`blue` 필드를, `-fg` 두 개는 `theme.rs` 의 수기 접근자로 `text_on_accent()` 를 돌려준다.
 component 접근자(`badge_warning_bg()` 등)는 이 네 접근자를 거친다. 본체의 탭 제목·surface 테두리·collapsed rail 점은
 component 접근자(`tab_fg_*()`·`surface_highlight_*_border()`·`status_dot_*()`)를 쓴다. 공용 StatusDot의 `NeedsInput`·`Completion` 종류도
-`status_dot_needs_input()`·`status_dot_completion()`을 쓴다. 갤러리 칩은 토큰 이름의 접근자를 쓴다.
-`--tasty-badge-group-gap` 도 `space-xs` 그대로 별칭이다 — 생성 접근자 `badge_group_gap()` 은 있으나 소비처는 없고
-`Theme::spacing_xs` 를 직접 참조한다.
+`status_dot_needs_input()`·`status_dot_completion()`을 쓴다. 공용 Badge의 `Warning` variant는 `badge_warning_bg()`·`badge_warning_fg()`를 쓰고,
+본체 워크스페이스 행의 개수 배지는 공용 Badge(`Primary`·`Warning`)로 그린다. 갤러리 칩은 토큰 이름의 접근자를 쓴다.
+`--tasty-badge-group-gap` 도 `space-xs` 그대로 별칭이다 — 갤러리 Badge 예제의 BadgeGroup은 `badge_group_gap()` 을 쓰고,
+본체 사이드바는 `Theme::spacing_xs` 를 직접 참조한다.
 
 | 디자인 토큰 | 디자인 체인 | tasty Theme / 값 | 비고 |
 |---|---|---|---|
@@ -352,8 +353,8 @@ component 접근자(`tab_fg_*()`·`surface_highlight_*_border()`·`status_dot_*(
 | `--tasty-attention-rank-needs-input` | `30`(정수) | `AttentionLevel::NeedsInput`(derive `Ord`) | 재도출 금지 — 소스에 정수 값 주석으로 미러링 |
 | `--tasty-attention-rank-completion` | `10`(정수) | `AttentionLevel::Completion` | 위와 동일 |
 | `--tasty-badge-primary-bg`/`-fg` | = attention-completion(-fg) | `accent_primary()`/`text_on_accent()` | Completion 배지 |
-| `--tasty-badge-warning-bg`/`-fg` | = attention-needs-input(-fg) | `accent_warning()`/`text_on_accent()` | NeedsInput 배지 |
-| `--tasty-badge-group-gap` | → `space-xs`(4px) | `Theme::spacing_xs` | 두 배지 동시 표시 시 간격. `badge_group_gap()` 은 생성됐으나 미사용 — 직접 참조 |
+| `--tasty-badge-warning-bg`/`-fg` | = attention-needs-input(-fg) | `badge_warning_bg()`/`badge_warning_fg()` (공용 Badge `Warning`) | NeedsInput 배지 |
+| `--tasty-badge-group-gap` | → `space-xs`(4px) | `Theme::spacing_xs` | 두 배지 동시 표시 시 간격. 갤러리 BadgeGroup은 `badge_group_gap()`, 본체 사이드바는 `spacing_xs` 직접 참조 |
 | `--tasty-tab-fg-needs-input`/`-completion` | = attention-* | `tab_fg_needs_input()`/`tab_fg_completion()` | 탭 제목 색 |
 | `--tasty-surface-highlight-input-border` | = attention-needs-input | `surface_highlight_input_border()` | surface 테두리 NeedsInput |
 | `--tasty-surface-highlight-input-width` | → `focus-ring-width`(2px) | `Theme::focus_ring_width` | Completion 테두리와 동일 굵기 |

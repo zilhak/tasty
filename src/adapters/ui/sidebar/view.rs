@@ -4,7 +4,7 @@ use crate::adapters::ui::{brand, icons};
 use crate::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::tokens::{STRUCT_GAP_1, STRUCT_GAP_2, STRUCT_GAP_3};
-use tasty_ui_widgets::{TagVariant, hspace, tag, vspace};
+use tasty_ui_widgets::{BadgeVariant, TagVariant, badge, hspace, tag, vspace};
 
 /// 드래그 중 표시되는 ghost workspace 이름. DTCG primitive `font-size-12` 는 있으나
 /// semantic role 이 없어 `Theme` 필드가 없다 — ADR-0035 대로 **이름에 primitive 임을 남긴다**.
@@ -231,46 +231,15 @@ fn paint_alert_badge(
     ui.painter()
         .galley(gp, galley, egui::Color32::from(th.text_on_accent()));
 }
-/// 워크스페이스 행 개수 배지의 색 variant — 디자인 Badge variant="primary"(파랑,
-/// Completion)/"warning"(노랑, NeedsInput). 둘 다 전경은 `text-on-accent` 로 동일.
-#[derive(Clone, Copy)]
-enum BadgeVariant {
-    Primary,
-    Warning,
-}
-
-impl BadgeVariant {
-    fn fill(self, th: &Theme) -> egui::Color32 {
-        match self {
-            BadgeVariant::Primary => th.accent_primary().into(),
-            BadgeVariant::Warning => th.accent_warning().into(),
-        }
-    }
-}
-
-/// 공용 배지 치수로 개수를 표시한다. 99를 넘으면 99+로 줄인다.
+/// 워크스페이스 행 개수 배지. 공용 Badge(primary = Completion, warning = NeedsInput)로 그리고
+/// 99를 넘으면 99+로 줄인다.
 fn paint_workspace_count_badge(ui: &mut egui::Ui, th: &Theme, count: usize, variant: BadgeVariant) {
     let label = if count > 99 {
         "99+".to_string()
     } else {
         count.to_string()
     };
-    let galley = ui.painter().layout_no_wrap(
-        label,
-        egui::FontId::monospace(th.badge_font_size().value()),
-        egui::Color32::from(th.text_on_accent()),
-    );
-    let size = th.badge_size().value();
-    let pad_x = th.badge_padding_x().value();
-    let w = (galley.size().x + pad_x * 2.0).max(size);
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, size), egui::Sense::hover());
-    ui.painter().rect_filled(rect, size / 2.0, variant.fill(th));
-    let gp = egui::pos2(
-        rect.center().x - galley.size().x / 2.0,
-        rect.center().y - galley.size().y / 2.0,
-    );
-    ui.painter()
-        .galley(gp, galley, egui::Color32::from(th.text_on_accent()));
+    badge(ui, th, &label, variant);
 }
 fn collapsed_ws_size(th: &Theme) -> egui::Vec2 {
     egui::vec2(
