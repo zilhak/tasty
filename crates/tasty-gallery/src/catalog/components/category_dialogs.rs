@@ -311,24 +311,7 @@ fn rail_category_menu(ui: &mut egui::Ui, theme: &Theme) {
                     top: theme.spacing_xs.value() as i8,
                     bottom: theme.spacing_sm.value() as i8,
                 })
-                .show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.label(
-                            egui::RichText::new("Services")
-                                .size(theme.font_size_body.value())
-                                .strong()
-                                .color(theme.text_primary().to_egui()),
-                        );
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            ui.label(
-                                egui::RichText::new("3")
-                                    .monospace()
-                                    .size(theme.font_size_micro.value())
-                                    .color(theme.text_muted().to_egui()),
-                            );
-                        });
-                    });
-                });
+                .show(ui, |ui| header_row(ui, theme, "Services", "3"));
             let (line, _) =
                 ui.allocate_exact_size(egui::vec2(ui.available_width(), bw), egui::Sense::hover());
             ui.painter()
@@ -458,4 +441,38 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
          거치며 본문이 안전한 결과(워크스페이스는 normal 로 이동)를 안내한다. 레일 팝업은 \
          `---` 버튼 우측에 앵커드로 뜬다.",
     );
+}
+
+/// 팝업 머리줄 — 이름(body, text-primary)과 오른쪽 개수(mono micro, text-muted).
+/// 시안은 `alignItems: baseline` 이라 크기가 다른 두 글자의 기준선을 맞춘다.
+fn header_row(ui: &mut egui::Ui, theme: &Theme, name: &str, count: &str) {
+    let name = ui.painter().layout_no_wrap(
+        name.to_owned(),
+        egui::FontId::proportional(theme.font_size_body.value()),
+        theme.text_primary().to_egui(),
+    );
+    let count = ui.painter().layout_no_wrap(
+        count.to_owned(),
+        egui::FontId::monospace(theme.font_size_micro.value()),
+        theme.text_muted().to_egui(),
+    );
+    let baseline = |g: &egui::Galley| {
+        g.rows
+            .first()
+            .and_then(|r| r.glyphs.first())
+            .map_or(g.rect.height(), |gl| gl.pos.y)
+    };
+    let (name_base, count_base) = (baseline(&name), baseline(&count));
+    let top = (count_base - name_base).max(0.0);
+    let h = (top + name.rect.height()).max(name_base - count_base + count.rect.height());
+    let (rect, _) =
+        ui.allocate_exact_size(egui::vec2(ui.available_width(), h), egui::Sense::hover());
+    let name_pos = egui::pos2(rect.left(), rect.top() + top);
+    let count_pos = egui::pos2(
+        rect.right() - count.rect.width(),
+        name_pos.y + name_base - count_base,
+    );
+    let (name_fg, count_fg) = (theme.text_primary().to_egui(), theme.text_muted().to_egui());
+    ui.painter().galley(name_pos, name, name_fg);
+    ui.painter().galley(count_pos, count, count_fg);
 }
