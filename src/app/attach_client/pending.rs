@@ -292,6 +292,13 @@ impl App {
             self.remote.active.remove(&anchor);
             if target.reconnect.is_some() {
                 self.on_reconnect_attempt_failed(anchor, &anyhow::anyhow!(error));
+            } else {
+                back_off_failed_first_attach(
+                    &mut self.remote,
+                    target.anchor,
+                    target.reconnect.is_some(),
+                    target.mapping.as_ref(),
+                );
             }
         }
     }
@@ -304,4 +311,46 @@ fn attach_wake(proxy: &EventLoopProxy<AppEvent>) -> Arc<dyn Fn() + Send + Sync> 
             tracing::debug!("remote wake after event loop closed: {error}");
         }
     })
+}
+
+/// 접수 뒤 연결 단계에서 실패한 첫 자동 attach도 해석 실패와 같은 간격으로 미룬다.
+/// 재연결(`reconnecting`)은 재연결 백오프가 맡으므로 기록하지 않는다.
+fn back_off_failed_first_attach(
+    remote: &mut tasty_remote::outbound::Remote,
+    anchor: Option<u32>,
+    reconnecting: bool,
+    mapping: Option<&crate::model::WorkspaceAttachMapping>,
+) {
+    if let (Some(anchor), false) = (anchor, reconnecting) {
+        crate::app::auto_attach::back_off_first_attach(remote, anchor, mapping);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn mapping() -> crate::model::WorkspaceAttachMapping {
+        crate::model::WorkspaceAttachMapping {
+            target: crate::model::WorkspaceAttachTarget::Profile { name: "p".into() },
+            remote_workspace: Some(1),
+        }
+    }
+
+    #[test]
+    fn a_first_attach_that_fails_after_queueing_backs_off() {
+        let mut remote = tasty_remote::outbound::Remote::new();
+        back_off_failed_first_attach(&mut remote, Some(10), false, Some(&mapping()));
+        let retry = remote.attach_retry.get(&10).expect("retry recorded");
+        assert_eq!(retry.mapping, mapping());
+        assert!(retry.holds(&mapping(), std::time::Instant::now()));
+    }
+
+    #[test]
+    fn a_reconnect_or_an_unanchored_failure_records_no_retry() {
+        let mut remote = tasty_remote::outbound::Remote::new();
+        back_off_failed_first_attach(&mut remote, Some(10), true, Some(&mapping()));
+        back_off_failed_first_attach(&mut remote, None, false, Some(&mapping()));
+        assert!(remote.attach_retry.is_empty());
+    }
 }

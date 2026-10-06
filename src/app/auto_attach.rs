@@ -513,27 +513,12 @@ impl App {
         }
     }
 
-    /// 첫 자동 attach가 실패하면 같은 매핑의 다음 시도를 재연결과 같은 지수 백오프(0.5초에서
-    /// 두 배씩, 상한 30초, jitter 0.8~1.2)로 미룬다. 자동 재시도 상한은 두지 않는다.
     fn on_first_attach_failed(
         &mut self,
         anchor: u32,
         mapping: Option<&crate::model::WorkspaceAttachMapping>,
     ) {
-        let Some(mapping) = mapping else {
-            return;
-        };
-        let retry = self
-            .remote
-            .attach_retry
-            .entry(anchor)
-            .or_insert_with(|| tasty_remote::outbound::AttachRetry::new(mapping.clone()));
-        if retry.mapping != *mapping {
-            *retry = tasty_remote::outbound::AttachRetry::new(mapping.clone());
-        }
-        use rand::Rng;
-        let jitter = 0.8 + rand::rng().random::<f64>() * 0.4;
-        retry.record_failure(Instant::now(), jitter);
+        back_off_first_attach(&mut self.remote, anchor, mapping);
     }
 
     /// already_attached는 긴 고정 간격, 나머지 실패는 지수 백오프로 재시도한다.
@@ -652,6 +637,22 @@ fn resolve_endpoint(target: &WorkspaceAttachTarget) -> anyhow::Result<(Option<Ss
     let tunnel = SshTunnel::establish(&ssh, &ssh_target, remote_port, verify)?;
     let local_port = tunnel.local_port;
     Ok((Some(tunnel), local_port))
+}
+
+/// 첫 자동 attach가 실패하면 같은 매핑의 다음 시도를 재연결과 같은 지수 백오프(0.5초에서
+/// 두 배씩, 상한 30초, jitter 0.8~1.2)로 미룬다. 자동 재시도 상한은 두지 않는다.
+/// 해석 실패·접수 실패와 접수 뒤 연결 실패가 함께 쓴다. 매핑이 없으면 기록하지 않는다.
+pub(crate) fn back_off_first_attach(
+    remote: &mut tasty_remote::outbound::Remote,
+    anchor: u32,
+    mapping: Option<&crate::model::WorkspaceAttachMapping>,
+) {
+    let Some(mapping) = mapping else {
+        return;
+    };
+    use rand::Rng;
+    let jitter = 0.8 + rand::rng().random::<f64>() * 0.4;
+    remote.record_first_attach_failure(anchor, mapping, Instant::now(), jitter);
 }
 
 /// 첫 자동 attach를 아직 미뤄야 하는지. 재활성화 직후에는 기다리지 않는다.

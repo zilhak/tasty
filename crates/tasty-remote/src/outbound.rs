@@ -88,6 +88,24 @@ impl Default for Remote {
     }
 }
 impl Remote {
+    /// 첫 자동 attach 실패를 anchor의 재시도 기록에 더한다. 다른 매핑의 기록이면 처음부터 센다.
+    pub fn record_first_attach_failure(
+        &mut self,
+        anchor: u32,
+        mapping: &tasty_model::WorkspaceAttachMapping,
+        now: Instant,
+        jitter: f64,
+    ) {
+        let retry = self
+            .attach_retry
+            .entry(anchor)
+            .or_insert_with(|| AttachRetry::new(mapping.clone()));
+        if retry.mapping != *mapping {
+            *retry = AttachRetry::new(mapping.clone());
+        }
+        retry.record_failure(now, jitter);
+    }
+
     pub fn new() -> Self {
         let (tx, rx) = std::sync::mpsc::channel();
         let (connection_tx, connection_rx) = std::sync::mpsc::sync_channel(8);

@@ -441,8 +441,9 @@ anchor 가 없는 mirror(IPC `remote.attach` 로 연 임시 mirror 등)는 대�
 - **레벨/엣지 트리거(기존, 신규 attach 전담)** — `src/app/auto_attach.rs::maybe_trigger_auto_attach`
   는 "활성 워크스페이스가 매핑 Some & `Remote.active` 에 없으면 트리거"를 **매 프레임**
   재평가한다. 단 첫 attach 가 실패한 anchor 는 `Remote.attach_retry`(`AttachRetry`)의 시각까지
-  건너뛴다(`first_attach_waits` — 같은 매핑·엣지 아님일 때만). 실패는 `on_first_attach_failed`
-  가 재연결과 같은 `Backoff`(0.5초→30초)와 jitter 로 기록하고, `sync_reconnect_timers` 가 아직
+  건너뛴다(`first_attach_waits` — 같은 매핑·엣지 아님일 때만). 실패는 `back_off_first_attach`
+  (해석·접수 실패는 `on_first_attach_failed`, 접수 뒤 연결 실패는 `pending.rs::fail_pending_mirror`)가
+  재연결과 같은 `Backoff`(0.5초→30초)와 jitter 로 `Remote::record_first_attach_failure` 에 기록하고, `sync_reconnect_timers` 가 아직
   오지 않은 시각만 `Tick::Reconnect(anchor)` 로 예약한다(지난 시각을 예약하면 다른 워크스페이스에
   있는 동안 루프를 계속 깨운다). 설치 성공 때 `pending.rs` 가 기록을 지운다. 예를 들어 이미 활성인 워크스페이스에 `attach_mapping` 을 방금 새로 설정하면
   (`tasty set workspace --ssh-profile ...`) 워크스페이스 전환 없이도 다음 프레임에 즉시
