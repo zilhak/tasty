@@ -439,7 +439,7 @@ fn draw_header(ui: &mut egui::Ui, th: &Theme, rect: egui::Rect) -> bool {
             .layout(egui::Layout::left_to_right(egui::Align::Center)),
     );
     child.spacing_mut().item_spacing.x = th.spacing_sm.value();
-    child.add(icons::TERMINAL_PROMPT.image(th.icon_glyph_size_md.value(), th.text_muted().into()));
+    child.add(icons::REMOTE.image(th.icon_glyph_size_md.value(), th.text_muted().into()));
     child.label(
         egui::RichText::new(t("remote_attach.heading"))
             .color(th.text_primary())
@@ -627,7 +627,7 @@ fn draw_right_pane(
     let sel_name = st.attach_sel.clone().unwrap_or_default();
     match &st.conn {
         Conn::Initial => {
-            CenterState::empty(icons::TERMINAL_PROMPT, t("remote_attach.select_profile"))
+            CenterState::empty(icons::REMOTE, t("remote_attach.select_profile"))
                 .sub_line(Some(t("remote_attach.select_profile_hint")))
                 .show_in(ui, th, rect);
             RightAction::None
