@@ -175,9 +175,9 @@ pub fn draw_when(ui: &mut egui::Ui, theme: &Theme) {
 pub fn draw_path_cut(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         for (label, raw) in [
-            "sample A — 70 chars, 5 over the budget",
-            "92 → 61 — whole segments dropped",
-            "one 72-char segment → 65",
+            "65 chars — fits exactly, no cut",
+            "93 → 57 chars — leading segments dropped at a boundary",
+            "one 72-char segment → 65 — mid-segment, front",
         ]
         .into_iter()
         .zip(PATH_SAMPLES)
@@ -208,11 +208,6 @@ pub fn draw_path_cut(ui: &mut egui::Ui, theme: &Theme) {
             theme.text_muted().to_egui(),
         )],
     );
-    spec::note(
-        ui,
-        theme,
-        "Sample A has 70 characters, exceeding this example’s 65-character limit by five. It therefore shows a shortened path. The example data is kept unchanged.",
-    );
     spec::do_(
         ui,
         theme,
@@ -227,10 +222,11 @@ pub fn draw_path_cut(ui: &mut egui::Ui, theme: &Theme) {
 }
 
 /// 경로를 미리 잘라 저장하지 않고 공용 생략 함수에 넣어 비교한다.
+/// 시안은 B·C 의 생략 결과만 보여 주므로, 원본은 그 결과와 라벨의 원래 글자 수(93·72)에 맞춰 앞 조각을 채운 것이다.
 const PATH_SAMPLES: [&str; 3] = [
-    "work/tasty/crates/tasty-gallery/src/catalog/components/file_handler.rs",
-    "/home/maya/src/tasty-main/crates/tasty-gallery/src/catalog/components/file_handler_picker.rs",
-    "quarterly-revenue-reconciliation-draft-final-v3-reviewed-by-finance.xlsx",
+    "packages/design-system/src/components/navigation/federated/Bar.ts",
+    "packages/design-system/src/components/navigation/federation/SidebarCategoryHeaderContrast.tsx",
+    "navigation-federation-sidebar-category-header-contrast-exploration-v2.md",
 ];
 
 /// 이 예제는 글꼴을 실측하지 않고 측정할 수 없을 때의 문자 수 상한을 사용한다.
@@ -487,16 +483,18 @@ mod tests {
     /// 예제 라벨에 적힌 원본·생략 결과의 문자 수를 실제 함수 결과와 비교한다.
     #[test]
     fn the_path_cut_labels_describe_what_the_specimen_draws() {
-        let [over, segment, one_piece] = PATH_SAMPLES;
+        let [fits, segment, one_piece] = PATH_SAMPLES;
 
-        assert_eq!(over.chars().count(), 70);
-        assert_eq!(over.chars().count() - PATH_BUDGET, 5);
-        assert_ne!(fh_model::elide_target_front(over, PATH_BUDGET), over);
+        assert_eq!(fits.chars().count(), PATH_BUDGET);
+        assert_eq!(fh_model::elide_target_front(fits, PATH_BUDGET), fits);
 
-        assert_eq!(segment.chars().count(), 92);
+        assert_eq!(segment.chars().count(), 93);
         let cut = fh_model::elide_target_front(segment, PATH_BUDGET);
-        assert_eq!(cut.chars().count(), 61);
-        assert!(cut.starts_with("…/tasty-gallery/"), "{cut}");
+        assert_eq!(cut.chars().count(), 57);
+        assert_eq!(
+            cut,
+            "…/navigation/federation/SidebarCategoryHeaderContrast.tsx"
+        );
 
         assert_eq!(one_piece.chars().count(), 72);
         assert!(
@@ -505,6 +503,9 @@ mod tests {
         );
         let cut = fh_model::elide_target_front(one_piece, PATH_BUDGET);
         assert_eq!(cut.chars().count(), 65);
-        assert!(cut.starts_with('…') && !cut.starts_with("…/"), "{cut}");
+        assert_eq!(
+            cut,
+            "…on-federation-sidebar-category-header-contrast-exploration-v2.md"
+        );
     }
 }

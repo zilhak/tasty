@@ -62,10 +62,10 @@ mod tests {
     use crate::tokens::FH_TARGET_MONO_ADVANCE;
 
     /// 디자인에서 받은 경로 표본. 실제 잘리는 위치는 현재 글자 수 상한으로 검사한다.
-    const A_FITS: &str = "work/tasty/crates/tasty-gallery/src/catalog/components/file_handler.rs";
-    const B_SEGMENT: &str = "/home/maya/src/tasty-main/crates/tasty-gallery/src/catalog/components/file_handler_picker.rs";
+    const A_FITS: &str = "packages/design-system/src/components/navigation/federated/Bar.ts";
+    const B_SEGMENT: &str = "packages/design-system/src/components/navigation/federation/SidebarCategoryHeaderContrast.tsx";
     const C_ONE_SEGMENT: &str =
-        "quarterly-revenue-reconciliation-draft-final-v3-reviewed-by-finance.xlsx";
+        "navigation-federation-sidebar-category-header-contrast-exploration-v2.md";
 
     /// 상한 안에 들어가는 짧은 경로는 그대로 반환한다.
     #[test]
@@ -75,30 +75,25 @@ mod tests {
         assert_eq!(elide_target_front(short, FH_TARGET_ELIDE_FALLBACK), short);
     }
 
-    /// 표본 A는 현재 상한보다 길어 앞부분이 줄어든다.
+    /// 표본 A는 상한과 같은 길이라 줄이지 않는다.
     #[test]
-    fn the_first_design_sample_overflows_the_recomputed_budget() {
-        assert_eq!(A_FITS.chars().count(), 70);
+    fn the_first_design_sample_fits_the_budget_exactly() {
         assert_eq!(FH_TARGET_ELIDE_FALLBACK, 65);
-        let out = elide_target_front(A_FITS, FH_TARGET_ELIDE_FALLBACK);
-        assert_ne!(out, A_FITS, "표본 A는 현재 상한을 넘어 줄어들어야 한다");
-        assert_eq!(
-            out,
-            "…/crates/tasty-gallery/src/catalog/components/file_handler.rs"
-        );
+        assert_eq!(A_FITS.chars().count(), FH_TARGET_ELIDE_FALLBACK);
+        assert_eq!(elide_target_front(A_FITS, FH_TARGET_ELIDE_FALLBACK), A_FITS);
     }
 
     #[test]
     fn a_long_path_loses_whole_leading_segments() {
-        assert_eq!(B_SEGMENT.chars().count(), 92);
+        assert_eq!(B_SEGMENT.chars().count(), 93);
         let out = elide_target_front(B_SEGMENT, FH_TARGET_ELIDE_FALLBACK);
         assert_eq!(
             out,
-            "…/tasty-gallery/src/catalog/components/file_handler_picker.rs"
+            "…/navigation/federation/SidebarCategoryHeaderContrast.tsx"
         );
-        assert_eq!(out.chars().count(), 61);
+        assert_eq!(out.chars().count(), 57);
         // 조각 경계에서 잘렸다 — `…/` 뒤는 온전한 디렉토리 이름이다.
-        assert!(out.starts_with("…/tasty-gallery/"));
+        assert!(out.starts_with("…/navigation/"));
     }
 
     #[test]
@@ -108,7 +103,7 @@ mod tests {
         assert_eq!(out.chars().count(), 65);
         assert!(out.starts_with('…'));
         assert!(!out.starts_with("…/"));
-        assert!(out.ends_with("-reviewed-by-finance.xlsx"));
+        assert!(out.ends_with("-exploration-v2.md"));
     }
 
     /// …/ 접두사 두 글자도 상한에 포함되는지 경계 입력으로 확인한다.
