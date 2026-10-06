@@ -194,15 +194,10 @@ pub fn title_bar_height() -> LogicalPx {
     )
 }
 
-/// `popup-content-margin`(→ space-xs)을 반올림한 팝업 내부 여백. 앵커 메뉴 팝업의 안쪽 둘레다.
+/// Theme.spacing_xs를 반올림한 팝업 내부 여백. 앵커 메뉴 팝업의 안쪽 둘레 `popup-content-margin`(→ space-xs)과 같은 값이다.
 pub fn content_margin() -> LogicalPx {
     use egui::emath::GuiRounding as _;
-    LogicalPx(
-        crate::theme::theme()
-            .popup_content_margin()
-            .value()
-            .round_ui(),
-    )
+    LogicalPx(crate::theme::theme().spacing_xs.value().round_ui())
 }
 
 /// 타이틀바 우측 버튼 사이 간격 — `popup-title-btn-gap` 의 round_ui.
