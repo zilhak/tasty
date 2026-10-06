@@ -22,7 +22,7 @@ fn request(method: &str, params: serde_json::Value) -> JsonRpcRequest {
 #[test]
 fn a_local_record_without_agent_uses_the_claimed_id_or_host() {
     let _home = crate::test_support::TastyHomeGuard::new();
-    let mut core = super::cli_entry_tests::test_core();
+    let mut core = crate::adapters::ipc::handler::cli_entry_tests::test_core();
     let (mut state, mut engine_session) = crate::state::tests::test_state();
     let mut engine = engine_session.borrow_mut();
     for (caller, want) in [
@@ -30,7 +30,7 @@ fn a_local_record_without_agent_uses_the_claimed_id_or_host() {
         (CallerContext::local(), "_host"),
         (CallerContext::local_claiming(Some("bad id!")), "_host"),
     ] {
-        let resp = super::handle_with_caller(
+        let resp = crate::adapters::ipc::handler::handle_with_caller(
             &mut core,
             &mut state,
             &mut engine,
@@ -45,11 +45,11 @@ fn a_local_record_without_agent_uses_the_claimed_id_or_host() {
 #[test]
 fn a_local_call_with_a_claimed_id_is_counted_under_that_id() {
     let _home = crate::test_support::TastyHomeGuard::new();
-    let mut core = super::cli_entry_tests::test_core();
+    let mut core = crate::adapters::ipc::handler::cli_entry_tests::test_core();
     let (mut state, mut engine_session) = crate::state::tests::test_state();
     let mut engine = engine_session.borrow_mut();
     let claimed = CallerContext::local_claiming(Some("agent_a"));
-    let resp = super::handle_with_caller(
+    let resp = crate::adapters::ipc::handler::handle_with_caller(
         &mut core,
         &mut state,
         &mut engine,
@@ -57,7 +57,7 @@ fn a_local_call_with_a_claimed_id_is_counted_under_that_id() {
         &claimed,
     );
     assert!(resp.error.is_none(), "{:?}", resp.error);
-    let summary = super::handle_with_caller(
+    let summary = crate::adapters::ipc::handler::handle_with_caller(
         &mut core,
         &mut state,
         &mut engine,

@@ -213,6 +213,8 @@ fn persist_event(core: &AppServices, ev: &TelemetryEvent) -> std::result::Result
 }
 
 pub mod anomaly;
+#[cfg(test)]
+mod caller_agent_id_tests;
 pub mod cap;
 pub mod query;
 pub mod record;

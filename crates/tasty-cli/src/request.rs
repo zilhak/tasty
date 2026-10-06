@@ -880,7 +880,6 @@ fn tool_command_to_method_params(command: &ToolCommands) -> (&'static str, serde
 }
 
 #[cfg(test)]
-#[path = "request_caller_agent_id_tests.rs"]
 mod caller_agent_id_tests;
 
 #[cfg(test)]

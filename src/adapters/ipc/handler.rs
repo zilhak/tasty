@@ -1,5 +1,3 @@
-#[cfg(test)]
-mod caller_agent_id_tests;
 mod checked;
 #[cfg(all(test, debug_assertions))]
 mod cli_entry_debug_tests;
@@ -224,16 +222,11 @@ fn canonicalize_and_route(request: &JsonRpcRequest) -> (&str, Cow<'_, JsonRpcReq
     let routed: Cow<JsonRpcRequest> = if canonical == request.method {
         Cow::Borrowed(request)
     } else {
+        // alias로 호출해도 멱등 키·세션 토큰·호출자 표시 ID 는 유지한다.
         Cow::Owned(JsonRpcRequest {
-            caller_agent_id: None,
             response_timeout_ms: None,
-            // alias로 호출해도 멱등 키는 유지한다.
-            idempotency_key: request.idempotency_key.clone(),
-            jsonrpc: request.jsonrpc.clone(),
             method: canonical.to_string(),
-            params: request.params.clone(),
-            id: request.id.clone(),
-            session_token: request.session_token.clone(),
+            ..request.clone()
         })
     };
     (canonical, routed)
