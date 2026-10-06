@@ -423,7 +423,11 @@ fi
 # workspace 밖 path 의존 파일은 crates 파일 수와 구분해 출력한다.
 n_all=$(printf '%s\n' "$CHANGED" | sed -n '/./p' | wc -l)
 n_extra=$(printf '%s\n' "$CHANGED" | sed -n "/^${SCAN_ROOT}\//!{/./p}" | wc -l)
-if [ "$n_extra" -gt 0 ]; then
+# 판정 대상이 없는 변경은 정상이라 rc 는 0 이지만, 아무것도 검사하지 않았으므로 통과로 표기하지 않는다.
+if [ "$CONSIDERED" -eq 0 ]; then
+    printf '[plugin-version] 판정 대상 없음 — 판정 대상 0 건 (변경된 crates 파일 %d 개 중). 버전을 확인할 플러그인 내용 변경이 없다.\n' \
+        "$n_all"
+elif [ "$n_extra" -gt 0 ]; then
     printf '[plugin-version] 통과 — 판정 대상 %d 건 (변경된 crates 파일 %d 개 · 워크스페이스 밖 path 의존 파일 %d 개 중)\n' \
         "$CONSIDERED" "$((n_all - n_extra))" "$n_extra"
 else

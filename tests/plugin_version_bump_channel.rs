@@ -294,6 +294,24 @@ fn a_docs_only_file_outside_the_build_output_needs_no_bump() {
     assert!(text.contains("판정 대상 0 건"), "{text}");
 }
 
+/// 판정 대상이 없으면 rc 는 0 이지만 아무것도 검사하지 않았으므로 통과로 표기하지 않는다.
+/// 대상이 있는 통과와 출력으로 구별돼야 한다.
+#[test]
+fn zero_judged_targets_read_as_none_not_as_a_pass() {
+    let tmp = seed_repo();
+    let d = tmp.path();
+    write(d, &format!("{PLUGIN}/README.md"), "설명이 늘었다\n");
+    commit_all(d, "docs(fixture): add a readme");
+
+    let (code, text) = check(d, &["--range", "HEAD^", "HEAD"]);
+    assert_eq!(code, 0, "대상 없는 커밋은 정상이다:\n{text}");
+    assert!(text.contains("판정 대상 없음"), "{text}");
+    assert!(
+        !text.contains("통과"),
+        "판정 대상 0 건을 통과로 표기했다:\n{text}"
+    );
+}
+
 #[test]
 fn staged_mode_sees_the_index_before_a_commit_exists_for_it() {
     let tmp = seed_repo();
