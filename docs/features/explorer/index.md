@@ -29,7 +29,7 @@ OS 파일 관리자에 의존하지 않고 tasty surface 안에서 디렉토리�
   - 빈 폴더(`Ok`이고 항목 0개)와 읽기 오류(`Error`): `folderOpen` 글리프(text-muted) + "This folder is empty"(text-secondary).
   - 권한 거부(`NoPermission`): `lock` 글리프와 제목 "Permission denied"를 accent-warning으로 칠하고, 보조 줄(caption, text-muted, 최대 폭 200)에 이유를 적는다.
   - 불러오는 중(`Loading`): 글리프 자리에 Spinner + "Loading…".
-  - 글리프는 `icon-glyph-size-md` × 1.6, 줄 간격은 `space-sm`이다.
+  - 글리프 배치 크기는 `icon-glyph-size-md`이고 그림만 그 칸 가운데에서 1.6배로 그린다(시안 `transform: scale(1.6)`은 배치에 영향이 없다). 줄 간격은 `space-sm`이다.
 - **주소창 편집 상태**: `addr_buffer`(편집 텍스트) / `addr_editing`(포커스=편집모드) / `addr_active`(후보 드롭다운 keyboard-active 행)를 뷰가 소유한다(PathField 계약 — 상태는 호출측 소유). `sync()` 는 **비편집 시** 버퍼를 활성 탭 current(`root`) 로 재동기화하고, 편집 중이면 사용자 입력을 보존한다. 내부 탭은 surface 단위 `ExplorerView` 를 공유하므로, cwd/내부 탭을 바꾸는 액션(`Navigate/GoBack/GoForward/GoUp/NewTab/CloseTab/SelectTab`) 적용 시 `cancel_addr_edit()` 로 편집을 취소해 버퍼가 다른 탭/경로로 새지 않게 하고(다음 `sync()` 가 새 current 로 맞춘다), id_salt 는 surface+내부탭 index 로 고유화한다.
 - **타입어헤드 상태**: `type_ahead`(입력 버퍼와 마지막 입력 시각)와 `scroll_to: Option<PathBuf>`(이번 프레임에 화면에 보이게 할 항목). `scroll_to`는 한 프레임만 유지한다. 남겨두면 매 프레임 다시 스크롤해서 사용자가 휠로 다른 곳을 보는 동안 화면이 끌려간다. 순환 시작 위치, 접두사 확장, 입력 되돌리기 같은 규칙은 egui와 파일시스템에 의존하지 않는 `explorer/type_ahead.rs`에 있고, 그리는 쪽은 그 결과를 선택과 스크롤로 옮기는 일만 한다.
 - **선택**: `selected: HashSet<PathBuf>` + `anchor`(shift 범위 기준). `select_all()` 은 현재 디렉토리 전체를 선택, `selected_paths_text()` 는 선택 경로를 정렬·개행 결합한 클립보드 페이로드를 만든다.

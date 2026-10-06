@@ -48,7 +48,9 @@ pub(super) fn show(ui: &mut egui::Ui, theme: &Theme, s: &StateScreen<'_>) -> egu
     } else {
         theme.text_secondary().to_egui()
     };
-    let glyph = theme.icon_glyph_size_md.value() * GLYPH_SCALE;
+    // transform: scale 은 배치에 영향이 없다. 배치는 원래 글리프 크기로 하고 그림만 확대한다.
+    let glyph_box = theme.icon_glyph_size_md.value();
+    let glyph = glyph_box * GLYPH_SCALE;
     let gap = theme.spacing_sm.value();
     let inner_w = (rect.width() - theme.spacing_lg.value() * 2.0).max(0.0);
     let center = |text: &str, size: f32, color: egui::Color32, max_w: f32| {
@@ -71,10 +73,10 @@ pub(super) fn show(ui: &mut egui::Ui, theme: &Theme, s: &StateScreen<'_>) -> egu
         )
     });
     let block_h =
-        glyph + gap + title.rect.height() + sub.as_ref().map_or(0.0, |g| gap + g.rect.height());
+        glyph_box + gap + title.rect.height() + sub.as_ref().map_or(0.0, |g| gap + g.rect.height());
     let top = rect.center().y - block_h * 0.5;
     let glyph_rect = egui::Rect::from_center_size(
-        egui::pos2(rect.center().x, top + glyph * 0.5),
+        egui::pos2(rect.center().x, top + glyph_box * 0.5),
         egui::vec2(glyph, glyph),
     );
     match s.glyph {
@@ -86,7 +88,7 @@ pub(super) fn show(ui: &mut egui::Ui, theme: &Theme, s: &StateScreen<'_>) -> egu
             Spinner::new().size(glyph).show(&mut slot, theme);
         }
     }
-    let mut y = glyph_rect.bottom() + gap;
+    let mut y = top + glyph_box + gap;
     // 가운데 정렬 job 의 원점은 줄 가운데다.
     let title_h = title.rect.height();
     ui.painter()
