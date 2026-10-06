@@ -399,7 +399,7 @@ specimen 간 중복 chrome 을 한 곳으로 모은 카탈로그 헬퍼 (`crates
 | `navigation/TreeRow` | `tree_row` | `prim_nav` |
 | `navigation/Tab` | `horizontal_tab_bar_with_arrows`(기존) | `prim_layout_shell` (Components `Layout shell widgets`) |
 | `navigation/DrillDown` | `DrillDown` / `DrillDownView` / `DrillDownOutput` (controlled list⇄detail content-swap, back bar ←(ghost IconButton sm)+제목+actions 슬롯, 본문 내부 스크롤, 0ms 즉시 전환 — opt-in animate 는 장식이라 미전사) | `prim_drilldown` |
-| `data/Table` | `Table`(컬럼 정의[제목·폭·정렬]·정렬 인디케이터·sticky 헤더·행 선택. 머리글은 대문자에 `table_header_tracking` 자간이고, 글꼴은 시안의 mono 가 아니라 비례 글꼴 `strong` 이다. 탐색기 상세 보기는 `header_as_given()` 으로 제목을 받은 그대로 그린다 — 디자인 갤러리 `DetailHeader` 의 `.06em` 과 공용 Table 토큰이 갈려 디자인 회신을 기다린다) | `prim_table` (Components `Table · ListCtrl`) |
+| `data/Table` | `Table`(컬럼 정의[제목·폭·정렬]·정렬 인디케이터·sticky 헤더·행 선택. 머리글은 대문자에 `table_header_tracking` 자간이고, 글꼴은 시안의 mono 가 아니라 비례 글꼴 `strong` 이다. 탐색기 상세 보기도 같은 머리글을 쓴다. 시안 `DetailHeader` 는 mono 10 이라 글꼴만 다르다) | `prim_table` (Components `Table · ListCtrl`) |
 | `data/ListCtrl` | `ListCtrl` / `ListCtrlItem` / `ListCtrlOutput` (label+description+leading icon+trailing 슬롯+drill-in chevron, divided 헤어라인, selected surface-active+2px accent 좌측 바, disabled, empty_label). disabled 행은 ink 규칙 — chevron 숨김, trailing은 `disabled_chip_scope` 안에서 그려 Tag·Badge가 disabled 변형이 되고, fade 없이 행 Sense만 hover로 둔다 | `prim_listctrl` · `prim_listctrl::draw_disabled_trailing`(Spec "Disabled row with a trailing marker — the ink rule", Mocha·Latte) |
 | `feedback/Toast` | `crates/tasty-ui-widgets/src/toast.rs`(그리기, hint 키캡은 `chip.rs::kbd_text_parts_painted`) + `src/adapters/ui/toast.rs`(상태·레이어, `binding_hint`) | Components `Toast`(시안 Toast Spec 6장, hint 2장 · Toast stack의 hint 1장). agent·icon은 카탈로그 전용이라 갤러리 본체 카드에 없다 |
 

@@ -415,8 +415,8 @@ fn header_pad_right_moves_right_aligned_titles_in() {
     );
 }
 
-/// 그려진 텍스트와 그 자간 목록. `as_given` 이면 `header_as_given()` 을 켠다.
-fn header_texts(theme: &Theme, as_given: bool) -> Vec<(String, f32)> {
+/// 그려진 텍스트와 그 자간 목록.
+fn header_texts(theme: &Theme) -> Vec<(String, f32)> {
     let ctx = egui::Context::default();
     let mut shapes = Vec::new();
     for _ in 0..2 {
@@ -431,13 +431,7 @@ fn header_texts(theme: &Theme, as_given: bool) -> Vec<(String, f32)> {
                     align: TableAlign::Left,
                     sort_id: None::<Col>,
                 }];
-                let table = Table::new(columns);
-                let table = if as_given {
-                    table.header_as_given()
-                } else {
-                    table
-                };
-                table.show(
+                Table::new(columns).show(
                     ui,
                     theme,
                     ROWS,
@@ -463,19 +457,16 @@ fn header_texts(theme: &Theme, as_given: bool) -> Vec<(String, f32)> {
 }
 
 #[test]
-fn header_titles_are_uppercased_unless_drawn_as_given() {
+fn header_titles_are_uppercased_and_spaced() {
     let theme = tasty_themes::mocha_fallback();
     let spacing_of = |texts: &[(String, f32)], title: &str| {
         texts.iter().find(|(t, _)| t == title).map(|(_, sp)| *sp)
     };
-    let caps = header_texts(&theme, false);
+    let caps = header_texts(&theme);
     let expected = theme
         .table_header_tracking(theme.table_header_font_size())
         .value();
     assert!(expected > 0.0);
     assert_eq!(spacing_of(&caps, "NAME"), Some(expected), "{caps:?}");
     assert_eq!(spacing_of(&caps, "Name"), None, "{caps:?}");
-    let given = header_texts(&theme, true);
-    assert_eq!(spacing_of(&given, "Name"), Some(0.0), "{given:?}");
-    assert_eq!(spacing_of(&given, "NAME"), None, "{given:?}");
 }
