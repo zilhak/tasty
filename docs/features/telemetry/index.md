@@ -102,7 +102,7 @@ GUI·headless의 외부 소켓과 plugin host-call은 라우팅 전에 권한·c
 | 휴리스틱 | 판정 | 기본값 |
 |---|---|---|
 | `CallBurst` | (agent, method) sliding window 호출 카운트 | 1분 1000회↑ |
-| `SlowLoop` | (agent, method, params-hash) sliding window 반복 카운트(동일 파라미터 반복) — 이 params-hash 는 **dedup 단위이기도 하다**(아래) | 5분 20회↑ |
+| `SlowLoop` | (agent, method, params-hash) sliding window 반복 카운트(동일 파라미터 반복). 응답 시간은 보지 않는다 — 15초보다 짧은 주기 폴링은 정상이어도 걸린다. 이 params-hash 는 **dedup 단위이기도 하다**(아래) | 5분 20회↑ |
 | `RssSurge` | agent 당 최근 5개 RSS 샘플의 **엄격한 단조 증가**(한 번의 급증에는 반응하지 않음, 추세만) | 5 샘플 |
 
 RSS 값 소스는 caller 타입별로 다르다: **Plugin** 은 host(`tasty-host-plugin::PluginManager`)가 `PluginProcess.child` 의 PID 를 sysinfo 로 30초 간격 직접 sampling(agent 자가 보고는 신뢰 불가 — 정확한 자기 RSS 를 보고할 유인이 없음). **Agent** 는 PID 기반이 구조적으로 불가능(원격/별도 프로세스)해 `telemetry.record` 자가 보고(`metric == "rss_bytes"`)로 받는다. 세 경우 모두 동일하게 `tasty.telemetry.anomaly.*` 영속 + 알림이고, 1분 쿨다운 dedup 도 공유한다. 다만 **dedup 키가 셋 다 `subject` 인 것은 아니다**:
@@ -113,7 +113,9 @@ RSS 값 소스는 caller 타입별로 다르다: **Plugin** 은 host(`tasty-host
 | `SlowLoop` | `(agent, kind, "{method}#{params_hash:016x}")` | `method` — **키와 다르다** |
 | `RssSurge` | `(agent, kind, "rss_bytes")` | `rss_bytes` — 키와 같다 |
 
-`SlowLoop` 만 dedup 키에 `params_hash` 를 덧붙여, 같은 method 라도 파라미터 조합이 다르면 **독립된 loop 로 취급해 각자 쿨다운을 갖는다**(`params_hash` 는 detail 에도 실린다). 같은 method라도 파라미터 조합이 다르면 각각 분당 한 건씩 알릴 수 있다. 여러 surface를 주기적으로 조회하는 경우에는 이 차이를 고려해야 한다. 보존 상한은 [ADR-0009](../../adr/0009-state-storage-and-retention.md) 의 공통 정책(50시간 · 5,000건)을 따른다.
+`SlowLoop` 만 dedup 키에 `params_hash` 를 덧붙여, 같은 method 라도 파라미터 조합이 다르면 **독립된 loop 로 취급해 각자 쿨다운을 갖는다**(`params_hash` 는 detail 에도 실린다). 여러 surface 를 주기적으로 조회하면 surface 마다 한 건씩 알릴 수 있다.
+
+`SlowLoop` 는 쿨다운에 더해 **루프 하나를 한 번만 알린다.** 조합의 창에 든 호출 수가 `SLOW_LOOP_THRESHOLD` 이상인 동안에는 쿨다운이 지나도 다시 레코드를 만들지 않는다. 호출이 멈춰 창의 호출 수가 그 아래로 줄어든 뒤 다시 넘으면 새 루프로 보고 다시 알린다. 감시 대상마다 800ms 로 도는 claude plugin 폴링이 대상 하나·메서드 하나에 1분마다 알림을 쌓던 것을 이렇게 막는다. `SLOW_LOOP_THRESHOLD`·`SLOW_LOOP_WINDOW_MS` 는 그대로라 첫 알림은 이전과 같은 시점에 나간다. 보존 상한은 [ADR-0009](../../adr/0009-state-storage-and-retention.md) 의 공통 정책(50시간 · 5,000건)을 따른다.
 
 ### 세션 요약
 

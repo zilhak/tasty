@@ -59,7 +59,7 @@ pub const ANOMALY_DEDUP_COOLDOWN_MS: u64 = 60_000;
 
 /// SlowLoop 휴리스틱: (agent, method, params-hash) 단위로 호출 시각의
 /// sliding window 를 유지하고, 5분 안에 동일 파라미터 조합이 20회 이상
-/// 반복되면 anomaly 를 발화한다.
+/// 반복되면 anomaly 를 발화한다. 한 루프는 창이 임계 아래로 내려갈 때까지 한 번만 알린다.
 pub const SLOW_LOOP_WINDOW_MS: u64 = 300_000;
 pub const SLOW_LOOP_THRESHOLD: usize = 20;
 
@@ -91,15 +91,22 @@ pub struct AnomalyDetector {
     call_windows: std::sync::Mutex<
         std::collections::HashMap<(String, String), std::collections::VecDeque<u64>>,
     >,
-    /// (agent, method, params_hash) → 5분 윈도우의 호출 시각 (ms). SlowLoop 용.
-    loop_windows: std::sync::Mutex<
-        std::collections::HashMap<(String, String, u64), std::collections::VecDeque<u64>>,
-    >,
+    /// (agent, method, params_hash) → 5분 윈도우의 호출 시각과 보고 여부. SlowLoop 용.
+    loop_windows: std::sync::Mutex<std::collections::HashMap<(String, String, u64), LoopWindow>>,
     /// agent → 최근 [`RSS_SURGE_MIN_SAMPLES`]개의 RSS 샘플 (bytes). RssSurge 용.
     rss_samples:
         std::sync::Mutex<std::collections::HashMap<String, std::collections::VecDeque<u64>>>,
     /// 마지막 emit 시각 — 같은 (agent, kind, subject) 의 연속 emit 방지.
     last_emitted: std::sync::Mutex<std::collections::HashMap<(String, AnomalyKind, String), u64>>,
+}
+
+/// SlowLoop 한 조합의 창. 감시 폴링처럼 끝나지 않는 루프가 쿨다운마다 다시 알리지 않도록
+/// 창이 임계 이상인 동안 보고했는지를 함께 둔다.
+#[derive(Debug, Default)]
+struct LoopWindow {
+    calls: std::collections::VecDeque<u64>,
+    /// 이 루프를 이미 알렸는지. 창이 임계 아래로 내려가면(루프가 멈추면) 풀린다.
+    reported: bool,
 }
 
 /// 탐지용 자료구조 락은 poison을 복구해 관측을 계속하고, 각각 처음 한 번 보고한다.
@@ -211,27 +218,28 @@ impl AnomalyDetector {
     ) -> Option<Anomaly> {
         let key = (agent.to_string(), method.to_string(), params_hash);
         let count = {
-            let mut windows = tasty_utils::poison::recover_mutex(
-                self.loop_windows.lock(),
-                LOOP_WINDOWS_WHAT,
-                &LOOP_WINDOWS_POISONED,
-            );
-            let dq = windows.entry(key).or_default();
-            dq.push_back(ts_ms);
+            let mut windows = self.lock_loop_windows();
+            let w = windows.entry(key.clone()).or_default();
+            w.calls.push_back(ts_ms);
             let cutoff = ts_ms.saturating_sub(SLOW_LOOP_WINDOW_MS);
-            while let Some(&front) = dq.front() {
+            while let Some(&front) = w.calls.front() {
                 if front < cutoff {
-                    dq.pop_front();
+                    w.calls.pop_front();
                 } else {
                     break;
                 }
             }
-            dq.len()
+            let count = w.calls.len();
+            if count < SLOW_LOOP_THRESHOLD {
+                w.reported = false;
+                return None;
+            }
+            // 이어지는 루프는 이미 알렸다. 쿨다운이 지나도 다시 알리지 않는다.
+            if w.reported {
+                return None;
+            }
+            count
         };
-
-        if count < SLOW_LOOP_THRESHOLD {
-            return None;
-        }
 
         // dedup subject 에 params_hash 를 포함 — 같은 method 라도 파라미터
         // 조합이 다르면 독립된 loop 로 취급(각자 자기 쿨다운을 가진다).
@@ -242,6 +250,9 @@ impl AnomalyDetector {
         );
         if !self.try_mark_emitted(dedup_key, ts_ms) {
             return None;
+        }
+        if let Some(w) = self.lock_loop_windows().get_mut(&key) {
+            w.reported = true;
         }
 
         Some(Anomaly {
@@ -309,6 +320,17 @@ impl AnomalyDetector {
                 "latest_rss_bytes": rss_bytes,
             }),
         })
+    }
+
+    fn lock_loop_windows(
+        &self,
+    ) -> std::sync::MutexGuard<'_, std::collections::HashMap<(String, String, u64), LoopWindow>>
+    {
+        tasty_utils::poison::recover_mutex(
+            self.loop_windows.lock(),
+            LOOP_WINDOWS_WHAT,
+            &LOOP_WINDOWS_POISONED,
+        )
     }
 
     /// dedup 체크 + emit 마킹을 한 번에. 쿨다운 내면 `false`(발화 취소).

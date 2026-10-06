@@ -345,6 +345,51 @@ fn slow_loop_cooldown_is_per_params_combination_not_per_method() {
     );
 }
 
+/// 800ms 간격 감시 폴링처럼 끝나지 않는 루프는 쿨다운이 지나도 다시 알리지 않는다.
+#[test]
+fn a_continuing_slow_loop_fires_once_not_every_cooldown() {
+    let d = AnomalyDetector::new();
+    let params = serde_json::json!({ "surface": 7 });
+    let mut fired = 0;
+    // 20분 동안 800ms 간격 — 쿨다운(60s)을 스무 번 넘긴다.
+    for i in 0..1500u64 {
+        let ts = 1_000 + i * 800;
+        fired += d
+            .record_call("agent_a", "terminal.parent", &params, ts, i)
+            .iter()
+            .filter(|a| a.kind == AnomalyKind::SlowLoop)
+            .count();
+    }
+    assert_eq!(fired, 1, "이어지는 루프는 한 번만 알린다");
+}
+
+/// 루프가 멈춰 창이 임계 아래로 내려간 뒤 다시 시작하면 새 루프로 다시 알린다.
+#[test]
+fn a_slow_loop_that_stops_and_restarts_fires_again() {
+    let d = AnomalyDetector::new();
+    let params = serde_json::json!({ "surface": 7 });
+    let mut fire_at = Vec::new();
+    let mut run = |start: u64, seq: u64| {
+        for i in 0..100u64 {
+            let ts = start + i * 800;
+            if d.record_call("agent_a", "terminal.parent", &params, ts, seq + i)
+                .iter()
+                .any(|a| a.kind == AnomalyKind::SlowLoop)
+            {
+                fire_at.push(ts);
+            }
+        }
+    };
+    run(1_000, 0);
+    // 창(5분)보다 길게 쉰 뒤 다시 시작한다.
+    run(1_000 + 100 * 800 + SLOW_LOOP_WINDOW_MS + 1, 1_000);
+    assert_eq!(
+        fire_at.len(),
+        2,
+        "멈췄다 다시 시작한 루프는 다시 알린다: {fire_at:?}"
+    );
+}
+
 #[test]
 fn slow_loop_anomaly_does_not_fire_when_params_vary() {
     let d = AnomalyDetector::new();
