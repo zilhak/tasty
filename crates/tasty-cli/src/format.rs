@@ -171,6 +171,40 @@ fn format_on_failure_summary(on_failure: &serde_json::Value) -> String {
     }
 }
 
+/// 타입 작업이 전이로 고른 경로. 고른 대상이 없으면 `(none)` 이다.
+fn task_route_line(task: &serde_json::Value) -> Option<String> {
+    let route = task.get("route").filter(|v| !v.is_null())?;
+    let selected: Vec<&str> = route
+        .get("selected")
+        .and_then(|v| v.as_array())
+        .map(|a| a.iter().filter_map(|v| v.as_str()).collect())
+        .unwrap_or_default();
+    let list = if selected.is_empty() {
+        "(none)".to_string()
+    } else {
+        selected.join(", ")
+    };
+    let otherwise = if route.get("otherwise").and_then(|v| v.as_bool()) == Some(true) {
+        " (otherwise)"
+    } else {
+        ""
+    };
+    Some(format!("route: {list}{otherwise}"))
+}
+
+/// 실행 없이 건너뛴 타입 작업의 이유. 앞 작업 때문이면 그 작업과 상태를 붙인다.
+fn task_skip_line(task: &serde_json::Value) -> Option<String> {
+    let skip = task.get("skip").filter(|v| !v.is_null())?;
+    let reason = skip.get("reason").and_then(|v| v.as_str()).unwrap_or("?");
+    match (
+        skip.get("source").and_then(|v| v.as_str()),
+        skip.get("source_state").and_then(|v| v.as_str()),
+    ) {
+        (Some(source), Some(state)) => Some(format!("skip: {reason} ({source} {state})")),
+        _ => Some(format!("skip: {reason}")),
+    }
+}
+
 fn format_task_get(result: &serde_json::Value) -> Result<()> {
     let id = result.get("id").and_then(|v| v.as_str()).unwrap_or("?");
     let name = result.get("name").and_then(|v| v.as_str()).unwrap_or("?");
@@ -212,6 +246,12 @@ fn format_task_get(result: &serde_json::Value) -> Result<()> {
     }
     if let Some(on_failure) = result.get("on_failure") {
         outln!("on_failure: {}", format_on_failure_summary(on_failure))?;
+    }
+    if let Some(line) = task_route_line(result) {
+        outln!("{line}")?;
+    }
+    if let Some(line) = task_skip_line(result) {
+        outln!("{line}")?;
     }
     if let Some(metadata) = result.get("metadata")
         && !metadata.is_null()
@@ -670,7 +710,7 @@ fn format_notification_list(result: &serde_json::Value) -> Result<()> {
 mod tests {
     use super::{
         format_runner_summary, format_workspace_row, render_layout, task_postprocess_lines,
-        timer_hard_deadline_line, timer_row_line, timer_row_text,
+        task_route_line, task_skip_line, timer_hard_deadline_line, timer_row_line, timer_row_text,
     };
     use serde_json::json;
 
@@ -707,6 +747,36 @@ mod tests {
             "typed_result": {"raw": {"postprocess": {"command": ["judge"], "run": 1, "exit_code": 0}}},
         }));
         assert_eq!(ok, ["postprocess: run 1 succeeded, exit_code 0"]);
+    }
+
+    #[test]
+    fn task_detail_names_the_route_and_why_a_task_was_skipped() {
+        assert_eq!(task_route_line(&json!({})), None);
+        assert_eq!(
+            task_route_line(&json!({"route": {"matched": [1], "selected": ["fix", "notify"]}})),
+            Some("route: fix, notify".into())
+        );
+        assert_eq!(
+            task_route_line(
+                &json!({"route": {"matched": [], "otherwise": true, "selected": ["human"]}})
+            ),
+            Some("route: human (otherwise)".into())
+        );
+        assert_eq!(
+            task_route_line(&json!({"route": {"matched": [], "selected": []}})),
+            Some("route: (none)".into())
+        );
+        assert_eq!(task_skip_line(&json!({"skip": null})), None);
+        assert_eq!(
+            task_skip_line(&json!({"skip": {"reason": "branch_not_selected"}})),
+            Some("skip: branch_not_selected".into())
+        );
+        assert_eq!(
+            task_skip_line(
+                &json!({"skip": {"reason": "upstream_unavailable", "source": "flaky", "source_state": "failed"}})
+            ),
+            Some("skip: upstream_unavailable (flaky failed)".into())
+        );
     }
 
     #[test]
