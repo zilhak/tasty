@@ -822,7 +822,8 @@ fn the_blind_spots_are_still_the_size_they_say() {
         // MultiSelect 메뉴 기준 rect 를 세로로만 내리는 vec2 의 가로 0 하나를 더한다.
         // modhint 코너 그립 획 좌표 시험의 패널 사각형·그립 크기 네 개가 test 전용으로 들어왔다.
         // 갤러리 이미지 paint bar의 좌우만 줄이는 shrink2 세로 0 하나를 더한다.
-        (218, 453),
+        // 이미지 플러그인 텍스트 버튼이 공용 Button으로 바뀌며 최소 크기 vec2 의 가로 0 하나가 빠졌다.
+        (217, 453),
         "제외한 0과 test 전용 코드의 수가 달라졌다. 실제 사용과 수집 범위의 변경을 확인하고 기록을 갱신한다."
     );
     let roster: usize = UNIT_SPACE_SITES.iter().map(|(.., n, _)| n).sum();
