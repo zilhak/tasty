@@ -3,7 +3,10 @@
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::{Button, ButtonVariant, CenterState, IconButton, IconButtonVariant, kbd};
+use tasty_ui_widgets::{
+    Button, ButtonVariant, CenterState, IconButton, IconButtonVariant, kbd,
+    script_trigger_add_control, script_trigger_menu, script_trigger_menu_frame,
+};
 
 use crate::catalog::icons;
 use crate::catalog::spec::{self, StageVariant, TokenChip};
@@ -90,7 +93,59 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             },
         );
     });
+    add_trigger_states(ui, theme);
     meta_note(ui, theme);
+}
+
+/// 시안 `LIFECYCLE_EVENTS` 중 앞쪽 여섯 이벤트. 메뉴를 연 모습의 표본이다.
+const MENU_SAMPLE: &[&str] = &[
+    "app.ready.post",
+    "window.create.post",
+    "window.close.pre",
+    "tab.create.post",
+    "tab.close.pre",
+    "pane.create.post",
+];
+
+/// Add trigger… 의 세 상태 — 평소(점선) · 메뉴를 연 모습 · 모든 이벤트가 걸려 disabled.
+fn add_trigger_states(ui: &mut egui::Ui, theme: &Theme) {
+    spec::cluster(
+        ui,
+        theme,
+        "Add trigger… — rest · menu open · all events bound (disabled)",
+        |ui| {
+            ui.horizontal_top(|ui| {
+                ui.spacing_mut().item_spacing.x = theme.spacing_xl.value();
+                for (label, enabled, open) in [
+                    ("rest", true, false),
+                    ("open", true, true),
+                    ("all bound", false, false),
+                ] {
+                    ui.vertical(|ui| {
+                        ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
+                        ui.label(
+                            egui::RichText::new(label)
+                                .size(theme.font_size_caption.value())
+                                .color(theme.text_muted().to_egui()),
+                        );
+                        script_trigger_add_control(
+                            ui,
+                            theme,
+                            "Add trigger…",
+                            CHIP_H.value(),
+                            enabled,
+                            open,
+                        );
+                        if open {
+                            script_trigger_menu_frame(ui, theme, |ui| {
+                                script_trigger_menu(ui, theme, MENU_SAMPLE)
+                            });
+                        }
+                    });
+                }
+            });
+        },
+    );
 }
 
 fn frame(ui: &mut egui::Ui, theme: &Theme, empty: bool) {
@@ -320,22 +375,16 @@ fn trigger_row(ui: &mut egui::Ui, theme: &Theme, triggers: &[&str]) {
                 .color(theme.text_muted().to_egui()),
         );
         for event in triggers {
-            trigger_chip(ui, theme, event, false);
+            trigger_chip(ui, theme, event);
         }
-        trigger_chip(ui, theme, "Add trigger…", true);
+        script_trigger_add_control(ui, theme, "Add trigger…", CHIP_H.value(), true, false);
     });
 }
 
-/// 트리거 칩 — mono micro 이벤트명 + 오른쪽 글리프 12, 높이 16, 안쪽 여백 0 4, border-default.
-/// `add` 면 text-muted 글자 · chevronDown 글리프(남은 이벤트 메뉴), 아니면 text-secondary 글자
-/// · close 글리프(칩 전체가 제거 영역). 테두리는 둘 다 실선이다.
-fn trigger_chip(ui: &mut egui::Ui, theme: &Theme, label: &str, add: bool) {
-    let fg = if add {
-        theme.text_muted()
-    } else {
-        theme.text_secondary()
-    }
-    .to_egui();
+/// 트리거 칩 — mono micro 이벤트명 + 오른쪽 close 글리프 12, 높이 16, 안쪽 여백 0 4,
+/// border-default 실선. 칩 전체가 제거 영역이다.
+fn trigger_chip(ui: &mut egui::Ui, theme: &Theme, label: &str) {
+    let fg = theme.text_secondary().to_egui();
     let glyph = theme.icon_glyph_size_xs.value();
     let gap = theme.spacing_xs.value();
     let pad_x = theme.spacing_xs.value();
@@ -349,7 +398,6 @@ fn trigger_chip(ui: &mut egui::Ui, theme: &Theme, label: &str, add: bool) {
     let bw = theme.border_width.value();
     let stroke = egui::Stroke::new(bw, theme.border_default().to_egui());
     let radius = theme.corner_radius_sm.value();
-    // 시안의 Add trigger… 는 점선이지만 점선·틈 길이 토큰이 없어 실선으로 그린다.
     ui.painter()
         .rect_stroke(rect, radius, stroke, egui::StrokeKind::Inside);
     let pos = egui::pos2(
@@ -361,12 +409,9 @@ fn trigger_chip(ui: &mut egui::Ui, theme: &Theme, label: &str, add: bool) {
         egui::pos2(rect.right() - pad_x - glyph, rect.center().y - glyph * 0.5),
         egui::vec2(glyph, glyph),
     );
-    let (g, gc) = if add {
-        (icons::CHEVRON_DOWN, fg)
-    } else {
-        (icons::CLOSE, theme.text_muted().to_egui())
-    };
-    g.image(glyph, gc).paint_at(ui, gr);
+    icons::CLOSE
+        .image(glyph, theme.text_muted().to_egui())
+        .paint_at(ui, gr);
 }
 
 /// 목록이 들어갈 자리에 공용 CenterState 를 자연 높이로 그린다(본체 Settings 와 같은 호출).
@@ -392,6 +437,14 @@ fn meta_note(ui: &mut egui::Ui, theme: &Theme) {
                 "trigger chips + Add trigger… (13 lifecycle events)",
             ),
             ("chip", "mono event · click removes · hover 12% overlay"),
+            (
+                "add control",
+                "dashed 1px border-default · 4 / 4 · disabled when all events are bound",
+            ),
+            (
+                "add menu",
+                "min 200 · max 220 then scroll · menu-* · mono micro rows",
+            ),
             ("actions", "bind · rename · remove"),
             ("empty", "glyph + Add script prompt"),
         ],
@@ -413,6 +466,10 @@ fn meta_note(ui: &mut egui::Ui, theme: &Theme) {
             ),
             TokenChip::new("text-disabled", "Unbound", theme.text_disabled().to_egui()),
             TokenChip::without_color("font-mono", "path · trigger chips"),
+            TokenChip::without_color("border-dash", "→ size-4"),
+            TokenChip::without_color("border-dash-gap", "→ size-4"),
+            TokenChip::without_color("trigger-menu-min-width", "→ field-width-lg 200"),
+            TokenChip::without_color("trigger-menu-max-height", "→ autocomplete-max-height 220"),
         ],
     );
     spec::note(
@@ -427,7 +484,10 @@ fn meta_note(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "The kit draws Add trigger… with a dashed border-default outline. The tokens define no \
-         dash length or gap, so the gallery draws it solid until those tokens exist.",
+        "Add trigger… is the shared dashed control: border-default at border-dash 4 / \
+         border-dash-gap 4, dashes on straight edges only, corners solid. Its menu lists the \
+         events not yet bound (min width trigger-menu-min-width, scrolls past \
+         trigger-menu-max-height, menu-* container). When every event is bound the control \
+         stays in place, disabled.",
     );
 }

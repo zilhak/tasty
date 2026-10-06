@@ -952,6 +952,8 @@ remove_confirm = "Remove?"
 remove = "Remove"
 autorun_label = "Auto-run:"
 trigger_add = "Add trigger…"
+trigger_add_tooltip = "Add an auto-run trigger"
+trigger_all_bound = "All events already bound"
 trigger_remove = "Remove trigger"
 
 [image_viewer]

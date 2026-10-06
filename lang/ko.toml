@@ -948,6 +948,8 @@ remove_confirm = "제거할까요?"
 remove = "제거"
 autorun_label = "자동 실행:"
 trigger_add = "트리거 추가…"
+trigger_add_tooltip = "자동 실행 트리거 추가"
+trigger_all_bound = "모든 이벤트가 이미 연결됨"
 trigger_remove = "트리거 제거"
 
 [image_viewer]

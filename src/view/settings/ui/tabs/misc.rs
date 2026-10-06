@@ -6,6 +6,7 @@ use tasty_type_geometry::length::LogicalPx;
 
 use tasty_ui_widgets::{
     Button, ButtonVariant, CenterState, ControlSize, IconButton, IconButtonVariant, Input, kbd,
+    script_trigger_add_control, script_trigger_menu,
 };
 
 use crate::adapters::ui::icons;
@@ -434,7 +435,7 @@ fn draw_script_row(
     );
 }
 
-/// row4 — 자동실행 트리거: 등록 chip(클릭=제거) + 미등록 이벤트 추가 ComboBox.
+/// row4 — 자동실행 트리거: 등록 chip(클릭=제거) + 점선 Add trigger… 컨트롤(남은 이벤트 메뉴).
 /// 이벤트명은 기술 식별자라 번역하지 않는다(mono 표기, i18n 하드코딩 허용 예외).
 fn draw_trigger_row(
     ui: &mut egui::Ui,
@@ -469,36 +470,44 @@ fn draw_trigger_row(
                     .any(|AutoTrigger::Event { name }| name == ev)
             })
             .collect();
-        if !available.is_empty() {
-            tasty_egui_theme::with_popover_frame(ui, th, |ui| {
-                egui::ComboBox::from_id_salt(("script_trigger_add", id))
-                    .selected_text(
-                        egui::RichText::new(t("settings.scripts.trigger_add"))
-                            .size(th.font_size_caption.value())
-                            .color(th.text_muted()),
-                    )
-                    .show_ui(ui, |ui| {
-                        for ev in available {
-                            if ui
-                                .selectable_label(
-                                    false,
-                                    egui::RichText::new(ev)
-                                        .monospace()
-                                        .size(th.font_size_term_sm.value()),
-                                )
-                                .clicked()
-                            {
-                                *pending = Some(Pending::AddTrigger(
-                                    id.to_string(),
-                                    AutoTrigger::Event {
-                                        name: ev.to_string(),
-                                    },
-                                ));
-                            }
-                        }
-                    })
-            });
+        // 모두 걸려 있으면 컨트롤을 숨기지 않고 disabled로 둔다.
+        let enabled = !available.is_empty();
+        let popup_id = ui.make_persistent_id(("script_trigger_add", id));
+        let open = ui.memory(|m| m.is_popup_open(popup_id));
+        let resp = script_trigger_add_control(
+            ui,
+            th,
+            t("settings.scripts.trigger_add"),
+            BADGE_HEIGHT.value(),
+            enabled,
+            open,
+        )
+        .on_hover_text(if enabled {
+            t("settings.scripts.trigger_add_tooltip")
+        } else {
+            t("settings.scripts.trigger_all_bound")
+        });
+        if resp.clicked() {
+            ui.memory_mut(|m| m.toggle_popup(popup_id));
         }
+        tasty_egui_theme::with_popover_frame(ui, th, |ui| {
+            egui::popup_below_widget(
+                ui,
+                popup_id,
+                &resp,
+                egui::PopupCloseBehavior::CloseOnClick,
+                |ui| {
+                    if let Some(ev) = script_trigger_menu(ui, th, &available) {
+                        *pending = Some(Pending::AddTrigger(
+                            id.to_string(),
+                            AutoTrigger::Event {
+                                name: ev.to_string(),
+                            },
+                        ));
+                    }
+                },
+            );
+        });
     });
 }
 

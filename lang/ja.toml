@@ -948,6 +948,8 @@ remove_confirm = "削除しますか?"
 remove = "削除"
 autorun_label = "自動実行:"
 trigger_add = "トリガーを追加…"
+trigger_add_tooltip = "自動実行トリガーを追加"
+trigger_all_bound = "すべてのイベントが設定済みです"
 trigger_remove = "トリガーを削除"
 
 [image_viewer]

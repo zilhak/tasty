@@ -1,4 +1,4 @@
-<!-- source-hash: a430937bbb02 -->
+<!-- source-hash: 0db376c49e89 -->
 # Lua scripts
 
 Turn repeated tasks into Lua scripts. Run them with a shortcut, or set them to run when a window, workspace, or tab opens or closes.
@@ -20,7 +20,7 @@ Assign a combination for each registered script in **Settings** > **Keybindings*
 
 ## Auto-running on an event
 
-Pick an event with **Add trigger…** on the **Auto-run** line below the script's row. You can attach several, and each attached event shows as a chip that you click to detach.
+Pick an event with **Add trigger…** on the **Auto-run** line below the script's row. You can attach several, and each attached event shows as a chip that you click to detach. Once every event is attached, **Add trigger…** stays in place, disabled.
 
 | Event | When |
 |---|---|
