@@ -1,4 +1,4 @@
-<!-- source-hash: af6897ffe42b -->
+<!-- source-hash: f149fc8e328e -->
 <a id="remote-attach"></a>
 
 # Working remotely (attach)
@@ -177,5 +177,6 @@ Other write errors, such as a permission problem on the output device, are repor
 | Timeout | Check whether you can reach the host and whether the firewall permits the connection. ssh profile `--option ConnectTimeout=<seconds>` |
 | SSH connection failed | Authentication · host key. First check that `tasty tool ssh <ssh profile>` connects |
 | A notice or error that the profile points to this Tasty itself | The profile's host (including a host name or LAN IP) and port file point to the Tasty you are using. You cannot attach to itself. To attach to another Tasty on the same computer, give that instance's port file |
+| An `ssh` process remains after Tasty was force-quit | On macOS the remote attach tunnel is cleaned up only on a normal exit (Quit from the menu or closing the window). End a leftover `ssh -N -L` process yourself after a force quit or a crash. On Linux and Windows it ends together with Tasty |
 | Workspace attach refused | One of the terminals inside it is already occupied by another client. Force-detach on the remote |
 | Screen flickers briefly when first attaching | Normal behavior while the remote re-lays out to your Pane size |

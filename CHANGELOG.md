@@ -87,7 +87,7 @@
 
 - **매핑한 원격에 처음 붙지 못하면 간격을 두고 다시 시도한다.** 이전에는 프로필·포트 발견·SSH 터널, 또는 그 뒤의 연결이 실패한 매핑 워크스페이스가 활성인 동안 거의 쉬지 않고 SSH 접속을 새로 열었다(이 머신 실측 30초에 70회). 이제 재연결과 같이 0.5초에서 두 배씩 30초까지 간격을 늘린다(같은 조건 실측 30초에 12회). 그 워크스페이스로 다시 전환하거나 매핑을 바꾸면 바로 시도한다.
 
-- **GUI 를 강제로 끝내도 원격 attach 의 ssh 터널이 남지 않는다(Linux·Windows).** 이전에는 Tasty 를 SIGTERM 등으로 끝내면 mirror 용 `ssh -N -L` 프로세스가 고아로 남아 로컬 포트와 원격 SSH 세션을 계속 붙잡았다. 이제 Linux 는 Tasty 가 끝나면 터널도 종료 신호를 받고, Windows 는 GUI 호스트의 Job Object 에 묶여 함께 끝난다. macOS 는 아직 묶지 않는다.
+- **GUI 를 강제로 끝내도 원격 attach 의 ssh 터널이 남지 않는다(Linux·Windows).** 이전에는 Tasty 를 SIGTERM 등으로 끝내면 mirror 용 `ssh -N -L` 프로세스가 고아로 남아 로컬 포트와 원격 SSH 세션을 계속 붙잡았다. 이제 Linux 는 Tasty 가 끝나면 터널도 종료 신호를 받고, Windows 는 Tasty 호스트의 Job Object 에 묶여 함께 끝난다. macOS 는 메뉴 종료처럼 정상적으로 끝낼 때만 터널을 정리하며, 강제 종료나 비정상 종료 뒤에는 ssh 프로세스가 남을 수 있다.
 
 - **호스트명이나 LAN IP 로 이 Tasty 자신을 가리키는 원격 attach 를 거절한다.** 이전에는 loopback 표기(`127.0.0.1` 등)만 자기 자신으로 알아봐서, 같은 머신을 호스트명·LAN IP 프로필로 지정하면 자기 mirror 가 자기 워크스페이스를 점유하고 `new_workspace` 요청은 자기 자신에 워크스페이스를 만들었다. 이제 SSH 로 연결한 뒤 상대의 인스턴스 식별자를 비교해 같으면 거절한다. IPC `remote.attach` 의 `new_workspace` 는 `-32602` 오류로 응답한다. 기존 워크스페이스 attach 는 판정에 SSH 왕복이 필요해 응답을 늦추지 않고 `{attaching:true}` 를 준 뒤 비동기로 거절해 `tasty remote refusals` 에 `via_ssh` 로 남기며(loopback 표기는 지금처럼 바로 오류), 자동 attach 매핑도 같은 기록을 남기고, 원격 워크스페이스 추가 창은 안내 문구를 보여 준다. 같은 컴퓨터의 다른 인스턴스에는 그대로 붙는다. `system.info`(`tasty list info`)에 프로세스별 `instance_id` 가 추가됐다.
 
