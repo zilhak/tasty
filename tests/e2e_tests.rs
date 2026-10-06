@@ -1116,8 +1116,9 @@ fn wait_x11_window_viewable(xid: u64) {
     }
 }
 
-/// 창 생성이 필요해 헤드리스 CI에서는 이 시나리오를 제외한다.
-/// 제외 이름의 일치는 headless_skip_names_are_exact 검사에서 확인한다.
+/// 창 생성이 필요해 GUI 조합에서만 컴파일한다. headless에는 창 생성 핸들러와 window.list가 없다.
+/// 헤드리스 CI의 제외 이름 일치는 headless_skip_names_are_exact 검사에서 확인한다.
+#[cfg(feature = "gui")]
 #[test]
 fn multi_window_owner_routing() {
     // 포커스가 첫 창에 남은 상태에서 새 창의 서피스에 요청해 소유 창 라우팅을 확인한다.
@@ -1163,7 +1164,7 @@ fn multi_window_owner_routing() {
         focused_before,
         "window.create 뒤 window.list 의 focused 는 원래 창이어야 한다: {create_resp:?}"
     );
-    #[cfg(all(target_os = "linux", feature = "gui"))]
+    #[cfg(target_os = "linux")]
     wait_x11_window_viewable(
         create_resp["window_id"]
             .as_u64()
