@@ -67,7 +67,11 @@ pub(crate) fn parse_or_route() -> anyhow::Result<Routed> {
         response_timeout_ms: cli.response_timeout_ms,
     }
     .refuse_if_set();
-    if !cli.launch && std::env::var("TASTY_SURFACE_ID").is_ok() {
+    #[cfg(debug_assertions)]
+    let forced_launch = cli.launch;
+    #[cfg(not(debug_assertions))]
+    let forced_launch = false;
+    if !forced_launch && std::env::var("TASTY_SURFACE_ID").is_ok() {
         return Ok(Routed::AugmentedHelp);
     }
     Ok(Routed::Gui(cli))

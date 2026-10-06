@@ -65,6 +65,8 @@ pub struct Cli {
     pub response_timeout_ms: Option<u64>,
 
     /// Force GUI launch even inside a tasty terminal
+    // debug 검증 전용이다. release는 같은 홈에 프로세스를 하나만 두므로 다시 실행해도 새 GUI가 뜨지 않는다.
+    #[cfg(debug_assertions)]
     #[arg(long)]
     pub launch: bool,
 

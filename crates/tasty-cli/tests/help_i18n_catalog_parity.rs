@@ -1,6 +1,6 @@
 //! 컴파일된 도움말과 카탈로그의 키 집합·영어 원문을 대조한다.
 
-use clap::CommandFactory;
+use clap::{CommandFactory, Parser};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
@@ -12,7 +12,20 @@ fn repo_root() -> PathBuf {
         .to_path_buf()
 }
 
-/// `lang/en.toml` 에서 `cli.help.` 로 시작하는 키만 평평하게 꺼낸다.
+/// debug 빌드에만 있는 인자의 키. release 조합에서는 컴파일된 도움말에 슬롯이 없으므로 대조에서 뺀다.
+const DEBUG_ONLY_KEYS: &[&str] = &[
+    "cli.help._root.arg.launch.help",
+    "cli.help._root.arg.enable_input_simulation.help",
+];
+
+/// debug 빌드에만 있는 하위 명령의 키 접두사(`tasty debug …`).
+const DEBUG_ONLY_PREFIXES: &[&str] = &["cli.help._root.debug."];
+
+fn is_debug_only(key: &str) -> bool {
+    DEBUG_ONLY_KEYS.contains(&key) || DEBUG_ONLY_PREFIXES.iter().any(|p| key.starts_with(p))
+}
+
+/// `lang/en.toml` 에서 `cli.help.` 로 시작하는 키만 평평하게 꺼낸다. release 조합에서는 debug 전용 키를 뺀다.
 fn english_catalog() -> BTreeMap<String, String> {
     let path = repo_root().join("lang/en.toml");
     let text = std::fs::read_to_string(&path)
@@ -23,6 +36,9 @@ fn english_catalog() -> BTreeMap<String, String> {
     let mut out = BTreeMap::new();
     flatten(&value, String::new(), &mut out);
     out.retain(|k, _| k.starts_with(&format!("{}.", tasty_cli::help_i18n::PREFIX)));
+    if !cfg!(debug_assertions) {
+        out.retain(|k, _| !is_debug_only(k));
+    }
     out
 }
 
@@ -95,4 +111,18 @@ fn every_help_slot_has_a_translation_key() {
         all, catalog,
         "compiled help slots and catalog must match exactly"
     );
+}
+
+#[test]
+fn debug_only_flags_and_commands_exist_only_in_debug_builds() {
+    let parsed = tasty_cli::Cli::try_parse_from(["tasty", "--launch"]);
+    assert_eq!(parsed.is_ok(), cfg!(debug_assertions), "{:?}", parsed.err());
+    for key in DEBUG_ONLY_KEYS {
+        let compiled = slots().into_iter().any(|s| s.key == *key);
+        assert_eq!(compiled, cfg!(debug_assertions), "{key}");
+    }
+    for prefix in DEBUG_ONLY_PREFIXES {
+        let compiled = slots().into_iter().any(|s| s.key.starts_with(prefix));
+        assert_eq!(compiled, cfg!(debug_assertions), "{prefix}");
+    }
 }
