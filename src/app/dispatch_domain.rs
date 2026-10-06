@@ -315,6 +315,27 @@ impl App {
                 // OSC 제목은 저장 대상이 아니므로 레이아웃 저장 대신 화면 갱신만 요청한다.
                 self.mark_source_window_dirty(source);
             }
+            plugin @ (CoreEvent::PluginLoaded { .. }
+            | CoreEvent::PluginEnableToggled { .. }
+            | CoreEvent::PluginUnloaded { .. }
+            | CoreEvent::PluginError { .. }
+            | CoreEvent::PluginSurfaceKindRegistered { .. }
+            | CoreEvent::PluginRegistryChanged { .. }
+            | CoreEvent::PluginWindowDeclared { .. }) => self.cascade_plugin_event(plugin),
+        }
+    }
+
+    // 플러그인 이벤트는 첫 MainView의 큐에 넣는다. 창이 없으면 이 경로는 큐에 넣지 않는다.
+
+    /// 플러그인 매니저는 App 전체에서 공유하므로 창 source 없이 이벤트를 처리한다.
+    pub(crate) fn cascade_plugin_events(&mut self, events: Vec<CoreEvent>) {
+        for ev in events {
+            self.cascade_plugin_event(ev);
+        }
+    }
+
+    fn cascade_plugin_event(&mut self, ev: CoreEvent) {
+        match ev {
             CoreEvent::PluginLoaded { plugin_id, version } => {
                 self.cascade_plugin_loaded(plugin_id, version)
             }
@@ -341,47 +362,11 @@ impl App {
                 plugin_id,
                 window_id,
             } => self.cascade_plugin_window_declared(plugin_id, window_id),
-        }
-    }
-
-    // 플러그인 이벤트는 첫 MainView의 큐에 넣는다. 창이 없으면 이 경로는 큐에 넣지 않는다.
-
-    /// 플러그인 매니저는 App 전체에서 공유하므로 창 source 없이 이벤트를 처리한다.
-    pub(crate) fn cascade_plugin_events(&mut self, events: Vec<CoreEvent>) {
-        for ev in events {
-            match ev {
-                CoreEvent::PluginLoaded { plugin_id, version } => {
-                    self.cascade_plugin_loaded(plugin_id, version)
-                }
-                CoreEvent::PluginEnableToggled { plugin_id, enabled } => {
-                    self.cascade_plugin_enable_toggled(plugin_id, enabled)
-                }
-                CoreEvent::PluginUnloaded { plugin_id, reason } => {
-                    self.cascade_plugin_unloaded(plugin_id, reason)
-                }
-                CoreEvent::PluginError {
-                    plugin_id,
-                    error_kind,
-                    message,
-                } => self.cascade_plugin_error(plugin_id, error_kind, message),
-                CoreEvent::PluginSurfaceKindRegistered {
-                    plugin_id,
-                    kind,
-                    rendering,
-                } => self.cascade_plugin_surface_kind_registered(plugin_id, kind, rendering),
-                CoreEvent::PluginRegistryChanged { plugin_id, change } => {
-                    self.cascade_plugin_registry_changed(plugin_id, change)
-                }
-                CoreEvent::PluginWindowDeclared {
-                    plugin_id,
-                    window_id,
-                } => self.cascade_plugin_window_declared(plugin_id, window_id),
-                other => {
-                    tracing::warn!(
-                        "cascade_plugin_events: non-plugin CoreEvent received: {:?}",
-                        std::mem::discriminant(&other)
-                    );
-                }
+            other => {
+                tracing::warn!(
+                    "cascade_plugin_events: non-plugin CoreEvent received: {:?}",
+                    std::mem::discriminant(&other)
+                );
             }
         }
     }
@@ -492,21 +477,14 @@ impl App {
     }
 
     fn cascade_surface_completion(&mut self, surface_id: u32, kind: AttentionKind) {
-        for (_, main, mut engine) in self.engines_mut().window_pairs() {
-            if engine.has_surface(surface_id) {
-                engine.raise_attention(surface_id, kind);
-                engine.mark_layout_dirty();
-                main.mark_dirty();
-                return;
+        self.apply_on_first_engine(|engine| {
+            if !engine.has_surface(surface_id) {
+                return false;
             }
-        }
-        for mut engine in self.engines_mut().parked() {
-            if engine.has_surface(surface_id) {
-                engine.raise_attention(surface_id, kind);
-                engine.mark_layout_dirty();
-                return;
-            }
-        }
+            engine.raise_attention(surface_id, kind);
+            engine.mark_layout_dirty();
+            true
+        });
     }
 
     /// 요청 후 다른 kind의 attention이 생겼으면 kind_filter로 남겨 둔다.
@@ -516,43 +494,27 @@ impl App {
         surface_id: u32,
         kind_filter: Option<AttentionKind>,
     ) {
-        for (_, main, mut engine) in self.engines_mut().window_pairs() {
-            if engine.has_surface(surface_id) {
-                if kind_filter.is_none_or(|k| engine.attention_kind(surface_id) == Some(k)) {
-                    engine.clear_attention(surface_id);
-                }
-                engine.mark_layout_dirty();
-                main.mark_dirty();
-                return;
+        self.apply_on_first_engine(|engine| {
+            if !engine.has_surface(surface_id) {
+                return false;
             }
-        }
-        for mut engine in self.engines_mut().parked() {
-            if engine.has_surface(surface_id) {
-                if kind_filter.is_none_or(|k| engine.attention_kind(surface_id) == Some(k)) {
-                    engine.clear_attention(surface_id);
-                }
-                engine.mark_layout_dirty();
-                return;
+            if kind_filter.is_none_or(|k| engine.attention_kind(surface_id) == Some(k)) {
+                engine.clear_attention(surface_id);
             }
-        }
+            engine.mark_layout_dirty();
+            true
+        });
     }
 
     fn cascade_surface_cwd_changed(&mut self, surface_id: u32) {
-        for (_, main, mut engine) in self.engines_mut().window_pairs() {
-            if engine.has_surface(surface_id) {
-                engine.refresh_tab_display_name(surface_id);
-                engine.mark_layout_dirty();
-                main.mark_dirty();
-                return;
+        self.apply_on_first_engine(|engine| {
+            if !engine.has_surface(surface_id) {
+                return false;
             }
-        }
-        for mut engine in self.engines_mut().parked() {
-            if engine.has_surface(surface_id) {
-                engine.refresh_tab_display_name(surface_id);
-                engine.mark_layout_dirty();
-                return;
-            }
-        }
+            engine.refresh_tab_display_name(surface_id);
+            engine.mark_layout_dirty();
+            true
+        });
     }
 
     /// 창과 parked 상태의 설정을 모두 갱신해야 복원된 창이 옛 설정을 쓰지 않는다.

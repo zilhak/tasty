@@ -1569,7 +1569,10 @@ impl App {
     }
 
     /// 창 → parked 순서로 처음 받아들인 engine에서 멈춘다. 창 engine이면 다시 그리도록 표시한다.
-    fn apply_on_first_engine(&mut self, mut apply: impl FnMut(&mut EngineMut<'_>) -> bool) {
+    pub(crate) fn apply_on_first_engine(
+        &mut self,
+        mut apply: impl FnMut(&mut EngineMut<'_>) -> bool,
+    ) {
         for (_, main, mut engine) in self.engines_mut().window_pairs() {
             if apply(&mut engine) {
                 main.mark_dirty();
