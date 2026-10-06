@@ -8,7 +8,8 @@ use crate::catalog::icons::{self, MockGlyph};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::catalog::widgets::dialog as kit;
 
-const WIDTH: LogicalPx = LogicalPx(480.0);
+/// 카드 폭 — 디자인 palette 프레임 540. 대응 토큰이 없어 본체 `PALETTE_WIDTH`와 같은 값을 둔다.
+const WIDTH: LogicalPx = LogicalPx(540.0);
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
@@ -69,7 +70,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         &[
-            ("frame", "480px · surface-raised"),
+            ("frame", "540px · surface-raised"),
             ("anchor", "top · overlay-top-offset 88"),
             ("header", "Input · padding space-md · border-bottom"),
             (
