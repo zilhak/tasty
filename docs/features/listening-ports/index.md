@@ -52,6 +52,7 @@ Port / Proto / Address / Process / Workspace / Tab / State.
 
 - 각 컬럼은 **최소폭**을 가진다 (Port 84 / Proto 76 / Address 140 / Process 200 / Workspace 120 / Tab 80 / State 140). 보이는 컬럼 최소폭 합이 본문 가용폭을 넘으면 **테이블 본문이 가로 스크롤**된다(말줄임 대신). 가용폭이 남으면 flex 컬럼(Address / Process)이 여유폭을 나눠 받아 빈 공간 없이 채운다.
 - 가로 스크롤은 **본문 영역에만** 갇힌다. sticky 헤더는 본문과 수평 동기 이동(세로로는 고정), footer / 구역 divider 는 popup 폭에 고정 유지된다.
+- 행·헤더 치수는 공용 Table 기본값을 쓴다. 헤더와 본문 행 높이는 `table-cell-height`(28), 헤더 셀 좌우 패딩은 `table-cell-padding-x`(12)다. 본문 스크롤 영역은 최소 한 행 높이를 남긴다. 포트 스캐너 전용 치수는 없다.
 
 ### 컬럼 표시/숨김 (column chooser)
 

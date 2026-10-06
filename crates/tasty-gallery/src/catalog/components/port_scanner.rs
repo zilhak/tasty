@@ -217,8 +217,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     .id_salt("ports_table")
                     .horizontal_scroll(true)
                     .header_fill(theme.bg_sidebar().to_egui())
-                    .header_pad_x(theme.spacing_sm)
-                    .row_height(theme.item_height_interactive)
+                    .header_pad_x(theme.table_cell_padding_x())
                     .max_scroll_height(theme.measure_md * 0.7)
                     .selectable(true)
                     .show(ui, theme, ROWS, |r| r.selected, cell);
