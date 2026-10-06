@@ -248,6 +248,10 @@ CI 는 `.github/workflows/crossplatform-check.yml` 의 `check-headless` 잡이 �
 - 별도 프로세스(자식 셸): `spawn_shell` 이 `JoinHandle` 을 반환하게 하고 테스트가 `join` 한다 —
   벽시계 없이 자식 `output()` 완료를 기다린다. 프로덕션은 그 핸들을 `let _` 로 drop 해
   fire-and-forget 을 유지한다(핸들을 버려도 스레드는 detach 되어 계속 돈다).
+- 조용한 구간을 "끝" 으로 읽지 않는다: `admissions_beyond_the_disk_credit_wait_for_a_released_credit_instead_of_failing`
+  은 완료를 `recv_timeout(1초)` 가 실패할 때까지 모아 "남은 것은 credit 대기 중" 으로 판정했다.
+  worker 처리가 부하로 1초 넘게 늦으면 루프가 일찍 끝나고, 늦게 온 완료를 다음 단정이 받는다.
+  지금은 요청을 순서대로 처리하는 worker 에 읽기 요청(barrier)을 하나 더 넣고 그 완료까지 모은다.
 - **타임아웃 상향은 처방이 아니다** — 발생 빈도만 낮추고(확률 저감) 부하가 그 상한을 넘는
   날 다시 깨진다. 근거는 [유닛 테스트 격리](unit-test-isolation.md).
 

@@ -49,18 +49,27 @@ fn admissions_beyond_the_disk_credit_wait_for_a_released_credit_instead_of_faili
             Work::Admit(header(&format!("credit-{ticket}"))),
         );
     }
+    // The worker handles requests in order, so once this read completes every admission above
+    // has either finished or joined the credit wait. A quiet period would only guess that.
+    let barrier = u64::MAX;
+    submit(
+        &worker,
+        barrier,
+        Work::ReadEngine("structure:credit-barrier".into()),
+    );
     let mut admitted = Vec::new();
-    while let Ok(Completion::Finished { ticket, result }) = worker
-        .completions
-        .as_ref()
-        .unwrap()
-        .recv_timeout(Duration::from_secs(1))
-    {
-        assert!(
-            matches!(result, Ok(ResultValue::NeedsResolution)),
-            "ticket {ticket} must wait for credit instead of failing: {result:?}"
-        );
-        admitted.push(ticket);
+    loop {
+        match receive(&worker) {
+            Completion::Finished { ticket, .. } if ticket == barrier => break,
+            Completion::Finished { ticket, result } => {
+                assert!(
+                    matches!(result, Ok(ResultValue::NeedsResolution)),
+                    "ticket {ticket} must wait for credit instead of failing: {result:?}"
+                );
+                admitted.push(ticket);
+            }
+            other => panic!("{other:?}"),
+        }
     }
     let waiting = submitted - admitted.len() as u64;
     assert!(
