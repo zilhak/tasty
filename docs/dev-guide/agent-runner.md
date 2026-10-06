@@ -640,7 +640,7 @@ inline fallback 은 v2 에서 거절한다.
 
 | 전략 | 출력 타입 | 규칙 |
 |---|---|---|
-| `all` | `list<{task_id, state, has_output, output?}>` 고정 | 실패한 입력의 출력을 만들어 넣지 않는다. `output` 은 입력마다 타입이 달라 json 으로 선언되며, 각 입력의 선언 타입대로 직렬화한 값을 넣는다(int64 입력은 10진 문자열, json 입력은 그대로) |
+| `all` | `list<{task_id, state, has_output, output?, attempt_id?}>` 고정 | 실패한 입력의 출력을 만들어 넣지 않는다. `attempt_id` 는 값을 낸 입력 회차(v1 입력은 없음)다. `output` 은 입력마다 타입이 달라 json 으로 선언되며, 각 입력의 선언 타입대로 직렬화한 값을 넣는다(int64 입력은 10진 문자열, json 입력은 그대로). 구체 타입으로 쓰려면 입력 task 를 지목해 그 출력 스키마로 다시 읽는다(`contract::reduce_all_record_output`) |
 | `first_success` | 선언한 공통 타입 T(기본 json) | 모든 입력이 T 에 대입 가능해야 생성된다. v1 입력은 json 으로 본다. 성공 출력이 하나도 없으면 실패 |
 | `merge_json` | object 또는 json | 모든 입력이 object 출력을 가져야 한다. 같은 경로의 다른 값은 기본 오류, `merge_conflict: "overwrite"` 면 뒤 입력이 이긴다. 같은 값은 충돌이 아니다. 숫자끼리는 표기가 아니라 수치로 비교한다(`1` 과 `1.0` 은 같고, 정수는 f64 로 바꾸지 않고 정확히 비교한다) |
 | `concat_text` | string | 모든 입력이 string 출력을 가져야 한다. 다른 타입은 명시적으로 변환하라는 오류 |

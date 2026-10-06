@@ -276,3 +276,76 @@ fn resettling_after_a_restart_finishes_an_interrupted_propagation() {
     assert_eq!(get(&store, "c").state, TaskState::Ready);
     assert!(store.resettle_waiting(1, 4).expect("again").is_empty());
 }
+
+#[test]
+fn a_reduce_all_record_reads_back_as_its_input_type_and_names_the_attempt() {
+    use crate::reducer::{TypedReducerInput, reduce_typed};
+    use crate::task::ReducerStrategy;
+    use crate::task::contract::{MergeConflict, reduce_all_record_output};
+    use crate::task::types::TypedValue;
+
+    let (_td, mut mem, seq) = fresh();
+    let mut store = TaskStore::new(&mut mem, "_host", &seq);
+    let spec: TaskGraphSpec = serde_json::from_value(json!({
+    "contract_version": 2,
+    "tasks": [
+        {"id": "p", "command": custom(),
+         "output_schema": {"type": "object", "fields": {"n": {"type": "int64"}}}},
+        {"id": "q", "command": custom(), "output_schema": {"type": "string"}},
+        {"id": "all", "command": {"kind": "reduce", "inputs": ["p", "q"],
+                                  "strategy": {"kind": "all"}}}
+    ]}))
+    .expect("spec");
+    store.submit_graph(1, spec, 0).expect("submit");
+    let big = 9_007_199_254_740_993_i64;
+    let a = start(&mut store, "p", 1);
+    store
+        .complete(1, &"p".into(), Completion::succeeded(Some(a), ok(big)), 2)
+        .unwrap();
+    start(&mut store, "q", 1);
+    store
+        .complete(1, &"q".into(), Completion::failed(None, "no".into()), 2)
+        .unwrap();
+
+    let inputs: Vec<TypedReducerInput> = ["p", "q"]
+        .iter()
+        .map(|id| TypedReducerInput::from_task(&get(&store, id)))
+        .collect();
+    let value = reduce_typed(
+        &ReducerStrategy::All,
+        &inputs,
+        MergeConflict::Error,
+        |_, _| unreachable!(),
+    )
+    .unwrap();
+    assert_eq!(value[0]["attempt_id"], json!("p#1"));
+    let attempt = start(&mut store, "all", 3);
+    let result = TaskResult {
+        exit_code: None,
+        output: Some(value),
+        error: None,
+    };
+    store
+        .complete(
+            1,
+            &"all".into(),
+            Completion::succeeded(Some(attempt), result),
+            4,
+        )
+        .expect("all");
+
+    let reducer = get(&store, "all");
+    let p = reduce_all_record_output(&reducer, &get(&store, "p")).expect("p");
+    assert_eq!(
+        p,
+        Some(TypedValue::Object(
+            [("n".to_string(), TypedValue::Int64(big))].into()
+        ))
+    );
+    assert_eq!(
+        reduce_all_record_output(&reducer, &get(&store, "q")).expect("q"),
+        None
+    );
+    let not_all = reduce_all_record_output(&get(&store, "p"), &get(&store, "q"));
+    assert!(not_all.is_err());
+}

@@ -182,6 +182,8 @@ pub struct TypedReducerInput {
     pub has_output: bool,
     /// 입력의 선언 타입을 아는 출력. v1 입력은 무타입이라 `json` 이다.
     pub output: TypedValue,
+    /// 출력을 낸 입력 회차. 회차가 없는 v1 입력은 None.
+    pub attempt_id: Option<String>,
 }
 
 impl TypedReducerInput {
@@ -202,6 +204,7 @@ impl TypedReducerInput {
             state: task.state.name(),
             has_output,
             output: if has_output { output } else { TypedValue::Null },
+            attempt_id: task.attempt.as_ref().map(|a| a.id.clone()),
         }
     }
 
@@ -210,6 +213,9 @@ impl TypedReducerInput {
         m.insert("task_id".into(), Value::String(self.task_id.clone()));
         m.insert("state".into(), Value::String(self.state.into()));
         m.insert("has_output".into(), Value::Bool(self.has_output));
+        if let Some(a) = &self.attempt_id {
+            m.insert("attempt_id".into(), Value::String(a.clone()));
+        }
         // 레코드의 output 은 입력마다 타입이 달라 json 으로 선언되므로, 각 입력의 선언
         // 타입대로 직렬화한 값을 넣는다(int64 는 10진 문자열). custom reducer stdin 도 같다.
         if self.has_output {
@@ -578,6 +584,7 @@ mod tests {
             state,
             has_output: output.is_some(),
             output: output.map(TypedValue::Json).unwrap_or_default(),
+            attempt_id: None,
         }
     }
 
@@ -625,6 +632,7 @@ mod tests {
             state: "succeeded",
             has_output: true,
             output: TypedValue::Int64(big),
+            attempt_id: None,
         };
         // json 으로 선언된 값 안의 정수는 바꾸지 않는다.
         let json_input = typed("b", "succeeded", Some(json!({"n": big})));

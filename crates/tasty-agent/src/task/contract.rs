@@ -166,6 +166,14 @@ pub fn reduce_all_record_list_schema() -> TypeSchema {
             default: None,
         },
     );
+    fields.insert(
+        "attempt_id".to_string(),
+        FieldSchema {
+            schema: TypeSchema::string(),
+            optional: true,
+            default: None,
+        },
+    );
     TypeSchema::new(TypeKind::List {
         items: Box::new(TypeSchema::new(TypeKind::Object { fields })),
         max_len: None,
@@ -440,6 +448,72 @@ pub fn check_task<'a>(
         }
     }
     Ok(())
+}
+
+/// reduce `all` 결과에서 `input` 의 레코드 출력을 그 입력의 출력 타입으로 읽는다. 레코드의
+/// `output` 은 입력마다 타입이 달라 json(wire 형식)으로 저장되므로, 구체 타입으로 쓰려면 입력
+/// task 를 지목해 그 스키마로 다시 읽는다. 입력이 출력을 내지 않았으면 `None` 이다.
+///
+/// `reducer` 가 확정된 `all` 결과가 아니거나 `input` 의 레코드가 없거나 값이 입력의 출력 타입에
+/// 맞지 않으면 오류다.
+pub fn reduce_all_record_output(
+    reducer: &Task,
+    input: &Task,
+) -> Result<Option<TypedValue>, TaskFailure> {
+    let failure = |m: String| TaskFailure {
+        task_id: Some(reducer.id.clone()),
+        ..TaskFailure::new(FailureStage::Input, m)
+    };
+    let is_all = matches!(
+        &reducer.command,
+        TaskCommand::Reduce {
+            strategy: ReducerStrategy::All,
+            ..
+        }
+    );
+    let records = match (&reducer.typed_result, is_all) {
+        (
+            Some(TypedResult {
+                has_output: true,
+                output: TypedValue::List(records),
+                ..
+            }),
+            true,
+        ) => records,
+        _ => {
+            return Err(failure(format!(
+                "task {} has no settled reduce all output",
+                reducer.id
+            )));
+        }
+    };
+    let record = records
+        .iter()
+        .find_map(|r| match r {
+            TypedValue::Object(m)
+                if matches!(m.get("task_id"), Some(TypedValue::String(id)) if *id == input.id) =>
+            {
+                Some(m)
+            }
+            _ => None,
+        })
+        .ok_or_else(|| {
+            failure(format!(
+                "reduce all output of {} has no record for {}",
+                reducer.id, input.id
+            ))
+        })?;
+    if !matches!(record.get("has_output"), Some(TypedValue::Bool(true))) {
+        return Ok(None);
+    }
+    let raw = match record.get("output") {
+        Some(TypedValue::Json(v)) => v.clone(),
+        _ => serde_json::Value::Null,
+    };
+    let (defs, schema) = input_output_schema(input);
+    defs.typed_value(&schema, &raw)
+        .map(Some)
+        .map_err(|e| TaskFailure::typed(FailureStage::Input, Some(input.id.clone()), e))
 }
 
 fn input_output_schema(task: &Task) -> (TypeDefs, TypeSchema) {
