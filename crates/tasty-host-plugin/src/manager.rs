@@ -299,6 +299,8 @@ pub(super) struct RemoteSurfaceEntry {
     pub(super) plugin_id: String,
     pub(super) handles: SurfaceHandles,
     pub(super) publication: RemotePublication,
+    /// 원 생성·복원 요청. 원 프로세스가 회수된 뒤 새 프로세스에 다시 게시할 때 쓴다.
+    pub(super) origin: reattach::SurfaceOrigin,
 }
 
 pub(super) enum RemotePublication {
@@ -548,6 +550,7 @@ mod lifecycle;
 mod popup;
 mod pump;
 mod queries;
+mod reattach;
 mod response;
 mod retire;
 #[cfg(any(test, feature = "test-support"))]
@@ -570,6 +573,10 @@ mod tests_surface_popup;
 // 원 프로세스 회수 뒤 surface 닫기의 소멸 증거 검사.
 #[cfg(test)]
 mod tests_retired_surface;
+
+// 원 프로세스 회수 뒤 남은 surface 를 새 프로세스에 다시 게시하는지 검사.
+#[cfg(test)]
+mod tests_reattach;
 
 // namespace 소유자가 설치 매니페스트에서 계산되는지 검사한다.
 #[cfg(test)]

@@ -19,7 +19,7 @@ use tasty_plugin_protocol::SharedBufferId;
 
 use super::{
     HEALTHCHECK_TIMEOUT, NAMESPACE_EXPIRY_RESTART_LIMIT, PendingPluginCall, PendingRequestKind,
-    PluginManager, PluginTick, RemoteSurfaceEntry,
+    PluginManager, PluginTick,
 };
 
 /// 한 tick에서 모은 플러그인 이벤트. collect_plugin_events가 채우고 apply_collected_events가 처리한다.
@@ -845,30 +845,14 @@ impl PluginManager {
                     params,
                     handles,
                 } => {
-                    let binding = handles.binding();
                     let cwd_str = cwd.as_ref().and_then(|p| p.to_str()).map(str::to_string);
-                    let publication = self.send_owned_surface_request(
-                        &plugin_id,
-                        protocol::METHOD_SURFACE_CREATE,
-                        json!({
-                            "surface_id": surface_id,
-                            "kind": kind,
-                            "cwd": cwd_str,
-                            "params": params,
-                        }),
-                        PendingRequestKind::SurfaceCreate {
-                            surface_id,
-                            binding,
-                        },
-                    );
-                    self.surfaces.insert(
-                        surface_id,
-                        RemoteSurfaceEntry {
-                            plugin_id,
-                            handles,
-                            publication,
-                        },
-                    );
+                    let origin = super::reattach::SurfaceOrigin::create(json!({
+                        "surface_id": surface_id,
+                        "kind": kind,
+                        "cwd": cwd_str,
+                        "params": params,
+                    }));
+                    self.publish_remote_surface(surface_id, plugin_id, handles, origin);
                 }
                 HostCmd::RemoteSurfaceRestored {
                     surface_id,
@@ -877,28 +861,12 @@ impl PluginManager {
                     data,
                     handles,
                 } => {
-                    let binding = handles.binding();
-                    let publication = self.send_owned_surface_request(
-                        &plugin_id,
-                        protocol::METHOD_SURFACE_RESTORE,
-                        json!({
-                            "surface_id": surface_id,
-                            "kind": kind,
-                            "data": data,
-                        }),
-                        PendingRequestKind::SurfaceRestore {
-                            surface_id,
-                            binding,
-                        },
-                    );
-                    self.surfaces.insert(
-                        surface_id,
-                        RemoteSurfaceEntry {
-                            plugin_id,
-                            handles,
-                            publication,
-                        },
-                    );
+                    let origin = super::reattach::SurfaceOrigin::restore(json!({
+                        "surface_id": surface_id,
+                        "kind": kind,
+                        "data": data,
+                    }));
+                    self.publish_remote_surface(surface_id, plugin_id, handles, origin);
                 }
             }
         }

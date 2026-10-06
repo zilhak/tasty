@@ -85,6 +85,10 @@ contribute 한 항목에 대응하는 콜백만 채우면 된다 — surface 가
 - **`rendering = "webview"`** (html, markdown — [ADR-0029](../adr/0029-webview-host-integration.md)): host 의 네이티브 WebView 오버레이로 그림. html 은 surface 의 URL 을 host 가 동기화하고, markdown 은 plugin 이 직접 sanitize 된 HTML 문서를 생성해 로드시킨다.
 - **`rendering = "remote"` (기본)**: webview 와 같은 `RemoteSurface` stand-in 등록만 하는 marker — host 는 이 kind 의 콘텐츠를 그리지 않는다. `snapshot_surface`/`restore_surface` 로 세션 복원.
 
+remote·webview surface 를 연 채 플러그인 프로세스가 바뀌면(disable 뒤 enable, 무응답 재시작, `upgrade-builtins --restart-running` 교체) 호스트는 새 프로세스가 뜰 때 남은 surface 를 다시 게시한다. 마지막 snapshot 이 있으면 그 값으로 `restore_surface` 를 부르고, 없으면 처음 받은 `create_surface` 요청을 그대로 다시 보낸다. 그래서 `restore_surface` 는 세션 복원뿐 아니라 실행 중에도 불릴 수 있고, 이미 열린 host 쪽 surface(webview 포함)를 그대로 이어 써야 한다. egui-mesh surface 는 렌더할 때 새 프로세스에 `create_surface` 를 다시 보내는 bootstrap 경로로 이어진다.
+
+이 재게시가 되살리는 것은 snapshot 에 담긴 상태까지다. 스크롤 위치, 저장하지 않은 편집·그림처럼 옛 프로세스 메모리에만 있던 상태는 잃는다. 다시 보내지 못한 surface(요청 큐 포화 등)는 경고 로그만 남기고 다음 기동 때 다시 보낸다. 그 사이 surface 에 "재연결 필요" 같은 표시는 하지 않는다.
+
 surface kind 선언에는 host 가 kind-agnostic 하게 소비하는 메타가 함께 실린다 — host 본체에 `if kind == "..."` 를 박지 않기 위한 것들이다:
 
 - **`icon`** — 탭/프리셋 leading 아이콘의 **이름**. host 가 자기 아이콘 세트에서 `icons::from_name` 으로 glyph 에 매핑한다(현재 이름: `markdown`/`folder`/`image`/`html`/`terminal`/`file`; 미지의 이름은 `file` 로 fallback). 예: markdown 의 `icon = "markdown"`.
@@ -576,6 +580,7 @@ tasty plugin upgrade-builtins         # 번들→user dir(~/.tasty/plugins) 재s
 tasty plugin enable com.x.<name>      # 재기동 — 호스트가 새 매니페스트를 레지스트리에 재적재
 # 기존 회수가 진행 중이면 enable이 그 작업의 완료를 기다린 뒤 새 프로세스를 시작한다.
 # 이 대기도 전체 2s 상한은 아니다. enable 성공은 spawn 완료이며 연결·hello 완료는 아니다(ADR-0026).
+# 새 프로세스가 뜨면 열어 둔 surface 를 다시 게시한다(§ Surface kind 의 재게시 문단).
 ```
 
 내용 비교를 **해시가 아니라 바이트로** 하는 근거와 잰 값·대안·재검토 조건은

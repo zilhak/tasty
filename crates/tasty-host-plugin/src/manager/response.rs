@@ -1008,6 +1008,7 @@ mod binding_tests {
                 plugin_id: plugin.into(),
                 handles: fresh.clone(),
                 publication: super::super::RemotePublication::NeverSent,
+                origin: super::super::reattach::SurfaceOrigin::create(serde_json::json!({})),
             },
         );
         for (id, binding, name) in [(1, old.binding(), "stale"), (2, fresh.binding(), "current")] {

@@ -458,6 +458,8 @@ impl PluginManager {
     fn on_plugin_spawn_success(&mut self, pkg: &PluginPackage, p: PluginProcess) {
         tracing::info!("plugin started: {}", p.plugin_id);
         self.processes.insert(pkg.manifest.id.clone(), p);
+        // 이전 프로세스가 회수된 뒤 남은 surface 를 새 프로세스에 다시 게시한다.
+        self.reattach_orphan_surfaces(&pkg.manifest.id);
         // 연결 성공 전까지는 연속 기동 실패 기록을 유지한다(manager::connect).
         // 실행 직후의 파일 상태를 기록해 같은 변경으로 auto-reload를 반복하지 않게 한다.
         self.capture_plugin_baseline(&pkg.manifest.id);
