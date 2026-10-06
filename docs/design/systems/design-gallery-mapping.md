@@ -889,13 +889,15 @@ C 프레임보더) 중 **A 배지가 사용자 확정**되어 갤러리는 A만 
 | prose(`<b>name</b> could not be received.`) | `horizontal_wrapped` mono bold + 산문 | 동 |
 | reason well(command-well: bg-app+separator, mono danger) | `reason_well` | `reason_well` |
 | Dismiss / (mid-transfer)Retry (danger-fill 금지) | `footer_buttons`(Secondary/Ghost) | 동 |
+| 배율 비교 Stage(ui_scale 0.85 · 1 · 1.2) + inset Meta | 해당 없음(본체는 현재 배율 하나로 그린다) | `draw` 두 번째 stage·meta |
 
 **본체 vs 갤러리 차이**: 갤러리는 main 바이너리 비의존이라 `draw_transfer_*`(DialogState 의존)을
 직접 못 부르고 같은 구조·토큰으로 미러(정적 seed 데이터). scrim dim 은 본체 `draw.rs` 가 그리므로
 갤러리 specimen 은 프레임을 클러스터에 **직접** 렌더한다(scrim 스테이지 미사용 — file_picker 관례,
 [design-parity-notes](design-parity-notes.md) "transfer — scrim_backdrop 스테이지…" 참조). 진행
 determinate bar 는 `Spinner` 처럼 위젯화하지 않고 painter 인라인(track `bg_app` + fill `accent_primary`,
-0ms). **별도 Theme 필드 없음** — 전부 기존 접근자([design-token-mapping §transfer](design-token-mapping.md#remote-file-transfer-progresserror-09) 참조).
+0ms). 폭과 여백(`transfer-*` 토큰)은 양쪽이 같은 Theme 접근자를 읽어 UI 배율을 따르고, 줄 높이는 글자 크기 ×
+`line_height_ui`로 계산한다. **별도 Theme 필드 없음** — 전부 생성 접근자([design-token-mapping §transfer](design-token-mapping.md#remote-file-transfer-progresserror-09) 참조).
 i18n 6키(`transfer.progress.{title,cancel}` · `transfer.error.{title,body_suffix,dismiss,retry}`).
 
 본체의 `upload_file_over_bulk`는 청크마다 `on_progress(sent,total)`을 호출한다. 이미지 업로드 워커가 `transfer_progress` 채널로 보내고 `drain_transfer_progress`가 화면 행을 갱신한다. `drain_image_upload_results`의 실패는 팝업으로 알린다. `BULK_REJECT_PREFIX`인 원격 거절에는 Dismiss만 제공하고, 그 밖의 실패에는 다시 큐에 넣는 Retry를 제공한다. 자세한 동작은 [원격 attach](../../features/remote-attach/index.md)를 따른다.
