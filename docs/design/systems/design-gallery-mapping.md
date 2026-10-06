@@ -865,13 +865,14 @@ General L1 에 5번째 L2 서브탭 "Remote transfer" 추가 — 원격 mirror �
 
 640×480 단일 컴포넌트가 로컬/원격 두 모드를 겸한다 — 차이는 헤더 host indicator 와
 브레드크럼 root 뿐, 레이아웃은 불변. §6.1 열린 결정(원격 표시 A 배지 / B 글리프 /
-C 프레임보더) 중 **A 배지가 사용자 확정**되어 갤러리는 A만 코드화한다 — B/C 는
-미채택 대안이라 반영하지 않는다.
+C 프레임보더) 중 **A 배지가 사용자 확정**되었다. 본체와 갤러리의 다른 예제는 A만
+쓰고, B/C 는 미채택 대안으로 `filepicker-remote-indicator` spec 의 비교 그림에만 그린다.
 
 | 디자인 jsx 컴포넌트 | 갤러리 함수 (`file_picker.rs` · `file_picker/{path_bar,footer}.rs`) | 비고 |
 |---|---|---|
 | `FilePickerFrame`(container) | `card` | 640×480 · bg-panel · border-strong · modal shadow |
-| header(glyph·title·host indicator·✕) | `header` | 글리프 항상 `FILE`(B안의 remote 글리프 스왑 미반영) |
+| header(glyph·title·host indicator·✕) | `header` → `indicator::{header_glyph, after_title}` | 로컬과 A안은 `FILE` 글리프. B안은 `remote` 글리프(`accent-info`) + mono 호스트 글자, C안은 `remote` 글리프(muted) |
+| `FilePickerFrame indicator` prop · `overlays-windows.jsx` "Remote indicator — three candidates" | `Variant::indicated` · `indicator::top_strip` · `draw_remote_indicator`(Spec `filepicker-remote-indicator`) | A 배지 · B 글리프 + 호스트 · C 프레임 테두리(`accent-info` 테두리 + 위 2px 띠) 세 카드 + Meta + Don't |
 | host 배지(§6.1 A안, 채택) | `host_badge` | mono `user@host` · `accent-info` 14%/45% 배경/보더 |
 | path bar(`FpCrumbs`+refresh) | `path_bar` → `crumbs` | `bg-sidebar` 전폭 띠 · 아래 `separator` 1px. root=mono, 조상=accent 링크, 현재 폴더=`text-primary` 비클릭 |
 | list header(NAME/SIZE/MODIFIED) | `list_header` | loaded/multi 상태만, `cols()` 좌표 공유 |

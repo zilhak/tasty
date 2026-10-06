@@ -3,10 +3,13 @@
 
 mod filter_chip;
 mod footer;
+mod indicator;
 mod path_bar;
 mod path_fit;
 
 pub use filter_chip::draw_filter_chip;
+use indicator::Indicator;
+pub use indicator::draw_remote_indicator;
 use path_bar::PathKind;
 pub use path_fit::draw_path_fit;
 
@@ -172,6 +175,8 @@ impl SaveState {
 struct Variant {
     state: FpState,
     remote: bool,
+    /// 원격 표시 방식 — 디자인 `FilePickerFrame indicator`. 로컬이면 쓰지 않는다.
+    indicator: Indicator,
     multi: bool,
     mode: Mode,
     /// 경로 데이터 — 디자인 `remote` · `deep` · `pathKind`.
@@ -193,6 +198,7 @@ impl Variant {
         Self {
             state,
             remote,
+            indicator: Indicator::Badge,
             multi,
             mode: Mode::Open,
             path: if remote {
@@ -212,6 +218,7 @@ impl Variant {
         Self {
             state: FpState::Loaded,
             remote: false,
+            indicator: Indicator::Badge,
             multi: false,
             mode: Mode::Save(save),
             path: if deep {
@@ -246,6 +253,16 @@ impl Variant {
     const fn crumb_menu_open(mut self) -> Self {
         self.crumb_menu = true;
         self
+    }
+
+    const fn indicated(mut self, indicator: Indicator) -> Self {
+        self.indicator = indicator;
+        self
+    }
+
+    /// 원격 표시가 프레임 테두리(C안)인가.
+    fn border_mode(self) -> bool {
+        self.remote && self.indicator == Indicator::Border
     }
 
     const fn sized(mut self, w: LogicalPx, h: LogicalPx) -> Self {
@@ -561,7 +578,11 @@ fn card(ui: &mut egui::Ui, theme: &Theme, v: Variant) {
         .fill(theme.bg_panel().to_egui())
         .stroke(egui::Stroke::new(
             theme.border_width.value(),
-            theme.border_strong().to_egui(),
+            if v.border_mode() {
+                theme.accent_info().to_egui()
+            } else {
+                theme.border_strong().to_egui()
+            },
         ))
         .corner_radius(theme.corner_radius.value())
         .shadow(theme.shadow_modal().to_egui())
@@ -571,6 +592,7 @@ fn card(ui: &mut egui::Ui, theme: &Theme, v: Variant) {
             ui.vertical(|ui| {
                 ui.set_width(v.w.value());
                 ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
+                let strip_h = indicator::top_strip(ui, theme, v);
                 header(ui, theme, v);
                 let hidden = path_bar::path_bar(ui, theme, v);
                 let bar_bottom = ui.min_rect().bottom();
@@ -581,7 +603,7 @@ fn card(ui: &mut egui::Ui, theme: &Theme, v: Variant) {
                     ui,
                     theme,
                     v,
-                    v.h - header_height(theme) - path_bar_height(theme) - footer_h,
+                    v.h - strip_h - header_height(theme) - path_bar_height(theme) - footer_h,
                 );
                 footer::footer(ui, theme, v, footer_h);
                 // 메뉴는 본문 위에 떠야 하므로 본문·footer 다음에 그린다.
@@ -621,12 +643,8 @@ fn header(ui: &mut egui::Ui, theme: &Theme, v: Variant) {
             .layout(egui::Layout::left_to_right(egui::Align::Center)),
     );
     child.spacing_mut().item_spacing.x = theme.fp_section_gap().value();
-    kit::icon(
-        &mut child,
-        icons::FILE,
-        theme.icon_glyph_size_md,
-        theme.text_muted().to_egui(),
-    );
+    let (glyph, glyph_fg) = indicator::header_glyph(theme, v);
+    kit::icon(&mut child, glyph, theme.icon_glyph_size_md, glyph_fg);
     kit::title(
         &mut child,
         theme,
@@ -635,9 +653,7 @@ fn header(ui: &mut egui::Ui, theme: &Theme, v: Variant) {
             Mode::Save(_) => "Save file",
         },
     );
-    if v.remote {
-        host_badge(&mut child, theme, HOST);
-    }
+    indicator::after_title(&mut child, theme, v);
     child.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
         IconButton::new()
             .variant(IconButtonVariant::Ghost)

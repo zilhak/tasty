@@ -1158,6 +1158,14 @@ pub fn pages() -> Vec<Page> {
                             components::file_picker::draw,
                         ),
                         spec(
+                            "filepicker-remote-indicator",
+                            "Remote indicator — three candidates",
+                            Some(
+                                "§6.1 · badge (recommended) · glyph + host · frame border — one accent-info axis",
+                            ),
+                            components::file_picker::draw_remote_indicator,
+                        ),
+                        spec(
                             "filepicker-states",
                             "States — loading · empty · permission · connection lost · multi-select",
                             Some("body swaps list ↔ status without changing the frame"),
