@@ -19,13 +19,13 @@ use crate::state::MainViewState;
 use crate::theme;
 use crate::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::tokens::STRUCT_GAP_1;
 use tasty_ui_widgets::{
     Button, ButtonVariant, ControlSize, IconButton, IconButtonVariant, LocalSshHost,
-    LocalSshSectionData, ProtocolFilterItem, ProtocolFilterLabels, TabStripData, TextWrap,
-    draw_local_ssh_section as ssh_section_view, draw_protocol_filter_body,
-    draw_protocol_filter_button, draw_tab_strip, filter_dropdown_content_width, ghost_button, hsep,
-    primary_button, selectable_label, selectable_text, warn_badge,
+    LocalSshSectionData, ProtocolFilterItem, ProtocolFilterLabels, RemoteRowChip, TabStripData,
+    TextWrap, draw_local_ssh_section as ssh_section_view, draw_protocol_filter_body,
+    draw_protocol_filter_button, draw_tab_strip, filter_dropdown_content_width, ghost_button,
+    primary_button, remote_list_row, remote_row_title, selectable_label, selectable_text,
+    warn_badge, warn_badge_width,
 };
 
 pub const REMOTE_TOOL_POPUP_ID: &str = "remote_tool";
@@ -817,45 +817,40 @@ fn draw_profile_row(
     let is_ssh = ssh.is_some();
     let disabled = ssh.as_ref().map(|v| v.is_disabled()).unwrap_or(false);
     let detecting_now = detecting == Some(p.name.as_str());
-    ui.horizontal(|ui| {
-        ui.vertical(|ui| {
-            ui.spacing_mut().item_spacing.y = STRUCT_GAP_1.value();
-            ui.horizontal(|ui| {
-                let title = match &p.label {
-                    Some(l) if !l.is_empty() => format!("{}  ({})", p.name, l),
-                    _ => p.name.clone(),
-                };
-                selectable_label(
-                    ui,
-                    &title,
-                    if disabled {
-                        th.text_disabled()
-                    } else {
-                        th.text_primary()
-                    },
-                    th.font_size_body.value(),
-                    false,
-                );
-                if is_builtin_kind(&p.kind) || KNOWN_TYPES.contains(&p.kind.as_str()) {
-                    selectable_label(
-                        ui,
-                        &p.kind,
-                        th.text_muted(),
-                        th.font_size_caption.value(),
-                        false,
-                    );
-                } else {
-                    warn_badge(ui, th, &p.kind, t("remote_tool.type_unknown_hint"));
-                }
-            });
-            selectable_label(
+    let kind_chip = if is_builtin_kind(&p.kind) || KNOWN_TYPES.contains(&p.kind.as_str()) {
+        RemoteRowChip::Tag(&p.kind)
+    } else {
+        RemoteRowChip::Warn {
+            text: &p.kind,
+            tooltip: t("remote_tool.type_unknown_hint"),
+        }
+    };
+    let action_count = if is_ssh { 3 } else { 2 };
+    remote_list_row(
+        ui,
+        th,
+        action_count,
+        |ui, w| {
+            remote_row_title(
+                ui,
+                th,
+                &p.name,
+                p.label.as_deref(),
+                disabled,
+                &[kind_chip],
+                w,
+            );
+            selectable_text(
                 ui,
                 &profile_summary(p),
                 th.text_muted(),
                 th.font_size_caption.value(),
                 true,
+                false,
+                TextWrap::Truncate(w),
             );
             ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
                 match &p.passkey_ref {
                     Some(pr) if !pr.is_empty() => {
                         selectable_label(
@@ -912,41 +907,30 @@ fn draw_profile_row(
                     }
                 }
             });
-        });
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            ui.spacing_mut().item_spacing.x = th.spacing_xs.value();
+        },
+        |ui| {
             // 오른쪽부터 배치하므로 삭제 버튼을 먼저 그린다.
-            let row_action = |ui: &mut egui::Ui, glyph: icons::Icon, enabled: bool| {
-                IconButton::new()
-                    .variant(IconButtonVariant::Ghost)
-                    .size(ControlSize::Sm)
-                    .enabled(enabled)
-                    .show(ui, th, &|ui, rect, c| {
-                        glyph.image(rect.height(), c).paint_at(ui, rect)
-                    })
-            };
-            if row_action(ui, icons::TRASH, true)
+            if row_icon_button(ui, th, icons::TRASH, true)
                 .on_hover_text(t("remote_tool.delete"))
                 .clicked()
             {
                 out = Some(ProfileRowAction::Delete);
             }
-            if row_action(ui, icons::EDIT, true)
+            if row_icon_button(ui, th, icons::EDIT, true)
                 .on_hover_text(t("remote_tool.edit"))
                 .clicked()
             {
                 out = Some(ProfileRowAction::Edit);
             }
             if is_ssh
-                && row_action(ui, icons::REFRESH, !detecting_now)
+                && row_icon_button(ui, th, icons::REFRESH, !detecting_now)
                     .on_hover_text(t("remote_tool.refresh_tooltip"))
                     .clicked()
             {
                 out = Some(ProfileRowAction::Redetect);
             }
-        });
-    });
-    hsep(ui, th);
+        },
+    );
     out
 }
 
@@ -1408,48 +1392,35 @@ fn draw_attach_row(
         t("remote_tool.attach_tag_inline")
     };
     let mut out = None;
-    ui.horizontal(|ui| {
-        ui.vertical(|ui| {
-            ui.spacing_mut().item_spacing.y = STRUCT_GAP_1.value();
+    let mut chips = vec![RemoteRowChip::Tag(mode_tag)];
+    if inactive {
+        chips.push(RemoteRowChip::Warn {
+            text: t("remote_tool.attach_inactive"),
+            tooltip: t("remote_tool.attach_inactive_hint"),
+        });
+    }
+    remote_list_row(
+        ui,
+        th,
+        2,
+        |ui, w| {
+            remote_row_title(ui, th, &p.name, p.label.as_deref(), inactive, &chips, w);
             ui.horizontal(|ui| {
-                let title = match &p.label {
-                    Some(l) if !l.is_empty() => format!("{}  ({})", p.name, l),
-                    _ => p.name.clone(),
+                ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
+                let missing_w = if missing {
+                    warn_badge_width(ui, th, t("remote_tool.attach_profile_missing"))
+                        + th.spacing_sm.value()
+                } else {
+                    0.0
                 };
-                selectable_label(
-                    ui,
-                    &title,
-                    if inactive {
-                        th.text_disabled()
-                    } else {
-                        th.text_primary()
-                    },
-                    th.font_size_body.value(),
-                    false,
-                );
-                selectable_label(
-                    ui,
-                    mode_tag,
-                    th.text_muted(),
-                    th.font_size_caption.value(),
-                    false,
-                );
-                if inactive {
-                    warn_badge(
-                        ui,
-                        th,
-                        t("remote_tool.attach_inactive"),
-                        t("remote_tool.attach_inactive_hint"),
-                    );
-                }
-            });
-            ui.horizontal(|ui| {
-                selectable_label(
+                selectable_text(
                     ui,
                     &target,
                     th.text_muted(),
                     th.font_size_caption.value(),
                     true,
+                    false,
+                    TextWrap::Truncate((w - missing_w).max(0.0)),
                 );
                 if missing {
                     warn_badge(
@@ -1461,6 +1432,7 @@ fn draw_attach_row(
                 }
             });
             ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = th.spacing_md.value();
                 selectable_label(
                     ui,
                     &format!("tasty: {}", v.remote_tasty()),
@@ -1476,24 +1448,22 @@ fn draw_attach_row(
                     false,
                 );
             });
-        });
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            ui.spacing_mut().item_spacing.x = th.spacing_xs.value();
-            if row_icon_button(ui, th, icons::TRASH)
+        },
+        |ui| {
+            if row_icon_button(ui, th, icons::TRASH, true)
                 .on_hover_text(t("remote_tool.delete"))
                 .clicked()
             {
                 out = Some(AttachRowAction::Delete);
             }
-            if row_icon_button(ui, th, icons::EDIT)
+            if row_icon_button(ui, th, icons::EDIT, true)
                 .on_hover_text(t("remote_tool.edit"))
                 .clicked()
             {
                 out = Some(AttachRowAction::Edit);
             }
-        });
-    });
-    hsep(ui, th);
+        },
+    );
     out
 }
 
@@ -1506,11 +1476,17 @@ fn add_button(ui: &mut egui::Ui, th: &Theme, label: &str) -> egui::Response {
         .show(ui, th)
 }
 
-/// 목록 행의 아이콘 버튼 — profile 행과 같은 ghost sm.
-fn row_icon_button(ui: &mut egui::Ui, th: &Theme, glyph: icons::Icon) -> egui::Response {
+/// 목록 행의 아이콘 버튼 — 세 탭이 같은 ghost sm.
+fn row_icon_button(
+    ui: &mut egui::Ui,
+    th: &Theme,
+    glyph: icons::Icon,
+    enabled: bool,
+) -> egui::Response {
     IconButton::new()
         .variant(IconButtonVariant::Ghost)
         .size(ControlSize::Sm)
+        .enabled(enabled)
         .show(ui, th, &|ui, rect, c| {
             glyph.image(rect.height(), c).paint_at(ui, rect)
         })
@@ -1897,74 +1873,44 @@ fn draw_passkey_row(
     revealed_value: Option<&str>,
 ) -> Option<PasskeyRowAction> {
     let mut out = None;
-    let known = KNOWN_PASSKEY_KINDS.contains(&k.kind.as_str());
-    ui.horizontal_top(|ui| {
-        ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
-        // 동작 묶음의 폭을 먼저 빼 둔다. 긴 이름·값은 남은 폭에서 말줄임하고 버튼을 밀어내지 않는다.
-        let gap = STRUCT_GAP_1.value();
-        let actions_w = ControlSize::Sm.height(th) * 3.0 + gap * 2.0;
-        let text_w = (ui.available_width() - actions_w - th.spacing_sm.value()).max(0.0);
-        ui.allocate_ui_with_layout(
-            egui::vec2(text_w, 0.0),
-            egui::Layout::top_down(egui::Align::Min),
-            |ui| {
-                ui.set_width(text_w);
-                ui.spacing_mut().item_spacing.y = STRUCT_GAP_1.value();
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
-                    let kind_w = if known {
-                        tasty_ui_widgets::tag_width(ui, th, &k.kind)
-                    } else {
-                        tasty_ui_widgets::warn_badge_width(ui, th, &k.kind)
-                    };
-                    let name_w = (text_w - kind_w - th.spacing_sm.value()).max(0.0);
-                    selectable_text(
-                        ui,
-                        &k.name,
-                        th.text_primary(),
-                        th.font_size_body.value(),
-                        false,
-                        false,
-                        TextWrap::Truncate(name_w),
-                    );
-                    if known {
-                        tasty_ui_widgets::tag(
-                            ui,
-                            th,
-                            &k.kind,
-                            tasty_ui_widgets::TagVariant::Default,
-                            false,
-                        );
-                    } else {
-                        warn_badge(ui, th, &k.kind, t("remote_tool.kind_unknown_hint"));
-                    }
-                });
-                let val = if revealed {
-                    revealed_value.unwrap_or("••••••••").to_string()
-                } else {
-                    "••••••••".into()
-                };
-                // 값 줄은 보일 때도 한 줄로 두고 끝을 말줄임한다.
-                selectable_text(
-                    ui,
-                    &format!("{} · {}", k.kind, val),
-                    th.text_muted(),
-                    th.font_size_caption.value(),
-                    true,
-                    false,
-                    TextWrap::Truncate(text_w),
-                );
-            },
-        );
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
-            ui.spacing_mut().item_spacing.x = gap;
-            if row_icon_button(ui, th, icons::TRASH)
+    let kind_chip = if KNOWN_PASSKEY_KINDS.contains(&k.kind.as_str()) {
+        RemoteRowChip::Tag(&k.kind)
+    } else {
+        RemoteRowChip::Warn {
+            text: &k.kind,
+            tooltip: t("remote_tool.kind_unknown_hint"),
+        }
+    };
+    remote_list_row(
+        ui,
+        th,
+        3,
+        |ui, w| {
+            remote_row_title(ui, th, &k.name, None, false, &[kind_chip], w);
+            let val = if revealed {
+                revealed_value.unwrap_or("••••••••").to_string()
+            } else {
+                "••••••••".into()
+            };
+            // 값 줄은 보일 때도 한 줄로 두고 끝을 말줄임한다.
+            selectable_text(
+                ui,
+                &format!("{} · {}", k.kind, val),
+                th.text_muted(),
+                th.font_size_caption.value(),
+                true,
+                false,
+                TextWrap::Truncate(w),
+            );
+        },
+        |ui| {
+            if row_icon_button(ui, th, icons::TRASH, true)
                 .on_hover_text(t("remote_tool.delete"))
                 .clicked()
             {
                 out = Some(PasskeyRowAction::Delete);
             }
-            if row_icon_button(ui, th, icons::EDIT)
+            if row_icon_button(ui, th, icons::EDIT, true)
                 .on_hover_text(t("remote_tool.edit"))
                 .clicked()
             {
@@ -1984,9 +1930,8 @@ fn draw_passkey_row(
             {
                 out = Some(PasskeyRowAction::Reveal);
             }
-        });
-    });
-    hsep(ui, th);
+        },
+    );
     out
 }
 

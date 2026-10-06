@@ -6,7 +6,8 @@ use std::collections::HashSet;
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 
-use crate::tokens::STRUCT_GAP_2;
+use crate::ControlSize;
+use crate::tokens::{STRUCT_GAP_1, STRUCT_GAP_2};
 use crate::vspace;
 use crate::{TagVariant, tag};
 
@@ -139,18 +140,6 @@ pub fn selectable_label_tracked(
 
 // ── 구역 구분선 · 버튼 ───────────────────────────────────────────────────
 
-/// 패널 위에서 보이도록 border_strong 색으로 구분선을 그린다.
-pub fn hsep(ui: &mut egui::Ui, th: &Theme) {
-    vspace(ui, STRUCT_GAP_2);
-    let r = ui.max_rect();
-    ui.painter().hline(
-        r.x_range(),
-        ui.cursor().top(),
-        egui::Stroke::new(th.border_width.value(), th.border_strong()),
-    );
-    vspace(ui, STRUCT_GAP_2);
-}
-
 /// 패널 배경과 구분되도록 surface-raised를 사용하는 보조 버튼.
 pub fn secondary_button(ui: &mut egui::Ui, th: &Theme, label: &str) -> egui::Response {
     ui.add(
@@ -193,32 +182,245 @@ pub fn ghost_button(ui: &mut egui::Ui, th: &Theme, label: &str) -> egui::Respons
     )
 }
 
-/// 경고 배지 — 아이콘 없는 pill. `text`·`tooltip` 은 호출자가 번역해 넘긴다.
-pub fn warn_badge(ui: &mut egui::Ui, th: &Theme, text: &str, tooltip: &str) {
-    selectable_label(
-        ui,
-        &warn_badge_text(text),
-        th.accent_warning(),
-        th.font_size_caption.value(),
-        false,
-    )
-    .on_hover_text(tooltip);
-}
-
-/// [`warn_badge`] 글자의 폭. 앞 칸의 말줄임 폭을 정할 때 뺀다.
-pub fn warn_badge_width(ui: &egui::Ui, th: &Theme, text: &str) -> f32 {
+/// 경고 배지 — 시안 `WarnBadge`. 경고 글리프(icon-glyph-xs)와 mono micro 글자를 담은 pill이며
+/// 높이·좌우 여백·간격·모서리는 Tag 토큰, 채움은 accent-warning × `tint-fill-alpha`,
+/// 테두리는 Tag 상태 테두리와 같은 40%다. `text`·`tooltip` 은 호출자가 번역해 넘긴다.
+pub fn warn_badge(ui: &mut egui::Ui, th: &Theme, text: &str, tooltip: &str) -> egui::Response {
+    let warn = th.accent_warning().to_egui();
+    let galley = warn_badge_galley(ui, th, text);
+    let (pad_x, glyph, gap) = warn_badge_metrics(th);
+    let w = pad_x * 2.0 + glyph + gap + galley.rect.width();
+    let (rect, resp) =
+        ui.allocate_exact_size(egui::vec2(w, th.tag_size().value()), egui::Sense::hover());
+    let radius = th.tag_radius().value();
     ui.painter()
-        .layout_no_wrap(
-            warn_badge_text(text),
-            egui::FontId::proportional(th.font_size_caption.value()),
-            egui::Color32::PLACEHOLDER,
-        )
-        .rect
-        .width()
+        .rect_filled(rect, radius, warn.gamma_multiply(th.tint_fill_alpha()));
+    ui.painter().rect_stroke(
+        rect,
+        radius,
+        egui::Stroke::new(
+            th.border_width.value(),
+            warn.gamma_multiply(WARN_BADGE_BORDER_OPACITY),
+        ),
+        egui::StrokeKind::Inside,
+    );
+    let glyph_rect = egui::Rect::from_min_size(
+        egui::pos2(rect.left() + pad_x, rect.center().y - glyph * 0.5),
+        egui::vec2(glyph, glyph),
+    );
+    tasty_icons::ALERT_TRIANGLE
+        .image(glyph, warn)
+        .paint_at(ui, glyph_rect);
+    let pos = egui::pos2(
+        glyph_rect.right() + gap,
+        rect.center().y - galley.rect.height() * 0.5,
+    );
+    ui.painter().galley(pos, galley, warn);
+    resp.on_hover_text(tooltip)
 }
 
-fn warn_badge_text(text: &str) -> String {
-    format!("⚠ {text}")
+/// 경고 배지 테두리 계수. 시안 `color-mix(accent-warning 40%)` 이며 Tag 상태 테두리와 같다.
+const WARN_BADGE_BORDER_OPACITY: f32 = 0.4;
+
+/// (좌우 여백, 글리프 크기, 글리프와 글자 사이 간격).
+fn warn_badge_metrics(th: &Theme) -> (f32, f32, f32) {
+    (
+        th.tag_padding_x().value(),
+        th.icon_glyph_size_xs.value(),
+        th.tag_gap().value(),
+    )
+}
+
+fn warn_badge_galley(ui: &egui::Ui, th: &Theme, text: &str) -> std::sync::Arc<egui::Galley> {
+    ui.painter().layout_no_wrap(
+        text.to_owned(),
+        egui::FontId::monospace(th.tag_font_size().value()),
+        egui::Color32::PLACEHOLDER,
+    )
+}
+
+/// [`warn_badge`] 의 폭. 앞 칸의 말줄임 폭을 정할 때 뺀다.
+pub fn warn_badge_width(ui: &egui::Ui, th: &Theme, text: &str) -> f32 {
+    let (pad_x, glyph, gap) = warn_badge_metrics(th);
+    pad_x * 2.0 + glyph + gap + warn_badge_galley(ui, th, text).rect.width()
+}
+
+// ── 목록 행 셸 ───────────────────────────────────────────────────────────
+
+/// 행 오른쪽 동작 묶음의 폭. Sm 아이콘 버튼 `count` 개를 `size-1` 간격으로 둔다.
+pub fn remote_row_actions_width(th: &Theme, count: usize) -> f32 {
+    let n = count as f32;
+    crate::ControlSize::Sm.height(th) * n + STRUCT_GAP_1.value() * (n - 1.0).max(0.0)
+}
+
+/// 원격 도구 세 탭(프로필·Attach·Passkeys)이 함께 쓰는 목록 행 셸. 시안 `ProfileRow`·
+/// `AttachRow`·`PasskeyRow` 의 공통 틀이다. 위아래 `space-md`·좌우 `space-xs` 안쪽 여백,
+/// 텍스트 열과 동작 묶음 사이 `space-sm`, 텍스트 줄 사이 `size-2`, 아래 1px `separator`.
+/// 동작 묶음의 폭을 먼저 빼므로 긴 텍스트가 버튼을 밀어내지 않는다. `body` 는 텍스트 열의
+/// 폭을 받아 줄을 그리고, `actions` 는 오른쪽부터(삭제가 맨 오른쪽) 버튼을 그린다.
+pub fn remote_list_row(
+    ui: &mut egui::Ui,
+    th: &Theme,
+    action_count: usize,
+    body: impl FnOnce(&mut egui::Ui, f32),
+    actions: impl FnOnce(&mut egui::Ui),
+) {
+    let pad_x = th.spacing_xs.value();
+    let gap = th.spacing_sm.value();
+    vspace(ui, th.spacing_md);
+    let actions_w = remote_row_actions_width(th, action_count);
+    let button_h = ControlSize::Sm.height(th);
+    let full = ui.available_rect_before_wrap();
+    let text_w = (full.width() - 2.0 * pad_x - gap - actions_w).max(0.0);
+    // 동작 묶음은 행 오른쪽 끝의 고정 사각형에 둔다. 텍스트 칸이 넓어져도 버튼 위치는 그대로다.
+    let actions_rect = egui::Rect::from_min_size(
+        egui::pos2(full.right() - pad_x - actions_w, full.top()),
+        egui::vec2(actions_w, button_h),
+    );
+    ui.horizontal_top(|ui| {
+        // add_space 는 항목 간격을 더하지 않으므로 왼쪽 여백이 그대로 pad_x 다.
+        ui.add_space(pad_x);
+        ui.allocate_ui_with_layout(
+            egui::vec2(text_w, button_h),
+            egui::Layout::top_down(egui::Align::Min),
+            |ui| {
+                ui.set_width(text_w);
+                ui.set_min_height(button_h);
+                ui.spacing_mut().item_spacing.y = STRUCT_GAP_2.value();
+                body(ui, text_w);
+            },
+        );
+    });
+    let mut actions_ui = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(actions_rect)
+            .layout(egui::Layout::right_to_left(egui::Align::Min)),
+    );
+    actions_ui.spacing_mut().item_spacing.x = STRUCT_GAP_1.value();
+    actions(&mut actions_ui);
+    vspace(ui, th.spacing_md);
+    ui.painter().hline(
+        ui.max_rect().x_range(),
+        ui.cursor().top(),
+        egui::Stroke::new(
+            th.border_width.value(),
+            th.separator.to_egui_premultiplied(),
+        ),
+    );
+}
+
+/// 행 첫 줄 끝에 붙는 칩.
+pub enum RemoteRowChip<'a> {
+    /// 기본 Tag(프로필 type, Attach 방식, passkey kind).
+    Tag(&'a str),
+    /// [`warn_badge`] — 모르는 type·kind, 비활성, 참조 없음.
+    Warn { text: &'a str, tooltip: &'a str },
+}
+
+/// 행 첫 줄. 이름(body · text-primary, 흐린 행은 text-disabled)과 선택 라벨
+/// (`  (label)`, text-muted)을 한 칸에 두고 칩 폭을 뺀 나머지에서 끝을 말줄임한다.
+/// 시안의 이름 weight 600은 egui UI에 굵은 글꼴이 없어 색으로만 근사한다
+/// ([디자인 정합 지침]의 폰트 weight 항목).
+pub fn remote_row_title(
+    ui: &mut egui::Ui,
+    th: &Theme,
+    name: &str,
+    label: Option<&str>,
+    dim: bool,
+    chips: &[RemoteRowChip<'_>],
+    width: f32,
+) {
+    ui.horizontal(|ui| {
+        let gap = th.spacing_sm.value();
+        ui.spacing_mut().item_spacing.x = gap;
+        let chips_w: f32 = chips
+            .iter()
+            .map(|c| match c {
+                RemoteRowChip::Tag(t) => crate::tag_width(ui, th, t) + gap,
+                RemoteRowChip::Warn { text, .. } => warn_badge_width(ui, th, text) + gap,
+            })
+            .sum();
+        let name_w = (width - chips_w).max(0.0);
+        let name_color = if dim {
+            th.text_disabled()
+        } else {
+            th.text_primary()
+        };
+        let label = label.filter(|l| !l.is_empty());
+        let text = match label {
+            Some(l) => format!("{name}  ({l})"),
+            None => name.to_string(),
+        };
+        title_text(
+            ui,
+            th,
+            &text,
+            name.len(),
+            name_color.to_egui(),
+            th.text_muted().to_egui(),
+            name_w,
+        );
+        for c in chips {
+            match c {
+                RemoteRowChip::Tag(t) => {
+                    tag(ui, th, t, TagVariant::Default, false);
+                }
+                RemoteRowChip::Warn { text, tooltip } => {
+                    warn_badge(ui, th, text, tooltip);
+                }
+            }
+        }
+    });
+}
+
+/// 앞 `split` 바이트는 `head`, 나머지는 `tail` 색으로 그리는 선택 가능한 한 줄. 폭을 넘으면
+/// 끝을 말줄임한다.
+fn title_text(
+    ui: &mut egui::Ui,
+    th: &Theme,
+    text: &str,
+    split: usize,
+    head: egui::Color32,
+    tail: egui::Color32,
+    max_w: f32,
+) -> egui::Response {
+    let font_id = egui::FontId::proportional(th.font_size_body.value());
+    let job_for = move |text: &str| {
+        let mut job = egui::text::LayoutJob::default();
+        let cut = split.min(text.len());
+        let cut = (0..=cut)
+            .rev()
+            .find(|&i| text.is_char_boundary(i))
+            .unwrap_or(0);
+        for (part, color) in [(&text[..cut], head), (&text[cut..], tail)] {
+            job.append(
+                part,
+                0.0,
+                egui::TextFormat {
+                    font_id: font_id.clone(),
+                    color,
+                    ..Default::default()
+                },
+            );
+        }
+        job.wrap.max_width = max_w;
+        job.wrap.max_rows = 1;
+        job.wrap.break_anywhere = true;
+        job
+    };
+    // 칸 폭은 말줄임한 글자 폭이다. 짧은 이름이 뒤 칩을 오른쪽 끝으로 밀지 않게 한다.
+    let content_w = ui.fonts(|f| f.layout_job(job_for(text))).size().x;
+    let mut buffer = text.to_string();
+    let mut layouter = move |ui: &egui::Ui, text: &str, _wrap_width: f32| {
+        ui.fonts(|f| f.layout_job(job_for(text)))
+    };
+    ui.add(
+        egui::TextEdit::multiline(&mut buffer)
+            .frame(false)
+            .desired_rows(1)
+            .desired_width(content_w)
+            .layouter(&mut layouter),
+    )
 }
 
 // ── 3탭 언더라인 탭 스트립 ───────────────────────────────────────────────

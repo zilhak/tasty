@@ -5,9 +5,9 @@ use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{
     Button, ButtonVariant, IconButton, IconButtonVariant, LocalSshHost, LocalSshSectionData,
-    ProtocolFilterItem, ProtocolFilterLabels, Spinner, TabStripData, TagVariant,
+    ProtocolFilterItem, ProtocolFilterLabels, RemoteRowChip, Spinner, TabStripData, TextWrap,
     draw_local_ssh_section, draw_protocol_filter_body, draw_protocol_filter_button, draw_tab_strip,
-    select, tag,
+    remote_list_row, remote_row_title, select, selectable_text, warn_badge,
 };
 
 use crate::catalog::icons;
@@ -31,7 +31,11 @@ struct Profile {
     tag: &'static str,
     target: &'static str,
     passkey: &'static str,
+    /// ssh 프로필의 셸. ssh 가 아니면 빈 문자열이다.
+    shell: &'static str,
     detecting: bool,
+    /// 감지에 실패해 비활성으로 표시한다(시안 `state: "failed"`).
+    failed: bool,
 }
 
 const PROFILES: &[Profile] = &[
@@ -41,7 +45,9 @@ const PROFILES: &[Profile] = &[
         tag: "ssh",
         target: "deploy@10.0.4.12",
         passkey: "ed25519-main",
+        shell: "zsh",
         detecting: false,
+        failed: false,
     },
     Profile {
         name: "db-primary",
@@ -49,7 +55,9 @@ const PROFILES: &[Profile] = &[
         tag: "ssh",
         target: "postgres@db.internal:2222",
         passkey: "",
+        shell: "bash",
         detecting: false,
+        failed: false,
     },
     Profile {
         name: "edge-cache",
@@ -57,7 +65,19 @@ const PROFILES: &[Profile] = &[
         tag: "ssh",
         target: "root@edge.example.com",
         passkey: "edge-pem",
+        shell: "auto",
         detecting: true,
+        failed: false,
+    },
+    Profile {
+        name: "legacy-box",
+        label: "",
+        tag: "ssh",
+        target: "admin@192.168.1.40",
+        passkey: "old-rsa",
+        shell: "sh",
+        detecting: false,
+        failed: true,
     },
     Profile {
         name: "media-nas",
@@ -65,9 +85,27 @@ const PROFILES: &[Profile] = &[
         tag: "smb",
         target: "host=nas.local  share=media",
         passkey: "nas-cred",
+        shell: "",
         detecting: false,
+        failed: false,
+    },
+    Profile {
+        name: "scratch",
+        label: "",
+        tag: "snb",
+        target: "endpoint=10.2.2.9",
+        passkey: "",
+        shell: "",
+        detecting: false,
+        failed: false,
     },
 ];
+
+/// 시안 seed 의 passkey 이름. 이 밖을 가리키는 프로필은 `passkey missing` 배지를 단다.
+const PASSKEY_NAMES: &[&str] = &["ed25519-main", "edge-pem", "nas-cred", "deploy-token"];
+
+/// tasty 가 전용 폼을 가진 프로필 type. 이 밖은 Tag 대신 경고 배지로 보인다.
+const KNOWN_PROFILE_TYPES: &[&str] = &["ssh", "smb", "http"];
 
 /// 로컬 ssh config 항목 — 본체와 같은 타입으로 둔다(공용 view 의 입력).
 ///
@@ -134,10 +172,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
 
             // 프로필과 SSH config 목록을 같은 스크롤 영역에 둔다.
             kit::region_sym(ui, theme.spacing_md, LogicalPx(0.0), |ui| {
-                for (i, p) in PROFILES.iter().enumerate() {
-                    if i > 0 {
-                        kit::hsep(ui, theme);
-                    }
+                for p in PROFILES {
                     profile_row(ui, theme, p);
                 }
                 // 공용 목록 뷰가 구분선과 간격을 포함하므로 중복해서 그리지 않는다.
@@ -312,10 +347,7 @@ fn attach_frame(ui: &mut egui::Ui, theme: &Theme) {
         });
 
         kit::region_sym(ui, theme.spacing_md, LogicalPx(0.0), |ui| {
-            for (i, a) in ATTACHES.iter().enumerate() {
-                if i > 0 {
-                    kit::hsep(ui, theme);
-                }
+            for a in ATTACHES {
                 attach_row(ui, theme, a);
             }
         });
@@ -384,97 +416,50 @@ fn attach_header(ui: &mut egui::Ui, theme: &Theme) {
 }
 
 fn attach_row(ui: &mut egui::Ui, theme: &Theme, a: &Attach) {
-    kit::region_sym(ui, LogicalPx(0.0), theme.spacing_sm, |ui| {
-        ui.horizontal(|ui| {
-            ui.vertical(|ui| {
-                ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-                    let name_color = if a.inactive {
-                        theme.text_disabled()
-                    } else {
-                        theme.text_primary()
-                    };
-                    ui.label(
-                        egui::RichText::new(a.name)
-                            .size(theme.font_size_body.value())
-                            .strong()
-                            .color(name_color.to_egui()),
-                    );
-                    if !a.label.is_empty() {
-                        ui.label(
-                            egui::RichText::new(format!("({})", a.label))
-                                .size(theme.font_size_body.value())
-                                .color(theme.text_muted().to_egui()),
-                        );
-                    }
-                    tag(ui, theme, a.mode, TagVariant::Default, false);
-                    if a.inactive {
-                        warn_pill(ui, theme, "inactive");
-                    }
-                });
-                ui.label(
-                    egui::RichText::new(a.target)
-                        .monospace()
-                        .size(theme.font_size_caption.value())
-                        .color(theme.text_muted().to_egui()),
-                );
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = theme.spacing_md.value();
-                    kit::caption(ui, theme, &format!("tasty: {}", a.tasty), true);
-                    kit::caption(ui, theme, &format!("port: {}", a.port), true);
-                });
-            });
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                for glyph in [icons::TRASH, icons::EDIT] {
-                    IconButton::new()
-                        .variant(IconButtonVariant::Ghost)
-                        .size(tasty_ui_widgets::ControlSize::Sm)
-                        .show(ui, theme, &|ui, rect, c| {
-                            glyph.image(rect.height(), c).paint_at(ui, rect)
-                        });
-                }
-            });
+    let mut chips = vec![RemoteRowChip::Tag(a.mode)];
+    if a.inactive {
+        chips.push(RemoteRowChip::Warn {
+            text: "inactive",
+            tooltip: "Inactive — the referenced ssh profile or inline shell isn't reachable.",
         });
-    });
+    }
+    remote_list_row(
+        ui,
+        theme,
+        2,
+        |ui, w| {
+            let label = (!a.label.is_empty()).then_some(a.label);
+            remote_row_title(ui, theme, a.name, label, a.inactive, &chips, w);
+            selectable_text(
+                ui,
+                a.target,
+                theme.text_muted(),
+                theme.font_size_caption.value(),
+                true,
+                false,
+                TextWrap::Truncate(w),
+            );
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = theme.spacing_md.value();
+                kit::caption(ui, theme, &format!("tasty: {}", a.tasty), true);
+                kit::caption(ui, theme, &format!("port: {}", a.port), true);
+            });
+        },
+        |ui| row_actions(ui, theme, &[(icons::TRASH, true), (icons::EDIT, true)]),
+    );
 }
 
-/// 경고 배지 고정 높이 — 디자인 `WarnBadge` height 16 (size-16).
-const WARN_BADGE_HEIGHT: LogicalPx = LogicalPx(16.0);
-
-/// accent-warning pill — 디자인 배지 (12% fill / 40% border / mono micro).
-/// gallery 미러(`RemoteFrame` attach)의 inactive 배지는 아이콘 없는 텍스트 pill.
-fn warn_pill(ui: &mut egui::Ui, theme: &Theme, text: &str) {
-    let warn = theme.accent_warning().to_egui();
-    let galley = ui.painter().layout_no_wrap(
-        text.to_owned(),
-        egui::FontId::monospace(theme.font_size_micro.value()),
-        egui::Color32::PLACEHOLDER,
-    );
-    let pad_x = theme.spacing_sm.value() * 0.75; // 디자인 padding 0 6 (raw)
-    let h = WARN_BADGE_HEIGHT.value();
-    let w = pad_x * 2.0 + galley.rect.width();
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
-    let radius = theme.corner_radius_sm.value();
-    // 채움은 `tint-fill-alpha`. 테두리 계수는 디자인이 "채움만" 으로 한정한
-    // 부분 사용이라(docs/design/systems/theme.md#ui-코드의-색상-접근) 이 자리 고유 값으로 남는다.
-    const BADGE_STROKE_OPACITY: f32 = 0.4;
-    ui.painter()
-        .rect_filled(rect, radius, warn.gamma_multiply(theme.tint_fill_alpha()));
-    ui.painter().rect_stroke(
-        rect,
-        radius,
-        egui::Stroke::new(
-            theme.border_width.value(),
-            warn.gamma_multiply(BADGE_STROKE_OPACITY),
-        ),
-        egui::StrokeKind::Inside,
-    );
-    let pos = egui::pos2(
-        rect.left() + pad_x,
-        rect.center().y - galley.rect.height() * 0.5,
-    );
-    ui.painter().galley(pos, galley, warn);
+/// 행 오른쪽 동작 묶음. 오른쪽부터 그린다(삭제가 맨 오른쪽).
+fn row_actions(ui: &mut egui::Ui, theme: &Theme, buttons: &[(icons::Icon, bool)]) {
+    for (glyph, enabled) in buttons {
+        IconButton::new()
+            .variant(IconButtonVariant::Ghost)
+            .size(tasty_ui_widgets::ControlSize::Sm)
+            .enabled(*enabled)
+            .show(ui, theme, &|ui, rect, c| {
+                glyph.image(rect.height(), c).paint_at(ui, rect)
+            });
+    }
 }
 
 /// 폼 라벨 컬럼 폭 — 디자인 `--tasty-remote-label-col`(size-112).
@@ -751,71 +736,72 @@ fn seg_chip(ui: &mut egui::Ui, theme: &Theme, label: &str, active: bool) {
 }
 
 fn profile_row(ui: &mut egui::Ui, theme: &Theme, p: &Profile) {
-    kit::region_sym(ui, LogicalPx(0.0), theme.spacing_sm, |ui| {
-        ui.horizontal(|ui| {
-            ui.vertical(|ui| {
-                ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-                    ui.label(
-                        egui::RichText::new(p.name)
-                            .size(theme.font_size_body.value())
-                            .strong()
-                            .color(theme.text_primary().to_egui()),
+    let kind_chip = if KNOWN_PROFILE_TYPES.contains(&p.tag) {
+        RemoteRowChip::Tag(p.tag)
+    } else {
+        RemoteRowChip::Warn {
+            text: p.tag,
+            tooltip: "Unknown type — no core feature or plugin handles it.",
+        }
+    };
+    let ssh = p.tag == "ssh";
+    // 본체 행과 같이 오른쪽부터 삭제 · 편집 · 재탐지(ssh 만, 탐지 중이면 비활성)를 둔다.
+    let mut actions = vec![(icons::TRASH, true), (icons::EDIT, true)];
+    if ssh {
+        actions.push((icons::REFRESH, !p.detecting));
+    }
+    remote_list_row(
+        ui,
+        theme,
+        actions.len(),
+        |ui, w| {
+            let label = (!p.label.is_empty()).then_some(p.label);
+            remote_row_title(ui, theme, p.name, label, p.failed, &[kind_chip], w);
+            selectable_text(
+                ui,
+                p.target,
+                theme.text_muted(),
+                theme.font_size_caption.value(),
+                true,
+                false,
+                TextWrap::Truncate(w),
+            );
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+                let passkey = if p.passkey.is_empty() {
+                    "—"
+                } else {
+                    p.passkey
+                };
+                kit::caption(ui, theme, &format!("passkey: {passkey}"), true);
+                if !p.passkey.is_empty() && !PASSKEY_NAMES.contains(&p.passkey) {
+                    warn_badge(
+                        ui,
+                        theme,
+                        "passkey missing",
+                        "Referenced passkey not found.",
                     );
-                    if !p.label.is_empty() {
-                        ui.label(
-                            egui::RichText::new(format!("({})", p.label))
-                                .size(theme.font_size_body.value())
-                                .color(theme.text_muted().to_egui()),
-                        );
-                    }
-                    tag(ui, theme, p.tag, TagVariant::Default, false);
-                });
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+                }
+                if ssh {
+                    kit::caption(ui, theme, &format!("shell: {}", p.shell), true);
+                }
+                if p.detecting {
+                    Spinner::new()
+                        .size(theme.font_size_term_sm.value())
+                        .show(ui, theme);
+                    kit::caption(ui, theme, "detecting…", false);
+                }
+                if p.failed {
                     ui.label(
-                        egui::RichText::new(p.target)
-                            .monospace()
+                        egui::RichText::new("detection failed (disabled)")
                             .size(theme.font_size_caption.value())
-                            .color(theme.text_muted().to_egui()),
+                            .color(theme.accent_danger().to_egui()),
                     );
-                });
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-                    let passkey = if p.passkey.is_empty() {
-                        "—"
-                    } else {
-                        p.passkey
-                    };
-                    kit::caption(ui, theme, &format!("passkey: {passkey}"), true);
-                    if p.detecting {
-                        Spinner::new()
-                            .size(theme.font_size_term_sm.value())
-                            .show(ui, theme);
-                        kit::caption(ui, theme, "detecting…", false);
-                    }
-                });
-            });
-            // 본체 행과 같이 오른쪽부터 삭제 · 편집 · 재탐지(ssh 만, 탐지 중이면 비활성)를 둔다.
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.spacing_mut().item_spacing.x = theme.spacing_xs.value();
-                let redetect = (p.tag == "ssh").then_some((icons::REFRESH, !p.detecting));
-                for (glyph, enabled) in [(icons::TRASH, true), (icons::EDIT, true)]
-                    .into_iter()
-                    .chain(redetect)
-                {
-                    IconButton::new()
-                        .variant(IconButtonVariant::Ghost)
-                        .size(tasty_ui_widgets::ControlSize::Sm)
-                        .enabled(enabled)
-                        .show(ui, theme, &|ui, rect, c| {
-                            glyph.image(rect.height(), c).paint_at(ui, rect)
-                        });
                 }
             });
-        });
-    });
+        },
+        |ui| row_actions(ui, theme, &actions),
+    );
 }
 
 /// 필터 목록의 프로토콜 — 디자인 seed 와 같은 넷이고 마지막 하나가 미지 kind 다.
