@@ -66,6 +66,26 @@ pub enum AgentCommands {
         #[arg(long, default_value_t = false)]
         reserved_for_fallback: bool,
     },
+    /// Submit a typed (contract_version 2) task graph in one call.
+    ///
+    /// The whole graph is validated first: ids, references, input bindings,
+    /// types, mappings, fallbacks and cycles. A graph that fails validation
+    /// stores nothing; the error names the task and a JSON pointer into the
+    /// submitted graph. A valid graph is stored and activated together, so no
+    /// task of it runs before every task exists. Run commands without a
+    /// `workspace_id` get `--workspace-id`.
+    TaskGraphSubmit {
+        /// Workspace id (focus-independent — required).
+        #[arg(long)]
+        workspace_id: u32,
+        /// Graph JSON (`{"contract_version":2,"types":{..},"tasks":[..]}`).
+        /// Accepts inline JSON or `@path/to/file.json`.
+        #[arg(long)]
+        graph: String,
+        /// Validate only. Nothing is stored or run.
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
+    },
     /// List tasks in a workspace.
     TaskList {
         /// Workspace id (focus-independent — required).

@@ -26,6 +26,11 @@ pub(super) fn agent_command_to_method_params(
             concurrency_limit.as_deref(),
             *reserved_for_fallback,
         ),
+        TaskGraphSubmit {
+            workspace_id,
+            graph,
+            dry_run,
+        } => build_task_graph_params(*workspace_id, graph, *dry_run),
         TaskList {
             workspace_id,
             state,
@@ -413,6 +418,38 @@ fn build_task_create_params(
         );
     }
     ("agent.task_create", p)
+}
+
+/// 그래프 안의 run command 에 `workspace_id` 가 없으면 `--workspace-id` 를 채운다.
+fn build_task_graph_params(
+    workspace_id: u32,
+    graph: &str,
+    dry_run: bool,
+) -> (&'static str, serde_json::Value) {
+    let mut graph_val = parse_inline_or_file_json(graph, "--graph");
+    let mut warnings = Vec::new();
+    if let Some(tasks) = graph_val.get_mut("tasks").and_then(|t| t.as_array_mut()) {
+        for task in tasks {
+            if let Some(command) = task.get_mut("command") {
+                warnings.extend(inject_command_workspace_id(command, workspace_id));
+            }
+        }
+    }
+    let mut p = serde_json::json!({ "workspace_id": workspace_id, "graph": graph_val });
+    if !warnings.is_empty() {
+        p[super::CLI_WARNINGS_PARAMS_KEY] = serde_json::Value::Array(
+            warnings
+                .into_iter()
+                .map(serde_json::Value::String)
+                .collect(),
+        );
+    }
+    let method = if dry_run {
+        "agent.task_graph_validate"
+    } else {
+        "agent.task_graph_submit"
+    };
+    (method, p)
 }
 
 /// `--strategy` 파싱:

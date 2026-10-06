@@ -3022,3 +3022,217 @@ fn typed_int64_outputs_survive_javascript_through_ipc_and_cli() {
     );
     tasty.call("workspace.close", json!({"id": ws.id}));
 }
+
+/// 작업 상태가 종결될 때까지 기다린다.
+fn await_task_state(tasty: &TastyInstance, ws: u64, id: &str) -> serde_json::Value {
+    let deadline = std::time::Instant::now() + Duration::from_secs(30);
+    loop {
+        let t = tasty.call("agent.task_get", json!({"workspace_id": ws, "id": id}));
+        let kind = t["state"]["kind"].as_str().unwrap_or_default().to_string();
+        if ["succeeded", "failed", "cancelled", "skipped"].contains(&kind.as_str()) {
+            return t;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "task {id} did not finish: {t}"
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
+fn task_count(tasty: &TastyInstance, ws: u64) -> usize {
+    tasty.call("agent.task_list", json!({"workspace_id": ws}))["tasks"]
+        .as_array()
+        .map(|a| a.len())
+        .unwrap_or_default()
+}
+
+fn graph_run(ws: u64, argv: serde_json::Value) -> serde_json::Value {
+    json!({"kind": "run", "workspace_id": ws, "command": argv})
+}
+
+/// 정수를 내는 producer, argv 로 받는 소비자, stdin 으로 받는 소비자로 된 그래프.
+fn typed_graph(
+    ws: u64,
+    args_log: &std::path::Path,
+    stdin_log: &std::path::Path,
+    label_binding: serde_json::Value,
+) -> serde_json::Value {
+    let args_script = format!("printf '%s\\n' \"$1\" >> '{}'", args_log.display());
+    let stdin_script = format!("cat >> '{}'", stdin_log.display());
+    json!({"contract_version": 2, "tasks": [
+        {"id": "use.args",
+         "command": graph_run(ws, json!(["sh", "-c", args_script, "sh"])),
+         "input_schema": {"type": "object", "fields": {"n": {"type": "int64"}}},
+         "bindings": {"n": {"from_task": "count.src"}},
+         "input_mapping": {"args": ["/n"]}},
+        {"id": "use.stdin",
+         "command": graph_run(ws, json!(["sh", "-c", stdin_script])),
+         "input_schema": {"type": "object", "fields": {
+             "label": {"type": "string"}, "n": {"type": "int64"}}},
+         "bindings": {"label": label_binding, "n": {"literal": "9007199254740993"}},
+         "input_mapping": {"stdin": true}},
+        {"id": "count.src", "command": graph_run(ws, json!(["sh", "-c", "exit 3"])),
+         "allowed_exit_codes": [0, 3]}
+    ]})
+}
+
+/// 격리 홈에서 CLI 로 그래프를 제출한다. stdout 과 stderr 를 합쳐 돌려준다.
+fn cli_graph_submit(
+    tasty: &TastyInstance,
+    ws: u64,
+    graph: &serde_json::Value,
+    dry_run: bool,
+) -> (bool, String) {
+    let cli_home = tempfile::tempdir().expect("cli home");
+    std::fs::write(cli_home.path().join("tasty.port"), tasty.port().to_string())
+        .expect("write port file");
+    let mut cmd = std::process::Command::new(common::spawn_diag::instance_bin());
+    cmd.env("TASTY_HOME", cli_home.path())
+        .env_remove("TASTY_SURFACE_ID")
+        .env_remove("TASTY_SESSION_TOKEN")
+        .args(["agent", "task-graph-submit", "--workspace-id"])
+        .arg(ws.to_string())
+        .arg("--graph")
+        .arg(graph.to_string())
+        .stdin(std::process::Stdio::null());
+    if dry_run {
+        cmd.arg("--dry-run");
+    }
+    let out = cmd.output().expect("run tasty cli");
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    (out.status.success(), text)
+}
+
+/// 잘못된 그래프는 실행 중인 러너가 있어도 아무것도 남기지 않고, 오류에 위치가 실린다.
+fn refused_graphs_leave_nothing(tasty: &TastyInstance, ws: u64, bad: &serde_json::Value) {
+    let refused = tasty.call_raw(
+        "agent.task_graph_submit",
+        json!({"workspace_id": ws, "graph": bad}),
+    );
+    assert_eq!(refused["error"]["code"], json!(-32602), "{refused}");
+    let data = &refused["error"]["data"];
+    assert_eq!(
+        data["location"],
+        json!("/tasks/1/bindings/label"),
+        "{refused}"
+    );
+    assert_eq!(data["task_id"], json!("use.stdin"));
+    assert_eq!(data["type_error"]["expected"], json!("string"));
+    assert_eq!(data["type_error"]["actual"], json!("int64"));
+    let cycle = tasty.call_raw(
+        "agent.task_graph_submit",
+        json!({"workspace_id": ws, "graph": {"contract_version": 2, "tasks": [
+            {"id": "a", "command": graph_run(ws, json!(["true"])), "depends_on": ["b"]},
+            {"id": "b", "command": graph_run(ws, json!(["true"])), "depends_on": ["a"]}]}}),
+    );
+    assert_eq!(
+        cycle["error"]["data"]["location"],
+        json!("/tasks"),
+        "{cycle}"
+    );
+    let (ok, text) = cli_graph_submit(tasty, ws, bad, true);
+    assert!(!ok, "{text}");
+    assert!(text.contains("/tasks/1/bindings/label"), "{text}");
+    assert_eq!(
+        task_count(tasty, ws),
+        0,
+        "a refused graph leaves no task behind"
+    );
+}
+
+/// 정지한 러너: 그래프는 저장·활성화되지만 러너를 시작하기 전에는 실행되지 않는다.
+fn stopped_runner_holds_an_active_graph(tasty: &TastyInstance, ws: u64, dir: &std::path::Path) {
+    tasty.call(
+        "agent.task_run",
+        json!({"workspace_id": ws, "action": "stop"}),
+    );
+    let later_log = dir.join("later.log");
+    let script = format!("echo once >> '{}'", later_log.display());
+    tasty.call(
+        "agent.task_graph_submit",
+        json!({"workspace_id": ws, "graph": {"contract_version": 2, "tasks": [
+            {"id": "later", "command": graph_run(ws, json!(["sh", "-c", script]))}]}}),
+    );
+    std::thread::sleep(Duration::from_millis(500));
+    let later = tasty.call("agent.task_get", json!({"workspace_id": ws, "id": "later"}));
+    assert_eq!(later["state"]["kind"], json!("ready"), "{later}");
+    assert!(!later_log.exists());
+    tasty.call(
+        "agent.task_run",
+        json!({"workspace_id": ws, "action": "start"}),
+    );
+    let later = await_task_state(tasty, ws, "later");
+    assert_eq!(later["state"]["kind"], json!("succeeded"), "{later}");
+    assert_eq!(std::fs::read_to_string(&later_log).unwrap(), "once\n");
+}
+
+/// v2 그래프 제출의 IPC·CLI 경계. 실행 중인 러너에 잘못된 그래프를 내도 task 가 하나도 남지
+/// 않고, 오류에는 task 와 제출 정의 안의 위치가 실린다. 올바른 그래프는 활성화 뒤에만 실행되며
+/// 입력은 값으로 한 번만 전달된다. 정지한 러너에서는 저장만 되고 러너를 시작해야 실행된다.
+#[cfg(unix)]
+#[test]
+fn typed_task_graphs_submit_atomically_and_pass_inputs_by_value() {
+    let _lane = lane();
+    let tasty = common::shared();
+    let ws = tasty.create_workspace("typed-graph").id;
+    let out = tempfile::tempdir().expect("out dir");
+    let args_log = out.path().join("args.log");
+    let stdin_log = out.path().join("stdin.log");
+    let started = tasty.call(
+        "agent.task_run",
+        json!({"workspace_id": ws, "action": "start"}),
+    );
+    assert!(started.is_object(), "{started}");
+
+    let bad = typed_graph(ws, &args_log, &stdin_log, json!({"from_task": "count.src"}));
+    refused_graphs_leave_nothing(tasty, ws, &bad);
+    let good = typed_graph(
+        ws,
+        &args_log,
+        &stdin_log,
+        json!({"from_task": "count.src", "convert": "to_string"}),
+    );
+    let (ok, text) = cli_graph_submit(tasty, ws, &good, true);
+    assert!(ok, "{text}");
+    assert_eq!(task_count(tasty, ws), 0, "a dry run stores nothing");
+
+    let submitted = tasty.call(
+        "agent.task_graph_submit",
+        json!({"workspace_id": ws, "graph": good}),
+    );
+    assert_eq!(submitted["activated"], json!(true), "{submitted}");
+    assert_eq!(submitted["tasks"].as_array().map(|a| a.len()), Some(3));
+    for id in ["use.args", "use.stdin"] {
+        let t = await_task_state(tasty, ws, id);
+        assert_eq!(t["state"]["kind"], json!("succeeded"), "{t}");
+    }
+    // 입력은 값으로 한 번만 전달된다. int64 는 정확하고 stdin 은 wire 형식이다.
+    assert_eq!(std::fs::read_to_string(&args_log).unwrap(), "3\n");
+    assert_eq!(
+        std::fs::read_to_string(&stdin_log).unwrap(),
+        r#"{"label":"3","n":"9007199254740993"}"#
+    );
+    let consumer = tasty.call(
+        "agent.task_get",
+        json!({"workspace_id": ws, "id": "use.args"}),
+    );
+    assert_eq!(consumer["input_snapshot"]["value"], json!({"n": "3"}));
+    assert_eq!(
+        consumer["input_snapshot"]["sources"][0]["from_task"],
+        json!("count.src")
+    );
+    let edges = tasty.call("agent.task_graph", json!({"workspace_id": ws}));
+    assert!(edges.to_string().contains("\"binding\""), "{edges}");
+
+    stopped_runner_holds_an_active_graph(tasty, ws, out.path());
+    tasty.call(
+        "agent.task_run",
+        json!({"workspace_id": ws, "action": "stop"}),
+    );
+    tasty.call("workspace.close", json!({"id": ws}));
+}

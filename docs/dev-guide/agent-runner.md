@@ -510,9 +510,9 @@ tasty agent task-purge --workspace-id 1 --states succeeded,failed --older-than-m
 
 ## v2 타입 계약 (`contract_version: 2`)
 
-task 는 선택적으로 타입 계약(`TaskContract`)을 가진다. 계약이 없는 task 가 v1 이며, 결과 형식·reducer 동작·저장 형식이 바뀌지 않는다. 계약은 Rust API `TaskStore::create_typed` 로만 만든다. IPC·CLI 의 `task_create` 는 아직 계약을 받지 않는다. 결정 근거는 [ADR-0068](../adr/0068-typed-task-contracts-live-in-a-separate-record-namespace.md).
+task 는 선택적으로 타입 계약(`TaskContract`)을 가진다. 계약이 없는 task 가 v1 이며, 결과 형식·reducer 동작·저장 형식이 바뀌지 않는다. v2 task 는 IPC `agent.task_graph_submit`(CLI `tasty agent task-graph-submit`)으로 그래프 단위로 만들거나 Rust API `TaskStore::create_typed` 로 하나씩 만든다. `task_create` 는 계약을 받지 않는다. 결정 근거는 [ADR-0068](../adr/0068-typed-task-contracts-live-in-a-separate-record-namespace.md).
 
-코드: 타입 `crates/tasty-agent/src/task/types.rs`, 계약·결과 `crates/tasty-agent/src/task/contract.rs`, v2 reduce `crates/tasty-agent/src/reducer.rs::reduce_typed`.
+코드: 타입 `crates/tasty-agent/src/task/types.rs`, 계약·결과 `crates/tasty-agent/src/task/contract.rs`, 입력 binding `crates/tasty-agent/src/task/binding.rs`, 그래프 제출 `crates/tasty-agent/src/task/store/graph_submit.rs`, 실행 시 입력 해석 `crates/tasty-task-runtime/src/runner_host/typed_inputs.rs`, v2 reduce `crates/tasty-agent/src/reducer.rs::reduce_typed`.
 
 ### 계약 형식
 
@@ -562,7 +562,61 @@ task 는 선택적으로 타입 계약(`TaskContract`)을 가진다. 계약이 �
 
 v1 이 v2 결과를 읽는 경로는 `-32602`(`error.data.task_id` 에 참조 대상)로 거절한다. 대상은 v1 출력 placeholder(`${task.<id>.output…}`)로 v2 task 를 참조하는 생성, `inputs` 에 v2 task 가 든 v1 `Reduce` 생성, v2 task 를 입력으로 준 단발 `agent.task_reduce` 다. 이미 저장된 v1 task 가 v2 를 가리키면 실행 직전 치환·reduce 수집이 실패로 끝낸다. 허용 범위는 입력 binding 이 정한다.
 
-생성할 때 바인딩이 없는 입력은 `{}`(object) 또는 null 로 검증되어야 한다. 즉 필수 입력이 있는 계약은 아직 만들 수 없다. 입력 바인딩은 아직 구현하지 않았다. inline fallback 은 v2 에서 거절한다.
+inline fallback 은 v2 에서 거절한다.
+
+### 입력 binding
+
+입력은 계약의 `bindings`(입력 필드 이름 → binding)로 채운다. binding 이 있으면 `input_schema` 는 object 여야 한다. 필수 필드는 binding 이나 `default` 가 있어야 하고, 둘 다 없으면 생성할 때 거절한다.
+
+| 형식 | 뜻 |
+|---|---|
+| `{"literal": <값>}` | 고정 값. 생성할 때 필드 타입으로 검사한다 |
+| `{"from_task": "<id>", "pointer": "/a/b", "convert": ...}` | 다른 task 의 최종 출력에서 JSON Pointer 위치의 값. `pointer` 를 생략하면 출력 전체 |
+| `{"one_of": [{"from_task": ..., "pointer": ...}, ...], "convert": ...}` | 성공한 원본 하나의 값. 본 작업과 fallback 중 실행된 쪽을 받을 때 쓴다 |
+
+- 원본 task 는 같은 그래프나 같은 workspace 의 v2 task 여야 한다. binding 은 의존성이기도 해서 원본이 끝나기 전에는 실행되지 않고, 삭제 보호·DAG 묶음·순환 검사·`task_graph` 의 `binding` 간선에 포함된다.
+- 생성할 때 원본의 출력 타입에서 포인터 위치의 타입을 구해 필드 타입에 대입 가능한지 검사한다. 암묵 변환은 없다. `convert` 로만 바꾼다: `to_string`(int64·boolean·enum → 10진·`true`/`false`·값 문자열), `int64_to_float64`(정확히 표현되는 값만, 아니면 `out_of_range`), `assert`(값을 바꾸지 않고 실행 시 입력 스키마로 검사한다. `json` 출력 안을 가리킬 때 쓴다).
+- 포인터가 optional 필드(기본값 없음)를 지나면 값이 없을 수 있다. 그러면 대상 필드도 optional 이거나 기본값이 있어야 한다. list 와 json 안의 위치는 실행 시 확인한다.
+- `from_task` 는 그 원본 자신이 성공해야 한다. 원본이 실패하면 받는 task 는 건너뛴다(fallback 이 대신 성공해도 마찬가지). `one_of` 는 모든 원본이 끝날 때까지 기다리고 성공한 원본의 값을 쓴다. 성공한 원본이 없으면 필수 필드는 task 를 건너뛰고 optional 필드는 비워 둔다. 성공한 원본이 둘 이상이면 실행 시 input 단계에서 실패한다.
+- `on_failure: continue_downstream` 과 `from_task` binding 은 함께 쓸 수 없다(값이 없는데 실행하게 된다). fallback 을 가진 task 를 `depends_on` 으로 기다리면서 그 task 만 `from_task` 로 받으면 거절하고 `one_of` 를 쓰라고 안내한다. v2 task 의 fallback 은 v2 task 여야 하고, fallback 이 실행된 v2 task 의 하위 작업은 대기하지 않고 건너뛴다.
+
+#### 실행할 때
+
+러너는 dispatch 직전에(lease 와 v1 placeholder 치환 뒤) binding 을 해석해 입력 값을 만들고 입력 스키마로 검사한다. 결과는 task 의 `input_snapshot` 에 저장한다: `resolved_at`, `value`(선언 타입대로 직렬화), `sources`(읽은 원본마다 필드·task·포인터와 그 실행의 `started_at`·`finished_at`), `execution`(실제로 넘긴 argv 요소·stdin 여부·custom params), 실패 시 `failure`. 원본을 나중에 다시 실행해도 snapshot 은 바뀌지 않는다. `retry` 는 snapshot 을 지운다. 해석이나 검사에 실패하면 실행하지 않고 실패 단계 `input` 으로 끝난다(`error.location` 은 `/bindings/<필드>`).
+
+입력은 `input_mapping` 이 정한 자리에만 값으로 들어간다. 원본 command 는 바꾸지 않으며 값 안의 `${...}`·`$(...)`·공백을 다시 해석하지 않는다.
+
+| 키 | 대상 | 규칙 |
+|---|---|---|
+| `args` | `run` | 입력 포인터 목록. 각 값을 argv 끝에 요소 하나로 붙인다. string·enum·int64·boolean 만 받는다(int64 는 10진, boolean 은 `true`/`false`) |
+| `stdin` | `run` | `true` 면 입력 전체를 wire 형식 JSON 한 문서로 stdin 에 쓴다(int64 는 10진 문자열) |
+| `params` | `custom` | params 포인터 → 입력 포인터. params 의 그 자리에 값을 넣는다. 부모 object 는 원래 params 에 있어야 한다. 값은 내부 표현이라 int64 가 JSON 정수다 |
+
+매핑하는 입력 위치는 항상 값이 있어야 한다. `reduce`·`wait_barrier` 는 입력을 받지 않으므로 입력 스키마가 unit 이어야 한다.
+
+### 그래프 제출
+
+앞뒤 task 를 서로 참조하는 정의를 하나씩 만들면 중간에 일부가 실행될 수 있다. `agent.task_graph_submit` 은 그래프 전체를 받아 검증한 뒤 한꺼번에 활성화한다.
+
+```json
+{"workspace_id": 1,
+ "graph": {"contract_version": 2,
+   "types": {"Verdict": {"type": "enum", "values": ["pass", "revise"]}},
+   "tasks": [
+     {"id": "build", "command": {"kind": "run", "workspace_id": 1, "command": ["cargo", "build"]}},
+     {"id": "report", "command": {"kind": "run", "workspace_id": 1, "command": ["notify"]},
+      "input_schema": {"type": "object", "fields": {"code": {"type": "int64"}}},
+      "bindings": {"code": {"from_task": "build"}},
+      "input_mapping": {"args": ["/code"]}}]}}
+```
+
+- task 키: `id`(필수, 호출자가 정하는 task id), `name`, `command`, `depends_on`, `on_failure`, `metadata`, `input_schema`, `output_schema`, `bindings`, `input_mapping`, `allowed_exit_codes`, `merge_conflict`. 모르는 키는 거절한다. `types` 는 모든 task 가 함께 쓴다.
+- 검증: id 형식과 중복(그래프 안·workspace), `depends_on`·fallback·reduce 입력·binding 원본의 존재, 계약과 binding 의 타입, 매핑, 위 조합 규칙, 순환. 그래프 task 의 command 에 v1 출력 placeholder(`${task.…}`)가 있으면 거절하고 binding 을 쓰라고 안내한다.
+- 실패하면 아무것도 저장하지 않고 `-32602` 로 답한다. `error.data` 는 실패 단계·task id·타입 오류와 함께 `location`(제출한 그래프 안의 JSON Pointer, 예: `/tasks/1/bindings/label`, 순환은 `/tasks`)을 싣는다.
+- 통과하면 task 를 활성화 전 상태로 모두 저장한 뒤 그래프 레코드(`tasty.agent.task_graph.<그래프 id>`, `tasty.task_graph/v1`) 하나를 쓰고 readiness 를 평가한다. 그래프 레코드가 없는 task 는 Ready 가 되지 않으므로 저장 도중 러너가 돌아도 실행되지 않는다. 저장 중 실패하면 저장한 task 를 지운다. 응답은 `{valid, activated, graph_id, tasks}` 다.
+- 그래프 id 는 `g-<ms>-<순번>` 이며 task 의 `graph_id` 에 기록한다. `metadata.dag` 가 없으면 그래프 id 를 넣어 DAG 로 묶는다. 그래프의 task 가 모두 삭제되면 그래프 레코드도 지운다.
+- `agent.task_graph_validate` 는 같은 검증만 하고 저장하지 않는다(`{valid, activated: false, tasks}`). CLI 는 `--dry-run` 이다.
+- 러너는 켜지 않는다. 정지한 러너에서는 활성화된 task 가 Ready 로 남는다.
 
 ### v2 reduce
 
@@ -584,6 +638,8 @@ v2 task 는 `tasty.agent.typed_task.<id>` 키에 `{"record_format": "tasty.task/
 ## 한계
 
 호스트가 ShellProcess spawn 과 watcher 완료 영속 사이에 죽으면 자식이 init(1) reparent 되어 exit_code 손실 → reload 시 `Failed("exit_code unknown")`. (cross-platform 으로 회피 불가.)
+
+그래프 제출에서 그래프 레코드를 쓴 뒤 readiness 평가를 마치기 전에 호스트가 죽으면, 의존이 없는 task 가 Waiting 으로 남는다. 재시작은 readiness 를 다시 평가하지 않는다. 그래프 레코드를 쓰기 전에 죽으면 활성화 전 task 가 남지만 실행되지 않으며 `task_delete`·`task_purge` 로 지운다.
 
 같은 이유로 **캡처한 stdout/stderr 도 유실된다** — 자식은 호스트 재시작 후에도 살아남지만(수명 계약은 그대로 유지), 파이프를 들고 있던 드레인 스레드는 호스트와 함께 사라지므로 그 사이의 출력은 다시 읽을 방법이 없다. 장시간 작업(빌드/배포)의 결과 보존이 중요해지면 `pty.*` 기반 별도 경로가 더 맞다.
 

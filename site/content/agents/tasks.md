@@ -69,6 +69,27 @@ ${task.<작업 ID>.output/stdout/text}   결과 안의 한 값
 
 작업을 보낼 때 그 자리에 실제 값이 들어갑니다. 자식 에이전트를 띄우고 그 자식에게 말을 거는 흐름처럼, 만들 때는 알 수 없고 실행해봐야 정해지는 값을 넘길 때 씁니다. 참조하는 작업은 반드시 `--depends-on` 에 적혀 있어야 하고, 아니면 만들 때 거부됩니다. 값의 형태는 유지됩니다. 자리표시자 하나만 있는 문자열은 숫자면 숫자로 바뀝니다.
 
+## 타입을 정한 작업 묶음 한 번에 보내기
+
+결과의 타입까지 정해 두고 싶으면 작업들을 그래프 하나로 묶어 보냅니다. 그래프 전체를 먼저 검사하므로, 하나라도 잘못되면 아무 작업도 만들어지지 않고 오류에 어느 작업의 어느 자리가 틀렸는지 나옵니다. 모든 작업이 만들어지기 전에는 어떤 작업도 실행되지 않습니다.
+
+```sh
+tasty agent task-graph-submit --workspace-id 2 --graph @graph.json --dry-run   # 검사만
+tasty agent task-graph-submit --workspace-id 2 --graph @graph.json
+```
+
+```json
+{"contract_version": 2,
+ "tasks": [
+   {"id": "build", "command": {"kind": "run", "command": ["cargo", "build"]}},
+   {"id": "report", "command": {"kind": "run", "command": ["notify"]},
+    "input_schema": {"type": "object", "fields": {"code": {"type": "int64"}}},
+    "bindings": {"code": {"from_task": "build"}},
+    "input_mapping": {"args": ["/code"]}}]}
+```
+
+각 작업의 `id` 는 직접 정합니다. `bindings` 는 입력을 어디서 받을지 정합니다. 고정 값(`literal`), 앞 작업 결과의 한 값(`from_task` 와 `pointer`), 본 작업과 폴백 중 실행된 쪽(`one_of`)을 쓸 수 있고, 타입이 맞지 않으면 보낼 때 거부됩니다. 받은 값은 `input_mapping` 에 적은 자리에만 들어갑니다. `args` 는 명령 뒤에 인자로 하나씩 붙이고, `stdin: true` 는 입력 전체를 JSON 으로 표준 입력에 씁니다. 값 안의 `$(...)` 나 공백은 다시 해석되지 않습니다. 실제로 넘긴 값은 작업의 `input_snapshot` 에서 볼 수 있습니다. 이 그래프의 작업에는 위 자리표시자를 쓰지 않습니다.
+
 ## 진행 보기
 
 작업이 어떻게 흘러가는지 보는 화면이 둘입니다. 둘 다 같은 데이터를 봅니다.

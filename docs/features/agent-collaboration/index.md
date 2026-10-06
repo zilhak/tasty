@@ -64,11 +64,11 @@ fallback을 후속 작업에 설정해도 의존성 실패로 인한 Skipped에�
 
 task 는 선택적으로 `contract_version: 2` 계약을 가진다. 계약은 입력·출력 타입(boolean·int64·float64·string·enum·object·list·unit·json·이름 붙은 타입)을 선언하고, 저장소가 보고된 결과를 그 타입으로 확정한다. 출력이 타입에 맞지 않거나 없으면 성공이 아니라 실패로 끝난다. 결과는 최종 출력(`has_output`·`output`)과 원시 응답·artifact·실패 단계·출처를 나눠 담는다. 기본 출력은 `run` 이 종료 코드(int64), `custom` 이 json, `wait_barrier` 가 unit, `reduce` 가 전략별 타입이다.
 
-v2 의 int64 값은 내부에서는 정수로 들고, 직렬화할 때(저장·IPC·CLI 등 경로와 무관) JavaScript 소비자를 지나도 바뀌지 않도록 10진 문자열로 쓴다(입력은 정수도 받는다). `json` 타입 값은 JSON 숫자 그대로이므로 2^53 을 넘는 정수는 JavaScript 도구에서 정밀도를 잃을 수 있다. 정밀도가 필요하면 `int64` 로 선언한다. v1 출력 placeholder 나 v1 reduce(단발 `agent.task_reduce` 포함)로 v2 task 의 결과를 읽는 요청은 거절한다. 계약이 없는 task(v1)의 결과와 reducer 동작은 그대로다. v2 task 는 별도 저장 namespace 에 envelope 로 저장해 구버전이 실행하지 않는다. 지금은 Rust API(`TaskStore::create_typed`)로만 만들 수 있고 IPC·CLI 생성과 입력 바인딩은 아직 없다. 형식과 규칙은 [작업 러너 §v2 타입 계약](../../dev-guide/agent-runner.md#v2-타입-계약-contract_version-2).
+v2 의 int64 값은 내부에서는 정수로 들고, 직렬화할 때(저장·IPC·CLI 등 경로와 무관) JavaScript 소비자를 지나도 바뀌지 않도록 10진 문자열로 쓴다(입력은 정수도 받는다). `json` 타입 값은 JSON 숫자 그대로이므로 2^53 을 넘는 정수는 JavaScript 도구에서 정밀도를 잃을 수 있다. 정밀도가 필요하면 `int64` 로 선언한다. v1 출력 placeholder 나 v1 reduce(단발 `agent.task_reduce` 포함)로 v2 task 의 결과를 읽는 요청은 거절한다. 계약이 없는 task(v1)의 결과와 reducer 동작은 그대로다. v2 task 는 별도 저장 namespace 에 envelope 로 저장해 구버전이 실행하지 않는다. v2 task 는 그래프 단위로 제출한다(`agent.task_graph_submit`, CLI `tasty agent task-graph-submit`, 검증만 하는 `agent.task_graph_validate`·`--dry-run`). 그래프 전체를 검증한 뒤 한꺼번에 활성화하므로, 검증에 실패하면 아무것도 저장되지 않고 오류에 task 와 그래프 안의 위치(JSON Pointer)가 실린다. 활성화 전에는 어떤 task 도 실행되지 않는다. 입력은 `bindings` 로 고정 값이나 다른 task 출력의 한 위치(`from_task`), 실행된 원본 하나(`one_of`)에서 받으며, 생성할 때 타입을 검사하고 실행 직전에 해석해 `input_snapshot` 으로 고정한다. 값은 `input_mapping` 이 정한 run argv 요소·stdin JSON·custom params 자리에만 들어가고 다시 해석하지 않는다. 형식과 규칙은 [작업 러너 §v2 타입 계약](../../dev-guide/agent-runner.md#v2-타입-계약-contract_version-2).
 
 #### 작업·DAG 조회
 
-`task_get`의 CLI 출력에는 command 종류, `depends_on`, `on_failure`, `metadata`가 포함된다. `task_graph`의 노드는 `command_kind`·`on_failure_kind`를, 엣지는 `depends_on`·`fallback`·`reduce` 종류를 제공한다. dot에서는 각각 실선·주황 점선·파랑 점선으로 표시한다.
+`task_get`의 CLI 출력에는 command 종류, `depends_on`, `on_failure`, `metadata`가 포함된다. `task_graph`의 노드는 `command_kind`·`on_failure_kind`를, 엣지는 `depends_on`·`fallback`·`reduce`·`binding`(v2 입력 binding 의 원본 → 받는 task) 종류를 제공한다. dot에서는 각각 실선·주황 점선·파랑 점선·실선으로 표시한다. DAG 화면도 `binding` 엣지를 `depends_on` 과 같은 모양으로 그린다.
 
 **fallback 참조는 사이클 검사 대상이 아니다.** `detect_cycles()`·`TaskGraph::dfs_cycle`은 `depends_on`과 `Reduce.inputs`만 순회한다. A와 F가 서로를 fallback으로 참조해도 존재 검사만 통과하면 저장된다. 그래프에는 보이지만 `-32602`로 차단되지 않는다.
 

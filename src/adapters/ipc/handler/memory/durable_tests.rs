@@ -239,6 +239,7 @@ fn every_memory_write_reports_a_fallback_store_as_not_durable() {
         include_str!("../agent/ratelimit.rs"),
         include_str!("../agent/semaphore.rs"),
         include_str!("../agent/task.rs"),
+        include_str!("../agent/task_graph_submit.rs"),
         include_str!("../approval/read.rs"),
         include_str!("../approval/request.rs"),
         include_str!("../approval/respond.rs"),

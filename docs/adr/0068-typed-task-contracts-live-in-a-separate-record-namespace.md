@@ -1,6 +1,6 @@
 # ADR-0068: 타입 계약을 가진 task는 별도 저장 namespace에 버전 envelope로 둔다
 
-- **Status**: Accepted — 입력 바인딩, 상태 전이 세분화, IPC·CLI 생성은 아직 구현하지 않았다
+- **Status**: Accepted — 상태 전이 세분화는 아직 구현하지 않았다. 입력 바인딩과 IPC·CLI 생성(그래프 제출)은 [ADR-0069](0069-typed-task-graphs-activate-through-a-graph-record.md)
 - **Date**: 2026-10-06
 - **Tags**: agents, tasks, types, compatibility, storage
 - **Group**: agents

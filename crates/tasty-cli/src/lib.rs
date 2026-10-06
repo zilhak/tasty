@@ -903,6 +903,36 @@ mod workspace_category_tests {
     }
 
     #[test]
+    fn task_graph_submit_fills_run_workspace_and_dry_run_only_validates() {
+        let graph = r#"{"contract_version":2,"tasks":[
+            {"id":"a","command":{"kind":"run","command":["true"]}},
+            {"id":"b","command":{"kind":"custom","ipc_method":"system.ping"}}]}"#;
+        let r = req(&[
+            "tasty",
+            "agent",
+            "task-graph-submit",
+            "--workspace-id",
+            "3",
+            "--graph",
+            graph,
+        ]);
+        assert_eq!(r.method, "agent.task_graph_submit");
+        assert_eq!(r.params["workspace_id"], 3);
+        assert_eq!(r.params["graph"]["tasks"][0]["command"]["workspace_id"], 3);
+        let r = req(&[
+            "tasty",
+            "agent",
+            "task-graph-submit",
+            "--workspace-id",
+            "3",
+            "--graph",
+            graph,
+            "--dry-run",
+        ]);
+        assert_eq!(r.method, "agent.task_graph_validate");
+    }
+
+    #[test]
     fn task_create_concurrency_limit_sets_semaphore_metadata() {
         let r = req(&[
             "tasty",

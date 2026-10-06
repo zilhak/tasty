@@ -1,4 +1,4 @@
-<!-- source-hash: b77c0c6511ac -->
+<!-- source-hash: bb4f02a87460 -->
 <a id="task-dag"></a>
 
 # Task workflows (DAG)
@@ -69,6 +69,27 @@ ${task.<task ID>.output/stdout/text}   one value inside the result
 ```
 
 The real value goes in that spot when the task is dispatched. Use it for values you cannot know at creation time and that are only settled by running — a flow that spawns a child agent and then talks to that child, for instance. The task you reference must be listed in `--depends-on`, otherwise creation is rejected. The shape of the value is preserved. A string that is nothing but a single placeholder turns into a number if the value is a number.
+
+## Sending a typed group of tasks at once
+
+To fix the types of results too, bundle tasks into one graph and send it. The whole graph is checked first, so if anything is wrong no task is created and the error says which spot in which task is wrong. No task runs before every task exists.
+
+```sh
+tasty agent task-graph-submit --workspace-id 2 --graph @graph.json --dry-run   # check only
+tasty agent task-graph-submit --workspace-id 2 --graph @graph.json
+```
+
+```json
+{"contract_version": 2,
+ "tasks": [
+   {"id": "build", "command": {"kind": "run", "command": ["cargo", "build"]}},
+   {"id": "report", "command": {"kind": "run", "command": ["notify"]},
+    "input_schema": {"type": "object", "fields": {"code": {"type": "int64"}}},
+    "bindings": {"code": {"from_task": "build"}},
+    "input_mapping": {"args": ["/code"]}}]}
+```
+
+You choose each task's `id`. `bindings` say where inputs come from: a fixed value (`literal`), one value from an earlier task's result (`from_task` with `pointer`), or whichever of a task and its fallback ran (`one_of`). Types that do not fit are rejected when you send the graph. Values go only where `input_mapping` says. `args` appends them to the command one argument each, and `stdin: true` writes the whole input as JSON to standard input. `$(...)` or spaces inside a value are never interpreted again. The values actually passed are in the task's `input_snapshot`. Tasks in such a graph do not use the placeholders above.
 
 ## Watching progress
 

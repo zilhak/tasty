@@ -927,6 +927,12 @@ fn route_engine_handler(
         "agent.task_cancel" => agent::handle_task_cancel(core, engine, caller, id, &request.params),
         "agent.task_retry" => agent::handle_task_retry(core, engine, caller, id, &request.params),
         "agent.task_graph" => agent::handle_task_graph(core, engine, caller, id, &request.params),
+        "agent.task_graph_validate" => {
+            agent::handle_task_graph_validate(core, engine, caller, id, &request.params)
+        }
+        "agent.task_graph_submit" => {
+            agent::handle_task_graph_submit(core, engine, caller, id, &request.params)
+        }
         "agent.dag_list" => agent::handle_dag_list(core, engine, caller, id, &request.params),
         "agent.dag_get" => agent::handle_dag_get(core, engine, caller, id, &request.params),
         "agent.task_set_result" => {

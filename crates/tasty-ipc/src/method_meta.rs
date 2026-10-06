@@ -523,6 +523,8 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("agent.task_cancel", plugin(Idempotent, &[AgentManage])),
         ("agent.task_retry", plugin(Mutate, &[AgentManage])),
         ("agent.task_graph", plugin(Read, &[AgentManage])),
+        ("agent.task_graph_validate", plugin(Read, &[AgentManage])),
+        ("agent.task_graph_submit", plugin(Mutate, &[AgentManage])),
         ("agent.dag_list", plugin(Read, &[AgentManage])),
         ("agent.dag_get", plugin(Read, &[AgentManage])),
         // Custom 작업의 상태는 러너가 관리한다. 플러그인의 별도 상태 변경과 경합하지 않도록 Local 전용이다.

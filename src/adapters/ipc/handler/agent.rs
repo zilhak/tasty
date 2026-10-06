@@ -78,9 +78,11 @@ mod lease;
 mod ratelimit;
 mod semaphore;
 pub(crate) mod task;
+mod task_graph_submit;
 
 pub use barrier::*;
 pub use lease::*;
 pub use ratelimit::*;
 pub use semaphore::*;
 pub use task::*;
+pub use task_graph_submit::*;
