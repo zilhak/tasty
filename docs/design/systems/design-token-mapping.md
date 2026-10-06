@@ -334,16 +334,20 @@ text-gap(버튼 하나 32, 둘 60).
 
 디자인 `tokens/semantic.css` + `tokens/components.css` + `components/core/Badge.jsx` +
 `components/feedback/StatusDot.jsx`(원본: Claude Design "attention-visuals", 2026-08-10
-확정). 색은 기존 semantic accessor 를 그대로 참조 — **신규 Theme 필드 0**
+확정). 색은 기존 semantic 색과 같은 Theme 필드를 쓴다 — **신규 Theme 필드 0**
 ([Theme 접근자 선택](design-parity-notes.md)).
+생성기는 아래 토큰마다 같은 이름의 접근자를 만든다. `attention_needs_input()`·`attention_completion()` 은
+`yellow`·`blue` 필드를, `-fg` 두 개는 `theme.rs` 의 수기 접근자로 `text_on_accent()` 를 돌려준다.
+component 접근자(`badge_warning_bg()` 등)는 이 네 접근자를 거친다. 본체 렌더러는 같은 값을
+`accent_warning()`/`accent_primary()`/`text_on_accent()` 로 직접 읽는다. 갤러리 칩은 토큰 이름의 접근자를 쓴다.
 `--tasty-badge-group-gap` 도 `space-xs` 그대로 별칭이다 — 생성 접근자 `badge_group_gap()` 은 있으나 소비처는 없고
 `Theme::spacing_xs` 를 직접 참조한다.
 
 | 디자인 토큰 | 디자인 체인 | tasty Theme / 값 | 비고 |
 |---|---|---|---|
-| `--tasty-attention-needs-input` | → `accent-warning` | `Theme::accent_warning()` | NeedsInput 색(노랑) |
-| `--tasty-attention-completion` | → `accent-primary` | `Theme::accent_primary()` | Completion 색(파랑) |
-| `--tasty-attention-needs-input-fg` / `-completion-fg` | → `text-on-accent` | `Theme::text_on_accent()` | 두 배지 공통 전경 |
+| `--tasty-attention-needs-input` | → `accent-warning` | `attention_needs_input()` = `accent_warning()` | NeedsInput 색(노랑) |
+| `--tasty-attention-completion` | → `accent-primary` | `attention_completion()` = `accent_primary()` | Completion 색(파랑) |
+| `--tasty-attention-needs-input-fg` / `-completion-fg` | → `text-on-accent` | `attention_*_fg()` = `text_on_accent()` | 두 배지 공통 전경 |
 | `--tasty-attention-rank-needs-input` | `30`(정수) | `AttentionLevel::NeedsInput`(derive `Ord`) | 재도출 금지 — 소스에 정수 값 주석으로 미러링 |
 | `--tasty-attention-rank-completion` | `10`(정수) | `AttentionLevel::Completion` | 위와 동일 |
 | `--tasty-badge-primary-bg`/`-fg` | = attention-completion(-fg) | `accent_primary()`/`text_on_accent()` | Completion 배지 |

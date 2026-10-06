@@ -1289,6 +1289,20 @@ impl Theme {
         }
     }
 
+    /// NeedsInput 알림 배지·점 위의 글자. `semantic.attention-needs-input-fg`는
+    /// text-on-accent의 별칭이므로 같은 밝기 분기를 따른다.
+    #[inline]
+    pub fn attention_needs_input_fg(&self) -> HexColor {
+        self.text_on_accent()
+    }
+
+    /// Completion 알림 배지·점 위의 글자. `semantic.attention-completion-fg`는
+    /// text-on-accent의 별칭이다.
+    #[inline]
+    pub fn attention_completion_fg(&self) -> HexColor {
+        self.text_on_accent()
+    }
+
     /// 비활성 글자. 밝은 테마는 한 단계 진한 neutral-800(overlay2)을 사용한다.
     /// `semantic.text-disabled`의 Latte remap이다.
     #[inline]
@@ -1893,6 +1907,12 @@ mod tests {
         assert_eq!(th.accent_warning(), th.yellow);
         assert_eq!(th.accent_danger(), th.red);
         assert_eq!(th.accent_agent(), th.mauve);
+
+        // 알림 종류
+        assert_eq!(th.attention_needs_input(), th.yellow);
+        assert_eq!(th.attention_completion(), th.blue);
+        assert_eq!(th.attention_needs_input_fg(), th.text_on_accent());
+        assert_eq!(th.attention_completion_fg(), th.text_on_accent());
 
         // 배경 / 표면
         assert_eq!(th.bg_app(), th.crust);

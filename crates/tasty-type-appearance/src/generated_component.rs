@@ -166,6 +166,18 @@ impl crate::theme::Theme {
         self.spacing_xs
     }
 
+    /// `component.badge-primary-bg` → `{semantic.attention-completion}`
+    #[inline]
+    pub fn badge_primary_bg(&self) -> HexColor {
+        self.attention_completion()
+    }
+
+    /// `component.badge-primary-fg` → `{semantic.attention-completion-fg}`
+    #[inline]
+    pub fn badge_primary_fg(&self) -> HexColor {
+        self.attention_completion_fg()
+    }
+
     /// `component.badge-radius` → `{semantic.radius-sm}` = 2px
     #[inline]
     pub fn badge_radius(&self) -> LogicalPx {
@@ -188,6 +200,18 @@ impl crate::theme::Theme {
     #[inline]
     pub fn badge_success_fg(&self) -> HexColor {
         self.text_on_accent()
+    }
+
+    /// `component.badge-warning-bg` → `{semantic.attention-needs-input}`
+    #[inline]
+    pub fn badge_warning_bg(&self) -> HexColor {
+        self.attention_needs_input()
+    }
+
+    /// `component.badge-warning-fg` → `{semantic.attention-needs-input-fg}`
+    #[inline]
+    pub fn badge_warning_fg(&self) -> HexColor {
+        self.attention_needs_input_fg()
     }
 
     /// `component.banner-body-font-size` → `{semantic.font-size-caption}` = 11px
@@ -2770,6 +2794,12 @@ impl crate::theme::Theme {
         LogicalPx((2.0 * self.ui_zoom).round())
     }
 
+    /// `component.status-dot-completion` → `{semantic.attention-completion}`
+    #[inline]
+    pub fn status_dot_completion(&self) -> HexColor {
+        self.attention_completion()
+    }
+
     /// `component.status-dot-danger` → `{semantic.accent-danger}`
     #[inline]
     pub fn status_dot_danger(&self) -> HexColor {
@@ -2780,6 +2810,12 @@ impl crate::theme::Theme {
     #[inline]
     pub fn status_dot_idle(&self) -> HexColor {
         self.status_idle()
+    }
+
+    /// `component.status-dot-needs-input` → `{semantic.attention-needs-input}`
+    #[inline]
+    pub fn status_dot_needs_input(&self) -> HexColor {
+        self.attention_needs_input()
     }
 
     /// `component.status-dot-pulse-duration` → `{primitive.duration-1600}` = 1600ms
@@ -2836,10 +2872,22 @@ impl crate::theme::Theme {
         self.glyph_dim()
     }
 
+    /// `component.surface-highlight-done-border` → `{semantic.attention-completion}`
+    #[inline]
+    pub fn surface_highlight_done_border(&self) -> HexColor {
+        self.attention_completion()
+    }
+
     /// `component.surface-highlight-done-width` → `{semantic.focus-ring-width}` = 2px
     #[inline]
     pub fn surface_highlight_done_width(&self) -> LogicalPx {
         self.focus_ring_width
+    }
+
+    /// `component.surface-highlight-input-border` → `{semantic.attention-needs-input}`
+    #[inline]
+    pub fn surface_highlight_input_border(&self) -> HexColor {
+        self.attention_needs_input()
     }
 
     /// `component.surface-highlight-input-width` → `{semantic.focus-ring-width}` = 2px
@@ -3028,10 +3076,22 @@ impl crate::theme::Theme {
         self.text_primary()
     }
 
+    /// `component.tab-fg-completion` → `{semantic.attention-completion}`
+    #[inline]
+    pub fn tab_fg_completion(&self) -> HexColor {
+        self.attention_completion()
+    }
+
     /// `component.tab-fg-hover` → `{semantic.text-secondary}`
     #[inline]
     pub fn tab_fg_hover(&self) -> HexColor {
         self.text_secondary()
+    }
+
+    /// `component.tab-fg-needs-input` → `{semantic.attention-needs-input}`
+    #[inline]
+    pub fn tab_fg_needs_input(&self) -> HexColor {
+        self.attention_needs_input()
     }
 
     /// `component.tab-gap` → `{semantic.space-sm}` = 8px

@@ -146,6 +146,18 @@ impl crate::theme::Theme {
         self.peach
     }
 
+    /// `semantic.attention-needs-input` → `{semantic.accent-warning}`
+    #[inline]
+    pub fn attention_needs_input(&self) -> HexColor {
+        self.yellow
+    }
+
+    /// `semantic.attention-completion` → `{semantic.accent-primary}`
+    #[inline]
+    pub fn attention_completion(&self) -> HexColor {
+        self.blue
+    }
+
     /// `semantic.status-idle` → `{primitive.color-neutral-600}`
     #[inline]
     pub fn status_idle(&self) -> HexColor {

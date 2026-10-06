@@ -129,6 +129,16 @@ pub const SEMANTIC_COLOR_TO_THEME_ACCESSOR: &[(&str, &str)] = &[
     ("semantic.accent-success", "accent_success()"),
     ("semantic.accent-warning", "accent_warning()"),
     ("semantic.accent-window-close", "accent_window_close()"),
+    ("semantic.attention-completion", "attention_completion()"),
+    (
+        "semantic.attention-completion-fg",
+        "attention_completion_fg()",
+    ),
+    ("semantic.attention-needs-input", "attention_needs_input()"),
+    (
+        "semantic.attention-needs-input-fg",
+        "attention_needs_input_fg()",
+    ),
     ("semantic.bg-app", "bg_app()"),
     ("semantic.bg-panel", "bg_panel()"),
     ("semantic.bg-sidebar", "bg_sidebar()"),
@@ -205,6 +215,17 @@ pub const SEMANTIC_COLOR_ACCESSOR_GEN: &[(&str, &str, &str)] = &[
     ("semantic.accent-move", "accent_move", "pink"),
     // 장식과 주의 환기는 색이 같아도 역할을 구분한다.
     ("semantic.accent-decorative", "accent_decorative", "peach"),
+    // 알림 종류(attention kind)는 경고·기본 강조와 색이 같아도 별도 역할이다.
+    (
+        "semantic.attention-needs-input",
+        "attention_needs_input",
+        "yellow",
+    ),
+    (
+        "semantic.attention-completion",
+        "attention_completion",
+        "blue",
+    ),
     // 상태 표시 (status-*)
     // 입력 placeholder의 사용자 설정이 상태 표시 색에 영향을 주지 않게 한다.
     ("semantic.status-idle", "status_idle", "overlay0"),
@@ -246,6 +267,14 @@ const SEMANTIC_COLOR_HAND_WRITTEN: &[(&str, &str)] = &[
         "OS 리터럴 const (Windows close hover, 테마 불변)",
     ),
     ("semantic.text-on-window-close", "리터럴 const (white 고정)"),
+    (
+        "semantic.attention-needs-input-fg",
+        "text-on-accent alias — is_light role-remap을 따른다",
+    ),
+    (
+        "semantic.attention-completion-fg",
+        "text-on-accent alias — is_light role-remap을 따른다",
+    ),
     ("semantic.accent-macos-close", "OS 리터럴 const"),
     ("semantic.accent-macos-min", "OS 리터럴 const"),
     ("semantic.accent-macos-zoom", "OS 리터럴 const"),
