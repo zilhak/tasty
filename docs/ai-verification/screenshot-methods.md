@@ -291,6 +291,16 @@ PointerRoot 모델이 구해 주는 것은 **포인터**뿐이다. 키보드 포
 주입한다(`tasty debug inject egui-text`). 절차·거절 조건은
 [debug-ipc.md](../dev-guide/debug-ipc.md) "문자 주입은 키 주입과 다른 채널이다" 가 정본이다.
 
+**호스트 단축키(`xdotool key alt+w` 등)를 재현할 때는 먼저 main 창에 X 포커스를 준다.**
+`xdotool windowfocus --sync <main 창 id>` 뒤에는 `XGetInputFocus` 가 main 창을 돌려주고, 클릭한
+surface 에 `xdotool key` 로 보낸 단축키가 `KeybindingSettings` 경로로 처리된다. 이 단계를 빼면
+WebView surface(html·markdown)와 Tasty 가 그리는 surface(터미널·image 같은 egui-mesh·DAG)의
+결과가 갈린다. PointerRoot 에서 키는 포인터 아래 X 창으로 가는데 WebView 는 자기 X 창이라 키를
+받아 호스트로 넘기고, Tasty 가 그리는 surface 는 포커스 없는 main 창이라 키를 받지 못한다.
+그래서 "markdown 은 닫히는데 image 는 안 닫힌다" 같은 surface 종류별 결함처럼 보인다. 포커스를
+준 뒤에도 결과가 다를 때만 surface 종류의 결함으로 판정한다. `debug inject key` 는 PTY 에
+바이트를 넣는 경로라 호스트 단축키를 재현하지 못한다.
+
 그 밖에 이 조합에서 지키는 것:
 
 - **기동은 절대경로로**(`/abs/worktree/target/debug/tasty`). 프로세스 소유를 나중에 가릴 때
