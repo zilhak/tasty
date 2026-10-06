@@ -218,7 +218,7 @@ kind 소스로 쓴다. 설정 화면(`draw_settings_detail`)도 같은 캐시 �
 | `chrome.jsx` `Sidebar`(grouped) | `sidebar/view.rs::draw_full_sidebar_view`(+`full.rs::build_category_sections`) | `sidebar` "Categories · full" |
 | `chrome.jsx` `RailCategoryBtn` | `sidebar/view.rs::draw_rail_category_button` | `sidebar` "Categories · rail" (`sidebar.rs::rail_categories`) |
 | `chrome.jsx` `CollapsedSidebar`(grouped) | `sidebar/view.rs::draw_collapsed_sidebar_view` | `sidebar` "Categories · rail" |
-| `overlays/sidebar_context_menu.jsx` `RailCategoryPopup` | `popup/rail_category.rs::draw_rail_category_popup` | `workspace-categories` "Rail popup" (`category_dialogs.rs::rail_popup`) · `rail-category` 레일 `---` 버튼 오른쪽에 붙은 상태(`category_dialogs.rs::draw_rail`, 시안 `RailCategoryFrame` 정적 사본) |
+| `overlays/sidebar_context_menu.jsx` `RailCategoryPopup` | `popup/rail_category.rs::draw_rail_category_popup` | `workspace-categories` "Rail popup" (`category_dialogs.rs::rail_category_menu`, 레일 예제와 같은 함수) · `rail-category` 레일 `---` 버튼 오른쪽에 붙은 상태(`category_dialogs.rs::draw_rail`, 시안 `RailCategoryFrame` 정적 사본) |
 | `overlays/sidebar_context_menu.jsx` `SidebarContextMenu` | `view/main/redraw.rs`(native menu: Workspace/WorkspaceCategoryHeader/SidebarBackground) | `sidebar-context-menu` 대상별 네 메뉴(`sidebar_context_menu.rs`, 시안 정적 사본) |
 | `overlays-dialogs.jsx` `CategoryEditFrame` | `dialog.rs::draw_rename_popup`(+`RenameTarget::NewCategory`/`CategoryName`, 라이브 검증) | `workspace-categories` "Create / rename" · "Validation error" (`category_dialogs.rs::edit_dialog`) |
 | `overlays-dialogs.jsx` `CategoryDeleteFrame` | `popup/confirm_delete_category.rs::draw_confirm_delete_category` | `workspace-categories` "Delete confirm" (`category_dialogs.rs::delete_confirm`) |
