@@ -958,6 +958,12 @@ pub fn pages() -> Vec<Page> {
                             ),
                             components::remote::draw_attach_form,
                         ),
+                        spec(
+                            "remote-passkeys",
+                            "Passkeys tab — reveal states",
+                            Some("right tab · hidden / revealed (active) / unknown kind"),
+                            components::remote::draw_passkeys,
+                        ),
                     ],
                 ),
                 section(
