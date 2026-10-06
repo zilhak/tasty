@@ -1592,7 +1592,7 @@ fn draw_surface_box(
     draw_leaf_preview(ui, theme, rect, leaf, cx.catalog);
 
     if selected {
-        let w = theme.tab_indicator_width().value();
+        let w = theme.preset_leaf_selected_ring_width().value();
         ui.painter_at(rect).rect_stroke(
             rect.shrink(w * 0.5),
             0.0,
@@ -1828,7 +1828,7 @@ fn pick_zone(nx: f32, ny: f32, w: f32, h: f32, min_axis: LogicalPx) -> Option<Sp
 fn draw_split_zone_overlay(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, zone: SplitZone) {
     let bg = theme.preset_split_zone_bg().to_egui();
     let border = theme.preset_split_zone_border().to_egui();
-    let divider = theme.tab_indicator_width().value(); // 2px 분할선(accent bar 와 동일 굵기).
+    let divider = theme.preset_split_divider_width().value();
     let stroke = egui::Stroke::new(divider, border);
     let p = ui.painter_at(rect);
     match zone {

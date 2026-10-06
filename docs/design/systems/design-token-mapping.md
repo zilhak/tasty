@@ -105,7 +105,8 @@ surface 경계 30% 존을 hover 할 때 뜨는 밴드+분할선 색. accent-prim
 | 디자인 토큰 | 디자인 체인 | tasty Theme | 비고 |
 |---|---|---|---|
 | `--tasty-preset-split-zone-bg` | `color-mix(accent-primary 22%, transparent)` | `Theme::preset_split_zone_bg()` = `accent_primary().with_alpha(56)` | 존 밴드 채움(22%×255≈56). `PRESET_SPLIT_ZONE_BG_ALPHA` |
-| `--tasty-preset-split-zone-border` | `color-mix(accent-primary 55%, transparent)` | `Theme::preset_split_zone_border()` = `accent_primary().with_alpha(140)` | 안쪽 변 2px 분할선(55%×255≈140). `PRESET_SPLIT_ZONE_BORDER_ALPHA`. 2px 굵기는 `tab_indicator_width` 재사용 |
+| `--tasty-preset-split-zone-border` | `color-mix(accent-primary 55%, transparent)` | `Theme::preset_split_zone_border()` = `accent_primary().with_alpha(140)` | 안쪽 변 2px 분할선(55%×255≈140). `PRESET_SPLIT_ZONE_BORDER_ALPHA`. 굵기는 `--tasty-preset-split-divider-width` → `Theme::preset_split_divider_width()`(= `selection_edge_width`, hairline, 배율 제외) |
+| `--tasty-preset-leaf-selected-ring-width` | `focus-ring-width` | `Theme::preset_leaf_selected_ring_width()`(= `focus_ring_width`, 배율 적용) | 선택한 leaf 를 감싸는 2px accent 링 |
 
 미리보기의 분할 영역 비율은 `SPLIT_ZONE_EDGE=0.3`(30%)이며 무차원 f32다. 길이인 `SPLIT_ZONE_MIN` 46px, 닫기 × 14px, 탭 추가 22px 등은 `demo_layout.rs`·`preset_editor.rs`의 LogicalPx 상수를 사용한다. egui에 넘기는 최종 좌표가 f32라는 이유로 내부 길이 타입 규칙에서 제외하지 않는다.
 

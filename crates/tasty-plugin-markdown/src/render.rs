@@ -1611,6 +1611,7 @@ fn theme_css(theme: &Theme) -> String {
 --md-disabled-fg:{disabled_fg};
 --md-radius:{radius}px;
 --md-border-w:{border_w}px;
+--md-quote-bar-w:{quote_bar_w}px;
 --md-space-xs:{space_xs}px;
 --md-space-sm:{space_sm}px;
 --md-space-md:{space_md}px;
@@ -1668,7 +1669,7 @@ pre:hover .tasty-copy-btn,.tasty-copy-btn:focus-visible{{opacity:1;}}
 table{{border-collapse:collapse;}}
 th,td{{border:var(--md-border-w) solid var(--md-border);padding:var(--md-space-xs) var(--md-space-sm);text-align:left;}}
 tr:nth-child(even){{background:var(--md-zebra);}}
-blockquote{{border-left:calc(var(--md-border-w) * 3) solid var(--md-quote-bar);margin:0.5em 0;padding:0.1em var(--md-space-md);opacity:0.9;}}
+blockquote{{border-left:var(--md-quote-bar-w) solid var(--md-quote-bar);margin:0.5em 0;padding:0.1em var(--md-space-md);opacity:0.9;}}
 blockquote[class^="markdown-alert-"]{{opacity:1;border-radius:var(--md-radius);padding:var(--md-space-sm) var(--md-space-md);}}
 blockquote[class^="markdown-alert-"]::before{{content:attr(data-label);display:block;font-weight:600;margin-bottom:var(--md-space-xs);padding-left:22px;background-repeat:no-repeat;background-position:left center;background-size:16px 16px;}}
 details[class^="markdown-alert-"]{{border-radius:var(--md-radius);padding:var(--md-space-sm) var(--md-space-md);border-left:calc(var(--md-border-w) * 3) solid;}}
@@ -1705,6 +1706,7 @@ li input[type=checkbox]{{margin-right:0.4em;}}
         bg = theme.bg_app().to_hex(),
         radius = theme.corner_radius.value(),
         border_w = theme.border_width.value(),
+        quote_bar_w = theme.md_quote_bar_width().value(),
         space_xs = theme.spacing_xs.value(),
         space_sm = theme.spacing_sm.value(),
         space_md = theme.spacing_md.value(),

@@ -62,6 +62,7 @@ pub const SEMANTIC_DIM_TO_THEME_FIELD: &[(&str, &str)] = &[
     ("semantic.overlay-top-offset", "overlay_top_offset"),
     ("semantic.label-detail-gap", "label_detail_gap"),
     ("semantic.selection-edge-width", "selection_edge_width"),
+    ("semantic.tint-edge-width", "tint_edge_width"),
     // component 전용 필드 — 사이드바 (host UI zoom 영향 받음)
     ("component.sidebar-logo-size", "sidebar_logo_size"),
     (

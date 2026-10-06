@@ -352,6 +352,8 @@ pub struct ThemeSizing {
     pub toast_accent_width: LogicalPx,
     /// 선택 항목의 한쪽 변에 붙는 띠 두께 (2px).
     pub selection_edge_width: LogicalPx,
+    /// tinted 강조 상자(Do / Don't 콜아웃 등)의 앞쪽 한 변 두께 (2px).
+    pub tint_edge_width: LogicalPx,
     /// 상단 정렬 모달(command palette) 상단 gap (88px).
     pub overlay_top_offset: LogicalPx,
     /// 한 글 묶음 안에서 라벨 줄과 그 부연 줄 사이 간격 (2px).
@@ -420,6 +422,7 @@ pub const SIZING: ThemeSizing = ThemeSizing {
     spinner_size: LogicalPx(16.0),
     toast_accent_width: LogicalPx(3.0),
     selection_edge_width: LogicalPx(2.0),
+    tint_edge_width: LogicalPx(2.0),
     overlay_top_offset: LogicalPx(88.0),
     label_detail_gap: LogicalPx(2.0),
 };
@@ -939,6 +942,9 @@ pub struct Theme {
     /// 선택 항목의 한쪽 변 띠(탭 밑줄·활성 워크스페이스 행·remote attach·preset 목록 행).
     /// hairline 띠이므로 UI zoom 제외.
     pub selection_edge_width: LogicalPx,
+    /// tinted 강조 상자의 앞쪽 한 변(Do / Don't 콜아웃). design `--tasty-tint-edge-width`.
+    /// hairline 띠이므로 UI zoom 제외.
+    pub tint_edge_width: LogicalPx,
     pub overlay_top_offset: LogicalPx,
     /// 라벨 줄 ↔ 부연 줄 간격. 글자와 함께 커지므로 UI zoom 적용.
     pub label_detail_gap: LogicalPx,
@@ -1108,6 +1114,7 @@ impl Theme {
             spinner_size: zoomed(SIZING.spinner_size),
             toast_accent_width: zoomed(SIZING.toast_accent_width),
             selection_edge_width: SIZING.selection_edge_width,
+            tint_edge_width: SIZING.tint_edge_width,
             overlay_top_offset: zoomed(SIZING.overlay_top_offset),
             label_detail_gap: zoomed(SIZING.label_detail_gap),
             ui_zoom,
@@ -2054,6 +2061,7 @@ mod tests {
         for z in [0.85, 1.0, 1.2, 1.5, 2.0] {
             let t = Theme::with_colors_and_zoom(dummy_colors(), false, z);
             assert_eq!(t.selection_edge_width, LogicalPx(2.0), "배율 {z}");
+            assert_eq!(t.tint_edge_width, LogicalPx(2.0), "배율 {z}");
             assert_eq!(
                 t.workspace_row_active_bar_width(),
                 LogicalPx(2.0),

@@ -67,7 +67,7 @@ const DECLARATION_SITES: &[(&str, usize, &str)] = &[
     ),
     (
         "crates/tasty-type-appearance/src/theme.rs",
-        52,
+        53,
         "Theme 의 값표 — 다른 자리가 참조해야 할 이름(border_width 등)이 여기 산다",
     ),
 ];
@@ -748,7 +748,8 @@ fn the_blind_spots_are_still_the_size_they_say() {
         // copies in the plugin and the gallery, which drops four zero literals.
         // 스케일에 size-10이 들어오면서 test 코드의 기존 값 10도 새로 집계됐다.
         // 툴팁의 스트립 안 후보 시험이 칸·앵커·창 rect 리터럴을 더한다.
-        (183, 407),
+        // tint_edge_width의 배율 무관 단언이 test 코드에 값 2를 하나 더한다.
+        (183, 408),
         "제외한 0과 test 전용 코드의 수가 달라졌다. 실제 사용과 수집 범위의 변경을 확인하고 기록을 갱신한다."
     );
     let roster: usize = UNIT_SPACE_SITES.iter().map(|(.., n, _)| n).sum();

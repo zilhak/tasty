@@ -601,7 +601,7 @@ fn draw_surface_box_edit(
     );
 
     if selected {
-        let bw = theme.tab_indicator_width().value();
+        let bw = theme.preset_leaf_selected_ring_width().value();
         ui.painter_at(rect).rect_stroke(
             rect.shrink(bw * 0.5),
             0.0,
@@ -638,7 +638,7 @@ fn draw_handle_cluster_mock(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) 
 fn draw_split_zone_overlay_mock(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
     let x = rect.min.x + rect.width() * SPLIT_ZONE_EDGE;
     let band = egui::Rect::from_min_max(rect.min, egui::pos2(x, rect.max.y));
-    let divider = theme.tab_indicator_width().value(); // 2px 분할선(accent bar 와 동일 굵기).
+    let divider = theme.preset_split_divider_width().value();
     let p = ui.painter_at(rect);
     p.rect_filled(band, 0.0, theme.preset_split_zone_bg().to_egui());
     p.vline(
