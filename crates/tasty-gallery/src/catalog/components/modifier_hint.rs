@@ -843,8 +843,8 @@ pub fn draw_anatomy(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         "Don't hide a chord that a key combo could reach — a bound-empty chord shows its ChordHead \
-         with a muted \"No shortcuts bound\" placeholder, never nothing, so holding an all-empty \
-         combo still surfaces the panel.",
+         with a muted \"No shortcuts bound\" placeholder (see below), never nothing, so holding an \
+         all-empty combo still surfaces the panel.",
     );
     spec::note(
         ui,
