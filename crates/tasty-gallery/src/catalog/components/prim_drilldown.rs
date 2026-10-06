@@ -19,7 +19,7 @@ const DEMO_W: LogicalPx = LogicalPx(560.0);
 /// 데모 상자 높이 — `height: 320`. 푸터를 뺀 나머지가 DrillDown 영역이다.
 const DEMO_H: LogicalPx = LogicalPx(320.0);
 /// 비교 표 첫 열 비율 — `minmax(0,1.6fr) 1fr 1fr`.
-const ACTION_COL_FR: f32 = 1.6;
+const ACTION_COL_WEIGHT: f32 = 1.6;
 /// 비교 표 칸의 세로 여백 — 머리줄 `padding: 0 12px 6px`, 칸 `padding: 6px 12px`.
 const CELL_PAD_Y: LogicalPx = LogicalPx(6.0);
 
@@ -259,8 +259,8 @@ fn diff_table(ui: &mut egui::Ui, th: &Theme, preset: &Preset) {
         .inner_margin(egui::Margin::same(th.spacing_lg.value() as i8))
         .show(ui, |ui| {
             let w = ui.available_width();
-            let unit = w / (ACTION_COL_FR + 2.0);
-            let cols = [unit * ACTION_COL_FR, unit, unit];
+            let unit = w / (ACTION_COL_WEIGHT + 2.0);
+            let cols = [unit * ACTION_COL_WEIGHT, unit, unit];
             let pad_x = th.spacing_md.value();
             let head = |text: &str| -> egui::WidgetText {
                 let mut job = egui::text::LayoutJob::default();
