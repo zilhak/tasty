@@ -16,10 +16,16 @@ const HOME_KEYS: &[&str] = &["\"TASTY_HOME\"", "\"HOME\""];
 
 /// 제품 코드 예외의 (파일, 사유). HOME_KEYS 리터럴이 원문에 있으면 예외를 재검토한다.
 /// 키의 런타임 값을 평가하는 검사는 아니다.
-const PRODUCTION_EXCEPTIONS: &[(&str, &str)] = &[(
-    "src/boot/locale.rs",
-    "프로덕션이 OS 로케일을 자식 프로세스로 넘긴다 — 홈 키가 아니라 로케일 키다",
-)];
+const PRODUCTION_EXCEPTIONS: &[(&str, &str)] = &[
+    (
+        "src/boot/locale.rs",
+        "프로덕션이 OS 로케일을 자식 프로세스로 넘긴다 — 홈 키가 아니라 로케일 키다",
+    ),
+    (
+        "src/boot/single_instance/evidence.rs",
+        "실행기 활성화 토큰(XDG_ACTIVATION_TOKEN·DESKTOP_STARTUP_ID)을 자식 셸에 넘기지 않도록 시작 직후 지운다 — 홈 키가 아니다",
+    ),
+];
 
 struct Hit {
     rel: String,
