@@ -93,7 +93,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ],
     );
 
-    spec::stage(ui, theme, StageVariant::Wrap, |ui| {
+    // 1.2 카드는 문서 열에서 앞의 두 카드와 한 줄에 들어가지 않는다. horizontal_wrapped는 크기를
+    // 미리 모르는 cluster를 다음 줄로 넘기지 못해 경계를 넘으므로 세로로 쌓는다.
+    spec::stage(ui, theme, StageVariant::Column, |ui| {
         for (label, zoom) in ZOOMS {
             let zoomed = Theme::with_colors_and_zoom(theme.to_colors(), theme.is_light, zoom);
             spec::cluster(
@@ -282,6 +284,12 @@ fn progress_card(ui: &mut egui::Ui, theme: &Theme, rows: &[ProgressRow]) {
                 }
                 progress_row(ui, theme, row);
             }
+        });
+        footer_buttons(ui, theme, |ui| {
+            Button::new("Cancel")
+                .variant(ButtonVariant::Ghost)
+                .size(ControlSize::Sm)
+                .show(ui, theme);
         });
     });
 }
