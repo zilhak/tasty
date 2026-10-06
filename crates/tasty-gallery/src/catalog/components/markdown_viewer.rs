@@ -3,6 +3,7 @@
 //! 주소창과 목차는 정적으로 그리며 이미지는 파일을 읽지 않고 대체 영역을 표시한다.
 
 mod callout_kinds;
+mod css_path;
 mod document;
 
 use tasty_type_appearance::theme::Theme;
@@ -10,7 +11,8 @@ use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::Spinner;
 
 pub use callout_kinds::spec as callout_kinds_spec;
-use document::{document, md_h2_size};
+pub use css_path::{content_colour_spec, heading_hierarchy_spec};
+use document::document;
 
 use crate::catalog::icons;
 use crate::catalog::spec::{self, StageVariant, TokenChip};
@@ -47,10 +49,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Solo, |ui| {
         ui.set_max_width(DOC_W.value());
         document(ui, theme);
-    });
-
-    spec::stage(ui, theme, StageVariant::Column, |ui| {
-        type_scale(ui, theme);
     });
 
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
@@ -229,77 +227,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         theme,
         "The plugin renders sanitized HTML in a native WebView and applies Theme values through CSS. It interpolates heading sizes between prose-h1 and body, generates heading IDs and a collapsible table of contents, and uses a bundled highlight.js for fenced code. GFM alerts use localized labels and distinct colors. This gallery reproduces those elements with egui and fixed example data; it does not run the browser, highlighting script or navigation.",
     );
-}
-
-/// heading type-scale 시트 — h1–h6 + p + small, 좌측 mono 태그.
-fn type_scale(ui: &mut egui::Ui, theme: &Theme) {
-    ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
-    let scale_row = |ui: &mut egui::Ui, tag: &str, draw: &dyn Fn(&mut egui::Ui)| {
-        ui.horizontal(|ui| {
-            ui.add_space(theme.spacing_xs.value());
-            let (r, _) = ui.allocate_exact_size(
-                egui::vec2(theme.spacing_xl.value(), theme.font_size_body.value()),
-                egui::Sense::hover(),
-            );
-            ui.painter().text(
-                r.left_center(),
-                egui::Align2::LEFT_CENTER,
-                tag,
-                egui::FontId::monospace(theme.font_size_micro.value()),
-                theme.text_muted().to_egui(),
-            );
-            ui.add_space(theme.spacing_md.value());
-            draw(ui);
-        });
-    };
-    for lvl in 1..=6u8 {
-        scale_row(ui, &format!("h{lvl}"), &move |ui| {
-            heading_sample(ui, theme, lvl)
-        });
-    }
-    scale_row(ui, "p", &|ui| {
-        ui.label(rich(
-            theme,
-            "Body — 13px, line-height 1.6, secondary.",
-            theme.font_size_body.value(),
-            theme.text_secondary().to_egui(),
-        ));
-    });
-    scale_row(ui, "small", &|ui| {
-        ui.label(rich(
-            theme,
-            "Caption — body × 0.85, muted.",
-            theme.font_size_caption.value(),
-            theme.text_muted().to_egui(),
-        ));
-    });
-}
-
-/// type-scale 한 줄용 heading 샘플(상단 마진 없이).
-fn heading_sample(ui: &mut egui::Ui, theme: &Theme, level: u8) {
-    let body = theme.font_size_body.value();
-    let (size, color, upper) = match level {
-        1 => (
-            theme.font_size_prose_h1.value(),
-            theme.text_primary().to_egui(),
-            false,
-        ),
-        2 => (md_h2_size(theme), theme.text_primary().to_egui(), false),
-        3 => (
-            theme.font_size_max.value(),
-            theme.text_primary().to_egui(),
-            false,
-        ),
-        4 => (body, theme.text_secondary().to_egui(), false),
-        5 => (body, theme.text_muted().to_egui(), false),
-        _ => (body, theme.text_muted().to_egui(), true),
-    };
-    let text = if upper {
-        "The quick brown fox".to_uppercase()
-    } else {
-        "The quick brown fox".to_string()
-    };
-    ui.label(egui::RichText::new(text).size(size).color(color));
 }
 
 /// 상태 타일 — 고정 W×H 테두리 박스, 콘텐츠 세로 가운데.

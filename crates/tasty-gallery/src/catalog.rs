@@ -2183,6 +2183,8 @@ pub fn pages() -> Vec<Page> {
                             plugins_settled::draw_address_states,
                         ),
                         components::markdown_viewer::callout_kinds_spec(),
+                        components::markdown_viewer::content_colour_spec(),
+                        components::markdown_viewer::heading_hierarchy_spec(),
                     ],
                 ),
                 components::image_viewer::section(),
