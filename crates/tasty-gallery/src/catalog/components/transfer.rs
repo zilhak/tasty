@@ -4,23 +4,26 @@
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::tokens::TRANSFER_CARD_PAD_X;
 use tasty_ui_widgets::{Button, ButtonVariant, ControlSize};
 
 use crate::catalog::icons;
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::catalog::widgets::dialog as kit;
 
-/// 헤더/푸터 가로 패딩 (디자인 14 — space 스텝 밖 raw).
-const PAD_X: LogicalPx = LogicalPx(14.0);
-/// 헤더 세로 패딩 (디자인 12 = space-md).
-const HEADER_PAD_Y: LogicalPx = LogicalPx(12.0);
-/// 바디 패딩 (디자인 14 — raw).
-const BODY_PAD: LogicalPx = LogicalPx(14.0);
-/// 푸터 세로 패딩 (디자인 10 — raw).
-const FOOTER_PAD_Y: LogicalPx = LogicalPx(10.0);
-/// 바디 내부 요소 gap (디자인 10 — raw).
-const BODY_GAP: LogicalPx = LogicalPx(10.0);
+// 여백은 본체와 같은 transfer-* 토큰이고 폭과 함께 UI 배율을 따른다. 줄 높이는 각 줄의
+// 글자 크기 × line-height-ui다.
+
+/// 글자 크기 한 줄의 높이.
+fn line_h(theme: &Theme, font: LogicalPx) -> LogicalPx {
+    font.scaled(theme.line_height_ui)
+}
+
+/// 시안 Stage의 배율 비교 세 단계.
+const ZOOMS: [(&str, f32); 3] = [
+    ("ui_scale 0.85", 0.85),
+    ("ui_scale 1", 1.0),
+    ("ui_scale 1.2", 1.2),
+];
 
 /// 단일·다중 파일 전송의 진행 상태를 비교한다.
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
@@ -89,6 +92,67 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::new("bg-panel", "frame", theme.bg_panel().to_egui()),
         ],
     );
+
+    spec::stage(ui, theme, StageVariant::Wrap, |ui| {
+        for (label, zoom) in ZOOMS {
+            let zoomed = Theme::with_colors_and_zoom(theme.to_colors(), theme.is_light, zoom);
+            spec::cluster(
+                ui,
+                theme,
+                &format!("{label} — width and insets scale together"),
+                |ui| {
+                    progress_card(
+                        ui,
+                        &zoomed,
+                        &[ProgressRow {
+                            name: "sprint-42-demo.mp4",
+                            pct: 27,
+                            done: "34.6 MiB",
+                            total: "128.0 MiB",
+                            rate: "2.1 MiB/s",
+                        }],
+                    );
+                },
+            );
+        }
+    });
+
+    spec::meta(
+        ui,
+        theme,
+        &[
+            (
+                "scale",
+                "on-scale: width and every inset below multiply by ui_scale",
+            ),
+            (
+                "header",
+                "pad-y transfer-header-pad-y 12 · pad-x transfer-pad-x 14 · gap space-sm",
+            ),
+            (
+                "body",
+                "padding transfer-pad-x 14 · block gap transfer-body-gap 10",
+            ),
+            ("footer", "pad-y transfer-footer-pad-y 10 · pad-x 14"),
+            (
+                "reason well",
+                "transfer-well-pad-y 8 · transfer-well-pad-x 10",
+            ),
+            (
+                "line heights",
+                "not tokens — each line = its font size × line-height-ui \
+                 (header row = max(glyph md, title line))",
+            ),
+        ],
+        &[
+            TokenChip::without_color("transfer-pad-x", "14 inset"),
+            TokenChip::without_color("transfer-header-pad-y", "→ space-md 12"),
+            TokenChip::without_color("transfer-body-gap", "→ size-10"),
+            TokenChip::without_color("transfer-footer-pad-y", "→ size-10"),
+            TokenChip::without_color("transfer-well-pad-y", "→ space-sm 8"),
+            TokenChip::without_color("transfer-well-pad-x", "→ size-10"),
+        ],
+    );
 }
 
 /// 시작 전 거부와 전송 중 실패의 확인·재시도 버튼을 비교한다.
@@ -154,8 +218,12 @@ fn header_band(
     title: &str,
     trailing: Option<&str>,
 ) {
-    let content_h = LogicalPx(20.0);
-    let band_h = HEADER_PAD_Y.scaled(2.0) + content_h;
+    let content_h = theme
+        .icon_glyph_size_md
+        .max(line_h(theme, theme.font_size_max));
+    let pad_y = theme.transfer_header_pad_y();
+    let pad_x = theme.transfer_pad_x();
+    let band_h = pad_y.scaled(2.0) + content_h;
     let (rect, _) = ui.allocate_exact_size(
         egui::vec2(theme.transfer_popup_width().value(), band_h.value()),
         egui::Sense::hover(),
@@ -166,14 +234,8 @@ fn header_band(
         egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
     );
     let inner = egui::Rect::from_min_max(
-        egui::pos2(
-            rect.left() + PAD_X.value(),
-            rect.top() + HEADER_PAD_Y.value(),
-        ),
-        egui::pos2(
-            rect.right() - PAD_X.value(),
-            rect.bottom() - HEADER_PAD_Y.value(),
-        ),
+        egui::pos2(rect.left() + pad_x.value(), rect.top() + pad_y.value()),
+        egui::pos2(rect.right() - pad_x.value(), rect.bottom() - pad_y.value()),
     );
     let mut child = ui.new_child(
         egui::UiBuilder::new()
@@ -213,10 +275,10 @@ fn progress_card(ui: &mut egui::Ui, theme: &Theme, rows: &[ProgressRow]) {
             "Receiving file",
             Some(&format!("{head_pct}%")),
         );
-        body_region(ui, |ui| {
+        body_region(ui, theme, |ui| {
             for (i, row) in rows.iter().enumerate() {
                 if i > 0 {
-                    ui.add_space(BODY_GAP.value());
+                    ui.add_space(theme.transfer_body_gap().value());
                 }
                 progress_row(ui, theme, row);
             }
@@ -226,7 +288,14 @@ fn progress_card(ui: &mut egui::Ui, theme: &Theme, rows: &[ProgressRow]) {
 
 /// 한 파일 진행 행 — 파일명 → determinate bar → done/total · rate.
 fn progress_row(ui: &mut egui::Ui, theme: &Theme, row: &ProgressRow) {
-    ui.horizontal(|ui| {
+    let w = ui.available_width();
+    let left_center = egui::Layout::left_to_right(egui::Align::Center);
+    let file_h = theme
+        .icon_glyph_size_md
+        .max(line_h(theme, theme.font_size_body))
+        .value();
+    ui.allocate_ui_with_layout(egui::vec2(w, file_h), left_center, |ui| {
+        ui.set_min_height(file_h);
         ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
         kit::icon(
             ui,
@@ -243,10 +312,12 @@ fn progress_row(ui: &mut egui::Ui, theme: &Theme, row: &ProgressRow) {
                 .color(theme.text_primary().to_egui()),
         );
     });
-    ui.add_space(BODY_GAP.value());
+    ui.add_space(theme.transfer_body_gap().value());
     progress_bar(ui, theme, row.pct);
-    ui.add_space(BODY_GAP.value());
-    ui.horizontal(|ui| {
+    ui.add_space(theme.transfer_body_gap().value());
+    let stats_h = line_h(theme, theme.font_size_caption).value();
+    ui.allocate_ui_with_layout(egui::vec2(w, stats_h), left_center, |ui| {
+        ui.set_min_height(stats_h);
         ui.label(
             egui::RichText::new(format!("{} / {}", row.done, row.total))
                 .monospace()
@@ -264,11 +335,10 @@ fn progress_row(ui: &mut egui::Ui, theme: &Theme, row: &ProgressRow) {
     });
 }
 
-/// determinate 4px progress bar — recessed track + accent fill (0ms 무애니).
-/// 토큰: height=`--tasty-progress-height`(size-4 = spacing_xs) · radius=radius-sm ·
-/// track=bg-app · fill=accent-primary.
+/// determinate progress bar — recessed track + accent fill (0ms 무애니).
+/// 토큰: height=`--tasty-progress-height` · radius=radius-sm · track=bg-app · fill=accent-primary.
 fn progress_bar(ui: &mut egui::Ui, theme: &Theme, pct: u32) {
-    let h = theme.spacing_xs.value(); // progress-height = size-4 = 4
+    let h = theme.progress_height().value();
     let w = ui.available_width();
     let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
     let r = theme.corner_radius_sm.value();
@@ -292,7 +362,7 @@ fn error_card(ui: &mut egui::Ui, theme: &Theme, name: &str, reason: &str, retry:
             "Transfer failed",
             None,
         );
-        body_region(ui, |ui| {
+        body_region(ui, theme, |ui| {
             ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing.x = 0.0;
                 ui.label(
@@ -308,7 +378,7 @@ fn error_card(ui: &mut egui::Ui, theme: &Theme, name: &str, reason: &str, retry:
                         .color(theme.text_secondary().to_egui()),
                 );
             });
-            ui.add_space(BODY_GAP.value());
+            ui.add_space(theme.transfer_body_gap().value());
             reason_well(ui, theme, reason);
         });
         // 푸터 버튼 — danger-fill 금지 (ghost/secondary 만).
@@ -341,12 +411,10 @@ fn reason_well(ui: &mut egui::Ui, theme: &Theme, reason: &str) {
             theme.separator.to_egui(),
         ))
         .corner_radius(theme.corner_radius.value())
-        .inner_margin(egui::Margin {
-            left: TRANSFER_CARD_PAD_X,
-            right: TRANSFER_CARD_PAD_X,
-            top: theme.spacing_sm.value() as i8,
-            bottom: theme.spacing_sm.value() as i8,
-        })
+        .inner_margin(egui::Margin::symmetric(
+            theme.transfer_well_pad_x().value() as i8,
+            theme.transfer_well_pad_y().value() as i8,
+        ))
         .show(ui, |ui| {
             ui.set_min_width(ui.available_width());
             ui.label(
@@ -358,21 +426,23 @@ fn reason_well(ui: &mut egui::Ui, theme: &Theme, reason: &str) {
         });
 }
 
-/// 바디 region (padding 14, 전체폭).
-fn body_region(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
+/// 바디 region (사방 transfer-pad-x, 전체폭).
+fn body_region(ui: &mut egui::Ui, theme: &Theme, add: impl FnOnce(&mut egui::Ui)) {
     egui::Frame::new()
-        .inner_margin(egui::Margin::same(BODY_PAD.value() as i8))
+        .inner_margin(egui::Margin::same(theme.transfer_pad_x().value() as i8))
         .show(ui, |ui| {
             ui.set_min_width(ui.available_width());
             add(ui);
         });
 }
 
-/// 푸터 (padding 10/14, borderTop separator, 우측정렬). `add` 는 우→좌 순서로
+/// 푸터 (transfer-footer-pad-y / transfer-pad-x, borderTop separator, 우측정렬). `add` 는 우→좌 순서로
 /// 위젯을 넣는다(먼저 넣은 것이 우측 끝).
 fn footer_buttons(ui: &mut egui::Ui, theme: &Theme, add: impl FnOnce(&mut egui::Ui)) {
     let btn_h = LogicalPx(ControlSize::Sm.height(theme));
-    let band_h = FOOTER_PAD_Y.scaled(2.0) + btn_h;
+    let pad_y = theme.transfer_footer_pad_y();
+    let pad_x = theme.transfer_pad_x();
+    let band_h = pad_y.scaled(2.0) + btn_h;
     let (rect, _) = ui.allocate_exact_size(
         egui::vec2(theme.transfer_popup_width().value(), band_h.value()),
         egui::Sense::hover(),
@@ -383,14 +453,8 @@ fn footer_buttons(ui: &mut egui::Ui, theme: &Theme, add: impl FnOnce(&mut egui::
         egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
     );
     let inner = egui::Rect::from_min_max(
-        egui::pos2(
-            rect.left() + PAD_X.value(),
-            rect.top() + FOOTER_PAD_Y.value(),
-        ),
-        egui::pos2(
-            rect.right() - PAD_X.value(),
-            rect.bottom() - FOOTER_PAD_Y.value(),
-        ),
+        egui::pos2(rect.left() + pad_x.value(), rect.top() + pad_y.value()),
+        egui::pos2(rect.right() - pad_x.value(), rect.bottom() - pad_y.value()),
     );
     let mut child = ui.new_child(
         egui::UiBuilder::new()

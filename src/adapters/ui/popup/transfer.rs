@@ -3,7 +3,6 @@
 //! 실패 팝업은 전송 중 실패에만 재시도를 제공한다.
 
 use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::tokens::TRANSFER_CARD_PAD_X;
 use tasty_ui_widgets::{Button, ButtonVariant, ControlSize};
 
 use crate::adapters::ui::icons;
@@ -16,18 +15,32 @@ use crate::theme;
 pub const TRANSFER_PROGRESS_POPUP_ID: &str = "transfer_progress";
 pub const TRANSFER_ERROR_POPUP_ID: &str = "transfer_error";
 
-/// 헤더/푸터 가로 패딩 (디자인 14 — space 스텝 밖 raw).
-const PAD_X: LogicalPx = LogicalPx(14.0);
-/// 헤더 세로 패딩 (디자인 12 = space-md).
-const HEADER_PAD_Y: LogicalPx = LogicalPx(12.0);
-/// 바디 패딩 (디자인 14 — raw).
-const BODY_PAD: LogicalPx = LogicalPx(14.0);
-/// 푸터 세로 패딩 (디자인 10 — raw).
-const FOOTER_PAD_Y: LogicalPx = LogicalPx(10.0);
-/// 바디 내부 요소 gap (디자인 10 — raw).
-const BODY_GAP: LogicalPx = LogicalPx(10.0);
-/// 헤더/푸터 콘텐츠 높이 근사(glyph 16 / 제목 14 line ≈ 20).
-const HEADER_CONTENT_H: LogicalPx = LogicalPx(20.0);
+// 여백은 모두 transfer-* 토큰이고 폭과 함께 UI 배율을 따른다. 줄 높이는 토큰이 아니라
+// 각 줄의 글자 크기 × line-height-ui로 계산한다.
+
+/// 글자 크기 한 줄의 높이.
+fn line_h(th: &theme::Theme, font: LogicalPx) -> LogicalPx {
+    font.scaled(th.line_height_ui)
+}
+
+/// 헤더 콘텐츠 높이 — glyph md와 제목 한 줄 중 큰 값.
+fn header_content_h(th: &theme::Theme) -> LogicalPx {
+    th.icon_glyph_size_md.max(line_h(th, th.font_size_max))
+}
+
+/// 파일명 줄 높이 — glyph md와 본문 한 줄 중 큰 값.
+fn file_line_h(th: &theme::Theme) -> LogicalPx {
+    th.icon_glyph_size_md.max(line_h(th, th.font_size_body))
+}
+
+/// 진행 행 하나 — 파일명 줄 + gap + bar + gap + 통계 줄.
+fn progress_row_h(th: &theme::Theme) -> LogicalPx {
+    file_line_h(th)
+        + th.transfer_body_gap()
+        + th.progress_height()
+        + th.transfer_body_gap()
+        + line_h(th, th.font_size_caption)
+}
 
 /// 진행 팝업 상태 — 진행 중인 파일 행들. 업로드 워커 진행 이벤트가 `row_by_id` 로 갱신한다.
 #[derive(Debug, Default, Clone)]
@@ -81,13 +94,11 @@ pub fn transfer_progress_sizer(state: &MainViewState, _e: &EngineRead<'_>) -> eg
         .unwrap_or(1)
         .max(1);
     let th = theme::theme();
-    let header_h = HEADER_PAD_Y.scaled(2.0) + HEADER_CONTENT_H;
-    let footer_h = FOOTER_PAD_Y.scaled(2.0) + LogicalPx(ControlSize::Sm.height(&th));
-    // 행 하나: fileRow(~18) + gap + bar(4) + gap + statsRow(~15).
-    let row_h = LogicalPx(18.0) + BODY_GAP + LogicalPx(4.0) + BODY_GAP + LogicalPx(15.0);
-    let body_h = BODY_PAD.scaled(2.0)
-        + row_h.scaled(n as f32)
-        + BODY_GAP.scaled((n.saturating_sub(1)) as f32);
+    let header_h = th.transfer_header_pad_y().scaled(2.0) + header_content_h(&th);
+    let footer_h = th.transfer_footer_pad_y().scaled(2.0) + LogicalPx(ControlSize::Sm.height(&th));
+    let body_h = th.transfer_pad_x().scaled(2.0)
+        + progress_row_h(&th).scaled(n as f32)
+        + th.transfer_body_gap().scaled((n.saturating_sub(1)) as f32);
     egui::vec2(
         th.transfer_popup_width().value(),
         (header_h + body_h + footer_h).value(),
@@ -97,8 +108,8 @@ pub fn transfer_progress_sizer(state: &MainViewState, _e: &EngineRead<'_>) -> eg
 /// 실패 팝업 높이 = header + body(prose + reason well) + footer. reason 길이로 well 줄수 추정.
 pub fn transfer_error_sizer(state: &MainViewState, _e: &EngineRead<'_>) -> egui::Vec2 {
     let th = theme::theme();
-    let header_h = HEADER_PAD_Y.scaled(2.0) + HEADER_CONTENT_H;
-    let footer_h = FOOTER_PAD_Y.scaled(2.0) + LogicalPx(ControlSize::Sm.height(&th));
+    let header_h = th.transfer_header_pad_y().scaled(2.0) + header_content_h(&th);
+    let footer_h = th.transfer_footer_pad_y().scaled(2.0) + LogicalPx(ControlSize::Sm.height(&th));
     let (name_len, reason_len) = state
         .dialogs
         .transfer_error
@@ -109,9 +120,11 @@ pub fn transfer_error_sizer(state: &MainViewState, _e: &EngineRead<'_>) -> egui:
     let prose_lines = (((name_len + 22) as f32) / 53.0).ceil().max(1.0);
     let prose_h = prose_lines * th.font_size_body.value() * 1.5;
     let well_lines = ((reason_len as f32) / 50.0).ceil().max(1.0);
-    // well: 패딩 8+8 + 텍스트 줄.
-    let well_h = 16.0 + well_lines * th.font_size_caption.value() * 1.4;
-    let body_h = BODY_PAD.scaled(2.0) + LogicalPx(prose_h) + BODY_GAP + LogicalPx(well_h);
+    // well: 위아래 패딩 + 텍스트 줄.
+    let well_h =
+        th.transfer_well_pad_y().scaled(2.0) + line_h(&th, th.font_size_caption).scaled(well_lines);
+    let body_h =
+        th.transfer_pad_x().scaled(2.0) + LogicalPx(prose_h) + th.transfer_body_gap() + well_h;
     egui::vec2(
         th.transfer_popup_width().value(),
         (header_h + body_h + footer_h).value(),
@@ -158,10 +171,10 @@ pub fn draw_transfer_progress(
             t("transfer.progress.title"),
             Some(&format!("{head_pct}%")),
         );
-        body_region(ui, |ui| {
+        body_region(ui, &th, |ui| {
             for (i, row) in rows.iter().enumerate() {
                 if i > 0 {
-                    ui.add_space(BODY_GAP.value());
+                    ui.add_space(th.transfer_body_gap().value());
                 }
                 progress_row(ui, &th, row);
             }
@@ -234,7 +247,7 @@ pub fn draw_transfer_error(
             t("transfer.error.title"),
             None,
         );
-        body_region(ui, |ui| {
+        body_region(ui, &th, |ui| {
             ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing.x = 0.0;
                 ui.label(
@@ -250,7 +263,7 @@ pub fn draw_transfer_error(
                         .color(th.text_secondary()),
                 );
             });
-            ui.add_space(BODY_GAP.value());
+            ui.add_space(th.transfer_body_gap().value());
             reason_well(ui, &th, &reason);
         });
         // danger-fill 금지 — ghost/secondary 만.
@@ -323,7 +336,9 @@ fn header_band(
     title: &str,
     trailing: Option<&str>,
 ) {
-    let band_h = HEADER_PAD_Y.scaled(2.0) + HEADER_CONTENT_H;
+    let pad_y = th.transfer_header_pad_y();
+    let pad_x = th.transfer_pad_x();
+    let band_h = pad_y.scaled(2.0) + header_content_h(th);
     let (rect, _) = ui.allocate_exact_size(
         egui::vec2(th.transfer_popup_width().value(), band_h.value()),
         egui::Sense::hover(),
@@ -334,14 +349,8 @@ fn header_band(
         egui::Stroke::new(th.border_width.value(), th.separator.to_egui()),
     );
     let inner = egui::Rect::from_min_max(
-        egui::pos2(
-            rect.left() + PAD_X.value(),
-            rect.top() + HEADER_PAD_Y.value(),
-        ),
-        egui::pos2(
-            rect.right() - PAD_X.value(),
-            rect.bottom() - HEADER_PAD_Y.value(),
-        ),
+        egui::pos2(rect.left() + pad_x.value(), rect.top() + pad_y.value()),
+        egui::pos2(rect.right() - pad_x.value(), rect.bottom() - pad_y.value()),
     );
     let mut child = ui.new_child(
         egui::UiBuilder::new()
@@ -370,19 +379,23 @@ fn header_band(
     }
 }
 
-/// 바디 region (padding 14, 전체폭).
-fn body_region(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
+/// 바디 region (사방 transfer-pad-x, 전체폭).
+fn body_region(ui: &mut egui::Ui, th: &theme::Theme, add: impl FnOnce(&mut egui::Ui)) {
     egui::Frame::new()
-        .inner_margin(egui::Margin::same(BODY_PAD.value() as i8))
+        .inner_margin(egui::Margin::same(th.transfer_pad_x().value() as i8))
         .show(ui, |ui| {
             ui.set_min_width(ui.available_width());
             add(ui);
         });
 }
 
-/// 한 파일 진행 행 — 파일명 → determinate bar → done/total · rate.
+/// 한 파일 진행 행 — 파일명 → determinate bar → done/total · rate. 줄 높이는 sizer와 같은
+/// [`file_line_h`]·[`line_h`]로 잡는다.
 fn progress_row(ui: &mut egui::Ui, th: &theme::Theme, row: &TransferRow) {
-    ui.horizontal(|ui| {
+    let w = ui.available_width();
+    let left_center = egui::Layout::left_to_right(egui::Align::Center);
+    ui.allocate_ui_with_layout(egui::vec2(w, file_line_h(th).value()), left_center, |ui| {
+        ui.set_min_height(file_line_h(th).value());
         ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
         let gsz = th.icon_glyph_size_md.value();
         let (grect, _) = ui.allocate_exact_size(egui::vec2(gsz, gsz), egui::Sense::hover());
@@ -398,10 +411,12 @@ fn progress_row(ui: &mut egui::Ui, th: &theme::Theme, row: &TransferRow) {
                 .color(th.text_primary()),
         );
     });
-    ui.add_space(BODY_GAP.value());
+    ui.add_space(th.transfer_body_gap().value());
     progress_bar(ui, th, row_pct(row));
-    ui.add_space(BODY_GAP.value());
-    ui.horizontal(|ui| {
+    ui.add_space(th.transfer_body_gap().value());
+    let stats_h = line_h(th, th.font_size_caption).value();
+    ui.allocate_ui_with_layout(egui::vec2(w, stats_h), left_center, |ui| {
+        ui.set_min_height(stats_h);
         ui.label(
             egui::RichText::new(format!(
                 "{} / {}",
@@ -447,10 +462,10 @@ fn elide_mono(ui: &egui::Ui, th: &theme::Theme, s: &str, max_w: f32) -> String {
     "…".to_owned()
 }
 
-/// determinate 4px progress bar — recessed track(bg-app) + accent fill(accent-primary),
-/// 0ms 무애니(fill 폭 = pct). 토큰: height=size-4(spacing_xs) · radius=radius-sm.
+/// determinate progress bar — recessed track(bg-app) + accent fill(accent-primary),
+/// 0ms 무애니(fill 폭 = pct). 토큰: height=progress-height · radius=radius-sm.
 fn progress_bar(ui: &mut egui::Ui, th: &theme::Theme, pct: u32) {
-    let h = th.spacing_xs.value(); // progress-height = size-4 = 4
+    let h = th.progress_height().value();
     let w = ui.available_width();
     let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
     let r = th.corner_radius_sm.value();
@@ -471,12 +486,10 @@ fn reason_well(ui: &mut egui::Ui, th: &theme::Theme, reason: &str) {
             th.separator.to_egui(),
         ))
         .corner_radius(th.corner_radius.value())
-        .inner_margin(egui::Margin {
-            left: TRANSFER_CARD_PAD_X,
-            right: TRANSFER_CARD_PAD_X,
-            top: th.spacing_sm.value() as i8,
-            bottom: th.spacing_sm.value() as i8,
-        })
+        .inner_margin(egui::Margin::symmetric(
+            th.transfer_well_pad_x().value() as i8,
+            th.transfer_well_pad_y().value() as i8,
+        ))
         .show(ui, |ui| {
             ui.set_min_width(ui.available_width());
             ui.label(
@@ -488,7 +501,7 @@ fn reason_well(ui: &mut egui::Ui, th: &theme::Theme, reason: &str) {
         });
 }
 
-/// 푸터 (padding 10/14, borderTop separator, 우측정렬). `add` 는 우→좌 순서로 위젯을
+/// 푸터 (transfer-footer-pad-y / transfer-pad-x, borderTop separator, 우측정렬). `add` 는 우→좌 순서로 위젯을
 /// 넣고 원하는 클릭 결과(bool)를 반환한다.
 fn footer_buttons<R>(
     ui: &mut egui::Ui,
@@ -496,7 +509,9 @@ fn footer_buttons<R>(
     add: impl FnOnce(&mut egui::Ui) -> R,
 ) -> R {
     let btn_h = ControlSize::Sm.height(th);
-    let band_h = FOOTER_PAD_Y.scaled(2.0) + LogicalPx(btn_h);
+    let pad_y = th.transfer_footer_pad_y();
+    let pad_x = th.transfer_pad_x();
+    let band_h = pad_y.scaled(2.0) + LogicalPx(btn_h);
     let (rect, _) = ui.allocate_exact_size(
         egui::vec2(th.transfer_popup_width().value(), band_h.value()),
         egui::Sense::hover(),
@@ -507,14 +522,8 @@ fn footer_buttons<R>(
         egui::Stroke::new(th.border_width.value(), th.separator.to_egui()),
     );
     let inner = egui::Rect::from_min_max(
-        egui::pos2(
-            rect.left() + PAD_X.value(),
-            rect.top() + FOOTER_PAD_Y.value(),
-        ),
-        egui::pos2(
-            rect.right() - PAD_X.value(),
-            rect.bottom() - FOOTER_PAD_Y.value(),
-        ),
+        egui::pos2(rect.left() + pad_x.value(), rect.top() + pad_y.value()),
+        egui::pos2(rect.right() - pad_x.value(), rect.bottom() - pad_y.value()),
     );
     let mut child = ui.new_child(
         egui::UiBuilder::new()
@@ -574,6 +583,38 @@ mod tests {
         assert_eq!(row_pct(&row(27, 100)), 27);
         assert_eq!(row_pct(&row(100, 100)), 100);
         assert_eq!(row_pct(&row(200, 100)), 100);
+    }
+
+    /// 여백 토큰과 줄 높이가 폭과 함께 UI 배율을 따르고, 줄 높이는 글자 크기 × line-height-ui다.
+    #[test]
+    fn insets_and_line_heights_follow_the_ui_scale() {
+        let base = tasty_themes::mocha_fallback();
+        for zoom in [0.85_f32, 1.0, 1.2] {
+            let th = theme::Theme::with_colors_and_zoom(base.to_colors(), false, zoom);
+            let z = |px: f32| (px * zoom).round();
+            assert_eq!(th.transfer_popup_width().value(), z(400.0), "zoom {zoom}");
+            assert_eq!(th.transfer_pad_x().value(), z(14.0), "zoom {zoom}");
+            assert_eq!(th.transfer_body_gap().value(), z(10.0), "zoom {zoom}");
+            assert_eq!(th.transfer_footer_pad_y().value(), z(10.0), "zoom {zoom}");
+            assert_eq!(th.transfer_well_pad_x().value(), z(10.0), "zoom {zoom}");
+            assert_eq!(th.transfer_header_pad_y(), th.spacing_md, "zoom {zoom}");
+            assert_eq!(th.transfer_well_pad_y(), th.spacing_sm, "zoom {zoom}");
+            assert_eq!(
+                header_content_h(&th).value(),
+                th.icon_glyph_size_md
+                    .value()
+                    .max(th.font_size_max.value() * th.line_height_ui),
+                "zoom {zoom}"
+            );
+            assert_eq!(
+                progress_row_h(&th).value(),
+                file_line_h(&th).value()
+                    + 2.0 * th.transfer_body_gap().value()
+                    + th.progress_height().value()
+                    + th.font_size_caption.value() * th.line_height_ui,
+                "zoom {zoom}"
+            );
+        }
     }
 
     #[test]

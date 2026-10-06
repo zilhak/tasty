@@ -281,20 +281,27 @@ semantic/primitive 종착.
 
 ## Remote file transfer (progress/error 09)
 
-디자인 `tokens/components.css` 의 `--tasty-transfer-popup-width` + `--tasty-progress-*`(4종).
-진행·실패 팝업(`popup/transfer.rs`)의 폭과 완료 비율을 표시하는 진행률 막대에 사용한다. 아래 값과 현재 호출 경로를 따른다. component 토큰이라는 이유만으로 Theme 접근자를 만들 수 없다고 일반화하지 않는다.
+디자인 `tokens/components.css` 의 `--tasty-transfer-popup-width` + `--tasty-transfer-*` 여백(6종) + `--tasty-progress-*`(4종).
+진행·실패 팝업(`popup/transfer.rs`)의 폭·여백과 완료 비율을 표시하는 진행률 막대에 사용한다. 아래 값과 현재 호출 경로를 따른다. component 토큰이라는 이유만으로 Theme 접근자를 만들 수 없다고 일반화하지 않는다.
 
 | 디자인 토큰 | 디자인 체인 | tasty Theme / 값 | 비고 |
 |---|---|---|---|
 | `--tasty-transfer-popup-width` | → `size-400` (400px) | `transfer_popup_width()` | 진행·실패 프레임 폭. UI 배율을 곱한다(본체와 갤러리 공용) |
-| `--tasty-progress-height` | → `size-4` (4px) | `Theme::spacing_xs`(=4) | determinate bar 두께. size-4 = space-xs 값 일치 → 기존 필드 재사용 |
+| `--tasty-transfer-pad-x` | → `size-14` (14px) | `transfer_pad_x()` | 헤더·바디·푸터 가로 여백과 바디 사방 여백 |
+| `--tasty-transfer-header-pad-y` | → `space-md` (12px) | `transfer_header_pad_y()` | 헤더 세로 여백 |
+| `--tasty-transfer-body-gap` | → `size-10` (10px) | `transfer_body_gap()` | 바디 블록 사이·진행 행 안 간격 |
+| `--tasty-transfer-footer-pad-y` | → `size-10` (10px) | `transfer_footer_pad_y()` | 푸터 세로 여백 |
+| `--tasty-transfer-well-pad-y` | → `space-sm` (8px) | `transfer_well_pad_y()` | 실패 사유 well 세로 여백 |
+| `--tasty-transfer-well-pad-x` | → `size-10` (10px) | `transfer_well_pad_x()` | 실패 사유 well 가로 여백 |
+| `--tasty-progress-height` | → `size-4` (4px) | `progress_height()` | determinate bar 두께 |
 | `--tasty-progress-radius` | → `radius-sm` (2px) | `Theme::corner_radius_sm` | bar 라운드 |
 | `--tasty-progress-track-bg` | → `bg-app` | `Theme::bg_app()` | recessed track(패널보다 어둡게) |
 | `--tasty-progress-fill-bg` | → `accent-primary` | `Theme::accent_primary()` | determinate fill(0ms, 폭=바이트) |
 
-> **팝업의 구조 치수**: 헤더/푸터 패딩(14/12/10)·바디 패딩(14)·
-> gap(10)·헤더 콘텐츠 높이(20)는 디자인 값을 유지한 `popup/transfer.rs`와 갤러리의 LogicalPx 상수다.
-> reason well 패딩(8/10)은 디자인 `padding: 8px 10px` 그대로. bar 는 `Spinner` 처럼 위젯화하지 않고
+> **팝업의 구조 치수**: 폭과 위 여백 토큰은 모두 UI 배율을 따른다(본체와 갤러리 공용 접근자).
+> 줄 높이는 토큰이 아니다. 각 줄은 글자 크기 × `line_height_ui`이고, 헤더 줄은 glyph md와 제목 줄 중
+> 큰 값, 파일명 줄은 glyph md와 본문 줄 중 큰 값이다. 실패 팝업 본문 문단의 줄 높이는 디자인
+> `lineHeight: 1.5`를 따른다. bar 는 `Spinner` 처럼 위젯화하지 않고
 > painter 인라인(track `bg_app` + fill `accent_primary`).
 
 ## Popup 타이틀바 · 알림 popup 폭

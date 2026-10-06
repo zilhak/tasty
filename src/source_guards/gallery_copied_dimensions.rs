@@ -120,31 +120,6 @@ const COPIED: &[(&str, Side, Side)] = &[
         Side::Lit(GALLERY_PRESET_EDITOR, "TAB_PAD_X"),
     ),
     (
-        "전송 팝업 좌우 여백",
-        Side::Lit(HOST_TRANSFER, "PAD_X"),
-        Side::Lit(GALLERY_TRANSFER, "PAD_X"),
-    ),
-    (
-        "전송 팝업 본문 여백",
-        Side::Lit(HOST_TRANSFER, "BODY_PAD"),
-        Side::Lit(GALLERY_TRANSFER, "BODY_PAD"),
-    ),
-    (
-        "전송 팝업 본문 행 간격",
-        Side::Lit(HOST_TRANSFER, "BODY_GAP"),
-        Side::Lit(GALLERY_TRANSFER, "BODY_GAP"),
-    ),
-    (
-        "전송 팝업 헤더 상하 여백",
-        Side::Lit(HOST_TRANSFER, "HEADER_PAD_Y"),
-        Side::Lit(GALLERY_TRANSFER, "HEADER_PAD_Y"),
-    ),
-    (
-        "전송 팝업 푸터 상하 여백",
-        Side::Lit(HOST_TRANSFER, "FOOTER_PAD_Y"),
-        Side::Lit(GALLERY_TRANSFER, "FOOTER_PAD_Y"),
-    ),
-    (
         "원격 attach 좌측 프로필 열 폭",
         Side::Lit(HOST_REMOTE_ATTACH, "LEFT_W"),
         Side::Lit(GALLERY_REMOTE_ATTACH, "LEFT_W"),
@@ -262,7 +237,6 @@ const COPIED: &[(&str, Side, Side)] = &[
 ];
 
 const GALLERY_QUIT_MODAL: &str = "crates/tasty-gallery/src/catalog/components/quit_modal.rs";
-const GALLERY_TRANSFER: &str = "crates/tasty-gallery/src/catalog/components/transfer.rs";
 const GALLERY_REMOTE_ATTACH: &str = "crates/tasty-gallery/src/catalog/components/remote_attach.rs";
 const GALLERY_FILE_PICKER: &str = "crates/tasty-gallery/src/catalog/components/file_picker.rs";
 const GALLERY_TUTORIAL: &str = "crates/tasty-gallery/src/catalog/widgets/tutorial.rs";
@@ -275,7 +249,6 @@ const GALLERY_SETTINGS_HANDLER: &str =
     "crates/tasty-gallery/src/catalog/components/settings_handler.rs";
 
 const HOST_PRESET_DEMO: &str = "src/adapters/ui/preset/demo_layout.rs";
-const HOST_TRANSFER: &str = "src/adapters/ui/popup/transfer.rs";
 const HOST_REMOTE_ATTACH: &str = "src/adapters/ui/popup/remote_attach.rs";
 const HOST_FILE_PICKER: &str = "src/adapters/ui/popup/file_picker.rs";
 const HOST_TUTORIAL_CALLOUT: &str = "src/adapters/ui/tutorial/callout.rs";
@@ -418,11 +391,11 @@ fn resolve(side: &Side, theme: &str, semantic: &str, primitive: &str) -> (String
 
 #[test]
 fn the_gallery_still_agrees_with_the_dimensions_it_restates() {
-    // 등록된 비교 쌍은 45개다. 항목을 삭제해 불일치를 숨기지 않도록 하한 대신 정확한 수를 확인한다.
+    // 등록된 비교 쌍은 40개다. 항목을 삭제해 불일치를 숨기지 않도록 하한 대신 정확한 수를 확인한다.
     assert_eq!(
         COPIED.len(),
-        45,
-        "비교 명부가 {}쌍이다(기록 45). 복사본이 실제로 사라졌는지 또는 새로 생겼는지 확인하고 명부와 기록을 함께 갱신한다.",
+        40,
+        "비교 명부가 {}쌍이다(기록 40). 복사본이 실제로 사라졌는지 또는 새로 생겼는지 확인하고 명부와 기록을 함께 갱신한다.",
         COPIED.len()
     );
     let theme = read(THEME);

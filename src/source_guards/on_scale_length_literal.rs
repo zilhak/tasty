@@ -107,11 +107,11 @@ fn is_in_unit_space(hit: &Hit) -> bool {
 const AREAS: &[(&str, usize, &str)] = &[
     (
         "src/adapters/ui/popup/",
-        50,
+        44,
         // popup의 기본 크기·열 최소폭·스크롤 상한 중 대응하는 역할의 토큰이 없는 값이 남아 있다.
         // 같은 숫자의 폭·점 크기 토큰을 높이·간격에 대신 쓰지 않는다.
         // 스케일에 size-140·360·440·620이 들어오면서 기존 popup 크기표의 360·440·140이 새로 집계됐다.
-        // 스케일에 size-10이 들어오면서 transfer popup의 여백 10 두 자리가 새로 집계됐다.
+        // transfer popup의 여백·줄 높이 상수는 transfer-* 토큰과 줄 높이 계산으로 옮겨 집계에서 빠졌다.
         "popup 기본 크기표 — vec2(400.0, 320.0) 처럼 정의 옆에 값이 그대로 박혀 있다",
     ),
     (
@@ -165,7 +165,8 @@ const AREAS: &[(&str, usize, &str)] = &[
         // html pane을 쌓은 탭 스트립 툴팁 예제의 WebView 자리 높이 64는 디자인 Spec의 `--tasty-size-64`이며
         // 역할 토큰이 없다.
         // 원격 도구 Passkeys 예제의 경고 배지 높이 16은 디자인 `WarnBadge`의 height 16이며 역할 토큰이 없다.
-        146,
+        // transfer 예제의 여백 상수는 본체와 같은 transfer-* 토큰으로 옮겨 집계에서 빠졌다.
+        141,
         "갤러리 specimen은 배율 검사에서 제외돼도 스케일 검사는 받는다(ADR-0039). 이름 붙은 치수와 인라인 값, 전시 목적을 별도로 분류한다.",
     ),
     (
@@ -623,7 +624,7 @@ fn the_gallery_share_is_one_question_or_it_is_not() {
     );
     assert_eq!(
         (named_cited, named_plain, inline_cited, inline_plain),
-        (62, 76, 0, 13),
+        (57, 76, 0, 13),
         "갤러리 후보의 (이름 있음/없음, 디자인 언급 있음/없음) 분류 수가 바뀌었다. 해당 선언과 주석을 확인하고 기록을 갱신한다."
     );
 }

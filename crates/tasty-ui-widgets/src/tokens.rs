@@ -70,11 +70,6 @@ pub const CLIPBOARD_CENTER_ICON_SIZE: f32 = 28.0;
 /// 본체 `adapters/ui/tutorial/topic_popup.rs` 와 갤러리 specimen 이 같이 읽는다.
 pub const TUTORIAL_STEP_GAP_X: f32 = 10.0;
 
-/// 전송(transfer) 카드의 좌우 안쪽 여백. 디자인 전사값 10 으로 그리드 밖이다.
-/// 본체 `adapters/ui/popup/transfer.rs` 와 갤러리 specimen 이 같이 읽는다.
-/// `egui::Margin` 필드가 `i8` 이라 타입을 맞춰 둔다.
-pub const TRANSFER_CARD_PAD_X: i8 = 10;
-
 // 대응하는 디자인 반경 토큰이 없는 값이다. 가까운 토큰으로 바꾸면 화면이 달라지므로 그대로 유지한다.
 // 이 상수들은 UI 배율을 적용하지 않아 Theme의 모서리 반경과 배율 동작이 다르다.
 
