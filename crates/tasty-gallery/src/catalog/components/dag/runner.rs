@@ -194,17 +194,17 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ],
         &[
             TokenChip::new(
-                "--tasty-dag-runner-stalled-fg",
+                "dag-runner-stalled-fg",
                 "stopped + ready",
                 theme.dag_runner_stalled_fg().to_egui(),
             ),
             TokenChip::new(
-                "--tasty-dag-runner-crashed-fg",
+                "dag-runner-crashed-fg",
                 "crashed",
                 theme.dag_runner_crashed_fg().to_egui(),
             ),
             TokenChip::new(
-                "--tasty-dag-runner-idle-fg",
+                "dag-runner-idle-fg",
                 "stopped, no work",
                 theme.dag_runner_idle_fg().to_egui(),
             ),

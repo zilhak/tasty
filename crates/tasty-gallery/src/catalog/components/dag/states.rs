@@ -52,16 +52,16 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ],
         &[
             TokenChip::new(
-                "--tasty-dag-cycle-bg",
+                "dag-cycle-bg",
                 "banner wash",
                 theme.dag_cycle_bg().to_egui(),
             ),
             TokenChip::new(
-                "--tasty-dag-cycle-fg",
+                "dag-cycle-fg",
                 "banner text",
                 theme.dag_cycle_fg().to_egui(),
             ),
-            TokenChip::without_color("--tasty-text-disabled", "empty glyph"),
+            TokenChip::without_color("text-disabled", "empty glyph"),
         ],
     );
     spec::note(

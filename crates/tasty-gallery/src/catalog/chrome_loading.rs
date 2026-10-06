@@ -366,7 +366,7 @@ pub fn draw_shell_setup(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         &[
-            ("form width", "360 · --tasty-size-360"),
+            ("form width", "360 · size-360"),
             (
                 "stack",
                 "lockup → (space-xl) → title · sub · input · validation · buttons (space-sm)",

@@ -360,18 +360,18 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ],
         &[
             TokenChip::new(
-                "--tasty-dag-detail-bg",
+                "dag-detail-bg",
                 "panel fill",
                 theme.dag_detail_bg().to_egui(),
             ),
             TokenChip::new(
-                "--tasty-dag-detail-log-bg",
+                "dag-detail-log-bg",
                 "log bed",
                 theme.dag_detail_log_bg().to_egui(),
             ),
-            TokenChip::without_color("--tasty-dag-detail-log-max-height", "160 error tail"),
+            TokenChip::without_color("dag-detail-log-max-height", "160 error tail"),
             TokenChip::new(
-                "--tasty-dag-detail-border",
+                "dag-detail-border",
                 "dock hairline",
                 theme.dag_detail_border().to_egui(),
             ),

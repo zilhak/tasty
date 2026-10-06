@@ -400,7 +400,7 @@ pub fn draw_attention_scale(ui: &mut egui::Ui, theme: &Theme) {
                     });
                     scale_cell(&mut child, SCALE_COLS[3], |ui| {
                         ui.label(
-                            egui::RichText::new(format!("--tasty-{}", k.role))
+                            egui::RichText::new(k.role)
                                 .monospace()
                                 .size(theme.font_size_caption.value())
                                 .color(ec(theme.text_secondary())),

@@ -351,17 +351,17 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("back", "restores the list, keeps the selection"),
         ],
         &[
-            TokenChip::without_color("--tasty-dag-popup-width", "560"),
-            TokenChip::without_color("--tasty-shadow-modal", "lift"),
-            TokenChip::without_color("--tasty-drilldown-backbar-height", "36 back bar"),
-            TokenChip::without_color("--tasty-dag-popup-height", "460 frame"),
+            TokenChip::without_color("dag-popup-width", "560"),
+            TokenChip::without_color("shadow-modal", "lift"),
+            TokenChip::without_color("drilldown-backbar-height", "36 back bar"),
+            TokenChip::without_color("dag-popup-height", "460 frame"),
             TokenChip::new(
-                "--tasty-separator",
+                "separator",
                 "band hairlines",
                 theme.separator.to_egui_premultiplied(),
             ),
             TokenChip::new(
-                "--tasty-drilldown-backbar-border",
+                "drilldown-backbar-border",
                 "back bar rule",
                 theme.drilldown_backbar_border().to_egui_premultiplied(),
             ),

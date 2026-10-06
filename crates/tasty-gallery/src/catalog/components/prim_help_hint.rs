@@ -115,16 +115,16 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         &[
-            ("bg", "--tasty-tooltip-bg"),
-            ("border", "1px --tasty-tooltip-border"),
-            ("radius", "--tasty-tooltip-radius"),
-            ("max-width", "240 --tasty-tooltip-max-width"),
+            ("bg", "tooltip-bg"),
+            ("border", "1px tooltip-border"),
+            ("radius", "tooltip-radius"),
+            ("max-width", "240 tooltip-max-width"),
             ("placement", "top / bottom / left / right"),
             (
                 "over native content",
                 "tab strip · pane head: top → bottom → inside the strip → top clamped (4 from the window edge) — Layouts › Pane tab strip",
             ),
-            ("delay", "150ms --tasty-tooltip-delay"),
+            ("delay", "150ms tooltip-delay"),
         ],
         &[
             TokenChip::new(

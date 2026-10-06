@@ -161,14 +161,14 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ],
         &[
             TokenChip::new(
-                "--tasty-dag-row-count-fg",
+                "dag-row-count-fg",
                 "done/total",
                 theme.dag_row_count_fg().to_egui(),
             ),
-            TokenChip::without_color("--tasty-listctrl-row-bg-hover", "hover"),
-            TokenChip::without_color("--tasty-dag-row-summary-gap", "trailing gap"),
-            TokenChip::new("--tasty-tag-bg", "derived tag", theme.tag_bg().to_egui()),
-            TokenChip::without_color("--tasty-dag-row-height", "36 row"),
+            TokenChip::without_color("listctrl-row-bg-hover", "hover"),
+            TokenChip::without_color("dag-row-summary-gap", "trailing gap"),
+            TokenChip::new("tag-bg", "derived tag", theme.tag_bg().to_egui()),
+            TokenChip::without_color("dag-row-height", "36 row"),
         ],
     );
     spec::note(

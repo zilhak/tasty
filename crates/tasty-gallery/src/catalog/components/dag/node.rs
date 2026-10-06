@@ -354,14 +354,14 @@ pub fn draw_states(ui: &mut egui::Ui, theme: &Theme) {
             .map(|s| {
                 TokenChip::new(
                     match s {
-                        Status::Waiting => "--tasty-dag-status-waiting",
-                        Status::Ready => "--tasty-dag-status-ready",
-                        Status::Running => "--tasty-dag-status-running",
-                        Status::Succeeded => "--tasty-dag-status-succeeded",
-                        Status::Failed => "--tasty-dag-status-failed",
-                        Status::Cancelled => "--tasty-dag-status-cancelled",
-                        Status::Skipped => "--tasty-dag-status-skipped",
-                        Status::Unknown => "--tasty-dag-status-unknown",
+                        Status::Waiting => "dag-status-waiting",
+                        Status::Ready => "dag-status-ready",
+                        Status::Running => "dag-status-running",
+                        Status::Succeeded => "dag-status-succeeded",
+                        Status::Failed => "dag-status-failed",
+                        Status::Cancelled => "dag-status-cancelled",
+                        Status::Skipped => "dag-status-skipped",
+                        Status::Unknown => "dag-status-unknown",
                     },
                     s.key(),
                     s.accent(theme).to_egui(),
@@ -410,7 +410,7 @@ pub fn draw_kinds(ui: &mut egui::Ui, theme: &Theme) {
             ("wait_barrier", "lock"),
         ],
         &[TokenChip::new(
-            "--tasty-dag-node-meta-fg",
+            "dag-node-meta-fg",
             "kind glyph",
             theme.dag_node_meta_fg().to_egui(),
         )],
@@ -484,12 +484,12 @@ pub fn draw_lod(ui: &mut egui::Ui, theme: &Theme) {
         ],
         &[
             TokenChip::new(
-                "--tasty-dag-node-selected-ring",
+                "dag-node-selected-ring",
                 "selection",
                 theme.dag_node_selected_ring().to_egui(),
             ),
-            TokenChip::without_color("--tasty-dag-node-hover-bg", "hover wash"),
-            TokenChip::without_color("--tasty-dag-node-dim-opacity", "skipped path"),
+            TokenChip::without_color("dag-node-hover-bg", "hover wash"),
+            TokenChip::without_color("dag-node-dim-opacity", "skipped path"),
         ],
     );
     super::canvas::dense_stage(ui, theme);

@@ -275,18 +275,18 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ],
         &[
             TokenChip::new(
-                "--tasty-dag-canvas-bg",
+                "dag-canvas-bg",
                 "canvas bed",
                 theme.dag_canvas_bg().to_egui(),
             ),
             TokenChip::new(
-                "--tasty-dag-canvas-dot",
+                "dag-canvas-dot",
                 "grid mark",
                 theme.dag_canvas_dot().to_egui(),
             ),
-            TokenChip::without_color("--tasty-dag-layer-gap", "32 flow depth"),
-            TokenChip::without_color("--tasty-dag-sibling-gap", "24 across"),
-            TokenChip::without_color("--tasty-dag-edge-corner-radius", "elbow"),
+            TokenChip::without_color("dag-layer-gap", "32 flow depth"),
+            TokenChip::without_color("dag-sibling-gap", "24 across"),
+            TokenChip::without_color("dag-edge-corner-radius", "elbow"),
         ],
     );
     spec::note(

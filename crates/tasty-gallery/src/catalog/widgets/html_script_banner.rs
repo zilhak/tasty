@@ -503,10 +503,10 @@ pub fn draw_states(ui: &mut egui::Ui, theme: &Theme) {
             ),
             (
                 "narrow",
-                "surface width < 440 (--tasty-banner-narrow-below) → action on its own line, body-aligned",
+                "surface width < 440 (banner-narrow-below) → action on its own line, body-aligned",
             ),
-            ("glyph nudge", "1 · --tasty-banner-glyph-offset"),
-            ("title ↔ body", "2 · --tasty-banner-text-gap (every banner)"),
+            ("glyph nudge", "1 · banner-glyph-offset"),
+            ("title ↔ body", "2 · banner-text-gap (every banner)"),
         ],
         &[
             TokenChip::new(

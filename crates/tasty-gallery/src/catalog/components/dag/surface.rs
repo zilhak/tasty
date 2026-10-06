@@ -360,13 +360,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("DAG switch", "instant swap + auto-fit"),
         ],
         &[
-            TokenChip::new(
-                "--tasty-bg-sidebar",
-                "header band",
-                theme.bg_sidebar().to_egui(),
-            ),
-            TokenChip::without_color("--tasty-separator", "header hairline"),
-            TokenChip::without_color("--tasty-dag-detail-sheet-height", "220 sheet"),
+            TokenChip::new("bg-sidebar", "header band", theme.bg_sidebar().to_egui()),
+            TokenChip::without_color("separator", "header hairline"),
+            TokenChip::without_color("dag-detail-sheet-height", "220 sheet"),
         ],
     );
     spec::note(

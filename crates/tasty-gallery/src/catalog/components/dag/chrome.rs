@@ -396,18 +396,18 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ],
         &[
             TokenChip::new(
-                "--tasty-dag-chrome-bg",
+                "dag-chrome-bg",
                 "cluster fill",
                 theme.dag_chrome_bg().to_egui(),
             ),
             TokenChip::new(
-                "--tasty-dag-minimap-viewport",
+                "dag-minimap-viewport",
                 "viewport rect",
                 theme.dag_minimap_viewport().to_egui(),
             ),
-            TokenChip::without_color("--tasty-dag-minimap-min-surface", "560 cutoff"),
+            TokenChip::without_color("dag-minimap-min-surface", "560 cutoff"),
             TokenChip::new(
-                "--tasty-dag-minimap-bg",
+                "dag-minimap-bg",
                 "minimap bed",
                 theme.dag_minimap_bg().to_egui(),
             ),

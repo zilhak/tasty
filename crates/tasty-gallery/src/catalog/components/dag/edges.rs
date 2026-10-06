@@ -200,23 +200,23 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ],
         &[
             TokenChip::new(
-                "--tasty-dag-edge-depends",
+                "dag-edge-depends",
                 "depends_on",
                 theme.dag_edge_depends().to_egui(),
             ),
             TokenChip::new(
-                "--tasty-dag-edge-fallback",
+                "dag-edge-fallback",
                 "fallback",
                 theme.dag_edge_fallback().to_egui(),
             ),
             TokenChip::new(
-                "--tasty-dag-edge-reduce",
+                "dag-edge-reduce",
                 "reduce",
                 theme.dag_edge_reduce().to_egui(),
             ),
-            TokenChip::without_color("--tasty-dag-edge-dim-opacity", "dead path"),
+            TokenChip::without_color("dag-edge-dim-opacity", "dead path"),
             TokenChip::new(
-                "--tasty-dag-edge-highlight",
+                "dag-edge-highlight",
                 "selected",
                 theme.dag_edge_highlight().to_egui(),
             ),

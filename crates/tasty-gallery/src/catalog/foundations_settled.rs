@@ -168,7 +168,7 @@ pub fn draw_shadows(ui: &mut egui::Ui, theme: &Theme) {
             token_label(
                 ui,
                 theme,
-                "--tasty-shadow-popover",
+                "shadow-popover",
                 "0 6px 18px · 40% — anchored, scrim-less",
             );
         });
@@ -178,7 +178,7 @@ pub fn draw_shadows(ui: &mut egui::Ui, theme: &Theme) {
             token_label(
                 ui,
                 theme,
-                "--tasty-shadow-modal",
+                "shadow-modal",
                 "0 20px 60px · 55% — centered, scrim-backed",
             );
         });

@@ -69,7 +69,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         &[
-            ("width", "--tasty-transfer-popup-width"),
+            ("width", "transfer-popup-width"),
             ("header", "download glyph · title · mono %"),
             ("filename", "mono 13 · ellipsized"),
             ("bar", "4px track + accent fill · no animation"),

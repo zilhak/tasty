@@ -360,7 +360,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         &[
             (
                 "trigger",
-                "Select language — 28px --tasty-multiselect-height · 12 left · 28 chevron room",
+                "Select language — 28px multiselect-height · 12 left · 28 chevron room",
             ),
             (
                 "open trigger",
@@ -372,13 +372,13 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ),
             (
                 "menu",
-                "4 below the trigger · min-width = trigger · grows to content up to --tasty-multiselect-menu-max-width (320)",
+                "4 below the trigger · min-width = trigger · grows to content up to multiselect-menu-max-width (320)",
             ),
             ("row", "28px · 12 padding-x · 8 box→label · Checkbox 16px"),
             ("checked row", "checkmark only — no background"),
             (
                 "overflow",
-                "scrolls past 220 --tasty-multiselect-menu-max-height · .tasty-scroll",
+                "scrolls past 220 multiselect-menu-max-height · .tasty-scroll",
             ),
             (
                 "bulk row",
