@@ -2,7 +2,7 @@
 //! GPU 없이 egui 프레임을 몇 번 돌려 Spec 하나가 차지한 폭을 잰다. 줄바꿈 줄이 직전 프레임의
 //! 크기로 자리를 잡으므로 한 프레임만으로는 판정하지 않는다. 픽셀이나 세로 넘침은 보지 않는다.
 
-// 렌더 결과(FullOutput)는 쓰지 않는다. 폭은 Ui에서 직접 읽는다.
+// 이유: 렌더 결과(FullOutput)는 쓰지 않는다. 폭은 Ui에서 직접 읽는다.
 #![allow(clippy::let_underscore_must_use)]
 
 use tasty_gallery::catalog::pages;
