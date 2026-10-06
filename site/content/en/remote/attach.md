@@ -163,6 +163,9 @@ tasty settings get-remote-transfer
 tasty settings set-remote-transfer --dir ~/Downloads/tasty --max-mb 2000
 ```
 
+When you pass the `--raw` output of a CLI attach to another command and that command exits first, the attach also ends normally.
+Other write errors, such as a permission problem on the output device, are reported as a failure.
+
 ## Troubleshooting
 
 | Symptom | What to check |
