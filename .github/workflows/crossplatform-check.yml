@@ -147,14 +147,10 @@ jobs:
       # GUI 전용 gui_tests 타깃은 Cargo의 required-features로 제외된다.
       # e2e 하네스는 같은 feature로 빌드한 headless 바이너리를 실행한다.
       #
-      # multi_window_owner_routing은 window.create를 요구해 건너뛴다.
-      # headless에는 winit 이벤트 루프와 창 생성 핸들러가 없다.
-      # 제외 범위는 이 테스트 하나이며 다른 시나리오는 실행한다.
-      # skip을 추가할 때는 각 테스트의 실행 불가 사유를 확인한다.
+      # 창이 필요한 시험은 #[cfg(feature = "gui")]로 이 조합에서 컴파일하지 않으므로
+      # 이름으로 건너뛰는 시험은 없다(ADR-0045).
       - name: cargo test (headless)
-        run: |
-          cargo test --workspace --no-default-features --locked --no-fail-fast -- \
-            --skip multi_window_owner_routing
+        run: cargo test --workspace --no-default-features --locked --no-fail-fast
 
       # 기본 feature의 Clippy에서는 제외되는 headless 전용 코드도 검사한다.
       - name: cargo clippy (headless)
@@ -169,7 +165,7 @@ jobs:
         if: ${{ !cancelled() }}
         run: cargo test --workspace --lib --bins --locked --no-fail-fast
 
-      # headless에서 제외한 창 소유권 테스트를 전용 Xvfb에서 실행한다.
+      # headless 조합에서 컴파일하지 않는 창 소유권 테스트를 전용 Xvfb에서 실행한다.
       # 아직 관측용이므로 실패해도 잡을 중단하지 않는다. 이 스텝의 결과를 따로 확인한다.
       # 차단 검사로 바꾸려면 CI에서 연속 통과할 횟수를 정하고 실제 결과를 확인한다.
       # 기준과 확인 절차는 docs/dev-guide/ci-gates.md에 기록한다.

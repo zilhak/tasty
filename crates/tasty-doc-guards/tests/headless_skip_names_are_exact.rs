@@ -1,4 +1,5 @@
-//! 헤드리스 테스트의 각 --skip 문자열이 소스에서 정확히 하나의 테스트 이름과 일치하는지 확인한다.
+//! 헤드리스 테스트 스텝이 이름 제외(--skip)를 쓰지 않는지 확인한다. GUI가 필요한 시험은 gui feature로 묶는다.
+//! skip이 다시 생기면 각 문자열이 소스에서 정확히 하나의 테스트 이름과 일치하는지도 확인한다.
 //! 부분일치이므로 이름 변경은 누락을, 유사한 새 이름은 의도하지 않은 제외를 만들 수 있다.
 //! 주석·문자열을 마스킹하고 #[test] 함수의 출현 수를 센다. 같은 이름도 파일별로 따로 센다.
 //! Cargo의 실제 테스트 목록을 실행해 얻지 않으므로 cfg·매크로로 달라지는 빌드 결과까지 보장하지는 않는다.
@@ -20,10 +21,16 @@ fn repo_root() -> PathBuf {
     tasty_doc_guards::repo_root()
 }
 
-/// 워크플로의 헤드리스 스텝에서 skip 인자를 읽는다. 스텝을 못 찾거나 결과가 비면 별도로 확인한다.
+/// 워크플로의 헤드리스 스텝에서 skip 인자를 읽는다. 스텝을 못 찾으면 실패한다.
+/// 지금은 비어 있어야 한다(`the_headless_step_skips_nothing`).
 fn skips_from_workflow() -> Vec<String> {
     let text = fs::read_to_string(repo_root().join(WORKFLOW))
         .unwrap_or_else(|e| panic!("{WORKFLOW} 를 읽을 수 없다: {e}"));
+    skips_in_step(&text)
+}
+
+/// 판독기는 문자열을 받아 합성 입력으로도 검사한다. 빈 결과가 판독 실패가 아님을 확인하기 위해서다.
+fn skips_in_step(text: &str) -> Vec<String> {
     let start = text
         .find(STEP_ANCHOR)
         .unwrap_or_else(|| panic!("워크플로에서 `{STEP_ANCHOR}` 스텝을 못 찾았다 — 앵커가 깨졌다"));
@@ -32,6 +39,10 @@ fn skips_from_workflow() -> Vec<String> {
         Some(i) => &rest[..i],
         None => rest,
     };
+    assert!(
+        block.contains("cargo test"),
+        "`{STEP_ANCHOR}` 스텝에서 cargo test 호출을 찾지 못했다. 스텝 경계 판독을 확인한다."
+    );
 
     let mut out = Vec::new();
     let mut cursor = block;
@@ -47,10 +58,6 @@ fn skips_from_workflow() -> Vec<String> {
         }
         cursor = after;
     }
-    assert!(
-        !out.is_empty(),
-        "{STEP_ANCHOR}에서 --skip을 읽지 못했다. 스텝 이름·인자 형식이 바뀌었는지 확인한다. 실제로 제외가 없어졌다면 ADR-0045의 격리·헤드리스 실행 기준을 재검토하고 이 검사를 갱신한다."
-    );
     out
 }
 
@@ -244,7 +251,6 @@ fn every_named_skip_matches_exactly_one_test() {
 fn the_parser_reads_the_workflow_rather_than_a_hardcoded_list() {
     // 워크플로의 skip 이름을 이 검사 소스에 복제하지 않았는지 확인한다.
     let skips = skips_from_workflow();
-    assert!(!skips.is_empty());
     let own_source =
         fs::read_to_string(repo_root().join(SELF_PATH)).expect("자기 소스를 읽을 수 있어야 한다");
     for s in &skips {
@@ -381,17 +387,26 @@ fn the_fixtures_in_this_file_are_not_counted_as_tests() {
     );
 }
 
-/// 헤드리스 skip 개수가 늘면 격리·GUI 요구 조건을 다시 검토한다(ADR-0045).
-/// 0개는 skips_from_workflow가 먼저 거부하므로 이 검사는 증가만 확인한다.
-/// 이 조건만 검증하려면 새 이름 대신 기존 skip을 중복해 개수만 바꾼다.
+/// 헤드리스 조합에서 실행할 수 없는 시험은 `#[cfg(feature = "gui")]`로 컴파일하지 않는다(ADR-0045).
+/// 워크플로의 이름 제외는 실행 범위를 소스 밖에서 줄이므로 쓰지 않는다.
 #[test]
-fn the_named_skip_count_is_still_one() {
+fn the_headless_step_skips_nothing() {
     let skips = skips_from_workflow();
-    assert_eq!(
-        skips.len(),
-        1,
-        "헤드리스 --skip이 {}건이다: {:?}. ADR-0045의 실행·격리 기준을 재검토한다. GUI가 필요한 테스트인지 헤드리스 구성 누락인지 구별하고, 구성 누락은 skip으로 숨기지 말고 고친다. 제외를 늘리기로 결정한 경우에만 기준값과 CLAUDE.md·ci-gates.md의 관련 설명을 함께 갱신한다.",
+    assert!(
+        skips.is_empty(),
+        "헤드리스 --skip이 {}건이다: {:?}. ADR-0045에 따라 GUI가 필요한 시험은 gui feature로 묶고, 헤드리스 구성 누락은 skip으로 숨기지 말고 고친다. 이름 제외가 꼭 필요하다고 결정했다면 ADR-0045와 ci-gates.md를 먼저 고친다.",
         skips.len(),
         skips
     );
+}
+
+/// 빈 결과가 판독 실패에서 오지 않았음을 합성 스텝으로 확인한다.
+#[test]
+fn the_skip_reader_still_reads_a_skip() {
+    let step = format!(
+        "      {STEP_ANCHOR}\n        run: |\n          cargo test --workspace -- \\\n            --skip some_name\n      - name: next\n        run: cargo test -- --skip outside\n"
+    );
+    assert_eq!(skips_in_step(&step), vec!["some_name".to_owned()]);
+    let bare = format!("      {STEP_ANCHOR}\n        run: cargo test --workspace\n");
+    assert!(skips_in_step(&bare).is_empty());
 }

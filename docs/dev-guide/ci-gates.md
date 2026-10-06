@@ -20,7 +20,7 @@ DPI 수동 변환 검사는 `src/`와 `crates/`의 파일 수 하한을 각각 �
 | SemVer 가드 | `cargo test --locked --no-default-features --no-fail-fast --test api_baseline_0_7 --test changelog_unreleased --test cli_naming_count_drift` | `test.yml` 의 `semver-guards` (self-hosted Linux X64) | main push · 수동 | [실측] |
 | macOS 컴파일 + 단위테스트 | `cargo check --workspace --locked` · `cargo test --workspace --lib --bins --locked --no-fail-fast` | `crossplatform-check.yml` 의 `check-macos` (self-hosted macOS) | main push(문서·site 제외) · PR · 수동 | [실측] |
 | Windows lint + 단위테스트 **+ 지목 통합** | `cargo clippy --workspace --all-targets --locked` · `cargo test --workspace --lib --bins --locked --no-fail-fast` · `cargo test -p tasty-shm -p tasty-doc-guards --locked --no-fail-fast` | `crossplatform-check.yml` (self-hosted Windows) | main push(문서·site 제외) · PR · 수동 | [실측] |
-| headless 컴파일 · **전체 스위트** · lint **+ Linux gui 단위테스트** | `cargo check --workspace --no-default-features --locked` · `cargo test --workspace --no-default-features --locked --no-fail-fast -- --skip <1 건>` · `cargo clippy --workspace --all-targets --no-default-features --locked` · `cargo test --workspace --lib --bins --locked --no-fail-fast`(스텝 `cargo test (linux, gui, unit)` — 기본 feature, 아래 [조합 격자의 빈 칸](#조합-격자의-빈-칸--linux--gui--debug-지금은-채워져-있다)) · **관측(비차단)** `xvfb-run … cargo test --workspace --locked --no-fail-fast --test e2e_tests -- multi_window_owner_routing --exact`(스텝 `cargo test (linux, gui, e2e — 관측용)`, `continue-on-error: true` — 위 `--skip` 1 건을 돌리되 실패해도 잡을 차단하지 않는다) | `crossplatform-check.yml` 의 `check-headless` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동 | [실측] |
+| headless 컴파일 · **전체 스위트** · lint **+ Linux gui 단위테스트** | `cargo check --workspace --no-default-features --locked` · `cargo test --workspace --no-default-features --locked --no-fail-fast` · `cargo clippy --workspace --all-targets --no-default-features --locked` · `cargo test --workspace --lib --bins --locked --no-fail-fast`(스텝 `cargo test (linux, gui, unit)` — 기본 feature, 아래 [조합 격자의 빈 칸](#조합-격자의-빈-칸--linux--gui--debug-지금은-채워져-있다)) · **관측(비차단)** `xvfb-run … cargo test --workspace --locked --no-fail-fast --test e2e_tests -- multi_window_owner_routing --exact`(스텝 `cargo test (linux, gui, e2e — 관측용)`, `continue-on-error: true` — 헤드리스 조합에서 컴파일하지 않는 이 시험을 돌리되 실패해도 잡을 차단하지 않는다) | `crossplatform-check.yml` 의 `check-headless` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동 | [실측] |
 | **not-debug(release) 컴파일 · gui** | `cargo check --workspace --release --locked` | `crossplatform-check.yml` 의 `check-release` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동 | [실측] |
 | 문서 가드 | `cargo test -p tasty-doc-guards --locked --no-fail-fast` | `doc-guards.yml` (ubuntu-latest) | main push · PR · 수동 — **경로 필터 없음**([ADR-0048](../adr/0048-source-guards-and-exemptions.md)) | [실측] |
 | 파일 SLOC | `bash scripts/check-file-size.sh` | `complexity-check.yml` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동 | [실측] |
@@ -388,9 +388,11 @@ cargo build -p tasty-doc-guards --bin workflow-channels
 문자열로 `Command::new` 등을 찾는 스캔 분류는 해당 문자열을 예시로 가진 가드를 제외할 수
 있으므로 그 결과를 저장소의 정확한 가드 총수로 쓰지 않는다.
 
-헤드리스 `--skip`은 테스트 이름의 부분문자열과 일치한다.
-`headless_skip_names_are_exact.rs`는 워크플로에서 읽은 skip마다 대상이 하나인지 확인한다.
-0개나 여러 개가 되면 실패한다. 상세 계수 방식과 한계는 그 가드의 모듈 설명을 따른다.
+헤드리스 테스트 스텝은 `--skip`을 쓰지 않는다. 창이 필요한 시험은 `#[cfg(feature = "gui")]`로
+그 조합에서 컴파일하지 않는다([ADR-0045](../adr/0045-test-isolation-and-harness.md)).
+`headless_skip_names_are_exact.rs`는 워크플로의 헤드리스 스텝에서 skip이 0건인지 확인하고,
+합성 스텝으로 판독기가 skip을 여전히 읽는지도 확인한다. skip이 다시 생기면 각 이름이
+테스트 하나와만 일치하는지도 검사한다. 상세 계수 방식과 한계는 그 가드의 모듈 설명을 따른다.
 
 ## 테스트는 **어디 있느냐**로 채널이 갈린다
 
@@ -402,7 +404,7 @@ cargo build -p tasty-doc-guards --bin workflow-channels
 | 테스트가 어디 있나 | 자동 **실행** | 자동 **컴파일** | 실례 |
 |---|---|---|---|
 | lib 유닛 테스트 (`src/`·`crates/*/src/` 안의 `#[cfg(test)] mod tests`) | **있다** — 두 조합 모두가 유닛 타깃을 포함한다. 기본 조합은 `crossplatform-check` 의 **세 잡 모두**가 `--lib --bins` 로 돌린다(`check-macos` · `check-windows` · `check-headless` 의 `cargo test (linux, gui, unit)` 스텝), 헤드리스 조합은 `check-headless` 의 전체 스위트가 담는다. 한때 조합 격자에 빈 칸(Linux + gui + debug)이 있었고 지금은 그 gui 스텝이 채운다 — 아래 절 | 있다 | `ui_font_size_tokens_are_integers_at_every_zoom` |
-| 통합 테스트 (`tests/*.rs`) | **헤드리스 조합에만 있다** — `check-headless` 가 전체 스위트를 돌린다(`--skip` 1 건 제외 — 그 1 건은 같은 잡의 관측용 gui/Xvfb 스텝이 돌리지만 `continue-on-error` 라 **차단하지 않는다**). **기본 조합에는 없다** — 그 조합의 세 잡은 `--lib --bins` 이고(예외는 Windows 잡이 지목하는 `-p tasty-shm -p tasty-doc-guards` 뿐이다) `test.yml` 의 전체 스위트는 `workflow_dispatch` 전용 그리고 `check-headless` 는 `paths-ignore: docs/** · site/** · **/*.md` 뒤에 있어 **문서만 바뀐 push 에서는 이 칸이 통째로 비는 것**에 유의한다 | **있다** — clippy `--all-targets` 가 타깃으로 잡는다 | `tests/i18n_key_parity.rs` |
+| 통합 테스트 (`tests/*.rs`) | **헤드리스 조합에만 있다** — `check-headless` 가 전체 스위트를 돌린다(gui feature 로 묶여 이 조합에서 컴파일하지 않는 `multi_window_owner_routing` 은 같은 잡의 관측용 gui/Xvfb 스텝이 돌리지만 `continue-on-error` 라 **차단하지 않는다**). **기본 조합에는 없다** — 그 조합의 세 잡은 `--lib --bins` 이고(예외는 Windows 잡이 지목하는 `-p tasty-shm -p tasty-doc-guards` 뿐이다) `test.yml` 의 전체 스위트는 `workflow_dispatch` 전용 그리고 `check-headless` 는 `paths-ignore: docs/** · site/** · **/*.md` 뒤에 있어 **문서만 바뀐 push 에서는 이 칸이 통째로 비는 것**에 유의한다 | **있다** — clippy `--all-targets` 가 타깃으로 잡는다 | `tests/i18n_key_parity.rs` |
 | 문서 가드 통합 테스트 (`crates/tasty-doc-guards/tests/*.rs`) | **있다 — 두 조합과 무관하게** `doc-guards.yml` 이 `-p tasty-doc-guards` 로 돌리고, **Windows 잡도 같은 지목으로 돌린다**(그쪽은 OS 축을 연다). 이 잡에는 경로 필터가 없어 문서만 바뀐 push에서도 실행한다([ADR-0048](../adr/0048-source-guards-and-exemptions.md)). `check-headless` 의 전체 스위트에서도 함께 돈다 | 있다 | `crates/tasty-doc-guards/tests/no_checkbox_in_docs.rs` |
 | SemVer 가드 3종 | **있다** — `semver-guards` 가 `--test` 로 이름을 지목한다 (main push) | 있다 | `api_baseline_0_7` · `changelog_unreleased` · `cli_naming_count_drift` |
 | 포맷 | **있다** — `format-check.yml` (main push · PR) + pre-commit | — | `cargo fmt --check` |
@@ -591,8 +593,8 @@ cargo clippy --workspace --all-targets \
 ### GUI 테스트를 실행하고 해석하는 조건
 
 `multi_window_owner_routing`은 `gui` feature 조합에서만 컴파일된다. 헤드리스에서
-`window.create`와 `window.list`를 지원하지 않기 때문이다. 그래서 `--skip` 없이 실행한 헤드리스
-`e2e_tests`에도 이 시험이 들어가지 않는다. 헤드리스 전체 실행의 `--skip`은 워크플로에 그대로 남아 있다. 같은 잡의 관측용 GUI/Xvfb 단계가 실행하지만
+`window.create`와 `window.list`를 지원하지 않기 때문이다. 그래서 헤드리스 전체 실행에는
+이 시험이 들어가지 않고 이름 제외도 필요 없다. 같은 잡의 관측용 GUI/Xvfb 단계가 실행하지만
 `continue-on-error: true`이므로 실패가 잡을 차단하지 않는다. 차단 검사로 승격할 때는
 러너의 Xvfb 가용성과 연속 성공 기록을 확인한다. 필요한 연속 횟수 N은 아직 정하지 않았다.
 
