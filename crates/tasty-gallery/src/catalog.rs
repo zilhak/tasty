@@ -1943,16 +1943,26 @@ pub fn pages() -> Vec<Page> {
                 section(
                     "statusbar",
                     "Status bar",
-                    vec![spec(
-                        "statusbar",
-                        "Workspace status bar",
-                        Some(
-                            "24px read-only summary + one keyboard reminder · collapses grid → \
+                    vec![
+                        spec(
+                            "statusbar",
+                            "Workspace status bar",
+                            Some(
+                                "24px read-only summary + one keyboard reminder · collapses grid → \
                              shell → surface id → palette cap → branch text (calls the real \
                              `tasty_ui_widgets` view)",
+                            ),
+                            components::status_bar::draw,
                         ),
-                        components::status_bar::draw,
-                    )],
+                        spec(
+                            "statusbar-theme-cell",
+                            "Theme cell — one glyph box, both themes (settled)",
+                            Some(
+                                "sun (Latte) and theme (Mocha) at one size — statusbar-glyph-size = icon-size-xs (12); the overshoot is fixed in the sun asset, not with a per-theme size",
+                            ),
+                            components::status_bar_theme_cell::draw,
+                        ),
+                    ],
                 ),
                 section(
                     "depth",
