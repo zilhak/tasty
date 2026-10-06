@@ -121,8 +121,8 @@ pub use semaphore::*;
 pub use task::*;
 pub use task_graph_submit::*;
 
-#[cfg(test)]
 #[path = "agent/postprocess_ipc_tests.rs"]
+#[cfg(test)]
 mod postprocess_ipc_tests;
 
 #[cfg(test)]

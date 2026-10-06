@@ -35,6 +35,10 @@ const TEST_ONLY_FILES: &[(&str, &str)] = &[
         "src/adapters/ipc/handler/cli_entry_debug_tests.rs",
         "동일한 요청 검증 중 debug 전용 항목을 분리한 파일이다. 부모에서 all(test, debug_assertions)로 선언해 제품 빌드에서 제외한다.",
     ),
+    (
+        "src/adapters/ipc/handler/agent/postprocess_ipc_tests.rs",
+        "agent.task_get 의 실제 응답을 CLI task-get 의 줄 생성 함수에 넣어 두 쪽이 같은 필드를 읽는지 검증한다. 응답을 만드는 핸들러 픽스처가 cfg(test) 전용이다.",
+    ),
 ];
 
 /// cfg(test) 또는 all(test, ...) 형태만 인정한다. 모든 cfg 논리식을 계산하지는 않는다.
