@@ -17,7 +17,7 @@ macOS 의 ⌘ 는 Windows · Linux 의 Alt 와 같은 자리에 있어서, 설�
 
 **비라틴 키보드에서도 위치로 맞춥니다.** 러시아어 · 그리스어처럼 라틴 문자가 아닌 배열을 써도 단축키는 키캡의 라틴 위치로 인식됩니다 — 러시아어 배열에서 `H` 자리(러시아어로는 `Р` 가 나오는 키)를 수식키와 함께 누르면 `Ctrl+Shift+H` 단축키가 그대로 동작합니다. 배열을 바꿔도 단축키를 다시 잡을 필요가 없습니다. 마크다운 · 웹 미리보기 화면 위에서도 같습니다.
 
-macOS 에서 설정 화면의 표기를 `⌘` `⌥` `⇧` 심볼로 바꾸려면 **설정** > **일반** <!-- en: General --> > **표시** <!-- en: Display --> 의 **Alt 키 표시** <!-- en: Alt key display --> · **Option 키 표시** <!-- en: Option key display --> · **Shift 키 표시** <!-- en: Shift key display --> 를 바꿉니다. 저장되는 값은 그대로입니다.
+macOS 에서 설정 화면의 표기를 `⌘` `⌥` `⇧` 심볼로 바꾸려면 **설정** > **일반** <!-- en: General --> > **표시** <!-- en: Display --> 의 **Cmd 키 표시** <!-- en: Cmd key display --> · **Option 키 표시** <!-- en: Option key display --> · **Shift 키 표시** <!-- en: Shift key display --> 를 바꿉니다. 저장되는 값은 그대로입니다.
 
 ## 기본 단축키 (Tasty 프리셋)
 

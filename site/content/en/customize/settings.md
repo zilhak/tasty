@@ -1,4 +1,4 @@
-<!-- source-hash: 4b07906bb606 -->
+<!-- source-hash: 716cf23aa6e1 -->
 # Settings
 
 Adjust your shell, fonts, and workspace preferences to suit the way you work. Use the settings window or edit `~/.tasty/config.toml` directly. For key combinations and colours, see [Keybindings](keybindings.md) and [Themes](themes.md).
@@ -39,7 +39,7 @@ Press the same shortcut again to close the settings window.
 | **Accessibility** | **Reduced motion** (turns off toast and overlay fades, the loading spinner's rotation, and the modal shake) · **Show modifier key hints** |
 | **Overlay** | **Toast duration** (1~10 seconds) |
 | **Remote transfer** | **Save folder** (default `~/.tasty/transfers/`) · **Maximum size** (MiB) — where files received from a remote Workspace are saved |
-| **Display** (macOS only) | **Alt key display** · **Option key display** · **Shift key display** — choose text or symbols for keybinding notation |
+| **Display** (macOS only) | **Cmd key display** · **Option key display** · **Shift key display** — choose text or symbols for keybinding notation |
 | **Permissions** (macOS only) | **Full Disk Access** · **Screen recording** status, **Request all permissions** (asks for the folders and screen recording in one go), and **Open System Settings** in the Full Disk Access row |
 
 ### Terminal

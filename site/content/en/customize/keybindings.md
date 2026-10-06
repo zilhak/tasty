@@ -1,4 +1,4 @@
-<!-- source-hash: daa2f3c1e38c -->
+<!-- source-hash: 1d4c24d3ebd6 -->
 # Keybindings
 
 Use Tasty with shortcuts that feel familiar. Choose a preset or assign your preferred keys to actions you use often. Open **Settings** > **Keybindings** to get started.
@@ -18,7 +18,7 @@ Tasty stores keybindings by the **physical position of the key**. That is why th
 
 **Non-Latin keyboards are matched by position too.** Even on a non-Latin layout such as Russian or Greek, keybindings are recognized by the Latin position on the keycap — on a Russian layout, pressing the `H` position (the key that types `Р` in Russian) together with modifiers still triggers the `Ctrl+Shift+H` shortcut. You do not need to re-record shortcuts after switching layouts. The same holds over Markdown and web preview surfaces.
 
-To show the settings screen's notation as the `⌘` `⌥` `⇧` symbols on macOS, change **Alt key display** · **Option key display** · **Shift key display** under **Settings** > **General** > **Display**. The stored values stay the same.
+To show the settings screen's notation as the `⌘` `⌥` `⇧` symbols on macOS, change **Cmd key display** · **Option key display** · **Shift key display** under **Settings** > **General** > **Display**. The stored values stay the same.
 
 ## Default keybindings (Tasty preset)
 
