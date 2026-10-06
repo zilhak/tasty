@@ -6,7 +6,7 @@ use tasty_ipc::method_meta::METHOD_TABLE;
 
 /// 메서드 표 변경 시 검토할 namespace별 개수.
 const EXPECTED: &[(&str, usize)] = &[
-    ("agent", 33),
+    ("agent", 35),
     ("approval", 9),
     ("attach", 6),
     ("banner", 2),
@@ -33,7 +33,7 @@ const EXPECTED: &[(&str, usize)] = &[
     ("preset", 7),
     ("pty", 7),
     ("recent", 1),
-    ("remote", 13),
+    ("remote", 14),
     ("session", 3),
     ("settings", 7),
     // 입력 재현 메서드는 release에서 제외된 debug 표에 있어 이 개수에 포함되지 않는다(ADR-0012).
