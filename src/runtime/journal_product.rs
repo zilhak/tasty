@@ -467,10 +467,56 @@ impl Drop for JournalWorker {
 fn request_payload_too_large(work: &Work) -> bool {
     match work {
         Work::Admit(header) => header.original_digest.len() > MAX_COMMAND_INPUT_BYTES,
-        Work::PutPreparation(input) => serde_json::to_vec(&input.params)
-            .map_or(true, |bytes| bytes.len() > MAX_COMMAND_INPUT_BYTES),
+        Work::PutPreparation(input) => {
+            json_len_within(&input.params, MAX_COMMAND_INPUT_BYTES).is_none()
+        }
         _ => false,
     }
+}
+
+/// JSON 직렬화 길이를 버퍼 없이 센다. `limit`를 넘으면 그 자리에서 멈추고 `None`을 준다.
+///
+/// `request_size`는 App 스레드에서 매 제출마다 불린다. 버릴 직렬화 버퍼를 만들지 않고,
+/// 상한을 넘은 작업은 상한까지만 센다. 직렬화 오류도 `None`이다.
+fn json_len_within(value: &impl serde::Serialize, limit: usize) -> Option<usize> {
+    struct Counter {
+        written: usize,
+        limit: usize,
+    }
+    // 오류 생성은 상한을 넘는 한 번뿐이다. 본문에 두면 이스케이프 문자마다 불리는 쓰기가
+    // 인라인되지 않아 측정에서 세 배 가까이 느려졌다.
+    #[cold]
+    #[inline(never)]
+    fn exceeded() -> std::io::Error {
+        std::io::Error::other("JSON length limit exceeded")
+    }
+    impl std::io::Write for Counter {
+        #[inline]
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.write_all(buf)?;
+            Ok(buf.len())
+        }
+        #[inline]
+        fn write_all(&mut self, buf: &[u8]) -> std::io::Result<()> {
+            self.written += buf.len();
+            if self.written > self.limit {
+                return Err(exceeded());
+            }
+            Ok(())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let mut counter = Counter { written: 0, limit };
+    serde_json::to_writer(&mut counter, value).ok()?;
+    Some(counter.written)
+}
+
+/// 큐 예산으로 잴 JSON 길이. 예산을 넘으면 예산 + 1을 준다. 호출자는 예산과 비교만 하므로
+/// 정확한 초과량은 필요 없고, 뒤따르는 덧셈이 넘치지 않는다.
+fn json_len(value: &impl serde::Serialize) -> usize {
+    json_len_within(value, MAX_QUEUED_BYTES).unwrap_or(MAX_QUEUED_BYTES + 1)
 }
 
 pub(crate) fn request_size(work: &Work) -> usize {
@@ -480,24 +526,20 @@ pub(crate) fn request_size(work: &Work) -> usize {
             evidence,
             discarded,
             view,
-        } => serde_json::to_vec(&(lease, view))
-            .map_or(usize::MAX, |bytes| bytes.len())
+        } => json_len(&(lease, view))
             .saturating_add(evidence.capacity())
             .saturating_add(discarded.as_ref().map_or(0, String::capacity)),
         Work::CapturePreset { draft } => draft.weight(),
-        Work::ReconcileRetirement { lease, evidence } => serde_json::to_vec(lease)
-            .map_or(usize::MAX, |bytes| bytes.len())
-            .saturating_add(evidence.capacity()),
-        Work::PrepareSubtree { binding, draft } => {
-            serde_json::to_vec(&(binding, draft)).map_or(usize::MAX, |bytes| bytes.len())
+        Work::ReconcileRetirement { lease, evidence } => {
+            json_len(lease).saturating_add(evidence.capacity())
         }
+        Work::PrepareSubtree { binding, draft } => json_len(&(binding, draft)),
         Work::PrepareUndo {
             binding,
             target_pane,
             scope,
             shell,
-        } => serde_json::to_vec(&(binding, target_pane, scope, shell))
-            .map_or(usize::MAX, |bytes| bytes.len()),
+        } => json_len(&(binding, target_pane, scope, shell)),
         Work::ReserveExecutionIds { binding, kinds } => {
             binding.stream.len()
                 + binding.journal_id.len()
@@ -510,9 +552,7 @@ pub(crate) fn request_size(work: &Work) -> usize {
             display_name,
             ..
         } => surfaces.iter().fold(
-            serde_json::to_vec(view)
-                .map_or(usize::MAX, |bytes| bytes.len())
-                .saturating_add(binding.stream.len())
+            json_len(view).saturating_add(binding.stream.len())
                 + binding.journal_id.len()
                 + display_name.as_ref().map_or(0, String::len)
                 + 96,
@@ -525,14 +565,13 @@ pub(crate) fn request_size(work: &Work) -> usize {
         #[cfg(any(feature = "gui", test))]
         Work::RetireEngine(binding) => binding.stream.len() + binding.journal_id.len() + 64,
         #[cfg(feature = "gui")]
-        Work::SaveView(view) => serde_json::to_vec(view).map_or(usize::MAX, |bytes| bytes.len()),
+        Work::SaveView(view) => json_len(view),
         Work::OpenEngine {
             selection,
             normal_category_name,
             surface_floor,
         } => {
-            let serialized = serde_json::to_vec(&(selection, normal_category_name, surface_floor))
-                .map_or(usize::MAX, |bytes| bytes.len());
+            let serialized = json_len(&(selection, normal_category_name, surface_floor));
             match selection {
                 EngineSelection::ImportedSlot { source } => serialized.max(
                     source
@@ -554,9 +593,7 @@ pub(crate) fn request_size(work: &Work) -> usize {
                     .len()
                     .saturating_add(key.idempotency_key.len())
             })),
-        Work::Resolve { changes, response } => {
-            serde_json::to_vec(&(changes, response)).map_or(usize::MAX, |bytes| bytes.len())
-        }
+        Work::Resolve { changes, response } => json_len(&(changes, response)),
         Work::Reserve(kinds) => kinds
             .len()
             .saturating_mul(std::mem::size_of::<(IdKind, u32)>()),
@@ -565,32 +602,20 @@ pub(crate) fn request_size(work: &Work) -> usize {
         Work::ReadCommand(stream) => stream.len(),
         Work::ReadPayload(_) => std::mem::size_of::<tasty_core::DataRef>(),
         Work::PutPayload(bytes) => bytes.len(),
-        Work::PutPreparation(input) => {
-            serde_json::to_vec(input).map_or(usize::MAX, |bytes| bytes.len())
-        }
+        Work::PutPreparation(input) => json_len(input),
         #[cfg(feature = "gui")]
         Work::ClaimForward { stream, operation } => stream.len().saturating_add(operation.0.len()),
         Work::ClaimPreparation { stream, operation }
         | Work::ClaimRetirement { stream, operation } => {
             stream.len().saturating_add(operation.0.len())
         }
-        Work::Prepared { lease, result } => {
-            serde_json::to_vec(&(lease, result)).map_or(usize::MAX, |bytes| bytes.len())
-        }
+        Work::Prepared { lease, result } => json_len(&(lease, result)),
         Work::InstallationRejected { lease, reason }
-        | Work::PreparationUncertain { lease, reason } => {
-            serde_json::to_vec(&(lease, reason)).map_or(usize::MAX, |bytes| bytes.len())
-        }
-        Work::CleanupFinished { lease, view } => {
-            serde_json::to_vec(&(lease, view)).map_or(usize::MAX, |bytes| bytes.len())
-        }
+        | Work::PreparationUncertain { lease, reason } => json_len(&(lease, reason)),
+        Work::CleanupFinished { lease, view } => json_len(&(lease, view)),
         #[cfg(feature = "gui")]
-        Work::ForwardFinished { lease, outcome } => {
-            serde_json::to_vec(&(lease, outcome)).map_or(usize::MAX, |bytes| bytes.len())
-        }
-        Work::RetirementFinished { lease, outcome } => {
-            serde_json::to_vec(&(lease, outcome)).map_or(usize::MAX, |bytes| bytes.len())
-        }
+        Work::ForwardFinished { lease, outcome } => json_len(&(lease, outcome)),
+        Work::RetirementFinished { lease, outcome } => json_len(&(lease, outcome)),
         Work::CancelAdmission => 0,
     }
 }

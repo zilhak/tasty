@@ -85,3 +85,36 @@ fn admissions_beyond_the_disk_credit_wait_for_a_released_credit_instead_of_faili
         Ok(ResultValue::NeedsResolution)
     ));
 }
+
+#[test]
+fn request_size_counts_the_same_json_bytes_without_building_them() {
+    // Escaped characters make the JSON longer than the in-memory string; the budget counts JSON.
+    let text = "quote\" newline\n tab\t ".repeat(4096);
+    let work = Work::Resolve {
+        changes: vec![category("count", 7)],
+        response: Some(ResponsePlan::Fixed(
+            crate::ipc::protocol::JsonRpcResponse::success(
+                serde_json::Value::Null,
+                serde_json::Value::String(text),
+            ),
+        )),
+    };
+    let Work::Resolve { changes, response } = &work else {
+        unreachable!("built above")
+    };
+    let expected = serde_json::to_vec(&(changes, response)).unwrap().len();
+    assert_eq!(request_size(&work), expected);
+}
+
+#[test]
+fn json_length_counting_stops_at_the_limit() {
+    let value = serde_json::json!({"name": "abcdef"});
+    let exact = serde_json::to_vec(&value).unwrap().len();
+    assert_eq!(json_len_within(&value, exact), Some(exact));
+    assert_eq!(json_len_within(&value, exact - 1), None);
+    // Over the queue budget the size is reported just past it, so later additions cannot overflow.
+    assert_eq!(
+        json_len(&"x".repeat(MAX_QUEUED_BYTES)),
+        MAX_QUEUED_BYTES + 1
+    );
+}
