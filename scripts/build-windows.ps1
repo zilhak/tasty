@@ -9,6 +9,7 @@
 # Output:
 #   dist\tasty-{version}-windows-x64.zip   (portable)
 #   dist\tasty-{version}-windows-x64.msi   (installer; cargo-wix + WiX 3.x auto-installed if missing)
+#   dist\tasty-headless-{version}-windows-x64.zip   (gui feature 없는 헤드리스 빌드, portable)
 
 param(
     [switch]$Release,
@@ -348,6 +349,53 @@ if (-not $SkipMsi) {
     }
 }
 
+# 헤드리스는 gui feature를 끈 빌드라 별도 target 디렉터리를 쓴다. 같은 target을 쓰면
+# 위 ZIP·MSI가 읽은 target\<profile>\tasty.exe를 헤드리스 바이너리로 덮는다.
+# plugin은 헤드리스 호스트도 실행하므로 위에서 빌드·서명한 번들을 그대로 넣는다.
+$HeadlessTargetDir = Join-Path "target" "headless"
+$HeadlessArchiveName = "tasty-headless-${Version}-windows-x64.zip"
+$HeadlessStageDir = Join-Path $DistDir "tasty-headless-windows"
+Write-Host "==> Building headless tasty ($BuildProfile, --no-default-features)..."
+$PrevCargoTargetDir = $env:CARGO_TARGET_DIR
+$env:CARGO_TARGET_DIR = $HeadlessTargetDir
+try {
+    cargo build @CargoFlags --no-default-features
+    $HeadlessBuildExit = $LASTEXITCODE
+} finally {
+    $env:CARGO_TARGET_DIR = $PrevCargoTargetDir
+}
+if ($HeadlessBuildExit -ne 0) {
+    Write-Error "cargo build (headless) failed with exit code $HeadlessBuildExit"
+    exit 1
+}
+
+Write-Host "==> Assembling headless archive..."
+if (Test-Path $HeadlessStageDir) { Remove-Item -Recurse -Force $HeadlessStageDir }
+New-Item -ItemType Directory -Force -Path $HeadlessStageDir | Out-Null
+$HeadlessBuildDir = Join-Path $HeadlessTargetDir $BuildProfile
+$HeadlessExePath = Join-Path $HeadlessBuildDir "tasty.exe"
+if (-not (Test-Path $HeadlessExePath)) {
+    Write-Error "Headless build output not found: $HeadlessExePath"
+    exit 1
+}
+# 두 빌드의 feature가 다르므로 GUI 바이너리와 같은 파일이면 헤드리스 빌드가 적용되지 않은 것이다.
+if ((Get-FileHash $HeadlessExePath -Algorithm SHA256).Hash -eq (Get-FileHash $ExePath -Algorithm SHA256).Hash) {
+    Write-Error "$HeadlessArchiveName would hold the GUI binary"
+    exit 1
+}
+Copy-Item $HeadlessExePath -Destination $HeadlessStageDir
+Get-ChildItem -Path $HeadlessBuildDir -Filter "*.dll" | ForEach-Object {
+    Copy-Item $_.FullName -Destination $HeadlessStageDir
+}
+Stage-Plugins (Join-Path $HeadlessStageDir "plugins")
+Stage-Notice $HeadlessStageDir
+
+Write-Host "==> Creating $HeadlessArchiveName..."
+$HeadlessArchivePath = Join-Path $DistDir $HeadlessArchiveName
+if (Test-Path $HeadlessArchivePath) { Remove-Item -Force $HeadlessArchivePath }
+Compress-Archive -Path (Join-Path $HeadlessStageDir "*") -DestinationPath $HeadlessArchivePath
+Remove-Item -Recurse -Force $HeadlessStageDir
+
 Write-Host "==> Verifying artifacts..."
 $VerifyDir = Join-Path $env:TEMP "tasty-verify-$([guid]::NewGuid())"
 Expand-Archive -Path $ArchivePath -DestinationPath $VerifyDir
@@ -363,6 +411,27 @@ Test-NoticeTree $VerifyDir $ArchiveName
 Remove-Item -Recurse -Force $VerifyDir -ErrorAction SilentlyContinue
 if ($VersionExit -ne 0) {
     Write-Error "tasty.exe --version failed with exit code $VersionExit"
+    exit 1
+}
+$HeadlessVerifyDir = Join-Path $env:TEMP "tasty-verify-headless-$([guid]::NewGuid())"
+Expand-Archive -Path $HeadlessArchivePath -DestinationPath $HeadlessVerifyDir
+$HeadlessVerifyExe = Join-Path $HeadlessVerifyDir "tasty.exe"
+if (-not (Test-Path $HeadlessVerifyExe)) {
+    Remove-Item -Recurse -Force $HeadlessVerifyDir -ErrorAction SilentlyContinue
+    Write-Error "tasty.exe not found in $HeadlessArchiveName"
+    exit 1
+}
+if (-not (Test-Path (Join-Path $HeadlessVerifyDir "plugins"))) {
+    Remove-Item -Recurse -Force $HeadlessVerifyDir -ErrorAction SilentlyContinue
+    Write-Error "plugins not found in $HeadlessArchiveName"
+    exit 1
+}
+& $HeadlessVerifyExe --version | Out-Null
+$HeadlessVersionExit = $LASTEXITCODE
+Test-NoticeTree $HeadlessVerifyDir $HeadlessArchiveName
+Remove-Item -Recurse -Force $HeadlessVerifyDir -ErrorAction SilentlyContinue
+if ($HeadlessVersionExit -ne 0) {
+    Write-Error "headless tasty.exe --version failed with exit code $HeadlessVersionExit"
     exit 1
 }
 if (-not $SkipMsi -and $BuildProfile -ne "debug") {
@@ -394,6 +463,8 @@ $ShaSumsPath = Join-Path $DistDir "SHA256SUMS-windows.txt"
 $Sums = @()
 $ZipHash = (Get-FileHash $ArchivePath -Algorithm SHA256).Hash.ToLower()
 $Sums += "$ZipHash  $(Split-Path -Leaf $ArchivePath)"
+$HeadlessZipHash = (Get-FileHash $HeadlessArchivePath -Algorithm SHA256).Hash.ToLower()
+$Sums += "$HeadlessZipHash  $(Split-Path -Leaf $HeadlessArchivePath)"
 if (-not $SkipMsi -and $BuildProfile -ne "debug") {
     $MsiPath = Join-Path $DistDir "tasty-${Version}-windows-x64.msi"
     if (Test-Path $MsiPath) {

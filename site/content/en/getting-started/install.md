@@ -1,4 +1,4 @@
-<!-- source-hash: deb32d80e1db -->
+<!-- source-hash: 20916312ab95 -->
 # Install
 
 Install Tasty for your computer and open your first terminal. Below you will find installation steps for each OS, along with how to update or uninstall.
@@ -16,9 +16,13 @@ Download the installer from the [GitHub releases page](https://github.com/zilhak
 | Linux | x86_64 | `Tasty-{ver}-x86_64.AppImage` | Distribution-independent single file |
 | Linux | x86_64 | `tasty-{ver}-linux-x64.tar.gz` | Archive for manual installation |
 | Linux | aarch64 | `_arm64.deb` / `.aarch64.rpm` / `-aarch64.AppImage` / `-linux-arm64.tar.gz` | ARM64 |
+| Linux | x86_64 | `tasty-headless-{ver}-linux-x64.tar.gz` | [Headless build](#headless-build) (runs on a server without a window) |
+| Linux | aarch64 | `tasty-headless-{ver}-linux-arm64.tar.gz` | [Headless build](#headless-build) |
 | macOS | Apple Silicon | `Tasty-{ver}-macos-arm64.dmg` | Drag-and-drop install. There is no build for Intel Macs |
+| macOS | Apple Silicon | `tasty-headless-{ver}-macos-arm64.tar.gz` | [Headless build](#headless-build) |
 | Windows | x86_64 | `tasty-{ver}-windows-x64.msi` | Setup wizard (recommended) |
 | Windows | x86_64 | `tasty-{ver}-windows-x64.zip` | Portable build — just unzip and run |
+| Windows | x86_64 | `tasty-headless-{ver}-windows-x64.zip` | [Headless build](#headless-build) |
 
 You can verify a downloaded file against the `SHA256SUMS-*.txt` for its OS.
 
@@ -96,13 +100,31 @@ Shells opened inside Tasty get the `tasty` command on PATH automatically. On mac
 
 ## GPU requirements
 
-Tasty draws its screen with the GPU (Vulkan / DirectX 12 / Metal). If there is no GPU it tries once more with a software renderer, and if that fails too it prints a "GPU adapter not found" message and exits. Installing or updating the GPU driver resolves this in most cases. All distributed install files are GUI builds. To run on a server without a graphical desktop, use the headless build below.
+Tasty draws its screen with the GPU (Vulkan / DirectX 12 / Metal). If there is no GPU it tries once more with a software renderer, and if that fails too it prints a "GPU adapter not found" message and exits. Installing or updating the GPU driver resolves this in most cases. Every install file without `headless` in its name is a GUI build. To run on a server without a graphical desktop, use the headless build below.
 
 ## Headless build
 
-A **headless build**, which runs Tasty on a server without a window, is not distributed as an install file. Running a distributed Tasty with `--headless` does not start it without a window; it starts the GUI as usual.
+A **headless build**, which runs Tasty on a server without a window, is published on the releases page as an archive for each OS (named `tasty-headless-…`). You just extract it; it is not distributed as an install file such as `.deb`, `.rpm`, `.AppImage`, `.dmg`, or `.msi`. The executable is named `tasty` in both the GUI and headless builds, so extract it into a different folder from the GUI build. The bundled plugins are included in the archive's `plugins/` folder.
 
-If you need a headless build, build it yourself from source on a machine with Rust installed.
+```sh
+# Linux (for aarch64, replace x64 with arm64)
+tar -xzf tasty-headless-{ver}-linux-x64.tar.gz && ./tasty-headless-linux-x64/tasty
+
+# macOS (Apple Silicon)
+tar -xzf tasty-headless-{ver}-macos-arm64.tar.gz && ./tasty-headless-macos-arm64/tasty
+```
+
+```powershell
+# Windows
+Expand-Archive tasty-headless-{ver}-windows-x64.zip -DestinationPath tasty-headless
+.\tasty-headless\tasty.exe
+```
+
+On macOS, a file downloaded with a browser may show an "unidentified developer" warning when you run it. In that case, clear the quarantine flag with `xattr -dr com.apple.quarantine tasty-headless-macos-arm64`.
+
+The headless build's `tasty` starts without a window even with no options, and you create and drive its terminals only through the `tasty` CLI. From another computer you can bring its workspaces in with [remote attach](../remote/attach.md). Running a GUI build with `--headless` does not start it without a window; it starts the GUI as usual.
+
+Where no archive is published (for example, an Intel Mac), build it yourself from source on a machine with Rust installed.
 
 ```sh
 git clone https://github.com/zilhak/tasty.git
@@ -110,8 +132,6 @@ cd tasty
 cargo build --release --no-default-features
 ./target/release/tasty
 ```
-
-The `tasty` built this way starts without a window even with no options, and you create and drive its terminals only through the `tasty` CLI. From another computer you can bring its workspaces in with [remote attach](../remote/attach.md).
 
 ## Updating
 
@@ -133,6 +153,7 @@ Settings · sessions · themes all live in `~/.tasty/`, so they survive updates.
 | macOS | Move `Tasty.app` to the Trash | Same as above |
 | Windows `.msi` | Uninstall Tasty from **Settings > Apps** | **`~/.tasty/` is deleted along with it** — back it up before uninstalling if you want to keep settings · sessions · themes |
 | Windows `.zip` | Delete the extracted folder | `~/.tasty/` remains. Delete it yourself |
+| Headless archive (any OS) | Delete the extracted folder | `~/.tasty/` remains. Delete it yourself |
 
 On Windows, `~` is `%USERPROFILE%` (usually `C:\Users\<name>`).
 

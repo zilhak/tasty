@@ -9,6 +9,7 @@
 # Output:
 #   dist/Tasty.app    — the application bundle
 #   dist/Tasty-{version}-macos-arm64.dmg — the disk image (Apple Silicon only)
+#   dist/tasty-headless-{version}-macos-arm64.tar.gz — gui feature 없는 헤드리스 빌드 (NO_DMG=1이면 생략)
 
 set -euo pipefail
 
@@ -277,11 +278,61 @@ hdiutil detach "$DMG_MOUNT" >/dev/null || echo "Warning: could not detach $DMG_M
 rmdir "$DMG_MOUNT" 2>/dev/null || true
 [[ "$dmg_notice_rc" -eq 0 ]] || exit 1
 
+# 헤드리스는 gui feature를 끈 빌드라 별도 target 디렉터리를 쓴다. 같은 target을 쓰면
+# 위 앱 번들에 넣은 바이너리 경로를 헤드리스 바이너리로 덮는다.
+# plugin은 헤드리스 호스트도 실행하므로 앱 번들에 넣은 서명된 번들을 그대로 복사한다.
+# .app이 아니므로 plugin은 실행 파일 옆 plugins/에 둔다.
+HEADLESS_TARGET_DIR="target/headless"
+HEADLESS_PKG_DIR="tasty-headless-macos-arm64"
+HEADLESS_ARCHIVE_NAME="tasty-headless-$VERSION-macos-arm64.tar.gz"
+HEADLESS_STAGE="$DIST_DIR/$HEADLESS_PKG_DIR"
+echo "==> Building headless tasty ($PROFILE, --no-default-features) for $TARGET..."
+CARGO_TARGET_DIR="$HEADLESS_TARGET_DIR" cargo build $CARGO_FLAGS --target "$TARGET" --no-default-features
+
+echo "==> Assembling headless archive..."
+rm -rf "${HEADLESS_STAGE:?}"
+mkdir -p "$HEADLESS_STAGE/plugins"
+cp "$HEADLESS_TARGET_DIR/$TARGET/$PROFILE/tasty" "$HEADLESS_STAGE/tasty"
+cp -R "$PLUGINS_DIR/." "$HEADLESS_STAGE/plugins/"
+stage_notice "$HEADLESS_STAGE"
+codesign --force --sign "$SIGN_IDENTITY" "$HEADLESS_STAGE/tasty"
+
+echo "==> Verifying headless binary..."
+"$HEADLESS_STAGE/tasty" --version >/dev/null || {
+    echo "Error: headless binary failed to invoke --version" >&2
+    exit 1
+}
+HEADLESS_ARCH_LINE=$(file "$HEADLESS_STAGE/tasty")
+[[ "$HEADLESS_ARCH_LINE" == *"Mach-O"*"arm64"* ]] || {
+    echo "Error: headless binary is not an arm64 Mach-O binary: $HEADLESS_ARCH_LINE" >&2
+    exit 1
+}
+if ! codesign --verify --strict "$HEADLESS_STAGE/tasty"; then
+    echo "Error: headless binary failed codesign --verify" >&2
+    exit 1
+fi
+# 두 빌드의 feature가 다르므로 GUI 바이너리와 같은 파일이면 헤드리스 빌드가 적용되지 않은 것이다.
+if cmp -s "$HEADLESS_TARGET_DIR/$TARGET/$PROFILE/tasty" "target/$TARGET/$PROFILE/tasty"; then
+    echo "Error: $HEADLESS_ARCHIVE_NAME would hold the GUI binary" >&2
+    exit 1
+fi
+verify_notice_tree "$HEADLESS_STAGE" "$HEADLESS_PKG_DIR" || exit 1
+
+rm -f "$DIST_DIR/$HEADLESS_ARCHIVE_NAME"
+tar -czf "$DIST_DIR/$HEADLESS_ARCHIVE_NAME" -C "$DIST_DIR" "$HEADLESS_PKG_DIR"
+rm -rf "${HEADLESS_STAGE:?}"
+HEADLESS_LISTING=$(tar -tzf "$DIST_DIR/$HEADLESS_ARCHIVE_NAME")
+grep -q "$HEADLESS_PKG_DIR/plugins/" <<<"$HEADLESS_LISTING" || {
+    echo "Error: plugins not in $HEADLESS_ARCHIVE_NAME" >&2
+    exit 1
+}
+
 SHASUMS_FILE="SHA256SUMS-macos.txt"
-(cd "$DIST_DIR" && shasum -a 256 "$DMG_NAME" > "$SHASUMS_FILE")
+(cd "$DIST_DIR" && shasum -a 256 "$DMG_NAME" "$HEADLESS_ARCHIVE_NAME" > "$SHASUMS_FILE")
 
 echo ""
 echo "Done!"
 echo "  App:  $APP_DIR"
 echo "  DMG:  $DIST_DIR/$DMG_NAME"
+echo "  Headless: $DIST_DIR/$HEADLESS_ARCHIVE_NAME"
 echo "  SHA:  $DIST_DIR/$SHASUMS_FILE"

@@ -17,7 +17,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build DMG
+      - name: Build DMG + headless tar.gz
         run: bash scripts/build-macos-dmg.sh
 
       - name: Clean up dist
@@ -56,7 +56,7 @@ jobs:
           }
           Write-Host "PSScriptAnalyzer OK"
 
-      - name: Build ZIP and MSI
+      - name: Build ZIP, MSI and headless ZIP
         shell: pwsh
         run: ./scripts/build-windows.ps1
 
@@ -75,7 +75,7 @@ jobs:
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
-      - name: Build tar.gz + deb + rpm + AppImage
+      - name: Build tar.gz + deb + rpm + AppImage + headless tar.gz
         run: bash scripts/build-linux.sh
 
       - name: Clean up dist
@@ -92,7 +92,7 @@ jobs:
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
-      - name: Build tar.gz + deb + rpm + AppImage
+      - name: Build tar.gz + deb + rpm + AppImage + headless tar.gz
         run: bash scripts/build-linux.sh
 
       - name: Clean up dist

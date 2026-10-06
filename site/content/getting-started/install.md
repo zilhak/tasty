@@ -15,9 +15,13 @@
 | Linux | x86_64 | `Tasty-{ver}-x86_64.AppImage` | 배포판 무관 단일 파일 |
 | Linux | x86_64 | `tasty-{ver}-linux-x64.tar.gz` | 수동 설치용 압축 파일 |
 | Linux | aarch64 | `_arm64.deb` / `.aarch64.rpm` / `-aarch64.AppImage` / `-linux-arm64.tar.gz` | ARM64 |
+| Linux | x86_64 | `tasty-headless-{ver}-linux-x64.tar.gz` | [headless 빌드](#headless-빌드) (윈도우 없이 서버에서 실행) |
+| Linux | aarch64 | `tasty-headless-{ver}-linux-arm64.tar.gz` | [headless 빌드](#headless-빌드) |
 | macOS | Apple Silicon | `Tasty-{ver}-macos-arm64.dmg` | 드래그 설치. Intel Mac 용 빌드는 없습니다 |
+| macOS | Apple Silicon | `tasty-headless-{ver}-macos-arm64.tar.gz` | [headless 빌드](#headless-빌드) |
 | Windows | x86_64 | `tasty-{ver}-windows-x64.msi` | 설치 마법사 (권장) |
 | Windows | x86_64 | `tasty-{ver}-windows-x64.zip` | 압축만 풀어 쓰는 무설치판 |
+| Windows | x86_64 | `tasty-headless-{ver}-windows-x64.zip` | [headless 빌드](#headless-빌드) |
 
 각 OS 의 `SHA256SUMS-*.txt` 로 받은 파일을 검증할 수 있습니다.
 
@@ -95,13 +99,31 @@ Tasty 안에서 연 셸에는 `tasty` 명령이 자동으로 PATH 에 들어갑�
 
 ## GPU 요구사항
 
-Tasty 는 GPU(Vulkan / DirectX 12 / Metal)로 화면을 그립니다. GPU 가 없으면 소프트웨어 렌더러로 한 번 더 시도하고, 그것도 안 되면 "GPU 어댑터를 찾을 수 없음" 메시지를 내고 종료합니다. GPU 드라이버를 설치·업데이트하면 대부분 해결됩니다. 배포되는 설치 파일은 모두 GUI 빌드입니다. 그래픽 화면 없이 서버에서 실행하려면 아래 headless 빌드를 사용하세요.
+Tasty 는 GPU(Vulkan / DirectX 12 / Metal)로 화면을 그립니다. GPU 가 없으면 소프트웨어 렌더러로 한 번 더 시도하고, 그것도 안 되면 "GPU 어댑터를 찾을 수 없음" 메시지를 내고 종료합니다. GPU 드라이버를 설치·업데이트하면 대부분 해결됩니다. 이름에 `headless` 가 없는 설치 파일은 모두 GUI 빌드입니다. 그래픽 화면 없이 서버에서 실행하려면 아래 headless 빌드를 사용하세요.
 
 ## headless 빌드
 
-윈도우 없이 서버에서 Tasty 를 돌리는 **headless 빌드**는 설치 파일로 배포하지 않습니다. 배포된 Tasty 에 `--headless` 를 붙여 실행해도 윈도우 없이 뜨지 않고 평소처럼 GUI 로 실행됩니다.
+윈도우 없이 서버에서 Tasty 를 돌리는 **headless 빌드**는 릴리스 페이지에 OS 별 압축 파일(이름이 `tasty-headless-` 로 시작)로 올라옵니다. 압축만 풀어 쓰며, `.deb` · `.rpm` · `.AppImage` · `.dmg` · `.msi` 같은 설치 파일로는 배포하지 않습니다. GUI 빌드와 실행 파일 이름이 둘 다 `tasty` 이므로 GUI 판과 다른 폴더에 풉니다. 번들 플러그인은 압축 파일 안 `plugins/` 에 함께 들어 있습니다.
 
-headless 빌드가 필요하면 Rust 가 설치된 환경에서 소스로 직접 만듭니다.
+```sh
+# Linux (aarch64 는 x64 자리를 arm64 로)
+tar -xzf tasty-headless-{ver}-linux-x64.tar.gz && ./tasty-headless-linux-x64/tasty
+
+# macOS (Apple Silicon)
+tar -xzf tasty-headless-{ver}-macos-arm64.tar.gz && ./tasty-headless-macos-arm64/tasty
+```
+
+```powershell
+# Windows
+Expand-Archive tasty-headless-{ver}-windows-x64.zip -DestinationPath tasty-headless
+.\tasty-headless\tasty.exe
+```
+
+macOS 에서 브라우저로 받은 파일은 실행할 때 "확인되지 않은 개발자" 경고가 뜰 수 있습니다. 그때는 `xattr -dr com.apple.quarantine tasty-headless-macos-arm64` 로 격리 표시를 지웁니다.
+
+headless 빌드의 `tasty` 는 옵션 없이 실행해도 윈도우 없이 뜨고, 터미널은 `tasty` CLI 로만 만들고 다룹니다. 다른 컴퓨터에서 [원격 attach](../remote/attach.md) 로 그 워크스페이스를 가져와 볼 수 있습니다. GUI 빌드에 `--headless` 를 붙여 실행해도 윈도우 없이 뜨지 않고 평소처럼 GUI 로 실행됩니다.
+
+배포 파일이 없는 환경(예: Intel Mac)에서는 Rust 가 설치된 환경에서 소스로 직접 만듭니다.
 
 ```sh
 git clone https://github.com/zilhak/tasty.git
@@ -109,8 +131,6 @@ cd tasty
 cargo build --release --no-default-features
 ./target/release/tasty
 ```
-
-이렇게 만든 `tasty` 는 옵션 없이 실행해도 윈도우 없이 뜨고, 터미널은 `tasty` CLI 로만 만들고 다룹니다. 다른 컴퓨터에서 [원격 attach](../remote/attach.md) 로 그 워크스페이스를 가져와 볼 수 있습니다.
 
 ## 업데이트
 
@@ -132,6 +152,7 @@ cargo build --release --no-default-features
 | macOS | `Tasty.app` 을 휴지통으로 | 위와 같습니다 |
 | Windows `.msi` | **설정 > 앱** 에서 Tasty 제거 | **`~/.tasty/` 까지 함께 삭제됩니다** — 설정 · 세션 · 테마를 남기려면 제거 전에 백업합니다 |
 | Windows `.zip` | 압축 푼 폴더를 지웁니다 | `~/.tasty/` 는 남습니다. 직접 지웁니다 |
+| headless 압축 파일 (모든 OS) | 압축 푼 폴더를 지웁니다 | `~/.tasty/` 는 남습니다. 직접 지웁니다 |
 
 Windows 에서 `~` 는 `%USERPROFILE%`(보통 `C:\Users\<이름>`)입니다.
 

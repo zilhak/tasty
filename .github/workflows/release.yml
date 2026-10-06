@@ -47,7 +47,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build DMG
+      - name: Build DMG + headless tar.gz
         run: bash scripts/build-macos-dmg.sh
 
       - name: Upload to release
@@ -57,6 +57,7 @@ jobs:
         run: |
           VERSION="${{ needs.create-release.outputs.version }}"
           gh release upload --clobber "v${VERSION}" "dist/Tasty-${VERSION}-macos-arm64.dmg"
+          gh release upload --clobber "v${VERSION}" "dist/tasty-headless-${VERSION}-macos-arm64.tar.gz"
           gh release upload --clobber "v${VERSION}" "dist/SHA256SUMS-macos.txt"
 
       - name: Clean up dist
@@ -70,7 +71,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build ZIP and MSI
+      - name: Build ZIP, MSI and headless ZIP
         shell: pwsh
         run: ./scripts/build-windows.ps1
 
@@ -83,6 +84,7 @@ jobs:
           $VERSION = "${{ needs.create-release.outputs.version }}"
           gh release upload --clobber "v${VERSION}" "dist/tasty-${VERSION}-windows-x64.zip"
           gh release upload --clobber "v${VERSION}" "dist/tasty-${VERSION}-windows-x64.msi"
+          gh release upload --clobber "v${VERSION}" "dist/tasty-headless-${VERSION}-windows-x64.zip"
           gh release upload --clobber "v${VERSION}" "dist/SHA256SUMS-windows.txt"
 
       - name: Clean up dist
@@ -102,7 +104,7 @@ jobs:
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
-      - name: Build tar.gz + deb + rpm + AppImage
+      - name: Build tar.gz + deb + rpm + AppImage + headless tar.gz
         run: bash scripts/build-linux.sh
 
       - name: Upload to release
@@ -112,6 +114,7 @@ jobs:
         run: |
           VERSION="${{ needs.create-release.outputs.version }}"
           gh release upload --clobber "v${VERSION}" "dist/tasty-${VERSION}-linux-x64.tar.gz"
+          gh release upload --clobber "v${VERSION}" "dist/tasty-headless-${VERSION}-linux-x64.tar.gz"
           gh release upload --clobber "v${VERSION}" "dist/tasty_${VERSION}-1_amd64.deb"
           gh release upload --clobber "v${VERSION}" "dist/tasty-${VERSION}-1.x86_64.rpm"
           gh release upload --clobber "v${VERSION}" "dist/Tasty-${VERSION}-x86_64.AppImage"
@@ -133,7 +136,7 @@ jobs:
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
-      - name: Build tar.gz + deb + rpm + AppImage
+      - name: Build tar.gz + deb + rpm + AppImage + headless tar.gz
         run: bash scripts/build-linux.sh
 
       - name: Upload to release
@@ -143,6 +146,7 @@ jobs:
         run: |
           VERSION="${{ needs.create-release.outputs.version }}"
           gh release upload --clobber "v${VERSION}" "dist/tasty-${VERSION}-linux-arm64.tar.gz"
+          gh release upload --clobber "v${VERSION}" "dist/tasty-headless-${VERSION}-linux-arm64.tar.gz"
           gh release upload --clobber "v${VERSION}" "dist/tasty_${VERSION}-1_arm64.deb"
           gh release upload --clobber "v${VERSION}" "dist/tasty-${VERSION}-1.aarch64.rpm"
           gh release upload --clobber "v${VERSION}" "dist/Tasty-${VERSION}-aarch64.AppImage"

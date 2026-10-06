@@ -11,6 +11,7 @@
 #   dist/tasty_{version}-1_{deb-arch}.deb          # debug 제외, deb-arch: amd64 | arm64
 #   dist/tasty-{version}-1.{rpm-arch}.rpm          # debug 제외, rpm-arch: x86_64 | aarch64
 #   dist/Tasty-{version}-{rpm-arch}.AppImage       # debug 제외, distro-무관 단일 파일
+#   dist/tasty-headless-{version}-linux-{arch}.tar.gz  # gui feature 없는 헤드리스 빌드
 #
 # Requires:
 #   cargo install cargo-deb            # .deb 패키지 생성 (debug 빌드에선 생략)
@@ -217,8 +218,9 @@ rm -rf "${DIST_DIR:?}/${PKG_DIR:?}"
 mkdir -p "$DIST_DIR/$PKG_DIR"
 
 # main 진입 전 공유 라이브러리가 없을 때 안내할 launcher를 함께 배포한다.
-cp "target/$PROFILE/tasty" "$DIST_DIR/$PKG_DIR/tasty.bin"
-cat > "$DIST_DIR/$PKG_DIR/tasty" <<'WRAPPER_EOF'
+# $1 = 실제 바이너리 tasty.bin이 있는 디렉터리.
+write_launcher() {
+cat > "$1/tasty" <<'WRAPPER_EOF'
 #!/usr/bin/env bash
 # 실행 전에 ldd에서 누락된 공유 라이브러리를 찾는다. ldd가 없거나 검사 실패 시에도 실행을 시도한다.
 set -euo pipefail
@@ -248,7 +250,11 @@ fi
 
 exec "$BIN" "$@"
 WRAPPER_EOF
-chmod +x "$DIST_DIR/$PKG_DIR/tasty"
+chmod +x "$1/tasty"
+}
+
+cp "target/$PROFILE/tasty" "$DIST_DIR/$PKG_DIR/tasty.bin"
+write_launcher "$DIST_DIR/$PKG_DIR"
 
 stage_plugins "$DIST_DIR/$PKG_DIR/plugins"
 stage_notice "$DIST_DIR/$PKG_DIR"
@@ -310,6 +316,28 @@ if [[ "$PROFILE" != "debug" ]]; then
     APPIMAGE_FILE="$DIST_DIR/$APPIMAGE_NAME"
 fi
 
+# 헤드리스는 gui feature를 끈 빌드라 별도 target 디렉터리를 쓴다. 같은 target을 쓰면
+# 위 패키지가 읽은 target/$PROFILE/tasty를 헤드리스 바이너리로 덮는다.
+# plugin은 헤드리스 호스트도 실행하므로 위에서 빌드·서명한 번들을 그대로 넣는다.
+HEADLESS_TARGET_DIR="target/headless"
+HEADLESS_PKG_DIR="tasty-headless-linux-${ARCH}"
+HEADLESS_ARCHIVE_NAME="tasty-headless-${VERSION}-linux-${ARCH}.tar.gz"
+echo "==> Building headless tasty ($PROFILE, --no-default-features)..."
+CARGO_TARGET_DIR="$HEADLESS_TARGET_DIR" cargo build $CARGO_FLAGS --no-default-features
+
+echo "==> Assembling headless archive..."
+rm -rf "${DIST_DIR:?}/${HEADLESS_PKG_DIR:?}"
+mkdir -p "$DIST_DIR/$HEADLESS_PKG_DIR"
+cp "$HEADLESS_TARGET_DIR/$PROFILE/tasty" "$DIST_DIR/$HEADLESS_PKG_DIR/tasty.bin"
+write_launcher "$DIST_DIR/$HEADLESS_PKG_DIR"
+stage_plugins "$DIST_DIR/$HEADLESS_PKG_DIR/plugins"
+stage_notice "$DIST_DIR/$HEADLESS_PKG_DIR"
+
+echo "==> Creating $HEADLESS_ARCHIVE_NAME..."
+rm -f "$DIST_DIR/$HEADLESS_ARCHIVE_NAME"
+tar -czf "$DIST_DIR/$HEADLESS_ARCHIVE_NAME" -C "$DIST_DIR" "$HEADLESS_PKG_DIR"
+rm -rf "${DIST_DIR:?}/${HEADLESS_PKG_DIR:?}"
+
 echo "==> Verifying artifacts..."
 # 조기 종료하는 grep/head에 producer를 직접 연결하면 pipefail에서 SIGPIPE로 실패할 수 있어 출력을 먼저 받는다.
 TAR_LISTING=$(tar -tzf "$DIST_DIR/$ARCHIVE_NAME")
@@ -325,6 +353,30 @@ tar -xzf "$DIST_DIR/$ARCHIVE_NAME" -C "$VERIFY_TMP"
     echo "Error: tasty --version failed (from tar.gz)" >&2
     exit 1
 }
+rm -rf "$VERIFY_TMP"
+HEADLESS_LISTING=$(tar -tzf "$DIST_DIR/$HEADLESS_ARCHIVE_NAME")
+grep -q "$HEADLESS_PKG_DIR/tasty.bin" <<<"$HEADLESS_LISTING" || {
+    echo "Error: tasty.bin not in $HEADLESS_ARCHIVE_NAME" >&2
+    exit 1
+}
+grep -q "$HEADLESS_PKG_DIR/plugins/" <<<"$HEADLESS_LISTING" || {
+    echo "Error: plugins not in $HEADLESS_ARCHIVE_NAME" >&2
+    exit 1
+}
+verify_notice_listing "$HEADLESS_LISTING" "$HEADLESS_PKG_DIR/" "$HEADLESS_ARCHIVE_NAME" || exit 1
+VERIFY_TMP=$(mktemp -d)
+tar -xzf "$DIST_DIR/$HEADLESS_ARCHIVE_NAME" -C "$VERIFY_TMP"
+"$VERIFY_TMP/$HEADLESS_PKG_DIR/tasty" --version >/dev/null || {
+    rm -rf "$VERIFY_TMP"
+    echo "Error: tasty --version failed (from $HEADLESS_ARCHIVE_NAME)" >&2
+    exit 1
+}
+# 두 빌드의 feature가 다르므로 GUI 바이너리와 같은 파일이면 헤드리스 빌드가 적용되지 않은 것이다.
+if cmp -s "$VERIFY_TMP/$HEADLESS_PKG_DIR/tasty.bin" "target/$PROFILE/tasty"; then
+    rm -rf "$VERIFY_TMP"
+    echo "Error: $HEADLESS_ARCHIVE_NAME holds the GUI binary" >&2
+    exit 1
+fi
 rm -rf "$VERIFY_TMP"
 if [[ -n "$DEB_FILE" ]]; then
     dpkg-deb -I "$DEB_FILE" >/dev/null || {
@@ -362,6 +414,7 @@ SHASUMS_FILE="SHA256SUMS-linux-${ARCH}.txt"
     cd "$DIST_DIR"
     {
         sha256sum "$ARCHIVE_NAME"
+        sha256sum "$HEADLESS_ARCHIVE_NAME"
         [[ -n "$DEB_FILE" ]]      && sha256sum "$(basename "$DEB_FILE")"
         [[ -n "$RPM_FILE" ]]      && sha256sum "$(basename "$RPM_FILE")"
         [[ -n "$APPIMAGE_FILE" ]] && sha256sum "$(basename "$APPIMAGE_FILE")"
@@ -371,6 +424,7 @@ SHASUMS_FILE="SHA256SUMS-linux-${ARCH}.txt"
 echo ""
 echo "Done!"
 echo "  Archive:  $DIST_DIR/$ARCHIVE_NAME"
+echo "  Headless: $DIST_DIR/$HEADLESS_ARCHIVE_NAME"
 [[ -n "$DEB_FILE" ]]      && echo "  Deb:      $DEB_FILE"
 [[ -n "$RPM_FILE" ]]      && echo "  Rpm:      $RPM_FILE"
 [[ -n "$APPIMAGE_FILE" ]] && echo "  AppImage: $APPIMAGE_FILE"
