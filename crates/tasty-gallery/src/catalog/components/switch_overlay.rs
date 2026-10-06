@@ -718,6 +718,7 @@ pub fn draw_category(ui: &mut egui::Ui, theme: &Theme) {
     );
     let full_held = format!("{held} held — keycap right-aligned on each header");
     let rail_held = format!("{held} held — keycap centered on each --- boundary");
+    let trigger = format!("{held} held (rebindable)");
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         spec::cluster(ui, theme, "released — full sidebar", |ui| {
             full_cat(ui, theme, false)
@@ -733,6 +734,7 @@ pub fn draw_category(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         &[
+            ("trigger", &trigger),
             ("widget", "Kbd keycap · 16px"),
             ("content", "digit · 1–9 then 0 (10th)"),
             ("full placement", "right-aligned on header (keeps chevron)"),
@@ -742,7 +744,8 @@ pub fn draw_category(ui: &mut egui::Ui, theme: &Theme) {
                 "exclusivity",
                 "category combo ⇒ headers only; rows keep dots",
             ),
-            ("on switch", "auto-expand collapsed + land on last-active"),
+            ("auto-expand", "collapsed target rotates open on switch"),
+            ("last-active", "lands on category's last-focused ws"),
         ],
         &[
             TokenChip::new(
@@ -760,6 +763,11 @@ pub fn draw_category(ui: &mut egui::Ui, theme: &Theme) {
                 "keycap edge",
                 theme.border_strong().into(),
             ),
+            TokenChip::new(
+                "surface-active",
+                "landed ws row",
+                theme.surface_active().into(),
+            ),
         ],
     );
 
@@ -771,5 +779,13 @@ pub fn draw_category(ui: &mut egui::Ui, theme: &Theme) {
          않는다. 카테고리 헤더엔 교체할 status dot 이 없고 chevron 은 접힘/자동확장 \
          을 나타내는 load-bearing 요소이므로, 키캡은 헤더 우측에 덧붙고 chevron 을 건드리지 \
          않는다. reserved normal(\"Workspaces\")도 전환 대상(1) 이다.",
+    );
+    spec::note(
+        ui,
+        theme,
+        "Reuses the switch-overlay keycap and all switch-overlay-* tokens — no new tokens. \
+         Auto-expand: switching to a collapsed category opens it (chevron rotates, rows reveal) \
+         and persists collapsed:false. Last-active: the landed workspace uses the ordinary \
+         active treatment (surface-active + 2px accent bar) — no separate cue.",
     );
 }

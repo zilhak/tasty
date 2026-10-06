@@ -756,6 +756,9 @@ pub fn draw_more_menu(ui: &mut egui::Ui, theme: &Theme) {
                 "items",
                 "suppress banner (bell) · disable capture (mouse) — both neutral",
             ),
+            ("reveal", "banner hover — same rule as ×"),
+            ("open state", "active (accent) while menu is open"),
+            ("card size", "unchanged"),
         ],
         &[
             TokenChip::new(
@@ -823,6 +826,20 @@ pub fn draw_more_menu(ui: &mut egui::Ui, theme: &Theme) {
          Suppressing the banner also closes it immediately; disabling capture leaves it open \
          so the user can read the confirmation. The program name renders as its own mono \
          segment so only it ellipsizes — the fixed label text never wraps or truncates.",
+    );
+    spec::note(
+        ui,
+        theme,
+        "New glyph more (icons/more.svg — three dots, horizontal, same 2px round-cap language \
+         as the dot glyphs). A unicode ⋯ was rejected: the system renders every affordance \
+         through the Icon component so it inherits currentColor and the 16px sm size.",
+    );
+    spec::dont(
+        ui,
+        theme,
+        "Don't keep the trigger permanently visible. A persistent banner with a permanently \
+         drawn ⋯ reads as a second dismiss control and adds chrome to a notice that is already \
+         at the top of live output — hover is where every other banner affordance lives.",
     );
 }
 

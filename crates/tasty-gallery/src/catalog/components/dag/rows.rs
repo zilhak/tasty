@@ -155,9 +155,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         &[
             ("row height", "36 · listctrl-row-min-height"),
             ("leading", "gitTree icon + name"),
-            ("description", "workspace · last update"),
+            ("label", "13 — DAG name"),
+            ("description", "11 — workspace · last update"),
             ("trailing", "origin tag · rollup · done/total"),
             ("counter", "mono, never a progress bar"),
+            ("scope", "all workspaces, filterable"),
         ],
         &[
             TokenChip::new(
@@ -170,6 +172,12 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::new("tag-bg", "derived tag", theme.tag_bg().to_egui()),
             TokenChip::without_color("dag-row-height", "36 row"),
         ],
+    );
+    spec::note(
+        ui,
+        theme,
+        "The workspace name is part of the description line, not a separate column — the \
+         popup lists every workspace, and a column would waste the width the DAG name needs.",
     );
     spec::note(
         ui,

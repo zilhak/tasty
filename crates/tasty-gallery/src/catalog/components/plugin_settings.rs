@@ -145,6 +145,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("select width", "field_width_md"),
             ("switch", "28×16 track"),
             ("number", "Input(mono) + suffix"),
+            ("pattern", "plugin settings page (label + control rows)"),
+            ("default zoom", "number + % suffix"),
+            ("color scheme", "select · follow / light / dark"),
+            ("allow remote", "switch (off default)"),
+            ("sandbox scripts", "switch (on default)"),
         ],
         &[
             TokenChip::new("text", "row label", theme.text_primary().to_egui()),
@@ -167,6 +172,12 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ),
             TokenChip::new("input-bg", "zoom field", theme.input_bg().to_egui()),
         ],
+    );
+    spec::note(
+        ui,
+        theme,
+        "Reuses the existing plugin-settings row vocabulary (switch 28×16 · select · number) — no \
+         bespoke controls. Toolbar / address bar / find-in-page / retry stay open decisions.",
     );
 }
 

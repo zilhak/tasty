@@ -201,6 +201,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         &[
+            ("structure", "2 regions · independent scroll state"),
             ("width", "196 (design ExpSidebar)"),
             (
                 "example body",
@@ -226,6 +227,14 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("tree active", "surface-active + text-primary"),
             ("fav star", "starFill · accent-warning"),
             ("empty", "faint star + caption + hint"),
+            (
+                "resize",
+                "recomputed from the live body height — no drag handle",
+            ),
+            (
+                "row visuals",
+                "unchanged (tree row · star row · empty state)",
+            ),
         ],
         &[
             TokenChip::new(
@@ -252,6 +261,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::without_color("explorer-favorites-pin-threshold", "small-surface switch"),
             TokenChip::without_color("explorer-favorites-pin-height", "pinned region height"),
             TokenChip::without_color("explorer-sidebar-width", "196 column"),
+            TokenChip::new(
+                "bg-sidebar",
+                "both regions' fill",
+                egui::Color32::from(theme.bg_sidebar()),
+            ),
         ],
     );
 
@@ -265,6 +279,15 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
          is a hard cutover, not an interpolation. The split border sits at a fixed coordinate \
          above the Favorites region — a short tree leaves blank background above it rather \
          than pushing it down or centering the tree.",
+    );
+    note(
+        ui,
+        theme,
+        "The threshold basis is the sidebar body height (the split container itself), not the \
+         whole explorer tab. The pinned region uses the shared hover-revealed scrollbar — no \
+         always-on bar. The boundary is the same 1px separator as before — no shadow, no tint; \
+         \"pinned\" is communicated by behaviour (the line never moves, each side scrolls \
+         alone), not by extra decoration.",
     );
 }
 

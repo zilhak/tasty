@@ -6,7 +6,7 @@ use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{StatusBarData, draw_status_bar_view};
 
-use crate::catalog::spec::{StageVariant, TokenChip, cluster, meta, note, stage};
+use crate::catalog::spec::{StageVariant, TokenChip, cluster, dont, meta, note, stage};
 
 /// specimen 공통 기본값 — 변형마다 필요한 필드만 덮어쓴다.
 fn base() -> StatusBarData {
@@ -140,8 +140,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("mono", "surface id · grid 만"),
             (
                 "drop order",
-                "1 grid → 2 shell → 3 surface id → 4 palette cap → 5 branch text",
+                "1 grid → 2 shell → 3 surface id → 4 palette cap → 5 branch text (glyph stays)",
             ),
+            ("theme", "a sun / theme glyph, not a coloured dot"),
             ("never drops", "theme glyph"),
             ("no value", "항목이 자리째 없다 — dash 를 그리지 않는다"),
             (
@@ -149,6 +150,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "git-branch / sun / theme · statusbar-glyph-size → icon-size-xs (12)",
             ),
             ("border-top", "border-width separator"),
+            ("detached HEAD", "short sha in the branch slot"),
+            ("interaction", "read-only; no item moves focus"),
+            ("refresh", "1Hz cache — unchanged"),
         ],
         &[
             TokenChip::new("bg-app", "bar", egui::Color32::from(theme.bg_app())),
@@ -177,5 +181,20 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::without_color("statusbar-dot-size", "6 — when a surface dot is shown"),
             TokenChip::without_color("status-bar-height", "24px bar"),
         ],
+    );
+
+    note(
+        ui,
+        theme,
+        "The theme indicator used to borrow accent-warning for light and accent-agent for dark. \
+         Light-vs-dark is not a warning and not an agent, so it becomes a glyph in dim ink — no \
+         colour role is minted for it.",
+    );
+    dont(
+        ui,
+        theme,
+        "Don't add counts, clocks, CPU meters or notification badges. Anything that changes \
+         faster than the bar's 1Hz read, or that is not a property of the focused surface, \
+         belongs elsewhere.",
     );
 }

@@ -115,6 +115,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ),
             ("h1", "Heading anchor prose-h1 20 · text-primary"),
             ("h2–h6", "CSS-interpolated 20→13 · strong"),
+            ("small", "11 · muted"),
             (
                 "heading id",
                 "GitHub-compatible auto slug — no explicit {#id} syntax",

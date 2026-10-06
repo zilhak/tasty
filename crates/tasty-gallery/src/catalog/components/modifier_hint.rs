@@ -164,6 +164,14 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "hold 500ms (Shift-only 1200ms) → fade 200ms (opacity 0.2→1.0)",
             ),
             ("release", "0ms — vanishes immediately"),
+            ("empty row", "placeholder text only — no keycap"),
+            ("empty tone", "muted (below a keycap row)"),
+            ("empty wash", "none — not a role-row"),
+            ("empty glyph", "none"),
+            ("empty min height", "20px (tighter than a 24px keycap row)"),
+            ("empty section gap", "3px inside (empty sits tight)"),
+            ("empty copy", "\u{201c}No shortcuts bound\u{201d}"),
+            ("empty interaction", "none — static, no hover/focus"),
         ],
         &[
             TokenChip::new(
@@ -198,6 +206,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "modhint-empty-fg",
                 "empty placeholder text",
                 theme.modhint_empty_fg().to_egui(),
+            ),
+            TokenChip::new(
+                "text-muted",
+                "→ semantic of modhint-empty-fg",
+                theme.text_muted().to_egui(),
             ),
             TokenChip::without_color("modhint-section-gap", "between sections (unchanged)"),
             TokenChip::new(
@@ -239,6 +252,13 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         "Don't dress the placeholder like a real row: no keycap (implies a binding), no washed background \
          (reads as a role-row), no leading glyph (reads as a bullet). It's text-muted only — quieter than \
          every real row so it never competes with an actual binding.",
+    );
+    spec::note(
+        ui,
+        theme,
+        "i18n key modifier_hint.empty — en \"No shortcuts bound\" · ko \"지정된 단축키 없음\" · \
+         ja \"割り当てなし\". Fits one line in the panel across all three. modhint-empty-fg points \
+         at text-muted (no new primitive).",
     );
     spec::note(
         ui,

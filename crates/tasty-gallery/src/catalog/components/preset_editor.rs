@@ -1162,6 +1162,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("edit: tab ×", "close on active / hover (tabs > 1)"),
             ("edit: add-tab", "+ 22px, overlay-hover fill"),
             ("edit: settings", "gear or double-click → settings screen"),
+            ("edit: last tab", "close × hidden (guard)"),
+            ("persistence", "structure auto-saves · parameters via OK"),
         ],
         &[
             TokenChip::new("bg-app", "leaf fill / pane gap", theme.bg_app().to_egui()),
@@ -1195,6 +1197,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "summary field value (text-secondary)",
                 theme.preset_leaf_value_fg().to_egui(),
             ),
+            TokenChip::new(
+                "accent-danger",
+                "remove handle",
+                theme.accent_danger().to_egui(),
+            ),
         ],
     );
 
@@ -1216,6 +1223,13 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
          active/hovered mini tabs show a close × (hidden when a pane has one tab); the add-tab + is \
          22px with an overlay-hover fill. Because the specimen is static, zone/× hover and the \
          crosshair are drawn as fixed-state examples — live tracking runs only in the host.",
+    );
+    spec::note(
+        ui,
+        theme,
+        "Split direction follows the edge: left/top add the new surface before (left / above), \
+         right/bottom after. Below ~46px on an axis that axis's bands drop out so tiny leaves stay \
+         selectable. Empty-list scope shows \"No presets saved yet.\" in the left list.",
     );
 
     spec::dont(

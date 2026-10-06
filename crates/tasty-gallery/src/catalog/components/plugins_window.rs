@@ -485,6 +485,27 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "add",
                 "단일 열 · 제목 없이 경로 선택 블록(Plugin folder 머리글 · mono 입력 + Find folder…(secondary) + Verify(primary) · 설명 문단) 바로 아래에 확인 전 안내 상자 또는 매니페스트 카드(아바타 lg · 이름 + 버전 Tag · id · 작성자 · 설명 · Permissions/Surface kinds Tag, 비면 caption None · Source · Homepage 링크) + 신뢰 상자 · 액션 바는 왼쪽 Grants 문구 또는 막힌 이유(caption, text-muted) + 오른쪽 Cancel(ghost) + Add plugin(primary, 미신뢰면 Trust & add), 막히면 disabled, 확인 전에는 Cancel 만",
             ),
+            (
+                "copy fingerprint",
+                "IconButton sm copy · after the value · absent without a fingerprint",
+            ),
+            (
+                "attention bar",
+                "no Details — the reason panel already shows the blurb + fingerprint",
+            ),
+            ("add — blocked", "disabled Add plugin · reason on the left"),
+            (
+                "reasons",
+                "Already installed · Signed, but the publisher's public key file is missing · Signature check failed",
+            ),
+            (
+                "untrusted + .pub",
+                "Trust & add — Primary (agent is for AI-agent surfaces only)",
+            ),
+            (
+                "grants",
+                "No permissions · Grants 1 permission · Grants N permissions",
+            ),
         ],
         &[
             TokenChip::new(
@@ -515,6 +536,12 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "trusted",
                 theme.accent_success().to_egui(),
             ),
+            TokenChip::new(
+                "state-disabled-fg",
+                "disabled ink",
+                theme.state_disabled_fg().to_egui(),
+            ),
+            TokenChip::new("text-muted", "reason", theme.text_muted().to_egui()),
         ],
     );
 

@@ -442,6 +442,16 @@ pub fn draw_child(ui: &mut egui::Ui, theme: &Theme) {
                 "draw paths",
                 "host popups and plugin popups share the scope's single scrim",
             ),
+            ("parent under child", "full ink, not dimmed further"),
+            (
+                "clamp",
+                "popup shrinks to the surface rect, min 320 → surface width wins",
+            ),
+            (
+                "surface hidden",
+                "popup shell AND scrim hide with it; both return on re-show",
+            ),
+            ("host popups", "same rule when they declare a surface scope"),
         ],
         &[
             TokenChip::new(
@@ -471,5 +481,12 @@ pub fn draw_child(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         "부모 팝업과 자식 파일 선택기는 같은 범위를 공유한다. 배경은 한 번만 어둡게 하고 그 위에 부모와 자식을 순서대로 그린다. 따라서 부모만 있을 때와 자식이 함께 있을 때의 배경 밝기가 같아야 한다.",
+    );
+    spec::note(
+        ui,
+        theme,
+        "convert_surface and any other host popup bound to a surface gain this scrim; host \
+         popups with no target binding stay on the window scrim. Child-lifetime and draft \
+         policy are the host's, unchanged by this visual rule.",
     );
 }

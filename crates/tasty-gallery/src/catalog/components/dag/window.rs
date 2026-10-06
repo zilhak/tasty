@@ -348,7 +348,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("detail header", "none — the back bar is the chrome"),
             ("back bar actions", "compact zoom cluster + runner badge"),
             ("DAG selector", "hidden in detail"),
+            ("back bar", "36 — drilldown-backbar-height"),
             ("back", "restores the list, keeps the selection"),
+            ("close / reset", "unchanged host contract"),
         ],
         &[
             TokenChip::without_color("dag-popup-width", "560"),

@@ -305,6 +305,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ),
             ("header bg", "bg-sidebar · mono caption"),
             ("footer", "count · Copy address · Close"),
+            ("identity", "(addr, port)"),
+            ("star", "22×22 hit · tight 28px column"),
+            ("row height", "22 (tree density)"),
+            ("scope", "always system-wide"),
         ],
         &[
             TokenChip::new("bg-panel", "frame", theme.bg_panel().to_egui()),
@@ -368,6 +372,22 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
          to 112px (5 rows) before scrolling; a leading 28px star column (no \
          header label, not hideable) toggles favorites in both the section and \
          the main table.",
+    );
+    spec::do_(
+        ui,
+        theme,
+        "Do keep the favorites rows as summary rows (addr:port · process · state), not the \
+         7-column grid — a stopped port has no process/workspace/tab data to show, and the \
+         summary row never needs the table's horizontal scroll. The star column width is \
+         shared, so stars still line up across both regions.",
+    );
+    spec::note(
+        ui,
+        theme,
+        "Strings: port_scanner.favorites_heading (\"Favorites\") · favorites_count · \
+         favorites_system_wide (\"system-wide\") · favorites_empty · favorites_not_running · \
+         state_none_label (\"NONE\"). Leave 20–40% growth room for ko/ja/de — the caption row \
+         and the empty line are single-line by design.",
     );
 }
 
