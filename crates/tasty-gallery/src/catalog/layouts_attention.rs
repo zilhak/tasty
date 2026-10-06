@@ -13,11 +13,12 @@ use crate::catalog::icons::{MockGlyph, TERMINAL};
 use crate::catalog::spec::{StageVariant, TokenChip, dont, meta, note, stage};
 use crate::catalog::{Section, Spec, layouts_settled};
 
-/// 시안 무대 배치 값: 경우 설명 열 폭, 행 폭(펼친 사이드바), 경우 사이 간격.
+/// 시안 `AttentionRows` 무대 값: 경우 설명 열 폭, 행 폭(펼친 사이드바).
 const ROW_CAPTION_W: LogicalPx = LogicalPx(190.0);
 const ROW_W: LogicalPx = LogicalPx(212.0);
+/// 시안 `AttentionRows` 경우 사이 간격(gap 6). 무대 배치 값이라 역할 토큰이 없다.
 const ROW_CASE_GAP: LogicalPx = LogicalPx(6.0);
-/// 레일 무대의 경우 설명 칸 최소 높이(두 줄 설명이 아바타 줄을 밀지 않게).
+/// 시안 `AttentionRail` 경우 설명 칸 최소 높이(minHeight 24). 두 줄 설명이 아바타 줄을 밀지 않게 한다.
 const RAIL_CAPTION_MIN_H: LogicalPx = LogicalPx(24.0);
 /// 테두리 무대의 surface 높이(시안 무대 200 − 위아래 여백).
 const LADDER_PANE_H: LogicalPx = LogicalPx(176.0);
