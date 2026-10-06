@@ -177,11 +177,14 @@ pub enum RemoteCommands {
     },
     /// List recent attach attempts refused because they targeted this instance.
     ///
-    /// Attaching to this instance's own port is refused after the endpoint is
-    /// resolved, so the `remote.attach` reply only acknowledges the attempt.
-    /// Each entry carries the `attempt` number from that reply, the local
-    /// workspace of an automatic attach mapping, the remote workspace id, and
-    /// the port. Up to 32 of the newest refusals are kept until the instance
-    /// exits. Other connection failures are not listed. Read-only.
+    /// An automatic attach mapping is resolved when its workspace is activated,
+    /// so a mapping that points at this instance's own port is refused after
+    /// resolution and listed here. `remote.attach` and `attach.into_gui` refuse
+    /// a loopback target on the own port immediately with an error instead.
+    /// Each entry carries the attempt number (the `attempt` in a
+    /// `remote.attach` reply), the local workspace of the mapping, the remote
+    /// workspace id, and the port. Up to 32 of the newest refusals are kept
+    /// until the instance exits. Other connection failures are not listed.
+    /// Read-only.
     Refusals,
 }

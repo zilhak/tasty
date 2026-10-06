@@ -71,7 +71,7 @@ pub fn resolve_connection_spec(
 
 /// `127.0.0.1:PORT` / `localhost:PORT` / `[::1]:PORT` 면 PORT 를 돌려준다(loopback 직결).
 /// 그 외(원격 호스트/alias)는 None → SSH 터널 경로.
-pub(crate) fn parse_loopback_port(dest: &str) -> Option<u16> {
+pub fn parse_loopback_port(dest: &str) -> Option<u16> {
     let (host, port_str) = if let Some(rest) = dest.strip_prefix("[::1]:") {
         ("::1", rest)
     } else {

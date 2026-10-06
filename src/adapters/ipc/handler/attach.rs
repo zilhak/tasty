@@ -123,10 +123,29 @@ pub(crate) fn handle_force_detach_workspace(
     )
 }
 
-/// 지정한 port와 workspace의 mirror 생성을 GUI 큐에 요청한다.
+/// attach 대상 포트가 이 인스턴스의 IPC 포트면 처리를 시작하기 전에 거절 응답을 만든다.
+/// 자기 자신을 mirror하면 그 mirror가 원본 workspace를 점유해 로컬 입력이 막힌다.
+/// 연결 직전의 `connect_unless_self` 검사는 비동기로 해석한 엔드포인트에 계속 적용한다.
+pub(crate) fn refuse_own_port(
+    own_port: Option<u16>,
+    port: u16,
+    id: serde_json::Value,
+) -> Option<JsonRpcResponse> {
+    (own_port == Some(port)).then(|| {
+        JsonRpcResponse::invalid_params(
+            id,
+            format!(
+                "attach target port {port} is this instance's own IPC port; attaching to itself is refused"
+            ),
+        )
+    })
+}
+
+/// 지정한 port와 workspace의 mirror 생성을 GUI 큐에 요청한다. 자기 포트는 큐에 넣기 전에 거절한다.
 /// 실제 연결·생성은 App이 처리하며 헤드리스는 이 큐를 처리하지 않는다.
 pub(crate) fn handle_into_gui(
     engine: &mut EngineMut<'_>,
+    own_port: Option<u16>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -138,6 +157,9 @@ pub(crate) fn handle_into_gui(
         Ok(v) => v,
         Err(e) => return e,
     };
+    if let Some(refused) = refuse_own_port(own_port, port, id.clone()) {
+        return refused;
+    }
     engine.remote.pending_gui_attach.push((port, workspace));
     JsonRpcResponse::success(
         id,

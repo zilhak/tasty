@@ -1000,7 +1000,9 @@ fn route_engine_handler(
         "attach.force_detach_workspace" => {
             attach::handle_force_detach_workspace(engine, id, &request.params)
         }
-        "attach.into_gui" => attach::handle_into_gui(engine, id, &request.params),
+        "attach.into_gui" => {
+            attach::handle_into_gui(engine, core.own_ipc_port(), id, &request.params)
+        }
         "attach.list" => attach::handle_list(&engine.read(), id),
         "remote.profile.list" => remote_profile::handle_list(id),
         "remote.profile.get" => remote_profile::handle_get(id, &request.params),

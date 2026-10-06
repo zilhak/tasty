@@ -472,6 +472,9 @@ fn start_ipc_and_seed(
         // 헤드리스에는 toast가 없어 초기화 실패는 함수 내부 경고 로그로만 알린다.
         let _ = crate::webhook::init_from_config(injector.clone());
         app.services.set_host_ipc_injector(injector);
+        if let Some(server) = app.hub.ipc_server.as_ref() {
+            app.services.set_own_ipc_port(server.port());
+        }
     }
 }
 

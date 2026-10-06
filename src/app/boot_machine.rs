@@ -725,6 +725,9 @@ impl App {
                 );
             }
             self.services.set_host_ipc_injector(injector);
+            if let Some(server) = self.hub.ipc_server.as_ref() {
+                self.services.set_own_ipc_port(server.port());
+            }
         }
     }
 

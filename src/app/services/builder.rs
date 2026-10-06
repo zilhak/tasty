@@ -171,6 +171,7 @@ impl AppServicesBuilder {
                 .ok_or_else(|| anyhow::anyhow!("SettingsStorage missing"))?,
             preset_store,
             host_ipc_injector,
+            own_ipc_port: OnceLock::new(),
             tasks,
             pressure: tasty_telemetry::PressureStats::default(),
             gate: tasty_telemetry::GateStats::default(),

@@ -54,6 +54,18 @@ impl App {
             }
         };
 
+        // loopback 대상은 포트가 인자(또는 프로필)로 정해지므로 원격에 workspace를 만들거나
+        // 연결 시도를 시작하기 전에 자기 포트인지 판정한다.
+        if let Some(port) = conn.loopback_port()
+            && let Some(refused) = crate::ipc::handler::attach::refuse_own_port(
+                self.services.own_ipc_port(),
+                port,
+                rpc_id.clone(),
+            )
+        {
+            send_response(&cmd.response_tx, refused);
+            return;
+        }
         let attempt = match self.remote.begin_attempt(None, None) {
             Ok(attempt) => attempt,
             Err(error) => {
@@ -133,6 +145,18 @@ impl App {
 use crate::app::services::RemoteConnParams;
 
 impl RemoteConnParams {
+    /// 대상이 loopback 직결이면 그 포트. 프로필은 파일에서 읽어 해석하며, 해석에 실패하면
+    /// 판정하지 않고 워커의 해석 오류에 맡긴다.
+    fn loopback_port(&self) -> Option<u16> {
+        let (target, ..) = tasty_remote::browse::resolve_connection_spec(
+            self.profile.as_deref(),
+            self.ssh.as_deref(),
+            &self.remote_tasty,
+            &self.remote_port_mode,
+        )
+        .ok()?;
+        tasty_remote::browse::parse_loopback_port(&target.destination)
+    }
     /// SSH 접속 준비는 블로킹하므로 워커에서 호출한다.
     fn resolve_endpoint(&self) -> anyhow::Result<(Option<tasty_ssh::SshTunnel>, u16)> {
         let (target, rt, pm, pf) = tasty_remote::browse::resolve_connection_spec(

@@ -185,7 +185,7 @@ fn the_stream_channel_ignores_session_token_so_auth_cannot_strand_occupancy() {
 }
 
 /// RTT는 진단 기준이며 통과·실패를 결정하지 않는다.
-#[cfg(debug_assertions)]
+#[cfg(all(not(feature = "gui"), debug_assertions))]
 const SELF_ATTACH_RTT_NOTICE: Duration = Duration::from_secs(2);
 
 #[cfg(debug_assertions)]
@@ -219,14 +219,15 @@ fn dispatch_completion(
     parse(&line)
 }
 
-#[cfg(debug_assertions)]
-fn observe_self_attach_queue(
+#[cfg(all(not(feature = "gui"), debug_assertions))]
+fn observe_queued_gui_attach(
     server: &TastyInstance,
     ws: &common::TestWorkspace,
+    port: u16,
 ) -> Option<serde_json::Value> {
     let queued = server.call(
         "attach.into_gui",
-        json!({ "port": server.port(), "workspace": ws.id }),
+        json!({ "port": port, "workspace": ws.id }),
     );
     assert_eq!(
         queued["queued"], true,
@@ -269,75 +270,87 @@ fn observe_self_attach_queue(
     completion
 }
 
-/// GUI dispatcher가 실제로 처리하고 connector에 진입하지 않았는지 확인한다.
-#[cfg(all(feature = "gui", debug_assertions))]
+/// 늦게 처리되는 일도 관측하도록 요청 몇 개로 이벤트 루프를 돌린다.
+fn settle(server: &TastyInstance) {
+    for _ in 0..10 {
+        server.call("ui.state", json!({}));
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
+/// 자기 포트 거절이 처리 시점의 인자 오류로 오는지 확인한다.
+fn assert_own_port_refusal(reply: &serde_json::Value) {
+    assert_eq!(reply["error"]["code"], -32602, "{reply}");
+    let message = reply["error"]["message"].as_str().unwrap_or_default();
+    assert!(message.contains("own IPC port"), "{reply}");
+}
+
+/// 자기 포트를 가리키는 attach.into_gui는 큐에 넣기 전에 오류로 응답한다(GUI·헤드리스 공통).
+/// GUI dispatcher와 connector에는 도달하지 않는다.
 #[test]
-fn self_attach_is_rejected_before_it_can_take_occupancy() {
+fn attach_into_gui_to_the_own_port_is_refused_before_queueing() {
     let server = common::shared();
-    let ws = server.create_workspace("self-attach-rejected");
-    let completion = observe_self_attach_queue(server, &ws)
-        .expect("no matching GUI dispatch completion; queued=true is not dispatch evidence");
-    assert_eq!(completion["outcome"], "rejected_self", "{completion}");
-    assert_eq!(completion["connector_entries"], 0, "{completion}");
+    let ws = server.create_workspace("self-attach-refused");
+    let reply = server.call_raw(
+        "attach.into_gui",
+        json!({ "port": server.port(), "workspace": ws.id }),
+    );
+    assert_own_port_refusal(&reply);
+    settle(server);
+    #[cfg(debug_assertions)]
+    assert_eq!(dispatch_completion(server, ws.id, INTO_GUI_SOURCE), None);
     assert!(!is_attached(server, ws.surface_id));
     let outcome = attach_common::try_open_workspace_attach(server.port(), ws.id);
     assert_eq!(outcome, "attached_workspace");
 }
 
-/// IPC remote.attach가 loopback 주소로 자기 포트를 가리키면 debug에서도 연결 전에 거절한다.
-/// 응답은 시도만 접수하고, 거절은 응답의 시도 번호로 remote.refusals에서 조회한다.
-#[cfg(all(feature = "gui", debug_assertions))]
+/// IPC remote.attach가 loopback 주소로 자기 포트를 가리키면 연결 시도를 시작하기 전에 오류로 응답한다.
+#[cfg(feature = "gui")]
 #[test]
-fn remote_attach_to_the_own_port_is_rejected_before_it_can_take_occupancy() {
+fn remote_attach_to_the_own_port_is_refused_before_any_attempt() {
     let server = common::shared();
-    let ws = server.create_workspace("remote-attach-self-rejected");
-    let reply = server.call(
+    let ws = server.create_workspace("remote-attach-self-refused");
+    let reply = server.call_raw(
         "remote.attach",
         json!({
             "ssh": format!("127.0.0.1:{}", server.port()),
             "remote_workspace": ws.id,
         }),
     );
-    assert_eq!(
-        reply["attaching"], true,
-        "IPC only acknowledges the attempt: {reply:?}"
-    );
-    let attempt = reply["attempt"].clone();
-    assert!(
-        attempt.is_u64(),
-        "reply carries the attempt number: {reply:?}"
-    );
-    let refusal = |server: &TastyInstance| {
-        server.call("remote.refusals", json!({}))["refusals"]
-            .as_array()
-            .and_then(|all| all.iter().find(|r| r["attempt"] == attempt).cloned())
-    };
-
-    let mut completion = None;
-    let deadline = Instant::now() + SELF_ATTACH_WATCH;
-    while completion.is_none() && Instant::now() < deadline {
-        assert!(
-            !is_attached(server, ws.surface_id),
-            "remote.attach to the own port took occupancy"
-        );
-        completion = dispatch_completion(server, ws.id, ENDPOINT_SOURCE);
-        std::thread::sleep(Duration::from_millis(100));
-    }
-    let completion = completion
-        .expect("no endpoint dispatch completion; attaching=true is not dispatch evidence");
-    assert_eq!(completion["outcome"], "rejected_self", "{completion}");
-    assert_eq!(completion["connector_entries"], 0, "{completion}");
+    assert_own_port_refusal(&reply);
+    settle(server);
+    #[cfg(debug_assertions)]
+    assert_eq!(dispatch_completion(server, ws.id, ENDPOINT_SOURCE), None);
     assert!(!is_attached(server, ws.surface_id));
-    // The refusal is recorded in the same main-loop step that wrote the completion record.
-    let refusal = refusal(server).expect("the refusal is listed under the reply's attempt");
-    assert_eq!(refusal["port"], server.port(), "{refusal}");
-    assert_eq!(refusal["remote_workspace"], ws.id, "{refusal}");
-    assert_eq!(
-        refusal["anchor_workspace"],
-        serde_json::Value::Null,
-        "{refusal}"
+}
+
+/// 자기 포트로 새 워크스페이스 attach를 요청하면 원격(=자기)에 워크스페이스를 만들기 전에 거절한다.
+#[cfg(feature = "gui")]
+#[test]
+fn remote_attach_new_workspace_to_the_own_port_creates_nothing() {
+    let server = common::shared();
+    let name = format!("self-create-probe-{}", std::process::id());
+    let reply = server.call_raw(
+        "remote.attach",
+        json!({
+            "ssh": format!("127.0.0.1:{}", server.port()),
+            "new_workspace": true,
+            "name": name,
+        }),
     );
-    assert_eq!(refusal["reconnect"], false, "{refusal}");
+    settle(server);
+    let created = server
+        .call("workspace.list", json!({}))
+        .as_array()
+        .expect("workspace.list returns a list")
+        .iter()
+        .filter(|ws| ws["name"] == name.as_str())
+        .count();
+    assert_eq!(
+        created, 0,
+        "a workspace was created on this instance; reply={reply}"
+    );
+    assert_own_port_refusal(&reply);
 }
 
 /// 자기 포트를 가리키는 자동 attach 인라인 매핑은 활성 동안과 재활성화 때 거절을 되풀이하지 않는다.
@@ -414,7 +427,9 @@ fn a_self_port_mapping_is_refused_once_until_it_changes() {
 fn a_queued_gui_attach_does_not_take_headless_occupancy() {
     let server = common::shared();
     let ws = server.create_workspace("headless-gui-attach-queued");
-    assert!(observe_self_attach_queue(server, &ws).is_none());
+    // 자기 포트는 접수 전에 거절하므로 다른 포트로 접수만 확인한다. 헤드리스는 큐를 처리하지 않는다.
+    let elsewhere = server.port().wrapping_add(1);
+    assert!(observe_queued_gui_attach(server, &ws, elsewhere).is_none());
     assert!(!is_attached(server, ws.surface_id));
     let outcome = attach_common::try_open_workspace_attach(server.port(), ws.id);
     assert_eq!(outcome, "attached_workspace");

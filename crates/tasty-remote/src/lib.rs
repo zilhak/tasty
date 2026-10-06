@@ -11,6 +11,7 @@
 //! |------|--------|
 //! | [`browse::RemoteWorkspace`] · [`browse::browse`] · [`browse::browse_via_port`] | 본체 · CLI |
 //! | [`browse::resolve_connection_spec`] · [`browse::resolve_endpoint`] | 본체 · CLI |
+//! | [`browse::parse_loopback_port`] | 자기 포트 attach를 처리 시점에 거절하는 본체 |
 //! | [`create::create_via_port`] ([`create::CreatedRemoteWorkspace`] 는 그 반환형) | 본체 · CLI |
 //! | [`browse::probe_method`] | 상황별 오류 안내를 만드는 호스트 호출자 |
 //! | [`browse::PROBE_TIMEOUT`] | 소비자가 진행 표시·문구를 같은 값에 맞추도록 노출(`docs/dev-guide/attach-behavior.md#ssh-터널-원격-client-공통`) |
