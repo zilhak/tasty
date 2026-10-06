@@ -606,9 +606,6 @@ impl App {
             .next()
             .map(|e| &e.runtime.settings);
         let prev_appearance = prev_settings.map(|s| s.appearance.clone());
-        let prev_theme = prev_appearance.as_ref().map(|a| a.theme.clone());
-        let prev_ui_scale = prev_appearance.as_ref().map(|a| a.ui_scale.clone());
-        let prev_overrides = prev_appearance.as_ref().map(|a| a.theme_overrides.clone());
         let prev_language = prev_settings.map(|s| s.general.language.clone());
 
         for session in self.engines.all_sessions_mut() {
@@ -622,17 +619,10 @@ impl App {
             tracing::error!("failed to save settings: {e}");
         }
 
-        let appearance_changed = prev_theme.as_deref()
-            != Some(new_settings.appearance.theme.as_str())
-            || prev_ui_scale.as_deref() != Some(new_settings.appearance.ui_scale.as_str())
-            || prev_overrides.as_ref() != Some(&new_settings.appearance.theme_overrides);
+        let appearance_changed =
+            theme_order::appearance_changed(prev_appearance.as_ref(), &new_settings.appearance);
         theme_order::install_theme_then(&new_settings, || {
-            self.announce_settings_change(
-                &new_settings,
-                appearance_changed,
-                prev_theme,
-                prev_language,
-            )
+            self.announce_settings_change(&new_settings, appearance_changed, prev_language)
         });
 
         // 바뀐 단축키가 macOS 메뉴 표시에도 반영되도록 재구성한다.
@@ -641,11 +631,11 @@ impl App {
     }
 
     /// 전역 Theme 설치 뒤에 창·터미널 색을 갱신하고 plugin에 설정 변경 이벤트를 발행한다.
+    /// `theme.changed`는 [`theme_order::appearance_changed`]가 참일 때 한 번 발행한다.
     fn announce_settings_change(
         &mut self,
         new_settings: &Settings,
         appearance_changed: bool,
-        prev_theme: Option<String>,
         prev_language: Option<String>,
     ) {
         if appearance_changed {
@@ -661,7 +651,7 @@ impl App {
         if let Some(mgr) = self.plugin_manager.as_mut() {
             use tasty_plugin_protocol::EventScope;
             use tasty_plugin_protocol::events::payloads::{LanguageChanged, ThemeChanged};
-            if prev_theme.as_deref() != Some(new_settings.appearance.theme.as_str()) {
+            if appearance_changed {
                 mgr.emit_host_event(
                     "theme.changed",
                     &ThemeChanged {

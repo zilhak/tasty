@@ -5,6 +5,9 @@
 //! 본체 `src/`(검사 디렉터리 제외)를 읽어 두 조건을 텍스트로 비교한다.
 //! `"theme.changed"` 리터럴은 모두 `fn announce_settings_change` 안에 있어야 하고,
 //! `announce_settings_change(` 호출은 모두 `install_theme_then(` 호출의 두 번째 인자 안에 있어야 한다.
+//! 발행 리터럴은 `if appearance_changed {` 블록 안에도 있어야 한다. 테마 ID만 비교하는 옛 조건으로
+//! 돌아가면 기본 색·색 override·라이트 여부·UI 배율 변경 때 발행하지 않는데, 판정 함수의 시험은 발행부가 그 판정을
+//! 쓰는지까지는 보지 못하기 때문이다. 그 값이 `theme_order::appearance_changed`에서 왔는지는 보지 않는다.
 //! 클로저를 변수로 받아 넘기는 형태, 상수·매크로로 키를 감춘 발행, `crates/`의 발행은 보지 못한다.
 //! 클로저 안의 실행 여부·횟수와 실제 실행 순서를 증명하지 않으며 실행 순서는 theme_order 시험이 맡는다.
 
@@ -12,6 +15,7 @@ use super::{fn_spans, line_of, matching_delim, rust_sources};
 
 const EVENT_LITERAL: &str = "\"theme.changed\"";
 const ANNOUNCER: &str = "announce_settings_change";
+const GATE: &str = "if appearance_changed {";
 const INSTALLER: &str = "install_theme_then";
 const GUARD_DIR: &str = "src/source_guards/";
 
@@ -72,6 +76,13 @@ fn judge(rel: &str, src: &str) -> Verdict {
     let code = tasty_doc_guards::source_text::mask_non_code_aligned(src);
     let with_literals = tasty_doc_guards::source_text::mask_comments_aligned(src);
     let spans = fn_spans(&code);
+    let gates: Vec<(usize, usize)> = code
+        .match_indices(GATE)
+        .filter_map(|(at, _)| {
+            let open = at + GATE.len() - 1;
+            matching_delim(&code, open).map(|close| (open, close))
+        })
+        .collect();
     let mut verdict = Verdict::default();
 
     for (at, _) in with_literals.match_indices(EVENT_LITERAL) {
@@ -83,6 +94,12 @@ fn judge(rel: &str, src: &str) -> Verdict {
         if !inside {
             verdict.violations.push(format!(
                 "{rel}:{}: `{EVENT_LITERAL}`가 `fn {ANNOUNCER}` 밖에 있다. 이 이벤트는 `{INSTALLER}`가 새 Theme를 설치한 뒤 실행하는 `{ANNOUNCER}` 안에서만 발행한다.",
+                line_of(&code, at)
+            ));
+        }
+        if !gates.iter().any(|(open, close)| *open < at && at < *close) {
+            verdict.violations.push(format!(
+                "{rel}:{}: `{EVENT_LITERAL}`가 `{GATE}` 블록 밖에 있다. `appearance_changed` 가 참이면(테마 ID·기본 색·색 override·라이트 여부·UI 배율 중 하나라도 바뀌면) 발행한다.",
                 line_of(&code, at)
             ));
         }
@@ -142,7 +159,9 @@ impl App {
     }
     fn announce_settings_change(&mut self, s: &Settings) {
         // "theme.changed" in a comment is not an emit
-        mgr.emit_host_event("theme.changed", &p, scope);
+        if appearance_changed {
+            mgr.emit_host_event("theme.changed", &p, scope);
+        }
     }
 }
 "#;
@@ -176,10 +195,22 @@ impl App {
     #[test]
     fn an_emit_outside_the_announcer_is_rejected() {
         let src = format!(
-            "{GOOD}\nfn elsewhere() {{ mgr.emit_host_event(\"theme.changed\", &p, scope); }}\n"
+            "{GOOD}\nfn elsewhere() {{ if appearance_changed {{ mgr.emit_host_event(\"theme.changed\", &p, scope); }} }}\n"
         );
         let verdict = judge("mutant.rs", &src);
         assert_eq!(verdict.emits, 2);
+        assert_eq!(verdict.violations.len(), 1, "{:?}", verdict.violations);
+    }
+
+    /// 테마 ID만 비교하던 옛 발행 조건으로 되돌리는 변이.
+    #[test]
+    fn gating_on_the_theme_id_alone_is_rejected() {
+        let src = GOOD.replace(
+            "if appearance_changed {",
+            "if prev_theme.as_deref() != Some(s.appearance.theme.as_str()) {",
+        );
+        assert_ne!(src, GOOD, "변이 치환이 적용되지 않았다");
+        let verdict = judge("mutant.rs", &src);
         assert_eq!(verdict.violations.len(), 1, "{:?}", verdict.violations);
     }
 

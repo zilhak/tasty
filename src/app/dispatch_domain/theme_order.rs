@@ -3,7 +3,7 @@
 //! ([markdown Theme parity](../../../docs/plugins/markdown/index.md)).
 //! 발행이 설치보다 앞서면 구독자는 직전 테마를 읽고 한 단계씩 밀린다.
 
-use tasty_settings::Settings;
+use tasty_settings::{AppearanceSettings, Settings};
 
 /// 새 설정의 전역 Theme를 설치한 뒤 `announce`를 실행한다.
 /// `theme.changed` 발행은 `announce` 안에서만 한다.
@@ -12,9 +12,80 @@ pub(super) fn install_theme_then<R>(settings: &Settings, announce: impl FnOnce()
     announce()
 }
 
+/// 전역 Theme 의 색 세트나 UI 배율을 정하는 외관 값이 하나라도 바뀌었는지.
+/// 테마 ID·기본 색(`theme_base`)·색 override·라이트 여부·UI 배율을 본다. 이전 설정이 없으면
+/// 바뀐 것으로 본다. 창·터미널 색 갱신과 `theme.changed` 발행이 이 판정 하나를 함께 쓴다.
+/// 구독자가 `theme.query`로 되읽는 색·`is_light`·zoom 이 이 값들에서 나온다.
+/// `accessibility.reduced_motion` 도 전역 Theme 에 들어가지만 `theme.query` 응답(`ThemeWire`)에
+/// 없어 구독자가 다시 읽을 값이 없고 색이 아니므로 보지 않는다.
+pub(super) fn appearance_changed(
+    prev: Option<&AppearanceSettings>,
+    new: &AppearanceSettings,
+) -> bool {
+    prev.is_none_or(|prev| {
+        prev.theme != new.theme
+            || prev.theme_base != new.theme_base
+            || prev.theme_overrides != new.theme_overrides
+            || prev.theme_is_light != new.theme_is_light
+            || prev.ui_scale != new.ui_scale
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 색 세트·배율을 정하는 값 하나만 바뀌어도 theme.changed 대상이고, 다른 외관 값만 바뀌면 아니다.
+    #[test]
+    fn theme_changed_covers_every_value_behind_the_colours_and_zoom() {
+        let base = Settings::default().appearance;
+        assert!(appearance_changed(None, &base), "no previous settings");
+        assert!(
+            !appearance_changed(Some(&base), &base.clone()),
+            "nothing changed"
+        );
+
+        let mut theme = base.clone();
+        theme.theme = if base.theme == "latte" {
+            "mocha"
+        } else {
+            "latte"
+        }
+        .to_string();
+        assert!(appearance_changed(Some(&base), &theme), "theme id");
+
+        let mut overrides = base.clone();
+        overrides.theme_overrides.crust = Some(base.theme_base.text);
+        assert!(
+            appearance_changed(Some(&base), &overrides),
+            "colour override"
+        );
+
+        let mut theme_base = base.clone();
+        theme_base.theme_base.crust = base.theme_base.text;
+        assert_ne!(theme_base.theme_base, base.theme_base, "sample must differ");
+        assert!(appearance_changed(Some(&base), &theme_base), "theme base");
+
+        let mut light = base.clone();
+        light.theme_is_light = !base.theme_is_light;
+        assert!(appearance_changed(Some(&base), &light), "light flag");
+
+        let mut scale = base.clone();
+        scale.ui_scale = if base.ui_scale == "large" {
+            "small"
+        } else {
+            "large"
+        }
+        .to_string();
+        assert!(appearance_changed(Some(&base), &scale), "ui scale");
+
+        let mut other = base.clone();
+        other.ligatures = !base.ligatures;
+        assert!(
+            !appearance_changed(Some(&base), &other),
+            "unrelated appearance field"
+        );
+    }
 
     /// 자식 프로세스에서만 probe가 실행되도록 표시하는 환경변수. 값은 완료 표지 파일 경로다.
     const PROBE_ENV: &str = "TASTY_THEME_ORDER_PROBE";

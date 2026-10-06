@@ -194,7 +194,7 @@ scope=global command 단축키는 조합키만, scope=surface 는 단일 키도 
 | `system.shutdown_initiated` | system | Stable | `reason` |
 | `debug.*` | system | Internal | (가변, debug 빌드만) |
 
-`theme.changed` 는 테마 ID 가 바뀐 설정 적용에서 새 전역 Theme 를 설치한 뒤에 발행한다. payload 에 색과 `is_light` 가 없으므로 구독자는 수신 후 `theme.query` 로 새 테마를 읽는다.
+`theme.changed` 는 전역 Theme 의 색 세트나 UI 배율을 정하는 외관 값 — 테마 ID(`appearance.theme`)·기본 색(`appearance.theme_base`)·색 override(`appearance.theme_overrides`)·라이트 여부(`appearance.theme_is_light`)·UI 배율(`appearance.ui_scale`) — 중 하나라도 바뀐 설정 적용에서 새 전역 Theme 를 설치한 뒤에 한 번 발행한다. 한 번의 설정 적용에서 여러 값이 함께 바뀌어도 한 번이다. 테마 ID 외의 값만 바뀐 경우(같은 ID 의 테마 파일을 고쳐 다시 적용한 경우 포함) `theme_id` 는 직전과 같으므로, 구독자는 `theme_id` 가 달라졌는지로 재적용 여부를 정하지 않는다. payload 에 색·`is_light`·zoom 이 없으므로 구독자는 수신 후 `theme.query` 로 새 테마를 읽는다. `accessibility.reduced_motion` 은 전역 Theme 에 들어가지만 `theme.query` 응답에 없고 색이 아니므로 발행 조건이 아니다. 발행 조건을 이렇게 넓힌 것은 Stable 이벤트의 키·필드를 바꾸지 않는 발행 시점 확장이다.
 
 > `composition_update`·`process.output_match`·`settings.changed` 는 1.0 제외. 알림 읽음 처리는 표시 상태만 바꾸며 host 이벤트를 발행하지 않는다.
 
