@@ -110,6 +110,13 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         "No new tokens — the glyphs drop into the existing Kbd cap and menu-row recipes \
          untouched. The + joiner between caps stays text; only the key faces become vectors.",
     );
+    note(
+        ui,
+        theme,
+        "The body settings row for the first key reads \u{201c}Alt key display:\u{201d} \
+         (settings.general.alt_display_style_label in lang/en.toml); this spec keeps the kit \
+         \u{201c}Cmd key display:\u{201d} label.",
+    );
     dont(
         ui,
         theme,

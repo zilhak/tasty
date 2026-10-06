@@ -765,7 +765,13 @@ pub fn pages() -> Vec<Page> {
                         "keys-in-use",
                         "Keycap chip · settings display style",
                         Some(
-                            "Keycap chip: the glyph replaces the key text inside the same Kbd cap at 14px · Settings dropdown: glyph alone on the closed trigger, glyph + text label on each open row",
+                            "Two places consume these glyphs. In a keycap chip (modifier-hint \
+                             header, switch overlays) the glyph replaces the key's text inside \
+                             the same Kbd cap — 14px, so its optical weight matches the 12px mono \
+                             label it stands in for. In the Settings › modifier display style \
+                             dropdown, the closed trigger shows the glyph alone (it is a preview \
+                             of the keycap), while each open option row pairs glyph + text label \
+                             so the choice is never ambiguous.",
                         ),
                         icons_keys::draw,
                     )],
