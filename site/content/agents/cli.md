@@ -286,6 +286,10 @@ tasty memory delete --workspace 7 --key build.status
 `--global` · `--surface 3` · `--window 42` · `--account me` 로 범위를 바꿉니다. 값이 JSON 이면
 JSON 으로, 아니면 문자열로 저장합니다.
 
+`--surface` 범위에 저장하는 것은 열려 있는 서피스에만 됩니다. 닫은 서피스 ID를 주면 오류로 거절합니다.
+서피스를 닫으면 그 범위의 값도 함께 지워집니다. 예전에 닫은 서피스 범위에 남아 있는 값은
+`tasty memory list --surface <ID>` 로 확인하고 `tasty memory delete` 로 지울 수 있습니다.
+
 Tasty 가 시작할 때 메모리 파일(`~/.tasty/memory.db`)을 열지 못하면 — 파일이 깨졌거나 권한이
 없는 경우 — Tasty 는 멈추지 않고 **임시 메모리**로 계속 동작합니다. 그동안 저장한 값은 Tasty 를
 다시 시작하면 사라집니다. 메모리뿐 아니라 같은 파일에 저장하는 에이전트 작업 · 세마포어 같은

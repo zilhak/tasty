@@ -147,6 +147,21 @@ pub(crate) fn method_scoped_resource_id(
             id,
         });
     }
+    // surface scope에 새 항목을 만드는 쓰기는 그 surface를 가진 engine으로 보낸다. 없으면 거절한다.
+    // 읽기·삭제는 닫힌 surface에 남은 옛 항목을 보고 지울 수 있게 대상으로 삼지 않는다.
+    if matches!(method, "memory.put" | "memory.secret.put") {
+        return match params
+            .get("scope")
+            .and_then(|v| v.as_str())
+            .map(tasty_memory::Scope::parse)
+        {
+            Some(Ok(tasty_memory::Scope::Surface(id))) => Some(ResourceId {
+                kind: Kind::Surface,
+                id: u64::from(id),
+            }),
+            _ => None,
+        };
+    }
     if matches!(method, "pty.write" | "pty.read" | "pty.wait" | "pty.kill") {
         return numeric(params, "id").map(|id| ResourceId {
             kind: Kind::HeadlessPty,
@@ -236,6 +251,28 @@ mod tests {
     fn rid(params: &serde_json::Value) -> (&str, Kind, u64) {
         let (key, r) = params_resource_id(params).expect("expected a resource id");
         (key, r.kind, r.id)
+    }
+
+    #[test]
+    fn a_surface_scope_put_names_its_surface_but_reads_and_deletes_do_not() {
+        let surface = json!({ "scope": "surface:7", "key": "k", "value": "v" });
+        for method in ["memory.put", "memory.secret.put"] {
+            let got = request_resource_id(method, &surface).expect("surface scope 쓰기의 대상");
+            assert!(matches!(got.kind, Kind::Surface), "{method}");
+            assert_eq!(got.id, 7, "{method}");
+        }
+        for method in [
+            "memory.get",
+            "memory.list",
+            "memory.delete",
+            "memory.secret.delete",
+        ] {
+            assert!(request_resource_id(method, &surface).is_none(), "{method}");
+        }
+        let global = json!({ "scope": "global", "key": "k", "value": "v" });
+        assert!(request_resource_id("memory.put", &global).is_none());
+        let bad = json!({ "scope": "surface:x", "key": "k", "value": "v" });
+        assert!(request_resource_id("memory.put", &bad).is_none());
     }
 
     #[test]

@@ -2024,7 +2024,8 @@ fn an_unowned_target_is_rejected_for_every_resource_kind() {
     }
 }
 
-/// 닫힌 surface에는 metadata를 쓸 수 없다. 닫기 전에 쓴 값도 닫기와 함께 지워진다.
+/// 닫힌 surface에는 metadata를 쓸 수 없다(`surface.meta.set`·`memory.put` 모두). 닫기 전에 쓴
+/// 값도 닫기와 함께 지워진다.
 /// metadata 저장소는 surface 소유 검사를 거치지 않는 `memory.list`로 직접 확인한다.
 #[test]
 fn a_closed_surface_takes_no_metadata() {
@@ -2057,6 +2058,23 @@ fn a_closed_surface_takes_no_metadata() {
     assert!(
         msg.contains(&closed.to_string()) && msg.contains("surface"),
         "거절이 어느 surface 를 못 찾았는지 말해야 한다: {resp}"
+    );
+
+    // memory.put 으로 같은 surface scope 에 쓰는 길도 같은 이유로 거절한다.
+    let via_memory = tasty.call_raw(
+        "memory.put",
+        json!({ "scope": format!("surface:{closed}"), "key": "role", "value": "via-memory" }),
+    );
+    assert_eq!(
+        via_memory["error"]["code"].as_i64(),
+        Some(-32602),
+        "닫힌 surface scope 에 memory.put 이 거절돼야 한다: {via_memory}"
+    );
+    assert!(
+        via_memory["error"]["message"]
+            .as_str()
+            .is_some_and(|m| m.contains(&closed.to_string())),
+        "거절이 어느 surface 를 못 찾았는지 말해야 한다: {via_memory}"
     );
 
     let left = tasty.call(

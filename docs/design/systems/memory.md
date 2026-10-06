@@ -25,6 +25,12 @@
 
 `surface:<id>` 의 `<id>` 는 **surface id 공간**(`< 0x8000_0000`)이어야 한다 — 그 이상은 headless PTY id 공간이라 실재하는 surface 가 가질 수 없는 값이고, IPC 가 `invalid_params` 로 거부한다([ADR-0059](../../adr/0059-id-targets-and-view-owned-selection.md)).
 
+`surface:<id>` scope 에 항목을 새로 만드는 쓰기(`memory.put` · `memory.secret.put`)는 **지금 열린 surface** 에만 받는다.
+- 라우터가 그 scope 의 surface 를 요청 대상으로 읽어 소유 창·parked engine 으로 보낸다. 어느 engine 에도 없으면 다른 surface 대상 요청과 같은 `-32602`(`no live surface <id> (named by 'memory.put')`)로 거절한다. 핸들러도 받은 engine 에 그 surface 가 없으면 `-32602 Surface <id> not found` 로 한 번 더 거절한다.
+- 읽기·삭제(`get` · `list` · `exists` · `count` · `delete` 와 secret 의 같은 메서드)는 surface 가 없어도 받는다. 닫힌 surface 의 scope 에 남은 항목을 확인하고 지울 수 있게 하기 위해서다.
+- surface 를 닫으면 그 surface 의 scope 를 regular·secret 모두 지운다(`purge_scope`, 닫기의 metadata 정리). 그래서 닫힌 surface 의 scope 에 항목이 남는 것은 이 검사가 생기기 전에 쓴 항목뿐이다. 이런 항목은 자동으로 지우지 않으며 `memory list --surface <id>` 로 찾아 `memory delete` 로 지운다. surface id 는 재사용하지 않으므로 남은 항목이 새 surface 에 붙지는 않는다.
+- `memory.import` 는 항목별 scope 의 surface 를 검사하지 않는다.
+
 ## owner — 숨겨진 host 전용 차원
 
 `owner`는 호출자가 지정할 수 없는 내부 소유자 값이다. 호스트가 caller에서 정한다. regular 조회 응답에는 소유자가 표시되고 secret 응답에는 표시되지 않는다:

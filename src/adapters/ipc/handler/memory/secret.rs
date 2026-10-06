@@ -15,7 +15,7 @@ use super::{
 
 pub fn handle_secret_put(
     core: &AppServices,
-    _engine: &crate::core::CoreState,
+    engine: &crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -24,6 +24,9 @@ pub fn handle_secret_put(
         Ok(s) => s,
         Err(e) => return e,
     };
+    if let Err(e) = super::reject_closed_surface_scope(engine, &scope, &id) {
+        return e;
+    }
     let key = match require_key(params, &id) {
         Ok(k) => k.to_string(),
         Err(e) => return e,

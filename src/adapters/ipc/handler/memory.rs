@@ -11,6 +11,8 @@ pub mod secret;
 
 #[cfg(test)]
 mod durable_tests;
+#[cfg(test)]
+mod surface_scope_tests;
 
 pub use advanced::{handle_export, handle_gc, handle_import, handle_query};
 pub use bb::*;
@@ -67,6 +69,22 @@ fn require_scope(params: &Value, id: &Value) -> Result<Scope, JsonRpcResponse> {
         .map_err(|s| JsonRpcResponse::invalid_params(id.clone(), format!("invalid scope: {s}")))?;
     reject_pty_space_surface_scope(&scope, id)?;
     Ok(scope)
+}
+
+/// surface scope에 새 항목을 만드는 쓰기는 열린 surface에만 허용한다. 라우터도 같은 대상을
+/// 확인하지만 다른 경로로 핸들러가 불려도 닫혔거나 없는 surface의 scope에 항목이 생기지 않게 한다.
+pub(super) fn reject_closed_surface_scope(
+    engine: &crate::core::CoreState,
+    scope: &Scope,
+    id: &Value,
+) -> Result<(), JsonRpcResponse> {
+    match scope {
+        Scope::Surface(sid) if !engine.has_surface(*sid) => Err(JsonRpcResponse::invalid_params(
+            id.clone(),
+            format!("Surface {sid} not found"),
+        )),
+        _ => Ok(()),
+    }
 }
 
 /// scope 문자열로 들어온 surface ID도 검사해 PTY ID가 surface scope로 저장되지 않게 한다.
@@ -393,7 +411,7 @@ pub(crate) fn mark_durability(core: &AppServices, mut resp: JsonRpcResponse) -> 
 
 pub fn handle_put(
     core: &AppServices,
-    _engine: &crate::core::CoreState,
+    engine: &crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -402,6 +420,9 @@ pub fn handle_put(
         Ok(s) => s,
         Err(e) => return e,
     };
+    if let Err(e) = reject_closed_surface_scope(engine, &scope, &id) {
+        return e;
+    }
     let key = match require_key(params, &id) {
         Ok(k) => k.to_string(),
         Err(e) => return e,

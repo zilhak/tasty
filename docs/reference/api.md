@@ -68,6 +68,7 @@ plugin caller 는 메서드별 권한 토큰이 필요하다(`method_meta`). Loc
 ### 메모리 (`memory.*` / `memory.secret.*`)
 regular(`put/get/delete/list/exists/count/scopes/stats/query/export/import`) · secret(`put/get/delete/list/exists/count/scopes/stats`) · `gc` · blackboard(`bb_*`) · plan(`plan_*`) · cache(`cache_*`) · goal(`goal_*` — surface 스코프 단일 목표 문장, `surface_id` 명시 필수).
 모델·권한은 [design/systems/memory](../design/systems/memory.md).
+`surface:<id>` scope 에 새 항목을 만드는 `memory.put` · `memory.secret.put` 은 열린 surface 에만 쓰고, 닫혔거나 없는 surface 는 `-32602` 로 거절한다. 읽기·삭제는 그대로 받는다(남은 옛 항목 정리용) — [design/systems/memory](../design/systems/memory.md).
 저장소 자체가 실패하면 `-32603 memory db error: …` 이고 `error.data.storage_failure` 가 원인을 싣는다(`busy` · `disk_full` · `io` · `corrupt` · `permission_denied` · `other`) — 실패한 쓰기는 quota 도 변경 알림도 남기지 않는다([storage](../design/systems/storage.md) "저장 실패의 의미").
 부팅이 `memory.db` 를 못 열어 in-memory 대체로 떴으면 쓰기 계열의 성공 응답에 `durable: false` 가 더해진다(`ok` 는 그대로, 정상 저장소에서는 칸 없음 — [ADR-0010](../adr/0010-storage-failure-reporting.md)).
 같은 저장소에 쓰는 `agent.*` · `approval.*` · `surface.meta.*` · `telemetry.*` · `session.*` 의 쓰기 응답도 같다([ADR-0010](../adr/0010-storage-failure-reporting.md)).
