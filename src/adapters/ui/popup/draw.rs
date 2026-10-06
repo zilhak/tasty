@@ -54,16 +54,16 @@ fn popup_bg_fill(popup_id: PopupId, th: &tasty_type_appearance::theme::Theme) ->
     }
 }
 
-/// 셸 테두리 색. 시안의 host 메뉴형 팝업(Tools 메뉴·레일 카테고리 메뉴·검색 바)은 border-strong,
-/// 마우스 캡처 배너 메뉴는 `banner-more-menu-border`(→ border-strong) 테두리다. 나머지는 공통 frame 색이다.
+/// 셸 테두리 색. 메뉴형 팝업(Tools 메뉴·레일 카테고리 메뉴)은 egui 팝오버와 같은 `menu-border`,
+/// 검색 바는 `search-bar-border`, 마우스 캡처 배너 메뉴는 `banner-more-menu-border` 다(셋 다
+/// → border-strong). 나머지는 공통 frame 색이다.
 fn popup_border(popup_id: PopupId, th: &tasty_type_appearance::theme::Theme) -> egui::Color32 {
     match popup_id {
         crate::adapters::ui::mouse_capture_menu::MOUSE_CAPTURE_BANNER_MENU_POPUP_ID => {
             th.banner_more_menu_border().into()
         }
-        "tools_menu" | "search_bar" | super::rail_category::RAIL_CATEGORY_POPUP_ID => {
-            th.border_strong().into()
-        }
+        "tools_menu" | super::rail_category::RAIL_CATEGORY_POPUP_ID => th.menu_border().into(),
+        "search_bar" => th.search_bar_border().into(),
         _ => th.border_frame().into(),
     }
 }
