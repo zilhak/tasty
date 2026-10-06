@@ -372,7 +372,8 @@ component 접근자(`tab_fg_*()`·`surface_highlight_*_border()`·`status_dot_*(
 건 + 그림자**. 세 건 다 **신규 값이 아니다** — 기존 primitive/component/semantic 종착이다.
 나머지 `--tasty-multiselect-*`(트리거 치수·색·행 리듬)는 디자인 판정이 그대로
 `--tasty-select-*` / `--tasty-menu-*` / `--tasty-checkbox-*` alias 다. 트리거는 select 토큰을
-직접 읽고, 메뉴 행은 `multiselect_row_height`·`multiselect_row_padding_x`·`multiselect_row_bg_hover`·
+직접 읽는다. 메뉴 프레임의 채움·테두리·반경은 `with_popover_frame` 의 메뉴 토큰(`multiselect_menu_bg`·`multiselect_menu_border`·
+`multiselect_menu_radius` 가 그 별칭)이고, 안쪽 여백 `multiselect_menu_padding`·그림자·트리거 간격 `multiselect_menu_gap` 은 egui 팝업 style 과 기준 rect 로 바꿔 그리고, 메뉴 행은 `multiselect_row_height`·`multiselect_row_padding_x`·`multiselect_row_bg_hover`·
 `multiselect_row_bg_active`·`multiselect_all_fg` 접근자를 읽는다.
 
 | 디자인 토큰 | 디자인 체인 | Theme 접근자 | 비고 |

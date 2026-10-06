@@ -46,10 +46,19 @@ pub fn multi_select_popup_id(ui: &egui::Ui, id_salt: &str) -> egui::Id {
 }
 
 /// 메뉴 전체 폭에서 본문 폭을 구할 때 빼야 하는 프레임의 가로 여유.
-/// 실제 위젯이 쓰는 style을 전달해야 같은 여백·테두리 값으로 계산된다.
-pub fn popup_chrome_width(style: &egui::Style) -> f32 {
-    let frame = egui::Frame::popup(style);
-    frame.total_margin().sum().x + 2.0 * frame.stroke.width
+/// 메뉴 프레임은 [`menu_style`]로 그리므로 같은 토큰(안쪽 여백·테두리)에서 계산한다.
+pub fn popup_chrome_width(theme: &Theme) -> f32 {
+    (theme.multiselect_menu_padding().value() + theme.border_width.value()) * 2.0
+}
+
+/// 메뉴 프레임용 style. egui 팝업은 부모 style로 프레임을 만들므로 안쪽 여백·그림자만 바꾼 사본을
+/// 넘긴다. 채움·테두리·반경은 `with_popover_frame`이 메뉴 토큰으로 정하며 multiselect-menu-bg·border·
+/// radius 는 그 별칭이다. 메뉴 안의 행 style은 바뀌지 않는다.
+fn menu_style(base: &egui::Style, theme: &Theme) -> egui::Style {
+    let mut style = base.clone();
+    style.visuals.popup_shadow = theme.shadow_popover().to_egui();
+    style.spacing.menu_margin = egui::Margin::same(theme.multiselect_menu_padding().value() as i8);
+    style
 }
 
 /// egui Memory에 저장하는 인스턴스별 키보드 커서의 키.
@@ -394,16 +403,24 @@ pub fn multi_select(
     });
     let widest_row =
         widest_option.max(widest_all_toggle) + theme.multiselect_row_padding_x().value() * 2.0;
-    let menu_chrome = popup_chrome_width(ui.style());
+    let menu_chrome = popup_chrome_width(theme);
     let menu_min = width;
     let menu_max = (theme.multiselect_menu_max_width().value() - menu_chrome).max(menu_min);
     let menu_width = widest_row.clamp(menu_min, menu_max);
 
-    tasty_egui_theme::with_popover_frame(ui, theme, |ui| {
+    // 여백·그림자 style만 바꾼 자식 Ui로 팝업을 띄운다. 자식은 부모 레이아웃에 자리를 차지하지 않는다.
+    let mut menu_parent = ui.new_child(egui::UiBuilder::new().max_rect(resp.rect));
+    menu_parent.set_style(menu_style(ui.style(), theme));
+    // 트리거와 메뉴 사이 `multiselect-menu-gap`. 팝업은 기준 rect 바로 아래에 붙으므로 기준만 내린다.
+    let mut anchor = resp.clone();
+    anchor.rect = resp
+        .rect
+        .translate(egui::vec2(0.0, theme.multiselect_menu_gap().value()));
+    tasty_egui_theme::with_popover_frame(&mut menu_parent, theme, |ui| {
         egui::popup_below_widget(
             ui,
             popup_id,
-            &resp,
+            &anchor,
             egui::PopupCloseBehavior::CloseOnClickOutside,
             |ui| {
                 ui.set_min_width(menu_width);

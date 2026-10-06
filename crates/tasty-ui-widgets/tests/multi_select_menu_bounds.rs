@@ -71,6 +71,11 @@ fn click(p: Pos2) -> Vec<Event> {
 
 /// 팝업을 연 뒤 안정된 프레임에서 메뉴(Area) rect 를 돌려준다.
 fn open_and_measure(theme: &Theme, salt: &str, options: &[&str]) -> Rect {
+    open_and_measure_with_trigger(theme, salt, options).1
+}
+
+/// [`open_and_measure`] 와 같되 트리거 rect 도 함께 돌려준다.
+fn open_and_measure_with_trigger(theme: &Theme, salt: &str, options: &[&str]) -> (Rect, Rect) {
     let ctx = egui::Context::default();
     let mut selected = vec![false; options.len()];
     let mut popup_id = None;
@@ -100,14 +105,16 @@ fn open_and_measure(theme: &Theme, salt: &str, options: &[&str]) -> Rect {
     frame(Vec::new(), &mut selected, &mut trigger, &mut popup_id);
 
     let id = popup_id.expect("팝업 id 가 관측되지 않았다");
-    ctx.memory(|m| m.area_rect(id))
-        .expect("팝업 Area 가 배치되지 않았다 — 열리지 않았을 가능성")
+    let menu = ctx
+        .memory(|m| m.area_rect(id))
+        .expect("팝업 Area 가 배치되지 않았다 — 열리지 않았을 가능성");
+    (trigger, menu)
 }
 
-/// 실제 위젯과 같은 style·함수로 프레임 여유를 계산한다.
+/// 실제 위젯과 같은 토큰·함수로 프레임 여유를 계산한다.
 /// 아래 높이 상한에는 여유가 있어 프레임 계산의 작은 오류까지 검출하지는 못한다.
-fn chrome() -> f32 {
-    tasty_ui_widgets::popup_chrome_width(&egui::Style::default())
+fn chrome(theme: &Theme) -> f32 {
+    tasty_ui_widgets::popup_chrome_width(theme)
 }
 
 #[test]
@@ -136,7 +143,7 @@ fn many_options_clamp_the_menu_height() {
     let rect = open_and_measure(&theme, "bounds_many", LONG_OPTIONS);
 
     // 세로는 ScrollArea 의 max_height 가 **본문** 상한이라 프레임 여유가 더 붙는다.
-    let limit = theme.multiselect_menu_max_height().value() + chrome();
+    let limit = theme.multiselect_menu_max_height().value() + chrome(&theme);
     assert!(
         rect.height() <= limit,
         "옵션 {}개가 메뉴 높이를 max-height 밖으로 밀었다: {} > {limit}",
@@ -152,7 +159,7 @@ fn short_option_lists_are_untouched_by_the_clamps() {
 
     // 폭은 트리거 폭(min-width) 그대로 — 짧은 라벨은 이보다 좁다.
     assert!(
-        rect.width() <= WIDTH + chrome(),
+        rect.width() <= WIDTH + chrome(&theme),
         "짧은 라벨 목록의 메뉴가 트리거보다 넓어졌다: {}",
         rect.width()
     );
@@ -171,5 +178,17 @@ fn menu_max_height_reuses_the_autocomplete_value() {
     assert_eq!(
         theme.multiselect_menu_max_height(),
         theme.autocomplete_max_height()
+    );
+}
+
+/// 메뉴는 트리거 아래 `multiselect-menu-gap` 만큼 떨어져 열린다(시안 top: 100% + gap).
+#[test]
+fn the_menu_opens_one_gap_below_the_trigger() {
+    let theme = tasty_themes::mocha_fallback();
+    let (trigger, menu) = open_and_measure_with_trigger(&theme, "bounds_gap", SHORT_OPTIONS);
+    let gap = menu.top() - trigger.bottom();
+    assert!(
+        (gap - theme.multiselect_menu_gap().value()).abs() < 0.5,
+        "트리거와 메뉴 사이가 menu-gap 이 아니다: {gap}"
     );
 }

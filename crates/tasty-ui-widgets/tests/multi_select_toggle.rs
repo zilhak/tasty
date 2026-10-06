@@ -129,7 +129,11 @@ fn row_pos(theme: &Theme, trigger: Rect, i: usize, margin: f32) -> Pos2 {
             + margin
             + theme.multiselect_row_padding_x().value()
             + theme.checkbox_size().value() * 0.5,
-        trigger.bottom() + margin + row_h * i as f32 + row_h * 0.5,
+        trigger.bottom()
+            + theme.multiselect_menu_gap().value()
+            + margin
+            + row_h * i as f32
+            + row_h * 0.5,
     )
 }
 
@@ -148,7 +152,7 @@ fn all_toggle_offset(theme: &Theme) -> f32 {
 fn all_toggle_pos(theme: &Theme, trigger: Rect, margin: f32) -> Pos2 {
     pos2(
         trigger.left() + margin + theme.multiselect_row_padding_x().value(),
-        trigger.bottom() + margin + row_height(theme) * 0.5,
+        trigger.bottom() + theme.multiselect_menu_gap().value() + margin + row_height(theme) * 0.5,
     )
 }
 
@@ -158,9 +162,9 @@ fn row_pos_below_all_toggle(theme: &Theme, trigger: Rect, i: usize, margin: f32)
     pos2(p.x, p.y + all_toggle_offset(theme))
 }
 
-/// 팝업 프레임의 inner margin — egui 기본 `Frame::popup` 값.
-fn popup_margin(ctx: &egui::Context) -> f32 {
-    ctx.style().spacing.menu_margin.left as f32
+/// 팝업 프레임 바깥에서 행까지의 거리 — 테두리 + `multiselect-menu-padding`.
+fn popup_margin(theme: &Theme) -> f32 {
+    theme.border_width.value() + theme.multiselect_menu_padding().value()
 }
 
 #[test]
@@ -177,7 +181,7 @@ fn consecutive_item_toggles_keep_the_popup_open() {
 
     // 팝업이 실제로 배치되도록 한 프레임 더.
     frame(&ctx, &theme, &mut selected, Vec::new());
-    let margin = popup_margin(&ctx);
+    let margin = popup_margin(&theme);
 
     for i in 0..3 {
         let f = frame(
@@ -244,7 +248,7 @@ fn disabled_rows_ignore_clicks_while_others_still_toggle() {
     let f = frame_masked(&ctx, &theme, &mut selected, mask, click(trigger.center()));
     assert!(f.open, "비활성 행이 있어도 컨트롤 자체는 열 수 있어야 한다");
     frame_masked(&ctx, &theme, &mut selected, mask, Vec::new());
-    let margin = popup_margin(&ctx);
+    let margin = popup_margin(&theme);
 
     let before = selected.clone();
     for i in 0..2 {
@@ -287,7 +291,7 @@ fn a_short_mask_leaves_the_remaining_rows_enabled() {
     let trigger = f.trigger;
     frame_masked(&ctx, &theme, &mut selected, mask, click(trigger.center()));
     frame_masked(&ctx, &theme, &mut selected, mask, Vec::new());
-    let margin = popup_margin(&ctx);
+    let margin = popup_margin(&theme);
 
     let f = frame_masked(
         &ctx,
@@ -351,7 +355,7 @@ fn all_toggle_selects_then_clears_every_option() {
     let f = frame_all(&ctx, &theme, &mut selected, None, click(trigger.center()));
     assert!(f.open, "트리거 클릭으로 팝업이 열려야 한다");
     frame_all(&ctx, &theme, &mut selected, None, Vec::new());
-    let margin = popup_margin(&ctx);
+    let margin = popup_margin(&theme);
     let action = all_toggle_pos(&theme, trigger, margin);
 
     // 1) 일부만 켜진 상태 → "Select all" → 전부 켜짐.
@@ -396,7 +400,7 @@ fn without_all_toggle_the_top_row_is_the_first_option() {
     let trigger = f.trigger;
     frame(&ctx, &theme, &mut selected, click(trigger.center()));
     frame(&ctx, &theme, &mut selected, Vec::new());
-    let margin = popup_margin(&ctx);
+    let margin = popup_margin(&theme);
 
     // 켰다면 액션 행이었을 좌표. 꺼져 있으므로 0 번 옵션만 켜져야 한다.
     let f = frame(
@@ -427,7 +431,7 @@ fn all_toggle_leaves_disabled_rows_untouched_in_both_directions() {
     let trigger = f.trigger;
     frame_all(&ctx, &theme, &mut selected, mask, click(trigger.center()));
     frame_all(&ctx, &theme, &mut selected, mask, Vec::new());
-    let margin = popup_margin(&ctx);
+    let margin = popup_margin(&theme);
     let action = all_toggle_pos(&theme, trigger, margin);
 
     // 1) 전부 켜기 — 활성 2·3 만 켜지고 비활성 0·1 은 그대로.
@@ -463,7 +467,7 @@ fn all_toggle_reports_nothing_when_no_row_is_toggleable() {
     let trigger = f.trigger;
     frame_all(&ctx, &theme, &mut selected, mask, click(trigger.center()));
     frame_all(&ctx, &theme, &mut selected, mask, Vec::new());
-    let margin = popup_margin(&ctx);
+    let margin = popup_margin(&theme);
 
     let f = frame_all(
         &ctx,
@@ -488,7 +492,7 @@ fn clicking_the_empty_end_of_a_row_toggles_that_row_only() {
     assert!(opened.open, "trigger click did not open the menu");
     // 팝업이 실제로 배치되도록 한 프레임 더.
     frame(&ctx, &theme, &mut selected, Vec::new());
-    let margin = popup_margin(&ctx);
+    let margin = popup_margin(&theme);
     let p = row_pos(&theme, first.trigger, 2, margin);
     // 트리거 폭 안쪽 오른쪽 끝 — 라벨보다 한참 오른쪽이고 행 좌우 여백 안이다.
     let end = pos2(first.trigger.right() - 2.0, p.y);
