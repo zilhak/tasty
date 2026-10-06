@@ -5303,7 +5303,7 @@ help = "워크스페이스 id (포커스 무관 — 필수)"
 help = "다시 돌릴 task id"
 
 [cli.help._root.agent.task-retry.arg.reset_downstream]
-help = "하류의 Skipped/Failed task 도 Waiting 으로 되돌린다"
+help = "하류의 Skipped/Failed task 도 Waiting 으로 되돌린다. 타입 계약(contract_version 2) task 에는 거절된다"
 
 [cli.help._root.agent.task-graph]
 about = "task DAG 를 JSON 또는 Graphviz dot 으로 낸다"

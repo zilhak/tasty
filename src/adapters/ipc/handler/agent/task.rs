@@ -500,6 +500,13 @@ fn render_graph_dot(tasks: &[Task]) -> String {
         ));
     }
     for edge in collect_graph_edges(tasks) {
+        if let Some(selection) = edge.selection {
+            out.push_str(&format!(
+                "  \"{}\" -> \"{}\" [label=\"{}\"];\n",
+                edge.from, edge.to, selection
+            ));
+            continue;
+        }
         let (style, color) = match edge.kind {
             "fallback" => ("dashed", "orangered"),
             "reduce" => ("dotted", "blue"),
@@ -527,6 +534,7 @@ fn render_graph_nodes(tasks: &[Task]) -> Vec<Value> {
                 "state": t.state.name(),
                 "command_kind": task_command_kind(&t.command),
                 "on_failure_kind": on_failure_kind(&t.on_failure),
+                "skip": t.skip,
             })
         })
         .collect()
@@ -537,7 +545,11 @@ fn render_graph_nodes(tasks: &[Task]) -> Vec<Value> {
 fn render_graph_edges(tasks: &[Task]) -> Vec<Value> {
     collect_graph_edges(tasks)
         .into_iter()
-        .map(|edge| json!({"from": edge.from, "to": edge.to, "kind": edge.kind}))
+        .map(|edge| match edge.selection {
+            Some(selection) => json!({"from": edge.from, "to": edge.to, "kind": edge.kind,
+                                      "selection": selection}),
+            None => json!({"from": edge.from, "to": edge.to, "kind": edge.kind}),
+        })
         .collect()
 }
 
@@ -1228,6 +1240,8 @@ mod graph_edge_tests {
             graph_id: None,
             input_snapshot: None,
             attempt: None,
+            route: None,
+            skip: None,
         }
     }
 
@@ -1366,6 +1380,56 @@ mod graph_edge_tests {
         );
     }
 
+    /// 전이 엣지는 대상마다 하나이며, 경로를 고른 뒤 선택 상태를 싣는다. 선택되지 않은
+    /// 노드는 skip 이유를 함께 낸다.
+    #[test]
+    fn transition_edges_carry_their_selection() {
+        let mut review = task("review", "review", TaskState::Waiting);
+        review.contract = Some(
+            serde_json::from_value(json!({"contract_version": 2,
+                "transitions": {"cases": [
+                    {"when": {"compare": {"path": "", "op": "eq", "value": 1}}, "to": ["ship"]},
+                    {"when": {"compare": {"path": "", "op": "eq", "value": 2}}, "to": ["ship", "fix"]}],
+                    "no_match": "finish"}}))
+            .expect("contract"),
+        );
+        let ship = task("ship", "ship", TaskState::Waiting);
+        let mut fix = task("fix", "fix", TaskState::Waiting);
+        let pending = [review.clone(), ship.clone(), fix.clone()];
+        let edges = render_graph_edges(&pending);
+        assert_eq!(
+            edges,
+            vec![
+                json!({"from": "review", "to": "ship", "kind": "transition", "selection": "pending"}),
+                json!({"from": "review", "to": "fix", "kind": "transition", "selection": "pending"}),
+            ]
+        );
+
+        review.state = TaskState::Succeeded;
+        review.route = Some(tasty_agent::RouteDecision {
+            attempt_id: Some("review#1".into()),
+            matched: vec![0],
+            otherwise: false,
+            selected: vec!["ship".into()],
+        });
+        fix.state = TaskState::Skipped;
+        fix.skip = Some(tasty_agent::SkipReason::BranchNotSelected);
+        let decided = [review, ship, fix];
+        let selections: Vec<Value> = render_graph_edges(&decided)
+            .into_iter()
+            .map(|e| e["selection"].clone())
+            .collect();
+        assert_eq!(selections, vec![json!("selected"), json!("not_selected")]);
+        let nodes = render_graph_nodes(&decided);
+        assert_eq!(nodes[2]["skip"], json!({"reason": "branch_not_selected"}));
+        assert_eq!(nodes[1]["skip"], Value::Null);
+        let dot = render_graph_dot(&decided);
+        assert!(
+            dot.contains("\"review\" -> \"fix\" [label=\"not_selected\"];"),
+            "{dot}"
+        );
+    }
+
     fn edges_debug(edges: &[GraphEdge<'_>]) -> Vec<(String, String, &'static str)> {
         edges
             .iter()
@@ -1402,6 +1466,8 @@ mod state_filter_tests {
             graph_id: None,
             input_snapshot: None,
             attempt: None,
+            route: None,
+            skip: None,
         }
     }
 

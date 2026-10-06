@@ -215,14 +215,15 @@ fn a_report_for_an_earlier_attempt_does_not_finish_the_current_one() {
             2,
         )
         .unwrap();
-    store.retry(1, &p, true, 3).unwrap();
+    let consumer_before = get(&store, "c").state;
+    store.retry(1, &p, false, 3).unwrap();
     start(&mut store, "p", 4);
     let stale = store
         .complete(1, &p, Completion::succeeded(Some("p#1".into()), ok(3)), 5)
         .expect_err("stale");
     assert_eq!(rejection(stale), CompletionRejection::StaleAttempt);
     assert_eq!(get(&store, "p").state, TaskState::Running);
-    assert_eq!(get(&store, "c").state, TaskState::Waiting);
+    assert_eq!(get(&store, "c").state, consumer_before);
 }
 
 #[test]

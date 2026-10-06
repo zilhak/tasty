@@ -647,26 +647,25 @@ fn a_typed_task_whose_fallback_ran_cannot_be_retried() {
     assert!(snap.failure.is_none(), "{:?}", snap.failure);
 }
 
+/// 재시도는 새 회차를 열지만 이미 실패를 받은 하류를 되감지 않는다. 되감으면 그 하류가 이전
+/// 회차의 실패 전파와 다른 결과로 다시 실행된다.
 #[test]
-fn a_typed_task_whose_fallback_failed_can_be_retried() {
+fn a_typed_task_whose_fallback_failed_is_retried_without_rewinding_its_consumer() {
     let (_td, mut mem, seq) = fresh();
     let mut store = TaskStore::new(&mut mem, "_host", &seq);
     store.submit_graph(1, spec(one_of_graph()), 0).unwrap();
     fail(&mut store, "main");
     fail(&mut store, "recover");
+    assert_eq!(get(&store, "use").state, TaskState::Skipped);
     let main = "main".to_string();
-    store.retry(1, &main, true, 3).expect("retry");
+    let e = store.retry(1, &main, true, 3).unwrap_err();
+    assert!(
+        matches!(e, AgentError::InvalidArgument(ref m) if m.contains("reset_downstream")),
+        "{e:?}"
+    );
+    store.retry(1, &main, false, 3).expect("retry");
     assert_eq!(get(&store, "main").state, TaskState::Ready);
     finish(&mut store, "main", json!({"value": 7}));
-    let consumer = get(&store, "use");
-    assert_eq!(consumer.state, TaskState::Ready);
-    let lookup = |id: &TaskId| store.get(1, id).unwrap();
-    let snap = resolve_inputs(
-        &consumer,
-        consumer.contract.as_ref().unwrap(),
-        None,
-        5,
-        &lookup,
-    );
-    assert_eq!(snap.value.to_internal(), json!({"v": 7}));
+    assert_eq!(get(&store, "main").state, TaskState::Succeeded);
+    assert_eq!(get(&store, "use").state, TaskState::Skipped);
 }

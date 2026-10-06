@@ -288,6 +288,12 @@ pub struct Task {
     /// v2 task 의 마지막 실행 회차. Running 전이마다 새 회차를 만든다.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attempt: Option<TaskAttempt>,
+    /// v2 task 가 전이로 고른 경로. 성공한 회차의 결과와 같은 쓰기로 저장한다.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub route: Option<RouteDecision>,
+    /// v2 task 가 실행 없이 Skipped 로 끝난 이유.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skip: Option<SkipReason>,
 }
 
 impl Task {
@@ -370,6 +376,7 @@ pub mod dag;
 mod graph;
 pub mod postprocess;
 mod record;
+pub mod route;
 mod store;
 pub mod types;
 
@@ -378,6 +385,7 @@ pub use binding::{InputBinding, InputMapping, InputSnapshot};
 pub use contract::{TaskContract, TypedResult};
 pub use dag::{DagStateCounts, DagSummary, group_tasks_into_dags};
 pub use graph::*;
+pub use route::{RouteDecision, SkipReason, Transitions};
 pub use store::*;
 
 #[cfg(test)]
@@ -399,3 +407,7 @@ mod completion_tests;
 #[cfg(test)]
 #[path = "task/postprocess_store_tests.rs"]
 mod postprocess_store_tests;
+
+#[cfg(test)]
+#[path = "task/route_tests.rs"]
+mod route_tests;

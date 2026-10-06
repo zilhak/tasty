@@ -770,11 +770,12 @@ mod tests {
         }
     }
 
-    /// `rollup()` 은 카운터를 `> 0` / `== 0` 로만 보므로, 8 개 카운터를 각각 0/1 로
-    /// 둔 256 조합이 도달 가능한 분기를 **전부** 훑는다.
+    /// `rollup()` 은 카운터를 `> 0` / `== 0` 와 skipped·not_selected 의 대소로만 보므로,
+    /// 8 개 카운터와 not_selected(skipped 의 부분)를 각각 0/1 로 둔 512 조합이 도달 가능한
+    /// 분기를 **전부** 훑는다.
     fn all_rollup_outputs() -> std::collections::BTreeSet<&'static str> {
         let mut out = std::collections::BTreeSet::new();
-        for bits in 0u32..256 {
+        for bits in 0u32..512 {
             let c = tasty_agent::DagStateCounts {
                 waiting: usize::from(bits & 1 != 0),
                 ready: usize::from(bits & 2 != 0),
@@ -782,8 +783,9 @@ mod tests {
                 succeeded: usize::from(bits & 8 != 0),
                 failed: usize::from(bits & 16 != 0),
                 cancelled: usize::from(bits & 32 != 0),
-                skipped: usize::from(bits & 64 != 0),
+                skipped: usize::from(bits & 64 != 0) + usize::from(bits & 256 != 0),
                 unknown: usize::from(bits & 128 != 0),
+                not_selected: usize::from(bits & 256 != 0),
             };
             out.insert(c.rollup());
         }

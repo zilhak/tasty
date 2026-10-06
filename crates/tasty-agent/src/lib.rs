@@ -26,8 +26,8 @@ pub use runner::{DispatchHandle, DispatchOutcome, PollOutcome, RunnerLoop, TaskE
 pub use semaphore::{AcquireOutcome, ReleaseOutcome, Semaphore, SemaphoreHolder, SemaphoreStore};
 pub use task::{
     DagStateCounts, DagSummary, InlineFallbackSpec, OnFailure, PollSpec, PollSpecRef,
-    ReducerStrategy, Task, TaskCommand, TaskGraph, TaskId, TaskResult, TaskState, TaskStore,
-    group_tasks_into_dags,
+    ReducerStrategy, RouteDecision, SkipReason, Task, TaskCommand, TaskGraph, TaskId, TaskResult,
+    TaskState, TaskStore, group_tasks_into_dags,
 };
 
 /// 본 크레이트의 공용 에러.

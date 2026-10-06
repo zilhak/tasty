@@ -83,7 +83,7 @@ regular(`put/get/delete/list/exists/count/scopes/stats/query/export/import`) · 
 | `task_run` | workspace 러너의 시작·중지·상태 조회. 호스트 재시작 후 자동으로 켜지지 않으므로 플러그인이 자기 workspace의 러너를 다시 시작할 수 있다. |
 | `barrier_*`, `semaphore_*`, `lease_*`, `rate_limit_*` | 작업 간 대기와 자원 사용 조정 |
 | `dag_{list,get}` | 작업을 DAG별로 묶어 조회 |
-| `task_graph_{validate,submit}` | v2 task 그래프를 한 번에 검증·제출. 검증 실패(task 1000 개 초과 포함)는 `-32602` 이고 `error.data.location` 에 그래프 안의 위치가 실리며 아무것도 저장하지 않는다. `submit` 은 모두 저장한 뒤 활성화한다. memory 대체 모드에서는 `durability: "best_effort"` 를 밝힌 그래프만 받는다. 활성화 뒤 readiness 반영 실패는 `-32603` 이고 `error.data` 에 `graph_id`·`possibly_active: true` 가 실린다([agent-runner](../dev-guide/agent-runner.md#그래프-제출)) |
+| `task_graph_{validate,submit}` | v2 task 그래프를 한 번에 검증·제출. 검증 실패(task 1000 개 초과 포함)는 `-32602` 이고 `error.data.location` 에 그래프 안의 위치가 실리며 아무것도 저장하지 않는다. `submit` 은 모두 저장한 뒤 활성화한다. memory 대체 모드에서는 `durability: "best_effort"` 를 밝힌 그래프만 받는다. 활성화 뒤 readiness 반영 실패는 `-32603` 이고 `error.data` 에 `graph_id`·`possibly_active: true` 가 실린다([agent-runner](../dev-guide/agent-runner.md#그래프-제출)). task 의 `transitions` 로 성공한 출력에 따라 후속 task 를 고르며, 고른 경로는 task 의 `route` 에, 고르지 않아 끝난 이유는 `skip` 에 실린다([agent-runner](../dev-guide/agent-runner.md#전이-조건과-경로-선택)) |
 
 다음 두 메서드는 **로컬 호출만 허용**하며 플러그인은 호출할 수 없다. 둘 다 [METHOD_TABLE](../../crates/tasty-ipc/src/method_meta.rs)에 `local_only()`로 등록되어 있다. 라우터가 처리하는 메서드는 모두 이 표에 등록한다. 미등록 메서드의 `UnknownMethod` 거부와 의도한 접근 제한을 구분하기 위해 `tests/ipc_router_table_parity.rs`로 누락을 검사한다.
 
@@ -98,7 +98,7 @@ regular(`put/get/delete/list/exists/count/scopes/stats/query/export/import`) · 
 
 `semaphore_set_permits`는 세마포어를 삭제하지 않고 한도를 바꾼다. 한도를 줄여도 기존 사용 권한을 강제로 회수하지 않고 새 acquire를 거절한다. `semaphore_acquire`의 `ttl_ms`는 선택 사항이다. 지정한 경우에만 사용 권한이 만료되어 회수되며, 기본값은 만료 없음이다([ADR-0042](../adr/0042-agent-coordination-and-task-views.md)).
 
-DAG는 별도로 저장하지 않고 `metadata.dag`의 명시적 지정 또는 작업 그래프의 연결 관계에서 도출한다. `dag_list`에서 `workspace_id`를 생략하면 현재 살아 있는 모든 workspace를 조회하고 `scope: "live_workspaces"`를 반환한다. `dag_get`은 해당 DAG의 작업만 골라 `task_graph`와 같은 `nodes`/`edges` 또는 dot 형식으로 반환한다. 자세한 흐름은 [agent-collaboration](../features/agent-collaboration/index.md)을 따른다.
+DAG는 별도로 저장하지 않고 `metadata.dag`의 명시적 지정 또는 작업 그래프의 연결 관계에서 도출한다. `dag_list`에서 `workspace_id`를 생략하면 현재 살아 있는 모든 workspace를 조회하고 `scope: "live_workspaces"`를 반환한다. `dag_get`은 해당 DAG의 작업만 골라 `task_graph`와 같은 `nodes`/`edges` 또는 dot 형식으로 반환한다. 전이는 `kind: "transition"` 간선이며 `selection`(`pending`·`selected`·`not_selected`·`unavailable`)을 싣는다. DAG 요약의 `state_counts.not_selected` 는 경로가 선택되지 않아 끝난 작업 수이고, 성공과 선택되지 않음만 있으면 `rollup_state` 는 `succeeded` 다. 자세한 흐름은 [agent-collaboration](../features/agent-collaboration/index.md)을 따른다.
 
 ### 사건 피드 (`events.*`)
 

@@ -52,6 +52,8 @@ fn running_task() -> Task {
         graph_id: None,
         input_snapshot: None,
         attempt: None,
+        route: None,
+        skip: None,
     }
 }
 

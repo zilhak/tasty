@@ -5303,7 +5303,7 @@ help = "ワークスペース id（フォーカス非依存 — 必須）"
 help = "やり直す task id"
 
 [cli.help._root.agent.task-retry.arg.reset_downstream]
-help = "下流の Skipped/Failed の task も Waiting に戻す"
+help = "下流の Skipped/Failed の task も Waiting に戻す。型契約 (contract_version 2) の task では拒否される"
 
 [cli.help._root.agent.task-graph]
 about = "task DAG を JSON または Graphviz dot で出す"

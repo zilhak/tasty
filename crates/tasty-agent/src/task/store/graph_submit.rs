@@ -17,6 +17,7 @@ use tasty_utils::id::WorkspaceId;
 use super::super::binding::{InputBinding, InputMapping};
 use super::super::contract::{self, FailureStage, MergeConflict, TaskContract, TaskFailure};
 use super::super::postprocess::PostprocessSpec;
+use super::super::route::{self, Transitions};
 use super::super::types::TypeSchema;
 use super::super::{
     OnFailure, TASK_GRAPH_KEY_PREFIX, TASK_GRAPH_RECORD_FORMAT, Task, TaskCommand, TaskGraph,
@@ -88,6 +89,8 @@ pub struct GraphTaskSpec {
     pub merge_conflict: Option<MergeConflict>,
     #[serde(default)]
     pub postprocess: Option<PostprocessSpec>,
+    #[serde(default)]
+    pub transitions: Option<Transitions>,
 }
 
 /// 검증을 통과한 그래프. task 는 아직 저장하지 않았고 상태는 Waiting 이다.
@@ -204,11 +207,14 @@ impl TaskStore<'_> {
                     bindings: t.bindings,
                     input_mapping: t.input_mapping,
                     postprocess: t.postprocess,
+                    transitions: t.transitions,
                 }),
                 typed_result: None,
                 graph_id: Some(graph_id.clone()),
                 input_snapshot: None,
                 attempt: None,
+                route: None,
+                skip: None,
             });
         }
 
@@ -248,7 +254,12 @@ impl TaskStore<'_> {
             }
             contract::check_task(t, &at, lookup)
                 .map_err(|f| AgentError::TypeContract(Box::new(f)))?;
+            route::check_transitions(t, &at, &planned, &lookup)
+                .map_err(|f| AgentError::TypeContract(Box::new(f)))?;
         }
+        let everything: Vec<&Task> = existing.iter().chain(planned.iter()).collect();
+        route::check_route_inputs(&planned, &everything)
+            .map_err(|f| AgentError::TypeContract(Box::new(f)))?;
 
         let mut all = existing.clone();
         all.extend(planned.iter().cloned());

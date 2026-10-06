@@ -6,6 +6,8 @@ pub struct GraphEdge<'a> {
     pub from: &'a TaskId,
     pub to: &'a TaskId,
     pub kind: &'static str,
+    /// `transition` 엣지의 선택 상태. 다른 종류는 `None`.
+    pub selection: Option<&'static str>,
 }
 
 /// 직접 참조는 그대로 연결한다. inline fallback은 실패 뒤 만든 작업의 fallback_of를 역조회한다.
@@ -18,6 +20,7 @@ pub fn collect_graph_edges(tasks: &[Task]) -> Vec<GraphEdge<'_>> {
                 from: dep,
                 to: &t.id,
                 kind: "depends_on",
+                selection: None,
             });
         }
         if let OnFailure::Fallback {
@@ -28,6 +31,7 @@ pub fn collect_graph_edges(tasks: &[Task]) -> Vec<GraphEdge<'_>> {
                 from: &t.id,
                 to: fb_id,
                 kind: "fallback",
+                selection: None,
             });
         }
         if let TaskCommand::Reduce { inputs, .. } = &t.command {
@@ -36,6 +40,7 @@ pub fn collect_graph_edges(tasks: &[Task]) -> Vec<GraphEdge<'_>> {
                     from: input,
                     to: &t.id,
                     kind: "reduce",
+                    selection: None,
                 });
             }
         }
@@ -48,6 +53,16 @@ pub fn collect_graph_edges(tasks: &[Task]) -> Vec<GraphEdge<'_>> {
                 from: source,
                 to: &t.id,
                 kind: "binding",
+                selection: None,
+            });
+        }
+        // v2 전이는 성공한 출력으로 대상을 고르는 제어 엣지다.
+        for target in tasty_agent::task::route::transition_targets(t) {
+            edges.push(GraphEdge {
+                from: &t.id,
+                to: target,
+                kind: "transition",
+                selection: Some(transition_selection(t, target)),
             });
         }
     }
@@ -62,9 +77,23 @@ pub fn collect_graph_edges(tasks: &[Task]) -> Vec<GraphEdge<'_>> {
             from: &main.id,
             to: &fb.id,
             kind: "fallback",
+            selection: None,
         });
     }
     edges
+}
+
+/// 전이 엣지의 선택 상태. 출처가 끝나기 전은 `pending`, 성공해 대상을 골랐으면 `selected`,
+/// 고르지 않았거나 출처 자신이 선택되지 않았으면 `not_selected`, 그 밖에 성공 결과가 없으면
+/// `unavailable` 이다.
+pub fn transition_selection(source: &Task, target: &TaskId) -> &'static str {
+    use tasty_agent::task::route::{self, EdgeStatus};
+    match route::control_status(source, target) {
+        EdgeStatus::Pending => "pending",
+        EdgeStatus::Available => "selected",
+        EdgeStatus::NotSelected => "not_selected",
+        EdgeStatus::Unavailable { .. } => "unavailable",
+    }
 }
 
 /// 노드 아이콘과 task_graph JSON이 공유하는 종류 식별자.

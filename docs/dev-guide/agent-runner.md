@@ -512,7 +512,7 @@ tasty agent task-purge --workspace-id 1 --states succeeded,failed --older-than-m
 
 task 는 선택적으로 타입 계약(`TaskContract`)을 가진다. 계약이 없는 task 가 v1 이며, 결과 형식·reducer 동작·저장 형식이 바뀌지 않는다. v2 task 는 IPC `agent.task_graph_submit`(CLI `tasty agent task-graph-submit`)으로 그래프 단위로 만들거나 Rust API `TaskStore::create_typed` 로 하나씩 만든다. `task_create` 는 계약을 받지 않는다. 결정 근거는 [ADR-0068](../adr/0068-typed-task-contracts-live-in-a-separate-record-namespace.md).
 
-코드: 타입 `crates/tasty-agent/src/task/types.rs`, 계약·결과 `crates/tasty-agent/src/task/contract.rs`, 입력 binding `crates/tasty-agent/src/task/binding.rs`, 그래프 제출 `crates/tasty-agent/src/task/store/graph_submit.rs`, 실행 시 입력 해석 `crates/tasty-task-runtime/src/runner_host/typed_inputs.rs`, 회차 완료 기록과 handle 의 회차 `crates/tasty-task-runtime/src/runner_host/attempt_record.rs`, v2 reduce `crates/tasty-agent/src/reducer.rs::reduce_typed`, 후처리 계약·결과 확정 `crates/tasty-agent/src/task/postprocess.rs`, 후처리 단계의 완료 기록 `crates/tasty-agent/src/task/store/postprocess.rs`, 후처리 프로세스 실행 `crates/tasty-task-runtime/src/runner_host/postprocess.rs`.
+코드: 타입 `crates/tasty-agent/src/task/types.rs`, 계약·결과 `crates/tasty-agent/src/task/contract.rs`, 입력 binding `crates/tasty-agent/src/task/binding.rs`, 그래프 제출 `crates/tasty-agent/src/task/store/graph_submit.rs`, 실행 시 입력 해석 `crates/tasty-task-runtime/src/runner_host/typed_inputs.rs`, 회차 완료 기록과 handle 의 회차 `crates/tasty-task-runtime/src/runner_host/attempt_record.rs`, v2 reduce `crates/tasty-agent/src/reducer.rs::reduce_typed`, 후처리 계약·결과 확정 `crates/tasty-agent/src/task/postprocess.rs`, 후처리 단계의 완료 기록 `crates/tasty-agent/src/task/store/postprocess.rs`, 후처리 프로세스 실행 `crates/tasty-task-runtime/src/runner_host/postprocess.rs`, 전이와 경로 선택 `crates/tasty-agent/src/task/route.rs`.
 
 ### 계약 형식
 
@@ -564,11 +564,11 @@ task 는 선택적으로 타입 계약(`TaskContract`)을 가진다. 계약이 �
 
 v2 task 는 Running 이 될 때마다 새 회차(`attempt`: `id` 는 `<task id>#<번호>`, `number`, `started_at`)를 받는다. `retry` 는 회차를 지우지 않으므로 다음 실행은 번호를 이어 간다. v1 task 에는 회차가 없다.
 
-v2 task 의 fallback 이 이미 실행됐으면(Ready·Running·Succeeded) 그 task 의 `retry` 는 `-32602` 로 거절한다. 본 작업이 다시 성공하면 `one_of` 소비자가 성공한 원본 둘을 보게 되고(input 단계 실패), 이미 끝난 fallback 의 결과와 전파를 되돌릴 수 없기 때문이다. 다시 실행하려면 새 task 로 제출한다. fallback 이 실패했거나 실행 전에 끝났으면(Failed·Skipped·Cancelled) 재시도할 수 있다. v1 task 는 이 제한이 없다.
+v2 task 의 fallback 이 이미 실행됐으면(Ready·Running·Succeeded) 그 task 의 `retry` 는 `-32602` 로 거절한다. 본 작업이 다시 성공하면 `one_of` 소비자가 성공한 원본 둘을 보게 되고(input 단계 실패), 이미 끝난 fallback 의 결과와 전파를 되돌릴 수 없기 때문이다. 다시 실행하려면 새 task 로 제출한다. fallback 이 실패했거나 실행 전에 끝났으면(Failed·Skipped·Cancelled) 재시도할 수 있다. v2 task 의 `retry` 는 `reset_downstream: true` 도 `-32602` 로 거절한다. 하류는 이전 회차의 실패 전파나 경로 선택으로 이미 판정됐고, 되감으면 두 회차의 판단이 섞이기 때문이다(근거 ADR-0075). 재시도는 그 task 만 새 회차로 다시 실행하며 저장된 경로(`route`)와 skip 이유를 지운다. v1 task 는 이 제한이 없다.
 
 완료 보고(`Completion`: 회차 id·결과·성공/실패)는 저장소의 `complete` 하나로 기록한다(근거 ADR-0071).
 
-- v2 는 결과 확정(출력 검증 포함)과 종결 상태를 레코드 한 번의 쓰기로 저장한다. 쓰기가 실패하면 상태·결과가 그대로이고 하류 readiness·fallback 도 움직이지 않는다. 그 쓰기가 끝난 뒤에야 하류를 평가하고 대기자에게 종결을 알린다.
+- v2 는 결과 확정(출력 검증 포함)과 종결 상태, 성공했을 때 고른 경로(`route`, 아래 §전이 조건과 경로 선택)를 레코드 한 번의 쓰기로 저장한다. 쓰기가 실패하면 상태·결과가 그대로이고 하류 readiness·fallback 도 움직이지 않는다. 그 쓰기가 끝난 뒤에야 하류를 평가하고 대기자에게 종결을 알린다.
 - 보고의 회차가 지금 회차와 다르면 적용하지 않는다(`stale_attempt`). 회차 id 를 생략하면 지금 회차로 본다.
 - 이미 끝난 회차에 같은 내용(결과·종결 종류)의 보고가 다시 오면 같은 레코드를 `duplicate: true` 로 돌려주고 하류 반영만 다시 시도한다. 다른 내용이면 거절한다(`different_report`). 회차를 끝낸 보고의 지문은 `attempt.completion.digest` 에 남는다. 보고 없이 끝난 task(취소·건너뜀)에 온 보고는 `already_terminal` 로 거절한다.
 - 거절은 IPC 에서 `-32014` 이고 `error.data` 에 `reason`·`attempt_id`(보고한 회차)·`current_attempt_id` 를 싣는다.
@@ -696,7 +696,7 @@ stdout 해석과 성공 판정:
 - 원본 task 는 같은 그래프나 같은 workspace 의 v2 task 여야 한다. binding 은 의존성이기도 해서 원본이 끝나기 전에는 실행되지 않고, 삭제 보호·DAG 묶음·순환 검사·`task_graph` 의 `binding` 간선에 포함된다.
 - 생성할 때 원본의 출력 타입에서 포인터 위치의 타입을 구해 필드 타입에 대입 가능한지 검사한다. 암묵 변환은 없다. `convert` 로만 바꾼다: `to_string`(int64·boolean·enum → 10진·`true`/`false`·값 문자열), `int64_to_float64`(정확히 표현되는 값만, 아니면 `out_of_range`), `assert`(값을 바꾸지 않고 실행 시 입력 스키마로 검사한다. `json` 출력 안을 가리킬 때 쓴다).
 - 포인터가 optional 필드(기본값 없음)를 지나면 값이 없을 수 있다. 그러면 대상 필드도 optional 이거나 기본값이 있어야 한다. list 와 json 안의 위치는 실행 시 확인한다.
-- `from_task` 는 그 원본 자신이 성공해야 한다. 원본이 실패하면 받는 task 는 건너뛴다(fallback 이 대신 성공해도 마찬가지). `one_of` 는 모든 원본이 끝날 때까지 기다리고 성공한 원본의 값을 쓴다. 성공한 원본이 없으면 필수 필드는 task 를 건너뛰고 optional 필드는 비워 둔다. 성공한 원본이 둘 이상이면 실행 시 input 단계에서 실패한다.
+- `from_task` 는 그 원본 자신이 성공해야 한다. 원본이 실패하면 받는 task 는 건너뛴다(fallback 이 대신 성공해도 마찬가지). 원본이 경로 선택에서 빠졌으면(`branch_not_selected`) optional·기본값 필드는 비워 두고 필수 필드는 받는 task 를 건너뛴다. `one_of` 는 모든 원본이 끝날 때까지 기다리고 성공한 원본의 값을 쓴다. 성공한 원본이 없으면 필수 필드는 task 를 건너뛰고 optional 필드는 비워 둔다. 성공한 원본이 둘 이상이면 실행 시 input 단계에서 실패한다.
 - `on_failure: continue_downstream` 과 `from_task` binding 은 함께 쓸 수 없다(값이 없는데 실행하게 된다). fallback 을 가진 task 를 `depends_on` 으로 기다리면서 그 task 만 `from_task` 로 받으면 거절하고 `one_of` 를 쓰라고 안내한다. v2 task 의 fallback 은 v2 task 여야 하고, fallback 이 실행된 v2 task 의 하위 작업은 대기하지 않고 건너뛴다.
 
 #### 실행할 때
@@ -729,8 +729,8 @@ stdout 해석과 성공 판정:
       "input_mapping": {"args": ["/code"]}}]}}
 ```
 
-- task 키: `id`(필수, 호출자가 정하는 task id), `name`, `command`, `depends_on`, `on_failure`, `metadata`, `input_schema`, `output_schema`, `bindings`, `input_mapping`, `allowed_exit_codes`, `merge_conflict`, `postprocess`. 모르는 키는 거절한다. `types` 는 모든 task 가 함께 쓴다.
-- 검증: id 형식과 중복(그래프 안·workspace), `depends_on`·fallback·reduce 입력·binding 원본의 존재, 계약과 binding 의 타입, 매핑, 위 조합 규칙, 순환. 그래프 task 의 command 에 v1 출력 placeholder(`${task.…}`)가 있으면 거절하고 binding 을 쓰라고 안내한다.
+- task 키: `id`(필수, 호출자가 정하는 task id), `name`, `command`, `depends_on`, `on_failure`, `metadata`, `input_schema`, `output_schema`, `bindings`, `input_mapping`, `allowed_exit_codes`, `merge_conflict`, `postprocess`, `transitions`. 모르는 키는 거절한다. `types` 는 모든 task 가 함께 쓴다.
+- 검증: id 형식과 중복(그래프 안·workspace), `depends_on`·fallback·reduce 입력·binding 원본의 존재, 계약과 binding 의 타입, 매핑, 전이(아래 절), 위 조합 규칙, 순환(전이 간선 포함). 그래프 task 의 command 에 v1 출력 placeholder(`${task.…}`)가 있으면 거절하고 binding 을 쓰라고 안내한다.
 - 그래프 하나에는 task 를 1000 개(`MAX_GRAPH_TASKS`)까지 담는다. 제출이 memory 잠금을 쥔 채 앱의 IPC 처리 경로에서 활성화하기 때문이다(근거 ADR-0069). 그동안 러너 tick 과 memory 를 쓰지 않는 요청을 포함한 다른 IPC 전체가 기다린다. 1000 개 제출 중 다른 연결의 `system.ping` 은 0.25~1.4s 기다렸다(격리 인스턴스, dev 빌드 실측, 표는 ADR-0069). 초과하면 `location: /tasks` 로 거절한다.
 - 실패하면 아무것도 저장하지 않고 `-32602` 로 답한다. `error.data` 는 실패 단계·task id·타입 오류와 함께 `location`(제출한 그래프 안의 JSON Pointer, 예: `/tasks/1/bindings/label`, 순환은 `/tasks`)을 싣는다.
 - 통과하면 task 를 활성화 전 상태로 모두 저장한 뒤 그래프 레코드(`tasty.agent.task_graph.<그래프 id>`, `tasty.task_graph/v1`) 하나를 쓰고 readiness 를 평가한다. 그래프 레코드가 없는 task 는 Ready 가 되지 않으므로 저장 도중 러너가 돌아도 실행되지 않는다. task 나 그래프 레코드를 쓰다 실패하면 저장한 task 를 지운다. 레코드를 쓴 뒤 readiness 반영이 실패하면 지우지 않고 `-32603` 으로 답하며 `error.data` 에 `graph_id`·`possibly_active: true`·`cause` 를 싣는다(복구는 아래 §한계). 응답은 `{valid, activated, graph_id, durability, tasks}` 다.
@@ -738,6 +738,55 @@ stdout 해석과 성공 판정:
 - `agent.task_graph_validate` 는 같은 검증만 하고 저장하지 않는다(`{valid, activated: false, durability, tasks}`). CLI 는 `--dry-run` 이다.
 - 그래프의 `durability` 는 `required`(기본) 또는 `best_effort` 다. memory 저장소가 대체 모드(`memory_init_fallback`, 재시작하면 사라진다)일 때 `required` 그래프는 검증·제출 모두 `-32602`(`error.data`: `location: /durability`, `store_durable: false`, `cause`)로 거절하고 아무것도 저장하지 않는다. `best_effort` 는 그대로 실행하되 재시작 복구를 약속하지 않는다. 판정은 `TaskService::task_graph_submit` 이 하므로(`AgentError::StoreNotDurable`) IPC 를 거치지 않는 호출자도 같다. 그래프 레코드에 `durability` 를 남기고, 제출 응답은 `durability` 와(대체 모드면) `durable: false` 를 싣는다(근거 ADR-0072).
 - 러너는 켜지 않는다. 정지한 러너에서는 활성화된 task 가 Ready 로 남는다.
+
+### 전이 조건과 경로 선택
+
+생산자 task 의 `transitions` 는 성공한 출력으로 후속 task 를 고른다(근거 ADR-0075). 대상이 함께 제출돼야 하므로 그래프 제출로만 정한다. 저장소의 단건 생성(`TaskStore::create_typed`)은 전이가 든 계약을 거절한다.
+
+```json
+{"id": "review", "output_schema": {"ref": "ReviewResult"},
+ "transitions": {
+   "cases": [
+     {"when": {"compare": {"path": "/verdict", "op": "eq", "value": "pass"}}, "to": ["ship"]},
+     {"when": {"in": {"path": "/verdict", "values": ["revise"]}}, "to": ["fix"]}],
+   "otherwise": ["human"]}}
+```
+
+| 키 | 뜻 |
+|---|---|
+| `mode` | `exclusive`(기본): 참인 case 가 정확히 하나여야 한다. `all_matches`: 참인 case 를 모두 고른다 |
+| `cases` | `{when, to}` 목록. `to` 는 같은 그래프의 task id 목록 |
+| `otherwise` | 맞는 case 가 없을 때 고를 대상 |
+| `no_match` | `"finish"`: 맞는 case 가 없으면 아무것도 고르지 않는다. `otherwise` 와 둘 중 하나를 반드시 적는다 |
+
+조건(`when`)은 다음을 조합한다.
+
+| 형식 | 뜻 |
+|---|---|
+| `{"compare": {"path", "op", "value", "input"?}}` | 출력의 JSON Pointer 위치와 상수 비교. `op` 는 `eq`·`ne`·`lt`·`le`·`gt`·`ge` |
+| `{"in": {"path", "values", "input"?}}` | 그 위치의 값이 목록 중 하나 |
+| `{"all": [...]}`·`{"any": [...]}`·`{"not": {...}}` | 논리 조합. 목록은 비어 있으면 안 된다 |
+
+- 조건은 그 task 의 확정된 최종 출력만 읽는다. reduce `all` 은 `input` 에 입력 task id 를 주면 그 입력의 레코드 출력을 입력의 선언 타입으로 읽는다(`contract::reduce_all_record_output`). 다른 task 에서는 `input` 을 거절한다.
+- 제출할 때 위치의 타입을 출력 스키마에서 구해 검사한다. 비교 대상은 boolean·int64·float64·string·enum 이다. float64 는 `lt`·`le`·`gt`·`ge` 만, boolean·string·enum 은 `eq`·`ne` 만, `in` 은 int64·string·enum 만 받는다. 상수는 그 위치의 타입으로 검사한다(예: enum 에 없는 값은 거절). 출력 타입이 json 인 위치는 읽지 않는다.
+- exclusive 에서 같은 조건이거나 같은 위치의 `eq`·`in` 값이 겹치는 case 는 제출할 때 거절한다. 그 밖의 다중 참은 실행할 때 경로 오류다.
+- 대상은 같은 그래프의 다른 task 여야 한다. `on_failure: continue_downstream` 인 task 와 다른 task 의 fallback 은 대상이 될 수 없다.
+- 오류의 `location` 은 `/tasks/<i>/transitions/...` 이다.
+
+성공으로 끝나는 회차에서 경로를 고르고 결과와 같은 쓰기로 `route` 에 저장한다: `attempt_id`, `matched`(참인 case 순번), `otherwise`, `selected`(고른 대상, 선언 순서·중복 없음). 고르지 못하면(값이 없거나 null, exclusive 다중 참, reduce 입력 레코드 없음) 그 task 는 실패 단계 `route` 로 Failed 가 되고 출력은 남긴다. 실패한 task 는 경로를 고르지 않으며 대상은 실패 전파를 받는다.
+
+v2 task 의 readiness:
+
+1. 전이로 들어오는 제어 엣지가 있으면, 그 원본이 모두 끝날 때까지 기다린다. 하나라도 이 task 를 골랐으면 다음으로 간다. 원본이 성공 결과를 내지 못했으면 실패 전파, 아무도 고르지 않았으면 선택되지 않음이다.
+2. depends_on·`from_task`·`one_of`·reduce 입력의 원본이 모두 끝날 때까지 기다린다. 선택되지 않은 원본은 기다릴 필요가 없는 경로로 본다(합류).
+3. 제어 엣지가 없고 위 원본이 모두 선택되지 않았으면 이 task 도 선택되지 않는다.
+4. 원본이 실패·취소·실패 전파로 끝났으면 실패 전파다(depends_on 은 fallback 이 대신 성공하면 통과). 선택되지 않은 원본을 필수 `from_task` 로 읽거나 `one_of` 원본이 하나도 성공하지 않았으면 역시 실패 전파다.
+
+선택되지 않은 task 는 실행 없이 Skipped 가 되고 `skip: {"reason": "branch_not_selected"}` 를 남긴다. 실패가 아니므로 실패 정책(fallback·continue_downstream)을 적용하지 않는다. main 이 실패 없이 끝나 실행할 일이 없는 v2 fallback 도 같은 이유로 끝난다. 실패 전파로 건너뛴 v2 task 는 `skip: {"reason": "upstream_unavailable", "source", "source_state"}` 를 남긴다. v1 task 의 판정과 레코드는 그대로다.
+
+선택되지 않을 수 있는 task(전이 대상, 또는 들어오는 경로가 모두 그런 task 에서만 오는 task)의 출력을 필수 `from_task` 로 읽는 task 는, 그 원본 말고 다른 경로로도 실행될 수 있으면 제출할 때 거절한다. 대안 경로의 값은 `one_of` 로, 없어도 되는 값은 optional·`default` 로 적는다. 같은 갈래 안의 사슬처럼 들어오는 경로가 그 원본뿐이면 받는다.
+
+DAG 요약(`agent.dag_list`·`agent.dag_get`)의 `state_counts.not_selected` 는 `skipped` 중 선택되지 않은 수다. 성공과 선택되지 않음만 있으면 `rollup_state` 는 `succeeded` 다. `agent.task_graph` 는 전이를 `kind: "transition"` 간선으로 내고 `selection`(`pending`·`selected`·`not_selected`·`unavailable`)을 싣는다. 노드는 `skip` 을 싣고, DOT 형식은 전이 간선에 선택 상태를 라벨로 붙인다. DAG 화면은 전이 간선을 depends_on 과 같은 모양으로 그린다.
 
 ### v2 reduce
 

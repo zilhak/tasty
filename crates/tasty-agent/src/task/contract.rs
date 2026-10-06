@@ -46,6 +46,9 @@ pub struct TaskContract {
     /// 본 작업 뒤 실행할 CLI. 있으면 최종 출력은 그 stdout 에서 수집한다.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub postprocess: Option<PostprocessSpec>,
+    /// 성공한 출력으로 후속 경로를 고르는 선언. 그래프 제출로만 정한다.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transitions: Option<super::route::Transitions>,
 }
 
 /// `merge_json` 의 동일 키 충돌 정책.
@@ -253,6 +256,8 @@ pub enum FailureStage {
     Postprocess,
     OutputValidation,
     Persistence,
+    /// 성공한 출력으로 경로를 고르지 못했다(조건 평가 오류, exclusive 다중 참).
+    Route,
 }
 
 /// 실패 사유. 타입 오류면 task·경로·기대·실제 타입을 함께 싣는다.

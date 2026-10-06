@@ -8,9 +8,9 @@ use tasty_utils::id::WorkspaceId;
 
 use super::contract::{FailureStage, Provenance, TaskContract, TaskFailure, TypedResult};
 use super::{
-    InlineFallbackSpec, OnFailure, TASK_KEY_PREFIX, TYPED_TASK_KEY_PREFIX,
+    InlineFallbackSpec, OnFailure, Readiness, SkipReason, TASK_KEY_PREFIX, TYPED_TASK_KEY_PREFIX,
     TYPED_TASK_RECORD_FORMAT, Task, TaskCommand, TaskGraph, TaskId, TaskResult, TaskState,
-    apply_on_failure, contract, is_valid_transition, referencing_task_ids, task_key,
+    apply_on_failure, contract, is_valid_transition, referencing_task_ids, route, task_key,
     transitive_referencing_task_ids, typed_task_key,
 };
 use crate::{AgentError, Result};
@@ -261,9 +261,21 @@ impl<'a> TaskStore<'a> {
             graph_id: None,
             input_snapshot: None,
             attempt: None,
+            route: None,
+            skip: None,
         };
         contract::check_task(&new_task, "", |id| existing.iter().find(|t| &t.id == id))
             .map_err(|f| AgentError::TypeContract(Box::new(f)))?;
+        // 전이 대상은 함께 제출하는 task 라 그래프 제출에서만 정한다.
+        if new_task
+            .contract
+            .as_ref()
+            .is_some_and(|c| c.transitions.is_some())
+        {
+            return Err(AgentError::InvalidArgument(
+                "transitions select tasks submitted together; use a task graph submission".into(),
+            ));
+        }
 
         let inactive = self.inactive_task_ids(workspace_id, &existing)?;
         existing.push(new_task.clone());
@@ -335,9 +347,12 @@ impl<'a> TaskStore<'a> {
             });
         }
         let new_state = settle_typed_terminal(&mut task, new_state);
+        let new_state = self.settle_route(&mut task, new_state);
         match new_state {
             TaskState::Running => {
                 task.started_at = Some(now_ms);
+                task.route = None;
+                task.skip = None;
                 if let Some(attempt) = super::attempt::next_attempt(&task, now_ms) {
                     task.attempt = Some(attempt);
                 }
@@ -391,12 +406,15 @@ impl<'a> TaskStore<'a> {
 
         // main이 실패 없이 끝났다면 실행할 일이 없는 기존 fallback도 종결한다.
         // inline fallback은 실패 시에만 생성되므로 정리할 대상이 없다.
-        if matches!(
-            new_state,
-            TaskState::Succeeded | TaskState::Cancelled | TaskState::Skipped
-        ) && let OnFailure::Fallback {
-            task: Some(fb_id), ..
-        } = task.on_failure.clone()
+        // v2 fallback 은 하류 판정(cascade)이 이유와 함께 마감한다.
+        if !task.is_typed()
+            && matches!(
+                new_state,
+                TaskState::Succeeded | TaskState::Cancelled | TaskState::Skipped
+            )
+            && let OnFailure::Fallback {
+                task: Some(fb_id), ..
+            } = task.on_failure.clone()
             && matches!(
                 self.get(workspace_id, &fb_id)?.map(|t| t.state),
                 Some(TaskState::Waiting)
@@ -558,6 +576,8 @@ impl<'a> TaskStore<'a> {
     /// 저장소 목록은 호출자가 한 번 읽어 `all` 로 넘기고, 이 함수는 저장한 상태를 `all` 에도
     /// 반영해 다음 평가에 쓴다. 저장소를 task 마다 다시 읽지 않는다. 호출 동안 다른 쓰기가
     /// 끼지 않는 것은 `&mut self` 가 보장한다. 활성화 여부는 호출 시점에 한 번 읽는다.
+    /// `ids` 가 위상 순서가 아니어도 되도록 바뀐 것이 없을 때까지 다시 훑는다. 합류 task 가
+    /// 아직 Waiting 인 선행보다 먼저 나와도 그 선행이 끝난 뒤 다시 평가된다.
     pub(super) fn settle_waiting(
         &mut self,
         workspace_id: WorkspaceId,
@@ -572,38 +592,41 @@ impl<'a> TaskStore<'a> {
             .map(|(i, t)| (t.id.clone(), i))
             .collect();
         let mut updated = Vec::new();
-        for id in ids {
-            let Some(&i) = index.get(id) else {
-                continue;
-            };
-            if !matches!(all[i].state, TaskState::Waiting) {
-                continue;
-            }
-            let target = {
-                let graph = TaskGraph::build(all).with_inactive(inactive.clone());
-                match graph.evaluate_readiness(id) {
-                    Some(TaskState::Skipped) => apply_on_failure(&all[i], all),
-                    other => other,
+        let mut changed = true;
+        while changed {
+            changed = false;
+            for id in ids {
+                let Some(&i) = index.get(id) else {
+                    continue;
+                };
+                if !matches!(all[i].state, TaskState::Waiting) {
+                    continue;
                 }
-            };
-            if let Some(next) = target
-                && next != TaskState::Waiting
-                && is_valid_transition(&all[i].state, &next)
-            {
-                let mut nt = all[i].clone();
-                if next.is_terminal() {
-                    nt.finished_at = Some(now_ms);
+                let target = {
+                    let graph = TaskGraph::build(all).with_inactive(inactive.clone());
+                    settle_target(&graph, &all[i], all)
+                };
+                if let Some((next, skip)) = target
+                    && next != TaskState::Waiting
+                    && is_valid_transition(&all[i].state, &next)
+                {
+                    let mut nt = all[i].clone();
+                    if next.is_terminal() {
+                        nt.finished_at = Some(now_ms);
+                    }
+                    nt.state = next;
+                    nt.skip = skip;
+                    #[cfg(test)]
+                    if graph_submit::FAIL_ACTIVATION_PUT.with(|f| f.replace(false)) {
+                        return Err(AgentError::InvalidArgument(
+                            "injected activation failure".into(),
+                        ));
+                    }
+                    self.put(&nt)?;
+                    all[i] = nt.clone();
+                    updated.push(nt);
+                    changed = true;
                 }
-                nt.state = next;
-                #[cfg(test)]
-                if graph_submit::FAIL_ACTIVATION_PUT.with(|f| f.replace(false)) {
-                    return Err(AgentError::InvalidArgument(
-                        "injected activation failure".into(),
-                    ));
-                }
-                self.put(&nt)?;
-                all[i] = nt.clone();
-                updated.push(nt);
             }
         }
         Ok(updated)
@@ -650,26 +673,35 @@ impl<'a> TaskStore<'a> {
             }
         }
         self.refuse_retry_after_fallback(workspace_id, &task)?;
+        if reset_downstream && task.is_typed() {
+            return Err(AgentError::InvalidArgument(format!(
+                "typed task {id} cannot be retried with reset_downstream: downstream tasks already \
+                 settled on this run's failure or route and are not rewound; retry without it, \
+                 or submit a new graph for the follow-up work"
+            )));
+        }
         task.state = TaskState::Waiting;
         task.started_at = None;
         task.finished_at = None;
         task.result = None;
         task.typed_result = None;
         task.input_snapshot = None;
+        task.route = None;
+        task.skip = None;
         self.put(&task)?;
 
         // readiness 즉시 평가 — deps 가 이미 종결(예: 여전히 실패/skip 상태)이면 이 자리에서
         // 곧장 Skipped 로 되돌아갈 수 있다. set_state 를 거치지 않는 직접-put 이므로, 그
         // terminal 타임스탬프 기록을 여기서 재현한다(cascade_downstream 과 동일 이유).
         let all = self.list(workspace_id)?;
-        if let Some(next) = self
-            .readiness_graph(workspace_id, &all)?
-            .evaluate_readiness(id)
+        if let Some((next, skip)) =
+            settle_target(&self.readiness_graph(workspace_id, &all)?, &task, &all)
             && next != TaskState::Waiting
         {
             let is_terminal = next.is_terminal();
             let mut nt = task.clone();
             nt.state = next;
+            nt.skip = skip;
             if is_terminal {
                 nt.finished_at = Some(now_ms);
             }
@@ -692,6 +724,8 @@ impl<'a> TaskStore<'a> {
                     d.result = None;
                     d.typed_result = None;
                     d.input_snapshot = None;
+                    d.route = None;
+                    d.skip = None;
                     self.put(&d)?;
                 }
             }
@@ -899,6 +933,29 @@ impl TaskStore<'_> {
         Ok(TaskGraph::build(tasks).with_inactive(self.inactive_task_ids(workspace_id, tasks)?))
     }
 
+    /// 성공으로 끝나는 v2 task 의 경로를 고른다. 고르지 못하면 `route` 단계 실패로 바꾼다.
+    /// 결과와 같은 레코드에 기록하므로 "결과는 있는데 경로는 미확정" 인 상태가 저장되지 않는다.
+    pub(super) fn settle_route(&self, task: &mut Task, state: TaskState) -> TaskState {
+        if state != TaskState::Succeeded || !task.is_typed() {
+            return state;
+        }
+        let ws = task.workspace_id;
+        match route::decide_route(task, &|id| self.get(ws, id).ok().flatten()) {
+            Ok(decision) => {
+                task.route = decision;
+                state
+            }
+            Err(failure) => {
+                let error = failure.message.clone();
+                if let Some(typed) = task.typed_result.as_mut() {
+                    typed.error = Some(failure);
+                }
+                task.result = task.typed_result.as_ref().map(contract::project_v1);
+                TaskState::Failed { error }
+            }
+        }
+    }
+
     /// 실행 직전에 해석한 입력을 기록한다. 원본 계약과 command 는 바꾸지 않는다.
     pub fn set_input_snapshot(
         &mut self,
@@ -975,6 +1032,24 @@ fn decode_typed_record(value: MemoryValue, label: &str) -> Result<Task> {
         )));
     }
     Ok(task)
+}
+
+/// Waiting task 의 다음 상태와(Skipped 면) 그 이유. 선행 실패에는 실패 정책을 적용하고,
+/// 경로가 선택되지 않은 것에는 적용하지 않는다(fallback·continue_downstream 으로 되살리지 않는다).
+fn settle_target(
+    graph: &TaskGraph<'_>,
+    task: &Task,
+    all: &[Task],
+) -> Option<(TaskState, Option<SkipReason>)> {
+    match graph.readiness(&task.id)? {
+        Readiness::Ready => Some((TaskState::Ready, None)),
+        Readiness::NotSelected => Some((TaskState::Skipped, Some(SkipReason::BranchNotSelected))),
+        Readiness::Unavailable(reason) => {
+            let next = apply_on_failure(task, all)?;
+            let skip = (next == TaskState::Skipped).then_some(reason).flatten();
+            Some((next, skip))
+        }
+    }
 }
 
 /// v2 task 의 종결 전이를 결과와 맞춘다. 확정된 유효 출력이 없으면 성공으로 끝내지

@@ -97,6 +97,7 @@ impl TaskStore<'_> {
             PostprocessStep::NotApplicable => record_result(&mut task, completion.result),
         }
         let state = settle_typed_terminal(&mut task, requested);
+        let state = self.settle_route(&mut task, state);
         task.state = state;
         task.finished_at = Some(now_ms);
         if let Some(attempt) = task.attempt.as_mut() {

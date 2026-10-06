@@ -5309,7 +5309,7 @@ help = "Workspace id (focus-independent — required)"
 help = "Task id to retry"
 
 [cli.help._root.agent.task-retry.arg.reset_downstream]
-help = "Also reset downstream Skipped/Failed tasks back to Waiting"
+help = "Also reset downstream Skipped/Failed tasks back to Waiting. Refused for typed (contract_version 2) tasks"
 
 [cli.help._root.agent.task-graph]
 about = "Output the task DAG as JSON or Graphviz dot"

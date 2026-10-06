@@ -11,8 +11,8 @@ use serde::Deserialize;
 use super::binding::{InputSnapshot, InputSnapshotWire};
 use super::contract::TypedResultWire;
 use super::{
-    OnFailure, Task, TaskAttempt, TaskCommand, TaskContract, TaskId, TaskResult, TaskState,
-    TypedResult, WorkspaceId,
+    OnFailure, RouteDecision, SkipReason, Task, TaskAttempt, TaskCommand, TaskContract, TaskId,
+    TaskResult, TaskState, TypedResult, WorkspaceId,
 };
 
 #[derive(Deserialize)]
@@ -47,6 +47,10 @@ pub(crate) struct TaskWire {
     input_snapshot: Option<InputSnapshotWire>,
     #[serde(default)]
     attempt: Option<TaskAttempt>,
+    #[serde(default)]
+    route: Option<RouteDecision>,
+    #[serde(default)]
+    skip: Option<SkipReason>,
 }
 
 impl TryFrom<TaskWire> for Task {
@@ -72,6 +76,8 @@ impl TryFrom<TaskWire> for Task {
             graph_id,
             input_snapshot,
             attempt,
+            route,
+            skip,
         } = wire;
         let input_snapshot = match (input_snapshot, &contract) {
             (None, _) => None,
@@ -112,6 +118,8 @@ impl TryFrom<TaskWire> for Task {
             graph_id,
             input_snapshot,
             attempt,
+            route,
+            skip,
         })
     }
 }

@@ -872,6 +872,14 @@ fn resolve_value(
             };
         let raw = match binding {
             InputBinding::Literal(v) => Some(v.clone()),
+            // 경로가 선택되지 않은 source 의 값은 없다. 빠져도 되는 필드는 비워 둔다.
+            InputBinding::FromTask { source, .. }
+                if (field.optional || field.default.is_some())
+                    && lookup(&source.from_task)
+                        .is_some_and(|p| super::route::is_not_selected(&p)) =>
+            {
+                None
+            }
             InputBinding::FromTask { source, .. } => {
                 Some(read(source, pins)?.ok_or_else(|| {
                     fail(

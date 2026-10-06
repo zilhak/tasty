@@ -136,7 +136,8 @@ pub enum AgentCommands {
         /// Task id to retry.
         #[arg(long)]
         id: String,
-        /// Also reset downstream Skipped/Failed tasks back to Waiting.
+        /// Also reset downstream Skipped/Failed tasks back to Waiting. Refused for typed
+        /// (contract_version 2) tasks.
         #[arg(long, default_value_t = false)]
         reset_downstream: bool,
     },

@@ -1,4 +1,4 @@
-<!-- source-hash: 40d6d50b64cb -->
+<!-- source-hash: 94a51ad81405 -->
 <a id="task-dag"></a>
 
 # Task workflows (DAG)
@@ -116,6 +116,28 @@ To run a task's result through another command (a judge or summary tool, say) an
 
 While Tasty runs on [temporary memory](cli.md#memory-shared-between-agents) because it could not open its memory file, a graph would not survive a restart, so sending it as is gets refused. For a graph that may be lost on restart, add `"durability": "best_effort"`.
 
+### Choosing the next task from a result
+
+Give a task `transitions` and it picks which tasks run next from its result. In the example below, `review` runs only `ship` when its verdict is `pass`, only `fix` when it is `revise`, and only `human` otherwise.
+
+```json
+{"id": "review", "command": {"kind": "run", "command": ["review-tool"]},
+ "output_schema": {"type": "object", "fields": {
+   "verdict": {"type": "enum", "values": ["pass", "revise", "review"]}}},
+ "transitions": {
+   "cases": [
+     {"when": {"compare": {"path": "/verdict", "op": "eq", "value": "pass"}}, "to": ["ship"]},
+     {"when": {"in": {"path": "/verdict", "values": ["revise"]}}, "to": ["fix"]}],
+   "otherwise": ["human"]}}
+```
+
+- A condition compares one spot in the result (`path`) with a value (`compare`: `eq`, `ne`, `lt`, `le`, `gt`, `ge`) or checks that it is one of a list (`in`). Combine them with `all`, `any` and `not`. Conditions that do not fit the result's type are rejected when you send the graph. Decimals are compared only as ranges.
+- By default exactly one condition may hold. If two hold, the task ends as failed. To run every match, add `"mode": "all_matches"`.
+- Always say what happens when nothing holds: tasks to run (`otherwise`) or run nothing (`"no_match": "finish"`).
+- Tasks that were not chosen, and tasks reached only through them, end as "not selected", not as failures. A task where branches meet waits only for the branches that ran. If a branch that ran fails, that failure still passes on.
+- Taking a required input from a branch that may not run is rejected when you send the graph. If each branch produces the value in a different task, take it with `one_of`. If the value may be missing, make the input field optional or give it a default.
+- A task's `route` shows the tasks it chose, and a task that was not chosen shows why in `skip`. When every task succeeded or was not selected, the DAG shows as succeeded.
+
 ## Watching progress
 
 There are two screens for seeing how the work flows. Both look at the same data.
@@ -155,6 +177,7 @@ tasty agent task-purge --workspace-id 2 --states succeeded
 
 - `task-await` waits up to 10 minutes by default and comes back with a timeout if the task has not finished by then. With `--timeout-ms 0` it waits indefinitely.
 - For a typed task, `task-retry` is refused once its fallback has run. If the main task succeeded again, a task that takes either of the two would see two values. To run it again, send it as a new task.
+- Typed tasks do not take `--reset-downstream`. The tasks after them already finished on the earlier run's failure or chosen path. `task-retry` runs only that task again. To rerun the tasks after it, send a new graph.
 - `task-set-result` is for reporting that something the runner did not run is done — a check a person does by hand, for example.
   - A typed task gets an attempt ID (`<task ID>#<number>`) each time it runs. Name the attempt with `--attempt-id`. If the task has run again since, the old report is refused instead of finishing the new run.
   - Sending the same report again returns the same answer as the first time. A different result for an attempt that has already finished is refused.

@@ -28,11 +28,16 @@ pub struct DagStateCounts {
     pub cancelled: usize,
     pub skipped: usize,
     pub unknown: usize,
+    /// `skipped` 중 경로가 선택되지 않아 끝난 v2 task. 실패가 아니다.
+    pub not_selected: usize,
 }
 
 impl DagStateCounts {
-    fn add(&mut self, state: &TaskState) {
-        match state {
+    fn add(&mut self, task: &Task) {
+        if super::route::is_not_selected(task) {
+            self.not_selected += 1;
+        }
+        match &task.state {
             TaskState::Waiting => self.waiting += 1,
             TaskState::Ready => self.ready += 1,
             TaskState::Running => self.running += 1,
@@ -46,8 +51,8 @@ impl DagStateCounts {
 
     /// DAG 하나의 대표 상태. 판정 순서는 화면의 상태칩 색과 직결되므로 고정이다:
     /// `running` 하나라도 있으면 `running` → `failed` 하나라도 있으면 `failed` →
-    /// 전부 terminal 이면 `succeeded`(전부 succeeded) 또는 `skipped`(cancelled/skipped
-    /// 섞임) → `ready` 하나라도 있으면 `ready` → 그 외 `waiting`.
+    /// 전부 terminal 이면 `succeeded`(succeeded 와 선택되지 않은 경로뿐) 또는 `skipped`
+    /// (cancelled 나 실패 전파로 skip 된 task 섞임) → `ready` 하나라도 있으면 `ready` → 그 외 `waiting`.
     ///
     /// 반환 가능한 상태는 위 여섯 가지이며 cancelled와 unknown은 직접 반환하지 않는다.
     pub fn rollup(&self) -> &'static str {
@@ -60,7 +65,7 @@ impl DagStateCounts {
         // 여기 도달하면 running/failed 는 0 이므로, 비-terminal 로 남은 건
         // waiting/ready/unknown 뿐이다.
         if self.waiting == 0 && self.ready == 0 && self.unknown == 0 {
-            return if self.cancelled == 0 && self.skipped == 0 {
+            return if self.cancelled == 0 && self.skipped <= self.not_selected {
                 "succeeded"
             } else {
                 "skipped"
@@ -224,7 +229,7 @@ fn summarize(
     let mut created_at = u64::MAX;
     let mut updated_at = 0u64;
     for t in &sorted {
-        state_counts.add(&t.state);
+        state_counts.add(t);
         created_at = created_at.min(t.created_at);
         updated_at = updated_at
             .max(t.finished_at.unwrap_or(0))
