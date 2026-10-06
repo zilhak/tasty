@@ -164,6 +164,16 @@ fn preempt_home_writer_lock() -> HomeWriterLock {
     let Some(home) = tasty_utils::path::tasty_home() else {
         return HomeWriterLock::Unchecked;
     };
+    // release 단일 실행: PID·시작 시각이 살아 있고 포트가 있는 인스턴스 기록이면 잠금 재시도
+    // (`WRITER_LOCK_WAIT`)를 기다리지 않고 바로 넘긴다. 낡은 기록이나 포트 없는 기록은 재시도 경로로 간다.
+    if !cfg!(debug_assertions)
+        && matches!(
+            single_instance::instance_file::read_state(&home),
+            single_instance::instance_file::InstanceState::Live(_)
+        )
+    {
+        return HomeWriterLock::Held(home);
+    }
     let database = crate::runtime::journal_product::journal_database_path(&home);
     match tasty_event_store::preempt_writer_lock(&database) {
         Ok(tasty_event_store::WriterPreempt::Acquired(lock)) => {
