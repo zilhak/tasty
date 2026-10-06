@@ -67,12 +67,29 @@ pub fn in_disabled_chip_scope(ui: &egui::Ui) -> bool {
 /// 상태 점 없는 태그의 폭을 계산한다. 그리기 전 가용 폭과 비교할 때 사용한다.
 pub fn tag_width(ui: &egui::Ui, theme: &Theme, label: &str) -> f32 {
     let pad_x = theme.tag_padding_x().value();
-    let galley = ui.painter().layout_no_wrap(
-        label.to_owned(),
-        mono(theme.tag_font_size().value()),
-        egui::Color32::PLACEHOLDER,
-    );
+    let galley = tag_galley(ui, theme, label, None);
     galley.rect.width() + 2.0 * pad_x
+}
+
+/// Tag 라벨 galley. 대문자 Tag만 `tracking`에 caps 자간을 넘기고, 나머지는 자간 없이 그린다.
+fn tag_galley(
+    ui: &egui::Ui,
+    theme: &Theme,
+    label: &str,
+    tracking: Option<LogicalPx>,
+) -> std::sync::Arc<egui::Galley> {
+    let mut job = egui::text::LayoutJob::default();
+    job.append(
+        label,
+        0.0,
+        egui::TextFormat {
+            font_id: mono(theme.tag_font_size().value()),
+            extra_letter_spacing: tracking.map_or(0.0, |t| t.value()),
+            color: egui::Color32::PLACEHOLDER,
+            ..Default::default()
+        },
+    );
+    ui.painter().layout_job(job)
 }
 
 /// Tag — 모노 라벨 chip. `dot` 이 true 면 선행 상태 점(현재 fg 색).
@@ -89,13 +106,38 @@ pub fn tag(
     } else {
         tag_colors(theme, variant)
     };
-    paint_tag(ui, theme, label, dot, colors)
+    paint_tag(ui, theme, label, dot, colors, None)
+}
+
+/// 대문자 Tag(디자인 `Tag caps`) — 라벨을 대문자로 바꾸고 `letter-spacing-caps` 자간으로 그린다.
+/// 대문자로 그리는 Tag는 모두 이 함수를 쓴다. 색과 disabled 문맥 처리는 [`tag`]와 같다.
+pub fn tag_caps(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    label: &str,
+    variant: TagVariant,
+    dot: bool,
+) -> egui::Response {
+    let colors = if in_disabled_chip_scope(ui) {
+        tag_disabled_colors(theme)
+    } else {
+        tag_colors(theme, variant)
+    };
+    let tracking = theme.letter_spacing_caps(theme.tag_font_size());
+    paint_tag(
+        ui,
+        theme,
+        &label.to_uppercase(),
+        dot,
+        colors,
+        Some(tracking),
+    )
 }
 
 /// disabled Tag — 모든 variant가 중립 상자(tag-disabled-bg·border)와 disabled ink를 쓴다.
 /// accent 채움과 tint 테두리는 빠지고 상태 점도 같은 ink다. opacity는 쓰지 않는다.
 pub fn tag_disabled(ui: &mut egui::Ui, theme: &Theme, label: &str, dot: bool) -> egui::Response {
-    paint_tag(ui, theme, label, dot, tag_disabled_colors(theme))
+    paint_tag(ui, theme, label, dot, tag_disabled_colors(theme), None)
 }
 
 /// Tag 채움·테두리·글자색.
@@ -191,6 +233,7 @@ fn paint_tag(
     label: &str,
     dot: bool,
     (fill, border, fg): TagColors,
+    tracking: Option<LogicalPx>,
 ) -> egui::Response {
     let radius = theme.tag_radius().value();
     let bw = theme.border_width.value();
@@ -198,11 +241,7 @@ fn paint_tag(
     let gap = theme.tag_gap().value();
     let dot_sz = theme.tag_dot_size().value();
     let tag_h = theme.tag_size().value();
-    let galley = ui.painter().layout_no_wrap(
-        label.to_owned(),
-        mono(theme.tag_font_size().value()),
-        egui::Color32::PLACEHOLDER,
-    );
+    let galley = tag_galley(ui, theme, label, tracking);
     let dot_w = if dot { dot_sz + gap } else { 0.0 };
     let w = galley.rect.width() + dot_w + 2.0 * pad_x;
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, tag_h), egui::Sense::hover());
@@ -670,6 +709,41 @@ fn draw_keycap_box(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 그려진 Tag 라벨과 그 자간을 모은다.
+    fn tag_texts(draw: impl Fn(&mut egui::Ui)) -> Vec<(String, f32)> {
+        let ctx = egui::Context::default();
+        let output = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| draw(ui));
+        });
+        output
+            .shapes
+            .iter()
+            .filter_map(|c| match &c.shape {
+                egui::Shape::Text(t) => Some((
+                    t.galley.text().to_string(),
+                    t.galley.job.sections[0].format.extra_letter_spacing,
+                )),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// 대문자 Tag만 라벨을 대문자로 바꾸고 caps 자간을 그린다. 일반 Tag는 받은 그대로다.
+    #[test]
+    fn caps_tag_uppercases_and_spaces_the_label() {
+        let theme = tasty_themes::mocha_fallback();
+        let caps = theme.letter_spacing_caps(theme.tag_font_size()).value();
+        assert!(caps > 0.0);
+        let texts = tag_texts(|ui| {
+            tag_caps(ui, &theme, "remote", TagVariant::Remote, false);
+            tag(ui, &theme, "plain", TagVariant::Default, false);
+        });
+        assert_eq!(
+            texts,
+            vec![("REMOTE".to_string(), caps), ("plain".to_string(), 0.0)]
+        );
+    }
 
     #[test]
     fn disabled_chip_scope_marks_only_its_own_scope_and_nests() {

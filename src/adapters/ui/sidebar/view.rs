@@ -4,7 +4,7 @@ use crate::adapters::ui::{brand, icons};
 use crate::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::tokens::{STRUCT_GAP_1, STRUCT_GAP_2, STRUCT_GAP_3};
-use tasty_ui_widgets::{BadgeVariant, TagVariant, badge, hspace, tag, vspace};
+use tasty_ui_widgets::{BadgeVariant, TagVariant, badge, hspace, tag_caps, vspace};
 
 /// 드래그 중 표시되는 ghost workspace 이름. DTCG primitive `font-size-12` 는 있으나
 /// semantic role 이 없어 `Theme` 필드가 없다 — ADR-0035 대로 **이름에 primitive 임을 남긴다**.
@@ -1407,13 +1407,7 @@ fn draw_workspace_card(
                     th.workspace_mirror_icon_size().value(),
                     th.workspace_mirror_fg().into(),
                 ));
-                tag(
-                    ui,
-                    th,
-                    &mirror_pill_label.to_uppercase(),
-                    TagVariant::Remote,
-                    false,
-                );
+                tag_caps(ui, th, mirror_pill_label, TagVariant::Remote, false);
             });
             resp.response.on_hover_text(mirror_hover);
         }

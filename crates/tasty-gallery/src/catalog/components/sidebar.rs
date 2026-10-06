@@ -1,7 +1,7 @@
 //! 펼친 사이드바와 접힌 레일의 정적 예제. 워크스페이스·카테고리·상태 배지를 비교한다.
 
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::{TagVariant, tag};
+use tasty_ui_widgets::{TagVariant, tag_caps};
 
 use crate::catalog::icons::{
     CHEVRON_DOWN, CHEVRON_RIGHT, FOLDER, MockGlyph, PLUG, REMOTE, SETTINGS, TERMINAL,
@@ -83,7 +83,7 @@ fn mirror_pill_line(ui: &mut egui::Ui, theme: &Theme, row: egui::Rect, name_x: f
         egui::pos2(name_x + sz + theme.workspace_mirror_gap().value(), y),
         egui::vec2(ui.available_width(), mirror_pill_line_h(theme)),
     )));
-    tag(&mut tag_ui, theme, "REMOTE", TagVariant::Remote, false);
+    tag_caps(&mut tag_ui, theme, "remote", TagVariant::Remote, false);
 }
 
 /// 접힌 아바타의 원격 표시는 오른쪽 아래에 놓아 알림 점·연결 테두리와 구분한다.
