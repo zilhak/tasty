@@ -329,7 +329,7 @@ pub fn draw_scroll_shape(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         &[
-            ("glyph", "chevronLeft / chevronRight · 12"),
+            ("glyph", "chevronLeft / chevronRight · 14"),
             ("cell", "24 × 24, no fill"),
             ("hover", "overlay-hover, enabled side only"),
             ("disabled", "the end reached · no hover · no response"),
@@ -344,7 +344,7 @@ pub fn draw_scroll_shape(ui: &mut egui::Ui, theme: &Theme) {
             ),
             TokenChip::new(
                 "tab-scroll-arrow-glyph-size",
-                "→ icon-size-xs 12",
+                "→ icon-size-sm 14",
                 egui::Color32::TRANSPARENT,
             ),
             TokenChip::new(
