@@ -1737,7 +1737,7 @@ pub fn pages() -> Vec<Page> {
                             "tab-strip-tooltips",
                             "Tooltips in the strip open upward — native content below",
                             Some(
-                                "top → bottom → inside the strip, first clear of every WebView rect · else top clamped 4 inside the window",
+                                "top → bottom → inside the strip (1px border-width tolerance), first clear of every WebView rect · else inside the strip anyway",
                             ),
                             widgets::html_script_banner::draw_strip_tooltips,
                         ),

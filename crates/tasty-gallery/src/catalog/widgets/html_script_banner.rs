@@ -31,6 +31,8 @@ const STRIP_TOOLTIP_W: LogicalPx = LogicalPx(320.0);
 const STRIP_TOOLTIP_WEBVIEW_H: LogicalPx = LogicalPx(96.0);
 /// html pane을 쌓은 툴팁 예제의 위·아래 WebView 자리 높이. 디자인은 `--tasty-size-64`를 쓴다.
 const STRIP_TOOLTIP_STACKED_WEBVIEW_H: LogicalPx = LogicalPx(64.0);
+/// 탭 스트립 툴팁 Stage의 오른쪽 여백. 디자인은 `--tasty-size-120`을 쓰며, 예제 창 밖으로 나간 버블이 이 안에 든다.
+const STRIP_TOOLTIP_STAGE_PAD_RIGHT: LogicalPx = LogicalPx(120.0);
 /// 상태 예제 한 장의 최대 폭. 디자인은 `--tasty-size-600`을 쓴다.
 const STATE_CARD_MAX_W: LogicalPx = LogicalPx(600.0);
 /// 배너 버튼 예제의 테마별 패널 폭. 디자인은 `--tasty-size-560`을 쓴다.
@@ -665,7 +667,7 @@ pub fn draw_markers(ui: &mut egui::Ui, theme: &Theme) {
             ("kept on", "#fragment moves"),
             (
                 "tooltip placement",
-                "top → bottom → inside the strip → top clamped (Tab strips › Tooltips in the strip open upward)",
+                "top → bottom → inside the strip; none clears → inside the strip (Tab strips › Tooltips in the strip open upward)",
             ),
             (
                 "no banner when",
@@ -787,9 +789,28 @@ pub fn draw_load_failed(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
+/// 시안 `Themed`: bg-app 카드(border-default 테두리, radius, 여백·간격 space-md)에 예제를 세로로 담는다.
+fn themed_card(ui: &mut egui::Ui, theme: &Theme, add: impl FnOnce(&mut egui::Ui)) {
+    egui::Frame::new()
+        .fill(theme.bg_app().to_egui())
+        .stroke(egui::Stroke::new(
+            theme.border_width.value(),
+            theme.border_default().to_egui(),
+        ))
+        .corner_radius(theme.corner_radius.value())
+        .inner_margin(egui::Margin::same(theme.spacing_md.value() as i8))
+        .show(ui, |ui| {
+            ui.vertical(|ui| {
+                ui.spacing_mut().item_spacing.y = theme.spacing_md.value();
+                add(ui);
+            });
+        });
+}
+
 /// 탭 스트립 툴팁 예제 창 하나. 툴팁은 본체와 같은 규칙으로 WebView 자리를 피한다.
 /// `stacked`가 거짓이면 제목 영역 → 탭 스트립 → WebView 자리라 버블이 위로 뜬다.
 /// 참이면 위 pane의 WebView → 탭 스트립 → 자기 WebView라 위·아래가 막혀 버블이 스트립 안에 뜬다.
+/// 이때 스트립 아래 separator는 없고 자기 WebView가 스트립 바로 아래에서 시작한다(앱 기하).
 fn strip_tooltip_window(ui: &mut egui::Ui, theme: &Theme, id: &str, stacked: bool) {
     let bw = theme.border_width.value();
     let strip_h = theme.tab_height().value();
@@ -805,9 +826,10 @@ fn strip_tooltip_window(ui: &mut egui::Ui, theme: &Theme, id: &str, stacked: boo
             STRIP_TOOLTIP_WEBVIEW_H.value(),
         )
     };
+    let strip_rule = if stacked { 0.0 } else { bw };
     let size = egui::vec2(
         STRIP_TOOLTIP_W.value(),
-        above_h + strip_h + bw + below_h + bw * 2.0,
+        above_h + strip_h + strip_rule + below_h + bw * 2.0,
     );
     let (outer, _) = ui.allocate_exact_size(size, egui::Sense::hover());
     let painter = ui.painter().clone();
@@ -864,14 +886,19 @@ fn strip_tooltip_window(ui: &mut egui::Ui, theme: &Theme, id: &str, stacked: boo
     );
     let second = egui::Rect::from_min_max(egui::pos2(cell.right(), strip.top()), strip.max);
     tab(ui, theme, second, "shell", icons::TERMINAL, false, None);
-    painter.hline(
-        strip.x_range(),
-        strip.bottom() + bw / 2.0,
-        egui::Stroke::new(bw, theme.separator.to_egui_premultiplied()),
-    );
+    // 쌓인 예제는 앱 기하를 따른다. 자기 WebView가 스트립 바로 아래에서 시작한다(간격 0, separator 없음).
+    if !stacked {
+        painter.hline(
+            strip.x_range(),
+            strip.bottom() + bw / 2.0,
+            egui::Stroke::new(bw, theme.separator.to_egui_premultiplied()),
+        );
+    }
 
-    let webview =
-        egui::Rect::from_min_max(egui::pos2(inner.left(), strip.bottom() + bw), inner.max);
+    let webview = egui::Rect::from_min_max(
+        egui::pos2(inner.left(), strip.bottom() + strip_rule),
+        inner.max,
+    );
     painter.rect_filled(webview, 0.0, theme.bg_panel().to_egui());
     painter.text(
         webview.center(),
@@ -923,27 +950,36 @@ pub fn draw_strip_tooltips(ui: &mut egui::Ui, theme: &Theme) {
     let latte = crate::host_shell::latte_theme();
     let mocha = mocha();
     spec::stage(ui, theme, StageVariant::Tight, |ui| {
-        app_backdrop(ui, theme, |ui| {
-            ui.horizontal_wrapped(|ui| {
-                ui.spacing_mut().item_spacing =
-                    egui::vec2(theme.spacing_lg.value(), theme.spacing_lg.value());
-                for (name, th) in [("Mocha", &mocha), ("Latte", &latte)] {
-                    ui.vertical(|ui| {
-                        ui.spacing_mut().item_spacing.y = th.spacing_xs.value();
-                        caption(ui, th, &format!("{name} · html tab active, lock hovered"));
-                        strip_tooltip_window(ui, th, name, false);
-                        caption(
-                            ui,
-                            th,
-                            &format!(
-                                "{name} · html pane under an html pane — fallback inside the strip"
-                            ),
-                        );
-                        strip_tooltip_window(ui, th, name, true);
-                    });
-                }
+        // 시안 Stage: bg-app, 여백 space-lg, 오른쪽만 size-120. 두 테마를 세로로 쌓는다.
+        let lg = theme.spacing_lg.value() as i8;
+        egui::Frame::new()
+            .fill(theme.bg_app().to_egui())
+            .inner_margin(egui::Margin {
+                left: lg,
+                right: STRIP_TOOLTIP_STAGE_PAD_RIGHT.value() as i8,
+                top: lg,
+                bottom: lg,
+            })
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.vertical(|ui| {
+                    ui.spacing_mut().item_spacing.y = theme.spacing_lg.value();
+                    for (name, th) in [("Mocha", &mocha), ("Latte", &latte)] {
+                        themed_card(ui, th, |ui| {
+                            caption(ui, th, &format!("{name} · html tab active, lock hovered"));
+                            strip_tooltip_window(ui, th, name, false);
+                            caption(
+                                ui,
+                                th,
+                                &format!(
+                                    "{name} · html pane under an html pane — fallback inside the strip"
+                                ),
+                            );
+                            strip_tooltip_window(ui, th, name, true);
+                        });
+                    }
+                });
             });
-        });
     });
 
     spec::meta(
@@ -963,8 +999,20 @@ pub fn draw_strip_tooltips(ui: &mut egui::Ui, theme: &Theme) {
                 "centred on the strip row · beside the anchor cell (right, then left) · tooltip-offset from the cell · may cover neighbour tabs",
             ),
             (
+                "overlap tolerance (b2)",
+                "the in-strip candidate is judged against native rects with a tolerance of border-width (1px) per edge — a one-line bubble (25) on the 24 strip passes; nothing else changes size",
+            ),
+            (
+                "last resort (b2)",
+                "if every candidate fails, the in-strip placement is used anyway (it is the one Tasty paints over); clamped top is no longer the final fallback",
+            ),
+            (
+                "specimen (b2)",
+                "themes stacked vertically; real copy; the bubble may run past the example window inside the stage padding — the app clamps to the app window, not to a pane",
+            ),
+            (
                 "none clears",
-                "top, clamped inside the window · tooltip-offset 4 as vertical margin · may cover the strip / accent line",
+                "superseded 2026-10-06 b2 → in-strip placement (see last resort)",
             ),
             ("horizontal", "clamped to window edges · tooltip-offset 4"),
             ("WebView hiding", "not used for tooltips"),
