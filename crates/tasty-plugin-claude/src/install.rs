@@ -667,12 +667,11 @@ mod tests {
                 None => cmd.env_remove("TASTY_SURFACE_ID"),
             };
             let mut child = cmd.spawn().unwrap();
-            child
-                .stdin
-                .take()
-                .unwrap()
-                .write_all(payload.as_bytes())
-                .unwrap();
+            // Tasty 밖 셸에서는 명령이 stdin 을 읽지 않고 끝나므로 쓰기가 BrokenPipe 로 끝날 수 있다.
+            let written = child.stdin.take().unwrap().write_all(payload.as_bytes());
+            if let Err(e) = written {
+                assert_eq!(e.kind(), std::io::ErrorKind::BrokenPipe, "{e}");
+            }
             assert!(child.wait().unwrap().success());
             std::fs::read_to_string(&log).unwrap_or_default()
         };
