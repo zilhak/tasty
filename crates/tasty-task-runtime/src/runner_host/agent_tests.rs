@@ -29,6 +29,11 @@ struct FakeProvider {
 
 impl FakeProvider {
     fn install(ctx: &RunnerContext, initial: &str) -> Self {
+        Self::install_with(ctx, initial, Duration::ZERO)
+    }
+
+    /// `spawn_delay` 만큼 늦게 spawn 에 답한다.
+    fn install_with(ctx: &RunnerContext, initial: &str, spawn_delay: Duration) -> Self {
         let (tx, rx) = mpsc::channel::<IpcCommand>();
         ctx.host_ipc
             .set(HostIpcInjector::new(tx, Arc::new(|| {})))
@@ -46,6 +51,7 @@ impl FakeProvider {
                 let body = if method.ends_with(".state") {
                     json!({ "state": s.lock().unwrap().clone() })
                 } else if method.ends_with(".spawn") {
+                    std::thread::sleep(spawn_delay);
                     json!({ "child_surface_id": 42 })
                 } else {
                     json!({ "ok": true })
@@ -267,6 +273,24 @@ fn a_structured_output_needs_a_submission_and_the_new_session_is_told_how() {
     let out = r.output.unwrap();
     assert!(out.get(report::SUBMITTED).is_none());
     assert_eq!(out[report::FINAL_ANSWER], "I think revise");
+}
+
+/// spawn 은 일반 호출의 응답 대기(5초)보다 늦게 답할 수 있다. 그래도 회차에 묶는다.
+#[test]
+fn a_slow_spawn_still_binds_the_new_session() {
+    let (_td, ctx) = fresh_ctx();
+    let _fake = FakeProvider::install_with(&ctx, "active", Duration::from_millis(5500));
+    let mut exec = HostExecutor::new(ctx.clone());
+    let task = create(
+        &ctx,
+        AgentSession::New {
+            parent_surface: 3,
+            cwd: None,
+        },
+        v2(),
+    );
+    dispatch(&mut exec, &ctx, &task);
+    assert_eq!(ctx.agent_turns.holder(42), Some(task.id.clone()));
 }
 
 #[test]

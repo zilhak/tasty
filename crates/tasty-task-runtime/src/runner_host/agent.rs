@@ -8,8 +8,13 @@ use tasty_agent::task::agent::{self, AgentLink, AgentSession};
 use tasty_agent::{Task, TaskCommand, TaskStore};
 use tasty_memory::HOST_OWNER;
 
-use super::{HostExecutor, now_ms};
+use super::{HostExecutor, INJECTOR_UNINIT_MSG, now_ms};
 use crate::agent_turns::{TurnBinding, TurnPoll, decide};
+
+/// provider spawn 의 응답 대기. spawn 은 셸을 띄우고 CLI 를 실행한 뒤 답하므로 일반 호출(5초)보다
+/// 오래 걸린다(실측 약 4초, 동시 spawn 이면 5초 초과). 다시 보내면 세션이 하나 더 생기므로
+/// 넉넉히 기다린다.
+const SPAWN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
 impl HostExecutor {
     /// 새 세션은 spawn 으로 지시를 보내고 바로 회차에 묶는다. 기존 세션은 handle 에 지시를 담아
@@ -81,10 +86,17 @@ impl HostExecutor {
                     params["cwd"] = json!(cwd);
                 }
                 let method = format!("{provider}.spawn");
-                let resp = self
+                let inj = self
                     .ctx
-                    .dispatch_plugin(&method, params)
-                    .map_err(|e| unavailable(format!("{method}: {e}")))?;
+                    .host_ipc
+                    .get()
+                    .ok_or_else(|| unavailable(format!("{method}: {INJECTOR_UNINIT_MSG}")))?;
+                let resp = inj.dispatch(&method, params, SPAWN_TIMEOUT).map_err(|e| {
+                    // 응답이 늦었을 뿐 spawn 이 실행됐을 수 있다. 그 세션은 이 회차에 묶이지 않는다.
+                    unavailable(format!(
+                        "{method}: {e} (the session may still start; it is not bound to this task)"
+                    ))
+                })?;
                 let surface = resp
                     .get("child_surface_id")
                     .and_then(|v| v.as_u64())
