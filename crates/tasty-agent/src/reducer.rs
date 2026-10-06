@@ -17,6 +17,7 @@
 //! extract_paths는 선택한 JSON Pointer의 값만 합성하도록 입력을 추출한다.
 //! 구조 전체가 필요한 전략도 있으므로 명시적으로 요청한 경우에만 적용한다.
 
+use crate::task::types::TypedValue;
 use serde_json::{Map, Value};
 
 use crate::{
@@ -179,7 +180,8 @@ pub struct TypedReducerInput {
     /// 입력 task 의 상태 이름([`crate::TaskState::name`]).
     pub state: &'static str,
     pub has_output: bool,
-    pub output: Value,
+    /// 입력의 선언 타입을 아는 출력. v1 입력은 무타입이라 `json` 이다.
+    pub output: TypedValue,
 }
 
 impl TypedReducerInput {
@@ -190,16 +192,16 @@ impl TypedReducerInput {
         let (has_output, output) = match (&task.typed_result, &task.result) {
             (Some(t), _) => (succeeded && t.has_output, t.output.clone()),
             (None, Some(r)) => match &r.output {
-                Some(v) if succeeded => (true, v.clone()),
-                _ => (false, Value::Null),
+                Some(v) if succeeded => (true, TypedValue::Json(v.clone())),
+                _ => (false, TypedValue::Null),
             },
-            (None, None) => (false, Value::Null),
+            (None, None) => (false, TypedValue::Null),
         };
         Self {
             task_id: task.id.clone(),
             state: task.state.name(),
             has_output,
-            output: if has_output { output } else { Value::Null },
+            output: if has_output { output } else { TypedValue::Null },
         }
     }
 
@@ -208,15 +210,18 @@ impl TypedReducerInput {
         m.insert("task_id".into(), Value::String(self.task_id.clone()));
         m.insert("state".into(), Value::String(self.state.into()));
         m.insert("has_output".into(), Value::Bool(self.has_output));
+        // 레코드의 output 은 입력마다 타입이 달라 json 으로 선언되므로, 각 입력의 선언
+        // 타입대로 직렬화한 값을 넣는다(int64 는 10진 문자열). custom reducer stdin 도 같다.
         if self.has_output {
-            m.insert("output".into(), self.output.clone());
+            m.insert("output".into(), self.output.to_wire());
         }
         Value::Object(m)
     }
 
-    fn require_output(&self) -> std::result::Result<&Value, String> {
+    /// 내부 계산용 JSON(int64 는 정수).
+    fn require_output(&self) -> std::result::Result<Value, String> {
         if self.has_output {
-            Ok(&self.output)
+            Ok(self.output.to_internal())
         } else {
             Err(format!(
                 "input {} has no output (state {})",
@@ -248,17 +253,18 @@ where
         ReducerStrategy::FirstSuccess => inputs
             .iter()
             .find(|i| i.has_output)
-            .map(|i| i.output.clone())
+            .map(|i| i.output.to_internal())
             .ok_or_else(|| "first_success: no input succeeded with an output".to_string()),
         ReducerStrategy::All => Ok(Value::Array(inputs.iter().map(|i| i.record()).collect())),
         ReducerStrategy::MergeJson => {
             let mut acc = Map::new();
             for input in inputs {
-                let Value::Object(map) = input.require_output()? else {
+                let output = input.require_output()?;
+                let Value::Object(map) = &output else {
                     return Err(format!(
                         "merge_json: input {} output is {}, not an object",
                         input.task_id,
-                        type_name(&input.output)
+                        type_name(&output)
                     ));
                 };
                 merge_typed(&mut acc, map, conflict, "")?;
@@ -269,12 +275,12 @@ where
             let mut out = String::new();
             for input in inputs {
                 match input.require_output()? {
-                    Value::String(s) => out.push_str(s),
+                    Value::String(s) => out.push_str(&s),
                     other => {
                         return Err(format!(
                             "concat_text: input {} output is {}, not a string; convert it explicitly",
                             input.task_id,
-                            type_name(other)
+                            type_name(&other)
                         ));
                     }
                 }
@@ -535,7 +541,7 @@ mod tests {
             task_id: id.to_string(),
             state,
             has_output: output.is_some(),
-            output: output.unwrap_or(Value::Null),
+            output: output.map(TypedValue::Json).unwrap_or_default(),
         }
     }
 
@@ -573,6 +579,50 @@ mod tests {
                 .validate(&schema, &out)
                 .is_ok()
         );
+    }
+
+    #[test]
+    fn records_and_custom_stdin_serialize_each_input_by_its_declared_type() {
+        let big = 9_007_199_254_740_993_i64;
+        let int_input = TypedReducerInput {
+            task_id: "a".into(),
+            state: "succeeded",
+            has_output: true,
+            output: TypedValue::Int64(big),
+        };
+        // json 으로 선언된 값 안의 정수는 바꾸지 않는다.
+        let json_input = typed("b", "succeeded", Some(json!({"n": big})));
+        let inputs = vec![int_input, json_input];
+        let all = reduce_typed(
+            &ReducerStrategy::All,
+            &inputs,
+            MergeConflict::Error,
+            no_shell,
+        )
+        .unwrap();
+        assert_eq!(all[0]["output"], json!("9007199254740993"));
+        assert_eq!(all[1]["output"], json!({"n": big}));
+
+        let strategy = ReducerStrategy::Custom {
+            command: "x".into(),
+        };
+        reduce_typed(&strategy, &inputs, MergeConflict::Error, |_, stdin| {
+            let v: Value = serde_json::from_str(stdin).unwrap();
+            assert_eq!(v[0]["output"], json!("9007199254740993"));
+            assert_eq!(v[1]["output"], json!({"n": big}));
+            Ok("null".into())
+        })
+        .unwrap();
+
+        // 내부 계산(first_success)은 정수 그대로다.
+        let first = reduce_typed(
+            &ReducerStrategy::FirstSuccess,
+            &inputs,
+            MergeConflict::Error,
+            no_shell,
+        )
+        .unwrap();
+        assert_eq!(first, json!(big));
     }
 
     #[test]

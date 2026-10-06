@@ -78,17 +78,30 @@ fn int64_is_an_integer_inside_and_a_decimal_string_only_on_the_wire() {
         let from_string = check(&s, json!(text)).unwrap();
         assert_eq!(from_token.as_i64(), Some(n));
         assert_eq!(from_string, from_token);
-        // 직렬화 경계에서만 문자열이 되고, 읽을 때 정수로 돌아온다.
-        let wire = defs.encode_wire(&s, &from_token);
+        // typed 값은 i64 를 들고, 직렬화하면 어떤 경로로든 문자열이 된다.
+        let typed = defs.typed_value(&s, &from_token).unwrap();
+        assert_eq!(typed, TypedValue::Int64(n));
+        let wire = serde_json::to_value(&typed).unwrap();
         assert_eq!(wire, json!(text));
-        assert_eq!(defs.decode_wire(&s, &wire).unwrap(), from_token);
+        assert_eq!(typed.to_wire(), wire);
+        // 스키마를 받는 역직렬화로 같은 값이 돌아온다.
+        let seed = TypedValueSeed {
+            defs: &defs,
+            schema: &s,
+        };
+        let wire_text = wire.to_string();
+        let mut de = serde_json::Deserializer::from_str(&wire_text);
+        assert_eq!(
+            serde::de::DeserializeSeed::deserialize(seed, &mut de).unwrap(),
+            typed
+        );
         // JavaScript 처럼 숫자를 f64 로 읽어도 문자열은 바뀌지 않는다.
         assert_eq!(serde_json::to_string(&wire).unwrap(), format!("\"{text}\""));
     }
 }
 
 #[test]
-fn wire_conversion_follows_the_schema_and_leaves_strings_and_json_alone() {
+fn typed_values_follow_the_schema_and_leave_strings_and_json_alone() {
     let mut types = std::collections::BTreeMap::new();
     types.insert("Count".to_string(), schema(json!({"type": "int64"})));
     let defs = TypeDefs::new(types);
@@ -101,15 +114,17 @@ fn wire_conversion_follows_the_schema_and_leaves_strings_and_json_alone() {
     }}));
     let inside = json!({"n": 7, "maybe": null, "label": "8", "raw": {"k": 9},
                         "rows": [{"id": -1}, {"id": 9007199254740993_i64}]});
-    let wire = defs.encode_wire(&s, &inside);
+    let typed = defs.typed_value(&s, &inside).unwrap();
+    assert_eq!(typed.to_internal(), inside);
+    let wire = serde_json::to_value(&typed).unwrap();
     assert_eq!(
         wire,
         json!({"n": "7", "maybe": null, "label": "8", "raw": {"k": 9},
                "rows": [{"id": "-1"}, {"id": "9007199254740993"}]})
     );
-    assert_eq!(defs.decode_wire(&s, &wire).unwrap(), inside);
+    assert_eq!(defs.typed_value(&s, &wire).unwrap(), typed);
     let bad = json!({"n": "7.5", "maybe": null, "label": "x", "raw": null, "rows": []});
-    let e = defs.decode_wire(&s, &bad).unwrap_err();
+    let e = defs.typed_value(&s, &bad).unwrap_err();
     assert_eq!(e.path, "/n");
     assert_eq!(e.kind, TypeErrorKind::NotInteger);
 }

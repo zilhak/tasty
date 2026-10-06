@@ -284,7 +284,7 @@ fn enum_results_succeed_for_any_declared_value_and_unknown_values_fail_validatio
     );
     assert_eq!(t.state, TaskState::Succeeded);
     let typed = t.typed_result.unwrap();
-    assert_eq!(typed.output, json!("revise"));
+    assert_eq!(typed.output.to_internal(), json!("revise"));
     assert_eq!(t.result.unwrap().output, Some(json!("revise")));
 
     let bad = store.create_typed(opts("bad", custom()), c).unwrap();
@@ -320,8 +320,7 @@ fn nullable_optional_unit_and_missing_results_stay_distinct() {
     );
     assert_eq!(t.state, TaskState::Succeeded);
     let out = t.typed_result.unwrap().output;
-    assert_eq!(out, json!({"reviewer": null}));
-    assert!(out.get("note").is_none());
+    assert_eq!(out.to_internal(), json!({"reviewer": null}));
 
     let barrier = store
         .create_typed(
@@ -337,7 +336,7 @@ fn nullable_optional_unit_and_missing_results_stay_distinct() {
     );
     let typed = t.typed_result.unwrap();
     assert!(typed.has_output);
-    assert_eq!(typed.output, Value::Null);
+    assert_eq!(typed.output, super::types::TypedValue::Null);
 
     // 결과를 저장하지 않은 채 성공을 요청하면 실패로 끝난다.
     let missing = store
@@ -389,8 +388,16 @@ fn int64_extremes_survive_the_memory_store_exactly() {
     let store = TaskStore::new(&mut mem, "_host", &seq);
     let t = store.get(1, &id).unwrap().unwrap();
     // 읽은 task 의 값은 내부 표현(정수)이다.
-    assert_eq!(t.typed_result.as_ref().unwrap().output, values);
-    assert_eq!(t.result.as_ref().unwrap().output, Some(values.clone()));
+    let typed = t.typed_result.as_ref().unwrap();
+    assert_eq!(
+        typed.output,
+        super::types::TypedValue::List(vec![
+            super::types::TypedValue::Int64(i64::MIN),
+            super::types::TypedValue::Int64(i64::MAX),
+            super::types::TypedValue::Int64(9007199254740993),
+        ])
+    );
+    assert_eq!(typed.output.to_internal(), values);
     // 저장된 레코드에서는 출력과 v1 투영 모두 10진 문자열이다.
     let stored = raw_json(&mem, &format!("{TYPED_TASK_KEY_PREFIX}{id}"));
     let wire = json!([
@@ -400,6 +407,8 @@ fn int64_extremes_survive_the_memory_store_exactly() {
     ]);
     assert_eq!(stored["task"]["typed_result"]["output"], wire);
     assert_eq!(stored["task"]["result"]["output"], wire);
+    // v1 투영은 무타입 JSON 이라 메모리에서도 wire 형식이다.
+    assert_eq!(t.result.as_ref().unwrap().output, Some(wire.clone()));
     // IPC 응답도 같은 serde 경계를 지난다.
     assert_eq!(
         serde_json::to_value(&t).unwrap()["typed_result"]["output"],
@@ -430,7 +439,7 @@ fn run_exit_code_is_the_output_and_execution_failures_keep_their_stage() {
     );
     assert_eq!(t.state, TaskState::Succeeded);
     let typed = t.typed_result.unwrap();
-    assert_eq!(typed.output, json!(7));
+    assert_eq!(typed.output.to_internal(), json!(7));
     assert_eq!(typed.raw.execution, Some(streams));
 
     let f = store

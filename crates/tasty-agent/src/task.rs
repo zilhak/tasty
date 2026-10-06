@@ -243,30 +243,40 @@ pub struct TaskResult {
 }
 
 /// 영속되는 Task 한 레코드.
-/// 직렬화는 [`record::TaskRepr`] 를 거친다. 그 경계에서만 v2 int64 값을 10진 문자열로 바꾼다.
+/// 역직렬화는 [`record::TaskWire`] 를 거친다. v2 결과의 typed 값은 계약의 출력 스키마가
+/// 있어야 읽을 수 있기 때문이다. 직렬화는 필드 그대로다(typed 값이 스스로 wire 형식을 쓴다).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(into = "record::TaskRepr", try_from = "record::TaskRepr")]
+#[serde(try_from = "record::TaskWire")]
 pub struct Task {
     pub id: TaskId,
     pub workspace_id: WorkspaceId,
     pub name: String,
     pub command: TaskCommand,
+    #[serde(default)]
     pub depends_on: Vec<TaskId>,
     pub state: TaskState,
     pub created_at: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub started_at: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub finished_at: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub result: Option<TaskResult>,
+    #[serde(default)]
     pub on_failure: OnFailure,
+    #[serde(default)]
     pub metadata: serde_json::Value,
     /// fallback 예약 상태. 참조할 main을 만들기 전에는 readiness 평가를 보류한다.
     /// main 생성 시 예약을 해제하고 일반 fallback 대기 규칙을 적용한다.
     /// 필드가 없는 옛 작업은 false로 읽는다.
+    #[serde(default)]
     pub reserved_for_fallback: bool,
     /// v2 계약. 없으면 v1 task 다. v2 task 는 v1 과 다른 저장 namespace 에 둔다
     /// ([`TYPED_TASK_KEY_PREFIX`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub contract: Option<TaskContract>,
     /// v2 결과. `result` 에는 같은 결과의 v1 형식 투영을 둔다.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub typed_result: Option<TypedResult>,
 }
 

@@ -902,7 +902,7 @@ pub struct ResolvedSchema<'a> {
     pub nullable: bool,
 }
 
-/// int64 값을 읽는다. 10진 문자열(wire 형식, [`TypeDefs::encode_wire`])과 JSON 정수 토큰을 받는다.
+/// int64 값을 읽는다. 10진 문자열(wire 형식, [`TypedValue`])과 JSON 정수 토큰을 받는다.
 /// 문자열은 `-?(0|[1-9][0-9]*)` 꼴만 받는다. `-0`·앞자리 0·`+`·공백은 거절한다.
 pub fn int64_of(value: &Value) -> Result<i64, TypeErrorKind> {
     match value {
@@ -975,7 +975,8 @@ fn json_depth(v: &Value) -> usize {
 
 mod assign;
 pub use assign::check_assignable;
-mod wire;
+mod value;
+pub use value::{TypedValue, TypedValueSeed};
 
 #[cfg(test)]
 #[path = "types_tests.rs"]

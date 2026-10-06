@@ -837,7 +837,7 @@ fn settle_typed_terminal(task: &mut Task, requested: TaskState) -> TaskState {
     }
     let failure_result = |task: &Task, failure: TaskFailure| TypedResult {
         has_output: false,
-        output: serde_json::Value::Null,
+        output: super::types::TypedValue::Null,
         raw: Default::default(),
         artifacts: Vec::new(),
         error: Some(failure),

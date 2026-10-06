@@ -2,7 +2,7 @@ use serde_json::{Value, json};
 
 use super::*;
 use crate::task::TaskState;
-use crate::task::types::TypeErrorKind;
+use crate::task::types::{TypeErrorKind, TypedValue};
 
 fn contract(v: Value) -> TaskContract {
     serde_json::from_value(v).expect("contract")
@@ -192,10 +192,15 @@ fn run_output_is_the_exit_code_with_streams_kept_as_raw() {
     let streams = json!({"pid": 1, "stdout": {"text": "hi\n"}});
     let r = finalize_result(&t, &v2(), &reported(Some(7), Some(streams.clone()), None));
     assert!(r.has_output);
-    assert_eq!(r.output, json!(7));
+    assert_eq!(r.output, TypedValue::Int64(7));
     assert_eq!(r.raw.exit_code, Some(7));
     assert_eq!(r.raw.execution, Some(streams));
     assert_eq!(r.provenance.output_source, "run.exit_code");
+
+    // Task 밖에서 결과만 직렬화해도 int64 는 10진 문자열이다.
+    let alone = serde_json::to_value(&r).unwrap();
+    assert_eq!(alone["output"], json!("7"));
+    assert_eq!(alone["raw"]["exit_code"], json!(7));
 
     let no_code = finalize_result(&t, &v2(), &reported(None, None, None));
     assert!(!no_code.has_output);
@@ -211,7 +216,7 @@ fn unit_output_is_a_confirmed_null_not_a_missing_output() {
     );
     let r = finalize_result(&t, &v2(), &reported(None, None, None));
     assert!(r.has_output);
-    assert_eq!(r.output, Value::Null);
+    assert_eq!(r.output, TypedValue::Null);
     let text = serde_json::to_value(&r).unwrap();
     // null 출력도 필드로 직렬화돼 부재와 구별된다.
     assert_eq!(text["has_output"], json!(true));
@@ -232,7 +237,7 @@ fn business_values_like_false_or_revise_are_valid_outputs_and_bad_values_are_typ
     let t = task("v", custom(), Some(verdict.clone()));
     let ok = finalize_result(&t, &verdict, &reported(None, Some(json!("revise")), None));
     assert!(ok.has_output && ok.error.is_none());
-    assert_eq!(ok.output, json!("revise"));
+    assert_eq!(ok.output, TypedValue::String("revise".into()));
 
     let bad = finalize_result(&t, &verdict, &reported(None, Some(json!("unknown")), None));
     assert!(!bad.has_output);
@@ -283,6 +288,7 @@ fn execution_failures_keep_the_reported_error_and_project_to_v1_fields() {
 
     let ok = finalize_result(&t, &v2(), &reported(Some(0), Some(json!({})), None));
     let v1 = project_v1(&ok);
-    assert_eq!(v1.output, Some(json!(0)));
+    // v1 투영은 무타입 JSON 이라 wire 형식이다.
+    assert_eq!(v1.output, Some(json!("0")));
     assert_eq!(v1.exit_code, Some(0));
 }

@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use super::types::{FieldSchema, TypeDefs, TypeError, TypeKind, TypeSchema};
+use super::types::{FieldSchema, TypeDefs, TypeError, TypeKind, TypeSchema, TypedValue};
 use super::{OnFailure, ReducerStrategy, Task, TaskCommand, TaskId, TaskResult};
 
 /// 현재 지원하는 계약 버전.
@@ -169,12 +169,14 @@ pub fn reduce_all_record_list_schema() -> TypeSchema {
 
 /// v2 task 의 결과. `has_output` 이 false 면 `output` 은 의미가 없다. unit 출력은
 /// `has_output: true, output: null` 이라 "아직 출력이 없음" 과 구별된다.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+///
+/// 역직렬화에는 출력 스키마가 필요하다([`TypedResult::from_wire`]). `Task` 의 역직렬화가
+/// 계약에서 스키마를 얻어 부른다.
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct TypedResult {
     pub has_output: bool,
     /// 최종 출력. `null` 도 그대로 직렬화해 부재와 섞이지 않게 한다.
-    #[serde(default)]
-    pub output: Value,
+    pub output: TypedValue,
     /// 본 작업의 원본 결과. 최종 출력과 따로 보존한다.
     #[serde(default, skip_serializing_if = "RawResult::is_empty")]
     pub raw: RawResult,
@@ -466,7 +468,7 @@ pub fn finalize_result(task: &Task, contract: &TaskContract, reported: &TaskResu
     };
     let failed = |stage: FailureStage, failure: TaskFailure, source: &str| TypedResult {
         has_output: false,
-        output: Value::Null,
+        output: TypedValue::Null,
         raw: raw.clone(),
         artifacts: Vec::new(),
         error: Some(TaskFailure { stage, ..failure }),
@@ -516,7 +518,7 @@ pub fn finalize_result(task: &Task, contract: &TaskContract, reported: &TaskResu
     };
     let defs = contract.defs();
     let schema = contract.output_schema(&task.command);
-    match defs.validate(&schema, &candidate) {
+    match defs.validate_typed(&schema, &candidate) {
         Ok(output) => TypedResult {
             has_output: true,
             output,
@@ -544,8 +546,47 @@ pub fn finalize_result(task: &Task, contract: &TaskContract, reported: &TaskResu
 pub fn project_v1(typed: &TypedResult) -> TaskResult {
     TaskResult {
         exit_code: typed.raw.exit_code,
-        output: typed.has_output.then(|| typed.output.clone()),
+        // v1 의 output 은 무타입 JSON 이라 wire 형식(int64 는 10진 문자열)으로 둔다.
+        output: typed.has_output.then(|| typed.output.to_wire()),
         error: typed.error.as_ref().map(|e| e.message.clone()),
+    }
+}
+
+/// 직렬화된 [`TypedResult`]. 출력은 스키마를 받아 [`TypedResult::from_wire`] 에서 typed 값이 된다.
+#[derive(Deserialize)]
+pub(crate) struct TypedResultWire {
+    has_output: bool,
+    #[serde(default)]
+    output: Value,
+    #[serde(default)]
+    raw: RawResult,
+    #[serde(default)]
+    artifacts: Vec<ArtifactRef>,
+    #[serde(default)]
+    error: Option<TaskFailure>,
+    provenance: Provenance,
+}
+
+impl TypedResult {
+    /// 계약의 출력 스키마로 직렬화된 결과를 읽는다.
+    pub(crate) fn from_wire(
+        wire: TypedResultWire,
+        defs: &TypeDefs,
+        schema: &TypeSchema,
+    ) -> Result<Self, TypeError> {
+        let output = if wire.has_output {
+            defs.typed_value(schema, &wire.output)?
+        } else {
+            TypedValue::Null
+        };
+        Ok(TypedResult {
+            has_output: wire.has_output,
+            output,
+            raw: wire.raw,
+            artifacts: wire.artifacts,
+            error: wire.error,
+            provenance: wire.provenance,
+        })
     }
 }
 
