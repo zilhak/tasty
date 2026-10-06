@@ -340,16 +340,8 @@ pub fn draw_scroll_shape(ui: &mut egui::Ui, theme: &Theme) {
             ("3:1 basis", "flat colour (Mocha 5.65 · Latte 3.65)"),
         ],
         &[
-            TokenChip::new(
-                "tab-scroll-arrow-width",
-                "→ control-height-tab 24",
-                egui::Color32::TRANSPARENT,
-            ),
-            TokenChip::new(
-                "tab-scroll-arrow-glyph-size",
-                "→ icon-size-sm 14",
-                egui::Color32::TRANSPARENT,
-            ),
+            TokenChip::without_color("tab-scroll-arrow-width", "→ control-height-tab 24"),
+            TokenChip::without_color("tab-scroll-arrow-glyph-size", "→ icon-size-sm 14"),
             TokenChip::new(
                 "tab-scroll-arrow-fg",
                 "→ text-muted",
@@ -589,17 +581,9 @@ pub fn draw_status_cluster(ui: &mut egui::Ui, theme: &Theme) {
             ),
         ],
         &[
-            TokenChip::new("tab-status-gap", "→ space-xs 4", egui::Color32::TRANSPARENT),
-            TokenChip::new(
-                "html-script-marker-hit",
-                "→ size-16",
-                egui::Color32::TRANSPARENT,
-            ),
-            TokenChip::new(
-                "html-script-marker-hover-bg",
-                "→ overlay-hover",
-                egui::Color32::TRANSPARENT,
-            ),
+            TokenChip::without_color("tab-status-gap", "→ space-xs 4"),
+            TokenChip::without_color("html-script-marker-hit", "→ size-16"),
+            TokenChip::without_color("html-script-marker-hover-bg", "→ overlay-hover"),
             TokenChip::new(
                 "html-script-marker-fg",
                 "lock",

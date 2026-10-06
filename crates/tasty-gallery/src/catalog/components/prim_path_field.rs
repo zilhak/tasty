@@ -207,7 +207,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::new(
                 "input-bg",
                 "field fill",
-                egui::Color32::from(theme.surface_raised()),
+                egui::Color32::from(theme.input_bg()),
             ),
             TokenChip::new(
                 "text-secondary",

@@ -380,7 +380,7 @@ pub fn draw_blacklist(ui: &mut egui::Ui, theme: &Theme) {
                 "match-rule notice",
                 theme.accent_warning().to_egui(),
             ),
-            TokenChip::new("input-bg", "add field", theme.surface_raised().to_egui()),
+            TokenChip::new("input-bg", "add field", theme.input_bg().to_egui()),
         ],
     );
 
