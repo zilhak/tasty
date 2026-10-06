@@ -55,7 +55,7 @@ pub use scoped_projection::{ScopedCut, ScopedProjectionState, ScopedProjectionWr
 pub use snapshot::{
     DomainSnapshot, NewSnapshot, RejectedSnapshot, Replay, SnapshotId, snapshot_holder,
 };
-pub use store::{EventStore, WriterLock, WriterPreempt, preempt_writer_lock};
+pub use store::{EventStore, WRITER_LOCK_WAIT, WriterLock, WriterPreempt, preempt_writer_lock};
 pub use types::{
     BatchCut, BatchId, CommandKey, CommandLookup, CommandRecord, CommandStatus, CommandUpdate,
     ExpectedRevision, JournalCut, NewCommand, NewEvent, OpaquePayload, PayloadRef, Revision,

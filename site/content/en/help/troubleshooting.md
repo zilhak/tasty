@@ -1,4 +1,4 @@
-<!-- source-hash: 4ab2bc9cb593 -->
+<!-- source-hash: 6b4997f40496 -->
 # Troubleshooting
 
 If something is not working, find the matching symptom below. Check installation, permissions, terminal connections, and notifications, or use the reporting steps at the end if you still need help.
@@ -82,7 +82,7 @@ You can see the current state in the same tab (only shown on macOS). Full Disk A
 
 ## A "Data folder already in use" screen appears
 
-- **Right after launch, Tasty shows "Another Tasty is already using this data folder"** — a Tasty that uses the same data folder (`~/.tasty/`, or the folder set with `TASTY_HOME`) is already running. The path on the screen is that folder. This screen does not touch the settings, logs or window layout of the running Tasty. Close it with **Quit** or by closing the window, and use the Tasty that is already open. If you really need two of them, start one with a different `TASTY_HOME`.
+- **Right after launch, Tasty shows "Another Tasty is already using this data folder"** — a Tasty that uses the same data folder (`~/.tasty/`, or the folder set with `TASTY_HOME`) is already running. The path on the screen is that folder. This screen does not touch the settings, logs or window layout of the running Tasty. Close it with **Quit** or by closing the window, and use the Tasty that is already open. Before showing this screen Tasty waits and checks again for two seconds, so if the previous Tasty finishes exiting within that time it starts normally. If you see this screen right after force-quitting Tasty, wait a moment and start it again. If you really need two of them, start one with a different `TASTY_HOME`.
 
   ```sh
   TASTY_HOME=~/tasty-second tasty

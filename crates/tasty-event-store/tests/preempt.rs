@@ -3,8 +3,11 @@
 
 use std::sync::{Arc, Barrier};
 use std::thread;
+use std::time::{Duration, Instant};
 
-use tasty_event_store::{EventStore, StoreError, WriterPreempt, preempt_writer_lock};
+use tasty_event_store::{
+    EventStore, StoreError, WRITER_LOCK_WAIT, WriterPreempt, preempt_writer_lock,
+};
 
 const JOURNAL: &str = "journal-preempt";
 
@@ -33,15 +36,42 @@ fn preempt_reports_held_while_another_store_is_writer() {
     let db = dir.path().join("journal.db");
     let mut store = EventStore::open(&db, JOURNAL).unwrap();
     store.acquire_writer().unwrap();
+    let started = Instant::now();
     assert!(matches!(
         preempt_writer_lock(&db).unwrap(),
         WriterPreempt::Held
     ));
+    // 계속 쥐고 있으면 재시도 구간을 다 쓴 뒤에 거절한다.
+    assert!(started.elapsed() >= WRITER_LOCK_WAIT);
     store.release_writer();
     assert!(matches!(
         preempt_writer_lock(&db).unwrap(),
         WriterPreempt::Acquired(_)
     ));
+}
+
+#[test]
+fn preempt_acquires_a_lock_released_within_the_retry_window() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("journal.db");
+    let mut store = EventStore::open(&db, JOURNAL).unwrap();
+    store.acquire_writer().unwrap();
+    // 비정상 종료한 이전 소유자의 잠금이 잠시 뒤 풀리는 경우.
+    let release_after = Duration::from_millis(300);
+    let owner = thread::spawn(move || {
+        thread::sleep(release_after);
+        store.release_writer();
+        store
+    });
+    let started = Instant::now();
+    let outcome = preempt_writer_lock(&db).unwrap();
+    let waited = started.elapsed();
+    drop(owner.join().unwrap());
+    assert!(
+        matches!(outcome, WriterPreempt::Acquired(_)),
+        "a lock released within the retry window must be acquired"
+    );
+    assert!(waited < WRITER_LOCK_WAIT, "waited {waited:?}");
 }
 
 #[test]
@@ -86,7 +116,8 @@ fn a_lock_for_another_journal_file_is_refused() {
 #[test]
 fn concurrent_preempts_yield_exactly_one_owner() {
     const CONTENDERS: usize = 8;
-    for _ in 0..20 {
+    // 진 쪽은 재시도 구간을 다 쓰고 거절되므로 한 회차가 그만큼 걸린다.
+    for _ in 0..3 {
         let dir = tempfile::tempdir().unwrap();
         let db = Arc::new(dir.path().join("structure").join("journal.db"));
         let start = Arc::new(Barrier::new(CONTENDERS));

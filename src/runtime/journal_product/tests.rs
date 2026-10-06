@@ -234,20 +234,12 @@ fn an_active_binding_never_recreates_a_lost_database() {
     assert!(!home.path().join("structure/journal.db").exists());
 }
 
-/// 잠금을 놓은 뒤 선점한다. 다른 테스트가 PTY를 fork하면 자식이 exec 전까지 잠금 파일의 열린 설명을
-/// 잠깐 공유하므로, 단발 시도는 해제 직후에도 `Held`를 볼 수 있다. writer 잠금의 재시도 시간 안에서 다시 시도한다.
+/// 선점은 잠금이 잡혀 있으면 writer 잠금 재시도 구간 동안 다시 시도한다. 다른 테스트의 PTY fork 자식이
+/// exec 전까지 잠금 파일 설명을 잠깐 공유해도 그 구간 안에 풀리므로 얻는다.
 fn preempt_after_release(database: &std::path::Path) -> tasty_event_store::WriterLock {
-    let deadline = std::time::Instant::now() + Duration::from_secs(2);
-    loop {
-        match tasty_event_store::preempt_writer_lock(database).unwrap() {
-            tasty_event_store::WriterPreempt::Acquired(lock) => return lock,
-            tasty_event_store::WriterPreempt::Held if std::time::Instant::now() < deadline => {
-                std::thread::sleep(Duration::from_millis(10));
-            }
-            tasty_event_store::WriterPreempt::Held => {
-                panic!("the released writer lock stayed held")
-            }
-        }
+    match tasty_event_store::preempt_writer_lock(database).unwrap() {
+        tasty_event_store::WriterPreempt::Acquired(lock) => lock,
+        tasty_event_store::WriterPreempt::Held => panic!("the released writer lock stayed held"),
     }
 }
 

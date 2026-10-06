@@ -88,7 +88,8 @@ pub fn run() -> anyhow::Result<std::process::ExitCode> {
         cli_routing::Routed::AugmentedHelp => run_augmented_help(),
         cli_routing::Routed::Gui(cli) => {
             // 로그 파일·memory.db·설정·플러그인·저널을 건드리기 전에 이 홈의 저널 writer 잠금을 선점한다.
-            // 다른 Tasty가 쥐고 있으면 그 인스턴스의 홈에 부작용을 내지 않고 오류 화면만 띄운다.
+            // 잡혀 있으면 저널 worker와 같은 구간 동안 다시 시도한다. 창을 만들기 전이라 멈춘 화면이 없다.
+            // 그래도 다른 Tasty가 쥐고 있으면 그 인스턴스의 홈에 부작용을 내지 않고 오류 화면만 띄운다.
             #[cfg(feature = "gui")]
             let writer_lock = match preempt_home_writer_lock() {
                 HomeWriterLock::Acquired(lock) => Some(lock),

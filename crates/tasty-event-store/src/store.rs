@@ -14,9 +14,11 @@ use crate::types::{JournalCut, StreamId, WriterEpoch};
 /// 다른 연결이 쓰는 동안 기다리는 시간. 넘으면 SQLITE_BUSY 오류로 돌려준다.
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// writer 잠금을 다시 시도하는 총 시간과 간격. 자식 프로세스는 fork·spawn부터 exec까지 잠금 파일의
-/// 열린 파일 설명을 공유하므로, 방금 놓은 잠금이 그동안 남아 있을 수 있다.
-const WRITER_LOCK_WAIT: Duration = Duration::from_secs(2);
+/// writer 잠금을 다시 시도하는 총 시간. [`EventStore::acquire_writer`]와 [`preempt_writer_lock`]이 함께 쓴다.
+/// 자식 프로세스는 fork·spawn부터 exec까지 잠금 파일의 열린 파일 설명을 공유하므로, 방금 놓은 잠금이
+/// 그동안 남아 있을 수 있다. 비정상 종료한 이전 소유자의 잠금도 프로세스가 완전히 끝날 때까지 남는다.
+pub const WRITER_LOCK_WAIT: Duration = Duration::from_secs(2);
+/// 재시도 간격. 처음 값에서 두 배씩 늘려 최대값에서 멈춘다.
 const WRITER_LOCK_FIRST_BACKOFF: Duration = Duration::from_millis(10);
 const WRITER_LOCK_MAX_BACKOFF: Duration = Duration::from_millis(100);
 
@@ -42,7 +44,8 @@ pub enum WriterPreempt {
     Held,
 }
 
-/// journal 파일의 writer 잠금을 기다리지 않고 한 번 시도한다.
+/// journal 파일의 writer 잠금을 얻는다. 잡혀 있으면 [`WRITER_LOCK_WAIT`] 동안 다시 시도하고,
+/// 그래도 잡혀 있으면 `Held`를 돌려준다. 재시도 시간과 간격은 [`EventStore::acquire_writer`]와 같다.
 ///
 /// 저장소를 열기 전에 부르면 schema migration도 잠금 소유자만 하게 된다. 잠금 파일 이름과
 /// 잠금 방식은 [`EventStore::acquire_writer`]와 같다. journal 파일이 있는 디렉터리가 없으면 만든다.
@@ -54,7 +57,7 @@ pub fn preempt_writer_lock(database_path: &Path) -> StoreResult<WriterPreempt> {
         std::fs::create_dir_all(parent).map_err(StoreError::WriterLockUnavailable)?;
     }
     let lock_path = writer_lock_path(database_path);
-    match lock_exclusive(&lock_path) {
+    match lock_exclusive_with_retry(&lock_path) {
         Ok(file) => Ok(WriterPreempt::Acquired(WriterLock { file, lock_path })),
         Err(StoreError::WriterLocked) => Ok(WriterPreempt::Held),
         Err(other) => Err(other),
@@ -119,7 +122,7 @@ impl EventStore {
     }
 
     /// 독점 writer 잠금을 얻고 새 writer 세대를 등록한다. 이후 이전 세대의 쓰기는 거절된다.
-    /// 잠금이 잡혀 있으면 최대 2초 동안 다시 시도하고, 그래도 잡혀 있으면 [`StoreError::WriterLocked`],
+    /// 잠금이 잡혀 있으면 최대 [`WRITER_LOCK_WAIT`] 동안 다시 시도하고, 그래도 잡혀 있으면 [`StoreError::WriterLocked`],
     /// 잠금을 쓸 수 없는 환경이면 [`StoreError::WriterLockUnavailable`]로 실패하며 writer가 되지 않는다.
     /// 이미 잠금을 가진 저장소가 다시 부르면 세대만 올린다.
     pub fn acquire_writer(&mut self) -> StoreResult<WriterEpoch> {
