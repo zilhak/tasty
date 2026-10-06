@@ -186,6 +186,9 @@ fn format_task_get(result: &serde_json::Value) -> Result<()> {
     } else {
         outln!("state: {state}")?;
     }
+    for line in task_postprocess_lines(result) {
+        outln!("{line}")?;
+    }
     if let Some(wait) = result.get("awaiting_external") {
         let wait_key = wait.get("wait_key").and_then(|v| v.as_str()).unwrap_or("?");
         let deadline_ms = wait
@@ -227,6 +230,48 @@ fn format_task_get(result: &serde_json::Value) -> Result<()> {
         )?;
     }
     Ok(())
+}
+
+/// 후처리가 있는 v2 task 의 진행과 결과. 진행 중이면 단계와 실행 번호를, 끝났으면 마지막
+/// 실행의 결과와 재시도로 넘어간 실행의 원인을 보인다.
+pub fn task_postprocess_lines(result: &serde_json::Value) -> Vec<String> {
+    let mut lines = Vec::new();
+    if let Some(phase) = result.get("phase").and_then(|v| v.as_str()) {
+        let run = result
+            .pointer("/attempt/postprocess/phase/run")
+            .and_then(|v| v.as_u64());
+        lines.push(match run {
+            Some(run) => format!("phase: {phase} (run {run})"),
+            None => format!("phase: {phase}"),
+        });
+    }
+    let Some(raw) = result.pointer("/typed_result/raw/postprocess") else {
+        return lines;
+    };
+    let run = raw.get("run").and_then(|v| v.as_u64()).unwrap_or(0);
+    let exit = |v: &serde_json::Value| match v.get("exit_code").and_then(|c| c.as_i64()) {
+        Some(code) => format!(", exit_code {code}"),
+        None => String::new(),
+    };
+    lines.push(match raw.get("cause").and_then(|v| v.as_str()) {
+        Some(cause) => format!("postprocess: run {run} failed ({cause}){}", exit(raw)),
+        None => format!("postprocess: run {run} succeeded{}", exit(raw)),
+    });
+    if let Some(failed) = raw.get("failed_runs").and_then(|v| v.as_array())
+        && !failed.is_empty()
+    {
+        let list = failed
+            .iter()
+            .map(|r| {
+                let n = r.get("run").and_then(|v| v.as_u64()).unwrap_or(0);
+                let cause = r.get("cause").and_then(|v| v.as_str()).unwrap_or("?");
+                format!("run {n} {cause}{}", exit(r))
+            })
+            .collect::<Vec<_>>()
+            .join("; ");
+        lines.push(format!("postprocess retried after: {list}"));
+    }
+    lines
 }
 
 fn format_task_run(result: &serde_json::Value) -> Result<()> {
@@ -624,10 +669,45 @@ fn format_notification_list(result: &serde_json::Value) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{
-        format_runner_summary, format_workspace_row, render_layout, timer_hard_deadline_line,
-        timer_row_line, timer_row_text,
+        format_runner_summary, format_workspace_row, render_layout, task_postprocess_lines,
+        timer_hard_deadline_line, timer_row_line, timer_row_text,
     };
     use serde_json::json;
+
+    #[test]
+    fn task_get_shows_the_postprocess_phase_while_it_runs() {
+        let lines = task_postprocess_lines(&json!({
+            "state": {"kind": "running"}, "phase": "retry_wait",
+            "attempt": {"postprocess": {"phase": {"state": "pending", "run": 2}}},
+        }));
+        assert_eq!(lines, ["phase: retry_wait (run 2)"]);
+        // 후처리가 없는 task 는 아무 줄도 더하지 않는다.
+        assert!(task_postprocess_lines(&json!({"state": {"kind": "running"}})).is_empty());
+    }
+
+    #[test]
+    fn task_get_shows_the_postprocess_cause_and_retried_runs() {
+        let lines = task_postprocess_lines(&json!({
+            "typed_result": {"raw": {"postprocess": {
+                "command": ["judge"], "run": 3, "exit_code": 4, "cause": "nonzero_exit",
+                "failed_runs": [
+                    {"run": 1, "cause": "timeout", "message": "m"},
+                    {"run": 2, "exit_code": 1, "cause": "invalid_json", "message": "m"},
+                ],
+            }}},
+        }));
+        assert_eq!(
+            lines,
+            [
+                "postprocess: run 3 failed (nonzero_exit), exit_code 4",
+                "postprocess retried after: run 1 timeout; run 2 invalid_json, exit_code 1",
+            ]
+        );
+        let ok = task_postprocess_lines(&json!({
+            "typed_result": {"raw": {"postprocess": {"command": ["judge"], "run": 1, "exit_code": 0}}},
+        }));
+        assert_eq!(ok, ["postprocess: run 1 succeeded, exit_code 0"]);
+    }
 
     #[test]
     fn timer_summary_names_what_is_waking_the_instance() {

@@ -109,6 +109,58 @@ fn a_graph_carries_the_postprocess_declaration_and_reports_its_phase() {
         task["attempt"]["postprocess"]["execution"]["exit_code"],
         json!(0)
     );
+    // CLI `agent task-get` 은 같은 응답에서 단계를 보인다.
+    assert_eq!(
+        tasty_cli::format::task_postprocess_lines(&task),
+        ["phase: postprocessing (run 1)"]
+    );
+
+    // 1번째 실행 실패 → 재시도 대기, 2번째 실행 실패 → 예산 소진으로 task 실패.
+    let report = |memory: &Memory, run: u32, cause, exit_code| {
+        let mut mem = memory.lock().expect("memory");
+        let seq = std::sync::atomic::AtomicU64::new(2000 + u64::from(run));
+        let mut store = tasty_agent::TaskStore::new(&mut *mem, tasty_memory::HOST_OWNER, &seq);
+        let id = "judge".to_string();
+        let attempt = format!("{id}#1");
+        store
+            .begin_postprocess_run(1, &id, &attempt, run, 10 * u64::from(run))
+            .expect("begin");
+        let mut r = tasty_agent::task::postprocess::PostprocessReport::failed(run, cause, "boom");
+        r.exit_code = exit_code;
+        store
+            .complete(
+                1,
+                &id,
+                tasty_agent::task::Completion::postprocessed(Some(attempt), r),
+                10 * u64::from(run) + 5,
+            )
+            .expect("postprocess report");
+    };
+    use tasty_agent::task::postprocess::PostprocessCause;
+    report(&memory, 1, PostprocessCause::Timeout, None);
+    let task = call(
+        &mut core,
+        "agent.task_get",
+        json!({"workspace_id": 1, "id": "judge"}),
+    );
+    assert_eq!(
+        tasty_cli::format::task_postprocess_lines(&task),
+        ["phase: retry_wait (run 2)"]
+    );
+    report(&memory, 2, PostprocessCause::NonzeroExit, Some(3));
+    let task = call(
+        &mut core,
+        "agent.task_get",
+        json!({"workspace_id": 1, "id": "judge"}),
+    );
+    assert_eq!(task["state"]["kind"], json!("failed"), "{task}");
+    assert_eq!(
+        tasty_cli::format::task_postprocess_lines(&task),
+        [
+            "postprocess: run 2 failed (nonzero_exit), exit_code 3",
+            "postprocess retried after: run 1 timeout",
+        ]
+    );
 }
 
 #[test]
