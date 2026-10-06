@@ -88,10 +88,10 @@ pub mod populations {
 
     /// `src/` 아래 `.rs` 전부.
     pub const SRC_RS: Population = Population {
-        measured: 831,
+        measured: 832,
         measured_on: "2026-10-06",
         counted_on: super::CountedOn::Tree(
-            "560248b14 — git ls-tree -r --name-only로 센 src 아래 Rust 파일 831개.",
+            "b6c81a65b — git ls-tree -r --name-only로 센 src 아래 Rust 파일 832개.",
         ),
         how: "src/ 아래에서 .rs로 끝나는 파일을 깊이 제한 없이 센다. 캐시는 제외한다. git ls-tree의 같은 경로 집합으로 대조하며 측정 당시 미추적 파일은 없었다.",
     };
@@ -121,10 +121,10 @@ pub mod populations {
 
     /// Git이 추적하는 `docs/` 아래 Markdown 파일 수.
     pub const DOCS_MD: Population = Population {
-        measured: 232,
+        measured: 233,
         measured_on: "2026-10-06",
         counted_on: super::CountedOn::Tree(
-            "5a6ae695f — 이 트리에서 Git이 추적하는 docs/ 아래 .md 파일 232개를 다시 확인했다.",
+            "b6c81a65b — 이 트리에서 Git이 추적하는 docs/ 아래 .md 파일 233개를 다시 확인했다.",
         ),
         how: "git ls-files에서 docs/로 시작하고 .md로 끝나는 경로를 센다. 깊이는 제한하지 않는다.",
     };
