@@ -371,6 +371,11 @@ impl Default for RunnerRegistry {
         Self::new()
     }
 }
+/// 서비스 소유자가 사라질 때(앱 종료) runner 스레드가 끝나기를 기다리는 상한. runner 는
+/// 끝나면서 진행 중인 후처리의 프로세스 그룹을 끝내고 보고를 저장한다(최대 3초). 그 일이
+/// 프로세스 종료보다 먼저 끝나도록 기다리되, 멈춘 runner 가 종료를 막지 않게 상한을 둔다.
+const SHUTDOWN_JOIN_WAIT: std::time::Duration = std::time::Duration::from_secs(4);
+
 impl Drop for RunnerRegistry {
     fn drop(&mut self) {
         let threads = self.threads.get_mut().unwrap_or_else(|poison| {
@@ -383,10 +388,18 @@ impl Drop for RunnerRegistry {
         for control in threads.values() {
             control.request_stop();
         }
-        let remaining = threads
-            .values()
-            .filter(|control| control.observe_join() == RunnerStopObservation::Waiting)
-            .count();
+        let waiting = || {
+            threads
+                .values()
+                .filter(|control| control.observe_join() == RunnerStopObservation::Waiting)
+                .count()
+        };
+        let deadline = std::time::Instant::now() + SHUTDOWN_JOIN_WAIT;
+        let mut remaining = waiting();
+        while remaining != 0 && std::time::Instant::now() < deadline {
+            thread::sleep(std::time::Duration::from_millis(5));
+            remaining = waiting();
+        }
         if remaining != 0 {
             tracing::warn!(
                 remaining,

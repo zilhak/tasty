@@ -303,6 +303,7 @@ mod through_the_runner {
 
     use serde_json::{Value, json};
     use tasty_agent::runner::RunnerLoop;
+    use tasty_agent::task::postprocess::{PostprocessCause, PostprocessOutcome};
     use tasty_agent::task::{TaskGraphSpec, TaskStore};
     use tasty_agent::{SemaphoreStore, TaskState};
 
@@ -527,5 +528,51 @@ mod through_the_runner {
             "postprocess grandchild {child} survived the cancel"
         );
         assert_eq!(get(&ctx, "judge").state, TaskState::Cancelled);
+    }
+
+    #[test]
+    fn stopping_the_runner_kills_the_postprocess_and_records_a_cancelled_report() {
+        let (td, ctx) = fresh_ctx();
+        let pidfile = td.path().join("child.pid");
+        let pid_s = pidfile.display().to_string();
+        submit(
+            &ctx,
+            json!({"contract_version": 2, "tasks": [
+                {"id": "judge",
+                 "command": {"kind": "run", "workspace_id": 1, "command": ["true"]},
+                 "postprocess": {"command": sh(format!(
+                     "sleep 30 & echo $! > '{pid_s}'.tmp; mv '{pid_s}'.tmp '{pid_s}'; wait")),
+                     "timeout_ms": 60000, "retry": {"max_retries": 3}}}
+            ]}),
+        );
+        let mut runner = RunnerLoop::new(HostExecutor::new(ctx.clone()));
+        tick_until(&ctx, &mut runner, "postprocess child started", |_, _| {
+            pidfile.exists()
+        });
+        let child: i32 = std::fs::read_to_string(&pidfile)
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        // runner 정지 = executor drop. 돌아온 시점에 그룹 종료와 보고 저장이 끝나 있어야 한다.
+        drop(runner);
+        assert!(
+            super::gone(child),
+            "postprocess grandchild {child} survived the runner stop"
+        );
+        let judge = get(&ctx, "judge");
+        assert_eq!(judge.state, TaskState::Running);
+        // 재시작 복원은 저장된 보고를 쓰고, 재시도가 남아 있어도 다시 실행하지 않는다.
+        match super::super::restored_handle(&ctx, 1, &judge) {
+            Some(DispatchHandle::PostprocessResolved(report)) => {
+                assert_eq!(report.cause(), Some(PostprocessCause::Cancelled));
+                assert!(
+                    matches!(&report.outcome,
+                        PostprocessOutcome::Failed { message, .. } if message.contains("runner stopped")),
+                    "{report:?}"
+                );
+            }
+            other => panic!("expected the stored report, got {other:?}"),
+        }
     }
 }

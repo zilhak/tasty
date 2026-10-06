@@ -100,12 +100,38 @@ impl PostprocessRuns {
     }
 }
 
+/// runner 가 멈출 때 후처리 작업 스레드가 프로세스 그룹을 끝내고 보고를 저장하기를 기다리는
+/// 상한. 그룹 종료 뒤 파이프 EOF 를 기다리는 2초에 저장 시간을 더한 값이다. 보통은 수십 ms 안에
+/// 끝나며, 넘으면 기다리지 않고 경고한다.
+const RUNNER_STOP_WAIT: Duration = Duration::from_secs(3);
+
 impl Drop for PostprocessRuns {
-    /// runner 가 멈추면 이 executor 가 띄운 후처리를 모두 중단한다. 중단한 실행은 자동으로 다시
-    /// 실행하지 않으며, 그 보고가 저장되기 전에 호스트가 끝나면 재시작 뒤 결과 불명으로 끝난다.
+    /// runner 가 멈추면 이 executor 가 띄운 후처리를 모두 중단하고, 그룹 종료와 보고 저장을
+    /// [`RUNNER_STOP_WAIT`] 까지 기다린다. 앱 종료 때 프로세스가 끝나기 전에 그룹을 끝내기
+    /// 위해서다. 중단한 실행은 자동으로 다시 실행하지 않으며, 보고가 저장되기 전에 호스트가
+    /// 끝나면 재시작 뒤 결과 불명으로 끝난다.
     fn drop(&mut self) {
         for e in self.active.values() {
             e.stop.store(process::STOP_RUNNER, Ordering::Release);
+        }
+        let pending = || {
+            self.active
+                .values()
+                .chain(&self.cancelling)
+                .filter(|e| !e.done.load(Ordering::Acquire))
+                .count()
+        };
+        let deadline = std::time::Instant::now() + RUNNER_STOP_WAIT;
+        let mut left = pending();
+        while left != 0 && std::time::Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(5));
+            left = pending();
+        }
+        if left != 0 {
+            tracing::warn!(
+                left,
+                "postprocess runs did not stop before the runner shutdown wait ran out"
+            );
         }
     }
 }

@@ -216,3 +216,68 @@ fn a_scheduled_run_that_never_started_runs_once_after_the_restart() {
     assert_eq!(t.state, TaskState::Succeeded, "{:?}", t.result);
     assert_eq!(runs(&log), 1);
 }
+
+/// 종료됐거나 좀비로 남아 회수를 기다리는 프로세스.
+#[cfg(target_os = "linux")]
+fn gone(pid: i32) -> bool {
+    match std::fs::read_to_string(format!("/proc/{pid}/stat")) {
+        Err(_) => true,
+        Ok(stat) => stat
+            .rsplit(')')
+            .next()
+            .is_some_and(|s| s.trim_start().starts_with('Z')),
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn dropping_the_registry_waits_until_the_postprocess_is_stopped_and_recorded() {
+    let (td, ctx) = fresh_ctx();
+    let pidfile = td.path().join("child.pid");
+    let pid_s = pidfile.display().to_string();
+    let script = format!("sleep 30 & echo $! > '{pid_s}'.tmp; mv '{pid_s}'.tmp '{pid_s}'; wait");
+    let spec: TaskGraphSpec = serde_json::from_value(json!({
+        "contract_version": 2,
+        "tasks": [{"id": JUDGE,
+                   "postprocess": {"command": ["sh", "-c", script], "timeout_ms": 60000,
+                                   "retry": {"max_retries": 3}},
+                   "command": {"kind": "run", "workspace_id": 1, "command": ["true"]}}]
+    }))
+    .expect("graph");
+    store_op(&ctx, |s| s.submit_graph(1, spec, 0).unwrap());
+    let registry = RunnerRegistry::new();
+    assert!(registry.start(ctx.clone(), 1));
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    while !pidfile.exists() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "postprocess did not start: {:?}",
+            judge(&ctx).state
+        );
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    let child: i32 = std::fs::read_to_string(&pidfile)
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    // 앱 종료 때 서비스 소유자가 사라지는 경로. 돌아온 뒤에는 프로세스 종료가 이어져도 된다.
+    drop(registry);
+    assert!(
+        gone(child),
+        "postprocess grandchild {child} survived the shutdown"
+    );
+    let stored = ctx.with_memory(|mem| {
+        mem.get(&Scope::Workspace(1), &postprocess_result_key(JUDGE))
+            .unwrap()
+            .map(|e| e.value)
+    });
+    let Some(MemoryValue::Json(stored)) = stored else {
+        panic!("no postprocess report was recorded: {stored:?}");
+    };
+    assert_eq!(
+        stored["report"]["outcome"]["cause"],
+        json!("cancelled"),
+        "{stored}"
+    );
+}
