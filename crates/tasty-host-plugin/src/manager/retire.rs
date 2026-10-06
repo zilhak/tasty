@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::Instant;
 
+use crate::host_cmd::RemoteRetirementCompletion;
 use crate::process::{CHILD_EXIT_POLL_INTERVAL, PendingShutdown, PluginProcess, ShutdownOutcome};
 
 use super::{PLUGIN_SHUTDOWN_TIMEOUT, PluginManager, PluginTick};
@@ -23,6 +24,10 @@ pub(crate) struct Retiring {
     /// (`discover_and_start`)이 세우며, 회수 중에 온 `disable` 과 호스트 종료가 내린다.
     /// 명시적 `enable` 은 이것을 세우지 않고 회수를 기다려 그 자리에서 띄운다.
     respawn: bool,
+    /// 회수 중인 프로세스의 응답 바인딩. 이 세대가 만든 surface 의 소멸을 판정한다.
+    generation: Option<std::sync::Weak<()>>,
+    /// 이 세대의 회수가 끝나면 성공으로 확정할 surface 회수 receipt.
+    waiters: Vec<RemoteRetirementCompletion>,
 }
 
 impl Retiring {
@@ -76,6 +81,8 @@ fn spawn_waiter(plugin_id: &str, pending: PendingShutdown) -> Retiring {
             done: None,
             started,
             respawn: false,
+            generation: None,
+            waiters: Vec::new(),
         },
         Err(e) => {
             tracing::warn!(
@@ -87,6 +94,8 @@ fn spawn_waiter(plugin_id: &str, pending: PendingShutdown) -> Retiring {
                 done: Some(outcome),
                 started,
                 respawn: false,
+                generation: None,
+                waiters: Vec::new(),
             }
         }
     }
@@ -96,8 +105,9 @@ impl PluginManager {
     /// 종료를 요청하고 회수를 별도 스레드에 맡긴다. respawn이면 회수 뒤 다시 실행한다.
     /// 스레드 생성에 실패하면 호출한 스레드에서 기다린다.
     pub(super) fn retire_process(&mut self, plugin_id: &str, proc: PluginProcess, respawn: bool) {
+        let generation = proc.reply_binding();
         let pending = proc.begin_shutdown(Instant::now() + PLUGIN_SHUTDOWN_TIMEOUT);
-        self.retire_pending(plugin_id, pending, respawn);
+        self.retire_pending(plugin_id, pending, respawn, generation);
     }
 
     /// 이미 만든 종료 핸들의 회수를 스레드에 맡긴다 — [`Self::retire_process`] 와, 연결이
@@ -107,13 +117,15 @@ impl PluginManager {
         plugin_id: &str,
         pending: PendingShutdown,
         respawn: bool,
+        generation: std::sync::Weak<()>,
     ) {
         let mut retiring = spawn_waiter(plugin_id, pending);
         retiring.respawn = respawn;
+        retiring.generation = Some(generation);
         // 같은 id 가 이미 회수 중일 수는 없다 — 회수 중인 id 는 기동이 미뤄지므로
         // 새 프로세스가 없다. 그래도 덮어쓰면 옛 핸들을 잃으니 먼저 거둔다.
         if let Some(prev) = self.retiring.remove(plugin_id) {
-            let outcome = prev.join();
+            let outcome = self.settle_retired(prev);
             tracing::warn!(
                 "plugin '{plugin_id}' was already retiring ({}) — joined before retiring again",
                 outcome.as_str()
@@ -168,7 +180,7 @@ impl PluginManager {
             };
             let respawn = r.respawn;
             let ms = r.started.elapsed().as_secs_f64() * 1000.0;
-            let outcome = r.join();
+            let outcome = self.settle_retired(r);
             tracing::info!(
                 plugin_id = id,
                 ms,
@@ -223,7 +235,7 @@ impl PluginManager {
         let mut respawn = false;
         if let Some(r) = self.retiring.remove(plugin_id) {
             respawn = r.respawn;
-            let outcome = r.join();
+            let outcome = self.settle_retired(r);
             tracing::info!(
                 plugin_id,
                 reason = outcome.as_str(),
@@ -251,7 +263,7 @@ impl PluginManager {
             .collect();
         for (id, ms) in started {
             if let Some(r) = self.retiring.remove(&id) {
-                let outcome = r.join();
+                let outcome = self.settle_retired(r);
                 tracing::info!(
                     target: "tasty::shutdown",
                     ms,
@@ -267,6 +279,64 @@ impl PluginManager {
         } else {
             false
         }
+    }
+
+    /// 회수가 끝난 세대를 기록하고 그 세대를 기다리던 surface 회수를 성공으로 확정한다.
+    /// 프로세스가 끝났으므로 그 안의 surface 인스턴스도 남아 있지 않다.
+    fn settle_retired(&mut self, mut r: Retiring) -> ShutdownOutcome {
+        let generation = r.generation.take();
+        let waiters = std::mem::take(&mut r.waiters);
+        let outcome = r.join();
+        if let Some(generation) = generation {
+            self.note_reaped_generation(generation);
+        }
+        for waiter in waiters {
+            waiter.finish(Ok(()));
+        }
+        outcome
+    }
+
+    /// 동기로 회수를 끝낸 프로세스의 세대를 기록한다.
+    pub(super) fn note_reaped_generation(&mut self, generation: std::sync::Weak<()>) {
+        self.reaped_generations.push(generation);
+    }
+
+    /// 원 프로세스가 없을 때 surface 회수를 그 세대의 회수로 확정한다. 회수가 끝났으면 바로
+    /// 성공, 회수 중이면 끝날 때 성공으로 확정한다. 어느 세대인지 모르면 receipt 를 돌려준다.
+    pub(super) fn settle_on_retired_generation(
+        &mut self,
+        plugin_id: &str,
+        generation: &std::sync::Weak<()>,
+        completion: RemoteRetirementCompletion,
+    ) -> Option<RemoteRetirementCompletion> {
+        if self.reaped_generations.iter().any(|g| g.ptr_eq(generation)) {
+            completion.finish(Ok(()));
+            return None;
+        }
+        match self
+            .retiring
+            .get_mut(plugin_id)
+            .filter(|r| r.generation.as_ref().is_some_and(|g| g.ptr_eq(generation)))
+        {
+            Some(r) => {
+                r.waiters.push(completion);
+                None
+            }
+            None => Some(completion),
+        }
+    }
+
+    /// 이 세대가 회수 중이거나 회수를 마쳤는가.
+    pub(super) fn is_retired_generation(
+        &self,
+        plugin_id: &str,
+        generation: &std::sync::Weak<()>,
+    ) -> bool {
+        self.reaped_generations.iter().any(|g| g.ptr_eq(generation))
+            || self
+                .retiring
+                .get(plugin_id)
+                .is_some_and(|r| r.generation.as_ref().is_some_and(|g| g.ptr_eq(generation)))
     }
 
     /// 헬스체크의 무응답 재시작 한 번 — 시험 전용(다른 모듈의 시험이 부른다).

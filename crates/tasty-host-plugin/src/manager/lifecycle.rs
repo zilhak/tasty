@@ -193,6 +193,7 @@ impl PluginManager {
             plugin_reaper,
             shutdown_batch: None,
             retiring: HashMap::new(),
+            reaped_generations: Vec::new(),
         }
     }
 
@@ -674,7 +675,9 @@ impl PluginManager {
             );
         }
         if let Some(proc) = self.processes.remove(plugin_id) {
+            let generation = proc.reply_binding();
             proc.shutdown(PLUGIN_SHUTDOWN_TIMEOUT);
+            self.note_reaped_generation(generation);
         }
         // ipc namespace 유지 — swap 중에 오는 호출은 "없는 메서드" 가 아니라
         // "지금 안 뜬 plugin" 이다(docs/dev-guide/plugin-development.md#cli--ipc-namespace).

@@ -17,7 +17,8 @@
 |---|---|
 | 요청 접수·Running claim | 실행할 권한과 원 attempt를 고정했다. 회수 완료가 아니다 |
 | 실제 child reap 또는 원 plugin receipt 완료 | 해당 물리 자원의 회수 증거다. 별도 metadata·명령 완료 의무가 남을 수 있다 |
-| timeout·연결 유실·원 plugin 응답 부재 | 성공 또는 알려진 실패로 단정하지 않는다. operation의 `Uncertain`과 receipt의 불명 관측을 유지한다 |
+| surface 를 만든 원 plugin 프로세스의 회수 완료 | 그 프로세스 안의 surface 인스턴스도 남지 않았다는 증거다. disable·무응답 재시작·교체로 원 프로세스가 회수된 뒤 그 surface 를 닫으면 파괴 요청 없이 성공으로 확정한다. 회수 중이면 회수가 끝날 때 확정한다. 새로 뜬 프로세스는 옛 surface 를 모르므로 파괴 요청을 보내지 않는다 |
+| timeout·연결 유실·원 plugin 응답 부재(회수 기록이 없는 원 프로세스 부재 포함) | 성공 또는 알려진 실패로 단정하지 않는다. operation의 `Uncertain`과 receipt의 불명 관측을 유지한다 |
 | 뒤늦게 도착한 정확한 원 receipt | 같은 attempt의 reconciliation 근거다. 새 자원에 cleanup을 다시 실행하는 근거가 아니다 |
 
 `OperationOutcome`의 Succeeded/Failed/Cancelled/Superseded/Uncertain과 물리 receipt 상태는 같은 enum이 아니다. 원 실행 결과가 불명인데 자동 재실행해 성공으로 덮지 않는다. `resource_cleanup.rs`는 대조가 필요한 owner와 receipt를 계속 보유한다.

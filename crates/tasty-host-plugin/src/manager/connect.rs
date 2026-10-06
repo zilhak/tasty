@@ -47,7 +47,8 @@ impl PluginManager {
     /// 기다리던 사이 쌓인 namespace 호출은 caller 에 오류로 회신한다.
     fn on_connect_failure(&mut self, plugin_id: &str, reason: String) {
         if let Some(proc) = self.processes.remove(plugin_id) {
-            self.retire_pending(plugin_id, proc.abandon(), false);
+            let generation = proc.reply_binding();
+            self.retire_pending(plugin_id, proc.abandon(), false, generation);
         }
         self.bypass_hooks_sent_to(plugin_id);
         self.forget_plugin_runtime(plugin_id, "plugin did not connect");

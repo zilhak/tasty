@@ -471,6 +471,9 @@ pub struct PluginManager {
     /// 무응답 재시작 · disable 로 내려가는 중인 plugin. 회수 대기는 스레드가 하고
     /// 메인 스레드는 [`PluginTick::Retire`] 에서 끝난 것만 거둔다(`manager::retire`).
     pub(super) retiring: HashMap<String, retire::Retiring>,
+    /// 회수를 마친 프로세스의 응답 바인딩. 그 프로세스가 만든 surface 를 나중에 닫을 때
+    /// 소멸 증거로 쓴다. 프로세스 교체 한 번에 한 항목씩만 늘어난다.
+    pub(super) reaped_generations: Vec<std::sync::Weak<()>>,
 }
 
 /// 호스트가 추적 중인 popup 인스턴스 한 건. plugin process가 죽으면 함께 제거된다.
@@ -561,6 +564,10 @@ mod tests_auto_reload;
 // surface 범위 이벤트 팝업의 대기열 진입 검사.
 #[cfg(test)]
 mod tests_surface_popup;
+
+// 원 프로세스 회수 뒤 surface 닫기의 소멸 증거 검사.
+#[cfg(test)]
+mod tests_retired_surface;
 
 // namespace 소유자가 설치 매니페스트에서 계산되는지 검사한다.
 #[cfg(test)]

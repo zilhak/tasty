@@ -87,7 +87,9 @@ impl PluginManager {
                         Ok(()) => {self.pending_requests.insert(id,PendingRequest::now(plugin,PendingRequestKind::SurfaceRetire {completion,process_binding:process.clone()}));},
                         Err(error) => completion.finish(Err(format!("mesh bootstrap {bootstrap} destruction was not acknowledged: {error}"))),
                     }
-                    } else {
+                    } else if let Some(completion) =
+                        self.settle_on_retired_generation(plugin, process, completion)
+                    {
                         completion.finish(Err(format!(
                             "mesh bootstrap {bootstrap} original process is unavailable"
                         )));
@@ -138,9 +140,13 @@ impl PluginManager {
             .get(&plugin_id)
             .filter(|process| process.reply_binding().ptr_eq(&process_binding))
         else {
-            completion.finish(Err(
-                "original plugin process is unavailable for destruction".into(),
-            ));
+            if let Some(completion) =
+                self.settle_on_retired_generation(&plugin_id, &process_binding, completion)
+            {
+                completion.finish(Err(
+                    "original plugin process is unavailable for destruction".into(),
+                ));
+            }
             return;
         };
         let id = self
@@ -232,6 +238,13 @@ impl PluginManager {
                     .processes
                     .get(&entry.plugin_id)
                     .is_some_and(|process| process.reply_binding().ptr_eq(binding)) => {}
+            RemotePublication::Sent(binding)
+                if self.is_retired_generation(&entry.plugin_id, binding) =>
+            {
+                tracing::debug!(surface_id, plugin = %entry.plugin_id,
+                        "original remote process was retired with its surface instance");
+                return;
+            }
             RemotePublication::Sent(_) => {
                 tracing::warn!(surface_id, plugin = %entry.plugin_id,
                         "original remote process is unavailable; destruction remains unconfirmed");
