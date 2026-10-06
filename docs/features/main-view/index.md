@@ -20,6 +20,8 @@ tasty 의 주 윈도우. 워크스페이스를 호스팅하고 사이드바·탭
 
 `create_new_window` 로 **MainView 를 여러 개** 띄울 수 있다. 각 MainView 는 독립 winit Window(1:1)이고 자기 `MainViewState` 를 가지며 독립 EngineSession의 구조 projection이 연결된다. View 는 `views: HashMap<WindowId, Box<dyn View>>`, engine 은 `App.engines` 가 관리한다([multi-window](../../architecture/multi-window.md#engine-registry와-parked--pty-생존)).
 
+release는 같은 데이터 홈에 프로세스 하나만 둔다. 같은 홈으로 다시 실행하면 두 번째 프로세스는 창을 만들지 않는다. 사용자 실행 증거가 있으면 실행 중인 MainView를 다시 보이고 OS에 활성화를 요청하며, 없으면 `tasty new window`와 같은 새 MainView 하나를 요청한다([같은 홈의 다시 실행](../layout-persistence/index.md#같은-홈의-다시-실행)).
+
 ### headless 와의 관계
 
 MainView는 EngineRead와 자기 View 상태로 그리는 GUI다. headless는 MainView 없이 App·EngineSession·실행 서비스를 사용한다. CoreState에는 구조 descriptor가 있고 PTY 같은 실행 자원은 EngineRuntime에 있다. (→ [identity](../../identity.md) headless)
@@ -57,6 +59,7 @@ MainView는 EngineRead와 자기 View 상태로 그리는 GUI다. headless는 Ma
 - struct: `src/view/main.rs` `MainView` (`ViewBase` + `MainViewState` + 입력 상태). 연결된 `CoreState` 는 `src/app/engine_registry.rs` 의 `EngineRegistry` 가 소유한다.
 - 렌더: `src/view/main/redraw.rs` (`handle_redraw` 경로. `View::render` 는 trait 호환용 빈 구현).
 - 멀티 윈도우 생성: `src/app/window_lifecycle.rs` `create_new_window` → `views.insert`.
+- 다시 실행 요청 처리: `src/app/external_activation.rs`(실행 중 쪽), `src/boot/single_instance/`(두 번째 프로세스·인스턴스 파일·D-Bus).
 - 사이드바/크롬: `src/adapters/ui/sidebar/`.
 
 ## 화면

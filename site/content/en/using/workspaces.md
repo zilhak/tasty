@@ -1,4 +1,4 @@
-<!-- source-hash: ce332d51154b -->
+<!-- source-hash: 6d8332383b6d -->
 # Workspaces
 
 Give each project or task its own workspace. Keep its terminals and layout together, then use names and categories to find it easily. If the window structure is new to you, start with [A first look](../getting-started/first-look.md).
@@ -120,5 +120,7 @@ When you run Tasty again, the Workspace · Pane · Tab · Surface layout of the 
 What is not restored — programs that were running, environment variables, popups that were open. The shell starts fresh in the same directory. Programs that leave a session-resume command, such as Claude Code, are run again automatically ([Working with Claude · Codex](../agents/claude-codex.md)).
 
 The save file is `~/.tasty/layouts/01.json`. With several windows open, each window gets its own `02.json`, `03.json`, and the next time you open a new window it takes over the empty slots in order. Only one window appears on restart; the remaining slots are restored when you open a new window (`Alt+Shift+N`).
+
+Running Tasty again while it is already running does not start a second Tasty. Launched from the app menu or a launcher, the open window comes forward; running `tasty` in a terminal opens one new window that takes over the next empty slot. See [Running Tasty again](../help/troubleshooting.md#running-tasty-again) for details.
 
 To reuse a layout that is not a restore target, save it as a preset — [Saving layouts](panes-tabs-splits.md#saving-layouts--presets).

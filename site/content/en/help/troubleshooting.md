@@ -1,4 +1,4 @@
-<!-- source-hash: c32b24110fa3 -->
+<!-- source-hash: d81147ad7ab1 -->
 # Troubleshooting
 
 If something is not working, find the matching symptom below. Check installation, permissions, terminal connections, and notifications, or use the reporting steps at the end if you still need help.
@@ -14,6 +14,7 @@ All of them live under `~/.tasty/` (on Windows, `%USERPROFILE%\.tasty\`).
 | `debug.log` | Warning-and-above log of the previous run. Cleared when Tasty starts again |
 | `crash-reports/crash-*.log` | Crash reports — version · OS · location · message · backtrace |
 | `crash-reports/hang-*.log` | Written automatically when the window freezes for more than 5 seconds |
+| `launch.log` | Records and results of launching Tasty again while one is already running |
 | `hook-failures.log` | Records of Claude / Codex hooks that failed to reach Tasty |
 | `plugins-logs/<plugin id>.log` | Per-plugin logs. Also viewable with `tasty plugin logs <id>` |
 | `state.db` | Data the app manages on its own, such as recent files |
@@ -80,9 +81,13 @@ You can see the current state in the same tab (only shown on macOS). Full Disk A
   ls -l ~/.tasty/config.toml ~/.tasty/layouts/
   ```
 
-## A "Data folder already in use" screen appears
+## Running Tasty again
 
-- **Right after launch, Tasty shows "Another Tasty is already using this data folder"** — a Tasty that uses the same data folder (`~/.tasty/`, or the folder set with `TASTY_HOME`) is already running. The path on the screen is that folder. This screen does not touch the settings, logs or window layout of the running Tasty. Close it with **Quit** or by closing the window, and use the Tasty that is already open. Before showing this screen Tasty waits and checks again for two seconds, so if the previous Tasty finishes exiting within that time it starts normally. If you see this screen right after force-quitting Tasty, wait a moment and start it again. If you really need two of them, start one with a different `TASTY_HOME`.
+- **Launching from the app menu or a launcher brings the open window forward instead of a new window** — only one Tasty runs per data folder (`~/.tasty/`, or the folder set with `TASTY_HOME`). A new launch does not start a second process; it is handed to the running Tasty. Windows hidden to the tray or minimized come back, and the window you used last comes forward. Whether it actually comes to the front is up to the OS, so in some environments the taskbar entry only flashes. On Wayland, Tasty cannot bring an already open window forward.
+- **Running `tasty` in a terminal opens just one new window** — launching from anywhere other than the app menu (a terminal, a script, an agent) is the same as `tasty new window`. The focused window and hidden windows stay as they are.
+- **A "Tasty is already running." box appears** — the launch could not be handed to the running Tasty. Usually the running Tasty was still starting up, or on Linux the session bus could not be reached. The cause of every launch is written as a line in `launch.log` in the data folder (`~/.tasty/launch.log`). On Linux without `zenity`, a desktop notification appears instead of the box.
+- **Starting Tasty right after force-quitting it takes a moment** — it waits up to two seconds for the leftover lock to be released before starting.
+- **You need two separate Tastys** — start one with a different `TASTY_HOME`.
 
   ```sh
   TASTY_HOME=~/tasty-second tasty

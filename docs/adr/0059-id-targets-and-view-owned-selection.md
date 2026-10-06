@@ -1,6 +1,6 @@
 # ADR-0059: 구조 명령은 ID로 대상을 정하고 사용자 선택은 View가 소유한다
 
-- **Status**: Accepted — 구조 선택·카테고리 접힘·terminal viewport는 View가 소유하고 headless는 별도 명령 기본 문맥을 사용한다. 로컬 구조는 journal, View 선택 복원은 DB manifest/checkpoint가 원본이며 legacy 파일은 최초 이관에 사용한다(ADR-0065). 실제 복원·다중 창 실행 검증은 별도다.
+- **Status**: Accepted — 구조 선택·카테고리 접힘·terminal viewport는 View가 소유하고 headless는 별도 명령 기본 문맥을 사용한다. 로컬 구조는 journal, View 선택 복원은 DB manifest/checkpoint가 원본이며 legacy 파일은 최초 이관에 사용한다(ADR-0065). 실제 복원·다중 창 실행 검증은 별도다. 2026-10-06 보강: release는 같은 홈의 다시 실행을 실행 중인 Tasty에 넘긴다(단일 실행). Wayland에서 이미 있는 창의 활성화는 미구현이다.
 - **Date**: 2026-09-30
 - **Tags**: workspace, focus, routing, identity, layout
 - **Group**: terminal
@@ -75,7 +75,26 @@
 - legacy scrollback의 부팅 정리는 모든 슬롯 참조를 모으고, 읽지 못한 슬롯이 있으면 삭제하지 않는다. journal payload 정리는 checkpoint·restore manifest·실행 중 reader의 pin을 따른다.
 - 복원 시 PTY 범위를 침범한 오래된 surface scope는 오류를 기록하고 삭제한다. 복원하지 않는 헤드리스·설정 비활성 실행은 이 정리를 하지 않지만 카운터도 오염된 scope에서 시작하지 않는다.
   복원할 명령은 레이아웃에 저장되고 세션 메타는 다시 생성되므로 현재는 키를 새로 발급하지 않는다.
-- 같은 `TASTY_HOME`을 여러 프로세스가 공유하는 구성은 지원하지 않는다.
+- 같은 `TASTY_HOME`을 여러 프로세스가 공유하는 구성은 지원하지 않는다. 아래 단일 실행이 release에서 이 조건을 지킨다.
+
+### 같은 홈의 다시 실행 (단일 실행, 2026-10-06 보강)
+
+- release는 데이터 홈 하나에 프로세스 하나를 둔다. 홈 단위이므로 다른 `TASTY_HOME`으로 띄운 격리 인스턴스는 사용자 release와 함께 뜬다.
+  같은 홈의 writer 잠금이 다른 프로세스에 있으면 두 번째 프로세스는 창·GPU·이벤트 루프 없이 실행 중인 Tasty에 요청을 넘기고 끝난다. debug는 "홈 사용 중" 오류 화면으로 끝난다.
+- 넘기는 요청은 OS가 사용자 실행에 붙여 준 활성화 증거로 나눈다. 실행 인자로 사용자와 에이전트를 나누지 않는다.
+  - 증거는 Linux Wayland `XDG_ACTIVATION_TOKEN`, X11 `DESKTOP_STARTUP_ID`, Windows에서 실행 중인 Tasty에 `AllowSetForegroundWindow`가 성공한 것이다. macOS의 Finder·Dock 실행은 LaunchServices가 처리해 두 번째 프로세스가 생기지 않으므로 두 번째 프로세스는 항상 증거 없음이다.
+  - 증거가 있으면 Linux는 D-Bus `org.freedesktop.Application.Activate`의 `platform_data`로, Windows는 MainView 창에 보내는 등록 창 메시지로 넘긴다. 실행 중인 Tasty는 증거가 있는 요청에서만 숨기거나 최소화한 View를 트레이 복원처럼 다시 보이고 마지막 포커스 View의 활성화를 OS에 요청한다. `focus_window()`는 부르지 않는다. MainView가 없으면 증거를 실은 새 창을 연다.
+  - 증거가 없으면 `tasty new window`와 같은 `window.create` 하나로 끝난다. 숨긴 창과 최소화한 창, 내부 포커스는 그대로다.
+- 원칙 3은 그대로다. 포커스를 주는 IPC 메서드는 없고, 창을 실제로 앞으로 올릴지는 컴포지터·창 관리자·포그라운드 잠금이 정한다. OS가 거절해도 두 번째 프로세스는 성공으로 끝난다.
+- 실행 중인 인스턴스는 `<home>/tasty.instance`에 PID·프로세스 시작 시각·IPC 포트를 원자적으로 기록한다. 포트는 IPC 서버가 열린 뒤 넣으며 정상 종료 때 잠금을 놓기 전에 지운다. 두 번째 프로세스는 PID와 시작 시각이 일치하고 포트가 있는 기록만 믿는다. 그렇지 않으면 상한까지 기다리며, 그 사이 잠금이 풀리면 평소처럼 부팅한다.
+- D-Bus 이름은 정규화한 기본 홈이면 `io.github.zilhak.tasty`, 다른 홈이면 정규화 경로 해시를 붙인 `io.github.zilhak.tasty.h<16진>`이다. 객체 경로는 `/io/github/zilhak/tasty`다.
+- 두 증거 환경변수는 `run()` 첫머리에서 읽어 보관하고 환경에서 지운다. 셸·플러그인에 아직 쓰지 않은 토큰이 넘어가지 않게 하기 위해서다. 첫 창은 자기 실행의 토큰을 받아 실행기의 대기 표시를 끝낸다.
+- 요청을 넘기지 못하면 Tasty 창 없이 OS 메시지 상자로 한 문장을 알리고 종료 코드 1로 끝낸다. 상세는 `<home>/launch.log`에 남기며 토큰 값은 기록하지 않는다. 실행 중인 인스턴스의 `debug.log`는 열지 않는다.
+- `--launch`는 debug 전용이다. Tasty 터미널 안 판정(`TASTY_SURFACE_ID`)을 건너뛰는 옵션일 뿐 보안 경계가 아니었고, 증거 규칙이 생긴 뒤 release에서는 `tasty new window`와 결과가 같다.
+- 알려진 한계
+  - X11에는 위조할 수 없는 사용자 조작 증거가 없다. startup id와 타임스탬프는 같은 사용자의 어떤 프로세스든 만들 수 있다. 같은 프로세스는 원래 `xdotool windowactivate`로 같은 일을 할 수 있다.
+  - Windows 등록 메시지는 같은 데스크톱의 어떤 프로세스든 보낼 수 있고, `AllowSetForegroundWindow`는 포그라운드 잠금 시간이 지나면 사용자가 실행하지 않은 프로세스에서도 성공한다. 같은 사용자의 프로세스는 원래 `ShowWindow`·`SetForegroundWindow`로 같은 일을 할 수 있다.
+  - Wayland에는 트레이 숨김 상태가 없다(winit의 Wayland `set_visible`이 동작하지 않는다). 사용하는 winit에는 외부 xdg-activation 토큰으로 이미 있는 창을 활성화하는 API가 없어, Wayland에서는 새 창을 열 때만 토큰을 쓴다.
 
 ## Consequences
 
@@ -91,6 +110,10 @@ category ID 조회는 사용자 전환 시점에만 선형 탐색하므로 렌�
 legacy 슬롯 파일과 저널이 함께 남아 있어도 파일은 최초 이관 입력이고 journal/manifest가 현재 원본이라는 구분을 유지해야 한다. 저널을 읽지 못하는 옛 바이너리가 새 상태를 덮어쓰지 않도록 소유 검사가 필요하다.
 OS의 실제 focus·쌓임 순서는 플랫폼이 결정하므로 새 창을 만든 뒤 대상 없는 명령이 새 창을 가리킨다고 가정하면 안 된다.
 
+단일 실행으로 앱 목록·Dock·시작 메뉴의 다시 실행이 오류 화면 대신 실행 중인 View로 이어진다. 그 대가로 Linux D-Bus 서비스, Windows 창 클래스와 메시지 훅, 인스턴스 파일이라는 OS별 표면이 생긴다.
+두 번째 프로세스는 부팅 첫머리의 writer 잠금 재시도 구간만큼 늦게 요청을 넘긴다.
+메시지 상자는 Linux에서 외부 프로그램 `zenity`에 기대므로 deb·rpm은 이를 권장 의존성으로 두고, 없으면 데스크톱 알림으로 대신한다.
+
 ## Alternatives Considered
 
 - 선택을 `CoreState`에 둔 채 replay에서만 무시하는 안: 같은 필드가 재생 모델과 사용자 상태를 겸해 경계가 다시 흐려진다.
@@ -104,6 +127,12 @@ OS의 실제 focus·쌓임 순서는 플랫폼이 결정하므로 새 창을 만
 - 활성 상태를 category·로컬 인덱스 쌍으로 바꾸거나 workspace 배열을 카테고리별로 나누는 안: 영속화·닫기·이동·드래그와 전역 조회·surface 소유자 탐색이 함께 복잡해진다.
 - 마지막 workspace를 닫으며 창까지 닫거나 새 workspace를 만드는 안: 요청하지 않은 동작이다. mirror를 일반 close로 지우면 attach 자원 정리를 우회한다.
 - 이름 규칙이나 줄 단위 grep만으로 목록 메서드를 찾는 안: tree, 필터 params, helper·serde를 통한 접근을 놓친다. 이유가 있는 명부와 실제 다중 엔진 조회를 함께 쓴다.
+- 다시 실행을 실행 중인 Tasty에 넘기는 IPC 메서드나 포커스 API 예외를 두는 안: 에이전트가 같은 메서드로 사용자 포커스를 가져갈 수 있어 원칙 3과 충돌한다.
+- Linux `DBusActivatable=true`(데스크톱 파일 수준 활성화): 앱 ID와 데스크톱 파일 이름 변경, D-Bus 서비스 파일 설치가 필요하고 AppImage에서 깨질 수 있다. `Exec=tasty`를 유지하고 두 번째 프로세스가 `Activate`를 부른다.
+- 홈과 무관한 전역 단일 실행: 격리 홈 release 인스턴스(장시간 메모리 시험, release 격리 검증)가 사용자 release와 함께 뜨지 못한다.
+- 실행 인자로 사용자와 에이전트를 나누는 안: 실행기도 같은 바이너리를 실행하고 에이전트도 인자 없이 실행할 수 있어 구분이 되지 않는다.
+- 증거가 있어도 숨긴 창을 두고 새 창을 여는 안: 트레이로 숨긴 사용자는 앱 아이콘으로 자기 창을 다시 찾지 못한다.
+- 두 번째 프로세스가 다른 프로세스의 창에 직접 `ShowWindow`를 부르는 안: winit이 들고 있는 보임 상태와 어긋나 이후 트레이 숨김이 깨진다.
 - 키보드 포커스만 유지하고 창을 앞에 띄우는 안: 새 창이 사용자의 내용을 가린다. tab 생성 뒤 호출자가 선택을 되돌리는 안은 누락하기 쉬워 선택 여부를 입력으로 전달한다.
 
 ## Reconsideration Triggers
@@ -119,12 +148,17 @@ OS의 실제 focus·쌓임 순서는 플랫폼이 결정하므로 새 창을 만
 - telemetry가 workspace를 항상 지정하거나 비용 상한이 workspace별로 나뉘면 기본 귀속 정책을 검토한다. 자동 승인에 실제 대상 surface가 생기면 그 소속을 사용한다.
 - 엔진별 중복 ID나 여러 active 값이 소비자에 문제를 만들면 집계 형식을 함께 고친다. 라우팅 규칙이 바뀌면 명부의 예외를 줄인다.
 - 런타임 scrollback 정리나 재시작을 넘어 보존할 surface 메타가 필요해지면 슬롯·ID 정책을 검토한다.
+- winit에 외부 활성화 토큰으로 이미 있는 창을 활성화하는 API가 생기면 Wayland 기존 창 활성화와 X11 직접 구현(`crates/tasty-platform/src/window_activation.rs`)을 그 API로 옮긴다.
+- 같은 홈을 여러 프로세스가 공유하거나 다시 실행에 실행 인자(파일 열기 등)를 넘겨야 하면 단일 실행의 요청 형식과 `Open` 미지원을 다시 정한다.
+- 데스크톱 파일 이름·앱 ID를 바꾸게 되면 `DBusActivatable`을 다시 검토한다.
 - category ID 탐색이 느려질 규모가 되면 조회 맵을 고려하며, 다중 재정렬은 단일 from/to 보정을 일반화해야 한다.
 - 새 삭제 경로에서 View 보정이 빠지는 문제가 반복되면 삭제 사실 전달 경계를 검사로 고정한다.
 
 ### 실행 결과로 확인
 
 - winit을 올릴 때 OS별 show·active 처리와 X11 확장을 대조한다. 창이 focus를 가져가거나 위에 뜨는 문제는 해당 WM에서 active·stacking 속성을 측정한다.
+- 에이전트나 다른 프로세스가 X11 startup id 위조나 Windows 등록 메시지로 사용자 창을 올리는 일이 실제 문제로 보고되면 증거 판정을 다시 정한다.
+- 다시 실행했는데 창이 앞으로 오지 않는다는 보고가 특정 실행기·컴포지터에서 반복되면 `launch.log`의 증거 종류와 경로로 원인을 확인한다.
 
 ## References
 
@@ -133,4 +167,5 @@ OS의 실제 focus·쌓임 순서는 플랫폼이 결정하므로 새 창을 만
 - [포커스 정책](../design/policies/focus.md)
 - [워크스페이스 카테고리](../features/workspace-category/index.md)
 - [레이아웃 저장](../features/layout-persistence/index.md)
+- 단일 실행 구현: `src/boot/single_instance/`, `src/app/external_activation.rs`, `crates/tasty-platform/src/window_activation.rs`, `crates/tasty-platform/src/single_instance_windows.rs`.
 - 현재 구현: `src/state/navigation.rs`, `src/app/journal/commands/view_completion.rs`, `src/runtime/journal_product/view_record.rs`, `src/core/layout_persistence`, `src/adapters/ipc/request_scope.rs`.

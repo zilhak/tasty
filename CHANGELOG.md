@@ -31,6 +31,7 @@
 
 ### Changed
 
+- **release Tasty를 같은 데이터 폴더로 다시 실행하면 두 번째 Tasty가 뜨지 않고 실행 중인 Tasty로 이어진다.** 이전에는 "이미 사용 중인 데이터 폴더" 화면이 떴다. 앱 목록·실행기·시작 메뉴로 실행해 OS가 활성화 증거(Linux `XDG_ACTIVATION_TOKEN`·`DESKTOP_STARTUP_ID`, Windows 포그라운드 권한)를 넘기면, 실행 중인 Tasty가 트레이로 숨기거나 최소화한 윈도우를 다시 보이고 마지막으로 쓰던 윈도우의 활성화를 OS에 요청한다. 윈도우가 없으면 새 윈도우를 연다. 증거가 없으면(터미널·스크립트·에이전트에서 `tasty` 실행, macOS에서 바이너리 직접 실행) `tasty new window`와 같은 새 윈도우 하나만 열리고 숨긴 윈도우와 포커스는 그대로다. 요청을 넘기지 못하면 Tasty 윈도우 없이 "이미 실행 중인 Tasty가 있습니다." 메시지 상자를 띄우고 종료 코드 1로 끝나며, Linux에서 `zenity`가 없으면 데스크톱 알림으로 대신한다. 같은 폴더의 `tasty.instance`(PID·시작 시각·IPC 포트)와 `launch.log`(다시 실행 기록, 토큰 값 없음)가 새로 생긴다. Linux release는 세션 버스에 `io.github.zilhak.tasty`(기본 폴더) 또는 `io.github.zilhak.tasty.h<해시>`(다른 폴더) 이름으로 `org.freedesktop.Application`을 등록한다. 데스크톱 파일은 `StartupNotify=true`를 갖고 deb·rpm은 `zenity`를 권장 패키지로 둔다. Wayland에서는 이미 떠 있는 윈도우를 앞으로 가져오지 못한다. debug 빌드는 이전처럼 "이미 사용 중인 데이터 폴더" 화면으로 끝난다.
 - **IPC `remote.attach`·`attach.into_gui` 가 이 Tasty 자신을 대상으로 하면 바로 오류로 응답한다.** 이전에는 `{attaching:true}`·`{queued:true}` 로 접수한 뒤 나중에 거절해 호출자가 알 수 없었고, `remote.attach` 에 `new_workspace:true` 를 주면 거절 전에 자기 자신에 워크스페이스가 만들어졌다. 이제 `127.0.0.1:<자기 포트>` 같은 loopback 대상은 처리 전에 `-32602` 오류로 거절하고 아무것도 만들지 않는다. `tasty remote attach --into-gui --target-port <자기 포트>` 도 같은 오류를 낸다.
 
 - **창 전체에 뜨는 알림이 하단 상태바 위에 쌓인다.** 창이나 워크스페이스 범위 알림의 맨 아래 카드가 창 하단에서 12px 떨어져 상태바와 겹쳤다. 이제 36px(UI 배율 적용) 위에서 쌓인다. pane·서피스 범위 알림의 위치는 그대로다.
