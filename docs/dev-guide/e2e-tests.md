@@ -348,7 +348,7 @@ renderD128·VK_ERROR_·DRI3·libEGL·tu_knl·failed to open device 같은 메시
 
 ## 7. WebView 배치 측정 시험 (ignored)
 
-`e2e_tests`의 두 시험은 Linux X11에서 native WebView X 자식 창의 위치·픽셀·입력 영역을 읽어 WebView 배치를 잰다.
+`e2e_tests`의 세 시험은 Linux X11에서 native WebView X 자식 창의 위치·픽셀·입력 영역을 읽어 WebView 배치를 잰다.
 
 `webview_page_viewport_fills_its_native_window_under_gtk_scale_two`는 GTK 배율이 2일 때 html surface의 페이지 viewport가 native WebView 창과 같은 크기인지 잰다. 조건은 `GDK_SCALE=2`와 `WINIT_X11_SCALE_FACTOR=2`로 만든다. GNOME이 XSETTINGS(`Gdk/WindowScalingFactor`)로 배율을 정하는 경로는 이 시험이 재지 않는다. 페이지는 viewport 전체에 고정한 파란 테두리를 그리고, 시험은 WebView 창의 네 변 가운데 픽셀이 모두 테두리 색인지 확인한다. host가 GTK 크기·allocation에 GDK 배율로 나눈 논리 px를 주지 않으면 viewport가 창의 두 배로 잡혀 오른쪽·아래 변에 페이지 바탕색이 나오고 실패한다.
 
@@ -375,6 +375,18 @@ Xvfb는 저장한 PID로 회수한다.
 ```
 TASTY_E2E_DISPLAY=:<n> cargo test --locked --test e2e_tests -- --ignored --exact \
   webview_fills_its_surface_and_leaves_host_input_bands_to_the_host
+```
+
+`webview_lets_the_first_press_drag_the_pane_divider_below_it_at_scale_two`는 배율 2(`GDK_SCALE=2`, `WINIT_X11_SCALE_FACTOR=2`)에서 터미널 / html / 터미널 세로 3단 배치를 만들고, 창 관리자 없이 X 창을 1600x1000으로 바꾼 뒤 잰다.
+
+- WebView 창 = surface 사각형이다. 아래쪽 7행(host 판정 `|y - d| < 8` 중 WebView 안쪽)은 입력 영역 밖이고 그 위 행은 안이다.
+- 포커스가 없는 html 의 아래쪽 띠를 XTest 로 한 번 눌러 끌면 분할선이 움직이고 포커스된 surface 는 그대로다.
+- 2560x1440 창에서는 egui 가 그 press 를 잡지 않아 드래그 중 이동 소비 결함이 드러나지 않았다. 그래서 창 크기를 리뷰에서 재현한 1600x1000으로 맞춘다.
+- 2600x1600 이상 Xvfb 가 필요하다(기본 창 2560x1440 이 화면 안에 있어야 한다).
+
+```
+TASTY_E2E_DISPLAY=:<n> cargo test --locked --test e2e_tests -- --ignored --exact \
+  webview_lets_the_first_press_drag_the_pane_divider_below_it_at_scale_two
 ```
 
 ## VTE 시뮬레이터 (`tasty-tui-simulator`)

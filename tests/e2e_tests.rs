@@ -2471,6 +2471,25 @@ fn region_contains(region: &[(i32, i32, i32, i32)], px: i32, py: i32) -> bool {
         .any(|&(x, y, w, h)| px >= x && px < x + w && py >= y && py < y + h)
 }
 
+/// 창 관리자 없는 하네스 디스플레이에서 X 창 크기를 바로 바꾼다(물리 px).
+#[cfg(all(target_os = "linux", feature = "gui"))]
+fn x11_resize(display: &str, window: u64, width: u32, height: u32) -> Result<(), String> {
+    let x = x11_dl::xlib::Xlib::open().map_err(|e| format!("Xlib::open: {e}"))?;
+    let cname = std::ffi::CString::new(display).map_err(|e| e.to_string())?;
+    // SAFETY: cname 은 NUL 종단 문자열이며 반환된 포인터가 null 인지 확인한다.
+    let dpy = unsafe { (x.XOpenDisplay)(cname.as_ptr()) };
+    if dpy.is_null() {
+        return Err(format!("XOpenDisplay({display}) failed"));
+    }
+    // SAFETY: dpy 는 열린 연결이고 window 는 같은 디스플레이의 최상위 창이다.
+    unsafe { (x.XResizeWindow)(dpy, window as _, width, height) };
+    // SAFETY: 위와 같은 연결. 요청이 서버에 닿을 때까지 기다린다.
+    unsafe { (x.XSync)(dpy, 0) };
+    // SAFETY: 열린 연결을 닫고 이후 dpy 를 쓰지 않는다.
+    unsafe { (x.XCloseDisplay)(dpy) };
+    Ok(())
+}
+
 /// XTest 로 하네스 디스플레이의 포인터를 움직인다. 좌표는 화면(root) 기준이다.
 #[cfg(all(target_os = "linux", feature = "gui"))]
 enum Pointer {
@@ -2663,5 +2682,118 @@ fn webview_fills_its_surface_and_leaves_host_input_bands_to_the_host() {
     assert!(
         !webview_takes_input_at(&display, &c, w - 2, h / 2),
         "창 오른쪽 리사이즈 밴드가 WebView 입력에 남았다"
+    );
+}
+
+/// 배율 2 에서 html pane 바로 아래의 가로 pane 분할선을 WebView 쪽 hit 띠에서 첫 press 로 잡는다.
+/// 배치는 터미널 / html / 터미널 세로 3단이고 html 은 포커스가 없다.
+/// - WebView 창 = surface 사각형, 입력 영역 아래쪽 7 행(host 판정 `|y - d| < 8` 중 WebView 안쪽)만
+///   구멍이고 그 위 행은 페이지가 받는다.
+/// - 분할선 위 6 행을 눌러 아래로 끌면 html 높이가 늘고, 포커스된 surface 는 바뀌지 않는다
+///   (분할선 hit 판정이 click-to-activate 보다 먼저다).
+///
+/// 실행: 2600x1600 이상 Xvfb 와 번들 plugin(html) 준비 뒤
+/// `TASTY_E2E_DISPLAY=:<n> cargo test --locked --test e2e_tests -- --ignored --exact webview_lets_the_first_press_drag_the_pane_divider_below_it_at_scale_two`.
+#[cfg(all(target_os = "linux", feature = "gui"))]
+#[test]
+#[ignore = "Linux X11 디스플레이와 번들 html plugin 이 필요하고 포인터를 움직여 기본 실행·CI 에서 돌리지 않는다"]
+fn webview_lets_the_first_press_drag_the_pane_divider_below_it_at_scale_two() {
+    let display = x11_harness_display()
+        .expect("X11 디스플레이가 필요하다(inherit + Wayland 는 측정하지 않는다)");
+    let tasty =
+        TastyInstance::spawn_with_env(&[("GDK_SCALE", "2"), ("WINIT_X11_SCALE_FACTOR", "2")]);
+    let page = tasty.tasty_home().join("webview-stack.html");
+    std::fs::write(
+        &page,
+        "<!doctype html><html><head><style>html,body{margin:0;height:100%;background:#808000}\
+         </style></head><body></body></html>",
+    )
+    .expect("page");
+    let top = tasty.first_surface_id();
+    let split = tasty.call(
+        "split",
+        json!({
+            "level": "pane",
+            "target_surface": top.to_string(),
+            "direction": "horizontal",
+            "type": "html",
+            "url": format!("file://{}", page.display()),
+        }),
+    );
+    let html = split["new_surface_id"].as_u64().expect("html split");
+    let below = tasty.call(
+        "split",
+        json!({ "level": "pane", "target_surface": html.to_string(), "direction": "horizontal" }),
+    );
+    assert!(
+        below["new_surface_id"].as_u64().is_some(),
+        "terminal split: {below}"
+    );
+    let window = tasty
+        .call("window.list", json!({}))
+        .as_array()
+        .and_then(|ws| ws.first().and_then(|w| w["id"].as_u64()))
+        .expect("window.list 에 창이 있어야 한다");
+    let wait_for = |what: &str, pred: &dyn Fn(&X11WebViewCapture) -> bool| {
+        let start = std::time::Instant::now();
+        loop {
+            match x11_capture_webview(&display, window) {
+                Ok(Some(c)) if pred(&c) => break c,
+                Ok(_) if start.elapsed() < Duration::from_secs(30) => {
+                    std::thread::sleep(Duration::from_millis(250));
+                }
+                Ok(c) => panic!("30 초 안에 {what}: {:?}", c.map(|c| c.child)),
+                Err(e) => panic!("WebView 창을 읽지 못했다: {e}"),
+            }
+        }
+    };
+    wait_for("페이지가 그려지지 않았다", &|c| {
+        let (_, _, w, h) = c.child;
+        c.child_at(w / 2, h / 2) == 0x808000
+    });
+    // 리뷰에서 결함을 재현한 창 크기다. 2560x1440 에서는 egui 가 press 를 잡지 않아 드러나지 않았다.
+    x11_resize(&display, window, 1600, 1000).expect("resize");
+    wait_for(
+        "창 크기를 바꾼 뒤 WebView 가 따라오지 않았다",
+        &|c| c.child.2 < 1300,
+    );
+    std::thread::sleep(Duration::from_millis(800));
+    let c = x11_capture_webview(&display, window).unwrap().unwrap();
+    assert_webview_fills_surface(&tasty, html, &c);
+    let (_, _, w, h) = c.child;
+    for row in h - 7..h {
+        assert!(
+            !webview_takes_input_at(&display, &c, w / 2, row),
+            "분할선 hit 띠 행 {row}(높이 {h})가 WebView 입력에 남았다"
+        );
+    }
+    assert!(
+        webview_takes_input_at(&display, &c, w / 2, h - 8),
+        "host 가 분할선으로 보지 않는 행 {}(높이 {h})이 WebView 입력에서 빠졌다",
+        h - 8
+    );
+
+    let focused =
+        |t: &TastyInstance| t.call("debug.focused_surface", json!({}))["surface_id"].clone();
+    let before = focused(&tasty);
+    assert_ne!(
+        before,
+        json!(html),
+        "시험 전제: html 은 포커스가 없어야 한다"
+    );
+    let (rx, ry) = c.child_root;
+    let press_y = ry + h - 6;
+    let mut drag = vec![Pointer::Move(rx + w / 2, press_y), Pointer::Press];
+    drag.extend((1..=4).map(|i| Pointer::Move(rx + w / 2, press_y + i * 10)));
+    drag.push(Pointer::Release);
+    x11_pointer(&display, &drag).expect("drag");
+    wait_for(
+        "WebView 아래 분할선 hit 띠의 첫 press 드래그가 분할선을 옮기지 않았다",
+        &|c| c.child.3 > h + 20,
+    );
+    assert_eq!(
+        focused(&tasty),
+        before,
+        "분할선 hit 띠의 press 가 포커스를 바꿨다"
     );
 }
