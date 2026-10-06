@@ -3365,6 +3365,21 @@ about = "Dump the current selection of the focused window (debug builds only)"
 [cli.help._root.debug.pending-menu]
 about = "Dump the pending native menu action of the focused window (debug builds only)"
 
+[cli.help._root.debug.menu-answer]
+about = "Answer the next native context menu of the focused window without the OS popup (debug builds only). Picks an item by id or label, or closes the menu. A right click such as `debug inject egui-mouse --button 2` still opens the menu"
+
+[cli.help._root.debug.menu-answer.arg.item]
+help = "Menu item id"
+
+[cli.help._root.debug.menu-answer.arg.label]
+help = "Item label as shown in the menu"
+
+[cli.help._root.debug.menu-answer.arg.dismiss]
+help = "Close the menu without picking an item"
+
+[cli.help._root.debug.pending-move]
+about = "Dump the pending move slot of the focused window (debug builds only)"
+
 [cli.help._root.debug.ui-state]
 about = "Dump the UI state tree of the focused window (debug builds only)"
 

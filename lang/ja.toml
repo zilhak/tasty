@@ -3359,6 +3359,21 @@ about = "フォーカス中のウィンドウの現在の選択範囲をダン�
 [cli.help._root.debug.pending-menu]
 about = "フォーカス中のウィンドウの保留中ネイティブメニュー操作をダンプ（debugビルド専用）"
 
+[cli.help._root.debug.menu-answer]
+about = "フォーカス中のウィンドウの次のネイティブコンテキストメニューにOSポップアップなしで応答（debugビルド専用）。項目IDか表示文言で選ぶか、メニューを閉じる。メニューは `debug inject egui-mouse --button 2` などの右クリックで開く"
+
+[cli.help._root.debug.menu-answer.arg.item]
+help = "メニュー項目ID"
+
+[cli.help._root.debug.menu-answer.arg.label]
+help = "メニューに表示される項目文言"
+
+[cli.help._root.debug.menu-answer.arg.dismiss]
+help = "項目を選ばずにメニューを閉じる"
+
+[cli.help._root.debug.pending-move]
+about = "フォーカス中のウィンドウの移動待ちスロットをダンプ（debugビルド専用）"
+
 [cli.help._root.debug.ui-state]
 about = "フォーカス中のウィンドウのUI状態ツリーをダンプ（debugビルド専用）"
 

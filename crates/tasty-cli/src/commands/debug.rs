@@ -213,6 +213,22 @@ pub enum DebugCommands {
     Selection,
     /// Dump the pending native menu action of the focused window (debug builds only).
     PendingMenu,
+    /// Answer the next native context menu of the focused window without the OS popup (debug
+    /// builds only). Picks an item by id or label, or closes the menu. A right click such as
+    /// `debug inject egui-mouse --button 2` still opens the menu.
+    MenuAnswer {
+        /// Menu item id.
+        #[arg(long, conflicts_with_all = ["label", "dismiss"])]
+        item: Option<u32>,
+        /// Item label as shown in the menu.
+        #[arg(long, conflicts_with = "dismiss")]
+        label: Option<String>,
+        /// Close the menu without picking an item.
+        #[arg(long)]
+        dismiss: bool,
+    },
+    /// Dump the pending move slot of the focused window (debug builds only).
+    PendingMove,
     /// Dump the UI state tree of the focused window (debug builds only).
     UiState,
     /// Switch the active workspace by index — reproduces the user's workspace tab

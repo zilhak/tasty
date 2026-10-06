@@ -338,11 +338,12 @@ event bus 두 건은 매니저를 **메타데이터 층까지만** 세운다 —
 띄우면 관측이 자기 대상을 바꾼다([ADR-0058](../adr/0058-headless-without-local-views.md)).
 그래서 아무 plugin 도 안 뜬 데몬에서는 구독자가 0 으로 나오고, 그것이 그 시점의 사실이다.
 
-#### 없는 것이 정답 (31)
+#### 없는 것이 정답 (33)
 
 | 메서드 | 왜 |
 |--------|-----|
-| `debug.info` · `debug.focused_surface` · `debug.surface_rect` · `debug.selection` · `debug.pending_menu` | 창 하나의 렌더 상태(셀 크기·포커스·화면 배치·선택·대기 중 native 메뉴)를 읽는다 |
+| `debug.info` · `debug.focused_surface` · `debug.surface_rect` · `debug.selection` · `debug.pending_menu` · `debug.pending_move` | 창 하나의 렌더 상태(셀 크기·포커스·화면 배치·선택·대기 중 native 메뉴·이동 대기 슬롯)를 읽는다 |
+| `debug.native_menu.answer` | 창이 여는 native 메뉴의 응답이다. 메뉴를 여는 창이 없다 |
 | `debug.settings.open` | `AppEvent::OpenSettings` 를 winit proxy 로 보낸다. 헤드리스엔 proxy 가 없다 |
 | `debug.gpu.stall` | 렌더 스레드를 일부러 막아 stall 워치독을 시험한다. 막을 스레드가 없다 |
 | `debug.banner.*` (4) · `debug.host_popup.*` (3) · `debug.modifier_hint.*` (2) | host 위젯의 표시 상태다. 그릴 창이 없으면 상태 자체가 없다 |

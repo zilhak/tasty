@@ -457,6 +457,8 @@ impl MainView {
         // 읽으므로, 두 좌표계의 배율이 같다는 전제가 성립해야 앵커가 맞는다.
         // Linux/GTK 에서만 그 둘의 출처가 갈린다(winit vs GDK) — 깨지면 경고한다.
         warn_if_menu_anchor_scale_premise_broken(self.base.winit.scale_factor());
+        #[cfg(debug_assertions)]
+        super::debug_menu::answer_or_return!(self, engine, items, cont);
         match show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, items) {
             MenuOutcome::Ready(result) => {
                 cont(self, engine, result);

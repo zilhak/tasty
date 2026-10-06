@@ -127,6 +127,26 @@ fn fullscreen_debug_methods_absent_in_release() {
 }
 
 #[test]
+#[cfg(debug_assertions)]
+fn native_menu_answer_and_pending_move_are_local_only_debug_methods() {
+    for name in ["debug.native_menu.answer", "debug.pending_move"] {
+        let m = method_meta(name).unwrap_or_else(|| panic!("{name} registered (debug build)"));
+        assert!(!m.plugin_callable, "{name} must be local_only");
+    }
+}
+
+#[test]
+#[cfg(not(debug_assertions))]
+fn native_menu_answer_and_pending_move_absent_in_release() {
+    for name in ["debug.native_menu.answer", "debug.pending_move"] {
+        assert!(
+            method_meta(name).is_none(),
+            "{name} must not exist in release"
+        );
+    }
+}
+
+#[test]
 #[cfg(not(debug_assertions))]
 fn debug_methods_absent_in_release() {
     assert!(method_meta("debug.inject_key").is_none());

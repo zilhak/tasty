@@ -3359,6 +3359,21 @@ about = "포커스된 윈도우의 현재 선택 영역 덤프(debug 빌드 전�
 [cli.help._root.debug.pending-menu]
 about = "포커스된 윈도우의 대기 중인 네이티브 메뉴 동작 덤프(debug 빌드 전용)"
 
+[cli.help._root.debug.menu-answer]
+about = "포커스된 윈도우의 다음 네이티브 컨텍스트 메뉴에 OS 팝업 없이 응답(debug 빌드 전용). 항목 id나 문구로 고르거나 메뉴를 닫는다. 메뉴는 `debug inject egui-mouse --button 2` 같은 우클릭이 연다"
+
+[cli.help._root.debug.menu-answer.arg.item]
+help = "메뉴 항목 id"
+
+[cli.help._root.debug.menu-answer.arg.label]
+help = "메뉴에 보이는 항목 문구"
+
+[cli.help._root.debug.menu-answer.arg.dismiss]
+help = "항목을 고르지 않고 메뉴를 닫는다"
+
+[cli.help._root.debug.pending-move]
+about = "포커스된 윈도우의 이동 대기 슬롯 덤프(debug 빌드 전용)"
+
 [cli.help._root.debug.ui-state]
 about = "포커스된 윈도우의 UI 상태 트리 덤프(debug 빌드 전용)"
 

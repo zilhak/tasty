@@ -74,6 +74,23 @@ fn read_pointer_params(
     Ok((fx, fy, action))
 }
 
+/// `item`(항목 id)·`label`(표시 문구)·`dismiss`(true) 중 하나만 받는다.
+#[cfg(debug_assertions)]
+fn read_menu_answer(
+    p: &serde_json::Value,
+) -> Result<crate::view::main::debug_menu::MenuAnswer, String> {
+    use crate::view::main::debug_menu::MenuAnswer;
+    let item = params::read_u32(p, "item")?;
+    let label = p.get("label").and_then(|v| v.as_str());
+    let dismiss = p.get("dismiss").and_then(|v| v.as_bool()).unwrap_or(false);
+    match (item, label, dismiss) {
+        (Some(id), None, false) => Ok(MenuAnswer::Item(id)),
+        (None, Some(text), false) => Ok(MenuAnswer::Label(text.to_owned())),
+        (None, None, true) => Ok(MenuAnswer::Dismiss),
+        _ => Err("give exactly one of 'item', 'label' or 'dismiss: true'".to_owned()),
+    }
+}
+
 impl App {
     #[cfg(not(debug_assertions))]
     pub(crate) fn ipc_step_window_required(&mut self, _cmd: &IpcCommand) -> IpcStep {
@@ -91,6 +108,8 @@ impl App {
             || cmd.request.method == "debug.inject_egui_text"
             || cmd.request.method == "debug.selection"
             || cmd.request.method == "debug.pending_menu"
+            || cmd.request.method == "debug.native_menu.answer"
+            || cmd.request.method == "debug.pending_move"
             || cmd.request.method == "debug.focused_surface"
             || cmd.request.method == "debug.surface_rect";
         if !is_window_required {
@@ -270,6 +289,30 @@ impl App {
             let response = host_ipc::protocol::JsonRpcResponse::success(
                 cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
                 body,
+            );
+            send_response(&cmd.response_tx, response);
+            return IpcStep::Handled;
+        }
+        // 다음 native 메뉴의 선택을 재현한다. 메뉴는 이후 egui 우클릭 주입이 연다.
+        #[cfg(debug_assertions)]
+        if cmd.request.method == "debug.native_menu.answer" {
+            let answer = match read_menu_answer(&cmd.request.params) {
+                Ok(a) => a,
+                Err(msg) => return reject_bad_params(cmd, &msg),
+            };
+            w.debug_set_menu_answer(answer);
+            let response = host_ipc::protocol::JsonRpcResponse::success(
+                cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
+                serde_json::json!({ "armed": true }),
+            );
+            send_response(&cmd.response_tx, response);
+            return IpcStep::Handled;
+        }
+        #[cfg(debug_assertions)]
+        if cmd.request.method == "debug.pending_move" {
+            let response = host_ipc::protocol::JsonRpcResponse::success(
+                cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
+                w.debug_pending_move(),
             );
             send_response(&cmd.response_tx, response);
             return IpcStep::Handled;

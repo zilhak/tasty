@@ -2,6 +2,8 @@ mod attach_mesh_input;
 pub(crate) mod clipboard;
 #[cfg(debug_assertions)]
 pub(crate) mod debug_input;
+#[cfg(debug_assertions)]
+pub(crate) mod debug_menu;
 mod divider_drag;
 mod egui_mesh;
 mod file_drop;
@@ -148,6 +150,9 @@ pub struct MainView {
     /// 실제 사용자 우클릭과 release 빌드에는 사용하지 않는다.
     #[cfg(debug_assertions)]
     pub(crate) debug_captured_menu: Option<crate::state::PendingNativeMenu>,
+    /// debug IPC가 둔 다음 native 메뉴의 응답. 실제 사용자 우클릭과 release 빌드에는 사용하지 않는다.
+    #[cfg(debug_assertions)]
+    pub(crate) debug_menu_answer: Option<debug_menu::MenuAnswer>,
     /// 무대가 OS 전체화면에 들어가기 전의 창 상태. fullscreen_window에서 복원한다.
     pub(crate) stage_saved_window_mode: Option<fullscreen_window::SavedWindowMode>,
 }
@@ -236,6 +241,8 @@ impl MainView {
             stage_was_active: false,
             #[cfg(debug_assertions)]
             debug_captured_menu: None,
+            #[cfg(debug_assertions)]
+            debug_menu_answer: None,
             stage_saved_window_mode: None,
         }
     }
