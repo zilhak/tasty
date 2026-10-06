@@ -214,6 +214,17 @@ fn section(id: &'static str, title: &'static str, specs: Vec<Spec>) -> Section {
     Section { id, title, specs }
 }
 
+/// 예제가 하나이고 구역 id와 예제 id가 같은 구역.
+fn single(
+    id: &'static str,
+    section_title: &'static str,
+    title: &'static str,
+    when: Option<&'static str>,
+    draw: fn(&mut egui::Ui, &Theme),
+) -> Section {
+    section(id, section_title, vec![spec(id, title, when, draw)])
+}
+
 /// 페이지별 구역과 예제 목록.
 pub fn pages() -> Vec<Page> {
     vec![
@@ -221,30 +232,24 @@ pub fn pages() -> Vec<Page> {
         Page {
             category: Category::Foundations,
             sections: vec![
-                section(
+                single(
                     "elevation",
                     "Color — elevation (surface ramp)",
-                    vec![spec(
-                        "elevation",
-                        "Depth reads through surface tint; shadow is for floating surfaces only",
-                        Some(
-                            "bg-app → sidebar → panel → surface-raised, one tint step apart — \
-                             lift is popover / modal / none, by surface shape",
-                        ),
-                        theme::elevation,
-                    )],
+                    "Depth reads through surface tint; shadow is for floating surfaces only",
+                    Some(
+                        "bg-app → sidebar → panel → surface-raised, one tint step apart — \
+                         lift is popover / modal / none, by surface shape",
+                    ),
+                    theme::elevation,
                 ),
-                section(
+                single(
                     "floating",
                     "Elevation — floating surfaces (the two shadows)",
-                    vec![spec(
-                        "floating",
-                        "Two shadows, and the rule that picks one",
-                        Some(
-                            "anchored + scrim-less → shadow-popover · centered + scrim-backed → shadow-modal",
-                        ),
-                        foundations_settled::draw_shadows,
-                    )],
+                    "Two shadows, and the rule that picks one",
+                    Some(
+                        "anchored + scrim-less → shadow-popover · centered + scrim-backed → shadow-modal",
+                    ),
+                    foundations_settled::draw_shadows,
                 ),
                 section(
                     "text",
@@ -266,65 +271,47 @@ pub fn pages() -> Vec<Page> {
                         ),
                     ],
                 ),
-                section(
+                single(
                     "accents",
                     "Color — accent roles",
-                    vec![spec(
-                        "accents",
-                        "Accents map to roles, not decoration",
-                        Some("primary · info · success · warning · danger · agent"),
-                        theme::accents,
-                    )],
+                    "Accents map to roles, not decoration",
+                    Some("primary · info · success · warning · danger · agent"),
+                    theme::accents,
                 ),
-                section(
+                single(
                     "terminal",
                     "Color — terminal / ANSI palette",
-                    vec![spec(
-                        "terminal",
-                        "The colors a terminal cell paints with — not UI chrome",
-                        Some("ANSI 16 (SGR 30–37 / 90–97) + selection · vi cursor · search fills"),
-                        theme::terminal,
-                    )],
+                    "The colors a terminal cell paints with — not UI chrome",
+                    Some("ANSI 16 (SGR 30–37 / 90–97) + selection · vi cursor · search fills"),
+                    theme::terminal,
                 ),
-                section(
+                single(
                     "type",
                     "Type",
-                    vec![spec(
-                        "type",
-                        "Two families, hard 14px cap, hierarchy by weight",
-                        Some("heading 13/600 · body 13 · caption 11 · mono 14"),
-                        typography::draw,
-                    )],
+                    "Two families, hard 14px cap, hierarchy by weight",
+                    Some("heading 13/600 · body 13 · caption 11 · mono 14"),
+                    typography::draw,
                 ),
-                section(
+                single(
                     "spacing",
                     "Spacing — the 4px grid, in use",
-                    vec![spec(
-                        "spacing",
-                        "Five steps, each with a job",
-                        Some("xs chip · sm pair · md card · lg column · xl region"),
-                        spacing::draw,
-                    )],
+                    "Five steps, each with a job",
+                    Some("xs chip · sm pair · md card · lg column · xl region"),
+                    spacing::draw,
                 ),
-                section(
+                single(
                     "shape",
                     "Radius · border · motion",
-                    vec![spec(
-                        "shape",
-                        "Crisp and rectilinear — it's a terminal",
-                        Some("radius 4/2 · 1px border · UI 90–120ms · terminal 0ms"),
-                        foundations_shape::draw,
-                    )],
+                    "Crisp and rectilinear — it's a terminal",
+                    Some("radius 4/2 · 1px border · UI 90–120ms · terminal 0ms"),
+                    foundations_shape::draw,
                 ),
-                section(
+                single(
                     "uiscale",
                     "UI scale — sidebar zoom",
-                    vec![spec(
-                        "uiscale",
-                        "One multiplier scales the sidebar; everything else stays fixed",
-                        Some("stops 0.8 / 1.0 / 1.2 — sidebar root zoom only"),
-                        foundations_uiscale::draw,
-                    )],
+                    "One multiplier scales the sidebar; everything else stays fixed",
+                    Some("stops 0.8 / 1.0 / 1.2 — sidebar root zoom only"),
+                    foundations_uiscale::draw,
                 ),
                 section(
                     "rolegaps",
@@ -646,15 +633,12 @@ pub fn pages() -> Vec<Page> {
                         widgets::hint_text::draw,
                     )],
                 ),
-                section(
+                single(
                     "warning-callout",
                     "Warning callout",
-                    vec![spec(
-                        "warning-callout",
-                        "Warning callout",
-                        Some("Bordered warning tint box — icon + caption under a risky toggle"),
-                        widgets::warning_callout::draw,
-                    )],
+                    "Warning callout",
+                    Some("Bordered warning tint box — icon + caption under a risky toggle"),
+                    widgets::warning_callout::draw,
                 ),
                 section(
                     "data",
@@ -684,61 +668,42 @@ pub fn pages() -> Vec<Page> {
                         ),
                     ],
                 ),
-                section(
+                single(
                     "segmented",
                     "Segmented control",
-                    vec![spec(
-                        "segmented",
-                        "Segmented",
-                        Some("Mutually-exclusive toggle — explorer's grid/list/detail switch"),
-                        components::segmented::draw,
-                    )],
+                    "Segmented",
+                    Some("Mutually-exclusive toggle — explorer's grid/list/detail switch"),
+                    components::segmented::draw,
                 ),
-                section(
+                single(
                     "explorer-cells",
                     "Explorer view cells",
-                    vec![spec(
-                        "explorer-cells",
-                        "Explorer view cells",
-                        Some(
-                            "grid cell (new) · list row (tree_row) · detail (Table + sort header)",
-                        ),
-                        components::explorer_view_cells::draw,
-                    )],
+                    "Explorer view cells",
+                    Some("grid cell (new) · list row (tree_row) · detail (Table + sort header)"),
+                    components::explorer_view_cells::draw,
                 ),
-                section(
+                single(
                     "explorer-toolbar",
                     "Explorer toolbar",
-                    vec![spec(
-                        "explorer-toolbar",
-                        "Address bar + view-mode toggle",
-                        Some(
-                            "surface-raised address box (clipped crumbs) + grid/list/detail icon toggle",
-                        ),
-                        components::explorer_toolbar::draw,
-                    )],
+                    "Address bar + view-mode toggle",
+                    Some(
+                        "surface-raised address box (clipped crumbs) + grid/list/detail icon toggle",
+                    ),
+                    components::explorer_toolbar::draw,
                 ),
-                section(
+                single(
                     "explorer-sidebar",
                     "Explorer sidebar",
-                    vec![spec(
-                        "explorer-sidebar",
-                        "Files tree + Favorites (populated / empty)",
-                        Some(
-                            "tree active highlight · section separator · filled star · empty state",
-                        ),
-                        components::explorer_sidebar::draw,
-                    )],
+                    "Files tree + Favorites (populated / empty)",
+                    Some("tree active highlight · section separator · filled star · empty state"),
+                    components::explorer_sidebar::draw,
                 ),
-                section(
+                single(
                     "layout-shell",
                     "Layout shell widgets",
-                    vec![spec(
-                        "layout-shell",
-                        "two-depth panel · overflow tab bar · content frame",
-                        Some("tasty-ui-widgets 공용 함수를 직접 호출한다 (복제 아님 — demo=main)"),
-                        components::prim_layout_shell::draw,
-                    )],
+                    "two-depth panel · overflow tab bar · content frame",
+                    Some("tasty-ui-widgets 공용 함수를 직접 호출한다 (복제 아님 — demo=main)"),
+                    components::prim_layout_shell::draw,
                 ),
             ],
         },
@@ -746,129 +711,99 @@ pub fn pages() -> Vec<Page> {
         Page {
             category: Category::Icons,
             sections: vec![
-                section(
+                single(
                     "system-rules",
                     "The icon system",
-                    vec![spec(
-                        "system-rules",
-                        "One geometry, recolored by context",
-                        Some(
-                            "24×24 viewBox · 2px stroke round · no fill · currentColor — sized via prop (26/20/16/14/12)",
-                        ),
-                        icons::draw_system_rules,
-                    )],
+                    "One geometry, recolored by context",
+                    Some(
+                        "24×24 viewBox · 2px stroke round · no fill · currentColor — sized via prop (26/20/16/14/12)",
+                    ),
+                    icons::draw_system_rules,
                 ),
-                section(
+                single(
                     "keys-in-use",
                     "Modifier symbols in use",
-                    vec![spec(
-                        "keys-in-use",
-                        "Keycap chip · settings display style",
-                        Some(
-                            "Two places consume these glyphs. In a keycap chip (modifier-hint \
-                             header, switch overlays) the glyph replaces the key's text inside \
-                             the same Kbd cap — 14px, so its optical weight matches the 12px mono \
-                             label it stands in for. In the Settings › modifier display style \
-                             dropdown, the closed trigger shows the glyph alone (it is a preview \
-                             of the keycap), while each open option row pairs glyph + text label \
-                             so the choice is never ambiguous.",
-                        ),
-                        icons_keys::draw,
-                    )],
+                    "Keycap chip · settings display style",
+                    Some(
+                        "Two places consume these glyphs. In a keycap chip (modifier-hint \
+                         header, switch overlays) the glyph replaces the key's text inside \
+                         the same Kbd cap — 14px, so its optical weight matches the 12px mono \
+                         label it stands in for. In the Settings › modifier display style \
+                         dropdown, the closed trigger shows the glyph alone (it is a preview \
+                         of the keycap), while each open option row pairs glyph + text label \
+                         so the choice is never ambiguous.",
+                    ),
+                    icons_keys::draw,
                 ),
-                section(
+                single(
                     "actions",
                     "Actions",
-                    vec![spec(
-                        "actions",
-                        "The verbs",
-                        Some(
-                            "What an IconButton wraps in a toolbar or row — close/refresh in every overlay header, edit/trash/copy in list rows",
-                        ),
-                        icons::draw_actions,
-                    )],
+                    "The verbs",
+                    Some(
+                        "What an IconButton wraps in a toolbar or row — close/refresh in every overlay header, edit/trash/copy in list rows",
+                    ),
+                    icons::draw_actions,
                 ),
-                section(
+                single(
                     "nav",
                     "Navigation & disclosure",
-                    vec![spec(
-                        "nav",
-                        "Movement and open/closed state",
-                        Some(
-                            "Single chevrons = tree-row disclosure; doubled = collapse/expand the sidebar rail",
-                        ),
-                        icons::draw_nav,
-                    )],
+                    "Movement and open/closed state",
+                    Some(
+                        "Single chevrons = tree-row disclosure; doubled = collapse/expand the sidebar rail",
+                    ),
+                    icons::draw_nav,
                 ),
-                section(
+                single(
                     "surfaces",
                     "Surfaces & workspace",
-                    vec![spec(
-                        "surfaces",
-                        "The nouns of the workspace",
-                        Some(
-                            "What a tab, tree row, or new-surface button shows — terminal/markdown are the two core surface kinds",
-                        ),
-                        icons::draw_surfaces,
-                    )],
+                    "The nouns of the workspace",
+                    Some(
+                        "What a tab, tree row, or new-surface button shows — terminal/markdown are the two core surface kinds",
+                    ),
+                    icons::draw_surfaces,
                 ),
-                section(
+                single(
                     "view",
                     "View modes & favorites",
-                    vec![spec(
-                        "view",
-                        "Explorer view switch & bookmark marker",
-                        Some(
-                            "grid / list / detail toggle glyphs + star — the explorer toolbar and favorites sidebar",
-                        ),
-                        icons::draw_view,
-                    )],
+                    "Explorer view switch & bookmark marker",
+                    Some(
+                        "grid / list / detail toggle glyphs + star — the explorer toolbar and favorites sidebar",
+                    ),
+                    icons::draw_view,
                 ),
-                section(
+                single(
                     "visibility",
                     "Visibility",
-                    vec![spec(
-                        "visibility",
-                        "Reveal toggle on secret values",
-                        Some(
-                            "Passkeys, env — eye when hidden, eyeOff when shown; swap in place on the same IconButton",
-                        ),
-                        icons::draw_visibility,
-                    )],
+                    "Reveal toggle on secret values",
+                    Some(
+                        "Passkeys, env — eye when hidden, eyeOff when shown; swap in place on the same IconButton",
+                    ),
+                    icons::draw_visibility,
                 ),
-                section(
+                single(
                     "status",
                     "Status & alerts",
-                    vec![spec(
-                        "status",
-                        "Inline meaning markers",
-                        Some(
-                            "Tinted by the line they sit in (warning amber, success green, danger red) via currentColor — not state dots",
-                        ),
-                        icons::draw_status,
-                    )],
+                    "Inline meaning markers",
+                    Some(
+                        "Tinted by the line they sit in (warning amber, success green, danger red) via currentColor — not state dots",
+                    ),
+                    icons::draw_status,
                 ),
-                section(
+                single(
                     "system",
                     "Tools & system",
-                    vec![spec(
-                        "system",
-                        "Sidebar footer & global tools",
-                        Some("Each anchors a menu or window — tools, settings, plug, rocket"),
-                        icons::draw_system,
-                    )],
+                    "Sidebar footer & global tools",
+                    Some("Each anchors a menu or window — tools, settings, plug, rocket"),
+                    icons::draw_system,
                 ),
-                section(
+                single(
                     "keys",
                     "Modifier keys (macOS)",
-                    vec![spec(
-                        "keys",
-                        "Command / Option / Shift symbols",
-                        Some(
-                            "Vector replacements for ⌘/⌥/⇧ — the settings display-style dropdowns and the modifier-hint keycap chip",
-                        ),
-                        icons::draw_keys,
-                    )],
+                    "Command / Option / Shift symbols",
+                    Some(
+                        "Vector replacements for ⌘/⌥/⇧ — the settings display-style dropdowns and the modifier-hint keycap chip",
+                    ),
+                    icons::draw_keys,
                 ),
             ],
         },
@@ -1087,25 +1022,19 @@ pub fn pages() -> Vec<Page> {
                         ),
                     ],
                 ),
-                section(
+                single(
                     "palette",
                     "Command palette",
-                    vec![spec(
-                        "palette",
-                        "Top-anchored, fuzzy, keyboard-first",
-                        Some("540px · surface-raised · spawns under the title bar"),
-                        components::command_palette::draw,
-                    )],
+                    "Top-anchored, fuzzy, keyboard-first",
+                    Some("540px · surface-raised · spawns under the title bar"),
+                    components::command_palette::draw,
                 ),
-                section(
+                single(
                     "tools",
                     "Tools menu",
-                    vec![spec(
-                        "tools",
-                        "Tools menu — anchored, no scrim",
-                        Some("160px popover · built-in tools, then plugin tools · no icons"),
-                        components::tools_menu::draw,
-                    )],
+                    "Tools menu — anchored, no scrim",
+                    Some("160px popover · built-in tools, then plugin tools · no icons"),
+                    components::tools_menu::draw,
                 ),
                 section(
                     "ports",
@@ -1315,15 +1244,12 @@ pub fn pages() -> Vec<Page> {
                         ),
                     ],
                 ),
-                section(
+                single(
                     "search",
                     "Search bar",
-                    vec![spec(
-                        "search",
-                        "Headless, sticky, top-right",
-                        Some("360×28 · find bar on the focused surface, no scrim"),
-                        components::search_bar::draw,
-                    )],
+                    "Headless, sticky, top-right",
+                    Some("360×28 · find bar on the focused surface, no scrim"),
+                    components::search_bar::draw,
                 ),
                 section(
                     "workspace-categories",
@@ -1409,15 +1335,12 @@ pub fn pages() -> Vec<Page> {
                         ),
                     ],
                 ),
-                section(
+                single(
                     "approval",
                     "Agent approval",
-                    vec![spec(
-                        "approval",
-                        "Review the command before it runs",
-                        Some("440px · the command and its grants, verbatim"),
-                        components::approval::draw,
-                    )],
+                    "Review the command before it runs",
+                    Some("440px · the command and its grants, verbatim"),
+                    components::approval::draw,
                 ),
                 section(
                     "convert",
@@ -1519,15 +1442,12 @@ pub fn pages() -> Vec<Page> {
                         ),
                     ],
                 ),
-                section(
+                single(
                     "preset",
                     "Apply preset",
-                    vec![spec(
-                        "preset",
-                        "Apply a saved layout",
-                        Some("440px · Workspace / Tab / Pane scope"),
-                        components::apply_preset::draw,
-                    )],
+                    "Apply a saved layout",
+                    Some("440px · Workspace / Tab / Pane scope"),
+                    components::apply_preset::draw,
                 ),
                 section(
                     "preseteditor",
@@ -1582,45 +1502,33 @@ pub fn pages() -> Vec<Page> {
                         ),
                     ],
                 ),
-                section(
+                single(
                     "rename",
                     "Rename popup",
-                    vec![spec(
-                        "rename",
-                        "One field, autofocused",
-                        Some("360px · workspace / subtitle / tab — one view"),
-                        components::rename_popup::draw,
-                    )],
+                    "One field, autofocused",
+                    Some("360px · workspace / subtitle / tab — one view"),
+                    components::rename_popup::draw,
                 ),
-                section(
+                single(
                     "explorer-context",
                     "Explorer context menu",
-                    vec![spec(
-                        "explorer-context",
-                        "Right-click — four targets",
-                        Some("empty · file · folder · multi-select — menu_item reuse"),
-                        components::explorer_context_menu::draw,
-                    )],
+                    "Right-click — four targets",
+                    Some("empty · file · folder · multi-select — menu_item reuse"),
+                    components::explorer_context_menu::draw,
                 ),
-                section(
+                single(
                     "explorer-favorite",
                     "Add to favorites popup",
-                    vec![spec(
-                        "explorer-favorite",
-                        "Name a global favorite",
-                        Some("≈280px · path caption + seeded input · anchored popup"),
-                        components::explorer_favorite_popup::draw,
-                    )],
+                    "Name a global favorite",
+                    Some("≈280px · path caption + seeded input · anchored popup"),
+                    components::explorer_favorite_popup::draw,
                 ),
-                section(
+                single(
                     "explorer-rename",
                     "Rename popup (explorer)",
-                    vec![spec(
-                        "explorer-rename",
-                        "Rename a file or folder",
-                        Some("≈280px · same skeleton as Add to favorites"),
-                        components::explorer_rename_popup::draw,
-                    )],
+                    "Rename a file or folder",
+                    Some("≈280px · same skeleton as Add to favorites"),
+                    components::explorer_rename_popup::draw,
                 ),
                 section(
                     "settings",
@@ -1816,15 +1724,12 @@ pub fn pages() -> Vec<Page> {
                         ),
                     ],
                 ),
-                section(
+                single(
                     "notifications",
                     "Notification panel",
-                    vec![spec(
-                        "notifications",
-                        "Unread header · entry list · empty state",
-                        Some("352×400 · 전체화면 무대를 선언한 유일한 popup (fit + X)"),
-                        components::notification_panel::draw,
-                    )],
+                    "Unread header · entry list · empty state",
+                    Some("352×400 · 전체화면 무대를 선언한 유일한 popup (fit + X)"),
+                    components::notification_panel::draw,
                 ),
                 section(
                     "info-modal",
@@ -1856,25 +1761,19 @@ pub fn pages() -> Vec<Page> {
                         ),
                     ],
                 ),
-                section(
+                single(
                     "script-confirm",
                     "Script changed confirm",
-                    vec![spec(
-                        "script-confirm",
-                        "TOFU gate — run the changed script?",
-                        Some("360px · mono 경로 truncate · changed 태그 · Run anyway / Cancel"),
-                        components::script_confirm::draw,
-                    )],
+                    "TOFU gate — run the changed script?",
+                    Some("360px · mono 경로 truncate · changed 태그 · Run anyway / Cancel"),
+                    components::script_confirm::draw,
                 ),
-                section(
+                single(
                     "quit-modal",
                     "Quit confirmation",
-                    vec![spec(
-                        "quit-modal",
-                        "Quit or minimize to background",
-                        Some("400×200 독립 창 · close_behavior = \"ask\" 경로"),
-                        components::quit_modal::draw,
-                    )],
+                    "Quit or minimize to background",
+                    Some("400×200 독립 창 · close_behavior = \"ask\" 경로"),
+                    components::quit_modal::draw,
                 ),
                 section(
                     "plugins-window",
@@ -1898,15 +1797,12 @@ pub fn pages() -> Vec<Page> {
                         ),
                     ],
                 ),
-                section(
+                single(
                     "drop-overlay",
                     "Drag & drop overlay",
-                    vec![spec(
-                        "drop-overlay",
-                        "Drop to open — hover feedback on the terminal",
-                        Some("accent-primary 12% fill + 60% 1px 보더 + 중앙 라벨"),
-                        components::drop_overlay::draw,
-                    )],
+                    "Drop to open — hover feedback on the terminal",
+                    Some("accent-primary 12% fill + 60% 1px 보더 + 중앙 라벨"),
+                    components::drop_overlay::draw,
                 ),
             ],
         },
@@ -2086,17 +1982,14 @@ pub fn pages() -> Vec<Page> {
                         ),
                     ],
                 ),
-                section(
+                single(
                     "movesource",
                     "Move source highlight",
-                    vec![spec(
-                        "movesource",
-                        "Move source — dashed ring and off-screen glyph",
-                        Some(
-                            "2px pink dashed ring inside the target · move glyph on the nearest visible container",
-                        ),
-                        components::move_source::draw,
-                    )],
+                    "Move source — dashed ring and off-screen glyph",
+                    Some(
+                        "2px pink dashed ring inside the target · move glyph on the nearest visible container",
+                    ),
+                    components::move_source::draw,
                 ),
                 section(
                     "dag-graph",
@@ -2194,25 +2087,19 @@ pub fn pages() -> Vec<Page> {
                         ),
                     ],
                 ),
-                section(
+                single(
                     "titlebar",
                     "Window titlebar (CSD)",
-                    vec![spec(
-                        "titlebar",
-                        "Active · inactive · close hover",
-                        Some("titlebar-height(36) · window-button-size(24) · 하단 1px"),
-                        components::titlebar::draw,
-                    )],
+                    "Active · inactive · close hover",
+                    Some("titlebar-height(36) · window-button-size(24) · 하단 1px"),
+                    components::titlebar::draw,
                 ),
-                section(
+                single(
                     "empty-surface",
                     "Empty surface",
-                    vec![spec(
-                        "empty-surface",
-                        "One button, nothing else",
-                        Some("bg-app 전면 · 세로 중앙 · convert popup 을 연다"),
-                        components::empty_surface::draw,
-                    )],
+                    "One button, nothing else",
+                    Some("bg-app 전면 · 세로 중앙 · convert popup 을 연다"),
+                    components::empty_surface::draw,
                 ),
             ],
         },
@@ -2220,17 +2107,12 @@ pub fn pages() -> Vec<Page> {
         Page {
             category: Category::Plugins,
             sections: vec![
-                section(
+                single(
                     "clipboard-viewer",
                     "Clipboard viewer popup",
-                    vec![spec(
-                        "clipboard-viewer",
-                        "Clipboard viewer — read-only snapshot popup",
-                        Some(
-                            "480×360 · single column · type bar → code well · empty / read-failed",
-                        ),
-                        components::clipboard_viewer::draw,
-                    )],
+                    "Clipboard viewer — read-only snapshot popup",
+                    Some("480×360 · single column · type bar → code well · empty / read-failed"),
+                    components::clipboard_viewer::draw,
                 ),
                 section(
                     "git-viewer",
@@ -2310,17 +2192,12 @@ pub fn pages() -> Vec<Page> {
                     ],
                 ),
                 components::image_viewer::section(),
-                section(
+                single(
                     "html-chrome",
                     "HTML (webview) chrome",
-                    vec![spec(
-                        "html-chrome",
-                        "HTML (webview) chrome",
-                        Some(
-                            "Native overlay · thin chrome · boundary / placeholder / loading / error",
-                        ),
-                        components::html_chrome::draw,
-                    )],
+                    "HTML (webview) chrome",
+                    Some("Native overlay · thin chrome · boundary / placeholder / loading / error"),
+                    components::html_chrome::draw,
                 ),
             ],
         },
