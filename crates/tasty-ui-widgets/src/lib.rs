@@ -41,6 +41,7 @@ mod popup_title;
 mod remote_tool;
 mod segmented;
 mod select;
+mod sequence_editor;
 mod shell_setup;
 mod spacing;
 mod spinner;
@@ -127,6 +128,9 @@ pub use remote_tool::{
 };
 pub use segmented::segmented;
 pub use select::{select, select_or_placeholder};
+pub use sequence_editor::{
+    SequenceEditorAction, SequenceEditorError, SequenceEditorView, sequence_editor,
+};
 pub use shell_setup::{
     SHELL_SETUP_FORM_WIDTH, ShellSetupCheck, ShellSetupOutput, ShellSetupView, shell_setup_screen,
 };

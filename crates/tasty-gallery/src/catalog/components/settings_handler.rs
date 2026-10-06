@@ -641,6 +641,8 @@ struct HookSeed {
     cmd: String,
     /// `IpcSequence` 행인가. 그러면 2 행이 편집 Input 이 아니라 **mono 한 줄 요약**이다.
     seq: bool,
+    /// 저장된 method 를 한 줄 형식으로 쓸 수 없는 시퀀스인가. 그러면 Edit 대신 "Edit with CLI" + 복사다.
+    cli: bool,
     on: bool,
 }
 
@@ -660,6 +662,7 @@ fn seed_hooks() -> Vec<HookSeed> {
             prio: 10,
             cmd: "tasty notify \"push → $TASTY_HOOK_REPO\"".into(),
             seq: false,
+            cli: false,
             on: true,
         },
         HookSeed {
@@ -669,6 +672,7 @@ fn seed_hooks() -> Vec<HookSeed> {
             prio: 20,
             cmd: "git-helper pr open --id $TASTY_HOOK_PR".into(),
             seq: false,
+            cli: false,
             on: true,
         },
         HookSeed {
@@ -678,6 +682,7 @@ fn seed_hooks() -> Vec<HookSeed> {
             prio: 30,
             cmd: "~/ops/on-deploy.sh $TASTY_HOOK_ENV".into(),
             seq: false,
+            cli: false,
             on: false,
         },
         HookSeed {
@@ -687,6 +692,17 @@ fn seed_hooks() -> Vec<HookSeed> {
             prio: 40,
             cmd: "ipc: window.focus → layout.save → surface.close".into(),
             seq: true,
+            cli: false,
+            on: true,
+        },
+        HookSeed {
+            id: "ci-notify".into(),
+            origin: "you",
+            user: true,
+            prio: 50,
+            cmd: "ipc: system.info → … (2 steps)".into(),
+            seq: true,
+            cli: true,
             on: true,
         },
     ]
@@ -733,6 +749,14 @@ pub fn draw_hook_handlers(ui: &mut egui::Ui, theme: &Theme) {
             (
                 "IpcSequence",
                 "편집 Input 대신 mono 한 줄 요약(스텝을 → 로 이음)",
+            ),
+            (
+                "sequence editing (2026-10-06 b2)",
+                "Edit (ghost sm) on EVERY IpcSequence row (host / plugin edits save as a user override, like ShellCommand) → opens the inline text editor below",
+            ),
+            (
+                "not text-representable",
+                "a stored method name the line format cannot carry → the row keeps caption \"Edit with CLI\" + copy; copies tasty hook-handler get --id <id>",
             ),
             ("disabled", "row 전체 opacity-disabled"),
             ("add card", "surface-raised + border + radius · caps 헤드"),
@@ -844,6 +868,7 @@ fn draw_hook_content(ui: &mut egui::Ui, theme: &Theme, st: &mut HookState) {
                             prio: max_prio + 10,
                             cmd: st.draft_cmd.trim().to_string(),
                             seq: false,
+                            cli: false,
                             on: true,
                         });
                         st.adding = false;
@@ -962,13 +987,44 @@ fn draw_hook_row(
                         },
                     );
                     if seq {
-                        // 단계별 편집 대신 동작 순서를 한 줄로 표시한다.
-                        ui.label(
-                            egui::RichText::new(st.hooks[i].cmd.clone())
-                                .monospace()
-                                .size(theme.font_size_term_sm.value())
-                                .color(theme.text_secondary().to_egui()),
-                        );
+                        // 요약 한 줄 · 오른쪽 끝 Edit(편집기는 아래 Spec), 한 줄 형식으로 쓸 수 없으면
+                        // "Edit with CLI"(툴팁 = 명령) + 복사.
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if st.hooks[i].cli {
+                                let copy = IconButton::new()
+                                    .variant(IconButtonVariant::Ghost)
+                                    .size(ControlSize::Sm)
+                                    .show(ui, theme, &|ui, rect, c| {
+                                        icons::COPY.image(rect.width(), c).paint_at(ui, rect);
+                                    });
+                                copy.on_hover_text("Copy edit command");
+                                ui.label(
+                                    egui::RichText::new("Edit with CLI")
+                                        .size(theme.font_size_caption.value())
+                                        .color(theme.text_muted().to_egui()),
+                                )
+                                .on_hover_text("tasty hook-handler get --id ci-notify");
+                            } else {
+                                Button::new("Edit")
+                                    .variant(ButtonVariant::Ghost)
+                                    .size(ControlSize::Sm)
+                                    .show(ui, theme);
+                            }
+                            ui.with_layout(
+                                egui::Layout::left_to_right(egui::Align::Center),
+                                |ui| {
+                                    ui.add(
+                                        egui::Label::new(
+                                            egui::RichText::new(st.hooks[i].cmd.clone())
+                                                .monospace()
+                                                .size(theme.font_size_term_sm.value())
+                                                .color(theme.text_secondary().to_egui()),
+                                        )
+                                        .truncate(),
+                                    );
+                                },
+                            );
+                        });
                     } else {
                         Input::new()
                             .mono(true)

@@ -29,7 +29,8 @@ pub struct CodeAreaOutput {
 }
 
 impl<'a> CodeArea<'a> {
-    /// `id_salt` 는 프레임마다 같은 값이어야 커서와 스크롤 위치가 유지된다.
+    /// `id_salt` 는 프레임마다 같은 값이어야 커서와 스크롤 위치가 유지된다. 글자 영역의 id 는
+    /// `egui::Id::new(id_salt)` 이므로 호출자가 이 id 로 포커스를 요청할 수 있다.
     pub fn new(id_salt: impl std::hash::Hash) -> Self {
         Self {
             id_salt: egui::Id::new(id_salt),
@@ -122,7 +123,7 @@ impl<'a> CodeArea<'a> {
         // TextEdit 에 들어가기 전에 단축키를 가로챈다. Mod+Enter 가 줄바꿈으로 먼저 처리되지 않게
         // 하려는 것이다. egui 는 프레임 시작에서 Esc 로 포커스를 이미 풀었으므로 Esc 는 직전 프레임의
         // 포커스로 판정한다.
-        let edit_id = ui.make_persistent_id(self.id_salt);
+        let edit_id = self.id_salt;
         let focus_key = edit_id.with("was_focused");
         let was_focused = ui.data(|d| d.get_temp::<bool>(focus_key).unwrap_or(false));
         let focused = self.enabled && (was_focused || ui.memory(|m| m.has_focus(edit_id)));

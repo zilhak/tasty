@@ -1544,6 +1544,14 @@ pub fn pages() -> Vec<Page> {
                             components::settings_handler::draw_hook_handlers,
                         ),
                         spec(
+                            "settings-hook-seq-editor",
+                            "Hook Handlers — IpcSequence text editor",
+                            Some(
+                                "inline CodeArea editor — normal · first error with gutter mark · empty note (Mocha + Latte)",
+                            ),
+                            components::settings_hook_seq::draw,
+                        ),
+                        spec(
                             "settings-macos-permissions",
                             "General › Permissions (macOS)",
                             Some(
