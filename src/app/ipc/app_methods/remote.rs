@@ -15,6 +15,19 @@ impl App {
         );
     }
 
+    /// 자기 포트라서 연결하지 않은 최근 attach 시도. 오래된 것부터 돌려준다.
+    pub(super) fn ipc_dispatch_remote_refusals(&mut self, cmd: &IpcCommand) {
+        let rpc_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
+        let refusals: Vec<_> = self.remote.refusals.recent().collect();
+        send_response(
+            &cmd.response_tx,
+            host_ipc::protocol::JsonRpcResponse::success(
+                rpc_id,
+                serde_json::json!({ "refusals": refusals }),
+            ),
+        );
+    }
+
     /// mirror를 만들되 로컬·원격 포커스는 옮기지 않는다.
     /// 기존 workspace는 attaching으로 즉시 응답한다. 새 workspace는 생성 결과 ID를 응답한 뒤
     /// mirror 연결을 이어 가므로 두 경우 모두 응답이 mirror 연결 완료를 뜻하지 않는다.
@@ -65,6 +78,7 @@ impl App {
         self.state
             .mirror_attempts
             .register_endpoint(attempt.clone(), target_binding);
+        let attempt_id = attempt.id();
         let tx = self.remote.tx.clone();
         let proxy = self.view.proxy.clone();
         match target {
@@ -83,7 +97,11 @@ impl App {
                     &cmd.response_tx,
                     host_ipc::protocol::JsonRpcResponse::success(
                         rpc_id,
-                        serde_json::json!({ "attaching": true, "remote_workspace": remote_ws }),
+                        serde_json::json!({
+                            "attaching": true,
+                            "remote_workspace": remote_ws,
+                            "attempt": attempt_id,
+                        }),
                     ),
                 );
             }
@@ -283,6 +301,7 @@ fn remote_attach_create_worker(
                 "remote_workspace": created.id,
                 "name": created.name,
                 "index": created.index,
+                "attempt": attempt.id(),
             }),
         ),
     );

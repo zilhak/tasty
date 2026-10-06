@@ -40,6 +40,10 @@ const NOT_IN_HEADLESS: &[(&str, &str)] = &[
         "mirror workspace 를 띄울 창이 필요하다 — winit proxy 로 창 생성 이벤트를 보낸다",
     ),
     (
+        "remote.refusals",
+        "거절을 기록하는 remote.attach 와 자동 attach 가 GUI 에만 있다",
+    ),
+    (
         "system.gpu_stats",
         "창마다의 GpuState 와 wgpu 전역 리포트를 센다. 헤드리스엔 GPU 컨텍스트가 없다",
     ),

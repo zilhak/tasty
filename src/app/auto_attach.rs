@@ -114,6 +114,9 @@ impl App {
         if self.remote.active.contains(&anchor) {
             return None;
         }
+        if self.remote.refusals.holds(anchor, &mapping) {
+            return None;
+        }
         let remote_ws = mapping.remote_workspace?;
 
         Some((anchor, mapping, remote_ws))
@@ -369,7 +372,7 @@ impl App {
 
     fn apply_auto_attach_outcome(&mut self, outcome: AutoAttachOutcome) {
         // Keep the accepted attempt owner through result dispatch, as before extraction.
-        let Some((target, _accepted)) = self.accept_auto_attach_outcome(&outcome) else {
+        let Some((target, accepted)) = self.accept_auto_attach_outcome(&outcome) else {
             self.remote.discard_endpoint_outcome(outcome);
             return;
         };
@@ -384,7 +387,7 @@ impl App {
             Ok((tunnel, port)) => {
                 self.handle_auto_attach_connected(
                     target,
-                    anchor_ws_id,
+                    &accepted,
                     remote_ws,
                     is_reconnect,
                     tunnel,
@@ -408,18 +411,18 @@ impl App {
     fn handle_auto_attach_connected(
         &mut self,
         target: crate::app::attach_client::pending::PendingMirrorInstall,
-        anchor_ws_id: Option<u32>,
+        accepted: &tasty_remote::outbound::AttemptRecord,
         remote_ws: u32,
         is_reconnect: bool,
         tunnel: Option<SshTunnel>,
         port: u16,
     ) {
+        // accept_auto_attach_outcome가 결과의 anchor와 같음을 확인했다.
+        let anchor_ws_id = accepted.anchor;
         // 자기 포트는 debug·release 모두 연결을 시도하기 전에 거절한다.
         let Some(attach_result) = self.queue_endpoint_mirror(target, port, remote_ws, tunnel)
         else {
-            if let Some(anchor) = anchor_ws_id {
-                self.remote.active.remove(&anchor);
-            }
+            self.record_self_refusal(accepted, remote_ws, is_reconnect, port);
             return;
         };
         match attach_result {
@@ -436,6 +439,40 @@ impl App {
                     }
                 }
             }
+        }
+    }
+
+    /// 거절을 IPC로 조회할 수 있게 남기고, 같은 대상을 매 프레임 다시 해석하지 않게 한다.
+    /// 첫 attach는 재활성화 때까지 기다리고, 인라인 매핑은 매핑이 바뀔 때까지 보류한다.
+    /// 재연결은 다른 재연결 실패와 같은 백오프를 따른다.
+    fn record_self_refusal(
+        &mut self,
+        accepted: &tasty_remote::outbound::AttemptRecord,
+        remote_ws: u32,
+        is_reconnect: bool,
+        port: u16,
+    ) {
+        self.remote.refusals.record(
+            tasty_remote::refusal::AttachRefusal {
+                attempt: accepted.token.id(),
+                anchor_workspace: accepted.anchor,
+                remote_workspace: remote_ws,
+                port,
+                reconnect: is_reconnect,
+            },
+            accepted.mapping.as_ref(),
+        );
+        let Some(anchor) = accepted.anchor else {
+            return;
+        };
+        self.remote.active.remove(&anchor);
+        if is_reconnect {
+            self.on_reconnect_attempt_failed(
+                anchor,
+                &anyhow::anyhow!("attach target is this instance's own port {port}"),
+            );
+        } else {
+            self.remote.pending_reactivation.insert(anchor);
         }
     }
 

@@ -201,6 +201,7 @@ GUI 조건에 따른다. 창이 없다는 이유로 권한 요청 자체를 막�
 | `window.list` / `view.list` | 빈 목록이 아니라 **개념이 없다** — `[]` 를 주면 "창이 0 개인 GUI" 로 읽혀 호출자가 `window.create` 를 시도한다 |
 | `ui.screenshot` | 창의 화면을 캡처해 파일로 쓴다. 캡처할 창이 필요하다 |
 | `remote.attach` | mirror workspace 를 띄울 창이 필요하다 |
+| `remote.refusals` | 거절을 기록하는 `remote.attach` 와 자동 attach 가 GUI 에만 있다 |
 | `system.gpu_stats` | 창마다의 GpuState 와 wgpu 전역 리포트를 센다. GPU 컨텍스트가 없다 |
 
 `plugin.*`의 현재 분류는 위 "`plugin.*` — 19 개 메서드의 판정" 절을 따른다.
@@ -245,7 +246,7 @@ macOS GUI·헤드리스 비교 측정은 없으므로 아래 집계에 포함하
 
 | 부류 | 건수 | 어디서 판정하나 |
 |------|------|-----------------|
-| 창 축(`window.*` · `view.*` · `ui.screenshot` · `remote.attach` · `system.gpu_stats`) | 11 | 위 "app 층 메서드" 절 |
+| 창 축(`window.*` · `view.*` · `ui.screenshot` · `remote.attach` · `remote.refusals` · `system.gpu_stats`) | 12 | 위 "app 층 메서드" 절 |
 | `plugin.*` | 9 | 위 "`plugin.*` — 19 개 메서드의 판정" 절 (census 시점 12 → 그 뒤 셋이 열렸다) |
 | `debug.*` | 36 | 이 절 |
 | 그 밖 | 6 | 이 절 |

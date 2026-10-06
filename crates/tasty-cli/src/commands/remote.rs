@@ -175,4 +175,13 @@ pub enum RemoteCommands {
         #[arg(long)]
         json: bool,
     },
+    /// List recent attach attempts refused because they targeted this instance.
+    ///
+    /// Attaching to this instance's own port is refused after the endpoint is
+    /// resolved, so the `remote.attach` reply only acknowledges the attempt.
+    /// Each entry carries the `attempt` number from that reply, the local
+    /// workspace of an automatic attach mapping, the remote workspace id, and
+    /// the port. Up to 32 of the newest refusals are kept until the instance
+    /// exits. Other connection failures are not listed. Read-only.
+    Refusals,
 }

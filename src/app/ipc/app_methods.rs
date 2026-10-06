@@ -98,6 +98,10 @@ impl App {
             self.ipc_dispatch_remote_attach(cmd);
             return IpcStep::Handled;
         }
+        if cmd.request.method == "remote.refusals" {
+            self.ipc_dispatch_remote_refusals(cmd);
+            return IpcStep::Handled;
+        }
         IpcStep::NotHandled
     }
 

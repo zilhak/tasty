@@ -285,6 +285,7 @@ fn self_attach_is_rejected_before_it_can_take_occupancy() {
 }
 
 /// IPC remote.attach가 loopback 주소로 자기 포트를 가리키면 debug에서도 연결 전에 거절한다.
+/// 응답은 시도만 접수하고, 거절은 응답의 시도 번호로 remote.refusals에서 조회한다.
 #[cfg(all(feature = "gui", debug_assertions))]
 #[test]
 fn remote_attach_to_the_own_port_is_rejected_before_it_can_take_occupancy() {
@@ -301,6 +302,16 @@ fn remote_attach_to_the_own_port_is_rejected_before_it_can_take_occupancy() {
         reply["attaching"], true,
         "IPC only acknowledges the attempt: {reply:?}"
     );
+    let attempt = reply["attempt"].clone();
+    assert!(
+        attempt.is_u64(),
+        "reply carries the attempt number: {reply:?}"
+    );
+    let refusal = |server: &TastyInstance| {
+        server.call("remote.refusals", json!({}))["refusals"]
+            .as_array()
+            .and_then(|all| all.iter().find(|r| r["attempt"] == attempt).cloned())
+    };
 
     let mut completion = None;
     let deadline = Instant::now() + SELF_ATTACH_WATCH;
@@ -317,6 +328,84 @@ fn remote_attach_to_the_own_port_is_rejected_before_it_can_take_occupancy() {
     assert_eq!(completion["outcome"], "rejected_self", "{completion}");
     assert_eq!(completion["connector_entries"], 0, "{completion}");
     assert!(!is_attached(server, ws.surface_id));
+    // The refusal is recorded in the same main-loop step that wrote the completion record.
+    let refusal = refusal(server).expect("the refusal is listed under the reply's attempt");
+    assert_eq!(refusal["port"], server.port(), "{refusal}");
+    assert_eq!(refusal["remote_workspace"], ws.id, "{refusal}");
+    assert_eq!(
+        refusal["anchor_workspace"],
+        serde_json::Value::Null,
+        "{refusal}"
+    );
+    assert_eq!(refusal["reconnect"], false, "{refusal}");
+}
+
+/// 자기 포트를 가리키는 자동 attach 인라인 매핑은 활성 동안과 재활성화 때 거절을 되풀이하지 않는다.
+/// 매핑이 바뀐 뒤의 재활성화에서만 다시 시도한다.
+#[cfg(all(feature = "gui", debug_assertions))]
+#[test]
+fn a_self_port_mapping_is_refused_once_until_it_changes() {
+    /// 자동 attach 판정은 이벤트 루프가 돌 때마다 실행된다. 이 시간 동안 요청을 보내 루프를 깨운다.
+    const CHURN: Duration = Duration::from_millis(1500);
+    let server = common::shared();
+    let ws = server.create_workspace("self-mapping-held");
+    let away = server.create_workspace("self-mapping-away");
+    let host = format!("127.0.0.1:{}", server.port());
+    let map_to = |remote_ws: u64| {
+        server.call(
+            "workspace.update",
+            json!({ "id": ws.id, "attach_ssh": host, "attach_remote_workspace": remote_ws }),
+        );
+    };
+    let refused = || {
+        server.call("remote.refusals", json!({}))["refusals"]
+            .as_array()
+            .expect("remote.refusals returns a list")
+            .iter()
+            .filter(|r| r["anchor_workspace"] == ws.id)
+            .count()
+    };
+    let switch_to = |index: usize| {
+        let switched = server.call("debug.switch_workspace", json!({ "index": index }));
+        assert_eq!(switched["switched"], true, "{switched:?}");
+    };
+    let churn_until = |least: usize| {
+        let started = Instant::now();
+        while started.elapsed() < CHURN
+            || (refused() < least && started.elapsed() < SELF_ATTACH_WATCH)
+        {
+            server.call("ui.state", json!({}));
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        refused()
+    };
+    // 공유 서버의 활성 workspace는 다른 시험에 영향을 주지 않도록 저장했다가 복원한다.
+    let previous_active = server.call("ui.state", json!({}))["active_workspace"]
+        .as_u64()
+        .expect("ui.state returns the active workspace index") as usize;
+
+    map_to(away.id);
+    switch_to(ws.index);
+    let while_active = churn_until(1);
+    switch_to(away.index);
+    switch_to(ws.index);
+    let after_return = churn_until(1);
+    map_to(ws.id);
+    switch_to(away.index);
+    switch_to(ws.index);
+    let after_change = churn_until(2);
+
+    switch_to(previous_active);
+    server.call(
+        "workspace.update",
+        json!({ "id": ws.id, "attach_clear": true }),
+    );
+    assert!(!is_attached(server, ws.surface_id));
+    assert_eq!(
+        (while_active, after_return, after_change),
+        (1, 1, 2),
+        "refusals per step: while active, after reactivation, after the mapping changed"
+    );
 }
 
 /// 헤드리스에서 GUI attach 큐가 처리되지 않더라도 점유를 잡지 않는지 확인한다.

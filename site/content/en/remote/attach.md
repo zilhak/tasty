@@ -1,4 +1,4 @@
-<!-- source-hash: 4403f856ce87 -->
+<!-- source-hash: 833c222425ee -->
 <a id="remote-attach"></a>
 
 # Working remotely (attach)
@@ -123,6 +123,7 @@ tasty set workspace --id 5 --clear-mapping                              # remove
 
 - `--remote-workspace` is the remote Workspace **ID**. Look it up with `tasty remote workspaces`.
 - A mapped mirror keeps the Workspace and its scrollback as they are when the connection drops and reconnects in the background (retrying with intervals growing from 0.5 seconds up to 30 seconds; at 30-second intervals when the remote is occupied by someone else). After 20 failures it stops and notifies you with a toast — leaving that Workspace and coming back triggers one more attempt immediately.
+- If the mapped target is this same Tasty, it does not connect. A mapping set with `--ssh` is not retried until you change the mapping, and a profile mapping is checked once more when you switch back to that Workspace. `tasty remote refusals` lists the refused attempts.
 - A mirror attached without a mapping disappears from the window when the connection drops. If it was the only Workspace left in that window, the window stays open and a new terminal Workspace takes its place.
 
 ## What you can do inside a mirror

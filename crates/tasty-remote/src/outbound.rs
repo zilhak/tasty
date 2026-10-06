@@ -45,6 +45,8 @@ pub struct Remote {
     pub last_active_ws: Option<u32>,
     pub pending_reactivation: std::collections::HashSet<u32>,
     pub reconnect: std::collections::HashMap<u32, ReconnectSlot>,
+    pub refusals: crate::refusal::Refusals,
+    next_attempt_id: u64,
     pub tx: std::sync::mpsc::Sender<AutoAttachOutcome>,
     pub rx: std::sync::mpsc::Receiver<AutoAttachOutcome>,
 }
@@ -73,6 +75,8 @@ impl Remote {
             last_active_ws: None,
             pending_reactivation: Default::default(),
             reconnect: Default::default(),
+            refusals: Default::default(),
+            next_attempt_id: 1,
             tx,
             rx,
         }
@@ -82,6 +86,7 @@ impl Remote {
 #[derive(Clone)]
 pub struct AttemptToken(std::sync::Arc<AttemptState>);
 struct AttemptState {
+    id: u64,
     ssh: std::sync::Mutex<Vec<tasty_ssh::SshCancel>>,
     active: std::sync::atomic::AtomicBool,
     sockets: std::sync::Mutex<Vec<std::net::TcpStream>>,
@@ -118,6 +123,10 @@ static ATTEMPT_SSH_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
 static ATTEMPT_SOCKETS_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
 
 impl AttemptToken {
+    /// 이 인스턴스 안에서 시도마다 다른 번호. 거절 기록과 IPC 응답이 같은 값을 쓴다.
+    pub fn id(&self) -> u64 {
+        self.0.id
+    }
     pub fn is_active(&self) -> bool {
         self.0.active.load(std::sync::atomic::Ordering::Acquire)
     }
@@ -340,7 +349,10 @@ impl Remote {
         if self.attempts.len() >= 64 {
             return Err("remote connection attempt queue is full");
         }
+        let id = self.next_attempt_id;
+        self.next_attempt_id += 1;
         let token = AttemptToken(std::sync::Arc::new(AttemptState {
+            id,
             ssh: std::sync::Mutex::new(Vec::new()),
             active: std::sync::atomic::AtomicBool::new(true),
             sockets: std::sync::Mutex::new(Vec::new()),

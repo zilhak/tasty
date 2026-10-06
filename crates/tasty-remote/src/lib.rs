@@ -26,6 +26,8 @@ pub mod transport;
 
 pub mod pending_connection;
 
+pub mod refusal;
+
 pub mod browser;
 
 pub mod profile_detection;

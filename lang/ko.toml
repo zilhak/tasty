@@ -2383,6 +2383,10 @@ help = "원격 파일시스템상의 새 워크스페이스 작업 디렉터리.
 [cli.help._root.remote.new-workspace.arg.json]
 help = "사람용 텍스트 대신 JSON 객체 출력(스크립트·에이전트용)"
 
+[cli.help._root.remote.refusals]
+about = "이 인스턴스를 대상으로 해서 거절한 최근 attach 시도를 나열합니다"
+long = "이 인스턴스를 대상으로 해서 거절한 최근 attach 시도를 나열합니다.\n\n이 인스턴스 자신의 포트로 향한 attach는 엔드포인트를 해석한 뒤에 거절하므로 `remote.attach` 응답은 시도를 접수했다는 것만 알립니다. 각 항목에는 그 응답의 `attempt` 번호, 자동 attach 매핑의 로컬 워크스페이스, 원격 워크스페이스 ID, 포트가 있습니다. 인스턴스가 종료될 때까지 최근 거절 32개를 보관합니다. 다른 연결 실패는 나열하지 않습니다. 읽기 전용입니다."
+
 [cli.help._root.send]
 about = "텍스트, 키, 큐 메시지 전송"
 
