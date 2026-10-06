@@ -1002,6 +1002,14 @@ pub fn pages() -> Vec<Page> {
                             ),
                             widgets::banner::draw_more_menu,
                         ),
+                        spec(
+                            "banner-more-elastic",
+                            "Elastic width — the interpolated program name",
+                            Some(
+                                "Row label = fixed text (never truncates) + mono program name (shrinks, ellipsises) · menu content-sized between 200 and 288 · full name as tooltip",
+                            ),
+                            widgets::banner_mouse_capture::draw_elastic,
+                        ),
                     ],
                 ),
                 section(

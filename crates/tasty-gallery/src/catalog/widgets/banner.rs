@@ -856,6 +856,22 @@ fn mouse_capture_menu_row(
     suffix: &str,
     hovered: bool,
 ) {
+    mouse_capture_menu_row_tone(ui, theme, icon, prefix, app, suffix, hovered, false);
+}
+
+/// `danger` 면 아이콘과 고정 문구를 accent-danger 로 칠한다(시안의 기각된 기록용 예).
+/// 프로그램 이름은 어느 쪽이든 banner-more-app-fg 다.
+#[allow(clippy::too_many_arguments)] // reason: 한 행의 아이콘·세 문구·두 상태를 그대로 받는다
+pub(super) fn mouse_capture_menu_row_tone(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    icon: MockGlyph,
+    prefix: &str,
+    app: &str,
+    suffix: &str,
+    hovered: bool,
+    danger: bool,
+) {
     let height = theme.menu_item_height().value();
     let pad_x = theme.menu_item_padding_x().value();
     let (rect, _) = ui.allocate_exact_size(
@@ -876,8 +892,12 @@ fn mouse_capture_menu_row(
         egui::pos2(x + icon_glyph * 0.5, rect.center().y),
         egui::vec2(icon_glyph, icon_glyph),
     );
-    icon.image(icon_glyph, theme.text_muted().to_egui())
-        .paint_at(ui, irect);
+    let icon_fg = if danger {
+        theme.accent_danger().to_egui()
+    } else {
+        theme.text_muted().to_egui()
+    };
+    icon.image(icon_glyph, icon_fg).paint_at(ui, irect);
     x += icon_glyph + gap;
 
     let label_rect = egui::Rect::from_min_max(
@@ -890,7 +910,11 @@ fn mouse_capture_menu_row(
             .layout(egui::Layout::left_to_right(egui::Align::Center)),
     );
     child.spacing_mut().item_spacing.x = 0.0;
-    let fg = theme.text_primary().to_egui();
+    let fg = if danger {
+        theme.accent_danger().to_egui()
+    } else {
+        theme.text_primary().to_egui()
+    };
     if !prefix.is_empty() {
         child.label(
             egui::RichText::new(prefix)
@@ -903,7 +927,7 @@ fn mouse_capture_menu_row(
             egui::RichText::new(app)
                 .monospace()
                 .size(theme.font_size_body.value())
-                .color(fg),
+                .color(theme.banner_more_app_fg().to_egui()),
         )
         .truncate(),
     );
