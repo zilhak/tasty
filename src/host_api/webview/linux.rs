@@ -19,6 +19,7 @@ use winit::raw_window_handle::{
 };
 
 use super::keys::WebViewKeySink;
+use super::load_generation::SignalOrderLoads;
 use super::script_gate::ScriptGate;
 use super::{NavState, PendingNavigation, WebViewBounds};
 
@@ -38,6 +39,8 @@ pub struct PlatformWebView {
     origin_thread: std::thread::ThreadId,
     block_remote: Rc<Cell<bool>>,
     nav_state: Rc<Cell<NavState>>,
+    /// chrome 세대. 앞 로드의 늦은 종료가 새 로드의 Loading을 바꾸지 않게 한다.
+    loads: Rc<RefCell<SignalOrderLoads>>,
     pending_navigations: Rc<RefCell<Vec<PendingNavigation>>>,
     /// html surface의 문서 단위 스크립트 허용. 없으면 JS는 설정값을 그대로 따른다.
     script_gate: Rc<RefCell<Option<ScriptGate>>>,
@@ -411,13 +414,16 @@ impl PlatformWebView {
 
         // 실패 후 Finished가 와도 Failed를 Done으로 덮지 않는다.
         let nav_state = Rc::new(Cell::new(NavState::Idle));
+        let loads = Rc::new(RefCell::new(SignalOrderLoads::default()));
         {
             let nav = nav_state.clone();
+            let loads = loads.clone();
             let gate = script_gate.clone();
             // load-changed는 main frame 로드에서만 온다(ADR-0053 측정). 화면 문서는 commit에서 기록한다.
             webview.connect_load_changed(move |wv, event| match event {
                 LoadEvent::Started => {
                     tracing::debug!("WebView surface {surface_id}: load started");
+                    loads.borrow_mut().started();
                     nav.set(NavState::Loading);
                     if let Some(gate) = gate.borrow().as_ref() {
                         set_js(wv, gate.load_started());
@@ -430,7 +436,8 @@ impl PlatformWebView {
                     }
                 }
                 LoadEvent::Finished => {
-                    if nav.get() != NavState::Failed {
+                    let state = loads.borrow_mut().finished();
+                    if state.is_some() && nav.get() != NavState::Failed {
                         tracing::debug!("WebView surface {surface_id}: load finished");
                         nav.set(NavState::Done);
                     }
@@ -445,11 +452,13 @@ impl PlatformWebView {
             // web process가 commit 전에 종료되면 load-failed도 load-changed Finished도 오지 않는다(실측).
             // 여기서 로드를 끝내지 않으면 스크립트 게이트가 로드 중에 머물러 허용을 거절한다.
             let nav = nav_state.clone();
+            let loads = loads.clone();
             let gate = script_gate.clone();
             webview.connect_web_process_terminated(move |wv, reason| {
                 tracing::warn!(
                     "WebView surface {surface_id}: WebKit web process terminated ({reason:?})"
                 );
+                loads.borrow_mut().terminated();
                 nav.set(NavState::Failed);
                 if let Some(gate) = gate.borrow().as_ref() {
                     gate.failed();
@@ -461,13 +470,16 @@ impl PlatformWebView {
         }
         {
             let nav = nav_state.clone();
+            let loads = loads.clone();
             let gate = script_gate.clone();
             webview.connect_load_failed(move |_wv, _event, failing_uri, error| {
                 tracing::warn!(
                     "WebView surface {surface_id}: WebKitGTK load-failed \
                      uri={failing_uri} err={error}"
                 );
-                nav.set(NavState::Failed);
+                if let Some(state) = loads.borrow().failed() {
+                    nav.set(state);
+                }
                 if let Some(gate) = gate.borrow().as_ref() {
                     gate.failed();
                 }
@@ -524,6 +536,7 @@ impl PlatformWebView {
             origin_thread: std::thread::current().id(),
             block_remote,
             nav_state,
+            loads,
             pending_navigations,
             script_gate,
             parent_x11_window: parent_xid as _,
@@ -848,11 +861,13 @@ impl PlatformWebView {
     }
 
     pub fn load_url(&self, url: &str) {
+        self.loads.borrow_mut().requested();
         self.nav_state.set(NavState::Loading);
         self.webview.load_uri(url);
     }
 
     pub fn load_html(&self, html: &str) {
+        self.loads.borrow_mut().requested();
         self.nav_state.set(NavState::Loading);
         self.webview.load_html(html, None);
     }
