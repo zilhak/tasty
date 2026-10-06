@@ -5,12 +5,43 @@ fn request(method: &str, params: serde_json::Value, key: Option<&str>, id: u64) 
     serde_json::from_value(serde_json::json!({"jsonrpc":"2.0","method":method,"params":params,"id":id,"idempotency_key":key})).unwrap()
 }
 
+/// Stall guard for loops that poll the journal on the test thread.
+///
+/// Only the time spent sleeping between polls counts. The polls themselves run App-side work
+/// synchronously on this thread (sizing a 64 MiB response takes seconds in a debug build), and
+/// the guard cannot interrupt a call that never returns anyway. Counting that work as waiting
+/// made the guard fail under CPU load although the worker was answering.
+struct IdleBudget {
+    waited: Duration,
+}
+
+impl IdleBudget {
+    const LIMIT: Duration = Duration::from_secs(10);
+
+    fn new() -> Self {
+        Self {
+            waited: Duration::ZERO,
+        }
+    }
+
+    fn nap(&mut self, what: &str) {
+        assert!(
+            self.waited < Self::LIMIT,
+            "{what} stalled: waited {:?} between polls",
+            self.waited
+        );
+        let started = Instant::now();
+        std::thread::sleep(Duration::from_millis(1));
+        self.waited += started.elapsed();
+    }
+}
+
 fn finish(
     journal: &mut JournalApplication,
     session: &mut EngineSession,
     receiver: &std::sync::mpsc::Receiver<JsonRpcResponse>,
 ) -> JsonRpcResponse {
-    let until = Instant::now() + Duration::from_secs(10);
+    let mut idle = IdleBudget::new();
     loop {
         journal.poll_bootstrap(&mut [session], None).unwrap();
         for (ticket, request) in journal.requests_needing_resolution() {
@@ -23,8 +54,7 @@ fn finish(
         if let Ok(response) = receiver.try_recv() {
             return response;
         }
-        assert!(Instant::now() < until, "structural IPC reply stalled");
-        std::thread::sleep(Duration::from_millis(1));
+        idle.nap("structural IPC reply");
     }
 }
 
@@ -258,7 +288,7 @@ fn oversized_admission_and_resolution_do_not_halt_other_requests() {
     );
     let leader = send(&mut journal, keyed.clone());
     let follower = send(&mut journal, keyed);
-    let until = Instant::now() + Duration::from_secs(10);
+    let mut idle = IdleBudget::new();
     loop {
         journal.poll_bootstrap(&mut [&mut session], None).unwrap();
         if journal
@@ -269,8 +299,7 @@ fn oversized_admission_and_resolution_do_not_halt_other_requests() {
         {
             break;
         }
-        assert!(Instant::now() < until);
-        std::thread::sleep(Duration::from_millis(1));
+        idle.nap("follower join");
     }
     let ticket = *journal.commands.pending.keys().next().unwrap();
     journal
