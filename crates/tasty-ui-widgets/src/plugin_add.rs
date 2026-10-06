@@ -686,7 +686,8 @@ fn help_paragraph(ui: &mut egui::Ui, theme: &Theme, text: &str) {
 }
 
 /// 매니페스트를 확인하기 전의 안내 상자. 폴더 아이콘과 `before` · `emphasis` · `after` 한 줄을
-/// border-default 1px 상자에 담는다. `emphasis` 는 text-secondary 다.
+/// border-default 1px 점선 상자에 담는다. `emphasis` 는 text-secondary 다.
+/// 점선은 곧은 변에만 두고 모서리는 실선 호다([`crate::paint_dashed_outline`]).
 pub fn plugin_add_empty_hint(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -694,14 +695,91 @@ pub fn plugin_add_empty_hint(
     emphasis: &str,
     after: &str,
 ) {
-    let width = theme.measure_xl.value().min(ui.available_width());
     let term_sm = theme.font_size_term_sm.value();
     let muted = theme.text_muted().to_egui();
+    let frame = hint_slot_frame(ui, theme, egui::Color32::TRANSPARENT, |ui| {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+            let glyph = theme.icon_glyph_size_md.value();
+            let (rect, _) = ui.allocate_exact_size(egui::vec2(glyph, glyph), egui::Sense::hover());
+            tasty_icons::FOLDER.image(glyph, muted).paint_at(ui, rect);
+            let mut job = egui::text::LayoutJob::default();
+            for (text, color) in [
+                (before, muted),
+                (emphasis, theme.text_secondary().to_egui()),
+                (after, muted),
+            ] {
+                job.append(
+                    text,
+                    0.0,
+                    egui::TextFormat {
+                        font_id: egui::FontId::proportional(term_sm),
+                        color,
+                        ..Default::default()
+                    },
+                );
+            }
+            ui.add(egui::Label::new(job).wrap());
+        });
+    });
+    crate::paint_dashed_outline(
+        ui.painter(),
+        theme,
+        frame.rect,
+        theme.corner_radius.value(),
+        theme.border_default().to_egui(),
+    );
+}
+
+/// Verify가 `tasty-plugin.toml`을 읽지 못했을 때 안내 상자 자리에 두는 상자.
+/// 안내 상자와 같은 크기에 accent-danger 실선 테두리, alertTriangle과 `title`,
+/// 그 아래 읽기 오류 원문 `reason` 한 줄(mono caption, 번역하지 않음)을 둔다. 채움과 동작은 없다.
+pub fn plugin_add_read_error(ui: &mut egui::Ui, theme: &Theme, title: &str, reason: &str) {
+    let danger = theme.accent_danger().to_egui();
+    hint_slot_frame(ui, theme, danger, |ui| {
+        ui.horizontal_top(|ui| {
+            ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+            let glyph = theme.icon_glyph_size_md.value();
+            let (rect, _) = ui.allocate_exact_size(egui::vec2(glyph, glyph), egui::Sense::hover());
+            tasty_icons::ALERT_TRIANGLE
+                .image(glyph, danger)
+                .paint_at(ui, rect);
+            ui.vertical(|ui| {
+                ui.spacing_mut().item_spacing.y = theme.label_detail_gap.value();
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(title)
+                            .size(theme.font_size_body.value())
+                            .color(danger),
+                    )
+                    .wrap(),
+                );
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(reason)
+                            .monospace()
+                            .size(theme.font_size_caption.value())
+                            .color(theme.text_muted().to_egui()),
+                    )
+                    .wrap_mode(egui::TextWrapMode::Wrap),
+                );
+            });
+        });
+    });
+}
+
+/// 안내 상자와 읽기 오류 상자가 함께 쓰는 틀. 바깥 폭은 `measure_xl`(남은 폭이 좁으면 남은 폭),
+/// 안쪽 여백은 가로 space-lg · 세로 14, 반경 radius, 테두리는 `edge` 색의 1px 실선이다.
+/// 점선 상자는 투명 테두리로 같은 크기를 잡고 호출부가 점선을 그린다.
+fn hint_slot_frame(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    edge: egui::Color32,
+    content: impl FnOnce(&mut egui::Ui),
+) -> egui::Response {
+    let width = theme.measure_xl.value().min(ui.available_width());
     egui::Frame::new()
-        .stroke(egui::Stroke::new(
-            theme.border_width.value(),
-            theme.border_default().to_egui(),
-        ))
+        .stroke(egui::Stroke::new(theme.border_width.value(), edge))
         .corner_radius(theme.corner_radius.value())
         .inner_margin(egui::Margin::symmetric(
             theme.spacing_lg.value() as i8,
@@ -710,31 +788,9 @@ pub fn plugin_add_empty_hint(
         .show(ui, |ui| {
             // 바깥 폭이 `width`가 되도록 안쪽 여백과 테두리를 뺀다.
             ui.set_width(width - (theme.spacing_lg.value() + theme.border_width.value()) * 2.0);
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-                let glyph = theme.icon_glyph_size_md.value();
-                let (rect, _) =
-                    ui.allocate_exact_size(egui::vec2(glyph, glyph), egui::Sense::hover());
-                tasty_icons::FOLDER.image(glyph, muted).paint_at(ui, rect);
-                let mut job = egui::text::LayoutJob::default();
-                for (text, color) in [
-                    (before, muted),
-                    (emphasis, theme.text_secondary().to_egui()),
-                    (after, muted),
-                ] {
-                    job.append(
-                        text,
-                        0.0,
-                        egui::TextFormat {
-                            font_id: egui::FontId::proportional(term_sm),
-                            color,
-                            ..Default::default()
-                        },
-                    );
-                }
-                ui.add(egui::Label::new(job).wrap());
-            });
-        });
+            content(ui);
+        })
+        .response
 }
 
 #[cfg(test)]

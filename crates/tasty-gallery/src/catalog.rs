@@ -1789,6 +1789,14 @@ pub fn pages() -> Vec<Page> {
                             components::plugins_window::draw,
                         ),
                         spec(
+                            "plugin-add-hint-slot",
+                            "Add plugin — dashed empty hint · manifest read error",
+                            Some(
+                                "Before Verify a dashed 1px border-default box · a read failure puts a solid accent-danger box in the same slot",
+                            ),
+                            components::plugins_window::draw_hint_slot,
+                        ),
+                        spec(
                             "plugin-identity-mark",
                             "Plugin identity mark — one component, two sizes",
                             Some(

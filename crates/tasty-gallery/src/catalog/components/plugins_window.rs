@@ -8,6 +8,7 @@ mod installed;
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::tokens::STRUCT_GAP_2;
+use tasty_ui_widgets::{ControlSize, paint_dashed_outline};
 
 use crate::catalog::icons::{CLOSE, PLUG};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
@@ -384,6 +385,86 @@ fn theme_pair(
                 .show(ui, |ui| draw(ui, th));
         }
     });
+}
+
+/// Add plugin의 안내 상자 자리 — 점선 빈 안내와 매니페스트 읽기 오류. Mocha·Latte 짝.
+pub fn draw_hint_slot(ui: &mut egui::Ui, theme: &Theme) {
+    let latte = crate::host_shell::latte_theme();
+    let mocha = tasty_themes::mocha_fallback();
+    spec::stage(ui, theme, StageVariant::Solo, |ui| {
+        theme_pair(ui, theme, &mocha, &latte, |ui, th| {
+            add::hint_slot(ui, th, th.measure_xl.value());
+        });
+    });
+    spec::cluster(
+        ui,
+        theme,
+        "dashed edge — radius vs square: dashes on the straight edges, solid corners",
+        |ui| {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = theme.spacing_lg.value();
+                for radius in [theme.corner_radius.value(), 0.0] {
+                    let size =
+                        egui::vec2(theme.field_width_lg.value(), ControlSize::Md.height(theme));
+                    let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+                    paint_dashed_outline(
+                        ui.painter(),
+                        theme,
+                        rect,
+                        radius,
+                        theme.border_default().to_egui(),
+                    );
+                }
+            });
+        },
+    );
+    spec::meta(
+        ui,
+        theme,
+        &[
+            (
+                "empty hint",
+                "dashed 1px border-default · radius · pad 14 / 16",
+            ),
+            (
+                "dash",
+                "4 on / 4 off · border-dash · border-dash-gap · OFF-SCALE",
+            ),
+            (
+                "corners",
+                "solid arc; dashes on straight edges only, centred",
+            ),
+            (
+                "read error",
+                "same box · solid accent-danger edge · no fill",
+            ),
+            (
+                "title",
+                "Can't read tasty-plugin.toml · body · accent-danger",
+            ),
+            ("reason", "mono caption · text-muted · untranslated"),
+            ("action", "none — fix the path above and Verify again"),
+        ],
+        &[
+            TokenChip::without_color("border-dash", "→ size-4"),
+            TokenChip::without_color("border-dash-gap", "→ size-4"),
+            TokenChip::new(
+                "border-default",
+                "hint edge",
+                theme.border_default().to_egui(),
+            ),
+            TokenChip::new(
+                "accent-danger",
+                "read error",
+                theme.accent_danger().to_egui(),
+            ),
+        ],
+    );
+    spec::note(
+        ui,
+        theme,
+        "The same dash pair draws the Scripts Add trigger… control (Misc › Scripts). Both boxes are the shared paint_dashed_outline and plugin_add_read_error widgets the host calls.",
+    );
 }
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {

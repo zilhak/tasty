@@ -224,6 +224,7 @@ DTCG component tier(치수+색) 토큰은 `crates/tasty-type-appearance/src/gene
 | UI 폰트 | micro 10, caption 11, body·heading 13, max 14. 역할이 있으면 component 접근자를 우선한다. |
 | 폰트 상한 | UI는 14px. 콘텐츠 폰트는 별도이며 브랜드 워드마크 17·부트 락업 30은 승인된 예외다. |
 | 보더 | `border_width` 1px. |
+| 점선 테두리 | 1px 점선은 대시 `border_dash` 4 · 간격 `border_dash_gap` 4(배율 제외)다. 대시는 곧은 변에만 두고 각 변이 대시로 시작해 대시로 끝나도록 남는 길이를 간격에 고르게 나눈다. 모서리는 실선 호다. 공용 `tasty_ui_widgets::paint_dashed_outline` 으로 그린다. 쓰는 곳: Add plugin 빈 안내 상자, Scripts Add trigger… |
 | 지목 링 | 대상을 감싸는 획은 `focus_ring_width` 2px. 색은 용도에 맞는 semantic 색을 고른다. |
 | 한쪽 선택 바 | 선택 항목의 한쪽 변 띠는 하나의 역할 `selection_edge_width` 2px(hairline, 배율 제외)다. 탭 밑줄은 `tab_indicator_width()`, 활성 워크스페이스 행은 `workspace_row_active_bar_width()`, 목록 행 선택 바(ListCtrl · file handler picker · git viewer 커밋·파일 행)는 `listctrl_selected_bar_width()`로 읽고 모두 이 역할을 가리킨다. remote attach·preset 목록 행과 갤러리 switch overlay·file picker 선택 행은 `selection_edge_width`를 직접 읽는다. 토스트 바는 `toast_accent_width` 3px로 별도 역할이다. 선택 표시가 아닌 한쪽 변 2px 선은 각자의 토큰을 읽는다: preset 분할 영역의 분할선 `preset_split_divider_width()`, markdown 인용 막대 `md_quote_bar_width()`(둘 다 `selection_edge_width`를 가리킨다), tinted 강조 상자(갤러리 Do / Don't 콜아웃)의 앞쪽 변 `tint_edge_width`(hairline, 배율 제외). |
 | painter 아이콘 | close X·chevron·트리 가지 등의 선은 `icon_stroke_width` 1.5px. |

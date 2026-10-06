@@ -5,7 +5,7 @@ use crate::theme;
 use tasty_ui_widgets::{
     PLUGIN_ADD_INSET, PluginAddBarClicks, PluginAddBarView, PluginAddPickerView,
     PluginManifestCardView, PluginTrustKind, plugin_add_bar, plugin_add_empty_hint,
-    plugin_add_path_picker, plugin_manifest_card, plugin_trust_box, vspace,
+    plugin_add_path_picker, plugin_add_read_error, plugin_manifest_card, plugin_trust_box, vspace,
 };
 
 use super::attention::fingerprint_line;
@@ -59,8 +59,8 @@ fn draw_add_form(
             ui.set_width(column_width);
             ui.spacing_mut().item_spacing.y = th.spacing_lg.value();
             draw_path_picker(ui, snapshot, ui_state, th);
-            if let Some(err) = &ui_state.add_error {
-                ui.label(egui::RichText::new(err).color(egui::Color32::from(th.accent_danger())));
+            if let Some(reason) = &ui_state.add_error {
+                plugin_add_read_error(ui, th, t("plugins.add_read_error"), reason);
             } else if let Some(preview) = &ui_state.add_preview {
                 draw_preview(ui, preview, th);
             } else {
@@ -324,7 +324,8 @@ fn try_validate_path(ui_state: &mut PluginsUiState, snapshot: &PluginsSnapshot) 
             });
         }
         Err(e) => {
-            ui_state.add_error = Some(t_fmt("plugins.add_invalid_manifest", &e.to_string()));
+            // 읽기 오류 원문은 번역하지 않고 상자의 둘째 줄에 그대로 보인다.
+            ui_state.add_error = Some(e.to_string());
         }
     }
 }

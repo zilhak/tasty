@@ -5,7 +5,7 @@ use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{
     ControlSize, PLUGIN_ADD_INSET, PluginAddBarView, PluginAddPickerView, PluginManifestCardView,
     PluginTrustKind, plugin_add_bar, plugin_add_empty_hint, plugin_add_path_picker,
-    plugin_manifest_card, plugin_trust_box,
+    plugin_add_read_error, plugin_manifest_card, plugin_trust_box,
 };
 
 /// 디자인 `SAMPLE_MANIFEST`. 미신뢰 · 공개키 있음.
@@ -119,6 +119,27 @@ fn manifest_card(ui: &mut egui::Ui, theme: &Theme, open_values: bool) {
             none: "None",
         },
     );
+}
+
+/// Verify 전 안내 상자(점선)와 매니페스트 읽기 오류 상자. 본체 열 폭 `width` 안에 둘을 쌓는다.
+pub(super) fn hint_slot(ui: &mut egui::Ui, theme: &Theme, width: f32) {
+    ui.vertical(|ui| {
+        ui.set_width(width);
+        ui.spacing_mut().item_spacing.y = theme.spacing_lg.value();
+        plugin_add_empty_hint(
+            ui,
+            theme,
+            "Choose a folder and press ",
+            "Verify",
+            " to read its manifest.",
+        );
+        plugin_add_read_error(
+            ui,
+            theme,
+            "Can't read tasty-plugin.toml",
+            "TOML parse error at line 4, column 9: expected `=`",
+        );
+    });
 }
 
 /// batch 2 회신의 열린 값 — Homepage 링크, 빈 목록 `None`, 긴 fingerprint 의 앞뒤 8바이트.

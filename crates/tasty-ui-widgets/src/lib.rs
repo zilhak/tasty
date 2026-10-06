@@ -18,6 +18,7 @@ mod clipboard_viewer;
 mod code_area;
 mod control;
 pub mod crumb_alloc;
+mod dashed_edge;
 mod drilldown;
 pub mod file_handler;
 mod filter_readout;
@@ -83,6 +84,7 @@ pub use clipboard_viewer::{
 };
 pub use code_area::{CodeArea, CodeAreaKeys, CodeAreaOutput};
 pub use control::ControlSize;
+pub use dashed_edge::paint_dashed_outline;
 pub use drilldown::{DrillDown, DrillDownActions, DrillDownOutput, DrillDownView};
 pub use filter_readout::{filter_readout, filter_readout_label, filter_readout_width};
 pub use help_hint::HelpHint;
@@ -121,7 +123,7 @@ pub use plugin_add::{
     PLUGIN_ADD_INSET, PluginAddBarClicks, PluginAddBarView, PluginAddPickerOutput,
     PluginAddPickerView, PluginFingerprintLineView, PluginManifestCardOutput,
     PluginManifestCardView, PluginTrustKind, plugin_add_bar, plugin_add_empty_hint,
-    plugin_add_path_picker, plugin_fingerprint_line, plugin_manifest_card,
+    plugin_add_path_picker, plugin_add_read_error, plugin_fingerprint_line, plugin_manifest_card,
     plugin_signature_invalid_detail, plugin_trust_box, short_fingerprint,
 };
 pub use plugin_avatar::{PluginAvatarSize, paint_plugin_avatar, plugin_avatar};

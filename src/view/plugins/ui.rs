@@ -205,7 +205,7 @@ pub struct PluginsUiState {
     pub add_path_input: String,
     /// 검증 후 preview 정보. 있으면 추가/취소 화면을 보여준다.
     pub add_preview: Option<AddPreview>,
-    /// 검증 실패 시 에러 메시지 (UI 하단에 빨간 글씨로 표시).
+    /// 매니페스트를 읽지 못한 이유의 원문. 있으면 안내 상자 자리에 읽기 오류 상자를 둔다.
     pub add_error: Option<String>,
 }
 
