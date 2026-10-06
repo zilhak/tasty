@@ -45,6 +45,8 @@ pub(crate) mod local_reads;
 #[cfg(feature = "gui")]
 pub(crate) mod modal;
 #[cfg(feature = "gui")]
+mod offview_window_events;
+#[cfg(feature = "gui")]
 pub(crate) mod persistence;
 #[cfg(feature = "gui")]
 pub(crate) mod plugin_glue;
@@ -55,8 +57,6 @@ pub(crate) mod request_owner;
 #[cfg(feature = "gui")]
 pub(crate) mod screenshot_capture;
 pub(crate) mod services;
-#[cfg(feature = "gui")]
-mod shell_setup_events;
 #[cfg(feature = "gui")]
 pub(crate) mod shutdown_cascade;
 #[cfg(feature = "gui")]

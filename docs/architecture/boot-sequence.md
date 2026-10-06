@@ -119,12 +119,13 @@ hidden 창은 `RedrawRequested` 를 못 받을 수 있으므로 첫 프레임은
   - 버튼은 공용 `Button` Secondary "Quit"(앱 종료)과 Primary "Use this shell"(md)이다.
     판정이 유효할 때만 확인이 활성이며 Enter 확인도 같은 조건을 따른다. disabled 모양은
     공용 규칙(중립 상자와 disabled ink)을 따른다.
-- **첫 실행 셸 설정 창의 다시 그리기** — 이 창은 View 밖에 있어 dirty 표시나 렌더 예약을
-  받지 않는다. 클릭·Enter 처리는 렌더 안에서 일어나므로 창이 스스로 redraw 를 요청한다.
-  egui 가 입력에 repaint 를 답하거나 즉시 repaint 를 요청하면(`AppEvent::EguiRepaint`) 다시 그리고,
-  `Resized`·`ScaleFactorChanged` 에서는 surface 를 다시 구성한 뒤 그린다. 렌더가 `Lost`·`Outdated`
-  로 실패하면 surface 를 다시 구성하고 한 번 더 그린다. 판정은 `src/app/shell_setup_events.rs`.
-  지연 repaint(텍스트 커서 깜빡임 등)는 다른 창과 같이 전달하지 않는다.
+- **View 밖 창의 다시 그리기** — 첫 실행 셸 설정 창과 부팅 오류 화면은 View 밖에 있어 dirty
+  표시나 렌더 예약을 받지 않는다. 클릭·Enter 처리는 렌더 안에서 일어나므로 창이 스스로 redraw 를
+  요청한다. egui 가 입력에 repaint 를 답하거나 즉시 repaint 를 요청하면(`AppEvent::EguiRepaint`)
+  다시 그리고, `Resized`·`ScaleFactorChanged` 에서는 surface 를 다시 구성한 뒤 그린다. 렌더가
+  `Lost`·`Outdated` 로 실패하면 surface 를 다시 구성하고 한 번 더 그린다. 판정은
+  `src/app/offview_window_events.rs`. 지연 repaint(텍스트 커서 깜빡임 등)는 다른 창과 같이
+  전달하지 않는다.
 
 ## 부팅 계측 (target: `tasty::boot`)
 

@@ -112,11 +112,11 @@ impl ApplicationHandler<AppEvent> for App {
                     // 애니메이션의 연속 repaint 요청에도 상한을 적용한다.
                     w.mark_dirty_from(RepaintSource::EguiAnimation);
                 }
-                // 셸 설정 창은 views 밖에 있으므로 hover·애니메이션 요청을 직접 그린다.
-                if let Some(w) = self
-                    .shell_setup_window
-                    .as_ref()
-                    .filter(|w| w.id() == window_id)
+                // 셸 설정·부팅 오류 창은 views 밖에 있으므로 hover·애니메이션 요청을 직접 그린다.
+                if let Some(w) = [&self.shell_setup_window, &self.boot_error_window]
+                    .into_iter()
+                    .flatten()
+                    .find(|w| w.id() == window_id)
                 {
                     w.request_redraw();
                 }
@@ -1013,7 +1013,7 @@ impl App {
         event_loop: &ActiveEventLoop,
         event: WindowEvent,
     ) {
-        use crate::app::shell_setup_events::{render_error_reconfigures, setup_event_effect};
+        use crate::app::offview_window_events::{offview_event_effect, render_error_reconfigures};
         if let WindowEvent::RedrawRequested = &event {
             if let (Some(gpu), Some(window)) = (&mut self.shell_setup_gpu, &self.shell_setup_window)
             {
@@ -1046,7 +1046,7 @@ impl App {
         }
         if let (Some(gpu), Some(window)) = (&mut self.shell_setup_gpu, &self.shell_setup_window) {
             let (_, egui_repaint) = gpu.handle_egui_event(window, &event);
-            let effect = setup_event_effect(&event, egui_repaint);
+            let effect = offview_event_effect(&event, egui_repaint);
             if effect.reconfigure_surface {
                 gpu.sync_scale_factor(window);
                 gpu.resize(window.inner_size());
@@ -1081,6 +1081,7 @@ impl App {
 
     /// 부팅 오류 화면에서 종료를 요청하면 실패 코드 1로 끝낸다.
     fn handle_boot_error_window_event(&mut self, event: WindowEvent) {
+        use crate::app::offview_window_events::{offview_event_effect, render_error_reconfigures};
         if let WindowEvent::RedrawRequested = &event {
             let quit = if let (Some(gpu), Some(window), Some(info)) = (
                 &mut self.boot_error_gpu,
@@ -1089,6 +1090,11 @@ impl App {
             ) {
                 match gpu.render_boot_error(window, info) {
                     Ok(quit) => quit,
+                    Err(e) if render_error_reconfigures(&e) => {
+                        gpu.resize(window.inner_size());
+                        window.request_redraw();
+                        false
+                    }
                     Err(e) => {
                         let msg = format!("boot error render error: {e}");
                         tracing::warn!("{}", msg);
@@ -1109,9 +1115,16 @@ impl App {
             return;
         }
         if let (Some(gpu), Some(window)) = (&mut self.boot_error_gpu, &self.boot_error_window) {
-            gpu.handle_egui_event(window, &event);
-            window.request_redraw();
-            if let WindowEvent::CloseRequested = &event {
+            let (_, egui_repaint) = gpu.handle_egui_event(window, &event);
+            let effect = offview_event_effect(&event, egui_repaint);
+            if effect.reconfigure_surface {
+                gpu.sync_scale_factor(window);
+                gpu.resize(window.inner_size());
+            }
+            if effect.redraw {
+                window.request_redraw();
+            }
+            if effect.exit {
                 std::process::exit(1);
             }
         }
