@@ -209,7 +209,8 @@ pub fn scan_option_bindings(
     }
     let mut found = Vec::new();
 
-    for &(field_id, _label) in KeybindingSettings::GENERAL_BINDING_FIELDS {
+    // 입력칸 키(TEXT_FIELD_BINDING_FIELDS)도 option 이면 비-macOS 에서 매칭되지 않으므로 함께 본다.
+    for &(field_id, _label) in KeybindingSettings::binding_fields() {
         let Some(bindings) = kb.get_bindings(field_id) else {
             continue;
         };
@@ -593,10 +594,12 @@ fn write_site(
 }
 
 /// 마이그레이션의 충돌 검사 범위. 호스트 동작·빠른 전환·스크립트를 함께 검사하고
-/// plugin은 각각 따로 검사한다. 호스트와 plugin 사이, 서로 다른 plugin 사이의 충돌은 검사하지 않는다.
+/// 입력칸 키와 plugin은 각각 따로 검사한다. 범위가 다른 자리 사이의 충돌은 검사하지 않는다
+/// (입력칸 키는 설정 화면에서도 입력칸 키끼리만 충돌을 본다).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 enum ConflictScope {
     Host,
+    TextField,
     Plugin(String),
 }
 
@@ -608,14 +611,22 @@ type RosterEntry = (ConflictScope, BindingSite, String);
 fn combo_roster(kb: &KeybindingSettings, overrides: &PluginShortcutOverrides) -> Vec<RosterEntry> {
     let mut roster = Vec::new();
 
-    for &(field_id, _label) in KeybindingSettings::GENERAL_BINDING_FIELDS {
+    for &(field_id, _label) in KeybindingSettings::binding_fields() {
         let Some(bindings) = kb.get_bindings(field_id) else {
             continue;
+        };
+        let scope = if KeybindingSettings::TEXT_FIELD_BINDING_FIELDS
+            .iter()
+            .any(|(id, _)| *id == field_id)
+        {
+            ConflictScope::TextField
+        } else {
+            ConflictScope::Host
         };
         for (index, combo) in bindings.iter().enumerate() {
             if !combo.is_empty() {
                 roster.push((
-                    ConflictScope::Host,
+                    scope.clone(),
                     BindingSite::GeneralBinding { field_id, index },
                     combo.clone(),
                 ));

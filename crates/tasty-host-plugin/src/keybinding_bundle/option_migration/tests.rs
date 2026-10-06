@@ -628,3 +628,36 @@ fn preview_applies_only_the_resolutions_chosen_so_far() {
     assert_eq!(preview.new_tab, vec!["ctrl+alt+shift+y".to_string()]);
     assert_eq!(preview.new_workspace, vec!["option+w".to_string()]);
 }
+
+/// 입력칸 키도 option 이면 비-macOS 이식 대상이다. 대체 값의 충돌은 입력칸 키끼리만 본다.
+#[test]
+fn code_field_keys_are_scanned_and_checked_in_their_own_scope() {
+    let mut kb = KeybindingSettings::preset_tasty();
+    kb.code_area_apply = vec!["option+enter".into()];
+    kb.code_area_cancel = vec!["option+q".into()];
+    let overrides = PluginShortcutOverrides::new();
+    let found = scan_option_bindings(&kb, &overrides, TargetOs::NonMac);
+    let sites: Vec<String> = found.iter().map(|f| f.site.to_string()).collect();
+    assert_eq!(
+        sites,
+        vec![
+            "code_area_apply[0]".to_string(),
+            "code_area_cancel[0]".to_string()
+        ]
+    );
+    assert!(scan_option_bindings(&kb, &overrides, TargetOs::Mac).is_empty());
+
+    // 전역 키(new_tab 의 alt+t)와 같은 값으로 바꿔도 범위가 달라 충돌이 아니다.
+    let mut plan = MigrationPlan::new();
+    plan.insert(found[0].site.clone(), "alt+t".into());
+    plan.insert(found[1].site.clone(), "escape".into());
+    let (kb2, _) = apply_migration(&kb, &overrides, &plan).unwrap();
+    assert_eq!(kb2.code_area_apply, vec!["alt+t".to_string()]);
+    assert_eq!(kb2.code_area_cancel, vec!["escape".to_string()]);
+
+    // 입력칸 키끼리 같은 값이면 새로 생긴 충돌이다.
+    let mut plan = MigrationPlan::new();
+    plan.insert(found[0].site.clone(), "ctrl+s".into());
+    plan.insert(found[1].site.clone(), "ctrl+s".into());
+    assert!(apply_migration(&kb, &overrides, &plan).is_err());
+}
