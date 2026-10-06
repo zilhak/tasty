@@ -814,7 +814,8 @@ fn the_blind_spots_are_still_the_size_they_say() {
         // 플러그인 추가 경로 선택 블록이 measure-xl 폭 열을 높이 0으로 할당한다.
         // 원격 도구 세 탭 행이 공용 행 셸로 모이며 행별 0 리터럴 넷(갤러리 여백 둘, 텍스트 열 높이 둘)이 빠졌다.
         // tasty-ui-widgets popover_frame 통합 테스트의 화면 사각형 pos2(0,0)·vec2(400,300) 넷이 test 전용으로 들어왔다.
-        (216, 448),
+        // MultiSelect 행 끝 클릭 시험이 트리거 오른쪽 안쪽 2를 더한다.
+        (216, 449),
         "제외한 0과 test 전용 코드의 수가 달라졌다. 실제 사용과 수집 범위의 변경을 확인하고 기록을 갱신한다."
     );
     let roster: usize = UNIT_SPACE_SITES.iter().map(|(.., n, _)| n).sum();

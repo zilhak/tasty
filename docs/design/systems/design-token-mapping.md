@@ -370,8 +370,9 @@ component 접근자(`tab_fg_*()`·`surface_highlight_*_border()`·`status_dot_*(
 디자인 `tokens/components.css` 의 `--tasty-multiselect-*` Tier-3 블록 중 **메뉴 크기 두
 건 + 그림자**. 세 건 다 **신규 값이 아니다** — 기존 primitive/component/semantic 종착이다.
 나머지 `--tasty-multiselect-*`(트리거 치수·색·행 리듬)는 디자인 판정이 그대로
-`--tasty-select-*` / `--tasty-menu-*` / `--tasty-checkbox-*` alias 라 위젯이 그 토큰을
-직접 읽는다(별도 접근자 불필요).
+`--tasty-select-*` / `--tasty-menu-*` / `--tasty-checkbox-*` alias 다. 트리거는 select 토큰을
+직접 읽고, 메뉴 행은 `multiselect_row_height`·`multiselect_row_padding_x`·`multiselect_row_bg_hover`·
+`multiselect_row_bg_active`·`multiselect_all_fg` 접근자를 읽는다.
 
 | 디자인 토큰 | 디자인 체인 | Theme 접근자 | 비고 |
 |---|---|---|---|

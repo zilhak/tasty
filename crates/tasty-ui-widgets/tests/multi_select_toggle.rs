@@ -120,29 +120,25 @@ fn frame_full(
     }
 }
 
-/// 트리거 영역에서 옵션 행의 클릭 위치를 계산한다. 실제 선택 변경으로 위치가 맞는지도 확인한다.
+/// 트리거 영역에서 옵션 행의 클릭 위치(체크박스 중심)를 계산한다. 실제 선택 변경으로 위치가 맞는지도 확인한다.
+/// 행은 `multiselect-row-height` 높이로 간격 없이 쌓이고 체크박스는 `multiselect-row-padding-x` 만큼 들어간다.
 fn row_pos(theme: &Theme, trigger: Rect, i: usize, margin: f32) -> Pos2 {
-    let row_h = theme
-        .checkbox_size()
-        .value()
-        .max(theme.font_size_body.value());
-    let gap = theme.spacing_xs.value();
+    let row_h = row_height(theme);
     pos2(
-        trigger.left() + margin + theme.checkbox_size().value() * 0.5,
-        trigger.bottom() + margin + (row_h + gap) * i as f32 + row_h * 0.5,
+        trigger.left()
+            + margin
+            + theme.multiselect_row_padding_x().value()
+            + theme.checkbox_size().value() * 0.5,
+        trigger.bottom() + margin + row_h * i as f32 + row_h * 0.5,
     )
 }
 
-/// 옵션 행 한 줄의 높이 — 위젯의 checkbox 행 계산과 같은 식.
+/// 옵션 행 한 줄의 높이 — 위젯의 행 높이 토큰.
 fn row_height(theme: &Theme) -> f32 {
-    theme
-        .checkbox_size()
-        .value()
-        .max(theme.font_size_body.value())
+    theme.multiselect_row_height().value()
 }
 
-/// 일괄 토글 행이 켜졌을 때 옵션 목록이 아래로 밀리는 양 — 액션 행 + 간격 + 구분선
-/// + 간격.
+/// 일괄 토글 행이 켜졌을 때 옵션 목록이 아래로 밀리는 양 — 액션 행 + 여백 + 구분선 + 여백.
 fn all_toggle_offset(theme: &Theme) -> f32 {
     let gap = theme.spacing_xs.value();
     row_height(theme) + gap + theme.border_width.value() + gap
@@ -151,7 +147,7 @@ fn all_toggle_offset(theme: &Theme) -> f32 {
 /// 일괄 토글 행(메뉴 최상단)의 화면 좌표.
 fn all_toggle_pos(theme: &Theme, trigger: Rect, margin: f32) -> Pos2 {
     pos2(
-        trigger.left() + margin + theme.checkbox_size().value() * 0.5,
+        trigger.left() + margin + theme.multiselect_row_padding_x().value(),
         trigger.bottom() + margin + row_height(theme) * 0.5,
     )
 }
@@ -479,4 +475,25 @@ fn all_toggle_reports_nothing_when_no_row_is_toggleable() {
     assert!(!f.changed, "바꿀 행이 없는데 변경으로 보고됐다");
     assert_eq!(selected, vec![false; OPTIONS.len()]);
     assert!(f.open);
+}
+
+/// 체크박스 밖, 행 오른쪽 끝의 빈 자리를 눌러도 그 행만 토글된다(시안: 행 전체가 누름 영역).
+#[test]
+fn clicking_the_empty_end_of_a_row_toggles_that_row_only() {
+    let theme = tasty_themes::mocha_fallback();
+    let ctx = egui::Context::default();
+    let mut selected = vec![false; OPTIONS.len()];
+    let first = frame(&ctx, &theme, &mut selected, vec![]);
+    let opened = frame(&ctx, &theme, &mut selected, click(first.trigger.center()));
+    assert!(opened.open, "trigger click did not open the menu");
+    // 팝업이 실제로 배치되도록 한 프레임 더.
+    frame(&ctx, &theme, &mut selected, Vec::new());
+    let margin = popup_margin(&ctx);
+    let p = row_pos(&theme, first.trigger, 2, margin);
+    // 트리거 폭 안쪽 오른쪽 끝 — 라벨보다 한참 오른쪽이고 행 좌우 여백 안이다.
+    let end = pos2(first.trigger.right() - 2.0, p.y);
+    let after = frame(&ctx, &theme, &mut selected, click(end));
+    assert!(after.changed, "row end click was not reported as a change");
+    assert_eq!(selected, vec![false, false, true, false]);
+    assert!(after.open, "row click closed the menu");
 }

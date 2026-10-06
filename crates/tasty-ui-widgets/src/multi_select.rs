@@ -119,9 +119,10 @@ fn all_rows_on(selected: &[bool], options: &[&str], disabled: Option<&[bool]>) -
     any
 }
 
-/// 옵션 행과 높이를 맞춘 일괄 토글 액션. 부분 선택 체크박스 대신 텍스트 액션으로 표시한다.
+/// 옵션 행과 같은 높이·좌우 여백의 일괄 토글 액션. 부분 선택 체크박스 대신 텍스트 액션으로 표시한다.
 fn all_toggle_row(ui: &mut egui::Ui, theme: &Theme, label: &str) -> egui::Response {
     let body = theme.font_size_body.value();
+    let pad = theme.multiselect_row_padding_x().value();
     let width = ui.available_width();
     // 옵션 행과 같은 규칙으로 말줄임 — 메뉴 폭이 max-width 에 걸려도 보더를 넘지 않는다.
     let mut job = egui::text::LayoutJob::simple_singleline(
@@ -129,22 +130,74 @@ fn all_toggle_row(ui: &mut egui::Ui, theme: &Theme, label: &str) -> egui::Respon
         egui::FontId::proportional(body),
         egui::Color32::PLACEHOLDER,
     );
-    job.wrap = egui::text::TextWrapping::truncate_at_width(width);
+    job.wrap = egui::text::TextWrapping::truncate_at_width((width - pad * 2.0).max(0.0));
     let galley = ui.fonts(|f| f.layout_job(job));
-    // 옵션 행과 같은 높이 계산을 사용한다.
-    let height = theme.checkbox_size().value().max(galley.rect.height());
+    let height = theme.multiselect_row_height().value();
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::click());
     if resp.hovered() {
         ui.painter().rect_filled(
             rect,
             theme.menu_item_radius().value(),
-            theme.menu_item_bg_hover().to_egui_premultiplied(),
+            theme.multiselect_row_bg_hover().to_egui_premultiplied(),
         );
     }
-    let pos = egui::pos2(rect.left(), rect.center().y - galley.rect.height() * 0.5);
+    let pos = egui::pos2(
+        rect.left() + pad,
+        rect.center().y - galley.rect.height() * 0.5,
+    );
     ui.painter()
-        .galley(pos, galley, theme.accent_primary().to_egui());
+        .galley(pos, galley, theme.multiselect_all_fg().to_egui());
     resp
+}
+
+/// 옵션 한 행. 높이·좌우 여백은 multiselect-row 토큰이고, 포인터가 올라간 행 전체에 hover 채움,
+/// 키보드 활성 행에 active 채움을 깐다. 체크박스 밖의 행 여백을 눌러도 그 행만 토글한다.
+/// 반환값은 (행 응답, 선택이 바뀌었는지)다.
+fn option_row(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    flag: &mut bool,
+    label: &str,
+    enabled: bool,
+    active: bool,
+) -> (egui::Response, bool) {
+    let pad = theme.multiselect_row_padding_x().value();
+    let height = theme.multiselect_row_height().value();
+    let width = ui.available_width();
+    let sense = if enabled {
+        egui::Sense::click()
+    } else {
+        egui::Sense::hover()
+    };
+    let (rect, row) = ui.allocate_exact_size(egui::vec2(width, height), sense);
+    // 체크박스가 행 위에 놓여 행 응답의 hovered가 꺼질 수 있으므로 포인터 위치로 판정한다.
+    let fill = if active {
+        Some(theme.multiselect_row_bg_active().to_egui())
+    } else if enabled && ui.rect_contains_pointer(rect) {
+        Some(theme.multiselect_row_bg_hover().to_egui_premultiplied())
+    } else {
+        None
+    };
+    if let Some(fill) = fill {
+        ui.painter()
+            .rect_filled(rect, theme.menu_item_radius().value(), fill);
+    }
+    let inner = egui::Rect::from_min_max(
+        egui::pos2(rect.left() + pad, rect.top()),
+        egui::pos2(rect.right() - pad, rect.bottom()),
+    );
+    let mut slot = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(inner)
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+    );
+    let check = crate::checkbox(&mut slot, theme, flag, label, enabled);
+    let mut changed = check.changed();
+    if row.clicked() {
+        *flag = !*flag;
+        changed = true;
+    }
+    (row.union(check), changed)
 }
 
 /// 일괄 토글 라벨을 줄이지 않고 표시하는 데 필요한 폭.
@@ -160,14 +213,17 @@ fn all_toggle_width(ui: &egui::Ui, theme: &Theme, label: &str) -> f32 {
     .width()
 }
 
-/// 일괄 토글 아래의 구분선. 위아래 여백은 목록 간격으로 확보한다.
+/// 일괄 토글 아래의 구분선. 행 사이 간격이 0이므로 위아래 `space-xs` 여백을 직접 둔다.
 fn all_toggle_separator(ui: &mut egui::Ui, theme: &Theme) {
     let bw = theme.border_width.value();
+    let margin = theme.spacing_xs.value();
+    ui.add_space(margin);
     let (rect, _) =
         ui.allocate_exact_size(egui::vec2(ui.available_width(), bw), egui::Sense::hover());
     // 파생 separator 색은 premultiplied 표현 그대로 그린다.
     ui.painter()
         .rect_filled(rect, 0.0, theme.separator.to_egui_premultiplied());
+    ui.add_space(margin);
 }
 
 /// 다중 선택 상태가 바뀌면 true를 반환한다. selected와 options의 길이는 같아야 하며 짧은 쪽까지만 그린다.
@@ -336,7 +392,8 @@ pub fn multi_select(
     let widest_all_toggle = all_toggle.map_or(0.0, |t| {
         all_toggle_width(ui, theme, t.select_all).max(all_toggle_width(ui, theme, t.clear_all))
     });
-    let widest_row = widest_option.max(widest_all_toggle);
+    let widest_row =
+        widest_option.max(widest_all_toggle) + theme.multiselect_row_padding_x().value() * 2.0;
     let menu_chrome = popup_chrome_width(ui.style());
     let menu_min = width;
     let menu_max = (theme.multiselect_menu_max_width().value() - menu_chrome).max(menu_min);
@@ -351,8 +408,8 @@ pub fn multi_select(
             |ui| {
                 ui.set_min_width(menu_width);
                 ui.set_max_width(menu_width);
-                ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
-                // 체크박스 행의 간격을 사용하고 일괄 토글 행은 스크롤 밖에 고정한다.
+                // 행은 간격 없이 쌓는다. 일괄 토글 행은 스크롤 밖에 고정한다.
+                ui.spacing_mut().item_spacing.y = 0.0;
                 if let Some(t) = all_toggle {
                     let all_on = all_rows_on(selected, options, disabled);
                     let label = if all_on { t.clear_all } else { t.select_all };
@@ -379,31 +436,19 @@ pub fn multi_select(
                             let Some(flag) = selected.get_mut(i) else {
                                 break;
                             };
-                            // 체크박스 뒤에 메뉴 전체 폭의 키보드 선택 배경을 넣도록 도형 자리를 예약한다.
-                            let cursor = (active == Some(i)).then(|| {
-                                (ui.painter().add(egui::Shape::Noop), ui.available_width())
-                            });
-                            let resp =
-                                crate::checkbox(ui, theme, flag, opt, row_enabled(disabled, i));
-                            if resp.changed() {
+                            let (resp, row_changed) = option_row(
+                                ui,
+                                theme,
+                                flag,
+                                opt,
+                                row_enabled(disabled, i),
+                                active == Some(i),
+                            );
+                            if row_changed {
                                 changed = true;
                             }
-                            if let Some((slot, row_width)) = cursor {
-                                let row = egui::Rect::from_min_size(
-                                    resp.rect.left_top(),
-                                    egui::vec2(row_width, resp.rect.height()),
-                                );
-                                ui.painter().set(
-                                    slot,
-                                    egui::Shape::rect_filled(
-                                        row,
-                                        theme.menu_item_radius().value(),
-                                        theme.surface_active().to_egui(),
-                                    ),
-                                );
-                                if scroll_to_active {
-                                    ui.scroll_to_rect(row, None);
-                                }
+                            if active == Some(i) && scroll_to_active {
+                                ui.scroll_to_rect(resp.rect, None);
                             }
                         }
                     });
