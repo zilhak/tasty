@@ -1,14 +1,17 @@
 /* Site layout and document typography. Colors come from the vendored design
  * tokens; spacing and radii use the site's own scale suited to web prose.
  *
- * Every rule here is the site's own (docs/dev-guide/site.md): spacing uses --sp-*
- * and radii use --radius*, both defined below. Literal values left without a line
- * comment belong to axes the site scale does not have: font sizes, element and
- * layout sizes, stroke widths (borders, outlines, the drawn caret), pill radii
- * (999px) and decoration offsets. Dimensions in em, rem or ch follow the reader's
- * font size (inline code padding, prose measure) and stay relative rather than
- * moving to the pixel scale. Media query conditions stay literal because a query
- * condition cannot read a custom property. */
+ * Every rule here is the site's own (docs/dev-guide/site.md): spacing uses --sp-*,
+ * radii use --radius*, control and glyph sizes use --size-*, and the page widths
+ * shared by several rules use the layout variables, all defined below. Literal
+ * values left without a line comment belong to axes the site scale does not have:
+ * font sizes, layout sizes used in one place, decoration sizes (the scrollbar),
+ * stroke widths (borders, outlines, the drawn caret), pill radii (999px) and
+ * decoration offsets. Dimensions in em, rem or ch sit inside a line of text (inline
+ * code padding) or set its length (prose measure); they follow the reader's font
+ * size and stay relative. Gaps between blocks use the site scale. Media query
+ * conditions stay literal because a query condition cannot read a custom
+ * property. */
 
 
 
@@ -35,10 +38,17 @@
   --radius-sm: 6px;
   --radius-lg: 14px;
 
+  /* Element sizes: controls (header buttons and inputs, landing chips and CTA)
+     and glyphs. Decorations such as dots and the scrollbar stay literal. */
+  --size-control-sm: 32px; --size-control-md: 36px; --size-control-lg: 44px;
+  --size-icon-sm: 16px; --size-icon-md: 18px; --size-icon-lg: 20px; --size-icon-xl: 24px;
+
   --header-h: 56px;
   --sidebar-w: 272px;
   --toc-w: 216px;
   --content-max: 780px;
+  --page-max: 1440px;
+  --landing-max: 1180px;
 
   --border: 1px solid var(--tasty-color-neutral-300);
   --border-soft: 1px solid color-mix(in srgb, var(--tasty-color-neutral-300) 60%, transparent);
@@ -136,7 +146,7 @@ code, kbd, pre, samp { font-family: var(--font-mono); }
   flex: 0 0 auto;
 }
 .brand:hover { text-decoration: none; }
-.brand__mark { width: 24px; height: 24px; }
+.brand__mark { width: var(--size-icon-xl); height: var(--size-icon-xl); }
 .brand__version {
   font-family: var(--font-mono);
   font-size: 11px;
@@ -181,7 +191,7 @@ code, kbd, pre, samp { font-family: var(--font-mono); }
   align-items: center;
   justify-content: center;
   flex: none;
-  width: 32px; height: 32px;
+  width: var(--size-control-sm); height: var(--size-control-sm);
   padding: 0;
   border: var(--border);
   border-radius: var(--radius-sm);
@@ -191,14 +201,14 @@ code, kbd, pre, samp { font-family: var(--font-mono); }
   transition: background 120ms ease, color 120ms ease;
 }
 .icon-btn:hover { background: var(--tasty-color-neutral-300); color: var(--tasty-color-neutral-1100); }
-.icon-btn svg { width: 16px; height: 16px; }
+.icon-btn svg { width: var(--size-icon-sm); height: var(--size-icon-sm); }
 
 /* Match adjacent controls in height. surface1 keeps the active fill distinct
    from the surface0 border. */
 .lang-switch {
   display: inline-flex;
   flex: none;
-  height: 32px;
+  height: var(--size-control-sm);
   border: var(--border);
   border-radius: var(--radius-sm);
   overflow: hidden;
@@ -231,7 +241,7 @@ code, kbd, pre, samp { font-family: var(--font-mono); }
 }
 .search input {
   width: 100%;
-  height: 32px;
+  height: var(--size-control-sm);
   padding: 0 var(--sp-3);
   font: inherit;
   font-size: 13px;
@@ -247,13 +257,13 @@ code, kbd, pre, samp { font-family: var(--font-mono); }
   display: none;
   position: absolute;
   left: 0; top: 0;
-  width: 34px; height: 32px;
+  width: var(--size-control-sm); height: var(--size-control-sm);
   align-items: center;
   justify-content: center;
   color: var(--tasty-color-neutral-600);
   pointer-events: none;
 }
-.search__icon svg { width: 15px; height: 15px; }
+.search__icon svg { width: var(--size-icon-sm); height: var(--size-icon-sm); }
 .search input:focus { outline: none; border-color: var(--brand); }
 
 .search__results {
@@ -301,7 +311,7 @@ code, kbd, pre, samp { font-family: var(--font-mono); }
   display: grid;
   grid-template-columns: var(--sidebar-w) minmax(0, 1fr) var(--toc-w);
   gap: var(--sp-8);
-  max-width: 1440px;
+  max-width: var(--page-max);
   margin: 0 auto;
   padding: 0 var(--sp-6);
   align-items: start;
@@ -665,7 +675,7 @@ code, kbd, pre, samp { font-family: var(--font-mono); }
   font-size: 14px;
 }
 .site-footer__inner {
-  max-width: 1180px;
+  max-width: var(--landing-max);
   margin: 0 auto;
   display: grid;
   grid-template-columns: minmax(0, 1.4fr) repeat(auto-fit, minmax(140px, 1fr));
@@ -685,7 +695,7 @@ code, kbd, pre, samp { font-family: var(--font-mono); }
 .site-footer a:hover { color: var(--tasty-color-neutral-1100); }
 .site-footer__blurb { color: var(--tasty-color-neutral-900); max-width: 34ch; margin: var(--sp-3) 0 0; font-size: 13.5px; }
 .site-footer__legal {
-  max-width: 1180px;
+  max-width: var(--landing-max);
   margin: var(--sp-10) auto 0;
   padding-top: var(--sp-5);
   border-top: var(--border);
@@ -731,7 +741,7 @@ code, kbd, pre, samp { font-family: var(--font-mono); }
     background: hsl(var(--shadow-color) / 0.5);
     z-index: 30;
   }
-  .search { flex-basis: 34px; transition: flex-basis 160ms ease; }
+  .search { flex-basis: var(--size-control-sm); transition: flex-basis 160ms ease; }
   .search:focus-within { flex-basis: 190px; }
   .search input { padding: 0 var(--sp-2); }
   .search input::placeholder { color: transparent; }

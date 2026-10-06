@@ -2,15 +2,16 @@
    site's own variables defined in global.css.
 
    Every rule here is the site's own (docs/dev-guide/site.md), so spacing uses the
-   site scale. Literal values left without a line comment belong to axes the site
-   scale does not have: font sizes, element sizes, pill radii (999px) and the
-   1-2px hover nudges. Widths in em follow the reader's font size and stay
-   relative. Media query conditions stay literal because a query condition cannot
-   read a custom property. */
+   site scale, control and glyph sizes use --size-* and the landing width uses
+   --landing-max. Literal values left without a line comment belong to axes the
+   site scale does not have: font sizes, decoration sizes (dots), pill radii
+   (999px) and the 1-2px hover nudges. Widths in em set the length of a line of
+   text, follow the reader's font size and stay relative. Media query conditions
+   stay literal because a query condition cannot read a custom property. */
 
 .landing {
   --gutter: var(--sp-6);
-  max-width: 1180px;
+  max-width: var(--landing-max);
   margin: 0 auto;
   padding: 0 var(--gutter);
 }
@@ -118,7 +119,7 @@
   display: inline-flex;
   align-items: center;
   gap: var(--sp-2);
-  height: 44px;
+  height: var(--size-control-lg);
   padding: 0 var(--sp-5);
   border-radius: var(--radius);
   border: var(--border);
@@ -130,7 +131,7 @@
   transition: border-color 0.15s, background 0.15s, transform 0.15s;
 }
 .btn:hover { border-color: var(--tasty-color-neutral-500); transform: translateY(-1px); }
-.btn svg { width: 18px; height: 18px; }
+.btn svg { width: var(--size-icon-md); height: var(--size-icon-md); }
 
 .btn--primary {
   border-color: transparent;
@@ -229,13 +230,13 @@
 .card__icon {
   display: grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
+  width: var(--size-control-md);
+  height: var(--size-control-md);
   border-radius: var(--radius-sm);
   color: var(--brand);
   background: color-mix(in srgb, var(--brand) 14%, transparent);
 }
-.card__icon svg { width: 18px; height: 18px; }
+.card__icon svg { width: var(--size-icon-md); height: var(--size-icon-md); }
 .card strong { font-size: 1rem; letter-spacing: -0.01em; }
 .card > span:not(.card__icon):not(.card__more) {
   font-size: 0.92rem;
@@ -265,7 +266,7 @@
   align-items: center;
   gap: var(--sp-2);
   padding: 0 var(--sp-4);
-  height: 34px;
+  height: var(--size-control-md);
   border-bottom: var(--border-soft);
   background: var(--tasty-bg-sidebar);
   font-family: var(--font-mono);
@@ -306,7 +307,7 @@
   background: var(--tasty-bg-panel);
   font-weight: 600;
 }
-.platform svg { width: 20px; height: 20px; color: var(--brand); }
+.platform svg { width: var(--size-icon-lg); height: var(--size-icon-lg); color: var(--brand); }
 
 .stat-row {
   display: grid;
