@@ -320,9 +320,8 @@ pub fn dont(ui: &mut egui::Ui, theme: &Theme, text: &str) {
 fn accent_bar(ui: &mut egui::Ui, theme: &Theme, text: &str, accent: egui::Color32) {
     ui.add_space(theme.spacing_sm.value());
     body_column(ui, |ui| {
-        // 배경은 강조색의 낮은 알파로 만든다.
-        const ACCENT_TINT_OPACITY: f32 = 0.12;
-        let tint = accent.gamma_multiply(ACCENT_TINT_OPACITY);
+        // 배경은 tinted 상자 관용구의 채움 계수(`--tasty-tint-fill-alpha`)로 만든다.
+        let tint = accent.gamma_multiply(theme.tint_fill_alpha());
         let resp = egui::Frame::new()
             .fill(tint)
             .corner_radius(theme.corner_radius_sm.value())
