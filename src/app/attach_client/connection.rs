@@ -46,6 +46,27 @@ impl App {
         }
     }
 
+    /// IPC `remote.attach`와 자동 attach의 연결도 같은 자기 포트 검사를 거친다.
+    /// 자기 포트면 연결을 시작하지 않고 터널을 정리한 뒤 None을 반환한다.
+    pub(crate) fn queue_endpoint_mirror(
+        &mut self,
+        target: pending::PendingMirrorInstall,
+        port: u16,
+        workspace: u32,
+        tunnel: Option<tasty_ssh::SshTunnel>,
+    ) -> Option<anyhow::Result<()>> {
+        let own_port = self.hub.ipc_server.as_ref().map(|server| server.port());
+        let mut tunnel = tunnel;
+        let outcome = dispatch_attach(own_port, port, workspace, AttachSource::Endpoint, || {
+            self.queue_mirror_connection(target, port, workspace, tunnel.take())
+        });
+        self.remote.retire_tunnel(tunnel);
+        match outcome {
+            Outcome::Connected(result) => Some(result),
+            Outcome::RejectedSelf => None,
+        }
+    }
+
     pub(crate) fn dispatch_pending_gui_attach(&mut self) {
         let mut requests = Vec::new();
         for session in self.engines.all_sessions_mut() {

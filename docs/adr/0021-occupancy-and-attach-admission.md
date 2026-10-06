@@ -23,7 +23,7 @@ hard 점유된 workspace의 terminal.spawn은 자원을 만들기 전에 거절�
 
 terminal.spawn의 제한은 최종 pane ID를 해소한 뒤 실제 소속 workspace에서 검사한다. workspace 인자와 pane override가 다를 수 있으므로 workspace 인자만 검사하지 않는다. mirror workspace도 생성을 시작하거나 forward 큐에 넣기 전에 거절한다. child registry는 즉시 생성 ID가 필요한데 일반 mirror forward는 그 ID를 동기로 반환하지 않기 때문이다.
 
-점유 획득 전 stream.open의 proto를 현재 STREAM_PROTO와 비교한다. 생략된 0이나 불일치는 기존 StreamAck{ok:false,proto,error}로 거절한다. GUI 원격 연결 팝업과 IPC attach.into_gui의 self-attach 포트 검사는 debug에서도 적용한다. IPC remote.attach와 자동 attach의 자기 포트 검사는 release 빌드에만 있다. 정상 연결 이후의 EOF·TTL 회수는 계속 필요하다.
+점유 획득 전 stream.open의 proto를 현재 STREAM_PROTO와 비교한다. 생략된 0이나 불일치는 기존 StreamAck{ok:false,proto,error}로 거절한다. GUI 원격 연결 팝업·IPC attach.into_gui·IPC remote.attach·자동 attach의 self-attach 포트 검사는 debug에서도 적용한다. 같은 머신의 self-mirror 검증은 별도 프로세스인 debug attach로 한다. 정상 연결 이후의 EOF·TTL 회수는 계속 필요하다.
 
 원격 조회·프로필 CRUD의 신뢰는 SSH와 loopback에 의존하지만, 로컬 mirror workspace를 만드는 remote.attach는 local_only로 둔다. 원격 접근 자격만으로 무권한 plugin에 로컬 구조 변경 권한을 주지 않는다.
 

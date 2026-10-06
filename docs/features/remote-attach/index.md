@@ -26,7 +26,7 @@ attach 의 본질은 **강한(hard) 배타 점유**다 — [ADR-0021](../../adr/
 
 - **자동 해제**: client 연결 종료(EOF) 또는 attach heartbeat TTL 만료(FIN/RST 없는 silent disconnect 감지) 시 lock 이 free 로 환원. 점유는 **휘발성** — 서버 재시작 시 전부 free(영속 안 함).
 - **실패하는 attach 는 점유를 잡지 않는다**: 핸드셰이크의 스트림 프로토콜 버전(`stream.open` 의 `proto`)이 서버와 다르면 attach 를 dispatch 하기 **전에** 거절 ack(`ok:false` + 사유)로 끊는다 — 성립할 수 없는 세션이 점유만 가져가 정상 attach 를 `already_attached` 로 막는 것을 방지한다. 검증 없이 잡으면, 소켓을 닫지 않는 구버전/hung peer 에서는 EOF 도 안 와 heartbeat TTL(20초)까지 그 workspace 가 붙잡힌다. 근거: [ADR-0021](../../adr/0021-occupancy-and-attach-admission.md).
-- **self-attach(자기 인스턴스 포트로 attach)는 거절된다**. GUI 원격 연결 팝업과 IPC `attach.into_gui` 는 debug/release 공통으로 연결 전에 거절한다. IPC `remote.attach` 와 자동 attach 의 자기 포트 거절은 release 빌드에만 있다. handshake 는 `queue_mirror_connection` 을 거쳐 Remote worker 가 비동기로 수행하므로 교착하지 않는다. 거절하지 않으면 attach 가 성립해 자기 mirror 가 자기 workspace 를 hard 점유하고, 그동안 원본 workspace 의 로컬 입력이 막힌다(debug 의 IPC `remote.attach` 가 이 상태가 된다). 로컬 self-mirror 를 검증할 때는 별도 프로세스인 `tasty debug attach` 를 쓴다.
+- **self-attach(자기 인스턴스 포트로 attach)는 거절된다**. GUI 원격 연결 팝업·IPC `attach.into_gui`·IPC `remote.attach`·자동 attach 모두 debug/release 공통으로 연결 전에 거절한다. handshake 는 `queue_mirror_connection` 을 거쳐 Remote worker 가 비동기로 수행하므로 교착하지 않는다. 거절하지 않으면 attach 가 성립해 자기 mirror 가 자기 workspace 를 hard 점유하고, 그동안 원본 workspace 의 로컬 입력이 막힌다. 같은 머신의 self-mirror 를 검증할 때는 별도 프로세스인 `tasty debug attach` 를 쓴다. 이 CLI 는 GUI 의 자기 포트 검사를 거치지 않고 서버 포트에 직접 붙는다.
 - **force-detach**: **로컬 사용자만** 점유를 강제로 끊을 수 있다(서버 권한).
   끊으면 holder client 에 종료를 통지하고 대상은 **일반 surface/workspace 로 복귀**.
   GUI 진입점은 **둘**이다 — 점유된 surface 우상단의 강제 끊기 버튼(그 워크스페이스가 활성일 때만 그려진다)과, 사이드바 워크스페이스 행 우클릭의 **강제 끊기** 항목.
@@ -309,7 +309,7 @@ Remote는 원 attempt의 SSH 취소와 터널 회수를 요청하고 worker의 �
 
 - **생성은 성공했는데 attach 가 실패하면 원격에 워크스페이스가 남는다.** 정리 수단은 원격의 `workspace.close` IPC, 또는 mirror 안에서 마지막 surface 를 닫아 원격 ws 를 purge 시키는 기존 경로다(아래 "역반영 대신 강제 detach").
 - **레이아웃을 저장하는 원격에서는 그 워크스페이스가 재시작 후에도 남는다.** 원격이 만든 것은 mirror 가 아닌 일반 워크스페이스라 원격의 슬롯 파일에 영속된다(비영속 제외 대상은 로컬 mirror 뿐 — 아래 절). 즉 이 기능은 **원격의 영속 상태를 늘린다**: 무심코 여러 번 확정하면 원격에 워크스페이스가 계속 쌓인다.
-- release 빌드의 self(loopback) attach 차단 게이트는 그대로 적용된다 — 새 ws 를 만들었더라도 대상 포트가 자기 자신이면 attach 되지 않는다(생성만 되고 끝). GUI 사용자 요청은 debug에서도 자기 인스턴스의 포트면 공통 사전 검사에서 거절한다.
+- self(loopback) attach 거절은 그대로 적용된다 — 새 ws 를 만들었더라도 대상 포트가 자기 자신이면 attach 되지 않는다(생성만 되고 끝). debug 와 release 모두 같은 사전 검사를 거친다.
 
 ### mirror workspace 비영속
 

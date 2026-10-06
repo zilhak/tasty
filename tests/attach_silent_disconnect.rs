@@ -191,8 +191,19 @@ const SELF_ATTACH_RTT_NOTICE: Duration = Duration::from_secs(2);
 #[cfg(debug_assertions)]
 const SELF_ATTACH_WATCH: Duration = Duration::from_secs(6);
 
+/// GUI dispatcher 완료 기록의 source 값. `AttachSource::label`과 같아야 한다.
 #[cfg(debug_assertions)]
-fn dispatch_completion(server: &TastyInstance, workspace: u64) -> Option<serde_json::Value> {
+const INTO_GUI_SOURCE: &str = "attach.into_gui";
+
+#[cfg(debug_assertions)]
+const ENDPOINT_SOURCE: &str = "remote.attach/auto-attach";
+
+#[cfg(debug_assertions)]
+fn dispatch_completion(
+    server: &TastyInstance,
+    workspace: u64,
+    source: &str,
+) -> Option<serde_json::Value> {
     let parse = |line: &str| {
         line.split_once("attach_dispatch_completed ")
             .and_then(|(_, record)| serde_json::from_str::<serde_json::Value>(record).ok())
@@ -201,7 +212,7 @@ fn dispatch_completion(server: &TastyInstance, workspace: u64) -> Option<serde_j
         parse(line).is_some_and(|record| {
             record["port"] == server.port()
                 && record["workspace"] == workspace
-                && record["source"] == "attach.into_gui"
+                && record["source"] == source
         })
     })?;
     parse(&line)
@@ -233,14 +244,14 @@ fn observe_self_attach_queue(
             "ui.state: {alive:?}"
         );
         // 뒤의 진단이 로그를 밀어내기 전에 이 요청의 완료 기록을 보관한다.
-        completion = completion.or_else(|| dispatch_completion(server, ws.id));
+        completion = completion.or_else(|| dispatch_completion(server, ws.id, INTO_GUI_SOURCE));
         assert!(
             !is_attached(server, ws.surface_id),
             "self-attach took occupancy; RTTs={rtts:?}"
         );
         std::thread::sleep(Duration::from_millis(100));
     }
-    completion = completion.or_else(|| dispatch_completion(server, ws.id));
+    completion = completion.or_else(|| dispatch_completion(server, ws.id, INTO_GUI_SOURCE));
     let worst = rtts.iter().copied().max().unwrap_or_default();
     let mut sorted = rtts.clone();
     sorted.sort_unstable();
@@ -270,6 +281,41 @@ fn self_attach_is_rejected_before_it_can_take_occupancy() {
     assert!(!is_attached(server, ws.surface_id));
     let outcome = attach_common::try_open_workspace_attach(server.port(), ws.id);
     assert_eq!(outcome, "attached_workspace");
+}
+
+/// IPC remote.attach가 loopback 주소로 자기 포트를 가리키면 debug에서도 연결 전에 거절한다.
+#[cfg(all(feature = "gui", debug_assertions))]
+#[test]
+fn remote_attach_to_the_own_port_is_rejected_before_it_can_take_occupancy() {
+    let server = common::shared();
+    let ws = server.create_workspace("remote-attach-self-rejected");
+    let reply = server.call(
+        "remote.attach",
+        json!({
+            "ssh": format!("127.0.0.1:{}", server.port()),
+            "remote_workspace": ws.id,
+        }),
+    );
+    assert_eq!(
+        reply["attaching"], true,
+        "IPC only acknowledges the attempt: {reply:?}"
+    );
+
+    let mut completion = None;
+    let deadline = Instant::now() + SELF_ATTACH_WATCH;
+    while completion.is_none() && Instant::now() < deadline {
+        assert!(
+            !is_attached(server, ws.surface_id),
+            "remote.attach to the own port took occupancy"
+        );
+        completion = dispatch_completion(server, ws.id, ENDPOINT_SOURCE);
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    let completion = completion
+        .expect("no endpoint dispatch completion; attaching=true is not dispatch evidence");
+    assert_eq!(completion["outcome"], "rejected_self", "{completion}");
+    assert_eq!(completion["connector_entries"], 0, "{completion}");
+    assert!(!is_attached(server, ws.surface_id));
 }
 
 /// 헤드리스에서 GUI attach 큐가 처리되지 않더라도 점유를 잡지 않는지 확인한다.

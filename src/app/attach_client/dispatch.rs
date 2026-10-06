@@ -7,6 +7,8 @@ mod debug_completion;
 pub(super) enum AttachSource {
     Ipc,
     User,
+    /// IPC `remote.attach`와 자동 attach가 해석한 endpoint.
+    Endpoint,
 }
 
 impl AttachSource {
@@ -14,6 +16,7 @@ impl AttachSource {
         match self {
             Self::Ipc => "attach.into_gui",
             Self::User => "remote-attach",
+            Self::Endpoint => "remote.attach/auto-attach",
         }
     }
 }
@@ -70,8 +73,12 @@ mod tests {
     use std::cell::Cell;
 
     #[test]
-    fn both_sources_reject_self_without_entering_the_connector() {
-        for source in [AttachSource::Ipc, AttachSource::User] {
+    fn every_source_rejects_self_without_entering_the_connector() {
+        for source in [
+            AttachSource::Ipc,
+            AttachSource::User,
+            AttachSource::Endpoint,
+        ] {
             let calls = Cell::new(0);
             let outcome = dispatch_attach(Some(1234), 1234, 42, source, || {
                 calls.set(calls.get() + 1);
@@ -83,8 +90,12 @@ mod tests {
     }
 
     #[test]
-    fn both_sources_enter_once_and_return_the_connector_result() {
-        for source in [AttachSource::Ipc, AttachSource::User] {
+    fn every_source_enters_once_and_returns_the_connector_result() {
+        for source in [
+            AttachSource::Ipc,
+            AttachSource::User,
+            AttachSource::Endpoint,
+        ] {
             for own_port in [None, Some(1234)] {
                 for result in [Ok(7), Err("connector failure")] {
                     let calls = Cell::new(0);

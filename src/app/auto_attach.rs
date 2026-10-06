@@ -414,20 +414,14 @@ impl App {
         tunnel: Option<SshTunnel>,
         port: u16,
     ) {
-        // release에서는 연결을 시도하기 전에 자기 포트를 거절한다.
-        #[cfg(not(debug_assertions))]
-        if self.hub.ipc_server.as_ref().map(|s| s.port()) == Some(port) {
-            tracing::warn!(
-                "self(loopback) attach (port={port}) 는 release 빌드에서 차단됩니다 \
-                 — 로컬 self-attach 는 debug 빌드 전용."
-            );
+        // 자기 포트는 debug·release 모두 연결을 시도하기 전에 거절한다.
+        let Some(attach_result) = self.queue_endpoint_mirror(target, port, remote_ws, tunnel)
+        else {
             if let Some(anchor) = anchor_ws_id {
                 self.remote.active.remove(&anchor);
             }
-            self.remote.retire_tunnel(tunnel);
             return;
-        }
-        let attach_result = self.queue_mirror_connection(target, port, remote_ws, tunnel);
+        };
         match attach_result {
             // 접수는 성공 설치가 아니다. 실패 이력은 pending 설치 성공 때만 해제한다.
             Ok(()) => {}
