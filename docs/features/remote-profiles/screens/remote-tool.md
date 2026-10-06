@@ -17,7 +17,7 @@
 ├──────────────────────────────────┤
 │ [원격 접속 프로필] [Attach] [Passkey]│  상단 3탭
 ├──────────────────────────────────┤
-│ 프로필 목록         [+ 추가][⤓필터]│  add-bar (필터는 프로필 탭 전용)
+│ [⊕ 프로필 추가]            [⤓필터]│  add-bar (필터는 프로필 탭 전용)
 │ ▸ prod-box   user@host:22   [✎][⌫]│  목록 — 편집/삭제
 │ ▸ staging    …                   │
 │ ─── SSH 설정에 등록된 호스트    3│  읽기 전용 섹션 (프로필 탭 전용) · 헤더에 ~/.ssh/config 경로
@@ -47,7 +47,10 @@
 
 ### 원격 접속 프로필 탭
 
-- **프로토콜 필터** (원격 접속 프로필 탭 전용): add-bar 우측의 `Filter` 버튼(funnel 아이콘). 현재 프로필에 존재하는 프로토콜(`kind`, tasty-attach 제외)이 2종 이상일 때만 표시. 클릭 시 체크박스 드롭다운(프로토콜 목록 + `모두 선택`/`모두 해제`/`초기화`/`적용`). Apply-on-confirm(적용 눌러야 반영), 선택된 프로토콜만 목록에 표시. 결과 0건이면 "선택한 프로토콜에 해당하는 프로필이 없습니다" 빈 상태. 필터 상태는 **세션 한정·비영속**(popup 재오픈에는 유지, tasty 재시작 시 전체 선택으로 리셋).
+- **추가 버튼 (3탭 공통)**: add-bar 왼쪽의 `프로필 추가`·`Attach 추가`·`Passkey 추가` 는 Button secondary sm + leading `plus` 아이콘이다. 라벨에는 `+` 문자를 넣지 않는다.
+- **행 삭제 글리프 (3탭 공통)**: `trash`. `x` 는 닫기·해제·필드 제거에만 쓴다.
+
+- **프로토콜 필터** (원격 접속 프로필 탭 전용): add-bar 우측의 `Filter` 버튼(funnel 아이콘). 현재 프로필에 존재하는 프로토콜(`kind`, tasty-attach 제외)이 2종 이상일 때만 표시. 클릭 시 체크박스 드롭다운(프로토콜 목록 + `모두 선택`/`모두 해제`/`초기화`/`적용`). 드롭다운 폭은 테두리를 포함해 `remote-filter-dropdown-width`(240)다. Apply-on-confirm(적용 눌러야 반영), 선택된 프로토콜만 목록에 표시. 결과 0건이면 "선택한 프로토콜에 해당하는 프로필이 없습니다" 빈 상태. 필터 상태는 **세션 한정·비영속**(popup 재오픈에는 유지, tasty 재시작 시 전체 선택으로 리셋).
 - **프로필 목록**: 각 행 = 이름 + 요약(user@host:port) + 편집/삭제. **tasty-attach kind 는 이 목록에 나오지 않는다**(Attach 탭 전담).
 - **추가/편집 폼 (ssh)**: name · host · user · port · label 텍스트 입력 + **shell**(콤보박스, 선택 가능 셸 목록 + `auto`) + **passkey**(저장된 passkey 선택 드롭다운, `passkey_ref`) + 저장/취소 — **순수 연결정보만**(remote_tasty 는 Attach 탭으로 이관, ADR-0020). (라벨 키 `field_name`/`field_host`/`field_user`/`field_port`/`field_label`/`field_shell`/`field_passkey`.)
   - **인증 = passkey**: GUI 폼에 `identity_file` 입력은 없다 — passkey 를 고르면 실제 ssh `-i` 경로는 내부에서 `passkey_ref → Passkey.path` 로 resolve 한다(`crates/tasty-ssh/src/lib.rs`).
@@ -67,7 +70,7 @@
 
 ### Attach 탭 (가운데)
 
-tasty-attach kind(같은 레지스트리, ADR-0020) 전담 탭. add-bar 는 `+ Attach 추가` 만(프로토콜 필터 없음).
+tasty-attach kind(같은 레지스트리, ADR-0020) 전담 탭. add-bar 는 `Attach 추가` 버튼만 있다(프로토콜 필터 없음).
 
 - **목록 행 (AttachRow)**:
   - row1 = 이름 + (label) + mode 태그(`profile`=ssh_ref 참조 / `inline`) + **비활성** 경고 배지(참조 ssh 프로필 감지실패 또는 인라인 detect_failed — 이름도 disabled 색).
@@ -83,7 +86,9 @@ tasty-attach kind(같은 레지스트리, ADR-0020) 전담 탭. add-bar 는 `+ A
 
 ### Passkey 탭
 
-name, kind 선택, value 입력, Reveal로 구성된다.
+add-bar 는 `Passkey 추가` 버튼이다. 행 우측 액션은 Reveal·편집·삭제(`trash`) 순서다. Reveal 은 값이 보이는 동안 IconButton active(accent 글리프 + `overlay-active`)로 그리고 글리프를 `eye` 에서 `eyeOff` 로 바꾼다.
+
+폼은 name, kind 선택, value 입력, Reveal로 구성된다.
 
 ### 폼 레이아웃 (디자인 `ProfileForm`/`AttachForm`/`PasskeyForm` 구조 전사)
 

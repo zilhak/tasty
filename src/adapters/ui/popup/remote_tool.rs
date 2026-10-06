@@ -21,11 +21,11 @@ use crate::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::tokens::STRUCT_GAP_1;
 use tasty_ui_widgets::{
-    ControlSize, IconButton, IconButtonVariant, LocalSshHost, LocalSshSectionData,
-    ProtocolFilterItem, ProtocolFilterLabels, TabStripData, TextWrap,
+    Button, ButtonVariant, ControlSize, IconButton, IconButtonVariant, LocalSshHost,
+    LocalSshSectionData, ProtocolFilterItem, ProtocolFilterLabels, TabStripData, TextWrap,
     draw_local_ssh_section as ssh_section_view, draw_protocol_filter_body,
-    draw_protocol_filter_button, draw_tab_strip, ghost_button, hsep, primary_button,
-    secondary_button, selectable_label, selectable_text, warn_badge,
+    draw_protocol_filter_button, draw_tab_strip, filter_dropdown_content_width, ghost_button, hsep,
+    primary_button, selectable_label, selectable_text, warn_badge,
 };
 
 pub const REMOTE_TOOL_POPUP_ID: &str = "remote_tool";
@@ -582,7 +582,7 @@ fn draw_profile_list(
     let mut add_clicked = false;
     let mut new_filter: Option<HashSet<String>> = None;
     ui.horizontal(|ui| {
-        add_clicked = secondary_button(ui, th, t("remote_tool.profile_add")).clicked();
+        add_clicked = add_button(ui, th, t("remote_tool.profile_add")).clicked();
         if protocols.len() >= 2 {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 new_filter = draw_protocol_filter(ui, th, st, &protocols, &applied_hidden);
@@ -763,6 +763,9 @@ fn draw_protocol_filter(
         egui::AboveOrBelow::Below,
         egui::PopupCloseBehavior::CloseOnClickOutside,
         |ui| {
+            // 토큰은 테두리를 포함한 폭이다. egui popup 프레임의 테두리와 안쪽 여백을 뺀다.
+            let frame_x = egui::Frame::popup(ui.style()).total_margin().sum().x;
+            ui.set_min_width(filter_dropdown_content_width(th, LogicalPx(frame_x)).value());
             if draw_protocol_filter_body(ui, th, &items, &labels, &mut st.filter_draft) {
                 applied = Some(
                     st.filter_draft
@@ -1301,7 +1304,7 @@ fn draw_attach_tab(
 }
 
 fn draw_attach_list(ui: &mut egui::Ui, th: &Theme, st: &mut UiState, profiles: &RemoteProfiles) {
-    if secondary_button(ui, th, t("remote_tool.attach_add")).clicked() {
+    if add_button(ui, th, t("remote_tool.attach_add")).clicked() {
         st.aform = AttachForm {
             mode_ref: true,
             shell: "auto".into(),
@@ -1471,13 +1474,13 @@ fn draw_attach_row(
         });
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = th.spacing_xs.value();
-            if row_icon_button(ui, th, icons::TRASH, None)
+            if row_icon_button(ui, th, icons::TRASH)
                 .on_hover_text(t("remote_tool.delete"))
                 .clicked()
             {
                 out = Some(AttachRowAction::Delete);
             }
-            if row_icon_button(ui, th, icons::EDIT, None)
+            if row_icon_button(ui, th, icons::EDIT)
                 .on_hover_text(t("remote_tool.edit"))
                 .clicked()
             {
@@ -1489,18 +1492,21 @@ fn draw_attach_row(
     out
 }
 
-/// 목록 행의 아이콘 버튼 — profile 행과 같은 ghost sm. `tint` 가 있으면 그 색으로 글리프를 칠한다.
-fn row_icon_button(
-    ui: &mut egui::Ui,
-    th: &Theme,
-    glyph: icons::Icon,
-    tint: Option<egui::Color32>,
-) -> egui::Response {
+/// 목록 머리줄의 추가 버튼. 세 탭이 같은 secondary sm + plus 형태를 쓴다.
+fn add_button(ui: &mut egui::Ui, th: &Theme, label: &str) -> egui::Response {
+    Button::new(label)
+        .variant(ButtonVariant::Secondary)
+        .size(ControlSize::Sm)
+        .leading_icon(&|ui, rect, c| icons::PLUS.image(rect.height(), c).paint_at(ui, rect))
+        .show(ui, th)
+}
+
+/// 목록 행의 아이콘 버튼 — profile 행과 같은 ghost sm.
+fn row_icon_button(ui: &mut egui::Ui, th: &Theme, glyph: icons::Icon) -> egui::Response {
     IconButton::new()
         .variant(IconButtonVariant::Ghost)
         .size(ControlSize::Sm)
         .show(ui, th, &|ui, rect, c| {
-            let c = tint.unwrap_or(c);
             glyph.image(rect.height(), c).paint_at(ui, rect)
         })
 }
@@ -1784,7 +1790,7 @@ fn draw_passkeys_tab(ui: &mut egui::Ui, th: &Theme, st: &mut UiState, passkeys: 
 }
 
 fn draw_passkey_list(ui: &mut egui::Ui, th: &Theme, st: &mut UiState, passkeys: &Passkeys) {
-    if secondary_button(ui, th, t("remote_tool.passkey_add")).clicked() {
+    if add_button(ui, th, t("remote_tool.passkey_add")).clicked() {
         st.kform = PasskeyForm {
             kind: "path".into(),
             ..Default::default()
@@ -1924,25 +1930,27 @@ fn draw_passkey_row(
         });
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = th.spacing_xs.value();
-            if row_icon_button(ui, th, icons::TRASH, None)
+            if row_icon_button(ui, th, icons::TRASH)
                 .on_hover_text(t("remote_tool.delete"))
                 .clicked()
             {
                 out = Some(PasskeyRowAction::Delete);
             }
-            if row_icon_button(ui, th, icons::EDIT, None)
+            if row_icon_button(ui, th, icons::EDIT)
                 .on_hover_text(t("remote_tool.edit"))
                 .clicked()
             {
                 out = Some(PasskeyRowAction::Edit);
             }
-            // 값이 보이는 동안은 글리프를 text-primary 로 둔다.
-            let (reveal_icon, reveal_tint) = if revealed {
-                (icons::EYE_OFF, Some(th.text_primary().into()))
-            } else {
-                (icons::EYE, None)
-            };
-            if row_icon_button(ui, th, reveal_icon, reveal_tint)
+            // 값이 보이는 동안은 active 상태로 그리고 글리프를 eyeOff 로 바꾼다.
+            let reveal_icon = if revealed { icons::EYE_OFF } else { icons::EYE };
+            if IconButton::new()
+                .variant(IconButtonVariant::Ghost)
+                .size(ControlSize::Sm)
+                .active(revealed)
+                .show(ui, th, &|ui, rect, c| {
+                    reveal_icon.image(rect.height(), c).paint_at(ui, rect)
+                })
                 .on_hover_text(t("remote_tool.reveal_tooltip"))
                 .clicked()
             {

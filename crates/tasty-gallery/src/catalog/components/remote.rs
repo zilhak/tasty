@@ -114,6 +114,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 ui.horizontal(|ui| {
                     Button::new("Add profile")
                         .variant(ButtonVariant::Secondary)
+                        .size(tasty_ui_widgets::ControlSize::Sm)
                         .leading_icon(&|ui, rect, c| {
                             icons::PLUS.image(rect.height(), c).paint_at(ui, rect)
                         })
@@ -295,6 +296,7 @@ pub fn draw_attach(ui: &mut egui::Ui, theme: &Theme) {
                 ui.horizontal(|ui| {
                     Button::new("Add attach")
                         .variant(ButtonVariant::Secondary)
+                        .size(tasty_ui_widgets::ControlSize::Sm)
                         .leading_icon(&|ui, rect, c| {
                             icons::PLUS.image(rect.height(), c).paint_at(ui, rect)
                         })
@@ -414,7 +416,7 @@ fn attach_row(ui: &mut egui::Ui, theme: &Theme, a: &Attach) {
                 });
             });
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                for glyph in [icons::CLOSE, icons::EDIT] {
+                for glyph in [icons::TRASH, icons::EDIT] {
                     IconButton::new()
                         .variant(IconButtonVariant::Ghost)
                         .size(tasty_ui_widgets::ControlSize::Sm)
@@ -840,11 +842,14 @@ pub fn draw_filter(ui: &mut egui::Ui, theme: &Theme) {
                     unknown: *unknown,
                 })
                 .collect();
-            // 공용 목록 뷰와 같은 최소폭을 사용한다.
+            // 토큰은 테두리를 포함한 폭이다. 이 카드 프레임은 좌우 테두리만 가진다.
             kit::frame_card_popover(
                 ui,
                 theme,
-                tasty_ui_widgets::FILTER_DROPDOWN_MIN_WIDTH,
+                tasty_ui_widgets::filter_dropdown_content_width(
+                    theme,
+                    LogicalPx(theme.border_width.value() * 2.0),
+                ),
                 kit::raised_fill(theme),
                 |ui| {
                     kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
@@ -885,7 +890,7 @@ pub fn draw_filter(ui: &mut egui::Ui, theme: &Theme) {
             ),
             (
                 "dropdown",
-                "216 min-width · title · checkbox list · bulk row · Reset/Apply",
+                "remote-filter-dropdown-width 240 border-box · title · checkbox list · bulk row · Reset/Apply",
             ),
             (
                 "unknown",

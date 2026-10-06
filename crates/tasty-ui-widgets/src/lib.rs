@@ -106,10 +106,11 @@ pub use popup_title::{
     show_popup_title_tooltip,
 };
 pub use remote_tool::{
-    FILTER_DROPDOWN_MAX_HEIGHT, FILTER_DROPDOWN_MIN_WIDTH, LocalSshHost, LocalSshSectionData,
-    ProtocolFilterItem, ProtocolFilterLabels, TabStripData, TextWrap, draw_local_ssh_section,
-    draw_protocol_filter_body, draw_protocol_filter_button, draw_tab_strip, ghost_button, hsep,
-    primary_button, secondary_button, selectable_label, selectable_text, warn_badge,
+    FILTER_DROPDOWN_MAX_HEIGHT, LocalSshHost, LocalSshSectionData, ProtocolFilterItem,
+    ProtocolFilterLabels, TabStripData, TextWrap, draw_local_ssh_section,
+    draw_protocol_filter_body, draw_protocol_filter_button, draw_tab_strip,
+    filter_dropdown_content_width, ghost_button, hsep, primary_button, secondary_button,
+    selectable_label, selectable_text, warn_badge,
 };
 pub use segmented::segmented;
 pub use select::{select, select_or_placeholder};

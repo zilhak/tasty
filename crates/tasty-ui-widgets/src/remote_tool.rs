@@ -10,9 +10,11 @@ use crate::tokens::STRUCT_GAP_2;
 use crate::vspace;
 use crate::{TagVariant, tag};
 
-/// 프로토콜 드롭다운의 본문 최소 폭. 테두리까지 포함한 디자인의 전체 폭과는 다르다.
-/// 현재 값을 유지하며 프레임 여백은 별도로 더한다.
-pub const FILTER_DROPDOWN_MIN_WIDTH: LogicalPx = LogicalPx(216.0);
+/// 프로토콜 드롭다운 프레임 안쪽의 최소 폭. `remote-filter-dropdown-width` 는 테두리를 포함한
+/// 폭(border-box)이므로 호출자가 그리는 프레임의 좌우 합(`frame_x`, 테두리 + 안쪽 여백)을 뺀다.
+pub fn filter_dropdown_content_width(th: &Theme, frame_x: LogicalPx) -> LogicalPx {
+    LogicalPx((th.remote_filter_dropdown_width().value() - frame_x.value()).max(0.0))
+}
 /// 프로토콜 목록이 길어질 때의 스크롤 상한. 드롭다운이 팝업 밖으로 자라지 않게 한다.
 pub const FILTER_DROPDOWN_MAX_HEIGHT: LogicalPx = LogicalPx(168.0);
 
@@ -519,7 +521,7 @@ pub fn draw_protocol_filter_button(
 
 /// 프로토콜 제외 집합 draft를 편집한다. 체크된 항목은 제외되지 않은 항목이다.
 /// 전체 선택·해제·초기화는 draft를 즉시 바꾸며 적용 버튼만 true를 반환한다.
-/// 팝업 배치와 실제 필터 적용은 호출자가 처리한다.
+/// 팝업 배치·폭([`filter_dropdown_content_width`])과 실제 필터 적용은 호출자가 처리한다.
 pub fn draw_protocol_filter_body(
     ui: &mut egui::Ui,
     th: &Theme,
@@ -528,7 +530,6 @@ pub fn draw_protocol_filter_body(
     draft: &mut HashSet<String>,
 ) -> bool {
     let mut applied = false;
-    ui.set_min_width(FILTER_DROPDOWN_MIN_WIDTH.value());
     selectable_label(
         ui,
         labels.title,

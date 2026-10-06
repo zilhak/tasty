@@ -21,7 +21,7 @@
 | `ProfileRow` | `draw_profile_row` | `components/remote.rs` `profile_row` (`remote` spec) — 행 동작 버튼은 본체와 같이 오른쪽부터 삭제(`TRASH`)·편집·재탐지(ssh 만) |
 | `ProfileForm` | `draw_profile_form` | — |
 | `LocalSshSection`(kit 정의 — 위 `space-md` 여백·`border-frame` 선·`space-sm` 안쪽 여백, 헤더와 빈 상태 줄 `size-2`/`space-xs`, 행 `space-xs`·alias↔target `label-detail-gap`) | `tasty_ui_widgets::draw_local_ssh_section` (본체 wrapper: `remote_tool.rs` 동명 함수 — i18n + 빈 상태 원인 판정) | `components/remote.rs` `remote` spec 이 **같은 공용 view 를 호출**한다. 호스트 3건 목록 옆에 no hosts·no file·unreadable config 빈 상태 세 장 |
-| `AttachRow` | `draw_attach_row` | `components/remote.rs` `attach_row` (`remote-attach` spec) — 삭제 아이콘은 디자인 gallery 미러를 따라 `CLOSE`, 본체는 `TRASH` |
+| `AttachRow` | `draw_attach_row` | `components/remote.rs` `attach_row` (`remote-attach` spec) — 행 삭제 아이콘은 본체와 같이 `TRASH`. `x`(`CLOSE`)는 닫기·해제·필드 제거에만 쓴다 |
 | `AttachForm` | `draw_attach_form` | `components/remote.rs` `attach_form_card` (`remote-attach-form` spec, ref/inline 2변종) |
 | `PasskeyRow` | `draw_passkey_row` | — |
 | `PasskeyForm` | `draw_passkey_form` | — |
@@ -43,7 +43,7 @@ tab="attach"` / `RemoteFormFrame` variant `attach-ref`·`attach-inline`)를 전�
 
 필터 예제는 닫힘과 열림 모습을 나란히 보여 준다. 열림 전이를 재현하지 않으며 목록 높이를 먼저 확보한다. 본체 팝업과 달리 갤러리 카드의 남은 높이가 작으면 같은 ScrollArea도 마지막 행을 자르기 때문이다.
 
-필터 폭은 아직 디자인과 차이가 있다. 디자인의 236px는 테두리를 포함한 폭이고 본체 `FILTER_DROPDOWN_MIN_WIDTH` 216은 내용 폭이다. 기록된 측정(scale 1.0, 창 1280×720)에서는 테두리 색 `(204, 208, 218)`의 x 범위가 874..1103으로 전체 230px였다. 좌우 프레임이 14px를 차지하므로 차이는 20px가 아닌 6px다. 이 차이의 해소는 디자인 결정이 필요하다. 갤러리는 본체 상수를 읽어 두 구현의 폭을 일치시킨다.
+필터 드롭다운 폭은 `remote-filter-dropdown-width`(240) 토큰이며 테두리를 포함한 폭(border-box)이다. 공용 `filter_dropdown_content_width`가 호출자의 프레임 좌우 합(테두리 + 안쪽 여백)을 빼 안쪽 최소 폭을 낸다. 본체는 egui popup 프레임(`Frame::popup`)의 `total_margin`을, 갤러리 카드는 좌우 테두리 두 개를 뺀다. 그래서 두 구현의 바깥 테두리 폭이 모두 토큰 값과 같다.
 
 ## remote_attach — RA02 "Add remote workspace" (Overlays)
 
