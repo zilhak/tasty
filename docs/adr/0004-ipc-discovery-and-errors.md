@@ -4,6 +4,7 @@
 - **Date**: 2026-09-24
 - **Tags**: ipc, compatibility, capabilities
 - **Group**: foundation
+- **부분 개정**: [ADR-0066](0066-pre-1-0-breaking-changes-ship-without-deprecation-period.md) — 호환성을 깨는 변경의 유예 조항
 
 ## Context
 
@@ -27,9 +28,7 @@
 가능하면 실제 프로토콜 상수에서 버전을 파생하고 미구현 기능을 미리 선언하지 않는다.
 메서드의 baseline 포함 여부는 동결 파일에서 파생하며 정확한 도입 버전을 추정해 만들지 않는다.
 
-호환성을 깨는 일반 변경은 deprecation 절차를 따른다.
-보안·심각한 버그·불가침 원칙 위반 수정은 해당 범위에 한해 유예를 생략할 수 있다.
-그 경우에도 기존 호출자를 가장 적게 깨는 수정안을 고르고 CHANGELOG에 구체적 사유를 적는다.
+호환성을 깨는 변경을 언제 어떻게 내는지는 [ADR-0066](0066-pre-1-0-breaking-changes-ship-without-deprecation-period.md)이 정한다.
 
 ## Consequences
 
@@ -38,14 +37,12 @@
 
 오류 코드를 제어 흐름에 쓰는 client와 엄격한 응답 파서는 호환 검토가 필요하다.
 구 SDK가 코드 필드를 보내지 않으면 원래 원인을 완전히 복원할 수 없다.
-원칙 위반의 즉시 수정도 외부 호출자에게는 경고 기간 없는 동작 변경이다.
 
 ## Alternatives Considered
 
 - 오류 문구만 바꾸고 코드를 유지하면 코드로 분기하는 client가 계속 잘못 판단한다.
 - plugin마다 호스트 오류를 다시 분류하면 같은 실패가 plugin마다 달라진다.
 - RPC 전체의 단일 버전은 필요한 기능만 선택하기 어렵고 별도 handshake는 구 client 연결을 깬다.
-- 원칙 위반 예외를 모든 변경에 적용하면 정상 호환 절차가 의미를 잃는다.
 
 ## Reconsideration Triggers
 
@@ -53,7 +50,6 @@
 plugin 내부 오류 때문에 외부 사용자가 고칠 수 없는 인자 오류를 받는 사례가 늘면 책임 구분을 검토한다.
 
 동결 baseline·capability 의미·불가침 원칙이 바뀌거나 안정 1.x로 전환하면 관련 계약을 재검토한다.
-사용자가 특정 호환성 변경의 유예를 요구하거나 외부 client 피해가 확인되면 예외 정책도 다시 논의한다.
 
 ## References
 
