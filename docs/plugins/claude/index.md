@@ -477,7 +477,25 @@ API 오류에서 실제 이벤트를 받은 실험까지 완료한 것은 아니
 | `terminal.state`가 `active` 또는 `stale` | `idle`·`needs_input`·`exited`는 별도 상태 훅이 다루므로 제외한다. 그 훅이나 알림이 실제 전달됐음을 확인하는 조건은 아니다. `stale`은 `confidence`와 무관하게 포함한다 |
 
 **백그라운드 작업을 기다리는 자식**(대기 Stop 뒤, 위 "백그라운드 작업을 기다리는 Stop")은 기준을 따로 둔다.
-Claude Code가 Stop payload로 알려 준 대기이므로 누적 출력이 **10분** 동안 같아야 알리고, 오류 문구 유무와 관계없이 이 기준을 쓴다.
+먼저 기다리는 작업의 출력 파일을 찾아 그 파일의 활동으로 판정한다.
+
+- 단서: 대기 Stop의 `background_tasks`(끝나지 않은 항목의 `id`와 이름 `description`·`command`), stdin의 `session_id`·`cwd`.
+  백그라운드 작업이 남은 `StopFailure`는 플러그인이 기록한 작업 id를 쓰며 이름도 id다.
+- 경로: Claude Code는 작업 출력을 `<임시 폴더>/claude-<uid>/<cwd slug>/<session_id>/tasks/<id>.output`에 쓴다. 임시 폴더는
+  `CLAUDE_CODE_TMPDIR`, 없으면 OS 임시 폴더다. slug는 cwd의 영숫자가 아닌 문자를 `-`로 바꾼 값이다(200자를 넘으면 해시가 붙는다).
+  서브에이전트의 `.output`은 `~/.claude/projects/<slug>/<session_id>/subagents/agent-<id>.jsonl`을 가리키는 심볼릭 링크다.
+  공식 문서에 없는 내부 규칙이며 Claude Code 2.1.291의 코드와 Linux의 실제 폴더로 확인했다.
+- 찾기: 플러그인 프로세스의 `CLAUDE_CODE_TMPDIR`·임시 폴더 아래 `claude-*` 폴더에서 slug 경로를 먼저 보고, 없으면 프로젝트 폴더를 훑어
+  `<session_id>/tasks`를 찾는다. 대상 transcript가 아직 없는 서브에이전트 링크도 찾은 것으로 본다(크기 0). 못 찾으면 10초마다 다시 찾는다.
+- 판정: 파일 크기나 수정 시각이 바뀌면 활동이다. 찾은 모든 파일이 일반 기준(**120초**) 동안 활동이 없으면 대기 한 번에 한 번 알린다.
+  화면 출력은 보지 않는다. 알리기 전에 surface meta `claude-background-quiet`에 대기 시작 시각·작업 이름·조용한 시간을 남기고,
+  `notify-error`는 대기 시작 시각이 같을 때만 이 기록으로 `surface <N>: background work <이름> has written no output for <분> min` 줄을 쓴다.
+  이름은 80자까지 적는다. 이 meta는 지우지 않고 다음 기록이 덮어쓴다.
+- 되돌림: 출력 파일을 하나도 찾지 못하면(경로 규칙이 바뀌었거나 자식의 임시 폴더 설정이 플러그인과 다름) 플러그인 로그에 대기당 한 번 warn을 남기고
+  아래 화면 기준을 쓴다. 셸 하위 프로세스의 CPU 시간은 보지 않는다.
+
+출력 파일을 찾지 못한 대기와 대기 meta에서 되살린 기록은 Claude Code가 Stop payload로 알려 준 대기이므로 누적 출력이 **10분** 동안 같아야 알리고,
+오류 문구 유무와 관계없이 이 기준을 쓴다.
 대기 한 번에 한 번만 알린다. 출력이 바뀌거나 쿨다운이 지나도 같은 대기에서는 다시 알리지 않는다.
 대기 기록은 플러그인 메모리에 두며 대기를 끝내는 이벤트(대기가 아닌 `Stop`·백그라운드 작업이 남지 않은 `StopFailure`·새 턴·`SessionEnd`)와 추적 해제가 지운다.
 플러그인이 다시 시작되면 메모리 기록은 사라지고 `claude-background-wait` meta는 남는다. 그래서 메모리 기록이 없는 surface가 일반 기준에 닿으면

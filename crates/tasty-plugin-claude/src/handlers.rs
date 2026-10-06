@@ -1716,11 +1716,17 @@ mod tests {
                 params: Value,
             ) -> Result<Value, tasty_plugin_sdk::PluginError> {
                 match method {
-                    "surface.meta.get" => {
-                        assert_eq!(params["key"], crate::hook::BACKGROUND_WAIT_META_KEY);
+                    "surface.meta.get"
+                        if params["key"] == crate::hook::BACKGROUND_WAIT_META_KEY =>
+                    {
                         Ok(json!({ "value": self.0 }))
                     }
-                    other => panic!("unexpected host call: {other}"),
+                    "surface.meta.get"
+                        if params["key"] == crate::task_watch::BACKGROUND_QUIET_META_KEY =>
+                    {
+                        Ok(json!({}))
+                    }
+                    other => panic!("unexpected host call: {other} {params}"),
                 }
             }
         }
@@ -1740,6 +1746,48 @@ mod tests {
         assert!(
             ko.contains("백그라운드 작업(shell)") && ko.contains("11분째"),
             "{ko}"
+        );
+    }
+
+    /// 출력 파일 감시가 같은 대기에 남긴 기록이 있으면 조용한 작업의 이름과 분을 적는다.
+    /// 시작 시각이 다른 대기의 기록은 쓰지 않는다.
+    #[test]
+    fn notify_error_message_names_the_quiet_background_tasks() {
+        struct QuietHost(String, String);
+        impl HostCall for QuietHost {
+            fn call(
+                &self,
+                method: &str,
+                params: Value,
+            ) -> Result<Value, tasty_plugin_sdk::PluginError> {
+                assert_eq!(method, "surface.meta.get");
+                if params["key"] == crate::hook::BACKGROUND_WAIT_META_KEY {
+                    Ok(json!({ "value": self.0 }))
+                } else {
+                    assert_eq!(params["key"], crate::task_watch::BACKGROUND_QUIET_META_KEY);
+                    Ok(json!({ "value": self.1 }))
+                }
+            }
+        }
+        let wait = json!({ "since_ms": 5_000, "tasks": 1, "types": ["shell"] }).to_string();
+        let long = "x".repeat(100);
+        let quiet = |since: u64| {
+            json!({ "since_ms": since, "labels": ["sleep 300", long], "quiet_ms": 125_000 })
+                .to_string()
+        };
+        let tr = test_translator();
+        let line = notify_error_message(&tr, &QuietHost(wait.clone(), quiet(5_000)), 42);
+        assert_eq!(
+            line,
+            format!(
+                "surface 42: background work sleep 300, {}… has written no output for 2 min",
+                "x".repeat(80)
+            )
+        );
+        let other = notify_error_message(&tr, &QuietHost(wait, quiet(4_000)), 42);
+        assert!(
+            other.contains("waiting on background work (shell)"),
+            "{other}"
         );
     }
 

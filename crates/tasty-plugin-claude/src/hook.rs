@@ -274,7 +274,7 @@ pub(crate) fn handle_claude_hook<H: HostCallSink>(
         .track(event, surface_id, params);
 
     if event == "stop-failure"
-        && let Some(response) = stop_failure_with_background_work(&tail, surface_id, error, now_ms)
+        && let Some(response) = stop_failure_with_background_work(&tail, surface_id, params, now_ms)
     {
         return Ok(response);
     }
@@ -381,7 +381,9 @@ fn stop_that_does_not_end_the_turn<H: HostCallSink>(
         tracing::info!(
             "claude hook stop s{surface_id}: waiting on background work ({pending}) — main turn continues, stays active"
         );
-        let calls = background_wait_calls(tail, surface_id, now_ms, background_task_types(params));
+        let watch = crate::task_watch::TaskWatch::from_stop(params);
+        let types = background_task_types(params);
+        let calls = background_wait_calls(tail, surface_id, now_ms, types, watch);
         // 게이트는 대기 Stop 도 판정한다. 그 판정이 다음 Stop 과 섞이지 않도록 이 Stop 과 짝짓는다.
         let host_call_failures = deliver_all(tail.host, &calls)
             + tail.pair_stop(session, surface_id, prompt_id, StopKind::Waiting, gates);
@@ -424,9 +426,14 @@ fn background_wait_calls<H>(
     surface_id: u32,
     now_ms: u64,
     types: Vec<String>,
+    watch: Option<crate::task_watch::TaskWatch>,
 ) -> [HostCall; 2] {
-    let since_ms =
-        crate::error_scan::lock_scanner(tail.scanner).mark_background_wait(surface_id, now_ms);
+    let since_ms = {
+        let mut scanner = crate::error_scan::lock_scanner(tail.scanner);
+        let since_ms = scanner.mark_background_wait(surface_id, now_ms);
+        scanner.set_task_watch(surface_id, watch);
+        since_ms
+    };
     [
         HostCall::SetState {
             surface_id,
@@ -449,10 +456,17 @@ fn background_wait_calls<H>(
 fn stop_failure_with_background_work<H: HostCallSink>(
     tail: &StopTail<'_, H>,
     surface_id: u32,
-    error: Option<&str>,
+    params: &Value,
     now_ms: u64,
 ) -> Option<Value> {
-    let types = lock_state(tail.state).background.pending_types(surface_id);
+    let error = params.get("error").and_then(Value::as_str);
+    let (ids, types) = {
+        let state = lock_state(tail.state);
+        (
+            state.background.pending_ids(surface_id),
+            state.background.pending_types(surface_id),
+        )
+    };
     if types.is_empty() {
         return None;
     }
@@ -469,7 +483,10 @@ fn stop_failure_with_background_work<H: HostCallSink>(
             .unwrap_or("unknown")
             .to_string(),
     }];
-    calls.extend(background_wait_calls(tail, surface_id, now_ms, types));
+    let watch = crate::task_watch::TaskWatch::from_ids(params, ids);
+    calls.extend(background_wait_calls(
+        tail, surface_id, now_ms, types, watch,
+    ));
     calls.push(HostCall::FireHook {
         surface_id,
         event: STOP_FAILURE_EVENT,

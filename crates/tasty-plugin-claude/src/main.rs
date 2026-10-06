@@ -19,6 +19,7 @@ mod profile_merge;
 mod reboot;
 mod state;
 mod stop_pairing;
+mod task_watch;
 
 use std::collections::HashSet;
 use std::path::PathBuf;

@@ -326,6 +326,56 @@ pub(crate) fn background_wait_message(
         .replacen("{}", &minutes.to_string(), 1)
 }
 
+/// 출력 파일 감시가 기록한 조용한 작업의 문구. 같은 대기(시작 시각이 같음)의 기록이 없으면 `None` 이다.
+pub(crate) fn quiet_task_message<H: HostCall>(
+    tr: &Translator,
+    host: &H,
+    target_surface: u32,
+    wait: &Value,
+) -> Option<String> {
+    let raw = host
+        .call(
+            "surface.meta.get",
+            json!({ "surface_id": target_surface, "key": crate::task_watch::BACKGROUND_QUIET_META_KEY }),
+        )
+        .ok()?
+        .get("value")?
+        .as_str()?
+        .to_string();
+    let quiet: Value = serde_json::from_str(&raw).ok()?;
+    if quiet.get("since_ms")? != wait.get("since_ms")? {
+        return None;
+    }
+    // 명령이 긴 셸 작업도 한 줄에 들어가도록 이름마다 앞부분만 적는다.
+    let labels: Vec<String> = quiet
+        .get("labels")?
+        .as_array()?
+        .iter()
+        .filter_map(Value::as_str)
+        .map(|l| {
+            let head: String = l.chars().take(QUIET_LABEL_CHARS).collect();
+            if head.len() < l.len() {
+                format!("{head}…")
+            } else {
+                head
+            }
+        })
+        .collect();
+    if labels.is_empty() {
+        return None;
+    }
+    let minutes = quiet.get("quiet_ms")?.as_u64()? / 60_000;
+    Some(
+        tr.t("claude.notify.stalled_background_task_quiet_message")
+            .replacen("{}", &target_surface.to_string(), 1)
+            .replacen("{}", &labels.join(", "), 1)
+            .replacen("{}", &minutes.to_string(), 1),
+    )
+}
+
+/// 조용한 작업 이름 하나에 적는 최대 글자 수.
+const QUIET_LABEL_CHARS: usize = 80;
+
 /// 화면의 오류 줄을 알림에 덧붙인다. 조회에 실패하면 힌트를 생략한다.
 /// 자식이 백그라운드 작업을 기다리는 중이면 대기 문구를 쓴다.
 pub(crate) fn notify_error_message<H: HostCall>(
@@ -338,6 +388,9 @@ pub(crate) fn notify_error_message<H: HostCall>(
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_millis() as u64)
             .unwrap_or(0);
+        if let Some(line) = quiet_task_message(tr, host, target_surface, &wait) {
+            return line;
+        }
         return background_wait_message(tr, target_surface, &wait, now_ms);
     }
     let screen = host

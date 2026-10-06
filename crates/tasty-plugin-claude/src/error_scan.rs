@@ -17,6 +17,8 @@ use serde_json::json;
 
 use tasty_plugin_agent_common::host_call::HostCall;
 
+use crate::task_watch::{FileActivity, TaskWatch};
+
 /// 출력에서 찾는 오류 패턴.
 const CLAUDE_ERROR_PATTERN: &str = r"(?i)(\bAPI Error\b|Output blocked by content filtering policy|\boverloaded_error\b|\brate_limit_error\b|\bInternal Server Error\b|\bnetwork error\b|\bBad Request\b)";
 
@@ -111,6 +113,57 @@ struct BackgroundWait {
     since_ms: u64,
     /// 이 대기에서 정지 알림을 보냈는지.
     notified: bool,
+    /// 기다리는 작업과 출력 파일을 찾을 단서. 없으면 화면 출력 기준(10분)만 쓴다.
+    watch: Option<TaskWatch>,
+    /// 찾은 출력 파일의 관측 상태.
+    files: Option<FileActivity>,
+    /// 마지막으로 출력 파일을 찾아본 시각. 못 찾으면 [`LOCATE_RETRY`] 뒤에 다시 찾는다.
+    last_locate: Option<Instant>,
+    /// 못 찾았다는 경고를 이 대기에서 남겼는지.
+    warned: bool,
+}
+
+/// 출력 파일을 못 찾았을 때 다시 찾는 간격. Claude Code 가 폴더를 늦게 만들 수 있어 한 번에 포기하지 않는다.
+const LOCATE_RETRY: Duration = Duration::from_secs(10);
+
+impl BackgroundWait {
+    fn new(since_ms: u64) -> Self {
+        Self {
+            since_ms,
+            notified: false,
+            watch: None,
+            files: None,
+            last_locate: None,
+            warned: false,
+        }
+    }
+
+    /// 기다리는 작업의 출력 파일이 모두 활동 없이 지난 시간. 파일을 찾지 못했으면 `None` 이다.
+    fn file_quiet(&mut self, surface_id: u32, now: Instant) -> Option<Duration> {
+        let watch = self.watch.as_ref()?;
+        let due = self
+            .last_locate
+            .is_none_or(|t| now.saturating_duration_since(t) >= LOCATE_RETRY);
+        if self.files.is_none() && due {
+            self.last_locate = Some(now);
+            let wall = std::time::SystemTime::now();
+            self.files = crate::task_watch::tasks_dir(watch)
+                .and_then(|dir| FileActivity::locate(watch, &dir, wall));
+            if self.files.is_none() && !self.warned {
+                self.warned = true;
+                tracing::warn!(
+                    "claude stall s{surface_id}: no output file found for background task(s) {:?} of session {} — falling back to the screen output rule",
+                    watch
+                        .tasks
+                        .iter()
+                        .map(|t| t.id.as_str())
+                        .collect::<Vec<_>>(),
+                    watch.session_id
+                );
+            }
+        }
+        Some(self.files.as_mut()?.poll(std::time::SystemTime::now()))
+    }
 }
 
 /// 누적 창의 해시 변화로 출력 변화를 추정한다. 실제 작업 진행 여부를 확정하지는 않는다.
@@ -209,11 +262,33 @@ impl ErrorScanner {
     pub fn mark_background_wait(&mut self, surface_id: u32, now_ms: u64) -> u64 {
         self.background_wait
             .entry(surface_id)
-            .or_insert(BackgroundWait {
-                since_ms: now_ms,
-                notified: false,
-            })
+            .or_insert_with(|| BackgroundWait::new(now_ms))
             .since_ms
+    }
+
+    /// 대기에서 관측할 작업을 바꾼다. 작업 목록이 바뀌면 출력 파일을 다시 찾는다. 알림 여부는 유지한다.
+    pub fn set_task_watch(&mut self, surface_id: u32, watch: Option<TaskWatch>) {
+        if let Some(b) = self.background_wait.get_mut(&surface_id)
+            && b.watch != watch
+        {
+            b.watch = watch;
+            b.files = None;
+            b.last_locate = None;
+        }
+    }
+
+    /// 시험 전용 — 찾은 출력 파일을 직접 넣는다. 실제 임시 폴더를 쓰지 않으려는 것이다.
+    #[cfg(test)]
+    pub(crate) fn set_file_activity_for_test(
+        &mut self,
+        surface_id: u32,
+        watch: TaskWatch,
+        files: FileActivity,
+    ) {
+        if let Some(b) = self.background_wait.get_mut(&surface_id) {
+            b.watch = Some(watch);
+            b.files = Some(files);
+        }
     }
 
     /// 백그라운드 대기 기록을 지운다.
@@ -373,21 +448,24 @@ impl ErrorScanner {
             tracing::info!(
                 "claude stall s{surface_id}: restored the background wait from its surface meta"
             );
-            self.background_wait.insert(
-                surface_id,
-                BackgroundWait {
-                    since_ms,
-                    notified: false,
-                },
-            );
+            self.background_wait
+                .insert(surface_id, BackgroundWait::new(since_ms));
         }
         let Some(w) = self.watch.get(&surface_id) else {
             return;
         };
+        // 기다리는 작업의 출력 파일을 찾았으면 화면 대신 그 파일의 활동으로 일반 기준(2분)을 적용한다.
+        let file_quiet = self
+            .background_wait
+            .get_mut(&surface_id)
+            .and_then(|b| b.file_quiet(surface_id, now));
         let wait = self.background_wait.get(&surface_id);
         // 대기 한 번에 한 번만 알린다. 출력 변화로 stall_notified가 풀려도 다시 알리지 않는다.
         let already_notified = w.stall_notified || wait.is_some_and(|b| b.notified);
-        let threshold = stall_threshold(w.saw_error, wait.is_some());
+        let (quiet, threshold) = match file_quiet {
+            Some(file_quiet) => (file_quiet, STALL_QUIET_NO_ERROR),
+            None => (quiet, stall_threshold(w.saw_error, wait.is_some())),
+        };
         let since_last_notify = self
             .last_stall_notify
             .get(&surface_id)
@@ -416,6 +494,14 @@ impl ErrorScanner {
             return;
         }
 
+        if let Some(b) = wait.filter(|_| file_quiet.is_some()) {
+            record_quiet_tasks(host, surface_id, b, quiet);
+        }
+        self.fire_stall(host, surface_id, now);
+    }
+
+    /// 정지 의심 훅을 요청하고, 성공하면 같은 정지 구간·대기에서 다시 알리지 않도록 기록한다.
+    fn fire_stall<H: HostCall>(&mut self, host: &H, surface_id: u32, now: Instant) {
         if let Err(e) = host.call(
             "surface.fire_hook",
             json!({
@@ -433,6 +519,32 @@ impl ErrorScanner {
             b.notified = true;
         }
         self.last_stall_notify.insert(surface_id, now);
+    }
+}
+
+/// 정지 알림 문구가 조용한 작업의 이름과 시간을 적도록 기록한다. 대기 시작 시각으로 같은 대기인지 가린다.
+fn record_quiet_tasks<H: HostCall>(
+    host: &H,
+    surface_id: u32,
+    wait: &BackgroundWait,
+    quiet: Duration,
+) {
+    let labels = wait
+        .files
+        .as_ref()
+        .map(FileActivity::labels)
+        .unwrap_or_default();
+    tracing::info!(
+        "claude stall s{surface_id}: background task output quiet for {}s ({}) — notifying",
+        quiet.as_secs(),
+        labels.join(", ")
+    );
+    let value = json!({ "since_ms": wait.since_ms, "labels": labels, "quiet_ms": quiet.as_millis() as u64 });
+    if let Err(e) = host.call(
+        "surface.meta.set",
+        json!({ "surface_id": surface_id, "key": crate::task_watch::BACKGROUND_QUIET_META_KEY, "value": value.to_string() }),
+    ) {
+        tracing::warn!("claude stall s{surface_id}: recording the quiet background tasks failed: {e}");
     }
 }
 
@@ -756,6 +868,11 @@ mod tests {
                     self.fired.borrow_mut().push(event);
                     Ok(json!({ "fired": 1 }))
                 }
+                "surface.meta.set" => {
+                    let key = params["key"].as_str().unwrap_or_default();
+                    self.fired.borrow_mut().push(format!("meta-set:{key}"));
+                    Ok(json!({}))
+                }
                 other => panic!("unexpected host call: {other}"),
             }
         }
@@ -947,6 +1064,82 @@ mod tests {
         assert!(s.is_waiting_on_background_work(1));
         s.scan_one_at(&host, 1, t0 + STALL_QUIET_BACKGROUND_WAIT);
         assert_eq!(host.stalled_count(), 1, "대기 기준에 도달하면 한 번 알린다");
+    }
+
+    fn quiet_task_files(age: Duration) -> (tempfile::TempDir, TaskWatch, FileActivity) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("bq1.output");
+        std::fs::write(&path, "").unwrap();
+        let file = std::fs::File::options().write(true).open(&path).unwrap();
+        file.set_modified(std::time::SystemTime::now() - age)
+            .unwrap();
+        let watch = TaskWatch {
+            session_id: "s-quiet".into(),
+            cwd: "/w".into(),
+            tasks: vec![crate::task_watch::WatchedTask {
+                id: "bq1".into(),
+                label: "sleep 300".into(),
+            }],
+        };
+        let files = FileActivity::locate(&watch, dir.path(), std::time::SystemTime::now()).unwrap();
+        (dir, watch, files)
+    }
+
+    /// 기다리는 작업의 출력 파일이 일반 기준(120초) 동안 그대로면 화면 출력과 관계없이 한 번 알린다.
+    /// 알림 문구가 쓸 조용한 작업 기록을 이벤트보다 먼저 남긴다.
+    #[test]
+    fn quiet_task_output_files_are_noticed_at_the_normal_threshold() {
+        let host = ScanHost::new("❯ \n⏵⏵ 1 shell\n", "active");
+        let mut s = ErrorScanner::new();
+        s.mark_background_wait(1, 1_000);
+        let (_dir, watch, files) = quiet_task_files(STALL_QUIET_NO_ERROR + Duration::from_secs(5));
+        s.set_file_activity_for_test(1, watch, files);
+        let t0 = Instant::now();
+        s.scan_one_at(&host, 1, t0);
+        assert_eq!(
+            host.events(),
+            [
+                format!("meta-set:{}", crate::task_watch::BACKGROUND_QUIET_META_KEY),
+                STALLED_EVENT.to_string()
+            ]
+        );
+        s.scan_one_at(&host, 1, t0 + STALL_QUIET_BACKGROUND_WAIT * 2);
+        assert_eq!(host.stalled_count(), 1, "대기 한 번에 한 번만 알린다");
+    }
+
+    /// 출력 파일이 계속 바뀌면 화면이 대기 기준(10분)보다 오래 조용해도 알리지 않는다.
+    #[test]
+    fn growing_task_output_files_keep_a_quiet_screen_from_being_noticed() {
+        let host = ScanHost::new("❯ \n⏵⏵ 1 shell\n", "active");
+        let mut s = ErrorScanner::new();
+        s.mark_background_wait(1, 1_000);
+        let (dir, watch, files) = quiet_task_files(Duration::from_secs(1));
+        s.set_file_activity_for_test(1, watch, files);
+        let t0 = Instant::now();
+        s.scan_one_at(&host, 1, t0);
+        for i in 1..=3u32 {
+            std::fs::write(dir.path().join("bq1.output"), "tick\n".repeat(i as usize)).unwrap();
+            s.scan_one_at(&host, 1, t0 + STALL_QUIET_BACKGROUND_WAIT * i);
+        }
+        assert_eq!(host.stalled_count(), 0);
+    }
+
+    /// 출력 파일을 찾지 못하면 대기 기준(10분)으로 돌아간다.
+    #[test]
+    fn without_task_output_files_the_wait_threshold_stays() {
+        let host = ScanHost::new("❯ \n⏵⏵ 1 shell\n", "active");
+        let mut s = ErrorScanner::new();
+        s.mark_background_wait(1, 1_000);
+        let (_dir, mut watch, _files) = quiet_task_files(Duration::from_secs(1));
+        watch.session_id = "no-such-session-7f3c1e".into();
+        s.set_task_watch(1, Some(watch));
+        let t0 = Instant::now();
+        s.scan_one_at(&host, 1, t0);
+        s.scan_one_at(&host, 1, t0 + STALL_QUIET_NO_ERROR + Duration::from_secs(1));
+        assert_eq!(host.stalled_count(), 0);
+        s.scan_one_at(&host, 1, t0 + STALL_QUIET_BACKGROUND_WAIT);
+        assert_eq!(host.stalled_count(), 1);
+        assert!(!host.events().iter().any(|e| e.starts_with("meta-set:")));
     }
 
     /// 대기 meta 가 없거나 읽을 수 없으면 일반 기준으로 알린다.

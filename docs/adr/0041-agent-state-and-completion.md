@@ -69,8 +69,11 @@ Claude Code의 연속 block 상한(기본 8, `CLAUDE_CODE_STOP_HOOK_BLOCK_CAP`)�
 [Claude 통합](../plugins/claude/index.md#stop-게이트와-idle)에 있다.
 
 백그라운드 작업을 기다리는 Claude 자식의 정지 알림은 일반 정지와 구분한다. 대기 Stop이 대기를 플러그인
-메모리와 surface meta `claude-background-wait`에 기록한다. 누적 출력이 10분 동안 같으면 대기 한 번에
-한 번만 알린다. 문구는 기다리는 작업의 종류와 경과한 분만 적고, 멈췄을 가능성이나 유실된 훅을 추정하지 않는다.
+메모리와 surface meta `claude-background-wait`에 기록한다. 기다리는 작업의 출력 파일(Claude Code 임시 폴더의
+`<session_id>/tasks/<id>.output`, 서브에이전트는 transcript를 가리키는 링크)을 찾으면 그 크기·수정 시각을 활동으로 보고,
+모든 파일이 일반 기준(120초) 동안 그대로면 작업 이름과 조용한 분을 적어 대기 한 번에 한 번 알린다. 파일을 찾지 못하면
+warn을 한 번 남기고 누적 화면 출력이 10분 동안 같을 때 대기 한 번에 한 번만 알린다. 이때 문구는 기다리는 작업의 종류와
+경과한 분만 적는다. 어느 문구도 멈췄을 가능성이나 유실된 훅을 추정하지 않는다.
 대기가 아닌 Stop, 백그라운드 작업이 남지 않은 StopFailure, 새 턴, 세션 종료가 대기 기록을 지운다.
 
 API 오류로 끝난 턴(`StopFailure`)은 payload에 `background_tasks`가 없다. 그래서 플러그인이 메인 턴의 백그라운드
@@ -107,7 +110,7 @@ block된 판정이 늦게 오면 턴이 이어지는데도 idle로 기록된다.
 그 Stop은 5초 뒤 통과로 확정되어 block이어도 idle로 기록될 수 있다. 시간 초과로 확정한 idle은 그 사이 같은 세션에 새 턴이
 시작됐으면 보내지 않는다. Claude Code의 연속 block 상한은 tasty 게이트가 아닌 Stop 훅의 continuation도 세지만 플러그인은 tasty
 게이트의 block만 센다. 다른 Stop 훅이 함께 턴을 이어 가게 하면 상한으로 끝난 턴의 idle이 기록되지 않을 수 있다. 사용자가 직접 `--settings`로 게이트를 붙인 Claude는 게이트 수를
-알 수 없어 block된 Stop도 idle로 기록된다. SessionEnd 없이 끝난 Claude의 settings meta는 남아, 같은 surface에서 다음에 실행한 Claude의 Stop이 최대 5초 늦게 idle이 될 수 있다. 프로필이 붙은 surface에서 `--settings` 없이 `claude -r`로 다시 연 세션도 같다. 보류 중에 플러그인이 다시 시작되면 그 Stop의 idle은 기록되지 않는다. Claude Code가 새 입력 대기 유형을 추가하면 목록에 넣기 전까지 그 대기를 `needs_input`으로 보고하지 않는다. agent view를 연 Claude 자식은 다른 세션의 입력 대기에도, auto mode의 classifier 요금 안내에도 `needs_input`이 된다. 백그라운드 작업을 기다리는 자식이 실제로 멈춰도 부모는 10분 뒤에야, 대기 한 번에 한 번만 알림을 받는다. 완료 로그는 제한된 기록이며 재시작·비우기·실패로 미독 내용이 사라질 수 있다.
+알 수 없어 block된 Stop도 idle로 기록된다. SessionEnd 없이 끝난 Claude의 settings meta는 남아, 같은 surface에서 다음에 실행한 Claude의 Stop이 최대 5초 늦게 idle이 될 수 있다. 프로필이 붙은 surface에서 `--settings` 없이 `claude -r`로 다시 연 세션도 같다. 보류 중에 플러그인이 다시 시작되면 그 Stop의 idle은 기록되지 않는다. Claude Code가 새 입력 대기 유형을 추가하면 목록에 넣기 전까지 그 대기를 `needs_input`으로 보고하지 않는다. agent view를 연 Claude 자식은 다른 세션의 입력 대기에도, auto mode의 classifier 요금 안내에도 `needs_input`이 된다. 출력 파일 경로는 공식 문서에 없는 Claude Code 내부 규칙(2.1.291 확인)이라 버전이 바뀌면 찾지 못할 수 있다. 플러그인은 자식의 환경 변수를 읽지 못해 자식에게만 `CLAUDE_CODE_TMPDIR`을 다르게 주면 찾지 못한다. 찾지 못한 대기의 자식이 실제로 멈춰도 부모는 10분 뒤에야, 대기 한 번에 한 번만 알림을 받는다. 출력 없이 오래 계산하는 작업(예: 출력 없는 빌드 단계, `sleep`)은 120초 뒤 알림을 받는다. 출력이 계속 늘지만 진행하지 않는 작업은 알리지 않는다. Linux에서만 실측했고 macOS·Windows의 경로와 서브에이전트 링크는 미측정이다. 완료 로그는 제한된 기록이며 재시작·비우기·실패로 미독 내용이 사라질 수 있다.
 
 ## Alternatives Considered
 
@@ -199,7 +202,7 @@ block된 판정이 늦게 오면 턴이 이어지는데도 idle로 기록된다.
   테스트 `the_docs_notification_table_matches_the_effect_list`가 검사한다. 공식 문서와의 일치는 자동으로
   검사하지 않는다. 공식 hooks 문서의 Notification matcher 값 목록을 표와 대조하고, 플러그인 로그의
   `unknown notification_type` 경고를 확인한다.
-- 대기 노드의 제한 시간 정책을 정하거나, 백그라운드 대기 중 알림의 10분 기준이 너무 늦거나 이르다는 사례가 보고될 때.
+- 대기 노드의 제한 시간 정책을 정하거나, 백그라운드 대기 중 알림의 기준(출력 파일 120초, 찾지 못하면 화면 10분)이 너무 늦거나 이르다는 사례가 보고될 때. 플러그인 로그에 `no output file found for background task` 경고가 늘어 Claude Code의 작업 출력 경로가 바뀐 것으로 보일 때.
   자동 검사는 없다. 부모 완료 로그에서 `waiting on background work (…) for <분> min` 줄의 시각을 해당 자식 플러그인
   로그의 `waiting on background work` 줄 시각과 비교한다.
 - 초안의 존재나 재시도 가능 시각을 직접 조회할 수 있거나 원치 않는 자동 재개가 보고될 때.

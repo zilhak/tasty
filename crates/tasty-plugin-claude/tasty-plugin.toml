@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.claude"
 name = "Claude Code"
-version = "0.1.151"
+version = "0.1.152"
 description = "Claude Code CLI integration for Tasty"
 api_version = "1"
 permissions = [
@@ -74,7 +74,7 @@ subcommands = [
     { name = "child-profile", ipc_method = "claude.child_profile", args = "child_profile_args", description = "Attach a persistent Claude session profile to a CHILD instance (resolves --child to its surface, then runs the same sequence as 'claude reboot --profile' on it). Unlike reboot, this does NOT cut off the caller's turn — only the child restarts. A notification is delivered to the caller surface when the child transitions to idle/needs_input, and once more when it exits.", description_i18n_key = "claude.cli.sub.child-profile.description" },
     { name = "install",   ipc_method = "claude.install",   args = "no_args",        description = "Install tasty hooks into ~/.claude/settings.json", description_i18n_key = "claude.cli.sub.install.description" },
     { name = "uninstall", ipc_method = "claude.uninstall", args = "no_args",        description = "Uninstall tasty hooks from ~/.claude/settings.json", description_i18n_key = "claude.cli.sub.uninstall.description" },
-    { name = "hook",      ipc_method = "claude.hook",      args = "hook_args",      stdin_json = true, description = "Claude Code hook integration. Reads JSON payload from stdin (session_id, prompt_id, message, notification_type, error, agent_id, background_tasks, tool_name, tool_response, prompt, source, reason) when invoked by Claude Code's hook system. Also reads waiting_on_background_work defensively, although neither the official hooks documentation nor observed payloads include it.", description_i18n_key = "claude.cli.sub.hook.description" },
+    { name = "hook",      ipc_method = "claude.hook",      args = "hook_args",      stdin_json = true, description = "Claude Code hook integration. Reads JSON payload from stdin (session_id, cwd, prompt_id, message, notification_type, error, agent_id, background_tasks, tool_name, tool_response, prompt, source, reason) when invoked by Claude Code's hook system. Also reads waiting_on_background_work defensively, although neither the official hooks documentation nor observed payloads include it.", description_i18n_key = "claude.cli.sub.hook.description" },
     # 전역 훅에 넣지 않고 게이트를 적용한 세션에서만 등록한다.
     # Stop payload와 --gate를 별도 인자로 받아 판정한다.
     { name = "checklist-hook", ipc_method = "claude.checklist_hook", args = "checklist_hook_args", stdin_json = true, description = "Stop-hook gate decision. Reads JSON payload from stdin (session_id, prompt_id, stop_hook_active, last_assistant_message); --gate selects which registered gate decides (default: continue-checklist).", description_i18n_key = "claude.cli.sub.checklist-hook.description" },
@@ -229,6 +229,7 @@ flags = [
     { name = "tool_response", type = "string", flag = "--tool-response", required = false, stdin_field = "tool_response", help = "Tool result, for the background-start event. Auto-populated from stdin JSON 'tool_response' on PostToolUse. A background Bash command carries backgroundTaskId and a background Agent carries agentId; the plugin records them so that a StopFailure while that work still runs keeps the child active.", help_i18n_key = "claude.cli.arg.hook_args.tool_response.help" },
     { name = "prompt", type = "string", flag = "--prompt", required = false, stdin_field = "prompt", help = "Prompt text. Auto-populated from stdin JSON 'prompt' on UserPromptSubmit. A prompt that starts with <task-notification> reports finished background work by its <task-id>.", help_i18n_key = "claude.cli.arg.hook_args.prompt.help" },
     { name = "source", type = "string", flag = "--source", required = false, stdin_field = "source", help = "How the session started (startup, resume, clear, compact, fork). Auto-populated from stdin JSON 'source' on SessionStart. A session reopened with resume records the --settings it was restored with, so the Stop-hook gates in it are counted.", help_i18n_key = "claude.cli.arg.hook_args.source.help" },
+    { name = "cwd", type = "string", flag = "--cwd", required = false, stdin_field = "cwd", help = "Working directory of the Claude session. Auto-populated from stdin JSON 'cwd'. While a child waits on background work, the plugin uses it with the session ID to find the output files of the awaited tasks under Claude Code's temporary folder and watches whether they still grow.", help_i18n_key = "claude.cli.arg.hook_args.cwd.help" },
     { name = "reason", type = "string", flag = "--reason", required = false, stdin_field = "reason", help = "Why the session ended (clear, resume, logout, prompt_input_exit, other). Auto-populated from stdin JSON 'reason' on SessionEnd. Any value but clear and resume means the Claude process ended, so the settings recorded for it are forgotten.", help_i18n_key = "claude.cli.arg.hook_args.reason.help" },
 ]
 

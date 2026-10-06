@@ -21,6 +21,7 @@ const EXPECTED_MTIME_SITES: &[(&str, usize)] = &[
         1,
     ),
     ("crates/tasty-plugin-agent-common/src/prompt_file.rs", 1),
+    ("crates/tasty-plugin-claude/src/error_scan.rs", 1),
     ("crates/tasty-plugin-sdk/src/file_watch.rs", 1),
 ];
 

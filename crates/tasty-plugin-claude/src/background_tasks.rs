@@ -89,6 +89,14 @@ impl BackgroundTasks {
         self.by_surface.remove(&surface_id);
     }
 
+    /// 아직 끝나지 않은 작업의 id.
+    pub fn pending_ids(&self, surface_id: u32) -> Vec<String> {
+        self.by_surface
+            .get(&surface_id)
+            .map(|t| t.keys().cloned().collect())
+            .unwrap_or_default()
+    }
+
     /// 아직 끝나지 않은 작업의 종류. 비어 있으면 남은 작업이 없다.
     pub fn pending_types(&self, surface_id: u32) -> Vec<String> {
         self.by_surface

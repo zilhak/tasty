@@ -65,6 +65,7 @@ stop_failure_hint = " — the turn ended on an API error ({}) and is waiting for
 stalled_message = "surface {}: no output since an error — the child looks stuck (still active, no completion signal)"
 stalled_no_error_message = "surface {}: no output for a long stretch and no completion signal — the child looks stuck (it may be waiting at a prompt whose hook never arrived)"
 stalled_background_wait_message = "surface {}: waiting on background work ({}) for {} min, with no output meanwhile"
+stalled_background_task_quiet_message = "surface {}: background work {} has written no output for {} min"
 stalled_hint = " Last error: {}"
 stop_failure_background_message = "surface {}: the turn ended on an API error ({}), but background work ({}) is still running, so the child keeps waiting"
 
@@ -177,7 +178,7 @@ description = "Install tasty hooks into ~/.claude/settings.json"
 description = "Uninstall tasty hooks from ~/.claude/settings.json"
 
 [claude.cli.sub.hook]
-description = "Claude Code hook integration. Reads JSON payload from stdin (session_id, prompt_id, message, notification_type, error, agent_id, background_tasks, tool_name, tool_response, prompt, source, reason) when invoked by Claude Code's hook system. Also reads waiting_on_background_work defensively, although neither the official hooks documentation nor observed payloads include it."
+description = "Claude Code hook integration. Reads JSON payload from stdin (session_id, cwd, prompt_id, message, notification_type, error, agent_id, background_tasks, tool_name, tool_response, prompt, source, reason) when invoked by Claude Code's hook system. Also reads waiting_on_background_work defensively, although neither the official hooks documentation nor observed payloads include it."
 
 [claude.cli.sub.checklist-hook]
 description = "Stop-hook gate decision. Reads JSON payload from stdin (session_id, prompt_id, stop_hook_active, last_assistant_message); --gate selects which registered gate decides (default: continue-checklist)."
@@ -436,6 +437,9 @@ help = "Prompt text. Auto-populated from stdin JSON 'prompt' on UserPromptSubmit
 
 [claude.cli.arg.hook_args.source]
 help = "How the session started (startup, resume, clear, compact, fork). Auto-populated from stdin JSON 'source' on SessionStart. A session reopened with resume records the --settings it was restored with, so the Stop-hook gates in it are counted."
+
+[claude.cli.arg.hook_args.cwd]
+help = "Working directory of the Claude session. Auto-populated from stdin JSON 'cwd'. While a child waits on background work, the plugin uses it with the session ID to find the output files of the awaited tasks under Claude Code's temporary folder and watches whether they still grow."
 
 [claude.cli.arg.hook_args.reason]
 help = "Why the session ended (clear, resume, logout, prompt_input_exit, other). Auto-populated from stdin JSON 'reason' on SessionEnd. Any value but clear and resume means the Claude process ended, so the settings recorded for it are forgotten."

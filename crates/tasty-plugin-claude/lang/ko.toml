@@ -65,6 +65,7 @@ stop_failure_hint = " — API 에러({})로 턴이 끝나 입력을 기다리는
 stalled_message = "surface {}: 오류 뒤 출력이 멈췄습니다. 자식은 아직 active 상태이며 완료 신호가 없어 작업이 멈췄을 수 있습니다."
 stalled_no_error_message = "surface {}: 오랫동안 출력과 완료 신호가 없습니다. 작업이 멈췄거나 훅이 전달되지 않은 상태로 입력을 기다리는 중일 수 있습니다."
 stalled_background_wait_message = "surface {}: 백그라운드 작업({})이 끝나기를 {}분째 기다리는 중이며 그동안 출력이 없습니다."
+stalled_background_task_quiet_message = "surface {}: 백그라운드 작업 {}이(가) {}분째 출력이 없습니다."
 stalled_hint = " 마지막 오류: {}"
 stop_failure_background_message = "surface {}: API 에러({})로 턴이 끝났지만 백그라운드 작업({})이 남아 있어 계속 기다리는 중"
 
@@ -177,7 +178,7 @@ description = "~/.claude/settings.json에 tasty 훅 설치"
 description = "~/.claude/settings.json에서 tasty 훅 제거"
 
 [claude.cli.sub.hook]
-description = "Claude Code 훅 연동. Claude Code 훅 시스템이 호출하면 stdin에서 JSON payload(session_id, prompt_id, message, notification_type, error, agent_id, background_tasks, tool_name, tool_response, prompt, source, reason)를 읽습니다. 공식 hooks 문서와 실측 payload에는 없지만 waiting_on_background_work도 방어적으로 읽습니다."
+description = "Claude Code 훅 연동. Claude Code 훅 시스템이 호출하면 stdin에서 JSON payload(session_id, cwd, prompt_id, message, notification_type, error, agent_id, background_tasks, tool_name, tool_response, prompt, source, reason)를 읽습니다. 공식 hooks 문서와 실측 payload에는 없지만 waiting_on_background_work도 방어적으로 읽습니다."
 
 [claude.cli.sub.checklist-hook]
 description = "Stop 훅 게이트 판정. stdin에서 JSON(session_id, prompt_id, stop_hook_active, last_assistant_message)을 읽습니다. --gate로 판정할 등록 게이트 선택(기본값: continue-checklist)."
@@ -436,6 +437,9 @@ help = "prompt 문자열. UserPromptSubmit의 stdin JSON 'prompt'에서 자동�
 
 [claude.cli.arg.hook_args.source]
 help = "세션이 시작된 방식(startup, resume, clear, compact, fork). SessionStart의 stdin JSON 'source'에서 자동으로 채웁니다. resume으로 다시 연 세션은 복원에 쓴 --settings를 기록해 그 안의 Stop 훅 게이트를 셉니다."
+
+[claude.cli.arg.hook_args.cwd]
+help = "Claude 세션의 작업 폴더. stdin JSON 'cwd'에서 자동으로 채웁니다. 자식이 백그라운드 작업을 기다리는 동안 플러그인은 이 값과 세션 ID로 Claude Code 임시 폴더에서 기다리는 작업의 출력 파일을 찾고, 파일이 계속 늘어나는지 봅니다."
 
 [claude.cli.arg.hook_args.reason]
 help = "세션이 끝난 이유(clear, resume, logout, prompt_input_exit, other). SessionEnd의 stdin JSON 'reason'에서 자동으로 채웁니다. clear와 resume 외의 값은 Claude 프로세스가 끝났다는 뜻이라 그 프로세스에 기록한 settings를 지웁니다."
