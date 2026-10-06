@@ -479,6 +479,10 @@ mod tests {
     ///
     /// 판단할 수 없는 회차는 실패로 두지 않고 다시 잰다. 모든 회차가 판단 불가이면
     /// 측정 생략을 출력하고 통과한다. 결함 판정 회차는 다시 재지 않고 바로 실패한다.
+    ///
+    /// 시험 도중 시작해 계속되는 부하에서는 주입 전후 표본도 정상 구간을 벗어나므로
+    /// 대조군이 측정 경로를 지나는 결함도 판단 불가 회차가 되어 측정 생략으로 끝난다.
+    /// 이 조건에서는 결함을 검출하지 못한다. 측정 생략 출력이 그 사실을 알린다.
     #[test]
     fn an_artificial_delay_in_the_measured_path_does_not_move_the_control() {
         let control = CpuControl::calibrate();
@@ -487,6 +491,21 @@ mod tests {
             injected > Duration::ZERO,
             "주입량이 0이다(기준선 {:?}). 이 시험은 아무 지연도 넣지 않는다",
             control.baseline()
+        );
+
+        // 양성 팔: 같은 판정 함수가 측정 경로를 지난 합성 표본을 거절해야 한다.
+        // 합성 표본이라 부하와 무관하므로 음성 팔이 측정 생략으로 끝나도 반드시 확인한다.
+        let as_if_it_traversed = ControlSample::from_parts_in(
+            &CPU_FAMILY,
+            control.baseline() + injected,
+            control.baseline(),
+        );
+        assert!(
+            !control_stayed_out_of_the_path(&as_if_it_traversed),
+            "control_stayed_out_of_the_path가 측정 경로를 지난 합성 표본({:.1}배 = 기준선 {:?} + 주입 {:?})을 허용했다. 주입은 기준선의 {INJECTED_OVER_BASELINE}배다. MUTATION_MARGIN({MUTATION_MARGIN})과 판정 함수를 확인한다.",
+            as_if_it_traversed.ratio(),
+            control.baseline(),
+            injected,
         );
 
         let mut undecidable = 0usize;
@@ -523,16 +542,10 @@ mod tests {
                 skipped = true,
                 baseline_ms = n(control.baseline().as_secs_f64() * 1e3),
                 injected_ms = n(injected.as_secs_f64() * 1e3),
+                injected_ratio = n(as_if_it_traversed.ratio()),
             );
             return;
         };
-
-        // 같은 판정 함수가 측정 경로를 지난 합성 표본을 거절하는지도 확인한다.
-        let as_if_it_traversed = ControlSample::from_parts_in(
-            &CPU_FAMILY,
-            after.baseline() + injected,
-            after.baseline(),
-        );
 
         // baseline_ms·injected_ms·elapsed_ms는 이번 측정값이고 injected_ratio는 구성상 상수다.
         observe!(
@@ -546,13 +559,6 @@ mod tests {
             injected_ms = n(injected.as_secs_f64() * 1e3),
             elapsed_ms = n(elapsed.as_secs_f64() * 1e3),
             injected_ratio = n(as_if_it_traversed.ratio()),
-        );
-        assert!(
-            !control_stayed_out_of_the_path(&as_if_it_traversed),
-            "control_stayed_out_of_the_path가 측정 경로를 지난 합성 표본({:.1}배 = 기준선 {:?} + 주입 {:?})을 허용했다. 주입은 기준선의 {INJECTED_OVER_BASELINE}배다. MUTATION_MARGIN({MUTATION_MARGIN})과 판정 함수를 확인한다.",
-            as_if_it_traversed.ratio(),
-            after.baseline(),
-            injected,
         );
     }
 
