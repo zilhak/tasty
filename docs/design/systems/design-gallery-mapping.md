@@ -19,12 +19,12 @@
 | `ProtocolFilter`(add-bar 버튼) | `tasty_ui_widgets::draw_protocol_filter_button` | `components/remote.rs` `remote-filter` spec — 닫힘 2 상태(가린 것 없음 / 1 개 가림) |
 | `ProtocolFilter`(드롭다운/팝오버) | `tasty_ui_widgets::draw_protocol_filter_body` (본체 wrapper `draw_protocol_filter` 가 memory·배치·닫기를 소유) | `components/remote.rs` `remote-filter` spec — 열림 1 상태 |
 | `ProfileRow` | `draw_profile_row` | `components/remote.rs` `profile_row` (`remote` spec) — 행 동작 버튼은 본체와 같이 오른쪽부터 삭제(`TRASH`)·편집·재탐지(ssh 만) |
-| `ProfileForm` | `draw_profile_form` | — |
+| `ProfileForm` | `draw_profile_form` | `components/remote/forms.rs` `form_card` (`remote-profile-form` spec — SSH 추가·Host 검증 오류, `remote-generic-passkey-forms` spec — generic key-value와 Unknown type 배지). 머리줄·탭·행·세그먼트는 `remote.rs`의 Attach 폼 헬퍼를 함께 쓴다 |
 | `LocalSshSection`(kit 정의 — 위 `space-md` 여백·`border-frame` 선·`space-sm` 안쪽 여백, 헤더와 빈 상태 줄 `size-2`/`space-xs`, 행 `space-xs`·alias↔target `label-detail-gap`) | `tasty_ui_widgets::draw_local_ssh_section` (본체 wrapper: `remote_tool.rs` 동명 함수 — i18n + 빈 상태 원인 판정) | `components/remote.rs` `remote` spec 이 **같은 공용 view 를 호출**한다. 호스트 3건 목록 옆에 no hosts·no file·unreadable config 빈 상태 세 장 |
 | `AttachRow` | `draw_attach_row` | `components/remote.rs` `attach_row` (`remote-attach` spec) — 행 삭제 아이콘은 본체와 같이 `TRASH`. `x`(`CLOSE`)는 닫기·해제·필드 제거에만 쓴다 |
 | `AttachForm` | `draw_attach_form` | `components/remote.rs` `attach_form_card` (`remote-attach-form` spec, ref/inline 2변종) |
 | `PasskeyRow` | `draw_passkey_row` | `components/remote/passkeys.rs` `passkey_row` (`remote-passkeys` spec) — kit `PasskeyRow` 구조(행 `space-md space-xs`, 이름 + kind Tag, 모르는 kind 는 경고 아이콘이 붙은 `WarnBadge`, 둘째 줄 mono 한 줄 말줄임, 동작 reveal·편집·trash 간격 `size-1`)를 옮긴 세 상태: 가림, 보임(IconButton active + eyeOff), 모르는 kind. 본체 행은 kind 를 Tag 대신 muted 텍스트로, 경고를 `⚠` 텍스트로 그리고 둘째 줄을 말줄임하지 않는다 |
-| `PasskeyForm` | `draw_passkey_form` | — |
+| `PasskeyForm` | `draw_passkey_form` | `components/remote/forms.rs` `form_card` (`remote-generic-passkey-forms` spec — kind path 한 줄, inline 세 줄 secret) |
 | `ConfirmDelete` | `draw_confirm_delete` | — |
 | `PasskeySelect` | `passkey_dropdown_row` | — |
 
