@@ -104,9 +104,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         "Drawn with the body parts: the toggle is the body SegToggle at pad 4 · gap 4 · 24×20 \
-         cells (the kit draws pad 2 · gap 2 · 24×22), and the address is the shared PathField \
-         at padding 12, gap 8 and mono 11 with 8 before Go (the kit draws padding 0 8, gap 6, \
-         mono 12 and 6 before Go).",
+         cells, the same as the kit, and the address is the shared PathField at padding 12, \
+         gap 8 and mono 11 with 8 before Go (the kit draws padding 0 8, gap 6, mono 12 and 6 \
+         before Go).",
     );
 
     spec::dont(
