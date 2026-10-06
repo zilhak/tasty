@@ -572,11 +572,23 @@ v2 task 의 fallback 이 이미 실행됐으면(Ready·Running·Succeeded) 그 t
 - 보고의 회차가 지금 회차와 다르면 적용하지 않는다(`stale_attempt`). 회차 id 를 생략하면 지금 회차로 본다.
 - 이미 끝난 회차에 같은 내용(결과·종결 종류)의 보고가 다시 오면 같은 레코드를 `duplicate: true` 로 돌려주고 하류 반영만 다시 시도한다. 다른 내용이면 거절한다(`different_report`). 회차를 끝낸 보고의 지문은 `attempt.completion.digest` 에 남는다. 보고 없이 끝난 task(취소·건너뜀)에 온 보고는 `already_terminal` 로 거절한다.
 - 거절은 IPC 에서 `-32014` 이고 `error.data` 에 `reason`·`attempt_id`(보고한 회차)·`current_attempt_id` 를 싣는다.
-- 러너는 기록하지 못한 보고를 보관하고 다음 tick 에 같은 보고를 다시 낸다. 그동안 그 task 를 다시 poll 하지 않고 handle 과 permit 을 유지한다. 거절된 보고는 다시 내지 않는다.
+- 러너는 기록하지 못한 보고를 보관하고 다음 tick 에 같은 보고를 다시 낸다. 그동안 그 task 를 다시 poll 하지 않고 handle 과 permit(세마포어·lease)을 유지한다. 거절된 보고는 다시 내지 않는다.
+- 저장소가 계속 실패하면 permit 을 쥐는 시간에 상한이 없다. 재시도 횟수나 시간으로 포기하지 않는다. 포기하면 결과가 기록되지 않은 채 Running 인 task 의 permit 을 풀어 같은 자원을 다른 task 에 넘기게 되기 때문이다. 묶이는 permit 은 보고가 보류된 task 마다 하나다. 풀리는 시점은 셋이다.
+  1. 저장이 회복돼 같은 보고가 기록되거나 거절될 때.
+  2. 러너를 멈춘 뒤 다음 러너 시작·부팅의 정리(`purge_stale_semaphore_holders`·`purge_stale_lease_holders`)가 Running task 의 점유를 회수할 때. 이때 보류됐던 보고는 메모리에만 있어 사라지고, task 는 그 정리 규칙대로 Failed 가 된다.
+  3. task 가 밖에서 종결됐을 때(취소 등). 다음 tick 의 종결 흡수가 보류 보고를 한 번 더 내고, 그 보고가 이미 끝난 task 라 거절되면 permit 을 푼다. 저장소가 여전히 실패하면 이 경우에도 계속 쥔다.
 - 재시작 복구(죽은 pid, 저장된 실행 결과)도 기록에 실패하면 handle 을 남겨 다음 reload 가 다시 보고한다.
 - 완료 쓰기는 끝났지만 하류 반영 중에 실패하면 오류를 돌려준다. 러너는 같은 보고를 다시 내 하류 반영을 마치고, 다시 낼 보고가 없는 재시작 뒤에는 부팅·러너 시작의 readiness 재평가가 마친다.
 - push 완료 전략의 훅 대기는 dispatch 한 회차 id 를 함께 저장한다. 늦게 온 훅이나 만료가 다음 회차를 끝내지 않는다.
 - v1 task 는 결과를 쓴 뒤 상태를 전이한다. 상태 전이가 맞지 않는 보고는 결과를 쓰기 전에 거절한다.
+
+| | v1 task | v2 task |
+|---|---|---|
+| 기록 | 결과 쓰기와 상태 전이, 두 번의 쓰기 | 결과 확정·종결 상태·완료 지문을 한 번의 쓰기 |
+| 두 쓰기 사이 실패 | 결과만 남은 Running task 가 될 수 있다. 같은 보고를 다시 내면 결과를 덮어쓰고 전이한다 | 해당 없음. 쓰기가 실패하면 아무것도 바뀌지 않는다 |
+| 회차 | 없음 | Running 전이마다 `<id>#<번호>` |
+| 같은 보고 재전송 | 이미 종결이면 전이 오류(`-32602`) | `duplicate: true` 로 같은 응답 |
+| 다른 회차·다른 내용 보고 | 구별하지 않는다 | `-32014` 거절 |
 
 v1 이 v2 결과를 읽는 경로는 `-32602`(`error.data.task_id` 에 참조 대상)로 거절한다. 대상은 v1 출력 placeholder(`${task.<id>.output…}`)로 v2 task 를 참조하는 생성, `inputs` 에 v2 task 가 든 v1 `Reduce` 생성, v2 task 를 입력으로 준 단발 `agent.task_reduce` 다. 이미 저장된 v1 task 가 v2 를 가리키면 실행 직전 치환·reduce 수집이 실패로 끝낸다. 허용 범위는 입력 binding 이 정한다.
 
