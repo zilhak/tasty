@@ -2349,8 +2349,8 @@ fn x11_capture_webview(display: &str, parent: u64) -> Result<Option<X11WebViewCa
     result
 }
 
-/// GTK 배율이 2 인 X11 세션(GNOME HiDPI 의 창 배율 2 와 같은 조건 — 여기서는 `GDK_SCALE=2` 와
-/// winit 배율 2 로 만든다)에서 html surface 의 페이지 viewport 가 native WebView 창과 같은
+/// GTK 배율이 2 인 X11 세션(`GDK_SCALE=2` 와 winit 배율 2 로 만든다. GNOME 의 XSETTINGS 배율
+/// 경로는 재지 않는다)에서 html surface 의 페이지 viewport 가 native WebView 창과 같은
 /// 크기인지 잰다. 페이지는 viewport 전체에 고정한 3 CSS px 파란 테두리를 그리므로, viewport 가
 /// 창과 같으면 창의 네 변 모두에 테두리 색이 보인다. host 가 GTK 크기·allocation 에 물리 px 를
 /// 그대로 주면 viewport 가 창의 두 배로 잡혀 오른쪽·아래 변에 페이지 바탕색이 나오고 실패한다.

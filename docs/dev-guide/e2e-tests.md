@@ -350,7 +350,7 @@ renderD128·VK_ERROR_·DRI3·libEGL·tu_knl·failed to open device 같은 메시
 
 `e2e_tests`의 두 시험은 Linux X11에서 native WebView X 자식 창과 메인 창의 픽셀을 `XGetImage`로 읽어 WebView 배치를 잰다.
 
-`webview_page_viewport_fills_its_native_window_under_gtk_scale_two`는 GTK 배율이 2일 때 html surface의 페이지 viewport가 native WebView 창과 같은 크기인지 잰다. GNOME HiDPI의 창 배율 2와 같은 조건을 `GDK_SCALE=2`와 `WINIT_X11_SCALE_FACTOR=2`로 만든다. 페이지는 viewport 전체에 고정한 파란 테두리를 그리고, 시험은 WebView 창의 네 변 가운데 픽셀이 모두 테두리 색인지 확인한다. host가 GTK 크기·allocation에 GDK 배율로 나눈 논리 px를 주지 않으면 viewport가 창의 두 배로 잡혀 오른쪽·아래 변에 페이지 바탕색이 나오고 실패한다.
+`webview_page_viewport_fills_its_native_window_under_gtk_scale_two`는 GTK 배율이 2일 때 html surface의 페이지 viewport가 native WebView 창과 같은 크기인지 잰다. 조건은 `GDK_SCALE=2`와 `WINIT_X11_SCALE_FACTOR=2`로 만든다. GNOME이 XSETTINGS(`Gdk/WindowScalingFactor`)로 배율을 정하는 경로는 이 시험이 재지 않는다. 페이지는 viewport 전체에 고정한 파란 테두리를 그리고, 시험은 WebView 창의 네 변 가운데 픽셀이 모두 테두리 색인지 확인한다. host가 GTK 크기·allocation에 GDK 배율로 나눈 논리 px를 주지 않으면 viewport가 창의 두 배로 잡혀 오른쪽·아래 변에 페이지 바탕색이 나오고 실패한다.
 
 - `#[cfg(all(target_os = "linux", feature = "gui"))]`와 `#[ignore]`로 두어 기본 `cargo test`와 CI 워크플로에서 실행하지 않는다. CI의 GUI e2e 단계는 `multi_window_owner_routing`만 이름으로 실행한다.
 - 이 시험은 창이 배율 2로 2560x1440이므로 그보다 큰 격리 Xvfb와 번들 plugin(html)이 필요하다. 자식 창이 화면 밖으로 나가면 시험은 픽셀을 읽지 않고 화면을 키우라는 오류로 끝난다.
