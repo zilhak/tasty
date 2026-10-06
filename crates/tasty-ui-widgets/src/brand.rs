@@ -50,16 +50,16 @@ pub fn draw_wordmark(
     );
     // 전체 가용 폭 대신 내용의 실제 폭만 할당해야 부모의 중앙 정렬을 그대로 사용할 수 있다.
     let galley = ui.fonts(|f| f.layout_job(job));
-    // label 앞의 item_spacing도 포함해 부모가 정렬하는 폭과 실제 폭을 맞춘다.
-    let item_spacing = ui.spacing().item_spacing.x;
     let content = egui::vec2(
-        icon_vec.x + gap + item_spacing + galley.size().x,
+        icon_vec.x + gap + galley.size().x,
         icon_vec.y.max(galley.size().y),
     );
     ui.allocate_ui_with_layout(
         content,
         egui::Layout::left_to_right(egui::Align::Center),
         |ui| {
+            // 마크와 글자 사이는 시안 gap `space-sm` 하나뿐이다. 부모의 item_spacing은 더하지 않는다.
+            ui.spacing_mut().item_spacing.x = 0.0;
             let (icon_rect, _) = ui.allocate_exact_size(icon_vec, egui::Sense::hover());
             egui::Image::from_bytes(LOGO_URI, LOGO_PNG)
                 .fit_to_exact_size(icon_vec)
