@@ -742,7 +742,7 @@ pub fn draw_category(ui: &mut egui::Ui, theme: &Theme) {
             ("range", "reserved normal = 1; 11th onward: none"),
             (
                 "exclusivity",
-                "category combo ⇒ headers only; rows keep dots",
+                "Ctrl = tabs · Alt = ws · Ctrl+Shift = category — headers only; rows keep dots",
             ),
             ("auto-expand", "collapsed target rotates open on switch"),
             ("last-active", "lands on category's last-focused ws"),
