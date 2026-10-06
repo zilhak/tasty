@@ -15,6 +15,9 @@ use crate::catalog::spec::{self, StageVariant, TokenChip};
 /// 본체 SEGMENT_TAB_LABEL_PRIMITIVE_12와 같은 12px 글꼴. 대응 semantic 토큰이 없다.
 const SEGMENT_TAB_LABEL_PRIMITIVE_12: LogicalPx = LogicalPx(12.0);
 
+/// 확인한 매니페스트를 보이는 Add 예제 창의 높이. 예제 무대 전용 값이다.
+const ADD_VERIFIED_STAGE_H: LogicalPx = LogicalPx(760.0);
+
 /// 세그먼트 탭 셋 — 본체 `PluginsUiState.tab`. 세 탭은 서로 다른 본문을 그린다.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Tab {
@@ -35,8 +38,9 @@ fn list_w(theme: &Theme) -> f32 {
 fn stage_size(theme: &Theme, tab: Tab) -> egui::Vec2 {
     let h = match tab {
         Tab::Installed { .. } => theme.measure_xl,
-        // 매니페스트 카드와 신뢰 상자, fingerprint 줄까지 담아야 액션 바가 무대 안에 든다.
-        Tab::Add { preview: true } => theme.measure_xl,
+        // 경로 선택 블록 아래 매니페스트 카드와 신뢰 상자, fingerprint 줄까지 담아야 액션 바가
+        // 무대 안에 든다.
+        Tab::Add { preview: true } => ADD_VERIFIED_STAGE_H.scaled(theme.ui_zoom),
         _ => theme.measure_sm,
     };
     egui::vec2(list_w(theme) + theme.measure_md.value(), h.value())
@@ -359,8 +363,7 @@ fn window(ui: &mut egui::Ui, theme: &Theme, tab: Tab) {
             }
             divider(ui, l.max.x);
         }
-        Tab::Add { preview: false } => add::input_pane(ui, theme, body),
-        Tab::Add { preview: true } => add::preview_pane(ui, theme, body),
+        Tab::Add { preview } => add::form_pane(ui, theme, body, preview),
     }
 }
 
@@ -411,9 +414,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ),
         ("Attention", Tab::Attention { empty: false }),
         ("Attention — empty", Tab::Attention { empty: true }),
-        ("Add plugin — path input", Tab::Add { preview: false }),
+        ("Add plugin — before Verify", Tab::Add { preview: false }),
         (
-            "Add plugin — manifest preview (untrusted)",
+            "Add plugin — verified manifest under the input (untrusted)",
             Tab::Add { preview: true },
         ),
     ] {
@@ -430,6 +433,16 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         |ui| {
             theme_pair(ui, theme, &mocha, &latte, |ui, th| {
                 add::add_bars(ui, th, th.measure_xl.value());
+            });
+        },
+    );
+    spec::cluster(
+        ui,
+        theme,
+        "Add plugin — open values (homepage link · None · long fingerprint)",
+        |ui| {
+            theme_pair(ui, theme, &mocha, &latte, |ui, th| {
+                add::open_values(ui, th, th.measure_xl.value());
             });
         },
     );
@@ -470,7 +483,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ),
             (
                 "add",
-                "단일 열 · 경로 입력(입력+Verify / 구분선 / 폴더 찾기)과 매니페스트 프리뷰 두 상태 · 프리뷰는 매니페스트 카드(아바타 lg · 이름 + 버전 Tag · id · 작성자 · 설명 · Permissions/Surface kinds Tag · Source · Homepage) 아래 신뢰 상자, 액션 바는 왼쪽 Grants 문구 또는 막힌 이유(caption, text-muted) + 오른쪽 Cancel(ghost) + Add plugin(primary, 미신뢰면 Trust & add), 막히면 disabled",
+                "단일 열 · 제목 없이 경로 선택 블록(Plugin folder 머리글 · mono 입력 + Find folder…(secondary) + Verify(primary) · 설명 문단) 바로 아래에 확인 전 안내 상자 또는 매니페스트 카드(아바타 lg · 이름 + 버전 Tag · id · 작성자 · 설명 · Permissions/Surface kinds Tag, 비면 caption None · Source · Homepage 링크) + 신뢰 상자 · 액션 바는 왼쪽 Grants 문구 또는 막힌 이유(caption, text-muted) + 오른쪽 Cancel(ghost) + Add plugin(primary, 미신뢰면 Trust & add), 막히면 disabled, 확인 전에는 Cancel 만",
             ),
         ],
         &[

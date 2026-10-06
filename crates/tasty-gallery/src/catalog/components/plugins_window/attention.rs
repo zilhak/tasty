@@ -1,13 +1,13 @@
 //! 서명·권한·실행 오류로 확인이 필요한 플러그인 예제.
 //! 본체는 선택한 하나를 표시하지만 갤러리는 네 사유를 나란히 보여준다.
 
-use tasty_icons as icons;
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::tokens::{PLUGIN_LIST_ROW_HEIGHT, STRUCT_GAP_2};
 use tasty_ui_widgets::{
-    Button, ButtonVariant, ControlSize, IconButton, IconButtonVariant, PluginAvatarSize,
-    TagVariant, margin_all, paint_plugin_avatar, plugin_avatar, tag,
+    Button, ButtonVariant, PluginAvatarSize, PluginFingerprintLineView, TagVariant, margin_all,
+    paint_plugin_avatar, plugin_avatar, plugin_fingerprint_line, plugin_signature_invalid_detail,
+    tag,
 };
 
 /// 본체 ATTN_PRIMITIVE_12와 같은 12px 글꼴. 대응 semantic 토큰이 없다.
@@ -244,8 +244,15 @@ fn reason_detail(ui: &mut egui::Ui, theme: &Theme, kind: Kind) {
         }
         Kind::UnknownKey | Kind::SignatureInvalid => {
             mono_header(ui, "Signature");
-            // 본체처럼 서명 무효에는 fingerprint 줄이 없다.
-            if kind == Kind::UnknownKey {
+            // 본체처럼 서명 무효에는 fingerprint 줄 대신 고정 설명과 실패 원인을 둔다.
+            if kind == Kind::SignatureInvalid {
+                plugin_signature_invalid_detail(
+                    ui,
+                    theme,
+                    "The signature does not match this plugin's files.",
+                    Some("tasty-plugin.toml.sig sidecar missing"),
+                );
+            } else {
                 fingerprint_line(ui, theme, "SHA256:9f2c…a17e");
             }
         }
@@ -284,33 +291,15 @@ fn copy_fingerprint_tooltip() -> &'static str {
     tasty_i18n::t("plugins.attn_copy_fingerprint")
 }
 
-/// fingerprint 라벨·값·복사 IconButton 한 줄 — 본체 `fingerprint_line`.
+/// fingerprint 라벨·값·복사 IconButton 한 줄 — 본체 `fingerprint_line`과 같은 공용 view.
 pub(super) fn fingerprint_line(ui: &mut egui::Ui, theme: &Theme, value: &str) {
-    // 라벨이 버튼보다 먼저 배치되므로 줄 높이를 버튼 높이로 먼저 잡아야 세로 가운데가 맞는다.
-    ui.allocate_ui_with_layout(
-        egui::vec2(ui.available_width(), ControlSize::Sm.height(theme)),
-        egui::Layout::left_to_right(egui::Align::Center),
-        |ui| {
-            ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-            ui.label(
-                egui::RichText::new("fingerprint")
-                    .monospace()
-                    .size(theme.font_size_caption.value())
-                    .color(theme.text_secondary().to_egui()),
-            );
-            ui.label(
-                egui::RichText::new(value)
-                    .monospace()
-                    .size(theme.font_size_caption.value())
-                    .color(theme.text_muted().to_egui()),
-            );
-            IconButton::new()
-                .variant(IconButtonVariant::Ghost)
-                .size(ControlSize::Sm)
-                .show(ui, theme, &|ui, rect, c| {
-                    icons::COPY.image(rect.width(), c).paint_at(ui, rect);
-                })
-                .on_hover_text(copy_fingerprint_tooltip());
+    plugin_fingerprint_line(
+        ui,
+        theme,
+        &PluginFingerprintLineView {
+            label: "fingerprint",
+            value,
+            copy_tooltip: copy_fingerprint_tooltip(),
         },
     );
 }

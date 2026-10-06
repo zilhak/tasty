@@ -90,6 +90,8 @@ pub struct AttentionEntry {
     pub permissions_removed: Vec<String>,
     /// HealthError 일 때 표시할 사유 (로그 경로 등). 없으면 일반 문구.
     pub health_detail: Option<String>,
+    /// SignatureInvalid 일 때 서명 검증이 실패한 원인. 표시용.
+    pub cause: Option<String>,
 }
 
 /// `PluginsView`가 메인 루프에 발행하는 동작.

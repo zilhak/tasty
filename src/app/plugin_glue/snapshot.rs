@@ -81,6 +81,7 @@ impl App {
                 permissions_added: r.permissions_added.clone(),
                 permissions_removed: r.permissions_removed.clone(),
                 health_detail: None,
+                cause: r.cause.clone(),
             })
             .collect();
         attention.extend(mgr.packages().iter().filter_map(|pkg| {
@@ -100,6 +101,7 @@ impl App {
                 permissions_added: Vec::new(),
                 permissions_removed: Vec::new(),
                 health_detail: Some(mgr.log_path(id).to_string_lossy().into_owned()),
+                cause: None,
             })
         }));
 

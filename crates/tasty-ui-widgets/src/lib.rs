@@ -111,9 +111,11 @@ pub use multi_select::{
 pub use override_row::{OverrideCell, override_row, override_row_fits};
 pub use path_field::{PathField, PathFieldOutcome};
 pub use plugin_add::{
-    PLUGIN_ADD_INSET, PluginAddBarClicks, PluginAddBarView, PluginManifestCardOutput,
-    PluginManifestCardView, PluginTrustKind, plugin_add_bar, plugin_manifest_card,
-    plugin_trust_box,
+    PLUGIN_ADD_INSET, PluginAddBarClicks, PluginAddBarView, PluginAddPickerOutput,
+    PluginAddPickerView, PluginFingerprintLineView, PluginManifestCardOutput,
+    PluginManifestCardView, PluginTrustKind, plugin_add_bar, plugin_add_empty_hint,
+    plugin_add_path_picker, plugin_fingerprint_line, plugin_manifest_card,
+    plugin_signature_invalid_detail, plugin_trust_box, short_fingerprint,
 };
 pub use plugin_avatar::{PluginAvatarSize, paint_plugin_avatar, plugin_avatar};
 pub use popup_title::{

@@ -1,4 +1,4 @@
-<!-- source-hash: 3d3cc845629e -->
+<!-- source-hash: 7710827bfb71 -->
 # Plugins
 
 Use plugins for tools such as Markdown and image viewers or AI agent integrations. Explore the bundled plugins, add new ones, and manage which tools run and what permissions they have.
@@ -59,7 +59,7 @@ The **Attention** tab. Plugins whose registration was rejected or that failed to
 | Shown | Meaning | What to do |
 |------|----|------|
 | **Signature not trusted** | Signed with a key not in the trust list | Confirm the source, copy the fingerprint with the **Copy fingerprint** button next to it and compare, and if you trust it, **Re-approve** |
-| **Signature invalid** | No signature, or verification failed | Get a correct package from the distributor |
+| **Signature invalid** | No signature, or verification failed. The detail shows the cause (such as a missing signature file) on one line | Get a correct package from the distributor |
 | **Permissions changed** | An update changed the required permissions | Read the **newly requested** list and **Re-approve** |
 | **Runtime error** | Enabled but failed while running | Check the **Log** |
 
@@ -67,9 +67,9 @@ The **Attention** tab. Plugins whose registration was rejected or that failed to
 
 The **Add plugin** tab.
 
-1. In **Plugin folder path**, enter a folder containing `tasty-plugin.toml`, or pick one with **Find plugin folder…**.
-2. Press **Verify** and **Plugin information** shows the manifest card: name · version · id · authors · description · **required permissions** · surface kinds · source path, plus a homepage link that opens in your browser when the plugin has one. With several authors, the first one is followed by `+N`; hover to see them all.
-3. The box under the card tells you how the signature was judged: **Signed by a trusted publisher**, **Unverified publisher**, **Permissions changed**, **Public key file missing**, or **Signature check failed**. For an unverified publisher or changed permissions the box shows the fingerprint, which you can copy with its button.
+1. In the **Plugin folder** field, enter a folder containing `tasty-plugin.toml`, or pick one with **Find folder…**.
+2. Press **Verify** and the manifest card appears right under the field: name · version · id · authors · description · **required permissions** · surface kinds · source path, plus an underlined homepage link that opens in your browser when the plugin has one. With several authors, the first one is followed by `+N`; hover to see them all. Editing the path clears the card, so press **Verify** again.
+3. The box under the card tells you how the signature was judged: **Signed by a trusted publisher**, **Unverified publisher**, **Permissions changed**, **Public key file missing**, or **Signature check failed**. For an unverified publisher or changed permissions the box shows the fingerprint, which you can copy with its button. A long fingerprint shows only its first and last 8 bytes with `…` in between; hovering or copying gives the full value.
 4. The left of the bottom bar shows how many permissions the plugin will get. Press **Add plugin**. For an unverified publisher or changed permissions the same button reads **Trust & add**; pressing it records that key (or the new permission set) in the trust list so you are not asked again.
 5. If the plugin cannot be added, the button stays disabled and the reason is shown on its left: **Already installed**, **Signed, but the publisher's public key file is missing**, or **Signature check failed**. A plugin without its public key file (`tasty-plugin.toml.pub`) cannot be registered, so ask the distributor for it.
 

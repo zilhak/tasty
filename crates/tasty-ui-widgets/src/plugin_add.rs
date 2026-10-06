@@ -1,16 +1,20 @@
-//! Plugins 창 Add plugin 프리뷰의 매니페스트 카드, 신뢰 판정 상자, 액션 바.
-//! 본체와 갤러리가 함께 호출한다.
+//! Plugins 창 Add plugin 화면의 경로 선택, 매니페스트 카드, 신뢰 판정 상자, 액션 바와
+//! fingerprint 줄·서명 무효 설명. 본체와 갤러리가 함께 호출한다.
 //!
 //! 이 view는 매니페스트를 읽거나 서명을 검증하지 않는다. 문구와 판정 결과는 호출부가 넘기고
-//! 눌린 동작만 돌려준다. fingerprint 줄은 복사 동작을 가진 호출부가 그린다.
+//! 눌린 동작만 돌려준다.
 
 use tasty_type_appearance::color::HexColor;
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 
+use std::borrow::Cow;
+
 use crate::button::{Button, ButtonVariant};
 use crate::chip::{TagVariant, tag};
 use crate::control::ControlSize;
+use crate::icon_button::{IconButton, IconButtonVariant};
+use crate::input::Input;
 use crate::plugin_avatar::{PluginAvatarSize, plugin_avatar};
 use crate::tokens::STRUCT_GAP_3;
 use crate::tooltip::{Tooltip, tooltip_hover_delay_elapsed};
@@ -223,23 +227,55 @@ pub fn plugin_manifest_card(
             });
             if !view.homepage.is_empty() {
                 mono_field(ui, theme, view.homepage_label, |ui| {
-                    let resp = ui
-                        .add(
-                            egui::Label::new(
-                                egui::RichText::new(view.homepage)
-                                    .monospace()
-                                    .size(theme.font_size_caption.value())
-                                    .color(theme.text_secondary().to_egui()),
-                            )
-                            .truncate()
-                            .sense(egui::Sense::click()),
-                        )
-                        .on_hover_cursor(egui::CursorIcon::PointingHand);
-                    output.open_homepage = resp.clicked();
+                    output.open_homepage = homepage_link(ui, theme, view.homepage).clicked();
                 });
             }
         });
     output
+}
+
+/// Homepage 링크. text-secondary 글자에 밑줄을 늘 긋고, hover 면 text-primary, 키보드 포커스면
+/// focus ring 을 두른다. 줄이 넘치면 끝을 말줄임한다.
+fn homepage_link(ui: &mut egui::Ui, theme: &Theme, url: &str) -> egui::Response {
+    let font = egui::FontId::monospace(theme.font_size_caption.value());
+    let max_width = ui.available_width();
+    let ctx = ui.ctx().clone();
+    let layout = |color: egui::Color32| {
+        let mut job = egui::text::LayoutJob::default();
+        job.append(
+            url,
+            0.0,
+            egui::TextFormat {
+                font_id: font.clone(),
+                color,
+                underline: egui::Stroke::new(theme.border_width.value(), color),
+                ..Default::default()
+            },
+        );
+        job.wrap.max_width = max_width;
+        job.wrap.max_rows = 1;
+        job.wrap.break_anywhere = true;
+        ctx.fonts(|f| f.layout_job(job))
+    };
+    let probe = layout(egui::Color32::PLACEHOLDER);
+    let (rect, resp) = ui.allocate_exact_size(probe.size(), egui::Sense::click());
+    let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+    let color = if resp.hovered() {
+        theme.text_primary()
+    } else {
+        theme.text_secondary()
+    };
+    ui.painter()
+        .galley(rect.min, layout(color.to_egui()), color.to_egui());
+    if resp.has_focus() {
+        ui.painter().rect_stroke(
+            rect,
+            theme.corner_radius_sm.value(),
+            egui::Stroke::new(theme.focus_ring_width.value(), theme.border_focus()),
+            egui::StrokeKind::Outside,
+        );
+    }
+    resp
 }
 
 /// 아바타 lg 오른쪽에 이름 + 버전 Tag, 그 아래 `id · 첫 작성자 +N`.
@@ -296,14 +332,21 @@ fn id_line(id: &str, authors: &[String]) -> String {
     }
 }
 
-/// mono 대문자 머리글. 디자인 `Mono`(micro, text-muted, caps).
+/// mono 대문자 머리글. 디자인 `Mono`(micro, text-muted, caps, `letter-spacing-caps`).
 fn mono_header(ui: &mut egui::Ui, theme: &Theme, text: &str) {
-    ui.label(
-        egui::RichText::new(text.to_uppercase())
-            .monospace()
-            .size(theme.font_size_micro.value())
-            .color(theme.text_muted().to_egui()),
+    let size = theme.font_size_micro;
+    let mut job = egui::text::LayoutJob::default();
+    job.append(
+        &text.to_uppercase(),
+        0.0,
+        egui::TextFormat {
+            font_id: egui::FontId::monospace(size.value()),
+            color: theme.text_muted().to_egui(),
+            extra_letter_spacing: theme.letter_spacing_caps(size).value(),
+            ..Default::default()
+        },
     );
+    ui.add(egui::Label::new(job).selectable(false));
 }
 
 /// 머리글과 값 한 줄을 `space-xs`로 묶는다.
@@ -340,11 +383,11 @@ fn tag_list(ui: &mut egui::Ui, theme: &Theme, label: &str, items: &[String], non
 
 /// 액션 바 문구.
 pub struct PluginAddBarView<'a> {
-    /// 왼쪽 문구. 추가할 수 없으면 이유, 아니면 부여할 권한 수.
+    /// 왼쪽 문구. 추가할 수 없으면 이유, 아니면 부여할 권한 수. 매니페스트가 없으면 빈 문자열.
     pub left: &'a str,
     pub cancel: &'a str,
-    /// `Add plugin` 또는 미신뢰일 때 `Trust & add`.
-    pub add: &'a str,
+    /// `Add plugin` 또는 미신뢰일 때 `Trust & add`. 매니페스트를 확인하기 전에는 `None`이다.
+    pub add: Option<&'a str>,
     pub add_enabled: bool,
 }
 
@@ -356,7 +399,8 @@ pub struct PluginAddBarClicks {
 }
 
 /// 위 구분선 아래에 왼쪽 문구, 오른쪽 Cancel(ghost) + 추가(primary)를 둔다.
-/// 추가할 수 없으면 추가 버튼을 숨기지 않고 disabled로 둔다.
+/// 추가할 수 없으면 추가 버튼을 숨기지 않고 disabled로 둔다. 매니페스트를 확인하기 전에는
+/// Cancel 만 둔다.
 pub fn plugin_add_bar(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -374,17 +418,21 @@ pub fn plugin_add_bar(
                 egui::Layout::left_to_right(egui::Align::Center),
                 |ui| {
                     ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-                    ui.label(
-                        egui::RichText::new(view.left)
-                            .size(theme.font_size_caption.value())
-                            .color(theme.text_muted().to_egui()),
-                    );
+                    if !view.left.is_empty() {
+                        ui.label(
+                            egui::RichText::new(view.left)
+                                .size(theme.font_size_caption.value())
+                                .color(theme.text_muted().to_egui()),
+                        );
+                    }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        clicks.add = Button::new(view.add)
-                            .variant(ButtonVariant::Primary)
-                            .enabled(view.add_enabled)
-                            .show(ui, theme)
-                            .clicked();
+                        if let Some(add) = view.add {
+                            clicks.add = Button::new(add)
+                                .variant(ButtonVariant::Primary)
+                                .enabled(view.add_enabled)
+                                .show(ui, theme)
+                                .clicked();
+                        }
                         clicks.cancel = Button::new(view.cancel)
                             .variant(ButtonVariant::Ghost)
                             .show(ui, theme)
@@ -406,6 +454,289 @@ pub fn plugin_add_bar(
     clicks
 }
 
+/// fingerprint 값에서 앞뒤로 남기는 바이트 수.
+const FINGERPRINT_EDGE_BYTES: usize = 8;
+
+/// colon-hex fingerprint 가 16바이트를 넘으면 앞 8바이트 + ` … ` + 뒤 8바이트로 줄인다.
+/// 그보다 짧거나 콜론으로 나뉘지 않은 표기는 그대로 둔다.
+pub fn short_fingerprint(value: &str) -> Cow<'_, str> {
+    let parts: Vec<&str> = value.split(':').collect();
+    if parts.len() <= FINGERPRINT_EDGE_BYTES * 2 {
+        return Cow::Borrowed(value);
+    }
+    Cow::Owned(format!(
+        "{} … {}",
+        parts[..FINGERPRINT_EDGE_BYTES].join(":"),
+        parts[parts.len() - FINGERPRINT_EDGE_BYTES..].join(":")
+    ))
+}
+
+/// fingerprint 줄의 문구.
+pub struct PluginFingerprintLineView<'a> {
+    pub label: &'a str,
+    /// 전체 값. 화면에는 [`short_fingerprint`]로 줄여 보이고 툴팁과 복사는 전체 값이다.
+    pub value: &'a str,
+    pub copy_tooltip: &'a str,
+}
+
+/// fingerprint 라벨, 값, 복사 IconButton 한 줄. 복사 버튼을 누르면 전체 값을 클립보드에 넣고
+/// true 를 돌려준다. 값이 없으면 호출하지 않으므로 복사 버튼에는 disabled 상태가 없다.
+pub fn plugin_fingerprint_line(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    view: &PluginFingerprintLineView<'_>,
+) -> bool {
+    let mut copied = false;
+    // 라벨이 버튼보다 먼저 배치되므로 줄 높이를 버튼 높이로 먼저 잡아야 세로 가운데가 맞는다.
+    ui.allocate_ui_with_layout(
+        egui::vec2(ui.available_width(), ControlSize::Sm.height(theme)),
+        egui::Layout::left_to_right(egui::Align::Center),
+        |ui| {
+            ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+            let caption = theme.font_size_caption.value();
+            ui.label(
+                egui::RichText::new(view.label)
+                    .monospace()
+                    .size(caption)
+                    .color(theme.text_secondary().to_egui()),
+            );
+            let shown = short_fingerprint(view.value);
+            let resp = ui.add(
+                egui::Label::new(
+                    egui::RichText::new(shown.as_ref())
+                        .monospace()
+                        .size(caption)
+                        .color(theme.text_muted().to_egui()),
+                )
+                .sense(egui::Sense::hover()),
+            );
+            if matches!(shown, Cow::Owned(_))
+                && tooltip_hover_delay_elapsed(ui.ctx(), theme, resp.id, resp.hovered())
+            {
+                Tooltip::new(view.value)
+                    .id_source(resp.id)
+                    .show(ui, theme, resp.rect);
+            }
+            let copy = IconButton::new()
+                .variant(IconButtonVariant::Ghost)
+                .size(ControlSize::Sm)
+                .show(ui, theme, &|ui, rect, c| {
+                    tasty_icons::COPY.image(rect.width(), c).paint_at(ui, rect);
+                })
+                .on_hover_text(view.copy_tooltip);
+            if copy.clicked() {
+                ui.ctx().copy_text(view.value.to_owned());
+                copied = true;
+            }
+        },
+    );
+    copied
+}
+
+/// Attention › Signature invalid 절의 머리글 아래 내용. `note` 는 term-sm text-muted 문단,
+/// `cause` 는 그 아래 mono caption text-muted 줄이다.
+pub fn plugin_signature_invalid_detail(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    note: &str,
+    cause: Option<&str>,
+) {
+    let term_sm = theme.font_size_term_sm.value();
+    let width = theme.measure_lg.value().min(ui.available_width());
+    ui.scope(|ui| {
+        ui.set_max_width(width);
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new(note)
+                    .size(term_sm)
+                    .line_height(Some(term_sm * theme.line_height_ui))
+                    .color(theme.text_muted().to_egui()),
+            )
+            .wrap(),
+        );
+    });
+    if let Some(cause) = cause {
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new(cause)
+                    .monospace()
+                    .size(theme.font_size_caption.value())
+                    .color(theme.text_muted().to_egui()),
+            )
+            .wrap(),
+        );
+    }
+}
+
+/// 경로 선택 블록의 문구.
+pub struct PluginAddPickerView<'a> {
+    /// mono 머리글. 디자인 `Plugin folder`.
+    pub label: &'a str,
+    pub placeholder: &'a str,
+    /// 폴더 선택 버튼 라벨.
+    pub find: &'a str,
+    pub verify: &'a str,
+    /// 경로가 비었고 확인한 매니페스트도 없으면 false.
+    pub verify_enabled: bool,
+    /// 아래 설명 문단. 백틱으로 감싼 부분은 mono text-secondary 로 그린다.
+    pub help: &'a str,
+}
+
+/// 경로 선택 블록에서 일어난 일.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PluginAddPickerOutput {
+    /// 경로를 고쳤다. 호출부는 확인한 매니페스트를 버린다.
+    pub changed: bool,
+    /// 폴더 선택 버튼을 눌렀다.
+    pub find: bool,
+    /// Verify 를 눌렀거나 입력에서 Enter 를 눌렀다.
+    pub verify: bool,
+}
+
+/// 경로 선택 블록. mono 머리글, mono 입력(폴더 아이콘) + 폴더 선택(secondary) + Verify(primary),
+/// 설명 문단을 `space-sm` 간격으로 쌓는다. 폭은 `measure-xl` 이 상한이다.
+pub fn plugin_add_path_picker(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    view: &PluginAddPickerView<'_>,
+    path: &mut String,
+) -> PluginAddPickerOutput {
+    let mut out = PluginAddPickerOutput::default();
+    let width = theme.measure_xl.value().min(ui.available_width());
+    ui.allocate_ui_with_layout(
+        egui::vec2(width, 0.0),
+        egui::Layout::top_down(egui::Align::Min),
+        |ui| {
+            ui.set_width(width);
+            ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
+            mono_header(ui, theme, view.label);
+            ui.allocate_ui_with_layout(
+                egui::vec2(width, ControlSize::Md.height(theme)),
+                egui::Layout::right_to_left(egui::Align::Center),
+                |ui| {
+                    ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+                    out.verify = Button::new(view.verify)
+                        .variant(ButtonVariant::Primary)
+                        .enabled(view.verify_enabled)
+                        .show(ui, theme)
+                        .clicked();
+                    out.find = Button::new(view.find)
+                        .variant(ButtonVariant::Secondary)
+                        .leading_icon(&|ui, rect, c| {
+                            tasty_icons::FOLDER
+                                .image(rect.height(), c)
+                                .paint_at(ui, rect)
+                        })
+                        .show(ui, theme)
+                        .clicked();
+                    let resp = Input::new()
+                        .mono(true)
+                        .placeholder(view.placeholder)
+                        .icon(&|ui, rect, c| {
+                            tasty_icons::FOLDER
+                                .image(rect.height(), c)
+                                .paint_at(ui, rect)
+                        })
+                        .show(ui, theme, path);
+                    out.changed = resp.changed();
+                    if resp.lost_focus()
+                        && ui.input(|i| i.key_pressed(egui::Key::Enter))
+                        && view.verify_enabled
+                    {
+                        out.verify = true;
+                    }
+                },
+            );
+            help_paragraph(ui, theme, view.help);
+        },
+    );
+    out
+}
+
+/// 백틱 사이를 mono text-secondary 로, 나머지를 term-sm text-muted 로 그린 문단.
+fn help_paragraph(ui: &mut egui::Ui, theme: &Theme, text: &str) {
+    let term_sm = theme.font_size_term_sm.value();
+    let mut job = egui::text::LayoutJob::default();
+    for (i, part) in text.split('`').enumerate() {
+        let code = i % 2 == 1;
+        let (font_id, color) = if code {
+            (
+                egui::FontId::monospace(term_sm),
+                theme.text_secondary().to_egui(),
+            )
+        } else {
+            (
+                egui::FontId::proportional(term_sm),
+                theme.text_muted().to_egui(),
+            )
+        };
+        job.append(
+            part,
+            0.0,
+            egui::TextFormat {
+                font_id,
+                color,
+                line_height: Some(term_sm * theme.line_height_ui),
+                ..Default::default()
+            },
+        );
+    }
+    job.wrap.max_width = ui.available_width();
+    ui.add(egui::Label::new(job).wrap());
+}
+
+/// 매니페스트를 확인하기 전의 안내 상자. 폴더 아이콘과 `before` · `emphasis` · `after` 한 줄을
+/// border-default 1px 상자에 담는다. `emphasis` 는 text-secondary 다.
+pub fn plugin_add_empty_hint(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    before: &str,
+    emphasis: &str,
+    after: &str,
+) {
+    let width = theme.measure_xl.value().min(ui.available_width());
+    let term_sm = theme.font_size_term_sm.value();
+    let muted = theme.text_muted().to_egui();
+    egui::Frame::new()
+        .stroke(egui::Stroke::new(
+            theme.border_width.value(),
+            theme.border_default().to_egui(),
+        ))
+        .corner_radius(theme.corner_radius.value())
+        .inner_margin(egui::Margin::symmetric(
+            theme.spacing_lg.value() as i8,
+            PLUGIN_ADD_INSET.value() as i8,
+        ))
+        .show(ui, |ui| {
+            // 바깥 폭이 `width`가 되도록 안쪽 여백과 테두리를 뺀다.
+            ui.set_width(width - (theme.spacing_lg.value() + theme.border_width.value()) * 2.0);
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+                let glyph = theme.icon_glyph_size_md.value();
+                let (rect, _) =
+                    ui.allocate_exact_size(egui::vec2(glyph, glyph), egui::Sense::hover());
+                tasty_icons::FOLDER.image(glyph, muted).paint_at(ui, rect);
+                let mut job = egui::text::LayoutJob::default();
+                for (text, color) in [
+                    (before, muted),
+                    (emphasis, theme.text_secondary().to_egui()),
+                    (after, muted),
+                ] {
+                    job.append(
+                        text,
+                        0.0,
+                        egui::TextFormat {
+                            font_id: egui::FontId::proportional(term_sm),
+                            color,
+                            ..Default::default()
+                        },
+                    );
+                }
+                ui.add(egui::Label::new(job).wrap());
+            });
+        });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -419,6 +750,25 @@ mod tests {
             id_line("com.a.b", &authors(&["ann", "bo", "cy"])),
             "com.a.b · ann +2"
         );
+    }
+
+    #[test]
+    fn long_colon_hex_fingerprints_keep_eight_bytes_at_each_end() {
+        let sha256 = (0..32)
+            .map(|i| format!("{i:02x}"))
+            .collect::<Vec<_>>()
+            .join(":");
+        assert_eq!(
+            short_fingerprint(&sha256),
+            "00:01:02:03:04:05:06:07 … 18:19:1a:1b:1c:1d:1e:1f"
+        );
+        let sixteen = (0..16)
+            .map(|i| format!("{i:02x}"))
+            .collect::<Vec<_>>()
+            .join(":");
+        assert_eq!(short_fingerprint(&sixteen), sixteen);
+        let spaced = "9f2c 4ad1 b770 e3a6  ·  ed25519";
+        assert_eq!(short_fingerprint(spaced), spaced);
     }
 
     #[test]

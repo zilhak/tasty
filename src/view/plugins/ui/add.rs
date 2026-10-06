@@ -3,8 +3,9 @@ use crate::terminal_link;
 use crate::theme;
 
 use tasty_ui_widgets::{
-    PLUGIN_ADD_INSET, PluginAddBarClicks, PluginAddBarView, PluginManifestCardView,
-    PluginTrustKind, plugin_add_bar, plugin_manifest_card, plugin_trust_box, vspace,
+    PLUGIN_ADD_INSET, PluginAddBarClicks, PluginAddBarView, PluginAddPickerView,
+    PluginManifestCardView, PluginTrustKind, plugin_add_bar, plugin_add_empty_hint,
+    plugin_add_path_picker, plugin_manifest_card, plugin_trust_box, vspace,
 };
 
 use super::attention::fingerprint_line;
@@ -22,77 +23,19 @@ pub(super) fn draw_add_tab(
 
     egui::CentralPanel::default().show(ctx, |ui| {
         vspace(ui, th.spacing_md);
-        if ui_state.add_preview.is_some() {
-            draw_add_preview(ui, snapshot, ui_state, actions, &th);
-        } else {
-            draw_add_input(ui, snapshot, ui_state, &th);
-        }
+        draw_add_form(ui, snapshot, ui_state, actions, &th);
     });
 }
 
-/// `Add` 탭의 초기 화면 — 경로 입력 + 확인 + 찾기.
-fn draw_add_input(
+/// 경로 선택 블록 아래에 안내 상자 또는 매니페스트 카드와 신뢰 판정 상자를 두고,
+/// 맨 아래 액션 바에서 추가하거나 취소한다. 경로를 고치면 확인한 매니페스트를 버린다.
+fn draw_add_form(
     ui: &mut egui::Ui,
     snapshot: &PluginsSnapshot,
-    ui_state: &mut PluginsUiState,
-    th: &theme::Theme,
-) {
-    ui.label(t("plugins.add_path_label"));
-    vspace(ui, th.spacing_sm);
-
-    let mut submitted = false;
-    ui.horizontal(|ui| {
-        let edit = egui::TextEdit::singleline(&mut ui_state.add_path_input)
-            .hint_text(tasty_egui_theme::hint_text(
-                &crate::theme::theme(),
-                t("plugins.add_path_placeholder"),
-            ))
-            .desired_width(ui.available_width() - 90.0);
-        let resp = ui.add(edit);
-        if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-            submitted = true;
-        }
-        if ui.button(t("plugins.add_confirm_path")).clicked() {
-            submitted = true;
-        }
-    });
-
-    if submitted {
-        try_validate_path(ui_state, snapshot);
-    }
-
-    if let Some(err) = &ui_state.add_error {
-        vspace(ui, th.spacing_sm);
-        ui.label(egui::RichText::new(err).color(egui::Color32::from(th.accent_danger())));
-    }
-
-    vspace(ui, th.spacing_lg);
-    ui.separator();
-    vspace(ui, th.spacing_md);
-
-    if ui.button(t("plugins.add_browse")).clicked() {
-        let dialog = rfd::FileDialog::new();
-        if let Some(path) = crate::stall_watchdog::without_stall_watch(|| dialog.pick_folder()) {
-            ui_state.add_path_input = path.to_string_lossy().to_string();
-            try_validate_path(ui_state, snapshot);
-        }
-    }
-}
-
-/// 검증된 매니페스트를 카드와 신뢰 판정 상자로 보여 주고, 아래 액션 바에서 추가하거나 취소한다.
-fn draw_add_preview(
-    ui: &mut egui::Ui,
-    _snapshot: &PluginsSnapshot,
     ui_state: &mut PluginsUiState,
     actions: &mut Vec<PluginsAction>,
     th: &theme::Theme,
 ) {
-    // 표시 중 원본 preview가 필요하므로 복사해 사용한다.
-    let preview = ui_state.add_preview.clone().expect("checked by caller");
-
-    ui.heading(t("plugins.add_preview_heading"));
-    vspace(ui, th.spacing_sm);
-    let blocked_key = add_blocked_reason_key(&preview);
     // 액션 바가 창 안에 남도록, 같은 내용을 보이지 않게 먼저 그려 높이를 잰다.
     let footer_height = {
         let mut probe = ui.new_child(
@@ -101,7 +44,7 @@ fn draw_add_preview(
                 .sizing_pass()
                 .invisible(),
         );
-        draw_preview_footer(&mut probe, &preview, blocked_key, th);
+        draw_add_footer(&mut probe, ui_state.add_preview.as_ref());
         probe.min_rect().height()
     };
     let scroll_height =
@@ -114,35 +57,24 @@ fn draw_add_preview(
         .drag_to_scroll(false)
         .show(ui, |ui| {
             ui.set_width(column_width);
-            ui.spacing_mut().item_spacing.y = PLUGIN_ADD_INSET.value();
-            let card = plugin_manifest_card(
-                ui,
-                th,
-                &PluginManifestCardView {
-                    name: &preview.name,
-                    version: &preview.version,
-                    id: &preview.id,
-                    authors: &preview.authors,
-                    description: &preview.description,
-                    permissions_label: t("plugins.permissions"),
-                    permissions: &preview.permissions,
-                    surface_kinds_label: t("plugins.surface_kinds"),
-                    surface_kinds: &preview.surface_kinds,
-                    source_label: t("plugins.add_source_path"),
-                    source: &preview.src_path,
-                    homepage_label: t("plugins.homepage"),
-                    homepage: &preview.homepage,
-                    none: t("plugins.add_none"),
-                },
-            );
-            if card.open_homepage && !terminal_link::open_uri(&preview.homepage) {
-                tracing::warn!(homepage = %preview.homepage, "plugin homepage did not open");
+            ui.spacing_mut().item_spacing.y = th.spacing_lg.value();
+            draw_path_picker(ui, snapshot, ui_state, th);
+            if let Some(err) = &ui_state.add_error {
+                ui.label(egui::RichText::new(err).color(egui::Color32::from(th.accent_danger())));
+            } else if let Some(preview) = &ui_state.add_preview {
+                draw_preview(ui, preview, th);
+            } else {
+                let template = t("plugins.add_empty_hint");
+                let (before, after) = template.split_once("{}").unwrap_or((template, ""));
+                plugin_add_empty_hint(ui, th, before, t("plugins.add_confirm_path"), after);
             }
-            draw_trust_box(ui, &preview.trust_state, th);
         });
 
-    let footer = draw_preview_footer(ui, &preview, blocked_key, th);
-    if footer.add {
+    let preview = ui_state.add_preview.clone();
+    let footer = draw_add_footer(ui, preview.as_ref());
+    if footer.add
+        && let Some(preview) = &preview
+    {
         let action = match &preview.trust_state {
             AddTrustState::Trusted => PluginsAction::Install {
                 src_path: preview.src_path.clone(),
@@ -173,25 +105,91 @@ fn draw_add_preview(
     }
 }
 
-/// 프리뷰 하단 액션 바. 높이 측정과 실제 그리기가 같은 함수를 쓴다.
-/// 추가할 수 없으면 추가 버튼을 disabled로 두고 이유를, 아니면 부여할 권한 수를 왼쪽에 적는다.
-fn draw_preview_footer(
+/// 경로 입력 · 폴더 찾기 · Verify 와 설명 문단.
+fn draw_path_picker(
     ui: &mut egui::Ui,
-    preview: &AddPreview,
-    blocked_key: Option<&'static str>,
+    snapshot: &PluginsSnapshot,
+    ui_state: &mut PluginsUiState,
     th: &theme::Theme,
-) -> PluginAddBarClicks {
-    let left = match blocked_key {
-        Some(key) => t(key).to_owned(),
-        None => grants_label(preview.permissions.len()),
+) {
+    let picker = plugin_add_path_picker(
+        ui,
+        th,
+        &PluginAddPickerView {
+            label: t("plugins.add_path_label"),
+            placeholder: t("plugins.add_path_placeholder"),
+            find: t("plugins.add_browse"),
+            verify: t("plugins.add_confirm_path"),
+            verify_enabled: !ui_state.add_path_input.trim().is_empty(),
+            help: t("plugins.add_help"),
+        },
+        &mut ui_state.add_path_input,
+    );
+    if picker.changed {
+        ui_state.add_preview = None;
+        ui_state.add_error = None;
+    }
+    if picker.find {
+        let dialog = rfd::FileDialog::new();
+        if let Some(path) = crate::stall_watchdog::without_stall_watch(|| dialog.pick_folder()) {
+            ui_state.add_path_input = path.to_string_lossy().to_string();
+            try_validate_path(ui_state, snapshot);
+        }
+    }
+    if picker.verify {
+        try_validate_path(ui_state, snapshot);
+    }
+}
+
+/// 확인한 매니페스트의 카드와 신뢰 판정 상자.
+fn draw_preview(ui: &mut egui::Ui, preview: &AddPreview, th: &theme::Theme) {
+    ui.vertical(|ui| {
+        ui.spacing_mut().item_spacing.y = PLUGIN_ADD_INSET.value();
+        let card = plugin_manifest_card(
+            ui,
+            th,
+            &PluginManifestCardView {
+                name: &preview.name,
+                version: &preview.version,
+                id: &preview.id,
+                authors: &preview.authors,
+                description: &preview.description,
+                permissions_label: t("plugins.permissions"),
+                permissions: &preview.permissions,
+                surface_kinds_label: t("plugins.surface_kinds"),
+                surface_kinds: &preview.surface_kinds,
+                source_label: t("plugins.add_source_path"),
+                source: &preview.src_path,
+                homepage_label: t("plugins.homepage"),
+                homepage: &preview.homepage,
+                none: t("plugins.add_none"),
+            },
+        );
+        if card.open_homepage && !terminal_link::open_uri(&preview.homepage) {
+            tracing::warn!(homepage = %preview.homepage, "plugin homepage did not open");
+        }
+        draw_trust_box(ui, &preview.trust_state, th);
+    });
+}
+
+/// 하단 액션 바. 높이 측정과 실제 그리기가 같은 함수를 쓴다.
+/// 매니페스트가 없으면 Cancel 만 둔다. 추가할 수 없으면 추가 버튼을 disabled로 두고 이유를,
+/// 아니면 부여할 권한 수를 왼쪽에 적는다.
+fn draw_add_footer(ui: &mut egui::Ui, preview: Option<&AddPreview>) -> PluginAddBarClicks {
+    let th = theme::theme();
+    let blocked_key = preview.and_then(add_blocked_reason_key);
+    let left = match (preview, blocked_key) {
+        (None, _) => String::new(),
+        (Some(_), Some(key)) => t(key).to_owned(),
+        (Some(preview), None) => grants_label(preview.permissions.len()),
     };
     plugin_add_bar(
         ui,
-        th,
+        &th,
         &PluginAddBarView {
             left: &left,
             cancel: t("button.cancel"),
-            add: t(add_button_key(preview, blocked_key)),
+            add: preview.map(|p| t(add_button_key(p, blocked_key))),
             add_enabled: blocked_key.is_none(),
         },
     )

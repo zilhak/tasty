@@ -1,67 +1,30 @@
-//! 플러그인 추가의 경로 입력과 매니페스트 확인 예제.
-//! 프리뷰는 본체와 같은 공용 매니페스트 카드·신뢰 상자·액션 바를 그린다.
+//! 플러그인 추가 화면 예제. 경로 선택 블록, 안내 상자, 매니페스트 카드, 신뢰 상자, 액션 바를
+//! 본체와 같은 공용 view로 그린다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{
-    Button, ButtonVariant, ControlSize, PLUGIN_ADD_INSET, PluginAddBarView, PluginManifestCardView,
-    PluginTrustKind, plugin_add_bar, plugin_manifest_card, plugin_trust_box,
+    ControlSize, PLUGIN_ADD_INSET, PluginAddBarView, PluginAddPickerView, PluginManifestCardView,
+    PluginTrustKind, plugin_add_bar, plugin_add_empty_hint, plugin_add_path_picker,
+    plugin_manifest_card, plugin_trust_box,
 };
-
-/// 경로 입력 오른쪽의 Verify 버튼 공간을 확보한다.
-fn field_width(theme: &Theme, available: f32) -> f32 {
-    (available - theme.field_width_xs.value()).max(theme.field_width_xs.value())
-}
-
-/// 경로 입력 상태.
-pub(super) fn input_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
-    ui.painter_at(rect)
-        .rect_filled(rect, 0.0, theme.bg_panel().to_egui());
-    let inner = rect.shrink(theme.spacing_md.value());
-    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner));
-    child.spacing_mut().item_spacing.y = theme.spacing_sm.value();
-
-    child.label(
-        egui::RichText::new("Plugin folder path")
-            .size(theme.font_size_body.value())
-            .color(theme.text_primary().to_egui()),
-    );
-    child.horizontal(|ui| {
-        let h = theme.item_height_interactive.value();
-        let w = field_width(theme, ui.available_width());
-        let (r, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
-        ui.painter().rect(
-            r,
-            theme.corner_radius.value(),
-            theme.surface_raised().to_egui(),
-            egui::Stroke::new(theme.border_width.value(), theme.border_default().to_egui()),
-            egui::StrokeKind::Inside,
-        );
-        ui.painter().text(
-            egui::pos2(r.min.x + theme.spacing_sm.value(), r.center().y),
-            egui::Align2::LEFT_CENTER,
-            "/path/to/plugin/directory",
-            egui::FontId::proportional(theme.font_size_body.value()),
-            theme.text_placeholder().to_egui(),
-        );
-        Button::new("Verify")
-            .variant(ButtonVariant::Secondary)
-            .show(ui, theme);
-    });
-    child.separator();
-    Button::new("Find plugin folder…")
-        .variant(ButtonVariant::Secondary)
-        .show(&mut child, theme);
-}
 
 /// 디자인 `SAMPLE_MANIFEST`. 미신뢰 · 공개키 있음.
 const SAMPLE_FINGERPRINT: &str = "9f2c 4ad1 b770 e3a6  ·  ed25519";
+
+/// 16바이트를 넘는 colon-hex fingerprint. 본체가 보이는 SHA-256 전체 표기와 같은 길이다.
+const LONG_FINGERPRINT: &str = "1a:2b:3c:4d:5e:6f:70:81:92:a3:b4:c5:d6:e7:f8:09:\
+                                 10:21:32:43:54:65:76:87:98:a9:ba:cb:dc:ed:fe:0f";
+
+/// 경로 선택 블록 아래 문단. 본체 `plugins.add_help`의 영어 문구다.
+const HELP: &str = "Point Tasty at a local folder containing a `tasty-plugin.toml`. Verifying reads its manifest and checks the signature; adding copies it into `~/.tasty/plugins`.";
 
 fn sample_strings(items: &[&str]) -> Vec<String> {
     items.iter().map(|s| (*s).to_owned()).collect()
 }
 
-/// 매니페스트 프리뷰 상태 (미신뢰 · 공개키 있음). 본체 `draw_add_preview`와 같은 공용 view를 쓴다.
-pub(super) fn preview_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
+/// 시안 `AddPluginForm` — 경로 선택 블록 아래에 안내 상자 또는 매니페스트 카드와 신뢰 상자,
+/// 맨 아래 액션 바. 본체 `draw_add_form`과 같은 공용 view를 쓴다.
+pub(super) fn form_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, verified: bool) {
     ui.painter_at(rect)
         .rect_filled(rect, 0.0, theme.bg_panel().to_egui());
     let bar_h = ControlSize::Md.height(theme) + theme.spacing_md.value() * 2.0;
@@ -69,13 +32,71 @@ pub(super) fn preview_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
     let inner = body.shrink(theme.spacing_md.value());
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner));
     child.set_max_width(theme.measure_xl.value().min(inner.width()));
-    child.spacing_mut().item_spacing.y = PLUGIN_ADD_INSET.value();
+    child.spacing_mut().item_spacing.y = theme.spacing_lg.value();
 
-    let authors = sample_strings(&["aurelia"]);
-    let perms = sample_strings(&["fs:read", "fs:watch", "ipc:logwatch.*"]);
-    let surfaces = sample_strings(&["logwatch.viewer"]);
-    plugin_manifest_card(
+    let mut path = if verified { "~/dev/tasty-logwatch" } else { "" }.to_owned();
+    plugin_add_path_picker(
         &mut child,
+        theme,
+        &PluginAddPickerView {
+            label: "Plugin folder",
+            placeholder: "~/dev/my-plugin",
+            find: "Find folder…",
+            verify: "Verify",
+            verify_enabled: verified,
+            help: HELP,
+        },
+        &mut path,
+    );
+    if verified {
+        child.vertical(|ui| {
+            ui.spacing_mut().item_spacing.y = PLUGIN_ADD_INSET.value();
+            manifest_card(ui, theme, false);
+            trust_box(ui, theme, PluginTrustKind::UnknownKey, SAMPLE_FINGERPRINT);
+        });
+    } else {
+        plugin_add_empty_hint(
+            &mut child,
+            theme,
+            "Choose a folder and press ",
+            "Verify",
+            " to read its manifest.",
+        );
+    }
+
+    let bar = egui::Rect::from_min_max(egui::pos2(rect.min.x, body.max.y), rect.max);
+    let mut bar_ui = ui.new_child(egui::UiBuilder::new().max_rect(bar));
+    if verified {
+        action_bar(&mut bar_ui, theme, None, false, 3);
+    } else {
+        plugin_add_bar(
+            &mut bar_ui,
+            theme,
+            &PluginAddBarView {
+                left: "",
+                cancel: "Cancel",
+                add: None,
+                add_enabled: false,
+            },
+        );
+    }
+}
+
+/// 시안 `SAMPLE_MANIFEST` 카드. `open_values`면 Homepage 링크와 빈 목록(`None`)을 보인다.
+fn manifest_card(ui: &mut egui::Ui, theme: &Theme, open_values: bool) {
+    let authors = sample_strings(&["aurelia"]);
+    let perms = if open_values {
+        Vec::new()
+    } else {
+        sample_strings(&["fs:read", "fs:watch", "ipc:logwatch.*"])
+    };
+    let surfaces = if open_values {
+        Vec::new()
+    } else {
+        sample_strings(&["logwatch.viewer"])
+    };
+    plugin_manifest_card(
+        ui,
         theme,
         &PluginManifestCardView {
             name: "logwatch",
@@ -90,15 +111,24 @@ pub(super) fn preview_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
             source_label: "Source",
             source: "~/dev/tasty-logwatch",
             homepage_label: "Homepage",
-            homepage: "",
+            homepage: if open_values {
+                "https://github.com/aurelia/tasty-logwatch"
+            } else {
+                ""
+            },
             none: "None",
         },
     );
-    trust_box(&mut child, theme, PluginTrustKind::UnknownKey);
+}
 
-    let bar = egui::Rect::from_min_max(egui::pos2(rect.min.x, body.max.y), rect.max);
-    let mut bar_ui = ui.new_child(egui::UiBuilder::new().max_rect(bar));
-    action_bar(&mut bar_ui, theme, None, false, 3);
+/// batch 2 회신의 열린 값 — Homepage 링크, 빈 목록 `None`, 긴 fingerprint 의 앞뒤 8바이트.
+pub(super) fn open_values(ui: &mut egui::Ui, theme: &Theme, width: f32) {
+    ui.vertical(|ui| {
+        ui.set_width(width);
+        ui.spacing_mut().item_spacing.y = PLUGIN_ADD_INSET.value();
+        manifest_card(ui, theme, true);
+        trust_box(ui, theme, PluginTrustKind::UnknownKey, LONG_FINGERPRINT);
+    });
 }
 
 /// 디자인 `TRUST_KIND`의 제목과 본문.
@@ -127,10 +157,10 @@ fn trust_copy(kind: PluginTrustKind) -> (&'static str, &'static str) {
     }
 }
 
-fn trust_box(ui: &mut egui::Ui, theme: &Theme, kind: PluginTrustKind) {
+fn trust_box(ui: &mut egui::Ui, theme: &Theme, kind: PluginTrustKind, fingerprint: &str) {
     let (title, body) = trust_copy(kind);
     plugin_trust_box(ui, theme, kind, title, body, |ui| {
-        super::attention::fingerprint_line(ui, theme, SAMPLE_FINGERPRINT);
+        super::attention::fingerprint_line(ui, theme, fingerprint);
     });
 }
 
@@ -143,7 +173,7 @@ fn grants(perms: usize) -> String {
     }
 }
 
-/// 프리뷰 하단 액션 바 — 본체 `draw_add_preview`의 버튼 줄.
+/// 프리뷰 하단 액션 바 — 본체 `draw_add_footer`의 버튼 줄.
 /// `blocked`가 있으면 추가 버튼을 disabled로 두고 이유를 왼쪽에 적는다.
 fn action_bar(
     ui: &mut egui::Ui,
@@ -159,11 +189,11 @@ fn action_bar(
         &PluginAddBarView {
             left: blocked.unwrap_or(&grants),
             cancel: "Cancel",
-            add: if blocked.is_none() && !trusted {
+            add: Some(if blocked.is_none() && !trusted {
                 "Trust & add"
             } else {
                 "Add plugin"
-            },
+            }),
             add_enabled: blocked.is_none(),
         },
     );
@@ -208,7 +238,7 @@ pub(super) fn trust_boxes(ui: &mut egui::Ui, theme: &Theme, width: f32) {
             PluginTrustKind::MissingPubkey,
             PluginTrustKind::SignatureError,
         ] {
-            trust_box(ui, theme, kind);
+            trust_box(ui, theme, kind, SAMPLE_FINGERPRINT);
         }
     });
 }

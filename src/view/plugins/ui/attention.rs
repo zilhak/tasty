@@ -12,11 +12,11 @@ const ATTN_PRIMITIVE_12: LogicalPx = LogicalPx(12.0);
 const ATTN_STATUS_DOT_SIZE: LogicalPx = LogicalPx(7.0);
 
 use super::{AttentionEntry, AttentionKind, PluginsAction, PluginsSnapshot, PluginsUiState};
-use crate::adapters::ui::icons;
 use tasty_ui_widgets::tokens::{PLUGIN_LIST_ROW_HEIGHT, STRUCT_GAP_2};
 use tasty_ui_widgets::{
-    ControlSize, IconButton, IconButtonVariant, PluginAvatarSize, hspace, margin_all, margin_sym,
-    paint_plugin_avatar, plugin_avatar, vspace,
+    PluginAvatarSize, PluginFingerprintLineView, hspace, margin_all, margin_sym,
+    paint_plugin_avatar, plugin_avatar, plugin_fingerprint_line, plugin_signature_invalid_detail,
+    vspace,
 };
 
 /// 사유별 (라벨 키, 설명 키). 색은 `AttentionKind::is_danger` 로 분기.
@@ -309,10 +309,16 @@ fn draw_reason_detail(ui: &mut egui::Ui, th: &theme::Theme, entry: &AttentionEnt
         AttentionKind::UnknownKey | AttentionKind::SignatureInvalid => {
             mono_header(ui, "plugins.attn_signature");
             vspace(ui, th.spacing_xs);
-            // 서명 무효는 fingerprint가 가리킬 서명 자체가 깨졌으므로 줄을 두지 않는다.
-            if entry.kind == AttentionKind::UnknownKey
-                && let Some(fp) = &entry.fingerprint
-            {
+            // 서명 무효는 fingerprint가 가리킬 서명 자체가 깨졌으므로 줄을 두지 않고
+            // 고정 설명과 실패 원인을 둔다.
+            if entry.kind == AttentionKind::SignatureInvalid {
+                plugin_signature_invalid_detail(
+                    ui,
+                    th,
+                    t("plugins.attn_sig_invalid_note"),
+                    entry.cause.as_deref(),
+                );
+            } else if let Some(fp) = &entry.fingerprint {
                 fingerprint_line(ui, th, fp);
             }
         }
@@ -341,38 +347,15 @@ fn draw_reason_detail(ui: &mut egui::Ui, th: &theme::Theme, entry: &AttentionEnt
     }
 }
 
-/// fingerprint 라벨, 값, 복사 IconButton을 한 줄에 그린다.
-/// 값이 없으면 호출하지 않으므로 복사 버튼에는 disabled 상태가 없다.
+/// fingerprint 라벨, 줄인 값, 복사 IconButton을 한 줄에 그린다. 툴팁과 복사는 전체 값이다.
 pub(super) fn fingerprint_line(ui: &mut egui::Ui, th: &theme::Theme, fingerprint: &str) {
-    // 라벨이 버튼보다 먼저 배치되므로 줄 높이를 버튼 높이로 먼저 잡아야 세로 가운데가 맞는다.
-    ui.allocate_ui_with_layout(
-        egui::vec2(ui.available_width(), ControlSize::Sm.height(th)),
-        egui::Layout::left_to_right(egui::Align::Center),
-        |ui| {
-            ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
-            ui.label(
-                egui::RichText::new(t("plugins.attn_fingerprint"))
-                    .monospace()
-                    .size(th.font_size_caption.value())
-                    .color(egui::Color32::from(th.text_secondary())),
-            );
-            ui.label(
-                egui::RichText::new(fingerprint)
-                    .monospace()
-                    .size(th.font_size_caption.value())
-                    .color(egui::Color32::from(th.text_muted())),
-            );
-            if IconButton::new()
-                .variant(IconButtonVariant::Ghost)
-                .size(ControlSize::Sm)
-                .show(ui, th, &|ui, rect, c| {
-                    icons::COPY.image(rect.width(), c).paint_at(ui, rect);
-                })
-                .on_hover_text(t("plugins.attn_copy_fingerprint"))
-                .clicked()
-            {
-                ui.ctx().copy_text(fingerprint.to_owned());
-            }
+    plugin_fingerprint_line(
+        ui,
+        th,
+        &PluginFingerprintLineView {
+            label: t("plugins.attn_fingerprint"),
+            value: fingerprint,
+            copy_tooltip: t("plugins.attn_copy_fingerprint"),
         },
     );
 }

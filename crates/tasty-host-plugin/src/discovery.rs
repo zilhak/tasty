@@ -104,6 +104,8 @@ pub struct RejectedPlugin {
     pub permissions_added: Vec<String>,
     /// PermissionsChanged 일 때 더 이상 쓰지 않는 권한.
     pub permissions_removed: Vec<String>,
+    /// SignatureInvalid 일 때 서명 검증이 실패한 원인(`SigVerifyError` 의 표시 문자열).
+    pub cause: Option<String>,
 }
 
 /// plugin 이 자동 로드에서 거부된 사유. `bundle_sig::TrustDecision` 을 UI 친화적
@@ -141,7 +143,7 @@ fn trust_outcome(dir: &std::path::Path, manifest: &Manifest) -> TrustOutcome {
     #[cfg(not(debug_assertions))]
     {
         use crate::bundle_sig::{TrustDecision, UntrustedReason, verify_bundle_signature};
-        let mk = |reason, fingerprint, added: Vec<String>, removed: Vec<String>| {
+        let mk = |reason, fingerprint, added: Vec<String>, removed: Vec<String>, cause| {
             TrustOutcome::Rejected(RejectedPlugin {
                 id: manifest.id.clone(),
                 name: manifest.name.clone(),
@@ -152,6 +154,7 @@ fn trust_outcome(dir: &std::path::Path, manifest: &Manifest) -> TrustOutcome {
                 fingerprint,
                 permissions_added: added,
                 permissions_removed: removed,
+                cause,
             })
         };
         match verify_bundle_signature(dir) {
@@ -169,6 +172,7 @@ fn trust_outcome(dir: &std::path::Path, manifest: &Manifest) -> TrustOutcome {
                         Some(fingerprint),
                         added,
                         removed,
+                        None,
                     )
                 }
                 UntrustedReason::UnknownKey => mk(
@@ -176,11 +180,18 @@ fn trust_outcome(dir: &std::path::Path, manifest: &Manifest) -> TrustOutcome {
                     Some(fingerprint),
                     vec![],
                     vec![],
+                    None,
                 ),
             },
             Err(e) => {
                 tracing::warn!("plugin '{}' signature check failed: {e}", manifest.id);
-                mk(RejectionReason::SignatureInvalid, None, vec![], vec![])
+                mk(
+                    RejectionReason::SignatureInvalid,
+                    None,
+                    vec![],
+                    vec![],
+                    Some(e.to_string()),
+                )
             }
         }
     }
