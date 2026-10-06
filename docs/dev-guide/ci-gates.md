@@ -466,7 +466,7 @@ cargo check -p tasty-doc-guards --all-targets --target x86_64-pc-windows-msvc
 새 실행을 만들기 전에 기존 jobs와 steps 로그로 시간을 확인한다.
 
 `fd budget`은 soft 상한이 4096 미만이면 실패하며 상한을 변경하지는 않는다.
-`test_state()`는 실제 PTY와 자식 셸을 띄우므로 fd 수요를 별도로 확인해야 한다.
+실제 PTY와 자식 셸을 띄우는 시험(저널·PTY 하네스)의 fd 수요는 별도로 확인해야 한다. 공유 픽스처 `test_state()`는 PTY를 열지 않는다([유닛 테스트 격리](unit-test-isolation.md) §8).
 2026-09-06 run 33994212447에서 macOS soft 상한은 10240이었다. 당시 Linux 테스트의
 최고 fd는 기본 병렬도 966, threads=3에서 1157이었다. 이는 서로 다른 OS의 측정이며
 macOS의 실제 여유를 증명하지 않는다. 병렬도를 줄이면 fd가 반드시 감소한다는 근거도 아니다.

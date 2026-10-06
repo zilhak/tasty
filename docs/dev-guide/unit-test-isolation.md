@@ -333,23 +333,29 @@ gh api "repos/<owner>/<repo>/actions/jobs/<job_id>/logs"
 두 feature 조합에서 검사하려면 각각 `-- --list`로 이름을 찾고 실제 실행 로그도 읽는다.
 목록 조회는 시험 실행이 아니다. 패키지·타깃 경계를 남겨 같은 이름을 합치지 않는다.
 
-## 8. 공유 픽스처 `test_state()` 는 **진짜 프로세스를 띄운다**
+<a id="8-공유-픽스처-test_state-는-진짜-프로세스를-띄운다"></a>
+<a id="그-spawn-을-건너뛰는-길"></a>
 
-`src/state/tests.rs` 의 `test_state()` / `test_state_with_memory()` 는 유닛 테스트가
-`MainViewState` + `EngineSession` 한 쌍을 얻는 표준 통로다. Session 소유자는 시험이 끝날 때까지
-유지하고 `borrow_mut()`로 구조·실행 자원을 대여한다. 그 안에서 `EngineSession::new` 이 도는데,
-이 생성자는 **기본 워크스페이스를 만들면서 실제 PTY 를 열고 실제 셸을 fork 한다**
-(`spawn_shell_terminal` → `tasty_terminal::spawn_terminal` → `portable_pty` →
-`std::process::Command::spawn`).
+## 8. 공유 픽스처 `test_state()` 는 프로세스를 띄우지 않는다
 
-그러니 이 픽스처를 쓰면 그 시험은 **파일 몇 개를 읽는 시험이 아니라 프로세스를 하나
-띄우는 시험**이다. 따라오는 것:
+`src/state/tests.rs` 의 `test_state()` · `test_state_with_memory()` · `test_mirror_state()` ·
+`test_state_from_model()` 는 유닛 테스트가 `RequestContext` + `EngineSession` 한 쌍을 얻는
+표준 통로다. Session 소유자는 시험이 끝날 때까지 유지하고 `borrow_mut()`로 구조·실행 자원을
+대여한다. 네 함수는 같은 `state_fixture` 로 합류한다.
 
-- 자식 셸 프로세스 하나와 그 PTY(master `/dev/ptmx` + slave `/dev/pts/N`).
-- PTY마다 raw reader/writer worker. child 종료는 Pty에서 관측하며 정상 Drop의 유예·회수는 별도 reaper에서 처리한다.
-- `std::process::Command::spawn` 이 exec 결과를 부모에게 알리려고 내부에서 만드는
-  AF_UNIX SEQPACKET socketpair 한 쌍. 이 spawn 경로에서 관측할 수 있는 보조 지표다.
-  아래 명령으로 소켓 생성 횟수를 세되, 실제 spawn 호출과 대조해 해석한다.
+- 엔진은 `EngineSession::new_with_ids_and_settings` 로 만든다. 서비스와 자원 소유자만
+  할당하고 구조나 PTY 는 만들지 않는다. 시험 빌드에서는 생성 중에 `IsolatedHome` 을 잡는다.
+- 구조는 canonical 사실로 넣는다. 카테고리·워크스페이스·탭과 terminal surface 하나의
+  `DomainEvent` 로 만든 `JournalModel`(또는 `test_state_from_model` 이 받은 모델)을
+  `projection::bootstrap::initialize` 로 투영한다. `test_mirror_state()` 는 mirror
+  워크스페이스를 넣는다.
+- terminal surface 에는 `Terminal::new_detached` 를 붙인다. PTY·자식 프로세스·reader
+  스레드가 없는 터미널이다. `empty` surface 는 `EmptySurface` 를 받고, 그 밖의 kind 값은
+  시험이 직접 설치한다.
+- WebView kind 와 오버레이 등록(`markdown`)은 플러그인 프로세스 없이 등록한다.
+
+실제 셸·PTY 를 실행하는 시험은 이 픽스처가 아니라 저널·PTY 하네스를 쓴다. 예를 들어
+`runtime::journal_product` 의 준비 시험은 `effect_runner::prepare` 로 `/bin/sh` 를 띄운다.
 
 <a id="몇-번-띄우는지는-이렇게-센다"></a>
 <a id="안-쟀다--그-총수의-귀속-그리고-재려면-무엇이-필요한가"></a>
@@ -358,15 +364,21 @@ gh api "repos/<owner>/<repo>/actions/jobs/<job_id>/logs"
 
 ### 프로세스 수와 fd 사용량을 측정한다
 
+어떤 시험이 프로세스나 PTY 를 여는지는 이름이나 픽스처로 짐작하지 않고 실행해서 센다.
+
 ```bash
 cargo test -p tasty --lib --no-run
-strace -f -e trace=socketpair -o /tmp/sp.txt <테스트 바이너리>
+strace -f -e trace=execve,socketpair,openat -o /tmp/sp.txt <테스트 바이너리> --exact <시험 이름>
+grep -c 'execve(' /tmp/sp.txt
 grep -c 'socketpair(AF_UNIX' /tmp/sp.txt
+grep -c ptmx /tmp/sp.txt
 ```
 
-socketpair 수는 현재 실행 경로의 보조 지표다. 다른 소켓 사용과 프로세스 생성 방식을
-구분하지 않으므로 일반적인 spawn 총수와 같다고 단정하지 않는다.
-직접 spawn 경로를 계측하거나 호출 스택과 대조해 지표가 맞는지 확인한다.
+`execve` 첫 줄은 시험 바이너리 자신이다. `socketpair` 는 `std::process::Command::spawn` 이
+exec 결과를 알리려고 만드는 AF_UNIX SEQPACKET 쌍을 포함하는 보조 지표이고, `ptmx` 는 PTY
+master 를 연 횟수다. 다른 소켓 사용과 프로세스 생성 방식을 구분하지 않으므로 일반적인
+spawn 총수와 같다고 단정하지 않는다. 직접 spawn 경로를 계측하거나 호출 스택과 대조해 지표가
+맞는지 확인한다. `--exact` 에 넘긴 이름이 비면 전체가 돌므로 test result 줄의 수를 확인한다.
 
 어느 시험이 얼마나 만드는지 찾으려면 전체 이름을 기준으로 부분집합을 나눠 비교한다.
 필터가 겹치거나 빠지지 않았는지 확인한다. 공유 초기화와 실행 순서 때문에 부분 실행의 합이
@@ -375,16 +387,6 @@ socketpair 수는 현재 실행 경로의 보조 지표다. 다른 소켓 사용
 총 spawn 수와 동시에 열린 fd의 최댓값은 다르다. 병렬도를 달리해 직접 실행한 PID의
 fd 수와 종류를 비교한다. 폴링은 짧게 열린 fd를 놓칠 수 있으며 openat/close만 추적해도
 socket·pipe·dup으로 만든 fd를 모두 재구성할 수는 없다. 사용한 관측 범위를 함께 기록한다.
-
-### 그 spawn 을 건너뛰는 길
-
-생성자 안에는 있다 — `pending_layout_restore` 가 차 있으면 기본 워크스페이스를 안 만들고,
-따라서 셸도 안 띄운다. 그 자리를 채우는 것은 `restore_layout` 설정이 켜져 있고 `layout_slot`
-이 실제로 읽히는 경우뿐이다.
-
-**그러나 테스트에서 닿는 길은 아니다.** `EngineSession::new` 은 `layout_slot` 에 `None` 을
-넘기므로 그 가지가 아예 안 돈다. 지금 유닛 테스트가 이 spawn 을 피하는 수단은 **없다** —
-`test_state()` 를 안 쓰는 것 말고는.
 
 ### 픽스처의 ID는 실행 순서에 따라 달라진다
 
@@ -402,9 +404,9 @@ socket·pipe·dup으로 만든 fd를 모두 재구성할 수는 없다. 사용�
 
 ### 왜 이것이 격리 문서에 있나
 
-§7 형태 B(프로세스 밖 OS 자원)의 모집단이 눈에 보이는 것보다 넓기 때문이다. PTY·자식
-프로세스를 다루는 시험만 그 자원을 잡는 것이 아니라, **이 픽스처를 쓰는 모든 시험**이 잡는다.
-어떤 시험이 그 자원을 만지는지 이름으로 짐작하면 틀린다 — `test_state()` 를 부르는지로 본다.
+§7 형태 B(프로세스 밖 OS 자원)의 모집단은 픽스처 이름으로 정해지지 않는다. `test_state()` 를
+쓰는 시험은 PTY 나 자식 프로세스를 잡지 않고, 저널·PTY 하네스나 `tasty_terminal` 의 spawn
+경로를 부르는 시험이 잡는다. 어떤 시험이 그 자원을 만지는지는 위 측정으로 확인한다.
 
 ## 실패가 실행 순서와 부하에 따라 달라질 때
 
