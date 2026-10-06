@@ -8,8 +8,8 @@ use tasty_ui_widgets::Spinner;
 use crate::catalog::icons;
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
-/// chrome 타일 폭.
-const TILE_W: LogicalPx = LogicalPx(240.0);
+/// chrome 타일 폭(시안 `HtmlTile` width 220).
+const TILE_W: LogicalPx = LogicalPx(220.0);
 /// chrome 타일 높이.
 const TILE_H: LogicalPx = LogicalPx(150.0);
 
