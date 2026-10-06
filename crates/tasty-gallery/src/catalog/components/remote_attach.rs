@@ -213,13 +213,16 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
 
 pub fn draw_states(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
-        for state in [
-            RaState::Initial,
-            RaState::Connecting,
-            RaState::Error,
-            RaState::Empty,
+        for (caption, state) in [
+            ("initial — nothing picked", RaState::Initial),
+            ("connecting", RaState::Connecting),
+            ("error — retry", RaState::Error),
+            (
+                "empty — reachable, no workspaces (list path)",
+                RaState::Empty,
+            ),
         ] {
-            spec::wrap_item(ui, |ui| ra_card(ui, theme, state));
+            spec::cluster(ui, theme, caption, |ui| ra_card(ui, theme, state));
         }
     });
 
@@ -235,7 +238,7 @@ pub fn draw_states(ui: &mut egui::Ui, theme: &Theme) {
             ("error", "danger warn glyph + reason + Retry"),
             (
                 "empty",
-                "list path — caps header + new row (pre-selected) + one muted line",
+                "caps header + pre-selected '+ New workspace' row + one muted line · Create & connect enabled",
             ),
             ("center", "flex-centered, gap sm, padding xl/lg"),
         ],
