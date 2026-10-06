@@ -66,6 +66,16 @@ POSIX는 `if [ -n "$TASTY_SURFACE_ID" ]; then … || true; fi`로 Tasty 안에�
   일반 질문(`request_user_input` 등)의 입력 대기는 이 훅의 대상이 아니다.
   Codex의 작업 완료 전략은 `needs_input`을 성공 종료 상태로 사용하지 않는다.
 
+### agent task 턴 보고
+
+훅은 [agent task](../../dev-guide/agent-runner.md#agent-task)의 턴 경계를 `agent.task_turn_report`(`provider: "codex"`)로 호스트에 알린다. `terminal.set_state` 보다 먼저 보낸다. 호스트는 그 surface 에 묶인 agent task 회차가 있을 때만 적용한다. 보고 실패는 경고 로그만 남긴다. 변환은 `task_turn.rs` 에 있다.
+
+| 훅 token | 보고 |
+|---|---|
+| `prompt-submit` | `turn_started` |
+| `stop` | `turn_ended` + `final_answer`(stdin `last_assistant_message`, `--last-assistant-message` 로 받는다) |
+| `interrupt` | `turn_ended` + `error: "interrupted"` |
+
 ### 자식 상태 알림
 
 spawn과 tell은 필요한 호스트 호출의 응답을 받은 뒤 반환하며 자식 작업 완료까지 기다리지 않는다. `codex-idle`, `needs-input`, `process-exit` once 훅을 등록한다. 같은 부모·대상의 완료 훅 그룹(명령 앞부분 `tasty codex notify-caller --caller <부모> --target <대상> --kind `)이 이미 있으면 먼저 지우고 등록하므로, tell을 반복하거나 spawn 뒤 tell해도 부모마다 그룹은 하나이고 한 번의 상태 변경에 완료 줄은 한 줄이다. 다른 부모의 그룹은 그대로 둔다. 하나가 실행되면 notify-caller가 상태 변경 로그를 쓰고 같은 command의 나머지 훅을 정리한다.

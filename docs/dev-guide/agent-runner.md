@@ -52,6 +52,7 @@ state 전이는 `tasty-agent` 의 `is_valid_transition` 표를 따른다. `Ready
 | `Custom { ipc_method, params, poll: Some(PollSpecRef::Named{strategy}) }`, push-kind | `dispatch_push_strategy` — 원 dispatch `params.surface_id` 대상 surface 에 `notify_via` 훅 핸들러를 `hook.set(..., once: true)` 로 1 회성 등록해 `hook_id` 획득 → `RunnerContext.hook_task_waits` 에 `(workspace_id, task_id, deadline)` 등록 → `AwaitExternal`. `surface_id` param 이 없으면 `PermanentFail` | 항상 Active(계약) — 종결은 `PendingHostEvent::HookFired` 소비부(`TaskService::resolve_hook_task_wait`, exit code 로 성공/실패 분기)와 timeout 안전망(`runner_thread::expire_overdue_hook_waits`)이 담당 |
 | `Reduce { inputs, strategy }` | input 결과 collect → `reduce_with_custom` → `ReduceImmediate`. `inputs` 는 Task DAG 의 암묵적 의존성(`TaskGraph`, `crates/tasty-agent/src/task/graph.rs`)이라 dispatch 시점엔 이미 전부 종결(terminal) 상태다 — `Ready` 로 올라오기 전에 readiness 평가가 그 종결을 강제한다 | 즉시 Done |
 | `WaitBarrier { name }` | `BarrierPoll` | `Open`→Active / `Closed`→Done / `TimedOut`→Failed |
+| `Agent { provider, session, instruction }` | 새 세션: `<provider>.spawn` 후 턴 표에 묶음 → `AgentTurn`. 기존 세션: 지시를 handle 의 `pending_instruction` 에 담은 `AgentTurn` | 지시를 아직 안 보냈으면 세션이 idle 이고 묶을 수 있을 때 `<provider>.tell`. 그 뒤 턴 표의 종료 보고·`<provider>.state` 로 판정(아래 §agent task) |
 
 > 자식 에이전트 완료 판정(`claude.spawn`/`codex.spawn` · `claude.tell`/`codex.tell`)과 셸 명령 완료(`host/command-completed`)가 이 범용 `Custom { poll }` 메커니즘의 실사용자다 — 코어는 특정 에이전트를 모른 채 임의 IPC dispatch→폴링/훅-보고를 표현한다. CLI auto_wait(`AutoWaitDecl`/`PollingDecl`)와 동형 스펙으로 폴링 semantics 를 통일한다.
 >
@@ -521,7 +522,7 @@ tasty agent task-purge --workspace-id 1 --states succeeded,failed --older-than-m
 
 task 는 선택적으로 타입 계약(`TaskContract`)을 가진다. 계약이 없는 task 가 v1 이며, 결과 형식·reducer 동작·저장 형식이 바뀌지 않는다. v2 task 는 IPC `agent.task_graph_submit`(CLI `tasty agent task-graph-submit`)으로 그래프 단위로 만들거나 Rust API `TaskStore::create_typed` 로 하나씩 만든다. `task_create` 는 계약을 받지 않는다. 결정 근거는 [ADR-0068](../adr/0068-typed-task-contracts-live-in-a-separate-record-namespace.md).
 
-코드: 타입 `crates/tasty-agent/src/task/types.rs`, 계약·결과 `crates/tasty-agent/src/task/contract.rs`, 입력 binding `crates/tasty-agent/src/task/binding.rs`, 그래프 제출 `crates/tasty-agent/src/task/store/graph_submit.rs`, 실행 시 입력 해석 `crates/tasty-task-runtime/src/runner_host/typed_inputs.rs`, 회차 완료 기록과 handle 의 회차 `crates/tasty-task-runtime/src/runner_host/attempt_record.rs`, v2 reduce `crates/tasty-agent/src/reducer.rs::reduce_typed`, 후처리 계약·결과 확정 `crates/tasty-agent/src/task/postprocess.rs`, 후처리 단계의 완료 기록 `crates/tasty-agent/src/task/store/postprocess.rs`, 후처리 프로세스 실행 `crates/tasty-task-runtime/src/runner_host/postprocess.rs`, 전이와 경로 선택 `crates/tasty-agent/src/task/route.rs`, 자식 환경 `crates/tasty-agent/src/child_env.rs`.
+코드: 타입 `crates/tasty-agent/src/task/types.rs`, 계약·결과 `crates/tasty-agent/src/task/contract.rs`, 입력 binding `crates/tasty-agent/src/task/binding.rs`, 그래프 제출 `crates/tasty-agent/src/task/store/graph_submit.rs`, 실행 시 입력 해석 `crates/tasty-task-runtime/src/runner_host/typed_inputs.rs`, 회차 완료 기록과 handle 의 회차 `crates/tasty-task-runtime/src/runner_host/attempt_record.rs`, v2 reduce `crates/tasty-agent/src/reducer.rs::reduce_typed`, 후처리 계약·결과 확정 `crates/tasty-agent/src/task/postprocess.rs`, 후처리 단계의 완료 기록 `crates/tasty-agent/src/task/store/postprocess.rs`, 후처리 프로세스 실행 `crates/tasty-task-runtime/src/runner_host/postprocess.rs`, 전이와 경로 선택 `crates/tasty-agent/src/task/route.rs`, 자식 환경 `crates/tasty-agent/src/child_env.rs`, agent task 계약 `crates/tasty-agent/src/task/agent.rs`, 턴 표 `crates/tasty-task-runtime/src/agent_turns.rs`, agent task 실행 `crates/tasty-task-runtime/src/runner_host/agent.rs`.
 
 ### 계약 형식
 
@@ -564,8 +565,9 @@ task 는 선택적으로 타입 계약(`TaskContract`)을 가진다. 계약이 �
 | `custom` | `json` | IPC 응답(최종 응답) |
 | `wait_barrier` | `unit`(다시 선언 불가) | 확정된 null |
 | `reduce` | 전략별(아래) | reducer 값 |
+| `agent` | `string` | 턴의 최종 답변. string 이 아닌 출력은 명시 제출 값(아래 §agent task) |
 
-결과는 `typed_result` 에 저장한다: `has_output`·`output`(최종 출력), `raw`(`exit_code`, `execution`, 후처리가 있으면 `postprocess`), `artifacts`, `error`(`stage`: `input`·`execution`·`postprocess`·`output_validation`·`persistence`·`route`), `provenance`(`contract_version`, `kind`, `output_source`). `has_output: true` 이고 `output: null` 이면 unit 또는 nullable 출력이 확정된 것이고, `has_output: false` 는 출력이 없다는 뜻이다. v1 호환을 위해 `result` 에는 최종 출력이 `output` 으로 투영된다.
+결과는 `typed_result` 에 저장한다: `has_output`·`output`(최종 출력), `raw`(`exit_code`, `execution`, 후처리가 있으면 `postprocess`), `artifacts`, `error`(`stage`: `input`·`execution`·`postprocess`·`output_validation`·`persistence`·`route`, agent task 는 `code` 도 싣는다), `provenance`(`contract_version`, `kind`, `output_source`). `has_output: true` 이고 `output: null` 이면 unit 또는 nullable 출력이 확정된 것이고, `has_output: false` 는 출력이 없다는 뜻이다. v1 호환을 위해 `result` 에는 최종 출력이 `output` 으로 투영된다.
 
 보고된 결과는 계약에 맞춰 확정하고, 유효한 출력 없이 성공으로 가려는 v2 task 는 Failed 로 끝낸다. 러너·재시작 복구·훅 완료·훅 만료·IPC `task_set_result` 가 모두 같은 완료 경로(아래 §실행 회차와 완료)를 지나므로 완료 경로마다 따로 검사하지 않는다. 비즈니스 값(`"revise"`, `false`)은 정상 출력이다. 출력 타입에 맞지 않는 값만 `output_validation` 실패가 된다. `retry` 는 `typed_result` 를 지운다.
 
@@ -720,7 +722,9 @@ stdout 해석과 성공 판정:
 | `stdin` | `run` | `true` 면 입력 전체를 wire 형식 JSON 한 문서로 stdin 에 쓴다(int64 는 10진 문자열) |
 | `params` | `custom` | params 포인터 → 입력 포인터. params 의 그 자리에 값을 넣는다. 부모 object 는 원래 params 에 있어야 한다. 값은 내부 표현이라 int64 가 JSON 정수다. snapshot 의 `execution.params` 도 같은 JSON 정수라, 2^53 을 넘는 값은 JavaScript 같은 f64 소비자가 읽으면 바뀐다(정확한 값은 `input_snapshot.value` 의 10진 문자열) |
 
-매핑하는 입력 위치는 항상 값이 있어야 한다. `reduce`·`wait_barrier` 는 입력을 받지 않으므로 입력 스키마가 unit 이어야 한다.
+| `input_block` | `agent` | `true` 면 입력 전체를 wire 형식 JSON 블록(`Task input (JSON):` 머리말)으로 지시문 끝에 붙인다. snapshot 의 `execution.instruction` 이 실제로 보낸 지시문이다 |
+
+매핑하는 입력 위치는 항상 값이 있어야 한다. `reduce`·`wait_barrier` 는 입력을 받지 않으므로 입력 스키마가 unit 이어야 한다. unit 이 아닌 입력을 받는 `agent` 는 `input_block` 이 필요하다.
 
 ### 그래프 제출
 
@@ -796,6 +800,38 @@ v2 task 의 readiness:
 선택되지 않을 수 있는 task(전이 대상, 또는 들어오는 경로가 모두 그런 task 에서만 오는 task)의 출력을 필수 `from_task` 로 읽는 task 는, 그 원본 말고 다른 경로로도 실행될 수 있으면 제출할 때 거절한다. 대안 경로의 값은 `one_of` 로, 없어도 되는 값은 optional·`default` 로 적는다. 같은 갈래 안의 사슬처럼 들어오는 경로가 그 원본뿐이면 받는다.
 
 DAG 요약(`agent.dag_list`·`agent.dag_get`)의 `state_counts.not_selected` 는 `skipped` 중 선택되지 않은 수다. `recovered` 는 `failed` 중 같은 그룹의 fallback 이 대신 성공한 수다(fallback 의 fallback 을 따라간다). 성공·선택되지 않음·fallback 이 대신한 실패만 있으면 `rollup_state` 는 `succeeded` 다. v1 task 의 fallback 에도 같다. `agent.task_graph` 는 전이를 `kind: "transition"` 간선으로 내고 `selection`(`pending`·`selected`·`not_selected`·`unavailable`)을 싣는다. 노드는 `skip` 을 싣고, DOT 형식은 전이 간선에 선택 상태를 라벨로 붙인다. DAG 화면은 전이 간선을 depends_on 과 같은 모양으로 그린다.
+
+### agent task
+
+`{"kind": "agent", "provider": "claude"|"codex", "workspace_id": N, "session": ..., "instruction": "...", "timeout_ms"?: N}` 는 provider 세션에 지시 하나를 보내고 그 턴의 끝을 task 결과로 만든다. v2 계약이 필요하다(`task_create` 는 `-32602`). 근거는 ADR-0078.
+
+| `session` | 동작 |
+|---|---|
+| `{"kind": "new", "parent_surface": N, "cwd"?: "..."}` | `<provider>.spawn` 으로 자식을 띄우고 지시를 첫 프롬프트로 준다. 그 자식의 첫 턴이 이 회차의 턴이다 |
+| `{"kind": "existing", "surface_id": N}` | 세션이 idle 이고 다른 task 가 쥐지 않았을 때만 `<provider>.tell` 로 보낸다. 사용자의 턴이 진행 중이거나 입력을 기다리면 끼어들지 않고 기다린다(`timeout_ms` 가 지나면 `timed_out`) |
+
+턴 귀속은 메모리의 턴 표(`AgentTurns`)가 한다. surface 하나에 회차 하나만 묶이므로 같은 세션의 agent task 는 차례로 실행된다. provider 플러그인은 훅에서 `agent.task_turn_report` 로 턴 시작(`turn_started`)과 끝(`turn_ended`: `final_answer` 또는 `error`)을 알린다. 이 메서드는 `agent` 권한을 가진 플러그인 중 그 provider namespace 를 소유한 플러그인만 부를 수 있다(그 밖의 호출은 `-32001`). 기존 세션은 시작 보고를 받은 뒤의 종료만 이 회차의 것으로 본다(앞선 사용자 턴의 늦은 종료를 섞지 않는다). 다른 provider 의 보고와 종결 뒤 보고는 무시한다.
+
+결과:
+
+- 출력 타입이 `string`(기본)이면 최종 답변이 출력이다(`provenance.output_source`: `agent.final_answer`).
+- 그 밖의 타입은 같은 회차에 명시 제출한 값이 출력이다(`agent.submitted`). 지시문 끝에 제출 방법(`tasty agent task-submit --workspace-id … --id … --attempt-id … --output '<JSON>'`)과 출력 스키마를 붙인다. 후처리가 있으면 제출이 필요 없고 후처리가 받는 실행 결과에 최종 답변이 든다.
+- `agent.task_submit_result` 는 값이 도착할 때 출력 타입으로 검사하고(실패하면 `-32602` 와 `output_validation`) 턴이 끝날 때 결과로 확정한다. 응답 `final: false` 는 task 가 아직 끝나지 않았다는 뜻이다. 같은 값을 다시 내면 `duplicate: true`, 거절은 `-32014` 와 `error.data.reason`: `not_running`·`stale_attempt`·`conflict`(같은 회차의 다른 값)·`turn_ended`·`not_the_session`(세션 토큰의 agent 가 그 task 의 세션이 아님).
+- 원본 보고(`provider`·`surface_id`·`final_answer`·`submitted`)는 `raw.execution` 에 남는다.
+
+| 상황 | 결과 |
+|---|---|
+| 턴이 끝났는데 필요한 결과가 없다(제출 없음, 최종 답변 없음) | Failed, `code: result_missing`, stage `output_validation` |
+| 턴이 오류로 끝났다(Claude StopFailure, Codex interrupt) | Failed, `agent_turn_error` |
+| 세션이 끝났다(`exited`) | Failed, `agent_exited` |
+| `timeout_ms` 초과 | Failed, `timed_out` |
+| provider 를 호출할 수 없다, 재시작으로 턴 귀속을 잃었다 | Failed, `agent_unavailable` |
+| 입력 대기(`needs_input`) | Running 유지. 회차에 `agent: {provider, surface_id, awaiting_input_since}` 를 남기고 `task_get` 의 `phase` 는 `awaiting_input`(그 밖의 Running agent task 는 `executing`) |
+| idle 인데 종료 보고가 없다 | Running 유지. 성공으로 보지 않는다 |
+
+실패 코드는 `typed_result.error.code` 다. 업무 값 `"revise"` 같은 출력은 성공이다. 취소·실패·종결 때 턴 묶음만 풀고 세션은 닫지 않는다. 턴 표는 영속하지 않으므로 호스트가 재시작되면 실행 중이던 agent task 는 `agent_unavailable` 로 끝난다.
+
+세션은 provider 의 spawn 이 만드는 터미널 surface 이고, 그 셸 환경은 터미널 규칙을 따른다. 위 §runner 자식의 환경의 규칙은 러너가 직접 띄우는 프로세스에만 적용된다.
 
 ### v2 reduce
 

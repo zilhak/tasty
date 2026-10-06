@@ -234,7 +234,7 @@ if [ -n "$TASTY_SURFACE_ID" ]; then tasty claude hook <token> || true; fi
 
 > **기존 사용자는 `tasty claude install` 재실행이 필요하다.** 명령 문자열은 사용자의 `settings.json` 에 이미 기록돼 있어, plugin 을 업데이트해도 옛 문자열 그대로다. 재실행하면 marker(`tasty claude hook <token>`) 가 일치하는 기존 entry 를 찾아 **제자리 갱신**하므로 entry 가 중복되지 않는다. 새로 넣은 항목이 없어도 기존 entry 의 matcher 나 명령이 현재 값과 다르면 파일을 다시 쓰며, 응답의 `installed` 에 새로 넣은 이벤트, `updated` 에 갱신한 이벤트를 적는다. 바뀐 것이 없으면 파일을 쓰지 않는다.
 
-`session_id`/`prompt_id`/`message`/`notification_type`/`error`/`agent_id`/`background_tasks`/`tool_name`/`tool_response`/`prompt`/`source`/`reason` 같은 이벤트별 가변 데이터는 명령 인자가 아니라 **stdin JSON**으로 들어온다 — 매니페스트 `hook` cli 항목이 `stdin_json = true`를 선언하고, `--session`/`--prompt-id`/`--message`/`--notification-type`/`--error`/`--agent-id`/`--background-tasks`/`--waiting-on-background-work`/`--tool-name`/`--tool-response`/`--prompt`/`--source`/`--reason` 플래그가 각각 `stdin_field`로 stdin JSON에서 자동 채워진다. 공식 hooks 문서와 실측 payload에는 없지만 `waiting_on_background_work`도 `--waiting-on-background-work`로 방어적으로 읽는다. `--background-tasks`·`--tool-response`와 이 인자는 문자열로 선언해 stdin의 배열·객체·bool 값을 그대로 넘긴다(Claude Code가 hook 실행 시 stdin으로 JSON payload를 준다). POSIX 셸 구문 1종만 발행한다 — [codex](../codex/index.md)처럼 Windows PowerShell 분기는 없다.
+`session_id`/`prompt_id`/`message`/`notification_type`/`error`/`agent_id`/`background_tasks`/`tool_name`/`tool_response`/`prompt`/`source`/`reason`/`last_assistant_message` 같은 이벤트별 가변 데이터는 명령 인자가 아니라 **stdin JSON**으로 들어온다 — 매니페스트 `hook` cli 항목이 `stdin_json = true`를 선언하고, `--session`/`--prompt-id`/`--message`/`--notification-type`/`--error`/`--agent-id`/`--background-tasks`/`--waiting-on-background-work`/`--tool-name`/`--tool-response`/`--prompt`/`--source`/`--reason`/`--last-assistant-message` 플래그가 각각 `stdin_field`로 stdin JSON에서 자동 채워진다. 공식 hooks 문서와 실측 payload에는 없지만 `waiting_on_background_work`도 `--waiting-on-background-work`로 방어적으로 읽는다. `--background-tasks`·`--tool-response`와 이 인자는 문자열로 선언해 stdin의 배열·객체·bool 값을 그대로 넘긴다(Claude Code가 hook 실행 시 stdin으로 JSON payload를 준다). POSIX 셸 구문 1종만 발행한다 — [codex](../codex/index.md)처럼 Windows PowerShell 분기는 없다.
 
 | Claude Code 이벤트 | matcher | tasty hook token | `terminal.set_state` | `surface.fire_hook` | surface meta | `surface.completion` kind |
 |---|---|---|---|---|---|---|
@@ -258,6 +258,16 @@ if [ -n "$TASTY_SURFACE_ID" ]; then tasty claude hook <token> || true; fi
 `UserPromptSubmit`은 child가 2번째 이후 prompt를 받을 때 직전 `Stop` hook이 남긴 `idle=true` 잔재를 지우는 데 필수다 — 미등록 시 실제로는 active인 child를 idle로 오보고하는 상태 버그가 생긴다.
 `PreToolUse`/`PostToolUse`만 matcher `AskUserQuestion`으로 좁혀 등록돼 그 툴 호출에만 발생한다(나머지 7개는 matcher `""`로 이벤트 전체를 받는다) — 실측(실제 Claude Code를 띄워 hook stdin payload를 덤프해 확인) 결과 `AskUserQuestion` 답변은 `UserPromptSubmit`을 발생시키지 않으므로(질문/답변이 같은 prompt turn 안의 tool 상호작용이라 새 프롬프트로 집계되지 않음), 기존 `UserPromptSubmit`(→active)만으로는 이 케이스의 needs_input 해제 시점을 잡을 수 없다.
 `PreToolUse`가 질문 UI가 뜨기 **전에** 발생해(`tool_input.questions` 포함) needs_input을 켜고, `PostToolUse`가 답변 즉시(관찰상 `duration_ms: 0`) 그 짝으로 active로 되돌린다 — `needs_input`은 이제 `Notification`과 `PreToolUse` 두 경로에서 나온다.
+
+#### agent task 턴 보고
+
+훅은 [agent task](../../dev-guide/agent-runner.md#agent-task)의 턴 경계를 `agent.task_turn_report`(`provider: "claude"`)로 호스트에 알린다. 상태 갱신보다 먼저 보낸다. 호스트는 그 surface 에 묶인 agent task 회차가 있을 때만 적용하므로 일반 세션에는 영향이 없다. 보고 실패는 경고 로그만 남기고 훅의 다른 처리를 막지 않는다. 변환은 `task_turn.rs` 에 있다.
+
+| 훅 token | 보고 |
+|---|---|
+| `prompt-submit` | `turn_started` |
+| `stop` | `turn_ended` + `final_answer`(stdin `last_assistant_message`). 백그라운드 작업을 기다리는 Stop 과 게이트가 보류한 Stop 은 턴을 끝내지 않으므로 보고하지 않는다. 보류가 나중에 풀려 턴이 끝나는 경로(다음 프롬프트·게이트 판정)는 보고하지 않으므로, Stop 게이트를 붙인 세션의 agent task 는 그 턴의 끝을 받지 못하고 `timeout_ms` 로 끝난다 |
+| `stop-failure` | `turn_ended` + `error`(stdin `error`, 없으면 `unknown`) |
 
 #### Notification 유형별 상태
 

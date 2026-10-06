@@ -1,4 +1,4 @@
-<!-- source-hash: 3b848aa766db -->
+<!-- source-hash: 33e0476cc16c -->
 <a id="task-dag"></a>
 
 # Task workflows (DAG)
@@ -139,6 +139,28 @@ Give a task `transitions` and it picks which tasks run next from its result. In 
 - Tasks that were not chosen, and tasks reached only through them, end as "not selected", not as failures. A task where branches meet waits only for the branches that ran. If a branch that ran fails, that failure still passes on.
 - Taking a required input from a branch that may not run is rejected when you send the graph. If each branch produces the value in a different task, take it with `one_of`. If the value may be missing, make the input field optional or give it a default.
 - A task's `route` shows the tasks it chose, and a task that was not chosen shows why in `skip`. When every task succeeded or was not selected, the DAG shows as succeeded. A failed task whose fallback succeeded in its place does not make the DAG fail.
+
+### Asking an agent and taking its answer as the result
+
+An `agent` task sends one instruction to a Claude or Codex session and takes the answer as the task's result. The result can feed the next task's input or the branch conditions above.
+
+```json
+{"id": "review",
+ "command": {"kind": "agent", "provider": "claude", "workspace_id": 2,
+             "session": {"kind": "existing", "surface_id": 12},
+             "instruction": "Review the changes on this branch",
+             "timeout_ms": 1800000},
+ "output_schema": {"type": "enum", "values": ["approve", "revise"]}}
+```
+
+- With `session` set to `{"kind": "new", "parent_surface": <surface>}`, a new session starts under that surface and gets the instruction. With `{"kind": "existing", "surface_id": <surface>}`, the instruction goes to a session that is already open.
+- An open session gets the instruction only when it is idle. If you are talking to it, the task waits until you finish, so the conversations do not mix. Tasks that use the same session run one after another.
+- Without a result type, the last answer of the turn becomes a string result.
+- With a result type, as in the example, the agent has to hand in a value with `tasty agent task-submit`. How to do that and the type are added to the end of the instruction. The value is checked right away and becomes the result when the turn ends. A verdict such as `revise` is a successful result.
+- A task that takes input adds `"input_mapping": {"input_block": true}`. The input is appended to the instruction as JSON.
+- The task fails when the turn ends without an answer, the turn ends with an error, the session ends, or `timeout_ms` passes. `task-get` shows which one happened.
+- While the agent waits for input such as a permission prompt, the task stays running and `task-get` shows a `phase: awaiting_input` line and a line like `agent session: claude surface 12, awaiting input since …`.
+- Finishing or cancelling the task does not close the session. If Tasty restarts, running agent tasks fail.
 
 ## Watching progress
 

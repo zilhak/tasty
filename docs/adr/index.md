@@ -125,6 +125,7 @@ Terminal·Pty 분리와 터미널 호환성, 입력·포커스, 점유와 원격
 | 0072 | [영속이 아닌 저장소에서는 명시 허용한 v2 그래프만 활성화한다](0072-non-durable-stores-run-typed-graphs-only-on-opt-in.md) | Accepted | 2026-10-07 | agents, tasks, dag, storage, durability |
 | 0073 | [v2 task 의 후처리 CLI 는 같은 실행 회차 안에서 실행하고 결과가 불명이면 다시 실행하지 않는다](0073-typed-task-postprocess-runs-inside-the-attempt.md) | Accepted | 2026-10-07 | agents, tasks, types, postprocess, idempotency |
 | 0075 | [v2 task 의 후속 경로는 생산자의 확정된 출력으로 고르고 고르지 않은 경로는 실패로 보지 않는다](0075-typed-task-transitions-select-paths-from-the-producer-output.md) | Accepted | 2026-10-07 | agents, tasks, types, dag, routing |
+| 0078 | [agent task 의 결과는 provider 가 보고한 턴의 끝에서 정하고 바쁜 세션에는 끼어들지 않는다](0078-agent-tasks-take-their-result-from-the-provider-turn.md) | Accepted | 2026-10-07 | agents, tasks, types, claude, codex |
 <!-- adr-rows:end agents -->
 
 ## 개발·검증·문서·배포

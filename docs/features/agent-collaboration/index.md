@@ -70,6 +70,10 @@ v2 의 int64 값은 내부에서는 정수로 들고, 직렬화할 때(저장·I
 
 #### 작업·DAG 조회
 
+#### agent task
+
+v2 `agent` task 는 Claude·Codex 세션(새로 띄우거나 이미 열린 세션)에 지시 하나를 보내고 그 턴의 끝을 결과로 받는다. 기본 출력은 최종 답변 string 이고, 다른 출력 타입은 에이전트가 같은 회차에 `agent.task_submit_result`(CLI `tasty agent task-submit`)로 낸 값이다. 제출은 도착할 때 타입을 검사하고 턴이 끝날 때 확정하며, 같은 회차의 다른 값은 거절한다. 턴 경계는 provider 플러그인이 훅에서 `agent.task_turn_report` 로 알린다. 이미 열린 세션은 idle 이고 다른 task 가 쥐지 않았을 때만 지시를 받고, 같은 세션의 task 는 차례로 실행된다. idle 만으로는 성공하지 않으며 결과 없음·턴 오류·세션 종료·시간 초과·provider 사용 불가를 `typed_result.error.code` 로 구별한다. 입력 대기는 Running 의 `awaiting_input` phase 다. task 는 세션을 닫지 않는다. 형식과 규칙은 [작업 러너 §agent task](../../dev-guide/agent-runner.md#agent-task).
+
 #### 후처리 CLI
 
 v2 run·custom task 는 계약의 `postprocess` 로 본 작업 뒤 CLI 하나를 실행해 그 stdout 을 최종 출력으로 받을 수 있다. 명령은 셸 없이 직접 실행하고, 입력 snapshot·본 작업 원본·artifact 에서 고른 값을 JSON 문서 하나로 stdin 에 쓴다. stdout 은 JSON 값 하나(선택 pointer) 또는 UTF-8 text 이고 출력 타입으로 검증한다. 후처리가 끝날 때까지 task 는 Running 이고 permit 을 쥐며 하류는 기다린다. 실패 원인(종료 코드·시작 실패·시간 초과·취소·형식 오류 등)을 구분해 기록하고, 명시한 횟수만큼 저장한 본 작업 결과로 후처리만 다시 실행한다. 시작했지만 결과를 받지 못한 실행은 재시작 뒤 다시 실행하지 않는다. `task_get` 은 이 단계의 task 에 `phase`(`postprocessing`·`retry_wait`)를 싣고, CLI `task-get` 은 단계와 실행 번호, 끝난 뒤에는 마지막 실행의 원인·종료 코드와 재시도로 넘어간 실행의 원인을 줄로 보인다. 후처리 자식은 바깥 Claude Code 세션 변수와 바깥 Tasty 인스턴스의 신원 변수를 받지 않는다. 앱을 정상 종료하면 진행 중인 후처리 그룹을 끝내고 보고를 저장할 때까지 짧게 기다린다. 형식과 규칙은 [작업 러너 §후처리 CLI](../../dev-guide/agent-runner.md#후처리-cli-postprocess).
