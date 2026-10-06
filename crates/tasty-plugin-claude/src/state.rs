@@ -1,4 +1,5 @@
 //! session-start 시각을 저장하고 stop/session-end에서 경과 시간을 계산한다.
+//! 메인 턴이 띄운 백그라운드 작업 기록도 함께 둔다.
 //! 메모리에서만 보관하므로 플러그인을 재시작하면 기록이 사라진다.
 
 use std::collections::HashMap;
@@ -16,6 +17,8 @@ pub(crate) fn lock_state(
 pub struct ClaudeState {
     /// surface → session-start 시각 (unix ms).
     wall_time_starts: HashMap<u32, u64>,
+    /// 메인 턴이 띄운 백그라운드 작업. `StopFailure` 가 대기인지 가린다.
+    pub(crate) background: crate::background_tasks::BackgroundTasks,
 }
 
 impl ClaudeState {

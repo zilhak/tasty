@@ -1,4 +1,4 @@
-<!-- source-hash: fc2f2f16ce62 -->
+<!-- source-hash: 189a55cf7aac -->
 # Working with Claude and Codex
 
 Connect Claude Code and Codex CLI to share work across several agents. One agent can launch others and receive their results, so implementation, testing, and review can run alongside each other.
@@ -17,6 +17,7 @@ tasty codex install     # add the Tasty entry to [hooks] in ~/.codex/config.toml
 - Hooks you added yourself are preserved as they are. Running it several times does not create duplicates.
 - **Run it again after updating Tasty.** The hook command string is baked into the settings file, so a reinstall is needed to pick up the new format.
 - The hook that reports a turn Claude Code ended on an API error (server overload, rate limit, authentication failure, and so on) as idle also arrives only with a reinstall. Until then such a child keeps looking "working".
+- When a child ends its turn on an API error while background work (a background shell or a background subagent) is still running, Tasty keeps it "working" until the turn that follows that work finishes. This also arrives only with a reinstall.
 - If Codex shows a `hook returned invalid ... JSON output` error, update and run `tasty codex install` again. It sets things up so Tasty's status reporting does not mix into Codex's hook response.
 - These hooks do not run when you use Claude Code outside Tasty.
 - To remove: `tasty claude uninstall` / `tasty codex uninstall`.

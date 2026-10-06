@@ -5,6 +5,7 @@
 //! 호스트 코드에 직접 의존하지 않고 `tasty-plugin-sdk`로 통신한다.
 
 mod auto_resume;
+mod background_tasks;
 mod checklist;
 mod error_scan;
 mod gate;

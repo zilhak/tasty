@@ -176,7 +176,7 @@ description = "Install tasty hooks into ~/.claude/settings.json"
 description = "Uninstall tasty hooks from ~/.claude/settings.json"
 
 [claude.cli.sub.hook]
-description = "Claude Code hook integration. Reads JSON payload from stdin (session_id, prompt_id, message, notification_type, error, agent_id, background_tasks) when invoked by Claude Code's hook system. Also reads waiting_on_background_work defensively, although neither the official hooks documentation nor observed payloads include it."
+description = "Claude Code hook integration. Reads JSON payload from stdin (session_id, prompt_id, message, notification_type, error, agent_id, background_tasks, tool_name, tool_response, prompt) when invoked by Claude Code's hook system. Also reads waiting_on_background_work defensively, although neither the official hooks documentation nor observed payloads include it."
 
 [claude.cli.sub.checklist-hook]
 description = "Stop-hook gate decision. Reads JSON payload from stdin (session_id, prompt_id, stop_hook_active, last_assistant_message); --gate selects which registered gate decides (default: continue-checklist)."
@@ -392,7 +392,7 @@ help = "Detach the child's previously attached session profile (path- or name-ba
 help = "Child permission mode: acceptEdits|auto|bypassPermissions|manual|dontAsk|plan. Passed as --permission-mode and overrides default_permission_mode for this call. If omitted, use that plugin setting; inherit or no setting adds no flag, leaving Claude Code settings in control. An explicit mode cannot be combined with --profile/--profile-file that sets permissions.defaultMode."
 
 [claude.cli.arg.hook_args.event]
-help = "Hook event name (e.g. stop, stop-failure, notification, session-end, prompt-submit, session-start, subagent-stop, pre-tool-use, post-tool-use)"
+help = "Hook event name (e.g. stop, stop-failure, notification, session-end, prompt-submit, session-start, subagent-stop, pre-tool-use, post-tool-use, background-start)"
 
 [claude.cli.arg.hook_args.surface]
 help = "Surface ID the hook is firing for (defaults to caller's TASTY_SURFACE_ID)"
@@ -420,6 +420,15 @@ help = "Background tasks still attached to the session, as a JSON array. Auto-po
 
 [claude.cli.arg.hook_args.waiting_on_background_work]
 help = "Whether the session is waiting for background work to finish (\"true\"/\"false\"). Not in the official hooks documentation (checked 2026-09-28) or in observed Claude Code 2.1.283 payloads; read defensively from stdin JSON 'waiting_on_background_work' if it ever arrives, and when present it decides instead of --background-tasks."
+
+[claude.cli.arg.hook_args.tool_name]
+help = "Tool that ran, for the background-start event. Auto-populated from stdin JSON 'tool_name' on PostToolUse. Bash and Agent (Task) can start background work."
+
+[claude.cli.arg.hook_args.tool_response]
+help = "Tool result, for the background-start event. Auto-populated from stdin JSON 'tool_response' on PostToolUse. A background Bash command carries backgroundTaskId and a background Agent carries agentId; the plugin records them so that a StopFailure while that work still runs keeps the child active."
+
+[claude.cli.arg.hook_args.prompt]
+help = "Prompt text. Auto-populated from stdin JSON 'prompt' on UserPromptSubmit. A prompt that starts with <task-notification> reports finished background work by its <task-id>."
 
 [claude.cli.arg.checklist_hook_args.surface]
 help = "Surface ID the gate is firing for, used to look up that session's goal. Defaults to the caller's TASTY_SURFACE_ID."

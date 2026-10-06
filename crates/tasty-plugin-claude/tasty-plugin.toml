@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.claude"
 name = "Claude Code"
-version = "0.1.145"
+version = "0.1.146"
 description = "Claude Code CLI integration for Tasty"
 api_version = "1"
 permissions = [
@@ -74,7 +74,7 @@ subcommands = [
     { name = "child-profile", ipc_method = "claude.child_profile", args = "child_profile_args", description = "Attach a persistent Claude session profile to a CHILD instance (resolves --child to its surface, then runs the same sequence as 'claude reboot --profile' on it). Unlike reboot, this does NOT cut off the caller's turn — only the child restarts. A notification is delivered to the caller surface when the child transitions to idle/needs_input, and once more when it exits.", description_i18n_key = "claude.cli.sub.child-profile.description" },
     { name = "install",   ipc_method = "claude.install",   args = "no_args",        description = "Install tasty hooks into ~/.claude/settings.json", description_i18n_key = "claude.cli.sub.install.description" },
     { name = "uninstall", ipc_method = "claude.uninstall", args = "no_args",        description = "Uninstall tasty hooks from ~/.claude/settings.json", description_i18n_key = "claude.cli.sub.uninstall.description" },
-    { name = "hook",      ipc_method = "claude.hook",      args = "hook_args",      stdin_json = true, description = "Claude Code hook integration. Reads JSON payload from stdin (session_id, prompt_id, message, notification_type, error, agent_id, background_tasks) when invoked by Claude Code's hook system. Also reads waiting_on_background_work defensively, although neither the official hooks documentation nor observed payloads include it.", description_i18n_key = "claude.cli.sub.hook.description" },
+    { name = "hook",      ipc_method = "claude.hook",      args = "hook_args",      stdin_json = true, description = "Claude Code hook integration. Reads JSON payload from stdin (session_id, prompt_id, message, notification_type, error, agent_id, background_tasks, tool_name, tool_response, prompt) when invoked by Claude Code's hook system. Also reads waiting_on_background_work defensively, although neither the official hooks documentation nor observed payloads include it.", description_i18n_key = "claude.cli.sub.hook.description" },
     # 전역 훅에 넣지 않고 게이트를 적용한 세션에서만 등록한다.
     # Stop payload와 --gate를 별도 인자로 받아 판정한다.
     { name = "checklist-hook", ipc_method = "claude.checklist_hook", args = "checklist_hook_args", stdin_json = true, description = "Stop-hook gate decision. Reads JSON payload from stdin (session_id, prompt_id, stop_hook_active, last_assistant_message); --gate selects which registered gate decides (default: continue-checklist).", description_i18n_key = "claude.cli.sub.checklist-hook.description" },
@@ -211,7 +211,7 @@ flags = [
 
 [contributes.cli.arg_groups.hook_args]
 positional = [
-    { name = "event", type = "string", required = true, help = "Hook event name (e.g. stop, stop-failure, notification, session-end, prompt-submit, session-start, subagent-stop, pre-tool-use, post-tool-use)", help_i18n_key = "claude.cli.arg.hook_args.event.help" },
+    { name = "event", type = "string", required = true, help = "Hook event name (e.g. stop, stop-failure, notification, session-end, prompt-submit, session-start, subagent-stop, pre-tool-use, post-tool-use, background-start)", help_i18n_key = "claude.cli.arg.hook_args.event.help" },
 ]
 flags = [
     { name = "surface", type = "u32",    flag = "--surface", required = false, help = "Surface ID the hook is firing for (defaults to caller's TASTY_SURFACE_ID)", help_i18n_key = "claude.cli.arg.hook_args.surface.help" },
@@ -224,6 +224,9 @@ flags = [
     # 배열·bool 값을 stdin JSON 그대로 받도록 문자열로 선언한다. bool 플래그는 미지정에도 false 가 채워져 stdin 값을 가린다.
     { name = "background_tasks", type = "string", flag = "--background-tasks", required = false, stdin_field = "background_tasks", help = "Background tasks still attached to the session, as a JSON array. Auto-populated from stdin JSON 'background_tasks' on the Stop hook. A stop with any item whose status does not mean finished (completed, failed, cancelled, canceled, killed, stopped, error, done; unknown or missing status counts as unfinished) only ended the main response while background work continues, so the child stays active instead of going idle.", help_i18n_key = "claude.cli.arg.hook_args.background_tasks.help" },
     { name = "waiting_on_background_work", type = "string", flag = "--waiting-on-background-work", required = false, stdin_field = "waiting_on_background_work", help = "Whether the session is waiting for background work to finish (\"true\"/\"false\"). Not in the official hooks documentation (checked 2026-09-28) or in observed Claude Code 2.1.283 payloads; read defensively from stdin JSON 'waiting_on_background_work' if it ever arrives, and when present it decides instead of --background-tasks.", help_i18n_key = "claude.cli.arg.hook_args.waiting_on_background_work.help" },
+    { name = "tool_name", type = "string", flag = "--tool-name", required = false, stdin_field = "tool_name", help = "Tool that ran, for the background-start event. Auto-populated from stdin JSON 'tool_name' on PostToolUse. Bash and Agent (Task) can start background work.", help_i18n_key = "claude.cli.arg.hook_args.tool_name.help" },
+    { name = "tool_response", type = "string", flag = "--tool-response", required = false, stdin_field = "tool_response", help = "Tool result, for the background-start event. Auto-populated from stdin JSON 'tool_response' on PostToolUse. A background Bash command carries backgroundTaskId and a background Agent carries agentId; the plugin records them so that a StopFailure while that work still runs keeps the child active.", help_i18n_key = "claude.cli.arg.hook_args.tool_response.help" },
+    { name = "prompt", type = "string", flag = "--prompt", required = false, stdin_field = "prompt", help = "Prompt text. Auto-populated from stdin JSON 'prompt' on UserPromptSubmit. A prompt that starts with <task-notification> reports finished background work by its <task-id>.", help_i18n_key = "claude.cli.arg.hook_args.prompt.help" },
 ]
 
 [contributes.cli.arg_groups.checklist_hook_args]

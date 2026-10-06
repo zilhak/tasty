@@ -222,7 +222,7 @@ SessionEnd는 모든 게이트에서 해당 세션의 반복 파일을 지우고
 
 훅은 호스트 호출에 실패해도 뒤의 로컬 정리를 계속한다. 응답의 `host_call_failures`에 실패한 호출 수를 넣고, 0이 아니면 `<tasty_home>/hook-failures.log`에도 기록을 시도한다. 따라서 응답의 `ok`만으로 모든 호출이 성공했다고 판단하지 않는다. [오류 처리](../../dev-guide/error-handling.md)와 [훅 실행 설계](../../adr/0027-lua-and-hook-execution.md)를 참고한다.
 
-`tasty claude install`이 `~/.claude/settings.json`의 `hooks`에 아래 9개 이벤트를 심는다. 모든 이벤트가 같은 형태의 명령 문자열을 쓴다:
+`tasty claude install`이 `~/.claude/settings.json`의 `hooks`에 아래 10개 항목을 심는다. 이벤트는 9개이며 `PostToolUse`에는 matcher가 다른 항목이 둘이다. 모든 항목이 같은 형태의 명령 문자열을 쓴다:
 
 ```
 if [ -n "$TASTY_SURFACE_ID" ]; then tasty claude hook <token> || true; fi
@@ -234,19 +234,20 @@ if [ -n "$TASTY_SURFACE_ID" ]; then tasty claude hook <token> || true; fi
 
 > **기존 사용자는 `tasty claude install` 재실행이 필요하다.** 명령 문자열은 사용자의 `settings.json` 에 이미 기록돼 있어, plugin 을 업데이트해도 옛 문자열 그대로다. 재실행하면 marker(`tasty claude hook <token>`) 가 일치하는 기존 entry 를 찾아 **제자리 갱신**하므로 entry 가 중복되지 않는다.
 
-`session_id`/`prompt_id`/`message`/`notification_type`/`error`/`agent_id`/`background_tasks` 같은 이벤트별 가변 데이터는 명령 인자가 아니라 **stdin JSON**으로 들어온다 — 매니페스트 `hook` cli 항목이 `stdin_json = true`를 선언하고, `--session`/`--prompt-id`/`--message`/`--notification-type`/`--error`/`--agent-id`/`--background-tasks`/`--waiting-on-background-work` 플래그가 각각 `stdin_field`로 stdin JSON에서 자동 채워진다. 공식 hooks 문서와 실측 payload에는 없지만 `waiting_on_background_work`도 `--waiting-on-background-work`로 방어적으로 읽는다. `--background-tasks`와 이 인자는 문자열로 선언해 stdin의 배열·bool 값을 그대로 넘긴다(Claude Code가 hook 실행 시 stdin으로 JSON payload를 준다). POSIX 셸 구문 1종만 발행한다 — [codex](../codex/index.md)처럼 Windows PowerShell 분기는 없다.
+`session_id`/`prompt_id`/`message`/`notification_type`/`error`/`agent_id`/`background_tasks`/`tool_name`/`tool_response`/`prompt` 같은 이벤트별 가변 데이터는 명령 인자가 아니라 **stdin JSON**으로 들어온다 — 매니페스트 `hook` cli 항목이 `stdin_json = true`를 선언하고, `--session`/`--prompt-id`/`--message`/`--notification-type`/`--error`/`--agent-id`/`--background-tasks`/`--waiting-on-background-work`/`--tool-name`/`--tool-response`/`--prompt` 플래그가 각각 `stdin_field`로 stdin JSON에서 자동 채워진다. 공식 hooks 문서와 실측 payload에는 없지만 `waiting_on_background_work`도 `--waiting-on-background-work`로 방어적으로 읽는다. `--background-tasks`·`--tool-response`와 이 인자는 문자열로 선언해 stdin의 배열·객체·bool 값을 그대로 넘긴다(Claude Code가 hook 실행 시 stdin으로 JSON payload를 준다). POSIX 셸 구문 1종만 발행한다 — [codex](../codex/index.md)처럼 Windows PowerShell 분기는 없다.
 
 | Claude Code 이벤트 | matcher | tasty hook token | `terminal.set_state` | `surface.fire_hook` | surface meta | `surface.completion` kind |
 |---|---|---|---|---|---|---|
 | `Stop` | `""`(전체) | `stop` | `idle`. 단 백그라운드 작업을 기다리는 Stop(아래)은 `active`, Stop 게이트가 붙은 세션은 판정이 모일 때까지 `active`(아래 "Stop 게이트와 idle") | `claude-idle`(대기 Stop은 없음) | 대기 Stop은 `claude-background-wait` **set**, 그 밖의 Stop은 **unset** | `completion`(대기 Stop은 없음) |
 | `SubagentStop` | `""`(전체) | `subagent-stop` | — (로그만) | — | — | — |
-| `StopFailure` | `""`(전체) | `stop-failure` | `idle` | `claude-idle` + `claude-stop-failure` | `claude-last-stop-failure` = stdin `error`(없으면 `unknown`) **set**. `claude-background-wait` **unset** | `completion` |
+| `StopFailure` | `""`(전체) | `stop-failure` | `idle`. 단 메인 턴이 띄운 백그라운드 작업이 남아 있으면 `active`(아래) | `claude-idle` + `claude-stop-failure`(백그라운드 작업이 남은 경우는 없음) | `claude-last-stop-failure` = stdin `error`(없으면 `unknown`) **set**. `claude-background-wait` **unset**. 백그라운드 작업이 남은 경우는 `claude-background-wait` **set**만 한다 | `completion`(백그라운드 작업이 남은 경우는 없음) |
 | `SessionEnd` | `""`(전체) | `session-end` | `idle` | `claude-idle` | `claude-session-id`·`restore.command`·`claude-last-stop-failure`·`claude-background-wait` **unset** (프로필 meta 2키는 건드리지 않는다. 프로필 **부착 기록**에는 종료 표시만 하고 유예 뒤 회수 — 아래 "복원을 건너 프로필이 유지되는 방식") | `completion` |
 | `Notification` | `""`(전체) | `notification` | `notification_type`별(아래 "Notification 유형별 상태"). `needs_input`·`active`·변경 없음 | `needs-input`(`needs_input` 유형만) | — | `needs_input`(`needs_input` 유형만) |
 | `UserPromptSubmit` | `""`(전체) | `prompt-submit` | `active` | — | `claude-last-stop-failure`·`claude-background-wait` **unset** | — |
 | `SessionStart` | `""`(전체) | `session-start` | `active` | — | `claude-last-stop-failure`·`claude-background-wait` **unset**. `claude-session-id` = 세션 ID, `restore.command` = `claude -r <id>` **set**(stdin JSON에 `session_id`가 없으면 건너뜀). 프로필이 부착돼 있으면 `claude -r <id> --settings "<경로>"` 로 쓰고, 복원으로 프로필 meta 가 사라졌으면 부착 기록에서 **복구**한다(아래 "복원을 건너 프로필이 유지되는 방식") | — |
 | `PreToolUse` | `AskUserQuestion` | `pre-tool-use` | `needs_input` | `needs-input` | — | `needs_input` |
 | `PostToolUse` | `AskUserQuestion` | `post-tool-use` | `active` | — | — | — |
+| `PostToolUse` | `Bash\|Agent\|Task` | `background-start` | — (백그라운드 작업 기록만) | — | — | — |
 
 `surface.completion` 은 `{ surface_id, kind }` 로 호출되며(`HostCall::SurfaceCompletion`,
 `hook.rs`), `kind` 는 위 표의 값을 그대로 싣는다 — 호스트의 `AttentionStore` 가
@@ -294,6 +295,22 @@ if [ -n "$TASTY_SURFACE_ID" ]; then tasty claude hook <token> || true; fi
 Meta를 먼저 쓴 뒤 이벤트를 보내며 새 턴(`prompt-submit`/`session-start`/`active`)과
 `session-end`에서는 지운다. `notify-done`은 meta가 있으면 상태 알림 뒤에 오류 종류를 붙인다.
 
+**백그라운드 작업이 남은 `StopFailure`는 턴 종료가 아니다.** `StopFailure` payload에는 `background_tasks`가
+없다(공식 hooks 문서, Claude Code 2.1.285 실측). 백그라운드 작업이 끝나면 Claude Code는 `<task-notification>` 턴을
+열고 그 턴의 `Stop`이 다시 온다. 그래서 플러그인은 메인 턴이 띄운 백그라운드 작업을 surface별로 따로 기록한다.
+
+- 시작: `PostToolUse`(matcher `Bash|Agent|Task`, token `background-start`)의 `tool_response`에서 읽는다.
+  Bash는 `backgroundTaskId`, Agent는 `isAsync: true` 또는 `status: "async_launched"`와 함께 오는 `agentId`다(2.1.290 실측).
+  다른 도구 호출과 포그라운드 호출은 기록하지 않으며 상태도 바꾸지 않는다.
+- 끝: `UserPromptSubmit`의 `prompt`가 `<task-notification>`으로 시작하면 그 안의 `<task-id>` 작업을 지운다.
+- `Stop`의 `background_tasks`를 읽을 수 있으면 기록을 그 목록의 끝나지 않은 항목으로 바꾼다.
+  `SessionStart`·`SessionEnd`는 기록을 버린다.
+- 기록이 남은 채 `StopFailure`가 오면 대기 Stop과 같이 `active`와 `claude-background-wait`만 보내고
+  `claude-idle`·`claude-stop-failure`·`surface.completion`·telemetry `wall_time_ms`·자동 재개 처리를 하지 않는다.
+  작업이 끝나 열린 턴의 `Stop`이 idle을 기록한다.
+- 기록은 메모리에만 있다. 플러그인이 다시 시작되면 사라지고 그 뒤의 `StopFailure`는 idle이 된다.
+  이 훅은 `tasty claude install`을 다시 실행해야 설치된다. 설치 전에는 전처럼 idle이 된다.
+
 **백그라운드 작업을 기다리는 Stop은 턴 종료가 아니다.** Claude Code는 백그라운드
 서브에이전트나 `run_in_background` 셸이 실행 중이어도 메인 응답을 끝내고 `Stop`을 보낸다.
 작업이 끝나면 `<task-notification>`으로 시작하는 prompt의 `UserPromptSubmit`으로 새 턴을 열고,
@@ -304,7 +321,7 @@ Meta를 먼저 쓴 뒤 이벤트를 보내며 새 턴(`prompt-submit`/`session-s
 `active`로만 보고하고 `claude-idle`·`surface.completion`·telemetry `wall_time_ms`·자동 재개의
 성공 처리를 하지 않는다. 두 필드가 없거나 해석할 수 없으면 이전처럼 턴 종료로 처리한다.
 대기 Stop은 surface meta `claude-background-wait`에 대기 시작 시각(`since_ms`, Unix ms)·끝나지 않은 작업 수(`tasks`)·
-작업 종류(`types`)를 JSON으로 남긴다. 같은 대기에서 이어진 대기 Stop은 시작 시각을 유지한다. 대기가 아닌 `Stop`·`StopFailure`·
+작업 종류(`types`)를 JSON으로 남긴다. 같은 대기에서 이어진 대기 Stop은 시작 시각을 유지한다. 대기가 아닌 `Stop`·백그라운드 작업이 남지 않은 `StopFailure`·
 새 턴(`UserPromptSubmit`·`SessionStart`)·`SessionEnd`가 이 meta를 지운다. 정지 알림은 이 대기를 따로 다룬다(아래 "정지 알림").
 Claude Code 2.1.283 실측 payload에는 `background_tasks`(항목 `id`·`type`·`status`·`description`·
 `agent_type` 또는 `command`)만 있고 `waiting_on_background_work`는 없었다. 공식 hooks 문서
@@ -357,12 +374,12 @@ Payload에 `agent_id`가 있는지로 구분한다. 메인 턴은 서브에이�
 계속 진행할 수 있기 때문이다. 이 필드 구분은 Claude Code 2.1.280의 payload 조립부를
 확인한 근거이며 모든 버전의 외부 동작을 보장한다는 뜻은 아니다.
 
-install이 심는 훅은 이 9개뿐이다 — matcher가 지정되지 않은 `PreToolUse`/`PostToolUse` 호출 전체나 `PreCompact` 등 다른 Claude Code 이벤트는 걸지 않는다. `install.rs`의 `install_preserves_other_hooks` 테스트가 사용자가 직접 추가한(matcher가 다른) `PreToolUse` entry를 tasty의 `AskUserQuestion`-matcher entry와 분리해 그대로 보존함을 검증한다.
+install이 심는 훅은 이 10개 항목뿐이다 — 위 matcher 밖의 `PreToolUse`/`PostToolUse` 호출이나 `PreCompact` 등 다른 Claude Code 이벤트는 걸지 않는다. `install.rs`의 `install_preserves_other_hooks` 테스트가 사용자가 직접 추가한(matcher가 다른) `PreToolUse` entry를 tasty의 `AskUserQuestion`-matcher entry와 분리해 그대로 보존함을 검증한다.
 
-install은 marker substring(`tasty claude hook <token>`)으로 자기 entry를 식별해 멱등하게 동작한다 — marker가 일치하는 기존 entry는 명령 문자열만 최신 형태로 덮어쓰고(옛 버전이 심은 잘못된 명령이 남는 회귀 방지), 사용자가 직접 추가한 다른 entry는 건드리지 않는다. `PreToolUse`/`PostToolUse`처럼 matcher가 있는 이벤트는 marker 일치만으로는 matcher 값까지 보증되지 않으므로, install이 matcher도 canonical 값(`AskUserQuestion`)으로 함께 갱신한다.
+install은 marker substring(`tasty claude hook <token>`)으로 자기 entry를 식별해 멱등하게 동작한다 — marker가 일치하는 기존 entry는 명령 문자열만 최신 형태로 덮어쓰고(옛 버전이 심은 잘못된 명령이 남는 회귀 방지), 사용자가 직접 추가한 다른 entry는 건드리지 않는다. `PreToolUse`/`PostToolUse`처럼 matcher가 있는 이벤트는 marker 일치만으로는 matcher 값까지 보증되지 않으므로, install이 matcher도 canonical 값(`AskUserQuestion`, `Bash|Agent|Task`)으로 함께 갱신한다.
 
 이 플러그인이 fire하는 surface hook 이벤트는 `claude-idle`/`needs-input`/`claude-stop-failure`/`claude-error`/`claude-error-stalled` 5개이며, 매니페스트 `contributes.hook_events`로 선언한다 — host가 (내장 ∪ 활성 plugin 선언) 집합으로 `hook.set` 등록을 검증하므로([hooks](../../features/hooks/index.md)), 이 플러그인이 비활성이면 저 5개 키로의 hook 등록도 거부된다.
-**이 5개가 전부 위 9개 설치 훅에서 나오는 건 아니다** — `claude-idle`은 위 `apply_hook`(Stop/StopFailure/SessionEnd)에서, `claude-stop-failure`는 `StopFailure`에서, `needs-input`은 `Notification`(`needs_input` 유형)과 `PreToolUse`(matcher `AskUserQuestion`) 두 경로에서 나오지만, `claude-error`/`claude-error-stalled`는 이 훅 메커니즘과 무관한 별도 producer다: `error_scan.rs`가 surface 출력 텍스트를 패턴 매칭해 매치 시 직접 `surface.fire_hook`으로 보낸다(정지 판정은 아래 절).
+**이 5개가 전부 위 설치 훅에서 나오는 건 아니다** — `claude-idle`은 위 `apply_hook`(Stop/StopFailure/SessionEnd)에서, `claude-stop-failure`는 `StopFailure`에서, `needs-input`은 `Notification`(`needs_input` 유형)과 `PreToolUse`(matcher `AskUserQuestion`) 두 경로에서 나오지만, `claude-error`/`claude-error-stalled`는 이 훅 메커니즘과 무관한 별도 producer다: `error_scan.rs`가 surface 출력 텍스트를 패턴 매칭해 매치 시 직접 `surface.fire_hook`으로 보낸다(정지 판정은 아래 절).
 API 에러로 턴이 **끝나면** `StopFailure`가 구조적 신호를 주지만, 요청이 응답 없이 매달리면 턴이 끝나지 않아 `Stop`도 `StopFailure`도 **발생하지 않는다** — 그때는 PTY에 찍히는 에러 문자열과 출력 정적이 얻을 수 있는 유일한 신호다.
 `claude-idle`/`needs-input`은 [surface-highlight](../../features/surface-highlight/index.md)(Stop hook → highlight)와 [telemetry](../../features/telemetry/index.md)(`session-start`→`stop`의 `wall_time_ms`, `notification`의 `input_tokens`)가 소비하고, `SessionStart`/`SessionEnd`의 meta set/unset은 [layout-persistence](../../features/layout-persistence/index.md)의 `restore.command` 복원이 소비한다.
 
@@ -479,7 +496,7 @@ Claude Code가 Stop payload로 알려 준 대기이므로 누적 출력이 **10�
 - Given 플러그인 활성 When `tasty claude launch` Then 새 워크스페이스에서 Claude 가 실행된다.
 - Given 부모 인스턴스 When `tasty claude spawn` Then 자식 인스턴스가 페인 분할로 생성되고 `children` 에 보인다.
 - Given 상태 훅과 로그 기록이 정상 동작하는 자식 When `tasty claude spawn` 또는 `tell` 뒤 idle/needs_input/process-exit 훅이 발생 Then caller의 completion-log에 상태 변경을 기록하고 같은 명령의 형제 훅을 정리한다. `surface.locate`가 성공하면 세 훅을 다시 등록한다.
-- Given `~/.claude/settings.json`에 사용자가 직접 추가한 hook entry가 있음 When `tasty claude install` 실행 Then 9개 tasty hook entry가 추가/갱신되고 사용자 entry는 그대로 보존된다.
+- Given `~/.claude/settings.json`에 사용자가 직접 추가한 hook entry가 있음 When `tasty claude install` 실행 Then 10개 tasty hook entry가 추가/갱신되고 사용자 entry는 그대로 보존된다.
 - Given 유효한 프로필 JSON When `tasty claude reboot --profile-file <경로>` Then 재시작된 Claude 에서 프로필 훅과 tasty 내장 훅이 함께 실행되고, 무인자로 다시 reboot 해도 프로필이 승계된다. `--clear-profile` 후 reboot 하면 프로필 훅이 더 이상 발생하지 않는다. 존재하지 않는 경로/깨진 JSON 은 kill 시퀀스를 시작하지 않고 즉시 에러를 반환한다.
 - Given 등록된 프로필 둘(각각 다른 마커를 남기는 `SessionStart` 훅) When 이름 둘을 쉼표로 `--profile` 에 함께 부착해 spawn Then **둘 다** 발생한다(머지가 last-wins 로 떨어지지 않는다). `permissions.deny`를 담은 프로필을 부착하면 그 자식에게서 해당 도구가 사라지고(거부 프롬프트가 아니라 툴셋에서 빠짐), `deny` 프로필과 그 도구를 `allow` 하는 프로필을 함께 부착해도 도구는 여전히 없다(deny를 allow보다 우선한다). `--profile-file` 과 `--profile` 을 함께 주면 즉시 에러.
 - Given `--profile continue-checklist` 로 부착한 세션 + 마커 파일 존재 When Claude 가 센티넬 없이 응답을 끝내려 함 Then block 되고 체크리스트 본문이 주입되며, 센티넬을 포함해 응답하거나 라운드 상한에 도달하면 정상 종료된다. 프로필을 부착하지 않은 세션은 이 동작에 전혀 영향받지 않는다. 같은 프로필을 부착한 세션 둘을 동시에 진행해도 라운드 카운터가 서로 섞이지 않는다.

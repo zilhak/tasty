@@ -176,7 +176,7 @@ description = "~/.claude/settings.jsonにtastyフックをインストール"
 description = "~/.claude/settings.jsonからtastyフックを削除"
 
 [claude.cli.sub.hook]
-description = "Claude Codeフック連携。Claude Codeのフックシステムから呼び出されるとstdinからJSONペイロード（session_id、prompt_id、message、notification_type、error、agent_id、background_tasks）を読み取ります。公式 hooks ドキュメントと実測 payload にはありませんが、waiting_on_background_work も防御的に読み取ります。"
+description = "Claude Codeフック連携。Claude Codeのフックシステムから呼び出されるとstdinからJSONペイロード（session_id、prompt_id、message、notification_type、error、agent_id、background_tasks、tool_name、tool_response、prompt）を読み取ります。公式 hooks ドキュメントと実測 payload にはありませんが、waiting_on_background_work も防御的に読み取ります。"
 
 [claude.cli.sub.checklist-hook]
 description = "Stopフックゲートの判定。stdinからJSON（session_id、prompt_id、stop_hook_active、last_assistant_message）を読み取ります。--gateで判定する登録ゲートを選択（既定値：continue-checklist）。"
@@ -392,7 +392,7 @@ help = "再開前に子の既存セッションプロファイルを解除（パ
 help = "子の権限モード：acceptEdits|auto|bypassPermissions|manual|dontAsk|plan。--permission-mode で渡し、今回だけ default_permission_mode より優先します。省略時はその設定を使用し、inherit または未設定ならフラグを付けず Claude Code の設定に従います。明示したモードは permissions.defaultMode を設定する --profile/--profile-file と併用できません。"
 
 [claude.cli.arg.hook_args.event]
-help = "フックイベント名（例：stop、stop-failure、notification、session-end、prompt-submit、session-start、subagent-stop、pre-tool-use、post-tool-use）"
+help = "フックイベント名（例：stop、stop-failure、notification、session-end、prompt-submit、session-start、subagent-stop、pre-tool-use、post-tool-use、background-start）"
 
 [claude.cli.arg.hook_args.surface]
 help = "フック対象サーフェスID（既定値：呼び出し元のTASTY_SURFACE_ID）"
@@ -420,6 +420,15 @@ help = "セッションに残っているバックグラウンドタスクの一
 
 [claude.cli.arg.hook_args.waiting_on_background_work]
 help = "セッションがバックグラウンド作業の完了を待っているかどうか（\"true\"/\"false\"）。公式 hooks ドキュメント（2026-09-28 確認）と Claude Code 2.1.283 の実測 payload にはないが、届いた場合は stdin JSON の 'waiting_on_background_work' から防御的に設定される。値があれば --background-tasks の代わりにこの値で判定する。"
+
+[claude.cli.arg.hook_args.tool_name]
+help = "background-start イベントで実行されたツール。PostToolUse の stdin JSON 'tool_name' から自動で埋めます。Bash と Agent（Task）がバックグラウンド作業を起動できます。"
+
+[claude.cli.arg.hook_args.tool_response]
+help = "background-start イベントのツール結果。PostToolUse の stdin JSON 'tool_response' から自動で埋めます。バックグラウンドの Bash コマンドは backgroundTaskId を、バックグラウンドの Agent は agentId を含みます。プラグインはこれを記録し、その作業が残ったまま StopFailure が来ると子を active のままにします。"
+
+[claude.cli.arg.hook_args.prompt]
+help = "プロンプト文字列。UserPromptSubmit の stdin JSON 'prompt' から自動で埋めます。<task-notification> で始まるプロンプトは <task-id> で終わったバックグラウンド作業を知らせます。"
 
 [claude.cli.arg.checklist_hook_args.surface]
 help = "ゲート対象サーフェスID。セッションの目標照会に使用。既定値は呼び出し元のTASTY_SURFACE_ID"

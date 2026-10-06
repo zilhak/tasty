@@ -33,6 +33,10 @@ pub(crate) const STOP_FAILURE_META_KEY: &str = "claude-last-stop-failure";
 /// 부모 정지 알림 문구가 읽는다.
 pub(crate) const BACKGROUND_WAIT_META_KEY: &str = "claude-background-wait";
 
+/// 백그라운드 작업을 띄운 도구 호출을 알리는 훅 이벤트. 설치가 `PostToolUse` 에 matcher
+/// [`crate::background_tasks::BACKGROUND_TOOLS_MATCHER`] 로 등록한다. 상태는 바꾸지 않고 작업만 기록한다.
+pub(crate) const BACKGROUND_START_EVENT: &str = "background-start";
+
 /// API 에러로 턴이 끝났을 때 `claude-idle` 과 함께 쏘는 surface hook 이벤트
 /// (매니페스트 `contributes.hook_events` 에 선언).
 pub(crate) const STOP_FAILURE_EVENT: &str = "claude-stop-failure";
@@ -248,6 +252,31 @@ pub(crate) fn handle_claude_hook<H: HostCallSink>(
         }));
     }
 
+    if event == BACKGROUND_START_EVENT {
+        let started = lock_state(state).background.started(
+            surface_id,
+            params.get("tool_name").and_then(Value::as_str),
+            params.get("tool_response"),
+        );
+        if let Some(id) = &started {
+            tracing::info!("claude hook s{surface_id}: background task {id} started");
+        }
+        return Ok(json!({
+            "ok": true,
+            "surface_id": surface_id,
+            "event": event,
+            "background_task": started,
+            "host_call_failures": 0,
+        }));
+    }
+    track_background_tasks(state, event, surface_id, params);
+
+    if event == "stop-failure"
+        && let Some(response) = stop_failure_with_background_work(&tail, surface_id, error, now_ms)
+    {
+        return Ok(response);
+    }
+
     if event == "stop"
         && let Some(response) = stop_that_does_not_end_the_turn(
             &tail,
@@ -274,20 +303,15 @@ pub(crate) fn handle_claude_hook<H: HostCallSink>(
         tr,
     )?;
 
-    // surface 메타데이터는 복원 시 유지되지 않으므로 복원 명령에도 프로필을 넣는다.
-    if event == "session-start"
-        && let Some(session_id) = session.as_deref()
-    {
-        let meta = crate::reboot::attached_profile_summary(host, surface_id);
-        let plan = plan_session_start_profile(session_id, &meta, data_dir, tr);
-        apply_session_start_profile(&mut calls, surface_id, session_id, &plan);
-        // reboot 중 session-end가 남긴 종료 표시를 새 session-start 기록으로 갱신한다.
-        if let Some(record) = &plan.restamp {
-            profile_attach::store(data_dir, session_id, record);
-        }
-        // 종료 훅이 오지 않은 세션의 오래된 기록도 정리한다.
-        profile_attach::sweep(data_dir);
-    }
+    session_lifecycle_calls(
+        &mut calls,
+        host,
+        event,
+        surface_id,
+        session.as_deref(),
+        data_dir,
+        tr,
+    );
 
     calls.extend(telemetry_for_hook(
         &mut lock_state(state),
@@ -363,22 +387,7 @@ fn stop_that_does_not_end_the_turn<H: HostCallSink>(
         tracing::info!(
             "claude hook stop s{surface_id}: waiting on background work ({pending}) — main turn continues, stays active"
         );
-        // 정지 감시가 대기 기준과 문구를 쓰도록 대기를 기록한다.
-        let since_ms =
-            crate::error_scan::lock_scanner(tail.scanner).mark_background_wait(surface_id, now_ms);
-        let types = background_task_types(params);
-        let calls = [
-            HostCall::SetState {
-                surface_id,
-                state: "active",
-            },
-            HostCall::MetaSet {
-                surface_id,
-                key: BACKGROUND_WAIT_META_KEY,
-                value: json!({ "since_ms": since_ms, "tasks": types.len(), "types": types })
-                    .to_string(),
-            },
-        ];
+        let calls = background_wait_calls(tail, surface_id, now_ms, background_task_types(params));
         // 게이트는 대기 Stop 도 판정한다. 그 판정이 다음 Stop 과 섞이지 않도록 이 Stop 과 짝짓는다.
         let host_call_failures = deliver_all(tail.host, &calls)
             + tail.pair_stop(session, surface_id, prompt_id, StopKind::Waiting, gates);
@@ -412,6 +421,87 @@ fn stop_that_does_not_end_the_turn<H: HostCallSink>(
     }
 
     None
+}
+
+/// 대기를 `active` 로 보고하고 정지 감시가 대기 기준과 문구를 쓰도록 기록하는 호출.
+/// 같은 대기에서 이어진 기록은 처음 시작 시각을 유지한다.
+fn background_wait_calls<H>(
+    tail: &StopTail<'_, H>,
+    surface_id: u32,
+    now_ms: u64,
+    types: Vec<String>,
+) -> [HostCall; 2] {
+    let since_ms =
+        crate::error_scan::lock_scanner(tail.scanner).mark_background_wait(surface_id, now_ms);
+    [
+        HostCall::SetState {
+            surface_id,
+            state: "active",
+        },
+        HostCall::MetaSet {
+            surface_id,
+            key: BACKGROUND_WAIT_META_KEY,
+            value: json!({ "since_ms": since_ms, "tasks": types.len(), "types": types })
+                .to_string(),
+        },
+    ]
+}
+
+/// 메인 턴이 띄운 백그라운드 작업의 기록을 이벤트에 맞춰 갱신한다.
+/// `Stop` 은 남은 작업 목록을 주고, `<task-notification>` prompt 는 끝난 작업을 알린다.
+/// 세션이 바뀌거나 끝나면 이전 작업은 이어지지 않는다.
+fn track_background_tasks(
+    state: &Mutex<ClaudeState>,
+    event: &str,
+    surface_id: u32,
+    params: &Value,
+) {
+    let mut s = lock_state(state);
+    match event {
+        "stop" => s
+            .background
+            .sync_with_stop(surface_id, params.get("background_tasks")),
+        "prompt-submit" => {
+            let ended = s
+                .background
+                .notified(surface_id, params.get("prompt").and_then(Value::as_str));
+            if ended > 0 {
+                tracing::info!(
+                    "claude hook s{surface_id}: {ended} background task(s) reported finished"
+                );
+            }
+        }
+        "session-start" | "session-end" => s.background.clear(surface_id),
+        _ => {}
+    }
+}
+
+/// 백그라운드 작업이 남은 채 API 오류로 끝난 턴. 작업이 끝나면 Claude Code 가 새 턴을 열므로
+/// 대기 Stop 과 같이 `active` 로만 보고하고 idle·완료 알림·오류 이벤트·자동 재개를 만들지 않는다.
+/// 남은 작업이 없으면 `None` 이며 호출자가 턴 종료로 처리한다.
+fn stop_failure_with_background_work<H: HostCallSink>(
+    tail: &StopTail<'_, H>,
+    surface_id: u32,
+    error: Option<&str>,
+    now_ms: u64,
+) -> Option<Value> {
+    let types = lock_state(tail.state).background.pending_types(surface_id);
+    if types.is_empty() {
+        return None;
+    }
+    tracing::info!(
+        "claude hook stop-failure s{surface_id}: API error {error:?} while {} background task(s) ({}) still run — the session continues when they finish, stays active",
+        types.len(),
+        types.join(",")
+    );
+    let calls = background_wait_calls(tail, surface_id, now_ms, types);
+    Some(json!({
+        "ok": true,
+        "surface_id": surface_id,
+        "event": "stop-failure",
+        "waiting": "background_work",
+        "host_call_failures": deliver_all(tail.host, &calls),
+    }))
 }
 
 /// 백그라운드 대기 기록을 지우는 이벤트. 대기가 아닌 Stop 과 StopFailure 는 턴이 끝났고,
@@ -491,7 +581,7 @@ const FINISHED_TASK_STATUSES: &[&str] = &[
     "done",
 ];
 
-fn is_finished_task(task: &Value) -> bool {
+pub(crate) fn is_finished_task(task: &Value) -> bool {
     task.get("status").and_then(Value::as_str).is_some_and(|s| {
         FINISHED_TASK_STATUSES
             .iter()
@@ -953,6 +1043,32 @@ pub(crate) fn plan_session_start_profile(
         meta_calls,
         profile_file: Some(profile_file),
         restamp: Some(record),
+    }
+}
+
+/// 세션 시작·종료에서 프로필 복원 기록과 settings meta 를 맞추는 호출을 덧붙인다.
+fn session_lifecycle_calls<H: HostCallSink>(
+    calls: &mut Vec<HostCall>,
+    host: &H,
+    event: &str,
+    surface_id: u32,
+    session: Option<&str>,
+    data_dir: Option<&Path>,
+    tr: &Translator,
+) {
+    // surface 메타데이터는 복원 시 유지되지 않으므로 복원 명령에도 프로필을 넣는다.
+    if event == "session-start"
+        && let Some(session_id) = session
+    {
+        let meta = crate::reboot::attached_profile_summary(host, surface_id);
+        let plan = plan_session_start_profile(session_id, &meta, data_dir, tr);
+        apply_session_start_profile(calls, surface_id, session_id, &plan);
+        // reboot 중 session-end가 남긴 종료 표시를 새 session-start 기록으로 갱신한다.
+        if let Some(record) = &plan.restamp {
+            profile_attach::store(data_dir, session_id, record);
+        }
+        // 종료 훅이 오지 않은 세션의 오래된 기록도 정리한다.
+        profile_attach::sweep(data_dir);
     }
 }
 
@@ -1605,12 +1721,145 @@ mod tests {
         assert!(value["since_ms"].as_u64().is_some_and(|ms| ms > 0));
     }
 
+    /// 2.1.290 실측 `PostToolUse` 처럼 Bash 를 백그라운드로 띄운 도구 호출을 알린다.
+    fn start_background_shell(rig: &mut HookRig) {
+        rig.run(json!({
+            "event": BACKGROUND_START_EVENT,
+            "surface": HookRig::SURFACE,
+            "tool_name": "Bash",
+            "tool_response": { "stdout": "", "stderr": "", "interrupted": false, "backgroundTaskId": "bwny9udnf" },
+        }));
+    }
+
+    /// 턴 종료로 처리한 StopFailure 의 흔적(idle·오류 이벤트·완료 알림·wall_time 소비·자동 재개 성공 처리).
+    fn assert_stop_failure_ended_the_turn(rig: &mut HookRig) {
+        assert_eq!(rig.host.states().last().map(String::as_str), Some("idle"));
+        assert!(rig.host.fired().contains(&"claude-idle".to_string()));
+        assert!(rig.host.fired().contains(&STOP_FAILURE_EVENT.to_string()));
+        assert!(
+            rig.host
+                .methods()
+                .contains(&"surface.completion".to_string())
+        );
+        assert!(!rig.is_waiting());
+    }
+
+    /// 백그라운드 작업이 남은 채 API 오류로 끝난 턴은 대기다. active 만 보내고 대기를 기록하며,
+    /// idle·완료 알림·오류 이벤트·wall_time·자동 재개 성공 처리를 만들지 않는다.
+    #[test]
+    fn a_stop_failure_while_background_work_runs_keeps_the_child_active() {
+        let mut rig = HookRig::new();
+        start_background_shell(&mut rig);
+        assert!(
+            rig.host.seen.borrow().is_empty(),
+            "작업 시작은 호스트를 부르지 않는다"
+        );
+        let reply = rig.run(json!({
+            "event": "stop-failure",
+            "surface": HookRig::SURFACE,
+            "error": "server_error",
+        }));
+        assert_eq!(reply["waiting"], "background_work");
+        assert_eq!(rig.host.states(), vec!["active"]);
+        assert!(rig.host.fired().is_empty());
+        assert!(
+            !rig.host
+                .methods()
+                .contains(&"surface.completion".to_string())
+        );
+        assert!(rig.is_waiting());
+        let seen = rig.host.seen.borrow();
+        let (_, set) = seen
+            .iter()
+            .find(|(m, _)| m == "surface.meta.set")
+            .expect("대기 meta");
+        assert_eq!(set["key"], BACKGROUND_WAIT_META_KEY);
+        let value: Value = serde_json::from_str(set["value"].as_str().unwrap()).unwrap();
+        assert_eq!(value["types"], json!(["shell"]));
+        drop(seen);
+        assert!(rig.wall_time_open());
+        assert!(rig.resume_attempts_kept());
+    }
+
+    /// 대기 Stop 뒤에 작업이 끝났다는 알림 없이 온 StopFailure 도 대기다.
+    #[test]
+    fn a_stop_failure_after_a_waiting_stop_keeps_waiting() {
+        let mut rig = HookRig::new();
+        rig.run(json!({
+            "event": "stop",
+            "surface": HookRig::SURFACE,
+            "background_tasks": running_subagent(),
+        }));
+        rig.run(
+            json!({ "event": "stop-failure", "surface": HookRig::SURFACE, "error": "overloaded" }),
+        );
+        assert_eq!(rig.host.states(), vec!["active", "active"]);
+        assert!(rig.host.fired().is_empty());
+        assert!(rig.is_waiting());
+    }
+
+    /// 작업이 끝났다고 알려졌거나 Stop 이 남은 작업이 없다고 하면 StopFailure 는 전처럼 턴을 끝낸다.
+    #[test]
+    fn a_stop_failure_after_the_background_work_ended_goes_idle() {
+        let finished = [
+            json!({
+                "event": "prompt-submit",
+                "prompt": "<task-notification>\n<task-id>bwny9udnf</task-id>\n<status>completed</status>\n</task-notification>",
+            }),
+            json!({ "event": "stop", "background_tasks": [] }),
+            json!({ "event": "session-start", "session": "s-2" }),
+        ];
+        for mut ended in finished {
+            let mut rig = HookRig::new();
+            start_background_shell(&mut rig);
+            ended["surface"] = json!(HookRig::SURFACE);
+            rig.run(ended.clone());
+            rig.host.seen.borrow_mut().clear();
+            rig.run(json!({ "event": "stop-failure", "surface": HookRig::SURFACE, "error": "overloaded" }));
+            assert_stop_failure_ended_the_turn(&mut rig);
+        }
+    }
+
+    /// 백그라운드 작업을 띄운 적 없는 StopFailure 는 지금처럼 idle 이다.
+    #[test]
+    fn a_stop_failure_without_background_work_goes_idle() {
+        let mut rig = HookRig::new();
+        rig.run(
+            json!({ "event": "stop-failure", "surface": HookRig::SURFACE, "error": "overloaded" }),
+        );
+        assert_stop_failure_ended_the_turn(&mut rig);
+    }
+
+    /// 대기 Stop 뒤 남은 작업이 없는 StopFailure 는 턴 종료이므로 대기 기록을 지운다.
+    #[test]
+    fn a_stop_failure_with_nothing_left_clears_the_wait_record() {
+        let mut rig = HookRig::new();
+        rig.run(json!({
+            "event": "stop",
+            "surface": HookRig::SURFACE,
+            "background_tasks": running_subagent(),
+        }));
+        rig.run(json!({
+            "event": "prompt-submit",
+            "surface": HookRig::SURFACE,
+            "prompt": "<task-notification><task-id>a05303b937811e7fc</task-id></task-notification>",
+        }));
+        rig.run(
+            json!({ "event": "stop-failure", "surface": HookRig::SURFACE, "error": "overloaded" }),
+        );
+        assert!(!rig.is_waiting());
+        assert!(
+            rig.host
+                .unset_keys()
+                .contains(&BACKGROUND_WAIT_META_KEY.to_string())
+        );
+    }
+
     /// 대기 기록은 턴 종료·새 턴·세션 종료에서 지운다. 서브에이전트 종료와 알림은 지우지 않는다.
     #[test]
     fn the_background_wait_record_is_cleared_by_turn_end_new_turn_and_session_end() {
         let clears = [
             json!({ "event": "stop", "background_tasks": [] }),
-            json!({ "event": "stop-failure", "error": "overloaded" }),
             json!({ "event": "prompt-submit" }),
             json!({ "event": "session-start", "session": "s-1" }),
             json!({ "event": "session-end" }),
