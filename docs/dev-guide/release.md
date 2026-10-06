@@ -89,7 +89,7 @@ GitHub Releases 에서 노트 + 플랫폼별 아티팩트 확인:
 
 | 항목 | x86_64 | aarch64 |
 |------|--------|---------|
-| 호스트 | `server` (192.168.0.16) | `gx10` (192.168.0.13) |
+| 호스트 | `8945hs` (192.168.0.5) | `gx10` (192.168.0.13) |
 | Runner 이름 | `tasty-server-x64` | `tasty-gx10-arm64` |
 | 라벨 | `self-hosted, Linux, X64` | `self-hosted, Linux, ARM64` |
 | 설치 경로 | `/home/zilhak/actions-runner/` | 〃 |
@@ -143,7 +143,7 @@ cargo install 도구는 PATH 변경 불필요. 별도 다운로드 도구는 `~/
 ### 운영 명령
 
 ```bash
-ssh server 'systemctl status actions.runner.zilhak-tasty.tasty-server-x64.service'
+ssh 8945hs 'systemctl status actions.runner.zilhak-tasty.tasty-server-x64.service'
 sudo systemctl {restart|stop|start} <service-name>
 sudo journalctl -u <service-name> -f
 gh api repos/zilhak/tasty/actions/runners        # GitHub 측 등록 상태
