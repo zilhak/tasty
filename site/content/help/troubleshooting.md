@@ -31,7 +31,7 @@ TASTY_LOG=debug tasty 2> tasty.log
 - **Linux: `GLIBC_2.39 not found` 로 실행되지 않습니다** — Ubuntu 20.04 · Debian 11 처럼 빌드 기준(Ubuntu 24.04)보다 오래된 배포판입니다. 구배포판용 빌드는 없습니다.
 - **Linux `.tar.gz`: 라이브러리가 없다며 종료됩니다** — `tasty` 가 빠진 라이브러리를 안내하고 끝납니다. 안내된 패키지(`libfreetype6` · `libfontconfig1` · `libgtk-3` · `libwebkit2gtk-4.1` 등)를 설치합니다. 자동으로 끌어오게 하려면 `.deb` / `.rpm` 을 씁니다.
 - **"GPU 어댑터를 찾을 수 없음" 이 뜨고 종료됩니다** — 사용할 수 있는 GPU 어댑터(Vulkan / DirectX 12 / Metal)를 찾지 못했습니다. 드라이버를 설치·업데이트합니다. Linux 는 `libvulkan1` / `vulkan-loader` 가 있으면 Vulkan 으로, 없으면 OpenGL 로, 그것도 안 되면 소프트웨어 렌더링으로 뜹니다. 그래픽 화면 없이 서버 · VM에서 실행하려면 [headless 빌드](../getting-started/install.md#headless-빌드)를 사용하세요.
-- **Windows: "Git Bash를 찾을 수 없습니다"** — Tasty 는 Windows 에서 Git Bash 를 셸로 씁니다. Git for Windows 를 설치하거나 **설정** <!-- en: Settings --> > **터미널** <!-- en: Terminal --> > **셸** <!-- en: Shell --> 에서 bash 경로를 직접 지정합니다.
+- **Windows: "Git Bash를 찾을 수 없습니다"** — Tasty 는 Windows 에서 Git Bash 를 셸로 씁니다. Git for Windows 를 설치하거나 **설정** <!-- en: Settings --> > **터미널** <!-- en: Terminal --> > **셸** <!-- en: Shell --> 에서 bash 경로를 직접 지정합니다. 첫 실행이면 터미널 대신 **셸 선택** <!-- en: Choose a shell --> 화면이 뜹니다. 그 화면에 bash.exe 경로를 입력하고 **이 셸 사용** <!-- en: Use this shell --> 을 누르거나, **종료** <!-- en: Quit --> 로 닫고 Git for Windows 를 설치한 뒤 다시 실행합니다.
 - **"데이터베이스 초기화 오류" 로 시작하자마자 종료됩니다** — 본문을 봅니다. "DB가 잠겨 있습니다" 면 다른 Tasty 가 이미 떠 있습니다. "손상되었습니다" / "스키마 버전이 맞지 않습니다" 면 `~/.tasty/state.db` 를 백업한 뒤 지우면 새로 시작됩니다. 최근 파일 목록과 튜토리얼 진행 기록만 사라집니다.
 - **Tasty 터미널 안에서 `tasty` 를 쳤는데 새 윈도우가 안 뜹니다** — Tasty 안에서 인자 없이 실행하면 새 윈도우 대신 도움말을 보여줍니다. 새 윈도우는 `tasty new window`(보던 윈도우의 포커스는 그대로 둡니다), GUI 를 강제로 띄우려면 `tasty --launch`.
 

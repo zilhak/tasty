@@ -76,7 +76,7 @@ Expand-Archive tasty-{ver}-windows-x64.zip -DestinationPath tasty
 
 첫 실행 시 "Windows 의 PC 보호" 경고가 뜹니다(코드 서명이 없어서입니다). **추가 정보 → 실행** 을 누르면 됩니다.
 
-Windows 에서 Tasty 는 **Git Bash** 를 셸로 씁니다. Git for Windows 가 없으면 설정 윈도우에서 "Git Bash를 찾을 수 없습니다" 안내가 뜨므로, 먼저 설치하거나 **설정** <!-- en: Settings --> > **터미널** <!-- en: Terminal --> > **셸** <!-- en: Shell --> 에서 bash 경로를 직접 지정합니다.
+Windows 에서 Tasty 는 **Git Bash** 를 셸로 씁니다. Git for Windows 가 없는 채로 처음 실행하면 터미널 대신 **셸 선택** <!-- en: Choose a shell --> 화면이 뜹니다. bash.exe 경로를 입력하고 **이 셸 사용** <!-- en: Use this shell --> 을 누르면 그 셸로 시작하고, **종료** <!-- en: Quit --> 를 누르면 Tasty 가 닫힙니다. 경로가 올바른 bash 나 zsh 실행 파일일 때만 **이 셸 사용** 을 누를 수 있습니다. 실행한 뒤에는 Git for Windows 가 없으면 설정 윈도우에서 "Git Bash를 찾을 수 없습니다" 안내가 뜨므로, 먼저 설치하거나 **설정** <!-- en: Settings --> > **터미널** <!-- en: Terminal --> > **셸** <!-- en: Shell --> 에서 bash 경로를 직접 지정합니다.
 
 ## 첫 실행
 

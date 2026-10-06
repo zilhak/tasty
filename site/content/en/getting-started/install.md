@@ -1,4 +1,4 @@
-<!-- source-hash: 20916312ab95 -->
+<!-- source-hash: f0f442e0848f -->
 # Install
 
 Install Tasty for your computer and open your first terminal. Below you will find installation steps for each OS, along with how to update or uninstall.
@@ -77,7 +77,7 @@ Expand-Archive tasty-{ver}-windows-x64.zip -DestinationPath tasty
 
 On first launch a "Windows protected your PC" warning appears (the binary is not code-signed). Click **More info → Run anyway**.
 
-On Windows, Tasty uses **Git Bash** as its shell. If Git for Windows is not installed, the settings window shows a "Git Bash not found" notice, so either install it first or set the bash path yourself under **Settings** > **Terminal** > **Shell**.
+On Windows, Tasty uses **Git Bash** as its shell. If you start Tasty for the first time without Git for Windows, a **Choose a shell** screen appears instead of a terminal. Enter the path to bash.exe and press **Use this shell** to start with that shell, or press **Quit** to close Tasty. **Use this shell** is available only when the path is a bash or zsh executable. Once Tasty is running without Git for Windows, the settings window shows a "Git Bash not found" notice, so either install it first or set the bash path yourself under **Settings** > **Terminal** > **Shell**.
 
 ## First launch
 
