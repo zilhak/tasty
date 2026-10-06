@@ -262,6 +262,10 @@ struct OutputWatch {
     stall_notified: bool,
     /// 마지막 창에 오류가 있었는지. 정지 알림까지 기다릴 시간을 고른다.
     saw_error: bool,
+    /// 이 조용한 구간에서 상태가 정지 알림을 허용하지 않음(idle·needs_input·exited)을 확인했는지.
+    /// 그 상태는 hook 이 보고한 값이라 출력 변화나 이 surface 의 hook 없이는 바뀌지 않으므로,
+    /// 그때까지 대기 기록·상태 조회를 tick 마다 반복하지 않는다.
+    settled: bool,
 }
 
 fn output_fingerprint(text: &str) -> u64 {
@@ -360,6 +364,7 @@ impl ErrorScanner {
                 last_change: now,
                 stall_notified: true,
                 saw_error: false,
+                settled: false,
             },
         );
         self.last_stall_notify
@@ -444,6 +449,34 @@ impl ErrorScanner {
     #[cfg(test)]
     pub(crate) fn target_of(&self, surface_id: u32) -> Option<ScanTarget> {
         self.enabled.get(&surface_id).copied()
+    }
+
+    /// 이 surface 의 hook 이 왔다. hook 은 상태를 바꿀 수 있으므로 조용한 구간의 상태 확인을 다시 하게 한다.
+    pub fn note_hook(&mut self, surface_id: u32) {
+        if let Some(w) = self.watch.get_mut(&surface_id) {
+            w.settled = false;
+        }
+    }
+
+    /// 시험 전용 — 조용한 구간의 상태 확인을 마친 것으로 둔다.
+    #[cfg(test)]
+    pub(crate) fn settle_for_test(&mut self, surface_id: u32) {
+        self.watch.insert(
+            surface_id,
+            OutputWatch {
+                fingerprint: 0,
+                last_change: Instant::now(),
+                stall_notified: false,
+                saw_error: false,
+                settled: true,
+            },
+        );
+    }
+
+    /// 시험 전용 — 조용한 구간의 상태 확인을 마쳤는지.
+    #[cfg(test)]
+    pub(crate) fn is_settled(&self, surface_id: u32) -> bool {
+        self.watch.get(&surface_id).is_some_and(|w| w.settled)
     }
 
     /// 새 턴을 위해 중복 알림 기록과 정지 관측을 초기화한다.
@@ -574,6 +607,7 @@ impl ErrorScanner {
                 w.last_change = now;
                 w.stall_notified = false;
                 w.saw_error = has_error;
+                w.settled = false;
             }
             None => {
                 self.watch.insert(
@@ -583,6 +617,7 @@ impl ErrorScanner {
                         last_change: now,
                         stall_notified: false,
                         saw_error: has_error,
+                        settled: false,
                     },
                 );
             }
@@ -595,6 +630,9 @@ impl ErrorScanner {
         let Some(w) = self.watch.get(&surface_id) else {
             return;
         };
+        if w.settled {
+            return;
+        }
         let quiet = now.saturating_duration_since(w.last_change);
         // 플러그인이 다시 시작되면 메모리의 대기 기록은 사라지고 surface meta 는 남는다. 알림 문구는 meta 를
         // 읽으므로, 일반 기준으로 알리기 전에 meta 에서 기록을 되살려 기준과 문구가 같은 대기를 가리키게 한다.
@@ -654,6 +692,12 @@ impl ErrorScanner {
             since_last_notify,
             threshold,
         ) {
+            // 조회에 실패했으면(빈 값) 다음 tick 에 다시 묻는다.
+            if !child_state.is_empty()
+                && let Some(w) = self.watch.get_mut(&surface_id)
+            {
+                w.settled = true;
+            }
             return;
         }
 
@@ -1008,6 +1052,8 @@ mod tests {
         wait_meta: Option<String>,
         /// surface.meta.set 으로 받은 (key, value).
         meta_sets: std::cell::RefCell<Vec<(String, String)>>,
+        /// 받은 호출의 method 순서.
+        calls: std::cell::RefCell<Vec<String>>,
     }
 
     impl ScanHost {
@@ -1018,7 +1064,11 @@ mod tests {
                 fired: std::cell::RefCell::new(Vec::new()),
                 wait_meta: None,
                 meta_sets: std::cell::RefCell::new(Vec::new()),
+                calls: std::cell::RefCell::new(Vec::new()),
             }
+        }
+        fn count(&self, method: &str) -> usize {
+            self.calls.borrow().iter().filter(|m| *m == method).count()
         }
         fn set_text(&self, text: &str) {
             *self.text.borrow_mut() = text.to_string();
@@ -1037,6 +1087,7 @@ mod tests {
             method: &str,
             params: serde_json::Value,
         ) -> Result<serde_json::Value, tasty_plugin_sdk::PluginError> {
+            self.calls.borrow_mut().push(method.to_string());
             match method {
                 "surface.read_since_scan_mark" => {
                     let delta = std::mem::take(&mut *self.text.borrow_mut());
@@ -1212,6 +1263,79 @@ mod tests {
             s.scan_one_at(&host, 1, t0 + STALL_QUIET_NO_ERROR * 2);
             assert_eq!(host.stalled_count(), 0, "state={state}");
         }
+    }
+
+    /// 800ms tick 을 `n` 번 돌린다.
+    fn ticks(s: &mut ErrorScanner, host: &ScanHost, from: Instant, n: u32) -> Instant {
+        let mut t = from;
+        for _ in 0..n {
+            t += Duration::from_millis(800);
+            s.scan_one_at(host, 1, t);
+        }
+        t
+    }
+
+    /// idle 로 조용한 대상은 조용한 구간마다 대기 기록·상태를 한 번만 묻는다.
+    #[test]
+    fn a_quiet_idle_target_is_checked_once_per_quiet_stretch() {
+        for state in ["idle", "needs_input", "exited"] {
+            let host = ScanHost::new("…\n", state);
+            let mut s = ErrorScanner::new();
+            let t0 = Instant::now();
+            s.scan_one_at(&host, 1, t0);
+            ticks(&mut s, &host, t0 + STALL_QUIET_NO_ERROR, 100);
+            assert_eq!(host.count("terminal.state"), 1, "state={state}");
+            assert_eq!(host.count("surface.meta.get"), 1, "state={state}");
+            assert_eq!(host.stalled_count(), 0, "state={state}");
+        }
+    }
+
+    /// 상태를 읽지 못했으면 확인한 것으로 치지 않고 다음 tick 에 다시 묻는다.
+    #[test]
+    fn a_failed_state_read_is_retried_next_tick() {
+        let host = ScanHost::new("…\n", "");
+        let mut s = ErrorScanner::new();
+        let t0 = Instant::now();
+        s.scan_one_at(&host, 1, t0);
+        ticks(&mut s, &host, t0 + STALL_QUIET_NO_ERROR, 5);
+        assert_eq!(host.count("terminal.state"), 5);
+    }
+
+    /// hook 이 상태를 active 로 되돌리면 다음 tick 에 다시 물어 이전과 같은 시점에 알린다.
+    #[test]
+    fn a_hook_rearms_the_state_check_without_delaying_the_stall() {
+        let host = ScanHost::new("…\n", "idle");
+        let mut s = ErrorScanner::new();
+        let t0 = Instant::now();
+        s.scan_one_at(&host, 1, t0);
+        let t = ticks(&mut s, &host, t0 + STALL_QUIET_NO_ERROR, 10);
+        assert_eq!(host.count("terminal.state"), 1);
+        *host.state.borrow_mut() = "active";
+        s.note_hook(1);
+        s.scan_one_at(&host, 1, t + Duration::from_millis(800));
+        assert_eq!(host.count("terminal.state"), 2);
+        assert_eq!(host.stalled_count(), 1, "hook 다음 tick 에 알린다");
+    }
+
+    /// 출력이 바뀌면 새 조용한 구간이라 기준 시간이 지난 뒤 다시 묻는다.
+    #[test]
+    fn new_output_starts_a_new_quiet_stretch_for_the_state_check() {
+        let host = ScanHost::new("…\n", "idle");
+        let mut s = ErrorScanner::new();
+        let t0 = Instant::now();
+        s.scan_one_at(&host, 1, t0);
+        let t = ticks(&mut s, &host, t0 + STALL_QUIET_NO_ERROR, 10);
+        assert_eq!(host.count("terminal.state"), 1);
+        host.set_text("more\n");
+        s.scan_one_at(&host, 1, t);
+        ticks(&mut s, &host, t, 10);
+        assert_eq!(
+            host.count("terminal.state"),
+            1,
+            "새 구간은 기준 시간 전에는 묻지 않는다"
+        );
+        ticks(&mut s, &host, t + STALL_QUIET_NO_ERROR, 10);
+        assert_eq!(host.count("terminal.state"), 2);
     }
 
     /// 출력이 재개되면 dedupe 가 풀리고 다음 정적 구간은 새 사건으로 센다.

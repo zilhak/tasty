@@ -221,6 +221,7 @@ pub(crate) fn handle_claude_hook<H: HostCallSink>(
         .ok_or_else(|| IpcMethodError::invalid_params(tr.t("claude.hook.missing_event")))?;
 
     let surface_id = resolve_surface_id(params, tr)?;
+    crate::error_scan::lock_scanner(scanner).note_hook(surface_id);
     let session = params
         .get("session")
         .and_then(|v| v.as_str())
@@ -1715,6 +1716,25 @@ mod tests {
             "자동 재개 시도 기록이 남아야 한다"
         );
         assert!(rig.wall_time_open(), "wall_time 이 열려 있어야 한다");
+    }
+
+    /// hook 은 상태를 바꿀 수 있으므로, 조용한 구간의 상태 확인을 마친 대상도 다시 묻게 한다.
+    /// 상태를 건드리지 않고 일찍 돌아가는 경로(하위 에이전트 실패)도 마찬가지다.
+    #[test]
+    fn every_hook_rearms_the_quiet_stretch_state_check() {
+        for params in [
+            json!({ "event": "prompt-submit", "surface": HookRig::SURFACE }),
+            json!({ "event": "notification", "surface": HookRig::SURFACE }),
+            json!({ "event": "stop-failure", "surface": HookRig::SURFACE, "agent_id": "sub-1" }),
+        ] {
+            let mut rig = HookRig::new();
+            crate::error_scan::lock_scanner(&rig.scanner).settle_for_test(HookRig::SURFACE);
+            rig.run(params.clone());
+            assert!(
+                !crate::error_scan::lock_scanner(&rig.scanner).is_settled(HookRig::SURFACE),
+                "{params}"
+            );
+        }
     }
 
     /// 대기 Stop 은 정지 감시와 부모 알림 문구가 쓰도록 대기를 기록한다.
