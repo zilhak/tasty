@@ -890,6 +890,7 @@ C 프레임보더) 중 **A 배지가 사용자 확정**되어 갤러리는 A만 
 | reason well(command-well: bg-app+separator, mono danger) | `reason_well` | `reason_well` |
 | Dismiss / (mid-transfer)Retry (danger-fill 금지) | `footer_buttons`(Secondary/Ghost) | 동 |
 | 배율 비교 Stage(ui_scale 0.85 · 1 · 1.2) + inset Meta | 해당 없음(본체는 현재 배율 하나로 그린다) | `draw` 두 번째 stage·meta |
+| 배율 비교 Stage 배치(시안 `flexWrap: wrap`) | 해당 없음 | 세로 `StageVariant::Column`으로 쌓는다. egui `horizontal_wrapped`는 크기를 미리 모르는 cluster를 다음 줄로 넘기지 못해 1.2 카드가 Stage 경계를 넘는다 |
 
 **본체 vs 갤러리 차이**: 갤러리는 main 바이너리 비의존이라 `draw_transfer_*`(DialogState 의존)을
 직접 못 부르고 같은 구조·토큰으로 미러(정적 seed 데이터). scrim dim 은 본체 `draw.rs` 가 그리므로
