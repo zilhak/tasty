@@ -5919,6 +5919,7 @@ dependencies = [
  "egui-wgpu",
  "egui-winit",
  "egui_extras",
+ "image",
  "png 0.18.1",
  "pollster",
  "tasty-dag-layout",

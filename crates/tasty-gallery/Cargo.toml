@@ -11,7 +11,9 @@ wgpu = "24"
 egui = "0.31"
 egui-wgpu = "0.31"
 egui-winit = "0.31"
-egui_extras = { version = "0.31", features = ["svg"] }
+# "image" 는 공용 워드마크의 로고 PNG(bytes 로더)를 디코드한다.
+egui_extras = { version = "0.31", features = ["svg", "image"] }
+image = { version = "0.25", default-features = false, features = ["png"] }
 pollster = "0.4"
 png = "0.18"
 anyhow = "1"
