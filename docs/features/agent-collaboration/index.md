@@ -68,6 +68,10 @@ v2 의 int64 값은 내부에서는 정수로 들고, 직렬화할 때(저장·I
 
 #### 작업·DAG 조회
 
+#### 후처리 CLI
+
+v2 run·custom task 는 계약의 `postprocess` 로 본 작업 뒤 CLI 하나를 실행해 그 stdout 을 최종 출력으로 받을 수 있다. 명령은 셸 없이 직접 실행하고, 입력 snapshot·본 작업 원본·artifact 에서 고른 값을 JSON 문서 하나로 stdin 에 쓴다. stdout 은 JSON 값 하나(선택 pointer) 또는 UTF-8 text 이고 출력 타입으로 검증한다. 후처리가 끝날 때까지 task 는 Running 이고 permit 을 쥐며 하류는 기다린다. 실패 원인(종료 코드·시작 실패·시간 초과·취소·형식 오류 등)을 구분해 기록하고, 명시한 횟수만큼 저장한 본 작업 결과로 후처리만 다시 실행한다. 시작했지만 결과를 받지 못한 실행은 재시작 뒤 다시 실행하지 않는다. `task_get` 은 이 단계의 task 에 `phase`(`postprocessing`·`retry_wait`)를 싣는다. 형식과 규칙은 [작업 러너 §후처리 CLI](../../dev-guide/agent-runner.md#후처리-cli-postprocess).
+
 `task_get`의 CLI 출력에는 command 종류, `depends_on`, `on_failure`, `metadata`가 포함된다. `task_graph`의 노드는 `command_kind`·`on_failure_kind`를, 엣지는 `depends_on`·`fallback`·`reduce`·`binding`(v2 입력 binding 의 원본 → 받는 task) 종류를 제공한다. dot에서는 각각 실선·주황 점선·파랑 점선·실선으로 표시한다. DAG 화면도 `binding` 엣지를 `depends_on` 과 같은 모양으로 그린다.
 
 **fallback 참조는 사이클 검사 대상이 아니다.** `detect_cycles()`·`TaskGraph::dfs_cycle`은 `depends_on`과 `Reduce.inputs`만 순회한다. A와 F가 서로를 fallback으로 참조해도 존재 검사만 통과하면 저장된다. 그래프에는 보이지만 `-32602`로 차단되지 않는다.
@@ -195,6 +199,7 @@ task 는 영속되지만(`Scope::Workspace`) runner thread 는 in-memory 다 —
 - **부팅 시 상태 정리 1회** — 라이브 workspace 전부에 대해 stale semaphore/lease holder 회수 + 직전 `Running` task 를 `Failed("host restart")` 로 마감 + persisted `DispatchHandle` reload(살아있는 `ShellProcess`/`PolledDispatch`/`BarrierPoll`/미만료 `AwaitExternal` 는 복원, 죽은 건 마감). runner thread 는 여전히 안 켜져 있으므로 복원된 handle 을 실제로 poll 하려면 수동(또는 plugin) `agent.task_run --action start` 가 필요하다.
 - **같은 부팅 정리 경로에서 자동 GC 도 함께 돈다** — 상태 무관 + 잠정 임계값(7일) 이상 방치된 task 를 `task_purge` 와 동일한 참조 안전 로직(`plan_sweep`/`apply_sweep_plan`)으로 쓸어낸다. memory 자체 TTL(`PutOpts.expires_at`)은 쓰지 않는다 — TTL 만료는 참조 무결성·상태 검사를 우회해 dangling 참조를 재도입하기 때문. 상세: [dev-guide/agent-runner](../../dev-guide/agent-runner.md#자동-gc).
 - **정지 상태는 조회로 드러난다** — `task_list`/`task_graph` 응답에 `runner: { running, crashed, ready_count, running_count, store_error, list_failures }` 가 동반된다. runner 가 꺼져 있어도 `ready_count`/`running_count` 는 store 의 실제 값이라, "할 일은 있는데 아무도 안 돌리고 있다"가 이 응답만으로 드러난다. store 를 못 읽으면 두 카운트는 `null` + `store_error` 이고(0 으로 흡수하지 않는다), 러너가 살아 있는데 계속 못 읽는 상태는 `list_failures` 로 드러난다. `task_get` 은 `AwaitExternal` 로 외부 신호를 기다리는 task 에 `awaiting_external: { wait_key, deadline_ms }` 를 실어 "그냥 running" 과 구분한다.
+- **후처리 단계의 v2 task 는 회차의 진행으로 복원한다** — 예약만 된 실행은 이어서 실행하고, 시작했는데 저장된 보고가 없으면 `outcome_unknown` 으로 끝내며 다시 실행하지 않는다.
 - **`hook_task_waits`(push 완료 전략의 hook_id → task_id 매핑)는 비영속** — 재시작하면 그 task 는 훅으로는 깨어날 수 없다. 대신 `AwaitExternal` handle 자체가 `deadline_ms` 를 들고 다니므로(핸들은 영속), 다음 재시작의 reload 가 만료 여부를 독자적으로 판정해 마감한다.
 - `agent.task_run` 은 plugin 도 호출 가능(`AgentManage`) — 자동 시작이 없으므로 plugin 이 자기 workspace 의 runner를 직접 시작할 수 있어야 하기 때문이다.
 

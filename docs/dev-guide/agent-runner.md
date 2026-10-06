@@ -512,7 +512,7 @@ tasty agent task-purge --workspace-id 1 --states succeeded,failed --older-than-m
 
 task 는 선택적으로 타입 계약(`TaskContract`)을 가진다. 계약이 없는 task 가 v1 이며, 결과 형식·reducer 동작·저장 형식이 바뀌지 않는다. v2 task 는 IPC `agent.task_graph_submit`(CLI `tasty agent task-graph-submit`)으로 그래프 단위로 만들거나 Rust API `TaskStore::create_typed` 로 하나씩 만든다. `task_create` 는 계약을 받지 않는다. 결정 근거는 [ADR-0068](../adr/0068-typed-task-contracts-live-in-a-separate-record-namespace.md).
 
-코드: 타입 `crates/tasty-agent/src/task/types.rs`, 계약·결과 `crates/tasty-agent/src/task/contract.rs`, 입력 binding `crates/tasty-agent/src/task/binding.rs`, 그래프 제출 `crates/tasty-agent/src/task/store/graph_submit.rs`, 실행 시 입력 해석 `crates/tasty-task-runtime/src/runner_host/typed_inputs.rs`, 회차 완료 기록과 handle 의 회차 `crates/tasty-task-runtime/src/runner_host/attempt_record.rs`, v2 reduce `crates/tasty-agent/src/reducer.rs::reduce_typed`.
+코드: 타입 `crates/tasty-agent/src/task/types.rs`, 계약·결과 `crates/tasty-agent/src/task/contract.rs`, 입력 binding `crates/tasty-agent/src/task/binding.rs`, 그래프 제출 `crates/tasty-agent/src/task/store/graph_submit.rs`, 실행 시 입력 해석 `crates/tasty-task-runtime/src/runner_host/typed_inputs.rs`, 회차 완료 기록과 handle 의 회차 `crates/tasty-task-runtime/src/runner_host/attempt_record.rs`, v2 reduce `crates/tasty-agent/src/reducer.rs::reduce_typed`, 후처리 계약·결과 확정 `crates/tasty-agent/src/task/postprocess.rs`, 후처리 단계의 완료 기록 `crates/tasty-agent/src/task/store/postprocess.rs`, 후처리 프로세스 실행 `crates/tasty-task-runtime/src/runner_host/postprocess.rs`.
 
 ### 계약 형식
 
@@ -551,12 +551,12 @@ task 는 선택적으로 타입 계약(`TaskContract`)을 가진다. 계약이 �
 
 | command | 기본 출력 타입 | 출력 값 |
 |---|---|---|
-| `run` | `int64`(다시 선언 불가) | 종료 코드(wire 에서는 `"0"` 같은 문자열). `allowed_exit_codes`(기본 `[0]`)에 든 코드면 성공. stdout·stderr 는 `raw.execution`, 숫자 종료 코드는 `raw.exit_code` |
+| `run` | `int64`(후처리가 없으면 다시 선언 불가) | 종료 코드(wire 에서는 `"0"` 같은 문자열). `allowed_exit_codes`(기본 `[0]`)에 든 코드면 성공. stdout·stderr 는 `raw.execution`, 숫자 종료 코드는 `raw.exit_code` |
 | `custom` | `json` | IPC 응답(최종 응답) |
 | `wait_barrier` | `unit`(다시 선언 불가) | 확정된 null |
 | `reduce` | 전략별(아래) | reducer 값 |
 
-결과는 `typed_result` 에 저장한다: `has_output`·`output`(최종 출력), `raw`(`exit_code`, `execution`), `artifacts`, `error`(`stage`: `input`·`execution`·`postprocess`·`output_validation`·`persistence`), `provenance`(`contract_version`, `kind`, `output_source`). `has_output: true` 이고 `output: null` 이면 unit 또는 nullable 출력이 확정된 것이고, `has_output: false` 는 출력이 없다는 뜻이다. v1 호환을 위해 `result` 에는 최종 출력이 `output` 으로 투영된다.
+결과는 `typed_result` 에 저장한다: `has_output`·`output`(최종 출력), `raw`(`exit_code`, `execution`, 후처리가 있으면 `postprocess`), `artifacts`, `error`(`stage`: `input`·`execution`·`postprocess`·`output_validation`·`persistence`), `provenance`(`contract_version`, `kind`, `output_source`). `has_output: true` 이고 `output: null` 이면 unit 또는 nullable 출력이 확정된 것이고, `has_output: false` 는 출력이 없다는 뜻이다. v1 호환을 위해 `result` 에는 최종 출력이 `output` 으로 투영된다.
 
 보고된 결과는 계약에 맞춰 확정하고, 유효한 출력 없이 성공으로 가려는 v2 task 는 Failed 로 끝낸다. 러너·재시작 복구·훅 완료·훅 만료·IPC `task_set_result` 가 모두 같은 완료 경로(아래 §실행 회차와 완료)를 지나므로 완료 경로마다 따로 검사하지 않는다. 비즈니스 값(`"revise"`, `false`)은 정상 출력이다. 출력 타입에 맞지 않는 값만 `output_validation` 실패가 된다. `retry` 는 `typed_result` 를 지운다.
 
@@ -593,6 +593,77 @@ v2 task 의 fallback 이 이미 실행됐으면(Ready·Running·Succeeded) 그 t
 v1 이 v2 결과를 읽는 경로는 `-32602`(`error.data.task_id` 에 참조 대상)로 거절한다. 대상은 v1 출력 placeholder(`${task.<id>.output…}`)로 v2 task 를 참조하는 생성, `inputs` 에 v2 task 가 든 v1 `Reduce` 생성, v2 task 를 입력으로 준 단발 `agent.task_reduce` 다. 이미 저장된 v1 task 가 v2 를 가리키면 실행 직전 치환·reduce 수집이 실패로 끝낸다. 허용 범위는 입력 binding 이 정한다.
 
 inline fallback 은 v2 에서 거절한다.
+
+### 후처리 CLI (`postprocess`)
+
+run·custom task 는 본 작업 뒤 CLI 하나를 실행해 그 stdout 을 최종 출력으로 삼을 수 있다. 모델 접속·인증·질문 작성은 CLI 의 일이고, Tasty 는 명령 실행·입출력·타입 검증·실패 처리만 한다. CLI 는 호스트 프로세스의 환경변수를 그대로 받으므로 인증은 기존 환경을 쓴다. 근거는 [ADR-0073](../adr/0073-typed-task-postprocess-runs-inside-the-attempt.md).
+
+```json
+{"id": "judge",
+ "command": {"kind": "run", "workspace_id": 1, "command": ["make-draft"]},
+ "output_schema": {"type": "enum", "values": ["pass", "revise"]},
+ "postprocess": {
+   "command": ["judge-cli", "--json"],
+   "cwd": "/work",
+   "stdin": {"draft": {"from": "raw", "pointer": "/execution/stdout/text"},
+             "request": {"from": "input"}},
+   "stdout": {"format": "json", "pointer": "/verdict"},
+   "timeout_ms": 120000,
+   "retry": {"max_retries": 1, "delay_ms": 5000}}}
+```
+
+- `command`: 실행 파일과 인자. 셸을 거치지 않고 직접 실행한다. 셸이 필요하면 `["sh", "-c", ...]` 처럼 셸을 명시한다. 입력 값은 명령 문자열에 끼워 넣지 않고 stdin 으로만 간다. TTY 가 없는 CLI 만 지원한다.
+- `cwd`: 생략하면 run 의 `cwd`, 그것도 없으면 호스트 프로세스의 디렉터리.
+- `stdin`: stdin 에 쓸 JSON object 의 필드별 출처. `from` 은 `input`(이 회차의 입력 snapshot, wire 형식), `raw`(본 작업 원본 `{exit_code?, execution?}`), `artifacts` 이고 `pointer` 로 그 안의 위치를 고른다. 위치에 값이 없으면 실행하지 않고 `stdin_mapping` 실패다. 생략하면 `{}` 를 쓴다. 문서 하나를 쓰고 stdin 을 닫는다.
+- `stdout.format`: `json`(기본)은 JSON 값 정확히 하나, `text` 는 UTF-8 문자열 그대로. json 형식이 실패해도 text 로 바꾸지 않는다. `stdout.pointer` 는 json 형식에서만 쓰며 그 위치의 값을 출력 후보로 고른다. 생략하면 값 전체다.
+- `timeout_ms`: 1 ~ 86400000. 프로세스 종료와 stdin 쓰기, 상속된 stdout·stderr 파이프의 EOF 까지 포함한다.
+- `retry`: 생략하면 재시도하지 않는다. `max_retries` 1 ~ 10, `delay_ms` 0 ~ 3600000.
+- 출력 스키마를 생략하면 json 형식은 `json`, text 형식은 `string` 이다. run 의 int64 출력 제한은 후처리가 있으면 적용하지 않는다. reduce·wait_barrier 에는 둘 수 없다.
+
+실행 순서:
+
+1. 본 작업이 성공하면 task 는 Running 으로 남고 회차의 `attempt.postprocess` 에 본 작업 결과(`execution`)와 진행(`phase`)이 기록된다. 본 작업이 실패하면 후처리 없이 끝난다.
+2. 호스트는 `phase` 를 `started` 로 기록한 뒤 프로세스를 띄운다. 러너는 본 작업이 끝난 tick 에 첫 실행을 시작한다.
+3. 실행 보고가 재시도 대상 실패이고 횟수가 남았으면 `phase` 는 `pending`(다음 `run`, `not_before_ms`)이 되고 task 는 Running 이다. 아니면 그 보고로 결과를 확정하고 종결한다. 종결·`on_failure`·하류 반영은 이때 한 번 일어난다.
+4. 세마포어·lease 는 본 작업부터 마지막 종결까지 쥔다. 다음 task 는 후처리가 끝난 뒤에야 Ready 가 된다.
+
+`agent.task_get` 은 후처리 단계의 Running task 에 `phase`(`postprocessing`, 재시도 대기 중이면 `retry_wait`)를 싣는다.
+
+stdout 해석과 성공 판정:
+
+- 성공은 종료 코드 0 이고 stdout 이 형식에 맞으며 출력 후보가 출력 타입에 맞을 때다. `false`·`0`·`null`·`"revise"` 같은 값은 비즈니스 결과이며 실패가 아니다. `null` 은 출력 타입이 unit 이거나 nullable 일 때만 유효하다.
+- stderr 는 진단 로그로만 쓰고 출력에 섞지 않는다. 마지막 16 KiB 만 남긴다.
+- stdout 은 256 KiB 까지 모은다. 넘으면 앞부분이 온전한 JSON 이어도 실패한다(`stdout_too_large`). 상한은 task 레코드가 memory 값 상한(1 MiB) 안에 들도록 정했다.
+
+실패 원인(`raw.postprocess.cause`, 오류 메시지는 `postprocess <원인>: ...`):
+
+| 원인 | 뜻 | 재시도 |
+|---|---|---|
+| `spawn` | 실행 파일을 시작하지 못함(없는 실행 파일 등) | 예 |
+| `stdin_write` | stdin 을 쓰지 못함. 읽지 않고 닫은 경우는 실패가 아니다 | 예 |
+| `nonzero_exit` | 0 이 아닌 종료 코드 | 예 |
+| `signal` | 숫자 종료 코드 없이 끝남 | 예 |
+| `timeout` | 제한 시간 안에 종료·출력 EOF 가 오지 않음 | 예 |
+| `stdout_too_large` · `stdout_read` · `invalid_utf8` | stdout 수집 실패 | 예 |
+| `invalid_json` · `multiple_documents` · `empty_output` · `pointer_missing` | json 형식 해석 실패 | 예 |
+| `stdin_mapping` | stdin 출처의 위치에 값이 없음 | 아니요 |
+| `cancelled` | task 취소 또는 러너 정지로 중단 | 아니요 |
+| `outcome_unknown` | 시작했지만 결과를 받기 전에 호스트가 재시작함 | 아니요 |
+
+출력 후보가 출력 타입에 맞지 않으면 `output_validation` 실패이고 재시도하지 않는다.
+
+결과:
+
+- `raw.exit_code`·`raw.execution` 은 본 작업 원본 그대로다. `raw.postprocess` 에 `command`, 회차 안의 실행 번호 `run`, `exit_code`, `stderr`(tail)·`stderr_truncated`, 실패면 `cause`, pointer 를 썼으면 stdout 전체(`stdout`), 재시도로 넘어간 앞선 실행(`failed_runs`: 번호·원인·종료 코드·메시지)이 있다.
+- `provenance.output_source` 는 `postprocess.stdout.json` 또는 `postprocess.stdout.text` 다. 모델 이름 같은 메타데이터는 CLI 가 stdout 에 담았을 때만 남는다.
+
+프로세스 소유와 재시작:
+
+- 실행·출력 수집은 작업 스레드에서 하며 저장소 잠금은 시작 기록과 결과 저장에만 잡는다. stdin 쓰기와 stdout·stderr 읽기는 서로 다른 스레드라 stdin 을 읽지 않는 CLI 나 출력이 큰 CLI 도 막히지 않는다.
+- 시간 초과·취소는 그 실행이 만든 프로세스 그룹(Unix, 자식을 새 그룹 리더로 띄운다)이나 job(Windows)만 종료한다. 직접 자식이 끝난 뒤에도 자손이 파이프를 쥐고 있으면 EOF 를 기다리다 시간 초과로 그룹을 종료한다. Linux 는 끝난 리더를 회수하지 않고 관찰해 그룹을 종료할 때까지 그룹 id 가 재사용되지 않는다. 다른 Unix 는 리더를 회수한 뒤에는 그룹을 종료하지 않는다. 스스로 새 세션·그룹으로 옮긴 프로세스나 Windows 에서 job 에 넣기 전에 만든 프로세스는 종료 대상에 들지 않는다.
+- 취소된 task 의 permit 은 실행이 끝난 것을 확인한 다음 tick 에 놓는다.
+- 각 실행 보고는 `tasty.agent.postprocess_result.<task id>` 에 회차 id 와 함께 저장한다. 재시작하면 `phase` 로 복원한다. `pending` 은 예약대로 실행하고, `started` 는 같은 회차·번호의 저장된 보고가 있으면 그것으로 확정하며 없으면 `outcome_unknown` 으로 끝낸다. 결과 불명인 실행은 재시도 예산이 남아도 다시 실행하지 않는다. 다시 실행하려면 `retry` 로 새 회차를 연다(본 작업부터 실행한다).
+- 러너가 멈추면(workspace 정리·앱 종료) 진행 중인 후처리를 `cancelled` 로 중단한다.
 
 ### 입력 binding
 

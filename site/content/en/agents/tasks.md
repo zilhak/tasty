@@ -1,4 +1,4 @@
-<!-- source-hash: ec5367488d30 -->
+<!-- source-hash: 77d2887982b7 -->
 <a id="task-dag"></a>
 
 # Task workflows (DAG)
@@ -90,6 +90,27 @@ tasty agent task-graph-submit --workspace-id 2 --graph @graph.json
 ```
 
 You choose each task's `id`. `bindings` say where inputs come from: a fixed value (`literal`), one value from an earlier task's result (`from_task` with `pointer`), or whichever of a task and its fallback ran (`one_of`). Types that do not fit are rejected when you send the graph. Values go only where `input_mapping` says. `args` appends them to the command one argument each, and `stdin: true` writes the whole input as JSON to standard input. `$(...)` or spaces inside a value are never interpreted again. The values actually passed are in the task's `input_snapshot`. Tasks in such a graph do not use the placeholders above.
+
+To run a task's result through another command (a judge or summary tool, say) and use that as the result, add `postprocess`. When the main work succeeds, the command runs and its standard output becomes the task's result.
+
+```json
+{"id": "judge",
+ "command": {"kind": "run", "command": ["make-draft"]},
+ "output_schema": {"type": "enum", "values": ["pass", "revise"]},
+ "postprocess": {"command": ["judge-cli", "--json"],
+                 "stdin": {"draft": {"from": "raw", "pointer": "/execution/stdout/text"}},
+                 "stdout": {"pointer": "/verdict"},
+                 "timeout_ms": 120000,
+                 "retry": {"max_retries": 1}}}
+```
+
+- The command runs as is, without a shell. If you need one, write it out, as in `["sh", "-c", "..."]`. Sign-in uses the environment Tasty was started from.
+- `stdin` sets the fields of the JSON written to standard input. `from` is `input` (the task's input), `raw` (the main work's result) or `artifacts`, and `pointer` picks a value inside it.
+- By default standard output must be exactly one JSON value. With `"stdout": {"format": "text"}` the text is taken as is. Progress logs sent to standard error stay out of the result.
+- `timeout_ms` is required. When it runs out or the task is cancelled, the command and the processes it started are stopped.
+- With `retry`, a failure reruns only the postprocess that many times; the main work does not run again.
+- Until the postprocess finishes, the task shows as running (`phase` in `task-get`) and the next tasks wait. The reason for a failure is in the task result's `raw.postprocess`.
+- If Tasty restarts while a postprocess runs, that postprocess is not run again and the task fails. To try again, rerun the task with `task-retry`.
 
 While Tasty runs on [temporary memory](cli.md#memory-shared-between-agents) because it could not open its memory file, a graph would not survive a restart, so sending it as is gets refused. For a graph that may be lost on restart, add `"durability": "best_effort"`.
 
