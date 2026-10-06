@@ -10,6 +10,7 @@ pub mod registry;
 #[cfg(feature = "gui")]
 pub mod sequence_text;
 pub mod types;
+mod user_file;
 
 pub use config::UserHookHandlerActionDecl;
 pub use env::{HookShellEnv, build_env};

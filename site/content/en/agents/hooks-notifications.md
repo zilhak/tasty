@@ -1,4 +1,4 @@
-<!-- source-hash: f70c2e229377 -->
+<!-- source-hash: 38afbd5b21aa -->
 # Hooks, notifications and webhooks
 
 Get a notification when a build finishes, or run a command when a message appears in the logs. **Hooks** run commands in response to events, and **notifications** let you know when to check back. Use **webhooks** to send requests to Tasty from an external service.
@@ -102,7 +102,7 @@ command = "tasty"
 args = ["notify", "Command failed", "--title", "hook"]
 ```
 
-With `kind = "ipc_sequence"` it runs a list of Tasty-internal actions (`calls = [{ method = "...", params = {} }]`) instead of a shell.
+With `kind = "ipc_sequence"` it runs a list of Tasty-internal actions (`calls = [{ method = "...", params = {} }]`) instead of a shell. TOML has no null, so when params need a null value, write them as a JSON string instead of `params`, as in `params_json = '{"a":null}'`. Saving with `tasty hook-handler upsert` writes this form for you.
 
 ## Notifications
 

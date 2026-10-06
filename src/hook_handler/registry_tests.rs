@@ -894,3 +894,149 @@ fn a_poisoned_registry_still_installs_and_lists() {
         "poison 이후에도 host default 설치가 반영돼야 한다"
     );
 }
+
+fn ipc_user_handler(id: &str, params: serde_json::Value) -> UserHookHandlerUpsertDecl {
+    UserHookHandlerUpsertDecl {
+        id: id.into(),
+        source: Some(HookSource::Webhook),
+        priority: Some(5),
+        display_name_i18n_key: None,
+        disabled: None,
+        action: Some(UserHookHandlerActionDecl::IpcSequence {
+            calls: vec![IpcCall {
+                method: "notification.create".into(),
+                params,
+            }],
+        }),
+    }
+}
+
+fn first_call_params(reg: &HookHandlerRegistry, id: &str) -> serde_json::Value {
+    let h = reg
+        .get(&HookHandlerId::new(id))
+        .expect("저장한 핸들러가 다시 읽혀야 한다");
+    match h.action {
+        HookHandlerAction::IpcSequence { calls } => calls[0].params.clone(),
+        other => panic!("expected ipc_sequence, got {other:?}"),
+    }
+}
+
+/// TOML에는 null이 없다. params 안쪽의 null은 JSON 문자열로 저장했다가 그대로 되살린다.
+#[test]
+fn inner_null_params_survive_a_save_and_reload() {
+    let params =
+        serde_json::json!({ "a": null, "list": [1, null], "nested": { "b": null, "c": "x" } });
+    let reg = HookHandlerRegistry::new();
+    reg.upsert_user_handler(ipc_user_handler("user/nulls", params.clone()))
+        .expect("upsert ok");
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("hook-handlers.toml");
+    reg.save_user_config(&path).expect("save ok");
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(
+        text.contains("params_json"),
+        "null을 품은 params가 JSON 문자열이 아니다:\n{text}"
+    );
+
+    let reread = HookHandlerRegistry::new();
+    reread.install_user_config(&path);
+    assert_eq!(first_call_params(&reread, "user/nulls"), params);
+}
+
+/// 설정 창 편집처럼 다른 필드만 바꿔 다시 저장해도 안쪽 null이 남는다.
+#[test]
+fn inner_null_params_survive_a_resave_after_an_unrelated_edit() {
+    let params = serde_json::json!({ "a": null });
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("hook-handlers.toml");
+    let reg = HookHandlerRegistry::new();
+    reg.upsert_user_handler(ipc_user_handler("user/nulls", params.clone()))
+        .expect("upsert ok");
+    reg.save_user_config(&path).expect("save ok");
+
+    let edited = HookHandlerRegistry::new();
+    edited.install_user_config(&path);
+    edited.set_user_handler_disabled(&HookHandlerId::new("user/nulls"), true);
+    edited.save_user_config(&path).expect("resave ok");
+
+    let reread = HookHandlerRegistry::new();
+    reread.install_user_config(&path);
+    assert_eq!(first_call_params(&reread, "user/nulls"), params);
+}
+
+/// params 자체가 null인 호출은 키를 빼고 저장한다. 다시 읽으면 null이다.
+#[test]
+fn null_params_are_left_out_and_read_back_as_null() {
+    let reg = HookHandlerRegistry::new();
+    reg.upsert_user_handler(ipc_user_handler("user/bare", serde_json::Value::Null))
+        .expect("upsert ok");
+    let text = reg.export_user_config();
+    assert!(
+        !text.contains("params"),
+        "null params가 키로 남았다:\n{text}"
+    );
+    let dir = tempfile::tempdir().unwrap();
+    let path = write_user_toml(&dir, &text);
+    let reread = HookHandlerRegistry::new();
+    reread.install_user_config(&path);
+    assert_eq!(
+        first_call_params(&reread, "user/bare"),
+        serde_json::Value::Null
+    );
+}
+
+/// null이 없는 params는 이전 형식 그대로 TOML 표로 쓰고 읽는다.
+#[test]
+fn params_without_null_keep_the_toml_table_form() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = write_user_toml(
+        &dir,
+        r#"
+        [[handler]]
+        id = "user/plain"
+        source = "webhook"
+        priority = 5
+        [handler.action]
+        kind = "ipc_sequence"
+        calls = [{ method = "notification.create", params = { body = "hi", n = 1 } }]
+        "#,
+    );
+    let reg = HookHandlerRegistry::new();
+    reg.install_user_config(&path);
+    assert_eq!(
+        first_call_params(&reg, "user/plain"),
+        serde_json::json!({ "body": "hi", "n": 1 })
+    );
+    let text = reg.export_user_config();
+    assert!(
+        !text.contains("params_json"),
+        "null 없는 params가 JSON 문자열로 바뀌었다:\n{text}"
+    );
+}
+
+/// params와 params_json을 함께 쓴 파일은 파싱 실패로 보고 이전 사용자 설정을 유지한다.
+#[test]
+fn a_call_with_both_params_forms_aborts_the_reload() {
+    let dir = tempfile::tempdir().unwrap();
+    let reg = HookHandlerRegistry::new();
+    reg.upsert_user_handler(ipc_user_handler(
+        "user/kept",
+        serde_json::json!({ "body": "hi" }),
+    ))
+    .expect("upsert ok");
+    let path = write_user_toml(
+        &dir,
+        r#"
+        [[handler]]
+        id = "user/both"
+        source = "webhook"
+        priority = 5
+        [handler.action]
+        kind = "ipc_sequence"
+        calls = [{ method = "notification.create", params = {}, params_json = '{"a":null}' }]
+        "#,
+    );
+    reg.reload_user_config(&path);
+    assert!(reg.get(&HookHandlerId::new("user/both")).is_none());
+    assert!(reg.get(&HookHandlerId::new("user/kept")).is_some());
+}

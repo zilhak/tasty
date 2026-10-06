@@ -100,7 +100,7 @@ command = "tasty"
 args = ["notify", "명령 실패", "--title", "hook"]
 ```
 
-`kind = "ipc_sequence"` 로 두면 셸 대신 Tasty 내부 동작 목록(`calls = [{ method = "...", params = {} }]`)을 실행합니다.
+`kind = "ipc_sequence"` 로 두면 셸 대신 Tasty 내부 동작 목록(`calls = [{ method = "...", params = {} }]`)을 실행합니다. TOML에는 null이 없으므로, params 안에 null 값이 필요하면 `params` 대신 JSON 문자열로 `params_json = '{"a":null}'` 처럼 적습니다. `tasty hook-handler upsert`로 저장하면 이 형식으로 자동 기록됩니다.
 
 ## 알림
 

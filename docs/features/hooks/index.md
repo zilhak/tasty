@@ -180,6 +180,7 @@ Plugin 선언에는 ShellCommand variant가 없어 매니페스트 파싱 단계
 - **이미 등록된 웹훅은 안 따라온다.** 웹훅 엔트리는 등록 시점의 `calls` 스냅샷을 직접 소유하고 발생 시 그것을 실행한다 — `--handler <id>` 로 바인딩한 것도 마찬가지다. 바뀐 시퀀스를 외부 URL 에도 적용하려면 그 웹훅을 다시 등록한다. owner 가 등록 시 흐름을 고정한다는 [ADR-0032](../../adr/0032-webhook-admission.md) 의 규칙이다.
 - **`remove` 는 user 기여분만** 지운다. host/plugin 이 같은 id 에 기본값을 심어 뒀으면 그것이 다시 드러나므로, 응답의 `still_present` 가 기본값이 남아 있는지를 알려준다.
 - **병합 순서는 출처 순서다** — 한 id 에 모인 contribution 은 설치 순서와 무관하게 Host → Plugin → User 순서로 병합한다. 원 출처(host 또는 plugin)가 base 가 되고, user 설정은 적은 필드만 그 위에 덮는다. 그래서 `hook-handlers.toml` 로 plugin 핸들러를 patch 하면, 부팅이 user 설정을 plugin 보다 먼저 읽든(headless 는 plugin 을 필요할 때 띄운다) plugin 을 껐다 켜든 reload 없이 user 값을 우선한다. host 와 plugin 은 id 가 `host/<short>` 와 `<plugin_id>/<short>` 로 갈려 한 id 에 함께 오지 않는다([ADR-0027](../../adr/0027-lua-and-hook-execution.md)).
+- **TOML에는 null이 없다.** `IpcSequence` 호출의 params 자체가 null이면 `params` 키를 쓰지 않고, 읽을 때 null로 채운다. params 안쪽에 null이 있으면(예: `{"a":null}`) 그 호출만 params 전체를 JSON 문자열 키 `params_json`으로 쓰고 읽을 때 되돌린다. null이 없는 params는 TOML 표 `params`로 쓰므로 이 규칙 이전의 파일도 그대로 읽힌다. 한 호출에 `params`와 `params_json`이 함께 있거나 `params_json`이 JSON이 아니면 파일 전체를 파싱 실패로 보고 이전 사용자 설정을 유지한다.
 - 영속은 `~/.tasty/hook-handlers.toml` atomic write. 쓰기에 실패하면 메모리 레지스트리는 이미 바뀐 상태이며, 그 사실을 오류문에 적고 **성공으로 보고하지 않는다**(다음 부팅에 유지되지 않을 수 있는 변경임을 알린다).
 
 ## 관련
