@@ -181,8 +181,8 @@ pub fn draw_plugin_identity(ui: &mut egui::Ui, theme: &Theme) {
         theme,
         &[
             ("sizes", "sm 32 · lg 46 — the whole roster"),
-            ("content", "name initial, uppercase, mono bold"),
-            ("initial size", "sm 14 · lg 16 (mark exception)"),
+            ("content", "name initial, uppercase, mono regular"),
+            ("initial size", "sm 13 · lg 14 — no UI-cap exception"),
             ("tint bed", "surface-raised — fixed, not the row bg"),
             ("mix", "bg 18% · border 38% of accent-primary"),
             ("row states", "mark unchanged — only the row bg moves"),
@@ -206,12 +206,9 @@ pub fn draw_plugin_identity(ui: &mut egui::Ui, theme: &Theme) {
                 "the initial",
                 ec(theme.plugin_avatar_fg()),
             ),
-            TokenChip::without_color("plugin-avatar-initial-font-size-sm", "14 at sm"),
-            TokenChip::without_color(
-                "plugin-avatar-initial-font-size-lg",
-                "16 at lg — mark exception to the UI cap",
-            ),
-            TokenChip::without_color("plugin-avatar-initial-weight", "bold"),
+            TokenChip::without_color("plugin-avatar-initial-font-size-sm", "→ font-size-body 13"),
+            TokenChip::without_color("plugin-avatar-initial-font-size-lg", "→ font-size-max 14"),
+            TokenChip::without_color("plugin-avatar-initial-weight", "→ font-weight-normal"),
             TokenChip::without_color("plugin-avatar-border-width", "= border-width"),
         ],
     );
@@ -223,7 +220,7 @@ pub fn draw_plugin_identity(ui: &mut egui::Ui, theme: &Theme) {
     dont(
         ui,
         theme,
-        "Don't mix the tint into the row background to \"blend\" on a selected row — the mark would then shift colour with row state and stop being a stable identity. And don't re-derive the initial's size from the box (round(size × 0.42)).",
+        "Don't mix the tint into the row background to \"blend\" on a selected row — the mark would then shift colour with row state and stop being a stable identity. And don't re-derive the initial's size from the box (round(size × 0.42)): that produced 19px at lg, off the type scale and over the UI cap with no decision behind it.",
     );
 }
 

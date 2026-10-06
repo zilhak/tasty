@@ -512,11 +512,11 @@ State 셀은 `status_dot`(점 `status_dot_size` 8 + gap 6 + caption 11px proport
   상수를 다시 적게 만든다. 매니페스트에 카테고리가 생기면 바뀌는 것은 두 `Theme` 접근자와
   위젯 시그니처뿐이다.
 - **글자 색**: 머리글자는 `plugin_avatar_fg()`(= `accent-primary` fallback 갈래)로 칠한다.
-- **글리프 크기 — 상세는 결정 대기**: 디자인 토큰은 목록 `plugin-avatar-initial-font-size-sm`
-  (= `font-size-max` 14)과 상세 `plugin-avatar-initial-font-size-lg`(16)다. 목록은 토큰
-  접근자 `plugin_avatar_initial_font_size_sm()` 으로 14 를 쓴다. 상세 16 은 UI 폰트 상한
-  14(`theme.md` "UI 폰트 최대" = `font_size_max`)를 넘어 상한 예외로 둘지 디자인 결정을
-  기다리므로 `font_size_max` 로 그린다. 사각형 한 변 46 은 그대로다
+- **글리프 크기와 굵기**: 머리글자는 목록 `plugin-avatar-initial-font-size-sm`
+  (→ `font-size-body` 13)과 상세 `plugin-avatar-initial-font-size-lg`(→ `font-size-max` 14)를
+  토큰 접근자 `plugin_avatar_initial_font_size_sm()`·`_lg()` 로 읽는다. 둘 다 UI 폰트 상한 14
+  안이라 상한 예외가 없다. 굵기 토큰 `plugin-avatar-initial-weight` 는 `font-weight-normal` 이고
+  위젯도 보통 굵기 mono 로 그린다. 사각형 한 변 46 은 그대로다
   (ADR-0035 대로 44 · 48 로 스냅하지 않는다).
 - **근거**: `crates/tasty-ui-widgets/src/plugin_avatar.rs` (위젯 · 두 갈래의 유일한 구현부),
   `crates/tasty-type-appearance/src/theme.rs` 의 `plugin_avatar_bg` · `plugin_avatar_border`
