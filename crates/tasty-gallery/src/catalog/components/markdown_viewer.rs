@@ -9,7 +9,7 @@ use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::Spinner;
 
-pub use callout_kinds::draw as draw_callout_kinds;
+pub use callout_kinds::spec as callout_kinds_spec;
 use document::{document, md_h2_size};
 
 use crate::catalog::icons;

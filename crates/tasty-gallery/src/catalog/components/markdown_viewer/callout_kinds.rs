@@ -49,7 +49,17 @@ const KINDS: [CalloutKind; 5] = [
     ),
 ];
 
-pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
+/// 카탈로그 항목. 동결 명부의 `catalog.rs` 에는 이 호출 한 줄만 둔다.
+pub fn spec() -> crate::catalog::Spec {
+    crate::catalog::Spec {
+        id: "markdown-callout-kinds",
+        title: "Markdown callout kinds",
+        when: Some("Five GFM / Obsidian kinds as the app renders them — icon · label · type fill"),
+        draw,
+    }
+}
+
+fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Column, |ui| {
         ui.set_max_width(DOC_W.value());
         egui::Frame::new()
