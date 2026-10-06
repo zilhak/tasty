@@ -570,7 +570,8 @@ const PATHLESS_LENGTH_TOKENS: &[(&str, &str)] = &[
     ),
     (
         "semantic.letter-spacing-ui",
-        "자간은 egui `extra_letter_spacing` 에 f32 로 넘어가고 이 토큰의 소비처가 없다",
+        "자간은 글자 크기에 비례해 길이 상수 경로를 두지 않는다 — 생성 접근자 \
+         `letter_spacing_ui(font_size)` 로 읽는다",
     ),
     (
         "semantic.radius-pill",

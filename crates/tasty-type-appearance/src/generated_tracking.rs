@@ -14,6 +14,12 @@ impl crate::theme::Theme {
         LogicalPx(0.04 * font_size.value())
     }
 
+    /// `semantic.letter-spacing-ui` → `{primitive.letter-spacing-0}` = 0
+    #[inline]
+    pub fn letter_spacing_ui(&self, font_size: LogicalPx) -> LogicalPx {
+        LogicalPx(0.0 * font_size.value())
+    }
+
     /// `component.sidebar-section-heading-tracking` → `{semantic.letter-spacing-caps}` = 0.04em
     #[inline]
     pub fn sidebar_section_heading_tracking(&self, font_size: LogicalPx) -> LogicalPx {

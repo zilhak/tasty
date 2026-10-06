@@ -15,13 +15,21 @@ enum TrackingAccessor {
     RawEm(f32),
 }
 
-/// 최종 값이 em 단위인 dimension 토큰이면 em 수치를 돌려준다.
+/// 자간 토큰이면 em 수치를 돌려준다. 최종 값이 em 인 dimension 이거나, 이름이 자간 계열
+/// (`letter-spacing-*`, `*-tracking`)이고 최종 값이 단위 없는 0 인 토큰이다. CSS 자간 0 은
+/// 단위와 무관하므로 0em 으로 읽는다.
 fn terminal_em(set: &TokenSet, token: &Token) -> Option<f32> {
     if token.ty != "dimension" {
         return None;
     }
     let terminal = set.resolve(&token.path(), ThemeMode::Mocha).ok()?;
-    terminal.strip_suffix("em")?.trim().parse::<f32>().ok()
+    if let Some(em) = terminal.strip_suffix("em") {
+        return em.trim().parse::<f32>().ok();
+    }
+    let tracking_family =
+        token.name.starts_with("letter-spacing-") || token.name.ends_with("-tracking");
+    let zero = terminal.trim().parse::<f32>().ok().filter(|v| *v == 0.0);
+    zero.filter(|_| tracking_family)
 }
 
 fn resolve_tracking_accessor(set: &TokenSet, token: &Token, em: f32) -> TrackingAccessor {
