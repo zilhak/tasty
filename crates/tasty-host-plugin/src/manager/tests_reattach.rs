@@ -117,3 +117,50 @@ fn closing_a_reattached_surface_asks_the_new_process_to_destroy_it() {
     assert_eq!(request.method, protocol::METHOD_SURFACE_DESTROY);
     assert_eq!(receipt.observation(), None, "새 프로세스의 응답을 기다린다");
 }
+
+/// 원 프로세스를 회수하고 요청을 받지 못하는(수신단이 끊긴) 새 프로세스로 재게시한다.
+fn restart_unreachable(mgr: &mut PluginManager) {
+    let process = mgr.processes.remove(PLUGIN).expect("running stub");
+    mgr.retire_process(PLUGIN, process, false);
+    assert!(!mgr.wait_retired(PLUGIN), "재시작 예약이 없는 회수다");
+    mgr.processes
+        .insert(PLUGIN.into(), PluginProcess::stub_for_test(PLUGIN));
+    mgr.reattach_orphan_surfaces(PLUGIN);
+}
+
+#[test]
+fn a_failed_reattach_leaves_the_surface_unsent() {
+    let (mut mgr, _surface) = manager_with_surface();
+    restart_unreachable(&mut mgr);
+    assert!(matches!(
+        mgr.surfaces[&7].publication,
+        RemotePublication::NeverSent
+    ));
+}
+
+#[test]
+fn a_failed_reattach_is_sent_again_at_the_next_start() {
+    let (mut mgr, surface) = manager_with_surface();
+    *surface.snapshot_cache.lock().unwrap() = Some(json!({"file": "/tmp/b.md"}));
+    restart_unreachable(&mut mgr);
+    let requests = restart(&mut mgr);
+    let request = requests.try_recv().expect("다음 기동에서 다시 보낸다");
+    assert_eq!(request.method, protocol::METHOD_SURFACE_RESTORE);
+    assert!(bound_to_current(&mgr));
+}
+
+#[test]
+fn closing_a_surface_whose_reattach_failed_succeeds_without_a_destroy() {
+    let (mut mgr, surface) = manager_with_surface();
+    restart_unreachable(&mut mgr);
+    let receipt = mgr
+        .enqueue_observed_remote_retirement(7, surface.binding())
+        .unwrap();
+    mgr.drain_host_cmds();
+    assert_eq!(
+        receipt.observation(),
+        Some(Ok(())),
+        "원 세대는 회수됐고 새 프로세스에는 게시된 적이 없다"
+    );
+    assert!(!mgr.surfaces.contains_key(&7));
+}
