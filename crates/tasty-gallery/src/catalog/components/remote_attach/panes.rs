@@ -33,7 +33,7 @@ pub(super) fn left_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, stat
     let sel_name = match state {
         RaState::Error => "legacy-attach",
         RaState::Connecting => "gb10",
-        RaState::Empty => "media-nas",
+        RaState::Empty | RaState::EmptyPlanA => "media-nas",
         _ => "prod-web",
     };
     for p in PROFILES {
@@ -54,6 +54,15 @@ pub(super) fn right_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, sta
             Some("agents-prod"),
         ),
         RaState::Empty => loaded_pane(ui, theme, rect, "media-nas", NewRow::Selected, &[], None),
+        // 채택하지 않은 비교안 — 가운데 상태에 생성 버튼을 단다.
+        RaState::EmptyPlanA => {
+            CenterState::empty(icons::PANE_EMPTY, "No workspaces on this remote yet")
+                .sub_line(Some(
+                    "media-nas is reachable. Create one there and mirror it here.",
+                ))
+                .action("New workspace", Some(icons::PLUS))
+                .show_in(ui, theme, rect);
+        }
         RaState::Initial => {
             CenterState::empty(icons::REMOTE, "Select an attach profile")
                 .sub_line(Some(

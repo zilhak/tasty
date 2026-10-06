@@ -34,7 +34,7 @@ const STRIP_W: LogicalPx = LogicalPx(440.0); // 새 행 상태 specimen 의 pane
 const CAPS_HEADER_H: LogicalPx = LogicalPx(30.0);
 
 /// 우측 pane 상태. `Loaded` / `Empty` 는 같은 목록 렌더 경로를 타고 ws 목록의
-/// 길이만 다르다.
+/// 길이만 다르다. `EmptyPlanA` 는 채택하지 않은 비교안(가운데 상태 + 생성 버튼)이다.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum RaState {
     Initial,
@@ -42,6 +42,13 @@ enum RaState {
     Error,
     Loaded,
     Empty,
+    EmptyPlanA,
+}
+
+impl RaState {
+    fn empty(self) -> bool {
+        matches!(self, RaState::Empty | RaState::EmptyPlanA)
+    }
 }
 
 /// "+ New workspace" 행의 시각 상태 — 디자인 `RaNewWsRow` 의 `phase`(rest/creating/
@@ -272,6 +279,90 @@ pub fn draw_states(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
+/// 빈 원격의 두 안 — 시안 "Empty remote — plan A (center-state + CTA) vs plan B (list path)".
+pub fn draw_empty_plans(ui: &mut egui::Ui, theme: &Theme) {
+    spec::stage(ui, theme, StageVariant::Wrap, |ui| {
+        plan_cluster(
+            ui,
+            theme,
+            "plan A — center-state + CTA",
+            theme.text_muted().to_egui(),
+            RaState::EmptyPlanA,
+        );
+        plan_cluster(
+            ui,
+            theme,
+            "plan B — list path (recommended)",
+            theme.accent_primary().to_egui(),
+            RaState::Empty,
+        );
+    });
+
+    spec::meta(
+        ui,
+        theme,
+        &[
+            ("recommendation", "plan B"),
+            ("why", "one render path, one affordance, one confirm route"),
+            (
+                "plan B copy",
+                "\u{201c}‹host› is reachable but has no workspaces yet.\u{201d}",
+            ),
+            (
+                "footer",
+                "Create & connect, enabled (the row is pre-selected)",
+            ),
+            (
+                "plan A cost",
+                "a second way to trigger the same action, confirmed differently",
+            ),
+        ],
+        &[
+            TokenChip::new(
+                "text-muted",
+                "explanatory line",
+                theme.text_muted().to_egui(),
+            ),
+            TokenChip::new(
+                "accent-primary",
+                "row label",
+                theme.accent_primary().to_egui(),
+            ),
+        ],
+    );
+
+    spec::note(
+        ui,
+        theme,
+        "Recommended: plan B. Plan A's CTA is a button, so it fires immediately — the same \
+         action would then be confirmed two different ways depending on whether the remote \
+         happened to be empty, and the implementation would carry two render branches plus \
+         two handlers. Plan B has one list, one row, one confirm route, and the empty case \
+         degrades to \u{201c}the list has exactly one row.\u{201d} In plan B the row is \
+         pre-selected on an empty remote, so Create & connect is live the moment the pane \
+         loads — the dead end is gone without adding a control.",
+    );
+}
+
+/// 안 이름 캡션과 카드 한 장. 권장안 캡션만 accent 로 칠한다(시안 캡션 색).
+fn plan_cluster(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    label: &str,
+    color: egui::Color32,
+    state: RaState,
+) {
+    spec::wrap_item(ui, |ui| {
+        ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
+        ui.label(
+            egui::RichText::new(label.to_uppercase())
+                .size(theme.font_size_micro.value())
+                .color(color),
+        );
+        ra_card(ui, theme, state);
+    });
+}
+
 /// 680×460 카드 한 장.
 fn ra_card(ui: &mut egui::Ui, theme: &Theme, state: RaState) {
     egui::Frame::new()
@@ -390,13 +481,13 @@ fn footer(ui: &mut egui::Ui, theme: &Theme, state: RaState) {
     );
     child.spacing_mut().item_spacing.x = theme.spacing_sm.value();
     // 새 워크스페이스 행을 고르면 확인 버튼이 생성과 연결을 함께 알린다.
-    Button::new(if state == RaState::Empty {
+    Button::new(if state.empty() {
         "Create & connect"
     } else {
         "Connect"
     })
     .variant(ButtonVariant::Primary)
-    .enabled(matches!(state, RaState::Loaded | RaState::Empty))
+    .enabled(state == RaState::Loaded || state.empty())
     .show(&mut child, theme);
     // 연결 중에는 팝업 닫기 대신 조회 중단을 표시한다.
     Button::new(if state == RaState::Connecting {

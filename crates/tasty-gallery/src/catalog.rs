@@ -1129,6 +1129,14 @@ pub fn pages() -> Vec<Page> {
                             ),
                             components::remote_attach::draw_states,
                         ),
+                        spec(
+                            "remote-workspace-attach-empty-plans",
+                            "Empty remote — plan A (center-state + CTA) vs plan B (list path)",
+                            Some(
+                                "§6-1 · plan B keeps the list path: caps header + one pre-selected new row + a muted line",
+                            ),
+                            components::remote_attach::draw_empty_plans,
+                        ),
                     ],
                 ),
                 section(

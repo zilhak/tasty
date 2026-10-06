@@ -53,7 +53,7 @@ tab="attach"` / `RemoteFormFrame` variant `attach-ref`·`attach-inline`)를 전�
 `gallery/overlays-shared.jsx` `RemoteAttachFrame({state})`) ↔ 본체
 `src/adapters/ui/popup/remote_attach.rs`.
 
-갤러리 공개 진입점 `remote_attach::{draw, draw_new_row, draw_states}`와 본체 대조용
+갤러리 공개 진입점 `remote_attach::{draw, draw_new_row, draw_states, draw_empty_plans}`와 본체 대조용
 치수 상수는 `catalog/components/remote_attach.rs`에 유지한다. 행·pane 구현 좌표는 아래와 같다.
 
 | 디자인 jsx 컴포넌트 | 갤러리 항목 (`catalog/components/` 기준) | 본체 함수 |
@@ -63,6 +63,7 @@ tab="attach"` / `RemoteFormFrame` variant `attach-ref`·`attach-inline`)를 전�
 | `RaNewWsRow` | `remote_attach/new_row.rs`의 `new_ws_row` + `dot_slot_glyph` / `new_ws_error` / `row_separator` (`remote-workspace-attach-new-row` spec, 5상태) | `draw_ws_list` → `new_ws_row` (+ `dot_slot_glyph` / `new_ws_error` / `row_separator`) |
 | `RaRemoteWsRow` | `remote_attach/rows.rs`의 `ws_row` (+ `dot_slot_status`) | `ws_row` |
 | DS `CenterState`(우측 pane 의 initial·connecting·error) | `remote_attach/panes.rs`의 `right_pane` → 공용 `CenterState` (`remote-workspace-attach-states` spec) | `draw_right_pane` → 공용 `CenterState` |
+| `RemoteAttachFrame emptyPlan="A"`(채택하지 않은 비교안) | `RaState::EmptyPlanA` → `remote_attach/panes.rs`의 `right_pane` → 공용 `CenterState` + 생성 액션 (`remote-workspace-attach-empty-plans` spec, plan B 카드와 나란히) | 없음 — 본체는 plan B(빈 목록이면 새 행을 미리 선택)만 구현한다 |
 | `RaInUseBadge` | `remote_attach/rows.rs`의 `badge` | `badge` |
 | loaded 렌더 경로(`conn==="loaded"`) | `remote_attach/panes.rs`의 `loaded_pane` (+ `remote_attach/rows.rs`의 `empty_line`) | `draw_right_pane`의 `Loaded` 분기 → `draw_ws_list` |
 | footer `Connect` / `Create & connect` | `remote_attach.rs`의 `footer` | `draw_footer` |
