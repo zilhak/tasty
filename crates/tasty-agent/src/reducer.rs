@@ -309,7 +309,7 @@ fn merge_typed(
         let here = format!("{path}/{k}");
         match (dst.get_mut(k), v) {
             (Some(Value::Object(d)), Value::Object(s)) => merge_typed(d, s, conflict, &here)?,
-            (Some(existing), _) if existing != v => match conflict {
+            (Some(existing), _) if !json_equal(existing, v) => match conflict {
                 MergeConflict::Overwrite => *existing = v.clone(),
                 MergeConflict::Error => {
                     return Err(format!(
@@ -324,6 +324,42 @@ fn merge_typed(
         }
     }
     Ok(())
+}
+
+/// merge 충돌 판정용 같음. 숫자끼리는 표기가 아니라 수치로 비교한다(`1` == `1.0`).
+fn json_equal(a: &Value, b: &Value) -> bool {
+    match (a, b) {
+        (Value::Number(x), Value::Number(y)) => number_equal(x, y),
+        (Value::Array(x), Value::Array(y)) => {
+            x.len() == y.len() && x.iter().zip(y).all(|(p, q)| json_equal(p, q))
+        }
+        (Value::Object(x), Value::Object(y)) => {
+            x.len() == y.len()
+                && x.iter()
+                    .all(|(k, p)| y.get(k).is_some_and(|q| json_equal(p, q)))
+        }
+        _ => a == b,
+    }
+}
+
+/// 둘 다 정수 값이면 i128 로 정확히 비교한다. 2^53 을 넘는 정수를 f64 로 바꿔 같다고
+/// 보지 않기 위해서다. 정수가 아닌 실수가 끼면 f64 로 비교한다.
+fn number_equal(a: &serde_json::Number, b: &serde_json::Number) -> bool {
+    fn exact(n: &serde_json::Number) -> Option<i128> {
+        if let Some(i) = n.as_i64() {
+            return Some(i128::from(i));
+        }
+        if let Some(u) = n.as_u64() {
+            return Some(i128::from(u));
+        }
+        let f = n.as_f64()?;
+        // 정수 모양이고 i128 범위 안이면 정확히 변환된다.
+        (f.fract() == 0.0 && f.abs() < 1.7e38).then_some(f as i128)
+    }
+    match (exact(a), exact(b)) {
+        (Some(x), Some(y)) => x == y,
+        _ => a.as_f64() == b.as_f64(),
+    }
 }
 
 /// custom 전략의 기본 셸 실행기. 입력 JSON을 stdin으로 보내고 stdout을 반환한다.
@@ -693,6 +729,58 @@ mod tests {
             reduce_typed(
                 &ReducerStrategy::MergeJson,
                 &failed,
+                MergeConflict::Error,
+                no_shell
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn typed_merge_compares_numbers_by_value() {
+        let inputs = vec![
+            typed("a", "succeeded", Some(json!({"n": 1, "m": {"x": [2]}}))),
+            typed("b", "succeeded", Some(json!({"n": 1.0, "m": {"x": [2.0]}}))),
+        ];
+        let out = reduce_typed(
+            &ReducerStrategy::MergeJson,
+            &inputs,
+            MergeConflict::Error,
+            no_shell,
+        )
+        .unwrap();
+        // 같은 값이면 앞 입력의 표기를 유지한다.
+        assert_eq!(out, json!({"n": 1, "m": {"x": [2]}}));
+        // 2^53 + 1 과 그 f64 근사(2^53)는 다른 값이다.
+        let near = vec![
+            typed(
+                "a",
+                "succeeded",
+                Some(json!({"n": 9_007_199_254_740_993_i64})),
+            ),
+            typed(
+                "b",
+                "succeeded",
+                Some(json!({"n": 9_007_199_254_740_992.0_f64})),
+            ),
+        ];
+        assert!(
+            reduce_typed(
+                &ReducerStrategy::MergeJson,
+                &near,
+                MergeConflict::Error,
+                no_shell
+            )
+            .is_err()
+        );
+        let different = vec![
+            typed("a", "succeeded", Some(json!({"n": 1}))),
+            typed("b", "succeeded", Some(json!({"n": 1.5}))),
+        ];
+        assert!(
+            reduce_typed(
+                &ReducerStrategy::MergeJson,
+                &different,
                 MergeConflict::Error,
                 no_shell
             )
