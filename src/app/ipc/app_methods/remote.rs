@@ -96,7 +96,14 @@ impl App {
         match target {
             RemoteAttachTarget::Existing(remote_ws) => {
                 if let Err(error) = self.remote.spawn_attempt(attempt.clone(), move || {
-                    let result = conn.resolve_endpoint();
+                    let result = conn.resolve_endpoint().and_then(|(tunnel, port)| {
+                        tasty_remote::self_instance::refuse_this_instance(
+                            tunnel.is_some(),
+                            port,
+                            Some(&attempt),
+                        )?;
+                        Ok((tunnel, port))
+                    });
                     send_attach_outcome(&tx, &proxy, attempt, remote_ws, result);
                 }) {
                     send_response(
@@ -290,6 +297,32 @@ fn remote_attach_create_worker(
             attempt,
             0,
             Err(anyhow::anyhow!("remote connection attempt cancelled")),
+        );
+        return;
+    }
+    // 호스트명·LAN IP로 자기 머신을 가리킨 SSH 대상은 원격(=자기)에 workspace를 만들기 전에 거절한다.
+    if let Err(e) =
+        tasty_remote::self_instance::refuse_this_instance(tunnel.is_some(), port, Some(&attempt))
+    {
+        let response = if e
+            .downcast_ref::<tasty_remote::self_instance::ThisInstance>()
+            .is_some()
+        {
+            host_ipc::protocol::JsonRpcResponse::invalid_params(rpc_id, e.to_string())
+        } else {
+            host_ipc::protocol::JsonRpcResponse::error(
+                rpc_id,
+                -32050,
+                format!("remote system.info failed: {e:#}"),
+            )
+        };
+        send_response(response_tx, response);
+        send_attach_outcome(
+            tx,
+            proxy,
+            attempt,
+            0,
+            Err(anyhow::anyhow!("remote attach preparation failed: {e:#}")),
         );
         return;
     }

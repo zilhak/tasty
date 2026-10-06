@@ -11,6 +11,7 @@ pub mod client;
 pub mod dispatch;
 pub mod host_call;
 pub mod host_port;
+pub mod instance;
 pub mod ipc_namespace;
 pub mod mesh_stream;
 pub mod method_meta;

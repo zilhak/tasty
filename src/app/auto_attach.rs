@@ -395,6 +395,13 @@ impl App {
                 );
             }
             Err(e) => {
+                if let Some(this) = e.downcast_ref::<tasty_remote::self_instance::ThisInstance>() {
+                    tracing::warn!(
+                        "SSH attach 대상이 이 인스턴스 자신이라 거절했다 (anchor ws {anchor_ws_id:?}, remote ws {remote_ws}, reconnect={is_reconnect})"
+                    );
+                    self.record_self_refusal(&accepted, remote_ws, is_reconnect, this.port, true);
+                    return;
+                }
                 tracing::warn!(
                     "attach 엔드포인트 해석 실패 (anchor ws {anchor_ws_id:?}, remote ws {remote_ws}, reconnect={is_reconnect}): {e}"
                 );
@@ -422,7 +429,7 @@ impl App {
         // 자기 포트는 debug·release 모두 연결을 시도하기 전에 거절한다.
         let Some(attach_result) = self.queue_endpoint_mirror(target, port, remote_ws, tunnel)
         else {
-            self.record_self_refusal(accepted, remote_ws, is_reconnect, port);
+            self.record_self_refusal(accepted, remote_ws, is_reconnect, port, false);
             return;
         };
         match attach_result {
@@ -451,6 +458,7 @@ impl App {
         remote_ws: u32,
         is_reconnect: bool,
         port: u16,
+        via_ssh: bool,
     ) {
         self.remote.refusals.record(
             tasty_remote::refusal::AttachRefusal {
@@ -458,6 +466,7 @@ impl App {
                 anchor_workspace: accepted.anchor,
                 remote_workspace: remote_ws,
                 port,
+                via_ssh,
                 reconnect: is_reconnect,
             },
             accepted.mapping.as_ref(),
@@ -533,6 +542,7 @@ fn resolve_endpoint_bound(
     if !attempt.is_active() {
         anyhow::bail!("remote endpoint attempt cancelled");
     }
+    tasty_remote::self_instance::refuse_this_instance(result.0.is_some(), result.1, Some(attempt))?;
     Ok(result)
 }
 

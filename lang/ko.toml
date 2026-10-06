@@ -1724,6 +1724,7 @@ new_workspace_hint = "원격에 기본 이름·기본 작업 디렉토리로 워
 creating_workspace = "워크스페이스 만드는 중…"
 create_timeout = "원격이 {secs}초 안에 워크스페이스 생성을 끝내지 못했습니다."
 create_failed_generic = "원격이 새 워크스페이스 id 를 돌려주지 않았습니다."
+self_instance = "이 프로필은 지금 실행 중인 이 Tasty 자신을 가리킵니다. 자기 자신에는 attach할 수 없습니다."
 try_again = "다시 시도"
 cancel = "취소"
 stop = "중단"

@@ -1179,6 +1179,8 @@ fn handle_system_info(
 ) -> JsonRpcResponse {
     let mut info = system_info_fields(engine, window.active_workspace_index(engine));
     info["capabilities"] = tasty_ipc::capability::capabilities_json();
+    // 프로세스마다 다르다. SSH 너머의 상대가 이 프로세스 자신인지 판정할 때 쓴다.
+    info["instance_id"] = tasty_ipc::instance::instance_id().into();
     // 재시도 가능 여부를 판단할 수 있도록 보존 시간·개수·응답 크기도 제공한다.
     info["idempotency"] = idempotency::declaration();
     JsonRpcResponse::success(id, info)

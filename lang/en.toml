@@ -1730,6 +1730,7 @@ new_workspace_hint = "Creates a workspace on the remote with its default name an
 creating_workspace = "Creating workspace…"
 create_timeout = "The remote did not finish creating the workspace within {secs}s."
 create_failed_generic = "The remote did not report a new workspace id."
+self_instance = "This profile points to this Tasty itself. Attaching to itself is not supported."
 try_again = "Try again"
 cancel = "Cancel"
 stop = "Stop"

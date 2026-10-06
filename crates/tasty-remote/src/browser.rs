@@ -88,10 +88,21 @@ impl Remote {
                 if !token.is_active() {
                     anyhow::bail!("remote browser cancelled");
                 }
+                // 연결과 원격 workspace 생성이 모두 이 엔드포인트를 쓰므로 목록을 받기 전에 판정한다.
+                crate::self_instance::refuse_this_instance(tunnel.is_some(), port, Some(&token))?;
                 let rows = crate::browse::browse_via_port_bound(port, Some(&token))?;
                 Ok(ResultValue::Listed { port, tunnel, rows })
             })()
-            .map_err(|error| error.to_string());
+            .map_err(|error| {
+                if error
+                    .downcast_ref::<crate::self_instance::ThisInstance>()
+                    .is_some()
+                {
+                    tasty_i18n::t("remote_attach.self_instance").to_owned()
+                } else {
+                    error.to_string()
+                }
+            });
             crate::outbound::send_attempt_result(
                 &tx,
                 &token,

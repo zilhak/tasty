@@ -174,5 +174,6 @@ CLI attach의 `--raw` 출력을 다른 명령으로 넘겼을 때 그 명령이 
 | 원격 tasty 미발견 | 원격에 Tasty 가 실행 중인가. `tasty tool remote-profile detect --name <n>` 으로 포트 검증. PATH 에 없으면 실행 파일 경로 지정 또는 `--port-mode file-unix` |
 | 타임아웃 | 호스트에 접속할 수 있는지와 방화벽 설정을 확인합니다. ssh 프로필 `--option ConnectTimeout=<초>` |
 | SSH 연결 실패 | 인증·호스트 키. `tasty tool ssh <ssh 프로필>` 로 먼저 접속되는지 봅니다 |
+| 이 Tasty 자신을 가리킨다는 안내·오류 | 프로필의 호스트(호스트명·LAN IP 포함)와 포트 파일이 지금 쓰고 있는 이 Tasty 를 가리킵니다. 자기 자신에는 붙을 수 없습니다. 같은 컴퓨터의 다른 Tasty 에 붙으려면 그 인스턴스의 포트 파일을 지정합니다 |
 | 워크스페이스 attach 거부 | 그 안의 터미널 하나가 이미 다른 client 에 점유돼 있습니다. 원격에서 강제 끊기 |
 | 처음 붙을 때 화면이 잠깐 깜빡임 | 원격이 내 페인 크기로 다시 배치하는 동안의 정상 동작 |

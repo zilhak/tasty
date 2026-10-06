@@ -324,6 +324,21 @@ fn remote_attach_to_the_own_port_is_refused_before_any_attempt() {
     assert!(!is_attached(server, ws.surface_id));
 }
 
+/// system.info는 프로세스마다 다른 instance_id를 준다. SSH 너머의 상대가 자기 자신인지
+/// 판정하는 근거라서, 같은 서버에서는 같고 이 시험 프로세스의 값과는 다르다.
+#[test]
+fn system_info_reports_a_per_process_instance_id() {
+    let server = common::shared();
+    let first = server.call("system.info", json!({}));
+    let id = first["instance_id"]
+        .as_str()
+        .expect("system.info carries instance_id");
+    assert_eq!(id.len(), 32, "{first}");
+    assert!(id.bytes().all(|b| b.is_ascii_hexdigit()), "{first}");
+    assert_ne!(id, tasty_ipc::instance::instance_id());
+    assert_eq!(server.call("system.info", json!({}))["instance_id"], id);
+}
+
 /// 자기 포트로 새 워크스페이스 attach를 요청하면 원격(=자기)에 워크스페이스를 만들기 전에 거절한다.
 #[cfg(feature = "gui")]
 #[test]

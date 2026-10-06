@@ -216,6 +216,8 @@ CLI 는 위 IPC 를 감싼다(`tasty list workspaces`, `tasty send text`, `tasty
 `system.info`의 `workspace_count`와 0부터 시작하는 `active_workspace`는 선택된 engine의
 기존 필드다. `scope="engine"`, `workspace_ids`, `active_workspace_id`(없으면 null),
 `layout_slot`으로 어떤 engine인지 구분한다. `version`은 프로세스 전체의 버전이다.
+`instance_id`는 프로세스가 시작될 때 만드는 무작위 hex 32자로, 같은 프로세스에서는 같고 다른 프로세스와는 다르다.
+SSH 너머의 attach 상대가 자기 자신인지 판정하는 데 쓴다. `system.info`에만 포함한다.
 `workspace_id` 같은 기존 대상 키로 engine을 고르면 포커스를 바꾸지 않고 조회할 수 있다.
 대상을 생략하면 기존 라우팅 기본값을 따른다.
 

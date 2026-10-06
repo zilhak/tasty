@@ -1724,6 +1724,7 @@ new_workspace_hint = "リモートに既定の名前と作業ディレクトリ�
 creating_workspace = "ワークスペースを作成中…"
 create_timeout = "リモートが {secs} 秒以内にワークスペースの作成を完了しませんでした。"
 create_failed_generic = "リモートが新しいワークスペース id を返しませんでした。"
+self_instance = "このプロファイルは実行中のこのTasty自身を指しています。自分自身にはattachできません。"
 try_again = "再試行"
 cancel = "キャンセル"
 stop = "中断"

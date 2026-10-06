@@ -1,4 +1,4 @@
-<!-- source-hash: 833c222425ee -->
+<!-- source-hash: 2948ecea93bc -->
 <a id="remote-attach"></a>
 
 # Working remotely (attach)
@@ -175,5 +175,6 @@ Other write errors, such as a permission problem on the output device, are repor
 | Remote tasty not found | Is Tasty running on the remote? Verify the port with `tasty tool remote-profile detect --name <n>`. If it is not on PATH, specify the executable path or `--port-mode file-unix` |
 | Timeout | Check whether you can reach the host and whether the firewall permits the connection. ssh profile `--option ConnectTimeout=<seconds>` |
 | SSH connection failed | Authentication · host key. First check that `tasty tool ssh <ssh profile>` connects |
+| A notice or error that the profile points to this Tasty itself | The profile's host (including a host name or LAN IP) and port file point to the Tasty you are using. You cannot attach to itself. To attach to another Tasty on the same computer, give that instance's port file |
 | Workspace attach refused | One of the terminals inside it is already occupied by another client. Force-detach on the remote |
 | Screen flickers briefly when first attaching | Normal behavior while the remote re-lays out to your Pane size |

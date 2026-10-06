@@ -1,4 +1,4 @@
-//! 자기 포트로 향한 attach 거절의 기록.
+//! 자기 자신(자기 포트, 또는 SSH 너머의 같은 인스턴스)으로 향한 attach 거절의 기록.
 //!
 //! 거절은 엔드포인트를 해석한 뒤 메인 루프에서 정해지므로 `remote.attach` 응답에 실을 수 없다.
 //! 호출자는 응답에 있는 시도 번호로 이 기록을 조회한다. 자동 attach 매핑의 거절은 같은 매핑이
@@ -19,8 +19,10 @@ pub struct AttachRefusal {
     /// 자동 attach 매핑을 가진 로컬 workspace. 수동 `remote.attach`는 `None`이다.
     pub anchor_workspace: Option<u32>,
     pub remote_workspace: u32,
-    /// 해석한 연결 포트. 이 인스턴스의 IPC 포트와 같았다.
+    /// 해석한 연결 포트. loopback 직결이면 이 인스턴스의 IPC 포트이고, SSH 터널이면 터널의 로컬 포트다.
     pub port: u16,
+    /// SSH 터널 너머의 `instance_id`가 이 프로세스와 같아서 거절했으면 true.
+    pub via_ssh: bool,
     pub reconnect: bool,
 }
 
@@ -66,6 +68,7 @@ mod tests {
             anchor_workspace: anchor,
             remote_workspace: 1,
             port: 4000,
+            via_ssh: false,
             reconnect: false,
         }
     }
