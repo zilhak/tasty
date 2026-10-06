@@ -932,8 +932,8 @@ pub fn is_registered_name(method: &str) -> bool {
         || DEBUG_METHODS.iter().any(|(name, _)| *name == method)
 }
 
-/// 0.7.0 시점에 동결된 메서드 이름 목록. `METHOD_TABLE` 의 스냅샷이고 major bump
-/// 전까지 안 바뀐다 — 갱신 절차는 파일 머리 주석과 `docs/dev-guide/release.md`.
+/// 0.7.0 시점에 동결된 메서드 이름 목록. `METHOD_TABLE` 의 스냅샷이고 의도한 제거가
+/// 있을 때만 이름이 빠진다 — 갱신 절차는 파일 머리 주석과 `docs/dev-guide/api-conventions.md`.
 const FROZEN_BASELINE_0_7: &str = include_str!("../fixtures/method_baseline_0_7.txt");
 
 /// 0.7.0 기준 목록에 포함됐는지 구분한다. 이후 추가된 이름의 개별 도입 버전은 기록하지 않는다.

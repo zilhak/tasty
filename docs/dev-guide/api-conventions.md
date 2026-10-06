@@ -16,7 +16,7 @@ CLI 명령:  tasty <namespace> <verb> [--<option>]
 - **root 예외**: `split`(pane 분할) · `tree`(surface tree)만 namespace 없이 root 에 등록(자주 쓰는 짧은 명령). 새 메서드는 namespace를 생략하지 않는다.
 - **보조 도메인은 3단** `<namespace>.<sub>.<verb>` (예: `remote.profile.*`, `surface.meta.*` 점 표기).
 
-namespace 별 메서드 수는 `tests/cli_naming_count_drift.rs` 가 강제한다 — 추가는 같은 minor 내 OK(테이블 동기화 필요), **제거는 SemVer 위반**(major bump 필요). 메서드 수는 테스트의 snapshot에서 관리하며 이 문서에 중복 기록하지 않는다.
+namespace 별 메서드 수는 `tests/cli_naming_count_drift.rs` 가 강제한다 — 추가는 같은 minor 내 OK(테이블 동기화 필요). 제거·이름 변경은 0.x 에서 유예 없이 `(BREAK)` 로 내고([안정성 정책](#안정성-정책)), 같은 커밋에서 이 기록과 0.7.0 기준 목록(`crates/tasty-ipc/fixtures/method_baseline_0_7.txt`, 절차는 그 파일 머리 주석)을 고친다. 메서드 수는 테스트의 snapshot에서 관리하며 이 문서에 중복 기록하지 않는다.
 
 ## verb 화이트리스트
 

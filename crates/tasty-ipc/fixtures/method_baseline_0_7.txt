@@ -1,11 +1,12 @@
 # Tasty IPC METHOD_TABLE baseline — frozen at v0.7.0 (2026-06-04).
 #
-# 본 파일은 0.7.0 시점의 IPC 메서드 목록을 고정한다.
-# 0.7.x 동안 *추가만 가능, 제거 금지* (SemVer 엄격 모드).
-# 메서드 제거/이름변경은 major bump (2.0.0) 가 필요하다.
+# 본 파일은 0.7.0 시점의 IPC 메서드 목록이다. 여기 있는 이름이 METHOD_TABLE 에서
+# 사라지면 tests/api_baseline_0_7.rs 가 실패한다 — 의도하지 않은 제거를 검출하는 목록이다.
 #
-# 갱신 절차: X.0.0 (major) tag 직전에만 본 파일을 갱신한다 (PR 에 명시).
-# 정책: docs/dev-guide/release.md.
+# 0.x 에서는 의도한 제거·이름 변경을 유예 없이 낸다 (ADR-0066). 그때는 같은 커밋에서
+# CHANGELOG.md 에 `(BREAK)` 로 적고, 이 파일에서 이름을 빼 아래에 사유를 남기고,
+# 시험의 BASELINE_METHOD_COUNT 를 고친다.
+# 정책: docs/dev-guide/api-conventions.md 「안정성 정책」.
 #
 # 보안 사유로 제거된 항목 (0.x 에서는 break 를 유예 없이 `(BREAK)` 로 낸다 —
 # api-conventions.md 「안정성 정책」):

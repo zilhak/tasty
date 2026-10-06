@@ -21,7 +21,7 @@ fn baseline_methods() -> Vec<&'static str> {
     assert_eq!(
         methods.len(),
         BASELINE_METHOD_COUNT,
-        "기준 파일의 메서드 수가 {}개로 0.7.0의 {BASELINE_METHOD_COUNT}개와 다르다. 파일·파싱 오류를 확인하고 호환성 정책 변경 없이 기준 목록을 고치지 않는다.",
+        "기준 파일의 메서드 수가 {}개로 0.7.0의 {BASELINE_METHOD_COUNT}개와 다르다. 파일·파싱 오류를 확인하고 의도한 제거가 아니면 기준 목록을 고치지 않는다.",
         methods.len()
     );
     methods
@@ -36,7 +36,7 @@ fn all_baseline_methods_still_registered() {
         .collect();
     assert!(
         missing.is_empty(),
-        "0.7.0 기준 메서드가 METHOD_TABLE에서 사라졌다: {missing:?}. 제거는 프로젝트의 호환성·버전 정책에 따라야 한다. 의도한 major 변경이면 tasty-ipc의 기준 파일도 함께 검토한다."
+        "0.7.0 기준 메서드가 METHOD_TABLE에서 사라졌다: {missing:?}. 의도한 제거라면 CHANGELOG에 (BREAK)로 적고 tasty-ipc의 기준 파일과 BASELINE_METHOD_COUNT를 함께 고친다(api-conventions 안정성 정책)."
     );
 }
 
