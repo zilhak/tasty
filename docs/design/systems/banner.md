@@ -121,7 +121,7 @@ mouse-capture 배너(`defs::BANNER_MOUSE_CAPTURE`)에 한해, X 왼쪽에 "더�
   `banner-more-menu-border`(border-strong), radius·그림자는 다른 headless 메뉴와 같다.
 - **항목 2개(순서 고정)**, 클릭 시 즉시 실행 + 메뉴 닫힘, 둘 다 neutral 톤(danger 아님 —
   파괴/유실 없고 Settings 에서 되돌릴 수 있음):
-  1. **"{app}에 대해 이 알림 끄기"**(en "Turn off this notice for {app}")(`icons::BELL`) — `mouse_capture_banner_blacklist` 에
+  1. **"{app}에 대해 이 안내 끄기"**(en "Turn off this notice for {app}")(`icons::BELL`) — `mouse_capture_banner_blacklist` 에
      foreground 프로그램 이름 추가 + **배너도 즉시 함께 닫힘**.
   2. **"{app}에 대해 마우스 캡처 비활성화"**(`icons::MOUSE`) — `mouse_capture_blacklist` 에
      추가. **배너는 남는다** — 캡처가 이미 풀렸음을 사용자가 읽고 직접 닫도록.
