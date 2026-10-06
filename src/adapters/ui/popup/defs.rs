@@ -18,6 +18,8 @@ pub(crate) fn panel_header_drag_strip(s: &PopupState) -> egui::Rect {
 pub fn all_defs() -> &'static [PopupDef] {
     static DEFS: OnceLock<Vec<PopupDef>> = OnceLock::new();
     DEFS.get_or_init(|| {
+        // Theme 읽기 잠금을 아래 vec! 식 전체 동안 잡고 있지 않도록 값만 먼저 꺼낸다.
+        let palette_width = crate::theme::theme().palette_width().value();
         vec![
             PopupDef {
                 id: "notifications",
@@ -200,8 +202,9 @@ pub fn all_defs() -> &'static [PopupDef] {
                 title_key: "command_palette.heading",
                 fullscreen_stage: None,
                 title_fn: None,
-                // 실제 높이는 sizer에서 매 프레임 검색 결과에 맞춰 계산한다.
-                default_size: egui::vec2(540.0, 412.0),
+                // 등록 시점의 placeholder다. sizer가 매 프레임 palette-width와 검색 결과에 맞춘
+                // 높이로 덮어쓴다.
+                default_size: egui::vec2(palette_width, 412.0),
                 sizer: Some(super::command_palette::command_palette_sizer),
                 default_scope: PopupScope::Window,
                 close_on_outside_click: true,
