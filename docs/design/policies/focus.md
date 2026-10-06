@@ -256,9 +256,9 @@ GUI 창 종료는 window.close를 사용하되 headless에는 이 API가 없어 
 다시 실행한 두 번째 프로세스가 창을 올릴 수 있는 것은 OS가 사용자 실행에 붙여 준 활성화 증거가 있을 때뿐이다.
 Tasty에는 포커스를 주는 IPC 메서드가 없다.
 
-- 증거 없음(터미널·에이전트·스크립트에서 `tasty` 실행, macOS에서 바이너리 직접 실행): `window.create`와 같은 `Agent` 창 하나로 끝난다.
+- 증거 없음(Linux에서 터미널·에이전트·스크립트로 `tasty` 실행, Windows에서 `AllowSetForegroundWindow`가 거절된 실행, macOS에서 바이너리 직접 실행): `window.create`와 같은 `Agent` 창 하나로 끝난다.
   위 "에이전트가 만든 창과 포커스" 규칙을 그대로 따르며 숨긴 창·최소화한 창·`focused_view_id`를 건드리지 않는다.
-- 증거 있음(앱 목록·실행기·시작 메뉴로 실행): 실행 중인 Tasty가 숨기거나 최소화한 View를 트레이 복원처럼 다시 보이고,
+- 증거 있음(앱 목록·실행기·시작 메뉴로 실행. Windows는 포그라운드 프로세스나 그것이 시작한 프로세스면 `AllowSetForegroundWindow`가 성공하므로 앞에 있는 터미널에서 친 `tasty`도 여기에 든다. 실기 미측정): 실행 중인 Tasty가 숨기거나 최소화한 View를 트레이 복원처럼 다시 보이고,
   `focused_view_id`의 View 활성화를 OS에 요청한다. `focus_window()`는 부르지 않는다.
   - X11: 창에 `_NET_STARTUP_ID`를 걸고 startup id의 `_TIME` 타임스탬프로 `_NET_ACTIVE_WINDOW`(source 1)를 보낸다.
   - Windows: 두 번째 프로세스가 `AllowSetForegroundWindow`로 넘긴 권한으로 `SetForegroundWindow`를 부른다.

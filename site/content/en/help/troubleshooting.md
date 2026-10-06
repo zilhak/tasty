@@ -1,4 +1,4 @@
-<!-- source-hash: 3c6389c85705 -->
+<!-- source-hash: 6de630c48d41 -->
 # Troubleshooting
 
 If something is not working, find the matching symptom below. Check installation, permissions, terminal connections, and notifications, or use the reporting steps at the end if you still need help.
@@ -84,8 +84,8 @@ You can see the current state in the same tab (only shown on macOS). Full Disk A
 ## Running Tasty again
 
 - **Launching from the app menu or a launcher brings the open window forward instead of a new window** — only one Tasty runs per data folder (`~/.tasty/`, or the folder set with `TASTY_HOME`). A new launch does not start a second process; it is handed to the running Tasty. Windows hidden to the tray or minimized come back, and the window you used last comes forward. Whether it actually comes to the front is up to the OS, so in some environments the taskbar entry only flashes. On Wayland, Tasty cannot yet bring an already open window forward, so running it again always opens a new window.
-- **Running `tasty` in a terminal opens just one new window** — launching from anywhere other than the app menu (a terminal, a script, an agent) is the same as `tasty new window`. The focused window and hidden windows stay as they are.
-- **A "Tasty is already running." box appears** — the launch could not be handed to the running Tasty. Usually the running Tasty was still starting up, or on Linux the session bus could not be reached. The cause of every launch is written as a line in `launch.log` in the data folder (`~/.tasty/launch.log`). On Linux without `zenity`, a desktop notification appears instead of the box.
+- **Running `tasty` in a terminal opens just one new window** — launching from anywhere other than the app menu (a terminal, a script, an agent) is the same as `tasty new window`. The focused window and hidden windows stay as they are. On Windows, launching from the terminal you are using (the one in front) passes on the permission to come forward, so the open window may come forward as it does from the app menu.
+- **A "Tasty is already running." box appears** — the launch could not be handed to the running Tasty and the running Tasty does not respond. When the request did arrive but is handled late, no box appears and a window opens a moment later. Usually the box means the running Tasty was still starting up, or on Linux the session bus could not be reached. The cause of every launch is written as a line in `launch.log` in the data folder (`~/.tasty/launch.log`). On Linux without `zenity`, a desktop notification appears instead of the box.
 - **Starting Tasty right after force-quitting it takes a moment** — it waits up to two seconds for the leftover lock to be released before starting.
 - **You need two separate Tastys** — start one with a different `TASTY_HOME`.
 

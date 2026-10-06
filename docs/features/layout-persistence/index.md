@@ -82,6 +82,7 @@ headless 빌드(`--no-default-features`)는 레이아웃을 영속하지 않는�
 GUI 부팅은 가장 먼저 데이터 홈의 구조 저널 writer 잠금(`<홈>/structure/journal.db.writer-lock`)을 얻는다. 잠금이 잡혀 있으면 저널 worker의 writer 잠금과 같은 재시도 구간(`WRITER_LOCK_WAIT`, 2초) 동안 10ms부터 두 배씩 최대 100ms 간격으로 다시 시도한다. 비정상 종료한 이전 인스턴스의 잠금이 그 안에 풀리면 그대로 부팅한다. 재시도는 창을 만들기 전에 끝나므로 멈춘 창이 보이지 않는다. 호스트 로그 파일, `memory.db`, 설정 저장, 플러그인, 테마, 저널, 슬롯 파일, IPC, 트레이보다 앞선다.
 
 - Given 다른 프로세스가 같은 홈의 writer 잠금을 재시도 구간 내내 쥐고 있을 때, When release GUI를 실행하면, Then 두 번째 프로세스는 창 없이 실행 중인 Tasty에 요청을 넘기고 끝난다(아래 "같은 홈의 다시 실행").
+- Given debug GUI를 실행할 때, Then 증거 환경변수(`XDG_ACTIVATION_TOKEN`·`DESKTOP_STARTUP_ID`)를 시작 직후 지우고, 잠금을 얻으면 `tasty.instance`를 쓰고 종료 때 지우는 것은 release와 같다. 두 번째 실행을 넘기는 동작과 D-Bus 등록만 release 전용이다.
 - Given 같은 조건에서, When debug GUI를 실행하면, Then 그 홈의 파일을 만들거나 바꾸지 않고 창과 GPU만 만들어 "이미 사용 중인 데이터 폴더" 부팅 오류 화면(`boot.home_in_use.*`)을 띄운다. 본문에 홈 경로를 넣고 같은 문구를 `tracing::error!`로 stderr에 남긴다. Quit 버튼이나 창 닫기로 종료 코드 1로 끝난다.
 - Given 잠금을 얻었을 때, When 부팅이 이어지면, Then 그 잠금을 저널 worker에 넘겨 저장소가 그 잠금으로 writer가 된다. 저널 schema migration은 잠금을 쥔 뒤에만 실행된다.
 - Given 잠금 시도를 판정할 수 없을 때(홈을 알 수 없거나 잠금 파일을 쓸 수 없음), When 부팅이 이어지면, Then 저널 worker가 저장소를 연 뒤 다시 잠근다. 이때 잠금이 이미 쥐어져 있거나 다른 프로세스가 저널 binding(`journal.binding-lock`)을 초기화하고 있으면 worker는 실패 종류를 "홈 사용 중"으로 보내고, 부팅 오류 화면은 엔진 오류 대신 같은 "이미 사용 중" 문구를 고른다. 오류 문자열은 해석하지 않는다.
@@ -97,7 +98,9 @@ release는 같은 홈에 프로세스 하나만 둔다. 잠금을 얻은 인스�
 - Given Wayland에서 실행기 토큰이 있을 때, When release GUI를 실행하면, Then 기존 View는 그대로 두고 토큰을 실은 새 창 하나를 연다.
 - Given 인스턴스 파일의 PID·시작 시각이 살아 있는 프로세스와 같고 포트가 있을 때, When release GUI를 실행하면, Then writer 잠금 재시도(`WRITER_LOCK_WAIT`)를 기다리지 않고 바로 넘긴다.
 - Given 인스턴스 파일이 없거나 포트가 없거나 PID·시작 시각이 맞지 않을 때, When release GUI를 실행하면, Then 잠금 재시도 뒤 20초까지 기다린다. 그 사이 잠금이 풀리면 평소처럼 부팅한다.
-- Given 요청을 넘기지 못했을 때(기다림 초과, 세션 버스·D-Bus 이름 없음, IPC 실패), When 두 번째 프로세스가 끝나면, Then Tasty 창 없이 OS 메시지 상자(`app.name`, `boot.already_running.body`)를 띄우고 종료 코드 1로 끝난다. Linux에서 `zenity`가 없으면 데스크톱 알림으로 대신한다.
+- Given 넘기는 중에 연결이 끊기거나 D-Bus 이름 소유자가 사라졌을 때, When 기록의 프로세스가 더 이상 살아 있지 않으면, Then 두 번째 프로세스는 기한을 기다리지 않고 기록과 writer 잠금을 다시 확인하고, 잠금을 얻으면 평소처럼 부팅한다(실행 요청이 사라지지 않는다).
+- Given `window.create`나 D-Bus `Activate`를 보냈지만 기한 안에 응답이 없을 때, When 실행 중인 인스턴스가 살아 있으면, Then 메시지 상자 없이 `launch.log`에 경고 한 줄만 남기고 종료 코드 0으로 끝난다. 실행 중인 쪽이 늦게라도 처리한다. 기능 확인 요청에 답하지 않아 `window.create`를 보내지 못한 경우는 "보냈다"로 보지 않는다.
+- Given 요청을 넘기지 못했고(기다림 초과, 세션 버스·D-Bus 이름 없음, IPC 연결 실패) 다시 확인해도 잠금을 얻지 못했을 때, When 두 번째 프로세스가 끝나면, Then Tasty 창 없이 OS 메시지 상자(`app.name`, `boot.already_running.body`)를 띄우고 종료 코드 1로 끝난다. Linux에서 `zenity`가 없으면 데스크톱 알림으로 대신한다.
 - Given 두 번째 실행이 있을 때, Then 그 과정이 `<홈>/launch.log`(256 KiB 상한, `launch.log.lock`으로 직렬화)와 stderr에 한 줄씩 남는다. 증거는 종류만 남기고 값은 남기지 않는다. 실행 중인 인스턴스의 `debug.log`는 열지 않는다.
 
 증거 판정과 포커스 규칙은 [포커스 정책](../../design/policies/focus.md#같은-홈으로-다시-실행했을-때-release-단일-실행), 근거와 한계는 [ADR-0059](../../adr/0059-id-targets-and-view-owned-selection.md)에 있다.
