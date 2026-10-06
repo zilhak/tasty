@@ -74,6 +74,16 @@ fn frame_case(
     draw_toast_scopes(&painter, &props);
 }
 
+/// 예제 hint 키캡. 시안의 Kbd 규칙대로 macOS는 `⌘C`, 그 밖은 Ctrl+C다.
+fn copy_hint() -> Vec<String> {
+    let keys: &[&str] = if cfg!(target_os = "macos") {
+        &["⌘C"]
+    } else {
+        &["Ctrl", "C"]
+    };
+    keys.iter().map(|k| (*k).to_owned()).collect()
+}
+
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     ui.label(
         egui::RichText::new("ToastViewProps + draw_toast_scopes — 본체와 공유하는 그리기 함수.")
@@ -106,6 +116,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             vec![ToastEntryView {
                 kind: ToastKind::Info,
                 message: "Reloaded settings.json".into(),
+                hint: Vec::new(),
                 alpha: 1.0,
             }],
         );
@@ -125,6 +136,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             vec![ToastEntryView {
                 kind: ToastKind::Success,
                 message: "Workspace saved.".into(),
+                hint: Vec::new(),
                 alpha: 1.0,
             }],
         );
@@ -144,6 +156,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             vec![ToastEntryView {
                 kind: ToastKind::Warning,
                 message: "Low disk space — clean up downloads.".into(),
+                hint: Vec::new(),
                 alpha: 1.0,
             }],
         );
@@ -163,6 +176,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             vec![ToastEntryView {
                 kind: ToastKind::Error,
                 message: "Plugin crashed: tasty-plugin-foo. See logs.".into(),
+                hint: Vec::new(),
                 alpha: 1.0,
             }],
         );
@@ -187,6 +201,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                          toast 카드 크기를 동적으로 늘린다. 여기서는 mock 으로 같은 알고리즘을 \
                          시연한다."
                         .into(),
+                hint: Vec::new(),
                 alpha: 1.0,
             }],
         );
@@ -210,27 +225,32 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 ToastEntryView {
                     kind: ToastKind::Info,
                     message: "Two notices while importing the bundle".into(),
+                    hint: Vec::new(),
                     alpha: 1.0,
                 },
                 ToastEntryView {
                     kind: ToastKind::Warning,
                     message: "Held by another client (readonly)".into(),
+                    hint: Vec::new(),
                     alpha: 1.0,
                 },
-                // 시안의 agent 변형은 본체 ToastKind에 없어 Info 강조색으로 대신한다.
                 ToastEntryView {
                     kind: ToastKind::Info,
-                    message: "Agent opened 3 surfaces in background".into(),
+                    message: "Settings applied".into(),
+                    hint: Vec::new(),
                     alpha: 1.0,
                 },
+                // 메뉴·마우스로 복사했고 binding이 있을 때 붙는 hint. 시안 Toast stack과 같다.
                 ToastEntryView {
                     kind: ToastKind::Success,
                     message: "Path copied to clipboard".into(),
+                    hint: copy_hint(),
                     alpha: 1.0,
                 },
                 ToastEntryView {
                     kind: ToastKind::Error,
                     message: "Force detach — connection dropped".into(),
+                    hint: Vec::new(),
                     alpha: 1.0,
                 },
             ],

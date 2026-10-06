@@ -487,14 +487,14 @@ pub fn kbd_parts(ui: &mut egui::Ui, theme: &Theme, keys: &[KbdKey<'_>]) {
                     let w = cap_width(galley.rect.width(), pad_x, kbd_h);
                     let (rect, _) =
                         ui.allocate_exact_size(egui::vec2(w, kbd_h), egui::Sense::hover());
-                    draw_keycap_box(ui, rect, radius, bw, fill, border, bottom_border);
+                    draw_keycap_box(ui.painter(), rect, radius, bw, fill, border, bottom_border);
                     let pos = rect.center() - galley.rect.size() * 0.5;
                     ui.painter().galley(pos, galley, fg);
                 }
                 KbdKey::Icon(icon) => {
                     let (rect, _) =
                         ui.allocate_exact_size(egui::vec2(kbd_h, kbd_h), egui::Sense::hover());
-                    draw_keycap_box(ui, rect, radius, bw, fill, border, bottom_border);
+                    draw_keycap_box(ui.painter(), rect, radius, bw, fill, border, bottom_border);
                     let irect = egui::Rect::from_center_size(
                         rect.center(),
                         egui::vec2(icon_glyph, icon_glyph),
@@ -565,14 +565,14 @@ pub(crate) fn kbd_parts_at_ink(
                 );
                 let w = cap_width(g.rect.width(), pad_x, kbd_h);
                 let rect = egui::Rect::from_min_size(egui::pos2(x, top), egui::vec2(w, kbd_h));
-                draw_keycap_box(ui, rect, radius, bw, fill, border, bottom_border);
+                draw_keycap_box(ui.painter(), rect, radius, bw, fill, border, bottom_border);
                 let pos = rect.center() - g.rect.size() * 0.5;
                 ui.painter().galley(pos, g, fg);
                 x += w + gap;
             }
             KbdKey::Icon(icon) => {
                 let rect = egui::Rect::from_min_size(egui::pos2(x, top), egui::vec2(kbd_h, kbd_h));
-                draw_keycap_box(ui, rect, radius, bw, fill, border, bottom_border);
+                draw_keycap_box(ui.painter(), rect, radius, bw, fill, border, bottom_border);
                 let irect =
                     egui::Rect::from_center_size(rect.center(), egui::vec2(icon_glyph, icon_glyph));
                 icon.image(icon_glyph, fg).paint_at(ui, irect);
@@ -583,10 +583,58 @@ pub(crate) fn kbd_parts_at_ink(
     total
 }
 
+/// `kbd_parts_at`과 같은 키캡을 `Ui` 없이 `painter`에 그린다. 텍스트 키만 받는다.
+/// 상자·글자·`+` 색에 `alpha`를 곱해 페이드하는 카드(토스트 hint) 안에서 쓴다.
+/// 오른쪽 끝을 `right_x`, 세로 중심을 `center_y`에 맞추고 차지한 폭을 돌려준다.
+pub fn kbd_text_parts_painted(
+    painter: &egui::Painter,
+    theme: &Theme,
+    keys: &[&str],
+    right_x: f32,
+    center_y: f32,
+    alpha: f32,
+) -> LogicalPx {
+    let parts: Vec<KbdKey<'_>> = keys.iter().map(|k| KbdKey::Text(k)).collect();
+    let total = kbd_parts_width(painter.ctx(), theme, &parts);
+    if keys.is_empty() {
+        return total;
+    }
+    let radius = theme.kbd_radius().value();
+    let bw = theme.border_width.value();
+    let border: egui::Color32 = theme.kbd_border().gamma_multiply(alpha).into();
+    let fill: egui::Color32 = theme.kbd_bg().gamma_multiply(alpha).into();
+    let fg: egui::Color32 = theme.kbd_fg().gamma_multiply(alpha).into();
+    let plus: egui::Color32 = theme.text_muted().gamma_multiply(alpha).into();
+    let micro = theme.kbd_font_size().value();
+    let gap = theme.kbd_gap().value();
+    let pad_x = theme.kbd_padding_x().value();
+    let kbd_h = theme.kbd_size().value();
+    let bottom_border = theme.kbd_shadow_depth().value();
+    let top = center_y - kbd_h * 0.5;
+    let mut x = right_x - total.value();
+    for (i, text) in keys.iter().enumerate() {
+        if i > 0 {
+            let g = painter.layout_no_wrap("+".to_owned(), mono(micro), plus);
+            let w = g.rect.width();
+            let pos = egui::pos2(x, center_y - g.rect.height() * 0.5);
+            painter.galley(pos, g, plus);
+            x += w + gap;
+        }
+        let g = painter.layout_no_wrap((*text).to_owned(), mono(micro), egui::Color32::PLACEHOLDER);
+        let w = cap_width(g.rect.width(), pad_x, kbd_h);
+        let rect = egui::Rect::from_min_size(egui::pos2(x, top), egui::vec2(w, kbd_h));
+        draw_keycap_box(painter, rect, radius, bw, fill, border, bottom_border);
+        let pos = rect.center() - g.rect.size() * 0.5;
+        painter.galley(pos, g, fg);
+        x += w + gap;
+    }
+    total
+}
+
 /// 텍스트·아이콘 키캡이 공유하는 배경과 아래쪽 강조 테두리.
 #[allow(clippy::too_many_arguments)]
 fn draw_keycap_box(
-    ui: &egui::Ui,
+    painter: &egui::Painter,
     rect: egui::Rect,
     radius: f32,
     bw: f32,
@@ -594,15 +642,15 @@ fn draw_keycap_box(
     border: egui::Color32,
     bottom_border: f32,
 ) {
-    ui.painter().rect_filled(rect, radius, fill);
+    painter.rect_filled(rect, radius, fill);
     // 키캡 하단 보더 2px 강조 → 윗변은 1px, 아랫변은 2px 로 따로 그린다.
-    ui.painter().rect_stroke(
+    painter.rect_stroke(
         rect,
         radius,
         egui::Stroke::new(bw, border),
         egui::StrokeKind::Inside,
     );
-    ui.painter().line_segment(
+    painter.line_segment(
         [
             egui::pos2(rect.left() + radius, rect.bottom() - bw),
             egui::pos2(rect.right() - radius, rect.bottom() - bw),

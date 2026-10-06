@@ -258,5 +258,5 @@ pub(super) fn action_row(
 /// 본체와 같은 draw_single_card 함수로 내보내기 완료 토스트를 그린다.
 fn export_toast(ui: &mut egui::Ui, theme: &Theme) {
     let text = format!("Exported to ~/tasty/{IE_FILE}");
-    toast_card::draw_single_card(ui, theme, ToastKind::Success, &text, 1.0);
+    toast_card::draw_single_card(ui, theme, ToastKind::Success, &text, &[], 1.0);
 }

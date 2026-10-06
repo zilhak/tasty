@@ -337,6 +337,12 @@ impl MainView {
     /// 현재 선택을 복사하고 선택 범위는 유지한다. 우클릭 복사는 포커스와 무관하다.
     /// Ctrl+C의 포커스 일치 검사는 호출자인 handle_copy_shortcut에서 한다.
     pub fn copy_selection_to_clipboard(&mut self, engine: &EngineRead<'_>) -> bool {
+        self.copy_selection_with_hint(engine, Vec::new())
+    }
+
+    /// [`Self::copy_selection_to_clipboard`]와 같고 토스트에 `hint` 키캡을 붙인다.
+    /// 우클릭 메뉴처럼 키보드가 아닌 경로에서 부른다.
+    pub fn copy_selection_with_hint(&mut self, engine: &EngineRead<'_>, hint: Vec<String>) -> bool {
         let sel = match &self.text_selection {
             Some(s) if !s.is_empty() => s.clone(),
             _ => return false,
@@ -352,8 +358,10 @@ impl MainView {
         if let Some(cb) = &mut self.clipboard {
             cb.set_text(&text);
         }
-        self.state.toasts.push_info(
+        self.state.toasts.push_with_hint(
             crate::i18n::t("toast.copied"),
+            crate::adapters::ui::ToastKind::Info,
+            hint,
             crate::adapters::ui::ToastScope::Surface(sel.surface_id),
         );
 

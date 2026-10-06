@@ -6,9 +6,10 @@ use std::time::Duration;
 use tasty_type_appearance::theme::Theme;
 use tasty_type_appearance::toast_kind::ToastKind;
 
+use crate::chip::{KbdKey, kbd_parts_width, kbd_text_parts_painted};
 use crate::tokens::{
-    TOAST_GAP, TOAST_MIN_INNER_WIDTH as MIN_TOAST_INNER_WIDTH, TOAST_PADDING_X as PADDING_X,
-    TOAST_PADDING_Y as PADDING_Y, TOAST_SCOPE_MARGIN as SCOPE_MARGIN,
+    TOAST_GAP, TOAST_HINT_GAP as HINT_GAP, TOAST_MIN_INNER_WIDTH as MIN_TOAST_INNER_WIDTH,
+    TOAST_PADDING_X as PADDING_X, TOAST_PADDING_Y as PADDING_Y, TOAST_SCOPE_MARGIN as SCOPE_MARGIN,
 };
 
 /// 등장 페이드 시간(ms).
@@ -21,6 +22,9 @@ pub const FADE_OUT_MS: f32 = 160.0;
 pub struct ToastEntryView {
     pub kind: ToastKind,
     pub message: String,
+    /// 알림을 낸 동작의 단축키 키캡(표시 문자열). 비어 있으면 hint를 그리지 않는다.
+    /// 메뉴·마우스로 실행했고 binding이 있을 때만 호출자가 채운다.
+    pub hint: Vec<String>,
     /// [0.0, 1.0] — 0 이면 스킵.
     pub alpha: f32,
 }
@@ -89,7 +93,8 @@ pub fn draw_toast_scopes(painter: &egui::Painter, props: &ToastViewProps<'_>) {
             // 들고 나도 다른 카드가 다시 흐르지 않는다. 좁은 영역에서는 왼쪽 여백도 넘지 않는다.
             let inner_limit = (scope_rect.width() - SCOPE_MARGIN * 2.0).max(MIN_TOAST_INNER_WIDTH);
             let max_width = th.toast_max_width.value().min(inner_limit);
-            let (galley, size) = layout_card(&ctx, th, entry.message.clone(), max_width);
+            let (galley, size) =
+                layout_card(&ctx, th, entry.message.clone(), &entry.hint, max_width);
             let (toast_w, toast_h) = (size.x, size.y);
 
             let max_x = scope_rect.max.x - SCOPE_MARGIN;
@@ -110,6 +115,8 @@ pub fn draw_toast_scopes(painter: &egui::Painter, props: &ToastViewProps<'_>) {
                 rect,
                 card_colors(th, entry.kind, alpha),
                 galley,
+                &entry.hint,
+                alpha,
             );
 
             cursor_y = top_y - TOAST_GAP;
@@ -129,21 +136,38 @@ pub fn card_colors(theme: &Theme, kind: ToastKind, alpha: f32) -> CardColors {
     }
 }
 
+/// hint 키캡이 차지하는 폭과 본문 사이 간격의 합. hint가 없으면 0이다.
+fn hint_reserve(ctx: &egui::Context, theme: &Theme, hint: &[String]) -> f32 {
+    if hint.is_empty() {
+        return 0.0;
+    }
+    let keys: Vec<KbdKey<'_>> = hint.iter().map(|k| KbdKey::Text(k)).collect();
+    kbd_parts_width(ctx, theme, &keys).value() + HINT_GAP
+}
+
 /// 카드 폭 상한에 맞춰 본문과 크기를 계산한다. 상한은 호출자가 정한다.
+/// hint는 줄지 않으므로 본문 줄바꿈 폭에서 먼저 뺀다(본문이 먼저 줄바꿈된다).
 /// 본문은 고정색으로 배치해 페이드하지 않고 배경·테두리·강조 막대만 페이드한다.
 pub fn layout_card(
     ctx: &egui::Context,
     theme: &Theme,
     message: String,
+    hint: &[String],
     max_width: f32,
 ) -> (std::sync::Arc<egui::Galley>, egui::Vec2) {
     let font = egui::FontId::proportional(theme.font_size_body.value());
     let accent_w = theme.toast_accent_width.value();
+    let reserve = hint_reserve(ctx, theme, hint);
     // wrap_width 음수 방지(스코프 클램프로 max_width 가 작아질 때).
-    let wrap_width = (max_width - PADDING_X * 2.0 - accent_w).max(1.0);
+    let wrap_width = (max_width - PADDING_X * 2.0 - accent_w - reserve).max(1.0);
     let galley = ctx.fonts(|f| f.layout(message, font, theme.text_primary().into(), wrap_width));
-    let toast_w = (galley.size().x + PADDING_X * 2.0 + accent_w).min(max_width);
-    let toast_h = galley.size().y + PADDING_Y * 2.0;
+    let toast_w = (galley.size().x + PADDING_X * 2.0 + accent_w + reserve).min(max_width);
+    let hint_h = if hint.is_empty() {
+        0.0
+    } else {
+        theme.kbd_size().value()
+    };
+    let toast_h = galley.size().y.max(hint_h) + PADDING_Y * 2.0;
     (galley, egui::vec2(toast_w, toast_h))
 }
 
@@ -153,12 +177,14 @@ pub fn draw_single_card(
     theme: &Theme,
     kind: ToastKind,
     message: &str,
+    hint: &[String],
     alpha: f32,
 ) -> egui::Response {
     let (galley, size) = layout_card(
         ui.ctx(),
         theme,
         message.to_string(),
+        hint,
         theme.toast_max_width.value(),
     );
     let (rect, response) = ui.allocate_exact_size(size, egui::Sense::hover());
@@ -169,6 +195,8 @@ pub fn draw_single_card(
         rect,
         card_colors(theme, kind, alpha),
         galley,
+        hint,
+        alpha,
     );
     response
 }
@@ -186,13 +214,16 @@ pub struct CardColors {
     pub text: egui::Color32,
 }
 
-/// 지정된 사각형 안에 카드의 배경·테두리·강조 막대와 본문을 그린다.
+/// 지정된 사각형 안에 카드의 배경·테두리·강조 막대와 본문, hint 키캡을 그린다.
+/// hint는 오른쪽 끝에서 본문 첫 줄의 세로 중심에 맞춘다. 키캡 색에도 `alpha`를 곱한다.
 pub fn draw_card(
     painter: &egui::Painter,
     theme: &Theme,
     rect: egui::Rect,
     colors: CardColors,
     galley: std::sync::Arc<egui::Galley>,
+    hint: &[String],
+    alpha: f32,
 ) {
     painter.rect_filled(rect, theme.corner_radius.value(), colors.bg);
     painter.rect_stroke(
@@ -214,5 +245,20 @@ pub fn draw_card(
     painter.rect_filled(bar_rect, bar_radius, colors.accent);
 
     let text_pos = egui::pos2(rect.min.x + accent_w + PADDING_X, rect.min.y + PADDING_Y);
+    if !hint.is_empty() {
+        let first_line_center = galley
+            .rows
+            .first()
+            .map_or(galley.size().y * 0.5, |row| row.rect.center().y);
+        let keys: Vec<&str> = hint.iter().map(String::as_str).collect();
+        kbd_text_parts_painted(
+            painter,
+            theme,
+            &keys,
+            rect.max.x - PADDING_X,
+            text_pos.y + first_line_center,
+            alpha,
+        );
+    }
     painter.galley(text_pos, galley, colors.text);
 }

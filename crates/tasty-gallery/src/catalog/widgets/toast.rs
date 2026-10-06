@@ -9,29 +9,67 @@ use crate::catalog::toast_card::{self, ToastKind};
 struct ToastCardProps {
     kind: ToastKind,
     message: &'static str,
+    hint: Option<HintKeys>,
+}
+
+/// 예제 hint의 키. 시안의 Kbd 규칙대로 macOS는 기호, 그 밖은 Ctrl+Shift+ 표기다.
+#[derive(Clone, Copy)]
+enum HintKeys {
+    /// 시안 `⌘⇧C`.
+    CopyPath,
+    /// 시안 `⌘C`.
+    Copy,
+}
+
+impl HintKeys {
+    fn keys(self) -> Vec<String> {
+        let keys: &[&str] = match (self, cfg!(target_os = "macos")) {
+            (HintKeys::CopyPath, true) => &["⌘⇧C"],
+            (HintKeys::CopyPath, false) => &["Ctrl", "Shift", "C"],
+            (HintKeys::Copy, true) => &["⌘C"],
+            (HintKeys::Copy, false) => &["Ctrl", "C"],
+        };
+        keys.iter().map(|k| (*k).to_owned()).collect()
+    }
 }
 
 fn draw_toast_card(ui: &mut egui::Ui, theme: &Theme, props: &ToastCardProps, alpha: f32) {
-    toast_card::draw_single_card(ui, theme, props.kind, props.message, alpha);
+    let hint = props.hint.map(HintKeys::keys).unwrap_or_default();
+    toast_card::draw_single_card(ui, theme, props.kind, props.message, &hint, alpha);
 }
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
+    // 시안 Toast Spec의 카드 여섯 장. 같은 문구로 hint 유무를 나란히 비교한다.
     let cards = [
         ToastCardProps {
             kind: ToastKind::Success,
-            message: "Path copied to clipboard",
+            message: "Path copied",
+            hint: Some(HintKeys::CopyPath),
+        },
+        ToastCardProps {
+            kind: ToastKind::Success,
+            message: "Path copied",
+            hint: None,
+        },
+        ToastCardProps {
+            kind: ToastKind::Success,
+            message: "Copied 3 lines from the selection to the clipboard",
+            hint: Some(HintKeys::Copy),
         },
         ToastCardProps {
             kind: ToastKind::Info,
-            message: "This action isn't supported in a mirrored remote explorer yet.",
+            message: "Copied (OSC 52)",
+            hint: None,
         },
         ToastCardProps {
             kind: ToastKind::Warning,
             message: "Held by another client (readonly)",
+            hint: None,
         },
         ToastCardProps {
             kind: ToastKind::Error,
             message: "Force detach — connection dropped",
+            hint: None,
         },
     ];
 
@@ -50,18 +88,33 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("radius", "4"),
             ("fill", "surface-raised"),
             ("max-width", "toast-max-width"),
+            (
+                "boxes",
+                "rail · body (flex 1) · hint (flex none) · gap space-sm · pad space-sm / space-md",
+            ),
+            (
+                "hint",
+                "Kbd of the action's binding · menu / mouse origin only · none when unbound",
+            ),
+            (
+                "hint position",
+                "right end, first line · never truncated — body wraps first",
+            ),
+            (
+                "platform",
+                // 갤러리 UI 글꼴에 ⌥가 없어 기호 이름으로 적는다.
+                "Kbd rule: Cmd / Shift / Option symbols on macOS, Ctrl+Shift+ on Windows / Linux",
+            ),
+            ("agent", "catalog only — host does not emit"),
+            ("icon", "catalog only — host card has no icon"),
         ],
         &[
             TokenChip::new(
                 "accent-success",
-                "success rail",
+                "ok rail",
                 egui::Color32::from(theme.accent_success()),
             ),
-            TokenChip::new(
-                "accent-agent",
-                "agent rail",
-                egui::Color32::from(theme.accent_agent()),
-            ),
+            TokenChip::without_color("toast-hint-font-size", "hint · micro mono"),
             TokenChip::new(
                 "surface-raised",
                 "card fill",
@@ -79,23 +132,27 @@ pub fn draw_stack(ui: &mut egui::Ui, theme: &Theme) {
         ToastCardProps {
             kind: ToastKind::Info,
             message: "Two notices while importing the bundle",
+            hint: None,
         },
         ToastCardProps {
             kind: ToastKind::Warning,
             message: "Held by another client (readonly)",
+            hint: None,
         },
-        // 시안의 agent 변형은 본체 ToastKind에 없어 Info 강조색으로 대신한다.
         ToastCardProps {
             kind: ToastKind::Info,
-            message: "Agent opened 3 surfaces in background",
+            message: "Settings applied",
+            hint: None,
         },
         ToastCardProps {
             kind: ToastKind::Success,
             message: "Path copied to clipboard",
+            hint: Some(HintKeys::Copy),
         },
         ToastCardProps {
             kind: ToastKind::Error,
             message: "Force detach — connection dropped",
+            hint: None,
         },
     ];
 
@@ -131,13 +188,6 @@ pub fn draw_stack(ui: &mut egui::Ui, theme: &Theme) {
          opaque — alpha is only for enter and exit. Each card keeps its own content width, \
          capped at toast-max-width, and right edges align to the anchor; there is no shared \
          stack width, so nothing re-flows when a card enters or leaves.",
-    );
-
-    note(
-        ui,
-        theme,
-        "The host has no agent ToastKind and no hint slot yet, so the agent card uses the \
-         Info accent and the success card omits its hint.",
     );
 
     meta(

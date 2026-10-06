@@ -1331,7 +1331,8 @@ impl MainView {
                     );
                 }
                 Some(2) => {
-                    this.copy_selection_to_clipboard(engine);
+                    let hint = crate::adapters::ui::toast::binding_hint(engine.settings, "copy");
+                    this.copy_selection_with_hint(engine, hint);
                 }
                 Some(3) => {
                     this.copy_selection_no_newline(engine);
@@ -1452,7 +1453,15 @@ impl MainView {
                 return;
             }
             match result {
-                Some(1) => this.explorer_menu_copy_path(surface_id, &paths, &cwd, is_empty_target),
+                Some(1) => {
+                    // 빈 곳을 눌러 현재 폴더를 복사하는 동작에는 대응하는 단축키가 없다.
+                    let hint = if is_empty_target {
+                        Vec::new()
+                    } else {
+                        crate::adapters::ui::toast::binding_hint(engine.settings, "copy_path")
+                    };
+                    this.explorer_menu_copy_path(surface_id, &paths, &cwd, is_empty_target, hint)
+                }
                 Some(10) => this.explorer_menu_set_clipboard(engine, surface_id, &paths, false),
                 Some(11) => this.explorer_menu_set_clipboard(engine, surface_id, &paths, true),
                 Some(12) => this.explorer_menu_paste(
@@ -1598,6 +1607,7 @@ impl MainView {
         paths: &[std::path::PathBuf],
         cwd: &std::path::Path,
         is_empty_target: bool,
+        hint: Vec<String>,
     ) {
         let text = if is_empty_target {
             cwd.display().to_string()
@@ -1611,8 +1621,10 @@ impl MainView {
         if let Some(cb) = &mut self.clipboard {
             cb.set_text(&text);
         }
-        self.state.toasts.push_info(
+        self.state.toasts.push_with_hint(
             crate::i18n::t("toast.copied_path"),
+            crate::adapters::ui::ToastKind::Info,
+            hint,
             crate::adapters::ui::ToastScope::Surface(surface_id),
         );
     }

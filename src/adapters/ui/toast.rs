@@ -16,6 +16,8 @@ pub struct ToastState {
     pub id: u64,
     pub message: String,
     pub kind: ToastKind,
+    /// 알림을 낸 동작의 단축키 키캡. 메뉴·마우스로 실행했고 binding이 있을 때만 채운다.
+    pub hint: Vec<String>,
     pub scope: ToastScope,
     pub spawned_at: Instant,
     pub lifetime: Duration,
@@ -43,6 +45,17 @@ pub fn draw_toast_view(ctx: &egui::Context, props: &ToastViewProps<'_>) {
     tasty_ui_widgets::draw_toast_scopes(&painter, props);
 }
 
+/// 토스트 hint에 넣을 `binding_id` 동작의 첫 단축키 키캡. binding이 비었으면 빈 목록이다.
+/// 메뉴·마우스로 실행한 동작에만 쓴다. 키를 눌러 실행했다면 사용자가 이미 키를 안다.
+pub fn binding_hint(settings: &tasty_settings::Settings, binding_id: &str) -> Vec<String> {
+    settings
+        .keybindings
+        .get_bindings(binding_id)
+        .and_then(|b| b.first())
+        .map(|b| tasty_settings::KeybindingSettings::format_display_parts(b, &settings.general))
+        .unwrap_or_default()
+}
+
 pub struct ToastManager {
     toasts: Vec<ToastState>,
     next_id: u64,
@@ -68,6 +81,18 @@ impl ToastManager {
 
     /// 사용자 행동의 결과로 토스트를 추가한다.
     pub fn push(&mut self, message: impl Into<String>, kind: ToastKind, scope: ToastScope) {
+        self.push_with_hint(message, kind, Vec::new(), scope);
+    }
+
+    /// `hint`(동작의 단축키 키캡)를 붙여 토스트를 추가한다. 키보드로 실행한 동작이나
+    /// binding이 빈 동작에는 빈 목록을 넘긴다. docs/design/systems/toast.md 참고.
+    pub fn push_with_hint(
+        &mut self,
+        message: impl Into<String>,
+        kind: ToastKind,
+        hint: Vec<String>,
+        scope: ToastScope,
+    ) {
         let message = truncate_message(message.into());
         let now = Instant::now();
 
@@ -78,6 +103,7 @@ impl ToastManager {
         }) {
             existing.spawned_at = now;
             existing.kind = kind;
+            existing.hint = hint;
             existing.lifetime = self.lifetime;
             return;
         }
@@ -89,6 +115,7 @@ impl ToastManager {
             id,
             message,
             kind,
+            hint,
             scope: scope.clone(),
             spawned_at: now,
             lifetime: self.lifetime,
@@ -159,6 +186,7 @@ impl ToastManager {
                 .map(|t| ToastEntryView {
                     kind: t.kind,
                     message: t.message.clone(),
+                    hint: t.hint.clone(),
                     alpha: compute_alpha(t, now, reduced_motion),
                 })
                 .collect();
@@ -267,6 +295,7 @@ mod tests {
             id,
             message: msg.to_string(),
             kind,
+            hint: Vec::new(),
             scope: ToastScope::Window,
             spawned_at: Instant::now(),
             lifetime: DEFAULT_LIFETIME,
@@ -365,11 +394,13 @@ mod tests {
                 ToastEntryView {
                     kind: ToastKind::Info,
                     message: "info".into(),
+                    hint: Vec::new(),
                     alpha: 1.0,
                 },
                 ToastEntryView {
                     kind: ToastKind::Error,
                     message: "long error message that may wrap into multiple lines".into(),
+                    hint: Vec::new(),
                     alpha: 0.5,
                 },
             ],
@@ -384,6 +415,7 @@ mod tests {
             entries: vec![ToastEntryView {
                 kind: ToastKind::Warning,
                 message: "invisible".into(),
+                hint: Vec::new(),
                 alpha: 0.0,
             }],
         }];

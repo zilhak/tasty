@@ -55,6 +55,8 @@ pub const TOAST_PADDING_X: f32 = SIZING.spacing_md.0;
 pub const TOAST_PADDING_Y: f32 = SIZING.spacing_sm.0;
 /// 토스트 사이 세로 간격. = `component.toast-gap` → `{semantic.space-sm}` = 8.
 pub const TOAST_GAP: f32 = SIZING.spacing_sm.0;
+/// 본문과 hint 키캡 사이 가로 간격. 시안 `.tasty-toast`의 `gap: var(--tasty-space-sm)`.
+pub const TOAST_HINT_GAP: f32 = SIZING.spacing_sm.0;
 
 /// 좁은 스코프에서 카드 폭을 제한할 때 사용하는 하한. 본문 줄바꿈 폭은 별도로 1 이상으로 제한한다.
 pub const TOAST_MIN_INNER_WIDTH: f32 = 48.0;
