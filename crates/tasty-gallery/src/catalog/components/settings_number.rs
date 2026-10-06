@@ -80,6 +80,124 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
+/// 토스트 표시 시간의 범위(초)와 눈금. 본체 `tabs/overlay.rs`의 NumberSpec과 같은 값이다.
+const TOAST_MIN: f64 = 1.0;
+const TOAST_MAX: f64 = 10.0;
+const TOAST_STEP: f64 = 0.5;
+
+thread_local! {
+    /// 시안 `ToastDragValue` 상태의 초기 글자 — 평소 · 범위 밖.
+    static TOAST_BUFS: RefCell<[String; 2]> =
+        RefCell::new([String::from("2.0"), String::from("14")]);
+}
+
+/// Settings › General › Overlay — 토스트 표시 시간. 설정 숫자 모양(mono Input 90 · 정적 단위 s ·
+/// 확정 때 1.0~10.0 범위 제한과 0.5 눈금)을 평소와 범위 밖 두 상태로 보인다.
+pub fn draw_toast_duration(ui: &mut egui::Ui, theme: &Theme) {
+    spec::stage(ui, theme, StageVariant::Wrap, |ui| {
+        ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing.y = theme.spacing_md.value();
+            TOAST_BUFS.with(|b| {
+                let bufs = &mut *b.borrow_mut();
+                for (i, caption) in ["rest", "out of range — commits as 10.0"]
+                    .iter()
+                    .enumerate()
+                {
+                    toast_row(ui, theme, caption, &mut bufs[i]);
+                }
+            });
+        });
+    });
+    spec::meta(
+        ui,
+        theme,
+        &[
+            ("L2 position", "4th — after Accessibility"),
+            ("label", "Toast duration"),
+            ("unit", "seconds — mono \"2.0 s\""),
+            ("range / step", "1.0–10.0 s, step 0.5"),
+            ("default", "2.0 s (= DEFAULT_LIFETIME 2000ms)"),
+            (
+                "control",
+                "mono Input (90) + static \"s\" — the Numbers in settings shape",
+            ),
+            ("commit", "blur / ↵ · clamps to 1.0–10.0 and snaps to 0.5"),
+            (
+                "out of range",
+                "danger border + \"Between 1.0 and 10.0.\" line",
+            ),
+            ("hint", "muted line below the grid"),
+        ],
+        &[
+            TokenChip::without_color("field-width-xs", "field width 90"),
+            TokenChip::new(
+                "border-focus",
+                "editing border",
+                theme.border_focus().to_egui(),
+            ),
+            TokenChip::new(
+                "accent-danger",
+                "out of range",
+                theme.accent_danger().to_egui(),
+            ),
+            TokenChip::without_color("font-mono", "value text"),
+        ],
+    );
+    spec::note(
+        ui,
+        theme,
+        "Scope is this one row only — the tab name is the umbrella so future overlay settings can land here. The value is stored in ms; only the display is in seconds. The editing state is the shared Input focus border and shows when the field is clicked.",
+    );
+}
+
+/// 토스트 표시 시간 한 행 — 상태 캡션 + (라벨 · 필드 · 단위 s) + (범위 밖이면) 한 줄.
+fn toast_row(ui: &mut egui::Ui, theme: &Theme, caption: &str, buf: &mut String) {
+    let settled = buf
+        .trim()
+        .parse::<f64>()
+        .ok()
+        .filter(|v| v.is_finite())
+        .map(|v| {
+            (
+                (v.clamp(TOAST_MIN, TOAST_MAX) / TOAST_STEP).round() * TOAST_STEP,
+                v,
+            )
+        })
+        .and_then(|(s, v)| (s != v).then_some(s));
+    ui.vertical(|ui| {
+        ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
+        ui.label(
+            egui::RichText::new(caption)
+                .size(theme.font_size_caption.value())
+                .color(theme.text_muted().to_egui()),
+        );
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+            ui.label(egui::RichText::new("Toast duration").color(theme.text_secondary().to_egui()));
+            Input::new()
+                .mono(true)
+                .align(egui::Align::RIGHT)
+                .width(theme.field_width_xs.value())
+                .invalid(settled.is_some())
+                .show(ui, theme, buf);
+            ui.label(
+                egui::RichText::new("s")
+                    .size(theme.font_size_term_sm.value())
+                    .color(theme.text_muted().to_egui()),
+            );
+        });
+        if let Some(settled) = settled {
+            ui.label(
+                egui::RichText::new(format!(
+                    "Between {TOAST_MIN:.1} and {TOAST_MAX:.1}. Commits as {settled:.1}."
+                ))
+                .size(theme.font_size_caption.value())
+                .color(theme.accent_danger().to_egui()),
+            );
+        }
+    });
+}
+
 /// 한 행 — 상태 캡션 + (라벨 · 필드 · 단위) + (범위 밖이면) 한 줄.
 fn row(ui: &mut egui::Ui, theme: &Theme, caption: &str, buf: &mut String, enabled: bool) {
     let settled = out_of_range(buf);

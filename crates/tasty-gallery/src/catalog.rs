@@ -1620,6 +1620,14 @@ pub fn pages() -> Vec<Page> {
                             components::settings_macos_permissions::draw,
                         ),
                         spec(
+                            "settings-overlay-toast-duration",
+                            "General › Overlay — toast duration",
+                            Some(
+                                "one row · mono Input 90 + static s · 1.0–10.0 step 0.5, clamp on commit",
+                            ),
+                            components::settings_number::draw_toast_duration,
+                        ),
+                        spec(
                             "settings-remote-transfer",
                             "General › Remote transfer",
                             Some(

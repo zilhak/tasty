@@ -822,6 +822,15 @@ TCC 상태 하나만 그린다. 손쉬운 사용 행은 본체에서 debug 빌�
 두고 반경과 좌우 여백은 없다. `PermRow`의 라벨 줄과 부연 줄 사이는 semantic
 `label-detail-gap`(Theme `label_detail_gap`)이다.
 
+## Settings › General › Overlay — toast duration
+
+General L1 의 4번째 L2 "Overlay" 의 한 행. 디자인: `gallery/overlays-shared.jsx` `ToastDragValue`(= `ToastDurationField`) ·
+`SettingsGeneralOverlayFrame` + `gallery/overlays-windows.jsx` "General › Overlay — toast duration" spec.
+
+| 디자인 jsx 컴포넌트 | 본체 함수 | 갤러리 항목 |
+|---|---|---|
+| `ToastDragValue`(설정 숫자 모양) | `src/view/settings/ui/tabs/overlay.rs::draw_overlay_tab` → `number::number_field`(`NumberSpec::int(1.0, 10.0).step(0.5).decimals(1)`, 단위 `s`) — mono `Input` `field_width_xs`(90) · 오른쪽 정렬 · 단위 term-sm text-muted · 확정(blur/↵) 때 범위 제한과 0.5 눈금 · 범위 밖이면 danger 테두리와 범위 한 줄 | `components/settings_number.rs::draw_toast_duration`(`settings-overlay-toast-duration` spec) — 평소 `2.0` · 범위 밖 `14` 두 상태와 Meta. 편집 중 상태는 공용 `Input` 의 포커스 테두리라 갤러리에서는 칸을 눌렀을 때 보인다. `SettingsGeneralOverlayFrame` 창 틀 전체는 옮기지 않았다 |
+
 ## Settings › General › Remote transfer
 
 General L1 에 5번째 L2 서브탭 "Remote transfer" 추가 — 원격 mirror 파일 전송(bulk, [ADR-0022](../../adr/0022-remote-mirror-content-and-queries.md))
