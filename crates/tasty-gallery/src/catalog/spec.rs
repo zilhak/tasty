@@ -238,28 +238,75 @@ fn meta_specs(ui: &mut egui::Ui, theme: &Theme, specs: &[(&str, &str)]) {
     }
 }
 
+/// 시안 `.chips`처럼 칩을 가로로 놓고 폭을 넘으면 다음 줄로 보낸다.
+/// 칩은 `.chip`처럼 surface-raised 배경과 border-default 1px 테두리를 두르고,
+/// 스와치는 border-strong 1px 테두리를 둘러 스와치 색이 패널 배경과 같아도 구분된다.
+/// 시안의 칩 간격 6·세로 여백 3은 토큰이 아니어서 `.meta`·`.mh`와 같이 4px 그리드 토큰(xs)으로 옮긴다.
 fn meta_tokens(ui: &mut egui::Ui, theme: &Theme, tokens: &[TokenChip]) {
     meta_head(ui, theme, "Tokens used");
-    for t in tokens {
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-            if let Some(color) = t.color {
-                let sz = theme.font_size_caption.value();
-                let (r, _) = ui.allocate_exact_size(egui::vec2(sz, sz), egui::Sense::hover());
-                ui.painter()
-                    .rect_filled(r, theme.corner_radius_sm.value(), color);
-            }
-            ui.label(
-                egui::RichText::new(t.tok)
-                    .size(theme.font_size_caption.value())
-                    .color(col(theme.text_secondary())),
-            );
-            ui.label(
-                egui::RichText::new(t.use_)
-                    .size(theme.font_size_caption.value())
-                    .color(col(theme.text_muted())),
-            );
-        });
+    let font = egui::FontId::monospace(theme.font_size_caption.value());
+    let gap = theme.spacing_xs.value();
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing = egui::vec2(gap, gap);
+        for t in tokens {
+            token_chip(ui, theme, t, &font);
+        }
+    });
+}
+
+/// 줄바꿈 배치가 칩 전체를 다음 줄로 넘길 수 있도록 크기를 먼저 계산해 할당한 뒤 그린다.
+fn token_chip(ui: &mut egui::Ui, theme: &Theme, t: &TokenChip, font: &egui::FontId) {
+    let pad = egui::vec2(theme.spacing_sm.value(), theme.spacing_xs.value());
+    let gap = theme.spacing_xs.value();
+    let sw = theme.font_size_caption.value();
+    let tok =
+        ui.fonts(|f| f.layout_no_wrap(t.tok.to_owned(), font.clone(), col(theme.text_primary())));
+    let use_ = (!t.use_.is_empty()).then(|| {
+        ui.fonts(|f| {
+            f.layout_no_wrap(
+                format!("— {}", t.use_),
+                font.clone(),
+                col(theme.text_muted()),
+            )
+        })
+    });
+    let sw_w = if t.color.is_some() { sw + gap } else { 0.0 };
+    let use_w = use_.as_ref().map_or(0.0, |g| gap + g.size().x);
+    let text_h = tok.size().y.max(use_.as_ref().map_or(0.0, |g| g.size().y));
+    let size = egui::vec2(
+        pad.x * 2.0 + sw_w + tok.size().x + use_w,
+        pad.y * 2.0 + text_h.max(sw),
+    );
+    let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+    let painter = ui.painter();
+    let radius = theme.corner_radius_sm.value();
+    let border = theme.border_width.value();
+    painter.rect_filled(rect, radius, col(theme.surface_raised()));
+    painter.rect_stroke(
+        rect,
+        radius,
+        egui::Stroke::new(border, col(theme.border_default())),
+        egui::StrokeKind::Inside,
+    );
+    let mut x = rect.min.x + pad.x;
+    let cy = rect.center().y;
+    if let Some(color) = t.color {
+        let r = egui::Rect::from_center_size(egui::pos2(x + sw * 0.5, cy), egui::vec2(sw, sw));
+        painter.rect_filled(r, radius, color);
+        painter.rect_stroke(
+            r,
+            radius,
+            egui::Stroke::new(border, col(theme.border_strong())),
+            egui::StrokeKind::Inside,
+        );
+        x += sw_w;
+    }
+    let tok_w = tok.size().x;
+    let tok_y = cy - tok.size().y * 0.5;
+    painter.galley(egui::pos2(x, tok_y), tok, col(theme.text_primary()));
+    if let Some(g) = use_ {
+        let y = cy - g.size().y * 0.5;
+        painter.galley(egui::pos2(x + tok_w + gap, y), g, col(theme.text_muted()));
     }
 }
 
