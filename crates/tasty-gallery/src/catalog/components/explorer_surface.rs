@@ -83,11 +83,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         theme,
         &[
             ("surface", "fills a work-area tile"),
-            ("internal tabs", "28px · per-cwd, with × + ＋"),
+            ("internal tabs", "24px · per-cwd, with × + ＋"),
             ("toolbar", "44px · nav · path field · view toggle"),
             ("sidebar", "196px — Files tree + Favorites"),
             ("splitter", "1px separator, drag to resize"),
-            ("row height", "26px (Detail) control-height-tree family"),
+            ("row height", "28px (Detail) table-cell-height"),
             ("selected row", "surface-active"),
         ],
         &[
@@ -133,6 +133,29 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
          preview panel is dropped in favour of a wider content area (re-add later as a toggle \
          if needed); no in-toolbar filter search in this pass; the tree is rooted at Home. \
          Favorites are global across surfaces.",
+    );
+
+    spec::note(
+        ui,
+        theme,
+        "Tab strip follows the body explorer tab bar: 24px, 13px label, padding 8/8, gap 4, \
+         12px folder glyph, no max width, × on the active tab only (others on hover), a \
+         separator only before inactive tabs, a border-strong bottom line and a square ＋ at \
+         strip height. The kit draws 28px, 12px label, padding 0 8 0 10, gap 6, a 16px glyph, \
+         140 max width with ellipsis, × on every tab at 0.6 opacity, a separator after every \
+         tab, a separator bottom line and an IconButton sm ＋ with 4px side padding.",
+    );
+
+    spec::note(
+        ui,
+        theme,
+        "Toolbar and rows follow the body: Up is the body chevronUp (the kit draws an up \
+         arrow); the view toggle is the body SegToggle at pad 4 · gap 4 · 24×20 cells (kit \
+         pad 2 · gap 2 · 24×22). Detail rows follow the shared Table: 28px rows \
+         (table-cell-height; the kit Meta says 26 while its DetailRow draws 28), 12px cell \
+         padding (kit 0 10), the shared header font (kit mono 10 uppercase), Type at 11px \
+         (kit 12), cut dims the ink only (kit dims the whole row to 0.5), and hover shows \
+         only under the pointer (the kit pins notes.md in hover).",
     );
 }
 
