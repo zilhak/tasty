@@ -801,6 +801,21 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 theme.border_default().into(),
             ),
             TokenChip::new(
+                "sidebar-category-header-bg",
+                "header band face (one tier below the sidebar)",
+                theme.sidebar_category_header_bg().into(),
+            ),
+            TokenChip::new(
+                "sidebar-category-header-fg",
+                "label + chevron",
+                theme.sidebar_category_header_fg().into(),
+            ),
+            TokenChip::new(
+                "sidebar-category-header-count-fg",
+                "trailing count",
+                theme.sidebar_category_header_count_fg().into(),
+            ),
+            TokenChip::new(
                 "badge-warning-bg",
                 "NeedsInput badge fill",
                 theme.badge_warning_bg().into(),

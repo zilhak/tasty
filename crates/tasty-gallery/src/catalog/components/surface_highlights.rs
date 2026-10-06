@@ -119,12 +119,12 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ],
         &[
             TokenChip::new(
-                "terminal.focused-bg",
+                "surface-terminal-focused-bg",
                 "focused fill",
                 theme.surface("terminal").focused_bg.into(),
             ),
             TokenChip::new(
-                "terminal.unfocused-bg",
+                "surface-terminal-unfocused-bg",
                 "unfocused fill",
                 theme.surface("terminal").unfocused_bg.into(),
             ),

@@ -83,6 +83,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 theme.border_default().to_egui(),
             ),
             TokenChip::new("text-muted", "captions", theme.text_muted().to_egui()),
+            TokenChip::new(
+                "spinner-indicator",
+                "loading",
+                theme.spinner_indicator().to_egui(),
+            ),
             TokenChip::new("accent-danger", "error", theme.accent_danger().to_egui()),
         ],
     );

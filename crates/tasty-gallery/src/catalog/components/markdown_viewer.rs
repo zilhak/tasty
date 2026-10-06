@@ -136,7 +136,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ],
         &[
             TokenChip::new("bg-panel", "surface", theme.bg_panel().to_egui()),
-            TokenChip::new("bg-app", "document bg (crust)", theme.bg_app().to_egui()),
+            TokenChip::new(
+                "md-doc-bg",
+                "document bed (crust)",
+                theme.surface("markdown").focused_bg.to_egui(),
+            ),
             TokenChip::new(
                 "text-primary",
                 "h1–h3 · bold",
@@ -169,13 +173,18 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 theme.border_strong().to_egui(),
             ),
             TokenChip::new(
+                "md-table-border",
+                "table grid (surface1)",
+                theme.md_table_border().to_egui(),
+            ),
+            TokenChip::new(
                 "md-table-header-bg",
                 "table header",
                 theme.md_table_header_bg().to_egui(),
             ),
             TokenChip::without_color("font-size-prose-h1", "h1 (cap-exempt)"),
             TokenChip::new(
-                "md-table-zebra",
+                "md-table-row-bg-zebra",
                 "table even row",
                 theme.md_table_row_bg_zebra().to_egui(),
             ),
@@ -193,6 +202,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "accent-warning",
                 "warning alert",
                 theme.accent_warning().to_egui(),
+            ),
+            TokenChip::new(
+                "spinner-indicator",
+                "loading",
+                theme.spinner_indicator().to_egui(),
             ),
             TokenChip::without_color("shadow-modal", "popup lift"),
             TokenChip::new(

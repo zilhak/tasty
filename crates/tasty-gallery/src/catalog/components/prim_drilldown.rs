@@ -144,14 +144,19 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ],
         &[
             TokenChip::new(
-                "separator",
-                "backbar hairline",
+                "drilldown-backbar-border",
+                "back-bar bottom rule",
                 theme.drilldown_backbar_border().to_egui_premultiplied(),
             ),
             TokenChip::new(
-                "text-primary",
+                "drilldown-title-fg",
                 "detail title",
                 egui::Color32::from(theme.drilldown_title_fg()),
+            ),
+            TokenChip::new(
+                "surface-active",
+                "selected list row",
+                egui::Color32::from(theme.surface_active()),
             ),
             TokenChip::new(
                 "accent-primary",

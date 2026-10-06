@@ -1167,22 +1167,22 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 theme.accent_primary().to_egui(),
             ),
             TokenChip::new(
-                "split-zone-bg",
+                "preset-split-zone-bg",
                 "boundary zone band (accent 22%)",
                 theme.preset_split_zone_bg().to_egui(),
             ),
             TokenChip::new(
-                "split-zone-border",
+                "preset-split-zone-border",
                 "zone 2px divider (accent 55%)",
                 theme.preset_split_zone_border().to_egui(),
             ),
             TokenChip::new(
-                "preset-leaf-label",
+                "preset-leaf-label-fg",
                 "summary field key (text-muted)",
                 theme.preset_leaf_label_fg().to_egui(),
             ),
             TokenChip::new(
-                "preset-leaf-value",
+                "preset-leaf-value-fg",
                 "summary field value (text-secondary)",
                 theme.preset_leaf_value_fg().to_egui(),
             ),

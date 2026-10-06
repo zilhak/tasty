@@ -97,11 +97,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("targets", "empty · file · folder · multi"),
         ],
         &[
-            TokenChip::new(
-                "surface-raised",
-                "menu fill",
-                egui::Color32::from(theme.surface_raised()),
-            ),
+            TokenChip::new("menu-bg", "menu fill", egui::Color32::from(theme.menu_bg())),
             TokenChip::new(
                 "border-strong",
                 "menu edge",

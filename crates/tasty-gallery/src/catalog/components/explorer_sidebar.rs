@@ -239,9 +239,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 egui::Color32::from(theme.accent_warning()),
             ),
             TokenChip::new(
-                "separator",
-                "split border",
-                theme.separator.to_egui_premultiplied(),
+                "explorer-split-border",
+                "fixed boundary line",
+                theme.explorer_split_border().to_egui_premultiplied(),
             ),
             TokenChip::new(
                 "text-placeholder",
