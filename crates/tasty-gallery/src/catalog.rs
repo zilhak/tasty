@@ -2095,6 +2095,12 @@ pub fn pages() -> Vec<Page> {
                             chrome_loading::draw_no_text,
                         ),
                         spec(
+                            "boot-loading-spinner",
+                            "Spinner reused — size 16 → 32 for boot hero",
+                            Some("the shared Spinner one step larger · reduced-motion fallback"),
+                            chrome_loading::draw_spinner_hero,
+                        ),
+                        spec(
                             "boot-loading-latte",
                             "Latte theme",
                             Some(

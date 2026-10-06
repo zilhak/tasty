@@ -5,7 +5,7 @@ use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::brand::{self};
 use tasty_ui_widgets::{ShellSetupCheck, ShellSetupView, Spinner, shell_setup_screen};
 
-use crate::catalog::spec::{TokenChip, meta, note};
+use crate::catalog::spec::{StageVariant, TokenChip, meta, note, stage};
 
 // 크기가 다른 예제 창에서도 로딩 요소의 크기를 유지하는지 비교한다.
 
@@ -146,6 +146,52 @@ pub fn draw_no_text(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         "First install can skip RestoringLayout — the phase slot stays reserved but empty, no layout shift.",
+    );
+}
+
+/// 부팅 화면은 새 스피너를 만들지 않고 공용 Spinner를 한 단계 큰 크기로 쓴다.
+pub fn draw_spinner_hero(ui: &mut egui::Ui, theme: &Theme) {
+    stage(ui, theme, StageVariant::Wrap, |ui| {
+        let size = theme.loading_screen_spinner_size().value();
+        let color = theme.accent_primary().to_egui();
+        Spinner::new().size(size).color(color).show(ui, theme);
+        Spinner::new()
+            .size(size)
+            .color(color)
+            .reduced_motion(true)
+            .show(ui, theme);
+        ui.label(
+            egui::RichText::new("animated · reduced-motion (3-dot fallback)")
+                .monospace()
+                .size(theme.font_size_caption.value())
+                .color(theme.text_muted().to_egui()),
+        );
+    });
+    meta(
+        ui,
+        theme,
+        &[
+            ("size", "32px (catalog 16 → hero) · viewBox 24"),
+            ("stroke", "3px · arc round cap"),
+            (
+                "arc / track",
+                "90° accent-primary / full-circle currentColor @0.22",
+            ),
+            (
+                "rotation",
+                "spinner-duration 900ms linear ∞ (constant velocity)",
+            ),
+            ("reduced-motion", "arc frozen / Spinner 3-dot fallback"),
+        ],
+        &[
+            TokenChip::new(
+                "spinner-indicator",
+                "= accent-primary",
+                theme.spinner_indicator().to_egui(),
+            ),
+            TokenChip::without_color("spinner-track", "0.22 track"),
+            TokenChip::without_color("spinner-duration", "900ms"),
+        ],
     );
 }
 
