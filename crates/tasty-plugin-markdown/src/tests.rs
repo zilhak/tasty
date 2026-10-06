@@ -613,3 +613,17 @@ fn only_an_agent_content_request_carries_the_agent_origin() {
         json!({ "surface_id": 3 })
     );
 }
+
+#[test]
+fn set_url_sends_the_document_path_as_the_chrome_label() {
+    let params = set_url_params(7, "/docs/readme.md", "<html>body</html>".to_string());
+    assert_eq!(params["surface_id"], json!(7));
+    assert_eq!(params["url"], json!("<html>body</html>"));
+    assert_eq!(params["label"], json!("/docs/readme.md"));
+}
+
+#[test]
+fn set_url_without_a_path_omits_the_label() {
+    let params = set_url_params(7, "", "<html>body</html>".to_string());
+    assert!(params.get("label").is_none());
+}

@@ -2186,6 +2186,9 @@ help = "対象サーフェスの id"
 [cli.help._root.set.url.arg.url]
 help = "読み込む URL"
 
+[cli.help._root.set.url.arg.label]
+help = "WebView が隠れている間にホストが表示するページ名。省略すると URL を表示する"
+
 [cli.help._root.set.global-hook]
 about = "サーフェスに関係なく、スケジュールに従って実行するグローバルフックを設定"
 

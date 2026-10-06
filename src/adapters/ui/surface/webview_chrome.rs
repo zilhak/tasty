@@ -6,9 +6,26 @@ use crate::adapters::ui::icons;
 use crate::theme;
 use crate::webview::NavState;
 
+/// URL 줄에 보일 문자열을 고른다. `label`이 있으면 그것을, 없으면 탐색 가능한 URL만 보인다.
+/// raw HTML을 url로 보내는 surface(markdown 등)는 원문 대신 label을 보이거나 줄을 비운다.
+pub fn chrome_caption<'a>(url: Option<&'a str>, label: Option<&'a str>) -> Option<&'a str> {
+    label.or_else(|| {
+        url.filter(|u| {
+            u.starts_with("file://") || u.starts_with("http://") || u.starts_with("https://")
+        })
+    })
+}
+
 /// webview-kind surface 의 host chrome 을 패널에 그린다. `nav` 가 Loading/Failed 면
-/// 해당 상태 chrome, 그 외(Idle/Done)는 `url` 기반으로 boundary(Some)/placeholder(None).
-pub fn draw_webview_chrome(ui: &mut egui::Ui, url: Option<&str>, nav: NavState) {
+/// 해당 상태 chrome, 그 외(Idle/Done)는 `url` 유무로 boundary(Some)/placeholder(None).
+/// URL 줄은 [`chrome_caption`]이 고른 문자열을 보인다.
+pub fn draw_webview_chrome(
+    ui: &mut egui::Ui,
+    url: Option<&str>,
+    page_label: Option<&str>,
+    nav: NavState,
+) {
+    let caption = chrome_caption(url, page_label);
     let th = theme::theme();
     let panel_rect = ui.max_rect();
     ui.painter()
@@ -38,8 +55,8 @@ pub fn draw_webview_chrome(ui: &mut egui::Ui, url: Option<&str>, nav: NavState) 
                         crate::i18n::t("webview.error"),
                         th.accent_danger().to_egui(),
                     );
-                    if let Some(url) = url {
-                        label(ui, url, th.text_disabled().to_egui());
+                    if let Some(caption) = caption {
+                        url_line(ui, caption);
                     }
                 }
                 NavState::Loading => {
@@ -63,7 +80,7 @@ pub fn draw_webview_chrome(ui: &mut egui::Ui, url: Option<&str>, nav: NavState) 
                             th.text_muted().to_egui(),
                         );
                     }
-                    Some(url) => {
+                    Some(_) => {
                         ui.add(icons::HTML.image(glyph, th.text_muted().to_egui()));
                         ui.add_space(th.spacing_sm.value());
                         label(
@@ -71,11 +88,26 @@ pub fn draw_webview_chrome(ui: &mut egui::Ui, url: Option<&str>, nav: NavState) 
                             crate::i18n::t("webview.region"),
                             th.text_muted().to_egui(),
                         );
-                        label(ui, url, th.text_disabled().to_egui());
+                        if let Some(caption) = caption {
+                            url_line(ui, caption);
+                        }
                     }
                 },
             }
         },
+    );
+}
+
+/// URL 줄(mono caption · text-disabled · 한 줄 말줄임).
+fn url_line(ui: &mut egui::Ui, text: &str) {
+    let th = theme::theme();
+    ui.add(
+        egui::Label::new(
+            egui::RichText::new(text)
+                .font(egui::FontId::monospace(th.font_size_caption.value()))
+                .color(th.text_disabled().to_egui()),
+        )
+        .truncate(),
     );
 }
 
@@ -87,4 +119,41 @@ fn label(ui: &mut egui::Ui, text: &str, color: egui::Color32) {
             .size(th.font_size_body.value())
             .color(color),
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::chrome_caption;
+
+    #[test]
+    fn a_label_wins_over_the_url() {
+        assert_eq!(
+            chrome_caption(Some("<html>…</html>"), Some("/docs/readme.md")),
+            Some("/docs/readme.md")
+        );
+        assert_eq!(
+            chrome_caption(Some("https://tasty.dev"), Some("Tasty")),
+            Some("Tasty")
+        );
+    }
+
+    #[test]
+    fn a_navigable_url_shows_without_a_label() {
+        for url in [
+            "https://tasty.dev",
+            "http://localhost:8080",
+            "file:///tmp/a.html",
+        ] {
+            assert_eq!(chrome_caption(Some(url), None), Some(url));
+        }
+    }
+
+    #[test]
+    fn raw_html_without_a_label_shows_no_caption() {
+        assert_eq!(
+            chrome_caption(Some("<!doctype html><html></html>"), None),
+            None
+        );
+        assert_eq!(chrome_caption(None, None), None);
+    }
 }

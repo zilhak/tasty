@@ -40,6 +40,12 @@ pub fn handle_set_url(
         Some(u) => u.to_string(),
         None => return JsonRpcResponse::invalid_params(id, "missing 'url'"),
     };
+    // 선택 인자. host chrome은 url 대신 이 이름을 보인다(raw HTML url의 원문 노출 방지).
+    let label = params
+        .get("label")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
 
     // 분할 탭의 비포커스 surface도 찾도록 레이아웃 전체를 순회한다.
     for ws in &engine.workspaces() {
@@ -59,7 +65,7 @@ pub fn handle_set_url(
                         .as_any()
                         .downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>(
                     ) {
-                        rs.set_webview_url(Some(url), is_owner(caller, rs));
+                        rs.set_webview_url(Some(url), label, is_owner(caller, rs));
                         notify_content_changed(engine, rs, sid);
                         return JsonRpcResponse::success(id, serde_json::json!({ "ok": true }));
                     }
@@ -270,6 +276,32 @@ mod tests {
         assert!(
             remote_surface(&engine.as_ref(), md_sid).take_webview_owner_takeover(),
             "가져가기 전의 전이는 뒤에 쓴 것이 지우지 않는다"
+        );
+    }
+
+    // label은 URL과 함께 바뀐다. 빼고 보내면 앞 문서의 이름이 남지 않는다.
+    #[test]
+    fn set_url_stores_the_label_and_clears_it_when_omitted() {
+        let (state, mut engine_session) = fixture(0, true);
+        let engine = engine_session.borrow_mut();
+        let md_sid = focused_surface_id(&state, &engine.as_ref());
+        let caller = tasty_ipc::caller::CallerContext::Local;
+        let send = |params: serde_json::Value| {
+            let resp = handle_set_url(&engine.as_ref(), &caller, json!(1), &params);
+            assert!(resp.error.is_none(), "{:?}", resp.error);
+            remote_surface(&engine.as_ref(), md_sid).webview_label()
+        };
+        assert_eq!(
+            send(json!({ "surface_id": md_sid, "url": "<html></html>", "label": "/docs/a.md" })),
+            Some("/docs/a.md".to_string())
+        );
+        assert_eq!(
+            send(json!({ "surface_id": md_sid, "url": "<html></html>" })),
+            None
+        );
+        assert_eq!(
+            send(json!({ "surface_id": md_sid, "url": "<html></html>", "label": "" })),
+            None
         );
     }
 

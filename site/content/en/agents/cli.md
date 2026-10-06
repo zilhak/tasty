@@ -318,7 +318,7 @@ tasty list pressure                    # where the time went while answering req
 tasty list theme                       # the theme snapshot in effect (colors, font sizes, UI scale)
 tasty list recent --kind markdown      # files recently opened as that kind
 tasty set cwd --surface 42 --path /tmp # change the working directory a remote surface reports
-tasty set url --surface 42 --url URL   # change the address of a webview surface
+tasty set url --surface 42 --url URL   # change the address of a webview surface (--label NAME: the name shown while the page is hidden)
 tasty surface html-script --surface 42 # script detection, allowance and notice state of an HTML surface (read only)
 tasty file-handler dispatch PATH       # open a file the same way a double-click in the explorer does
 tasty file-handler reload              # read the file handler settings file again

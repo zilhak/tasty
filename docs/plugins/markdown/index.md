@@ -12,7 +12,7 @@
 
 ## 목적
 
-마크다운 파일을 렌더해 보는 **`markdown` surface 종류**를 제공한다. `rendering = "webview"`([ADR-0029](../../adr/0029-webview-host-integration.md)) — 플러그인이 `pulldown-cmark` 로 markdown 을 HTML 로 변환하고 `ammonia` 로 sanitize 한 뒤, Theme 토큰을 CSS custom property 로 주입한 `<style>` 을 문서에 인라인해 host 의 native OS WebView(WebKitGTK/WKWebView/WebView2) overlay 에 올린다(`webview.set_url`). 문서의 픽셀은 WebView가 렌더하며 host는 mesh를 합성하지 않는다.
+마크다운 파일을 렌더해 보는 **`markdown` surface 종류**를 제공한다. `rendering = "webview"`([ADR-0029](../../adr/0029-webview-host-integration.md)) — 플러그인이 `pulldown-cmark` 로 markdown 을 HTML 로 변환하고 `ammonia` 로 sanitize 한 뒤, Theme 토큰을 CSS custom property 로 주입한 `<style>` 을 문서에 인라인해 host 의 native OS WebView(WebKitGTK/WKWebView/WebView2) overlay 에 올린다(`webview.set_url`). 같은 호출의 `label` 에 문서 경로를 보내, WebView 가 숨겨진 동안 host chrome 이 HTML 원문 대신 경로를 보인다(경로 없는 문서는 label 을 빼고 chrome 의 URL 줄도 비운다). 문서의 픽셀은 WebView가 렌더하며 host는 mesh를 합성하지 않는다.
 
 ## 내부 동작
 

@@ -2186,6 +2186,9 @@ help = "대상 서피스 id"
 [cli.help._root.set.url.arg.url]
 help = "불러올 URL"
 
+[cli.help._root.set.url.arg.label]
+help = "WebView가 숨겨져 있을 때 호스트가 보일 페이지 이름. 생략하면 URL을 보인다"
+
 [cli.help._root.set.global-hook]
 about = "서피스와 무관하게 일정에 따라 실행되는 전역 훅 설정"
 

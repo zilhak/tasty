@@ -25,7 +25,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 );
                 gap(ui, theme);
                 label(ui, theme, "WebView region", theme.text_muted());
-                label(ui, theme, "https://tasty.dev", theme.text_disabled());
+                url_line(ui, theme, "https://tasty.dev");
             });
         });
         spec::cluster(ui, theme, "placeholder — no URL", |ui| {
@@ -59,7 +59,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 );
                 gap(ui, theme);
                 label(ui, theme, "Failed to load", theme.accent_danger());
-                label(ui, theme, "https://tasty.dev", theme.text_disabled());
+                url_line(ui, theme, "https://tasty.dev");
             });
         });
     });
@@ -128,6 +128,18 @@ fn label(ui: &mut egui::Ui, theme: &Theme, text: &str, color: impl Into<egui::Co
         egui::RichText::new(text)
             .size(theme.font_size_body.value())
             .color(color.into()),
+    );
+}
+
+/// URL 줄 — 시안 `HtmlTile`의 sub 줄(mono caption 11 · text-disabled · 한 줄 말줄임).
+fn url_line(ui: &mut egui::Ui, theme: &Theme, text: &str) {
+    ui.add(
+        egui::Label::new(
+            egui::RichText::new(text)
+                .font(egui::FontId::monospace(theme.font_size_caption.value()))
+                .color(theme.text_disabled().to_egui()),
+        )
+        .truncate(),
     );
 }
 

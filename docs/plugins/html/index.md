@@ -89,6 +89,11 @@ surface 는 트리에선 `RemoteSurface` marker. 네이티브 WebView 의 naviga
 - **Failed** — 실패. overlay 를 숨긴 채 `ALERT_CIRCLE`(`accent-danger`) + "Failed to load"
   + URL chrome. 실패 사유는 화면 대신 `tracing::warn!` 로그로만 남긴다.
 
+boundary·Failed chrome 의 URL 줄은 `webview.set_url` 의 선택 인자 `label` 을 먼저 보이고, label 이 없으면
+탐색 가능한 URL(`http(s)://`·`file://`)만 보인다. raw HTML 을 url 로 싣는 surface(markdown)는 label 로
+문서 경로를 보내므로 chrome 에 HTML 원문이 나오지 않는다. 줄은 mono `font_size_caption`(11) ·
+`text_disabled` 한 줄이며 넘치면 말줄임한다. 판정은 `webview_chrome.rs::chrome_caption` 이다.
+
 ### 디자인 토큰 매핑
 
 페이지 콘텐츠는 해당 페이지의 스타일을 따른다. Tasty가 그리는 로딩·오류·빈 상태에는 공용 Theme 토큰을 사용한다.

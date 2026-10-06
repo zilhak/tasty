@@ -815,12 +815,22 @@ fn theme_from_wire(w: &ThemeWire) -> Theme {
     Theme::with_colors_and_zoom(w.colors.clone(), w.is_light, w.ui_zoom)
 }
 
+/// `webview.set_url` 인자. url에는 렌더한 HTML을 싣고, host chrome이 보일 이름은 `label`에
+/// 문서 경로로 따로 보낸다. 경로가 없으면 label을 빼서 chrome이 HTML 원문을 보이지 않게 한다.
+fn set_url_params(surface_id: u32, file_path: &str, html: String) -> Value {
+    let mut params = json!({ "surface_id": surface_id, "url": html });
+    if !file_path.is_empty() {
+        params["label"] = json!(file_path);
+    }
+    params
+}
+
 /// 렌더한 HTML을 호스트 WebView에 보내고 결과를 기록한다.
 fn push_html(host: &HostHandle, surface_id: u32, file_path: &str, html: String) {
     let html_len = html.len();
     if let Err(e) = host.call(
         "webview.set_url",
-        json!({ "surface_id": surface_id, "url": html }),
+        set_url_params(surface_id, file_path, html),
     ) {
         tracing::warn!("markdown surface {surface_id}: webview.set_url failed: {e}");
     } else {

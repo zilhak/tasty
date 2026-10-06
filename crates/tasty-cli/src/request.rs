@@ -692,9 +692,13 @@ fn set_command_to_method_params(command: &SetCommands) -> (&'static str, serde_j
             "surface.set_cwd",
             serde_json::json!({ "surface_id": surface, "cwd": path }),
         ),
-        SetCommands::Url { surface, url } => (
+        SetCommands::Url {
+            surface,
+            url,
+            label,
+        } => (
             "webview.set_url",
-            serde_json::json!({ "surface_id": surface, "url": url }),
+            serde_json::json!({ "surface_id": surface, "url": url, "label": label }),
         ),
         SetCommands::GlobalHook {
             condition,

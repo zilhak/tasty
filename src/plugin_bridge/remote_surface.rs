@@ -23,6 +23,10 @@ pub struct RemoteSurface {
     pub display_name: Arc<Mutex<String>>,
     /// webview.set_url로 받은 URL. sync_webviews가 네이티브 WebView에 반영한다.
     pub webview_url: Arc<Mutex<Option<String>>>,
+    /// webview.set_url의 선택 인자 label. host chrome이 URL 대신 보이는 문서 이름이다.
+    /// url이 raw HTML이어도 chrome에 원문을 보이지 않도록 출처를 나눈다.
+    #[cfg(feature = "gui")]
+    pub webview_label: Arc<Mutex<Option<String>>>,
     /// 현재 URL을 설정한 호출자가 surface 소유 플러그인인지 표시한다.
     /// 사용자 navigation 판정은 소유 플러그인이 설정한 페이지에서만 허용한다.
     #[cfg(feature = "gui")]
@@ -56,6 +60,10 @@ static CWD_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
 pub(crate) const SNAPSHOT_WHAT: &str = "remote surface snapshot cache";
 const DISPLAY_NAME_WHAT: &str = "remote surface display name";
 const WEBVIEW_URL_WHAT: &str = "remote surface webview url";
+#[cfg(feature = "gui")]
+static WEBVIEW_LABEL_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
+#[cfg(feature = "gui")]
+const WEBVIEW_LABEL_WHAT: &str = "remote surface webview label";
 #[cfg(any(feature = "gui", test))]
 const NAV_STATE_WHAT: &str = "remote surface nav state";
 const CWD_WHAT: &str = "remote surface cwd";
@@ -79,6 +87,8 @@ impl RemoteSurface {
             display_name: Arc::new(Mutex::new(initial_name)),
             webview_url: Arc::new(Mutex::new(None)),
             #[cfg(feature = "gui")]
+            webview_label: Arc::new(Mutex::new(None)),
+            #[cfg(feature = "gui")]
             webview_page_by_owner: Arc::new(AtomicBool::new(false)),
             #[cfg(feature = "gui")]
             webview_owner_took_over: Arc::new(AtomicBool::new(false)),
@@ -91,9 +101,15 @@ impl RemoteSurface {
         }
     }
 
-    /// URL과 작성자를 갱신한다. by_owner는 호출자가 이 surface의 소유 플러그인인지 나타낸다.
+    /// URL·chrome 라벨과 작성자를 갱신한다. by_owner는 호출자가 이 surface의 소유 플러그인인지 나타낸다.
+    /// label이 None이면 이전 라벨을 지운다. 라벨은 URL과 함께 바뀌어야 다른 문서의 이름이 남지 않는다.
     #[cfg(feature = "gui")]
-    pub fn set_webview_url(&self, url: Option<String>, by_owner: bool) {
+    pub fn set_webview_url(&self, url: Option<String>, label: Option<String>, by_owner: bool) {
+        *crate::poison::recover_mutex(
+            self.webview_label.lock(),
+            WEBVIEW_LABEL_WHAT,
+            &WEBVIEW_LABEL_POISON_REPORTED,
+        ) = label;
         let mut slot = crate::poison::recover_mutex(
             self.webview_url.lock(),
             WEBVIEW_URL_WHAT,
@@ -124,6 +140,17 @@ impl RemoteSurface {
     pub fn webview_page_by_owner(&self) -> bool {
         self.webview_page_by_owner
             .load(std::sync::atomic::Ordering::Acquire)
+    }
+
+    /// webview.set_url이 함께 보낸 chrome 라벨.
+    #[cfg(feature = "gui")]
+    pub fn webview_label(&self) -> Option<String> {
+        crate::poison::recover_mutex(
+            self.webview_label.lock(),
+            WEBVIEW_LABEL_WHAT,
+            &WEBVIEW_LABEL_POISON_REPORTED,
+        )
+        .clone()
     }
 
     #[cfg(any(feature = "gui", test))]

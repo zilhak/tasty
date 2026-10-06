@@ -233,6 +233,7 @@ pub fn draw_egui_panels(
             // webview 내용은 native overlay가 그린다. 여기서는 URL 부재나 overlay 숨김 때 보일 배경을 그린다.
             if crate::runtime::surface_registry::webview_kind::is_webview_kind(remote.kind()) {
                 let url = remote.url();
+                let chrome_label = remote.label();
                 let nav = remote.nav_state();
                 let banner_inset = draw_panel_frame(
                     ctx,
@@ -242,7 +243,12 @@ pub fn draw_egui_panels(
                     None,
                     |ui| {
                         let panel = ui.max_rect();
-                        crate::webview_chrome_ui::draw_webview_chrome(ui, url.as_deref(), nav);
+                        crate::webview_chrome_ui::draw_webview_chrome(
+                            ui,
+                            url.as_deref(),
+                            chrome_label.as_deref(),
+                            nav,
+                        );
                         let sid = info.surface_id?;
                         if remote.kind() != "html" {
                             return None;

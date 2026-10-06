@@ -206,6 +206,9 @@ pub enum SetCommands {
         /// URL to load.
         #[arg(long)]
         url: String,
+        /// Name the host shows for the page while the WebView is hidden. Omit to show the URL.
+        #[arg(long)]
+        label: Option<String>,
     },
     /// Set a global hook — fires on a schedule, not bound to any surface
     GlobalHook {

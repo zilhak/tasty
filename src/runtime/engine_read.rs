@@ -286,6 +286,9 @@ impl WebviewRead<'_> {
     pub(crate) fn url(&self) -> Option<String> {
         self.inner.webview_url()
     }
+    pub(crate) fn label(&self) -> Option<String> {
+        self.inner.webview_label()
+    }
     pub(crate) fn nav_state(&self) -> crate::model::NavState {
         self.inner.nav_state()
     }

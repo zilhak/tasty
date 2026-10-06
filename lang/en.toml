@@ -2192,6 +2192,9 @@ help = "Target surface id"
 [cli.help._root.set.url.arg.url]
 help = "URL to load"
 
+[cli.help._root.set.url.arg.label]
+help = "Name the host shows for the page while the WebView is hidden. Omit to show the URL"
+
 [cli.help._root.set.global-hook]
 about = "Set a global hook — fires on a schedule, not bound to any surface"
 
