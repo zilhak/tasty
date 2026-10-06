@@ -261,6 +261,40 @@ GUI의 ui.screenshot으로 PNG를 저장할 수 있다. hover와 애니메이션
 검사 대상 집합은 빠진 경로와 추가된 경로로 대조하고, 같은 빈 집합끼리 일치하는 경우를
 막기 위해 하한도 확인한다. 결과 0만으로 환경·상태·성능의 영향을 배제하지 않는다.
 
+## 검사 결과를 읽는다
+
+빌드·테스트·lint 의 통과 여부는 검사 명령 자신의 종료 코드와 출력으로 판정한다.
+아래 함정은 실패한 검사를 통과로 읽게 만든다. 판독 결과가 통과로 나왔다는 사실만으로는 판독 방법이 맞았다고 볼 수 없다.
+
+- **파이프라인의 종료 코드는 마지막 명령의 것이다.** `cmd | tail`, `| head`, `| grep -c`, `| awk`, `| wc -l`, `| tee` 뒤에서 읽은 `$?` 는 그 마지막 명령의 결과다. 앞의 검사가 실패해도 0이 나올 수 있다. 명령 이름과 관계없이, 파이프 뒤에서 종료 코드나 수를 읽는 형태 전체가 이 규칙의 대상이다. 파이프 오른쪽이 먼저 닫히면 앞 명령이 중단될 수도 있다([셸 스크립트 규약](shell-scripts.md)).
+- **긴 명령은 로그 파일로 보내고 자기 종료 코드를 함께 남긴다.**
+
+  ```bash
+  { cargo test --workspace --locked --no-fail-fast > LOG 2>&1; echo "rc=$?" >> LOG; }
+  ```
+
+- **수를 필드 위치로 읽지 않는다.** 로그 파일에서 읽어도 마찬가지다. 구분자 정의에 따라 빈 필드가 생기면 위치가 밀린다.
+
+  ```console
+  $ echo 'test result: FAILED. 25 passed; 1 failed; …' | awk -F'[ ;]' '{print $4, $6, $7}'
+  25  1
+  ```
+
+  `-F'[ ;]'` 는 `; ` 사이에 빈 필드를 만든다. 그래서 `$6` 은 failed 수가 아니라 빈 값이고, 이 값을 더하면 무엇이 실패해도 0이 된다.
+- **수를 세지 말고 ok 가 아닌 `test result` 줄을 직접 본다.**
+
+  ```bash
+  grep '^test result:' LOG | grep -v '^test result: ok\.'
+  ```
+
+  이 출력이 비어 있고, `test result` 줄이 1개 이상이며, 로그의 `rc=` 가 0일 때만 통과로 기록한다. `test result` 줄이 하나도 없으면 통과가 아니다. 대상이 실행되지 않은 것이다.
+- **여러 타깃은 `--no-fail-fast` 로 실행한다.** 이 옵션이 없으면 cargo 는 첫 실패 타깃에서 멈춘다. 그 뒤 타깃은 실패가 아니라 미측정이며 `test result` 줄도 남기지 않는다.
+
+예를 들어 다음 두 판독은 실제로 실패를 통과로 보고했다.
+
+- `cargo test … | grep '^test result:' | awk -F'[ ;]' '{f+=$6} END {print f}'` 는 실패한 타깃이 있는데도 failed 0 을 출력했다.
+- `cargo clippy … 2>&1 | grep -cE '^(warning|error)'; echo "rc=$?"` 의 `rc=0` 은 grep 의 종료 코드였다. clippy 자신은 컴파일 실패로 rc=101 이었다.
+
 ## 길이 가드의 사각 계수가 달라졌을 때
 
 `on_scale_length_literal::the_blind_spots_are_still_the_size_they_say`는 테스트 전용이 아닌 코드의
