@@ -1,5 +1,12 @@
 /* Site layout and document typography. Colors come from the vendored design
- * tokens; spacing and font sizes use a separate scale suited to web prose. */
+ * tokens; spacing and font sizes use a separate scale suited to web prose.
+ *
+ * Every rule here is the site's own (docs/dev-guide/site.md): spacing uses --sp-*
+ * and radii use --radius*, both defined below. Literal values left without a line
+ * comment belong to axes the site scale does not have: font sizes, element and
+ * layout sizes, stroke widths (borders, outlines, the drawn caret), pill radii
+ * (999px) and decoration offsets. Media query conditions stay literal because a
+ * query condition cannot read a custom property. */
 
 
 
@@ -16,6 +23,8 @@
   --font-mono: var(--tasty-font-family-mono), monospace;
 
 
+  /* The site's own variables (scale, radii, layout, borders, shadows) are defined
+     here, so the literals in this block are the definitions themselves. */
   --sp-1: 4px;  --sp-2: 8px;  --sp-3: 12px; --sp-4: 16px;
   --sp-5: 20px; --sp-6: 24px; --sp-8: 32px; --sp-10: 40px;
   --sp-12: 48px; --sp-16: 64px; --sp-20: 80px; --sp-24: 96px;
@@ -92,6 +101,7 @@ a:hover { text-decoration: underline; text-underline-offset: 3px; }
 code, kbd, pre, samp { font-family: var(--font-mono); }
 
 .visually-hidden {
+  /* The standard visually-hidden pattern; its 1px values are not design steps. */
   position: absolute; width: 1px; height: 1px;
   padding: 0; margin: -1px; overflow: hidden;
   clip: rect(0 0 0 0); white-space: nowrap; border: 0;
@@ -109,7 +119,7 @@ code, kbd, pre, samp { font-family: var(--font-mono); }
   gap: var(--sp-4);
   padding: 0 var(--sp-5);
   background: color-mix(in srgb, var(--tasty-color-neutral-100) 88%, transparent);
-  backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px); /* an effect radius, not a spacing step */
   border-bottom: var(--border);
 }
 
@@ -132,7 +142,7 @@ code, kbd, pre, samp { font-family: var(--font-mono); }
   color: var(--tasty-color-neutral-900);
   background: var(--tasty-color-neutral-300);
   border-radius: 999px;
-  padding: 1px 7px;
+  padding: 1px 7px; /* no site step: --sp-* has no 1 or 7 */
   letter-spacing: 0;
 }
 
@@ -274,7 +284,7 @@ code, kbd, pre, samp { font-family: var(--font-mono); }
   font-size: 11px;
   font-family: var(--font-mono);
   color: var(--tasty-color-neutral-700);
-  margin-top: 2px;
+  margin-top: 2px; /* no site step: --sp-* has no 2 */
 }
 .search__empty {
   padding: var(--sp-4);
@@ -350,8 +360,8 @@ code, kbd, pre, samp { font-family: var(--font-mono); }
 .nav-list li { margin: 0; }
 .nav-list a {
   display: block;
-  padding: 3px var(--sp-2) 3px calc(var(--sp-2) + var(--indent, 0) * 12px);
-  margin-left: calc(var(--sp-2) * -1 + 4px);
+  padding: 3px var(--sp-2) 3px calc(var(--sp-2) + var(--indent, 0) * var(--sp-3)); /* 3px: --sp-* has no 3 */
+  margin-left: calc(var(--sp-2) * -1 + var(--sp-1));
   border-radius: var(--radius-sm);
   color: var(--tasty-color-neutral-900);
   line-height: 1.45;
@@ -451,7 +461,7 @@ code, kbd, pre, samp { font-family: var(--font-mono); }
 .prose :not(pre) > code {
   font-size: 0.875em;
   padding: 0.15em 0.4em;
-  border-radius: 4px;
+  border-radius: 4px; /* no site radius: the radius scale is 6/8/14 */
   background: color-mix(in srgb, var(--tasty-color-neutral-300) 70%, transparent);
   border: 1px solid color-mix(in srgb, var(--tasty-color-neutral-400) 45%, transparent);
   color: var(--tasty-color-neutral-1100);
@@ -508,8 +518,8 @@ code, kbd, pre, samp { font-family: var(--font-mono); }
   text-transform: uppercase;
   color: var(--tasty-color-neutral-600);
   background: color-mix(in srgb, var(--tasty-color-neutral-300) 70%, transparent);
-  padding: 2px 6px;
-  border-radius: 4px;
+  padding: 2px 6px; /* no site step: --sp-* has no 2 or 6 */
+  border-radius: 4px; /* no site radius: the radius scale is 6/8/14 */
   pointer-events: none;
 }
 .code-block pre {
@@ -533,7 +543,7 @@ code, kbd, pre, samp { font-family: var(--font-mono); }
   border-radius: var(--radius-sm);
   font-size: 11px;
   font-family: var(--font-mono);
-  padding: 3px var(--sp-2);
+  padding: 3px var(--sp-2); /* 3px: --sp-* has no 3 */
   cursor: pointer;
 }
 .code-block:hover .copy-btn { opacity: 1; }
@@ -601,7 +611,7 @@ code, kbd, pre, samp { font-family: var(--font-mono); }
 }
 .page-nav a:hover { border-color: var(--brand); background: var(--tasty-color-neutral-100); text-decoration: none; }
 .page-nav .dir { display: block; font-size: 11px; font-family: var(--font-mono);
-                 color: var(--tasty-color-neutral-700); margin-bottom: 2px; }
+                 color: var(--tasty-color-neutral-700); margin-bottom: 2px; } /* no site step: --sp-* has no 2 */
 .page-nav .next { text-align: right; }
 
 .edit-link {
@@ -635,7 +645,7 @@ code, kbd, pre, samp { font-family: var(--font-mono); }
 .toc ul { list-style: none; margin: 0; padding: 0; }
 .toc a {
   display: block;
-  padding: 3px 0 3px var(--sp-3);
+  padding: 3px 0 3px var(--sp-3); /* 3px: --sp-* has no 3 */
   border-left: 2px solid var(--tasty-color-neutral-300);
   color: var(--tasty-color-neutral-900);
   line-height: 1.45;
