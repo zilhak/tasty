@@ -137,6 +137,58 @@ fn a_write_to_a_durable_store_answers_as_before() {
     }
 }
 
+/// `func` 의 본문을 `sources` 에서 찾는다. 본문은 중괄호 균형으로 자르므로 뒤따르는 도우미 함수는
+/// 들어가지 않는다. 주석·문자열 속 중괄호는 가린 사본에서 센다. 같은 이름이 둘 이상이면 어느 본문을
+/// 볼지 모르므로 실패한다.
+fn body_of(sources: &[&'static str], func: &str) -> Option<&'static str> {
+    let mut found = sources.iter().flat_map(|src| {
+        let parsed = tasty_doc_guards::match_arms::Source::new(src);
+        parsed
+            .fn_bodies(func)
+            .into_iter()
+            .map(|r| &src[r])
+            .collect::<Vec<_>>()
+    });
+    let body = found.next()?;
+    assert!(
+        found.next().is_none(),
+        "`{func}` 이 두 곳에 있다 — 어느 본문을 볼지 모른다"
+    );
+    Some(body)
+}
+
+/// 본문이 대체 저장소 표시(`written` · `mark_durability`)를 직접 부르는가.
+fn marks_durability(body: &str) -> bool {
+    body.contains("written(") || body.contains("mark_durability(")
+}
+
+/// 공개 핸들러 뒤의 private 도우미가 표시를 불러도 핸들러 본문으로 세지 않는다. 다음 `pub fn` 까지를
+/// 본문으로 보면 파일 끝까지가 본문이 되어 도우미의 표시를 핸들러 것으로 읽는다.
+#[test]
+fn a_helper_after_the_handler_does_not_count_as_its_marking() {
+    const FIXTURE: &str = "\
+pub fn handle_put(core: &mut Core, p: &Value) -> Result<Value, String> {
+    let inner = { core.store.put(p)? };
+    Ok(json!({ \"ok\": inner, \"note\": \"{ not a brace }\" }))
+}
+
+fn helper(core: &mut Core, out: &mut Value) {
+    mark_durability(core, out);
+}
+";
+    let body = body_of(&[FIXTURE], "handle_put").expect("본문");
+    assert!(
+        body.ends_with("}") && !body.contains("fn helper"),
+        "본문이 핸들러 밖까지 늘었다:\n{body}"
+    );
+    assert!(
+        !marks_durability(body),
+        "도우미의 표시를 핸들러 것으로 읽었다:\n{body}"
+    );
+    let helper = body_of(&[FIXTURE], "helper").expect("도우미 본문");
+    assert!(marks_durability(helper), "전제: 도우미는 표시한다");
+}
+
 // 메서드 효과 표와 라우터에서 저장소 쓰기 핸들러를 찾아 durable 표시 여부를 검사한다.
 // 쓰기로 분류됐어도 실제로 저장하지 않는 메서드는 이유와 함께 제외한다.
 // 함수 이름이 여러 파일에 있으면 검사 대상을 확정할 수 없으므로 실패한다.
@@ -196,21 +248,6 @@ fn every_memory_write_reports_a_fallback_store_as_not_durable() {
         include_str!("../telemetry/record.rs"),
         include_str!("../session.rs"),
     ];
-    let body_of = |func: &str| -> Option<&'static str> {
-        let head = format!("\npub fn {func}(");
-        let mut found = sources.iter().filter_map(|src| {
-            let at = src.find(&head)?;
-            let rest = &src[at + 1..];
-            let end = rest[1..].find("\npub fn ").map_or(rest.len(), |i| i + 1);
-            Some(&rest[..end])
-        });
-        let body = found.next()?;
-        assert!(
-            found.next().is_none(),
-            "`{func}` 이 두 소스에 있다 — 어느 본문을 볼지 모른다"
-        );
-        Some(body)
-    };
 
     let mut checked = Vec::new();
     let mut missing = Vec::new();
@@ -233,8 +270,8 @@ fn every_memory_write_reports_a_fallback_store_as_not_durable() {
             .chars()
             .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
             .collect();
-        let body = body_of(&func).unwrap_or_else(|| panic!("`{func}` 본문을 못 찾았다"));
-        if !body.contains("written(") && !body.contains("mark_durability(") {
+        let body = body_of(&sources, &func).unwrap_or_else(|| panic!("`{func}` 본문을 못 찾았다"));
+        if !marks_durability(body) {
             missing.push(format!("{method} → {func}"));
         }
         checked.push(*method);
