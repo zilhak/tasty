@@ -521,12 +521,9 @@ impl MainView {
             None => return,
         };
 
-        // debug에서는 실제 native 메뉴 없이 egui의 메뉴 요청을 관찰할 수 있게 한다.
+        // debug에서는 실제 native 메뉴 없이 egui의 메뉴 요청을 관찰하거나, 열 메뉴의 종류를 기록한다.
         #[cfg(debug_assertions)]
-        if std::env::var_os("TASTY_DEBUG_SUPPRESS_NATIVE_MENU").is_some() {
-            self.debug_captured_menu = Some(pending);
-            return;
-        }
+        super::debug_menu::capture_or_note!(self, pending);
 
         match pending {
             PendingNativeMenu::Tab {

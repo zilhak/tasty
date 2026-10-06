@@ -120,14 +120,15 @@ pub(super) fn debug_command_to_method_params(
         DebugCommands::Selection => ("debug.selection", serde_json::json!({})),
         DebugCommands::PendingMenu => ("debug.pending_menu", serde_json::json!({})),
         DebugCommands::MenuAnswer {
+            menu,
             item,
             label,
             dismiss,
         } => {
             let params = match (item, label) {
-                (Some(id), _) => serde_json::json!({ "item": id }),
-                (None, Some(text)) => serde_json::json!({ "label": text }),
-                (None, None) => serde_json::json!({ "dismiss": *dismiss }),
+                (Some(id), _) => serde_json::json!({ "menu": menu, "item": id }),
+                (None, Some(text)) => serde_json::json!({ "menu": menu, "label": text }),
+                (None, None) => serde_json::json!({ "menu": menu, "dismiss": *dismiss }),
             };
             ("debug.native_menu.answer", params)
         }

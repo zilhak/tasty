@@ -3360,7 +3360,10 @@ about = "フォーカス中のウィンドウの現在の選択範囲をダン�
 about = "フォーカス中のウィンドウの保留中ネイティブメニュー操作をダンプ（debugビルド専用）"
 
 [cli.help._root.debug.menu-answer]
-about = "フォーカス中のウィンドウの次のネイティブコンテキストメニューにOSポップアップなしで応答（debugビルド専用）。項目IDか表示文言で選ぶか、メニューを閉じる。メニューは `debug inject egui-mouse --button 2` などの右クリックで開く"
+about = "フォーカス中のウィンドウで指定した種類の次のネイティブコンテキストメニューにOSポップアップなしで応答（debugビルド専用）。項目IDか表示文言で選ぶか、メニューを閉じる。ほかの種類のメニューは通常どおり開く。メニューは `debug inject egui-mouse --button 2` などの右クリックで開く"
+
+[cli.help._root.debug.menu-answer.arg.menu]
+help = "応答を使うメニューの種類。`debug pending-menu` が使う名前（Tab、Pane、TerminalSurface など）"
 
 [cli.help._root.debug.menu-answer.arg.item]
 help = "メニュー項目ID"

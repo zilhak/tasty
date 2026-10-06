@@ -74,21 +74,26 @@ fn read_pointer_params(
     Ok((fx, fy, action))
 }
 
-/// `item`(항목 id)·`label`(표시 문구)·`dismiss`(true) 중 하나만 받는다.
+/// `menu`(메뉴 종류, 필수)와 `item`(항목 id)·`label`(표시 문구)·`dismiss`(true) 중 하나를 받는다.
 #[cfg(debug_assertions)]
 fn read_menu_answer(
     p: &serde_json::Value,
 ) -> Result<crate::view::main::debug_menu::MenuAnswer, String> {
-    use crate::view::main::debug_menu::MenuAnswer;
+    use crate::view::main::debug_menu::{MENU_KINDS, MenuAnswer, MenuChoice};
+    let menu = p.get("menu").and_then(|v| v.as_str()).unwrap_or_default();
+    let Some(menu) = MENU_KINDS.iter().copied().find(|k| *k == menu) else {
+        return Err(format!("'menu' must be one of {}", MENU_KINDS.join(", ")));
+    };
     let item = params::read_u32(p, "item")?;
     let label = p.get("label").and_then(|v| v.as_str());
     let dismiss = p.get("dismiss").and_then(|v| v.as_bool()).unwrap_or(false);
-    match (item, label, dismiss) {
-        (Some(id), None, false) => Ok(MenuAnswer::Item(id)),
-        (None, Some(text), false) => Ok(MenuAnswer::Label(text.to_owned())),
-        (None, None, true) => Ok(MenuAnswer::Dismiss),
-        _ => Err("give exactly one of 'item', 'label' or 'dismiss: true'".to_owned()),
-    }
+    let choice = match (item, label, dismiss) {
+        (Some(id), None, false) => MenuChoice::Item(id),
+        (None, Some(text), false) => MenuChoice::Label(text.to_owned()),
+        (None, None, true) => MenuChoice::Dismiss,
+        _ => return Err("give exactly one of 'item', 'label' or 'dismiss: true'".to_owned()),
+    };
+    Ok(MenuAnswer { menu, choice })
 }
 
 impl App {
@@ -277,7 +282,7 @@ impl App {
                 .or(w.debug_captured_menu.as_ref());
             let body = match menu {
                 Some(menu) => {
-                    let (kind, surface_id) = pending_menu_kind(menu);
+                    let (kind, surface_id) = crate::view::main::debug_menu::menu_kind(menu);
                     let mut obj = serde_json::json!({ "present": true, "kind": kind });
                     if let Some(sid) = surface_id {
                         obj["surface_id"] = serde_json::json!(sid);
@@ -372,24 +377,5 @@ impl App {
             w.base.state.dirty = true;
         }
         IpcStep::Handled
-    }
-}
-
-#[cfg(debug_assertions)]
-fn pending_menu_kind(menu: &crate::state::PendingNativeMenu) -> (&'static str, Option<u32>) {
-    use crate::state::PendingNativeMenu as M;
-    match menu {
-        M::Tab { .. } => ("Tab", None),
-        M::Pane { .. } => ("Pane", None),
-        M::Workspace { .. } => ("Workspace", None),
-        M::TerminalSurface { surface_id, .. } => ("TerminalSurface", Some(*surface_id)),
-        M::TerminalLink { link, .. } => ("TerminalLink", Some(link.surface_id)),
-        M::Surface { surface_id, .. } => ("Surface", Some(*surface_id)),
-        M::Explorer { surface_id, .. } => ("Explorer", Some(*surface_id)),
-        M::ExplorerFavorite { surface_id, .. } => ("ExplorerFavorite", Some(*surface_id)),
-        M::NewWorkspaceButton { .. } => ("NewWorkspaceButton", None),
-        M::WorkspaceCategoryHeader { .. } => ("WorkspaceCategoryHeader", None),
-        M::SidebarBackground { .. } => ("SidebarBackground", None),
-        M::NewTabButton { .. } => ("NewTabButton", None),
     }
 }

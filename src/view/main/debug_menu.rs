@@ -1,11 +1,12 @@
 //! debug 전용 native 메뉴 응답과 이동 대기 조회. release에는 없다.
-//! 다음에 열리는 native 메뉴를 OS 팝업 없이 지정한 항목을 고른 것으로 끝낸다. 메뉴 항목을 만드는 일과
-//! 선택 뒤 처리는 사용자 우클릭과 같은 경로를 쓴다. 메뉴를 열려면 `debug.inject_egui_mouse` 우클릭을 함께 쓴다.
+//! 호출자가 지정한 종류의 native 메뉴가 다음에 열릴 때 OS 팝업 없이 지정한 항목을 고른 것으로 끝낸다.
+//! 다른 종류의 메뉴는 응답을 쓰지 않고 실제로 연다. 메뉴 항목을 만드는 일과 선택 뒤 처리는 사용자 우클릭과
+//! 같은 경로를 쓴다. 메뉴를 열려면 `debug.inject_egui_mouse` 우클릭을 함께 쓴다.
 
 #![cfg(debug_assertions)]
 
 use crate::platform::native_menu::MenuItem;
-use crate::state::PendingMove;
+use crate::state::{PendingMove, PendingNativeMenu};
 
 use super::MainView;
 
@@ -20,9 +21,63 @@ macro_rules! answer_or_return {
 }
 pub(super) use answer_or_return;
 
-/// 다음 native 메뉴에 줄 응답.
+/// `process_pending_native_menu`에서 메뉴 요청을 포획하거나(`TASTY_DEBUG_SUPPRESS_NATIVE_MENU`), 열 메뉴의
+/// 종류를 기록한 뒤 요청을 돌려받는다. 포획했으면 돌아간다.
+macro_rules! capture_or_note {
+    ($view:expr, $pending:ident) => {
+        let Some($pending) = $view.debug_note_menu($pending) else {
+            return;
+        };
+    };
+}
+pub(super) use capture_or_note;
+
+/// 메뉴 요청의 종류 이름과 대상 surface. `debug.pending_menu`의 `kind`와 응답의 `menu`가 같은 이름을 쓴다.
+pub(crate) fn menu_kind(menu: &PendingNativeMenu) -> (&'static str, Option<u32>) {
+    use PendingNativeMenu as M;
+    match menu {
+        M::Tab { .. } => ("Tab", None),
+        M::Pane { .. } => ("Pane", None),
+        M::Workspace { .. } => ("Workspace", None),
+        M::TerminalSurface { surface_id, .. } => ("TerminalSurface", Some(*surface_id)),
+        M::TerminalLink { link, .. } => ("TerminalLink", Some(link.surface_id)),
+        M::Surface { surface_id, .. } => ("Surface", Some(*surface_id)),
+        M::Explorer { surface_id, .. } => ("Explorer", Some(*surface_id)),
+        M::ExplorerFavorite { surface_id, .. } => ("ExplorerFavorite", Some(*surface_id)),
+        M::NewWorkspaceButton { .. } => ("NewWorkspaceButton", None),
+        M::WorkspaceCategoryHeader { .. } => ("WorkspaceCategoryHeader", None),
+        M::SidebarBackground { .. } => ("SidebarBackground", None),
+        M::NewTabButton { .. } => ("NewTabButton", None),
+    }
+}
+
+/// 응답이 받는 메뉴 종류 이름. [`menu_kind`]의 이름과 같다.
+pub(crate) const MENU_KINDS: &[&str] = &[
+    "Tab",
+    "Pane",
+    "Workspace",
+    "TerminalSurface",
+    "TerminalLink",
+    "Surface",
+    "Explorer",
+    "ExplorerFavorite",
+    "NewWorkspaceButton",
+    "WorkspaceCategoryHeader",
+    "SidebarBackground",
+    "NewTabButton",
+];
+
+/// 지정한 종류의 다음 native 메뉴에 줄 응답.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) enum MenuAnswer {
+pub(crate) struct MenuAnswer {
+    /// 응답을 쓸 메뉴 종류([`MENU_KINDS`] 중 하나).
+    pub menu: &'static str,
+    pub choice: MenuChoice,
+}
+
+/// 메뉴에서 고를 것.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum MenuChoice {
     /// 항목 id로 고른다.
     Item(u32),
     /// 표시 문구가 같은 항목을 고른다.
@@ -32,9 +87,22 @@ pub(crate) enum MenuAnswer {
 }
 
 impl MainView {
-    /// 다음 native 메뉴 하나에 쓸 응답을 둔다. 앞서 둔 응답이 남아 있으면 덮어쓴다.
+    /// 지정한 종류의 다음 native 메뉴 하나에 쓸 응답을 둔다. 앞서 둔 응답이 남아 있으면 덮어쓴다.
     pub(crate) fn debug_set_menu_answer(&mut self, answer: MenuAnswer) {
         self.debug_menu_answer = Some(answer);
+    }
+
+    /// 포획 모드면 요청을 보관하고 None을 돌려준다. 아니면 열 메뉴의 종류를 기록하고 요청을 돌려준다.
+    pub(super) fn debug_note_menu(
+        &mut self,
+        pending: PendingNativeMenu,
+    ) -> Option<PendingNativeMenu> {
+        if std::env::var_os("TASTY_DEBUG_SUPPRESS_NATIVE_MENU").is_some() {
+            self.debug_captured_menu = Some(pending);
+            return None;
+        }
+        self.debug_opening_menu = Some(menu_kind(&pending).0);
+        Some(pending)
     }
 
     /// 둔 응답이 있으면 OS 메뉴 대신 그 선택으로 `cont`를 실행한다(macOS·Windows의 즉시 완료와 같은 순서).
@@ -48,11 +116,15 @@ impl MainView {
     where
         F: FnOnce(&mut MainView, &crate::runtime::engine_read::EngineRead<'_>, Option<u32>),
     {
+        let opening = self.debug_opening_menu.take();
+        if !answer_applies(self.debug_menu_answer.as_ref(), opening) {
+            return Err(cont);
+        }
         let Some(answer) = self.debug_menu_answer.take() else {
             return Err(cont);
         };
-        let result = resolve_answer(&answer, items);
-        if result.is_none() && answer != MenuAnswer::Dismiss {
+        let result = resolve_answer(&answer.choice, items);
+        if result.is_none() && answer.choice != MenuChoice::Dismiss {
             tracing::warn!("debug menu answer {answer:?} matched no enabled item; menu dismissed");
         }
         cont(self, engine, result);
@@ -66,13 +138,18 @@ impl MainView {
     }
 }
 
+/// 응답은 지정한 종류의 메뉴가 열릴 때만 쓴다. 종류를 모르는 메뉴에도 쓰지 않는다.
+fn answer_applies(answer: Option<&MenuAnswer>, opening: Option<&str>) -> bool {
+    matches!((answer, opening), (Some(a), Some(kind)) if a.menu == kind)
+}
+
 /// 사용자가 고를 수 있는 항목만 고른다. 구분선과 비활성 항목은 고를 수 없다.
-fn resolve_answer(answer: &MenuAnswer, items: &[MenuItem]) -> Option<u32> {
+fn resolve_answer(choice: &MenuChoice, items: &[MenuItem]) -> Option<u32> {
     let pickable = |item: &&MenuItem| item.enabled && !item.is_separator();
-    match answer {
-        MenuAnswer::Item(id) => items.iter().filter(pickable).find(|i| i.id == *id),
-        MenuAnswer::Label(label) => items.iter().filter(pickable).find(|i| i.label == *label),
-        MenuAnswer::Dismiss => None,
+    match choice {
+        MenuChoice::Item(id) => items.iter().filter(pickable).find(|i| i.id == *id),
+        MenuChoice::Label(label) => items.iter().filter(pickable).find(|i| i.label == *label),
+        MenuChoice::Dismiss => None,
     }
     .map(|item| item.id)
 }
@@ -102,23 +179,109 @@ mod tests {
 
     #[test]
     fn an_answer_picks_an_enabled_item_by_id_or_label() {
-        assert_eq!(resolve_answer(&MenuAnswer::Item(7), &items()), Some(7));
+        assert_eq!(resolve_answer(&MenuChoice::Item(7), &items()), Some(7));
         assert_eq!(
-            resolve_answer(&MenuAnswer::Label("Move Tab".into()), &items()),
+            resolve_answer(&MenuChoice::Label("Move Tab".into()), &items()),
             Some(7)
         );
     }
 
     #[test]
     fn an_answer_never_picks_what_the_user_cannot_pick() {
-        assert_eq!(resolve_answer(&MenuAnswer::Item(9), &items()), None);
-        assert_eq!(resolve_answer(&MenuAnswer::Item(0), &items()), None);
-        assert_eq!(resolve_answer(&MenuAnswer::Item(42), &items()), None);
+        assert_eq!(resolve_answer(&MenuChoice::Item(9), &items()), None);
+        assert_eq!(resolve_answer(&MenuChoice::Item(0), &items()), None);
+        assert_eq!(resolve_answer(&MenuChoice::Item(42), &items()), None);
         assert_eq!(
-            resolve_answer(&MenuAnswer::Label(String::new()), &items()),
+            resolve_answer(&MenuChoice::Label(String::new()), &items()),
             None
         );
-        assert_eq!(resolve_answer(&MenuAnswer::Dismiss, &items()), None);
+        assert_eq!(resolve_answer(&MenuChoice::Dismiss, &items()), None);
+    }
+
+    fn answer(menu: &'static str) -> MenuAnswer {
+        MenuAnswer {
+            menu,
+            choice: MenuChoice::Item(7),
+        }
+    }
+
+    #[test]
+    fn an_answer_applies_only_to_the_menu_kind_it_names() {
+        assert!(answer_applies(Some(&answer("Tab")), Some("Tab")));
+        assert!(!answer_applies(
+            Some(&answer("Tab")),
+            Some("TerminalSurface")
+        ));
+        assert!(!answer_applies(Some(&answer("Tab")), None));
+        assert!(!answer_applies(None, Some("Tab")));
+    }
+
+    /// 응답이 받는 이름 목록과 메뉴 요청의 종류 이름이 같은 집합이다.
+    #[test]
+    fn the_answer_kinds_are_exactly_the_menu_kinds() {
+        use crate::state::TerminalLinkMenu;
+        use std::path::PathBuf;
+        let point = tasty_selection::SelectionPoint {
+            epoch: Default::default(),
+            col: 0,
+            absolute_row: 0,
+        };
+        let (x, y) = (0.0, 0.0);
+        let menus = [
+            PendingNativeMenu::Tab {
+                pane_id: 1,
+                tab_index: 0,
+                x,
+                y,
+            },
+            PendingNativeMenu::Pane { pane_id: 1, x, y },
+            PendingNativeMenu::Workspace { ws_idx: 0, x, y },
+            PendingNativeMenu::TerminalSurface {
+                surface_id: 1,
+                x,
+                y,
+            },
+            PendingNativeMenu::TerminalLink {
+                link: TerminalLinkMenu {
+                    surface_id: 1,
+                    start: point,
+                    end: point,
+                    text: String::new(),
+                    open_with: None,
+                    remote_path: false,
+                },
+                x,
+                y,
+            },
+            PendingNativeMenu::Surface {
+                surface_id: 1,
+                x,
+                y,
+            },
+            PendingNativeMenu::Explorer {
+                surface_id: 1,
+                paths: Vec::new(),
+                cwd: PathBuf::new(),
+                single_is_dir: false,
+                x,
+                y,
+            },
+            PendingNativeMenu::ExplorerFavorite {
+                surface_id: 1,
+                path: PathBuf::new(),
+                x,
+                y,
+            },
+            PendingNativeMenu::NewWorkspaceButton { x, y },
+            PendingNativeMenu::WorkspaceCategoryHeader { cat_id: 1, x, y },
+            PendingNativeMenu::SidebarBackground { x, y },
+            PendingNativeMenu::NewTabButton { pane_id: 1, x, y },
+        ];
+        let named: std::collections::BTreeSet<&str> =
+            menus.iter().map(|m| menu_kind(m).0).collect();
+        let listed: std::collections::BTreeSet<&str> = MENU_KINDS.iter().copied().collect();
+        assert_eq!(named, listed);
+        assert_eq!(listed.len(), MENU_KINDS.len(), "이름이 중복됐다");
     }
 
     #[test]

@@ -3366,7 +3366,10 @@ about = "Dump the current selection of the focused window (debug builds only)"
 about = "Dump the pending native menu action of the focused window (debug builds only)"
 
 [cli.help._root.debug.menu-answer]
-about = "Answer the next native context menu of the focused window without the OS popup (debug builds only). Picks an item by id or label, or closes the menu. A right click such as `debug inject egui-mouse --button 2` still opens the menu"
+about = "Answer the next native context menu of the given kind in the focused window without the OS popup (debug builds only). Picks an item by id or label, or closes the menu. Menus of other kinds open as usual. A right click such as `debug inject egui-mouse --button 2` still opens the menu"
+
+[cli.help._root.debug.menu-answer.arg.menu]
+help = "Menu kind the answer applies to, as `debug pending-menu` names it (Tab, Pane, TerminalSurface, ...)"
 
 [cli.help._root.debug.menu-answer.arg.item]
 help = "Menu item id"

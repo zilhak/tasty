@@ -153,6 +153,9 @@ pub struct MainView {
     /// debug IPC가 둔 다음 native 메뉴의 응답. 실제 사용자 우클릭과 release 빌드에는 사용하지 않는다.
     #[cfg(debug_assertions)]
     pub(crate) debug_menu_answer: Option<debug_menu::MenuAnswer>,
+    /// `process_pending_native_menu`가 지금 여는 메뉴의 종류. 응답을 그 종류에만 쓰는 데 사용한다.
+    #[cfg(debug_assertions)]
+    pub(crate) debug_opening_menu: Option<&'static str>,
     /// 무대가 OS 전체화면에 들어가기 전의 창 상태. fullscreen_window에서 복원한다.
     pub(crate) stage_saved_window_mode: Option<fullscreen_window::SavedWindowMode>,
 }
@@ -243,6 +246,8 @@ impl MainView {
             debug_captured_menu: None,
             #[cfg(debug_assertions)]
             debug_menu_answer: None,
+            #[cfg(debug_assertions)]
+            debug_opening_menu: None,
             stage_saved_window_mode: None,
         }
     }

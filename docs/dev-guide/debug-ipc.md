@@ -50,7 +50,7 @@ debug 메서드는 모두 `local_only()` — plugin caller 는 호출 불가, CL
 | `debug.inject_egui_text` | `text`(필수, 문자열) | egui 레벨 **문자** 이벤트 주입 — 포커스된 `TextEdit`(command palette 쿼리 등)에 글자를 넣는다. 아래 [문자 주입은 키 주입과 다른 채널이다](#문자-주입은-키-주입과-다른-채널이다) |
 | `debug.selection` | `{}` | focused window 의 로컬 텍스트 선택 상태 read-only 덤프(`present`·`surface_id`·`mode`·`dragging`·`empty`·`anchor/cursor/start/end{col,row}`). 마우스 라우팅 회귀 net 의 관찰면 — 순수 관찰(사용자 상태 불변) |
 | `debug.pending_menu` | `{}` | 대기 중 컨텍스트 메뉴 read-only 덤프(`present`·`kind`·`surface_id?`). live pending 우선, 없으면 주입 포획본(`debug_captured_menu`). 우클릭 라우팅 회귀 관찰용 |
-| `debug.native_menu.answer` | `item` · `label` · `dismiss: true` 중 하나 | 포커스된 창이 **다음에 여는** native 메뉴 하나를 OS 팝업 없이 지정 항목을 고른 것으로 끝낸다(`item`은 항목 id, `label`은 표시 문구, `dismiss`는 고르지 않고 닫기). 응답은 메뉴가 열릴 때까지 남아 있고 새 응답이 덮어쓴다. 아래 [native 메뉴 항목 선택 재현](#native-메뉴-항목-선택-재현-debugnative_menuanswer) |
+| `debug.native_menu.answer` | `menu`(필수) + `item` · `label` · `dismiss: true` 중 하나 | 포커스된 창이 **다음에 여는 `menu` 종류의** native 메뉴 하나를 OS 팝업 없이 지정 항목을 고른 것으로 끝낸다(`menu`는 `debug.pending_menu`의 `kind`와 같은 이름, `item`은 항목 id, `label`은 표시 문구, `dismiss`는 고르지 않고 닫기). 다른 종류의 메뉴에는 쓰지 않는다. 응답은 그 종류의 메뉴가 열릴 때까지 남아 있고 새 응답이 덮어쓴다. 아래 [native 메뉴 항목 선택 재현](#native-메뉴-항목-선택-재현-debugnative_menuanswer) |
 | `debug.pending_move` | `{}` | 포커스된 창의 이동 대기 슬롯 read-only 덤프(`present`·`kind` = `surface`/`tab`/`pane`·`id`) |
 | `debug.focused_surface` | `{}` | 현재 포커스된 surface id read-only 덤프(`surface_id`, 없으면 null). `surface.list` 가 노출 않는 view-layer 포커스를 관찰 — click-to-activate 라우팅 회귀 net 용 |
 | `debug.surface_rect` | `surface_id` | 활성 탭에 있는 surface 의 화면 사각형 read-only 덤프(`rect` = 물리 px `x`·`y`·`width`·`height`, 화면에 없으면 null, `scale_factor`). 터미널이 아닌 surface 도 같은 leaf rect 다. native WebView 창이 surface 를 채우는지 재는 기준값 |
@@ -135,15 +135,15 @@ debug 메서드는 모두 `local_only()` — plugin caller 는 호출 불가, CL
 
 ### native 메뉴 항목 선택 재현 (`debug.native_menu.answer`)
 
-이동 대기(pending move)처럼 native 메뉴의 항목을 골라야 생기는 상태는 OS 팝업을 열 수 없는 환경(Xvfb의 GTK 메뉴는 `no trigger event for menu popup`으로 뜨지 않는다)에서 만들 수 없다. `debug.native_menu.answer`로 응답을 먼저 둔 뒤 사용자처럼 우클릭하면, `MainView::open_native_menu`가 메뉴 항목을 만든 다음 OS 팝업 대신 그 응답을 선택 결과로 넘긴다. 메뉴 항목 구성과 선택 뒤 처리(`apply_tab_move_selection` 등)는 사용자 우클릭과 같은 경로다. macOS·Windows의 즉시 완료 경로와 같은 순서이며, Linux의 비동기 폴링(`poll_pending_native_menu`)은 거치지 않는다.
+이동 대기(pending move)처럼 native 메뉴의 항목을 골라야 생기는 상태는 OS 팝업을 열 수 없는 환경(Xvfb의 GTK 메뉴는 `no trigger event for menu popup`으로 뜨지 않는다)에서 만들 수 없다. `debug.native_menu.answer`로 메뉴 종류와 응답을 먼저 둔 뒤 사용자처럼 우클릭하면, `process_pending_native_menu`가 여는 메뉴의 종류를 기록하고 `MainView::open_native_menu`가 메뉴 항목을 만든 다음, 종류가 같을 때만 OS 팝업 대신 그 응답을 선택 결과로 넘긴다. 메뉴 항목 구성과 선택 뒤 처리(`apply_tab_move_selection` 등)는 사용자 우클릭과 같은 경로다. macOS·Windows의 즉시 완료 경로와 같은 순서이며, Linux의 비동기 폴링(`poll_pending_native_menu`)은 거치지 않는다.
 
 - 고를 수 없는 항목(구분선·비활성·없는 id나 문구)을 지목하면 메뉴를 닫은 것으로 끝내고 warn 로그를 남긴다.
-- 응답은 다음 native 메뉴 하나에만 쓰이고, 메뉴가 열리지 않으면 남아 있다. 남은 응답은 이후 다른 메뉴에 쓰이므로 응답을 둔 뒤에는 바로 메뉴를 연다.
+- 응답은 지정한 종류의 다음 메뉴 하나에만 쓰인다. 다른 종류의 메뉴는 응답을 그대로 둔 채 실제로 연다. 그 종류의 메뉴가 열리지 않으면 응답이 남아 있다가 나중에 열리는 같은 종류의 메뉴에 쓰인다.
 - 메뉴를 여는 입력: 탭·사이드바처럼 egui가 만드는 메뉴는 `debug.inject_egui_mouse`(`button` 2, press·release)로 연다. 터미널 surface 메뉴는 winit 우클릭 경로라 `debug.inject_window_mouse`로는 열리지 않았다(2026-10-07 측정) — Xvfb에서는 xdotool 우클릭으로 연다.
 - `TASTY_DEBUG_SUPPRESS_NATIVE_MENU`가 켜져 있으면 메뉴 요청을 그 앞에서 포획하므로 응답이 쓰이지 않는다.
 
 ```bash
-tasty debug menu-answer --label "Move Tab"        # 또는 --item 7, --dismiss
+tasty debug menu-answer --menu Tab --label "Move Tab"   # 또는 --item 7, --dismiss
 tasty debug inject egui-mouse --fx 0.34 --fy 0.067 --event-type press --button 2
 tasty debug inject egui-mouse --fx 0.34 --fy 0.067 --event-type release --button 2
 tasty debug pending-move                           # {"present":true,"kind":"tab","id":...}
