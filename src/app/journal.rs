@@ -524,6 +524,8 @@ impl JournalApplication {
 
 #[cfg(all(test, unix))]
 mod bulk_restore_tests;
+#[cfg(test)]
+mod stall_budget;
 #[cfg(all(test, unix))]
 mod tests;
 

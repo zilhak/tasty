@@ -1,5 +1,5 @@
+use super::stall_budget::StallBudget;
 use super::*;
-use std::time::{Duration, Instant};
 
 #[test]
 fn application_bootstrap_commits_default_structure_before_installing_its_real_pty() {
@@ -49,14 +49,13 @@ fn application_bootstrap_commits_default_structure_before_installing_its_real_pt
             },
         )
         .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let mut stall = StallBudget::new(&journal);
     loop {
         journal.poll_bootstrap(&mut [&mut session], None).unwrap();
         if session.journal_binding.is_some() && journal.is_ready(session.id) {
             break;
         }
-        assert!(Instant::now() < deadline, "bootstrap stalled");
-        std::thread::sleep(Duration::from_millis(2));
+        stall.nap("bootstrap");
     }
     let binding = session.journal_binding.as_ref().unwrap();
     assert_eq!(binding.stream, "structure:slot-1");
@@ -74,8 +73,7 @@ fn application_bootstrap_commits_default_structure_before_installing_its_real_pt
         .with_content(|view| view.screen_text(false))
         .contains("BOOTSTRAP-JOURNAL")
     {
-        assert!(Instant::now() < deadline);
-        std::thread::sleep(Duration::from_millis(2));
+        stall.nap("bootstrap terminal output");
     }
     assert!(
         session

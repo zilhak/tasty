@@ -1,21 +1,20 @@
+use super::stall_budget::StallBudget;
 use super::*;
 use crate::runtime::journal_product::view_record::StoredView;
-use std::time::{Duration, Instant};
 
 fn poll_until(
     journal: &mut JournalApplication,
     session: &mut EngineSession,
     predicate: impl Fn(&JournalApplication, &EngineSession) -> bool,
 ) {
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let mut stall = StallBudget::new(journal);
     loop {
         journal.poll_bootstrap(&mut [session], None).unwrap();
         journal.poll_restore_bootstrap(session).unwrap();
         if predicate(journal, session) {
             break;
         }
-        assert!(Instant::now() < deadline, "View checkpoint test stalled");
-        std::thread::sleep(Duration::from_millis(1));
+        stall.nap("View checkpoint");
     }
 }
 
@@ -371,13 +370,12 @@ fn failed_legacy_import_keeps_regular_and_secret_scopes() {
             },
         )
         .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let mut stall = StallBudget::new(&journal);
     loop {
         if journal.poll_bootstrap(&mut [&mut session], None).is_err() {
             break;
         }
-        assert!(Instant::now() < deadline);
-        std::thread::sleep(Duration::from_millis(1));
+        stall.nap("failed legacy import");
     }
     assert!(session.journal_binding.is_none());
     assert_legacy_scopes(&memory.lock().unwrap(), true);
@@ -391,7 +389,7 @@ fn assert_stale_view_rejected(journal: &JournalApplication, stale: StoredView) {
             work: Work::SaveView(stale),
         })
         .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(3);
+    let mut stall = StallBudget::new(journal);
     loop {
         match journal.worker.try_recv() {
             Ok(Completion::Finished { ticket, result }) => {
@@ -407,7 +405,6 @@ fn assert_stale_view_rejected(journal: &JournalApplication, stale: StoredView) {
             Err(std::sync::mpsc::TryRecvError::Empty) => {}
             other => panic!("unexpected stale save result: {other:?}"),
         }
-        assert!(Instant::now() < deadline);
-        std::thread::sleep(Duration::from_millis(1));
+        stall.nap("stale view rejection");
     }
 }

@@ -1,5 +1,5 @@
+use super::stall_budget::StallBudget;
 use super::*;
-use std::time::{Duration, Instant};
 
 struct NoScrollback;
 impl crate::core::layout_persistence::import::ScrollbackSource for NoScrollback {
@@ -77,7 +77,7 @@ fn more_than_one_channel_capacity_of_captures_are_read_without_halting_bootstrap
             },
         )
         .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let mut stall = StallBudget::new(&journal);
     let mut turns = 0;
     loop {
         turns += 1;
@@ -86,8 +86,7 @@ fn more_than_one_channel_capacity_of_captures_are_read_without_halting_bootstrap
         if journal.restorations.ready(session.id).len() == 100 {
             break;
         }
-        assert!(Instant::now() < deadline, "capture reads stalled");
-        std::thread::sleep(Duration::from_millis(1));
+        stall.nap("capture reads");
     }
     assert!(
         turns > 1,
@@ -138,7 +137,7 @@ fn check_cancelled_reads(journal: &mut JournalApplication, session: &EngineSessi
             inputs.has_reads(session.id),
             "accepted read retains its completion ticket"
         );
-        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut stall = StallBudget::new(journal);
         loop {
             match journal.worker.try_recv() {
                 Ok(Completion::Finished {
@@ -151,8 +150,7 @@ fn check_cancelled_reads(journal: &mut JournalApplication, session: &EngineSessi
                     break;
                 }
                 Err(std::sync::mpsc::TryRecvError::Empty) => {
-                    assert!(Instant::now() < deadline);
-                    std::thread::sleep(Duration::from_millis(1));
+                    stall.nap("check cancelled reads");
                 }
                 other => panic!("unexpected read completion: {other:?}"),
             }
@@ -248,15 +246,14 @@ fn selected_terminal_restores_capture_while_other_tabs_remain_resource_free() {
             },
         )
         .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let mut stall = StallBudget::new(&journal);
     loop {
         journal.poll_bootstrap(&mut [&mut session], None).unwrap();
         journal.poll_restore_bootstrap(&session).unwrap();
         if journal.is_ready(session.id) {
             break;
         }
-        assert!(Instant::now() < deadline, "selected restore stalled");
-        std::thread::sleep(Duration::from_millis(1));
+        stall.nap("selected restore");
     }
     assert_eq!(session.runtime.terminals.iter().count(), 1);
     let terminal = session.runtime.terminals.get(ids[1]).unwrap();
@@ -264,8 +261,7 @@ fn selected_terminal_restores_capture_while_other_tabs_remain_resource_free() {
         .with_content(|view| view.screen_text(false))
         .contains("RESTORE-READY")
     {
-        assert!(Instant::now() < deadline, "restore command did not run");
-        std::thread::sleep(Duration::from_millis(1));
+        stall.nap("restore command output");
     }
     assert!(
         terminal
@@ -299,8 +295,7 @@ fn selected_terminal_restores_capture_while_other_tabs_remain_resource_free() {
         if !journal.has_creation(session.id) {
             break;
         }
-        assert!(Instant::now() < deadline, "later selection stalled");
-        std::thread::sleep(Duration::from_millis(1));
+        stall.nap("later selection");
     }
     assert_eq!(session.runtime.terminals.iter().count(), 2);
     assert!(session.runtime.terminals.get(ids[0]).is_none());
@@ -372,15 +367,14 @@ fn large_generic_capture_waits_for_registration_and_reaches_restore_factory_unch
             },
         )
         .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let mut stall = StallBudget::new(&journal);
     loop {
         journal.poll_bootstrap(&mut [&mut session], None).unwrap();
         journal.poll_restore_bootstrap(&session).unwrap();
         if journal.is_ready(session.id) {
             break;
         }
-        assert!(Instant::now() < deadline);
-        std::thread::sleep(Duration::from_millis(1));
+        stall.nap("generic capture bootstrap");
     }
     assert_eq!(journal.restorations.ready(session.id).len(), 1);
     assert!(
@@ -412,11 +406,7 @@ fn large_generic_capture_waits_for_registration_and_reaches_restore_factory_unch
         if journal.is_ready(session.id) && journal.restorations.ready(session.id).is_empty() {
             break;
         }
-        assert!(
-            Instant::now() < deadline,
-            "late registration restore stalled"
-        );
-        std::thread::sleep(Duration::from_millis(1));
+        stall.nap("late registration restore");
     }
     match receiver.try_recv().unwrap() {
         crate::plugin_bridge::host_cmd::HostCmd::RemoteSurfaceRestored {
@@ -489,15 +479,14 @@ fn product_slot_import_preserves_null_restore_and_does_not_reimport_modified_leg
             },
         )
         .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let mut stall = StallBudget::new(&journal);
     loop {
         journal.poll_bootstrap(&mut [&mut session], None).unwrap();
         journal.poll_restore_bootstrap(&session).unwrap();
         if journal.is_ready(session.id) {
             break;
         }
-        assert!(Instant::now() < deadline, "product slot import stalled");
-        std::thread::sleep(Duration::from_millis(1));
+        stall.nap("product slot import");
     }
     let ids = session.core_state.local_workspaces()[0].all_surface_ids();
     assert_eq!(
@@ -539,14 +528,14 @@ fn product_slot_import_preserves_null_restore_and_does_not_reimport_modified_leg
             },
         )
         .unwrap();
+    stall.watch(&journal);
     loop {
         journal.poll_bootstrap(&mut [&mut session], None).unwrap();
         journal.poll_restore_bootstrap(&session).unwrap();
         if journal.is_ready(session.id) {
             break;
         }
-        assert!(Instant::now() < deadline, "journal resume stalled");
-        std::thread::sleep(Duration::from_millis(1));
+        stall.nap("journal resume");
     }
     assert_eq!(
         session.core_state.local_workspaces()[0].all_surface_ids(),

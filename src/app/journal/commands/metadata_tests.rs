@@ -8,7 +8,7 @@ fn mirror(id: u32, name: &str) -> crate::model::Workspace {
 }
 
 fn resolve_without_executing(journal: &mut JournalApplication, session: &mut EngineSession) {
-    let until = Instant::now() + Duration::from_secs(10);
+    let mut stall = StallBudget::new(journal);
     loop {
         journal.poll_bootstrap(&mut [session], None).unwrap();
         let requests = journal.requests_needing_resolution();
@@ -18,8 +18,7 @@ fn resolve_without_executing(journal: &mut JournalApplication, session: &mut Eng
             }
             return;
         }
-        assert!(Instant::now() < until);
-        std::thread::sleep(Duration::from_millis(1));
+        stall.nap("resolve without executing");
     }
 }
 
@@ -138,11 +137,10 @@ fn mixed_order_keeps_local_canonical_order_and_stored_move_does_not_move_again()
     )
     .unwrap();
     journal.creations.insert((session.id, ticket), creation);
-    let until = Instant::now() + Duration::from_secs(10);
+    let mut stall = StallBudget::new(&journal);
     while !journal.creations.is_empty() {
         journal.poll_bootstrap(&mut [&mut session], None).unwrap();
-        assert!(Instant::now() < until);
-        std::thread::sleep(Duration::from_millis(1));
+        stall.nap("canonical order resolution");
     }
     let other = session.core_state.local_workspaces()[1].id;
     session
@@ -210,14 +208,13 @@ fn mixed_order_keeps_local_canonical_order_and_stored_move_does_not_move_again()
 }
 
 pub(super) fn finish_intents(journal: &mut JournalApplication, session: &mut EngineSession) {
-    let until = Instant::now() + Duration::from_secs(10);
+    let mut stall = StallBudget::new(journal);
     while !journal.commands.pending.is_empty() {
         journal.poll_bootstrap(&mut [session], None).unwrap();
         for (ticket, _) in journal.requests_needing_resolution() {
             journal.resolve_ipc_for_engine(ticket, session);
         }
-        assert!(Instant::now() < until);
-        std::thread::sleep(Duration::from_millis(1));
+        stall.nap("finish intents");
     }
 }
 

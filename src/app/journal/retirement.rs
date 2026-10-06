@@ -160,22 +160,21 @@ impl JournalApplication {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::{Duration, Instant};
+    use crate::app::journal::stall_budget::StallBudget;
 
     fn pump(
         journal: &mut JournalApplication,
         session: &mut EngineSession,
         ready: impl Fn(&JournalApplication) -> bool,
     ) {
-        let until = Instant::now() + Duration::from_secs(10);
+        let mut stall = StallBudget::new(journal);
         loop {
             journal.poll_bootstrap(&mut [session], None).unwrap();
             journal.poll_restore_bootstrap(session).unwrap();
             if ready(journal) {
                 return;
             }
-            assert!(Instant::now() < until, "slot lifecycle stalled");
-            std::thread::sleep(Duration::from_millis(1));
+            stall.nap("slot lifecycle");
         }
     }
 

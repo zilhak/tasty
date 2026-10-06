@@ -9,6 +9,8 @@ mod error;
 mod identity;
 mod preparation;
 mod response;
+#[cfg(test)]
+pub(crate) mod thread_probe;
 pub(crate) mod view_record;
 mod worker;
 
@@ -307,6 +309,9 @@ pub(crate) struct JournalWorker {
     thread: Option<JoinHandle<()>>,
     #[cfg(test)]
     pub(crate) fail_next_publication: Arc<AtomicBool>,
+    /// 시험의 정체 감지가 worker 스레드의 상태를 읽는다.
+    #[cfg(test)]
+    pub(crate) thread_probe: thread_probe::ThreadProbe,
 }
 
 impl JournalWorker {
@@ -335,9 +340,15 @@ impl JournalWorker {
         let fail_next_publication = Arc::new(AtomicBool::new(false));
         #[cfg(test)]
         let publication_fault = fail_next_publication.clone();
+        #[cfg(test)]
+        let thread_probe = thread_probe::ThreadProbe::default();
+        #[cfg(test)]
+        let bound_probe = thread_probe.clone();
         let thread = std::thread::Builder::new()
             .name("structure-journal".into())
             .spawn(move || {
+                #[cfg(test)]
+                bound_probe.bind_current();
                 worker::run(
                     home,
                     writer_lock,
@@ -362,6 +373,8 @@ impl JournalWorker {
             thread: Some(thread),
             #[cfg(test)]
             fail_next_publication,
+            #[cfg(test)]
+            thread_probe,
         })
     }
 

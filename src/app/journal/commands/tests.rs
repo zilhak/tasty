@@ -1,39 +1,9 @@
 use super::*;
+use crate::app::journal::stall_budget::StallBudget;
 use std::time::{Duration, Instant};
 
 fn request(method: &str, params: serde_json::Value, key: Option<&str>, id: u64) -> JsonRpcRequest {
     serde_json::from_value(serde_json::json!({"jsonrpc":"2.0","method":method,"params":params,"id":id,"idempotency_key":key})).unwrap()
-}
-
-/// Stall guard for loops that poll the journal on the test thread.
-///
-/// Only the time spent sleeping between polls counts. The polls themselves run App-side work
-/// synchronously on this thread (sizing a 64 MiB response takes seconds in a debug build), and
-/// the guard cannot interrupt a call that never returns anyway. Counting that work as waiting
-/// made the guard fail under CPU load although the worker was answering.
-struct IdleBudget {
-    waited: Duration,
-}
-
-impl IdleBudget {
-    const LIMIT: Duration = Duration::from_secs(10);
-
-    fn new() -> Self {
-        Self {
-            waited: Duration::ZERO,
-        }
-    }
-
-    fn nap(&mut self, what: &str) {
-        assert!(
-            self.waited < Self::LIMIT,
-            "{what} stalled: waited {:?} between polls",
-            self.waited
-        );
-        let started = Instant::now();
-        std::thread::sleep(Duration::from_millis(1));
-        self.waited += started.elapsed();
-    }
 }
 
 fn finish(
@@ -41,7 +11,7 @@ fn finish(
     session: &mut EngineSession,
     receiver: &std::sync::mpsc::Receiver<JsonRpcResponse>,
 ) -> JsonRpcResponse {
-    let mut idle = IdleBudget::new();
+    let mut stall = StallBudget::new(journal);
     loop {
         journal.poll_bootstrap(&mut [session], None).unwrap();
         for (ticket, request) in journal.requests_needing_resolution() {
@@ -54,7 +24,7 @@ fn finish(
         if let Ok(response) = receiver.try_recv() {
             return response;
         }
-        idle.nap("structural IPC reply");
+        stall.nap("structural IPC reply");
     }
 }
 
@@ -73,7 +43,7 @@ fn send(
 #[test]
 fn category_wire_results_and_rejections_survive_deletion_and_worker_restart() {
     let (mut session, mut journal) = boot();
-    let until = Instant::now() + Duration::from_secs(10);
+    let mut stall = StallBudget::new(&journal);
     let create = request(
         "workspace_category.create",
         serde_json::json!({"name":"  Work  "}),
@@ -148,11 +118,11 @@ fn category_wire_results_and_rejections_survive_deletion_and_worker_restart() {
             },
         )
         .unwrap();
+    stall.watch(&journal);
     while !journal.is_ready(session.id) {
         journal.poll_bootstrap(&mut [&mut session], None).unwrap();
         journal.poll_restore_bootstrap(&session).unwrap();
-        assert!(Instant::now() < until);
-        std::thread::sleep(Duration::from_millis(1));
+        stall.nap("worker restart bootstrap");
     }
     for (original, expected) in [(create, created), (rename, renamed), (invalid, rejected)] {
         let rx = send(&mut journal, original);
@@ -204,15 +174,14 @@ fn boot_with_layout(layout: Option<serde_json::Value>) -> (EngineSession, Journa
     journal
         .begin_engine(&session, EngineSelection::Slot { slot: 1, resume })
         .unwrap();
-    let until = Instant::now() + Duration::from_secs(10);
+    let mut stall = StallBudget::new(&journal);
     while !journal.is_ready(session.id) {
         journal.poll_bootstrap(&mut [&mut session], None).unwrap();
         if resume {
             journal.poll_restore_bootstrap(&session).unwrap();
         }
-        assert!(
-            Instant::now() < until,
-            "bootstrap stalled: started={} epoch={:?} binding={} opening={:?} creations={:?} cleanup={} restore_queue={} restore_reads={} restore_ready={} restore_done={} id_refills={} pending_materializations={}",
+        stall.nap_with(|| format!(
+            "bootstrap (started={} epoch={:?} binding={} opening={:?} creations={:?} cleanup={} restore_queue={} restore_reads={} restore_ready={} restore_done={} id_refills={} pending_materializations={})",
             journal.started,
             journal.runtime_epoch,
             session.journal_binding.is_some(),
@@ -237,8 +206,7 @@ fn boot_with_layout(layout: Option<serde_json::Value>) -> (EngineSession, Journa
             journal.restorations.boot_done(session.id),
             journal.execution_id_requests.len(),
             session.pending_materializations.len(),
-        );
-        std::thread::sleep(Duration::from_millis(1));
+        ));
     }
     (session, journal)
 }
@@ -288,7 +256,7 @@ fn oversized_admission_and_resolution_do_not_halt_other_requests() {
     );
     let leader = send(&mut journal, keyed.clone());
     let follower = send(&mut journal, keyed);
-    let mut idle = IdleBudget::new();
+    let mut stall = StallBudget::new(&journal);
     loop {
         journal.poll_bootstrap(&mut [&mut session], None).unwrap();
         if journal
@@ -299,7 +267,7 @@ fn oversized_admission_and_resolution_do_not_halt_other_requests() {
         {
             break;
         }
-        idle.nap("follower join");
+        stall.nap("follower join");
     }
     let ticket = *journal.commands.pending.keys().next().unwrap();
     journal
@@ -364,14 +332,13 @@ fn resolved_rename_releases_raw_params_before_retaining_input_and_wire_reply() {
             2,
         ),
     );
-    let until = Instant::now() + Duration::from_secs(10);
+    let mut stall = StallBudget::new(&journal);
     let ticket = loop {
         journal.poll_bootstrap(&mut [&mut session], None).unwrap();
         if let Some((ticket, _)) = journal.requests_needing_resolution().into_iter().next() {
             break ticket;
         }
-        assert!(Instant::now() < until);
-        std::thread::sleep(Duration::from_millis(1));
+        stall.nap("rename resolution");
     };
     journal.resolve_ipc_for_engine(ticket, &session);
     let pending = &journal.commands.pending[&ticket];
@@ -405,7 +372,7 @@ fn committed_publication_failure_halts_readers_and_fails_all_pending_replies() {
             1,
         ),
     );
-    let until = Instant::now() + Duration::from_secs(10);
+    let mut stall = StallBudget::new(&journal);
     loop {
         if journal.poll_bootstrap(&mut [&mut session], None).is_err() {
             break;
@@ -413,8 +380,7 @@ fn committed_publication_failure_halts_readers_and_fails_all_pending_replies() {
         for (ticket, _) in journal.requests_needing_resolution() {
             journal.resolve_ipc_for_engine(ticket, &session);
         }
-        assert!(Instant::now() < until);
-        std::thread::sleep(Duration::from_millis(1));
+        stall.nap("publication halt");
     }
     assert!(journal.is_halted());
     assert!(
@@ -485,11 +451,10 @@ fn stale_settings_reset_completion_cannot_overwrite_a_newer_settings_intent() {
             &crate::intent::IntentOrigin::System,
         )
         .unwrap();
-    let until = Instant::now() + Duration::from_secs(10);
+    let mut stall = StallBudget::new(&journal);
     while !journal.commands.pending.is_empty() {
         journal.poll_bootstrap(&mut [&mut session], None).unwrap();
-        assert!(Instant::now() < until);
-        std::thread::sleep(Duration::from_millis(1));
+        stall.nap("settings intent");
     }
     assert_eq!(session.core_state.categories().len(), 2);
     assert_eq!(session.core_state.local_workspaces()[0].category, category);
@@ -514,11 +479,10 @@ fn stale_settings_reset_completion_cannot_overwrite_a_newer_settings_intent() {
         .general
         .workspace_categories_enabled = true;
     session.runtime.settings.general.startup_command = "latest-setting-B".into();
-    let until = Instant::now() + Duration::from_secs(10);
+    let mut stall = StallBudget::new(&journal);
     while !journal.commands.pending.is_empty() {
         journal.poll_bootstrap(&mut [&mut session], None).unwrap();
-        assert!(Instant::now() < until);
-        std::thread::sleep(Duration::from_millis(1));
+        stall.nap("settings intent");
     }
     assert!(
         journal.take_settings_results().is_empty(),
@@ -627,12 +591,11 @@ fn headless_pending_category_intent_uses_the_explicit_engine_journal_admission()
         panic!("journal admission");
     };
     assert_eq!(header.actor, "agent");
-    let until = Instant::now() + Duration::from_secs(10);
+    let mut stall = StallBudget::new(&journal);
     while !journal.commands.pending.is_empty() {
         journal.poll_bootstrap(&mut [&mut session], None).unwrap();
         journal.resolve_headless_requests(&mut session, &mut state, &core);
-        assert!(Instant::now() < until);
-        std::thread::sleep(Duration::from_millis(1));
+        stall.nap("headless intent");
     }
     assert!(
         session
@@ -798,7 +761,7 @@ fn workspace_create_uses_completion_mirror_count_and_serialized_local_append_ord
             2,
         ),
     );
-    let until = Instant::now() + Duration::from_secs(10);
+    let mut stall = StallBudget::new(&journal);
     loop {
         journal.poll_bootstrap(&mut [&mut session], None).unwrap();
         let requests = journal.requests_needing_resolution();
@@ -806,8 +769,7 @@ fn workspace_create_uses_completion_mirror_count_and_serialized_local_append_ord
             journal.resolve_workspace_creation(*ticket, &session, None);
             break;
         }
-        assert!(Instant::now() < until);
-        std::thread::sleep(Duration::from_millis(1));
+        stall.nap("workspace creation");
     }
     // The remote display changes after admission but before the resource publication barrier.
     let mut mirror =
@@ -893,13 +855,12 @@ fn an_unfinished_external_effect_blocks_its_engine_but_not_another_engine() {
             },
         )
         .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let mut stall = StallBudget::new(&journal);
     while !journal.is_ready(second.id) {
         journal
             .poll_bootstrap(&mut [&mut first, &mut second], None)
             .unwrap();
-        assert!(Instant::now() < deadline);
-        std::thread::sleep(Duration::from_millis(1));
+        stall.nap("held external effect");
     }
     let first_ws = first.core_state.local_workspaces()[0].id;
     let second_ws = second.core_state.local_workspaces()[0].id;
@@ -917,13 +878,12 @@ fn an_unfinished_external_effect_blocks_its_engine_but_not_another_engine() {
         journal
             .poll_bootstrap(&mut [&mut first, &mut second], None)
             .unwrap();
-        assert!(Instant::now() < deadline);
-        std::thread::sleep(Duration::from_millis(1));
+        stall.nap("held external effect");
     }
     assert!(journal.bind_command_engine(held_ticket, first.id));
     // Persist a genuine external obligation but deliberately do not attach a transport runner.
     // Its command stays InProgress without delaying the storage worker or publication ACKs.
-    let input = store_waiting_effect_input(&journal, held_ticket, deadline);
+    let input = store_waiting_effect_input(&journal, held_ticket, &mut stall);
     journal
         .commands
         .pending
@@ -950,8 +910,7 @@ fn an_unfinished_external_effect_blocks_its_engine_but_not_another_engine() {
         journal
             .poll_bootstrap(&mut [&mut first, &mut second], None)
             .unwrap();
-        assert!(Instant::now() < deadline);
-        std::thread::sleep(Duration::from_millis(1));
+        stall.nap("held external effect");
     }
     let same = send(
         &mut journal,
@@ -987,11 +946,7 @@ fn an_unfinished_external_effect_blocks_its_engine_but_not_another_engine() {
             assert!(response.error.is_none(), "{response:?}");
             break;
         }
-        assert!(
-            Instant::now() < deadline,
-            "independent engine was blocked by external effects"
-        );
-        std::thread::sleep(Duration::from_millis(1));
+        stall.nap("independent engine (blocked by external effects)");
     }
     assert!(matches!(
         held.try_recv(),
@@ -1009,7 +964,7 @@ fn an_unfinished_external_effect_blocks_its_engine_but_not_another_engine() {
 fn store_waiting_effect_input(
     journal: &JournalApplication,
     held_ticket: u64,
-    deadline: Instant,
+    stall: &mut StallBudget,
 ) -> tasty_core::DataRef {
     use crate::runtime::journal_product::{Completion, Request as WorkerRequest};
     journal
@@ -1029,8 +984,7 @@ fn store_waiting_effect_input(
                 return input;
             }
             Err(std::sync::mpsc::TryRecvError::Empty) => {
-                assert!(Instant::now() < deadline);
-                std::thread::sleep(Duration::from_millis(1));
+                stall.nap("payload store");
             }
             other => panic!("unexpected payload result: {other:?}"),
         }
