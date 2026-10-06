@@ -131,16 +131,20 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             // 같은 키 조합을 보여주는 패널끼리도 스크롤 ID가 겹치지 않게 한다.
             ui.horizontal_top(|ui| {
                 ui.spacing_mut().item_spacing.x = theme.spacing_lg.value();
-                ui.push_id("mh_ctrl", |ui| panel(ui, theme, "Ctrl", CTRL_SECTIONS));
-                ui.push_id("mh_shift", |ui| panel(ui, theme, "Shift", SHIFT_SECTIONS));
+                ui.push_id("mh_ctrl", |ui| {
+                    panel(ui, theme, "Ctrl", CTRL_SECTIONS, RowLabel::Wrap)
+                });
+                ui.push_id("mh_shift", |ui| {
+                    panel(ui, theme, "Shift", SHIFT_SECTIONS, RowLabel::Wrap)
+                });
             });
             ui.horizontal_top(|ui| {
                 ui.spacing_mut().item_spacing.x = theme.spacing_lg.value();
                 ui.push_id("mh_ctrl_mixed", |ui| {
-                    panel(ui, theme, "Ctrl", MIXED_SECTIONS)
+                    panel(ui, theme, "Ctrl", MIXED_SECTIONS, RowLabel::Wrap)
                 });
                 ui.push_id("mh_ctrl_alt", |ui| {
-                    panel(ui, theme, "Ctrl+Alt", EMPTY_SECTIONS)
+                    panel(ui, theme, "Ctrl+Alt", EMPTY_SECTIONS, RowLabel::Wrap)
                 });
             });
         });
@@ -258,13 +262,29 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
+/// 액션 행 라벨이 넘칠 때의 처리.
+#[derive(Clone, Copy)]
+enum RowLabel {
+    /// 본체 `draw_row`처럼 줄을 바꾼다. 본체 사본인 "Held-modifier shortcut panel" Spec 이 쓴다.
+    Wrap,
+    /// 시안 `HintRow`처럼 한 줄로 두고 말줄임한다. 시안을 옮긴 hold·anatomy Spec 이 쓴다.
+    Elide,
+}
+
 /// 180×400 패널 셸 + 드래그 스트립 + 섹션 리스트 + 코너 그립.
-fn panel(ui: &mut egui::Ui, theme: &Theme, held: &str, sections: &[Section]) {
-    panel_sized(ui, theme, held, sections, theme.modhint_height());
+fn panel(ui: &mut egui::Ui, theme: &Theme, held: &str, sections: &[Section], label: RowLabel) {
+    panel_sized(ui, theme, held, sections, theme.modhint_height(), label);
 }
 
 /// 높이를 지정한 패널. 시안의 "resized taller" 예제는 높이만 바꾼다.
-fn panel_sized(ui: &mut egui::Ui, theme: &Theme, held: &str, sections: &[Section], h: LogicalPx) {
+fn panel_sized(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    held: &str,
+    sections: &[Section],
+    h: LogicalPx,
+    label: RowLabel,
+) {
     let w = theme.modhint_width().value();
     let h = h.value();
     let bw = theme.border_width.value();
@@ -288,7 +308,7 @@ fn panel_sized(ui: &mut egui::Ui, theme: &Theme, held: &str, sections: &[Section
                 .auto_shrink([false, false])
                 .drag_to_scroll(false)
                 .show(ui, |ui| {
-                    section_list(ui, theme, w, sections);
+                    section_list(ui, theme, w, sections, label);
                 });
         });
     });
@@ -356,7 +376,7 @@ fn drag_strip(ui: &mut egui::Ui, theme: &Theme, w: f32, held: &str) {
 }
 
 /// 섹션 리스트 — 각 섹션 = ChordHead + HintRow* + RoleRow*.
-fn section_list(ui: &mut egui::Ui, theme: &Theme, w: f32, sections: &[Section]) {
+fn section_list(ui: &mut egui::Ui, theme: &Theme, w: f32, sections: &[Section], label: RowLabel) {
     let pad = theme.modhint_pad().value();
     let inner_w = w - pad * 2.0;
     // 패딩과 고정 폭을 레이아웃으로 지정해 스크롤 영역 밖에 배치되지 않게 한다.
@@ -368,13 +388,13 @@ fn section_list(ui: &mut egui::Ui, theme: &Theme, w: f32, sections: &[Section]) 
             egui::Layout::top_down(egui::Align::Min),
             |ui| {
                 ui.spacing_mut().item_spacing.y = theme.modhint_section_gap().value();
-                section_body(ui, theme, sections);
+                section_body(ui, theme, sections, label);
             },
         );
     });
 }
 
-fn section_body(ui: &mut egui::Ui, theme: &Theme, sections: &[Section]) {
+fn section_body(ui: &mut egui::Ui, theme: &Theme, sections: &[Section], label: RowLabel) {
     ui.vertical(|ui| {
         for sec in sections {
             chord_head(ui, theme, sec.chord);
@@ -390,11 +410,11 @@ fn section_body(ui: &mut egui::Ui, theme: &Theme, sections: &[Section]) {
             if is_empty {
                 empty_row(ui, theme);
             } else {
-                for (label, binding, plugin) in sec.rows {
+                for (text, binding, plugin) in sec.rows {
                     // 조합 헤더에 보조 키가 있으므로 행 키캡에서는 같은 접두어를 뺀다.
                     let prefix = format!("{}+", sec.chord);
                     let leaf = binding.strip_prefix(&prefix).unwrap_or(binding);
-                    hint_row(ui, theme, label, leaf, *plugin);
+                    hint_row(ui, theme, text, leaf, *plugin, label);
                 }
                 for (desc, glyph) in sec.roles {
                     role_row(ui, theme, desc, *glyph);
@@ -425,9 +445,15 @@ fn chord_head(ui: &mut egui::Ui, theme: &Theme, chord: &str) {
     );
 }
 
-/// 액션 행 — (plugin 이면 agent dot) + 라벨 + 우측 Kbd. 시안 `HintRow`처럼 라벨은 한 줄로
-/// 두고 넘치면 말줄임한다.
-fn hint_row(ui: &mut egui::Ui, theme: &Theme, label: &str, binding: &str, plugin: bool) {
+/// 액션 행 — (plugin 이면 agent dot) + 라벨 + 우측 Kbd. 라벨이 넘치면 `overflow`를 따른다.
+fn hint_row(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    label: &str,
+    binding: &str,
+    plugin: bool,
+    overflow: RowLabel,
+) {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
         if plugin {
@@ -439,14 +465,15 @@ fn hint_row(ui: &mut egui::Ui, theme: &Theme, label: &str, binding: &str, plugin
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             kbd(ui, theme, binding);
             ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                ui.add(
-                    egui::Label::new(
-                        egui::RichText::new(label)
-                            .size(theme.font_size_body.value())
-                            .color(theme.modhint_row_fg().to_egui()),
-                    )
-                    .truncate(),
+                let text = egui::Label::new(
+                    egui::RichText::new(label)
+                        .size(theme.font_size_body.value())
+                        .color(theme.modhint_row_fg().to_egui()),
                 );
+                ui.add(match overflow {
+                    RowLabel::Wrap => text.wrap(),
+                    RowLabel::Elide => text.truncate(),
+                });
             });
         });
     });
@@ -694,7 +721,9 @@ fn hold_frame(ui: &mut egui::Ui, theme: &Theme) {
         egui::vec2(pw, ph),
     );
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(panel_rect));
-    child.push_id("mh_hold", |ui| panel(ui, theme, "Ctrl", DEFAULT_SECTIONS));
+    child.push_id("mh_hold", |ui| {
+        panel(ui, theme, "Ctrl", DEFAULT_SECTIONS, RowLabel::Elide)
+    });
 }
 
 /// 누르고 있는 홀드 버튼 — surface-active 채움, border-strong 테두리, Kbd + "Hold".
@@ -760,7 +789,7 @@ pub fn draw_anatomy(ui: &mut egui::Ui, theme: &Theme) {
                                 .color(theme.text_muted().to_egui()),
                         );
                         ui.push_id(("mh_anatomy", i), |ui| {
-                            panel_sized(ui, theme, held, sections, h)
+                            panel_sized(ui, theme, held, sections, h, RowLabel::Elide)
                         });
                     });
                 }
