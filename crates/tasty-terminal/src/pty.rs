@@ -595,6 +595,34 @@ fn default_shell() -> String {
     }
 }
 
+/// Tasty 를 띄운 프로세스에서 상속되지만 자식 셸에 넘기면 안 되는 환경변수의 접두사.
+/// `CMUX_` 는 터미널 안에서 cmux CLI 가 동작하지 않게 하고, `CLAUDE_CODE_` 는
+/// Claude Code 세션 표지(`CLAUDE_CODE_CHILD_SESSION` 등)와 세션 비밀
+/// (`CLAUDE_CODE_MESSAGING_TOKEN` 등)이다. 표지가 남으면 그 셸에서 띄운 Claude 가
+/// 자신을 자식 세션으로 판단해 transcript 를 쓰지 않는다.
+const STRIPPED_ENV_PREFIXES: &[&str] = &["CMUX_", "CLAUDE_CODE_"];
+
+/// 접두사로 묶이지 않는 Claude Code 세션 환경변수.
+const STRIPPED_ENV_NAMES: &[&str] = &[
+    "CLAUDECODE",
+    "CLAUDE_PID",
+    "CLAUDE_EFFORT",
+    "CLAUDE_PLUGIN_DATA",
+];
+
+fn is_stripped_env(key: &str) -> bool {
+    STRIPPED_ENV_NAMES.contains(&key) || STRIPPED_ENV_PREFIXES.iter().any(|p| key.starts_with(p))
+}
+
+/// `inherited` 중 제거 대상 키를 자식 환경에서 지운다. Tasty 가 직접 넣은 TASTY_* 는 대상이 아니다.
+fn strip_inherited_env(cmd: &mut CommandBuilder, inherited: impl Iterator<Item = String>) {
+    for key in inherited {
+        if is_stripped_env(&key) {
+            cmd.env_remove(&key);
+        }
+    }
+}
+
 /// 자식 셸의 인자·환경변수·작업 디렉터리를 구성한다.
 fn build_shell_command(
     shell: &str,
@@ -630,12 +658,7 @@ fn build_shell_command(
         cmd.env("TASTY_PARENT_HOME", &home);
     }
 
-    // Remove CMUX_* environment variables so cmux CLI doesn't work inside tasty terminals.
-    for (key, _) in std::env::vars() {
-        if key.starts_with("CMUX_") {
-            cmd.env_remove(&key);
-        }
-    }
+    strip_inherited_env(&mut cmd, std::env::vars().map(|(key, _)| key));
 
     // Add tasty's own binary directory to PATH so `tasty` CLI works inside the
     // terminal. hook_runtime::trigger::spawn_shell 와 동일한 보강을 공유
@@ -695,6 +718,45 @@ mod tests {
             extra_env: &[],
         })
         .expect("pty spawn")
+    }
+
+    /// Claude Code 세션 키와 CMUX_* 는 지우고 TASTY_*·일반 키는 남긴다.
+    #[test]
+    fn claude_session_and_cmux_env_are_stripped_but_tasty_env_is_kept() {
+        const STRIPPED: &[&str] = &[
+            "CLAUDECODE",
+            "CLAUDE_CODE_SESSION_ID",
+            "CLAUDE_CODE_CHILD_SESSION",
+            "CLAUDE_CODE_SESSION_ATTENDED",
+            "CLAUDE_PID",
+            "CLAUDE_CODE_ENTRYPOINT",
+            "CLAUDE_CODE_MESSAGING_SOCKET",
+            "CLAUDE_CODE_MESSAGING_TOKEN",
+            "CLAUDE_CODE_EXECPATH",
+            "CLAUDE_EFFORT",
+            "CLAUDE_PLUGIN_DATA",
+            "CMUX_SOCKET_PATH",
+        ];
+        const KEPT: &[&str] = &[
+            "TASTY_SURFACE_ID",
+            "TASTY_PARENT_HOME",
+            "TERM",
+            "CLAUDE_CONFIG_DIR",
+            "ANTHROPIC_API_KEY",
+            "MY_CLAUDECODE",
+        ];
+        let mut cmd = CommandBuilder::new("/bin/sh");
+        for key in STRIPPED.iter().chain(KEPT) {
+            cmd.env(key, "1");
+        }
+        let inherited = STRIPPED.iter().chain(KEPT).map(|k| (*k).to_owned());
+        strip_inherited_env(&mut cmd, inherited);
+        for key in STRIPPED {
+            assert_eq!(cmd.get_env(key), None, "{key} 는 지워져야 한다");
+        }
+        for key in KEPT {
+            assert!(cmd.get_env(key).is_some(), "{key} 는 남아야 한다");
+        }
     }
 
     fn wait_until(what: &str, mut cond: impl FnMut() -> bool) {

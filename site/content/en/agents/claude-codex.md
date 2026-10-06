@@ -1,4 +1,4 @@
-<!-- source-hash: 96dda2ac7ad4 -->
+<!-- source-hash: 9e40dca36ecb -->
 # Working with Claude and Codex
 
 Connect Claude Code and Codex CLI to share work across several agents. One agent can launch others and receive their results, so implementation, testing, and review can run alongside each other.
@@ -49,6 +49,8 @@ This creates a new Workspace and runs the CLI in its terminal. If you omit `--wo
 For Codex you can attach approval and sandbox policies with `--approval untrusted|on-request|never`, `--sandbox read-only|workspace-write|danger-full-access`, and `--full-auto` (see "Codex approval policy" below).
 
 For Claude Code you can set the permission mode with `--permission-mode` (see "Claude permission mode" below).
+
+Even when you start Tasty from inside a Claude Code session, the shells in Tasty terminals do not receive that session's environment variables (`CLAUDECODE`, `CLAUDE_CODE_*`, and so on). Claude Code started in such a terminal runs as an independent session and saves its transcript.
 
 <a id="3-driving-child-agents-spawn--tell"></a>
 

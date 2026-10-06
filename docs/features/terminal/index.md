@@ -14,7 +14,11 @@
 
 ### PTY 셸
 
-ConPTY(Windows) / Unix PTY 로 네이티브 셸 실행(`TERM=xterm-256color`). 윈도우 리사이즈 시 자식에 새 크기 전파 — rows 축소 시 커서 아래 빈 행 먼저 제거 후 부족분은 위쪽 행을 scrollback 으로 캡처(커서-콘텐츠 관계 보존), 확대 시 scrollback 에서 복원.
+ConPTY(Windows) / Unix PTY 로 네이티브 셸 실행(`TERM=xterm-256color`).
+
+**자식 셸 환경변수**: Tasty 가 `TERM`·`TASTY_SURFACE_ID`·`TASTY_PARENT_HOME` 을 넣고 `PATH` 앞에 자기 실행 파일 디렉터리를 붙인다. Tasty 프로세스에서 상속한 환경변수 중 `CMUX_*`(터미널 안에서 cmux CLI 가 동작하지 않게)와 Claude Code 세션 변수 `CLAUDECODE`·`CLAUDE_PID`·`CLAUDE_CODE_*`·`CLAUDE_EFFORT`·`CLAUDE_PLUGIN_DATA` 는 지운다. Claude Code 세션 안에서 Tasty 를 띄워도 그 터미널에서 실행한 Claude 가 자식 세션 표지(`CLAUDE_CODE_CHILD_SESSION`)를 물려받아 transcript 저장을 끄지 않고, 세션 비밀(`CLAUDE_CODE_MESSAGING_TOKEN` 등)이 무관한 셸로 새지 않는다. 목록은 `crates/tasty-terminal/src/pty.rs` 의 `STRIPPED_ENV_PREFIXES`·`STRIPPED_ENV_NAMES` 한 곳에 있으며 Windows·macOS·Linux 가 같은 코드 경로를 쓴다.
+
+윈도우 리사이즈 시 자식에 새 크기 전파 — rows 축소 시 커서 아래 빈 행 먼저 제거 후 부족분은 위쪽 행을 scrollback 으로 캡처(커서-콘텐츠 관계 보존), 확대 시 scrollback 에서 복원.
 
 **작업 디렉토리 상속**: 새 surface 생성 시 소스의 현재 cwd 를 상속(`general.inherit_cwd`, 기본 on). macOS/Linux 는 셸 PID 로 OS 직접 조회(`proc_pidinfo` / `/proc/<pid>/cwd`, OSC 7 캐시 우선), Windows 는 타 프로세스 cwd API 부재로 셸이 내보내는 OSC 7 캐시에만 의존(합성 rcfile 로 OSC 7 emit 강제). 합성 rcfile 은 OSC 0(cwd 기반 탭 제목, `__tasty_title`)도 함께 보내며, 빌트인 블록에 버전 스탬프(`# tasty-bashrc-v<N>`)를 심어 스탬프가 다른 기존 `~/.tasty/bashrc`·`bashrc.default` 를 셸 spawn 시 자동 재생성한다(`ensure_compiled_bashrc_in` — 사용자 편집 영역 `bashrc.user` 는 보존). carry 규칙은 [surface-cwd invariant](../../design/policies/cwd.md#surface-cwd-invariant).
 
