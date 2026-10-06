@@ -1,6 +1,7 @@
 //! 줄 번호 거터가 있는 여러 줄 고정폭 입력. 상자는 Input 과 같고(surface-raised · border-default ·
 //! radius · focus 테두리와 ring · invalid · disabled), 글자는 mono caption 이다.
-//! 줄을 바꿔 감싸지 않는다. 내용이 `codearea-max-height` 를 넘으면 상자 안에서 스크롤하며,
+//! 줄을 바꿔 감싸지 않는다. 테두리를 포함한 바깥 높이가 `codearea-max-height` 에 닿으면 상자 안에서
+//! 스크롤하며,
 //! 거터는 가로 스크롤에도 왼쪽에 남는다.
 //! 디자인의 오류 줄 번호 semibold 는 egui UI 에 굵은 글꼴을 등록하지 않아 재현하지 않는다.
 
@@ -99,12 +100,10 @@ impl<'a> CodeArea<'a> {
 
         let lines = buf.split('\n').count().max(self.min_rows);
         let content_h = lines as f32 * line_h + pad_y * 2.0;
-        let viewport_h = content_h.min(theme.codearea_max_height().value());
+        // 디자인 kit 은 border-box 라 max-height 는 테두리를 포함한 바깥 높이다.
+        let outer_h = (content_h + bw * 2.0).min(theme.codearea_max_height().value());
         let width = ui.available_width();
-        let (outer, _) = ui.allocate_exact_size(
-            egui::vec2(width, viewport_h + bw * 2.0),
-            egui::Sense::hover(),
-        );
+        let (outer, _) = ui.allocate_exact_size(egui::vec2(width, outer_h), egui::Sense::hover());
         let inner = outer.shrink(bw);
 
         let bg = if self.enabled {
@@ -318,7 +317,7 @@ mod tests {
         (rect, output)
     }
 
-    /// 상자는 min_rows 만큼 자라고, 내용이 max-height 를 넘으면 그 높이에서 멈춘다.
+    /// 상자는 min_rows 만큼 자라고, 바깥 높이가 max-height 에 닿으면 그 높이에서 멈춘다.
     #[test]
     fn the_box_grows_with_lines_up_to_the_max_height() {
         let theme = tasty_themes::mocha_fallback();
@@ -335,7 +334,8 @@ mod tests {
 
         let mut many = "a\n".repeat(200);
         let (rect, _) = run(&ctx, &mut many, None);
-        let max = theme.codearea_max_height().value() + theme.border_width.value() * 2.0;
+        // max-height 는 테두리를 포함한 바깥 높이다(kit border-box).
+        let max = theme.codearea_max_height().value();
         assert!((rect.height() - max).abs() < 0.01);
     }
 
