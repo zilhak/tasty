@@ -22,8 +22,8 @@ const ELASTIC_GAP: LogicalPx = LogicalPx(18.0);
 const ELASTIC_LABEL_GAP: LogicalPx = LogicalPx(6.0);
 /// 기각된 기록용 메뉴의 흐림 — `opacity: 0.75`.
 const REJECTED_OPACITY: f32 = 0.75;
-/// 메뉴 행의 고정 문구. 본체 `popup.mouse_capture_banner_menu` 영어 문구와 같다.
-const SUPPRESS_PREFIX: &str = "Turn off this notification for ";
+/// 메뉴 행의 고정 문구 — 시안 `BannerMoreMenuG` 의 행 문구.
+const SUPPRESS_PREFIX: &str = "Turn off this notice for ";
 const DISABLE_PREFIX: &str = "Disable mouse capture for ";
 
 /// bg-app 무대 — 가운데 정렬 세로 묶음.
@@ -177,7 +177,7 @@ pub fn draw_elastic(ui: &mut egui::Ui, theme: &Theme) {
         &[
             ("label", "fixed text + app name (2 spans)"),
             ("truncates", "the app name only"),
-            ("app name", "mono · --tasty-text-primary"),
+            ("app name", "mono · text-primary"),
             ("width", "content-sized, 200 ≤ w ≤ 288"),
             ("wrap", "never — 1 line per row"),
             ("tooltip", "full program name on the row"),
@@ -197,6 +197,14 @@ pub fn draw_elastic(ui: &mut egui::Ui, theme: &Theme) {
                 theme.accent_danger().to_egui(),
             ),
         ],
+    );
+    spec::note(
+        ui,
+        theme,
+        "The body menu (src/adapters/ui/mouse_capture_menu.rs) is a fixed 240px wide and its \
+         first row reads \u{201c}Turn off this notification for\u{201d} \
+         (popup.mouse_capture_banner_menu); this spec draws the kit elastic width and the kit \
+         \u{201c}notice\u{201d} copy.",
     );
     spec::do_(
         ui,
@@ -262,26 +270,32 @@ fn more_menu(ui: &mut egui::Ui, theme: &Theme, app: &str, hovered: Option<usize>
         .show(ui, |ui| {
             ui.set_width(outer - chrome);
             ui.spacing_mut().item_spacing.y = 0.0;
-            mouse_capture_menu_row_tone(
-                ui,
-                theme,
-                icons::BELL,
-                SUPPRESS_PREFIX,
-                app,
-                "",
-                hovered == Some(0),
-                false,
-            );
-            mouse_capture_menu_row_tone(
-                ui,
-                theme,
-                icons::MOUSE,
-                DISABLE_PREFIX,
-                app,
-                "",
-                hovered == Some(1),
-                danger,
-            );
+            let rows = [
+                (icons::BELL, SUPPRESS_PREFIX, false),
+                (icons::MOUSE, DISABLE_PREFIX, danger),
+            ];
+            for (i, (icon, prefix, tone)) in rows.into_iter().enumerate() {
+                // 시안 MenuItem `active` 는 surface-active 채움이다. 행 헬퍼의 hover 채움
+                // (overlay-hover)은 쓰지 않고, 행 아래 자리를 먼저 잡아 두었다가 채운다.
+                let fill = ui.painter().add(egui::Shape::Noop);
+                let top = ui.cursor().min;
+                let w = ui.available_width();
+                mouse_capture_menu_row_tone(ui, theme, icon, prefix, app, "", false, tone);
+                if hovered == Some(i) {
+                    let rect = egui::Rect::from_min_size(
+                        top,
+                        egui::vec2(w, theme.menu_item_height().value()),
+                    );
+                    ui.painter().set(
+                        fill,
+                        egui::Shape::rect_filled(
+                            rect,
+                            theme.menu_item_radius().value(),
+                            theme.surface_active().to_egui(),
+                        ),
+                    );
+                }
+            }
         });
     resp.response.on_hover_text(app);
 }
