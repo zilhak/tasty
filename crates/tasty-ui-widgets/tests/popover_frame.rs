@@ -65,3 +65,44 @@ fn tooltips_use_tooltip_tokens_and_popovers_use_menu_tokens_only_inside_the_wrap
     );
     assert_eq!(frame_of(&ctx.style().visuals), tooltip);
 }
+
+/// 래퍼 안에서 연 팝오버의 내용은 테두리와 `popup-content-margin` 만큼 틀 안쪽에서 시작한다.
+#[test]
+fn a_popover_opened_inside_the_wrapper_keeps_the_menu_inner_ring() {
+    let th = theme();
+    let ctx = egui::Context::default();
+    tasty_egui_theme::apply_theme_to_egui(&th, &ctx);
+    let mut seen = None;
+    // 첫 프레임에 열고, 팝업 영역 크기가 정해진 뒤의 위치를 읽는다.
+    for frame in 0..3 {
+        let input = RawInput {
+            screen_rect: Some(Rect::from_min_size(pos2(0.0, 0.0), vec2(400.0, 300.0))),
+            ..Default::default()
+        };
+        let _output = ctx.run(input, |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let anchor = ui.label("anchor");
+                let id = ui.make_persistent_id("ring");
+                if frame == 0 {
+                    ui.memory_mut(|m| m.open_popup(id));
+                }
+                tasty_egui_theme::with_popover_frame(ui, &th, |ui| {
+                    egui::popup_below_widget(
+                        ui,
+                        id,
+                        &anchor,
+                        egui::PopupCloseBehavior::CloseOnClickOutside,
+                        |ui| {
+                            let row = ui.label("row").rect;
+                            seen = Some((row.min, ui.ctx().memory(|m| m.area_rect(id))));
+                        },
+                    );
+                });
+            });
+        });
+    }
+    let (row, area) = seen.expect("팝오버가 그려지지 않았다");
+    let area = area.expect("팝오버 영역이 기록되지 않았다");
+    let inset = th.border_width.value() + th.popup_content_margin().value();
+    assert_eq!(row - area.min, vec2(inset, inset));
+}

@@ -51,14 +51,19 @@ pub fn popup_chrome_width(theme: &Theme) -> f32 {
     (theme.multiselect_menu_padding().value() + theme.border_width.value()) * 2.0
 }
 
-/// 메뉴 프레임용 style. egui 팝업은 부모 style로 프레임을 만들므로 안쪽 여백·그림자만 바꾼 사본을
-/// 넘긴다. 채움·테두리·반경은 `with_popover_frame`이 메뉴 토큰으로 정하며 multiselect-menu-bg·border·
-/// radius 는 그 별칭이다. 메뉴 안의 행 style은 바뀌지 않는다.
+/// 메뉴 프레임용 style. egui 팝업은 부모 style로 프레임을 만들므로 그림자만 바꾼 사본을 넘긴다.
+/// 채움·테두리·반경은 `with_popover_frame`이 메뉴 토큰으로 정하며 multiselect-menu-bg·border·
+/// radius 는 그 별칭이다. 안쪽 여백은 래퍼 안에서 [`menu_margin`]으로 정한다. 메뉴 안의 행 style은
+/// 바뀌지 않는다.
 fn menu_style(base: &egui::Style, theme: &Theme) -> egui::Style {
     let mut style = base.clone();
     style.visuals.popup_shadow = theme.shadow_popover().to_egui();
-    style.spacing.menu_margin = egui::Margin::same(theme.multiselect_menu_padding().value() as i8);
     style
+}
+
+/// 메뉴 안쪽 여백 `multiselect-menu-padding`. 래퍼가 메뉴 공통 둘레로 덮어쓰므로 래퍼 안에서 넣는다.
+fn menu_margin(theme: &Theme) -> egui::Margin {
+    egui::Margin::same(theme.multiselect_menu_padding().value() as i8)
 }
 
 /// egui Memory에 저장하는 인스턴스별 키보드 커서의 키.
@@ -417,6 +422,7 @@ pub fn multi_select(
         .rect
         .translate(egui::vec2(0.0, theme.multiselect_menu_gap().value()));
     tasty_egui_theme::with_popover_frame(&mut menu_parent, theme, |ui| {
+        ui.spacing_mut().menu_margin = menu_margin(theme);
         egui::popup_below_widget(
             ui,
             popup_id,

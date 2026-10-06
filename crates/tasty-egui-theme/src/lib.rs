@@ -23,8 +23,10 @@ fn stroke1(theme: &Theme, c: HexColor) -> egui::Stroke {
 
 /// 버튼에 붙는 egui 팝오버(`popup_below_widget` · `popup_above_or_below_widget` ·
 /// `ComboBox`)를 `add` 안에서 열면 그 틀이 메뉴 컨테이너 토큰(menu-bg · menu-border ·
-/// menu-radius)을 쓴다. egui 는 팝오버 틀을 부모 `Ui` 스타일로, tooltip 틀을 전역 스타일로
-/// 그리므로 부모 스타일만 잠시 바꾼다. 자식 `Ui` 를 만들지 않아 위젯·팝업 ID 는 그대로다.
+/// menu-radius)을 쓰고, 안쪽 둘레는 앵커 메뉴 팝업 공통인 `popup-content-margin` 이다.
+/// egui 는 팝오버 틀을 부모 `Ui` 스타일로, tooltip 틀을 전역 스타일로 그리므로 부모 스타일만
+/// 잠시 바꾼다. 자식 `Ui` 를 만들지 않아 위젯·팝업 ID 는 그대로다. 안쪽 둘레를 따로 정하는
+/// 팝오버는 `add` 안에서 팝오버를 열기 전에 `menu_margin` 을 바꾼다.
 pub fn with_popover_frame<R>(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -35,6 +37,8 @@ pub fn with_popover_frame<R>(
     visuals.window_fill = theme.menu_bg().into();
     visuals.window_stroke = stroke1(theme, theme.menu_border());
     visuals.menu_corner_radius = theme.menu_radius().value().into();
+    ui.style_mut().spacing.menu_margin =
+        egui::Margin::same(theme.popup_content_margin().value().round() as i8);
     let out = add(ui);
     ui.set_style(prev);
     out
