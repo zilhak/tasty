@@ -304,6 +304,50 @@ fn attach_into_gui_to_the_own_port_is_refused_before_queueing() {
     assert_eq!(outcome, "attached_workspace");
 }
 
+/// 다른 포트에서 자기 IPC 포트로 바이트를 그대로 넘기는 중계. 사용자가 연 `ssh -L` 터널을 대신한다.
+#[cfg(feature = "gui")]
+fn relay_to(target: u16) -> u16 {
+    use std::net::{TcpListener, TcpStream};
+    let listener = TcpListener::bind("127.0.0.1:0").expect("relay listener");
+    let port = listener.local_addr().expect("relay addr").port();
+    std::thread::spawn(move || {
+        for inbound in listener.incoming() {
+            let Ok(inbound) = inbound else { return };
+            let Ok(outbound) = TcpStream::connect(("127.0.0.1", target)) else {
+                return;
+            };
+            let (mut a_read, mut b_write) = (
+                inbound.try_clone().expect("clone inbound"),
+                outbound.try_clone().expect("clone outbound"),
+            );
+            let (mut b_read, mut a_write) = (outbound, inbound);
+            std::thread::spawn(move || std::io::copy(&mut a_read, &mut b_write));
+            std::thread::spawn(move || std::io::copy(&mut b_read, &mut a_write));
+        }
+    });
+    port
+}
+
+/// 다른 포트를 거쳐 자기 자신에 닿는 attach.into_gui는 상대의 instance_id로 판정해 오류로 응답한다.
+/// 헤드리스는 자기 포트만 비교하고 큐를 처리하지 않으므로 GUI에서만 확인한다.
+#[cfg(feature = "gui")]
+#[test]
+fn attach_into_gui_through_a_tunnel_to_itself_is_refused_before_queueing() {
+    let server = common::shared();
+    let ws = server.create_workspace("tunnel-self-attach-refused");
+    let reply = server.call_raw(
+        "attach.into_gui",
+        json!({ "port": relay_to(server.port()), "workspace": ws.id }),
+    );
+    assert_eq!(reply["error"]["code"], -32602, "{reply}");
+    let message = reply["error"]["message"].as_str().unwrap_or_default();
+    assert!(message.contains("reaches this instance itself"), "{reply}");
+    settle(server);
+    #[cfg(debug_assertions)]
+    assert_eq!(dispatch_completion(server, ws.id, INTO_GUI_SOURCE), None);
+    assert!(!is_attached(server, ws.surface_id));
+}
+
 /// IPC remote.attach가 loopback 주소로 자기 포트를 가리키면 연결 시도를 시작하기 전에 오류로 응답한다.
 #[cfg(feature = "gui")]
 #[test]

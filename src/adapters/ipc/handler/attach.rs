@@ -141,30 +141,48 @@ pub(crate) fn refuse_own_port(
     })
 }
 
-/// 지정한 port와 workspace의 mirror 생성을 GUI 큐에 요청한다. 자기 포트는 큐에 넣기 전에 거절한다.
-/// 실제 연결·생성은 App이 처리하며 헤드리스는 이 큐를 처리하지 않는다.
+/// `attach.into_gui`의 대상 port와 원격 workspace를 읽고 자기 포트를 거절한다.
+/// GUI는 App 층에서, 헤드리스는 아래 engine 처리기에서 같은 판정을 쓴다.
+pub(crate) fn into_gui_target(
+    own_port: Option<u16>,
+    id: &serde_json::Value,
+    params: &serde_json::Value,
+) -> Result<(u16, u32), JsonRpcResponse> {
+    let port = match params::opt_int::<u64>(params, "port", id)? {
+        Some(v) if v <= u16::MAX as u64 => v as u16,
+        _ => {
+            return Err(JsonRpcResponse::invalid_params(
+                id.clone(),
+                "Missing/invalid 'port' parameter",
+            ));
+        }
+    };
+    let workspace = super::params::require_u32(params, "workspace", id)?;
+    if let Some(refused) = refuse_own_port(own_port, port, id.clone()) {
+        return Err(refused);
+    }
+    Ok((port, workspace))
+}
+
+/// `attach.into_gui`의 접수 응답.
+pub(crate) fn into_gui_queued(id: serde_json::Value, port: u16, workspace: u32) -> JsonRpcResponse {
+    JsonRpcResponse::success(
+        id,
+        json!({ "queued": true, "port": port, "workspace": workspace }),
+    )
+}
+
+/// 헤드리스의 `attach.into_gui`. 자기 포트만 거절하고 큐에 넣는다. 헤드리스는 이 큐를 처리하지
+/// 않으므로 mirror가 생기지 않는다. GUI는 App 층(`attach_client::into_gui`)이 먼저 처리한다.
 pub(crate) fn handle_into_gui(
     engine: &mut EngineMut<'_>,
     own_port: Option<u16>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    let port = match p_try!(params::opt_int::<u64>(params, "port", &id)) {
-        Some(v) if v <= u16::MAX as u64 => v as u16,
-        _ => return JsonRpcResponse::invalid_params(id, "Missing/invalid 'port' parameter"),
-    };
-    let workspace = match super::params::require_u32(params, "workspace", &id) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    if let Some(refused) = refuse_own_port(own_port, port, id.clone()) {
-        return refused;
-    }
+    let (port, workspace) = p_try!(into_gui_target(own_port, &id, params));
     engine.remote.pending_gui_attach.push((port, workspace));
-    JsonRpcResponse::success(
-        id,
-        json!({ "queued": true, "port": port, "workspace": workspace }),
-    )
+    into_gui_queued(id, port, workspace)
 }
 
 /// surface와 workspace 점유 목록을 함께 반환한다.

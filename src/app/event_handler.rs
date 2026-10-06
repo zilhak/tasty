@@ -162,6 +162,7 @@ impl ApplicationHandler<AppEvent> for App {
             AppEvent::AutoAttachReady => {
                 self.poll_remote_browsers();
                 self.drain_auto_attach_results();
+                self.drain_into_gui_checks();
             }
             AppEvent::ScreenshotCaptureReady => {
                 self.drain_screenshot_capture_results();
@@ -457,6 +458,7 @@ impl ApplicationHandler<AppEvent> for App {
         }
 
         // 방금 IPC가 만든 attach 요청을 이번 회차에 처리한다.
+        self.drain_into_gui_checks();
         self.dispatch_pending_gui_attach();
 
         // 사용자가 닫은 mirror의 연결도 정리해야 원격 점유가 남지 않는다.

@@ -577,7 +577,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("attach.release", plugin(Idempotent, &[])),
         ("attach.force_detach", plugin(Idempotent, &[])),
         ("attach.force_detach_workspace", plugin(Idempotent, &[])),
-        ("attach.into_gui", plugin(Mutate, &[])),
+        ("attach.into_gui", plugin(Mutate, &[]).kept_by_app_layer()),
         ("attach.list", plugin(Read, &[])),
         // ── remote.profile.* (원격 접속 프로필 CRUD) ─────────────────────
         // 프로필은 비밀 없는 장비 인벤토리(passkey 를 이름으로 참조만). attach.* 와 동일하게

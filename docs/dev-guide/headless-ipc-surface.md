@@ -204,6 +204,8 @@ GUI 조건에 따른다. 창이 없다는 이유로 권한 요청 자체를 막�
 | `remote.refusals` | 거절을 기록하는 `remote.attach` 와 자동 attach 가 GUI 에만 있다 |
 | `system.gpu_stats` | 창마다의 GpuState 와 wgpu 전역 리포트를 센다. GPU 컨텍스트가 없다 |
 
+`attach.into_gui` 는 위 두 표 어디에도 속하지 않는다. GUI 는 app 층이 가로채 다른 포트를 거쳐 자기 자신에 닿는지 워커에서 확인한 뒤 응답하고, 헤드리스는 engine 처리기가 그대로 답한다(자기 포트만 거절하고 큐에 넣는다). 헤드리스는 그 큐를 처리하지 않아 mirror 가 생기지 않으므로 터널 너머의 자기 판정이 필요 없다. 소스 검사의 `NOT_IN_HEADLESS` 에는 이 사유로 등록돼 있다.
+
 `plugin.*`의 현재 분류는 위 "`plugin.*` — 19 개 메서드의 판정" 절을 따른다.
 
 <a id="dispatch-arm-이-gui-로-게이트된-표면"></a>

@@ -40,6 +40,10 @@ const NOT_IN_HEADLESS: &[(&str, &str)] = &[
         "mirror workspace 를 띄울 창이 필요하다 — winit proxy 로 창 생성 이벤트를 보낸다",
     ),
     (
+        "attach.into_gui",
+        "헤드리스는 engine 처리기가 자기 포트만 거절하고 큐에 넣는다 — 큐를 처리하지 않아 mirror 가 생기지 않으므로 터널 너머 자기 판정이 필요 없다",
+    ),
+    (
         "remote.refusals",
         "거절을 기록하는 remote.attach 와 자동 attach 가 GUI 에만 있다",
     ),

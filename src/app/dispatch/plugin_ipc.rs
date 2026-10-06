@@ -74,6 +74,9 @@ impl App {
             if self.defer_plugin_preset_capture(&call) {
                 continue;
             }
+            if self.defer_plugin_attach_into_gui(&call) {
+                continue;
+            }
             if self
                 .journal
                 .admit_plugin(&request, &caller, &call, self.plugin_manager.as_ref())
@@ -85,6 +88,16 @@ impl App {
             }
             self.handle_ipc_default_dispatch(&call, &checked);
         }
+    }
+
+    /// 외부 IPC와 같은 메서드다. 메인 루프가 답하는 system.info로 대상 포트의 상대를 확인하므로
+    /// engine 처리기 대신 App 층에서 판정한 뒤 답한다.
+    fn defer_plugin_attach_into_gui(&mut self, call: &PendingPluginCall) -> bool {
+        if call.method != "attach.into_gui" {
+            return false;
+        }
+        self.plugin_dispatch_attach_into_gui(call);
+        true
     }
 
     /// Gates and cross-plugin namespace routing have already selected the host fallback.

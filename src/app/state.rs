@@ -13,6 +13,9 @@ pub(crate) struct AppState {
     pub(crate) started: bool,
     #[cfg(feature = "gui")]
     pub(crate) mirror_attempts: crate::app::attach_client::attempts::MirrorAttempts,
+    /// 워커가 자기 자신 여부를 판정한 `attach.into_gui` 요청.
+    #[cfg(feature = "gui")]
+    pub(crate) into_gui_checks: crate::app::attach_client::into_gui::IntoGuiChecks,
     #[cfg(feature = "gui")]
     pub(crate) pending_host_events: Vec<crate::core::host_event::PendingHostEvent>,
     #[cfg(not(feature = "gui"))]
