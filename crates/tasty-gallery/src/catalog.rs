@@ -6,6 +6,7 @@ pub mod chrome_loading;
 pub mod components;
 pub mod components_settled;
 pub mod foundations_disabled_ink;
+pub mod foundations_rolegaps;
 pub mod foundations_settled;
 pub mod foundations_shape;
 pub mod foundations_uiscale;
@@ -327,6 +328,22 @@ pub fn pages() -> Vec<Page> {
                     "rolegaps",
                     "Role gaps — settled",
                     vec![
+                        spec(
+                            "role-colors",
+                            "Colors that had no role of their own",
+                            Some(
+                                "C1–C7 · four new roles, three moves to the role they should have used",
+                            ),
+                            foundations_rolegaps::draw_role_colors,
+                        ),
+                        spec(
+                            "c1-correction",
+                            "C1 correction — the popup frame does move, and should (settled)",
+                            Some(
+                                "popup frame border-strong → border-frame · pane divider unchanged",
+                            ),
+                            foundations_rolegaps::draw_c1_correction,
+                        ),
                         spec(
                             "half-pixel-type",
                             "Half-pixel type sizes snap to the scale",
