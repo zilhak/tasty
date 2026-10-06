@@ -1,12 +1,14 @@
 /* Site layout and document typography. Colors come from the vendored design
- * tokens; spacing and font sizes use a separate scale suited to web prose.
+ * tokens; spacing and radii use the site's own scale suited to web prose.
  *
  * Every rule here is the site's own (docs/dev-guide/site.md): spacing uses --sp-*
  * and radii use --radius*, both defined below. Literal values left without a line
  * comment belong to axes the site scale does not have: font sizes, element and
  * layout sizes, stroke widths (borders, outlines, the drawn caret), pill radii
- * (999px) and decoration offsets. Media query conditions stay literal because a
- * query condition cannot read a custom property. */
+ * (999px) and decoration offsets. Dimensions in em, rem or ch follow the reader's
+ * font size (inline code padding, prose measure) and stay relative rather than
+ * moving to the pixel scale. Media query conditions stay literal because a query
+ * condition cannot read a custom property. */
 
 
 
