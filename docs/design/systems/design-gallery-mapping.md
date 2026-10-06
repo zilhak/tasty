@@ -63,7 +63,7 @@ tab="attach"` / `RemoteFormFrame` variant `attach-ref`·`attach-inline`)를 전�
 | `RaNewWsRow` | `remote_attach/new_row.rs`의 `new_ws_row` + `dot_slot_glyph` / `new_ws_error` / `row_separator` (`remote-workspace-attach-new-row` spec, 5상태) | `draw_ws_list` → `new_ws_row` (+ `dot_slot_glyph` / `new_ws_error` / `row_separator`) |
 | `RaRemoteWsRow` | `remote_attach/rows.rs`의 `ws_row` (+ `dot_slot_status`) | `ws_row` |
 | DS `CenterState`(우측 pane 의 initial·connecting·error) | `remote_attach/panes.rs`의 `right_pane` → 공용 `CenterState` (`remote-workspace-attach-states` spec) | `draw_right_pane` → 공용 `CenterState` |
-| `RemoteAttachFrame emptyPlan="A"`(채택하지 않은 비교안) | `RaState::EmptyPlanA` → `remote_attach/panes.rs`의 `right_pane` → 공용 `CenterState` + 생성 액션 (`remote-workspace-attach-empty-plans` spec, plan B 카드와 나란히) | 없음 — 본체는 plan B(빈 목록이면 새 행을 미리 선택)만 구현한다 |
+| `RemoteAttachFrame emptyPlan="A"`(채택하지 않은 비교안) | `RaState::EmptyPlanA` → `remote_attach/panes.rs`의 `plan_a_center`. 공용 `CenterState`가 아니라 시안 `center()` 값을 쓴다: `paneEmpty` 16 × 1.4 `text-placeholder` · 제목 13 `text-muted` · 보조 줄 11(호스트 mono, 줄 높이 1.5) · Secondary sm 생성 버튼 · 안쪽 여백 `space-xl`/`space-lg` · 간격 `space-sm` (`remote-workspace-attach-empty-plans` spec, plan B 카드와 나란히) | 없음 — 본체는 plan B(빈 목록이면 새 행을 미리 선택)만 구현한다 |
 | `RaInUseBadge` | `remote_attach/rows.rs`의 `badge` | `badge` |
 | loaded 렌더 경로(`conn==="loaded"`) | `remote_attach/panes.rs`의 `loaded_pane` (+ `remote_attach/rows.rs`의 `empty_line`) | `draw_right_pane`의 `Loaded` 분기 → `draw_ws_list` |
 | footer `Connect` / `Create & connect` | `remote_attach.rs`의 `footer` | `draw_footer` |
