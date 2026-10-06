@@ -140,6 +140,11 @@ pub struct MainViewState {
     /// 한 프레임 전 값을 사용한다. 콘텐츠의 물리 rect인 plugin_mesh_popup_regions와 다르다.
     #[cfg(feature = "gui")]
     pub(crate) plugin_popup_hittest: Vec<crate::adapters::ui::popup::occlusion::Occluder>,
+    /// 이전 프레임에 플러그인 팝업을 실제로 배치한 범위. 좁은 surface 라 창 범위로 연
+    /// 팝업의 자식 파일 피커가 선언이 아니라 이 범위를 따른다. 숨은 팝업은 들어 있지 않다.
+    #[cfg(feature = "gui")]
+    pub(crate) plugin_popup_placed_scopes:
+        std::collections::HashMap<u64, crate::adapters::ui::popup::PopupScope>,
     /// 현재 프레임 배너 Area의 레이어. 오버레이 그리기 순서를 정할 때 쓴다.
     #[cfg(feature = "gui")]
     pub(crate) banner_layer: Option<egui::LayerId>,

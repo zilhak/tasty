@@ -73,6 +73,41 @@ fn trigger_inherits_declaration_and_target_not_just_target() {
 }
 
 #[test]
+fn the_child_follows_the_scope_its_parent_was_actually_placed_in() {
+    // 좁은 surface 라 창 범위로 연 부모, 그리고 surface 에 그대로 놓인 부모.
+    for (placed, expected) in [
+        (Some(PopupScope::Window), PopupScope::Window),
+        (Some(PopupScope::Surface(17)), PopupScope::Surface(17)),
+        (None, PopupScope::Surface(17)),
+    ] {
+        let (mut state, _) = trigger(Some(7));
+        if let Some(scope) = placed {
+            state.plugin_popup_placed_scopes.insert(7, scope);
+        }
+        let inst = parent("surface", Some(17));
+        inherit_file_picker_scope(&mut state, [(7, &inst)].into_iter());
+        assert_eq!(
+            state.popups.get_mut(FILE_PICKER_POPUP_ID).unwrap().scope,
+            expected
+        );
+    }
+}
+
+#[test]
+fn a_placed_scope_of_another_instance_is_not_inherited() {
+    let (mut state, _) = trigger(Some(7));
+    state
+        .plugin_popup_placed_scopes
+        .insert(8, PopupScope::Window);
+    let inst = parent("surface", Some(17));
+    inherit_file_picker_scope(&mut state, [(7, &inst)].into_iter());
+    assert_eq!(
+        state.popups.get_mut(FILE_PICKER_POPUP_ID).unwrap().scope,
+        PopupScope::Surface(17)
+    );
+}
+
+#[test]
 fn ownerless_and_foreign_owner_cannot_inherit_another_plugins_scope() {
     for owner in [None, Some(8), Some(7)] {
         let (mut state, _) = trigger(owner);

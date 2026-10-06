@@ -192,6 +192,8 @@ impl RequestContext {
             #[cfg(feature = "gui")]
             plugin_popup_hittest: Vec::new(),
             #[cfg(feature = "gui")]
+            plugin_popup_placed_scopes: std::collections::HashMap::new(),
+            #[cfg(feature = "gui")]
             banner_layer: None,
             #[cfg(feature = "gui")]
             modifier_hint_layer: None,

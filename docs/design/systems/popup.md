@@ -53,7 +53,7 @@ plugin 이 `file_picker.trigger`로 host popup 을 열 때 `owner_popup_instance
 
 관계가 성립하면:
 
-- **범위 상속·숨김 보존** — host는 요청자와 부모 instance를 대조해 선언 종류+target의 유효 범위를 자식 파일 피커에 적용한다([ADR-0036](../../adr/0036-overlay-scope-and-lifetime.md)). 부모가 숨으면 자식도 paint/hit/Esc/키 게이트에서 빠지고, 돌아오면 draft·선택·pending 요청을 그대로 이어간다. 숨김은 닫기로 처리하지 않는다. Window 부모와 owner 없는 피커는 창 범위다.
+- **범위 상속·숨김 보존** — host는 요청자와 부모 instance를 대조해 부모가 직전 frame 에 실제로 놓인 범위(좁은 surface 라 창 범위로 대체된 경우 포함)를, 아직 놓이지 않았으면 선언 종류+target의 유효 범위를 자식 파일 피커에 적용한다([ADR-0036](../../adr/0036-overlay-scope-and-lifetime.md)). 부모가 숨으면 자식도 paint/hit/Esc/키 게이트에서 빠지고, 돌아오면 draft·선택·pending 요청을 그대로 이어간다. 숨김은 닫기로 처리하지 않는다. Window 부모와 owner 없는 피커는 창 범위다.
 - **스택 유지** — 자식이 열려 있는 동안 부모는 outside-click dismiss 대상에서 빠진다. 부모를 모달로 잠그는 것이 아니라 dismiss 목록에서만 제외한다(popup은 포커스를 독점하지 않으므로).
 - **Esc 소유권** — host/plugin 통틀어 그 프레임 최상단 popup **하나만** Esc 를 소비한다. Esc 를 한 번 누르면 최상단 팝업 하나가 닫힌다. host 쪽 판정은 `MainViewState.popup_escape_owner`(`popup::frame` 이 매 프레임 결정), plugin 쪽은 `popup_render` 가 같은 z 축으로 비교한다. **host popup 끼리의 Esc 중재는 범위 밖** — 각 view 가 자기 Esc 를 직접 소비하며, 현재 스택에 참여하는 `file_picker` 에만 게이트가 붙어 있다.
 - **연쇄 정리** — 부모가 어떤 경로로 닫히든 자식 피커에 취소 결과가 채워져, 평소 result 경로 그대로 plugin 에 `cancelled: true` 가 전달되고 피커도 닫힌다. 부모 없는 피커나 결과 유실을 남기지 않는다. 사용자가 이미 확정한 결과는 덮지 않는다.
@@ -171,8 +171,9 @@ scrim 도 그 범위를 덮는다(위 §scrim 의 범위). 보이는 범위의 �
 줄이면 버튼이 잘려 확정할 수 없기 때문이다. 배치·scrim·히트테스트가 모두 이 실효 범위를 쓰고,
 surface 가 다시 넓어지면 surface 범위로 돌아온다. 숨은 범위는 대체하지 않고 계속 숨긴다.
 창보다 큰 셸은 창 크기로 줄어든다 — plugin 콘텐츠는 GPU 합성으로 올라가 egui 레이어 클립이
-그것까지 잘라 주지 않기 때문이다. 자식 파일 피커의 범위 상속은 선언 종류와 대상으로 계산하며
-이 대체를 반영하지 않는다.
+그것까지 잘라 주지 않기 때문이다. 자식 파일 피커는 부모가 직전 frame 에 실제로 놓인 범위를
+상속하므로, 부모가 창 범위로 대체되면 피커도 창 범위로 뜬다. 부모가 아직 그려지지 않았거나
+숨었으면 선언 종류와 대상으로 정한다.
 
 현재 `scope = "surface"` 선언: markdown `file-open` · `large-file-confirm`.
 
