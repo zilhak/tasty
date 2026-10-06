@@ -6,6 +6,13 @@ pub mod config;
 pub mod env;
 pub mod exec;
 pub mod registry;
+// 설정 창의 IpcSequence 편집기가 쓸 형식이다. 편집기가 이 함수들을 부르면 expect 가 충족되지 않아
+// 경고가 나므로 그때 이 속성을 지운다.
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "the IpcSequence text editor is not built yet")
+)]
+pub mod sequence_text;
 pub mod types;
 
 pub use config::UserHookHandlerActionDecl;
