@@ -428,6 +428,9 @@ pub struct PluginManager {
     pub(super) popup_instances: HashMap<u64, PopupInstance>,
     /// 다음 popup `instance_id`. 1부터 시작해 단조 증가.
     pub(super) next_popup_instance_id: u64,
+    /// surface 범위 이벤트 팝업 중 대상 surface 의 소유 확인을 기다리는 요청.
+    /// 매니저는 surface 트리를 모르므로 호스트가 꺼내 확인한 뒤 연다.
+    pub(super) pending_surface_popups: Vec<PendingSurfacePopup>,
     /// 현재 열려 있는 banner 인스턴스(A3). host가 발급한 `instance_id`를 키로 사용.
     pub(super) banner_instances: HashMap<u64, BannerInstance>,
     /// 다음 banner `instance_id`. popup 과 별도 카운터, 1부터 단조 증가.
@@ -483,6 +486,19 @@ pub struct PopupInstance {
     /// 진입점이 [`PluginManager::bind_popup_instance_surface`] 로 채운다. `None` 이면
     /// 렌더는 선언과 무관하게 window 범위로 다룬다(plugin 이 스스로 연 popup 등).
     pub scope_surface: Option<u32>,
+}
+
+/// surface 범위로 선언한 이벤트 팝업을 대상 surface 와 함께 연다는 요청.
+/// 호스트는 대상이 `plugin_id` 소유의 플러그인 surface 이고, 플러그인이 발행한 이벤트라면
+/// 발행자가 `plugin_id` 일 때만 연다. 그 밖에는 거절한다(ADR-0036).
+#[derive(Debug, Clone)]
+pub struct PendingSurfacePopup {
+    pub plugin_id: String,
+    pub popup_id: String,
+    pub context: serde_json::Value,
+    /// 이벤트를 발행한 플러그인. 호스트가 발행했으면 `None`.
+    pub publisher: Option<String>,
+    pub surface_id: u32,
 }
 
 /// 호스트가 추적 중인 banner 인스턴스 한 건(A3). plugin process가 죽으면 함께 제거된다.
@@ -541,6 +557,10 @@ mod tests_derived_freshness;
 // 자동 reload의 기준값·변경 감지·교체 검사.
 #[cfg(test)]
 mod tests_auto_reload;
+
+// surface 범위 이벤트 팝업의 대기열 진입 검사.
+#[cfg(test)]
+mod tests_surface_popup;
 
 // namespace 소유자가 설치 매니페스트에서 계산되는지 검사한다.
 #[cfg(test)]

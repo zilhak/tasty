@@ -95,6 +95,11 @@ impl PluginManager {
         Some(instance_id)
     }
 
+    /// 소유 확인을 기다리는 surface 범위 이벤트 팝업을 모두 꺼낸다.
+    pub fn take_pending_surface_popups(&mut self) -> Vec<super::PendingSurfacePopup> {
+        std::mem::take(&mut self.pending_surface_popups)
+    }
+
     /// 팝업에 surface를 연결한다. 기존 인스턴스를 재사용할 때는 처음의 대상을 유지한다.
     pub fn bind_popup_instance_surface(&mut self, instance_id: u64, surface_id: u32) {
         if let Some(inst) = self.popup_instances.get_mut(&instance_id)

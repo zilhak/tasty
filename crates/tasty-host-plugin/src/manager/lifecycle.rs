@@ -176,6 +176,7 @@ impl PluginManager {
             event_trace_seq: AtomicU64::new(1),
             popup_instances: HashMap::new(),
             next_popup_instance_id: 1,
+            pending_surface_popups: Vec::new(),
             banner_instances: HashMap::new(),
             next_banner_instance_id: 1,
             banner_mesh_frames: HashMap::new(),

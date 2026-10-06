@@ -1,0 +1,117 @@
+//! surface 범위로 선언한 플러그인 이벤트 팝업을 대상 surface 의 소유를 확인한 뒤 연다.
+//! 플러그인이 자기 surface 가 아닌 곳에 팝업을 띄우지 못하게 하는 경계다(ADR-0036).
+
+use crate::app::App;
+use tasty_host_plugin::manager::PendingSurfacePopup;
+
+impl App {
+    pub(crate) fn dispatch_pending_surface_popups(&mut self) {
+        let Some(pending) = self
+            .plugin_manager
+            .as_mut()
+            .map(|m| m.take_pending_surface_popups())
+        else {
+            return;
+        };
+        for req in pending {
+            let owner = self.plugin_surface_owner_of_any_kind(req.surface_id);
+            if let Err(reason) = authorize(&req, owner.as_deref()) {
+                tracing::warn!(
+                    "popup '{}/{}' refused: {reason}",
+                    req.plugin_id,
+                    req.popup_id
+                );
+                continue;
+            }
+            let Some(mgr) = self.plugin_manager.as_mut() else {
+                return;
+            };
+            if let Some(instance_id) =
+                mgr.open_popup_instance(&req.plugin_id, &req.popup_id, req.context)
+            {
+                mgr.bind_popup_instance_surface(instance_id, req.surface_id);
+            }
+        }
+    }
+
+    /// 창에 있는 플러그인 surface 의 소유 플러그인. webview(RemoteSurface)와 egui-mesh 를 모두 본다.
+    /// parked engine 은 화면이 없어 팝업을 그릴 곳이 없으므로 보지 않는다.
+    fn plugin_surface_owner_of_any_kind(&self, surface_id: u32) -> Option<String> {
+        self.engines().windows().find_map(|(_, e)| {
+            let surface = e.find_surface_by_id(surface_id)?;
+            let any = surface.as_any();
+            if let Some(rs) =
+                any.downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>()
+            {
+                return Some(rs.plugin_id.clone());
+            }
+            any.downcast_ref::<crate::runtime::egui_mesh_surface::EguiMeshSurface>()
+                .map(|ms| ms.plugin_id.clone())
+        })
+    }
+}
+
+/// 대상은 팝업 소유 플러그인의 surface 여야 하고, 플러그인이 발행한 이벤트라면
+/// 발행자도 팝업 소유 플러그인이어야 한다. 호스트 발행 이벤트는 발행자 검사를 생략한다.
+pub(crate) fn authorize(req: &PendingSurfacePopup, owner: Option<&str>) -> Result<(), String> {
+    if let Some(publisher) = req.publisher.as_deref()
+        && publisher != req.plugin_id
+    {
+        return Err(format!(
+            "event from plugin '{publisher}' cannot place another plugin's popup on surface {}",
+            req.surface_id
+        ));
+    }
+    match owner {
+        None => Err(format!(
+            "surface {} is not a live plugin surface",
+            req.surface_id
+        )),
+        Some(owner) if owner != req.plugin_id => Err(format!(
+            "surface {} belongs to plugin '{owner}'",
+            req.surface_id
+        )),
+        Some(_) => Ok(()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn req(publisher: Option<&str>) -> PendingSurfacePopup {
+        PendingSurfacePopup {
+            plugin_id: "com.tasty.markdown".to_string(),
+            popup_id: "large-file-confirm".to_string(),
+            context: serde_json::Value::Null,
+            publisher: publisher.map(str::to_string),
+            surface_id: 7,
+        }
+    }
+
+    #[test]
+    fn own_surface_from_own_event_is_allowed() {
+        assert!(authorize(&req(Some("com.tasty.markdown")), Some("com.tasty.markdown")).is_ok());
+        assert!(authorize(&req(None), Some("com.tasty.markdown")).is_ok());
+    }
+
+    #[test]
+    fn another_plugins_surface_is_refused() {
+        let err = authorize(&req(Some("com.tasty.markdown")), Some("com.tasty.html"))
+            .expect_err("foreign surface");
+        assert!(err.contains("belongs to plugin 'com.tasty.html'"), "{err}");
+    }
+
+    #[test]
+    fn a_host_surface_or_a_missing_one_is_refused() {
+        let err = authorize(&req(Some("com.tasty.markdown")), None).expect_err("no owner");
+        assert!(err.contains("not a live plugin surface"), "{err}");
+    }
+
+    #[test]
+    fn another_plugins_event_cannot_place_the_popup() {
+        let err = authorize(&req(Some("com.tasty.html")), Some("com.tasty.markdown"))
+            .expect_err("foreign publisher");
+        assert!(err.contains("event from plugin 'com.tasty.html'"), "{err}");
+    }
+}

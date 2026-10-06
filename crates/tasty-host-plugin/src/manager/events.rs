@@ -8,20 +8,31 @@ use serde_json::json;
 use crate::protocol;
 use tasty_plugin_manifest::EventHookDecl;
 
-use super::{PendingRequest, PendingRequestKind, PluginManager};
+use super::{PendingRequest, PendingRequestKind, PendingSurfacePopup, PluginManager};
+use tasty_plugin_manifest::PopupScopeDecl;
 
 impl PluginManager {
     pub fn publish_host_event(&mut self, envelope: tasty_plugin_protocol::EventEnvelope) {
         let event_key = envelope.key.clone();
         let payload = envelope.payload.clone();
+        let scope = envelope.meta.scope;
         let dispatches = self.event_bus.publish_from_host(envelope);
         self.send_event_dispatches(dispatches);
-        self.fire_popup_triggers(&event_key, &payload);
+        self.fire_popup_triggers(&event_key, &payload, None, scope);
     }
 
     /// 실행 중인 plugin이 이벤트 trigger로 선언한 popup을 열고 payload를 context로 전달한다.
-    pub(super) fn fire_popup_triggers(&mut self, event_key: &str, payload: &serde_json::Value) {
-        let matches: Vec<(String, String)> = self
+    /// surface 범위로 선언한 popup에 surface 이벤트 대상이 있으면 바로 열지 않고
+    /// 호스트의 소유 확인을 기다린다. `publisher`는 발행한 플러그인, 호스트 발행이면 None이다.
+    pub(super) fn fire_popup_triggers(
+        &mut self,
+        event_key: &str,
+        payload: &serde_json::Value,
+        publisher: Option<&str>,
+        scope: tasty_plugin_protocol::EventScope,
+    ) {
+        let target = surface_event_target(scope, payload);
+        let matches: Vec<(String, String, PopupScopeDecl)> = self
             .packages
             .iter()
             .filter(|pkg| self.processes.contains_key(&pkg.manifest.id))
@@ -31,14 +42,27 @@ impl PluginManager {
                     if let tasty_plugin_manifest::PopupTrigger::Event { event_key: ek } = &p.trigger
                         && ek == event_key
                     {
-                        return Some((plugin_id.clone(), p.id.clone()));
+                        return Some((plugin_id.clone(), p.id.clone(), p.scope));
                     }
                     None
                 })
             })
             .collect();
-        for (plugin_id, popup_id) in matches {
-            self.open_popup_instance(&plugin_id, &popup_id, payload.clone());
+        for (plugin_id, popup_id, decl) in matches {
+            match (decl, target) {
+                (PopupScopeDecl::Surface, Some(surface_id)) => {
+                    self.pending_surface_popups.push(PendingSurfacePopup {
+                        plugin_id,
+                        popup_id,
+                        context: payload.clone(),
+                        publisher: publisher.map(str::to_string),
+                        surface_id,
+                    });
+                }
+                _ => {
+                    self.open_popup_instance(&plugin_id, &popup_id, payload.clone());
+                }
+            }
         }
     }
 
@@ -131,10 +155,11 @@ impl PluginManager {
     ) {
         let key_for_log = envelope.key.clone();
         let payload = envelope.payload.clone();
+        let scope = envelope.meta.scope;
         match self.event_bus.publish_from_plugin(plugin_id, envelope) {
             Ok(dispatches) => {
                 self.send_event_dispatches(dispatches);
-                self.fire_popup_triggers(&key_for_log, &payload);
+                self.fire_popup_triggers(&key_for_log, &payload, Some(plugin_id), scope);
             }
             Err(e) => {
                 tracing::warn!("plugin '{plugin_id}' publish '{key_for_log}' rejected: {e}");
@@ -429,4 +454,19 @@ impl PluginManager {
             }
         }
     }
+}
+
+/// surface 이벤트의 대상. 프로토콜 규약대로 `EventScope::Surface` 이벤트의 payload
+/// `surface_id` 만 읽는다. 그 밖의 범위나 키는 대상이 아니다.
+fn surface_event_target(
+    scope: tasty_plugin_protocol::EventScope,
+    payload: &serde_json::Value,
+) -> Option<u32> {
+    if scope != tasty_plugin_protocol::EventScope::Surface {
+        return None;
+    }
+    payload
+        .get("surface_id")
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|n| u32::try_from(n).ok())
 }

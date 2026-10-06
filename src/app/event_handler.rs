@@ -502,6 +502,7 @@ impl ApplicationHandler<AppEvent> for App {
         self.publish_lua_snapshot();
         self.dispatch_pending_lua_commands();
         self.dispatch_pending_popup_opens();
+        self.dispatch_pending_surface_popups();
         self.dispatch_pending_handler_ipc();
         self.dispatch_pending_picker_results();
         self.dispatch_pending_info_modal_requests();

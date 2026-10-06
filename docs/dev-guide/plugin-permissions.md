@@ -194,6 +194,8 @@ IPC 외에 일부 contribute 는 권한을 강제(매니페스트 로드 단계 
 
 `event_subscribe` 는 별도 권한 없음 — 구독 패턴으로 허용 범위를 제한.
 
+`scope = "surface"` 로 선언한 event trigger popup 은 별도 권한 토큰이 없다. 대신 host 가 대상 소유를 확인한다 — 이벤트가 가리킨 surface 가 그 popup 을 선언한 plugin 의 surface 이고, plugin 이 발행한 이벤트라면 발행자도 그 plugin 이어야 연다. 그 밖에는 열지 않는다([ADR-0036](../adr/0036-overlay-scope-and-lifetime.md), 배치는 [popup 설계](../design/systems/popup.md#plugin-popup-의-스코프)).
+
 ### 새 게이트 추가
 
 1. `gates.rs` 의 `contributes_gates!` 에 행 추가 — `enum` · `ALL` · `contributes_key` · `token` 이
