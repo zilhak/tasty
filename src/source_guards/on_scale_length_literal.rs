@@ -840,7 +840,8 @@ fn the_blind_spots_are_still_the_size_they_say() {
         // 스케일에 size-20·40이 들어오면서 기존 값 20·40이 test 코드에서 마흔한 자리 새로 집계됐다.
         // popover_frame 시험의 부모 스타일 테두리 굵기 +2 하나가 test 전용으로 들어왔다.
         // Attention kinds 무대의 설명 열·레일 열이 높이 0으로 칸을 요청해 0 리터럴 둘을 더한다.
-        (219, 495),
+        // 토스트 같은 모서리 합치기 시험의 화면·pane 사각형과 Settings 하단 거리 시험이 열한 개를 더한다.
+        (219, 506),
         "제외한 0과 test 전용 코드의 수가 달라졌다. 실제 사용과 수집 범위의 변경을 확인하고 기록을 갱신한다."
     );
     let roster: usize = UNIT_SPACE_SITES.iter().map(|(.., n, _)| n).sum();
