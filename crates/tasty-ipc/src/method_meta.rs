@@ -777,6 +777,7 @@ pub const DEBUG_METHODS: &[(&str, MethodMeta)] = &[
     ("debug.selection", local_only(MethodEffect::Read)),
     ("debug.pending_menu", local_only(MethodEffect::Read)),
     ("debug.focused_surface", local_only(MethodEffect::Read)),
+    ("debug.surface_rect", local_only(MethodEffect::Read)),
     ("debug.tool.list", local_only(MethodEffect::Read)),
     ("debug.tool.invoke", local_only(MethodEffect::Mutate)),
     ("debug.popup.list", local_only(MethodEffect::Read)),

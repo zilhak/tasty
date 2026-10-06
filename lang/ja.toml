@@ -3299,6 +3299,12 @@ help = "代替画面に入らず主画面を維持"
 [cli.help._root.debug.focused-surface]
 about = "フォーカス中のサーフェスIDをダンプ（debugビルド専用）。フォーカス中のビューを読み取るだけで変更しません"
 
+[cli.help._root.debug.surface-rect]
+about = "アクティブなタブにあるサーフェスの画面上の矩形を物理ピクセルで出力（debug ビルド専用）。ターミナル以外のサーフェスにも使え、画面にない場合は null"
+
+[cli.help._root.debug.surface-rect.arg.surface]
+help = "サーフェス ID"
+
 [cli.help._root.debug.selection]
 about = "フォーカス中のウィンドウの現在の選択範囲をダンプ（debugビルド専用）"
 

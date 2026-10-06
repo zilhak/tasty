@@ -3299,6 +3299,12 @@ help = "대체 화면에 진입하지 않고 기본 화면에 유지"
 [cli.help._root.debug.focused-surface]
 about = "포커스된 서피스 ID 덤프(debug 빌드 전용). 포커스된 뷰를 읽기만 하며 변경하지 않음"
 
+[cli.help._root.debug.surface-rect]
+about = "활성 탭에 있는 서피스의 화면 사각형을 물리 픽셀로 덤프(debug 빌드 전용). 터미널이 아닌 서피스도 되며, 화면에 없으면 null"
+
+[cli.help._root.debug.surface-rect.arg.surface]
+help = "서피스 ID"
+
 [cli.help._root.debug.selection]
 about = "포커스된 윈도우의 현재 선택 영역 덤프(debug 빌드 전용)"
 

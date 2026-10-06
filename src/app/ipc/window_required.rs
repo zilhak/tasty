@@ -91,7 +91,8 @@ impl App {
             || cmd.request.method == "debug.inject_egui_text"
             || cmd.request.method == "debug.selection"
             || cmd.request.method == "debug.pending_menu"
-            || cmd.request.method == "debug.focused_surface";
+            || cmd.request.method == "debug.focused_surface"
+            || cmd.request.method == "debug.surface_rect";
         if !is_window_required {
             return IpcStep::NotHandled;
         }
@@ -280,6 +281,37 @@ impl App {
             let response = host_ipc::protocol::JsonRpcResponse::success(
                 cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
                 serde_json::json!({ "surface_id": focused }),
+            );
+            send_response(&cmd.response_tx, response);
+            return IpcStep::Handled;
+        }
+        // 화면 배치를 읽는다. 비-터미널 surface 도 같은 leaf 사각형을 쓴다.
+        #[cfg(debug_assertions)]
+        if cmd.request.method == "debug.surface_rect" {
+            let surface_id = match params::read_u32(&cmd.request.params, "surface_id") {
+                Ok(Some(v)) => v,
+                Ok(None) => return reject_bad_params(cmd, "missing 'surface_id'"),
+                Err(msg) => return reject_bad_params(cmd, &msg),
+            };
+            let scale_factor = w.base.gpu.scale_factor();
+            let rect = w.state.surface_rect_by_id(
+                engine.core,
+                surface_id,
+                w.compute_terminal_rect(),
+                scale_factor,
+            );
+            let response = host_ipc::protocol::JsonRpcResponse::success(
+                cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
+                serde_json::json!({
+                    "surface_id": surface_id,
+                    "scale_factor": scale_factor,
+                    "rect": rect.map(|r| serde_json::json!({
+                        "x": r.x.value(),
+                        "y": r.y.value(),
+                        "width": r.width.value(),
+                        "height": r.height.value(),
+                    })),
+                }),
             );
             send_response(&cmd.response_tx, response);
             return IpcStep::Handled;

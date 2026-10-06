@@ -3305,6 +3305,12 @@ help = "Stay on the main screen instead of entering the alternate screen"
 [cli.help._root.debug.focused-surface]
 about = "Dump the focused surface id (debug builds only). Observation only — the focused view is read, never changed"
 
+[cli.help._root.debug.surface-rect]
+about = "Dump the on-screen rect of a surface in the active tab, in physical pixels (debug builds only). Works for non-terminal surfaces too; null when the surface is not on screen"
+
+[cli.help._root.debug.surface-rect.arg.surface]
+help = "Surface id"
+
 [cli.help._root.debug.selection]
 about = "Dump the current selection of the focused window (debug builds only)"
 

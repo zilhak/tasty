@@ -180,6 +180,13 @@ pub enum DebugCommands {
     /// Dump the focused surface id (debug builds only). Observation only — the
     /// focused view is read, never changed.
     FocusedSurface,
+    /// Dump the on-screen rect of a surface in the active tab, in physical pixels (debug builds
+    /// only). Works for non-terminal surfaces too; null when the surface is not on screen.
+    SurfaceRect {
+        /// Surface id.
+        #[arg(long)]
+        surface: u32,
+    },
     /// Dump the current selection of the focused window (debug builds only).
     Selection,
     /// Dump the pending native menu action of the focused window (debug builds only).
