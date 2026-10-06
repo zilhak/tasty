@@ -72,6 +72,16 @@ fn saved_target<H: HostCall>(host: &H, surface_id: u32) -> Option<ScanTarget> {
     has_parent.then_some(ScanTarget::Child)
 }
 
+/// 재시작 전에 남긴 정지 알림 시각(Unix ms). 없거나 읽을 수 없으면 `None` 이다.
+fn stall_notice_at<H: HostCall>(host: &H, surface_id: u32) -> Option<u64> {
+    let raw = meta_text(host, surface_id, crate::error_scan::STALL_NOTICE_META_KEY)?;
+    serde_json::from_str::<Value>(&raw)
+        .inspect_err(|e| tracing::warn!("claude stall notice meta is not JSON ({e}): {raw}"))
+        .ok()?
+        .get("at_ms")?
+        .as_u64()
+}
+
 /// 모든 터미널을 훑어 감시 대상과 대기 기록을 되살린다. 되살린 surface 수를 돌려준다.
 /// 이미 등록된 대상과 이미 있는 대기 기록은 덮어쓰지 않는다.
 pub(crate) fn retrack<H: HostCall>(host: &H, scanner: &Mutex<ErrorScanner>) -> usize {
@@ -91,32 +101,39 @@ pub(crate) fn retrack<H: HostCall>(host: &H, scanner: &Mutex<ErrorScanner>) -> u
                 .collect()
         })
         .unwrap_or_default();
-    let mut restored = 0;
-    for surface_id in ids {
-        let Some(target) = saved_target(host, surface_id) else {
-            continue;
-        };
-        if !crate::error_scan::scan_target_is_alive(host, surface_id, target) {
-            continue;
-        }
-        let saved = saved_wait_from_meta(host, surface_id);
-        let waiting = saved.as_ref().map(|w| (w.notified, w.watch.is_some()));
-        {
-            let mut s = lock_scanner(scanner);
-            if !s.is_enabled(surface_id) {
-                s.enable(surface_id, target);
-            }
-            if let Some(saved) = saved {
-                s.restore_background_wait(surface_id, saved);
-            }
-        }
-        tracing::info!(
-            "claude retrack s{surface_id}: watching again as {} (background wait: {waiting:?})",
-            target_name(target)
-        );
-        restored += 1;
+    ids.into_iter()
+        .filter(|&surface_id| retrack_one(host, scanner, surface_id))
+        .count()
+}
+
+/// surface 하나를 되살린다. 감시 대상이 아니거나 추적 유지 판단을 통과하지 못하면 `false` 다.
+fn retrack_one<H: HostCall>(host: &H, scanner: &Mutex<ErrorScanner>, surface_id: u32) -> bool {
+    let Some(target) = saved_target(host, surface_id) else {
+        return false;
+    };
+    if !crate::error_scan::scan_target_is_alive(host, surface_id, target) {
+        return false;
     }
-    restored
+    let saved = saved_wait_from_meta(host, surface_id);
+    let waiting = saved.as_ref().map(|w| (w.notified, w.watch.is_some()));
+    let notice = stall_notice_at(host, surface_id);
+    {
+        let mut s = lock_scanner(scanner);
+        if !s.is_enabled(surface_id) {
+            s.enable(surface_id, target);
+        }
+        if let Some(saved) = saved {
+            s.restore_background_wait(surface_id, saved);
+        }
+        if let Some(at_ms) = notice {
+            s.restore_stall_notice(surface_id, at_ms, std::time::Instant::now());
+        }
+    }
+    tracing::info!(
+        "claude retrack s{surface_id}: watching again as {} (background wait: {waiting:?}, stall notice at: {notice:?})",
+        target_name(target)
+    );
+    true
 }
 
 #[cfg(test)]
@@ -199,6 +216,11 @@ mod tests {
             meta: recorder.meta,
         }
         .with_meta(
+            6,
+            crate::error_scan::STALL_NOTICE_META_KEY,
+            r#"{"at_ms":1000}"#,
+        )
+        .with_meta(
             5,
             crate::hook::BACKGROUND_WAIT_META_KEY,
             r#"{"since_ms":1000,"types":["shell"],"notified":true}"#,
@@ -211,6 +233,8 @@ mod tests {
         assert!(!s.is_enabled(4), "Claude 기록이 없는 터미널");
         assert!(s.is_waiting_on_background_work(5));
         assert!(!s.is_waiting_on_background_work(6));
+        assert!(s.stall_notified_for_test(6), "남긴 정지 알림");
+        assert!(!s.stall_notified_for_test(5));
     }
 
     /// 등록 경로를 남기기 전 버전이 spawn 한 자식은 세션 meta 와 부모 관계로 찾는다. 부모가 없는 Claude 는

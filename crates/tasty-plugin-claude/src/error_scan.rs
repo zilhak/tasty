@@ -105,6 +105,20 @@ pub struct ErrorScanner {
     last_stall_notify: HashMap<u32, Instant>,
     /// 백그라운드 작업을 기다리는 surface. 대기 Stop에서 넣고 턴 종료·새 턴·세션 종료에서 뺀다.
     background_wait: HashMap<u32, BackgroundWait>,
+    /// 정지 알림을 meta [`STALL_NOTICE_META_KEY`] 에 남긴 surface. 그 조용한 구간이 끝나면 meta 를 지운다.
+    notice_recorded: std::collections::HashSet<u32>,
+}
+
+/// 정지 알림을 보낸 시각(`at_ms`, Unix ms)을 남기는 surface meta. 플러그인이 다시 시작돼도 같은 조용한 구간을
+/// 다시 알리지 않고 알림 간격도 이어 가려는 것이다. 출력이 바뀌거나 새 턴이 시작되면 지운다.
+pub(crate) const STALL_NOTICE_META_KEY: &str = "claude-stall-notice";
+
+/// 현재 시각(Unix ms).
+fn unix_now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 /// 백그라운드 작업 대기 한 번의 기록.
@@ -328,6 +342,29 @@ impl ErrorScanner {
         self.last_stall_notify.remove(&surface_id);
         self.window.remove(&surface_id);
         self.background_wait.remove(&surface_id);
+        self.notice_recorded.remove(&surface_id);
+    }
+
+    /// 재시작 전에 남긴 정지 알림을 되살린다. 누적 창이 빈 상태에서 시작하므로 빈 창의 해시를 기준으로 삼는다.
+    /// 첫 스캔에서 새 출력이 없으면 같은 조용한 구간으로 보고 다시 알리지 않는다. 새 출력이 있으면 해시가 바뀌어
+    /// 평소처럼 다시 센다. 알림 간격은 남긴 시각부터 잇는다.
+    pub(crate) fn restore_stall_notice(&mut self, surface_id: u32, at_ms: u64, now: Instant) {
+        if self.watch.contains_key(&surface_id) {
+            return;
+        }
+        let elapsed = Duration::from_millis(unix_now_ms().saturating_sub(at_ms));
+        self.watch.insert(
+            surface_id,
+            OutputWatch {
+                fingerprint: output_fingerprint(""),
+                last_change: now,
+                stall_notified: true,
+                saw_error: false,
+            },
+        );
+        self.last_stall_notify
+            .insert(surface_id, now.checked_sub(elapsed).unwrap_or(now));
+        self.notice_recorded.insert(surface_id);
     }
 
     /// 대기 Stop을 기록하고 대기 시작 시각(Unix ms)을 돌려준다. 이어진 대기 Stop은 처음 기록을 유지한다.
@@ -428,6 +465,14 @@ impl ErrorScanner {
         self.last_fired.insert(surface_id, snippet.to_string());
     }
 
+    /// 테스트 전용 — 현재 조용한 구간에서 정지 알림을 보낸 것으로 기록됐는지.
+    #[cfg(test)]
+    pub(crate) fn stall_notified_for_test(&self, surface_id: u32) -> bool {
+        self.watch
+            .get(&surface_id)
+            .is_some_and(|w| w.stall_notified)
+    }
+
     /// 테스트 전용 — dedupe 상태 존재 여부.
     #[cfg(test)]
     pub(crate) fn has_dedupe_state(&self, surface_id: u32) -> bool {
@@ -466,6 +511,7 @@ impl ErrorScanner {
         let snippet: String = window.chars().take(DEDUPE_SNIPPET_CHARS).collect();
         // 오류를 발견하기 전부터 창의 변화를 추적한다.
         self.track_output(surface_id, fingerprint, now, has_error);
+        self.forget_ended_notice(host, surface_id);
 
         let mut fired = None;
         if has_error {
@@ -496,6 +542,27 @@ impl ErrorScanner {
         // 오류가 없거나 중복 알림을 생략한 경우에도 정지 의심 여부는 확인한다.
         self.maybe_notify_stall(host, surface_id, now);
         fired
+    }
+
+    /// 알림을 남긴 조용한 구간이 끝났으면(출력 변화·새 턴) 알림 meta 를 지운다.
+    fn forget_ended_notice<H: HostCall>(&mut self, host: &H, surface_id: u32) {
+        if !self.notice_recorded.contains(&surface_id)
+            || self
+                .watch
+                .get(&surface_id)
+                .is_some_and(|w| w.stall_notified)
+        {
+            return;
+        }
+        self.notice_recorded.remove(&surface_id);
+        if let Err(e) = host.call(
+            "surface.meta.unset",
+            json!({ "surface_id": surface_id, "key": STALL_NOTICE_META_KEY }),
+        ) {
+            tracing::warn!(
+                "claude stall s{surface_id}: clearing the stall notice meta failed: {e}"
+            );
+        }
     }
 
     /// 창의 해시가 바뀌면 조용한 구간을 다시 센다. 같은 창을 다시 해시하지 않도록 값으로 받는다.
@@ -611,9 +678,28 @@ impl ErrorScanner {
         if let Some(w) = self.watch.get_mut(&surface_id) {
             w.stall_notified = true;
         }
+        self.record_notice(host, surface_id);
+        self.record_wait_notice(host, surface_id);
+        self.last_stall_notify.insert(surface_id, now);
+    }
+
+    /// 플러그인이 다시 시작돼도 같은 조용한 구간을 다시 알리지 않도록 알림 시각을 남긴다.
+    fn record_notice<H: HostCall>(&mut self, host: &H, surface_id: u32) {
+        match host.call(
+            "surface.meta.set",
+            json!({ "surface_id": surface_id, "key": STALL_NOTICE_META_KEY, "value": json!({ "at_ms": unix_now_ms() }).to_string() }),
+        ) {
+            Ok(_) => {
+                self.notice_recorded.insert(surface_id);
+            }
+            Err(e) => tracing::warn!("claude stall s{surface_id}: recording the stall notice failed: {e}"),
+        }
+    }
+
+    /// 대기 중이면 이 대기를 알린 것으로 기록하고 대기 meta 에도 남긴다. 플러그인이 다시 시작돼도 같은 대기를 다시 알리지 않는다.
+    fn record_wait_notice<H: HostCall>(&mut self, host: &H, surface_id: u32) {
         if let Some(b) = self.background_wait.get_mut(&surface_id) {
             b.notified = true;
-            // 플러그인이 다시 시작돼도 같은 대기를 다시 알리지 않도록 meta 에도 남긴다.
             if let Err(e) = host.call(
                 "surface.meta.set",
                 json!({ "surface_id": surface_id, "key": crate::hook::BACKGROUND_WAIT_META_KEY, "value": b.meta_value() }),
@@ -621,7 +707,6 @@ impl ErrorScanner {
                 tracing::warn!("claude stall s{surface_id}: recording the notice in the wait meta failed: {e}");
             }
         }
-        self.last_stall_notify.insert(surface_id, now);
     }
 }
 
@@ -978,6 +1063,11 @@ mod tests {
                     ));
                     Ok(json!({}))
                 }
+                "surface.meta.unset" => {
+                    let key = params["key"].as_str().unwrap_or_default();
+                    self.fired.borrow_mut().push(format!("meta-unset:{key}"));
+                    Ok(json!({}))
+                }
                 other => panic!("unexpected host call: {other}"),
             }
         }
@@ -1091,7 +1181,10 @@ mod tests {
         s.scan_one_at(&host, 1, t0 + STALL_QUIET_NO_ERROR);
         assert_eq!(host.stalled_count(), 1, "에러가 없어도 정적이 길면 알린다");
         assert!(
-            host.events().iter().all(|e| e == STALLED_EVENT),
+            host.events()
+                .iter()
+                .filter(|e| !e.starts_with("meta-set:"))
+                .all(|e| e == STALLED_EVENT),
             "에러 이벤트가 섞이면 안 된다: {:?}",
             host.events()
         );
@@ -1169,6 +1262,70 @@ mod tests {
         assert!(s.is_waiting_on_background_work(1));
         s.scan_one_at(&host, 1, t0 + STALL_QUIET_BACKGROUND_WAIT);
         assert_eq!(host.stalled_count(), 1, "대기 기준에 도달하면 한 번 알린다");
+    }
+
+    /// 화면 기준 정지 알림은 meta 에 시각을 남긴다. 플러그인이 다시 시작돼 그 시각을 되살리면, 새 출력이 없는 한
+    /// 같은 조용한 구간을 다시 알리지 않는다. 출력이 다시 바뀌면 meta 를 지우고 다음 조용한 구간은 평소처럼 알린다.
+    #[test]
+    fn a_screen_notice_before_a_restart_is_not_repeated_while_the_output_stays() {
+        let host = ScanHost::new("thinking…\n", "active");
+        let mut s = ErrorScanner::new();
+        let t0 = Instant::now();
+        s.scan_one_at(&host, 1, t0);
+        s.scan_one_at(&host, 1, t0 + STALL_QUIET_NO_ERROR);
+        assert_eq!(host.stalled_count(), 1);
+        let saved = host
+            .meta_sets
+            .borrow()
+            .iter()
+            .find(|(k, _)| k == STALL_NOTICE_META_KEY)
+            .map(|(_, v)| v.clone())
+            .expect("알림 시각을 남긴다");
+        let at_ms = serde_json::from_str::<serde_json::Value>(&saved).unwrap()["at_ms"]
+            .as_u64()
+            .unwrap();
+
+        // 재시작: 메모리 기록 없이 meta 의 시각만 되살린다. 그사이 새 출력은 없다.
+        let restarted_host = ScanHost::new("", "active");
+        let mut restarted = ErrorScanner::new();
+        restarted.restore_stall_notice(1, at_ms, t0);
+        for k in 0..6 {
+            restarted.scan_one_at(&restarted_host, 1, t0 + STALL_QUIET_NO_ERROR * k);
+        }
+        assert_eq!(restarted_host.stalled_count(), 0, "같은 조용한 구간");
+        assert!(
+            !restarted_host
+                .events()
+                .contains(&format!("meta-unset:{STALL_NOTICE_META_KEY}"))
+        );
+
+        // 출력이 바뀌면 그 구간은 끝났다. meta 를 지우고 다음 구간은 알린다(알림 간격은 지났다).
+        let t1 = t0 + STALL_QUIET_NO_ERROR * 6;
+        restarted_host.set_text("next step\n");
+        restarted.scan_one_at(&restarted_host, 1, t1);
+        assert!(
+            restarted_host
+                .events()
+                .contains(&format!("meta-unset:{STALL_NOTICE_META_KEY}"))
+        );
+        restarted.scan_one_at(&restarted_host, 1, t1 + STALL_QUIET_NO_ERROR);
+        assert_eq!(restarted_host.stalled_count(), 1);
+    }
+
+    /// 되살린 알림 뒤 첫 스캔에 새 출력이 있으면 재시작 사이에 구간이 끝난 것이다. 그 뒤 조용해지면 알림 간격을
+    /// 지킨 채 다시 알린다.
+    #[test]
+    fn a_restored_notice_is_dropped_when_output_arrived_during_the_restart() {
+        let host = ScanHost::new("resumed output\n", "active");
+        let mut s = ErrorScanner::new();
+        let t0 = Instant::now();
+        let long_ago = super::unix_now_ms() - STALL_NOTIFY_COOLDOWN.as_millis() as u64;
+        s.restore_stall_notice(1, long_ago, t0);
+        assert!(s.stall_notified_for_test(1));
+        s.scan_one_at(&host, 1, t0);
+        assert!(!s.stall_notified_for_test(1));
+        s.scan_one_at(&host, 1, t0 + STALL_QUIET_NO_ERROR);
+        assert_eq!(host.stalled_count(), 1);
     }
 
     /// 대기 알림은 대기 meta 에도 남는다. 플러그인이 다시 시작돼 그 meta 로 대기를 되살리면 같은 대기를 다시 알리지 않는다.
@@ -1265,6 +1422,7 @@ mod tests {
             [
                 format!("meta-set:{}", crate::task_watch::BACKGROUND_QUIET_META_KEY),
                 STALLED_EVENT.to_string(),
+                format!("meta-set:{STALL_NOTICE_META_KEY}"),
                 format!("meta-set:{}", crate::hook::BACKGROUND_WAIT_META_KEY),
             ]
         );
