@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.codex"
 name = "Codex"
-version = "0.1.131"
+version = "0.1.132"
 description = "Codex CLI integration for Tasty"
 api_version = "1"
 permissions = [
@@ -15,6 +15,8 @@ permissions = [
     "ui.settings_page",
     # `codex.spawn`/`codex.tell` 기본 완료 전략 선언에 필요.
     "completion_strategy.define",
+    # agent task 의 턴 시작·끝을 호스트에 보고한다(`agent.task_turn_report`).
+    "agent",
 ]
 lang_dir = "lang"
 
