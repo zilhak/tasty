@@ -576,7 +576,10 @@ pub fn draw_status_cluster(ui: &mut egui::Ui, theme: &Theme) {
                 "re-shows the banner only (no tab switch, no focus change) · mouse only",
             ),
             ("scriptFile", "tooltip only"),
-            ("tooltip placement", "top (see next spec)"),
+            (
+                "tooltip placement",
+                "top → bottom → inside the strip → top clamped (see next spec)",
+            ),
         ],
         &[
             TokenChip::new("tab-status-gap", "→ space-xs 4", egui::Color32::TRANSPARENT),

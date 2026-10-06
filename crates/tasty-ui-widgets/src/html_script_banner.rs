@@ -292,11 +292,13 @@ pub enum HtmlScriptMarkerKind {
 /// 마커를 `html_script_marker_hit` 정사각 칸 가운데에 그린다. hover 때 `tooltip`을 보인다.
 /// Blocked 마커만 클릭을 받고 hover 채움을 가진다. Allowed 마커는 툴팁만 있다.
 /// 툴팁은 탭 스트립 규칙([`Tooltip::placement_clear_of_native`])으로 `native` 영역을 피해 배치한다.
+/// `cell`은 마커가 든 탭 칸이며 위·아래가 모두 막혔을 때 스트립 안 후보의 기준이 된다.
 pub fn html_script_marker(
     ui: &mut egui::Ui,
     theme: &Theme,
     kind: HtmlScriptMarkerKind,
     tooltip: &str,
+    cell: Option<egui::Rect>,
     native: &[egui::Rect],
 ) -> egui::Response {
     let hit = theme.html_script_marker_hit().value();
@@ -327,7 +329,7 @@ pub fn html_script_marker(
         let window = ui.ctx().screen_rect();
         Tooltip::new(tooltip)
             .id_source(resp.id)
-            .placement_clear_of_native(ui.ctx(), theme, rect, window, native)
+            .placement_clear_of_native(ui.ctx(), theme, rect, cell, window, native)
             .show(ui, theme, rect);
     }
     if kind == HtmlScriptMarkerKind::Blocked {

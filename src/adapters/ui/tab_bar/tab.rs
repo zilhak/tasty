@@ -180,7 +180,7 @@ pub(super) fn draw_tab(
         // close 버튼 (active or hover) — 우측 끝. 클릭은
         // SwitchTab 보다 우선.
         let marker_clicked =
-            marker_slot.and_then(|slot| paint_html_script_marker(ui, context, i, slot));
+            marker_slot.and_then(|slot| paint_html_script_marker(ui, context, i, tab_rect, slot));
         // lock 칸은 click만 받아 click_and_drag인 탭 응답의 hover를 빼앗지 않는다. lock hover에도 close가 보인다.
         let show_close = is_active || resp.hovered();
         let close_clicked = if show_close {
@@ -362,10 +362,12 @@ pub(super) fn status_cluster(
 }
 
 /// 표지를 그리고, 사용자가 lock 을 눌렀으면 그 surface id 를 돌려준다.
+/// `cell`은 표지가 든 탭 칸이며 툴팁의 스트립 안 후보 기준이다.
 fn paint_html_script_marker(
     ui: &mut egui::Ui,
     context: &TabRenderContext<'_, '_>,
     i: usize,
+    cell: egui::Rect,
     (slot, marker): (egui::Rect, super::TabScriptMarker),
 ) -> Option<u32> {
     use tasty_ui_widgets::HtmlScriptMarkerKind;
@@ -384,6 +386,7 @@ fn paint_html_script_marker(
         context.props.theme,
         marker.kind,
         tooltip,
+        Some(cell),
         context.props.native_content,
     );
     resp.clicked().then_some(marker.surface_id)

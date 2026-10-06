@@ -71,7 +71,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("max-width", "240px · wraps"),
             (
                 "over native content",
-                "tab strip · pane head: always top, clamped inside the window (Tab strips › Tooltips in the strip open upward)",
+                "tab strip · pane head: top → bottom → inside the strip → top clamped (4 from the window edge) — Tab strips › Tooltips in the strip open upward",
             ),
             ("text", "caption 11 · line-height 1.4"),
             ("delay", "150ms hover"),
@@ -122,7 +122,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("placement", "top / bottom / left / right"),
             (
                 "over native content",
-                "tab strip · pane head: always top, clamped inside the window (Layouts › Pane tab strip)",
+                "tab strip · pane head: top → bottom → inside the strip → top clamped (4 from the window edge) — Layouts › Pane tab strip",
             ),
             ("delay", "150ms --tasty-tooltip-delay"),
         ],

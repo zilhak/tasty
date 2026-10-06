@@ -164,7 +164,9 @@ const AREAS: &[(&str, usize, &str)] = &[
         // Appearance 색 행 예제와 Extension Mapping 예제의 테마 패널 바깥 폭 360은 디자인 Spec의
         // `--tasty-size-360`이며 공개 역할 토큰이 없다.
         // 스케일에 size-10이 들어오면서 기존 값 10이 새로 집계됐다.
-        144,
+        // html pane을 쌓은 탭 스트립 툴팁 예제의 WebView 자리 높이 64는 디자인 Spec의 `--tasty-size-64`이며
+        // 역할 토큰이 없다.
+        145,
         "갤러리 specimen은 배율 검사에서 제외돼도 스케일 검사는 받는다(ADR-0039). 이름 붙은 치수와 인라인 값, 전시 목적을 별도로 분류한다.",
     ),
     (
@@ -622,7 +624,7 @@ fn the_gallery_share_is_one_question_or_it_is_not() {
     );
     assert_eq!(
         (named_cited, named_plain, inline_cited, inline_plain),
-        (60, 76, 0, 13),
+        (61, 76, 0, 13),
         "갤러리 후보의 (이름 있음/없음, 디자인 언급 있음/없음) 분류 수가 바뀌었다. 해당 선언과 주석을 확인하고 기록을 갱신한다."
     );
 }
@@ -745,7 +747,8 @@ fn the_blind_spots_are_still_the_size_they_say() {
         // The clipboard type segments are drawn once in tasty-ui-widgets instead of three
         // copies in the plugin and the gallery, which drops four zero literals.
         // 스케일에 size-10이 들어오면서 test 코드의 기존 값 10도 새로 집계됐다.
-        (183, 389),
+        // 툴팁의 스트립 안 후보 시험이 칸·앵커·창 rect 리터럴을 더한다.
+        (183, 407),
         "제외한 0과 test 전용 코드의 수가 달라졌다. 실제 사용과 수집 범위의 변경을 확인하고 기록을 갱신한다."
     );
     let roster: usize = UNIT_SPACE_SITES.iter().map(|(.., n, _)| n).sum();

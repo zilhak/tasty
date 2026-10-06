@@ -938,8 +938,9 @@ attention 상태에 연결되지 않음, 다른 surfaces specimen과 동일 관�
 | 창(`size-320` 폭, `border-frame` 테두리, `radius`) | `strip_tooltip_window` | Tasty 창 | 폭과 WebView 자리 높이 `size-96`은 예제 전용 이름 붙은 상수 |
 | 제목 영역(`titlebar-height`, bg-app, mono micro text-muted) | 같은 함수 | 타이틀바 | |
 | 탭 스트립(surface-raised, separator 아래 선) · 활성 html 탭의 lock(hover 채움) + 비활성 shell 탭 | `tab` 두 번 + hover 채움 | `html_script_marker` | |
-| 위로 뜬 툴팁 | `Tooltip::placement_clear_of_native`(WebView 자리를 피할 영역으로 넘김) | 같은 함수, 피할 영역은 `MainViewState::native_content_rects` | Mocha·Latte 두 장 |
+| 위로 뜬 툴팁 | `Tooltip::placement_clear_of_native`(WebView 자리를 피할 영역으로, html 탭 칸을 앵커 칸으로 넘김) | 같은 함수, 피할 영역은 `MainViewState::native_content_rects`, 앵커 칸은 표지가 든 탭 칸 | Mocha·Latte 두 장 |
 | WebView 자리(bg-panel, 가운데 mono micro text-muted) | 같은 함수 | 네이티브 WebView | |
+| html pane 아래 html pane(위 pane WebView `size-64`(아래 separator 포함, border-box) → 탭 스트립 → 자기 WebView `size-64`) · 스트립 안에 뜬 툴팁 | `strip_tooltip_window(.., stacked = true)` | 같은 함수 | 버블은 활성 탭 칸 오른쪽 `tooltip-offset`, 스트립 행 세로 가운데. 높이 64는 예제 전용 이름 붙은 상수 |
 
 ## 탭 스트립 스크롤 화살표 — disabled ink (Layouts)
 

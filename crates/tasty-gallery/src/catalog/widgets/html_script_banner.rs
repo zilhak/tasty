@@ -27,6 +27,8 @@ const MARKER_SURFACE_H: LogicalPx = LogicalPx(120.0);
 const STRIP_TOOLTIP_W: LogicalPx = LogicalPx(320.0);
 /// 탭 스트립 툴팁 예제의 WebView 자리 높이. 디자인은 `--tasty-size-96`을 쓴다.
 const STRIP_TOOLTIP_WEBVIEW_H: LogicalPx = LogicalPx(96.0);
+/// html pane을 쌓은 툴팁 예제의 위·아래 WebView 자리 높이. 디자인은 `--tasty-size-64`를 쓴다.
+const STRIP_TOOLTIP_STACKED_WEBVIEW_H: LogicalPx = LogicalPx(64.0);
 /// 상태 예제 한 장의 최대 폭. 디자인은 `--tasty-size-600`을 쓴다.
 const STATE_CARD_MAX_W: LogicalPx = LogicalPx(600.0);
 /// 배너 버튼 예제의 테마별 패널 폭. 디자인은 `--tasty-size-560`을 쓴다.
@@ -139,7 +141,7 @@ fn tab(
             egui::vec2(hit, hit),
         );
         let mut mui = ui.new_child(egui::UiBuilder::new().max_rect(m));
-        html_script_marker(&mut mui, theme, kind, tip, &[]);
+        html_script_marker(&mut mui, theme, kind, tip, Some(rect), &[]);
         cluster_left = m.left();
         marker_rect = Some(m);
     }
@@ -599,7 +601,7 @@ pub fn draw_markers(ui: &mut egui::Ui, theme: &Theme) {
             ("kept on", "#fragment moves"),
             (
                 "tooltip placement",
-                "top (Tab strips › Tooltips in the strip open upward)",
+                "top → bottom → inside the strip → top clamped (Tab strips › Tooltips in the strip open upward)",
             ),
             (
                 "no banner when",
@@ -629,33 +631,66 @@ pub fn draw_markers(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
-/// 탭 스트립 툴팁 예제 창 하나: 제목 영역 → 탭 스트립(html 탭 활성, lock hover) → WebView 자리.
-/// 툴팁은 본체와 같은 규칙으로 WebView 자리를 피해 위로 뜬다.
-fn strip_tooltip_window(ui: &mut egui::Ui, theme: &Theme, id: &str) {
+/// 탭 스트립 툴팁 예제 창 하나. 툴팁은 본체와 같은 규칙으로 WebView 자리를 피한다.
+/// `stacked`가 거짓이면 제목 영역 → 탭 스트립 → WebView 자리라 버블이 위로 뜬다.
+/// 참이면 위 pane의 WebView → 탭 스트립 → 자기 WebView라 위·아래가 막혀 버블이 스트립 안에 뜬다.
+fn strip_tooltip_window(ui: &mut egui::Ui, theme: &Theme, id: &str, stacked: bool) {
     let bw = theme.border_width.value();
-    let title_h = theme.titlebar_height.value();
     let strip_h = theme.tab_height().value();
+    let (above_h, below_h) = if stacked {
+        // 시안은 border-box라 위 pane 자리 64 안에 아래 separator 1px가 들어간다.
+        (
+            STRIP_TOOLTIP_STACKED_WEBVIEW_H.value(),
+            STRIP_TOOLTIP_STACKED_WEBVIEW_H.value(),
+        )
+    } else {
+        (
+            theme.titlebar_height.value(),
+            STRIP_TOOLTIP_WEBVIEW_H.value(),
+        )
+    };
     let size = egui::vec2(
         STRIP_TOOLTIP_W.value(),
-        title_h + strip_h + bw + STRIP_TOOLTIP_WEBVIEW_H.value() + bw * 2.0,
+        above_h + strip_h + bw + below_h + bw * 2.0,
     );
     let (outer, _) = ui.allocate_exact_size(size, egui::Sense::hover());
     let painter = ui.painter().clone();
     let radius = theme.corner_radius.value();
     painter.rect_filled(outer, radius, theme.border_frame().to_egui());
     let inner = outer.shrink(bw);
+    let mono = egui::FontId::monospace(theme.font_size_micro.value());
 
-    let title = egui::Rect::from_min_size(inner.min, egui::vec2(inner.width(), title_h));
-    painter.rect_filled(title, 0.0, theme.bg_app().to_egui());
-    painter.text(
-        egui::pos2(title.left() + theme.spacing_sm.value(), title.center().y),
-        egui::Align2::LEFT_CENTER,
-        "title area",
-        egui::FontId::monospace(theme.font_size_micro.value()),
-        theme.text_muted().to_egui(),
-    );
+    let above = egui::Rect::from_min_size(inner.min, egui::vec2(inner.width(), above_h));
+    let mut native = Vec::new();
+    if stacked {
+        let upper =
+            egui::Rect::from_min_max(above.min, egui::pos2(above.right(), above.bottom() - bw));
+        painter.rect_filled(upper, 0.0, theme.bg_panel().to_egui());
+        painter.text(
+            upper.center(),
+            egui::Align2::CENTER_CENTER,
+            "upper pane WebView",
+            mono.clone(),
+            theme.text_muted().to_egui(),
+        );
+        painter.hline(
+            above.x_range(),
+            above.bottom() - bw / 2.0,
+            egui::Stroke::new(bw, theme.separator.to_egui()),
+        );
+        native.push(upper);
+    } else {
+        painter.rect_filled(above, 0.0, theme.bg_app().to_egui());
+        painter.text(
+            egui::pos2(above.left() + theme.spacing_sm.value(), above.center().y),
+            egui::Align2::LEFT_CENTER,
+            "title area",
+            mono.clone(),
+            theme.text_muted().to_egui(),
+        );
+    }
 
-    let strip = egui::Rect::from_min_size(title.left_bottom(), egui::vec2(inner.width(), strip_h));
+    let strip = egui::Rect::from_min_size(above.left_bottom(), egui::vec2(inner.width(), strip_h));
     painter.rect_filled(strip, 0.0, theme.surface_raised().to_egui());
     let tip = t(MARKER_BLOCKED);
     let marker = tab(
@@ -667,10 +702,11 @@ fn strip_tooltip_window(ui: &mut egui::Ui, theme: &Theme, id: &str) {
         true,
         Some((HtmlScriptMarkerKind::Blocked, tip)),
     );
-    let second = egui::Rect::from_min_max(
-        egui::pos2(strip.left() + theme.tab_width.value(), strip.top()),
-        strip.max,
+    let cell = egui::Rect::from_min_size(
+        strip.min,
+        egui::vec2(theme.tab_width.value().min(strip.width()), strip.height()),
     );
+    let second = egui::Rect::from_min_max(egui::pos2(cell.right(), strip.top()), strip.max);
     tab(ui, theme, second, "shell", icons::TERMINAL, false, None);
     painter.hline(
         strip.x_range(),
@@ -684,10 +720,15 @@ fn strip_tooltip_window(ui: &mut egui::Ui, theme: &Theme, id: &str) {
     painter.text(
         webview.center(),
         egui::Align2::CENTER_CENTER,
-        "WebView — native, drawn above Tasty",
-        egui::FontId::monospace(theme.font_size_micro.value()),
+        if stacked {
+            "own WebView"
+        } else {
+            "WebView — native, drawn above Tasty"
+        },
+        mono,
         theme.text_muted().to_egui(),
     );
+    native.push(webview);
 
     if let Some(m) = marker {
         // 강제 표시 버블은 창 안으로 당겨지므로 예제가 스크롤로 가려졌을 때는 그리지 않는다.
@@ -708,8 +749,15 @@ fn strip_tooltip_window(ui: &mut egui::Ui, theme: &Theme, id: &str) {
                 egui::Rect::from_center_size(m.center(), egui::vec2(size, size)),
             );
         Tooltip::new(tip)
-            .id_source(("strip_tooltip", id))
-            .placement_clear_of_native(ui.ctx(), theme, m, ui.ctx().screen_rect(), &[webview])
+            .id_source(("strip_tooltip", id, stacked))
+            .placement_clear_of_native(
+                ui.ctx(),
+                theme,
+                m,
+                Some(cell),
+                ui.ctx().screen_rect(),
+                &native,
+            )
             .show(ui, theme, m);
     }
 }
@@ -727,7 +775,15 @@ pub fn draw_strip_tooltips(ui: &mut egui::Ui, theme: &Theme) {
                     ui.vertical(|ui| {
                         ui.spacing_mut().item_spacing.y = th.spacing_xs.value();
                         caption(ui, th, &format!("{name} · html tab active, lock hovered"));
-                        strip_tooltip_window(ui, th, name);
+                        strip_tooltip_window(ui, th, name, false);
+                        caption(
+                            ui,
+                            th,
+                            &format!(
+                                "{name} · html pane under an html pane — fallback inside the strip"
+                            ),
+                        );
+                        strip_tooltip_window(ui, th, name, true);
                     });
                 }
             });
@@ -744,9 +800,16 @@ pub fn draw_strip_tooltips(ui: &mut egui::Ui, theme: &Theme) {
             ),
             (
                 "placement",
-                "top → bottom; first that clears all native rects",
+                "top → bottom → inside the strip; first that clears all native rects",
             ),
-            ("neither clears", "top, clamped to the window"),
+            (
+                "inside the strip",
+                "centred on the strip row · beside the anchor cell (right, then left) · tooltip-offset from the cell · may cover neighbour tabs",
+            ),
+            (
+                "none clears",
+                "top, clamped inside the window · tooltip-offset 4 as vertical margin · may cover the strip / accent line",
+            ),
             ("horizontal", "clamped to window edges · tooltip-offset 4"),
             ("WebView hiding", "not used for tooltips"),
             ("delay · copy · click", "unchanged"),

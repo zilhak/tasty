@@ -76,12 +76,13 @@ tasty가 위에 그릴 수 없는 네이티브 레이어(HTML surface의 WebView
 
 네이티브 WebView는 OS z-order상 항상 egui 렌더 표면 위에 있어 그 영역에 그린 egui 툴팁은 보이지 않는다. 그래서 pane 탭 스트립과 pane 머리에 붙은 툴팁은 surface 종류와 관계없이 같은 배치 규칙을 쓴다.
 
-- 후보는 위 → 아래 순서다. 창 안에 들어가고 드러난 모든 네이티브 콘텐츠 영역(WebView)과 겹치지 않는 첫 후보를 쓴다.
-- 둘 다 안 되면(html pane 위에 다른 html pane이 쌓인 경우 등) 위에 두고 창 안으로 당긴다.
+- 후보는 위 → 아래 → 스트립 안 순서다. 창 안에 들어가고 드러난 모든 네이티브 콘텐츠 영역(WebView)과 겹치지 않는 첫 후보를 쓴다.
+- 스트립 안 후보는 위·아래가 모두 WebView에 막힐 때(html pane 위에 다른 html pane이 쌓인 경우 등) 쓴다. 탭 스트립은 Tasty가 그려 WebView가 덮지 않으므로, 버블을 스트립 행의 세로 가운데에 두고 앵커가 든 탭 칸의 오른쪽(안 되면 왼쪽)에 `tooltip-offset`(4)만큼 띄운다. 이웃 탭을 덮을 수 있다.
+- 셋 다 안 되면(스트립보다 높은 두 줄 버블이 WebView에 닿는 경우 등) 위에 두고 창 안으로 당긴다. 세로도 창 가장자리에서 `tooltip-offset`만큼 띄워 y = 0에 붙지 않는다. 떠 있는 동안 스트립과 활성 탭 강조선을 덮을 수 있다.
 - 가로는 창 가장자리에서 `tooltip-offset`(4)만큼 안쪽으로 당긴다.
 - 툴팁을 보이는 동안 WebView를 숨기지 않는다. hover마다 페이지가 깜박이기 때문이다. 대기 시간·문안·클릭 동작은 다른 툴팁과 같다.
 
-위젯은 `Tooltip::placement_clear_of_native`이며 피할 영역은 호출자가 넘긴다. 본체는 WebView 동기화가 드러낸 WebView의 영역을 `MainViewState::native_content_rects`에 기록하고 탭 바가 이를 읽는다. 지금 이 규칙을 쓰는 탭 스트립 툴팁은 스크립트 표지(`html_script_marker`)뿐이다. 다른 탭 스트립 요소(닫기·스크롤 화살표·분할 버튼)에는 툴팁이 없다. 갤러리 예제는 Layouts › Tab strips의 `tab-strip-tooltips` spec이다.
+위젯은 `Tooltip::placement_clear_of_native`이며 피할 영역과 앵커가 든 탭 칸은 호출자가 넘긴다. 칸을 넘기지 않으면 스트립 안 후보는 건너뛴다. 본체는 WebView 동기화가 드러낸 WebView의 영역을 `MainViewState::native_content_rects`에 기록하고 탭 바가 이를 읽는다. 지금 이 규칙을 쓰는 탭 스트립 툴팁은 스크립트 표지(`html_script_marker`)뿐이다. 다른 탭 스트립 요소(닫기·스크롤 화살표·분할 버튼)에는 툴팁이 없다. 갤러리 예제는 Layouts › Tab strips의 `tab-strip-tooltips` spec이다.
 
 ## 닫기 버튼 / 카운트다운 (우측 상단, 같은 자리)
 
