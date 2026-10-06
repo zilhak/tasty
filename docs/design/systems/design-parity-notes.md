@@ -211,7 +211,7 @@ State 셀은 `status_dot`(점 `status_dot_size` 8 + gap 6 + caption 11px proport
 - **글리프 선택**: 크기와 색은 위젯이 정한다. 오류 글리프도 부품이 정한다 — 모든 호스트에서
   `alertTriangle`(`CENTER_STATE_ERROR_GLYPH`)이고 `CenterState::error` 는 글리프를 받지 않는다.
   호스트는 빈 상태 글리프만 고른다(file picker `FOLDER_OPEN`, Scripts `SCRIPT`, remote attach
-  초기 상태 `REMOTE` — 본체는 같은 아이콘의 별칭 `TERMINAL_PROMPT` 로 부른다).
+  초기 상태 `REMOTE`).
 - **굵기와 배율**: 제목은 시안에 굵기 지정이 없어 기본 굵기다. 글리프 크기는 `ui_scale`
   0.85 / 1 / 1.2 에서 20 / 24 / 29 다. 시안 표기 20.4 / 28.8 과의 차이는 Theme 배율 반올림이다.
 - **근거**: `crates/tasty-ui-widgets/src/center_state.rs`, `crates/tasty-ui-widgets/tests/center_state.rs`.
