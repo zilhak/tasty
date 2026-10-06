@@ -53,7 +53,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Column, |ui| {
         ui.set_max_width(DOC_W.value());
         egui::Frame::new()
-            .fill(theme.bg_app().to_egui())
+            .fill(theme.surface("markdown").focused_bg.to_egui())
             .stroke(egui::Stroke::new(
                 theme.border_width.value(),
                 theme.border_default().to_egui(),
@@ -81,7 +81,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ),
             (
                 "box",
-                "type colour at 31/255 over bg-app · md-quote-bar-width left bar · radius · icon + label",
+                "type colour at 31/255 over md-doc-bg · md-quote-bar-width left bar · radius · icon + label",
             ),
             (
                 "source",
@@ -115,11 +115,12 @@ fn callout_box(
 ) {
     // 콜아웃 채움 — 강조색 저알파. 대응 토큰이 없어 본체 렌더러와 같은 값을 둔다.
     const CALLOUT_BG_ALPHA: u8 = 31;
-    // WebView 는 `#rrggbb1f` 를 문서 바탕(bg-app) 위에 sRGB 값으로 섞는다. egui 에 반투명
+    // WebView 는 `#rrggbb1f` 를 문서 바탕(md-doc-bg) 위에 sRGB 값으로 섞는다. egui 에 반투명
     // 색을 넘기면 감마 보정 premultiply 때문에 약 3배 진해지므로, 같은 바탕 위에서 sRGB 로
     // 미리 섞은 불투명 색을 칠한다.
     let fill = theme
-        .bg_app()
+        .surface("markdown")
+        .focused_bg
         .to_egui()
         .lerp_to_gamma(color.to_egui(), f32::from(CALLOUT_BG_ALPHA) / 255.0);
     let resp = egui::Frame::new()

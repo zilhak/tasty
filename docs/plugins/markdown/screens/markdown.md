@@ -550,7 +550,7 @@ debounce, `compositionend` 시 즉시)마다 이전 `<mark>` 를 먼저 원문�
 정적 근사).
 같은 섹션의 `Markdown callout kinds` 카드(`markdown_viewer/callout_kinds.rs`)는 렌더러가 그리는
 콜아웃 다섯 종을 본체 모양 그대로 보인다 — 종류별 색 31/255 채움(egui 에 반투명 색을 넘기지 않고
-문서 바탕 `bg-app` 위에서 sRGB 로 미리 섞은 불투명 색), 왼쪽 `md_quote_bar_width` 막대,
+문서 바탕 `md-doc-bg` 위에서 sRGB 로 미리 섞은 불투명 색), 왼쪽 `md_quote_bar_width` 막대,
 아이콘과 굵은 라벨. 시안 `Callouts` 에는 채움·아이콘이 없어 본체 전용 견본으로 표시한다.
 디자인·갤러리·제품 구현의 대응표: [design-gallery-mapping.md](../../../design/systems/design-gallery-mapping.md#surface-viewers-plugins).
 
