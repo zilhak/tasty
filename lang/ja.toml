@@ -1010,7 +1010,7 @@ body = "このアプリがマウスをキャプチャしています。テキス
 more_button = "その他のオプション"
 
 [popup.mouse_capture_banner_menu]
-title = "マウスキャプチャ通知オプション"
+title = "バナーのオプション"
 suppress_prefix = ""
 suppress_suffix = "についてこのお知らせをオフにする"
 disable_prefix = ""

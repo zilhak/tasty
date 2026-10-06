@@ -1010,7 +1010,7 @@ body = "이 앱이 마우스를 캡처하고 있습니다. 텍스트 선택은 S
 more_button = "더 보기"
 
 [popup.mouse_capture_banner_menu]
-title = "마우스 캡처 알림 옵션"
+title = "배너 옵션"
 suppress_prefix = ""
 suppress_suffix = "에 대해 이 안내 끄기"
 disable_prefix = ""
