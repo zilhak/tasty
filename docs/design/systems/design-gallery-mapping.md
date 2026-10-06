@@ -749,9 +749,19 @@ L1 "File Handler" 를 **Handler** 로 일반화(내부 key `FileHandler` 유지)
   **그 plugin 의 id**(mauve `accent-agent`)를 찍는다. `IpcSequence` 행은 인라인 편집
   대신 mono 한 줄 요약(스텝을 `→` 로 이음)이다. intro copy 의 priority 방향은 엔진
   규약(낮을수록 먼저)으로 기술.
-- **`IpcSequence` 행의 `Edit` ghost 버튼은 아직 없다** — 디자인은 그 버튼이 시퀀스
-  편집기를 연다고 적지만, 이 레포에 **GUI 편집기가 없다**. 시퀀스를 고치는 경로는
-  CLI 에 있다(`tasty hook-handler get` / `upsert`). 편집기를 구현하기 전까지 동작하지 않는 버튼을 표시하지 않는다. 갤러리 specimen 도 같다.
+- **`IpcSequence` 행**: 요약 한 줄(줄어드는 항목) · 오른쪽 끝 `Edit`(ghost sm). 한 줄 형식으로
+  쓸 수 없는 시퀀스(`sequence_text::format_sequence` 가 거절)는 `Edit` 대신 caption
+  "Edit with CLI"(text-muted, 툴팁 = `tasty hook-handler get --id <id>`) + 복사 `IconButton` sm 이다.
+  갤러리 Spec 은 시안 `on_webhook` CLI 행을 `ci-notify` 행으로 옮겼다.
+- **IpcSequence 문자열 편집기**: 본체 `hook_handlers::draw_seq_editor` 와 갤러리
+  `settings_hook_seq.rs`(시안 `HookSeqEditorG` normal · error · empty, Mocha·Latte, 카드 폭
+  `--tasty-size-460`)가 같은 `tasty_ui_widgets::sequence_editor` 를 그린다 — `CodeArea`
+  (minRows 4) · 오류 한 줄(`alertCircle` `icon-glyph-size-xs` + accent-danger caption 문장 + mono
+  caption text-muted serde 원문) 또는 빈 안내(text-muted caption) · 도움말(text-muted caption) ·
+  위 `space-xs` 뒤 오른쪽 정렬 Cancel(ghost sm) · Apply(secondary sm, 오류면 disabled). 세로 간격
+  `space-xs`, 캡션 줄 높이 `line-height-ui`. 본체는 행 둘째 줄 자리에 편집기를 두고, 갤러리는
+  시안처럼 머리줄(`on_webhook` · `ci-notify` mono `font-size-term-sm` · Tag `you`)이 있는 카드에
+  둔다. 갤러리는 해석기가 없어 error 상태의 문장·이유·줄(3)을 시안 값으로 고정한다.
 
 ## Settings › General › Permissions (macOS)
 

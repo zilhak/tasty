@@ -90,26 +90,29 @@ pub fn sequence_editor(
         );
         let valid = checked.is_ok();
         ui.add_space(theme.spacing_xs.value());
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-            let apply = Button::new(view.apply)
-                .variant(ButtonVariant::Secondary)
-                .size(ControlSize::Sm)
-                .enabled(valid)
-                .show(ui, theme)
-                .clicked();
-            let cancel = Button::new(view.cancel)
-                .variant(ButtonVariant::Ghost)
-                .size(ControlSize::Sm)
-                .show(ui, theme)
-                .clicked();
-            action = if cancel || out.cancel {
-                SequenceEditorAction::Cancel
-            } else if valid && (apply || out.submit) {
-                SequenceEditorAction::Apply
-            } else {
-                SequenceEditorAction::None
-            };
+        // 버튼 한 줄 높이만 쓴다. 바로 right_to_left 로 두면 남은 세로 공간을 모두 차지한다.
+        ui.horizontal(|ui| {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+                let apply = Button::new(view.apply)
+                    .variant(ButtonVariant::Secondary)
+                    .size(ControlSize::Sm)
+                    .enabled(valid)
+                    .show(ui, theme)
+                    .clicked();
+                let cancel = Button::new(view.cancel)
+                    .variant(ButtonVariant::Ghost)
+                    .size(ControlSize::Sm)
+                    .show(ui, theme)
+                    .clicked();
+                action = if cancel || out.cancel {
+                    SequenceEditorAction::Cancel
+                } else if valid && (apply || out.submit) {
+                    SequenceEditorAction::Apply
+                } else {
+                    SequenceEditorAction::None
+                };
+            })
         });
     });
     action

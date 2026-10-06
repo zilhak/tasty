@@ -78,7 +78,7 @@
 - **파일 확장자 매핑** <!-- en: File Extension Mapping --> — 같은 확장자를 여러 디텍터가 가져갈 때 우선순위.
 - **파일 디텍터** <!-- en: File Detectors --> — 확장자 · 경로 패턴으로 파일 종류를 식별하는 규칙. 사용자 규칙 추가 가능.
 - **파일 핸들러** <!-- en: File Handlers --> — 식별된 종류를 어떤 서피스로 열지, 또는 OS 기본 앱으로 넘길지.
-- **훅 핸들러** <!-- en: Hook Handlers --> — 훅 · 웹훅 이벤트가 왔을 때 실행할 셸 명령. [훅 · 알림 · 웹훅](../agents/hooks-notifications.md).
+- **훅 핸들러** <!-- en: Hook Handlers --> — 훅 · 웹훅 이벤트가 왔을 때 실행할 셸 명령과 내부 동작 목록. [훅 · 알림 · 웹훅](../agents/hooks-notifications.md).
 
 이 표는 `config.toml` 이 아니라 `~/.tasty/file-handlers.toml` 과 `~/.tasty/hook-handlers.toml` 에 저장됩니다.
 

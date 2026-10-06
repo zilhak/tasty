@@ -3,25 +3,31 @@
 //!
 //! 모든 출처의 활성 상태를 바꿀 수 있고 ShellCommand는 명령을 편집할 수 있다.
 //! 삭제는 user 항목만 허용하며 host/plugin 항목에는 자물쇠를 표시한다.
-//! IpcSequence GUI 편집기는 없으므로 요약만 표시한다. 편집은 tasty hook-handler get/upsert를 쓴다.
+//! IpcSequence는 요약 한 줄과 Edit 이다. Edit 은 그 행 둘째 줄을 한 줄에 호출 하나인 문자열 편집기로
+//! 바꾸고, Apply 한 결과는 초안에 들어간다. 한 줄 형식으로 쓸 수 없는 시퀀스는 편집기 대신
+//! `tasty hook-handler get` 명령을 복사하게 한다.
 //! 관련 문서: docs/features/hooks/index.md.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{
-    Button, ButtonVariant, ControlSize, IconButton, IconButtonVariant, Input, TagVariant, switch,
-    tag, vspace,
+    Button, ButtonVariant, ControlSize, IconButton, IconButtonVariant, Input, SequenceEditorAction,
+    SequenceEditorError, SequenceEditorView, TagVariant, sequence_editor, switch, tag, vspace,
 };
 
 use crate::adapters::ui::icons;
 use crate::hook_handler::config::UserHookHandlerActionDecl;
 use crate::hook_handler::registry::UserHookHandlerUpsertDecl;
+use crate::hook_handler::sequence_text::{
+    SequenceTextError, SequenceTextErrorKind, format_sequence, parse_sequence,
+};
+use crate::hook_handler::types::IpcCall;
 use crate::hook_handler::types::is_valid_hook_handler_short_name;
 use crate::hook_handler::{
     HookHandler, HookHandlerAction, HookHandlerId, HookHandlerOwner, HookSource,
 };
-use crate::i18n::{t, t_fmt};
+use crate::i18n::{t, t_fmt, t_fmt2};
 
 /// jsx `HookRow` line 2 의 "Shell cmd:" 라벨 폭 (`width: 74, flex: none`).
 const HOOK_CMD_LABEL_W: LogicalPx = LogicalPx(74.0);
@@ -37,12 +43,33 @@ pub(crate) struct HookHandlerEditDraft {
     enabled: BTreeMap<HookHandlerId, bool>,
     /// ShellCommand 행의 인라인 명령 편집 (전체 명령 문자열).
     cmd_edits: BTreeMap<HookHandlerId, String>,
+    /// IpcSequence 편집기에서 Apply 한 호출 목록. host/plugin 행도 user override 로 저장한다.
+    seq_edits: BTreeMap<HookHandlerId, Vec<IpcCall>>,
+    /// 열려 있는 IpcSequence 편집기. 한 번에 한 행이다.
+    seq_editor: Option<SeqEditor>,
     /// user-origin entry 삭제 의도.
     remove: BTreeSet<HookHandlerId>,
     /// 새로 추가될 user 핸들러 (short-name, 셸 명령).
     add: Vec<PendingHookAdd>,
     /// "Add handler" 인라인 draft 폼 상태.
     form: AddHookForm,
+}
+
+/// 열린 IpcSequence 편집기 — 대상 행과 편집 중인 문자열.
+#[derive(Debug, Clone)]
+struct SeqEditor {
+    id: HookHandlerId,
+    text: String,
+    /// 처음 그리는 프레임에 포커스를 요청한다. egui 는 그 프레임에 그리지 않은 위젯의 포커스를
+    /// 풀므로 Edit 을 누른 프레임에는 요청할 수 없다.
+    focus: bool,
+}
+
+/// 이번 프레임에 IpcSequence 행에서 일어난 일.
+enum SeqRowEvent {
+    Open(HookHandlerId, String),
+    Apply(HookHandlerId, Vec<IpcCall>),
+    Close,
 }
 
 /// draft 에 쌓인 신규 user 핸들러 한 건.
@@ -80,6 +107,17 @@ impl HookHandlerEditDraft {
                         command: cmd,
                         args: Vec::new(),
                     }),
+                })
+            }))
+            .chain(self.seq_edits.into_iter().map(|(id, calls)| {
+                // 시퀀스만 바꾼다. source 를 비워 두어야 webhook 에 묶인 핸들러의 출처 게이트가 유지된다.
+                E::UpsertHook(UserHookHandlerUpsertDecl {
+                    id: id.as_str().to_owned(),
+                    source: None,
+                    priority: None,
+                    display_name_i18n_key: None,
+                    disabled: None,
+                    action: Some(UserHookHandlerActionDecl::IpcSequence { calls }),
                 })
             }))
             .chain(self.add.into_iter().map(|add| {
@@ -163,16 +201,32 @@ pub(super) fn draw_hook_handlers(ui: &mut egui::Ui, hh: &mut HookHandlerEditDraf
     let mut toggle: Option<(HookHandlerId, bool)> = None;
     let mut cmd_edit: Option<(HookHandlerId, String)> = None;
     let mut remove_toggle: Option<HookHandlerId> = None;
+    let mut seq_event: Option<SeqRowEvent> = None;
+    let mut editor = hh.seq_editor.take();
     for h in &rows {
-        draw_hook_row(
-            ui,
-            &th,
-            hh,
-            h,
-            &mut toggle,
-            &mut cmd_edit,
-            &mut remove_toggle,
-        );
+        let mut out = RowOutput {
+            toggle: &mut toggle,
+            cmd_edit: &mut cmd_edit,
+            remove_toggle: &mut remove_toggle,
+            seq_event: &mut seq_event,
+        };
+        draw_hook_row(ui, &th, hh, h, &mut editor, &mut out);
+    }
+    hh.seq_editor = editor;
+    match seq_event {
+        Some(SeqRowEvent::Open(id, text)) => {
+            hh.seq_editor = Some(SeqEditor {
+                id,
+                text,
+                focus: true,
+            });
+        }
+        Some(SeqRowEvent::Apply(id, calls)) => {
+            hh.seq_edits.insert(id, calls);
+            hh.seq_editor = None;
+        }
+        Some(SeqRowEvent::Close) => hh.seq_editor = None,
+        None => {}
     }
     // draft 로 추가된 행 — jsx 는 commitAdd 가 목록에 바로 push 하므로 pending add
     // 도 동일 비주얼의 행으로 노출한다 (Save 전까지는 draft 에만 존재).
@@ -207,6 +261,19 @@ fn mono_caps_head(ui: &mut egui::Ui, th: &tasty_type_appearance::theme::Theme, t
     );
 }
 
+/// 한 행이 돌려주는 변경 의도. 초안은 모든 행을 그린 뒤 한 번에 고친다.
+struct RowOutput<'a> {
+    toggle: &'a mut Option<(HookHandlerId, bool)>,
+    cmd_edit: &'a mut Option<(HookHandlerId, String)>,
+    remove_toggle: &'a mut Option<HookHandlerId>,
+    seq_event: &'a mut Option<SeqRowEvent>,
+}
+
+/// 편집기 글자 영역의 id. 편집기를 처음 그린 프레임에 이 id 로 포커스를 요청한다.
+fn seq_editor_id(id: &HookHandlerId) -> egui::Id {
+    egui::Id::new(("hook_seq_editor", id.as_str()))
+}
+
 /// 한 핸들러 행 (jsx `HookRow` 전사) — 2행 컬럼 + 하단 separator + disabled 시
 /// row 전체 opacity.
 fn draw_hook_row(
@@ -214,18 +281,34 @@ fn draw_hook_row(
     th: &tasty_type_appearance::theme::Theme,
     hh: &HookHandlerEditDraft,
     h: &HookHandler,
-    toggle: &mut Option<(HookHandlerId, bool)>,
-    cmd_edit: &mut Option<(HookHandlerId, String)>,
-    remove_toggle: &mut Option<HookHandlerId>,
+    editor: &mut Option<SeqEditor>,
+    out: &mut RowOutput<'_>,
 ) {
+    let RowOutput {
+        toggle,
+        cmd_edit,
+        remove_toggle,
+        seq_event,
+    } = out;
     let on = hh.enabled.get(&h.id).copied().unwrap_or(!h.disabled);
     let pending_remove = hh.remove.contains(&h.id);
     let is_shell = matches!(h.action, HookHandlerAction::ShellCommand { .. });
-    let cmd_display = hh
-        .cmd_edits
-        .get(&h.id)
-        .cloned()
-        .unwrap_or_else(|| action_display(&h.action));
+    let seq_calls: Option<&[IpcCall]> = match &h.action {
+        HookHandlerAction::IpcSequence { calls } => Some(
+            hh.seq_edits
+                .get(&h.id)
+                .map_or(calls.as_slice(), Vec::as_slice),
+        ),
+        HookHandlerAction::ShellCommand { .. } => None,
+    };
+    let cmd_display = match seq_calls {
+        Some(calls) => sequence_summary(calls),
+        None => hh
+            .cmd_edits
+            .get(&h.id)
+            .cloned()
+            .unwrap_or_else(|| action_display(&h.action)),
+    };
 
     let resp = ui.scope(|ui| {
         if !on {
@@ -255,7 +338,7 @@ fn draw_hook_row(
                                 })
                                 .clicked()
                             {
-                                *remove_toggle = Some(h.id.clone());
+                                **remove_toggle = Some(h.id.clone());
                             }
                         } else {
                             lock_slot(ui, th);
@@ -271,7 +354,7 @@ fn draw_hook_row(
                         }
                         let mut checked = on;
                         if switch(ui, th, &mut checked, None, true).changed() {
-                            *toggle = Some((h.id.clone(), checked));
+                            **toggle = Some((h.id.clone(), checked));
                         }
                         // 좌측 나머지 (LTR 로 되돌림): id + Tag + prio.
                         ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
@@ -300,7 +383,13 @@ fn draw_hook_row(
                         });
                     });
                 });
-                // ── line 2: action — 셸 명령 인라인 Input / IpcSequence 요약 ──
+                // ── line 2: action — 셸 명령 인라인 Input / IpcSequence 요약 또는 편집기 ──
+                if let Some(ed) = editor.as_mut().filter(|ed| ed.id == h.id) {
+                    if let Some(event) = draw_seq_editor(ui, th, ed) {
+                        **seq_event = Some(event);
+                    }
+                    return;
+                }
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
                     row_label(
@@ -320,15 +409,10 @@ fn draw_hook_row(
                             .show(ui, th, &mut buf)
                             .changed()
                         {
-                            *cmd_edit = Some((h.id.clone(), buf));
+                            **cmd_edit = Some((h.id.clone(), buf));
                         }
-                    } else {
-                        ui.label(
-                            egui::RichText::new(cmd_display)
-                                .monospace()
-                                .size(th.font_size_term_sm.value())
-                                .color(th.text_secondary()),
-                        );
+                    } else if let Some(calls) = seq_calls {
+                        seq_summary_line(ui, th, h, calls, cmd_display, seq_event);
                     }
                 });
             });
@@ -462,6 +546,148 @@ fn origin_tag(owner: &HookHandlerOwner) -> (&str, TagVariant) {
     }
 }
 
+/// IpcSequence 요약 줄 — mono 한 줄 요약(줄어드는 항목) · 오른쪽 끝 Edit. 한 줄 형식으로 쓸 수 없는
+/// 시퀀스는 Edit 대신 "Edit with CLI"(툴팁 = 명령) + 명령 복사 IconButton 이다.
+fn seq_summary_line(
+    ui: &mut egui::Ui,
+    th: &tasty_type_appearance::theme::Theme,
+    h: &HookHandler,
+    calls: &[IpcCall],
+    summary: String,
+    seq_event: &mut Option<SeqRowEvent>,
+) {
+    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+        match format_sequence(calls) {
+            Ok(text) => {
+                if Button::new(t("settings.file_handler.hook_handlers.seq_edit"))
+                    .variant(ButtonVariant::Ghost)
+                    .size(ControlSize::Sm)
+                    .show(ui, th)
+                    .clicked()
+                {
+                    *seq_event = Some(SeqRowEvent::Open(h.id.clone(), text));
+                }
+            }
+            Err(_) => {
+                let command = format!("tasty hook-handler get --id {}", h.id.as_str());
+                let copy = IconButton::new()
+                    .variant(IconButtonVariant::Ghost)
+                    .size(ControlSize::Sm)
+                    .show(ui, th, &|ui, rect, c| {
+                        icons::COPY.image(rect.width(), c).paint_at(ui, rect);
+                    });
+                if copy.clicked() {
+                    ui.ctx().copy_text(command.clone());
+                }
+                copy.on_hover_text(t("settings.file_handler.hook_handlers.seq_copy_cli"));
+                ui.label(
+                    egui::RichText::new(t("settings.file_handler.hook_handlers.seq_edit_with_cli"))
+                        .size(th.font_size_caption.value())
+                        .color(th.text_muted()),
+                )
+                .on_hover_text(command);
+            }
+        }
+        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+            ui.add(
+                egui::Label::new(
+                    egui::RichText::new(summary)
+                        .monospace()
+                        .size(th.font_size_term_sm.value())
+                        .color(th.text_secondary()),
+                )
+                .truncate(),
+            );
+        });
+    });
+}
+
+/// 열린 편집기. 입력할 때마다 해석하고 첫 오류를 보인다. Apply 는 해석 결과를, Cancel 은 닫기를 돌려준다.
+fn draw_seq_editor(
+    ui: &mut egui::Ui,
+    th: &tasty_type_appearance::theme::Theme,
+    ed: &mut SeqEditor,
+) -> Option<SeqRowEvent> {
+    let alert = |ui: &mut egui::Ui, rect: egui::Rect, c: egui::Color32| {
+        icons::ALERT_CIRCLE
+            .image(rect.width(), c)
+            .paint_at(ui, rect);
+    };
+    let check = |text: &str| {
+        parse_sequence(text)
+            .map(|calls| calls.len())
+            .map_err(editor_error)
+    };
+    let view = SequenceEditorView {
+        placeholder: "system.info",
+        help: t("settings.file_handler.hook_handlers.seq_help"),
+        empty_note: t("settings.file_handler.hook_handlers.seq_empty"),
+        cancel: t("button.cancel"),
+        apply: t("settings.file_handler.hook_handlers.seq_apply"),
+        alert_icon: &alert,
+        check: &check,
+    };
+    let action = sequence_editor(
+        ui,
+        th,
+        ("hook_seq_editor", ed.id.as_str()),
+        &view,
+        &mut ed.text,
+    );
+    if ed.focus {
+        ui.memory_mut(|m| m.request_focus(seq_editor_id(&ed.id)));
+        ui.ctx().request_repaint();
+        ed.focus = false;
+    }
+    match action {
+        SequenceEditorAction::Apply => parse_sequence(&ed.text)
+            .ok()
+            .map(|calls| SeqRowEvent::Apply(ed.id.clone(), calls)),
+        SequenceEditorAction::Cancel => Some(SeqRowEvent::Close),
+        SequenceEditorAction::None => None,
+    }
+}
+
+/// 해석 오류를 편집기 한 줄로 옮긴다. 문장은 번역하고 serde 원문 이유는 그대로 둔다.
+fn editor_error(e: SequenceTextError) -> SequenceEditorError {
+    let line = e.line.to_string();
+    let (sentence, reason) = match e.kind {
+        SequenceTextErrorKind::MissingMethod => (
+            t_fmt(
+                "settings.file_handler.hook_handlers.seq_err_missing_method",
+                &line,
+            ),
+            None,
+        ),
+        SequenceTextErrorKind::InvalidMethod => (
+            t_fmt(
+                "settings.file_handler.hook_handlers.seq_err_invalid_method",
+                &line,
+            ),
+            None,
+        ),
+        SequenceTextErrorKind::InvalidParams { column, message } => (
+            t_fmt2(
+                "settings.file_handler.hook_handlers.seq_err_invalid_params",
+                &line,
+                &column.to_string(),
+            ),
+            Some(message),
+        ),
+    };
+    SequenceEditorError {
+        line: e.line,
+        sentence,
+        reason,
+    }
+}
+
+/// IpcSequence 한 줄 요약 — 메서드를 → 로 잇는다.
+fn sequence_summary(calls: &[IpcCall]) -> String {
+    let methods: Vec<&str> = calls.iter().map(|c| c.method.as_str()).collect();
+    format!("ipc: {}", methods.join(" → "))
+}
+
 /// action 표시 문자열 — ShellCommand 는 전체 명령, IpcSequence 는 method 요약.
 fn action_display(action: &HookHandlerAction) -> String {
     match action {
@@ -472,10 +698,7 @@ fn action_display(action: &HookHandlerAction) -> String {
                 format!("{command} {}", args.join(" "))
             }
         }
-        HookHandlerAction::IpcSequence { calls } => {
-            let methods: Vec<&str> = calls.iter().map(|c| c.method.as_str()).collect();
-            format!("ipc: {}", methods.join(" → "))
-        }
+        HookHandlerAction::IpcSequence { calls } => sequence_summary(calls),
     }
 }
 
@@ -645,6 +868,40 @@ mod tests {
         assert!(
             matches!(edits.as_slice(), [RegistryEdit::HookEnabled(id, false)] if id.as_str() == "user/noisy")
         );
+    }
+
+    /// Apply 한 시퀀스는 host 행이라도 같은 id 의 user override 로 저장되고, 출처·우선순위·활성은 건드리지 않는다.
+    #[test]
+    fn applied_sequence_saves_as_an_ipc_sequence_override() {
+        use crate::app::settings_edit::RegistryEdit;
+        let calls = parse_sequence("system.info\nnotification.send {\"title\":\"x\"}").unwrap();
+        let mut draft = HookHandlerEditDraft::default();
+        draft
+            .seq_edits
+            .insert(HookHandlerId::new("host/notify"), calls.clone());
+        let edits = draft.into_edits();
+        let [RegistryEdit::UpsertHook(h)] = edits.as_slice() else {
+            panic!("expected one upsert")
+        };
+        assert_eq!(h.id, "host/notify");
+        assert_eq!(h.source, None);
+        assert_eq!(h.priority, None);
+        assert_eq!(h.disabled, None);
+        assert!(matches!(
+            &h.action,
+            Some(UserHookHandlerActionDecl::IpcSequence { calls: saved }) if *saved == calls
+        ));
+    }
+
+    /// 편집기 오류 줄은 해석 오류의 줄 번호를 쓰고, params 오류만 serde 원문 이유를 붙인다.
+    #[test]
+    fn editor_error_keeps_the_line_and_only_params_carry_a_reason() {
+        let e = editor_error(parse_sequence("# c\nsystem.info\nnotify {bad}").unwrap_err());
+        assert_eq!(e.line, 3);
+        assert!(e.reason.is_some());
+        let e = editor_error(parse_sequence("system.info\n{\"a\":1}").unwrap_err());
+        assert_eq!(e.line, 2);
+        assert!(e.reason.is_none());
     }
 
     #[test]
