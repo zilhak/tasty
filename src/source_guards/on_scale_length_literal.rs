@@ -844,14 +844,16 @@ fn the_blind_spots_are_still_the_size_they_say() {
         // 토스트 같은 모서리 합치기 시험의 화면·pane 사각형과 Settings 하단 거리 시험이 열한 개를 더한다.
         // 점선 무늬의 배율 무관 단언이 test 코드에 값 4를 둘 더한다.
         // HelpHint 강제 버블 시험의 클립 사각형이 세 개를 더한다.
-        (219, 511),
+        // 탐색기 분할 하한 시험의 분할 사각형 PhysicalPx(0)·PhysicalPx(0)·PhysicalPx(600) 셋이 test 전용으로 들어왔다.
+        (219, 514),
         "제외한 0과 test 전용 코드의 수가 달라졌다. 실제 사용과 수집 범위의 변경을 확인하고 기록을 갱신한다."
     );
     let roster: usize = UNIT_SPACE_SITES.iter().map(|(.., n, _)| n).sum();
     assert_eq!(
         (floors, unit_space),
         // 값 1의 clamp·서브픽셀 비교 문턱을 별도로 센다.
-        (19, roster),
+        // 탐색기 분할 하한이 pane 내용 높이를 resize_all 과 같은 1px 하한으로 잡아 하나를 더한다.
+        (20, roster),
         "값 1의 하한·정규화 좌표 수가 달라졌다. 별도 집계 대상의 변경을 확인하고 기록을 갱신한다."
     );
     for (path, head, budget, why) in UNIT_SPACE_SITES {

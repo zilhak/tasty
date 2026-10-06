@@ -274,10 +274,13 @@ impl MainView {
                             / drag.info.split_rect.height.value()
                     }
                 };
-                let changed = self
-                    .state
-                    .layout_previews
-                    .update(engine, drag.sequence, ratio);
+                let changed = self.state.update_divider_preview(
+                    engine,
+                    drag.sequence,
+                    ratio,
+                    terminal_rect,
+                    scale_factor,
+                );
                 if changed {
                     self.state
                         .resize_all(engine, terminal_rect, cell_w, cell_h, scale_factor);

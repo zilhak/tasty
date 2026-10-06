@@ -332,5 +332,7 @@ impl super::MainViewState {
     }
 }
 
+mod explorer_floor;
+
 #[cfg(test)]
 mod tests;

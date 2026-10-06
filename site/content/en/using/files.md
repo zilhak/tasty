@@ -1,4 +1,4 @@
-<!-- source-hash: 9462d89c1210 -->
+<!-- source-hash: a5b764c013db -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -47,6 +47,8 @@ The file manager built into Tasty. Change a terminal with `Alt+'` > **Explorer**
 - **Top** — **Back** · **Forward** · **Up** · **Refresh**, the address bar, and the view switch (**Grid** · **List** · **Detail**).
 - **Right** — the items in the current folder. `..` at the top goes to the parent folder. In Detail view, click the **Name** · **Size** · **Date modified** · **Type** column headers to sort.
 - You can keep several **New tab**s inside a Surface and view folders separately. These are separate from the Pane's Tabs.
+
+Dragging a split line to shrink an Explorer stops at the height that still leaves the toolbar, the status line and about two rows of the list (160px).
 
 Click the address bar to type a path directly; recently visited folders appear as autocompletion. Go with `Enter` or **Go**. The left tree stays fixed at the root, but the right list can go anywhere.
 
