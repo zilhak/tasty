@@ -89,7 +89,7 @@ GitHub Releases 에서 노트 + 플랫폼별 아티팩트 확인:
 
 | 항목 | x86_64 | aarch64 |
 |------|--------|---------|
-| 호스트 | `8945hs` (192.168.0.5) | `gx10` (192.168.0.13) |
+| 호스트 | `8945hs` (192.168.0.5) | `gx10` (192.168.0.4) |
 | Runner 이름 | `tasty-server-x64` | `tasty-gx10-arm64` |
 | 라벨 | `self-hosted, Linux, X64` | `self-hosted, Linux, ARM64` |
 | 설치 경로 | `/home/zilhak/actions-runner/` | 〃 |
