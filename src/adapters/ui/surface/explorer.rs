@@ -27,6 +27,8 @@ const CELL_W: LogicalPx = LogicalPx(80.0);
 /// 사이드바 폭 (logical px — design `ExpSidebar` width 196).
 const SIDEBAR_W: LogicalPx = LogicalPx(196.0);
 
+mod columns;
+
 /// 기본 고정 높이.
 const FAV_PIN_BASE_H: LogicalPx = LogicalPx(240.0);
 /// 사이드바 본문 높이가 이 값 미만이면 고정 높이 대신 비율(`FAV_PIN_RATIO`)을 쓴다.
@@ -138,29 +140,7 @@ pub fn draw_explorer(
             egui::Stroke::new(theme.border_width.value(), theme.border_strong().to_egui()),
         );
 
-        // 아래 행을 칸에 남은 높이의 고정 사각형으로 나눈다. 사이드바는 즐겨찾기 최소 높이 때문에
-        // 낮은 칸에서 남은 높이보다 커질 수 있다. 그 높이가 행을 늘리면 내용 열과 상태줄이 칸 밖으로
-        // 밀리므로, 각 열을 자기 사각형에 가두고 넘치는 부분은 잘라 낸다.
-        let (row, _) = ui.allocate_exact_size(
-            egui::vec2(ui.available_width(), ui.available_height()),
-            egui::Sense::hover(),
-        );
-        let side = egui::Rect::from_min_size(row.min, egui::vec2(SIDEBAR_W.value(), row.height()));
-        let line = egui::Rect::from_min_size(
-            egui::pos2(side.max.x, row.min.y),
-            egui::vec2(theme.border_width.value(), row.height()),
-        );
-        let body = egui::Rect::from_min_max(egui::pos2(line.max.x, row.min.y), row.max);
-        let column = |ui: &mut egui::Ui, rect: egui::Rect| {
-            let mut child = ui.new_child(
-                egui::UiBuilder::new()
-                    .max_rect(rect)
-                    .layout(egui::Layout::top_down(egui::Align::Min)),
-            );
-            child.set_clip_rect(rect.intersect(ui.clip_rect()));
-            child
-        };
-        let mut side_ui = column(ui, side);
+        let (mut side_ui, line, mut body_ui) = columns::split(ui, SIDEBAR_W, theme.border_width);
         sidebar(
             &mut side_ui,
             theme,
@@ -175,7 +155,6 @@ pub fn draw_explorer(
             line.y_range(),
             egui::Stroke::new(theme.border_width.value(), theme.border_strong().to_egui()),
         );
-        let mut body_ui = column(ui, body);
         content(
             &mut body_ui,
             theme,
