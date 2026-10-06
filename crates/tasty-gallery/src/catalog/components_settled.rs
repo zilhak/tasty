@@ -317,23 +317,36 @@ pub fn draw_dot_family(ui: &mut egui::Ui, theme: &Theme) {
                 ("tab marker · 4 (other role)", TAB_MARKER, false),
             ];
             for (label, size, with_ring) in cells {
-                ui.vertical_centered(|ui| {
-                    ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
-                    let (cell, _) = ui.allocate_exact_size(
-                        egui::vec2(DOT_CELL_W.value(), chrome_h),
-                        egui::Sense::hover(),
-                    );
-                    let p = ui.painter();
-                    p.rect_filled(cell, theme.corner_radius_sm.value(), ec(theme.bg_sidebar()));
-                    paint_dot(
-                        p,
-                        theme,
-                        cell.center(),
-                        size.value(),
-                        with_ring.then_some(ring),
-                    );
-                    mono_micro(ui, theme, label, ec(theme.text_muted()));
-                });
+                let font = egui::FontId::monospace(theme.font_size_micro.value());
+                let label_w = ui
+                    .painter()
+                    .layout_no_wrap(label.to_owned(), font, egui::Color32::PLACEHOLDER)
+                    .rect
+                    .width();
+                let w = label_w.max(DOT_CELL_W.value());
+                // vertical_centered는 남은 폭 전체를 차지하므로 열 폭을 먼저 정한다.
+                ui.allocate_ui_with_layout(
+                    egui::vec2(w, 0.0),
+                    egui::Layout::top_down(egui::Align::Center),
+                    |ui| {
+                        ui.set_width(w);
+                        ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
+                        let (cell, _) = ui.allocate_exact_size(
+                            egui::vec2(DOT_CELL_W.value(), chrome_h),
+                            egui::Sense::hover(),
+                        );
+                        let p = ui.painter();
+                        p.rect_filled(cell, theme.corner_radius_sm.value(), ec(theme.bg_sidebar()));
+                        paint_dot(
+                            p,
+                            theme,
+                            cell.center(),
+                            size.value(),
+                            with_ring.then_some(ring),
+                        );
+                        mono_micro(ui, theme, label, ec(theme.text_muted()));
+                    },
+                );
             }
         });
         ui.horizontal_top(|ui| {
