@@ -81,9 +81,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
 }
 
 /// 토스트 표시 시간의 범위(초)와 눈금. 본체 `tabs/overlay.rs`의 NumberSpec과 같은 값이다.
-const TOAST_MIN: f64 = 1.0;
-const TOAST_MAX: f64 = 10.0;
-const TOAST_STEP: f64 = 0.5;
+const TOAST_SECS_MIN: f64 = 1.0;
+const TOAST_SECS_MAX: f64 = 10.0;
+const TOAST_SECS_STEP: f64 = 0.5;
 
 thread_local! {
     /// 시안 `ToastDragValue` 상태의 초기 글자 — 평소 · 범위 밖.
@@ -159,7 +159,8 @@ fn toast_row(ui: &mut egui::Ui, theme: &Theme, caption: &str, buf: &mut String) 
         .filter(|v| v.is_finite())
         .map(|v| {
             (
-                (v.clamp(TOAST_MIN, TOAST_MAX) / TOAST_STEP).round() * TOAST_STEP,
+                (v.clamp(TOAST_SECS_MIN, TOAST_SECS_MAX) / TOAST_SECS_STEP).round()
+                    * TOAST_SECS_STEP,
                 v,
             )
         })
@@ -189,7 +190,7 @@ fn toast_row(ui: &mut egui::Ui, theme: &Theme, caption: &str, buf: &mut String) 
         if let Some(settled) = settled {
             ui.label(
                 egui::RichText::new(format!(
-                    "Between {TOAST_MIN:.1} and {TOAST_MAX:.1}. Commits as {settled:.1}."
+                    "Between {TOAST_SECS_MIN:.1} and {TOAST_SECS_MAX:.1}. Commits as {settled:.1}."
                 ))
                 .size(theme.font_size_caption.value())
                 .color(theme.accent_danger().to_egui()),
