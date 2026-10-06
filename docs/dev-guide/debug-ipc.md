@@ -153,8 +153,9 @@ IPC dispatch 한 회차의 시간 예산(제품값 16 ms)을 밀리초로 **줄�
 
 egui의 `Event::Text(String)`은 문자를 입력하고 `Event::Key`는 키 동작을 전달한다.
 `debug.inject_egui_key`만으로는 `TextEdit`에 문자가 들어가지 않으므로
-`debug.inject_egui_text`를 사용한다. WM 없는 Xvfb에서는 `xdotool type`도 키보드
-포커스(`XGetInputFocus`가 `PointerRoot`) 문제로 이 경로를 대신하지 못한다.
+`debug.inject_egui_text`를 사용한다. WM 없는 Xvfb에서 `xdotool type`은 main 창에
+`xdotool windowfocus --sync`로 X 포커스를 준 뒤에만 들어간다. 포커스가 없으면(`XGetInputFocus`가
+`PointerRoot`) rc=0으로 끝나고 아무것도 입력되지 않는다([스크린샷 방법](../ai-verification/screenshot-methods.md) 5번).
 
 - **문자열 전체가 한 이벤트로** 들어간다. winit 의 `text` 필드가 `char` 가 아니라 문자열이라
   죽은키 조합 같은 실입력도 여러 문자를 한 이벤트로 나른다 — 문자마다 쪼개면 실입력이 만들지

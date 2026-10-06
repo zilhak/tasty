@@ -279,27 +279,33 @@ activate 없이 절대 좌표로 `mousemove` 한 뒤 `click` 하면 그대로 �
 조건을 우연히 만족한다 — 하지만 **우연에 기대지 않는다.** "입력 전" 기준 화면을 찍는 순간이
 정확히 이 함정에 걸리는 구간이다.)
 
-**5. 키보드는 `xdotool type` 으로 안 들어간다 — 텍스트는 IPC 로 주입한다.** 위 3 번의
-PointerRoot 모델이 구해 주는 것은 **포인터**뿐이다. 키보드 포커스는 여전히 없어서
+**5. Tasty 가 그리는 화면의 키 입력은 main 창에 X 포커스를 준 뒤에만 들어간다 — 없으면 조용히 실패한다.** 위 3 번의
+PointerRoot 모델이 구해 주는 것은 **포인터**뿐이다. 클릭만으로는 키보드 포커스가 생기지 않아
 `XGetInputFocus` 가 `PointerRoot`(1)를 돌려주고, winit 은 포커스 없는 창에 키 이벤트를
 올리지 않는다. `xdotool type --window <id>` 로 창을 지목해도 같다 — 합성 이벤트가 그
 경로를 타지 못한다. **그리고 조용하다**: `xdotool` 은 그 경고를 stderr 로 흘리면서 `0` 으로
 끝나고, 직후 캡처는 치기 전 프레임과 **바이트까지 같다**(실측: 같은 `md5sum`). 종료 코드로
 판정하면 "쳤는데 필터가 안 먹는다" 로 오진한다.
 
-그래서 `TextEdit` 에 쿼리를 넣어 **목록이 줄어든 화면**을 찍으려면 egui 입력 큐로 직접
-주입한다(`tasty debug inject egui-text`). 절차·거절 조건은
-[debug-ipc.md](../dev-guide/debug-ipc.md) "문자 주입은 키 주입과 다른 채널이다" 가 정본이다.
+`xdotool windowfocus --sync <main 창 id>` 로 X 포커스를 main 창에 주면 `XGetInputFocus` 가 그
+창을 돌려주고, `xdotool key`·`xdotool type` 이 들어간다. 실측: 포커스를 준 뒤
+`key ctrl+shift+p` 로 명령 팔레트가 열리고 `type zzq` 가 egui `TextEdit` 에 들어갔으며, WebView
+의 `<input>` 에도 `type` 으로 친 글자가 들어갔다. 포커스를 주지 않으면 같은 `key` 로 팔레트가
+열리지 않고 `type` 은 rc=0 으로 끝난다. 그래서 키 입력 재현은 포커스를 먼저 주고, 친 결과를
+캡처로 확인한다.
 
-**호스트 단축키(`xdotool key alt+w` 등)를 재현할 때는 먼저 main 창에 X 포커스를 준다.**
-`xdotool windowfocus --sync <main 창 id>` 뒤에는 `XGetInputFocus` 가 main 창을 돌려주고, 클릭한
-surface 에 `xdotool key` 로 보낸 단축키가 `KeybindingSettings` 경로로 처리된다. 이 단계를 빼면
+**호스트 단축키(`xdotool key alt+w` 등)도 같다.** 포커스를 준 뒤에는 클릭한 surface 에
+`xdotool key` 로 보낸 단축키가 `KeybindingSettings` 경로로 처리된다. 포커스를 빼면
 WebView surface(html·markdown)와 Tasty 가 그리는 surface(터미널·image 같은 egui-mesh·DAG)의
 결과가 갈린다. PointerRoot 에서 키는 포인터 아래 X 창으로 가는데 WebView 는 자기 X 창이라 키를
 받아 호스트로 넘기고, Tasty 가 그리는 surface 는 포커스 없는 main 창이라 키를 받지 못한다.
 그래서 "markdown 은 닫히는데 image 는 안 닫힌다" 같은 surface 종류별 결함처럼 보인다. 포커스를
 준 뒤에도 결과가 다를 때만 surface 종류의 결함으로 판정한다. `debug inject key` 는 PTY 에
 바이트를 넣는 경로라 호스트 단축키를 재현하지 못한다.
+
+포커스와 무관하게 `TextEdit` 에 쿼리를 넣어 **목록이 줄어든 화면**을 찍으려면 egui 입력 큐로
+직접 주입한다(`tasty debug inject egui-text`). 절차·거절 조건은
+[debug-ipc.md](../dev-guide/debug-ipc.md) "문자 주입은 키 주입과 다른 채널이다" 가 정본이다.
 
 그 밖에 이 조합에서 지키는 것:
 
