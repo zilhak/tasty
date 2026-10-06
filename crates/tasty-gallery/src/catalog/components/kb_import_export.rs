@@ -24,8 +24,8 @@ pub use migrate::draw_migration;
 pub use open_values::draw_open_values;
 pub use remaining_values::draw_remaining_values;
 
-/// specimen 폭 — 본체 설정 창 콘텐츠 컬럼(1100 창 − L2 200 − 좌우 패딩 16×2). jsx gallery 의
-/// `maxWidth: 620` 에서는 ui kit 의 288 · 120 라벨 열이 들어가지 않아 본체 폭으로 둔다.
+/// specimen 폭 — 시안 `IE_W`. Import/Export 는 full-bleed 라 기본 1100 창의 본체 설정 창 콘텐츠
+/// 컬럼(1100 − L2 200 − 좌우 패딩 16×2)을 쓰고 620 상한을 받지 않는다.
 const SPECIMEN_W: LogicalPx = LogicalPx(868.0);
 /// 진입 화면 컬럼 폭 — jsx gallery `IeEntry` 의 `maxWidth: 620`(L2 꼬리와 한 줄에 놓인다).
 const ENTRY_W: LogicalPx = LogicalPx(620.0);
@@ -33,14 +33,6 @@ const ENTRY_W: LogicalPx = LogicalPx(620.0);
 const PREVIEW_H: LogicalPx = LogicalPx(420.0);
 /// 마이그레이션 DrillDown 높이 — back bar + 미완료 카드.
 const MIGRATION_H: LogicalPx = LogicalPx(440.0);
-// 이 치수의 디자인 토큰 이름이 저장된 DTCG에 없어 명명 상수를 사용한다.
-/// 표 선택 열 — 디자인 `--tasty-kb-ie-select-column-width`(→ `size-32`).
-const SELECT_COL_W: LogicalPx = LogicalPx(32.0);
-/// 마이그레이션 행 라벨 열 — 디자인 `--tasty-kb-ie-action-column-width`(→ `size-288`, ja 최장 액션
-/// 라벨 실측 255px). 본체 단축키 탭의 `LABEL_COL_WIDTH` 와 같은 값이다.
-const MIGRATE_LABEL_W: LogicalPx = LogicalPx(288.0);
-/// 마이그레이션 행 원래 조합 열 — 디자인 `--tasty-kb-ie-from-column-width`(→ `size-120`).
-const MIGRATE_FROM_W: LogicalPx = LogicalPx(120.0);
 /// 그룹 헤더의 chevron ↔ 그룹명, 경고 줄 글머리 ↔ 문구 간격 — jsx `gap: 6`(그리드 밖 값,
 /// 스냅하지 않는다).
 const GROUP_CHEVRON_GAP: LogicalPx = LogicalPx(6.0);

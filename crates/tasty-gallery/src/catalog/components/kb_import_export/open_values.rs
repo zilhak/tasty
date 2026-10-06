@@ -12,8 +12,8 @@ use super::migrate::card;
 use super::notices::{dropped_notice, notice_block, notice_line, parse_failure};
 use super::paint::{caption, fixed_label, glyph_at, intro_secondary};
 use super::{
-    IE_FILE, IE_PICK, MIGRATE_FROM_W, MODIFIER_OPTIONS, MigrateRow, MigrateState, NOTICE_FOLD_AT,
-    SPECIMEN_W, STATE, State, Widget,
+    IE_FILE, IE_PICK, MODIFIER_OPTIONS, MigrateRow, MigrateState, NOTICE_FOLD_AT, SPECIMEN_W,
+    STATE, State, Widget,
 };
 
 /// 경고 블록 데모 줄 — 고정 순서(스키마 → 모르는 액션 → 빈 그룹). 넷째 줄은 접힌다.
@@ -260,7 +260,7 @@ fn modifier_selects(ui: &mut egui::Ui, theme: &Theme, st: &mut State) {
             ui.spacing_mut().item_spacing.x = theme.spacing_md.value();
             fixed_label(
                 ui,
-                MIGRATE_FROM_W,
+                theme.kb_ie_from_column_width(),
                 "Option",
                 egui::FontId::monospace(theme.font_size_term_sm.value()),
                 theme.text_muted().to_egui(),

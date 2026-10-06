@@ -11,9 +11,8 @@ use crate::catalog::spec::{self, StageVariant, TokenChip};
 use super::notices::notices;
 use super::paint::{caption, fixed_label, glyph_at, intro_secondary};
 use super::{
-    CONFLICT_SUMMARY_FROM, GROUP_CHEVRON_GAP, IE_PICK, MIGRATE_FROM_W, MIGRATE_LABEL_W,
-    MIGRATION_H, MODIFIER_OPTIONS, MigrateRow, MigrateState, SPECIMEN_W, STATE, State, Widget,
-    detail_frame,
+    CONFLICT_SUMMARY_FROM, GROUP_CHEVRON_GAP, IE_PICK, MIGRATION_H, MODIFIER_OPTIONS, MigrateRow,
+    MigrateState, SPECIMEN_W, STATE, State, Widget, detail_frame,
 };
 
 pub fn draw_migration(ui: &mut egui::Ui, theme: &Theme) {
@@ -56,6 +55,10 @@ pub fn draw_migration(ui: &mut egui::Ui, theme: &Theme) {
         theme,
         &[
             ("position", "above the diff table; notice between"),
+            (
+                "width",
+                "full-bleed — 868 at the default 1100 window (not the 620 cap) · columns 288 / 120 · kb-ie-action-column-width / kb-ie-from-column-width",
+            ),
             ("gate", "Apply disabled while any row is unresolved"),
             (
                 "counter",
@@ -329,14 +332,14 @@ fn migrate_row(
             ui.spacing_mut().item_spacing.x = theme.spacing_md.value();
             fixed_label(
                 ui,
-                MIGRATE_LABEL_W,
+                theme.kb_ie_action_column_width(),
                 r.action,
                 egui::FontId::proportional(theme.font_size_body.value()),
                 theme.text_secondary().to_egui(),
             );
             fixed_label(
                 ui,
-                MIGRATE_FROM_W,
+                theme.kb_ie_from_column_width(),
                 r.from,
                 egui::FontId::monospace(theme.font_size_term_sm.value()),
                 theme.text_muted().to_egui(),
@@ -414,7 +417,7 @@ fn migrate_row(
         if let Some(conflict) = r.conflict {
             tasty_ui_widgets::vspace(ui, theme.spacing_xs);
             ui.horizontal(|ui| {
-                ui.add_space(MIGRATE_LABEL_W.value());
+                ui.add_space(theme.kb_ie_action_column_width().value());
                 ui.spacing_mut().item_spacing.x = GROUP_CHEVRON_GAP.value();
                 glyph_at(
                     ui,
@@ -433,7 +436,7 @@ fn migrate_row(
         } else if let Some(fanout) = r.fanout {
             tasty_ui_widgets::vspace(ui, theme.spacing_xs);
             ui.horizontal(|ui| {
-                ui.add_space(MIGRATE_LABEL_W.value());
+                ui.add_space(theme.kb_ie_action_column_width().value());
                 ui.label(
                     egui::RichText::new(fanout)
                         .size(theme.font_size_caption.value())

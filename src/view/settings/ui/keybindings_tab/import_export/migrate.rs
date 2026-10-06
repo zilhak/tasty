@@ -10,12 +10,12 @@ use crate::adapters::ui::icons;
 use crate::adapters::ui::input::shortcuts::modifier_hint::all_modifier_combos;
 use crate::i18n::{t, t_fmt, t_fmt2};
 
-use super::super::{FieldKind, LABEL_COL_WIDTH, RecordingSlot};
+use super::super::{FieldKind, RecordingSlot};
 use super::labels::Labels;
 use super::model::{MigrationRow, MigrationValue};
 use super::paint::{fixed_label, glyph_at};
 use super::view_model::{MigrationView, ViewModel};
-use super::{CONFLICT_SUMMARY_FROM, GROUP_CHEVRON_GAP, MIGRATE_FROM_W, RECORDING_FIELD};
+use super::{CONFLICT_SUMMARY_FROM, GROUP_CHEVRON_GAP, RECORDING_FIELD};
 
 /// jsx `IeMigrateCard` — 톤 틴트 카드(헤더 · 설명 · 행들).
 pub(super) fn migrate_card(
@@ -167,14 +167,14 @@ fn migrate_row(
             ui.spacing_mut().item_spacing.x = th.spacing_md.value();
             fixed_label(
                 ui,
-                LABEL_COL_WIDTH,
+                th.kb_ie_action_column_width(),
                 &view.action,
                 egui::FontId::proportional(th.font_size_body.value()),
                 th.text_secondary().to_egui(),
             );
             fixed_label(
                 ui,
-                MIGRATE_FROM_W,
+                th.kb_ie_from_column_width(),
                 &view.from,
                 egui::FontId::monospace(th.font_size_term_sm.value()),
                 th.text_muted().to_egui(),
@@ -265,7 +265,7 @@ fn migrate_row(
         if let Some(conflict) = &view.conflict {
             vspace(ui, th.spacing_xs);
             ui.horizontal(|ui| {
-                ui.add_space(LABEL_COL_WIDTH.value());
+                ui.add_space(th.kb_ie_action_column_width().value());
                 ui.spacing_mut().item_spacing.x = GROUP_CHEVRON_GAP.value();
                 glyph_at(
                     ui,
@@ -282,7 +282,7 @@ fn migrate_row(
         } else if let Some(fanout) = &view.fanout {
             vspace(ui, th.spacing_xs);
             ui.horizontal(|ui| {
-                ui.add_space(LABEL_COL_WIDTH.value());
+                ui.add_space(th.kb_ie_action_column_width().value());
                 ui.label(
                     egui::RichText::new(fanout)
                         .size(th.font_size_caption.value())

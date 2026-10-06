@@ -48,11 +48,7 @@ use paint::intro;
 use view_model::build_view_model;
 
 // 아래 전용 치수는 이름을 붙인 상수로 유지하며 gallery_copied_dimensions가 갤러리와 대조한다.
-// 카드 여백과 슬롯 높이는 Theme의 공통 토큰을 쓴다.
-/// 표 선택 열 — 디자인 `--tasty-kb-ie-select-column-width`(→ `size-32`).
-const SELECT_COL_W: LogicalPx = LogicalPx(32.0);
-/// 마이그레이션 행 원래 조합 열 — 디자인 `--tasty-kb-ie-from-column-width`(→ `size-120`).
-const MIGRATE_FROM_W: LogicalPx = LogicalPx(120.0);
+// 열 폭·카드 여백·슬롯 높이는 Theme의 `kb-ie-*` 토큰을 쓴다.
 /// 그룹 헤더 chevron ↔ 그룹명, 충돌 부제 아이콘 ↔ 문구, 경고 줄 글머리 ↔ 문구 간격 — jsx `gap: 6`.
 const GROUP_CHEVRON_GAP: LogicalPx = LogicalPx(6.0);
 /// plugin 행 부제의 점 ↔ plugin 이름 간격 — jsx `gap: 5`.

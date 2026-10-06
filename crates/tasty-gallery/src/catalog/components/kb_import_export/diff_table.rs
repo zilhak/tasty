@@ -8,8 +8,8 @@ use crate::catalog::spec::{self, StageVariant, TokenChip};
 
 use super::paint::{intro, truncated, truncated_tracked};
 use super::{
-    GROUP_CHEVRON_GAP, GROUPS, Group, IE_FILE, PLUGIN_DOT_GAP, PREVIEW_H, Row, SELECT_COL_W, STATE,
-    State, counts, detail_frame, selected_count,
+    GROUP_CHEVRON_GAP, GROUPS, Group, IE_FILE, PLUGIN_DOT_GAP, PREVIEW_H, Row, STATE, State,
+    counts, detail_frame, selected_count,
 };
 
 pub fn draw_preview(ui: &mut egui::Ui, theme: &Theme) {
@@ -97,16 +97,17 @@ pub fn draw_preview(ui: &mut egui::Ui, theme: &Theme) {
 /// jsx `IeDiffTable` — 4 열 grid(select · action · current · imported), 그룹 헤더 축.
 fn diff_table(ui: &mut egui::Ui, theme: &Theme, st: &mut State) {
     let w = ui.available_width();
-    let rest = (w - SELECT_COL_W.value()).max(0.0);
+    let select_w = theme.kb_ie_select_column_width().value();
+    let rest = (w - select_w).max(0.0);
     let action_w = rest * 1.6 / 3.6;
     let value_w = rest / 3.6;
     let x_off = [
         0.0,
-        SELECT_COL_W.value(),
-        SELECT_COL_W.value() + action_w,
-        SELECT_COL_W.value() + action_w + value_w,
+        select_w,
+        select_w + action_w,
+        select_w + action_w + value_w,
     ];
-    let col_w = [SELECT_COL_W.value(), action_w, value_w, value_w];
+    let col_w = [select_w, action_w, value_w, value_w];
     let pad_x = theme.spacing_md.value();
     let pad_y = theme.spacing_sm.value();
     let hairline = egui::Stroke::new(

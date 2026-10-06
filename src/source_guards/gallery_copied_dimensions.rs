@@ -208,21 +208,6 @@ const COPIED: &[(&str, Side, Side)] = &[
         Side::Lit(GALLERY_SETTINGS_HANDLER, "HOOK_CMD_LABEL_W"),
     ),
     (
-        "단축키 가져오기 마이그레이션 행 라벨 열",
-        Side::Lit(HOST_KEYBINDINGS_TAB, "LABEL_COL_WIDTH"),
-        Side::Lit(GALLERY_KB_IMPORT_EXPORT, "MIGRATE_LABEL_W"),
-    ),
-    (
-        "단축키 가져오기 표 선택 열 폭",
-        Side::Lit(HOST_KB_IMPORT_EXPORT, "SELECT_COL_W"),
-        Side::Lit(GALLERY_KB_IMPORT_EXPORT, "SELECT_COL_W"),
-    ),
-    (
-        "단축키 가져오기 마이그레이션 원래 조합 열",
-        Side::Lit(HOST_KB_IMPORT_EXPORT, "MIGRATE_FROM_W"),
-        Side::Lit(GALLERY_KB_IMPORT_EXPORT, "MIGRATE_FROM_W"),
-    ),
-    (
         "단축키 가져오기 그룹 헤더 chevron 간격",
         Side::Lit(HOST_KB_IMPORT_EXPORT, "GROUP_CHEVRON_GAP"),
         Side::Lit(GALLERY_KB_IMPORT_EXPORT, "GROUP_CHEVRON_GAP"),
@@ -263,7 +248,6 @@ const HOST_TUTORIAL_CALLOUT: &str = "src/adapters/ui/tutorial/callout.rs";
 const HOST_EXPLORER: &str = "src/adapters/ui/surface/explorer.rs";
 const HOST_DAG_CHROME: &str = "src/adapters/ui/surface/dag_graph/chrome.rs";
 const HOST_HOOK_HANDLERS: &str = "src/view/settings/ui/file_handler_tab/hook_handlers.rs";
-const HOST_KEYBINDINGS_TAB: &str = "src/view/settings/ui/keybindings_tab.rs";
 const HOST_KB_IMPORT_EXPORT: &str = "src/view/settings/ui/keybindings_tab/import_export.rs";
 const GALLERY_KB_IMPORT_EXPORT: &str =
     "crates/tasty-gallery/src/catalog/components/kb_import_export.rs";
@@ -399,11 +383,11 @@ fn resolve(side: &Side, theme: &str, semantic: &str, primitive: &str) -> (String
 
 #[test]
 fn the_gallery_still_agrees_with_the_dimensions_it_restates() {
-    // 등록된 비교 쌍은 41개다. 항목을 삭제해 불일치를 숨기지 않도록 하한 대신 정확한 수를 확인한다.
+    // 등록된 비교 쌍은 38개다. 항목을 삭제해 불일치를 숨기지 않도록 하한 대신 정확한 수를 확인한다.
     assert_eq!(
         COPIED.len(),
-        41,
-        "비교 명부가 {}쌍이다(기록 41). 복사본이 실제로 사라졌는지 또는 새로 생겼는지 확인하고 명부와 기록을 함께 갱신한다.",
+        38,
+        "비교 명부가 {}쌍이다(기록 38). 복사본이 실제로 사라졌는지 또는 새로 생겼는지 확인하고 명부와 기록을 함께 갱신한다.",
         COPIED.len()
     );
     let theme = read(THEME);
@@ -686,7 +670,6 @@ const CONFESSED: &[(&str, &str)] = &[
         "FRAME_MAX_W",
     ),
     (GALLERY_KB_IMPORT_EXPORT, "SPECIMEN_W"),
-    (GALLERY_KB_IMPORT_EXPORT, "MIGRATE_LABEL_W"),
     (GALLERY_PLUGINS_WINDOW, "SEGMENT_TAB_LABEL_PRIMITIVE_12"),
     (GALLERY_PLUGINS_ATTENTION, "ATTN_PRIMITIVE_12"),
     (

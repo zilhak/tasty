@@ -728,14 +728,12 @@ i18n: `settings.keybindings.preset_*` 신규 10키 + `select_preset_label`/`pres
   `letter_spacing_caps(font_size_micro)` 를 `paint::truncated_tracked` 로 적용한다. `color-mix(tone X%, transparent)` 는 명명 const
   계수의 `gamma_multiply`.
 - 그리드 밖 값(chevron gap 6 · plugin 점 gap 5)은 가까운 값으로 바꾸지 않고 용도를 명시한 상수로 둔다([ADR-0035](../../adr/0035-shared-design-and-theme.md)).
-- 선택 열 32 · 라벨 288/120 · 슬롯 최소 폭 140 은 디자인이 컴포넌트 토큰(`kb-ie-select-column-width` ·
-  `kb-ie-action-column-width` · `kb-ie-from-column-width` · `kb-ie-slot-min-width`)을 열었지만 vendor 한
-  DTCG export(`crates/tasty-design-tokens/dtcg/tasty.tokens.json`)에 아직 그 이름이 없어 명명 const 로
-  남아 있다. export 에 들어오면 const 를 지우고 토큰을 읽는다. semantic 별칭인 둘 — 카드·알림 inset
-  (`kb-ie-notice-inset` → `space-md`)과 슬롯 높이(`kb-ie-slot-height` → `control-height-tab` =
-  `item_height_tab`) — 는 이미 Theme 을 읽는다.
-- specimen 폭은 본체 설정 창 콘텐츠 컬럼(868)이다 — jsx gallery 의 620 에는 ui kit 의 288·120
-  라벨 열이 들어가지 않는다. 진입 화면 컬럼만 620 을 따른다.
+- 선택 열 32 · 라벨 288/120 · 슬롯 최소 폭 140 · 카드·알림 inset · 슬롯 높이는 본체와 갤러리가 모두
+  Theme 의 `kb-ie-*` 접근자(`kb_ie_select_column_width` · `kb_ie_action_column_width` ·
+  `kb_ie_from_column_width` · `kb_ie_slot_min_width` · `kb_ie_notice_inset` · `kb_ie_slot_height`)를 읽는다.
+  본체 단축키 탭의 다른 서브탭이 쓰는 라벨 열 `LABEL_COL_WIDTH` 는 마이그레이션 행이 읽지 않는다.
+- Import/Export 는 full-bleed 서브탭이라 620 상한을 받지 않는다. specimen 폭은 시안 `IE_W` 와 같은 868
+  (기본 1100 창의 본체 설정 창 콘텐츠 컬럼)이다. 진입 화면 컬럼만 620 을 따른다.
 
 <a id="settings--handler-탭-서브탭-콘텐츠-s13"></a>
 

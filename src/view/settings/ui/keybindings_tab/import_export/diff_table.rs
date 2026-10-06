@@ -11,7 +11,7 @@ use crate::i18n::{t, t_fmt2};
 use super::model::{Group, RowKey};
 use super::paint::{truncated, truncated_tracked};
 use super::view_model::{GroupView, RowView, Sub, ViewModel};
-use super::{GROUP_CHEVRON_GAP, PLUGIN_DOT_GAP, SELECT_COL_W};
+use super::{GROUP_CHEVRON_GAP, PLUGIN_DOT_GAP};
 
 /// jsx `IeDiffTable` — 4 열 grid(select · action · current · imported) + 그룹 헤더.
 pub(super) fn diff_table(
@@ -23,16 +23,17 @@ pub(super) fn diff_table(
     deselected: &mut BTreeSet<RowKey>,
 ) {
     let w = ui.available_width();
-    let rest = (w - SELECT_COL_W.value()).max(0.0);
+    let select_w = th.kb_ie_select_column_width().value();
+    let rest = (w - select_w).max(0.0);
     let action_w = rest * 1.6 / 3.6;
     let value_w = rest / 3.6;
     let x_off = [
         0.0,
-        SELECT_COL_W.value(),
-        SELECT_COL_W.value() + action_w,
-        SELECT_COL_W.value() + action_w + value_w,
+        select_w,
+        select_w + action_w,
+        select_w + action_w + value_w,
     ];
-    let col_w = [SELECT_COL_W.value(), action_w, value_w, value_w];
+    let col_w = [select_w, action_w, value_w, value_w];
     let pad_x = th.spacing_md.value();
     let pad_y = th.spacing_sm.value();
     let hairline = egui::Stroke::new(
