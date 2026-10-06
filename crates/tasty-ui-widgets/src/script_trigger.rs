@@ -90,15 +90,19 @@ pub fn script_trigger_menu<'a>(
         })
         .fold(theme.trigger_menu_min_width().value(), f32::max);
     let mut picked = None;
+    let row_h = theme.menu_item_height().value();
+    let max_h = theme.trigger_menu_max_height().value();
+    // 부모의 남은 높이가 짧아도 상한까지는 행을 다 보인다. 상한을 넘을 때만 스크롤한다.
+    let content_h = row_h * events.len() as f32;
     egui::ScrollArea::vertical()
-        .max_height(theme.trigger_menu_max_height().value())
+        .max_height(max_h)
+        .min_scrolled_height(content_h.min(max_h))
         .drag_to_scroll(false)
         .show(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 0.0;
             for ev in events {
-                let h = theme.menu_item_height().value();
                 let (rect, resp) =
-                    ui.allocate_exact_size(egui::vec2(width, h), egui::Sense::click());
+                    ui.allocate_exact_size(egui::vec2(width, row_h), egui::Sense::click());
                 let hovered = resp.hovered();
                 if hovered {
                     ui.painter().rect_filled(
