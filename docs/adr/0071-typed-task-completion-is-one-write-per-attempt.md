@@ -26,6 +26,7 @@ v2 task 는 Ready → Running 전이마다 새 실행 회차를 받는다(`Task.
 - `RunnerLoop` 는 저장소 오류로 기록하지 못한 보고를 보관하고 다음 tick 에 같은 보고를 다시 낸다. 그동안 다시 poll 하지 않고 handle 과 permit 을 유지한다.
 - 훅 대기는 dispatch 한 회차 id 를 저장한다. snapshot 의 `sources` 는 원본 회차 id(`producer_attempt`)를 기록한다.
 - v1 task 에는 회차를 두지 않는다. v1 은 결과를 쓴 뒤 전이하는 기존 순서를 유지하되, 전이가 맞지 않는 보고는 결과를 쓰기 전에 거절한다.
+- 명시 `retry` 는 같은 task 레코드에 새 회차를 연다. 이미 실행된 fallback 의 결과와 전파는 되돌리지 않는다. 그래서 fallback 이 Ready·Running·Succeeded 인 v2 task 의 `retry` 는 거절한다. 본 작업이 다시 성공하면 `one_of` 소비자가 성공한 원본 둘을 보게 되기 때문이다(실측: 재시도 뒤 소비자의 입력 해석이 "one_of expects exactly one succeeded source" 로 실패했다).
 
 현재 동작은 [agent runner 가이드](../dev-guide/agent-runner.md)의 "실행 회차와 완료" 절에 있다.
 
@@ -43,6 +44,7 @@ v2 task 는 Ready → Running 전이마다 새 실행 회차를 받는다(`Task.
 - **두 메서드를 유지하고 러너가 실패 시 멈추게 한다.** 상태 전이가 실패했을 때 이미 쓴 결과를 되돌릴 수 없다. 외부 보고·훅 경로마다 같은 처리를 반복해야 한다.
 - **memory 의 CAS(`PutOpts::cas`)로 레코드 버전을 맞춘다.** 동시 보고를 막는 데는 맞지만 같은 보고의 재전송을 알아보지 못한다. 완료 경로는 이미 memory 잠금 하나 안에서 읽고 써서 버전 경합이 생기지 않는다.
 - **완료 보고 원문을 회차에 그대로 저장한다.** 출력이 큰 task 는 레코드가 두 배가 된다. 비교에는 지문으로 충분하다.
+- **재시도마다 새 후속 실행 범위를 연다.** 회차별로 하류 task 를 따로 두면 fallback 결과를 그대로 둔 채 본 작업을 다시 돌릴 수 있다. 하류가 task 레코드 하나라 회차별 범위를 표현할 수 없고, 경로(route) 설계가 생긴 뒤에 다시 본다. 그때까지는 거절하고 새 task 제출을 안내한다.
 - **validating·persisting 같은 중간 phase 를 상태로 둔다.** 완료가 한 번의 쓰기라 바깥에서 관측할 수 없는 상태다. 후처리 단계가 생기면 그때 phase 를 정한다.
 
 ## Reconsideration Triggers

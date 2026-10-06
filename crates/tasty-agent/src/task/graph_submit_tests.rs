@@ -605,3 +605,68 @@ fn a_readiness_failure_after_the_record_reports_an_active_graph_without_rollback
     let f = failure(store.submit_graph(1, spec(graph), 2).unwrap_err());
     assert_eq!(f.location.as_deref(), Some("/tasks/0/id"));
 }
+
+fn one_of_graph() -> Value {
+    let input = json!({"type": "object", "fields": {"v": {"type": "int64"}}});
+    fallback_graph(json!({"id": "use", "command": custom(json!({})),
+        "depends_on": ["main"], "input_schema": input,
+        "bindings": {"v": {"one_of": [
+            {"from_task": "main", "pointer": "/value"},
+            {"from_task": "recover", "pointer": "/value"}]}}}))
+}
+
+#[test]
+fn a_typed_task_whose_fallback_ran_cannot_be_retried() {
+    let (_td, mut mem, seq) = fresh();
+    let mut store = TaskStore::new(&mut mem, "_host", &seq);
+    store.submit_graph(1, spec(one_of_graph()), 0).unwrap();
+    fail(&mut store, "main");
+    let main = "main".to_string();
+    // fallback 이 Ready 인 동안에도 거절한다(곧 실행된다).
+    let e = store.retry(1, &main, true, 3).unwrap_err();
+    assert!(
+        matches!(e, AgentError::InvalidArgument(ref m) if m.contains("recover")),
+        "{e:?}"
+    );
+    finish(&mut store, "recover", json!({"value": 41}));
+    store.retry(1, &main, true, 4).unwrap_err();
+    assert!(matches!(
+        get(&store, "main").state,
+        TaskState::Failed { .. }
+    ));
+    // 소비자는 fallback 값 하나만 받는다.
+    let consumer = get(&store, "use");
+    let lookup = |id: &TaskId| store.get(1, id).unwrap();
+    let snap = resolve_inputs(
+        &consumer,
+        consumer.contract.as_ref().unwrap(),
+        None,
+        5,
+        &lookup,
+    );
+    assert!(snap.failure.is_none(), "{:?}", snap.failure);
+}
+
+#[test]
+fn a_typed_task_whose_fallback_failed_can_be_retried() {
+    let (_td, mut mem, seq) = fresh();
+    let mut store = TaskStore::new(&mut mem, "_host", &seq);
+    store.submit_graph(1, spec(one_of_graph()), 0).unwrap();
+    fail(&mut store, "main");
+    fail(&mut store, "recover");
+    let main = "main".to_string();
+    store.retry(1, &main, true, 3).expect("retry");
+    assert_eq!(get(&store, "main").state, TaskState::Ready);
+    finish(&mut store, "main", json!({"value": 7}));
+    let consumer = get(&store, "use");
+    assert_eq!(consumer.state, TaskState::Ready);
+    let lookup = |id: &TaskId| store.get(1, id).unwrap();
+    let snap = resolve_inputs(
+        &consumer,
+        consumer.contract.as_ref().unwrap(),
+        None,
+        5,
+        &lookup,
+    );
+    assert_eq!(snap.value.to_internal(), json!({"v": 7}));
+}

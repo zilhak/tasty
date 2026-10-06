@@ -648,6 +648,7 @@ impl<'a> TaskStore<'a> {
                 });
             }
         }
+        self.refuse_retry_after_fallback(workspace_id, &task)?;
         task.state = TaskState::Waiting;
         task.started_at = None;
         task.finished_at = None;
@@ -699,6 +700,37 @@ impl<'a> TaskStore<'a> {
         }
 
         Ok(task)
+    }
+
+    /// v2 task 의 fallback 이 이미 실행됐으면 재시도를 거절한다. main 이 다시 성공하면 둘 중
+    /// 하나를 받는 소비자(`one_of`)가 성공한 원본 둘을 보게 되고, 이미 끝난 fallback 의 결과를
+    /// 되돌릴 수도 없다. fallback 이 실패했거나 실행 전에 끝났으면 재시도할 수 있다.
+    fn refuse_retry_after_fallback(&self, workspace_id: WorkspaceId, task: &Task) -> Result<()> {
+        let OnFailure::Fallback {
+            task: Some(fallback_id),
+            ..
+        } = &task.on_failure
+        else {
+            return Ok(());
+        };
+        if !task.is_typed() {
+            return Ok(());
+        }
+        let Some(fallback) = self.get(workspace_id, fallback_id)? else {
+            return Ok(());
+        };
+        if matches!(
+            fallback.state,
+            TaskState::Ready | TaskState::Running | TaskState::Succeeded
+        ) {
+            return Err(AgentError::InvalidArgument(format!(
+                "typed task {} cannot be retried: its fallback {fallback_id} is {} and \
+                 stays the outcome of this run; submit a new task to run it again",
+                task.id,
+                fallback.state.name()
+            )));
+        }
+        Ok(())
     }
 
     /// 참조 무결성 + 상태 제약을 지키는 task 삭제. `raw delete`

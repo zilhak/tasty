@@ -1,4 +1,4 @@
-<!-- source-hash: 5c99d14effa1 -->
+<!-- source-hash: ec5367488d30 -->
 <a id="task-dag"></a>
 
 # Task workflows (DAG)
@@ -131,6 +131,7 @@ tasty agent task-purge --workspace-id 2 --states succeeded
 ```
 
 - `task-await` waits up to 10 minutes by default and comes back with a timeout if the task has not finished by then. With `--timeout-ms 0` it waits indefinitely.
+- For a typed task, `task-retry` is refused once its fallback has run. If the main task succeeded again, a task that takes either of the two would see two values. To run it again, send it as a new task.
 - `task-set-result` is for reporting that something the runner did not run is done — a check a person does by hand, for example.
   - A typed task gets an attempt ID (`<task ID>#<number>`) each time it runs. Name the attempt with `--attempt-id`. If the task has run again since, the old report is refused instead of finishing the new run.
   - Sending the same report again returns the same answer as the first time. A different result for an attempt that has already finished is refused.
