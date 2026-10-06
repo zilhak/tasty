@@ -19,7 +19,7 @@ use windows::core::*;
 use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
 use super::keys::WebViewKeySink;
-use super::load_generation::is_current_load;
+use super::load_generation::{is_current_load, nav_state_after_end};
 use super::script_gate::ScriptGate;
 use super::{NavState, PendingNavigation, WebViewBounds};
 
@@ -228,6 +228,10 @@ impl PlatformWebView {
             // 이 세대의 것일 때만 게이트를 마무리한다(ADR-0053).
             let gate_generation: Rc<Cell<Option<u64>>> = Rc::new(Cell::new(None));
             let generation_start = gate_generation.clone();
+            // 마지막에 시작한 main frame 탐색의 NavigationId. 게이트 세대와 달리 fragment 이동과
+            // 게이트가 없는 surface의 탐색도 기록해, chrome 상태가 그 탐색의 종료만 따르게 한다.
+            let chrome_generation: Rc<Cell<Option<u64>>> = Rc::new(Cell::new(None));
+            let chrome_start = chrome_generation.clone();
             let mut tok_start: i64 = 0;
             // NavigationStarting은 main frame 탐색에서만 온다. WebView2는 응답 단계가 없어
             // 로드 시작과 응답 결정을 여기서 함께 한다(ADR-0053 후보 이벤트, 미측정).
@@ -236,6 +240,18 @@ impl PlatformWebView {
                     tracing::debug!("WebView surface {surface_id}: load started");
                     nav_start.set(NavState::Loading);
                     if let Some(args) = args {
+                        let mut id = 0u64;
+                        let nav_id = match args.NavigationId(&mut id) {
+                            Ok(()) => Some(id),
+                            Err(e) => {
+                                tracing::warn!(
+                                    "WebView surface {surface_id}: NavigationId failed ({e}); \
+                                     any navigation end counts as this load"
+                                );
+                                None
+                            }
+                        };
+                        chrome_start.set(nav_id);
                         let mut uri = windows::core::PWSTR::null();
                         args.Uri(&mut uri)?;
                         let uri_str = uri.to_string().unwrap_or_default();
@@ -269,17 +285,7 @@ impl PlatformWebView {
                         if let (Some(gate), Some(wv)) = (gate_start.borrow().as_ref(), &sender)
                             && !skip
                         {
-                            let mut nav_id = 0u64;
-                            match args.NavigationId(&mut nav_id) {
-                                Ok(()) => generation_start.set(Some(nav_id)),
-                                Err(e) => {
-                                    tracing::warn!(
-                                        "WebView surface {surface_id}: NavigationId failed ({e}); \
-                                         any navigation end finishes this load"
-                                    );
-                                    generation_start.set(None);
-                                }
-                            }
+                            generation_start.set(nav_id);
                             gate.load_started();
                             set_js(wv, gate.main_response(&uri_str));
                         }
@@ -318,6 +324,7 @@ impl PlatformWebView {
             let nav_done = nav_state.clone();
             let gate_done = script_gate.clone();
             let generation_done = gate_generation.clone();
+            let chrome_done = chrome_generation.clone();
             let mut tok_done: i64 = 0;
             let h_done = NavigationCompletedEventHandler::create(Box::new(
                 move |sender, args| -> windows::core::Result<()> {
@@ -352,7 +359,6 @@ impl PlatformWebView {
                     args.IsSuccess(&mut is_success)?;
                     if is_success.as_bool() {
                         tracing::debug!("WebView surface {surface_id}: load finished");
-                        nav_done.set(NavState::Done);
                     } else {
                         let mut status = COREWEBVIEW2_WEB_ERROR_STATUS::default();
                         if let Err(e) = args.WebErrorStatus(&mut status) {
@@ -361,13 +367,17 @@ impl PlatformWebView {
                         tracing::warn!(
                             "WebView surface {surface_id}: WebView2 navigation failed: status={status:?}"
                         );
-                        // 앞 로드의 늦은 실패는 새 로드의 chrome과 게이트를 건드리지 않는다.
-                        if current {
-                            nav_done.set(NavState::Failed);
-                            if let Some(gate) = gate_done.borrow().as_ref() {
-                                gate.failed();
-                            }
+                        // 앞 로드의 늦은 실패는 새 로드의 게이트를 건드리지 않는다.
+                        if current && let Some(gate) = gate_done.borrow().as_ref() {
+                            gate.failed();
                         }
+                    }
+                    // 앞 로드의 늦은 종료는 새 로드의 Loading을 Done이나 Failed로 덮지 않는다.
+                    match nav_state_after_end(chrome_done.get(), nav_id, is_success.as_bool()) {
+                        Some(state) => nav_done.set(state),
+                        None => tracing::debug!(
+                            "WebView surface {surface_id}: keeping the chrome state of the newer load"
+                        ),
                     }
                     Ok(())
                 },

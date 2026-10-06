@@ -21,7 +21,7 @@ use objc2_web_kit::{
 use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
 use super::keys::WebViewKeySink;
-use super::load_generation::is_current_load;
+use super::load_generation::{is_current_load, nav_state_after_end};
 use super::script_gate::ScriptGate;
 use super::{NavState, PendingNavigation, WebViewBounds};
 
@@ -38,6 +38,9 @@ struct NavDelegateIvars {
     /// 새 로드 시작 뒤에 올 수 있으므로, 종료 신호는 이 세대의 것일 때만 게이트를 마무리한다(ADR-0053).
     /// 값을 붙잡아 두어 같은 주소가 다른 navigation에 다시 쓰이지 않게 한다.
     gate_navigation: RefCell<Option<Retained<WKNavigation>>>,
+    /// 마지막에 provisional 시작한 main frame navigation. 게이트 세대와 달리 모든 로드를 기록해,
+    /// chrome 상태가 그 navigation의 종료만 따르게 한다. 붙잡아 두는 이유는 위와 같다.
+    chrome_navigation: RefCell<Option<Retained<WKNavigation>>>,
 }
 
 /// 세대 비교용 WKNavigation 식별 값. 알 수 없으면 None이다.
@@ -65,12 +68,23 @@ impl NavDelegateIvars {
         }
     }
 
-    /// 로드가 실패했다. 게이트가 시작한 마지막 로드의 실패일 때만 chrome을 Failed로 두고
-    /// 다음 commit까지 배너와 탭 표지를 내린 뒤 로드를 끝낸다. 앞 로드가 늦게 취소된 실패는
-    /// 새 로드의 chrome과 게이트를 건드리지 않는다.
+    /// 로드 종료를 chrome 상태에 반영한다. 마지막에 시작한 navigation의 종료일 때만 바꾸고,
+    /// 앞 로드의 늦은 종료는 새 로드의 Loading을 덮지 않는다.
+    fn chrome_navigation_ended(&self, navigation: Option<&WKNavigation>, success: bool) {
+        let started = navigation_key(self.chrome_navigation.borrow().as_deref());
+        match nav_state_after_end(started, navigation_key(navigation), success) {
+            Some(state) => self.nav_state.set(state),
+            None => tracing::debug!(
+                "WebView surface {}: keeping the chrome state of the newer load",
+                self.surface_id
+            ),
+        }
+    }
+
+    /// 로드가 실패했다. 게이트가 시작한 마지막 로드의 실패일 때만 다음 commit까지 배너와 탭
+    /// 표지를 내린 뒤 로드를 끝낸다. 앞 로드가 늦게 취소된 실패는 새 로드의 게이트를 건드리지 않는다.
     fn gate_navigation_failed(&self, navigation: Option<&WKNavigation>) {
         if self.is_current_navigation(navigation) {
-            self.nav_state.set(NavState::Failed);
             self.gate_failed();
         }
         self.gate_navigation_ended(navigation);
@@ -121,6 +135,7 @@ define_class!(
             let sid = self.ivars().surface_id;
             tracing::debug!("WebView surface {sid}: load started");
             self.ivars().nav_state.set(NavState::Loading);
+            *self.ivars().chrome_navigation.borrow_mut() = navigation.map(|n| n.retain());
             // 정책 결정에서 게이트가 시작한 로드라면 이 navigation이 새 세대다(실기 미측정).
             if self.ivars().gate_load_pending.replace(false) {
                 *self.ivars().gate_navigation.borrow_mut() = navigation.map(|n| n.retain());
@@ -131,7 +146,7 @@ define_class!(
         fn did_finish(&self, _web_view: &WKWebView, navigation: Option<&WKNavigation>) {
             let sid = self.ivars().surface_id;
             tracing::debug!("WebView surface {sid}: load finished");
-            self.ivars().nav_state.set(NavState::Done);
+            self.ivars().chrome_navigation_ended(navigation, true);
             self.ivars().gate_navigation_ended(navigation);
         }
 
@@ -161,6 +176,7 @@ define_class!(
                 self.ivars().surface_id,
                 error.localizedDescription()
             );
+            self.ivars().chrome_navigation_ended(navigation, false);
             self.ivars().gate_navigation_failed(navigation);
         }
 
@@ -176,6 +192,7 @@ define_class!(
                 self.ivars().surface_id,
                 error.localizedDescription()
             );
+            self.ivars().chrome_navigation_ended(navigation, false);
             self.ivars().gate_navigation_failed(navigation);
         }
 
@@ -274,6 +291,7 @@ impl NavDelegate {
             script_gate,
             gate_load_pending: Cell::new(false),
             gate_navigation: RefCell::new(None),
+            chrome_navigation: RefCell::new(None),
         });
         // SAFETY: NSObject 의 지정 초기화자 init 을 super 로 호출.
         unsafe { msg_send![super(this), init] }
