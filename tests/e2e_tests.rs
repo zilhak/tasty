@@ -2202,3 +2202,179 @@ fn concurrent_creations_keep_their_creation_route_after_binding_the_engine() {
         tasty.call("workspace.close", json!({"id":workspace.id}));
     }
 }
+
+/// 하네스 디스플레이 이름. inherit + Wayland 이면 Xlib 로 조회할 수 없어 None 이다.
+#[cfg(all(target_os = "linux", feature = "gui"))]
+fn x11_harness_display() -> Option<String> {
+    let declared = std::env::var("TASTY_E2E_DISPLAY").unwrap_or_default();
+    if declared.trim() != "inherit" {
+        return Some(declared.trim().to_string());
+    }
+    if std::env::var("WAYLAND_DISPLAY").is_ok_and(|v| !v.is_empty()) {
+        return None;
+    }
+    std::env::var("DISPLAY").ok()
+}
+
+/// `parent` 창의 자식 중 보이는 것 하나의 내용을 읽어 네 변 가운데 픽셀 색을 돌려준다.
+/// 순서는 왼쪽·오른쪽·위·아래이고 각 변에서 안쪽으로 한 칸 들어간 자리를 읽는다.
+/// native WebView 는 Linux 에서 메인 창의 X 자식 창이다(`src/host_api/webview/linux.rs`).
+#[cfg(all(target_os = "linux", feature = "gui"))]
+fn x11_child_edge_pixels(display: &str, parent: u64) -> Result<Option<[u32; 4]>, String> {
+    use x11_dl::xlib;
+    let x = xlib::Xlib::open().map_err(|e| format!("Xlib::open: {e}"))?;
+    let cname = std::ffi::CString::new(display).map_err(|e| e.to_string())?;
+    // SAFETY: cname 은 NUL 종단 문자열이며 반환된 포인터가 null 인지 확인한다.
+    let dpy = unsafe { (x.XOpenDisplay)(cname.as_ptr()) };
+    if dpy.is_null() {
+        return Err(format!("XOpenDisplay({display}) failed"));
+    }
+    let mut root = 0;
+    let mut parent_out = 0;
+    let mut children: *mut xlib::Window = std::ptr::null_mut();
+    let mut count = 0;
+    // SAFETY: dpy 는 열린 연결이고 출력 인자는 모두 쓰기 가능한 지역 변수다.
+    let ok = unsafe {
+        (x.XQueryTree)(
+            dpy,
+            parent as xlib::Window,
+            &mut root,
+            &mut parent_out,
+            &mut children,
+            &mut count,
+        )
+    };
+    let kids: Vec<xlib::Window> = if ok != 0 && !children.is_null() {
+        // SAFETY: XQueryTree 가 count 개의 창 ID 배열을 돌려줬다. 복사한 뒤 XFree 로 돌려준다.
+        let v = unsafe { std::slice::from_raw_parts(children, count as usize).to_vec() };
+        // SAFETY: XQueryTree 가 할당한 배열이며 이후 쓰지 않는다.
+        unsafe { (x.XFree)(children.cast()) };
+        v
+    } else {
+        Vec::new()
+    };
+    let mut result = None;
+    for kid in kids {
+        // SAFETY: XWindowAttributes 는 0 으로 초기화할 수 있는 C 구조체다.
+        let mut attrs: xlib::XWindowAttributes = unsafe { std::mem::zeroed() };
+        // SAFETY: dpy 는 열린 연결이고 kid 는 같은 디스플레이의 창 ID 다.
+        if unsafe { (x.XGetWindowAttributes)(dpy, kid, &mut attrs) } == 0
+            || attrs.map_state != xlib::IsViewable
+            || attrs.width < 8
+            || attrs.height < 8
+        {
+            continue;
+        }
+        let (w, h) = (attrs.width, attrs.height);
+        // 화면 밖으로 나간 부분을 XGetImage 로 읽으면 BadMatch 로 프로세스가 끝난다. 먼저 잰다.
+        let (mut ax, mut ay, mut through) = (0, 0, 0);
+        // SAFETY: dpy 는 열린 연결이고 kid·root 는 같은 디스플레이의 창이다. 출력은 지역 변수다.
+        unsafe { (x.XTranslateCoordinates)(dpy, kid, root, 0, 0, &mut ax, &mut ay, &mut through) };
+        // SAFETY: XWindowAttributes 는 0 으로 초기화할 수 있는 C 구조체다.
+        let mut screen: xlib::XWindowAttributes = unsafe { std::mem::zeroed() };
+        // SAFETY: root 는 같은 디스플레이의 루트 창이다.
+        unsafe { (x.XGetWindowAttributes)(dpy, root, &mut screen) };
+        if ax < 0 || ay < 0 || ax + w > screen.width || ay + h > screen.height {
+            // SAFETY: 열린 연결을 닫고 이후 dpy 를 쓰지 않는다.
+            unsafe { (x.XCloseDisplay)(dpy) };
+            return Err(format!(
+                "WebView 창 {w}x{h}+{ax}+{ay} 이 화면 {}x{} 밖으로 나간다. Xvfb 화면을 키운다",
+                screen.width, screen.height
+            ));
+        }
+        // SAFETY: 보이는 창의 전체 영역을 ZPixmap 으로 읽는다. 실패하면 null 이다.
+        let image = unsafe { (x.XGetImage)(dpy, kid, 0, 0, w as u32, h as u32, !0, xlib::ZPixmap) };
+        if image.is_null() {
+            continue;
+        }
+        let at = |px: i32, py: i32| {
+            // SAFETY: image 는 w×h 이미지이고 좌표는 그 안이다.
+            (unsafe { (x.XGetPixel)(image, px, py) } & 0x00ff_ffff) as u32
+        };
+        result = Some([
+            at(1, h / 2),
+            at(w - 2, h / 2),
+            at(w / 2, 1),
+            at(w / 2, h - 2),
+        ]);
+        // SAFETY: XGetImage 가 만든 이미지이며 이후 쓰지 않는다.
+        unsafe { (x.XDestroyImage)(image) };
+        break;
+    }
+    // SAFETY: 열린 연결을 닫고 이후 dpy 를 쓰지 않는다.
+    unsafe { (x.XCloseDisplay)(dpy) };
+    Ok(result)
+}
+
+/// GTK 배율이 2 인 X11 세션(GNOME HiDPI 의 창 배율 2 와 같은 조건 — 여기서는 `GDK_SCALE=2` 와
+/// winit 배율 2 로 만든다)에서 html surface 의 페이지 viewport 가 native WebView 창과 같은
+/// 크기인지 잰다. 페이지는 viewport 전체에 고정한 3 CSS px 파란 테두리를 그리므로, viewport 가
+/// 창과 같으면 창의 네 변 모두에 파랑이 보인다. 현재 main 에서는 오른쪽·아래 변이 초록이다 —
+/// viewport 가 창의 두 배로 잡혀 페이지 오른쪽·아래 절반이 잘린다. 배율 1 에서는 네 변이 모두
+/// 파랑이다(실측). 실행: 창이 배율 2 로 2560x1440 이므로 화면이 그보다 큰 격리 Xvfb(예:
+/// `Xvfb :<n> -screen 0 2600x1600x24`)와 번들 plugin 준비 뒤
+/// `TASTY_E2E_DISPLAY=:<n> cargo test --locked --test e2e_tests -- --ignored --exact webview_page_viewport_fills_its_native_window_under_gtk_scale_two`.
+#[cfg(all(target_os = "linux", feature = "gui"))]
+#[test]
+#[ignore = "현재 main 에서 실패하는 결함 측정이다. Linux X11 디스플레이·번들 html plugin 이 필요해 CI 에서 돌리지 않는다"]
+fn webview_page_viewport_fills_its_native_window_under_gtk_scale_two() {
+    const BLUE: u32 = 0x0000ff;
+    let display = x11_harness_display()
+        .expect("X11 디스플레이가 필요하다(inherit + Wayland 는 측정하지 않는다)");
+    let tasty =
+        TastyInstance::spawn_with_env(&[("GDK_SCALE", "2"), ("WINIT_X11_SCALE_FACTOR", "2")]);
+    let page = tasty.tasty_home().join("webview-viewport-marker.html");
+    std::fs::write(
+        &page,
+        "<!doctype html><html><head><style>\
+         html,body{margin:0;height:100%;background:#00ff00;overflow:hidden}\
+         #f{position:fixed;left:0;top:0;right:0;bottom:0;border:3px solid #0000ff;box-sizing:border-box}\
+         </style></head><body><div id=f></div></body></html>",
+    )
+    .expect("marker page");
+    let sid = tasty.first_surface_id();
+    let split = tasty.call(
+        "split",
+        json!({
+            "level": "pane",
+            "target_surface": sid.to_string(),
+            "direction": "vertical",
+            "type": "html",
+            "url": format!("file://{}", page.display()),
+        }),
+    );
+    assert!(
+        split["new_surface_id"].as_u64().is_some(),
+        "html split: {split}"
+    );
+    let window = tasty
+        .call("window.list", json!({}))
+        .as_array()
+        .and_then(|ws| ws.first().and_then(|w| w["id"].as_u64()))
+        .expect("window.list 에 창이 있어야 한다");
+
+    // 페이지가 그려질 때까지 왼쪽 변의 파랑을 기다린다. 왼쪽 변은 배율과 무관하게 창 안에 있다.
+    let start = std::time::Instant::now();
+    let edges = loop {
+        match x11_child_edge_pixels(&display, window) {
+            Ok(Some(e)) if e[0] == BLUE => break e,
+            Ok(_) if start.elapsed() < Duration::from_secs(30) => {
+                std::thread::sleep(Duration::from_millis(250));
+            }
+            Ok(other) => panic!("30 초 안에 WebView 창에 페이지가 그려지지 않았다: {other:?}"),
+            Err(e) => panic!("WebView 창을 읽지 못했다: {e}"),
+        }
+    };
+    let names = ["left", "right", "top", "bottom"];
+    let missing: Vec<_> = names
+        .iter()
+        .zip(edges)
+        .filter(|(_, c)| *c != BLUE)
+        .map(|(n, c)| format!("{n}=#{c:06x}"))
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "페이지 viewport 의 테두리가 WebView 창의 변에 없다({}). viewport 가 창보다 크거나 작다",
+        missing.join(", ")
+    );
+}

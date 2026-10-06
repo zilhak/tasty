@@ -346,6 +346,24 @@ renderD128·VK_ERROR_·DRI3·libEGL·tu_knl·failed to open device 같은 메시
 새 시그니처를 원인 판정에 사용하려면 정상 실행에서도 나타나는지 먼저 확인한다.
 현재 GPU_FALLBACK_MARKERS는 단서이며 확정 진단이 아니다.
 
+## 7. 결함 측정용 ignored 시험
+
+`e2e_tests`의 `webview_page_viewport_fills_its_native_window_under_gtk_scale_two`는 Linux X11에서 GTK 배율이 2일 때 html surface의 페이지 viewport가 native WebView 창과 같은 크기인지 잰다. GNOME HiDPI의 창 배율 2와 같은 조건을 `GDK_SCALE=2`와 `WINIT_X11_SCALE_FACTOR=2`로 만든다. 페이지는 viewport 전체에 고정한 파란 테두리를 그리고, 시험은 WebView X 자식 창의 네 변 가운데 픽셀을 `XGetImage`로 읽어 모두 파랑인지 확인한다.
+
+현재 main에서는 이 시험이 실패한다. 오른쪽·아래 변이 페이지 바탕색으로 나오며, viewport가 창의 두 배로 잡혀 페이지의 오른쪽·아래 절반이 잘린다는 뜻이다. GTK 배율 1(`GDK_SCALE=1`, winit 배율 2)에서는 같은 시험이 통과한다.
+
+- `#[cfg(all(target_os = "linux", feature = "gui"))]`와 `#[ignore]`로 두어 기본 `cargo test`와 CI 워크플로에서 실행하지 않는다. CI의 GUI e2e 단계는 `multi_window_owner_routing`만 이름으로 실행한다.
+- 창이 배율 2로 2560x1440이므로 그보다 큰 격리 Xvfb와 번들 plugin(html)이 필요하다. 자식 창이 화면 밖으로 나가면 시험은 픽셀을 읽지 않고 화면을 키우라는 오류로 끝난다.
+
+```
+Xvfb :<n> -screen 0 2600x1600x24 -nolisten tcp -ac &
+XVFB_PID=$!
+TASTY_E2E_DISPLAY=:<n> cargo test --locked --test e2e_tests -- --ignored --exact \
+  webview_page_viewport_fills_its_native_window_under_gtk_scale_two
+```
+
+Xvfb는 저장한 PID로 회수한다.
+
 ## VTE 시뮬레이터 (`tasty-tui-simulator`)
 
 터미널 동작 검증용 도구 — 고수준 명령을 raw VTE escape 시퀀스로 변환해 출력한다(터미널 입장에선 실제 TUI 앱과 같은 바이트 스트림). **인터랙티브 모드**(stdin REPL — 외부에서 `surface.send` 로 명령 단계 전송, 명령마다 `OK` 동기화)와 원샷 시나리오를 제공한다. 명령: cursor/print/sgr/fg·bg/altscreen/scroll-region/erase/raw/esc 등, 종료 제어 `quit`/`exit-code N`/`crash`(SIGABRT)/`panic`. debug 의 `debug.cell_info`/`debug.screen_attrs`([debug-ipc](debug-ipc.md))와 조합하면 셀 속성을 결정적으로 자동 검증할 수 있다.
