@@ -6,7 +6,7 @@ use std::cell::RefCell;
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, IconButton, Input};
+use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, IconButton};
 
 use super::preset_editor::{
     Kind, Scope, Surf, cell, draw_scope_body, leaf_with, pleaf, psplit, ssplit, tab,
@@ -49,8 +49,12 @@ const HEAD_TRACKING_EM: f32 = 0.06;
 const TOOLBAR_H: LogicalPx = LogicalPx(44.0);
 /// 편집 중 이름 입력 폭 — `width: 150`.
 const NAME_INPUT_W: LogicalPx = LogicalPx(150.0);
+/// 편집 중 이름 입력 높이 — `height: 26`. 공용 Input 은 input-height(28) 고정이라 직접 그린다.
+const NAME_INPUT_H: LogicalPx = LogicalPx(26.0);
 /// 도구줄 세로 구분선 높이 — `height: 18`.
 const TOOLBAR_SEP_H: LogicalPx = LogicalPx(18.0);
+/// "saved automatically" 앞 체크 글리프 배율 — `transform: scale(.8)`. 자리는 원래 크기를 차지한다.
+const SAVED_CHECK_SCALE: f32 = 0.8;
 
 struct PresetEntry {
     name: &'static str,
@@ -301,7 +305,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("L1 tabs", "40px, accent underline"),
             ("list", "196px, fill + 2px bar"),
             ("toolbar", "44px, Edit on the right"),
-            ("preview", "flex, on --tasty-bg-app"),
+            ("preview", "flex, on bg-app"),
         ],
         &[
             TokenChip::new("bg-sidebar", "L1 + list", theme.bg_sidebar().to_egui()),
@@ -520,12 +524,16 @@ fn preset_list(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, st: &mut WinS
             let radius = theme.corner_radius_sm.value();
             ui.painter()
                 .rect_filled(r, radius, theme.surface_active().to_egui());
+            // 시안 막대는 inset box-shadow 라 행의 둥근 모서리를 따른다. 행 모양을 막대 폭으로 자른다.
             let bar = egui::Rect::from_min_size(
                 r.min,
                 egui::vec2(theme.listctrl_selected_bar_width().value(), r.height()),
             );
-            ui.painter()
-                .rect_filled(bar, 0.0, theme.listctrl_selected_bar().to_egui());
+            ui.painter().with_clip_rect(bar).rect_filled(
+                r,
+                radius,
+                theme.listctrl_selected_bar().to_egui(),
+            );
         }
         let nx = r.left() + ROW_PAD.0;
         let name_h = name.size().y;
@@ -549,9 +557,7 @@ fn detail_column(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, st: &mut Wi
     let mut left = child(ui, inner, egui::Layout::left_to_right(egui::Align::Center));
     left.spacing_mut().item_spacing.x = theme.spacing_sm.value();
     if st.edit {
-        Input::new()
-            .width(NAME_INPUT_W.value())
-            .show(&mut left, theme, &mut st.name_buf);
+        name_input(&mut left, theme, &mut st.name_buf);
     } else {
         left.label(
             egui::RichText::new(entry.name)
@@ -578,17 +584,23 @@ fn detail_column(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, st: &mut Wi
         if done.clicked() {
             st.edit = false;
         }
+        // 시안: 체크 + 문구 묶음(gap space-xs) · marginRight 4 · 도구줄 gap 8 · Done.
         right.add_space(theme.spacing_xs.value());
+        right.spacing_mut().item_spacing.x = theme.spacing_xs.value();
         right.label(
             egui::RichText::new("saved automatically")
                 .size(theme.font_size_caption.value())
                 .color(theme.text_muted().to_egui()),
         );
-        let g = theme.icon_glyph_size_xs.value();
-        let (r, _) = right.allocate_exact_size(egui::vec2(g, g), egui::Sense::hover());
+        let box_ = theme.icon_glyph_size_md.value();
+        let (r, _) = right.allocate_exact_size(egui::vec2(box_, box_), egui::Sense::hover());
+        let g = box_ * SAVED_CHECK_SCALE;
         icons::CHECK
             .image(g, theme.accent_success().to_egui())
-            .paint_at(&right, r);
+            .paint_at(
+                &right,
+                egui::Rect::from_center_size(r.center(), egui::vec2(g, g)),
+            );
     } else {
         let edit = Button::new("Edit")
             .variant(ButtonVariant::Secondary)
@@ -599,6 +611,8 @@ fn detail_column(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, st: &mut Wi
             st.edit = true;
             st.name_buf = entry.name.to_owned();
         }
+        // 시안 구분선 `margin: 0 4px` — 도구줄 gap 8 에 더해 양쪽 12.
+        right.add_space(theme.spacing_xs.value());
         let (sep, _) = right.allocate_exact_size(
             egui::vec2(theme.border_width.value(), TOOLBAR_SEP_H.value()),
             egui::Sense::hover(),
@@ -606,6 +620,7 @@ fn detail_column(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, st: &mut Wi
         right
             .painter()
             .rect_filled(sep, 0.0, theme.separator.to_egui_premultiplied());
+        right.add_space(theme.spacing_xs.value());
         for g in [icons::TRASH, icons::COPY, icons::EDIT] {
             IconButton::new()
                 .size(ControlSize::Sm)
@@ -618,4 +633,32 @@ fn detail_column(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, st: &mut Wi
         .rect_filled(preview, 0.0, theme.bg_app().to_egui());
     let scope = (entry.build)();
     draw_scope_body(ui, theme, preview.shrink(theme.spacing_md.value()), &scope);
+}
+
+/// 편집 중 이름 입력 — 시안 `<input>`: 150 × 26, border-default, radius, surface-raised,
+/// 13px, 좌우 8.
+fn name_input(ui: &mut egui::Ui, theme: &Theme, buf: &mut String) {
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(NAME_INPUT_W.value(), NAME_INPUT_H.value()),
+        egui::Sense::hover(),
+    );
+    let radius = theme.corner_radius.value();
+    ui.painter()
+        .rect_filled(rect, radius, theme.surface_raised().to_egui());
+    ui.painter().rect_stroke(
+        rect,
+        radius,
+        egui::Stroke::new(theme.border_width.value(), theme.border_default().to_egui()),
+        egui::StrokeKind::Inside,
+    );
+    let inner = rect.shrink2(egui::vec2(theme.spacing_sm.value(), 0.0));
+    let mut field = child(ui, inner, egui::Layout::left_to_right(egui::Align::Center));
+    field.add(
+        egui::TextEdit::singleline(buf)
+            .frame(false)
+            .margin(egui::Margin::ZERO)
+            .desired_width(inner.width())
+            .font(egui::FontId::proportional(theme.font_size_body.value()))
+            .text_color(theme.text_primary().to_egui()),
+    );
 }
