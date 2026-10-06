@@ -395,7 +395,7 @@ hard 점유의 holder가 원격으로 전달한 구조 명령과, holder가 아�
   입력 유실은 재연결 중 세션을 바꾸는 구간에서 발생하며, 리더 스레드가 누적돼 시간이 갈수록 커지는 문제는 아니다.
   슬롯이 비어 있는 동안 stdin EOF나 오류가 발생하면 별도 `AtomicBool`에 기록한다. 다음 세션의 `install_sender`가 sender를 설치할 때 `RawEvent::StdinEof`를 바로 전달해, 이미 닫힌 stdin을 계속 기다리지 않도록 한다.
   현재는 재연결 중 보내지 못한 입력을 버퍼에 보관하지 않는다.
-- **loopback 직결**: 인라인 host 가 `127.0.0.1:PORT`/`localhost:PORT` 면 SSH 없이 직접 attach(동일 머신 다중 인스턴스 검증).
+- **loopback 직결 없음**: 이 공용 경로(`remote attach`·`tool attach`·`remote check`)는 인라인 host 가 `127.0.0.1:PORT`/`localhost:PORT` 여도 SSH 포트 발견과 터널을 거치므로 SSH 없이 붙지 않는다. loopback 직결 분기는 `tasty_remote::browse::resolve_endpoint`(browse·`remote new-workspace`·IPC `remote.*`·GUI 원격 브라우저 워커)와 자동 attach 의 `src/app/auto_attach.rs` 에만 있다. 같은 머신 다중 인스턴스에서 attach 를 재현할 때는 debug 빌드의 `tasty debug attach` 로 서버 인스턴스의 포트에 직접 붙는다([debug-ipc](debug-ipc.md)).
 
 ## 연결 생존 확인 (read timeout + heartbeat)
 

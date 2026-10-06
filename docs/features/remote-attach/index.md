@@ -421,7 +421,9 @@ bulk 파일 전송과 mirror 터미널 이미지 붙여넣기 업로드에 대�
 - Given mesh mirror pane 이 표시 중 When client 가 그 pane 을 클릭/타이핑 Then 원격 plugin 프로세스의 상태가 실제로 바뀌고 그 결과가 mirror 에 반영된다(예: mesh_demo 클릭 카운터 증가).
 - Given mesh mirror pane 에 텍스처 delta 체인 단절(예: 재연결) When client 가 감지 Then `MeshFullResendRequest` 로 전체 텍스처 상태를 재수신해 정상 렌더를 회복한다.
 
-> 프로토콜과 터미널 화면 동기화는 headless로 검증할 수 있다 — 동일 머신 다중 인스턴스 + loopback 직결(`127.0.0.1:PORT`)로 SSH 없이도 attach 파이프라인을 재현, `--dump-after` 로 grid 일치 확인.
+> 프로토콜과 터미널 화면 동기화는 headless로 검증할 수 있다 — 같은 머신에 인스턴스를 띄우고 debug 빌드의 `tasty debug attach --workspace <id> --dump-after <ms>` 로 그 인스턴스의 포트에 SSH 없이 직접 붙어 grid 일치를 확인한다. 포트는 `TASTY_HOME` 이 가리키는 데이터 루트의 포트 파일에서 읽으므로 서버 인스턴스의 `TASTY_HOME` 으로 실행한다. workspace id 는 `tasty remote workspaces --ssh 127.0.0.1:<port>` 로 찾는다.
+>
+> `tasty remote attach`·`tool attach`·`remote check` 에는 loopback 분기가 없다. `--ssh 127.0.0.1:<port>` 를 줘도 SSH 로 원격 포트를 찾으려다 "SSH connection failed" 로 끝난다. `127.0.0.1:PORT`·`localhost:PORT` 직결은 browse(`remote workspaces`·`remote new-workspace`), IPC `remote.*`, GUI 원격 연결 팝업, 자동 attach 에만 있다.
 
 ## 구현
 
