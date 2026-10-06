@@ -6,6 +6,7 @@
 //! 본체 호출자가 아직 없는 경우도 허용한다. 같은 UI를 다시 구현하지 않고 공용 함수를 사용한다.
 //! 기준은 docs/architecture/ui-widgets-crate.md와 docs/dev-guide/gallery-first.md를 따른다.
 
+mod attention;
 mod autocomplete;
 mod banner;
 pub mod brand;
@@ -57,6 +58,10 @@ mod tooltip;
 mod tree_row;
 mod two_depth;
 mod warning_callout;
+pub use attention::{
+    Attention, RailDot, attention_count_label, attention_edge_stroke, occupancy_edge_stroke,
+    paint_rail_dot, surface_edge_attention, tab_title_color, workspace_attention_badges,
+};
 pub use autocomplete::{
     AutoComplete, AutoCompleteAction, AutoCompleteResponse, MatchMode, autocomplete_dropdown,
 };

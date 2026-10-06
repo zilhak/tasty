@@ -4,9 +4,7 @@ use crate::adapters::ui::{brand, icons};
 use crate::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::tokens::{STRUCT_GAP_1, STRUCT_GAP_2, STRUCT_GAP_3};
-use tasty_ui_widgets::{
-    BadgeVariant, ControlSize, IconButton, TagVariant, badge, hspace, tag_caps, vspace,
-};
+use tasty_ui_widgets::{ControlSize, IconButton, TagVariant, hspace, tag_caps, vspace};
 
 /// 드래그 중 표시되는 ghost workspace 이름. DTCG primitive `font-size-12` 는 있으나
 /// semantic role 이 없어 `Theme` 필드가 없다 — ADR-0035 대로 **이름에 primitive 임을 남긴다**.
@@ -232,16 +230,6 @@ fn paint_alert_badge(
     );
     ui.painter()
         .galley(gp, galley, egui::Color32::from(th.text_on_accent()));
-}
-/// 워크스페이스 행 개수 배지. 공용 Badge(primary = Completion, warning = NeedsInput)로 그리고
-/// 99를 넘으면 99+로 줄인다.
-fn paint_workspace_count_badge(ui: &mut egui::Ui, th: &Theme, count: usize, variant: BadgeVariant) {
-    let label = if count > 99 {
-        "99+".to_string()
-    } else {
-        count.to_string()
-    };
-    badge(ui, th, &label, variant);
 }
 fn collapsed_ws_size(th: &Theme) -> egui::Vec2 {
     egui::vec2(
@@ -1232,26 +1220,13 @@ fn draw_collapsed_avatar(
         );
     }
     // 상태는 오른쪽 위 점, mirror는 오른쪽 아래 표시, 다른 클라이언트 점유는 둘레 링이다.
-    let dot_radius = th.status_dot_size_compact().value() * 0.5;
-    let dot_pad = 4.0;
-    let dot_center = egui::pos2(
-        rect.max.x - dot_pad - dot_radius,
-        rect.min.y + dot_pad + dot_radius,
-    );
     // 점 하나로 NeedsInput > Completion > running 순서의 상태를 표시한다.
-    if ws.needs_input_count > 0 {
-        ui.painter()
-            .circle_filled(dot_center, dot_radius + 1.5, th.bg_sidebar());
-        ui.painter()
-            .circle_filled(dot_center, dot_radius, th.status_dot_needs_input());
-    } else if ws.completion_count > 0 {
-        ui.painter()
-            .circle_filled(dot_center, dot_radius + 1.5, th.bg_sidebar());
-        ui.painter()
-            .circle_filled(dot_center, dot_radius, th.status_dot_completion());
-    } else if ws.busy_count > 0 {
-        ui.painter()
-            .circle_filled(dot_center, dot_radius, th.accent_success());
+    if let Some(dot) = tasty_ui_widgets::RailDot::resolve(
+        ws.needs_input_count > 0,
+        ws.completion_count > 0,
+        ws.busy_count > 0,
+    ) {
+        tasty_ui_widgets::paint_rail_dot(ui.painter(), th, rect, dot);
     }
     if ws.attached {
         ui.painter().rect_stroke(
@@ -1369,22 +1344,14 @@ fn draw_workspace_card(
             // 배지 폭을 먼저 확보하고 남은 폭에 이름을 줄여 표시한다.
             // 오른쪽부터 그리므로 Completion 뒤에 NeedsInput을 넣어 왼쪽에 배치한다.
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ws.completion_count > 0 {
-                    paint_workspace_count_badge(ui, th, ws.completion_count, BadgeVariant::Primary);
-                }
-                if ws.needs_input_count > 0 {
-                    if ws.completion_count > 0 {
-                        ui.add_space(th.spacing_xs.value());
-                    }
-                    paint_workspace_count_badge(
-                        ui,
-                        th,
-                        ws.needs_input_count,
-                        BadgeVariant::Warning,
-                    );
-                }
+                let badged = tasty_ui_widgets::workspace_attention_badges(
+                    ui,
+                    th,
+                    ws.needs_input_count,
+                    ws.completion_count,
+                );
                 if ws.move_source {
-                    if ws.completion_count + ws.needs_input_count > 0 {
+                    if badged {
                         ui.add_space(th.spacing_xs.value());
                     }
                     paint_move_source_row_glyph(ui, th);

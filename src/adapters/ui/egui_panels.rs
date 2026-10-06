@@ -639,16 +639,11 @@ fn draw_occupied_overlays(
     for o in &occ {
         let painter =
             ctx.layer_painter(crate::adapters::ui::tab_bar::pane_tab_bar_layer(o.pane_id));
-        let border_color = if o.hard {
-            th.accent_occupied_hard()
-        } else {
-            th.accent_occupied_soft()
-        };
         let rect = egui::Rect::from_min_size(egui::pos2(o.x, o.y), egui::vec2(o.w, o.h));
         painter.rect_stroke(
             rect,
             0.0,
-            egui::Stroke::new(th.border_width.value(), border_color),
+            tasty_ui_widgets::occupancy_edge_stroke(&th, o.hard),
             egui::StrokeKind::Inside,
         );
     }

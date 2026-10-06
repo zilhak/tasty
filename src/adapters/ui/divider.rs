@@ -37,11 +37,13 @@ pub struct SurfaceHighlightsProps<'a> {
     pub scale_factor: f32,
 }
 
-/// attention 종류별 테두리 색(surface-highlight-input/done-border).
-fn highlight_stroke_color(theme: &Theme, kind: AttentionKind) -> egui::Color32 {
-    match kind {
-        AttentionKind::NeedsInput => theme.surface_highlight_input_border().into(),
-        AttentionKind::Completion => theme.surface_highlight_done_border().into(),
+/// 공용 attention 표시 판정에 넘기는 종류. 사이드바·탭 바·테두리가 같은 변환을 쓴다.
+impl From<AttentionKind> for tasty_ui_widgets::Attention {
+    fn from(kind: AttentionKind) -> Self {
+        match kind {
+            AttentionKind::NeedsInput => tasty_ui_widgets::Attention::NeedsInput,
+            AttentionKind::Completion => tasty_ui_widgets::Attention::Completion,
+        }
     }
 }
 
@@ -59,13 +61,12 @@ pub fn draw_surface_highlights_view(ctx: &egui::Context, props: &SurfaceHighligh
         let Some(kind) = region.kind else {
             continue;
         };
-        let stroke_color = highlight_stroke_color(props.theme, kind);
         let r = region.rect;
         let egui_rect = crate::adapters::ui::to_egui_rect(r, scale_factor).round_ui();
         painter.rect_stroke(
             egui_rect,
             0.0,
-            egui::Stroke::new(props.theme.focus_ring_width.value(), stroke_color),
+            tasty_ui_widgets::attention_edge_stroke(props.theme, kind.into()),
             egui::StrokeKind::Inside,
         );
     }
@@ -83,11 +84,9 @@ pub(crate) fn regions_from_state(
         for r in surface_regions {
             // 응답 필요는 점유 표시보다 우선한다. 완료 표시는 점유 중 숨긴다.
             let occupied = engine.live.occupancy.occupancy_of(r.id).is_some();
-            let kind = match engine.attention_kind(r.id) {
-                Some(AttentionKind::NeedsInput) => Some(AttentionKind::NeedsInput),
-                Some(AttentionKind::Completion) if !occupied => Some(AttentionKind::Completion),
-                _ => None,
-            };
+            let kind = engine.attention_kind(r.id).filter(|k| {
+                tasty_ui_widgets::surface_edge_attention(Some((*k).into()), occupied).is_some()
+            });
             out.push(SurfaceHighlightRegion { rect: r.rect, kind });
         }
     }

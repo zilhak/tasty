@@ -2,7 +2,6 @@
 
 use super::{PaneTabBarView, PaneTabBarsOutput, PaneTabBarsProps, TabBarAction};
 use crate::adapters::ui::{icons, zoomed_px};
-use crate::core::AttentionKind;
 use tasty_type_geometry::length::LogicalPx;
 
 /// 점 형태의 활성 표시 지름. 대응 역할 토큰이 없어 별도로 두며 밑줄 두께와 구분한다.
@@ -64,12 +63,7 @@ pub(super) fn draw_tab(
             bg
         };
     // 제목 색 우선순위: NeedsInput > Completion > 활성 탭 > 기본.
-    let text_color = match tab_kind {
-        Some(AttentionKind::NeedsInput) => th.tab_fg_needs_input(),
-        Some(AttentionKind::Completion) => th.tab_fg_completion(),
-        None if is_active => th.text_primary(),
-        None => th.text_muted(),
-    };
+    let text_color = tasty_ui_widgets::tab_title_color(th, tab_kind.map(Into::into), is_active);
 
     let tab_rect =
         egui::Rect::from_min_size(egui::pos2(x, clip_rect.min.y), egui::vec2(tab_w, bar_h));

@@ -1,0 +1,191 @@
+//! attention 표시의 공용 판정과 그리기. 본체 사이드바·탭 바·surface 테두리와 갤러리가
+//! 같은 함수를 불러 순위(NeedsInput > Completion)와 색 토큰이 갈라지지 않게 한다.
+
+use tasty_type_appearance::color::HexColor;
+use tasty_type_appearance::theme::Theme;
+
+use crate::{BadgeVariant, badge};
+
+/// 화면에 표시하는 attention 종류. 본체 상태의 종류를 이 값으로 옮겨 넘긴다.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Attention {
+    NeedsInput,
+    Completion,
+}
+
+/// 탭 제목 색. 순위는 NeedsInput > Completion > 활성 > 기본이다.
+pub fn tab_title_color(theme: &Theme, attention: Option<Attention>, active: bool) -> HexColor {
+    match attention {
+        Some(Attention::NeedsInput) => theme.tab_fg_needs_input(),
+        Some(Attention::Completion) => theme.tab_fg_completion(),
+        None if active => theme.tab_fg_active(),
+        None => theme.tab_fg(),
+    }
+}
+
+/// surface 테두리에 남는 attention. NeedsInput은 점유보다 위이고 Completion은 점유 아래라
+/// 점유 중에는 숨긴다.
+pub fn surface_edge_attention(attention: Option<Attention>, occupied: bool) -> Option<Attention> {
+    match attention {
+        Some(Attention::NeedsInput) => Some(Attention::NeedsInput),
+        Some(Attention::Completion) if !occupied => Some(Attention::Completion),
+        _ => None,
+    }
+}
+
+/// attention 테두리의 선. 두 종류 모두 2px(focus-ring-width)이다.
+pub fn attention_edge_stroke(theme: &Theme, attention: Attention) -> egui::Stroke {
+    match attention {
+        Attention::NeedsInput => egui::Stroke::new(
+            theme.surface_highlight_input_width().value(),
+            theme.surface_highlight_input_border(),
+        ),
+        Attention::Completion => egui::Stroke::new(
+            theme.surface_highlight_done_width().value(),
+            theme.surface_highlight_done_border(),
+        ),
+    }
+}
+
+/// 점유 테두리의 선. soft는 초록, hard(읽기 전용)는 peach이고 둘 다 1px이다.
+pub fn occupancy_edge_stroke(theme: &Theme, hard: bool) -> egui::Stroke {
+    let color = if hard {
+        theme.surface_occupied_hard_border()
+    } else {
+        theme.surface_occupied_soft_border()
+    };
+    egui::Stroke::new(theme.surface_occupied_border_width().value(), color)
+}
+
+/// 워크스페이스 행 개수 배지의 글자. 99를 넘으면 99+로 줄인다.
+pub fn attention_count_label(count: usize) -> String {
+    if count > 99 {
+        "99+".to_string()
+    } else {
+        count.to_string()
+    }
+}
+
+/// 워크스페이스 행 끝의 배지 묶음. 호출부의 right-to-left 레이아웃 안에서 부른다.
+/// 하나만 있으면 끝 자리에 두고, 둘이면 NeedsInput이 앞, Completion이 끝이다.
+/// 배지를 그렸으면 true를 돌려준다.
+pub fn workspace_attention_badges(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    needs_input: usize,
+    completion: usize,
+) -> bool {
+    if completion > 0 {
+        badge(
+            ui,
+            theme,
+            &attention_count_label(completion),
+            BadgeVariant::Primary,
+        );
+    }
+    if needs_input > 0 {
+        if completion > 0 {
+            ui.add_space(theme.badge_group_gap().value());
+        }
+        badge(
+            ui,
+            theme,
+            &attention_count_label(needs_input),
+            BadgeVariant::Warning,
+        );
+    }
+    needs_input + completion > 0
+}
+
+/// 접힌 레일 아바타의 점 하나. 순위는 NeedsInput > Completion > 실행 중이다.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RailDot {
+    NeedsInput,
+    Completion,
+    Busy,
+}
+
+impl RailDot {
+    pub fn resolve(needs_input: bool, completion: bool, busy: bool) -> Option<Self> {
+        if needs_input {
+            Some(RailDot::NeedsInput)
+        } else if completion {
+            Some(RailDot::Completion)
+        } else if busy {
+            Some(RailDot::Busy)
+        } else {
+            None
+        }
+    }
+}
+
+/// 아바타 오른쪽 위에 레일 점을 그린다. attention 점은 사이드바 배경 고리로 둘러 아바타
+/// 위에서도 읽히게 한다.
+pub fn paint_rail_dot(painter: &egui::Painter, theme: &Theme, avatar: egui::Rect, dot: RailDot) {
+    let radius = theme.status_dot_size_compact().value() * 0.5;
+    let pad = theme.spacing_xs.value();
+    let center = egui::pos2(avatar.max.x - pad - radius, avatar.min.y + pad + radius);
+    let color = match dot {
+        RailDot::NeedsInput => theme.status_dot_needs_input(),
+        RailDot::Completion => theme.status_dot_completion(),
+        RailDot::Busy => theme.status_dot_success(),
+    };
+    if dot != RailDot::Busy {
+        painter.circle_filled(center, radius + RAIL_DOT_RING, theme.bg_sidebar());
+    }
+    painter.circle_filled(center, radius, color);
+}
+
+/// 레일 attention 점의 배경 고리 두께(시안 1.5px). 대응하는 토큰이 없다.
+const RAIL_DOT_RING: f32 = 1.5;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rail_dot_takes_the_highest_rank() {
+        assert_eq!(
+            RailDot::resolve(true, true, true),
+            Some(RailDot::NeedsInput)
+        );
+        assert_eq!(
+            RailDot::resolve(false, true, true),
+            Some(RailDot::Completion)
+        );
+        assert_eq!(RailDot::resolve(false, false, true), Some(RailDot::Busy));
+        assert_eq!(RailDot::resolve(false, false, false), None);
+    }
+
+    #[test]
+    fn completion_edge_hides_under_occupancy_but_needs_input_does_not() {
+        use Attention::*;
+        assert_eq!(
+            surface_edge_attention(Some(NeedsInput), true),
+            Some(NeedsInput)
+        );
+        assert_eq!(surface_edge_attention(Some(Completion), true), None);
+        assert_eq!(
+            surface_edge_attention(Some(Completion), false),
+            Some(Completion)
+        );
+        assert_eq!(surface_edge_attention(None, false), None);
+    }
+
+    #[test]
+    fn counts_over_two_digits_collapse() {
+        assert_eq!(attention_count_label(99), "99");
+        assert_eq!(attention_count_label(100), "99+");
+    }
+
+    #[test]
+    fn tab_title_attention_outranks_active() {
+        let th = tasty_themes::mocha_fallback();
+        assert_eq!(
+            tab_title_color(&th, Some(Attention::Completion), true),
+            th.tab_fg_completion()
+        );
+        assert_eq!(tab_title_color(&th, None, true), th.tab_fg_active());
+        assert_eq!(tab_title_color(&th, None, false), th.tab_fg());
+    }
+}
