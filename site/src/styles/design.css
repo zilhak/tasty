@@ -1,4 +1,11 @@
-/* Fixed-width design examples use a wider content column without a table of contents. */
+/* Fixed-width design examples use a wider content column without a table of contents.
+
+   The heads, cards and tiles here are the site's own frame around the design
+   documents (docs/dev-guide/site.md), so spacing uses the site scale; the documents
+   inside the iframes are vendor copies and are not styled here. Literal values
+   left without a line comment are font sizes and element sizes, which the site
+   scale has no axis for. Media query conditions stay literal because a query
+   condition cannot read a custom property. */
 
 .layout--design {
   grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
@@ -52,7 +59,7 @@
 .ds-card__head { margin-bottom: var(--sp-3); }
 .ds-card__head h3 { margin: 0; font-size: 15px; }
 .ds-card__head p {
-  margin: 2px 0 0;
+  margin: 2px 0 0; /* no site step: --sp-* has no 2 */
   font-size: 13px;
   color: var(--tasty-color-neutral-800);
 }
@@ -118,7 +125,7 @@
 .ds-tiles__label { display: block; font-weight: 600; }
 .ds-tiles__desc {
   display: block;
-  margin-top: 2px;
+  margin-top: 2px; /* no site step: --sp-* has no 2 */
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--tasty-color-neutral-700);
