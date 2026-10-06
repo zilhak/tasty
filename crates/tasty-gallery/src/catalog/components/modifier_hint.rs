@@ -318,7 +318,7 @@ fn panel_sized(
     let g = theme.modhint_grip_size().value();
     let pad = bw * 2.0;
     let br = egui::pos2(rect.right() - pad, rect.bottom() - pad);
-    let col: egui::Color32 = theme.text_muted().to_egui();
+    let col: egui::Color32 = theme.modhint_grip_fg().to_egui();
     let stroke = egui::Stroke::new(bw, col);
     ui.painter().line_segment(
         [egui::pos2(br.x - g, br.y), egui::pos2(br.x, br.y - g)],

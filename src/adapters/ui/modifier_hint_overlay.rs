@@ -580,7 +580,7 @@ pub(crate) fn modifier_free_wheel_y(ctx: &egui::Context, rect: egui::Rect) -> f3
     })
 }
 
-/// 한 조합 섹션 — ChordHead(Kbd + separator) + HintRow* + RoleRow*.
+/// 한 조합 섹션 — ChordHead(Kbd + separator) + RoleRow* + HintRow*. 시안처럼 조합이 하는 일을 먼저 보인다.
 fn draw_section(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -614,11 +614,11 @@ fn draw_section(
     if sec.is_empty() {
         draw_empty_row(ui, theme);
     } else {
-        for row in &sec.rows {
-            draw_row(ui, theme, row);
-        }
         for role in &sec.roles {
             draw_role_row(ui, theme, *role);
+        }
+        for row in &sec.rows {
+            draw_row(ui, theme, row);
         }
     }
 }
