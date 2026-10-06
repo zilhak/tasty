@@ -360,7 +360,13 @@ impl ImageDoc {
     }
 
     /// Replace the original image with a fresh blank canvas and enter edit mode.
+    /// 새 캔버스는 열려 있던 파일과 별개 문서다. 경로와 폴더 목록을 버려
+    /// Save가 원래 파일을 덮어쓰지 않고 저장할 경로를 묻게 한다.
     pub fn create_blank_canvas(&mut self, width: usize, height: usize) {
+        self.file_path = None;
+        self.dir_images.clear();
+        self.current_index = 0;
+        self.pending_external_reload = false;
         self.original_image = Some(ColorImage::new([width, height], Color32::WHITE));
         self.texture = None;
         self.zoom = 1.0;
@@ -922,6 +928,29 @@ mod tests {
             first_pixel(&doc).r(),
             255,
             "외부 변경 기록이 없으면 편집 종료 때 다시 읽지 않아야 한다"
+        );
+        let _ = std::fs::remove_file(&path); // best-effort 정리 — 실패 무시.
+    }
+
+    /// 파일을 연 문서에서 새 캔버스를 만들면 원래 파일 경로를 저장 대상으로 쓰지 않아야 한다.
+    #[test]
+    fn a_new_canvas_does_not_keep_the_open_file_as_its_save_path() {
+        let path = probe_png_path("newcanvas");
+        write_probe_png(&path, [255, 0, 0]);
+        let mut doc = ImageDoc::new(Some(path.to_string_lossy().into_owned()));
+        doc.ensure_loaded();
+        assert!(doc.save_path().is_some(), "전제: 연 파일이 저장 대상이다");
+
+        doc.create_blank_canvas(8, 8);
+        assert_eq!(
+            doc.save_path(),
+            None,
+            "새 캔버스는 저장할 경로를 물어야 한다"
+        );
+        assert!(doc.is_blank());
+        assert!(
+            doc.dir_images.is_empty(),
+            "새 캔버스에서 원래 폴더의 이전·다음 이미지로 넘어가지 않아야 한다"
         );
         let _ = std::fs::remove_file(&path); // best-effort 정리 — 실패 무시.
     }

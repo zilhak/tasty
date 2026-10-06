@@ -647,6 +647,7 @@ fn draw_save_path_popup(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, doc: 
                     doc.file_path = Some(path);
                     doc.save_path_popup = false;
                     doc.exit_edit_mode();
+                    doc.reload_from_disk();
                 }
             }
         });

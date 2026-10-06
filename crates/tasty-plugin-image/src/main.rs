@@ -477,6 +477,42 @@ mod tests {
         assert_eq!(err.code, -32602);
     }
 
+    /// 파일을 연 서피스에서 새 캔버스를 만든 뒤 경로 없이 저장하면 원래 파일을 덮어쓰지 않아야 한다.
+    #[test]
+    fn saving_a_new_canvas_without_a_path_leaves_the_opened_file_intact() {
+        // 같은 프로세스의 재호출도 구분하도록 단조 카운터를 붙인다.
+        static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let path = std::env::temp_dir().join(format!(
+            "tasty-image-newcanvas-save-{}-{}.png",
+            std::process::id(),
+            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
+        image::RgbImage::from_pixel(4, 4, image::Rgb([255, 0, 0]))
+            .save(&path)
+            .expect("probe png 저장 실패");
+        let file = path.to_string_lossy().into_owned();
+        let mut p = ImagePlugin::new(Translator::default());
+        p.create_surface(SurfaceCreateCtx {
+            surface_id: 1,
+            kind: "image".into(),
+            cwd: None,
+            params: json!({ "surface_id": 1, "kind": "image", "params": { "file": file } }),
+        });
+        let doc = p.docs.get_mut(&1).expect("문서가 있어야 한다");
+        doc.ensure_loaded();
+        doc.create_blank_canvas(8, 8);
+
+        let err = p.image_save(&json!({ "surface": 1 })).unwrap_err();
+        assert_eq!(err.code, -32602, "경로가 없으면 저장을 거절해야 한다");
+        let on_disk = image::open(&path).expect("원래 파일을 읽을 수 있어야 한다");
+        assert_eq!(
+            (on_disk.width(), on_disk.height()),
+            (4, 4),
+            "원래 파일이 새 캔버스로 덮어써지지 않아야 한다"
+        );
+        let _ = std::fs::remove_file(&path); // best-effort 정리 — 실패 무시.
+    }
+
     #[test]
     fn step_on_missing_surface_is_invalid_params() {
         let mut p = ImagePlugin::new(Translator::default());
