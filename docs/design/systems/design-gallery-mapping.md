@@ -355,6 +355,14 @@ specimen 간 중복 chrome 을 한 곳으로 모은 카탈로그 헬퍼 (`crates
 | `toast_card.rs` | `tasty-type-appearance` 의 `ToastKind` · `tasty-ui-widgets` 의 `draw_toast_single_card` 재수출 — 정의는 여기 없다 | toast(components/widgets) · kb import/export |
 | `popup_frame.rs` | `draw` (`ContentInset` · `TitleButtons`) — surface-raised 프레임 + border-strong + 타이틀바 우측 버튼군(`draw_title_buttons`: IconButton sm 규칙의 `close` / 전체화면 `fit`) + 제목(`draw_title_text`: 본체와 같은 `popup_title_text_rect`·`elide_popup_title`, 버튼 수와 무관하게 대칭, 잘리면 띠를 돌려줘 `title_tooltip`이 전체 제목 Tooltip 을 붙인다) | notification_panel · info_modal · fullscreen_stage (뒤의 둘은 `draw_title_buttons`·`draw_title_text`·`TITLE_BAR_HEIGHT` 만) |
 
+<a id="토큰-이름-표기"></a>
+
+### 토큰 이름 표기
+
+갤러리가 그리는 글자(Meta의 Layout spec 값과 Tokens used 칩, Spec 제목·설명, 예제 안의 라벨)에는 토큰 이름을 시안 CSS 변수에서 `--tasty-` 접두를 뗀 이름으로 쓴다. 시안 칩의 `--tasty-bg-app`은 갤러리에서 `bg-app`이다. 갤러리 UI 글꼴은 하이픈 두 개를 붙여 그리므로 접두를 그대로 두면 `-tasty-bg-app`처럼 한 줄로 읽힌다. 소스 주석에서 시안 CSS 변수를 가리킬 때는 접두를 둔 원래 이름을 쓴다.
+
+`crates/tasty-gallery/tests/meta_token_notation.rs`가 모든 Spec을 GPU 없이 한 프레임 그리고, 출력 shape의 글자와 Section·Spec 제목에 `--tasty-`가 있으면 실패한다. 그리지 않는 문자열과 주석은 보지 않는다.
+
 <a id="primitive-컴포넌트-레이어-components"></a>
 
 ## 기본 컴포넌트 (Components)
