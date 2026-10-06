@@ -27,6 +27,7 @@ fn mono_head(ui: &mut egui::Ui, theme: &Theme, text: &str) {
         egui::RichText::new(text.to_uppercase())
             .monospace()
             .size(theme.font_size_micro.value())
+            .extra_letter_spacing(theme.letter_spacing_caps(theme.font_size_micro).value())
             .color(theme.text_muted().to_egui()),
     );
 }

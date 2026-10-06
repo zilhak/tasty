@@ -6,7 +6,7 @@ use tasty_ui_widgets::checkbox;
 use crate::catalog::icons;
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
-use super::paint::{intro, truncated};
+use super::paint::{intro, truncated, truncated_tracked};
 use super::{
     GROUP_CHEVRON_GAP, GROUPS, Group, IE_FILE, PLUGIN_DOT_GAP, PREVIEW_H, Row, SELECT_COL_W, STATE,
     State, counts, detail_frame, selected_count,
@@ -120,13 +120,20 @@ fn diff_table(ui: &mut egui::Ui, theme: &Theme, st: &mut State) {
         let head_font = egui::FontId::monospace(theme.font_size_micro.value());
         let head_h = ui.fonts(|f| f.row_height(&head_font)) + pad_y;
         let (rect, _) = ui.allocate_exact_size(egui::vec2(w, head_h), egui::Sense::hover());
+        let caps = theme.letter_spacing_caps(theme.font_size_micro);
         for (i, text) in ["", "ACTION", "CURRENT", "IMPORTED"].iter().enumerate() {
-            ui.painter().text(
-                egui::pos2(rect.left() + x_off[i] + pad_x, rect.top()),
-                egui::Align2::LEFT_TOP,
-                *text,
+            let g = truncated_tracked(
+                ui,
+                text,
                 head_font.clone(),
                 theme.text_muted().to_egui(),
+                f32::INFINITY,
+                caps,
+            );
+            ui.painter().galley(
+                egui::pos2(rect.left() + x_off[i] + pad_x, rect.top()),
+                g,
+                egui::Color32::PLACEHOLDER,
             );
         }
         ui.painter().hline(
@@ -248,10 +255,13 @@ fn group_header(
                 }
             }
             let glyph = theme.icon_glyph_size_sm.value();
-            let galley = ui.painter().layout_no_wrap(
-                g.label.to_uppercase(),
+            let galley = truncated_tracked(
+                ui,
+                &g.label.to_uppercase(),
                 egui::FontId::monospace(theme.font_size_micro.value()),
                 theme.text_secondary().to_egui(),
+                f32::INFINITY,
+                theme.letter_spacing_caps(theme.font_size_micro),
             );
             let bw = glyph + GROUP_CHEVRON_GAP.value() + galley.rect.width();
             let (br, resp) = ui.allocate_exact_size(egui::vec2(bw, h), egui::Sense::click());

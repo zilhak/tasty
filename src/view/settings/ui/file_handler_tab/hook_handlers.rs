@@ -196,12 +196,13 @@ pub(super) fn draw_hook_handlers(ui: &mut egui::Ui, hh: &mut HookHandlerEditDraf
     }
 }
 
-/// 대문자 고정폭 섹션 제목. em 자간 토큰은 생성기가 지원하지 않아 적용하지 않는다.
+/// 대문자 고정폭 섹션 제목. 자간은 시안의 `letter-spacing-caps` 다.
 fn mono_caps_head(ui: &mut egui::Ui, th: &tasty_type_appearance::theme::Theme, text: &str) {
     ui.label(
         egui::RichText::new(text.to_uppercase())
             .monospace()
             .size(th.font_size_micro.value())
+            .extra_letter_spacing(th.letter_spacing_caps(th.font_size_micro).value())
             .color(th.text_muted()),
     );
 }

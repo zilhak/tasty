@@ -9,7 +9,7 @@ use crate::adapters::ui::icons;
 use crate::i18n::{t, t_fmt2};
 
 use super::model::{Group, RowKey};
-use super::paint::truncated;
+use super::paint::{truncated, truncated_tracked};
 use super::view_model::{GroupView, RowView, Sub, ViewModel};
 use super::{GROUP_CHEVRON_GAP, PLUGIN_DOT_GAP, SELECT_COL_W};
 
@@ -53,13 +53,15 @@ pub(super) fn diff_table(
             t("settings.keybindings.preset_col_before").to_uppercase(),
             t("settings.keybindings.ie_col_imported").to_uppercase(),
         ];
+        let caps = th.letter_spacing_caps(th.font_size_micro);
         for (i, text) in headers.iter().enumerate() {
-            let g = truncated(
+            let g = truncated_tracked(
                 ui,
                 text,
                 head_font.clone(),
                 th.text_muted().to_egui(),
                 (col_w[i] - pad_x * 2.0).max(0.0),
+                caps,
             );
             ui.painter().galley(
                 egui::pos2(rect.left() + x_off[i] + pad_x, rect.top()),
@@ -185,10 +187,13 @@ fn group_header(
             }
             // chevron + 그룹명 — 한 버튼(접힘 토글).
             let glyph = th.icon_glyph_size_sm.value();
-            let galley = ui.painter().layout_no_wrap(
-                t(g.group.label_key()).to_uppercase(),
+            let galley = truncated_tracked(
+                ui,
+                &t(g.group.label_key()).to_uppercase(),
                 egui::FontId::monospace(th.font_size_micro.value()),
                 th.text_secondary().to_egui(),
+                f32::INFINITY,
+                th.letter_spacing_caps(th.font_size_micro),
             );
             let bw = glyph + GROUP_CHEVRON_GAP.value() + galley.rect.width();
             let (br, resp) = ui.allocate_exact_size(egui::vec2(bw, h), egui::Sense::click());

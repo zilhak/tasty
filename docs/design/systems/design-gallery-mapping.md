@@ -701,8 +701,8 @@ i18n: `settings.keybindings.preset_*` 신규 10키 + `select_preset_label`/`pres
 
 **전사 노트**:
 - `letter-spacing-caps` 는 mono `font-size-micro` uppercase, `fontWeight: 600` 은 색 강조로
-  둔다(Preset · Hook Handlers 관례). 자간은 이 자리에 아직 적용하지 않았다. 값은
-  생성 접근자 `letter_spacing_caps(font_size)`(`generated_tracking.rs`)로 읽을 수 있다. `color-mix(tone X%, transparent)` 는 명명 const
+  둔다(Preset · Hook Handlers 관례). diff 표 머리글과 그룹 라벨의 자간은 생성 접근자
+  `letter_spacing_caps(font_size_micro)` 를 `paint::truncated_tracked` 로 적용한다. `color-mix(tone X%, transparent)` 는 명명 const
   계수의 `gamma_multiply`.
 - 그리드 밖 값(chevron gap 6 · plugin 점 gap 5)은 가까운 값으로 바꾸지 않고 용도를 명시한 상수로 둔다([ADR-0035](../../adr/0035-shared-design-and-theme.md)).
 - 선택 열 32 · 라벨 288/120 · 슬롯 최소 폭 140 은 디자인이 컴포넌트 토큰(`kb-ie-select-column-width` ·
@@ -732,8 +732,8 @@ L1 "File Handler" 를 **Handler** 로 일반화(내부 key `FileHandler` 유지)
 
 **전사 노트**:
 - jsx `headStyle`(mono 10 uppercase `letter-spacing-caps`)은 기존 관례(mono
-  `font-size-micro` uppercase `text-muted`)로 전사했고 자간은 아직 적용하지 않았다. 값은
-  생성 접근자 `letter_spacing_caps(font_size)` 로 읽을 수 있다.
+  `font-size-micro` uppercase `text-muted`)로 전사하고 자간은 생성 접근자
+  `letter_spacing_caps(font_size_micro)` 로 적용한다.
 - **별도 토큰 없음** — `hook_handlers.rs`/`settings_handler.rs`가 쓰는 토큰은 전부 기존
   `spacing_*`/`font_size_*`/`text_*`/`border_*` 등 범용 접근자이며 이 기능 전용으로
   추가된 Theme 필드가 없다. 화면 전용 고정값(라벨폭 74/100, priority step 10)은

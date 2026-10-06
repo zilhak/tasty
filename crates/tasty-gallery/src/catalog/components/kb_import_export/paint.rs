@@ -66,7 +66,22 @@ pub(super) fn truncated(
     color: egui::Color32,
     max_width: f32,
 ) -> std::sync::Arc<egui::Galley> {
+    truncated_tracked(ui, text, font, color, max_width, LogicalPx(0.0))
+}
+
+/// [`truncated`] 에 자간을 더한다. 대문자 mono 머리글의 `letter-spacing-caps` 용.
+pub(super) fn truncated_tracked(
+    ui: &egui::Ui,
+    text: &str,
+    font: egui::FontId,
+    color: egui::Color32,
+    max_width: f32,
+    tracking: LogicalPx,
+) -> std::sync::Arc<egui::Galley> {
     let mut job = egui::text::LayoutJob::simple_singleline(text.to_owned(), font, color);
+    for section in &mut job.sections {
+        section.format.extra_letter_spacing = tracking.value();
+    }
     job.wrap = egui::text::TextWrapping::truncate_at_width(max_width.max(0.0));
     ui.fonts(|f| f.layout_job(job))
 }
