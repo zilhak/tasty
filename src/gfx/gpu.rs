@@ -681,7 +681,11 @@ impl GpuState {
             window.set_ime_allowed(!disable_ime);
         }
         #[cfg(windows)]
-        window.set_ime_allowed(true);
+        {
+            // Windows는 팝업 포커스와 무관하게 IME를 허용하므로 state를 읽지 않는다.
+            let _ = state;
+            window.set_ime_allowed(true);
+        }
     }
 
     /// 자원 개수를 바꾸지 않고 읽어 system.gpu_stats에 제공한다.
