@@ -59,11 +59,12 @@ fn draw_viewer_controls(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, doc: 
     let has_dir = doc.dir_images.len() > 1;
 
     if has_dir {
-        if baked_icon_button(
+        if icon_button(
             ui,
             theme,
             baked_icons::CHEVRON_LEFT,
             tr.t("image_viewer.prev"),
+            true,
         )
         .clicked()
             && !doc.is_editing()
@@ -71,11 +72,12 @@ fn draw_viewer_controls(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, doc: 
         {
             doc.load_after_navigation();
         }
-        if baked_icon_button(
+        if icon_button(
             ui,
             theme,
             baked_icons::CHEVRON_RIGHT,
             tr.t("image_viewer.next"),
+            true,
         )
         .clicked()
             && !doc.is_editing()
@@ -85,11 +87,12 @@ fn draw_viewer_controls(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, doc: 
         }
     }
 
-    if baked_icon_button(
+    if icon_button(
         ui,
         theme,
         baked_icons::REFRESH,
         tr.t("image_viewer.refresh"),
+        true,
     )
     .clicked()
     {
@@ -97,12 +100,27 @@ fn draw_viewer_controls(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, doc: 
     }
 
     if doc.original_image.is_some()
-        && baked_icon_button(ui, theme, baked_icons::EDIT, tr.t("image_viewer.edit")).clicked()
+        && icon_button(
+            ui,
+            theme,
+            baked_icons::EDIT,
+            tr.t("image_viewer.edit"),
+            true,
+        )
+        .clicked()
     {
         doc.enter_edit_mode();
     }
 
-    if baked_icon_button(ui, theme, baked_icons::PLUS, tr.t("image_viewer.new_image")).clicked() {
+    if icon_button(
+        ui,
+        theme,
+        baked_icons::PLUS,
+        tr.t("image_viewer.new_image"),
+        true,
+    )
+    .clicked()
+    {
         doc.new_image_popup = true;
     }
 
@@ -161,7 +179,7 @@ fn draw_edit_controls(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, doc: &m
     }
 
     let undo_enabled = doc.can_undo();
-    if baked_icon_button_enabled(
+    if icon_button(
         ui,
         theme,
         baked_icons::UNDO,
@@ -173,7 +191,7 @@ fn draw_edit_controls(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, doc: &m
         doc.undo();
     }
     let redo_enabled = doc.can_redo();
-    if baked_icon_button_enabled(
+    if icon_button(
         ui,
         theme,
         baked_icons::REDO,
@@ -211,12 +229,28 @@ fn draw_edit_controls(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, doc: &m
 /// 시안 ZoomGroup: Fit은 Secondary sm Button, +/−는 sm IconButton이다.
 fn draw_zoom_controls(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, doc: &mut ImageDoc) {
     // right_to_left layout: add in reverse visual order (-, %, +, Fit).
-    if zoom_icon_button(ui, theme, baked_icons::MINUS, tr.t("image_viewer.zoom_out")).clicked() {
+    if icon_button(
+        ui,
+        theme,
+        baked_icons::MINUS,
+        tr.t("image_viewer.zoom_out"),
+        true,
+    )
+    .clicked()
+    {
         doc.zoom = (doc.zoom / 1.25).max(0.1);
     }
     let zoom_pct = format!("{}%", (doc.zoom * 100.0).round_ui() as i32);
     ui.label(caption(theme, &zoom_pct));
-    if zoom_icon_button(ui, theme, baked_icons::PLUS, tr.t("image_viewer.zoom_in")).clicked() {
+    if icon_button(
+        ui,
+        theme,
+        baked_icons::PLUS,
+        tr.t("image_viewer.zoom_in"),
+        true,
+    )
+    .clicked()
+    {
         doc.zoom = (doc.zoom * 1.25).min(20.0);
     }
     if Button::new(tr.t("image_viewer.fit"))
@@ -568,11 +602,12 @@ fn draw_save_path_popup(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, doc: 
             if !resp.has_focus() && doc.save_path_buffer.is_empty() {
                 resp.request_focus();
             }
-            if baked_icon_button(
+            if icon_button(
                 ui,
                 theme,
                 baked_icons::FOLDER_OPEN,
                 tr.t("image_viewer.browse"),
+                true,
             )
             .clicked()
             {
@@ -637,95 +672,18 @@ fn heading(theme: &Theme, text: &str) -> egui::RichText {
         .color(theme.text_primary().to_egui())
 }
 
-/// 공용 토큰의 배경·테두리·caption 글꼴을 사용하는 버튼.
-fn styled_button(theme: &Theme, label: &str) -> egui::Button<'static> {
-    egui::Button::new(
-        egui::RichText::new(label.to_owned())
-            .size(theme.font_size_caption.value())
-            .color(theme.text_primary().to_egui()),
-    )
-    .fill(theme.surface_raised().to_egui())
-    .stroke(egui::Stroke::new(
-        theme.border_width.value(),
-        theme.border_default().to_egui(),
-    ))
-    .corner_radius(theme.corner_radius_sm.value())
-}
-
-/// 버튼 높이에 대한 아이콘 크기 비율.
-const ICON_DRAW_RATIO: f32 = 0.7;
-
-/// 도구 모음 아이콘 버튼의 크기.
-fn icon_button_size(theme: &Theme) -> [f32; 2] {
-    let h = theme.spacing_lg.value() + theme.spacing_xs.value(); // ≈ 20
-    let w = theme.spacing_lg.value() * 1.5; // ≈ 24
-    [w, h]
-}
-
-/// 공용 스타일의 빈 버튼 위에 text_primary 색상으로 폴리라인 아이콘을 그린다.
-fn baked_icon_button(
-    ui: &mut egui::Ui,
-    theme: &Theme,
-    icon: &[&[[f32; 2]]],
-    tooltip: &str,
-) -> egui::Response {
-    let [w, h] = icon_button_size(theme);
-    let resp = ui
-        .add_sized([w, h], styled_button(theme, ""))
-        .on_hover_text(tooltip);
-    tasty_plugin_sdk::baked_icon::draw(
-        ui.painter(),
-        icon,
-        resp.rect.center(),
-        h * ICON_DRAW_RATIO,
-        theme.text_primary().to_egui(),
-    );
-    resp
-}
-
-/// 비활성 상태는 흐리게 하지 않고 disabled 상자와 disabled 잉크로 그린다.
-/// 입력은 Sense로만 막아 egui disabled fade가 겹치지 않게 한다.
-fn baked_icon_button_enabled(
-    ui: &mut egui::Ui,
-    theme: &Theme,
-    icon: &[&[[f32; 2]]],
-    tooltip: &str,
-    enabled: bool,
-) -> egui::Response {
-    let [w, h] = icon_button_size(theme);
-    let (button, color) = if enabled {
-        (styled_button(theme, ""), theme.text_primary())
-    } else {
-        let button = egui::Button::new("")
-            .fill(theme.state_disabled_fill().to_egui())
-            .stroke(egui::Stroke::new(
-                theme.border_width.value(),
-                theme.state_disabled_border().to_egui(),
-            ))
-            .corner_radius(theme.corner_radius_sm.value())
-            .sense(egui::Sense::hover());
-        (button, theme.state_disabled_fg())
-    };
-    let resp = ui.add_sized([w, h], button).on_hover_text(tooltip);
-    tasty_plugin_sdk::baked_icon::draw(
-        ui.painter(),
-        icon,
-        resp.rect.center(),
-        h * ICON_DRAW_RATIO,
-        color.to_egui(),
-    );
-    resp
-}
-
-/// zoom 그룹의 sm IconButton. 위젯이 정한 글리프 칸과 상태별 색으로 폴리라인 아이콘을 그린다.
-fn zoom_icon_button(
+/// 시안 ImgBtn: 도구 모음·zoom 그룹·찾아보기의 sm IconButton.
+/// 위젯이 정한 글리프 칸과 상태별 색으로 폴리라인 아이콘을 그린다.
+fn icon_button(
     ui: &mut egui::Ui,
     theme: &Theme,
     icon: &'static [&'static [[f32; 2]]],
     tooltip: &str,
+    enabled: bool,
 ) -> egui::Response {
     IconButton::new()
         .size(ControlSize::Sm)
+        .enabled(enabled)
         .show(ui, theme, &|ui, rect, color| {
             tasty_plugin_sdk::baked_icon::draw(
                 ui.painter(),
