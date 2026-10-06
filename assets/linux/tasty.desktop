@@ -4,6 +4,7 @@ Comment=Cross-platform GPU-accelerated terminal emulator
 Exec=tasty
 Icon=tasty
 Terminal=false
+StartupNotify=true
 Type=Application
 Categories=System;TerminalEmulator;
 Keywords=terminal;shell;console;

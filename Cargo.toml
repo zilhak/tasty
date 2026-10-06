@@ -59,7 +59,8 @@ terminal programmatically alongside human use."""
 depends = "$auto, libfreetype6, libfontconfig1"
 # Vulkan은 동적 로딩하므로 $auto의 ELF 의존성 검사로 찾지 못한다.
 # 다른 GPU 백엔드를 사용할 수 있어 필수 의존성 대신 권장 패키지로 둔다.
-recommends = "libvulkan1"
+# zenity는 이미 실행 중인 Tasty에 요청을 넘기지 못했을 때 띄우는 메시지 상자다. 없으면 데스크톱 알림을 쓴다.
+recommends = "libvulkan1, zenity"
 section = "utils"
 priority = "optional"
 assets = [
@@ -162,6 +163,7 @@ fontconfig = "*"
 # Debian의 libvulkan1과 같은 동적 로딩용 권장 의존성이다.
 [package.metadata.generate-rpm.recommends]
 vulkan-loader = "*"
+zenity = "*"
 
 # 모듈과 공개 API는 lib에, 실행 진입점은 bin에 둔다.
 # 외부 공개 범위는 cargo doc -p tasty --no-deps로 확인할 수 있다.

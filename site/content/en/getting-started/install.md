@@ -1,4 +1,4 @@
-<!-- source-hash: f0f442e0848f -->
+<!-- source-hash: fe1cdc4a6f67 -->
 # Install
 
 Install Tasty for your computer and open your first terminal. Below you will find installation steps for each OS, along with how to update or uninstall.
@@ -46,6 +46,7 @@ tar -xzf tasty-{ver}-linux-x64.tar.gz && ./tasty-linux-x64/tasty
 
 - `.deb` / `.rpm` put the `tasty` command on PATH and add an icon to the app menu. The package manager installs the required libraries.
 - GPU acceleration (Vulkan) is used when `libvulkan1` / `vulkan-loader` is present. Without it, Tasty still installs and runs, using OpenGL, or software rendering if that fails too.
+- `zenity` is a recommended package. Tasty uses it to show a notice when a new launch cannot be handed to the Tasty that is already running. Without it, a desktop notification is shown instead.
 - `.AppImage` bundles libraries used to run Tasty. You register it in the app menu yourself (use `appimaged`, or put a `.desktop` file in `~/.local/share/applications/`).
 - `.tar.gz` requires you to set up PATH and the menu entry yourself. If a required system library is missing, `tasty` tells you what is missing and exits.
 - The licence notices (Tasty's MIT text, the licence texts of the bundled font and markdown rendering engines, and the third-party notice document) travel inside the artifacts. `.deb` keeps them in `/usr/share/doc/tasty/`, `.rpm` and `.AppImage` in `usr/share/licenses/tasty/`, and `.tar.gz` at the top of the extracted directory. The release process also uploads these notice files separately to the release page.

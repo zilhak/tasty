@@ -35,7 +35,7 @@ chmod +x Tasty-{ver}-x86_64.AppImage && ./Tasty-{ver}-x86_64.AppImage
 tar -xzf tasty-{ver}-linux-x64.tar.gz && ./tasty-linux-x64/tasty
 ```
 
-- `.deb`/`.rpm`: `tasty` 가 PATH 등록 + 데스크톱 메뉴 아이콘 등록. 의존성은 패키지 메타데이터(`libfreetype6`/`libfontconfig1`/`libgtk-3`/`libwebkit2gtk-4.1` 등)로 자동 분석. GPU 가속(Vulkan)은 `libvulkan1`/`vulkan-loader` 를 Recommends 로만 요구 — 없어도 설치·실행은 되고 소프트웨어 렌더러로 fallback 한다.
+- `.deb`/`.rpm`: `tasty` 가 PATH 등록 + 데스크톱 메뉴 아이콘 등록. 의존성은 패키지 메타데이터(`libfreetype6`/`libfontconfig1`/`libgtk-3`/`libwebkit2gtk-4.1` 등)로 자동 분석. GPU 가속(Vulkan)은 `libvulkan1`/`vulkan-loader` 를 Recommends 로만 요구 — 없어도 설치·실행은 되고 소프트웨어 렌더러로 fallback 한다. `zenity` 도 deb·rpm 모두 Recommends 다 — 두 번째 실행이 실행 중 Tasty에 요청을 넘기지 못했을 때의 메시지 상자(rfd)가 쓰며, 없으면 데스크톱 알림으로 대신한다. 데스크톱 항목은 `StartupNotify=true` 라 실행기가 활성화 토큰을 넘긴다.
 - `.AppImage`: 필요한 라이브러리를 번들. 데스크톱 메뉴 등록은 수동(`appimaged` 또는 `.desktop` 을 `~/.local/share/applications/`).
 - `.tar.gz`: PATH·메뉴 등록 사용자 직접. 편한 등록을 원하면 `.deb`/`.rpm`/`.AppImage` 권장. 필요 `.so` 가
   없으면 실행 전 `tasty` wrapper 가 감지해 안내 후 종료한다(`tasty.bin` 이 실제 바이너리).

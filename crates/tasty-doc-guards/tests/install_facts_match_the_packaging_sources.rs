@@ -62,8 +62,9 @@ fn the_gpu_dependency_names_the_guide_states_are_the_packaging_ones() {
     let manifest = read("Cargo.toml");
     // 배포판별 의존 이름과 recommends·requires 구분을 유지한다.
     for (needle, where_) in [
-        (r#"recommends = "libvulkan1""#, "libvulkan1"),
+        (r#"recommends = "libvulkan1, zenity""#, "libvulkan1"),
         (r#"vulkan-loader = "*""#, "vulkan-loader"),
+        (r#"zenity = "*""#, "zenity"),
     ] {
         assert!(
             manifest.contains(needle),
