@@ -641,6 +641,8 @@ fn draw_new_image_popup(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, doc: 
         tr.t("button.cancel"),
         |ui| {
             ui.horizontal(|ui| {
+                // 라벨을 입력칸 높이의 가운데에 맞추려면 줄 높이를 먼저 정한다.
+                ui.set_min_height(theme.input_height().value());
                 ui.spacing_mut().item_spacing.x = theme.image_popup_btn_gap().value();
                 let input_w = theme.image_size_input_width().value();
                 ui.label(body(theme, tr.t("image_viewer.width")));
@@ -740,10 +742,11 @@ fn caption(theme: &Theme, text: &str) -> egui::RichText {
         .color(theme.text_muted().to_egui())
 }
 
+/// New Image 의 Width · Height 라벨 — 시안 13 · text-secondary.
 fn body(theme: &Theme, text: &str) -> egui::RichText {
     egui::RichText::new(text)
         .size(theme.font_size_body.value())
-        .color(theme.text_muted().to_egui())
+        .color(theme.text_secondary().to_egui())
 }
 
 /// 시안 ImgBtn: 도구 모음·zoom 그룹·찾아보기의 sm IconButton.
