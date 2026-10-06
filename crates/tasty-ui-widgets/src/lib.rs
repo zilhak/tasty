@@ -125,7 +125,7 @@ pub use remote_tool::{
     ProtocolFilterLabels, TabStripData, TextWrap, draw_local_ssh_section,
     draw_protocol_filter_body, draw_protocol_filter_button, draw_tab_strip,
     filter_dropdown_content_width, ghost_button, hsep, primary_button, secondary_button,
-    selectable_label, selectable_text, warn_badge,
+    selectable_label, selectable_text, warn_badge, warn_badge_width,
 };
 pub use segmented::segmented;
 pub use select::{select, select_or_placeholder};

@@ -856,14 +856,13 @@ pub fn draw_filter(ui: &mut egui::Ui, theme: &Theme) {
                 })
                 .collect();
             // 토큰은 테두리를 포함한 폭이다. 이 카드 프레임은 좌우 테두리만 가진다.
-            kit::frame_card_popover(
+            kit::frame_card_menu(
                 ui,
                 theme,
                 tasty_ui_widgets::filter_dropdown_content_width(
                     theme,
                     LogicalPx(theme.border_width.value() * 2.0),
                 ),
-                kit::raised_fill(theme),
                 |ui| {
                     // 구획 여백과 구분선은 공용 본문이 그린다. 카드는 안쪽 여백 없이 담는다.
                     draw_protocol_filter_body(
@@ -900,7 +899,7 @@ pub fn draw_filter(ui: &mut egui::Ui, theme: &Theme) {
             ),
             (
                 "dropdown",
-                "remote-filter-dropdown-width 240 border-box · title · checkbox list · bulk row · Reset/Apply",
+                "remote-filter-dropdown-width 240 border-box · menu container frame · title · checkbox list · bulk row · Reset/Apply",
             ),
             (
                 "unknown",
@@ -916,14 +915,22 @@ pub fn draw_filter(ui: &mut egui::Ui, theme: &Theme) {
             ),
             TokenChip::new(
                 "surface-raised",
-                "idle button · dropdown",
+                "idle button",
                 theme.surface_raised().to_egui(),
             ),
             TokenChip::new(
                 "border-strong",
-                "idle button · dropdown border",
+                "idle button border",
                 theme.border_strong().to_egui(),
             ),
+            TokenChip::new("menu-bg", "dropdown fill", theme.menu_bg().to_egui()),
+            TokenChip::new(
+                "menu-border",
+                "dropdown border",
+                theme.menu_border().to_egui(),
+            ),
+            TokenChip::without_color("menu-radius", "dropdown corners"),
+            TokenChip::without_color("shadow-popover", "dropdown shadow"),
             TokenChip::new(
                 "accent-warning",
                 "unknown badge",

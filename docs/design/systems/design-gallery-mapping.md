@@ -23,7 +23,7 @@
 | `LocalSshSection`(kit 정의 — 위 `space-md` 여백·`border-frame` 선·`space-sm` 안쪽 여백, 헤더와 빈 상태 줄 `size-2`/`space-xs`, 행 `space-xs`·alias↔target `label-detail-gap`) | `tasty_ui_widgets::draw_local_ssh_section` (본체 wrapper: `remote_tool.rs` 동명 함수 — i18n + 빈 상태 원인 판정) | `components/remote.rs` `remote` spec 이 **같은 공용 view 를 호출**한다. 호스트 3건 목록 옆에 no hosts·no file·unreadable config 빈 상태 세 장 |
 | `AttachRow` | `draw_attach_row` | `components/remote.rs` `attach_row` (`remote-attach` spec) — 행 삭제 아이콘은 본체와 같이 `TRASH`. `x`(`CLOSE`)는 닫기·해제·필드 제거에만 쓴다 |
 | `AttachForm` | `draw_attach_form` | `components/remote.rs` `attach_form_card` (`remote-attach-form` spec, ref/inline 2변종) |
-| `PasskeyRow` | `draw_passkey_row` | `components/remote/passkeys.rs` `passkey_row` (`remote-passkeys` spec) — kit `PasskeyRow` 구조(행 `space-md space-xs`, 이름 + kind Tag, 모르는 kind 는 경고 아이콘이 붙은 `WarnBadge`, 둘째 줄 mono 한 줄 말줄임, 동작 reveal·편집·trash 간격 `size-1`)를 옮긴 세 상태: 가림, 보임(IconButton active + eyeOff), 모르는 kind. 본체 행은 kind 를 Tag 대신 muted 텍스트로, 경고를 `⚠` 텍스트로 그리고 둘째 줄을 말줄임하지 않는다 |
+| `PasskeyRow` | `draw_passkey_row` | `components/remote/passkeys.rs` `passkey_row` (`remote-passkeys` spec, Attach 앞) — gallery 미러 `RemoteFrame tab="passkeys"`의 네 행(가림, 긴 경로 보임(IconButton active + eyeOff), 가림, 모르는 kind)을 Mocha·Latte 두 장으로 그린다. 시안 seed kind `file`·`secret`은 tasty kind `path`·`inline`으로 옮긴다. 행 구조는 kit `PasskeyRow`(행 `space-md space-xs`, 이름 + kind Tag, 둘째 줄 mono 한 줄 말줄임, 동작 reveal·편집·trash 간격 `size-1`)다. 본체 행도 kind Tag, 이름·값 말줄임, 동작 묶음 폭을 먼저 빼는 배치, 간격 `size-1`을 쓴다. 본체 행은 이름이 weight 400이고 행 위아래 여백이 없으며 모르는 kind 를 `⚠` 텍스트 배지로 그린다. 세 탭의 본체 행이 같은 방식이다 |
 | `PasskeyForm` | `draw_passkey_form` | `components/remote/forms.rs` `form_card` (`remote-generic-passkey-forms` spec — kind path 한 줄, inline 세 줄 secret) |
 | `ConfirmDelete` | `draw_confirm_delete` | — |
 | `PasskeySelect` | `passkey_dropdown_row` | — |
@@ -35,7 +35,7 @@ tab="attach"` / `RemoteFormFrame` variant `attach-ref`·`attach-inline`)를 전�
 
 로컬 SSH config는 카드 대신 섹션 헤더와 2줄 행으로 표시한다. 헤더는 11px 대문자 라벨·고정폭 경로·오른쪽 개수이며, 행은 alias와 `user@host:port`다. 행 아이콘 버튼 대신 ghost `Add profile`을 사용하고, 등록된 호스트에는 `in profiles` Tag를 표시한다. 호스트 없음·파일 없음·읽기 실패는 `text-muted` 한 줄로 알리며, 읽기 실패 문구는 권한·디렉터리·UTF-8 아님 같은 원인을 나누지 않는다. 본체와 갤러리 모두 `tasty_ui_widgets::draw_local_ssh_section`을 호출한다.
 
-디자인과의 차이는 헤더·빈 줄 위 세로 여백 2px다. 4px 그리드 밖이며 대응 토큰이 없어 적용하지 않았다. 가로 들여쓰기 4px는 `space-xs`를 사용한다. 자간 `letterSpacing: 0.06em`은 `SECTION_HEADING_TRACKING_EM`(0.06)에 글자 크기를 곱해 `TextFormat::extra_letter_spacing`으로 적용한다. caption 11px에서는 0.66px이며, 사이드바의 0.07em(10px에서 0.7px)과 같은 방법이다.
+디자인과의 차이는 헤더·빈 줄 위 세로 여백 2px다. 4px 그리드 밖이며 대응 토큰이 없어 적용하지 않았다. 가로 들여쓰기 4px는 `space-xs`를 사용한다. 헤더 자간은 `letter-spacing-caps`(0.04em)다. 생성 접근자 `letter_spacing_caps(font_size_caption)`의 값을 `TextFormat::extra_letter_spacing`으로 적용하며 caption 11px에서는 0.44px이다.
 
 **셸은 공유하지 않고 사본으로 둔다.** `draw_remote_tool_popup`은 MainViewState·CoreState를 받으므로 갤러리의 `(ui, &Theme)` 콜백에서 직접 호출할 수 없다. 프로필·Passkey 읽기, 폼 상태, `FILTER_MEMORY_ID`·`FILTER_POPUP_ID`, 배치는 본체가 맡는다. 셸을 props 로 떼어 내면 이 상태 전부를 갤러리 쪽 가짜 값으로 다시 만들어야 하므로, 공유 범위는 상태 없이 그릴 수 있는 내부 위젯(탭 스트립, 로컬 SSH 섹션, 필터 버튼·드롭다운, 버튼·배지·텍스트 헬퍼)으로 한정한다. 이 함수들은 `crates/tasty-ui-widgets/src/remote_tool.rs`에서 props를 받아 본체와 갤러리가 공유한다.
 
@@ -45,7 +45,9 @@ tab="attach"` / `RemoteFormFrame` variant `attach-ref`·`attach-inline`)를 전�
 
 필터 드롭다운 폭은 `remote-filter-dropdown-width`(240) 토큰이며 테두리를 포함한 폭(border-box)이다. 공용 `filter_dropdown_content_width`가 호출자의 프레임 좌우 합(테두리 + 안쪽 여백)을 빼 안쪽 최소 폭을 낸다. 본체는 egui popup 프레임(`Frame::popup`)의 `total_margin`을, 갤러리 카드는 좌우 테두리 두 개를 뺀다. 그래서 두 구현의 바깥 테두리 폭이 모두 토큰 값과 같다.
 
-드롭다운 안쪽은 kit `ProtocolFilter`의 네 구획(제목 · 목록 · 일괄 선택 링크 · Reset/Apply)을 공용 `draw_protocol_filter_body`가 그린다. 구획마다 위아래 `space-sm`, 좌우 `space-md` 여백을 두고 구획 사이에 `separator` 1px 선을 프레임 폭 전체에 긋는다. 그래서 호출자는 안쪽 여백이 없는 프레임에 담는다. 본체는 popup을 띄우는 scope의 `menu_margin`을 0으로 두고, popup 안쪽 Ui는 컨텍스트 스타일을 받으므로 프레임 여백은 그 scope에서 잰다. 갤러리 카드는 `frame_card_popover`에 그대로 담는다. 목록 스크롤은 `min_scrolled_height`도 상한 168로 두어, 가로로 감싸는 갤러리 행처럼 바깥 높이가 좁은 자리에서도 내용 높이(최대 168)까지 자란다. 제목은 대문자 mono `font-size-micro`, 자간 `letter-spacing-caps`(0.04em, 생성 접근자 `letter_spacing_caps(font_size)`), 링크는 `font-size-caption` accent 글자 버튼과 separator 색 `·`이다. 체크박스 라벨은 공용 checkbox의 body 크기 proportional 글꼴로 남아 있고, 시안의 mono 12와 다르다.
+드롭다운 틀은 버튼에 붙는 팝오버 공통인 메뉴 컨테이너 토큰(`menu-bg` · `menu-border` · `menu-radius` · `shadow-popover`)이다. 본체는 `apply_theme_to_egui`가 egui popup 틀에 이 값을 넣고, 갤러리 카드는 같은 토큰을 쓰는 `frame_card_menu`에 담는다.
+
+드롭다운 안쪽은 kit `ProtocolFilter`의 네 구획(제목 · 목록 · 일괄 선택 링크 · Reset/Apply)을 공용 `draw_protocol_filter_body`가 그린다. 구획마다 위아래 `space-sm`, 좌우 `space-md` 여백을 두고 구획 사이에 `separator` 1px 선을 프레임 폭 전체에 긋는다. 그래서 호출자는 안쪽 여백이 없는 프레임에 담는다. 본체는 popup을 띄우는 scope의 `menu_margin`을 0으로 두고, popup 안쪽 Ui는 컨텍스트 스타일을 받으므로 프레임 여백은 그 scope에서 잰다. 갤러리 카드는 `frame_card_menu`에 그대로 담는다. 목록 스크롤은 `min_scrolled_height`도 상한 168로 두어, 가로로 감싸는 갤러리 행처럼 바깥 높이가 좁은 자리에서도 내용 높이(최대 168)까지 자란다. 제목은 대문자 mono `font-size-micro`, 자간 `letter-spacing-caps`(0.04em, 생성 접근자 `letter_spacing_caps(font_size)`), 링크는 `font-size-caption` accent 글자 버튼과 separator 색 `·`이다. 체크박스 라벨은 공용 checkbox 라벨(body 크기, UI 글꼴)이며 시안도 같은 라벨을 쓴다.
 
 ## remote_attach — RA02 "Add remote workspace" (Overlays)
 

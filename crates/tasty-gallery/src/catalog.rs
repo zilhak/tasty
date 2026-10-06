@@ -1144,6 +1144,14 @@ pub fn pages() -> Vec<Page> {
                             components::remote::draw_filter,
                         ),
                         spec(
+                            "remote-passkeys",
+                            "Passkeys tab — rows, reveal, unknown kind",
+                            Some(
+                                "right tab · hidden / revealed (active + eyeOff) / long revealed path / unknown kind · Mocha · Latte",
+                            ),
+                            components::remote::draw_passkeys,
+                        ),
+                        spec(
                             "remote-attach",
                             "Attach tab — tasty-attach targets",
                             Some("middle tab · ref/inline targets · remote tasty + port discovery"),
@@ -1178,12 +1186,6 @@ pub fn pages() -> Vec<Page> {
                                 "tab strip = 2px accent underline (view) · segmented = accent-primary fill + text-on-accent (value) · surface-active stays row selection",
                             ),
                             components::remote::draw_segment_rule,
-                        ),
-                        spec(
-                            "remote-passkeys",
-                            "Passkeys tab — reveal states",
-                            Some("right tab · hidden / revealed (active) / unknown kind"),
-                            components::remote::draw_passkeys,
                         ),
                     ],
                 ),

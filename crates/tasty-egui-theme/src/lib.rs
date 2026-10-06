@@ -31,8 +31,11 @@ pub fn apply_theme_to_egui(theme: &Theme, ctx: &egui::Context) {
     };
 
     visuals.panel_fill = theme.mantle.into();
-    visuals.window_fill = theme.base.into();
-    visuals.window_stroke = stroke1(theme, theme.surface0);
+    // egui 의 popup·menu·tooltip 프레임은 window 값을 읽는다. 버튼에 붙는 팝오버가
+    // 메뉴 컨테이너 토큰(menu-bg · menu-border · menu-radius)을 쓰도록 여기서 맞춘다.
+    visuals.window_fill = theme.menu_bg().into();
+    visuals.window_stroke = stroke1(theme, theme.menu_border());
+    visuals.menu_corner_radius = theme.menu_radius().value().into();
 
     // 위젯에 붙는 팝업은 popover, 독립 창은 modal 그림자를 사용한다.
     // 프레임을 직접 지정하는 호출부도 같은 두 토큰 중에서 선택한다.

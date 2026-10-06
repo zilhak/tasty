@@ -1897,44 +1897,67 @@ fn draw_passkey_row(
     revealed_value: Option<&str>,
 ) -> Option<PasskeyRowAction> {
     let mut out = None;
-    ui.horizontal(|ui| {
-        ui.vertical(|ui| {
-            ui.spacing_mut().item_spacing.y = STRUCT_GAP_1.value();
-            ui.horizontal(|ui| {
-                selectable_label(
-                    ui,
-                    &k.name,
-                    th.text_primary(),
-                    th.font_size_body.value(),
-                    false,
-                );
-                if KNOWN_PASSKEY_KINDS.contains(&k.kind.as_str()) {
-                    selectable_label(
+    let known = KNOWN_PASSKEY_KINDS.contains(&k.kind.as_str());
+    ui.horizontal_top(|ui| {
+        ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
+        // 동작 묶음의 폭을 먼저 빼 둔다. 긴 이름·값은 남은 폭에서 말줄임하고 버튼을 밀어내지 않는다.
+        let gap = STRUCT_GAP_1.value();
+        let actions_w = ControlSize::Sm.height(th) * 3.0 + gap * 2.0;
+        let text_w = (ui.available_width() - actions_w - th.spacing_sm.value()).max(0.0);
+        ui.allocate_ui_with_layout(
+            egui::vec2(text_w, 0.0),
+            egui::Layout::top_down(egui::Align::Min),
+            |ui| {
+                ui.set_width(text_w);
+                ui.spacing_mut().item_spacing.y = STRUCT_GAP_1.value();
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
+                    let kind_w = if known {
+                        tasty_ui_widgets::tag_width(ui, th, &k.kind)
+                    } else {
+                        tasty_ui_widgets::warn_badge_width(ui, th, &k.kind)
+                    };
+                    let name_w = (text_w - kind_w - th.spacing_sm.value()).max(0.0);
+                    selectable_text(
                         ui,
-                        &k.kind,
-                        th.text_muted(),
-                        th.font_size_caption.value(),
+                        &k.name,
+                        th.text_primary(),
+                        th.font_size_body.value(),
                         false,
+                        false,
+                        TextWrap::Truncate(name_w),
                     );
+                    if known {
+                        tasty_ui_widgets::tag(
+                            ui,
+                            th,
+                            &k.kind,
+                            tasty_ui_widgets::TagVariant::Default,
+                            false,
+                        );
+                    } else {
+                        warn_badge(ui, th, &k.kind, t("remote_tool.kind_unknown_hint"));
+                    }
+                });
+                let val = if revealed {
+                    revealed_value.unwrap_or("••••••••").to_string()
                 } else {
-                    warn_badge(ui, th, &k.kind, t("remote_tool.kind_unknown_hint"));
-                }
-            });
-            let val = if revealed {
-                revealed_value.unwrap_or("••••••••").to_string()
-            } else {
-                "••••••••".into()
-            };
-            selectable_label(
-                ui,
-                &format!("{} · {}", k.kind, val),
-                th.text_muted(),
-                th.font_size_caption.value(),
-                true,
-            );
-        });
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            ui.spacing_mut().item_spacing.x = th.spacing_xs.value();
+                    "••••••••".into()
+                };
+                // 값 줄은 보일 때도 한 줄로 두고 끝을 말줄임한다.
+                selectable_text(
+                    ui,
+                    &format!("{} · {}", k.kind, val),
+                    th.text_muted(),
+                    th.font_size_caption.value(),
+                    true,
+                    false,
+                    TextWrap::Truncate(text_w),
+                );
+            },
+        );
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+            ui.spacing_mut().item_spacing.x = gap;
             if row_icon_button(ui, th, icons::TRASH)
                 .on_hover_text(t("remote_tool.delete"))
                 .clicked()

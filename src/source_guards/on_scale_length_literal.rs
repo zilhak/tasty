@@ -807,7 +807,8 @@ fn the_blind_spots_are_still_the_size_they_say() {
         // Gate 4 반영의 0 리터럴 하나를 더한다.
         // 탐색기 낮은 칸 상태줄 시험의 칸 폭 1100이 하나를 더한다.
         // 갤러리 Rail popup 묶음이 팝업 폭 세로 칸을 높이 0으로 요청해 0 리터럴 하나를 더한다.
-        (218, 444),
+        // 원격 도구 Passkeys 행이 동작 묶음을 뺀 텍스트 열을 높이 0으로 할당한다.
+        (219, 444),
         "제외한 0과 test 전용 코드의 수가 달라졌다. 실제 사용과 수집 범위의 변경을 확인하고 기록을 갱신한다."
     );
     let roster: usize = UNIT_SPACE_SITES.iter().map(|(.., n, _)| n).sum();

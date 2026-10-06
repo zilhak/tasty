@@ -197,12 +197,28 @@ pub fn ghost_button(ui: &mut egui::Ui, th: &Theme, label: &str) -> egui::Respons
 pub fn warn_badge(ui: &mut egui::Ui, th: &Theme, text: &str, tooltip: &str) {
     selectable_label(
         ui,
-        &format!("⚠ {text}"),
+        &warn_badge_text(text),
         th.accent_warning(),
         th.font_size_caption.value(),
         false,
     )
     .on_hover_text(tooltip);
+}
+
+/// [`warn_badge`] 글자의 폭. 앞 칸의 말줄임 폭을 정할 때 뺀다.
+pub fn warn_badge_width(ui: &egui::Ui, th: &Theme, text: &str) -> f32 {
+    ui.painter()
+        .layout_no_wrap(
+            warn_badge_text(text),
+            egui::FontId::proportional(th.font_size_caption.value()),
+            egui::Color32::PLACEHOLDER,
+        )
+        .rect
+        .width()
+}
+
+fn warn_badge_text(text: &str) -> String {
+    format!("⚠ {text}")
 }
 
 // ── 3탭 언더라인 탭 스트립 ───────────────────────────────────────────────
@@ -288,9 +304,6 @@ pub fn draw_tab_strip(ui: &mut egui::Ui, th: &Theme, data: &TabStripData<'_>) ->
 // SSH 설정 항목은 프로필 목록 아래 별도 구역으로 표시한다.
 // 이미 가져온 호스트는 버튼 대신 상태 태그를 표시하며, 설정 없음은 오류색으로 표시하지 않는다.
 
-/// 대문자 헤딩의 자간 비율. 글꼴 크기에 곱해 논리 픽셀로 변환한다.
-const SECTION_HEADING_TRACKING_EM: f32 = 0.06;
-
 /// 로컬 `~/.ssh/config` 행 하나 — tasty 레코드가 아니라 사용자 파일의 항목이다.
 pub struct LocalSshHost<'a> {
     /// `Host` 별칭.
@@ -354,7 +367,7 @@ pub fn draw_local_ssh_section(
                 th.text_secondary(),
                 th.font_size_caption.value(),
                 false,
-                th.font_size_caption.value() * SECTION_HEADING_TRACKING_EM,
+                th.letter_spacing_caps(th.font_size_caption).value(),
             );
             selectable_label(
                 ui,

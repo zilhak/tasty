@@ -378,6 +378,8 @@ search bar는 범위 상단 중앙에 있어도 scrim 없이 콘텐츠 위에 �
 
 `Shadow {}` 생성은 `ShadowToken::to_egui()`로 모은다. 페이드가 필요하면 변환 결과의 color에만 opacity를 적용하고 offset·blur·spread는 바꾸지 않는다. egui 기본값도 `visuals.popup_shadow`는 popover, `visuals.window_shadow`는 modal에 연결한다. 직접 프레임을 넘긴 호출부는 자신의 shadow 설정을 사용한다.
 
+버튼에 붙는 팝오버(드롭다운·필터·열 선택·숨은 경로 메뉴 등)의 틀은 메뉴 컨테이너 토큰 `menu_bg()`·`menu_border()`·`menu_radius()`와 `shadow_popover()`다. egui popup 틀은 `visuals.window_fill`·`window_stroke`·`menu_corner_radius`를 읽으므로 `apply_theme_to_egui`가 이 세 값을 메뉴 토큰으로 넣는다. 같은 틀을 쓰는 egui 기본 tooltip(`on_hover_text`)도 이 값을 받는다.
+
 `ShadowToken.spread`는 음수를 표현하지만 egui의 u8 spread로 재현할 수 없다. 음수를 0으로 근사하지 않으며 해당 표면은 미구현으로 둔다. `to_egui()`는 debug에서 음수 spread를 단언으로 거부한다.
 
 검사는 역할이 다르다. `shadow_policy_guard.rs`는 인식하는 리터럴 생성 위치, 같은 줄의 변수 선언에서 찾은 기하 재대입, 접근자 목록을 확인한다. 데이터 흐름 전체·egui 기본 매핑·표면별 선택은 확인하지 않는다. `shadow_parity.rs`는 수기로 옮긴 두 토큰의 값과 vendor JSON, raw·alias 목록, 그림자가 아닌 kbd-shadow-depth 구분을 대조한다. 음수 spread 사용 검사도 토큰 목록 완전성 검사와 함께 유지한다. 실행 범위는 [CI 가이드](../../dev-guide/ci-gates.md)를 따른다.

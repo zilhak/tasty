@@ -48,6 +48,25 @@ pub fn frame_card_flat(
     frame_card_with_shadow(ui, theme, width, fill, None, add);
 }
 
+/// 버튼에 붙는 팝오버(드롭다운) 프레임. 본체 egui popup 틀과 같은 메뉴 컨테이너 토큰
+/// (`menu-bg` · `menu-border` · `menu-radius` · `shadow-popover`)을 쓴다.
+pub fn frame_card_menu(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    width: LogicalPx,
+    add: impl FnOnce(&mut egui::Ui),
+) {
+    let frame = egui::Frame::new()
+        .fill(theme.menu_bg().to_egui())
+        .stroke(egui::Stroke::new(
+            theme.border_width.value(),
+            theme.menu_border().to_egui(),
+        ))
+        .corner_radius(theme.menu_radius().value())
+        .shadow(theme.shadow_popover().to_egui());
+    show_card(ui, frame, width, add);
+}
+
 fn frame_card_with_shadow(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -66,6 +85,17 @@ fn frame_card_with_shadow(
     if let Some(shadow) = shadow {
         frame = frame.shadow(shadow.to_egui());
     }
+    show_card(ui, frame, width, add);
+}
+
+/// 카드 프레임 안에 `width` 폭의 세로 본문을 그린다. 콘텐츠 영역이 각자 여백을 가지므로
+/// item_spacing 은 0이다.
+fn show_card(
+    ui: &mut egui::Ui,
+    frame: egui::Frame,
+    width: LogicalPx,
+    add: impl FnOnce(&mut egui::Ui),
+) {
     frame.show(ui, |ui| {
         // 부모의 가로 레이아웃을 상속하면 본문 폭이 좁아지므로 세로 child를 만든다.
         ui.set_width(width.value());

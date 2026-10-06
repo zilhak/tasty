@@ -1,4 +1,4 @@
-//! 원격 도구 Passkeys 탭 예제 — 시안 `PasskeyRow` 의 값 가림·보임·모르는 kind 상태.
+//! 원격 도구 Passkeys 탭 예제 — 시안 `PasskeyRow` 의 값 가림·보임·모르는 kind 상태를 Mocha·Latte 로 그린다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
@@ -17,7 +17,9 @@ struct PasskeySample {
     revealed: bool,
 }
 
-/// 시안 `PasskeyRow` 의 세 상태 — 가림, 보임(active + eyeOff, 긴 값은 말줄임), 모르는 kind.
+/// 시안 `RemoteFrame tab="passkeys"` 의 네 행 — 가림, 보임(active + eyeOff, 긴 경로는
+/// 끝 말줄임), 가림, 모르는 kind. 시안 seed 의 kind `file`·`secret` 은 tasty 의 kind 인
+/// `path`·`inline` 으로 옮긴다.
 const PASSKEYS: &[PasskeySample] = &[
     PasskeySample {
         name: "ed25519-main",
@@ -26,14 +28,20 @@ const PASSKEYS: &[PasskeySample] = &[
         revealed: false,
     },
     PasskeySample {
-        name: "edge-pem",
+        name: "deploy-key-with-a-very-long-name",
         kind: "path",
-        value: "/home/maya/.config/tasty/keys/edge-cache-staging-deploy-2026-q4-rotated.pem",
+        value: "/Users/hyunjun/Library/Application Support/tasty/keys/deploy/ci-runner/id_ed25519_deploy",
         revealed: true,
     },
     PasskeySample {
-        name: "nas-cred",
-        kind: "keyring",
+        name: "vault-token",
+        kind: "inline",
+        value: "",
+        revealed: false,
+    },
+    PasskeySample {
+        name: "legacy",
+        kind: "agent-x",
         value: "",
         revealed: false,
     },
@@ -46,29 +54,16 @@ const KNOWN_PASSKEY_KINDS: &[&str] = &["path", "inline"];
 const PASSKEY_MASK: &str = "••••••••";
 
 pub fn draw_passkeys(ui: &mut egui::Ui, theme: &Theme) {
-    spec::stage(ui, theme, StageVariant::Wrap, |ui| {
-        kit::frame_card(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
-            attach_header(ui, theme);
-            tab_bar(ui, theme, 2);
-
-            kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
-                ui.horizontal(|ui| {
-                    Button::new("Add passkey")
-                        .variant(ButtonVariant::Secondary)
-                        .size(tasty_ui_widgets::ControlSize::Sm)
-                        .leading_icon(&|ui, rect, c| {
-                            icons::PLUS.image(rect.height(), c).paint_at(ui, rect)
-                        })
-                        .show(ui, theme);
-                });
-            });
-
-            kit::region_sym(ui, theme.spacing_md, LogicalPx(0.0), |ui| {
-                for k in PASSKEYS {
-                    passkey_row(ui, theme, k);
-                }
-            });
-        });
+    let with_zoom =
+        |base: Theme| Theme::with_colors_and_zoom(base.to_colors(), base.is_light, theme.ui_zoom);
+    let themes = [
+        with_zoom(tasty_themes::mocha_fallback()),
+        with_zoom(crate::host_shell::latte_theme()),
+    ];
+    spec::stage(ui, theme, StageVariant::Column, |ui| {
+        for (i, th) in themes.iter().enumerate() {
+            ui.push_id(i, |ui| passkeys_frame(ui, th));
+        }
     });
 
     spec::meta(
@@ -81,7 +76,12 @@ pub fn draw_passkeys(ui: &mut egui::Ui, theme: &Theme) {
             ),
             (
                 "value",
-                "kind · value-or-mask · mono 11 · one line, ellipsis",
+                "kind · value-or-mask · mono 11 · one line, ellipsis revealed or not",
+            ),
+            ("mask", "fixed 8-dot mask while hidden"),
+            (
+                "long value",
+                "ellipsis at the end · actions never pushed out of the row",
             ),
             (
                 "actions",
@@ -104,6 +104,32 @@ pub fn draw_passkeys(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::without_color("separator", "row dividers"),
         ],
     );
+}
+
+/// 시안 `RemoteFrame tab="passkeys"` — 머리 · 탭 · add-bar · 목록.
+fn passkeys_frame(ui: &mut egui::Ui, theme: &Theme) {
+    kit::frame_card(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
+        attach_header(ui, theme);
+        tab_bar(ui, theme, 2);
+
+        kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
+            ui.horizontal(|ui| {
+                Button::new("Add passkey")
+                    .variant(ButtonVariant::Secondary)
+                    .size(tasty_ui_widgets::ControlSize::Sm)
+                    .leading_icon(&|ui, rect, c| {
+                        icons::PLUS.image(rect.height(), c).paint_at(ui, rect)
+                    })
+                    .show(ui, theme);
+            });
+        });
+
+        kit::region_sym(ui, theme.spacing_md, LogicalPx(0.0), |ui| {
+            for k in PASSKEYS {
+                passkey_row(ui, theme, k);
+            }
+        });
+    });
 }
 
 fn passkey_row(ui: &mut egui::Ui, theme: &Theme, k: &PasskeySample) {

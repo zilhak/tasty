@@ -241,8 +241,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
 
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         funnel_button(ui, theme, "State", false);
-        // 버튼에 붙는 드롭다운이므로 popover 그림자를 쓴다.
-        kit::frame_card_popover(ui, theme, LogicalPx(216.0), kit::panel_fill(theme), |ui| {
+        // 버튼에 붙는 드롭다운이므로 본체 egui popup 과 같은 메뉴 컨테이너 틀을 쓴다.
+        kit::frame_card_menu(ui, theme, LogicalPx(216.0), |ui| {
             kit::region_sym(ui, theme.spacing_sm, theme.spacing_sm, |ui| {
                 kit::caption(ui, theme, "Filter by state", true);
                 ui.add_space(theme.spacing_xs.value());
