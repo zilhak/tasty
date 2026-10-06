@@ -359,6 +359,11 @@ impl MainView {
         }
 
         let overlay_open = self.mouse_overlay_open();
+        // 분할선 hit 띠의 press 는 포커스를 바꾸지 않고 곧바로 드래그를 시작한다. 비활성 surface 쪽
+        // 띠도 첫 press 부터 분할선을 잡아야 하므로 click-to-activate 보다 먼저 본다.
+        if self.try_press_divider_first(engine, button, button_state, egui_consumed, overlay_open) {
+            return;
+        }
         if self.try_click_to_activate(engine, button, button_state, overlay_open) {
             return;
         }
@@ -765,26 +770,79 @@ impl MainView {
         y: f32,
         terminal_rect: &crate::model::PhysicalRect,
     ) {
+        if !self.begin_divider_drag_at(engine, x, y, terminal_rect) {
+            self.begin_left_selection(engine, x, y, terminal_rect);
+        }
+    }
+
+    /// (`x`, `y`)가 pane·surface 분할선 hit 띠 안이면 그 분할선의 드래그를 시작하고 `true`.
+    fn begin_divider_drag_at(
+        &mut self,
+        engine: &EngineRead<'_>,
+        x: f32,
+        y: f32,
+        terminal_rect: &crate::model::PhysicalRect,
+    ) -> bool {
         let scale_factor = self.base.gpu.scale_factor();
-        let pane_div = self
-            .state
-            .find_pane_divider_at(engine, x, y, *terminal_rect, scale_factor);
-        let surf_div =
+        if let Some(info) =
             self.state
-                .find_surface_divider_at(engine, x, y, *terminal_rect, scale_factor);
-        if let Some(info) = pane_div {
+                .find_pane_divider_at(engine, x, y, *terminal_rect, scale_factor)
+        {
             self.dragging_divider = self
                 .state
                 .begin_pane_divider(engine, info, *terminal_rect, scale_factor)
                 .map(|sequence| DividerDrag { info, sequence });
-        } else if let Some(info) = surf_div {
+            true
+        } else if let Some(info) =
+            self.state
+                .find_surface_divider_at(engine, x, y, *terminal_rect, scale_factor)
+        {
             self.dragging_divider = self
                 .state
                 .begin_surface_divider(engine, info, *terminal_rect, scale_factor)
                 .map(|sequence| DividerDrag { info, sequence });
+            true
         } else {
-            self.begin_left_selection(engine, x, y, terminal_rect);
+            false
         }
+    }
+
+    /// 좌버튼 press 가 분할선 hit 띠에 떨어지면 포커스를 바꾸지 않고 드래그를 시작한다(`true`).
+    /// egui·오버레이·popup·배너·수식키 안내가 받은 press 는 그쪽이 우선이라 보지 않는다.
+    /// 띠 안이면 수식키 링크 클릭보다도 분할선이 먼저다(일반 press 경로와 같은 우선순위다).
+    fn try_press_divider_first(
+        &mut self,
+        engine: &EngineRead<'_>,
+        button: MouseButton,
+        button_state: ElementState,
+        egui_consumed: bool,
+        overlay_open: bool,
+    ) -> bool {
+        if button != MouseButton::Left
+            || button_state != ElementState::Pressed
+            || egui_consumed
+            || overlay_open
+            || self.state.popup_hovered
+            || self.state.banner_hovered
+            || self.state.modifier_hint_hovered
+        {
+            return false;
+        }
+        let Some(pos) = self.cursor_position else {
+            return false;
+        };
+        let terminal_rect = self.compute_terminal_rect();
+        if !self.begin_divider_drag_at(engine, pos.x as f32, pos.y as f32, &terminal_rect) {
+            return false;
+        }
+        // handle_left_button 의 press 준비와 같다. release 는 일반 경로가 드래그를 끝낸다.
+        self.left_mouse_down = true;
+        self.link_click_consumed = false;
+        if self.vi_copy.is_some() {
+            self.vi_copy = None;
+            self.base.state.dirty = true;
+        }
+        true
     }
 
     /// 좌클릭 로컬/보고 선택 시작. focus 전환 + IME flush 후, 순수
