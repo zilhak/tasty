@@ -691,7 +691,7 @@ enum ListAction {
     RetryCreate,
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)] // reason: 목록 그리기 입력은 popup UiState 의 서로 다른 필드라 묶을 구조체가 없다
 fn draw_ws_list(
     ui: &mut egui::Ui,
     th: &Theme,
