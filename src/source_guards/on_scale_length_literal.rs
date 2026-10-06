@@ -70,7 +70,8 @@ const DECLARATION_SITES: &[(&str, usize, &str)] = &[
     (
         "crates/tasty-type-appearance/src/theme.rs",
         // 스케일에 size-20이 들어오면서 font_size_prose_h1 의 기존 값 20이 새로 집계됐다.
-        54,
+        // 점선 무늬 border_dash·border_dash_gap 의 기본값 4 두 개가 더해졌다.
+        56,
         "Theme 의 값표 — 다른 자리가 참조해야 할 이름(border_width 등)이 여기 산다",
     ),
 ];
