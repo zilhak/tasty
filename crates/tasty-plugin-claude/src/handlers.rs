@@ -437,7 +437,7 @@ pub(crate) fn handle_launch(
             tracing::warn!("surface.send (launch) failed: {e}");
         }
 
-        crate::error_scan::lock_scanner(scanner).enable(sid, ScanTarget::TopLevel);
+        crate::retrack::enable_and_record(host, scanner, sid, ScanTarget::TopLevel);
         crate::stop_pairing::record_settings_file(host, sid, profile_file.as_deref());
     }
 
@@ -508,11 +508,8 @@ pub(crate) fn handle_respawn(
     );
 
     // 재실행 뒤 같은 오류도 알릴 수 있도록 중복 기록을 지운다.
-    {
-        let mut s = crate::error_scan::lock_scanner(scanner);
-        s.enable(child_surface_id, ScanTarget::Child);
-        s.reset_dedupe(child_surface_id);
-    }
+    crate::retrack::enable_and_record(host, scanner, child_surface_id, ScanTarget::Child);
+    crate::error_scan::lock_scanner(scanner).reset_dedupe(child_surface_id);
 
     Ok(json!({
         "child_surface_id": child_surface_id,
@@ -701,7 +698,7 @@ pub(crate) fn handle_spawn(
     );
 
     // 자식 관계로 추적해 surface가 남는 release도 정리할 수 있게 한다.
-    crate::error_scan::lock_scanner(scanner).enable(child_surface_id, ScanTarget::Child);
+    crate::retrack::enable_and_record(host, scanner, child_surface_id, ScanTarget::Child);
 
     // 호스트 응답에 부모 id를 추가하고 나머지 필드는 그대로 전달한다.
     let mut out = resp;

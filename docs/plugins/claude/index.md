@@ -331,7 +331,8 @@ Meta를 먼저 쓴 뒤 이벤트를 보내며 새 턴(`prompt-submit`/`session-s
 `active`로만 보고하고 `claude-idle`·`surface.completion`·telemetry `wall_time_ms`·자동 재개의
 성공 처리를 하지 않는다. 두 필드가 없거나 해석할 수 없으면 이전처럼 턴 종료로 처리한다.
 대기 Stop은 surface meta `claude-background-wait`에 대기 시작 시각(`since_ms`, Unix ms)·끝나지 않은 작업 수(`tasks`)·
-작업 종류(`types`)를 JSON으로 남긴다. 같은 대기에서 이어진 대기 Stop은 시작 시각을 유지한다. 대기가 아닌 `Stop`·백그라운드 작업이 남지 않은 `StopFailure`·
+작업 종류(`types`)·정지 알림 여부(`notified`)·출력 파일 단서(`watch`: `session`·`cwd`·작업 `id`와 이름)를 JSON으로 남긴다. 같은 대기에서 이어진 대기 Stop은 시작 시각과 알림 여부를 유지한다.
+정지 알림을 보내면 `notified`를 `true`로 다시 쓴다. 대기가 아닌 `Stop`·백그라운드 작업이 남지 않은 `StopFailure`·
 새 턴(`UserPromptSubmit`·`SessionStart`)·`SessionEnd`가 이 meta를 지운다. 정지 알림은 이 대기를 따로 다룬다(아래 "정지 알림").
 Claude Code 2.1.283 실측 payload에는 `background_tasks`(항목 `id`·`type`·`status`·`description`·
 `agent_type` 또는 `command`)만 있고 `waiting_on_background_work`는 없었다. 공식 hooks 문서
@@ -449,6 +450,16 @@ API 오류에서 실제 이벤트를 받은 실험까지 완료한 것은 아니
 회차 사이에는 800ms를 기다린다. 파일·IPC·잠금 대기 시간은 별도이므로 800ms 안에 감지한다는 보장은 아니다.
 
 `claude launch`의 top-level surface와 `claude spawn`/`claude respawn`의 자식 surface를 모두 추적한다.
+등록할 때 등록 경로를 surface meta `claude-scan-target`(`top-level`·`child`)에 남긴다.
+
+추적 대상은 플러그인 메모리에만 있어 플러그인이 다시 시작되면(업데이트·disable/enable) 사라진다. 그래서 시작할 때 `surface.list`의 모든 터미널을 훑어 다시 채운다.
+
+- `claude-scan-target`이 있으면 그 경로로 등록한다.
+- 없더라도 `claude-session-id` meta와 부모·자식 관계가 있으면 자식으로 등록한다. 등록 경로를 남기기 전 버전이 띄운 자식도 업데이트 뒤 다시 추적하려는 것이다. 부모가 없는 Claude는 사용자가 직접 실행한 것일 수 있어 등록하지 않는다.
+- 아래 추적 유지 판단을 통과하지 못하면(예: release된 자식) 등록하지 않는다.
+- `claude-background-wait` meta가 있으면 대기 기록도 되살린다. 그사이 대기 Stop이 먼저 기록됐으면 그 기록을 둔다.
+
+되살린 surface의 화면 정지 시간은 플러그인 시작부터 다시 센다. 출력 파일 판정은 파일의 수정 시각을 쓰므로 재시작 전의 조용한 시간도 센다.
 
 추적을 계속할지는 등록 경로에 따라 아래와 같이 판단한다.
 
@@ -499,9 +510,9 @@ API 오류에서 실제 이벤트를 받은 실험까지 완료한 것은 아니
 오류 문구 유무와 관계없이 이 기준을 쓴다.
 대기 한 번에 한 번만 알린다. 출력이 바뀌거나 쿨다운이 지나도 같은 대기에서는 다시 알리지 않는다.
 대기 기록은 플러그인 메모리에 두며 대기를 끝내는 이벤트(대기가 아닌 `Stop`·백그라운드 작업이 남지 않은 `StopFailure`·새 턴·`SessionEnd`)와 추적 해제가 지운다.
-플러그인이 다시 시작되면 메모리 기록은 사라지고 `claude-background-wait` meta는 남는다. 그래서 메모리 기록이 없는 surface가 일반 기준에 닿으면
-알리기 전에 이 meta를 읽고, 대기 시작 시각이 있으면 기록을 되살려 대기 기준으로 다시 판정한다. 알림 문구도 이 meta를 읽으므로 기준과 문구가 같은 상태를 가리킨다.
-되살린 기록은 이전 알림 여부를 모르므로 재시작 뒤 대기 기준에 닿으면 한 번 더 알릴 수 있다. 재시작 뒤에는 스캐너의 추적 대상도 비므로 그 전에 띄운 자식은 다시 추적될 때만 이 판정을 받는다.
+플러그인이 다시 시작되면 메모리 기록은 사라지고 `claude-background-wait` meta는 남는다. 시작할 때 위 "추적" 절차가 이 meta로 기록을 되살린다.
+그 뒤에 meta가 생긴 surface도 일반 기준에 닿으면 알리기 전에 이 meta를 읽어 기록을 되살리고 대기 기준으로 다시 판정한다. 알림 문구도 이 meta를 읽으므로 기준과 문구가 같은 상태를 가리킨다.
+되살린 기록은 meta의 알림 여부와 출력 파일 단서를 이어받는다. 그래서 재시작 전에 알린 대기는 다시 알리지 않고, 출력 파일 감시도 이어 간다.
 이때 부모 로그 문구는 "looks stuck" 대신 대기 사실만 적는다.
 영어 문구는 `surface <N>: waiting on background work (<종류>) for <분> min, with no output meanwhile`이다.
 종류는 `claude-background-wait`의 `types`이며, 비어 있으면 판정에 쓴 `waiting_on_background_work`를 적는다.

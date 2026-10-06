@@ -17,6 +17,7 @@ mod profile;
 mod profile_attach;
 mod profile_merge;
 mod reboot;
+mod retrack;
 mod state;
 mod stop_pairing;
 mod task_watch;
@@ -353,6 +354,9 @@ fn stop_pairing_loop(
 }
 
 fn error_scan_loop(scanner: Arc<Mutex<ErrorScanner>>, host: HostHandle) {
+    // 재시작 전부터 있던 Claude 터미널을 다시 감시한다.
+    let restored = retrack::retrack(&host, &scanner);
+    tracing::info!("claude retrack: {restored} surface(s) watched again after start");
     loop {
         std::thread::sleep(ERROR_SCAN_INTERVAL);
         // 대상 목록을 복사한 뒤 잠금을 풀고, 개별 스캔 때 다시 잠근다.

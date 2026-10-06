@@ -77,6 +77,38 @@ impl TaskWatch {
         Self::new(params, tasks)
     }
 
+    /// 대기 meta 에 싣는 값. 플러그인이 다시 시작돼도 같은 작업의 출력 파일을 찾도록 남긴다.
+    pub fn to_meta(&self) -> Value {
+        serde_json::json!({
+            "session": self.session_id,
+            "cwd": self.cwd,
+            "tasks": self
+                .tasks
+                .iter()
+                .map(|t| serde_json::json!({ "id": t.id, "label": t.label }))
+                .collect::<Vec<_>>(),
+        })
+    }
+
+    /// [`Self::to_meta`] 로 남긴 값을 읽는다. 형식이 다르거나 작업이 없으면 `None` 이다.
+    pub fn from_meta(value: &Value) -> Option<Self> {
+        let tasks = value
+            .get("tasks")?
+            .as_array()?
+            .iter()
+            .filter_map(|t| {
+                let id = t.get("id")?.as_str()?.to_string();
+                let label = t
+                    .get("label")
+                    .and_then(Value::as_str)
+                    .unwrap_or(&id)
+                    .to_string();
+                Some(WatchedTask { id, label })
+            })
+            .collect();
+        Self::new(value, tasks)
+    }
+
     fn new(params: &Value, tasks: Vec<WatchedTask>) -> Option<Self> {
         let text = |k: &str| {
             params
@@ -279,6 +311,32 @@ mod tests {
     }
 
     /// Claude Code 2.1.291 이 실제로 만든 폴더 이름과 같은 규칙이다(점으로 시작하는 폴더는 `--`).
+    /// 대기 meta 에 실은 단서를 그대로 읽는다. 이름이 없으면 id 를 쓴다.
+    #[test]
+    fn a_task_watch_survives_the_wait_meta() {
+        let watch = TaskWatch {
+            session_id: "s-1".into(),
+            cwd: "/home/u/proj".into(),
+            tasks: vec![
+                WatchedTask {
+                    id: "bq1".into(),
+                    label: "sleep 300".into(),
+                },
+                WatchedTask {
+                    id: "a2".into(),
+                    label: "a2".into(),
+                },
+            ],
+        };
+        assert_eq!(TaskWatch::from_meta(&watch.to_meta()), Some(watch));
+        let no_label = serde_json::json!({ "session": "s", "cwd": "/c", "tasks": [{ "id": "x" }] });
+        assert_eq!(TaskWatch::from_meta(&no_label).unwrap().tasks[0].label, "x");
+        assert_eq!(
+            TaskWatch::from_meta(&serde_json::json!({ "session": "s", "cwd": "/c", "tasks": [] })),
+            None
+        );
+    }
+
     #[test]
     fn the_slug_replaces_every_non_alphanumeric_character() {
         assert_eq!(

@@ -123,6 +123,42 @@ struct BackgroundWait {
     unresolved_since: Option<Instant>,
     /// 못 찾았다는 경고를 이 대기에서 남겼는지.
     warned: bool,
+    /// 기다리는 작업의 종류. 대기 meta 에 다시 쓸 때 쓴다.
+    types: Vec<String>,
+}
+
+/// surface meta `claude-background-wait` 에 남긴 대기. 플러그인이 다시 시작되면 이 값으로 대기를 되살린다.
+pub(crate) struct SavedWait {
+    pub since_ms: u64,
+    pub notified: bool,
+    pub types: Vec<String>,
+    pub watch: Option<TaskWatch>,
+}
+
+impl SavedWait {
+    /// meta 문자열을 읽는다. JSON 이 아니거나 시작 시각이 없으면 `None` 이다.
+    pub fn parse(raw: &str) -> Option<Self> {
+        let v: serde_json::Value = serde_json::from_str(raw)
+            .inspect_err(|e| tracing::warn!("claude background wait meta is not JSON ({e}): {raw}"))
+            .ok()?;
+        Some(Self {
+            since_ms: v.get("since_ms")?.as_u64()?,
+            notified: v
+                .get("notified")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false),
+            types: v
+                .get("types")
+                .and_then(serde_json::Value::as_array)
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|t| t.as_str().map(String::from))
+                        .collect()
+                })
+                .unwrap_or_default(),
+            watch: v.get("watch").and_then(TaskWatch::from_meta),
+        })
+    }
 }
 
 /// 출력 파일을 못 찾았을 때 다시 찾는 간격. Claude Code 가 폴더를 늦게 만들 수 있어 한 번에 포기하지 않는다.
@@ -138,7 +174,31 @@ impl BackgroundWait {
             last_locate: None,
             unresolved_since: None,
             warned: false,
+            types: Vec::new(),
         }
+    }
+
+    fn restored(saved: SavedWait) -> Self {
+        Self {
+            notified: saved.notified,
+            watch: saved.watch,
+            types: saved.types,
+            ..Self::new(saved.since_ms)
+        }
+    }
+
+    /// 대기 meta 값. 알림 여부와 출력 파일 단서를 함께 남겨 플러그인이 다시 시작돼도 같은 대기로 이어 간다.
+    fn meta_value(&self) -> String {
+        let mut v = json!({
+            "since_ms": self.since_ms,
+            "tasks": self.types.len(),
+            "types": self.types,
+            "notified": self.notified,
+        });
+        if let Some(watch) = &self.watch {
+            v["watch"] = watch.to_meta();
+        }
+        v.to_string()
     }
 
     /// 기다리는 작업의 출력 파일이 모두 활동 없이 지난 시간. 파일을 찾지 못했거나 대상이 있는 파일이 없으면
@@ -303,6 +363,31 @@ impl ErrorScanner {
         }
     }
 
+    /// 대기 Stop 을 기록하고 대기 meta 값을 돌려준다. 이어진 대기 Stop 은 처음 시작 시각과 알림 여부를 유지한다.
+    pub fn record_background_wait(
+        &mut self,
+        surface_id: u32,
+        now_ms: u64,
+        types: Vec<String>,
+        watch: Option<TaskWatch>,
+    ) -> String {
+        self.mark_background_wait(surface_id, now_ms);
+        self.set_task_watch(surface_id, watch);
+        let b = self
+            .background_wait
+            .entry(surface_id)
+            .or_insert_with(|| BackgroundWait::new(now_ms));
+        b.types = types;
+        b.meta_value()
+    }
+
+    /// meta 에 남은 대기를 되살린다. 이미 기록이 있으면(그사이 대기 Stop 이 먼저 왔으면) 그 기록을 둔다.
+    pub(crate) fn restore_background_wait(&mut self, surface_id: u32, saved: SavedWait) {
+        self.background_wait
+            .entry(surface_id)
+            .or_insert_with(|| BackgroundWait::restored(saved));
+    }
+
     /// 백그라운드 대기 기록을 지운다.
     pub fn clear_background_wait(&mut self, surface_id: u32) {
         self.background_wait.remove(&surface_id);
@@ -455,13 +540,12 @@ impl ErrorScanner {
                     .map(|t| now.saturating_duration_since(*t)),
                 stall_threshold(w.saw_error, false),
             )
-            && let Some(since_ms) = background_wait_since_from_meta(host, surface_id)
+            && let Some(saved) = saved_wait_from_meta(host, surface_id)
         {
             tracing::info!(
                 "claude stall s{surface_id}: restored the background wait from its surface meta"
             );
-            self.background_wait
-                .insert(surface_id, BackgroundWait::new(since_ms));
+            self.restore_background_wait(surface_id, saved);
         }
         let Some(w) = self.watch.get(&surface_id) else {
             return;
@@ -529,6 +613,13 @@ impl ErrorScanner {
         }
         if let Some(b) = self.background_wait.get_mut(&surface_id) {
             b.notified = true;
+            // 플러그인이 다시 시작돼도 같은 대기를 다시 알리지 않도록 meta 에도 남긴다.
+            if let Err(e) = host.call(
+                "surface.meta.set",
+                json!({ "surface_id": surface_id, "key": crate::hook::BACKGROUND_WAIT_META_KEY, "value": b.meta_value() }),
+            ) {
+                tracing::warn!("claude stall s{surface_id}: recording the notice in the wait meta failed: {e}");
+            }
         }
         self.last_stall_notify.insert(surface_id, now);
     }
@@ -560,8 +651,8 @@ fn record_quiet_tasks<H: HostCall>(
     }
 }
 
-/// surface meta `claude-background-wait` 의 대기 시작 시각. 없거나 읽을 수 없으면 `None` 이다.
-fn background_wait_since_from_meta<H: HostCall>(host: &H, surface_id: u32) -> Option<u64> {
+/// surface meta `claude-background-wait` 에 남은 대기. 없거나 읽을 수 없으면 `None` 이다.
+pub(crate) fn saved_wait_from_meta<H: HostCall>(host: &H, surface_id: u32) -> Option<SavedWait> {
     let reply = host
         .call(
             "surface.meta.get",
@@ -573,12 +664,7 @@ fn background_wait_since_from_meta<H: HostCall>(host: &H, surface_id: u32) -> Op
             )
         })
         .ok()?;
-    let raw = reply.get("value")?.as_str()?;
-    serde_json::from_str::<serde_json::Value>(raw)
-        .inspect_err(|e| tracing::warn!("claude background wait meta is not JSON ({e}): {raw}"))
-        .ok()?
-        .get("since_ms")?
-        .as_u64()
+    SavedWait::parse(reply.get("value")?.as_str()?)
 }
 
 /// 폴링 중 추적 유지 여부를 확인한다. 조회 오류는 추적을 유지하도록 true로 처리한다.
@@ -835,6 +921,8 @@ mod tests {
         fired: std::cell::RefCell<Vec<String>>,
         /// surface meta `claude-background-wait` 값. 없으면 meta 가 없는 것이다.
         wait_meta: Option<String>,
+        /// surface.meta.set 으로 받은 (key, value).
+        meta_sets: std::cell::RefCell<Vec<(String, String)>>,
     }
 
     impl ScanHost {
@@ -844,6 +932,7 @@ mod tests {
                 state: std::cell::RefCell::new(state),
                 fired: std::cell::RefCell::new(Vec::new()),
                 wait_meta: None,
+                meta_sets: std::cell::RefCell::new(Vec::new()),
             }
         }
         fn set_text(&self, text: &str) {
@@ -883,6 +972,10 @@ mod tests {
                 "surface.meta.set" => {
                     let key = params["key"].as_str().unwrap_or_default();
                     self.fired.borrow_mut().push(format!("meta-set:{key}"));
+                    self.meta_sets.borrow_mut().push((
+                        key.to_string(),
+                        params["value"].as_str().unwrap_or_default().to_string(),
+                    ));
                     Ok(json!({}))
                 }
                 other => panic!("unexpected host call: {other}"),
@@ -1078,6 +1171,65 @@ mod tests {
         assert_eq!(host.stalled_count(), 1, "대기 기준에 도달하면 한 번 알린다");
     }
 
+    /// 대기 알림은 대기 meta 에도 남는다. 플러그인이 다시 시작돼 그 meta 로 대기를 되살리면 같은 대기를 다시 알리지 않는다.
+    #[test]
+    fn a_wait_notified_before_a_restart_is_not_notified_again() {
+        let host = ScanHost::new("❯ \n⏵⏵ 1 shell\n", "active");
+        let mut s = ErrorScanner::new();
+        let first = s.record_background_wait(1, 1_000, vec!["shell".into()], None);
+        assert!(!SavedWait::parse(&first).unwrap().notified);
+        let t0 = Instant::now();
+        s.scan_one_at(&host, 1, t0);
+        s.scan_one_at(&host, 1, t0 + STALL_QUIET_BACKGROUND_WAIT);
+        assert_eq!(host.stalled_count(), 1);
+        let saved = host
+            .meta_sets
+            .borrow()
+            .iter()
+            .rev()
+            .find(|(k, _)| k == crate::hook::BACKGROUND_WAIT_META_KEY)
+            .map(|(_, v)| v.clone())
+            .expect("알림 뒤 대기 meta 를 다시 쓴다");
+        let parsed = SavedWait::parse(&saved).unwrap();
+        assert!(parsed.notified, "{saved}");
+        assert_eq!(
+            (parsed.since_ms, parsed.types),
+            (1_000, vec!["shell".to_string()])
+        );
+
+        let mut restarted_host = ScanHost::new("❯ \n⏵⏵ 1 shell\n", "active");
+        restarted_host.wait_meta = Some(saved);
+        let mut restarted = ErrorScanner::new();
+        restarted.scan_one_at(&restarted_host, 1, t0);
+        restarted.scan_one_at(&restarted_host, 1, t0 + STALL_QUIET_BACKGROUND_WAIT * 2);
+        assert_eq!(restarted_host.stalled_count(), 0, "이미 알린 대기");
+    }
+
+    /// 대기 meta 는 출력 파일 단서를 싣고, 되살린 대기는 그 단서로 파일을 다시 찾는다.
+    #[test]
+    fn a_restored_wait_keeps_the_task_watch() {
+        let watch = TaskWatch {
+            session_id: "s-1".into(),
+            cwd: "/w".into(),
+            tasks: vec![crate::task_watch::WatchedTask {
+                id: "bq1".into(),
+                label: "sleep 300".into(),
+            }],
+        };
+        let mut s = ErrorScanner::new();
+        let meta = s.record_background_wait(1, 1_000, vec!["shell".into()], Some(watch.clone()));
+        let mut restarted = ErrorScanner::new();
+        restarted.restore_background_wait(1, SavedWait::parse(&meta).unwrap());
+        assert_eq!(restarted.background_wait[&1].watch, Some(watch));
+        // 그사이 대기 Stop 이 먼저 기록됐으면 되살린 값이 덮어쓰지 않는다.
+        restarted.restore_background_wait(
+            1,
+            SavedWait::parse(r#"{"since_ms":5,"notified":true}"#).unwrap(),
+        );
+        assert_eq!(restarted.background_wait[&1].since_ms, 1_000);
+        assert!(!restarted.background_wait[&1].notified);
+    }
+
     fn quiet_task_files(age: Duration) -> (tempfile::TempDir, TaskWatch, FileActivity) {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("bq1.output");
@@ -1112,7 +1264,8 @@ mod tests {
             host.events(),
             [
                 format!("meta-set:{}", crate::task_watch::BACKGROUND_QUIET_META_KEY),
-                STALLED_EVENT.to_string()
+                STALLED_EVENT.to_string(),
+                format!("meta-set:{}", crate::hook::BACKGROUND_WAIT_META_KEY),
             ]
         );
         s.scan_one_at(&host, 1, t0 + STALL_QUIET_BACKGROUND_WAIT * 2);
@@ -1165,7 +1318,8 @@ mod tests {
         assert_eq!(host.stalled_count(), 0);
         s.scan_one_at(&host, 1, t0 + STALL_QUIET_BACKGROUND_WAIT);
         assert_eq!(host.stalled_count(), 1);
-        assert!(!host.events().iter().any(|e| e.starts_with("meta-set:")));
+        let quiet = format!("meta-set:{}", crate::task_watch::BACKGROUND_QUIET_META_KEY);
+        assert!(!host.events().contains(&quiet));
     }
 
     /// 출력 파일을 찾지 못하면 대기 기준(10분)으로 돌아간다.
@@ -1183,7 +1337,8 @@ mod tests {
         assert_eq!(host.stalled_count(), 0);
         s.scan_one_at(&host, 1, t0 + STALL_QUIET_BACKGROUND_WAIT);
         assert_eq!(host.stalled_count(), 1);
-        assert!(!host.events().iter().any(|e| e.starts_with("meta-set:")));
+        let quiet = format!("meta-set:{}", crate::task_watch::BACKGROUND_QUIET_META_KEY);
+        assert!(!host.events().contains(&quiet));
     }
 
     /// 대기 meta 가 없거나 읽을 수 없으면 일반 기준으로 알린다.

@@ -428,12 +428,8 @@ fn background_wait_calls<H>(
     types: Vec<String>,
     watch: Option<crate::task_watch::TaskWatch>,
 ) -> [HostCall; 2] {
-    let since_ms = {
-        let mut scanner = crate::error_scan::lock_scanner(tail.scanner);
-        let since_ms = scanner.mark_background_wait(surface_id, now_ms);
-        scanner.set_task_watch(surface_id, watch);
-        since_ms
-    };
+    let value = crate::error_scan::lock_scanner(tail.scanner)
+        .record_background_wait(surface_id, now_ms, types, watch);
     [
         HostCall::SetState {
             surface_id,
@@ -442,8 +438,7 @@ fn background_wait_calls<H>(
         HostCall::MetaSet {
             surface_id,
             key: BACKGROUND_WAIT_META_KEY,
-            value: json!({ "since_ms": since_ms, "tasks": types.len(), "types": types })
-                .to_string(),
+            value,
         },
     ]
 }
