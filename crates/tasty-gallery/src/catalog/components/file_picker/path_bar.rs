@@ -1,4 +1,4 @@
-//! 파일 선택 예제의 경로와 새로고침 버튼. 경로는 본체와 같은 `crumb_alloc::plan` 으로 실폭에 배분한다.
+//! 파일 선택 예제의 경로와 상위 이동·새로고침 버튼. 경로는 본체와 같은 `crumb_alloc::plan` 으로 실폭에 배분한다.
 
 use tasty_ui_widgets::crumb_alloc::{Caps, CrumbSlot, Measure, Plan, Role, plan};
 use tasty_ui_widgets::tokens::STRUCT_GAP_2;
@@ -55,22 +55,24 @@ pub(super) fn path_bar(ui: &mut egui::Ui, theme: &Theme, v: Variant) -> Option<H
             rect.bottom() - theme.fp_path_pad_y().value(),
         ),
     );
-    // 새로고침 버튼과 그 간격을 먼저 뺀 폭이 경로의 가용 폭이다(디자인 measure).
+    // 시안 path bar 는 경로 · Up · Refresh 를 fp-section-gap 간격으로 놓는다.
     let mut child = ui.new_child(
         egui::UiBuilder::new()
             .max_rect(inner)
             .layout(egui::Layout::right_to_left(egui::Align::Center)),
     );
     child.spacing_mut().item_spacing.x = theme.fp_section_gap().value();
-    IconButton::new()
-        .variant(IconButtonVariant::Ghost)
-        .size(ControlSize::Sm)
-        .show(&mut child, theme, &|ui, rect, c| {
-            icons::REFRESH.image(rect.height(), c).paint_at(ui, rect)
-        });
-    let crumbs_rect = egui::Rect::from_min_max(
+    for glyph in [icons::REFRESH, icons::CHEVRON_UP] {
+        IconButton::new()
+            .variant(IconButtonVariant::Ghost)
+            .size(ControlSize::Sm)
+            .show(&mut child, theme, &|ui, rect, c| {
+                glyph.image(rect.height(), c).paint_at(ui, rect)
+            });
+    }
+    let crumbs_rect = egui::Rect::from_min_size(
         inner.min,
-        egui::pos2(child.cursor().right().max(inner.left()), inner.max.y),
+        egui::vec2(crumbs_width(theme, rect.width()), inner.height()),
     );
     let mut crumbs_ui = ui.new_child(
         egui::UiBuilder::new()
@@ -79,6 +81,18 @@ pub(super) fn path_bar(ui: &mut egui::Ui, theme: &Theme, v: Variant) -> Option<H
     );
     crumbs_ui.set_clip_rect(crumbs_rect.intersect(ui.clip_rect()));
     crumbs(&mut crumbs_ui, theme, v.path)
+}
+
+/// 경로 칸의 가용 폭 — 디자인 measure: 막대 − 좌우 inset − Up − Refresh − 간격 둘(팝업 폭이 아니다).
+pub(super) fn crumbs_width(theme: &Theme, bar_w: f32) -> f32 {
+    let button = ControlSize::Sm.height(theme) + theme.fp_section_gap().value();
+    (bar_w - theme.fp_inset_start().value() - theme.fp_inset_end().value() - button * 2.0).max(0.0)
+}
+
+/// 이 카드의 경로가 받는 배분 — 성분 수와 `crumb_alloc::plan` 의 단계. 폭 사다리 예제가 라벨에 쓴다.
+pub(super) fn path_step(ui: &egui::Ui, theme: &Theme, v: Variant) -> (usize, usize) {
+    let plan = allocate(ui, theme, v.path, crumbs_width(theme, v.w.value()));
+    (items(v.path).len(), plan.step)
 }
 
 struct Crumb {
@@ -278,13 +292,19 @@ fn hidden_tooltip(count: usize) -> String {
     }
 }
 
-/// 폴더 아이콘·간격·라벨·좌우 패딩을 합친 폭을 `…` 메뉴 밴드 안으로 제한한다 — 본체 `menu_width` 와 같다.
+/// `…` 메뉴 틀의 안쪽 여백과 테두리를 합친 좌우 폭 — 본체 `menu_chrome` 과 같다.
+fn menu_chrome(theme: &Theme) -> f32 {
+    (theme.popup_content_margin().value() + theme.border_width.value()) * 2.0
+}
+
+/// `…` 메뉴의 바깥 폭. 행(폴더 아이콘·간격·라벨·좌우 패딩)에 틀을 더한 border-box 폭을 밴드 안으로
+/// 제한한다 — 본체 `menu_width` 와 같다.
 fn menu_width(widest_label: f32, theme: &Theme) -> f32 {
     let row = widest_label
         + theme.menu_item_padding_x().value() * 2.0
         + theme.icon_glyph_size_md.value()
         + theme.spacing_sm.value();
-    row.clamp(
+    (row + menu_chrome(theme)).clamp(
         theme.fp_crumb_menu_min_width().value(),
         theme.fp_crumb_menu_max_width().value(),
     )
@@ -309,16 +329,19 @@ pub(super) fn crumb_menu(ui: &mut egui::Ui, theme: &Theme, hidden: &HiddenCrumbs
             .layout(egui::Layout::top_down(egui::Align::Min)),
     );
     egui::Frame::new()
-        .fill(theme.surface_raised().to_egui())
+        .fill(theme.menu_bg().to_egui())
         .stroke(egui::Stroke::new(
             theme.border_width.value(),
-            theme.border_strong().to_egui(),
+            theme.menu_border().to_egui(),
         ))
-        .corner_radius(theme.corner_radius.value())
+        .corner_radius(theme.menu_radius().value())
         .shadow(theme.shadow_popover().to_egui())
-        .inner_margin(egui::Margin::same(theme.spacing_xs.value() as i8))
+        .inner_margin(egui::Margin::same(
+            theme.popup_content_margin().value() as i8
+        ))
         .show(&mut menu_ui, |ui| {
-            ui.set_width(width - theme.spacing_xs.value() * 2.0);
+            // 밴드는 테두리까지 포함한 바깥 폭이다. 안쪽 폭은 틀을 뺀 값이다.
+            ui.set_width(width - menu_chrome(theme));
             ui.spacing_mut().item_spacing.y = 0.0;
             let folder = theme.accent_primary().to_egui();
             for (i, label) in hidden.labels.iter().enumerate() {
@@ -344,7 +367,7 @@ pub(super) fn crumb_menu(ui: &mut egui::Ui, theme: &Theme, hidden: &HiddenCrumbs
                         egui::Shape::rect_filled(
                             resp.rect,
                             theme.corner_radius_sm.value(),
-                            theme.overlay_hover().to_egui_premultiplied(),
+                            theme.menu_item_bg_hover().to_egui_premultiplied(),
                         ),
                     );
                 }

@@ -24,6 +24,8 @@ use crate::catalog::widgets::dialog as kit;
 // 화면 전용 고정 치수. 대응 토큰이 없는 값은 디자인 값을 유지한다.
 const FRAME_W: LogicalPx = LogicalPx(640.0);
 const FRAME_H: LogicalPx = LogicalPx(480.0);
+/// `…` 메뉴 예제 카드의 높이 — 디자인 `FilePickerFrame mode="save" deep crumbMenu w={320} h={420}`.
+const CRUMB_MENU_H: LogicalPx = LogicalPx(420.0);
 const SIZE_COL_W: LogicalPx = LogicalPx(68.0);
 const MOD_COL_W: LogicalPx = LogicalPx(108.0);
 /// 폴더 선택 갈래에서 고른 행 — 디자인 seed(`overlays-shared.jsx` `folderSel`).
@@ -402,14 +404,9 @@ pub fn draw_save_mode(ui: &mut egui::Ui, theme: &Theme) {
                 card(ui, theme, Variant::save(SaveState::Edited, false));
             },
         );
-        spec::cluster(
-            ui,
-            theme,
-            "deep path — fits at 640, so nothing folds",
-            |ui| {
-                card(ui, theme, Variant::save(SaveState::New, true));
-            },
-        );
+        spec::cluster(ui, theme, "deep path — fits at 640, nothing folds", |ui| {
+            card(ui, theme, Variant::save(SaveState::New, true));
+        });
     });
 
     spec::meta(
@@ -493,7 +490,7 @@ pub fn draw_gesture_table(ui: &mut egui::Ui, theme: &Theme) {
                     ui,
                     theme,
                     Variant::save(SaveState::New, true)
-                        .sized(theme.fp_popup_min_width(), FRAME_H)
+                        .sized(theme.fp_popup_min_width(), CRUMB_MENU_H)
                         .crumb_menu_open(),
                 );
             },
@@ -524,7 +521,18 @@ pub fn draw_gesture_table(ui: &mut egui::Ui, theme: &Theme) {
                 "… tooltip",
                 "Show 3 hidden folders (singular: 1 hidden folder)",
             ),
-            ("… menu", "content-measured, 180–320 band, path order"),
+            (
+                "… menu",
+                "content-measured, 180–320 band = BORDER-BOX outer width, path order",
+            ),
+            (
+                "… menu rows",
+                "shared MenuItem — 28 · pad-x 12 · folder 16 · text-primary",
+            ),
+            (
+                "specimen",
+                "320 (fp-popup-min-width) — the width where it folds",
+            ),
             (
                 "tone",
                 "the folder line has none — it is a fact, not a warning",
@@ -546,11 +554,9 @@ pub fn draw_gesture_table(ui: &mut egui::Ui, theme: &Theme) {
                 "selected row bed",
                 theme.overlay_active().to_egui_premultiplied(),
             ),
-            TokenChip::new(
-                "surface-raised",
-                "… menu fill",
-                theme.surface_raised().to_egui(),
-            ),
+            TokenChip::new("menu-bg", "… menu fill", theme.menu_bg().to_egui()),
+            TokenChip::new("menu-border", "… menu edge", theme.menu_border().to_egui()),
+            TokenChip::without_color("menu-item-padding-x", "row pad-x 12"),
             TokenChip::without_color("fp-crumb-menu-max-width", "320 — … menu ceiling (NEW)"),
             TokenChip::without_color("fp-crumb-menu-min-width", "180 — … menu floor (NEW)"),
             TokenChip::without_color("fp-crumb-max-width", "180 — one crumb's cap (NEW)"),
