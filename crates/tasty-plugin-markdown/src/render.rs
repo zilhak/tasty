@@ -1616,6 +1616,7 @@ fn theme_css(theme: &Theme) -> String {
 --md-rule:{rule};
 --md-zebra:{zebra};
 --md-bg:{bg};
+--md-control-bg:{control_bg};
 --md-disabled-fill:{disabled_fill};
 --md-disabled-border:{disabled_border};
 --md-disabled-fg:{disabled_fg};
@@ -1632,14 +1633,14 @@ fn theme_css(theme: &Theme) -> String {
 html{{height:100%;margin:0;padding:0;}}
 body{{min-height:100%;margin:0;padding:0;background:var(--md-bg);color:var(--md-fg);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;font-size:var(--md-font-body);line-height:1.6;}}
 #tasty-addr-bar{{position:sticky;top:0;display:flex;align-items:center;gap:var(--md-space-sm);height:var(--md-addr-bar-h);padding:0 var(--md-space-sm);box-sizing:border-box;background:{bg_sidebar};border-bottom:var(--md-border-w) solid {separator};}}
-#tasty-addr-input{{flex:1;height:24px;border:var(--md-border-w) solid var(--md-border);border-radius:var(--md-radius);padding:0 var(--md-space-xs);background:var(--md-bg);color:var(--md-fg);font-size:var(--md-font-body);}}
+#tasty-addr-input{{flex:1;height:24px;border:var(--md-border-w) solid var(--md-border);border-radius:var(--md-radius);padding:0 var(--md-space-xs);background:var(--md-control-bg);color:var(--md-fg);font-size:var(--md-font-body);}}
 #tasty-addr-go{{height:24px;padding:0 var(--md-space-sm);border:var(--md-border-w) solid var(--md-border);border-radius:var(--md-radius);background:var(--md-code-bg);color:var(--md-fg);cursor:pointer;}}
 #tasty-addr-input[readonly]{{color:{muted};}}
 #tasty-refresh{{height:24px;padding:0 var(--md-space-sm);border:var(--md-border-w) solid var(--md-border);border-radius:var(--md-radius);background:var(--md-code-bg);color:var(--md-fg);cursor:pointer;}}
 #tasty-refresh[data-stale="true"]{{background:{accent};border-color:{accent};color:{on_accent};}}
 #tasty-find-bar{{position:fixed;top:calc(var(--md-addr-bar-h) + var(--md-space-xs));right:var(--md-space-sm);z-index:20;display:flex;align-items:center;gap:var(--md-space-xs);height:28px;padding:0 var(--md-space-xs);background:{bg_sidebar};border:var(--md-border-w) solid {separator};border-radius:var(--md-radius);box-shadow:0 2px 8px rgba(0,0,0,0.25);}}
 #tasty-find-bar[hidden]{{display:none;}}
-#tasty-find-input{{width:140px;height:22px;border:var(--md-border-w) solid var(--md-border);border-radius:var(--md-radius);padding:0 var(--md-space-xs);background:var(--md-bg);color:var(--md-fg);font-size:var(--md-font-body);}}
+#tasty-find-input{{width:140px;height:22px;border:var(--md-border-w) solid var(--md-border);border-radius:var(--md-radius);padding:0 var(--md-space-xs);background:var(--md-control-bg);color:var(--md-fg);font-size:var(--md-font-body);}}
 #tasty-find-count{{min-width:40px;text-align:center;font-size:calc(var(--md-font-body) * 0.85);color:{muted};}}
 #tasty-find-count.tasty-find-nomatch{{color:{danger};}}
 .tasty-find-btn{{height:22px;width:22px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;border:var(--md-border-w) solid var(--md-border);border-radius:var(--md-radius);background:var(--md-code-bg);color:var(--md-fg);font-size:10px;line-height:1;padding:0;cursor:pointer;}}
@@ -1671,7 +1672,7 @@ strong{{color:var(--md-strong);font-weight:600;}}
 code{{background:var(--md-code-bg);border-radius:var(--md-radius);padding:0.1em 0.35em;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;}}
 pre{{position:relative;background:var(--md-code-bg);border:var(--md-border-w) solid var(--md-code-border);border-radius:var(--md-radius);padding:var(--md-space-sm);overflow:auto;}}
 pre code{{background:none;padding:0;}}
-.tasty-copy-btn{{position:absolute;top:var(--md-space-xs);right:var(--md-space-xs);height:22px;padding:0 var(--md-space-xs);border:var(--md-border-w) solid var(--md-border);border-radius:var(--md-radius);background:var(--md-bg);color:var(--md-fg);font-size:calc(var(--md-font-body) * 0.8);line-height:1;cursor:pointer;opacity:0;transition:opacity 0.15s ease;}}
+.tasty-copy-btn{{position:absolute;top:var(--md-space-xs);right:var(--md-space-xs);height:22px;padding:0 var(--md-space-xs);border:var(--md-border-w) solid var(--md-border);border-radius:var(--md-radius);background:var(--md-control-bg);color:var(--md-fg);font-size:calc(var(--md-font-body) * 0.8);line-height:1;cursor:pointer;opacity:0;transition:opacity 0.15s ease;}}
 pre:hover .tasty-copy-btn,.tasty-copy-btn:focus-visible{{opacity:1;}}
 @media (hover:none){{.tasty-copy-btn{{opacity:1;}}}}
 .tasty-copy-btn[data-state="copied"]{{border-color:{success};color:{success};}}
@@ -1712,6 +1713,8 @@ li input[type=checkbox]{{margin-right:0.4em;}}
         rule = theme.separator.unpremultiplied().to_hex(),
         zebra = theme.md_table_row_bg_zebra().to_hex(),
         bg = md_doc_bg(theme).to_hex(),
+        // 주소·찾기 입력과 코드 복사 버튼은 문서 바탕이 아니라 이전과 같은 bg_app으로 칠한다.
+        control_bg = theme.bg_app().to_hex(),
         radius = theme.corner_radius.value(),
         border_w = theme.border_width.value(),
         quote_bar_w = theme.md_quote_bar_width().value(),
@@ -5020,6 +5023,12 @@ Outro\n";
         assert_ne!(theme.bg_app(), doc);
         let css = theme_css(&theme);
         assert!(css.contains(&format!("--md-bg:{};", doc.to_hex())), "{css}");
+        // 문서 바탕만 바뀌고 입력·복사 버튼은 bg_app 그대로다.
+        assert!(
+            css.contains(&format!("--md-control-bg:{};", theme.bg_app().to_hex())),
+            "{css}"
+        );
+        assert_eq!(css.matches("background:var(--md-bg)").count(), 1, "{css}");
     }
 
     #[test]
