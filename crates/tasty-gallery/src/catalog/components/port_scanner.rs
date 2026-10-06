@@ -603,3 +603,188 @@ fn cell(ui: &mut egui::Ui, theme: &Theme, row: &PortRow, c: usize) {
         }
     }
 }
+
+/// 시안 "Process column" 예제의 표 폭(기본 660 · 좁은 460)과 열 폭.
+const PROC_TABLE_WIDE: LogicalPx = LogicalPx(660.0);
+const PROC_TABLE_NARROW: LogicalPx = LogicalPx(460.0);
+/// Port · PID 64, Proto 72. 머리줄 24, 행 26.
+const PROC_COL_NUM: LogicalPx = LogicalPx(64.0);
+const PROC_COL_PROTO: LogicalPx = LogicalPx(72.0);
+const PROC_HEADER_H: LogicalPx = LogicalPx(24.0);
+const PROC_ROW_H: LogicalPx = LogicalPx(26.0);
+/// 셀 안쪽 여백: Port 오른쪽 8, 나머지 10.
+const PROC_PAD_PORT: LogicalPx = LogicalPx(8.0);
+const PROC_PAD: LogicalPx = LogicalPx(10.0);
+/// 별 글리프 12, 표 사이 간격 14, 캡션 아래 간격 6.
+const PROC_STAR: LogicalPx = LogicalPx(12.0);
+const PROC_STAGE_GAP: LogicalPx = LogicalPx(14.0);
+const PROC_CAPTION_GAP: LogicalPx = LogicalPx(6.0);
+
+const PROC_ROWS: &[[&str; 4]] = &[
+    [
+        "3000",
+        "tcp",
+        "node /usr/local/bin/vite --host --strictPort",
+        "41822",
+    ],
+    ["5432", "tcp", "postgres: checkpointer", "913"],
+];
+
+/// Overlays › Listening ports — Process 열은 고정 폭이 아니라 최소 폭이다.
+pub fn draw_process_column(ui: &mut egui::Ui, theme: &Theme) {
+    spec::stage(ui, theme, StageVariant::Solo, |ui| {
+        ui.spacing_mut().item_spacing.y = PROC_STAGE_GAP.value();
+        for (label, w) in [
+            ("default — Process takes the spare width", PROC_TABLE_WIDE),
+            (
+                "narrow — Process holds its 200 floor and ellipsises",
+                PROC_TABLE_NARROW,
+            ),
+        ] {
+            ui.vertical(|ui| {
+                ui.spacing_mut().item_spacing.y = PROC_CAPTION_GAP.value();
+                ui.label(
+                    egui::RichText::new(label)
+                        .size(theme.font_size_caption.value())
+                        .color(theme.text_muted().to_egui()),
+                );
+                process_table(ui, theme, w);
+            });
+        }
+    });
+    spec::meta(
+        ui,
+        theme,
+        &[
+            ("role", "minimum width (flex-grow, never shrink)"),
+            ("value", "200 — unchanged"),
+            ("token", "port-process-col-min-width"),
+            ("zoom", "scales with the UI scale, like every width token"),
+            ("hiding", "none — no column disappears"),
+        ],
+        &[
+            TokenChip::without_color("port-process-col-min-width", "Process floor"),
+            TokenChip::without_color("port-star-col-width", "leading star column"),
+        ],
+    );
+    spec::note(
+        ui,
+        theme,
+        "The gallery specimen keeps a fixed stage width, so it pins the same 200 — same token, \
+         same number, one role.",
+    );
+}
+
+/// 별 · Port · Proto · Process(flex, 최소 폭) · PID 다섯 열. Process 는 남는 폭을 모두 받되
+/// 최소 폭 아래로 줄지 않고, 넘치는 글자는 말줄임한다.
+fn process_table(ui: &mut egui::Ui, theme: &Theme, width: LogicalPx) {
+    let bw = theme.border_width.value();
+    let star_w = theme.port_star_col_width().value();
+    let num_w = PROC_COL_NUM.value();
+    let proto_w = PROC_COL_PROTO.value();
+    let inner_w = width.value() - bw * 2.0;
+    let proc_w =
+        (inner_w - star_w - num_w * 2.0 - proto_w).max(theme.port_process_col_min_width().value());
+    let h = PROC_HEADER_H.value() + PROC_ROW_H.value() * PROC_ROWS.len() as f32 + bw * 2.0;
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(width.value(), h), egui::Sense::hover());
+    let p = ui.painter_at(rect);
+    let radius = theme.corner_radius.value();
+    p.rect_filled(rect, radius, theme.bg_panel().to_egui());
+    let sep = egui::Stroke::new(bw, theme.separator.to_egui_premultiplied());
+    let inner = rect.shrink(bw);
+    let xs = [
+        inner.left(),
+        inner.left() + star_w,
+        inner.left() + star_w + num_w,
+        inner.left() + star_w + num_w + proto_w,
+        inner.left() + star_w + num_w + proto_w + proc_w,
+    ];
+
+    let head =
+        egui::Rect::from_min_size(inner.min, egui::vec2(inner.width(), PROC_HEADER_H.value()));
+    let r = radius as u8;
+    p.rect_filled(
+        head,
+        egui::CornerRadius {
+            nw: r,
+            ne: r,
+            sw: 0,
+            se: 0,
+        },
+        theme.bg_sidebar().to_egui(),
+    );
+    p.hline(head.x_range(), head.bottom() - bw * 0.5, sep);
+    let head_font = egui::FontId::proportional(theme.font_size_caption.value());
+    let ink = theme.text_secondary().to_egui();
+    let texts = ["Port", "Proto", "Process", "PID"];
+    proc_cells(&p, head, &xs, inner.right(), texts, head_font, ink);
+
+    let mono = egui::FontId::monospace(theme.font_size_caption.value());
+    for (i, row) in PROC_ROWS.iter().enumerate() {
+        let top = head.bottom() + PROC_ROW_H.value() * i as f32;
+        let rr = egui::Rect::from_min_size(
+            egui::pos2(inner.left(), top),
+            egui::vec2(inner.width(), PROC_ROW_H.value()),
+        );
+        p.hline(rr.x_range(), rr.bottom() - bw * 0.5, sep);
+        let s = PROC_STAR.value();
+        let star_rect = egui::Rect::from_center_size(
+            egui::pos2(xs[0] + star_w * 0.5, rr.center().y),
+            egui::vec2(s, s),
+        );
+        icons::STAR
+            .image(s, theme.port_star_off().to_egui())
+            .paint_at(ui, star_rect);
+        proc_cells(&p, rr, &xs, inner.right(), *row, mono.clone(), ink);
+    }
+    p.rect_stroke(
+        rect,
+        radius,
+        egui::Stroke::new(bw, theme.border_strong().to_egui()),
+        egui::StrokeKind::Inside,
+    );
+}
+
+/// 한 줄의 Port(오른쪽 정렬) · Proto · Process(말줄임) · PID(오른쪽 정렬) 글자를 그린다.
+fn proc_cells(
+    p: &egui::Painter,
+    row: egui::Rect,
+    xs: &[f32; 5],
+    right: f32,
+    texts: [&str; 4],
+    font: egui::FontId,
+    color: egui::Color32,
+) {
+    let y = row.center().y;
+    let pad = PROC_PAD.value();
+    p.text(
+        egui::pos2(xs[2] - PROC_PAD_PORT.value(), y),
+        egui::Align2::RIGHT_CENTER,
+        texts[0],
+        font.clone(),
+        color,
+    );
+    p.text(
+        egui::pos2(xs[2] + pad, y),
+        egui::Align2::LEFT_CENTER,
+        texts[1],
+        font.clone(),
+        color,
+    );
+    let mut job =
+        egui::text::LayoutJob::simple_singleline(texts[2].to_owned(), font.clone(), color);
+    job.wrap = egui::text::TextWrapping::truncate_at_width(xs[4] - xs[3] - pad);
+    let galley = p.layout_job(job);
+    p.galley(
+        egui::pos2(xs[3] + pad, y - galley.size().y * 0.5),
+        galley,
+        color,
+    );
+    p.text(
+        egui::pos2(right - pad, y),
+        egui::Align2::RIGHT_CENTER,
+        texts[3],
+        font,
+        color,
+    );
+}

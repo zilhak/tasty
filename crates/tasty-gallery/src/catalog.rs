@@ -1042,12 +1042,22 @@ pub fn pages() -> Vec<Page> {
                 section(
                     "ports",
                     "Listening ports",
-                    vec![spec(
-                        "ports",
-                        "Live listeners, copy address",
-                        Some("660×520 · 7-column table · sticky header"),
-                        components::port_scanner::draw,
-                    )],
+                    vec![
+                        spec(
+                            "ports",
+                            "Live listeners, copy address",
+                            Some("660×520 · 7-column table · sticky header"),
+                            components::port_scanner::draw,
+                        ),
+                        spec(
+                            "ports-process-column",
+                            "Process column — a minimum, not a fixed width",
+                            Some(
+                                "200 is a floor · takes the spare width as the popup grows · no column hides, narrow tables ellipsise",
+                            ),
+                            components::port_scanner::draw_process_column,
+                        ),
+                    ],
                 ),
                 section(
                     "remote",
