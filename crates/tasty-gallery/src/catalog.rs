@@ -12,6 +12,7 @@ pub mod foundations_uiscale;
 pub mod icons;
 pub mod layouts_settled;
 pub mod overlays_settled;
+pub mod plugins_settled;
 pub mod popup_frame;
 pub mod spacing;
 pub mod spec;
@@ -2029,14 +2030,28 @@ pub fn pages() -> Vec<Page> {
                 section(
                     "markdown-viewer",
                     "Markdown surface",
-                    vec![spec(
-                        "markdown-viewer",
-                        "Markdown surface",
-                        Some(
-                            "6-level prose hierarchy · library-owned body leading · element catalog · load/empty states",
+                    vec![
+                        spec(
+                            "markdown-viewer",
+                            "Markdown surface",
+                            Some(
+                                "6-level prose hierarchy · library-owned body leading · element catalog · load/empty states",
+                            ),
+                            components::markdown_viewer::draw,
                         ),
-                        components::markdown_viewer::draw,
-                    )],
+                        spec(
+                            "markdown-doc-bg",
+                            "Markdown — document background (single bed, webview render path)",
+                            Some("md-doc-bg → surface-markdown-focused-bg = crust · no focus swap"),
+                            plugins_settled::draw_doc_background,
+                        ),
+                        spec(
+                            "markdown-address-states",
+                            "Address bar states · large-file confirm",
+                            Some("idle · editing · over 1 MB confirm dims only the tile"),
+                            plugins_settled::draw_address_states,
+                        ),
+                    ],
                 ),
                 section(
                     "image-viewer",
