@@ -56,6 +56,7 @@ pub mod prim_icon_button;
 pub mod prim_input;
 pub mod prim_layout_shell;
 pub mod prim_listctrl;
+pub mod prim_multiselect;
 pub mod prim_nav;
 pub mod prim_path_field;
 pub mod prim_spinner;

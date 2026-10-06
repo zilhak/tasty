@@ -459,9 +459,19 @@ pub fn pages() -> Vec<Page> {
                         ),
                         spec(
                             "forms",
-                            "Select · Multi-select · Checkbox · Switch",
-                            Some("Choice and toggle controls (single + multi choice)"),
+                            "Select · Checkbox · Switch",
+                            Some(
+                                "Select = native dropdown styled like Input · Checkbox = standalone boolean (the MultiSelect option row) · Switch = boolean that applies immediately",
+                            ),
                             components::prim_forms::draw,
+                        ),
+                        spec(
+                            "multiselect",
+                            "MultiSelect — many values in one control",
+                            Some(
+                                "Select sibling for more than one value — closed it is a Select, open a Checkbox menu that stays open; 3-branch plain-text summary",
+                            ),
+                            components::prim_multiselect::draw,
                         ),
                         spec(
                             "autocomplete",
