@@ -66,6 +66,7 @@ stalled_message = "surface {}: 오류 뒤 출력이 멈췄습니다. 자식은 �
 stalled_no_error_message = "surface {}: 오랫동안 출력과 완료 신호가 없습니다. 작업이 멈췄거나 훅이 전달되지 않은 상태로 입력을 기다리는 중일 수 있습니다."
 stalled_background_wait_message = "surface {}: 백그라운드 작업({})이 끝나기를 {}분째 기다리는 중이며 그동안 출력이 없습니다."
 stalled_hint = " 마지막 오류: {}"
+stop_failure_background_message = "surface {}: API 에러({})로 턴이 끝났지만 백그라운드 작업({})이 남아 있어 계속 기다리는 중"
 
 [claude.launch]
 workspace_create_missing_id = "호스트 workspace.create 응답에 'id'가 없습니다"
@@ -189,6 +190,9 @@ description = "Stop 훅 게이트 비활성화(활성 마커 제거). 이미 꺼
 
 [claude.cli.sub.checklist-status]
 description = "Stop 훅 게이트 활성 상태 표시. 모든 게이트를 한 번에 보려면 'claude gate-list' 사용"
+
+[claude.cli.sub.notify-stop-failure]
+description = "내부용: 자식의 턴이 API 오류로 끝났지만 백그라운드 작업 때문에 계속 대기할 때 호출자의 알림 로그에 한 줄을 남깁니다. 턴이 그대로 끝났으면 완료 줄이 오류를 적으므로 아무것도 남기지 않습니다. claude-stop-failure의 hook.set 명령으로 사용합니다."
 
 [claude.cli.sub.notify-error]
 description = "내부용: 자식의 출력이 오래 변하지 않아 작업이 멈췄을 가능성을 호출자에게 알립니다. claude-error-stalled의 hook.set 명령으로 사용합니다. 자식 상태를 바꾸거나 완료 훅을 제거·재등록하지 않습니다."

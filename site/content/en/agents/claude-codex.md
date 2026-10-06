@@ -1,4 +1,4 @@
-<!-- source-hash: 189a55cf7aac -->
+<!-- source-hash: 986fe1e74b88 -->
 # Working with Claude and Codex
 
 Connect Claude Code and Codex CLI to share work across several agents. One agent can launch others and receive their results, so implementation, testing, and review can run alongside each other.
@@ -97,7 +97,7 @@ When there are too many children, a warning is attached to the spawn response. C
 
 Completion lands in the same log file as one line per event, whatever the parent is, and for both Claude and Codex children. Input requests,
 interruptions, errors, and process exits are state notifications too; they do not establish task success.
-When a Claude child ended its turn on an API error, the end of the completion line says so and names the error kind (for example `overloaded`).
+When a Claude child ended its turn on an API error, the end of the completion line says so and names the error kind (for example `overloaded`). If background work is still running and the child keeps waiting, a single line saying so is written instead of a completion line.
 
 ### Receiving through Claude Code's Monitor
 

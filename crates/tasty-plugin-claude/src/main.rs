@@ -196,6 +196,9 @@ impl Plugin for ClaudePlugin {
             "claude.tell" => handle_tell(&ctx.host, &ctx.params, &self.translator),
             "claude.notify_done" => handle_notify_done(&ctx.host, &ctx.params, &self.translator),
             "claude.notify_error" => handle_notify_error(&ctx.host, &ctx.params, &self.translator),
+            "claude.notify_stop_failure" => {
+                handle_notify_stop_failure(&ctx.host, &ctx.params, &self.translator)
+            }
             "claude.launch" => handle_launch(
                 &self.scanner,
                 &ctx.host,

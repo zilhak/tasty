@@ -240,7 +240,7 @@ if [ -n "$TASTY_SURFACE_ID" ]; then tasty claude hook <token> || true; fi
 |---|---|---|---|---|---|---|
 | `Stop` | `""`(전체) | `stop` | `idle`. 단 백그라운드 작업을 기다리는 Stop(아래)은 `active`, Stop 게이트가 붙은 세션은 판정이 모일 때까지 `active`(아래 "Stop 게이트와 idle") | `claude-idle`(대기 Stop은 없음) | 대기 Stop은 `claude-background-wait` **set**, 그 밖의 Stop은 **unset** | `completion`(대기 Stop은 없음) |
 | `SubagentStop` | `""`(전체) | `subagent-stop` | — (로그만) | — | — | — |
-| `StopFailure` | `""`(전체) | `stop-failure` | `idle`. 단 메인 턴이 띄운 백그라운드 작업이 남아 있으면 `active`(아래) | `claude-idle` + `claude-stop-failure`(백그라운드 작업이 남은 경우는 없음) | `claude-last-stop-failure` = stdin `error`(없으면 `unknown`) **set**. `claude-background-wait` **unset**. 백그라운드 작업이 남은 경우는 `claude-background-wait` **set**만 한다 | `completion`(백그라운드 작업이 남은 경우는 없음) |
+| `StopFailure` | `""`(전체) | `stop-failure` | `idle`. 단 메인 턴이 띄운 백그라운드 작업이 남아 있으면 `active`(아래) | `claude-idle` + `claude-stop-failure`(백그라운드 작업이 남은 경우는 `claude-stop-failure`만) | `claude-last-stop-failure` = stdin `error`(없으면 `unknown`) **set**. `claude-background-wait` **unset**. 백그라운드 작업이 남은 경우는 `claude-background-wait`를 **unset** 대신 **set**한다 | `completion`(백그라운드 작업이 남은 경우는 없음) |
 | `SessionEnd` | `""`(전체) | `session-end` | `idle` | `claude-idle` | `claude-session-id`·`restore.command`·`claude-last-stop-failure`·`claude-background-wait` **unset**. stdin `reason`이 `clear`·`resume`이 아니고(값이 없을 때 포함) 이 세션이 `claude-settings-session`과 같으면 `claude-settings-file`·`claude-settings-session`도 **unset** (프로필 meta 2키는 건드리지 않는다. 프로필 **부착 기록**에는 종료 표시만 하고 유예 뒤 회수 — 아래 "복원을 건너 프로필이 유지되는 방식") | `completion` |
 | `Notification` | `""`(전체) | `notification` | `notification_type`별(아래 "Notification 유형별 상태"). `needs_input`·`active`·변경 없음 | `needs-input`(`needs_input` 유형만) | — | `needs_input`(`needs_input` 유형만) |
 | `UserPromptSubmit` | `""`(전체) | `prompt-submit` | `active` | — | `claude-last-stop-failure`·`claude-background-wait` **unset** | — |
@@ -293,7 +293,7 @@ if [ -n "$TASTY_SURFACE_ID" ]; then tasty claude hook <token> || true; fi
 `server_error`·`max_output_tokens`·`unknown` 등이다. Surface의 Custom 훅은 값 없이
 이벤트 키만 전달하므로 이 meta를 사용한다([훅](../../features/hooks/index.md)).
 Meta를 먼저 쓴 뒤 이벤트를 보내며 새 턴(`prompt-submit`/`session-start`/`active`)과
-`session-end`에서는 지운다. `notify-done`은 meta가 있으면 상태 알림 뒤에 오류 종류를 붙인다.
+`session-end`에서는 지운다. `notify-done`은 meta가 있고 자식 상태가 `idle`이면 상태 알림 뒤에 오류 종류를 붙인다. `needs_input`·종료 등 다른 상태의 줄에는 붙이지 않는다.
 
 **백그라운드 작업이 남은 `StopFailure`는 턴 종료가 아니다.** `StopFailure` payload에는 `background_tasks`가
 없다(공식 hooks 문서, Claude Code 2.1.285 실측). 백그라운드 작업이 끝나면 Claude Code는 `<task-notification>` 턴을
@@ -305,9 +305,16 @@ Meta를 먼저 쓴 뒤 이벤트를 보내며 새 턴(`prompt-submit`/`session-s
 - 끝: `UserPromptSubmit`의 `prompt`가 `<task-notification>`으로 시작하면 그 안의 `<task-id>` 작업을 지운다.
 - `Stop`의 `background_tasks`를 읽을 수 있으면 기록을 그 목록의 끝나지 않은 항목으로 바꾼다.
   `SessionStart`·`SessionEnd`는 기록을 버린다.
-- 기록이 남은 채 `StopFailure`가 오면 대기 Stop과 같이 `active`와 `claude-background-wait`만 보내고
-  `claude-idle`·`claude-stop-failure`·`surface.completion`·telemetry `wall_time_ms`·자동 재개 처리를 하지 않는다.
+- 기록이 남은 채 `StopFailure`가 오면 대기 Stop과 같이 `active`와 `claude-background-wait`를 보내고,
+  `claude-last-stop-failure`를 기록한 뒤 `claude-stop-failure`만 fire한다. 두 meta는 이벤트보다 먼저 기록한다.
+  `claude-idle`·`surface.completion`·telemetry `wall_time_ms`·자동 재개 처리는 하지 않는다.
   작업이 끝나 열린 턴의 `Stop`이 idle을 기록한다.
+- spawn·tell은 `claude-stop-failure`에 상시 훅 `tasty claude notify-stop-failure`를 등록한다. 이 훅은 `claude-background-wait`가
+  있을 때만 부모 완료 로그에 한 줄을 남긴다. 영어 문구는 `surface <N>: the turn ended on an API error (<오류>), but background work (<종류>) is still running, so the child keeps waiting`이다.
+  대기 기록이 없는 StopFailure(턴 종료)는 `claude-idle` 완료 줄이 오류를 적으므로 이 훅은 아무것도 쓰지 않는다.
+  작업이 끝나 열린 턴이 `claude-last-stop-failure`를 지우므로, 그 턴의 완료 줄에는 오류가 붙지 않는다.
+- 작업이 바쁜 턴 중에 끝나 `<task-notification>` 턴 없이 결과가 소비된 뒤 `StopFailure`가 오면, 기록이 남아 `active`로 머물다
+  대기 정지 알림까지 갈 수 있다. 이 경우는 미측정이다.
 - 기록은 메모리에만 있다. 플러그인이 다시 시작되면 사라지고 그 뒤의 `StopFailure`는 idle이 된다.
   이 훅은 `tasty claude install`을 다시 실행해야 설치된다. 설치 전에는 전처럼 idle이 된다.
 
@@ -480,11 +487,11 @@ Claude Code가 Stop payload로 알려 준 대기이므로 누적 출력이 **10�
 
 같은 정적 구간에서는 한 번만 알리고 surface별로 최소 5분 간격을 둔다. 출력이 바뀌면 정적 구간을 다시 측정한다. 새 턴 신호도 중복 기록과 정적 측정을 초기화하지만 5분 쿨다운은 유지한다. 긴 추론이나 입력 대기와 실제 멈춤은 구분하지 못할 수 있다.
 
-`StopFailure`가 상태를 idle로 바꾸면 이 정지 알림의 조건에서 빠진다. 대신 `claude-idle` 훅으로 실행된 `notify-done`이 API 오류 종류를 붙여 로그를 쓰는 경로를 사용한다. 훅 호출과 로그 쓰기가 실패하지 않았다는 보장까지 뜻하지는 않는다.
+`StopFailure`가 상태를 idle로 바꾸면 이 정지 알림의 조건에서 빠진다. 대신 `claude-idle` 훅으로 실행된 `notify-done`이 API 오류 종류를 붙여 로그를 쓰는 경로를 사용한다. 백그라운드 작업이 남아 `active`로 남는 StopFailure는 `notify-stop-failure`가 한 줄을 쓴다. 훅 호출과 로그 쓰기가 실패하지 않았다는 보장까지 뜻하지는 않는다.
 
 정지 스캐너는 `terminal.set_state`를 호출하지 않는다. 관측 결과로 알림만 만들며 `claude children`의 상태를 직접 바꾸지 않는다.
 
-`register_notify_hooks`는 상태 변경용 once 훅 세 개와 별도로 `claude-error-stalled` 상시 훅을 등록한다. 명령은 `tasty claude notify-error --caller-surface … --target-surface …`이며, `notify-done` 형제 훅과 명령 문자열이 달라 그 정리 대상에 포함되지 않는다.
+`register_notify_hooks`는 상태 변경용 once 훅 세 개와 별도로 `claude-error-stalled` 상시 훅을 등록한다. 명령은 `tasty claude notify-error --caller-surface … --target-surface …`이며, `notify-done` 형제 훅과 명령 문자열이 달라 그 정리 대상에 포함되지 않는다. 같은 방식으로 `claude-stop-failure` 상시 훅(`tasty claude notify-stop-failure --caller-surface … --target-surface …`)도 등록한다.
 
 같은 caller·target의 정지 알림을 다시 등록할 때는 같은 명령 문자열로 등록된 기존 훅을 정리한다.
 

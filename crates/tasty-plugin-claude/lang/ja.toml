@@ -66,6 +66,7 @@ stalled_message = "surface {}: エラー以降 出力が止まっています �
 stalled_no_error_message = "surface {}: 長時間 出力も完了シグナルもありません — 子が停止している可能性があります (フックが届かないプロンプトで待機中かもしれません)"
 stalled_background_wait_message = "surface {}: バックグラウンド作業（{}）の終了を {} 分間待っています。その間の出力はありません。"
 stalled_hint = " 直近のエラー: {}"
+stop_failure_background_message = "surface {}: API エラー（{}）でターンが終わりましたが、バックグラウンド作業（{}）が残っているため待機を続けています"
 
 [claude.launch]
 workspace_create_missing_id = "ホストの workspace.create 応答に 'id' がありません"
@@ -189,6 +190,9 @@ description = "Stopフックゲートを無効化（有効マーカーを削除�
 
 [claude.cli.sub.checklist-status]
 description = "Stopフックゲートの有効状態を表示。全ゲートを一度に見るには 'claude gate-list' を使用"
+
+[claude.cli.sub.notify-stop-failure]
+description = "内部用: 子のターンが API エラーで終わったものの、バックグラウンド作業のため待機を続けるときに、呼び出し元の通知ログへ 1 行書きます。ターンがそのまま終わった場合は完了行がエラーを示すため何も書きません。claude-stop-failure の hook.set コマンドとして使います。"
 
 [claude.cli.sub.notify-error]
 description = "内部用：子の出力が長時間変わらず、処理が止まっている可能性を呼び出し元に通知します。claude-error-stalled の hook.set コマンドで使用します。子の状態は変更せず、完了フックの削除・再登録もしません。"

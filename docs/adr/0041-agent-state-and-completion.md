@@ -75,8 +75,10 @@ Claude Code의 연속 block 상한(기본 8, `CLAUDE_CODE_STOP_HOOK_BLOCK_CAP`)�
 
 API 오류로 끝난 턴(`StopFailure`)은 payload에 `background_tasks`가 없다. 그래서 플러그인이 메인 턴의 백그라운드
 작업을 따로 기록한다. 시작은 `PostToolUse`(Bash·Agent)의 `tool_response`, 끝은 `<task-notification>` prompt의
-`<task-id>`와 `Stop`의 `background_tasks`로 갱신한다. 기록이 남은 채 `StopFailure`가 오면 대기 Stop과 같이 `active`로만
-보고하고 idle·완료 알림을 보내지 않는다.
+`<task-id>`와 `Stop`의 `background_tasks`로 갱신한다. 기록이 남은 채 `StopFailure`가 오면 대기 Stop과 같이 `active`로
+보고하고 idle·완료 알림·자동 재개를 만들지 않는다. 오류는 `claude-last-stop-failure` meta와 `claude-stop-failure` 이벤트로 남기고,
+spawn·tell이 이 이벤트에 등록한 알림 훅이 부모 완료 로그에 "API 오류로 턴이 끝났지만 백그라운드 작업이 남아 계속 대기한다"는 줄을 한 번 쓴다.
+완료 줄의 "입력을 기다린다" 오류 힌트는 자식이 `idle`일 때만 붙인다.
 
 부모에게 전달하는 완료·입력 대기·정지 알림은 부모 종류와 무관하게 완료 로그에 기록한다.
 부모 PTY에 사용자 메시지처럼 넣지 않으며 Codex App Server의 별도 전달 경로도 두지 않는다.
@@ -98,7 +100,7 @@ API 오류로 끝난 턴(`StopFailure`)은 payload에 `background_tasks`가 없�
 보수적으로 취소한다. 끝나지 않는 백그라운드 명령을 남긴 채 턴을 끝낸 Claude 자식은 idle이
 되지 않아 spawn·tell 대기 노드와 완료 알림이 오지 않는다. 대기 노드에는 제한 시간을 두어야 한다.
 Claude Code가 끝난 항목에 위 목록에 없는 `status`를 붙여 남기면 그 자식도 idle이 되지 않는다.
-백그라운드 작업 기록은 메모리에만 있어, 플러그인이 다시 시작된 뒤의 `StopFailure`는 작업이 남아 있어도 idle과 완료 알림을 보낸다. `tasty claude install`을 다시 실행하기 전의 설치본도 시작 훅이 없어 같다. 작업이 끝났다는 `<task-notification>` 턴이 오지 않는 작업이 기록에 남으면 그 뒤의 `StopFailure`는 다음 `Stop`이 기록을 바꿀 때까지 idle이 되지 않는다. Bash·Agent 도구 호출마다(포그라운드 호출 포함) 훅 명령이 한 번 더 실행된다.
+백그라운드 작업 기록은 메모리에만 있어, 플러그인이 다시 시작된 뒤의 `StopFailure`는 작업이 남아 있어도 idle과 완료 알림을 보낸다. `tasty claude install`을 다시 실행하기 전의 설치본도 시작 훅이 없어 같다. 작업이 끝났다는 `<task-notification>` 턴이 오지 않는 작업이 기록에 남으면 그 뒤의 `StopFailure`는 다음 `Stop`이 기록을 바꿀 때까지 idle이 되지 않는다. 작업이 바쁜 턴 중에 끝나 알림 턴 없이 소비되는 경우가 이에 해당하는지는 미측정이다. 작업이 남은 `StopFailure`의 오류는 부모 완료 로그의 별도 줄 하나로만 전달된다. 작업이 끝나 열린 턴이 오류 meta를 지우므로 그 턴의 완료 줄과 자동 재개에는 오류가 반영되지 않는다. Bash·Agent 도구 호출마다(포그라운드 호출 포함) 훅 명령이 한 번 더 실행된다.
 게이트가 붙은 세션은 턴이 끝나도 판정이 모일 때까지 idle이 늦어진다. 판정이 5초 안에 오지 않으면 그만큼 늦고, 그 사이
 block된 판정이 늦게 오면 턴이 이어지는데도 idle로 기록된다. 늦게 온 판정은 다음 Stop이 오기 전까지만 버리고, 다음 Stop이 오면
 앞 Stop의 빈자리를 지운다. 다만 그 사이 다음 Stop의 게이트 판정이 상태 훅보다 먼저 오면 앞 Stop의 늦은 판정으로 보고 버리므로,

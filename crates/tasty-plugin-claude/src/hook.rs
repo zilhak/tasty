@@ -442,7 +442,9 @@ fn background_wait_calls<H>(
 }
 
 /// 백그라운드 작업이 남은 채 API 오류로 끝난 턴. 작업이 끝나면 Claude Code 가 새 턴을 열므로
-/// 대기 Stop 과 같이 `active` 로만 보고하고 idle·완료 알림·오류 이벤트·자동 재개를 만들지 않는다.
+/// 대기 Stop 과 같이 `active` 로 보고하고 idle·완료 알림·자동 재개를 만들지 않는다.
+/// 오류는 meta 와 `claude-stop-failure` 로 남겨, 부모의 notify-stop-failure 훅이 한 줄로 알린다.
+/// 그 훅은 대기 meta 를 읽으므로 두 meta 를 이벤트보다 먼저 기록한다.
 /// 남은 작업이 없으면 `None` 이며 호출자가 턴 종료로 처리한다.
 fn stop_failure_with_background_work<H: HostCallSink>(
     tail: &StopTail<'_, H>,
@@ -459,7 +461,19 @@ fn stop_failure_with_background_work<H: HostCallSink>(
         types.len(),
         types.join(",")
     );
-    let calls = background_wait_calls(tail, surface_id, now_ms, types);
+    let mut calls = vec![HostCall::MetaSet {
+        surface_id,
+        key: STOP_FAILURE_META_KEY,
+        value: error
+            .filter(|e| !e.is_empty())
+            .unwrap_or("unknown")
+            .to_string(),
+    }];
+    calls.extend(background_wait_calls(tail, surface_id, now_ms, types));
+    calls.push(HostCall::FireHook {
+        surface_id,
+        event: STOP_FAILURE_EVENT,
+    });
     Some(json!({
         "ok": true,
         "surface_id": surface_id,
@@ -1799,8 +1813,9 @@ mod tests {
         assert!(!rig.is_waiting());
     }
 
-    /// 백그라운드 작업이 남은 채 API 오류로 끝난 턴은 대기다. active 만 보내고 대기를 기록하며,
-    /// idle·완료 알림·오류 이벤트·wall_time·자동 재개 성공 처리를 만들지 않는다.
+    /// 백그라운드 작업이 남은 채 API 오류로 끝난 턴은 대기다. active 를 보내고 대기와 오류를 기록한 뒤
+    /// 부모 알림용 `claude-stop-failure` 만 fire 한다. idle·`claude-idle`·완료 알림·wall_time·자동 재개
+    /// 성공 처리는 만들지 않는다. 알림 훅이 두 meta 를 읽으므로 meta 기록이 이벤트보다 먼저다.
     #[test]
     fn a_stop_failure_while_background_work_runs_keeps_the_child_active() {
         let mut rig = HookRig::new();
@@ -1816,7 +1831,7 @@ mod tests {
         }));
         assert_eq!(reply["waiting"], "background_work");
         assert_eq!(rig.host.states(), vec!["active"]);
-        assert!(rig.host.fired().is_empty());
+        assert_eq!(rig.host.fired(), vec![STOP_FAILURE_EVENT]);
         assert!(
             !rig.host
                 .methods()
@@ -1824,12 +1839,23 @@ mod tests {
         );
         assert!(rig.is_waiting());
         let seen = rig.host.seen.borrow();
-        let (_, set) = seen
+        let meta = |key: &str| {
+            seen.iter()
+                .position(|(m, p)| m == "surface.meta.set" && p["key"] == key)
+                .expect(key)
+        };
+        let fire = seen
             .iter()
-            .find(|(m, _)| m == "surface.meta.set")
-            .expect("대기 meta");
-        assert_eq!(set["key"], BACKGROUND_WAIT_META_KEY);
-        let value: Value = serde_json::from_str(set["value"].as_str().unwrap()).unwrap();
+            .position(|(m, _)| m == "surface.fire_hook")
+            .expect("fire");
+        assert!(meta(STOP_FAILURE_META_KEY) < fire && meta(BACKGROUND_WAIT_META_KEY) < fire);
+        assert_eq!(seen[meta(STOP_FAILURE_META_KEY)].1["value"], "server_error");
+        let value: Value = serde_json::from_str(
+            seen[meta(BACKGROUND_WAIT_META_KEY)].1["value"]
+                .as_str()
+                .unwrap(),
+        )
+        .unwrap();
         assert_eq!(value["types"], json!(["shell"]));
         drop(seen);
         assert!(rig.wall_time_open());
@@ -1849,7 +1875,7 @@ mod tests {
             json!({ "event": "stop-failure", "surface": HookRig::SURFACE, "error": "overloaded" }),
         );
         assert_eq!(rig.host.states(), vec!["active", "active"]);
-        assert!(rig.host.fired().is_empty());
+        assert_eq!(rig.host.fired(), vec![STOP_FAILURE_EVENT]);
         assert!(rig.is_waiting());
     }
 

@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.claude"
 name = "Claude Code"
-version = "0.1.149"
+version = "0.1.150"
 description = "Claude Code CLI integration for Tasty"
 api_version = "1"
 permissions = [
@@ -45,7 +45,7 @@ description = "Claude instance is waiting for user input (Notification hook)"
 
 [[contributes.hook_events]]
 key = "claude-stop-failure"
-description = "Claude's turn ended on an API error (StopFailure hook — overloaded, rate limit, auth failure, ...). Fires together with claude-idle; the error kind is in surface meta claude-last-stop-failure"
+description = "Claude's turn ended on an API error (StopFailure hook — overloaded, rate limit, auth failure, ...). The error kind is in surface meta claude-last-stop-failure. Usually fires together with claude-idle; when background work started in the turn is still running, the state stays active, claude-idle does not fire and this event fires alone"
 
 [[contributes.hook_events]]
 key = "claude-error"
@@ -83,6 +83,7 @@ subcommands = [
     { name = "checklist-disable", ipc_method = "claude.checklist_disable", args = "checklist_gate_args", description = "Turn off a Stop-hook gate (removes its enabled marker). Succeeds even if it was already off.", description_i18n_key = "claude.cli.sub.checklist-disable.description" },
     { name = "checklist-status",  ipc_method = "claude.checklist_status",  args = "checklist_gate_args", description = "Show whether a Stop-hook gate is currently on. Use 'claude gate-list' to see every gate's on/off at once.", description_i18n_key = "claude.cli.sub.checklist-status.description" },
     { name = "notify-error", ipc_method = "claude.notify_error", args = "notify_error_args", description = "Internal: notify the caller that a child may be stalled after a long period without output changes. Used as the hook.set command for claude-error-stalled. Does not change child state or remove or re-register completion hooks.", description_i18n_key = "claude.cli.sub.notify-error.description" },
+    { name = "notify-stop-failure", ipc_method = "claude.notify_stop_failure", args = "notify_error_args", description = "Internal: when a child's turn ended on an API error while background work keeps it waiting, write one line to the caller's notification log. Writes nothing when the turn simply ended, since the completion line already names the error. Used as the hook.set command for claude-stop-failure.", description_i18n_key = "claude.cli.sub.notify-stop-failure.description" },
     { name = "notify-done", ipc_method = "claude.notify_done", args = "notify_done_args", description = "Internal: report a spawn/tell state transition to the caller and remove matching once-hooks. If the target surface can still be found, register the three completion hooks again. Used as the hook.set command for claude-idle/needs-input/process-exit.", description_i18n_key = "claude.cli.sub.notify-done.description" },
     # CLI가 한 단계의 하위 명령을 지원하므로 profile-* 이름을 사용한다.
     { name = "profile-register",   ipc_method = "claude.profile_register",   args = "profile_register_args",   description = "Register a Claude session profile under a name (copies the file into plugin-private storage; re-registering the same name updates its content)", description_i18n_key = "claude.cli.sub.profile-register.description" },

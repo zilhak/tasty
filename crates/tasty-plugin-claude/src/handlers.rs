@@ -375,7 +375,7 @@ pub(crate) fn handle_tell(
 #[cfg(test)]
 use crate::notifications::*;
 pub(crate) use crate::notifications::{
-    handle_notify_done, handle_notify_error, register_notify_hooks,
+    handle_notify_done, handle_notify_error, handle_notify_stop_failure, register_notify_hooks,
 };
 
 /// 새 워크스페이스에 Claude를 실행하고 독립 surface로 오류 감시에 등록한다.
@@ -1574,6 +1574,36 @@ mod tests {
                 .iter()
                 .any(|c| c == &notify_error_command(caller, target))
         );
+    }
+
+    /// spawn·tell 은 백그라운드 대기 중 API 오류를 알릴 상시 훅도 하나 등록한다.
+    /// 완료 훅 정리·재등록을 거쳐도 하나로 남는다.
+    #[test]
+    fn spawn_tell_wiring_subscribes_the_stop_failure_notice() {
+        let host = MockHost::new();
+        let (caller, target) = (7u32, 1650u32);
+        host.mark_alive(target);
+        register_notify_hooks(&host, caller, target, "spawn");
+        let tr = test_translator();
+        for _ in 0..2 {
+            assert_eq!(
+                host.hooks_for_event(target, crate::hook::STOP_FAILURE_EVENT),
+                1
+            );
+            assert!(
+                host.commands_on(target)
+                    .iter()
+                    .any(|c| c == &notify_stop_failure_command(caller, target))
+            );
+            assert_eq!(host.fire(target, crate::hook::STOP_FAILURE_EVENT), 1);
+            assert_eq!(host.fire(target, "claude-idle"), 1);
+            handle_notify_done(
+                &host,
+                &json!({ "caller_surface": caller, "target_surface": target, "command": "spawn" }),
+                &tr,
+            )
+            .unwrap();
+        }
     }
 
     #[test]

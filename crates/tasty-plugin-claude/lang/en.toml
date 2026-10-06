@@ -66,6 +66,7 @@ stalled_message = "surface {}: no output since an error — the child looks stuc
 stalled_no_error_message = "surface {}: no output for a long stretch and no completion signal — the child looks stuck (it may be waiting at a prompt whose hook never arrived)"
 stalled_background_wait_message = "surface {}: waiting on background work ({}) for {} min, with no output meanwhile"
 stalled_hint = " Last error: {}"
+stop_failure_background_message = "surface {}: the turn ended on an API error ({}), but background work ({}) is still running, so the child keeps waiting"
 
 [claude.launch]
 workspace_create_missing_id = "host workspace.create response is missing 'id'"
@@ -189,6 +190,9 @@ description = "Turn off a Stop-hook gate (removes its enabled marker). Succeeds 
 
 [claude.cli.sub.checklist-status]
 description = "Show whether a Stop-hook gate is currently on. Use 'claude gate-list' to see every gate's on/off at once."
+
+[claude.cli.sub.notify-stop-failure]
+description = "Internal: when a child's turn ended on an API error while background work keeps it waiting, write one line to the caller's notification log. Writes nothing when the turn simply ended, since the completion line already names the error. Used as the hook.set command for claude-stop-failure."
 
 [claude.cli.sub.notify-error]
 description = "Internal: notify the caller that a child may be stalled after a long period without output changes. Used as the hook.set command for claude-error-stalled. Does not change child state or remove or re-register completion hooks."

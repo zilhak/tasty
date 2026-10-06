@@ -71,6 +71,36 @@ pub(crate) fn register_notify_hooks<H: HostCall>(
         "claude",
     );
     register_error_notify_hook(host, caller_surface, target_surface);
+    register_stop_failure_notify_hook(host, caller_surface, target_surface);
+}
+
+/// 백그라운드 작업이 남은 StopFailure 를 부모에게 알리는 훅 명령. 완료 그룹과 다른 명령을 쓴다.
+pub(crate) fn notify_stop_failure_command(caller_surface: u32, target_surface: u32) -> String {
+    format!(
+        "tasty claude notify-stop-failure --caller-surface {caller_surface} --target-surface {target_surface}"
+    )
+}
+
+/// `claude-stop-failure` 를 반복해서 받는 훅을 등록한다. 같은 부모·대상의 기존 훅을 먼저 정리한다.
+/// 턴이 끝난 StopFailure 는 완료 줄이 오류를 적으므로 이 훅은 줄을 남기지 않는다.
+pub(crate) fn register_stop_failure_notify_hook<H: HostCall>(
+    host: &H,
+    caller_surface: u32,
+    target_surface: u32,
+) {
+    let command = notify_stop_failure_command(caller_surface, target_surface);
+    cleanup_sibling_hooks(host, target_surface, &command);
+    if let Err(error) = host.call(
+        "hook.set",
+        json!({
+            "surface_id": target_surface,
+            "event": crate::hook::STOP_FAILURE_EVENT,
+            "command": command,
+            "once": false,
+        }),
+    ) {
+        tracing::warn!("stop-failure notification hook registration failed: {error}");
+    }
 }
 
 /// 완료 훅과 다른 명령을 써서 완료 그룹을 정리할 때 제거되지 않게 한다.
@@ -128,11 +158,7 @@ pub(crate) fn handle_notify_done<H: HostCall>(
         .and_then(|v| v.as_str())
         .ok_or_else(|| IpcMethodError::invalid_params(tr.t("claude.params.missing_command")))?;
 
-    let message = with_stop_failure_hint(
-        tr,
-        notify_done_message(tr, command_name, target_surface),
-        last_stop_failure(host, target_surface).as_deref(),
-    );
+    let message = notify_done_line(tr, host, command_name, target_surface);
     if let Err(e) = tasty_utils::notify::append_notify_line(caller_surface, &message) {
         tracing::warn!("claude notify-done completion-log append failed: {e}");
     }
@@ -172,6 +198,87 @@ pub(crate) fn handle_notify_error<H: HostCall>(
         tracing::warn!("claude notify-error completion-log append failed: {e}");
     }
     Ok(json!({}))
+}
+
+/// 완료 줄. 오류 힌트("입력을 기다린다")는 턴이 끝난 idle 줄에만 붙인다. 백그라운드 작업이 남아
+/// 대기 중에 기록된 오류가 needs-input·process-exit 줄에 붙지 않게 한다.
+pub(crate) fn notify_done_line<H: HostCall>(
+    tr: &Translator,
+    host: &H,
+    command_name: &str,
+    target_surface: u32,
+) -> String {
+    let error = if target_state(host, target_surface).as_deref() == Some("idle") {
+        last_stop_failure(host, target_surface)
+    } else {
+        None
+    };
+    with_stop_failure_hint(
+        tr,
+        notify_done_message(tr, command_name, target_surface),
+        error.as_deref(),
+    )
+}
+
+/// 대상의 현재 상태(`idle`·`active`·`needs_input` 등). 조회에 실패하면 `None` 이다.
+fn target_state<H: HostCall>(host: &H, target_surface: u32) -> Option<String> {
+    host.call("terminal.state", json!({ "surface": target_surface }))
+        .ok()
+        .and_then(|r| r.get("state").and_then(|v| v.as_str()).map(str::to_string))
+}
+
+/// 백그라운드 작업이 남은 채 API 오류로 끝난 턴을 부모 로그에 한 번 남긴다.
+/// 대기 기록이 없으면 턴이 끝난 StopFailure 이고 완료 줄이 오류를 적으므로 줄을 남기지 않는다.
+pub(crate) fn handle_notify_stop_failure<H: HostCall>(
+    host: &H,
+    params: &Value,
+    tr: &Translator,
+) -> Result<Value, IpcMethodError> {
+    let caller_surface = params
+        .get("caller_surface")
+        .and_then(|v| v.as_u64())
+        .ok_or_else(|| {
+            IpcMethodError::invalid_params(tr.t("claude.params.missing_caller_surface"))
+        })? as u32;
+    let target_surface = params
+        .get("target_surface")
+        .and_then(|v| v.as_u64())
+        .ok_or_else(|| {
+            IpcMethodError::invalid_params(tr.t("claude.params.missing_target_surface"))
+        })? as u32;
+    let Some(message) = stop_failure_notice(tr, host, target_surface) else {
+        return Ok(json!({ "written": false }));
+    };
+    if let Err(e) = tasty_utils::notify::append_notify_line(caller_surface, &message) {
+        tracing::warn!("claude notify-stop-failure completion-log append failed: {e}");
+    }
+    Ok(json!({ "written": true }))
+}
+
+/// 백그라운드 대기 중인 StopFailure 의 부모 로그 문구. 대기 기록이 없으면 `None` 이다.
+pub(crate) fn stop_failure_notice<H: HostCall>(
+    tr: &Translator,
+    host: &H,
+    target_surface: u32,
+) -> Option<String> {
+    let wait = background_wait(host, target_surface)?;
+    let error = last_stop_failure(host, target_surface).unwrap_or_else(|| "unknown".to_string());
+    let types: Vec<&str> = wait
+        .get("types")
+        .and_then(Value::as_array)
+        .map(|a| a.iter().filter_map(Value::as_str).collect())
+        .unwrap_or_default();
+    let detail = if types.is_empty() {
+        "waiting_on_background_work".to_string()
+    } else {
+        types.join(", ")
+    };
+    Some(
+        tr.t("claude.notify.stop_failure_background_message")
+            .replacen("{}", &target_surface.to_string(), 1)
+            .replacen("{}", &error, 1)
+            .replacen("{}", &detail, 1),
+    )
 }
 
 /// 백그라운드 대기 기록을 읽는다. 없거나 해석할 수 없으면 `None` 이다.
@@ -268,5 +375,87 @@ pub(crate) fn rearm_if_still_alive<H: HostCall>(
 ) {
     if surface_is_alive(host, target_surface) {
         register_notify_hooks(host, caller_surface, target_surface, command_name);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tr() -> Translator {
+        Translator::load(
+            &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("lang"),
+            "en",
+        )
+    }
+
+    /// surface meta 와 상태 조회만 답하는 mock 호스트.
+    struct StateHost {
+        state: &'static str,
+        meta: Vec<(&'static str, String)>,
+    }
+
+    impl HostCall for StateHost {
+        fn call(
+            &self,
+            method: &str,
+            params: Value,
+        ) -> Result<Value, tasty_plugin_sdk::PluginError> {
+            Ok(match method {
+                "terminal.state" => json!({ "state": self.state }),
+                "surface.meta.get" => self
+                    .meta
+                    .iter()
+                    .find(|(k, _)| params["key"] == *k)
+                    .map(|(_, v)| json!({ "value": v }))
+                    .unwrap_or_else(|| json!({})),
+                _ => json!({}),
+            })
+        }
+    }
+
+    fn waiting_host(state: &'static str) -> StateHost {
+        StateHost {
+            state,
+            meta: vec![
+                (crate::hook::STOP_FAILURE_META_KEY, "overloaded".to_string()),
+                (
+                    crate::hook::BACKGROUND_WAIT_META_KEY,
+                    r#"{"since_ms":1,"tasks":1,"types":["shell"]}"#.to_string(),
+                ),
+            ],
+        }
+    }
+
+    /// 오류 힌트는 idle 완료 줄에만 붙는다. 대기 중 기록된 오류가 다른 상태의 줄에 붙지 않는다.
+    #[test]
+    fn the_stop_failure_hint_is_added_to_idle_lines_only() {
+        let tr = tr();
+        let hint = "waiting for input";
+        assert!(notify_done_line(&tr, &waiting_host("idle"), "spawn", 5).contains(hint));
+        for state in ["active", "needs_input", "exited", "stale"] {
+            let line = notify_done_line(&tr, &waiting_host(state), "spawn", 5);
+            assert!(!line.contains(hint), "{state}: {line}");
+            assert!(!line.contains("overloaded"), "{state}: {line}");
+        }
+    }
+
+    /// 백그라운드 대기 중인 StopFailure 는 오류와 작업 종류를 적은 줄 하나를 만든다.
+    /// 대기 기록이 없으면 턴이 끝난 것이므로 줄을 만들지 않는다.
+    #[test]
+    fn a_stop_failure_notice_is_written_only_while_waiting_on_background_work() {
+        let tr = tr();
+        let line = stop_failure_notice(&tr, &waiting_host("active"), 5).expect("대기 중");
+        assert!(line.starts_with("surface 5:"), "{line}");
+        assert!(
+            line.contains("overloaded") && line.contains("shell"),
+            "{line}"
+        );
+        assert!(!line.contains("waiting for input"), "{line}");
+        let ended = StateHost {
+            state: "idle",
+            meta: vec![(crate::hook::STOP_FAILURE_META_KEY, "overloaded".to_string())],
+        };
+        assert_eq!(stop_failure_notice(&tr, &ended, 5), None);
     }
 }
