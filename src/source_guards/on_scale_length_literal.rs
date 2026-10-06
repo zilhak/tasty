@@ -178,7 +178,9 @@ const AREAS: &[(&str, usize, &str)] = &[
         // 탭 스트립 툴팁 Stage의 오른쪽 여백 120은 디자인 Stage의 `--tasty-size-120`이며 역할 토큰이 없다.
         // 명령 팔레트 카드 폭은 palette-width 접근자를, 설정 창 예제 크기는 settings-window-* 토큰을 읽어
         // 갤러리 상수에서 빠졌다.
-        176,
+        // 시안 Spec 전사(역할 색 표·C1 보정 카드·8방향 크기 조절·경계와 겹침·사이드바 우클릭 메뉴)와
+        // 설정 푸터 좌우 여백, 메뉴 바깥 폭이 시안 Stage 치수를 지역 상수로 더한다.
+        203,
         "갤러리 specimen은 배율 검사에서 제외돼도 스케일 검사는 받는다(ADR-0039). 이름 붙은 치수와 인라인 값, 전시 목적을 별도로 분류한다.",
     ),
     (
@@ -643,7 +645,8 @@ fn the_gallery_share_is_one_question_or_it_is_not() {
         // 탭 스트립 툴팁 Stage 오른쪽 여백(디자인 언급 있음) 한 자리를 더한다.
         // 명령 팔레트 카드 폭(디자인 언급 있음)은 palette-width 접근자로 옮겨 하나 줄었다.
         // 설정 창 예제 폭·높이(디자인 언급 없음)는 settings-window-* 토큰으로 옮겨 둘 줄었다.
-        (64, 96, 0, 21),
+        // 위 시안 Spec 전사가 이름 있는 치수 스물여섯 자리(디자인 언급 6, 없음 20)와 디자인 언급 없는 인라인 값 하나를 더한다.
+        (70, 116, 0, 22),
         "갤러리 후보의 (이름 있음/없음, 디자인 언급 있음/없음) 분류 수가 바뀌었다. 해당 선언과 주석을 확인하고 기록을 갱신한다."
     );
 }
@@ -689,9 +692,10 @@ fn the_gallery_share_splits_into_four_kinds() {
         .map_or(0, |(_, n, _)| *n);
     assert_eq!(
         (displayed, named_value, nameless, undecided),
-        // 같은 Theme 값 16개 중 4개는 표 열 폭 140이다. 같은 숫자의 kb-ie·info-modal 토큰과 역할이 다르다.
+        // 같은 Theme 값 17개 중 4개는 표 열 폭 140이다. 같은 숫자의 kb-ie·info-modal 토큰과 역할이 다르다.
         // 8개는 Structural dimensions·attention scale 예제의 표 열 폭 배열이며 디자인 grid 열 값이다.
-        (roster, 16, 0, ratcheted - 16),
+        // 시안 Spec 전사에서 Theme 값과 숫자만 같은 자리 하나가 더해졌다.
+        (roster, 17, 0, ratcheted - 17),
         "갤러리의 전시 후보·같은 Theme 값·값 없음·이름 붙은 치수 분류 수가 달라졌다"
     );
 }
@@ -782,7 +786,8 @@ fn the_blind_spots_are_still_the_size_they_say() {
         // 스케일에 size-700이 들어오면서 test 코드의 기존 값 700 세 자리가 새로 집계됐다.
         // 시안에서 옮긴 결정 기록 Spec의 여백·간격·원점 0 리터럴이 아홉 개를 더한다.
         // 탭 스트립 툴팁의 border-width 허용치·최후 배치 시험이 창·칸·버블 치수 14개를 더한다.
-        (200, 437),
+        // 시안 Spec 전사의 칠 모서리·세로 간격 0 리터럴이 두 개를 더한다.
+        (202, 437),
         "제외한 0과 test 전용 코드의 수가 달라졌다. 실제 사용과 수집 범위의 변경을 확인하고 기록을 갱신한다."
     );
     let roster: usize = UNIT_SPACE_SITES.iter().map(|(.., n, _)| n).sum();

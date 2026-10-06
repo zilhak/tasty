@@ -37,7 +37,7 @@ const BEHIND_POPUP: (LogicalPx, LogicalPx) = (LogicalPx(190.0), LogicalPx(66.0))
 const FRONT_POPUP: (LogicalPx, LogicalPx) = (LogicalPx(200.0), LogicalPx(70.0));
 /// 미니 팝업 본문 안쪽 여백 10 과 줄 높이 배율 1.7.
 const POPUP_BODY_PAD: LogicalPx = LogicalPx(10.0);
-const POPUP_LINE_HEIGHT: f32 = 1.7;
+const POPUP_LINE_HEIGHT_FACTOR: f32 = 1.7;
 /// 겹침 예제에서 뒤 팝업의 불투명도(시안 0.55).
 const BEHIND_OPACITY: f32 = 0.55;
 /// 예제 사이 간격(시안 stage gap 28)과 캡션 아래 간격 6.
@@ -129,7 +129,7 @@ fn faux_popup(
             galley,
             fg,
         );
-        y += size * POPUP_LINE_HEIGHT * rows;
+        y += size * POPUP_LINE_HEIGHT_FACTOR * rows;
     }
 }
 

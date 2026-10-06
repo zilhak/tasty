@@ -28,6 +28,14 @@ enum Side {
 
 const COPIED: &[(&str, Side, Side)] = &[
     (
+        "설정 창 푸터 좌우 패딩(디자인 footer padding size-14)",
+        Side::Lit("src/view/settings/ui.rs", "SETTINGS_FOOTER_PAD_X"),
+        Side::Lit(
+            "crates/tasty-gallery/src/catalog/components/settings.rs",
+            "FOOTER_PAD_X",
+        ),
+    ),
+    (
         "Plugins 세그먼트 탭 라벨 폰트(primitive 12 — semantic role 없음)",
         Side::Lit("src/view/plugins/ui.rs", "SEGMENT_TAB_LABEL_PRIMITIVE_12"),
         Side::Lit(GALLERY_PLUGINS_WINDOW, "SEGMENT_TAB_LABEL_PRIMITIVE_12"),
@@ -391,11 +399,11 @@ fn resolve(side: &Side, theme: &str, semantic: &str, primitive: &str) -> (String
 
 #[test]
 fn the_gallery_still_agrees_with_the_dimensions_it_restates() {
-    // 등록된 비교 쌍은 40개다. 항목을 삭제해 불일치를 숨기지 않도록 하한 대신 정확한 수를 확인한다.
+    // 등록된 비교 쌍은 41개다. 항목을 삭제해 불일치를 숨기지 않도록 하한 대신 정확한 수를 확인한다.
     assert_eq!(
         COPIED.len(),
-        40,
-        "비교 명부가 {}쌍이다(기록 40). 복사본이 실제로 사라졌는지 또는 새로 생겼는지 확인하고 명부와 기록을 함께 갱신한다.",
+        41,
+        "비교 명부가 {}쌍이다(기록 41). 복사본이 실제로 사라졌는지 또는 새로 생겼는지 확인하고 명부와 기록을 함께 갱신한다.",
         COPIED.len()
     );
     let theme = read(THEME);
@@ -681,6 +689,10 @@ const CONFESSED: &[(&str, &str)] = &[
     (GALLERY_KB_IMPORT_EXPORT, "MIGRATE_LABEL_W"),
     (GALLERY_PLUGINS_WINDOW, "SEGMENT_TAB_LABEL_PRIMITIVE_12"),
     (GALLERY_PLUGINS_ATTENTION, "ATTN_PRIMITIVE_12"),
+    (
+        "crates/tasty-gallery/src/catalog/components/settings.rs",
+        "FOOTER_PAD_X",
+    ),
     (
         "crates/tasty-gallery/src/catalog/components/status_bar.rs",
         "WIDE",
