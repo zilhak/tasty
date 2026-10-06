@@ -5,6 +5,7 @@
 //! - 제한 시간은 프로세스 종료와 상속된 파이프의 EOF 까지 포함한다. 시간이 지나거나 취소되면
 //!   이 실행이 만든 프로세스 그룹(Windows 는 job)만 종료하고, 직접 자식을 회수한 뒤 보고한다.
 
+use std::ffi::OsString;
 use std::io::{self, Read, Write};
 use std::path::PathBuf;
 use std::process::{Child, Command, ExitStatus, Stdio};
@@ -32,6 +33,23 @@ pub(crate) struct ProcessRequest {
     pub(crate) stdout: StdoutSpec,
     pub(crate) timeout: Duration,
     pub(crate) run: u32,
+    /// 자식에게 줄 환경. 호스트 프로세스 환경에서 [`child_env`] 로 거른 값이다.
+    pub(crate) env: Vec<(OsString, OsString)>,
+}
+
+/// 후처리 자식의 환경. 상속 환경에서 바깥 Claude Code 세션의 표지·비밀처럼 터미널 셸에도
+/// 넘기지 않는 변수(`tasty_utils::process::is_stripped_inherited_env`)만 뺀다. `TASTY_*` 를
+/// 포함한 나머지는 그대로 넘기고, Tasty 가 task 별 변수를 더하지는 않는다.
+pub(crate) fn child_env(
+    inherited: impl IntoIterator<Item = (OsString, OsString)>,
+) -> Vec<(OsString, OsString)> {
+    inherited
+        .into_iter()
+        .filter(|(k, v)| {
+            !k.to_str()
+                .is_some_and(|k| tasty_utils::process::is_stripped_inherited_env(k, v))
+        })
+        .collect()
 }
 
 /// 시작한 프로세스. `wait` 가 끝날 때까지 프로세스 그룹을 소유한다.
@@ -63,13 +81,16 @@ struct StderrCapture {
 /// 프로세스를 시작한다. 실패하면 그 실행의 보고를 돌려준다.
 pub(crate) fn spawn(req: ProcessRequest) -> Result<Started, PostprocessReport> {
     let deadline = Instant::now() + req.timeout;
-    let fail = |cause, message: String| PostprocessReport::failed(req.run, cause, message);
+    let run = req.run;
+    let fail = |cause, message: String| PostprocessReport::failed(run, cause, message);
     let Some((program, args)) = req.command.split_first() else {
         return Err(fail(PostprocessCause::Spawn, "empty command".into()));
     };
     let mut cmd = Command::new(program);
     tasty_utils::process::hide_console(&mut cmd);
     cmd.args(args)
+        .env_clear()
+        .envs(req.env)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());

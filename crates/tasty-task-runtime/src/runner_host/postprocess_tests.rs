@@ -9,7 +9,7 @@ use tasty_agent::task::postprocess::{
     PostprocessCause, PostprocessOutcome, PostprocessReport, StdoutFormat, StdoutSpec,
 };
 
-use super::process::{ProcessRequest, STOP_CANCELLED, STOP_NONE, spawn};
+use super::process::{ProcessRequest, STOP_CANCELLED, STOP_NONE, child_env, spawn};
 
 fn json_out() -> StdoutSpec {
     StdoutSpec::default()
@@ -23,6 +23,7 @@ fn run_with(script: &str, stdin: Vec<u8>, timeout_ms: u64, cancel: &AtomicU8) ->
         stdout: json_out(),
         timeout: Duration::from_millis(timeout_ms),
         run: 1,
+        env: child_env(std::env::vars_os()),
     };
     match spawn(req) {
         Ok(started) => started.wait(cancel),
@@ -106,6 +107,7 @@ fn failures_are_reported_with_distinct_causes() {
         stdout: json_out(),
         timeout: Duration::from_secs(5),
         run: 2,
+        env: child_env(std::env::vars_os()),
     })
     .err()
     .expect("spawn failure");
@@ -227,9 +229,66 @@ fn text_format_keeps_stdout_verbatim() {
         },
         timeout: Duration::from_secs(10),
         run: 1,
+        env: child_env(std::env::vars_os()),
     };
     let r = spawn(req).expect("spawn").wait(&AtomicU8::new(STOP_NONE));
     assert_eq!(stdout_of(&r), json!("not json\n"));
+}
+
+#[test]
+fn the_child_gets_the_host_environment_without_the_outer_claude_session() {
+    use std::ffi::OsString;
+    let os = |k: &str, v: &str| (OsString::from(k), OsString::from(v));
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    let inherited = vec![
+        (OsString::from("PATH"), path),
+        os("HOME", "/home/someone"),
+        // 바깥 Claude Code 세션의 표지·비밀은 넘기지 않는다.
+        os("CLAUDECODE", "1"),
+        os("CLAUDE_CODE_SESSION_ID", "s-1"),
+        os("CLAUDE_CODE_ENTRYPOINT", "cli"),
+        os("CLAUDE_CODE_MESSAGING_TOKEN", "secret"),
+        os("CLAUDE_PLUGIN_OPTION_X", "1"),
+        os("AI_AGENT", "claude-code_2.1.291_bash"),
+        // 사용자가 넣는 Claude Code 설정과 인증은 남긴다.
+        os("CLAUDE_CODE_OAUTH_TOKEN", "user-token"),
+        os("ANTHROPIC_API_KEY", "user-key"),
+        // Tasty 프로세스의 TASTY_* 는 그대로 넘긴다.
+        os("TASTY_HOME", "/tmp/tasty-home"),
+        os("TASTY_LOCALE", "ko"),
+    ];
+    let req = ProcessRequest {
+        command: vec!["env".into()],
+        cwd: None,
+        stdin: Vec::new(),
+        stdout: StdoutSpec {
+            format: StdoutFormat::Text,
+            pointer: None,
+        },
+        timeout: Duration::from_secs(10),
+        run: 1,
+        env: child_env(inherited),
+    };
+    let r = spawn(req).expect("spawn").wait(&AtomicU8::new(STOP_NONE));
+    let out = stdout_of(&r);
+    let mut seen: Vec<&str> = out
+        .as_str()
+        .expect("text")
+        .lines()
+        .filter(|l| !l.starts_with("PATH="))
+        .collect();
+    seen.sort_unstable();
+    // 넘긴 것만 있고 Tasty 가 더한 변수는 없다.
+    assert_eq!(
+        seen,
+        [
+            "ANTHROPIC_API_KEY=user-key",
+            "CLAUDE_CODE_OAUTH_TOKEN=user-token",
+            "HOME=/home/someone",
+            "TASTY_HOME=/tmp/tasty-home",
+            "TASTY_LOCALE=ko",
+        ]
+    );
 }
 
 // ── executor 와 runner 를 거친 실행 ──────────────────────────────────────────
