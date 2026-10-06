@@ -183,7 +183,7 @@ modifier-hint는 보조키를 누르는 동안 유지되며 키보드 포커스 
 | `--tasty-modhint-empty-row-gap` | → 3px | `modhint_empty_row_gap()` | 빈 조합 섹션 내부 간격(채워진 6px보다 좁게, §6-5). 디자인은 인라인 px(`.mh-section--empty{gap:3px}`) — 코드에서 토큰화 |
 | `--tasty-modhint-empty-row-min-height` | → 20px | `modhint_empty_row_min_height()` | 빈 조합 플레이스홀더 행 최소 높이(키캡 행 24px보다 타이트). 디자인 인라인 px(`.mh-empty{min-height:20px}`) — 코드에서 토큰화 |
 | `--tasty-modhint-grip-size` | → `icon-size-xs` (12) | `modhint_grip_size()` | 코너 리사이즈 그립 |
-| `--tasty-modhint-grip-fg` | → `border-strong` | `modhint_grip_fg()` | 코너 그립 대각선 색(갤러리 예제). 본체는 그립 선을 그리지 않고 상호작용 영역만 둔다 |
+| `--tasty-modhint-grip-fg` | → `border-strong` | `modhint_grip_fg()` | 코너 그립 대각선 두 획의 색. 본체와 갤러리가 `tasty_ui_widgets::modhint_resize_grip` 으로 시안 SVG(`M11 5 5 11M11 9 9 11`, 12 상자, 오른쪽·아래 2 안쪽)를 그린다. 안쪽 2 는 대응 토큰이 없어 border-width 두 배다 |
 | `--tasty-modhint-bg` | → `bg-panel` (불투명) | `modhint_bg()` | 라이브 출력 위 불투명 셸 |
 | `--tasty-modhint-border` | → `border-strong` | `modhint_border()` | 1px 셸 보더 |
 | `--tasty-modhint-radius` | → `radius` (4) | `corner_radius` | 셸 코너 |

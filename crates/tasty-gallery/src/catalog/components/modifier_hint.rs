@@ -313,24 +313,8 @@ fn panel_sized(
         });
     });
 
-    // 우하단 코너 그립 — 대각선 2획 (nwse-resize). right:2 bottom:2, 12×12.
-    let rect = resp.response.rect;
-    let g = theme.modhint_grip_size().value();
-    let pad = bw * 2.0;
-    let br = egui::pos2(rect.right() - pad, rect.bottom() - pad);
-    let col: egui::Color32 = theme.modhint_grip_fg().to_egui();
-    let stroke = egui::Stroke::new(bw, col);
-    ui.painter().line_segment(
-        [egui::pos2(br.x - g, br.y), egui::pos2(br.x, br.y - g)],
-        stroke,
-    );
-    ui.painter().line_segment(
-        [
-            egui::pos2(br.x - g * 0.5, br.y),
-            egui::pos2(br.x, br.y - g * 0.5),
-        ],
-        stroke,
-    );
+    // 우하단 코너 그립 — 본체와 같은 공용 함수로 그린다.
+    tasty_ui_widgets::modhint_resize_grip(ui.painter(), theme, resp.response.rect);
 }
 
 /// 드래그 스트립 — held 조합 Kbd + "held" 라벨 + 우측 X. bg-sidebar, 하단 separator, cursor:move.

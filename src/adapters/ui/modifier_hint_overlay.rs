@@ -234,7 +234,9 @@ use std::time::Duration;
 
 use crate::i18n::t;
 use tasty_settings::Settings;
-use tasty_ui_widgets::{ControlSize, IconButton, IconButtonVariant, kbd, kbd_parts};
+use tasty_ui_widgets::{
+    ControlSize, IconButton, IconButtonVariant, kbd, kbd_parts, modhint_resize_grip,
+};
 
 use crate::adapters::ui::icons;
 
@@ -329,6 +331,10 @@ pub fn draw_modifier_hint(
                 &settings.general,
             );
             draw_shell_border(&ui, theme, render_rect, alpha);
+            // 오른쪽 아래 리사이즈 그립. 아래 상호작용 영역(`modhint_resize`)과 같은 모서리다.
+            let mut grip_painter = ui.painter().clone();
+            grip_painter.multiply_opacity(alpha);
+            modhint_resize_grip(&grip_painter, theme, render_rect);
 
             let strip_h = theme.modhint_strip_height().value();
             let x_zone = strip_h; // 우측 X 버튼 폭 만큼 드래그에서 제외.

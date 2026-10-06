@@ -39,6 +39,7 @@ mod plugin_add;
 mod plugin_avatar;
 mod popup_title;
 mod remote_tool;
+mod resize_grip;
 mod segmented;
 mod select;
 mod sequence_editor;
@@ -130,6 +131,7 @@ pub use remote_tool::{
     remote_row_actions_width, remote_row_title, secondary_button, selectable_label,
     selectable_text, warn_badge, warn_badge_width,
 };
+pub use resize_grip::{modhint_resize_grip, resize_grip_segments};
 pub use segmented::segmented;
 pub use select::{select, select_or_placeholder};
 pub use sequence_editor::{

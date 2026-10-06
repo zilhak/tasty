@@ -817,7 +817,8 @@ fn the_blind_spots_are_still_the_size_they_say() {
         // tasty-ui-widgets popover_frame 통합 테스트의 화면 사각형 pos2(0,0)·vec2(400,300) 넷이 test 전용으로 들어왔다.
         // MultiSelect 행 끝 클릭 시험이 트리거 오른쪽 안쪽 2를 더한다.
         // MultiSelect 메뉴 기준 rect 를 세로로만 내리는 vec2 의 가로 0 하나를 더한다.
-        (217, 449),
+        // modhint 코너 그립 획 좌표 시험의 패널 사각형·그립 크기 네 개가 test 전용으로 들어왔다.
+        (217, 453),
         "제외한 0과 test 전용 코드의 수가 달라졌다. 실제 사용과 수집 범위의 변경을 확인하고 기록을 갱신한다."
     );
     let roster: usize = UNIT_SPACE_SITES.iter().map(|(.., n, _)| n).sum();
