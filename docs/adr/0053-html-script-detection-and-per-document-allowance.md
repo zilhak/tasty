@@ -152,7 +152,8 @@ OS별 구현은 다음과 같다.
     - 실기 측정 없이 구현했다. 이 머신에는 macOS용 C 컴파일러가 없어 macOS 코드를 컴파일하지 못했다.
   - chrome의 `NavState` 종료 전이(Done·Failed)도 같은 판정 함수(`load_generation::nav_state_after_end`)를 따른다. 앞 로드의 늦은 실패가 chrome만 Failed로 두거나, 늦은 성공이 새 로드의 Loading을 Done으로 덮어 새 로드가 끝나기 전에 overlay를 보이는 일을 막는다. Windows는 `NavigationCompleted`의 성공·실패, macOS는 `didFinishNavigation`·`didFailNavigation`·`didFailProvisionalNavigation`이 대상이다. 실기 측정은 하지 않았다.
     - chrome 세대는 게이트 세대와 따로 둔다. 마지막에 시작한 main frame navigation(Windows `NavigationStarting`의 `NavigationId`, macOS `didStartProvisionalNavigation`의 `WKNavigation`)을 모두 기록한다. 게이트 세대는 fragment 이동과 게이트가 없는 surface의 탐색을 기록하지 않으므로, 이를 chrome에 쓰면 그 탐색의 종료가 앞 로드로 보여 Loading이 남는다.
-    - `load_url`·`load_html`은 navigation 시작 신호 전에 Loading을 둔다. 그 사이에 오는 앞 로드의 종료는 아직 마지막에 시작한 navigation의 것이라 상태를 바꾼다. 뒤이은 시작 신호가 다시 Loading으로 둔다.
+    - `load_url`·`load_html`은 navigation 시작 신호 전에 Loading을 두고 chrome 세대를 비운다(모름 = 현재). 게이트가 정책 결정에서 세대를 비우는 것과 같은 장치다. 요청한 로드가 시작 신호 없이 끝나도 그 종료를 현재 로드로 보아 Loading에 남지 않는다. 그런 경로가 실제로 있는지는 측정하지 않았다. 후보는 macOS의 provisional 시작 전 정책·스킴 단계 실패와 Windows `NavigationStarting`의 args가 없는 경우다.
+      - 대가로 그 사이에 오는 앞 로드의 종료도 현재 로드로 보아 상태를 바꾼다. 뒤이은 시작 신호가 다시 Loading으로 둔다.
     - web process 종료(Windows `ProcessFailed`의 렌더러·브라우저 종료, macOS `webViewWebContentProcessDidTerminate:`)는 세대와 관계없이 Failed로 둔다. 종료 신호에는 navigation이 없고 화면 문서를 잃었기 때문이다.
     - Linux는 세대를 기록하지 않는다. `load_uri`로 앞 로드를 취소하면 앞 로드의 `load-failed`("Load request cancelled")와 `FINISHED`가 새 로드의 navigation 결정과 `STARTED`보다 먼저 왔다. 그래서 새 로드의 `STARTED`가 Failed를 Loading으로 되돌리고 새 로드는 Done으로 끝났다(측정: FIFO `file://` 로드를 걸어 둔 채 다른 파일로 바꾸기 2회, WebKitGTK 2.50.4).
 
