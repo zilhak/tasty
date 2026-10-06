@@ -1,6 +1,6 @@
 # ADR-0053: HTML 문서의 스크립트는 원본 파일에서 감지하고 사용자만 문서 단위로 허용한다
 
-- **Status**: Accepted — 감지·문서 단위 JS 게이트·배너 발화 판정·조회 명령·inset 배너·탭 표지가 구현됐다. Windows와 macOS에서 navigation별 적용 시점과 로드 종료 순서, macOS 서브프레임의 JS 적용은 측정하지 않았다
+- **Status**: Accepted — 감지·문서 단위 JS 게이트·배너 발화 판정·조회 명령·inset 배너·탭 표지가 구현됐다. Windows와 macOS에서 navigation별 적용 시점과 로드 종료 순서, macOS 서브프레임의 JS 적용은 측정하지 않았다. 두 OS의 로드 세대 구분·process 종료 처리와 macOS 서브프레임 preferences는 실기 측정 없이 구현했다
 - **Date**: 2026-09-29
 - **Tags**: plugins, webview, html, javascript, sandbox, banner, ipc, security
 - **Group**: plugins
@@ -137,7 +137,7 @@ OS별 구현은 다음과 같다.
     - 측정 결과 허용 문서의 timer가 다시 돌았다(tick 14→19, JS True).
   - `stop_loading`이나 기존 정책이 무시하는 `http(s)` navigation에는 `STARTED`가 오지 않았다. 따라서 JS와 문서가 그대로다(리뷰 측정).
 - **Windows(미측정, API 문서 근거)**: `NavigationStarting`은 main frame navigation에서만 발생한다. 서브프레임은 `FrameNavigationStarting`, 새 창은 `NewWindowRequested`로 따로 온다. 이 핸들러 안에서 `IsScriptEnabled`를 정한다. API 문서의 예제도 이 핸들러에서 해당 navigation에 적용되도록 설정을 바꾼다. `NavigationStarting` 이후에 바꾸면 다음 top-level navigation부터 적용된다.
-- **macOS(미측정, API 문서 근거)**: `webView:decidePolicyForNavigationAction:preferences:decisionHandler:`에서 navigation별 `WKWebpagePreferences.allowsContentJavaScript`를 정한다. `targetFrame.isMainFrame`이 참일 때만 판단한다. 새 창 요청은 `targetFrame`이 nil이다.
+- **macOS(미측정, API 문서 근거)**: `webView:decidePolicyForNavigationAction:preferences:decisionHandler:`에서 navigation별 `WKWebpagePreferences.allowsContentJavaScript`를 정한다. `targetFrame.isMainFrame`이 참일 때만 로드를 시작하고 판단한다. 서브프레임 navigation에는 그 시점 main frame 문서에 대한 게이트의 판단(`ScriptGate::effective_js`)을 넣는다. Linux에서 서브프레임이 webview 전체 JS 설정을 따르는 것과 같은 결과다. 새 창 요청은 `targetFrame`이 nil이며 preferences를 바꾸지 않는다.
   - 허용 판단이 붙은 webview에서는 전역 `javaScriptEnabled`(deprecated)를 켜 둔다. 전역 값이 꺼져 있으면 navigation별 `allowsContentJavaScript`를 켜도 스크립트가 실행되지 않기 때문이다. 문서의 JS는 navigation별 값으로만 정한다.
   - 그래서 전역 "Sandbox scripts" 변경은 화면 문서에 바로 적용되지 않고 다음 navigation부터 적용된다(미측정).
 - Windows와 macOS의 bfcache 복원에 navigation별 설정이 적용되는지는 측정하지 않았다.
@@ -145,7 +145,10 @@ OS별 구현은 다음과 같다.
 - 두 OS에서도 허용 기록은 새 main frame 문서가 commit될 때 갱신한다. commit 없이 끝난 로드에서는 화면 문서의 허용 상태로 JS를 되돌린다. 이 시점에 대응하는 이벤트는 구현에서 정하며 측정하지 않았다.
   - 두 OS는 로드 시작과 응답 결정을 navigation 시작 콜백에서 함께 한다. 새 로드가 앞 로드를 취소하면 앞 로드의 종료 신호가 새 로드의 시작 뒤에 올 수 있다. 이 신호가 새 로드의 대기 값을 지우면 새 문서가 지문 없이 기록된다.
   - Windows는 `NavigationStarting`의 `NavigationId`를 로드 세대로 기록하고, `NavigationCompleted`는 자기 `NavigationId`가 현재 세대일 때만 복원한다. 앞 로드의 늦은 종료는 무시한다(순서 자체는 미측정).
-  - macOS는 로드를 구분하지 않는다. `didFinishNavigation`·`didFailNavigation`·`didFailProvisionalNavigation`이 모두 복원한다. 앞 로드의 종료가 새 로드 시작 뒤에 오면 새 문서가 지문 없이 기록될 수 있다(미측정). 이 머신에서 macOS 코드를 컴파일할 수 없어 WKNavigation으로 세대를 구분하는 변경은 실제 Mac에서 측정한 뒤 한다.
+  - macOS는 `WKNavigation`을 로드 세대로 쓴다. 정책 결정(`decidePolicyForNavigationAction`)에는 `WKNavigation`이 없으므로, 게이트가 로드를 시작한 정책 결정 뒤 첫 `didStartProvisionalNavigation`의 `WKNavigation`을 세대로 기록한다. `didFinishNavigation`·`didFailNavigation`·`didFailProvisionalNavigation`은 자기 `WKNavigation`이 현재 세대일 때만 복원한다. 판정은 Windows와 같은 함수(`load_generation::is_current_load`)이며, 어느 쪽이든 `WKNavigation`을 알 수 없으면 현재 로드로 본다.
+    - 정책 결정부터 provisional 시작까지는 세대를 비워 둔다. 이 사이에 온 종료는 모두 현재 로드로 본다. 앞 로드의 종료가 이 구간에 오면 새 로드의 대기 값을 지울 수 있다. 이 순서가 실제로 생기는지는 측정하지 않았다.
+    - 기록한 `WKNavigation`은 다음 로드가 시작할 때까지 붙잡아 둔다. 같은 주소가 다른 navigation에 다시 쓰여 앞 로드의 종료가 현재 세대로 보이는 일을 막는다.
+    - 실기 측정 없이 구현했다. 이 머신에는 macOS용 C 컴파일러가 없어 macOS 코드를 컴파일하지 못했다.
 
 ### 배너 표시 시점
 
@@ -195,8 +198,8 @@ OS별 구현은 다음과 같다.
   - Linux는 `ResponsePolicyDecision::is_main_frame_main_resource()`가 필요하다. 이 API는 WebKitGTK 2.40부터 있어 바인딩 feature를 `v2_40`으로 둔다(`Cargo.toml`). 최소 런타임도 WebKitGTK 2.40이 된다.
   - Windows는 `NavigationStarting` 안에서 정한 `IsScriptEnabled`가 같은 navigation에 적용되는지 측정하지 않았다. API 문서가 근거다.
   - macOS는 delegate 시그니처가 바뀌고, 실제 Mac에서 확인하기 전까지 미검증이다.
-  - macOS에서 앞 로드의 종료가 새 로드 시작 뒤에 오면 새 문서가 지문 없이 기록될 수 있다(미측정). 그 문서는 스크립트가 있어도 배너가 뜨지 않고 허용할 수 없으며, 허용된 문서의 재로드였다면 허용이 풀린다. Windows는 `NavigationId` 세대로 이 경우를 막는다.
-  - macOS의 `decidePolicyForNavigationAction`은 서브프레임 navigation에도 기본 preferences(`allowsContentJavaScript` 참)를 돌려준다. WebKit이 서브프레임에서 이 값을 쓰는지는 확인하지 않았다(미측정).
+  - 앞 로드의 종료가 새 로드 시작 뒤에 오면 새 문서가 지문 없이 기록될 수 있다. 그 문서는 스크립트가 있어도 배너가 뜨지 않고 허용할 수 없으며, 허용된 문서의 재로드였다면 허용이 풀린다. Windows는 `NavigationId`, macOS는 `WKNavigation` 세대로 이 경우를 막는다. macOS는 정책 결정과 provisional 시작 사이에 온 종료를 막지 못한다. 두 OS 모두 순서를 측정하지 않았다.
+  - macOS의 `decidePolicyForNavigationAction`은 서브프레임 navigation에 main frame 문서에 대한 판단을 preferences로 돌려준다. WebKit이 서브프레임에서 이 값을 쓰는지는 확인하지 않았다(미측정). 쓰지 않는다면 차단 문서의 iframe 스크립트가 실행될 수 있다.
   - Windows와 macOS의 bfcache 복원 동작도 미측정이다.
 - 에이전트는 release에서 스크립트 문서를 자동으로 실행할 수 없다. 자동화에는 debug 빌드나 전역 설정이 필요하다.
 - 에이전트가 연 문서는 사용자가 그 문서를 보기 전까지 배너 없이 차단 상태로 남는다.
@@ -246,8 +249,8 @@ OS별 구현은 다음과 같다.
 실행 결과로 확인한다.
 
 - Windows에서 `NavigationStarting` 안의 설정이 같은 navigation에 적용되지 않으면 해제 시점을 다시 정한다.
-- macOS에서 앞 로드의 종료가 새 로드 시작 뒤에 오는 것이 측정되면, WKNavigation 포인터로 로드 세대를 구분해 종료 신호가 현재 로드일 때만 복원하게 한다.
-- macOS에서 차단 문서의 iframe 스크립트가 실행되면 서브프레임 navigation의 preferences를 main frame 문서의 판단에 맞춘다.
+- macOS에서 앞 로드의 종료가 정책 결정과 provisional 시작 사이에 오는 것이 측정되면 세대를 기록하는 시점을 다시 정한다.
+- macOS에서 서브프레임 navigation의 preferences를 main frame 문서의 판단에 맞췄는데도 차단 문서의 iframe 스크립트가 실행되면 서브프레임의 차단 방법을 다시 정한다.
 - macOS에서 `allowsContentJavaScript`를 설정한 navigation의 첫 로드에 스크립트가 실행되면 해제 시점을 다시 정한다.
 - Windows나 macOS의 bfcache 복원에서 허용되지 않은 문서의 스크립트가 다시 실행되면 복원 경로의 차단을 추가한다.
 - 두 OS 모두 Linux와 같은 방법으로 확인한다.

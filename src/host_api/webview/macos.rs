@@ -8,7 +8,7 @@ use std::rc::Rc;
 use block2::{DynBlock, RcBlock};
 use objc2::rc::Retained;
 use objc2::runtime::{NSObject, NSObjectProtocol, ProtocolObject};
-use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
+use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, Message, define_class, msg_send};
 use objc2_app_kit::{
     NSAppearance, NSAppearanceNameAqua, NSAppearanceNameDarkAqua, NSEvent, NSResponder, NSView,
 };
@@ -21,6 +21,7 @@ use objc2_web_kit::{
 use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
 use super::keys::WebViewKeySink;
+use super::load_generation::is_current_load;
 use super::script_gate::ScriptGate;
 use super::{NavState, PendingNavigation, WebViewBounds};
 
@@ -31,9 +32,34 @@ struct NavDelegateIvars {
     pending_navigations: Rc<RefCell<Vec<PendingNavigation>>>,
     /// html surface의 문서 단위 스크립트 허용. 없으면 탐색 단위 JS를 바꾸지 않는다.
     script_gate: Rc<RefCell<Option<ScriptGate>>>,
+    /// 게이트가 정책 결정에서 로드를 시작했고 그 provisional 시작을 아직 받지 않았다.
+    gate_load_pending: Cell<bool>,
+    /// 게이트가 시작한 마지막 로드의 WKNavigation. 새 로드가 앞 로드를 취소하면 앞 로드의 종료가
+    /// 새 로드 시작 뒤에 올 수 있으므로, 종료 신호는 이 세대의 것일 때만 게이트를 마무리한다(ADR-0053).
+    /// 값을 붙잡아 두어 같은 주소가 다른 navigation에 다시 쓰이지 않게 한다.
+    gate_navigation: RefCell<Option<Retained<WKNavigation>>>,
+}
+
+/// 세대 비교용 WKNavigation 식별 값. 알 수 없으면 None이다.
+fn navigation_key(navigation: Option<&WKNavigation>) -> Option<u64> {
+    navigation.map(|n| std::ptr::from_ref(n) as usize as u64)
 }
 
 impl NavDelegateIvars {
+    /// 종료 신호가 게이트가 시작한 마지막 로드의 것일 때만 [`Self::gate_finished`]를 부른다.
+    /// 어느 쪽이든 WKNavigation을 알 수 없으면 현재 로드로 본다(Windows와 같은 규칙).
+    fn gate_navigation_ended(&self, navigation: Option<&WKNavigation>) {
+        let current = navigation_key(self.gate_navigation.borrow().as_deref());
+        if is_current_load(current, navigation_key(navigation)) {
+            self.gate_finished();
+        } else {
+            tracing::debug!(
+                "WebView surface {}: ignoring the end of a superseded load",
+                self.surface_id
+            );
+        }
+    }
+
     /// 로드가 commit 없이 끝났을 때 게이트 상태를 되돌린다. 화면 문서의 JS는 탐색 단위라 그대로다.
     fn gate_finished(&self) {
         if let Some(js) = self
@@ -65,18 +91,22 @@ define_class!(
 
     unsafe impl WKNavigationDelegate for NavDelegate {
         #[unsafe(method(webView:didStartProvisionalNavigation:))]
-        fn did_start_provisional(&self, _web_view: &WKWebView, _navigation: Option<&WKNavigation>) {
+        fn did_start_provisional(&self, _web_view: &WKWebView, navigation: Option<&WKNavigation>) {
             let sid = self.ivars().surface_id;
             tracing::debug!("WebView surface {sid}: load started");
             self.ivars().nav_state.set(NavState::Loading);
+            // 정책 결정에서 게이트가 시작한 로드라면 이 navigation이 새 세대다(실기 미측정).
+            if self.ivars().gate_load_pending.replace(false) {
+                *self.ivars().gate_navigation.borrow_mut() = navigation.map(|n| n.retain());
+            }
         }
 
         #[unsafe(method(webView:didFinishNavigation:))]
-        fn did_finish(&self, _web_view: &WKWebView, _navigation: Option<&WKNavigation>) {
+        fn did_finish(&self, _web_view: &WKWebView, navigation: Option<&WKNavigation>) {
             let sid = self.ivars().surface_id;
             tracing::debug!("WebView surface {sid}: load finished");
             self.ivars().nav_state.set(NavState::Done);
-            self.ivars().gate_finished();
+            self.ivars().gate_navigation_ended(navigation);
         }
 
         /// main frame 문서가 commit됐다(ADR-0053 후보 이벤트, 미측정).
@@ -97,7 +127,7 @@ define_class!(
         fn did_fail(
             &self,
             _web_view: &WKWebView,
-            _navigation: Option<&WKNavigation>,
+            navigation: Option<&WKNavigation>,
             error: &NSError,
         ) {
             tracing::warn!(
@@ -106,14 +136,14 @@ define_class!(
                 error.localizedDescription()
             );
             self.ivars().nav_state.set(NavState::Failed);
-            self.ivars().gate_finished();
+            self.ivars().gate_navigation_ended(navigation);
         }
 
         #[unsafe(method(webView:didFailProvisionalNavigation:withError:))]
         fn did_fail_provisional(
             &self,
             _web_view: &WKWebView,
-            _navigation: Option<&WKNavigation>,
+            navigation: Option<&WKNavigation>,
             error: &NSError,
         ) {
             tracing::warn!(
@@ -122,7 +152,7 @@ define_class!(
                 error.localizedDescription()
             );
             self.ivars().nav_state.set(NavState::Failed);
-            self.ivars().gate_finished();
+            self.ivars().gate_navigation_ended(navigation);
         }
 
         /// web content process가 끝나면 Linux처럼 게이트 로드를 끝낸다(ADR-0053, 실기 미측정).
@@ -164,20 +194,30 @@ define_class!(
                 // SAFETY: main thread WebKit delegate 호출. targetFrame()/isMainFrame()/
                 // navigationType()은 이 호출 동안 유효한 navigation_action을 읽는다.
                 #[allow(clippy::multiple_unsafe_ops_per_block)]
-                let (main_frame, reload) = unsafe {
+                let (target_main_frame, reload) = unsafe {
                     (
-                        navigation_action
-                            .targetFrame()
-                            .is_some_and(|f| f.isMainFrame()),
+                        navigation_action.targetFrame().map(|f| f.isMainFrame()),
                         navigation_action.navigationType() == WKNavigationType::Reload,
                     )
                 };
-                // 같은 문서의 fragment 이동은 로드가 아니므로 건너뛴다. 재로드는 fragment가 있어도 거친다.
-                if main_frame && (reload || !gate.is_fragment_move(url)) {
-                    gate.load_started();
-                    let js = gate.main_response(url);
-                    // SAFETY: main thread WebKit delegate 호출. preferences는 이 호출 동안 유효하다.
-                    unsafe { preferences.setAllowsContentJavaScript(js) };
+                match target_main_frame {
+                    // 같은 문서의 fragment 이동은 로드가 아니므로 건너뛴다. 재로드는 fragment가 있어도 거친다.
+                    Some(true) if reload || !gate.is_fragment_move(url) => {
+                        gate.load_started();
+                        let js = gate.main_response(url);
+                        // provisional 시작이 새 세대를 기록할 때까지 어떤 종료든 이 로드를 끝낸다.
+                        self.ivars().gate_load_pending.set(true);
+                        *self.ivars().gate_navigation.borrow_mut() = None;
+                        // SAFETY: main thread WebKit delegate 호출. preferences는 이 호출 동안 유효하다.
+                        unsafe { preferences.setAllowsContentJavaScript(js) };
+                    }
+                    // 서브프레임은 기본 preferences(JS 켬) 대신 main frame 문서에 대한 판단을 받는다(실기 미측정).
+                    Some(false) => {
+                        let js = gate.effective_js();
+                        // SAFETY: main thread WebKit delegate 호출. preferences는 이 호출 동안 유효하다.
+                        unsafe { preferences.setAllowsContentJavaScript(js) };
+                    }
+                    _ => {}
                 }
             }
             if let Some(url) = url {
@@ -207,6 +247,8 @@ impl NavDelegate {
             nav_state,
             pending_navigations,
             script_gate,
+            gate_load_pending: Cell::new(false),
+            gate_navigation: RefCell::new(None),
         });
         // SAFETY: NSObject 의 지정 초기화자 init 을 super 로 호출.
         unsafe { msg_send![super(this), init] }
