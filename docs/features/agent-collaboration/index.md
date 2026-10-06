@@ -87,7 +87,7 @@ DAG는 별도 영속 레코드가 아니라 workspace의 task에서 도출한다
 
 ID는 explicit의 `d:<metadata.dag 값>` 또는 derived의 `c:<root task id>`다. root는 그룹에서 `(created_at, id)`가 가장 작은 작업이다. 같은 작업 집합은 같은 ID를 가지며 전체 식별에는 `(workspace_id, id)`를 쓴다.
 
-`dag_list`의 각 항목에는 `id`, `workspace_id`, `name`, `source`(`explicit` 또는 `derived`), `task_count`, `state_counts`(상태 8종과 그중 경로가 선택되지 않은 수 `not_selected`), `rollup_state`, `created_at`, `updated_at`, `root_task_ids`, `has_cycle`이 있다. `root_task_ids`는 흐름의 시작점이다. 그룹 안의 선행을 기다리지 않고, 그룹 안 다른 작업의 fallback(`Fallback.task`·`metadata.fallback_of`)이나 전이 대상도 아닌 작업이다. `include_tasks:true`일 때만 `task_ids`를 포함한다. rollup 판단 순서는 running → failed → 전부 종결(succeeded/skipped) → ready → waiting이다.
+`dag_list`의 각 항목에는 `id`, `workspace_id`, `name`, `source`(`explicit` 또는 `derived`), `task_count`, `state_counts`(상태 8종과, 그중 경로가 선택되지 않은 수 `not_selected`·fallback 이 대신 성공한 실패 수 `recovered`), `rollup_state`, `created_at`, `updated_at`, `root_task_ids`, `has_cycle`이 있다. `root_task_ids`는 흐름의 시작점이다. 그룹 안의 선행을 기다리지 않고, 그룹 안 다른 작업의 fallback(`Fallback.task`·`metadata.fallback_of`)이나 전이 대상도 아닌 작업이다. `include_tasks:true`일 때만 `task_ids`를 포함한다. rollup 판단 순서는 running → failed → 전부 종결(succeeded/skipped) → ready → waiting이다. failed 는 fallback 이 대신하지 못한 실패가 있을 때만이다. 같은 그룹의 fallback(`Fallback.task` 또는 `metadata.fallback_of` 로 main 을 가리키는 inline fallback)이 성공한 실패는 `recovered` 로 세고 실패로 보지 않는다. fallback 도 실패했으면 그 fallback 의 fallback 을 따라간다. 그룹 밖의 fallback 은 보지 않는다. 전부 종결이면 cancelled 가 없고 skipped 가 모두 선택되지 않은 것일 때 succeeded, 아니면 skipped 다.
 
 workspace_id를 생략하면 살아 있는 모든 workspace를 조회하고 `scope: "live_workspaces"`로 범위를 알린다. 삭제된 workspace의 고아 작업은 제외하며 부팅 GC가 정리한다. `dag_get`은 선택한 DAG의 부분집합으로 `task_graph`와 같은 nodes·edges 또는 dot을 만든다.
 

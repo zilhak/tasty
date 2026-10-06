@@ -23,7 +23,7 @@ v2 그래프는 depends_on·binding 으로 순서와 값을 잇지만, 결과에
 - 전이 대상은 제어 엣지로 들어온다. 그 엣지가 하나라도 고르기 전에는 실행하지 않는다. depends_on·binding·reduce 입력은 선택되지 않은 선행을 기다리지 않는다(합류). 선택된 선행이 실패하면 합류 task 는 실패 전파를 받는다.
 - 선택되지 않을 수 있는 task 의 출력을 필수 입력으로 읽으면서 그 task 가 아닌 경로로도 실행될 수 있는 task 는 제출 때 거절한다. 대안 경로의 값은 `one_of`, 없어도 되는 값은 optional·default 로 적는다. 전이 대상은 continue_downstream 을 쓸 수 없고 fallback 대상일 수 없다.
 - v2 task 의 `retry` 는 `reset_downstream` 을 거절한다. 하류는 이미 이전 회차의 실패나 경로로 판정됐고, 되감으면 같은 그래프에서 두 회차의 판단이 섞인다. 새 회차를 열면 저장된 경로와 skip 이유를 지운다.
-- DAG 집계는 선택되지 않은 task 를 `not_selected` 로 세고, 성공과 선택되지 않음만 있으면 그래프를 `succeeded` 로 본다. `task_graph` 는 전이를 `transition` 간선과 선택 상태(`pending`·`selected`·`not_selected`·`unavailable`)로 보인다.
+- DAG 집계는 선택되지 않은 task 를 `not_selected` 로 센다. fallback 이 대신 성공한 실패는 `recovered` 로 세고 실패로 보지 않는다(설계 §10 확장: fallback 은 실패를 처리한 정상 경로다). 성공·선택되지 않음·fallback 이 대신한 실패만 있으면 그래프를 `succeeded` 로 본다. 이 집계 규칙은 v1 fallback 에도 적용한다. fallback 이 끝내 성공하지 못하면 `failed` 다. `task_graph` 는 전이를 `transition` 간선과 선택 상태(`pending`·`selected`·`not_selected`·`unavailable`)로 보인다.
 
 현재 동작은 [agent runner 가이드](../dev-guide/agent-runner.md)의 "전이 조건과 경로 선택" 절에 있다.
 
@@ -33,6 +33,7 @@ v2 그래프는 depends_on·binding 으로 순서와 값을 잇지만, 결과에
 - 경로는 출력에서 결정적으로 정해지므로 완료 지문은 바뀌지 않는다. 같은 보고를 다시 내면 같은 경로가 나온다.
 - 기존 v2 그래프의 판정이 바뀐다. 갈래가 없더라도 Skipped 선행의 하류는 전과 같이 실패 전파를 받지만, 건너뛴 이유(`skip`)가 레코드에 남는다. v1 task 의 판정은 그대로다.
 - v2 task 를 고치고 하류까지 다시 돌리려면 새 그래프를 보내야 한다.
+- fallback 으로 복구한 그래프는 v1·v2 모두 DAG 목록에서 `failed` 가 아니라 `succeeded` 로 보인다. 실패한 main 은 `state_counts.failed`·`recovered` 와 task 상태로 그대로 확인한다. main 의 실패로 건너뛴 소비자가 있으면 rollup 은 `skipped` 다.
 - DAG 화면은 전이 간선을 아직 depends_on 과 같은 모양으로 그린다. 선택 상태를 구분하는 표현은 디자인을 받은 뒤 반영한다.
 
 ## Alternatives Considered
@@ -40,6 +41,7 @@ v2 그래프는 depends_on·binding 으로 순서와 값을 잇지만, 결과에
 - **조건을 소비자(대상 task)에 둔다.** 대상마다 생산자의 출력 구조를 다시 적어야 하고, 대상들의 조건이 서로 배타적인지 한곳에서 검사할 수 없다.
 - **일반 표현식 언어(CEL 등)를 쓴다.** 타입 검사와 겹침 검사를 제출 때 하기 어렵고, 조건이 출력 밖의 값을 읽을 여지가 생긴다.
 - **선택되지 않음을 새 TaskState 로 둔다.** 모든 상태 소비자(필터·UI·CLI·이벤트)를 바꿔야 한다. Skipped 와 이유 필드로 같은 구분을 하면서 기존 소비자를 유지했다.
+- **fallback 이 대신한 실패도 rollup 을 failed 로 둔다.** 전이의 미선택처럼 정해진 처리 경로를 따라 끝난 그래프를 실패로 보여, 실제로 복구하지 못한 그래프와 목록에서 구별되지 않는다.
 - **retry 의 reset_downstream 으로 하류를 되감는다.** 이미 실행된 갈래의 결과를 되돌릴 수 없고, 되감은 하류가 이전 회차의 실패 전파와 다른 경로로 실행된다.
 
 ## Reconsideration Triggers

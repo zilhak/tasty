@@ -40,6 +40,7 @@
 ### Changed
 
 - **보조키 도움말 패널 오른쪽 아래에 크기 조절 그립이 보인다.** 전에는 끌 수 있는 자리만 있고 표시가 없었다. 이제 디자인과 같은 대각선 두 줄을 그린다.
+- **fallback 이 대신 성공한 실패는 DAG 를 실패로 만들지 않는다.** DAG 요약의 `state_counts.recovered` 가 같은 그룹의 fallback(그 fallback 의 fallback 포함)이 성공한 실패 수를 센다. 성공·선택되지 않음·fallback 이 대신한 실패만 있으면 `rollup_state` 는 `succeeded` 다. 타입 계약이 없는 작업의 fallback 에도 적용된다. 이전에는 실패가 하나라도 있으면 `failed` 였다.
 - **`tasty memory put --surface <ID>`(와 secret 저장)는 열린 서피스에만 저장한다.** 이전에는 닫았거나 없는 서피스 ID 범위에도 저장돼 정리되지 않는 값이 남았다. 이제 서피스를 못 찾았다는 오류(`-32602`)로 거절한다. 읽기와 삭제는 그대로라 예전에 남은 값은 `tasty memory list --surface <ID>`로 찾아 `tasty memory delete`로 지울 수 있다.
 - **타입을 정한 작업의 `task-retry --reset-downstream` 을 거절한다.** 뒤따르는 작업은 이전 실행의 실패나 고른 경로대로 이미 끝났으므로 되감지 않는다. `-32602` 로 답하며, `--reset-downstream` 없이 재시도하면 그 작업만 다시 실행한다. 타입 계약이 없는 작업은 그대로다.
 - **설정 › 기타 › 스크립트의 자동 실행 트리거 칩이 좁아졌다.** 칩 좌우 여백을 시안대로 8px에서 4px로 줄였다.

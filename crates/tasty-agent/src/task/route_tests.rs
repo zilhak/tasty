@@ -822,3 +822,32 @@ fn a_stored_route_and_skip_reason_survive_a_reload() {
     let wire = serde_json::to_value(ship).unwrap();
     assert_eq!(wire["skip"], json!({"reason": "branch_not_selected"}));
 }
+
+/// 전이와 fallback 이 섞인 그래프: 선택된 a 가 실패하고 fallback 이 대신 성공하면, 선택되지 않은
+/// b 와 함께 DAG 는 성공이다.
+#[test]
+fn a_selected_branch_recovered_by_its_fallback_rolls_up_as_succeeded() {
+    let (_td, mut mem, seq) = fresh();
+    let mut store = TaskStore::new(&mut mem, "_host", &seq);
+    submit(
+        &mut store,
+        json!({"contract_version": 2, "types": review_types(), "tasks": [
+            {"id": "p", "command": custom(), "output_schema": {"ref": "ReviewResult"},
+             "transitions": {"cases": [{"when": verdict_is("pass"), "to": ["a"]}],
+                             "otherwise": ["b"]}},
+            {"id": "a", "command": custom(), "on_failure": {"kind": "fallback", "task": "fb"}},
+            {"id": "fb", "command": custom()},
+            {"id": "b", "command": custom()},
+            {"id": "after", "command": custom(), "depends_on": ["a"]}]}),
+    )
+    .expect("submit");
+    run(&mut store, "p", json!({"verdict": "pass", "confidence": 1}));
+    run_fail(&mut store, "a");
+    run(&mut store, "fb", json!({}));
+    run(&mut store, "after", json!({}));
+    let d = &group_tasks_into_dags(&store.list(1).unwrap())[0];
+    assert_eq!(d.state_counts.failed, 1);
+    assert_eq!(d.state_counts.recovered, 1);
+    assert_eq!(d.state_counts.not_selected, 1);
+    assert_eq!(d.rollup_state, "succeeded");
+}

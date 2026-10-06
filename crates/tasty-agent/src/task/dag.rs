@@ -30,6 +30,8 @@ pub struct DagStateCounts {
     pub unknown: usize,
     /// `skipped` 중 경로가 선택되지 않아 끝난 v2 task. 실패가 아니다.
     pub not_selected: usize,
+    /// `failed` 중 같은 그룹의 fallback 이 성공해 대신한 task. rollup 에서 실패로 세지 않는다.
+    pub recovered: usize,
 }
 
 impl DagStateCounts {
@@ -50,7 +52,7 @@ impl DagStateCounts {
     }
 
     /// DAG 하나의 대표 상태. 판정 순서는 화면의 상태칩 색과 직결되므로 고정이다:
-    /// `running` 하나라도 있으면 `running` → `failed` 하나라도 있으면 `failed` →
+    /// `running` 하나라도 있으면 `running` → fallback 이 대신하지 못한 `failed` 가 있으면 `failed` →
     /// 전부 terminal 이면 `succeeded`(succeeded 와 선택되지 않은 경로뿐) 또는 `skipped`
     /// (cancelled 나 실패 전파로 skip 된 task 섞임) → `ready` 하나라도 있으면 `ready` → 그 외 `waiting`.
     ///
@@ -59,7 +61,7 @@ impl DagStateCounts {
         if self.running > 0 {
             return "running";
         }
-        if self.failed > 0 {
+        if self.failed > self.recovered {
             return "failed";
         }
         // 여기 도달하면 running/failed 는 0 이므로, 비-terminal 로 남은 건
@@ -215,6 +217,29 @@ fn weakly_connected_components<'a>(pool: &[&'a Task]) -> Vec<Vec<&'a Task>> {
     components.into_values().collect()
 }
 
+/// 실패한 task 를 그룹 안의 fallback 이 대신 성공했는가. fallback 도 실패했으면 그 fallback 의
+/// fallback 을 따라간다. 그룹 밖 fallback 은 보지 않는다. `seen` 은 fallback 순환을 끊는다.
+fn recovered_by_fallback<'a>(task: &'a Task, group: &[&'a Task], seen: &mut Vec<&'a str>) -> bool {
+    if !matches!(task.state, TaskState::Failed { .. }) || seen.contains(&task.id.as_str()) {
+        return false;
+    }
+    seen.push(task.id.as_str());
+    let fallback = match &task.on_failure {
+        OnFailure::Fallback { task: Some(id), .. } => group.iter().find(|t| &t.id == id),
+        OnFailure::Fallback {
+            inline: Some(_), ..
+        } => group.iter().find(|t| {
+            t.metadata.get("fallback_of").and_then(|v| v.as_str()) == Some(task.id.as_str())
+        }),
+        _ => None,
+    };
+    match fallback {
+        Some(fb) if fb.state == TaskState::Succeeded => true,
+        Some(fb) => recovered_by_fallback(fb, group, seen),
+        None => false,
+    }
+}
+
 /// task 가 참조하지만 흐름은 task 에서 그쪽으로 가는 id: 전이 대상과 fallback task.
 fn forward_refs(task: &Task) -> Vec<&str> {
     let mut out: Vec<&str> = super::route::transition_targets(task)
@@ -242,6 +267,9 @@ fn summarize(
     let mut updated_at = 0u64;
     for t in &sorted {
         state_counts.add(t);
+        if recovered_by_fallback(t, &sorted, &mut Vec::new()) {
+            state_counts.recovered += 1;
+        }
         created_at = created_at.min(t.created_at);
         updated_at = updated_at
             .max(t.finished_at.unwrap_or(0))

@@ -2060,6 +2060,84 @@ fn a_task_with_a_fallback_stays_a_dag_root() {
     assert_eq!(dags[0].root_task_ids, vec!["main".to_string()]);
 }
 
+fn failed_with(id: &str, fallback: Option<&str>, at: u64) -> Task {
+    let mut t = dag_task(id, &[], at);
+    t.state = TaskState::Failed {
+        error: "boom".into(),
+    };
+    if let Some(fb) = fallback {
+        t.on_failure = OnFailure::Fallback {
+            task: Some(fb.to_string()),
+            inline: None,
+        };
+    }
+    t
+}
+
+fn with_state(mut t: Task, state: TaskState) -> Task {
+    t.state = state;
+    t
+}
+
+/// fallback 이 대신 성공한 실패는 DAG 를 실패로 만들지 않는다. fallback 도 실패하면 그 fallback 의
+/// fallback 을 따라가고, 끝내 성공하지 못하면 실패다.
+#[test]
+fn a_failure_its_fallback_recovered_does_not_fail_the_dag() {
+    let ok = TaskState::Succeeded;
+    let recovered = vec![
+        failed_with("main", Some("fb"), 1000),
+        with_state(dag_task("fb", &[], 1001), ok.clone()),
+        with_state(dag_task("use", &["main"], 1002), ok.clone()),
+    ];
+    let d = &group_tasks_into_dags(&recovered)[0];
+    assert_eq!((d.state_counts.failed, d.state_counts.recovered), (1, 1));
+    assert_eq!(d.rollup_state, "succeeded");
+
+    let chained = vec![
+        failed_with("main", Some("fb1"), 1000),
+        failed_with("fb1", Some("fb2"), 1001),
+        with_state(dag_task("fb2", &[], 1002), ok.clone()),
+    ];
+    let d = &group_tasks_into_dags(&chained)[0];
+    assert_eq!((d.state_counts.failed, d.state_counts.recovered), (2, 2));
+    assert_eq!(d.rollup_state, "succeeded");
+
+    let unrecovered = vec![
+        failed_with("main", Some("fb"), 1000),
+        failed_with("fb", None, 1001),
+    ];
+    let d = &group_tasks_into_dags(&unrecovered)[0];
+    assert_eq!((d.state_counts.failed, d.state_counts.recovered), (2, 0));
+    assert_eq!(d.rollup_state, "failed");
+
+    // 서로를 fallback 으로 가리키는 순환은 끝나야 하고 실패로 남는다.
+    let cyclic = vec![
+        failed_with("x", Some("y"), 1000),
+        failed_with("y", Some("x"), 1001),
+    ];
+    let d = &group_tasks_into_dags(&cyclic)[0];
+    assert_eq!(d.state_counts.recovered, 0);
+    assert_eq!(d.rollup_state, "failed");
+
+    // inline fallback 은 실패 뒤 만든 task 가 fallback_of 로 main 을 가리킨다.
+    let mut main = failed_with("main", None, 1000);
+    main.on_failure = OnFailure::Fallback {
+        task: None,
+        inline: Some(Box::new(InlineFallbackSpec {
+            name: "fb".into(),
+            command: run_cmd(),
+            depends_on_override: None,
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::json!({}),
+        })),
+    };
+    let mut fb = with_state(dag_task("fb", &[], 1001), ok);
+    fb.metadata = serde_json::json!({"fallback_of": "main"});
+    let d = &group_tasks_into_dags(&[main, fb])[0];
+    assert_eq!(d.state_counts.recovered, 1);
+    assert_eq!(d.rollup_state, "succeeded");
+}
+
 /// 실패 뒤 만든 inline fallback 은 `metadata.fallback_of` 로 main 을 가리킨다. 이것도 시작점이 아니다.
 #[test]
 fn a_materialized_inline_fallback_is_not_a_dag_root() {

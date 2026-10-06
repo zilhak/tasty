@@ -1,4 +1,4 @@
-<!-- source-hash: 94a51ad81405 -->
+<!-- source-hash: 78de55953aa2 -->
 <a id="task-dag"></a>
 
 # Task workflows (DAG)
@@ -136,7 +136,7 @@ Give a task `transitions` and it picks which tasks run next from its result. In 
 - Always say what happens when nothing holds: tasks to run (`otherwise`) or run nothing (`"no_match": "finish"`).
 - Tasks that were not chosen, and tasks reached only through them, end as "not selected", not as failures. A task where branches meet waits only for the branches that ran. If a branch that ran fails, that failure still passes on.
 - Taking a required input from a branch that may not run is rejected when you send the graph. If each branch produces the value in a different task, take it with `one_of`. If the value may be missing, make the input field optional or give it a default.
-- A task's `route` shows the tasks it chose, and a task that was not chosen shows why in `skip`. When every task succeeded or was not selected, the DAG shows as succeeded.
+- A task's `route` shows the tasks it chose, and a task that was not chosen shows why in `skip`. When every task succeeded or was not selected, the DAG shows as succeeded. A failed task whose fallback succeeded in its place does not make the DAG fail.
 
 ## Watching progress
 
