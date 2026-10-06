@@ -326,6 +326,8 @@ fn render_frame(rt: &mut Runtime, capture: Option<&std::path::Path>) -> anyhow::
         &screen_descriptor,
     );
 
+    // egui가 칠하지 않은 자리도 본문 배경과 같게 보이도록 선택한 테마의 bg-app으로 지운다.
+    let clear = rt.gallery.theme.bg_app().to_gpu_rgba();
     {
         let render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("gallery_pass"),
@@ -334,9 +336,9 @@ fn render_frame(rt: &mut Runtime, capture: Option<&std::path::Path>) -> anyhow::
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Clear(wgpu::Color {
-                        r: 0.05,
-                        g: 0.05,
-                        b: 0.07,
+                        r: f64::from(clear.r()),
+                        g: f64::from(clear.g()),
+                        b: f64::from(clear.b()),
                         a: 1.0,
                     }),
                     store: wgpu::StoreOp::Store,
