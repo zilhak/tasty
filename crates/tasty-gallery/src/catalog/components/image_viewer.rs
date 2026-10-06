@@ -54,7 +54,34 @@ const SIZE_INPUT_W: LogicalPx = LogicalPx(64.0);
 /// Save As 경로 줄의 입력과 찾아보기 버튼 간격.
 const PATH_ROW_GAP: LogicalPx = LogicalPx(6.0);
 
-pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
+/// Plugins 페이지의 image 섹션: 보기 화면과 편집 모드 두 spec.
+pub fn section() -> crate::catalog::Section {
+    crate::catalog::Section {
+        id: "image-viewer",
+        title: "Image surface / canvas",
+        specs: vec![spec(), paint_spec()],
+    }
+}
+
+fn spec() -> crate::catalog::Spec {
+    crate::catalog::Spec {
+        id: "image-viewer",
+        title: "Image surface / canvas",
+        when: Some("Toolbar + zoom · canvas=bg-sidebar · loaded / no-image fallback"),
+        draw,
+    }
+}
+
+fn paint_spec() -> crate::catalog::Spec {
+    crate::catalog::Spec {
+        id: "image-paint",
+        title: "Image — paint bar · floating selection · popups",
+        when: Some("edit mode · 8 handles · New Image · Save As"),
+        draw: draw_paint,
+    }
+}
+
+fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Column, |ui| {
         spec::cluster(ui, theme, "viewer — image loaded", |ui| {
             surface(ui, theme, true);
@@ -302,7 +329,7 @@ fn glyph(ui: &egui::Ui, center: egui::Pos2, size: f32, color: egui::Color32) {
 }
 
 /// 편집 모드: paint bar · floating selection, 그리고 New Image · Save As 팝업.
-pub fn draw_paint(ui: &mut egui::Ui, theme: &Theme) {
+fn draw_paint(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         spec::cluster(ui, theme, "edit · floating selection", |ui| {
             paint_surface(ui, theme);

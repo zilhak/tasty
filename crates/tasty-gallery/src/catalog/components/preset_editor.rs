@@ -1222,14 +1222,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
          (accent 22% band + 2px accent 55% divider, crosshair cursor) that splits toward the edge; \
          active/hovered mini tabs show a close × (hidden when a pane has one tab); the add-tab + is \
          22px with an overlay-hover fill. Because the specimen is static, zone/× hover and the \
-         crosshair are drawn as fixed-state examples — live tracking runs only in the host.",
-    );
-    spec::note(
-        ui,
-        theme,
-        "Split direction follows the edge: left/top add the new surface before (left / above), \
-         right/bottom after. Below ~46px on an axis that axis's bands drop out so tiny leaves stay \
-         selectable. Empty-list scope shows \"No presets saved yet.\" in the left list.",
+         crosshair are drawn as fixed-state examples — live tracking runs only in the host. Split \
+         direction follows the edge: left/top add the new surface before, right/bottom after. Below \
+         ~46px on an axis that axis's bands drop out. Empty-list scope shows \"No presets saved yet.\"",
     );
 
     spec::dont(

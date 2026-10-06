@@ -2309,24 +2309,7 @@ pub fn pages() -> Vec<Page> {
                         components::markdown_viewer::callout_kinds_spec(),
                     ],
                 ),
-                section(
-                    "image-viewer",
-                    "Image surface / canvas",
-                    vec![
-                        spec(
-                            "image-viewer",
-                            "Image surface / canvas",
-                            Some("Toolbar + zoom · canvas=bg-sidebar · loaded / no-image fallback"),
-                            components::image_viewer::draw,
-                        ),
-                        spec(
-                            "image-paint",
-                            "Image — paint bar · floating selection · popups",
-                            Some("edit mode · 8 handles · New Image · Save As"),
-                            components::image_viewer::draw_paint,
-                        ),
-                    ],
-                ),
+                components::image_viewer::section(),
                 section(
                     "html-chrome",
                     "HTML (webview) chrome",
