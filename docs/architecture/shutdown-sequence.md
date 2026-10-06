@@ -92,7 +92,7 @@ present 한다. **부팅과 같은 렌더 함수와 화면 구성**이고 다른
 | phase | 문구 키 | 프레임을 넘기는가 |
 |-------|---------|-------------------|
 | `SavingLayout` | `shutdown.phase_saving_layout` | publication·닫기 정리·View 저장·retirement가 남으면 Waiting으로 다음 회차에서 관측. 닫기 정리의 receipt 대기는 관측을 멈추지 않지만 종료는 이를 기다린다. 이 대기 동안 plugin pump가 돌지 않으므로 이 단계가 plugin 회수 응답을 직접 처리한다. 상한은 receipt 시한(5초)이며, 시한이 지나면 닫기는 `Uncertain`으로 기록되고 한 번 응답한 뒤 종료가 이어진다 |
-| `ReclaimingBootWorker` | `shutdown.phase_finishing_startup` | 예 (부팅 중 종료 전용) |
+| `ReclaimingBootWorker` | `shutdown.phase_stopping_background_worker` | 예 (부팅 중 종료 전용) |
 | `ClosingSurfaces` | `shutdown.phase_closing_surfaces` | runner stop의 실제 join 관측 등이 남으면 기한까지 Waiting. 완료 또는 명시한 미회수 처리 뒤 다음 단계로 진행 |
 | `StoppingPlugins` | `shutdown.phase_stopping_plugins` | 남은 대상이 있으면 다음 회차에서 확인. kill·wait는 동기 호출 |
 
@@ -120,7 +120,7 @@ SavingLayout과 ClosingSurfaces가 1ms 미만으로 끝난 측정은 아래 조�
   ([ADR-0016](../adr/0016-window-platform-and-shutdown.md)). 창 없는 블로킹 경로도
   같은 루프를 쓰므로 함께 덮인다.
 
-갤러리 specimen 은 Chrome 카테고리의 "Shutdown loading screen" — 부팅 specimen 과
+갤러리 specimen 은 Chrome 카테고리의 "Shutdown screen" — 부팅 specimen 과
 같은 `draw_frame` 을 공유해 두 화면의 동일성을 눈으로 확인하는 자리다.
 
 ## 헤드리스와의 비대칭

@@ -1225,7 +1225,7 @@ phase_restoring_layout = "Restoring layout…"
 
 [shutdown]
 phase_saving_layout = "Saving layout…"
-phase_finishing_startup = "Finishing startup…"
+phase_stopping_background_worker = "Stopping background worker…"
 phase_closing_surfaces = "Closing surfaces…"
 phase_stopping_plugins = "Stopping plugins…"
 

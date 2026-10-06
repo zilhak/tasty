@@ -1221,7 +1221,7 @@ phase_restoring_layout = "레이아웃 복원 중…"
 
 [shutdown]
 phase_saving_layout = "레이아웃 저장 중…"
-phase_finishing_startup = "시작 마무리 중…"
+phase_stopping_background_worker = "백그라운드 작업 종료 중…"
 phase_closing_surfaces = "서피스 정리 중…"
 phase_stopping_plugins = "플러그인 종료 중…"
 

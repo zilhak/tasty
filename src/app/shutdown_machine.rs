@@ -42,7 +42,7 @@ impl ShutdownPhase {
     pub(crate) fn text_key(&self) -> &'static str {
         match self {
             Self::SavingLayout => "shutdown.phase_saving_layout",
-            Self::ReclaimingBootWorker { .. } => "shutdown.phase_finishing_startup",
+            Self::ReclaimingBootWorker { .. } => "shutdown.phase_stopping_background_worker",
             Self::ClosingSurfaces => "shutdown.phase_closing_surfaces",
             Self::StoppingPlugins | Self::Done | Self::Exited => "shutdown.phase_stopping_plugins",
         }

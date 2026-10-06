@@ -2283,23 +2283,15 @@ pub fn pages() -> Vec<Page> {
                 ),
                 section(
                     "shutdown-loading",
-                    "Shutdown loading screen",
-                    vec![
-                        spec(
-                            "shutdown-loading-default",
-                            "Default — 1280×720",
-                            Some("Same lockup as boot — only the phase text differs"),
-                            chrome_loading::draw_shutdown_default,
+                    "Shutdown screen",
+                    vec![spec(
+                        "shutdown-loading",
+                        "Same surface as boot, shutdown phases",
+                        Some(
+                            "Shown only while quitting has work to wait for — values identical to boot",
                         ),
-                        spec(
-                            "shutdown-loading-phases",
-                            "Phase text — four variants",
-                            Some(
-                                "SavingLayout / ReclaimingBootWorker / ClosingSurfaces / StoppingPlugins",
-                            ),
-                            chrome_loading::draw_shutdown_phases,
-                        ),
-                    ],
+                        chrome_loading::draw_shutdown,
+                    )],
                 ),
             ],
         },

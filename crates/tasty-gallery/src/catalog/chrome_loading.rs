@@ -224,57 +224,83 @@ pub fn draw_latte(ui: &mut egui::Ui, _theme: &Theme) {
     );
 }
 
-pub fn draw_shutdown_phases(ui: &mut egui::Ui, theme: &Theme) {
-    ui.horizontal_wrapped(|ui| {
-        ui.spacing_mut().item_spacing.x = theme.spacing_lg.value();
-        for text in [
-            "Saving layout…",
-            "Finishing startup…",
-            "Closing surfaces…",
-            "Stopping plugins…",
-        ] {
-            draw_frame(
-                ui,
-                theme,
-                egui::vec2(CANVAS_MULTI.0, CANVAS_MULTI.1),
-                Some(text),
-            );
-        }
-    });
-    meta(
+/// 종료 단계 비교 칸을 줄여 보이는 배율. 시안 `BootFrame w={640} h={480} z={0.5}`.
+const SHUTDOWN_PHASE_ZOOM: f32 = 0.5;
+/// 종료 단계 문구. 본체 `ShutdownPhase::text_key`의 영어 문구와 같은 순서다.
+const SHUTDOWN_PHASES: [&str; 4] = [
+    "Saving layout…",
+    "Stopping background worker…",
+    "Closing surfaces…",
+    "Stopping plugins…",
+];
+
+/// `canvas` 크기 창을 `zoom` 배율로 줄여 그린다. 크기 토큰도 같은 배율의 Theme 에서 읽는다.
+fn draw_scaled_frame(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    canvas: (f32, f32),
+    zoom: f32,
+    phase_text: &str,
+) {
+    let zoomed =
+        Theme::with_colors_and_zoom(theme.to_colors(), theme.is_light, theme.ui_zoom * zoom);
+    draw_frame(
         ui,
-        theme,
-        &[
-            ("SavingLayout", "\"Saving layout…\""),
-            ("ReclaimingBootWorker", "\"Finishing startup…\""),
-            ("ClosingSurfaces", "\"Closing surfaces…\""),
-            ("StoppingPlugins", "\"Stopping plugins…\""),
-        ],
-        &[],
-    );
-    note(
-        ui,
-        theme,
-        "Only the two waiting phases (ReclaimingBootWorker, StoppingPlugins) survive a frame — the other two advance within the frame they enter, so they are rarely seen.",
+        &zoomed,
+        egui::vec2(canvas.0, canvas.1) * zoom,
+        Some(phase_text),
     );
 }
 
-pub fn draw_shutdown_default(ui: &mut egui::Ui, theme: &Theme) {
-    draw_default_preview(ui, theme, "Stopping plugins…");
+/// 시안 "Shutdown screen": 부팅과 같은 화면에 종료 단계 문구만 다르다.
+pub fn draw_shutdown(ui: &mut egui::Ui, theme: &Theme) {
+    draw_default_preview(ui, theme, SHUTDOWN_PHASES[0]);
+    ui.add_space(theme.spacing_lg.value());
+    egui::Grid::new("shutdown_phase_grid")
+        .num_columns(2)
+        .spacing(egui::vec2(
+            theme.spacing_lg.value(),
+            theme.spacing_lg.value(),
+        ))
+        .show(ui, |ui| {
+            for (i, text) in SHUTDOWN_PHASES.iter().enumerate() {
+                draw_scaled_frame(ui, theme, CANVAS_MIN, SHUTDOWN_PHASE_ZOOM, text);
+                if i % 2 == 1 {
+                    ui.end_row();
+                }
+            }
+        });
     meta(
         ui,
         theme,
         &[
-            ("window", "1280×720 default · shown at 60%"),
-            ("phase", "StoppingPlugins"),
-            ("lockup", "identical to boot"),
+            (
+                "surface · stack",
+                "identical to boot (lockup → space-xl → spinner → space-lg → phase slot)",
+            ),
+            ("1 · SavingLayout", "Saving layout…"),
+            ("2 · ReclaimingBootWorker", "Stopping background worker…"),
+            ("3 · ClosingSurfaces", "Closing surfaces…"),
+            ("4 · StoppingPlugins", "Stopping plugins…"),
+            ("nothing to wait for", "no frame — the window closes"),
+            ("theme", "follows the saved theme, like boot"),
         ],
-        &[],
+        &[
+            TokenChip::new("bg-app", "full surface", theme.bg_app().to_egui()),
+            TokenChip::new(
+                "accent-primary",
+                "spinner arc",
+                theme.accent_primary().to_egui(),
+            ),
+            TokenChip::new("text-muted", "phase", theme.text_muted().to_egui()),
+        ],
     );
     note(
         ui,
         theme,
-        "A shutdown with nothing to wait for never renders this frame at all — the state machine reaches Done inside its first drive.",
+        "No new tokens. Phase copy is i18n (shutdown.phase_saving_layout · \
+         shutdown.phase_stopping_background_worker · shutdown.phase_closing_surfaces · \
+         shutdown.phase_stopping_plugins); keep the trailing ellipsis character.",
     );
 }
 

@@ -181,8 +181,7 @@ fn loading_specimen_은_헤드리스로_렌더된다() {
     run_frames(|ui| chrome_loading::draw_phases(ui, &theme));
     run_frames(|ui| chrome_loading::draw_no_text(ui, &theme));
     run_frames(|ui| chrome_loading::draw_latte(ui, &theme));
-    run_frames(|ui| chrome_loading::draw_shutdown_default(ui, &theme));
-    run_frames(|ui| chrome_loading::draw_shutdown_phases(ui, &theme));
+    run_frames(|ui| chrome_loading::draw_shutdown(ui, &theme));
 }
 
 #[test]
