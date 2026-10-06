@@ -597,7 +597,10 @@ fn default_shell() -> String {
 }
 
 /// `inherited` 중 제거 대상 키(`tasty_utils::process::is_stripped_inherited_env`)를 자식 환경에서 지운다.
-fn strip_inherited_env(cmd: &mut CommandBuilder, inherited: impl IntoIterator<Item = OsString>) {
+fn strip_inherited_env(
+    cmd: &mut CommandBuilder,
+    inherited: impl IntoIterator<Item = (OsString, OsString)>,
+) {
     for key in tasty_utils::process::env_keys_to_strip(inherited) {
         cmd.env_remove(&key);
     }
@@ -638,7 +641,7 @@ fn build_shell_command(
         cmd.env("TASTY_PARENT_HOME", &home);
     }
 
-    strip_inherited_env(&mut cmd, std::env::vars_os().map(|(key, _)| key));
+    strip_inherited_env(&mut cmd, std::env::vars_os());
 
     // Add tasty's own binary directory to PATH so `tasty` CLI works inside the
     // terminal. hook_runtime::trigger::spawn_shell 와 동일한 보강을 공유
@@ -703,12 +706,12 @@ mod tests {
     /// Claude Code 세션 키와 CMUX_* 는 지우고 TASTY_*·일반 키는 남긴다.
     #[test]
     fn claude_session_and_cmux_env_are_stripped_but_tasty_env_is_kept() {
-        use tasty_test_support::strip_env_keys::{KEPT, STRIPPED};
+        use tasty_test_support::strip_env_keys::{KEPT, STRIPPED, inherited};
         let mut cmd = CommandBuilder::new("/bin/sh");
-        for key in STRIPPED.iter().chain(KEPT) {
-            cmd.env(key, "1");
+        for (key, value) in inherited() {
+            cmd.env(key, value);
         }
-        strip_inherited_env(&mut cmd, STRIPPED.iter().chain(KEPT).map(OsString::from));
+        strip_inherited_env(&mut cmd, inherited());
         for key in STRIPPED {
             assert_eq!(cmd.get_env(key), None, "{key} 는 지워져야 한다");
         }

@@ -226,9 +226,9 @@ mod tests {
     /// 전역 훅도 터미널 셸과 같은 목록으로 Claude Code 세션 키와 CMUX_* 를 지우고 나머지는 남긴다.
     #[test]
     fn global_hook_strips_claude_session_and_cmux_env() {
-        use tasty_test_support::strip_env_keys::{KEPT, STRIPPED};
+        use tasty_test_support::strip_env_keys::{KEPT, STRIPPED, inherited};
         use tasty_utils::process::env_keys_to_strip;
-        let strip = env_keys_to_strip(STRIPPED.iter().chain(KEPT).map(std::ffi::OsString::from));
+        let strip = env_keys_to_strip(inherited());
         let cmd = global_hook_command("true", strip);
         let removed: Vec<_> = cmd
             .get_envs()

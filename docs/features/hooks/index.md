@@ -111,7 +111,7 @@ webhook은 요청별 스레드에서 실행하므로 이 순서에 포함되지 
 
 - **key 정규화**: ASCII 영숫자는 대문자로, 그 외 문자는 `_` 로. 정규화 결과가 겹치거나 위 예약 변수와 겹치면 **먼저 온 값을 사용하고** 나머지는 무시한다. payload 안에서 서로 다른 원본 key 가 정규화 후 충돌하는 경우(예: `pr-id` vs `pr_id`)만 warn 하고, 예약 변수와의 충돌은 조용히 무시한다(`surface_id` 처럼 이벤트가 발생할 때마다 생기는 정상 경로). 영숫자가 없는 key 는 건너뜀.
 - **값**: 문자열은 그대로, 그 외 JSON 은 compact 표현. NUL 문자는 제거(플랫폼 env 제약), 값당 4096 바이트 초과분은 절단(Windows env 블록 상한 보호).
-- **상속 env 제거**: 셸 명령(`ShellCommand`)·직접 실행 명령·surface 훅 명령 모두 Tasty 프로세스에서 상속한 `CMUX_*` 와 Claude Code 세션 표지·비밀 변수(`CLAUDECODE`·`CLAUDE_CODE_CHILD_SESSION`·`CLAUDE_CODE_MESSAGING_TOKEN` 등 13개)를 지운다. 사용자가 넣는 `CLAUDE_CODE_*` 설정은 남는다. 터미널 셸과 같은 목록이다([터미널 자식 셸 환경변수](../terminal/index.md#pty-셸)).
+- **상속 env 제거**: 셸 명령(`ShellCommand`)·직접 실행 명령·surface 훅 명령 모두 Tasty 프로세스에서 상속한 `CMUX_*` 와 Claude Code 세션 표지·비밀 변수(`CLAUDECODE`·`CLAUDE_CODE_CHILD_SESSION`·`CLAUDE_CODE_MESSAGING_TOKEN`·`CLAUDE_PLUGIN_OPTION_*` 등)와 Claude Code 가 넣은 `AI_AGENT` 값을 지운다. 사용자가 넣는 `CLAUDE_CODE_*` 설정은 남는다. 터미널 셸과 같은 목록이다([터미널 자식 셸 환경변수](../terminal/index.md#pty-셸)).
 - **데이터/흐름 분리**: env 는 값 전달 전용 — 실행할 명령(command/args)은 레지스트리 owner 가 고정하므로 payload 가 실행 대상을 바꿀 수 없다.
 
 참조 대상 핸들러 레지스트리는 [Settings › Handler › Hook Handlers](../settings/screens/settings.md) 서브탭에서도 조회·편집할 수 있다(user 매핑은 `~/.tasty/hook-handlers.toml` 영속). 시퀀스(`IpcSequence`) 본문은 그 서브탭에 편집 자리가 없고 아래 [핸들러 레지스트리 CLI](#핸들러-레지스트리-hook_handler)가 그 자리다.

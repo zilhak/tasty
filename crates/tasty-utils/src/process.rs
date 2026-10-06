@@ -21,13 +21,17 @@ pub fn hide_console(cmd: &mut Command) -> &mut Command {
 }
 
 /// Tasty 를 띄운 프로세스에서 상속되지만 Tasty 가 띄우는 자식(터미널 셸·훅 명령)에
-/// 넘기지 않는 환경변수의 접두사. `CMUX_` 는 자식에서 cmux CLI 가
-/// 동작하지 않게 한다.
-pub const STRIPPED_ENV_PREFIXES: &[&str] = &["CMUX_"];
+/// 넘기지 않는 환경변수의 접두사.
+/// - `CMUX_`: 자식에서 cmux CLI 가 동작하지 않게 한다.
+/// - `CLAUDE_PLUGIN_OPTION_`: Claude Code 가 플러그인 훅 자식에 플러그인 사용자 옵션을
+///   `CLAUDE_PLUGIN_OPTION_<KEY>` 로 주입하는 이름공간이다(2.1.291, 훅 env 조립에서
+///   `CLAUDE_PLUGIN_ROOT`·`CLAUDE_PLUGIN_DATA` 와 같은 자리). 키 이름이 플러그인 옵션마다
+///   달라 이름 목록으로 쓸 수 없고 사용자가 직접 넣는 이름공간이 아니어서 접두사로 지운다.
+pub const STRIPPED_ENV_PREFIXES: &[&str] = &["CMUX_", "CLAUDE_PLUGIN_OPTION_"];
 
-/// Claude Code 가 자기 세션의 자식에 표지·비밀로 넣는 환경변수. 바깥 Claude 세션에서 Tasty 를
-/// 띄웠을 때 이 값이 남으면 자식에서 띄운 Claude 가 자신을 자식 세션으로 판단해 transcript 를
-/// 쓰지 않고, 세션 비밀(`CLAUDE_CODE_MESSAGING_TOKEN`)이 무관한 프로세스로 샌다.
+/// Claude Code 가 자기 세션의 자식에 표지·비밀·세션 값으로 넣는 환경변수. 바깥 Claude 세션에서
+/// Tasty 를 띄웠을 때 이 값이 남으면 자식에서 띄운 Claude 가 자신을 자식 세션으로 판단해
+/// transcript 를 쓰지 않고, 세션 비밀(`CLAUDE_CODE_MESSAGING_TOKEN`)이 무관한 프로세스로 샌다.
 ///
 /// 접두사(`CLAUDE_CODE_`)로 지우지 않는다. 그 이름공간의 대부분은 사용자가 직접 넣는 설정
 /// (`CLAUDE_CODE_GIT_BASH_PATH`·`CLAUDE_CODE_OAUTH_TOKEN` 등)이다. 목록은 Claude Code 2.1.291
@@ -35,17 +39,22 @@ pub const STRIPPED_ENV_PREFIXES: &[&str] = &["CMUX_"];
 /// - Bash·훅 자식에 넣는 키: `CLAUDECODE`·`CLAUDE_CODE_SESSION_ID`·`CLAUDE_CODE_CHILD_SESSION`·
 ///   `CLAUDE_CODE_SESSION_ATTENDED`·`CLAUDE_PID`·`CLAUDE_EFFORT`, 셸 스냅숏 키
 ///   `CLAUDE_CODE_EXECPATH`·`CLAUDE_CODE_INVOKED_SKILLS`.
-/// - 플러그인 훅·MCP 자식에 넣는 키: `CLAUDE_PLUGIN_DATA`.
+/// - 플러그인 훅·MCP 자식에 넣는 키: `CLAUDE_PLUGIN_ROOT`·`CLAUDE_PLUGIN_DATA`·
+///   `CLAUDE_PROJECT_DIR`, SessionStart·Setup·CwdChanged·FileChanged 훅에만 넣는 `CLAUDE_ENV_FILE`.
 /// - Claude 가 자기 프로세스에 두어 상속되는 키: `CLAUDE_CODE_ENTRYPOINT`·
 ///   `CLAUDE_CODE_BRIDGE_SESSION_ID`·`CLAUDE_CODE_MESSAGING_SOCKET`·`CLAUDE_CODE_MESSAGING_TOKEN`.
 ///   마지막 셋과 세션 키는 Claude 가 새 Claude 를 띄울 때 스스로 지우는 목록에도 있다.
 ///
-/// `AI_AGENT`·`TRACEPARENT` 는 Claude 전용 이름이 아니어서 넣지 않는다.
+/// `AI_AGENT` 는 값으로 판정한다([`STRIPPED_ENV_VALUE_PREFIXES`]). `TRACEPARENT` 는 W3C
+/// trace-context 표준 이름이라 넣지 않는다.
 pub const STRIPPED_ENV_NAMES: &[&str] = &[
     "CLAUDECODE",
     "CLAUDE_PID",
     "CLAUDE_EFFORT",
+    "CLAUDE_PLUGIN_ROOT",
     "CLAUDE_PLUGIN_DATA",
+    "CLAUDE_PROJECT_DIR",
+    "CLAUDE_ENV_FILE",
     "CLAUDE_CODE_SESSION_ID",
     "CLAUDE_CODE_CHILD_SESSION",
     "CLAUDE_CODE_SESSION_ATTENDED",
@@ -57,22 +66,45 @@ pub const STRIPPED_ENV_NAMES: &[&str] = &[
     "CLAUDE_CODE_BRIDGE_SESSION_ID",
 ];
 
-/// `key` 가 자식에게 넘기지 않는 상속 환경변수인지 판정한다. Tasty 가 넣는 TASTY_* 는 대상이 아니다.
-pub fn is_stripped_inherited_env(key: &str) -> bool {
-    STRIPPED_ENV_NAMES.contains(&key) || STRIPPED_ENV_PREFIXES.iter().any(|p| key.starts_with(p))
+/// 이름은 여러 도구가 함께 쓰지만 Claude Code 가 넣은 값만 지우는 환경변수와 그 값 접두사.
+/// `AI_AGENT` 는 에이전트가 실행한 명령임을 알리는 관례 이름이다. Claude Code 2.1.291 은 Bash
+/// 자식에 `claude-code_<버전>_<출처>` 를 넣고, 자기 프로세스에서는 `claude-code_` 나
+/// `claude-code/` 로 시작하는 값을 자기 값으로 보고 덮어쓴다. 같은 기준으로 두 접두사의 값만
+/// 지우고 사용자나 다른 도구가 넣은 값은 남긴다.
+pub const STRIPPED_ENV_VALUE_PREFIXES: &[(&str, &[&str])] =
+    &[("AI_AGENT", &["claude-code_", "claude-code/"])];
+
+/// `key=value` 가 자식에게 넘기지 않는 상속 환경변수인지 판정한다. Tasty 가 넣는 TASTY_* 는 대상이 아니다.
+pub fn is_stripped_inherited_env(key: &str, value: &std::ffi::OsStr) -> bool {
+    if STRIPPED_ENV_NAMES.contains(&key) || STRIPPED_ENV_PREFIXES.iter().any(|p| key.starts_with(p))
+    {
+        return true;
+    }
+    STRIPPED_ENV_VALUE_PREFIXES
+        .iter()
+        .find(|(name, _)| *name == key)
+        .is_some_and(|(_, prefixes)| {
+            value
+                .to_str()
+                .is_some_and(|v| prefixes.iter().any(|p| v.starts_with(p)))
+        })
 }
 
-/// `inherited` 키 중 자식 환경에서 지울 키를 고른다. UTF-8 이 아닌 키는 목록과 같을 수 없어 건너뛴다.
-pub fn env_keys_to_strip(inherited: impl IntoIterator<Item = OsString>) -> Vec<OsString> {
+/// `inherited` 의 `(키, 값)` 중 자식 환경에서 지울 키를 고른다. UTF-8 이 아닌 키는 목록과 같을 수
+/// 없어 건너뛴다.
+pub fn env_keys_to_strip(
+    inherited: impl IntoIterator<Item = (OsString, OsString)>,
+) -> Vec<OsString> {
     inherited
         .into_iter()
-        .filter(|k| k.to_str().is_some_and(is_stripped_inherited_env))
+        .filter(|(k, v)| k.to_str().is_some_and(|k| is_stripped_inherited_env(k, v)))
+        .map(|(k, _)| k)
         .collect()
 }
 
 /// 현재 프로세스 환경에서 자식에게 넘기지 않을 키.
 pub fn process_env_keys_to_strip() -> Vec<OsString> {
-    env_keys_to_strip(std::env::vars_os().map(|(k, _)| k))
+    env_keys_to_strip(std::env::vars_os())
 }
 
 /// 현재 실행 파일의 디렉터리를 base PATH 앞에 붙인다. 패키징된 앱의 제한된 PATH에서도

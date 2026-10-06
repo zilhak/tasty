@@ -148,12 +148,17 @@ impl Drop for EnvVarGuard {
 /// 터미널 셸·surface 훅·전역 훅·hook_handler 실행 네 경로의 시험이 같은 목록을 쓴다.
 /// 출하 크레이트 밖에 두어 목록을 고쳐도 번들 플러그인의 배포 내용이 바뀌지 않는다.
 pub mod strip_env_keys {
-    /// 지워야 하는 키.
+    use std::ffi::OsString;
+
+    /// 지워야 하는 키. 값은 [`inherited`] 가 정한다.
     pub const STRIPPED: &[&str] = &[
         "CLAUDECODE",
         "CLAUDE_PID",
         "CLAUDE_EFFORT",
+        "CLAUDE_PLUGIN_ROOT",
         "CLAUDE_PLUGIN_DATA",
+        "CLAUDE_PROJECT_DIR",
+        "CLAUDE_ENV_FILE",
         "CLAUDE_CODE_SESSION_ID",
         "CLAUDE_CODE_CHILD_SESSION",
         "CLAUDE_CODE_SESSION_ATTENDED",
@@ -163,7 +168,9 @@ pub mod strip_env_keys {
         "CLAUDE_CODE_MESSAGING_TOKEN",
         "CLAUDE_CODE_INVOKED_SKILLS",
         "CLAUDE_CODE_BRIDGE_SESSION_ID",
+        "CLAUDE_PLUGIN_OPTION_API_KEY",
         "CMUX_SOCKET_PATH",
+        "AI_AGENT",
     ];
 
     /// 지우지 않아야 하는 키. 사용자가 넣는 Claude Code 설정과 Claude 전용이 아닌 이름을 포함한다.
@@ -176,26 +183,66 @@ pub mod strip_env_keys {
         "CLAUDE_CODE_OAUTH_TOKEN",
         "CLAUDE_CODE_FORCE_SESSION_PERSISTENCE",
         "CLAUDE_CODE_USE_BEDROCK",
-        "AI_AGENT",
         "TRACEPARENT",
         "ANTHROPIC_API_KEY",
         "MY_CLAUDECODE",
     ];
 
+    /// `AI_AGENT` 에 Claude Code 2.1.291 이 Bash 자식에 넣는 형태의 값을 준다.
+    pub const CLAUDE_AI_AGENT: &str = "claude-code_2-1-291_agent";
+
+    /// 시험에 쓸 값. `AI_AGENT` 만 Claude 가 넣은 값이고 나머지는 판정에 영향 없는 값이다.
+    pub fn value_for(key: &str) -> &'static str {
+        if key == "AI_AGENT" {
+            CLAUDE_AI_AGENT
+        } else {
+            "1"
+        }
+    }
+
+    /// [`STRIPPED`] 와 [`KEPT`] 를 상속 환경처럼 `(키, 값)` 으로 늘어놓는다.
+    pub fn inherited() -> Vec<(OsString, OsString)> {
+        STRIPPED
+            .iter()
+            .chain(KEPT)
+            .map(|k| (OsString::from(k), OsString::from(value_for(k))))
+            .collect()
+    }
+
     #[cfg(test)]
     mod tests {
-        use std::ffi::OsString;
+        use std::ffi::{OsStr, OsString};
 
-        use super::{KEPT, STRIPPED};
-        use tasty_utils::process::env_keys_to_strip;
+        use super::{STRIPPED, inherited};
+        use tasty_utils::process::{env_keys_to_strip, is_stripped_inherited_env};
 
         /// 공용 판정이 Claude Code 세션 키와 CMUX_* 는 고르고 사용자 설정·TASTY_*·일반 키는 남긴다.
         #[test]
         fn claude_session_and_cmux_keys_are_stripped_but_others_are_kept() {
-            let all = STRIPPED.iter().chain(KEPT).map(OsString::from);
-            let picked = env_keys_to_strip(all);
+            let picked = env_keys_to_strip(inherited());
             let expected: Vec<OsString> = STRIPPED.iter().map(OsString::from).collect();
             assert_eq!(picked, expected);
+        }
+
+        /// `AI_AGENT` 는 Claude Code 가 넣은 값만 지우고 사용자·다른 도구의 값은 남긴다.
+        #[test]
+        fn ai_agent_is_stripped_only_for_claude_code_values() {
+            for v in [
+                "claude-code_2-1-291_agent",
+                "claude-code_2-1-291_harness",
+                "claude-code/1.0",
+            ] {
+                assert!(
+                    is_stripped_inherited_env("AI_AGENT", OsStr::new(v)),
+                    "{v} 는 지워야 한다"
+                );
+            }
+            for v in ["my-agent", "codex", "", "x-claude-code_"] {
+                assert!(
+                    !is_stripped_inherited_env("AI_AGENT", OsStr::new(v)),
+                    "{v} 는 남겨야 한다"
+                );
+            }
         }
     }
 }
