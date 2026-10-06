@@ -513,7 +513,7 @@ fn trigger_chip(
     let micro = th.font_size_micro.value();
     let glyph = th.icon_glyph_size_xs.value(); // 12
     let gap = th.spacing_xs.value(); // 4 (라벨↔글리프)
-    let pad_x = th.spacing_sm.value(); // 8 (좌우)
+    let pad_x = th.spacing_xs.value(); // 4 (좌우, 시안 `padding: 0 space-xs`)
     let galley = ui.painter().layout_no_wrap(
         event.to_owned(),
         egui::FontId::monospace(micro),
