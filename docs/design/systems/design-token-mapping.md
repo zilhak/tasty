@@ -13,7 +13,7 @@ Claude Design의 `tokens/semantic.css`·`tokens/primitives.css`와 Tasty Theme�
 | `surface-raised` | `surface0` | `#313244` | 카드·입력·메뉴·command_palette 본문, secondary 버튼 fill |
 | `border-default` | `surface0` | `#313244` | |
 | `border-strong` | `surface1` | `#45475a` | 팝업 외곽선·강한 구분 |
-| `separator` | 흰색 8% 알파 | — | **구역 bg 위 블렌드.** base 위 → ≈surface0, mantle 위 → ≈surface1 근사. egui 는 `ui.separator()`(비가시) 대신 surface1 `hline` 으로 그린다 |
+| `separator` | 흰색 8% 알파 | — | **구역 bg 위 블렌드.** premultiplied `Theme.separator`를 `to_egui_premultiplied()`로 그린다. 예: bg-panel(base) 위 (48,48,62), 대비 1.264:1. 카드 안 구획선 전용이며 팝업 바깥 경계는 `border-strong`이다 |
 | `text-primary` | `text` | `#cdd6f4` | |
 | `text-secondary` | `subtext1` | `#bac2de` | |
 | `text-muted` | `subtext0` | `#a6adc8` | |

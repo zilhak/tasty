@@ -915,7 +915,7 @@ C 프레임보더) 중 **A 배지가 사용자 확정**되어 갤러리는 A만 
 갤러리 specimen 은 프레임을 클러스터에 **직접** 렌더한다(scrim 스테이지 미사용 — file_picker 관례,
 [design-parity-notes](design-parity-notes.md) "transfer — scrim_backdrop 스테이지…" 참조). 진행
 determinate bar 는 `Spinner` 처럼 위젯화하지 않고 painter 인라인(track `bg_app` + fill `accent_primary`,
-0ms). 폭과 여백(`transfer-*` 토큰)은 양쪽이 같은 Theme 접근자를 읽어 UI 배율을 따르고, 줄 높이는 글자 크기 ×
+0ms). 헤더 아래·푸터 위 구분선과 reason well 테두리는 `separator`(Mocha bg-panel 위 1.264:1)이고, 카드 바깥 경계만 `border-strong`이다. 디자인이 의도한 대비로 확인한 값이라 더 강한 토큰으로 바꾸지 않는다. 폭과 여백(`transfer-*` 토큰)은 양쪽이 같은 Theme 접근자를 읽어 UI 배율을 따르고, 줄 높이는 글자 크기 ×
 `line_height_ui`로 계산한다. **별도 Theme 필드 없음** — 전부 생성 접근자([design-token-mapping §transfer](design-token-mapping.md#remote-file-transfer-progresserror-09) 참조).
 i18n 6키(`transfer.progress.{title,cancel}` · `transfer.error.{title,body_suffix,dismiss,retry}`).
 
