@@ -346,7 +346,10 @@ fn header_band(
     ui.painter().hline(
         rect.x_range(),
         rect.bottom(),
-        egui::Stroke::new(th.border_width.value(), th.separator.to_egui()),
+        egui::Stroke::new(
+            th.border_width.value(),
+            th.separator.to_egui_premultiplied(),
+        ),
     );
     let inner = egui::Rect::from_min_max(
         egui::pos2(rect.left() + pad_x.value(), rect.top() + pad_y.value()),
@@ -483,7 +486,7 @@ fn reason_well(ui: &mut egui::Ui, th: &theme::Theme, reason: &str) {
         .fill(th.bg_app().into())
         .stroke(egui::Stroke::new(
             th.border_width.value(),
-            th.separator.to_egui(),
+            th.separator.to_egui_premultiplied(),
         ))
         .corner_radius(th.corner_radius.value())
         .inner_margin(egui::Margin::symmetric(
@@ -519,7 +522,10 @@ fn footer_buttons<R>(
     ui.painter().hline(
         rect.x_range(),
         rect.top(),
-        egui::Stroke::new(th.border_width.value(), th.separator.to_egui()),
+        egui::Stroke::new(
+            th.border_width.value(),
+            th.separator.to_egui_premultiplied(),
+        ),
     );
     let inner = egui::Rect::from_min_max(
         egui::pos2(rect.left() + pad_x.value(), rect.top() + pad_y.value()),
