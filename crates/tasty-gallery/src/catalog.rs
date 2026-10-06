@@ -1286,14 +1286,24 @@ pub fn pages() -> Vec<Page> {
                 section(
                     "modhint",
                     "Modifier hints",
-                    vec![spec(
-                        "modhint",
-                        "Held-modifier shortcut panel",
-                        Some(
-                            "220×400 · hold 500ms → fade in · focus-less, mouse-interactive · release vanishes",
+                    vec![
+                        spec(
+                            "modhint-hold",
+                            "Modifier hint panel — hold to reveal",
+                            Some(
+                                "floating, focus-less · 500ms hold → fade in · bottom-left default · release dismisses instantly",
+                            ),
+                            components::modifier_hint::draw_hold,
                         ),
-                        components::modifier_hint::draw,
-                    )],
+                        spec(
+                            "modhint",
+                            "Held-modifier shortcut panel",
+                            Some(
+                                "220×400 · hold 500ms → fade in · focus-less, mouse-interactive · release vanishes",
+                            ),
+                            components::modifier_hint::draw,
+                        ),
+                    ],
                 ),
                 section(
                     "approval",

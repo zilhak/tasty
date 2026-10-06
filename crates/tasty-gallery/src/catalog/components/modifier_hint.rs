@@ -2,6 +2,7 @@
 //! 갤러리는 패널이 열린 상태만 그리며 키 누름·해제와 이동·크기 조절을 처리하지 않는다.
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{ControlSize, IconButton, IconButtonVariant, kbd};
 
 use crate::catalog::icons::{MOUSE, MockGlyph};
@@ -417,7 +418,8 @@ fn chord_head(ui: &mut egui::Ui, theme: &Theme, chord: &str) {
     );
 }
 
-/// 액션 행 — (plugin 이면 agent dot) + 라벨(wrap) + 우측 Kbd.
+/// 액션 행 — (plugin 이면 agent dot) + 라벨 + 우측 Kbd. 시안 `HintRow`처럼 라벨은 한 줄로
+/// 두고 넘치면 말줄임한다.
 fn hint_row(ui: &mut egui::Ui, theme: &Theme, label: &str, binding: &str, plugin: bool) {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
@@ -436,7 +438,7 @@ fn hint_row(ui: &mut egui::Ui, theme: &Theme, label: &str, binding: &str, plugin
                             .size(theme.font_size_body.value())
                             .color(theme.modhint_row_fg().to_egui()),
                     )
-                    .wrap(),
+                    .truncate(),
                 );
             });
         });
@@ -504,4 +506,182 @@ fn role_row(ui: &mut egui::Ui, theme: &Theme, desc: &str, glyph: RoleGlyph) {
 
 fn paint_glyph(ui: &mut egui::Ui, glyph: MockGlyph, rect: egui::Rect, color: egui::Color32) {
     glyph.image(rect.height(), color).paint_at(ui, rect);
+}
+
+/// 시안 `MH_SECTIONS` — Ctrl 홀드의 기본 패널 내용.
+const DEFAULT_SECTIONS: &[Section] = &[
+    Section {
+        chord: "Ctrl",
+        rows: &[
+            ("Command palette", "Ctrl+K", false),
+            ("New tab", "Ctrl+T", false),
+            ("Close tab", "Ctrl+W", false),
+            ("Split vertical", "Ctrl+D", false),
+            ("Settings", "Ctrl+,", false),
+        ],
+        roles: &[(
+            "Preview tab-switch numbers — 1–9, 0 over each tab.",
+            RoleGlyph::Hash,
+        )],
+    },
+    Section {
+        chord: "Ctrl+Alt",
+        rows: &[
+            ("Apply workspace preset", "Ctrl+Alt+1", false),
+            ("git-helper: Stage hunk", "Ctrl+Alt+G", true),
+            ("docker: Attach shell", "Ctrl+Alt+D", true),
+        ],
+        roles: &[],
+    },
+    Section {
+        chord: "Ctrl+Shift",
+        rows: &[
+            ("New workspace", "Ctrl+Shift+N", false),
+            ("Split horizontal", "Ctrl+Shift+D", false),
+            ("Copy", "Ctrl+Shift+C", false),
+            ("Paste", "Ctrl+Shift+V", false),
+        ],
+        roles: &[],
+    },
+];
+
+/// 시안 `ModHintHoldDemo` 프레임 치수: 최대 폭 560, 높이 460, 사이드바 180.
+const HOLD_FRAME_W: LogicalPx = LogicalPx(560.0);
+const HOLD_FRAME_H: LogicalPx = LogicalPx(460.0);
+const HOLD_SIDEBAR_W: LogicalPx = LogicalPx(180.0);
+/// 시안 홀드 컨트롤 위치(`top: 20, left: 200`)와 상태 글자까지의 간격 10.
+const HOLD_CONTROL_TOP: LogicalPx = LogicalPx(20.0);
+const HOLD_CONTROL_LEFT: LogicalPx = LogicalPx(200.0);
+const HOLD_CONTROL_GAP: LogicalPx = LogicalPx(10.0);
+/// 시안 패널 기본 위치(`left: 12, bottom: 12`).
+const HOLD_PANEL_INSET: LogicalPx = LogicalPx(12.0);
+/// Overlays › Modifier hints — "hold to reveal". 시안은 누르고 있는 동안 실제로 재생하지만
+/// 갤러리는 500ms 대기를 지나 패널이 떠 있는 상태 하나만 그린다.
+pub fn draw_hold(ui: &mut egui::Ui, theme: &Theme) {
+    spec::stage(ui, theme, StageVariant::Center, |ui| hold_frame(ui, theme));
+    spec::meta(
+        ui,
+        theme,
+        &[
+            ("trigger", "modifier held 500ms"),
+            ("default size", "220 × 400"),
+            ("default pos", "bottom-left, above sidebar footer"),
+            ("appear", "fade opacity 0.2→1 · 200ms"),
+            ("release", "0ms — instant dismiss"),
+            ("focus", "never — not a focus window"),
+            ("scrim", "none"),
+        ],
+        &[
+            TokenChip::new("modhint-bg", "panel fill", theme.modhint_bg().to_egui()),
+            TokenChip::without_color("modhint-shadow", "floating lift"),
+            TokenChip::without_color("modhint-fade", "200ms fade-in"),
+            TokenChip::without_color("modhint-hold-delay", "500ms hold"),
+        ],
+    );
+    spec::note(
+        ui,
+        theme,
+        "Reduced motion skips the fade — the panel appears at full opacity the instant the 500ms \
+         hold completes. The bound modifier set is read from the same keybindings source the \
+         shortcuts use (Win/Linux: Ctrl / Alt / Shift; macOS adds Cmd / Option).",
+    );
+}
+
+/// 가짜 앱(사이드바 + 터미널 표면) 위에 누른 홀드 컨트롤과 왼쪽 아래 패널을 그린다.
+fn hold_frame(ui: &mut egui::Ui, theme: &Theme) {
+    let bw = theme.border_width.value();
+    let radius = theme.corner_radius.value();
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(HOLD_FRAME_W.value(), HOLD_FRAME_H.value()),
+        egui::Sense::hover(),
+    );
+    let painter = ui.painter_at(rect);
+    painter.rect_filled(rect, radius, theme.bg_app().to_egui());
+    let side =
+        egui::Rect::from_min_size(rect.min, egui::vec2(HOLD_SIDEBAR_W.value(), rect.height()));
+    let r = radius as u8;
+    painter.rect_filled(
+        side,
+        egui::CornerRadius {
+            nw: r,
+            sw: r,
+            ne: 0,
+            se: 0,
+        },
+        theme.bg_sidebar().to_egui(),
+    );
+    painter.vline(
+        side.right() - bw * 0.5,
+        side.y_range(),
+        egui::Stroke::new(bw, theme.separator.to_egui_premultiplied()),
+    );
+    let term = egui::Rect::from_min_max(egui::pos2(side.right(), rect.top()), rect.max);
+    painter.rect_filled(
+        term,
+        egui::CornerRadius {
+            nw: 0,
+            sw: 0,
+            ne: r,
+            se: r,
+        },
+        egui::Color32::from(theme.surface("terminal").focused_bg),
+    );
+    painter.rect_stroke(
+        rect,
+        radius,
+        egui::Stroke::new(bw, theme.border_default().to_egui()),
+        egui::StrokeKind::Inside,
+    );
+
+    let control = egui::Rect::from_min_size(
+        rect.min + egui::vec2(HOLD_CONTROL_LEFT.value(), HOLD_CONTROL_TOP.value()),
+        egui::vec2(
+            rect.width() - HOLD_CONTROL_LEFT.value(),
+            theme.button_height().value(),
+        ),
+    );
+    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(control));
+    child.horizontal_centered(|ui| {
+        ui.spacing_mut().item_spacing.x = HOLD_CONTROL_GAP.value();
+        hold_button(ui, theme);
+        ui.label(
+            egui::RichText::new("showing")
+                .monospace()
+                .size(theme.font_size_caption.value())
+                .color(theme.text_muted().to_egui()),
+        );
+    });
+
+    let pw = theme.modhint_width().value() + bw * 2.0;
+    let ph = theme.modhint_height().value() + bw * 2.0;
+    let inset = HOLD_PANEL_INSET.value();
+    let panel_rect = egui::Rect::from_min_size(
+        egui::pos2(rect.left() + inset, rect.bottom() - inset - ph),
+        egui::vec2(pw, ph),
+    );
+    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(panel_rect));
+    child.push_id("mh_hold", |ui| panel(ui, theme, "Ctrl", DEFAULT_SECTIONS));
+}
+
+/// 누르고 있는 홀드 버튼 — surface-active 채움, border-strong 테두리, Kbd + "Hold".
+fn hold_button(ui: &mut egui::Ui, theme: &Theme) {
+    let h = theme.button_height().value();
+    let bw = theme.border_width.value();
+    egui::Frame::new()
+        .fill(theme.surface_active().to_egui())
+        .stroke(egui::Stroke::new(bw, theme.border_strong().to_egui()))
+        .corner_radius(theme.corner_radius.value())
+        .inner_margin(egui::Margin::symmetric(theme.spacing_md.value() as i8, 0))
+        .show(ui, |ui| {
+            ui.set_height(h - bw * 2.0);
+            ui.horizontal_centered(|ui| {
+                ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+                kbd(ui, theme, "Ctrl");
+                ui.label(
+                    egui::RichText::new("Hold")
+                        .size(theme.font_size_body.value())
+                        .color(theme.text_secondary().to_egui()),
+                );
+            });
+        });
 }
