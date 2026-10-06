@@ -258,13 +258,40 @@ Sätteri 의 hast 플러그인(`src/lib/satteri-*.mjs`)에서 일어난다.
   latte 만 `data-theme="latte"` 를 달고, mocha 는 속성 없는 `:root` 다.
 - 코드 하이라이팅도 같은 토큰(`--tasty-color-mauve` · `-green` · `-peach` …)을
   참조하므로 테마 토글에 함께 반응한다.
-- `site/src/styles/global.css` 는 **치수만 자기 것을 갖는다.** vendor 스케일은 앱 chrome 용이라
-  (14px UI 상한, 조밀한 4/8/12 간격) 웹 본문에 그대로 쓰면 읽히지 않는다. 색은 공유하고
-  간격·폰트 크기는 공유하지 않는다.
+- 색은 모두 vendor 토큰을 쓴다. **치수(간격·크기·반경)는 출처에 따라 두 척도로 나뉜다.**
+  vendor 스케일은 앱 chrome 용이라(14px UI 상한, 조밀한 4/8/12 간격) 웹 본문에 그대로 쓰면
+  읽히지 않기 때문이다.
 
 선택은 `localStorage` 에 남고(`tasty-theme`), 저장값이 없으면 `prefers-color-scheme` 을
 따른다. 첫 페인트 전에 인라인 스크립트가 적용해 깜빡임이 없다. 옛 빌드가 저장한
 `"light"` · `"dark"` 도 그대로 해석된다.
+
+### 치수 척도의 두 출처
+
+판정 단위는 파일이 아니라 **규칙(선택자 블록)** 이다. 한 파일에 두 출처가 섞이면 규칙마다
+판정한다. 물음은 하나다 — *Claude Design 이 킷에서 이 값을 바꾸면 이 규칙도 따라 바뀌어야
+하는가.* 그렇다면 Claude Design 출처, 아니면 사이트 독자다.
+
+| 출처 | 대상 | 쓰는 척도 |
+|------|------|-----------|
+| Claude Design | `site/vendor/` 사본과 거기서 생성한 파일(`kit.css` · `tokens.css` · 갤러리). 사이트 스타일시트 안에서는 킷 컴포넌트가 그리는 앱 화면을 재현하거나 그 값을 그대로 옮기는 규칙 — 랜딩·가이드의 제품 창 chrome(`app-shell.css` 의 `.shell` · `.shell__*` · `.shell-overlays*`), 킷 창 크기를 옮긴 Settings 무대(`.anat-settings__stage`), 갤러리 경로의 `gallery-site.css` · `vendor-stamp.css`, 디자인 섹션에서 iframe 으로 띄우는 킷 문서 | Claude Design 토큰 `--tasty-*` 의 semantic 층(`--tasty-space-*`, `--tasty-radius*`, `--tasty-font-size-<역할>` …). 토큰 파일 머리말대로 primitive(`--tasty-size-N` 등)는 직접 읽지 않는다 |
+| 사이트 독자 | 사이트가 스스로 디자인한 것 — 페이지 레이아웃, 헤더 · 사이드바 · 목차, 본문 타이포그래피(`global.css`), 랜딩 섹션과 제품 창을 감싸는 카드(`landing.css` 의 `.window` 포함), 디자인 섹션의 머리 · 카드 · 타일 틀(`design.css`), 가이드 그림의 영역 라벨(`.anat*`)과 배치(`.workflow-diagram*`) | 사이트 척도 — 간격 `--sp-1`(4px) ~ `--sp-24`(96px), 반경 `--radius-sm` · `--radius` · `--radius-lg`, 레이아웃 변수(`--header-h` 등). `global.css` 의 `:root` 가 정의한다 |
+
+- 예외 하나 — 제품 창을 **페이지에 얼마나 크게 보일지**(`.shell` 의 높이 `clamp(…, vw, …)`,
+  가이드 그림의 높이 · 너비)는 킷이 정하지 않는 페이지 배치라 Claude Design 출처 규칙 안에
+  있어도 사이트 독자 값으로 본다. 반대로 킷이 정한 창 크기를 옮긴 값(Settings 1100×700)은
+  Claude Design 출처다.
+- 갤러리 경로는 `Base.astro` 를 거치지 않아 `global.css` 를 싣지 않는다. 그 경로에는 `--sp-*` 가
+  없으므로 갤러리 스타일시트는 위 표와 별개로도 `--tasty-*` 만 쓸 수 있다.
+- 사이트 척도는 **간격과 반경만** 갖는다. 글꼴 크기, 요소 크기(너비 · 높이 · 아이콘), 선 굵기,
+  pill 반경에 해당하는 사이트 변수는 없다. 사이트 독자 규칙의 이런 값은 숫자로 남기고 파일 머리
+  주석에 그 범주를 적는다. `--sp-*` 는 간격 척도라 크기 값에 빌려 쓰지 않는다.
+- 고른 척도에 대응 값이 없으면 값이 우연히 같은 다른 토큰·변수를 부르지 않고 숫자로 둔 채
+  "대응 값 없음" 주석을 단다 — 없는 관계가 생기기 때문이다. Claude Design 출처인데 토큰이 없으면
+  값을 로컬에서 정하지 않고 디자인 요청으로 올린다. 사이트 독자 척도에 필요한 값이 없어도 변수를
+  즉석에서 만들지 않는다.
+- 미디어 쿼리와 컨테이너 쿼리의 **조건**은 숫자로 남긴다. media feature 는 custom property 를
+  읽지 못한다(`@media (max-width: var(--x))` 는 파싱되지 않는다). 블록 안의 선언은 위 규칙을 따른다.
 
 ## 랜딩의 제품 창
 
