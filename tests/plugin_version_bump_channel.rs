@@ -233,6 +233,10 @@ fn the_same_change_with_a_bump_passes() {
     let (code, text) = check(d, &["--range", "HEAD^", "HEAD"]);
     assert_eq!(code, 0, "bump 했는데 막혔다:\n{text}");
     assert!(
+        text.contains("통과"),
+        "대상이 있는 통과를 통과로 표기하지 않았다:\n{text}"
+    );
+    assert!(
         text.contains("판정 대상 1 건"),
         "판정 대상 건수가 1 이 아니다(게이트가 이 변경을 아예 안 봤을 수 있다):\n{text}"
     );
