@@ -13,6 +13,7 @@ use crate::ipc::protocol::JsonRpcRequest;
 
 fn request(method: &str, params: serde_json::Value) -> JsonRpcRequest {
     JsonRpcRequest {
+        caller_agent_id: None,
         response_timeout_ms: None,
         idempotency_key: None,
         jsonrpc: "2.0".into(),
@@ -59,7 +60,7 @@ fn handler_intents_append_after_the_queue_in_request_order() {
             &mut state,
             &mut engine,
             &req,
-            &CallerContext::Local,
+            &CallerContext::local(),
         );
         assert!(
             resp.error.is_none(),
@@ -102,7 +103,7 @@ fn gate_intents_precede_the_handler_intents_of_the_same_request() {
                 "action": "notify",
             }),
         ),
-        &CallerContext::Local,
+        &CallerContext::local(),
     );
     assert!(set.error.is_none(), "cap 등록 실패: {:?}", set.error);
     assert!(state.pending_intents.is_empty());
@@ -143,7 +144,7 @@ fn a_rejected_request_leaves_the_queue_untouched() {
         &mut state,
         &mut engine,
         &request("surface.set_mark", json!({})),
-        &CallerContext::Local,
+        &CallerContext::local(),
     );
     assert!(resp.error.is_some(), "surface_id 없는 set_mark 는 거절된다");
     assert_eq!(labels(&state), ["RestoreClosedItem"]);
@@ -201,7 +202,7 @@ fn set_notify_and_approval_caps(
                     "action": action,
                 }),
             ),
-            &CallerContext::Local,
+            &CallerContext::local(),
         );
         assert!(
             resp.error.is_none(),
@@ -273,7 +274,7 @@ fn a_notify_cap_precedes_the_approval_popup_fired_by_a_telemetry_record() {
             "telemetry.record",
             json!({ "agent": "order-probe", "metric": "tokens", "value": 1 }),
         ),
-        &CallerContext::Local,
+        &CallerContext::local(),
     );
     assert!(resp.error.is_none(), "{:?}", resp.error);
 
@@ -305,7 +306,7 @@ fn intents_in_one_outbox_arrive_in_the_order_they_were_pushed() {
                 "telemetry.cap.set",
                 json!({ "agent": "order-probe", "metric": metric, "threshold": 1, "action": "notify" }),
             ),
-            &CallerContext::Local,
+            &CallerContext::local(),
         );
         assert!(
             resp.error.is_none(),
@@ -325,7 +326,7 @@ fn intents_in_one_outbox_arrive_in_the_order_they_were_pushed() {
                 { "agent": "order-probe", "metric": "m_a", "value": 1 },
             ] }),
         ),
-        &CallerContext::Local,
+        &CallerContext::local(),
     );
     assert!(resp.error.is_none(), "{:?}", resp.error);
 

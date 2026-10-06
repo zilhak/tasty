@@ -456,7 +456,7 @@ mod tests {
         let params = json!({
             "sequence": [{ "method": "notification.create", "params": { "body": "x" } }]
         });
-        let resp = handle_register(&CallerContext::Local, json!(1), &params);
+        let resp = handle_register(&CallerContext::local(), json!(1), &params);
         let msg = err_message(&resp);
         assert!(
             !msg.contains("inline 'sequence'") && !msg.contains("may only bind its own"),

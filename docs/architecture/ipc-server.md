@@ -78,6 +78,8 @@ GUI와 헤드리스는 IpcRound로 256명령 또는 16ms 중 먼저 닿는 제�
 
 응답 대기 상한은 호출자가 response_timeout_ms로 정한다. 없거나 0이면 무한 대기를 유지해 승인·task await의 의도적 대기를 자르지 않는다. 시작 뒤 만료는 -32061 결과 불명이며 취소가 아니다. 만료해도 작업은 계속될 수 있고 연결은 유지한다. 늦은 응답은 사라진 전용 수신자에게 전달 실패해 다음 요청과 섞이지 않는다. capability ipc.response-timeout으로 지원을 확인한다. 연결 끊김을 작업 취소로 해석하지 않으며 소켓 생존 감지를 통한 대기 회수는 별도 검토 대상이다.
 
+세션 토큰이 없는 요청의 선택 필드 caller_agent_id는 호출자가 스스로 밝힌 agent ID다. CLI는 자기 환경의 TASTY_AGENT_ID를 싣는다. 호스트는 이 값을 텔레메트리·감사·헤드리스 PTY 소유자 표시에만 쓰고 권한 판단에는 쓰지 않는다. 형식이 틀리면 버리고 요청은 처리한다. 세션 토큰이 있으면 무시한다. capability ipc.caller-agent-id로 지원을 알린다([ADR-0076](../adr/0076-local-caller-agent-id-is-a-self-reported-label.md)).
+
 요청은 QUEUED에서 STARTED 또는 WITHDRAWN으로 한 번만 전환한다. dequeue와 응답 대기 timeout이 공유 lifecycle을 원자적으로 비교·교환해 실행 시작 여부를 결정한다. 큐에서 기한이 지나면 권한·rate·audit 전에 -32067 미실행으로 답하고 나중에도 실행하지 않는다. 시작 뒤 만료만 -32061이다. ipc.response-timeout.not-run capability로 이를 알린다. 미실행 만료도 dequeue 전까지는 큐 장부에 남는다. timeout과 연결 종료는 실행 중 작업의 취소를 뜻하지 않는다.
 
 HostIpcInjector::dispatch는 자신의 대기 시간을 deadline으로 전달하며 1ms 미만도 1ms로 올린다. 큐에서 포기한 요청은 Expired(nothing_ran), 시작한 뒤 만료는 Timeout(결과 불명)이다. tell의 Enter 재주입과 runner는 이 기본 경로를 쓴다. 이미 발생한 사건을 늦게라도 반영해야 하는 execute_sequence의 모든 훅 단계만 dispatch_even_if_abandoned로 deadline 없이 남긴다. 시작 직전 경합과 시작 뒤 실행은 여전히 취소할 수 없다. 새 주입자는 이 차이를 명시적으로 선택해야 한다.

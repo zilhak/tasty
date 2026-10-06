@@ -34,6 +34,7 @@ impl JournalApplication {
             command,
         }];
         let request = JsonRpcRequest {
+            caller_agent_id: None,
             jsonrpc: "2.0".into(),
             method: "intent.divider".into(),
             params: serde_json::to_value(&changes).map_err(|error| error.to_string())?,

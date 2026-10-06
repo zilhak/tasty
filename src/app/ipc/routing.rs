@@ -176,6 +176,7 @@ mod namespace_forward_tests {
     fn command(method: &str, key: Option<&str>) -> (IpcCommand, mpsc::Receiver<JsonRpcResponse>) {
         let (tx, rx) = mpsc::sync_channel(4);
         let request = JsonRpcRequest {
+            caller_agent_id: None,
             jsonrpc: "2.0".into(),
             method: method.into(),
             params: json!({}),
@@ -193,7 +194,7 @@ mod namespace_forward_tests {
         let (cmd, _rx) = command(method, key);
         assert!(forward_owned_namespace(
             Some(&mut mgr),
-            &CallerContext::Local,
+            &CallerContext::local(),
             &cmd
         ));
         let sent = stub.drain_invokes();
@@ -227,10 +228,14 @@ mod namespace_forward_tests {
         let (cmd, _rx) = command("workspace.list", None);
         assert!(!forward_owned_namespace(
             Some(&mut mgr),
-            &CallerContext::Local,
+            &CallerContext::local(),
             &cmd
         ));
         assert!(stub.drain_invokes().is_empty());
-        assert!(!forward_owned_namespace(None, &CallerContext::Local, &cmd));
+        assert!(!forward_owned_namespace(
+            None,
+            &CallerContext::local(),
+            &cmd
+        ));
     }
 }

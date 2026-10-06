@@ -500,6 +500,7 @@ mod tests {
         let (mut state, mut engine_session) = crate::state::tests::test_state();
         let mut engine = engine_session.borrow_mut();
         let req = tasty_ipc::protocol::JsonRpcRequest {
+            caller_agent_id: None,
             response_timeout_ms: None,
             idempotency_key: None,
             jsonrpc: "2.0".into(),
@@ -514,7 +515,7 @@ mod tests {
             &mut state,
             &mut engine,
             &req,
-            &crate::ipc::caller::CallerContext::Local,
+            &crate::ipc::caller::CallerContext::local(),
         );
 
         assert!(
@@ -646,6 +647,7 @@ mod tests {
         gauge.close();
 
         let req = tasty_ipc::protocol::JsonRpcRequest {
+            caller_agent_id: None,
             response_timeout_ms: None,
             idempotency_key: None,
             jsonrpc: "2.0".into(),
@@ -659,7 +661,7 @@ mod tests {
             &mut state,
             &mut engine,
             &req,
-            &crate::ipc::caller::CallerContext::Local,
+            &crate::ipc::caller::CallerContext::local(),
         );
         let c = resp.result.expect("result")["connections"].clone();
         assert_eq!(c["live"], 1, "핸들러가 AppServices 의 게이지를 읽어야 한다");
@@ -700,6 +702,7 @@ mod tests {
         rx.recv().expect("프레임 하나를 받는다");
 
         let req = tasty_ipc::protocol::JsonRpcRequest {
+            caller_agent_id: None,
             response_timeout_ms: None,
             idempotency_key: None,
             jsonrpc: "2.0".into(),
@@ -713,7 +716,7 @@ mod tests {
             &mut state,
             &mut engine,
             &req,
-            &crate::ipc::caller::CallerContext::Local,
+            &crate::ipc::caller::CallerContext::local(),
         );
         let s = resp.result.expect("result")["stream_push"].clone();
         assert_eq!(s["frames_dropped"], 1, "주입된 허브의 손실이 아니다: {s}");
@@ -837,6 +840,7 @@ mod tests {
         let (reply_tx, _reply_rx) = std::sync::mpsc::sync_channel(1);
         let running = tasty_ipc::server::IpcCommand::new(
             tasty_ipc::protocol::JsonRpcRequest {
+                caller_agent_id: None,
                 response_timeout_ms: None,
                 idempotency_key: None,
                 jsonrpc: "2.0".into(),
@@ -861,6 +865,7 @@ mod tests {
                     params: serde_json::Value,
                     key: Option<&str>| {
             let req = tasty_ipc::protocol::JsonRpcRequest {
+                caller_agent_id: None,
                 response_timeout_ms: None,
                 idempotency_key: key.map(Into::into),
                 jsonrpc: "2.0".into(),
@@ -874,7 +879,7 @@ mod tests {
                 state,
                 engine,
                 &req,
-                &crate::ipc::caller::CallerContext::Local,
+                &crate::ipc::caller::CallerContext::local(),
             )
         };
         for _ in 0..2 {
@@ -1236,6 +1241,7 @@ mod tests {
                 outcome: Default::default(),
             });
         let req = tasty_ipc::protocol::JsonRpcRequest {
+            caller_agent_id: None,
             response_timeout_ms: None,
             idempotency_key: None,
             jsonrpc: "2.0".into(),
@@ -1249,7 +1255,7 @@ mod tests {
             &mut state,
             &mut engine,
             &req,
-            &crate::ipc::caller::CallerContext::Local,
+            &crate::ipc::caller::CallerContext::local(),
         );
         let result = resp.result.expect("result");
         assert_eq!(

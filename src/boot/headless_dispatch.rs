@@ -445,6 +445,7 @@ mod namespace_forward_tests {
     fn command(method: &str, key: Option<&str>) -> (IpcCommand, mpsc::Receiver<JsonRpcResponse>) {
         let (tx, rx) = mpsc::sync_channel(4);
         let request = JsonRpcRequest {
+            caller_agent_id: None,
             jsonrpc: "2.0".into(),
             method: method.into(),
             params: json!({}),

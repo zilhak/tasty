@@ -163,6 +163,7 @@ fn every_window_router_arm_declares_who_may_call_it() {
 
 fn request(method: &str) -> JsonRpcRequest {
     JsonRpcRequest {
+        caller_agent_id: None,
         response_timeout_ms: None,
         idempotency_key: None,
         jsonrpc: "2.0".into(),
@@ -184,7 +185,7 @@ fn a_plugin_only_window_arm_refuses_cli_and_agent_without_touching_the_window() 
         if *policy != WindowCallers::PluginOnly {
             continue;
         }
-        for caller in [CallerContext::Local, agent.clone()] {
+        for caller in [CallerContext::local(), agent.clone()] {
             let (mut state, mut engine_session) = crate::state::tests::test_state();
             let mut engine = engine_session.borrow_mut();
             let active_before = state.active_workspace_index(&engine);

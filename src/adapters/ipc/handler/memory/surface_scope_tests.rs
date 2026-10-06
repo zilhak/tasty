@@ -44,6 +44,7 @@ impl Fixture {
     fn call(&mut self, method: &str, params: Value) -> JsonRpcResponse {
         let mut engine = self.session.borrow_mut();
         let req = JsonRpcRequest {
+            caller_agent_id: None,
             response_timeout_ms: None,
             idempotency_key: None,
             session_token: None,
@@ -57,7 +58,7 @@ impl Fixture {
             &mut self.state,
             &mut engine,
             &req,
-            &CallerContext::Local,
+            &CallerContext::local(),
         )
     }
 }

@@ -393,7 +393,7 @@ fn digest(method: &str, params: &serde_json::Value) -> u64 {
 /// Local은 한 주체로, 플러그인과 에이전트는 각각의 ID로 구분해 다른 호출자의 응답을 섞지 않는다.
 pub(crate) fn caller_scope(caller: &CallerContext) -> String {
     match caller {
-        CallerContext::Local => "local".to_string(),
+        CallerContext::Local { .. } => "local".to_string(),
         CallerContext::Plugin { plugin_id, .. } => format!("plugin:{plugin_id}"),
         CallerContext::Agent { agent_id, .. } => format!("agent:{agent_id}"),
     }
@@ -851,7 +851,7 @@ mod tests {
         use std::collections::HashSet;
         use std::sync::Arc;
         let scopes: HashSet<String> = [
-            caller_scope(&CallerContext::Local),
+            caller_scope(&CallerContext::local()),
             caller_scope(&CallerContext::Plugin {
                 plugin_id: "p".into(),
                 permissions: Arc::new(Default::default()),
@@ -985,6 +985,7 @@ mod tests {
     #[test]
     fn a_request_without_a_key_is_untouched() {
         let req = JsonRpcRequest {
+            caller_agent_id: None,
             jsonrpc: "2.0".into(),
             method: "workspace.create".into(),
             params: json!({}),
@@ -994,7 +995,7 @@ mod tests {
             idempotency_key: None,
         };
         assert!(
-            begin(Instant::now(), &CallerContext::Local, &req, &json!(1))
+            begin(Instant::now(), &CallerContext::local(), &req, &json!(1))
                 .unwrap()
                 .is_none()
         );
@@ -1004,6 +1005,7 @@ mod tests {
     fn a_key_on_a_non_mutating_method_does_nothing() {
         for method in ["workspace.list", "workspace.update"] {
             let req = JsonRpcRequest {
+                caller_agent_id: None,
                 jsonrpc: "2.0".into(),
                 method: method.into(),
                 params: json!({}),
@@ -1013,7 +1015,7 @@ mod tests {
                 idempotency_key: Some("shared-key".into()),
             };
             assert!(
-                begin(Instant::now(), &CallerContext::Local, &req, &json!(1))
+                begin(Instant::now(), &CallerContext::local(), &req, &json!(1))
                     .unwrap()
                     .is_none(),
                 "{method} 가 보존소에 들어갔다"
@@ -1025,6 +1027,7 @@ mod tests {
     fn a_key_outside_the_length_bound_is_rejected_before_anything_runs() {
         fn keyed(key: String) -> JsonRpcRequest {
             JsonRpcRequest {
+                caller_agent_id: None,
                 jsonrpc: "2.0".into(),
                 method: "workspace.create".into(),
                 params: json!({}),
@@ -1060,6 +1063,7 @@ mod tests {
                 ("fine".to_string(), true),
             ] {
                 let req = JsonRpcRequest {
+                    caller_agent_id: None,
                     jsonrpc: "2.0".into(),
                     method: method.into(),
                     params: json!({}),
@@ -1068,18 +1072,12 @@ mod tests {
                     response_timeout_ms: None,
                     idempotency_key: Some(key.clone()),
                 };
-                let r = check_request(
-                    &mut core,
-                    &mut state,
-                    &mut engine,
-                    &req,
-                    &CallerContext::Local,
-                );
+                let local = CallerContext::local();
+                let r = check_request(&mut core, &mut state, &mut engine, &req, &local);
                 #[cfg(feature = "gui")]
                 let without_engine = Some((
                     "check_without_engine",
-                    crate::ipc::handler::check_without_engine(&req, &CallerContext::Local)
-                        .map(|_| ()),
+                    crate::ipc::handler::check_without_engine(&req, &local).map(|_| ()),
                 ));
                 #[cfg(not(feature = "gui"))]
                 let without_engine = None;
@@ -1105,6 +1103,7 @@ mod tests {
     fn a_blocked_retry_carries_no_replay_marker_though_the_contract_did_engage() {
         fn req(name: &str) -> JsonRpcRequest {
             JsonRpcRequest {
+                caller_agent_id: None,
                 jsonrpc: "2.0".into(),
                 method: "workspace.create".into(),
                 params: json!({ "name": name }),
@@ -1117,15 +1116,15 @@ mod tests {
         }
         let now = Instant::now();
         let first = req("probe-a");
-        let pending =
-            begin(now, &CallerContext::Local, &first, &json!(1)).expect("처음 보는 키는 실행이다");
+        let pending = begin(now, &CallerContext::local(), &first, &json!(1))
+            .expect("처음 보는 키는 실행이다");
         finish(now, pending, &resp(1, "ok"));
 
         let replay =
-            begin(now, &CallerContext::Local, &first, &json!(2)).expect_err("재생은 답을 낸다");
+            begin(now, &CallerContext::local(), &first, &json!(2)).expect_err("재생은 답을 낸다");
         assert!(replay.idempotent_replay, "재생에는 표지가 붙어야 한다");
 
-        let conflict = begin(now, &CallerContext::Local, &req("probe-b"), &json!(3))
+        let conflict = begin(now, &CallerContext::local(), &req("probe-b"), &json!(3))
             .expect_err("같은 키·다른 요청은 거절이다");
         assert_eq!(
             conflict.error.as_ref().expect("에러").code,
@@ -1144,6 +1143,7 @@ mod tests {
     fn app_cmd(key: &str, id: i64, name: &str) -> (IpcCommand, mpsc::Receiver<JsonRpcResponse>) {
         let (tx, rx) = mpsc::sync_channel(1);
         let req = JsonRpcRequest {
+            caller_agent_id: None,
             jsonrpc: "2.0".into(),
             method: "window.create".into(),
             params: json!({ "name": name }),
@@ -1175,7 +1175,7 @@ mod tests {
         let runs = std::cell::Cell::new(0);
         let (first, rx1) = app_cmd("app-once-probe", 1, "a");
         let out = run_app_layer(
-            &CallerContext::Local,
+            &CallerContext::local(),
             &first,
             false,
             |h| *h,
@@ -1187,7 +1187,7 @@ mod tests {
 
         let (retry, rx2) = app_cmd("app-once-probe", 2, "a");
         let out = run_app_layer(
-            &CallerContext::Local,
+            &CallerContext::local(),
             &retry,
             false,
             |h| *h,
@@ -1210,7 +1210,7 @@ mod tests {
         let unkeyed = IpcCommand::new(req, tx);
         assert!(
             run_app_layer(
-                &CallerContext::Local,
+                &CallerContext::local(),
                 &unkeyed,
                 false,
                 |h| *h,
@@ -1225,7 +1225,7 @@ mod tests {
         let seen = std::cell::Cell::new(None);
         let (first, _rx) = app_cmd("app-seq-probe", 1, "a");
         let out = run_app_layer(
-            &CallerContext::Local,
+            &CallerContext::local(),
             &first,
             false,
             |h| *h,
@@ -1245,7 +1245,7 @@ mod tests {
         let out = run_app_layer_in(
             isolated_store(),
             no_threads,
-            &CallerContext::Local,
+            &CallerContext::local(),
             &second,
             false,
             |h| *h,
@@ -1264,7 +1264,7 @@ mod tests {
         let parked: std::cell::RefCell<Option<IpcCommand>> = std::cell::RefCell::new(None);
         let (first, rx1) = app_cmd("app-join-probe", 1, "a");
         let out = run_app_layer(
-            &CallerContext::Local,
+            &CallerContext::local(),
             &first,
             false,
             |h| *h,
@@ -1279,7 +1279,7 @@ mod tests {
 
         let (retry, rx2) = app_cmd("app-join-probe", 2, "a");
         let out = run_app_layer(
-            &CallerContext::Local,
+            &CallerContext::local(),
             &retry,
             false,
             |h| *h,
@@ -1293,7 +1293,7 @@ mod tests {
 
         let (other, rx3) = app_cmd("app-join-probe", 3, "b");
         run_app_layer(
-            &CallerContext::Local,
+            &CallerContext::local(),
             &other,
             false,
             |h| *h,
@@ -1328,11 +1328,11 @@ mod tests {
     #[test]
     fn a_layer_that_does_not_handle_the_name_leaves_no_trace() {
         let (cmd, _rx) = app_cmd("app-unhandled-probe", 1, "a");
-        let out = run_app_layer(&CallerContext::Local, &cmd, false, |h| *h, |_| false);
+        let out = run_app_layer(&CallerContext::local(), &cmd, false, |h| *h, |_| false);
         assert_eq!(out, Some(false));
         let pending = begin(
             Instant::now(),
-            &CallerContext::Local,
+            &CallerContext::local(),
             &cmd.request,
             &json!(1),
         )
@@ -1345,7 +1345,7 @@ mod tests {
         let parked: std::cell::RefCell<Option<IpcCommand>> = std::cell::RefCell::new(None);
         let (first, rx1) = app_cmd("app-dropped-probe", 1, "a");
         run_app_layer(
-            &CallerContext::Local,
+            &CallerContext::local(),
             &first,
             false,
             |h| *h,
@@ -1357,7 +1357,7 @@ mod tests {
         );
         let (retry, rx2) = app_cmd("app-dropped-probe", 2, "a");
         run_app_layer(
-            &CallerContext::Local,
+            &CallerContext::local(),
             &retry,
             false,
             |h| *h,
@@ -1378,7 +1378,7 @@ mod tests {
         let runs = std::cell::Cell::new(0);
         let (again, rx3) = app_cmd("app-dropped-probe", 3, "a");
         run_app_layer(
-            &CallerContext::Local,
+            &CallerContext::local(),
             &again,
             false,
             |h| *h,
@@ -1460,6 +1460,7 @@ mod tests {
     #[test]
     fn the_process_counts_move_where_the_router_decides() {
         let req = JsonRpcRequest {
+            caller_agent_id: None,
             jsonrpc: "2.0".into(),
             method: "workspace.create".into(),
             params: json!({"name": "count-probe"}),
@@ -1470,9 +1471,9 @@ mod tests {
         };
         let before = retry_counts();
         let now = Instant::now();
-        let pending = begin(now, &CallerContext::Local, &req, &json!(1)).expect("처음 보는 키");
+        let pending = begin(now, &CallerContext::local(), &req, &json!(1)).expect("처음 보는 키");
         finish(now, pending, &resp(1, "ok"));
-        begin(now, &CallerContext::Local, &req, &json!(2)).expect_err("재생");
+        begin(now, &CallerContext::local(), &req, &json!(2)).expect_err("재생");
         let after = retry_counts();
         assert!(after.executed > before.executed, "{before:?} → {after:?}");
         assert!(after.replayed > before.replayed, "{before:?} → {after:?}");
@@ -1485,6 +1486,7 @@ mod tests {
     fn keyed(method: &str, key: &str) -> (IpcCommand, mpsc::Receiver<JsonRpcResponse>) {
         let (tx, rx) = mpsc::sync_channel(1);
         let req = JsonRpcRequest {
+            caller_agent_id: None,
             jsonrpc: "2.0".into(),
             method: method.into(),
             params: json!({}),
@@ -1505,7 +1507,7 @@ mod tests {
         let out = run_app_layer_in(
             store,
             spawn_relay,
-            &CallerContext::Local,
+            &CallerContext::local(),
             &cmd,
             true,
             |h| *h,
@@ -1515,7 +1517,7 @@ mod tests {
         let pending = begin_in(
             store,
             Instant::now(),
-            &CallerContext::Local,
+            &CallerContext::local(),
             &cmd.request,
             &json!(1),
         )
@@ -1532,7 +1534,7 @@ mod tests {
         let out = run_app_layer_in(
             store,
             spawn_relay,
-            &CallerContext::Local,
+            &CallerContext::local(),
             &cmd,
             true,
             |h| *h,
@@ -1557,7 +1559,7 @@ mod tests {
             run_app_layer_in(
                 store,
                 spawn_relay,
-                &CallerContext::Local,
+                &CallerContext::local(),
                 &cmd,
                 true,
                 |h| *h,
@@ -1581,7 +1583,7 @@ mod tests {
     fn a_forwarded_host_method_runs_once_per_key_and_the_retry_is_a_replay() {
         let held = std::cell::RefCell::new(Vec::new());
         let (first, rx1) = keyed("image.open", "forward-once-probe");
-        forward_keeping_the_key(&CallerContext::Local, &first, hold_forward(&held));
+        forward_keeping_the_key(&CallerContext::local(), &first, hold_forward(&held));
         assert_eq!(held.borrow().len(), 1, "첫 요청이 forward 되지 않았다");
         assert!(
             held.borrow()[0].request.idempotency_key.is_none(),
@@ -1593,7 +1595,7 @@ mod tests {
         assert!(!r1.idempotent_replay);
 
         let (retry, rx2) = keyed("image.open", "forward-once-probe");
-        forward_keeping_the_key(&CallerContext::Local, &retry, hold_forward(&held));
+        forward_keeping_the_key(&CallerContext::local(), &retry, hold_forward(&held));
         assert_eq!(
             held.borrow().len(),
             1,
@@ -1608,9 +1610,9 @@ mod tests {
     fn a_retry_before_the_plugin_answers_joins_the_running_forward() {
         let held = std::cell::RefCell::new(Vec::new());
         let (first, rx1) = keyed("image.open", "forward-join-probe");
-        forward_keeping_the_key(&CallerContext::Local, &first, hold_forward(&held));
+        forward_keeping_the_key(&CallerContext::local(), &first, hold_forward(&held));
         let (retry, rx2) = keyed("image.open", "forward-join-probe");
-        forward_keeping_the_key(&CallerContext::Local, &retry, hold_forward(&held));
+        forward_keeping_the_key(&CallerContext::local(), &retry, hold_forward(&held));
         assert_eq!(
             held.borrow().len(),
             1,
@@ -1645,7 +1647,7 @@ mod tests {
         let held = std::cell::RefCell::new(Vec::new());
         for _ in 0..2 {
             let (cmd, _rx) = keyed(&method, "forward-outside-probe");
-            forward_keeping_the_key(&CallerContext::Local, &cmd, hold_forward(&held));
+            forward_keeping_the_key(&CallerContext::local(), &cmd, hold_forward(&held));
         }
         table
             .write()
@@ -1676,7 +1678,7 @@ mod tests {
             let out = run_app_layer_in(
                 store,
                 no_threads,
-                &CallerContext::Local,
+                &CallerContext::local(),
                 &cmd,
                 false,
                 |h| *h,
@@ -1694,7 +1696,7 @@ mod tests {
         let out = run_app_layer_in(
             store,
             no_threads,
-            &CallerContext::Local,
+            &CallerContext::local(),
             &cmd,
             true,
             |h| *h,

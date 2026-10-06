@@ -179,7 +179,7 @@ fn send_text_wait_idle_cli_entry_point_switches_method_and_reaches_its_handler()
 #[test]
 fn session_cli_entry_points_reach_their_handlers() {
     let core = test_core();
-    let caller = CallerContext::Local;
+    let caller = CallerContext::local();
 
     let issue = command_to_request(&Commands::Session {
         command: SessionCommands::Issue {

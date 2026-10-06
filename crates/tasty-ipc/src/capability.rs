@@ -56,6 +56,11 @@ pub const CAPABILITIES: &[Capability] = &[
     Capability {
         name: crate::output_cursor::CAPABILITY,
         version: crate::output_cursor::VERSION,
+    }, // 봉투의 caller_agent_id 를 Local 호출자의 텔레메트리·감사 표시 ID 로 쓴다. 구 서버는 필드를
+    // 무시하고 `_host` 로 기록할 뿐 요청은 그대로 처리하므로 client 는 전송 전에 묻지 않는다.
+    Capability {
+        name: "ipc.caller-agent-id",
+        version: 1,
     },
 ];
 

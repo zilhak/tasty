@@ -1055,7 +1055,7 @@ mod journal_event_tests {
         let request=serde_json::from_value(serde_json::json!({"jsonrpc":"2.0","method":"workspace.create","params":{"name":"event-driven"},"id":1,"idempotency_key":"event-create"})).unwrap();
         assert!(app.journal.admit_ipc(
             &crate::ipc::server::IpcCommand::new(request, reply),
-            &crate::ipc::caller::CallerContext::Local
+            &crate::ipc::caller::CallerContext::local()
         ));
         let response = loop {
             if let Ok(response) = rx.try_recv() {

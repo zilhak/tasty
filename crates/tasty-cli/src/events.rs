@@ -139,6 +139,7 @@ fn connect(port_file: Option<&str>) -> Result<IpcConnection> {
 pub fn run_follow(args: FollowArgs<'_>, port_file: Option<&str>) -> Result<()> {
     let mut conn = connect(port_file)?;
     let session_token = std::env::var("TASTY_SESSION_TOKEN").ok();
+    let caller_agent_id = tasty_ipc::protocol::caller_agent_id_from_env();
     let mut next_id: i64 = 1;
     let mut cursor = Cursor {
         offset: args.offset,
@@ -157,6 +158,7 @@ pub fn run_follow(args: FollowArgs<'_>, port_file: Option<&str>) -> Result<()> {
             params.insert("filter".into(), json!(f));
         }
         let req = tasty_ipc::protocol::JsonRpcRequest {
+            caller_agent_id: caller_agent_id.clone(),
             response_timeout_ms: None,
             idempotency_key: None,
             jsonrpc: "2.0".to_string(),

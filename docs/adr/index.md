@@ -35,6 +35,7 @@ App·Core·View 계층과 상태 소유, 구조 도메인 이벤트 소싱, 크�
 | 0065 | [구조 journal이 원본이고 CoreState 트리는 확정 이벤트로 갱신하는 live projection이다](0065-journal-source-and-core-state-projection.md) | Accepted | 2026-09-30 | architecture, event-sourcing, domain, projection, migration |
 | 0066 | [0.x에서는 호환성을 깨는 변경을 유예 기간 없이 `(BREAK)`로 낸다](0066-pre-1-0-breaking-changes-ship-without-deprecation-period.md) | Accepted | 2026-10-06 | ipc, compatibility, versioning, changelog |
 | 0074 | [닫기의 자원 receipt 대기는 관측을 멈추지 않는다](0074-close-receipt-wait-does-not-pause-observation.md) | Accepted | 2026-10-07 | event-sourcing, effects, close, retirement, ipc, plugin |
+| 0076 | [토큰 없는 로컬 호출자의 agent ID 는 요청 봉투로 받는 자기 신고 표시값이다](0076-local-caller-agent-id-is-a-self-reported-label.md) | Accepted | 2026-10-07 | ipc, telemetry, audit, compatibility, security |
 <!-- adr-rows:end foundation -->
 
 ## 터미널과 원격 연결

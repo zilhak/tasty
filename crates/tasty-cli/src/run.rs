@@ -280,6 +280,7 @@ fn run_dynamic_client_with_auto_wait(
 
     let wait_params = build_wait_params(&aw, &first_value);
     let wait_req = tasty_ipc::protocol::JsonRpcRequest {
+        caller_agent_id: request.caller_agent_id.clone(),
         response_timeout_ms: None,
         idempotency_key: None,
         jsonrpc: "2.0".into(),

@@ -472,7 +472,7 @@ fn a_gated_caller_needs_the_namespace_token_to_reach_a_plugin_namespace() {
             .is_err()
     );
     assert!(
-        crate::caller::CallerContext::Local
+        crate::caller::CallerContext::local()
             .ensure_allowed("codex.spawn")
             .is_ok()
     );

@@ -22,7 +22,8 @@ pub enum SessionResolution {
 /// audit log 의 caller 표식. enum 으로 좁혀 trait 시그니처에 본 바이너리 타입이
 /// 새지 않게 한다.
 pub enum AuditCallerMarker {
-    Local,
+    /// Local 호출자. 값은 봉투로 밝힌 자기 신고 agent ID 이고 검증된 신원이 아니다(ADR-0076).
+    Local(Option<String>),
     Plugin(String),
     Agent(String),
 }

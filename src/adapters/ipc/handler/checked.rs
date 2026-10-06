@@ -112,7 +112,7 @@ pub(crate) fn check_without_engine<'a>(
     caller: &'a CallerContext,
 ) -> Result<CheckedRequest<'a>, JsonRpcResponse> {
     let id = request.id.clone().unwrap_or(serde_json::Value::Null);
-    if matches!(caller, CallerContext::Local) {
+    if matches!(caller, CallerContext::Local { .. }) {
         super::idempotency::check_envelope(request, &id)?;
         return Ok(CheckedRequest { request, caller });
     }
@@ -140,6 +140,7 @@ mod tests {
 
     fn request(method: &str) -> JsonRpcRequest {
         JsonRpcRequest {
+            caller_agent_id: None,
             response_timeout_ms: None,
             idempotency_key: None,
             jsonrpc: "2.0".into(),
@@ -169,7 +170,7 @@ mod tests {
     ) -> usize {
         let mut req = request("telemetry.summary");
         req.params = json!({"agent": "gate-probe", "metric": "ipc_calls"});
-        super::super::handle_with_caller(core, state, engine, &req, &CallerContext::Local)
+        super::super::handle_with_caller(core, state, engine, &req, &CallerContext::local())
             .result
             .unwrap()["total_events"]
             .as_u64()
@@ -315,7 +316,7 @@ mod tests {
         };
         assert_eq!(call(&mut core, &plugin), Some(-32007));
         // Local 은 어느 게이트에도 안 걸린다.
-        assert_eq!(call(&mut core, &CallerContext::Local), None);
+        assert_eq!(call(&mut core, &CallerContext::local()), None);
 
         let mut query = request("system.pressure");
         query.params = json!({});
@@ -324,7 +325,7 @@ mod tests {
             &mut state,
             &mut engine,
             &query,
-            &CallerContext::Local,
+            &CallerContext::local(),
         )
         .result
         .expect("local 은 조회할 수 있다");
@@ -355,7 +356,7 @@ mod tests {
                     &mut state,
                     &mut engine,
                     &req,
-                    &CallerContext::Local
+                    &CallerContext::local()
                 )
                 .error
                 .is_none()
@@ -368,7 +369,7 @@ mod tests {
     #[test]
     fn no_engine_allows_only_local_bootstrap() {
         let req = request("surface.kinds");
-        assert!(check_without_engine(&req, &CallerContext::Local).is_ok());
+        assert!(check_without_engine(&req, &CallerContext::local()).is_ok());
         assert!(check_without_engine(&req, &agent(&[Permission::SurfaceRead])).is_err());
     }
 }

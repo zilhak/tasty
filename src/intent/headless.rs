@@ -335,6 +335,7 @@ mod tests {
 
     fn request(method: &str, params: serde_json::Value) -> JsonRpcRequest {
         JsonRpcRequest {
+            caller_agent_id: None,
             response_timeout_ms: None,
             idempotency_key: None,
             jsonrpc: "2.0".to_string(),
@@ -358,7 +359,7 @@ mod tests {
             state,
             engine,
             &req,
-            &CallerContext::Local,
+            &CallerContext::local(),
         );
         assert!(resp.error.is_none(), "{method} failed: {:?}", resp.error);
     }
@@ -468,7 +469,7 @@ mod tests {
                     "command": "true",
                 }),
             ),
-            &CallerContext::Local,
+            &CallerContext::local(),
         );
         resp.result
             .as_ref()
@@ -526,7 +527,7 @@ mod tests {
                     "once": true,
                 }),
             ),
-            &CallerContext::Local,
+            &CallerContext::local(),
         );
         let hook_id = resp
             .result

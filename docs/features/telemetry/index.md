@@ -31,7 +31,7 @@ Metric(`input_tokens`/`ipc_calls`/…) × Agent(plugin 은 id 의 비허용 문�
 |--------|----------|
 | Agent (session token 동반) | 호스트가 `session.issue` 때 기록한 `agent_id`(토큰 검증 통과) |
 | Plugin process | 매니페스트 `plugin_id`(매니페스트 등록으로 인증됨) |
-| Local CLI/사용자 | sentinel `_host` |
+| Local CLI/사용자 | 요청 봉투의 `caller_agent_id`(CLI 가 자기 환경의 `TASTY_AGENT_ID` 를 싣는다, 자기 신고), 없거나 형식이 틀리면 sentinel `_host` |
 
 ```rust
 caller.agent_id()                  // CallerContext (crates/tasty-ipc/src/caller.rs)
@@ -58,13 +58,13 @@ $ TASTY_SURFACE_ID=<surface_id> TASTY_AGENT_ID=claude_s<surface_id> TASTY_SESSIO
 | `AgentId::HOST` | `"_host"` |
 | `tasty_memory::HOST_OWNER` | `"_host"` (memory.db `owner` 컬럼) |
 | `CallerContext::owner()` | Local → `_host`, Plugin → `plugin_id`, Agent → `agent_id` |
-| `CallerContext::agent_id()` | Local → `_host`, Plugin → `plugin_id`, Agent → `agent_id` |
+| `CallerContext::agent_id()` | Local → 봉투의 `caller_agent_id` 또는 `_host`, Plugin → `plugin_id`, Agent → `agent_id` |
 
-Local 분기는 `owner()` 와 `agent_id()` 모두 `_host` 다. 호스트는 요청 봉투에서 호출자의 `TASTY_AGENT_ID` 를 받지 않으므로 Local 호출자의 env 를 알 수 없다. 호스트 프로세스 자신의 `TASTY_AGENT_ID` 는 이 Tasty 를 띄운 바깥 인스턴스에서 상속한 값이라 읽지 않는다. child agent 는 `session.issue` 토큰으로 Agent 가 되어 자기 ID 로 분리된다.
+Local 분기에서 `owner()` 는 항상 `_host` 이고 `agent_id()` 는 호출자가 봉투로 밝힌 `caller_agent_id` 다. 이 값은 검증할 수 없는 자기 신고라 텔레메트리 기록(`telemetry record` 의 기본 agent, `ipc_calls` 집계)·감사 `caller_id`·헤드리스 PTY `owner_agent_id` 표시에만 쓰고, 권한·memory owner·rate limit·cap 차단 판단에는 쓰지 않는다([ADR-0076](../../adr/0076-local-caller-agent-id-is-a-self-reported-label.md)). 형식(`[a-zA-Z0-9_-]`, 64자 이하)이 틀리면 버리고 `_host` 로 기록하며 요청은 거절하지 않는다. 세션 토큰이 있으면 세션의 ID 가 우선한다. 호스트 프로세스 자신의 `TASTY_AGENT_ID` 는 이 Tasty 를 띄운 바깥 인스턴스에서 상속한 값이라 읽지 않는다. 구 서버는 봉투 필드를 무시하고 `_host` 로 기록하며, 지원 여부는 capability `ipc.caller-agent-id` 로 확인한다.
 
 #### 보안 한계
 
-토큰 없는 Local 호출은 모두 `_host` 로 묶인다 — 토큰 없이 띄운 agent 는 사용자와 구분되지 않고, `telemetry record --agent` 로 다른 id 를 적어 넣을 수 있다. 이 모델은 **악의보다 버그** 영역으로 처리한다 — *정직한 agent 의 폭주를 막는 안전망*. 적대적 agent 방어는 OS 권한·plugin 매니페스트가 우선.
+토큰 없는 Local 호출의 agent ID 는 호출자가 적어 보낸 값이다 — 다른 agent·plugin 의 ID 를 적으면 그 이름의 텔레메트리가 늘고 그 이름에 걸린 cap 이 발동할 수 있다. `telemetry record --agent` 로도 같은 일을 할 수 있다. 이 모델은 **악의보다 버그** 영역으로 처리한다 — *정직한 agent 의 폭주를 막는 안전망*. 적대적 agent 방어는 OS 권한·plugin 매니페스트가 우선.
 
 검증 가능한 신원: claude plugin 은 child 기동 때 `issue_session_token`(`crates/tasty-plugin-claude/src/handlers.rs`)으로 `session.issue` 토큰을 받아 `TASTY_SESSION_TOKEN` 으로 싣고, CLI 가 그 env 를 envelope 에 실으면 `resolve_caller_from_envelope`(`crates/tasty-ipc/src/caller.rs`)가 `CallerContext::Agent` 로 해석한다. 토큰이 잘못됐거나 만료면 Local 로 떨어지지 않고 거부된다.
 

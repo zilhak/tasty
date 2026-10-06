@@ -458,6 +458,7 @@ fn dispatch_plugin_ipc_calls_headless(
             permissions: call.permissions.clone(),
         };
         let request = crate::ipc::protocol::JsonRpcRequest {
+            caller_agent_id: None,
             response_timeout_ms: None,
             idempotency_key: None,
             jsonrpc: "2.0".to_string(),

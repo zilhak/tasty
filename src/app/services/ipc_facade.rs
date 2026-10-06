@@ -43,7 +43,9 @@ impl IpcHostFacade for AppServices {
         ts_ms: u64,
     ) {
         let (caller_kind, caller_id) = match caller {
-            AuditCallerMarker::Local => (AuditCallerKind::Local, String::new()),
+            AuditCallerMarker::Local(claimed) => {
+                (AuditCallerKind::Local, claimed.unwrap_or_default())
+            }
             AuditCallerMarker::Plugin(id) => (AuditCallerKind::Plugin, id),
             AuditCallerMarker::Agent(id) => (AuditCallerKind::Agent, id),
         };

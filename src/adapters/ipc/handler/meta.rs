@@ -115,6 +115,7 @@ mod tests {
         surface_id: u32,
     ) -> JsonRpcResponse {
         let req = JsonRpcRequest {
+            caller_agent_id: None,
             response_timeout_ms: None,
             idempotency_key: None,
             session_token: None,
@@ -123,7 +124,7 @@ mod tests {
             method: "surface.meta.set".into(),
             params: json!({ "surface_id": surface_id, "key": "role", "value": "x" }),
         };
-        super::super::handle_with_caller(core, state, engine, &req, &CallerContext::Local)
+        super::super::handle_with_caller(core, state, engine, &req, &CallerContext::local())
     }
 
     /// 라우터를 거치지 않고 핸들러를 직접 불러도 없는 surface에는 쓰지 않는다.

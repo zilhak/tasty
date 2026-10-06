@@ -35,7 +35,7 @@ fn send(
     let (tx, rx) = std::sync::mpsc::sync_channel(1);
     assert!(journal.admit_ipc(
         &crate::ipc::server::IpcCommand::new(request, tx),
-        &crate::ipc::caller::CallerContext::Local
+        &crate::ipc::caller::CallerContext::local()
     ));
     rx
 }

@@ -14,7 +14,7 @@ use tasty_ipc::protocol::JsonRpcResponse;
 
 pub(super) fn requester_from_caller(caller: &CallerContext) -> Requester {
     match caller {
-        CallerContext::Local => Requester::User,
+        CallerContext::Local { .. } => Requester::User,
         CallerContext::Plugin { plugin_id, .. } => Requester::Plugin {
             id: plugin_id.clone(),
         },
@@ -26,7 +26,7 @@ pub(super) fn requester_from_caller(caller: &CallerContext) -> Requester {
 
 pub(super) fn responder_from_caller(caller: &CallerContext) -> Responder {
     match caller {
-        CallerContext::Local => Responder::User,
+        CallerContext::Local { .. } => Responder::User,
         CallerContext::Plugin { plugin_id, .. } => Responder::Agent {
             id: plugin_id.clone(),
         },

@@ -154,6 +154,7 @@ pub fn matches_to_request(
 
     Ok((
         JsonRpcRequest {
+            caller_agent_id: tasty_ipc::protocol::caller_agent_id_from_env(),
             response_timeout_ms: None,
             idempotency_key: None,
             jsonrpc: "2.0".into(),

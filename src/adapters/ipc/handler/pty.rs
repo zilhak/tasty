@@ -407,7 +407,7 @@ pub(crate) mod tests {
         ok(handle_spawn(
             core,
             engine,
-            &CallerContext::Local,
+            &CallerContext::local(),
             json!(1),
             &json!({}),
         ))["pty_id"]
@@ -561,7 +561,7 @@ pub(crate) mod tests {
         let mut e_session = engine();
         let mut e = e_session.borrow_mut();
         let (mut c, _home) = core();
-        let caller = CallerContext::Local;
+        let caller = CallerContext::local();
 
         let resp = handle_spawn(&mut c, &mut e, &caller, json!(1), &json!({}));
         let spawned = ok(resp);
@@ -602,7 +602,7 @@ pub(crate) mod tests {
         let mut e_session = engine();
         let mut e = e_session.borrow_mut();
         let (mut c, _home) = core();
-        let caller = CallerContext::Local;
+        let caller = CallerContext::local();
         let resp = handle_spawn(
             &mut c,
             &mut e,
@@ -624,7 +624,7 @@ pub(crate) mod tests {
         e.runtime
             .terminals
             .set_standalone_limits(2, crate::runtime::terminal_store::DEFAULT_IDLE_TTL);
-        let caller = CallerContext::Local;
+        let caller = CallerContext::local();
         let a = handle_spawn(&mut c, &mut e, &caller, json!(1), &json!({}));
         let b = handle_spawn(&mut c, &mut e, &caller, json!(2), &json!({}));
         assert!(a.result.is_some());
@@ -660,7 +660,7 @@ pub(crate) mod tests {
         let factory = RecordingWakerFactory::new();
         let shared: crate::waker::SharedWakerFactory = factory.clone();
         e.runtime.waker_factory = Some(shared);
-        let caller = CallerContext::Local;
+        let caller = CallerContext::local();
 
         let a = ok(handle_spawn(&mut c, &mut e, &caller, json!(1), &json!({})))["pty_id"]
             .as_u64()
@@ -698,7 +698,7 @@ pub(crate) mod tests {
         let factory = RecordingWakerFactory::new();
         let shared: crate::waker::SharedWakerFactory = factory.clone();
         e.runtime.waker_factory = Some(shared);
-        let caller = CallerContext::Local;
+        let caller = CallerContext::local();
 
         let a = ok(handle_spawn(&mut c, &mut e, &caller, json!(1), &json!({})))["pty_id"]
             .as_u64()
@@ -784,7 +784,7 @@ pub(crate) mod tests {
         let spawned = ok(handle_spawn(
             &mut c,
             &mut e,
-            &CallerContext::Local,
+            &CallerContext::local(),
             json!(1),
             &json!({}),
         ));
@@ -824,7 +824,13 @@ pub(crate) mod tests {
         spawn_test_pty(&mut c, &mut e);
         std::thread::sleep(Duration::from_millis(5));
 
-        let resp = handle_spawn(&mut c, &mut e, &CallerContext::Local, json!(1), &json!({}));
+        let resp = handle_spawn(
+            &mut c,
+            &mut e,
+            &CallerContext::local(),
+            json!(1),
+            &json!({}),
+        );
         assert!(
             resp.error.is_none(),
             "lazy sweep 이 먼저 돌아 슬롯을 회수해야 한다 (상한 초과 실패 = lazy 가 제거된 것): {:?}",

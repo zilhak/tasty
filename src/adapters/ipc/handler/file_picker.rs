@@ -44,7 +44,7 @@ pub fn handle_trigger(
     // 결과는 플러그인에게만 전달된다. 외부 호출은 결과 없이 사용자 포커스만 바꾸므로 거절한다.
     let requester_plugin = match caller {
         CallerContext::Plugin { plugin_id, .. } => plugin_id.clone(),
-        CallerContext::Local | CallerContext::Agent { .. } => {
+        CallerContext::Local { .. } | CallerContext::Agent { .. } => {
             return JsonRpcResponse::error(
                 id,
                 -32016,
@@ -163,7 +163,7 @@ mod tests {
             agent_id: "child:1".to_string(),
             permissions: Arc::new(Default::default()),
         };
-        for caller in [CallerContext::Local, agent] {
+        for caller in [CallerContext::local(), agent] {
             let (mut state, mut engine_session) = make_test_state();
             let mut engine = engine_session.borrow_mut();
             let resp = handle_trigger(&mut state, &mut engine, &caller, json!(1), &json!({}));

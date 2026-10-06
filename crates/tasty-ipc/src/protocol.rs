@@ -51,6 +51,14 @@ pub const ERR_EXPIRED_BEFORE_RUN: i32 = -32067;
 /// never resends the external action; reconciliation must establish its result first.
 pub const ERR_OPERATION_RECOVERY_REQUIRED: i32 = -32068;
 
+/// 이 프로세스 환경의 `TASTY_AGENT_ID` 를 [`JsonRpcRequest::caller_agent_id`] 에 실을 값으로
+/// 돌려준다. 비어 있으면 싣지 않는다. 형식 검사는 호스트가 한다.
+pub fn caller_agent_id_from_env() -> Option<String> {
+    std::env::var(tasty_telemetry::AgentId::ENV_KEY)
+        .ok()
+        .filter(|s| !s.is_empty())
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JsonRpcRequest {
     pub jsonrpc: String,
@@ -62,6 +70,13 @@ pub struct JsonRpcRequest {
     /// 잘못됐거나 만료·철회된 토큰을 Local로 대신 처리하지 않는다.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_token: Option<String>,
+    /// 호출자가 스스로 밝힌 agent ID(CLI 는 자기 환경의 `TASTY_AGENT_ID`). 텔레메트리·감사·
+    /// 헤드리스 PTY 소유자 표시에만 쓰는 **자기 신고 값**이다. 로컬 IPC 에서는 누구나 아무 값이나
+    /// 적을 수 있으므로 권한·memory owner·rate limit 판단에 쓰지 않는다(ADR-0076).
+    /// `session_token` 이 있으면 세션이 정한 agent ID 가 우선하고 이 값은 무시한다.
+    /// 구 서버는 모르는 봉투 필드를 무시하고 `_host` 로 기록한다. 선언은 `ipc.caller-agent-id`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub caller_agent_id: Option<String>,
     /// 요청별 응답 대기 상한(밀리초). 생략 또는 0은 무한 대기다.
     /// 시작 전 만료는 -32067, 시작 후 결과 불명은 -32061로 답한다.
     /// 구 서버는 필드를 무시할 수 있어 ipc.response-timeout capability를 먼저 확인한다.
@@ -221,9 +236,27 @@ impl JsonRpcResponse {
 mod tests {
     use super::*;
 
+    /// 값이 없으면 봉투에 키를 싣지 않고, 키가 없는 옛 봉투도 그대로 읽는다.
+    #[test]
+    fn caller_agent_id_is_optional_on_the_wire() {
+        let old: JsonRpcRequest =
+            serde_json::from_str(r#"{"jsonrpc":"2.0","method":"system.info","id":1}"#)
+                .expect("old envelope");
+        assert_eq!(old.caller_agent_id, None);
+        let line = serde_json::to_string(&old).expect("serialize");
+        assert!(!line.contains("caller_agent_id"), "{line}");
+        let claimed = JsonRpcRequest {
+            caller_agent_id: Some("agent_a".into()),
+            ..old
+        };
+        let value = serde_json::to_value(&claimed).expect("serialize");
+        assert_eq!(value["caller_agent_id"], "agent_a");
+    }
+
     #[test]
     fn request_serialization() {
         let req = JsonRpcRequest {
+            caller_agent_id: None,
             jsonrpc: "2.0".into(),
             method: "workspace.list".into(),
             params: serde_json::json!({}),
@@ -242,6 +275,7 @@ mod tests {
     #[test]
     fn request_session_token_roundtrip() {
         let req_none = JsonRpcRequest {
+            caller_agent_id: None,
             jsonrpc: "2.0".into(),
             method: "x.y".into(),
             params: serde_json::json!({}),
@@ -255,6 +289,7 @@ mod tests {
 
         let token = "a".repeat(64);
         let req_some = JsonRpcRequest {
+            caller_agent_id: None,
             jsonrpc: "2.0".into(),
             method: "x.y".into(),
             params: serde_json::json!({}),

@@ -137,6 +137,7 @@ impl HostIpcInjector {
     ) -> Result<Value, InjectError> {
         let (resp_tx, resp_rx) = mpsc::sync_channel::<JsonRpcResponse>(1);
         let req = JsonRpcRequest {
+            caller_agent_id: None,
             response_timeout_ms: with_deadline.then(|| deadline_ms(timeout)),
             idempotency_key: None,
             jsonrpc: "2.0".to_string(),

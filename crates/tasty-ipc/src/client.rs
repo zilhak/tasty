@@ -211,6 +211,7 @@ impl IpcConnection {
     ) -> Result<&BTreeMap<String, u32>> {
         if self.capabilities.is_none() {
             let mut probe = JsonRpcRequest {
+                caller_agent_id: None,
                 jsonrpc: "2.0".to_string(),
                 method: "system.info".to_string(),
                 params: serde_json::Value::Null,
@@ -395,6 +396,7 @@ mod tests {
         );
 
         let req = JsonRpcRequest {
+            caller_agent_id: None,
             jsonrpc: "2.0".to_string(),
             method: "window.create".to_string(),
             params: serde_json::json!({}),
@@ -435,6 +437,7 @@ mod tests {
         let (mut server, _) = listener.accept().unwrap();
 
         let req = JsonRpcRequest {
+            caller_agent_id: None,
             jsonrpc: "2.0".to_string(),
             method: "markdown.recent".to_string(),
             params: serde_json::json!({}),
@@ -489,6 +492,7 @@ mod tests {
         });
 
         let req = JsonRpcRequest {
+            caller_agent_id: None,
             jsonrpc: "2.0".to_string(),
             method: "memory.put".to_string(),
             params: serde_json::json!({}),

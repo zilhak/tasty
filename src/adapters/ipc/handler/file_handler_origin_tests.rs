@@ -231,7 +231,7 @@ fn a_dispatch_without_a_popup_requests_background_creation() {
 #[test]
 fn an_external_caller_cannot_claim_a_popup() {
     let got = dispatch_then_selection(
-        &CallerContext::Local,
+        &CallerContext::local(),
         Some((PLUGIN, POPUP)),
         popup_params(),
         false,
@@ -425,7 +425,7 @@ fn a_plugin_cannot_claim_a_navigation_that_never_happened() {
 
 #[test]
 fn an_external_caller_cannot_claim_a_webview_navigation() {
-    let got = link_then_selection(&CallerContext::Local, &[gesture(true)], link_params());
+    let got = link_then_selection(&CallerContext::local(), &[gesture(true)], link_params());
     assert_eq!(got, (FileDispatchOrigin::Agent, false, false));
 }
 
@@ -433,7 +433,10 @@ fn an_external_caller_cannot_claim_a_webview_navigation() {
 /// 증명하지 못한 plugin 중계 요청에만 열리고 외부 IPC 요청에는 열리지 않는다.
 #[test]
 fn only_an_unverified_plugin_request_opens_the_fallback_picker() {
-    for (caller, opens) in [(plugin_caller(PLUGIN), true), (CallerContext::Local, false)] {
+    for (caller, opens) in [
+        (plugin_caller(PLUGIN), true),
+        (CallerContext::local(), false),
+    ] {
         let mut core = crate::adapters::ipc::handler::cli_entry_tests::test_core();
         let (mut state, mut engine_session) = source_fixture();
         let mut engine = engine_session.borrow_mut();
@@ -604,7 +607,7 @@ fn a_mirror_origin_dispatch_echoes_the_requested_depth() {
             &mut out,
             &mut scope,
             &engine.as_ref(),
-            &CallerContext::Local,
+            &CallerContext::local(),
             json!(1),
             json!({"path": "/remote/doc.md", "depth": "deep", "origin_surface_id": sid}),
         );

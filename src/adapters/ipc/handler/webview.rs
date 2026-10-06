@@ -193,7 +193,7 @@ mod tests {
     }
 
     fn set_url(engine: &crate::runtime::engine_access::EngineRef<'_>, sid: u32) -> JsonRpcResponse {
-        set_url_as(engine, &tasty_ipc::caller::CallerContext::Local, sid)
+        set_url_as(engine, &tasty_ipc::caller::CallerContext::local(), sid)
     }
 
     fn set_url_as(
@@ -244,7 +244,7 @@ mod tests {
             remote_surface(&engine.as_ref(), md_sid).webview_page_by_owner()
         };
         assert!(written_by(&plugin_caller(&owner)));
-        assert!(!written_by(&tasty_ipc::caller::CallerContext::Local));
+        assert!(!written_by(&tasty_ipc::caller::CallerContext::local()));
         assert!(written_by(&plugin_caller(&owner)));
         assert!(!written_by(&plugin_caller("com.example.other")));
     }
@@ -256,7 +256,7 @@ mod tests {
         let engine = engine_session.borrow_mut();
         let md_sid = focused_surface_id(&state, &engine.as_ref());
         let owner = plugin_caller(&remote_surface(&engine.as_ref(), md_sid).plugin_id.clone());
-        let agent = tasty_ipc::caller::CallerContext::Local;
+        let agent = tasty_ipc::caller::CallerContext::local();
 
         let took_over_after = |caller: &tasty_ipc::caller::CallerContext| {
             assert!(set_url_as(&engine.as_ref(), caller, md_sid).error.is_none());
@@ -285,7 +285,7 @@ mod tests {
         let (state, mut engine_session) = fixture(0, true);
         let engine = engine_session.borrow_mut();
         let md_sid = focused_surface_id(&state, &engine.as_ref());
-        let caller = tasty_ipc::caller::CallerContext::Local;
+        let caller = tasty_ipc::caller::CallerContext::local();
         let send = |params: serde_json::Value| {
             let resp = handle_set_url(&engine.as_ref(), &caller, json!(1), &params);
             assert!(resp.error.is_none(), "{:?}", resp.error);

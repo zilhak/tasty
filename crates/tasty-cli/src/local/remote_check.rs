@@ -82,6 +82,7 @@ fn probe_system_info(port: u16) -> Result<serde_json::Value> {
     stream.set_write_timeout(Some(PROBE_TIMEOUT))?;
 
     let request = JsonRpcRequest {
+        caller_agent_id: None,
         response_timeout_ms: None,
         idempotency_key: None,
         jsonrpc: "2.0".to_string(),

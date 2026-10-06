@@ -5073,7 +5073,7 @@ help = "数値"
 help = "演算: set | inc | dec。既定: inc"
 
 [cli.help._root.telemetry.record.arg.agent]
-help = "エージェント id (既定: 呼び出し元 — セッションのエージェント id、トークンがなければ `_host`)"
+help = "エージェント id (既定: 呼び出し元 — セッションのエージェント id、なければ TASTY_AGENT_ID、それもなければ `_host`)"
 
 [cli.help._root.telemetry.record.arg.workspace_id]
 help = "紐づけるワークスペース id (既定: アクティブなワークスペース)"

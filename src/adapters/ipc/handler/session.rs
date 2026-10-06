@@ -127,7 +127,7 @@ pub fn handle_issue(
     }
 
     let parent = match caller {
-        CallerContext::Local => None,
+        CallerContext::Local { .. } => None,
         CallerContext::Plugin { plugin_id, .. } => Some(plugin_id.clone()),
         CallerContext::Agent { agent_id, .. } => Some(agent_id.clone()),
     };
@@ -474,6 +474,6 @@ mod grant_tests {
             &own,
             owns
         ));
-        assert!(caller_may_grant(&CallerContext::Local, &own, owns));
+        assert!(caller_may_grant(&CallerContext::local(), &own, owns));
     }
 }

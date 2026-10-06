@@ -23,7 +23,7 @@ Pty가 child handle을 끝까지 소유하며 `try_wait` 결과를 보관한다.
 `pty.wait`는 이 값을 즉시 조회하며 블로킹 대기가 아니다.
 wait 실패는 내부 WaitFailed로 보존하고 기존 wire에서는 exit_code:null/success:false의 결과로 답한다.
 kill/remove 응답은 신호 전달·실제 종료·reap 완료를 모두 확인했다는 뜻이 아니다.
-owner_agent_id는 호출자의 텔레메트리 agent ID다. 세션 토큰을 쓰는 에이전트는 그 세션의 ID, 플러그인은 매니페스트 ID, 토큰 없는 로컬 호출은 `_host`다([텔레메트리 도출 규칙](../telemetry/index.md#도출-규칙)). 로컬 호출끼리는 구분하지 않으므로 강한 인증 정보로 취급하지 않는다.
+owner_agent_id는 호출자의 텔레메트리 agent ID다. 세션 토큰을 쓰는 에이전트는 그 세션의 ID, 플러그인은 매니페스트 ID, 토큰 없는 로컬 호출은 호출자가 밝힌 `TASTY_AGENT_ID`(없으면 `_host`)다([텔레메트리 도출 규칙](../telemetry/index.md#도출-규칙)). 로컬 호출의 값은 자기 신고라 위조할 수 있으므로 강한 인증 정보로 취급하지 않는다.
 
 ### ID 범위
 

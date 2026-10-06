@@ -309,6 +309,7 @@ mod tests {
     fn cmd(bound_ms: Option<u64>) -> (IpcCommand, mpsc::Receiver<JsonRpcResponse>) {
         let (tx, rx) = mpsc::sync_channel(1);
         let req = JsonRpcRequest {
+            caller_agent_id: None,
             jsonrpc: "2.0".to_string(),
             method: "workspace.create".to_string(),
             params: serde_json::Value::Null,

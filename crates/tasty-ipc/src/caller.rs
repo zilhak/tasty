@@ -76,7 +76,12 @@ impl fmt::Display for SessionToken {
 pub enum CallerContext {
     /// CLI/네트워크 IPC 클라이언트(사용자) — 모든 메서드 자동 허용.
     /// TCP 포트는 로컬 기기 액세스를 전제로 하므로 별도 권한 검사 없음.
-    Local,
+    Local {
+        /// 호출자가 요청 봉투의 `caller_agent_id` 로 밝힌 agent ID. 검증할 수 없는 자기 신고라
+        /// 텔레메트리·감사·헤드리스 PTY 소유자 표시에만 쓰고 권한·memory owner·rate limit
+        /// 판단에는 쓰지 않는다(ADR-0076). 형식이 틀렸거나 없으면 None 이다.
+        claimed_agent_id: Option<tasty_telemetry::AgentId>,
+    },
     /// 외부 plugin process가 호출. 매니페스트의 `permissions`만 허용.
     Plugin {
         plugin_id: String,
@@ -134,10 +139,32 @@ impl std::fmt::Display for CallerError {
 impl std::error::Error for CallerError {}
 
 impl CallerContext {
+    /// 자기 신고 agent ID 가 없는 Local 호출자(사용자·호스트 내부 경로).
+    pub const fn local() -> Self {
+        CallerContext::Local {
+            claimed_agent_id: None,
+        }
+    }
+
+    /// 봉투의 `caller_agent_id` 로 Local 호출자를 만든다. 텔레메트리 agent ID 형식
+    /// (`[a-zA-Z0-9_-]`, 64자 이하)이 아니면 버리고 `_host` 로 기록되게 한다. 요청은 거절하지
+    /// 않는다 — 표시용 값 때문에 사용자의 명령이 실패하면 안 된다.
+    pub fn local_claiming(claimed: Option<&str>) -> Self {
+        let claimed_agent_id =
+            claimed.and_then(|raw| match tasty_telemetry::validate_agent_id(raw) {
+                Ok(()) => Some(tasty_telemetry::AgentId::new(raw)),
+                Err(e) => {
+                    tracing::warn!("ignoring caller_agent_id: {e}");
+                    None
+                }
+            });
+        CallerContext::Local { claimed_agent_id }
+    }
+
     /// 호출하려는 메서드가 caller에게 허용되는지 확인.
     pub fn ensure_allowed(&self, method: &str) -> Result<(), CallerError> {
         match self {
-            CallerContext::Local => Ok(()),
+            CallerContext::Local { .. } => Ok(()),
             CallerContext::Plugin {
                 plugin_id,
                 permissions,
@@ -166,19 +193,21 @@ impl CallerContext {
     /// memory.db `owner` 값 도출.
     pub fn owner(&self) -> &str {
         match self {
-            CallerContext::Local => tasty_memory::HOST_OWNER,
+            CallerContext::Local { .. } => tasty_memory::HOST_OWNER,
             CallerContext::Plugin { plugin_id, .. } => plugin_id.as_str(),
             CallerContext::Agent { agent_id, .. } => agent_id.as_str(),
         }
     }
 
     /// 텔레메트리에 쓸 호출자 ID. Agent는 세션에서 확인한 에이전트 ID, Plugin은 매니페스트 ID를
-    /// 허용 문자로 변환한 값, Local은 _host다. 요청 봉투에는 호출자의 `TASTY_AGENT_ID` 가 없으므로
-    /// Local 을 호스트 프로세스 자신의 env 로 판정하지 않는다. 그 값은 이 Tasty 를 띄운 바깥
-    /// 인스턴스에서 상속한 것이라 호출자와 관계가 없다.
+    /// 허용 문자로 변환한 값, Local은 봉투로 밝힌 자기 신고 ID, 없으면 _host다. 호스트 프로세스
+    /// 자신의 `TASTY_AGENT_ID` 는 읽지 않는다. 그 값은 이 Tasty 를 띄운 바깥 인스턴스에서 상속한
+    /// 것이라 호출자와 관계가 없다. Local 의 값은 위조할 수 있으므로 표시·집계에만 쓴다.
     pub fn agent_id(&self) -> tasty_telemetry::AgentId {
         match self {
-            CallerContext::Local => tasty_telemetry::AgentId::host(),
+            CallerContext::Local { claimed_agent_id } => claimed_agent_id
+                .clone()
+                .unwrap_or_else(tasty_telemetry::AgentId::host),
             CallerContext::Plugin { plugin_id, .. } => {
                 tasty_telemetry::AgentId::from_plugin_id(plugin_id)
             }
@@ -252,7 +281,11 @@ pub fn resolve_caller_from_envelope(
     use crate::SessionResolution;
 
     let token_str = match request.session_token.as_deref() {
-        None => return Ok(CallerContext::Local),
+        None => {
+            return Ok(CallerContext::local_claiming(
+                request.caller_agent_id.as_deref(),
+            ));
+        }
         Some(s) => s,
     };
     let id = request.id.clone().unwrap_or(serde_json::Value::Null);
@@ -308,6 +341,51 @@ pub fn resolve_caller_from_envelope(
 mod tests {
     use super::*;
 
+    /// 봉투의 `caller_agent_id` 는 토큰이 없을 때만 Local 의 표시 ID 가 되고, 세션 토큰이 있으면
+    /// 세션이 정한 ID 가 우선한다. 형식이 틀린 값은 버리되 요청은 거절하지 않는다.
+    #[test]
+    fn the_envelope_claim_names_a_local_caller_but_never_a_session() {
+        struct OneSession;
+        impl crate::IpcHostFacade for OneSession {
+            fn session_resolve(&self, _token: &str, _now_ms: u64) -> crate::SessionResolution {
+                crate::SessionResolution::Agent {
+                    agent_id: "child_1".into(),
+                    permissions: vec![],
+                }
+            }
+            fn record_audit(
+                &self,
+                _caller: crate::AuditCallerMarker,
+                _method: &str,
+                _decision: crate::AuditDecision,
+                _reason: Option<&str>,
+                _workspace_id: Option<u32>,
+                _seq: u64,
+                _ts_ms: u64,
+            ) {
+            }
+        }
+        let envelope = |token: Option<&str>, claim: Option<&str>| {
+            serde_json::from_value::<crate::protocol::JsonRpcRequest>(serde_json::json!({
+                "jsonrpc": "2.0", "method": "system.info", "id": 1,
+                "session_token": token, "caller_agent_id": claim,
+            }))
+            .expect("envelope")
+        };
+        let resolve = |token: Option<&str>, claim: Option<&str>| {
+            resolve_caller_from_envelope(&OneSession, &envelope(token, claim))
+                .expect("resolved")
+                .agent_id()
+        };
+        assert_eq!(resolve(None, Some("agent_a")).as_str(), "agent_a");
+        assert!(resolve(None, None).is_host());
+        assert!(resolve(None, Some("")).is_host());
+        assert!(resolve(None, Some("bad id!")).is_host());
+        assert!(resolve(None, Some(&"a".repeat(65))).is_host());
+        let token = "ab".repeat(32);
+        assert_eq!(resolve(Some(&token), Some("agent_a")).as_str(), "child_1");
+    }
+
     /// 호스트 프로세스가 바깥 인스턴스의 `TASTY_AGENT_ID` 를 상속했어도 Local 호출자는 `_host` 다.
     /// 이 시험만 `TASTY_AGENT_ID` 를 둔 자식 프로세스로 다시 실행한다.
     #[test]
@@ -332,7 +410,7 @@ mod tests {
             std::env::var("TASTY_AGENT_ID").expect("inherited"),
             "outer_agent"
         );
-        assert!(CallerContext::Local.agent_id().is_host());
+        assert!(CallerContext::local().agent_id().is_host());
     }
 
     fn plugin_with(perms: &[Permission]) -> CallerContext {
@@ -351,7 +429,7 @@ mod tests {
 
     #[test]
     fn local_passes_all_known_methods() {
-        let c = CallerContext::Local;
+        let c = CallerContext::local();
         assert!(c.ensure_allowed("surface.list").is_ok());
         assert!(c.ensure_allowed("debug.inject_key").is_ok());
         assert!(c.ensure_allowed("plugin.enable").is_ok());
@@ -362,7 +440,7 @@ mod tests {
         // Local은 method_meta 검사 없이 통과 — 알려지지 않은 메서드도 라우터의
         // method_not_found가 처리하도록 위임.
         assert!(
-            CallerContext::Local
+            CallerContext::local()
                 .ensure_allowed("not.a.real.method")
                 .is_ok()
         );

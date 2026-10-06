@@ -125,7 +125,7 @@ mod tests {
     }
 
     fn navigate(mirror: bool) -> (JsonRpcResponse, Vec<crate::intent::DispatchedIntent>, u32) {
-        navigate_with(mirror, &CallerContext::Local, None, json!({}))
+        navigate_with(mirror, &CallerContext::local(), None, json!({}))
     }
 
     /// 대상이 mirror라 경로 검사 없이 intent가 나온다. 반환값은 사용자 요청 여부다.
@@ -171,7 +171,7 @@ mod tests {
     #[test]
     fn navigate_from_external_ipc_stays_agent_origin_even_with_owner_field() {
         assert!(!navigate_is_user(
-            &CallerContext::Local,
+            &CallerContext::local(),
             Some((PLUGIN, POPUP)),
             json!({ "owner_popup_instance": POPUP }),
         ));

@@ -276,7 +276,7 @@ mod tests {
             &mut out,
             &mut scope,
             &engine.as_ref(),
-            &tasty_ipc::caller::CallerContext::Local,
+            &tasty_ipc::caller::CallerContext::local(),
             serde_json::json!(1),
             serde_json::json!({ "path": "https://example.com/a.md" }),
         );
@@ -288,7 +288,7 @@ mod tests {
             &mut out,
             &mut scope,
             &engine.as_ref(),
-            &tasty_ipc::caller::CallerContext::Local,
+            &tasty_ipc::caller::CallerContext::local(),
             serde_json::json!(2),
             serde_json::json!({ "path": "/tmp/a.md" }),
         );
@@ -306,7 +306,7 @@ mod tests {
             &mut out,
             &mut scope,
             &engine.as_ref(),
-            &tasty_ipc::caller::CallerContext::Local,
+            &tasty_ipc::caller::CallerContext::local(),
             serde_json::json!(42),
             serde_json::json!({"path":"/a", "origin_surface_id":u32::MAX}),
         );

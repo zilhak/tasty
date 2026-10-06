@@ -1,3 +1,5 @@
+#[cfg(test)]
+mod caller_agent_id_tests;
 mod checked;
 #[cfg(all(test, debug_assertions))]
 mod cli_entry_debug_tests;
@@ -223,6 +225,7 @@ fn canonicalize_and_route(request: &JsonRpcRequest) -> (&str, Cow<'_, JsonRpcReq
         Cow::Borrowed(request)
     } else {
         Cow::Owned(JsonRpcRequest {
+            caller_agent_id: None,
             response_timeout_ms: None,
             // alias로 호출해도 멱등 키는 유지한다.
             idempotency_key: request.idempotency_key.clone(),
@@ -394,7 +397,7 @@ fn record_telemetry_and_audit(
 fn should_rate_limit(caller: &CallerContext, method: &str) -> bool {
     use crate::ipc::caller::CallerContext as C;
     match caller {
-        C::Local => return false,
+        C::Local { .. } => return false,
         C::Agent { .. } if caller.agent_id().is_host() => return false,
         _ => {}
     }

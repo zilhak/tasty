@@ -49,6 +49,7 @@ fn call_raw(
         params["surface_id"] = json!(live);
     }
     let req = tasty_ipc::protocol::JsonRpcRequest {
+        caller_agent_id: None,
         response_timeout_ms: None,
         idempotency_key: None,
         session_token: None,
@@ -57,7 +58,7 @@ fn call_raw(
         method: method.into(),
         params,
     };
-    super::super::handle_with_caller(core, &mut state, &mut engine, &req, &CallerContext::Local)
+    super::super::handle_with_caller(core, &mut state, &mut engine, &req, &CallerContext::local())
 }
 
 fn writes() -> Vec<(&'static str, Value)> {

@@ -395,6 +395,7 @@ fn send_window_create(
         )
         .map_err(|e| unreachable(&e))?;
     let request = tasty_ipc::protocol::JsonRpcRequest {
+        caller_agent_id: None,
         jsonrpc: "2.0".to_string(),
         method: "window.create".to_string(),
         params: serde_json::json!({}),

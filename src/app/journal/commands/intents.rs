@@ -233,6 +233,7 @@ impl JournalApplication {
         view: Option<IntentViewContinuation>,
     ) {
         let request = JsonRpcRequest {
+            caller_agent_id: None,
             jsonrpc: "2.0".into(),
             method: method.into(),
             params,
@@ -285,6 +286,7 @@ impl JournalApplication {
             })
             .collect();
         let request = JsonRpcRequest {
+            caller_agent_id: None,
             jsonrpc: "2.0".into(),
             method: "intent.structural".into(),
             params: serde_json::to_value(&changes).map_err(|error| error.to_string())?,
@@ -323,6 +325,7 @@ impl JournalApplication {
         origin: &crate::intent::IntentOrigin,
     ) {
         let request = JsonRpcRequest {
+            caller_agent_id: None,
             jsonrpc: "2.0".into(),
             method: "intent.category-reset".into(),
             params: serde_json::to_value(&changes).expect("fixed commands serialize"),

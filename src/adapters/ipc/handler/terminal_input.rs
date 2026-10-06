@@ -95,7 +95,7 @@ mod tests {
         let response = handle_input_rule_update(
             &mut out,
             &engine.read(),
-            &CallerContext::Local,
+            &CallerContext::local(),
             json!(1),
             &json!({ "app": "claude", "shift_enter_newline": true }),
             "settings.set_input_rule",
@@ -123,7 +123,7 @@ mod tests {
                 handle_input_rule_update(
                     &mut out,
                     &engine.read(),
-                    &CallerContext::Local,
+                    &CallerContext::local(),
                     json!(1),
                     &params,
                     "settings.set_input_rule"

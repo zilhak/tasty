@@ -8,7 +8,7 @@ use crate::store::audit::{AuditCallerKind, AuditDecision};
 impl AuditCallerKind {
     pub fn from_caller(caller: &CallerContext) -> Self {
         match caller {
-            CallerContext::Local => Self::Local,
+            CallerContext::Local { .. } => Self::Local,
             CallerContext::Plugin { .. } => Self::Plugin,
             CallerContext::Agent { .. } => Self::Agent,
         }
@@ -36,9 +36,10 @@ pub fn record(
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0);
     let kind = AuditCallerKind::from_caller(caller);
-    let caller_id = caller.agent_id().as_str().to_string();
+    let agent = caller.agent_id();
+    let caller_id = agent.as_str().to_string();
     let marker = match kind {
-        AuditCallerKind::Local => AuditCallerMarker::Local,
+        AuditCallerKind::Local => AuditCallerMarker::Local((!agent.is_host()).then_some(caller_id)),
         AuditCallerKind::Agent => AuditCallerMarker::Agent(caller_id),
         AuditCallerKind::Plugin => AuditCallerMarker::Plugin(caller_id),
     };
@@ -89,7 +90,7 @@ mod tests {
         }
 
         let host = CountingFacade::default();
-        let caller = CallerContext::Local;
+        let caller = CallerContext::local();
         for method in [
             "terminal.parent",
             "surface.read_since_mark",
@@ -116,6 +117,57 @@ mod tests {
         assert_eq!(
             *host.recorded.lock().unwrap(),
             vec!["terminal.state".to_string()]
+        );
+    }
+    /// Local 의 자기 신고 ID 는 감사 레코드에 그대로 남고, 없으면 빈 값이다.
+    #[test]
+    fn a_local_denial_carries_the_claimed_id() {
+        use std::sync::Mutex;
+        use tasty_ipc::{AuditCallerMarker, IpcHostFacade, SessionResolution};
+
+        #[derive(Default)]
+        struct MarkerFacade {
+            markers: Mutex<Vec<Option<String>>>,
+        }
+        impl IpcHostFacade for MarkerFacade {
+            fn session_resolve(&self, _token: &str, _now_ms: u64) -> SessionResolution {
+                SessionResolution::NotFound
+            }
+            fn record_audit(
+                &self,
+                caller: AuditCallerMarker,
+                _method: &str,
+                _decision: tasty_ipc::AuditDecision,
+                _reason: Option<&str>,
+                _workspace_id: Option<u32>,
+                _seq: u64,
+                _ts_ms: u64,
+            ) {
+                match caller {
+                    AuditCallerMarker::Local(claimed) => self.markers.lock().unwrap().push(claimed),
+                    _ => panic!("Local 이 아닌 표지"),
+                }
+            }
+        }
+
+        let host = MarkerFacade::default();
+        for caller in [
+            CallerContext::local_claiming(Some("agent_a")),
+            CallerContext::local(),
+        ] {
+            record(
+                &host,
+                &caller,
+                "surface.send",
+                AuditDecision::Deny,
+                None,
+                None,
+                0,
+            );
+        }
+        assert_eq!(
+            *host.markers.lock().unwrap(),
+            vec![Some("agent_a".to_string()), None]
         );
     }
 }

@@ -369,6 +369,7 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
     };
 
     JsonRpcRequest {
+        caller_agent_id: tasty_ipc::protocol::caller_agent_id_from_env(),
         response_timeout_ms: None,
         idempotency_key: None,
         jsonrpc: "2.0".to_string(),
@@ -877,6 +878,10 @@ fn tool_command_to_method_params(command: &ToolCommands) -> (&'static str, serde
         ToolCommands::Passkey { .. } => ("tool.passkey.noop", serde_json::json!({})),
     }
 }
+
+#[cfg(test)]
+#[path = "request_caller_agent_id_tests.rs"]
+mod caller_agent_id_tests;
 
 #[cfg(test)]
 mod tests {

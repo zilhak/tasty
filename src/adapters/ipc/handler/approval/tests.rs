@@ -154,7 +154,7 @@ fn requested_workspace(params: Value, active: usize) -> (Option<u64>, Vec<u32>) 
         &mut core,
         &mut scope,
         &mut engine,
-        &CallerContext::Local,
+        &CallerContext::local(),
         json!(1),
         &params,
     );

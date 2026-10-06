@@ -674,8 +674,8 @@ mod tests {
     #[test]
     fn the_local_caller_still_reaches_host_keys() {
         let id = json!(1);
-        assert!(reject_host_key(&CallerContext::Local, "tasty.audit.0001", &id).is_ok());
-        let kept = hide_host_keys(&CallerContext::Local, vec![entry("tasty.audit.0001")]);
+        assert!(reject_host_key(&CallerContext::local(), "tasty.audit.0001", &id).is_ok());
+        let kept = hide_host_keys(&CallerContext::local(), vec![entry("tasty.audit.0001")]);
         assert_eq!(
             kept.len(),
             1,

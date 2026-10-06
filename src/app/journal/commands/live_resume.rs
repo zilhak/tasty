@@ -299,6 +299,7 @@ impl JournalApplication {
             return false;
         };
         let request = JsonRpcRequest {
+            caller_agent_id: None,
             jsonrpc: "2.0".into(),
             method: "intent.wake".into(),
             params: serde_json::json!({"surface_id":surface,"activation":activation}),
@@ -352,6 +353,7 @@ impl JournalApplication {
             return true;
         }
         let request = JsonRpcRequest {
+            caller_agent_id: None,
             jsonrpc: "2.0".into(),
             method: "intent.wake".into(),
             params: serde_json::json!({"surface_id":surface,"activation":activation}),
@@ -398,6 +400,7 @@ impl JournalApplication {
         activation: Option<u64>,
     ) {
         let request = JsonRpcRequest {
+            caller_agent_id: None,
             jsonrpc: "2.0".into(),
             method: "intent.wake".into(),
             params: serde_json::json!({"surface_id":surface,"activation":activation}),

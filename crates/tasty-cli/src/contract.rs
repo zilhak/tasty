@@ -159,6 +159,7 @@ mod tests {
 
     fn req(method: &str, params: serde_json::Value, timeout: Option<u64>) -> JsonRpcRequest {
         JsonRpcRequest {
+            caller_agent_id: None,
             jsonrpc: "2.0".into(),
             method: method.into(),
             params,

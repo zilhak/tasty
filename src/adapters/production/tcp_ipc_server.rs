@@ -1125,6 +1125,7 @@ mod admission_tests {
         let (cmd_tx, cmd_rx) = mpsc::channel::<IpcCommand>();
         let queue = test_queue(cmd_tx, QueueLimits::DEFAULT);
         let request = JsonRpcRequest {
+            caller_agent_id: None,
             jsonrpc: "2.0".to_string(),
             method: "workspace.list".to_string(),
             params: serde_json::Value::Null,
@@ -1200,6 +1201,7 @@ mod admission_tests {
         let (cmd_tx, cmd_rx) = mpsc::channel::<IpcCommand>();
         let queue = test_queue(cmd_tx, QueueLimits::DEFAULT);
         let request = JsonRpcRequest {
+            caller_agent_id: None,
             jsonrpc: "2.0".to_string(),
             method: "workspace.create".to_string(),
             params: serde_json::Value::Null,
@@ -1260,6 +1262,7 @@ mod admission_tests {
         };
         let (resp_tx, _resp_rx) = mpsc::sync_channel(1);
         let request = JsonRpcRequest {
+            caller_agent_id: None,
             jsonrpc: "2.0".to_string(),
             method: "workspace.list".to_string(),
             params: serde_json::Value::Null,
@@ -1300,6 +1303,7 @@ mod admission_tests {
             },
         );
         let request = |id: u64| JsonRpcRequest {
+            caller_agent_id: None,
             jsonrpc: "2.0".to_string(),
             method: "workspace.list".to_string(),
             params: serde_json::Value::Null,
@@ -1360,6 +1364,7 @@ mod admission_tests {
         let (cmd_tx, cmd_rx) = mpsc::channel();
         let queue = test_queue(cmd_tx, QueueLimits::DEFAULT);
         let request = JsonRpcRequest {
+            caller_agent_id: None,
             jsonrpc: "2.0".to_string(),
             method: "workspace.list".to_string(),
             params: serde_json::Value::Null,

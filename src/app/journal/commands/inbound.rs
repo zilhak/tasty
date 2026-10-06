@@ -436,6 +436,7 @@ fn remote_request(
     origin: ForwardOrigin,
 ) -> JsonRpcRequest {
     JsonRpcRequest {
+        caller_agent_id: None,
         jsonrpc: "2.0".into(),
         method: "remote.structural".into(),
         params: serde_json::json!({"op":op,"origin":origin,"correlation":{

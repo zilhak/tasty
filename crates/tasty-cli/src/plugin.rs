@@ -58,6 +58,7 @@ pub fn run_audit_follow(
     base.insert("limit".into(), json!(batch));
 
     let session_token = std::env::var("TASTY_SESSION_TOKEN").ok();
+    let caller_agent_id = tasty_ipc::protocol::caller_agent_id_from_env();
     let mut next_id: i64 = 1;
     let mut after_ts: Option<u64> = None;
     let mut after_seq: Option<u64> = None;
@@ -70,6 +71,7 @@ pub fn run_audit_follow(
             params.insert("after_seq".into(), json!(s));
         }
         let req = tasty_ipc::protocol::JsonRpcRequest {
+            caller_agent_id: caller_agent_id.clone(),
             response_timeout_ms: None,
             idempotency_key: None,
             jsonrpc: "2.0".to_string(),
