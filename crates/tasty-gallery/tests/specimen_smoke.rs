@@ -261,7 +261,7 @@ fn 시안에서_옮긴_결정_specimen_은_id_충돌_없이_렌더된다() {
         ("attention-scale", layouts_settled::draw_attention_scale),
         ("profile-form", remote::draw_profile_form),
         ("generic-passkey", remote::draw_generic_passkey_forms),
-        ("path-fold", file_picker::draw_path_fold),
+        ("path-fit", file_picker::draw_path_fit),
         ("plugin-identity", overlays_settled::draw_plugin_identity),
         ("diff-toolbar", overlays_settled::draw_diff_toolbar),
         ("drag-handles", overlays_settled::draw_drag_handles),
