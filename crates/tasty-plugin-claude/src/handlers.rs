@@ -1472,47 +1472,46 @@ mod tests {
     }
 
     #[test]
-    fn concurrent_registrations_leave_no_zombie() {
-        // 같은 자식에 spawn과 tell의 완료 훅을 각각 등록한다.
+    fn a_new_registration_replaces_the_completion_group_of_the_same_caller() {
+        // 같은 부모가 spawn 뒤 tell 하면 tell 그룹이 spawn 그룹을 대신한다. 둘 다 두면 한 번의 상태 변경에
+        // 완료 줄이 두 줄 남는다.
         let host = MockHost::new();
         let (caller, target) = (7u32, 1650u32);
         register_notify_hooks(&host, caller, target, "spawn");
         register_notify_hooks(&host, caller, target, "tell");
-        assert_eq!(host.done_commands_on(target).len(), 6, "두 그룹 = 6 hook");
-        // 에러 정지 hook 은 command 에 command_name 이 없어 두 그룹이 같은 문자열을
-        // 쓴다 — 멱등 등록이라 두 번 불러도 1 개만 남는다.
+        let tell_cmd = notify_done_command(caller, target, "tell");
+        assert_eq!(host.done_commands_on(target), vec![tell_cmd.clone(); 3]);
+        // 에러 정지 hook 은 명령 이름이 없어 두 번 등록해도 1 개만 남는다.
         assert_eq!(
             host.hooks_for_event(target, crate::error_scan::STALLED_EVENT),
             1,
             "에러 정지 hook 은 중복 등록되지 않아야 함"
         );
 
-        // spawn 그룹의 claude-idle 이 먼저 fire → spawn 그룹만 정리.
-        host.fire(target, "claude-idle");
-        let spawn_cmd = notify_done_command(caller, target, "spawn");
-        cleanup_sibling_hooks(&host, target, &spawn_cmd);
-
-        let remaining = host.done_commands_on(target);
-        let tell_cmd = notify_done_command(caller, target, "tell");
-        // tell 그룹은 그대로(claude-idle fire 가 tell 의 claude-idle 도 제거했으므로 2개),
-        // spawn 그룹은 완전히 사라져야 한다.
-        assert!(
-            remaining.iter().all(|c| c == &tell_cmd),
-            "spawn 완료 그룹의 훅이 남았다: {remaining:?}"
-        );
-        assert!(
-            !remaining.iter().any(|c| c == &spawn_cmd),
-            "spawn 그룹의 process-exit 훅이 남았다"
-        );
-
-        // 이제 tell 그룹도 fire → 전부 정리.
-        host.fire(target, "needs-input");
+        assert_eq!(host.fire(target, "claude-idle"), 1, "완료 줄은 한 줄");
         cleanup_sibling_hooks(&host, target, &tell_cmd);
         assert!(
             host.done_commands_on(target).is_empty(),
-            "최종적으로 형제 hook 이 전부 사라져야 함: {:?}",
+            "형제 hook 이 전부 사라져야 함: {:?}",
             host.done_commands_on(target)
         );
+    }
+
+    /// tell 을 반복해도 같은 부모·대상의 완료 그룹은 하나다. 다른 부모의 그룹은 건드리지 않는다.
+    #[test]
+    fn repeated_tells_keep_one_completion_group_per_caller() {
+        let host = MockHost::new();
+        let (caller, other, target) = (7u32, 8u32, 1650u32);
+        for _ in 0..3 {
+            register_notify_hooks(&host, caller, target, "tell");
+        }
+        assert_eq!(host.done_commands_on(target).len(), 3);
+        assert_eq!(host.fire(target, "claude-idle"), 1);
+        register_notify_hooks(&host, other, target, "tell");
+        register_notify_hooks(&host, caller, target, "tell");
+        let commands = host.done_commands_on(target);
+        assert_eq!(commands.len(), 6, "{commands:?}");
+        assert_eq!(host.fire(target, "needs-input"), 2, "부모마다 한 줄");
     }
 
     // 대상 surface가 남아 있으면 완료 훅을 다시 등록해 이후 상태 전환도 알린다.

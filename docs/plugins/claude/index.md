@@ -27,7 +27,7 @@
 [completion-log](../../dev-guide/external-interaction.md#child-완료-알림--completion-log)에 기록하며 caller PTY에 메시지를 입력하지 않는다.
 
 - **cli `claude`** (`tasty claude …`) — 서브커맨드: `launch`(새 워크스페이스에서 실행) · `spawn`(자식 인스턴스, 페인 분할) · `children`/`parent`(관계 조회) · `tell`/`broadcast`(메시지 전송) · `kill`/`respawn` · `reboot`(같은 세션 resume 재시작, 아래) · `child-profile`(자식에게 지속 프로필 부착, 아래) · `hook`(Claude Code 훅 통합, 아래 "Claude Code 훅 통합" 절) · `checklist-hook`(`continue-checklist` 세션 프로필 전용 `Stop` 훅, 아래 "continue-checklist 세션 프로필" 절) · `checklist-enable`/`checklist-disable`/`checklist-status`(게이트별 마커 파일을 켜고 끄고 조회 — `--gate` 생략 시 `continue-checklist`, 같은 절) · `notify-done`(내부용: spawn/tell 상태 전환 시 caller 에게 알림 전달 + 형제 hook 정리·재등록, 아래) · `profile-register`/`profile-unregister`/`profile-list`/`profile-show`/`profile-current`(Claude 세션 프로필 레지스트리, 아래 "Claude 세션 프로필 레지스트리" 절).
-- `spawn`/`tell`은 필요한 호스트 호출의 응답을 받은 뒤 반환하며 자식 작업 완료까지 기다리지는 않는다. `claude-idle`/`needs-input`/`process-exit` once 훅을 등록한다. 하나가 실행되면 `notify-done`이 상태 변경 로그를 쓰고 같은 명령의 형제 훅을 정리한다. 이후 `surface.locate`가 성공하면 훅을 다시 등록한다. Surface 존재는 프로세스 생존과 같지 않으며, 등록·호출·로그 기록 실패나 재등록 사이의 이벤트까지 전달한다고 보장하지 않는다.
+- `spawn`/`tell`은 필요한 호스트 호출의 응답을 받은 뒤 반환하며 자식 작업 완료까지 기다리지는 않는다. `claude-idle`/`needs-input`/`process-exit` once 훅을 등록한다. 같은 부모·대상의 완료 훅 그룹(명령 앞부분 `tasty claude notify-done --caller-surface <부모> --target-surface <대상> --command `)이 이미 있으면 먼저 지우고 등록하므로, tell을 반복하거나 spawn 뒤 tell해도 부모마다 그룹은 하나이고 한 번의 상태 변경에 완료 줄은 한 줄이다. 다른 부모의 그룹은 그대로 둔다. 하나가 실행되면 `notify-done`이 상태 변경 로그를 쓰고 같은 명령의 형제 훅을 정리한다. 이후 `surface.locate`가 성공하면 훅을 다시 등록한다. Surface 존재는 프로세스 생존과 같지 않으며, 등록·호출·로그 기록 실패나 재등록 사이의 이벤트까지 전달한다고 보장하지 않는다.
 - **ipc_namespace `claude`** — 위 동작에 대응하는 IPC API.
 - 실제 Claude 프로세스는 터미널 surface 안에서 돌고(`terminal.spawn`), 플러그인은 그 생명주기·관계를 관리한다.
 - **`reboot`** (`tasty claude reboot [--surface <id>] [--delay <초>] [--prompt <추가문구>] [--profile-file <경로> | --profile <이름[,이름2,...]>] [--clear-profile] [--permission-mode <모드>]`) — surface 안의 Claude 를 종료하고 **같은 세션으로 재시작**한다.
@@ -545,6 +545,7 @@ API 오류에서 실제 이벤트를 받은 실험까지 완료한 것은 아니
 - Given 플러그인 활성 When `tasty claude launch` Then 새 워크스페이스에서 Claude 가 실행된다.
 - Given 부모 인스턴스 When `tasty claude spawn` Then 자식 인스턴스가 페인 분할로 생성되고 `children` 에 보인다.
 - Given 상태 훅과 로그 기록이 정상 동작하는 자식 When `tasty claude spawn` 또는 `tell` 뒤 idle/needs_input/process-exit 훅이 발생 Then caller의 completion-log에 상태 변경을 기록하고 같은 명령의 형제 훅을 정리한다. `surface.locate`가 성공하면 세 훅을 다시 등록한다.
+- Given 같은 부모가 같은 자식에 `tasty claude tell`을 세 번 보낸 상태 When 자식의 상태가 한 번 바뀜 Then 부모의 completion-log에 완료 줄이 한 줄 남는다. 다른 부모가 등록한 그룹은 지우지 않는다.
 - Given `~/.claude/settings.json`에 사용자가 직접 추가한 hook entry가 있음 When `tasty claude install` 실행 Then 10개 tasty hook entry가 추가/갱신되고 사용자 entry는 그대로 보존된다.
 - Given 유효한 프로필 JSON When `tasty claude reboot --profile-file <경로>` Then 재시작된 Claude 에서 프로필 훅과 tasty 내장 훅이 함께 실행되고, 무인자로 다시 reboot 해도 프로필이 승계된다. `--clear-profile` 후 reboot 하면 프로필 훅이 더 이상 발생하지 않는다. 존재하지 않는 경로/깨진 JSON 은 kill 시퀀스를 시작하지 않고 즉시 에러를 반환한다.
 - Given 등록된 프로필 둘(각각 다른 마커를 남기는 `SessionStart` 훅) When 이름 둘을 쉼표로 `--profile` 에 함께 부착해 spawn Then **둘 다** 발생한다(머지가 last-wins 로 떨어지지 않는다). `permissions.deny`를 담은 프로필을 부착하면 그 자식에게서 해당 도구가 사라지고(거부 프롬프트가 아니라 툴셋에서 빠짐), `deny` 프로필과 그 도구를 `allow` 하는 프로필을 함께 부착해도 도구는 여전히 없다(deny를 allow보다 우선한다). `--profile-file` 과 `--profile` 을 함께 주면 즉시 에러.

@@ -46,16 +46,60 @@ pub fn cleanup_sibling_hooks<H: HostCall>(host: &H, target_surface: u32, expecte
     }
 }
 
+/// command가 `group_prefix`로 시작하는 훅의 id를 고른다. 같은 부모·대상의 완료 그룹은 명령 이름(spawn·tell 등)만
+/// 다르므로 접두어로 함께 찾는다.
+pub fn group_members_to_unset(hooks: &[Value], group_prefix: &str) -> Vec<u64> {
+    hooks
+        .iter()
+        .filter(|h| {
+            h.get("command")
+                .and_then(|v| v.as_str())
+                .is_some_and(|c| c.starts_with(group_prefix))
+        })
+        .filter_map(|h| h.get("id").and_then(|v| v.as_u64()))
+        .collect()
+}
+
+/// 같은 부모·대상의 기존 완료 그룹을 지운다. 조회·해제 실패는 로그만 남기고 새 등록을 계속한다.
+fn remove_completion_group<H: HostCall>(
+    host: &H,
+    target_surface: u32,
+    group_prefix: &str,
+    agent: &str,
+) {
+    match host.call("hook.list", json!({ "surface_id": target_surface })) {
+        Ok(resp) => {
+            for hook_id in
+                group_members_to_unset(resp.as_array().map_or(&[][..], Vec::as_slice), group_prefix)
+            {
+                if let Err(e) = host.call("hook.unset", json!({ "hook_id": hook_id })) {
+                    tracing::warn!(
+                        "{agent} hook.unset {hook_id} failed while replacing the completion group: {e}"
+                    );
+                }
+            }
+        }
+        Err(e) => {
+            tracing::warn!("{agent} hook.list failed before registering completion hooks: {e}")
+        }
+    }
+}
+
 /// 이벤트별로 같은 command의 once 훅을 등록한다.
+/// 같은 부모·대상의 완료 그룹(`group_prefix`로 시작하는 명령)이 이미 있으면 먼저 지운다. 그대로 두면 tell 을
+/// 반복할 때마다 그룹이 쌓여 한 번의 상태 변경에 완료 줄이 그룹 수만큼 남는다.
 /// 이벤트 목록은 각 CLI의 매니페스트에 따라 호출자가 전달한다.
 /// 등록 실패는 로그에 남기되 이미 성공한 spawn/tell 결과를 바꾸지 않는다.
 pub fn register_completion_hooks<H: HostCall>(
     host: &H,
     target_surface: u32,
     command: &str,
+    group_prefix: &str,
     events: &[&str],
     agent: &str,
 ) {
+    debug_assert!(command.starts_with(group_prefix));
+    remove_completion_group(host, target_surface, group_prefix, agent);
     for event in events {
         if let Err(e) = host.call(
             "hook.set",
@@ -88,6 +132,19 @@ mod tests {
         ];
         assert_eq!(siblings_to_unset(&hooks, spawn_cmd), vec![1, 3]);
         assert_eq!(siblings_to_unset(&hooks, tell_cmd), vec![2]);
+    }
+
+    /// 같은 부모·대상의 완료 그룹은 명령 이름과 관계없이 모두 고르고, 다른 부모나 다른 명령 종류는 고르지 않는다.
+    #[test]
+    fn group_members_share_the_caller_and_target_prefix() {
+        let prefix = "tasty x notify --caller 1 --target 5 --command ";
+        let hooks = vec![
+            json!({ "id": 1, "command": "tasty x notify --caller 1 --target 5 --command spawn" }),
+            json!({ "id": 2, "command": "tasty x notify --caller 1 --target 5 --command tell" }),
+            json!({ "id": 3, "command": "tasty x notify --caller 11 --target 5 --command tell" }),
+            json!({ "id": 4, "command": "tasty x notify-error --caller 1 --target 5" }),
+        ];
+        assert_eq!(group_members_to_unset(&hooks, prefix), vec![1, 2]);
     }
 
     /// `command` 가 없거나 `id` 가 없는 항목은 조용히 건너뛴다 — 호스트 응답 스키마가

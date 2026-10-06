@@ -1,4 +1,4 @@
-<!-- source-hash: b304edf32905 -->
+<!-- source-hash: 99ed5c3f9f3c -->
 # Working with Claude and Codex
 
 Connect Claude Code and Codex CLI to share work across several agents. One agent can launch others and receive their results, so implementation, testing, and review can run alongside each other.
@@ -97,7 +97,9 @@ When there are too many children, a warning is attached to the spawn response. C
 
 ## 4. Receiving completion notifications
 
-Completion lands in the same log file as one line per event, whatever the parent is, and for both Claude and Codex children. Input requests,
+Completion lands in the same log file as one line per event, whatever the parent is, and for both Claude and Codex children.
+Sending tell to the same child several times still writes one line per state change. When another parent sends tell to the same child, its notifications go to that parent's log separately.
+Input requests,
 interruptions, errors, and process exits are state notifications too; they do not establish task success.
 When a Claude child ended its turn on an API error, the end of the completion line says so and names the error kind (for example `overloaded`). If background work is still running and the child keeps waiting, a single line saying so is written instead of a completion line.
 While a child waits on a background shell or subagent and that work's output has not grown for 2 minutes, one line naming the work is written (`background work <name> has written no output for <min> min`). If Tasty cannot find that work's output, it writes one line after 10 minutes without screen output instead.

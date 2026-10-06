@@ -11,7 +11,15 @@ pub(crate) fn notify_done_command(
     command_name: &str,
 ) -> String {
     format!(
-        "tasty claude notify-done --caller-surface {caller_surface} --target-surface {target_surface} --command {command_name}"
+        "{}{command_name}",
+        notify_done_group_prefix(caller_surface, target_surface)
+    )
+}
+
+/// 같은 부모·대상의 완료 그룹이 공유하는 명령 앞부분. 등록할 때 이 앞부분으로 기존 그룹을 찾아 바꾼다.
+fn notify_done_group_prefix(caller_surface: u32, target_surface: u32) -> String {
+    format!(
+        "tasty claude notify-done --caller-surface {caller_surface} --target-surface {target_surface} --command "
     )
 }
 
@@ -67,6 +75,7 @@ pub(crate) fn register_notify_hooks<H: HostCall>(
         host,
         target_surface,
         &command,
+        &notify_done_group_prefix(caller_surface, target_surface),
         &["claude-idle", "needs-input", "process-exit"],
         "claude",
     );

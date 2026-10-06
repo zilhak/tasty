@@ -68,7 +68,7 @@ POSIX는 `if [ -n "$TASTY_SURFACE_ID" ]; then … || true; fi`로 Tasty 안에�
 
 ### 자식 상태 알림
 
-spawn과 tell은 필요한 호스트 호출의 응답을 받은 뒤 반환하며 자식 작업 완료까지 기다리지 않는다. `codex-idle`, `needs-input`, `process-exit` once 훅을 등록한다. 하나가 실행되면 notify-caller가 상태 변경 로그를 쓰고 같은 command의 나머지 훅을 정리한다.
+spawn과 tell은 필요한 호스트 호출의 응답을 받은 뒤 반환하며 자식 작업 완료까지 기다리지 않는다. `codex-idle`, `needs-input`, `process-exit` once 훅을 등록한다. 같은 부모·대상의 완료 훅 그룹(명령 앞부분 `tasty codex notify-caller --caller <부모> --target <대상> --kind `)이 이미 있으면 먼저 지우고 등록하므로, tell을 반복하거나 spawn 뒤 tell해도 부모마다 그룹은 하나이고 한 번의 상태 변경에 완료 줄은 한 줄이다. 다른 부모의 그룹은 그대로 둔다. 하나가 실행되면 notify-caller가 상태 변경 로그를 쓰고 같은 command의 나머지 훅을 정리한다.
 
 명령 문자열은 caller·target·kind로 구분한다. 이 조합이 같으면 반복 요청도 같은 훅 그룹이므로 요청마다 독립된 구독은 아니다. 이후 `surface.locate`가 성공하면 세 훅을 다시 등록한다. Surface 존재는 프로세스 생존과 다르며, 훅 등록과 로그 쓰기 실패나 재등록 사이의 이벤트 전달까지 보장하지 않는다.
 
@@ -147,6 +147,7 @@ idle 보고도 진위나 작업 성공을 검증한 값은 아니므로 현재 �
 - Given 플러그인 활성 When `tasty codex spawn --prompt "…"` Then 자식 Codex 가 페인 분할로 생성되고 CLI는 호스트 응답 후 반환하며 자식 작업 완료는 기다리지 않는다.
 - Given 자식 When `tasty codex tell <msg>` Then 줄바꿈 보존하며 메시지가 전송·제출되고 CLI는 호스트 응답 후 반환하며 자식 작업 완료는 기다리지 않는다.
 - Given 상태 훅과 로그 기록이 정상 동작하는 대상 When 등록된 idle·needs_input·process-exit 훅이 실행 Then caller의 상태 로그를 쓰고 형제 훅을 정리한다. `surface.locate`가 성공하면 다시 등록한다.
+- Given 같은 부모가 같은 자식에 `tasty codex tell`을 여러 번 보낸 상태 When 자식의 상태가 한 번 바뀜 Then 부모의 상태 로그에 완료 줄이 한 줄 남는다. 다른 부모가 등록한 그룹은 지우지 않는다.
 - Given 훅이 설치된 Codex When 도구 실행 승인 프롬프트가 뜬다 Then 그 surface 의 상태가 `needs_input` 으로 조회되고 비포커스 대상의 탭·워크스페이스에 기존 노란 표시가 난다.
 - Given 승인 대기 When 사용자가 승인하고 그 도구가 끝난다(`PostToolUse`) 또는 거절·Esc·Ctrl-C 로 중단한다(`Interrupt`) Then 상태가 각각 `active` · `idle` 로 돌아오고 `needs_input` 이 잔류하지 않는다.
 - Given 승인이 필요 없는 실행 When 도구가 오래 걸리거나 출력이 없다 Then `needs_input` 으로 오판하지 않는다.
