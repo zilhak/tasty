@@ -20,7 +20,7 @@ App은 journal 사실을 게시하는 동안 관측을 멈춘다. 이 동안 IPC
 
 - 정리 항목: `Claim`(실행 권한 확정)과 `Finish`(결과 확정·metadata 정리·닫힘 이벤트 적재)만 일시정지 대상이다. `Running`·`Reconcile`·`Reconciled`는 대상이 아니다(`src/app/journal/resource_cleanup.rs`의 `cleanup_pauses_observation`).
 - 닫기 명령: 커밋 전에는 일시정지한다. 커밋 뒤 그 명령이 준비한 operation이 **모두** `Running`이면 일시정지를 푼다. 하나라도 `Finish` 이후로 넘어가면 응답까지 다시 일시정지한다. 그래서 닫기의 최종 사실·응답이 뒤의 입력보다 먼저 나간다. operation을 알 수 없으면 지금처럼 일시정지한다(`src/app/journal/commands.rs`의 `close_pauses`). 교체(replacement)는 바꾸지 않는다.
-- `Claim`이 `Running`으로 바뀌는 즉시 plugin의 회수 게시를 적용한다(`poll_publication_retirements`). 관측이 재개된 첫 턴은 보류한 입력을 pump보다 먼저 실행한다. 이 순서 때문에 보류된 enable이 파괴 중인 surface를 새 프로세스에 다시 게시하는 일을 막는다.
+- `Claim`이 `Running`으로 바뀌는 즉시 plugin의 회수 게시를 적용한다(`poll_publication_retirements`). 관측이 재개된 첫 턴은 보류한 입력을 pump보다 먼저 실행한다. 이 적용이 없으면 그 턴에 처리된 enable이 파괴 중인 surface를 새 프로세스에 다시 게시할 수 있다.
 - 앱 종료(GUI의 `SavingLayout`, headless의 종료 마무리)는 `Running` 정리도 기다린다(`shutdown_waits_for_publication`). 이 대기 동안 plugin pump가 돌지 않으므로 종료 단계가 회수 응답을 직접 처리한다. 상한은 receipt 시한이다. 그래서 종료가 걸린 닫기도 응답을 한 번 보내고, 종료 전에 결과(시한이 지나면 `Uncertain`)를 기록한다.
 
 같은 자원을 다루는 다른 명령에 대한 보장은 다음과 같다.
@@ -28,7 +28,7 @@ App은 journal 사실을 게시하는 동안 관측을 멈춘다. 이 동안 IPC
 | 상황 | 보장 | 근거 |
 |---|---|---|
 | 같은 surface·workspace id | 회수 중인 id는 다시 쓰이지 않는다 | id 예약은 단조 증가하며 되감지 않는다. 닫은 항목 복원도 새 id를 받는다. metadata 정리는 id가 다시 살아 있으면 거절한다 |
-| 같은 plugin disable·재기동 | 먼저 보낸 파괴 요청은 원 세대 회수로 확정된다. 회수 중 surface는 새 프로세스에 다시 게시되지 않는다 | 세대 회수 확정과 회수 게시 즉시 적용 |
+| 같은 plugin disable·재기동 | 먼저 보낸 파괴 요청은 원 세대 회수로 확정된다. claim 이후에 처리되는 enable은 회수 중 surface를 새 프로세스에 다시 게시하지 않는다. 닫기 대상이 해석되기 전에 처리된 enable은 다시 게시할 수 있다(이 결정 전부터 있던 범위). 이때도 닫기는 옛 세대 회수로 확정된다 | 세대 회수 확정과 회수 게시 즉시 적용 |
 | 엔진 은퇴 | receipt가 남은 엔진은 해제하지 않는다 | 엔진 해제는 정리 항목·보류 회수가 빌 때까지 기다린다 |
 | 같은 워크스페이스의 다른 닫기 | 같은 자원을 두 번 회수하지 않는다 | 회수 대상은 이미 구조에서 빠졌다. 뒤 명령의 `Claim`·`Finish`는 여전히 일시정지한다 |
 | 사용자 창 입력 | 입력은 닫기가 반영된 구조를 대상으로 바로 처리된다 | 닫힌 surface는 이미 View·구조에 없다. 일시정지 단계의 입력 보류·재검사는 그대로다 |
@@ -57,7 +57,8 @@ App은 journal 사실을 게시하는 동안 관측을 멈춘다. 이 동안 IPC
 코드와 설정에서 확인:
 - 정리 `Running` 단계에 journal 쓰기나 구조 게시가 추가되면 그 단계도 일시정지해야 한다. `answer_resource_cleanup`과 `poll_resource_cleanup`이 `Running`에서 worker에 쓰기를 보내는지 확인한다.
 - id 예약이 재사용을 허용하게 바뀌면 같은 id 재사용 보장이 사라진다(`EventStore::reserve_ids`).
-- 관측 재개 첫 턴의 순서(보류 입력 → plugin pump)가 바뀌거나 enable 경로가 회수 게시보다 먼저 surface를 재게시하게 되면 즉시 적용의 필요를 다시 판단한다.
+- 관측 재개 첫 턴의 순서(보류 입력 → plugin pump)가 바뀌거나 enable 경로가 회수 게시보다 먼저 surface를 재게시하게 되면 즉시 적용의 필요를 다시 판단한다. 즉시 적용은 `close_receipt` 시험이 지킨다.
+- 닫기 대상 해석 단계부터 재게시를 막게 되면 위 표의 재게시 범위를 고친다.
 - 종료 단계가 plugin pump를 돌리게 되면 `SavingLayout`의 직접 회수 처리가 필요한지 다시 판단한다.
 
 실행 결과로 확인:

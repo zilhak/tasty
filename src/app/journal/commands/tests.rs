@@ -610,6 +610,9 @@ fn headless_pending_category_intent_uses_the_explicit_engine_journal_admission()
 #[path = "metadata_tests.rs"]
 mod metadata;
 
+#[path = "close_receipt_tests.rs"]
+mod close_receipt;
+
 #[test]
 fn each_keyed_journal_request_reports_only_its_initial_retry_decision() {
     use crate::ipc::handler::idempotency::RetryOutcome as O;
