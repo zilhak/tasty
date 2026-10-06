@@ -1,6 +1,7 @@
 //! native WebView 배치와 입력 영역. native 창은 마우스를 직접 받으므로 분할선 드래그와 창 가장자리
-//! 리사이즈 입력을 가리지 않게 해야 한다. Linux는 WebView를 surface에 꽉 채우고 그 입력 영역만
-//! input shape으로 뺀다. 다른 OS는 아직 입력 영역을 빼지 못해 pane 외곽 변에 여백을 둔다.
+//! 리사이즈 입력을 가리지 않게 해야 한다. Linux는 WebView를 surface에 꽉 채우고, host 판정이
+//! 분할선·리사이즈로 보는 픽셀만 input shape으로 뺀다. 다른 OS는 아직 입력 영역을 빼지 못해
+//! pane 외곽 변에 여백을 둔다.
 
 use crate::model::{PhysicalPx, PhysicalRect};
 
@@ -42,10 +43,18 @@ pub fn webview_edge_inset(
     ]
 }
 
-/// 창 좌표의 host 입력 영역(물리 px). 분할선마다 hit-test 범위와 같은 띠를 만들고,
-/// `resize_band` 가 0보다 크면 창 네 가장자리의 리사이즈 밴드를 더한다.
-/// 분할선 사각형은 두 자식 사이의 틈이며 hit-test는 그 틈의 앞쪽 변을 중심으로
-/// `divider_hit_threshold_physical` 만큼 양쪽을 본다(`find_divider_at`).
+/// 정수 픽셀 `c` 가 `low < c < high` 인 구간 `[시작, 끝)`. 커서와 X input shape는 정수 픽셀 단위다.
+fn open_pixels(low: f32, high: f32) -> (f32, f32) {
+    (low.floor() + 1.0, high.ceil())
+}
+
+/// 창 좌표의 host 입력 영역(물리 px, 정수 픽셀 경계). host 판정과 같은 픽셀만 담는다.
+/// - 분할선: `find_divider_at` 은 분할선 위치(틈의 앞쪽 변) `d` 에서 `|p - d| < reach` 인
+///   열린 구간을 분할선으로 보고, 분할 사각형 안(`y <= p < y + 높이`)에서만 판정한다.
+/// - 창 가장자리: `resize_direction_at` 은 `x <= band`, `x >= 너비 - band`(위·아래도 같다)를
+///   리사이즈로 본다. 그래서 왼쪽·위 밴드는 `band + 1` 픽셀, 오른쪽·아래 밴드는 `band` 픽셀이다.
+///
+/// `resize_band` 가 0이면(최대화·전체화면·OS 장식) 창 가장자리 밴드를 넣지 않는다.
 pub fn host_input_zones(
     dividers: &[PhysicalRect],
     window_width: PhysicalPx,
@@ -53,55 +62,63 @@ pub fn host_input_zones(
     resize_band: PhysicalPx,
     scale_factor: f32,
 ) -> Vec<PhysicalRect> {
-    let reach = PhysicalPx(crate::state::mouse::divider_hit_threshold_physical(
-        scale_factor,
-    ));
+    let reach = crate::state::mouse::divider_hit_threshold_physical(scale_factor);
+    let span = |(start, end): (f32, f32)| (PhysicalPx(start), PhysicalPx((end - start).max(0.0)));
     let mut zones: Vec<PhysicalRect> = dividers
         .iter()
         .map(|d| {
             if d.width <= d.height {
+                let (x, width) = span(open_pixels(d.x.value() - reach, d.x.value() + reach));
+                let (y, height) = span((d.y.value().ceil(), (d.y + d.height).value().ceil()));
                 PhysicalRect {
-                    x: d.x - reach,
-                    y: d.y,
-                    width: reach + reach,
-                    height: d.height,
+                    x,
+                    y,
+                    width,
+                    height,
                 }
             } else {
+                let (y, height) = span(open_pixels(d.y.value() - reach, d.y.value() + reach));
+                let (x, width) = span((d.x.value().ceil(), (d.x + d.width).value().ceil()));
                 PhysicalRect {
-                    x: d.x,
-                    y: d.y - reach,
-                    width: d.width,
-                    height: reach + reach,
+                    x,
+                    y,
+                    width,
+                    height,
                 }
             }
         })
         .collect();
     if resize_band > PhysicalPx::default() {
+        let band = resize_band.value();
+        let (w, h) = (window_width.value(), window_height.value());
+        let near = band.floor() + 1.0;
+        let (right_x, right_w) = span(((w - band).ceil(), w));
+        let (bottom_y, bottom_h) = span(((h - band).ceil(), h));
         let origin = PhysicalPx::default();
         zones.extend([
             PhysicalRect {
                 x: origin,
                 y: origin,
-                width: resize_band,
+                width: PhysicalPx(near),
                 height: window_height,
             },
             PhysicalRect {
-                x: window_width - resize_band,
+                x: right_x,
                 y: origin,
-                width: resize_band,
+                width: right_w,
                 height: window_height,
             },
             PhysicalRect {
                 x: origin,
                 y: origin,
                 width: window_width,
-                height: resize_band,
+                height: PhysicalPx(near),
             },
             PhysicalRect {
                 x: origin,
-                y: window_height - resize_band,
+                y: bottom_y,
                 width: window_width,
-                height: resize_band,
+                height: bottom_h,
             },
         ]);
     }
@@ -173,14 +190,52 @@ mod tests {
             1.0,
         );
         let holes = webview_input_holes(rect(730.0, 61.0, 550.0, 634.0), &zones);
-        // hit-test 는 |x - 729| < 4 라 띠는 725..733 이고 WebView 안쪽은 730..733 이다.
+        // hit-test 는 |x - 729| < 4 라 띠는 726..=732 이고 WebView 안쪽은 730..=732 이다.
         assert_eq!(
             values(&holes),
             values(&[rect(0.0, 0.0, 3.0, 634.0), rect(542.0, 0.0, 8.0, 634.0)])
         );
     }
 
-    /// 배율 2: 분할선 띠는 논리 4px = 물리 8px 씩 양쪽, 밴드는 물리 8px 그대로다.
+    /// 분할선 앞쪽(왼쪽) WebView: 띠는 host 가 분할선으로 보는 726..=728 만 뺀다. 725 는
+    /// |725 - 729| = 4 라 분할선이 아니므로 페이지가 받아야 한다.
+    #[test]
+    fn a_webview_before_the_divider_yields_only_the_pixels_the_host_hits() {
+        let divider = rect(729.0, 30.0, 1.0, 665.0);
+        let zones = host_input_zones(
+            &[divider],
+            PhysicalPx(1280.0),
+            PhysicalPx(720.0),
+            PhysicalPx(8.0),
+            1.0,
+        );
+        let holes = webview_input_holes(rect(180.0, 61.0, 549.0, 634.0), &zones);
+        assert_eq!(values(&holes), values(&[rect(546.0, 0.0, 3.0, 634.0)]));
+    }
+
+    /// 창 왼쪽·위 밴드는 `x <= 8` 이라 9 픽셀, 오른쪽·아래 밴드는 `x >= 너비 - 8` 이라 8 픽셀이다.
+    /// 사이드바를 숨기면 WebView 가 창 왼쪽 끝에 닿는다.
+    #[test]
+    fn the_window_bands_match_the_resize_hit_test() {
+        let zones = host_input_zones(
+            &[],
+            PhysicalPx(1280.0),
+            PhysicalPx(720.0),
+            PhysicalPx(8.0),
+            1.0,
+        );
+        let holes = webview_input_holes(rect(0.0, 61.0, 1280.0, 634.0), &zones);
+        assert_eq!(
+            values(&holes),
+            values(&[rect(0.0, 0.0, 9.0, 634.0), rect(1272.0, 0.0, 8.0, 634.0)])
+        );
+        assert_eq!(
+            values(&zones[2..]),
+            values(&[rect(0.0, 0.0, 1280.0, 9.0), rect(0.0, 712.0, 1280.0, 8.0)])
+        );
+    }
+
+    /// 배율 2: 분할선 띠는 논리 4px = 물리 8px 기준 열린 구간, 밴드는 물리 8px 그대로다.
     #[test]
     fn the_divider_band_scales_but_the_resize_band_stays_physical() {
         let divider = rect(1460.0, 60.0, 2.0, 1330.0);
@@ -191,9 +246,10 @@ mod tests {
             PhysicalPx(8.0),
             2.0,
         );
+        // |x - 1460| < 8 → 1453..=1467
         assert_eq!(
             values(&zones[..1]),
-            values(&[rect(1452.0, 60.0, 16.0, 1330.0)])
+            values(&[rect(1453.0, 60.0, 15.0, 1330.0)])
         );
         assert_eq!(
             values(&zones[2..3]),
@@ -212,6 +268,87 @@ mod tests {
             1.0,
         );
         assert!(webview_input_holes(rect(180.0, 61.0, 1100.0, 634.0), &zones).is_empty());
+    }
+
+    /// 반 픽셀 분할선(배율 2 에서 논리 크기가 .5 로 끝나는 leaf): |y - 730.5| < 8 → 723..=738.
+    #[test]
+    fn a_fractional_divider_yields_whole_pixels() {
+        let divider = rect(360.0, 730.5, 1240.0, 2.0);
+        let zones = host_input_zones(
+            &[divider],
+            PhysicalPx(1600.0),
+            PhysicalPx(1000.0),
+            PhysicalPx(0.0),
+            2.0,
+        );
+        assert_eq!(values(&zones), values(&[rect(360.0, 723.0, 1240.0, 16.0)]));
+    }
+
+    /// 띠는 host 판정(`find_divider_at`)이 분할선으로 보는 픽셀과 정확히 같다. 터미널/가운데/터미널
+    /// 세로 3단(가로 분할선 둘)과 세로 분할을 배율 1·2 에서 픽셀마다 대조한다.
+    #[test]
+    fn the_bands_hold_exactly_the_pixels_the_divider_hit_test_hits() {
+        use crate::model::{Pane, PaneNode, SplitDirection};
+        let leaf = |id| {
+            Box::new(PaneNode::Leaf(Pane::new_with_terminal_marker(
+                id,
+                id * 10,
+                id * 100,
+            )))
+        };
+        let stacked = PaneNode::Split {
+            direction: SplitDirection::Horizontal,
+            ratio: 0.5,
+            first: leaf(1),
+            second: Box::new(PaneNode::Split {
+                direction: SplitDirection::Horizontal,
+                ratio: 0.5,
+                first: leaf(2),
+                second: leaf(3),
+            }),
+        };
+        let side_by_side = PaneNode::Split {
+            direction: SplitDirection::Vertical,
+            ratio: 0.37,
+            first: leaf(4),
+            second: leaf(5),
+        };
+        for scale in [1.0_f32, 2.0] {
+            let rect = rect(180.0 * scale, 30.0 * scale, 550.0 * scale, 437.0 * scale);
+            let threshold = crate::state::mouse::divider_hit_threshold_physical(scale);
+            for tree in [&stacked, &side_by_side] {
+                let zones = host_input_zones(
+                    &tree.collect_dividers(rect, scale),
+                    PhysicalPx(2000.0),
+                    PhysicalPx(2000.0),
+                    PhysicalPx::default(),
+                    scale,
+                );
+                let inside = |px: f32, py: f32| {
+                    zones.iter().any(|z| {
+                        px >= z.x.value()
+                            && px < (z.x + z.width).value()
+                            && py >= z.y.value()
+                            && py < (z.y + z.height).value()
+                    })
+                };
+                let (cx, cy) = (
+                    (rect.x + rect.width * 0.5).value(),
+                    (rect.y + rect.height * 0.5).value(),
+                );
+                for p in 0..1200 {
+                    let p = p as f32;
+                    for (px, py) in [(cx, p), (p, cy)] {
+                        assert_eq!(
+                            inside(px, py),
+                            tree.find_divider_at(px, py, rect, threshold, scale)
+                                .is_some(),
+                            "배율 {scale} 픽셀 ({px}, {py})"
+                        );
+                    }
+                }
+            }
+        }
     }
 
     /// 가로 분할선은 위아래로 띠를 만든다.

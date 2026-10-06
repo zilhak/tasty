@@ -763,8 +763,8 @@ fn the_blind_spots_are_still_the_size_they_say() {
         // The override row fit test adds its checkbox width literal.
         // The shared table header mode test adds its 140 column width.
         // The import diff truncated() passes zero tracking to truncated_tracked in the app and the gallery (2 literals).
-        // WebView 입력 띠 시험이 창 리사이즈 밴드로 PhysicalPx(8) 세 개와 PhysicalPx(0) 두 개를 넘긴다.
-        (191, 417),
+        // WebView 입력 띠 시험이 창 리사이즈 밴드로 PhysicalPx(8) 다섯 개와 PhysicalPx(0) 세 개를 넘긴다.
+        (191, 420),
         "제외한 0과 test 전용 코드의 수가 달라졌다. 실제 사용과 수집 범위의 변경을 확인하고 기록을 갱신한다."
     );
     let roster: usize = UNIT_SPACE_SITES.iter().map(|(.., n, _)| n).sum();

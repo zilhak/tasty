@@ -22,8 +22,11 @@ use super::keys::WebViewKeySink;
 use super::script_gate::ScriptGate;
 use super::{NavState, PendingNavigation, WebViewBounds};
 
-/// input shape 를 정한 GTK 크기와 구멍(이 창 기준 물리 px `[x, y, 너비, 높이]`).
+/// input shape 를 정한 X 창 크기와 구멍(이 창 기준 물리 px `[x, y, 너비, 높이]`).
 type InputShape = ((i32, i32), Vec<[i32; 4]>);
+
+/// X SHAPE 확장의 입력 shape 종류(`ShapeInput`).
+const SHAPE_INPUT: std::os::raw::c_int = 2;
 
 pub struct PlatformWebView {
     webview: WebView,
@@ -45,8 +48,10 @@ pub struct PlatformWebView {
     ucm: Option<UserContentManager>,
     /// 비동기 컴파일 완료 전에는 필터가 없다.
     content_filter: Rc<RefCell<Option<ContentFilter>>>,
-    /// 마지막 `set_bounds` 의 GTK 크기(GDK 논리 px). input shape 의 전체 사각형이다.
-    gtk_size: Cell<(i32, i32)>,
+    /// 마지막 `set_bounds` 의 X 창 크기(물리 px). input shape 의 전체 사각형이다.
+    x11_size: Cell<(i32, i32)>,
+    /// X 창 input shape 를 물리 px 로 설정하는 XFixes. 열지 못하면 입력 구멍을 두지 않는다.
+    xfixes: Option<x11_dl::xfixes::Xlib>,
     /// 마지막으로 적용한 input shape(GTK 크기와 구멍). 같으면 X 요청을 다시 보내지 않는다.
     applied_input_shape: RefCell<Option<InputShape>>,
 }
@@ -204,6 +209,30 @@ fn transient(msg: impl std::fmt::Display) -> super::WebViewCreateError {
     super::WebViewCreateError::Transient(msg.to_string())
 }
 
+/// XFixes 를 열고 region 요청에 필요한 버전을 맞춘다. 실패하면 경고하고 None 이다.
+fn open_xfixes(display: *mut x11_dl::xlib::Display) -> Option<x11_dl::xfixes::Xlib> {
+    let fixes = match x11_dl::xfixes::Xlib::open() {
+        Ok(f) => f,
+        Err(e) => {
+            tracing::warn!("WebView input shape disabled: cannot open libXfixes: {e}");
+            return None;
+        }
+    };
+    let (mut event_base, mut error_base) = (0, 0);
+    let (mut major, minor) = (5, 0);
+    // SAFETY: display 는 호출자가 확인한 유효한 연결이고 출력 인자는 지역 변수다.
+    // region 요청(버전 2 이상)을 쓰기 전에 확장과 버전을 협상한다.
+    let ready = unsafe {
+        (fixes.XFixesQueryExtension)(display, &mut event_base, &mut error_base) != 0
+            && (fixes.XFixesQueryVersion)(display, &mut major, &minor) != 0
+    };
+    if !ready || major < 2 {
+        tracing::warn!("WebView input shape disabled: XFixes 2.0 is not available (got {major})");
+        return None;
+    }
+    Some(fixes)
+}
+
 impl PlatformWebView {
     pub fn new(
         window: &(impl HasWindowHandle + HasDisplayHandle),
@@ -233,10 +262,10 @@ impl PlatformWebView {
             x11_dl::xlib::Xlib::open().map_err(|e| perm(format!("Failed to open Xlib: {e}")))?;
 
         let physical = bounds.to_physical(scale_factor);
-        let x = physical.x as i32;
-        let y = physical.y as i32;
-        let w = physical.width as u32;
-        let h = physical.height as u32;
+        let x = physical.x.round() as i32;
+        let y = physical.y.round() as i32;
+        let w = physical.width.round() as u32;
+        let h = physical.height.round() as u32;
 
         let display = if x11_display_ptr.is_null() {
             // SAFETY: XOpenDisplay(null)는 DISPLAY env에서 기본 디스플레이를 연다.
@@ -484,6 +513,8 @@ impl PlatformWebView {
 
         gtk_window.show_all();
 
+        let xfixes = open_xfixes(display as _);
+
         Ok(Self {
             webview,
             gtk_window,
@@ -499,7 +530,8 @@ impl PlatformWebView {
             gdk_window,
             ucm,
             content_filter,
-            gtk_size: Cell::new((w.max(1) as i32, h.max(1) as i32)),
+            x11_size: Cell::new((w.max(1) as i32, h.max(1) as i32)),
+            xfixes,
             applied_input_shape: RefCell::new(None),
         })
     }
@@ -518,10 +550,10 @@ impl PlatformWebView {
     pub fn set_bounds(&self, bounds: WebViewBounds, scale_factor: f64) {
         self.assert_origin_thread();
         let physical = bounds.to_physical(scale_factor);
-        let x = physical.x as i32;
-        let y = physical.y as i32;
-        let w = physical.width as i32;
-        let h = physical.height as i32;
+        let x = physical.x.round() as i32;
+        let y = physical.y.round() as i32;
+        let w = physical.width.round() as i32;
+        let h = physical.height.round() as i32;
 
         // SAFETY: self가 살아있으면 x11_display/x11_window 모두 valid (Drop이 정리).
         // 호출은 main thread (winit event loop) 흐름에서만 일어남 — 위
@@ -543,7 +575,7 @@ impl PlatformWebView {
         let gdk_scale = self.gdk_window.scale_factor().max(1);
         let gtk_w = (w.max(1) + gdk_scale - 1) / gdk_scale;
         let gtk_h = (h.max(1) + gdk_scale - 1) / gdk_scale;
-        self.gtk_size.set((gtk_w, gtk_h));
+        self.x11_size.set((w.max(1), h.max(1)));
         self.gtk_window.resize(gtk_w, gtk_h);
 
         // foreign X 창의 크기 변경을 GTK가 자동 반영하지 못하므로 allocation도 직접 갱신한다.
@@ -552,12 +584,16 @@ impl PlatformWebView {
     }
 
     /// host 가 받아야 하는 입력 영역(분할선 hit 띠·창 리사이즈 밴드)을 이 창의 입력에서 뺀다.
-    /// `holes` 는 이 창 기준 물리 px `[x, y, 너비, 높이]` 다. 빠진 곳의 포인터 이벤트는 X 서버가
-    /// 부모 창(winit)으로 보낸다 — 입력 shape 밖의 자손 창으로는 내려가지 않는다. 화면에는 그대로
-    /// 페이지가 보인다. GDK 단위로 바꿀 때 구멍을 바깥쪽으로 반올림해 host 쪽 띠가 줄지 않게 한다.
+    /// `holes` 는 이 X 창 기준 물리 px `[x, y, 너비, 높이]` 다. 빠진 곳의 포인터 이벤트는 X 서버가
+    /// 부모 창(winit)으로 보낸다 — 입력 shape 밖이면 이 창과 자손(GTK 창)으로 내려가지 않는다.
+    /// 화면에는 그대로 페이지가 보인다. GDK 의 input shape 는 GDK 논리 px 단위라 배율 2 에서
+    /// 홀수 경계를 나타내지 못하므로 XFixes 로 X 창에 물리 px 그대로 설정한다.
     pub fn set_input_holes(&self, holes: &[[i32; 4]]) {
         self.assert_origin_thread();
-        let size = self.gtk_size.get();
+        let Some(fixes) = &self.xfixes else {
+            return;
+        };
+        let size = self.x11_size.get();
         if self
             .applied_input_shape
             .borrow()
@@ -566,20 +602,39 @@ impl PlatformWebView {
         {
             return;
         }
-        let scale = self.gdk_window.scale_factor().max(1);
-        let rect = |x, y, w, h| gtk::cairo::RectangleInt::new(x, y, w, h);
-        let region = gtk::cairo::Region::create_rectangle(&rect(0, 0, size.0, size.1));
-        for &[x, y, w, h] in holes {
-            let x0 = x.div_euclid(scale);
-            let y0 = y.div_euclid(scale);
-            let x1 = (x + w + scale - 1).div_euclid(scale);
-            let y1 = (y + h + scale - 1).div_euclid(scale);
-            if let Err(e) = region.subtract_rectangle(&rect(x0, y0, x1 - x0, y1 - y0)) {
-                tracing::warn!("WebView input shape: region subtract failed: {e}");
-                return;
+        let dpy = self.x11_display as *mut x11_dl::xlib::Display;
+        let xrect = |x: i32, y: i32, w: i32, h: i32| x11_dl::xlib::XRectangle {
+            x: x.clamp(i16::MIN.into(), i16::MAX.into()) as i16,
+            y: y.clamp(i16::MIN.into(), i16::MAX.into()) as i16,
+            width: w.clamp(0, u16::MAX.into()) as u16,
+            height: h.clamp(0, u16::MAX.into()) as u16,
+        };
+        if holes.is_empty() {
+            // SAFETY: self 가 살아 있으면 display·x11_window 는 유효하다. origin thread(위 assert).
+            // region None(0)은 input shape 를 지워 창 전체가 입력을 받게 한다.
+            unsafe {
+                (fixes.XFixesSetWindowShapeRegion)(dpy, self.x11_window, SHAPE_INPUT, 0, 0, 0);
+            }
+        } else {
+            let mut whole = xrect(0, 0, size.0, size.1);
+            let mut cut: Vec<_> = holes
+                .iter()
+                .map(|&[x, y, w, h]| xrect(x, y, w, h))
+                .collect();
+            // SAFETY: display·x11_window 는 유효하고 origin thread 다. 사각형 배열은 호출 동안
+            // 살아 있다. 만든 region 은 shape 에 복사된 뒤 이 블록에서 지운다.
+            unsafe {
+                let region = (fixes.XFixesCreateRegion)(dpy, &mut whole, 1);
+                let holes_region =
+                    (fixes.XFixesCreateRegion)(dpy, cut.as_mut_ptr(), cut.len() as i32);
+                (fixes.XFixesSubtractRegion)(dpy, region, region, holes_region);
+                (fixes.XFixesSetWindowShapeRegion)(dpy, self.x11_window, SHAPE_INPUT, 0, 0, region);
+                (fixes.XFixesDestroyRegion)(dpy, holes_region);
+                (fixes.XFixesDestroyRegion)(dpy, region);
             }
         }
-        self.gdk_window.input_shape_combine_region(&region, 0, 0);
+        // SAFETY: 위와 같은 display. 요청을 즉시 내보낸다.
+        unsafe { (self.xlib.XFlush)(dpy) };
         *self.applied_input_shape.borrow_mut() = Some((size, holes.to_vec()));
     }
 

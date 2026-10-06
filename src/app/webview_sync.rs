@@ -165,10 +165,19 @@ fn collect_html_surfaces(
                                 width: crate::model::PhysicalPx(physical.width as f32),
                                 height: crate::model::PhysicalPx(physical.height as f32),
                             };
+                            // native 창은 물리 px 를 반올림한 정수 사각형에 놓인다(`set_bounds`).
+                            // 구멍도 같은 정수 사각형 기준으로 잘라 창 좌표와 한 픽셀도 어긋나지 않게 한다.
+                            let px = |v: f64| crate::model::PhysicalPx(v.round() as f32);
+                            let window_rect = crate::model::PhysicalRect {
+                                x: px(physical.x),
+                                y: px(physical.y),
+                                width: px(physical.width),
+                                height: px(physical.height),
+                            };
                             active_holes.insert(
                                 sid,
                                 crate::state::webview_edges::webview_input_holes(
-                                    webview_rect,
+                                    window_rect,
                                     &input_zones,
                                 ),
                             );
@@ -419,15 +428,10 @@ fn publish_native_content_rects(
 /// surface 에 꽉 채운다. 다른 OS는 아직 방법이 없어 `webview_edge_inset` 여백으로 피한다.
 #[cfg(target_os = "linux")]
 fn apply_input_holes(wv: &crate::webview::PlatformWebView, holes: &[crate::model::PhysicalRect]) {
+    // 구멍은 이미 정수 픽셀 경계다(`webview_edges`). 반올림은 부동소수 오차만 없앤다.
     let holes: Vec<[i32; 4]> = holes
         .iter()
-        .map(|r| {
-            let x0 = r.x.value().floor() as i32;
-            let y0 = r.y.value().floor() as i32;
-            let x1 = (r.x + r.width).value().ceil() as i32;
-            let y1 = (r.y + r.height).value().ceil() as i32;
-            [x0, y0, x1 - x0, y1 - y0]
-        })
+        .map(|r| [r.x, r.y, r.width, r.height].map(|v| v.value().round() as i32))
         .collect();
     wv.set_input_holes(&holes);
 }
