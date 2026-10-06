@@ -631,12 +631,12 @@ specimen 이 아니라) 실제 CSS 출력 내용까지 손으로 전사한다 �
 | surface | plugin draw | 갤러리 specimen | 핵심 토큰 |
 |---|---|---|---|
 | markdown | `crates/tasty-plugin-markdown/src/render.rs` (`pulldown-cmark` → `ammonia` sanitize → CSS custom property 주입, native OS WebView 가 렌더) | `components/markdown_viewer.rs` | 본문 `text-secondary`(=override subtext1) · 링크 `accent-primary` · 코드 `surface-raised` · 헤딩 `font-size-prose-h1`(h1)↔`font-size-body`(h6) CSS 5단계 선형보간(`prose-h2`·`line-height-prose` 은퇴 유지 — CSS custom property `--md-h1`..`--md-h6` 로 대체) |
-| image | `crates/tasty-plugin-image/src/render.rs` | `components/image_viewer.rs` | 캔버스 `bg-sidebar` · 버튼 `surface-raised`/`border-default` · 파일명·zoom `text-muted` · fallback `IMAGE` glyph |
+| image | `crates/tasty-plugin-image/src/render.rs` | `components/image_viewer.rs` (`image-viewer` spec, 편집 모드는 `image-paint` spec) | 캔버스 `bg-sidebar` · 버튼 `surface-raised`/`border-default` · 파일명·zoom `text-muted` · fallback `IMAGE` glyph · floating selection·손잡이 `accent-primary` · 기본 붓 색 `accent-danger` · 붓 슬라이더 트랙 `surface-active` · 팝업 `shadow-modal` |
 | explorer | 본체 `src/adapters/ui/surface/explorer.rs`의 `draw_explorer` (plugin 아님) | `components/explorer_surface.rs` (`explorer-surface` spec). 탭 줄 `explorer_tab_bar::strip` · 보기 전환 `explorer_toolbar::seg_toggle` · 사이드바 `explorer_sidebar::two_region` · 상세 표 `explorer_view_cells::detail_table` 를 760×420 한 장으로 조립. 탭 줄·Up 글리프·보기 전환·상세 행은 본체 값을 그리며, 시안 값과의 차이는 Spec Note에 적는다. 보기 전환이 세그먼트 채움을 따른다는 결론은 `components/explorer_view_toggle.rs` (`explorer-view-toggle` spec — Mocha·Latte 상자마다 켜짐 · 꺼진 칸 hover · grid 켜짐 세 줄). 내용 영역 상태 화면은 `components/explorer_states.rs` (`explorer-states` spec — 빈 폴더 · 권한 거부(`accent-warning`) · 불러오는 중(Spinner) 세 칸과 `explorer_states/popups.rs`의 `favorite` · `rename` 두 팝업. 팝업은 시안 Spec 무대의 구성(Path·Name 라벨, Kbd 안내 줄, 확장자 보존 줄, sm 버튼, 여백 12/14/10)을 따르며 본체를 따르는 단독 팝업 예제와 따로 그린다) | 면 `bg-panel` · 탭 줄·사이드바 `bg-sidebar` · 보기 전환 `segtoggle-on-bg` · 선택 행 `surface-active` · 즐겨찾기 별 `accent-warning` |
 | html | OS native WebView overlay (`src/runtime/surface_registry/webview_kind.rs`) | `components/html_chrome.rs` | 콘텐츠 토큰 무관 — chrome 만: `bg-panel`/`border-default` 빈 경계 타일(글리프·라벨·URL 없음) · placeholder `HTML` glyph · `Spinner` 로딩 · `ALERT_CIRCLE`+`accent-danger` 에러 |
 
 glyph: `crates/tasty-icons` 의 `IMAGE`(image fallback) · `HTML`(webview) — 갤러리 아이콘 페이지 SURFACES 그룹에 전시. image 는
-`viewer`/`no-image` 2 cluster, html 은 `boundary`/`placeholder`/`loading`/`error` 4 cluster,
+`viewer`/`no-image` 2 cluster, image 편집 모드(`image-paint`)는 시안 Spec 무대(paint bar · floating selection · New Image · Save As 팝업)를 공용 `Button`·`IconButton`으로 전사한 Wrap 무대, html 은 `boundary`/`placeholder`/`loading`/`error` 4 cluster,
 markdown 은 Column · Solo · Column · Wrap 네 무대. 화면 전용 고정값(560/360/300, control 버튼 24×20/30×20)은
 용도를 명시한 모듈 상수.
 
