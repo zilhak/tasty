@@ -236,7 +236,7 @@ fn text_format_keeps_stdout_verbatim() {
 }
 
 #[test]
-fn the_child_gets_the_host_environment_without_the_outer_claude_session() {
+fn the_child_gets_the_host_environment_without_the_outer_session_identities() {
     use std::ffi::OsString;
     let os = |k: &str, v: &str| (OsString::from(k), OsString::from(v));
     let path = std::env::var_os("PATH").unwrap_or_default();
@@ -253,7 +253,12 @@ fn the_child_gets_the_host_environment_without_the_outer_claude_session() {
         // 사용자가 넣는 Claude Code 설정과 인증은 남긴다.
         os("CLAUDE_CODE_OAUTH_TOKEN", "user-token"),
         os("ANTHROPIC_API_KEY", "user-key"),
-        // Tasty 프로세스의 TASTY_* 는 그대로 넘긴다.
+        // 바깥 Tasty 인스턴스의 신원은 넘기지 않는다.
+        os("TASTY_SESSION_TOKEN", "outer-token"),
+        os("TASTY_SURFACE_ID", "777"),
+        os("TASTY_PARENT_HOME", "/tmp/outer-home"),
+        os("TASTY_AGENT_ID", "outer-agent"),
+        // 그 밖의 TASTY_* 는 그대로 넘긴다.
         os("TASTY_HOME", "/tmp/tasty-home"),
         os("TASTY_LOCALE", "ko"),
     ];
