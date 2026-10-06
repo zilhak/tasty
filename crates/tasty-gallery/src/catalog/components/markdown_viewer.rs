@@ -381,38 +381,41 @@ fn toc_chrome(ui: &mut egui::Ui, theme: &Theme) {
         ))
         .show(ui, |ui| {
             ui.set_width((DOC_W - theme.spacing_lg.scaled(2.0)).value());
-            ui.horizontal(|ui| {
-                ui.label(rich(
-                    theme,
-                    "\u{25be}",
-                    theme.font_size_body.value(),
-                    theme.text_primary().to_egui(),
-                ));
-                ui.add_space(theme.spacing_xs.value());
-                ui.label(
-                    rich(
+            // 감싸는 cluster 의 가로 줄바꿈을 이어받지 않도록 목차 행을 세로로 쌓는다.
+            ui.vertical(|ui| {
+                ui.horizontal(|ui| {
+                    ui.label(rich(
                         theme,
-                        "Table of contents",
+                        "\u{25be}",
                         theme.font_size_body.value(),
                         theme.text_primary().to_egui(),
-                    )
-                    .strong(),
-                );
+                    ));
+                    ui.add_space(theme.spacing_xs.value());
+                    ui.label(
+                        rich(
+                            theme,
+                            "Table of contents",
+                            theme.font_size_body.value(),
+                            theme.text_primary().to_egui(),
+                        )
+                        .strong(),
+                    );
+                });
+                ui.add_space(theme.spacing_xs.value());
+                for (level, label) in [
+                    (1u8, "Markdown surface"),
+                    (2, "Headings & emphasis"),
+                    (3, "Lists"),
+                    (3, "Code block"),
+                    (3, "Image"),
+                    (3, "Table"),
+                    (3, "Blockquote"),
+                    (3, "Alerts (GFM)"),
+                    (4, "Subsection (h4)"),
+                ] {
+                    toc_row(ui, theme, level, label);
+                }
             });
-            ui.add_space(theme.spacing_xs.value());
-            for (level, label) in [
-                (1u8, "Markdown surface"),
-                (2, "Headings & emphasis"),
-                (3, "Lists"),
-                (3, "Code block"),
-                (3, "Image"),
-                (3, "Table"),
-                (3, "Blockquote"),
-                (3, "Alerts (GFM)"),
-                (4, "Subsection (h4)"),
-            ] {
-                toc_row(ui, theme, level, label);
-            }
         });
 }
 

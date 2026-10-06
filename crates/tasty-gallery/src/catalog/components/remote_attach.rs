@@ -206,10 +206,14 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
 
 pub fn draw_states(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
-        ra_card(ui, theme, RaState::Initial);
-        ra_card(ui, theme, RaState::Connecting);
-        ra_card(ui, theme, RaState::Error);
-        ra_card(ui, theme, RaState::Empty);
+        for state in [
+            RaState::Initial,
+            RaState::Connecting,
+            RaState::Error,
+            RaState::Empty,
+        ] {
+            spec::wrap_item(ui, |ui| ra_card(ui, theme, state));
+        }
     });
 
     spec::meta(

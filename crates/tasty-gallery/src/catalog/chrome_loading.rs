@@ -11,6 +11,9 @@ use crate::catalog::spec::{StageVariant, TokenChip, meta, note, stage};
 
 /// 기본 크기 예제 창.
 const CANVAS_DEFAULT: (f32, f32) = (1280.0, 720.0);
+/// 기본 크기 예제를 보여 주는 배율. 시안 `BootFrame z={0.6}`처럼 1280×720 창을 60%로 줄여
+/// 문서 칸에 넣는다. 크기 토큰도 같은 배율의 Theme 에서 읽는다.
+const DEFAULT_PREVIEW_ZOOM: f32 = 0.6;
 /// 최소 크기 예제 창. 문구 없음·Latte 예제에서도 사용한다.
 const CANVAS_MIN: (f32, f32) = (640.0, 480.0);
 /// 진행 문구들을 나란히 비교할 예제 창.
@@ -62,17 +65,26 @@ fn draw_frame(ui: &mut egui::Ui, theme: &Theme, canvas: egui::Vec2, phase_text: 
     }
 }
 
-pub fn draw_default(ui: &mut egui::Ui, theme: &Theme) {
-    draw_frame(
-        ui,
-        theme,
-        egui::vec2(CANVAS_DEFAULT.0, CANVAS_DEFAULT.1),
-        Some("Initializing graphics…"),
+/// 기본 크기 창을 시안 배율로 줄여 그린다.
+fn draw_default_preview(ui: &mut egui::Ui, theme: &Theme, phase_text: &str) {
+    let zoomed = Theme::with_colors_and_zoom(
+        theme.to_colors(),
+        theme.is_light,
+        theme.ui_zoom * DEFAULT_PREVIEW_ZOOM,
     );
+    let canvas = egui::vec2(CANVAS_DEFAULT.0, CANVAS_DEFAULT.1) * DEFAULT_PREVIEW_ZOOM;
+    draw_frame(ui, &zoomed, canvas, Some(phase_text));
+}
+
+pub fn draw_default(ui: &mut egui::Ui, theme: &Theme) {
+    draw_default_preview(ui, theme, "Initializing graphics…");
     meta(
         ui,
         theme,
-        &[("window", "1280×720 default"), ("phase", "GpuInit")],
+        &[
+            ("window", "1280×720 default · shown at 60%"),
+            ("phase", "GpuInit"),
+        ],
         &[
             TokenChip::new("bg-app", "full surface", theme.bg_app().to_egui()),
             TokenChip::new(
@@ -247,17 +259,12 @@ pub fn draw_shutdown_phases(ui: &mut egui::Ui, theme: &Theme) {
 }
 
 pub fn draw_shutdown_default(ui: &mut egui::Ui, theme: &Theme) {
-    draw_frame(
-        ui,
-        theme,
-        egui::vec2(CANVAS_DEFAULT.0, CANVAS_DEFAULT.1),
-        Some("Stopping plugins…"),
-    );
+    draw_default_preview(ui, theme, "Stopping plugins…");
     meta(
         ui,
         theme,
         &[
-            ("window", "1280×720 default"),
+            ("window", "1280×720 default · shown at 60%"),
             ("phase", "StoppingPlugins"),
             ("lockup", "identical to boot"),
         ],

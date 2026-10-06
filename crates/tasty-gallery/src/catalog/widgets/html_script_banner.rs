@@ -603,54 +603,56 @@ pub fn draw_markers(ui: &mut egui::Ui, theme: &Theme) {
                 ui.spacing_mut().item_spacing =
                     egui::vec2(theme.spacing_lg.value(), theme.spacing_lg.value());
                 for (name, th) in [("Mocha", &mocha), ("Latte", &latte)] {
-                    egui::Frame::new()
-                        .fill(th.bg_app().to_egui())
-                        .stroke(egui::Stroke::new(
-                            th.border_width.value(),
-                            th.border_default().to_egui(),
-                        ))
-                        .corner_radius(th.corner_radius.value())
-                        .inner_margin(egui::Margin::same(th.spacing_md.value() as i8))
-                        .show(ui, |ui| {
-                            ui.horizontal_top(|ui| {
-                                ui.spacing_mut().item_spacing.x = th.spacing_md.value();
-                                for (cap, kind, tip) in [
-                                    (
-                                        "4a · dismissed — lock, click to re-show",
-                                        HtmlScriptMarkerKind::Blocked,
-                                        t(MARKER_BLOCKED),
-                                    ),
-                                    (
-                                        "4b · allowed this session",
-                                        HtmlScriptMarkerKind::Allowed,
-                                        t(MARKER_ALLOWED),
-                                    ),
-                                ] {
-                                    ui.vertical(|ui| {
-                                        ui.spacing_mut().item_spacing.y = th.spacing_xs.value();
-                                        caption(ui, th, &format!("{name} · {cap}"));
-                                        framed(
-                                            ui,
-                                            th,
-                                            egui::vec2(
-                                                MARKER_SURFACE_W.value(),
-                                                MARKER_SURFACE_H.value(),
-                                            ),
-                                            |ui, inner| {
-                                                html_surface(
-                                                    ui,
-                                                    th,
-                                                    inner,
-                                                    None,
-                                                    Some((kind, tip)),
-                                                    false,
-                                                );
-                                            },
-                                        );
-                                    });
-                                }
+                    spec::wrap_item(ui, |ui| {
+                        egui::Frame::new()
+                            .fill(th.bg_app().to_egui())
+                            .stroke(egui::Stroke::new(
+                                th.border_width.value(),
+                                th.border_default().to_egui(),
+                            ))
+                            .corner_radius(th.corner_radius.value())
+                            .inner_margin(egui::Margin::same(th.spacing_md.value() as i8))
+                            .show(ui, |ui| {
+                                ui.horizontal_top(|ui| {
+                                    ui.spacing_mut().item_spacing.x = th.spacing_md.value();
+                                    for (cap, kind, tip) in [
+                                        (
+                                            "4a · dismissed — lock, click to re-show",
+                                            HtmlScriptMarkerKind::Blocked,
+                                            t(MARKER_BLOCKED),
+                                        ),
+                                        (
+                                            "4b · allowed this session",
+                                            HtmlScriptMarkerKind::Allowed,
+                                            t(MARKER_ALLOWED),
+                                        ),
+                                    ] {
+                                        ui.vertical(|ui| {
+                                            ui.spacing_mut().item_spacing.y = th.spacing_xs.value();
+                                            caption(ui, th, &format!("{name} · {cap}"));
+                                            framed(
+                                                ui,
+                                                th,
+                                                egui::vec2(
+                                                    MARKER_SURFACE_W.value(),
+                                                    MARKER_SURFACE_H.value(),
+                                                ),
+                                                |ui, inner| {
+                                                    html_surface(
+                                                        ui,
+                                                        th,
+                                                        inner,
+                                                        None,
+                                                        Some((kind, tip)),
+                                                        false,
+                                                    );
+                                                },
+                                            );
+                                        });
+                                    }
+                                });
                             });
-                        });
+                    });
                 }
             });
         });

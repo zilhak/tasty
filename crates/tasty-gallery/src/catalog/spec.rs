@@ -147,17 +147,22 @@ pub fn cluster(
             add_contents(ui);
         });
     };
-    // 감싸는 줄(stage Wrap)은 크기를 모르는 자식 ui 를 다음 줄로 보내지 못한다. 직전 프레임에
-    // 잰 크기로 자리를 요청해 시안 `flex-wrap: wrap` 처럼 칸을 넘기면 줄을 바꾼다.
-    let id = ui.next_auto_id().with(("cluster", label));
+    wrap_item(ui, body);
+}
+
+/// 줄바꿈 줄(stage Wrap · `horizontal_wrapped`)에 놓는 묶음 하나. 감싸는 줄은 크기를 모르는
+/// 자식 ui 를 다음 줄로 보내지 못하므로, 직전 프레임에 잰 크기로 자리를 요청해 시안
+/// `flex-wrap: wrap` 처럼 칸을 넘기면 줄을 바꾼다. 묶음 안은 세로 배치다.
+pub fn wrap_item(ui: &mut egui::Ui, add_contents: impl FnOnce(&mut egui::Ui)) {
+    let id = ui.next_auto_id().with("wrap_item");
     let prev: Option<egui::Vec2> = ui.data(|d| d.get_temp(id));
     let rect = match prev {
         Some(size) => {
-            ui.allocate_ui_with_layout(size, egui::Layout::top_down(egui::Align::Min), body)
+            ui.allocate_ui_with_layout(size, egui::Layout::top_down(egui::Align::Min), add_contents)
                 .response
                 .rect
         }
-        None => ui.vertical(body).response.rect,
+        None => ui.vertical(add_contents).response.rect,
     };
     ui.data_mut(|d| d.insert_temp(id, rect.size()));
 }

@@ -667,8 +667,9 @@ pub fn draw_more_menu(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Column, |ui| {
         ui.spacing_mut().item_spacing.y = theme.spacing_lg.value();
 
-        ui.horizontal_top(|ui| {
-            ui.spacing_mut().item_spacing.x = theme.spacing_lg.value();
+        // 시안은 세 배너를 세로로 쌓는다(flexDirection: column).
+        ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing.y = theme.spacing_lg.value();
             for (state, caption) in [
                 (MoreTriggerState::Hidden, "closed — hover to reveal"),
                 (MoreTriggerState::Hovered, "hover — ⋯ left of ×, 4px gap"),

@@ -114,15 +114,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             true,
         ),
     ];
-    // 카드 폭 560 두 장이 문서 컬럼에 들어가므로 두 장씩 한 줄에 놓는다.
-    spec::stage(ui, theme, StageVariant::Column, |ui| {
-        for pair in cases.chunks(2) {
-            ui.horizontal_top(|ui| {
-                ui.spacing_mut().item_spacing.x = theme.spacing_lg.value();
-                for &(key, label, th, scenario, debug) in pair {
-                    spec::cluster(ui, th, label, |ui| pane(ui, th, key, scenario, debug));
-                }
-            });
+    // 시안처럼 줄바꿈 무대에 놓는다. 카드 폭 560 두 장은 문서 칸에 들어가지 않아 한 줄에 한 장이다.
+    spec::stage(ui, theme, StageVariant::Wrap, |ui| {
+        for &(key, label, th, scenario, debug) in &cases {
+            spec::cluster(ui, th, label, |ui| pane(ui, th, key, scenario, debug));
         }
     });
 

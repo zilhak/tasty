@@ -2,6 +2,7 @@
 //! 빈 영역·파일·폴더·다중 선택에 따른 네 가지 구성을 보여준다.
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{MenuItemVariant, menu_item, menu_separator};
 
 use crate::catalog::icons::{COPY, EDIT, MockGlyph, STAR, TRASH};
@@ -61,8 +62,15 @@ fn multi_menu() -> Vec<Mi> {
 /// (caption, 항목 빌더) — 한 컨텍스트 메뉴 variant.
 type Variant = (&'static str, fn() -> Vec<Mi>);
 
+/// 시안 메뉴 한 장의 바깥 폭(`width: 220`, border-box).
+const MENU_OUTER_W: LogicalPx = LogicalPx(220.0);
+/// 시안 무대의 메뉴 사이 간격(`gap: 18`). 대응 토큰이 없는 전시용 값이다.
+const MENU_GAP: LogicalPx = LogicalPx(18.0);
+
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
-    let menu_w = theme.field_width_lg.value() + theme.spacing_xl.value(); // ≈224
+    // 시안 메뉴 폭 220 은 테두리·안쪽 여백을 포함한 바깥 폭이다.
+    let menu_w =
+        MENU_OUTER_W.value() - theme.spacing_xs.value() * 2.0 - theme.border_width.value() * 2.0;
     let variants: [Variant; 4] = [
         ("empty area → cwd", empty_menu),
         ("file (single)", file_menu),
@@ -71,8 +79,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     ];
 
     stage(ui, theme, StageVariant::Wrap, |ui| {
-        ui.spacing_mut().item_spacing =
-            egui::vec2(theme.spacing_xl.value(), theme.spacing_lg.value());
+        ui.spacing_mut().item_spacing = egui::vec2(MENU_GAP.value(), theme.spacing_lg.value());
         for (caption, build) in variants {
             ui.vertical(|ui| {
                 ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();

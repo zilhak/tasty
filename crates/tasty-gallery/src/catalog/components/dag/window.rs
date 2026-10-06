@@ -324,8 +324,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     let entries = rows::entries();
     let size = popup_size(theme);
     spec::stage(ui, theme, StageVariant::Tight, |ui| {
-        ui.horizontal_top(|ui| {
-            ui.spacing_mut().item_spacing.x = theme.spacing_lg.value();
+        // 두 팝업이 칸에 함께 들어가지 않으면 시안처럼 위아래로 쌓는다.
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing =
+                egui::vec2(theme.spacing_lg.value(), theme.spacing_lg.value());
             for (salt, open) in [("list", None), ("detail", Some(&entries[0]))] {
                 let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
                 paint(ui, theme, rect, &entries, open, salt);

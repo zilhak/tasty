@@ -9,7 +9,7 @@ use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{Input, OverrideCell, checkbox, override_row, select};
 
 use crate::catalog::icons::SEARCH;
-use crate::catalog::spec::{StageVariant, TokenChip, meta, stage};
+use crate::catalog::spec::{StageVariant, TokenChip, meta, stage, wrap_item};
 
 /// 시안 좁은 짝의 폭 `--tasty-size-360`. 공개 역할 토큰이 없어 갤러리 무대 치수로 둔다.
 const NARROW_WIDTH: LogicalPx = LogicalPx(360.0);
@@ -186,27 +186,31 @@ fn theme_pair(
         ("Mocha", with_zoom(tasty_themes::mocha_fallback())),
         ("Latte", with_zoom(crate::host_shell::latte_theme())),
     ];
-    ui.horizontal_top(|ui| {
-        ui.spacing_mut().item_spacing.x = theme.spacing_lg.value();
+    // 시안 ThemePair 는 줄바꿈 줄이다. 두 타일이 칸에 안 들어가면 아래로 내려간다.
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing =
+            egui::vec2(theme.spacing_lg.value(), theme.spacing_lg.value());
         for ((label, th), rows) in themes.iter().zip(state.chunks_mut(ROWS.len())) {
-            egui::Frame::new()
-                .fill(th.bg_app().to_egui())
-                .corner_radius(th.corner_radius.value())
-                .inner_margin(egui::Margin::same(th.spacing_md.value() as i8))
-                .show(ui, |ui| {
-                    ui.vertical(|ui| {
-                        ui.set_width(width);
-                        ui.spacing_mut().item_spacing.y = th.spacing_sm.value();
-                        ui.label(
-                            egui::RichText::new(*label)
-                                .size(th.font_size_caption.value())
-                                .color(th.text_muted().to_egui()),
-                        );
-                        ui.push_id(("font_override", pair, *label), |ui| {
-                            font_override(ui, th, pair == 1, rows);
+            wrap_item(ui, |ui| {
+                egui::Frame::new()
+                    .fill(th.bg_app().to_egui())
+                    .corner_radius(th.corner_radius.value())
+                    .inner_margin(egui::Margin::same(th.spacing_md.value() as i8))
+                    .show(ui, |ui| {
+                        ui.vertical(|ui| {
+                            ui.set_width(width);
+                            ui.spacing_mut().item_spacing.y = th.spacing_sm.value();
+                            ui.label(
+                                egui::RichText::new(*label)
+                                    .size(th.font_size_caption.value())
+                                    .color(th.text_muted().to_egui()),
+                            );
+                            ui.push_id(("font_override", pair, *label), |ui| {
+                                font_override(ui, th, pair == 1, rows);
+                            });
                         });
                     });
-                });
+            });
         }
     });
 }
