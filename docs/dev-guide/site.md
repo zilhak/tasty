@@ -279,8 +279,10 @@ Sätteri 의 hast 플러그인(`src/lib/satteri-*.mjs`)에서 일어난다.
 
 - 선언 단위로 갈리는 경우 — 제품 창을 **페이지에 얼마나 크게 보일지**(`.shell` 의 높이
   `clamp(…, vw, …)`, 가이드 그림의 높이 · 너비)는 킷이 정하지 않는 페이지 배치라 Claude Design
-  출처 규칙 안의 선언이어도 사이트 독자 값으로 본다. 반대로 킷이 정한 창 크기를 옮긴 값(Settings 1100×700)은
-  Claude Design 출처다.
+  출처 규칙 안의 선언이어도 사이트 독자 값으로 본다(hero 높이 clamp, 그림 높이 420 · 400 · 620px, 그림 폭
+  820px, 작업 흐름 패인 최소 높이 190px). 반대로 킷이 정한 창 크기를 옮긴 값은 Claude Design 출처다 —
+  Settings 무대는 `--tasty-settings-window-width` · `-height`, 제품 창 토스트의 하단 거리는
+  `--tasty-toast-stack-offset-bottom` 을 읽는다.
 - 갤러리 경로는 `Base.astro` 를 거치지 않아 `global.css` 를 싣지 않는다. 그 경로에는 `--sp-*` 가
   없으므로 갤러리 스타일시트는 위 표와 별개로도 `--tasty-*` 만 쓸 수 있다.
 - primitive 직접 참조 금지는 Claude Design 출처 규칙의 **치수**에만 적용한다. 색 토큰을 어느 층에서

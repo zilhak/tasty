@@ -83,10 +83,9 @@
    readable, then allow horizontal scrolling. */
 .anat-settings__stage {
   position: relative;
-  /* The kit's own Settings window size (settings_window.jsx draws it inline at
-     1100x700). No token carries it yet; a design request asks for one. */
-  width: 1100px;
-  height: 700px;
+  /* The kit's Settings window size, the same tokens settings_window.jsx reads. */
+  width: var(--tasty-settings-window-width);
+  height: var(--tasty-settings-window-height);
   zoom: 0.7;
 }
 @container (max-width: 700px) { .anat-settings__stage { zoom: 0.6; } }
@@ -123,9 +122,8 @@
 .shell-overlays > * { pointer-events: auto; }
 .shell-overlays__toast {
   position: absolute;
-  /* Reads a primitive, as the kit's app.jsx does. Awaiting the design reply on
-     whether this offset gets a semantic or component token. */
-  bottom: var(--tasty-size-36);
+  /* The window-scope stack offset, as the kit's app.jsx reads it. */
+  bottom: var(--tasty-toast-stack-offset-bottom);
   left: 50%;
   transform: translateX(-50%);
   pointer-events: none;
