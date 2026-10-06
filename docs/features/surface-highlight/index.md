@@ -95,7 +95,7 @@ clear 전송 실패는 재시도하지 않는다. 오래된 확인을 나중에 
 
 Claude prompt-submit·session-start·active·post-tool-use·subagent-stop은 새 attention을 만들지 않는다.
 Codex PostToolUse·Interrupt도 만들지 않으며 Codex Stop은 현재 Completion attention 대신 완료 알림 경로를 쓴다.
-OSC 133은 셸 통합이 설치된 개별 명령 종료를 뜻한다. 종료 코드는 memory 명령 기록과 CommandCompleted 훅에도 남긴다.
+OSC 133은 셸 통합이 설치된 개별 명령 종료를 뜻한다. 같은 PTY 연결에서 프롬프트(A)를 그리기 전의 D는 셸 시작 보고라 attention을 만들지 않는다. 종료 코드는 memory 명령 기록과 CommandCompleted 훅에도 남긴다.
 coalesce된 기존 toast는 신규 attention 발생으로 세지 않는다.
 
 ## 인터페이스

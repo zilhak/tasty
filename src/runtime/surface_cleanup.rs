@@ -70,6 +70,7 @@ impl EngineMut<'_> {
         self.observer_router.drop_surface(surface_id);
         self.hooks.forget_surface(surface_id);
         self.forget_shell_integration_hint(surface_id);
+        self.forget_prompt_shown(surface_id);
         if let Some(factory) = self.runtime.waker_factory.as_ref() {
             factory.forget_surface(surface_id);
         }

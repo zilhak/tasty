@@ -155,8 +155,12 @@ impl AppServices {
                 body,
             });
         }
-        // 명령 이력 저장 성공 여부와 무관하게 D 경계는 완료 후속 처리로 넘긴다.
-        if phase == 'D' {
+        if phase == 'A' {
+            engine.note_prompt_shown(sid, generation.value());
+        }
+        // 명령 이력 저장 성공 여부와 무관하게 D 경계는 완료 후속 처리로 넘긴다. 첫 프롬프트 전의 D는
+        // 셸 시작 보고라 완료 attention·command-completed 훅을 일으키지 않는다.
+        if phase == 'D' && engine.take_command_completed(sid, generation.value()) {
             let exit_code = crate::core::command_index::extract_exit_code(payload);
             out.push(CoreEvent::TerminalCommandCompleted {
                 generation,
@@ -203,3 +207,7 @@ impl AppServices {
         engine.refresh_busy_surfaces()
     }
 }
+
+#[cfg(test)]
+#[path = "impl_pty_tests.rs"]
+mod tests;

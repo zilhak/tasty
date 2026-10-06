@@ -128,6 +128,7 @@ impl EngineRef<'_> {
 
 pub(crate) mod attention;
 pub mod child_liveness;
+mod command_cycle;
 mod finders;
 mod message;
 mod shell_integration_hint;

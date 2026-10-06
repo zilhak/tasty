@@ -18,6 +18,8 @@ pub(crate) struct LiveDomainState {
     pub(crate) shell_integration_boundary_seen: std::collections::HashSet<u32>,
     /// 안내 요청 이벤트를 이미 보낸 surface. 배너를 보여줬는지는 창 상태가 따로 기록한다.
     pub(crate) shell_integration_hint_requested: std::collections::HashSet<u32>,
+    /// 프롬프트(OSC 133 A)를 그린 PTY 연결의 generation. 그 뒤의 D만 명령 완료로 센다.
+    pub(crate) prompt_shown: HashMap<u32, u64>,
     // 매 프레임 OS 프로세스를 조회하지 않도록 busy 폴링의 전경 이름을 재사용한다.
     pub(crate) foreground_names: std::collections::HashMap<u32, String>,
     /// 폴링에서 전경 이름이 바뀔 때 올리는 번호. PID나 실제 프로세스 동일성을 판별하는 값은 아니다.
@@ -43,6 +45,7 @@ impl Default for LiveDomainState {
             shell_integration_first_output_at: std::collections::HashMap::new(),
             shell_integration_boundary_seen: std::collections::HashSet::new(),
             shell_integration_hint_requested: std::collections::HashSet::new(),
+            prompt_shown: HashMap::new(),
             foreground_names: std::collections::HashMap::new(),
             foreground_generation: std::collections::HashMap::new(),
             command_index: crate::core::command_index::CommandIndex::new(),
