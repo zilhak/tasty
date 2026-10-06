@@ -12,7 +12,7 @@ use tasty_ui_widgets::{Button, ButtonVariant, CenterState, ControlSize};
 /// transform 은 배치에 영향이 없으므로 배치 높이는 원래 글리프 크기다.
 const PLAN_A_GLYPH_SCALE: f32 = 1.4;
 /// 시안 plan A 보조 줄의 줄 높이 비율(`lineHeight: 1.5`). 대응 토큰이 없다.
-const PLAN_A_SUB_LINE_HEIGHT: f32 = 1.5;
+const PLAN_A_SUB_LINE_HEIGHT_RATIO: f32 = 1.5;
 
 pub(super) fn left_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, state: RaState) {
     let mut col = ui.new_child(
@@ -162,7 +162,7 @@ fn plan_a_center(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
         let fmt = |font: egui::FontId| egui::TextFormat {
             font_id: font,
             color: muted,
-            line_height: Some(size * PLAN_A_SUB_LINE_HEIGHT),
+            line_height: Some(size * PLAN_A_SUB_LINE_HEIGHT_RATIO),
             ..Default::default()
         };
         let mut job = egui::text::LayoutJob::default();
