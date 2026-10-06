@@ -438,3 +438,48 @@ fn text_output_defaults_to_a_string_and_keeps_the_empty_string() {
     assert_eq!(serde_json::to_value(&typed.output).unwrap(), json!(""));
     assert_eq!(typed.provenance.output_source, "postprocess.stdout.text");
 }
+
+#[test]
+fn cancelling_closes_the_postprocess_phase() {
+    // 시작한 실행 중 취소: 그 실행 번호로 닫는다.
+    let (_td, mut mem, seq) = fresh();
+    let mut store = TaskStore::new(&mut mem, "_host", &seq);
+    submit_plain(&mut store);
+    let attempt = main_done(&mut store, 10);
+    store
+        .begin_postprocess_run(1, &judge(), &attempt, 1, 20)
+        .expect("begin");
+    let (task, _) = store.cancel(1, &judge(), 30).expect("cancel");
+    assert!(matches!(task.state, TaskState::Cancelled));
+    assert_eq!(phase(&task), PostprocessPhase::Finished { run: 1 });
+    assert_eq!(
+        phase(&get(&store, "judge")),
+        PostprocessPhase::Finished { run: 1 }
+    );
+
+    // 재시도 대기 중 취소: 아직 시작하지 않은 2번째가 아니라 마지막으로 시작한 1번째로 닫는다.
+    let (_td, mut mem, seq) = fresh();
+    let mut store = TaskStore::new(&mut mem, "_host", &seq);
+    submit(
+        &mut store,
+        json!({"command": ["judge"], "timeout_ms": 1000, "retry": {"max_retries": 2, "delay_ms": 500}}),
+        json!({"type": "boolean"}),
+    );
+    let attempt = main_done(&mut store, 10);
+    store
+        .begin_postprocess_run(1, &judge(), &attempt, 1, 20)
+        .expect("begin");
+    report(
+        &mut store,
+        &attempt,
+        failed(1, PostprocessCause::NonzeroExit),
+        30,
+    )
+    .expect("retry");
+    assert!(matches!(
+        phase(&get(&store, "judge")),
+        PostprocessPhase::Pending { run: 2, .. }
+    ));
+    let (task, _) = store.cancel(1, &judge(), 40).expect("cancel");
+    assert_eq!(phase(&task), PostprocessPhase::Finished { run: 1 });
+}

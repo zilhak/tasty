@@ -439,8 +439,23 @@ pub enum PostprocessPhase {
     Pending { run: u32, not_before_ms: u64 },
     /// `run` 번째 실행을 시작했다. 결과 없이 호스트가 재시작하면 결과 불명으로 끝낸다.
     Started { run: u32, started_at: u64 },
-    /// `run` 번째 실행의 보고로 회차를 확정했다.
+    /// 더 실행하지 않는다. `run` 번째 실행의 보고로 회차를 확정했거나, 그 전에 task 가
+    /// 취소 등으로 끝났다. 뒤의 경우 `run` 은 마지막으로 시작한 실행 번호다(없으면 0).
     Finished { run: u32 },
+}
+
+/// 완료 보고 밖에서(취소 등) 종결된 task 의 후처리 단계를 닫는다. 기록을 읽는 쪽이 끝난
+/// task 를 진행 중으로 보지 않게 한다.
+pub(crate) fn close_phase(task: &mut Task) {
+    let Some(progress) = task.attempt.as_mut().and_then(|a| a.postprocess.as_mut()) else {
+        return;
+    };
+    let run = match progress.phase {
+        PostprocessPhase::Pending { run, .. } => run - 1,
+        PostprocessPhase::Started { run, .. } => run,
+        PostprocessPhase::Finished { .. } => return,
+    };
+    progress.phase = PostprocessPhase::Finished { run };
 }
 
 /// 재시도로 넘어간 실행 하나의 요약.

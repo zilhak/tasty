@@ -347,6 +347,7 @@ impl<'a> TaskStore<'a> {
             | TaskState::Cancelled
             | TaskState::Skipped => {
                 task.finished_at = Some(now_ms);
+                super::postprocess::close_phase(&mut task);
             }
             _ => {}
         }
