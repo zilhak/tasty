@@ -234,17 +234,17 @@ if [ -n "$TASTY_SURFACE_ID" ]; then tasty claude hook <token> || true; fi
 
 > **기존 사용자는 `tasty claude install` 재실행이 필요하다.** 명령 문자열은 사용자의 `settings.json` 에 이미 기록돼 있어, plugin 을 업데이트해도 옛 문자열 그대로다. 재실행하면 marker(`tasty claude hook <token>`) 가 일치하는 기존 entry 를 찾아 **제자리 갱신**하므로 entry 가 중복되지 않는다.
 
-`session_id`/`prompt_id`/`message`/`notification_type`/`error`/`agent_id`/`background_tasks`/`tool_name`/`tool_response`/`prompt` 같은 이벤트별 가변 데이터는 명령 인자가 아니라 **stdin JSON**으로 들어온다 — 매니페스트 `hook` cli 항목이 `stdin_json = true`를 선언하고, `--session`/`--prompt-id`/`--message`/`--notification-type`/`--error`/`--agent-id`/`--background-tasks`/`--waiting-on-background-work`/`--tool-name`/`--tool-response`/`--prompt` 플래그가 각각 `stdin_field`로 stdin JSON에서 자동 채워진다. 공식 hooks 문서와 실측 payload에는 없지만 `waiting_on_background_work`도 `--waiting-on-background-work`로 방어적으로 읽는다. `--background-tasks`·`--tool-response`와 이 인자는 문자열로 선언해 stdin의 배열·객체·bool 값을 그대로 넘긴다(Claude Code가 hook 실행 시 stdin으로 JSON payload를 준다). POSIX 셸 구문 1종만 발행한다 — [codex](../codex/index.md)처럼 Windows PowerShell 분기는 없다.
+`session_id`/`prompt_id`/`message`/`notification_type`/`error`/`agent_id`/`background_tasks`/`tool_name`/`tool_response`/`prompt`/`source`/`reason` 같은 이벤트별 가변 데이터는 명령 인자가 아니라 **stdin JSON**으로 들어온다 — 매니페스트 `hook` cli 항목이 `stdin_json = true`를 선언하고, `--session`/`--prompt-id`/`--message`/`--notification-type`/`--error`/`--agent-id`/`--background-tasks`/`--waiting-on-background-work`/`--tool-name`/`--tool-response`/`--prompt`/`--source`/`--reason` 플래그가 각각 `stdin_field`로 stdin JSON에서 자동 채워진다. 공식 hooks 문서와 실측 payload에는 없지만 `waiting_on_background_work`도 `--waiting-on-background-work`로 방어적으로 읽는다. `--background-tasks`·`--tool-response`와 이 인자는 문자열로 선언해 stdin의 배열·객체·bool 값을 그대로 넘긴다(Claude Code가 hook 실행 시 stdin으로 JSON payload를 준다). POSIX 셸 구문 1종만 발행한다 — [codex](../codex/index.md)처럼 Windows PowerShell 분기는 없다.
 
 | Claude Code 이벤트 | matcher | tasty hook token | `terminal.set_state` | `surface.fire_hook` | surface meta | `surface.completion` kind |
 |---|---|---|---|---|---|---|
 | `Stop` | `""`(전체) | `stop` | `idle`. 단 백그라운드 작업을 기다리는 Stop(아래)은 `active`, Stop 게이트가 붙은 세션은 판정이 모일 때까지 `active`(아래 "Stop 게이트와 idle") | `claude-idle`(대기 Stop은 없음) | 대기 Stop은 `claude-background-wait` **set**, 그 밖의 Stop은 **unset** | `completion`(대기 Stop은 없음) |
 | `SubagentStop` | `""`(전체) | `subagent-stop` | — (로그만) | — | — | — |
 | `StopFailure` | `""`(전체) | `stop-failure` | `idle`. 단 메인 턴이 띄운 백그라운드 작업이 남아 있으면 `active`(아래) | `claude-idle` + `claude-stop-failure`(백그라운드 작업이 남은 경우는 없음) | `claude-last-stop-failure` = stdin `error`(없으면 `unknown`) **set**. `claude-background-wait` **unset**. 백그라운드 작업이 남은 경우는 `claude-background-wait` **set**만 한다 | `completion`(백그라운드 작업이 남은 경우는 없음) |
-| `SessionEnd` | `""`(전체) | `session-end` | `idle` | `claude-idle` | `claude-session-id`·`restore.command`·`claude-last-stop-failure`·`claude-background-wait` **unset** (프로필 meta 2키는 건드리지 않는다. 프로필 **부착 기록**에는 종료 표시만 하고 유예 뒤 회수 — 아래 "복원을 건너 프로필이 유지되는 방식") | `completion` |
+| `SessionEnd` | `""`(전체) | `session-end` | `idle` | `claude-idle` | `claude-session-id`·`restore.command`·`claude-last-stop-failure`·`claude-background-wait` **unset**. stdin `reason`이 `clear`·`resume`이 아니면(값이 없을 때 포함) `claude-settings-file`도 **unset** (프로필 meta 2키는 건드리지 않는다. 프로필 **부착 기록**에는 종료 표시만 하고 유예 뒤 회수 — 아래 "복원을 건너 프로필이 유지되는 방식") | `completion` |
 | `Notification` | `""`(전체) | `notification` | `notification_type`별(아래 "Notification 유형별 상태"). `needs_input`·`active`·변경 없음 | `needs-input`(`needs_input` 유형만) | — | `needs_input`(`needs_input` 유형만) |
 | `UserPromptSubmit` | `""`(전체) | `prompt-submit` | `active` | — | `claude-last-stop-failure`·`claude-background-wait` **unset** | — |
-| `SessionStart` | `""`(전체) | `session-start` | `active` | — | `claude-last-stop-failure`·`claude-background-wait` **unset**. `claude-session-id` = 세션 ID, `restore.command` = `claude -r <id>` **set**(stdin JSON에 `session_id`가 없으면 건너뜀). 프로필이 부착돼 있으면 `claude -r <id> --settings "<경로>"` 로 쓰고, 복원으로 프로필 meta 가 사라졌으면 부착 기록에서 **복구**한다(아래 "복원을 건너 프로필이 유지되는 방식") | — |
+| `SessionStart` | `""`(전체) | `session-start` | `active` | — | `claude-last-stop-failure`·`claude-background-wait` **unset**. `claude-session-id` = 세션 ID, `restore.command` = `claude -r <id>` **set**(stdin JSON에 `session_id`가 없으면 건너뜀). 프로필이 부착돼 있으면 `claude -r <id> --settings "<경로>"` 로 쓰고, stdin `source`가 `resume`이면 그 경로를 `claude-settings-file`에 **set**하며, 복원으로 프로필 meta 가 사라졌으면 부착 기록에서 **복구**한다(아래 "복원을 건너 프로필이 유지되는 방식") | — |
 | `PreToolUse` | `AskUserQuestion` | `pre-tool-use` | `needs_input` | `needs-input` | — | `needs_input` |
 | `PostToolUse` | `AskUserQuestion` | `post-tool-use` | `active` | — | — | — |
 | `PostToolUse` | `Bash\|Agent\|Task` | `background-start` | — (백그라운드 작업 기록만) | — | — | — |
@@ -339,10 +339,14 @@ Claude Code는 한 Stop의 훅을 병렬로 실행하므로 상태 훅(`claude h
 어느 쪽이든 먼저 도착할 수 있다. 플러그인은 요청을 한 워커에서 차례로 처리하므로 한 요청이 다른 요청을 기다리지 않고
 메모리의 표에서 둘을 짝짓는다.
 
-- 게이트 수: Stop마다 그 surface에 부착된 settings 파일의 `hooks.Stop`에서 `tasty claude checklist-hook` 명령 수를 센다.
-  경로는 `launch`·`spawn`·`respawn`·`reboot`가 기록하는 surface meta `claude-settings-file`에서 읽는다(프로필 없이 실행하면 지운다).
-  이 meta가 없으면 프로필 meta 2키(`claude-session-profile`·`claude-session-profile-names`)를 읽는다. 사용자가 직접 `--settings`를
-  붙여 실행한 Claude는 알 수 없어 게이트가 없는 것으로 센다. 같은 명령 문자열은 한 번만 센다. Claude Code는 같은 handler를
+- 게이트 수: Stop마다 지금 실행 중인 Claude의 settings 파일에서 `hooks.Stop`의 `tasty claude checklist-hook` 명령 수를 센다.
+  경로는 surface meta `claude-settings-file`에서만 읽는다. `launch`·`spawn`·`respawn`·`reboot`가 Claude를 실행할 때 기록하고(프로필 없이 실행하면 지운다),
+  `--resume`으로 다시 연 세션(SessionStart `source: resume`)은 복원 명령에 붙인 프로필 경로를 기록한다.
+  Claude 프로세스가 끝나면(SessionEnd의 `reason`이 `clear`·`resume`이 아니면) 지운다. 그래서 같은 surface에서 사용자가 직접 실행한
+  `claude`는 게이트가 없는 것으로 세고 idle이 늦어지지 않는다. 프로필 meta 2키(`claude-session-profile`·`claude-session-profile-names`)는
+  다음 실행에 다시 붙일 프로필이라 게이트 수에 쓰지 않는다. 사용자가 직접 `--settings`를 붙여 실행한 Claude는 알 수 없어 게이트가 없는 것으로 센다.
+  SessionEnd 없이 끝난 Claude(강제 종료 등)의 meta는 다음 실행 기록이나 SessionEnd까지 남는다. 프로필이 붙은 surface에서 사용자가 `--settings` 없이
+  `claude -r`로 다시 열면 게이트가 있는 것으로 세어 Stop마다 idle이 최대 5초 늦는다. 같은 명령 문자열은 한 번만 센다. Claude Code는 같은 handler를
   한 번만 실행한다(공식 hooks 문서는 settings 파일이 여럿인 경우를 적고, 한 파일 안의 중복도 2.1.285에서 한 번 실행됐다).
 - 게이트가 없거나 payload에 `session_id`가 없으면 지금처럼 곧바로 idle을 기록한다.
 - 게이트가 있으면 상태를 `active`로 보내고 idle 처리(`claude-idle`·`surface.completion`·telemetry `wall_time_ms`·자동 재개 성공 처리)를

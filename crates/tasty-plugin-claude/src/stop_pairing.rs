@@ -412,34 +412,14 @@ fn meta_value<H: HostCall>(host: &H, surface_id: u32, key: &str) -> Option<Strin
     .filter(|s| !s.is_empty())
 }
 
-/// Stop 을 보낸 세션에 부착된 게이트 수. 실행 때 기록한 settings 경로를 먼저 읽고,
-/// 없으면 reboot·복원이 남긴 프로필 경로나 이름을 읽는다. 셋 다 없으면 0 이다.
-/// 사용자가 직접 `--settings` 로 실행한 Claude 는 알 수 없어 0 으로 센다.
-pub(crate) fn attached_gate_count<H: HostCall>(
-    host: &H,
-    surface_id: u32,
-    data_dir: Option<&std::path::Path>,
-    tr: &tasty_plugin_sdk::i18n::Translator,
-) -> usize {
-    if let Some(path) = meta_value(host, surface_id, SETTINGS_FILE_META_KEY) {
-        return count_gate_commands_in_file(std::path::Path::new(&path));
-    }
-    let attached = crate::reboot::attached_profile_summary(host, surface_id);
-    if let Some(path) = attached.path {
-        return count_gate_commands_in_file(std::path::Path::new(&path));
-    }
-    if let Some(names) = attached.names {
-        return match crate::profile::resolve_names(data_dir, &names, tr) {
-            Ok(path) => count_gate_commands_in_file(&path),
-            Err(e) => {
-                tracing::warn!(
-                    "claude stop s{surface_id}: cannot resolve attached profile names {names:?} ({e:?}) — no gate assumed"
-                );
-                0
-            }
-        };
-    }
-    0
+/// Stop 을 보낸 세션에 부착된 게이트 수. 지금 실행 중인 Claude 의 `--settings` 경로(meta)에서만 센다.
+/// 플러그인이 실행·재시작한 Claude 와 `--settings` 를 붙여 복원한 세션만 이 meta 를 가진다.
+/// Claude 가 끝나면 meta 를 지우므로, 같은 surface 에서 사용자가 직접 실행한 Claude 는 0 으로 센다.
+/// 프로필 meta 는 surface 에 남아 다음 실행에 다시 붙이는 용도라, 지금 프로세스의 게이트를 뜻하지 않는다.
+pub(crate) fn attached_gate_count<H: HostCall>(host: &H, surface_id: u32) -> usize {
+    meta_value(host, surface_id, SETTINGS_FILE_META_KEY)
+        .map(|path| count_gate_commands_in_file(std::path::Path::new(&path)))
+        .unwrap_or(0)
 }
 
 #[cfg(test)]
@@ -715,42 +695,32 @@ mod tests {
     }
 
     #[test]
-    fn the_gate_count_reads_the_settings_meta_then_the_profile_metas() {
+    fn the_gate_count_reads_only_the_settings_meta_of_the_running_claude() {
         let dir = tempfile::tempdir().unwrap();
-        let tr = tasty_plugin_sdk::i18n::Translator::load(
-            &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("lang"),
-            "en",
-        );
         let one = settings_with_gates(dir.path(), "one.json", &["a"]);
         let two = settings_with_gates(dir.path(), "two.json", &["a", "b"]);
-        let count = |host: MetaHost| attached_gate_count(&host, 3, Some(dir.path()), &tr);
+        let count = |host: MetaHost| attached_gate_count(&host, 3);
         assert_eq!(count(MetaHost(vec![])), 0);
         assert_eq!(
             count(MetaHost(vec![(SETTINGS_FILE_META_KEY, one.clone())])),
             1
         );
-        // reboot·복원이 남긴 프로필 경로 meta.
+        // 프로필 meta 는 다음 실행에 다시 붙일 프로필이다. 지금 실행 중인 Claude 의 게이트로 세지 않는다.
         assert_eq!(
-            count(MetaHost(vec![(
-                crate::reboot::PROFILE_META_KEY,
-                two.clone()
-            )])),
-            2
+            count(MetaHost(vec![
+                (crate::reboot::PROFILE_META_KEY, two.clone()),
+                (
+                    crate::reboot::PROFILE_NAMES_META_KEY,
+                    "continue-checklist".to_string()
+                )
+            ])),
+            0
         );
-        // 실행 때 기록한 settings 경로가 앞선다.
         assert_eq!(
             count(MetaHost(vec![
                 (SETTINGS_FILE_META_KEY, one),
                 (crate::reboot::PROFILE_META_KEY, two)
             ])),
-            1
-        );
-        // 이름 meta 는 등록 이름을 해석한 파일에서 센다. 내장 게이트는 명령 하나다.
-        assert_eq!(
-            count(MetaHost(vec![(
-                crate::reboot::PROFILE_NAMES_META_KEY,
-                "continue-checklist".to_string()
-            )])),
             1
         );
     }

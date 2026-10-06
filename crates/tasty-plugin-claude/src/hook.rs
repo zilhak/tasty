@@ -278,15 +278,8 @@ pub(crate) fn handle_claude_hook<H: HostCallSink>(
     }
 
     if event == "stop"
-        && let Some(response) = stop_that_does_not_end_the_turn(
-            &tail,
-            params,
-            surface_id,
-            session.as_deref(),
-            now_ms,
-            data_dir,
-            tr,
-        )
+        && let Some(response) =
+            stop_that_does_not_end_the_turn(&tail, params, surface_id, session.as_deref(), now_ms)
     {
         return Ok(response);
     }
@@ -309,6 +302,7 @@ pub(crate) fn handle_claude_hook<H: HostCallSink>(
         event,
         surface_id,
         session.as_deref(),
+        params,
         data_dir,
         tr,
     );
@@ -365,8 +359,6 @@ fn stop_that_does_not_end_the_turn<H: HostCallSink>(
     surface_id: u32,
     session: Option<&str>,
     now_ms: u64,
-    data_dir: Option<&Path>,
-    tr: &Translator,
 ) -> Option<Value> {
     let prompt_id = params
         .get("prompt_id")
@@ -375,7 +367,7 @@ fn stop_that_does_not_end_the_turn<H: HostCallSink>(
         .map(String::from);
     // 게이트가 붙은 세션의 Stop 은 게이트 판정과 짝지어 확정한다. 판정을 가릴 세션 id 가 필요하다.
     let gates = match session {
-        Some(_) => crate::stop_pairing::attached_gate_count(tail.host, surface_id, data_dir, tr),
+        Some(_) => crate::stop_pairing::attached_gate_count(tail.host, surface_id),
         None => 0,
     };
 
@@ -1047,12 +1039,14 @@ pub(crate) fn plan_session_start_profile(
 }
 
 /// 세션 시작·종료에서 프로필 복원 기록과 settings meta 를 맞추는 호출을 덧붙인다.
+#[allow(clippy::too_many_arguments)] // reason: 훅 처리기가 가진 입력을 그대로 넘겨받는다.
 fn session_lifecycle_calls<H: HostCallSink>(
     calls: &mut Vec<HostCall>,
     host: &H,
     event: &str,
     surface_id: u32,
     session: Option<&str>,
+    params: &Value,
     data_dir: Option<&Path>,
     tr: &Translator,
 ) {
@@ -1063,6 +1057,11 @@ fn session_lifecycle_calls<H: HostCallSink>(
         let meta = crate::reboot::attached_profile_summary(host, surface_id);
         let plan = plan_session_start_profile(session_id, &meta, data_dir, tr);
         apply_session_start_profile(calls, surface_id, session_id, &plan);
+        calls.extend(settings_file_for_resumed_session(
+            surface_id,
+            params.get("source").and_then(Value::as_str),
+            &plan,
+        ));
         // reboot 중 session-end가 남긴 종료 표시를 새 session-start 기록으로 갱신한다.
         if let Some(record) = &plan.restamp {
             profile_attach::store(data_dir, session_id, record);
@@ -1070,6 +1069,46 @@ fn session_lifecycle_calls<H: HostCallSink>(
         // 종료 훅이 오지 않은 세션의 오래된 기록도 정리한다.
         profile_attach::sweep(data_dir);
     }
+    if event == "session-end"
+        && let Some(call) = settings_file_after_session_end(
+            surface_id,
+            params.get("reason").and_then(Value::as_str),
+        )
+    {
+        calls.push(call);
+    }
+}
+
+/// `--resume` 으로 다시 연 세션은 복원 명령이 붙인 `--settings` 로 실행됐다고 보고 그 경로를
+/// 게이트 수를 셀 settings meta 로 기록한다. 플러그인이 실행하지 않은 Claude 에는 다른 기록 경로가 없다.
+/// 새로 시작한 세션(`startup`)은 플러그인이 실행할 때 기록한 meta 를 그대로 쓴다.
+fn settings_file_for_resumed_session(
+    surface_id: u32,
+    source: Option<&str>,
+    plan: &SessionStartProfile,
+) -> Option<HostCall> {
+    let path = plan
+        .profile_file
+        .as_ref()
+        .filter(|_| source == Some("resume"))?;
+    Some(HostCall::MetaSet {
+        surface_id,
+        key: crate::stop_pairing::SETTINGS_FILE_META_KEY,
+        value: path.clone(),
+    })
+}
+
+/// Claude 프로세스가 끝나면 그 프로세스의 settings meta 를 지운다. 같은 surface 에서 다음에 실행한
+/// Claude 의 게이트로 세지 않기 위해서다. `/clear`·`/resume` 의 SessionEnd(`clear`·`resume`)는
+/// 같은 프로세스가 이어지므로 남긴다. 값이 없거나 다른 값이면 종료로 본다(공식 hooks 문서의 SessionEnd reason).
+fn settings_file_after_session_end(surface_id: u32, reason: Option<&str>) -> Option<HostCall> {
+    if matches!(reason, Some("clear" | "resume")) {
+        return None;
+    }
+    Some(HostCall::MetaUnset {
+        surface_id,
+        key: crate::stop_pairing::SETTINGS_FILE_META_KEY,
+    })
 }
 
 /// 복원 명령에 settings를 반영하고 기록에서 복구할 메타데이터 호출을 덧붙인다.
@@ -1719,6 +1758,59 @@ mod tests {
         assert_eq!(value["tasks"], 1);
         assert_eq!(value["types"], json!(["subagent"]));
         assert!(value["since_ms"].as_u64().is_some_and(|ms| ms > 0));
+    }
+
+    /// Claude 가 끝난 SessionEnd 는 그 프로세스의 settings meta 를 지운다. `/clear`·`/resume` 은 같은
+    /// 프로세스가 이어지므로 남긴다.
+    #[test]
+    fn a_session_end_that_ends_the_process_clears_the_settings_meta() {
+        let key = crate::stop_pairing::SETTINGS_FILE_META_KEY.to_string();
+        for (reason, cleared) in [
+            (Some("prompt_input_exit"), true),
+            (Some("other"), true),
+            (Some("logout"), true),
+            (None, true),
+            (Some("clear"), false),
+            (Some("resume"), false),
+        ] {
+            let mut rig = HookRig::new();
+            let mut params =
+                json!({ "event": "session-end", "surface": HookRig::SURFACE, "session": "s-1" });
+            if let Some(r) = reason {
+                params["reason"] = json!(r);
+            }
+            rig.run(params);
+            assert_eq!(rig.host.unset_keys().contains(&key), cleared, "{reason:?}");
+        }
+    }
+
+    /// `--resume` 으로 다시 연 세션은 복원 명령이 붙인 settings 를 게이트 수를 셀 meta 로 기록한다.
+    /// 새로 시작한 세션은 플러그인이 실행할 때 기록한 meta 를 건드리지 않는다.
+    #[test]
+    fn a_resumed_session_records_the_settings_it_was_restored_with() {
+        let plan = SessionStartProfile {
+            profile_file: Some("/p/merged.json".to_string()),
+            ..SessionStartProfile::default()
+        };
+        assert_eq!(
+            settings_file_for_resumed_session(7, Some("resume"), &plan),
+            Some(HostCall::MetaSet {
+                surface_id: 7,
+                key: crate::stop_pairing::SETTINGS_FILE_META_KEY,
+                value: "/p/merged.json".to_string(),
+            })
+        );
+        for source in [Some("startup"), Some("clear"), Some("compact"), None] {
+            assert_eq!(
+                settings_file_for_resumed_session(7, source, &plan),
+                None,
+                "{source:?}"
+            );
+        }
+        assert_eq!(
+            settings_file_for_resumed_session(7, Some("resume"), &SessionStartProfile::default()),
+            None
+        );
     }
 
     /// 2.1.290 실측 `PostToolUse` 처럼 Bash 를 백그라운드로 띄운 도구 호출을 알린다.

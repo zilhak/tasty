@@ -176,7 +176,7 @@ description = "Install tasty hooks into ~/.claude/settings.json"
 description = "Uninstall tasty hooks from ~/.claude/settings.json"
 
 [claude.cli.sub.hook]
-description = "Claude Code hook integration. Reads JSON payload from stdin (session_id, prompt_id, message, notification_type, error, agent_id, background_tasks, tool_name, tool_response, prompt) when invoked by Claude Code's hook system. Also reads waiting_on_background_work defensively, although neither the official hooks documentation nor observed payloads include it."
+description = "Claude Code hook integration. Reads JSON payload from stdin (session_id, prompt_id, message, notification_type, error, agent_id, background_tasks, tool_name, tool_response, prompt, source, reason) when invoked by Claude Code's hook system. Also reads waiting_on_background_work defensively, although neither the official hooks documentation nor observed payloads include it."
 
 [claude.cli.sub.checklist-hook]
 description = "Stop-hook gate decision. Reads JSON payload from stdin (session_id, prompt_id, stop_hook_active, last_assistant_message); --gate selects which registered gate decides (default: continue-checklist)."
@@ -429,6 +429,12 @@ help = "Tool result, for the background-start event. Auto-populated from stdin J
 
 [claude.cli.arg.hook_args.prompt]
 help = "Prompt text. Auto-populated from stdin JSON 'prompt' on UserPromptSubmit. A prompt that starts with <task-notification> reports finished background work by its <task-id>."
+
+[claude.cli.arg.hook_args.source]
+help = "How the session started (startup, resume, clear, compact, fork). Auto-populated from stdin JSON 'source' on SessionStart. A session reopened with resume records the --settings it was restored with, so the Stop-hook gates in it are counted."
+
+[claude.cli.arg.hook_args.reason]
+help = "Why the session ended (clear, resume, logout, prompt_input_exit, other). Auto-populated from stdin JSON 'reason' on SessionEnd. Any value but clear and resume means the Claude process ended, so the settings recorded for it are forgotten."
 
 [claude.cli.arg.checklist_hook_args.surface]
 help = "Surface ID the gate is firing for, used to look up that session's goal. Defaults to the caller's TASTY_SURFACE_ID."

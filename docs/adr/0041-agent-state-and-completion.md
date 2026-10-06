@@ -62,7 +62,7 @@ Claude `Notification`은 `notification_type`으로 이 세션이 입력을 기�
 
 Stop 게이트가 `block`으로 턴을 이어 가게 한 Stop은 턴 종료가 아니다. 게이트가 붙은 세션의 Stop은 idle 처리를
 보류하고 `active`를 보낸 뒤, 같은 `session_id`·`prompt_id`의 게이트 판정을 플러그인 메모리에서 짝짓는다.
-게이트 수는 Stop마다 부착된 settings에서 다시 센다. 판정이 모두 통과하면 보류한 idle 처리를 실행하고, 하나라도
+게이트 수는 Stop마다 지금 실행 중인 Claude의 settings(`claude-settings-file` meta)에서 다시 센다. 이 meta는 플러그인이 Claude를 실행하거나 `--resume`으로 복원할 때 기록하고 Claude 프로세스가 끝나는 SessionEnd에서 지운다. 판정이 모두 통과하면 보류한 idle 처리를 실행하고, 하나라도
 block이면 `active`를 유지한다. 판정이 5초 안에 다 오지 않으면 온 판정만으로 확정하고 오지 않은 판정은 통과로 본다.
 Claude Code의 연속 block 상한(기본 8, `CLAUDE_CODE_STOP_HOOK_BLOCK_CAP`)에 닿은 block은 통과로 본다.
 보류 중에 새 턴이 오면 보류한 Stop을 idle로 확정한 뒤 새 턴을 처리한다. 세부는
@@ -105,7 +105,7 @@ block된 판정이 늦게 오면 턴이 이어지는데도 idle로 기록된다.
 그 Stop은 5초 뒤 통과로 확정되어 block이어도 idle로 기록될 수 있다. 시간 초과로 확정한 idle은 그 사이 같은 세션에 새 턴이
 시작됐으면 보내지 않는다. Claude Code의 연속 block 상한은 tasty 게이트가 아닌 Stop 훅의 continuation도 세지만 플러그인은 tasty
 게이트의 block만 센다. 다른 Stop 훅이 함께 턴을 이어 가게 하면 상한으로 끝난 턴의 idle이 기록되지 않을 수 있다. 사용자가 직접 `--settings`로 게이트를 붙인 Claude는 게이트 수를
-알 수 없어 block된 Stop도 idle로 기록된다. 보류 중에 플러그인이 다시 시작되면 그 Stop의 idle은 기록되지 않는다. Claude Code가 새 입력 대기 유형을 추가하면 목록에 넣기 전까지 그 대기를 `needs_input`으로 보고하지 않는다. agent view를 연 Claude 자식은 다른 세션의 입력 대기에도, auto mode의 classifier 요금 안내에도 `needs_input`이 된다. 백그라운드 작업을 기다리는 자식이 실제로 멈춰도 부모는 10분 뒤에야, 대기 한 번에 한 번만 알림을 받는다. 완료 로그는 제한된 기록이며 재시작·비우기·실패로 미독 내용이 사라질 수 있다.
+알 수 없어 block된 Stop도 idle로 기록된다. SessionEnd 없이 끝난 Claude의 settings meta는 남아, 같은 surface에서 다음에 실행한 Claude의 Stop이 최대 5초 늦게 idle이 될 수 있다. 프로필이 붙은 surface에서 `--settings` 없이 `claude -r`로 다시 연 세션도 같다. 보류 중에 플러그인이 다시 시작되면 그 Stop의 idle은 기록되지 않는다. Claude Code가 새 입력 대기 유형을 추가하면 목록에 넣기 전까지 그 대기를 `needs_input`으로 보고하지 않는다. agent view를 연 Claude 자식은 다른 세션의 입력 대기에도, auto mode의 classifier 요금 안내에도 `needs_input`이 된다. 백그라운드 작업을 기다리는 자식이 실제로 멈춰도 부모는 10분 뒤에야, 대기 한 번에 한 번만 알림을 받는다. 완료 로그는 제한된 기록이며 재시작·비우기·실패로 미독 내용이 사라질 수 있다.
 
 ## Alternatives Considered
 
