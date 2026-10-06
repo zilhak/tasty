@@ -3141,6 +3141,27 @@ about = "Dump the active stage id plus the window's fullscreen state (OS fullscr
 [cli.help._root.debug.fullscreen.state.arg.window_id]
 help = "Target window (see `open --window-id`)"
 
+[cli.help._root.debug.toast]
+about = "Fire a toast in a chosen scope and target (debug builds only). Toasts only follow user actions in release; this places one for measuring its position"
+
+[cli.help._root.debug.toast.arg.message]
+help = "Toast text"
+
+[cli.help._root.debug.toast.arg.scope]
+help = "Scope: window, workspace, pane or surface"
+
+[cli.help._root.debug.toast.arg.target_id]
+help = "Workspace, pane or surface id for the non-window scopes"
+
+[cli.help._root.debug.toast.arg.window_id]
+help = "Target window, main or auxiliary (Settings, Preset, Plugins). May be omitted only when exactly one main window is open"
+
+[cli.help._root.debug.toast.arg.kind]
+help = "Kind: info, success, warning or error"
+
+[cli.help._root.debug.toast.arg.hint]
+help = "Shortcut keycap shown after the text; repeat for each key"
+
 [cli.help._root.debug.banner]
 about = "Banner inspection and direct fire/close (debug builds only). Fires a banner without the user-action path (banners only fire from user actions in release), for visual verification of the overlay"
 

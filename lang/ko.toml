@@ -3135,6 +3135,27 @@ about = "활성 무대 ID와 윈도우 전체화면 상태 덤프(OS 전체화�
 [cli.help._root.debug.fullscreen.state.arg.window_id]
 help = "대상 윈도우(`open --window-id` 참조)"
 
+[cli.help._root.debug.toast]
+about = "범위와 대상을 지정해 토스트 표시(debug 빌드 전용). release에서 토스트는 사용자 동작 뒤에만 표시되므로 위치 측정용으로 직접 표시"
+
+[cli.help._root.debug.toast.arg.message]
+help = "토스트 문구"
+
+[cli.help._root.debug.toast.arg.scope]
+help = "범위: window, workspace, pane, surface"
+
+[cli.help._root.debug.toast.arg.target_id]
+help = "window가 아닌 범위의 워크스페이스·pane·surface ID"
+
+[cli.help._root.debug.toast.arg.window_id]
+help = "대상 윈도우. 메인 또는 보조 윈도우(Settings, Preset, Plugins). 메인 윈도우가 정확히 하나일 때만 생략 가능"
+
+[cli.help._root.debug.toast.arg.kind]
+help = "종류: info, success, warning, error"
+
+[cli.help._root.debug.toast.arg.hint]
+help = "문구 뒤에 표시할 단축키 키캡. 키마다 반복 지정"
+
 [cli.help._root.debug.banner]
 about = "배너 조회 및 직접 표시/닫기(debug 빌드 전용). 사용자 동작 없이 배너를 표시하여 오버레이 시각 검증(release에서는 사용자 동작으로만 표시)"
 

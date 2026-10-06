@@ -45,7 +45,7 @@ pub struct PresetView {
     selected_node: Option<usize>,
     /// 열려 있는 surface 설정 화면(대상 leaf + draft). `None` 이면 미리보기가 보인다.
     surface_cfg: Option<SurfaceCfg>,
-    toasts: ToastManager,
+    pub(crate) toasts: ToastManager,
     pending_presentation: Option<PendingPresentation>,
     shown: bool,
 }

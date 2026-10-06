@@ -3135,6 +3135,27 @@ about = "アクティブステージIDとウィンドウの全画面状態をダ
 [cli.help._root.debug.fullscreen.state.arg.window_id]
 help = "対象ウィンドウ（`open --window-id` を参照）"
 
+[cli.help._root.debug.toast]
+about = "範囲と対象を指定してトーストを表示（debugビルド専用）。releaseではユーザー操作の後にのみ表示されるため、位置の計測用に直接表示"
+
+[cli.help._root.debug.toast.arg.message]
+help = "トーストの文言"
+
+[cli.help._root.debug.toast.arg.scope]
+help = "範囲：window、workspace、pane、surface"
+
+[cli.help._root.debug.toast.arg.target_id]
+help = "window以外の範囲のワークスペース・pane・surface ID"
+
+[cli.help._root.debug.toast.arg.window_id]
+help = "対象ウィンドウ。メインまたは補助ウィンドウ（Settings、Preset、Plugins）。メインウィンドウが一つの場合のみ省略可能"
+
+[cli.help._root.debug.toast.arg.kind]
+help = "種類：info、success、warning、error"
+
+[cli.help._root.debug.toast.arg.hint]
+help = "文言の後に表示するショートカットのキーキャップ。キーごとに繰り返し指定"
+
 [cli.help._root.debug.banner]
 about = "バナーの照会と直接表示/終了（debugビルド専用）。ユーザー操作なしでバナーを表示しオーバーレイを検証（releaseではユーザー操作でのみ表示）"
 

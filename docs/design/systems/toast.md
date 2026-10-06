@@ -57,6 +57,8 @@ rg -n 'toasts|report_apply_error|push_toast' src/adapters/ipc src/app/ipc src/ap
 
 `ToastScope`는 알림을 놓을 영역을 지정한다. `ToastScope`: `Window` / `Workspace(usize)` / `Pane(u32)` / `Surface(u32)`. 기본은 `Surface`(어디서 일어난 일인지 모르면 `Window`). 같은 스코프 내 여럿이면 오른쪽 아래 모서리에서 위로 쌓는다. 가장 새 토스트가 맨 아래에 오고 오래된 것이 위로 밀린다. 맨 아래 카드는 스코프 하단에서 띄워 놓는다. `Window`·`Workspace`처럼 창 전체를 덮는 스코프는 창 하단에서 `toast-stack-offset-bottom`(→ `size-36`, UI 배율 적용)만큼 띄워 하단 상태바 위에 둔다. `Pane`·`Surface`는 가장자리 여백 `space-md`(12)를 둔다. 공용 위젯은 이 구분을 `ToastStackBottom`(`Window` / `ScopeMargin`)으로 받는다. 스코프가 화면에서 사라지면 즉시 제거.
 
+메인 창 밖의 Settings·Preset·Plugins 창은 각자 토스트 스택을 갖고 `Window` 범위만 그린다. debug 빌드의 `debug.toast`는 창과 범위를 지정해 토스트를 띄운다. 사용자 조작 없이 위치를 실측하기 위한 진입점이며 release에는 없다([debug IPC](../../dev-guide/debug-ipc.md)).
+
 ## 시각 / 레이아웃
 
 모든 색·치수는 Theme 토큰([theme.md](theme.md)). 배경 `surface-raised` + 1px `toast-border`(= `border-strong`) 보더 + `corner_radius`, 본문 `font_size_body`, 스코프 우측 하단 정렬·스택, 카드 사이 간격 `space-sm`(8). 종류 강조는 좌측 컬러 바다. 바 두께는 `toast_accent_width`(`toast-accent-width` = 3px)이며 본문 줄바꿈 폭과 카드 폭 계산에도 같은 값을 쓴다:

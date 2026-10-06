@@ -35,6 +35,11 @@ impl App {
             send_response(&cmd.response_tx, response);
             return IpcStep::Handled;
         }
+        // 토스트 스택은 창마다 따로 있어 보조 창까지 볼 수 있는 App에서 처리한다.
+        #[cfg(feature = "gui")]
+        if cmd.request.method == "debug.toast" {
+            return self.ipc_handle_debug_toast(cmd);
+        }
         // 설정에 한정하지 않고 현재 활성 모달을 닫는다.
         #[cfg(feature = "gui")]
         if cmd.request.method == "debug.modal.close_request" {

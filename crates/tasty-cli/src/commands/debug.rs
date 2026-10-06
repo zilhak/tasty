@@ -143,6 +143,28 @@ pub enum DebugCommands {
     /// the window's fullscreen state, for visual verification of the stage.
     #[command(subcommand)]
     Fullscreen(FullscreenDebugCommands),
+    /// Fire a toast in a chosen scope and target (debug builds only). Toasts only
+    /// follow user actions in release; this places one for measuring its position
+    Toast {
+        /// Toast text
+        #[arg()]
+        message: String,
+        /// Scope: window, workspace, pane or surface
+        #[arg(long, default_value = "window")]
+        scope: String,
+        /// Workspace, pane or surface id for the non-window scopes
+        #[arg(long)]
+        target_id: Option<u32>,
+        /// Target window, main or auxiliary (Settings, Preset, Plugins). May be omitted only when exactly one main window is open
+        #[arg(long)]
+        window_id: Option<u64>,
+        /// Kind: info, success, warning or error
+        #[arg(long, default_value = "info")]
+        kind: String,
+        /// Shortcut keycap shown after the text; repeat for each key
+        #[arg(long)]
+        hint: Vec<String>,
+    },
     /// Banner inspection and direct fire/close (debug builds only).
     /// Fires a banner without the user-action path (banners only fire from user
     /// actions in release), for visual verification of the overlay.

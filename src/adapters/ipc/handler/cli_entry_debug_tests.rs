@@ -19,3 +19,23 @@ fn modal_close_request_cli_entry_point_matches_the_registered_method() {
         req.params
     );
 }
+
+/// 창 범위가 기본값이고, 생략한 대상 인자는 null로 보내 핸들러가 단일 메인 창을 고르게 한다.
+#[test]
+fn toast_cli_entry_point_defaults_to_the_window_scope() {
+    let req = command_to_request(&Commands::Debug {
+        command: DebugCommands::Toast {
+            message: "Saved".to_string(),
+            scope: "window".to_string(),
+            target_id: None,
+            window_id: None,
+            kind: "info".to_string(),
+            hint: Vec::new(),
+        },
+    });
+    assert_eq!(req.method, "debug.toast");
+    assert_eq!(req.params["scope"], "window");
+    assert_eq!(req.params["message"], "Saved");
+    assert!(req.params["window_id"].is_null());
+    assert!(req.params["target_id"].is_null());
+}

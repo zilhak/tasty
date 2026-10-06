@@ -20,7 +20,7 @@ pub struct PluginsView {
     ui_state: PluginsUiState,
     shown: bool,
     should_close: bool,
-    toasts: ToastManager,
+    pub(crate) toasts: ToastManager,
 }
 
 impl PluginsView {

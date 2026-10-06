@@ -31,7 +31,7 @@ pub struct SettingsView {
     /// Cancel · 창 닫기 · 설정 토글 키로 닫으면 그 draft 는 버려진다.
     committed: bool,
     original_restore_content: bool,
-    toasts: ToastManager,
+    pub(crate) toasts: ToastManager,
 }
 
 impl SettingsView {

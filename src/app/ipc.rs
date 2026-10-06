@@ -5,6 +5,8 @@ mod app_methods;
 mod caller_gate;
 #[cfg(debug_assertions)]
 mod debug_methods;
+#[cfg(all(debug_assertions, feature = "gui"))]
+mod debug_toast;
 mod routing;
 mod window_required;
 

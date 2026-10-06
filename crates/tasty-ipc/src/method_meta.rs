@@ -806,6 +806,11 @@ pub const DEBUG_METHODS: &[(&str, MethodMeta)] = &[
         "debug.modal.close_request",
         local_only(MethodEffect::Idempotent),
     ),
+    // 범위·대상을 지정한 토스트 발화 — 토스트는 사용자 행동의 결과라 release 미노출. 위치 실측용.
+    (
+        "debug.toast",
+        local_only(MethodEffect::Mutate).kept_on_every_host_path(),
+    ),
     // 배너 직접 발화/조회/닫기/카운트다운 — 사용자 조작 재현. release 미노출.
     ("debug.banner.list", local_only(MethodEffect::Read)),
     ("debug.banner.show", local_only(MethodEffect::Mutate)),
