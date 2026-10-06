@@ -1,4 +1,4 @@
-<!-- source-hash: 2a00129da24f -->
+<!-- source-hash: 5c99d14effa1 -->
 <a id="task-dag"></a>
 
 # Task workflows (DAG)
@@ -90,6 +90,8 @@ tasty agent task-graph-submit --workspace-id 2 --graph @graph.json
 ```
 
 You choose each task's `id`. `bindings` say where inputs come from: a fixed value (`literal`), one value from an earlier task's result (`from_task` with `pointer`), or whichever of a task and its fallback ran (`one_of`). Types that do not fit are rejected when you send the graph. Values go only where `input_mapping` says. `args` appends them to the command one argument each, and `stdin: true` writes the whole input as JSON to standard input. `$(...)` or spaces inside a value are never interpreted again. The values actually passed are in the task's `input_snapshot`. Tasks in such a graph do not use the placeholders above.
+
+While Tasty runs on [temporary memory](cli.md#memory-shared-between-agents) because it could not open its memory file, a graph would not survive a restart, so sending it as is gets refused. For a graph that may be lost on restart, add `"durability": "best_effort"`.
 
 ## Watching progress
 

@@ -2,7 +2,7 @@
 //! 활성화한다. 검증 오류는 `error.data` 에 실패 단계·task·제출 정의 안의 위치를 싣는다.
 
 use serde_json::{Value, json};
-use tasty_agent::task::TaskGraphSpec;
+use tasty_agent::task::{GraphDurability, TaskGraphSpec};
 use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
 
@@ -20,9 +20,9 @@ pub fn handle_task_graph_validate(
     params: &Value,
 ) -> JsonRpcResponse {
     match submit(core, engine, &id, params, true) {
-        Ok((_, tasks)) => JsonRpcResponse::success(
+        Ok(s) => JsonRpcResponse::success(
             id,
-            json!({"valid": true, "activated": false, "tasks": tasks}),
+            json!({"valid": true, "activated": false, "durability": s.durability, "tasks": s.tasks}),
         ),
         Err(e) => e,
     }
@@ -37,25 +37,34 @@ pub fn handle_task_graph_submit(
     params: &Value,
 ) -> JsonRpcResponse {
     match submit(core, engine, &id, params, false) {
-        Ok((graph_id, tasks)) => mark_durability(
+        Ok(s) => mark_durability(
             core,
             JsonRpcResponse::success(
                 id,
-                json!({"valid": true, "activated": true, "graph_id": graph_id, "tasks": tasks}),
+                json!({"valid": true, "activated": true, "graph_id": s.graph_id,
+                       "durability": s.durability, "tasks": s.tasks}),
             ),
         ),
         Err(e) => e,
     }
 }
 
+struct Submitted {
+    graph_id: String,
+    durability: GraphDurability,
+    tasks: Value,
+}
+
 /// 검증(과 dry_run 이 아니면 저장·활성화)을 하고 그래프 id 와 task 목록을 돌려준다.
+/// 저장소가 영속이 아니면 `durability: best_effort` 를 밝힌 그래프만 받는다. 검증만 할 때도
+/// 같은 판정을 해 제출 결과를 미리 알 수 있게 한다.
 fn submit(
     core: &AppServices,
     engine: &mut EngineMut<'_>,
     id: &Value,
     params: &Value,
     dry_run: bool,
-) -> Result<(String, Value), JsonRpcResponse> {
+) -> Result<Submitted, JsonRpcResponse> {
     let workspace_id = workspace_id_param(params, id)?;
     let Some(raw) = params.get("graph") else {
         return Err(JsonRpcResponse::invalid_params(
@@ -66,13 +75,29 @@ fn submit(
     let spec: TaskGraphSpec = serde_json::from_value(raw.clone()).map_err(|e| {
         JsonRpcResponse::invalid_params(id.clone(), format!("invalid 'graph': {e}"))
     })?;
+    let durability = spec.durability;
+    if let Some(fallback) = core.memory_init_fallback()
+        && durability == GraphDurability::Required
+    {
+        return Err(JsonRpcResponse::error_with_data(
+            id.clone(),
+            -32602,
+            "the task store is not durable (memory fallback), so this graph would not survive a \
+             restart; set \"durability\": \"best_effort\" to run it anyway",
+            json!({"location": "/durability", "store_durable": false, "cause": fallback.cause}),
+        ));
+    }
     let outcome = core
         .tasks
         .task_graph_submit(engine.task_scope, workspace_id, spec, dry_run, now_ms())
         .map_err(|e| agent_err_to_response(id.clone(), e))?;
     let tasks = serde_json::to_value(&outcome.tasks)
         .map_err(|e| JsonRpcResponse::error(id.clone(), -32603, format!("serialize: {e}")))?;
-    Ok((outcome.graph_id, tasks))
+    Ok(Submitted {
+        graph_id: outcome.graph_id,
+        durability,
+        tasks,
+    })
 }
 
 #[cfg(test)]

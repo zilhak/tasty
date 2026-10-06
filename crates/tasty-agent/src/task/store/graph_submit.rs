@@ -42,6 +42,20 @@ pub struct TaskGraphSpec {
     #[serde(default)]
     pub types: BTreeMap<String, TypeSchema>,
     pub tasks: Vec<GraphTaskSpec>,
+    /// 재시작 뒤에도 이어서 실행돼야 하는가. 저장소가 영속이 아닐 때 활성화할지를 정한다.
+    #[serde(default)]
+    pub durability: GraphDurability,
+}
+
+/// 그래프가 요구하는 영속성.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GraphDurability {
+    /// 재시작 복구를 요구한다. 영속이 아닌 저장소에서는 활성화하지 않는다.
+    #[default]
+    Required,
+    /// 영속이 아닌 저장소에서도 실행한다. 재시작하면 그래프와 결과가 사라질 수 있다.
+    BestEffort,
 }
 
 /// 그래프 안의 task 하나. `id` 는 호출자가 정하며 그대로 task id 가 된다. 같은 그래프의
@@ -79,6 +93,7 @@ pub struct GraphPlan {
     pub workspace_id: WorkspaceId,
     pub graph_id: String,
     pub tasks: Vec<Task>,
+    pub durability: GraphDurability,
 }
 
 fn graph_error(message: impl Into<String>, location: impl Into<String>) -> AgentError {
@@ -128,6 +143,7 @@ impl TaskStore<'_> {
         let existing = self.list(workspace_id)?;
         let existing_ids: HashSet<&TaskId> = existing.iter().map(|t| &t.id).collect();
 
+        let durability = spec.durability;
         let mut planned: Vec<Task> = Vec::with_capacity(spec.tasks.len());
         for (i, t) in spec.tasks.into_iter().enumerate() {
             let at = format!("/tasks/{i}");
@@ -242,6 +258,7 @@ impl TaskStore<'_> {
             workspace_id,
             graph_id,
             tasks: planned,
+            durability,
         })
     }
 
@@ -277,6 +294,7 @@ impl TaskStore<'_> {
             "graph_id": plan.graph_id,
             "task_ids": plan.tasks.iter().map(|t| &t.id).collect::<Vec<_>>(),
             "activated_at": now_ms,
+            "durability": plan.durability,
         });
         let put = graph_key(&plan.graph_id).and_then(|key| {
             self.mem

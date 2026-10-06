@@ -119,6 +119,7 @@ Terminal·Pty 분리와 터미널 호환성, 입력·포커스, 점유와 원격
 | 0068 | [타입 계약을 가진 task는 별도 저장 namespace에 버전 envelope로 둔다](0068-typed-task-contracts-live-in-a-separate-record-namespace.md) | Accepted | 2026-10-06 | agents, tasks, types, compatibility, storage |
 | 0069 | [v2 task 그래프는 전체 검증 뒤 그래프 레코드 하나로 활성화한다](0069-typed-task-graphs-activate-through-a-graph-record.md) | Accepted | 2026-10-06 | agents, tasks, types, dag, storage |
 | 0071 | [v2 task 완료는 실행 회차마다 레코드 한 번의 쓰기로 확정한다](0071-typed-task-completion-is-one-write-per-attempt.md) | Accepted | 2026-10-07 | agents, tasks, types, idempotency, storage |
+| 0072 | [영속이 아닌 저장소에서는 명시 허용한 v2 그래프만 활성화한다](0072-non-durable-stores-run-typed-graphs-only-on-opt-in.md) | Accepted | 2026-10-07 | agents, tasks, dag, storage, durability |
 <!-- adr-rows:end agents -->
 
 ## 개발·검증·문서·배포

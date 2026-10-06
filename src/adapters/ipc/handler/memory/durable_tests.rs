@@ -26,6 +26,16 @@ fn core_with(fallback: Option<tasty_memory::InitFallback>) -> crate::app::servic
 }
 
 fn call(core: &mut crate::app::services::AppServices, method: &str, params: Value) -> Value {
+    let resp = call_raw(core, method, params);
+    resp.result
+        .unwrap_or_else(|| panic!("{method} 이 실패했다: {:?}", resp.error))
+}
+
+fn call_raw(
+    core: &mut crate::app::services::AppServices,
+    method: &str,
+    params: Value,
+) -> tasty_ipc::protocol::JsonRpcResponse {
     let (mut state, mut engine_session) = crate::state::tests::test_state();
     let mut engine = engine_session.borrow_mut();
     let req = tasty_ipc::protocol::JsonRpcRequest {
@@ -37,15 +47,7 @@ fn call(core: &mut crate::app::services::AppServices, method: &str, params: Valu
         method: method.into(),
         params,
     };
-    let resp = super::super::handle_with_caller(
-        core,
-        &mut state,
-        &mut engine,
-        &req,
-        &CallerContext::Local,
-    );
-    resp.result
-        .unwrap_or_else(|| panic!("{method} 이 실패했다: {:?}", resp.error))
+    super::super::handle_with_caller(core, &mut state, &mut engine, &req, &CallerContext::Local)
 }
 
 fn writes() -> Vec<(&'static str, Value)> {
@@ -299,4 +301,50 @@ fn every_memory_write_reports_a_fallback_store_as_not_durable() {
         "쓰기 성공을 durable 표시 없이 답하는 핸들러가 있다 — 대체 저장소에서 durable 로 보인다:\n{}",
         missing.join("\n")
     );
+}
+
+fn graph(durability: Option<&str>) -> Value {
+    let mut g = json!({"contract_version": 2, "tasks": [
+        {"id": "only", "command": {"kind": "custom", "ipc_method": "system.ping", "params": {}}}]});
+    if let Some(d) = durability {
+        g["durability"] = json!(d);
+    }
+    json!({"workspace_id": 1, "graph": g})
+}
+
+#[test]
+fn a_fallback_store_refuses_a_graph_that_needs_a_restart_to_survive() {
+    let mut core = core_with(Some(fallback()));
+    for method in ["agent.task_graph_validate", "agent.task_graph_submit"] {
+        let e = call_raw(&mut core, method, graph(None))
+            .error
+            .unwrap_or_else(|| panic!("{method} 이 비영속 저장소에서 기본 그래프를 받았다"));
+        assert_eq!(e.code, -32602, "{method}");
+        let data = e.data.expect("data");
+        assert_eq!(data["location"], json!("/durability"), "{method}");
+        assert_eq!(data["store_durable"], json!(false), "{method}");
+    }
+    let tasks = call(&mut core, "agent.task_list", json!({"workspace_id": 1}));
+    assert_eq!(
+        tasks["tasks"],
+        json!([]),
+        "거절한 그래프의 task 가 남았다: {tasks}"
+    );
+
+    let ok = call(
+        &mut core,
+        "agent.task_graph_submit",
+        graph(Some("best_effort")),
+    );
+    assert_eq!(ok["activated"], json!(true));
+    assert_eq!(ok["durability"], json!("best_effort"));
+    assert_eq!(ok["durable"], json!(false));
+}
+
+#[test]
+fn a_durable_store_runs_graphs_without_an_opt_in() {
+    let mut core = core_with(None);
+    let ok = call(&mut core, "agent.task_graph_submit", graph(None));
+    assert_eq!(ok["durability"], json!("required"));
+    assert!(ok.get("durable").is_none(), "{ok}");
 }

@@ -630,9 +630,10 @@ inline fallback 은 v2 에서 거절한다.
 - 검증: id 형식과 중복(그래프 안·workspace), `depends_on`·fallback·reduce 입력·binding 원본의 존재, 계약과 binding 의 타입, 매핑, 위 조합 규칙, 순환. 그래프 task 의 command 에 v1 출력 placeholder(`${task.…}`)가 있으면 거절하고 binding 을 쓰라고 안내한다.
 - 그래프 하나에는 task 를 1000 개(`MAX_GRAPH_TASKS`)까지 담는다. 제출이 memory 잠금을 쥔 채 활성화하기 때문이다(근거 ADR-0069). 초과하면 `location: /tasks` 로 거절한다.
 - 실패하면 아무것도 저장하지 않고 `-32602` 로 답한다. `error.data` 는 실패 단계·task id·타입 오류와 함께 `location`(제출한 그래프 안의 JSON Pointer, 예: `/tasks/1/bindings/label`, 순환은 `/tasks`)을 싣는다.
-- 통과하면 task 를 활성화 전 상태로 모두 저장한 뒤 그래프 레코드(`tasty.agent.task_graph.<그래프 id>`, `tasty.task_graph/v1`) 하나를 쓰고 readiness 를 평가한다. 그래프 레코드가 없는 task 는 Ready 가 되지 않으므로 저장 도중 러너가 돌아도 실행되지 않는다. task 나 그래프 레코드를 쓰다 실패하면 저장한 task 를 지운다. 레코드를 쓴 뒤 readiness 반영이 실패하면 지우지 않고 `-32603` 으로 답하며 `error.data` 에 `graph_id`·`possibly_active: true`·`cause` 를 싣는다(복구는 아래 §한계). 응답은 `{valid, activated, graph_id, tasks}` 다.
+- 통과하면 task 를 활성화 전 상태로 모두 저장한 뒤 그래프 레코드(`tasty.agent.task_graph.<그래프 id>`, `tasty.task_graph/v1`) 하나를 쓰고 readiness 를 평가한다. 그래프 레코드가 없는 task 는 Ready 가 되지 않으므로 저장 도중 러너가 돌아도 실행되지 않는다. task 나 그래프 레코드를 쓰다 실패하면 저장한 task 를 지운다. 레코드를 쓴 뒤 readiness 반영이 실패하면 지우지 않고 `-32603` 으로 답하며 `error.data` 에 `graph_id`·`possibly_active: true`·`cause` 를 싣는다(복구는 아래 §한계). 응답은 `{valid, activated, graph_id, durability, tasks}` 다.
 - 그래프 id 는 `g-<ms>-<순번>` 이며 task 의 `graph_id` 에 기록한다. `metadata.dag` 가 없으면 그래프 id 를 넣어 DAG 로 묶는다. 그래프의 task 가 모두 삭제되면 그래프 레코드도 지운다.
-- `agent.task_graph_validate` 는 같은 검증만 하고 저장하지 않는다(`{valid, activated: false, tasks}`). CLI 는 `--dry-run` 이다.
+- `agent.task_graph_validate` 는 같은 검증만 하고 저장하지 않는다(`{valid, activated: false, durability, tasks}`). CLI 는 `--dry-run` 이다.
+- 그래프의 `durability` 는 `required`(기본) 또는 `best_effort` 다. memory 저장소가 대체 모드(`memory_init_fallback`, 재시작하면 사라진다)일 때 `required` 그래프는 검증·제출 모두 `-32602`(`error.data`: `location: /durability`, `store_durable: false`, `cause`)로 거절하고 아무것도 저장하지 않는다. `best_effort` 는 그대로 실행하되 재시작 복구를 약속하지 않는다. 그래프 레코드에 `durability` 를 남기고, 제출 응답은 `durability` 와(대체 모드면) `durable: false` 를 싣는다(근거 ADR-0072).
 - 러너는 켜지 않는다. 정지한 러너에서는 활성화된 task 가 Ready 로 남는다.
 
 ### v2 reduce
