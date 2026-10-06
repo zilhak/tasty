@@ -155,7 +155,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("refresh", "1Hz cache — unchanged"),
         ],
         &[
-            TokenChip::new("bg-app", "bar", egui::Color32::from(theme.bg_app())),
+            TokenChip::new("bg-sidebar", "bar", egui::Color32::from(theme.bg_sidebar())),
             TokenChip::new(
                 "separator",
                 "border-top",

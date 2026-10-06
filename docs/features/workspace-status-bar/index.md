@@ -107,7 +107,7 @@ view 는 본체 binary 가 아니라 공용 crate `tasty-ui-widgets` 에 있어 
   - 브랜치 항목은 **전체 폭 160 상한**이고, 넘으면 이름을 말줄임(`…`)한다.
   - `<shell>` 셀은 정확히는 해당 surface 의 **foreground 프로세스명**이다(셸 idle 시엔 셸 이름). Windows 에선 *가장 얕은 non-shell 자손*(사용자가 띄운 바깥쪽 앱, 예: `node`)을 표시한다 — 안쪽 단명 helper 가 아니라. 매 프레임 OS 조회가 아니라 1Hz busy-poll 캐시(`CoreState::foreground_name`)에서 읽으므로 표시는 최대 1초 지연될 수 있다. 판정·플랫폼별 메커니즘은 [busy-indicator](../../design/policies/busy-indicator.md).
 - **우측 클러스터**(clickable): 팔레트 단축키 **Kbd 키캡**(라벨 단어 없음) · 테마 **글리프**(이름 없음, 잉크 `statusbar-theme-glyph` · 크기는 좌측과 같은 `statusbar-glyph-size`).
-- **상단 1px separator** + `bg_app` 배경.
+- **상단 1px separator** + `bg_sidebar` 배경.
 
 ### 상태별 시각
 

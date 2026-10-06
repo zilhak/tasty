@@ -87,7 +87,8 @@ pub fn draw_status_bar_view(
         tasty_icons::THEME
     };
     let glyph_size = th.statusbar_glyph_size();
-    let bg: egui::Color32 = th.bg_app().into();
+    // 시안 Workspace status bar 의 바 채움은 bg-sidebar 다.
+    let bg: egui::Color32 = th.bg_sidebar().into();
     let bar_h = th.status_bar_height;
 
     let (rect, _) = ui.allocate_exact_size(
