@@ -1065,7 +1065,7 @@ pub fn pages() -> Vec<Page> {
                             "html-script-banner-button",
                             "A button on the banner shell",
                             Some(
-                                "Secondary inside any banner shell goes one ramp step up · fill surface-hover · edge border-frame",
+                                "Secondary inside any banner shell goes one ramp step up · fill surface-hover · edge border-frame · plugin banners too: the platform opens the context for the whole frame",
                             ),
                             widgets::html_script_banner::draw_banner_button,
                         ),

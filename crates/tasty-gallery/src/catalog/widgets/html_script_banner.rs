@@ -576,6 +576,10 @@ pub fn draw_banner_button(ui: &mut egui::Ui, theme: &Theme) {
             ("edge", "border-frame (one step above banner-border)"),
             ("hover", "overlay-hover · edge unchanged"),
             ("variant", "none new — context rule in Button"),
+            (
+                "plugin",
+                "same box — the SDK opens the context for the whole banner frame, never for the plugin's surfaces or popups",
+            ),
         ],
         &[
             TokenChip::new(

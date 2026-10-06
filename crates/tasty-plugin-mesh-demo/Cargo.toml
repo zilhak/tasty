@@ -1,6 +1,6 @@
 [package]
 name = "tasty-plugin-mesh-demo"
-version = "0.1.67"
+version = "0.1.68"
 edition = "2024"
 license = "MIT"
 description = "egui-mesh channel PoC surface plugin (A1)"
@@ -16,6 +16,8 @@ serde_json = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 anyhow = "1"
+tasty-type-appearance = { path = "../tasty-type-appearance", features = ["egui-compat"] }
+tasty-ui-widgets = { path = "../tasty-ui-widgets" }
 
 # host·SDK 와 동일 egui 인스턴스로 unify (epaint serde OFF + bytemuck ON). plugin 이
 # closure 에서 egui 위젯을 그리려면 SDK 와 같은 egui 타입이 필요하다 — Cargo 가

@@ -153,8 +153,15 @@ impl MeshDemoPlugin {
             .entry(iid)
             .or_insert_with(|| EguiMeshBanner::new(iid));
         let clicks = self.banner_clicks.entry(iid).or_insert(0);
+        let theme = ctx.params.theme.as_ref().map(|w| {
+            tasty_type_appearance::theme::Theme::with_colors_and_zoom(
+                w.colors.clone(),
+                w.is_light,
+                w.ui_zoom,
+            )
+        });
         let result = banner.paint(&ctx.host, &ctx.params, |egui_ctx| {
-            draw_banner(egui_ctx, clicks);
+            draw_banner(egui_ctx, theme.as_ref(), clicks);
         });
         match result {
             Ok(Some(_gen)) => tracing::info!("mesh-demo banner {iid} paint sent"),
@@ -212,12 +219,27 @@ fn draw_popup(ctx: &egui::Context, clicks: &mut u32) {
 /// 데모 banner UI: 가로 레이아웃 label + 클릭 카운터 버튼. host 가 셸(컨테이너/border/
 /// close X/카운트다운)과 스택/위치/dismiss 를 소유하고, 이 content 만 plugin mesh 로
 /// content_rect 에 합성된다 — 입력 forward(클릭)가 banner mesh 를 바꾸는지 검증한다.
+/// 버튼은 감싸지 않은 공용 Secondary 다. SDK 가 배너 frame 전체에 배너 셸 문맥을 열어
+/// host 배너와 같은 배너 박스로 그려지는지 확인하는 예제다. host 가 테마를 보내지 않으면
+/// 공용 위젯을 그릴 수 없어 egui 기본 버튼으로 대신한다.
 #[cfg(unix)]
-fn draw_banner(ctx: &egui::Context, clicks: &mut u32) {
+fn draw_banner(
+    ctx: &egui::Context,
+    theme: Option<&tasty_type_appearance::theme::Theme>,
+    clicks: &mut u32,
+) {
+    use tasty_ui_widgets::{Button, ButtonVariant};
     egui::CentralPanel::default().show(ctx, |ui| {
         ui.horizontal(|ui| {
             ui.label(format!("egui-mesh banner — clicks: {clicks}"));
-            if ui.button("BUMP").clicked() {
+            let bumped = match theme {
+                Some(theme) => Button::new("BUMP")
+                    .variant(ButtonVariant::Secondary)
+                    .show(ui, theme)
+                    .clicked(),
+                None => ui.button("BUMP").clicked(),
+            };
+            if bumped {
                 *clicks += 1;
             }
         });

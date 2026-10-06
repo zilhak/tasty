@@ -894,6 +894,8 @@ impl EguiMeshBanner {
 
     /// `banner.set_context` 입력으로 한 frame 을 그려 POD mesh 바이트를 만든다.
     /// 정적 화면이면 `None`(송신 생략). `need_full_textures` 면 dedup 우회 + 전체 텍스처 동봉.
+    /// frame 전체를 배너 셸 문맥([`tasty_ui_widgets::banner_surface_ctx`]) 안에서 그리므로
+    /// 공용 Secondary 버튼이 배너 박스를 쓴다.
     pub fn run_frame(
         &mut self,
         params: &BannerSetContextParams,
@@ -905,7 +907,7 @@ impl EguiMeshBanner {
     fn run_frame_inner(
         &mut self,
         params: &BannerSetContextParams,
-        run_ui: impl FnMut(&Context),
+        mut run_ui: impl FnMut(&Context),
     ) -> Option<MeshFrame> {
         self.core.run_frame(
             params.width_px,
@@ -914,7 +916,7 @@ impl EguiMeshBanner {
             params.theme.as_ref(),
             &params.raw_input,
             params.need_full_textures,
-            run_ui,
+            |ctx| tasty_ui_widgets::banner_surface_ctx(ctx, || run_ui(ctx)),
         )
     }
 
@@ -1953,6 +1955,27 @@ mod tests {
             banner.core.pending_self_repaint().is_some(),
             "banner render() must not drop egui's repaint request either"
         );
+    }
+
+    /// Banner frame은 배너 셸 문맥 안에서 그리고, 끝나면 문맥을 닫는다.
+    #[test]
+    fn banner_frame_runs_inside_the_banner_context() {
+        let mut banner = EguiMeshBanner::new(1);
+        let params = BannerSetContextParams {
+            instance_id: 1,
+            width_px: 320,
+            height_px: 64,
+            pixels_per_point: 1.0,
+            raw_input: RawInputWire::default(),
+            theme: None,
+            need_full_textures: false,
+        };
+        let mut inside = false;
+        banner.run_frame(&params, |ctx| {
+            inside = tasty_ui_widgets::in_banner_surface(ctx);
+        });
+        assert!(inside, "banner content must see the banner context");
+        assert!(!tasty_ui_widgets::in_banner_surface(banner.context()));
     }
 
     /// paint에서 타이머를 거쳐 BannerInvalidated가 소켓으로 나가는지 확인한다.

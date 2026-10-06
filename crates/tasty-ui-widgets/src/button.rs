@@ -27,20 +27,33 @@ fn banner_surface_id() -> egui::Id {
 /// 이 안의 Secondary 버튼은 배너 배경보다 한 단계 위의 채움과 테두리
 /// (`banner_button_bg`·`banner_button_border`)를 쓴다. `banner_shell`이 모든 배너에 적용한다.
 pub fn banner_surface<R>(ui: &mut egui::Ui, content: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    let ctx = ui.ctx().clone();
+    banner_surface_ctx(&ctx, || content(ui))
+}
+
+/// `content`가 `ctx`에 그리는 동안 배너 셸 문맥을 연다. 루트 `Ui` 없이 한 프레임 전체를
+/// 감쌀 때 쓴다. plugin SDK의 egui-mesh 배너가 배너 전용 `Context`의 매 프레임을 이것으로
+/// 감싸므로 plugin 작성자는 따로 감싸지 않는다. 끝나면 이전 깊이로 돌아가 같은 plugin의
+/// surface·popup에는 새지 않는다.
+pub fn banner_surface_ctx<R>(ctx: &egui::Context, content: impl FnOnce() -> R) -> R {
     let id = banner_surface_id();
-    let prev = ui.ctx().data(|d| d.get_temp::<u32>(id)).unwrap_or(0);
-    ui.ctx().data_mut(|d| d.insert_temp(id, prev + 1));
-    let out = content(ui);
-    ui.ctx().data_mut(|d| d.insert_temp(id, prev));
+    let prev = ctx.data(|d| d.get_temp::<u32>(id)).unwrap_or(0);
+    ctx.data_mut(|d| d.insert_temp(id, prev + 1));
+    let out = content();
+    ctx.data_mut(|d| d.insert_temp(id, prev));
     out
+}
+
+/// `ctx`에 지금 배너 셸 문맥이 열려 있는지.
+pub fn in_banner_surface(ctx: &egui::Context) -> bool {
+    ctx.data(|d| d.get_temp::<u32>(banner_surface_id()))
+        .unwrap_or(0)
+        > 0
 }
 
 /// 지금 그리는 위치가 배너 셸 문맥 안인지.
 fn on_banner_surface(ui: &egui::Ui) -> bool {
-    ui.ctx()
-        .data(|d| d.get_temp::<u32>(banner_surface_id()))
-        .unwrap_or(0)
-        > 0
+    in_banner_surface(ui.ctx())
 }
 
 /// Button 빌더.

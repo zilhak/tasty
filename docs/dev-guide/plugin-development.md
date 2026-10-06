@@ -238,7 +238,9 @@ plugin 이 자기 프로세스에서 egui 를 구동해 tessellate 한 `(Clipped
 TexturesDelta, ppp)` 를 SharedBuffer 로 host 에 보내고 host 가 합성한다. 위젯 어휘
 제한이 없고(egui 전부 사용 가능) 색·간격은 host 가 forward 한 `Theme` 토큰에서
 가져온다. 상세·SDK 헬퍼(`EguiMeshSurface`/`EguiMeshPopup`/`EguiMeshBanner`)는
-[egui-mesh-channel](egui-mesh-channel.md). (`rendering = "webview"` surface(html/markdown)
+[egui-mesh-channel](egui-mesh-channel.md). 배너 콘텐츠는 SDK가 프레임 전체에 배너 문맥을 열어 주므로
+공용 Secondary 버튼이 따로 감싸지 않아도 배너 박스로 그려진다. 같은 plugin의 surface·popup에는
+적용되지 않는다. (`rendering = "webview"` surface(html/markdown)
 의 본문은 이 채널을 타지 않는다 — host native WebView 가 직접 렌더한다. 단 markdown
 의 대용량/파일열기 확인 팝업 2 개는 여전히 egui-mesh 채널을 쓴다.)
 

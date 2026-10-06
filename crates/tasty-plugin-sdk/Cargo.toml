@@ -24,10 +24,12 @@ egui = { version = "0.31", default-features = false, features = [
     "bytemuck",
     "default_fonts",
 ], optional = true }
+# egui-mesh 배너가 프레임마다 배너 셸 문맥을 연다. 문맥 키는 공용 위젯이 소유한다.
+tasty-ui-widgets = { path = "../tasty-ui-widgets", optional = true }
 
 [features]
 # egui-mesh: tessellate→POD 인코드→shared buffer 송신 헬퍼([`egui_surface`]) 활성화.
-egui-mesh = ["dep:egui", "tasty-plugin-protocol/egui-mesh"]
+egui-mesh = ["dep:egui", "dep:tasty-ui-widgets", "tasty-plugin-protocol/egui-mesh"]
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

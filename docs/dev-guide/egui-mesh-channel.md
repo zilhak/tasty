@@ -805,6 +805,12 @@ surface 에만 배너를 허용한다(`open_plugin_banner` 가 surface→plugin 
 { instance_id }` 로 닫는다. 최소 예시는 `crates/tasty-plugin-mesh-demo/src/main.rs` 의
 `draw_banner`. debug 검증은 `debug.plugin_banner.open/close`.
 
+배너 콘텐츠는 항상 배너 문맥 안에서 그려진다. `EguiMeshBanner::run_frame`이 프레임 전체를
+`tasty_ui_widgets::banner_surface_ctx`로 감싸므로 작성자는 아무것도 감싸지 않는다. 공용
+`tasty_ui_widgets::Button`의 Secondary 변형은 배너 위에서 `banner_button_bg`·`banner_button_border`
+박스로 그려진다. 같은 plugin의 surface·popup에는 이 문맥이 적용되지 않는다
+([배너 위 버튼](../design/systems/banner.md#배너-위-버튼)). mesh-demo의 `BUMP` 버튼이 이 경로의 예제다.
+
 > 현 단계는 채널 **인프라 + 검증용 더미 PoC banner** 까지다. 실제 소비자 전환은 별도 작업.
 
 ## 이미지 텍스처의 전송

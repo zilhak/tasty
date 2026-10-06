@@ -59,7 +59,8 @@ Popup은 독립 기능, Banner는 안내와 조치, Toast는 짧은 정보 표�
 
 - `banner_shell`은 콘텐츠 클로저를 `tasty_ui_widgets::banner_surface` 안에서 그린다. 그 안에서 그린 `Button`의 Secondary 변형은 자동으로 배너 박스를 쓴다. 셸 밖에서 배너 콘텐츠를 그리는 위젯은 `banner_surface(ui, |ui| …)`로 직접 문맥을 켠다.
 - 문맥은 클로저가 끝나면 이전 상태로 돌아가고 중첩할 수 있다. 다른 변형(Primary·Ghost 등)과 disabled 버튼은 영향을 받지 않는다.
-- plugin이 mesh로 그리는 배너 콘텐츠는 host 위젯을 거치지 않으므로 이 문맥이 적용되지 않는다.
+- 배너 콘텐츠는 누가 그리든 항상 배너 문맥 안에서 그린다. plugin 배너는 플랫폼이 프레임 전체에 문맥을 연다. plugin SDK의 `EguiMeshBanner::run_frame`이 배너 전용 egui `Context`의 매 프레임을 `tasty_ui_widgets::banner_surface_ctx`로 감싸므로, 작성자가 감싸지 않은 공용 Secondary 버튼도 배너 박스를 쓴다. 같은 plugin의 surface·popup은 각자 다른 `Context`라 문맥이 적용되지 않는다. 문맥 키는 `tasty-ui-widgets`가 혼자 소유하고, SDK는 egui-mesh 기능에서만 이 크레이트를 의존한다.
+- 디자인 원문: "A banner's content is always drawn inside the banner context. For plugin banners the platform opens it for the whole frame, so a plain Secondary button gets the banner box. The context never applies to the same plugin's surfaces or popups."
 
 ### inset 배치
 
