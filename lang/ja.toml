@@ -1728,6 +1728,16 @@ workspace_switch = "ワークスペース切り替え (ワークスペース上�
 category_switch = "カテゴリ切り替え (カテゴリヘッダー上に番号を表示)"
 link_click = "修飾キー+クリックでリンクを開く"
 
+[remote.refusal]
+# {} 자리에 매핑 대상(프로필 이름 또는 host:port)이 mono 글꼴로 들어간다.
+title = "リモートに接続していません — {}"
+self = "このマッピングは実行中の Tasty 自身を指しているため、接続しませんでした。"
+profile_missing = "この名前の SSH プロファイルはありません。"
+unresolved = "接続先を解決できませんでした。"
+hint = "このワークスペースのマッピングを変更するか削除してください。"
+remove = "マッピングを削除"
+dismiss = "閉じる"
+
 [remote_attach]
 heading = "リモートワークスペースを追加"
 close = "閉じる"

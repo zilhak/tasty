@@ -1734,6 +1734,16 @@ workspace_switch = "Switch workspaces (number keys show over workspaces)"
 category_switch = "Switch category (number keys show over category headers)"
 link_click = "Open links with modifier+click"
 
+[remote.refusal]
+# {} 자리에 매핑 대상(프로필 이름 또는 host:port)이 mono 글꼴로 들어간다.
+title = "Remote not attached — {}"
+self = "This mapping points at this Tasty, so it was not attached."
+profile_missing = "No SSH profile with this name."
+unresolved = "The endpoint could not be resolved."
+hint = "Change or remove the mapping for this workspace."
+remove = "Remove mapping"
+dismiss = "Dismiss"
+
 [remote_attach]
 heading = "Add remote workspace"
 close = "Close"

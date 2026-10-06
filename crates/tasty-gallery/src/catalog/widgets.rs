@@ -1,5 +1,6 @@
 //! 개별 위젯 카탈로그.
 
+pub mod attach_refusal;
 pub mod banner;
 pub mod banner_mouse_capture;
 pub mod dialog;

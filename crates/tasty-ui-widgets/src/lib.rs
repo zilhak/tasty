@@ -6,6 +6,7 @@
 //! 본체 호출자가 아직 없는 경우도 허용한다. 같은 UI를 다시 구현하지 않고 공용 함수를 사용한다.
 //! 기준은 docs/architecture/ui-widgets-crate.md와 docs/dev-guide/gallery-first.md를 따른다.
 
+mod attach_refusal;
 mod attention;
 mod autocomplete;
 mod banner;
@@ -60,6 +61,10 @@ mod tooltip;
 mod tree_row;
 mod two_depth;
 mod warning_callout;
+pub use attach_refusal::{
+    AttachRefusalBannerClicks, AttachRefusalBannerView, attach_refusal_banner,
+    attach_refusal_banner_content, attach_refusal_mark, attach_refusal_mark_size,
+};
 pub use attention::{
     Attention, RailDot, attention_count_label, attention_edge_stroke, occupancy_edge_shows,
     occupancy_edge_stroke, paint_rail_dot, surface_edge_attention, tab_title_color,

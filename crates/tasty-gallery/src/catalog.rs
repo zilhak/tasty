@@ -1024,6 +1024,15 @@ pub fn pages() -> Vec<Page> {
                     ],
                 ),
                 single(
+                    "attachrefusal",
+                    "Auto-attach refused",
+                    "Persistent row mark + workspace banner, no toast",
+                    Some(
+                        "alertTriangle on the sidebar row · Workspace banner with Remove mapping and ×",
+                    ),
+                    widgets::attach_refusal::draw,
+                ),
+                single(
                     "palette",
                     "Command palette",
                     "Top-anchored, fuzzy, keyboard-first",
