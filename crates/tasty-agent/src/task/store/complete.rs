@@ -7,6 +7,7 @@
 
 use super::super::attempt::{Completion, CompletionReceipt, CompletionRecord};
 use super::super::{Task, TaskId, TaskState, is_valid_transition};
+use super::postprocess::PostprocessStep;
 use super::{TaskStore, WorkspaceId, record_result, settle_typed_terminal};
 use crate::{AgentError, CompletionRejection, Result};
 
@@ -90,7 +91,11 @@ impl TaskStore<'_> {
         }
 
         let mut task = task;
-        record_result(&mut task, completion.result);
+        match self.postprocess_step(&mut task, &completion, now_ms)? {
+            PostprocessStep::Continue(receipt) => return Ok(*receipt),
+            PostprocessStep::Finalize => {}
+            PostprocessStep::NotApplicable => record_result(&mut task, completion.result),
+        }
         let state = settle_typed_terminal(&mut task, requested);
         task.state = state;
         task.finished_at = Some(now_ms);
@@ -142,7 +147,11 @@ fn transition_error(task: &Task, requested: &TaskState) -> AgentError {
     }
 }
 
-fn rejected(task: &Task, reported: Option<String>, reason: CompletionRejection) -> AgentError {
+pub(super) fn rejected(
+    task: &Task,
+    reported: Option<String>,
+    reason: CompletionRejection,
+) -> AgentError {
     AgentError::CompletionRejected {
         task_id: task.id.clone(),
         attempt_id: reported,

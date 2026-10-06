@@ -550,6 +550,9 @@ fn classify_persisted_handle(
         DispatchHandle::ReduceImmediate(_)
         | DispatchHandle::CustomImmediate(_)
         | DispatchHandle::ImmediateFail(_) => HandleClassification::Stale(task_id),
+        DispatchHandle::PostprocessPending { .. }
+        | DispatchHandle::PostprocessProcess { .. }
+        | DispatchHandle::PostprocessResolved(_) => HandleClassification::Alive(task_id, handle),
     }
 }
 
@@ -624,6 +627,7 @@ fn finalize_precise_tasks(
         let completion = match outcome {
             PollOutcome::Done(r) => Completion::succeeded(attempt.clone(), r.clone()),
             PollOutcome::Failed(err) => Completion::failed(attempt.clone(), err.clone()),
+            PollOutcome::Postprocessed(r) => Completion::postprocessed(attempt.clone(), r.clone()),
             // 저장된 결과가 종결이 아니면 이전처럼 handle 만 지운다.
             PollOutcome::Active => {
                 evict_handle(ctx, scope, task_id);

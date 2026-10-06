@@ -26,6 +26,7 @@ use std::time::Duration;
 
 use serde_json::json;
 use tasty_agent::runner::{DispatchHandle, DispatchOutcome, PollOutcome, TaskExecutor};
+use tasty_agent::task::postprocess::{PostprocessCause, PostprocessReport};
 use tasty_agent::{
     AgentError, BarrierState, BarrierStore, ElasticSpec, LeaseMode, LeaseStore, ReducerInput,
     SemaphoreStore, Task, TaskCommand, TaskId, TaskResult, TypedReducerInput, reduce_typed,
@@ -958,6 +959,18 @@ impl HostExecutor {
             }
             // 외부 훅·만료 처리가 store를 종결시키면 다음 러너 tick이 handle과 점유 자원을 정리한다.
             DispatchHandle::AwaitExternal { .. } => PollOutcome::Active,
+            // 예약·확정된 후처리 handle 은 runner 가 직접 다룬다.
+            DispatchHandle::PostprocessPending { .. } => PollOutcome::Active,
+            DispatchHandle::PostprocessResolved(report) => {
+                PollOutcome::Postprocessed(report.clone())
+            }
+            DispatchHandle::PostprocessProcess { run, .. } => {
+                PollOutcome::Postprocessed(PostprocessReport::failed(
+                    *run,
+                    PostprocessCause::OutcomeUnknown,
+                    "postprocess process is not tracked by this host",
+                ))
+            }
         }
     }
 }

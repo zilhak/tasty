@@ -935,6 +935,7 @@ mod complete;
 pub(super) use complete::FAIL_COMPLETION_PUT;
 mod graph_submit;
 pub use graph_submit::*;
+mod postprocess;
 
 fn decode_v1_record(value: MemoryValue, label: &str) -> Result<Task> {
     let MemoryValue::Json(v) = value else {

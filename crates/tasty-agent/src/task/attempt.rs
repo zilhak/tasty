@@ -7,10 +7,11 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::postprocess::{PostprocessOutcome, PostprocessProgress, PostprocessReport};
 use super::{Task, TaskId, TaskResult, TaskState};
 
 /// 한 실행 회차. `id` 는 `<task id>#<number>` 다.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TaskAttempt {
     pub id: String,
     pub number: u32,
@@ -18,6 +19,9 @@ pub struct TaskAttempt {
     /// 이 회차를 끝낸 보고. 같은 보고의 재전송을 알아보는 데 쓴다.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub completion: Option<CompletionRecord>,
+    /// 본 작업이 성공한 뒤의 후처리 진행. 후처리가 없거나 본 작업이 끝나기 전이면 없다.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub postprocess: Option<PostprocessProgress>,
 }
 
 /// 회차를 끝낸 보고의 요약. 보고 원문은 결과에 이미 있으므로 지문만 둔다.
@@ -43,6 +47,7 @@ pub fn next_attempt(task: &Task, now_ms: u64) -> Option<TaskAttempt> {
         number,
         started_at: now_ms,
         completion: None,
+        postprocess: None,
     })
 }
 
@@ -72,6 +77,8 @@ pub struct Completion {
     pub attempt_id: Option<String>,
     pub result: TaskResult,
     pub outcome: CompletionOutcome,
+    /// 후처리 실행 보고. 있으면 본 작업이 아니라 후처리의 완료다.
+    pub postprocess: Option<PostprocessReport>,
 }
 
 impl Completion {
@@ -80,6 +87,7 @@ impl Completion {
             attempt_id,
             result,
             outcome: CompletionOutcome::Succeeded,
+            postprocess: None,
         }
     }
 
@@ -93,12 +101,42 @@ impl Completion {
                 error: Some(error.clone()),
             },
             outcome: CompletionOutcome::Failed { error },
+            postprocess: None,
+        }
+    }
+
+    /// 후처리 실행 보고. 결과는 후처리 실패 사유만 싣는다(본 작업 결과는 회차에 있다).
+    pub fn postprocessed(attempt_id: Option<String>, report: PostprocessReport) -> Self {
+        let (outcome, error) = match &report.outcome {
+            PostprocessOutcome::Collected { .. } => (CompletionOutcome::Succeeded, None),
+            PostprocessOutcome::Failed { cause, message } => {
+                let error = format!("postprocess {}: {message}", cause.name());
+                (
+                    CompletionOutcome::Failed {
+                        error: error.clone(),
+                    },
+                    Some(error),
+                )
+            }
+        };
+        Self {
+            attempt_id,
+            result: TaskResult {
+                exit_code: None,
+                output: None,
+                error,
+            },
+            outcome,
+            postprocess: Some(report),
         }
     }
 
     /// 보고 내용의 지문. 회차 id 는 넣지 않는다(같은 회차 안에서만 비교한다).
     pub fn digest(&self) -> String {
-        let body = serde_json::json!({"result": self.result, "outcome": self.outcome});
+        let mut body = serde_json::json!({"result": self.result, "outcome": self.outcome});
+        if let Some(report) = &self.postprocess {
+            body["postprocess"] = serde_json::to_value(report).unwrap_or_default();
+        }
         format!("{:016x}", fnv1a64(body.to_string().as_bytes()))
     }
 }

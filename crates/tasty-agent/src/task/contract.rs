@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::binding::{InputBinding, InputMapping};
+use super::postprocess::{PostprocessRaw, PostprocessSpec, StdoutFormat, check_spec};
 use super::types::{FieldSchema, TypeDefs, TypeError, TypeKind, TypeSchema, TypedValue};
 use super::{OnFailure, ReducerStrategy, Task, TaskCommand, TaskId, TaskResult};
 
@@ -42,6 +43,9 @@ pub struct TaskContract {
     /// 검증된 입력을 실행 인자로 넘기는 자리.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub input_mapping: Option<InputMapping>,
+    /// 본 작업 뒤 실행할 CLI. 있으면 최종 출력은 그 stdout 에서 수집한다.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub postprocess: Option<PostprocessSpec>,
 }
 
 /// `merge_json` 의 동일 키 충돌 정책.
@@ -65,11 +69,17 @@ impl TaskContract {
         self.input_schema.clone().unwrap_or_else(TypeSchema::unit)
     }
 
-    /// 최종 출력 스키마. 선언이 없으면 종류별 기본값.
+    /// 최종 출력 스키마. 선언이 없으면 종류별 기본값이고, 후처리가 있으면 stdout 형식에 따라
+    /// json(json 형식) 또는 string(text 형식)이다.
     pub fn output_schema(&self, command: &TaskCommand) -> TypeSchema {
-        self.output_schema
-            .clone()
-            .unwrap_or_else(|| default_output_schema(command))
+        if let Some(s) = &self.output_schema {
+            return s.clone();
+        }
+        match &self.postprocess {
+            Some(p) if p.stdout.format == StdoutFormat::Text => TypeSchema::string(),
+            Some(_) => TypeSchema::json(),
+            None => default_output_schema(command),
+        }
     }
 
     /// run 이 성공으로 받는 종료 코드.
@@ -212,11 +222,14 @@ pub struct RawResult {
     /// 실행 응답 원문(Run 의 stdout·stderr tail, Custom 의 IPC 응답 등).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub execution: Option<Value>,
+    /// 후처리 CLI 의 원본 결과. 후처리가 없거나 실행 전에 끝났으면 비어 있다.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub postprocess: Option<PostprocessRaw>,
 }
 
 impl RawResult {
     pub fn is_empty(&self) -> bool {
-        self.exit_code.is_none() && self.execution.is_none()
+        self.exit_code.is_none() && self.execution.is_none() && self.postprocess.is_none()
     }
 }
 
@@ -351,6 +364,18 @@ pub fn check_contract<'a>(
         return Err(contract_error(
             "merge_conflict applies to reduce merge_json only",
         ));
+    }
+
+    if let Some(spec) = &contract.postprocess {
+        check_spec(spec)?;
+        if !matches!(
+            command,
+            TaskCommand::Run { .. } | TaskCommand::Custom { .. }
+        ) {
+            return Err(contract_error("postprocess applies to run and custom"));
+        }
+        // 후처리가 최종 출력을 만든다. 종류별 출력 제한은 본 작업의 값에만 적용된다.
+        return Ok(());
     }
 
     let declared = contract.output_schema.is_some();
@@ -611,6 +636,7 @@ pub fn finalize_result(task: &Task, contract: &TaskContract, reported: &TaskResu
     let raw = RawResult {
         exit_code: reported.exit_code,
         execution: reported.output.clone(),
+        postprocess: None,
     };
     let failed = |stage: FailureStage, failure: TaskFailure, source: &str| TypedResult {
         has_output: false,
@@ -673,6 +699,7 @@ pub fn finalize_result(task: &Task, contract: &TaskContract, reported: &TaskResu
                 TaskCommand::Reduce { .. } => RawResult {
                     exit_code: raw.exit_code,
                     execution: None,
+                    postprocess: None,
                 },
                 _ => raw.clone(),
             },

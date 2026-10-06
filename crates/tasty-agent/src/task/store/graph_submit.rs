@@ -16,6 +16,7 @@ use tasty_utils::id::WorkspaceId;
 
 use super::super::binding::{InputBinding, InputMapping};
 use super::super::contract::{self, FailureStage, MergeConflict, TaskContract, TaskFailure};
+use super::super::postprocess::PostprocessSpec;
 use super::super::types::TypeSchema;
 use super::super::{
     OnFailure, TASK_GRAPH_KEY_PREFIX, TASK_GRAPH_RECORD_FORMAT, Task, TaskCommand, TaskGraph,
@@ -85,6 +86,8 @@ pub struct GraphTaskSpec {
     pub allowed_exit_codes: Option<Vec<i32>>,
     #[serde(default)]
     pub merge_conflict: Option<MergeConflict>,
+    #[serde(default)]
+    pub postprocess: Option<PostprocessSpec>,
 }
 
 /// 검증을 통과한 그래프. task 는 아직 저장하지 않았고 상태는 Waiting 이다.
@@ -200,6 +203,7 @@ impl TaskStore<'_> {
                     merge_conflict: t.merge_conflict,
                     bindings: t.bindings,
                     input_mapping: t.input_mapping,
+                    postprocess: t.postprocess,
                 }),
                 typed_result: None,
                 graph_id: Some(graph_id.clone()),

@@ -253,6 +253,7 @@ impl TaskService {
                 error: None,
             },
             outcome,
+            postprocess: None,
         };
         let task_id = wait.task;
         if let Err(error) = context.complete_task(wait.workspace, &task_id, completion, now_ms) {

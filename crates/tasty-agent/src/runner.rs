@@ -17,7 +17,8 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::task::{Completion, Task, TaskId, TaskResult, TaskState};
+use crate::task::postprocess::{self, PostprocessCause, PostprocessPhase, PostprocessReport};
+use crate::task::{Completion, CompletionOutcome, Task, TaskId, TaskResult, TaskState};
 use crate::{AgentError, Result};
 
 /// dispatch / poll 결과를 묶는 핸들. variant 별 의미:
@@ -75,6 +76,19 @@ pub enum DispatchHandle {
         #[serde(default)]
         deadline_ms: u64,
     },
+    /// 후처리 `run` 번째 실행을 `not_before_ms` 이후 시작한다. 루프가 직접 다루며
+    /// executor 의 poll 을 부르지 않는다. 저장소의 후처리 진행(`Pending`)과 같은 값이다.
+    PostprocessPending {
+        run: u32,
+        not_before_ms: u64,
+    },
+    /// 실행 중인 후처리 프로세스. host executor 가 프로세스와 출력 수집을 보관한다.
+    PostprocessProcess {
+        pid: u32,
+        run: u32,
+    },
+    /// 프로세스 없이 결과가 정해진 후처리 실행(시작 실패, 재시작 뒤 결과 불명 등).
+    PostprocessResolved(PostprocessReport),
 }
 
 /// poll 결과.
@@ -83,6 +97,8 @@ pub enum PollOutcome {
     Active,
     Done(TaskResult),
     Failed(String),
+    /// 후처리 실행 하나가 끝났다.
+    Postprocessed(PostprocessReport),
 }
 
 /// dispatch 의 3-way 결과.
@@ -108,6 +124,26 @@ pub trait TaskExecutor {
     /// task 가 종결(Succeeded/Failed/Cancelled) 됐을 때 permit 등을 해제.
     /// 기본 구현은 no-op — semaphore 통합이 없는 executor 는 override 불필요.
     fn release_permit(&mut self, _task_id: &TaskId) {}
+    /// 저장소에 예약된 후처리 실행을 시작한다([`crate::task::TaskStore::begin_postprocess_run`]
+    /// 을 기록한 뒤에만 프로세스를 띄운다). 기본 구현은 후처리를 실행하지 못한다.
+    fn start_postprocess(&mut self, _task: &Task, _attempt_id: &str, run: u32) -> DispatchHandle {
+        DispatchHandle::PostprocessResolved(PostprocessReport::failed(
+            run,
+            PostprocessCause::Spawn,
+            "this executor does not run postprocess commands",
+        ))
+    }
+    /// 매 tick 처음에 부른다. 종료를 기다리는 자원의 정리 등에 쓴다.
+    fn maintain(&mut self) {}
+}
+
+/// 완료 보고 기록의 결과.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Reported {
+    Recorded,
+    Rejected,
+    /// 다시 시도할 오류라 보고를 보관했다.
+    Kept,
 }
 
 /// `TaskExecutor` 를 들고 task list 를 진행시키는 루프. workspace 1개당 1 instance.
@@ -139,7 +175,7 @@ impl<E: TaskExecutor> RunnerLoop<E> {
         }
     }
 
-    /// 완료 보고를 기록한다. 다시 시도할 오류면 보고를 보관하고 `false` 를 돌려준다.
+    /// 완료 보고를 기록한다. 다시 시도할 오류면 보고를 보관한다.
     fn report<FC>(
         &mut self,
         workspace_id: u32,
@@ -147,28 +183,57 @@ impl<E: TaskExecutor> RunnerLoop<E> {
         completion: Completion,
         now_ms: u64,
         complete: &mut FC,
-    ) -> bool
+    ) -> Reported
     where
         FC: FnMut(u32, &TaskId, Completion, u64) -> Result<()>,
     {
         match complete(workspace_id, task_id, completion.clone(), now_ms) {
             Ok(()) => {
                 self.pending.remove(task_id);
-                true
+                Reported::Recorded
             }
             Err(e) if completion_retryable(&e) => {
                 tracing::warn!(
                     "runner: {task_id} completion not recorded, retrying next tick: {e}"
                 );
                 self.pending.insert(task_id.clone(), completion);
-                false
+                Reported::Kept
             }
             Err(e) => {
                 tracing::warn!("runner: {task_id} completion rejected: {e}");
                 self.pending.remove(task_id);
-                true
+                Reported::Rejected
             }
         }
+    }
+
+    /// 기록한 보고 뒤 같은 회차에서 이어 갈 후처리 handle. 저장소의 후처리 단계와 같은
+    /// 규칙([`postprocess::next_run`])으로 정한다. 없으면 task 가 종결됐다.
+    fn continuation(task: &Task, completion: &Completion, now_ms: u64) -> Option<DispatchHandle> {
+        let spec = task.contract.as_ref()?.postprocess.as_ref()?;
+        match &completion.postprocess {
+            None => matches!(completion.outcome, CompletionOutcome::Succeeded).then_some(
+                DispatchHandle::PostprocessPending {
+                    run: 1,
+                    not_before_ms: now_ms,
+                },
+            ),
+            Some(report) => {
+                postprocess::next_run(spec, report).map(|run| DispatchHandle::PostprocessPending {
+                    run,
+                    not_before_ms: now_ms.saturating_add(spec.retry_delay_ms()),
+                })
+            }
+        }
+    }
+
+    /// 예약 시각이 된 후처리 실행을 시작한다.
+    fn start_postprocess(&mut self, task: &Task, run: u32) {
+        let Some(attempt) = task.attempt.as_ref().map(|a| a.id.clone()) else {
+            return;
+        };
+        let handle = self.executor.start_postprocess(task, &attempt, run);
+        self.running.insert(task.id.clone(), handle);
     }
 
     /// 한 tick. 상태 기록은 `set_state`/`complete` 클로저로 호출자가 위임.
@@ -192,6 +257,7 @@ impl<E: TaskExecutor> RunnerLoop<E> {
         FS: FnMut(u32, &TaskId, TaskState, u64) -> Result<()>,
         FC: FnMut(u32, &TaskId, Completion, u64) -> Result<()>,
     {
+        self.executor.maintain();
         // 외부에서 종결된 작업도 poll 전에 정리해야 permit이 남지 않는다.
         // 결과는 기록됐지만 후속 효과가 끊긴 보고는 같은 보고를 다시 내 마무리한다.
         for task in tasks {
@@ -199,7 +265,7 @@ impl<E: TaskExecutor> RunnerLoop<E> {
                 continue;
             }
             if let Some(c) = self.pending.get(&task.id).cloned()
-                && !self.report(workspace_id, &task.id, c, now_ms, &mut complete)
+                && self.report(workspace_id, &task.id, c, now_ms, &mut complete) == Reported::Kept
             {
                 continue;
             }
@@ -212,28 +278,75 @@ impl<E: TaskExecutor> RunnerLoop<E> {
             if !matches!(task.state, TaskState::Running) {
                 continue;
             }
-            let handle = match self.running.get(&task.id) {
+            let mut handle = match self.running.get(&task.id) {
                 Some(h) => h.clone(),
                 None => {
                     // 호스트가 복원하지 않은 핸들은 이 루프에서 처리할 수 없다.
                     continue;
                 }
             };
+            // 본 작업이 밖에서 완료 보고됐으면(훅·외부 보고) 저장소의 후처리 예약을 따른다.
+            if let Some(PostprocessPhase::Pending { run, not_before_ms }) = postprocess_phase(task)
+                && !handle.is_postprocess()
+                && !self.pending.contains_key(&task.id)
+            {
+                handle = DispatchHandle::PostprocessPending { run, not_before_ms };
+                self.running.insert(task.id.clone(), handle.clone());
+            }
             // 기록하지 못한 보고가 있으면 다시 poll 하지 않고 그 보고를 다시 낸다.
             let completion = match self.pending.get(&task.id) {
                 Some(c) => c.clone(),
                 None => {
                     let attempt = task.attempt.as_ref().map(|a| a.id.clone());
-                    match self.executor.poll(&handle) {
+                    let outcome = match &handle {
+                        DispatchHandle::PostprocessPending { run, not_before_ms } => {
+                            if now_ms >= *not_before_ms {
+                                self.start_postprocess(task, *run);
+                            }
+                            continue;
+                        }
+                        DispatchHandle::PostprocessResolved(report) => {
+                            PollOutcome::Postprocessed(report.clone())
+                        }
+                        _ => self.executor.poll(&handle),
+                    };
+                    match outcome {
                         PollOutcome::Active => continue,
                         PollOutcome::Done(result) => Completion::succeeded(attempt, result),
                         PollOutcome::Failed(err) => Completion::failed(attempt, err),
+                        PollOutcome::Postprocessed(report) => {
+                            Completion::postprocessed(attempt, report)
+                        }
                     }
                 }
             };
-            if self.report(workspace_id, &task.id, completion, now_ms, &mut complete) {
-                self.running.remove(&task.id);
-                self.executor.release_permit(&task.id);
+            match self.report(
+                workspace_id,
+                &task.id,
+                completion.clone(),
+                now_ms,
+                &mut complete,
+            ) {
+                Reported::Kept => {}
+                Reported::Recorded => match Self::continuation(task, &completion, now_ms) {
+                    // 같은 회차가 이어진다. permit 은 마지막 종결까지 유지한다.
+                    Some(DispatchHandle::PostprocessPending { run, not_before_ms })
+                        if now_ms >= not_before_ms =>
+                    {
+                        self.start_postprocess(task, run);
+                    }
+                    Some(next) => {
+                        self.running.insert(task.id.clone(), next);
+                    }
+                    None => {
+                        self.running.remove(&task.id);
+                        self.executor.release_permit(&task.id);
+                    }
+                },
+                Reported::Rejected => {
+                    self.running.remove(&task.id);
+                    self.executor.release_permit(&task.id);
+                }
             }
         }
 
@@ -262,11 +375,31 @@ impl<E: TaskExecutor> RunnerLoop<E> {
     }
 }
 
+impl DispatchHandle {
+    /// 후처리 단계의 handle 인가.
+    pub fn is_postprocess(&self) -> bool {
+        matches!(
+            self,
+            DispatchHandle::PostprocessPending { .. }
+                | DispatchHandle::PostprocessProcess { .. }
+                | DispatchHandle::PostprocessResolved(_)
+        )
+    }
+}
+
+/// snapshot 의 후처리 단계. 후처리 진행이 없으면 없다.
+fn postprocess_phase(task: &Task) -> Option<PostprocessPhase> {
+    task.attempt.as_ref()?.postprocess.as_ref().map(|p| p.phase)
+}
+
 // ImmediateFail은 호스트 executor의 poll이 Failed로 반환해야 한다.
 fn _agent_error_link(_e: AgentError) {}
 
 #[cfg(test)]
 mod pending_tests;
+
+#[cfg(test)]
+mod postprocess_tests;
 
 #[cfg(test)]
 mod tests {

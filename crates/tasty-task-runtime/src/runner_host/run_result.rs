@@ -202,6 +202,8 @@ pub(super) fn run_outcome_to_value(outcome: &PollOutcome) -> serde_json::Value {
             "error": e,
         }),
         PollOutcome::Active => json!({ "kind": "active" }),
+        // Run 의 결과 셀에는 후처리 보고가 들어가지 않는다.
+        PollOutcome::Postprocessed(_) => json!({ "kind": "active" }),
     }
 }
 

@@ -368,6 +368,7 @@ pub mod binding;
 pub mod contract;
 pub mod dag;
 mod graph;
+pub mod postprocess;
 mod record;
 mod store;
 pub mod types;
@@ -394,3 +395,7 @@ mod graph_submit_tests;
 #[cfg(test)]
 #[path = "task/completion_tests.rs"]
 mod completion_tests;
+
+#[cfg(test)]
+#[path = "task/postprocess_store_tests.rs"]
+mod postprocess_store_tests;
