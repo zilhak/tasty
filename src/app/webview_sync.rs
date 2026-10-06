@@ -43,17 +43,24 @@ pub(crate) fn synchronize(
     }
 }
 
+/// `collect_html_surfaces` 의 결과. 활성 surface 는 세 맵에 같은 키로 들어 있다.
+struct HtmlSurfaces {
+    /// 플랫폼에 넘길 논리 좌표.
+    bounds: std::collections::HashMap<u32, crate::webview::WebViewBounds>,
+    /// egui 툴팁 배치에 쓸 물리 사각형.
+    physical: std::collections::HashMap<u32, crate::model::PhysicalRect>,
+    /// WebView 입력에서 뺄 host 입력 영역(WebView 기준 물리 px).
+    holes: std::collections::HashMap<u32, Vec<crate::model::PhysicalRect>>,
+    all_ids: Vec<u32>,
+}
+
 /// HTML surface 전체와 활성 surface의 영역을 수집한다. native 호출은 하지 않는다.
 /// 활성 surface의 영역은 플랫폼에 넘길 논리 좌표와 egui 툴팁 배치에 쓸 물리 사각형을 함께 돌려준다.
 fn collect_html_surfaces(
     view: &MainView,
     engine: &crate::runtime::engine_access::EngineRef<'_>,
     scale_factor: f64,
-) -> (
-    std::collections::HashMap<u32, crate::webview::WebViewBounds>,
-    std::collections::HashMap<u32, crate::model::PhysicalRect>,
-    Vec<u32>,
-) {
+) -> HtmlSurfaces {
     let terminal_rect = view.compute_terminal_rect();
 
     // Collect all Html surface IDs and their visibility/bounds
@@ -62,12 +69,19 @@ fn collect_html_surfaces(
         std::collections::HashMap::new();
     let mut active_physical: std::collections::HashMap<u32, crate::model::PhysicalRect> =
         std::collections::HashMap::new();
+    let mut active_holes: std::collections::HashMap<u32, Vec<crate::model::PhysicalRect>> =
+        std::collections::HashMap::new();
     let mut all_html_ids: Vec<u32> = Vec::new();
+    let window = view.base.gpu.size();
+    let resize_band = view.window_resize_band();
 
     for (ws_idx, ws) in engine.workspaces().into_iter().enumerate() {
         let pane_rects = view
             .state
             .pane_rects(engine, ws, terminal_rect, scale_factor as f32);
+        let pane_dividers =
+            view.state
+                .pane_dividers(engine, ws, terminal_rect, scale_factor as f32);
         for (pane_id, pane_rect) in &pane_rects {
             if let Some(pane) = ws.pane_layout().find_pane(*pane_id) {
                 // tab bar 아래 콘텐츠 영역 — 탭 내부 분할(SurfaceGroup)의 leaf rect
@@ -86,6 +100,26 @@ fn collect_html_surfaces(
                     // Only visible if: active workspace AND active tab
                     let is_visible =
                         ws_idx == active_ws && tab_idx == view.state.navigation.tab_index(pane);
+                    // native WebView가 가리면 안 되는 host 입력 영역: pane·surface 분할선 hit 띠와
+                    // 창 가장자리 리사이즈 밴드. 활성 탭에서만 쓴다.
+                    let input_zones = if is_visible {
+                        let mut dividers = pane_dividers.clone();
+                        dividers.extend(view.state.surface_dividers(
+                            engine,
+                            tab,
+                            content_rect,
+                            scale_factor as f32,
+                        ));
+                        crate::state::webview_edges::host_input_zones(
+                            &dividers,
+                            crate::model::PhysicalPx(window.width as f32),
+                            crate::model::PhysicalPx(window.height as f32),
+                            resize_band,
+                            scale_factor as f32,
+                        )
+                    } else {
+                        Vec::new()
+                    };
                     // 비포커스 leaf에도 native WebView가 필요하므로 탭 전체를 순회한다.
                     for region in view.state.tab_surface_regions(
                         engine,
@@ -105,12 +139,13 @@ fn collect_html_surfaces(
                         if is_visible {
                             // 패널 바깥쪽 변에는 divider 드래그 영역만큼 여백을 둔다.
                             // egui chrome도 같은 여백 안쪽으로 내용을 자른다.
-                            let [left, right, bottom] = crate::state::mouse::webview_edge_inset(
-                                leaf_rect,
-                                content_rect,
-                                scale_factor as f32,
-                            )
-                            .map(|v| v.value() as f64);
+                            let [left, right, bottom] =
+                                crate::state::webview_edges::webview_edge_inset(
+                                    leaf_rect,
+                                    content_rect,
+                                    scale_factor as f32,
+                                )
+                                .map(|v| v.value() as f64);
                             // 물리 사각형을 만든 뒤 플랫폼 API에 맞는 논리 좌표로 변환한다.
                             let top = view.html_script_banner_top(sid, scale_factor);
                             let physical = crate::webview::PhysicalWebViewBounds {
@@ -124,15 +159,20 @@ fn collect_html_surfaces(
                                 scale_factor,
                             );
                             active_html.insert(sid, bounds);
-                            active_physical.insert(
+                            let webview_rect = crate::model::PhysicalRect {
+                                x: crate::model::PhysicalPx(physical.x as f32),
+                                y: crate::model::PhysicalPx(physical.y as f32),
+                                width: crate::model::PhysicalPx(physical.width as f32),
+                                height: crate::model::PhysicalPx(physical.height as f32),
+                            };
+                            active_holes.insert(
                                 sid,
-                                crate::model::PhysicalRect {
-                                    x: crate::model::PhysicalPx(physical.x as f32),
-                                    y: crate::model::PhysicalPx(physical.y as f32),
-                                    width: crate::model::PhysicalPx(physical.width as f32),
-                                    height: crate::model::PhysicalPx(physical.height as f32),
-                                },
+                                crate::state::webview_edges::webview_input_holes(
+                                    webview_rect,
+                                    &input_zones,
+                                ),
                             );
+                            active_physical.insert(sid, webview_rect);
                         }
                     }
                 }
@@ -140,7 +180,12 @@ fn collect_html_surfaces(
         }
     }
 
-    (active_html, active_physical, all_html_ids)
+    HtmlSurfaces {
+        bounds: active_html,
+        physical: active_physical,
+        holes: active_holes,
+        all_ids: all_html_ids,
+    }
 }
 
 /// 필요한 설정을 읽은 뒤 HTML surface의 native WebView를 만들고 페이지를 연다.
@@ -370,6 +415,28 @@ fn publish_native_content_rects(
     }
 }
 
+/// host 입력 영역을 native WebView 입력에서 뺀다. Linux는 X input shape 으로 빼고 WebView 를
+/// surface 에 꽉 채운다. 다른 OS는 아직 방법이 없어 `webview_edge_inset` 여백으로 피한다.
+#[cfg(target_os = "linux")]
+fn apply_input_holes(wv: &crate::webview::PlatformWebView, holes: &[crate::model::PhysicalRect]) {
+    let holes: Vec<[i32; 4]> = holes
+        .iter()
+        .map(|r| {
+            let x0 = r.x.value().floor() as i32;
+            let y0 = r.y.value().floor() as i32;
+            let x1 = (r.x + r.width).value().ceil() as i32;
+            let y1 = (r.y + r.height).value().ceil() as i32;
+            [x0, y0, x1 - x0, y1 - y0]
+        })
+        .collect();
+    wv.set_input_holes(&holes);
+}
+
+/// 입력 영역을 빼는 방법이 아직 없는 OS.
+#[cfg(not(target_os = "linux"))]
+fn apply_input_holes(_wv: &crate::webview::PlatformWebView, _holes: &[crate::model::PhysicalRect]) {
+}
+
 /// Synchronize native WebView instances with the current state.
 /// Creates webviews for new Html panels, destroys removed ones,
 /// updates bounds and visibility based on active workspace/tab.
@@ -380,8 +447,12 @@ fn sync_webviews(
     proofs: &super::html_runtime::NavigationProofs,
 ) {
     let scale_factor = view.base.gpu.scale_factor() as f64;
-    let (active_html, active_physical, all_html_ids) =
-        collect_html_surfaces(view, engine, scale_factor);
+    let HtmlSurfaces {
+        bounds: active_html,
+        physical: active_physical,
+        holes: active_holes,
+        all_ids: all_html_ids,
+    } = collect_html_surfaces(view, engine, scale_factor);
     create_missing_webviews(view, engine, &all_html_ids, &active_html, scale_factor);
     resync_webview_urls(view, engine, &all_html_ids);
     update_html_script_banners(view, engine, &all_html_ids);
@@ -462,6 +533,7 @@ fn sync_webviews(
         // active 면 bounds 는 숨겨져 있어도 갱신(다음 reveal 대비).
         if let Some(bounds) = active_html.get(sid) {
             wv.set_bounds(*bounds, scale_factor);
+            apply_input_holes(wv, active_holes.get(sid).map_or(&[][..], Vec::as_slice));
         }
         let nav = wv.nav_state();
         // 드러나야 할 자리에 있는데(활성 tab · overlay 없음) nav 가 Done 이 아니면

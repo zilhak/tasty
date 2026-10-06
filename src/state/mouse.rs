@@ -15,31 +15,6 @@ pub fn divider_hit_threshold_physical(scale_factor: f32) -> f32 {
     DIVIDER_HIT_THRESHOLD.to_physical(scale_factor).value()
 }
 
-/// native WebView가 leaf 안에서 비워 두는 변별 여백(물리 px). 왼쪽·오른쪽·아래 순서다.
-/// native 창은 마우스를 직접 받으므로 pane 콘텐츠 영역 외곽에 닿는 변에는 분할선 입력 영역만큼
-/// 비워 둔다. 내부 leaf 사이에는 divider gap만 있고, 위쪽은 탭 바와 닿아 여백이 없다.
-#[cfg(feature = "gui")]
-pub fn webview_edge_inset(
-    leaf: PhysicalRect,
-    content: PhysicalRect,
-    scale_factor: f32,
-) -> [PhysicalPx; 3] {
-    let inset = PhysicalPx(divider_hit_threshold_physical(scale_factor));
-    let on_edge = |a: PhysicalPx, b: PhysicalPx| (a - b).abs() < PhysicalPx(0.5);
-    let pick = |touches: bool| {
-        if touches {
-            inset
-        } else {
-            PhysicalPx::default()
-        }
-    };
-    [
-        pick(on_edge(leaf.x, content.x)),
-        pick(on_edge(leaf.x + leaf.width, content.x + content.width)),
-        pick(on_edge(leaf.y + leaf.height, content.y + content.height)),
-    ]
-}
-
 impl RequestContext {
     /// Determine the cursor icon for the winit (non-egui) area at the given position.
     /// Checks dividers first, then asks the surface. Returns None if not over any winit area.

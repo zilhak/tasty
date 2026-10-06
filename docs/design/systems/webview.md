@@ -70,6 +70,8 @@ WebViewCreateError의 Permanent는 즉시 중단하고 Transient는 최대 8 회
 
 Linux foreign GdkWindow 구성에서는 GTK resize·size request만으로 allocation이 갱신되지 않았다.
 foreign bind와 직접 size_allocate는 함께 유지하거나 함께 제거한다.
+
+native 창은 egui보다 위에서 마우스를 직접 받는다. Linux는 WebView를 leaf rect에 꽉 채우고, 분할선 hit 띠와 창 리사이즈 밴드가 겹치는 부분만 `set_input_holes`로 X 창의 input shape에서 뺀다. 구멍은 `state::webview_edges::{host_input_zones, webview_input_holes}`가 물리 px로 계산하고, 플랫폼 경계에서 GDK 논리 px로 바꿀 때 바깥쪽으로 반올림한다. macOS·Windows는 이 처리가 없어 `webview_edge_inset`의 pane 외곽 여백을 쓴다.
 X 창에는 물리 px를 주고, GTK resize·size_allocate에는 GDK 창 배율로 나눈 논리 px(올림)를 준다. GTK 크기 단위는 논리 px라 물리 px를 그대로 주면 GDK 배율이 2일 때 페이지 viewport가 X 창의 두 배가 된다. winit 배율과 GDK 배율은 출처가 달라(`Xft.dpi`·`WINIT_X11_SCALE_FACTOR` / `GDK_SCALE`·XSETTINGS) 서로 대신하지 않는다. 이 규칙은 `GDK_SCALE=2`에서 측정했고, XSETTINGS로 배율이 정해지는 GNOME 세션에서는 측정하지 않았다.
 활성·비활성 탭 생성, 전환, 확대·축소, 분할에서 부모와 렌더 자식 크기를 비교한다.
 원인을 ConfigureNotify 누락 하나로 확정하지 않는다.

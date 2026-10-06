@@ -42,6 +42,23 @@ fn borderless_for(window: &Window) -> Fullscreen {
     Fullscreen::Borderless(window.current_monitor())
 }
 
+/// native 화면이 덮으면 안 되는 창 가장자리 리사이즈 밴드 폭. 장식 없는 Windows·Linux 창만
+/// 이 밴드로 리사이즈를 받고, 최대화·전체화면에서는 받지 않는다.
+#[cfg(not(target_os = "macos"))]
+fn window_resize_band(window: &Window) -> crate::model::PhysicalPx {
+    if window_size_is_locked(window) {
+        crate::model::PhysicalPx::default()
+    } else {
+        crate::model::PhysicalPx(crate::platform::window_chrome::RESIZE_EDGE_MARGIN as f32)
+    }
+}
+
+/// macOS는 OS 장식이 리사이즈를 맡아 창 안에 밴드가 없다.
+#[cfg(target_os = "macos")]
+fn window_resize_band(_window: &Window) -> crate::model::PhysicalPx {
+    crate::model::PhysicalPx::default()
+}
+
 /// 최대화·전체화면에서는 가장자리 리사이즈를 시작하지 않는다.
 // 이유: macOS는 네이티브 리사이즈를 사용해 이 함수의 호출부가 없다.
 #[cfg_attr(target_os = "macos", allow(dead_code))]
@@ -77,6 +94,11 @@ pub(crate) struct FullscreenWindowReport {
 }
 
 impl MainView {
+    /// 지금 창 상태의 가장자리 리사이즈 밴드 폭(물리 px).
+    pub(crate) fn window_resize_band(&self) -> crate::model::PhysicalPx {
+        window_resize_band(&self.base.winit)
+    }
+
     /// 무대 상태(`fullscreen_stage_active`)에 OS 창 fullscreen 을 맞춘다.
     ///
     /// `stage_saved_window_mode` 가 "무대 때문에 전환해 둔 상태" 의 마커를 겸한다 —

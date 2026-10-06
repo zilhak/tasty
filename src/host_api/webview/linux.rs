@@ -22,6 +22,9 @@ use super::keys::WebViewKeySink;
 use super::script_gate::ScriptGate;
 use super::{NavState, PendingNavigation, WebViewBounds};
 
+/// input shape 를 정한 GTK 크기와 구멍(이 창 기준 물리 px `[x, y, 너비, 높이]`).
+type InputShape = ((i32, i32), Vec<[i32; 4]>);
+
 pub struct PlatformWebView {
     webview: WebView,
     gtk_window: gtk::Window,
@@ -42,6 +45,10 @@ pub struct PlatformWebView {
     ucm: Option<UserContentManager>,
     /// 비동기 컴파일 완료 전에는 필터가 없다.
     content_filter: Rc<RefCell<Option<ContentFilter>>>,
+    /// 마지막 `set_bounds` 의 GTK 크기(GDK 논리 px). input shape 의 전체 사각형이다.
+    gtk_size: Cell<(i32, i32)>,
+    /// 마지막으로 적용한 input shape(GTK 크기와 구멍). 같으면 X 요청을 다시 보내지 않는다.
+    applied_input_shape: RefCell<Option<InputShape>>,
 }
 
 /// GObject가 아닌 ref-counted filter의 소유권. 안전 바인딩이 없어 Drop에서 직접 unref한다.
@@ -492,6 +499,8 @@ impl PlatformWebView {
             gdk_window,
             ucm,
             content_filter,
+            gtk_size: Cell::new((w.max(1) as i32, h.max(1) as i32)),
+            applied_input_shape: RefCell::new(None),
         })
     }
 
@@ -534,11 +543,44 @@ impl PlatformWebView {
         let gdk_scale = self.gdk_window.scale_factor().max(1);
         let gtk_w = (w.max(1) + gdk_scale - 1) / gdk_scale;
         let gtk_h = (h.max(1) + gdk_scale - 1) / gdk_scale;
+        self.gtk_size.set((gtk_w, gtk_h));
         self.gtk_window.resize(gtk_w, gtk_h);
 
         // foreign X 창의 크기 변경을 GTK가 자동 반영하지 못하므로 allocation도 직접 갱신한다.
         self.gtk_window
             .size_allocate(&gtk::Allocation::new(0, 0, gtk_w, gtk_h));
+    }
+
+    /// host 가 받아야 하는 입력 영역(분할선 hit 띠·창 리사이즈 밴드)을 이 창의 입력에서 뺀다.
+    /// `holes` 는 이 창 기준 물리 px `[x, y, 너비, 높이]` 다. 빠진 곳의 포인터 이벤트는 X 서버가
+    /// 부모 창(winit)으로 보낸다 — 입력 shape 밖의 자손 창으로는 내려가지 않는다. 화면에는 그대로
+    /// 페이지가 보인다. GDK 단위로 바꿀 때 구멍을 바깥쪽으로 반올림해 host 쪽 띠가 줄지 않게 한다.
+    pub fn set_input_holes(&self, holes: &[[i32; 4]]) {
+        self.assert_origin_thread();
+        let size = self.gtk_size.get();
+        if self
+            .applied_input_shape
+            .borrow()
+            .as_ref()
+            .is_some_and(|(s, h)| *s == size && h.as_slice() == holes)
+        {
+            return;
+        }
+        let scale = self.gdk_window.scale_factor().max(1);
+        let rect = |x, y, w, h| gtk::cairo::RectangleInt::new(x, y, w, h);
+        let region = gtk::cairo::Region::create_rectangle(&rect(0, 0, size.0, size.1));
+        for &[x, y, w, h] in holes {
+            let x0 = x.div_euclid(scale);
+            let y0 = y.div_euclid(scale);
+            let x1 = (x + w + scale - 1).div_euclid(scale);
+            let y1 = (y + h + scale - 1).div_euclid(scale);
+            if let Err(e) = region.subtract_rectangle(&rect(x0, y0, x1 - x0, y1 - y0)) {
+                tracing::warn!("WebView input shape: region subtract failed: {e}");
+                return;
+            }
+        }
+        self.gdk_window.input_shape_combine_region(&region, 0, 0);
+        *self.applied_input_shape.borrow_mut() = Some((size, holes.to_vec()));
     }
 
     pub fn set_visible(&self, visible: bool) {

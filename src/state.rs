@@ -31,6 +31,8 @@ mod shell_integration_hint;
 mod tab;
 #[cfg(test)]
 pub(crate) mod tests;
+#[cfg(feature = "gui")]
+pub(crate) mod webview_edges;
 mod workspace;
 
 // 팔레트 매칭은 헤드리스 시험에서도 검사한다.

@@ -40,11 +40,19 @@ Linux의 foreign X11 창은 생성·조회 사이 XSync, NULL 오류 처리, 실
 크기 변경은 native container와 실제 렌더 target 모두에 전달한다.
 원격 콘텐츠 차단은 navigation과 하위 리소스 요청을 함께 처리한다.
 
+native webview 창은 egui보다 위에서 마우스를 직접 받는다. 그래서 분할선 드래그와 창 가장자리 리사이즈 입력을 가리지 않아야 한다.
+Linux에서는 webview가 surface를 꽉 채우고, 분할선 hit 띠와 창 리사이즈 밴드에 겹치는 부분만 X 창의 input shape에서 뺀다.
+X 서버는 input shape 밖의 포인터 이벤트를 자손 창으로 내려보내지 않고 부모 창(winit)에 보낸다. 화면에는 그 띠에도 페이지가 보인다.
+macOS와 Windows는 아직 같은 방법을 구현하지 않았다. pane 콘텐츠 영역 외곽에 닿는 변에 분할선 입력 폭만큼 여백을 두고, 그 여백의 chrome 글자는 webview 영역 안으로 자른다.
+
 ## Consequences
 
 문서 레이아웃과 확장을 웹 렌더러로 처리하면서 호스트의 창·입력 정책을 유지한다.
 그 대신 webview 인스턴스별 자원과 세 백엔드의 수명 관리 비용을 부담한다.
 컴파일은 호출 가능한 형태를 검사할 뿐 실제 focus·키 반복·렌더 크기·종료 순서를 증명하지 않는다.
+
+Linux의 input shape는 분할선·창 상태가 바뀔 때마다 다시 계산하며, 값이 같으면 X 요청을 다시 보내지 않는다.
+macOS·Windows에서는 webview가 surface보다 작고 창 가장자리 리사이즈 밴드의 일부를 webview가 가져갈 수 있다.
 
 Linux 원격 필터는 비동기로 준비되므로 적용 전까지 차단하지 못하는 시간이 남는다.
 일부 단축키는 호스트가 소비한 뒤 현재 focus 조건 때문에 실행되지 않을 수 있다.
@@ -57,11 +65,15 @@ Linux 원격 필터는 비동기로 준비되므로 적용 전까지 차단하�
 - backend trait이나 메서드 이름 검사만 추가해도 플랫폼 행동 차이는 검사되지 않는다.
 - X 오류를 trap으로만 숨기면 잘못된 종료 순서가 남는다.
 - 모든 webview가 쓰는 proxy를 막으면 원격 접근을 허용한 다른 뷰까지 영향을 받는다.
+- webview를 변마다 입력 영역만큼 줄이면 surface와 크기가 달라 보이고, 그 틈에 아래 chrome이 드러난다. 사용자가 이 차이를 결함으로 지목해 Linux에서 기각했다.
+- 입력 띠마다 InputOnly 창을 webview 위에 두면 창 생성·쌓임 순서·수명을 따로 관리해야 한다. input shape는 webview 창 하나의 속성이라 같은 수명으로 관리된다.
 
 ## Reconsideration Triggers
 
 GTK·WebKit·WebView2·AppKit 변경 때 크기·focus·종료·원격 리소스 차단을 실제 플랫폼에서 비교한다.
 Wayland나 복수 backend 선택을 지원하면 현재 창 소유와 정적 선택을 다시 정한다.
+Wayland backend를 추가하면 input shape 대신 subsurface의 input region을 써야 하므로 입력 띠 처리를 다시 정한다.
+macOS·Windows에서 입력 영역을 webview에서 빼는 방법(hitTest 재정의, WebView2 입력 경로)을 구현하면 그 OS의 여백을 없앤다.
 winit이 자식 창으로의 포커스 이동을 창 비활성과 구분해 알리면 창 활성 판정에서 webview 포커스 조회를 뺀다.
 상류가 안전한 FFI 또는 공식 크기 갱신 방법을 제공하면 직접 호출을 줄인다.
 다중 문서의 자원 비용이 문제가 되면 같은 문서를 열어 webview와 대안 렌더러의 비용을 측정한다.

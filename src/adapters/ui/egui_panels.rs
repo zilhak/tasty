@@ -76,9 +76,12 @@ pub fn draw_egui_panels(
                         )
                     });
                 let logical = r.rect.to_logical(scale_factor);
-                let webview_inset =
-                    crate::state::mouse::webview_edge_inset(r.rect, content_rect, scale_factor)
-                        .map(|v| v.to_logical(scale_factor).value());
+                let webview_inset = crate::state::webview_edges::webview_edge_inset(
+                    r.rect,
+                    content_rect,
+                    scale_factor,
+                )
+                .map(|v| v.to_logical(scale_factor).value());
                 let info = EguiPanelInfo {
                     pane_id,
                     surface_id: Some(r.id),
