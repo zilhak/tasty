@@ -369,6 +369,39 @@ impl PlatformWebView {
                 .add_NavigationCompleted(&h_done, &mut tok_done)
                 .map_err(|e| transient(format!("add_NavigationCompleted failed: {e}")))?;
 
+            // main frame 문서를 그리던 process가 끝나면 Linux처럼 게이트 로드를 끝낸다(ADR-0053, 실기 미측정).
+            // NavigationCompleted가 뒤따라 와도 finished()는 로드 중이 아닐 때 아무것도 하지 않는다.
+            // iframe·GPU·utility process 종료는 main frame 로드를 끝내지 않으므로 건너뛴다.
+            let nav_failed = nav_state.clone();
+            let gate_failed = script_gate.clone();
+            let mut tok_failed: i64 = 0;
+            let h_failed = ProcessFailedEventHandler::create(Box::new(
+                move |sender, args| -> windows::core::Result<()> {
+                    let Some(args) = args else { return Ok(()) };
+                    let mut kind = COREWEBVIEW2_PROCESS_FAILED_KIND::default();
+                    args.ProcessFailedKind(&mut kind)?;
+                    tracing::warn!(
+                        "WebView surface {surface_id}: WebView2 process failed: kind={kind:?}"
+                    );
+                    if kind != COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_EXITED
+                        && kind != COREWEBVIEW2_PROCESS_FAILED_KIND_BROWSER_PROCESS_EXITED
+                    {
+                        return Ok(());
+                    }
+                    nav_failed.set(NavState::Failed);
+                    if let (Some(js), Some(wv)) = (
+                        gate_failed.borrow().as_ref().and_then(|g| g.finished()),
+                        &sender,
+                    ) {
+                        set_js(wv, js);
+                    }
+                    Ok(())
+                },
+            ));
+            webview
+                .add_ProcessFailed(&h_failed, &mut tok_failed)
+                .map_err(|e| transient(format!("add_ProcessFailed failed: {e}")))?;
+
             let key_bridge_cb = key_bridge.clone();
             let mut tok_key: i64 = 0;
             let h_key = AcceleratorKeyPressedEventHandler::create(Box::new(

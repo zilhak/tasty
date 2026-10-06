@@ -131,7 +131,9 @@ OS별 구현은 다음과 같다.
     - `load-failed`는 기록만 한다. 측정한 두 경우 모두 `load-failed` 뒤에 `FINISHED`가 왔다. `FINISHED`에서 처리하면 commit 없이 끝나는 다른 경로도 함께 다룬다. 예외는 web process 종료다.
     - commit 전에 web process가 종료되면 `web-process-terminated`만 오고 `load-failed`와 `FINISHED`는 오지 않았다. 느린 http 응답을 기다리는 로드에서 web process를 강제 종료해 측정했고, 3분 뒤에도 신호가 없었다. 복원하지 않으면 로드 중 상태가 남아 배너가 허용 버튼을 비활성으로 두고 허용 요청이 `AllowError::Loading`으로 거절됐다(측정).
       - 그래서 `web-process-terminated`에서도 `FINISHED`와 같은 방식으로 로드를 끝내고 JS를 되돌린다. 로드가 이미 끝났으면 아무것도 바꾸지 않으므로, 뒤에 `FINISHED`가 와도 결과가 같다.
-      - Windows·macOS 백엔드에는 web process 종료 콜백이 없다. 같은 증상이 나는지는 측정하지 않았다.
+      - Windows·macOS 백엔드도 같은 방식으로 로드를 끝낸다. 구현은 했지만 실기에서 측정하지 않았다. 같은 증상이 나는지와 종료 뒤 어떤 navigation 신호가 오는지는 모른다.
+        - macOS는 `webViewWebContentProcessDidTerminate:`에서 로드를 끝낸다.
+        - Windows는 `ProcessFailed` 중 main frame 문서를 그리던 process가 끝난 종류(`RENDER_PROCESS_EXITED`·`BROWSER_PROCESS_EXITED`)에서만 끝낸다. iframe·GPU·utility process 종료와 `RENDER_PROCESS_UNRESPONSIVE`는 main frame 로드를 끝내지 않으므로 건너뛴다.
     - 측정 결과 허용 문서의 timer가 다시 돌았다(tick 14→19, JS True).
   - `stop_loading`이나 기존 정책이 무시하는 `http(s)` navigation에는 `STARTED`가 오지 않았다. 따라서 JS와 문서가 그대로다(리뷰 측정).
 - **Windows(미측정, API 문서 근거)**: `NavigationStarting`은 main frame navigation에서만 발생한다. 서브프레임은 `FrameNavigationStarting`, 새 창은 `NewWindowRequested`로 따로 온다. 이 핸들러 안에서 `IsScriptEnabled`를 정한다. API 문서의 예제도 이 핸들러에서 해당 navigation에 적용되도록 설정을 바꾼다. `NavigationStarting` 이후에 바꾸면 다음 top-level navigation부터 적용된다.

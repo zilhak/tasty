@@ -104,6 +104,20 @@ fn a_load_that_ends_without_a_commit_restores_the_allowed_document() {
     assert!(st.current_is_allowed());
 }
 
+/// process 종료 콜백과 실패 콜백이 함께 오는 백엔드에서 두 번째 종료는 아무것도 바꾸지 않는다.
+#[test]
+fn a_second_end_of_the_same_load_changes_nothing() {
+    let mut st = allowed_a();
+    st.on_load_started();
+    assert!(!st.on_main_response(C, Some(scan(2))));
+    assert_eq!(st.on_load_finished(), Some(true));
+    assert!(!st.loading_before_commit());
+    assert_eq!(st.on_load_finished(), None);
+    assert!(!st.loading_before_commit());
+    assert!(st.current_is_allowed());
+    assert_eq!(st.allow_current(), Ok(()));
+}
+
 #[test]
 fn a_load_that_ends_without_a_commit_keeps_an_unallowed_document_off() {
     let mut st = HtmlScriptState::new(true);
