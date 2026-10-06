@@ -79,4 +79,21 @@ mod tests {
             Some(NavState::Failed)
         );
     }
+
+    #[test]
+    fn an_end_after_a_load_request_without_a_start_signal_is_applied() {
+        // load_url·load_html이 chrome 세대를 비운 뒤 시작 신호 없이 끝나는 로드.
+        assert_eq!(
+            nav_state_after_end(None, Some(9), false),
+            Some(NavState::Failed)
+        );
+        assert_eq!(
+            nav_state_after_end(None, Some(9), true),
+            Some(NavState::Done)
+        );
+        assert_eq!(
+            nav_state_after_end(None, None, false),
+            Some(NavState::Failed)
+        );
+    }
 }

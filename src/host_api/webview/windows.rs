@@ -30,6 +30,8 @@ pub struct PlatformWebView {
     _environment: ICoreWebView2Environment,
     allow_remote: Rc<Cell<bool>>,
     nav_state: Rc<Cell<NavState>>,
+    /// 마지막에 시작한 main frame 탐색의 NavigationId. chrome 상태는 이 탐색의 종료만 따른다.
+    chrome_generation: Rc<Cell<Option<u64>>>,
     /// 원격 차단 여부와 별도로 기록한 NavigationStarting 시도 큐.
     pending_navigations: Rc<RefCell<Vec<PendingNavigation>>>,
     /// html surface의 문서 단위 스크립트 허용. 없으면 JS는 설정값을 그대로 따른다.
@@ -475,6 +477,7 @@ impl PlatformWebView {
                 _environment: env,
                 allow_remote,
                 nav_state,
+                chrome_generation,
                 pending_navigations,
                 script_gate,
                 parent_hwnd: parent,
@@ -569,8 +572,15 @@ impl PlatformWebView {
         std::mem::take(&mut *self.pending_navigations.borrow_mut())
     }
 
-    pub fn load_url(&self, url: &str) {
+    /// 로드를 요청하며 chrome을 Loading으로 둔다. 시작 신호 없이 끝나는 로드가 Loading에 남지 않게
+    /// chrome 세대를 비워(모름 = 현재) 다음 시작 신호 전의 종료를 이 로드의 것으로 본다.
+    fn begin_load(&self) {
         self.nav_state.set(NavState::Loading);
+        self.chrome_generation.set(None);
+    }
+
+    pub fn load_url(&self, url: &str) {
+        self.begin_load();
         // SAFETY: HSTRING은 호출 끝까지 살아있고 Navigate는 main thread 호출.
         unsafe {
             let url = HSTRING::from(url);
@@ -581,7 +591,7 @@ impl PlatformWebView {
     }
 
     pub fn load_html(&self, html: &str) {
-        self.nav_state.set(NavState::Loading);
+        self.begin_load();
         // SAFETY: HSTRING은 호출 끝까지 살아있고 NavigateToString은 main thread 호출.
         unsafe {
             let html = HSTRING::from(html);

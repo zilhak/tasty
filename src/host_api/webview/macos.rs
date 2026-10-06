@@ -586,8 +586,15 @@ impl PlatformWebView {
         std::mem::take(&mut *self.pending_navigations.borrow_mut())
     }
 
-    pub fn load_url(&self, url: &str) {
+    /// 로드를 요청하며 chrome을 Loading으로 둔다. 시작 신호 없이 끝나는 로드가 Loading에 남지 않게
+    /// chrome 세대를 비워(모름 = 현재) 다음 시작 신호 전의 종료를 이 로드의 것으로 본다.
+    fn begin_load(&self) {
         self.nav_state.set(NavState::Loading);
+        *self._nav_delegate.ivars().chrome_navigation.borrow_mut() = None;
+    }
+
+    pub fn load_url(&self, url: &str) {
+        self.begin_load();
         // SAFETY: main thread WKWebView API. NSString/NSURL은 호출 동안 살아있는 local Retained.
         // URL loading 시퀀스는 한 단위라 분할 시 가독성 저하.
         #[allow(clippy::multiple_unsafe_ops_per_block)]
@@ -706,7 +713,7 @@ impl PlatformWebView {
     }
 
     pub fn load_html(&self, html: &str) {
-        self.nav_state.set(NavState::Loading);
+        self.begin_load();
         // SAFETY: main thread WKWebView API. NSString/NSURL은 호출 동안 살아있는 local Retained.
         unsafe {
             let ns_html = NSString::from_str(html);
