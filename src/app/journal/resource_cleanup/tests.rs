@@ -58,3 +58,17 @@ fn another_operation_is_not_mistaken_for_one_awaiting_receipts() {
     set_phase(&mut journal, Phase::Running);
     assert!(!journal.cleanup_awaits_receipts(&OperationId("cmd-1-2/prepare/0".into())));
 }
+
+/// Observation continues during the receipt wait, but shutdown must not drop the close's reply or
+/// its recorded outcome, so it still waits for that phase.
+#[test]
+fn shutdown_waits_for_a_retirement_that_only_awaits_receipts() {
+    let (mut journal, _, _) = journal_with_cleanup();
+    set_phase(&mut journal, Phase::Running);
+    assert!(!journal.pauses_observation());
+    assert!(journal.shutdown_waits_for_publication());
+    set_phase(&mut journal, Phase::Claim);
+    assert!(journal.shutdown_waits_for_publication());
+    set_phase(&mut journal, Phase::Reconcile);
+    assert!(!journal.shutdown_waits_for_publication());
+}

@@ -235,15 +235,27 @@ impl App {
         }
     }
 
+    /// Do not capture an authorized installation as though it were a committed surface.
+    /// Cleanup has a bounded receipt deadline and records Uncertain before the halt path.
+    /// A retirement awaiting receipts does not pause observation, so its plugin receipts are
+    /// advanced here because the shutdown frame no longer pumps plugins.
+    fn shutdown_publication_pending(&mut self) -> bool {
+        if !self.journal.shutdown_waits_for_publication() || self.journal.is_halted() {
+            return false;
+        }
+        if let Some(plugins) = self.plugin_manager.as_mut()
+            && let Err(error) = plugins.poll_publication_retirements()
+        {
+            tracing::warn!("shutdown could not advance plugin retirements: {error}");
+        }
+        self.poll_journal_application();
+        self.journal.shutdown_waits_for_publication() && !self.journal.is_halted()
+    }
+
     /// 부팅 중에는 저장 대상 engine이 아직 없어 빈 레이아웃으로 덮어쓰지 않는다.
     fn shutdown_step_saving_layout(&mut self) -> StepOutcome {
-        // Do not capture an authorized installation as though it were a committed surface.
-        // Cleanup has a bounded receipt deadline and records Uncertain before the halt path.
-        if self.journal.pauses_observation() && !self.journal.is_halted() {
-            self.poll_journal_application();
-            if self.journal.pauses_observation() && !self.journal.is_halted() {
-                return StepOutcome::Waiting;
-            }
+        if self.shutdown_publication_pending() {
+            return StepOutcome::Waiting;
         }
         for session in self.engines.all_sessions_mut() {
             crate::app::attach_activation::cancel_engine(

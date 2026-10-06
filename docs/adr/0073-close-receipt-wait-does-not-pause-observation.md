@@ -21,6 +21,7 @@ App은 journal 사실을 게시하는 동안 관측을 멈춘다. 이 동안 IPC
 - 정리 항목: `Claim`(실행 권한 확정)과 `Finish`(결과 확정·metadata 정리·닫힘 이벤트 적재)만 일시정지 대상이다. `Running`·`Reconcile`·`Reconciled`는 대상이 아니다(`src/app/journal/resource_cleanup.rs`의 `cleanup_pauses_observation`).
 - 닫기 명령: 커밋 전에는 일시정지한다. 커밋 뒤 그 명령이 준비한 operation이 **모두** `Running`이면 일시정지를 푼다. 하나라도 `Finish` 이후로 넘어가면 응답까지 다시 일시정지한다. 그래서 닫기의 최종 사실·응답이 뒤의 입력보다 먼저 나간다. operation을 알 수 없으면 지금처럼 일시정지한다(`src/app/journal/commands.rs`의 `close_pauses`). 교체(replacement)는 바꾸지 않는다.
 - `Claim`이 `Running`으로 바뀌는 즉시 plugin의 회수 게시를 적용한다(`poll_publication_retirements`). 관측이 재개된 첫 턴은 보류한 입력을 pump보다 먼저 실행한다. 이 순서 때문에 보류된 enable이 파괴 중인 surface를 새 프로세스에 다시 게시하는 일을 막는다.
+- 앱 종료(GUI의 `SavingLayout`, headless의 종료 마무리)는 `Running` 정리도 기다린다(`shutdown_waits_for_publication`). 이 대기 동안 plugin pump가 돌지 않으므로 종료 단계가 회수 응답을 직접 처리한다. 상한은 receipt 시한이다. 그래서 종료가 걸린 닫기도 응답을 한 번 보내고, 종료 전에 결과(시한이 지나면 `Uncertain`)를 기록한다.
 
 같은 자원을 다루는 다른 명령에 대한 보장은 다음과 같다.
 
@@ -30,13 +31,18 @@ App은 journal 사실을 게시하는 동안 관측을 멈춘다. 이 동안 IPC
 | 같은 plugin disable·재기동 | 먼저 보낸 파괴 요청은 원 세대 회수로 확정된다. 회수 중 surface는 새 프로세스에 다시 게시되지 않는다 | 세대 회수 확정과 회수 게시 즉시 적용 |
 | 엔진 은퇴 | receipt가 남은 엔진은 해제하지 않는다 | 엔진 해제는 정리 항목·보류 회수가 빌 때까지 기다린다 |
 | 같은 워크스페이스의 다른 닫기 | 같은 자원을 두 번 회수하지 않는다 | 회수 대상은 이미 구조에서 빠졌다. 뒤 명령의 `Claim`·`Finish`는 여전히 일시정지한다 |
-| 사용자 창 입력 | 입력은 닫기가 반영된 구조를 대상으로 한다 | 닫힌 surface는 이미 View·구조에 없다. 일시정지 단계의 입력 보류·재검사는 그대로다 |
+| 사용자 창 입력 | 입력은 닫기가 반영된 구조를 대상으로 바로 처리된다 | 닫힌 surface는 이미 View·구조에 없다. 일시정지 단계의 입력 보류·재검사는 그대로다 |
+| 앱 종료 | 종료가 걸린 닫기도 응답을 한 번 보내고, 종료 전에 결과를 기록한다 | 종료는 `Running` 정리를 기다리고 그동안 회수 응답을 직접 처리한다. 상한은 receipt 시한이다 |
+| 레이아웃 저장·surface capture·preset capture | 닫히는 surface를 저장하거나 되살리지 않는다 | 닫히는 surface는 구조와 runtime 표에서 빠져 `ResourceRetirement`만 쥐고 있다. 저장·capture는 닫기가 반영된 상태를 읽는다 |
+| 원격 attach 갱신·해석 대기 요청 | 클라이언트가 닫기 중간 상태를 받지 않는다 | 구조 변경은 이미 확정·게시됐다. 클라이언트는 닫기가 반영된 구조를 받는다. 닫힘 이벤트는 결과 확정 뒤에 나간다 |
 
 ## Consequences
 
 - 멈춘 plugin의 닫기를 기다리는 동안에도 무관한 IPC가 평상시 지연으로 답한다. plugin pump와 헬스체크도 돈다.
 - 닫기 대기 중 보낸 `plugin disable`이 바로 처리된다. 원 프로세스 회수가 시한 안에 닫기를 성공으로 확정한다.
 - `Running` 동안 관측자는 "구조에서는 빠졌지만 응답은 아직"인 상태를 볼 수 있다. 목록 조회에서 닫히는 surface는 이미 보이지 않는다. 닫힘 이벤트와 닫기 응답은 `Finish` 뒤에 나간다.
+- `Running` 동안 사용자가 다른 surface를 클릭하거나 입력하면 바로 처리된다. 이전에는 닫기가 끝날 때까지 보류됐다가 버려질 수 있었다.
+- 앱 종료는 멈춘 plugin의 닫기를 receipt 시한까지 기다릴 수 있다.
 - `Running` 동안 닫히는 surface의 metadata를 쓰면 바로 성공한다. 그 값은 `Finish`의 scope 정리로 지워진다.
 - 닫기 명령은 준비한 operation id를 응답 진행 기록에서 읽어 보관한다. 유지 비용은 이 판정과 정리 단계 판정의 일치다. `close_pause_tests`와 `resource_cleanup::tests`가 단계별 판정을 검사한다.
 
@@ -52,6 +58,7 @@ App은 journal 사실을 게시하는 동안 관측을 멈춘다. 이 동안 IPC
 - 정리 `Running` 단계에 journal 쓰기나 구조 게시가 추가되면 그 단계도 일시정지해야 한다. `answer_resource_cleanup`과 `poll_resource_cleanup`이 `Running`에서 worker에 쓰기를 보내는지 확인한다.
 - id 예약이 재사용을 허용하게 바뀌면 같은 id 재사용 보장이 사라진다(`EventStore::reserve_ids`).
 - 관측 재개 첫 턴의 순서(보류 입력 → plugin pump)가 바뀌거나 enable 경로가 회수 게시보다 먼저 surface를 재게시하게 되면 즉시 적용의 필요를 다시 판단한다.
+- 종료 단계가 plugin pump를 돌리게 되면 `SavingLayout`의 직접 회수 처리가 필요한지 다시 판단한다.
 
 실행 결과로 확인:
 - plugin 프로세스를 SIGSTOP한 상태에서 surface를 닫는 동안 `list info` 지연과, 0.5초 뒤 `plugin disable`을 보냈을 때 닫기가 성공으로 끝나는지를 격리 debug 인스턴스에서 잰다. 지연이 receipt 시한 수준으로 돌아가면 다시 검토한다.

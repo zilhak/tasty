@@ -251,6 +251,12 @@ impl JournalApplication {
                 .any(creation::Creation::pauses_observation)
     }
 
+    /// Shutdown waits for publication and also for retirements that only await their receipts,
+    /// so a close replies once and records its outcome. The receipt deadline bounds the wait.
+    pub(crate) fn shutdown_waits_for_publication(&self) -> bool {
+        self.pauses_observation() || self.cleanup_awaits_any_receipts()
+    }
+
     pub(crate) fn cleanup_poll_deadline(&self) -> Option<std::time::Instant> {
         self.resource_cleanup_deadline()
             .into_iter()

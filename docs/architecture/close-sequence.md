@@ -19,6 +19,8 @@ App은 journal 사실을 게시하는 동안 관측을 멈춘다. 이 동안 IPC
 
 3·4단계 사이의 receipt 대기에서는 관측을 멈추지 않는다. 닫히는 surface는 이미 구조와 View에서 빠졌으므로, 이때의 조회와 입력은 닫기가 반영된 구조를 본다. 닫힘 이벤트와 닫기 응답은 결과 확정 뒤에 나간다. receipt 대기로 넘어가는 즉시 plugin 회수 게시를 적용하므로, 관측 재개 직후 처리되는 enable이 파괴 중인 surface를 새 프로세스에 다시 게시하지 않는다.
 
+앱 종료는 receipt 대기도 기다린다. 닫기가 한 번 응답하고 결과(시한이 지나면 `Uncertain`)를 기록한 뒤 종료가 진행된다([종료 시퀀스](shutdown-sequence.md)).
+
 생산 경로는 `src/app/journal/commands/close.rs`, `src/runtime/resource_retirement.rs`, `src/app/journal/resource_cleanup.rs`다. GUI의 cache·선택 보정과 toast는 이 실행 원본을 대신하지 않는다.
 
 ## 실패와 불명 결과

@@ -30,6 +30,12 @@ impl JournalApplication {
             .values()
             .any(|entry| entry.operation == *operation && matches!(entry.phase, Phase::Running))
     }
+    /// Some retirement only awaits its resource receipts.
+    pub(super) fn cleanup_awaits_any_receipts(&self) -> bool {
+        self.resource_cleanups
+            .values()
+            .any(|entry| matches!(entry.phase, Phase::Running))
+    }
     pub(super) fn resource_cleanup_deadline(&self) -> Option<std::time::Instant> {
         self.resource_cleanups
             .values()

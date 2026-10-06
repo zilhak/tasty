@@ -11,6 +11,7 @@ begin_shutdown / begin_error_shutdown → start_shutdown
   AppState에 ShutdownState 설치; native webview 숨김
   원 task scope stop·profile/port scan/screenshot 신규 admission 중단
 SavingLayout
+  진행 중 게시·닫기 정리(receipt 대기 포함)의 완료 관측
   최신 final View capture 요청 → checkpoint/필요한 retirement 완료 관측
 ReclaimingBootWorker
   부팅 중 worker 결과를 회수할 기회 제공
@@ -90,7 +91,7 @@ present 한다. **부팅과 같은 렌더 함수와 화면 구성**이고 다른
 
 | phase | 문구 키 | 프레임을 넘기는가 |
 |-------|---------|-------------------|
-| `SavingLayout` | `shutdown.phase_saving_layout` | publication·View 저장·retirement가 남으면 Waiting으로 다음 회차에서 관측 |
+| `SavingLayout` | `shutdown.phase_saving_layout` | publication·닫기 정리·View 저장·retirement가 남으면 Waiting으로 다음 회차에서 관측. 닫기 정리의 receipt 대기는 관측을 멈추지 않지만 종료는 이를 기다린다. 이 대기 동안 plugin pump가 돌지 않으므로 이 단계가 plugin 회수 응답을 직접 처리한다. 상한은 receipt 시한(5초)이며, 시한이 지나면 닫기는 `Uncertain`으로 기록되고 한 번 응답한 뒤 종료가 이어진다 |
 | `ReclaimingBootWorker` | `shutdown.phase_finishing_startup` | 예 (부팅 중 종료 전용) |
 | `ClosingSurfaces` | `shutdown.phase_closing_surfaces` | runner stop의 실제 join 관측 등이 남으면 기한까지 Waiting. 완료 또는 명시한 미회수 처리 뒤 다음 단계로 진행 |
 | `StoppingPlugins` | `shutdown.phase_stopping_plugins` | 남은 대상이 있으면 다음 회차에서 확인. kill·wait는 동기 호출 |
