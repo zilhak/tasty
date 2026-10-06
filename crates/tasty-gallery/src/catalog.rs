@@ -536,9 +536,9 @@ pub fn pages() -> Vec<Page> {
                         ),
                         spec(
                             "drilldown",
-                            "DrillDown",
+                            "One area, swapped — list → detail → back",
                             Some(
-                                "Master → detail content swap — pinned back bar (← + title + actions), instant switch",
+                                "Full-width ListCtrl swaps in place to a detail view; a pinned back bar (← + title + actions) returns — first home Settings › Keybindings › Preset. Select a preset, then press ←",
                             ),
                             components::prim_drilldown::draw,
                         ),
