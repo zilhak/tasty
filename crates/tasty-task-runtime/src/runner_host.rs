@@ -3,6 +3,7 @@
 
 mod attempt_record;
 mod command_inputs;
+mod postprocess;
 mod run_result;
 mod typed_inputs;
 #[cfg(test)]
@@ -17,6 +18,9 @@ pub(crate) use run_result::{
 
 pub(crate) use attempt_record::{HANDLE_ATTEMPT_FIELD, dispatch_attempt, handle_value};
 use command_inputs::{substitute_lease_resource, substitute_task_outputs};
+#[cfg(all(test, unix))]
+pub(crate) use postprocess::postprocess_result_key;
+pub(crate) use postprocess::restored_handle as restored_postprocess_handle;
 
 use std::collections::HashMap;
 use std::sync::atomic::AtomicU64;
@@ -26,7 +30,6 @@ use std::time::Duration;
 
 use serde_json::json;
 use tasty_agent::runner::{DispatchHandle, DispatchOutcome, PollOutcome, TaskExecutor};
-use tasty_agent::task::postprocess::{PostprocessCause, PostprocessReport};
 use tasty_agent::{
     AgentError, BarrierState, BarrierStore, ElasticSpec, LeaseMode, LeaseStore, ReducerInput,
     SemaphoreStore, Task, TaskCommand, TaskId, TaskResult, TypedReducerInput, reduce_typed,
@@ -167,6 +170,7 @@ pub(crate) struct HostExecutor {
     held_handles: HashMap<TaskId, u32>,
     /// workspace executor의 모든 PolledDispatch가 공유한다. 한 poll이라도 성공하면 유예를 초기화한다.
     injector_grace_deadline_ms: Option<u64>,
+    postprocess: postprocess::PostprocessRuns,
 }
 
 impl HostExecutor {
@@ -178,6 +182,7 @@ impl HostExecutor {
             held_leases: HashMap::new(),
             held_handles: HashMap::new(),
             injector_grace_deadline_ms: None,
+            postprocess: Default::default(),
         }
     }
 
@@ -515,7 +520,26 @@ impl TaskExecutor for HostExecutor {
     }
 
     fn release_permit(&mut self, task_id: &TaskId) {
-        // 이름과 달리 permit뿐 아니라 lease·저장된 handle도 정리한다. 자식 프로세스는 종료시키지 않는다.
+        // 실행 중인 후처리는 취소하고, 종료를 확인한 뒤(maintain)에야 자원을 놓는다.
+        if !self.postprocess.cancel(task_id) {
+            self.release_resources(task_id);
+        }
+    }
+
+    fn start_postprocess(&mut self, task: &Task, attempt_id: &str, run: u32) -> DispatchHandle {
+        self.start_postprocess_run(task, attempt_id, run)
+    }
+
+    fn maintain(&mut self) {
+        for task_id in self.postprocess.terminated() {
+            self.release_resources(&task_id);
+        }
+    }
+}
+
+impl HostExecutor {
+    fn release_resources(&mut self, task_id: &TaskId) {
+        // permit뿐 아니라 lease·저장된 handle도 정리한다. Run 자식 프로세스는 종료시키지 않는다.
         if let Some((ws, name, holder)) = self.held_permits.remove(task_id) {
             let res: Result<(), String> = self.ctx.with_memory(|mem| {
                 let mut store = SemaphoreStore::new(mem, HOST_OWNER);
@@ -964,13 +988,7 @@ impl HostExecutor {
             DispatchHandle::PostprocessResolved(report) => {
                 PollOutcome::Postprocessed(report.clone())
             }
-            DispatchHandle::PostprocessProcess { run, .. } => {
-                PollOutcome::Postprocessed(PostprocessReport::failed(
-                    *run,
-                    PostprocessCause::OutcomeUnknown,
-                    "postprocess process is not tracked by this host",
-                ))
-            }
+            DispatchHandle::PostprocessProcess { pid, run } => self.postprocess.poll(*pid, *run),
         }
     }
 }

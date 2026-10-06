@@ -154,7 +154,9 @@ pub(crate) fn load_run_result(
     })
 }
 
+/// 실행 결과와 함께 후처리 결과도 지운다.
 pub(crate) fn evict_run_result(ctx: &RunnerContext, workspace_id: u32, task_id: &str) {
+    super::postprocess::evict_postprocess_result(ctx, workspace_id, task_id);
     let res = ctx.with_memory(|mem| {
         mem.delete(
             HOST_OWNER,

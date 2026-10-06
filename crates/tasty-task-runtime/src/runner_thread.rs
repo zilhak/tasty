@@ -21,7 +21,7 @@ use tasty_memory::{HOST_OWNER, ListOpts, MemoryValue, Scope};
 
 use super::runner_host::{
     HANDLE_ATTEMPT_FIELD, HANDLE_KEY_PREFIX, HostExecutor, RunnerContext, evict_run_result,
-    evict_task_side_keys, handle_key, load_run_result,
+    evict_task_side_keys, handle_key, load_run_result, restored_postprocess_handle,
 };
 use tasty_agent::runner::PollOutcome;
 
@@ -506,17 +506,17 @@ fn classify_persisted_handle(
     };
 
     // Running이 아닌 작업은 handle만 지운다. 현재 구현은 task 조회 오류도 None으로 보아 같은 분류를 한다.
-    let state_opt: Option<TaskState> = ctx.with_memory(|mem| {
+    let task_opt = ctx.with_memory(|mem| {
         let seq = ctx.agent_seq.clone();
         let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
-        store
-            .get(workspace_id, &task_id)
-            .ok()
-            .flatten()
-            .map(|t| t.state)
+        store.get(workspace_id, &task_id).ok().flatten()
     });
-    if !matches!(state_opt, Some(TaskState::Running)) {
+    let Some(task) = task_opt.filter(|t| matches!(t.state, TaskState::Running)) else {
         return HandleClassification::Stale(task_id);
+    };
+    // 본 작업을 마친 후처리 단계는 저장된 handle 이 아니라 회차의 진행으로 복원한다.
+    if let Some(h) = restored_postprocess_handle(ctx, workspace_id, &task) {
+        return HandleClassification::Alive(task_id, h);
     }
 
     match &handle {
@@ -1803,3 +1803,7 @@ mod lifecycle_tests {
         successor.join_blocking();
     }
 }
+
+#[cfg(all(test, unix))]
+#[path = "runner_thread/postprocess_reload_tests.rs"]
+mod postprocess_reload_tests;

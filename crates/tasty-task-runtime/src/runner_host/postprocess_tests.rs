@@ -1,0 +1,467 @@
+//! 실제 프로세스로 후처리 실행을 확인한다. 셸 명령을 쓰므로 Unix 에서만 실행한다.
+#![cfg(unix)]
+
+use std::sync::atomic::{AtomicU8, Ordering};
+use std::time::{Duration, Instant};
+
+use serde_json::{Value, json};
+use tasty_agent::task::postprocess::{
+    PostprocessCause, PostprocessOutcome, PostprocessReport, StdoutFormat, StdoutSpec,
+};
+
+use super::process::{ProcessRequest, STOP_CANCELLED, STOP_NONE, spawn};
+
+fn json_out() -> StdoutSpec {
+    StdoutSpec::default()
+}
+
+fn run_with(script: &str, stdin: Vec<u8>, timeout_ms: u64, cancel: &AtomicU8) -> PostprocessReport {
+    let req = ProcessRequest {
+        command: vec!["sh".into(), "-c".into(), script.into()],
+        cwd: None,
+        stdin,
+        stdout: json_out(),
+        timeout: Duration::from_millis(timeout_ms),
+        run: 1,
+    };
+    match spawn(req) {
+        Ok(started) => started.wait(cancel),
+        Err(report) => report,
+    }
+}
+
+fn run(script: &str) -> PostprocessReport {
+    run_with(script, b"{}".to_vec(), 10_000, &AtomicU8::new(STOP_NONE))
+}
+
+fn stdout_of(r: &PostprocessReport) -> Value {
+    match &r.outcome {
+        PostprocessOutcome::Collected { stdout } => stdout.clone(),
+        other => panic!(
+            "expected collected stdout, got {other:?} (stderr {:?})",
+            r.stderr
+        ),
+    }
+}
+
+fn cause_of(r: &PostprocessReport) -> PostprocessCause {
+    r.cause()
+        .unwrap_or_else(|| panic!("expected a failure, got {r:?}"))
+}
+
+#[test]
+fn values_on_stdout_are_collected_and_stderr_stays_a_log() {
+    for (printed, want) in [
+        ("'\"revise\"'", json!("revise")),
+        ("false", json!(false)),
+        ("0", json!(0)),
+        (
+            "'{\"verdict\":\"pass\",\"n\":0}'",
+            json!({"verdict": "pass", "n": 0}),
+        ),
+    ] {
+        let r = run(&format!(
+            "cat >/dev/null; echo progress >&2; printf %s {printed}"
+        ));
+        assert_eq!(stdout_of(&r), want, "{printed}");
+        assert_eq!(r.exit_code, Some(0));
+        assert_eq!(r.stderr.as_deref(), Some("progress\n"));
+    }
+}
+
+#[test]
+fn the_stdin_document_reaches_the_command_and_is_closed() {
+    // cat 은 EOF 를 받아야 끝난다.
+    let doc = json!({"draft": "hello", "n": 0});
+    let r = run_with(
+        "cat",
+        doc.to_string().into_bytes(),
+        10_000,
+        &AtomicU8::new(STOP_NONE),
+    );
+    assert_eq!(stdout_of(&r), doc);
+}
+
+#[test]
+fn failures_are_reported_with_distinct_causes() {
+    let r = run("echo why >&2; exit 3");
+    assert_eq!(cause_of(&r), PostprocessCause::NonzeroExit);
+    assert_eq!(r.exit_code, Some(3));
+    assert_eq!(r.stderr.as_deref(), Some("why\n"));
+    assert_eq!(cause_of(&run("printf pass")), PostprocessCause::InvalidJson);
+    assert_eq!(
+        cause_of(&run("printf '1 2'")),
+        PostprocessCause::MultipleDocuments
+    );
+    assert_eq!(
+        cause_of(&run("printf '\\377'")),
+        PostprocessCause::InvalidUtf8
+    );
+    assert_eq!(cause_of(&run("true")), PostprocessCause::EmptyOutput);
+    assert_eq!(cause_of(&run("kill -9 $$")), PostprocessCause::Signal);
+    let missing = spawn(ProcessRequest {
+        command: vec!["/nonexistent/tasty-postprocess-cli".into()],
+        cwd: None,
+        stdin: Vec::new(),
+        stdout: json_out(),
+        timeout: Duration::from_secs(5),
+        run: 2,
+    })
+    .err()
+    .expect("spawn failure");
+    assert_eq!(cause_of(&missing), PostprocessCause::Spawn);
+    assert_eq!(missing.run, 2);
+}
+
+#[test]
+fn oversized_stdout_fails_even_when_it_starts_as_valid_json() {
+    // 앞부분은 올바른 JSON 문자열이고 상한(256 KiB)을 넘긴다. 잘린 값으로 성공하지 않는다.
+    let r = run("printf '\"'; head -c 400000 /dev/zero | tr '\\0' a; printf '\"'");
+    assert_eq!(cause_of(&r), PostprocessCause::StdoutTooLarge);
+    // 상한 안의 큰 값은 그대로 수집한다.
+    let r = run("printf '\"'; head -c 200000 /dev/zero | tr '\\0' a; printf '\"'");
+    assert_eq!(stdout_of(&r).as_str().map(str::len), Some(200_000));
+}
+
+#[test]
+fn huge_stderr_keeps_only_the_tail_and_does_not_block() {
+    let r = run("head -c 5000000 /dev/zero | tr '\\0' e >&2; echo END >&2; printf 1");
+    assert_eq!(stdout_of(&r), json!(1));
+    assert!(r.stderr_truncated);
+    let tail = r.stderr.expect("stderr");
+    assert!(tail.len() <= tasty_agent::task::postprocess::POSTPROCESS_STDERR_TAIL_BYTES);
+    assert!(tail.ends_with("END\n"));
+}
+
+#[test]
+fn a_command_that_ignores_a_large_stdin_still_finishes() {
+    let stdin = json!({"blob": "x".repeat(2 * 1024 * 1024)})
+        .to_string()
+        .into_bytes();
+    let r = run_with("printf true", stdin, 10_000, &AtomicU8::new(STOP_NONE));
+    assert_eq!(stdout_of(&r), json!(true));
+}
+
+#[test]
+fn a_command_that_never_reads_stdin_times_out() {
+    let stdin = vec![b' '; 4 * 1024 * 1024];
+    let started = Instant::now();
+    let r = run_with("sleep 30", stdin, 300, &AtomicU8::new(STOP_NONE));
+    assert_eq!(cause_of(&r), PostprocessCause::Timeout);
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "{:?}",
+        started.elapsed()
+    );
+}
+
+#[test]
+fn endless_stdout_is_drained_until_the_timeout() {
+    let started = Instant::now();
+    let r = run_with("yes", Vec::new(), 300, &AtomicU8::new(STOP_NONE));
+    assert_eq!(cause_of(&r), PostprocessCause::Timeout);
+    assert!(started.elapsed() < Duration::from_secs(5));
+}
+
+fn gone(pid: i32) -> bool {
+    // 종료된 뒤 init 이 회수하기 전에는 좀비로 남을 수 있다.
+    match std::fs::read_to_string(format!("/proc/{pid}/stat")) {
+        Err(_) => true,
+        Ok(stat) => stat
+            .rsplit(')')
+            .next()
+            .is_some_and(|s| s.trim_start().starts_with('Z')),
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn a_grandchild_holding_the_pipe_is_killed_at_the_timeout() {
+    let started = Instant::now();
+    let r = run_with(
+        "sleep 30 & echo $! >&2; printf true",
+        Vec::new(),
+        500,
+        &AtomicU8::new(STOP_NONE),
+    );
+    // 직접 자식은 바로 끝나지만 손자가 stdout 을 쥐고 있어 EOF 를 기다리다 시간이 다 된다.
+    assert_eq!(cause_of(&r), PostprocessCause::Timeout);
+    assert!(started.elapsed() < Duration::from_secs(5));
+    let pid: i32 = r
+        .stderr
+        .expect("stderr")
+        .trim()
+        .parse()
+        .expect("grandchild pid");
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while !gone(pid) && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(gone(pid), "grandchild {pid} is still running");
+}
+
+#[test]
+fn cancellation_stops_the_process_group() {
+    let cancel = std::sync::Arc::new(AtomicU8::new(STOP_NONE));
+    let flag = cancel.clone();
+    let trigger = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(150));
+        flag.store(STOP_CANCELLED, Ordering::Release);
+    });
+    let started = Instant::now();
+    let r = run_with("sleep 30 & sleep 30", Vec::new(), 30_000, &cancel);
+    trigger.join().expect("trigger");
+    assert_eq!(cause_of(&r), PostprocessCause::Cancelled);
+    assert!(started.elapsed() < Duration::from_secs(5));
+}
+
+#[test]
+fn text_format_keeps_stdout_verbatim() {
+    let req = ProcessRequest {
+        command: vec!["sh".into(), "-c".into(), "printf 'not json\\n'".into()],
+        cwd: None,
+        stdin: Vec::new(),
+        stdout: StdoutSpec {
+            format: StdoutFormat::Text,
+            pointer: None,
+        },
+        timeout: Duration::from_secs(10),
+        run: 1,
+    };
+    let r = spawn(req).expect("spawn").wait(&AtomicU8::new(STOP_NONE));
+    assert_eq!(stdout_of(&r), json!("not json\n"));
+}
+
+// ── executor 와 runner 를 거친 실행 ──────────────────────────────────────────
+
+mod through_the_runner {
+    use std::path::Path;
+
+    use serde_json::{Value, json};
+    use tasty_agent::runner::RunnerLoop;
+    use tasty_agent::task::{TaskGraphSpec, TaskStore};
+    use tasty_agent::{SemaphoreStore, TaskState};
+
+    use super::super::super::tests::fresh_ctx;
+    use super::super::super::*;
+
+    fn store_op<R>(ctx: &RunnerContext, f: impl FnOnce(&mut TaskStore) -> R) -> R {
+        ctx.with_memory(|mem| {
+            let seq = ctx.agent_seq.clone();
+            let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+            f(&mut store)
+        })
+    }
+
+    fn get(ctx: &RunnerContext, id: &str) -> Task {
+        store_op(ctx, |s| s.get(1, &id.to_string()).unwrap().expect("task"))
+    }
+
+    fn tick(ctx: &RunnerContext, runner: &mut RunnerLoop<HostExecutor>, now: u64) {
+        let snapshot = store_op(ctx, |s| s.list(1).unwrap());
+        let set_ctx = ctx.clone();
+        let res_ctx = ctx.clone();
+        runner.tick(
+            1,
+            now,
+            &snapshot,
+            move |ws, id, st, n| store_op(&set_ctx, |s| s.set_state(ws, id, st, n).map(|_| ())),
+            move |ws, id, c, n| store_op(&res_ctx, |s| s.complete(ws, id, c, n).map(|_| ())),
+        );
+    }
+
+    fn tick_until(
+        ctx: &RunnerContext,
+        runner: &mut RunnerLoop<HostExecutor>,
+        what: &str,
+        mut done: impl FnMut(&RunnerContext, &RunnerLoop<HostExecutor>) -> bool,
+    ) {
+        for _ in 0..500 {
+            tick(ctx, runner, now_ms());
+            if done(ctx, runner) {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        panic!("{what} did not happen");
+    }
+
+    fn submit(ctx: &RunnerContext, graph: Value) {
+        let spec: TaskGraphSpec = serde_json::from_value(graph).expect("graph");
+        store_op(ctx, |s| s.submit_graph(1, spec, 0).unwrap());
+    }
+
+    fn log_lines(path: &Path) -> Vec<String> {
+        std::fs::read_to_string(path)
+            .unwrap_or_default()
+            .lines()
+            .map(str::to_string)
+            .collect()
+    }
+
+    fn sh(script: String) -> Value {
+        json!(["sh", "-c", script])
+    }
+
+    #[test]
+    fn a_retried_postprocess_runs_again_without_rerunning_the_main_work() {
+        let (td, ctx) = fresh_ctx();
+        let log = td.path().join("order.log");
+        let log_s = log.display().to_string();
+        // 후처리는 세 번째 실행에서야 성공한다. 다음 task 는 그 뒤에 실행돼야 한다.
+        let pp = format!(
+            "cat >/dev/null; echo pp >> '{log_s}'; n=$(grep -c '^pp$' '{log_s}'); \
+             echo try $n >&2; [ $n -ge 3 ] && printf true || exit 1"
+        );
+        submit(
+            &ctx,
+            json!({"contract_version": 2, "tasks": [
+                {"id": "judge",
+                 "command": {"kind": "run", "workspace_id": 1,
+                             "command": sh(format!("echo main >> '{log_s}'; printf draft"))},
+                 "output_schema": {"type": "boolean"},
+                 "postprocess": {"command": sh(pp), "timeout_ms": 10000,
+                                 "retry": {"max_retries": 2}}},
+                {"id": "after", "depends_on": ["judge"],
+                 "command": {"kind": "run", "workspace_id": 1,
+                             "command": sh(format!("echo after >> '{log_s}'"))}}
+            ]}),
+        );
+        let mut runner = RunnerLoop::new(HostExecutor::new(ctx.clone()));
+        tick_until(&ctx, &mut runner, "after finished", |c, _| {
+            get(c, "after").state.is_terminal()
+        });
+        assert_eq!(log_lines(&log), ["main", "pp", "pp", "pp", "after"]);
+        let judge = get(&ctx, "judge");
+        assert_eq!(judge.state, TaskState::Succeeded, "{:?}", judge.result);
+        let typed = judge.typed_result.expect("typed");
+        assert_eq!(serde_json::to_value(&typed.output).unwrap(), json!(true));
+        assert_eq!(
+            typed.raw.execution.unwrap()["stdout"]["text"],
+            json!("draft")
+        );
+        let pp = typed.raw.postprocess.expect("postprocess raw");
+        assert_eq!((pp.run, pp.failed_runs.len()), (3, 2));
+        assert_eq!(pp.stderr.as_deref(), Some("try 3\n"));
+    }
+
+    #[test]
+    fn the_main_raw_result_reaches_the_postprocess_stdin() {
+        let (_td, ctx) = fresh_ctx();
+        submit(
+            &ctx,
+            json!({"contract_version": 2, "tasks": [
+                {"id": "judge",
+                 "command": {"kind": "run", "workspace_id": 1, "command": ["printf", "draft"]},
+                 "output_schema": {"type": "string"},
+                 "postprocess": {"command": ["cat"], "timeout_ms": 10000,
+                                 "stdin": {"text": {"from": "raw", "pointer": "/execution/stdout/text"},
+                                           "code": {"from": "raw", "pointer": "/exit_code"}},
+                                 "stdout": {"pointer": "/text"}}}
+            ]}),
+        );
+        let mut runner = RunnerLoop::new(HostExecutor::new(ctx.clone()));
+        tick_until(&ctx, &mut runner, "judge finished", |c, _| {
+            get(c, "judge").state.is_terminal()
+        });
+        let typed = get(&ctx, "judge").typed_result.expect("typed");
+        assert_eq!(serde_json::to_value(&typed.output).unwrap(), json!("draft"));
+        assert_eq!(
+            typed.raw.postprocess.unwrap().stdout,
+            Some(json!({"text": "draft", "code": 0}))
+        );
+    }
+
+    fn holders(ctx: &RunnerContext) -> Vec<String> {
+        ctx.with_memory(|mem| {
+            SemaphoreStore::new(mem, HOST_OWNER)
+                .get(1, "gpu")
+                .unwrap()
+                .map(|s| s.holders.into_iter().map(|h| h.id).collect())
+                .unwrap_or_default()
+        })
+    }
+
+    #[test]
+    fn the_permit_is_held_until_the_postprocess_finishes() {
+        let (td, ctx) = fresh_ctx();
+        ctx.with_memory(|mem| {
+            SemaphoreStore::new(mem, HOST_OWNER)
+                .create(1, "gpu", 1, 0)
+                .unwrap()
+        });
+        let log_s = td.path().join("order.log").display().to_string();
+        submit(
+            &ctx,
+            json!({"contract_version": 2, "tasks": [
+                {"id": "judge", "metadata": {"semaphore": {"name": "gpu"}},
+                 "command": {"kind": "run", "workspace_id": 1, "command": ["true"]},
+                 "postprocess": {"command": sh(format!(
+                     "echo pp-start >> '{log_s}'; sleep 0.3; echo pp-end >> '{log_s}'; printf 1")),
+                     "timeout_ms": 10000}},
+                {"id": "other", "metadata": {"semaphore": {"name": "gpu"}},
+                 "command": {"kind": "run", "workspace_id": 1,
+                             "command": sh(format!("echo other >> '{log_s}'"))}}
+            ]}),
+        );
+        let mut runner = RunnerLoop::new(HostExecutor::new(ctx.clone()));
+        tick_until(&ctx, &mut runner, "both finished", |c, _| {
+            get(c, "judge").state.is_terminal() && get(c, "other").state.is_terminal()
+        });
+        let order = log_lines(&td.path().join("order.log"));
+        // judge 가 먼저 permit 을 얻으면 후처리가 끝날 때까지 other 는 시작하지 않는다.
+        if order.first().map(String::as_str) == Some("pp-start") {
+            assert_eq!(order, ["pp-start", "pp-end", "other"]);
+        } else {
+            assert_eq!(order, ["other", "pp-start", "pp-end"]);
+        }
+        assert!(holders(&ctx).is_empty());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn cancelling_kills_the_postprocess_before_the_permit_is_released() {
+        let (td, ctx) = fresh_ctx();
+        ctx.with_memory(|mem| {
+            SemaphoreStore::new(mem, HOST_OWNER)
+                .create(1, "gpu", 1, 0)
+                .unwrap()
+        });
+        let pidfile = td.path().join("child.pid");
+        let pid_s = pidfile.display().to_string();
+        submit(
+            &ctx,
+            json!({"contract_version": 2, "tasks": [
+                {"id": "judge", "metadata": {"semaphore": {"name": "gpu"}},
+                 "command": {"kind": "run", "workspace_id": 1, "command": ["true"]},
+                 "postprocess": {"command": sh(format!(
+                     "sleep 30 & echo $! > '{pid_s}'.tmp; mv '{pid_s}'.tmp '{pid_s}'; wait")),
+                     "timeout_ms": 60000}}
+            ]}),
+        );
+        let mut runner = RunnerLoop::new(HostExecutor::new(ctx.clone()));
+        tick_until(&ctx, &mut runner, "postprocess child started", |_, _| {
+            pidfile.exists()
+        });
+        let child: i32 = std::fs::read_to_string(&pidfile)
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        store_op(&ctx, |s| {
+            s.set_state(1, &"judge".to_string(), TaskState::Cancelled, now_ms())
+                .unwrap()
+        });
+        // 취소를 반영한 tick 에서는 종료를 확인하기 전이라 permit 을 아직 쥐고 있다.
+        tick(&ctx, &mut runner, now_ms());
+        assert_eq!(holders(&ctx), ["judge"]);
+        tick_until(&ctx, &mut runner, "permit released", |c, _| {
+            holders(c).is_empty()
+        });
+        assert!(
+            super::gone(child),
+            "postprocess grandchild {child} survived the cancel"
+        );
+        assert_eq!(get(&ctx, "judge").state, TaskState::Cancelled);
+    }
+}
