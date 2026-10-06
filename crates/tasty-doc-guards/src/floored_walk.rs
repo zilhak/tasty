@@ -88,10 +88,10 @@ pub mod populations {
 
     /// `src/` 아래 `.rs` 전부.
     pub const SRC_RS: Population = Population {
-        measured: 822,
+        measured: 823,
         measured_on: "2026-10-06",
         counted_on: super::CountedOn::Tree(
-            "b8063eec5 — git ls-tree -r --name-only로 센 src 아래 Rust 파일 822개.",
+            "b9857cd2c — git ls-tree -r --name-only로 센 src 아래 Rust 파일 823개.",
         ),
         how: "src/ 아래에서 .rs로 끝나는 파일을 깊이 제한 없이 센다. 캐시는 제외한다. git ls-tree의 같은 경로 집합으로 대조하며 측정 당시 미추적 파일은 없었다.",
     };
