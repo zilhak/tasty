@@ -6,6 +6,7 @@ use tasty_design_tokens::generated::semantic::{
 };
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
+use tasty_ui_widgets::tokens::STRUCT_GAP_1;
 use tasty_ui_widgets::{TagVariant, tag};
 
 use crate::catalog::components::sidebar::paint_ws_count_badge_at;
@@ -318,7 +319,8 @@ pub fn draw_attention_scale(ui: &mut egui::Ui, theme: &Theme) {
             .fill(ec(theme.bg_panel()))
             .inner_margin(egui::Margin::same(theme.spacing_md.value() as i8))
             .show(ui, |ui| {
-                ui.spacing_mut().item_spacing = egui::vec2(theme.spacing_md.value(), 1.0);
+                ui.spacing_mut().item_spacing =
+                    egui::vec2(theme.spacing_md.value(), STRUCT_GAP_1.value());
                 ui.horizontal(|ui| {
                     ui.add_space(theme.spacing_sm.value());
                     for (head, w) in ["RANK", "KIND", "MEANING", "ROLE BORROWED", "FILL"]
