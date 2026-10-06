@@ -256,12 +256,19 @@ fn summarize(
         .unwrap_or_default();
 
     let member_ids: BTreeSet<&str> = sorted.iter().map(|t| t.id.as_str()).collect();
+    // 전이는 생산자가 대상을 참조하지만 흐름은 생산자에서 대상으로 간다. 대상은 source 가 아니다.
+    let selected_by_member: BTreeSet<&TaskId> = sorted
+        .iter()
+        .flat_map(|t| super::route::transition_targets(t))
+        .collect();
     let root_task_ids: Vec<TaskId> = sorted
         .iter()
         .filter(|t| {
-            !referenced_task_ids(t)
-                .iter()
-                .any(|r| member_ids.contains(r.as_str()))
+            let targets = super::route::transition_targets(t);
+            !selected_by_member.contains(&t.id)
+                && !referenced_task_ids(t)
+                    .iter()
+                    .any(|r| member_ids.contains(r.as_str()) && !targets.contains(&r))
         })
         .map(|t| t.id.clone())
         .collect();

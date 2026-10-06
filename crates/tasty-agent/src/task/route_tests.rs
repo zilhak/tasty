@@ -248,6 +248,11 @@ fn no_match_finish_selects_nothing_and_the_dag_still_succeeds() {
     assert_eq!(dags.len(), 1);
     assert_eq!(dags[0].state_counts.not_selected, 1);
     assert_eq!(dags[0].rollup_state, "succeeded");
+    // 흐름의 시작은 경로를 고르는 쪽이다. 전이 대상이 아닌 fix·human 도 시작점이다.
+    assert_eq!(
+        dags[0].root_task_ids,
+        vec!["fix".to_string(), "human".to_string(), "review".to_string()]
+    );
 }
 
 /// a 가 b 또는 c 를 고른다. c 아래로 c2 → c3 가 이어지고 d 는 b 와 c3 에서 합류한다.
