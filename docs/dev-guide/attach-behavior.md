@@ -50,12 +50,13 @@ attach 는 **server**(피점유 — PTY/grid 소유)와 **client**(점유 — mi
   - 연결마다의 push sink·입력 프레임 분류·bulk 연결 결속은 `StreamHub`(`crates/tasty-ipc/src/stream_hub.rs`)가 든다. sink 는 채널이라 허브도 TCP 를 모른다 — 소켓을 읽고 쓰는 accept 스레드는 본체 adapter `src/adapters/production/tcp_ipc_server.rs` 에 있다. root Remote adapter가 원 등록 binding을 확인해 허브에 전달한다. 순수 tasty-core은 StreamHub를 소유하거나 호출하지 않는다([ADR-0001](../adr/0001-crate-dependency-boundaries.md)).
   - 점유된 workspace의 디렉터리·Git·markdown 조회와 응답 직렬화 예산은 `src/remote/server/content_queries.rs`가 담당한다. 호출자는 기존 `server` handler 경로를 사용한다.
 - **클라이언트측** — "원격성" 을 전부 흡수한다. 두 종류:
-  - **로컬 client**: 포트 파일(`~/.tasty/tasty.port`)을 읽어 그 loopback 포트로 직결. **release 에서 제거 → debug 전용**(`tasty debug attach`).
+  - **로컬 CLI client**: 포트 파일(`~/.tasty/tasty.port`)을 읽어 그 loopback 포트로 직결. **release CLI 에서 제거 → debug 전용**(`tasty debug attach`).
+  - **loopback 직결 대상 지정**: GUI 원격 연결 팝업·IPC `remote.attach`·자동 attach 는 대상이 `127.0.0.1:PORT`·`localhost:PORT` 면 SSH 없이 그 포트로 직결한다(`tasty_remote::browse::resolve_endpoint`, `src/app/auto_attach.rs`). release 에도 있으며, 같은 머신의 다른 인스턴스를 mirror 할 수 있다. 자기 인스턴스 포트는 아래 self-attach 거절을 따른다.
   - **원격 client**: `ssh -L 127.0.0.1:<localport>:127.0.0.1:<remoteport> -N` 터널 후 그 **localport 로 직결**. 터널은 바이트 파이프라 스트림 프로토콜에 투명 — 원격 client 도 결국 자기 머신 loopback 에 붙는다(`tasty remote attach --ssh|--profile`).
 
 ### "로컬 attach 제거" 의 정확한 의미
 
-> **attach 는 원격을 대상으로 한다** — 로컬 self-attach 는 release 에서 제거하고 debug 격리한다. 이 결정의 *근거·대안·재검토 조건* 은 [ADR-0020](../adr/0020-remote-connection-profiles.md). 아래는 그 결정이 구현에 어떻게 드러나는지다.
+> **attach 는 원격을 대상으로 한다** — 로컬 attach 의 CLI 진입점은 release 에서 제거하고 debug 격리하며, 자기 인스턴스(self) attach 는 거절한다. 같은 머신 다른 인스턴스로의 loopback 직결은 위 GUI·IPC·자동 attach 경로에 남는다. 이 결정의 *근거·대안·재검토 조건* 은 [ADR-0020](../adr/0020-remote-connection-profiles.md). 아래는 그 결정이 구현에 어떻게 드러나는지다.
 
 원격 attach 도 **서버 입장엔 loopback** 이다. 따라서 release 에서 "로컬 attach 제거" 는 **서버를 바꾼 게 아니라 client 의 로컬 진입점(`tasty attach` → `tasty debug attach`)만 제거**한 것이다. 서버의 attach 수신 경로는 로컬/원격 공용으로 보존된다. SSH 터널 + attach 세션 머신(`run_attach_*`)은 `crates/tasty-cli/src/local/attach.rs` 에 공용으로 남고, `remote`/`debug` 네임스페이스는 그 위에서 디스패치만 한다.
 
@@ -77,7 +78,7 @@ attach 는 **server**(피점유 — PTY/grid 소유)와 **client**(점유 — mi
 - **끊긴 holder 는 재attach 를 막지 못한다** ([ADR-0021](../adr/0021-occupancy-and-attach-admission.md)). inbound 한 배치(`PumpOutcome`)의 적용 순서는 attach 연결이 먼저, 연결 종료 *정리*가 마지막이다 — 끊긴 client 의 잔여 입력 프레임이 그 client 의 점유가 살아 있는 동안 적용돼야 하기 때문이다. 그래서 한 배치에 "C1 끊김" 과 "C2 attach" 가 함께 실리면 C2 가 곧 사라질 C1 의 lock 에 막힌다. 이를 막기 위해 두 pump(`App::apply_stream_outcome` · `boot::headless_stream::apply`)가 배치 **머리**에서 `mark_clients_disconnected` 로 *사실만* 먼저 알리고, `acquire`/`acquire_workspace` 는 자기를 막고 선 holder 가 그 표시를 가지면 그 자리에서 점유를 회수한다. 회수는 경쟁이 있을 때만 하므로 경쟁이 없는 잔여 입력은 그대로 처리된다. 표시는 `release_all_for_client` 가 lock 과 함께 지워 한 배치를 넘지 않는다.
 - **입력 격리**: `apply_send_to_surface` 가 `is_hard_occupied` 면 서버 로컬 입력 거부, client 입력만 `feed_attached_input` 우회 경로로 PTY 도달. (soft 점유는 write 를 막지 않는다 — hard 만 격리.)
 - **점유는 핸드셰이크가 검증된 뒤에만 잡힌다** ([ADR-0021](../adr/0021-occupancy-and-attach-admission.md)). 점유를 잡는 유일한 진입점은 `dispatch_stream_attach` → `attach_workspace_for_stream`/`attach_surface_for_stream` 인데, 그 **앞에** `tcp_ipc_server.rs::validate_stream_proto` 가 있다. `stream.open` params 의 `proto` 가 `STREAM_PROTO` 와 다르면(생략 시 serde default `0`) attach 를 dispatch 하지 않고 `StreamAck{ok:false, proto, error}` 로 거절한다 — 점유가 애초에 잡히지 않는다. 없을 때의 문제: 프로토콜이 안 맞는 client 는 그 점유를 **쓸 수 없는데도** 가져가고, 소켓을 닫지 않는 구버전/hung peer 면 아래 EOF 가 오지 않아 heartbeat TTL(20초)까지 그 workspace 가 붙잡혀 정상 attach 가 `already_attached` 로 거절됐다. 거절 ack 는 client(`StreamConnection::open_with`)가 이미 검사하는 형식이라 실패 사유가 그대로 사용자에게 전달된다.
-- **self-attach는 client dispatch에서 거절한다**: `attach_client/dispatch.rs::connect_unless_self`가 요청 포트를 자기 IPC 포트와 비교한다(debug/release 공통). 이 검사는 GUI가 원격 대상을 선택한다는 정책이며, 현재 handshake는 `queue_mirror_connection`을 통해 Remote worker가 수행한다. 서버는 정상 SSH 터널과 self 연결을 loopback 주소만으로 구별할 수 없다. 로컬 검증은 별도 프로세스의 `tasty debug attach`를 사용한다.
+- **self-attach는 client에서 거절한다**: GUI 원격 연결 팝업(`queue_browser_mirror`)과 IPC `attach.into_gui`(`dispatch_pending_gui_attach`)는 `attach_client/dispatch.rs::connect_unless_self`가 요청 포트를 자기 IPC 포트와 비교한다(debug/release 공통). IPC `remote.attach`와 자동 attach는 이 입구를 거치지 않고 `auto_attach.rs::handle_auto_attach_connected`의 자기 포트 검사로 거절하며, 그 검사는 release 빌드에만 있다. 이 검사는 GUI가 원격 대상을 선택한다는 정책이며, 현재 handshake는 `queue_mirror_connection`을 통해 Remote worker가 수행한다. 서버는 정상 SSH 터널과 self 연결을 loopback 주소만으로 구별할 수 없다. 로컬 검증은 별도 프로세스의 `tasty debug attach`를 사용한다.
 
 ## 조회 팝업과 연결 시도의 소유
 

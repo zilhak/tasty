@@ -26,7 +26,7 @@ attach 의 본질은 **강한(hard) 배타 점유**다 — [ADR-0021](../../adr/
 
 - **자동 해제**: client 연결 종료(EOF) 또는 attach heartbeat TTL 만료(FIN/RST 없는 silent disconnect 감지) 시 lock 이 free 로 환원. 점유는 **휘발성** — 서버 재시작 시 전부 free(영속 안 함).
 - **실패하는 attach 는 점유를 잡지 않는다**: 핸드셰이크의 스트림 프로토콜 버전(`stream.open` 의 `proto`)이 서버와 다르면 attach 를 dispatch 하기 **전에** 거절 ack(`ok:false` + 사유)로 끊는다 — 성립할 수 없는 세션이 점유만 가져가 정상 attach 를 `already_attached` 로 막는 것을 방지한다. 검증 없이 잡으면, 소켓을 닫지 않는 구버전/hung peer 에서는 EOF 도 안 와 heartbeat TTL(20초)까지 그 workspace 가 붙잡힌다. 근거: [ADR-0021](../../adr/0021-occupancy-and-attach-admission.md).
-- **self-attach(자기 인스턴스 포트로 attach)는 거절된다** — debug/release 공통. GUI attach 핸드셰이크는 메인 스레드에서 동기 대기하는데 그 응답을 만드는 것도 같은 메인 스레드라 자기 자신 대상이면 교착으로 반드시 실패하고, 실패하는 동안 대상 workspace 점유만 남는다. 로컬 self-mirror 가 필요하면 별도 프로세스인 `tasty debug attach` 를 쓴다(같은 이유로 교착이 없다).
+- **self-attach(자기 인스턴스 포트로 attach)는 거절된다**. GUI 원격 연결 팝업과 IPC `attach.into_gui` 는 debug/release 공통으로 연결 전에 거절한다. IPC `remote.attach` 와 자동 attach 의 자기 포트 거절은 release 빌드에만 있다. GUI attach 핸드셰이크는 메인 스레드에서 동기 대기하는데 그 응답을 만드는 것도 같은 메인 스레드라 자기 자신 대상이면 교착으로 반드시 실패하고, 실패하는 동안 대상 workspace 점유만 남는다. 로컬 self-mirror 가 필요하면 별도 프로세스인 `tasty debug attach` 를 쓴다(같은 이유로 교착이 없다).
 - **force-detach**: **로컬 사용자만** 점유를 강제로 끊을 수 있다(서버 권한).
   끊으면 holder client 에 종료를 통지하고 대상은 **일반 surface/workspace 로 복귀**.
   GUI 진입점은 **둘**이다 — 점유된 surface 우상단의 강제 끊기 버튼(그 워크스페이스가 활성일 때만 그려진다)과, 사이드바 워크스페이스 행 우클릭의 **강제 끊기** 항목.
@@ -346,7 +346,7 @@ attach 세션의 수명은 **창(window)이 아니라 engine 에 매인다.** �
   - `tasty set workspace --id <id> --ssh-profile <name> --remote-workspace <N>` — 자동 매핑 선언.
 - **IPC (`attach.*`)**: `acquire`/`release`(stream 핸드셰이크), `force_detach`/`force_detach_workspace`, `into_gui`, `list`(점유 목록 조회). 표 상세 → [dev-guide/attach-behavior](../../dev-guide/attach-behavior.md#ipc-표면-attach).
 - **IPC (`remote.*` — 원격 브라우징/생성/attach, 원칙 2)**: `remote.workspaces` { `profile?`/`ssh?` } → 원격 ws 목록(browse, 워커 스레드+지연 회신). `remote.attach` { `remote_workspace` | `new_workspace`, `profile?`/`ssh?`, `name?`, `cwd?` } → 원격 ws 를 로컬 mirror 로 attach(**focus 중립**: mirror 생성만, focus 이동 없음). `new_workspace:true` 면 원격에 워크스페이스를 먼저 만들고 그것을 attach 한다 — `remote_workspace` 와 상호배타이며, 이때만 **생성 완료까지 기다렸다 지연 회신**해 새 `remote_workspace` id 를 돌려준다(기존 ws attach 는 즉시 `{attaching:true}` 유지). CLI 와 코어 공유 — 조회는 `tasty_remote::browse`, 생성은 `tasty_remote::create`.
-- **로컬 self attach**: 사용자 mirror 조작 재현 성격이라 release 에 없음 — `tasty debug attach`(debug 빌드 전용, [`dev-guide/debug-ipc`](../../dev-guide/debug-ipc.md)).
+- **로컬 self attach**(별도 CLI 프로세스가 포트 파일로 로컬 인스턴스를 mirror): 사용자 mirror 조작 재현 성격이라 release 에 없음 — `tasty debug attach`(debug 빌드 전용, [`dev-guide/debug-ipc`](../../dev-guide/debug-ipc.md)). 같은 머신의 다른 인스턴스에 `127.0.0.1:PORT` 로 붙는 GUI 원격 연결 팝업·IPC `remote.attach`·자동 attach 는 release 에도 있다(아래 비-목표 절).
 - **프로필**: `--profile`/`tool attach` 이 참조하는 tasty-attach 프로필(및 그것이 `ssh_ref` 로 참조하는 ssh 프로필)은 [remote-profiles](../remote-profiles/index.md) 이 관리.
 
 ## 원격 파일 전송 수신측 저장 정책
@@ -377,7 +377,7 @@ bulk 파일 전송과 mirror 터미널 이미지 붙여넣기 업로드에 대�
 
 - **자체 원격 프로토콜/암호화/인증** — 전부 SSH 에 위임. attach 채널에 별도 토큰 없음(연결 경계 = 권한 경계).
 - **단발 화면 읽기** — attach 세션을 열 필요 없음. 정식 경로는 `tasty read screen` / `tasty read since-mark`(별도 기능).
-- **로컬 loopback attach 의 release 노출** — debug 전용.
+- **self attach(자기 인스턴스)의 release 노출** — release 는 자기 인스턴스 포트를 대상으로 한 attach 를 거절하고, 로컬 self-mirror CLI(`tasty debug attach`)는 debug 빌드에만 둔다. 같은 머신의 **다른** 인스턴스에 `127.0.0.1:PORT`·`localhost:PORT` 로 붙는 것은 비-목표가 아니다 — GUI 원격 연결 팝업·IPC `remote.attach`·자동 attach 는 release 에서도 SSH 없이 직결한다(CLI `remote attach`·`tool attach`·`remote check` 에는 loopback 분기가 없다). 같은 OS 사용자의 다른 인스턴스는 이미 같은 권한으로 실행되고 loopback 은 같은 사용자 사이의 격리 수단이 아니므로, 이 직결이 SSH 로 정한 신뢰 경계를 넓히지 않는다([ADR-0020](../../adr/0020-remote-connection-profiles.md) · [ADR-0011](../../adr/0011-secrets-and-local-trust.md)).
 - **프로토콜 프레임/터널 연결/재연결 백오프 등 메커니즘** — [dev-guide/attach-behavior](../../dev-guide/attach-behavior.md).
 - **SSH 프로필 CRUD** — [ssh-tool](../remote-profiles/index.md).
 
