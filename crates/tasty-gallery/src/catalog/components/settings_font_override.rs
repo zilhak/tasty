@@ -80,7 +80,17 @@ fn control(ui: &mut egui::Ui, th: &Theme, row: usize, buf: &mut String, enabled:
     }
 }
 
-/// 미리보기 한 칸 — Focused 는 `border-strong`·`text-primary`, Unfocused 는 `separator`·`text-muted`.
+/// 미리보기 표본 — 라틴 · 한글 · 숫자 · 가나(본체 `draw_font_preview` 와 같은 네 줄).
+const SAMPLE_LINES: [&str; 4] = [
+    "AaBbCcDdEeFfGg",
+    "가나다라마바사",
+    "1234567890",
+    "アカサタナハマラヤワ",
+];
+
+/// 미리보기 한 칸. 본체는 surface 의 실제 배경을 쓰고, 갤러리는 Focused `bg-app` · Unfocused
+/// `bg-panel` 을 대역으로 쓴다. 글자색은 surface focused 전경색 대역 `text-primary`, 테두리는
+/// Focused `border-strong` · Unfocused `separator`.
 fn preview_block(ui: &mut egui::Ui, th: &Theme, focused: bool, w: f32) {
     ui.vertical(|ui| {
         ui.set_width(w);
@@ -91,30 +101,38 @@ fn preview_block(ui: &mut egui::Ui, th: &Theme, focused: bool, w: f32) {
                 .color(th.text_muted().to_egui()),
         );
         // separator 는 premultiplied 바이트로 저장된다.
-        let (border, fg) = if focused {
-            (th.border_strong().to_egui(), th.text_primary())
+        let (fill, border) = if focused {
+            (th.bg_app().to_egui(), th.border_strong().to_egui())
         } else {
-            (th.separator.to_egui_premultiplied(), th.text_muted())
+            (
+                th.bg_panel().to_egui(),
+                th.separator.to_egui_premultiplied(),
+            )
         };
+        let size = th.font_size_term.value();
         egui::Frame::new()
-            .fill(th.bg_app().to_egui())
+            .fill(fill)
             .stroke(egui::Stroke::new(th.border_width.value(), border))
             .corner_radius(th.corner_radius.value())
             .inner_margin(egui::Margin::symmetric(
-                th.spacing_md.value() as i8,
-                th.spacing_sm.value() as i8,
+                th.font_preview_padding_x().value() as i8,
+                th.font_preview_padding_y().value() as i8,
             ))
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
-                ui.add(
-                    egui::Label::new(
-                        egui::RichText::new("~/tasty ❯ cargo build")
-                            .monospace()
-                            .size(th.font_size_body.value())
-                            .color(fg.to_egui()),
-                    )
-                    .truncate(),
-                );
+                ui.spacing_mut().item_spacing.y = 0.0;
+                for line in SAMPLE_LINES {
+                    ui.add(
+                        egui::Label::new(
+                            egui::RichText::new(line)
+                                .monospace()
+                                .size(size)
+                                .line_height(Some(size * th.line_height_ui))
+                                .color(th.text_primary().to_egui()),
+                        )
+                        .truncate(),
+                    );
+                }
             });
     });
 }
@@ -156,14 +174,21 @@ fn font_override(ui: &mut egui::Ui, th: &Theme, long: bool, state: &mut [(String
                 .size(th.font_size_caption.value())
                 .color(th.text_muted().to_egui()),
         );
-        // 시안 `pv()` 는 flex 1 1 0 · min-width 0 이라 좁아도 줄을 바꾸지 않고 반씩 나눈다.
+        // 한 칸이 `font-preview-min-width` 보다 좁아지면 Unfocused 가 Focused 아래로 내려간다.
         let gap = th.spacing_md.value();
-        let half = ((ui.available_width() - gap) / 2.0).max(0.0);
-        ui.horizontal_top(|ui| {
-            ui.spacing_mut().item_spacing.x = gap;
-            preview_block(ui, th, true, half);
-            preview_block(ui, th, false, half);
-        });
+        let half = (ui.available_width() - gap) / 2.0;
+        if half >= th.font_preview_min_width().value() {
+            ui.horizontal_top(|ui| {
+                ui.spacing_mut().item_spacing.x = gap;
+                preview_block(ui, th, true, half);
+                preview_block(ui, th, false, half);
+            });
+        } else {
+            let w = ui.available_width();
+            preview_block(ui, th, true, w);
+            ui.add_space(gap - th.spacing_sm.value());
+            preview_block(ui, th, false, w);
+        }
         ui.label(
             egui::RichText::new("Font: D2Coding / 14.0px")
                 .monospace()
@@ -267,14 +292,34 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ),
             (
                 "preview",
-                "below the grid at every width · Focused | Unfocused side by side at every width (flex 1 1 0, min-width 0) · mono summary",
+                "below the grid · space-lg above · Focused / Unfocused flex 1 each",
             ),
+            (
+                "preview box (b2)",
+                "the surface's effective bg (runtime colour, not a token) + effective font & size · 4 lines: latin · hangul · digits · kana · ink = surface focused fg · edge Focused border-strong / Unfocused separator · radius",
+            ),
+            ("padding", "font-preview-padding-y space-sm · -x space-md"),
+            (
+                "line height",
+                "font-preview-line-height → line-height-ui 1.4 × effective size; box height follows (no height token)",
+            ),
+            (
+                "stack",
+                "a box narrower than font-preview-min-width (→ field-width-lg 200) wraps under the other — content width < 2 × 200 + space-md",
+            ),
+            ("summary", "mono caption · text-muted"),
         ],
         &[
             TokenChip::without_color("settings-label-width", "→ size-150"),
             TokenChip::without_color("field-width-lg", "family · file"),
             TokenChip::without_color("field-width-xs", "size · line height"),
             TokenChip::without_color("field-width-md", "DPI scaling"),
+            TokenChip::without_color(
+                "font-preview-min-width",
+                "→ field-width-lg 200 · stack below",
+            ),
+            TokenChip::without_color("font-preview-padding-x", "→ space-md"),
+            TokenChip::without_color("font-preview-padding-y", "→ space-sm"),
         ],
     );
 }

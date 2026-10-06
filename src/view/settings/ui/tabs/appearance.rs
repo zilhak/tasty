@@ -2069,9 +2069,10 @@ fn draw_font_preview(
 
     let font_size = eff.font_size.max(1.0);
     let preview_font = egui::FontId::new(font_size, preview_family);
-    let line_height = font_size * 1.4;
-    let padding = 8.0;
-    let block_height = line_height * sample_lines.len() as f32 + padding * 2.0;
+    let line_height = font_size * th.line_height_ui;
+    let pad_x = th.font_preview_padding_x().value();
+    let pad_y = th.font_preview_padding_y().value();
+    let block_height = line_height * sample_lines.len() as f32 + pad_y * 2.0;
 
     // 두 칸의 배경이 같은 패널 색과 겹쳐도 경계가 보이도록 1px 테두리를 두른다.
     // Focused 는 border-strong, Unfocused 는 separator(premultiplied 바이트)다.
@@ -2106,7 +2107,7 @@ fn draw_font_preview(
             egui::StrokeKind::Inside,
         );
         for (i, line) in sample_lines.iter().enumerate() {
-            let pos = rect.min + egui::vec2(padding, padding + line_height * i as f32);
+            let pos = rect.min + egui::vec2(pad_x, pad_y + line_height * i as f32);
             ui.painter().text(
                 pos,
                 egui::Align2::LEFT_TOP,
@@ -2117,20 +2118,30 @@ fn draw_font_preview(
         }
     };
     match layout {
-        // Focused · Unfocused 를 폭과 관계없이 나란히 두고 남은 폭을 반씩 나눈다.
-        // 시안 `pv()` 가 flex 1 1 0 · min-width 0 이라 좁아도 줄을 바꾸지 않는다.
+        // Focused · Unfocused 를 나란히 두고 남은 폭을 반씩 나눈다. 한 칸이
+        // `font-preview-min-width` 보다 좁아지면 Unfocused 가 아래로 내려간다.
         PreviewLayout::SideBySide => {
             let gap = th.spacing_md.value();
-            let half = ((ui.available_width() - gap) / 2.0).max(0.0);
-            ui.horizontal_top(|ui| {
-                ui.spacing_mut().item_spacing.x = gap;
-                for b in blocks {
-                    ui.vertical(|ui| {
-                        ui.set_width(half);
-                        block(ui, b, half);
-                    });
+            let half = (ui.available_width() - gap) / 2.0;
+            if half < th.font_preview_min_width().value() {
+                let w = ui.available_width();
+                for (i, b) in blocks.into_iter().enumerate() {
+                    if i > 0 {
+                        vspace(ui, th.spacing_md);
+                    }
+                    ui.vertical(|ui| block(ui, b, w));
                 }
-            });
+            } else {
+                ui.horizontal_top(|ui| {
+                    ui.spacing_mut().item_spacing.x = gap;
+                    for b in blocks {
+                        ui.vertical(|ui| {
+                            ui.set_width(half);
+                            block(ui, b, half);
+                        });
+                    }
+                });
+            }
         }
         PreviewLayout::Stacked => {
             for (i, b) in blocks.into_iter().enumerate() {
