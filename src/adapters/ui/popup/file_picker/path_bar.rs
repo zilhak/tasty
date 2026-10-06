@@ -291,10 +291,9 @@ fn hidden_crumbs(
                             .x
                     })
                     .fold(0.0_f32, f32::max);
-                // 밴드는 테두리까지 포함한 바깥 폭이라 안쪽 폭은 틀을 뺀 값이다.
-                let band = menu_band(th);
-                ui.set_min_width(menu_width(widest, th) - menu_chrome(th));
-                ui.set_max_width(band.1 - menu_chrome(th));
+                // 밴드는 테두리까지 포함한 바깥 폭이라 안쪽 폭은 틀을 뺀 값이다. 행은 남은 폭을
+                // 모두 차지하므로 상한만 두면 메뉴가 늘 상한까지 늘어난다 — 폭을 고정한다.
+                ui.set_width(menu_width(widest, th) - menu_chrome(th));
                 let folder = th.accent_primary().to_egui();
                 for i in range.clone() {
                     let glyph = |ui: &mut egui::Ui, rect: egui::Rect, _c: egui::Color32| {
