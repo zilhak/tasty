@@ -86,10 +86,9 @@ const RAIL_BUTTON_PAD: LogicalPx = LogicalPx(2.0);
 const RAIL_AVATAR: LogicalPx = LogicalPx(28.0);
 const RAIL_DOT: LogicalPx = LogicalPx(6.0);
 const RAIL_DOT_RING: LogicalPx = LogicalPx(2.0);
-/// 팝업 위치(`left: 60, top: 118`)와 시안 `catMenuPanel` 안쪽 여백 6.
+/// 팝업 위치(`left: 60, top: 118`). 안쪽 여백은 `popup-content-margin`.
 const RAIL_POPUP_LEFT: LogicalPx = LogicalPx(60.0);
 const RAIL_POPUP_TOP: LogicalPx = LogicalPx(118.0);
-const RAIL_POPUP_PAD: LogicalPx = LogicalPx(6.0);
 
 /// 레일 한 칸.
 #[derive(Clone, Copy)]
@@ -236,14 +235,15 @@ fn rail_avatar(
 /// 시안 레일 팝업: 누를 수 없는 카테고리 이름 머리줄(+ 개수) 아래에 메뉴 항목.
 fn rail_category_menu(ui: &mut egui::Ui, theme: &Theme) {
     let bw = theme.border_width.value();
+    let ring = theme.popup_content_margin().value();
     egui::Frame::new()
-        .fill(theme.surface_raised().to_egui())
-        .stroke(egui::Stroke::new(bw, theme.border_strong().to_egui()))
-        .corner_radius(theme.corner_radius.value())
+        .fill(theme.menu_bg().to_egui())
+        .stroke(egui::Stroke::new(bw, theme.menu_border().to_egui()))
+        .corner_radius(theme.menu_radius().value())
         .shadow(theme.shadow_popover().to_egui())
-        .inner_margin(egui::Margin::same(RAIL_POPUP_PAD.value() as i8))
+        .inner_margin(egui::Margin::same(ring as i8))
         .show(ui, |ui| {
-            ui.set_width(POPUP_WIDTH.value() - (RAIL_POPUP_PAD.value() + bw) * 2.0);
+            ui.set_width(POPUP_WIDTH.value() - (ring + bw) * 2.0);
             ui.spacing_mut().item_spacing.y = 0.0;
             // 머리줄: 안쪽 여백 4 8 8, 아래 separator, 아래 바깥 여백 4.
             egui::Frame::new()
@@ -314,6 +314,8 @@ pub fn draw_rail(ui: &mut egui::Ui, theme: &Theme) {
                 "popup fill",
                 theme.surface_raised().to_egui(),
             ),
+            TokenChip::new("menu-border", "edge", theme.menu_border().to_egui()),
+            TokenChip::without_color("popup-content-margin", "inner ring 4 (all sides)"),
             TokenChip::new(
                 "accent-danger",
                 "delete row",

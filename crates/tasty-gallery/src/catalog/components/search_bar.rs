@@ -28,7 +28,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ],
         &[
             TokenChip::new("surface-raised", "bar", theme.surface_raised().to_egui()),
-            TokenChip::new("border-strong", "edge", theme.border_strong().to_egui()),
+            TokenChip::new(
+                "search-bar-border",
+                "edge → menu-border",
+                theme.search_bar_border().to_egui(),
+            ),
             TokenChip::new(
                 "accent-danger",
                 "0 matches",
@@ -47,50 +51,57 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
 }
 
 fn bar(ui: &mut egui::Ui, theme: &Theme, count: &str, no_match: bool) {
-    kit::frame_card_popover(ui, theme, WIDTH, kit::raised_fill(theme), |ui| {
-        kit::region_sym(ui, theme.spacing_sm, theme.spacing_xs, |ui| {
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = theme.spacing_xs.value();
-                let counter_w = theme.field_width_xs.scaled(0.5);
-                let trailing = counter_w
-                    + theme.item_height_interactive.scaled(4.0)
-                    + theme.spacing_md.scaled(4.0);
-                let input_w =
-                    (WIDTH - theme.spacing_sm.scaled(2.0) - trailing).max(LogicalPx(80.0));
-                kit::field(ui, theme, Some(input_w), "tasty", false, false);
-                let counter_color = if no_match {
-                    theme.accent_danger()
-                } else {
-                    theme.text_muted()
-                };
-                ui.label(
-                    egui::RichText::new(count)
-                        .monospace()
-                        .size(theme.font_size_caption.value())
-                        .color(counter_color.to_egui()),
-                );
-                icon_btn(ui, theme, icons::CHEVRON_DOWN, false);
-                icon_btn(ui, theme, icons::CHEVRON_RIGHT, false);
-                toggle_chip(ui, theme, "Aa", false);
-                toggle_chip(ui, theme, ".*", false);
-                toggle_chip(ui, theme, "ab", true);
-                let h = theme.item_height_interactive.value() * 0.6;
-                let (r, _) = ui.allocate_exact_size(
-                    egui::vec2(theme.border_width.value(), h),
-                    egui::Sense::hover(),
-                );
-                ui.painter().vline(
-                    r.center().x,
-                    r.y_range(),
-                    egui::Stroke::new(
-                        theme.border_width.value(),
-                        theme.separator.to_egui_premultiplied(),
-                    ),
-                );
-                icon_btn(ui, theme, icons::CLOSE, false);
+    kit::frame_card_popover_edge(
+        ui,
+        theme,
+        WIDTH,
+        kit::raised_fill(theme),
+        theme.search_bar_border().to_egui(),
+        |ui| {
+            kit::region_sym(ui, theme.spacing_sm, theme.spacing_xs, |ui| {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = theme.spacing_xs.value();
+                    let counter_w = theme.field_width_xs.scaled(0.5);
+                    let trailing = counter_w
+                        + theme.item_height_interactive.scaled(4.0)
+                        + theme.spacing_md.scaled(4.0);
+                    let input_w =
+                        (WIDTH - theme.spacing_sm.scaled(2.0) - trailing).max(LogicalPx(80.0));
+                    kit::field(ui, theme, Some(input_w), "tasty", false, false);
+                    let counter_color = if no_match {
+                        theme.accent_danger()
+                    } else {
+                        theme.text_muted()
+                    };
+                    ui.label(
+                        egui::RichText::new(count)
+                            .monospace()
+                            .size(theme.font_size_caption.value())
+                            .color(counter_color.to_egui()),
+                    );
+                    icon_btn(ui, theme, icons::CHEVRON_DOWN, false);
+                    icon_btn(ui, theme, icons::CHEVRON_RIGHT, false);
+                    toggle_chip(ui, theme, "Aa", false);
+                    toggle_chip(ui, theme, ".*", false);
+                    toggle_chip(ui, theme, "ab", true);
+                    let h = theme.item_height_interactive.value() * 0.6;
+                    let (r, _) = ui.allocate_exact_size(
+                        egui::vec2(theme.border_width.value(), h),
+                        egui::Sense::hover(),
+                    );
+                    ui.painter().vline(
+                        r.center().x,
+                        r.y_range(),
+                        egui::Stroke::new(
+                            theme.border_width.value(),
+                            theme.separator.to_egui_premultiplied(),
+                        ),
+                    );
+                    icon_btn(ui, theme, icons::CLOSE, false);
+                });
             });
-        });
-    });
+        },
+    );
 }
 
 fn icon_btn(ui: &mut egui::Ui, theme: &Theme, glyph: icons::MockGlyph, active: bool) {

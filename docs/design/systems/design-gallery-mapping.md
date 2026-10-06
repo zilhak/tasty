@@ -227,10 +227,11 @@ kind 소스로 쓴다. 설정 화면(`draw_settings_detail`)도 같은 캐시 �
 | `overlays-dialogs.jsx` `CategoryDeleteFrame` | `popup/confirm_delete_category.rs::draw_confirm_delete_category` | `workspace-categories` "Delete confirm" (`category_dialogs.rs::delete_confirm`) |
 
 **갤러리 vs 본체 차이**: 본체 컨텍스트 메뉴는 OS native(`show_context_menu`)라 같은 함수를 호출할 수 없다.
-갤러리 `sidebar-context-menu`는 시안의 대상별 네 메뉴를 공용 메뉴 항목으로 옮긴 정적 사본이다. 시안은
-"카테고리로 이동"을 하위 메뉴로 그리지만 native 메뉴는 하위 메뉴를 지원하지 않아 본체는 비활성 머리글
-아래에 대상 카테고리를 평면 나열한다(선택지 B). 나머지는 Theme 토큰으로 시각만 재현하며 상태(접힘/빈
-카테고리/검증 에러)는 mock 데이터로 주입한다.
+갤러리 `sidebar-context-menu`는 시안의 대상별 네 메뉴를 공용 메뉴 항목으로 옮긴 정적 사본이다. 시안과
+본체 모두 "카테고리로 이동"을 하위 메뉴 없이 비활성 머리글로 두고, 그 아래에 현재 카테고리를 뺀 대상
+카테고리를 평면 나열한다. 나머지는 Theme 토큰으로 시각만 재현하며 상태(접힘/빈 카테고리/검증 에러)는
+mock 데이터로 주입한다. 앵커 메뉴 팝업(Tools 메뉴·레일 카테고리 팝업·컨텍스트 메뉴 예제)의 틀은 메뉴
+컨테이너 토큰(`menu-bg`·`menu-border`·`menu-radius`)이고 안쪽 둘레는 네 변 모두 `popup-content-margin`이다.
 
 ## 이미 갤러리에 있는 관련 항목 (참고)
 

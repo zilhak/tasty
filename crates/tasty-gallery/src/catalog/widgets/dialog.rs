@@ -23,7 +23,15 @@ pub fn frame_card(
     fill: egui::Color32,
     add: impl FnOnce(&mut egui::Ui),
 ) {
-    frame_card_with_shadow(ui, theme, width, fill, Some(theme.shadow_modal()), add);
+    frame_card_with_shadow(
+        ui,
+        theme,
+        width,
+        fill,
+        strong_edge(theme),
+        Some(theme.shadow_modal()),
+        add,
+    );
 }
 
 /// 트리거 옆에 뜨는 팝오버 프레임. 배경을 어둡게 하지 않는다.
@@ -34,7 +42,15 @@ pub fn frame_card_popover(
     fill: egui::Color32,
     add: impl FnOnce(&mut egui::Ui),
 ) {
-    frame_card_with_shadow(ui, theme, width, fill, Some(theme.shadow_popover()), add);
+    frame_card_with_shadow(
+        ui,
+        theme,
+        width,
+        fill,
+        strong_edge(theme),
+        Some(theme.shadow_popover()),
+        add,
+    );
 }
 
 /// 별도 창·페인·설정 섹션처럼 떠 있는 팝업이 아닌 콘텐츠에는 그림자를 넣지 않는다.
@@ -45,7 +61,7 @@ pub fn frame_card_flat(
     fill: egui::Color32,
     add: impl FnOnce(&mut egui::Ui),
 ) {
-    frame_card_with_shadow(ui, theme, width, fill, None, add);
+    frame_card_with_shadow(ui, theme, width, fill, strong_edge(theme), None, add);
 }
 
 /// 버튼에 붙는 팝오버(드롭다운) 프레임. 본체 egui popup 틀과 같은 메뉴 컨테이너 토큰
@@ -67,20 +83,42 @@ pub fn frame_card_menu(
     show_card(ui, frame, width, add);
 }
 
+/// 떠 있는 입력 띠처럼 메뉴가 아닌 팝오버에 그 표면의 테두리 토큰(`edge`)을 쓴다.
+pub fn frame_card_popover_edge(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    width: LogicalPx,
+    fill: egui::Color32,
+    edge: egui::Color32,
+    add: impl FnOnce(&mut egui::Ui),
+) {
+    frame_card_with_shadow(
+        ui,
+        theme,
+        width,
+        fill,
+        edge,
+        Some(theme.shadow_popover()),
+        add,
+    );
+}
+
+fn strong_edge(theme: &Theme) -> egui::Color32 {
+    theme.border_strong().to_egui()
+}
+
 fn frame_card_with_shadow(
     ui: &mut egui::Ui,
     theme: &Theme,
     width: LogicalPx,
     fill: egui::Color32,
+    edge: egui::Color32,
     shadow: Option<tasty_type_appearance::theme::ShadowToken>,
     add: impl FnOnce(&mut egui::Ui),
 ) {
     let mut frame = egui::Frame::new()
         .fill(fill)
-        .stroke(egui::Stroke::new(
-            theme.border_width.value(),
-            theme.border_strong().to_egui(),
-        ))
+        .stroke(egui::Stroke::new(theme.border_width.value(), edge))
         .corner_radius(theme.corner_radius.value());
     if let Some(shadow) = shadow {
         frame = frame.shadow(shadow.to_egui());

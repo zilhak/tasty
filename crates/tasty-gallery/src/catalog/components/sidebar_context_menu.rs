@@ -5,25 +5,22 @@ use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{MenuItemVariant, menu_item, menu_separator};
 
-use crate::catalog::icons::{CHEVRON_RIGHT, EDIT, MOVE, MockGlyph, PLUS, TRASH};
+use crate::catalog::icons::{EDIT, MOVE, MockGlyph, PLUS, TRASH};
 use crate::catalog::spec::{StageVariant, TokenChip, meta, note, stage, wrap_item};
 
-/// 시안 메뉴 최소 폭(`minWidth: 176`, 테두리·안쪽 여백 포함)과 안쪽 여백 6.
+/// 시안 메뉴 최소 폭(`minWidth: 176`, 테두리·안쪽 여백 포함).
 const MENU_MIN_W: LogicalPx = LogicalPx(176.0);
-const MENU_PAD: LogicalPx = LogicalPx(6.0);
 /// 캡션과 메뉴 사이 간격 6, 메뉴 사이 간격 22(시안 stage gap).
 const CAPTION_GAP: LogicalPx = LogicalPx(6.0);
 const MENU_GAP: LogicalPx = LogicalPx(22.0);
-/// 하위 메뉴 표시 chevron 크기(시안 `chevronRight size={13}`).
-const SUBMENU_CHEVRON: LogicalPx = LogicalPx(13.0);
 
 /// 메뉴 한 줄.
 #[derive(Clone, Copy)]
 enum Row {
     /// (glyph, label, danger, enabled)
     Item(MockGlyph, &'static str, bool, bool),
-    /// 하위 메뉴를 여는 행. 열린 상태라 active 로 그린다.
-    Submenu(MockGlyph, &'static str),
+    /// 아이콘 없는 이동 대상 카테고리 행.
+    Target(&'static str),
     Sep,
 }
 
@@ -44,24 +41,29 @@ const RESERVED: &[Row] = &[
     Row::Sep,
     Row::Item(PLUS, "New category", false, true),
 ];
+/// 본체 OS native 메뉴는 하위 메뉴를 그리지 않으므로, 누를 수 없는 머리글 아래에 현재
+/// 카테고리를 뺀 대상을 평면으로 나열한다.
 const WORKSPACE: &[Row] = &[
-    Row::Submenu(MOVE, "Move to category"),
+    Row::Item(MOVE, "Move to category", false, false),
+    Row::Target("Workspaces"),
+    Row::Target("Services"),
     Row::Sep,
     Row::Item(PLUS, "New category", false, true),
 ];
 
 fn menu(ui: &mut egui::Ui, theme: &Theme, rows: &[Row]) {
+    let ring = theme.popup_content_margin().value();
     egui::Frame::new()
-        .fill(egui::Color32::from(theme.surface_raised()))
+        .fill(egui::Color32::from(theme.menu_bg()))
         .stroke(egui::Stroke::new(
             theme.border_width.value(),
-            egui::Color32::from(theme.border_strong()),
+            egui::Color32::from(theme.menu_border()),
         ))
-        .corner_radius(theme.corner_radius.value())
+        .corner_radius(theme.menu_radius().value())
         .shadow(theme.shadow_popover().to_egui())
-        .inner_margin(egui::Margin::same(MENU_PAD.value() as i8))
+        .inner_margin(egui::Margin::same(ring as i8))
         .show(ui, |ui| {
-            let inner = MENU_MIN_W.value() - (MENU_PAD.value() + theme.border_width.value()) * 2.0;
+            let inner = MENU_MIN_W.value() - (ring + theme.border_width.value()) * 2.0;
             // 항목이 남은 폭을 다 차지하므로 최소 폭으로 고정한다. 시안 메뉴도 이 폭이다.
             ui.set_width(inner);
             ui.spacing_mut().item_spacing.y = 0.0;
@@ -85,28 +87,17 @@ fn menu(ui: &mut egui::Ui, theme: &Theme, rows: &[Row]) {
                             enabled,
                         );
                     }
-                    Row::Submenu(g, label) => {
-                        let resp = menu_item(
+                    Row::Target(label) => {
+                        menu_item(
                             ui,
                             theme,
-                            Some(&|ui, rect, c| g.image(rect.height(), c).paint_at(ui, rect)),
+                            None,
                             label,
                             None,
                             MenuItemVariant::Normal,
-                            true,
+                            false,
                             true,
                         );
-                        let s = SUBMENU_CHEVRON.value();
-                        let r = egui::Rect::from_center_size(
-                            egui::pos2(
-                                resp.rect.right() - theme.spacing_sm.value() - s * 0.5,
-                                resp.rect.center().y,
-                            ),
-                            egui::vec2(s, s),
-                        );
-                        CHEVRON_RIGHT
-                            .image(s, egui::Color32::from(theme.text_muted()))
-                            .paint_at(ui, r);
                     }
                 }
             }
@@ -150,19 +141,23 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("background", "New category"),
             ("category", "Add ws · Rename · Delete · New"),
             ("reserved", "Add ws · New (additive-only)"),
-            ("workspace", "Move to category › · New"),
+            (
+                "workspace",
+                "Move to category (inert header) · targets · New",
+            ),
+            (
+                "targets",
+                "every category except the current one · normal = “Workspaces”",
+            ),
         ],
         &[
+            TokenChip::new("menu-bg", "menu fill", egui::Color32::from(theme.menu_bg())),
             TokenChip::new(
-                "surface-raised",
-                "menu fill",
-                egui::Color32::from(theme.surface_raised()),
+                "menu-border",
+                "edge → border-strong",
+                egui::Color32::from(theme.menu_border()),
             ),
-            TokenChip::new(
-                "border-strong",
-                "edge",
-                egui::Color32::from(theme.border_strong()),
-            ),
+            TokenChip::without_color("popup-content-margin", "inner ring 4"),
             TokenChip::new(
                 "accent-danger",
                 "delete row",
@@ -174,6 +169,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     note(
         ui,
         theme,
-        "\"Move to category\" opens a submenu of category targets (the drag-and-drop reorder is the primary path; this is the keyboard/menu fallback). New strings: workspace_category.add_workspace · collapse · expand. Existing: new_category · rename_category · delete_category · move_to_category.",
+        "\"Move to category\" is an inert header with the target categories listed flat beneath it (current category omitted) — no submenu, because the product draws this menu with the OS-native context menu. Drag-and-drop reorder stays the primary path; this is the menu fallback. New strings: workspace_category.add_workspace · collapse · expand. Existing: new_category · rename_category · delete_category · move_to_category.",
     );
 }

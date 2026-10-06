@@ -13,7 +13,7 @@ const WIDTH: LogicalPx = LogicalPx(160.0);
 /// 본체 내장 도구의 영어 라벨(lang/en.toml) — 본체 `BUILTIN_TOOLS` 순서.
 const BUILTIN: &[&str] = &[
     "Command palette…",
-    "Listening ports...",
+    "Listening ports…",
     "Remote connections…",
     "Presets",
     "Tutorial…",
@@ -25,8 +25,9 @@ const PLUGIN: &[&str] = &["Clipboard Viewer", "Git"];
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
-        kit::frame_card_popover(ui, theme, WIDTH, kit::raised_fill(theme), |ui| {
-            kit::region_sym(ui, theme.spacing_sm, theme.spacing_sm, |ui| {
+        kit::frame_card_menu(ui, theme, WIDTH, |ui| {
+            let ring = theme.popup_content_margin();
+            kit::region_sym(ui, ring, ring, |ui| {
                 for label in BUILTIN {
                     row(ui, theme, label);
                 }
@@ -45,16 +46,19 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("width", "160px"),
             ("anchor", "above button, left-aligned"),
             ("rows", "28px MenuItem, no icons"),
+            ("built-in", "7 — fixed order"),
+            ("inner ring", "4 · popup-content-margin"),
             ("scrim", "none"),
             ("dismiss", "outside click · Esc"),
         ],
         &[
+            TokenChip::new("menu-bg", "menu fill", theme.menu_bg().to_egui()),
             TokenChip::new(
-                "surface-raised",
-                "menu fill",
-                theme.surface_raised().to_egui(),
+                "menu-border",
+                "edge → border-strong",
+                theme.menu_border().to_egui(),
             ),
-            TokenChip::new("border-strong", "edge", theme.border_strong().to_egui()),
+            TokenChip::without_color("popup-content-margin", "→ space-xs 4"),
             TokenChip::without_color("shadow-popover", "lift"),
         ],
     );
