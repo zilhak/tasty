@@ -682,18 +682,14 @@ impl MainView {
             .find_pane(pane_id)
             .map(|p| p.tabs.len())
             .unwrap_or(0);
-        let can_move_left = tab_index > 0;
-        let can_move_right = tab_index + 1 < tab_count;
 
-        let move_left = if can_move_left {
-            MenuItem::new(3, crate::i18n::t("tab_context_menu.move_left"))
-        } else {
-            MenuItem::disabled(3, crate::i18n::t("tab_context_menu.move_left"))
+        let move_left = MenuItem {
+            enabled: tab_index > 0,
+            ..MenuItem::new(3, crate::i18n::t("tab_context_menu.move_left"))
         };
-        let move_right = if can_move_right {
-            MenuItem::new(4, crate::i18n::t("tab_context_menu.move_right"))
-        } else {
-            MenuItem::disabled(4, crate::i18n::t("tab_context_menu.move_right"))
+        let move_right = MenuItem {
+            enabled: tab_index + 1 < tab_count,
+            ..MenuItem::new(4, crate::i18n::t("tab_context_menu.move_right"))
         };
 
         let mut items = vec![
@@ -771,15 +767,10 @@ impl MainView {
         else {
             return;
         };
-        let target = crate::state::RenameTarget::TabName { tab_id };
-        let scope = target.popup_scope(engine);
-        self.state.dialogs.rename = Some((target, current_name));
-        self.state.dispatch_intent(
-            crate::intent::UiIntent::OpenPopup {
-                id: "rename",
-                mode: crate::intent::OpenPopupMode::WithScope(scope),
-            }
-            .from_user_context_menu(),
+        self.open_rename_dialog(
+            engine,
+            crate::state::RenameTarget::TabName { tab_id },
+            current_name,
         );
     }
 
@@ -914,7 +905,7 @@ impl MainView {
                         .workspace_at(ws_idx)
                         .expect("workspace index is valid");
                     let (workspace_id, name) = (ws.id, ws.name.clone());
-                    this.open_rename_workspace_dialog(
+                    this.open_rename_dialog(
                         engine,
                         crate::state::RenameTarget::WorkspaceName { workspace_id },
                         name,
@@ -925,7 +916,7 @@ impl MainView {
                         .workspace_at(ws_idx)
                         .expect("workspace index is valid");
                     let (workspace_id, subtitle) = (ws.id, ws.subtitle.clone());
-                    this.open_rename_workspace_dialog(
+                    this.open_rename_dialog(
                         engine,
                         crate::state::RenameTarget::WorkspaceSubtitle { workspace_id },
                         subtitle,
@@ -1010,18 +1001,14 @@ impl MainView {
     ) {
         use crate::platform::native_menu::MenuItem;
         let ws_count = engine.workspaces().len();
-        let can_move_up = ws_idx > 0;
-        let can_move_down = ws_idx + 1 < ws_count;
 
-        let move_up = if can_move_up {
-            MenuItem::new(3, crate::i18n::t("context_menu.move_up"))
-        } else {
-            MenuItem::disabled(3, crate::i18n::t("context_menu.move_up"))
+        let move_up = MenuItem {
+            enabled: ws_idx > 0,
+            ..MenuItem::new(3, crate::i18n::t("context_menu.move_up"))
         };
-        let move_down = if can_move_down {
-            MenuItem::new(4, crate::i18n::t("context_menu.move_down"))
-        } else {
-            MenuItem::disabled(4, crate::i18n::t("context_menu.move_down"))
+        let move_down = MenuItem {
+            enabled: ws_idx + 1 < ws_count,
+            ..MenuItem::new(4, crate::i18n::t("context_menu.move_down"))
         };
 
         let mut items = vec![
@@ -1095,9 +1082,8 @@ impl MainView {
         (items, move_targets)
     }
 
-    /// workspace 이름/부제 rename 팝업을 연다 — 현재 값을 prefill 하고 `target`
-    /// scope 로 `rename` 팝업을 dispatch(제목/부제 공용 — 값과 target 만 다르다).
-    fn open_rename_workspace_dialog(
+    /// 현재 값을 채운 `rename` 팝업을 `target`의 scope로 연다. 컨텍스트 메뉴의 이름 변경이 모두 쓴다.
+    fn open_rename_dialog(
         &mut self,
         engine: &crate::runtime::engine_read::EngineRead<'_>,
         target: crate::state::RenameTarget,
@@ -1754,15 +1740,7 @@ impl MainView {
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_default();
             let target = crate::state::RenameTarget::ExplorerEntry { surface_id, path };
-            let scope = target.popup_scope(engine);
-            self.state.dialogs.rename = Some((target, current_name));
-            self.state.dispatch_intent(
-                crate::intent::UiIntent::OpenPopup {
-                    id: "rename",
-                    mode: crate::intent::OpenPopupMode::WithScope(scope),
-                }
-                .from_user_context_menu(),
-            );
+            self.open_rename_dialog(engine, target, current_name);
         }
     }
 
@@ -1791,15 +1769,7 @@ impl MainView {
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_default();
         let target = crate::state::RenameTarget::ExplorerAddFavorite { path };
-        let scope = target.popup_scope(engine);
-        self.state.dialogs.rename = Some((target, seed));
-        self.state.dispatch_intent(
-            crate::intent::UiIntent::OpenPopup {
-                id: "rename",
-                mode: crate::intent::OpenPopupMode::WithScope(scope),
-            }
-            .from_user_context_menu(),
-        );
+        self.open_rename_dialog(engine, target, seed);
     }
 
     /// 대상 폴더로 새 explorer 탭을 연다.
