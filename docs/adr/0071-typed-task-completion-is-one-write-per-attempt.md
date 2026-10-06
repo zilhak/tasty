@@ -24,7 +24,7 @@ v2 task 는 Ready → Running 전이마다 새 실행 회차를 받는다(`Task.
 - 끝난 회차에 같은 지문의 보고가 오면 같은 레코드를 돌려주고 하류 반영만 다시 적용한다. 다른 지문이면 거절한다. 지문은 결과와 종결 종류를 FNV-1a 64 로 해시한 값이다.
 - 거절은 `AgentError::CompletionRejected` 이고 IPC 에서는 `-32014` 로 사유와 두 회차 id 를 싣는다.
 - `RunnerLoop` 는 저장소 오류로 기록하지 못한 보고를 보관하고 다음 tick 에 같은 보고를 다시 낸다. 그동안 다시 poll 하지 않고 handle 과 permit 을 유지한다. 보류에는 횟수·시간 상한을 두지 않는다. 저장이 회복되거나, 러너를 다시 시작할 때 점유 정리가 회수하거나(보류 보고는 사라지고 task 는 Failed), task 가 밖에서 종결될 때 풀린다.
-- 훅 대기는 dispatch 한 회차 id 를 저장한다. snapshot 의 `sources` 는 원본 회차 id(`producer_attempt`)를 기록한다.
+- 훅 대기와 저장한 실행 handle 은 dispatch 한 회차 id 를 저장한다. 재시작 복구는 handle 의 회차로 보고하므로 재시도 뒤 남은 옛 handle 이 새 회차를 끝내지 않는다. snapshot 의 `sources` 는 원본 회차 id(`producer_attempt`)를 기록한다.
 - v1 task 에는 회차를 두지 않는다. v1 은 결과 쓰기와 상태 전이의 두 번 쓰기를 유지하되, 전이가 맞지 않는 보고는 결과를 쓰기 전에 거절한다. v1 은 두 쓰기 사이에서 실패하면 결과만 남은 Running task 가 될 수 있다. v1 출력은 계약 검증이 없어 두 쓰기 사이에 공개되는 미확정 결과가 없고, 기존 호출자의 응답 형식을 바꾸지 않으려고 이 차이를 남긴다.
 - 명시 `retry` 는 같은 task 레코드에 새 회차를 연다. 이미 실행된 fallback 의 결과와 전파는 되돌리지 않는다. 그래서 fallback 이 Ready·Running·Succeeded 인 v2 task 의 `retry` 는 거절한다. 본 작업이 다시 성공하면 `one_of` 소비자가 성공한 원본 둘을 보게 되기 때문이다(실측: 재시도 뒤 소비자의 입력 해석이 "one_of expects exactly one succeeded source" 로 실패했다).
 
@@ -67,6 +67,7 @@ v2 task 는 Ready → Running 전이마다 새 실행 회차를 받는다(`Task.
 - `crates/tasty-agent/src/task/attempt.rs` — 회차, `Completion`, 지문.
 - `crates/tasty-agent/src/task/store/complete.rs` — `TaskStore::complete`.
 - `crates/tasty-agent/src/runner.rs` — `RunnerLoop::pending`, `completion_retryable`.
-- `crates/tasty-task-runtime/src/runner_host.rs` — `RunnerContext::complete_task`.
+- `crates/tasty-task-runtime/src/runner_host.rs` — `RunnerContext::complete_task`, handle 의 회차 저장(`persist_handle`).
+- `crates/tasty-task-runtime/src/runner_thread.rs` — 재시작 복구 보고(`mark_dead_tasks`·`finalize_precise_tasks`).
 - [ADR-0068](0068-typed-task-contracts-live-in-a-separate-record-namespace.md) — v2 레코드 형식.
 - [ADR-0069](0069-typed-task-graphs-activate-through-a-graph-record.md) — 그래프 활성화와 readiness.

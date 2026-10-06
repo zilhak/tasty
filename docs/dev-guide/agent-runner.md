@@ -577,7 +577,7 @@ v2 task 의 fallback 이 이미 실행됐으면(Ready·Running·Succeeded) 그 t
   1. 저장이 회복돼 같은 보고가 기록되거나 거절될 때.
   2. 러너를 멈춘 뒤 다음 러너 시작·부팅의 정리(`purge_stale_semaphore_holders`·`purge_stale_lease_holders`)가 Running task 의 점유를 회수할 때. 이때 보류됐던 보고는 메모리에만 있어 사라지고, task 는 그 정리 규칙대로 Failed 가 된다.
   3. task 가 밖에서 종결됐을 때(취소 등). 다음 tick 의 종결 흡수가 보류 보고를 한 번 더 내고, 그 보고가 이미 끝난 task 라 거절되면 permit 을 푼다. 저장소가 여전히 실패하면 이 경우에도 계속 쥔다.
-- 재시작 복구(죽은 pid, 저장된 실행 결과)도 기록에 실패하면 handle 을 남겨 다음 reload 가 다시 보고한다.
+- 재시작 복구(죽은 pid, 저장된 실행 결과, 기한이 지난 외부 완료 대기)는 handle 레코드에 함께 저장한 dispatch 회차 id(`attempt_id` 키)로 보고한다. 재시도 뒤 남은 옛 회차의 handle 은 `stale_attempt` 로 거절돼 지워지고 새 회차를 끝내지 않는다. 회차 id 가 없는 레코드(v1 task, 회차 저장 전에 만든 handle)는 지금 회차로 보고한다. 기록에 실패하면 handle 을 남겨 다음 reload 가 다시 보고한다.
 - 완료 쓰기는 끝났지만 하류 반영 중에 실패하면 오류를 돌려준다. 러너는 같은 보고를 다시 내 하류 반영을 마치고, 다시 낼 보고가 없는 재시작 뒤에는 부팅·러너 시작의 readiness 재평가가 마친다.
 - push 완료 전략의 훅 대기는 dispatch 한 회차 id 를 함께 저장한다. 늦게 온 훅이나 만료가 다음 회차를 끝내지 않는다.
 - v1 task 는 결과를 쓴 뒤 상태를 전이한다. 상태 전이가 맞지 않는 보고는 결과를 쓰기 전에 거절한다.

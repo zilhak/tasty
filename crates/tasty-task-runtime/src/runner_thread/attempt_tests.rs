@@ -6,11 +6,11 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use tasty_agent::task::{Completion, TaskGraphSpec};
 use tasty_agent::{TaskState, TaskStore};
-use tasty_memory::{HOST_OWNER, MemoryStore};
+use tasty_memory::{HOST_OWNER, MemoryStore, MemoryValue, PutOpts, Scope};
 
 use super::{expire_overdue_hook_waits, purge_and_reload_on_restart};
 use crate::hook_wait::HookWaitOwner;
-use crate::runner_host::RunnerContext;
+use crate::runner_host::{HANDLE_ATTEMPT_FIELD, RunnerContext, handle_key, run_result_key};
 
 fn ctx() -> (tempfile::TempDir, RunnerContext) {
     let td = tempfile::tempdir().unwrap();
@@ -110,4 +110,87 @@ fn a_restart_releases_consumers_left_waiting_after_the_completion_write() {
     assert_eq!(state_of(&ctx, "c"), TaskState::Waiting);
     purge_and_reload_on_restart(&ctx, 1);
     assert_eq!(state_of(&ctx, "c"), TaskState::Ready);
+}
+
+/// 실패한 `p#1` 을 재시도해 `p#2` 가 Running 인 상태를 만든다.
+fn retried_to_second_attempt(ctx: &RunnerContext) {
+    with_store(ctx, |s| {
+        let spec: TaskGraphSpec = serde_json::from_value(serde_json::json!({
+            "contract_version": 2,
+            "tasks": [{"id": "p",
+                "command": {"kind": "custom", "ipc_method": "system.ping", "params": {}},
+                "output_schema": {"type": "object", "fields": {}}}]
+        }))
+        .unwrap();
+        s.submit_graph(1, spec, 0).unwrap();
+        let p = "p".to_string();
+        s.set_state(1, &p, TaskState::Running, 1).unwrap();
+        s.complete(1, &p, Completion::failed(None, "boom".into()), 2)
+            .unwrap();
+        s.retry(1, &p, false, 3).unwrap();
+        s.set_state(1, &p, TaskState::Running, 4).unwrap();
+    });
+}
+
+/// 죽은 pid 의 shell handle 을 `attempt` 회차로 저장한다. 보통 존재하지 않는 큰 PID 를 쓴다.
+fn put_dead_handle(ctx: &RunnerContext, attempt: &str) {
+    let mut v = serde_json::json!({"kind": "shell_process", "data": {"pid": 0xFFFF_FFFEu32}});
+    v[HANDLE_ATTEMPT_FIELD] = attempt.into();
+    put(ctx, &handle_key("p"), v);
+}
+
+fn put(ctx: &RunnerContext, key: &str, v: serde_json::Value) {
+    ctx.with_memory(|mem| {
+        mem.put(
+            HOST_OWNER,
+            &Scope::Workspace(1),
+            key,
+            &MemoryValue::Json(v),
+            &PutOpts::default(),
+        )
+        .unwrap();
+    });
+}
+
+fn handle_left(ctx: &RunnerContext) -> bool {
+    ctx.with_memory(|mem| mem.get(&Scope::Workspace(1), &handle_key("p")).unwrap())
+        .is_some()
+}
+
+#[test]
+fn a_late_restart_report_from_an_earlier_attempt_leaves_the_retried_run_alone() {
+    let (_td, ctx) = ctx();
+    retried_to_second_attempt(&ctx);
+
+    // 죽은 pid: 옛 회차의 handle 은 지우되 p#2 를 끝내지 않는다.
+    put_dead_handle(&ctx, "p#1");
+    purge_and_reload_on_restart(&ctx, 1);
+    assert_eq!(
+        state(&ctx),
+        TaskState::Running,
+        "p#1 의 복구 보고가 p#2 를 끝냈다"
+    );
+    assert!(!handle_left(&ctx));
+
+    // 저장된 실행 결과: 같은 규칙.
+    put_dead_handle(&ctx, "p#1");
+    put(
+        &ctx,
+        &run_result_key("p"),
+        serde_json::json!({"kind": "failed", "error": "old run"}),
+    );
+    purge_and_reload_on_restart(&ctx, 1);
+    assert_eq!(
+        state(&ctx),
+        TaskState::Running,
+        "p#1 의 저장 결과가 p#2 를 끝냈다"
+    );
+    assert!(!handle_left(&ctx));
+
+    // 지금 회차의 handle 은 그대로 보고한다.
+    put_dead_handle(&ctx, "p#2");
+    purge_and_reload_on_restart(&ctx, 1);
+    assert!(matches!(state(&ctx), TaskState::Failed { .. }));
+    let attempt = with_store(&ctx, |s| s.get(1, &"p".into()).unwrap().unwrap().attempt);
+    assert_eq!(attempt.expect("attempt").id, "p#2");
 }

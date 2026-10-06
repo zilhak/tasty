@@ -34,6 +34,9 @@ use tasty_memory::{HOST_OWNER, MemoryStorage, MemoryValue, PutOpts, Scope};
 /// 재시작 뒤 실행 중인 작업을 복원할 workspace별 handle 키. 즉시 끝나는 handle은 저장하지 않는다.
 pub(crate) const HANDLE_KEY_PREFIX: &str = "tasty.agent.handle.";
 
+/// 저장한 handle 레코드에서 dispatch 회차 id 를 담는 키. handle 의 `kind`·`data` 옆에 둔다.
+pub(crate) const HANDLE_ATTEMPT_FIELD: &str = "attempt_id";
+
 pub(crate) fn handle_key(task_id: &str) -> String {
     format!("{HANDLE_KEY_PREFIX}{task_id}")
 }
@@ -343,7 +346,14 @@ impl HostExecutor {
 
     /// Started를 반환하기 전에 실행 handle을 저장한다. workspace는 handle에 없을 수 있어 별도로 받는다.
     /// 즉시 종료 handle은 저장하지 않으며 저장 실패는 로그를 남긴다.
-    fn persist_handle(&mut self, ws: u32, task_id: &TaskId, handle: &DispatchHandle) {
+    /// `attempt` 는 이 dispatch 가 만들 v2 회차다. 재시작 복구가 이 회차로 보고해 다른 회차를 끝내지 않는다.
+    fn persist_handle(
+        &mut self,
+        ws: u32,
+        task_id: &TaskId,
+        handle: &DispatchHandle,
+        attempt: Option<&str>,
+    ) {
         if matches!(
             handle,
             DispatchHandle::ReduceImmediate(_)
@@ -353,7 +363,12 @@ impl HostExecutor {
             return;
         }
         let value = match serde_json::to_value(handle) {
-            Ok(v) => MemoryValue::Json(v),
+            Ok(mut v) => {
+                if let (Some(attempt), Some(obj)) = (attempt, v.as_object_mut()) {
+                    obj.insert(HANDLE_ATTEMPT_FIELD.into(), attempt.into());
+                }
+                MemoryValue::Json(v)
+            }
             Err(e) => {
                 tracing::warn!("persist handle {task_id} serialize: {e}");
                 return;
@@ -511,7 +526,9 @@ impl TaskExecutor for HostExecutor {
         };
         let result = match dispatch_result {
             Ok(h) => {
-                self.persist_handle(task.workspace_id, &task.id, &h);
+                // dispatch 직후 Running 전이가 만들 회차다.
+                let attempt = tasty_agent::task::attempt::next_attempt(task, 0).map(|a| a.id);
+                self.persist_handle(task.workspace_id, &task.id, &h, attempt.as_deref());
                 DispatchOutcome::Started(h)
             }
             Err(e) => DispatchOutcome::PermanentFail(e),
@@ -1019,7 +1036,7 @@ mod tests {
         let (_td, ctx) = fresh_ctx();
         let mut exec = HostExecutor::new(ctx.clone());
         let handle = DispatchHandle::ShellProcess { pid: 4242 };
-        exec.persist_handle(1, &"t-test".to_string(), &handle);
+        exec.persist_handle(1, &"t-test".to_string(), &handle, None);
 
         let loaded: Option<DispatchHandle> = ctx.with_memory(|mem| {
             let entry = mem
@@ -1035,6 +1052,30 @@ mod tests {
             DispatchHandle::ShellProcess { pid } => assert_eq!(pid, 4242),
             other => panic!("expected ShellProcess, got {other:?}"),
         }
+    }
+
+    /// 회차 id 는 handle 옆에 저장되고, handle 을 읽는 쪽은 그 키를 무시한다.
+    #[test]
+    fn a_persisted_handle_keeps_its_attempt_and_still_reads_back() {
+        let (_td, ctx) = fresh_ctx();
+        let mut exec = HostExecutor::new(ctx.clone());
+        let handle = DispatchHandle::ShellProcess { pid: 4242 };
+        exec.persist_handle(1, &"t-test".to_string(), &handle, Some("t-test#3"));
+
+        let raw = ctx.with_memory(|mem| {
+            mem.get(&Scope::Workspace(1), &handle_key("t-test"))
+                .unwrap()
+                .unwrap()
+                .value
+        });
+        let MemoryValue::Json(raw) = raw else {
+            panic!("handle is json");
+        };
+        assert_eq!(raw[HANDLE_ATTEMPT_FIELD], "t-test#3");
+        assert!(matches!(
+            load_dispatch_handle(&ctx, 1, "t-test"),
+            Some(DispatchHandle::ShellProcess { pid: 4242 })
+        ));
     }
 
     #[test]
@@ -1056,7 +1097,7 @@ mod tests {
         ];
         for (i, h) in immediates.into_iter().enumerate() {
             let id = format!("t-im-{i}");
-            exec.persist_handle(1, &id, &h);
+            exec.persist_handle(1, &id, &h, None);
             let present: bool = ctx.with_memory(|mem| {
                 mem.get(&Scope::Workspace(1), &handle_key(&id))
                     .map(|v| v.is_some())
@@ -2171,7 +2212,7 @@ mod tests {
         let mut exec = HostExecutor::new(ctx.clone());
         let task_id = "t-evict".to_string();
         let handle = mk_polled("fake.poll");
-        exec.persist_handle(1, &task_id, &handle);
+        exec.persist_handle(1, &task_id, &handle, None);
         let present_before: bool = ctx.with_memory(|mem| {
             mem.get(&Scope::Workspace(1), &handle_key(&task_id))
                 .map(|v| v.is_some())

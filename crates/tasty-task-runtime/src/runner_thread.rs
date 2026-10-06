@@ -20,8 +20,8 @@ use tasty_agent::{TaskId, TaskState, TaskStore};
 use tasty_memory::{HOST_OWNER, ListOpts, MemoryValue, Scope};
 
 use super::runner_host::{
-    HANDLE_KEY_PREFIX, HostExecutor, RunnerContext, evict_run_result, evict_task_side_keys,
-    handle_key, load_run_result,
+    HANDLE_ATTEMPT_FIELD, HANDLE_KEY_PREFIX, HostExecutor, RunnerContext, evict_run_result,
+    evict_task_side_keys, handle_key, load_run_result,
 };
 use tasty_agent::runner::PollOutcome;
 
@@ -439,16 +439,18 @@ fn reload_persistent_handles(
         mem.list(&scope, &opts).unwrap_or_default()
     });
     let mut alive: Vec<(TaskId, DispatchHandle)> = Vec::new();
-    let mut dead: Vec<(TaskId, String)> = Vec::new();
+    let mut dead: Vec<(TaskId, Option<String>, String)> = Vec::new();
     let mut stale: Vec<TaskId> = Vec::new();
-    let mut precise: Vec<(TaskId, PollOutcome)> = Vec::new();
+    let mut precise: Vec<(TaskId, Option<String>, PollOutcome)> = Vec::new();
 
     for e in entries {
         match classify_persisted_handle(ctx, workspace_id, now, e) {
             HandleClassification::Alive(task_id, handle) => alive.push((task_id, handle)),
-            HandleClassification::Dead(task_id, err) => dead.push((task_id, err)),
+            HandleClassification::Dead(task_id, attempt, err) => dead.push((task_id, attempt, err)),
             HandleClassification::Stale(task_id) => stale.push(task_id),
-            HandleClassification::Precise(task_id, outcome) => precise.push((task_id, outcome)),
+            HandleClassification::Precise(task_id, attempt, outcome) => {
+                precise.push((task_id, attempt, outcome))
+            }
         }
     }
 
@@ -468,11 +470,12 @@ fn reload_persistent_handles(
     alive
 }
 
+/// `Dead`·`Precise` 의 회차는 handle 을 저장한 dispatch 의 회차다(v1·옛 레코드는 없음).
 enum HandleClassification {
     Alive(TaskId, DispatchHandle),
-    Dead(TaskId, String),
+    Dead(TaskId, Option<String>, String),
     Stale(TaskId),
-    Precise(TaskId, PollOutcome),
+    Precise(TaskId, Option<String>, PollOutcome),
 }
 
 /// handle별 정리 계획을 만든다. 저장소 변경은 분류를 모은 뒤 별도 함수에서 수행한다.
@@ -490,6 +493,10 @@ fn classify_persisted_handle(
     let MemoryValue::Json(v) = e.value else {
         return HandleClassification::Stale(task_id);
     };
+    let attempt = v
+        .get(HANDLE_ATTEMPT_FIELD)
+        .and_then(|a| a.as_str())
+        .map(str::to_string);
     let handle: DispatchHandle = match serde_json::from_value(v) {
         Ok(h) => h,
         Err(e) => {
@@ -517,10 +524,11 @@ fn classify_persisted_handle(
             if tasty_agent::platform::process_alive::is_alive(*pid) {
                 HandleClassification::Alive(task_id, handle)
             } else if let Some(outcome) = load_run_result(ctx, workspace_id, &task_id) {
-                HandleClassification::Precise(task_id, outcome)
+                HandleClassification::Precise(task_id, attempt, outcome)
             } else {
                 HandleClassification::Dead(
                     task_id,
+                    attempt,
                     format!("host restart: pid {pid} died (exit_code unknown)"),
                 )
             }
@@ -529,6 +537,7 @@ fn classify_persisted_handle(
         DispatchHandle::AwaitExternal { deadline_ms, .. } if *deadline_ms <= now => {
             HandleClassification::Dead(
                 task_id,
+                attempt,
                 "host restart: push completion strategy deadline already expired".to_string(),
             )
         }
@@ -563,10 +572,10 @@ fn mark_dead_tasks(
     workspace_id: u32,
     scope: &Scope,
     now: u64,
-    dead: &[(TaskId, String)],
+    dead: &[(TaskId, Option<String>, String)],
 ) {
-    for (task_id, err) in dead {
-        let completion = Completion::failed(None, err.clone());
+    for (task_id, attempt, err) in dead {
+        let completion = Completion::failed(attempt.clone(), err.clone());
         if record_reload_completion(ctx, workspace_id, task_id, completion, now) {
             evict_handle(ctx, scope, task_id);
         }
@@ -609,12 +618,12 @@ fn finalize_precise_tasks(
     workspace_id: u32,
     scope: &Scope,
     now: u64,
-    precise: &[(TaskId, PollOutcome)],
+    precise: &[(TaskId, Option<String>, PollOutcome)],
 ) {
-    for (task_id, outcome) in precise {
+    for (task_id, attempt, outcome) in precise {
         let completion = match outcome {
-            PollOutcome::Done(r) => Completion::succeeded(None, r.clone()),
-            PollOutcome::Failed(err) => Completion::failed(None, err.clone()),
+            PollOutcome::Done(r) => Completion::succeeded(attempt.clone(), r.clone()),
+            PollOutcome::Failed(err) => Completion::failed(attempt.clone(), err.clone()),
             // 저장된 결과가 종결이 아니면 이전처럼 handle 만 지운다.
             PollOutcome::Active => {
                 evict_handle(ctx, scope, task_id);
