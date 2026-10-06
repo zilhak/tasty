@@ -590,8 +590,9 @@ cargo clippy --workspace --all-targets \
 
 ### GUI 테스트를 실행하고 해석하는 조건
 
-`multi_window_owner_routing`은 헤드리스 전체 실행에서 skip한다. 헤드리스에서
-`window.create`를 지원하지 않기 때문이다. 같은 잡의 관측용 GUI/Xvfb 단계가 실행하지만
+`multi_window_owner_routing`은 `gui` feature 조합에서만 컴파일된다. 헤드리스에서
+`window.create`와 `window.list`를 지원하지 않기 때문이다. 그래서 `--skip` 없이 실행한 헤드리스
+`e2e_tests`에도 이 시험이 들어가지 않는다. 헤드리스 전체 실행의 `--skip`은 워크플로에 그대로 남아 있다. 같은 잡의 관측용 GUI/Xvfb 단계가 실행하지만
 `continue-on-error: true`이므로 실패가 잡을 차단하지 않는다. 차단 검사로 승격할 때는
 러너의 Xvfb 가용성과 연속 성공 기록을 확인한다. 필요한 연속 횟수 N은 아직 정하지 않았다.
 
