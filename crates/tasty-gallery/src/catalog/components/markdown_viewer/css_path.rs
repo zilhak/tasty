@@ -7,8 +7,11 @@ use tasty_type_appearance::theme::Theme;
 use super::rich;
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
+/// 대응 한 줄: 왼쪽 이름 · 토큰 이름 · 그 색을 읽는 함수.
+type MapEntry = (&'static str, &'static str, fn(&Theme) -> HexColor);
+
 /// CSS 변수 → Tasty 토큰. 렌더러 `theme_css`의 색 변수 중 시안 Meta가 다루는 것.
-const CSS_VARS: &[(&str, &str, fn(&Theme) -> HexColor)] = &[
+const CSS_VARS: &[MapEntry] = &[
     ("--md-fg", "text-secondary", Theme::text_secondary),
     ("--md-strong", "text-primary", Theme::text_primary),
     ("--md-link", "accent-primary", Theme::accent_primary),
@@ -17,7 +20,7 @@ const CSS_VARS: &[(&str, &str, fn(&Theme) -> HexColor)] = &[
 ];
 
 /// highlight.js 역할 → 팔레트 색. 렌더러 `hljs_css`와 같은 순서다.
-const HLJS_ROLES: &[(&str, &str, fn(&Theme) -> HexColor)] = &[
+const HLJS_ROLES: &[MapEntry] = &[
     ("keyword", "mauve", |t| t.mauve),
     ("string", "green", |t| t.green),
     ("title / function", "blue", |t| t.blue),
