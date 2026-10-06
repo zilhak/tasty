@@ -1661,25 +1661,10 @@ impl Theme {
     pub fn modhint_section_gap(&self) -> LogicalPx {
         self.spacing_md
     }
-    /// 섹션 내부 행 사이 간격 (6px). `--tasty-modhint-row-gap`.
-    #[inline]
-    pub fn modhint_row_gap(&self) -> LogicalPx {
-        LogicalPx((6.0 * self.ui_zoom).round())
-    }
     /// 빈 조합 섹션은 채워진 섹션보다 간격을 좁게 해 불필요한 높이를 줄인다.
     #[inline]
     pub fn modhint_empty_row_gap(&self) -> LogicalPx {
         LogicalPx((3.0 * self.ui_zoom).round())
-    }
-    /// 빈 조합 안내 행의 최소 높이.
-    #[inline]
-    pub fn modhint_empty_row_min_height(&self) -> LogicalPx {
-        LogicalPx((20.0 * self.ui_zoom).round())
-    }
-    /// 코너 리사이즈 그립 크기 (12px). `--tasty-modhint-grip-size` → `--tasty-icon-size-xs`.
-    #[inline]
-    pub fn modhint_grip_size(&self) -> LogicalPx {
-        self.icon_glyph_size_xs
     }
     /// 패널 배경 (불투명 — 라이브 출력 위). `--tasty-modhint-bg` → `bg-panel`.
     #[inline]

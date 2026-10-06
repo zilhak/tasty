@@ -179,10 +179,10 @@ modifier-hint는 보조키를 누르는 동안 유지되며 키보드 포커스 
 | `--tasty-modhint-strip-height` | → `size-28` (= item-height-interactive) | `modhint_strip_height()` | 드래그 스트립 높이 |
 | `--tasty-modhint-pad` | → 10px | `modhint_pad()` | 스크롤 리스트 안쪽 패딩 |
 | `--tasty-modhint-section-gap` | → `space-md` (12) | `modhint_section_gap()` | 섹션 사이 |
-| `--tasty-modhint-row-gap` | → 6px | `modhint_row_gap()` | 섹션 내부 행 사이 |
+| `--tasty-modhint-row-gap` | → `size-6` (6px) | `modhint_row_gap()` (생성) | 섹션 내부 행 사이 |
 | `--tasty-modhint-empty-row-gap` | → 3px | `modhint_empty_row_gap()` | 빈 조합 섹션 내부 간격(채워진 6px보다 좁게, §6-5). 디자인은 인라인 px(`.mh-section--empty{gap:3px}`) — 코드에서 토큰화 |
-| `--tasty-modhint-empty-row-min-height` | → 20px | `modhint_empty_row_min_height()` | 빈 조합 플레이스홀더 행 최소 높이(키캡 행 24px보다 타이트). 디자인 인라인 px(`.mh-empty{min-height:20px}`) — 코드에서 토큰화 |
-| `--tasty-modhint-grip-size` | → `icon-size-xs` (12) | `modhint_grip_size()` | 코너 리사이즈 그립 |
+| `--tasty-modhint-empty-row-min-height` | → `size-20` (20px) | `modhint_empty_row_min_height()` (생성) | 빈 조합 플레이스홀더 행 최소 높이(키캡 행 24px보다 타이트) |
+| `--tasty-modhint-grip-size` | → `icon-size-xs` (12) | `modhint_grip_size()` (생성) | 코너 리사이즈 그립 |
 | `--tasty-modhint-grip-fg` | → `border-strong` | `modhint_grip_fg()` | 코너 그립 대각선 두 획의 색. 본체와 갤러리가 `tasty_ui_widgets::modhint_resize_grip` 으로 시안 SVG(`M11 5 5 11M11 9 9 11`, 12 상자, 오른쪽·아래 2 안쪽)를 그린다. 안쪽 2 는 대응 토큰이 없어 border-width 두 배다 |
 | `--tasty-modhint-bg` | → `bg-panel` (불투명) | `modhint_bg()` | 라이브 출력 위 불투명 셸 |
 | `--tasty-modhint-border` | → `border-strong` | `modhint_border()` | 1px 셸 보더 |
@@ -447,7 +447,7 @@ max 를 이긴다(트리거가 320 보다 넓으면 트리거를 따른다). 행
 
 디자인 시스템의 DTCG 토큰과 Rust `Theme` 필드, 그리고 실제 `th.*`/`theme.*` 호출처를 잇는 매핑 참조. [theme.md](theme.md) 의 토큰 구조를 호출처 관점에서 보충한다.
 
-> **vendor 상태**: DTCG 토큰 파일은 `crates/tasty-design-tokens/dtcg/tasty.tokens.json` 으로 **vendor 되어 있다** (974 토큰 = primitive 134 / semantic 154 / component 686 — 수는 `crates/tasty-design-tokens/tests/freshness.rs` 가 고정). 치수 계열은 `crates/tasty-design-tokens/src/generated/` 에 const 로 생성되고 freshness·정합·색 드리프트 테스트가 CI 에서 일치를 강제한다. vendor 갱신 절차는 `crates/tasty-design-tokens/README.md`. **component tier(치수+색)는 `&Theme` 접근자로 생성돼**(`tasty-type-appearance/src/generated_component.rs`, [theme.md](theme.md) "Component tier 접근자") `tasty-ui-widgets` 위젯과 host chrome(`src/adapters/ui/`)이 소비 중.
+> **vendor 상태**: DTCG 토큰 파일은 `crates/tasty-design-tokens/dtcg/tasty.tokens.json` 으로 **vendor 되어 있다** (1011 토큰 = primitive 136 / semantic 158 / component 717 — 수는 `crates/tasty-design-tokens/tests/freshness.rs` 가 고정). 치수 계열은 `crates/tasty-design-tokens/src/generated/` 에 const 로 생성되고 freshness·정합·색 드리프트 테스트가 CI 에서 일치를 강제한다. vendor 갱신 절차는 `crates/tasty-design-tokens/README.md`. **component tier(치수+색)는 `&Theme` 접근자로 생성돼**(`tasty-type-appearance/src/generated_component.rs`, [theme.md](theme.md) "Component tier 접근자") `tasty-ui-widgets` 위젯과 host chrome(`src/adapters/ui/`)이 소비 중.
 
 ### 구조 모델
 

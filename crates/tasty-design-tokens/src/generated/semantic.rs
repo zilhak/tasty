@@ -13,6 +13,12 @@ pub const ATTENTION_RANK_COMPLETION: f32 = 10.0;
 /// `semantic.attention-rank-needs-input` = 30
 pub const ATTENTION_RANK_NEEDS_INPUT: f32 = 30.0;
 
+/// `semantic.border-dash` → `{primitive.size-4}` = 4px
+pub const BORDER_DASH: LogicalPx = super::primitive::SIZE_4;
+
+/// `semantic.border-dash-gap` → `{primitive.size-4}` = 4px
+pub const BORDER_DASH_GAP: LogicalPx = super::primitive::SIZE_4;
+
 /// `semantic.border-width` → `{primitive.size-1}` = 1px
 pub const BORDER_WIDTH: LogicalPx = super::primitive::SIZE_1;
 

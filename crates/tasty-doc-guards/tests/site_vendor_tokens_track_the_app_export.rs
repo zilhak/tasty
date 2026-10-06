@@ -21,7 +21,45 @@ const TIERS: [(&str, &str); 3] = [
 
 /// 사이트에 반영하지 못한 토큰을 이름별로 기록한다. 개수만 같고 이름이 달라져도 실패한다.
 /// 갱신된 토큰은 목록에서 제거한다. 반영을 미루며 항목을 추가하려면 커밋 메시지에 사유를 적는다.
-const LAGGING: &[(&str, &str)] = &[];
+const LAGGING: &[(&str, &str)] = &[
+    ("primitive", "size-20"),
+    ("primitive", "size-40"),
+    ("semantic", "accent-data"),
+    ("semantic", "accent-route"),
+    ("semantic", "border-dash"),
+    ("semantic", "border-dash-gap"),
+    ("component", "dag-edge-binding"),
+    ("component", "dag-edge-dash-binding"),
+    ("component", "dag-edge-dash-transition"),
+    ("component", "dag-edge-selected-width"),
+    ("component", "dag-edge-transition"),
+    ("component", "explorer-error-fg"),
+    ("component", "explorer-favorites-hide-below"),
+    ("component", "explorer-min-height"),
+    ("component", "image-handle-size"),
+    ("component", "image-path-row-gap"),
+    ("component", "image-popup-btn-gap"),
+    ("component", "image-popup-gap"),
+    ("component", "image-popup-pad-top"),
+    ("component", "image-popup-pad-x"),
+    ("component", "image-popup-title-font-size"),
+    ("component", "image-popup-title-weight"),
+    ("component", "image-popup-width"),
+    ("component", "image-size-input-width"),
+    ("component", "image-zoom-font-size"),
+    ("component", "image-zoom-min-width"),
+    ("component", "modhint-empty-row-min-height"),
+    ("component", "modhint-grip-inset"),
+    ("component", "modhint-grip-size"),
+    ("component", "modhint-row-font-size"),
+    ("component", "modhint-row-gap"),
+    ("component", "modhint-row-min-height"),
+    ("component", "popup-content-margin"),
+    ("component", "search-bar-border"),
+    ("component", "toast-stack-offset-bottom-settings"),
+    ("component", "trigger-menu-max-height"),
+    ("component", "trigger-menu-min-width"),
+];
 
 /// 빈 결과끼리 비교해 통과하지 않도록 토큰 수 하한을 둔다.
 /// 앱 818·사이트 791개를 측정했을 때 수집 실패를 찾을 수 있도록 그보다 낮게 정한 값이다.
