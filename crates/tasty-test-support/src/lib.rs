@@ -181,4 +181,21 @@ pub mod strip_env_keys {
         "ANTHROPIC_API_KEY",
         "MY_CLAUDECODE",
     ];
+
+    #[cfg(test)]
+    mod tests {
+        use std::ffi::OsString;
+
+        use super::{KEPT, STRIPPED};
+        use tasty_utils::process::env_keys_to_strip;
+
+        /// 공용 판정이 Claude Code 세션 키와 CMUX_* 는 고르고 사용자 설정·TASTY_*·일반 키는 남긴다.
+        #[test]
+        fn claude_session_and_cmux_keys_are_stripped_but_others_are_kept() {
+            let all = STRIPPED.iter().chain(KEPT).map(OsString::from);
+            let picked = env_keys_to_strip(all);
+            let expected: Vec<OsString> = STRIPPED.iter().map(OsString::from).collect();
+            assert_eq!(picked, expected);
+        }
+    }
 }
