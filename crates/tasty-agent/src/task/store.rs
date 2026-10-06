@@ -242,13 +242,6 @@ impl<'a> TaskStore<'a> {
             }
         }
 
-        if let Some(c) = &contract {
-            contract::check_contract(c, &command, &on_failure, |id| {
-                existing.iter().find(|t| &t.id == id)
-            })
-            .map_err(|f| AgentError::TypeContract(Box::new(f)))?;
-        }
-
         let mut new_task = Task {
             id: id.clone(),
             workspace_id,
@@ -265,11 +258,16 @@ impl<'a> TaskStore<'a> {
             reserved_for_fallback: false,
             contract,
             typed_result: None,
+            graph_id: None,
+            input_snapshot: None,
         };
+        contract::check_task(&new_task, "", |id| existing.iter().find(|t| &t.id == id))
+            .map_err(|f| AgentError::TypeContract(Box::new(f)))?;
 
+        let inactive = self.inactive_task_ids(workspace_id, &existing)?;
         existing.push(new_task.clone());
         {
-            let graph = TaskGraph::build(&existing);
+            let graph = TaskGraph::build(&existing).with_inactive(inactive);
             graph.detect_cycles()?;
             if let Some(state) = graph.evaluate_readiness(&new_task.id) {
                 new_task.state = state;
@@ -452,7 +450,10 @@ impl<'a> TaskStore<'a> {
             return Ok(None);
         };
         let all_now = self.list(workspace_id)?;
-        let Some(target) = TaskGraph::build(&all_now).evaluate_readiness(fb_id) else {
+        let Some(target) = self
+            .readiness_graph(workspace_id, &all_now)?
+            .evaluate_readiness(fb_id)
+        else {
             return Ok(None);
         };
         if target == TaskState::Waiting || !is_valid_transition(&fb.state, &target) {
@@ -515,7 +516,13 @@ impl<'a> TaskStore<'a> {
             .ok_or_else(|| AgentError::TaskNotFound(id.clone()))?;
         if let Some(c) = &task.contract {
             // v2 는 보고된 결과를 계약으로 확정하고, v1 형식 필드에는 그 투영을 둔다.
-            let typed = contract::finalize_result(&task, c, &result);
+            let mut typed = contract::finalize_result(&task, c, &result);
+            // 입력 해석에 실패해 실행하지 않았다면 실패 단계는 input 이다.
+            if result.error.is_some()
+                && let Some(failure) = task.input_snapshot.as_ref().and_then(|s| s.failure.clone())
+            {
+                typed.error = Some(failure);
+            }
             task.result = Some(contract::project_v1(&typed));
             task.typed_result = Some(typed);
         } else {
@@ -546,7 +553,7 @@ impl<'a> TaskStore<'a> {
         // BFS 순서대로: 각 단계마다 최신 상태로 다시 list/build.
         for d_id in downstream_ids {
             let all_now = self.list(workspace_id)?;
-            let graph = TaskGraph::build(&all_now);
+            let graph = self.readiness_graph(workspace_id, &all_now)?;
             let d_task = match self.get(workspace_id, &d_id)? {
                 Some(t) => t,
                 None => continue,
@@ -620,13 +627,16 @@ impl<'a> TaskStore<'a> {
         task.finished_at = None;
         task.result = None;
         task.typed_result = None;
+        task.input_snapshot = None;
         self.put(&task)?;
 
         // readiness 즉시 평가 — deps 가 이미 종결(예: 여전히 실패/skip 상태)이면 이 자리에서
         // 곧장 Skipped 로 되돌아갈 수 있다. set_state 를 거치지 않는 직접-put 이므로, 그
         // terminal 타임스탬프 기록을 여기서 재현한다(cascade_downstream 과 동일 이유).
         let all = self.list(workspace_id)?;
-        if let Some(next) = TaskGraph::build(&all).evaluate_readiness(id)
+        if let Some(next) = self
+            .readiness_graph(workspace_id, &all)?
+            .evaluate_readiness(id)
             && next != TaskState::Waiting
         {
             let is_terminal = next.is_terminal();
@@ -653,6 +663,7 @@ impl<'a> TaskStore<'a> {
                     d.finished_at = None;
                     d.result = None;
                     d.typed_result = None;
+                    d.input_snapshot = None;
                     self.put(&d)?;
                 }
             }
@@ -718,6 +729,7 @@ impl<'a> TaskStore<'a> {
         for t_id in &targets {
             self.delete(workspace_id, t_id)?;
         }
+        self.prune_graph_records(workspace_id)?;
         Ok(TaskDeleteReport { deleted: targets })
     }
 
@@ -786,9 +798,82 @@ impl<'a> TaskStore<'a> {
         for id in &plan.deleted {
             self.delete(workspace_id, id)?;
         }
-        Ok(())
+        self.prune_graph_records(workspace_id)
     }
 }
+
+impl TaskStore<'_> {
+    /// 활성화 레코드가 없는 그래프의 task id.
+    pub(super) fn inactive_task_ids(
+        &self,
+        workspace_id: WorkspaceId,
+        tasks: &[Task],
+    ) -> Result<HashSet<TaskId>> {
+        let scope = Scope::Workspace(workspace_id);
+        let mut active: std::collections::HashMap<&str, bool> = Default::default();
+        let mut out = HashSet::new();
+        for t in tasks {
+            let Some(gid) = t.graph_id.as_deref() else {
+                continue;
+            };
+            let is_active = match active.get(gid) {
+                Some(a) => *a,
+                None => {
+                    let a = self.mem.get(&scope, &graph_key(gid)?)?.is_some();
+                    active.insert(gid, a);
+                    a
+                }
+            };
+            if !is_active {
+                out.insert(t.id.clone());
+            }
+        }
+        Ok(out)
+    }
+
+    /// readiness 평가용 그래프. 활성화되지 않은 그래프의 task 는 대기로 둔다.
+    pub(super) fn readiness_graph<'t>(
+        &self,
+        workspace_id: WorkspaceId,
+        tasks: &'t [Task],
+    ) -> Result<TaskGraph<'t>> {
+        Ok(TaskGraph::build(tasks).with_inactive(self.inactive_task_ids(workspace_id, tasks)?))
+    }
+
+    /// 실행 직전에 해석한 입력을 기록한다. 원본 계약과 command 는 바꾸지 않는다.
+    pub fn set_input_snapshot(
+        &mut self,
+        workspace_id: WorkspaceId,
+        id: &TaskId,
+        snapshot: super::binding::InputSnapshot,
+    ) -> Result<Task> {
+        let mut task = self
+            .get(workspace_id, id)?
+            .ok_or_else(|| AgentError::TaskNotFound(id.clone()))?;
+        if !task.is_typed() {
+            return Err(AgentError::InvalidArgument(format!(
+                "task {id} is not a typed task; it has no input snapshot"
+            )));
+        }
+        task.input_snapshot = Some(snapshot);
+        self.put(&task)?;
+        Ok(task)
+    }
+}
+
+#[cfg(test)]
+impl TaskStore<'_> {
+    pub(super) fn memory(&self) -> &dyn MemoryStorage {
+        &*self.mem
+    }
+}
+
+pub(super) fn graph_key(graph_id: &str) -> Result<String> {
+    crate::component_key(super::TASK_GRAPH_KEY_PREFIX, "graph id", graph_id)
+}
+
+mod graph_submit;
+pub use graph_submit::*;
 
 fn decode_v1_record(value: MemoryValue, label: &str) -> Result<Task> {
     let MemoryValue::Json(v) = value else {

@@ -2011,6 +2011,8 @@ fn dag_task(id: &str, depends_on: &[&str], created_at: u64) -> Task {
         reserved_for_fallback: false,
         contract: None,
         typed_result: None,
+        graph_id: None,
+        input_snapshot: None,
     }
 }
 

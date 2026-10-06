@@ -25,6 +25,8 @@ fn task(id: &str, command: TaskCommand, contract: Option<TaskContract>) -> Task 
         reserved_for_fallback: false,
         contract,
         typed_result: None,
+        graph_id: None,
+        input_snapshot: None,
     }
 }
 
@@ -56,9 +58,8 @@ fn v2() -> TaskContract {
 }
 
 fn checked(c: &TaskContract, command: &TaskCommand, others: &[Task]) -> Result<(), TaskFailure> {
-    check_contract(c, command, &OnFailure::Abort, |id| {
-        others.iter().find(|t| &t.id == id)
-    })
+    let t = task("t", command.clone(), Some(c.clone()));
+    check_task(&t, "", |id| others.iter().find(|t| &t.id == id))
 }
 
 #[test]
@@ -117,9 +118,8 @@ fn inputs_without_bindings_must_be_fully_defaulted() {
     }));
     let e = checked(&required, &custom(), &[]).unwrap_err();
     assert_eq!(e.stage, FailureStage::Input);
-    let te = e.type_error.expect("type error");
-    assert_eq!(te.kind, TypeErrorKind::MissingField);
-    assert_eq!(te.path, "/input/requirement");
+    assert_eq!(e.location.as_deref(), Some("/bindings/requirement"));
+    assert!(e.message.contains("no binding or default"), "{}", e.message);
 
     let defaulted = contract(json!({
         "contract_version": 2,

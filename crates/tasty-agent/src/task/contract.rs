@@ -6,8 +6,9 @@
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::Value;
 
+use super::binding::{InputBinding, InputMapping};
 use super::types::{FieldSchema, TypeDefs, TypeError, TypeKind, TypeSchema, TypedValue};
 use super::{OnFailure, ReducerStrategy, Task, TaskCommand, TaskId, TaskResult};
 
@@ -35,6 +36,12 @@ pub struct TaskContract {
     /// reduce `merge_json` 전용. 같은 키에 다른 값이 오면 어떻게 할지. 생략하면 오류.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub merge_conflict: Option<MergeConflict>,
+    /// 입력 object 필드별 값의 출처. source task 는 데이터 의존성이 된다.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub bindings: BTreeMap<String, InputBinding>,
+    /// 검증된 입력을 실행 인자로 넘기는 자리.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_mapping: Option<InputMapping>,
 }
 
 /// `merge_json` 의 동일 키 충돌 정책.
@@ -236,6 +243,9 @@ pub struct TaskFailure {
     pub task_id: Option<TaskId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub type_error: Option<TypeError>,
+    /// 제출한 정의 안의 오류 위치(JSON Pointer, 예: `/tasks/1/bindings/count`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub location: Option<String>,
 }
 
 impl TaskFailure {
@@ -245,6 +255,7 @@ impl TaskFailure {
             message: message.into(),
             task_id: None,
             type_error: None,
+            location: None,
         }
     }
 
@@ -258,6 +269,7 @@ impl TaskFailure {
             message,
             task_id,
             type_error: Some(e),
+            location: None,
         }
     }
 }
@@ -306,20 +318,6 @@ pub fn check_contract<'a>(
     defs.check_schema_at(&output, "/output_schema")
         .map_err(typed)?;
 
-    // 입력 binding 은 아직 없다. 상수 입력이 없으므로 기본값만으로 입력이 채워져야 한다.
-    let empty = match defs.resolve(&input).map_err(typed)?.kind {
-        TypeKind::Object { .. } => json!({}),
-        _ => Value::Null,
-    };
-    defs.validate(&input, &empty).map_err(|mut e| {
-        if e.path.is_empty() {
-            e.path = "/input".into();
-        } else {
-            e.path = format!("/input{}", e.path);
-        }
-        TaskFailure::typed(FailureStage::Input, None, e)
-    })?;
-
     if let OnFailure::Fallback {
         inline: Some(_), ..
     } = on_failure
@@ -365,6 +363,80 @@ pub fn check_contract<'a>(
         TaskCommand::Custom { .. } => {}
         TaskCommand::Reduce { inputs, strategy } => {
             check_reduce(&defs, &output, declared, inputs, strategy, &lookup)?;
+        }
+    }
+    Ok(())
+}
+
+/// 생성할 v2 task 하나를 검사한다. 계약, 입력 binding·mapping, 그리고 다른 task 와의
+/// 관계(데이터 입력과 실패 정책)를 본다. `lookup` 은 같은 그래프에서 함께 만드는 task 와
+/// 기존 task 를 찾는다. `at` 은 오류 위치의 접두사다.
+pub fn check_task<'a>(
+    task: &Task,
+    at: &str,
+    lookup: impl Fn(&TaskId) -> Option<&'a Task>,
+) -> Result<(), TaskFailure> {
+    let Some(contract) = &task.contract else {
+        return Ok(());
+    };
+    let locate = |mut f: TaskFailure, loc: &str| {
+        if f.location.is_none() {
+            f.location = Some(format!("{at}{loc}"));
+        }
+        if f.task_id.is_none() {
+            f.task_id = Some(task.id.clone());
+        }
+        f
+    };
+    check_contract(contract, &task.command, &task.on_failure, &lookup)
+        .map_err(|f| locate(f, ""))?;
+    super::binding::check_inputs(&task.id, contract, &task.command, at, &lookup)?;
+
+    let data_sources: Vec<&TaskId> = contract
+        .bindings
+        .values()
+        .filter_map(|b| match b {
+            InputBinding::FromTask { source, .. } => Some(&source.from_task),
+            _ => None,
+        })
+        .collect();
+    if !data_sources.is_empty() && matches!(task.on_failure, OnFailure::ContinueDownstream) {
+        return Err(locate(
+            contract_error(
+                "continue_downstream cannot run a task whose input producer failed; the input would have no value",
+            ),
+            "/on_failure",
+        ));
+    }
+    // 순서 의존성(depends_on)은 main 이 실패해도 fallback 성공으로 진행하지만, main 의
+    // 출력을 읽는 binding 에는 값이 없다. 값 출처를 명시하지 않은 이 조합은 거절한다.
+    for dep in &task.depends_on {
+        let Some(main) = lookup(dep) else { continue };
+        if let OnFailure::Fallback { task: Some(fb), .. } = &main.on_failure
+            && data_sources.contains(&dep)
+        {
+            return Err(locate(
+                contract_error(format!(
+                    "task {}: depends_on {dep} accepts its fallback {fb}, but a binding reads {dep}'s own output, \
+                     which does not exist when the fallback ran; bind with one_of [{dep}, {fb}] instead",
+                    task.id
+                )),
+                "/bindings",
+            ));
+        }
+    }
+    if let OnFailure::Fallback { task: Some(fb), .. } = &task.on_failure {
+        match lookup(fb) {
+            Some(t) if t.is_typed() => {}
+            Some(_) => {
+                return Err(locate(
+                    contract_error(format!(
+                        "fallback {fb} is a v1 task; a v2 fallback must be a typed task declared up front"
+                    )),
+                    "/on_failure/task",
+                ));
+            }
+            None => {}
         }
     }
     Ok(())

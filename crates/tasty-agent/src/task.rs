@@ -278,6 +278,13 @@ pub struct Task {
     /// v2 결과. `result` 에는 같은 결과의 v1 형식 투영을 둔다.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub typed_result: Option<TypedResult>,
+    /// 그래프로 함께 제출된 task 의 그래프 id. 그 그래프의 활성화 레코드가 저장되기
+    /// 전에는 실행 대상이 되지 않는다([`TASK_GRAPH_KEY_PREFIX`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub graph_id: Option<String>,
+    /// 마지막 실행 직전에 해석한 v2 입력. 원본 정의(계약·command)와 따로 둔다.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_snapshot: Option<InputSnapshot>,
 }
 
 impl Task {
@@ -298,6 +305,13 @@ pub(super) const TYPED_TASK_KEY_PREFIX: &str = "tasty.agent.typed_task.";
 /// v2 레코드 envelope 의 형식 표지. 레코드를 v1 namespace 로 옮겨도 v1 `Task` 의
 /// 필수 필드가 없어 실행 레코드로 읽히지 않는다.
 pub const TYPED_TASK_RECORD_FORMAT: &str = "tasty.task/v2";
+
+/// 그래프 활성화 레코드의 memory 키 접두사. 레코드가 있으면 그 그래프의 task 가 실행
+/// 대상이 된다. 레코드 하나를 쓰는 것으로 그래프 전체가 한 번에 활성화된다.
+pub(super) const TASK_GRAPH_KEY_PREFIX: &str = "tasty.agent.task_graph.";
+
+/// 그래프 활성화 레코드의 형식 표지.
+pub const TASK_GRAPH_RECORD_FORMAT: &str = "tasty.task_graph/v1";
 
 pub(super) fn task_key(id: &TaskId) -> crate::Result<String> {
     crate::component_key(TASK_KEY_PREFIX, "task id", id)
@@ -337,12 +351,16 @@ pub(super) fn apply_on_failure(task: &Task, _all: &[Task]) -> Option<TaskState> 
     match &task.on_failure {
         OnFailure::Abort => Some(TaskState::Skipped),
         OnFailure::ContinueDownstream => Some(TaskState::Ready),
+        // v2 의 fallback 은 자기 실행 실패에만 적용한다. 선행이 실패해 실행하지 못하는
+        // task 는 영구 대기로 남기지 않고 skip 한다.
+        OnFailure::Fallback { .. } if task.is_typed() => Some(TaskState::Skipped),
         // Fallback은 호스트가 fallback task를 별도 트리거해야 함. 본 task는 일단
         // Waiting을 유지하고, fallback이 Succeed하면 그때 호스트가 다시 평가.
         OnFailure::Fallback { .. } => None,
     }
 }
 
+pub mod binding;
 pub mod contract;
 pub mod dag;
 mod graph;
@@ -350,6 +368,7 @@ mod record;
 mod store;
 pub mod types;
 
+pub use binding::{InputBinding, InputMapping, InputSnapshot};
 pub use contract::{TaskContract, TypedResult};
 pub use dag::{DagStateCounts, DagSummary, group_tasks_into_dags};
 pub use graph::*;
@@ -362,3 +381,7 @@ mod tests;
 #[cfg(test)]
 #[path = "task/typed_store_tests.rs"]
 mod typed_store_tests;
+
+#[cfg(test)]
+#[path = "task/graph_submit_tests.rs"]
+mod graph_submit_tests;

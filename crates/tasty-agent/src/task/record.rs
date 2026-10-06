@@ -8,6 +8,7 @@
 
 use serde::Deserialize;
 
+use super::binding::{InputSnapshot, InputSnapshotWire};
 use super::contract::TypedResultWire;
 use super::{
     OnFailure, Task, TaskCommand, TaskContract, TaskId, TaskResult, TaskState, TypedResult,
@@ -40,6 +41,10 @@ pub(crate) struct TaskWire {
     contract: Option<TaskContract>,
     #[serde(default)]
     typed_result: Option<TypedResultWire>,
+    #[serde(default)]
+    graph_id: Option<String>,
+    #[serde(default)]
+    input_snapshot: Option<InputSnapshotWire>,
 }
 
 impl TryFrom<TaskWire> for Task {
@@ -62,7 +67,19 @@ impl TryFrom<TaskWire> for Task {
             reserved_for_fallback,
             contract,
             typed_result,
+            graph_id,
+            input_snapshot,
         } = wire;
+        let input_snapshot = match (input_snapshot, &contract) {
+            (None, _) => None,
+            (Some(s), Some(c)) => Some(
+                InputSnapshot::from_wire(s, &c.defs(), &c.input_schema())
+                    .map_err(|e| format!("task {id}: stored input: {e}"))?,
+            ),
+            (Some(_), None) => {
+                return Err(format!("task {id}: input_snapshot without a contract"));
+            }
+        };
         let typed_result = match (typed_result, &contract) {
             (None, _) => None,
             (Some(r), Some(c)) => Some(
@@ -89,6 +106,8 @@ impl TryFrom<TaskWire> for Task {
             reserved_for_fallback,
             contract,
             typed_result,
+            graph_id,
+            input_snapshot,
         })
     }
 }

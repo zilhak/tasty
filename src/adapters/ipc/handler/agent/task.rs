@@ -1212,6 +1212,8 @@ mod graph_edge_tests {
             reserved_for_fallback: false,
             contract: None,
             typed_result: None,
+            graph_id: None,
+            input_snapshot: None,
         }
     }
 
@@ -1383,6 +1385,8 @@ mod state_filter_tests {
             reserved_for_fallback: false,
             contract: None,
             typed_result: None,
+            graph_id: None,
+            input_snapshot: None,
         }
     }
 

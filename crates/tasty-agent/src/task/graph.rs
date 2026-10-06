@@ -2,11 +2,25 @@
 
 use std::collections::{HashMap, HashSet};
 
+use super::binding::InputBinding;
 use super::{OnFailure, Task, TaskCommand, TaskId, TaskState};
 use crate::{AgentError, Result};
 
 pub struct TaskGraph<'a> {
     tasks: HashMap<&'a TaskId, &'a Task>,
+    /// 활성화 레코드가 없는 그래프의 task. 실행 대상이 되지 않는다.
+    inactive: HashSet<TaskId>,
+}
+
+/// v2 binding 이 읽는 source task id. 값을 받는 데이터 의존성이다.
+pub fn binding_task_ids(task: &Task) -> Vec<&TaskId> {
+    let Some(c) = &task.contract else {
+        return Vec::new();
+    };
+    c.bindings
+        .values()
+        .flat_map(|b| b.sources().iter().map(|s| &s.from_task))
+        .collect()
 }
 
 impl<'a> TaskGraph<'a> {
@@ -15,7 +29,17 @@ impl<'a> TaskGraph<'a> {
         for t in tasks {
             map.insert(&t.id, t);
         }
-        Self { tasks: map }
+        Self {
+            tasks: map,
+            inactive: HashSet::new(),
+        }
+    }
+
+    /// 아직 활성화되지 않은 그래프의 task 를 지정한다. 이 task 는 readiness 평가에서
+    /// 항상 대기다.
+    pub fn with_inactive(mut self, inactive: HashSet<TaskId>) -> Self {
+        self.inactive = inactive;
+        self
     }
 
     /// 사이클 검출. 발견 시 `Err(DependencyCycle)`.
@@ -52,13 +76,16 @@ impl<'a> TaskGraph<'a> {
             }
             // 옛 Reduce 레코드의 없는 참조가 무관한 작업 생성까지 막지 않도록
             // 존재하는 입력만 순회한다. 신규 참조 검증은 TaskStore::create가 담당한다.
-            if let TaskCommand::Reduce { inputs, .. } = &task.command {
-                for dep in inputs {
-                    let Some((dep_ref, _)) = self.tasks.get_key_value(dep) else {
-                        continue;
-                    };
-                    self.visit_cycle_edge(dep_ref, color, stack)?;
-                }
+            // binding source 도 같은 이유로 존재하는 것만 본다.
+            let reduce_inputs = match &task.command {
+                TaskCommand::Reduce { inputs, .. } => inputs.iter().collect(),
+                _ => Vec::new(),
+            };
+            for dep in reduce_inputs.into_iter().chain(binding_task_ids(task)) {
+                let Some((dep_ref, _)) = self.tasks.get_key_value(dep) else {
+                    continue;
+                };
+                self.visit_cycle_edge(dep_ref, color, stack)?;
             }
         }
         color.insert(node, 2);
@@ -85,12 +112,13 @@ impl<'a> TaskGraph<'a> {
     }
 
     /// `task_id`의 직접 downstream (이 task에 의존하는 task들).
-    /// `depends_on` 뿐 아니라 `Reduce.inputs` 도 암묵적 의존성으로 취급한다.
+    /// `depends_on` 뿐 아니라 `Reduce.inputs` 와 v2 binding source 도 의존성으로 취급한다.
     pub fn downstream_of(&self, task_id: &TaskId) -> Vec<TaskId> {
         let mut out = Vec::new();
         for (id, t) in &self.tasks {
             let is_dep = t.depends_on.iter().any(|d| d == task_id)
-                || matches!(&t.command, TaskCommand::Reduce { inputs, .. } if inputs.iter().any(|d| d == task_id));
+                || matches!(&t.command, TaskCommand::Reduce { inputs, .. } if inputs.iter().any(|d| d == task_id))
+                || binding_task_ids(t).contains(&task_id);
             if is_dep {
                 out.push((*id).clone());
             }
@@ -138,6 +166,44 @@ impl<'a> TaskGraph<'a> {
         })
     }
 
+    /// binding 은 값을 읽으므로 source 자신의 성공이 필요하다. fallback 의 성공은 main
+    /// 의 출력을 대신하지 않는다. one_of 는 모든 source 가 종결된 뒤 성공한 것을 쓴다.
+    /// 반환: `None` 대기, `Some(true)` 값을 받을 수 없음, `Some(false)` 준비됨.
+    fn data_inputs_failed(&self, task: &Task) -> Option<bool> {
+        let Some(c) = &task.contract else {
+            return Some(false);
+        };
+        let mut failed = false;
+        for (field, binding) in &c.bindings {
+            match binding {
+                InputBinding::Literal(_) => {}
+                InputBinding::FromTask { source, .. } => {
+                    match &self.tasks.get(&source.from_task)?.state {
+                        TaskState::Succeeded => {}
+                        s if s.is_terminal() => failed = true,
+                        _ => return None,
+                    }
+                }
+                InputBinding::OneOf { sources, .. } => {
+                    let mut succeeded = 0;
+                    for s in sources {
+                        let state = &self.tasks.get(&s.from_task)?.state;
+                        if !state.is_terminal() {
+                            return None;
+                        }
+                        if matches!(state, TaskState::Succeeded) {
+                            succeeded += 1;
+                        }
+                    }
+                    if succeeded == 0 && !super::binding::field_may_be_absent(c, field) {
+                        failed = true;
+                    }
+                }
+            }
+        }
+        Some(failed)
+    }
+
     /// `task_id`의 의존성 상태를 평가해 `Ready`로 진행 가능한지 판단.
     /// 반환:
     /// - `Some(TaskState::Ready)` — 모든 dep Succeeded
@@ -146,9 +212,11 @@ impl<'a> TaskGraph<'a> {
     pub fn evaluate_readiness(&self, task_id: &TaskId) -> Option<TaskState> {
         let task = self.tasks.get(task_id)?;
 
-        if self.dormant_as_pending_fallback(task_id) {
+        if self.inactive.contains(task_id) || self.dormant_as_pending_fallback(task_id) {
             return None;
         }
+
+        let data_failed = self.data_inputs_failed(task)?;
 
         // Reduce는 실패 결과도 합성하므로 성공 여부와 무관하게 모든 입력의 종결을 기다린다.
         if let TaskCommand::Reduce { inputs, .. } = &task.command {
@@ -161,9 +229,13 @@ impl<'a> TaskGraph<'a> {
         }
 
         if task.depends_on.is_empty() {
-            return Some(TaskState::Ready);
+            return Some(if data_failed {
+                TaskState::Skipped
+            } else {
+                TaskState::Ready
+            });
         }
-        let mut any_failed = false;
+        let mut any_failed = data_failed;
         for dep_id in &task.depends_on {
             let dep = self.tasks.get(dep_id)?;
             match &dep.state {
@@ -215,9 +287,9 @@ impl<'a> TaskGraph<'a> {
 }
 
 /// `task` 하나가 참조하는 다른 task id 전체 — `depends_on` ∪
-/// `OnFailure::Fallback.task` ∪ `TaskCommand::Reduce.inputs`. `Fallback.inline`
-/// 은 생성 시점에 대상이 아직 존재하지 않는 게 정상(실패 전이 시 동적 생성)
-/// 이므로 제외한다.
+/// `OnFailure::Fallback.task` ∪ `TaskCommand::Reduce.inputs` ∪ v2 binding source.
+/// `Fallback.inline` 은 생성 시점에 대상이 아직 존재하지 않는 게 정상(실패 전이 시
+/// 동적 생성)이므로 제외한다.
 pub fn referenced_task_ids(task: &Task) -> Vec<TaskId> {
     let mut out = task.depends_on.clone();
     if let OnFailure::Fallback {
@@ -229,6 +301,7 @@ pub fn referenced_task_ids(task: &Task) -> Vec<TaskId> {
     if let TaskCommand::Reduce { inputs, .. } = &task.command {
         out.extend(inputs.iter().cloned());
     }
+    out.extend(binding_task_ids(task).into_iter().cloned());
     out
 }
 
