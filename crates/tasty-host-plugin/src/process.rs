@@ -800,8 +800,9 @@ fn build_plugin_command(
     log_clone: std::fs::File,
 ) -> io::Result<(Command, Option<mpsc::Receiver<HandleStream>>)> {
     let mut cmd = launch::command(package)?;
-    // Windows GUI 서브시스템 호스트가 콘솔 서브시스템 플러그인 바이너리를
-    // spawn 할 때 빈 콘솔 창이 뜨는 것을 막는다 (비-Windows 에서는 no-op).
+    // Windows 에서 콘솔 서브시스템 플러그인 바이너리를 콘솔 없이 실행한다. GUI 서브시스템 호스트에서는
+    // 빈 콘솔 창이 뜨지 않고, 콘솔 서브시스템 헤드리스 호스트에서도 자식이 호스트 콘솔을 함께 쓰지 않는다.
+    // 자식 stdio 는 로그 파일로 보낸다. 비-Windows 에서는 no-op.
     tasty_utils::process::hide_console(&mut cmd);
     // 플러그인 수명을 호스트에 결박: spawn *전* 준비(Linux PDEATHSIG pre_exec /
     // macOS TASTY_HOST_PID env 주입). Windows assign 은 spawn *후*(adopt).
