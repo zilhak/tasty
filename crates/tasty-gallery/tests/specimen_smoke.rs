@@ -238,3 +238,43 @@ fn layout_shell_specimen_은_헤드리스로_렌더된다() {
     let theme = tasty_themes::mocha_fallback();
     run_frames(|ui| prim_layout_shell::draw(ui, &theme));
 }
+
+#[test]
+fn 시안에서_옮긴_결정_specimen_은_id_충돌_없이_렌더된다() {
+    use tasty_gallery::catalog::components::{dag, file_picker, remote};
+    use tasty_gallery::catalog::{
+        components_settled, foundations_settled, layouts_settled, overlays_settled, plugins_settled,
+    };
+    let theme = tasty_themes::mocha_fallback();
+    let specs: [(
+        &str,
+        fn(&mut egui::Ui, &tasty_type_appearance::theme::Theme),
+    ); 20] = [
+        ("shadows", foundations_settled::draw_shadows),
+        ("half-pixel", foundations_settled::draw_half_pixel),
+        ("tint", foundations_settled::draw_tint),
+        ("structural", foundations_settled::draw_structural),
+        ("one-keycap", components_settled::draw_one_keycap),
+        ("glyph-sizes", components_settled::draw_glyph_sizes),
+        ("dot-family", components_settled::draw_dot_family),
+        ("mixed-split", layouts_settled::draw_mixed_split),
+        ("attention-scale", layouts_settled::draw_attention_scale),
+        ("profile-form", remote::draw_profile_form),
+        ("generic-passkey", remote::draw_generic_passkey_forms),
+        ("path-fold", file_picker::draw_path_fold),
+        ("plugin-identity", overlays_settled::draw_plugin_identity),
+        ("diff-toolbar", overlays_settled::draw_diff_toolbar),
+        ("drag-handles", overlays_settled::draw_drag_handles),
+        ("spinner-hero", chrome_loading::draw_spinner_hero),
+        ("dag-window", dag::window::draw),
+        ("doc-background", plugins_settled::draw_doc_background),
+        ("address-states", plugins_settled::draw_address_states),
+        (
+            "md-large-file",
+            tasty_gallery::catalog::components::md_large_file::draw,
+        ),
+    ];
+    for (label, draw) in specs {
+        assert_no_id_clash(label, |ui| draw(ui, &theme));
+    }
+}
