@@ -467,6 +467,12 @@ impl JournalWorker {
 impl Drop for JournalWorker {
     fn drop(&mut self) {
         self.stop();
+        // 시험이 멈춘 worker로 판정했다. join하면 실패 대신 그 자리에서 멈춘다.
+        #[cfg(test)]
+        if self.thread_probe.is_abandoned() {
+            drop(self.thread.take());
+            return;
+        }
         if let Some(thread) = self.thread.take()
             && thread.join().is_err()
         {

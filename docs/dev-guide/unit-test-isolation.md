@@ -262,9 +262,9 @@ CI 는 `.github/workflows/crossplatform-check.yml` 의 `check-headless` 잡이 �
   않는다. 응답을 잃었거나 잠금을 기다리며 멈춘 worker는 잠들어 있으므로 그대로 10초 안에
   실패한다. 쉬지 않고 도는 worker는 벽시계 상한 300초로 잡는다. worker 상태는 Linux의
   `/proc/<pid>/task/<tid>/stat` 에서만 읽고, 다른 OS에서는 쉰 시간을 모두 센다.
-  - 한계: 정체 판정이 패닉을 내도 `JournalWorker` 의 Drop이 worker를 join하므로, worker가 실제로
-    멈춘 경우 시험은 실패로 끝나지 않고 그 자리에서 멈춘다. 판정 메시지는 `--nocapture` 로 실행해야
-    바로 보인다.
+  - 정체로 판정하면 패닉 전에 그 worker를 버린다고 표시한다. `JournalWorker` 의 Drop은 평소
+    worker를 join하는데, 표시가 있으면 join하지 않고 스레드를 떼어 낸다. 그래서 멈춘 worker가
+    있어도 시험은 그 자리에서 걸리지 않고 실패로 끝난다.
 - **타임아웃 상향은 처방이 아니다** — 발생 빈도만 낮추고(확률 저감) 부하가 그 상한을 넘는
   날 다시 깨진다. 근거는 [유닛 테스트 격리](unit-test-isolation.md).
 

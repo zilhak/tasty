@@ -10,6 +10,8 @@
 //!
 //! worker 상태는 Linux에서만 읽는다. 다른 OS에서는 쉰 시간을 모두 센다.
 //! 끝없이 도는 worker는 잠들지 않으므로 [`StallBudget::CEILING`]의 벽시계 상한으로 잡는다.
+//! 정체로 판정하면 패닉 전에 worker를 버린다고 표시한다. 그래야 풀리는 중의 Drop이 멈춘
+//! worker를 join하지 않고 시험이 실패로 끝난다.
 
 use std::time::{Duration, Instant};
 
@@ -50,6 +52,7 @@ impl StallBudget {
     /// [`Self::nap`]과 같다. 실패 메시지의 상태 덤프는 실패할 때만 만든다.
     pub(super) fn nap_with(&mut self, what: impl FnOnce() -> String) {
         if self.idle >= Self::IDLE_LIMIT {
+            self.worker.abandon();
             panic!(
                 "{} stalled: the journal worker slept {:?} without progress",
                 what(),
@@ -57,6 +60,7 @@ impl StallBudget {
             );
         }
         if self.started.elapsed() >= Self::CEILING {
+            self.worker.abandon();
             panic!(
                 "{} stalled: still waiting after {:?} although the journal worker was busy",
                 what(),

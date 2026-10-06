@@ -4,13 +4,20 @@
 //! 기다리는 시간까지 세면 같은 디스크를 쓰는 다른 프로세스의 fsync 지연이 교착처럼 보인다.
 //! 스레드 상태는 Linux의 `/proc/<pid>/task/<tid>/stat`에서만 읽는다. 다른 OS에서는 항상
 //! 모름으로 답하고, 호출자는 쉰 시간을 모두 정체로 센다.
+//!
+//! 정체로 판정한 시험은 worker를 버린다고 표시한다. 멈춘 worker를 Drop에서 join하면 시험이
+//! 실패로 끝나지 않고 그 자리에서 멈추기 때문이다.
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 
-/// worker 스레드의 상태 파일 경로. worker가 시작하며 한 번 기록한다.
+/// worker 스레드의 상태 파일 경로와 버림 표시. worker가 시작하며 경로를 한 번 기록한다.
 #[derive(Clone, Default)]
-pub(crate) struct ThreadProbe(Arc<OnceLock<PathBuf>>);
+pub(crate) struct ThreadProbe {
+    stat: Arc<OnceLock<PathBuf>>,
+    abandoned: Arc<AtomicBool>,
+}
 
 impl ThreadProbe {
     /// 지금 스레드를 이 probe가 볼 스레드로 기록한다. worker 스레드 첫머리에서 부른다.
@@ -19,7 +26,7 @@ impl ThreadProbe {
         match std::fs::read_link("/proc/thread-self") {
             Ok(link) => {
                 let path = PathBuf::from("/proc").join(link).join("stat");
-                if self.0.set(path).is_err() {
+                if self.stat.set(path).is_err() {
                     tracing::warn!("journal worker thread probe was bound twice");
                 }
             }
@@ -30,13 +37,24 @@ impl ThreadProbe {
     /// worker가 실행 중(R)이거나 끊을 수 없는 대기(D, 대개 디스크 I/O)에 있으면 true.
     /// 잠든 상태, 끝난 스레드, 상태를 읽을 수 없는 OS는 false다.
     pub(crate) fn is_working(&self) -> bool {
-        let Some(path) = self.0.get() else {
+        let Some(path) = self.stat.get() else {
             return false;
         };
         match std::fs::read_to_string(path) {
             Ok(stat) => matches!(state_of(&stat), Some('R' | 'D')),
             Err(_) => false,
         }
+    }
+}
+
+impl ThreadProbe {
+    /// 시험이 이 worker를 정체로 판정했다. 이후 Drop은 worker를 join하지 않는다.
+    pub(crate) fn abandon(&self) {
+        self.abandoned.store(true, Ordering::Release);
+    }
+
+    pub(crate) fn is_abandoned(&self) -> bool {
+        self.abandoned.load(Ordering::Acquire)
     }
 }
 
@@ -73,7 +91,7 @@ mod tests {
             // 잠든 상태(S)로 머문다.
             park_rx.recv().ok();
         });
-        while probe.0.get().is_none() {
+        while probe.stat.get().is_none() {
             std::thread::yield_now();
         }
         assert!(probe.is_working(), "spinning thread is R");
