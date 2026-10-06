@@ -185,7 +185,9 @@ Jekyll/Hugo/Obsidian/Zettlr 등에서 흔히 붙이는 메타데이터 블록이
 일반 인용문의 왼쪽 막대는 `md_quote_bar_width()`(2px, `selection_edge_width`를 가리키는 hairline)를
 CSS 변수 `--md-quote-bar-w`로 받아 그린다. 접지 않는 콜아웃은 `<blockquote>`라 같은 규칙을 이어받아
 2px다. 접는 콜아웃(`<details>`)도 `--md-quote-bar-w`를 읽어 같은 두께로 그린다. 막대 색은 콜아웃
-종류별 강조색이다.
+종류별 강조색이다. 종류별 규칙(`alert_css`)은 `border-left-color`만 정하므로, details 규칙은 막대를
+`border-left-width`·`border-left-style`로 나눠 쓴다. `border-left` 축약을 쓰면 색이 currentColor로
+돌아가고, 선택자 특이성이 더 높아 종류별 색을 덮는다.
 
 ## 콜아웃 (GFM alert + Obsidian 확장 타입)
 

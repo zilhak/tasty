@@ -1684,7 +1684,7 @@ tr:nth-child(even){{background:var(--md-zebra);}}
 blockquote{{border-left:var(--md-quote-bar-w) solid var(--md-quote-bar);margin:0.5em 0;padding:0.1em var(--md-space-md);opacity:0.9;}}
 blockquote[class^="markdown-alert-"]{{opacity:1;border-radius:var(--md-radius);padding:var(--md-space-sm) var(--md-space-md);}}
 blockquote[class^="markdown-alert-"]::before{{content:attr(data-label);display:block;font-weight:600;margin-bottom:var(--md-space-xs);padding-left:22px;background-repeat:no-repeat;background-position:left center;background-size:16px 16px;}}
-details[class^="markdown-alert-"]{{border-radius:var(--md-radius);padding:var(--md-space-sm) var(--md-space-md);border-left:var(--md-quote-bar-w) solid;}}
+details[class^="markdown-alert-"]{{border-radius:var(--md-radius);padding:var(--md-space-sm) var(--md-space-md);border-left-width:var(--md-quote-bar-w);border-left-style:solid;}}
 details[class^="markdown-alert-"]>summary{{cursor:pointer;font-weight:600;}}
 details[class^="markdown-alert-"]>summary::before{{content:"";display:inline-block;width:16px;height:16px;margin-right:6px;vertical-align:middle;background-repeat:no-repeat;background-position:center;background-size:16px 16px;}}
 details[class^="markdown-alert-"][open]>summary{{margin-bottom:var(--md-space-xs);}}
@@ -3255,11 +3255,119 @@ mod tests {
         let css = stylesheet_of_a_rendered_document();
         assert!(
             css.contains(
-                r#"details[class^="markdown-alert-"]{border-radius:var(--md-radius);padding:var(--md-space-sm) var(--md-space-md);border-left:var(--md-quote-bar-w) solid;}"#
+                r#"details[class^="markdown-alert-"]{border-radius:var(--md-radius);padding:var(--md-space-sm) var(--md-space-md);border-left-width:var(--md-quote-bar-w);border-left-style:solid;}"#
             ),
             "접히는 콜아웃의 왼쪽 막대는 --md-quote-bar-w 를 읽어야 한다"
         );
         assert!(!css.contains("calc(var(--md-border-w) * 3)"));
+    }
+
+    /// 단순 선택자(태그·클래스·`[class^=..]`, 결합자·의사 클래스 없음)가 요소에 맞으면
+    /// (클래스·속성 수, 태그 수) 특이성을 돌려준다.
+    fn simple_selector_specificity(sel: &str, tag: &str, class: &str) -> Option<(u32, u32)> {
+        let sel = sel.trim();
+        if sel.is_empty() || sel.contains([' ', '>', '+', '~', ':', '#']) {
+            return None;
+        }
+        let name_end = sel.find(['.', '[']).unwrap_or(sel.len());
+        let name = &sel[..name_end];
+        let mut tags = 0;
+        if !name.is_empty() && name != "*" {
+            if name != tag {
+                return None;
+            }
+            tags = 1;
+        }
+        let mut classes = 0;
+        let mut rest = &sel[name_end..];
+        while !rest.is_empty() {
+            if let Some(r) = rest.strip_prefix('.') {
+                let end = r.find(['.', '[']).unwrap_or(r.len());
+                if &r[..end] != class {
+                    return None;
+                }
+                classes += 1;
+                rest = &r[end..];
+            } else if let Some(r) = rest.strip_prefix("[class^=\"") {
+                let end = r.find("\"]")?;
+                if !class.starts_with(&r[..end]) {
+                    return None;
+                }
+                classes += 1;
+                rest = &r[end + 2..];
+            } else {
+                return None;
+            }
+        }
+        Some((classes, tags))
+    }
+
+    /// 문서 `<style>` 들에 CSS 캐스케이드(특이성, 같으면 뒤 규칙)를 적용해 요소의
+    /// `border-left-color` 계산값을 구한다. 색을 생략한 `border-left` 축약은 currentColor 로 센다.
+    fn computed_border_left_color(html: &str, tag: &str, class: &str) -> Option<String> {
+        let mut best: Option<((u32, u32), usize, String)> = None;
+        let mut order = 0;
+        for style in html.split("<style>").skip(1) {
+            let css = style.split("</style>").next().unwrap_or("");
+            for rule in css.split('}') {
+                let Some((selectors, body)) = rule.split_once('{') else {
+                    continue;
+                };
+                let Some(spec) = selectors
+                    .split(',')
+                    .filter_map(|s| simple_selector_specificity(s, tag, class))
+                    .max()
+                else {
+                    continue;
+                };
+                for decl in body.split(';') {
+                    let Some((prop, value)) = decl.split_once(':') else {
+                        continue;
+                    };
+                    let value = value.trim();
+                    let color = match prop.trim() {
+                        "border-left-color" | "border-color" => value.to_string(),
+                        "border-left" | "border" => value
+                            .split_whitespace()
+                            .find(|v| v.starts_with('#') || v.starts_with("var(--md-quote-bar)"))
+                            .unwrap_or("currentColor")
+                            .to_string(),
+                        _ => continue,
+                    };
+                    order += 1;
+                    if best
+                        .as_ref()
+                        .is_none_or(|(s, o, _)| (spec, order) >= (*s, *o))
+                    {
+                        best = Some((spec, order, color));
+                    }
+                }
+            }
+        }
+        best.map(|(_, _, c)| c)
+    }
+
+    /// 접힌 콜아웃의 막대도 종류별 강조색이다. details 규칙이 축약으로 색을 currentColor 로
+    /// 되돌리면 특이성이 높아 종류별 색을 덮는다.
+    #[test]
+    fn foldable_callout_bar_takes_the_kind_colour() {
+        let html = stylesheet_of_a_rendered_document();
+        let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
+        for kind in CALLOUT_KINDS {
+            let hex = (kind.accent)(&theme).to_hex();
+            assert_eq!(
+                computed_border_left_color(&html, "details", kind.class).as_deref(),
+                Some(hex.as_str()),
+                "접힌 {} 콜아웃 막대",
+                kind.class
+            );
+            assert_eq!(
+                computed_border_left_color(&html, "blockquote", kind.class).as_deref(),
+                Some(hex.as_str()),
+                "펼친 {} 콜아웃 막대",
+                kind.class
+            );
+        }
     }
 
     #[test]
