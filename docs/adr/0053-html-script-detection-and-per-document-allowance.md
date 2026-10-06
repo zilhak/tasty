@@ -150,6 +150,9 @@ OS별 구현은 다음과 같다.
     - 게이트 로드가 끝나면(`gate_finished`) provisional 시작 대기 표시도 내린다. provisional 시작 없이 끝난 로드 뒤에 오는 다른 provisional 시작을 세대로 기록하지 않기 위해서다. 그래서 위 구간에 앞 로드의 종료가 오면 새 로드는 세대 없이 진행하고, 그 로드의 종료는 모두 현재 로드로 본다.
     - 기록한 `WKNavigation`은 다음 로드가 시작할 때까지 붙잡아 둔다. 같은 주소가 다른 navigation에 다시 쓰여 앞 로드의 종료가 현재 세대로 보이는 일을 막는다.
     - 실기 측정 없이 구현했다. 이 머신에는 macOS용 C 컴파일러가 없어 macOS 코드를 컴파일하지 못했다.
+  - chrome의 `NavState::Failed` 전이도 같은 세대 판정을 따른다. 앞 로드의 늦은 실패가 chrome만 Failed로 두고 게이트는 새 로드를 계속하는 어긋난 상태를 막는다. Windows는 `NavigationCompleted` 실패, macOS는 `didFailNavigation`·`didFailProvisionalNavigation`이 대상이다. 실기 측정은 하지 않았다.
+    - web process 종료(Windows `ProcessFailed`의 렌더러·브라우저 종료, macOS `webViewWebContentProcessDidTerminate:`)는 세대와 관계없이 Failed로 둔다. 종료 신호에는 navigation이 없고 화면 문서를 잃었기 때문이다.
+    - Linux는 세대를 기록하지 않는다. `load_uri`로 앞 로드를 취소하면 앞 로드의 `load-failed`("Load request cancelled")와 `FINISHED`가 새 로드의 navigation 결정과 `STARTED`보다 먼저 왔다. 그래서 새 로드의 `STARTED`가 Failed를 Loading으로 되돌리고 새 로드는 Done으로 끝났다(측정: FIFO `file://` 로드를 걸어 둔 채 다른 파일로 바꾸기 2회, WebKitGTK 2.50.4).
 
 ### 배너 표시 시점
 
