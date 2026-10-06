@@ -435,7 +435,7 @@ pub fn draw_extension_mapping(ui: &mut egui::Ui, theme: &Theme) {
             ),
             ("confirm", "none — both edit the draft, Cancel reverts"),
             (
-                "pending (2026-10-06 b2)",
+                "pending",
                 "after Remove / Reset, before Save: the header stays; the pressed button becomes Undo (ghost sm, same slot); a Tag disabled says what Save does — \"removed on save\" / \"reset on save\"",
             ),
             (
@@ -454,7 +454,6 @@ pub fn draw_extension_mapping(ui: &mut egui::Ui, theme: &Theme) {
                 "Save / Cancel",
                 "Save applies (removed group disappears, Reset button disappears); Cancel reverts every pending header",
             ),
-            ("row height", "settings-row-min-height"),
         ],
         &[
             TokenChip::new(
@@ -462,13 +461,13 @@ pub fn draw_extension_mapping(ui: &mut egui::Ui, theme: &Theme) {
                 "disabled ink",
                 theme.state_disabled_fg().to_egui(),
             ),
-            TokenChip::new(
-                "separator",
-                "row divider",
-                theme.separator.to_egui_premultiplied(),
-            ),
             TokenChip::without_color("settings-row-min-height", "row"),
         ],
+    );
+    spec::note(
+        ui,
+        theme,
+        "The body draws each detector row at settings-row-min-height with a separator rule under it, and a separator under a not-installed header (extension_mapping.rs); the kit Meta lists neither.",
     );
 }
 
@@ -751,7 +750,7 @@ pub fn draw_hook_handlers(ui: &mut egui::Ui, theme: &Theme) {
                 "편집 Input 대신 mono 한 줄 요약(스텝을 → 로 이음)",
             ),
             (
-                "sequence editing (2026-10-06 b2)",
+                "sequence editing",
                 "Edit (ghost sm) on EVERY IpcSequence row (host / plugin edits save as a user override, like ShellCommand) → opens the inline text editor below",
             ),
             (
