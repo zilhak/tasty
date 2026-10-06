@@ -102,4 +102,40 @@ mod tests {
             .port();
         refuse_this_instance(false, port, None).expect("not asked");
     }
+
+    /// 판정 요청에는 신원이 필요 없으므로, 부모 Tasty의 토큰을 상속한 GUI에서도 `system.info`에
+    /// `session_token`을 싣지 않는다. 실으면 원격이 모르는 토큰이라 거절해 기존 워크스페이스
+    /// attach까지 막힌다. 이 시험만 `TASTY_SESSION_TOKEN`을 둔 자식 프로세스로 다시 실행한다.
+    #[test]
+    fn the_self_check_does_not_carry_the_inherited_session_token() {
+        const CHILD: &str = "TASTY_TEST_INHERITED_TOKEN_CHILD";
+        if std::env::var_os(CHILD).is_none() {
+            let status = std::process::Command::new(std::env::current_exe().expect("exe"))
+                .args([
+                    "--exact",
+                    "self_instance::tests::the_self_check_does_not_carry_the_inherited_session_token",
+                    "--nocapture",
+                    "--test-threads=1",
+                ])
+                .env(CHILD, "1")
+                .env("TASTY_SESSION_TOKEN", "ab".repeat(32))
+                .status()
+                .expect("child");
+            assert!(status.success(), "child run failed: {status}");
+            return;
+        }
+        assert_eq!(
+            std::env::var("TASTY_SESSION_TOKEN").expect("inherited"),
+            "ab".repeat(32)
+        );
+        let (port, server) = serve_once(serde_json::json!({ "instance_id": "another-instance" }));
+        refuse_this_instance(true, port, None).expect("not this instance");
+        let request: serde_json::Value =
+            serde_json::from_str(server.join().expect("server").trim()).expect("json");
+        assert_eq!(request["method"], "system.info");
+        assert!(
+            request.get("session_token").is_none(),
+            "self check carried a session token: {request}"
+        );
+    }
 }

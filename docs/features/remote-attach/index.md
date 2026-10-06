@@ -282,7 +282,7 @@ Auto 체인이 전 단계 실패하면 가장 확정적인 분류(취소 > 타�
 
 ### 원격 요청의 세션 토큰
 
-세션 토큰(`TASTY_SESSION_TOKEN`)은 그 프로세스를 띄운 로컬 Tasty의 `session.issue`가 발급하므로 다른 인스턴스는 모른다. 원격 인스턴스로 보내는 IPC 요청(브라우징의 `workspace.list`·`attach.list`, 원격 워크스페이스 생성의 `workspace.create`, `remote check`의 `system.info`)에는 세션 토큰을 싣지 않는다. Tasty 안의 터미널에서 띄운 GUI·CLI가 부모 Tasty의 토큰을 상속해도 원격은 토큰 없는 요청으로 받는다. 원격 쪽 권한 경계는 SSH 접속이다. attach 채널도 토큰을 싣지 않는다(아래 비-목표). 원격·GUI 경로는 로컬 세션 토큰을 보내지 않는다. GUI의 원격 요청은 사용자 조작이므로 `--ssh 127.0.0.1:<port>` loopback 직결로 같은 머신의 인스턴스(토큰을 발급한 부모 인스턴스 포함)를 대상으로 해도 토큰 없는 요청으로 보낸다.
+세션 토큰(`TASTY_SESSION_TOKEN`)은 그 프로세스를 띄운 로컬 Tasty의 `session.issue`가 발급하므로 다른 인스턴스는 모른다. 원격 인스턴스로 보내는 IPC 요청(브라우징의 `workspace.list`·`attach.list`, 원격 워크스페이스 생성의 `workspace.create`, `remote check`의 `system.info`, SSH 터널로 붙기 전 이 인스턴스 자신인지 묻는 `system.info`)에는 세션 토큰을 싣지 않는다. Tasty 안의 터미널에서 띄운 GUI·CLI가 부모 Tasty의 토큰을 상속해도 원격은 토큰 없는 요청으로 받는다. 원격 쪽 권한 경계는 SSH 접속이다. attach 채널도 토큰을 싣지 않는다(아래 비-목표). 원격·GUI 경로는 로컬 세션 토큰을 보내지 않는다. GUI의 원격 요청은 사용자 조작이므로 `--ssh 127.0.0.1:<port>` loopback 직결로 같은 머신의 인스턴스(토큰을 발급한 부모 인스턴스 포함)를 대상으로 해도 토큰 없는 요청으로 보낸다.
 
 ### 원격 attach (IPC — focus 중립)
 
