@@ -27,7 +27,30 @@ pub(crate) struct IntoGuiCheck {
     params: serde_json::Value,
     port: u16,
     workspace: u32,
-    this_instance: bool,
+    verdict: Verdict,
+}
+
+/// 워커의 판정 결과.
+#[derive(Debug, PartialEq)]
+enum Verdict {
+    /// 다른 상대이거나 판정할 수 없다. 큐에 넣는다.
+    Other,
+    /// 이 프로세스 자신이다. 거절한다.
+    ThisInstance,
+    /// 판정 중 패닉했다. 응답 없이 끝나지 않도록 내부 오류로 답한다.
+    Panicked,
+}
+
+/// 패닉도 판정 결과로 바꿔 응답이 반드시 나가게 한다.
+fn judge(probe: impl FnOnce() -> bool + std::panic::UnwindSafe) -> Verdict {
+    match std::panic::catch_unwind(probe) {
+        Ok(true) => Verdict::ThisInstance,
+        Ok(false) => Verdict::Other,
+        Err(_) => {
+            tracing::error!("attach.into_gui self check panicked");
+            Verdict::Panicked
+        }
+    }
 }
 
 pub(crate) struct IntoGuiChecks {
@@ -129,7 +152,7 @@ impl App {
                     params,
                     port,
                     workspace,
-                    this_instance: reaches_this_instance(port),
+                    verdict: judge(move || reaches_this_instance(port)),
                 };
                 if tx.send(check).is_err() {
                     tracing::debug!("attach.into_gui check finished after the main loop ended");
@@ -178,8 +201,10 @@ impl App {
     /// 판정을 마친 요청을 거절하거나, 요청을 받은 창(routing과 같은 규칙)의 큐에 넣고 응답한다.
     pub(crate) fn drain_into_gui_checks(&mut self) {
         while let Ok(check) = self.state.into_gui_checks.rx.try_recv() {
-            let response = if check.this_instance {
+            let response = if check.verdict == Verdict::ThisInstance {
                 this_instance_refused(check.rpc_id, check.port)
+            } else if check.verdict == Verdict::Panicked {
+                JsonRpcResponse::internal_error(check.rpc_id, "attach.into_gui self check panicked")
             } else if self.queue_into_gui(&check) {
                 attach::into_gui_queued(check.rpc_id, check.port, check.workspace)
             } else {
@@ -222,6 +247,13 @@ mod tests {
         );
         assert!(reaches_this_instance(port));
         assert!(server.join().expect("server").contains("\"system.info\""));
+    }
+
+    #[test]
+    fn a_panicking_check_still_ends_in_a_verdict() {
+        assert_eq!(judge(|| panic!("probe")), Verdict::Panicked);
+        assert_eq!(judge(|| true), Verdict::ThisInstance);
+        assert_eq!(judge(|| false), Verdict::Other);
     }
 
     #[test]
