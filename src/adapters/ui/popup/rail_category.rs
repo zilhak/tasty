@@ -1,4 +1,6 @@
 //! 접힌 사이드바의 카테고리 버튼 오른쪽에 여는 메뉴.
+//! 머리줄은 이름과 오른쪽 끝의 워크스페이스 수(mono · micro · text-muted)다(시안 RailCategoryFrame).
+//! 시안 이름의 semibold 는 egui UI 에 굵은 글꼴을 등록하지 않아 재현하지 않는다(`popup_title_font` 와 같다).
 //! 이름 아래에 워크스페이스 추가와 접기·펼치기를 표시한다.
 //! 기본 카테고리가 아니면 이름 변경·삭제도 제공하며 대상이 없으면 닫는다.
 
@@ -21,6 +23,8 @@ const HEADER_HEIGHT: LogicalPx = LogicalPx(30.0);
 /// 현재 대상 카테고리가 접혀 있는지 등 팝업 렌더에 필요한 스냅샷.
 struct Target {
     label: String,
+    /// 이 카테고리에 속한 워크스페이스 수.
+    count: usize,
     collapsed: bool,
     /// 기본 카테고리이면 이름 변경·삭제를 표시하지 않는다.
     is_reserved: bool,
@@ -40,6 +44,7 @@ fn resolve_target(
     };
     Some(Target {
         label,
+        count: engine.workspaces_in_category(cat.id).len(),
         collapsed: state.navigation.collapsed_categories.contains(&cat.id),
         is_reserved: cat.is_normal(),
     })
@@ -120,7 +125,20 @@ pub fn draw_rail_category_popup(
         egui::vec2(width, HEADER_HEIGHT.value()),
         egui::Sense::hover(),
     );
-    ui.painter().text(
+    // 수를 먼저 그리고, 이름은 시안 gap(space-sm)을 두고 수 앞에서 자른다.
+    let count_rect = ui.painter().text(
+        egui::pos2(
+            header_rect.max.x - th.spacing_sm.value(),
+            header_rect.center().y,
+        ),
+        egui::Align2::RIGHT_CENTER,
+        target.count.to_string(),
+        egui::FontId::monospace(th.font_size_micro.value()),
+        th.text_muted().into(),
+    );
+    let mut label_clip = header_rect;
+    label_clip.max.x = count_rect.min.x - th.spacing_sm.value();
+    ui.painter().with_clip_rect(label_clip).text(
         egui::pos2(
             header_rect.min.x + th.spacing_sm.value(),
             header_rect.center().y,
