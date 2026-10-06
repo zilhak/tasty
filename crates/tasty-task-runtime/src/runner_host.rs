@@ -2,6 +2,7 @@
 //! lease·작업 출력 치환, 실행 handle 보존, 폴링 결과 수집도 담당한다.
 
 mod attempt_record;
+mod child_env;
 mod command_inputs;
 mod postprocess;
 mod run_result;
@@ -641,7 +642,7 @@ impl HostExecutor {
                 let (program, args) = argv.split_first().expect("non-empty");
                 let mut cmd = std::process::Command::new(program);
                 tasty_utils::process::hide_console(&mut cmd);
-                cmd.args(args);
+                cmd.args(args).env_clear().envs(child_env::inherited());
                 if let Some(c) = cwd {
                     cmd.current_dir(c);
                 }

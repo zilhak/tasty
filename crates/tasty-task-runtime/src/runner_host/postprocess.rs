@@ -187,7 +187,7 @@ impl HostExecutor {
             stdout: spec.stdout.clone(),
             timeout: Duration::from_millis(spec.timeout_ms),
             run,
-            env: process::child_env(std::env::vars_os()),
+            env: super::child_env::inherited(),
         };
         let started = match process::spawn(request) {
             Ok(s) => s,

@@ -33,40 +33,8 @@ pub(crate) struct ProcessRequest {
     pub(crate) stdout: StdoutSpec,
     pub(crate) timeout: Duration,
     pub(crate) run: u32,
-    /// 자식에게 줄 환경. 호스트 프로세스 환경에서 [`child_env`] 로 거른 값이다.
+    /// 자식에게 줄 환경. 호스트 프로세스 환경을 runner 자식 규칙(`runner_host::child_env`)으로 거른 값이다.
     pub(crate) env: Vec<(OsString, OsString)>,
-}
-
-/// 바깥 Tasty 인스턴스가 이 프로세스에 남긴 신원 변수. 이 Tasty 를 다른 Tasty 의 터미널에서
-/// 띄웠으면 그 surface·세션을 가리킨다. 후처리 자식이 `tasty` 를 부를 때 다른 인스턴스의
-/// surface 신원·세션 토큰·완료 알림 경로를 싣지 않도록 넘기지 않는다. 터미널 셸은 이 값들을
-/// 자기 값으로 덮어쓰지만 후처리는 surface 가 없어 덮어쓸 값이 없다.
-pub(crate) const OUTER_IDENTITY_ENV: &[&str] = &[
-    "TASTY_SESSION_TOKEN",
-    "TASTY_SURFACE_ID",
-    "TASTY_PARENT_HOME",
-    "TASTY_AGENT_ID",
-];
-
-/// 후처리 자식의 환경. 상속 환경에서 두 종류를 뺀다.
-/// - 바깥 Claude Code 세션의 표지·비밀처럼 터미널 셸에도 넘기지 않는 변수
-///   (`tasty_utils::process::is_stripped_inherited_env`).
-/// - 바깥 Tasty 인스턴스의 신원 변수([`OUTER_IDENTITY_ENV`]).
-///
-/// 나머지(`TASTY_HOME`·`TASTY_LOCALE` 등 다른 `TASTY_*` 포함)는 그대로 넘기고, Tasty 가 task 별
-/// 변수를 더하지는 않는다.
-pub(crate) fn child_env(
-    inherited: impl IntoIterator<Item = (OsString, OsString)>,
-) -> Vec<(OsString, OsString)> {
-    inherited
-        .into_iter()
-        .filter(|(k, v)| {
-            !k.to_str().is_some_and(|k| {
-                OUTER_IDENTITY_ENV.contains(&k)
-                    || tasty_utils::process::is_stripped_inherited_env(k, v)
-            })
-        })
-        .collect()
 }
 
 /// 시작한 프로세스. `wait` 가 끝날 때까지 프로세스 그룹을 소유한다.
