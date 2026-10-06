@@ -343,7 +343,7 @@ Codex는 대응 훅에서 `codex notify-caller`를 호출한다([Codex](../plugi
 
 | 단계 | break 정책 |
 |------|-----------|
-| 0.x (현재) | 적극 변경. break 는 `CHANGELOG.md` 에 `(BREAK)` 표기 + **한 minor 이상 deprecation 우선**(유예를 건너뛰는 예외는 아래 「Deprecation 절차」 한 자리에만 적는다). major bump 는 사용자 결정으로만 |
+| 0.x (현재) | 적극 변경. break 는 유예 기간 없이 바로 내고 `CHANGELOG.md` 에 `(BREAK)` 표기. major bump 는 사용자 결정으로만 |
 | 안정선 | SemVer 엄격. `api_version = "1"` schema 는 추가만. 진입 시점은 사용자가 결정 |
 | 1.x | minor 추가, major break |
 | 2.0 | `api_version = "2"` 시작. plugin 이 매니페스트로 명시 선택 |
@@ -400,16 +400,16 @@ Codex는 대응 훅에서 `codex notify-caller`를 호출한다([Codex](../plugi
 
 ### Deprecation 절차
 
+0.x 에는 deprecation 유예 기간 규칙이 없다 — break 는 위 표대로 바로 낸다
+([ADR-0066](../adr/0066-pre-1-0-breaking-changes-ship-without-deprecation-period.md)).
+이전 이름을 잠시 남기고 싶을 때만 아래처럼 표기한다.
+
 1. 기존 API를 유지하면서 새 API를 추가한다.
 2. 기존 API를 호출하면 `tracing::warn!("deprecated: <old>, use <new>")`(`crates/tasty-ipc/src/alias.rs`).
-3. `CHANGELOG.md` `Deprecated` 절에 제거 기한 기록.
-4. 기한 직전 일괄 제거 PR.
+3. `CHANGELOG.md` `Deprecated` 절에 기록한다.
+4. 제거할 때는 `Removed` 절에 적고, 깨지는 변경이면 `(BREAK)` 를 붙인다.
 
-deprecation 기간은 "한 minor 이상"이 원칙이다. 아래 셋은 유예 없이 바로 바꾸거나 제거할 수 있다 — 유예 생략 사유는 **이 목록 한 자리에만** 적는다(위 버전 단계 표는 여기를 가리킨다).
-
-- **보안**
-- **심각 버그**
-- **불가침 원칙 위반** — [`identity.md`](../identity.md) §2 의 원칙을 어기는 동작. 유예를 두면 그 기간 동안 원칙을 위반하는 동작이 계속 배포된다. 세 조건이 붙는다: ① 유예를 건너뛰는 것은 위반을 이루는 부분뿐이고, 함께 가는 무관한 break 는 정상 절차를 따른다. ② 고치는 형태가 여럿이면 기존 호출자를 가장 적게 깨는 쪽을 고른다. ③ `(BREAK)` 항목에 어느 원칙을 어겼는지와, 유예를 건너뛴 사유가 이 예외라는 것을 적는다. 근거·대안은 [ADR-0004](../adr/0004-ipc-discovery-and-errors.md).
+안정선 이후의 deprecation 기간은 안정선에 진입할 때 정한다.
 
 ### plugin-protocol schema
 

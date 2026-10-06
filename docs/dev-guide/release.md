@@ -164,7 +164,7 @@ cd ~/actions-runner && ./config.sh remove --token <REMOVAL_TOKEN>   # token: Set
 
 ## API 안정성 가드
 
-외부 API의 추가·제거는 명시한 호환성·deprecation 규칙과 예외를 따른다 (메서드 baseline 등 `cargo test --workspace` 강제). 분류는 [api-conventions](api-conventions.md).
+외부 API의 추가·제거는 명시한 호환성 분류와 `(BREAK)` 표기 규칙을 따른다 (메서드 baseline 등 `cargo test --workspace` 강제). 분류는 [api-conventions](api-conventions.md).
 
 ## 관련
 
