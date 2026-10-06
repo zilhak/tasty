@@ -587,13 +587,21 @@ const DEFAULT_SECTIONS: &[Section] = &[
     },
 ];
 
-/// 시안 `MH_CAT_SECTIONS`의 역할 행. 바인딩 행은 없다.
+/// 시안 `MH_CAT_SECTIONS`의 역할 행. 바인딩 행은 그 아래 [`CATEGORY_ROWS`]다.
 const CATEGORY_ROLES: &[(&str, RoleGlyph)] = &[(
     "Switch category — 1–9, 0 over each category header; a collapsed target auto-expands.",
     RoleGlyph::Folder,
 )];
 
-/// 카테고리 전환 조합 표기. 시안은 Alt+Shift 지만 본체 KeybindingSettings 기본값을 따른다.
+/// 시안 `MH_CAT_SECTIONS`의 바인딩 행. 역할 행 아래에 같은 조합의 바인딩이 이어진다.
+const CATEGORY_ROWS: &[(&str, &str, bool)] = &[
+    ("New workspace", "Ctrl+Shift+N", false),
+    ("Split horizontal", "Ctrl+Shift+D", false),
+    ("Copy", "Ctrl+Shift+C", false),
+    ("Paste", "Ctrl+Shift+V", false),
+];
+
+/// 카테고리 전환 조합 표기. 본체 KeybindingSettings 기본값(시안과 같은 Ctrl+Shift)을 읽는다.
 fn category_chord() -> &'static str {
     static LABEL: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     LABEL
@@ -616,8 +624,10 @@ const HOLD_CONTROL_LEFT: LogicalPx = LogicalPx(200.0);
 const HOLD_CONTROL_GAP: LogicalPx = LogicalPx(10.0);
 /// 시안 패널 기본 위치(`left: 12, bottom: 12`).
 const HOLD_PANEL_INSET: LogicalPx = LogicalPx(12.0);
-/// 시안 "resized taller" 와 카테고리 패널 높이(`height: 300`).
-const RESIZED_PANEL_H: LogicalPx = LogicalPx(300.0);
+/// 시안 "resized taller" 패널 높이(`height: 480`).
+const RESIZED_PANEL_H: LogicalPx = LogicalPx(480.0);
+/// 시안 카테고리 패널 높이(`height: 300`).
+const CATEGORY_PANEL_H: LogicalPx = LogicalPx(300.0);
 /// 시안 무대의 패널 사이 간격(`gap: 40`).
 const ANATOMY_GAP: LogicalPx = LogicalPx(40.0);
 
@@ -630,7 +640,7 @@ pub fn draw_hold(ui: &mut egui::Ui, theme: &Theme) {
         theme,
         &[
             ("trigger", "modifier held 500ms"),
-            ("default size", "220 × 400"),
+            ("default size", "180 × 400 · modhint-width × modhint-height"),
             ("default pos", "bottom-left, above sidebar footer"),
             ("appear", "fade opacity 0.2→1 · 200ms"),
             ("release", "0ms — instant dismiss"),
@@ -766,7 +776,7 @@ pub fn draw_anatomy(ui: &mut egui::Ui, theme: &Theme) {
     let chord = category_chord();
     let category = [Section {
         chord,
-        rows: &[],
+        rows: CATEGORY_ROWS,
         roles: CATEGORY_ROLES,
     }];
     let cat_caption = format!("{chord} held — categories on");
@@ -784,12 +794,12 @@ pub fn draw_anatomy(ui: &mut egui::Ui, theme: &Theme) {
                         theme.modhint_height(),
                     ),
                     (
-                        "resized taller (drag any edge)",
+                        "resized taller (drag any edge) — 480",
                         "Ctrl",
                         DEFAULT_SECTIONS,
                         RESIZED_PANEL_H,
                     ),
-                    (cat_caption.as_str(), chord, &category, RESIZED_PANEL_H),
+                    (cat_caption.as_str(), chord, &category, CATEGORY_PANEL_H),
                 ];
                 for (i, (caption, held, sections, h)) in items.into_iter().enumerate() {
                     spec::wrap_item(ui, |ui| {
