@@ -81,6 +81,14 @@ Tasty 는 시작할 때 프롬프트를 **자동으로 띄우지 않습니다.**
   ls -l ~/.tasty/config.toml ~/.tasty/layouts/
   ```
 
+## "이미 사용 중인 데이터 폴더" 화면이 뜰 때
+
+- **Tasty 를 켜자마자 "다른 Tasty가 이 데이터 폴더를 이미 사용하고 있습니다" 화면이 뜹니다** — 같은 데이터 폴더(`~/.tasty/`, 또는 `TASTY_HOME` 으로 지정한 폴더)를 쓰는 Tasty 가 이미 실행 중입니다. 화면에 적힌 경로가 그 폴더입니다. 이 화면은 실행 중인 Tasty 의 설정 · 로그 · 윈도우 구성을 건드리지 않습니다. **종료** <!-- en: Quit --> 버튼이나 윈도우 닫기로 끝내고 이미 떠 있는 Tasty 를 쓰세요. 두 개를 따로 띄워야 한다면 하나를 다른 `TASTY_HOME` 으로 실행합니다.
+
+  ```sh
+  TASTY_HOME=~/tasty-second tasty
+  ```
+
 ## `tasty` 명령이 연결되지 않을 때
 
 - **`No running tasty instance found (port file not found at …)`** — CLI가 확인한 경로에 포트 파일이 없습니다. 메시지에 적힌 경로가 `~/.tasty/tasty.port` 가 아니면 다른 홈 디렉토리(`TASTY_HOME`)를 보고 있는 것입니다. 이 메시지는 설정 언어(`general.language`, 기본값 영어)를 따르므로 한국어로 설정했다면 "실행 중인 tasty 인스턴스를 찾을 수 없습니다" 로 나옵니다. 인자가 잘못됐으면(깨진 JSON, 없는 `--cwd` 폴더 등) 이 메시지보다 그 인자의 오류가 먼저 나오므로, 이 메시지가 보였다면 접속 전에 수행하는 인자 검사를 통과한 것입니다.
