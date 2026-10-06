@@ -9,8 +9,8 @@ use tasty_agent::task::postprocess::{
     PostprocessCause, PostprocessOutcome, PostprocessReport, StdoutFormat, StdoutSpec,
 };
 
-use super::super::child_env::child_env;
 use super::process::{ProcessRequest, STOP_CANCELLED, STOP_NONE, spawn};
+use tasty_agent::child_env::child_env;
 
 fn json_out() -> StdoutSpec {
     StdoutSpec::default()

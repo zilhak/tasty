@@ -5,6 +5,7 @@
 #![allow(clippy::result_large_err)]
 
 pub mod barrier;
+pub mod child_env;
 pub mod lease;
 pub mod platform;
 pub mod rate_limit;
