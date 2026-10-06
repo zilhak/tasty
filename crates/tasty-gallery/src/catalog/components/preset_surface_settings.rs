@@ -370,11 +370,15 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("after OK/Cancel", "back to preview, leaf stays selected"),
         ],
         &[
+            TokenChip::without_color("preset-cfg-header-height", "header (44)"),
+            TokenChip::without_color("preset-cfg-footer-height", "footer (52)"),
+            TokenChip::without_color("preset-cfg-form-max-width", "form column cap (460)"),
             TokenChip::new(
                 "preset-cfg-draft-fg",
                 "unsaved dot (accent-warning)",
                 theme.preset_cfg_draft_fg().to_egui(),
             ),
+            TokenChip::without_color("preset-cfg-dim-opacity", "list + scope while open"),
             TokenChip::new("bg-panel", "screen fill", theme.bg_panel().to_egui()),
             TokenChip::new(
                 "separator",
