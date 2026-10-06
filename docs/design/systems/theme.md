@@ -38,7 +38,7 @@ UI의 색·글꼴 크기·간격은 `Theme`에서 읽는다. 이 문서는 테�
 
 | crate | 책임 | IO |
 |-------|------|----|
-| `tasty-type-appearance::color` | `HexColor`, `GpuRgba`/`GpuRgb` newtype | 없음 |
+| `tasty-type-appearance::color` | `HexColor`, `PremulColor`, `GpuRgba`/`GpuRgb` newtype | 없음 |
 | `tasty-type-appearance::theme` | `Theme` · `ThemeColors` · `PartialColors` · `ThemeSizing`/`SIZING` · `SurfaceTheme`/`FALLBACK_SURFACE` · `derive_overlays` · `Theme::surface(id)` | 없음 |
 | `tasty-themes` | 전역 `RwLock<Theme>` + `theme()/set_theme()` · `ThemeFile`(TOML) · mocha/latte 임베드 · scan/load/apply/resolve/install · `first_run_init`/`sync_builtin_themes` | `~/.tasty/themes/` |
 | `tasty-settings::appearance` | `AppearanceSettings.{theme,theme_base,theme_overrides,theme_is_light,ui_scale}` | settings IO |
@@ -113,7 +113,7 @@ host UI와 공용 위젯은 semantic 접근자를 사용한다. 원시 팔레트
 
 단순 primitive alias인 semantic 색 메서드는 `semantic_color_generated.rs`에서 생성한다. 테마 밝기 분기·overlay 도출·합성색·OS 또는 브랜드 값은 수기 접근자로 남는다. component 접근자도 이 경로를 호출한다.
 
-`hover_overlay`·`active_overlay`·`separator`의 premultiplied 바이트는 `to_egui_premultiplied()`로 변환한다. 일반 `to_egui()`를 쓰면 premultiplication이 한 번 더 적용된다. GPU 버퍼는 GpuRgba 같은 타입을 받고, 직접 색 생성은 아래 정책을 따른다.
+`hover_overlay`·`active_overlay`·`separator`는 알파를 미리 곱한 바이트로 저장하며 타입이 `PremulColor`다. 이 세 필드에 alias로 닿는 접근자(`overlay_hover()`·`overlay_active()`·`titlebar_border()`·`modhint_separator()`와 생성된 component 접근자)도 `PremulColor`를 반환한다. `PremulColor`는 `to_egui_premultiplied()`만 제공하므로 알파를 한 번 더 곱하는 `to_egui()`·`Color32::from`·`into()`는 컴파일되지 않는다. CSS처럼 straight rgba를 받는 곳에는 `unpremultiplied()`로 straight `HexColor`를 얻어 넘긴다. `PremulColor`에는 GPU 변환이 없어 GPU 버퍼로 가는 경로가 없다. 직접 색 생성은 아래 정책을 따른다.
 
 ## 색 생성 정책
 
@@ -153,6 +153,8 @@ let bg = GpuRgba::dangerously_force_from_array([r, g, b, a]);  // ⚠ 명시 + �
 
 `#[repr(transparent)]` + `bytemuck::Pod` 라 byte layout 은 raw `[f32; 4]` 와 동일 — wgpu vertex layout 무수정, 런타임 오버헤드 0.
 
+`PremulColor`도 같은 방식으로 변환을 제한한다. 생성자는 크레이트 안(`derive_overlays`)에서만 부를 수 있고, egui 변환은 `to_egui_premultiplied()` 하나다. 토큰 생성기는 alias 체인이 `overlay-hover`·`overlay-active`·`separator`에 닿는 component 색 접근자의 반환 타입을 `PremulColor`로 만든다(`PREMULTIPLIED_SEMANTIC_COLORS`). `HexColor`에는 `to_egui_premultiplied()`가 없어 straight 색을 premultiplied로 읽는 반대 실수도 컴파일되지 않는다.
+
 ### clippy 강제 — disallowed-methods
 
 `clippy.toml` 의 `disallowed-methods` 가 색 생성 함수의 외부 호출을 차단한다:
@@ -161,7 +163,7 @@ let bg = GpuRgba::dangerously_force_from_array([r, g, b, a]);  // ⚠ 명시 + �
 |-----------|------|
 | `HexColor::from_rgb` / `from_rgba` | TOML 또는 const(`hex!`) |
 | `egui::Color32::from_rgb` | `theme().X` 또는 `.with_alpha(N).to_egui()` |
-| `egui::Color32::from_rgba_{unmultiplied,premultiplied}` | 외부 픽셀은 `#[allow]` + 주석 / premultiplied 는 `to_egui_premultiplied()` |
+| `egui::Color32::from_rgba_{unmultiplied,premultiplied}` | 외부 픽셀은 `#[allow]` + 주석 / premultiplied 테마 색은 `PremulColor::to_egui_premultiplied()` |
 | `egui::Color32::from_gray` | theme 회색 톤 |
 
 예외 위치는 본거지 모듈(`tasty-type-appearance::{color,theme}`, `tasty-themes::fallback`)의 항목 단위 `#[allow]` + `// reason:` 주석, 외부 입력/테스트는 라인별 `#[allow]` + 주석.
