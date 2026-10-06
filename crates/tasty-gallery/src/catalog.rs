@@ -5,6 +5,7 @@
 pub mod chrome_loading;
 pub mod components;
 pub mod foundations_disabled_ink;
+pub mod foundations_settled;
 pub mod foundations_shape;
 pub mod foundations_uiscale;
 pub mod icons;
@@ -227,6 +228,18 @@ pub fn pages() -> Vec<Page> {
                     )],
                 ),
                 section(
+                    "floating",
+                    "Elevation — floating surfaces (the two shadows)",
+                    vec![spec(
+                        "floating",
+                        "Two shadows, and the rule that picks one",
+                        Some(
+                            "anchored + scrim-less → shadow-popover · centered + scrim-backed → shadow-modal",
+                        ),
+                        foundations_settled::draw_shadows,
+                    )],
+                ),
+                section(
                     "text",
                     "Color — text",
                     vec![
@@ -305,6 +318,34 @@ pub fn pages() -> Vec<Page> {
                         Some("stops 0.8 / 1.0 / 1.2 — sidebar root zoom only"),
                         foundations_uiscale::draw,
                     )],
+                ),
+                section(
+                    "rolegaps",
+                    "Role gaps — settled",
+                    vec![
+                        spec(
+                            "half-pixel-type",
+                            "Half-pixel type sizes snap to the scale",
+                            Some("read text snaps up · numeric micro-labels snap down"),
+                            foundations_settled::draw_half_pixel,
+                        ),
+                        spec(
+                            "tint-recipe",
+                            "One tinted-box recipe: 12% fill, 36% edge",
+                            Some(
+                                "tint-fill-alpha 0.12 · tint-border-alpha 0.36 · fill-only and border-only uses",
+                            ),
+                            foundations_settled::draw_tint,
+                        ),
+                        spec(
+                            "structural-dimensions",
+                            "Structural dimensions — the leftovers",
+                            Some(
+                                "icon-size-lg 24 · toolbar-height 32 · popup default sizes stay outside tokens",
+                            ),
+                            foundations_settled::draw_structural,
+                        ),
+                    ],
                 ),
             ],
         },
