@@ -25,6 +25,10 @@ mod semantic_color_generated;
 /// DO NOT EDIT — `cargo run -p tasty-design-tokens --bin generate` 로 재생성.
 mod generated_component;
 
+/// `tasty-design-tokens` 생성기가 산출하는 em 자간 접근자 (`impl Theme`).
+/// DO NOT EDIT — `cargo run -p tasty-design-tokens --bin generate` 로 재생성.
+mod generated_tracking;
+
 /// 그림자 선택 정책의 소스 검사. CI의 패키지 lib 검사에 포함한다.
 #[cfg(test)]
 mod shadow_policy_guard;

@@ -196,6 +196,7 @@ DTCG component tier(치수+색) 토큰은 `crates/tasty-type-appearance/src/gene
 
 - **치수 접근자**(→ `LogicalPx`) 3형태: alias 체인이 (a) zoom 정책이 이미 박힌 `Theme` 필드에 닿으면 그 필드 반환, (b) 다른 component 접근자에 닿으면 그 접근자 호출, (c) primitive 에 직접 닿으면 `Theme.ui_zoom` 을 곱해 계산(`LogicalPx((v*ui_zoom).round())`). 예: `button_gap()`=`spacing_sm`, `button_height_lg()`=`(32*ui_zoom).round()`.
 - **색 접근자**(→ `HexColor`): semantic 접근자 체인 또는 component→component 상호 호출. 예: `button_primary_bg()`=`accent_primary()`. `banner_*`/`titlebar_*` 색은 기존 수기 접근자와 이름 충돌이라 생성 제외(수기 유지).
+- **자간 접근자**(→ `LogicalPx`): em 단위 자간 토큰(`semantic.letter-spacing-caps`, `component.table-header-tracking`, `component.sidebar-section-heading-tracking`)은 `crates/tasty-type-appearance/src/generated_tracking.rs` 의 생성 메서드로 읽는다. 글자 크기를 받아 `em × 글자 크기`를 돌려주고, egui `TextFormat::extra_letter_spacing`에 `.value()`로 넘긴다. 글자 크기 필드가 이미 UI 배율을 반영하므로 배율을 다시 곱하지 않는다. 예: `letter_spacing_caps(font_size_micro)` = 0.4(배율 1). component 자간은 semantic 접근자를 호출한다. em 토큰은 `LogicalPx` 상수로는 생성하지 않는다(`Skip::EmUnit`).
 - **소비처**: `tasty-ui-widgets` 위젯(button/chip/input/menu_item/select/toggle/tree_row/icon_button/status_dot/table 등)이 이 접근자를 소비. host chrome(`src/adapters/ui/`)도 이 접근자를 소비한다.
 - **zoom 회귀/값불변 테스트**: `tasty-type-appearance` 에 zoom 1.0 값 불변(이식 전후 동일)·zoom 1.5 스케일 단위 테스트 존재.
 

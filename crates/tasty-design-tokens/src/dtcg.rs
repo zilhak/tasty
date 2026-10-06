@@ -7,10 +7,12 @@
 
 mod accessor;
 mod duration_accessor;
+mod tracking_accessor;
 
 /// 토큰 경로와 SIZING 필드의 대응표. 접근자 생성과 치수 대조 시험에서 공유한다.
 pub use accessor::SEMANTIC_DIM_TO_THEME_FIELD;
 use accessor::{generate_component_accessors, generate_semantic_color_accessors};
+use tracking_accessor::generate_tracking_accessors;
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -295,7 +297,8 @@ enum Skip {
     Color,
     /// 상수 생성을 지원하지 않는 `$type` (fontFamily / shadow / cubicBezier 등).
     Type(String),
-    /// em 단위 dimension (letter-spacing 계열) — `LogicalPx` 로 표현 불가.
+    /// em 단위 dimension (letter-spacing 계열) — `LogicalPx` 상수로 표현할 수 없다.
+    /// semantic·component 계층은 글자 크기를 받는 Theme 접근자로 생성한다(`generated_tracking.rs`).
     EmUnit(String),
     /// 별칭의 최종 값을 숫자로 해석할 수 없음.
     Unparsable(String),
@@ -488,7 +491,7 @@ fn emit_const(
     format!("{indent}/// {doc}{unit}\n{decl}\n")
 }
 
-/// 토큰 상수 파일 4개와 Theme 접근자 파일 2개를 생성한다.
+/// 토큰 상수 파일 4개와 Theme 접근자 파일 3개를 생성한다.
 pub fn generate(set: &TokenSet) -> Generated {
     let mut skips: Vec<String> = Vec::new();
     let mut color_count = 0usize;
@@ -506,7 +509,7 @@ pub fn generate(set: &TokenSet) -> Generated {
             }
             Err(Skip::EmUnit(v)) => {
                 skips.push(format!(
-                    "{path}: em 단위 ({v}) — LogicalPx 표현 불가, 생성 스킵"
+                    "{path}: em 단위 ({v}) — LogicalPx 상수 생성 스킵(자간 접근자는 generated_tracking.rs)"
                 ));
             }
             Err(Skip::Unparsable(v)) => {
@@ -621,6 +624,7 @@ pub fn generate(set: &TokenSet) -> Generated {
         type_appearance_files: vec![
             ("semantic_color_generated.rs", semantic_color_accessors),
             ("generated_component.rs", component_accessors),
+            ("generated_tracking.rs", generate_tracking_accessors(set)),
         ],
         skips,
     }

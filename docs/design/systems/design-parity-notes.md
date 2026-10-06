@@ -251,11 +251,10 @@ State 셀은 `status_dot`(점 `status_dot_size` 8 + gap 6 + caption 11px proport
   별도 bold family 없이 굵기를 재현하지 못한다(위 "공용 위젯 레이어 — 폰트 weight" 항목).
 - **앞의 둘은 API가 있다**: `RichText::extra_letter_spacing` / `RichText::line_height` 와
   `TextFormat` 의 같은 이름 필드. 둘 다 px 를 받으므로 em·배수 토큰은 폰트 크기를 곱해
-  넘긴다 — `tasty_ui_widgets::remote_tool::selectable_label_tracked` 가 그 형태다. 전사가
-  안 된 자리가 남아 있다면 API가 없어서가 아니라 값이 Rust 상수로 안 와 있어서다: em 단위
-  dimension 은 DTCG 생성기가 `LogicalPx` 로 못 담아 스킵한다
-  (`crates/tasty-design-tokens/src/dtcg.rs` 의 `Skip::EmUnit`).
-- **처방**: weight 는 크기+색으로 근사한다. 나머지 둘은 값이 준비되면 해당 API로 적용한다.
+  넘긴다. em 자간 토큰은 생성 Theme 접근자(`generated_tracking.rs` 의 `letter_spacing_caps(font_size)`
+  등)가 그 곱을 돌려준다. `LogicalPx` 상수로는 생성하지 않는다(`Skip::EmUnit`). 자간이
+  빠진 자리가 남아 있다면 값이 아니라 그 자리에 아직 적용하지 않은 것이다.
+- **처방**: weight 는 크기+색으로 근사한다. 자간은 생성 접근자로, line-height 는 값이 준비되면 해당 API로 적용한다.
 - **디자인 확인**: 권한 안내 모달의 제목(600)·도입부(semibold)·경로(medium)는 굵기 없이
   `text-primary` 색으로만 본문과 구분하며, 디자인이 이 근사를 받아들였다. 굵은 UI 글꼴을
   등록하기 전까지 다른 자리도 같은 근사를 쓴다.

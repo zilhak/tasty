@@ -28,6 +28,10 @@ const COMMITTED_TYPE_APPEARANCE: &[(&str, &str)] = &[
         "generated_component.rs",
         include_str!("../../tasty-type-appearance/src/generated_component.rs"),
     ),
+    (
+        "generated_tracking.rs",
+        include_str!("../../tasty-type-appearance/src/generated_tracking.rs"),
+    ),
 ];
 
 /// 토큰 수 스냅샷. 원격 토큰을 갱신할 때 추가·삭제된 항목을 확인한 뒤 함께 갱신한다.

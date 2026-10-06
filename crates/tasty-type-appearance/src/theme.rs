@@ -2422,6 +2422,24 @@ mod tests {
         assert_eq!(t.font_size_micro.value(), 15.0);
     }
 
+    /// em 자간 접근자는 넘겨받은 (이미 배율이 적용된) 글자 크기에 비례하고 배율을 다시 곱하지 않는다.
+    #[test]
+    fn tracking_scales_with_the_given_font_size_only() {
+        let base = Theme::with_colors(dummy_colors(), false);
+        let zoomed = Theme::with_colors_and_zoom(dummy_colors(), false, 1.5);
+        let at = |t: &Theme| t.letter_spacing_caps(t.font_size_micro).value();
+        assert!((at(&base) - 0.4).abs() < 1e-6);
+        assert!((at(&zoomed) - 0.6).abs() < 1e-6);
+        assert_eq!(
+            zoomed.sidebar_section_heading_tracking(zoomed.font_size_micro),
+            zoomed.letter_spacing_caps(zoomed.font_size_micro)
+        );
+        assert_eq!(
+            zoomed.table_header_tracking(zoomed.font_size_caption),
+            zoomed.letter_spacing_caps(zoomed.font_size_caption)
+        );
+    }
+
     #[test]
     fn set_is_light_swaps_overlays() {
         let mut t = Theme::with_colors(dummy_colors(), false);
