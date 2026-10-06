@@ -1,4 +1,4 @@
-<!-- source-hash: b10e2cc35996 -->
+<!-- source-hash: bcdbd293a556 -->
 # Panes · Tabs · splits
 
 Keep an agent, your code, and the logs side by side. Divide the window with panes and surfaces, switch tasks with tabs, and save layouts you use often as presets. [A first look](../getting-started/first-look.md) explains how the parts fit together.
@@ -105,7 +105,7 @@ When the cut item is not on screen, a move icon appears on whatever holds it.
 - In a Tab that is not showing: after that Tab's title.
 - In another Workspace: on that Workspace's row in the sidebar. With the sidebar collapsed, at the bottom-left of its avatar.
 
-When a Pane has so many Tabs that its tab row scrolls and the cut Tab, or the Tab holding the cut Surface, is scrolled out of view, the tab row arrow on that side turns pink. Once the Tab is fully inside the tab row, the arrow returns to its usual color and the mark on the Tab shows. Pressing the pink arrow still scrolls one step at a time.
+When a Pane has so many Tabs that its tab row scrolls and the cut Tab, or the Tab holding the cut Surface when that Tab is not the active one, is scrolled out of view, the tab row arrow on that side turns pink. When the cut Surface is in the active Tab, its outline is already on screen, so the arrow does not change. Once the Tab is fully inside the tab row, the arrow returns to its usual color and the mark on the Tab shows. Pressing the pink arrow still scrolls one step at a time.
 
 The mark goes away when the move is done, when you cut something else, or when the cut item is closed. It stays while you switch Tabs or Workspaces, and it does not block clicks.
 

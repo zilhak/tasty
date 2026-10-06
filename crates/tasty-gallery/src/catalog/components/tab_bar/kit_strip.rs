@@ -420,6 +420,10 @@ pub fn draw_move_cue(ui: &mut egui::Ui, theme: &Theme) {
             ("where", "the scroll arrow on the target's side"),
             ("colour", "accent-move (same as the glyph)"),
             ("tab · surface target", "same cue"),
+            (
+                "surface in the ACTIVE tab",
+                "no cue — the content-area ring already shows it (2026-10-06)",
+            ),
             ("visible", "cell fully inside the viewport"),
             ("input", "none of its own — the arrow's normal step scroll"),
             ("too-small rect", "no substitute"),
