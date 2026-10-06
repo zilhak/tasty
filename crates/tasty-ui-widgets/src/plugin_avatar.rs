@@ -1,7 +1,7 @@
 //! 플러그인 이름의 첫 글자로 사각 아바타를 그린다.
 //! 매니페스트에 카테고리가 없어 기본 강조색을 사용한다.
-//! 현재 목록은 font_size_body, 상세는 font_size_max를 사용한다.
-//! 디자인의 별도 아바타 글꼴 토큰은 아직 적용하지 않았으며 이 파일에서 임의로 바꾸지 않는다.
+//! 목록 머리글자는 plugin-avatar-initial-font-size-sm(= font-size-max 14)을 쓴다.
+//! 상세 머리글자는 디자인 값 16이 UI 글꼴 상한(14)의 예외인지 결정 전이라 font_size_max를 쓴다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
@@ -31,7 +31,7 @@ impl PluginAvatarSize {
     #[inline]
     fn font(self, theme: &Theme) -> LogicalPx {
         match self {
-            PluginAvatarSize::Row => theme.font_size_body,
+            PluginAvatarSize::Row => theme.plugin_avatar_initial_font_size_sm(),
             PluginAvatarSize::Detail => theme.font_size_max,
         }
     }
@@ -77,7 +77,7 @@ pub fn paint_plugin_avatar(
         egui::Align2::CENTER_CENTER,
         label,
         egui::FontId::monospace(size.font(theme).value()),
-        theme.accent_primary().to_egui(),
+        theme.plugin_avatar_fg().to_egui(),
     );
 }
 
