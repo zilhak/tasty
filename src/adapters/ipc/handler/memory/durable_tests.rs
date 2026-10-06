@@ -38,8 +38,8 @@ fn call_raw(
 ) -> tasty_ipc::protocol::JsonRpcResponse {
     let (mut state, mut engine_session) = crate::state::tests::test_state();
     let mut engine = engine_session.borrow_mut();
-    // surface metadata는 열린 surface에만 쓴다. fixture에 있는 surface를 가리킨다.
-    if method.starts_with("surface.meta.") {
+    // surface metadata는 열린 surface에만 쓴다. 표의 surface_id 0은 fixture의 열린 surface로 바꾼다.
+    if params.get("surface_id") == Some(&json!(0)) {
         let live = engine
             .workspaces()
             .into_iter()
@@ -78,7 +78,7 @@ fn writes_outside_memory() -> Vec<(&'static str, Value)> {
     vec![
         (
             "surface.meta.set",
-            // surface_id는 call_raw가 fixture의 열린 surface로 바꾼다.
+            // surface_id 0은 call_raw가 fixture의 열린 surface로 바꾼다.
             json!({ "surface_id": 0, "key": "role", "value": "x" }),
         ),
         (
