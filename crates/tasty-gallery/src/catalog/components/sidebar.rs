@@ -800,7 +800,37 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "footer divider",
                 theme.border_default().into(),
             ),
+            TokenChip::new(
+                "badge-warning-bg",
+                "NeedsInput badge fill",
+                theme.badge_warning_bg().into(),
+            ),
+            TokenChip::new(
+                "badge-warning-fg",
+                "NeedsInput numeral",
+                theme.badge_warning_fg().into(),
+            ),
+            TokenChip::new(
+                "badge-primary-bg",
+                "Completion badge fill",
+                theme.badge_primary_bg().into(),
+            ),
+            TokenChip::new(
+                "badge-primary-fg",
+                "Completion numeral",
+                theme.badge_primary_fg().into(),
+            ),
             TokenChip::without_color("badge-group-gap", "4px between the two"),
+            TokenChip::new(
+                "status-dot-needs-input",
+                "rail dot — NeedsInput",
+                theme.status_dot_needs_input().into(),
+            ),
+            TokenChip::new(
+                "status-dot-completion",
+                "rail dot — Completion",
+                theme.status_dot_completion().into(),
+            ),
             TokenChip::new(
                 "status-dot-success",
                 "rail dot — busy/running",

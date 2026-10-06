@@ -59,6 +59,16 @@ pub fn draw_badge(ui: &mut egui::Ui, theme: &Theme) {
                 egui::Color32::from(theme.badge_danger_bg()),
             ),
             TokenChip::new(
+                "badge-warning-bg",
+                "NeedsInput count",
+                egui::Color32::from(theme.badge_warning_bg()),
+            ),
+            TokenChip::new(
+                "badge-primary-bg",
+                "Completion count",
+                egui::Color32::from(theme.badge_primary_bg()),
+            ),
+            TokenChip::new(
                 "badge-agent-bg",
                 "agent",
                 egui::Color32::from(theme.badge_agent_bg()),

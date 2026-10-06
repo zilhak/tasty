@@ -266,8 +266,28 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "hard edge (→ peach)",
                 theme.surface_occupied_hard_border().into(),
             ),
+            TokenChip::new(
+                "surface-highlight-done-border",
+                "completion edge (→ blue)",
+                theme.surface_highlight_done_border().into(),
+            ),
             TokenChip::without_color("surface-occupied-border-width", "occupancy edge = 1px"),
             TokenChip::without_color("surface-highlight-done-width", "completion edge = 2px"),
+            TokenChip::new(
+                "tab-fg-needs-input",
+                "blocked tab title",
+                theme.tab_fg_needs_input().into(),
+            ),
+            TokenChip::new(
+                "tab-fg-completion",
+                "finished tab title",
+                theme.tab_fg_completion().into(),
+            ),
+            TokenChip::new(
+                "surface-highlight-input-border",
+                "blocked surface edge",
+                theme.surface_highlight_input_border().into(),
+            ),
             TokenChip::without_color("surface-highlight-input-width", "2px — matches completion"),
         ],
     );
