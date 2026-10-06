@@ -3221,6 +3221,21 @@ mod tests {
     }
 
     #[test]
+    fn blockquote_bar_reads_the_quote_bar_width_token() {
+        let css = stylesheet_of_a_rendered_document();
+        let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
+        let width = format!("--md-quote-bar-w:{}px;", theme.md_quote_bar_width().value());
+        assert!(
+            css.contains(&width),
+            "인용 막대 두께는 md-quote-bar-width 토큰 값이어야 한다"
+        );
+        assert!(
+            css.contains("blockquote{border-left:var(--md-quote-bar-w) solid"),
+            "인용문 왼쪽 막대는 --md-quote-bar-w 를 읽어야 한다"
+        );
+    }
+
+    #[test]
     fn stylesheet_lets_body_grow_while_html_stays_definite() {
         let css = stylesheet_of_a_rendered_document();
         assert!(
