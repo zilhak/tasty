@@ -567,6 +567,8 @@ fn floating_selection(p: &egui::Painter, theme: &Theme, center: egui::Pos2) {
 fn new_image_popup(ui: &mut egui::Ui, theme: &Theme) {
     popup(ui, theme, "New Image", "OK", |ui| {
         ui.horizontal(|ui| {
+            // 라벨을 입력칸 높이의 가운데에 맞추려면 줄 높이를 먼저 정한다.
+            ui.set_min_height(theme.input_height().value());
             ui.spacing_mut().item_spacing.x = theme.image_popup_btn_gap().value();
             let input_w = theme.image_size_input_width();
             kit::body(ui, theme, "Width");
