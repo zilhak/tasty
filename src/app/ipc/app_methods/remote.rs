@@ -15,15 +15,29 @@ impl App {
         );
     }
 
-    /// 자기 포트라서 연결하지 않은 최근 attach 시도. 오래된 것부터 돌려준다.
+    /// 자기 포트라서 연결하지 않은 최근 attach 시도(오래된 것부터)와, 지금 연결하지 않은 채
+    /// 남은 자동 attach 매핑의 안내(워크스페이스 ID 순)를 돌려준다.
     pub(super) fn ipc_dispatch_remote_refusals(&mut self, cmd: &IpcCommand) {
         let rpc_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
         let refusals: Vec<_> = self.remote.refusals.recent().collect();
+        let notices: Vec<_> = self
+            .remote
+            .refusals
+            .notices()
+            .into_iter()
+            .map(|(workspace_id, notice)| {
+                serde_json::json!({
+                    "workspace_id": workspace_id,
+                    "kind": notice.kind,
+                    "target": notice.target,
+                })
+            })
+            .collect();
         send_response(
             &cmd.response_tx,
             host_ipc::protocol::JsonRpcResponse::success(
                 rpc_id,
-                serde_json::json!({ "refusals": refusals }),
+                serde_json::json!({ "refusals": refusals, "notices": notices }),
             ),
         );
     }

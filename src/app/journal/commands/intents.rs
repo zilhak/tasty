@@ -220,6 +220,10 @@ impl JournalApplication {
                 "intent.tab-name",
                 serde_json::json!({"tab_id":tab_id,"name":name,"user_direct":origin.is_user()}),
             ),
+            R::ClearWorkspaceMapping { workspace_id } => (
+                "intent.workspace-mapping",
+                serde_json::json!({"id":workspace_id,"mapping":null}),
+            ),
         };
         self.admit_intent_request(engine_id, method, params, origin, None);
     }

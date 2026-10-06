@@ -302,3 +302,38 @@ fn direct_rename_commits_before_notification_and_clear_uses_current_selected_tit
             .is_some()
     );
 }
+
+#[test]
+fn clearing_a_mapping_from_the_refusal_banner_removes_it_from_the_workspace() {
+    use crate::intent::{IntentOrigin, rename::DirectRename};
+    let (mut session, mut journal) = boot();
+    let workspace = session.core_state.local_workspaces()[0].id;
+    let origin = IntentOrigin::User {
+        source: crate::core::origin::UserSource::Menu("refusal-banner-test"),
+    };
+    let mapping = crate::model::WorkspaceAttachMapping::profile("prod-web", Some(1));
+    journal.admit_intent_request(
+        session.id,
+        "intent.workspace-mapping",
+        serde_json::json!({"id": workspace, "mapping": mapping}),
+        &origin,
+        None,
+    );
+    finish_intents(&mut journal, &mut session);
+    assert_eq!(
+        session.core_state.local_workspaces()[0].attach_mapping,
+        Some(mapping)
+    );
+    journal.admit_direct_rename(
+        session.id,
+        &DirectRename::ClearWorkspaceMapping {
+            workspace_id: workspace,
+        },
+        &origin,
+    );
+    finish_intents(&mut journal, &mut session);
+    assert_eq!(
+        session.core_state.local_workspaces()[0].attach_mapping,
+        None
+    );
+}

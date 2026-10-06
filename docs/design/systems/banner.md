@@ -35,6 +35,7 @@ Popup은 독립 기능, Banner는 안내와 조치, Toast는 짧은 정보 표�
 네 스코프 모두 **"탭 바 바로 아래 = 콘텐츠 영역 최상단"** 을 기준으로 상단 margin 을 두고 뜬다.
 
 - Workspace / Pane 은 **탭 바 하단** 기준, Tab / Surface 는 **자기 영역 최상단** 기준이지만 — Tab/Surface 영역의 최상단이 곧 탭 바 아래이므로 **네 스코프 모두 사실상 같은 y 위치** 다.
+- Workspace 영역은 그 워크스페이스에 보이는 pane 사각형 전체의 합이다. 사이드바와 제목 표시줄은 포함하지 않는다.
 - 스코프 간 차이는 **가로 폭이 어느 영역의 100% 인지**(그리고 좌우 clamp 경계)뿐이다.
 
 ### ② View / Modal 배너 — 플레이스홀더
@@ -167,6 +168,14 @@ mouse-capture 배너(`defs::BANNER_MOUSE_CAPTURE`)에 한해, X 왼쪽에 "더�
 ## 발화 정책 (불가침)
 
 배너는 사용자 직접 조작에 대한 안내로 표시한다. release의 IPC·CLI·플러그인·시스템 작업만으로는 표시하지 않는다. [사용자와 에이전트 행동 분리](../../identity.md)를 따른다. 토스트에 허용된 원격 연결 상태 알림은 배너의 예외가 아니다.
+
+## 호스트 배너 목록
+
+| id | 범위 | 언제 | 내용 |
+|---|---|---|---|
+| `mouse-capture` | Surface | 마우스를 캡처한 TUI에서 사용자가 드래그 선택을 시도했을 때 | 정적 `content_fn` + 더보기(⋯)·닫기 |
+| `shell-integration-missing` | Surface | 사용자가 본 surface가 출력은 있는데 PromptBoundary를 받지 못할 때 | 정적 `content_fn` + 닫기 |
+| `attach-refusal` | Workspace | 사용자가 활성화한 워크스페이스의 자동 attach 매핑을 연결하지 않았을 때 | `BannerContentSource::AttachRefusal`(대상·이유)을 `tasty_ui_widgets::attach_refusal_banner_content`로 그린다. 매핑 지우기·닫기 버튼이 내용 안에 있어 모서리 닫기 슬롯을 쓰지 않는다. ×는 그 창의 이번 활성화에만 숨긴다. 상세는 [원격 attach](../../features/remote-attach/index.md) |
 
 ## IPC / debug
 

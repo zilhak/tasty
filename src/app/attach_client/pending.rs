@@ -256,6 +256,7 @@ impl App {
                     }
                     if let Some(anchor) = target.anchor {
                         crate::app::auto_attach::forget_anchor_backoff(&mut self.remote, anchor);
+                        self.remote.refusals.clear_notice(anchor);
                     }
                 }
                 Err(error) => self.fail_pending_mirror(ticket, &target, error.to_string()),

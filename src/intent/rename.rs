@@ -1,4 +1,4 @@
-//! Fixed rename inputs admitted by the application journal.
+//! Fixed workspace and tab metadata inputs admitted by the application journal.
 /// 대상은 ID로 지정한다. 팝업이 열린 동안 순서가 바뀌어도 같은 대상을 바꾼다.
 #[cfg_attr(
     all(not(feature = "gui"), not(test)),
@@ -25,5 +25,16 @@ pub enum DirectRename {
     TabName {
         tab_id: u32,
         name: Option<String>,
+    },
+    /// 자동 attach 매핑을 지운다. 연결하지 않은 매핑 배너의 매핑 지우기 버튼이 보낸다.
+    #[cfg_attr(
+        all(not(feature = "gui"), test),
+        expect(
+            dead_code,
+            reason = "the GUI refusal banner raises it; headless tests clear mappings through the journal tests"
+        )
+    )]
+    ClearWorkspaceMapping {
+        workspace_id: u32,
     },
 }

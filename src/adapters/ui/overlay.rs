@@ -43,6 +43,13 @@ pub(crate) fn draw_overlays(
     ));
     // 메뉴가 열려 있는 동안에는 포인터가 떠나도 더보기 버튼을 강조한다.
     let more_menu_open_for = mouse_capture_more_menu_open_for(state);
+    let active_workspace = engine
+        .core
+        .workspace_at(draw_ctx.active_workspace)
+        .map(|ws| (draw_ctx.active_workspace, ws.id));
+    state
+        .attach_notices
+        .sync_banner(&mut state.banners, active_workspace);
     let banner_result = state.banners.draw(
         ctx,
         draw_ctx,
@@ -55,6 +62,20 @@ pub(crate) fn draw_overlays(
     state.banner_layer = Some(banner_result.layer);
     if let Some((scope, trigger_rect)) = banner_result.more_clicked {
         crate::adapters::ui::mouse_capture_menu::open(state, engine, ctx, &scope, trigger_rect);
+    }
+    if let Some((workspace_id, clicks)) = banner_result.attach_refusal {
+        if clicks.dismiss {
+            state.attach_notices.dismiss(workspace_id);
+        }
+        // 매핑 지우기는 `tasty set workspace --clear-mapping`과 같은 저널 경로로 지운다.
+        if clicks.remove && engine.find_workspace_index_for_id(workspace_id).is_some() {
+            state.dispatch_intent(
+                crate::intent::Intent::DirectRename(
+                    crate::intent::rename::DirectRename::ClearWorkspaceMapping { workspace_id },
+                )
+                .from_user_menu("attach_refusal_banner"),
+            );
+        }
     }
 
     // 단축키 도움말은 키보드 포커스를 받지 않으며, 홀드 조합에 따라 표시 지연이 다르다.

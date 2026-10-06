@@ -13,6 +13,7 @@ use super::view::{
 
 /// 워크스페이스 1개를 `WorkspaceEntryView` snapshot 으로 변환. collapsed 레일도 공유.
 pub(super) fn entry_view(
+    notices: &crate::adapters::ui::attach_notice::AttachNotices,
     pending: Option<crate::state::PendingMove>,
     engine: &crate::runtime::engine_read::EngineRead<'_>,
     global_idx: usize,
@@ -34,11 +35,13 @@ pub(super) fn entry_view(
         is_active: global_idx == active_ws,
         move_source: crate::adapters::ui::move_source::workspace_cue(engine, active_ws, pending)
             == Some(global_idx),
+        attach_refusal: notices.tooltip(ws.id),
     }
 }
 
 /// 카테고리 표시가 켜져 있으면 저장된 순서로 그룹을 만든다. 행은 전역 워크스페이스 인덱스를 유지한다.
 pub(super) fn build_category_sections(
+    notices: &crate::adapters::ui::attach_notice::AttachNotices,
     presentation: &dyn crate::model::StructurePresentation,
     pending: Option<crate::state::PendingMove>,
     engine: &crate::runtime::engine_read::EngineRead<'_>,
@@ -56,7 +59,7 @@ pub(super) fn build_category_sections(
                 let entries = engine
                     .workspaces_in_category(cat.id)
                     .into_iter()
-                    .map(|(gi, ws)| (gi, entry_view(pending, engine, gi, ws, active_ws)))
+                    .map(|(gi, ws)| (gi, entry_view(notices, pending, engine, gi, ws, active_ws)))
                     .collect();
                 CategorySectionView {
                     id: cat.id,
@@ -93,11 +96,25 @@ pub fn draw_full_sidebar(
         .workspaces()
         .into_iter()
         .enumerate()
-        .map(|(i, ws)| entry_view(state.pending_move, engine, i, ws, active_ws))
+        .map(|(i, ws)| {
+            entry_view(
+                &state.attach_notices,
+                state.pending_move,
+                engine,
+                i,
+                ws,
+                active_ws,
+            )
+        })
         .collect();
 
-    let sections =
-        build_category_sections(&state.navigation, state.pending_move, engine, active_ws);
+    let sections = build_category_sections(
+        &state.attach_notices,
+        &state.navigation,
+        state.pending_move,
+        engine,
+        active_ws,
+    );
 
     let drag = state.dialogs.ws_drag.as_ref().map(|d| DragSnapshot {
         ws_idx: d.ws_idx,

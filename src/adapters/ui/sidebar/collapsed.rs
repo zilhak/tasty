@@ -31,11 +31,25 @@ pub fn draw_collapsed_sidebar(
         .workspaces()
         .into_iter()
         .enumerate()
-        .map(|(i, ws)| entry_view(state.pending_move, engine, i, ws, active_ws))
+        .map(|(i, ws)| {
+            entry_view(
+                &state.attach_notices,
+                state.pending_move,
+                engine,
+                i,
+                ws,
+                active_ws,
+            )
+        })
         .collect();
 
-    let sections =
-        build_category_sections(&state.navigation, state.pending_move, engine, active_ws);
+    let sections = build_category_sections(
+        &state.attach_notices,
+        &state.navigation,
+        state.pending_move,
+        engine,
+        active_ws,
+    );
 
     let tools_hover = t("sidebar.tools_button");
 

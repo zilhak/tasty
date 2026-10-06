@@ -4,6 +4,8 @@
 //! 자동 재시도 상한에 도달해도 사용자가 다시 활성화하면 재시도할 수 있다.
 //! docs/dev-guide/attach-behavior.md#gui-자동-재연결-스코프 참조.
 
+mod notice;
+
 use std::time::Instant;
 
 use tasty_remote_profiles::{Passkeys, RemoteProfiles};
@@ -60,10 +62,16 @@ impl App {
             })
             .map(|ws| ws.id);
         self.remote.last_active_ws = current_ws_id;
+        if let Some(current) = current_ws_id
+            && is_reactivation_edge(current_ws_id, prev_active)
+        {
+            self.remote.refusals.announce(current);
+        }
 
         self.maybe_trigger_auto_attach(current_ws_id, prev_active);
         self.maybe_trigger_reconnect(current_ws_id, prev_active);
         self.drain_auto_attach_results();
+        self.sync_mapping_notices();
     }
 
     /// 워크스페이스가 닫혔거나 매핑이 지워지거나 바뀐 anchor의 첫 attach 재시도 기록을 지운다.
@@ -197,6 +205,10 @@ impl App {
             .register_endpoint(attempt.clone(), endpoint_target);
         self.remote.active.insert(anchor);
         self.remote.pending_reactivation.remove(&anchor);
+        // 배너는 사용자 조작의 안내다. 매핑만 바뀌어 바로 시작한 시도의 안내는 행 표지만 보인다.
+        let from_activation =
+            current_ws_id == Some(anchor) && is_reactivation_edge(current_ws_id, prev_active);
+        self.remote.refusals.begin_attempt(anchor, from_activation);
         let spawned =
             self.spawn_endpoint_attempt(attempt, anchor, remote_ws, mapping.target.clone(), false);
         if let Err(error) = spawned {
@@ -455,6 +467,13 @@ impl App {
                     if is_reconnect {
                         self.on_reconnect_attempt_failed(anchor, &e);
                     } else {
+                        if let Some(mapping) = accepted.mapping.as_ref() {
+                            self.remote.refusals.note(
+                                anchor,
+                                notice::resolve_failure_kind(&e),
+                                mapping,
+                            );
+                        }
                         self.on_first_attach_failed(anchor, accepted.mapping.as_ref());
                     }
                 }
@@ -523,6 +542,13 @@ impl App {
         let Some(anchor) = accepted.anchor else {
             return;
         };
+        if let Some(mapping) = accepted.mapping.as_ref() {
+            self.remote.refusals.note(
+                anchor,
+                tasty_remote::refusal::MappingNoticeKind::SelfInstance,
+                mapping,
+            );
+        }
         self.remote.active.remove(&anchor);
         if is_reconnect {
             self.on_reconnect_attempt_failed(
@@ -616,12 +642,9 @@ fn resolve_endpoint(target: &WorkspaceAttachTarget) -> anyhow::Result<(Option<Ss
         WorkspaceAttachTarget::Profile { name } => {
             let profiles = RemoteProfiles::load();
             let passkeys = Passkeys::load();
-            let p = profiles.get(name).ok_or_else(|| {
-                anyhow::anyhow!(
-                    "{}",
-                    crate::i18n::t_fmt("cli.remote_profile.not_found", name)
-                )
-            })?;
+            let p = profiles
+                .get(name)
+                .ok_or_else(|| notice::ProfileNotFound(name.clone()))?;
             ssh::resolve_attach_target(p, &profiles, &passkeys)?
         }
         WorkspaceAttachTarget::Inline {

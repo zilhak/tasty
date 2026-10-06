@@ -6,7 +6,11 @@
 use std::collections::{HashMap, VecDeque};
 use std::time::Instant;
 
-use tasty_ui_widgets::{ControlSize, IconButton, IconButtonVariant, banner_shell};
+use tasty_remote::refusal::MappingNoticeKind;
+use tasty_ui_widgets::{
+    AttachRefusalBannerClicks, AttachRefusalBannerView, ControlSize, IconButton, IconButtonVariant,
+    attach_refusal_banner_content, banner_shell,
+};
 
 use crate::adapters::ui::icons;
 use crate::theme::Theme;
@@ -47,6 +51,12 @@ pub enum BannerContentSource {
         instance_id: u64,
         /// 매니페스트 size_hint.height 또는 기본값으로 정한 카드 높이. 너비는 소속 범위를 따른다.
         height: f32,
+    },
+    /// 연결하지 않은 자동 attach 매핑의 안내. 닫기 버튼을 내용 안에 직접 둔다.
+    AttachRefusal {
+        anchor: u32,
+        kind: MappingNoticeKind,
+        target: String,
     },
 }
 
@@ -106,6 +116,23 @@ impl BannerState {
         }
     }
 
+    /// 연결하지 않은 자동 attach 매핑의 Workspace 배너. 사용자가 닫을 때까지 유지한다.
+    pub fn attach_refusal(
+        scope: BannerScope,
+        anchor: u32,
+        kind: MappingNoticeKind,
+        target: String,
+    ) -> Self {
+        Self {
+            content: BannerContentSource::AttachRefusal {
+                anchor,
+                kind,
+                target,
+            },
+            ..Self::persistent(defs::BANNER_ATTACH_REFUSAL, scope)
+        }
+    }
+
     /// 플러그인 mesh 배너. TTL이 없으면 만료되지 않으며 height는 논리 좌표의 카드 높이다.
     pub fn plugin_mesh(
         scope: BannerScope,
@@ -131,7 +158,9 @@ impl BannerState {
 
     pub fn key(&self) -> BannerKey {
         match &self.content {
-            BannerContentSource::Host => BannerKey::Host(self.id),
+            BannerContentSource::Host | BannerContentSource::AttachRefusal { .. } => {
+                BannerKey::Host(self.id)
+            }
             BannerContentSource::PluginMesh { instance_id, .. } => BannerKey::Plugin(*instance_id),
         }
     }
@@ -296,7 +325,7 @@ impl BannerManager {
                 .chain(lane.queue.iter())
                 .filter_map(|b| match &b.content {
                     BannerContentSource::PluginMesh { instance_id, .. } => Some(*instance_id),
-                    BannerContentSource::Host => None,
+                    BannerContentSource::Host | BannerContentSource::AttachRefusal { .. } => None,
                 })
         })
     }
@@ -309,9 +338,6 @@ impl BannerManager {
         std::mem::take(&mut self.closed_plugin_banners)
     }
 
-    // 이유: 호출부가 debug.rs(`#![cfg(debug_assertions)]`)와 `#[cfg(test)]` 뿐이라
-    // release+non-test 빌드에서 미사용으로 잡힌다 (debug-ipc.md 격리 정책의 정상 형태).
-    #[cfg_attr(not(debug_assertions), allow(dead_code))]
     pub fn close_by_id(&mut self, id: BannerId) -> bool {
         let mut target_scope: Option<BannerScope> = None;
         for (scope, lane) in self.scopes.iter_mut() {
@@ -328,6 +354,25 @@ impl BannerManager {
             return self.close_shown(&scope).is_some();
         }
         false
+    }
+
+    /// 연결하지 않은 매핑 배너를 `desired` 하나로 맞춘다. 같으면 그대로 두고, 다르면 모두 닫고 새로 넣는다.
+    pub fn sync_attach_refusal(&mut self, desired: Option<BannerState>) {
+        let current: Vec<&BannerState> = self
+            .scopes
+            .values()
+            .flat_map(|lane| lane.shown.iter().chain(lane.queue.iter()))
+            .filter(|b| b.id == defs::BANNER_ATTACH_REFUSAL)
+            .collect();
+        if current.len() == usize::from(desired.is_some())
+            && current.first().copied() == desired.as_ref()
+        {
+            return;
+        }
+        while self.close_by_id(defs::BANNER_ATTACH_REFUSAL) {}
+        if let Some(banner) = desired {
+            self.push(banner);
+        }
     }
 
     /// hover·비가시 상태에서는 TTL을 멈춘다. 만료 시 다음 배너를 표시하고 플러그인 종료를 기록한다.
@@ -422,6 +467,8 @@ pub struct BannerDrawResult {
     pub more_clicked: Option<(BannerScope, egui::Rect)>,
     /// 빈 경우에도 생성하는 배너 Area. 중앙 레이어 정렬에서 탭바·상태바의 기준으로 쓴다.
     pub layer: egui::LayerId,
+    /// 연결하지 않은 매핑 배너의 anchor와 이번 프레임의 클릭.
+    pub attach_refusal: Option<(u32, AttachRefusalBannerClicks)>,
 }
 
 impl BannerManager {
@@ -455,13 +502,14 @@ impl BannerManager {
             id: BannerId,
             /// plugin egui-mesh 배너면 (plugin_id, instance_id, 셸 높이). host 면 None.
             mesh: Option<(String, u64, f32)>,
+            /// 연결하지 않은 매핑 배너면 (anchor, 이유, 대상).
+            refusal: Option<(u32, MappingNoticeKind, String)>,
             zone: egui::Rect,
             remaining_seconds: Option<u32>,
         }
         let mut slots: Vec<Slot> = Vec::new();
         for banner in self.shown_banners() {
-            let Some(zone) =
-                Self::banner_zone(&banner.scope, draw_ctx, ctx, view_placeholder, theme)
+            let Some(zone) = Self::banner_zone(&banner.scope, draw_ctx, view_placeholder, theme)
             else {
                 continue; // 백그라운드(스코프 비가시) — draw 안 함, TTL 정지(아래).
             };
@@ -471,13 +519,22 @@ impl BannerManager {
                     instance_id,
                     height,
                 } => Some((plugin_id.clone(), *instance_id, *height)),
-                BannerContentSource::Host => None,
+                BannerContentSource::Host | BannerContentSource::AttachRefusal { .. } => None,
+            };
+            let refusal = match &banner.content {
+                BannerContentSource::AttachRefusal {
+                    anchor,
+                    kind,
+                    target,
+                } => Some((*anchor, *kind, target.clone())),
+                _ => None,
             };
             slots.push(Slot {
                 scope: banner.scope.clone(),
                 key: banner.key(),
                 id: banner.id,
                 mesh,
+                refusal,
                 zone,
                 remaining_seconds: banner.remaining_seconds(),
             });
@@ -492,6 +549,7 @@ impl BannerManager {
         let mut hovered_ids: Vec<(BannerScope, BannerKey)> = Vec::new();
         let mut close_requests: Vec<BannerScope> = Vec::new();
         let mut more_clicked: Option<(BannerScope, egui::Rect)> = None;
+        let mut attach_refusal: Option<(u32, AttachRefusalBannerClicks)> = None;
         let mut mesh_drawn: Vec<PluginBannerMeshSlot> = Vec::new();
         // 이번 좌표로 교체해 사라진 배너를 제외한다. hover에는 직전 프레임 값을 쓴다.
         let mut next_card_rects: HashMap<(BannerScope, BannerKey), egui::Rect> = HashMap::new();
@@ -536,6 +594,29 @@ impl BannerManager {
                             let (rect, _) = ui
                                 .allocate_exact_size(egui::vec2(w, *height), egui::Sense::hover());
                             mesh_content_rect = Some(rect);
+                        } else if let Some((anchor, kind, target)) = &slot.refusal {
+                            // 닫기 버튼이 내용 안에 있어 모서리 닫기 슬롯을 쓰지 않는다.
+                            let (before, after) = super::attach_notice::title_parts();
+                            let body = super::attach_notice::banner_body(*kind);
+                            let clicks = attach_refusal_banner_content(
+                                ui,
+                                theme,
+                                &AttachRefusalBannerView {
+                                    title_before: before,
+                                    target,
+                                    title_after: after,
+                                    body: &body,
+                                    remove: crate::i18n::t("remote.refusal.remove"),
+                                    dismiss: crate::i18n::t("remote.refusal.dismiss"),
+                                },
+                            );
+                            if clicks.dismiss {
+                                close_requests.push(slot.scope.clone());
+                            }
+                            if clicks.remove || clicks.dismiss {
+                                attach_refusal = Some((*anchor, clicks));
+                            }
+                            return;
                         } else if let Some(def) = defs::find(slot.id) {
                             (def.content_fn)(ui, theme);
                         } else {
@@ -657,6 +738,7 @@ impl BannerManager {
             hovered: hovered_any,
             more_clicked,
             layer: egui::LayerId::new(egui::Order::Foreground, egui::Id::new("banner_layer")),
+            attach_refusal,
         }
     }
 
@@ -664,7 +746,6 @@ impl BannerManager {
     fn banner_zone(
         scope: &BannerScope,
         draw_ctx: &LayoutContext,
-        ctx: &egui::Context,
         view_placeholder: Option<egui::Rect>,
         theme: &Theme,
     ) -> Option<egui::Rect> {
@@ -675,10 +756,15 @@ impl BannerManager {
                 if *ws_idx != draw_ctx.active_workspace {
                     return None;
                 }
-                let screen = ctx.screen_rect();
+                // 워크스페이스 콘텐츠 = 보이는 pane 전체. 사이드바·제목 표시줄을 덮지 않고 탭 바 아래에 둔다.
+                let rect = draw_ctx
+                    .pane_rects
+                    .iter()
+                    .map(|(_, r)| *r)
+                    .reduce(|a, b| a.union(b))?;
                 egui::Rect::from_min_max(
-                    egui::pos2(screen.left(), screen.top() + theme.tab_bar_height.value()),
-                    screen.max,
+                    egui::pos2(rect.left(), rect.top() + theme.tab_bar_height.value()),
+                    rect.max,
                 )
             }
             BannerScope::Pane(pane_id) => {
@@ -786,6 +872,10 @@ pub mod defs {
             });
         });
     }
+
+    /// 자동 attach 매핑을 연결하지 않았을 때 그 워크스페이스에 표시한다. 내용은
+    /// `BannerContentSource::AttachRefusal`이 그리므로 정적 정의 목록에는 없다.
+    pub const BANNER_ATTACH_REFUSAL: BannerId = "attach-refusal";
 
     /// 출력이 있는데도 PromptBoundary를 받지 못하면 안내한다. 자동으로 설치하거나 수정하지 않는다.
     pub const BANNER_SHELL_INTEGRATION_MISSING: BannerId = "shell-integration-missing";

@@ -33,6 +33,8 @@ pub struct WorkspaceEntryView {
     pub is_active: bool,
     /// 이동 대기 대상이 이 워크스페이스 안에 있고 화면에 보이지 않는지. move 글리프로 표시한다.
     pub move_source: bool,
+    /// 자동 attach 매핑을 연결하지 않았으면 행 끝 경고 표지의 툴팁(대상과 이유).
+    pub attach_refusal: Option<String>,
 }
 
 /// 카테고리별 행과 전역 인덱스. 클릭·드래그 동작이 같은 워크스페이스를 가리키도록 전역 인덱스를 유지한다.
@@ -1344,6 +1346,9 @@ fn draw_workspace_card(
             // 배지 폭을 먼저 확보하고 남은 폭에 이름을 줄여 표시한다.
             // 오른쪽부터 그리므로 Completion 뒤에 NeedsInput을 넣어 왼쪽에 배치한다.
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if let Some(tooltip) = &ws.attach_refusal {
+                    tasty_ui_widgets::attach_refusal_mark(ui, th, tooltip);
+                }
                 let badged = tasty_ui_widgets::workspace_attention_badges(
                     ui,
                     th,
@@ -1471,6 +1476,7 @@ mod tests {
             attached: false,
             is_mirror: false,
             move_source: false,
+            attach_refusal: None,
             is_active,
         }
     }
@@ -1715,6 +1721,7 @@ mod tests {
                 attached: false,
                 is_mirror: false,
                 move_source: false,
+                attach_refusal: None,
                 is_active: true,
             },
             WorkspaceEntryView {
@@ -1727,6 +1734,7 @@ mod tests {
                 attached: false,
                 is_mirror: false,
                 move_source: false,
+                attach_refusal: None,
                 is_active: false,
             },
             WorkspaceEntryView {
@@ -1739,6 +1747,7 @@ mod tests {
                 attached: false,
                 is_mirror: false,
                 move_source: false,
+                attach_refusal: None,
                 is_active: false,
             },
         ];
@@ -1860,6 +1869,7 @@ mod tests {
             attached: true,
             is_mirror: false,
             move_source: false,
+            attach_refusal: None,
             is_active: true,
         }];
         let actions = run_collapsed(ws, false);
