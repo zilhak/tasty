@@ -65,8 +65,8 @@ pub(super) fn draw_tab(
         };
     // 제목 색 우선순위: NeedsInput > Completion > 활성 탭 > 기본.
     let text_color = match tab_kind {
-        Some(AttentionKind::NeedsInput) => th.accent_warning(),
-        Some(AttentionKind::Completion) => th.accent_primary(),
+        Some(AttentionKind::NeedsInput) => th.tab_fg_needs_input(),
+        Some(AttentionKind::Completion) => th.tab_fg_completion(),
         None if is_active => th.text_primary(),
         None => th.text_muted(),
     };

@@ -37,11 +37,11 @@ pub struct SurfaceHighlightsProps<'a> {
     pub scale_factor: f32,
 }
 
-/// NeedsInput은 accent_warning, Completion은 accent_primary 색을 쓴다.
+/// attention 종류별 테두리 색(surface-highlight-input/done-border).
 fn highlight_stroke_color(theme: &Theme, kind: AttentionKind) -> egui::Color32 {
     match kind {
-        AttentionKind::NeedsInput => theme.accent_warning().into(),
-        AttentionKind::Completion => theme.accent_primary().into(),
+        AttentionKind::NeedsInput => theme.surface_highlight_input_border().into(),
+        AttentionKind::Completion => theme.surface_highlight_done_border().into(),
     }
 }
 

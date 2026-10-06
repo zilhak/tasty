@@ -1269,12 +1269,12 @@ fn draw_collapsed_avatar(
         ui.painter()
             .circle_filled(dot_center, dot_radius + 1.5, th.bg_sidebar());
         ui.painter()
-            .circle_filled(dot_center, dot_radius, th.accent_warning());
+            .circle_filled(dot_center, dot_radius, th.status_dot_needs_input());
     } else if ws.completion_count > 0 {
         ui.painter()
             .circle_filled(dot_center, dot_radius + 1.5, th.bg_sidebar());
         ui.painter()
-            .circle_filled(dot_center, dot_radius, th.accent_primary());
+            .circle_filled(dot_center, dot_radius, th.status_dot_completion());
     } else if ws.busy_count > 0 {
         ui.painter()
             .circle_filled(dot_center, dot_radius, th.accent_success());

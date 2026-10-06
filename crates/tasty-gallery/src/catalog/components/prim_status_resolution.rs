@@ -7,13 +7,16 @@ use tasty_ui_widgets::{StatusKind, status_dot};
 use crate::catalog::spec::{StageVariant, TokenChip, meta, note, stage};
 
 /// 우선순위 인덱스 (작을수록 우세).
+/// attention 종류는 owner·activity 입력이 아니지만 시안 순위(needs-input › completion › activity)대로 둔다.
 fn priority(k: StatusKind) -> u8 {
     match k {
-        StatusKind::Error => 0,
-        StatusKind::Waiting => 1,
-        StatusKind::Running => 2,
-        StatusKind::Agent => 3,
-        StatusKind::Idle => 4,
+        StatusKind::NeedsInput => 0,
+        StatusKind::Completion => 1,
+        StatusKind::Error => 2,
+        StatusKind::Waiting => 3,
+        StatusKind::Running => 4,
+        StatusKind::Agent => 5,
+        StatusKind::Idle => 6,
     }
 }
 
@@ -33,6 +36,8 @@ fn label(k: StatusKind) -> &'static str {
         StatusKind::Agent => "agent",
         StatusKind::Waiting => "waiting",
         StatusKind::Error => "error",
+        StatusKind::NeedsInput => "needs input",
+        StatusKind::Completion => "completion",
     }
 }
 

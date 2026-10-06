@@ -19,8 +19,8 @@
 
 | 종류 | 의미 | 표시색 | 우선순위 |
 |---|---|---|---|
-| `Completion` | 작업 완료 | `accent_primary` | 10 |
-| `NeedsInput` | 사용자 응답 대기 | `accent_warning` | 30 |
+| `Completion` | 작업 완료 | `surface_highlight_done_border` (attention-completion) | 10 |
+| `NeedsInput` | 사용자 응답 대기 | `surface_highlight_input_border` (attention-needs-input) | 30 |
 
 `effects_of`가 효과를 결정한다. 두 kind 모두 `panel_item=false`다.
 attention만으로 알림 패널 항목을 만들지 않으며, 필요하면 발생원이 `NotificationStore::add`를 별도로 부른다.

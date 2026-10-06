@@ -20,6 +20,8 @@ fn status_color(theme: &Theme, kind: StatusKind) -> egui::Color32 {
         StatusKind::Agent => egui::Color32::from(theme.accent_agent()),
         StatusKind::Waiting => egui::Color32::from(theme.accent_warning()),
         StatusKind::Error => egui::Color32::from(theme.accent_danger()),
+        StatusKind::NeedsInput => egui::Color32::from(theme.status_dot_needs_input()),
+        StatusKind::Completion => egui::Color32::from(theme.status_dot_completion()),
     }
 }
 

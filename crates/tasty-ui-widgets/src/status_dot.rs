@@ -9,7 +9,8 @@ const PULSE_SCALE_MIN: f32 = 0.6;
 const PULSE_SCALE_RANGE: f32 = 1.2;
 const PULSE_OPACITY: f32 = 0.5;
 
-/// 디자인 StatusDot status.
+/// 디자인 StatusDot status. NeedsInput·Completion은 실행 상태가 아닌 attention 종류이며
+/// 같은 점 자리를 순위(needs-input > completion > 실행 상태)로 차지한다.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum StatusKind {
     Running,
@@ -17,6 +18,8 @@ pub enum StatusKind {
     Agent,
     Waiting,
     Error,
+    NeedsInput,
+    Completion,
 }
 
 impl StatusKind {
@@ -27,6 +30,8 @@ impl StatusKind {
             StatusKind::Agent => theme.status_dot_agent().to_egui(),
             StatusKind::Waiting => theme.status_dot_warning().to_egui(),
             StatusKind::Error => theme.status_dot_danger().to_egui(),
+            StatusKind::NeedsInput => theme.status_dot_needs_input().to_egui(),
+            StatusKind::Completion => theme.status_dot_completion().to_egui(),
         }
     }
 }

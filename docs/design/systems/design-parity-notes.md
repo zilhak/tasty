@@ -491,7 +491,7 @@ State 셀은 `status_dot`(점 `status_dot_size` 8 + gap 6 + caption 11px proport
 
 ## tab_bar — 주의 환기 종류별 색
 
-탭 제목의 NeedsInput은 `accent_warning`, Completion은 `accent_primary`를 사용한다. 입력 요청과 작업 완료를 구분하는 색이며 별도의 값 보존 예외를 두지 않는다.
+탭 제목의 NeedsInput은 `tab_fg_needs_input()`, Completion은 `tab_fg_completion()`을 사용한다(각각 attention-needs-input·attention-completion). 입력 요청과 작업 완료를 구분하는 색이며 별도의 값 보존 예외를 두지 않는다.
 
 구현은 `src/adapters/ui/tab_bar/tab.rs`의 `text_color`와 `AttentionKind` 분기다. 값과 대응은 [토큰 매핑](design-token-mapping.md#attention-kind--needsinputcompletion-surface-highlight-adr-0062), [갤러리 대응표](design-gallery-mapping.md#attention-kind--needsinput-배지dot테두리탭-제목-surfaces-adr-0062)를 따른다.
 

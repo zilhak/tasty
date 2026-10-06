@@ -1,4 +1,4 @@
-//! 공용 StatusDot의 실행·대기·오류 등 상태별 예제.
+//! 공용 StatusDot의 실행·대기·오류 상태와 attention 종류 예제.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{StatusKind, status_dot};
@@ -14,6 +14,24 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             status_dot(ui, theme, StatusKind::Idle, "idle", false, false);
             status_dot(ui, theme, StatusKind::Error, "error", false, false);
         });
+        cluster(ui, theme, "attention kinds", |ui| {
+            status_dot(
+                ui,
+                theme,
+                StatusKind::NeedsInput,
+                "needs input",
+                false,
+                false,
+            );
+            status_dot(
+                ui,
+                theme,
+                StatusKind::Completion,
+                "completion",
+                false,
+                false,
+            );
+        });
     });
 
     meta(
@@ -23,6 +41,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("dot", "status-dot-size"),
             ("pulse", "ring on running / agent"),
             ("agent", "accent-agent"),
+            ("attention rank", "needs-input › completion › activity"),
         ],
         &[
             TokenChip::new(
