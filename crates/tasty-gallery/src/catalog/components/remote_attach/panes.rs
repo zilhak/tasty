@@ -5,7 +5,14 @@ use super::rows::{empty_line, profile_row, ws_row};
 use super::{CAPS_HEADER_H, LEFT_W, NewRow, PROFILES, RaState, WORKSPACES, Ws};
 use crate::catalog::icons;
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::CenterState;
+use tasty_type_geometry::length::LogicalPx;
+use tasty_ui_widgets::{Button, ButtonVariant, CenterState, ControlSize};
+
+/// 시안 plan A 글리프 확대 비율(`transform: scale(1.4)`). 대응 토큰이 없다.
+/// transform 은 배치에 영향이 없으므로 배치 높이는 원래 글리프 크기다.
+const PLAN_A_GLYPH_SCALE: f32 = 1.4;
+/// 시안 plan A 보조 줄의 줄 높이 비율(`lineHeight: 1.5`). 대응 토큰이 없다.
+const PLAN_A_SUB_LINE_HEIGHT: f32 = 1.5;
 
 pub(super) fn left_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, state: RaState) {
     let mut col = ui.new_child(
@@ -55,14 +62,8 @@ pub(super) fn right_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, sta
         ),
         RaState::Empty => loaded_pane(ui, theme, rect, "media-nas", NewRow::Selected, &[], None),
         // 채택하지 않은 비교안 — 가운데 상태에 생성 버튼을 단다.
-        RaState::EmptyPlanA => {
-            CenterState::empty(icons::PANE_EMPTY, "No workspaces on this remote yet")
-                .sub_line(Some(
-                    "media-nas is reachable. Create one there and mirror it here.",
-                ))
-                .action("New workspace", Some(icons::PLUS))
-                .show_in(ui, theme, rect);
-        }
+        // 시안 `RemoteAttachFrame` 의 `center()` 를 그대로 옮긴다. 공용 CenterState 와 값이 다르다.
+        RaState::EmptyPlanA => plan_a_center(ui, theme, rect),
         RaState::Initial => {
             CenterState::empty(icons::REMOTE, "Select an attach profile")
                 .sub_line(Some(
@@ -135,4 +136,90 @@ fn loaded_pane(
             ws_row(&mut col, theme, w, sel_ws == Some(w.name));
         }
     }
+}
+
+/// 시안 plan A 가운데 블록 — 글리프 · 제목 · 보조 줄 · 생성 버튼을 한 묶음으로 세로 가운데에
+/// 둔다. 안쪽 여백은 `space-xl` / `space-lg`, 항목 사이는 `space-sm`, 버튼 위는 `space-xs` 를 더한다.
+fn plan_a_center(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
+    let inner = rect.shrink2(egui::vec2(
+        theme.spacing_lg.value(),
+        theme.spacing_xl.value(),
+    ));
+    let gap = theme.spacing_sm;
+    let muted = theme.text_muted().to_egui();
+    let title = {
+        let mut job = egui::text::LayoutJob::simple(
+            "No workspaces on this remote yet".to_owned(),
+            egui::FontId::proportional(theme.font_size_body.value()),
+            muted,
+            inner.width(),
+        );
+        job.halign = egui::Align::Center;
+        ui.painter().layout_job(job)
+    };
+    let sub = {
+        let size = theme.font_size_caption.value();
+        let fmt = |font: egui::FontId| egui::TextFormat {
+            font_id: font,
+            color: muted,
+            line_height: Some(size * PLAN_A_SUB_LINE_HEIGHT),
+            ..Default::default()
+        };
+        let mut job = egui::text::LayoutJob::default();
+        job.append("media-nas", 0.0, fmt(egui::FontId::monospace(size)));
+        job.append(
+            " is reachable. Create one there and mirror it here.",
+            0.0,
+            fmt(egui::FontId::proportional(size)),
+        );
+        job.wrap.max_width = theme.center_state_max_width().value().min(inner.width());
+        job.halign = egui::Align::Center;
+        ui.painter().layout_job(job)
+    };
+    let glyph_box = theme.icon_glyph_size_md;
+    let button_h = LogicalPx(ControlSize::Sm.height(theme));
+    let block_h = glyph_box
+        + gap
+        + LogicalPx(title.rect.height())
+        + gap
+        + LogicalPx(sub.rect.height())
+        + gap
+        + theme.spacing_xs
+        + button_h;
+    let cx = inner.center().x;
+    let mut y = inner.center().y - (block_h * 0.5).value();
+
+    let painted = glyph_box.value() * PLAN_A_GLYPH_SCALE;
+    let glyph_rect = egui::Rect::from_center_size(
+        egui::pos2(cx, y + glyph_box.value() * 0.5),
+        egui::vec2(painted, painted),
+    );
+    icons::PANE_EMPTY
+        .image(painted, theme.text_placeholder().to_egui())
+        .paint_at(ui, glyph_rect);
+    y += (glyph_box + gap).value();
+    let title_h = title.rect.height();
+    // 가운데 정렬 job 은 원점이 줄의 가운데이므로 블록 가운데에 둔다.
+    ui.painter().galley(egui::pos2(cx, y), title, muted);
+    y += title_h + gap.value();
+    let sub_h = sub.rect.height();
+    ui.painter().galley(egui::pos2(cx, y), sub, muted);
+    y += sub_h + (gap + theme.spacing_xs).value();
+
+    let mut col = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(egui::Rect::from_min_max(
+                egui::pos2(inner.left(), y),
+                egui::pos2(inner.right(), y + button_h.value()),
+            ))
+            .layout(egui::Layout::top_down(egui::Align::Center)),
+    );
+    let plus = |ui: &mut egui::Ui, r: egui::Rect, c: egui::Color32| {
+        icons::PLUS.image(r.height(), c).paint_at(ui, r);
+    };
+    Button::new("New workspace")
+        .variant(ButtonVariant::Secondary)
+        .size(ControlSize::Sm)
+        .leading_icon(&plus)
+        .show(&mut col, theme);
 }
