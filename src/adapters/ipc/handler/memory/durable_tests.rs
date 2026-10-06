@@ -34,10 +34,20 @@ fn call(core: &mut crate::app::services::AppServices, method: &str, params: Valu
 fn call_raw(
     core: &mut crate::app::services::AppServices,
     method: &str,
-    params: Value,
+    mut params: Value,
 ) -> tasty_ipc::protocol::JsonRpcResponse {
     let (mut state, mut engine_session) = crate::state::tests::test_state();
     let mut engine = engine_session.borrow_mut();
+    // surface metadata는 열린 surface에만 쓴다. fixture에 있는 surface를 가리킨다.
+    if method.starts_with("surface.meta.") {
+        let live = engine
+            .workspaces()
+            .into_iter()
+            .flat_map(|ws| ws.all_surface_ids())
+            .next()
+            .expect("fixture 에 열린 surface 가 있다");
+        params["surface_id"] = json!(live);
+    }
     let req = tasty_ipc::protocol::JsonRpcRequest {
         response_timeout_ms: None,
         idempotency_key: None,
@@ -68,11 +78,12 @@ fn writes_outside_memory() -> Vec<(&'static str, Value)> {
     vec![
         (
             "surface.meta.set",
-            json!({ "surface_id": 1, "key": "role", "value": "x" }),
+            // surface_id는 call_raw가 fixture의 열린 surface로 바꾼다.
+            json!({ "surface_id": 0, "key": "role", "value": "x" }),
         ),
         (
             "surface.meta.unset",
-            json!({ "surface_id": 1, "key": "role" }),
+            json!({ "surface_id": 0, "key": "role" }),
         ),
         (
             "approval.summary.set",
