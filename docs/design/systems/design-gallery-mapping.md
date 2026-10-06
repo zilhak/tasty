@@ -419,31 +419,32 @@ thread-local mock. `crates/tasty-gallery/src/catalog/widgets/<name>.rs`.
 
 디자인 `ui_kits/terminal/overlays/settings_window.jsx` ↔ 본체
 `src/view/settings/ui.rs`(+ `settings/ui/tabs/*`, `keybindings_tab.rs`) ↔ 갤러리
-`components/settings.rs` (Overlays `settings` specimen). 그 L2 200 · L1 44 는 본체
-`SETTINGS_SIDEBAR_WIDTH`(200) · `SETTINGS_HEADER_HEIGHT`(44) **값과 일치**하나 컴파일 연동은
-아니다 — 갤러리 크레이트가 본체 bin 의 비공개 상수를 참조할 수 없어 값을 로컬로 들고
-관례로 맞춘다(200 은 리터럴, 44 는 `titlebar_height + spacing_sm` 도출).
+`components/settings.rs` (Overlays `settings` · `settings-controls` specimen). `settings` 는 시안 갤러리
+`SettingsFrame` 의 620×380 전시 구성(L1 탭 넷, L2 168 · 항목 셋, Theme preset 카드 둘, 버튼 줄)을 그대로
+옮긴다. 제품 창 1100×700 · L2 200 · L1 탭 일곱은 Meta 의 canonical 값과 본체에만 있다. L1 높이 44 는
+본체 `SETTINGS_HEADER_HEIGHT`(44)와 같은 `titlebar_height + spacing_sm` 도출이다. `settings-controls` 는
+시안 갤러리에 없는 갤러리 전용 예제로, 콘텐츠 열 최대 폭(620) 안에 행·스위치·색 override·언어 선택을 모았다.
 Layouts 의 `widgets/layout_2depth.rs`(`twodepth`)는 이 미러가 아니라 특정 창에 매이지
 않는 일반 2단계 레이아웃(168/40, 토큰으로 계산)이다.
 
 | 디자인 jsx 컴포넌트 | 본체 (`src/view/settings/ui.rs`) | 갤러리 (`components/settings.rs`) | 비고 |
 |---|---|---|---|
-| `SettingsWindow`(container, 824×472) | `draw_settings_panel` | `draw` | 창 크기는 `settings-window-width`/`-height`(1100×700)다. 본체 창은 배율 없는 생성 상수를, 갤러리는 같은 토큰의 Theme 접근자를 배율 1로 읽는다 |
+| `SettingsWindow`(container, 824×472) · 갤러리 `SettingsFrame`(620×380) | `draw_settings_panel` | `draw` | 본체 창 크기는 `settings-window-width`/`-height`(1100×700)다. 갤러리는 시안 갤러리처럼 620×380 전시 크기로 그린다 |
 | L1 top tabs (underline) | `draw_l1_tab_band` | `l1_band` / `l1_tab` | 밑줄 스타일을 별도 탭 구현으로 복제하지 않는다. **공유 위젯을 쓰지 않는다** — 양쪽 다 자기 `Frame` 으로 밴드를 그린다. 좌측 타이틀·세로 구분선이 탭과 같은 줄에 들어가야 해서 탭만 담는 컨테이너에 안 맞는다 |
-| L2 sidebar(필터+리스트, 200) | `draw_l2_sidebar` | `l2_sidebar` / `l2_item` | 필터 Input + sub-section 리스트. **양쪽 다 200** 이고 공유 위젯을 쓰지 않는다 — 본체는 모달 셸이 소유하는 `SidePanel`(오른쪽 1px vline), 갤러리는 같은 폭의 `Frame`. `tasty_ui_widgets::two_depth_layout_filtered` 는 콘텐츠 안에 놓이는 둥근 테두리 패널(`SUB_TAB_PANEL_WIDTH` 150)이라 **다른 idiom** 이다 |
-| `Row`(label-150 + 컨트롤) | 공통 헬퍼 없음 — 탭마다 따로(`tabs/remote_transfer.rs` `settings_row` · `tabs/appearance.rs` `plugin_setting_row` 등) | `row` | gap 16(space-lg)·min-h 32(`--tasty-settings-row-min-height`). `hint` 있는 행은 라벨 뒤 `HelpHint`(placement Bottom, gap space-xs) 인라인 — 아래 `Note` 설명줄과 중복 금지. 본체 적용: `tabs/performance.rs`(2행) · `tabs/appearance.rs::label_with_tooltip`(4곳) · `keybindings_tab/entries.rs`(3행 — `close_active`/`quit`/`fullscreen_stage_exit`, right-to-left 라벨 컬럼이라 HelpHint를 라벨보다 먼저 add) |
+| L2 sidebar(필터+리스트, 200) | `draw_l2_sidebar` | `l2_sidebar` / `l2_item` | 필터 Input + sub-section 리스트. 본체 200, 갤러리는 시안 전시 크기 168 이고 공유 위젯을 쓰지 않는다 — 본체는 모달 셸이 소유하는 `SidePanel`(오른쪽 1px vline), 갤러리는 `Frame`. `tasty_ui_widgets::two_depth_layout_filtered` 는 콘텐츠 안에 놓이는 둥근 테두리 패널(`SUB_TAB_PANEL_WIDTH` 150)이라 **다른 idiom** 이다 |
+| `Row`(label-150 + 컨트롤) | 공통 헬퍼 없음 — 탭마다 따로(`tabs/remote_transfer.rs` `settings_row` · `tabs/appearance.rs` `plugin_setting_row` 등) | `row`(`settings-controls`) | gap 16(space-lg)·min-h 32(`--tasty-settings-row-min-height`). `hint` 있는 행은 라벨 뒤 `HelpHint`(placement Bottom, gap space-xs) 인라인 — 아래 `Note` 설명줄과 중복 금지. 본체 적용: `tabs/performance.rs`(2행) · `tabs/appearance.rs::label_with_tooltip`(4곳) · `keybindings_tab/entries.rs`(3행 — `close_active`/`quit`/`fullscreen_stage_exit`, right-to-left 라벨 컬럼이라 HelpHint를 라벨보다 먼저 add) |
 | `Mono`(섹션 헤딩) | — | `mono` | micro(10)·uppercase·text-muted |
 | `Note` | — | `note` | `measure-md`(400) 폭·text-muted |
-| 색 스와치(16, radius 2) | — | `theme_swatch` | `swatch-size`16·`corner_radius_sm`2·`border_strong` 보더 |
+| Theme preset 카드(색 띠 34 + 라벨) | — | `theme_swatch` | 시안 `SettingsFrame` 카드 — 띠 34 · 라벨 여백 6/9 · 선택 시 accent 테두리 + 1px ring, 카드 사이 10 |
 | 색 행 hex 칸(Colors·Tasty·Terminal surface 배경) | `tabs/appearance.rs` 의 세 행 → `color_row_line`(높이 control-height = `input_height`, 세로 가운데) + Default 칸 `default_hex_field`(`Input::mono().read_only(true)`) | `settings_appearance_colors` (`settings-appearance-colour-rows` spec, Mocha·Latte) | Default = 읽기 전용(`input-readonly-*`, 값 text-secondary, 1px focus 테두리·선택·복사), override = 일반 Input · 폭 `field-width-xs` · 패널 바깥 폭 `--tasty-size-360` |
 | Colors 헤더(설명 + Reset all) | `tabs/appearance.rs` `draw_appearance_colors` 헤더 줄 — 오른쪽 `Button` ghost sm, override 0 이면 비활성 "Reset all", 있으면 "Reset all (N)" | `settings_appearance_colors::draw_header` (`settings-appearance-colors-header` spec, Mocha·Latte) | 시안 `ui_kits/terminal/overlays/settings_window.jsx` `ColorOverridePicker` 헤더. 갤러리는 본체 헤더 줄의 미러이고 패널 바깥 폭 `--tasty-size-360` |
 | 글꼴 override 격자(Terminal·Explorer·plugin surface) | `tabs/appearance.rs` `font_override_grid` → 행마다 `tasty_ui_widgets::override_row` · 미리보기 `draw_font_preview(PreviewLayout::SideBySide)` 를 격자 아래에 | `settings_font_override` (`settings-appearance-font-override` spec, Mocha·Latte, 설정 본문 최대 폭 짝 + `--tasty-size-360` 긴 문구 짝) | 행 = 라벨 `settings-label-width`(본문 크기 text-secondary) · 컨트롤(family·file `field-width-lg`, size·line height `field-width-xs`, DPI Select `field-width-md`) · 뒤따르는 Checkbox "Use default"(켜면 컨트롤 disabled) · 칸 사이 `space-lg`, 위아래 `space-xs`, 최소 높이 `settings-row-min-height` · 체크박스가 남은 폭에 들어가지 않으면 컨트롤 아래 줄(줄 사이 `space-xs`) · 미리보기는 창 폭과 관계없이 격자 아래 — caption "Preview", Focused·Unfocused 를 폭과 관계없이 나란히(시안 `pv()` 의 flex 1 1 0 · min-width 0 — 남은 폭을 반씩 나누고 줄을 바꾸지 않는다) — 칸마다 1px 테두리(Focused `border-strong`, Unfocused `separator`)·`radius`, 본체는 칸 배경에 실제 surface 의 focused/unfocused 배경과 표본 네 줄을, 갤러리는 시안처럼 `bg-app` 과 한 줄 명령을 그린다 · mono caption 요약 줄 |
-| footer Cancel/Save | `draw_settings_footer` | `footer` | ghost/primary, gap 8 |
+| footer Cancel/Save | `draw_settings_footer` | `footer` | ghost/primary, gap 8. 갤러리는 시안 `SettingsFrame` 처럼 `transfer-footer-pad-y` · `transfer-pad-x` 여백 |
 
 form-control 폭: `field-width-{xs,color,md,range,lg}` = 90/110/160/180/200 (디자인
 `tokens/semantic.css` 미러). 다섯 중 **`range`(180)만 `Theme` 필드로 안 이어져 있다** —
-`dtcg.rs` 가 xs/color/md/lg 넷만 잇는다(집합을 셀 때 그 넷으로 세지 마라). content 는
-Appearance 탭(Theme/Tasty)을 대표 골격으로 보여준다 (전 7탭 전수 구현 아님 — skeleton).
+`dtcg.rs` 가 xs/color/md/lg 넷만 잇는다(집합을 셀 때 그 넷으로 세지 마라). `settings` content 는
+시안처럼 Appearance › Theme 한 화면만 보여준다 (전 7탭 전수 구현 아님 — skeleton).
 
 ### Components 재분류
 

@@ -15,34 +15,35 @@ use crate::catalog::icons;
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::catalog::widgets::dialog as kit;
 
-const L2_WIDTH: LogicalPx = LogicalPx(200.0);
+/// 시안 갤러리 `SettingsFrame`의 전시 크기 620×380. 제품 창(settings-window-* 1100×700)을
+/// 줄여 보이는 Stage 치수다.
+const FRAME_W: LogicalPx = LogicalPx(620.0);
+const FRAME_H: LogicalPx = LogicalPx(380.0);
+/// 시안 L2 사이드바 폭 168(전시 크기 기준).
+const L2_WIDTH: LogicalPx = LogicalPx(168.0);
+/// 시안 L1 탭 좌우 여백 13, 제목 뒤 구분선의 왼쪽 6·오른쪽 14 여백과 높이 20.
+const L1_TAB_PAD_X: LogicalPx = LogicalPx(13.0);
+const L1_SEP_MARGIN_L: LogicalPx = LogicalPx(6.0);
+const L1_SEP_MARGIN_R: LogicalPx = LogicalPx(14.0);
+const L1_SEP_H: LogicalPx = LogicalPx(20.0);
+/// 시안 L2 목록 바깥 여백 6, 항목 세로 여백 5.
+const L2_LIST_PAD: LogicalPx = LogicalPx(6.0);
+const L2_ITEM_PAD_Y: LogicalPx = LogicalPx(5.0);
+/// 시안 콘텐츠 여백 18, 블록 간격 12, 테마 카드 사이 10, 카드 색 띠 34, 카드 라벨 여백 6·9.
+const CONTENT_PAD: LogicalPx = LogicalPx(18.0);
+const CONTENT_GAP: LogicalPx = LogicalPx(12.0);
+const CARD_GAP: LogicalPx = LogicalPx(10.0);
+const CARD_STRIP_H: LogicalPx = LogicalPx(34.0);
+const CARD_LABEL_PAD: (LogicalPx, LogicalPx) = (LogicalPx(9.0), LogicalPx(6.0));
 /// jsx `Row` 라벨 폭 (width 150, flex none) — 디자인 고정 치수.
 const ROW_LABEL_W: LogicalPx = LogicalPx(150.0);
 
-/// 상단 탭 목록. 이 예제는 Appearance를 선택한다.
-const L1_TABS: &[&str] = &[
-    "General",
-    "Terminal",
-    "Appearance",
-    "Keybindings",
-    "Handler",
-    "Misc",
-    "Plugins",
-];
-const L1_ACTIVE: usize = 2;
+/// 시안 L1 탭 네 개. Appearance 를 선택한다.
+const L1_TABS: &[&str] = &["General", "Appearance", "Keybindings", "Plugins"];
+const L1_ACTIVE: usize = 1;
 
-/// Appearance 섹션 L2 (jsx `L2.Appearance`). plugin-기여 "Diff colors" 는 dot 표시.
-/// `(label, plugin_dot)`. 선택 = "Theme".
-const L2_SECTIONS: &[(&str, bool)] = &[
-    ("Theme", false),
-    ("Colors", false),
-    ("General", false),
-    ("Display", false),
-    ("Tasty", false),
-    ("Terminal", false),
-    ("Diff colors", true),
-    ("HTML", false),
-];
+/// 시안 L2 세 항목. Theme 를 선택한다.
+const L2_SECTIONS: &[&str] = &["Theme", "General", "Terminal"];
 const L2_SELECTED: usize = 0;
 
 const FONT_FAMILIES: &[&str] = &["D2Coding", "JetBrains Mono", "Cascadia Code"];
@@ -102,32 +103,34 @@ thread_local! {
     });
 }
 
+/// Overlays › Settings window — 시안 `SettingsFrame`: L1 탭 줄 아래 L2 사이드바와 콘텐츠, 하단 버튼 줄.
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
-    // 창 크기는 settings-window-width/height 토큰이다. 갤러리는 배율 1로 그리므로 1100×700이다.
-    let (window_w, window_h) = (
-        theme.settings_window_width(),
-        theme.settings_window_height(),
-    );
     let band_h = theme.titlebar_height + theme.spacing_sm; // 44
-    let footer_h = theme.item_height_interactive + theme.spacing_md.scaled(2.0); // 52
-    let mid_h =
-        (window_h - band_h - footer_h - theme.border_width.scaled(2.0)).max(theme.measure_sm);
-    // content 폭은 명시 계산(측정 패스에서 available_width 0 → 음수 폭 패닉 회피).
-    let content_w = (window_w - L2_WIDTH - theme.border_width - theme.spacing_lg.scaled(2.0))
-        .max(theme.measure_sm);
-
-    spec::stage(ui, theme, StageVariant::Wrap, |ui| {
-        // 별도 설정 창의 콘텐츠이므로 팝업 그림자를 그리지 않는다.
-        kit::frame_card_flat(ui, theme, window_w, kit::panel_fill(theme), |ui| {
+    spec::stage(ui, theme, StageVariant::Center, |ui| {
+        kit::frame_card(ui, theme, FRAME_W, kit::panel_fill(theme), |ui| {
+            ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
             l1_band(ui, theme, band_h);
             kit::hsep(ui, theme);
+            // 콘텐츠 높이는 버튼 줄을 뺀 나머지다. 버튼 줄 높이는 직전 프레임에 잰 값을 쓴다.
+            let footer_id = ui.id().with("settings_footer_h");
+            let footer_h: f32 = ui
+                .data(|d| d.get_temp(footer_id))
+                .unwrap_or(theme.item_height_interactive.value());
+            let bw = theme.border_width.value();
+            // 프레임 위아래 테두리와 L1 줄 아래 구분선을 뺀 높이가 사이드바·콘텐츠 열의 높이다.
+            let mid_h = (FRAME_H.value() - band_h.value() - bw * 3.0).max(theme.measure_sm.value());
             ui.horizontal_top(|ui| {
+                ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
                 l2_sidebar(ui, theme, mid_h);
                 vsep(ui, theme, mid_h);
-                content(ui, theme, content_w, mid_h);
+                ui.vertical(|ui| {
+                    ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
+                    content(ui, theme, mid_h - footer_h - bw);
+                    kit::hsep(ui, theme);
+                    let r = footer(ui, theme);
+                    ui.data_mut(|d| d.insert_temp(footer_id, r.height()));
+                });
             });
-            kit::hsep(ui, theme);
-            footer(ui, theme);
         });
     });
 
@@ -135,46 +138,23 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         &[
-            (
-                "frame",
-                "settings-window-width × height 1100×700 · bg-panel · border-strong",
-            ),
-            ("L1 band", "h44 · Settings title · 7 tabs"),
-            ("active tab", "2px accent underline"),
-            ("L2", "sidebar 200 · search filter · plugin dot"),
-            ("content", "padding 16 · row label 150 · gap 16"),
-            (
-                "content column",
-                "capped at 620 — every non-full-bleed subtab inherits",
-            ),
-            ("boolean", "switch() — Colors Default = checkbox()"),
-            (
-                "language",
-                "language_select() — built-in 3 + packs · code fallback · missing row",
-            ),
-            (
-                "footer",
-                "52px · space-md size-14 · Cancel (ghost) · Save (primary)",
-            ),
+            ("frame", "1100 × 700 (canonical)"),
+            ("L1 tabs", "44px bar, accent underline"),
+            ("L2 sidebar", "200px, filter + list"),
+            ("footer", "Cancel / Save, right"),
         ],
         &[
-            TokenChip::new("bg-sidebar", "band + L2", theme.bg_sidebar().to_egui()),
+            TokenChip::new("bg-sidebar", "L1 + L2", theme.bg_sidebar().to_egui()),
             TokenChip::new("bg-panel", "content", theme.bg_panel().to_egui()),
             TokenChip::new(
                 "accent-primary",
-                "active tab · switch on",
+                "active tab",
                 theme.accent_primary().to_egui(),
             ),
-            TokenChip::without_color("font-mono", "value text"),
             TokenChip::new(
                 "surface-active",
-                "selected section",
+                "active section",
                 theme.surface_active().to_egui(),
-            ),
-            TokenChip::new(
-                "accent-agent",
-                "plugin section dot",
-                theme.accent_agent().to_egui(),
             ),
         ],
     );
@@ -182,47 +162,81 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "Three tiers: the L1 band picks a domain, the L2 sidebar the section within it, \
-         and content shows the controls. Every boolean is a Switch; only the Colors \
-         override 'Default' row is a Checkbox.",
+        "L1 stays small forever; growth happens only in L2. Plugins are their own L1 tab — never crammed into another group's sidebar.",
+    );
+}
+
+/// 설정 창 콘텐츠의 컨트롤 어휘. 시안 갤러리에는 없는 갤러리 전용 예제로, 본체의 행·스위치·
+/// 색 override·언어 선택을 콘텐츠 열 최대 폭(settings-content-max-width)으로 보인다.
+pub fn draw_controls(ui: &mut egui::Ui, theme: &Theme) {
+    spec::stage(ui, theme, StageVariant::Column, |ui| {
+        ui.set_max_width(theme.settings_content_max_width().value());
+        ui.spacing_mut().item_spacing.y = theme.spacing_md.value();
+        controls(ui, theme);
+    });
+    spec::meta(
+        ui,
+        theme,
+        &[
+            (
+                "content column",
+                "capped at settings-content-max-width (620)",
+            ),
+            ("row", "label 150 · gap 16 · control"),
+            ("boolean", "switch() — Colors Default = checkbox()"),
+            (
+                "language",
+                "language_select() — built-in 3 + packs · code fallback · missing row",
+            ),
+        ],
+        &[
+            TokenChip::without_color("font-mono", "value text"),
+            TokenChip::new(
+                "accent-primary",
+                "switch on · override dot",
+                theme.accent_primary().to_egui(),
+            ),
+        ],
     );
 }
 
 fn l1_band(ui: &mut egui::Ui, theme: &Theme, band_h: LogicalPx) {
-    egui::Frame::new()
-        .fill(theme.bg_sidebar().to_egui())
-        .inner_margin(egui::Margin::symmetric(theme.spacing_md.value() as i8, 0))
-        .show(ui, |ui| {
-            ui.set_min_width(ui.available_width());
-            ui.horizontal(|ui| {
-                ui.set_min_height(band_h.value());
-                ui.spacing_mut().item_spacing.x = theme.spacing_xs.value();
-                ui.label(
-                    egui::RichText::new("Settings")
-                        .size(theme.font_size_max.value())
-                        .strong()
-                        .color(theme.text_primary().to_egui()),
-                );
-                ui.add_space(theme.spacing_sm.value());
-                let (vr, _) = ui.allocate_exact_size(
-                    egui::vec2(theme.border_width.value(), theme.spacing_xl.value()),
-                    egui::Sense::hover(),
-                );
-                ui.painter().vline(
-                    vr.center().x,
-                    vr.y_range(),
-                    egui::Stroke::new(
-                        theme.border_width.value(),
-                        theme.separator.to_egui_premultiplied(),
-                    ),
-                );
-                ui.add_space(theme.spacing_sm.value());
-                // 닫기는 푸터 Cancel과 OS 타이틀바를 사용한다.
-                for (i, t) in L1_TABS.iter().enumerate() {
-                    l1_tab(ui, theme, t, band_h, i == L1_ACTIVE);
-                }
-            });
-        });
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(ui.available_width(), band_h.value()),
+        egui::Sense::hover(),
+    );
+    ui.painter()
+        .rect_filled(rect, 0.0, theme.bg_sidebar().to_egui());
+    let mut row = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(rect.shrink2(egui::vec2(theme.spacing_md.value(), 0.0)))
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+    );
+    // 시안 탭 사이 gap 2.
+    row.spacing_mut().item_spacing.x = theme.border_width.value() * 2.0;
+    row.label(
+        egui::RichText::new("Settings")
+            .size(theme.font_size_max.value())
+            .strong()
+            .color(theme.text_primary().to_egui()),
+    );
+    row.add_space(L1_SEP_MARGIN_L.value());
+    let (vr, _) = row.allocate_exact_size(
+        egui::vec2(theme.border_width.value(), L1_SEP_H.value()),
+        egui::Sense::hover(),
+    );
+    row.painter().vline(
+        vr.center().x,
+        vr.y_range(),
+        egui::Stroke::new(
+            theme.border_width.value(),
+            theme.separator.to_egui_premultiplied(),
+        ),
+    );
+    row.add_space(L1_SEP_MARGIN_R.value());
+    for (i, t) in L1_TABS.iter().enumerate() {
+        l1_tab(&mut row, theme, t, band_h, i == L1_ACTIVE);
+    }
 }
 
 fn l1_tab(ui: &mut egui::Ui, theme: &Theme, label: &str, band_h: LogicalPx, active: bool) {
@@ -231,7 +245,7 @@ fn l1_tab(ui: &mut egui::Ui, theme: &Theme, label: &str, band_h: LogicalPx, acti
         egui::FontId::proportional(theme.font_size_body.value()),
         egui::Color32::PLACEHOLDER,
     );
-    let pad = theme.spacing_md.value();
+    let pad = L1_TAB_PAD_X.value();
     let (rect, _) = ui.allocate_exact_size(
         egui::vec2(galley.rect.width() + pad * 2.0, band_h.value()),
         egui::Sense::hover(),
@@ -259,20 +273,20 @@ fn l1_tab(ui: &mut egui::Ui, theme: &Theme, label: &str, band_h: LogicalPx, acti
     }
 }
 
-fn l2_sidebar(ui: &mut egui::Ui, theme: &Theme, mid_h: LogicalPx) {
+fn l2_sidebar(ui: &mut egui::Ui, theme: &Theme, mid_h: f32) {
     egui::Frame::new()
         .fill(theme.bg_sidebar().to_egui())
         .show(ui, |ui| {
             ui.set_width(L2_WIDTH.value());
-            ui.set_min_height(mid_h.value());
-            ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
-            // 상위 가로 배치와 달리 사이드바 내부는 세로로 쌓는다.
+            ui.set_min_height(mid_h);
+            ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
             ui.vertical(|ui| {
+                ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
                 kit::region_sym(ui, theme.spacing_sm, theme.spacing_sm, |ui| {
                     STATE.with(|s| {
                         let st = &mut *s.borrow_mut();
                         Input::new()
-                            .placeholder("Filter sections…")
+                            .placeholder("Filter…")
                             .icon(&|ui, rect, c| {
                                 icons::SEARCH.image(rect.height(), c).paint_at(ui, rect)
                             })
@@ -280,18 +294,20 @@ fn l2_sidebar(ui: &mut egui::Ui, theme: &Theme, mid_h: LogicalPx) {
                     });
                 });
                 kit::hsep(ui, theme);
-                kit::region_sym(ui, theme.spacing_sm, theme.spacing_sm, |ui| {
-                    ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
-                    for (i, (label, plugin)) in L2_SECTIONS.iter().enumerate() {
-                        l2_item(ui, theme, label, *plugin, i == L2_SELECTED);
+                kit::region_sym(ui, L2_LIST_PAD, L2_LIST_PAD, |ui| {
+                    ui.spacing_mut().item_spacing.y = 0.0;
+                    for (i, label) in L2_SECTIONS.iter().enumerate() {
+                        l2_item(ui, theme, label, i == L2_SELECTED);
                     }
                 });
             });
         });
 }
 
-fn l2_item(ui: &mut egui::Ui, theme: &Theme, label: &str, plugin: bool, active: bool) {
-    let h = theme.item_height_interactive.value();
+fn l2_item(ui: &mut egui::Ui, theme: &Theme, label: &str, active: bool) {
+    let font = egui::FontId::proportional(theme.font_size_body.value());
+    let row_h = ui.fonts(|f| f.row_height(&font));
+    let h = row_h + L2_ITEM_PAD_Y.value() * 2.0;
     let w = ui.available_width();
     let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
     if active {
@@ -301,33 +317,23 @@ fn l2_item(ui: &mut egui::Ui, theme: &Theme, label: &str, plugin: bool, active: 
             theme.surface_active().to_egui(),
         );
     }
-    let mut x = rect.left() + theme.spacing_sm.value();
-    if plugin {
-        let d = theme.status_dot_size.value();
-        ui.painter().circle_filled(
-            egui::pos2(x + d * 0.5, rect.center().y),
-            d * 0.5,
-            theme.accent_agent().to_egui(),
-        );
-        x += d + theme.spacing_sm.value();
-    }
     let fg = if active {
         theme.text_primary()
     } else {
         theme.text_muted()
     };
     ui.painter().text(
-        egui::pos2(x, rect.center().y),
+        egui::pos2(rect.left() + theme.spacing_sm.value(), rect.center().y),
         egui::Align2::LEFT_CENTER,
         label,
-        egui::FontId::proportional(theme.font_size_body.value()),
+        font,
         fg.to_egui(),
     );
 }
 
-fn vsep(ui: &mut egui::Ui, theme: &Theme, mid_h: LogicalPx) {
+fn vsep(ui: &mut egui::Ui, theme: &Theme, mid_h: f32) {
     let (r, _) = ui.allocate_exact_size(
-        egui::vec2(theme.border_width.value(), mid_h.value()),
+        egui::vec2(theme.border_width.value(), mid_h),
         egui::Sense::hover(),
     );
     ui.painter().vline(
@@ -340,131 +346,123 @@ fn vsep(ui: &mut egui::Ui, theme: &Theme, mid_h: LogicalPx) {
     );
 }
 
-fn content(ui: &mut egui::Ui, theme: &Theme, content_w: LogicalPx, mid_h: LogicalPx) {
-    egui::Frame::new()
-        .inner_margin(egui::Margin::same(theme.spacing_lg.value() as i8))
-        .show(ui, |ui| {
-            ui.set_min_width(content_w.value());
-            ui.set_min_height(mid_h.value());
-            ui.spacing_mut().item_spacing.y = theme.spacing_md.value();
-            // 모든 콘텐츠 블록에 같은 최대폭을 적용한다. 본문 산문은 이것과 다른 축인 measure-md를 쓴다.
-            let inner = (content_w - theme.spacing_lg.scaled(2.0))
-                .min(theme.settings_content_max_width())
-                .value();
-            ui.vertical(|ui| {
-                mono(ui, theme, "Theme preset");
-                let cw =
-                    ((inner - theme.spacing_sm.value()) * 0.5).max(theme.field_width_md.value());
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-                    theme_swatch(
-                        ui,
-                        theme,
-                        cw,
-                        "Catppuccin Mocha",
-                        true,
-                        &[
-                            theme.crust,
-                            theme.base,
-                            theme.blue,
-                            theme.mauve,
-                            theme.green,
-                        ],
-                    );
-                    theme_swatch(
-                        ui,
-                        theme,
-                        cw,
-                        "Catppuccin Latte",
-                        false,
-                        &[
-                            theme.surface2,
-                            theme.subtext0,
-                            theme.sky,
-                            theme.lavender,
-                            theme.teal,
-                        ],
-                    );
-                });
-                note(
-                    ui,
-                    theme,
-                    "Selecting a preset resets all custom colors. Fine-tune individual colors \
-                 in the Colors section — switching presets clears those overrides.",
-                );
+/// 시안 콘텐츠: Theme preset 캡션, 테마 카드 두 장, 안내 한 줄.
+fn content(ui: &mut egui::Ui, theme: &Theme, h: f32) {
+    let w = ui.available_width();
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h.max(0.0)), egui::Sense::hover());
+    let mut inner = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(rect.shrink(CONTENT_PAD.value()))
+            .layout(egui::Layout::top_down(egui::Align::Min)),
+    );
+    inner.spacing_mut().item_spacing.y = CONTENT_GAP.value();
+    mono(&mut inner, theme, "Theme preset");
+    let cw = (inner.available_width() - CARD_GAP.value()) * 0.5;
+    inner.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = CARD_GAP.value();
+        theme_swatch(
+            ui,
+            theme,
+            cw,
+            "Catppuccin Mocha",
+            true,
+            &[
+                theme.crust,
+                theme.base,
+                theme.blue,
+                theme.mauve,
+                theme.green,
+            ],
+        );
+        theme_swatch(
+            ui,
+            theme,
+            cw,
+            "Catppuccin Latte",
+            false,
+            &[
+                theme.surface2,
+                theme.subtext0,
+                theme.sky,
+                theme.lavender,
+                theme.teal,
+            ],
+        );
+    });
+    note(
+        &mut inner,
+        theme,
+        "Selecting a preset resets all surface colors.",
+    );
+}
 
-                ui.add_space(theme.spacing_sm.value());
-                kit::hsep(ui, theme);
-                ui.add_space(theme.spacing_sm.value());
-                note(ui, theme, "Control vocabulary — other Appearance sections");
+/// 갤러리 전용 컨트롤 어휘 — 본체 Appearance·General 의 행 컨트롤.
+fn controls(ui: &mut egui::Ui, theme: &Theme) {
+    STATE.with(|s| {
+        let st = &mut *s.borrow_mut();
 
-                STATE.with(|s| {
-                    let st = &mut *s.borrow_mut();
-
-                    mono(ui, theme, "General");
-                    row(ui, theme, "Font family:", |ui| {
-                        select(
-                            ui,
-                            theme,
-                            "settings_font_family",
-                            &mut st.font_family,
-                            FONT_FAMILIES,
-                            theme.field_width_lg.value(),
-                            true,
-                        );
-                    });
-                    row(ui, theme, "Font size:", |ui| {
-                        Input::new()
-                            .mono(true)
-                            .addon("px")
-                            .width(theme.field_width_xs.value())
-                            .show(ui, theme, &mut st.font_size);
-                    });
-                    row(ui, theme, "Ligatures:", |ui| {
-                        switch(ui, theme, &mut st.ligatures, None, true);
-                    });
-                    row(ui, theme, "Background opacity:", |ui| {
-                        range_track(ui, theme, theme.field_width_lg.value(), st.opacity);
-                    });
-
-                    mono(ui, theme, "Colors");
-                    override_row(ui, theme, "blue", "#74c7ec", &mut st.color_default);
-
-                    mono(ui, theme, "General › Language");
-                    row(ui, theme, "Language:", |ui| {
-                        language_select(
-                            ui,
-                            theme,
-                            "settings_language",
-                            &mut st.language,
-                            LANGUAGES,
-                            &LANGUAGE_LABELS,
-                            theme.field_width_lg.value(),
-                            true,
-                        );
-                    });
-                    row(ui, theme, "Language (pack removed):", |ui| {
-                        language_select(
-                            ui,
-                            theme,
-                            "settings_language_missing",
-                            &mut st.language_missing,
-                            LANGUAGES,
-                            &LANGUAGE_LABELS,
-                            theme.field_width_lg.value(),
-                            true,
-                        );
-                    });
-                    note(
-                        ui,
-                        theme,
-                        "Built-in en/ko/ja plus packs in the Tasty home's lang/<code>/pack.toml. A pack without a \
-                         [meta] name shows its code (xx); a configured code with no pack stays \
-                         selected as 'zz (not found)' instead of being overwritten.",
-                    );
-                });
-            });
+        mono(ui, theme, "General");
+        row(ui, theme, "Font family:", |ui| {
+            select(
+                ui,
+                theme,
+                "settings_font_family",
+                &mut st.font_family,
+                FONT_FAMILIES,
+                theme.field_width_lg.value(),
+                true,
+            );
         });
+        row(ui, theme, "Font size:", |ui| {
+            Input::new()
+                .mono(true)
+                .addon("px")
+                .width(theme.field_width_xs.value())
+                .show(ui, theme, &mut st.font_size);
+        });
+        row(ui, theme, "Ligatures:", |ui| {
+            switch(ui, theme, &mut st.ligatures, None, true);
+        });
+        row(ui, theme, "Background opacity:", |ui| {
+            range_track(ui, theme, theme.field_width_lg.value(), st.opacity);
+        });
+
+        mono(ui, theme, "Colors");
+        override_row(ui, theme, "blue", "#74c7ec", &mut st.color_default);
+
+        mono(ui, theme, "General › Language");
+        row(ui, theme, "Language:", |ui| {
+            language_select(
+                ui,
+                theme,
+                "settings_language",
+                &mut st.language,
+                LANGUAGES,
+                &LANGUAGE_LABELS,
+                theme.field_width_lg.value(),
+                true,
+            );
+        });
+        row(ui, theme, "Language (pack removed):", |ui| {
+            language_select(
+                ui,
+                theme,
+                "settings_language_missing",
+                &mut st.language_missing,
+                LANGUAGES,
+                &LANGUAGE_LABELS,
+                theme.field_width_lg.value(),
+                true,
+            );
+        });
+        note(
+            ui,
+            theme,
+            "Built-in en/ko/ja plus packs in the Tasty home's lang/<code>/pack.toml. A pack without a \
+             [meta] name shows its code (xx); a configured code with no pack stays \
+             selected as 'zz (not found)' instead of being overwritten.",
+        );
+    });
 }
 
 /// jsx `Row` — 라벨(width 150, text-secondary) 좌 / 컨트롤 우, gap 16, min-height row.
@@ -537,7 +535,7 @@ fn override_row(ui: &mut egui::Ui, theme: &Theme, field: &str, value: &str, defa
     });
 }
 
-/// jsx `ThemeSwatch` — 상단 색 strip(높이 38) + 하단 라벨 바(bg-panel). active 시 accent border + ring.
+/// 시안 테마 카드 — 상단 색 띠(높이 34) + 하단 라벨 바(bg-panel). active 시 accent border + ring.
 fn theme_swatch(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -546,8 +544,9 @@ fn theme_swatch(
     active: bool,
     strip: &[tasty_type_appearance::color::HexColor],
 ) {
-    let strip_h = theme.titlebar_height.value(); // ≈ 38 (디자인 height 38)
-    let label_h = theme.item_height_interactive.value();
+    let strip_h = CARD_STRIP_H.value();
+    let label_font = egui::FontId::proportional(theme.font_size_caption.value());
+    let label_h = ui.fonts(|f| f.row_height(&label_font)) + CARD_LABEL_PAD.1.value() * 2.0;
     let (rect, _) =
         ui.allocate_exact_size(egui::vec2(width, strip_h + label_h), egui::Sense::hover());
     let radius = theme.corner_radius.value();
@@ -570,12 +569,12 @@ fn theme_swatch(
         .rect_filled(label_rect, 0.0, theme.bg_panel().to_egui());
     ui.painter().text(
         egui::pos2(
-            label_rect.left() + theme.spacing_sm.value(),
+            label_rect.left() + CARD_LABEL_PAD.0.value(),
             label_rect.center().y,
         ),
         egui::Align2::LEFT_CENTER,
         label,
-        egui::FontId::proportional(theme.font_size_caption.value()),
+        label_font,
         theme.text_primary().to_egui(),
     );
     let (border, bw) = if active {
@@ -611,22 +610,30 @@ fn range_track(ui: &mut egui::Ui, theme: &Theme, width: f32, frac: f32) {
     );
 }
 
-/// 푸터 좌우 패딩. 디자인 footer `padding: space-md size-14` 의 수평값(본체와 같은 값).
-const FOOTER_PAD_X: LogicalPx = LogicalPx(14.0);
-
-fn footer(ui: &mut egui::Ui, theme: &Theme) {
-    kit::region_sym(ui, FOOTER_PAD_X, theme.spacing_md, |ui| {
-        ui.horizontal(|ui| {
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                Button::new("Save")
-                    .variant(ButtonVariant::Primary)
-                    .show(ui, theme);
-                Button::new("Cancel")
-                    .variant(ButtonVariant::Ghost)
-                    .show(ui, theme);
+/// 시안 버튼 줄 — transfer-footer-pad-y · transfer-pad-x 여백, 오른쪽 정렬 Cancel · Save.
+fn footer(ui: &mut egui::Ui, theme: &Theme) -> egui::Rect {
+    let margin = egui::Margin::symmetric(
+        theme.transfer_pad_x().value() as i8,
+        theme.transfer_footer_pad_y().value() as i8,
+    );
+    egui::Frame::new()
+        .inner_margin(margin)
+        .show(ui, |ui| {
+            ui.set_min_width(ui.available_width());
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    Button::new("Save")
+                        .variant(ButtonVariant::Primary)
+                        .show(ui, theme);
+                    Button::new("Cancel")
+                        .variant(ButtonVariant::Ghost)
+                        .show(ui, theme);
+                });
             });
-        });
-    });
+        })
+        .response
+        .rect
 }
 
 /// Mono 섹션 헤더 — mono 10 uppercase muted (jsx `Mono`).

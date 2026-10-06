@@ -1469,9 +1469,19 @@ pub fn pages() -> Vec<Page> {
                     vec![
                         spec(
                             "settings",
-                            "Three-tier: tabs over sidebar over content",
-                            Some("1100×700 · 7 L1 tabs · L2 sidebar · content · footer"),
+                            "Settings — two-tier navigation",
+                            Some(
+                                "the largest dialog · L1 top tabs · L2 filterable sidebar · shown at 620×380",
+                            ),
                             components::settings::draw,
+                        ),
+                        spec(
+                            "settings-controls",
+                            "Settings content — the control vocabulary",
+                            Some(
+                                "rows · switch · colour override · language select · gallery-only",
+                            ),
+                            components::settings::draw_controls,
                         ),
                         spec(
                             "settings-appearance-colour-rows",

@@ -15,10 +15,7 @@ const TOLERANCE: f32 = 0.5;
 const BODY_COLUMN_KEY: &str = "g_body_column_width";
 
 /// 문서 칸보다 넓게 남겨 둔 Spec과 그 이유.
-const ALLOWED_WIDE: &[(&str, &str)] = &[(
-    "settings",
-    "제품 설정 창 1100 폭을 그대로 그린다. 시안 갤러리의 620×380 구성으로 바꿀지 결정 전이다.",
-)];
+const ALLOWED_WIDE: &[(&str, &str)] = &[];
 
 #[test]
 fn every_spec_fits_the_doc_column() {
