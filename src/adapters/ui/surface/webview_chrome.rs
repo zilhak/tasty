@@ -41,9 +41,12 @@ pub fn draw_webview_chrome(
     let block_h = glyph + th.spacing_sm.value() + th.font_size_body.value() * 2.0;
     let top_pad = ((panel_rect.height() - block_h) / 2.0).max(th.spacing_xl.value());
 
-    ui.allocate_ui_with_layout(
-        panel_rect.size(),
-        egui::Layout::top_down(egui::Align::Center),
+    // 시안 `HtmlTile`의 내용 padding 16(space-lg)을 좌우에 둬 긴 URL 줄이 가장자리에 닿지 않게 한다.
+    let content_rect = panel_rect.shrink2(egui::vec2(th.spacing_lg.value(), 0.0));
+    ui.scope_builder(
+        egui::UiBuilder::new()
+            .max_rect(content_rect)
+            .layout(egui::Layout::top_down(egui::Align::Center)),
         |ui| {
             ui.add_space(top_pad);
             match nav {

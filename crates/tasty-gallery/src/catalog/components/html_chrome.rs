@@ -99,7 +99,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
 }
 
 /// 고정 W×H 테두리 타일, 콘텐츠를 상단에서 가운데 정렬로 쌓는다.
+/// 좌우에는 시안 `HtmlTile`의 내용 padding 16(space-lg)을 두며 바깥 폭은 그대로다.
 fn tile(ui: &mut egui::Ui, theme: &Theme, add: impl FnOnce(&mut egui::Ui)) {
+    let pad_x = theme.spacing_lg.value();
     egui::Frame::new()
         .fill(theme.bg_panel().to_egui())
         .stroke(egui::Stroke::new(
@@ -107,9 +109,10 @@ fn tile(ui: &mut egui::Ui, theme: &Theme, add: impl FnOnce(&mut egui::Ui)) {
             theme.border_default().to_egui(),
         ))
         .corner_radius(theme.corner_radius.value())
+        .inner_margin(egui::Margin::symmetric(pad_x as i8, 0))
         .show(ui, |ui| {
             ui.allocate_ui_with_layout(
-                egui::vec2(TILE_W.value(), TILE_H.value()),
+                egui::vec2(TILE_W.value() - pad_x * 2.0, TILE_H.value()),
                 egui::Layout::top_down(egui::Align::Center),
                 |ui| {
                     ui.add_space(theme.spacing_xl.value() * 2.0);

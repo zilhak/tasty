@@ -755,7 +755,8 @@ fn the_blind_spots_are_still_the_size_they_say() {
         // 명령 팔레트 행 라벨 위치 시험이 카드 원점 pos2(0.0, 0.0)으로 두 개를 더한다.
         // 첫 실행 셸 설정 화면이 공용 view로 옮겨 가며 카드 배치의 0 리터럴이 하나 줄었다.
         // 플러그인 추가 프리뷰의 공용 view가 카드 안 세로 간격만 주는 0 리터럴 하나를 더한다.
-        (185, 410),
+        // webview chrome과 갤러리 html chrome 타일의 좌우 전용 여백이 세로 0 두 개를 더한다.
+        (187, 410),
         "제외한 0과 test 전용 코드의 수가 달라졌다. 실제 사용과 수집 범위의 변경을 확인하고 기록을 갱신한다."
     );
     let roster: usize = UNIT_SPACE_SITES.iter().map(|(.., n, _)| n).sum();
