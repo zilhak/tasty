@@ -45,6 +45,7 @@ pub mod prim_autocomplete;
 pub mod prim_button;
 pub mod prim_center_state;
 pub mod prim_chips;
+pub mod prim_code_area;
 pub mod prim_drilldown;
 pub mod prim_forms;
 pub mod prim_help_hint;

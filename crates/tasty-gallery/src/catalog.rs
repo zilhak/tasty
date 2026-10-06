@@ -450,6 +450,14 @@ pub fn pages() -> Vec<Page> {
                             components::prim_input::draw,
                         ),
                         spec(
+                            "codearea",
+                            "CodeArea",
+                            Some(
+                                "Multi-line mono field with a line-number gutter — error line, empty, disabled",
+                            ),
+                            components::prim_code_area::draw,
+                        ),
+                        spec(
                             "forms",
                             "Select · Multi-select · Checkbox · Switch",
                             Some("Choice and toggle controls (single + multi choice)"),
