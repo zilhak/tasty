@@ -19,7 +19,13 @@ pub fn handle_task_graph_validate(
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
-    submit(core, engine, id, params, true)
+    match submit(core, engine, &id, params, true) {
+        Ok((_, tasks)) => JsonRpcResponse::success(
+            id,
+            json!({"valid": true, "activated": false, "tasks": tasks}),
+        ),
+        Err(e) => e,
+    }
 }
 
 /// 그래프를 검증하고 저장한 뒤 활성화한다. 검증에 실패하면 아무것도 저장하지 않는다.
@@ -30,43 +36,41 @@ pub fn handle_task_graph_submit(
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
-    submit(core, engine, id, params, false)
+    match submit(core, engine, &id, params, false) {
+        Ok((graph_id, tasks)) => mark_durability(
+            core,
+            JsonRpcResponse::success(
+                id,
+                json!({"valid": true, "activated": true, "graph_id": graph_id, "tasks": tasks}),
+            ),
+        ),
+        Err(e) => e,
+    }
 }
 
+/// 검증(과 dry_run 이 아니면 저장·활성화)을 하고 그래프 id 와 task 목록을 돌려준다.
 fn submit(
     core: &AppServices,
     engine: &mut EngineMut<'_>,
-    id: Value,
+    id: &Value,
     params: &Value,
     dry_run: bool,
-) -> JsonRpcResponse {
-    let workspace_id = match workspace_id_param(params, &id) {
-        Ok(w) => w,
-        Err(e) => return e,
-    };
+) -> Result<(String, Value), JsonRpcResponse> {
+    let workspace_id = workspace_id_param(params, id)?;
     let Some(raw) = params.get("graph") else {
-        return JsonRpcResponse::invalid_params(id, "Missing required 'graph'");
+        return Err(JsonRpcResponse::invalid_params(
+            id.clone(),
+            "Missing required 'graph'",
+        ));
     };
-    let spec: TaskGraphSpec = match serde_json::from_value(raw.clone()) {
-        Ok(s) => s,
-        Err(e) => return JsonRpcResponse::invalid_params(id, format!("invalid 'graph': {e}")),
-    };
-    let outcome =
-        match core
-            .tasks
-            .task_graph_submit(engine.task_scope, workspace_id, spec, dry_run, now_ms())
-        {
-            Ok(o) => o,
-            Err(e) => return agent_err_to_response(id, e),
-        };
-    let tasks = match serde_json::to_value(&outcome.tasks) {
-        Ok(v) => v,
-        Err(e) => return JsonRpcResponse::error(id, -32603, format!("serialize: {e}")),
-    };
-    let body = if dry_run {
-        json!({"valid": true, "activated": false, "tasks": tasks})
-    } else {
-        json!({"valid": true, "activated": true, "graph_id": outcome.graph_id, "tasks": tasks})
-    };
-    mark_durability(core, JsonRpcResponse::success(id, body))
+    let spec: TaskGraphSpec = serde_json::from_value(raw.clone()).map_err(|e| {
+        JsonRpcResponse::invalid_params(id.clone(), format!("invalid 'graph': {e}"))
+    })?;
+    let outcome = core
+        .tasks
+        .task_graph_submit(engine.task_scope, workspace_id, spec, dry_run, now_ms())
+        .map_err(|e| agent_err_to_response(id.clone(), e))?;
+    let tasks = serde_json::to_value(&outcome.tasks)
+        .map_err(|e| JsonRpcResponse::error(id.clone(), -32603, format!("serialize: {e}")))?;
+    Ok((outcome.graph_id, tasks))
 }
