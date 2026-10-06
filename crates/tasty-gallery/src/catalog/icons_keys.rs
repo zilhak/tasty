@@ -183,7 +183,7 @@ fn trigger(ui: &mut egui::Ui, theme: &Theme, glyph: MockGlyph) {
 
 /// 펼친 옵션 목록 — 텍스트 행과 활성 Symbol 행(글리프 + 라벨 + 체크).
 fn option_menu(ui: &mut egui::Ui, theme: &Theme) {
-    let pad = theme.spacing_xs.value();
+    let pad = theme.popup_content_margin().value();
     let bw = theme.border_width.value();
     egui::Frame::new()
         .fill(theme.menu_bg().to_egui())

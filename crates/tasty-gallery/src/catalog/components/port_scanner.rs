@@ -243,7 +243,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         funnel_button(ui, theme, "State", false);
         // 버튼에 붙는 드롭다운이므로 본체 egui popup 과 같은 메뉴 컨테이너 틀을 쓴다.
         kit::frame_card_menu(ui, theme, LogicalPx(216.0), |ui| {
-            kit::region_sym(ui, theme.spacing_sm, theme.spacing_sm, |ui| {
+            // 본체 egui 팝오버와 같은 앵커 메뉴 안쪽 둘레.
+            let ring = theme.popup_content_margin();
+            kit::region_sym(ui, ring, ring, |ui| {
                 kit::caption(ui, theme, "Filter by state", true);
                 ui.add_space(theme.spacing_xs.value());
                 check_row(ui, theme, "LISTEN", true);
