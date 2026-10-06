@@ -62,12 +62,12 @@ const EGUI_LENGTH_HEADS: &[&str] = &[
 const DECLARATION_SITES: &[(&str, usize, &str)] = &[
     (
         "crates/tasty-design-tokens/src/generated/",
-        54,
+        56,
         "스케일 자신 — 이 파일이 곧 size-* 의 정본이다",
     ),
     (
         "crates/tasty-type-appearance/src/theme.rs",
-        50,
+        52,
         "Theme 의 값표 — 다른 자리가 참조해야 할 이름(border_width 등)이 여기 산다",
     ),
 ];
@@ -107,12 +107,13 @@ fn is_in_unit_space(hit: &Hit) -> bool {
 const AREAS: &[(&str, usize, &str)] = &[
     (
         "src/adapters/ui/popup/",
-        55,
+        57,
         // popup의 기본 크기·열 최소폭·스크롤 상한 중 대응하는 역할의 토큰이 없는 값이 남아 있다.
         // 같은 숫자의 폭·점 크기 토큰을 높이·간격에 대신 쓰지 않는다.
         // 스케일에 size-140·360·440·620이 들어오면서 기존 popup 크기표의 360·440·140이 새로 집계됐다.
         // 포트 스캐너 표의 글자 높이 여백 6·4·8·8과 헤더 왼쪽 여백 12는 Table 길이 setter가 LogicalPx를
         // 받게 되면서 LogicalPx로 감싸 집계된다. 값은 이전과 같다.
+        // 스케일에 size-10이 들어오면서 transfer popup의 여백 10 두 자리가 새로 집계됐다.
         "popup 기본 크기표 — vec2(400.0, 320.0) 처럼 정의 옆에 값이 그대로 박혀 있다",
     ),
     (
@@ -120,14 +121,16 @@ const AREAS: &[(&str, usize, &str)] = &[
         // 본체 chrome의 역할별 치수다. 테마 접근자가 생긴 값은 옮기되 같은 숫자의 다른 역할과 혼동하지 않는다.
         // 튜토리얼 popup 360·탐색기 열 140 같은 기존 값은 새 스케일 값이라 집계된다.
         // 알림 popup 기본 높이 400은 대응 토큰이 없어 notification.rs 의 sizer 에 남는다(폭은 토큰).
-        50,
+        // 스케일에 size-10이 들어오면서 기존 값 10이 새로 집계됐다.
+        53,
         "나머지 host chrome(사이드바·타이틀바·서피스 장식)",
     ),
     (
         "src/view/",
         // 설정·플러그인 화면에서 역할에 맞는 토큰이 아직 없는 치수와 폰트 값이 남아 있다.
         // 단축키 탭 버튼 폭 140은 새 스케일 값이지만 녹화 슬롯 토큰과 역할이 달라 그대로 둔다.
-        35,
+        // 스케일에 size-10이 들어오면서 기존 값 10이 새로 집계됐다.
+        36,
         "설정 화면의 폼 레이아웃",
     ),
     (
@@ -160,7 +163,8 @@ const AREAS: &[(&str, usize, &str)] = &[
         // 공개 역할 토큰이 없다.
         // Appearance 색 행 예제와 Extension Mapping 예제의 테마 패널 바깥 폭 360은 디자인 Spec의
         // `--tasty-size-360`이며 공개 역할 토큰이 없다.
-        140,
+        // 스케일에 size-10이 들어오면서 기존 값 10이 새로 집계됐다.
+        144,
         "갤러리 specimen은 배율 검사에서 제외돼도 스케일 검사는 받는다(ADR-0039). 이름 붙은 치수와 인라인 값, 전시 목적을 별도로 분류한다.",
     ),
     (
@@ -168,7 +172,8 @@ const AREAS: &[(&str, usize, &str)] = &[
         // 아바타·파일 선택기·원격 도구의 치수는 같은 값의 다른 토큰으로 대체할 수 없다.
         // FH_TARGET_MONO_ADVANCE는 한 글자를 더할 때 잰 폭 증가분이므로 폰트가 바뀌면 다시 측정한다.
         // 스케일 밖 값은 이 집계에 포함되지 않는다.
-        14,
+        // 스케일에 size-10이 들어오면서 상태바 여백 10 등 기존 값 10이 새로 집계됐다.
+        19,
         "공용 위젯",
     ),
     (
@@ -617,7 +622,7 @@ fn the_gallery_share_is_one_question_or_it_is_not() {
     );
     assert_eq!(
         (named_cited, named_plain, inline_cited, inline_plain),
-        (58, 75, 0, 12),
+        (60, 76, 0, 13),
         "갤러리 후보의 (이름 있음/없음, 디자인 언급 있음/없음) 분류 수가 바뀌었다. 해당 선언과 주석을 확인하고 기록을 갱신한다."
     );
 }
@@ -663,8 +668,8 @@ fn the_gallery_share_splits_into_four_kinds() {
         .map_or(0, |(_, n, _)| *n);
     assert_eq!(
         (displayed, named_value, nameless, undecided),
-        // 같은 Theme 값 7개 중 4개는 표 열 폭 140이다. 같은 숫자의 kb-ie·info-modal 토큰과 역할이 다르다.
-        (roster, 7, 0, ratcheted - 7),
+        // 같은 Theme 값 8개 중 4개는 표 열 폭 140이다. 같은 숫자의 kb-ie·info-modal 토큰과 역할이 다르다.
+        (roster, 8, 0, ratcheted - 8),
         "갤러리의 전시 후보·같은 Theme 값·값 없음·이름 붙은 치수 분류 수가 달라졌다"
     );
 }
@@ -739,7 +744,8 @@ fn the_blind_spots_are_still_the_size_they_say() {
         // The icon button state table test adds its 24x24 anchor rect at the origin (4 literals).
         // The clipboard type segments are drawn once in tasty-ui-widgets instead of three
         // copies in the plugin and the gallery, which drops four zero literals.
-        (183, 354),
+        // size-10 joining the scale makes the existing test literals of 10 count as well.
+        (183, 389),
         "제외한 0과 test 전용 코드의 수가 달라졌다. 실제 사용과 수집 범위의 변경을 확인하고 기록을 갱신한다."
     );
     let roster: usize = UNIT_SPACE_SITES.iter().map(|(.., n, _)| n).sum();
