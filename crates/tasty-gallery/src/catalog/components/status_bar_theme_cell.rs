@@ -53,10 +53,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         &[
-            (
-                "glyph box",
-                "12 — --tasty-statusbar-glyph-size → --tasty-icon-size-xs",
-            ),
+            ("glyph box", "12 — statusbar-glyph-size → icon-size-xs"),
             ("per theme", "the same value — Mocha and Latte never differ"),
             ("per glyph", "the same value — sun and theme never differ"),
             (
@@ -73,7 +70,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "asset — icons/sun.svg rays 2→3 / 22→21, diagonals to ±6.4",
             ),
             ("ink before", "sun 92% · theme 83% → Latte read +2px large"),
-            ("color", "--tasty-statusbar-theme-glyph"),
+            ("color", "statusbar-theme-glyph"),
         ],
         &[
             TokenChip::without_color("statusbar-glyph-size", "every inline glyph in the bar"),
