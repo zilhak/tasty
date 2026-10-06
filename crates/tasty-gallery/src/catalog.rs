@@ -538,7 +538,15 @@ pub fn pages() -> Vec<Page> {
                             "drilldown",
                             "One area, swapped — list → detail → back",
                             Some(
-                                "Full-width ListCtrl swaps in place to a detail view; a pinned back bar (← + title + actions) returns — first home Settings › Keybindings › Preset. Select a preset, then press ←",
+                                "When the model is \"one full-width list, pick an item, see its \
+                                 detail, go back\" — and a side-by-side split would starve both — \
+                                 the content area swaps in place. The list view (a full-width \
+                                 ListCtrl) becomes a detail view the moment you select a row; a \
+                                 pinned back bar (← + title) returns you. This is a generic \
+                                 DrillDown layout — its first home is Settings › Keybindings › \
+                                 Preset (preset list → diff preview), replacing the old cramped \
+                                 120px-list + right-preview split. Select a preset below, then \
+                                 press ←.",
                             ),
                             components::prim_drilldown::draw,
                         ),

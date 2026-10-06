@@ -103,7 +103,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("views", "list (full width) ⇄ detail (full width)"),
             (
                 "back bar",
-                "36px, --tasty-drilldown-backbar-height · bottom hairline",
+                "36px, drilldown-backbar-height · bottom hairline",
             ),
             ("back button", "ghost IconButton · chevronLeft"),
             ("title", "detail subject, next to ←"),
