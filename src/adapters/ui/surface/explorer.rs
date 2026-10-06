@@ -1447,6 +1447,9 @@ fn detail_view(
     let scroll_to: Option<PathBuf> = view.scroll_to.clone();
     let out = Table::new(columns)
         .active_sort(tab.sort_column, dir)
+        // 상세 머리글 자간은 시안 출처끼리 갈린다(디자인 갤러리 .06em, 공용 Table 토큰).
+        // 디자인 회신 전까지 기존 모양을 유지한다.
+        .header_as_given()
         .header_fill(theme.table_header_bg().to_egui())
         // Size 제목 끝을 본문 Size 값처럼 날짜 열에서 띄운다(design DetailHeader paddingRight).
         .header_pad_right(theme.spacing_sm)

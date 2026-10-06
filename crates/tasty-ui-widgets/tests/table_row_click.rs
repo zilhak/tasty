@@ -351,7 +351,7 @@ fn hovered_row_fill_is_table_row_bg_hover() {
     );
 }
 
-/// 오른쪽 정렬 열 제목 "Kind" 글자 영역의 오른쪽 끝.
+/// 오른쪽 정렬 열 제목 "Kind"(머리글은 "KIND") 글자 영역의 오른쪽 끝.
 fn right_header_text_right(theme: &Theme, pad_right: LogicalPx) -> f32 {
     let ctx = egui::Context::default();
     let mut shapes = Vec::new();
@@ -394,7 +394,8 @@ fn right_header_text_right(theme: &Theme, pad_right: LogicalPx) -> f32 {
     shapes
         .iter()
         .find_map(|c| match &c.shape {
-            egui::epaint::Shape::Text(t) if t.galley.text() == "Kind" => {
+            // 머리글은 대문자로 그린다.
+            egui::epaint::Shape::Text(t) if t.galley.text() == "KIND" => {
                 Some(t.visual_bounding_rect().right())
             }
             _ => None,
@@ -412,4 +413,69 @@ fn header_pad_right_moves_right_aligned_titles_in() {
         ((flush - padded) - pad.value()).abs() <= 0.5,
         "right header title moves in by {pad}: flush {flush}, padded {padded}"
     );
+}
+
+/// 그려진 텍스트와 그 자간 목록. `as_given` 이면 `header_as_given()` 을 켠다.
+fn header_texts(theme: &Theme, as_given: bool) -> Vec<(String, f32)> {
+    let ctx = egui::Context::default();
+    let mut shapes = Vec::new();
+    for _ in 0..2 {
+        let out = ctx.run(raw(vec![]), |c| {
+            egui::CentralPanel::default().show(c, |ui| {
+                let columns = vec![TableColumn {
+                    title: "Name",
+                    width: TableColumnWidth::Remainder {
+                        at_least: LogicalPx(140.0),
+                        clip: true,
+                    },
+                    align: TableAlign::Left,
+                    sort_id: None::<Col>,
+                }];
+                let table = Table::new(columns);
+                let table = if as_given {
+                    table.header_as_given()
+                } else {
+                    table
+                };
+                table.show(
+                    ui,
+                    theme,
+                    ROWS,
+                    |_row: &Row| false,
+                    |ui, _th, row: &Row, _col| {
+                        ui.label(row.name);
+                    },
+                );
+            });
+        });
+        shapes = out.shapes;
+    }
+    shapes
+        .iter()
+        .filter_map(|c| match &c.shape {
+            egui::epaint::Shape::Text(t) => Some((
+                t.galley.text().to_string(),
+                t.galley.job.sections[0].format.extra_letter_spacing,
+            )),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn header_titles_are_uppercased_unless_drawn_as_given() {
+    let theme = tasty_themes::mocha_fallback();
+    let spacing_of = |texts: &[(String, f32)], title: &str| {
+        texts.iter().find(|(t, _)| t == title).map(|(_, sp)| *sp)
+    };
+    let caps = header_texts(&theme, false);
+    let expected = theme
+        .table_header_tracking(theme.table_header_font_size())
+        .value();
+    assert!(expected > 0.0);
+    assert_eq!(spacing_of(&caps, "NAME"), Some(expected), "{caps:?}");
+    assert_eq!(spacing_of(&caps, "Name"), None, "{caps:?}");
+    let given = header_texts(&theme, true);
+    assert_eq!(spacing_of(&given, "Name"), Some(0.0), "{given:?}");
+    assert_eq!(spacing_of(&given, "NAME"), None, "{given:?}");
 }

@@ -64,6 +64,7 @@ pub struct Table<'a, K> {
     header_pad_x: LogicalPx,
     header_pad_right: LogicalPx,
     header_height: Option<LogicalPx>,
+    header_as_given: bool,
     row_height: Option<LogicalPx>,
     max_scroll_height: Option<LogicalPx>,
     id_salt: Option<egui::Id>,
@@ -82,6 +83,7 @@ impl<'a, K> Table<'a, K> {
             header_pad_x: LogicalPx(0.0),
             header_pad_right: LogicalPx(0.0),
             header_height: None,
+            header_as_given: false,
             row_height: None,
             max_scroll_height: None,
             id_salt: None,
@@ -125,6 +127,14 @@ impl<'a, K> Table<'a, K> {
     /// 헤더 행 높이. 미지정 시 `table_cell_height`.
     pub fn header_height(mut self, h: LogicalPx) -> Self {
         self.header_height = Some(h);
+        self
+    }
+
+    /// 헤더 제목을 받은 그대로(대소문자 유지, 자간 없음) 그린다. 기본은 시안 `Table` 대로
+    /// 대문자 · `table-header-tracking` 이다. 시안 출처끼리 머리글 값이 갈리는 화면이
+    /// 디자인 회신 전까지 기존 모양을 유지할 때 쓴다.
+    pub fn header_as_given(mut self) -> Self {
+        self.header_as_given = true;
         self
     }
 
@@ -188,6 +198,7 @@ impl<'a, K> Table<'a, K> {
         let active_sort = self.active_sort;
         let header_pad_x = self.header_pad_x;
         let header_pad_right = self.header_pad_right;
+        let header_as_given = self.header_as_given;
         let selectable = self.selectable;
         let striped = self.striped;
         let max_scroll_height = self.max_scroll_height;
@@ -225,8 +236,15 @@ impl<'a, K> Table<'a, K> {
             let mut table = builder.header(header_h.value(), |mut header| {
                 for col in columns {
                     header.col(|ui| {
-                        if header_cell(ui, theme, col, active_sort, header_pad_x, header_pad_right)
-                        {
+                        if header_cell(
+                            ui,
+                            theme,
+                            col,
+                            active_sort,
+                            header_pad_x,
+                            header_pad_right,
+                            header_as_given,
+                        ) {
                             clicked_sort = col.sort_id;
                         }
                     });
@@ -323,6 +341,7 @@ fn header_cell<K: Copy + PartialEq>(
     active_sort: Option<(K, TableSortDir)>,
     pad_x: LogicalPx,
     pad_right: LogicalPx,
+    as_given: bool,
 ) -> bool {
     let is_active = match (col.sort_id, active_sort) {
         (Some(k), Some((ak, _))) => k == ak,
@@ -336,11 +355,18 @@ fn header_cell<K: Copy + PartialEq>(
     } else {
         ""
     };
-    let text = if arrow.is_empty() {
+    // 시안 머리글은 대문자 · `table-header-tracking` 이다.
+    let title = if as_given {
         col.title.to_string()
     } else {
-        format!("{}{arrow}", col.title)
+        col.title.to_uppercase()
     };
+    let text = if arrow.is_empty() {
+        title
+    } else {
+        format!("{title}{arrow}")
+    };
+    let size = theme.table_header_font_size();
     let rich = egui::RichText::new(text)
         .color(if is_active {
             // active 정렬 컬럼 강조색 — 대응 component 토큰 부재로 text_primary() 로 alias.
@@ -348,7 +374,12 @@ fn header_cell<K: Copy + PartialEq>(
         } else {
             egui::Color32::from(theme.table_header_fg())
         })
-        .size(theme.table_header_font_size().value())
+        .size(size.value())
+        .extra_letter_spacing(if as_given {
+            0.0
+        } else {
+            theme.table_header_tracking(size).value()
+        })
         .strong();
 
     let clickable = col.sort_id.is_some();

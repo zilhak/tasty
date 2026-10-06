@@ -259,6 +259,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     let selected = *sel;
                     let out = Table::new(columns)
                         .active_sort(0_usize, TableSortDir::Asc)
+                        // 상세 머리글 자간은 시안 출처끼리 갈린다(디자인 갤러리 .06em, 공용 Table 토큰).
+                        // 디자인 회신 전까지 기존 모양을 유지한다.
+                        .header_as_given()
                         .header_fill(egui::Color32::from(theme.table_header_bg()))
                         // design DetailHeader: Size 제목 paddingRight 8, 본문 Size 셀과 같은 여백.
                         .header_pad_right(theme.spacing_sm)

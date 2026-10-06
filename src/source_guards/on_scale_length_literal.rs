@@ -761,7 +761,8 @@ fn the_blind_spots_are_still_the_size_they_say() {
         // webview chrome과 갤러리 html chrome 타일의 좌우 전용 여백이 세로 0 두 개를 더한다.
         // The file picker filter chip clamps its text cap and the gallery name field's chip share at zero (2 literals).
         // The override row fit test adds its checkbox width literal.
-        (189, 411),
+        // The shared table header mode test adds its 140 column width.
+        (189, 412),
         "제외한 0과 test 전용 코드의 수가 달라졌다. 실제 사용과 수집 범위의 변경을 확인하고 기록을 갱신한다."
     );
     let roster: usize = UNIT_SPACE_SITES.iter().map(|(.., n, _)| n).sum();
