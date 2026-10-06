@@ -321,8 +321,8 @@ fn trigger_row(ui: &mut egui::Ui, theme: &Theme, triggers: &[&str]) {
 }
 
 /// 트리거 칩 — mono micro 이벤트명 + 오른쪽 글리프 12, 높이 16, 안쪽 여백 0 4, border-default.
-/// `add` 면 점선 테두리 · text-muted 글자 · chevronDown 글리프(남은 이벤트 메뉴), 아니면
-/// 실선 테두리 · text-secondary 글자 · close 글리프(칩 전체가 제거 영역).
+/// `add` 면 text-muted 글자 · chevronDown 글리프(남은 이벤트 메뉴), 아니면 text-secondary 글자
+/// · close 글리프(칩 전체가 제거 영역). 테두리는 둘 다 실선이다.
 fn trigger_chip(ui: &mut egui::Ui, theme: &Theme, label: &str, add: bool) {
     let fg = if add {
         theme.text_muted()
@@ -343,23 +343,9 @@ fn trigger_chip(ui: &mut egui::Ui, theme: &Theme, label: &str, add: bool) {
     let bw = theme.border_width.value();
     let stroke = egui::Stroke::new(bw, theme.border_default().to_egui());
     let radius = theme.corner_radius_sm.value();
-    if add {
-        // 점선 길이는 시안에 값이 없어 갤러리의 다른 점선 예제와 같은 space-xs 를 쓴다.
-        let dash = theme.spacing_xs.value();
-        let r = rect.shrink(bw * 0.5);
-        for pts in [
-            [r.left_top(), r.right_top()],
-            [r.right_top(), r.right_bottom()],
-            [r.right_bottom(), r.left_bottom()],
-            [r.left_bottom(), r.left_top()],
-        ] {
-            ui.painter()
-                .extend(egui::Shape::dashed_line(&pts, stroke, dash, dash));
-        }
-    } else {
-        ui.painter()
-            .rect_stroke(rect, radius, stroke, egui::StrokeKind::Inside);
-    }
+    // 시안의 Add trigger… 는 점선이지만 점선·틈 길이 토큰이 없어 실선으로 그린다.
+    ui.painter()
+        .rect_stroke(rect, radius, stroke, egui::StrokeKind::Inside);
     let pos = egui::pos2(
         rect.left() + pad_x,
         rect.center().y - galley.rect.height() * 0.5,
@@ -431,5 +417,11 @@ fn meta_note(ui: &mut egui::Ui, theme: &Theme) {
          host emits a bound lifecycle event). A script can have either, both, or neither. The \
          changed state is informational — the script still runs, but re-confirms once (TOFU) \
          because the on-disk file drifted from the registered hash.",
+    );
+    spec::note(
+        ui,
+        theme,
+        "The kit draws Add trigger… with a dashed border-default outline. The tokens define no \
+         dash length or gap, so the gallery draws it solid until those tokens exist.",
     );
 }
