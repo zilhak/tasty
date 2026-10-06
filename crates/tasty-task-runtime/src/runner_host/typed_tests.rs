@@ -24,6 +24,7 @@ fn opts(name: &str, command: TaskCommand) -> TaskCreateOpts {
     }
 }
 
+#[cfg(unix)]
 fn wait_outcome(exec: &mut HostExecutor, handle: &DispatchHandle) -> PollOutcome {
     for _ in 0..100 {
         match exec.poll(handle) {
