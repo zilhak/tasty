@@ -368,6 +368,8 @@ specimen 간 중복 chrome 을 한 곳으로 모은 카탈로그 헬퍼 (`crates
 
 갤러리가 그리는 글자(Meta의 Layout spec 값과 Tokens used 칩, Spec 제목·설명, 예제 안의 라벨)에는 토큰 이름을 시안 CSS 변수에서 `--tasty-` 접두를 뗀 이름으로 쓴다. 시안 칩의 `--tasty-bg-app`은 갤러리에서 `bg-app`이다. 갤러리 UI 글꼴은 하이픈 두 개를 붙여 그리므로 접두를 그대로 두면 `-tasty-bg-app`처럼 한 줄로 읽힌다. 소스 주석에서 시안 CSS 변수를 가리킬 때는 접두를 둔 원래 이름을 쓴다.
 
+시안도 Meta에서는 같은 표기를 쓴다. 시안 소스는 `--tasty-` 이름을 그대로 두고, `gallery/shell.jsx`의 `Meta`가 칩과 Layout spec 값을 그릴 때 접두를 떼며 칩 툴팁에는 전체 이름을 보인다. Meta 밖의 설명문(Spec 본문 등)은 시안에서 접두를 유지한다. 갤러리는 글꼴 때문에 설명문에서도 접두를 떼므로, 이 부분은 그리는 방식만 다르다.
+
 `crates/tasty-gallery/tests/meta_token_notation.rs`가 모든 Spec을 GPU 없이 한 프레임 그리고, 출력 shape의 글자와 Section·Spec 제목에 `--tasty-`가 있으면 실패한다. 그리지 않는 문자열과 주석은 보지 않는다.
 
 <a id="primitive-컴포넌트-레이어-components"></a>
