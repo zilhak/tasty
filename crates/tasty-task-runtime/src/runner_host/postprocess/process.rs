@@ -115,9 +115,14 @@ pub(crate) fn spawn(req: ProcessRequest) -> Result<Started, PostprocessReport> {
         cmd.current_dir(dir);
     }
     ProcessGroup::configure(&mut cmd);
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| fail(PostprocessCause::Spawn, format!("spawn '{program}': {e}")))?;
+    // Linux 는 호스트가 비정상 종료하면 리더가 SIGTERM 을 받도록 호스트 수명에 묶는다. 그룹의
+    // 다른 프로세스에는 신호가 가지 않는다(리더가 전달하지 않으면 남는다).
+    #[cfg(target_os = "linux")]
+    let spawned = tasty_reaper::spawn_bound_to_host(cmd);
+    #[cfg(not(target_os = "linux"))]
+    let spawned = cmd.spawn();
+    let mut child =
+        spawned.map_err(|e| fail(PostprocessCause::Spawn, format!("spawn '{program}': {e}")))?;
     let pid = child.id();
     let mut group = ProcessGroup::adopt(pid);
 

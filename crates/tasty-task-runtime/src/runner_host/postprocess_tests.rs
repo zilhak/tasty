@@ -576,3 +576,86 @@ mod through_the_runner {
         }
     }
 }
+
+/// 호스트 역할 프로세스에서 후처리를 띄우는 helper 실행. 아래 시험이 테스트 바이너리를 이 이름으로
+/// 다시 실행한다. 환경변수가 없으면 아무것도 하지 않는다.
+#[cfg(target_os = "linux")]
+#[test]
+fn host_death_helper() {
+    let Some(dir) = std::env::var_os("TASTY_PP_HOST_DEATH_DIR") else {
+        return;
+    };
+    let dir = std::path::PathBuf::from(dir);
+    let leader = dir.join("leader.pid").display().to_string();
+    let grandchild = dir.join("grandchild.pid").display().to_string();
+    let script = format!(
+        "sleep 30 & echo $! > '{grandchild}'; echo $$ > '{leader}'.tmp; mv '{leader}'.tmp '{leader}'; wait"
+    );
+    let req = ProcessRequest {
+        command: vec!["sh".into(), "-c".into(), script],
+        cwd: None,
+        stdin: Vec::new(),
+        stdout: json_out(),
+        timeout: Duration::from_secs(60),
+        run: 1,
+        env: child_env(std::env::vars_os()),
+    };
+    let started = spawn(req).expect("spawn");
+    // 신호로 끝나기를 기다린다.
+    std::thread::sleep(Duration::from_secs(60));
+    drop(started);
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn the_postprocess_leader_gets_sigterm_when_the_host_dies() {
+    let td = tempfile::tempdir().expect("tempdir");
+    let mut host = std::process::Command::new(std::env::current_exe().expect("exe"))
+        .args([
+            "--exact",
+            "runner_host::postprocess::tests::host_death_helper",
+            "--test-threads=1",
+        ])
+        .env("TASTY_PP_HOST_DEATH_DIR", td.path())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .expect("helper host");
+    let read_pid = |name: &str| -> Option<i32> {
+        std::fs::read_to_string(td.path().join(name))
+            .ok()?
+            .trim()
+            .parse()
+            .ok()
+    };
+    let deadline = Instant::now() + Duration::from_secs(20);
+    let leader = loop {
+        if let Some(pid) = read_pid("leader.pid") {
+            break pid;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the helper host never started the postprocess"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    };
+    let grandchild = read_pid("grandchild.pid").expect("grandchild pid");
+    let host_pid = i32::try_from(host.id()).expect("pid");
+    // SAFETY: 이 시험이 띄운 helper 에만 보낸다.
+    assert_eq!(unsafe { libc::kill(host_pid, libc::SIGTERM) }, 0);
+    host.wait().expect("reap helper host");
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while !gone(leader) && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let leader_gone = gone(leader);
+    // 그룹의 다른 프로세스는 신호를 받지 않는다(문서화한 한계). 시험이 남긴 것은 정리한다.
+    if !gone(grandchild) {
+        // SAFETY: 이 시험이 띄운 helper 의 후처리가 만든 프로세스다.
+        unsafe { libc::kill(grandchild, libc::SIGKILL) };
+    }
+    assert!(
+        leader_gone,
+        "the postprocess leader {leader} outlived the host"
+    );
+}
