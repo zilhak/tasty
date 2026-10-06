@@ -207,11 +207,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                         TableColumnWidth::Exact(LogicalPx(140.0)),
                         TableAlign::Left,
                     ),
-                    col(
-                        "",
-                        TableColumnWidth::Exact(theme.item_height_interactive),
-                        TableAlign::Right,
-                    ),
                 ];
                 Table::new(cols)
                     .id_salt("ports_table")
@@ -595,21 +590,13 @@ fn cell(ui: &mut egui::Ui, theme: &Theme, row: &PortRow, c: usize) {
             mono(ui, row.proc, theme.text_secondary().to_egui());
             tag(ui, theme, row.pid, TagVariant::Default, false);
         }
-        5 => {
+        _ => {
             let v = if row.state == "LISTEN" {
                 TagVariant::Success
             } else {
                 TagVariant::Default
             };
             tag(ui, theme, row.state, v, true);
-        }
-        _ => {
-            kit::icon(
-                ui,
-                icons::COPY,
-                theme.icon_glyph_size_sm,
-                theme.text_muted().to_egui(),
-            );
         }
     }
 }
