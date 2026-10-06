@@ -1617,6 +1617,7 @@ fn theme_css(theme: &Theme) -> String {
 --md-zebra:{zebra};
 --md-bg:{bg};
 --md-control-bg:{control_bg};
+--md-input-bg:{input_bg};
 --md-disabled-fill:{disabled_fill};
 --md-disabled-border:{disabled_border};
 --md-disabled-fg:{disabled_fg};
@@ -1633,7 +1634,7 @@ fn theme_css(theme: &Theme) -> String {
 html{{height:100%;margin:0;padding:0;}}
 body{{min-height:100%;margin:0;padding:0;background:var(--md-bg);color:var(--md-fg);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;font-size:var(--md-font-body);line-height:1.6;}}
 #tasty-addr-bar{{position:sticky;top:0;display:flex;align-items:center;gap:var(--md-space-sm);height:var(--md-addr-bar-h);padding:0 var(--md-space-sm);box-sizing:border-box;background:{bg_sidebar};border-bottom:var(--md-border-w) solid {separator};}}
-#tasty-addr-input{{flex:1;height:24px;border:var(--md-border-w) solid var(--md-border);border-radius:var(--md-radius);padding:0 var(--md-space-xs);background:var(--md-control-bg);color:var(--md-fg);font-size:var(--md-font-body);}}
+#tasty-addr-input{{flex:1;height:24px;border:var(--md-border-w) solid var(--md-border);border-radius:var(--md-radius);padding:0 var(--md-space-xs);background:var(--md-input-bg);color:var(--md-fg);font-size:var(--md-font-body);}}
 #tasty-addr-go{{height:24px;padding:0 var(--md-space-sm);border:var(--md-border-w) solid var(--md-border);border-radius:var(--md-radius);background:var(--md-code-bg);color:var(--md-fg);cursor:pointer;}}
 #tasty-addr-input[readonly]{{color:{muted};}}
 #tasty-refresh{{height:24px;padding:0 var(--md-space-sm);border:var(--md-border-w) solid var(--md-border);border-radius:var(--md-radius);background:var(--md-code-bg);color:var(--md-fg);cursor:pointer;}}
@@ -1713,8 +1714,10 @@ li input[type=checkbox]{{margin-right:0.4em;}}
         rule = theme.separator.unpremultiplied().to_hex(),
         zebra = theme.md_table_row_bg_zebra().to_hex(),
         bg = md_doc_bg(theme).to_hex(),
-        // 주소·찾기 입력과 코드 복사 버튼은 문서 바탕이 아니라 이전과 같은 bg_app으로 칠한다.
+        // 찾기 입력과 코드 복사 버튼은 문서 바탕이 아니라 이전과 같은 bg_app으로 칠한다.
         control_bg = theme.bg_app().to_hex(),
+        // 주소 입력은 디자인 킷의 공용 입력 칸과 같은 input-bg다.
+        input_bg = theme.input_bg().to_hex(),
         radius = theme.corner_radius.value(),
         border_w = theme.border_width.value(),
         quote_bar_w = theme.md_quote_bar_width().value(),
@@ -5023,12 +5026,21 @@ Outro\n";
         assert_ne!(theme.bg_app(), doc);
         let css = theme_css(&theme);
         assert!(css.contains(&format!("--md-bg:{};", doc.to_hex())), "{css}");
-        // 문서 바탕만 바뀌고 입력·복사 버튼은 bg_app 그대로다.
+        // 문서 바탕만 바뀌고 찾기 입력·복사 버튼은 bg_app, 주소 입력은 input-bg 다.
         assert!(
             css.contains(&format!("--md-control-bg:{};", theme.bg_app().to_hex())),
             "{css}"
         );
         assert_eq!(css.matches("background:var(--md-bg)").count(), 1, "{css}");
+        assert!(
+            css.contains(&format!("--md-input-bg:{};", theme.input_bg().to_hex())),
+            "{css}"
+        );
+        let addr = css
+            .lines()
+            .find(|l| l.starts_with("#tasty-addr-input{"))
+            .expect("address input rule");
+        assert!(addr.contains("background:var(--md-input-bg)"), "{addr}");
     }
 
     #[test]

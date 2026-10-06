@@ -485,7 +485,7 @@ ANSI 16색은 개별 `th.*` 호출이 아니라 `theme.ansi_palette()` 배열로
 ### surface kind 색은 `surface_themes` map
 
 터미널/마크다운의 focused/unfocused × bg/fg 색은 `ThemeColors.surface_themes: BTreeMap<String, SurfaceTheme>` 에 들어가 `theme.surface("terminal")` / `theme.surface("markdown")` 헬퍼로 읽는다. `focused_bg` 만 black/white role-remap(light/dark).
-markdown 플러그인의 문서 바탕 `md-doc-bg`(→ `surface-markdown-focused-bg`)는 플러그인이 `ThemeWire.colors.surface_themes["markdown"].focused_bg`로 읽는다(`crates/tasty-plugin-markdown/src/render.rs`의 `md_doc_bg`). webview 경로에는 focus 신호가 없어 unfocused 값은 쓰지 않는다. `surface_themes`를 싣지 않는 이전 호스트에서는 항목이 없으므로 `bg_app`으로 칠한다. 주소·찾기 입력과 코드 복사 버튼은 문서 바탕이 아니라 `bg_app`(`--md-control-bg`)으로 칠한다. 같은 방식으로 `bg_app`을 바탕으로 쓰는 git-viewer diff 영역과 clipboard-viewer 영역은 디자인에 별도 토큰이 없어 `bg_app` 그대로다.
+markdown 플러그인의 문서 바탕 `md-doc-bg`(→ `surface-markdown-focused-bg`)는 플러그인이 `ThemeWire.colors.surface_themes["markdown"].focused_bg`로 읽는다(`crates/tasty-plugin-markdown/src/render.rs`의 `md_doc_bg`). webview 경로에는 focus 신호가 없어 unfocused 값은 쓰지 않는다. `surface_themes`를 싣지 않는 이전 호스트에서는 항목이 없으므로 `bg_app`으로 칠한다. 주소 입력은 킷의 공용 입력 칸과 같은 `input-bg`(`--md-input-bg`)로, 찾기 입력과 코드 복사 버튼은 `bg_app`(`--md-control-bg`)으로 칠한다. 같은 방식으로 `bg_app`을 바탕으로 쓰는 git-viewer diff 영역과 clipboard-viewer 영역은 디자인에 별도 토큰이 없어 `bg_app` 그대로다.
 
 ### neutral ramp 12단 ↔ ThemeColors 필드
 
