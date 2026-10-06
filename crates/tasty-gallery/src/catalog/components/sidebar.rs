@@ -105,7 +105,7 @@ fn mirror_corner_chip(ui: &mut egui::Ui, theme: &Theme, avatar: egui::Rect) {
 
 /// 오른쪽 끝에서 offset만큼 떨어진 곳에 개수 배지를 그린다.
 /// 반환한 폭은 다음 배지를 배치할 때 사용한다.
-fn paint_ws_count_badge_at(
+pub(crate) fn paint_ws_count_badge_at(
     p: &egui::Painter,
     theme: &Theme,
     row: egui::Rect,

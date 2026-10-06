@@ -10,6 +10,7 @@ pub mod foundations_settled;
 pub mod foundations_shape;
 pub mod foundations_uiscale;
 pub mod icons;
+pub mod layouts_settled;
 pub mod popup_frame;
 pub mod spacing;
 pub mod spec;
@@ -1803,12 +1804,28 @@ pub fn pages() -> Vec<Page> {
                             components::surface_highlights::draw,
                         ),
                         spec(
+                            "mixed-split",
+                            "Mixed split — terminal + markdown in one pane group",
+                            Some(
+                                "each surface keeps its own focus bed · 36px address bar kept in split",
+                            ),
+                            layouts_settled::draw_mixed_split,
+                        ),
+                        spec(
                             "occupancy",
                             "Occupancy & attention borders",
                             Some(
                                 "needs-input yellow 2px · soft green 1px · hard peach 1px · completed blue 2px",
                             ),
                             components::occupancy_borders::draw,
+                        ),
+                        spec(
+                            "attention-scale",
+                            "The scale — kind → color → rank",
+                            Some(
+                                "needs-input 30 · completion 10 · error 40 and approval 20 reserved",
+                            ),
+                            layouts_settled::draw_attention_scale,
                         ),
                     ],
                 ),
