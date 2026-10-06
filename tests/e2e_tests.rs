@@ -3024,6 +3024,7 @@ fn typed_int64_outputs_survive_javascript_through_ipc_and_cli() {
 }
 
 /// 작업 상태가 종결될 때까지 기다린다.
+#[cfg(unix)]
 fn await_task_state(tasty: &TastyInstance, ws: u64, id: &str) -> serde_json::Value {
     let deadline = std::time::Instant::now() + Duration::from_secs(30);
     loop {
@@ -3040,6 +3041,7 @@ fn await_task_state(tasty: &TastyInstance, ws: u64, id: &str) -> serde_json::Val
     }
 }
 
+#[cfg(unix)]
 fn task_count(tasty: &TastyInstance, ws: u64) -> usize {
     tasty.call("agent.task_list", json!({"workspace_id": ws}))["tasks"]
         .as_array()
@@ -3047,11 +3049,13 @@ fn task_count(tasty: &TastyInstance, ws: u64) -> usize {
         .unwrap_or_default()
 }
 
+#[cfg(unix)]
 fn graph_run(ws: u64, argv: serde_json::Value) -> serde_json::Value {
     json!({"kind": "run", "workspace_id": ws, "command": argv})
 }
 
 /// 정수를 내는 producer, argv 로 받는 소비자, stdin 으로 받는 소비자로 된 그래프.
+#[cfg(unix)]
 fn typed_graph(
     ws: u64,
     args_log: &std::path::Path,
@@ -3078,6 +3082,7 @@ fn typed_graph(
 }
 
 /// 격리 홈에서 CLI 로 그래프를 제출한다. stdout 과 stderr 를 합쳐 돌려준다.
+#[cfg(unix)]
 fn cli_graph_submit(
     tasty: &TastyInstance,
     ws: u64,
@@ -3109,6 +3114,7 @@ fn cli_graph_submit(
 }
 
 /// 잘못된 그래프는 실행 중인 러너가 있어도 아무것도 남기지 않고, 오류에 위치가 실린다.
+#[cfg(unix)]
 fn refused_graphs_leave_nothing(tasty: &TastyInstance, ws: u64, bad: &serde_json::Value) {
     let refused = tasty.call_raw(
         "agent.task_graph_submit",
@@ -3146,6 +3152,7 @@ fn refused_graphs_leave_nothing(tasty: &TastyInstance, ws: u64, bad: &serde_json
 }
 
 /// 정지한 러너: 그래프는 저장·활성화되지만 러너를 시작하기 전에는 실행되지 않는다.
+#[cfg(unix)]
 fn stopped_runner_holds_an_active_graph(tasty: &TastyInstance, ws: u64, dir: &std::path::Path) {
     tasty.call(
         "agent.task_run",
