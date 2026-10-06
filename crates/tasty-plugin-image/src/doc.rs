@@ -308,11 +308,14 @@ impl ImageDoc {
     }
 
     /// After navigation updated `file_path`, load the new file and reset zoom/pan/edit.
+    /// 이동을 적용한 경로는 호스트에 알릴 경로로 남겨 탭 제목·복원 경로·감시 대상이 따라오게 한다.
+    /// 편집 중에는 이동을 적용하지 않으므로 알리지도 않는다.
     pub fn load_after_navigation(&mut self) {
         if self.is_editing() {
             return;
         }
         if let Some(path) = self.file_path.clone() {
+            self.path_for_host = Some(path.clone());
             self.original_image = load_image_from_path(&path);
             self.texture = None;
             self.zoom = 1.0;

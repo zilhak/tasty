@@ -107,14 +107,7 @@ impl Plugin for ImagePlugin {
             "image.save" | "image.export_png" => {
                 let out = self.image_save(&ctx.params)?;
                 self.repaint_after_edit(&ctx.host, &ctx.params);
-                if let Ok(sid) = require_surface(&ctx.params)
-                    && let Some(path) = self
-                        .docs
-                        .get_mut(&sid)
-                        .and_then(ImageDoc::take_path_for_host)
-                {
-                    announce_saved_path(&ctx.host, sid, path);
-                }
+                self.announce_pending_path(&ctx.host, &ctx.params);
                 Ok(out)
             }
             // 파일 읽기와 문서 변경은 플러그인 처리 스레드에서 수행한다.
@@ -131,11 +124,13 @@ impl Plugin for ImagePlugin {
             "image.next" => {
                 let out = self.image_step(&ctx.params, true)?;
                 self.repaint_after_edit(&ctx.host, &ctx.params);
+                self.announce_pending_path(&ctx.host, &ctx.params);
                 Ok(out)
             }
             "image.prev" => {
                 let out = self.image_step(&ctx.params, false)?;
                 self.repaint_after_edit(&ctx.host, &ctx.params);
+                self.announce_pending_path(&ctx.host, &ctx.params);
                 Ok(out)
             }
             other => Err(IpcMethodError::not_found(other)),
@@ -148,6 +143,18 @@ impl Plugin for ImagePlugin {
 }
 
 impl ImagePlugin {
+    /// IPC 처리로 문서 경로가 바뀌었으면 호스트에 알린다.
+    fn announce_pending_path(&mut self, host: &HostHandle, params: &Value) {
+        if let Ok(sid) = require_surface(params)
+            && let Some(path) = self
+                .docs
+                .get_mut(&sid)
+                .and_then(ImageDoc::take_path_for_host)
+        {
+            announce_surface_path(host, sid, path);
+        }
+    }
+
     fn image_save(&mut self, params: &Value) -> Result<Value, IpcMethodError> {
         let sid = require_surface(params)?;
         let explicit = params
@@ -278,7 +285,7 @@ impl ImagePlugin {
             tracing::warn!("image surface {sid} paint failed: {e}");
         }
         if let Some(path) = doc.take_path_for_host() {
-            announce_saved_path(&ctx.host, sid, path);
+            announce_surface_path(&ctx.host, sid, path);
         }
     }
 
@@ -322,22 +329,24 @@ impl ImagePlugin {
     fn repaint_after_edit(&mut self, _host: &HostHandle, _params: &Value) {}
 }
 
-/// 새 경로로 저장한 이미지를 호스트의 `image.open`으로 같은 surface에서 다시 연다.
+/// 새 경로로 저장하거나 이동한 이미지를 호스트의 `image.open`으로 같은 surface에서 다시 연다.
 /// 호스트가 탭 제목과 복원 경로를 바꾸고 surface를 다시 만들어, 새 문서가 그 파일을 감시한다.
 /// 호스트는 다시 만들 때 이 플러그인의 응답을 기다리므로 플러그인 처리 스레드에서 호출하면
 /// 서로 기다리다 호출 시한(60초)까지 멈춘다. 그래서 별도 스레드에서 호출한다.
-fn announce_saved_path(host: &HostHandle, surface_id: u32, path: String) {
+fn announce_surface_path(host: &HostHandle, surface_id: u32, path: String) {
     let host = host.clone();
     let spawned = std::thread::Builder::new()
-        .name("image-save-as".to_string())
+        .name("image-path-announce".to_string())
         .spawn(move || {
             let params = json!({ "surface_id": surface_id, "path": path });
             if let Err(e) = host.call("image.open", params) {
-                tracing::warn!("image surface {surface_id}: image.open after save failed: {e}");
+                tracing::warn!(
+                    "image surface {surface_id}: image.open after path change failed: {e}"
+                );
             }
         });
     if let Err(e) = spawned {
-        tracing::warn!("image surface {surface_id}: save-as announce thread spawn failed: {e}");
+        tracing::warn!("image surface {surface_id}: path announce thread spawn failed: {e}");
     }
 }
 
@@ -549,6 +558,71 @@ mod tests {
             "같은 경로를 두 번 알리지 않아야 한다"
         );
         let _ = std::fs::remove_file(&path); // best-effort 정리 — 실패 무시.
+    }
+
+    /// 같은 폴더에 PNG 두 장을 둔 시험용 폴더와 첫 파일 경로.
+    fn two_image_dir(what: &str) -> (std::path::PathBuf, String, String) {
+        let dir = probe_path(what).with_extension("");
+        std::fs::create_dir_all(&dir).expect("시험 폴더 생성 실패");
+        let first = dir.join("a.png");
+        let second = dir.join("b.png");
+        for (path, rgb) in [(&first, [255, 0, 0]), (&second, [0, 0, 255])] {
+            image::RgbImage::from_pixel(4, 4, image::Rgb(rgb))
+                .save(path)
+                .expect("probe png 저장 실패");
+        }
+        (
+            dir,
+            first.to_string_lossy().into_owned(),
+            second.to_string_lossy().into_owned(),
+        )
+    }
+
+    fn plugin_with_file(file: &str) -> ImagePlugin {
+        let mut p = ImagePlugin::new(Translator::default());
+        p.create_surface(SurfaceCreateCtx {
+            surface_id: 1,
+            kind: "image".into(),
+            cwd: None,
+            params: json!({ "surface_id": 1, "kind": "image", "params": { "file": file } }),
+        });
+        p.docs
+            .get_mut(&1)
+            .expect("문서가 있어야 한다")
+            .ensure_loaded();
+        p
+    }
+
+    /// 다음 이미지로 넘어가면 그 경로를 호스트에 알려 탭 제목·복원 경로·감시 대상을 바꾸게 해야 한다.
+    #[test]
+    fn stepping_to_a_sibling_queues_its_path_for_the_host() {
+        let (dir, first, second) = two_image_dir("step-host");
+        let mut p = plugin_with_file(&first);
+
+        p.image_step(&json!({ "surface": 1 }), true)
+            .expect("다음 이미지로 넘어가야 한다");
+        let doc = p.docs.get_mut(&1).expect("문서가 있어야 한다");
+        assert_eq!(doc.file_path.as_deref(), Some(second.as_str()));
+        assert_eq!(doc.take_path_for_host().as_deref(), Some(second.as_str()));
+        let _ = std::fs::remove_dir_all(&dir); // best-effort 정리 — 실패 무시.
+    }
+
+    /// 편집 중에는 이동을 적용하지 않으므로 호스트에 알리지 않는다. 알리면 다시 만들면서 편집을 잃는다.
+    #[test]
+    fn stepping_during_an_edit_does_not_move_the_surface() {
+        let (dir, first, _second) = two_image_dir("step-edit");
+        let mut p = plugin_with_file(&first);
+        p.docs
+            .get_mut(&1)
+            .expect("문서가 있어야 한다")
+            .enter_edit_mode();
+
+        p.image_step(&json!({ "surface": 1 }), true)
+            .expect("이동 요청 자체는 받아야 한다");
+        let doc = p.docs.get_mut(&1).expect("문서가 있어야 한다");
+        assert!(doc.is_editing(), "편집 세션이 유지되어야 한다");
+        assert_eq!(doc.take_path_for_host(), None);
+        let _ = std::fs::remove_dir_all(&dir); // best-effort 정리 — 실패 무시.
     }
 
     /// 파일을 연 문서를 다른 경로로 내보내는 저장은 문서 경로를 바꾸지 않으므로 호스트에 알리지 않는다.
