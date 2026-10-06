@@ -1,4 +1,4 @@
-<!-- source-hash: 09e19ebb8afa -->
+<!-- source-hash: daa2f3c1e38c -->
 # Keybindings
 
 Use Tasty with shortcuts that feel familiar. Choose a preset or assign your preferred keys to actions you use often. Open **Settings** > **Keybindings** to get started.
@@ -89,6 +89,15 @@ Category keybindings work only when **Settings** > **General** > **Workspace cat
 | Command palette | `Ctrl+Shift+P` · `Alt+Shift+P` | `Ctrl+Shift+P` · `Cmd+Shift+P` |
 | Clipboard Viewer (plugin) | `Ctrl+Shift+H` | `Ctrl+Shift+H` |
 
+### Code fields
+
+These work only while a multi-line code field, such as the hook handler sequence editor, has focus. They never reach terminals or other shortcuts, so the same keys may also be bound elsewhere.
+
+| Action | Windows · Linux | macOS |
+|--------|-----------------|-------|
+| Apply in a code field | `Ctrl+Enter` · `Alt+Enter` | `Ctrl+Enter` · `Cmd+Enter` |
+| Cancel in a code field | `Esc` | `Esc` |
+
 ### Actions with an empty default
 
 The following have no default combination, either to prevent accidents or because they clash with OS shortcuts. Assign one yourself if you need it.
@@ -169,7 +178,7 @@ Recording rules:
 
 - Typing keys such as letters · digits · space register only together with at least one modifier (Ctrl/Alt/Shift). `W` alone is ignored.
 - Keys such as `F1`~`F12` · `Tab` · `Enter` register without a modifier.
-- `Esc` is reserved for "empty the slot" and cannot be recorded as a keybinding. To restore **Exit fullscreen stage**, whose default is `Esc`, reapply a preset.
+- `Esc` is reserved for "empty the slot" and cannot be recorded as a keybinding. To restore **Exit fullscreen stage** or **Cancel in a code field**, whose default is `Esc`, reapply a preset.
 - When a plugin keybinding (the **Plugins** sub-tab) overlaps a core keybinding, **the plugin's runs first**.
 
 ## Changing the numbered-switching rule

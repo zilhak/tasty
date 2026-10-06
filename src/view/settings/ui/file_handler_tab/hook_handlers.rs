@@ -12,11 +12,13 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{
-    Button, ButtonVariant, ControlSize, IconButton, IconButtonVariant, Input, SequenceEditorAction,
-    SequenceEditorError, SequenceEditorView, TagVariant, sequence_editor, switch, tag, vspace,
+    Button, ButtonVariant, CodeAreaKeys, ControlSize, IconButton, IconButtonVariant, Input,
+    SequenceEditorAction, SequenceEditorError, SequenceEditorView, TagVariant, sequence_editor,
+    switch, tag, vspace,
 };
 
 use crate::adapters::ui::icons;
+use crate::adapters::ui::input::shortcuts::consume_binding_egui;
 use crate::hook_handler::config::UserHookHandlerActionDecl;
 use crate::hook_handler::registry::UserHookHandlerUpsertDecl;
 use crate::hook_handler::sequence_text::{
@@ -138,7 +140,11 @@ impl HookHandlerEditDraft {
 }
 
 /// Hook Handlers sub-tab 콘텐츠 (jsx `HookHandlers` 전사).
-pub(super) fn draw_hook_handlers(ui: &mut egui::Ui, hh: &mut HookHandlerEditDraft) {
+pub(super) fn draw_hook_handlers(
+    ui: &mut egui::Ui,
+    hh: &mut HookHandlerEditDraft,
+    kb: &crate::settings::KeybindingSettings,
+) {
     let th = crate::theme::theme();
     vspace(ui, th.spacing_xs);
 
@@ -210,7 +216,7 @@ pub(super) fn draw_hook_handlers(ui: &mut egui::Ui, hh: &mut HookHandlerEditDraf
             remove_toggle: &mut remove_toggle,
             seq_event: &mut seq_event,
         };
-        draw_hook_row(ui, &th, hh, h, &mut editor, &mut out);
+        draw_hook_row(ui, &th, hh, h, kb, &mut editor, &mut out);
     }
     hh.seq_editor = editor;
     match seq_event {
@@ -281,6 +287,7 @@ fn draw_hook_row(
     th: &tasty_type_appearance::theme::Theme,
     hh: &HookHandlerEditDraft,
     h: &HookHandler,
+    kb: &crate::settings::KeybindingSettings,
     editor: &mut Option<SeqEditor>,
     out: &mut RowOutput<'_>,
 ) {
@@ -385,7 +392,7 @@ fn draw_hook_row(
                 });
                 // ── line 2: action — 셸 명령 인라인 Input / IpcSequence 요약 또는 편집기 ──
                 if let Some(ed) = editor.as_mut().filter(|ed| ed.id == h.id) {
-                    if let Some(event) = draw_seq_editor(ui, th, ed) {
+                    if let Some(event) = draw_seq_editor(ui, th, ed, kb) {
                         **seq_event = Some(event);
                     }
                     return;
@@ -607,6 +614,7 @@ fn draw_seq_editor(
     ui: &mut egui::Ui,
     th: &tasty_type_appearance::theme::Theme,
     ed: &mut SeqEditor,
+    kb: &crate::settings::KeybindingSettings,
 ) -> Option<SeqRowEvent> {
     let alert = |ui: &mut egui::Ui, rect: egui::Rect, c: egui::Color32| {
         icons::ALERT_CIRCLE
@@ -626,6 +634,10 @@ fn draw_seq_editor(
         apply: t("settings.file_handler.hook_handlers.seq_apply"),
         alert_icon: &alert,
         check: &check,
+        keys: Some(CodeAreaKeys {
+            submit: &|i| consume_binding_egui(&kb.code_area_apply, i),
+            cancel: &|i| consume_binding_egui(&kb.code_area_cancel, i),
+        }),
     };
     let action = sequence_editor(
         ui,

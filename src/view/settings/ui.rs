@@ -1809,6 +1809,7 @@ fn draw_active_content(
             &mut ui_state.extension_priority_new_input,
             &mut ui_state.fh_edit_draft,
             &mut ui_state.hook_edit_draft,
+            &draft.keybindings,
             file_format,
             file_handler,
         ),

@@ -27,6 +27,16 @@ tasty 의 **모든 단축키는 `KeybindingSettings` 한 곳에서 정의**되�
 수 있고, `remove_conflicts_from_defaults`가 충돌한 기본값을 제거할 수 있기 때문이다.
 plugin 도구의 단축키는 `[[contributes.commands]]`로 선언하고 Plugins 서브탭에서 관리한다.
 
+### 입력칸 바인딩 — `TEXT_FIELD_BINDING_FIELDS`
+
+`code_area_apply`·`code_area_cancel` 은 여러 줄 코드 입력칸(`tasty_ui_widgets::CodeArea`, 지금은 Settings › Handler › Hook Handlers 의 IpcSequence 편집기)에 포커스가 있을 때만 검사하는 확정·취소 키다. 전역 목록 `GENERAL_BINDING_FIELDS` 가 아니라 `KeybindingSettings::TEXT_FIELD_BINDING_FIELDS` 에 있다.
+
+- 전역 키 경로(메인 윈도우 단축키 매칭·명령 팔레트·modifier hint·webview 키 선점·탐색기 type-ahead)는 `GENERAL_BINDING_FIELDS` 만 읽는다. 그래서 `escape`·`ctrl+enter` 가 터미널이나 webview 에서 가로채이지 않는다.
+- 위젯은 키를 정하지 않는다. 호출자가 `CodeAreaKeys` 로 판정 함수를 넘기고, 본체는 `tasty_key_match::consume_binding_egui` 로 그 바인딩과 맞는 키 누름을 TextEdit 보다 먼저 소비한다(확정 키가 줄바꿈으로 들어가지 않게). 매칭 규칙은 다른 바인딩과 같다(macOS 에서 `alt` = Command).
+- 충돌 검사(`find_conflict`)와 기본값 충돌 제거(`remove_conflicts_from_defaults`)는 필드가 속한 목록 안에서만 한다. 입력칸 취소 `escape` 는 전역 `fullscreen_stage_exit` 의 `escape` 와 충돌하지 않는다.
+- 설정 화면·프리셋 비교·가져오기/내보내기는 두 목록을 합친 `KeybindingSettings::binding_fields()` 를 읽는다. 두 행은 General 서브탭의 `fullscreen_stage_exit` 다음에 설명과 함께 나온다.
+- 녹화 중 `Esc` 는 슬롯 비우기라 `code_area_cancel` 에 `escape` 를 다시 녹화할 수 없다. 프리셋을 재적용해 되돌린다.
+
 `open_preset_window`(도구 메뉴의 **프리셋** 윈도우 열기)와 `apply_workspace_preset`/`apply_tab_preset`/`apply_pane_preset`(레이아웃 프리셋 **적용** picker)은 다른 것이다. 이름이 비슷해 섞기 쉬우므로 설정 화면에서도 서브탭이 갈린다 — 앞은 General, 뒤 셋은 대상 스코프를 따라 Workspace/Tab/Pane 이다.
 
 ### 탭/워크스페이스/카테고리 quick-switch (raw 키 + 축별 modifier 조합)
@@ -319,6 +329,8 @@ tasty 는 4개 프리셋을 제공한다. 각 프리셋은 **바인딩 문자열
 | toggle_dag_list | ctrl+shift+g | alt+shift+g | ctrl+shift+g | ctrl+shift+g |
 | toggle_sidebar / _collapse | ctrl+shift+b / ctrl+b | alt+shift+b / alt+b | (ctrl 계열) | (ctrl 계열) |
 | fullscreen_stage_exit | escape | escape | escape | escape |
+| code_area_apply | ctrl+enter, alt+enter | alt+enter | ctrl+enter | ctrl+enter |
+| code_area_cancel | escape | escape | escape | escape |
 | quit | | alt+q | | ctrl+q |
 | quit_minimize | | alt+m | | |
 | convert_surface | alt+' | alt+' | alt+' | alt+' |
@@ -329,6 +341,8 @@ tasty 는 4개 프리셋을 제공한다. 각 프리셋은 **바인딩 문자열
 > (settings 모달·notifications 팝업 닫기, 터미널 `\x1b` 전달)을 가져가지 않는다. 설정 UI 의
 > 녹화 버튼에서는 ESC 가 "슬롯 비우기" 로 예약돼 있어 ESC 를 **다시 지정할 수는 없다** —
 > 기본값으로 되돌리려면 프리셋을 재적용한다([key-mapping](../../design/policies/key-mapping.md#바인딩-문자열-문법)).
+
+> `code_area_apply` 의 Tasty 프리셋 두 조합은 어느 OS 에서나 이전 고정 키(egui Mod+Enter — macOS Command, 그 밖 Ctrl)를 포함하려는 것이다. `alt+enter` 는 macOS 에서 Command+Enter 이고 Windows·Linux 에서는 Alt+Enter 로 하나 더 늘어난다. 이 필드가 없는 기존 설정 파일은 다른 누락 필드처럼 Tasty 프리셋 값을 받는다.
 
 > `quit_immediate` 는 실수 방지로 전 프리셋 기본값 없음. `apply_*_preset`(레이아웃 프리셋 적용)도 사용자가 직접 배정하도록 기본값 없음. Windows 는 Alt+F4 가 OS 종료라 `quit` 불요.
 

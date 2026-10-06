@@ -45,7 +45,7 @@ macOS 에서만 `alt` 토큰이 Cmd(⌘)에 매핑된다(물리 위치가 Win/Li
 - **모디파이어 단독 입력(Ctrl/Shift/Alt/Super/Meta/Fn)은 어떤 바인딩과도 매칭 안 됨** — 매처가 구조적으로 차단.
 - **Escape 는 설정 UI 녹화에서 "슬롯 비우기"로 예약** — 녹화 중 ESC 를 누르면 그 슬롯이
   지워지고 녹화가 끝난다. 따라서 `escape` 를 값으로 갖는 바인딩은 프리셋/설정 파일로만
-  들어오고 녹화 버튼으로는 재지정할 수 없다(현재 해당: `fullscreen_stage_exit`). 기본값으로
+  들어오고 녹화 버튼으로는 재지정할 수 없다(현재 해당: `fullscreen_stage_exit`, `code_area_cancel`). 기본값으로
   되돌리려면 프리셋을 재적용한다.
 - **modifier 없는 바인딩은 modifier-hint 오버레이에 뜨지 않는다** — 오버레이는 홀드 중인
   modifier 조합에 속한 바인딩만 나열하므로, 조합이 없는 바인딩은 속할 섹션이 없다.

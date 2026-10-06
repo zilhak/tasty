@@ -58,6 +58,11 @@ pub struct KeybindingSettings {
     /// 필드가 없으면 default_fullscreen_stage_exit를 사용한다.
     #[serde(default = "default_fullscreen_stage_exit")]
     pub fullscreen_stage_exit: Vec<String>,
+    /// 여러 줄 코드 입력칸(CodeArea)에 포커스가 있을 때만 검사하는 확정 키. 전역 단축키와 범위가 달라
+    /// [`KeybindingSettings::TEXT_FIELD_BINDING_FIELDS`] 에 둔다.
+    pub code_area_apply: Vec<String>,
+    /// 여러 줄 코드 입력칸의 취소 키. 범위는 `code_area_apply` 와 같다.
+    pub code_area_cancel: Vec<String>,
     /// Toggle sidebar visibility (completely hidden/shown).
     pub toggle_sidebar: Vec<String>,
     /// Toggle sidebar collapse (full/compact mode).

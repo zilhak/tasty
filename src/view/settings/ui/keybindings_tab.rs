@@ -86,7 +86,7 @@ pub enum KeybindingsSubTab {
     ImportExport,
 }
 
-/// 필드의 탭과 표시 순서를 지정한다. 라벨은 GENERAL_BINDING_FIELDS에서 읽는다.
+/// 필드의 탭과 표시 순서를 지정한다. 라벨은 `KeybindingSettings::binding_fields`에서 읽는다.
 /// 배치를 지정하지 않은 필드는 General 끝에 표시한다.
 const ENTRY_PLACEMENT: &[(&str, KeybindingsSubTab, Option<&str>)] = &[
     // General
@@ -105,6 +105,16 @@ const ENTRY_PLACEMENT: &[(&str, KeybindingsSubTab, Option<&str>)] = &[
         "fullscreen_stage_exit",
         KeybindingsSubTab::General,
         Some("settings.keybindings.fullscreen_stage_exit_desc"),
+    ),
+    (
+        "code_area_apply",
+        KeybindingsSubTab::General,
+        Some("settings.keybindings.code_area_apply_desc"),
+    ),
+    (
+        "code_area_cancel",
+        KeybindingsSubTab::General,
+        Some("settings.keybindings.code_area_cancel_desc"),
     ),
     ("restore_closed", KeybindingsSubTab::General, None),
     ("new_window", KeybindingsSubTab::General, None),
@@ -200,13 +210,13 @@ fn draws_entries(sub_tab: KeybindingsSubTab) -> bool {
 /// 정렬 전의 항목 한 줄 — 배치 순서와 (필드 id, 라벨 키, 설명 키).
 type PlacedEntry<'a> = (usize, (&'a str, &'a str, Option<&'a str>));
 
-/// GENERAL_BINDING_FIELDS의 필드와 라벨을 읽고 배치표에 따라 정렬한다.
+/// 전역·입력칸 바인딩 필드와 라벨을 읽고 배치표에 따라 정렬한다.
 /// 배치가 없으면 General 끝에 추가한다.
 fn entries_for(
     sub_tab: KeybindingsSubTab,
 ) -> Vec<(&'static str, &'static str, Option<&'static str>)> {
     let mut rows: Vec<PlacedEntry<'_>> = Vec::new();
-    for (field_id, label_key) in crate::settings::KeybindingSettings::GENERAL_BINDING_FIELDS {
+    for (field_id, label_key) in crate::settings::KeybindingSettings::binding_fields() {
         let placed = ENTRY_PLACEMENT
             .iter()
             .position(|(fid, _, _)| fid == field_id);
@@ -488,21 +498,19 @@ use tasty_ui_widgets::vspace;
 mod placement_tests {
     use super::*;
 
-    /// 배치표에 등록된 필드가 GENERAL_BINDING_FIELDS에도 있는지 확인한다.
+    /// 배치표에 등록된 필드가 바인딩 필드 목록에도 있는지 확인한다.
     #[test]
     fn every_placement_row_points_at_a_real_field() {
         let dangling: Vec<&str> = ENTRY_PLACEMENT
             .iter()
             .map(|(fid, _, _)| *fid)
             .filter(|fid| {
-                crate::settings::KeybindingSettings::GENERAL_BINDING_FIELDS
-                    .iter()
-                    .all(|(sot, _)| sot != fid)
+                crate::settings::KeybindingSettings::binding_fields().all(|(sot, _)| sot != fid)
             })
             .collect();
         assert!(
             dangling.is_empty(),
-            "GENERAL_BINDING_FIELDS에 없는 필드가 배치표에 있다: {dangling:?}"
+            "바인딩 필드 목록에 없는 필드가 배치표에 있다: {dangling:?}"
         );
     }
 }

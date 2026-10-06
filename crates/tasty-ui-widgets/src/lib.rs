@@ -73,7 +73,7 @@ pub use chrome_slot::top_right_inset_square;
 pub use clipboard_viewer::{
     SEG_COMPACT_AT, SegmentIconPainter, TypeSegment, draw_type_segments, seg_shows_label,
 };
-pub use code_area::{CodeArea, CodeAreaOutput};
+pub use code_area::{CodeArea, CodeAreaKeys, CodeAreaOutput};
 pub use control::ControlSize;
 pub use drilldown::{DrillDown, DrillDownActions, DrillDownOutput, DrillDownView};
 pub use filter_readout::{filter_readout, filter_readout_label, filter_readout_width};

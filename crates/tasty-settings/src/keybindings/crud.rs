@@ -184,6 +184,39 @@ impl KeybindingSettings {
         ("close_window", "settings.keybindings.close_window_label"),
     ];
 
+    /// 입력칸 안에서만 검사하는 바인딩. 전역 단축키 경로(키 전달·명령 팔레트·modifier hint·webview
+    /// 키 선점)는 [`Self::GENERAL_BINDING_FIELDS`] 만 읽으므로 여기 둔 키는 터미널이나 webview 에서
+    /// 가로채지 않는다. 충돌 검사도 같은 목록 안에서만 한다.
+    pub const TEXT_FIELD_BINDING_FIELDS: &'static [(&'static str, &'static str)] = &[
+        (
+            "code_area_apply",
+            "settings.keybindings.code_area_apply_label",
+        ),
+        (
+            "code_area_cancel",
+            "settings.keybindings.code_area_cancel_label",
+        ),
+    ];
+
+    /// 설정이 저장·표시하는 모든 콤보 필드(전역 + 입력칸). 설정 화면·가져오기·프리셋 비교가 쓴다.
+    pub fn binding_fields() -> impl Iterator<Item = &'static (&'static str, &'static str)> {
+        Self::GENERAL_BINDING_FIELDS
+            .iter()
+            .chain(Self::TEXT_FIELD_BINDING_FIELDS)
+    }
+
+    /// 필드가 속한 충돌 검사 범위. 알 수 없는 id 는 전역으로 본다.
+    fn conflict_scope(field_id: &str) -> &'static [(&'static str, &'static str)] {
+        if Self::TEXT_FIELD_BINDING_FIELDS
+            .iter()
+            .any(|(id, _)| *id == field_id)
+        {
+            Self::TEXT_FIELD_BINDING_FIELDS
+        } else {
+            Self::GENERAL_BINDING_FIELDS
+        }
+    }
+
     /// 필드 id로 Vec<String> 참조를 얻는다.
     pub fn get_bindings(&self, field_id: &str) -> Option<&[String]> {
         Some(match field_id {
@@ -249,6 +282,8 @@ impl KeybindingSettings {
             "minimize_window" => self.minimize_window.as_slice(),
             "maximize_window" => self.maximize_window.as_slice(),
             "close_window" => self.close_window.as_slice(),
+            "code_area_apply" => self.code_area_apply.as_slice(),
+            "code_area_cancel" => self.code_area_cancel.as_slice(),
             _ => return None,
         })
     }
@@ -317,6 +352,8 @@ impl KeybindingSettings {
             "minimize_window" => &mut self.minimize_window,
             "maximize_window" => &mut self.maximize_window,
             "close_window" => &mut self.close_window,
+            "code_area_apply" => &mut self.code_area_apply,
+            "code_area_cancel" => &mut self.code_area_cancel,
             _ => return None,
         })
     }
@@ -404,7 +441,7 @@ impl KeybindingSettings {
         if combo.is_empty() {
             return None;
         }
-        for (id, _label) in Self::GENERAL_BINDING_FIELDS {
+        for (id, _label) in Self::conflict_scope(field_id) {
             if *id == field_id {
                 continue;
             }
@@ -421,10 +458,23 @@ impl KeybindingSettings {
     ///
     /// `existing_keys`: TOML에 실제로 존재했던 keybindings 키 목록.
     /// existing_keys에 없는 필드(= 기본값으로 채워진 필드)의 바인딩 중,
-    /// 다른 필드와 중복되는 것을 제거한다.
+    /// 같은 충돌 범위의 다른 필드와 중복되는 것을 제거한다.
     pub fn remove_conflicts_from_defaults(&mut self, existing_keys: &HashSet<String>) {
+        for scope in [
+            Self::GENERAL_BINDING_FIELDS,
+            Self::TEXT_FIELD_BINDING_FIELDS,
+        ] {
+            self.remove_conflicts_in_scope(scope, existing_keys);
+        }
+    }
+
+    fn remove_conflicts_in_scope(
+        &mut self,
+        scope: &[(&'static str, &'static str)],
+        existing_keys: &HashSet<String>,
+    ) {
         let mut user_combos: HashSet<String> = HashSet::new();
-        for (field_id, _) in Self::GENERAL_BINDING_FIELDS {
+        for (field_id, _) in scope {
             if existing_keys.contains(*field_id)
                 && let Some(bindings) = self.get_bindings(field_id)
             {
@@ -436,7 +486,7 @@ impl KeybindingSettings {
             }
         }
 
-        for (field_id, _) in Self::GENERAL_BINDING_FIELDS {
+        for (field_id, _) in scope {
             if existing_keys.contains(*field_id) {
                 continue;
             }
@@ -502,8 +552,7 @@ impl KeybindingSettings {
 
     /// field_id → 라벨 번역 키.
     pub fn label_key_for(field_id: &str) -> Option<&'static str> {
-        Self::GENERAL_BINDING_FIELDS
-            .iter()
+        Self::binding_fields()
             .find(|(id, _)| *id == field_id)
             .map(|(_, key)| *key)
     }

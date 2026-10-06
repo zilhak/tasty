@@ -160,8 +160,7 @@ pub(crate) fn row_keys(
     imported: &KeybindingSettings,
     imported_overrides: &PluginShortcutOverrides,
 ) -> Vec<RowKey> {
-    let mut keys: Vec<RowKey> = KeybindingSettings::GENERAL_BINDING_FIELDS
-        .iter()
+    let mut keys: Vec<RowKey> = KeybindingSettings::binding_fields()
         .map(|(id, _)| RowKey::General(id))
         .collect();
     keys.extend(SwitchAxis::ALL.into_iter().map(RowKey::Axis));

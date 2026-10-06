@@ -69,6 +69,8 @@ fn editor_card(
         apply: "Apply",
         alert_icon: &alert,
         check: &check,
+        // 키는 본체가 단축키 설정(code_area_apply · code_area_cancel)에서 읽는다. 갤러리는 버튼만 쓴다.
+        keys: None,
     };
     let sm = th.spacing_sm.value() as i8;
     let md = th.spacing_md.value() as i8;
@@ -189,7 +191,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "right-aligned · Cancel ghost sm · Apply secondary sm (disabled while an error stands)",
             ),
             ("save flow", "Apply → tab draft → Settings Save"),
-            ("keys", "Mod+Enter Apply · Esc Cancel · Enter newline"),
+            (
+                "keys",
+                "Apply · Cancel keys come from the keybinding settings code_area_apply / code_area_cancel (default Mod+Enter · Esc) · Enter newline · the gallery specimen has no keys",
+            ),
             (
                 "reopen",
                 "comments / blank lines are gone, JSON compact with sorted keys — the help line says so; no extra notice",

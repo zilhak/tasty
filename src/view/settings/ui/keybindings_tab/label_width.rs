@@ -39,10 +39,9 @@ fn load_lang(toml_str: &str) -> HashMap<String, String> {
     map
 }
 
-/// GENERAL_BINDING_FIELDS에서 실제 단축키 행의 라벨 키를 읽는다.
+/// 전역·입력칸 바인딩 필드에서 실제 단축키 행의 라벨 키를 읽는다.
 fn entry_labels() -> Vec<&'static str> {
-    crate::settings::KeybindingSettings::GENERAL_BINDING_FIELDS
-        .iter()
+    crate::settings::KeybindingSettings::binding_fields()
         .map(|(_, label_key)| *label_key)
         .collect()
 }

@@ -88,7 +88,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ),
             (
                 "keys",
-                "Enter newline · Mod+Enter / Esc are handed to the surrounding editor",
+                "Enter newline · submit / cancel keys come from the caller (the app reads code_area_apply / code_area_cancel)",
             ),
         ],
         &[

@@ -5,7 +5,7 @@
 use tasty_type_appearance::theme::Theme;
 
 use crate::button::{Button, ButtonVariant};
-use crate::code_area::CodeArea;
+use crate::code_area::{CodeArea, CodeAreaKeys};
 use crate::control::ControlSize;
 use crate::icon_button::IconPainter;
 
@@ -29,15 +29,17 @@ pub struct SequenceEditorView<'a> {
     pub alert_icon: IconPainter<'a>,
     /// 호출 수를 세거나 첫 오류를 돌려준다. 입력이 바뀔 때마다 부른다.
     pub check: &'a dyn Fn(&str) -> Result<usize, SequenceEditorError>,
+    /// 입력칸의 Apply·Cancel 키. 없으면 버튼으로만 닫는다.
+    pub keys: Option<CodeAreaKeys<'a>>,
 }
 
 /// 이번 프레임에 사용자가 고른 동작.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SequenceEditorAction {
     None,
-    /// Apply 또는 Mod+Enter. 오류가 있으면 나오지 않는다.
+    /// Apply 버튼 또는 확정 키. 오류가 있으면 나오지 않는다.
     Apply,
-    /// Cancel 또는 Esc.
+    /// Cancel 버튼 또는 취소 키.
     Cancel,
 }
 
@@ -57,6 +59,7 @@ pub fn sequence_editor(
         let out = CodeArea::new(id_salt)
             .placeholder(view.placeholder)
             .error_line(before.as_ref().err().map(|e| e.line))
+            .keys(view.keys)
             .show(ui, theme, buf);
         // 거터 표시는 이번 프레임 입력 전 해석으로 그렸으므로 바뀌었으면 한 번 더 그린다.
         if out.response.changed() {
@@ -155,12 +158,20 @@ fn error_line(
 mod tests {
     use super::*;
 
-    /// 포커스 중 Mod+Enter 는 해석 오류가 없을 때만 Apply 다. Esc 는 언제나 Cancel 이다.
+    /// 포커스 중 확정 키는 해석 오류가 없을 때만 Apply 다. 취소 키는 언제나 Cancel 이다.
     #[test]
-    fn mod_enter_applies_only_without_an_error() {
+    fn the_submit_key_applies_only_without_an_error() {
         let theme = tasty_themes::mocha_fallback();
         let ctx = egui::Context::default();
         let no_icon = |_: &mut egui::Ui, _: egui::Rect, _: egui::Color32| {};
+        let submit_key = |i: &mut egui::InputState| {
+            i.consume_shortcut(&egui::KeyboardShortcut::new(
+                egui::Modifiers::COMMAND,
+                egui::Key::Enter,
+            ))
+        };
+        let cancel_key =
+            |i: &mut egui::InputState| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape);
         let run = |text: &str, key: Option<(egui::Key, egui::Modifiers)>| {
             let check = |s: &str| {
                 if s.contains('{') {
@@ -181,6 +192,10 @@ mod tests {
                 apply: "Apply",
                 alert_icon: &no_icon,
                 check: &check,
+                keys: Some(CodeAreaKeys {
+                    submit: &submit_key,
+                    cancel: &cancel_key,
+                }),
             };
             let mut buf = text.to_string();
             let mut last = SequenceEditorAction::None;

@@ -3,6 +3,8 @@
 
 use winit::keyboard::{Key, KeyCode, ModifiersState, NamedKey, PhysicalKey};
 
+#[cfg(feature = "egui-input")]
+use tasty_settings::keybindings::parse::ParsedBinding;
 pub use tasty_settings::keybindings::parse::bindings_equivalent;
 pub use tasty_settings::keybindings::parse::parse_binding;
 
@@ -24,23 +26,52 @@ fn binding_pressed_egui(binding: &str, input: &egui::InputState) -> bool {
     let Some(parsed) = parse_binding(binding) else {
         return false;
     };
-    let mods = &input.modifiers;
-
-    // modifier 매핑은 winit 경로(`matches_binding`)와 동일한 플랫폼 규칙을 따른다.
-    // macOS: 바인딩 "alt" → Cmd(mac_cmd), "option" → Option(alt). 그 외: "alt" → alt.
-    #[cfg(target_os = "macos")]
-    let (alt_matches, option_matches) = (mods.mac_cmd == parsed.alt, mods.alt == parsed.option);
-    #[cfg(not(target_os = "macos"))]
-    let (alt_matches, option_matches) = (mods.alt == parsed.alt, !parsed.option);
-
-    if mods.ctrl != parsed.ctrl || mods.shift != parsed.shift || !alt_matches || !option_matches {
+    if !egui_modifiers_match(&parsed, &input.modifiers) {
         return false;
     }
-
     match token_to_egui_key(&parsed.key.to_ascii_lowercase()) {
         Some(key) => input.key_pressed(key),
         None => false,
     }
+}
+
+#[cfg(feature = "egui-input")]
+/// 이번 프레임의 키 누름 중 바인딩 목록과 맞는 것을 입력에서 지우고, 하나라도 있었는지 돌려준다.
+/// 여러 줄 입력의 확정 키처럼 같은 키가 위젯 기본 동작(줄바꿈)으로 처리되면 안 될 때 위젯보다 먼저
+/// 부른다. 판정은 각 이벤트가 가진 modifier 로 하며 규칙은 [`any_binding_pressed_egui`] 와 같다.
+pub fn consume_binding_egui(bindings: &[String], input: &mut egui::InputState) -> bool {
+    let wanted: Vec<_> = bindings
+        .iter()
+        .filter_map(|b| parse_binding(b))
+        .filter_map(|p| Some((token_to_egui_key(&p.key.to_ascii_lowercase())?, p)))
+        .collect();
+    let before = input.events.len();
+    input.events.retain(|e| {
+        let egui::Event::Key {
+            key,
+            pressed: true,
+            modifiers,
+            ..
+        } = e
+        else {
+            return true;
+        };
+        !wanted
+            .iter()
+            .any(|(k, p)| k == key && egui_modifiers_match(p, modifiers))
+    });
+    input.events.len() != before
+}
+
+#[cfg(feature = "egui-input")]
+/// modifier 매핑은 winit 경로(`matches_binding`)와 동일한 플랫폼 규칙을 따른다.
+/// macOS: 바인딩 "alt" → Cmd(mac_cmd), "option" → Option(alt). 그 외: "alt" → alt.
+fn egui_modifiers_match(parsed: &ParsedBinding<'_>, mods: &egui::Modifiers) -> bool {
+    #[cfg(target_os = "macos")]
+    let (alt_matches, option_matches) = (mods.mac_cmd == parsed.alt, mods.alt == parsed.option);
+    #[cfg(not(target_os = "macos"))]
+    let (alt_matches, option_matches) = (mods.alt == parsed.alt, !parsed.option);
+    mods.ctrl == parsed.ctrl && mods.shift == parsed.shift && alt_matches && option_matches
 }
 
 /// 바인딩 키 토큰(소문자)을 egui `Key` 로 변환. named/function 토큰은 명시 매핑하고,
@@ -268,4 +299,82 @@ pub fn physical_key_to_logical(physical: &PhysicalKey) -> Option<Key> {
         _ => return None,
     };
     Some(Key::Character(ch.into()))
+}
+
+#[cfg(all(test, feature = "egui-input"))]
+mod egui_tests {
+    use super::*;
+
+    fn press(key: egui::Key, modifiers: egui::Modifiers) -> egui::Event {
+        egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers,
+        }
+    }
+
+    /// 맞는 키 누름만 지운다. modifier 가 다르거나 바인딩에 없는 키는 위젯에 그대로 간다.
+    #[test]
+    fn consume_removes_only_the_matching_press() {
+        let ctx = egui::Context::default();
+        let ctrl = egui::Modifiers {
+            ctrl: true,
+            command: !cfg!(target_os = "macos"),
+            ..Default::default()
+        };
+        let mut hit = None;
+        let mut left = Vec::new();
+        let output = ctx.run(
+            egui::RawInput {
+                events: vec![
+                    press(egui::Key::Enter, egui::Modifiers::NONE),
+                    press(egui::Key::Enter, ctrl),
+                    press(egui::Key::A, ctrl),
+                ],
+                ..Default::default()
+            },
+            |ctx| {
+                ctx.input_mut(|i| {
+                    hit = Some(consume_binding_egui(&["ctrl+enter".into()], i));
+                    left = i.events.clone();
+                });
+            },
+        );
+        drop(output);
+        assert_eq!(hit, Some(true));
+        assert_eq!(
+            left,
+            vec![
+                press(egui::Key::Enter, egui::Modifiers::NONE),
+                press(egui::Key::A, ctrl)
+            ]
+        );
+    }
+
+    /// 빈 목록과 맞지 않는 바인딩은 아무것도 지우지 않는다.
+    #[test]
+    fn consume_without_a_match_keeps_every_event() {
+        let ctx = egui::Context::default();
+        let mut hit = None;
+        let mut n = 0;
+        let output = ctx.run(
+            egui::RawInput {
+                events: vec![press(egui::Key::Escape, egui::Modifiers::NONE)],
+                ..Default::default()
+            },
+            |ctx| {
+                ctx.input_mut(|i| {
+                    hit = Some(
+                        consume_binding_egui(&[], i)
+                            || consume_binding_egui(&["ctrl+enter".into()], i),
+                    );
+                    n = i.events.len();
+                });
+            },
+        );
+        drop(output);
+        assert_eq!((hit, n), (Some(false), 1));
+    }
 }

@@ -857,15 +857,11 @@ fn every_combo_field_is_in_the_sot() {
     let kb = KeybindingSettings::preset_tasty();
     let missing: Vec<String> = combo_field_ids(&kb)
         .into_iter()
-        .filter(|id| {
-            KeybindingSettings::GENERAL_BINDING_FIELDS
-                .iter()
-                .all(|(fid, _)| fid != id)
-        })
+        .filter(|id| KeybindingSettings::binding_fields().all(|(fid, _)| fid != id))
         .collect();
     assert!(
         missing.is_empty(),
-        "콤보 필드인데 GENERAL_BINDING_FIELDS 에 없다: {missing:?}"
+        "콤보 필드인데 GENERAL_BINDING_FIELDS·TEXT_FIELD_BINDING_FIELDS 어디에도 없다: {missing:?}"
     );
 }
 
@@ -983,4 +979,75 @@ fn copy_link_is_unbound_in_every_preset() {
     ] {
         assert_eq!(kb.get_bindings("copy_link"), Some(&[][..]));
     }
+}
+
+// ── 코드 입력칸 확정·취소 (code_area_apply / code_area_cancel) ─────────────
+
+/// 네 프리셋 모두 이전 고정 키(Mod+Enter · Esc)를 포함한다. 저장 토큰 alt 는 macOS 에서 Command 다.
+#[test]
+fn code_area_keys_keep_the_previous_fixed_keys() {
+    let expect_apply: &[(&str, &[&str])] = &[
+        ("Tasty", &["ctrl+enter", "alt+enter"]),
+        ("Mac", &["alt+enter"]),
+        ("Windows", &["ctrl+enter"]),
+        ("Linux", &["ctrl+enter"]),
+    ];
+    for (name, apply) in expect_apply {
+        let kb = KeybindingSettings::preset_by_name(name).unwrap();
+        assert_eq!(kb.code_area_apply, *apply, "preset {name}");
+        assert_eq!(kb.code_area_cancel, vec!["escape"], "preset {name}");
+    }
+    let kb: KeybindingSettings = toml::from_str(r#"new_tab = ["alt+t"]"#).unwrap();
+    assert_eq!(kb.code_area_apply, vec!["ctrl+enter", "alt+enter"]);
+    assert_eq!(kb.code_area_cancel, vec!["escape"]);
+}
+
+/// 입력칸 키는 전역 목록 밖에 있다 — 전역 키 전달·팔레트·webview 선점이 읽지 않는다.
+#[test]
+fn code_area_keys_are_outside_the_global_list_but_settable() {
+    for id in ["code_area_apply", "code_area_cancel"] {
+        assert!(
+            KeybindingSettings::GENERAL_BINDING_FIELDS
+                .iter()
+                .all(|(f, _)| *f != id),
+            "{id}"
+        );
+        assert!(KeybindingSettings::binding_fields().any(|(f, _)| *f == id));
+    }
+    let mut kb = KeybindingSettings::preset_tasty();
+    assert!(kb.set_field("code_area_apply", "ctrl+s"));
+    assert_eq!(kb.get_field("code_area_apply"), Some("ctrl+s"));
+    assert_eq!(
+        KeybindingSettings::label_key_for("code_area_cancel"),
+        Some("settings.keybindings.code_area_cancel_label")
+    );
+}
+
+/// 충돌 검사는 범위 안에서만 한다. 전역 escape(전체화면 무대 종료)와 입력칸 취소 escape 는 겹치지 않는다.
+#[test]
+fn code_area_conflicts_stay_inside_their_scope() {
+    let kb = KeybindingSettings::preset_tasty();
+    assert_eq!(kb.find_conflict("code_area_cancel", "escape"), None);
+    assert_eq!(kb.find_conflict("fullscreen_stage_exit", "escape"), None);
+    assert_eq!(
+        kb.find_conflict("code_area_apply", "escape"),
+        Some(("code_area_cancel", 0))
+    );
+    assert_eq!(kb.find_conflict("code_area_apply", "ctrl+t"), None);
+}
+
+/// 설정 파일에 전역 escape 가 명시돼 있어도 기본값으로 채운 입력칸 취소 escape 는 지우지 않는다.
+#[test]
+fn defaulted_code_area_cancel_survives_an_explicit_global_escape() {
+    let mut kb: KeybindingSettings =
+        toml::from_str(r#"fullscreen_stage_exit = ["escape"]"#).unwrap();
+    let existing: HashSet<String> = ["fullscreen_stage_exit".to_string()].into_iter().collect();
+    kb.remove_conflicts_from_defaults(&existing);
+    assert_eq!(kb.code_area_cancel, vec!["escape"]);
+    assert_eq!(kb.fullscreen_stage_exit, vec!["escape"]);
+
+    let mut kb: KeybindingSettings = toml::from_str(r#"code_area_apply = ["escape"]"#).unwrap();
+    let existing: HashSet<String> = ["code_area_apply".to_string()].into_iter().collect();
+    kb.remove_conflicts_from_defaults(&existing);
+    assert!(kb.code_area_cancel.is_empty());
 }

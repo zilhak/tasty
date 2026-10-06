@@ -103,6 +103,7 @@ pub(crate) fn draw_file_handler_tab(
     new_ext_input: &mut String,
     fh_draft: &mut FileHandlerEditDraft,
     hh_draft: &mut HookHandlerEditDraft,
+    keybindings: &crate::settings::KeybindingSettings,
     file_format: &FileFormatRegistry,
     file_handler: &FileHandlerRegistry,
 ) {
@@ -112,7 +113,7 @@ pub(crate) fn draw_file_handler_tab(
         }
         FileHandlerSubTab::Detectors => draw_detectors(ui, fh_draft, file_format),
         FileHandlerSubTab::Handlers => draw_handlers(ui, fh_draft, file_format, file_handler),
-        FileHandlerSubTab::HookHandlers => draw_hook_handlers(ui, hh_draft),
+        FileHandlerSubTab::HookHandlers => draw_hook_handlers(ui, hh_draft, keybindings),
     }
 }
 

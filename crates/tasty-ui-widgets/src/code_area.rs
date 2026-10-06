@@ -16,15 +16,24 @@ pub struct CodeArea<'a> {
     invalid: bool,
     error_line: Option<usize>,
     enabled: bool,
+    keys: Option<CodeAreaKeys<'a>>,
+}
+
+/// 확정·취소 키 판정. 위젯은 키를 정하지 않고, 호출자가 단축키 설정을 읽어 넘긴다. 맞은 키
+/// 이벤트는 소비해야 한다 — 확정 키가 줄바꿈으로 함께 들어가지 않게 위젯보다 먼저 부른다.
+#[derive(Clone, Copy)]
+pub struct CodeAreaKeys<'a> {
+    pub submit: &'a dyn Fn(&mut egui::InputState) -> bool,
+    pub cancel: &'a dyn Fn(&mut egui::InputState) -> bool,
 }
 
 /// 한 프레임의 결과.
 pub struct CodeAreaOutput {
     /// 글자 영역 TextEdit 의 응답(`changed()` 로 변경 감지). `rect` 는 상자 전체다.
     pub response: egui::Response,
-    /// 포커스 중 Mod+Enter 가 눌렸다. 이 키는 줄바꿈을 넣지 않는다.
+    /// 포커스 중 [`CodeAreaKeys::submit`] 이 맞았다. 그 키는 줄바꿈을 넣지 않는다.
     pub submit: bool,
-    /// 포커스 중 Esc 가 눌렸다.
+    /// 포커스 중 [`CodeAreaKeys::cancel`] 이 맞았다.
     pub cancel: bool,
 }
 
@@ -39,7 +48,14 @@ impl<'a> CodeArea<'a> {
             invalid: false,
             error_line: None,
             enabled: true,
+            keys: None,
         }
+    }
+
+    /// 확정·취소 키. 없으면 키로는 확정·취소하지 않는다.
+    pub fn keys(mut self, keys: Option<CodeAreaKeys<'a>>) -> Self {
+        self.keys = keys;
+        self
     }
 
     pub fn placeholder(mut self, placeholder: &'a str) -> Self {
@@ -120,25 +136,16 @@ impl<'a> CodeArea<'a> {
             ui.fonts(|f| f.layout_job(line_job(text, font.clone(), ink, line_h)))
         };
 
-        // TextEdit 에 들어가기 전에 단축키를 가로챈다. Mod+Enter 가 줄바꿈으로 먼저 처리되지 않게
-        // 하려는 것이다. egui 는 프레임 시작에서 Esc 로 포커스를 이미 풀었으므로 Esc 는 직전 프레임의
-        // 포커스로 판정한다.
+        // TextEdit 에 들어가기 전에 확정·취소 키를 가로챈다. 확정 키가 줄바꿈으로 먼저 처리되지 않게
+        // 하려는 것이다. egui 는 프레임 시작에서 Esc 로 포커스를 이미 풀었으므로 직전 프레임의
+        // 포커스도 포커스로 본다.
         let edit_id = self.id_salt;
         let focus_key = edit_id.with("was_focused");
         let was_focused = ui.data(|d| d.get_temp::<bool>(focus_key).unwrap_or(false));
         let focused = self.enabled && (was_focused || ui.memory(|m| m.has_focus(edit_id)));
-        let (submit, cancel) = if focused {
-            ui.input_mut(|i| {
-                (
-                    i.consume_shortcut(&egui::KeyboardShortcut::new(
-                        egui::Modifiers::COMMAND,
-                        egui::Key::Enter,
-                    )),
-                    i.consume_key(egui::Modifiers::NONE, egui::Key::Escape),
-                )
-            })
-        } else {
-            (false, false)
+        let (submit, cancel) = match self.keys {
+            Some(keys) if focused => ui.input_mut(|i| ((keys.submit)(i), (keys.cancel)(i))),
+            _ => (false, false),
         };
 
         let band_fill = theme
@@ -360,9 +367,10 @@ mod tests {
         assert_eq!(fills(&marked), (true, true));
     }
 
-    /// 포커스 중 Mod+Enter 는 submit 이 되고 줄바꿈을 넣지 않는다. Enter 는 줄바꿈, Esc 는 cancel 이다.
+    /// 포커스 중 넘긴 확정 키는 submit 이 되고 줄바꿈을 넣지 않는다. Enter 는 줄바꿈, 취소 키는
+    /// cancel 이다. 키를 넘기지 않으면 같은 입력이 아무 동작도 하지 않는다.
     #[test]
-    fn mod_enter_submits_esc_cancels_and_enter_is_a_newline() {
+    fn given_keys_submit_and_cancel_and_enter_is_a_newline() {
         let theme = tasty_themes::mocha_fallback();
         let ctx = egui::Context::default();
         let mut buf = "a".to_string();
@@ -373,7 +381,22 @@ mod tests {
             repeat: false,
             modifiers,
         };
-        let frame = |buf: &mut String, events: Vec<egui::Event>| -> (bool, bool) {
+        let submit_key = |i: &mut egui::InputState| {
+            i.consume_shortcut(&egui::KeyboardShortcut::new(
+                egui::Modifiers::COMMAND,
+                egui::Key::Enter,
+            ))
+        };
+        let cancel_key =
+            |i: &mut egui::InputState| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape);
+        let keys = CodeAreaKeys {
+            submit: &submit_key,
+            cancel: &cancel_key,
+        };
+        let frame = |buf: &mut String,
+                     keys: Option<CodeAreaKeys<'_>>,
+                     events: Vec<egui::Event>|
+         -> (bool, bool) {
             let mut out = (false, false);
             let output = ctx.run(
                 egui::RawInput {
@@ -386,7 +409,7 @@ mod tests {
                 },
                 |ctx| {
                     egui::CentralPanel::default().show(ctx, |ui| {
-                        let o = CodeArea::new("k").show(ui, &theme, buf);
+                        let o = CodeArea::new("k").keys(keys).show(ui, &theme, buf);
                         if !o.response.has_focus() {
                             o.response.request_focus();
                         }
@@ -397,19 +420,33 @@ mod tests {
             drop(output);
             out
         };
-        frame(&mut buf, Vec::new());
-        frame(&mut buf, Vec::new());
+        frame(&mut buf, Some(keys), Vec::new());
+        frame(&mut buf, Some(keys), Vec::new());
+        let unbound = frame(
+            &mut buf,
+            None,
+            vec![key(egui::Key::Enter, egui::Modifiers::COMMAND)],
+        );
+        assert_eq!(unbound, (false, false));
+        buf = "a".to_string();
+        frame(&mut buf, Some(keys), Vec::new());
         let submit = frame(
             &mut buf,
+            Some(keys),
             vec![key(egui::Key::Enter, egui::Modifiers::COMMAND)],
         );
         assert_eq!(submit, (true, false));
         assert_eq!(buf, "a");
-        let newline = frame(&mut buf, vec![key(egui::Key::Enter, egui::Modifiers::NONE)]);
+        let newline = frame(
+            &mut buf,
+            Some(keys),
+            vec![key(egui::Key::Enter, egui::Modifiers::NONE)],
+        );
         assert_eq!(newline, (false, false));
         assert_eq!(buf.matches('\n').count(), 1);
         let cancel = frame(
             &mut buf,
+            Some(keys),
             vec![key(egui::Key::Escape, egui::Modifiers::NONE)],
         );
         assert_eq!(cancel, (false, true));

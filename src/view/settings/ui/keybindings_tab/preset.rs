@@ -174,20 +174,17 @@ fn preset_desc(name: &str) -> &str {
 /// 현재 draft 와 프리셋의 모든 일반 바인딩이 일치하면 true (= 사용 중).
 fn preset_matches(current: &KeybindingSettings, name: &str) -> bool {
     KeybindingSettings::preset_by_name(name).is_some_and(|p| {
-        KeybindingSettings::GENERAL_BINDING_FIELDS
-            .iter()
+        KeybindingSettings::binding_fields()
             .all(|(id, _)| current.get_bindings(id) == p.get_bindings(id))
     })
 }
 
 /// (변경 행 수, 전체 행 수).
 fn diff_counts(current: &KeybindingSettings, preset: &KeybindingSettings) -> (usize, usize) {
-    let fields = KeybindingSettings::GENERAL_BINDING_FIELDS;
-    let changed = fields
-        .iter()
+    let changed = KeybindingSettings::binding_fields()
         .filter(|(id, _)| current.get_bindings(id) != preset.get_bindings(id))
         .count();
-    (changed, fields.len())
+    (changed, KeybindingSettings::binding_fields().count())
 }
 
 /// 동작·현재 키·프리셋 키의 비교 표. 달라진 프리셋 값은 색으로 강조한다.
@@ -247,7 +244,7 @@ fn draw_preset_diff_table(
         let content_h = ui.fonts(|f| f.row_height(&action_font).max(f.row_height(&mono_font)));
         let row_h = content_h + pad_y * 2.0;
 
-        for (field_id, label_key) in KeybindingSettings::GENERAL_BINDING_FIELDS {
+        for (field_id, label_key) in KeybindingSettings::binding_fields() {
             let cur_raw = current.get_bindings(field_id).unwrap_or(&[]);
             let next_raw = preset.get_bindings(field_id).unwrap_or(&[]);
             let changed = cur_raw != next_raw;
@@ -331,7 +328,7 @@ mod tests {
         let p = KeybindingSettings::preset_tasty();
         let (changed, total) = diff_counts(&p, &p);
         assert_eq!(changed, 0);
-        assert_eq!(total, KeybindingSettings::GENERAL_BINDING_FIELDS.len());
+        assert_eq!(total, KeybindingSettings::binding_fields().count());
     }
 
     #[test]
