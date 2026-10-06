@@ -47,27 +47,101 @@ fn row_separator(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
 /// 공개 역할 토큰이 없어 갤러리 무대 치수로 둔다.
 const EXT_PANEL_WIDTH: LogicalPx = LogicalPx(360.0);
 
-/// 시안 `ExtMapG` seed: (확장자, [(detector, 후보 여부)]) — 먼저 맞는 detector가 이긴다.
-const EXT_GROUPS: &[(&str, &[(&str, bool)])] = &[
-    (
-        ".md",
-        &[
-            ("Markdown viewer", true),
-            ("Editor", true),
-            ("html-preview", false),
-        ],
-    ),
-    (".log", &[("Log viewer", true)]),
+/// 시안 `ExtMapG` seed의 `.md` detector 순서 — 먼저 맞는 detector가 이긴다.
+const EXT_MD_ROWS: &[(&str, bool)] = &[
+    ("Markdown viewer", true),
+    ("Editor", true),
+    ("html-preview", false),
 ];
+const EXT_LOG_ROWS: &[(&str, bool)] = &[("Log viewer", true)];
+
+/// 시안 `ExtMapG` prop — `custom`은 `.md`에 사용자 순서가 있어 Reset이 보이는 갈래,
+/// `missing`은 미설치 `.ipynb` 묶음을 더하는 갈래, `long`은 긴 번역 문구 갈래다.
+#[derive(Clone, Copy, Default)]
+struct ExtMapSeed {
+    custom: bool,
+    missing: bool,
+    long: bool,
+}
+
+impl ExtMapSeed {
+    /// (Reset, Remove, not installed) 문구. `long`은 시안의 긴 번역 표본이다.
+    fn labels(self) -> (&'static str, &'static str, &'static str) {
+        if self.long {
+            (
+                "Restablecer orden",
+                "Entfernen",
+                "インストールされていません",
+            )
+        } else {
+            ("Reset", "Remove", "not installed")
+        }
+    }
+}
 
 thread_local! {
-    // 두 패널 짝(빈 입력 · ".toml")의 Mocha·Latte 입력 버퍼.
-    static EXT_DRAFTS: RefCell<[String; 4]> = RefCell::new([
+    // 네 패널 짝(빈 입력 · ".toml" · custom+missing · custom+missing+long)의 Mocha·Latte 입력 버퍼.
+    static EXT_DRAFTS: RefCell<[String; 8]> = RefCell::new([
         String::new(),
         String::new(),
         ".toml".to_string(),
         ".toml".to_string(),
+        String::new(),
+        String::new(),
+        String::new(),
+        String::new(),
     ]);
+}
+
+/// 확장자 머리줄 — `.ext` · (미설치면 Tag disabled) · 빈 칸 · 오른쪽 끝 ghost Button sm.
+/// 위·아래 space-xs 여백 안의 높이는 button-height-sm 이상이라 Reset이 나타나도 행이 움직이지 않는다.
+/// 미설치 묶음은 머리줄만 남고 그 아래에 구분선 하나를 둔다.
+fn ext_group_header(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    ext: &str,
+    button: Option<&str>,
+    not_installed: Option<&str>,
+) {
+    let head_y = theme.spacing_xs.value().round() as i8;
+    let resp = egui::Frame::new()
+        .inner_margin(egui::Margin {
+            top: head_y,
+            bottom: head_y,
+            ..egui::Margin::ZERO
+        })
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.set_min_height(theme.button_height_sm().value());
+                ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+                let ext_fg = if not_installed.is_some() {
+                    theme.text_disabled()
+                } else {
+                    theme.text_secondary()
+                };
+                ui.label(
+                    egui::RichText::new(ext)
+                        .monospace()
+                        .size(theme.font_size_caption.value())
+                        .color(ext_fg.to_egui()),
+                );
+                if let Some(tag_label) = not_installed {
+                    tag_disabled(ui, theme, tag_label, false);
+                }
+                if let Some(label) = button {
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        Button::new(label)
+                            .variant(ButtonVariant::Ghost)
+                            .size(ControlSize::Sm)
+                            .show(ui, theme);
+                    });
+                }
+            });
+        })
+        .response;
+    if not_installed.is_some() {
+        row_separator(ui, theme, resp.rect);
+    }
 }
 
 /// 확장자 아래 detector 한 행 — 순번 · 이름 · (비후보면 Tag disabled "off") · ▲ · ▼.
@@ -131,7 +205,7 @@ fn ext_detector_row(
 }
 
 /// 시안 `ExtMapG` 패널 — Input + Add, 그 아래 확장자별 detector 순서 목록.
-fn ext_map_panel(ui: &mut egui::Ui, theme: &Theme, draft: &mut String) {
+fn ext_map_panel(ui: &mut egui::Ui, theme: &Theme, draft: &mut String, seed: ExtMapSeed) {
     let frame = egui::Frame::new()
         .fill(theme.bg_panel().to_egui())
         .stroke(egui::Stroke::new(
@@ -162,38 +236,47 @@ fn ext_map_panel(ui: &mut egui::Ui, theme: &Theme, draft: &mut String) {
                         .show(ui, theme, draft);
                 });
             });
-            for (ext, rows) in EXT_GROUPS {
+            let (reset, remove, not_installed) = seed.labels();
+            let md_button = seed.custom.then_some(reset);
+            ext_group(ui, theme, ".md", EXT_MD_ROWS, md_button);
+            if seed.missing {
                 ui.vertical(|ui| {
                     ui.spacing_mut().item_spacing.y = 0.0;
-                    // 시안 `padding: xs 0` — 위·아래에만 여백을 둔다.
-                    let head_y = theme.spacing_xs.value().round() as i8;
-                    egui::Frame::new()
-                        .inner_margin(egui::Margin {
-                            top: head_y,
-                            bottom: head_y,
-                            ..egui::Margin::ZERO
-                        })
-                        .show(ui, |ui| {
-                            ui.label(
-                                egui::RichText::new(*ext)
-                                    .monospace()
-                                    .size(theme.font_size_caption.value())
-                                    .color(theme.text_secondary().to_egui()),
-                            );
-                        });
-                    let last = rows.iter().rposition(|(_, c)| *c);
-                    for (i, (name, candidate)) in rows.iter().enumerate() {
-                        ext_detector_row(ui, theme, i, name, *candidate, Some(i) == last);
-                    }
+                    ext_group_header(ui, theme, ".ipynb", Some(remove), Some(not_installed));
                 });
             }
+            ext_group(ui, theme, ".log", EXT_LOG_ROWS, None);
         });
+    });
+}
+
+/// 설치된 확장자 한 묶음 — 머리줄과 detector 순서 목록.
+fn ext_group(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    ext: &str,
+    rows: &[(&str, bool)],
+    button: Option<&str>,
+) {
+    ui.vertical(|ui| {
+        ui.spacing_mut().item_spacing.y = 0.0;
+        ext_group_header(ui, theme, ext, button, None);
+        let last = rows.iter().rposition(|(_, c)| *c);
+        for (i, (name, candidate)) in rows.iter().enumerate() {
+            ext_detector_row(ui, theme, i, name, *candidate, Some(i) == last);
+        }
     });
 }
 
 /// 시안 `ThemePair` — 같은 패널을 Mocha·Latte로 나란히 둔다.
 /// `pair`는 짝 번호다. 입력 버퍼 내용이 아니라 고정 번호로 id를 구분해야 입력 중에도 포커스가 유지된다.
-fn ext_map_theme_pair(ui: &mut egui::Ui, theme: &Theme, pair: usize, drafts: &mut [String]) {
+fn ext_map_theme_pair(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    pair: usize,
+    drafts: &mut [String],
+    seed: ExtMapSeed,
+) {
     // 갤러리 배율을 따르도록 두 팔레트에 현재 zoom을 입힌다.
     let with_zoom =
         |base: Theme| Theme::with_colors_and_zoom(base.to_colors(), base.is_light, theme.ui_zoom);
@@ -217,7 +300,7 @@ fn ext_map_theme_pair(ui: &mut egui::Ui, theme: &Theme, pair: usize, drafts: &mu
                                 .color(th.text_muted().to_egui()),
                         );
                         ui.push_id(("ext_map", pair, *label), |ui| {
-                            ext_map_panel(ui, th, draft);
+                            ext_map_panel(ui, th, draft, seed);
                         });
                     });
                 });
@@ -226,14 +309,33 @@ fn ext_map_theme_pair(ui: &mut egui::Ui, theme: &Theme, pair: usize, drafts: &mu
 }
 
 pub fn draw_extension_mapping(ui: &mut egui::Ui, theme: &Theme) {
-    spec::stage(ui, theme, StageVariant::Column, |ui| {
-        ui.spacing_mut().item_spacing.y = theme.spacing_lg.value();
-        EXT_DRAFTS.with(|d| {
-            let drafts = &mut *d.borrow_mut();
-            let (empty, typed) = drafts.split_at_mut(2);
-            ext_map_theme_pair(ui, theme, 0, empty);
-            ext_map_theme_pair(ui, theme, 1, typed);
-        });
+    let custom_missing = ExtMapSeed {
+        custom: true,
+        missing: true,
+        long: false,
+    };
+    let custom_missing_long = ExtMapSeed {
+        long: true,
+        ..custom_missing
+    };
+    let seeds = [
+        ExtMapSeed::default(),
+        ExtMapSeed::default(),
+        custom_missing,
+        custom_missing_long,
+    ];
+    EXT_DRAFTS.with(|d| {
+        let drafts = &mut *d.borrow_mut();
+        let mut pairs = drafts.chunks_mut(2).zip(seeds).enumerate();
+        // 시안은 기본 두 짝과 Reset·Remove 두 짝을 서로 다른 Stage에 둔다.
+        for _ in 0..2 {
+            spec::stage(ui, theme, StageVariant::Column, |ui| {
+                ui.spacing_mut().item_spacing.y = theme.spacing_lg.value();
+                for (pair, (buf, seed)) in pairs.by_ref().take(2) {
+                    ext_map_theme_pair(ui, theme, pair, buf, seed);
+                }
+            });
+        }
     });
     spec::meta(
         ui,
@@ -250,6 +352,23 @@ pub fn draw_extension_mapping(ui: &mut egui::Ui, theme: &Theme) {
                 "both disabled · name text-disabled · Tag disabled \"off\"",
             ),
             ("hide instead?", "no — slots stay put"),
+            (
+                "Reset",
+                "ghost Button sm · header right end · only when the extension has a custom order · tooltip kept · draft only",
+            ),
+            (
+                "not installed",
+                "the group header alone: .ext text-disabled · Tag disabled · Remove ghost Button sm; no detector rows; separator under it",
+            ),
+            (
+                "header",
+                "min-height button-height-sm — Reset appearing never moves the rows",
+            ),
+            (
+                "long copy",
+                "Tag and button never truncate; .ext label is the shrinking item",
+            ),
+            ("confirm", "none — both edit the draft, Cancel reverts"),
             ("row height", "settings-row-min-height"),
         ],
         &[

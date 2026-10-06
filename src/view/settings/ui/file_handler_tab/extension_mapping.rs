@@ -7,8 +7,8 @@ use crate::i18n::t;
 use super::draw_intro_block;
 use crate::adapters::ui::icons;
 use tasty_ui_widgets::{
-    Button, ButtonVariant, ControlSize, IconButton, IconButtonVariant, Input, hspace, tag_disabled,
-    vspace,
+    Button, ButtonVariant, ControlSize, IconButton, IconButtonVariant, Input, Tooltip,
+    tag_disabled, tooltip_hover_delay_elapsed, vspace,
 };
 
 /// 등록된 확장자와 편집 중인 확장자를 표시하고 detector 우선순위를 조정한다.
@@ -104,21 +104,10 @@ fn draw_extension_row(
     let th = crate::theme::theme();
     let candidates = file_format.detectors_for_extension(ext);
     if candidates.is_empty() {
-        egui::Frame::new()
-            .inner_margin(egui::vec2(th.spacing_sm.value(), th.spacing_xs.value()))
-            .fill(ui.visuals().faint_bg_color)
-            .show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label(format!(".{}", ext));
-                    ui.label(t("settings.file_handler.extension_mapping.unregistered"));
-                    if ui
-                        .button(t("settings.file_handler.extension_mapping.clear"))
-                        .clicked()
-                    {
-                        draft_map.insert(ext.to_string(), Vec::new());
-                    }
-                });
-            });
+        // 미설치 확장자는 머리줄만 남는다 — detector 행 없이 아래 구분선 하나.
+        if group_header(ui, &th, ext, GroupHeader::NotInstalled) {
+            draft_map.insert(ext.to_string(), Vec::new());
+        }
         return;
     }
 
@@ -134,33 +123,14 @@ fn draw_extension_row(
         candidates.clone()
     };
 
-    // 머리줄은 위·아래에만 space-xs 여백을 둔다(시안 `padding: xs 0`).
-    let head_y = th.spacing_xs.value().round() as i8;
-    egui::Frame::new()
-        .inner_margin(egui::Margin {
-            top: head_y,
-            bottom: head_y,
-            ..egui::Margin::ZERO
-        })
-        .show(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.label(
-                    egui::RichText::new(format!(".{}", ext))
-                        .monospace()
-                        .size(th.font_size_caption.value())
-                        .color(th.text_secondary().to_egui()),
-                );
-                hspace(ui, th.spacing_sm);
-                if draft_map.contains_key(ext)
-                    && ui
-                        .small_button(t("settings.file_handler.extension_mapping.reset"))
-                        .on_hover_text(t("settings.file_handler.extension_mapping.reset_tooltip"))
-                        .clicked()
-                {
-                    draft_map.insert(ext.to_string(), Vec::new());
-                }
-            });
-        });
+    let header = if draft_map.contains_key(ext) {
+        GroupHeader::Custom
+    } else {
+        GroupHeader::Default
+    };
+    if group_header(ui, &th, ext, header) {
+        draft_map.insert(ext.to_string(), Vec::new());
+    }
     // 후보 = 켜져 있고 이 확장자를 지원하는 detector. 비후보(꺼짐·미설치) 행은 자리를 지키고
     // ▲▼를 모두 disabled로 둔다. ▼는 뒤에 후보가 더 없으면 disabled다.
     let last_candidate = last_candidate(&order, &candidates);
@@ -195,6 +165,95 @@ fn draw_extension_row(
         new_order.swap(i, i + 1);
         draft_map.insert(ext.to_string(), new_order);
     }
+}
+
+/// 확장자 머리줄의 갈래. 오른쪽 끝 버튼과 `.ext` 색이 이것으로 정해진다.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum GroupHeader {
+    /// 설치 순서 그대로 — 버튼 없음.
+    Default,
+    /// 사용자가 순서를 바꿨다 — Reset.
+    Custom,
+    /// 켜진 detector 가 없다 — `.ext` 흐림 · Tag disabled · Remove · 아래 구분선.
+    NotInstalled,
+}
+
+/// 확장자 머리줄 — `.ext` · (미설치면 Tag disabled) · 빈 칸 · 오른쪽 끝 ghost Button sm.
+/// 위·아래 space-xs 여백 안의 높이는 button-height-sm 이상이라 Reset 이 나타나도 아래 행이
+/// 움직이지 않는다. Tag 와 버튼은 줄지 않는다. 버튼이 눌렸는지를 돌려준다.
+fn group_header(
+    ui: &mut egui::Ui,
+    th: &tasty_type_appearance::theme::Theme,
+    ext: &str,
+    kind: GroupHeader,
+) -> bool {
+    let mut clicked = false;
+    let head_y = th.spacing_xs.value().round() as i8;
+    let resp = egui::Frame::new()
+        .inner_margin(egui::Margin {
+            top: head_y,
+            bottom: head_y,
+            ..egui::Margin::ZERO
+        })
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.set_min_height(th.button_height_sm().value());
+                ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
+                let ext_fg = if kind == GroupHeader::NotInstalled {
+                    th.text_disabled()
+                } else {
+                    th.text_secondary()
+                };
+                ui.label(
+                    egui::RichText::new(format!(".{ext}"))
+                        .monospace()
+                        .size(th.font_size_caption.value())
+                        .color(ext_fg.to_egui()),
+                );
+                if kind == GroupHeader::NotInstalled {
+                    tag_disabled(
+                        ui,
+                        th,
+                        t("settings.file_handler.extension_mapping.unregistered"),
+                        false,
+                    );
+                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let (label, tooltip) = match kind {
+                        GroupHeader::Default => return,
+                        GroupHeader::Custom => (
+                            t("settings.file_handler.extension_mapping.reset"),
+                            Some(t("settings.file_handler.extension_mapping.reset_tooltip")),
+                        ),
+                        GroupHeader::NotInstalled => {
+                            (t("settings.file_handler.extension_mapping.clear"), None)
+                        }
+                    };
+                    let resp = Button::new(label)
+                        .variant(ButtonVariant::Ghost)
+                        .size(ControlSize::Sm)
+                        .show(ui, th);
+                    if let Some(tip) = tooltip
+                        && tooltip_hover_delay_elapsed(ui.ctx(), th, resp.id, resp.hovered())
+                    {
+                        Tooltip::new(tip).id_source(resp.id).show(ui, th, resp.rect);
+                    }
+                    clicked = resp.clicked();
+                });
+            });
+        })
+        .response;
+    if kind == GroupHeader::NotInstalled {
+        ui.painter().hline(
+            resp.rect.x_range(),
+            resp.rect.bottom(),
+            egui::Stroke::new(
+                th.border_width.value(),
+                th.separator.to_egui_premultiplied(),
+            ),
+        );
+    }
+    clicked
 }
 
 /// 순서 목록에서 마지막 후보의 위치. 그 뒤에는 비후보 행만 온다.
