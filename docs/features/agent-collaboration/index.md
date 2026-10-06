@@ -64,7 +64,7 @@ fallback을 후속 작업에 설정해도 의존성 실패로 인한 Skipped에�
 
 task 는 선택적으로 `contract_version: 2` 계약을 가진다. 계약은 입력·출력 타입(boolean·int64·float64·string·enum·object·list·unit·json·이름 붙은 타입)을 선언하고, 저장소가 보고된 결과를 그 타입으로 확정한다. 출력이 타입에 맞지 않거나 없으면 성공이 아니라 실패로 끝난다. 결과는 최종 출력(`has_output`·`output`)과 원시 응답·artifact·실패 단계·출처를 나눠 담는다. 기본 출력은 `run` 이 종료 코드(int64), `custom` 이 json, `wait_barrier` 가 unit, `reduce` 가 전략별 타입이다.
 
-v2 의 int64 값은 내부에서는 정수로 들고, 저장·IPC·CLI 로 나갈 때만 JavaScript 소비자를 지나도 바뀌지 않도록 10진 문자열로 쓴다(입력은 정수도 받는다). v1 출력 placeholder 나 v1 reduce(단발 `agent.task_reduce` 포함)로 v2 task 의 결과를 읽는 요청은 거절한다. 계약이 없는 task(v1)의 결과와 reducer 동작은 그대로다. v2 task 는 별도 저장 namespace 에 envelope 로 저장해 구버전이 실행하지 않는다. 지금은 Rust API(`TaskStore::create_typed`)로만 만들 수 있고 IPC·CLI 생성과 입력 바인딩은 아직 없다. 형식과 규칙은 [작업 러너 §v2 타입 계약](../../dev-guide/agent-runner.md#v2-타입-계약-contract_version-2).
+v2 의 int64 값은 내부에서는 정수로 들고, 직렬화할 때(저장·IPC·CLI 등 경로와 무관) JavaScript 소비자를 지나도 바뀌지 않도록 10진 문자열로 쓴다(입력은 정수도 받는다). `json` 타입 값은 JSON 숫자 그대로이므로 2^53 을 넘는 정수는 JavaScript 도구에서 정밀도를 잃을 수 있다. 정밀도가 필요하면 `int64` 로 선언한다. v1 출력 placeholder 나 v1 reduce(단발 `agent.task_reduce` 포함)로 v2 task 의 결과를 읽는 요청은 거절한다. 계약이 없는 task(v1)의 결과와 reducer 동작은 그대로다. v2 task 는 별도 저장 namespace 에 envelope 로 저장해 구버전이 실행하지 않는다. 지금은 Rust API(`TaskStore::create_typed`)로만 만들 수 있고 IPC·CLI 생성과 입력 바인딩은 아직 없다. 형식과 규칙은 [작업 러너 §v2 타입 계약](../../dev-guide/agent-runner.md#v2-타입-계약-contract_version-2).
 
 #### 작업·DAG 조회
 

@@ -24,7 +24,8 @@ task에 선택적 계약 `contract_version: 2`를 둔다. 계약이 없으면 v1
 - 결과는 최종 출력(`has_output`, `output`)과 원시 응답·artifact·실패 단계·출처를 나눠 `typed_result`에 둔다.
   v1 필드 `result`에는 최종 출력을 투영한다.
 - 결과 확정은 저장소의 `set_result`·`set_state`가 맡는다. 모든 완료 경로가 이 두 메서드를 지난다.
-- typed 값의 내부 표현은 타입 그대로다. int64는 메모리 안에서 정수로 들고, `Task`의 serde 경계(저장, IPC, CLI JSON 출력이 모두 지난다)에서만 10진 문자열로 쓴다(proto3 JSON 관례). 읽을 때는 문자열과 JSON 정수 토큰을 모두 받고, 범위 초과와 소수는 거절한다. 스키마가 int64를 알려 주므로 string 타입과 혼동되지 않는다.
+- 확정된 출력은 선언 타입을 아는 값(`TypedValue`)으로 든다. 메모리 안에서 int64는 i64이고, 이 타입의 `Serialize`가 항상 10진 문자열로 쓴다(proto3 JSON 관례). 직렬화 경로(저장, IPC, CLI, 결과만 내보내는 API)와 무관하게 같은 wire 형식이 나온다. 역직렬화는 스키마가 있어야 하며(`TypedValueSeed`), 문자열과 JSON 정수 토큰을 모두 받고 범위 초과와 소수는 거절한다. 스키마가 int64를 알려 주므로 string 타입과 혼동되지 않는다.
+- reduce `all` 레코드의 `output`과 custom reducer stdin에는 각 입력의 선언 타입대로 직렬화한 값을 넣는다. `json` 타입 값은 무타입이라 안의 숫자를 바꾸지 않는다. 2^53을 넘는 정수의 정밀도가 필요하면 `int64`로 선언한다.
 - v1이 v2 결과를 읽는 경로는 생성에서 거절한다. v1 출력 placeholder(`${task.<id>.output}`)가 v2 task를 가리키는 경우, v1 `Reduce`의 입력에 v2 task가 있는 경우, 단발 reduce에 v2 task를 준 경우다. v2 결과의 의미(계약 타입, run의 종료 코드)가 v1 경로로 조용히 바뀌어 넘어가지 않게 하기 위해서다. 허용 범위는 입력 binding이 정한다.
 - 값 한도는 스키마 깊이 32, 값 깊이 64, 직렬화 크기 256KiB로 시작한다(`MAX_SCHEMA_DEPTH`·`MAX_VALUE_DEPTH`·`MAX_VALUE_BYTES`). memory 값 하나의 한도가 1MiB이고 v2 레코드에는 출력 외에 계약·raw 응답(run은 stdout·stderr 각 64KiB tail)·v1 투영이 함께 실리므로, 출력 하나를 그 4분의 1로 두었다. 깊이는 검증·직렬화가 재귀하는 깊이를 막는 값이며 사람이 쓰는 스키마·결과에 충분한 여유를 둔 초기값이다.
 - 그 밖의 암묵 변환은 하지 않는다. 형식과 규칙은 [작업 러너 §v2 타입 계약](../dev-guide/agent-runner.md#v2-타입-계약-contract_version-2)에 있다.
@@ -34,7 +35,7 @@ task에 선택적 계약 `contract_version: 2`를 둔다. 계약이 없으면 v1
 구버전 앱이 v2 데이터를 실행하거나 v1 목록 조회에 실패하지 않는다. v1 레코드는 다시 저장해도 같은 JSON으로 남는다.
 
 task 조회·삭제는 두 키를 확인해야 하고, 목록은 두 접두사를 읽는다. memory의 호스트 키 공간이 하나 늘었다.
-int64 출력은 JavaScript를 지나도 정확하고, Rust 소비자(reducer, 조건 평가)는 정수를 그대로 받는다. 직렬화된 레코드·응답만 보면 같은 task라도 `raw.exit_code`는 숫자, `output`은 문자열이다. `Task`의 serde가 계약 스키마를 알아야 하므로 `typed_result`만 따로 직렬화하면 내부 표현(정수)이 그대로 나간다. 결과를 내보내는 경로는 `Task`를 직렬화해야 한다.
+int64 출력은 JavaScript를 지나도 정확하고, Rust 소비자(reducer, 조건 평가)는 정수를 그대로 받는다. 직렬화된 레코드·응답만 보면 같은 task라도 `raw.exit_code`는 숫자, `output`은 문자열이다. 역직렬화에는 스키마가 필요해 `TypedResult`는 단독으로 역직렬화하지 않고 `Task`(계약 포함)를 통해 읽는다. `json` 타입 값 안의 큰 정수는 JavaScript 도구에서 정밀도를 잃을 수 있다.
 계약 형식을 바꿀 때는 `record_format`과 `contract_version`을 함께 올리고 새 namespace를 검토해야 한다.
 
 ## Alternatives Considered

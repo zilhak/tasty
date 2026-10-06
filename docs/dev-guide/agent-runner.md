@@ -538,12 +538,14 @@ task 는 선택적으로 타입 계약(`TaskContract`)을 가진다. 계약이 �
 
 ### int64 와 JSON 숫자
 
-메모리 안의 typed 값은 내부 표현이다. int64 는 JSON 정수(i64)로 들고 있고, reducer·결과 확정·이후 조건 평가는 이 값을 그대로 쓴다. 문자열은 wire 표현일 뿐이다. `Task` 의 serde(`task/record.rs`)가 저장·IPC 응답·CLI 출력이 모두 지나는 직렬화 경계에서 계약의 출력 스키마를 따라 `typed_result.output` 과 v1 투영 `result.output` 의 int64 자리를 10진 문자열로 바꾸고(`TypeDefs::encode_wire`), 읽을 때 다시 정수로 바꾼다(`decode_wire`, 정수가 아닌 값이면 읽기 오류). proto3 JSON 과 같은 관례이며, 숫자를 f64 로 읽는 소비자(JavaScript 의 `JSON.parse` 등)를 지나도 i64 최솟값·최댓값과 9007199254740993 이 같은 정수로 돌아온다. 스키마가 위치를 알려 주므로 string 타입 값과 섞이지 않는다.
+확정된 출력은 선언 타입을 아는 값(`TypedValue`, `task/types/value.rs`)으로 든다. 메모리 안에서 int64 는 i64 이고, reducer·결과 확정·이후 조건 평가는 이 값을 그대로 쓴다. 문자열은 wire 표현일 뿐이다. 변환은 `TypedValue` 의 `Serialize` 에 있어서 저장·IPC 응답·CLI 출력, 그리고 `typed_result` 만 따로 내보내는 경로까지 어떤 경로로 직렬화해도 int64 는 10진 문자열이 된다(proto3 JSON 과 같은 관례). 숫자를 f64 로 읽는 소비자(JavaScript 의 `JSON.parse` 등)를 지나도 i64 최솟값·최댓값과 9007199254740993 이 같은 정수로 돌아온다. wire 형식만으로는 int64 와 string 을 구별할 수 없으므로 역직렬화에는 스키마가 필요하다. `TypedValueSeed` 가 스키마를 받는 역직렬화이고, `Task` 의 역직렬화(`task/record.rs`)는 같은 레코드의 계약에서 출력 스키마를 얻어 읽는다. int64 자리에 정수가 아닌 값이 있으면 읽기 오류다.
 
 - 입력으로는 JSON 정수 토큰과 10진 문자열을 모두 받는다. 문자열은 `-?(0|[1-9][0-9]*)` 꼴만 받고 `-0`·앞자리 0·`+`·공백·지수 표기는 `type_mismatch` 다.
 - 범위를 넘는 값(토큰·문자열)과 |값| ≥ 2^63 인 정수형 실수는 `out_of_range`, 소수(`1.5`, `"1.5"`, `42.0`)는 `not_integer` 다.
 - 기본값도 같은 경로로 내부 표현이 된다.
-- `json` 타입 안의 숫자는 바꾸지 않는다. float64 는 f64 로 정확히 표현되는 정수 토큰만 받는다(9007199254740993 은 거절). NaN·Infinity 는 `not_finite` 다.
+- `json` 타입 값은 무타입 JSON 이라 안의 숫자를 JSON 숫자 그대로 쓴다. 그래서 2^53 을 넘는 정수는 JavaScript 도구에서 정밀도를 잃을 수 있다. 정밀도가 필요하면 그 값을 `int64` 로 선언한다.
+- v1 투영 `result.output` 은 무타입 JSON 이라 메모리에서도 wire 형식(int64 는 문자열)으로 둔다.
+- float64 는 f64 로 정확히 표현되는 정수 토큰만 받는다(9007199254740993 은 거절). NaN·Infinity 는 `not_finite` 다.
 
 ### 종류별 기본 출력과 결과
 
@@ -566,11 +568,11 @@ v1 이 v2 결과를 읽는 경로는 `-32602`(`error.data.task_id` 에 참조 �
 
 | 전략 | 출력 타입 | 규칙 |
 |---|---|---|
-| `all` | `list<{task_id, state, has_output, output?}>` 고정 | 실패한 입력의 출력을 만들어 넣지 않는다 |
+| `all` | `list<{task_id, state, has_output, output?}>` 고정 | 실패한 입력의 출력을 만들어 넣지 않는다. `output` 은 입력마다 타입이 달라 json 으로 선언되며, 각 입력의 선언 타입대로 직렬화한 값을 넣는다(int64 입력은 10진 문자열, json 입력은 그대로) |
 | `first_success` | 선언한 공통 타입 T(기본 json) | 모든 입력이 T 에 대입 가능해야 생성된다. v1 입력은 json 으로 본다. 성공 출력이 하나도 없으면 실패 |
 | `merge_json` | object 또는 json | 모든 입력이 object 출력을 가져야 한다. 같은 경로의 다른 값은 기본 오류, `merge_conflict: "overwrite"` 면 뒤 입력이 이긴다. 같은 값은 충돌이 아니다 |
 | `concat_text` | string | 모든 입력이 string 출력을 가져야 한다. 다른 타입은 명시적으로 변환하라는 오류 |
-| `custom` | 선언 타입(기본 json) | stdin 은 `all` 과 같은 레코드 배열. stdout 은 JSON 값 하나여야 하며 문자열로 대신하지 않는다 |
+| `custom` | 선언 타입(기본 json) | stdin 은 `all` 과 같은 레코드 배열(같은 직렬화 규칙). stdout 은 JSON 값 하나여야 하며 문자열로 대신하지 않는다 |
 
 v1 reduce 는 기존 동작(`reduce_with_custom`) 그대로다.
 
