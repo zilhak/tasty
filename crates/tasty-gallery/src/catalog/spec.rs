@@ -259,7 +259,8 @@ fn meta_specs(ui: &mut egui::Ui, theme: &Theme, specs: &[(&str, &str)]) {
 /// 시안 `.chips`처럼 칩을 가로로 놓고 폭을 넘으면 다음 줄로 보낸다.
 /// 칩은 `.chip`처럼 surface-raised 배경과 border-default 1px 테두리를 두르고,
 /// 스와치는 border-strong 1px 테두리를 둘러 스와치 색이 패널 배경과 같아도 구분된다.
-/// 시안의 칩 간격 6·세로 여백 3은 토큰이 아니어서 `.meta`·`.mh`와 같이 4px 그리드 토큰(xs)으로 옮긴다.
+/// 칩 사이·칩 안 간격과 세로 여백은 space-xs, 가로 여백은 space-sm, 글꼴은 caption,
+/// 스와치는 icon-size-xs 다(시안 `.chips`·`.chip`).
 fn meta_tokens(ui: &mut egui::Ui, theme: &Theme, tokens: &[TokenChip]) {
     meta_head(ui, theme, "Tokens used");
     let font = egui::FontId::monospace(theme.font_size_caption.value());
@@ -276,7 +277,7 @@ fn meta_tokens(ui: &mut egui::Ui, theme: &Theme, tokens: &[TokenChip]) {
 fn token_chip(ui: &mut egui::Ui, theme: &Theme, t: &TokenChip, font: &egui::FontId) {
     let pad = egui::vec2(theme.spacing_sm.value(), theme.spacing_xs.value());
     let gap = theme.spacing_xs.value();
-    let sw = theme.font_size_caption.value();
+    let sw = theme.icon_glyph_size_xs.value();
     let tok =
         ui.fonts(|f| f.layout_no_wrap(t.tok.to_owned(), font.clone(), col(theme.text_primary())));
     let sw_w = if t.color.is_some() { sw + gap } else { 0.0 };
