@@ -1040,3 +1040,22 @@ fn a_call_with_both_params_forms_aborts_the_reload() {
     assert!(reg.get(&HookHandlerId::new("user/both")).is_none());
     assert!(reg.get(&HookHandlerId::new("user/kept")).is_some());
 }
+
+/// 사용자 파일의 타입 오류와 params_json 오류에도 toml이 줄·열 위치를 붙인다.
+#[test]
+fn user_file_errors_keep_the_toml_line_and_column() {
+    let bad_source = "[[handler]]\nid = \"user/x\"\nsource = \"bogus\"\npriority = 5\n";
+    let err = parse_user_handler_section(bad_source)
+        .expect_err("잘못된 source는 거부해야 한다")
+        .to_string();
+    assert!(err.contains("line 3, column 10"), "위치가 빠졌다:\n{err}");
+
+    let bad_json = "[[handler]]\nid = \"user/x\"\n[handler.action]\nkind = \"ipc_sequence\"\n\
+                    calls = [{ method = \"m\", params_json = \"{oops\" }]\n";
+    let err = parse_user_handler_section(bad_json)
+        .expect_err("JSON이 아닌 params_json은 거부해야 한다")
+        .to_string();
+    // 호출은 인라인 배열 안에 있어 오류 위치는 그 호출을 담은 action 표가 된다.
+    assert!(err.contains("line 3, column 1"), "위치가 빠졌다:\n{err}");
+    assert!(err.contains("params_json is not JSON"), "{err}");
+}

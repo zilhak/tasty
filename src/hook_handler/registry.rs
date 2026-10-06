@@ -705,7 +705,7 @@ struct UserHookHandlerSettingsDecl {
     #[serde(default)]
     disabled: Option<bool>,
     #[serde(default)]
-    action: Option<UserHookHandlerActionDecl>,
+    action: Option<super::user_file::UserFileActionDecl>,
 }
 
 fn parse_host_handler_section(
@@ -720,15 +720,15 @@ fn parse_host_handler_section(
     Ok(w.handlers)
 }
 
-fn parse_user_handler_section(toml_text: &str) -> Result<Vec<UserHookHandlerSettingsDecl>, String> {
+fn parse_user_handler_section(
+    toml_text: &str,
+) -> Result<Vec<UserHookHandlerSettingsDecl>, toml::de::Error> {
     #[derive(Deserialize)]
     struct Wrap {
         #[serde(default, rename = "handler")]
         handlers: Vec<UserHookHandlerSettingsDecl>,
     }
-    let doc: toml::Value = toml::from_str(toml_text).map_err(|e| e.to_string())?;
-    let json = super::user_file::restore_params(doc)?;
-    let w: Wrap = serde_json::from_value(json).map_err(|e| e.to_string())?;
+    let w: Wrap = toml::from_str(toml_text)?;
     Ok(w.handlers)
 }
 
