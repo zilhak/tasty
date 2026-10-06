@@ -5397,6 +5397,21 @@ help = "선택적 프로세스 종료 코드"
 [cli.help._root.agent.task-set-result.arg.attempt_id]
 help = "선택적 typed task 실행 회차 id. 다른 회차의 보고는 거절한다"
 
+[cli.help._root.agent.task-submit]
+about = "agent 작업의 현재 회차에 구조화된 결과를 제출합니다. 값은 지금 작업의 출력 타입으로 검사하고, agent의 턴이 끝날 때 결과가 됩니다. 제출에 성공해도 작업이 끝나지는 않습니다. 같은 값은 다시 제출할 수 있고, 같은 회차에 다른 값을 내면 거절됩니다"
+
+[cli.help._root.agent.task-submit.arg.workspace_id]
+help = "워크스페이스 id (포커스 무관 — 필수)"
+
+[cli.help._root.agent.task-submit.arg.id]
+help = "agent 작업 ID"
+
+[cli.help._root.agent.task-submit.arg.attempt_id]
+help = "지시에 적힌 회차 ID. 다른 회차의 제출은 거절됩니다"
+
+[cli.help._root.agent.task-submit.arg.output]
+help = "결과 JSON. 인라인 JSON 또는 `@path/to/file.json`"
+
 [cli.help._root.agent.task-delete]
 about = "작업을 삭제합니다. depends_on / on_failure.fallback.task / reduce.inputs에서 참조 중이면 기본적으로 거절하고 참조하는 작업 ID를 반환합니다. `Running` 작업은 `--cascade`나 `--force`가 있어도 삭제할 수 없습니다. 먼저 취소하세요."
 

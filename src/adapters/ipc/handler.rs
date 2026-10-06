@@ -914,6 +914,8 @@ fn route_engine_handler(
         "agent.task_set_result" => {
             agent::handle_task_set_result(core, engine, caller, id, &request.params)
         }
+        "agent.task_submit_result" => agent::task_submit(core, engine, caller, id, &request.params),
+        "agent.task_turn_report" => agent::task_turn_report(core, caller, id, &request.params),
         "agent.task_run" => agent::handle_task_run(core, engine, caller, id, &request.params),
         "agent.task_delete" => agent::handle_task_delete(core, engine, caller, id, &request.params),
         "agent.task_purge" => agent::handle_task_purge(core, engine, caller, id, &request.params),

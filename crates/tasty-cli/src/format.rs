@@ -149,8 +149,43 @@ fn format_command_summary(command: &serde_json::Value) -> String {
             let name = command.get("name").and_then(|v| v.as_str()).unwrap_or("?");
             format!("wait_barrier: {name}")
         }
+        "agent" => {
+            let provider = command
+                .get("provider")
+                .and_then(|v| v.as_str())
+                .unwrap_or("?");
+            let session = command.get("session");
+            let num = |k: &str| session.and_then(|s| s.get(k)).and_then(|v| v.as_u64());
+            match (num("surface_id"), num("parent_surface")) {
+                (Some(s), _) => format!("agent: {provider} (surface {s})"),
+                (None, Some(p)) => format!("agent: {provider} (new session under surface {p})"),
+                _ => format!("agent: {provider}"),
+            }
+        }
         other => other.to_string(),
     }
+}
+
+/// agent 작업 회차의 세션 연결과 세부 단계. 연결 전이면 단계만 보인다.
+fn task_agent_line(task: &serde_json::Value) -> Option<String> {
+    let phase = task.get("phase").and_then(|v| v.as_str());
+    let link = task
+        .get("attempt")
+        .and_then(|a| a.get("agent"))
+        .filter(|v| !v.is_null());
+    let Some(link) = link else {
+        return phase.map(|p| format!("phase: {p}"));
+    };
+    let provider = link.get("provider").and_then(|v| v.as_str()).unwrap_or("?");
+    let surface = link.get("surface_id").and_then(|v| v.as_u64()).unwrap_or(0);
+    let mut line = format!("agent session: {provider} surface {surface}");
+    if let Some(p) = phase {
+        line.push_str(&format!(", phase {p}"));
+    }
+    if let Some(since) = link.get("awaiting_input_since").and_then(|v| v.as_u64()) {
+        line.push_str(&format!(" (awaiting input since {since})"));
+    }
+    Some(line)
 }
 
 /// 실패 정책의 한 줄 요약.
@@ -251,6 +286,9 @@ fn format_task_get(result: &serde_json::Value) -> Result<()> {
         outln!("{line}")?;
     }
     if let Some(line) = task_skip_line(result) {
+        outln!("{line}")?;
+    }
+    if let Some(line) = task_agent_line(result) {
         outln!("{line}")?;
     }
     if let Some(metadata) = result.get("metadata")

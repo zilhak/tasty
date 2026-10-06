@@ -315,7 +315,9 @@ pub fn handle_task_get(
         Ok(None) => JsonRpcResponse::error(id, -32004, format!("task not found: {task_id}")),
         Ok(Some(t)) => {
             let is_running = matches!(t.state, TaskState::Running);
-            let phase = t.postprocess_phase();
+            let phase = t
+                .postprocess_phase()
+                .or_else(|| tasty_agent::task::agent::phase(&t));
             let mut v = serde_json::to_value(t).unwrap_or(Value::Null);
             if let (Some(phase), Some(obj)) = (phase, v.as_object_mut()) {
                 obj.insert("phase".to_string(), Value::from(phase));

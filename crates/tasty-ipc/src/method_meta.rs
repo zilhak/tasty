@@ -529,6 +529,15 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("agent.dag_get", plugin(Read, &[AgentManage])),
         // Custom 작업의 상태는 러너가 관리한다. 플러그인의 별도 상태 변경과 경합하지 않도록 Local 전용이다.
         ("agent.task_set_result", local_only(Idempotent)),
+        // agent task 회차에 결과를 제안한다. 종결은 러너가 한다. 세션 토큰의 agent 는 자기 세션의
+        // 회차에만 낼 수 있고(핸들러 검사), task_set_result 의 Local 전용은 그대로 둔다.
+        (
+            "agent.task_submit_result",
+            plugin(Idempotent, &[AgentManage]),
+        ),
+        // provider 플러그인의 턴 시작·종료 보고. 핸들러가 호출자가 provider namespace 를 소유한
+        // 플러그인인지 확인한다(Local·agent 세션 호출은 -32001).
+        ("agent.task_turn_report", plugin(Idempotent, &[])),
         // 러너는 자동 재시작하지 않으므로 플러그인도 명시적으로 시작·중지할 수 있다.
         ("agent.task_run", plugin(Mutate, &[AgentManage])),
         ("agent.task_delete", plugin(Idempotent, &[AgentManage])),

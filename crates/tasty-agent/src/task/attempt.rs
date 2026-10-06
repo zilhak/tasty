@@ -22,6 +22,9 @@ pub struct TaskAttempt {
     /// 본 작업이 성공한 뒤의 후처리 진행. 후처리가 없거나 본 작업이 끝나기 전이면 없다.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub postprocess: Option<PostprocessProgress>,
+    /// agent task 회차가 지시를 보낸 세션과 입력 대기 상태.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent: Option<super::agent::AgentLink>,
 }
 
 /// 회차를 끝낸 보고의 요약. 보고 원문은 결과에 이미 있으므로 지문만 둔다.
@@ -48,6 +51,7 @@ pub fn next_attempt(task: &Task, now_ms: u64) -> Option<TaskAttempt> {
         started_at: now_ms,
         completion: None,
         postprocess: None,
+        agent: None,
     })
 }
 

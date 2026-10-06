@@ -324,6 +324,7 @@ fn command_text(command: &TaskCommand) -> String {
             format!("reduce: {}", inputs.join(", "))
         }
         TaskCommand::WaitBarrier { name } => format!("barrier: {name}"),
+        TaskCommand::Agent { provider, .. } => format!("agent: {provider}"),
     }
 }
 

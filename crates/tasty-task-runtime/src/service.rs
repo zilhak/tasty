@@ -83,6 +83,7 @@ pub struct TaskService {
     host_ipc: Arc<OnceLock<HostIpcInjector>>,
     runner_registry: Arc<RunnerRegistry>,
     hook_task_waits: Arc<HookTaskWaits>,
+    agent_turns: Arc<crate::agent_turns::AgentTurns>,
     completion: Arc<dyn crate::completion::CompletionResolver>,
     /// 저장소가 memory 대체 모드면 그 원인. 재시작 복구를 요구한 그래프를 거절하는 데 쓴다.
     store_fallback: Option<String>,
@@ -100,6 +101,7 @@ impl TaskService {
             completion,
             runner_registry: Arc::new(RunnerRegistry::new()),
             hook_task_waits: Arc::new(HookTaskWaits::new()),
+            agent_turns: Arc::new(crate::agent_turns::AgentTurns::new()),
             store_fallback: None,
         }
     }
@@ -141,6 +143,7 @@ impl TaskService {
             host_ipc: self.host_ipc.clone(),
             task_waker_hub: scope.waker_hub().clone(),
             hook_task_waits: self.hook_task_waits.clone(),
+            agent_turns: self.agent_turns.clone(),
             completion: self.completion.clone(),
         }
     }
@@ -149,6 +152,10 @@ impl TaskService {
     pub fn purge_stale_agent_state_on_boot(&self, scope: &TaskScope, workspace_ids: &[u32]) {
         let ctx = self.runner_context(scope);
         crate::runner_thread::purge_stale_agent_state_on_boot(&ctx, workspace_ids);
+    }
+
+    pub fn agent_turns(&self) -> &crate::agent_turns::AgentTurns {
+        &self.agent_turns
     }
 
     pub fn hook_task_waits(&self) -> &HookTaskWaits {

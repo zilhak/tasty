@@ -5403,6 +5403,21 @@ help = "Optional process exit code"
 [cli.help._root.agent.task-set-result.arg.attempt_id]
 help = "Optional attempt id of a typed task run; a report for another attempt is rejected"
 
+[cli.help._root.agent.task-submit]
+about = "Submit the structured result of an agent task's current attempt. The value is checked against the task's output type now and becomes the result when the agent's turn ends; a successful submission does not finish the task. The same value may be submitted again; a different value for the same attempt is rejected"
+
+[cli.help._root.agent.task-submit.arg.workspace_id]
+help = "Workspace id (focus-independent — required)"
+
+[cli.help._root.agent.task-submit.arg.id]
+help = "Agent task id"
+
+[cli.help._root.agent.task-submit.arg.attempt_id]
+help = "Attempt id the instruction named; a submission for another attempt is rejected"
+
+[cli.help._root.agent.task-submit.arg.output]
+help = "Result JSON. Accepts inline JSON or `@path/to/file.json`"
+
 [cli.help._root.agent.task-delete]
 about = "Delete a task. Rejected by default if other tasks still reference it (depends_on / on_failure.fallback.task / reduce.inputs) — the referencing task IDs are returned. `Running` tasks are always rejected regardless of `--cascade`/`--force` (cancel first)"
 

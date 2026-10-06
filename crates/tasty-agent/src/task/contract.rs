@@ -102,6 +102,7 @@ pub fn command_kind(command: &TaskCommand) -> &'static str {
         TaskCommand::Custom { .. } => "custom",
         TaskCommand::Reduce { .. } => "reduce",
         TaskCommand::WaitBarrier { .. } => "wait_barrier",
+        TaskCommand::Agent { .. } => "agent",
     }
 }
 
@@ -110,12 +111,14 @@ pub fn command_kind(command: &TaskCommand) -> &'static str {
 /// - run: 종료 코드 int64. stdout·stderr 는 raw 로만 남는다.
 /// - custom: 최종 IPC 결과 json.
 /// - wait_barrier: unit. 완료 사실을 boolean 으로 복제하지 않는다.
+/// - agent: 그 회차의 최종 답변 string.
 /// - reduce: `concat_text` string, `all` 결과 레코드 list, 나머지는 json.
 pub fn default_output_schema(command: &TaskCommand) -> TypeSchema {
     match command {
         TaskCommand::Run { .. } => TypeSchema::int64(),
         TaskCommand::Custom { .. } => TypeSchema::json(),
         TaskCommand::WaitBarrier { .. } => TypeSchema::unit(),
+        TaskCommand::Agent { .. } => TypeSchema::string(),
         TaskCommand::Reduce { strategy, .. } => match strategy {
             ReducerStrategy::ConcatText => TypeSchema::string(),
             ReducerStrategy::All => reduce_all_record_list_schema(),
@@ -260,10 +263,60 @@ pub enum FailureStage {
     Route,
 }
 
+/// 같은 단계 안에서 실패를 구별하는 이유. 지금은 agent task 만 쓴다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FailureCode {
+    /// 턴은 끝났지만 출력 타입이 요구하는 결과가 없다(string 이 아닌 출력인데 제출이 없음 등).
+    ResultMissing,
+    /// 턴이 끝나기 전에 agent 세션이 종료됐다.
+    AgentExited,
+    /// provider 가 턴을 오류로 끝냈다(API 오류 등).
+    AgentTurnError,
+    /// 턴이 기한 안에 끝나지 않았다.
+    TimedOut,
+    /// provider 가 결과 수집을 지원하지 않거나 세션에 지시를 보내지 못했다.
+    AgentUnavailable,
+}
+
+impl FailureCode {
+    pub const ALL: [FailureCode; 5] = [
+        FailureCode::ResultMissing,
+        FailureCode::AgentExited,
+        FailureCode::AgentTurnError,
+        FailureCode::TimedOut,
+        FailureCode::AgentUnavailable,
+    ];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            FailureCode::ResultMissing => "result_missing",
+            FailureCode::AgentExited => "agent_exited",
+            FailureCode::AgentTurnError => "agent_turn_error",
+            FailureCode::TimedOut => "timed_out",
+            FailureCode::AgentUnavailable => "agent_unavailable",
+        }
+    }
+
+    /// 실행 실패 문자열(`<code>: <설명>`)로 싣는다. runner 의 실패 보고는 문자열 하나만 나른다.
+    pub fn message(self, detail: impl std::fmt::Display) -> String {
+        format!("{}: {detail}", self.as_str())
+    }
+
+    /// [`FailureCode::message`] 로 만든 문자열에서 이유를 읽는다.
+    pub fn parse_message(message: &str) -> Option<FailureCode> {
+        let (head, _) = message.split_once(": ")?;
+        FailureCode::ALL.into_iter().find(|c| c.as_str() == head)
+    }
+}
+
 /// 실패 사유. 타입 오류면 task·경로·기대·실제 타입을 함께 싣는다.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TaskFailure {
     pub stage: FailureStage,
+    /// 같은 단계 안의 구별. 없으면 단계와 메시지로만 설명한다.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub code: Option<FailureCode>,
     pub message: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub task_id: Option<TaskId>,
@@ -278,6 +331,7 @@ impl TaskFailure {
     pub fn new(stage: FailureStage, message: impl Into<String>) -> Self {
         Self {
             stage,
+            code: None,
             message: message.into(),
             task_id: None,
             type_error: None,
@@ -292,6 +346,7 @@ impl TaskFailure {
         };
         Self {
             stage,
+            code: None,
             message,
             task_id,
             type_error: Some(e),
@@ -371,13 +426,24 @@ pub fn check_contract<'a>(
         ));
     }
 
+    if let TaskCommand::Agent {
+        provider,
+        instruction,
+        timeout_ms,
+        ..
+    } = command
+    {
+        super::agent::check_command(provider, instruction, *timeout_ms).map_err(contract_error)?;
+    }
     if let Some(spec) = &contract.postprocess {
         check_spec(spec)?;
         if !matches!(
             command,
-            TaskCommand::Run { .. } | TaskCommand::Custom { .. }
+            TaskCommand::Run { .. } | TaskCommand::Custom { .. } | TaskCommand::Agent { .. }
         ) {
-            return Err(contract_error("postprocess applies to run and custom"));
+            return Err(contract_error(
+                "postprocess applies to run, custom and agent",
+            ));
         }
         // 후처리가 최종 출력을 만든다. 종류별 출력 제한은 본 작업의 값에만 적용된다.
         return Ok(());
@@ -398,7 +464,8 @@ pub fn check_contract<'a>(
                 return Err(contract_error("wait_barrier output is unit"));
             }
         }
-        TaskCommand::Custom { .. } => {}
+        // string 이 아닌 출력은 같은 회차의 명시 제출로만 채운다.
+        TaskCommand::Custom { .. } | TaskCommand::Agent { .. } => {}
         TaskCommand::Reduce { inputs, strategy } => {
             check_reduce(&defs, &output, declared, inputs, strategy, &lookup)?;
         }
@@ -656,9 +723,19 @@ pub fn finalize_result(task: &Task, contract: &TaskContract, reported: &TaskResu
     };
 
     if let Some(error) = &reported.error {
+        let code = matches!(task.command, TaskCommand::Agent { .. })
+            .then(|| FailureCode::parse_message(error))
+            .flatten();
+        let stage = match code {
+            Some(FailureCode::ResultMissing) => FailureStage::OutputValidation,
+            _ => FailureStage::Execution,
+        };
         return failed(
-            FailureStage::Execution,
-            TaskFailure::new(FailureStage::Execution, error.clone()),
+            stage,
+            TaskFailure {
+                code,
+                ..TaskFailure::new(stage, error.clone())
+            },
             "none",
         );
     }
@@ -678,6 +755,22 @@ pub fn finalize_result(task: &Task, contract: &TaskContract, reported: &TaskResu
             }
         },
         TaskCommand::WaitBarrier { .. } => (Value::Null, "wait_barrier.closed"),
+        TaskCommand::Agent { .. } => match super::agent::candidate(reported.output.as_ref()) {
+            Some(found) => found,
+            None => {
+                return failed(
+                    FailureStage::OutputValidation,
+                    TaskFailure {
+                        code: Some(FailureCode::ResultMissing),
+                        ..TaskFailure::new(
+                            FailureStage::OutputValidation,
+                            "the agent turn ended without a final answer or a submitted result",
+                        )
+                    },
+                    "agent.final_answer",
+                );
+            }
+        },
         TaskCommand::Custom { .. } | TaskCommand::Reduce { .. } => {
             let source = if matches!(task.command, TaskCommand::Custom { .. }) {
                 "custom.response"

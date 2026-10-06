@@ -1,0 +1,146 @@
+//! agent task 회차에 결과를 제안하는 두 경로. 명시 제출(`agent.task_submit_result`)과 provider
+//! 턴 보고(`agent.task_turn_report`). 둘 다 task 를 끝내지 않는다(종결은 러너가 한다).
+
+use serde_json::{Value, json};
+use tasty_ipc::caller::CallerContext;
+use tasty_ipc::protocol::JsonRpcResponse;
+use tasty_task_runtime::agent_task::Submitter;
+use tasty_task_runtime::agent_turns::{ReportOutcome, SubmitOutcome, TurnEnd, TurnEvent};
+
+use crate::app::services::AppServices;
+use crate::runtime::engine_access::EngineMut;
+
+use super::{agent_err_to_response, task_id_param, workspace_id_param};
+
+fn required_str<'a>(params: &'a Value, key: &str, id: &Value) -> Result<&'a str, JsonRpcResponse> {
+    params.get(key).and_then(|v| v.as_str()).ok_or_else(|| {
+        JsonRpcResponse::invalid_params(id.clone(), format!("Missing required '{key}'"))
+    })
+}
+
+/// 세션 토큰의 agent id(`<provider>_s<surface>`)에서 세션 surface 를 읽는다.
+fn session_surface(agent_id: &str) -> Option<u32> {
+    let (_, surface) = agent_id.rsplit_once("_s")?;
+    surface.parse().ok()
+}
+
+/// 같은 회차의 구조화 결과를 제출한다. 출력 타입으로 검증하고 받은 값은 턴이 끝날 때 결과가
+/// 된다. 응답 `final: false` 는 task 가 아직 끝나지 않았다는 뜻이다.
+pub fn task_submit(
+    core: &AppServices,
+    engine: &mut EngineMut<'_>,
+    caller: &CallerContext,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
+    let workspace_id = match workspace_id_param(params, &id) {
+        Ok(w) => w,
+        Err(e) => return e,
+    };
+    let task_id = match task_id_param(params, &id) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    let attempt_id = match required_str(params, "attempt_id", &id) {
+        Ok(a) => a.to_string(),
+        Err(e) => return e,
+    };
+    let Some(output) = params.get("output") else {
+        return JsonRpcResponse::invalid_params(id, "Missing required 'output'");
+    };
+    let submitter = match caller {
+        CallerContext::Agent { agent_id, .. } => match session_surface(agent_id) {
+            Some(s) => Submitter::Session(s),
+            None => {
+                return JsonRpcResponse::error(
+                    id,
+                    -32001,
+                    format!("agent '{agent_id}' is not a session that can submit a task result"),
+                );
+            }
+        },
+        CallerContext::Local { .. } | CallerContext::Plugin { .. } => Submitter::Trusted,
+    };
+    match core.tasks.agent_submit_result(
+        engine.task_scope,
+        workspace_id,
+        &task_id,
+        &attempt_id,
+        output,
+        submitter,
+    ) {
+        Ok(outcome) => JsonRpcResponse::success(
+            id,
+            json!({
+                "accepted": true,
+                "duplicate": outcome == SubmitOutcome::Duplicate,
+                "final": false,
+            }),
+        ),
+        Err(e) => agent_err_to_response(id, e),
+    }
+}
+
+/// provider 플러그인의 턴 시작·종료 보고. 호출한 플러그인이 `provider` namespace 를 소유해야
+/// 한다. surface 에 묶인 회차가 없으면 아무것도 하지 않는다.
+pub fn task_turn_report(
+    core: &AppServices,
+    caller: &CallerContext,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
+    let provider = match required_str(params, "provider", &id) {
+        Ok(p) => p,
+        Err(e) => return e,
+    };
+    let owns = matches!(caller, CallerContext::Plugin { plugin_id, .. }
+        if tasty_ipc::method_meta::plugin_owns_prefix(plugin_id, provider));
+    if !owns {
+        return JsonRpcResponse::error(
+            id,
+            -32001,
+            format!("only the plugin that owns the '{provider}' namespace reports its turns"),
+        );
+    }
+    let surface = match super::super::params::require_u32(params, "surface_id", &id) {
+        Ok(s) => s,
+        Err(e) => return e,
+    };
+    let event = match required_str(params, "event", &id) {
+        Ok("turn_started") => TurnEvent::Started,
+        Ok("turn_ended") => {
+            let text = |k: &str| params.get(k).and_then(|v| v.as_str()).map(str::to_string);
+            TurnEvent::Ended(match text("error") {
+                Some(e) => TurnEnd::Error(e),
+                None => TurnEnd::Answer(text("final_answer")),
+            })
+        }
+        Ok(other) => {
+            return JsonRpcResponse::invalid_params(
+                id,
+                format!("invalid 'event': {other} (expected turn_started or turn_ended)"),
+            );
+        }
+        Err(e) => return e,
+    };
+    let body = match core.tasks.agent_turn_report(surface, provider, event) {
+        ReportOutcome::Unbound => json!({ "bound": false }),
+        ReportOutcome::Applied { task, attempt } => {
+            json!({ "bound": true, "applied": true, "task_id": task, "attempt_id": attempt })
+        }
+        ReportOutcome::Ignored(why) => json!({ "bound": true, "applied": false, "reason": why }),
+    };
+    JsonRpcResponse::success(id, body)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::session_surface;
+
+    #[test]
+    fn the_session_surface_comes_from_the_issued_agent_id() {
+        assert_eq!(session_surface("claude_s12"), Some(12));
+        assert_eq!(session_surface("child:1"), None);
+        assert_eq!(session_surface("claude_sx"), None);
+    }
+}

@@ -167,11 +167,14 @@ pub struct InputMapping {
     /// custom 전용. params 안의 JSON Pointer → 입력의 JSON Pointer. 타입을 유지해 넣는다.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub params: BTreeMap<String, String>,
+    /// agent 전용. 입력 전체를 지시 뒤의 구조화된 입력 블록(JSON, wire 형식)으로 넣는다.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub input_block: bool,
 }
 
 impl InputMapping {
     pub fn is_empty(&self) -> bool {
-        self.args.is_empty() && !self.stdin && self.params.is_empty()
+        self.args.is_empty() && !self.stdin && self.params.is_empty() && !self.input_block
     }
 }
 
@@ -218,11 +221,14 @@ pub struct ResolvedExecution {
     /// custom 에 실제로 넘긴 params.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub params: Option<Value>,
+    /// agent 에 실제로 보낸 지시(입력 블록 포함).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instruction: Option<String>,
 }
 
 impl ResolvedExecution {
     pub fn is_empty(&self) -> bool {
-        self.args.is_empty() && !self.stdin && self.params.is_none()
+        self.args.is_empty() && !self.stdin && self.params.is_none() && self.instruction.is_none()
     }
 }
 
@@ -665,6 +671,13 @@ fn check_mapping(
     let kind = super::contract::command_kind(command);
     let is_run = matches!(command, TaskCommand::Run { .. });
     let is_custom = matches!(command, TaskCommand::Custom { .. });
+    let is_agent = matches!(command, TaskCommand::Agent { .. });
+    if mapping.input_block && !is_agent {
+        return Err(fail(
+            format!("input_mapping input_block applies to agent, not {kind}"),
+            loc,
+        ));
+    }
     if (!mapping.args.is_empty() || mapping.stdin) && !is_run {
         return Err(fail(
             format!("input_mapping args/stdin apply to run, not {kind}"),
@@ -681,7 +694,19 @@ fn check_mapping(
         defs.resolve(input).map(|r| r.kind.clone()),
         Ok(TypeKind::Unit)
     );
-    if !input_is_unit && !is_run && !is_custom {
+    if !input_is_unit && is_agent && !mapping.input_block {
+        return Err(fail(
+            "agent input reaches the session only through input_mapping input_block".into(),
+            loc,
+        ));
+    }
+    if mapping.input_block && input_is_unit {
+        return Err(fail(
+            "input_mapping input_block needs a non-unit input".into(),
+            format!("{loc}/input_block"),
+        ));
+    }
+    if !input_is_unit && !is_run && !is_custom && !is_agent {
         return Err(fail(
             format!("{kind} has no input mapping; its input_schema must be unit"),
             format!("{at}/input_schema"),
@@ -1044,6 +1069,14 @@ fn resolve_execution(
             m.insert(last.clone(), v);
         }
         out.params = Some(params);
+    }
+    if mapping.input_block
+        && let TaskCommand::Agent { instruction, .. } = &task.command
+    {
+        out.instruction = Some(super::agent::compose_instruction(
+            instruction,
+            Some(&value.to_wire()),
+        ));
     }
     Ok(out)
 }

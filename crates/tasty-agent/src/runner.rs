@@ -89,6 +89,23 @@ pub enum DispatchHandle {
     },
     /// 프로세스 없이 결과가 정해진 후처리 실행(시작 실패, 재시작 뒤 결과 불명 등).
     PostprocessResolved(PostprocessReport),
+    /// agent 세션의 턴 하나. 호스트의 턴 표(비영속)에 묶인 회차를 poll 마다 확인한다.
+    AgentTurn {
+        workspace_id: u32,
+        task_id: TaskId,
+        attempt_id: String,
+        provider: String,
+        surface_id: u32,
+        /// 출력이 같은 회차의 명시 제출을 요구한다(string 이 아닌 출력).
+        #[serde(default)]
+        needs_submission: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        deadline_ms: Option<u64>,
+        /// 기존 세션에 아직 보내지 못한 지시. 세션이 다른 회차에 묶였거나 idle 이 아니면
+        /// 보내지 않고 다음 poll 에서 다시 본다(같은 세션의 회차를 직렬화한다).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pending_instruction: Option<String>,
+    },
 }
 
 /// poll 결과.

@@ -95,6 +95,16 @@ pub enum AgentError {
         graph_id: String,
         source: Box<AgentError>,
     },
+    /// agent task 회차에 낸 결과를 받지 않았다. 사유와 지금 회차로 호출자가 다시 낼지 정한다.
+    #[error(
+        "result submission for task {task_id} was rejected ({reason:?}): submitted attempt {attempt_id:?}, current attempt {current_attempt_id:?}"
+    )]
+    SubmissionRejected {
+        task_id: TaskId,
+        attempt_id: String,
+        current_attempt_id: Option<String>,
+        reason: SubmissionRejection,
+    },
     #[error("memory: {0}")]
     Memory(#[from] tasty_memory::MemoryError),
     #[error("serde: {0}")]
@@ -113,6 +123,22 @@ pub enum CompletionRejection {
     DifferentReport,
     /// 회차 지문 없이 이미 종결된 task 다.
     AlreadyTerminal,
+}
+
+/// [`AgentError::SubmissionRejected`] 의 사유.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SubmissionRejection {
+    /// task 가 Running 인 agent task 가 아니거나 아직 세션에 지시를 보내지 않았다.
+    NotRunning,
+    /// 제출의 회차가 지금 회차가 아니다.
+    StaleAttempt,
+    /// 같은 회차에 이미 다른 값이 제출됐다.
+    Conflict,
+    /// 턴이 이미 끝나 결과를 확정하는 중이다.
+    TurnEnded,
+    /// 제출한 세션이 그 회차가 지시를 보낸 세션이 아니다.
+    NotTheSession,
 }
 
 /// 호출자 값으로 memory 키를 만들고 입력 오류를 InvalidArgument로 반환한다.

@@ -566,6 +566,15 @@ fn classify_persisted_handle(
         DispatchHandle::PostprocessPending { .. }
         | DispatchHandle::PostprocessProcess { .. }
         | DispatchHandle::PostprocessResolved(_) => HandleClassification::Alive(task_id, handle),
+        // 턴 표는 영속하지 않는다. 재시작 사이에 끝난 턴의 답변을 이 회차에 귀속할 수 없다.
+        // 세션은 그대로 두고 회차만 실패로 정리한다.
+        DispatchHandle::AgentTurn { surface_id, .. } => HandleClassification::Dead(
+            task_id,
+            attempt,
+            tasty_agent::task::FailureCode::AgentUnavailable.message(format!(
+                "host restart: the turn on surface {surface_id} can no longer be attributed to this attempt"
+            )),
+        ),
     }
 }
 
@@ -940,6 +949,7 @@ mod tests {
             host_ipc: Arc::new(OnceLock::new()),
             task_waker_hub: Arc::new(crate::task_waker::TaskWakerHub::new()),
             hook_task_waits: Arc::new(crate::hook_wait::HookTaskWaits::new()),
+            agent_turns: Default::default(),
             completion: Arc::new(crate::completion::fixture::Resolver::default()),
         };
         (td, ctx)

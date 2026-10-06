@@ -217,6 +217,24 @@ pub enum AgentCommands {
         #[arg(long)]
         attempt_id: Option<String>,
     },
+    /// Submit the structured result of an agent task's current attempt. The value is
+    /// checked against the task's output type now and becomes the result when the
+    /// agent's turn ends; a successful submission does not finish the task. The same
+    /// value may be submitted again; a different value for the same attempt is rejected.
+    TaskSubmit {
+        /// Workspace id (focus-independent — required).
+        #[arg(long)]
+        workspace_id: u32,
+        /// Agent task id.
+        #[arg(long)]
+        id: String,
+        /// Attempt id the instruction named; a submission for another attempt is rejected.
+        #[arg(long)]
+        attempt_id: String,
+        /// Result JSON. Accepts inline JSON or `@path/to/file.json`.
+        #[arg(long)]
+        output: String,
+    },
     /// Delete a task. Rejected by default if other tasks still reference it
     /// (depends_on / on_failure.fallback.task / reduce.inputs) — the
     /// referencing task IDs are returned. `Running` tasks are always

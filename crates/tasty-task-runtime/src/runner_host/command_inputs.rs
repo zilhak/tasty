@@ -33,7 +33,7 @@ pub(super) fn substitute_lease_resource(command: &mut TaskCommand, resource: &st
         TaskCommand::Custom { params, .. } => {
             substitute_lease_resource_in_json(params, resource);
         }
-        TaskCommand::Reduce { .. } | TaskCommand::WaitBarrier { .. } => {}
+        _ => {}
     }
 }
 
@@ -84,7 +84,7 @@ pub(super) fn substitute_task_outputs(
         TaskCommand::Custom { params, .. } => {
             substitute_task_outputs_in_json(params, outputs, &mut changed)?;
         }
-        TaskCommand::Reduce { .. } | TaskCommand::WaitBarrier { .. } => {}
+        _ => {}
     }
     Ok(changed)
 }

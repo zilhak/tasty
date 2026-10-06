@@ -5397,6 +5397,21 @@ help = "任意のプロセス終了コード"
 [cli.help._root.agent.task-set-result.arg.attempt_id]
 help = "任意の typed task 実行回の id。別の実行回の報告は拒否する"
 
+[cli.help._root.agent.task-submit]
+about = "agent タスクの現在の試行に構造化された結果を提出します。値はその場でタスクの出力型と照合し、agent のターンが終わったときに結果になります。提出に成功してもタスクは終わりません。同じ値は再提出でき、同じ試行に別の値を出すと拒否されます"
+
+[cli.help._root.agent.task-submit.arg.workspace_id]
+help = "ワークスペース id（フォーカス非依存 — 必須）"
+
+[cli.help._root.agent.task-submit.arg.id]
+help = "agent タスク ID"
+
+[cli.help._root.agent.task-submit.arg.attempt_id]
+help = "指示に書かれた試行 ID。別の試行への提出は拒否されます"
+
+[cli.help._root.agent.task-submit.arg.output]
+help = "結果 JSON。インライン JSON または `@path/to/file.json`"
+
 [cli.help._root.agent.task-delete]
 about = "タスクを削除します。depends_on / on_failure.fallback.task / reduce.inputs から参照されていれば既定では拒否し、参照元のタスク ID を返します。`Running` のタスクは `--cascade` や `--force` があっても削除できません。先にキャンセルしてください。"
 

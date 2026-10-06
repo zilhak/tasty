@@ -22,6 +22,7 @@ fn ctx() -> (tempfile::TempDir, RunnerContext) {
         host_ipc: Arc::new(OnceLock::new()),
         task_waker_hub: Arc::new(crate::task_waker::TaskWakerHub::new()),
         hook_task_waits: Arc::new(crate::hook_wait::HookTaskWaits::new()),
+        agent_turns: Default::default(),
         completion: Arc::new(crate::completion::fixture::Resolver::default()),
     };
     (td, ctx)

@@ -141,6 +141,20 @@ pub(super) fn agent_command_to_method_params(
                 attempt_id.as_deref(),
             ),
         ),
+        TaskSubmit {
+            workspace_id,
+            id,
+            attempt_id,
+            output,
+        } => (
+            "agent.task_submit_result",
+            serde_json::json!({
+                "workspace_id": *workspace_id,
+                "id": id,
+                "attempt_id": attempt_id,
+                "output": parse_inline_or_file_json(output, "--output"),
+            }),
+        ),
         TaskDelete {
             workspace_id,
             id,

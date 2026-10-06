@@ -104,7 +104,9 @@ pub fn for_each_template(command: &TaskCommand, f: &mut impl FnMut(&str)) {
             }
         }
         TaskCommand::Custom { params, .. } => visit_json(params, f),
-        TaskCommand::Reduce { .. } | TaskCommand::WaitBarrier { .. } => {}
+        TaskCommand::Reduce { .. }
+        | TaskCommand::WaitBarrier { .. }
+        | TaskCommand::Agent { .. } => {}
     }
 }
 

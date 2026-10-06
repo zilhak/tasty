@@ -103,6 +103,7 @@ pub fn task_command_kind(command: &TaskCommand) -> &'static str {
         TaskCommand::Custom { .. } => "custom",
         TaskCommand::Reduce { .. } => "reduce",
         TaskCommand::WaitBarrier { .. } => "wait_barrier",
+        TaskCommand::Agent { .. } => "agent",
     }
 }
 

@@ -193,6 +193,11 @@ impl<'a> TaskStore<'a> {
             metadata,
             now_ms,
         } = opts;
+        if contract.is_none() && matches!(command, TaskCommand::Agent { .. }) {
+            return Err(AgentError::InvalidArgument(
+                super::agent::AGENT_NEEDS_CONTRACT.into(),
+            ));
+        }
         let id = self.new_id(now_ms);
         let mut existing = self.list(workspace_id)?;
 
@@ -988,6 +993,7 @@ pub(super) fn graph_key(graph_id: &str) -> Result<String> {
     crate::component_key(super::TASK_GRAPH_KEY_PREFIX, "graph id", graph_id)
 }
 
+mod agent;
 mod complete;
 #[cfg(test)]
 pub(super) use complete::FAIL_COMPLETION_PUT;

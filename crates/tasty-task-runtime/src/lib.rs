@@ -2,6 +2,8 @@
 #![cfg_attr(test, allow(clippy::let_underscore_must_use))]
 //! Task execution and completion ownership. TaskStore remains the sole durable task source.
 //! Stopping a runner or dropping an engine scope neither cancels tasks nor kills running children.
+pub mod agent_task;
+pub mod agent_turns;
 pub mod completion;
 pub mod event_feed;
 pub mod graph_view;

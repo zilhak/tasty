@@ -73,6 +73,22 @@ pub(super) fn agent_err_to_response(id: Value, err: AgentError) -> JsonRpcRespon
                 "current_attempt_id": current_attempt_id,
             }),
         ),
+        // 결과 제출을 받지 않았다. 완료 보고 거절과 같은 코드이고 data 로 사유와 회차를 싣는다.
+        SubmissionRejected {
+            attempt_id,
+            current_attempt_id,
+            reason,
+            ..
+        } => JsonRpcResponse::error_with_data(
+            id,
+            -32014,
+            msg,
+            serde_json::json!({
+                "reason": reason,
+                "attempt_id": attempt_id,
+                "current_attempt_id": current_attempt_id,
+            }),
+        ),
         // 실패 단계와 타입 오류(task·경로·기대·실제)를 error.data 로 돌려준다.
         TypeContract(failure) => JsonRpcResponse::error_with_data(
             id,
@@ -107,6 +123,7 @@ pub(super) fn name_param(params: &Value, id: &Value) -> Result<String, JsonRpcRe
         .ok_or_else(|| JsonRpcResponse::invalid_params(id.clone(), "Missing required 'name'"))
 }
 
+mod agent_turn;
 mod barrier;
 mod lease;
 mod ratelimit;
@@ -114,6 +131,7 @@ mod semaphore;
 pub(crate) mod task;
 mod task_graph_submit;
 
+pub use agent_turn::*;
 pub use barrier::*;
 pub use lease::*;
 pub use ratelimit::*;

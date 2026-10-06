@@ -161,6 +161,19 @@ pub enum TaskCommand {
     /// 명시적 barrier 대기. barrier 가 Closed 되면 Succeeded, TimedOut 이면 Failed.
     /// timeout 은 barrier 자체의 `timeout_ms` 가 단일 출처.
     WaitBarrier { name: String },
+    /// agent 세션 한 턴. v2 계약으로만 만든다. 턴이 끝나고 결과를 수집·검증해야 성공한다
+    /// (idle·needs_input 만으로는 끝나지 않는다).
+    Agent {
+        /// 결과 수집을 지원하는 provider([`agent::AGENT_PROVIDERS`]).
+        provider: String,
+        workspace_id: WorkspaceId,
+        session: agent::AgentSession,
+        /// 세션에 보낼 지시. 입력은 계약의 `input_mapping.input_block` 으로 뒤에 붙인다.
+        instruction: String,
+        /// 턴 전체의 기한(ms). 지나면 실패하고 세션은 그대로 둔다.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        timeout_ms: Option<u64>,
+    },
 }
 
 /// dispatch 후 state_field가 terminal_states에 도달할 때까지 poll_method를 호출한다.
@@ -369,6 +382,7 @@ pub(super) fn apply_on_failure(task: &Task, _all: &[Task]) -> Option<TaskState> 
     }
 }
 
+pub mod agent;
 pub mod attempt;
 pub mod binding;
 pub mod contract;
@@ -380,9 +394,10 @@ pub mod route;
 mod store;
 pub mod types;
 
+pub use agent::{AgentLink, AgentSession};
 pub use attempt::{Completion, CompletionOutcome, CompletionReceipt, TaskAttempt};
 pub use binding::{InputBinding, InputMapping, InputSnapshot};
-pub use contract::{TaskContract, TypedResult};
+pub use contract::{FailureCode, TaskContract, TypedResult};
 pub use dag::{DagStateCounts, DagSummary, group_tasks_into_dags};
 pub use graph::*;
 pub use route::{RouteDecision, SkipReason, Transitions};
@@ -411,3 +426,7 @@ mod postprocess_store_tests;
 #[cfg(test)]
 #[path = "task/route_tests.rs"]
 mod route_tests;
+
+#[cfg(test)]
+#[path = "task/agent_tests.rs"]
+mod agent_tests;

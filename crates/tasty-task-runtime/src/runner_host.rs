@@ -1,8 +1,10 @@
 //! 러너 스레드에서 작업을 실행한다. Run은 자식 프로세스, Custom은 IPC와 완료 전략을 사용한다.
 //! lease·작업 출력 치환, 실행 handle 보존, 폴링 결과 수집도 담당한다.
 
+mod agent;
 mod attempt_record;
 mod child_env;
+mod clock;
 mod command_inputs;
 mod postprocess;
 mod run_result;
@@ -18,6 +20,7 @@ pub(crate) use run_result::{
 };
 
 pub(crate) use attempt_record::{HANDLE_ATTEMPT_FIELD, dispatch_attempt, handle_value};
+use clock::now_ms;
 use command_inputs::{substitute_lease_resource, substitute_task_outputs};
 #[cfg(all(test, unix))]
 pub(crate) use postprocess::postprocess_result_key;
@@ -96,6 +99,7 @@ pub(crate) struct RunnerContext {
     pub(crate) task_waker_hub: Arc<crate::task_waker::TaskWakerHub>,
     /// 러너가 push 대기를 등록하고 호스트가 훅 결과를 전달하는 공유 매핑.
     pub(crate) hook_task_waits: Arc<crate::hook_wait::HookTaskWaits>,
+    pub(crate) agent_turns: Arc<crate::agent_turns::AgentTurns>,
     pub(crate) completion: Arc<dyn crate::completion::CompletionResolver>,
 }
 
@@ -556,6 +560,7 @@ impl HostExecutor {
             }
         }
         self.release_lease(task_id);
+        self.ctx.agent_turns.release(task_id);
         self.evict_handle(task_id);
     }
 }
@@ -815,6 +820,7 @@ impl HostExecutor {
                     deadline_ms,
                 })
             }
+            TaskCommand::Agent { .. } => self.dispatch_agent(task),
             TaskCommand::WaitBarrier { name } => Ok(DispatchHandle::BarrierPoll {
                 workspace_id: task.workspace_id,
                 name: name.clone(),
@@ -990,16 +996,9 @@ impl HostExecutor {
                 PollOutcome::Postprocessed(report.clone())
             }
             DispatchHandle::PostprocessProcess { pid, run } => self.postprocess.poll(*pid, *run),
+            DispatchHandle::AgentTurn { .. } => self.poll_agent(handle),
         }
     }
-}
-
-fn now_ms() -> u64 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0)
 }
 
 #[cfg(test)]
@@ -1027,6 +1026,7 @@ mod tests {
             host_ipc: Arc::new(OnceLock::new()),
             task_waker_hub: Arc::new(crate::task_waker::TaskWakerHub::new()),
             hook_task_waits: Arc::new(crate::hook_wait::HookTaskWaits::new()),
+            agent_turns: Default::default(),
             completion: Arc::new(crate::completion::fixture::Resolver::default()),
         };
         (td, ctx)
