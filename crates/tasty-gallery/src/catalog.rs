@@ -1296,6 +1296,14 @@ pub fn pages() -> Vec<Page> {
                             components::modifier_hint::draw_hold,
                         ),
                         spec(
+                            "modhint-anatomy",
+                            "Anatomy & chord ordering",
+                            Some(
+                                "chords containing the held modifier · size then Ctrl → Cmd/Alt → Option → Shift · keycap, role and plugin rows",
+                            ),
+                            components::modifier_hint::draw_anatomy,
+                        ),
+                        spec(
                             "modhint",
                             "Held-modifier shortcut panel",
                             Some(

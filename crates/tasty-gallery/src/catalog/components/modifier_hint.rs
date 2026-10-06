@@ -5,7 +5,7 @@ use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{ControlSize, IconButton, IconButtonVariant, kbd};
 
-use crate::catalog::icons::{MOUSE, MockGlyph};
+use crate::catalog::icons::{FOLDER, MOUSE, MockGlyph};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
 /// 한 조합 섹션의 mock 데이터.
@@ -25,6 +25,8 @@ enum RoleGlyph {
     Hash,
     /// `mhIc.mouse` — TUI 마우스 캡처 우회.
     Mouse,
+    /// `mhIc.folder` — 카테고리 전환.
+    Folder,
 }
 
 /// **Ctrl 홀드** 패널 — normal 행 · plugin 행(agent dot) · hash role(탭 전환) 을 노출.
@@ -258,8 +260,13 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
 
 /// 180×400 패널 셸 + 드래그 스트립 + 섹션 리스트 + 코너 그립.
 fn panel(ui: &mut egui::Ui, theme: &Theme, held: &str, sections: &[Section]) {
+    panel_sized(ui, theme, held, sections, theme.modhint_height());
+}
+
+/// 높이를 지정한 패널. 시안의 "resized taller" 예제는 높이만 바꾼다.
+fn panel_sized(ui: &mut egui::Ui, theme: &Theme, held: &str, sections: &[Section], h: LogicalPx) {
     let w = theme.modhint_width().value();
-    let h = theme.modhint_height().value();
+    let h = h.value();
     let bw = theme.border_width.value();
 
     let frame = egui::Frame::new()
@@ -491,6 +498,9 @@ fn role_row(ui: &mut egui::Ui, theme: &Theme, desc: &str, glyph: RoleGlyph) {
                     RoleGlyph::Mouse => {
                         paint_glyph(ui, MOUSE, r, col);
                     }
+                    RoleGlyph::Folder => {
+                        paint_glyph(ui, FOLDER, r, col);
+                    }
                 }
                 ui.add(
                     egui::Label::new(
@@ -545,6 +555,25 @@ const DEFAULT_SECTIONS: &[Section] = &[
     },
 ];
 
+/// 시안 `MH_CAT_SECTIONS`의 역할 행. 바인딩 행은 없다.
+const CATEGORY_ROLES: &[(&str, RoleGlyph)] = &[(
+    "Switch category — 1–9, 0 over each category header; a collapsed target auto-expands.",
+    RoleGlyph::Folder,
+)];
+
+/// 카테고리 전환 조합 표기. 시안은 Alt+Shift 지만 본체 KeybindingSettings 기본값을 따른다.
+fn category_chord() -> &'static str {
+    static LABEL: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    LABEL
+        .get_or_init(|| {
+            crate::catalog::modifier_label(
+                &tasty_settings::keybindings::KeybindingSettings::default()
+                    .category_switch_modifier,
+            )
+        })
+        .as_str()
+}
+
 /// 시안 `ModHintHoldDemo` 프레임 치수: 최대 폭 560, 높이 460, 사이드바 180.
 const HOLD_FRAME_W: LogicalPx = LogicalPx(560.0);
 const HOLD_FRAME_H: LogicalPx = LogicalPx(460.0);
@@ -555,6 +584,11 @@ const HOLD_CONTROL_LEFT: LogicalPx = LogicalPx(200.0);
 const HOLD_CONTROL_GAP: LogicalPx = LogicalPx(10.0);
 /// 시안 패널 기본 위치(`left: 12, bottom: 12`).
 const HOLD_PANEL_INSET: LogicalPx = LogicalPx(12.0);
+/// 시안 "resized taller" 와 카테고리 패널 높이(`height: 300`).
+const RESIZED_PANEL_H: LogicalPx = LogicalPx(300.0);
+/// 시안 무대의 패널 사이 간격(`gap: 40`).
+const ANATOMY_GAP: LogicalPx = LogicalPx(40.0);
+
 /// Overlays › Modifier hints — "hold to reveal". 시안은 누르고 있는 동안 실제로 재생하지만
 /// 갤러리는 500ms 대기를 지나 패널이 떠 있는 상태 하나만 그린다.
 pub fn draw_hold(ui: &mut egui::Ui, theme: &Theme) {
@@ -684,4 +718,113 @@ fn hold_button(ui: &mut egui::Ui, theme: &Theme) {
                 );
             });
         });
+}
+
+/// Overlays › Modifier hints — 구성과 조합 순서. 기본 Ctrl 패널, 높이를 늘린 패널,
+/// 카테고리를 켰을 때 카테고리 전환 조합 패널.
+pub fn draw_anatomy(ui: &mut egui::Ui, theme: &Theme) {
+    let chord = category_chord();
+    let category = [Section {
+        chord,
+        rows: &[],
+        roles: CATEGORY_ROLES,
+    }];
+    let cat_caption = format!("{chord} held — categories on");
+    spec::stage(ui, theme, StageVariant::Wrap, |ui| {
+        ui.spacing_mut().item_spacing = egui::vec2(ANATOMY_GAP.value(), ANATOMY_GAP.value());
+        // 시안 무대는 `alignItems: flex-start` 라 높이가 다른 패널도 위쪽을 맞춘다.
+        ui.with_layout(
+            egui::Layout::left_to_right(egui::Align::Min).with_main_wrap(true),
+            |ui| {
+                let items: [(&str, &str, &[Section], LogicalPx); 3] = [
+                    (
+                        "default — Ctrl held",
+                        "Ctrl",
+                        DEFAULT_SECTIONS,
+                        theme.modhint_height(),
+                    ),
+                    (
+                        "resized taller (drag any edge)",
+                        "Ctrl",
+                        DEFAULT_SECTIONS,
+                        RESIZED_PANEL_H,
+                    ),
+                    (cat_caption.as_str(), chord, &category, RESIZED_PANEL_H),
+                ];
+                for (i, (caption, held, sections, h)) in items.into_iter().enumerate() {
+                    spec::wrap_item(ui, |ui| {
+                        ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
+                        ui.label(
+                            egui::RichText::new(caption)
+                                .size(theme.font_size_caption.value())
+                                .color(theme.text_muted().to_egui()),
+                        );
+                        ui.push_id(("mh_anatomy", i), |ui| {
+                            panel_sized(ui, theme, held, sections, h)
+                        });
+                    });
+                }
+            },
+        );
+    });
+    spec::meta(
+        ui,
+        theme,
+        &[
+            ("drag strip", "muted sidebar fill — NOT a titlebar"),
+            ("X button", "dismiss for this hold only"),
+            ("section order", "size ↑, then Ctrl→Cmd/Alt→Option→Shift"),
+            ("keycap row", "action + Kbd"),
+            ("role row", "washed, leading glyph, no keycap"),
+            ("plugin row", "agent dot, context-dependent"),
+            ("grip", "bottom-right, nwse-resize"),
+            ("min size", "200 × 240"),
+        ],
+        &[
+            TokenChip::new(
+                "modhint-header-bg",
+                "drag strip",
+                theme.modhint_header_bg().to_egui(),
+            ),
+            TokenChip::new(
+                "modhint-role-bg",
+                "role-row wash",
+                theme.modhint_role_bg().to_egui(),
+            ),
+            TokenChip::new(
+                "modhint-role-fg",
+                "role glyph",
+                theme.modhint_role_fg().to_egui(),
+            ),
+            TokenChip::new("accent-agent", "plugin dot", theme.accent_agent().to_egui()),
+            TokenChip::new(
+                "modhint-grip-fg",
+                "resize grip",
+                theme.modhint_grip_fg().to_egui(),
+            ),
+        ],
+    );
+    spec::do_(
+        ui,
+        theme,
+        "Do keep it opaque and low-chrome — it floats over live terminal output, and the muted drag \
+         strip (not a titlebar) is the promise that it will never steal focus.",
+    );
+    spec::dont(
+        ui,
+        theme,
+        "Don't hide a chord that a key combo could reach — a bound-empty chord shows its ChordHead \
+         with a muted \"No shortcuts bound\" placeholder, never nothing, so holding an all-empty \
+         combo still surfaces the panel.",
+    );
+    spec::note(
+        ui,
+        theme,
+        &format!(
+            "When Workspace categories (folders) is on, the {chord} chord carries a \"Switch \
+             category\" role row (folder glyph) — the discoverability entry for the category \
+             quick-switch (see Switch-number overlay). A chord's role row is how a numeric switch \
+             announces itself, exactly like Ctrl = tab-switch numbers."
+        ),
+    );
 }
