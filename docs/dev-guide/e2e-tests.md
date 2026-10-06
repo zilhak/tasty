@@ -364,6 +364,13 @@ TASTY_E2E_DISPLAY=:<n> cargo test --locked --test e2e_tests -- --ignored --exact
 
 Xvfb는 저장한 PID로 회수한다.
 
+`webview_edge_inset_shows_no_chrome_text`는 markdown surface의 WebView X 창 바로 아래·왼쪽·오른쪽 두 줄씩을 메인 창 픽셀에서 읽어 줄마다 한 가지 색인지 확인한다. WebView는 pane 콘텐츠 영역 외곽 변에서 분할선 입력 영역만큼 안쪽에 놓이고, 그 여백에는 webview chrome의 배경·테두리만 보여야 한다. chrome이 안내 글자를 WebView 영역 안으로 자르지 않으면 아래 여백에서 글자를 검출해 실패한다. 부팅 안내 toast가 여백에 겹칠 수 있어 toast 수명이 지날 때까지 최대 10초 다시 읽는다. 같은 조건(Linux·gui·`#[ignore]`)이며 기본 크기 Xvfb에서 실행할 수 있다.
+
+```
+TASTY_E2E_DISPLAY=:<n> cargo test --locked --test e2e_tests -- --ignored --exact \
+  webview_edge_inset_shows_no_chrome_text
+```
+
 ## VTE 시뮬레이터 (`tasty-tui-simulator`)
 
 터미널 동작 검증용 도구 — 고수준 명령을 raw VTE escape 시퀀스로 변환해 출력한다(터미널 입장에선 실제 TUI 앱과 같은 바이트 스트림). **인터랙티브 모드**(stdin REPL — 외부에서 `surface.send` 로 명령 단계 전송, 명령마다 `OK` 동기화)와 원샷 시나리오를 제공한다. 명령: cursor/print/sgr/fg·bg/altscreen/scroll-region/erase/raw/esc 등, 종료 제어 `quit`/`exit-code N`/`crash`(SIGABRT)/`panic`. debug 의 `debug.cell_info`/`debug.screen_attrs`([debug-ipc](debug-ipc.md))와 조합하면 셀 속성을 결정적으로 자동 검증할 수 있다.

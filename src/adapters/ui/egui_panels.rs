@@ -21,6 +21,8 @@ struct EguiPanelInfo {
     explorer_cwd: Option<std::path::PathBuf>,
     /// 렌더 중 engine을 빌리고 있으므로 DAG 조회 요청만 모아 두 패스 사이에 처리한다.
     dag_poll: Option<crate::adapters::ui::surface::dag_graph::DagPollRequest>,
+    /// native WebView가 비워 두는 왼쪽·오른쪽·아래 여백(논리 px). webview chrome의 내용을 자른다.
+    webview_inset: [f32; 3],
 }
 
 /// 비터미널 패널을 그린다. 터미널 내용은 별도 GPU 경로에서 처리한다.
@@ -74,6 +76,9 @@ pub fn draw_egui_panels(
                         )
                     });
                 let logical = r.rect.to_logical(scale_factor);
+                let webview_inset =
+                    crate::state::mouse::webview_edge_inset(r.rect, content_rect, scale_factor)
+                        .map(|v| v.to_logical(scale_factor).value());
                 let info = EguiPanelInfo {
                     pane_id,
                     surface_id: Some(r.id),
@@ -83,6 +88,7 @@ pub fn draw_egui_panels(
                     logical_h: logical.height.value().round_ui(),
                     explorer_cwd,
                     dag_poll,
+                    webview_inset,
                 };
                 infos.push(info);
             }
@@ -243,8 +249,14 @@ pub fn draw_egui_panels(
                     None,
                     |ui| {
                         let panel = ui.max_rect();
+                        let [left, right, bottom] = info.webview_inset;
+                        let content = egui::Rect::from_min_max(
+                            egui::pos2(panel.min.x + left, panel.min.y),
+                            egui::pos2(panel.max.x - right, panel.max.y - bottom),
+                        );
                         crate::webview_chrome_ui::draw_webview_chrome(
                             ui,
+                            content,
                             url.as_deref(),
                             chrome_label.as_deref(),
                             nav,

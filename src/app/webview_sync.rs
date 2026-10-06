@@ -104,36 +104,13 @@ fn collect_html_surfaces(
                         all_html_ids.push(sid);
                         if is_visible {
                             // 패널 바깥쪽 변에는 divider 드래그 영역만큼 여백을 둔다.
-                            // 내부 leaf 사이에는 divider gap만 두며 탭바 쪽에는 여백을 두지 않는다.
-                            // native WebView가 드래그 영역을 덮지 않도록 같은 상수를 쓴다.
-                            let inset = crate::state::mouse::divider_hit_threshold_physical(
+                            // egui chrome도 같은 여백 안쪽으로 내용을 자른다.
+                            let [left, right, bottom] = crate::state::mouse::webview_edge_inset(
+                                leaf_rect,
+                                content_rect,
                                 scale_factor as f32,
-                            ) as f64;
-                            let on_edge =
-                                |a: crate::model::PhysicalPx, b: crate::model::PhysicalPx| {
-                                    (a - b).abs() < crate::model::PhysicalPx(0.5)
-                                };
-                            let left = if on_edge(leaf_rect.x, content_rect.x) {
-                                inset
-                            } else {
-                                0.0
-                            };
-                            let right = if on_edge(
-                                leaf_rect.x + leaf_rect.width,
-                                content_rect.x + content_rect.width,
-                            ) {
-                                inset
-                            } else {
-                                0.0
-                            };
-                            let bottom = if on_edge(
-                                leaf_rect.y + leaf_rect.height,
-                                content_rect.y + content_rect.height,
-                            ) {
-                                inset
-                            } else {
-                                0.0
-                            };
+                            )
+                            .map(|v| v.value() as f64);
                             // 물리 사각형을 만든 뒤 플랫폼 API에 맞는 논리 좌표로 변환한다.
                             let top = view.html_script_banner_top(sid, scale_factor);
                             let physical = crate::webview::PhysicalWebViewBounds {

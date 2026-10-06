@@ -15,8 +15,11 @@ pub fn chrome_caption<'a>(url: Option<&'a str>, label: Option<&'a str>) -> Optio
 /// webview-kind surface 의 host chrome 을 패널에 그린다. `nav` 가 Loading/Failed 면
 /// 해당 상태 chrome, 그 외(Idle/Done)는 `url` 유무로 boundary(Some)/placeholder(None).
 /// URL 줄은 [`chrome_caption`]이 고른 문자열을 보인다.
+/// 배경·테두리는 패널 전체에 그리고 아이콘·글자는 native WebView가 덮는 `content` 안으로 자른다.
+/// native 창이 비워 둔 분할선 여백으로 글자가 비치지 않게 하기 위해서다.
 pub fn draw_webview_chrome(
     ui: &mut egui::Ui,
+    content: egui::Rect,
     url: Option<&str>,
     page_label: Option<&str>,
     nav: NavState,
@@ -44,6 +47,7 @@ pub fn draw_webview_chrome(
             .max_rect(content_rect)
             .layout(egui::Layout::top_down(egui::Align::Center)),
         |ui| {
+            ui.set_clip_rect(ui.clip_rect().intersect(content));
             ui.add_space(top_pad);
             match nav {
                 NavState::Failed => {

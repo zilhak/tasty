@@ -2216,11 +2216,49 @@ fn x11_harness_display() -> Option<String> {
     std::env::var("DISPLAY").ok()
 }
 
-/// `parent` 창의 자식 중 보이는 것 하나의 내용을 읽어 네 변 가운데 픽셀 색을 돌려준다.
-/// 순서는 왼쪽·오른쪽·위·아래이고 각 변에서 안쪽으로 한 칸 들어간 자리를 읽는다.
+/// native WebView 창과 그것을 품은 메인 창을 한 번에 읽은 결과.
 /// native WebView 는 Linux 에서 메인 창의 X 자식 창이다(`src/host_api/webview/linux.rs`).
 #[cfg(all(target_os = "linux", feature = "gui"))]
-fn x11_child_edge_pixels(display: &str, parent: u64) -> Result<Option<[u32; 4]>, String> {
+#[derive(Debug)]
+struct X11WebViewCapture {
+    /// 메인 창 기준 자식 창 위치·크기(물리 px).
+    child: (i32, i32, i32, i32),
+    child_pixels: Vec<u32>,
+    parent_width: i32,
+    parent_height: i32,
+    parent_pixels: Vec<u32>,
+}
+
+#[cfg(all(target_os = "linux", feature = "gui"))]
+impl X11WebViewCapture {
+    fn child_at(&self, px: i32, py: i32) -> u32 {
+        self.child_pixels[(py * self.child.2 + px) as usize]
+    }
+
+    fn parent_at(&self, px: i32, py: i32) -> u32 {
+        self.parent_pixels[(py * self.parent_width + px) as usize]
+    }
+
+    /// 자식 창 네 변에서 한 칸 안쪽 가운데 픽셀. 순서는 왼쪽·오른쪽·위·아래다.
+    fn child_edges(&self) -> [u32; 4] {
+        let (_, _, w, h) = self.child;
+        [
+            self.child_at(1, h / 2),
+            self.child_at(w - 2, h / 2),
+            self.child_at(w / 2, 1),
+            self.child_at(w / 2, h - 2),
+        ]
+    }
+
+    /// 자식 창 내용이 한 가지 색만이 아닌지. 페이지가 그려졌는지 판단하는 데 쓴다.
+    fn child_has_content(&self) -> bool {
+        self.child_pixels.iter().any(|&c| c != self.child_pixels[0])
+    }
+}
+
+/// `parent` 창의 보이는 자식 하나와 `parent` 자신의 픽셀을 읽는다. 자식이 없으면 None 이다.
+#[cfg(all(target_os = "linux", feature = "gui"))]
+fn x11_capture_webview(display: &str, parent: u64) -> Result<Option<X11WebViewCapture>, String> {
     use x11_dl::xlib;
     let x = xlib::Xlib::open().map_err(|e| format!("Xlib::open: {e}"))?;
     let cname = std::ffi::CString::new(display).map_err(|e| e.to_string())?;
@@ -2229,6 +2267,7 @@ fn x11_child_edge_pixels(display: &str, parent: u64) -> Result<Option<[u32; 4]>,
     if dpy.is_null() {
         return Err(format!("XOpenDisplay({display}) failed"));
     }
+    let parent = parent as xlib::Window;
     let mut root = 0;
     let mut parent_out = 0;
     let mut children: *mut xlib::Window = std::ptr::null_mut();
@@ -2237,7 +2276,7 @@ fn x11_child_edge_pixels(display: &str, parent: u64) -> Result<Option<[u32; 4]>,
     let ok = unsafe {
         (x.XQueryTree)(
             dpy,
-            parent as xlib::Window,
+            parent,
             &mut root,
             &mut parent_out,
             &mut children,
@@ -2253,57 +2292,61 @@ fn x11_child_edge_pixels(display: &str, parent: u64) -> Result<Option<[u32; 4]>,
     } else {
         Vec::new()
     };
-    let mut result = None;
-    for kid in kids {
+    let attributes = |win: xlib::Window| {
         // SAFETY: XWindowAttributes 는 0 으로 초기화할 수 있는 C 구조체다.
         let mut attrs: xlib::XWindowAttributes = unsafe { std::mem::zeroed() };
-        // SAFETY: dpy 는 열린 연결이고 kid 는 같은 디스플레이의 창 ID 다.
-        if unsafe { (x.XGetWindowAttributes)(dpy, kid, &mut attrs) } == 0
-            || attrs.map_state != xlib::IsViewable
-            || attrs.width < 8
-            || attrs.height < 8
-        {
-            continue;
-        }
-        let (w, h) = (attrs.width, attrs.height);
-        // 화면 밖으로 나간 부분을 XGetImage 로 읽으면 BadMatch 로 프로세스가 끝난다. 먼저 잰다.
+        // SAFETY: dpy 는 열린 연결이고 win 은 같은 디스플레이의 창 ID 다.
+        let ok = unsafe { (x.XGetWindowAttributes)(dpy, win, &mut attrs) } != 0;
+        ok.then_some(attrs)
+    };
+    // 화면 밖으로 나간 부분을 XGetImage 로 읽으면 BadMatch 로 프로세스가 끝난다. 먼저 잰다.
+    let read = |win: xlib::Window, w: i32, h: i32| -> Result<Vec<u32>, String> {
         let (mut ax, mut ay, mut through) = (0, 0, 0);
-        // SAFETY: dpy 는 열린 연결이고 kid·root 는 같은 디스플레이의 창이다. 출력은 지역 변수다.
-        unsafe { (x.XTranslateCoordinates)(dpy, kid, root, 0, 0, &mut ax, &mut ay, &mut through) };
-        // SAFETY: XWindowAttributes 는 0 으로 초기화할 수 있는 C 구조체다.
-        let mut screen: xlib::XWindowAttributes = unsafe { std::mem::zeroed() };
-        // SAFETY: root 는 같은 디스플레이의 루트 창이다.
-        unsafe { (x.XGetWindowAttributes)(dpy, root, &mut screen) };
+        // SAFETY: dpy 는 열린 연결이고 win·root 는 같은 디스플레이의 창이다. 출력은 지역 변수다.
+        unsafe { (x.XTranslateCoordinates)(dpy, win, root, 0, 0, &mut ax, &mut ay, &mut through) };
+        let screen = attributes(root).ok_or("root attributes")?;
         if ax < 0 || ay < 0 || ax + w > screen.width || ay + h > screen.height {
-            // SAFETY: 열린 연결을 닫고 이후 dpy 를 쓰지 않는다.
-            unsafe { (x.XCloseDisplay)(dpy) };
             return Err(format!(
-                "WebView 창 {w}x{h}+{ax}+{ay} 이 화면 {}x{} 밖으로 나간다. Xvfb 화면을 키운다",
+                "창 {w}x{h}+{ax}+{ay} 이 화면 {}x{} 밖으로 나간다. Xvfb 화면을 키운다",
                 screen.width, screen.height
             ));
         }
-        // SAFETY: 보이는 창의 전체 영역을 ZPixmap 으로 읽는다. 실패하면 null 이다.
-        let image = unsafe { (x.XGetImage)(dpy, kid, 0, 0, w as u32, h as u32, !0, xlib::ZPixmap) };
+        // SAFETY: 화면 안에 있는 창의 전체 영역을 ZPixmap 으로 읽는다. 실패하면 null 이다.
+        let image = unsafe { (x.XGetImage)(dpy, win, 0, 0, w as u32, h as u32, !0, xlib::ZPixmap) };
         if image.is_null() {
-            continue;
+            return Err("XGetImage returned null".into());
         }
-        let at = |px: i32, py: i32| {
-            // SAFETY: image 는 w×h 이미지이고 좌표는 그 안이다.
-            (unsafe { (x.XGetPixel)(image, px, py) } & 0x00ff_ffff) as u32
-        };
-        result = Some([
-            at(1, h / 2),
-            at(w - 2, h / 2),
-            at(w / 2, 1),
-            at(w / 2, h - 2),
-        ]);
+        let mut pixels = Vec::with_capacity((w * h) as usize);
+        for py in 0..h {
+            for px in 0..w {
+                // SAFETY: image 는 w×h 이미지이고 좌표는 그 안이다.
+                pixels.push((unsafe { (x.XGetPixel)(image, px, py) } & 0x00ff_ffff) as u32);
+            }
+        }
         // SAFETY: XGetImage 가 만든 이미지이며 이후 쓰지 않는다.
         unsafe { (x.XDestroyImage)(image) };
-        break;
-    }
+        Ok(pixels)
+    };
+    let result = (|| {
+        let Some((kid, attrs)) = kids.iter().find_map(|&kid| {
+            attributes(kid)
+                .filter(|a| a.map_state == xlib::IsViewable && a.width >= 8 && a.height >= 8)
+                .map(|a| (kid, a))
+        }) else {
+            return Ok(None);
+        };
+        let parent_attrs = attributes(parent).ok_or("parent attributes")?;
+        Ok(Some(X11WebViewCapture {
+            child: (attrs.x, attrs.y, attrs.width, attrs.height),
+            child_pixels: read(kid, attrs.width, attrs.height)?,
+            parent_width: parent_attrs.width,
+            parent_height: parent_attrs.height,
+            parent_pixels: read(parent, parent_attrs.width, parent_attrs.height)?,
+        }))
+    })();
     // SAFETY: 열린 연결을 닫고 이후 dpy 를 쓰지 않는다.
     unsafe { (x.XCloseDisplay)(dpy) };
-    Ok(result)
+    result
 }
 
 /// GTK 배율이 2 인 X11 세션(GNOME HiDPI 의 창 배율 2 와 같은 조건 — 여기서는 `GDK_SCALE=2` 와
@@ -2356,7 +2399,7 @@ fn webview_page_viewport_fills_its_native_window_under_gtk_scale_two() {
     // 페이지가 그려질 때까지 왼쪽 변의 파랑을 기다린다. 왼쪽 변은 배율과 무관하게 창 안에 있다.
     let start = std::time::Instant::now();
     let edges = loop {
-        match x11_child_edge_pixels(&display, window) {
+        match x11_capture_webview(&display, window).map(|c| c.map(|c| c.child_edges())) {
             Ok(Some(e)) if e[0] == BLUE => break e,
             Ok(_) if start.elapsed() < Duration::from_secs(30) => {
                 std::thread::sleep(Duration::from_millis(250));
@@ -2377,4 +2420,107 @@ fn webview_page_viewport_fills_its_native_window_under_gtk_scale_two() {
         "페이지 viewport 의 테두리가 WebView 창의 변에 없다({}). viewport 가 창보다 크거나 작다",
         missing.join(", ")
     );
+}
+
+/// native WebView 는 pane 콘텐츠 영역 외곽 변에서 분할선 입력 영역만큼 surface 보다 작다
+/// (`webview_edge_inset`). 그 여백에는 webview chrome 의 배경·테두리만 보여야 한다. chrome 이
+/// 그 아래에 그린 안내 글자 — markdown 은 렌더한 HTML 문서 전체를 URL 자리에 싣는다 — 가 여백으로
+/// 비치면 여백 줄이 한 가지 색이 아니게 된다. 시험은 WebView 창 바로 아래·왼쪽·오른쪽 두 줄씩을
+/// 메인 창 픽셀에서 읽어 줄마다 한 가지 색인지 확인한다. chrome 이 내용을 WebView 영역 안으로
+/// 자르기 전에는 아래 여백에서 글자를 검출해 실패했다. 실행: 격리 Xvfb 와 번들 plugin(markdown)
+/// 준비 뒤 `TASTY_E2E_DISPLAY=:<n> cargo test --locked --test e2e_tests -- --ignored --exact webview_edge_inset_shows_no_chrome_text`.
+#[cfg(all(target_os = "linux", feature = "gui"))]
+#[test]
+#[ignore = "Linux X11 디스플레이와 번들 markdown plugin 이 필요해 기본 실행·CI 에서 돌리지 않는다"]
+fn webview_edge_inset_shows_no_chrome_text() {
+    let display = x11_harness_display()
+        .expect("X11 디스플레이가 필요하다(inherit + Wayland 는 측정하지 않는다)");
+    let tasty = TastyInstance::spawn_with_env(&[]);
+    let doc = tasty.tasty_home().join("webview-inset.md");
+    std::fs::write(&doc, "# Title\n\nhello world\n").expect("markdown doc");
+    let sid = tasty.first_surface_id();
+    let split = tasty.call(
+        "split",
+        json!({
+            "level": "pane",
+            "target_surface": sid.to_string(),
+            "direction": "vertical",
+            "type": "markdown",
+            "file": doc.display().to_string(),
+        }),
+    );
+    assert!(
+        split["new_surface_id"].as_u64().is_some(),
+        "markdown split: {split}"
+    );
+    let window = tasty
+        .call("window.list", json!({}))
+        .as_array()
+        .and_then(|ws| ws.first().and_then(|w| w["id"].as_u64()))
+        .expect("window.list 에 창이 있어야 한다");
+
+    // 페이지가 그려질 때까지 기다린다.
+    let start = std::time::Instant::now();
+    loop {
+        match x11_capture_webview(&display, window) {
+            Ok(Some(c)) if c.child_has_content() => break,
+            Ok(_) if start.elapsed() < Duration::from_secs(30) => {
+                std::thread::sleep(Duration::from_millis(250));
+            }
+            Ok(_) => panic!("30 초 안에 markdown 페이지가 그려지지 않았다"),
+            Err(e) => panic!("WebView 창을 읽지 못했다: {e}"),
+        }
+    }
+    // 부팅 안내 toast(웹훅 포트 bind 실패 등)가 여백 위에 겹칠 수 있다. toast 수명(기본 2 초)이
+    // 지날 때까지 다시 읽고, 끝까지 여백이 섞여 있으면 chrome 내용으로 판정한다.
+    let settle = std::time::Instant::now();
+    let (capture, mixed) = loop {
+        let capture = x11_capture_webview(&display, window)
+            .expect("WebView 창 읽기")
+            .expect("WebView 창");
+        let mixed = webview_inset_mixed_lines(&capture);
+        if mixed.is_empty() || settle.elapsed() > Duration::from_secs(10) {
+            break (capture, mixed);
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    };
+    assert!(
+        mixed.is_empty(),
+        "WebView 창 {:?} 둘레 여백에서 chrome 내용을 검출했다: {}",
+        capture.child,
+        mixed.join(", ")
+    );
+}
+
+/// WebView 창 바로 아래 두 줄과 좌우 두 열 가운데 한 가지 색이 아닌 것. 좌우 열은 창 위 끝 한 줄을
+/// 뺀다 — 창이 탭 바 아래 경계선 한 줄을 덮고 시작해 그 줄은 옆이 경계선 색이다.
+#[cfg(all(target_os = "linux", feature = "gui"))]
+fn webview_inset_mixed_lines(capture: &X11WebViewCapture) -> Vec<String> {
+    let (cx, cy, cw, ch) = capture.child;
+    assert!(
+        cy + ch + 2 <= capture.parent_height && cx >= 2 && cx + cw + 2 <= capture.parent_width,
+        "WebView 창 {:?} 둘레에 여백이 없다(메인 창 {}x{})",
+        capture.child,
+        capture.parent_width,
+        capture.parent_height
+    );
+    let mut mixed = Vec::new();
+    for d in 0..2 {
+        let bottom: Vec<u32> = (cx..cx + cw)
+            .map(|px| capture.parent_at(px, cy + ch + d))
+            .collect();
+        let left: Vec<u32> = (cy + 1..cy + ch)
+            .map(|py| capture.parent_at(cx - 1 - d, py))
+            .collect();
+        let right: Vec<u32> = (cy + 1..cy + ch)
+            .map(|py| capture.parent_at(cx + cw + d, py))
+            .collect();
+        for (name, line) in [("bottom", bottom), ("left", left), ("right", right)] {
+            let distinct: std::collections::BTreeSet<u32> = line.iter().copied().collect();
+            if distinct.len() > 1 {
+                mixed.push(format!("{name}+{d}: {} colors", distinct.len()));
+            }
+        }
+    }
+    mixed
 }
