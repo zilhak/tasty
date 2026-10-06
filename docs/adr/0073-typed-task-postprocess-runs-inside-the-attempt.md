@@ -44,6 +44,12 @@
 
 계약 형식, stdout 해석, 실패 원인 목록은 [agent runner 가이드](../dev-guide/agent-runner.md)의 "후처리 CLI" 절에 있다.
 
+### Run·custom 자식으로 범위 확장
+
+위 환경 결정(바깥 Claude Code 세션 표지·비밀과 바깥 Tasty 인스턴스의 신원 변수 네 개를 지우고 나머지는 넘긴다)은 후처리 CLI 만이 아니라 Tasty 가 작업 실행을 위해 띄우는 모든 자식에 적용한다: `Run` task 의 명령과 reduce 의 custom 전략 셸(`run_custom_shell`, runner 의 reduce task 와 `agent.task_reduce`). 같은 이유다. 어느 자식이든 바깥 세션의 값을 받으면 자식이 부른 `claude`·`tasty` 가 다른 세션·인스턴스의 신원으로 동작한다. 규칙은 한 곳(`tasty_agent::child_env`)에 두어 세 경로가 같이 바뀐다.
+
+자식에 이 인스턴스의 신원을 넣지는 않는다. 터미널 셸은 자기 surface 의 `TASTY_SURFACE_ID`·`TASTY_PARENT_HOME` 을 넣지만, 작업의 자식은 터미널 surface 가 아니어서 넣을 surface id 가 없고, 자식이 띄운 에이전트의 완료 알림은 그 알림을 기다리는 호출자의 것이라 `TASTY_PARENT_HOME` 을 이 인스턴스로 정할 근거가 없다.
+
 ## Consequences
 
 - 하류·permit·`on_failure` 의 시점이 task 하나의 종결로 정해진다. 본 작업 결과와 후처리 원본은 `raw` 에 따로 남는다.
@@ -70,4 +76,4 @@
 
 - [agent runner 가이드](../dev-guide/agent-runner.md) — 후처리 CLI 절
 - [ADR-0071](0071-typed-task-completion-is-one-write-per-attempt.md) — 실행 회차와 한 번의 완료 쓰기
-- 구현: `crates/tasty-agent/src/task/postprocess.rs`, `crates/tasty-agent/src/task/store/postprocess.rs`, `crates/tasty-task-runtime/src/runner_host/postprocess.rs`
+- 구현: `crates/tasty-agent/src/child_env.rs`(작업 자식의 환경), `crates/tasty-agent/src/task/postprocess.rs`, `crates/tasty-agent/src/task/store/postprocess.rs`, `crates/tasty-task-runtime/src/runner_host/postprocess.rs`

@@ -1,4 +1,4 @@
-<!-- source-hash: abc7a4fdf7eb -->
+<!-- source-hash: 3b848aa766db -->
 <a id="task-dag"></a>
 
 # Task workflows (DAG)
@@ -39,7 +39,7 @@ Creating one returns a task ID. Use that ID to define dependencies and to query 
 
 You can also pull the command JSON out into a file and pass it as `--command @build.json`.
 
-A `run` command (and the postprocess command below) gets the environment Tasty was started from. If you started Tasty inside Claude Code, the variables that point at that session are not passed on (the same as in the terminal). If you started Tasty from another Tasty's terminal, `TASTY_SESSION_TOKEN`, `TASTY_SURFACE_ID`, `TASTY_PARENT_HOME` and `TASTY_AGENT_ID`, which point at that Tasty, are not passed on either, so a `tasty` call inside the command reaches this Tasty.
+A `run` command, the postprocess command below and a reducer that merges results with a shell command get the environment Tasty was started from. If you started Tasty inside Claude Code, the variables that point at that session are not passed on (the same as in the terminal). If you started Tasty from another Tasty's terminal, `TASTY_SESSION_TOKEN`, `TASTY_SURFACE_ID`, `TASTY_PARENT_HOME` and `TASTY_AGENT_ID`, which point at that Tasty, are not passed on either, so a `tasty` call inside the command reaches this Tasty.
 
 ## Order and failure handling
 

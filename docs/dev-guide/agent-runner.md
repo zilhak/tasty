@@ -88,12 +88,12 @@ state 전이는 `tasty-agent` 의 `is_valid_transition` 표를 따른다. `Ready
 
 ### runner 자식의 환경
 
-`Run` task 와 후처리 CLI 의 자식은 같은 규칙(`crates/tasty-task-runtime/src/runner_host/child_env.rs`)으로 Tasty 프로세스의 환경을 받는다.
+`Run` task, 후처리 CLI, reduce 의 custom 전략 셸(`run_custom_shell` — runner 의 reduce task 와 `agent.task_reduce` 모두)의 자식은 같은 규칙(`crates/tasty-agent/src/child_env.rs`)으로 Tasty 프로세스의 환경을 받는다.
 
 - 지우는 것 1 — 바깥 Claude Code 세션의 표지·비밀. 터미널 셸에서도 지우는 목록(`tasty_utils::process` 의 `STRIPPED_ENV_*`)이다: `CLAUDECODE`·`CLAUDE_CODE_SESSION_ID`·`CLAUDE_CODE_ENTRYPOINT`·`CLAUDE_CODE_MESSAGING_TOKEN` 등의 고정 목록, `CLAUDE_PLUGIN_OPTION_*`·`CMUX_*`, `claude-code_`·`claude-code/` 로 시작하는 `AI_AGENT`.
 - 지우는 것 2 — 바깥 Tasty 인스턴스의 신원: `TASTY_SESSION_TOKEN`·`TASTY_SURFACE_ID`·`TASTY_PARENT_HOME`·`TASTY_AGENT_ID`. 이 Tasty 를 다른 Tasty 의 터미널에서 띄웠으면 이 값들은 그 인스턴스의 surface·세션 토큰·완료 알림 경로를 가리킨다. 터미널 셸은 `TASTY_SURFACE_ID`·`TASTY_PARENT_HOME` 을 자기 값으로 덮어쓰지만 runner 의 자식에는 덮어쓸 surface 가 없어 지운다. 그래서 자식이 부른 `tasty` 는 다른 인스턴스의 신원으로 요청하지 않는다.
 - 그대로 넘기는 것: 그 밖의 `TASTY_*`(예: `TASTY_HOME`, 부팅 때 정한 `TASTY_LOCALE`)와 `CLAUDE_CODE_OAUTH_TOKEN`·`ANTHROPIC_API_KEY` 같은 사용자 설정·인증. `TASTY_HOME` 이 남으므로 자식이 부른 `tasty` 는 이 인스턴스에 닿는다.
-- Tasty 가 task 별 변수를 더하지는 않는다. task 에는 자기 surface 가 없다.
+- Tasty 가 task 별 변수를 더하지는 않는다. task 에는 자기 surface 가 없다. 터미널 셸과 달리 `TASTY_PARENT_HOME` 도 이 인스턴스의 값으로 넣지 않는다: 작업의 자식은 터미널 surface 가 아니고, 자식이 띄운 에이전트의 완료 알림은 그 알림을 기다리는 호출자의 것이다.
 
 ### `Run` 결과를 reduce 하기 — `--extract-path`
 
@@ -521,7 +521,7 @@ tasty agent task-purge --workspace-id 1 --states succeeded,failed --older-than-m
 
 task 는 선택적으로 타입 계약(`TaskContract`)을 가진다. 계약이 없는 task 가 v1 이며, 결과 형식·reducer 동작·저장 형식이 바뀌지 않는다. v2 task 는 IPC `agent.task_graph_submit`(CLI `tasty agent task-graph-submit`)으로 그래프 단위로 만들거나 Rust API `TaskStore::create_typed` 로 하나씩 만든다. `task_create` 는 계약을 받지 않는다. 결정 근거는 [ADR-0068](../adr/0068-typed-task-contracts-live-in-a-separate-record-namespace.md).
 
-코드: 타입 `crates/tasty-agent/src/task/types.rs`, 계약·결과 `crates/tasty-agent/src/task/contract.rs`, 입력 binding `crates/tasty-agent/src/task/binding.rs`, 그래프 제출 `crates/tasty-agent/src/task/store/graph_submit.rs`, 실행 시 입력 해석 `crates/tasty-task-runtime/src/runner_host/typed_inputs.rs`, 회차 완료 기록과 handle 의 회차 `crates/tasty-task-runtime/src/runner_host/attempt_record.rs`, v2 reduce `crates/tasty-agent/src/reducer.rs::reduce_typed`, 후처리 계약·결과 확정 `crates/tasty-agent/src/task/postprocess.rs`, 후처리 단계의 완료 기록 `crates/tasty-agent/src/task/store/postprocess.rs`, 후처리 프로세스 실행 `crates/tasty-task-runtime/src/runner_host/postprocess.rs`, 전이와 경로 선택 `crates/tasty-agent/src/task/route.rs`, 자식 환경 `crates/tasty-task-runtime/src/runner_host/child_env.rs`.
+코드: 타입 `crates/tasty-agent/src/task/types.rs`, 계약·결과 `crates/tasty-agent/src/task/contract.rs`, 입력 binding `crates/tasty-agent/src/task/binding.rs`, 그래프 제출 `crates/tasty-agent/src/task/store/graph_submit.rs`, 실행 시 입력 해석 `crates/tasty-task-runtime/src/runner_host/typed_inputs.rs`, 회차 완료 기록과 handle 의 회차 `crates/tasty-task-runtime/src/runner_host/attempt_record.rs`, v2 reduce `crates/tasty-agent/src/reducer.rs::reduce_typed`, 후처리 계약·결과 확정 `crates/tasty-agent/src/task/postprocess.rs`, 후처리 단계의 완료 기록 `crates/tasty-agent/src/task/store/postprocess.rs`, 후처리 프로세스 실행 `crates/tasty-task-runtime/src/runner_host/postprocess.rs`, 전이와 경로 선택 `crates/tasty-agent/src/task/route.rs`, 자식 환경 `crates/tasty-agent/src/child_env.rs`.
 
 ### 계약 형식
 
