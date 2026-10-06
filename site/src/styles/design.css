@@ -4,7 +4,8 @@
    documents (docs/dev-guide/site.md), so spacing uses the site scale; the documents
    inside the iframes are vendor copies and are not styled here. Literal values
    left without a line comment are font sizes and element sizes, which the site
-   scale has no axis for. Media query conditions stay literal because a query
+   scale has no axis for. Widths in ch follow the reader's font size and stay
+   relative. Media query conditions stay literal because a query
    condition cannot read a custom property. */
 
 .layout--design {
