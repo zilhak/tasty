@@ -12,6 +12,7 @@ pub mod foundations_shape;
 pub mod foundations_uiscale;
 pub mod icons;
 pub mod layouts_settled;
+pub mod overlays_resize;
 pub mod overlays_settled;
 pub mod plugins_settled;
 pub mod popup_frame;
@@ -847,6 +848,22 @@ pub fn pages() -> Vec<Page> {
                             "Drag handles — TitleBar · Region · None",
                             Some("how a popup moves · the cursor is the only affordance"),
                             overlays_settled::draw_drag_handles,
+                        ),
+                        spec(
+                            "resize-map",
+                            "8-direction resize — handle map & cursors",
+                            Some(
+                                "resizable popups · a band inside the border · corners win · cursor only",
+                            ),
+                            overlays_resize::draw_resize_map,
+                        ),
+                        spec(
+                            "resize-constraints",
+                            "Constraints & z-order — quiet limits, top-most wins",
+                            Some(
+                                "min size · scope rect is the cap · only the front popup responds",
+                            ),
+                            overlays_resize::draw_constraints,
                         ),
                     ],
                 ),
