@@ -58,7 +58,7 @@ fn dismiss_x(ui: &mut egui::Ui, theme: &Theme) {
 
 /// 마우스 캡처 배너의 더보기 버튼 표시 상태.
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum MoreTriggerState {
+pub(super) enum MoreTriggerState {
     /// hover 전 — ⋯/× 둘 다 숨김(폭은 예약된 채 비어 있음).
     Hidden,
     /// hover 중 — ⋯ + × 둘 다 노출(⋯가 왼쪽, 4px gap).
@@ -216,6 +216,16 @@ fn faux_scope(
 
 /// 더보기와 닫기 버튼의 폭을 항상 확보해 호버 전후에 본문 폭이 바뀌지 않게 한다.
 fn mouse_capture_banner(ui: &mut egui::Ui, theme: &Theme, more: MoreTriggerState) {
+    mouse_capture_banner_body(ui, theme, more, None);
+}
+
+/// `body` 가 있으면 기본 본문(Shift 키캡 두 개) 대신 그 한 줄을 쓴다(짧은 로캘 예).
+pub(super) fn mouse_capture_banner_body(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    more: MoreTriggerState,
+    body: Option<&str>,
+) {
     ui.horizontal_top(|ui| {
         ui.spacing_mut().item_spacing.x = theme.spacing_md.value();
         glyph(
@@ -233,6 +243,10 @@ fn mouse_capture_banner(ui: &mut egui::Ui, theme: &Theme, more: MoreTriggerState
             ui.set_width(body_w);
             ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
             title_line(ui, theme, "Mouse input captured");
+            if let Some(text) = body {
+                body_line(ui, theme, text);
+                return;
+            }
             ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing.x = theme.spacing_xs.value();
                 body_line(ui, theme, "This app is capturing the mouse. Hold");
@@ -903,7 +917,7 @@ fn mouse_capture_menu_row(
 }
 
 /// 데모 라벨 — caption(11), text-muted (스테이지 내 상태 주석).
-fn caption_label(ui: &mut egui::Ui, theme: &Theme, text: &str) {
+pub(super) fn caption_label(ui: &mut egui::Ui, theme: &Theme, text: &str) {
     ui.label(
         egui::RichText::new(text)
             .size(theme.font_size_caption.value())

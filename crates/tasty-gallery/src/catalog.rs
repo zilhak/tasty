@@ -971,6 +971,14 @@ pub fn pages() -> Vec<Page> {
                             widgets::banner::draw_stack,
                         ),
                         spec(
+                            "banner-anatomy",
+                            "Anatomy & states",
+                            Some(
+                                "Mouse-capture banner — persistent (no TTL), once per tracking session, user click only · × and ⋯ hidden until hover · body wraps 1–3 lines",
+                            ),
+                            widgets::banner_mouse_capture::draw_anatomy,
+                        ),
+                        spec(
                             "banner-hit-zone",
                             "Position & hit-zone",
                             Some(
