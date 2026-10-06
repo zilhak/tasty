@@ -31,6 +31,9 @@ impl App {
     /// mirror를 만들되 로컬·원격 포커스는 옮기지 않는다.
     /// 기존 workspace는 attaching으로 즉시 응답한다. 새 workspace는 생성 결과 ID를 응답한 뒤
     /// mirror 연결을 이어 가므로 두 경우 모두 응답이 mirror 연결 완료를 뜻하지 않는다.
+    /// 자기 자신이 대상이면 loopback 표기는 여기서 동기 오류로 끝난다. SSH 경로는 터널 너머
+    /// `system.info` 왕복이 필요해, 새 workspace는 생성 전 같은 오류로 응답하고 기존 workspace는
+    /// 즉시 응답한 뒤 비동기로 거절해 `remote.refusals`에 남긴다.
     pub(super) fn ipc_dispatch_remote_attach(&mut self, cmd: &IpcCommand) {
         let rpc_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
         let conn = match RemoteConnParams::parse(&cmd.request.params) {

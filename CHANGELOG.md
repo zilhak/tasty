@@ -70,7 +70,7 @@
 
 ### Fixed
 
-- **호스트명이나 LAN IP 로 이 Tasty 자신을 가리키는 원격 attach 를 거절한다.** 이전에는 loopback 표기(`127.0.0.1` 등)만 자기 자신으로 알아봐서, 같은 머신을 호스트명·LAN IP 프로필로 지정하면 자기 mirror 가 자기 워크스페이스를 점유하고 `new_workspace` 요청은 자기 자신에 워크스페이스를 만들었다. 이제 SSH 로 연결한 뒤 상대의 인스턴스 식별자를 비교해 같으면 거절한다. IPC `remote.attach` 의 `new_workspace` 는 `-32602` 오류로 응답하고, 기존 워크스페이스 attach 와 자동 attach 매핑은 `tasty remote refusals` 에 `via_ssh` 로 남으며, 원격 워크스페이스 추가 창은 안내 문구를 보여 준다. 같은 컴퓨터의 다른 인스턴스에는 그대로 붙는다. `system.info`(`tasty list info`)에 프로세스별 `instance_id` 가 추가됐다.
+- **호스트명이나 LAN IP 로 이 Tasty 자신을 가리키는 원격 attach 를 거절한다.** 이전에는 loopback 표기(`127.0.0.1` 등)만 자기 자신으로 알아봐서, 같은 머신을 호스트명·LAN IP 프로필로 지정하면 자기 mirror 가 자기 워크스페이스를 점유하고 `new_workspace` 요청은 자기 자신에 워크스페이스를 만들었다. 이제 SSH 로 연결한 뒤 상대의 인스턴스 식별자를 비교해 같으면 거절한다. IPC `remote.attach` 의 `new_workspace` 는 `-32602` 오류로 응답한다. 기존 워크스페이스 attach 는 판정에 SSH 왕복이 필요해 응답을 늦추지 않고 `{attaching:true}` 를 준 뒤 비동기로 거절해 `tasty remote refusals` 에 `via_ssh` 로 남기며(loopback 표기는 지금처럼 바로 오류), 자동 attach 매핑도 같은 기록을 남기고, 원격 워크스페이스 추가 창은 안내 문구를 보여 준다. 같은 컴퓨터의 다른 인스턴스에는 그대로 붙는다. `system.info`(`tasty list info`)에 프로세스별 `instance_id` 가 추가됐다.
 
 - **자기 자신을 가리키는 자동 attach 매핑이 거절을 끝없이 되풀이하지 않는다.** 이전에는 그 워크스페이스가 활성인 동안 해석·거절·경고 로그를 계속 반복했다. 이제 `--ssh` 매핑은 매핑을 바꿀 때까지 다시 시도하지 않고, 프로필 매핑은 그 워크스페이스로 다시 전환할 때 한 번 더 확인한다. 재연결 중의 거절은 다른 재연결 실패와 같은 간격으로 재시도한다.
 
