@@ -52,9 +52,9 @@ pub(super) fn dispatch_attach<T, E>(
     if matches!(outcome, Outcome::RejectedSelf) {
         let label = source.label();
         tracing::warn!(
-            "self(loopback) {label} (port={port}) 는 차단됩니다 — 자기 자신을 mirror 하는 \
-             attach 는 메인 스레드가 자기 응답을 기다리며 교착돼 성립할 수 없고, 실패하는 \
-             동안 그 workspace 점유만 잡습니다. 로컬 self-mirror 는 `tasty debug attach`."
+            "self(loopback) {label} (port={port}) 는 차단됩니다 — 자기 자신을 mirror 하면 \
+             그 mirror 가 자기 workspace 를 점유해 원본의 로컬 입력이 막힙니다. \
+             로컬 self-mirror 는 `tasty debug attach`."
         );
     }
     #[cfg(debug_assertions)]
