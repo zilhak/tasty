@@ -35,6 +35,11 @@ title = "Could not start the terminal"
 body = "Tasty could not start a terminal. Details: {}"
 hint = "Check general.shell in your config.toml and make sure the shell exists, then start Tasty again."
 
+[boot.home_in_use]
+title = "Data folder already in use"
+body = "Another Tasty is already using this data folder: {}"
+hint = "Use the Tasty that is already running, or start this one with a different TASTY_HOME."
+
 [boot.window_error]
 title = "Could not open the window"
 body = "Tasty could not create its first window. Details: {}"

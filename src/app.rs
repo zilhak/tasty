@@ -233,6 +233,7 @@ impl App {
         proxy: EventLoopProxy<AppEvent>,
         port_file: Option<String>,
         memory: Option<std::sync::Arc<std::sync::Mutex<tasty_memory::MemoryStore>>>,
+        journal_writer_lock: Option<tasty_event_store::WriterLock>,
         #[cfg(debug_assertions)] input_simulation_enabled: bool,
     ) -> anyhow::Result<Self> {
         let (stream_inbound_tx, stream_inbound_rx) = std::sync::mpsc::channel();
@@ -245,14 +246,17 @@ impl App {
             let proxy = proxy.clone();
             move || proxy.send_event(AppEvent::TimerTick).is_ok()
         });
-        let journal = journal::JournalApplication::new({
-            let proxy = proxy.clone();
-            Arc::new(move || {
-                if proxy.send_event(AppEvent::JournalReady).is_err() {
-                    tracing::trace!("journal wake after GUI shutdown");
-                }
-            })
-        })?;
+        let journal = journal::JournalApplication::new_with_writer_lock(
+            {
+                let proxy = proxy.clone();
+                Arc::new(move || {
+                    if proxy.send_event(AppEvent::JournalReady).is_err() {
+                        tracing::trace!("journal wake after GUI shutdown");
+                    }
+                })
+            },
+            journal_writer_lock,
+        )?;
         Ok(Self {
             journal,
             pending_server_attaches: Vec::new(),
@@ -328,10 +332,7 @@ impl App {
             image_upload_rx,
             transfer_progress_tx,
             transfer_progress_rx,
-            gpu_instance: Arc::new(wgpu::Instance::new(&wgpu::InstanceDescriptor {
-                backends: wgpu::Backends::all(),
-                ..Default::default()
-            })),
+            gpu_instance: Arc::new(new_gpu_instance()),
             gpu_adapter: None,
         })
     }
@@ -400,26 +401,7 @@ impl App {
         let proxy = self.view.proxy.clone();
         pollster::block_on(async move {
             if self.gpu_adapter.is_none() {
-                // 어댑터 선택용 surface는 실제 surface를 만들기 전에 해제한다.
-                let adapter = {
-                    let probe = instance.create_surface(window.clone())?;
-                    let opts = wgpu::RequestAdapterOptions {
-                        power_preference: wgpu::PowerPreference::default(),
-                        compatible_surface: Some(&probe),
-                        force_fallback_adapter: false,
-                    };
-                    // 하드웨어 선택에 실패하면 소프트웨어 어댑터도 시도한다.
-                    match instance.request_adapter(&opts).await {
-                        Some(a) => a,
-                        None => instance
-                            .request_adapter(&wgpu::RequestAdapterOptions {
-                                force_fallback_adapter: true,
-                                ..opts
-                            })
-                            .await
-                            .ok_or_else(|| anyhow::Error::new(NoGpuAdapter))?,
-                    }
-                };
+                let adapter = select_gpu_adapter(&instance, &window).await?;
                 self.gpu_adapter = Some(Arc::new(adapter));
             }
             let adapter = Arc::clone(
@@ -438,6 +420,41 @@ impl App {
             )
             .await
         })
+    }
+}
+
+/// 모든 창이 공유하는 wgpu instance를 만든다.
+#[cfg(feature = "gui")]
+pub(crate) fn new_gpu_instance() -> wgpu::Instance {
+    wgpu::Instance::new(&wgpu::InstanceDescriptor {
+        backends: wgpu::Backends::all(),
+        ..Default::default()
+    })
+}
+
+/// 창에 맞는 GPU adapter를 고른다. 하드웨어 선택에 실패하면 소프트웨어 adapter도 시도하고,
+/// 그것도 없으면 [`NoGpuAdapter`]로 실패한다.
+#[cfg(feature = "gui")]
+pub(crate) async fn select_gpu_adapter(
+    instance: &wgpu::Instance,
+    window: &Arc<Window>,
+) -> anyhow::Result<wgpu::Adapter> {
+    // 어댑터 선택용 surface는 실제 surface를 만들기 전에 해제한다.
+    let probe = instance.create_surface(window.clone())?;
+    let opts = wgpu::RequestAdapterOptions {
+        power_preference: wgpu::PowerPreference::default(),
+        compatible_surface: Some(&probe),
+        force_fallback_adapter: false,
+    };
+    match instance.request_adapter(&opts).await {
+        Some(adapter) => Ok(adapter),
+        None => instance
+            .request_adapter(&wgpu::RequestAdapterOptions {
+                force_fallback_adapter: true,
+                ..opts
+            })
+            .await
+            .ok_or_else(|| anyhow::Error::new(NoGpuAdapter)),
     }
 }
 

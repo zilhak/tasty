@@ -565,13 +565,9 @@ impl App {
         }
     }
 
-    /// hidden 상태의 첫 창을 만든다. 로딩·shell setup 경로가 렌더를 시도한 뒤 표시한다.
-    fn boot_create_hidden_window(
-        event_loop: &ActiveEventLoop,
-        boot_t0: std::time::Instant,
-    ) -> std::sync::Arc<winit::window::Window> {
-        use winit::window::WindowAttributes;
-        let mut attrs = WindowAttributes::default()
+    /// 부팅 첫 창의 속성. hidden으로 만들고 첫 렌더를 시도한 뒤 표시한다.
+    pub(crate) fn boot_window_attributes() -> winit::window::WindowAttributes {
+        let mut attrs = winit::window::WindowAttributes::default()
             .with_visible(false)
             .with_title(if cfg!(debug_assertions) {
                 "Tasty (Debug)"
@@ -583,7 +579,15 @@ impl App {
         if let Some(icon) = crate::app_icon::winit_window_icon() {
             attrs = attrs.with_window_icon(Some(icon));
         }
-        attrs = crate::platform::window_chrome::apply_csd_attributes(attrs);
+        crate::platform::window_chrome::apply_csd_attributes(attrs)
+    }
+
+    /// hidden 상태의 첫 창을 만든다. 로딩·shell setup 경로가 렌더를 시도한 뒤 표시한다.
+    fn boot_create_hidden_window(
+        event_loop: &ActiveEventLoop,
+        boot_t0: std::time::Instant,
+    ) -> std::sync::Arc<winit::window::Window> {
+        let attrs = Self::boot_window_attributes();
         // 표시할 창이 없으면 오류를 로그로 남기고 실패 코드로 종료한다.
         let window = match event_loop.create_window(attrs) {
             Ok(w) => std::sync::Arc::new(w),

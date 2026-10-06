@@ -28,7 +28,15 @@ impl JournalApplication {
                 } => {
                     self.accept_bootstrap(cut, bootstrap, runtime_epoch, sessions)?;
                 }
-                Completion::StartupFailed(error) | Completion::Halted(error) => return Err(error),
+                Completion::StartupFailed(failure) => {
+                    let detail = failure.to_string();
+                    #[cfg(feature = "gui")]
+                    {
+                        self.startup_failure = Some(failure);
+                    }
+                    return Err(detail);
+                }
+                Completion::Halted(error) => return Err(error),
                 Completion::Publish {
                     batch,
                     before,

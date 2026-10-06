@@ -229,8 +229,71 @@ fn an_active_binding_never_recreates_a_lost_database() {
     let Completion::StartupFailed(error) = receive(&worker) else {
         panic!("must refuse lost database")
     };
-    assert!(error.contains("refusing to recreate"));
+    assert!(!error.is_home_in_use());
+    assert!(error.to_string().contains("refusing to recreate"));
     assert!(!home.path().join("structure/journal.db").exists());
+}
+
+#[test]
+fn a_held_writer_lock_is_reported_as_home_in_use() {
+    let home = tempfile::tempdir().unwrap();
+    drop(start(home.path()));
+    let database = super::identity::journal_database_path(home.path());
+    let lock = match tasty_event_store::preempt_writer_lock(&database).unwrap() {
+        tasty_event_store::WriterPreempt::Acquired(lock) => lock,
+        tasty_event_store::WriterPreempt::Held => panic!("nothing else holds the lock"),
+    };
+    // 핸들 없이 여는 경로(헤드리스·테스트)도 같은 종류로 알린다.
+    let worker = JournalWorker::spawn(home.path().to_owned(), Arc::new(|| {})).unwrap();
+    let Completion::StartupFailed(error) = receive(&worker) else {
+        panic!("a held writer lock must refuse startup")
+    };
+    assert!(error.is_home_in_use(), "{error}");
+    drop(lock);
+}
+
+#[test]
+fn a_held_binding_lock_is_reported_as_home_in_use() {
+    let home = tempfile::tempdir().unwrap();
+    let structure = home.path().join("structure");
+    std::fs::create_dir_all(&structure).unwrap();
+    let binding = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(structure.join("journal.binding-lock"))
+        .unwrap();
+    binding.try_lock().unwrap();
+    let worker = JournalWorker::spawn(home.path().to_owned(), Arc::new(|| {})).unwrap();
+    let Completion::StartupFailed(error) = receive(&worker) else {
+        panic!("a held binding lock must refuse startup")
+    };
+    assert!(error.is_home_in_use(), "{error}");
+    drop(binding);
+}
+
+#[test]
+fn a_preempted_writer_lock_lets_the_worker_open_and_keeps_others_out() {
+    let home = tempfile::tempdir().unwrap();
+    let database = super::identity::journal_database_path(home.path());
+    let lock = match tasty_event_store::preempt_writer_lock(&database).unwrap() {
+        tasty_event_store::WriterPreempt::Acquired(lock) => lock,
+        tasty_event_store::WriterPreempt::Held => panic!("an empty home must be free"),
+    };
+    // 빈 홈(첫 실행)에서도 선점 잠금으로 저널을 초기화하고 writer가 된다.
+    let worker =
+        JournalWorker::spawn_with(home.path().to_owned(), Arc::new(|| {}), Some(lock)).unwrap();
+    assert!(matches!(receive(&worker), Completion::Ready { .. }));
+    assert!(matches!(
+        tasty_event_store::preempt_writer_lock(&database).unwrap(),
+        tasty_event_store::WriterPreempt::Held
+    ));
+    drop(worker);
+    assert!(matches!(
+        tasty_event_store::preempt_writer_lock(&database).unwrap(),
+        tasty_event_store::WriterPreempt::Acquired(_)
+    ));
 }
 
 #[test]

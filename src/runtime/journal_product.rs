@@ -13,6 +13,8 @@ pub(crate) mod view_record;
 mod worker;
 
 pub(crate) use error::JournalError;
+#[cfg(feature = "gui")]
+pub(crate) use identity::journal_database_path;
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -220,7 +222,7 @@ pub(crate) enum Completion {
         cut: Option<u64>,
         bootstrap: StructureModels,
     },
-    StartupFailed(String),
+    StartupFailed(StartupFailure),
     /// Canonical/publication cut is no longer available. Every App reader and writer must halt.
     Halted(String),
     /// All affected local engines must apply this as one publication before acknowledging.
@@ -235,6 +237,41 @@ pub(crate) enum Completion {
         ticket: u64,
         result: Result<ResultValue, JournalError>,
     },
+}
+
+/// 저널을 열지 못한 이유. 부팅 화면이 오류 문자열을 해석하지 않고 종류로 문구를 고른다.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum StartupFailure {
+    /// 다른 프로세스가 같은 데이터 홈의 저널을 쓰거나 초기화하고 있다.
+    HomeInUse(String),
+    Other(String),
+}
+
+impl StartupFailure {
+    #[cfg(any(test, feature = "gui"))]
+    pub(crate) fn is_home_in_use(&self) -> bool {
+        matches!(self, Self::HomeInUse(_))
+    }
+}
+
+impl std::fmt::Display for StartupFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::HomeInUse(detail) | Self::Other(detail) => f.write_str(detail),
+        }
+    }
+}
+
+impl From<String> for StartupFailure {
+    fn from(detail: String) -> Self {
+        Self::Other(detail)
+    }
+}
+
+impl From<&str> for StartupFailure {
+    fn from(detail: &str) -> Self {
+        Self::Other(detail.to_owned())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -274,7 +311,18 @@ pub(crate) struct JournalWorker {
 
 impl JournalWorker {
     /// Filesystem work begins on the new thread, including opening and recovering the database.
+    #[cfg(test)]
     pub(crate) fn spawn(home: PathBuf, wake: Arc<dyn Fn() + Send + Sync>) -> Result<Self, String> {
+        Self::spawn_with(home, wake, None)
+    }
+
+    /// `writer_lock`는 부팅 첫머리에서 이 홈의 저널에 대해 선점한 잠금이다. 있으면 worker가
+    /// 저장소를 열기 전부터 그 잠금을 쥐고 writer가 된다. 없으면 worker 안에서 잠근다.
+    pub(crate) fn spawn_with(
+        home: PathBuf,
+        wake: Arc<dyn Fn() + Send + Sync>,
+        writer_lock: Option<tasty_event_store::WriterLock>,
+    ) -> Result<Self, String> {
         let (requests, incoming) = mpsc::sync_channel(QUEUE_CAPACITY);
         let (outgoing, completions) = mpsc::sync_channel(QUEUE_CAPACITY);
         // A separate channel leaves room for the publication barrier even when admission is full.
@@ -292,6 +340,7 @@ impl JournalWorker {
             .spawn(move || {
                 worker::run(
                     home,
+                    writer_lock,
                     worker_readers,
                     incoming,
                     outgoing,

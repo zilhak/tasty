@@ -48,6 +48,7 @@ type Acknowledgements = mpsc::Receiver<(u64, Result<(), String>)>;
 #[allow(clippy::too_many_arguments)] // reason: 스레드 생성 1회에 소유권째로 넘기는 자원 묶음이다
 pub(super) fn run(
     home: PathBuf,
+    writer_lock: Option<tasty_event_store::WriterLock>,
     readers: Arc<crate::runtime::journal_payload::PayloadReaders>,
     requests: mpsc::Receiver<super::QueuedRequest>,
     completions: mpsc::SyncSender<Completion>,
@@ -63,7 +64,8 @@ pub(super) fn run(
         wake();
         true
     };
-    let Some((executor, mut published)) = open_published_executor(&home, &acknowledgements, &send)
+    let Some((executor, mut published)) =
+        open_published_executor(&home, writer_lock, &acknowledgements, &send)
     else {
         return;
     };
@@ -792,11 +794,20 @@ fn release_halted_admissions(
 
 fn open_published_executor(
     home: &std::path::Path,
+    writer_lock: Option<tasty_event_store::WriterLock>,
     acknowledgements: &Acknowledgements,
     send: &impl Fn(Completion) -> bool,
 ) -> Option<(Executor<StructureDecider>, Option<u64>)> {
-    let opened = identity::open(home)
-        .and_then(|store| Executor::open(StructureDecider, store).map_err(|e| e.to_string()));
+    let opened = identity::open(home, writer_lock).and_then(|store| {
+        Executor::open(StructureDecider, store).map_err(|error| match &error {
+            crate::runtime::command_executor::ExecError::Store(store_error)
+                if matches!(**store_error, tasty_event_store::StoreError::WriterLocked) =>
+            {
+                super::StartupFailure::HomeInUse(error.to_string())
+            }
+            _ => super::StartupFailure::Other(error.to_string()),
+        })
+    });
     let executor = match opened {
         Ok(executor) => executor,
         Err(error) => {
@@ -808,12 +819,12 @@ fn open_published_executor(
         let mut inner = executor.inner.lock().expect("new executor lock");
         let epoch = inner.epoch;
         if let Err(error) = inner.store.release_abandoned_admission_holders(epoch) {
-            send(Completion::StartupFailed(error.to_string()));
+            send(Completion::StartupFailed(error.to_string().into()));
             return None;
         }
     }
     if let Err(error) = recovery::recover(&executor) {
-        send(Completion::StartupFailed(error));
+        send(Completion::StartupFailed(error.into()));
         return None;
     }
     let published = {
@@ -831,7 +842,7 @@ fn open_published_executor(
         cut
     };
     if let Err(error) = acknowledge(acknowledgements, published.unwrap_or(0)) {
-        send(Completion::StartupFailed(error));
+        send(Completion::StartupFailed(error.into()));
         return None;
     }
     Some((executor, published))

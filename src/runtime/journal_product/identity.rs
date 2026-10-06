@@ -2,7 +2,9 @@
 
 use std::fs::{File, OpenOptions};
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+use super::StartupFailure;
 
 use serde::{Deserialize, Serialize};
 
@@ -19,8 +21,22 @@ struct Binding {
     phase: Phase,
 }
 
-pub(super) fn open(home: &Path) -> Result<tasty_event_store::EventStore, String> {
-    let directory = home.join("structure");
+fn structure_directory(home: &Path) -> PathBuf {
+    home.join("structure")
+}
+
+/// 데이터 홈의 구조 저널 파일. 부팅 첫머리의 writer 잠금 선점과 [`open`]이 같은 경로를 쓴다.
+pub(crate) fn journal_database_path(home: &Path) -> PathBuf {
+    structure_directory(home).join("journal.db")
+}
+
+/// `writer_lock`은 [`journal_database_path`]에 대해 미리 얻은 잠금이다. 있으면 저장소를 열기
+/// 전부터 쥐고 있으므로 schema migration도 잠금 소유자만 한다.
+pub(super) fn open(
+    home: &Path,
+    writer_lock: Option<tasty_event_store::WriterLock>,
+) -> Result<tasty_event_store::EventStore, StartupFailure> {
+    let directory = structure_directory(home);
     std::fs::create_dir_all(&directory).map_err(|e| e.to_string())?;
     #[cfg(unix)]
     File::open(home)
@@ -28,13 +44,16 @@ pub(super) fn open(home: &Path) -> Result<tasty_event_store::EventStore, String>
         .map_err(|e| e.to_string())?;
     let _initialization = lock_initialization(&directory)?;
     let path = directory.join("journal.json");
-    let database = directory.join("journal.db");
+    let database = journal_database_path(home);
     let mut binding = read_or_create(&path, &database)?;
     if binding.phase == Phase::Ready && !database.is_file() {
         return Err("active structure journal database is missing; refusing to recreate it".into());
     }
-    let store = tasty_event_store::EventStore::open(&database, &binding.journal_id)
+    let mut store = tasty_event_store::EventStore::open(&database, &binding.journal_id)
         .map_err(|e| e.to_string())?;
+    if let Some(lock) = writer_lock {
+        store.acquire_writer_with(lock).map_err(|e| e.to_string())?;
+    }
     if binding.phase == Phase::Preparing {
         // No command can be admitted until the durable Ready marker has been published.
         binding.phase = Phase::Ready;
@@ -43,7 +62,7 @@ pub(super) fn open(home: &Path) -> Result<tasty_event_store::EventStore, String>
     Ok(store)
 }
 
-fn lock_initialization(directory: &Path) -> Result<File, String> {
+fn lock_initialization(directory: &Path) -> Result<File, StartupFailure> {
     let file = OpenOptions::new()
         .read(true)
         .write(true)
@@ -52,9 +71,16 @@ fn lock_initialization(directory: &Path) -> Result<File, String> {
         .open(directory.join("journal.binding-lock"))
         .map_err(|e| e.to_string())?;
     // Keep the lock file: deleting it could let two processes lock different inodes.
-    file.try_lock()
-        .map_err(|e| format!("structure journal binding is unavailable: {e}"))?;
-    Ok(file)
+    match file.try_lock() {
+        Ok(()) => Ok(file),
+        // 다른 프로세스가 같은 홈의 저널을 초기화하는 중이다.
+        Err(std::fs::TryLockError::WouldBlock) => Err(StartupFailure::HomeInUse(
+            "structure journal binding is held by another process".into(),
+        )),
+        Err(std::fs::TryLockError::Error(e)) => Err(StartupFailure::Other(format!(
+            "structure journal binding is unavailable: {e}"
+        ))),
+    }
 }
 
 fn read_or_create(path: &Path, database: &Path) -> Result<Binding, String> {

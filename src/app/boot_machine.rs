@@ -47,7 +47,33 @@ fn boot_engine_error_info(err: &anyhow::Error) -> crate::gpu::BootErrorInfo {
     crate::gpu::BootErrorInfo { title, body, hint }
 }
 
+/// 저널 실패 문구. `home_in_use`는 worker가 "다른 프로세스가 같은 홈을 쓰고 있음"으로 보낸
+/// 실패일 때의 홈 경로다. 오류 문자열을 해석하지 않는다.
+fn journal_error_info(
+    home_in_use: Option<&std::path::Path>,
+    err: &anyhow::Error,
+) -> crate::gpu::BootErrorInfo {
+    match home_in_use {
+        Some(home) => {
+            tracing::error!("structure journal refused: {err:#}");
+            crate::boot::home_in_use::error_info(home)
+        }
+        None => boot_engine_error_info(err),
+    }
+}
+
 impl App {
+    /// 저널을 열지 못한 이유가 "다른 프로세스가 같은 홈을 쓰고 있음"이면 그 문구를, 아니면 엔진
+    /// 오류 문구를 고른다. 오류 문자열이 아니라 worker가 보낸 종류로 판정한다.
+    fn boot_journal_error_info(&self, err: &anyhow::Error) -> crate::gpu::BootErrorInfo {
+        let home = self
+            .journal
+            .home_in_use()
+            .then(tasty_utils::path::tasty_home)
+            .flatten();
+        journal_error_info(home.as_deref(), err)
+    }
+
     /// 테마를 적용하고 첫 로딩 프레임을 그린다. hidden으로 만든 창만 표시를 전환한다.
     pub(crate) fn begin_boot(
         &mut self,
@@ -364,7 +390,8 @@ impl App {
                 resume: session.runtime.settings.general.restore_layout,
             },
         ) {
-            self.state.boot_error_info = Some(boot_engine_error_info(&anyhow::anyhow!(error)));
+            self.state.boot_error_info =
+                Some(self.boot_journal_error_info(&anyhow::anyhow!(error)));
             return false;
         }
         progress.phase = BootPhase::WaitingJournal;
@@ -382,7 +409,8 @@ impl App {
             .journal
             .poll_bootstrap(&mut [session], self.plugin_manager.as_mut())
         {
-            self.state.boot_error_info = Some(boot_engine_error_info(&anyhow::anyhow!(error)));
+            self.state.boot_error_info =
+                Some(self.boot_journal_error_info(&anyhow::anyhow!(error)));
             return false;
         }
         if session.journal_binding.is_some() && !progress.journal_plugins_waited {
@@ -400,7 +428,8 @@ impl App {
         }
         let session = self.engines.session_mut(id).expect("pending engine exists");
         if let Err(error) = self.journal.poll_restore_bootstrap(session) {
-            self.state.boot_error_info = Some(boot_engine_error_info(&anyhow::anyhow!(error)));
+            self.state.boot_error_info =
+                Some(self.boot_journal_error_info(&anyhow::anyhow!(error)));
             return false;
         }
         if session.journal_binding.is_none() || !self.journal.is_ready(id) {
@@ -753,6 +782,28 @@ mod boot_error_tests {
     use super::*;
 
     /// 번역 초기화 전후 모두 서로 다른 제목·본문·조치 안내를 사용해야 한다.
+    #[test]
+    fn a_home_in_use_failure_names_the_home_instead_of_the_shell() {
+        crate::i18n::init("en");
+        let home = std::path::Path::new("/tmp/tasty-home-in-use-example");
+        let err = anyhow::anyhow!("another store holds the journal writer lock");
+        let info = journal_error_info(Some(home), &err);
+        assert_eq!(info.title, crate::i18n::t("boot.home_in_use.title"));
+        assert_eq!(info.hint, crate::i18n::t("boot.home_in_use.hint"));
+        assert!(info.body.contains(&home.display().to_string()));
+        assert_ne!(info.title, crate::i18n::t("boot.engine_error.title"));
+        assert_ne!(info.hint, crate::i18n::t("boot.engine_error.hint"));
+    }
+
+    #[test]
+    fn other_journal_failures_keep_the_engine_error_text() {
+        crate::i18n::init("en");
+        // 같은 문자열이어도 종류가 홈 사용 중이 아니면 엔진 오류 문구다(문자열로 판정하지 않는다).
+        let err = anyhow::anyhow!("another store holds the journal writer lock");
+        let info = journal_error_info(None, &err);
+        assert_eq!(info.title, crate::i18n::t("boot.engine_error.title"));
+    }
+
     #[test]
     fn engine_error_info_reads_three_distinct_diagnostics() {
         let info = boot_engine_error_info(&anyhow::anyhow!("shell not found: /bad/path"));

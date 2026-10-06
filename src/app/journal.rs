@@ -58,6 +58,9 @@ pub(crate) struct JournalApplication {
     retirements: retirement::Retirements,
     known_slots: std::collections::BTreeMap<u32, bool>,
     started: bool,
+    /// 저널을 열지 못한 이유. 부팅 오류 화면이 문구를 고를 때 읽는다.
+    #[cfg(feature = "gui")]
+    startup_failure: Option<crate::runtime::journal_product::StartupFailure>,
     runtime_epoch: Option<u64>,
     next_ticket: u64,
     halted: Option<String>,
@@ -101,10 +104,21 @@ impl JournalApplication {
         );
     }
 
+    #[cfg(any(test, not(feature = "gui")))]
     pub(crate) fn new(wake: Arc<dyn Fn() + Send + Sync>) -> anyhow::Result<Self> {
+        Self::new_with_writer_lock(wake, None)
+    }
+
+    /// `writer_lock`은 부팅 첫머리에서 이 홈의 저널에 대해 선점한 잠금이다(GUI 부팅). 없으면
+    /// worker가 저장소를 연 뒤 잠근다(헤드리스·테스트).
+    pub(crate) fn new_with_writer_lock(
+        wake: Arc<dyn Fn() + Send + Sync>,
+        writer_lock: Option<tasty_event_store::WriterLock>,
+    ) -> anyhow::Result<Self> {
         let home = tasty_utils::path::tasty_home()
             .ok_or_else(|| anyhow::anyhow!("data home unavailable for structure journal"))?;
-        let worker = JournalWorker::spawn(home, wake.clone()).map_err(anyhow::Error::msg)?;
+        let worker = JournalWorker::spawn_with(home, wake.clone(), writer_lock)
+            .map_err(anyhow::Error::msg)?;
         Ok(Self {
             worker,
             commands: Default::default(),
@@ -129,6 +143,8 @@ impl JournalApplication {
             retirements: Default::default(),
             known_slots: Default::default(),
             started: false,
+            #[cfg(feature = "gui")]
+            startup_failure: None,
             runtime_epoch: None,
             next_ticket: 1,
             halted: None,
@@ -426,6 +442,14 @@ impl JournalApplication {
     #[cfg(feature = "gui")]
     pub(crate) fn has_pending_view_for(&self, stream: &str) -> bool {
         self.view_writes.pending_for(stream)
+    }
+
+    /// 저널 worker가 다른 프로세스가 같은 홈을 쓰고 있어 시작하지 못했다.
+    #[cfg(feature = "gui")]
+    pub(crate) fn home_in_use(&self) -> bool {
+        self.startup_failure
+            .as_ref()
+            .is_some_and(crate::runtime::journal_product::StartupFailure::is_home_in_use)
     }
 
     pub(crate) fn is_ready(&self, id: EngineId) -> bool {

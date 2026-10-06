@@ -10,6 +10,8 @@ pub(crate) mod headless_dispatch;
 pub(crate) mod headless_plugins;
 #[cfg(not(feature = "gui"))]
 pub(crate) mod headless_stream;
+#[cfg(feature = "gui")]
+pub(crate) mod home_in_use;
 pub(crate) mod locale;
 pub(crate) mod locale_font;
 pub(crate) mod os;
@@ -85,6 +87,14 @@ pub fn run() -> anyhow::Result<std::process::ExitCode> {
         }
         cli_routing::Routed::AugmentedHelp => run_augmented_help(),
         cli_routing::Routed::Gui(cli) => {
+            // 로그 파일·memory.db·설정·플러그인·저널을 건드리기 전에 이 홈의 저널 writer 잠금을 선점한다.
+            // 다른 Tasty가 쥐고 있으면 그 인스턴스의 홈에 부작용을 내지 않고 오류 화면만 띄운다.
+            #[cfg(feature = "gui")]
+            let writer_lock = match preempt_home_writer_lock() {
+                HomeWriterLock::Acquired(lock) => Some(lock),
+                HomeWriterLock::Held(home) => return home_in_use::run(&home),
+                HomeWriterLock::Unchecked => None,
+            };
             // CLI도 같은 바이너리라 호스트로 결정한 뒤 열어야 실행 중 호스트의 로그를 자르지 않는다.
             os::enable_host_file_log();
             // Windows 호스트 종료 시 자식 셸도 정리하도록 job을 만든다. CLI에는 만들지 않는다.
@@ -97,7 +107,7 @@ pub fn run() -> anyhow::Result<std::process::ExitCode> {
                          Build with --no-default-features to enable headless. Falling back to run_gui."
                     );
                 }
-                return run_gui(cli);
+                return run_gui(cli, writer_lock);
             }
             #[cfg(not(feature = "gui"))]
             {
@@ -122,7 +132,38 @@ fn run_augmented_help() -> anyhow::Result<()> {
 }
 
 #[cfg(feature = "gui")]
-fn run_gui(cli: cli::Cli) -> anyhow::Result<std::process::ExitCode> {
+enum HomeWriterLock {
+    Acquired(tasty_event_store::WriterLock),
+    /// 다른 프로세스가 이 홈의 저널 writer 잠금을 쥐고 있다.
+    Held(std::path::PathBuf),
+    /// 홈을 알 수 없거나 잠금을 쓸 수 없다. 저널 worker가 다시 시도하고 그 결과로 판정한다.
+    Unchecked,
+}
+
+#[cfg(feature = "gui")]
+fn preempt_home_writer_lock() -> HomeWriterLock {
+    let Some(home) = tasty_utils::path::tasty_home() else {
+        return HomeWriterLock::Unchecked;
+    };
+    let database = crate::runtime::journal_product::journal_database_path(&home);
+    match tasty_event_store::preempt_writer_lock(&database) {
+        Ok(tasty_event_store::WriterPreempt::Acquired(lock)) => HomeWriterLock::Acquired(lock),
+        Ok(tasty_event_store::WriterPreempt::Held) => HomeWriterLock::Held(home),
+        Err(e) => {
+            tracing::warn!(
+                "journal writer lock preempt failed for {}: {e}; the journal worker will retry",
+                database.display()
+            );
+            HomeWriterLock::Unchecked
+        }
+    }
+}
+
+#[cfg(feature = "gui")]
+fn run_gui(
+    cli: cli::Cli,
+    writer_lock: Option<tasty_event_store::WriterLock>,
+) -> anyhow::Result<std::process::ExitCode> {
     locale::init();
 
     let (event_loop, proxy) = event_loop::build()?;
@@ -161,6 +202,7 @@ fn run_gui(cli: cli::Cli) -> anyhow::Result<std::process::ExitCode> {
         proxy,
         cli.port_file,
         memory_arc,
+        writer_lock,
         #[cfg(debug_assertions)]
         cli.enable_input_simulation,
     )?;
