@@ -53,7 +53,7 @@ tab="attach"` / `RemoteFormFrame` variant `attach-ref`·`attach-inline`)를 전�
 `gallery/overlays-shared.jsx` `RemoteAttachFrame({state})`) ↔ 본체
 `src/adapters/ui/popup/remote_attach.rs`.
 
-갤러리 공개 진입점 `remote_attach::{draw, draw_new_row, draw_states, draw_empty_plans}`와 본체 대조용
+갤러리 공개 진입점 `remote_attach::{draw, draw_new_row, draw_states, draw_empty_plans, draw_decisions}`와 본체 대조용
 치수 상수는 `catalog/components/remote_attach.rs`에 유지한다. 행·pane 구현 좌표는 아래와 같다.
 
 | 디자인 jsx 컴포넌트 | 갤러리 항목 (`catalog/components/` 기준) | 본체 함수 |

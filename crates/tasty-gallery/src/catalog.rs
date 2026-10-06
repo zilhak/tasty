@@ -1137,6 +1137,12 @@ pub fn pages() -> Vec<Page> {
                             ),
                             components::remote_attach::draw_empty_plans,
                         ),
+                        spec(
+                            "remote-workspace-attach-decisions",
+                            "Decisions — the eight open questions, resolved",
+                            Some("What was chosen and why. This is the implementation spec."),
+                            components::remote_attach::draw_decisions,
+                        ),
                     ],
                 ),
                 section(

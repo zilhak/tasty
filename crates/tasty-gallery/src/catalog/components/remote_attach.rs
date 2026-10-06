@@ -344,6 +344,64 @@ pub fn draw_empty_plans(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
+/// 열린 질문 여덟 개의 결론 — 시안 "Decisions — the eight open questions, resolved".
+/// 예제 그림 없이 Note 세 개로 이뤄진 구현 명세다.
+pub fn draw_decisions(ui: &mut egui::Ui, theme: &Theme) {
+    spec::note(
+        ui,
+        theme,
+        "1 · empty state — plan B (list path, one pre-selected row). One render branch, one \
+         confirm route.\n\
+         2 · distinction — plus glyph in the dot slot + accent label + 1px separator below \
+         (4/4 margins). Weight stays 500, size stays 13 — the row must read as a peer of the \
+         rows below it, not as a header.\n\
+         3 · creating — inline in the row (glyph → Spinner, label → \u{201c}Creating \
+         workspace…\u{201d}), list below dimmed to 50% and inert. A full-pane connecting \
+         takeover would throw away the list for a 1–3s roundtrip.\n\
+         4 · failure — inline under the row, message clamped to 3 lines (full string in \
+         title) + Try again. The connect-error center-state is right for \u{201c}we never got \
+         a list\u{201d}; here we have the list and the user's next move is usually to pick an \
+         existing workspace instead — don't hide it.\n\
+         5 · confirm (core) — select, then footer. The user chose a placement inside a list; \
+         a single row that fires on click while its neighbours only select is the \
+         inconsistency, and it also loses the reversible \u{201c}I clicked it, now what?\u{201d} \
+         moment before a remote-mutating action. Cost accepted: the row carries a selected \
+         state.\n\
+         6 · height & sticky — 34px, not sticky. Same box as a ws row; sticky would stack a \
+         second frozen band under the caps header for a list that rarely exceeds ~8 rows.\n\
+         7 · footer label — \u{201c}Create & connect\u{201d} while the new row is selected, \
+         \u{201c}Connect\u{201d} otherwise. Because §6-5 chose footer confirmation, the button \
+         must say which of the two things it will do.\n\
+         8 · tooltip — yes, on the row: \u{201c}Creates a workspace on the remote with its \
+         default name and cwd — you won't be asked for a name — then mirrors it here.\u{201d} \
+         Not asking for a name is the surprising part, so it gets said where the click \
+         happens.",
+    );
+
+    spec::note(
+        ui,
+        theme,
+        "Interaction contract. Arrow keys traverse the new row as row 1; Enter confirms the \
+         selection (same as the footer). Changing the left-hand profile resets the selection \
+         and the row's phase to rest. During creation the left profile list and the right \
+         list are inert; Cancel stays live — it closes the popup and abandons the in-flight \
+         request, and a workspace already created on the remote is not rolled back (a flash \
+         message on close says so; no extra confirm). On success the popup closes straight \
+         into attach — no interstitial \u{201c}created\u{201d} step. The caps header keeps its \
+         wording: REMOTE WORKSPACES · ‹profile› still describes the group, and the new row's \
+         own label says it is a creation.",
+    );
+
+    spec::note(
+        ui,
+        theme,
+        "New icons: none. plus, alertTriangle and refresh already exist in icons/. New \
+         tokens: none — the row is built from accent-primary, overlay-hover, \
+         surface-active, separator, accent-danger and the existing \
+         spacing steps.",
+    );
+}
+
 /// 안 이름 캡션과 카드 한 장. 권장안 캡션만 accent 로 칠한다(시안 캡션 색).
 fn plan_cluster(
     ui: &mut egui::Ui,
