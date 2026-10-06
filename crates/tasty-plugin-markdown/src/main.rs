@@ -729,7 +729,7 @@ impl MarkdownPlugin {
     /// 문서를 (재)렌더해 host WebView 에 싣는다: 현재 Theme + recent 목록을 조회하고
     /// [`render::render_document`] 로 sanitize 된 HTML 문서를 만들어 `webview.set_url` 로
     /// 전달한다. host 의 `sync_webviews` 가 scheme 없는 문자열을 raw HTML 로 인식해
-    /// `PlatformWebView::load_html` 을 호출한다(`src/view/main/redraw.rs`).
+    /// `PlatformWebView::load_html` 을 호출한다(`src/app/webview_sync.rs`).
     fn reload_webview(&self, surface_id: u32) {
         let Some(host) = &self.host else {
             tracing::warn!(
