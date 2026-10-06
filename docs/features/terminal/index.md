@@ -16,7 +16,7 @@
 
 ConPTY(Windows) / Unix PTY 로 네이티브 셸 실행(`TERM=xterm-256color`).
 
-**자식 셸 환경변수**: Tasty 가 `TERM`·`TASTY_SURFACE_ID`·`TASTY_PARENT_HOME` 을 넣고 `PATH` 앞에 자기 실행 파일 디렉터리를 붙인다. Tasty 프로세스에서 상속한 환경변수 중 `CMUX_*`(터미널 안에서 cmux CLI 가 동작하지 않게)와 Claude Code 세션 변수 `CLAUDECODE`·`CLAUDE_PID`·`CLAUDE_CODE_*`·`CLAUDE_EFFORT`·`CLAUDE_PLUGIN_DATA` 는 지운다. Claude Code 세션 안에서 Tasty 를 띄워도 그 터미널에서 실행한 Claude 가 자식 세션 표지(`CLAUDE_CODE_CHILD_SESSION`)를 물려받아 transcript 저장을 끄지 않고, 세션 비밀(`CLAUDE_CODE_MESSAGING_TOKEN` 등)이 무관한 셸로 새지 않는다. 목록은 `crates/tasty-terminal/src/pty.rs` 의 `STRIPPED_ENV_PREFIXES`·`STRIPPED_ENV_NAMES` 한 곳에 있으며 Windows·macOS·Linux 가 같은 코드 경로를 쓴다.
+**자식 셸 환경변수**: Tasty 가 `TERM`·`TASTY_SURFACE_ID`·`TASTY_PARENT_HOME` 을 넣고 `PATH` 앞에 자기 실행 파일 디렉터리를 붙인다. Tasty 프로세스에서 상속한 환경변수 중 `CMUX_*`(터미널 안에서 cmux CLI 가 동작하지 않게)와 Claude Code 세션 변수 `CLAUDECODE`·`CLAUDE_PID`·`CLAUDE_CODE_*`·`CLAUDE_EFFORT`·`CLAUDE_PLUGIN_DATA` 는 지운다. 훅 명령의 자식 프로세스도 같은 목록으로 지운다([훅](../hooks/index.md#셸-핸들러-환경변수-tasty_hook_)). Claude Code 세션 안에서 Tasty 를 띄워도 그 터미널에서 실행한 Claude 가 자식 세션 표지(`CLAUDE_CODE_CHILD_SESSION`)를 물려받아 transcript 저장을 끄지 않고, 세션 비밀(`CLAUDE_CODE_MESSAGING_TOKEN` 등)이 무관한 셸로 새지 않는다. 목록은 `crates/tasty-utils/src/process.rs` 의 `STRIPPED_ENV_PREFIXES`·`STRIPPED_ENV_NAMES` 한 곳에 있고 터미널 셸과 훅 실행 두 경로가 `is_stripped_inherited_env` 로 같은 판정을 쓰며, Windows·macOS·Linux 가 같은 코드 경로를 쓴다.
 
 윈도우 리사이즈 시 자식에 새 크기 전파 — rows 축소 시 커서 아래 빈 행 먼저 제거 후 부족분은 위쪽 행을 scrollback 으로 캡처(커서-콘텐츠 관계 보존), 확대 시 scrollback 에서 복원.
 

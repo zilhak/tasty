@@ -125,31 +125,76 @@ fn spawn_shell(
         } else {
             format!("{command} {}", args.join(" "))
         };
-        let mut process = if cfg!(windows) {
-            let mut c = std::process::Command::new("cmd");
-            c.args(["/C", &full]);
-            c
-        } else {
-            let mut c = std::process::Command::new("sh");
-            c.args(["-c", &full]);
-            c
-        };
-        process.envs(env);
-        // 제한된 PATH에서도 자기 바이너리를 찾도록 현재 실행 파일의 디렉터리를 앞에 붙인다.
-        if let Some(path) = tasty_utils::process::path_prepending_self_dir(std::env::var_os("PATH"))
-        {
-            process.env("PATH", path);
-        }
+        let mut process = hook_shell_command(
+            &full,
+            env,
+            tasty_utils::process::process_env_keys_to_strip(),
+        );
         if let Err(e) = tasty_utils::process::hide_console(&mut process).output() {
             tracing::warn!("hook shell command spawn failed: {e}; cmd: {full}");
         }
     })
 }
 
+/// 훅 명령을 sh/cmd로 감싼 Command를 만든다. `strip` 키는 터미널 셸과 같은 목록으로
+/// 상속 환경에서 지운다(`tasty_utils::process::is_stripped_inherited_env`).
+fn hook_shell_command(
+    full: &str,
+    env: Vec<(String, String)>,
+    strip: Vec<std::ffi::OsString>,
+) -> std::process::Command {
+    let mut process = if cfg!(windows) {
+        let mut c = std::process::Command::new("cmd");
+        c.args(["/C", full]);
+        c
+    } else {
+        let mut c = std::process::Command::new("sh");
+        c.args(["-c", full]);
+        c
+    };
+    process.envs(env);
+    for key in strip {
+        process.env_remove(key);
+    }
+    // 제한된 PATH에서도 자기 바이너리를 찾도록 현재 실행 파일의 디렉터리를 앞에 붙인다.
+    if let Some(path) = tasty_utils::process::path_prepending_self_dir(std::env::var_os("PATH")) {
+        process.env("PATH", path);
+    }
+    process
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::time::{Duration, Instant};
+
+    /// 훅 셸은 터미널 셸과 같은 목록으로 Claude Code 세션 키와 CMUX_* 를 지우고 나머지는 남긴다.
+    #[test]
+    fn hook_shell_strips_claude_session_and_cmux_env() {
+        use tasty_utils::process::{
+            KEPT_KEYS_FOR_TEST as KEPT, STRIPPED_KEYS_FOR_TEST as STRIPPED, env_keys_to_strip,
+        };
+        let env = KEPT
+            .iter()
+            .map(|k| ((*k).to_owned(), "1".to_owned()))
+            .collect();
+        let strip = env_keys_to_strip(STRIPPED.iter().chain(KEPT).map(std::ffi::OsString::from));
+        let cmd = hook_shell_command("true", env, strip);
+        let envs: Vec<_> = cmd.get_envs().collect();
+        for key in STRIPPED {
+            assert!(
+                envs.contains(&(std::ffi::OsStr::new(key), None)),
+                "{key} 는 지워져야 한다"
+            );
+        }
+        for key in KEPT {
+            assert!(
+                envs.iter()
+                    .any(|(k, v)| *k == std::ffi::OsStr::new(key) && v.is_some()),
+                "{key} 는 남아야 한다"
+            );
+        }
+    }
 
     #[test]
     fn inline_shell_binding_spawns_and_runs() {

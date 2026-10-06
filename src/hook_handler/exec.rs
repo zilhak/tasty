@@ -155,8 +155,12 @@ pub fn spawn_shell(command: String, args: Vec<String>, env: Vec<(String, String)
     if let Err(e) = std::thread::Builder::new()
         .name("hook-shell".into())
         .spawn(move || {
-            let mut cmd = std::process::Command::new(&command);
-            cmd.args(&args).envs(env);
+            let mut cmd = hook_exec_command(
+                &command,
+                &args,
+                env,
+                tasty_utils::process::process_env_keys_to_strip(),
+            );
             match tasty_utils::process::hide_console(&mut cmd).output() {
                 Ok(_) => tracing::debug!("hook shell '{command}' ran"),
                 Err(e) => tracing::warn!("hook shell '{command}' spawn failed: {e}"),
@@ -167,10 +171,54 @@ pub fn spawn_shell(command: String, args: Vec<String>, env: Vec<(String, String)
     }
 }
 
+/// 셸을 거치지 않는 훅 Command를 만든다. `strip` 키는 터미널 셸과 같은 목록으로
+/// 상속 환경에서 지운다(`tasty_utils::process::is_stripped_inherited_env`).
+fn hook_exec_command(
+    command: &str,
+    args: &[String],
+    env: Vec<(String, String)>,
+    strip: Vec<std::ffi::OsString>,
+) -> std::process::Command {
+    let mut cmd = std::process::Command::new(command);
+    cmd.args(args).envs(env);
+    for key in strip {
+        cmd.env_remove(key);
+    }
+    cmd
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    /// 직접 실행 훅도 터미널 셸과 같은 목록으로 Claude Code 세션 키와 CMUX_* 를 지운다.
+    #[test]
+    fn hook_exec_strips_claude_session_and_cmux_env() {
+        use tasty_utils::process::{
+            KEPT_KEYS_FOR_TEST as KEPT, STRIPPED_KEYS_FOR_TEST as STRIPPED, env_keys_to_strip,
+        };
+        let env = KEPT
+            .iter()
+            .map(|k| ((*k).to_owned(), "1".to_owned()))
+            .collect();
+        let strip = env_keys_to_strip(STRIPPED.iter().chain(KEPT).map(std::ffi::OsString::from));
+        let cmd = hook_exec_command("true", &[], env, strip);
+        let envs: Vec<_> = cmd.get_envs().collect();
+        for key in STRIPPED {
+            assert!(
+                envs.contains(&(std::ffi::OsStr::new(key), None)),
+                "{key} 는 지워져야 한다"
+            );
+        }
+        for key in KEPT {
+            assert!(
+                envs.iter()
+                    .any(|(k, v)| *k == std::ffi::OsStr::new(key) && v.is_some()),
+                "{key} 는 남아야 한다"
+            );
+        }
+    }
 
     fn capture_logs(f: impl FnOnce()) -> String {
         use std::sync::{Arc, Mutex};
