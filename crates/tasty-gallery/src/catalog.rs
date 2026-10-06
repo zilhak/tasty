@@ -4,6 +4,7 @@
 
 pub mod chrome_loading;
 pub mod components;
+pub mod components_settled;
 pub mod foundations_disabled_ink;
 pub mod foundations_settled;
 pub mod foundations_shape;
@@ -403,6 +404,18 @@ pub fn pages() -> Vec<Page> {
                             Some("Keyboard shortcut keycaps"),
                             components::prim_chips::draw_kbd,
                         ),
+                        spec(
+                            "kbd-one-keycap",
+                            "One keycap, no palette variant",
+                            Some("the palette converges on Kbd — 16 / 4 / 3 / 10"),
+                            components_settled::draw_one_keycap,
+                        ),
+                        spec(
+                            "glyph-sizes",
+                            "Glyph sizes are icons, not type",
+                            Some("12 → icon-size-xs · 16 → icon-size-md · clipboard 30 → 28"),
+                            components_settled::draw_glyph_sizes,
+                        ),
                     ],
                 ),
                 section(
@@ -506,6 +519,12 @@ pub fn pages() -> Vec<Page> {
                             "Status resolution",
                             Some("How owner and activity collapse to a single dot"),
                             components::prim_status_resolution::draw,
+                        ),
+                        spec(
+                            "dot-family",
+                            "The dot family — 8 generic, 6 in dense chrome, and the attached ring",
+                            Some("status-dot-size 8 · status-dot-size-compact 6 · ring 2 / 2"),
+                            components_settled::draw_dot_family,
                         ),
                         spec(
                             "spinner",
