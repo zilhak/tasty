@@ -419,17 +419,113 @@ mod tests {
     /// CPU 일감 비용이 기준선보다 작아져도 검출 여유를 둔다.
     const INJECTED_OVER_BASELINE: f64 = 2.0 * MUTATION_MARGIN;
 
+    /// 판단할 수 없는 회차를 포함한 최대 회차 수. 회차마다 기준선의 약 23배 시간이 든다.
+    /// 결함으로 판정한 회차는 다시 재지 않으므로, 회차 수는 부하 아래에서 판단 가능한 회차를 얻을 기회만 늘린다.
+    const INDEPENDENCE_ROUNDS: usize = 5;
+
+    /// 지연 주입 한 회차의 판정.
+    #[derive(Debug, PartialEq, Eq)]
+    enum RoundOutcome {
+        /// 주입 뒤 표본이 변이 문턱 아래다. 이 회차에서 대조군은 측정 경로를 지나지 않았다.
+        Independent,
+        /// 주입 뒤 표본이 문턱 이상이지만 앞이나 뒤 표본도 정상 구간을 벗어났다.
+        /// 부하와 측정 경로의 영향을 구분할 수 없다.
+        Undecidable(String),
+        /// 앞뒤 표본은 정상 구간인데 주입 뒤 표본만 문턱 이상이다.
+        Traversed(String),
+    }
+
+    /// 주입 전(`before`)·주입 뒤(`after`)·그 직후 재측정(`post`) 표본으로 회차를 판정한다.
+    /// 주입은 `after` 직전에만 있으므로 경로를 지나는 대조군은 `after`만 크게 늘어난다.
+    /// 부하는 보통 이웃 표본도 정상 구간 밖으로 민다. `after` 하나의 측정 시간 안에만
+    /// 머무른 부하는 이 방법으로 배제하지 못한다.
+    fn judge_round(
+        before: &ControlSample,
+        after: &ControlSample,
+        post: &ControlSample,
+        injected: Duration,
+    ) -> RoundOutcome {
+        if control_stayed_out_of_the_path(after) {
+            return RoundOutcome::Independent;
+        }
+        let ratios = format!(
+            "주입 전 {:.1}배, 주입 {injected:?}, 주입 뒤 {:.1}배({:?}), 직후 재측정 {:.1}배",
+            before.ratio(),
+            after.ratio(),
+            after.cost(),
+            post.ratio(),
+        );
+        if before.is_inflated() || post.is_inflated() {
+            return RoundOutcome::Undecidable(format!(
+                "{ratios}. 주입 뒤 표본 주변의 대조군도 정상 구간을 벗어났다. 측정 대상 경로의 영향과 그 시간의 부하를 구분할 수 없으므로 이 회차는 측정하지 않은 것으로 처리한다."
+            ));
+        }
+        RoundOutcome::Traversed(format!(
+            "{ratios}. 주입 전후 표본은 정상 구간인데 주입 뒤 표본만 변이 문턱({MUTATION_MARGIN}배) 이상이다. 대조군이 측정 대상 경로를 지난다."
+        ))
+    }
+
+    /// `busy_for`를 실제로 기다렸는지 밖에서 잰다. 주입이 사라지면 음성 팔은 아무것도 재지 않고 통과한다.
+    fn inject(injected: Duration) -> Duration {
+        let started = Instant::now();
+        // sleep의 유휴 반응과 섞이지 않도록 바쁜 시간으로 지연을 넣는다.
+        busy_for(injected);
+        started.elapsed()
+    }
+
     /// 측정 대상 경로에 기준선 비례 지연을 넣어 대조군의 독립성을 확인한다.
     /// 앞뒤 표본의 비율만 비교하면 둘 다 같은 경로를 지날 때 지연이 상쇄되므로
     /// 보정한 기준선과 비교한다.
+    ///
+    /// 판단할 수 없는 회차는 실패로 두지 않고 다시 잰다. 모든 회차가 판단 불가이면
+    /// 측정 생략을 출력하고 통과한다. 결함 판정 회차는 다시 재지 않고 바로 실패한다.
     #[test]
     fn an_artificial_delay_in_the_measured_path_does_not_move_the_control() {
         let control = CpuControl::calibrate();
         let injected = control.baseline().mul_f64(INJECTED_OVER_BASELINE);
-        let before = control.sample();
-        // sleep의 유휴 반응과 섞이지 않도록 바쁜 시간으로 지연을 넣는다.
-        busy_for(injected);
-        let after = control.sample();
+        assert!(
+            injected > Duration::ZERO,
+            "주입량이 0이다(기준선 {:?}). 이 시험은 아무 지연도 넣지 않는다",
+            control.baseline()
+        );
+
+        let mut undecidable = 0usize;
+        let mut last = None;
+        for _ in 0..INDEPENDENCE_ROUNDS {
+            let before = control.sample();
+            let elapsed = inject(injected);
+            let after = control.sample();
+            let post = control.sample();
+            assert!(
+                elapsed >= injected,
+                "주입한 지연이 흐르지 않았다: 요청 {injected:?}, 실제 {elapsed:?}. 지연이 없으면 대조군의 독립성을 검사하지 않는다"
+            );
+            match judge_round(&before, &after, &post, injected) {
+                RoundOutcome::Independent => {
+                    last = Some((before, after, elapsed));
+                    break;
+                }
+                RoundOutcome::Undecidable(why) => {
+                    eprintln!("[latency-control] 판단 불가 회차: {why}");
+                    undecidable += 1;
+                }
+                RoundOutcome::Traversed(why) => panic!("{why}"),
+            }
+        }
+
+        let Some((before, after, elapsed)) = last else {
+            eprintln!(
+                "[latency-control] 측정 생략: {INDEPENDENCE_ROUNDS}회 모두 판단할 수 없어 대조군의 독립성을 재지 못했다. 조용한 조건에서 다시 실행한다."
+            );
+            observe!(
+                rounds = undecidable,
+                undecidable = undecidable,
+                skipped = true,
+                baseline_ms = n(control.baseline().as_secs_f64() * 1e3),
+                injected_ms = n(injected.as_secs_f64() * 1e3),
+            );
+            return;
+        };
 
         // 같은 판정 함수가 측정 경로를 지난 합성 표본을 거절하는지도 확인한다.
         let as_if_it_traversed = ControlSample::from_parts_in(
@@ -438,19 +534,18 @@ mod tests {
             after.baseline(),
         );
 
-        // baseline_ms와 injected_ms는 이번 측정값이고 injected_ratio는 구성상 상수다.
+        // baseline_ms·injected_ms·elapsed_ms는 이번 측정값이고 injected_ratio는 구성상 상수다.
         observe!(
+            rounds = undecidable + 1,
+            undecidable = undecidable,
+            skipped = false,
             before = n(before.ratio()),
             after = n(after.ratio()),
             margin = n(MUTATION_MARGIN),
             baseline_ms = n(control.baseline().as_secs_f64() * 1e3),
             injected_ms = n(injected.as_secs_f64() * 1e3),
+            elapsed_ms = n(elapsed.as_secs_f64() * 1e3),
             injected_ratio = n(as_if_it_traversed.ratio()),
-        );
-        assert!(
-            control_stayed_out_of_the_path(&after),
-            "{}",
-            control_independence_verdict(&before, &after, injected)
         );
         assert!(
             !control_stayed_out_of_the_path(&as_if_it_traversed),
@@ -461,61 +556,46 @@ mod tests {
         );
     }
 
-    /// 보정 직후와 지연 주입 뒤 표본을 구분해 기록한다. 지속 부하에서도 두 경우가
-    /// 관측될 수 있으므로 어느 시점에 증가했는지만으로 원인을 확정하지 않는다.
-    fn control_independence_verdict(
-        before: &ControlSample,
-        after: &ControlSample,
-        injected: Duration,
-    ) -> String {
-        if before.is_inflated() {
-            return format!(
-                "보정 직후부터 대조군이 기준선의 {:.1}배다({:?} → {:?}). 지연 주입 전 증가이므로 이 결과로 코드 경로의 독립성을 판단할 수 없다. 부하와 보정·표본의 작업 차이를 확인한다.",
-                before.ratio(),
-                before.baseline(),
-                before.cost(),
-            );
-        }
-        format!(
-            "지연 주입 뒤 대조군이 증가했다: 주입 전 {:.1}배, 주입 {injected:?}, 주입 뒤 {:.1}배({:?}). 측정 대상 경로의 영향과 그 시간의 부하는 이 측정만으로 구분할 수 없다. 조용한 조건에서 다시 확인한다.",
-            before.ratio(),
-            after.ratio(),
-            after.cost(),
-        )
-    }
-
-    /// 두 시점의 진단이 서로 구분되는지 확인한다.
+    /// 세 판정의 경계를 부하 없이 확인한다.
     #[test]
-    fn the_independence_verdict_separates_a_broken_control_from_a_reactive_one() {
+    fn a_round_fails_only_when_the_neighbours_stay_quiet() {
         let base = Duration::from_micros(170);
-
         let injected = base * 20;
-        let broken = control_independence_verdict(
-            &ControlSample::from_parts(base * 900, base),
-            &ControlSample::from_parts(base * 900, base),
-            injected,
+        let quiet = ControlSample::from_parts(base, base);
+        let loaded = ControlSample::from_parts(base * 5 / 2, base);
+        let jumped = ControlSample::from_parts(base * 21, base);
+
+        assert_eq!(
+            judge_round(&loaded, &quiet, &loaded, injected),
+            RoundOutcome::Independent
         );
-        assert!(broken.contains("보정 직후부터"), "{broken}");
-        assert!(!broken.contains("규칙 2\n"), "{broken}");
-        assert!(
-            !broken.contains("지연 주입 뒤 대조군이 증가했다"),
-            "{broken}"
+        assert_eq!(
+            judge_round(
+                &quiet,
+                &ControlSample::from_parts(base * 10 - Duration::from_nanos(1), base),
+                &quiet,
+                injected
+            ),
+            RoundOutcome::Independent
         );
 
-        let reactive = control_independence_verdict(
-            &ControlSample::from_parts(base, base),
-            &ControlSample::from_parts(base * 900, base),
-            injected,
-        );
-        assert!(
-            reactive.contains("지연 주입 뒤 대조군이 증가했다"),
-            "{reactive}"
-        );
-        assert!(
-            reactive.contains("이 측정만으로 구분할 수 없다"),
-            "{reactive}"
-        );
-        assert!(!reactive.contains("보정 직후부터"), "{reactive}");
+        for (before, post) in [(&loaded, &quiet), (&quiet, &loaded), (&loaded, &loaded)] {
+            match judge_round(before, &jumped, post, injected) {
+                RoundOutcome::Undecidable(why) => {
+                    assert!(why.contains("구분할 수 없으므로"), "{why}");
+                    assert!(why.contains("측정하지 않은 것으로"), "{why}");
+                }
+                other => panic!("이웃 표본이 정상 구간을 벗어났는데 {other:?}로 판정했다"),
+            }
+        }
+
+        match judge_round(&quiet, &jumped, &quiet, injected) {
+            RoundOutcome::Traversed(why) => {
+                assert!(why.contains("측정 대상 경로를 지난다"), "{why}");
+                assert!(!why.contains("구분할 수 없"), "{why}");
+            }
+            other => panic!("주입 뒤 표본만 문턱을 넘었는데 {other:?}로 판정했다"),
+        }
     }
 
     // spawn의 독립성 변이 시험은 없다. sleep은 유휴 변동을, busy 루프는 CPU 경합을
