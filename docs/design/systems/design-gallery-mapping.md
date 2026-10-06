@@ -426,7 +426,7 @@ Layouts 의 `widgets/layout_2depth.rs`(`twodepth`)는 이 미러가 아니라 �
 
 | 디자인 jsx 컴포넌트 | 본체 (`src/view/settings/ui.rs`) | 갤러리 (`components/settings.rs`) | 비고 |
 |---|---|---|---|
-| `SettingsWindow`(container, 824×472) | `draw_settings_panel` | `draw` | 갤러리 고정 크기 `WIDTH`/`HEIGHT`(1100×700) |
+| `SettingsWindow`(container, 824×472) | `draw_settings_panel` | `draw` | 창 크기는 `settings-window-width`/`-height`(1100×700)다. 본체 창은 배율 없는 생성 상수를, 갤러리는 같은 토큰의 Theme 접근자를 배율 1로 읽는다 |
 | L1 top tabs (underline) | `draw_l1_tab_band` | `l1_band` / `l1_tab` | 밑줄 스타일을 별도 탭 구현으로 복제하지 않는다. **공유 위젯을 쓰지 않는다** — 양쪽 다 자기 `Frame` 으로 밴드를 그린다. 좌측 타이틀·세로 구분선이 탭과 같은 줄에 들어가야 해서 탭만 담는 컨테이너에 안 맞는다 |
 | L2 sidebar(필터+리스트, 200) | `draw_l2_sidebar` | `l2_sidebar` / `l2_item` | 필터 Input + sub-section 리스트. **양쪽 다 200** 이고 공유 위젯을 쓰지 않는다 — 본체는 모달 셸이 소유하는 `SidePanel`(오른쪽 1px vline), 갤러리는 같은 폭의 `Frame`. `tasty_ui_widgets::two_depth_layout_filtered` 는 콘텐츠 안에 놓이는 둥근 테두리 패널(`SUB_TAB_PANEL_WIDTH` 150)이라 **다른 idiom** 이다 |
 | `Row`(label-150 + 컨트롤) | 공통 헬퍼 없음 — 탭마다 따로(`tabs/remote_transfer.rs` `settings_row` · `tabs/appearance.rs` `plugin_setting_row` 등) | `row` | gap 16(space-lg)·min-h 32(`--tasty-settings-row-min-height`). `hint` 있는 행은 라벨 뒤 `HelpHint`(placement Bottom, gap space-xs) 인라인 — 아래 `Note` 설명줄과 중복 금지. 본체 적용: `tabs/performance.rs`(2행) · `tabs/appearance.rs::label_with_tooltip`(4곳) · `keybindings_tab/entries.rs`(3행 — `close_active`/`quit`/`fullscreen_stage_exit`, right-to-left 라벨 컬럼이라 HelpHint를 라벨보다 먼저 add) |

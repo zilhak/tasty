@@ -15,8 +15,6 @@ use crate::catalog::icons;
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::catalog::widgets::dialog as kit;
 
-const WIDTH: LogicalPx = LogicalPx(1100.0);
-const HEIGHT: LogicalPx = LogicalPx(700.0);
 const L2_WIDTH: LogicalPx = LogicalPx(200.0);
 /// jsx `Row` 라벨 폭 (width 150, flex none) — 디자인 고정 치수.
 const ROW_LABEL_W: LogicalPx = LogicalPx(150.0);
@@ -105,16 +103,22 @@ thread_local! {
 }
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
+    // 창 크기는 settings-window-width/height 토큰이다. 갤러리는 배율 1로 그리므로 1100×700이다.
+    let (window_w, window_h) = (
+        theme.settings_window_width(),
+        theme.settings_window_height(),
+    );
     let band_h = theme.titlebar_height + theme.spacing_sm; // 44
     let footer_h = theme.item_height_interactive + theme.spacing_sm.scaled(2.0); // 44
-    let mid_h = (HEIGHT - band_h - footer_h - theme.border_width.scaled(2.0)).max(theme.measure_sm);
+    let mid_h =
+        (window_h - band_h - footer_h - theme.border_width.scaled(2.0)).max(theme.measure_sm);
     // content 폭은 명시 계산(측정 패스에서 available_width 0 → 음수 폭 패닉 회피).
-    let content_w = (WIDTH - L2_WIDTH - theme.border_width - theme.spacing_lg.scaled(2.0))
+    let content_w = (window_w - L2_WIDTH - theme.border_width - theme.spacing_lg.scaled(2.0))
         .max(theme.measure_sm);
 
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         // 별도 설정 창의 콘텐츠이므로 팝업 그림자를 그리지 않는다.
-        kit::frame_card_flat(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
+        kit::frame_card_flat(ui, theme, window_w, kit::panel_fill(theme), |ui| {
             l1_band(ui, theme, band_h);
             kit::hsep(ui, theme);
             ui.horizontal_top(|ui| {
@@ -131,7 +135,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         &[
-            ("frame", "1100×700 · bg-panel · border-strong"),
+            (
+                "frame",
+                "settings-window-width × height 1100×700 · bg-panel · border-strong",
+            ),
             ("L1 band", "h44 · Settings title · 7 tabs"),
             ("active tab", "2px accent underline"),
             ("L2", "sidebar 200 · search filter · plugin dot"),

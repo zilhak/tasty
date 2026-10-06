@@ -24,10 +24,13 @@ impl App {
 
         use winit::window::WindowAttributes;
 
+        // 창 크기는 settings-window-width/height 토큰이다. 창 생성 시점의 크기라 UI 배율을 곱하지 않는다.
+        use tasty_design_tokens::generated::component::settings::{WINDOW_HEIGHT, WINDOW_WIDTH};
+        let size = winit::dpi::LogicalSize::new(WINDOW_WIDTH.value(), WINDOW_HEIGHT.value());
         let mut attrs = WindowAttributes::default()
             .with_title("Tasty Settings")
-            .with_inner_size(winit::dpi::LogicalSize::new(1100, 700))
-            .with_min_inner_size(winit::dpi::LogicalSize::new(1100, 700))
+            .with_inner_size(size)
+            .with_min_inner_size(size)
             .with_visible(false); // Start hidden, show after first render
         if let Some(icon) = crate::app_icon::winit_window_icon() {
             attrs = attrs.with_window_icon(Some(icon));
