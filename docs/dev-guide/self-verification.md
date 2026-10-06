@@ -175,7 +175,7 @@ plugin enable은 지목한 플러그인, surface kind 생성은 활성 소유자
 
 **스크린샷은 OS 화면 캡처(`screencapture` / PowerShell `CopyFromScreen` 등)보다 tasty 자체 `ui.screenshot` IPC 를 먼저 쓴다.** OS 화면 캡처는 화면 녹화 권한이 필요해 *빌드할 때마다 사용자가 권한을 다시 풀어주지 않는 한 막힌다* — 자기검증 흐름이 권한 프롬프트에서 멈춘다. `ui.screenshot` 은 tasty 가 실제 렌더한 프레임을 권한 없이 PNG 로 떨구므로 자동 검증에 적합하다(다른 윈도우 가림·포커스 상태에도 영향 없음).
 
-**다만 `ui.screenshot` 이 모든 화면의 상위 채널은 아니다 — 무엇을 그리느냐가 어느 캡처로 보이느냐를 정한다.** native WebView 로 그리는 surface(`markdown` · `html`)는 wgpu 스왑체인 **밖의 OS 자식 윈도우**라 그 캡처에 담기지 않는다(찍으면 그 자리에 host 가 그린 "WebView region" + URL chrome 만 나온다). 그쪽은 OS 화면 캡처가 폴백이 아니라 **유일 채널**이다. 대상별로 어느 채널에 있고 어느 채널에 없는지는 [`ai-verification/screenshot-methods`](../ai-verification/screenshot-methods.md) 맨 위 표가 정본이다 — **"OS 캡처는 최후 폴백" 으로만 읽으면 그 두 kind 의 시각 검증을 통째로 건너뛰게 된다.** 호출법·격리 실행도 같은 문서.
+**다만 `ui.screenshot` 이 모든 화면의 상위 채널은 아니다 — 무엇을 그리느냐가 어느 캡처로 보이느냐를 정한다.** native WebView 로 그리는 surface(`markdown` · `html`)는 wgpu 스왑체인 **밖의 OS 자식 윈도우**라 그 캡처에 담기지 않는다(찍으면 그 자리에 host 가 그린 빈 boundary 타일만 나온다). 그쪽은 OS 화면 캡처가 폴백이 아니라 **유일 채널**이다. 대상별로 어느 채널에 있고 어느 채널에 없는지는 [`ai-verification/screenshot-methods`](../ai-verification/screenshot-methods.md) 맨 위 표가 정본이다 — **"OS 캡처는 최후 폴백" 으로만 읽으면 그 두 kind 의 시각 검증을 통째로 건너뛰게 된다.** 호출법·격리 실행도 같은 문서.
 
 ### Linux 개발 환경
 

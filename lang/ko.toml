@@ -1419,7 +1419,6 @@ dismiss = "닫기"
 retry = "재시도"
 
 [webview]
-region = "WebView 영역"
 no_page = "로드된 페이지 없음"
 loading = "불러오는 중…"
 error = "불러오지 못했습니다"

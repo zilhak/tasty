@@ -87,14 +87,13 @@ tasty screenshot --path /abs/win.png --window 2
 readback 하는데(`gfx/gpu/screenshot.rs`), native WebView overlay 는 그 swapchain 이 아니라
 **별개의 OS 자식 창**이다(Linux 는 X11 자식 창 안의 GTK 창 — `host_api/webview/linux.rs`).
 readback 이 그 자리에서 읽는 것은 overlay 아래에 host 가 그려 둔 chrome
-(`adapters/ui/surface/webview_chrome.rs` 의 boundary backdrop)이라, 캡처에는 지구본 글리프 +
-"WebView region" + **URL 문자열**이 담긴다.
-
-Markdown 캡처에 HTML 소스가 보일 수 있다. 플러그인이 정리한 HTML 전체를 URL 자리에 전달하기 때문이다([ADR-0029](../adr/0029-webview-host-integration.md)). 이는 WebView 아래의 backdrop을 캡처한 결과이며 WebView 렌더링 실패를 뜻하지 않는다.
+(`adapters/ui/surface/webview_chrome.rs`)이다. 페이지를 불러온 surface 는 boundary 상태라
+캡처에는 **글리프·라벨·URL 없는 빈 타일**(`bg-panel` + 1px 테두리)만 담긴다. 빈 타일은
+WebView 렌더링 실패를 뜻하지 않는다.
 
 **처방**: webview 화면의 픽셀이 필요하면 `ui.screenshot` 이 아니라 **OS 화면 캡처**를 쓴다.
 실측(2026-09-07, Xvfb :90 · aarch64 · WebKitGTK 4.1): 한 창을 같은 순간 두 채널로 찍어
-`ui.screenshot` 은 "WebView region" + URL 만, `scrot` 은 렌더된 페이지(제목·본문·한글
+`ui.screenshot` 은 host chrome 만, `scrot` 은 렌더된 페이지(제목·본문·한글
 글리프·색 블록)를 그대로 냈다. 네 갈래를 한 탭에 surface split 으로 나란히 놓고 한 장에
 담으면 대조가 한 번에 끝난다.
 

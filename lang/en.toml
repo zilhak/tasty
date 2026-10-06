@@ -1425,7 +1425,6 @@ dismiss = "Dismiss"
 retry = "Retry"
 
 [webview]
-region = "WebView region"
 no_page = "No page loaded"
 loading = "Loading…"
 error = "Failed to load"

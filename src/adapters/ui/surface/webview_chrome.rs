@@ -1,6 +1,6 @@
 //! native WebView 아래의 배경·상태 안내. 페이지 자체는 OS WebView가 그린다.
-//! Loading·Failed는 탐색 상태를 표시하고 나머지는 URL 유무로 경로 배경 또는 빈 화면을 고른다.
-//! 메뉴·팝업 때문에 native 화면이 숨겨지면 이 배경이 보인다.
+//! Loading·Failed는 탐색 상태를 표시하고 나머지는 URL 유무로 빈 타일 또는 빈 화면 안내를 고른다.
+//! 메뉴·팝업·토스트 때문에 불러온 페이지가 숨겨지면 이 빈 타일이 보인다.
 
 use crate::adapters::ui::icons;
 use crate::theme;
@@ -14,7 +14,8 @@ pub fn chrome_caption<'a>(url: Option<&'a str>, label: Option<&'a str>) -> Optio
 
 /// webview-kind surface 의 host chrome 을 패널에 그린다. `nav` 가 Loading/Failed 면
 /// 해당 상태 chrome, 그 외(Idle/Done)는 `url` 유무로 boundary(Some)/placeholder(None).
-/// URL 줄은 [`chrome_caption`]이 고른 문자열을 보인다.
+/// boundary는 배경·테두리만 있는 빈 타일이다. 페이지가 잠시 가려진 동안에만 보이므로
+/// 글리프·라벨·URL을 그리지 않는다. Failed의 URL 줄은 [`chrome_caption`]이 고른 문자열을 보인다.
 /// 배경·테두리는 패널 전체에 그리고 아이콘·글자는 native WebView가 덮는 `content` 안으로 자른다.
 /// native 창이 비워 둔 분할선 여백으로 글자가 비치지 않게 하기 위해서다.
 pub fn draw_webview_chrome(
@@ -73,8 +74,9 @@ pub fn draw_webview_chrome(
                         th.text_muted().to_egui(),
                     );
                 }
-                NavState::Idle | NavState::Done => match url {
-                    None => {
+                // URL이 있으면 boundary: 배경·테두리만 남긴다.
+                NavState::Idle | NavState::Done => {
+                    if url.is_none() {
                         ui.add(icons::HTML.image(glyph, th.text_disabled().to_egui()));
                         ui.add_space(th.spacing_sm.value());
                         label(
@@ -83,19 +85,7 @@ pub fn draw_webview_chrome(
                             th.text_muted().to_egui(),
                         );
                     }
-                    Some(_) => {
-                        ui.add(icons::HTML.image(glyph, th.text_muted().to_egui()));
-                        ui.add_space(th.spacing_sm.value());
-                        label(
-                            ui,
-                            crate::i18n::t("webview.region"),
-                            th.text_muted().to_egui(),
-                        );
-                        if let Some(caption) = caption {
-                            url_line(ui, caption);
-                        }
-                    }
-                },
+                }
             }
         },
     );
