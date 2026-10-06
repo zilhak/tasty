@@ -1,4 +1,4 @@
-# ADR-0069: 사용자 훅 핸들러 파일은 null을 품은 호출 params만 JSON 문자열로 쓴다
+# ADR-0070: 사용자 훅 핸들러 파일은 null을 품은 호출 params만 JSON 문자열로 쓴다
 
 - **Status**: Accepted
 - **Date**: 2026-10-06

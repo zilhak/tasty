@@ -82,7 +82,7 @@ Terminal·Pty 분리와 터미널 호환성, 입력·포커스, 점유와 원격
 | 0033 | [이벤트 피드는 짧게 보관하고 소비자가 읽은 위치를 관리한다](0033-event-feed-delivery.md) | Accepted | 2026-09-24 | plugins, runtime |
 | 0034 | [터미널 출력은 스트림과 바이트 위치로 이어 읽는다](0034-output-cursor-contract.md) | Accepted | 2026-09-24 | plugins, runtime |
 | 0053 | [HTML 문서의 스크립트는 원본 파일에서 감지하고 사용자만 문서 단위로 허용한다](0053-html-script-detection-and-per-document-allowance.md) | Accepted | 2026-09-29 | plugins, webview, html, javascript, sandbox, banner, ipc, security |
-| 0069 | [사용자 훅 핸들러 파일은 null을 품은 호출 params만 JSON 문자열로 쓴다](0069-hook-handler-user-file-keeps-null-params-as-json-strings.md) | Accepted | 2026-10-06 | plugins, hooks, storage, compatibility |
+| 0070 | [사용자 훅 핸들러 파일은 null을 품은 호출 params만 JSON 문자열로 쓴다](0070-hook-handler-user-file-keeps-null-params-as-json-strings.md) | Accepted | 2026-10-06 | plugins, hooks, storage, compatibility |
 <!-- adr-rows:end plugins -->
 
 ## 화면·테마·국제화
