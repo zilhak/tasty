@@ -3,6 +3,7 @@
 //! v2 task 는 결과 확정(출력 검증 포함)과 종결 전이를 같은 레코드 쓰기로 한다. 쓰기가
 //! 실패하면 상태도 결과도 바뀌지 않고, 하류 readiness·fallback 도 움직이지 않는다. 쓰기 뒤
 //! 후속 효과가 실패하면 오류를 돌려주고, 같은 보고를 다시 내면 후속 효과만 다시 적용한다.
+//! 다시 낼 보고가 없는 재시작 뒤에는 [`TaskStore::resettle_waiting`] 이 남은 Waiting 을 마무리한다.
 
 use super::super::attempt::{Completion, CompletionReceipt, CompletionRecord};
 use super::super::{Task, TaskId, TaskState, is_valid_transition};
@@ -109,6 +110,28 @@ impl TaskStore<'_> {
             transitioned,
             duplicate: false,
         })
+    }
+
+    /// workspace 의 모든 Waiting task 를 다시 평가한다. 완료 쓰기 뒤 하류 반영이 끊겼거나
+    /// 그래프 레코드를 쓴 뒤 readiness 반영 전에 멈춘 경우를 재시작 때 마무리한다. 이미 맞는
+    /// 상태라면 아무것도 바꾸지 않는다. 반환값은 상태가 바뀐 task 다.
+    pub fn resettle_waiting(
+        &mut self,
+        workspace_id: WorkspaceId,
+        now_ms: u64,
+    ) -> Result<Vec<Task>> {
+        let mut all = self.list(workspace_id)?;
+        let ids: Vec<TaskId> = all
+            .iter()
+            .filter(|t| matches!(t.state, TaskState::Waiting))
+            .map(|t| t.id.clone())
+            .collect();
+        let settled = self.settle_waiting(workspace_id, &mut all, &ids, now_ms)?;
+        let mut changed = settled.clone();
+        for t in settled.iter().filter(|t| t.state.is_terminal()) {
+            changed.extend(self.cascade_downstream(workspace_id, &t.id, now_ms)?);
+        }
+        Ok(changed)
     }
 }
 

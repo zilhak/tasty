@@ -654,7 +654,7 @@ fn expire_overdue_hook_waits(ctx: &RunnerContext, now_ms: u64) {
     }
 }
 
-/// 부팅 또는 러너 시작 때 점유 정리와 handle 복원을 수행한다.
+/// 부팅 또는 러너 시작 때 점유 정리, handle 복원, Waiting task 의 readiness 재평가를 수행한다.
 /// 부팅에서는 반환 handle을 버리고 수동 러너 시작 때 다시 읽는다. 저장 실패 항목은 남을 수 있다.
 fn purge_and_reload_on_restart(
     ctx: &RunnerContext,
@@ -662,7 +662,22 @@ fn purge_and_reload_on_restart(
 ) -> Vec<(TaskId, DispatchHandle)> {
     purge_stale_semaphore_holders(ctx, workspace_id);
     purge_stale_lease_holders(ctx, workspace_id);
-    reload_persistent_handles(ctx, workspace_id)
+    let reloaded = reload_persistent_handles(ctx, workspace_id);
+    resettle_waiting_tasks(ctx, workspace_id);
+    reloaded
+}
+
+/// 완료 쓰기 뒤 하류 반영 전에 멈춘 task 를 마무리한다. 복원한 handle 의 보고를 먼저 기록한 뒤
+/// 평가해야 그 보고로 풀리는 하류도 같은 번에 맞춰진다.
+fn resettle_waiting_tasks(ctx: &RunnerContext, workspace_id: u32) {
+    let changed = ctx.with_memory(|mem| {
+        TaskStore::new(mem, HOST_OWNER, ctx.agent_seq.as_ref())
+            .resettle_waiting(workspace_id, now_ms())
+    });
+    match changed {
+        Ok(tasks) => ctx.fire_terminal_tasks(workspace_id, tasks),
+        Err(e) => tracing::warn!("agent runner ws{workspace_id}: readiness resettle failed: {e}"),
+    }
 }
 
 /// 전달받은 live workspace를 정리하되 러너 스레드를 자동으로 시작하지 않는다.

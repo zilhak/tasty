@@ -6,7 +6,7 @@ use serde_json::{Value, json};
 use tasty_memory::MemoryStore;
 use tempfile::TempDir;
 
-use super::store::FAIL_COMPLETION_PUT;
+use super::store::{FAIL_ACTIVATION_PUT, FAIL_COMPLETION_PUT};
 use super::*;
 use crate::{AgentError, CompletionRejection};
 
@@ -237,4 +237,42 @@ fn a_terminal_task_finished_without_an_attempt_record_refuses_reports() {
         .complete(1, &p, Completion::succeeded(None, ok(3)), 3)
         .expect_err("cancelled");
     assert_eq!(rejection(e), CompletionRejection::AlreadyTerminal);
+}
+
+/// 완료 쓰기 뒤 하류 반영이 끊긴 상태를 만든다.
+fn interrupted_after_the_write(store: &mut TaskStore) -> Completion {
+    submit_pair(store);
+    let attempt = start(store, "p", 1);
+    let report = Completion::succeeded(Some(attempt), ok(3));
+    FAIL_ACTIVATION_PUT.with(|f| f.set(true));
+    store
+        .complete(1, &"p".into(), report.clone(), 2)
+        .expect_err("propagation interrupted");
+    assert_eq!(get(store, "p").state, TaskState::Succeeded);
+    assert_eq!(get(store, "c").state, TaskState::Waiting);
+    report
+}
+
+#[test]
+fn resending_the_report_finishes_an_interrupted_propagation() {
+    let (_td, mut mem, seq) = fresh();
+    let mut store = TaskStore::new(&mut mem, "_host", &seq);
+    let report = interrupted_after_the_write(&mut store);
+    let receipt = store.complete(1, &"p".into(), report, 3).expect("resend");
+    assert!(receipt.duplicate);
+    assert_eq!(get(&store, "c").state, TaskState::Ready);
+}
+
+#[test]
+fn resettling_after_a_restart_finishes_an_interrupted_propagation() {
+    let (_td, mut mem, seq) = fresh();
+    let mut store = TaskStore::new(&mut mem, "_host", &seq);
+    interrupted_after_the_write(&mut store);
+    let changed = store.resettle_waiting(1, 3).expect("resettle");
+    assert_eq!(
+        changed.iter().map(|t| t.id.as_str()).collect::<Vec<_>>(),
+        ["c"]
+    );
+    assert_eq!(get(&store, "c").state, TaskState::Ready);
+    assert!(store.resettle_waiting(1, 4).expect("again").is_empty());
 }

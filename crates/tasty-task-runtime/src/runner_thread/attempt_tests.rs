@@ -1,4 +1,5 @@
 //! 훅 대기는 건 회차에만 보고한다 — 늦게 온 옛 회차의 훅이 다음 회차를 끝내지 않는다.
+//! 재시작은 완료 쓰기 뒤 끊긴 하류 반영을 마무리한다.
 
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -7,7 +8,7 @@ use tasty_agent::task::{Completion, TaskGraphSpec};
 use tasty_agent::{TaskState, TaskStore};
 use tasty_memory::{HOST_OWNER, MemoryStore};
 
-use super::expire_overdue_hook_waits;
+use super::{expire_overdue_hook_waits, purge_and_reload_on_restart};
 use crate::hook_wait::HookWaitOwner;
 use crate::runner_host::RunnerContext;
 
@@ -30,8 +31,12 @@ fn with_store<R>(ctx: &RunnerContext, f: impl FnOnce(&mut TaskStore) -> R) -> R 
     ctx.with_memory(|mem| f(&mut TaskStore::new(mem, HOST_OWNER, ctx.agent_seq.as_ref())))
 }
 
+fn state_of(ctx: &RunnerContext, id: &str) -> TaskState {
+    with_store(ctx, |s| s.get(1, &id.into()).unwrap().unwrap().state)
+}
+
 fn state(ctx: &RunnerContext) -> TaskState {
-    with_store(ctx, |s| s.get(1, &"p".into()).unwrap().unwrap().state)
+    state_of(ctx, "p")
 }
 
 fn register(ctx: &RunnerContext, hook_id: u64, attempt: &str) {
@@ -79,4 +84,30 @@ fn an_expired_wait_from_an_earlier_attempt_leaves_the_current_run_alone() {
     register(&ctx, 2, "p#2");
     expire_overdue_hook_waits(&ctx, 5000);
     assert!(matches!(state(&ctx), TaskState::Failed { .. }));
+}
+
+#[test]
+fn a_restart_releases_consumers_left_waiting_after_the_completion_write() {
+    let (_td, ctx) = ctx();
+    with_store(&ctx, |s| {
+        let spec: TaskGraphSpec = serde_json::from_value(serde_json::json!({
+            "contract_version": 2,
+            "tasks": [
+                {"id": "p",
+                 "command": {"kind": "custom", "ipc_method": "system.ping", "params": {}},
+                 "output_schema": {"type": "object", "fields": {}}},
+                {"id": "c", "depends_on": ["p"],
+                 "command": {"kind": "custom", "ipc_method": "system.ping", "params": {}}}]
+        }))
+        .unwrap();
+        s.submit_graph(1, spec, 0).unwrap();
+        // 완료 레코드는 썼지만 하류 반영 전에 멈춘 상태를 그대로 심는다.
+        let mut p = s.get(1, &"p".into()).unwrap().unwrap();
+        p.state = TaskState::Succeeded;
+        p.finished_at = Some(1);
+        s.put(&p).unwrap();
+    });
+    assert_eq!(state_of(&ctx, "c"), TaskState::Waiting);
+    purge_and_reload_on_restart(&ctx, 1);
+    assert_eq!(state_of(&ctx, "c"), TaskState::Ready);
 }
