@@ -55,6 +55,10 @@ pub const TOAST_PADDING_X: f32 = SIZING.spacing_md.0;
 pub const TOAST_PADDING_Y: f32 = SIZING.spacing_sm.0;
 /// 토스트 사이 세로 간격. = `component.toast-gap` → `{semantic.space-sm}` = 8.
 pub const TOAST_GAP: f32 = SIZING.spacing_sm.0;
+/// 메인 창 범위 스택의 하단 거리. = `component.toast-stack-offset-bottom` → `{primitive.size-36}`
+/// (상태바 24 + 12). 상태바와 토스트 구조 치수처럼 UI 배율을 따르지 않는다(OFF-SCALE).
+/// 생성 접근자는 배율을 곱하므로 쓰지 않는다. 토큰 값과의 일치는 시험이 확인한다.
+pub const TOAST_STACK_OFFSET_BOTTOM: f32 = 36.0;
 /// 본문과 hint 키캡 사이 가로 간격. 시안 `.tasty-toast`의 `gap: var(--tasty-space-sm)`.
 pub const TOAST_HINT_GAP: f32 = SIZING.spacing_sm.0;
 

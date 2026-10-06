@@ -1,13 +1,16 @@
 //! 스택의 카드가 공유 폭 없이 자기 내용 폭을 쓰고, 넓은 스코프에서도 `toast_max_width`를
 //! 넘지 않으며, 오른쪽 끝이 앵커에 맞는지 검사한다. 좌측 강조 막대가 `toast_accent_width`
 //! 두께인지도 검사한다. hint 키캡이 카드 오른쪽 끝 첫 줄에 놓이고 줄지 않으며 본문이 먼저
-//! 줄바꿈되는지도 검사한다. 맨 아래 카드가 스코프 하단에서 떨어지는 거리도 검사한다. 창 범위는
-//! `toast-stack-offset-bottom`(UI 배율 적용), 영역 범위는 가장자리 여백이다.
+//! 줄바꿈되는지도 검사한다. 맨 아래 카드가 스코프 하단에서 떨어지는 거리도 검사한다. 메인 창 범위는
+//! `toast-stack-offset-bottom`(배율 없음), Settings 창 범위는 `toast-stack-offset-bottom-settings`
+//! (UI 배율 적용), 영역 범위는 가장자리 여백이다.
 
 use egui::{Pos2, RawInput, Rect, vec2};
 use tasty_type_appearance::theme::Theme;
 use tasty_type_appearance::toast_kind::ToastKind;
-use tasty_ui_widgets::tokens::{TOAST_HINT_GAP, TOAST_PADDING_X, TOAST_SCOPE_MARGIN};
+use tasty_ui_widgets::tokens::{
+    TOAST_HINT_GAP, TOAST_PADDING_X, TOAST_SCOPE_MARGIN, TOAST_STACK_OFFSET_BOTTOM,
+};
 use tasty_ui_widgets::{
     KbdKey, ToastEntryView, ToastScopeView, ToastStackBottom, ToastViewProps, draw_toast_scopes,
     kbd_parts_width,
@@ -318,12 +321,31 @@ fn theme_at(zoom: f32) -> Theme {
     Theme::with_colors_and_zoom(base.to_colors(), base.is_light, zoom)
 }
 
+/// 메인 창 범위의 하단 거리는 상태바처럼 UI 배율을 따르지 않는다(OFF-SCALE).
 #[test]
-fn a_window_scope_stack_sits_the_offset_token_above_the_window_bottom() {
-    for (zoom, offset) in [(0.85_f32, 31.0), (1.0, 36.0), (1.2, 43.0)] {
+fn a_window_scope_stack_sits_the_offset_token_above_the_window_bottom_at_every_zoom() {
+    assert_eq!(
+        TOAST_STACK_OFFSET_BOTTOM,
+        tasty_design_tokens::generated::component::toast::STACK_OFFSET_BOTTOM.value(),
+        "the structural constant must equal the toast-stack-offset-bottom token"
+    );
+    for zoom in [0.85_f32, 1.0, 1.2] {
+        let card = bottom_card_rect(&theme_at(zoom), ToastStackBottom::Window);
+        assert!(
+            (SCOPE_H - card.bottom() - TOAST_STACK_OFFSET_BOTTOM).abs() <= 0.01,
+            "zoom {zoom}: card bottom {} should be {TOAST_STACK_OFFSET_BOTTOM} above {SCOPE_H}",
+            card.bottom()
+        );
+    }
+}
+
+/// Settings 창 범위의 하단 거리는 하단 버튼 줄처럼 UI 배율을 따른다(ON-SCALE).
+#[test]
+fn a_settings_window_stack_sits_above_the_footer_and_follows_the_zoom() {
+    for (zoom, offset) in [(0.85_f32, 54.0), (1.0, 64.0), (1.2, 77.0)] {
         let theme = theme_at(zoom);
-        assert_eq!(theme.toast_stack_offset_bottom().value(), offset);
-        let card = bottom_card_rect(&theme, ToastStackBottom::Window);
+        assert_eq!(theme.toast_stack_offset_bottom_settings().value(), offset);
+        let card = bottom_card_rect(&theme, ToastStackBottom::SettingsWindow);
         assert!(
             (SCOPE_H - card.bottom() - offset).abs() <= 0.01,
             "zoom {zoom}: card bottom {} should be {offset} above {SCOPE_H}",

@@ -158,6 +158,7 @@ pub use toast::{
     ToastViewProps, accent_color as toast_accent_color, card_colors as toast_card_colors,
     draw_card as draw_toast_card, draw_single_card as draw_toast_single_card, draw_toast_scopes,
     fade_alpha as toast_fade_alpha, layout_card as toast_layout_card,
+    stack_anchor as toast_stack_anchor,
 };
 pub use toggle::{checkbox, checkbox_width, switch};
 pub use tooltip::{Tooltip, TooltipPlacement, tooltip_hover_delay_elapsed};

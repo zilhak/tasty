@@ -10,6 +10,7 @@ use crate::chip::{KbdKey, kbd_parts_width, kbd_text_parts_painted};
 use crate::tokens::{
     TOAST_GAP, TOAST_HINT_GAP as HINT_GAP, TOAST_MIN_INNER_WIDTH as MIN_TOAST_INNER_WIDTH,
     TOAST_PADDING_X as PADDING_X, TOAST_PADDING_Y as PADDING_Y, TOAST_SCOPE_MARGIN as SCOPE_MARGIN,
+    TOAST_STACK_OFFSET_BOTTOM,
 };
 
 /// 등장 페이드 시간(ms).
@@ -35,8 +36,25 @@ pub enum ToastStackBottom {
     /// pane·surface처럼 화면 일부를 덮는 스코프. 가장자리 여백(space-md)만 둔다.
     #[default]
     ScopeMargin,
-    /// 창 전체를 덮는 스코프. 창 하단에서 `toast-stack-offset-bottom`만큼 띄워 상태바 위에 쌓는다.
+    /// 메인 창 전체를 덮는 스코프. 창 하단에서 `toast-stack-offset-bottom`(배율 없음)만큼 띄워
+    /// 상태바 위에 쌓는다.
     Window,
+    /// Settings 창 전체를 덮는 스코프. 창 하단에서 `toast-stack-offset-bottom-settings`(배율
+    /// 적용)만큼 띄워 하단 버튼 줄(Cancel · Save) 위에 쌓는다.
+    SettingsWindow,
+}
+
+/// 스택 맨 아래 카드의 오른쪽 아래 모서리. 같은 점에 놓이는 스택은 호출자가 한 열로 합친다.
+pub fn stack_anchor(th: &Theme, scope_rect: egui::Rect, bottom: ToastStackBottom) -> egui::Pos2 {
+    let bottom_offset = match bottom {
+        ToastStackBottom::ScopeMargin => SCOPE_MARGIN,
+        ToastStackBottom::Window => TOAST_STACK_OFFSET_BOTTOM,
+        ToastStackBottom::SettingsWindow => th.toast_stack_offset_bottom_settings().value(),
+    };
+    egui::pos2(
+        scope_rect.max.x - SCOPE_MARGIN,
+        scope_rect.max.y - bottom_offset,
+    )
 }
 
 /// 생성 순서(ID 오름차순)의 토스트 목록. 역순으로 그려 최신 항목을 오른쪽 아래에 놓는다.
@@ -94,11 +112,8 @@ pub fn draw_toast_scopes(painter: &egui::Painter, props: &ToastViewProps<'_>) ->
         let scope_rect = scope.scope_rect;
         // 토스트가 이웃 영역을 덮지 않도록 스코프 경계로 자른다.
         let painter = painter.with_clip_rect(scope_rect);
-        let bottom_offset = match scope.bottom {
-            ToastStackBottom::ScopeMargin => SCOPE_MARGIN,
-            ToastStackBottom::Window => th.toast_stack_offset_bottom().value(),
-        };
-        let mut cursor_y = scope_rect.max.y - bottom_offset;
+        let anchor = stack_anchor(th, scope_rect, scope.bottom);
+        let mut cursor_y = anchor.y;
 
         // 새것부터 그리며 위로 올라간다 (id 오름차순으로 받았으므로 reverse).
         for entry in scope.entries.iter().rev() {
@@ -115,7 +130,7 @@ pub fn draw_toast_scopes(painter: &egui::Painter, props: &ToastViewProps<'_>) ->
                 layout_card(&ctx, th, entry.message.clone(), &entry.hint, max_width);
             let (toast_w, toast_h) = (size.x, size.y);
 
-            let max_x = scope_rect.max.x - SCOPE_MARGIN;
+            let max_x = anchor.x;
             let bottom_y = cursor_y;
             let top_y = bottom_y - toast_h;
             // 위쪽 경계를 넘는 카드부터는 그리지 않는다.

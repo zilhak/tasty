@@ -14,6 +14,8 @@ tasty-type-appearance = { path = "../tasty-type-appearance", features = ["egui-c
 tasty-type-geometry = { path = "../tasty-type-geometry" }
 
 [dev-dependencies]
+# 토스트 구조 상수가 DTCG 토큰 값과 같은지 시험에서 대조한다.
+tasty-design-tokens = { path = "../tasty-design-tokens" }
 # path_field_focus 통합테스트가 headless Context 구동에 실제 Theme 을 요구한다.
 tasty-themes = { path = "../tasty-themes" }
 # 스크롤 화살표 테스트가 chevron 글리프를 실제 텍스처로 칠해 tint를 읽는다. svg 로더가 없으면 글리프가 칠해지지 않는다.

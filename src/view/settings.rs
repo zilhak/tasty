@@ -68,7 +68,7 @@ impl SettingsView {
             captured_double_tap: None,
             should_close: false,
             committed: false,
-            toasts: ToastManager::new(),
+            toasts: ToastManager::for_settings_window(),
         }
     }
 

@@ -55,9 +55,11 @@ rg -n 'toasts|report_apply_error|push_toast' src/adapters/ipc src/app/ipc src/ap
 
 ## 스코프
 
-`ToastScope`는 알림을 놓을 영역을 지정한다. `ToastScope`: `Window` / `Workspace(usize)` / `Pane(u32)` / `Surface(u32)`. 기본은 `Surface`(어디서 일어난 일인지 모르면 `Window`). 같은 스코프 내 여럿이면 오른쪽 아래 모서리에서 위로 쌓는다. 가장 새 토스트가 맨 아래에 오고 오래된 것이 위로 밀린다. 맨 아래 카드는 스코프 하단에서 띄워 놓는다. `Window`·`Workspace`처럼 창 전체를 덮는 스코프는 창 하단에서 `toast-stack-offset-bottom`(→ `size-36`, UI 배율 적용)만큼 띄워 하단 상태바 위에 둔다. `Pane`·`Surface`는 가장자리 여백 `space-md`(12)를 둔다. 공용 위젯은 이 구분을 `ToastStackBottom`(`Window` / `ScopeMargin`)으로 받는다. 스코프가 화면에서 사라지면 즉시 제거.
+`ToastScope`는 알림을 놓을 영역을 지정한다. `ToastScope`: `Window` / `Workspace(usize)` / `Pane(u32)` / `Surface(u32)`. 기본은 `Surface`(어디서 일어난 일인지 모르면 `Window`). 같은 스코프 내 여럿이면 오른쪽 아래 모서리에서 위로 쌓는다. 가장 새 토스트가 맨 아래에 오고 오래된 것이 위로 밀린다. 맨 아래 카드는 스코프 하단에서 띄워 놓는다. `Window`·`Workspace`처럼 창 전체를 덮는 스코프는 메인 창에서 창 하단으로부터 `toast-stack-offset-bottom`(→ `size-36` = 상태바 24 + 12)만큼 띄워 하단 상태바 위에 둔다. 이 값은 상태바와 카드 구조 치수처럼 UI 배율을 따르지 않는다. Settings 창에서는 `toast-stack-offset-bottom-settings`(→ `size-64` = 하단 버튼 줄 52 + 12)만큼 띄워 Cancel·Save 위에 둔다. 하단 버튼 줄이 UI 배율을 따르므로 이 값도 배율을 따른다. `Pane`·`Surface`는 가장자리 여백 `space-md`(12)를 둔다. 공용 위젯은 이 구분을 `ToastStackBottom`(`Window` / `SettingsWindow` / `ScopeMargin`)으로 받고, 맨 아래 카드의 오른쪽 아래 모서리는 `stack_anchor`가 계산한다. 스코프가 화면에서 사라지면 즉시 제거.
 
-메인 창 밖의 Settings·Preset·Plugins 창은 각자 토스트 스택을 갖고 `Window` 범위만 그린다. debug 빌드의 `debug.toast`는 창과 범위를 지정해 토스트를 띄운다. 사용자 조작 없이 위치를 실측하기 위한 진입점이며 release에는 없다([debug IPC](../../dev-guide/debug-ipc.md)).
+**같은 모서리의 스택**: 맨 아래 카드의 기준점이 같은 스코프들은 한 열로 합친다. 오른쪽 아래 pane 의 스택은 workspace 스택과 같은 점에 놓이므로, 따로 그리면 카드가 겹친다. 합친 열은 가장 새 카드가 맨 아래이고 상한 5개를 스코프 구분 없이 함께 센다. 영역은 가장 넓은 스코프의 것을 써서 좁은 pane 위쪽 경계에 잘리지 않는다. 판정은 기준점 좌표로 하므로 `Window`·`Surface` 스코프도 같은 점에 놓이면 합쳐진다.
+
+메인 창 밖의 Settings·Preset·Plugins 창은 각자 토스트 스택을 갖고 `Window` 범위만 그린다. Settings 창의 관리자는 `ToastManager::for_settings_window`로 만들어 위 Settings 하단 거리를 쓴다. debug 빌드의 `debug.toast`는 창과 범위를 지정해 토스트를 띄운다. 사용자 조작 없이 위치를 실측하기 위한 진입점이며 release에는 없다([debug IPC](../../dev-guide/debug-ipc.md)).
 
 ## 시각 / 레이아웃
 
@@ -114,7 +116,7 @@ Toast 위에서 마우스 클릭/드래그해도 토스트는 무시하고 이�
 
 ## 합치기 / 제한
 
-같은 스코프에서 같은 메시지가 짧은 시간(기본 500ms) 내 다시 발생하면 새로 만들지 않고 **기존 토스트 수명만 갱신**(연속 Ctrl+C 깜빡임 방지). 스코프당 최대 동시 5개, 초과 시 가장 오래된(맨 위) 것 즉시 제거. 넘친 토스트를 `+N more` 같은 요약 행으로 접지 않는다. 쉬는 카드는 나이와 관계없이 모두 불투명(alpha 1)이고 불투명도는 등장·소멸 페이드에만 쓴다.
+같은 스코프에서 같은 메시지가 짧은 시간(기본 500ms) 내 다시 발생하면 새로 만들지 않고 **기존 토스트 수명만 갱신**(연속 Ctrl+C 깜빡임 방지). 스코프당(같은 모서리로 합친 열은 열당) 최대 동시 5개, 초과 시 가장 오래된(맨 위) 것 즉시 제거. 넘친 토스트를 `+N more` 같은 요약 행으로 접지 않는다. 쉬는 카드는 나이와 관계없이 모두 불투명(alpha 1)이고 불투명도는 등장·소멸 페이드에만 쓴다.
 
 본문은 **200자(유니코드 문자 기준)** 로 제한한다. 초과 시 앞 200자만 남기고 줄바꿈 + 안내 접미(`toast.char_limit_notice`)를 붙여(`<앞 200자>\n(200자 제한)`) 긴 입력 때문에 토스트가 지나치게 길어지는 것을 막는다. 길이/자르기는 char 경계로 처리해 멀티바이트에서 안전하며, coalesce 비교 이전(`push` 진입부 `truncate_message`)에 적용된다.
 

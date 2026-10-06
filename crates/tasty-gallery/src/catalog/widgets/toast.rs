@@ -203,16 +203,24 @@ pub fn draw_stack(ui: &mut egui::Ui, theme: &Theme) {
                 "content width per card, cap toast-max-width (320) · right edges align",
             ),
             (
-                "window-scope offset",
-                "toast-stack-offset-bottom (→ size-36) from the window bottom",
+                "window-scope offset (b2 · 2026-10-07)",
+                "main window: toast-stack-offset-bottom (→ size-36 = status bar 24 + 12), OFF-SCALE like the status bar and the card dims · Settings window: toast-stack-offset-bottom-settings (→ size-64 = footer 52 + 12), ON-SCALE like the footer — the stack sits above Cancel / Save",
             ),
             (
-                "link menu Copy hint",
+                "scale",
+                "every structural toast dim (scope margin 12, padding 12 × 8, gap 8, main offset) is OFF-SCALE; only the Settings offset follows the zoom",
+            ),
+            (
+                "shared corner (2026-10-07)",
+                "workspace- and pane-scope stacks that land on the same corner merge into ONE column, newest bottom, cap 5 across both",
+            ),
+            (
+                "link menu Copy hint (b2)",
                 "own action copy_link ('Copy link'), unbound by default → no hint until the user binds it; never borrow the copy binding",
             ),
             (
-                "over a native WebView",
-                "while a toast card's rect intersects a WebView, only that WebView is hidden for the card's life (its tile shows plain); others stay; a WebView receiving keys is not hidden, so the card stays under it; keyboard focus is not reclaimed (a toast never takes focus)",
+                "over a native WebView (b2)",
+                "while a toast card's rect intersects a WebView, only THAT WebView is hidden for the card's life (its tile shows plain); others stay; keyboard focus is not reclaimed (a toast never takes focus). A WebView that is RECEIVING KEYS is not hidden, so the card stays under it — accepted (2026-10-07): typing must not be lost, and a toast is transient",
             ),
         ],
         &[
