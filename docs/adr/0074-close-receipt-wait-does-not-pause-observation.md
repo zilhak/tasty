@@ -28,7 +28,7 @@ App은 journal 사실을 게시하는 동안 관측을 멈춘다. 이 동안 IPC
 | 상황 | 보장 | 근거 |
 |---|---|---|
 | 같은 surface·workspace id | 회수 중인 id는 다시 쓰이지 않는다 | id 예약은 단조 증가하며 되감지 않는다. 닫은 항목 복원도 새 id를 받는다. metadata 정리는 id가 다시 살아 있으면 거절한다 |
-| 같은 plugin disable·재기동 | 먼저 보낸 파괴 요청은 원 세대 회수로 확정된다. claim 이후에 처리되는 enable은 회수 중 surface를 새 프로세스에 다시 게시하지 않는다. 닫기 대상이 해석되기 전에 처리된 enable은 다시 게시할 수 있다(이 결정 전부터 있던 범위). 이때도 닫기는 옛 세대 회수로 확정된다 | 세대 회수 확정과 회수 게시 즉시 적용 |
+| 같은 plugin disable·재기동 | 먼저 보낸 파괴 요청은 원 세대 회수로 확정된다. 닫기를 접수한 뒤에 처리되는 enable은 그 닫기가 회수할 수 있는 surface를 새 프로세스에 다시 게시하지 않는다. 접수 뒤 해석 전까지는 접수된 닫기 목록이, claim 이후에는 회수 게시 즉시 적용이 막는다. 닫기보다 먼저 처리된 enable은 살아 있는 surface를 게시하고, 닫기는 새 프로세스의 파괴 응답으로 확정된다 | 세대 회수 확정, 접수된 닫기의 재게시 보류, 회수 게시 즉시 적용 |
 | 엔진 은퇴 | receipt가 남은 엔진은 해제하지 않는다 | 엔진 해제는 정리 항목·보류 회수가 빌 때까지 기다린다 |
 | 같은 워크스페이스의 다른 닫기 | 같은 자원을 두 번 회수하지 않는다 | 회수 대상은 이미 구조에서 빠졌다. 뒤 명령의 `Claim`·`Finish`는 여전히 일시정지한다 |
 | 사용자 창 입력 | 입력은 닫기가 반영된 구조를 대상으로 바로 처리된다 | 닫힌 surface는 이미 View·구조에 없다. 일시정지 단계의 입력 보류·재검사는 그대로다 |
@@ -58,7 +58,7 @@ App은 journal 사실을 게시하는 동안 관측을 멈춘다. 이 동안 IPC
 - 정리 `Running` 단계에 journal 쓰기나 구조 게시가 추가되면 그 단계도 일시정지해야 한다. `answer_resource_cleanup`과 `poll_resource_cleanup`이 `Running`에서 worker에 쓰기를 보내는지 확인한다.
 - id 예약이 재사용을 허용하게 바뀌면 같은 id 재사용 보장이 사라진다(`EventStore::reserve_ids`).
 - 관측 재개 첫 턴의 순서(보류 입력 → plugin pump)가 바뀌거나 enable 경로가 회수 게시보다 먼저 surface를 재게시하게 되면 즉시 적용의 필요를 다시 판단한다. 즉시 적용은 `close_receipt` 시험이 지킨다.
-- 닫기 대상 해석 단계부터 재게시를 막게 되면 위 표의 재게시 범위를 고친다.
+- 닫기 접수 경로가 늘거나 plugin을 기동하는 처리가 IPC 명령 처리·journal 턴 밖에서 일어나게 되면, 그 전에 접수된 닫기 목록을 plugin host에 넘기는지 확인한다(`sync_closing_surfaces`). 보류는 `closing_surfaces`와 `a_closing_surface_waits_for_its_close_before_republishing` 시험이 지킨다.
 - 종료 단계가 plugin pump를 돌리게 되면 `SavingLayout`의 직접 회수 처리가 필요한지 다시 판단한다.
 
 실행 결과로 확인:
