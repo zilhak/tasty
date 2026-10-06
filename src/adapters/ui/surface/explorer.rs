@@ -860,7 +860,7 @@ fn content(
         egui::vec2(ui.available_width(), body_h),
         egui::Layout::top_down(egui::Align::Min),
         |ui| {
-            if state_screen::show_for(ui, theme, view) {
+            if state_screen::show_for(ui, theme, view, &root, action) {
                 return;
             }
             egui::ScrollArea::vertical()

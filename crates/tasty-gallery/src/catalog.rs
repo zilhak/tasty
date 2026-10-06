@@ -2174,9 +2174,9 @@ pub fn pages() -> Vec<Page> {
                         ),
                         spec(
                             "explorer-states",
-                            "Empty / permission / loading · favorite + rename popups",
+                            "Empty / permission / loading / read error · favorite + rename popups",
                             Some(
-                                "Status screens fill the content area; the two small editors reuse the Popup/rename visual language.",
+                                "Status screens fill the content area; the two small editors reuse the Popup/rename visual language. A read failure that is not a permission denial gets its own state with Retry and Go up instead of the empty folder line.",
                             ),
                             components::explorer_states::draw,
                         ),

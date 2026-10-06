@@ -1,4 +1,4 @@
-<!-- source-hash: c4695b3b3db7 -->
+<!-- source-hash: bccbd01d778e -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -49,6 +49,8 @@ The file manager built into Tasty. Change a terminal with `Alt+'` > **Explorer**
 - You can keep several **New tab**s inside a Surface and view folders separately. These are separate from the Pane's Tabs.
 
 Dragging a split line to shrink an Explorer stops at the height that still leaves the toolbar, the status line and about two rows of the list (160px). When the cell is so low that the left sidebar is shorter than 240px, Favorites hide and only the Files tree shows.
+
+If a folder can't be read (the path is gone, it is not a folder, or a remote read failed), the list area shows **Can't read this folder** with the reason the operating system gave. **Retry** reads the same folder again and **Go up** goes one folder up. A missing permission shows **Permission denied** instead.
 
 Click the address bar to type a path directly; recently visited folders appear as autocompletion. Go with `Enter` or **Go**. The left tree stays fixed at the root, but the right list can go anywhere.
 
