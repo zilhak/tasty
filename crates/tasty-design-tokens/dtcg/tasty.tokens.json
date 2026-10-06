@@ -313,6 +313,10 @@
       "$type": "dimension",
       "$value": "8px"
     },
+    "size-10": {
+      "$type": "dimension",
+      "$value": "10px"
+    },
     "size-12": {
       "$type": "dimension",
       "$value": "12px"
@@ -1285,6 +1289,10 @@
     "font-size-brand-display": {
       "$type": "dimension",
       "$value": "{primitive.font-size-30}"
+    },
+    "tint-edge-width": {
+      "$type": "dimension",
+      "$value": "{primitive.size-2}"
     }
   },
   "component": {
@@ -1987,7 +1995,7 @@
     },
     "tab-scroll-arrow-glyph-size": {
       "$type": "dimension",
-      "$value": "{semantic.icon-size-xs}"
+      "$value": "{semantic.icon-size-sm}"
     },
     "tab-scroll-arrow-hover-bg": {
       "$type": "color",
@@ -3903,6 +3911,58 @@
     "dag-popup-height": {
       "$type": "dimension",
       "$value": "{primitive.size-460}"
+    },
+    "md-quote-bar-width": {
+      "$type": "dimension",
+      "$value": "{semantic.selection-edge-width}"
+    },
+    "fp-filter-max-width": {
+      "$type": "dimension",
+      "$value": "{semantic.field-width-md}"
+    },
+    "transfer-pad-x": {
+      "$type": "dimension",
+      "$value": "{primitive.size-14}"
+    },
+    "transfer-header-pad-y": {
+      "$type": "dimension",
+      "$value": "{semantic.space-md}"
+    },
+    "transfer-body-gap": {
+      "$type": "dimension",
+      "$value": "{primitive.size-10}"
+    },
+    "transfer-footer-pad-y": {
+      "$type": "dimension",
+      "$value": "{primitive.size-10}"
+    },
+    "transfer-well-pad-y": {
+      "$type": "dimension",
+      "$value": "{semantic.space-sm}"
+    },
+    "transfer-well-pad-x": {
+      "$type": "dimension",
+      "$value": "{primitive.size-10}"
+    },
+    "preset-split-divider-width": {
+      "$type": "dimension",
+      "$value": "{semantic.selection-edge-width}"
+    },
+    "preset-leaf-selected-ring-width": {
+      "$type": "dimension",
+      "$value": "{semantic.focus-ring-width}"
+    },
+    "palette-list-max-height": {
+      "$type": "dimension",
+      "$value": "{primitive.size-320}"
+    },
+    "remote-filter-dropdown-width": {
+      "$type": "dimension",
+      "$value": "{primitive.size-240}"
+    },
+    "settings-label-width": {
+      "$type": "dimension",
+      "$value": "{primitive.size-150}"
     }
   }
 }

@@ -190,6 +190,9 @@ pub const TAB_WIDTH: LogicalPx = super::primitive::SIZE_150;
 /// `semantic.tint-border-alpha` → `{primitive.opacity-tint-border}` = 0.36
 pub const TINT_BORDER_ALPHA: f32 = super::primitive::OPACITY_TINT_BORDER;
 
+/// `semantic.tint-edge-width` → `{primitive.size-2}` = 2px
+pub const TINT_EDGE_WIDTH: LogicalPx = super::primitive::SIZE_2;
+
 /// `semantic.tint-fill-alpha` → `{primitive.opacity-tint-fill}` = 0.12
 pub const TINT_FILL_ALPHA: f32 = super::primitive::OPACITY_TINT_FILL;
 

@@ -1240,6 +1240,12 @@ impl crate::theme::Theme {
         self.item_height_interactive
     }
 
+    /// `component.fp-filter-max-width` → `{semantic.field-width-md}` = 160px
+    #[inline]
+    pub fn fp_filter_max_width(&self) -> LogicalPx {
+        self.field_width_md
+    }
+
     /// `component.fp-footer-label-width` → `{primitive.size-64}` = 64px
     #[inline]
     pub fn fp_footer_label_width(&self) -> LogicalPx {
@@ -1750,6 +1756,12 @@ impl crate::theme::Theme {
         self.border_strong()
     }
 
+    /// `component.md-quote-bar-width` → `{semantic.selection-edge-width}` = 2px
+    #[inline]
+    pub fn md_quote_bar_width(&self) -> LogicalPx {
+        self.selection_edge_width
+    }
+
     /// `component.md-quote-fg` → `{semantic.text-muted}`
     #[inline]
     pub fn md_quote_fg(&self) -> HexColor {
@@ -2134,6 +2146,12 @@ impl crate::theme::Theme {
         LogicalPx((352.0 * self.ui_zoom).round())
     }
 
+    /// `component.palette-list-max-height` → `{primitive.size-320}` = 320px
+    #[inline]
+    pub fn palette_list_max_height(&self) -> LogicalPx {
+        LogicalPx((320.0 * self.ui_zoom).round())
+    }
+
     /// `component.perm-granted-fg` → `{semantic.accent-success}`
     #[inline]
     pub fn perm_granted_fg(&self) -> HexColor {
@@ -2350,6 +2368,12 @@ impl crate::theme::Theme {
         self.font_size_micro
     }
 
+    /// `component.preset-leaf-selected-ring-width` → `{semantic.focus-ring-width}` = 2px
+    #[inline]
+    pub fn preset_leaf_selected_ring_width(&self) -> LogicalPx {
+        self.focus_ring_width
+    }
+
     /// `component.preset-leaf-summary-gap` → `{semantic.space-xs}` = 4px
     #[inline]
     pub fn preset_leaf_summary_gap(&self) -> LogicalPx {
@@ -2360,6 +2384,12 @@ impl crate::theme::Theme {
     #[inline]
     pub fn preset_leaf_value_font_size(&self) -> LogicalPx {
         self.font_size_caption
+    }
+
+    /// `component.preset-split-divider-width` → `{semantic.selection-edge-width}` = 2px
+    #[inline]
+    pub fn preset_split_divider_width(&self) -> LogicalPx {
+        self.selection_edge_width
     }
 
     /// `component.progress-fill-bg` → `{semantic.accent-primary}`
@@ -2384,6 +2414,12 @@ impl crate::theme::Theme {
     #[inline]
     pub fn progress_track_bg(&self) -> HexColor {
         self.bg_app()
+    }
+
+    /// `component.remote-filter-dropdown-width` → `{primitive.size-240}` = 240px
+    #[inline]
+    pub fn remote_filter_dropdown_width(&self) -> LogicalPx {
+        LogicalPx((240.0 * self.ui_zoom).round())
     }
 
     /// `component.remote-filter-menu-width` → `{primitive.size-240}` = 240px
@@ -2480,6 +2516,12 @@ impl crate::theme::Theme {
     #[inline]
     pub fn settings_content_max_width(&self) -> LogicalPx {
         LogicalPx((620.0 * self.ui_zoom).round())
+    }
+
+    /// `component.settings-label-width` → `{primitive.size-150}` = 150px
+    #[inline]
+    pub fn settings_label_width(&self) -> LogicalPx {
+        LogicalPx((150.0 * self.ui_zoom).round())
     }
 
     /// `component.settings-row-min-height` → `{primitive.size-32}` = 32px
@@ -2944,10 +2986,10 @@ impl crate::theme::Theme {
         self.text_disabled()
     }
 
-    /// `component.tab-scroll-arrow-glyph-size` → `{semantic.icon-size-xs}` = 12px
+    /// `component.tab-scroll-arrow-glyph-size` → `{semantic.icon-size-sm}` = 14px
     #[inline]
     pub fn tab_scroll_arrow_glyph_size(&self) -> LogicalPx {
-        self.icon_glyph_size_xs
+        self.icon_glyph_size_sm
     }
 
     /// `component.tab-scroll-arrow-hover-bg` → `{semantic.overlay-hover}`
@@ -3376,10 +3418,46 @@ impl crate::theme::Theme {
         self.corner_radius
     }
 
+    /// `component.transfer-body-gap` → `{primitive.size-10}` = 10px
+    #[inline]
+    pub fn transfer_body_gap(&self) -> LogicalPx {
+        LogicalPx((10.0 * self.ui_zoom).round())
+    }
+
+    /// `component.transfer-footer-pad-y` → `{primitive.size-10}` = 10px
+    #[inline]
+    pub fn transfer_footer_pad_y(&self) -> LogicalPx {
+        LogicalPx((10.0 * self.ui_zoom).round())
+    }
+
+    /// `component.transfer-header-pad-y` → `{semantic.space-md}` = 12px
+    #[inline]
+    pub fn transfer_header_pad_y(&self) -> LogicalPx {
+        self.spacing_md
+    }
+
+    /// `component.transfer-pad-x` → `{primitive.size-14}` = 14px
+    #[inline]
+    pub fn transfer_pad_x(&self) -> LogicalPx {
+        LogicalPx((14.0 * self.ui_zoom).round())
+    }
+
     /// `component.transfer-popup-width` → `{primitive.size-400}` = 400px
     #[inline]
     pub fn transfer_popup_width(&self) -> LogicalPx {
         LogicalPx((400.0 * self.ui_zoom).round())
+    }
+
+    /// `component.transfer-well-pad-x` → `{primitive.size-10}` = 10px
+    #[inline]
+    pub fn transfer_well_pad_x(&self) -> LogicalPx {
+        LogicalPx((10.0 * self.ui_zoom).round())
+    }
+
+    /// `component.transfer-well-pad-y` → `{semantic.space-sm}` = 8px
+    #[inline]
+    pub fn transfer_well_pad_y(&self) -> LogicalPx {
+        self.spacing_sm
     }
 
     /// `component.tree-row-bg-active` → `{semantic.surface-active}`

@@ -382,6 +382,9 @@ pub mod fp {
     /// `component.fp-filter-height` → `{semantic.control-height}` = 28px
     pub const FILTER_HEIGHT: LogicalPx = crate::generated::semantic::CONTROL_HEIGHT;
 
+    /// `component.fp-filter-max-width` → `{semantic.field-width-md}` = 160px
+    pub const FILTER_MAX_WIDTH: LogicalPx = crate::generated::semantic::FIELD_WIDTH_MD;
+
     /// `component.fp-footer-label-width` → `{primitive.size-64}` = 64px
     pub const FOOTER_LABEL_WIDTH: LogicalPx = crate::generated::primitive::SIZE_64;
 
@@ -563,6 +566,9 @@ pub mod listctrl {
 pub mod md {
     use tasty_type_geometry::length::LogicalPx;
 
+    /// `component.md-quote-bar-width` → `{semantic.selection-edge-width}` = 2px
+    pub const QUOTE_BAR_WIDTH: LogicalPx = crate::generated::semantic::SELECTION_EDGE_WIDTH;
+
     /// `component.md-table-cell-padding-x` → `{semantic.space-sm}` = 8px
     pub const TABLE_CELL_PADDING_X: LogicalPx = crate::generated::semantic::SPACE_SM;
 
@@ -695,6 +701,13 @@ pub mod notifications {
     pub const POPUP_WIDTH: LogicalPx = crate::generated::primitive::SIZE_352;
 }
 
+pub mod palette {
+    use tasty_type_geometry::length::LogicalPx;
+
+    /// `component.palette-list-max-height` → `{primitive.size-320}` = 320px
+    pub const LIST_MAX_HEIGHT: LogicalPx = crate::generated::primitive::SIZE_320;
+}
+
 pub mod perm {
     use tasty_type_geometry::length::LogicalPx;
 
@@ -796,11 +809,17 @@ pub mod preset {
     /// `component.preset-leaf-label-font-size` → `{semantic.font-size-micro}` = 10px
     pub const LEAF_LABEL_FONT_SIZE: LogicalPx = crate::generated::semantic::FONT_SIZE_MICRO;
 
+    /// `component.preset-leaf-selected-ring-width` → `{semantic.focus-ring-width}` = 2px
+    pub const LEAF_SELECTED_RING_WIDTH: LogicalPx = crate::generated::semantic::FOCUS_RING_WIDTH;
+
     /// `component.preset-leaf-summary-gap` → `{semantic.space-xs}` = 4px
     pub const LEAF_SUMMARY_GAP: LogicalPx = crate::generated::semantic::SPACE_XS;
 
     /// `component.preset-leaf-value-font-size` → `{semantic.font-size-caption}` = 11px
     pub const LEAF_VALUE_FONT_SIZE: LogicalPx = crate::generated::semantic::FONT_SIZE_CAPTION;
+
+    /// `component.preset-split-divider-width` → `{semantic.selection-edge-width}` = 2px
+    pub const SPLIT_DIVIDER_WIDTH: LogicalPx = crate::generated::semantic::SELECTION_EDGE_WIDTH;
 }
 
 pub mod progress {
@@ -815,6 +834,9 @@ pub mod progress {
 
 pub mod remote {
     use tasty_type_geometry::length::LogicalPx;
+
+    /// `component.remote-filter-dropdown-width` → `{primitive.size-240}` = 240px
+    pub const FILTER_DROPDOWN_WIDTH: LogicalPx = crate::generated::primitive::SIZE_240;
 
     /// `component.remote-filter-menu-width` → `{primitive.size-240}` = 240px
     pub const FILTER_MENU_WIDTH: LogicalPx = crate::generated::primitive::SIZE_240;
@@ -850,6 +872,9 @@ pub mod settings {
 
     /// `component.settings-content-max-width` → `{primitive.size-620}` = 620px
     pub const CONTENT_MAX_WIDTH: LogicalPx = crate::generated::primitive::SIZE_620;
+
+    /// `component.settings-label-width` → `{primitive.size-150}` = 150px
+    pub const LABEL_WIDTH: LogicalPx = crate::generated::primitive::SIZE_150;
 
     /// `component.settings-row-min-height` → `{primitive.size-32}` = 32px
     pub const ROW_MIN_HEIGHT: LogicalPx = crate::generated::primitive::SIZE_32;
@@ -1023,8 +1048,8 @@ pub mod tab {
     /// `component.tab-padding-x` → `{semantic.space-sm}` = 8px
     pub const PADDING_X: LogicalPx = crate::generated::semantic::SPACE_SM;
 
-    /// `component.tab-scroll-arrow-glyph-size` → `{semantic.icon-size-xs}` = 12px
-    pub const SCROLL_ARROW_GLYPH_SIZE: LogicalPx = crate::generated::semantic::ICON_SIZE_XS;
+    /// `component.tab-scroll-arrow-glyph-size` → `{semantic.icon-size-sm}` = 14px
+    pub const SCROLL_ARROW_GLYPH_SIZE: LogicalPx = crate::generated::semantic::ICON_SIZE_SM;
 
     /// `component.tab-scroll-arrow-width` → `{semantic.control-height-tab}` = 24px
     pub const SCROLL_ARROW_WIDTH: LogicalPx = crate::generated::semantic::CONTROL_HEIGHT_TAB;
@@ -1158,8 +1183,26 @@ pub mod tooltip {
 pub mod transfer {
     use tasty_type_geometry::length::LogicalPx;
 
+    /// `component.transfer-body-gap` → `{primitive.size-10}` = 10px
+    pub const BODY_GAP: LogicalPx = crate::generated::primitive::SIZE_10;
+
+    /// `component.transfer-footer-pad-y` → `{primitive.size-10}` = 10px
+    pub const FOOTER_PAD_Y: LogicalPx = crate::generated::primitive::SIZE_10;
+
+    /// `component.transfer-header-pad-y` → `{semantic.space-md}` = 12px
+    pub const HEADER_PAD_Y: LogicalPx = crate::generated::semantic::SPACE_MD;
+
+    /// `component.transfer-pad-x` → `{primitive.size-14}` = 14px
+    pub const PAD_X: LogicalPx = crate::generated::primitive::SIZE_14;
+
     /// `component.transfer-popup-width` → `{primitive.size-400}` = 400px
     pub const POPUP_WIDTH: LogicalPx = crate::generated::primitive::SIZE_400;
+
+    /// `component.transfer-well-pad-x` → `{primitive.size-10}` = 10px
+    pub const WELL_PAD_X: LogicalPx = crate::generated::primitive::SIZE_10;
+
+    /// `component.transfer-well-pad-y` → `{semantic.space-sm}` = 8px
+    pub const WELL_PAD_Y: LogicalPx = crate::generated::semantic::SPACE_SM;
 }
 
 pub mod tree_row {
