@@ -278,7 +278,7 @@ Auto 체인이 전 단계 실패하면 가장 확정적인 분류(취소 > 타�
 
 `remote attach` 가 대상 workspace id 를 **미리 알아야** 동작하는 것과 달리, 브라우징은 그 id 를 **발견**한다 — attach 프로필/ssh 대상에 붙어 원격 인스턴스의 워크스페이스 목록(각 `id`/`name`/`pane_count`/`busy_count`/`attached`)을 받아온다. 흐름: 접속 스펙 resolve → (SSH 터널 or `127.0.0.1:PORT` loopback 직결) → 그 포트로 `workspace.list` + `attach.list` **2회 IPC** → workspace 단위 lock 을 join 해 `attached`(타 client 점유 여부)/`holder` 를 채운다(서버측 변경 0). 순수 조회라 로컬 사용자 상태(focus/닫은항목/선택)에 닿지 않는다([포커스 독립성](../../identity.md)).
 
-이 능력은 **CLI(`remote workspaces`)와 로컬 IPC method(`remote.workspaces`) 양면**으로 노출된다(원칙 2 — 에이전트가 CLI 없이 소켓만으로도 브라우징 가능). 둘 다 동일한 코어(`tasty_remote::browse`)를 공유하며, 블로킹 SSH I/O 는 호스트 IPC 경로에서 **워커 스레드**로 돌려 이벤트루프를 막지 않는다. RA02 원격 추가 팝업의 우측 목록이 이 출력을 데이터 소스로 소비한다.
+이 능력은 **CLI(`remote workspaces`)와 로컬 IPC method(`remote.workspaces`) 양면**으로 노출된다(원칙 2 — 에이전트가 CLI 없이 소켓만으로도 브라우징 가능). 둘 다 동일한 코어(`tasty_remote::browse`)를 공유하며, 블로킹 SSH I/O 는 호스트 IPC 경로에서 **워커 스레드**로 돌려 이벤트루프를 막지 않는다. RA02 원격 추가 팝업의 우측 목록이 이 출력을 데이터 소스로 소비한다. IPC `remote.workspaces`가 실패하면 -32050으로 답하고, 문구는 `remote browse failed: <바깥 문맥>: <원격의 원인>` 처럼 원인 체인까지 담는다(`remote.attach` 생성 실패와 같은 형식).
 
 ### 원격 요청의 세션 토큰
 

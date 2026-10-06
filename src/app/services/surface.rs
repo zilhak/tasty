@@ -97,12 +97,15 @@ pub(crate) fn spawn_remote_workspaces(
                         rpc_id,
                         serde_json::to_value(list).unwrap_or(Value::Null),
                     ),
-                    Err(e) => {
-                        JsonRpcResponse::error(rpc_id, -32050, format!("remote browse failed: {e}"))
-                    }
+                    // `{e:#}`로 원인 체인까지 싣는다. remote.attach 생성 실패 응답과 같은 형식이다.
+                    Err(e) => JsonRpcResponse::error(
+                        rpc_id,
+                        -32050,
+                        format!("remote browse failed: {e:#}"),
+                    ),
                 }
             }
-            Err(e) => JsonRpcResponse::error(rpc_id, -32050, format!("{e}")),
+            Err(e) => JsonRpcResponse::error(rpc_id, -32050, format!("{e:#}")),
         };
         send_response(&response_tx, resp);
     });
@@ -116,6 +119,49 @@ pub(crate) fn no_application_state(rpc_id: Value) -> JsonRpcResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 원격이 거절하면 -32050 응답 문구에 바깥 문맥과 함께 원격의 원인까지 들어간다.
+    #[test]
+    fn a_failed_remote_browse_reports_the_remote_cause() {
+        use std::io::{BufRead, BufReader, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = std::thread::spawn(move || {
+            let (mut sock, _) = listener.accept().unwrap();
+            let mut request = String::new();
+            BufReader::new(sock.try_clone().unwrap())
+                .read_line(&mut request)
+                .unwrap();
+            sock.write_all(
+                br#"{"jsonrpc":"2.0","error":{"code":-32001,"message":"permission_denied: session_token unknown/expired/revoked"},"id":1}"#,
+            )
+            .unwrap();
+            sock.write_all(b"\n").unwrap();
+        });
+        let (tx, rx) = std::sync::mpsc::sync_channel(1);
+        spawn_remote_workspaces(
+            serde_json::json!(7),
+            &serde_json::json!({ "ssh": format!("127.0.0.1:{port}") }),
+            &tx,
+        );
+        let resp = rx
+            .recv_timeout(std::time::Duration::from_secs(30))
+            .expect("response");
+        server.join().unwrap();
+        let err = resp.error.expect("error response");
+        assert_eq!(err.code, -32050);
+        assert!(
+            err.message.starts_with("remote browse failed: "),
+            "{}",
+            err.message
+        );
+        assert!(
+            err.message
+                .contains("session_token unknown/expired/revoked"),
+            "cause missing: {}",
+            err.message
+        );
+    }
 
     #[test]
     fn remote_conn_params_reject_both_and_neither() {
