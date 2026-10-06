@@ -109,7 +109,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         theme.settings_window_height(),
     );
     let band_h = theme.titlebar_height + theme.spacing_sm; // 44
-    let footer_h = theme.item_height_interactive + theme.spacing_sm.scaled(2.0); // 44
+    let footer_h = theme.item_height_interactive + theme.spacing_md.scaled(2.0); // 52
     let mid_h =
         (window_h - band_h - footer_h - theme.border_width.scaled(2.0)).max(theme.measure_sm);
     // content 폭은 명시 계산(측정 패스에서 available_width 0 → 음수 폭 패닉 회피).
@@ -152,7 +152,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "language",
                 "language_select() — built-in 3 + packs · code fallback · missing row",
             ),
-            ("footer", "Cancel (ghost) · Save (primary)"),
+            (
+                "footer",
+                "52px · space-md size-14 · Cancel (ghost) · Save (primary)",
+            ),
         ],
         &[
             TokenChip::new("bg-sidebar", "band + L2", theme.bg_sidebar().to_egui()),
@@ -608,8 +611,11 @@ fn range_track(ui: &mut egui::Ui, theme: &Theme, width: f32, frac: f32) {
     );
 }
 
+/// 푸터 좌우 패딩. 디자인 footer `padding: space-md size-14` 의 수평값(본체와 같은 값).
+const FOOTER_PAD_X: LogicalPx = LogicalPx(14.0);
+
 fn footer(ui: &mut egui::Ui, theme: &Theme) {
-    kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
+    kit::region_sym(ui, FOOTER_PAD_X, theme.spacing_md, |ui| {
         ui.horizontal(|ui| {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 Button::new("Save")
