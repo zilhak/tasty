@@ -254,6 +254,36 @@ fn missing_result_exit_and_turn_error_stay_distinguishable() {
     }
 }
 
+/// 제출이 필요한 출력에서 답만 있으면 result_missing 이고, 그 답은 raw 에 남는다.
+#[test]
+fn a_missing_submission_keeps_the_last_answer_in_the_record() {
+    let (_td, mut mem, seq) = fresh_store();
+    let mut store = TaskStore::new(&mut mem, "host", &seq);
+    let t = store
+        .create_typed(opts(agent_cmd("claude")), review_contract())
+        .unwrap();
+    start(&mut store, &t.id);
+    // "revise" 는 출력 타입에 맞지만 제출되지 않았으므로 결과가 아니다.
+    let receipt = store
+        .complete(1, &t.id, done(json!({ report::FINAL_ANSWER: "revise" })), 2)
+        .expect("complete");
+    assert!(matches!(receipt.task.state, TaskState::Failed { .. }));
+    let typed = receipt.task.typed_result.unwrap();
+    let err = typed.error.expect("error");
+    assert_eq!(err.code, Some(FailureCode::ResultMissing));
+    assert_eq!(err.stage, FailureStage::OutputValidation);
+    assert!(
+        err.message.starts_with("result_missing: "),
+        "{}",
+        err.message
+    );
+    assert_eq!(
+        typed.raw.execution.expect("raw")[report::FINAL_ANSWER],
+        "revise"
+    );
+    assert_eq!(typed.provenance.output_source, "agent.submitted");
+}
+
 #[test]
 fn a_report_without_any_answer_is_result_missing() {
     let (_td, mut mem, seq) = fresh_store();

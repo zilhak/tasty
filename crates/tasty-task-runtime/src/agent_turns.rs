@@ -10,7 +10,7 @@ use std::sync::atomic::AtomicBool;
 
 use serde_json::{Value, json};
 use tasty_agent::task::FailureCode;
-use tasty_agent::task::agent::report;
+use tasty_agent::task::agent::{self, report};
 use tasty_agent::{SubmissionRejection, TaskId, TaskResult};
 
 const WHAT: &str = "agent turn registry";
@@ -243,19 +243,28 @@ pub fn decide(
     match &binding.ended {
         Some(TurnEnd::Error(e)) => TurnPoll::Failed(FailureCode::AgentTurnError.message(e)),
         Some(TurnEnd::Answer(answer)) => {
-            if binding.submitted.is_none() && (needs_submission || answer.is_none()) {
-                let why = if needs_submission {
-                    "the turn ended without submitting the required result (tasty agent task-submit)"
-                } else {
-                    "the turn ended without a final answer"
-                };
-                return TurnPoll::Failed(FailureCode::ResultMissing.message(why));
+            if binding.submitted.is_none() && !needs_submission && answer.is_none() {
+                return TurnPoll::Failed(
+                    FailureCode::ResultMissing.message("the turn ended without a final answer"),
+                );
             }
             let mut out = json!({
                 report::PROVIDER: binding.provider,
                 report::SURFACE_ID: surface,
                 report::FINAL_ANSWER: answer,
             });
+            // 제출 없이 끝난 회차는 결과 확정이 result_missing 으로 끝낸다. 그 기록에는 마지막 답의
+            // 발췌만 남긴다.
+            if binding.submitted.is_none()
+                && needs_submission
+                && let Some(a) = answer
+            {
+                let (excerpt, truncated) = agent::answer_excerpt(a);
+                out[report::FINAL_ANSWER] = json!(excerpt);
+                if truncated {
+                    out[report::FINAL_ANSWER_TRUNCATED] = json!(true);
+                }
+            }
             if let Some(v) = &binding.submitted {
                 out[report::SUBMITTED] = v.clone();
             }

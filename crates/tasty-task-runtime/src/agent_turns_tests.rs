@@ -129,7 +129,31 @@ fn idle_without_a_turn_end_report_stays_active_and_needs_input_waits() {
 fn turn_end_without_the_required_submission_is_result_missing() {
     let mut b = binding("a", "a#1", true);
     b.ended = Some(TurnEnd::Answer(Some("I reviewed it".into())));
-    let TurnPoll::Failed(msg) = decide(&b, 7, true, Some("idle"), 0, None) else {
+    // 제출 없는 보고를 낸다. 결과 확정이 result_missing 으로 끝내고 답은 기록에 남는다.
+    let TurnPoll::Done(r) = decide(&b, 7, true, Some("idle"), 0, None) else {
+        panic!("expected a report without a submission");
+    };
+    let out = r.output.unwrap();
+    assert!(out.get("submitted").is_none());
+    assert_eq!(out["final_answer"], json!("I reviewed it"));
+    assert!(out.get("final_answer_truncated").is_none());
+    // 기록에는 상한까지만 남긴다.
+    let long = "가".repeat(tasty_agent::task::agent::ANSWER_EXCERPT_CHARS + 5);
+    b.ended = Some(TurnEnd::Answer(Some(long)));
+    let TurnPoll::Done(r) = decide(&b, 7, true, Some("idle"), 0, None) else {
+        panic!("expected a report without a submission");
+    };
+    let out = r.output.unwrap();
+    assert_eq!(
+        out["final_answer"].as_str().unwrap().chars().count(),
+        tasty_agent::task::agent::ANSWER_EXCERPT_CHARS
+    );
+    assert_eq!(out["final_answer_truncated"], json!(true));
+    b.ended = Some(TurnEnd::Answer(Some("I reviewed it".into())));
+    // string 출력에서 답이 없으면 그 자리에서 result_missing 이다.
+    let mut none = binding("a", "a#1", true);
+    none.ended = Some(TurnEnd::Answer(None));
+    let TurnPoll::Failed(msg) = decide(&none, 7, false, Some("idle"), 0, None) else {
         panic!("expected failure");
     };
     assert_eq!(

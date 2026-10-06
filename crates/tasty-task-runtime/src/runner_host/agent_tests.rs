@@ -260,13 +260,13 @@ fn a_structured_output_needs_a_submission_and_the_new_session_is_told_how() {
         "claude",
         TurnEvent::Ended(TurnEnd::Answer(Some("I think revise".into()))),
     );
-    let PollOutcome::Failed(e) = exec.poll(&h) else {
-        panic!("expected failure");
+    // 제출이 없으므로 보고에는 답만 있다. 결과 확정이 result_missing 으로 끝낸다.
+    let PollOutcome::Done(r) = exec.poll(&h) else {
+        panic!("expected a report without a submission");
     };
-    assert_eq!(
-        FailureCode::parse_message(&e),
-        Some(FailureCode::ResultMissing)
-    );
+    let out = r.output.unwrap();
+    assert!(out.get(report::SUBMITTED).is_none());
+    assert_eq!(out[report::FINAL_ANSWER], "I think revise");
 }
 
 #[test]

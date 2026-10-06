@@ -1,4 +1,4 @@
-<!-- source-hash: 33e0476cc16c -->
+<!-- source-hash: cf336d39af9e -->
 <a id="task-dag"></a>
 
 # Task workflows (DAG)
@@ -158,7 +158,7 @@ An `agent` task sends one instruction to a Claude or Codex session and takes the
 - Without a result type, the last answer of the turn becomes a string result.
 - With a result type, as in the example, the agent has to hand in a value with `tasty agent task-submit`. How to do that and the type are added to the end of the instruction. The value is checked right away and becomes the result when the turn ends. A verdict such as `revise` is a successful result.
 - A task that takes input adds `"input_mapping": {"input_block": true}`. The input is appended to the instruction as JSON.
-- The task fails when the turn ends without an answer, the turn ends with an error, the session ends, or `timeout_ms` passes. `task-get` shows which one happened.
+- The task fails when the turn ends without an answer, the turn ends with an error, the session ends, or `timeout_ms` passes. `task-get` shows which one happened. When the turn ends without the value being handed in, the first 2000 characters of the turn's last answer stay in the failure record.
 - While the agent waits for input such as a permission prompt, the task stays running and `task-get` shows a `phase: awaiting_input` line and a line like `agent session: claude surface 12, awaiting input since …`.
 - Finishing or cancelling the task does not close the session. If Tasty restarts, running agent tasks fail.
 

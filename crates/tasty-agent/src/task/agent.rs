@@ -44,6 +44,20 @@ pub mod report {
     pub const SUBMITTED: &str = "submitted";
     pub const PROVIDER: &str = "provider";
     pub const SURFACE_ID: &str = "surface_id";
+    /// 결과 없이 끝난 회차에서 `final_answer` 를 [`super::ANSWER_EXCERPT_CHARS`] 로 자른 경우 true.
+    pub const FINAL_ANSWER_TRUNCATED: &str = "final_answer_truncated";
+}
+
+/// 결과 없이 끝난 회차의 기록에 남기는 마지막 답의 최대 문자 수. 진단용 발췌라 출력 크기
+/// 상한(256KiB)보다 훨씬 작게 둔다.
+pub const ANSWER_EXCERPT_CHARS: usize = 2000;
+
+/// 마지막 답의 앞부분 발췌와 잘렸는지 여부.
+pub fn answer_excerpt(answer: &str) -> (String, bool) {
+    match answer.char_indices().nth(ANSWER_EXCERPT_CHARS) {
+        Some((cut, _)) => (answer[..cut].to_string(), true),
+        None => (answer.to_string(), false),
+    }
 }
 
 /// 생성 시 agent command 를 검사한다.
@@ -80,13 +94,18 @@ pub fn needs_submission(contract: &super::TaskContract, command: &super::TaskCom
     )
 }
 
-/// 실행 보고에서 출력 후보와 그 출처를 고른다. 명시 제출이 최종 답변보다 우선한다.
+/// 실행 보고에서 출력 후보와 그 출처를 고른다. 명시 제출이 최종 답변보다 우선하고, 제출이
+/// 필요한 출력이면 최종 답변은 후보가 아니다(기록용 발췌일 뿐이다).
 pub(crate) fn candidate(
     report: Option<&serde_json::Value>,
+    needs_submission: bool,
 ) -> Option<(serde_json::Value, &'static str)> {
     let report = report?;
     if let Some(v) = report.get(report::SUBMITTED) {
         return Some((v.clone(), "agent.submitted"));
+    }
+    if needs_submission {
+        return None;
     }
     report
         .get(report::FINAL_ANSWER)

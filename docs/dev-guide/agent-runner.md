@@ -821,7 +821,7 @@ DAG 요약(`agent.dag_list`·`agent.dag_get`)의 `state_counts.not_selected` 는
 
 | 상황 | 결과 |
 |---|---|
-| 턴이 끝났는데 필요한 결과가 없다(제출 없음, 최종 답변 없음) | Failed, `code: result_missing`, stage `output_validation` |
+| 턴이 끝났는데 필요한 결과가 없다(제출 없음, 최종 답변 없음) | Failed, `code: result_missing`, stage `output_validation`. 제출이 없었으면 그 턴의 마지막 답을 앞에서 2000자(`ANSWER_EXCERPT_CHARS`)까지 `raw.execution.final_answer` 에 남기고, 잘랐으면 `final_answer_truncated: true` 를 붙인다. 답이 출력 타입에 맞아도 제출하지 않았으면 결과가 아니다 |
 | 턴이 오류로 끝났다(Claude StopFailure, Codex interrupt) | Failed, `agent_turn_error` |
 | 세션이 끝났다(`exited`) | Failed, `agent_exited` |
 | `timeout_ms` 초과 | Failed, `timed_out` |

@@ -755,22 +755,36 @@ pub fn finalize_result(task: &Task, contract: &TaskContract, reported: &TaskResu
             }
         },
         TaskCommand::WaitBarrier { .. } => (Value::Null, "wait_barrier.closed"),
-        TaskCommand::Agent { .. } => match super::agent::candidate(reported.output.as_ref()) {
-            Some(found) => found,
-            None => {
-                return failed(
-                    FailureStage::OutputValidation,
-                    TaskFailure {
-                        code: Some(FailureCode::ResultMissing),
-                        ..TaskFailure::new(
-                            FailureStage::OutputValidation,
-                            "the agent turn ended without a final answer or a submitted result",
+        TaskCommand::Agent { .. } => {
+            let needs_submission = super::agent::needs_submission(contract, &task.command);
+            match super::agent::candidate(reported.output.as_ref(), needs_submission) {
+                Some(found) => found,
+                None => {
+                    let (why, source) = if needs_submission {
+                        (
+                            "the turn ended without submitting the required result (tasty agent task-submit)",
+                            "agent.submitted",
                         )
-                    },
-                    "agent.final_answer",
-                );
+                    } else {
+                        (
+                            "the agent turn ended without a final answer",
+                            "agent.final_answer",
+                        )
+                    };
+                    return failed(
+                        FailureStage::OutputValidation,
+                        TaskFailure {
+                            code: Some(FailureCode::ResultMissing),
+                            ..TaskFailure::new(
+                                FailureStage::OutputValidation,
+                                FailureCode::ResultMissing.message(why),
+                            )
+                        },
+                        source,
+                    );
+                }
             }
-        },
+        }
         TaskCommand::Custom { .. } | TaskCommand::Reduce { .. } => {
             let source = if matches!(task.command, TaskCommand::Custom { .. }) {
                 "custom.response"
