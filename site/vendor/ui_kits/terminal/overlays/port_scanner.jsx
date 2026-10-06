@@ -1,3 +1,5 @@
+// 2026-10-06 — table metrics: header AND body rows = --tasty-table-cell-height (28, on-scale); header pad-x =
+// --tasty-table-cell-padding-x (12); body scroll min height = one row (table-cell-height). No port-scanner-only sizes.
 // Tasty UI kit — Listening ports popup (Tools › Listening ports...).
 // Mirrors zilhak/tasty → src/adapters/ui/popup/port_scanner.rs
 //   Popup: id "port_scanner", headless, close_on_outside_click.

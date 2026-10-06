@@ -88,6 +88,7 @@
   --tasty-size-4:   4px;
   --tasty-size-6:   6px;  /* compact status dot — dots inside 24px-tall chrome (tab strip, status bar, sidebar rail) */
   --tasty-size-8:   8px;
+  --tasty-size-10:  10px; /* off-grid inset kept from the transfer popup (footer pad-y · body gap · well pad-x) — 2026-10-06 */
   --tasty-size-12:  12px;
   --tasty-size-14:  14px;
   --tasty-size-16:  16px;

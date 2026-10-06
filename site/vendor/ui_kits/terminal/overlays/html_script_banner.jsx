@@ -131,7 +131,21 @@ function HsPage() {
 }
 
 // one HTML surface: tab strip → [inset banner] → WebView rect
-function HtmlSurfaceG({ banner = "blocked", marker = null, remote = false, hover = false, narrow = false, width, height = 260, label = "report.html" }) {
+// failed (2026-10-06): the document never committed (web process died / load error). The host chrome's
+// failure state replaces the page. DECISION: in this state there is NO script banner and NO tab lock / script
+// marker — both describe a document that is not there, and Allow would allow nothing. A reload that commits
+// re-derives banner + marker from the new document. (Passing banner/marker with failed draws the old, wrong mix.)
+function HsFailed({ url = "file:///Users/me/report.html" }) {
+  const DsIcon = window.TastyDesignSystem_41fd3f.Icon;
+  return (
+    <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "var(--tasty-space-sm)", padding: "var(--tasty-space-md)" }}>
+      <span style={{ display: "inline-flex", color: "var(--tasty-accent-danger)" }}><DsIcon name="alertCircle" size="var(--tasty-icon-size-md)" /></span>
+      <span style={{ fontSize: "var(--tasty-font-size-body)", color: "var(--tasty-accent-danger)" }}>Failed to load</span>
+      <span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-disabled)", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{url}</span>
+    </div>
+  );
+}
+function HtmlSurfaceG({ banner = "blocked", marker = null, remote = false, hover = false, narrow = false, width, height = 260, label = "report.html", failed = false }) {
   return (
     <div style={{ width, height, flex: width ? "none" : 1, minWidth: 0, display: "flex", flexDirection: "column", background: "var(--tasty-bg-panel)", overflow: "hidden" }}>
       <div style={{ display: "flex", flex: "none", background: "var(--tasty-bg-sidebar)", borderBottom: "var(--tasty-border-width) solid var(--tasty-separator)" }}>
@@ -142,7 +156,7 @@ function HtmlSurfaceG({ banner = "blocked", marker = null, remote = false, hover
           <HtmlScriptBanner state={banner} remote={remote} hover={hover} narrow={narrow} />
         </div>
       )}
-      <HsPage />
+      {failed ? <HsFailed /> : <HsPage />}
     </div>
   );
 }

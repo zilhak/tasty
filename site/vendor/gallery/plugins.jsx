@@ -587,9 +587,9 @@ function MarkdownDoc({ editing = false }) {
         rows={[["surface", "viewer", "12"], ["popup", "overlay", "8"], ["banner", "notice", "3"]]}
       />
       <MdH level={3}>Blockquote</MdH>
-      <div style={{ borderLeft: "2px solid var(--tasty-md-quote-bar)", paddingLeft: 12, margin: "0 0 12px", color: "var(--tasty-md-quote-fg)", fontSize: 13, lineHeight: 1.6 }}>
+      <div style={{ borderLeft: "var(--tasty-md-quote-bar-width) solid var(--tasty-md-quote-bar)", paddingLeft: 12, margin: "0 0 12px", color: "var(--tasty-md-quote-fg)", fontSize: 13, lineHeight: 1.6 }}>
         Quoted text reads one tone down (muted) with a left bar.
-        <div style={{ borderLeft: "2px solid var(--tasty-md-quote-bar)", paddingLeft: 12, marginTop: 6 }}>Nested quote, one level deeper.</div>
+        <div style={{ borderLeft: "var(--tasty-md-quote-bar-width) solid var(--tasty-md-quote-bar)", paddingLeft: 12, marginTop: 6 }}>Nested quote, one level deeper.</div>
       </div>
       <div style={{ height: 1, background: "var(--tasty-md-rule)", margin: "16px 0" }} />
       <div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>Horizontal rule above · trailing space below.</div>

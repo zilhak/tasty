@@ -715,16 +715,22 @@ const L2 = {
 const EXT_SEED = [
   { ext: ".md", rows: [["Markdown viewer", true], ["Editor", true], ["html-preview", false]] },
   { ext: ".log", rows: [["Log viewer", true]] },
+  { ext: ".ipynb", missing: true, rows: [] },
   { ext: ".html", rows: [["HTML viewer", true], ["Editor", true]] },
 ];
+// 2026-10-06 — group header = .ext · [Tag disabled "not installed"] · spacer · [Reset | Remove] (ghost Button sm),
+// min-height button-height-sm. Reset shows only once the order differs from install order (custom); Remove only on a
+// not-installed group (no enabled detector supports it), which has no rows. Both edit the draft; no confirm.
 function ExtensionMapping({ detectors = true }) {
   const DsIcon = window.TastyDesignSystem_41fd3f.Icon;
   const [map, setMap] = React.useState(EXT_SEED);
   const [draft, setDraft] = React.useState("");
   const move = (gi, i, d) => setMap((m) => m.map((g, j) => {
     if (j !== gi) return g;
-    const rows = g.rows.slice(); const t = rows[i]; rows[i] = rows[i + d]; rows[i + d] = t; return { ...g, rows };
+    const rows = g.rows.slice(); const t = rows[i]; rows[i] = rows[i + d]; rows[i + d] = t; return { ...g, rows, custom: true };
   }));
+  const reset = (gi) => setMap((m) => m.map((g, j) => j === gi ? { ...g, custom: false, rows: (EXT_SEED.find((s) => s.ext === g.ext) || g).rows } : g));
+  const remove = (gi) => setMap((m) => m.filter((_, j) => j !== gi));
   const add = () => { const e = draft.trim(); if (!e || !detectors) return; setMap((m) => [...m, { ext: e.startsWith(".") ? e : "." + e, rows: [["Editor", true]] }]); setDraft(""); };
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-md)" }}>
@@ -736,7 +742,13 @@ function ExtensionMapping({ detectors = true }) {
         const cand = g.rows.filter(([, c]) => c).length;
         return (
           <div key={g.ext} style={{ display: "flex", flexDirection: "column" }}>
-            <div style={{ fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-secondary)", padding: "var(--tasty-space-xs) 0" }}>{g.ext}</div>
+            <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", minHeight: "var(--tasty-button-height-sm)", padding: "var(--tasty-space-xs) 0", borderBottom: g.missing ? "var(--tasty-border-width) solid var(--tasty-separator)" : undefined }}>
+              <span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-caption)", color: g.missing ? "var(--tasty-text-disabled)" : "var(--tasty-text-secondary)" }}>{g.ext}</span>
+              {g.missing && <Tag disabled>not installed</Tag>}
+              <span style={{ flex: 1 }} />
+              {g.custom && <Button variant="ghost" size="sm" title="Remove the custom priority for this extension (revert to install order)." onClick={() => reset(gi)}>Reset</Button>}
+              {g.missing && <Button variant="ghost" size="sm" onClick={() => remove(gi)}>Remove</Button>}
+            </div>
             {g.rows.map(([name, c], i) => (
               <div key={name} style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", minHeight: "var(--tasty-settings-row-min-height)",
                 borderBottom: "var(--tasty-border-width) solid var(--tasty-separator)" }}>
@@ -770,7 +782,7 @@ function SettingsWindow({ theme, onTheme, uiScale, onUiScale, onClose }) {
   // + internal scroll (list full-width, detail table scrolls). It renders
   // full-bleed — outside the standard padded/scrolling content wrapper.
   const fullBleed = l1 === "Keybindings" && (l2 === "Preset" || l2 === "Import / Export");
-  const pickL1 = (t) => { setL1(t); setL2(L2[t][0] ?? null); setFilter(""); };
+  const pickL1 = (t) => { setL1(t); setL2(L2[t][0] || null); setFilter(""); };
   const shown = L2[l1].filter((s) => s.toLowerCase().includes(filter.toLowerCase()));
 
   const Row = ({ label, hint, children }) => (

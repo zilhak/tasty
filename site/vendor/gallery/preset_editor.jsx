@@ -263,10 +263,10 @@
       }
     };
     const bandStyle = {
-      left:   { left: 0, top: 0, bottom: 0, width: "30%", borderRight: "2px solid var(--tasty-preset-split-zone-border)" },
-      right:  { right: 0, top: 0, bottom: 0, width: "30%", borderLeft: "2px solid var(--tasty-preset-split-zone-border)" },
-      top:    { left: 0, right: 0, top: 0, height: "30%", borderBottom: "2px solid var(--tasty-preset-split-zone-border)" },
-      bottom: { left: 0, right: 0, bottom: 0, height: "30%", borderTop: "2px solid var(--tasty-preset-split-zone-border)" },
+      left:   { left: 0, top: 0, bottom: 0, width: "30%", borderRight: "var(--tasty-preset-split-divider-width) solid var(--tasty-preset-split-zone-border)" },
+      right:  { right: 0, top: 0, bottom: 0, width: "30%", borderLeft: "var(--tasty-preset-split-divider-width) solid var(--tasty-preset-split-zone-border)" },
+      top:    { left: 0, right: 0, top: 0, height: "30%", borderBottom: "var(--tasty-preset-split-divider-width) solid var(--tasty-preset-split-zone-border)" },
+      bottom: { left: 0, right: 0, bottom: 0, height: "30%", borderTop: "var(--tasty-preset-split-divider-width) solid var(--tasty-preset-split-zone-border)" },
     };
 
     return (
@@ -281,7 +281,7 @@
           alignItems: "center", justifyContent: "center", gap: 6, padding: 6, overflow: "hidden",
           background: "var(--tasty-bg-app)", cursor: edit ? (zone ? "crosshair" : "pointer") : "default",
           boxShadow: selected
-            ? "inset 0 0 0 2px var(--tasty-accent-primary)"
+            ? "inset 0 0 0 var(--tasty-preset-leaf-selected-ring-width) var(--tasty-accent-primary)"
             : edit ? "inset 0 0 0 1px var(--tasty-separator)" : "none",
         }}
       >
@@ -824,7 +824,7 @@
           </Stage>
           <Meta
             specs={[["boxes", "header / scroll body / fixed footer"], ["header", "44px — same as the toolbar it replaces"], ["body", "16px padding · 12px field gap · max 460"], ["footer", "52px fixed · 0 14px · Cancel ghost + OK primary"], ["OK", "disabled until draft ≠ saved"], ["keys", "Esc = Cancel · Enter in an input = OK"], ["structure keys", "inert while open (preview hidden)"], ["after OK/Cancel", "back to preview, leaf stays selected"]]}
-            tokens={[{ tok: "--tasty-preset-cfg-header-height", use: "header (44)", color: "var(--tasty-bg-panel)" }, { tok: "--tasty-preset-cfg-footer-height", use: "footer (52)", color: "var(--tasty-bg-panel)" }, { tok: "--tasty-preset-cfg-form-max-width", use: "form column cap (460)", color: "var(--tasty-bg-panel)" }, { tok: "--tasty-preset-cfg-draft-fg", use: "unsaved dot", color: "var(--tasty-accent-warning)" }, { tok: "--tasty-preset-cfg-dim-opacity", use: "list + scope while open", color: "var(--tasty-bg-sidebar)" }]} />
+            tokens={[{ tok: "--tasty-preset-cfg-header-height", use: "header (44)" }, { tok: "--tasty-preset-cfg-footer-height", use: "footer (52)" }, { tok: "--tasty-preset-cfg-form-max-width", use: "form column cap (460)" }, { tok: "--tasty-preset-cfg-draft-fg", use: "unsaved dot", color: "var(--tasty-accent-warning)" }, { tok: "--tasty-preset-cfg-dim-opacity", use: "list + scope while open" }, { tok: "--tasty-bg-panel", use: "screen fill", color: "var(--tasty-bg-panel)" }, { tok: "--tasty-separator", use: "header / footer rule", color: "var(--tasty-separator)" }]} />
           <Do><b>Do</b> keep the three boxes independent: only the body scrolls; header and footer never move, so Cancel / OK sit in the same place for a two-field terminal and a twenty-field plugin.</Do>
           <Dont><b>Don't</b> show “saved automatically” while the screen is open — it is not true for the draft. The toolbar is replaced wholesale (decision B) so the two save models never appear side by side; the header's <b>unsaved</b> dot is the only persistence cue on this screen.</Dont>
         </Spec>

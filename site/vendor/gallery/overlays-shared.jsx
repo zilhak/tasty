@@ -111,12 +111,12 @@ function ApprovalFrame() {
   return (
     <div style={{ width: 440, background: "var(--tasty-bg-panel)", border: "1px solid var(--tasty-border-strong)",
       borderRadius: "var(--tasty-radius)", overflow: "hidden", boxShadow: "var(--tasty-shadow-modal)" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 14px", borderBottom: "1px solid var(--tasty-separator)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", padding: "var(--tasty-transfer-header-pad-y) var(--tasty-transfer-pad-x)", borderBottom: "1px solid var(--tasty-separator)" }}>
         <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--tasty-accent-agent)" }} />
         <span style={{ fontSize: 14, fontWeight: 600 }}>Approve agent action</span>
         <Tag variant="agent" style={{ marginLeft: "auto" }}>agent</Tag>
       </div>
-      <div style={{ padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ padding: "var(--tasty-transfer-pad-x)", display: "flex", flexDirection: "column", gap: "var(--tasty-transfer-body-gap)" }}>
         <p style={{ margin: 0, fontSize: 13, color: "var(--tasty-text-secondary)", lineHeight: 1.5 }}>
           The agent <b style={{ color: "var(--tasty-text-primary)" }}>ai-review</b> wants to run a command in <span className="ic">s_01HXK9</span>:
         </p>
@@ -127,7 +127,7 @@ git push --force origin main</pre>
           <Tag variant="danger" dot>destructive</Tag><Tag>fs:write</Tag><Tag>net</Tag>
         </div>
       </div>
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, padding: "10px 14px", borderTop: "1px solid var(--tasty-separator)" }}>
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: "var(--tasty-space-sm)", padding: "var(--tasty-transfer-footer-pad-y) var(--tasty-transfer-pad-x)", borderTop: "1px solid var(--tasty-separator)" }}>
         <Button variant="ghost">Deny</Button>
         <Button variant="secondary">Allow once</Button>
         <Button variant="agent">Always allow</Button>
@@ -197,7 +197,7 @@ function SettingsFrame() {
             </div>
             <p style={{ fontSize: 12, color: "var(--tasty-text-muted)", margin: 0, lineHeight: 1.5 }}>Selecting a preset resets all surface colors.</p>
           </div>
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, padding: "10px 14px", borderTop: "1px solid var(--tasty-separator)" }}>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: "var(--tasty-space-sm)", padding: "var(--tasty-transfer-footer-pad-y) var(--tasty-transfer-pad-x)", borderTop: "1px solid var(--tasty-separator)" }}>
             <Button variant="ghost">Cancel</Button><Button variant="primary">Save</Button>
           </div>
         </div>
@@ -254,7 +254,7 @@ function SettingsGeneralOverlayFrame() {
             </div>
             <p style={{ fontSize: 12, color: "var(--tasty-text-muted)", margin: 0, lineHeight: 1.5 }}>How long a toast stays on screen before it auto-dismisses. Drag left–right to adjust, or click to type a value.</p>
           </div>
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, padding: "10px 14px", borderTop: "1px solid var(--tasty-separator)" }}>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: "var(--tasty-space-sm)", padding: "var(--tasty-transfer-footer-pad-y) var(--tasty-transfer-pad-x)", borderTop: "1px solid var(--tasty-separator)" }}>
             <Button variant="ghost">Cancel</Button><Button variant="primary">Save</Button>
           </div>
         </div>
@@ -312,7 +312,7 @@ function SettingsRemoteTransferFrame() {
             </div>
             <p style={{ fontSize: 12, color: "var(--tasty-text-muted)", margin: 0, lineHeight: 1.5 }}>Total the folder may hold. A transfer that would push it past this limit is rejected before it starts.</p>
           </div>
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, padding: "10px 14px", borderTop: "1px solid var(--tasty-separator)" }}>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: "var(--tasty-space-sm)", padding: "var(--tasty-transfer-footer-pad-y) var(--tasty-transfer-pad-x)", borderTop: "1px solid var(--tasty-separator)" }}>
             <Button variant="ghost">Cancel</Button><Button variant="primary">Save</Button>
           </div>
         </div>
@@ -326,12 +326,12 @@ function TransferProgressFrame({ name = "sprint-42-demo.mp4", pct = 27, done = "
   return (
     <div style={{ width: "var(--tasty-transfer-popup-width)", background: "var(--tasty-bg-panel)", border: "1px solid var(--tasty-border-strong)",
       borderRadius: "var(--tasty-radius)", overflow: "hidden", boxShadow: "var(--tasty-shadow-modal)" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 14px", borderBottom: "1px solid var(--tasty-separator)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", padding: "var(--tasty-transfer-header-pad-y) var(--tasty-transfer-pad-x)", borderBottom: "1px solid var(--tasty-separator)" }}>
         <span style={{ display: "inline-flex", color: "var(--tasty-text-muted)" }}>{ic.download}</span>
         <span style={{ fontSize: 14, fontWeight: 600 }}>Receiving file</span>
         <span style={{ marginLeft: "auto", fontFamily: "var(--tasty-font-mono)", fontSize: 12, color: "var(--tasty-text-muted)" }}>{pct}%</span>
       </div>
-      <div style={{ padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ padding: "var(--tasty-transfer-pad-x)", display: "flex", flexDirection: "column", gap: "var(--tasty-transfer-body-gap)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
           <span style={{ display: "inline-flex", flex: "none", color: "var(--tasty-text-muted)" }}>{ic.file}</span>
           <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
@@ -344,7 +344,7 @@ function TransferProgressFrame({ name = "sprint-42-demo.mp4", pct = 27, done = "
           <span>{done} / {total}</span><span>{rate}</span>
         </div>
       </div>
-      <div style={{ display: "flex", justifyContent: "flex-end", padding: "10px 14px", borderTop: "1px solid var(--tasty-separator)" }}>
+      <div style={{ display: "flex", justifyContent: "flex-end", padding: "var(--tasty-transfer-footer-pad-y) var(--tasty-transfer-pad-x)", borderTop: "1px solid var(--tasty-separator)" }}>
         <Button variant="ghost">Cancel</Button>
       </div>
     </div>
@@ -356,18 +356,18 @@ function TransferErrorFrame({ retry = false, name = "sprint-42-demo.mp4", reason
   return (
     <div style={{ width: "var(--tasty-transfer-popup-width)", background: "var(--tasty-bg-panel)", border: "1px solid var(--tasty-border-strong)",
       borderRadius: "var(--tasty-radius)", overflow: "hidden", boxShadow: "var(--tasty-shadow-modal)" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 14px", borderBottom: "1px solid var(--tasty-separator)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", padding: "var(--tasty-transfer-header-pad-y) var(--tasty-transfer-pad-x)", borderBottom: "1px solid var(--tasty-separator)" }}>
         <span style={{ display: "inline-flex", color: "var(--tasty-accent-danger)" }}>{ic.warn}</span>
         <span style={{ fontSize: 14, fontWeight: 600 }}>Transfer failed</span>
       </div>
-      <div style={{ padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ padding: "var(--tasty-transfer-pad-x)", display: "flex", flexDirection: "column", gap: "var(--tasty-transfer-body-gap)" }}>
         <p style={{ margin: 0, fontSize: 13, color: "var(--tasty-text-secondary)", lineHeight: 1.5 }}>
           <b style={{ color: "var(--tasty-text-primary)", fontFamily: "var(--tasty-font-mono)", fontWeight: 600 }}>{name}</b> could not be received.
         </p>
         <div style={{ background: "var(--tasty-bg-app)", border: "1px solid var(--tasty-separator)", borderRadius: "var(--tasty-radius)",
-          padding: "8px 10px", fontFamily: "var(--tasty-font-mono)", fontSize: 12, color: "var(--tasty-accent-danger)" }}>{reason}</div>
+          padding: "var(--tasty-transfer-well-pad-y) var(--tasty-transfer-well-pad-x)", fontFamily: "var(--tasty-font-mono)", fontSize: 12, color: "var(--tasty-accent-danger)" }}>{reason}</div>
       </div>
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, padding: "10px 14px", borderTop: "1px solid var(--tasty-separator)" }}>
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: "var(--tasty-space-sm)", padding: "var(--tasty-transfer-footer-pad-y) var(--tasty-transfer-pad-x)", borderTop: "1px solid var(--tasty-separator)" }}>
         {retry ? <Button variant="ghost">Dismiss</Button> : null}
         {retry ? <Button variant="secondary">Retry</Button> : <Button variant="secondary">Dismiss</Button>}
       </div>
@@ -539,7 +539,7 @@ function RemoteFrame({ tab = "profiles", ssh = "hosts" }) {
       <div style={{ display: "flex", gap: 1, flex: "none" }}>
         <IconButton size="sm" aria-label="Re-detect">{ic.refresh}</IconButton>
         <IconButton size="sm" aria-label="Edit">{ic.edit}</IconButton>
-        <IconButton size="sm" aria-label="Delete">{ic.x}</IconButton>
+        <IconButton size="sm" aria-label="Delete"><Icon name="trash" /></IconButton>
       </div>
     </div>
   );
@@ -564,7 +564,7 @@ function RemoteFrame({ tab = "profiles", ssh = "hosts" }) {
       </div>
       <div style={{ display: "flex", gap: 1, flex: "none" }}>
         <IconButton size="sm" aria-label="Edit">{ic.edit}</IconButton>
-        <IconButton size="sm" aria-label="Delete">{ic.x}</IconButton>
+        <IconButton size="sm" aria-label="Delete"><Icon name="trash" /></IconButton>
       </div>
     </div>
   );
@@ -961,8 +961,9 @@ function FhHeader({ state, path }) {
           T5 — the cut is driven by the MEASURED line box (390 inside the 420
           frame: 420 − 1px border × 2 − 14px inset × 2), at a segment boundary:
           drop whole leading segments and prefix "…/" until the rest fits.
-          70 mono chars at 11px is the derived cap
-          where measuring is not available (D2Coding 5.5px per char). A single segment
+          65 mono chars at 11px is the derived cap where measuring is not
+          available: 390 / 6 — D2Coding 11px is 5.56px nominal but each glyph ADVANCES
+          a whole 6px once rounded (2026-10-06; was 70 / 5.5, which overran by ~30px). A single segment
           longer than the line is the one case that cuts mid-segment. */}
       <span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: 11, color: "var(--tasty-text-muted)",
         whiteSpace: "nowrap", overflow: "hidden", textOverflow: "clip", minWidth: 0 }}>
@@ -2681,7 +2682,7 @@ function FpHostBadge({ host }) {
     </span>
   );
 }
-function FilePickerFrame({ state = "loaded", remote = false, indicator = "badge", multi = false, filterOpen = false, mode = "open", save = "new", deep = false, crumbMenu = false, folderSel = false, w = 640, h = 480, pathKind, single = false }) {
+function FilePickerFrame({ state = "loaded", remote = false, indicator = "badge", multi = false, filters = [], mode = "open", save = "new", deep = false, crumbMenu = false, folderSel = false, w = 640, h = 480, pathKind, single = false }) {
   const host = "deploy@10.0.4.12";
   const saving = mode === "save";
   const deepTail = [{ label: "tasty" }, { label: "config" }, { label: "keybindings" }, { label: "exports" }, { label: "2026-09", current: true }];
@@ -2781,12 +2782,18 @@ function FilePickerFrame({ state = "loaded", remote = false, indicator = "badge"
           <span style={{ flex: 1, minWidth: 0, display: "flex" }}>
             <Input block defaultValue={saving ? saveName : folderSel ? "" : state === "loaded" ? fileName : ""} placeholder={saving ? "Type a file name" : "No file selected"} />
           </span>
-          <span style={{ flex: "none", position: "relative" }}>
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 6, height: "var(--tasty-fp-filter-height)", padding: "0 8px", border: "1px solid var(--tasty-border-strong)", borderRadius: "var(--tasty-radius)",
-              background: "var(--tasty-bg-panel)", fontSize: 12, color: "var(--tasty-text-secondary)", cursor: "pointer", whiteSpace: "nowrap" }}>
-              All files <span style={{ display: "inline-flex", color: "var(--tasty-text-muted)" }}><Icon name="chevronDown" size={13} /></span>
-            </span>
-          </span>
+          {filters.length > 0 && (() => {
+            /* 2026-10-06 — READ-ONLY readout of the caller's filter: no chevron, no hover, not focusable.
+               Hidden when the caller passes no filter. Content width up to fp-filter-max-width,
+               then end-ellipsis; the tooltip carries the full list. */
+            const label = filters.map((e) => "*." + e).join(", ");
+            return (
+              <span title={"Showing " + label} style={{ flex: "none", display: "inline-flex", alignItems: "center", height: "var(--tasty-fp-filter-height)", maxWidth: "var(--tasty-fp-filter-max-width)", padding: "0 var(--tasty-space-sm)", boxSizing: "border-box",
+                border: "var(--tasty-border-width) solid var(--tasty-separator)", borderRadius: "var(--tasty-radius)", fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)", cursor: "default" }}>
+                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{label}</span>
+              </span>
+            );
+          })()}
         </div>
         {folderSel && (
           <div style={{ display: "flex", alignItems: "flex-start", gap: 6, fontSize: 11, lineHeight: 1.5, color: "var(--tasty-text-muted)" }}>

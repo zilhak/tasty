@@ -238,7 +238,7 @@
   /* shape (2026-09-29) — every horizontal tab-bar scroll arrow (pane strip + horizontal_tab_bar_with_arrows):
      chevron ICON (never the < > characters), square cell = strip height, no own fill. */
   --tasty-tab-scroll-arrow-width:      var(--tasty-control-height-tab);  /* 24 */
-  --tasty-tab-scroll-arrow-glyph-size: var(--tasty-icon-size-xs);        /* 12 */
+  --tasty-tab-scroll-arrow-glyph-size: var(--tasty-icon-size-sm);        /* 14 — was xs 12; a 1px stroke at 12 lands on a pixel seam and rasters at ~0.5 alpha (2026-10-06) */
   --tasty-tab-scroll-arrow-hover-bg:   var(--tasty-overlay-hover);       /* enabled side only */
   --tasty-tab-scroll-arrow-move-fg:    var(--tasty-move-source-glyph);   /* the side that hides the move-source target */
 
@@ -577,6 +577,7 @@
   --tasty-md-code-border:           var(--tasty-separator);
   --tasty-md-quote-bar:             var(--tasty-border-strong);
   --tasty-md-quote-fg:              var(--tasty-text-muted);
+  --tasty-md-quote-bar-width:       var(--tasty-selection-edge-width); /* 2 — blockquote left bar; hairline, zoom-exempt. Plugin's 3px (border-w × 3) is retired (2026-10-06) */
   --tasty-md-rule:                  var(--tasty-separator);
 
   /* Explorer surface — sidebar 2-region split. The sidebar is NOT one scroll
@@ -636,6 +637,7 @@
   /* Settings window */
   --tasty-settings-sidebar-width:   var(--tasty-size-200); /* L2 left nav */
   --tasty-settings-row-min-height:  var(--tasty-size-32);  /* one settings/toggle row */
+  --tasty-settings-label-width:     var(--tasty-size-150); /* Settings Row label column (name the 150 the rows already used; font-override grid shares it) — 2026-10-06 */
   --tasty-settings-content-max-width: var(--tasty-size-620); /* content column cap — cards, tables and notice blocks all stop here */
   /* Settings › General › Permissions (macOS) — four states, told apart by
      GLYPH + WORD, colour only as a third channel. Unknown and Not observable
@@ -705,6 +707,7 @@
   --tasty-fp-footer-pad-y:            var(--tasty-space-sm);  /* 8 — footer x inset = fp-inset-start on both sides */
   --tasty-fp-footer-label-width:      var(--tasty-size-64);   /* "File name" label column */
   --tasty-fp-filter-height:           var(--tasty-control-height); /* 28 — the file-type filter chip matches the Input beside it (was 30) */
+  --tasty-fp-filter-max-width:        var(--tasty-field-width-md); /* 160 — READ-ONLY filter chip: content width up to this, then front-kept ellipsis + tooltip with the full list (2026-10-06) */
 
   /* Shared popup title bar — right-hand buttons (× , and fullscreen when the popup declares a stage) (2026-09-29).
      The title is centred on the STRIP: both sides reserve the same width,
@@ -739,6 +742,14 @@
      the system's first determinate bar: a recessed 4px track with an accent
      fill; no animation (fill width follows bytes — terminal motion stays 0ms). */
   --tasty-transfer-popup-width:     var(--tasty-size-400); /* progress + error frame width */
+  /* Transfer popup insets (2026-10-06) — ON-SCALE: multiply by ui_scale with the width. Line heights are
+     NOT tokens: derive each text line from its font (line-height-ui × font-size). */
+  --tasty-transfer-pad-x:           var(--tasty-size-14);  /* header · body · footer left/right inset, body padding */
+  --tasty-transfer-header-pad-y:    var(--tasty-space-md); /* 12 */
+  --tasty-transfer-body-gap:        var(--tasty-size-10);  /* between body blocks / file-row lines */
+  --tasty-transfer-footer-pad-y:    var(--tasty-size-10);
+  --tasty-transfer-well-pad-y:      var(--tasty-space-sm); /* 8 — failure-reason well */
+  --tasty-transfer-well-pad-x:      var(--tasty-size-10);
   --tasty-progress-height:          var(--tasty-size-4);   /* bar thickness */
   --tasty-progress-radius:          var(--tasty-radius-sm);
   --tasty-progress-track-bg:        var(--tasty-bg-app);   /* recessed track (darker than the panel) */
@@ -749,6 +760,8 @@
      translucent fill + a stronger leading edge marking the new split line. */
   --tasty-preset-split-zone-bg:     color-mix(in srgb, var(--tasty-accent-primary) 22%, transparent);
   --tasty-preset-split-zone-border: color-mix(in srgb, var(--tasty-accent-primary) 55%, transparent);
+  --tasty-preset-split-divider-width: var(--tasty-selection-edge-width); /* 2 — the one-edge split line inside the zone band; hairline, zoom-exempt (2026-10-06) */
+  --tasty-preset-leaf-selected-ring-width: var(--tasty-focus-ring-width); /* 2 — ring AROUND the selected leaf; on-scale like dag-node-selected-ring-width (2026-10-06) */
   /* Preset editor — surface-leaf preview VALUE SUMMARY. On an UNSELECTED leaf
      (read-only preview AND edit mode), below the kind icon + kind name we list
      the leaf's configured fields as `label value` rows (cwd / startup / file /
@@ -1056,4 +1069,8 @@
   --tasty-dag-row-count-font-size:   var(--tasty-font-size-caption); /* 11 mono — "7/12" */
   --tasty-dag-popup-width:           var(--tasty-size-560);
   --tasty-dag-popup-height:          var(--tasty-size-460);
+
+  /* 2026-10-06 — command palette list cap · remote protocol filter */
+  --tasty-palette-list-max-height:     var(--tasty-size-320); /* list grows to 11 rows then scrolls; ON-SCALE with control-height. List padding = space-sm on all four sides (no extra footer gap) */
+  --tasty-remote-filter-dropdown-width: var(--tasty-size-240); /* BORDER-BOX width (includes the 1px border) of the protocol-filter popover; content = 240 − 2 */
 }

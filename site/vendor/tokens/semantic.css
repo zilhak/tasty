@@ -236,6 +236,7 @@
   /* ── Tinted fill + edge (the accent-box idiom) ── */
   --tasty-tint-fill-alpha:   var(--tasty-opacity-tint-fill);   /* 0.12 — accent as a soft fill */
   --tasty-tint-border-alpha: var(--tasty-opacity-tint-border); /* 0.36 — the same accent as the edge */
+  --tasty-tint-edge-width:   var(--tasty-size-2); /* 2 — the accent-box's one leading edge (Do / Don't callouts, notes). HAIRLINE — zoom-exempt like selection-edge-width (2026-10-06) */
 
   /* ── Typography roles ─────────────────────────────────────── */
   --tasty-font-ui:   var(--tasty-font-family-sans);

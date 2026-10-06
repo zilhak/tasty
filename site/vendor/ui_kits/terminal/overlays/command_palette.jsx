@@ -1,7 +1,8 @@
 // Tasty UI kit — command palette popup (⌘K / Ctrl+K, also Tools › Command palette…).
 // Mirrors zilhak/tasty → src/adapters/ui/popup/command_palette.rs
 //   Popup: id "command_palette", CenteredFocused, sticky_focus.
-//   Size = 540 wide, list maxHeight 320 (DESIGN CANONICAL). Source now matches:
+//   Size = 540 wide, list maxHeight = --tasty-palette-list-max-height (320, on-scale; 2026-10-06).
+//   List padding space-sm on all four sides — no separate list↔footer gap (the host's 6 is retired). Search padding space-md is canonical. Source now matches:
 //   defs.rs:136 = 540×360 and command_palette.rs:154 list ScrollArea
 //   max_height 320 — reconcile complete.
 //
@@ -43,7 +44,7 @@ function CommandPalette({ onClose, onRun }) {
           <Input block autoFocus icon={ic.search} placeholder="Type to search commands…"
             value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
-        <div className="tasty-scroll" style={{ padding: "var(--tasty-space-sm)", maxHeight: 320, overflow: "auto" }}>
+        <div className="tasty-scroll" style={{ padding: "var(--tasty-space-sm)", maxHeight: "var(--tasty-palette-list-max-height)", overflow: "auto" }}>
           {items.length === 0 && <div style={{ padding: 14, fontSize: 13, color: "var(--tasty-text-muted)" }}>No matching commands</div>}
           {items.map((i, n) => (
             <MenuItem key={i.label} label={i.label} icon={i.icon}

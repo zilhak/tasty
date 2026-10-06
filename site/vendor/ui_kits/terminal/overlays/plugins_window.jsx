@@ -133,12 +133,56 @@ function FingerprintLine({ value, onCopy }) {
 
 // Add plugin — a verified manifest that can't be added (2026-09-29): the button stays in its slot,
 // DISABLED (shared ink rule), and the reason replaces "Grants N permissions" on the left of the bar.
-//   manifest.blocked: "installed" | "unsigned-no-key" | "signature-error"
+//   manifest.blocked: "installed" | "missing-pubkey" | "signature-error"
+//   2026-10-06: "unsigned-no-key" → "missing-pubkey". The host state (UntrustedNoPubkey) IS signed — by a key
+//   not in the trust store — and the .pub that would let us trust it is missing or unreadable.
 const ADD_BLOCKED = {
   "installed": "Already installed",
-  "unsigned-no-key": "Unsigned, and no public key to check it against",
+  "missing-pubkey": "Signed, but the publisher's public key file is missing",
   "signature-error": "Signature check failed",
 };
+const grantsLabel = (n) => n === 0 ? "No permissions" : n === 1 ? "Grants 1 permission" : "Grants " + n + " permissions";
+
+// Trust judgment box (2026-10-06) — one box, five kinds. Tone: success = can add as is · warning = can add,
+// adding trusts the key · danger = blocked. Box = tint-fill + tint-border of the tone, pad space-md / 14,
+// title row (glyph md + 13/600 in the tone) > body (term-sm, text-secondary) > fingerprint line (absent
+// when there is no fingerprint — signature-error never has one).
+//   manifest.trust: "trusted" | "unknown-key" | "permissions-changed" | "missing-pubkey" | "signature-error"
+const TRUST_KIND = {
+  "trusted":             { tone: "success", glyph: "shieldCheck",  title: null },
+  "unknown-key":         { tone: "warning", glyph: "alertTriangle", title: "Unverified publisher",
+    body: "This plugin isn't signed by a key in your trust store. It runs with the permissions above on every launch — review them, and only add plugins from sources you trust. Adding it also trusts this key." },
+  "permissions-changed": { tone: "warning", glyph: "alertTriangle", title: "Permissions changed",
+    body: "This publisher is trusted, but this version asks for permissions the trusted version did not have. Review the list above; adding it trusts the new set." },
+  "missing-pubkey":      { tone: "danger",  glyph: "alertCircle",  title: "Public key file missing",
+    body: "The manifest is signed by a key that isn't in your trust store, and tasty-plugin.toml.pub is missing or unreadable, so the key can't be added. Ask the publisher for this public key file." },
+  "signature-error":     { tone: "danger",  glyph: "alertCircle",  title: "Signature check failed",
+    body: "The signature could not be verified. The plugin can't be added until the publisher ships a valid signature." },
+};
+function TrustBox({ manifest }) {
+  const kind = manifest.trust || (manifest.trusted ? "trusted" : "unknown-key");
+  const k = TRUST_KIND[kind];
+  const acc = "var(--tasty-accent-" + k.tone + ")";
+  const box = { display: "flex", flexDirection: "column", gap: "var(--tasty-space-sm)", padding: "var(--tasty-space-md) var(--tasty-size-14)",
+    borderRadius: "var(--tasty-radius)", color: "var(--tasty-text-secondary)",
+    background: "color-mix(in srgb, " + acc + " calc(var(--tasty-tint-fill-alpha) * 100%), transparent)",
+    border: "var(--tasty-border-width) solid color-mix(in srgb, " + acc + " calc(var(--tasty-tint-border-alpha) * 100%), transparent)" };
+  if (kind === "trusted") return (
+    <div style={{ ...box, flexDirection: "row", alignItems: "center", color: acc, fontSize: "var(--tasty-font-size-term-sm)" }}>
+      <Icon name="shieldCheck" size={16} />
+      <span>Signed by a <b>trusted publisher</b> — its key is in your trust store.</span>
+    </div>
+  );
+  return (
+    <div style={box}>
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", color: acc, fontSize: 13, fontWeight: 600 }}>
+        <Icon name={k.glyph} size={16} /><span>{k.title}</span>
+      </div>
+      <p style={{ margin: 0, fontSize: "var(--tasty-font-size-term-sm)", lineHeight: "var(--tasty-line-height-ui)" }}>{k.body}</p>
+      {kind !== "signature-error" && <FingerprintLine value={manifest.fingerprint} />}
+    </div>
+  );
+}
 function AddPluginForm({ onAdded, onCancel }) {
   const [path, setPath] = React.useState("");
   const [manifest, setManifest] = React.useState(null);
@@ -216,31 +260,7 @@ function AddPluginForm({ onAdded, onCancel }) {
             </div>
 
             {/* trust judgment */}
-            {manifest.trusted ? (
-              <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", padding: "var(--tasty-space-md) var(--tasty-space-md)",
-                borderRadius: "var(--tasty-radius)", fontSize: "var(--tasty-font-size-term-sm)", color: "var(--tasty-accent-success)",
-                background: "color-mix(in srgb, var(--tasty-accent-success) 12%, transparent)",
-                border: "var(--tasty-border-width) solid color-mix(in srgb, var(--tasty-accent-success) 32%, transparent)" }}>
-                <Icon name="shieldCheck" size={16} />
-                <span>Signed by a <b>trusted publisher</b> — its key is in your trust store.</span>
-              </div>
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "var(--tasty-space-md) var(--tasty-size-14)",
-                borderRadius: "var(--tasty-radius)", color: "var(--tasty-text-secondary)",
-                background: "color-mix(in srgb, var(--tasty-accent-warning) 11%, transparent)",
-                border: "var(--tasty-border-width) solid color-mix(in srgb, var(--tasty-accent-warning) 36%, transparent)" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", color: "var(--tasty-accent-warning)",
-                  fontSize: 13, fontWeight: 600 }}>
-                  <Icon name="alertTriangle" size={16} />
-                  <span>Unverified publisher</span>
-                </div>
-                <p style={{ margin: 0, fontSize: "var(--tasty-font-size-term-sm)", lineHeight: "var(--tasty-line-height-ui)" }}>
-                  This plugin isn't signed by a key in your trust store. It runs with the permissions above
-                  on every launch — review them, and only add plugins from sources you trust.
-                </p>
-                <FingerprintLine value={manifest.fingerprint} />
-              </div>
-            )}
+            <TrustBox manifest={manifest} />
           </div>
         )}
       </div>
@@ -250,7 +270,7 @@ function AddPluginForm({ onAdded, onCancel }) {
         borderTop: "var(--tasty-border-width) solid var(--tasty-separator)", flex: "none" }}>
         {manifest && (
           <span style={{ fontSize: 12, color: "var(--tasty-text-muted)" }}>
-            {manifest.blocked ? ADD_BLOCKED[manifest.blocked] : <>Grants {manifest.perms.length} permission{manifest.perms.length === 1 ? "" : "s"}</>}
+            {manifest.blocked ? ADD_BLOCKED[manifest.blocked] : grantsLabel(manifest.perms.length)}
           </span>
         )}
         <div style={{ flex: 1 }} />
@@ -259,7 +279,7 @@ function AddPluginForm({ onAdded, onCancel }) {
           ? <Button variant="primary" disabled>Add plugin</Button>
           : manifest.trusted
           ? <Button variant="primary" onClick={() => onAdded(manifest)}>Add plugin</Button>
-          : <Button variant="agent" onClick={() => onAdded(manifest)}>Trust &amp; add</Button>)}
+          : <Button variant="primary" onClick={() => onAdded(manifest)}>Trust &amp; add</Button>)}
       </div>
     </div>
   );
@@ -415,9 +435,7 @@ function AttentionPanel({ items, onFlash, onConfigure }) {
             <Button variant="ghost" leadingIcon={ic.settings}
               onClick={() => onConfigure && onConfigure()}>Configure</Button>
           )}
-          {(sel.reason === "unknown-key" || sel.reason === "signature-invalid") && (
-            <Button variant="secondary" onClick={() => onFlash && onFlash("Signature details — " + sel.name)}>Details</Button>
-          )}
+          {/* unknown-key · signature-invalid: no button (2026-10-06) — the reason panel already carries the blurb + fingerprint */}
         </div>
       </div>
     </React.Fragment>
@@ -658,5 +676,5 @@ function PluginsWindow({ onClose, onFlash, onConfigure }) {
   );
 }
 
-window.TastyKit = Object.assign(window.TastyKit || {}, { PluginsWindow,
+window.TastyKit = Object.assign(window.TastyKit || {}, { PluginsWindow, TrustBox, ADD_BLOCKED, SAMPLE_MANIFEST,
   pluginAttentionCount: ATTENTION_LIST.length + PLUGIN_LIST.filter((p) => p.installed && p.status === "error").length });

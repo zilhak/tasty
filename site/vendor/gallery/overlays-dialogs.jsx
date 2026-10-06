@@ -195,11 +195,11 @@ function Page() {
         </Spec>
 
         <Spec title="Header path — where the front cut lands (settled T5)"
-          when={<>The header's path line is one mono-11 row inside the 420 frame: <b>390px</b> after the 1px frame borders and the 14px insets (420 − 2 − 28), which is <b>70 characters</b> at this font (D2Coding, 5.5px per glyph). The cut is a <b>measure, not a count</b>: drop whole leading segments and prefix <code>…/</code> until the remainder fits the line box. The 70-char figure is the derived cap for a path that cannot be measured. The one time a cut falls mid-segment is a single segment longer than the whole line — then the filename itself elides at the front, by characters. The 48-char provisional cap was cutting paths that fit by a wide margin.</>}>
+          when={<>The header's path line is one mono-11 row inside the 420 frame: <b>390px</b> after the 1px frame borders and the 14px insets (420 − 2 − 28), which is <b>65 characters</b> at this font: D2Coding 11px is 5.56px nominal, but each glyph advances a whole <b>6px</b> once rounded, so 390 / 6 = 65. The cut is a <b>measure, not a count</b>: drop whole leading segments and prefix <code>…/</code> until the remainder fits the line box. The 65-char figure is the derived cap for a path that cannot be measured. The one time a cut falls mid-segment is a single segment longer than the whole line — then the filename itself elides at the front, by characters. The 48-char provisional cap was cutting paths that fit by a wide margin.</>}>
           <Stage variant="solo" style={{ padding: 20, background: "var(--tasty-bg-app)", gap: 18, flexWrap: "wrap", alignItems: "flex-start" }}>
-            {[["70 chars — fits exactly, no cut", "packages/design-system/src/components/navigation/federation/Sidebar.ts"],
-              ["92 → 68 chars — leading segments dropped at a boundary", "…/components/navigation/federation/SidebarCategoryHeaderContrast.tsx"],
-              ["one 72-char segment → 70 — mid-segment, front", "…igation-federation-sidebar-category-header-contrast-exploration-v2.md"]].map(([label, p]) => (
+            {[["65 chars — fits exactly, no cut", "packages/design-system/src/components/navigation/federated/Bar.ts"],
+              ["93 → 57 chars — leading segments dropped at a boundary", "…/components/navigation/federation/SidebarCategoryHeaderContrast.tsx"],
+              ["one 72-char segment → 65 — mid-segment, front", "…on-federation-sidebar-category-header-contrast-exploration-v2.md"]].map(([label, p]) => (
               <div key={label} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 <div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>{label}</div>
                 <FileHandlerFrame path={p} />
@@ -207,7 +207,7 @@ function Page() {
             ))}
           </Stage>
           <Meta
-            specs={[["line box", "390 = 420 − 1 × 2 (frame border) − 14 × 2"], ["cap", "70 mono chars @ 11px (390 / 5.5, D2Coding)"], ["rule", "measure first; the count is the fallback"], ["boundary", "segment — drop whole leading segments, prefix …/"], ["mid-segment", "only when one segment exceeds the line; then front-elide by characters, prefix …"], ["row id", "unchanged — 34 chars, front, the id line is narrower"], ["was", "48 chars provisional — retired"]]}
+            specs={[["line box", "390 = 420 − 1 × 2 (frame border) − 14 × 2"], ["cap", "65 mono chars @ 11px (390 / 6 — rounded advance, D2Coding)"], ["was", "70 / 5.5 nominal — overran the line by ~30px (2026-10-06)"], ["rule", "measure first; the count is the fallback"], ["boundary", "segment — drop whole leading segments, prefix …/"], ["mid-segment", "only when one segment exceeds the line; then front-elide by characters, prefix …"], ["row id", "unchanged — 34 chars, front, the id line is narrower"], ["was", "48 chars provisional — retired"]]}
             tokens={[{ tok: "--tasty-font-mono", use: "path" }, { tok: "--tasty-text-muted", use: "path ink", color: "var(--tasty-text-muted)" }]} />
         </Spec>
 
@@ -369,6 +369,17 @@ function Page() {
           <Meta
             specs={[["width", <span className="tok">--tasty-transfer-popup-width</span>], ["header", "download glyph · title · mono %"], ["filename", "mono 13 · ellipsized"], ["bar", "4px track + accent fill · no animation"], ["stats", "done / total · rate (mono, muted)"], ["close", "auto on completion · Cancel aborts"], ["outside click", "does not dismiss"]]}
             tokens={[{ tok: "--tasty-progress-track-bg", use: "recessed track", color: "var(--tasty-progress-track-bg)" }, { tok: "--tasty-progress-fill-bg", use: "determinate fill", color: "var(--tasty-progress-fill-bg)" }, { tok: "--tasty-progress-height", use: "4px thickness" }, { tok: "--tasty-bg-panel", use: "frame", color: "var(--tasty-bg-panel)" }]} />
+          <Stage variant="solo" style={{ padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-app)", gap: "var(--tasty-space-lg)", flexWrap: "wrap", alignItems: "flex-start" }}>
+            {[["ui_scale 0.85", 0.85], ["ui_scale 1", 1], ["ui_scale 1.2", 1.2]].map(([cap, z]) => (
+              <div key={cap} style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)" }}>
+                <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>{cap} — width and insets scale together</span>
+                <div style={{ zoom: z }}><TransferProgressFrame /></div>
+              </div>
+            ))}
+          </Stage>
+          <Meta
+            specs={[["scale (2026-10-06)", "ON-SCALE: width AND every inset below multiply by ui_scale"], ["header", "pad-y transfer-header-pad-y 12 · pad-x transfer-pad-x 14 · gap space-sm"], ["body", "padding transfer-pad-x 14 · block gap transfer-body-gap 10"], ["footer", "pad-y transfer-footer-pad-y 10 · pad-x 14"], ["reason well", "transfer-well-pad-y 8 · transfer-well-pad-x 10"], ["line heights", "not tokens — each line = its font-size × line-height-ui (header row = max(glyph md, title line))"]]}
+            tokens={[{ tok: "--tasty-transfer-pad-x", use: "14 inset" }, { tok: "--tasty-transfer-header-pad-y", use: "→ space-md 12" }, { tok: "--tasty-transfer-body-gap", use: "→ size-10" }, { tok: "--tasty-transfer-footer-pad-y", use: "→ size-10" }, { tok: "--tasty-transfer-well-pad-y", use: "→ space-sm 8" }, { tok: "--tasty-transfer-well-pad-x", use: "→ size-10" }]} />
           <Note>Rate / time-remaining is <b>optional</b> — filename + progress are the contract; drop the right stat when the channel can't estimate it. Multi-file transfers reuse this frame with one filename+bar row per file, newest last — same header, one Cancel for the batch.</Note>
           <Do><b>Do</b> keep the bar still — the fill moves only when bytes land. A shimmering or eased bar would be the only animated chrome in a 0ms-motion terminal.</Do>
         </Spec>

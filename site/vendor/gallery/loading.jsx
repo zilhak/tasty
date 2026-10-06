@@ -69,9 +69,21 @@ function BootFrame({ w, h, z = 1, phase, showPhase = true, theme }) {
   );
 }
 
-// First-run shell setup (render_shell_setup) — 2026-09-29. Same boot surface + lockup,
-// then a form: title · sub · path Input · validation line · Cancel / Use this shell.
-function ShellSetupFrame({ valid = true, theme }) {
+// First-run shell setup (render_shell_setup) — 2026-09-29, revised 2026-10-06.
+// Same boot surface + lockup, then a form: title · sub · [Windows: Git Bash notice] · path Input ·
+// validation line (height ALWAYS reserved = one caption line) · Quit / Use this shell.
+// check: "empty" | "missing" | "notShell" | "valid"  — one line per host verdict (path empty / no file /
+// file exists but name has no bash|zsh / valid).
+const SHELL_CHECK = {
+  empty:    null,
+  missing:  { glyph: "alertCircle", fg: "var(--tasty-accent-danger)",  text: "No file at this path" },
+  notShell: { glyph: "alertCircle", fg: "var(--tasty-accent-danger)",  text: "Not a bash or zsh executable" },
+  valid:    { glyph: "check",       fg: "var(--tasty-accent-success)", text: "Shell found" },
+};
+function ShellSetupFrame({ check = "valid", os = "mac", theme }) {
+  const c = SHELL_CHECK[check];
+  const win = os === "win";
+  const value = { empty: "", missing: win ? "C:/Program Files/Git/bin/bash.exe" : "/usr/local/bin/zsh", notShell: win ? "C:/Windows/System32/cmd.exe" : "/usr/bin/fish", valid: win ? "D:/Tools/Git/bin/bash.exe" : "/bin/zsh" }[check];
   return (
     <div style={{ display: "inline-block", border: "var(--tasty-border-width) solid var(--tasty-border-strong)", borderRadius: "var(--tasty-radius-8)", overflow: "hidden" }}>
       <div {...(theme ? { "data-theme": theme } : {})} style={{ width: 640, height: 480, background: "var(--tasty-bg-app)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
@@ -79,13 +91,19 @@ function ShellSetupFrame({ valid = true, theme }) {
         <div style={{ marginTop: "var(--tasty-space-xl)", width: "var(--tasty-size-360)", display: "flex", flexDirection: "column", gap: "var(--tasty-space-sm)" }}>
           <div style={{ fontSize: "var(--tasty-font-size-max)", fontWeight: "var(--tasty-font-weight-semibold)", color: "var(--tasty-text-primary)" }}>Choose a shell</div>
           <div style={{ fontSize: "var(--tasty-font-size-body)", color: "var(--tasty-text-muted)", lineHeight: "var(--tasty-line-height-ui)" }}>New terminals start this shell. You can change it later in Settings.</div>
-          <LInput block mono defaultValue={valid ? "/bin/zsh" : "/usr/local/bin/fsh"} />
-          <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-xs)", fontSize: "var(--tasty-font-size-caption)", color: valid ? "var(--tasty-accent-success)" : "var(--tasty-accent-danger)" }}>
-            <LIcon name={valid ? "check" : "alertCircle"} size="var(--tasty-icon-size-sm)" />{valid ? "Executable found" : "No executable at this path"}
+          {win && (
+            <div style={{ display: "flex", alignItems: "flex-start", gap: "var(--tasty-space-xs)", fontSize: "var(--tasty-font-size-caption)", lineHeight: "var(--tasty-line-height-ui)", color: "var(--tasty-accent-warning)" }}>
+              <span style={{ display: "inline-flex", flex: "none", marginTop: "var(--tasty-size-1)" }}><LIcon name="alertTriangle" size="var(--tasty-icon-size-sm)" /></span>
+              <span>Git Bash was not found. Install Git for Windows, or enter the path to bash.exe.</span>
+            </div>
+          )}
+          <LInput block mono defaultValue={value} placeholder={win ? "C:/Program Files/Git/bin/bash.exe" : "/bin/zsh"} />
+          <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-xs)", minHeight: "calc(var(--tasty-font-size-caption) * var(--tasty-line-height-ui))", fontSize: "var(--tasty-font-size-caption)", color: c ? c.fg : undefined }}>
+            {c && <><LIcon name={c.glyph} size="var(--tasty-icon-size-sm)" />{c.text}</>}
           </div>
           <div style={{ display: "flex", justifyContent: "flex-end", gap: "var(--tasty-space-sm)", marginTop: "var(--tasty-space-sm)" }}>
-            <LButton variant="secondary">Cancel</LButton>
-            <LButton variant="primary" disabled={!valid}>Use this shell</LButton>
+            <LButton variant="secondary">Quit</LButton>
+            <LButton variant="primary" disabled={check !== "valid"}>Use this shell</LButton>
           </div>
         </div>
       </div>
@@ -187,15 +205,19 @@ function Page() {
       </Section>
       <Section id="shellsetup" title="First-run shell setup — 2026-09-29">
         <Spec title="Shell path form — Cancel / Use this shell"
-          when={<>Shown on the boot surface when no usable shell is configured (<code>render_shell_setup</code>). Same fill and lockup as the loading screen, then a 360-wide form: title, one-line sub, mono path <b>Input</b>, a validation line (glyph + word), and a right-aligned button row. The confirm moves to the shared <b>Button primary</b> (md) — the hand-painted accent-success fill goes, there is no success variant — and is labelled by what it does, <b>Use this shell</b> (the untranslated "OK" goes; i18n key). <b>Cancel</b> is Button secondary. While the path is not an executable, the primary is <b>disabled</b> with the shared ink rule; the validation line says why.</>}>
+          when={<>Shown on the boot surface when no usable shell is configured (<code>render_shell_setup</code>). Same fill and lockup as the loading screen, then a 360-wide form: title, one-line sub, mono path <b>Input</b>, a validation line (glyph + word), and a right-aligned button row. The confirm moves to the shared <b>Button primary</b> (md) — the hand-painted accent-success fill goes, there is no success variant — and is labelled by what it does, <b>Use this shell</b> (the untranslated "OK" goes; i18n key). <b>Quit</b> (was Cancel — it exits the app) is Button secondary. The validation line has one message per host verdict, and on <b>Windows</b> a warning caption names the missing Git Bash (2026-10-06). While the path is not an executable, the primary is <b>disabled</b> with the shared ink rule; the validation line says why.</>}>
           <Stage variant="solo" style={{ display: "flex", flexWrap: "wrap", gap: "var(--tasty-space-lg)", padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-app)" }} eager>
-            <ShellSetupFrame valid />
-            <ShellSetupFrame valid={false} />
-            <ShellSetupFrame valid theme="latte" />
-            <ShellSetupFrame valid={false} theme="latte" />
+            <ShellSetupFrame os="win" check="empty" />
+            <ShellSetupFrame os="win" check="missing" />
+            <ShellSetupFrame os="win" check="notShell" />
+            <ShellSetupFrame os="win" check="valid" />
+            <ShellSetupFrame os="mac" check="notShell" />
+            <ShellSetupFrame os="mac" check="valid" />
+            <ShellSetupFrame os="win" check="missing" theme="latte" />
+            <ShellSetupFrame os="mac" check="valid" theme="latte" />
           </Stage>
           <Meta
-            specs={[["form width", "360 · --tasty-size-360"], ["stack", "lockup → (space-xl) → title · sub · input · validation · buttons (space-sm)"], ["title", "14 / 600 · text-primary"], ["validation", "check + Executable found (success) · alertCircle + No executable at this path (danger)"], ["confirm", "Button primary md · Use this shell · disabled while invalid"], ["cancel", "Button secondary md"]]}
+            specs={[["form width", "360 · --tasty-size-360"], ["stack", "lockup → (space-xl) → title · sub · input · validation · buttons (space-sm)"], ["title", "14 / 600 · text-primary"], ["validation (2026-10-06)", "empty → blank line, height reserved · No file at this path · Not a bash or zsh executable (danger) · Shell found (success)"], ["Git Bash notice", "Windows only · caption line alertTriangle + warning ink · between sub and Input · no box"], ["confirm", "Button primary md · Use this shell · disabled unless valid · Enter = confirm when valid"], ["cancel → Quit", "Button secondary md · labelled Quit because it exits the app"], ["no card", "the host's 440 card, 12px literal and 32 input go: control-height Input, caption type, size-360 form"]]}
             tokens={[{ tok: "--tasty-accent-success", use: "valid line", color: "var(--tasty-accent-success)" }, { tok: "--tasty-accent-danger", use: "invalid line", color: "var(--tasty-accent-danger)" }, { tok: "--tasty-state-disabled-fg", use: "disabled confirm ink", color: "var(--tasty-state-disabled-fg)" }]} />
         </Spec>
       </Section>

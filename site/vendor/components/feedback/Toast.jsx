@@ -4,6 +4,13 @@ import React from "react";
  * Tasty Toast — a transient, bottom-anchored notification ("Copied",
  * "Path copied", "Force detach"). Surface-raised card, accent rail,
  * optional icon. Coalesces in the real app; here it's a static cell.
+ *
+ * Host contract (2026-10-06):
+ *   variant "agent" — catalog only; the host does NOT emit it (toast trigger policy: agent CLI/IPC
+ *     results are logged, never toasted). Kept so agent-hosted plugins can reuse the card.
+ *   hint — the shortcut of the action that produced the notice, shown only when that action came
+ *     from a non-keyboard path (menu / mouse) and the binding is non-empty. Empty binding → no hint.
+ *   icon — catalog-only optional slot; the host card draws rail + body only.
  */
 
 const CSS = `
@@ -34,8 +41,12 @@ const CSS = `
 .tasty-toast--danger  .tasty-toast__icon { color: var(--tasty-accent-danger); }
 .tasty-toast--agent   .tasty-toast__icon { color: var(--tasty-accent-agent); }
 .tasty-toast--info    .tasty-toast__icon { color: var(--tasty-accent-primary); }
-.tasty-toast__msg { flex: 1; }
-.tasty-toast__hint { font-family: var(--tasty-font-mono); font-size: var(--tasty-toast-hint-font-size); color: var(--tasty-text-muted); }
+.tasty-toast__msg { flex: 1; min-width: 0; line-height: var(--tasty-line-height-ui); }
+/* hint (2026-10-06): display-only, never truncates — the body wraps first. Pinned to the FIRST line
+   of the body (align-self start + one body line box), so a two-line notice keeps the key beside its verb. */
+.tasty-toast__hint { flex: none; align-self: flex-start; display: inline-flex; align-items: center; white-space: nowrap;
+  min-height: calc(var(--tasty-font-size-body) * var(--tasty-line-height-ui));
+  font-family: var(--tasty-font-mono); font-size: var(--tasty-toast-hint-font-size); color: var(--tasty-text-muted); }
 `;
 
 let injected = false;

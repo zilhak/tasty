@@ -23,19 +23,85 @@ function FpLineG({ value }) {
     </div>
   );
 }
-function AddBarG({ blocked, trusted = true }) {
-  const why = { installed: "Already installed", "unsigned-no-key": "Unsigned, and no public key to check it against", "signature-error": "Signature check failed" }[blocked];
+function AddBarG({ blocked, trusted = true, perms = 3 }) {
+  // 2026-10-06: "unsigned-no-key" → "missing-pubkey" (the state IS signed; only the .pub is missing / unreadable)
+  const why = { installed: "Already installed", "missing-pubkey": "Signed, but the publisher's public key file is missing", "signature-error": "Signature check failed" }[blocked];
+  const grants = perms === 0 ? "No permissions" : perms === 1 ? "Grants 1 permission" : "Grants " + perms + " permissions";
   return (
     <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", padding: "var(--tasty-space-md) var(--tasty-size-14)", borderTop: "var(--tasty-border-width) solid var(--tasty-separator)", background: "var(--tasty-bg-panel)" }}>
-      <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>{why || "Grants 3 permissions"}</span>
+      <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>{why || grants}</span>
       <div style={{ flex: 1 }} />
       <Button variant="ghost">Cancel</Button>
-      {blocked ? <Button variant="primary" disabled>Add plugin</Button> : trusted ? <Button variant="primary">Add plugin</Button> : <Button variant="agent">Trust &amp; add</Button>}
+      {blocked ? <Button variant="primary" disabled>Add plugin</Button> : trusted ? <Button variant="primary">Add plugin</Button> : <Button variant="primary">Trust &amp; add</Button>}
     </div>
   );
 }
-function ExtMapG({ draft = "", detectors = true }) {
-  const groups = [{ ext: ".md", rows: [["Markdown viewer", true], ["Editor", true], ["html-preview", false]] }, { ext: ".log", rows: [["Log viewer", true]] }];
+// 2026-10-06 static specimen of plugins_window.jsx TrustBox (same copy + recipe)
+const TRUST_G = {
+  "unknown-key":         ["warning", "alertTriangle", "Unverified publisher", "This plugin isn't signed by a key in your trust store. It runs with the permissions above on every launch — review them, and only add plugins from sources you trust. Adding it also trusts this key."],
+  "permissions-changed": ["warning", "alertTriangle", "Permissions changed", "This publisher is trusted, but this version asks for permissions the trusted version did not have. Review the list above; adding it trusts the new set."],
+  "missing-pubkey":      ["danger", "alertCircle", "Public key file missing", "The manifest is signed by a key that isn't in your trust store, and tasty-plugin.toml.pub is missing or unreadable, so the key can't be added. Ask the publisher for this public key file."],
+  "signature-error":     ["danger", "alertCircle", "Signature check failed", "The signature could not be verified. The plugin can't be added until the publisher ships a valid signature."],
+};
+function TrustBoxG({ kind }) {
+  const [tone, glyph, title, body] = kind === "trusted" ? ["success"] : TRUST_G[kind];
+  const acc = "var(--tasty-accent-" + tone + ")";
+  const box = { display: "flex", flexDirection: "column", gap: "var(--tasty-space-sm)", padding: "var(--tasty-space-md) var(--tasty-size-14)", borderRadius: "var(--tasty-radius)", color: "var(--tasty-text-secondary)",
+    background: "color-mix(in srgb, " + acc + " calc(var(--tasty-tint-fill-alpha) * 100%), transparent)", border: "var(--tasty-border-width) solid color-mix(in srgb, " + acc + " calc(var(--tasty-tint-border-alpha) * 100%), transparent)" };
+  if (kind === "trusted") return (
+    <div style={{ ...box, flexDirection: "row", alignItems: "center", color: acc, fontSize: "var(--tasty-font-size-term-sm)" }}><WIcon name="shieldCheck" size={16} /><span>Signed by a <b>trusted publisher</b> — its key is in your trust store.</span></div>
+  );
+  return (
+    <div style={box}>
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", color: acc, fontSize: 13, fontWeight: 600 }}><WIcon name={glyph} size={16} /><span>{title}</span></div>
+      <p style={{ margin: 0, fontSize: "var(--tasty-font-size-term-sm)", lineHeight: "var(--tasty-line-height-ui)" }}>{body}</p>
+      {kind !== "signature-error" && <FpLineG value="9f2c 4ad1 b770 e3a6  ·  ed25519" />}
+    </div>
+  );
+}
+// 2026-10-06 — Settings › Appearance › <surface> › Font override. Same idiom as the colour-override rows:
+// label (settings-label-width) · control (its field-width) · trailing Checkbox "Use default". Preview is a
+// separate block BELOW the grid at every window width — no side column to collide with.
+function FontOverrideG({ long = false }) {
+  const ud = long ? "既定値を使用" : "Use default";
+  const rows = [
+    ["Font family", <span style={{ display: "flex", width: "var(--tasty-field-width-lg)" }}><Input block defaultValue="D2Coding" icon={<WIcon name="search" />} /></span>, false],
+    ["Custom font file", <span style={{ display: "flex", width: "var(--tasty-field-width-lg)" }}><Input block mono readOnly placeholder="~/fonts/MyFont.ttf" /></span>, true],
+    ["Font size", <span style={{ display: "flex", width: "var(--tasty-field-width-xs)" }}><Input block mono defaultValue="14" addon="px" /></span>, false],
+    ["Line height", <span style={{ display: "flex", width: "var(--tasty-field-width-xs)" }}><Input block mono readOnly defaultValue="1.2" /></span>, true],
+    ["Font DPI scaling", <WSelect options={["Follow display"]} style={{ width: "var(--tasty-field-width-md)" }} />, true],
+  ];
+  const pv = (focused) => (
+    <div style={{ flex: "1 1 0", minWidth: 0, display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)" }}>
+      <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>{focused ? "Focused" : "Unfocused"}</span>
+      <div style={{ padding: "var(--tasty-space-sm) var(--tasty-space-md)", background: "var(--tasty-bg-app)", border: "var(--tasty-border-width) solid " + (focused ? "var(--tasty-border-strong)" : "var(--tasty-separator)"), borderRadius: "var(--tasty-radius)",
+        fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-body)", color: focused ? "var(--tasty-text-primary)" : "var(--tasty-text-muted)", whiteSpace: "nowrap", overflow: "hidden" }}>~/tasty ❯ cargo build</div>
+    </div>
+  );
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-lg)", maxWidth: "var(--tasty-settings-content-max-width)" }}>
+      <div style={{ display: "flex", flexDirection: "column" }}>
+        {rows.map(([label, ctl, def]) => (
+          <div key={label} style={{ display: "flex", alignItems: "center", flexWrap: "wrap", columnGap: "var(--tasty-space-lg)", rowGap: "var(--tasty-space-xs)", minHeight: "var(--tasty-settings-row-min-height)", padding: "var(--tasty-space-xs) 0" }}>
+            <span style={{ flex: "none", width: "var(--tasty-settings-label-width)", fontSize: "var(--tasty-font-size-body)", color: "var(--tasty-text-secondary)" }}>{label}</span>
+            <span style={{ flex: "none", display: "flex", opacity: def ? "var(--tasty-state-disabled-opacity)" : undefined }}>{ctl}</span>
+            <WCheckbox label={ud} checked={def} />
+          </div>
+        ))}
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-sm)" }}>
+        <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>Preview</span>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--tasty-space-md)" }}>{pv(true)}{pv(false)}</div>
+        <span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>Font: D2Coding / 14.0px</span>
+      </div>
+    </div>
+  );
+}
+function ExtMapG({ draft = "", detectors = true, custom = false, missing = false, long = false }) {
+  // 2026-10-06 — Reset (custom order) and Remove (not installed) live at the RIGHT END of the group header,
+  // ghost Button sm; header min-height = button-height-sm so the row does not jump when Reset appears.
+  const L = long ? { reset: "Restablecer orden", remove: "Entfernen", ni: "インストールされていません" } : { reset: "Reset", remove: "Remove", ni: "not installed" };
+  const groups = [{ ext: ".md", custom, rows: [["Markdown viewer", true], ["Editor", true], ["html-preview", false]] }, ...(missing ? [{ ext: ".ipynb", missing: true, rows: [] }] : []), { ext: ".log", rows: [["Log viewer", true]] }];
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-md)", padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-panel)", border: "var(--tasty-border-width) solid var(--tasty-border-frame)", borderRadius: "var(--tasty-radius)", width: "var(--tasty-size-360)", maxWidth: "100%" }}>
       <div style={{ display: "flex", gap: "var(--tasty-space-sm)" }}>
@@ -46,7 +112,13 @@ function ExtMapG({ draft = "", detectors = true }) {
         const cand = g.rows.filter(([, c]) => c).length;
         return (
           <div key={g.ext} style={{ display: "flex", flexDirection: "column" }}>
-            <div style={{ fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-secondary)", padding: "var(--tasty-space-xs) 0" }}>{g.ext}</div>
+            <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", minHeight: "var(--tasty-button-height-sm)", padding: "var(--tasty-space-xs) 0", borderBottom: g.missing ? "var(--tasty-border-width) solid var(--tasty-separator)" : undefined }}>
+              <span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-caption)", color: g.missing ? "var(--tasty-text-disabled)" : "var(--tasty-text-secondary)" }}>{g.ext}</span>
+              {g.missing && <WTag disabled>{L.ni}</WTag>}
+              <span style={{ flex: 1 }} />
+              {g.custom && <span title="Remove the custom priority for this extension (revert to install order)."><Button variant="ghost" size="sm">{L.reset}</Button></span>}
+              {g.missing && <Button variant="ghost" size="sm">{L.remove}</Button>}
+            </div>
             {g.rows.map(([name, c], i) => (
               <div key={name} style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", minHeight: "var(--tasty-settings-row-min-height)", borderBottom: "var(--tasty-border-width) solid var(--tasty-separator)" }}>
                 <span style={{ width: "var(--tasty-space-lg)", fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>{i + 1}</span>
@@ -928,6 +1000,19 @@ function Page() {
           <Dont><b>Don't</b> buy width from the footer, the file-name input, the Refresh button, or the font size. The path bar takes what is left over after those, and folds.</Dont>
           <Note>Same table at <b>ui_scale 0.85 / 1 / 1.2</b>: floors and caps are width tokens, so they scale with everything else and the order is unchanged. Windows drives, UNC roots and remote <code>user@host</code> roots are ordinary root crumbs — long ones fold at step 5, they get no exemption.</Note>
         </Spec>
+        <Spec title="File-type filter chip — a read-only readout (2026-10-06)"
+          when={<>The chip shows the filter <b>the caller</b> passed and nothing else: there is no menu and no way to change it, so it is drawn as a <b>readout</b>, not a control — no chevron, no fill, no hover, not focusable. Text is the extension list in mono (<code>*.toml, *.json</code>), lowercase, in the caller's order. <b>No filter → no chip</b>; the name field takes the width. Width is the content, capped at <span className="tok">--tasty-fp-filter-max-width</span>; past that the list ends in an ellipsis and the tooltip ("Showing …") carries all of it. Both consumers (Tools menu picker, the picker inside Settings) and both modes show the same chip. In save mode the filter does <b>not</b> touch the name field — no extension is appended.</>}>
+          <Stage variant="solo" style={{ padding: 20, background: "var(--tasty-bg-app)", gap: 18, flexWrap: "wrap", alignItems: "flex-start" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}><div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>no filter — chip hidden</div><FilePickerFrame w={480} h={300} /></div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}><div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>one extension</div><FilePickerFrame w={480} h={300} filters={["toml"]} /></div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}><div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>two extensions — save mode</div><FilePickerFrame w={480} h={300} mode="save" filters={["toml", "json"]} /></div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}><div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>many — capped at 160, ellipsis + tooltip</div><FilePickerFrame w={480} h={300} filters={["png", "jpg", "jpeg", "gif", "webp", "svg"]} /></div>
+          </Stage>
+          <Meta
+            specs={[["role", "read-only readout — not a button, no menu, not in tab order"], ["label", "*.ext list, mono caption, caller order, joined by \", \""], ["no filter", "chip absent"], ["width", "content, ≤ fp-filter-max-width (160) · then end ellipsis"], ["tooltip", "Showing *.png, *.jpg, … (full list)"], ["height", "fp-filter-height = the Input beside it"], ["box", "1px separator · radius · no fill · pad-x space-sm"], ["save mode", "no extension auto-append"], ["i18n", "only the tooltip prefix is translated; the list is literal"]]}
+            tokens={[{ tok: "--tasty-fp-filter-height", use: "28 — matches the Input" }, { tok: "--tasty-fp-filter-max-width", use: "160 cap (new)" }, { tok: "--tasty-separator", use: "chip edge", color: "var(--tasty-separator)" }, { tok: "--tasty-text-muted", use: "list", color: "var(--tasty-text-muted)" }]} />
+          <Dont><b>Don't</b> draw it with a chevron or a hover fill while nothing opens — the earlier static "All files ▾" chip promised a menu that does not exist.</Dont>
+        </Spec>
       </Section>
       {window.PresetEditor && <window.PresetEditor.Section />}
 
@@ -1008,7 +1093,7 @@ function Page() {
                     <span style={{ flex: "none", width: 88, fontFamily: "var(--tasty-font-mono)", fontSize: 12, color: "var(--tasty-text-secondary)" }}>{r.ev}</span>
                     <span style={{ flex: 1, minWidth: 0, fontFamily: "var(--tasty-font-mono)", fontSize: 12, color: "var(--tasty-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.act}</span>
                     <span style={{ flex: "none", color: plugin ? "var(--tasty-accent-agent)" : undefined }}><WTag>{r.origin}</WTag></span>
-                    {r.seq && <Button variant="ghost" size="sm">Edit</Button>}
+                    {r.seq && <span title="tasty hook-handler upsert" style={{ flex: "none", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>Edit with CLI</span>}{r.seq && <IconButton size="sm" aria-label="Copy edit command"><WIcon name="copy" size={13} /></IconButton>}
                     <span style={{ flex: "none", width: 24, display: "inline-flex", justifyContent: "center" }}>
                       {user
                         ? <IconButton size="sm" aria-label="Remove"><WIcon name="trash" size={13} /></IconButton>
@@ -1020,7 +1105,7 @@ function Page() {
             </div>
           </Stage>
           <Meta
-            specs={[["origin", <>Tag: <b>host</b> · <b>you</b> · plugin id (<span className="tok">--tasty-accent-agent</span>)</>], ["remove", "user rows only"], ["not removable", <>lock glyph, <span className="tok">--tasty-glyph-dim</span>, with tooltip</>], ["not a disabled button", "nothing is pending — an affordance would lie"], ["IpcSequence", "mono one-line summary, steps joined by →"], ["sequence editing", "Edit → the sequence editor (no inline edit)"], ["registry", "unchanged — defaults re-seed on start"]]}
+            specs={[["origin", <>Tag: <b>host</b> · <b>you</b> · plugin id (<span className="tok">--tasty-accent-agent</span>)</>], ["remove", "user rows only"], ["not removable", <>lock glyph, <span className="tok">--tasty-glyph-dim</span>, with tooltip</>], ["not a disabled button", "nothing is pending — an affordance would lie"], ["IpcSequence", "mono one-line summary, steps joined by →"], ["sequence editing (2026-10-06)", "no GUI editor yet → caption \"Edit with CLI\" (text-muted) + IconButton sm copy: copies tasty hook-handler get <event> <id>. No Edit button until the editor exists"], ["when the editor lands", "the caption + copy pair is replaced by Edit (ghost sm) in the same slot — separate design request"], ["registry", "unchanged — defaults re-seed on start"]]}
             tokens={[{ tok: "--tasty-glyph-dim", use: "lock glyph", color: "var(--tasty-glyph-dim)" }, { tok: "--tasty-accent-agent", use: "plugin origin", color: "var(--tasty-accent-agent)" }, { tok: "--tasty-font-mono", use: "event · action · sequence" }]} />
           <Note>The design's earlier “remove on every row” is dropped: the registry policy wins, and the lock is the honest reading of it.</Note>
         </Spec>
@@ -1046,14 +1131,28 @@ function Page() {
             specs={[["Default hex", "Input readOnly"], ["box", "state-disabled fill + border (same as disabled)"], ["value ink", "text-secondary"], ["select · copy", "allowed; focusable"], ["override", "normal Input"], ["disabled", "reserved for an unavailable control"]]}
             tokens={[{ tok: "--tasty-input-readonly-bg", use: "→ state-disabled-fill", color: "var(--tasty-input-readonly-bg)" }, { tok: "--tasty-input-readonly-border", use: "→ state-disabled-border", color: "var(--tasty-input-readonly-border)" }, { tok: "--tasty-input-readonly-fg", use: "→ text-secondary", color: "var(--tasty-input-readonly-fg)" }]} />
         </Spec>
+        <Spec title="Appearance › Font override — rows + preview below (2026-10-06)"
+          when={<>The override grid uses the <b>colour-override idiom</b> already in Settings: label in <span className="tok">--tasty-settings-label-width</span> (150), the control at its own field width, then a trailing <b>Checkbox "Use default"</b> with its label always shown. Trailing means a long ko / ja label grows into free space instead of pushing the control. The <b>Preview</b> leaves the side column and sits <b>below</b> the grid at every window width, Focused and Unfocused side by side (they wrap under each other when narrow), then the one-line font summary. Nothing overlaps at 1100 or at the minimum width; the two-column egui split goes. A defaulted row keeps its control visible at the shared disabled look, filled with the default.</>}>
+          <Stage variant="solo" style={{ padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-app)", gap: "var(--tasty-space-lg)", flexWrap: "wrap", alignItems: "flex-start" }}>
+            <ThemePair><div style={{ width: "var(--tasty-settings-content-max-width)", maxWidth: "100%" }}><FontOverrideG /></div></ThemePair>
+            <ThemePair><div style={{ width: "var(--tasty-size-360)" }}><FontOverrideG long /></div></ThemePair>
+          </Stage>
+          <Meta
+            specs={[["row", "label 150 · control · Use default — gap space-lg, min-h settings-row 32 (same as Settings Row)"], ["Font family", "searchable combo · field-width-lg 200"], ["Custom font file", "path Input mono · field-width-lg 200"], ["Font size · Line height", "number Input · field-width-xs 90"], ["DPI scaling", "Select · field-width-md 160"], ["Use default", "Checkbox + label, trailing, never truncated"], ["narrow", "row wraps: the checkbox drops under the control (row-gap space-xs)"], ["preview", "below the grid · space-lg above · Focused / Unfocused flex 1 each, wrap"], ["summary", "mono caption · text-muted"]]}
+            tokens={[{ tok: "--tasty-settings-label-width", use: "150 label column (new name)" }, { tok: "--tasty-field-width-lg", use: "family · file" }, { tok: "--tasty-field-width-md", use: "DPI" }, { tok: "--tasty-field-width-xs", use: "numbers" }, { tok: "--tasty-settings-row-min-height", use: "row" }]} />
+        </Spec>
         <Spec title="FileHandler › File Extension Mapping — order + Add (2026-09-29)"
           when={<>The product's structure is the design (it replaces the earlier per-extension Select). An extension <b>Input + Add</b> (Button secondary sm, the same pair as the capture blacklist), then per extension an <b>ordered detector list</b> — first match wins. Reorder with <b>IconButton sm</b> <code>chevronUp</code> / <code>chevronDown</code> (the ▲ ▼ text glyphs go). Arrows are <b>disabled, not hidden</b>: ▲ on the top row, ▼ on the last candidate, both on a row whose detector is off (muted name + disabled Tag), so rows keep one slot layout. Add is disabled while the input is empty or no detector is installed.</>}>
           <Stage variant="solo" style={{ padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-app)", gap: "var(--tasty-space-lg)", flexWrap: "wrap", alignItems: "flex-start" }}>
             <ThemePair><ExtMapG /></ThemePair>
             <ThemePair><ExtMapG draft=".toml" /></ThemePair>
           </Stage>
+          <Stage variant="solo" style={{ padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-app)", gap: "var(--tasty-space-lg)", flexWrap: "wrap", alignItems: "flex-start" }}>
+            <ThemePair><ExtMapG custom missing /></ThemePair>
+            <ThemePair><ExtMapG custom missing long /></ThemePair>
+          </Stage>
           <Meta
-            specs={[["add", "Button secondary sm · disabled: empty input or no detector"], ["order", "IconButton sm chevronUp / chevronDown"], ["top / last row", "▲ / ▼ disabled"], ["non-candidate row", "both disabled · name text-disabled · Tag disabled \"off\""], ["hide instead?", "no — slots stay put"]]}
+            specs={[["add", "Button secondary sm · disabled: empty input or no detector"], ["order", "IconButton sm chevronUp / chevronDown"], ["top / last row", "▲ / ▼ disabled"], ["non-candidate row", "both disabled · name text-disabled · Tag disabled \"off\""], ["hide instead?", "no — slots stay put"], ["Reset (2026-10-06)", "ghost Button sm · header right end · only when the extension has a custom order · tooltip kept · draft only"], ["not installed", "the group header alone: .ext text-disabled · Tag disabled · Remove ghost Button sm; no detector rows; separator under it"], ["header", "min-height button-height-sm — Reset appearing never moves the rows"], ["long copy", "Tag and button never truncate; .ext label is the shrinking item"], ["confirm", "none — both edit the draft, Cancel reverts"]]}
             tokens={[{ tok: "--tasty-state-disabled-fg", use: "disabled ink", color: "var(--tasty-state-disabled-fg)" }, { tok: "--tasty-settings-row-min-height", use: "row" }]} />
         </Spec>
       </Section>
@@ -1062,7 +1161,7 @@ function Page() {
         <Spec title="Status table, one action per row, one request button"
           when={<>macOS builds only, the last L2 under General. A three-column table: <b>permission</b> · <b>status</b> · <b>row action</b>. The four states are told apart by <b>glyph + word</b>, with colour as a third channel: <b>Granted</b> check / success, <b>Not granted</b> alertCircle / warning, <b>Unknown</b> helpCircle / muted, <b>Cannot check automatically</b> eyeOff / muted. Unknown (inference failed) and Cannot check (deliberately not looked at) share the muted ink but never the glyph, and neither can be misread as granted. The Full Disk Access shortcut moves <b>into its own row</b> as Secondary / Sm <b>[Open System Settings]</b>. What needs explaining per row now lives in HelpHints, so the two notes under the table are short. <b>[Request all permissions]</b> stays Primary / Md under the table. While requesting it is disabled and the line below becomes a spinner + <i>requesting</i> copy; the button carries no spinner. The debug-only Accessibility row carries a <b>debug</b> Tag.</>}>
           <Stage variant="solo" style={{ padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-app)", gap: "var(--tasty-space-lg)", flexWrap: "wrap", alignItems: "flex-start" }}>
-            {[["A · nothing granted — Mocha", "none", false, null], ["A · nothing granted — Latte", "none", false, "latte"], ["B · all granted", "all", false, null], ["C · FDA unknown, screen granted", "fdaUnknown", false, null], ["D · requesting", "requesting", false, null], ["E · debug build (4 rows)", "none", true, null], ["E · debug build — Latte", "all", true, "latte"]].map(([cap, sc, dbg, theme]) => (
+            {[["A · nothing granted — Mocha", "none", false, null], ["A · nothing granted — Latte", "none", false, "latte"], ["B · all granted", "all", false, null], ["C · FDA unknown, screen granted", "fdaUnknown", false, null], ["F · FDA granted before an update — Mocha", "fdaStale", false, null], ["F · FDA granted before an update — Latte", "fdaStale", false, "latte"], ["D · requesting", "requesting", false, null], ["E · debug build (4 rows)", "none", true, null], ["E · debug build — Latte", "all", true, "latte"]].map(([cap, sc, dbg, theme]) => (
               <div key={cap} {...(theme ? { "data-theme": theme } : {})} style={{ width: "var(--tasty-size-560)", display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)" }}>
                 <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>{cap}</span>
                 <div style={{ padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-panel)", border: "var(--tasty-border-width) solid var(--tasty-border-frame)", borderRadius: "var(--tasty-radius)" }}>
@@ -1072,7 +1171,7 @@ function Page() {
             ))}
           </Stage>
           <Meta
-            specs={[["columns", "label (1fr) · status · row action"], ["row", "min 32 (settings row) · 1px border-default rule"], ["status", "glyph 14 + word · gap 4"], ["FDA action", "Secondary / Sm, in the FDA row"], ["primary", "Request all permissions · Primary / Md"], ["requesting", "button disabled · note line → spinner + copy"], ["notes", "caption 12 · text-muted · wrap at measure-xl"], ["narrow", "status + action wrap under each other, right-aligned; label never truncates"], ["debug row", "Tag \"debug\""]]}
+            specs={[["columns", "label (1fr) · status · row action"], ["row", "min 32 (settings row) · 1px border-default rule"], ["status", "glyph 14 + word · gap 4"], ["FDA action", "Secondary / Sm, in the FDA row"], ["primary", "Request all permissions · Primary / Md"], ["requesting", "button disabled · note line → spinner + copy"], ["notes", "caption 12 · text-muted · wrap at measure-xl"], ["narrow", "status + action wrap under each other, right-aligned; label never truncates"], ["debug row", "Tag \"debug\""], ["stale grant (2026-10-06)", "no 5th state — Not granted + a caption line under the label with the remedy (remove, then add again)"]]}
             tokens={[{ tok: "--tasty-perm-granted-fg", use: "check", color: "var(--tasty-perm-granted-fg)" }, { tok: "--tasty-perm-missing-fg", use: "alertCircle", color: "var(--tasty-perm-missing-fg)" }, { tok: "--tasty-perm-unknown-fg", use: "helpCircle", color: "var(--tasty-perm-unknown-fg)" }, { tok: "--tasty-perm-unobservable-fg", use: "eyeOff", color: "var(--tasty-perm-unobservable-fg)" }, { tok: "--tasty-perm-row-height", use: "→ settings row 32" }]} />
           <Note><b>Copy changed</b> (en final, in the specimen): FDA button → "Open System Settings"; <i>detection_note</i> and <i>request_note</i> shortened, their per-row parts moved to the FDA and Folder access HelpHints; <i>requesting</i> shortened to two clauses. Status words unchanged.</Note>
           <Dont><b>Don't</b> paint Unknown or Cannot check as a blank or a dash. An empty status cell reads as "fine".</Dont>
@@ -1107,7 +1206,7 @@ function Page() {
           <Dont><b>Don't</b> mix the tint into the row background to "blend" on a selected row — the mark would then shift colour with row state and stop being a stable identity. And don't re-derive the initial's size from the box (<code>round(size × 0.42)</code>): that produced 19px at lg, off the type scale and over the UI cap with no decision behind it.</Dont>
         </Spec>
         <Spec title="Copy fingerprint · Add plugin that can't be added (2026-09-29)"
-          when={<><b>Copy fingerprint</b> moves out of the action bar: an <b>IconButton sm</b> <code>copy</code> right after the mono fingerprint, in Attention and in the Add plugin manifest card alike. No fingerprint → no line and no button (nothing to copy, so no disabled state). Attention's action bar keeps <b>Details</b> only. <b>Add plugin</b> on a verified manifest that can't be added (already installed · unsigned with no public key · signature error) stays in its slot <b>disabled</b> — the variant it would have had, drawn with the shared disabled ink — and the reason replaces "Grants N permissions" on the left of the bar.</>}>
+          when={<><b>Copy fingerprint</b> moves out of the action bar: an <b>IconButton sm</b> <code>copy</code> right after the mono fingerprint, in Attention and in the Add plugin manifest card alike. No fingerprint → no line and no button (nothing to copy, so no disabled state). Attention's action bar has <b>no Details</b> for signature reasons (2026-10-06): the reason panel already shows the blurb and the fingerprint. <b>Add plugin</b> on a verified manifest that can't be added (already installed · signed but the public key file is missing · signature error) stays in its slot <b>disabled</b> — the variant it would have had, drawn with the shared disabled ink — and the reason replaces "Grants N permissions" on the left of the bar.</>}>
           <Stage variant="solo" style={{ padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-app)", gap: "var(--tasty-space-lg)", flexWrap: "wrap", alignItems: "flex-start" }}>
             <ThemePair>
               <FpLineG value="a13c 4e7f 2b08 9d51  ·  ed25519" />
@@ -1115,14 +1214,29 @@ function Page() {
                 <AddBarG />
                 <AddBarG trusted={false} />
                 <AddBarG blocked="installed" />
-                <AddBarG blocked="unsigned-no-key" />
+                <AddBarG blocked="missing-pubkey" />
+                <AddBarG perms={1} />
+                <AddBarG perms={0} />
                 <AddBarG blocked="signature-error" />
               </div>
             </ThemePair>
           </Stage>
           <Meta
-            specs={[["copy fingerprint", "IconButton sm copy · after the value · absent without a fingerprint"], ["attention bar", "Details (secondary) only"], ["add — blocked", "disabled Add plugin · reason on the left"], ["reasons", "Already installed · Unsigned, and no public key to check it against · Signature check failed"]]}
+            specs={[["copy fingerprint", "IconButton sm copy · after the value · absent without a fingerprint"], ["attention bar", "no Details (2026-10-06) — the reason panel already shows the blurb + fingerprint"], ["add — blocked", "disabled Add plugin · reason on the left"], ["reasons", "Already installed · Signed, but the publisher's public key file is missing · Signature check failed"], ["untrusted + .pub", "Trust & add — Primary (agent is for AI-agent surfaces only)"], ["grants", "No permissions · Grants 1 permission · Grants N permissions"]]}
             tokens={[{ tok: "--tasty-state-disabled-fg", use: "disabled ink", color: "var(--tasty-state-disabled-fg)" }, { tok: "--tasty-text-muted", use: "reason", color: "var(--tasty-text-muted)" }]} />
+        </Spec>
+        <Spec title="Add plugin — trust judgment, five kinds (2026-10-06)"
+          when={<>One box under the manifest card, toned by <b>what Add will do</b>: <b>success</b> — adds as is; <b>warning</b> — adds, and adding trusts the key (unknown key) or the new permission set (permissions changed); <b>danger</b> — blocked, Add is disabled and the bar names the reason. The fingerprint line follows the body whenever a fingerprint exists (signature errors have none). Untrusted-but-addable uses <b>Trust &amp; add</b> in <b>Primary</b>: the agent variant is reserved for AI-agent surfaces.</>}>
+          <Stage variant="solo" style={{ padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-app)", gap: "var(--tasty-space-lg)", flexWrap: "wrap", alignItems: "flex-start" }}>
+            <ThemePair>
+              <div style={{ width: "var(--tasty-size-560)", maxWidth: "100%", display: "flex", flexDirection: "column", gap: "var(--tasty-space-sm)" }}>
+                {["trusted", "unknown-key", "permissions-changed", "missing-pubkey", "signature-error"].map((k) => <TrustBoxG key={k} kind={k} />)}
+              </div>
+            </ThemePair>
+          </Stage>
+          <Meta
+            specs={[["tone", "success add · warning add + trust · danger blocked"], ["box", "tint-fill + tint-border of the tone · pad space-md / 14 · radius"], ["title", "glyph 16 + 13/600 in the tone"], ["body", "term-sm · text-secondary"], ["fingerprint", "after the body · absent for signature-error"], ["installed", "trust box as judged · bar reason 'Already installed' only (no second notice)"], ["Attention › signature invalid", "no fingerprint line (the signature it would identify is the broken part)"], ["homepage", "mono caption row 'Homepage' under Source · link text, opens the default browser"], ["authors", "id · first author · +N (tooltip lists all)"], ["empty lists", "Permissions / Surface kinds: 'None' in text-muted, no Tag"]]}
+            tokens={[{ tok: "--tasty-tint-fill-alpha", use: "box fill" }, { tok: "--tasty-tint-border-alpha", use: "box edge" }, { tok: "--tasty-accent-warning", use: "add + trust", color: "var(--tasty-accent-warning)" }, { tok: "--tasty-accent-danger", use: "blocked", color: "var(--tasty-accent-danger)" }, { tok: "--tasty-accent-success", use: "trusted", color: "var(--tasty-accent-success)" }]} />
         </Spec>
       </Section>
 

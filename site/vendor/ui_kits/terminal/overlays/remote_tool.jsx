@@ -316,6 +316,7 @@ function PasskeyRow({ k, revealed, onReveal, onEdit, onDelete }) {
         </div>
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 1, flex: "none" }}>
+        {/* 2026-10-06: revealed = IconButton active (accent glyph + overlay-active) AND eye → eyeOff. Row delete = trash on all three tabs (x is reserved for Close / Dismiss). */}
         <IconButton size="sm" active={revealed} aria-label="Reveal"
           title={revealed ? "Hide value" : "Show value (local only)"} onClick={() => onReveal(k)}>
           <Icon name={revealed ? RD.eyeOff : RD.eye} size={16} />
@@ -577,7 +578,7 @@ function ProtocolFilter({ protocols, hidden, onApply }) {
         <>
           <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
           <div role="dialog" aria-label="Filter by protocol" style={{ position: "absolute", top: "calc(100% + var(--tasty-space-xs))", right: 0, zIndex: 41,
-            width: 236, background: "var(--tasty-surface-raised)", border: "var(--tasty-border-width) solid var(--tasty-border-strong)",
+            width: "var(--tasty-remote-filter-dropdown-width)", boxSizing: "border-box", background: "var(--tasty-surface-raised)", border: "var(--tasty-border-width) solid var(--tasty-border-strong)",
             borderRadius: "var(--tasty-radius)", boxShadow: "var(--tasty-shadow-popover)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
             <div style={{ padding: "var(--tasty-space-sm) var(--tasty-space-md)", borderBottom: "var(--tasty-border-width) solid var(--tasty-separator)",
               fontFamily: "var(--tasty-font-mono)", fontSize: 10, textTransform: "uppercase",

@@ -269,7 +269,7 @@ function Components() {
             <Cluster label="default · icon · addon — click to focus">
               <Input placeholder="Workspace name" style={{ width: 200 }} />
               <Input icon={ic.search} placeholder="Filter…" style={{ width: 200 }} />
-              <Input mono defaultValue="14" addon="px" style={{ width: 110 }} />
+              <Input mono defaultValue="14" addon="px" style={{ width: "var(--tasty-field-width-color)" }} />
             </Cluster>
             <Cluster label="mono · invalid · disabled">
               <Input mono defaultValue="s_01HXK9" style={{ width: 200 }} />
@@ -503,16 +503,18 @@ function Components() {
         </Spec>
 
         <Spec title="Toast"
-          when={<>Transient notification card with an accent rail by intent — <code>Copied</code>, <code>Path copied</code>, <code>Force detach</code>. Terse, second person. Use <b>agent</b> for agent-originated notices.</>}>
+          when={<>Transient notification card with an accent rail by intent — <code>Copied</code>, <code>Path copied</code>, <code>Force detach</code>. Terse, second person. <b>hint (2026-10-06)</b> is the shortcut of the action that raised the notice, shown only when the action came from a <b>menu or the mouse</b> (pressing the key already taught it) and only if the binding is set — an unbound action shows no hint. It sits at the right end on the <b>first line</b>; the body wraps before the hint ever shrinks. The <b>agent</b> variant is catalog-only: the host never toasts agent-originated results (they are logged), so no host notice uses it.</>}>
           <Stage variant="column" style={{ gap: 10, alignItems: "stretch", maxWidth: 380 }}>
-            <Toast variant="success" hint={<Kbd keys="⌘C" />}>Path copied to clipboard</Toast>
-            <Toast variant="agent">Agent opened 3 surfaces in background</Toast>
+            <Toast variant="success" hint={<Kbd keys="⌘⇧C" />}>Path copied</Toast>
+            <Toast variant="success">Path copied</Toast>
+            <Toast variant="success" hint={<Kbd keys="⌘C" />}>Copied 3 lines from the selection to the clipboard</Toast>
+            <Toast variant="info">Copied (OSC 52)</Toast>
             <Toast variant="warning">Held by another client (readonly)</Toast>
             <Toast variant="danger">Force detach — connection dropped</Toast>
           </Stage>
           <Meta
-            specs={[["rail", "3px accent left edge"], ["radius", <span className="tok">--tasty-radius</span>], ["fill", <span className="tok">--tasty-surface-raised</span>]]}
-            tokens={[{ tok: "--tasty-accent-success", use: "ok rail", color: "var(--tasty-accent-success)" }, { tok: "--tasty-accent-agent", use: "agent rail", color: "var(--tasty-accent-agent)" }, { tok: "--tasty-surface-raised", use: "card", color: "var(--tasty-surface-raised)" }]} />
+            specs={[["rail", "3px accent left edge"], ["radius", <span className="tok">--tasty-radius</span>], ["fill", <span className="tok">--tasty-surface-raised</span>], ["boxes", "rail · body (flex 1) · hint (flex none) · gap space-sm · pad space-sm / space-md"], ["hint", "Kbd of the action's binding · menu / mouse origin only · none when unbound"], ["hint position", "right end, first line · never truncated — body wraps first"], ["platform", "Kbd rule: ⌘ ⇧ ⌥ on macOS, Ctrl+Shift+ on Windows / Linux"], ["agent", "catalog only — host does not emit"], ["icon", "catalog only — host card has no icon"]]}
+            tokens={[{ tok: "--tasty-accent-success", use: "ok rail", color: "var(--tasty-accent-success)" }, { tok: "--tasty-toast-hint-font-size", use: "hint · micro mono" }, { tok: "--tasty-surface-raised", use: "card", color: "var(--tasty-surface-raised)" }]} />
         </Spec>
 
         <Spec title="Toast stack"
@@ -521,7 +523,7 @@ function Components() {
             <div style={{ width: "var(--tasty-toast-max-width)", display: "flex", flexDirection: "column", justifyContent: "flex-end", alignItems: "flex-end", gap: "var(--tasty-space-sm)" }}>
               <Toast variant="info">Two notices while importing the bundle</Toast>
               <Toast variant="warning">Held by another client (readonly)</Toast>
-              <Toast variant="agent">Agent opened 3 surfaces in background</Toast>
+              <Toast variant="info">Settings applied</Toast>
               <Toast variant="success" hint={<Kbd keys="⌘C" />}>Path copied to clipboard</Toast>
               <Toast variant="danger">Force detach — connection dropped</Toast>
             </div>
@@ -737,7 +739,7 @@ function Components() {
               ["radius", <span className="tok">--tasty-tooltip-radius</span>],
               ["max-width", <>240 <span className="tok">--tasty-tooltip-max-width</span></>],
               ["placement", "top / bottom / left / right"],
-              ["over native content", "tab strip · pane head: always top, clamped inside the window (Layouts › Pane tab strip)"],
+              ["over native content", "tab strip · pane head: top → bottom → inside the strip → top clamped (4 from the window edge) — Layouts › Pane tab strip"],
               ["delay", <>150ms <span className="tok">--tasty-tooltip-delay</span></>],
             ]}
             tokens={[

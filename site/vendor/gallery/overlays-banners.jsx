@@ -229,6 +229,24 @@ function Page() {
             specs={[["where", "Secondary inside any banner shell"], ["fill", "surface-hover (one step above banner-bg)"], ["edge", "border-frame (one step above banner-border)"], ["hover", "overlay-hover · edge unchanged"], ["variant", "none new — context rule in Button"]]}
             tokens={[{ tok: "--tasty-banner-button-bg", use: "→ surface-hover", color: "var(--tasty-banner-button-bg)" }, { tok: "--tasty-banner-button-border", use: "→ border-frame", color: "var(--tasty-banner-button-border)" }, { tok: "--tasty-banner-bg", use: "shell", color: "var(--tasty-banner-bg)" }]} />
         </Spec>
+        <Spec title="Load failed — no banner, no marker (2026-10-06)"
+          when={<>When the document never commits (the web process dies first, or the load errors), the host chrome's <b>Failed to load</b> state takes the body. The script banner and the tab's lock / script marker are <b>both removed</b> in that state: they describe the previous document, and Allow would allow nothing. Only the failure state shows. A reload that commits decides banner and marker again from the new document. Same on every OS; only Linux is measured today.</>}>
+          <Stage variant="solo" style={{ padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-app)", gap: "var(--tasty-space-lg)", flexWrap: "wrap", alignItems: "flex-start" }}>
+            {[["Mocha", null], ["Latte", "latte"]].map(([label, attr]) => (
+              <div key={label} {...(attr ? { "data-theme": attr } : {})} style={{ display: "flex", gap: "var(--tasty-space-md)", flexWrap: "wrap", padding: "var(--tasty-space-md)", background: "var(--tasty-bg-app)", border: "var(--tasty-border-width) solid var(--tasty-border-default)", borderRadius: "var(--tasty-radius)" }}>
+                {[["current — stale banner over the failure (wrong)", { banner: "blocked", marker: "blocked" }], ["decided — failure state only", { banner: null, marker: null }]].map(([cap, p]) => (
+                  <div key={cap} style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)" }}>
+                    <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>{label} · {cap}</span>
+                    <div style={{ border: "var(--tasty-border-width) solid var(--tasty-border-frame)", borderRadius: "var(--tasty-radius)", overflow: "hidden" }}><HtmlSurfaceG {...p} failed width="var(--tasty-size-360)" height={220} /></div>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </Stage>
+          <Meta
+            specs={[["banner", "removed while failed"], ["tab marker", "lock / script glyph removed while failed"], ["failure state", "alertCircle md + Failed to load (accent-danger) · URL mono caption text-disabled"], ["reload commits", "banner + marker re-derived from the new document"]]}
+            tokens={[{ tok: "--tasty-accent-danger", use: "glyph + title", color: "var(--tasty-accent-danger)" }, { tok: "--tasty-text-disabled", use: "URL", color: "var(--tasty-text-disabled)" }]} />
+        </Spec>
         <Spec title="After × and after Allow — the tab-strip marker"
           when={<>× hides the notice for this load; scripts stay blocked. A <b>lock</b> marker then sits in the surface's tab, first in the tab's right-hand status cluster (Layouts › Pane tab strip; <span className="tok">--tasty-html-script-marker-fg</span> → glyph-dim, 12px). Clicking it <b>shows the banner again</b> — it re-explains before offering Allow, and never allows on its own. Mouse only, no focus change. After Allow, the tab carries a <b>script</b> glyph in text-muted with a tooltip; it is not clickable. Navigating to another document clears both, and the new document starts over. <code>#fragment</code> moves keep them.</>}>
           <Stage variant="solo" style={{ padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-app)", gap: "var(--tasty-space-lg)", flexWrap: "wrap", alignItems: "flex-start" }}>
