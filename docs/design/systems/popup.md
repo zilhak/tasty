@@ -149,8 +149,9 @@ plugin popup(`[[contributes.popup]]`)은 매니페스트 `scope` 로 범위의 *
 
 이벤트 trigger popup 의 대상은 host 가 확인한다. 매니저는 surface 트리를 모르므로 `surface`
 선언 + 대상이 있는 이벤트 popup 을 대기열에 두고, 앱이 같은 frame 에 꺼내 대상 surface
-(webview 또는 egui-mesh plugin surface)의 소유 plugin 과 이벤트 발행자를 대조한다. 거절하면
-popup 을 열지 않고 경고 로그를 남긴다. `window` 로 낮춰 열지 않는다 — 지목한 대상이 조용히
+(webview 또는 egui-mesh plugin surface)의 소유 plugin 을 대조한다. 발행자 대조는 매니저가
+대상 유무와 관계없이 먼저 한다 — 다른 plugin 이 발행한 이벤트로는 `surface` 선언 popup 을
+창 범위로도 열지 않는다. 거절하면 popup 을 열지 않고 경고 로그만 남긴다. 발행 자체는 성공한다. `window` 로 낮춰 열지 않는다 — 지목한 대상이 조용히
 무시되고 창 scrim 이 다른 surface 를 덮기 때문이다.
 
 | 진입점 | 바인딩되는 대상 |
@@ -158,7 +159,7 @@ popup 을 열지 않고 경고 로그를 남긴다. `window` 로 낮춰 열지 �
 | 변환 입력 popup(`convert_input_popup`) | 제자리 변환이면 그 surface, 새 탭이면 여는 시점의 focus surface |
 | 도구 메뉴 popup | 여는 시점의 focus surface |
 | 이벤트 trigger popup | `surface` 범위 이벤트(`EventScope::Surface`)의 payload `surface_id`. 대상이 그 popup 을 선언한 plugin 의 surface 가 아니거나, 다른 plugin 이 발행한 이벤트면 열지 않는다 |
-| plugin 이 IPC 로 연 popup, 대상 없는 이벤트 | 없음 — 선언이 `surface` 여도 `window` 로 뜬다 |
+| plugin 이 IPC 로 연 popup, 대상 없는 이벤트 | 없음 — 선언이 `surface` 여도 `window` 로 뜬다. 대상 없는 이벤트도 다른 plugin 이 발행했으면 열지 않는다 |
 
 `surface` 범위 popup은 앵커의 가운데 기준도 그 surface 영역이다. 범위가 안 보이는 frame 에는
 셸·콘텐츠 합성·히트테스트 rect·Esc·바깥 클릭·키 게이트 어디에도 들어가지 않는다 — 보이지

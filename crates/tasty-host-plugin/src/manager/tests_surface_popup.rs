@@ -113,3 +113,68 @@ fn a_window_popup_or_an_event_without_a_surface_opens_at_once() {
     assert!(mgr.take_pending_surface_popups().is_empty());
     assert_eq!(mgr.popup_instances().count(), 1);
 }
+
+fn publish_from(
+    mgr: &mut PluginManager,
+    publisher: &str,
+    payload: serde_json::Value,
+    scope: EventScope,
+) {
+    mgr.event_bus
+        .set_plugin_permissions(publisher, vec![], vec![format!("{PLUGIN}.*")]);
+    mgr.publish_and_dispatch(
+        publisher,
+        EventEnvelope {
+            key: KEY.into(),
+            payload,
+            meta: EventMeta {
+                trace_id: "t".into(),
+                hop: 0,
+                origin: EventOrigin::Plugin {
+                    plugin_id: publisher.into(),
+                },
+                scope,
+            },
+        },
+    );
+}
+
+#[test]
+fn another_plugins_event_opens_no_surface_popup_with_or_without_a_target() {
+    const OTHER: &str = "com.example.other";
+    for (payload, scope) in [
+        (surface_payload(), EventScope::Surface),
+        (surface_payload(), EventScope::System),
+        (serde_json::json!({ "path": "/a.md" }), EventScope::Surface),
+    ] {
+        let mut mgr = manager(r#"scope = "surface""#);
+        publish_from(&mut mgr, OTHER, payload, scope);
+        assert!(mgr.take_pending_surface_popups().is_empty());
+        assert_eq!(mgr.popup_instances().count(), 0, "{scope:?}");
+    }
+}
+
+#[test]
+fn the_owners_own_event_without_a_target_still_opens_on_the_window() {
+    let mut mgr = manager(r#"scope = "surface""#);
+    publish_from(
+        &mut mgr,
+        PLUGIN,
+        serde_json::json!({ "path": "/a.md" }),
+        EventScope::System,
+    );
+    assert!(mgr.take_pending_surface_popups().is_empty());
+    assert_eq!(mgr.popup_instances().count(), 1);
+}
+
+#[test]
+fn a_window_popup_keeps_opening_from_another_plugins_event() {
+    let mut mgr = manager("");
+    publish_from(
+        &mut mgr,
+        "com.example.other",
+        surface_payload(),
+        EventScope::Surface,
+    );
+    assert_eq!(mgr.popup_instances().count(), 1);
+}

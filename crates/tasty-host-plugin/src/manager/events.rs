@@ -49,6 +49,18 @@ impl PluginManager {
             })
             .collect();
         for (plugin_id, popup_id, decl) in matches {
+            // surface 팝업은 그 플러그인이 발행한 이벤트로만 연다. 대상이 없어 창 범위로
+            // 열리는 경우에도 같다. 발행 권한은 플러그인 ID 에 묶이지 않기 때문이다.
+            if decl == PopupScopeDecl::Surface
+                && let Some(publisher) = publisher
+                && publisher != plugin_id
+            {
+                tracing::warn!(
+                    "popup '{plugin_id}/{popup_id}' refused: event from plugin '{publisher}' \
+                     cannot open another plugin's surface popup"
+                );
+                continue;
+            }
             match (decl, target) {
                 (PopupScopeDecl::Surface, Some(surface_id)) => {
                     self.pending_surface_popups.push(PendingSurfacePopup {
