@@ -974,7 +974,15 @@ pub fn pages() -> Vec<Page> {
                             "banner-anatomy",
                             "Anatomy & states",
                             Some(
-                                "Mouse-capture banner — persistent (no TTL), once per tracking session, user click only · × and ⋯ hidden until hover · body wraps 1–3 lines",
+                                "The canonical use: a TUI app turns on mouse tracking (DECSET \
+                                 1000/1002/1003), so drag-to-select and right-click stop working. \
+                                 The banner explains why and the bypass. It is persistent (no TTL \
+                                 — it doesn't time out), fires once per tracking session and only \
+                                 on a real user click (never from agent/IPC). The top-right × is \
+                                 hidden until you hover; dismissing it suppresses the banner for \
+                                 that session. Leading glyph = a mouse (open decision resolved: \
+                                 keep it, in banner-icon-fg tone). Card height is variable — body \
+                                 wraps to 1–3 lines depending on locale.",
                             ),
                             widgets::banner_mouse_capture::draw_anatomy,
                         ),

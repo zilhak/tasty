@@ -104,12 +104,9 @@ pub fn draw_anatomy(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         &[
-            (
-                "title",
-                "\"Mouse input captured\" · 13/600 --tasty-banner-fg",
-            ),
-            ("body", "caption · --tasty-text-muted · 1–3 lines"),
-            ("glyph", "mouse · --tasty-banner-icon-fg"),
+            ("title", "\"Mouse input captured\" · 13/600 banner-fg"),
+            ("body", "caption · text-muted · 1–3 lines"),
+            ("glyph", "mouse · banner-icon-fg"),
             ("affordance", "⋯ + × on hover (no TTL / countdown)"),
             ("fires", "once per tracking session · user click only"),
             ("dismiss", "suppresses for the session"),
