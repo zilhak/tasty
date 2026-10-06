@@ -76,11 +76,11 @@ function Page() {
     <>
 <Section id="tools" title="Tools menu">
         <Spec title="Tools menu — anchored, no scrim"
-          when={<>A <b>160px</b> popup anchored <b>above</b> the sidebar Tools button (left-aligned to it). Unlike the modal layer this is a lightweight menu — <b>no scrim</b>, dismisses on outside click or <Kbd keys="Esc" />. Built-in entries first (Command palette, Listening ports, Remote connections, Presets), then a separator, then <b>plugin-contributed</b> tools.</>}>
+          when={<>A <b>160px</b> popup anchored <b>above</b> the sidebar Tools button (left-aligned to it). Unlike the modal layer this is a lightweight menu — <b>no scrim</b>, dismisses on outside click or <Kbd keys="Esc" />. Built-in entries first, in this fixed order — <b>Command palette… · Listening ports… · Remote connections… · Presets · Tutorial… · Task DAGs · Open File…</b> — then a separator, then <b>plugin-contributed</b> tools in manifest <code>order</code> (Clipboard Viewer 100 · Git 130). Every label that opens a further window ends in the single ellipsis character <code>…</code>, never three periods.</>}>
           <Stage variant="solo center"><ToolsMenuFrame /></Stage>
           <Meta
-            specs={[["width", "160px"], ["anchor", "above button, left-aligned"], ["rows", "28px MenuItem, no icons"], ["scrim", "none"], ["dismiss", <>outside click · <span className="ic">Esc</span></>]]}
-            tokens={[{ tok: "--tasty-surface-raised", use: "menu fill", color: "var(--tasty-surface-raised)" }, { tok: "--tasty-border-strong", use: "edge", color: "var(--tasty-border-strong)" }, { tok: "--tasty-shadow-popover", use: "lift" }]} />
+            specs={[["width", "160px"], ["anchor", "above button, left-aligned"], ["rows", "28px MenuItem, no icons"], ["built-in", "7 — fixed order"], ["inner ring", <>4 · <span className="tok">--tasty-popup-content-margin</span></>], ["scrim", "none"], ["dismiss", <>outside click · <span className="ic">Esc</span></>]]}
+            tokens={[{ tok: "--tasty-menu-bg", use: "menu fill", color: "var(--tasty-menu-bg)" }, { tok: "--tasty-menu-border", use: "edge → border-strong", color: "var(--tasty-menu-border)" }, { tok: "--tasty-popup-content-margin", use: "→ space-xs 4" }, { tok: "--tasty-shadow-popover", use: "lift" }]} />
           <Note>Plugins extend the list <b>below</b> the separator only — built-in order is fixed. This is a popover, not a dialog: it never dims the app.</Note>
         </Spec>
       </Section>
@@ -91,7 +91,7 @@ function Page() {
           <Stage variant="solo center"><SearchBarFrame /></Stage>
           <Meta
             specs={[["frame", "360 × 28 row"], ["anchor", "top-right of focused surface"], ["counter", "cur/total · red on 0"], ["toggles", "Aa · .* · ab"], ["dismiss", <span className="ic">Esc</span>]]}
-            tokens={[{ tok: "--tasty-surface-raised", use: "bar fill", color: "var(--tasty-surface-raised)" }, { tok: "--tasty-accent-danger", use: "no-match counter", color: "var(--tasty-accent-danger)" }, { tok: "--tasty-shadow-popover", use: "lift" }]} />
+            tokens={[{ tok: "--tasty-surface-raised", use: "bar fill", color: "var(--tasty-surface-raised)" }, { tok: "--tasty-search-bar-border", use: "edge → menu-border", color: "var(--tasty-search-bar-border)" }, { tok: "--tasty-accent-danger", use: "no-match counter", color: "var(--tasty-accent-danger)" }, { tok: "--tasty-shadow-popover", use: "lift" }]} />
           <Note>Sticky-focus popover: the input keeps focus and the bar persists through clicks in the terminal — it closes only on <span className="ic">Esc</span> or its × button.</Note>
         </Spec>
       </Section>
@@ -136,24 +136,24 @@ function Page() {
           <Note>Workspace shortcuts only go <b>1–9</b> (no <span className="ic">0</span>), so the 10th workspace and beyond get <b>no keycap</b> — in the collapsed rail they keep their letter avatar (last item above). The bound modifier is read from the same keybindings the shortcut uses: rebind it and the overlay follows.</Note>
           <Do><b>Do</b> replace the leading indicator rather than overlapping the label — the keycap's own surface-raised fill + border clears 4.5:1 on both tab and sidebar backgrounds without a scrim.</Do>
         </Spec>
-        <Spec title="Category switch overlay — Alt+Shift held"
-          when={<>A third switch axis, present only when <b>Workspace categories (folders)</b> is on. Holding the <b>category switch modifier</b> (<Kbd keys="Alt+Shift" /> by default — rebindable) paints a keycap over <b>each category</b>, previewing <Kbd keys="Alt+Shift+1" />…<Kbd keys="Alt+Shift+9" /> / <Kbd keys="Alt+Shift+0" />. In the <b>full</b> sidebar the keycap is <b>right-aligned on the category header</b> — it does <b>not</b> replace the chevron, which stays to carry collapse state (and its auto-expand rotation). In the <b>rail</b> it sits <b>centered on the <code>---</code> boundary</b>. The reserved <b>normal</b> category (“Workspaces”) is <b>1</b>. This overlay and the workspace overlay are <b>modifier-exclusive</b> — <Kbd keys="Alt" /> paints workspaces, <Kbd keys="Alt+Shift" /> paints categories, never both at once, so workspace rows keep their status dots here.</>}>
+        <Spec title="Category switch overlay — Ctrl+Shift held"
+          when={<>A third switch axis, present only when <b>Workspace categories (folders)</b> is on. Holding the <b>category switch modifier</b> (<Kbd keys="Ctrl+Shift" /> by default — rebindable) paints a keycap over <b>each category</b>, previewing <Kbd keys="Ctrl+Shift+1" />…<Kbd keys="Ctrl+Shift+9" /> / <Kbd keys="Ctrl+Shift+0" />. In the <b>full</b> sidebar the keycap is <b>right-aligned on the category header</b> — it does <b>not</b> replace the chevron, which stays to carry collapse state (and its auto-expand rotation). In the <b>rail</b> it sits <b>centered on the <code>---</code> boundary</b>. The reserved <b>normal</b> category (“Workspaces”) is <b>1</b>. This overlay and the workspace overlay are <b>modifier-exclusive</b> — <Kbd keys="Alt" /> paints workspaces, <Kbd keys="Ctrl+Shift" /> paints categories, never both at once, so workspace rows keep their status dots here. The chord is the product default <code>category_switch_modifier = ctrl+shift</code> (every preset) — the gallery and the app read it from there.</>}>
           <Stage variant="solo center" style={{ alignItems: "flex-start", gap: 24, padding: 20, background: "var(--tasty-bg-app)", flexWrap: "wrap" }}>
             <div>
               <div style={{ fontSize: 11, color: "var(--tasty-text-muted)", marginBottom: 8 }}>released — full sidebar with categories</div>
               <CatSwitchSidebarMock held={false} />
             </div>
             <div>
-              <HeldLabel keys="Alt+Shift">category header gets a trailing keycap</HeldLabel>
+              <HeldLabel keys="Ctrl+Shift">category header gets a trailing keycap</HeldLabel>
               <CatSwitchSidebarMock held={true} />
             </div>
             <div>
-              <HeldLabel keys="Alt+Shift">collapsed rail · <code>---</code> becomes the keycap</HeldLabel>
+              <HeldLabel keys="Ctrl+Shift">collapsed rail · <code>---</code> becomes the keycap</HeldLabel>
               <CatSwitchRailMock held={true} />
             </div>
           </Stage>
           <Meta
-            specs={[["widget", <><span className="ic">Kbd</span> keycap · 16px</>], ["content", "digit only · 0 = 10th category"], ["full placement", "trailing on header — chevron kept"], ["rail", <>centered on the <code>---</code> boundary</>], ["range", "1–9 + 0; 11th category onward: none"], ["reserved", "normal (“Workspaces”) = 1"], ["active cat", "accent-filled keycap"], ["exclusivity", "Alt = ws · Alt+Shift = category"]]}
+            specs={[["widget", <><span className="ic">Kbd</span> keycap · 16px</>], ["content", "digit only · 0 = 10th category"], ["full placement", "trailing on header — chevron kept"], ["rail", <>centered on the <code>---</code> boundary</>], ["range", "1–9 + 0; 11th category onward: none"], ["reserved", "normal (“Workspaces”) = 1"], ["active cat", "accent-filled keycap"], ["exclusivity", "Ctrl = tabs · Alt = ws · Ctrl+Shift = category"], ["default", "category_switch_modifier = ctrl+shift"]]}
             tokens={[{ tok: "--tasty-switch-overlay-bg", use: "keycap fill", color: "var(--tasty-switch-overlay-bg)" }, { tok: "--tasty-switch-overlay-active-bg", use: "active-category keycap", color: "var(--tasty-switch-overlay-active-bg)" }, { tok: "--tasty-switch-overlay-active-fg", use: "digit on accent", color: "var(--tasty-switch-overlay-active-fg)" }, { tok: "--tasty-surface-active", use: "landed workspace row", color: "var(--tasty-surface-active)" }]} />
           <Note><b>Auto-expand:</b> switching to a <b>collapsed</b> category rotates its chevron open and reveals its rows (the chevron is why it isn't replaced by the keycap) — the new collapse state persists in <code>layout.json</code>. <b>Last-active:</b> the switch lands on that category's most-recently-focused workspace (its first if never visited), shown with the ordinary <b>surface-active + 2px accent bar</b> — no separate affordance. Reuses the <span className="ic">NumCap</span> keycap and every <span className="tok">--tasty-switch-overlay-*</span> token; no new tokens.</Note>
         </Spec>
@@ -166,7 +166,7 @@ function Page() {
             <ModHintHoldDemo />
           </Stage>
           <Meta
-            specs={[["trigger", <>modifier held <b>500ms</b></>], ["default size", "220 × 400"], ["default pos", "bottom-left, above sidebar footer"], ["appear", "fade opacity 0.2→1 · 200ms"], ["release", "0ms — instant dismiss"], ["focus", "never — not a focus window"], ["scrim", "none"]]}
+            specs={[["trigger", <>modifier held <b>500ms</b></>], ["default size", <>180 × 400 · <span className="tok">--tasty-modhint-width</span> × <span className="tok">--tasty-modhint-height</span></>], ["default pos", "bottom-left, above sidebar footer"], ["appear", "fade opacity 0.2→1 · 200ms"], ["release", "0ms — instant dismiss"], ["focus", "never — not a focus window"], ["scrim", "none"]]}
             tokens={[{ tok: "--tasty-modhint-bg", use: "panel fill", color: "var(--tasty-modhint-bg)" }, { tok: "--tasty-modhint-shadow", use: "floating lift" }, { tok: "--tasty-modhint-fade", use: "200ms fade-in" }, { tok: "--tasty-modhint-hold-delay", use: "500ms hold" }]} />
           <Note>Reduced motion skips the fade — the panel appears at full opacity the instant the 500ms hold completes. The <b>bound</b> modifier set is read from the same keybindings source the shortcuts use (Win/Linux: Ctrl / Alt / Shift; macOS adds Cmd / Option).</Note>
         </Spec>
@@ -179,20 +179,20 @@ function Page() {
               <ModifierHintPanelG />
             </div>
             <div>
-              <div style={{ fontSize: 11, color: "var(--tasty-text-muted)", marginBottom: 8 }}>resized taller (drag any edge)</div>
-              <ModifierHintPanelG style={{ height: 300 }} />
+              <div style={{ fontSize: 11, color: "var(--tasty-text-muted)", marginBottom: 8 }}>resized taller (drag any edge) — 480</div>
+              <ModifierHintPanelG style={{ height: 480 }} />
             </div>
             <div>
-              <div style={{ fontSize: 11, color: "var(--tasty-text-muted)", marginBottom: 8 }}>Alt+Shift held — categories on</div>
-              <ModifierHintPanelG held="Alt+Shift" sections={MH_CAT_SECTIONS} style={{ height: 300 }} />
+              <div style={{ fontSize: 11, color: "var(--tasty-text-muted)", marginBottom: 8 }}>Ctrl+Shift held — categories on</div>
+              <ModifierHintPanelG held="Ctrl+Shift" sections={MH_CAT_SECTIONS} style={{ height: 300 }} />
             </div>
           </Stage>
           <Meta
-            specs={[["drag strip", "muted sidebar fill — NOT a titlebar"], ["X button", "dismiss for this hold only"], ["section order", "size ↑, then Ctrl→Cmd/Alt→Option→Shift"], ["keycap row", "action + Kbd"], ["role row", "washed, leading glyph, no keycap"], ["plugin row", "agent dot, context-dependent"], ["grip", "bottom-right, nwse-resize"], ["min size", "200 × 240"]]}
+            specs={[["drag strip", "muted sidebar fill — NOT a titlebar"], ["X button", "dismiss for this hold only"], ["section order", "size ↑, then Ctrl→Cmd/Alt→Option→Shift"], ["keycap row", "action + Kbd"], ["role row", "washed, leading glyph, no keycap"], ["plugin row", "agent dot, context-dependent"], ["row text", <>11 · <span className="tok">--tasty-modhint-row-font-size</span> (chord · role · empty rows)</>], ["chord row", <>min 24 · <span className="tok">--tasty-modhint-row-min-height</span></>], ["role row pad", <>6 / 8 · <span className="tok">--tasty-modhint-row-gap</span> / <span className="tok">--tasty-space-sm</span></>], ["grip", <>12 · inset 2 from right/bottom · <span className="tok">--tasty-modhint-grip-size</span> · <span className="tok">--tasty-modhint-grip-inset</span> (on-scale)</>], ["min size", "180 × 240"]]}
             tokens={[{ tok: "--tasty-modhint-header-bg", use: "drag strip", color: "var(--tasty-modhint-header-bg)" }, { tok: "--tasty-modhint-role-bg", use: "role-row wash", color: "var(--tasty-modhint-role-bg)" }, { tok: "--tasty-modhint-role-fg", use: "role glyph", color: "var(--tasty-modhint-role-fg)" }, { tok: "--tasty-accent-agent", use: "plugin dot", color: "var(--tasty-accent-agent)" }, { tok: "--tasty-modhint-grip-fg", use: "resize grip", color: "var(--tasty-modhint-grip-fg)" }]} />
           <Do><b>Do</b> keep it opaque and low-chrome — it floats over live terminal output, and the muted drag strip (not a titlebar) is the promise that it will never steal focus.</Do>
           <Dont><b>Don't</b> hide a chord that a key combo <i>could</i> reach — a bound-empty chord shows its ChordHead with a muted <b>“No shortcuts bound”</b> placeholder (see below), never nothing, so holding an all-empty combo still surfaces the panel.</Dont>
-          <Note>When <b>Workspace categories (folders)</b> is on, the <Kbd keys="Alt+Shift" /> chord carries a <b>“Switch category”</b> role row (folder glyph) — the discoverability entry for the category quick-switch (see Switch-number overlay). A chord's role row is how a numeric switch announces itself, exactly like <Kbd keys="Ctrl" /> = tab-switch numbers.</Note>
+          <Note>When <b>Workspace categories (folders)</b> is on, the <Kbd keys="Ctrl+Shift" /> chord carries a <b>“Switch category”</b> role row (folder glyph) — the discoverability entry for the category quick-switch (see Switch-number overlay). A chord's role row is how a numeric switch announces itself, exactly like <Kbd keys="Ctrl" /> = tab-switch numbers.</Note>
         </Spec>
 
         <Spec title="Empty chord — “No shortcuts bound” placeholder"
@@ -212,7 +212,7 @@ function Page() {
             tokens={[{ tok: "--tasty-modhint-empty-fg", use: "placeholder text", color: "var(--tasty-modhint-empty-fg)" }, { tok: "--tasty-text-muted", use: "→ semantic", color: "var(--tasty-text-muted)" }, { tok: "--tasty-modhint-section-gap", use: "between sections (unchanged)" }]} />
           <Do><b>Do</b> keep the placeholder muted and bare — it announces an <i>absence</i>, so it must read quieter than a bound keycap row and never borrow the role-row's wash or glyph.</Do>
           <Dont><b>Don't</b> give it a keycap, a hover highlight, or a washed background — a keycap implies a binding that isn't there, and a wash makes it look like a role-row that <i>does</i> something.</Dont>
-          <Note>i18n key <code>modifier_hint.empty</code> — en <code>“No shortcuts bound”</code> · ko <code>“지정된 단축키 없음”</code> · ja <code>“割り当てなし”</code>. Fits one line in the 220px panel across all three. New token <code>--tasty-modhint-empty-fg</code> → <code>text-muted</code> (a pointer, no new primitive), so the implementing side flips <code>build_hint_sections()</code>' empty-<code>retain</code> and paints one <code>draw_row</code> variant.</Note>
+          <Note>i18n key <code>modifier_hint.empty</code> — en <code>“No shortcuts bound”</code> · ko <code>“지정된 단축키 없음”</code> · ja <code>“割り当てなし”</code>. Fits one line in the 180px panel across all three. New token <code>--tasty-modhint-empty-fg</code> → <code>text-muted</code> (a pointer, no new primitive), so the implementing side flips <code>build_hint_sections()</code>' empty-<code>retain</code> and paints one <code>draw_row</code> variant.</Note>
         </Spec>
       </Section>
 
@@ -240,15 +240,17 @@ function Page() {
               <MenuItem label="New category" icon={catIc.plus} />
             </CatMenu>
             <CatMenu caption="target: workspace row">
-              <MenuItem label="Move to category" icon={catIc.move} active shortcut={<span style={{ display: "inline-flex", color: "var(--tasty-text-muted)" }}>{catIc.chevR}</span>} />
+              <MenuItem label="Move to category" icon={catIc.move} disabled />
+              <MenuItem label="Workspaces" />
+              <MenuItem label="Services" />
               <MenuItem separator />
               <MenuItem label="New category" icon={catIc.plus} />
             </CatMenu>
           </Stage>
           <Meta
-            specs={[["trigger", "right-click, no dedicated button"], ["width", "176px min"], ["background", "New category"], ["category", "Add ws · Rename · Delete · New"], ["reserved", "Add ws · New (additive-only)"], ["workspace", "Move to category ▸ · New"]]}
+            specs={[["trigger", "right-click, no dedicated button"], ["width", "176px min"], ["background", "New category"], ["category", "Add ws · Rename · Delete · New"], ["reserved", "Add ws · New (additive-only)"], ["workspace", "Move to category (inert header) · targets · New"], ["targets", "every category except the current one · normal = “Workspaces”"]]}
             tokens={[{ tok: "--tasty-surface-raised", use: "menu fill", color: "var(--tasty-surface-raised)" }, { tok: "--tasty-border-strong", use: "edge", color: "var(--tasty-border-strong)" }, { tok: "--tasty-accent-danger", use: "delete row", color: "var(--tasty-accent-danger)" }, { tok: "--tasty-shadow-popover", use: "lift" }]} />
-          <Note>“Move to category” opens a submenu of category targets (the drag-and-drop reorder is the primary path; this is the keyboard/menu fallback). New strings: <code>workspace_category.add_workspace</code> · <code>collapse</code> · <code>expand</code>. Existing: <code>new_category</code> · <code>rename_category</code> · <code>delete_category</code> · <code>move_to_category</code>.</Note>
+          <Note>“Move to category” is an <b>inert header</b> with the target categories listed <b>flat</b> beneath it (current category omitted) — no submenu, because the product draws this menu with the OS-native context menu (2026-10-07). Drag-and-drop reorder stays the primary path; this is the menu fallback. New strings: <code>workspace_category.add_workspace</code> · <code>collapse</code> · <code>expand</code>. Existing: <code>new_category</code> · <code>rename_category</code> · <code>delete_category</code> · <code>move_to_category</code>.</Note>
         </Spec>
         <Spec title="Collapsed rail — `---` category button + anchored popup"
           when={<>In the 52px rail, categories aren't labelled — each boundary is a clickable <b>horizontal <code>---</code> button</b> (the old thin separator, now a button). Clicking it opens a popup to its <b>right</b> (like the rail Tools button). The popup's <b>top line is the category name</b>, a <b>non-clickable header</b>; below are the actions. A category's avatars sit <b>below</b> its <code>---</code>; a <b>collapsed or empty</b> category shows only the <code>---</code> button.</>}>
@@ -257,7 +259,7 @@ function Page() {
           </Stage>
           <Meta
             specs={[["boundary", <><code>---</code> full-width button</>], ["anchor", "popup to the right of the button"], ["header", "category name — non-clickable"], ["items", "Add workspace · Collapse · Rename · Delete"], ["collapsed/empty", <><code>---</code> only, no avatars</>], ["reserved", "no Rename/Delete"]]}
-            tokens={[{ tok: "--tasty-separator", use: <><code>---</code> line (idle)</>, color: "var(--tasty-separator)" }, { tok: "--tasty-text-muted", use: <><code>---</code> line (hover)</>, color: "var(--tasty-text-muted)" }, { tok: "--tasty-surface-raised", use: "popup fill", color: "var(--tasty-surface-raised)" }, { tok: "--tasty-accent-danger", use: "delete row", color: "var(--tasty-accent-danger)" }]} />
+            tokens={[{ tok: "--tasty-separator", use: <><code>---</code> line (idle)</>, color: "var(--tasty-separator)" }, { tok: "--tasty-text-muted", use: <><code>---</code> line (hover)</>, color: "var(--tasty-text-muted)" }, { tok: "--tasty-surface-raised", use: "popup fill", color: "var(--tasty-surface-raised)" }, { tok: "--tasty-menu-border", use: "edge", color: "var(--tasty-menu-border)" }, { tok: "--tasty-popup-content-margin", use: "inner ring 4 (all sides)" }, { tok: "--tasty-accent-danger", use: "delete row", color: "var(--tasty-accent-danger)" }]} />
           <Note>Collapse state is per-category and <b>shared</b> with the full sidebar (both seed from the persisted <code>collapsed</code> flag in <code>layout.json</code>). Toggling here or in the full header updates the same state.</Note>
         </Spec>
       </Section>

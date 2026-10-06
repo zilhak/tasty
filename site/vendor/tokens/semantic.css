@@ -64,6 +64,8 @@
   --tasty-accent-window-close: var(--tasty-color-os-windows-close); /* OS-native window-close hover (Windows CSD) */
   --tasty-accent-attached: var(--tasty-color-lavender); /* workspace claimed by ANOTHER client (multi-client attach) — deliberately NOT danger-red, which means error */
   --tasty-accent-remote:   var(--tasty-color-sky); /* MIRROR: this workspace is a local mirror of a REMOTE tasty instance (an origin/identity, NOT an execution state) — an axis of its own, kept off the status dot */
+  --tasty-accent-data:     var(--tasty-color-teal); /* DATA FLOW: a value handed from one task to another (DAG input binding edge). An origin-of-data mark, not a state (2026-10-07) */
+  --tasty-accent-route:    var(--tasty-color-lavender); /* ROUTE: a result-chosen path between tasks (DAG transition edge). Same primitive as accent-attached, a different role — never shown on the same surface (2026-10-07) */
   --tasty-accent-move:     var(--tasty-color-pink); /* MOVE SOURCE: the one surface / tab / pane armed by "Move Surface / Tab / Pane" and waiting for "… Here". A pending-action marker, not a state or an attention kind — its own hue so it never reads as notice (yellow/blue), occupancy (green/peach), agent (mauve) or attach (lavender) */
 
   /* OCCUPANCY — a subject (remote user / AI agent) HOLDS a terminal surface.
@@ -236,6 +238,11 @@
   /* ── Tinted fill + edge (the accent-box idiom) ── */
   --tasty-tint-fill-alpha:   var(--tasty-opacity-tint-fill);   /* 0.12 — accent as a soft fill */
   --tasty-tint-border-alpha: var(--tasty-opacity-tint-border); /* 0.36 — the same accent as the edge */
+  /* ── Dashed edge (one rule for every dashed 1px outline: empty-hint box, "Add trigger…" control). CSS draws `dashed`;
+     a renderer without CSS dashes draws segments of this length/gap. Corners stay SOLID (the arc is drawn whole); dashes run on the
+     straight edges only, centred so each edge starts and ends on a dash. OFF-SCALE like border-width (2026-10-07) */
+  --tasty-border-dash:     var(--tasty-size-4);
+  --tasty-border-dash-gap: var(--tasty-size-4);
   --tasty-tint-edge-width:   var(--tasty-size-2); /* 2 — the accent-box's one leading edge (Do / Don't callouts, notes). HAIRLINE — zoom-exempt like selection-edge-width (2026-10-06) */
 
   /* ── Typography roles ─────────────────────────────────────── */

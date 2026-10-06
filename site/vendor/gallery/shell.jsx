@@ -259,10 +259,20 @@ function Cluster({ label, children }) {
 }
 
 // specs: [[label, valueNode], …]   tokens: [{tok, use, color}]
+// Token-name notation (2026-10-07): Meta DRAWS the bare name ("bg-app"), the same as the
+// product gallery; sources keep the full "--tasty-bg-app" (grep-able) and the chip's
+// tooltip carries it. Applies to the chips and to every string inside the Meta block.
+const bareTok = (s) => (typeof s === "string" ? s.replace(/--tasty-/g, "") : s);
 function Meta({ specs, tokens }) {
   const cols = (specs ? 1 : 0) + (tokens ? 1 : 0);
+  const ref = React.useRef(null);
+  React.useEffect(() => {
+    const root = ref.current; if (!root) return;
+    const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    for (let n = w.nextNode(); n; n = w.nextNode()) if (n.nodeValue.includes("--tasty-")) n.nodeValue = bareTok(n.nodeValue);
+  });
   return (
-    <div className="meta" style={cols === 1 ? { gridTemplateColumns: "1fr" } : undefined}>
+    <div ref={ref} className="meta" style={cols === 1 ? { gridTemplateColumns: "1fr" } : undefined}>
       {specs && (
         <div>
           <div className="mh">Layout spec</div>
@@ -276,9 +286,9 @@ function Meta({ specs, tokens }) {
           <div className="mh">Tokens used</div>
           <div className="chips">
             {tokens.map((t, i) => (
-              <span className="chip" key={i}>
+              <span className="chip" key={i} title={t.tok}>
                 {t.color && <span className="sw" style={{ background: t.color }} />}
-                <b>{t.tok}</b>{t.use && <span className="use">— {t.use}</span>}
+                <b>{bareTok(t.tok)}</b>{t.use && <span className="use">— {t.use}</span>}
               </span>
             ))}
           </div>

@@ -206,17 +206,22 @@ function SettingsFrame() {
   );
 }
 
-// ── Settings › General › Overlay — L2 subtab + toast duration DragValue ──
-function ToastDragValue({ state = "rest", v = "2.0 s" }) {
-  const border = state === "editing" ? "1px solid var(--tasty-accent-primary)" : state === "hover" ? "1px solid var(--tasty-border-strong)" : "1px solid var(--tasty-border-default)";
+// ── Settings › General › Overlay — toast duration: the settings number shape
+// (mono Input · static "s" suffix · clamp on commit). DragValue retired 2026-10-07.
+// Name kept (ToastDragValue) so existing imports keep resolving.
+function ToastDragValue({ state = "rest", v = "2.0" }) {
+  const bad = state === "invalid";
   return (
-    <span style={{ display: "inline-flex", alignItems: "center", height: 24, padding: "0 10px", fontFamily: "var(--tasty-font-mono)", fontSize: 13,
-      background: state === "hover" ? "var(--tasty-surface-hover)" : "var(--tasty-bg-app)", border, borderRadius: "var(--tasty-radius-sm)",
-      cursor: "ew-resize", color: "var(--tasty-text-primary)", userSelect: "none" }}>
-      {state === "editing" ? <span style={{ background: "var(--tasty-surface-active)" }}>2.0</span> : v}{state === "editing" ? <span>&nbsp;s</span> : null}
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
+      <span style={{ flex: "none", width: "var(--tasty-field-width-xs)" }}>
+        <Input block defaultValue={bad ? "14" : v} aria-invalid={bad || undefined}
+          style={{ fontFamily: "var(--tasty-font-mono)", textAlign: "right", ...(bad ? { borderColor: "var(--tasty-accent-danger)" } : state === "editing" ? { borderColor: "var(--tasty-border-focus)" } : null) }} />
+      </span>
+      <span style={{ flex: "none", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>s</span>
     </span>
   );
 }
+const ToastDurationField = ToastDragValue;
 
 function SettingsGeneralOverlayFrame() {
   const L1 = ["General", "Appearance", "Keybindings", "Plugins"];
@@ -252,7 +257,7 @@ function SettingsGeneralOverlayFrame() {
               <span style={{ fontSize: 13 }}>Toast duration</span>
               <span><ToastDragValue /></span>
             </div>
-            <p style={{ fontSize: 12, color: "var(--tasty-text-muted)", margin: 0, lineHeight: 1.5 }}>How long a toast stays on screen before it auto-dismisses. Drag left–right to adjust, or click to type a value.</p>
+            <p style={{ fontSize: 12, color: "var(--tasty-text-muted)", margin: 0, lineHeight: 1.5 }}>How long a toast stays on screen before it auto-dismisses. 1.0–10.0 seconds, in steps of 0.5.</p>
           </div>
           <div style={{ display: "flex", justifyContent: "flex-end", gap: "var(--tasty-space-sm)", padding: "var(--tasty-transfer-footer-pad-y) var(--tasty-transfer-pad-x)", borderTop: "1px solid var(--tasty-separator)" }}>
             <Button variant="ghost">Cancel</Button><Button variant="primary">Save</Button>
@@ -377,10 +382,10 @@ function TransferErrorFrame({ retry = false, name = "sprint-42-demo.mp4", reason
 
 // ── Tools menu — 160px, anchored above the sidebar Tools button, no scrim ──
 function ToolsMenuFrame() {
-  const builtin = ["Command palette…", "Listening ports...", "Remote connections…", "Presets"];
+  const builtin = ["Command palette…", "Listening ports…", "Remote connections…", "Presets", "Tutorial…", "Task DAGs", "Open File…"];
   const plugin = ["Clipboard Viewer", "Git"];
   return (
-    <div style={{ position: "relative", width: "100%", height: 320, borderRadius: "var(--tasty-radius)", overflow: "hidden",
+    <div style={{ position: "relative", width: "100%", height: 400, borderRadius: "var(--tasty-radius)", overflow: "hidden",
       border: "1px solid var(--tasty-border-default)", background: "var(--tasty-bg-app)" }}>
       {/* faux sidebar with a Tools button at the bottom */}
       <div style={{ position: "absolute", top: 0, bottom: 0, left: 0, width: 150, background: "var(--tasty-bg-sidebar)",
@@ -389,8 +394,8 @@ function ToolsMenuFrame() {
       </div>
       {/* the menu, anchored above the button */}
       <div role="menu" aria-label="Tools" style={{ position: "absolute", left: 12, bottom: 52, width: 160,
-        background: "var(--tasty-surface-raised)", border: "1px solid var(--tasty-border-strong)",
-        borderRadius: "var(--tasty-radius)", padding: 6, boxShadow: "var(--tasty-shadow-popover)" }}>
+        background: "var(--tasty-menu-bg)", border: "var(--tasty-border-width) solid var(--tasty-menu-border)",
+        borderRadius: "var(--tasty-menu-radius)", padding: "var(--tasty-popup-content-margin)", boxShadow: "var(--tasty-shadow-popover)" }}>
         {builtin.map((l) => <MenuItem key={l} label={l} />)}
         <MenuItem separator />
         {plugin.map((l) => <MenuItem key={l} label={l} />)}
@@ -852,7 +857,7 @@ function SearchBarFrame() {
       {/* the search bar */}
       <div role="search" style={{ position: "absolute", top: 8, right: 8, width: 360, maxWidth: "calc(100% - 16px)",
         display: "flex", alignItems: "center", gap: 4, padding: 4, background: "var(--tasty-surface-raised)",
-        border: "1px solid var(--tasty-border-strong)", borderRadius: "var(--tasty-radius)", boxShadow: "var(--tasty-shadow-popover)" }}>
+        border: "var(--tasty-border-width) solid var(--tasty-search-bar-border)", borderRadius: "var(--tasty-radius)", boxShadow: "var(--tasty-shadow-popover)" }}>
         <span style={{ flex: 1, minWidth: 60, display: "flex" }}><Input block defaultValue="tasty" /></span>
         <span style={{ flex: "none", width: 40, textAlign: "center", fontSize: 12, color: "var(--tasty-text-muted)", fontVariantNumeric: "tabular-nums" }}>2/3</span>
         <IconButton size="sm" aria-label="Previous"><Icon name="chevronUp" size={14} /></IconButton>
@@ -1283,11 +1288,11 @@ function RailMock() {
   );
 }
 
-// ── Category quick-switch — Alt+Shift held paints a keycap per CATEGORY ──
+// ── Category quick-switch — Ctrl+Shift held paints a keycap per CATEGORY ──
 // A second switch AXIS layered on the folders feature. The two switch
 // overlays are modifier-EXCLUSIVE, so they never paint at once:
 //   Alt        = workspaces  (row status-dot → keycap)   [SidebarMock/RailMock]
-//   Alt+Shift  = categories  (this overlay)
+//   Ctrl+Shift  = categories  (this overlay)
 // Full sidebar: the keycap is RIGHT-aligned on the category HEADER row — the
 // chevron is NOT replaced, because it is load-bearing for the auto-expand
 // transition (a collapsed target rotates open on switch). Reserved `normal`
@@ -1333,7 +1338,7 @@ function CatSwitchSidebarMock({ held }) {
   );
 }
 
-// Collapsed rail: categories are `---` boundary buttons. Alt+Shift held puts
+// Collapsed rail: categories are `---` boundary buttons. Ctrl+Shift held puts
 // the keycap centered ON the `---` slot (a collapsed/empty category still
 // shows its `---`, so it still gets a keycap).
 function CatSwitchRailMock({ held }) {
@@ -2148,8 +2153,8 @@ const catIc = {
   chevD: <Icon name="chevronDown" size={14} />,
   chevR: <Icon name="chevronRight" size={13} />,
 };
-const catMenuPanel = { background: "var(--tasty-surface-raised)", border: "1px solid var(--tasty-border-strong)",
-  borderRadius: "var(--tasty-radius)", padding: 6, boxShadow: "var(--tasty-shadow-popover)", minWidth: 176 };
+const catMenuPanel = { background: "var(--tasty-menu-bg)", border: "var(--tasty-border-width) solid var(--tasty-menu-border)",
+  borderRadius: "var(--tasty-menu-radius)", padding: "var(--tasty-popup-content-margin)", boxShadow: "var(--tasty-shadow-popover)", minWidth: 176 };
 
 // small labelled menu column (for the "target resolves to N shapes" layout)
 function CatMenu({ caption, children }) {
@@ -2297,10 +2302,10 @@ function ChordHead({ keys }) {
 // one keycap row inside a chord section — action label (elides) + its Kbd
 function HintRow({ action, keys, plugin }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, minHeight: 24 }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 8, minHeight: "var(--tasty-modhint-row-min-height)" }}>
       {plugin && <span aria-hidden style={{ width: "var(--tasty-status-dot-size)", height: "var(--tasty-status-dot-size)",
         borderRadius: "50%", flex: "none", background: "var(--tasty-accent-agent)" }} />}
-      <span style={{ flex: 1, minWidth: 0, fontSize: 12, color: "var(--tasty-text-secondary)",
+      <span style={{ flex: 1, minWidth: 0, fontSize: "var(--tasty-modhint-row-font-size)", color: "var(--tasty-text-secondary)",
         overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{action}</span>
       <span style={{ flex: "none" }}><Kbd keys={keys} /></span>
     </div>
@@ -2311,10 +2316,10 @@ function HintRow({ action, keys, plugin }) {
 // "what does holding it DO" line (tab-switch numbers, mouse-capture bypass).
 function RoleRow({ icon, children }) {
   return (
-    <div style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "6px 8px", borderRadius: "var(--tasty-radius-sm)",
+    <div style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "var(--tasty-modhint-row-gap) var(--tasty-space-sm)", borderRadius: "var(--tasty-radius-sm)",
       background: "var(--tasty-modhint-role-bg)" }}>
       <span style={{ display: "inline-flex", flex: "none", marginTop: 1, color: "var(--tasty-modhint-role-fg)" }}>{icon}</span>
-      <span style={{ flex: 1, fontSize: 12, lineHeight: "var(--tasty-line-height-ui)", color: "var(--tasty-text-secondary)" }}>{children}</span>
+      <span style={{ flex: 1, fontSize: "var(--tasty-modhint-row-font-size)", lineHeight: "var(--tasty-line-height-ui)", color: "var(--tasty-text-secondary)" }}>{children}</span>
     </div>
   );
 }
@@ -2327,8 +2332,8 @@ function RoleRow({ icon, children }) {
 // interactive (no hover, no focus, no click) — like every row in this overlay.
 function EmptyRow({ label = "No shortcuts bound" }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", minHeight: 20, padding: "0 2px" }}>
-      <span style={{ fontSize: 12, color: "var(--tasty-modhint-empty-fg)" }}>{label}</span>
+    <div style={{ display: "flex", alignItems: "center", minHeight: "var(--tasty-modhint-empty-row-min-height)", padding: "0 2px" }}>
+      <span style={{ fontSize: "var(--tasty-modhint-row-font-size)", color: "var(--tasty-modhint-empty-fg)" }}>{label}</span>
     </div>
   );
 }
@@ -2363,13 +2368,18 @@ const MH_SECTIONS = [
     ] },
 ];
 
-// Alt+Shift held — the category quick-switch chord. Its own function (a numeric
+// Ctrl+Shift held — the category quick-switch chord. Its own function (a numeric
 // switch that jumps categories) rides in the special-role row, exactly like
 // Ctrl = tab-switch numbers. Only present when the folders feature is on.
 const MH_CAT_SECTIONS = [
-  { keys: "Alt+Shift",
+  { keys: "Ctrl+Shift",
     role: <>Switch <b style={{ color: "var(--tasty-text-primary)" }}>category</b> — <span style={{ fontFamily: "var(--tasty-font-mono)" }}>1</span>–<span style={{ fontFamily: "var(--tasty-font-mono)" }}>9</span>, <span style={{ fontFamily: "var(--tasty-font-mono)" }}>0</span> over each category header; a collapsed target auto-expands.</>, roleIcon: mhIc.folder,
-    rows: [] },
+    rows: [
+      { action: "New workspace", keys: "Ctrl+Shift+N" },
+      { action: "Split horizontal", keys: "Ctrl+Shift+D" },
+      { action: "Copy", keys: "Ctrl+Shift+C" },
+      { action: "Paste", keys: "Ctrl+Shift+V" },
+    ] },
 ];
 
 // Ctrl held, mixed — filled chords next to empty ones. Ctrl (role + rows) and
@@ -2436,8 +2446,8 @@ function ModifierHintPanelG({ style, held = "Ctrl", sections = MH_SECTIONS, show
       </div>
       {/* bottom-right resize grip */}
       {showGrip && (
-        <span aria-hidden style={{ position: "absolute", right: 2, bottom: 2, width: 12, height: 12, cursor: "nwse-resize" }}>
-          <svg viewBox="0 0 12 12" width="12" height="12" fill="none"
+        <span aria-hidden style={{ position: "absolute", right: "var(--tasty-modhint-grip-inset)", bottom: "var(--tasty-modhint-grip-inset)", width: "var(--tasty-modhint-grip-size)", height: "var(--tasty-modhint-grip-size)", cursor: "nwse-resize" }}>
+          <svg viewBox="0 0 12 12" width="100%" height="100%" fill="none"
             stroke="var(--tasty-modhint-grip-fg)" strokeWidth="1" strokeLinecap="round">
             <path d="M11 5 5 11M11 9 9 11" />
           </svg>
@@ -2673,10 +2683,9 @@ function FpCrumbs({ items, elide = false, single = false }) {
         <React.Fragment key={i}>
           {i > 0 && <span style={{ flex: "none", display: "inline-flex", color: "var(--tasty-text-disabled)" }}><Icon name="chevronRight" size={13} /></span>}
           <span title={it.hidden ? "Show " + it.hidden + (it.hidden === 1 ? " hidden folder" : " hidden folders") : undefined} style={{ ...alloc(it, i, shown.length), overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-            fontSize: 12, fontFamily: it.root ? "var(--tasty-font-mono)" : "var(--tasty-font-ui)",
+            fontSize: "var(--tasty-font-size-caption)", fontFamily: it.root ? "var(--tasty-font-mono)" : "var(--tasty-font-ui)",
             cursor: it.current ? "default" : "pointer",
-            color: it.current ? "var(--tasty-text-primary)" : "var(--tasty-accent-primary)",
-            fontWeight: it.current ? 600 : 400 }}>{it.label}</span>
+            color: it.current ? "var(--tasty-text-primary)" : "var(--tasty-accent-primary)" }}>{it.label}</span>
         </React.Fragment>
       ))}
     </div>
@@ -2689,12 +2698,12 @@ function FpCrumbMenu({ items }) {
   return (
     <div style={{ position: "absolute", top: "100%", left: 44, marginTop: 4, zIndex: 5,
       minWidth: "var(--tasty-fp-crumb-menu-min-width)", maxWidth: "var(--tasty-fp-crumb-menu-max-width)",
-      padding: 4, background: "var(--tasty-surface-raised)", border: "1px solid var(--tasty-border-strong)",
-      borderRadius: "var(--tasty-radius)", boxShadow: "var(--tasty-shadow-popover)" }}>
+      boxSizing: "border-box", padding: "var(--tasty-popup-content-margin)", background: "var(--tasty-menu-bg)", border: "var(--tasty-border-width) solid var(--tasty-menu-border)",
+      borderRadius: "var(--tasty-menu-radius)", boxShadow: "var(--tasty-shadow-popover)" }}>
       {items.map((l, i) => (
-        <div key={l} style={{ display: "flex", alignItems: "center", gap: 8, height: 28, padding: "0 8px", borderRadius: "var(--tasty-radius-sm)",
-          fontSize: 13, background: i === 0 ? "var(--tasty-overlay-hover)" : "transparent", color: "var(--tasty-text-secondary)" }}>
-          <span style={{ display: "inline-flex", flex: "none", color: "var(--tasty-accent-primary)" }}><Icon name="folder" size={14} /></span>
+        <div key={l} style={{ display: "flex", alignItems: "center", gap: 8, height: "var(--tasty-menu-item-height)", padding: "0 var(--tasty-menu-item-padding-x)", borderRadius: "var(--tasty-menu-item-radius)",
+          fontSize: "var(--tasty-font-size-body)", background: i === 0 ? "var(--tasty-menu-item-bg-hover)" : "transparent", color: "var(--tasty-text-primary)" }}>
+          <span style={{ display: "inline-flex", flex: "none", color: "var(--tasty-accent-primary)" }}><Icon name="folder" size="var(--tasty-icon-size-md)" /></span>
           <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l}</span>
         </div>
       ))}
@@ -2711,7 +2720,7 @@ function FpHostBadge({ host }) {
     </span>
   );
 }
-function FilePickerFrame({ state = "loaded", remote = false, indicator = "badge", multi = false, filters = [], mode = "open", save = "new", deep = false, crumbMenu = false, folderSel = false, w = 640, h = 480, pathKind, single = false }) {
+function FilePickerFrame({ state = "loaded", remote = false, indicator = "badge", multi = false, filters = [], mode = "open", save = "new", deep = false, crumbMenu = false, folderSel = false, w = 640, h = 480, pathKind, single = false, elideStage }) {
   const host = "deploy@10.0.4.12";
   const saving = mode === "save";
   const deepTail = [{ label: "tasty" }, { label: "config" }, { label: "keybindings" }, { label: "exports" }, { label: "2026-09", current: true }];
@@ -2772,7 +2781,8 @@ function FilePickerFrame({ state = "loaded", remote = false, indicator = "badge"
       </div>
       {/* path bar */}
       <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-fp-section-gap)", padding: "var(--tasty-fp-path-pad-y) var(--tasty-fp-inset-end) var(--tasty-fp-path-pad-y) var(--tasty-fp-inset-start)", flex: "none", position: "relative", borderBottom: "1px solid var(--tasty-separator)", background: "var(--tasty-bg-sidebar)" }}>
-        <FpCrumbs items={crumbs} elide={deep || pathKind === "longtwo"} single={single} />
+        <FpCrumbs items={crumbs} elide={elideStage ?? (deep || pathKind === "longtwo")} single={single} />
+        <IconButton size="sm" aria-label="Up one folder"><Icon name="chevronUp" size="var(--tasty-icon-size-sm)" /></IconButton>
         <IconButton size="sm" aria-label="Refresh">{ic.refresh}</IconButton>
         {crumbMenu && <FpCrumbMenu items={crumbs.slice(1, -2).map((c) => c.label)} />}
       </div>
@@ -2854,7 +2864,7 @@ function FilePickerFrame({ state = "loaded", remote = false, indicator = "badge"
 // ── shared across the 4 overlay sub-pages (dialogs / windows / popups / banners) ──
 window.OverlaysShared = {
   ic, Backdrop,
-  PaletteFrame, ApprovalFrame, RenameFrame, SettingsFrame, SettingsGeneralOverlayFrame, SettingsRemoteTransferFrame, TransferProgressFrame, TransferErrorFrame, ToastDragValue,
+  PaletteFrame, ApprovalFrame, RenameFrame, SettingsFrame, SettingsGeneralOverlayFrame, SettingsRemoteTransferFrame, TransferProgressFrame, TransferErrorFrame, ToastDurationField, ToastDragValue,
   ToolsMenuFrame, PortsFrame, PortsFavoritesG, PortStarG, RemoteFrame, LocalSshSection, SearchBarFrame,
   FileHandlerFrame, FhFooter, FhRow, FhGroup, PresetFrame, MarkdownOpenFrame,
   NumCap, HeldLabel, TabStripMock, SidebarMock, RailMock, CatSwitchSidebarMock, CatSwitchRailMock,

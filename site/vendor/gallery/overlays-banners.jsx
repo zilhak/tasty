@@ -7,6 +7,42 @@ const { IconButton, Kbd, Tag } = window.TastyDesignSystem_41fd3f;
 const { BannerScope, MouseCaptureBannerG, MouseCaptureHitZone, BlacklistEditorG, BannerShellG, TtlBannerG, StackDemoG, BannerMoreMenuG, BannerMoreDemoG, ic } = window.OverlaysShared;
 
 const { HtmlScriptBanner, HtmlSurfaceG, TermSurfaceG } = window.TastyKit;
+const { Button: BButton, Icon: BIcon } = window.TastyDesignSystem_41fd3f;
+
+// 2026-10-07 — auto-attach mapping refused. Workspace-scope banner + a persistent sidebar row mark.
+const REFUSAL = {
+  self: { target: "127.0.0.1:7420", reason: "This mapping points at this Tasty, so it was not attached." },
+  profile: { target: "prod-web", reason: "No SSH profile with this name." },
+  resolve: { target: "build-eu:7420", reason: "The endpoint could not be resolved." },
+};
+function AttachRefusalBannerG({ kind = "self" }) {
+  const r = REFUSAL[kind];
+  return (
+    <BannerShellG>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: "var(--tasty-banner-gap)", padding: "var(--tasty-banner-padding-y) var(--tasty-banner-padding-x)" }}>
+        <span style={{ display: "inline-flex", flex: "none", marginTop: "var(--tasty-banner-glyph-offset)", color: "var(--tasty-accent-warning)" }}><BIcon name="alertTriangle" size="var(--tasty-icon-size-md)" /></span>
+        <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: "var(--tasty-banner-text-gap)" }}>
+          <span style={{ fontSize: "var(--tasty-banner-title-font-size)", fontWeight: "var(--tasty-font-weight-semibold)" }}>Remote not attached — <span style={{ fontFamily: "var(--tasty-font-mono)", fontWeight: "var(--tasty-font-weight-normal)" }}>{r.target}</span></span>
+          <span style={{ fontSize: "var(--tasty-banner-body-font-size)", color: "var(--tasty-text-muted)" }}>{r.reason} Change or remove the mapping for this workspace.</span>
+        </div>
+        <span style={{ flex: "none", display: "flex", gap: "var(--tasty-space-xs)", alignItems: "center" }}>
+          <BButton variant="secondary" size="sm" style={{ background: "var(--tasty-banner-button-bg)", borderColor: "var(--tasty-banner-button-border)" }}>Remove mapping</BButton>
+          <IconButton size="sm" aria-label="Dismiss">{ic.x}</IconButton>
+        </span>
+      </div>
+    </BannerShellG>
+  );
+}
+function RefusalRowG({ name, active, refused }) {
+  return (
+    <div title={refused ? "Remote not attached — 127.0.0.1:7420 points at this Tasty." : undefined} style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", height: "var(--tasty-size-28)", padding: "0 var(--tasty-space-sm)", borderRadius: "var(--tasty-radius-sm)",
+      background: active ? "var(--tasty-surface-active)" : "transparent", color: active ? "var(--tasty-text-primary)" : "var(--tasty-text-secondary)", fontSize: "var(--tasty-font-size-body)" }}>
+      <span style={{ width: "var(--tasty-status-dot-size)", height: "var(--tasty-status-dot-size)", borderRadius: "var(--tasty-radius-pill)", background: "var(--tasty-status-idle)", flex: "none" }} />
+      <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>
+      {refused && <span style={{ display: "inline-flex", flex: "none", color: "var(--tasty-accent-warning)" }}><BIcon name="alertTriangle" size="var(--tasty-icon-size-sm)" /></span>}
+    </div>
+  );
+}
 
 const NAV = [
   { id: "banner", label: "Banner" },
@@ -14,6 +50,7 @@ const NAV = [
   { id: "more", label: "Banner more menu" },
   { id: "blacklist", label: "Capture blacklist" },
   { id: "htmlscript", label: "HTML script notice" },
+  { id: "attachrefusal", label: "Auto-attach refused" },
 ];
 
 function Page() {
@@ -132,7 +169,7 @@ function Page() {
           when={<>Every row interpolates a program name of arbitrary length, and word order differs by locale (en: name last; ko/ja: name first). So a row's label is <b>two parts</b>: the <b>fixed text</b> (never truncates) and the <b>program name</b> in <b>mono / text-primary</b>, which is the part that <b>shrinks and ellipsises</b>. The menu grows with the content between <b>200px</b> and <b>288px</b> — the fixed Tools-menu 160px is too narrow for these strings — and the full name is available as the row's tooltip.</>}>
           <Stage variant="solo center" style={{ padding: 20, background: "var(--tasty-bg-app)", gap: 18, alignItems: "flex-start", flexWrap: "wrap" }}>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>short name — at the 200px floor</div>
+              <div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>short name — content-sized (the vim row already passes the 200 floor)</div>
               <BannerMoreMenuG app="vim" />
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -265,6 +302,35 @@ function Page() {
             specs={[["dismissed", "lock · glyph-dim · click → banner again"], ["allowed", "scriptFile · text-muted · tooltip only"], ["size", "12 (icon-size-xs) in the 24 strip"], ["cleared by", "navigation to another document · app restart"], ["kept on", "#fragment moves"], ["no banner when", "no runnable script · already allowed · sandbox off"]]}
             tokens={[{ tok: "--tasty-html-script-marker-fg", use: "→ glyph-dim", color: "var(--tasty-html-script-marker-fg)" }, { tok: "--tasty-html-script-marker-allowed-fg", use: "→ text-muted", color: "var(--tasty-html-script-marker-allowed-fg)" }, { tok: "--tasty-html-script-marker-size", use: "→ icon-size-xs" }]} />
           <Note><b>Firing:</b> only when the user views the document (opened it, or selected the surface). Agent/IPC opens, session restore and background loads keep a "has scripts" flag and show the banner the first time the user looks at that surface.</Note>
+        </Spec>
+      </Section>
+      <Section id="attachrefusal" title="Auto-attach refused — mapping notice (2026-10-07)">
+        <Spec title="Persistent row mark + workspace banner, no toast"
+          when={<>A workspace mapped with <code>tasty set workspace --ssh / --ssh-profile</code> whose target <b>is this Tasty</b> is not attached (a self-mirror would lock local input). Two signals, both <b>persistent</b> and neither takes focus: a <b>warning glyph</b> on the workspace's <b>sidebar row</b> (visible whether or not it is active, tooltip = target + reason), and a <b>Workspace-scope banner</b> at the top of that workspace's content while it is active — target in mono, the reason, and what to do. <b>Remove mapping</b> (banner button) clears the mapping as <code>tasty set workspace --id … --no-remote</code> would; × hides the banner for this activation only — the row mark stays until the mapping changes, is removed, or a profile re-check succeeds. <b>No toast</b>: the condition outlives a toast and must be findable later. The same pair covers the other mapping errors (profile not found, endpoint not resolvable) with their own reason line.</>}>
+          <Stage variant="solo" style={{ padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-app)", gap: "var(--tasty-space-lg)", flexWrap: "wrap", alignItems: "flex-start" }}>
+            {[["Mocha", null], ["Latte", "latte"]].map(([label, th]) => (
+              <div key={label} {...(th ? { "data-theme": th } : {})} style={{ display: "flex", gap: "var(--tasty-space-md)", padding: "var(--tasty-space-md)", background: "var(--tasty-bg-app)", border: "var(--tasty-border-width) solid var(--tasty-border-default)", borderRadius: "var(--tasty-radius)", alignItems: "flex-start" }}>
+                <div style={{ width: "var(--tasty-size-200)", display: "flex", flexDirection: "column", gap: "var(--tasty-size-1)", padding: "var(--tasty-space-xs)", background: "var(--tasty-bg-sidebar)", borderRadius: "var(--tasty-radius)" }}>
+                  <RefusalRowG name="tasty-core" />
+                  <RefusalRowG name="staging-mirror" active refused />
+                  <RefusalRowG name="scratch" />
+                </div>
+                <div style={{ width: "var(--tasty-size-460)", display: "flex", flexDirection: "column", gap: "var(--tasty-space-sm)" }}>
+                  <AttachRefusalBannerG kind="self" />
+                  <div style={{ height: "var(--tasty-size-64)", borderRadius: "var(--tasty-radius)", background: "var(--tasty-surface-terminal-focused-bg)", fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)", padding: "var(--tasty-space-sm)" }}>local terminal — still usable</div>
+                </div>
+              </div>
+            ))}
+          </Stage>
+          <Stage variant="solo" style={{ padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-app)", flexDirection: "column", gap: "var(--tasty-space-sm)", alignItems: "stretch" }}>
+            <div style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>other mapping errors — same banner, own reason</div>
+            <div style={{ maxWidth: "var(--tasty-size-560)" }}><AttachRefusalBannerG kind="profile" /></div>
+            <div style={{ maxWidth: "var(--tasty-size-560)" }}><AttachRefusalBannerG kind="resolve" /></div>
+          </Stage>
+          <Meta
+            specs={[["row mark", "alertTriangle 14 · accent-warning · trailing slot of the workspace row · tooltip = target + reason"], ["banner scope", "Workspace · shown while that workspace is active"], ["glyph", "alertTriangle 16 · accent-warning"], ["title", "Remote not attached — {target} (target mono)"], ["body", "{reason} Change or remove the mapping for this workspace."], ["action", "Remove mapping · banner button (secondary sm on banner-button tokens)"], ["×", "hides for this activation; the row mark stays"], ["clears", "mapping changed / removed · profile re-check succeeds"], ["focus", "never moved — agent-made mappings included"], ["toast", "none"]]}
+            tokens={[{ tok: "--tasty-accent-warning", use: "glyph + row mark", color: "var(--tasty-accent-warning)" }, { tok: "--tasty-banner-bg", use: "shell", color: "var(--tasty-banner-bg)" }, { tok: "--tasty-banner-button-bg", use: "Remove mapping", color: "var(--tasty-banner-button-bg)" }, { tok: "--tasty-banner-body-font-size", use: "reason 11" }]} />
+          <Note>Strings (en): <code>remote.refusal.title</code> “Remote not attached — {"{target}"}” · <code>remote.refusal.self</code> “This mapping points at this Tasty, so it was not attached.” · <code>remote.refusal.profile_missing</code> “No SSH profile with this name.” · <code>remote.refusal.unresolved</code> “The endpoint could not be resolved.” · <code>remote.refusal.hint</code> “Change or remove the mapping for this workspace.” · <code>remote.refusal.remove</code> “Remove mapping”. No new tokens.</Note>
         </Spec>
       </Section>
     </>

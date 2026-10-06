@@ -198,7 +198,8 @@ function TriggerChip({ event, onRemove }) {
 // The 4th row of a ScriptRow's centre column: an "Auto-run:" caption, the bound
 // trigger chips, and a dashed add control opening a menu of the still-available
 // events. Empty `triggers` still shows the caption + add control so the affordance
-// is discoverable.
+// is discoverable. 2026-10-07: dashed edge = border-dash / border-dash-gap (4 / 4,
+// corners solid); when every event is bound the control stays, DISABLED (not hidden).
 function TriggerRow({ triggers, onAdd, onRemove }) {
   const [open, setOpen] = React.useState(false);
   const ref = React.useRef(null);
@@ -226,9 +227,9 @@ function TriggerRow({ triggers, onAdd, onRemove }) {
         </button>
         {open && !none && (
           <div role="menu" className="tasty-scroll"
-            style={{ position: "absolute", top: "calc(100% + var(--tasty-space-xs))", left: 0, zIndex: 40, minWidth: 200, maxHeight: 220, overflowY: "auto",
-              background: "var(--tasty-surface-raised)", border: "var(--tasty-border-width) solid var(--tasty-border-strong)",
-              borderRadius: "var(--tasty-radius)", boxShadow: "var(--tasty-shadow-popover)", padding: "var(--tasty-space-xs)" }}>
+            style={{ position: "absolute", top: "calc(100% + var(--tasty-space-xs))", left: 0, zIndex: 40, minWidth: "var(--tasty-trigger-menu-min-width)", maxHeight: "var(--tasty-trigger-menu-max-height)", overflowY: "auto",
+              background: "var(--tasty-menu-bg)", border: "var(--tasty-border-width) solid var(--tasty-menu-border)",
+              borderRadius: "var(--tasty-menu-radius)", boxShadow: "var(--tasty-shadow-popover)", padding: "var(--tasty-popup-content-margin)" }}>
             {available.map((e) => (
               <button key={e} type="button" role="menuitem" onClick={() => { onAdd(e); setOpen(false); }}
                 onMouseEnter={(ev) => { ev.currentTarget.style.background = "var(--tasty-overlay-hover)"; ev.currentTarget.style.color = "var(--tasty-text-primary)"; }}

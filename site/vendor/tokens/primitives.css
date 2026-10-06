@@ -94,10 +94,12 @@
   --tasty-size-16:  16px;
   --tasty-size-24:  24px;
   /* fixed control dimensions (off-grid, but real product values) */
+  --tasty-size-20:  20px;  /* modifier-hint empty-row min height (2026-10-07) */
   --tasty-size-22:  22px;
   --tasty-size-28:  28px;
   --tasty-size-32:  32px;
   --tasty-size-36:  36px;  /* titlebar height (CSD) */
+  --tasty-size-40:  40px;  /* image zoom-percent label min width (2026-10-07) */
   --tasty-size-44:  44px;  /* preset-window detail toolbar / surface-settings header height */
   --tasty-size-46:  46px;  /* Windows caption button width */
   --tasty-size-48:  48px;  /* DAG node card height */

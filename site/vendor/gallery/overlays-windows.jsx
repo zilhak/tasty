@@ -143,6 +143,43 @@ function ExtMapG({ draft = "", detectors = true, custom = false, missing = false
     </div>
   );
 }
+
+// 2026-10-07 — host / plugin hook row carrying a user patch: "edited" mark + Revert, and the pending-revert state.
+const WSwitch = window.TastyDesignSystem_41fd3f.Switch;
+function HookOverrideG() {
+  const rows = [
+    { ev: "on_open", act: "ipc: focus → open_markdown_preview", def: "open_markdown_preview", origin: "host", edited: true, on: true },
+    { ev: "on_paste", act: "imgview.stash", origin: "dev.imgview", edited: true, on: false },
+    { ev: "on_open", act: "ipc: focus → open_markdown_preview", def: "open_markdown_preview", origin: "host", edited: true, on: true, pending: true },
+    { ev: "on_exit", act: "ipc: focus → save → close", origin: "host", on: true },
+  ];
+  return (
+    <div style={{ width: "var(--tasty-size-560)", maxWidth: "100%", background: "var(--tasty-bg-panel)", border: "var(--tasty-border-width) solid var(--tasty-border-strong)", borderRadius: "var(--tasty-radius)", overflow: "hidden" }}>
+      {rows.map((r, i) => {
+        const plugin = r.origin !== "host";
+        const shownOn = r.pending ? true : r.on;
+        return (
+          <div key={i} style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)", padding: "var(--tasty-space-sm) var(--tasty-space-md)", borderBottom: "var(--tasty-border-width) solid var(--tasty-separator)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)" }}>
+              <span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-secondary)" }}>{r.ev}</span>
+              <span style={{ color: plugin ? "var(--tasty-accent-agent)" : undefined, display: "inline-flex" }}><WTag>{r.origin}</WTag></span>
+              {r.edited && !r.pending && <span title="Changed in your settings. Updates to the default no longer apply." style={{ display: "inline-flex" }}><WTag>edited</WTag></span>}
+              {r.pending && <WTag disabled>reverts on save</WTag>}
+              <span style={{ flex: 1 }} />
+              <WSwitch checked={shownOn} onChange={() => {}} aria-label="Enabled" />
+              <span title={"Provided by " + r.origin + " — can't be removed"} style={{ display: "inline-flex", color: "var(--tasty-glyph-dim)" }}><WIcon name="lock" size="var(--tasty-icon-size-sm)" /></span>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)" }}>
+              <span style={{ flex: 1, minWidth: 0, fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.pending ? r.def : r.act}</span>
+              {r.edited && (r.pending ? <Button variant="ghost" size="sm">Undo</Button> : <span title={"Go back to the default from " + r.origin + "."}><Button variant="ghost" size="sm">Revert</Button></span>)}
+              {r.act.startsWith("ipc:") && <Button variant="ghost" size="sm">Edit</Button>}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 const ThemePair = ({ children }) => (
   <>{[["Mocha", null], ["Latte", "latte"]].map(([label, t]) => (
     <div key={label} {...(t ? { "data-theme": t } : {})} style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-sm)", padding: "var(--tasty-space-md)", background: "var(--tasty-bg-app)", borderRadius: "var(--tasty-radius)", minWidth: 0 }}>
@@ -240,6 +277,10 @@ const ieCaps = { fontFamily: "var(--tasty-font-mono)", fontSize: 10, textTransfo
   letterSpacing: "var(--tasty-letter-spacing-caps)" };
 
 // L2 tail with the SEPARATED row (new axis on the settings L2 row model).
+// Import/Export specimens render at the product width: Keybindings › Import/Export is FULL-BLEED, so at the default
+// 1100 window the content column is 868 (settings-window-width − L2 sidebar − paddings). The 620 settings cap does not
+// apply here (2026-10-07). Column widths come from the kb-ie tokens (288 · 120).
+const IE_W = 868;
 function IeL2Tail() {
   const row = (label, active) => (
     <div key={label} style={{ display: "flex", alignItems: "center", padding: "4px 8px", borderRadius: "var(--tasty-radius-sm)", fontSize: 13,
@@ -269,7 +310,7 @@ function IeEntry() {
     </div>
   );
   return (
-    <div style={{ width: "100%", maxWidth: 620, display: "flex", flexDirection: "column", gap: 12 }}>
+    <div style={{ width: "100%", maxWidth: IE_W, display: "flex", flexDirection: "column", gap: 12 }}>
       {card("download", "Export", "Writes every binding — general, quick switch, script bindings and plugin overrides — to one file.",
         <Button variant="secondary" size="sm">Export…</Button>)}
       {card("file", "Import", "Reads a keybinding file and shows the changes against your current bindings before anything is written.",
@@ -302,7 +343,7 @@ function IeGrid() {
     </React.Fragment>
   );
   return (
-    <div style={{ width: "100%", maxWidth: 620, display: "grid", gridTemplateColumns: "32px minmax(0,1.6fr) 1fr 1fr", alignItems: "stretch" }}>
+    <div style={{ width: "100%", maxWidth: IE_W, display: "grid", gridTemplateColumns: "32px minmax(0,1.6fr) 1fr 1fr", alignItems: "stretch" }}>
       <div style={head} /><div style={{ ...head, textAlign: "left" }}>Action</div><div style={head}>Current</div><div style={head}>Imported</div>
       {group("General bindings", "3 changed · 61 total")}
       {row("Command palette", "Ctrl+K", "Ctrl+Shift+P")}
@@ -326,8 +367,8 @@ function IeMigrateG({ state = "pending" }) {
   const row = (action, from, widget, trail, sub, subTone) => (
     <div style={{ display: "flex", flexDirection: "column", gap: 4, padding: "8px 0", borderTop: "1px solid var(--tasty-separator)" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12, minHeight: 28, flexWrap: "wrap" }}>
-        <span style={{ width: 200, flex: "none", fontSize: 13, color: "var(--tasty-text-secondary)" }}>{action}</span>
-        <span style={{ ...ieMono, width: 110, flex: "none", color: "var(--tasty-text-muted)" }}>{from}</span>
+        <span style={{ width: "var(--tasty-kb-ie-action-column-width)", flex: "none", fontSize: 13, color: "var(--tasty-text-secondary)" }}>{action}</span>
+        <span style={{ ...ieMono, width: "var(--tasty-kb-ie-from-column-width)", flex: "none", color: "var(--tasty-text-muted)" }}>{from}</span>
         <span style={{ display: "inline-flex", color: "var(--tasty-text-muted)" }}><WIcon name="chevronRight" size={14} /></span>
         {widget}{trail}
       </div>
@@ -341,7 +382,7 @@ function IeMigrateG({ state = "pending" }) {
       borderRadius: "var(--tasty-radius)" }}>{label}</span>
   );
   return (
-    <div style={{ width: "100%", maxWidth: 620, borderRadius: "var(--tasty-radius)", padding: "12px 14px",
+    <div style={{ width: "100%", maxWidth: IE_W, borderRadius: "var(--tasty-radius)", padding: "12px 14px",
       background: "color-mix(in srgb, " + tone + " 11%, transparent)",
       border: "1px solid color-mix(in srgb, " + tone + " 36%, transparent)" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, color: tone, fontSize: 13, fontWeight: 600 }}>
@@ -372,7 +413,7 @@ function IeMigrateG({ state = "pending" }) {
 
 function IeBackBarG({ unresolved }) {
   return (
-    <div style={{ width: "100%", maxWidth: 620, display: "flex", alignItems: "center", gap: 8, height: 40, padding: "0 12px",
+    <div style={{ width: "100%", maxWidth: IE_W, display: "flex", alignItems: "center", gap: 8, height: 40, padding: "0 12px",
       background: "var(--tasty-bg-sidebar)", border: "1px solid var(--tasty-separator)", borderRadius: "var(--tasty-radius)" }}>
       <IconButton size="sm" aria-label="Back">{ic.back}</IconButton>
       <span style={{ fontSize: 13, color: "var(--tasty-text-primary)" }}>Import keybindings</span>
@@ -387,7 +428,7 @@ function IeBackBarG({ unresolved }) {
 
 function IeNotices() {
   return (
-    <div style={{ width: "100%", maxWidth: 620, display: "flex", flexDirection: "column", gap: 12 }}>
+    <div style={{ width: "100%", maxWidth: IE_W, display: "flex", flexDirection: "column", gap: 12 }}>
       <div style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 12, color: "var(--tasty-text-muted)" }}>
         <span style={{ display: "inline-flex", flex: "none", marginTop: 1 }}><WIcon name="helpCircle" size={14} /></span>
         <span>2 plugin overrides were dropped — those plugins aren't installed here (<span style={ieMono}>k8s-lens, s3-browser</span>).</span>
@@ -732,7 +773,7 @@ function Page() {
         <Spec title="Process column — a minimum, not a fixed width"
           when={<>The <b>Process</b> column's 200 is a <b>floor</b>: the column never shrinks below it and takes the table's spare width as the popup grows, because the process line (<code>node /usr/local/bin/vite --host</code>) is the cell most likely to be cut. The name is now public — <span className="tok">--tasty-port-process-col-min-width</span> — so the gallery's fixed 200 and the product's min 200 stop reading as two different numbers that happen to match. <b>No column hides</b> at any width; narrow tables ellipsise.</>}>
           <Stage variant="solo center" style={{ padding: 20, background: "var(--tasty-bg-app)", flexDirection: "column", gap: 14, alignItems: "flex-start" }}>
-            {[["default — Process takes the spare width", 660], ["narrow — Process holds its 200 floor and ellipsises", 460]].map(([label, tw]) => (
+            {[["default — Process takes the spare width", 660], ["narrow (460) — Process gets the remaining 230 and ellipsises; the 200 floor engages only below 430", 460]].map(([label, tw]) => (
               <div key={label} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 <div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>{label}</div>
                 <div style={{ width: tw, border: "1px solid var(--tasty-border-strong)", borderRadius: "var(--tasty-radius)", overflow: "hidden", background: "var(--tasty-bg-panel)" }}>
@@ -799,7 +840,7 @@ function Page() {
           </Stage>
           <Meta
             specs={[["toggle", "SSH profile ↔ Direct (inline)"], ["ref", "ssh_ref dropdown of ssh profiles"], ["inline", "host · user · port · shell · passkey"], ["remote tasty", "Executable (def. tasty)"], ["port", "auto / subcommand / file-unix / file-windows"], ["port file", "optional — overrides port mode"]]}
-            tokens={[{ tok: "--tasty-remote-label-col", use: "shared 112 label column" }, { tok: "--tasty-surface-active", use: "selected connection segment", color: "var(--tasty-surface-active)" }, { tok: "--tasty-accent-primary", use: "active tab / segment", color: "var(--tasty-accent-primary)" }, { tok: "--tasty-text-muted", use: "labels / hints", color: "var(--tasty-text-muted)" }]} />
+            tokens={[{ tok: "--tasty-remote-label-col", use: "shared 112 label column" }, { tok: "--tasty-accent-primary", use: "active tab / segment", color: "var(--tasty-accent-primary)" }, { tok: "--tasty-text-muted", use: "labels / hints", color: "var(--tasty-text-muted)" }]} />
         </Spec>
         <Spec title="Profile form — SSH (the [112px · 1fr] row grid)"
           when={<>The add/edit route inside the popup. Every row is the same grid: a <b>fixed 112px right-aligned label</b> + a <b>1fr</b> control (columnGap 12, rowGap 8) so labels never collapse/truncate and all controls share one left edge. SSH gets the dedicated fields (Type · Name · Host · User · Port · Label · Shell + hint · Passkey) — <b>remote_tasty moved to the Attach tab</b>. Body scrolls; the footer is pinned with a <b>full-width</b> separator and right-aligned <b>Cancel (ghost) / Save (primary)</b>. Right: the same form with a <b>validation error</b>.</>}>
@@ -821,7 +862,7 @@ function Page() {
           </Stage>
           <Meta
             specs={[["generic", "Type · Name · FIELDS · Passkey"], ["field row", "[112 key · 1fr value · 28 ✕]"], ["unknown type", "peach badge (saves anyway)"], ["passkey kind", "path = singleline · inline = 3-row"], ["secret", "name-reference only · note always shown"], ["footer", "ghost Cancel / primary Save (both forms)"]]}
-            tokens={[{ tok: "--tasty-accent-warning", use: "unknown-type / dangling badge", color: "var(--tasty-accent-warning)" }, { tok: "--tasty-surface-active", use: "selected kind segment", color: "var(--tasty-surface-active)" }, { tok: "--tasty-input-bg", use: "inline secret field", color: "var(--tasty-input-bg)" }, { tok: "--tasty-remote-label-col", use: "shared 112 column" }]} />
+            tokens={[{ tok: "--tasty-accent-warning", use: "unknown-type / dangling badge", color: "var(--tasty-accent-warning)" }, { tok: "--tasty-accent-primary", use: "selected kind segment (accent fill)", color: "var(--tasty-accent-primary)" }, { tok: "--tasty-input-bg", use: "inline secret field", color: "var(--tasty-input-bg)" }, { tok: "--tasty-remote-label-col", use: "shared 112 column" }]} />
           <Note>Other states (brief §5/§ST): <b>dangling passkey</b> reuses the same peach badge ("passkey missing"); <b>detecting</b> shows "detecting…" / "detection failed (disabled)" + Re-detect after a shell=auto save. Secrets live only in passkeys — a profile holds a <b>name reference</b>, never an inline secret.</Note>
         </Spec>
         <Spec title="Segmented active is an accent fill — tab strips keep the underline"
@@ -878,15 +919,16 @@ function Page() {
           <Do><b>Do</b> block selection of a remote workspace already <b>attached on another client</b> (lavender <span className="ic">in use</span> badge, dot dimmed) — mirror it there, not twice. This is the same <span className="tok">--tasty-accent-attached</span> axis as the sidebar attached ring.</Do>
           <Note>The right pane runs four states off the left selection: <b>initial</b> (nothing picked — placeholder), <b>connecting</b> (Spinner — SSH tunnel + list can take seconds), <b>error</b> (danger glyph + reason + <b>Retry</b>), and <b>loaded</b> (the workspace list, or a muted “no workspaces” empty when the remote is reachable but idle).</Note>
         </Spec>
-        <Spec title="Right-pane states — initial · connecting · error"
-          when={<>The three non-list states, driven by the left selection. Each is a centered column (glyph → title → one muted line), so the pane never looks broken while a connect is pending or failed.</>}>
+        <Spec title="Right-pane states — initial · connecting · error · empty"
+          when={<>The three non-list states, plus the <b>empty</b> remote (plan B: the list path with the pre-selected “+ New workspace” row), driven by the left selection. Each is a centered column (glyph → title → one muted line), so the pane never looks broken while a connect is pending or failed.</>}>
           <Stage variant="solo center" style={{ padding: 20, background: "var(--tasty-bg-app)", gap: 16, flexWrap: "wrap", alignItems: "flex-start" }}>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}><div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>initial — nothing picked</div><RemoteAttachFrame state="initial" /></div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}><div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>connecting</div><RemoteAttachFrame state="loading" /></div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}><div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>error — retry</div><RemoteAttachFrame state="error" /></div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}><div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>empty — reachable, no workspaces (list path)</div><RemoteAttachFrame state="empty" emptyPlan="B" /></div>
           </Stage>
           <Meta
-            specs={[["initial", "remote glyph + prompt · Connect disabled"], ["connecting", "Spinner + “Connecting…”"], ["error", "danger glyph + reason + Retry"], ["empty", "muted “no workspaces” (reachable, idle)"]]}
+            specs={[["initial", "remote glyph + prompt · Connect disabled"], ["connecting", "Spinner + “Connecting…”"], ["error", "danger glyph + reason + Retry"], ["empty", "caps header + pre-selected “+ New workspace” row + one muted line · Create & connect enabled"]]}
             tokens={[{ tok: "--tasty-text-placeholder", use: "initial glyph", color: "var(--tasty-text-placeholder)" }, { tok: "--tasty-accent-danger", use: "error glyph", color: "var(--tasty-accent-danger)" }, { tok: "--tasty-spinner-track", use: "connecting spinner" }]} />
         </Spec>
         <Spec title="“+ New workspace” row — the escape from a dead-end remote"
@@ -997,10 +1039,10 @@ function Page() {
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}><div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>save — typed name (new file)</div><FilePickerFrame mode="save" /></div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}><div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>save — existing file picked → Overwrite</div><FilePickerFrame mode="save" save="picked" /></div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}><div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>save — name edited after the pick → selection cleared</div><FilePickerFrame mode="save" save="edited" /></div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}><div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>deep path — middle-elided breadcrumb</div><FilePickerFrame mode="save" deep /></div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}><div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>deep path — fits at 640, nothing folds</div><FilePickerFrame mode="save" deep elideStage={false} /></div>
           </Stage>
           <Meta
-            specs={[["title", "Save file (open mode: Open file)"], ["confirm", "footer primary only — one control"], ["labels", "Save · Overwrite when the name exists"], ["input", "editable · placeholder “Type a file name”"], ["list pick", "writes the name into the input → Overwrite"], ["selection", "clears as soon as the name diverges → Save"], ["overwrite", "11px warning line above the buttons"], ["disabled", "Save disabled while the name is empty"], ["breadcrumb", "root + … + last two segments"], ["footer", "never shrinks — the input absorbs it"]]}
+            specs={[["title", "Save file (open mode: Open file)"], ["confirm", "footer primary only — one control"], ["labels", "Save · Overwrite when the name exists"], ["input", "editable · placeholder “Type a file name”"], ["list pick", "writes the name into the input → Overwrite"], ["selection", "clears as soon as the name diverges → Save"], ["overwrite", "11px warning line above the buttons"], ["disabled", "Save disabled while the name is empty"], ["breadcrumb", "folds only when the measured row doesn't fit — see Path bar"], ["footer", "never shrinks — the input absorbs it"]]}
             tokens={[{ tok: "--tasty-accent-warning", use: "overwrite line", color: "var(--tasty-accent-warning)" }, { tok: "--tasty-input-bg", use: "name field", color: "var(--tasty-input-bg)" }, { tok: "--tasty-text-placeholder", use: "empty name", color: "var(--tasty-text-placeholder)" }, { tok: "--tasty-separator", use: "footer rule", color: "var(--tasty-separator)" }]} />
           <Note><b>Long-path shrink rule (fixes a defect in open mode too).</b> Overflow is absorbed <b>in the path bar</b>, never by the footer: the breadcrumb is the only flexible child (<code>flex:1; min-width:0</code>) and elides in the <b>middle</b> — root + <span className="ic">…</span> + the last two segments, since the current folder and its parent are what orient you; the <span className="ic">…</span> lists the hidden ancestors on click. Footer label, filter chip and both buttons are <code>flex:none</code>; only the name input shrinks. No horizontal scroll, and Cancel / Open / Save can never be clipped.</Note>
           <Dont><b>Don't</b> append a save row under the list. Two confirm controls in one dialog means two targets — pick <span className="ic">package.json</span>, then type a different name, and the screen holds two answers with no rule for which wins.</Dont>
@@ -1011,41 +1053,41 @@ function Page() {
           <Stage variant="solo center" style={{ padding: 20, background: "var(--tasty-bg-app)", gap: 16, flexWrap: "wrap", alignItems: "flex-start" }}>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}><div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>save — folder selected · not a save target</div><FilePickerFrame mode="save" folderSel /></div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}><div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>open — folder selected · Open enters it</div><FilePickerFrame folderSel /></div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}><div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>… menu open — the hidden ancestors</div><FilePickerFrame mode="save" deep crumbMenu /></div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}><div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>… menu open — at the 320 picker floor, where the deep path really folds</div><FilePickerFrame mode="save" deep crumbMenu w={320} h={420} /></div>
           </Stage>
           <Meta
-            specs={[["single click", "selects the row — file or folder, both modes"], ["double click folder", "descends — both modes"], ["double click file", "open: confirms · save: selects only"], ["folder + Save", "never a target — muted footer line, button unchanged"], ["folder + Open", "enters it (Open is the keyboard route to descend)"], ["elision", "overflow-driven — one ancestor at a time, no depth threshold"], ["… tooltip", "Show 3 hidden folders (singular: 1 hidden folder)"], ["… menu", "content-measured, 180–320 band, path order"]]}
-            tokens={[{ tok: "--tasty-fp-crumb-max-width", use: "180 — one crumb's cap (NEW)" }, { tok: "--tasty-fp-crumb-menu-min-width", use: "180 — … menu floor (NEW)" }, { tok: "--tasty-fp-crumb-menu-max-width", use: "320 — … menu ceiling (NEW)" }, { tok: "--tasty-text-muted", use: "folder-target line", color: "var(--tasty-text-muted)" }, { tok: "--tasty-surface-raised", use: "… menu fill", color: "var(--tasty-surface-raised)" }]} />
+            specs={[["single click", "selects the row — file or folder, both modes"], ["double click folder", "descends — both modes"], ["double click file", "open: confirms · save: selects only"], ["folder + Save", "never a target — muted footer line, button unchanged"], ["folder + Open", "enters it (Open is the keyboard route to descend)"], ["elision", "overflow-driven — one ancestor at a time, no depth threshold"], ["… tooltip", "Show 3 hidden folders (singular: 1 hidden folder)"], ["… menu", "content-measured, 180–320 band = BORDER-BOX outer width, path order"], ["… menu rows", "shared MenuItem — 28 · pad-x 12 · folder 16 · text-primary"], ["specimen", <>320 (<span className="tok">--tasty-fp-popup-min-width</span>) — the width where it folds</>]]}
+            tokens={[{ tok: "--tasty-fp-crumb-max-width", use: "180 — one crumb's cap (NEW)" }, { tok: "--tasty-fp-crumb-menu-min-width", use: "180 — … menu floor (NEW)" }, { tok: "--tasty-fp-crumb-menu-max-width", use: "320 — … menu ceiling (NEW)" }, { tok: "--tasty-text-muted", use: "folder-target line", color: "var(--tasty-text-muted)" }, { tok: "--tasty-menu-bg", use: "… menu fill", color: "var(--tasty-menu-bg)" }, { tok: "--tasty-menu-border", use: "… menu edge", color: "var(--tasty-menu-border)" }, { tok: "--tasty-menu-item-padding-x", use: "row pad-x 12" }]} />
           <Note><b>Elision is measured, not counted.</b> The path bar elides only when the crumb row doesn't fit, and it drops <b>one ancestor at a time</b> from the middle — a six-segment path that fits stays whole. The floor is root + <span className="ic">…</span> + the current folder; the parent is the first tail segment to go. Separately, a single crumb longer than <span className="tok">--tasty-fp-crumb-max-width</span> ellipsises inside itself — a different axis from the path's middle elision, which is why it has its own token.</Note>
           <Note><b>Open mode changes too</b> (same view, same table): folder single-click now <i>selects</i> instead of doing nothing, and <b>Open</b> with a folder selected descends — which is also what <span className="ic">Enter</span> does, so the keyboard route to "go into this folder" exists without a second control. File behaviour in open mode is unchanged.</Note>
         </Spec>
 
         <Spec title="Path bar — what gives way when the folded path still doesn't fit"
-          when={<>Folding the middle (<code>root › … › parent › current</code>) is not always enough: at <b>400px</b> with 53-character folder names the current folder used to be <b>clipped without an ellipsis</b>. The bar now allocates the width it actually has — <b>the path bar minus the Refresh button and its gap</b>, never the popup width — in a fixed priority order: <b>current folder → parent → root → the … menu</b>. Five steps, each taken only when the one before it has hit its floor.</>}>
+          when={<>Folding the middle (<code>root › … › parent › current</code>) is not always enough: at <b>400px</b> with 53-character folder names the current folder used to be <b>clipped without an ellipsis</b>. The bar now allocates the width it actually has — <b>the path bar minus the Up and Refresh buttons and their gaps</b>, never the popup width — in a fixed priority order: <b>current folder → parent → root → the … menu</b>. Five steps, each taken only when the one before it has hit its floor.</>}>
           <Stage variant="solo" style={{ padding: 20, background: "var(--tasty-bg-app)", flexDirection: "column", gap: 14, alignItems: "flex-start" }}>
             <div style={{ display: "flex", gap: 18, flexWrap: "wrap", alignItems: "flex-start" }}>
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>640×480 · two 53-char segments — parent shrinks to its 64 floor</div>
+                <div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>stage diagram (forced) — step 2 · parent at its 64 floor</div>
                 <FilePickerFrame pathKind="longtwo" />
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>400×360 · single-crumb fallback — … › current</div>
+                <div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>stage diagram (forced) — step 5 · … › current</div>
                 <FilePickerFrame pathKind="longtwo" w={400} h={360} single />
               </div>
             </div>
             <div style={{ display: "flex", gap: 18, flexWrap: "wrap", alignItems: "flex-start" }}>
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>long UNC root, short current — the root gives way before the current folder</div>
+                <div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>440×300 · long UNC root — capped at 180, nothing folds</div>
                 <FilePickerFrame pathKind="longroot" w={440} h={300} />
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>save / overwrite · same rule, footer untouched</div>
+                <div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>stage diagram (forced) — save / overwrite · footer untouched</div>
                 <FilePickerFrame pathKind="longtwo" mode="save" save="picked" w={400} h={360} single />
               </div>
             </div>
           </Stage>
           <Meta
-            specs={[["measure", "path-bar width − trailing buttons − gap (not the popup width)"], ["1 fold", "ancestors → … menu, one per step (approved 09-14)"], ["2 parent", <>180 → 64 (<span className="tok">--tasty-fp-crumb-min-width</span>)</>], ["3 current", <>180 → 96 (<span className="tok">--tasty-fp-crumb-current-min-width</span>)</>], ["4 parent folds", "root › … › current"], ["5 root folds", "… › current — the design floor"], ["grow back", <>floor + 8 (<span className="tok">--tasty-fp-bar-hysteresis</span>)</>], ["current ellipsis", "at the FRONT (…-bbbb) — the tail names the folder"], ["ancestor ellipsis", "at the tail"], ["picker floor", <><span className="tok">--tasty-fp-popup-min-width</span> 320 — the owning surface always wins</>]]}
+            specs={[["measure", "path-bar width − Up − Refresh − gaps (not the popup width)"], ["specimens", "cards marked “stage diagram” force the fold to show the step; unmarked cards are measured"], ["product gallery", "measured only — a width ladder: longtwo at 640 · 520 · 440 · 360 · 320, longroot at 320, each labelled with the step crumb_alloc::plan returns"], ["crumb type", <>11 · <span className="tok">--tasty-font-size-caption</span> · current = text-primary, no extra weight</>], ["1 fold", "ancestors → … menu, one per step (approved 09-14)"], ["2 parent", <>180 → 64 (<span className="tok">--tasty-fp-crumb-min-width</span>)</>], ["3 current", <>180 → 96 (<span className="tok">--tasty-fp-crumb-current-min-width</span>)</>], ["4 parent folds", "root › … › current"], ["5 root folds", "… › current — the design floor"], ["grow back", <>floor + 8 (<span className="tok">--tasty-fp-bar-hysteresis</span>)</>], ["current ellipsis", "at the FRONT (…-bbbb) — the tail names the folder"], ["ancestor ellipsis", "at the tail"], ["picker floor", <><span className="tok">--tasty-fp-popup-min-width</span> 320 — the owning surface always wins</>]]}
             tokens={[{ tok: "--tasty-fp-crumb-max-width", use: "cap (approved, unchanged)" }, { tok: "--tasty-fp-crumb-min-width", use: "ancestor floor" }, { tok: "--tasty-fp-crumb-current-min-width", use: "current-folder floor" }, { tok: "--tasty-fp-bar-hysteresis", use: "grow-back margin" }, { tok: "--tasty-fp-popup-min-width", use: "popup floor" }]} />
           <Do><b>Do</b> keep the <b>… menu</b> in place through every step: hidden ancestors enter it in <b>path order</b>, so step 4 and 5 just prepend the parent and the root. Its hit area never exceeds its painted box.</Do>
           <Dont><b>Don't</b> buy width from the footer, the file-name input, the Refresh button, or the font size. The path bar takes what is left over after those, and folds.</Dont>
@@ -1078,11 +1120,11 @@ function Page() {
         </Spec>
 
         <Spec title="General › Overlay — toast duration"
-          when={<>The <b>General</b> L1 tab gains a fourth L2 section, <b>Overlay</b> (after General / Notifications / Accessibility) — the umbrella term for Toast / Banner / Modifier-hint / Marker overlays. It ships with <b>one row</b>: <b>Toast duration</b>, a DragValue that controls how long a toast stays before auto-dismissing (today hardcoded at 2000ms). Exposed in <b>seconds</b> (matches the user's mental model), stored as ms. Same Grid (label + control) and hint-text pattern as the other General sections — no new interaction invented.</>}>
+          when={<>The <b>General</b> L1 tab gains a fourth L2 section, <b>Overlay</b> (after General / Notifications / Accessibility) — the umbrella term for Toast / Banner / Modifier-hint / Marker overlays. It ships with <b>one row</b>: <b>Toast duration</b>, a mono number field (the <b>Numbers in settings</b> shape — DragValue retired 2026-10-07) that controls how long a toast stays before auto-dismissing (today hardcoded at 2000ms). Exposed in <b>seconds</b> (matches the user's mental model), stored as ms. Same Grid (label + control) and hint-text pattern as the other General sections — no new interaction invented.</>}>
           <Stage variant="solo center" style={{ gap: 24, flexWrap: "wrap" }}>
             <Backdrop height={420}><SettingsGeneralOverlayFrame /></Backdrop>
             <div style={{ display: "flex", flexDirection: "column", gap: 10, alignSelf: "center" }}>
-              {[["rest", "rest"], ["hover", "hover — ew-resize cursor"], ["editing", "editing — click to type"]].map(([s, l]) => (
+              {[["rest", "rest"], ["editing", "editing — focus border"], ["invalid", "out of range — commits as 10.0"]].map(([s, l]) => (
                 <div key={s} style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <ToastDragValue state={s} />
                   <span style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>{l}</span>
@@ -1091,8 +1133,8 @@ function Page() {
             </div>
           </Stage>
           <Meta
-            specs={[["L2 position", "4th — after Accessibility"], ["label", "Toast duration"], ["unit", "seconds — mono “2.0 s”"], ["range / step", "1.0–10.0 s, step 0.5"], ["default", "2.0 s (= DEFAULT_LIFETIME 2000ms)"], ["control", "DragValue — drag or click-to-type"], ["hint", "12px muted line below the grid"]]}
-            tokens={[{ tok: "--tasty-surface-active", use: "active L2 row / edit selection", color: "var(--tasty-surface-active)" }, { tok: "--tasty-border-default", use: "DragValue border", color: "var(--tasty-border-default)" }, { tok: "--tasty-accent-primary", use: "editing border", color: "var(--tasty-accent-primary)" }, { tok: "--tasty-font-mono", use: "value text" }]} />
+            specs={[["L2 position", "4th — after Accessibility"], ["label", "Toast duration"], ["unit", "seconds — mono “2.0 s”"], ["range / step", "1.0–10.0 s, step 0.5"], ["default", "2.0 s (= DEFAULT_LIFETIME 2000ms)"], ["control", "mono Input (90) + static “s” — the Numbers in settings shape"], ["commit", "blur / ↵ · clamps to 1.0–10.0 and snaps to 0.5"], ["out of range", "danger border + “Between 1.0 and 10.0.” line"], ["hint", "12px muted line below the grid"]]}
+            tokens={[{ tok: "--tasty-surface-active", use: "active L2 row", color: "var(--tasty-surface-active)" }, { tok: "--tasty-field-width-xs", use: "field width 90" }, { tok: "--tasty-border-focus", use: "editing border", color: "var(--tasty-border-focus)" }, { tok: "--tasty-accent-danger", use: "out of range", color: "var(--tasty-accent-danger)" }, { tok: "--tasty-font-mono", use: "value text" }]} />
           <Note>Scope is <b>this one row only</b> — the tab name is the umbrella so future overlay settings (banner, marker…) can land here without inventing a new section. Existing General / Notifications / Accessibility content is untouched. Store the value in ms internally; only the display is in seconds.</Note>
         </Spec>
         <Spec title="Settings · General › Remote transfer — 5th L2 subtab"
@@ -1101,7 +1143,7 @@ function Page() {
           <Meta
             specs={[["L2 position", "5th — after Overlay"], ["rows", "Save folder · Maximum size"], ["folder row", "mono path Input + Browse… (secondary, folder icon)"], ["size row", "numeric Input · 88px + mono “MiB” suffix"], ["defaults", "~/.tasty/transfers/ · 500 MiB"], ["row grid", "150px label · control · desc below"]]}
             tokens={[{ tok: "--tasty-settings-row-min-height", use: "row height" }, { tok: "--tasty-surface-active", use: "active L2 row", color: "var(--tasty-surface-active)" }, { tok: "--tasty-separator", use: "row separator", color: "var(--tasty-separator)" }, { tok: "--tasty-text-muted", use: "descriptions + unit", color: "var(--tasty-text-muted)" }]} />
-          <Note>The unit is a static mono <b>MiB</b> suffix outside the field — not typed, not a Tag — mirroring how the Toast DragValue carries its “s” unit. Exceeding <b>Maximum size</b> rejects new transfers before they start; the rejection surfaces as the <b>Transfer failed</b> popup (Overlays › Dialogs › Remote transfer).</Note>
+          <Note>The unit is a static mono <b>MiB</b> suffix outside the field — not typed, not a Tag — mirroring how Toast duration carries its “s” unit. Exceeding <b>Maximum size</b> rejects new transfers before they start; the rejection surfaces as the <b>Transfer failed</b> popup (Overlays › Dialogs › Remote transfer).</Note>
         </Spec>
         <Spec title="Numbers in settings — one shape: mono Input + a static suffix"
           when={<>Three different numeric controls had appeared: a mono text Input with a static unit (remote transfer <b>Maximum size</b> · MiB), a <b>drag</b> number (plugin <b>Default zoom</b> · %), and a proposed stepper. The settled shape is the <b>first</b>, everywhere: a <b>mono text Input</b>, keyboard entry only, a <b>static muted suffix</b> outside the field, and <b>clamp on commit</b> (blur / <span className="ic">↵</span>) — not while typing, so you can type <code>150</code> in a 25–200 field without the second keystroke fighting you. Out of range shows the danger border + one inline line naming the range. A drag surface inside a scrolling settings pane steals the scroll and hides its own range; a stepper needs two more hit targets for a field people set once.</>}>
@@ -1176,6 +1218,16 @@ function Page() {
           <Meta
             specs={[["placement", "inline — the row's second line becomes the editor; one row open at a time"], ["field", "CodeArea · minRows 4 · grows to codearea-max-height 200, then scrolls · no wrap"], ["help", "text-muted caption: One call per line: method, then optional JSON params. Lines starting with # are skipped and are not kept."], ["parse", "every change · first error only"], ["error line", "alertCircle + sentence in accent-danger caption · parser reason after it, mono caption text-muted (untranslated) · gutter number danger + tinted band"], ["error copy", "Line {line}: a method name is required before the params. · Line {line}: the method name contains a control character. · Line {line}, column {column}: invalid params JSON."], ["empty", "allowed · note: No calls. The handler does nothing."], ["buttons", "right-aligned · Cancel ghost sm · Apply secondary sm (disabled while an error stands)"], ["save flow", "Apply → tab draft → Settings Save"], ["keys", "Mod+Enter Apply · Esc Cancel · Enter newline"], ["reopen", "comments / blank lines are gone, JSON compact with sorted keys — the help line says so; no extra notice"]]}
             tokens={[{ tok: "--tasty-codearea-gutter-bg", use: "→ bg-sidebar", color: "var(--tasty-codearea-gutter-bg)" }, { tok: "--tasty-codearea-gutter-fg", use: "→ text-muted", color: "var(--tasty-codearea-gutter-fg)" }, { tok: "--tasty-codearea-error-fg", use: "→ accent-danger", color: "var(--tasty-codearea-error-fg)" }, { tok: "--tasty-codearea-max-height", use: "→ size-200" }]} />
+        </Spec>
+        <Spec title="Hook Handlers — edited default: mark + Revert (2026-10-07)"
+          when={<>Editing (or switching off) a handler that <b>host</b> or a <b>plugin</b> registered saves a <b>user patch</b> under the same id; the row keeps its origin Tag and padlock. The row now says so: an <b>edited</b> Tag right after the origin Tag, and a <b>Revert</b> ghost button on the action line beside Edit. Revert follows the extension-mapping pending pattern: the summary goes back to the default, the button becomes <b>Undo</b> in the same slot, and the Tag reads <b>reverts on save</b>. Settings <b>Save</b> drops the patch (same effect as <code>tasty hook-handler remove --id</code>); Cancel restores it. Any patch counts — a changed sequence, a Switch turned off, or both — and one Revert clears all of it.</>}>
+          <Stage variant="solo" style={{ padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-app)", gap: "var(--tasty-space-lg)", flexWrap: "wrap", alignItems: "flex-start" }}>
+            <ThemePair><HookOverrideG /></ThemePair>
+          </Stage>
+          <Meta
+            specs={[["mark", "Tag (neutral) “edited” after the origin Tag — host / plugin rows with a user patch only"], ["mark tooltip", "Changed in your settings. Updates to the default no longer apply."], ["action", "Revert · ghost Button sm · action line, left of Edit"], ["Revert tooltip", "Go back to the default from {origin}."], ["pending", "button → Undo (same slot) · Tag “reverts on save” (disabled) · summary shows the default"], ["scope", "sequence edit · Switch off · both — any user patch"], ["Save / Cancel", "Save removes the patch · Cancel restores it"], ["user rows", "never marked — they are the user's own"]]}
+            tokens={[{ tok: "--tasty-tag-disabled-bg", use: "pending Tag", color: "var(--tasty-tag-disabled-bg)" }, { tok: "--tasty-glyph-dim", use: "padlock", color: "var(--tasty-glyph-dim)" }, { tok: "--tasty-accent-agent", use: "plugin origin", color: "var(--tasty-accent-agent)" }]} />
+          <Note>No new tokens: the mark is the shared Tag, the pending state reuses the extension-mapping Undo + disabled Tag pair. Strings: <code>hook_handler.edited</code> “edited” · <code>hook_handler.edited_tip</code> · <code>hook_handler.revert</code> “Revert” · <code>hook_handler.revert_tip</code> · <code>hook_handler.reverts_on_save</code> “reverts on save” · <code>common.undo</code>.</Note>
         </Spec>
         <Spec title="Appearance › colour rows — the Default hex is read-only, not disabled (2026-09-29)"
           when={<>With <b>Default</b> checked, a colour row has no override and its hex field cannot be edited. The field still carries the <b>base value in use</b>, the only text value on the row, so it is <b>read-only</b>, not disabled: the same neutral box as a disabled Input, with the value in <span className="tok">--tasty-input-readonly-fg</span> (text-secondary) instead of the disabled ink. The value can be selected and copied; the field takes focus (1px focus edge, no ring). Unchecking Default starts the override and the field becomes a normal Input. Applies to the Tasty colour rows, the terminal surface background row and the Colors group.</>}>
@@ -1252,7 +1304,7 @@ function Page() {
 
       <Section id="pluginswindow" title="Plugins window · plugin avatar">
         <Spec title="Plugin identity mark — one component, two sizes"
-          when={<>A plugin manifest carries <b>no image</b>, so its identity in the Plugins window is a <b>square initial mark</b>: the first letter of the plugin name, mono, bold, in a tinted square at <span className="tok">--tasty-radius</span>. There are exactly <b>two sizes</b> — <b>sm (32)</b> on Installed / Attention list rows and <b>lg (46)</b> on a detail identity block and the <b>Add plugin</b> manifest preview (the old one-off 42px preview copy is gone; it was the same thing at different numbers). The tint is mixed into <span className="tok">--tasty-surface-raised</span>, a <b>fixed bed</b> — not the row background — so the mark is pixel-identical on a rest, hover and selected row. The initial's size is a <b>token per size</b>, not a ratio of the box: at lg it is <b>16px</b>, a sanctioned <b>mark</b> exception to the 14px UI cap (same class as the brand wordmark) because it is one glyph standing in for an icon, never running copy.</>}>
+          when={<>A plugin manifest carries <b>no image</b>, so its identity in the Plugins window is a <b>square initial mark</b>: the first letter of the plugin name, mono, bold, in a tinted square at <span className="tok">--tasty-radius</span>. There are exactly <b>two sizes</b> — <b>sm (32)</b> on Installed / Attention list rows and <b>lg (46)</b> on a detail identity block and the <b>Add plugin</b> manifest preview (the old one-off 42px preview copy is gone; it was the same thing at different numbers). The tint is mixed into <span className="tok">--tasty-surface-raised</span>, a <b>fixed bed</b> — not the row background — so the mark is pixel-identical on a rest, hover and selected row. The initial's size is a <b>token per size</b>, not a ratio of the box: <b>13 at sm, 14 at lg</b> — inside the 14px UI cap, with no exception (2026-10-07; the earlier 16 is withdrawn). The two sizes differ by the box (32 / 46) and one type step. Weight is <b>regular</b>: no bold mono face ships, so colour and size carry the mark.</>}>
           <Stage variant="tight" grid>
             <div style={{ display: "flex", gap: 32, alignItems: "flex-start", flexWrap: "wrap", padding: 14, background: "var(--tasty-bg-panel)" }}>
               <div style={{ display: "flex", gap: 18, alignItems: "flex-end" }}>
@@ -1272,8 +1324,8 @@ function Page() {
             </div>
           </Stage>
           <Meta
-            specs={[["sizes", "sm 32 · lg 46 — the whole roster"], ["content", "name initial, uppercase, mono bold"], ["initial size", "sm 14 · lg 16 (mark exception)"], ["tint bed", "surface-raised — fixed, not the row bg"], ["mix", "bg 18% · border 38% of accent-primary"], ["row states", "mark unchanged — only the row bg moves"], ["disabled row", "whole row at state-disabled-opacity"]]}
-            tokens={[{ tok: "--tasty-plugin-avatar-size-sm", use: "32 — list row" }, { tok: "--tasty-plugin-avatar-size-lg", use: "46 — detail / manifest preview" }, { tok: "--tasty-plugin-avatar-bg", use: "tinted square", color: "var(--tasty-plugin-avatar-bg)" }, { tok: "--tasty-plugin-avatar-border", use: "1px edge", color: "var(--tasty-plugin-avatar-border)" }, { tok: "--tasty-plugin-avatar-fg", use: "the initial", color: "var(--tasty-plugin-avatar-fg)" }, { tok: "--tasty-plugin-avatar-initial-font-size-sm", use: "14 at sm" }, { tok: "--tasty-plugin-avatar-initial-font-size-lg", use: "16 at lg — mark exception to the UI cap" }, { tok: "--tasty-plugin-avatar-initial-weight", use: "bold" }, { tok: "--tasty-plugin-avatar-border-width", use: "= --tasty-border-width" }]} />
+            specs={[["sizes", "sm 32 · lg 46 — the whole roster"], ["content", "name initial, uppercase, mono regular"], ["initial size", "sm 13 · lg 14 — no UI-cap exception"], ["tint bed", "surface-raised — fixed, not the row bg"], ["mix", "bg 18% · border 38% of accent-primary"], ["row states", "mark unchanged — only the row bg moves"], ["disabled row", "whole row at state-disabled-opacity"]]}
+            tokens={[{ tok: "--tasty-plugin-avatar-size-sm", use: "32 — list row" }, { tok: "--tasty-plugin-avatar-size-lg", use: "46 — detail / manifest preview" }, { tok: "--tasty-plugin-avatar-bg", use: "tinted square", color: "var(--tasty-plugin-avatar-bg)" }, { tok: "--tasty-plugin-avatar-border", use: "1px edge", color: "var(--tasty-plugin-avatar-border)" }, { tok: "--tasty-plugin-avatar-fg", use: "the initial", color: "var(--tasty-plugin-avatar-fg)" }, { tok: "--tasty-plugin-avatar-initial-font-size-sm", use: "→ font-size-body 13" }, { tok: "--tasty-plugin-avatar-initial-font-size-lg", use: "→ font-size-max 14" }, { tok: "--tasty-plugin-avatar-initial-weight", use: "→ font-weight-normal" }, { tok: "--tasty-plugin-avatar-border-width", use: "= --tasty-border-width" }]} />
           <Note><b>The mark carries identity, not classification.</b> An earlier draft coloured it by a plugin <i>category</i>, but a manifest has no category field — every real install fell back to one colour, so the hue said nothing while implying a taxonomy. Colour is now fixed at <span className="tok">--tasty-plugin-avatar-fg</span> for every plugin; state (running / error / needs attention) is already carried by the row's status dot and callouts, which is where a reader looks for it. If a classification axis is ever wanted here, it needs a manifest field first — and then it is a new decision, not this token.</Note>
           <Dont><b>Don't</b> mix the tint into the row background to "blend" on a selected row — the mark would then shift colour with row state and stop being a stable identity. And don't re-derive the initial's size from the box (<code>round(size × 0.42)</code>): that produced 19px at lg, off the type scale and over the UI cap with no decision behind it.</Dont>
         </Spec>
@@ -1309,6 +1361,27 @@ function Page() {
           <Meta
             specs={[["tone", "success add · warning add + trust · danger blocked"], ["box", "tint-fill + tint-border of the tone · pad space-md / 14 · radius"], ["title", "glyph 16 + 13/600 in the tone"], ["body", "term-sm · text-secondary"], ["fingerprint", "after the body · absent for signature-error"], ["installed", "trust box as judged · bar reason 'Already installed' only (no second notice)"], ["Attention › signature invalid", "no fingerprint line (the signature it would identify is the broken part)"], ["homepage", "mono caption row 'Homepage' under Source · link text, opens the default browser"], ["homepage link (b2)", "text-secondary · 1px underline always · hover text-primary · focus = focus ring · pointer cursor (no accent: the row sits on surface-raised and text-secondary already clears 4.5:1)"], ["authors", "id · first author · +N (tooltip lists all)"], ["empty lists", "Permissions / Surface kinds: 'None' in text-muted, no Tag · font-size-caption (same as the mono caption rows it replaces)"], ["long fingerprint (b2)", "colon-hex over 16 bytes → first 8 + ' … ' + last 8 bytes, one line; tooltip + copy = full value"], ["Signature invalid (b2)", "header kept · fixed note 'The signature does not match this plugin's files.' · cause (key missing / mismatch …) as a mono caption text-muted line under it"], ["action-bar left text (b2)", "font-size-caption — the kit's 12 is corrected"], ["flow (b2)", "kit structure: path input, preview card directly under it, no 'Plugin information' title / second step"]]}
             tokens={[{ tok: "--tasty-tint-fill-alpha", use: "box fill" }, { tok: "--tasty-tint-border-alpha", use: "box edge" }, { tok: "--tasty-accent-warning", use: "add + trust", color: "var(--tasty-accent-warning)" }, { tok: "--tasty-accent-danger", use: "blocked", color: "var(--tasty-accent-danger)" }, { tok: "--tasty-accent-success", use: "trusted", color: "var(--tasty-accent-success)" }]} />
+        </Spec>
+        <Spec title="Add plugin — dashed empty hint · manifest read error (2026-10-07)"
+          when={<>Before Verify the slot under the path field holds the <b>empty hint</b>: a <b>dashed</b> 1px border-default box. Renderers without CSS dashes draw it with <span className="tok">--tasty-border-dash</span> / <span className="tok">--tasty-border-dash-gap</span> (4 / 4) on the straight edges, centred so each edge starts and ends on a dash; the <b>corners stay solid</b> arcs. When Verify cannot read <code>tasty-plugin.toml</code> (missing, parse error) the <b>same box</b> takes the slot with a <b>solid accent-danger edge</b>: alertTriangle + “Can't read tasty-plugin.toml”, then the reader's reason as one mono caption line (untranslated). No fill, no action — the path field above is how to fix it.</>}>
+          <Stage variant="solo" style={{ padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-app)", gap: "var(--tasty-space-lg)", flexWrap: "wrap", alignItems: "flex-start" }}>
+            <ThemePair>
+              <div style={{ width: "var(--tasty-size-400)", display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", padding: "var(--tasty-size-14) var(--tasty-space-lg)", borderRadius: "var(--tasty-radius)", border: "var(--tasty-border-width) dashed var(--tasty-border-default)", color: "var(--tasty-text-muted)", fontSize: "var(--tasty-font-size-body)" }}>
+                <WIcon name="folder" size="var(--tasty-icon-size-md)" /><span>Choose a folder and press <b style={{ color: "var(--tasty-text-secondary)" }}>Verify</b> to read its manifest.</span>
+              </div>
+              <div style={{ width: "var(--tasty-size-400)", display: "flex", alignItems: "flex-start", gap: "var(--tasty-space-sm)", padding: "var(--tasty-size-14) var(--tasty-space-lg)", borderRadius: "var(--tasty-radius)", border: "var(--tasty-border-width) solid var(--tasty-accent-danger)" }}>
+                <span style={{ display: "inline-flex", flex: "none", color: "var(--tasty-accent-danger)" }}><WIcon name="alertTriangle" size="var(--tasty-icon-size-md)" /></span>
+                <span style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-label-detail-gap)", minWidth: 0 }}>
+                  <span style={{ fontSize: "var(--tasty-font-size-body)", color: "var(--tasty-accent-danger)" }}>Can't read tasty-plugin.toml</span>
+                  <span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)", overflowWrap: "anywhere" }}>TOML parse error at line 4, column 9: expected `=`</span>
+                </span>
+              </div>
+            </ThemePair>
+          </Stage>
+          <Meta
+            specs={[["empty hint", "dashed 1px border-default · radius · pad 14 / 16"], ["dash", <>4 on / 4 off · <span className="tok">--tasty-border-dash</span> · <span className="tok">--tasty-border-dash-gap</span> · OFF-SCALE</>], ["corners", "solid arc; dashes on straight edges only, centred"], ["read error", "same box · solid accent-danger edge · no fill"], ["title", "Can't read tasty-plugin.toml · body · accent-danger"], ["reason", "mono caption · text-muted · untranslated"], ["action", "none — fix the path above and Verify again"]]}
+            tokens={[{ tok: "--tasty-border-dash", use: "→ size-4" }, { tok: "--tasty-border-dash-gap", use: "→ size-4" }, { tok: "--tasty-border-default", use: "hint edge", color: "var(--tasty-border-default)" }, { tok: "--tasty-accent-danger", use: "read error", color: "var(--tasty-accent-danger)" }]} />
+          <Note>The same dash pair draws the Scripts <b>Add trigger…</b> control (Misc › Scripts). String: <code>plugins.add.read_error</code> “Can't read tasty-plugin.toml”.</Note>
         </Spec>
       </Section>
 
@@ -1353,7 +1426,7 @@ function Page() {
             </div>
           </Stage>
           <Meta
-            specs={[["position", "above the diff table; notice between"], ["gate", "Apply disabled while any row is unresolved"], ["counter", "“{n} of {m} unresolved” in the card header + back bar"], ["widget A", "record slot — min 140 × 24, mono"], ["widget B", "modifier Select — 7 combos (non-macOS)"], ["label column", "288px — ja longest label measures 255px"], ["axis fan-out", "sub-line: “10 slots change with it”"], ["unbound", "counts as resolved, shown as a Tag"], ["not needed", "card absent + one intro sentence"], ["failure", "inline block in the detail area"]]}
+            specs={[["position", "above the diff table; notice between"], ["width", <>full-bleed — 868 at the default 1100 window (not the 620 cap) · columns 288 / 120 · <span className="tok">--tasty-kb-ie-action-column-width</span> / <span className="tok">--tasty-kb-ie-from-column-width</span></>], ["gate", "Apply disabled while any row is unresolved"], ["counter", "“{n} of {m} unresolved” in the card header + back bar"], ["widget A", "record slot — min 140 × 24, mono"], ["widget B", "modifier Select — 7 combos (non-macOS)"], ["label column", "288px — ja longest label measures 255px"], ["axis fan-out", "sub-line: “10 slots change with it”"], ["unbound", "counts as resolved, shown as a Tag"], ["not needed", "card absent + one intro sentence"], ["failure", "inline block in the detail area"]]}
             tokens={[{ tok: "--tasty-accent-warning", use: "pending card + “Not set”", color: "var(--tasty-accent-warning)" }, { tok: "--tasty-accent-success", use: "resolved card + set check", color: "var(--tasty-accent-success)" }, { tok: "--tasty-accent-danger", use: "conflict border + parse failure", color: "var(--tasty-accent-danger)" }, { tok: "--tasty-surface-raised", use: "record slot bed", color: "var(--tasty-surface-raised)" }, { tok: "--tasty-text-disabled", use: "empty slot label", color: "var(--tasty-text-disabled)" }, { tok: "--tasty-size-24", use: "record slot height" }]} />
           <Note><b>Two disabled Applies, two reasons.</b> Preset shows a disabled button relabelled <b>Applied</b> (nothing left to do). Here the label stays <b>Apply</b> and the reason is carried next to it as <b>“{"{n}"} unresolved”</b> plus the card counter — a disabled button whose cause is off-screen is a dead end, and relabelling would claim the import already happened. Same disabled treatment, different message.</Note>
           <Dont><b>Don't</b> make “dropped plugin overrides” a warning callout. Nothing is wrong and there is no action — a warning triangle on an unactionable fact trains people to ignore triangles. It is one muted info line naming the plugins.</Dont>
@@ -1406,7 +1479,7 @@ function Page() {
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}><div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>empty state</div><ScriptManagerFrame empty /></div>
           </Stage>
           <Meta
-            specs={[["home", "Settings › Misc › Scripts (subsection)"], ["row", "name · path · shortcut · actions · auto-run"], ["shortcut", <><span className="ic">Kbd</span> badge or italic Unbound</>], ["changed", "peach badge + help line (SHA mismatch)"], ["auto-run", "trigger chips + Add trigger… (13 lifecycle events)"], ["chip", "mono event · click removes · hover 12% overlay"], ["actions", "bind · rename · remove"], ["empty", "glyph + Add script prompt"]]}
+            specs={[["home", "Settings › Misc › Scripts (subsection)"], ["row", "name · path · shortcut · actions · auto-run"], ["shortcut", <><span className="ic">Kbd</span> badge or italic Unbound</>], ["changed", "peach badge + help line (SHA mismatch)"], ["auto-run", "trigger chips + Add trigger… (13 lifecycle events)"], ["Add trigger… edge", <>dashed · <span className="tok">--tasty-border-dash</span> / <span className="tok">--tasty-border-dash-gap</span> 4 / 4 · corners solid (2026-10-07)</>], ["trigger menu", <>min 200 · max 220 then scrolls · <span className="tok">--tasty-trigger-menu-min-width</span> / <span className="tok">-max-height</span> · menu-* container</>], ["all bound", "control stays, DISABLED (disabled ink) · tooltip All events already bound"], ["chip", "mono event · click removes · hover 12% overlay"], ["actions", "bind · rename · remove"], ["empty", "glyph + Add script prompt"]]}
             tokens={[{ tok: "--tasty-accent-warning", use: "changed badge + help", color: "var(--tasty-accent-warning)" }, { tok: "--tasty-border-default", use: "chip + add-control border", color: "var(--tasty-border-default)" }, { tok: "--tasty-overlay-active", use: "chip hover / menu open", color: "var(--tasty-overlay-active)" }, { tok: "--tasty-text-disabled", use: "Unbound", color: "var(--tasty-text-disabled)" }, { tok: "--tasty-font-mono", use: "path · trigger chips" }]} />
           <Note>Two independent run paths: a <b>manual shortcut</b> (bound in the Keybindings tab, shown as the <span className="ic">Kbd</span> badge) and <b>auto-run triggers</b> (edited inline here — the script fires when the host emits a bound lifecycle event). A script can have either, both, or neither. The <span className="ic">changed</span> state is informational — the script still runs, but re-confirms once (TOFU) because the on-disk file drifted from the registered hash.</Note>
         </Spec>

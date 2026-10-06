@@ -12,7 +12,8 @@ const { ListCtrl } = window.TastyDesignSystem_41fd3f;
 const NAV = [
   { id: "canvas", label: "Graph canvas" },
   { id: "node", label: "Node card · 8 states" },
-  { id: "edges", label: "Edges · 3 relations" },
+  { id: "edges", label: "Edges · 5 relations" },
+  { id: "routes", label: "Transitions · not selected" },
   { id: "chrome", label: "Canvas chrome" },
   { id: "runner", label: "Runner badge" },
   { id: "rows", label: "DAG list row" },
@@ -134,16 +135,43 @@ function Page() {
         </Spec>
       </Section>
 
-      <Section id="edges" title="Edges · 3 relations">
+      <Section id="edges" title="Edges · 5 relations">
         <Spec title="Dependency edges"
-          when={<>Relation is carried by <b>dash pattern and colour together</b>: <code>depends_on</code> solid neutral, <code>fallback</code> long-dash attention, <code>reduce</code> fine-dash info. Every edge ends in an arrowhead at the <b>dependent</b> task, so the direction reads as "waits for".</>}>
+          when={<>Relation is carried by <b>dash pattern and colour together</b>: <code>depends_on</code> solid neutral, <code>fallback</code> long-dash attention, <code>reduce</code> fine-dash info, <code>binding</code> dash-dot data (teal, 2026-10-07), <code>transition</code> long-dash route (lavender, 2026-10-07). When a pair has both <code>depends_on</code> and <code>binding</code>, <b>only the binding is drawn</b> — a binding already implies the order. A <code>one_of</code> binding draws one binding edge per source. Every edge ends in an arrowhead at the <b>dependent</b> task, so the direction reads as "waits for".</>}>
           <Stage variant="grid" style={{ display: "flex", gap: 32, padding: 20, alignItems: "flex-start" }}>
             {Object.keys(DAG_REL).map((r) => <EdgeSpecimen key={r} rel={r} />)}
           </Stage>
           <Meta
-            specs={[["routing", "orthogonal, 4px elbow"], ["width", "1px"], ["fallback dash", "6 3"], ["reduce dash", "2 3"], ["arrow", "8px triangle at target"], ["selected node", "its edges take the accent"]]}
-            tokens={[{ tok: "--tasty-dag-edge-depends", use: "depends_on", color: "var(--tasty-dag-edge-depends)" }, { tok: "--tasty-dag-edge-fallback", use: "fallback", color: "var(--tasty-dag-edge-fallback)" }, { tok: "--tasty-dag-edge-reduce", use: "reduce", color: "var(--tasty-dag-edge-reduce)" }, { tok: "--tasty-dag-edge-dim-opacity", use: "dead path" }]} />
+            specs={[["routing", "orthogonal, 4px elbow"], ["width", "1px"], ["fallback dash", "6 3"], ["reduce dash", "2 3"], ["binding dash", "8 2 2 2"], ["transition dash", "10 4"], ["same pair", "binding replaces depends_on"], ["detail label", "binding → “binds input” · transition → “transition”"], ["arrow", "8px triangle at target"], ["selected node", "its edges take the accent"]]}
+            tokens={[{ tok: "--tasty-dag-edge-depends", use: "depends_on", color: "var(--tasty-dag-edge-depends)" }, { tok: "--tasty-dag-edge-fallback", use: "fallback", color: "var(--tasty-dag-edge-fallback)" }, { tok: "--tasty-dag-edge-reduce", use: "reduce", color: "var(--tasty-dag-edge-reduce)" }, { tok: "--tasty-dag-edge-binding", use: "binding → accent-data", color: "var(--tasty-dag-edge-binding)" }, { tok: "--tasty-dag-edge-transition", use: "transition → accent-route", color: "var(--tasty-dag-edge-transition)" }, { tok: "--tasty-dag-edge-dim-opacity", use: "dead path" }]} />
           <Do>Dim the <b>dead path</b>: an edge leaving a failed/cancelled task, or entering a skipped one, drops to 0.4 along with the node. The failure stays loud; everything it stranded recedes.</Do>
+        </Spec>
+      </Section>
+
+      <Section id="routes" title="Transitions · not selected (2026-10-07)">
+        <Spec title="Transition selection — four states on one edge style"
+          when={<>A transition edge always keeps its lavender long dash; its <b>selection</b> changes weight and opacity only. <b>pending</b> (producer not finished) = 1px, full opacity. <b>selected</b> = <b>2px</b> (<span className="tok">--tasty-dag-edge-selected-width</span>). <b>not_selected</b> = 1px at <span className="tok">--tasty-dag-edge-dim-opacity</span>. <b>unavailable</b> (producer failed) = the existing dead-path dim, like any edge leaving a failed task. Nothing is hidden: the unchosen route stays readable.</>}>
+          <Stage variant="grid" style={{ display: "flex", gap: 32, padding: 20, alignItems: "flex-start", flexWrap: "wrap" }}>
+            {[["pending", 1, 1], ["selected", 2, 1], ["not_selected", 1, 0.4], ["unavailable", 1, 0.4]].map(([s, w, o]) => (
+              <div key={s} style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "center" }}>
+                <svg width="120" height="56" viewBox="0 0 120 56" aria-hidden="true" style={{ opacity: o }}>
+                  <path d={elbow({ x: 12, y: 8 }, { x: 108, y: 48 }, true, 4)} fill="none" stroke="var(--tasty-dag-edge-transition)" strokeWidth={w} strokeDasharray="10 4" />
+                  <polygon points="104,41 112,41 108,48" fill="var(--tasty-dag-edge-transition)" />
+                </svg>
+                <span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: 11, color: "var(--tasty-dag-edge-transition)" }}>{s}</span>
+              </div>
+            ))}
+          </Stage>
+          <Stage variant="grid" style={{ display: "flex", flexWrap: "wrap", gap: 16, padding: 20, alignItems: "flex-start" }}>
+            <NodeBox node={mk({ status: "succeeded", name: "route:pick", kind: "custom", dur: "1s" })} caption="producer · succeeded" />
+            <NodeBox node={mk({ status: "running", name: "deploy:canary" })} caption="branch selected" />
+            <NodeBox node={mk({ status: "skipped", name: "deploy:full", dur: null })} dimmed caption="skipped — branch not selected" />
+            <NodeBox node={mk({ status: "skipped", name: "notify:ops", kind: "custom", dur: null })} dimmed caption="skipped — upstream unavailable" />
+          </Stage>
+          <Meta
+            specs={[["pending", "1px · full opacity"], ["selected", "2px · dag-edge-selected-width"], ["not_selected", "1px · dim 0.4"], ["unavailable", "dead-path dim, as from a failed task"], ["not-selected node", "skipped look (dimmed card, − glyph) · label NOT SELECTED · tooltip “Not taken — another branch was selected.”"], ["upstream-unavailable node", "skipped look · label SKIPPED · tooltip “Skipped — {source} {state}.”"], ["rollup", "succeeded + not selected only → succeeded"], ["DAG list", "no new filter; the skipped count reads “{n} skipped ({k} not selected)”"], ["legend", "binding and transition join the edge legend"]]}
+            tokens={[{ tok: "--tasty-dag-edge-transition", use: "route", color: "var(--tasty-dag-edge-transition)" }, { tok: "--tasty-dag-edge-selected-width", use: "→ focus-ring-width 2" }, { tok: "--tasty-dag-edge-dim-opacity", use: "not selected / unavailable" }, { tok: "--tasty-dag-status-skipped", use: "both skip reasons", color: "var(--tasty-dag-status-skipped)" }]} />
+          <Note>A branch that was not taken is a normal outcome, so it gets <b>no new colour</b>: it shares the skipped card and differs only in its spelled label and tooltip. i18n: <code>dag.status.not_selected</code> “not selected” · <code>dag.skip.branch_not_selected</code> · <code>dag.skip.upstream_unavailable</code> · <code>dag.rel.binding</code> “binds input” · <code>dag.rel.transition</code> “transition”.</Note>
         </Spec>
       </Section>
 

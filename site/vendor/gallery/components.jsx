@@ -397,17 +397,18 @@ function Components() {
       {/* NAV */}
       <Section id="nav" title="Tab · TreeRow · MenuItem">
         <Spec title="Tab"
-          when={<>One tab in the pane tab strip. <b>24px tall × 150px wide</b>, accent bar on the active tab, hover-revealed close, and a <b>busy dot</b> mirroring the product surface model (busy=green, idle=no dot). <code>attached</code> adds the lavender "claimed by another client" ring; <code>notif</code> tints the label. The 5-color owner×activity vocabulary lives on the workspace StatusDot, not on tabs — Tasty has no "unsaved" state.</>}>
+          when={<>One tab in the pane tab strip. <b>24px tall × 150px wide</b>, accent bar on the active tab, hover-revealed close, and a <b>busy dot</b> mirroring the product surface model (busy=green, idle=no dot). The title carries <b>attention</b>: <code>needs-input</code> (yellow) outranks <code>completion</code> (blue); the active tab never shows it (attention clears on focus). States are exactly the product's (2026-10-07): busy · needs-input · completion — no attached ring and no separate notif tint on a tab. The 5-color owner×activity vocabulary lives on the workspace StatusDot, not on tabs — Tasty has no "unsaved" state.</>}>
           <Stage variant="tight">
             <div style={{ display: "flex", background: "var(--tasty-bg-sidebar)", borderBottom: "1px solid var(--tasty-separator)" }}>
               <Tab label="build.sh" icon={ic.term} active status="busy" />
-              <Tab label="README.md" icon={ic.md} status="idle" attached />
-              <Tab label="server.log" icon={ic.term} notif />
+              <Tab label="deploy.sh" icon={ic.term} attention="needs-input" />
+              <Tab label="README.md" icon={ic.md} attention="completion" />
+              <Tab label="server.log" icon={ic.term} />
             </div>
           </Stage>
           <Meta
-            specs={[["height", <>24px <span className="tok">--tasty-control-height-tab</span></>], ["width", <>150px <span className="tok">--tasty-tab-width</span></>], ["active", "accent top bar + panel fill"], ["close", "hover-revealed"]]}
-            tokens={[{ tok: "--tasty-bg-panel", use: "active fill", color: "var(--tasty-bg-panel)" }, { tok: "--tasty-accent-primary", use: "active bar", color: "var(--tasty-accent-primary)" }, { tok: "--tasty-separator", use: "dividers" }]} />
+            specs={[["height", <>24px <span className="tok">--tasty-control-height-tab</span></>], ["width", <>150px <span className="tok">--tasty-tab-width</span></>], ["active", "accent top bar + panel fill"], ["close", "hover-revealed"], ["title", "needs-input › completion › active › rest"], ["cluster", <>busy dot · close, 4 apart · <span className="tok">--tasty-tab-status-gap</span></>]]}
+            tokens={[{ tok: "--tasty-bg-panel", use: "active fill", color: "var(--tasty-bg-panel)" }, { tok: "--tasty-accent-primary", use: "active bar", color: "var(--tasty-accent-primary)" }, { tok: "--tasty-tab-fg-needs-input", use: "needs-input title", color: "var(--tasty-tab-fg-needs-input)" }, { tok: "--tasty-tab-fg-completion", use: "completion title", color: "var(--tasty-tab-fg-completion)" }, { tok: "--tasty-tab-status-gap", use: "→ space-xs 4" }, { tok: "--tasty-separator", use: "dividers" }]} />
         </Spec>
 
         <Spec title="TreeRow"
@@ -529,7 +530,7 @@ function Components() {
             </div>
           </Stage>
           <Meta
-            specs={[["anchor", "one corner (bottom-right)"], ["order", "newest bottom"], ["gap", <>8px <span className="tok">--tasty-space-sm</span></>], ["cap", "5 per scope → oldest dropped"], ["width", <>content width per card, cap <span className="tok">--tasty-toast-max-width</span> (320) · right edges align</>], ["window-scope offset (b2)", <><span className="tok">--tasty-toast-stack-offset-bottom</span> (→ size-36) from the window bottom</>], ["link menu Copy hint (b2)", "own action copy_link ('Copy link'), unbound by default → no hint until the user binds it; never borrow the copy binding"], ["over a native WebView (b2)", "while a toast card's rect intersects a WebView, only THAT WebView is hidden for the card's life (its tile shows plain); others stay; keyboard focus is not reclaimed (a toast never takes focus)"]]}
+            specs={[["anchor", "one corner (bottom-right)"], ["order", "newest bottom"], ["gap", <>8px <span className="tok">--tasty-space-sm</span></>], ["cap", "5 per scope → oldest dropped"], ["width", <>content width per card, cap <span className="tok">--tasty-toast-max-width</span> (320) · right edges align</>], ["window-scope offset (b2 · 2026-10-07)", <>main window: <span className="tok">--tasty-toast-stack-offset-bottom</span> (→ size-36 = status bar 24 + 12), OFF-SCALE like the status bar and the card dims · Settings window: <span className="tok">--tasty-toast-stack-offset-bottom-settings</span> (→ size-64 = footer 52 + 12), ON-SCALE like the footer — the stack sits above Cancel / Save</>], ["scale", "every structural toast dim (scope margin 12, padding 12 × 8, gap 8, main offset) is OFF-SCALE; only the Settings offset follows the zoom"], ["shared corner (2026-10-07)", "workspace- and pane-scope stacks that land on the same corner merge into ONE column, newest bottom, cap 5 across both"], ["link menu Copy hint (b2)", "own action copy_link ('Copy link'), unbound by default → no hint until the user binds it; never borrow the copy binding"], ["over a native WebView (b2)", "while a toast card's rect intersects a WebView, only THAT WebView is hidden for the card's life (its tile shows plain); others stay; keyboard focus is not reclaimed (a toast never takes focus). A WebView that is RECEIVING KEYS is not hidden, so the card stays under it — accepted (2026-10-07): typing must not be lost, and a toast is transient"]]}
             tokens={[{ tok: "--tasty-space-sm", use: "stack gap" }, { tok: "--tasty-surface-raised", use: "each card", color: "var(--tasty-surface-raised)" }]} />
           <Dont><b>Don’t</b> let the stack grow unbounded, and don’t fold the tail into a “+N more” row either. Hold the cap by dropping the oldest card — a wall of toasts buries the newest signal, and an overflow counter is one more thing to read instead of the notice itself.</Dont>
         <Spec title="The dot family — 8 generic, 6 in dense chrome, and the attached ring"
@@ -739,7 +740,7 @@ function Components() {
               ["radius", <span className="tok">--tasty-tooltip-radius</span>],
               ["max-width", <>240 <span className="tok">--tasty-tooltip-max-width</span></>],
               ["placement", "top / bottom / left / right"],
-              ["over native content", "tab strip · pane head: top → bottom → inside the strip → top clamped (4 from the window edge) — Layouts › Pane tab strip"],
+              ["over native content", "tab strip · pane head: top → bottom → inside the strip (1px border-width tolerance) · none clears → inside the strip — Layouts › Pane tab strip. No anchor cell (outside a strip): top clamped, 4 from the window edge"],
               ["delay", <>150ms <span className="tok">--tasty-tooltip-delay</span></>],
             ]}
             tokens={[

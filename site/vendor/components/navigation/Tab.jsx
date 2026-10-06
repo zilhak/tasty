@@ -18,13 +18,14 @@ import React from "react";
  * WORKSPACE level (sidebar StatusDot, port_scanner, plugins). It deliberately
  * does NOT live on the tab; don't reintroduce it here without a product source.
  *
- * `attached` (the surface is claimed by another client — an orthogonal axis,
- * not an activity) draws the lavender ring from StatusDot AROUND the dot; since
- * an idle tab has no dot, attached forces a neutral idle dot to carry the ring.
- * `notif` (a pending notification) tints the label yellow — mirroring
- * tab_bar.rs (busy dot + notif label). The dot is static (no pulse): a strip of
- * pulsing dots would be noisy. Pulsing per-surface signals live on the
- * workspace StatusDot + the status bar.
+ * `attention` tints the TITLE — the product's one attention channel on a tab
+ * (tab_bar.rs): needs-input (tab-fg-needs-input) › completion (tab-fg-completion)
+ * › active › rest. Attention clears on focus. (2026-10-07: the old `attached`
+ * ring and `notif` label were removed — the product tab draws neither; attach
+ * lives on the workspace row.) The dot is static (no pulse).
+ *
+ * Right cluster: busy dot · close, tab-status-gap (4) apart; label → cluster
+ * is tab-gap (8).
  */
 
 const CSS = `
@@ -32,7 +33,7 @@ const CSS = `
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: var(--tasty-space-sm);
+  gap: var(--tasty-tab-gap);
   height: var(--tasty-control-height-tab);
   width: var(--tasty-tab-width);
   padding: 0 var(--tasty-space-sm) 0 var(--tasty-space-md);
@@ -63,12 +64,12 @@ const CSS = `
 .tasty-tab__close:hover { background: var(--tasty-overlay-active); color: var(--tasty-text-primary); }
 .tasty-tab__close svg { width: var(--tasty-icon-size-xs); height: var(--tasty-icon-size-xs); }
 /* live-activity dot — mirrors the product busy bool (busy = green, idle = none) */
+.tasty-tab__cluster { flex: none; display: inline-flex; align-items: center; gap: var(--tasty-tab-status-gap); }
 .tasty-tab__dot { position: relative; width: var(--tasty-tab-dot-size); height: var(--tasty-tab-dot-size); border-radius: var(--tasty-radius-pill); background: var(--tasty-status-dot-idle); flex: none; }
 .tasty-tab__dot--busy { background: var(--tasty-status-dot-success); }
-/* attached (claimed by another client) — orthogonal lavender ring, same token as StatusDot */
-.tasty-tab__dot--attached { outline: var(--tasty-status-dot-attached-ring-width) solid var(--tasty-status-dot-attached-ring); outline-offset: var(--tasty-status-dot-attached-ring-offset); }
-/* pending notification — yellow label, no dot of its own (mirrors tab_bar.rs) */
-.tasty-tab--notif .tasty-tab__label { color: var(--tasty-status-dot-warning); }
+/* attention — title tint (needs-input outranks completion); clears on focus */
+.tasty-tab--needs-input .tasty-tab__label { color: var(--tasty-tab-fg-needs-input); }
+.tasty-tab--completion .tasty-tab__label { color: var(--tasty-tab-fg-completion); }
 `;
 
 
@@ -83,17 +84,17 @@ function ensureCss() {
   injected = true;
 }
 
-export function Tab({ label, icon = null, active = false, status = "idle", attached = false, notif = false, onClose, className = "", ...rest }) {
+export function Tab({ label, icon = null, active = false, status = "idle", attention = null, onClose, className = "", ...rest }) {
   ensureCss();
   const busy = status === "busy";
-  const hasDot = busy || attached;
-  const dotCls = ["tasty-tab__dot", busy ? "tasty-tab__dot--busy" : "", attached ? "tasty-tab__dot--attached" : ""].filter(Boolean).join(" ");
-  const cls = ["tasty-tab", active ? "tasty-tab--active" : "", notif ? "tasty-tab--notif" : "", className].filter(Boolean).join(" ");
+  const att = active ? null : attention;
+  const cls = ["tasty-tab", active ? "tasty-tab--active" : "", att ? "tasty-tab--" + att : "", className].filter(Boolean).join(" ");
   return (
     <div className={cls} {...rest}>
       {icon && <span className="tasty-tab__icon">{icon}</span>}
       <span className="tasty-tab__label">{label}</span>
-      {hasDot && <span className={dotCls} />}
+      <span className="tasty-tab__cluster">
+      {busy && <span className="tasty-tab__dot tasty-tab__dot--busy" />}
       <button
         className="tasty-tab__close"
         aria-label="Close tab"
@@ -103,6 +104,7 @@ export function Tab({ label, icon = null, active = false, status = "idle", attac
           <path d="M18 6 6 18M6 6l12 12" />
         </svg>
       </button>
+      </span>
     </div>
   );
 }

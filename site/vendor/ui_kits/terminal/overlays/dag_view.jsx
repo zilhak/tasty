@@ -47,6 +47,8 @@ const DAG_REL = {
   depends_on: { label: "depends on", color: "var(--tasty-dag-edge-depends)",  dash: null },
   fallback:   { label: "fallback",   color: "var(--tasty-dag-edge-fallback)", dash: "6 3" },
   reduce:     { label: "reduce",     color: "var(--tasty-dag-edge-reduce)",   dash: "2 3" },
+  binding:    { label: "binds input", color: "var(--tasty-dag-edge-binding)", dash: "8 2 2 2" },   // 2026-10-07 — data edge; replaces depends_on on the same pair
+  transition: { label: "transition",  color: "var(--tasty-dag-edge-transition)", dash: "10 4" },  // 2026-10-07 — result-chosen route; selection drawn per edge
 };
 const sTok = (s) => `var(--tasty-dag-status-${s})`;
 const sBg = (s) => `var(--tasty-dag-status-${s}-bg)`;

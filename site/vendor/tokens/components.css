@@ -167,7 +167,7 @@
   --tasty-multiselect-summary-fg:       var(--tasty-text-primary);           /* N-selected / all summary */
   --tasty-multiselect-summary-fg-empty: var(--tasty-text-placeholder);       /* 0 selected reads as placeholder */
   --tasty-multiselect-menu-bg:          var(--tasty-menu-bg);                /* → surface-raised */
-  --tasty-multiselect-menu-border:      var(--tasty-menu-border);            /* → border-default */
+  --tasty-multiselect-menu-border:      var(--tasty-menu-border);            /* → border-strong (2026-10-07) */
   --tasty-multiselect-menu-radius:      var(--tasty-menu-radius);            /* → radius */
   --tasty-multiselect-menu-shadow:      var(--tasty-shadow-popover);         /* popover lift */
   --tasty-multiselect-menu-padding:     var(--tasty-space-xs);               /* 4 inner ring around the rows */
@@ -255,7 +255,7 @@
 
   /* MenuItem (+ menu container) */
   --tasty-menu-bg:                 var(--tasty-surface-raised);
-  --tasty-menu-border:             var(--tasty-border-default);
+  --tasty-menu-border:             var(--tasty-border-strong); /* was border-default (= surface-raised, invisible) — 2026-10-07: every menu-shaped popover draws a visible edge */
   --tasty-menu-radius:             var(--tasty-radius);
   --tasty-menu-item-height:        var(--tasty-control-height);
   --tasty-menu-item-padding-x:     var(--tasty-space-md);
@@ -274,7 +274,7 @@
      .tasty-scroll bar (neutral-400 thumb) — no new scrollbar token. */
   --tasty-autocomplete-max-height:      var(--tasty-size-220);        /* default dropdown cap (~7 rows) — caller overrides via maxDropdownHeight */
   --tasty-autocomplete-menu-bg:         var(--tasty-menu-bg);         /* → surface-raised */
-  --tasty-autocomplete-menu-border:     var(--tasty-menu-border);     /* → border-default */
+  --tasty-autocomplete-menu-border:     var(--tasty-menu-border);     /* → border-strong (2026-10-07) */
   --tasty-autocomplete-menu-radius:     var(--tasty-menu-radius);     /* → radius */
   --tasty-autocomplete-menu-shadow:     var(--tasty-shadow-popover);  /* popover lift */
   --tasty-autocomplete-row-height:      var(--tasty-menu-item-height);   /* → control-height 28 */
@@ -631,9 +631,9 @@
   --tasty-plugin-avatar-bg:         color-mix(in srgb, var(--tasty-accent-primary) 18%, var(--tasty-surface-raised));
   --tasty-plugin-avatar-border:     color-mix(in srgb, var(--tasty-accent-primary) 38%, transparent);
   --tasty-plugin-avatar-border-width: var(--tasty-border-width);
-  --tasty-plugin-avatar-initial-weight: var(--tasty-font-weight-bold);
-  --tasty-plugin-avatar-initial-font-size-sm: var(--tasty-font-size-max); /* 14 — at the UI cap */
-  --tasty-plugin-avatar-initial-font-size-lg: var(--tasty-font-size-16);  /* 16 — sanctioned MARK exception to the 14px UI cap (same class as font-size-brand-wordmark): a single glyph standing in for an icon, never running copy. Replaces the old round(size x 0.42) ratio. */
+  --tasty-plugin-avatar-initial-weight: var(--tasty-font-weight-normal); /* was bold — no bold mono face ships; size + colour carry the mark (2026-10-07) */
+  --tasty-plugin-avatar-initial-font-size-sm: var(--tasty-font-size-body); /* 13 — list (32) (2026-10-07) */
+  --tasty-plugin-avatar-initial-font-size-lg: var(--tasty-font-size-max); /* 14 — detail (46); was 16, no UI-cap exception (2026-10-07) */
   /* Settings window */
   --tasty-settings-sidebar-width:   var(--tasty-size-200); /* L2 left nav */
   --tasty-settings-row-min-height:  var(--tasty-size-32);  /* one settings/toggle row */
@@ -1077,9 +1077,9 @@
 
   /* 2026-10-06 (batch 2) — palette width · settings window · toast offset · brand lockup · font preview · CodeArea */
   --tasty-palette-width:               var(--tasty-size-540);  /* command palette card; ON-SCALE (× UI zoom) */
-  --tasty-settings-window-width:       var(--tasty-size-1100); /* settings window inner + min size */
+  --tasty-settings-window-width:       var(--tasty-size-1100); /* settings window inner + min size — OFF-SCALE (2026-10-07) */
   --tasty-settings-window-height:      var(--tasty-size-700);
-  --tasty-toast-stack-offset-bottom:   var(--tasty-size-36);   /* window-scope stack: distance from the window bottom edge */
+  --tasty-toast-stack-offset-bottom:   var(--tasty-size-36);   /* MAIN window-scope stack: status bar 24 + 12. OFF-SCALE — the status bar and the toast structural dims are outside the UI zoom (2026-10-07) */
   --tasty-loading-lockup-tracking:     var(--tasty-letter-spacing-n1px); /* "tasty." 38px loading lockup */
   --tasty-font-preview-min-width:      var(--tasty-field-width-lg); /* one preview box narrower than this → Focused / Unfocused stack */
   --tasty-font-preview-padding-y:      var(--tasty-space-sm);
@@ -1095,4 +1095,37 @@
   --tasty-codearea-gutter-border:      var(--tasty-separator);
   --tasty-codearea-error-fg:           var(--tasty-accent-danger); /* gutter number + message glyph on the error line */
   --tasty-codearea-max-height:         var(--tasty-size-200);  /* then scrolls */
+
+  /* 2026-10-07 (batch 3) */
+  --tasty-search-bar-border:           var(--tasty-menu-border);   /* floating find band — same edge as menus (→ border-strong) */
+  --tasty-popup-content-margin:        var(--tasty-space-xs);      /* inner ring of EVERY anchored menu popup (Tools menu, rail category menu, banner more-menu, multiselect) — 4 */
+  --tasty-modhint-grip-size:           var(--tasty-icon-size-xs);  /* 12 corner resize grip */
+  --tasty-modhint-grip-inset:          var(--tasty-size-2);        /* grip offset from the right / bottom edge; ON-SCALE */
+  --tasty-modhint-row-font-size:       var(--tasty-font-size-caption); /* 11 — chord row label · role row text · empty row (was raw 12) */
+  --tasty-modhint-row-min-height:      var(--tasty-size-24);       /* chord row */
+  --tasty-modhint-empty-row-min-height: var(--tasty-size-20);     /* empty-chord placeholder row */
+  --tasty-modhint-row-gap:             var(--tasty-size-6);        /* role row padding-y (padding-x = space-sm) */
+  --tasty-trigger-menu-min-width:      var(--tasty-field-width-lg);      /* Scripts "Add trigger…" menu — 200 */
+  --tasty-trigger-menu-max-height:     var(--tasty-autocomplete-max-height); /* → 220, then scrolls */
+  --tasty-image-handle-size:           var(--tasty-size-6);        /* floating-selection corner handle; ON-SCALE; centred on the corner (offset = −size/2) */
+  --tasty-image-popup-width:           var(--tasty-size-300);      /* New Image · Save As card */
+  --tasty-image-popup-pad-top:         var(--tasty-space-md);      /* 12 */
+  --tasty-image-popup-pad-x:           var(--tasty-size-14);
+  --tasty-image-popup-gap:             var(--tasty-size-10);       /* title → body and body → buttons */
+  --tasty-image-popup-btn-gap:         var(--tasty-space-sm);      /* 8 between buttons and between size fields */
+  --tasty-image-popup-title-font-size: var(--tasty-font-size-max); /* 14 */
+  --tasty-image-popup-title-weight:    var(--tasty-font-weight-semibold);
+  --tasty-image-size-input-width:      var(--tasty-size-64);
+  --tasty-image-path-row-gap:          var(--tasty-size-6);        /* path input → browse IconButton */
+  --tasty-image-zoom-font-size:        var(--tasty-font-size-caption); /* "100%" — mono 11 */
+  --tasty-image-zoom-min-width:        var(--tasty-size-40);
+  --tasty-explorer-min-height:         var(--tasty-size-160);      /* split-drag stops here: toolbar + status line + 2 rows */
+  --tasty-explorer-favorites-hide-below: var(--tasty-size-240);    /* body height under which Favorites hides (Files only): fav floor 120 + Files 120 */
+  --tasty-explorer-error-fg:           var(--tasty-accent-danger); /* folder read error glyph */
+  --tasty-dag-edge-binding:            var(--tasty-accent-data);   /* input binding — data handed downstream */
+  --tasty-dag-edge-dash-binding:       8 2 2 2;                    /* @kind other */ /* dash-dot — apart from reduce 2 3 / fallback 6 3 */
+  --tasty-dag-edge-transition:         var(--tasty-accent-route);  /* result-chosen route */
+  --tasty-dag-edge-dash-transition:    10 4;                       /* @kind other */ /* long dash */
+  --tasty-dag-edge-selected-width:     var(--tasty-focus-ring-width); /* the SELECTED transition draws 2 */
+  --tasty-toast-stack-offset-bottom-settings: var(--tasty-size-64); /* Settings window-scope stack: footer 52 + 12. ON-SCALE — the footer is inside the UI zoom */
 }

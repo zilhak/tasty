@@ -136,7 +136,7 @@ function CollapsedRail() {
 }
 
 // ── Sidebar with workspace categories (folders) ──
-// Transient keycap for the Alt+Shift category quick-switch overlay — mirrors
+// Transient keycap for the Ctrl+Shift category quick-switch overlay — mirrors
 // overlays-shared NumCap (same --tasty-switch-overlay-* tokens); this page
 // doesn't load overlays-shared, so it's re-declared locally.
 function SwitchCap({ n, active }) {
@@ -196,7 +196,7 @@ function CategoryFullSidebar({ held }) {
   return (
     <div className="anno" style={{ width: 212, flex: "none", display: "flex", flexDirection: "column",
       background: "var(--tasty-bg-sidebar)", borderRight: "1px solid var(--tasty-separator)", height: 360 }}>
-      <Dim style={{ top: -9, left: "50%", transform: "translateX(-50%)" }}>{held ? "Alt+Shift held" : "categories on"}</Dim>
+      <Dim style={{ top: -9, left: "50%", transform: "translateX(-50%)" }}>{held ? "Ctrl+Shift held" : "categories on"}</Dim>
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 12px 4px" }}>
         <img src="../assets/icons/icon_256.png" width="22" height="22" alt="" />
         <span style={{ fontFamily: "var(--tasty-font-mono)", fontWeight: 700, fontSize: "var(--tasty-sidebar-wordmark-font-size)", letterSpacing: "var(--tasty-sidebar-wordmark-tracking)" }}>tasty<span style={{ color: "var(--tasty-brand-melon-flesh)" }}>.</span></span>
@@ -227,7 +227,7 @@ function CategoryRail({ held }) {
   return (
     <div className="anno" style={{ width: 52, flex: "none", display: "flex", flexDirection: "column", alignItems: "center",
       background: "var(--tasty-bg-sidebar)", borderRight: "1px solid var(--tasty-separator)", padding: "10px 0", gap: 4, height: 360 }}>
-      <Dim style={{ top: -9, left: "50%", transform: "translateX(-50%)" }}>{held ? "Alt+Shift held" : "--- = category"}</Dim>
+      <Dim style={{ top: -9, left: "50%", transform: "translateX(-50%)" }}>{held ? "Ctrl+Shift held" : "--- = category"}</Dim>
       <img src="../assets/icons/icon_256.png" width="24" height="24" alt="" style={{ marginBottom: 4 }} />
       <IconButton size="sm" aria-label="Expand">{ic.chevR}</IconButton>
       {boundary("Workspaces", false, { n: "1", active: true })}
@@ -570,8 +570,8 @@ function Layouts() {
           <Note>Backend invariants honoured: <code>normal</code> reserved &amp; pinned top; category order = section order; <code>collapsed</code> persisted in <code>layout.json</code>; empty categories allowed (no auto-delete). Toggle off → the flat single "Workspaces" list above, unchanged.</Note>
         </Spec>
 
-        <Spec title="Category quick-switch — Alt+Shift held"
-          when={<>A keyboard axis over the folders: holding <b>Alt+Shift</b> (rebindable) previews <b>Alt+Shift+1–9 / 0</b> to jump <b>between categories</b>, the way <b>Alt</b> jumps between workspaces and <b>Ctrl</b> between tabs. Each category gets a switch keycap: in the <b>full</b> sidebar it's <b>right-aligned on the header</b> (the chevron is kept — it carries collapse state and its auto-expand rotation); in the <b>rail</b> it sits on the <code>---</code> boundary. The reserved <b>normal</b> category is <b>1</b>. This and the workspace overlay are <b>modifier-exclusive</b>, so rows keep their status dots while headers show keycaps. See Overlays › Popups → Switch-number overlay for the full spec.</>}>
+        <Spec title="Category quick-switch — Ctrl+Shift held"
+          when={<>A keyboard axis over the folders: holding <b>Ctrl+Shift</b> (rebindable) previews <b>Ctrl+Shift+1–9 / 0</b> to jump <b>between categories</b>, the way <b>Alt</b> jumps between workspaces and <b>Ctrl</b> between tabs. Each category gets a switch keycap: in the <b>full</b> sidebar it's <b>right-aligned on the header</b> (the chevron is kept — it carries collapse state and its auto-expand rotation); in the <b>rail</b> it sits on the <code>---</code> boundary. The reserved <b>normal</b> category is <b>1</b>. This and the workspace overlay are <b>modifier-exclusive</b>, so rows keep their status dots while headers show keycaps. See Overlays › Popups → Switch-number overlay for the full spec.</>}>
           <Stage variant="tight" grid>
             <div style={{ display: "flex" }}>
               <CategoryFullSidebar held />
@@ -580,7 +580,7 @@ function Layouts() {
             </div>
           </Stage>
           <Meta
-            specs={[["trigger", <>Alt+Shift held (rebindable)</>], ["full placement", "trailing keycap on header — chevron kept"], ["rail placement", <>keycap on the <code>---</code> boundary</>], ["range", "1–9 + 0; 11th category on: none"], ["reserved", "normal (“Workspaces”) = 1"], ["auto-expand", "collapsed target rotates open on switch"], ["last-active", "lands on category's last-focused ws"]]}
+            specs={[["trigger", <>Ctrl+Shift held (rebindable)</>], ["full placement", "trailing keycap on header — chevron kept"], ["rail placement", <>keycap on the <code>---</code> boundary</>], ["range", "1–9 + 0; 11th category on: none"], ["reserved", "normal (“Workspaces”) = 1"], ["auto-expand", "collapsed target rotates open on switch"], ["last-active", "lands on category's last-focused ws"]]}
             tokens={[{ tok: "--tasty-switch-overlay-bg", use: "keycap fill", color: "var(--tasty-switch-overlay-bg)" }, { tok: "--tasty-switch-overlay-active-bg", use: "active category", color: "var(--tasty-switch-overlay-active-bg)" }, { tok: "--tasty-switch-overlay-border", use: "keycap edge", color: "var(--tasty-switch-overlay-border)" }, { tok: "--tasty-surface-active", use: "landed ws row", color: "var(--tasty-surface-active)" }]} />
           <Note>Reuses the switch-overlay keycap and all <span className="tok">--tasty-switch-overlay-*</span> tokens — no new tokens. <b>Auto-expand</b>: switching to a collapsed category opens it (chevron rotates, rows reveal) and persists <code>collapsed:false</code>. <b>Last-active</b>: the landed workspace uses the ordinary active treatment (<span className="tok">--tasty-surface-active</span> + 2px accent bar) — no separate cue.</Note>
         </Spec>

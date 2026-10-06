@@ -226,6 +226,8 @@ function AddPluginForm({ onAdded, onCancel }) {
           </p>
         </div>
 
+        {/* 2026-10-07 — empty hint keeps the dashed edge (border-dash / border-dash-gap 4 / 4, corners solid).
+            A manifest that can't be read takes the same box, solid accent-danger edge — see gallery Plugins › Add plugin read error. */}
         {!manifest ? (
           <div style={{ maxWidth: "var(--tasty-measure-xl)", display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)",
             padding: "var(--tasty-size-14) var(--tasty-space-lg)", borderRadius: "var(--tasty-radius)", border: "var(--tasty-border-width) dashed var(--tasty-border-default)",

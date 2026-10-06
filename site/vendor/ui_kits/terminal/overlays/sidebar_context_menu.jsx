@@ -22,9 +22,10 @@ const cx = {
   chevR: <Icon name="chevronRight" size={14} />,
 };
 
+// every anchored menu popup: menu-* container tokens + popup-content-margin (4) on all sides (2026-10-07)
 const panelStyle = {
-  background: "var(--tasty-surface-raised)", border: "var(--tasty-border-width) solid var(--tasty-border-strong)",
-  borderRadius: "var(--tasty-radius)", padding: "var(--tasty-space-sm)", boxShadow: "var(--tasty-shadow-popover)",
+  background: "var(--tasty-menu-bg)", border: "var(--tasty-border-width) solid var(--tasty-menu-border)",
+  borderRadius: "var(--tasty-menu-radius)", padding: "var(--tasty-popup-content-margin)", boxShadow: "var(--tasty-shadow-popover)",
   minWidth: 176,
 };
 
@@ -60,25 +61,20 @@ function SidebarContextMenu({ x, y, target, onClose, categories = [] }) {
   const W = 200, left = Math.min(x, window.innerWidth - W - 8), top = Math.min(y, window.innerHeight - 200);
   const act = () => onClose();
   const moveTargets = (categories || []).filter((c) => !t.ws || c.id !== (t.cat && t.cat.id));
-  const [subOpen, setSubOpen] = React.useState(false);
   return (
     <div onClick={onClose} onContextMenu={(e) => { e.preventDefault(); onClose(); }}
       style={{ position: "fixed", inset: 0, zIndex: 60 }}>
       <div onClick={(e) => e.stopPropagation()} role="menu" aria-label="Workspace categories"
         style={{ position: "fixed", left, top, ...panelStyle }}>
+        {/* 2026-10-07 — flat list, no submenu: the product draws this with the OS-native menu.
+            Inert "Move to category" header, then every OTHER category as a plain item. */}
         {t.kind === "workspace" && (
-          <div style={{ position: "relative" }} onMouseEnter={() => setSubOpen(true)} onMouseLeave={() => setSubOpen(false)}>
-            <MenuItem label="Move to category" icon={cx.move} onClick={() => setSubOpen((v) => !v)}
-              shortcut={<span style={{ display: "inline-flex", color: "var(--tasty-text-muted)" }}>{cx.chevR}</span>} />
-            {subOpen && (
-              <div role="menu" style={{ position: "absolute", top: -6, left: "100%", marginLeft: 4, ...panelStyle }}>
-                {moveTargets.map((c) => (
-                  <MenuItem key={c.id} label={c.reserved ? "Workspaces" : c.name} icon={cx.folder}
-                    active={t.cat && c.id === t.cat.id} onClick={act} />
-                ))}
-              </div>
-            )}
-          </div>
+          <>
+            <MenuItem label="Move to category" icon={cx.move} disabled />
+            {moveTargets.filter((c) => !(t.cat && c.id === t.cat.id)).map((c) => (
+              <MenuItem key={c.id} label={c.reserved ? "Workspaces" : c.name} onClick={act} />
+            ))}
+          </>
         )}
         {t.kind === "category" && (
           <>

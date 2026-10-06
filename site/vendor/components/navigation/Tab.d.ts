@@ -16,13 +16,11 @@ export interface TabProps extends React.HTMLAttributes<HTMLDivElement> {
    */
   status?: "idle" | "busy";
   /**
-   * Surface is claimed by another client (orthogonal to activity). Draws the
-   * lavender ring around the dot — same token as StatusDot; forces a neutral
-   * idle dot when the tab is otherwise idle so the ring has something to mark.
+   * Attention kind — tints the title (tab-fg-needs-input / tab-fg-completion).
+   * Ignored on the active tab (attention clears on focus). Replaces the removed
+   * `attached` / `notif` props (2026-10-07) — the product tab draws neither.
    */
-  attached?: boolean;
-  /** Pending notification (nothing more urgent live) — tints the label yellow. */
-  notif?: boolean;
+  attention?: "needs-input" | "completion" | null;
   /** Fired when the close affordance is clicked. */
   onClose?: (e: React.MouseEvent) => void;
 }
