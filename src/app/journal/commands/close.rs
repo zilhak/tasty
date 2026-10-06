@@ -483,6 +483,45 @@ impl JournalApplication {
     }
 }
 
+pub(super) fn is_close_method(method: &str) -> bool {
+    matches!(
+        method,
+        "terminal.kill"
+            | "workspace.close"
+            | "tab.close"
+            | "pane.close"
+            | "surface.close"
+            | "surface.close_self"
+            | "intent.close"
+    )
+}
+
+impl JournalApplication {
+    /// Surfaces an admitted close may still retire. A close is admitted before its targets are
+    /// resolved, so unresolved closes are resolved here against the current structure; resolved
+    /// ones keep their captured targets until the command finishes.
+    pub(crate) fn closing_surfaces(
+        &self,
+        sessions: &[&EngineSession],
+    ) -> std::collections::BTreeSet<u32> {
+        let mut closing = std::collections::BTreeSet::new();
+        for pending in self.commands.pending.values() {
+            if let Some(request) = &pending.closing {
+                closing.extend(request.expected.iter().map(|surface| surface.id));
+            } else if is_close_method(&pending.request.method) {
+                for session in sessions {
+                    if let Ok(request) =
+                        Request::resolve(&pending.request, session, pending.close_cause)
+                    {
+                        closing.extend(request.expected.iter().map(|surface| surface.id));
+                    }
+                }
+            }
+        }
+        closing
+    }
+}
+
 fn core_expected(session: &EngineSession, id: u32) -> Option<tasty_core::RetiredSurface> {
     let surface = session.core_state.find_surface_by_id(id)?;
     Some(tasty_core::RetiredSurface {

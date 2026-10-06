@@ -478,6 +478,9 @@ pub struct PluginManager {
     pub(super) reaped_generations: Vec<std::sync::Weak<()>>,
     /// 보낸 mesh bootstrap 의 게시 상태. 회수한 세대를 아직 가리키는지 판정한다.
     pub(super) mesh_publications: crate::host_cmd::MeshPublicationRegistry,
+    /// 호스트가 접수했지만 아직 끝나지 않은 닫기가 회수할 수 있는 surface. 새 프로세스에
+    /// 다시 게시하지 않는다(`manager::reattach`).
+    pub(super) closing_surfaces: std::collections::BTreeSet<u32>,
 }
 
 /// 호스트가 추적 중인 popup 인스턴스 한 건. plugin process가 죽으면 함께 제거된다.

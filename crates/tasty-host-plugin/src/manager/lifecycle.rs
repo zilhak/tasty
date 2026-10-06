@@ -195,6 +195,7 @@ impl PluginManager {
             retiring: HashMap::new(),
             reaped_generations: Vec::new(),
             mesh_publications: Default::default(),
+            closing_surfaces: Default::default(),
         }
     }
 

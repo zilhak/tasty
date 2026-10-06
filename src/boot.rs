@@ -734,6 +734,7 @@ fn handle_headless_journal_ready(
     app.finish_preset_captures();
     app.journal
         .deliver_plugin_replies(app.plugin_manager.as_mut());
+    headless_dispatch::sync_closing_surfaces(app, session);
     while !app.journal.pauses_observation() && !app.journal.is_halted() {
         let Some(crate::app::publication_input::DeferredEvent::App(event)) =
             app.publication_inputs.pop()

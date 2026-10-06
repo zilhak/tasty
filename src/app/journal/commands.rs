@@ -618,18 +618,12 @@ impl JournalApplication {
             self.resolve_undo(ticket, session);
             return;
         }
-        if self.commands.pending.get(&ticket).is_some_and(|pending| {
-            matches!(
-                pending.request.method.as_str(),
-                "terminal.kill"
-                    | "workspace.close"
-                    | "tab.close"
-                    | "pane.close"
-                    | "surface.close"
-                    | "surface.close_self"
-                    | "intent.close"
-            )
-        }) {
+        if self
+            .commands
+            .pending
+            .get(&ticket)
+            .is_some_and(|pending| close::is_close_method(&pending.request.method))
+        {
             self.resolve_close(ticket, session);
             return;
         }

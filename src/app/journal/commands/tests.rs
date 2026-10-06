@@ -613,6 +613,9 @@ mod metadata;
 #[path = "close_receipt_tests.rs"]
 mod close_receipt;
 
+#[path = "closing_surfaces_tests.rs"]
+mod closing_surfaces;
+
 #[test]
 fn each_keyed_journal_request_reports_only_its_initial_retry_decision() {
     use crate::ipc::handler::idempotency::RetryOutcome as O;

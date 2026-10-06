@@ -76,6 +76,8 @@ impl App {
         let mut processed = false;
         let mut tool_registry_dirty = false;
         while let Some(cmd) = round.next(self.hub.ipc_server.as_deref()) {
+            // Closes admitted on any path so far must not be republished by a plugin start here.
+            self.sync_closing_surfaces();
             let observed =
                 crate::app::ipc_round::CommandObservation::begin(self.services.pressure(), &cmd);
             let step = self.ipc_dispatch_command(cmd);

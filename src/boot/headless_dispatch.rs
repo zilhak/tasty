@@ -17,6 +17,8 @@ pub(crate) fn pump_ipc(
 ) -> std::ops::ControlFlow<()> {
     let mut round = crate::app::ipc_round::IpcRound::begin();
     while let Some(cmd) = round.next(app.hub.ipc_server.as_deref()) {
+        // Closes admitted on any path so far must not be republished by a plugin start here.
+        sync_closing_surfaces(app, session);
         let observed =
             crate::app::ipc_round::CommandObservation::begin(app.services.pressure(), &cmd);
         let flow = dispatch_command(app, state, session, cmd);
@@ -29,6 +31,16 @@ pub(crate) fn pump_ipc(
     // 남은 명령을 보고 다시 깨우는 일은 호출자가 맡는다.
     round.finish(app.services.pressure(), app.services.dispatch());
     std::ops::ControlFlow::Continue(())
+}
+
+/// Tell the plugin host which surfaces admitted closes may retire (see the GUI counterpart).
+pub(crate) fn sync_closing_surfaces(
+    app: &mut App,
+    session: &crate::runtime::engine_session::EngineSession,
+) {
+    if let Some(plugins) = app.plugin_manager.as_mut() {
+        plugins.set_closing_surfaces(app.journal.closing_surfaces(&[session]));
+    }
 }
 
 fn dispatch_command(

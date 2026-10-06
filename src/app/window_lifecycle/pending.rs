@@ -118,11 +118,22 @@ impl App {
             self.dispatch_pending_surface_lifecycle();
             self.dispatch_pending_host_events();
         }
+        self.sync_closing_surfaces();
         self.poll_preserved_window_closes();
         for id in self.journal.take_retired_engines() {
             self.engines.mark_retiring_release(id);
         }
         self.poll_retiring_engine_owners();
+    }
+
+    /// Tell the plugin host which surfaces admitted closes may retire, so a new plugin process
+    /// does not receive them, and so it publishes those that a finished close left alive.
+    pub(crate) fn sync_closing_surfaces(&mut self) {
+        let Some(plugins) = self.plugin_manager.as_mut() else {
+            return;
+        };
+        let sessions: Vec<_> = self.engines.all_sessions().collect();
+        plugins.set_closing_surfaces(self.journal.closing_surfaces(&sessions));
     }
 
     pub(crate) fn poll_retiring_engine_owners(&mut self) {

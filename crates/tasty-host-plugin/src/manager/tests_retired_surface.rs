@@ -284,3 +284,48 @@ fn an_applied_retirement_is_not_republished_to_a_restarted_process() {
         );
     }
 }
+
+/// 닫기는 접수 뒤 대상을 해석하기까지 시간이 걸린다. 그 사이 새 프로세스가 떠도 닫기가
+/// 회수할 수 있는 surface 는 다시 게시하지 않고, 닫기가 그 surface 를 남긴 채 끝나면 게시한다.
+#[test]
+fn a_closing_surface_waits_for_its_close_before_republishing() {
+    let (mut mgr, _surface) = manager_with_surface();
+    retire(&mut mgr);
+    assert!(!mgr.wait_retired(PLUGIN), "재시작 예약이 없는 회수다");
+    mgr.set_closing_surfaces([7].into());
+    let (fresh, requests) = PluginProcess::stub_with_request_rx(PLUGIN);
+    mgr.processes.insert(PLUGIN.into(), fresh);
+    mgr.reattach_orphan_surfaces(PLUGIN);
+    assert!(
+        requests.try_recv().is_err(),
+        "닫는 중인 surface 는 보내지 않는다"
+    );
+    mgr.set_closing_surfaces(Default::default());
+    let restored = requests
+        .try_recv()
+        .expect("닫기가 남긴 surface 는 게시한다");
+    assert_eq!(restored.params["surface_id"], 7);
+    assert!(requests.try_recv().is_err(), "한 번만 보낸다");
+}
+
+#[test]
+fn a_released_surface_that_its_close_retired_is_not_republished() {
+    let (mut mgr, surface) = manager_with_surface();
+    retire(&mut mgr);
+    assert!(!mgr.wait_retired(PLUGIN), "재시작 예약이 없는 회수다");
+    mgr.set_closing_surfaces([7].into());
+    let (fresh, requests) = PluginProcess::stub_with_request_rx(PLUGIN);
+    mgr.processes.insert(PLUGIN.into(), fresh);
+    mgr.reattach_orphan_surfaces(PLUGIN);
+    let receipt = close(&mut mgr, &surface);
+    assert_eq!(
+        receipt.observation(),
+        Some(Ok(())),
+        "옛 세대 회수로 확정한다"
+    );
+    mgr.set_closing_surfaces(Default::default());
+    assert!(
+        requests.try_recv().is_err(),
+        "회수된 surface 는 게시하지 않는다"
+    );
+}

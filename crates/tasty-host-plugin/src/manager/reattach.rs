@@ -74,6 +74,25 @@ impl PluginManager {
         );
     }
 
+    /// 호스트가 접수한 닫기가 회수할 수 있는 surface 를 바꾼다. 닫기는 접수 뒤 대상을
+    /// 해석하기까지 시간이 걸리므로, 그 사이 새 프로세스가 떠도 이 surface 는 다시 게시하지
+    /// 않는다. 닫기가 그 surface 를 회수하지 않고 끝나 목록에서 빠지면 그때 게시한다.
+    pub fn set_closing_surfaces(&mut self, closing: std::collections::BTreeSet<u32>) {
+        if closing == self.closing_surfaces {
+            return;
+        }
+        let released: std::collections::BTreeSet<String> = self
+            .closing_surfaces
+            .difference(&closing)
+            .filter_map(|id| self.surfaces.get(id))
+            .map(|entry| entry.plugin_id.clone())
+            .collect();
+        self.closing_surfaces = closing;
+        for plugin_id in released {
+            self.reattach_orphan_surfaces(&plugin_id);
+        }
+    }
+
     /// 새로 뜬 `plugin_id` 프로세스에 게시되지 않은 그 플러그인의 surface 를 다시 보낸다.
     /// 마지막 snapshot 이 있으면 그것으로 복원하고, 없으면 원 요청을 그대로 보낸다.
     pub(super) fn reattach_orphan_surfaces(&mut self, plugin_id: &str) {
@@ -87,8 +106,9 @@ impl PluginManager {
         let orphans: Vec<u32> = self
             .surfaces
             .iter()
-            .filter(|(_, entry)| {
+            .filter(|(id, entry)| {
                 entry.plugin_id == plugin_id
+                    && !self.closing_surfaces.contains(id)
                     && match &entry.publication {
                         RemotePublication::Sent(binding) => !binding.ptr_eq(&current),
                         RemotePublication::NeverSent => true,
