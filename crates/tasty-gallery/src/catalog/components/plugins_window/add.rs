@@ -148,7 +148,7 @@ pub(super) fn blocked_bars(ui: &mut egui::Ui, theme: &Theme, width: f32) {
         ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
         for reason in [
             "Already installed",
-            "Unsigned, and no public key to check it against",
+            "Signed, but the publisher's public key file is missing",
             "Signature check failed",
         ] {
             egui::Frame::new()

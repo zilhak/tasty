@@ -1,4 +1,4 @@
-<!-- source-hash: a80be2785b29 -->
+<!-- source-hash: 842f54945d98 -->
 # Plugins
 
 Use plugins for tools such as Markdown and image viewers or AI agent integrations. Explore the bundled plugins, add new ones, and manage which tools run and what permissions they have.
@@ -69,7 +69,7 @@ The **Add plugin** tab.
 
 1. In **Plugin folder path**, enter a folder containing `tasty-plugin.toml`, or pick one with **Find plugin folder…**.
 2. Press **Verify** and **Plugin information** previews the name · version · description and the **required permissions**.
-3. Press **Add**. If the plugin cannot be added, the button stays disabled and the reason is shown on its left: **Already installed**, **Unsigned, and no public key to check it against**, or **Signature check failed**.
+3. Press **Add**. If the plugin cannot be added, the button stays disabled and the reason is shown on its left: **Already installed**, **Signed, but the publisher's public key file is missing**, or **Signature check failed**.
 4. If the plugin is not signed with a verified key, the **Unknown source plugin** confirmation appears. If you check the fingerprint and proceed, that key is recorded in the trust list and you are not asked again. A plugin without its signing key file (`tasty-plugin.toml.pub`) cannot be registered, so ask the distributor for it.
 
 Installing grants the permissions the plugin requests. Review the permission list in the preview before adding it.

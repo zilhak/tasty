@@ -267,7 +267,7 @@ fn add_blocked_reason_key(preview: &AddPreview) -> Option<&'static str> {
         return Some("plugins.add_blocked_installed");
     }
     match preview.trust_state {
-        AddTrustState::UntrustedNoPubkey { .. } => Some("plugins.add_blocked_no_pubkey"),
+        AddTrustState::UntrustedNoPubkey { .. } => Some("plugins.add_blocked_missing_pubkey"),
         AddTrustState::SigError(_) => Some("plugins.add_blocked_sig_error"),
         AddTrustState::Trusted | AddTrustState::UntrustedWithPubkey { .. } => None,
     }
@@ -457,7 +457,7 @@ mod tests {
         );
         assert_eq!(
             add_blocked_reason_key(&preview(no_pubkey, None)),
-            Some("plugins.add_blocked_no_pubkey")
+            Some("plugins.add_blocked_missing_pubkey")
         );
         assert_eq!(
             add_blocked_reason_key(&preview(AddTrustState::SigError("bad".into()), None)),
