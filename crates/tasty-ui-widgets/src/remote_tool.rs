@@ -522,10 +522,6 @@ pub fn draw_protocol_filter_button(
     )
 }
 
-/// 필터 드롭다운 제목의 자간 비율 — 디자인 `--tasty-letter-spacing-caps`(0.04em).
-/// Theme 에 자간 토큰이 없어 글꼴 크기에 곱해 논리 픽셀로 바꾼다.
-const FILTER_TITLE_TRACKING_EM: f32 = 0.04;
-
 /// 프로토콜 제외 집합 draft를 편집한다. 체크된 항목은 제외되지 않은 항목이다.
 /// 전체 선택·해제·초기화는 draft를 즉시 바꾸며 적용 버튼만 true를 반환한다.
 /// 팝업 배치·폭([`filter_dropdown_content_width`])과 실제 필터 적용은 호출자가 처리한다.
@@ -544,15 +540,16 @@ pub fn draw_protocol_filter_body(
     ui.spacing_mut().item_spacing.y = 0.0;
     filter_section(ui, th, |ui| {
         // 목록·링크와 같은 왼쪽 선에서 시작하도록 TextEdit 여백이 없는 일반 라벨로 그린다.
-        let size = th.font_size_micro.value();
+        // 자간은 시안의 `letter-spacing-caps`(0.04em)다.
+        let size = th.font_size_micro;
         let mut job = egui::text::LayoutJob::default();
         job.append(
             &labels.title.to_uppercase(),
             0.0,
             egui::TextFormat {
-                font_id: egui::FontId::monospace(size),
+                font_id: egui::FontId::monospace(size.value()),
                 color: th.text_muted().into(),
-                extra_letter_spacing: size * FILTER_TITLE_TRACKING_EM,
+                extra_letter_spacing: th.letter_spacing_caps(size).value(),
                 ..Default::default()
             },
         );
