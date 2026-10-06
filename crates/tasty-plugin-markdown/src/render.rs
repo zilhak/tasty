@@ -4764,6 +4764,7 @@ Outro\n";
         }
     }
 
+    #[cfg(unix)]
     #[test]
     fn refuses_a_symlink_that_escapes_the_tree() {
         let (dir, _) = tree_with_image();
@@ -4771,10 +4772,7 @@ Outro\n";
         let target = outside.path().join("secret.png");
         std::fs::write(&target, b"\x89PNG\r\n\x1a\n").unwrap();
         let link = dir.path().join("link.png");
-        #[cfg(unix)]
         std::os::unix::fs::symlink(&target, &link).unwrap();
-        #[cfg(not(unix))]
-        return;
         // 판정을 `canonicalize` 뒤에 하는 이유가 이것이다 — 이름만 트리 안이다.
         let out = inline_local_images(&img("link.png"), Some(dir.path()));
         assert_eq!(src_of(&out), None, "got: {out}");
