@@ -1,4 +1,4 @@
-# ADR-0073: 닫기의 자원 receipt 대기는 관측을 멈추지 않는다
+# ADR-0074: 닫기의 자원 receipt 대기는 관측을 멈추지 않는다
 
 - **Status**: Accepted
 - **Date**: 2026-10-07

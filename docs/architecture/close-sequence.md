@@ -11,7 +11,7 @@
 
 ## 관측 일시정지 범위
 
-App은 journal 사실을 게시하는 동안 관측을 멈춘다. 이 동안 IPC·창 입력을 보류하고 plugin pump를 돌리지 않는다. 닫기에서는 다음 구간만 멈춘다([ADR-0073](../adr/0073-close-receipt-wait-does-not-pause-observation.md)).
+App은 journal 사실을 게시하는 동안 관측을 멈춘다. 이 동안 IPC·창 입력을 보류하고 plugin pump를 돌리지 않는다. 닫기에서는 다음 구간만 멈춘다([ADR-0074](../adr/0074-close-receipt-wait-does-not-pause-observation.md)).
 
 - 커밋 전(대상·cleanup 의무 확정과 batch 게시).
 - 정리 항목의 claim 단계와 결과 확정 단계.
