@@ -98,6 +98,8 @@ pub struct AnomalyDetector {
         std::sync::Mutex<std::collections::HashMap<String, std::collections::VecDeque<u64>>>,
     /// 마지막 emit 시각 — 같은 (agent, kind, subject) 의 연속 emit 방지.
     last_emitted: std::sync::Mutex<std::collections::HashMap<(String, AnomalyKind, String), u64>>,
+    /// 마지막으로 만료 항목을 정리한 호출 시각(ms). [`SLOW_LOOP_WINDOW_MS`] 마다 한 번 정리한다.
+    last_sweep_ms: std::sync::atomic::AtomicU64,
 }
 
 /// SlowLoop 한 조합의 창. 감시 폴링처럼 끝나지 않는 루프가 쿨다운마다 다시 알리지 않도록
@@ -141,6 +143,7 @@ impl AnomalyDetector {
         ts_ms: u64,
         id_seq: u64,
     ) -> Vec<Anomaly> {
+        self.sweep_expired(ts_ms);
         let mut out = Vec::new();
         if let Some(a) = self.check_call_burst(agent, method, ts_ms, id_seq) {
             out.push(a);
@@ -320,6 +323,45 @@ impl AnomalyDetector {
                 "latest_rss_bytes": rss_bytes,
             }),
         })
+    }
+
+    /// 창 안에 호출이 하나도 남지 않은 조합과 쿨다운이 지난 emit 기록을 지운다. 닫힌 surface 처럼
+    /// 다시 오지 않는 params 조합이 프로세스 수명 동안 쌓이지 않게 한다. 지운 항목은 빈 창·기록 없음과
+    /// 판정이 같으므로 검출 결과는 바뀌지 않는다.
+    fn sweep_expired(&self, ts_ms: u64) {
+        use std::sync::atomic::Ordering;
+        let last = self.last_sweep_ms.load(Ordering::Relaxed);
+        if ts_ms.saturating_sub(last) < SLOW_LOOP_WINDOW_MS {
+            return;
+        }
+        self.last_sweep_ms.store(ts_ms, Ordering::Relaxed);
+        let burst_cutoff = ts_ms.saturating_sub(CALL_BURST_WINDOW_MS);
+        tasty_utils::poison::recover_mutex(
+            self.call_windows.lock(),
+            CALL_WINDOWS_WHAT,
+            &CALL_WINDOWS_POISONED,
+        )
+        .retain(|_, dq| dq.back().is_some_and(|&t| t >= burst_cutoff));
+        let loop_cutoff = ts_ms.saturating_sub(SLOW_LOOP_WINDOW_MS);
+        self.lock_loop_windows()
+            .retain(|_, w| w.calls.back().is_some_and(|&t| t >= loop_cutoff));
+        let emit_cutoff = ts_ms.saturating_sub(ANOMALY_DEDUP_COOLDOWN_MS);
+        tasty_utils::poison::recover_mutex(
+            self.last_emitted.lock(),
+            LAST_EMITTED_WHAT,
+            &LAST_EMITTED_POISONED,
+        )
+        .retain(|_, &mut t| t >= emit_cutoff);
+    }
+
+    /// 시험 전용 — (호출 빈도 창, 반복 창, emit 기록) 항목 수.
+    #[cfg(test)]
+    pub(crate) fn tracked_counts(&self) -> (usize, usize, usize) {
+        (
+            self.call_windows.lock().map(|m| m.len()).unwrap_or(0),
+            self.lock_loop_windows().len(),
+            self.last_emitted.lock().map(|m| m.len()).unwrap_or(0),
+        )
     }
 
     fn lock_loop_windows(

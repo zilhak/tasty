@@ -390,6 +390,37 @@ fn a_slow_loop_that_stops_and_restarts_fires_again() {
     );
 }
 
+/// 다시 오지 않는 params 조합(닫힌 surface)의 창과 지난 emit 기록은 창이 지난 뒤 정리된다.
+/// 이어지는 루프의 창은 남는다 — 지워지면 위 연속 루프 시험이 다시 알려 실패한다.
+#[test]
+fn windows_of_surfaces_that_stopped_calling_are_dropped() {
+    let d = AnomalyDetector::new();
+    let t0 = 1_000u64;
+    for surface in 0..50u64 {
+        let params = serde_json::json!({ "surface": surface });
+        for i in 0..(SLOW_LOOP_THRESHOLD as u64) {
+            d.record_call(
+                "agent_a",
+                "terminal.parent",
+                &params,
+                t0 + i,
+                surface * 100 + i,
+            );
+        }
+    }
+    // 1000회라 CallBurst 도 한 번 발화해 emit 기록은 SlowLoop 50 + CallBurst 1 이다.
+    assert_eq!(d.tracked_counts(), (1, 50, 51), "전제: 닫히기 전 50 조합");
+
+    let later = t0 + SLOW_LOOP_WINDOW_MS + 1_000;
+    let live = serde_json::json!({ "surface": 999 });
+    d.record_call("agent_a", "terminal.parent", &live, later, 9_000);
+    assert_eq!(
+        d.tracked_counts(),
+        (1, 1, 0),
+        "창이 지난 조합과 쿨다운이 지난 emit 기록은 지운다"
+    );
+}
+
 #[test]
 fn slow_loop_anomaly_does_not_fire_when_params_vary() {
     let d = AnomalyDetector::new();

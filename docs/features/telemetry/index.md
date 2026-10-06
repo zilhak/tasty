@@ -115,7 +115,9 @@ RSS 값 소스는 caller 타입별로 다르다: **Plugin** 은 host(`tasty-host
 
 `SlowLoop` 만 dedup 키에 `params_hash` 를 덧붙여, 같은 method 라도 파라미터 조합이 다르면 **독립된 loop 로 취급해 각자 쿨다운을 갖는다**(`params_hash` 는 detail 에도 실린다). 여러 surface 를 주기적으로 조회하면 surface 마다 한 건씩 알릴 수 있다.
 
-`SlowLoop` 는 쿨다운에 더해 **루프 하나를 한 번만 알린다.** 조합의 창에 든 호출 수가 `SLOW_LOOP_THRESHOLD` 이상인 동안에는 쿨다운이 지나도 다시 레코드를 만들지 않는다. 호출이 멈춰 창의 호출 수가 그 아래로 줄어든 뒤 다시 넘으면 새 루프로 보고 다시 알린다. 감시 대상마다 800ms 로 도는 claude plugin 폴링이 대상 하나·메서드 하나에 1분마다 알림을 쌓던 것을 이렇게 막는다. `SLOW_LOOP_THRESHOLD`·`SLOW_LOOP_WINDOW_MS` 는 그대로라 첫 알림은 이전과 같은 시점에 나간다. 보존 상한은 [ADR-0009](../../adr/0009-state-storage-and-retention.md) 의 공통 정책(50시간 · 5,000건)을 따른다.
+`SlowLoop` 는 쿨다운에 더해 **루프 하나를 한 번만 알린다.** 조합의 창에 든 호출 수가 `SLOW_LOOP_THRESHOLD` 이상인 동안에는 쿨다운이 지나도 다시 레코드를 만들지 않는다. 호출이 멈춰 창의 호출 수가 그 아래로 줄어든 뒤 다시 넘으면 새 루프로 보고 다시 알린다. 감시 대상마다 800ms 로 도는 claude plugin 폴링이 대상 하나·메서드 하나에 1분마다 알림을 쌓던 것을 이렇게 막는다. `SLOW_LOOP_THRESHOLD`·`SLOW_LOOP_WINDOW_MS` 는 그대로라 첫 알림은 이전과 같은 시점에 나간다.
+
+탐지기의 창과 emit 기록은 메모리에만 있다. `SLOW_LOOP_WINDOW_MS` 마다 한 번, 창 안에 호출이 남지 않은 조합과 쿨다운이 지난 emit 기록을 지운다. 닫힌 surface 처럼 다시 오지 않는 params 조합이 프로세스 수명 동안 쌓이지 않게 하려는 것이다. 지운 항목은 빈 창·기록 없음과 판정이 같아 검출 결과는 바뀌지 않는다. 보존 상한은 [ADR-0009](../../adr/0009-state-storage-and-retention.md) 의 공통 정책(50시간 · 5,000건)을 따른다.
 
 ### 세션 요약
 
