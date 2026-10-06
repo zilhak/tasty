@@ -329,3 +329,52 @@ fn a_released_surface_that_its_close_retired_is_not_republished() {
         "회수된 surface 는 게시하지 않는다"
     );
 }
+
+/// 닫기 접수보다 먼저 처리된 enable 은 살아 있는 surface 를 새 프로세스에 게시한다. 뒤이은 닫기는
+/// 옛 세대 회수가 아니라 새 프로세스의 인스턴스를 파괴해야 하고, 그 응답으로 확정한다.
+#[test]
+fn a_close_after_republication_destroys_the_instance_in_the_new_process() {
+    let (mut mgr, surface) = manager_with_surface();
+    retire(&mut mgr);
+    assert!(!mgr.wait_retired(PLUGIN), "재시작 예약이 없는 회수다");
+    let (fresh, requests) = PluginProcess::stub_with_request_rx(PLUGIN);
+    mgr.processes.insert(PLUGIN.into(), fresh);
+    mgr.reattach_orphan_surfaces(PLUGIN);
+    let published = requests.try_recv().expect("닫기 전 enable 은 게시한다");
+    assert_eq!(published.params["surface_id"], 7);
+
+    let receipt = close(&mut mgr, &surface);
+    let destroy = requests
+        .try_recv()
+        .expect("새 프로세스에 게시된 인스턴스를 파괴한다");
+    assert_eq!(
+        destroy.method,
+        tasty_plugin_protocol::METHOD_SURFACE_DESTROY
+    );
+    assert_eq!(destroy.params["surface_id"], 7);
+    assert_eq!(
+        receipt.observation(),
+        None,
+        "옛 세대 회수로 확정하지 않고 새 프로세스의 응답을 기다린다"
+    );
+    mgr.handle_plugin_response(
+        PLUGIN,
+        tasty_plugin_protocol::PluginResponse {
+            id: destroy.id,
+            result: Some(serde_json::Value::Null),
+            error: None,
+            error_code: None,
+        },
+    );
+    assert_eq!(receipt.observation(), Some(Ok(())));
+
+    retire(&mut mgr);
+    assert!(!mgr.wait_retired(PLUGIN), "재시작 예약이 없는 회수다");
+    let (again, requests) = PluginProcess::stub_with_request_rx(PLUGIN);
+    mgr.processes.insert(PLUGIN.into(), again);
+    mgr.reattach_orphan_surfaces(PLUGIN);
+    assert!(
+        requests.try_recv().is_err(),
+        "닫힌 surface 는 다시 게시하지 않는다"
+    );
+}
