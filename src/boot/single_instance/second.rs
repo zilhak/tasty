@@ -4,7 +4,11 @@
 //! - 사용자 실행 증거가 있으면 OS 활성화 경로를 쓴다(Linux D-Bus `Activate`, Windows 등록 창 메시지).
 //! - 증거가 없으면 `tasty new window`와 같은 `window.create`로 새 View 하나를 요청한다.
 //! - 실행 중인 쪽이 아직 부팅 중이면 상한 안에서 기다리고, 그 사이 잠금이 풀리면 평소처럼 부팅한다.
-//! - 요청을 넘기지 못하면 Tasty 창 없이 OS 메시지 상자로 알리고 종료한다.
+//! - 넘기다 연결이 끊기거나 D-Bus 이름 소유자가 사라지면 인스턴스 기록과 잠금을 다시 확인한다. 실행 중이던
+//!   쪽이 끝나 잠금을 얻으면 평소처럼 부팅한다.
+//! - 요청을 썼지만 기한 안에 확인을 못 받았고 실행 중인 쪽이 살아 있으면 경고만 남기고 성공으로 끝낸다.
+//!   늦게라도 그쪽이 처리한다.
+//! - 요청을 넘기지 못했고 잠금도 얻지 못하면 Tasty 창 없이 OS 메시지 상자로 알리고 종료한다.
 
 use std::path::Path;
 use std::process::ExitCode;
@@ -25,6 +29,8 @@ const OWNER_WAIT: Duration = Duration::from_secs(5);
 const DBUS_METHOD_TIMEOUT: Duration = Duration::from_secs(5);
 /// 대체 동작의 종료 코드. 요청을 넘기지 못했다.
 const FALLBACK_EXIT: u8 = 1;
+/// 넘김 실패 뒤 다시 기다려 넘기는 최대 횟수. 실행 중이던 쪽이 끝나고 다른 인스턴스가 뜬 경우만 다시 돈다.
+const MAX_ROUNDS: u32 = 3;
 
 pub(crate) enum HeldOutcome {
     Exit(ExitCode),
@@ -102,51 +108,132 @@ pub(crate) fn handle_held(home: &Path) -> HeldOutcome {
         display_backend(),
         evidence.kinds()
     ));
-
-    let record = match wait_for_instance(home, &log) {
-        Waited::Live(record) => record,
-        Waited::LockReleased(lock) => {
+    let code = match hand_over(home, &evidence, &log, started) {
+        Handover::Delivered => ExitCode::SUCCESS,
+        Handover::Unconfirmed(reason) => {
             log.line(&format!(
-                "the running instance ended while waiting ({} ms); booting normally",
+                "warning: the request was written but not confirmed ({reason}); \
+                 the running instance is alive, so no notice is shown"
+            ));
+            ExitCode::SUCCESS
+        }
+        Handover::BootNormally(lock) => {
+            log.line(&format!(
+                "the running instance ended ({} ms); booting normally",
                 started.elapsed().as_millis()
             ));
             return HeldOutcome::BootNormally(lock);
         }
-        Waited::TimedOut(reason) => {
-            return HeldOutcome::Exit(fallback(
-                &log,
-                &evidence,
-                &format!("instance not ready: {reason}"),
-            ));
-        }
-    };
-    log.line(&format!(
-        "instance live: pid={} start_time={} port={:?} after {} ms",
-        record.pid,
-        record.start_time,
-        record.port,
-        started.elapsed().as_millis()
-    ));
-
-    let granted = windows_grant(record.pid, &log);
-    let chosen = route(Platform::current(), &evidence, granted);
-    log.line(&format!("route: {chosen:?}"));
-    let code = match chosen {
-        Route::NewView => match request_new_view(&record, &log) {
-            Ok(window_id) => {
-                log.line(&format!("new view requested: window_id={window_id}"));
-                ExitCode::SUCCESS
-            }
-            Err(reason) => fallback(&log, &evidence, &reason),
-        },
-        Route::DbusActivate => dbus_activate(home, &evidence, &log),
-        Route::WindowsActivate => windows_activate(home, &record, &log),
+        Handover::GiveUp(reason) => give_up(&log, &evidence, &reason),
     };
     log.line(&format!(
         "second launch done in {} ms",
         started.elapsed().as_millis()
     ));
     HeldOutcome::Exit(code)
+}
+
+/// 넘김의 결과. 화면에 아무것도 띄우지 않고 정하기만 한다.
+#[derive(Debug)]
+enum Handover {
+    Delivered,
+    /// 요청을 썼지만 확인을 못 받았고, 실행 중인 쪽은 아직 살아 있다.
+    Unconfirmed(String),
+    /// 실행 중이던 쪽이 끝나 잠금을 얻었다.
+    BootNormally(tasty_event_store::WriterLock),
+    /// 넘기지 못했고 잠금도 얻지 못했다.
+    GiveUp(String),
+}
+
+/// 넘기다 실패한 이유. `written`은 실행 중인 쪽에 연결된 뒤 실패해 요청이 닿았을 수 있다는 뜻이다.
+#[derive(Debug)]
+struct Undelivered {
+    written: bool,
+    reason: String,
+}
+
+impl Undelivered {
+    fn lost(reason: impl Into<String>) -> Self {
+        Self {
+            written: false,
+            reason: reason.into(),
+        }
+    }
+}
+
+/// 기다림 → 넘김 → 실패하면 기록과 잠금 재확인. 재확인은 `wait_for_instance`와 같은 규칙이다.
+fn hand_over(
+    home: &Path,
+    evidence: &LaunchEvidence,
+    log: &LaunchLog,
+    started: Instant,
+) -> Handover {
+    let mut round = 0u32;
+    loop {
+        round += 1;
+        let record = match wait_for_instance(home, log) {
+            Waited::Live(record) => record,
+            Waited::LockReleased(lock) => return Handover::BootNormally(lock),
+            Waited::TimedOut(reason) => {
+                return Handover::GiveUp(format!("instance not ready: {reason}"));
+            }
+        };
+        log.line(&format!(
+            "instance live: pid={} start_time={} port={:?} after {} ms",
+            record.pid,
+            record.start_time,
+            record.port,
+            started.elapsed().as_millis()
+        ));
+        let failure = match deliver(home, &record, evidence, log) {
+            Ok(()) => return Handover::Delivered,
+            Err(failure) => failure,
+        };
+        if failure.written && is_running(home, &record) {
+            return Handover::Unconfirmed(failure.reason);
+        }
+        log.line(&format!(
+            "not delivered: {}; checking the instance record and the writer lock again",
+            failure.reason
+        ));
+        let database = crate::runtime::journal_product::journal_database_path(home);
+        match tasty_event_store::preempt_writer_lock(&database) {
+            Ok(tasty_event_store::WriterPreempt::Acquired(lock)) => {
+                return Handover::BootNormally(lock);
+            }
+            Ok(tasty_event_store::WriterPreempt::Held) => {}
+            Err(e) => log.line(&format!("writer lock check failed: {e}")),
+        }
+        // 같은 인스턴스가 살아 있는데 넘기지 못했으면 더 기다려도 소용없다.
+        if is_running(home, &record) || round >= MAX_ROUNDS {
+            return Handover::GiveUp(failure.reason);
+        }
+    }
+}
+
+/// 기록이 여전히 같은 프로세스(PID·시작 시각)를 살아 있는 인스턴스로 가리키는지.
+fn is_running(home: &Path, record: &InstanceRecord) -> bool {
+    matches!(
+        instance_file::read_state(home),
+        InstanceState::Live(now) if now.pid == record.pid && now.start_time == record.start_time
+    )
+}
+
+fn deliver(
+    home: &Path,
+    record: &InstanceRecord,
+    evidence: &LaunchEvidence,
+    log: &LaunchLog,
+) -> Result<(), Undelivered> {
+    let granted = windows_grant(record.pid, log);
+    let chosen = route(Platform::current(), evidence, granted);
+    log.line(&format!("route: {chosen:?}"));
+    match chosen {
+        Route::NewView => request_new_view(home, record, log)
+            .map(|window_id| log.line(&format!("new view requested: window_id={window_id}"))),
+        Route::DbusActivate => dbus_activate(home, record, evidence, log),
+        Route::WindowsActivate => windows_activate(home, record, log),
+    }
 }
 
 enum Waited {
@@ -189,47 +276,72 @@ fn wait_for_instance(home: &Path, log: &LaunchLog) -> Waited {
 }
 
 /// `window.create`를 멱등 키와 함께 보낸다. 응답이 유실되면 같은 키로, 명시적으로 거절되면 새 키로 다시 보낸다.
-fn request_new_view(record: &InstanceRecord, log: &LaunchLog) -> Result<u64, String> {
-    request_new_view_within(record, log, IPC_DEADLINE)
+/// 연결 오류가 나면 실행 중인 쪽이 아직 살아 있는지 확인하고, 끝났으면 기한을 기다리지 않고 돌아온다.
+fn request_new_view(
+    home: &Path,
+    record: &InstanceRecord,
+    log: &LaunchLog,
+) -> Result<u64, Undelivered> {
+    request_new_view_within(home, record, log, IPC_DEADLINE)
 }
 
 fn request_new_view_within(
+    home: &Path,
     record: &InstanceRecord,
     log: &LaunchLog,
     limit: Duration,
-) -> Result<u64, String> {
+) -> Result<u64, Undelivered> {
     let Some(port) = record.port else {
-        return Err("instance record has no port".to_string());
+        return Err(Undelivered::lost("instance record has no port"));
     };
     let deadline = Instant::now() + limit;
     let mut key = new_key();
     let mut attempt = 0u32;
+    let mut written = false;
     loop {
         attempt += 1;
         let left = deadline.saturating_duration_since(Instant::now());
         if left.is_zero() {
-            return Err(format!(
-                "window.create gave no result within {} ms ({attempt} attempts)",
-                limit.as_millis()
-            ));
+            return Err(Undelivered {
+                written,
+                reason: format!(
+                    "window.create gave no result within {} ms ({attempt} attempts)",
+                    limit.as_millis()
+                ),
+            });
         }
-        match send_window_create(port, &key, left) {
+        let transport_error = match send_window_create(port, &key, left) {
             Ok(value) => {
                 return value
                     .get("window_id")
                     .and_then(serde_json::Value::as_u64)
-                    .ok_or_else(|| format!("window.create returned no window_id: {value}"));
+                    .ok_or_else(|| Undelivered {
+                        written: true,
+                        reason: format!("window.create returned no window_id: {value}"),
+                    });
             }
             Err(SendError::Refused { code, message }) => {
                 log.line(&format!(
                     "window.create refused (attempt {attempt}): code={code} message={message}"
                 ));
                 key = new_key();
+                None
             }
+            Err(SendError::Unreachable(e)) => Some(e),
             Err(SendError::Transport(e)) => {
-                log.line(&format!(
-                    "window.create transport error (attempt {attempt}): {e}"
-                ));
+                written = true;
+                Some(e)
+            }
+        };
+        if let Some(e) = transport_error {
+            log.line(&format!(
+                "window.create transport error (attempt {attempt}): {e}"
+            ));
+            if !is_running(home, record) {
+                return Err(Undelivered {
+                    written,
+                    reason: format!("the running instance ended: {e}"),
+                });
             }
         }
         std::thread::sleep(Duration::from_millis(200).min(left));
@@ -237,7 +349,13 @@ fn request_new_view_within(
 }
 
 enum SendError {
-    Refused { code: i32, message: String },
+    Refused {
+        code: i32,
+        message: String,
+    },
+    /// 연결하지 못했다. 요청은 닿지 않았다.
+    Unreachable(String),
+    /// 연결된 뒤 실패했다. 요청이 닿았을 수 있다.
     Transport(String),
 }
 
@@ -256,7 +374,8 @@ fn send_window_create(
 ) -> Result<serde_json::Value, SendError> {
     let address = std::net::SocketAddr::from(([127, 0, 0, 1], port));
     let transport = |e: &dyn std::fmt::Display| SendError::Transport(e.to_string());
-    let stream = std::net::TcpStream::connect_timeout(&address, left).map_err(|e| transport(&e))?;
+    let stream = std::net::TcpStream::connect_timeout(&address, left)
+        .map_err(|e| SendError::Unreachable(e.to_string()))?;
     stream
         .set_read_timeout(Some(left))
         .map_err(|e| transport(&e))?;
@@ -288,48 +407,56 @@ fn send_window_create(
 }
 
 #[cfg(target_os = "linux")]
-fn dbus_activate(home: &Path, evidence: &LaunchEvidence, log: &LaunchLog) -> ExitCode {
+fn dbus_activate(
+    home: &Path,
+    record: &InstanceRecord,
+    evidence: &LaunchEvidence,
+    log: &LaunchLog,
+) -> Result<(), Undelivered> {
     let name = super::dbus::bus_name(home);
-    let connection = match super::dbus::connect(DBUS_METHOD_TIMEOUT) {
-        Ok(c) => c,
-        Err(e) => return activation_failed(log, evidence, &format!("session bus: {e}")),
-    };
+    let connection = super::dbus::connect(DBUS_METHOD_TIMEOUT)
+        .map_err(|e| Undelivered::lost(format!("session bus: {e}")))?;
     let deadline = Instant::now() + OWNER_WAIT;
     loop {
         match super::dbus::name_has_owner(&connection, &name) {
             Ok(true) => break,
-            Ok(false) if Instant::now() < deadline => {
+            Ok(false) if Instant::now() < deadline && is_running(home, record) => {
                 std::thread::sleep(Duration::from_millis(100))
             }
             Ok(false) => {
-                return activation_failed(
-                    log,
-                    evidence,
-                    &format!("D-Bus name {name} has no owner"),
-                );
+                return Err(Undelivered::lost(format!("D-Bus name {name} has no owner")));
             }
             Err(e) => {
-                return activation_failed(log, evidence, &format!("NameHasOwner({name}): {e}"));
+                return Err(Undelivered::lost(format!("NameHasOwner({name}): {e}")));
             }
         }
     }
     match super::dbus::activate(&connection, &name, evidence) {
         Ok(()) => {
             log.line(&format!("D-Bus Activate sent to {name}"));
-            ExitCode::SUCCESS
+            Ok(())
         }
-        Err(e) => activation_failed(log, evidence, &format!("Activate on {name}: {e}")),
+        // 메서드 호출은 소유자에게 보낸 뒤 응답을 기다리다 실패할 수 있다.
+        Err(e) => Err(Undelivered {
+            written: true,
+            reason: format!("Activate on {name}: {e}"),
+        }),
     }
 }
 
 #[cfg(not(target_os = "linux"))]
-fn dbus_activate(_home: &Path, evidence: &LaunchEvidence, log: &LaunchLog) -> ExitCode {
-    fallback(log, evidence, "D-Bus activation is only used on Linux")
+fn dbus_activate(
+    _home: &Path,
+    _record: &InstanceRecord,
+    _evidence: &LaunchEvidence,
+    _log: &LaunchLog,
+) -> Result<(), Undelivered> {
+    Err(Undelivered::lost("D-Bus activation is only used on Linux"))
 }
 
+/// 넘기지 못했다. X11 증거가 있으면 실행기의 대기 표시를 직접 끝낸 뒤 대체 동작으로 간다.
 #[cfg(target_os = "linux")]
-/// 증거를 넘기지 못했다. X11이면 실행기의 대기 표시를 직접 끝낸 뒤 대체 동작으로 간다.
-fn activation_failed(log: &LaunchLog, evidence: &LaunchEvidence, reason: &str) -> ExitCode {
+fn give_up(log: &LaunchLog, evidence: &LaunchEvidence, reason: &str) -> ExitCode {
     log.line(&format!("activation failed: {reason}"));
     if let Some(id) = &evidence.x11_startup_id {
         match crate::platform::window_activation::x11_startup_complete(id) {
@@ -337,7 +464,12 @@ fn activation_failed(log: &LaunchLog, evidence: &LaunchEvidence, reason: &str) -
             Err(e) => log.line(&format!("X11 startup-notification remove failed: {e}")),
         }
     }
-    fallback(log, evidence, reason)
+    fallback(log, reason)
+}
+
+#[cfg(not(target_os = "linux"))]
+fn give_up(log: &LaunchLog, _evidence: &LaunchEvidence, reason: &str) -> ExitCode {
+    fallback(log, reason)
 }
 
 #[cfg(windows)]
@@ -360,7 +492,11 @@ fn windows_grant(_pid: u32, _log: &LaunchLog) -> bool {
 }
 
 #[cfg(windows)]
-fn windows_activate(home: &Path, record: &InstanceRecord, log: &LaunchLog) -> ExitCode {
+fn windows_activate(
+    home: &Path,
+    record: &InstanceRecord,
+    log: &LaunchLog,
+) -> Result<(), Undelivered> {
     use crate::platform::single_instance_windows as win;
     let find = |log: &LaunchLog| match win::enumerate_top_level() {
         Ok(windows) => {
@@ -381,50 +517,36 @@ fn windows_activate(home: &Path, record: &InstanceRecord, log: &LaunchLog) -> Ex
     let post = |hwnd: isize, log: &LaunchLog| match win::post_activate(hwnd) {
         Ok(()) => {
             log.line("posted the activate message");
-            ExitCode::SUCCESS
+            Ok(())
         }
-        Err(e) => fallback(
-            log,
-            &LaunchEvidence::default(),
-            &format!("post activate: {e}"),
-        ),
+        Err(e) => Err(Undelivered::lost(format!("post activate: {e}"))),
     };
     if let Some(hwnd) = find(log) {
         return post(hwnd, log);
     }
     // 창이 없으면 연속 실행이 각자 창을 만들지 않도록 차례로 처리하고 다시 확인한다.
-    let _turn = match activation_turn(home) {
-        Ok(lock) => lock,
-        Err(e) => {
-            return fallback(
-                log,
-                &LaunchEvidence::default(),
-                &format!("activation lock: {e}"),
-            );
-        }
-    };
+    let _turn =
+        activation_turn(home).map_err(|e| Undelivered::lost(format!("activation lock: {e}")))?;
     if let Some(hwnd) = find(log) {
         return post(hwnd, log);
     }
-    match request_new_view(record, log) {
-        Ok(window_id) => {
-            let granted = win::set_foreground(window_id);
-            log.line(&format!(
-                "new view {window_id} requested; SetForegroundWindow returned {granted}"
-            ));
-            ExitCode::SUCCESS
-        }
-        Err(reason) => fallback(log, &LaunchEvidence::default(), &reason),
-    }
+    let window_id = request_new_view(home, record, log)?;
+    let granted = win::set_foreground(window_id);
+    log.line(&format!(
+        "new view {window_id} requested; SetForegroundWindow returned {granted}"
+    ));
+    Ok(())
 }
 
 #[cfg(not(windows))]
-fn windows_activate(_home: &Path, _record: &InstanceRecord, log: &LaunchLog) -> ExitCode {
-    fallback(
-        log,
-        &LaunchEvidence::default(),
+fn windows_activate(
+    _home: &Path,
+    _record: &InstanceRecord,
+    _log: &LaunchLog,
+) -> Result<(), Undelivered> {
+    Err(Undelivered::lost(
         "window messages are only used on Windows",
-    )
+    ))
 }
 
 /// 증거 있음 + 창 없음 처리를 차례로 하기 위한 홈의 활성화 잠금.
@@ -454,7 +576,7 @@ fn activation_turn(home: &Path) -> std::io::Result<std::fs::File> {
 }
 
 /// Tasty 창 없이 원인을 알리고 끝낸다. 문구는 하나이고 상세는 launch.log에 있다.
-fn fallback(log: &LaunchLog, _evidence: &LaunchEvidence, reason: &str) -> ExitCode {
+fn fallback(log: &LaunchLog, reason: &str) -> ExitCode {
     log.line(&format!("fallback: {reason}"));
     crate::boot::locale::init();
     let title = crate::i18n::t("app.name").to_string();
@@ -575,25 +697,110 @@ mod tests {
         assert!(matches!(wait_for_instance(home.path(), &log), Waited::Live(r) if r == record));
     }
 
-    #[test]
-    fn a_refused_or_unreachable_window_create_ends_within_the_deadline() {
-        // 아무도 듣지 않는 포트: 연결 거절이 반복되고 기한 안에 오류로 끝난다.
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let port = listener.local_addr().unwrap().port();
-        drop(listener);
-        let home = tempfile::tempdir().unwrap();
-        let log = LaunchLog::new(Some(home.path()));
+    /// 이 프로세스(살아 있음)를 가리키는 기록을 홈에 쓴다.
+    fn publish_self(home: &Path, port: u16) -> InstanceRecord {
+        let pid = std::process::id();
         let record = InstanceRecord {
-            pid: 1,
-            start_time: 1,
+            pid,
+            start_time: instance_file::process_start_time(pid).unwrap(),
             port: Some(port),
         };
+        std::fs::write(
+            instance_file::path(home),
+            serde_json::to_vec(&record).unwrap(),
+        )
+        .unwrap();
+        record
+    }
+
+    fn closed_port() -> u16 {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.local_addr().unwrap().port()
+    }
+
+    #[test]
+    fn an_unreachable_running_instance_ends_at_the_deadline_as_not_written() {
+        // 기록의 프로세스는 살아 있는데 포트가 아무도 듣지 않는다: 기한까지 재시도하고 "닿지 않음"으로 끝난다.
+        let home = tempfile::tempdir().unwrap();
+        let record = publish_self(home.path(), closed_port());
+        let log = LaunchLog::new(Some(home.path()));
         let started = Instant::now();
         let limit = Duration::from_millis(800);
-        let error = request_new_view_within(&record, &log, limit).unwrap_err();
-        assert!(error.contains("window.create gave no result"), "{error}");
+        let error = request_new_view_within(home.path(), &record, &log, limit).unwrap_err();
+        assert!(
+            error.reason.contains("window.create gave no result"),
+            "{error:?}"
+        );
+        assert!(!error.written);
         assert!(started.elapsed() < limit + Duration::from_secs(1));
         let text = std::fs::read_to_string(super::super::launch_log::path(home.path())).unwrap();
         assert!(text.contains("transport error"), "{text}");
+    }
+
+    #[test]
+    fn a_running_instance_that_dies_mid_request_hands_the_launch_back_to_boot() {
+        // 리뷰 재현의 시험판: 실행 중인 A가 잠금을 쥐고 요청을 받아 둔 채(멈춤) 강제 종료된다.
+        // B는 기한(10초)을 기다리지 않고 기록·잠금을 다시 확인해 스스로 부팅해야 한다(유실 0).
+        let home = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(home.path().join("structure")).unwrap();
+        let database = crate::runtime::journal_product::journal_database_path(home.path());
+        let Ok(tasty_event_store::WriterPreempt::Acquired(lock)) =
+            tasty_event_store::preempt_writer_lock(&database)
+        else {
+            panic!("the test home lock must be free");
+        };
+        let mut a = std::process::Command::new("sleep")
+            .arg("30")
+            .spawn()
+            .unwrap();
+        // 연결은 받지만(backlog) 응답하지 않는 멈춘 A의 포트.
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let record = InstanceRecord {
+            pid: a.id(),
+            start_time: instance_file::process_start_time(a.id()).unwrap(),
+            port: Some(listener.local_addr().unwrap().port()),
+        };
+        std::fs::write(
+            instance_file::path(home.path()),
+            serde_json::to_vec(&record).unwrap(),
+        )
+        .unwrap();
+        let killer = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(500));
+            a.kill().unwrap();
+            a.wait().unwrap();
+            drop(listener);
+            drop(lock);
+        });
+        let log = LaunchLog::new(Some(home.path()));
+        let started = Instant::now();
+        let outcome = hand_over(home.path(), &LaunchEvidence::default(), &log, started);
+        killer.join().unwrap();
+        let text = std::fs::read_to_string(super::super::launch_log::path(home.path())).unwrap();
+        assert!(
+            matches!(outcome, Handover::BootNormally(_)),
+            "{outcome:?}\n{text}"
+        );
+        assert!(
+            started.elapsed() < IPC_DEADLINE,
+            "{:?}\n{text}",
+            started.elapsed()
+        );
+        assert!(text.contains("instance live"), "{text}");
+        assert!(text.contains("not delivered"), "{text}");
+    }
+
+    #[test]
+    fn a_written_request_to_a_live_but_silent_instance_is_unconfirmed_not_lost() {
+        // 요청은 닿았는데(연결 성공) 응답이 없고 A는 살아 있다: 상자 대신 성공으로 끝낼 근거가 된다.
+        let home = tempfile::tempdir().unwrap();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let record = publish_self(home.path(), listener.local_addr().unwrap().port());
+        let log = LaunchLog::new(Some(home.path()));
+        let error = request_new_view_within(home.path(), &record, &log, Duration::from_millis(600))
+            .unwrap_err();
+        assert!(error.written, "{error:?}");
+        assert!(is_running(home.path(), &record));
+        drop(listener);
     }
 }
