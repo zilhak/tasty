@@ -81,7 +81,7 @@ regular(`put/get/delete/list/exists/count/scopes/stats/query/export/import`) · 
 | `task_run` | workspace 러너의 시작·중지·상태 조회. 호스트 재시작 후 자동으로 켜지지 않으므로 플러그인이 자기 workspace의 러너를 다시 시작할 수 있다. |
 | `barrier_*`, `semaphore_*`, `lease_*`, `rate_limit_*` | 작업 간 대기와 자원 사용 조정 |
 | `dag_{list,get}` | 작업을 DAG별로 묶어 조회 |
-| `task_graph_{validate,submit}` | v2 task 그래프를 한 번에 검증·제출. 검증 실패(task 200 개 초과 포함)는 `-32602` 이고 `error.data.location` 에 그래프 안의 위치가 실리며 아무것도 저장하지 않는다. `submit` 은 모두 저장한 뒤 활성화한다. 활성화 뒤 readiness 반영 실패는 `-32603` 이고 `error.data` 에 `graph_id`·`possibly_active: true` 가 실린다([agent-runner](../dev-guide/agent-runner.md#그래프-제출)) |
+| `task_graph_{validate,submit}` | v2 task 그래프를 한 번에 검증·제출. 검증 실패(task 1000 개 초과 포함)는 `-32602` 이고 `error.data.location` 에 그래프 안의 위치가 실리며 아무것도 저장하지 않는다. `submit` 은 모두 저장한 뒤 활성화한다. 활성화 뒤 readiness 반영 실패는 `-32603` 이고 `error.data` 에 `graph_id`·`possibly_active: true` 가 실린다([agent-runner](../dev-guide/agent-runner.md#그래프-제출)) |
 
 다음 두 메서드는 **로컬 호출만 허용**하며 플러그인은 호출할 수 없다. 둘 다 [METHOD_TABLE](../../crates/tasty-ipc/src/method_meta.rs)에 `local_only()`로 등록되어 있다. 라우터가 처리하는 메서드는 모두 이 표에 등록한다. 미등록 메서드의 `UnknownMethod` 거부와 의도한 접근 제한을 구분하기 위해 `tests/ipc_router_table_parity.rs`로 누락을 검사한다.
 

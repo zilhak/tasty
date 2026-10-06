@@ -1,6 +1,6 @@
 # ADR-0069: v2 task 그래프는 전체 검증 뒤 그래프 레코드 하나로 활성화한다
 
-- **Status**: Accepted
+- **Status**: Accepted — 3단계를 목록 한 번으로 평가하게 바꾼 뒤 재측정해 상한을 1000 으로 올렸다(2026-10-07, 재검토 조건 3)
 - **Date**: 2026-10-06
 - **Tags**: agents, tasks, types, dag, storage
 - **Group**: agents
@@ -13,7 +13,7 @@ v2 task 의 입력 binding 은 다른 task 의 출력을 타입으로 받는다.
 
 v2 task 는 그래프 단위로 제출한다(`agent.task_graph_submit`, 검증만 하는 `agent.task_graph_validate`). 순서는 세 단계다.
 
-1. 그래프 전체를 검증한다. task 수(상한 `MAX_GRAPH_TASKS` = 200), id, 참조, 타입, binding, 매핑, 조합 규칙, 순환을 확인하고 실패하면 아무것도 쓰지 않는다. 오류에는 제출 정의 안의 JSON Pointer 를 싣는다.
+1. 그래프 전체를 검증한다. task 수(상한 `MAX_GRAPH_TASKS` = 1000), id, 참조, 타입, binding, 매핑, 조합 규칙, 순환을 확인하고 실패하면 아무것도 쓰지 않는다. 오류에는 제출 정의 안의 JSON Pointer 를 싣는다.
 2. task 를 모두 Waiting 으로 쓴다. 쓰는 도중 실패하면 쓴 task 를 지운다.
 3. 그래프 레코드(`tasty.agent.task_graph.<그래프 id>`, `tasty.task_graph/v1`) 하나를 쓰고 readiness 를 평가한다.
 
@@ -26,7 +26,8 @@ v2 task 는 그래프 단위로 제출한다(`agent.task_graph_submit`, 검증�
 - 3단계 도중 호스트가 죽어도 같다. 반영하지 못한 의존 없는 task 는 Waiting 으로 남고 재시작은 readiness 를 다시 평가하지 않는다. 복구 절차는 [작업 러너 §한계](../dev-guide/agent-runner.md#한계).
 - 2단계에서 롤백까지 실패하면 활성화되지 않은 task 가 남는다. 실행되지 않으며 삭제·purge 로 지운다.
 - readiness 평가는 task 마다 그래프 레코드 존재를 확인해야 한다(`TaskStore::readiness_graph`).
-- 제출 전체가 memory 잠금 안에서 돈다. 3단계가 task 마다 workspace 목록과 readiness 그래프를 다시 만들어 비용이 task 수의 제곱으로 늘어난다. 그동안 memory 를 쓰는 다른 IPC 와 러너 tick 이 기다린다. 실측(빈 workspace, 러너 정지, 부하 있는 머신)은 50 개 39ms, 200 개 430ms, 1000 개 5.7s 였고, 1000 개 제출 중 다른 연결의 `memory.get` 은 5369ms 를 기다렸다. 그래서 그래프 하나를 200 개로 제한하고 초과는 `-32602`(`location: /tasks`)로 거절한다.
+- 제출 전체가 memory 잠금 안에서 돈다. 그동안 memory 를 쓰는 다른 IPC 와 러너 tick 이 기다린다. 처음 구현은 3단계가 task 마다 workspace 목록을 저장소에서 다시 읽어 1000 개 제출이 5.7s 걸렸고, 그동안 다른 연결의 `memory.get` 이 5369ms 를 기다렸다(호스트 IPC 실측). 그래서 상한을 200 으로 두었다.
+- 지금은 3단계와 하류 전파(`TaskStore::settle_waiting`)가 저장소 목록을 한 번 읽고 작업본을 갱신한다. 메모리 안의 readiness 그래프 재구성은 task 마다 남아 있어 비용은 여전히 제곱이지만 상수가 작다. `TaskStore::submit_graph` 를 같은 머신에서 번갈아 잰 값(dev 프로필, 3회 최소~최대)은 이전 구현이 200 개 178~539ms · 1000 개 3781~5441ms, 지금 구현이 200 개 38~85ms · 1000 개 181~488ms 다. 지금 구현의 1000 개가 이전 구현의 200 개와 같은 범위라 상한을 1000 으로 둔다. 초과는 `-32602`(`location: /tasks`)로 거절한다.
 
 ## Alternatives Considered
 
@@ -38,7 +39,7 @@ v2 task 는 그래프 단위로 제출한다(`agent.task_graph_submit`, 검증�
 
 - 메모리 저장소가 여러 키 쓰기를 한 트랜잭션으로 제공하면 2·3단계를 하나로 합친다(`tasty_memory` 의 쓰기 API).
 - 재시작 시 readiness 를 다시 평가하는 경로가 생기면 Consequences 의 남는 Waiting 을 지운다(`TaskStore` 의 복구 경로).
-- 3단계를 workspace 목록 한 번으로 평가하도록 바꾸면 제출 시간을 다시 재고 `MAX_GRAPH_TASKS` 를 올린다(`graph_submit.rs`).
+- readiness 그래프를 task 마다 다시 만들지 않도록 바꾸면 제출 시간을 다시 재고 `MAX_GRAPH_TASKS` 를 조정한다(`TaskStore::settle_waiting`).
 
 ## References
 

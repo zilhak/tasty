@@ -129,6 +129,16 @@ enum Kind {
 /// 검색 결과 중 현재 값 설명이 아닌 파일과 제외 근거.
 const EXCLUDED: &[(&str, Kind, &str)] = &[
     (
+        "crates/tasty-agent/src/task/store/graph_submit.rs",
+        Kind::OtherMeaning,
+        "task 그래프 하나의 task 수 상한 1000 이며 파일 SLOC 임계값이 아니다",
+    ),
+    (
+        "docs/adr/0069-typed-task-graphs-activate-through-a-graph-record.md",
+        Kind::OtherMeaning,
+        "task 그래프 하나의 task 수 상한 1000 과 그 측정값이며 파일 SLOC 임계값이 아니다",
+    ),
+    (
         "crates/tasty-ssh/src/lib.rs",
         Kind::OtherMeaning,
         "SYN 재시도 ~127초이며 allow 개수가 아니다",

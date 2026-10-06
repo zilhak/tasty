@@ -19,14 +19,14 @@ use super::super::contract::{self, FailureStage, MergeConflict, TaskContract, Ta
 use super::super::types::TypeSchema;
 use super::super::{
     OnFailure, TASK_GRAPH_KEY_PREFIX, TASK_GRAPH_RECORD_FORMAT, Task, TaskCommand, TaskGraph,
-    TaskId, TaskState, apply_on_failure, is_valid_transition, typed_task_key,
+    TaskId, TaskState, typed_task_key,
 };
 use super::{TaskStore, graph_key};
 use crate::{AgentError, Result};
 
 /// 그래프 하나에 담을 수 있는 task 수의 상한. 제출은 memory 잠금을 쥔 채 활성화하고
-/// 활성화 비용이 task 수의 제곱으로 늘어난다. 200 개에서 약 430ms 를 실측했다(ADR-0069).
-pub const MAX_GRAPH_TASKS: usize = 200;
+/// 활성화 비용이 task 수의 제곱으로 늘어난다. 측정값과 근거는 ADR-0069.
+pub const MAX_GRAPH_TASKS: usize = 1000;
 
 #[cfg(test)]
 thread_local! {
@@ -303,40 +303,14 @@ impl TaskStore<'_> {
     /// 활성화 3단계. 그래프 task 의 readiness 를 평가해 저장하고 하류로 전파한다.
     fn apply_graph_readiness(&mut self, plan: &GraphPlan, now_ms: u64) -> Result<Vec<Task>> {
         let ws = plan.workspace_id;
-        let mut settled = Vec::new();
-        for planned in &plan.tasks {
-            let all = self.list(ws)?;
-            let Some(task) = all.iter().find(|t| t.id == planned.id).cloned() else {
-                continue;
-            };
-            if !matches!(task.state, TaskState::Waiting) {
-                continue;
-            }
-            let target = match self.readiness_graph(ws, &all)?.evaluate_readiness(&task.id) {
-                Some(TaskState::Skipped) => apply_on_failure(&task, &all),
-                other => other,
-            };
-            if let Some(next) = target
-                && next != TaskState::Waiting
-                && is_valid_transition(&task.state, &next)
-            {
-                let mut t = task;
-                if next.is_terminal() {
-                    t.finished_at = Some(now_ms);
-                }
-                t.state = next;
-                #[cfg(test)]
-                if FAIL_ACTIVATION_PUT.with(|f| f.replace(false)) {
-                    return Err(AgentError::InvalidArgument(
-                        "injected activation failure".into(),
-                    ));
-                }
-                self.put(&t)?;
-                if t.state.is_terminal() {
-                    settled.push(t.id.clone());
-                }
-            }
-        }
+        let mut all = self.list(ws)?;
+        let ids: Vec<TaskId> = plan.tasks.iter().map(|t| t.id.clone()).collect();
+        let settled: Vec<TaskId> = self
+            .settle_waiting(ws, &mut all, &ids, now_ms)?
+            .into_iter()
+            .filter(|t| t.state.is_terminal())
+            .map(|t| t.id)
+            .collect();
         for id in settled {
             self.cascade_downstream(ws, &id, now_ms)?;
         }

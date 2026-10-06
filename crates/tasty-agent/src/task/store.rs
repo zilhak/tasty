@@ -544,38 +544,61 @@ impl<'a> TaskStore<'a> {
         task_id: &TaskId,
         now_ms: u64,
     ) -> Result<Vec<Task>> {
-        let all = self.list(workspace_id)?;
-        let downstream_ids = {
-            let graph = TaskGraph::build(&all);
-            graph.transitive_downstream(task_id)
-        };
+        let mut all = self.list(workspace_id)?;
+        let downstream_ids = TaskGraph::build(&all).transitive_downstream(task_id);
+        self.settle_waiting(workspace_id, &mut all, &downstream_ids, now_ms)
+    }
+
+    /// `ids` 순서대로 Waiting task 의 readiness 를 평가하고 바뀐 task 를 저장한다.
+    ///
+    /// 저장소 목록은 호출자가 한 번 읽어 `all` 로 넘기고, 이 함수는 저장한 상태를 `all` 에도
+    /// 반영해 다음 평가에 쓴다. 저장소를 task 마다 다시 읽지 않는다. 호출 동안 다른 쓰기가
+    /// 끼지 않는 것은 `&mut self` 가 보장한다. 활성화 여부는 호출 시점에 한 번 읽는다.
+    pub(super) fn settle_waiting(
+        &mut self,
+        workspace_id: WorkspaceId,
+        all: &mut [Task],
+        ids: &[TaskId],
+        now_ms: u64,
+    ) -> Result<Vec<Task>> {
+        let inactive = self.inactive_task_ids(workspace_id, all)?;
+        let index: std::collections::HashMap<TaskId, usize> = all
+            .iter()
+            .enumerate()
+            .map(|(i, t)| (t.id.clone(), i))
+            .collect();
         let mut updated = Vec::new();
-        // BFS 순서대로: 각 단계마다 최신 상태로 다시 list/build.
-        for d_id in downstream_ids {
-            let all_now = self.list(workspace_id)?;
-            let graph = self.readiness_graph(workspace_id, &all_now)?;
-            let d_task = match self.get(workspace_id, &d_id)? {
-                Some(t) => t,
-                None => continue,
+        for id in ids {
+            let Some(&i) = index.get(id) else {
+                continue;
             };
-            if !matches!(d_task.state, TaskState::Waiting) {
+            if !matches!(all[i].state, TaskState::Waiting) {
                 continue;
             }
-            let target = match graph.evaluate_readiness(&d_id) {
-                Some(TaskState::Skipped) => apply_on_failure(&d_task, &all_now),
-                other => other,
+            let target = {
+                let graph = TaskGraph::build(all).with_inactive(inactive.clone());
+                match graph.evaluate_readiness(id) {
+                    Some(TaskState::Skipped) => apply_on_failure(&all[i], all),
+                    other => other,
+                }
             };
             if let Some(next) = target
                 && next != TaskState::Waiting
-                && is_valid_transition(&d_task.state, &next)
+                && is_valid_transition(&all[i].state, &next)
             {
-                let is_terminal = next.is_terminal();
-                let mut nt = d_task;
-                nt.state = next;
-                if is_terminal {
+                let mut nt = all[i].clone();
+                if next.is_terminal() {
                     nt.finished_at = Some(now_ms);
                 }
+                nt.state = next;
+                #[cfg(test)]
+                if graph_submit::FAIL_ACTIVATION_PUT.with(|f| f.replace(false)) {
+                    return Err(AgentError::InvalidArgument(
+                        "injected activation failure".into(),
+                    ));
+                }
                 self.put(&nt)?;
+                all[i] = nt.clone();
                 updated.push(nt);
             }
         }
