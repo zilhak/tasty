@@ -20,8 +20,8 @@ const BTN_H: LogicalPx = LogicalPx(20.0);
 /// "Fit" zoom 버튼 폭 (host `add_sized([30,20])`).
 const FIT_W: LogicalPx = LogicalPx(30.0);
 
-// 아래 값은 시안 `plugins.jsx`의 ImgSurface(edit) · FloatingSelection · New Image ·
-// Save As 그림에서 옮긴 표본 치수다. 대응하는 토큰이 없다.
+// 아래 값은 시안 `plugins.jsx`의 ImgSurface(edit) · FloatingSelection 그림에서 옮긴 표본 치수다.
+// 대응하는 토큰이 없다. 손잡이 · 팝업 · 입력 · zoom % 치수는 `image-*` 토큰을 읽는다.
 /// paint bar 높이.
 const PAINT_BAR_H: LogicalPx = LogicalPx(40.0);
 /// paint bar 구분선 높이.
@@ -36,23 +36,12 @@ const BRUSH_KNOB_AT: f32 = 0.4;
 const COLOR_SWATCH: LogicalPx = LogicalPx(16.0);
 /// zoom 그룹 안 간격.
 const ZOOM_GROUP_GAP: LogicalPx = LogicalPx(2.0);
-/// zoom 비율 글자 칸의 최소 폭.
-const ZOOM_PCT_MIN_W: LogicalPx = LogicalPx(40.0);
 /// 캔버스 위 그림 자리.
 const PICTURE_W: LogicalPx = LogicalPx(200.0);
 const PICTURE_H: LogicalPx = LogicalPx(132.0);
-/// 붙여 넣은 floating selection 크기와 손잡이 한 변.
+/// 붙여 넣은 floating selection 크기.
 const FLOAT_W: LogicalPx = LogicalPx(96.0);
 const FLOAT_H: LogicalPx = LogicalPx(64.0);
-const FLOAT_HANDLE: LogicalPx = LogicalPx(6.0);
-/// New Image · Save As 팝업 폭과 안쪽 여백.
-const POPUP_W: LogicalPx = LogicalPx(300.0);
-const POPUP_PAD_X: LogicalPx = LogicalPx(14.0);
-const POPUP_TITLE_GAP: LogicalPx = LogicalPx(10.0);
-/// New Image의 Width · Height 입력 폭.
-const SIZE_INPUT_W: LogicalPx = LogicalPx(64.0);
-/// Save As 경로 줄의 입력과 찾아보기 버튼 간격.
-const PATH_ROW_GAP: LogicalPx = LogicalPx(6.0);
 
 /// Plugins 페이지의 image 섹션: 보기 화면과 편집 모드 두 spec.
 pub fn section() -> crate::catalog::Section {
@@ -280,12 +269,17 @@ fn zoom_group(p: &egui::Painter, theme: &Theme, right_x: LogicalPx, y: LogicalPx
         egui::vec2(BTN_W.value(), BTN_H.value()),
     );
     btn_box(p, theme, minus, "-");
-    let pct_x = LogicalPx(minus.left()) - gap;
-    let pct = p.text(
-        egui::pos2(pct_x.value(), (y + BTN_H.scaled(0.5)).value()),
-        egui::Align2::RIGHT_CENTER,
+    // 비율은 mono caption, 최소 폭 칸 가운데에 둔다(시안 ZoomGroup).
+    let pct_w = theme.image_zoom_min_width();
+    let pct = egui::Rect::from_min_size(
+        egui::pos2((LogicalPx(minus.left()) - gap - pct_w).value(), y.value()),
+        egui::vec2(pct_w.value(), BTN_H.value()),
+    );
+    p.text(
+        pct.center(),
+        egui::Align2::CENTER_CENTER,
         "100%",
-        egui::FontId::proportional(theme.font_size_caption.value()),
+        egui::FontId::monospace(theme.image_zoom_font_size().value()),
         theme.text_muted().to_egui(),
     );
     let plus = egui::Rect::from_min_size(
@@ -350,7 +344,17 @@ fn draw_paint(ui: &mut egui::Ui, theme: &Theme) {
                 "Save · Cancel · undo redo · brush · color · zoom",
             ),
             ("undo/redo", "enabled / disabled (text-disabled)"),
-            ("floating sel", "accent border + 8 handles (6px)"),
+            (
+                "floating sel",
+                "accent border + 8 handles · 6 · image-handle-size (on-scale), centred on the edge",
+            ),
+            (
+                "popup card",
+                "300 · pad 12 / 14 / 10 · title 14 semibold, 10 below · buttons gap 8 · image-popup-*",
+            ),
+            ("size field", "64 · image-size-input-width"),
+            ("path row gap", "6 · image-path-row-gap"),
+            ("zoom %", "mono 11 · min 40 · image-zoom-font-size"),
             ("commit", "click outside = composite · Esc = cancel"),
             ("New Image", "Width × Height (1–8192)"),
             ("Save As", "path input + browse · PNG"),
@@ -508,15 +512,14 @@ fn paint_bar(ui: &mut egui::Ui, theme: &Theme) {
         ui.spacing_mut().item_spacing.x = ZOOM_GROUP_GAP.value();
         icon_button(ui, theme, icons::MINUS, true);
         let (pct, _) = ui.allocate_exact_size(
-            egui::vec2(ZOOM_PCT_MIN_W.value(), PAINT_SEP_H.value()),
+            egui::vec2(theme.image_zoom_min_width().value(), PAINT_SEP_H.value()),
             egui::Sense::hover(),
         );
         ui.painter().text(
             pct.center(),
             egui::Align2::CENTER_CENTER,
             "100%",
-            // 시안의 12px는 UI 글꼴 단계(10/11/13/14)에 없어 caption으로 맞춘다.
-            egui::FontId::monospace(theme.font_size_caption.value()),
+            egui::FontId::monospace(theme.image_zoom_font_size().value()),
             theme.text_muted().to_egui(),
         );
         icon_button(ui, theme, icons::PLUS, true);
@@ -527,7 +530,7 @@ fn paint_bar(ui: &mut egui::Ui, theme: &Theme) {
     });
 }
 
-/// 붙여 넣은 이미지: 1px accent 테두리 + 모서리·변 중앙 손잡이 8개.
+/// 붙여 넣은 이미지: 1px accent 테두리 + 모서리·변 중앙 손잡이 8개. 손잡이는 변 위에 가운데를 맞춘다.
 fn floating_selection(p: &egui::Painter, theme: &Theme, center: egui::Pos2) {
     let sel = egui::Rect::from_center_size(center, egui::vec2(FLOAT_W.value(), FLOAT_H.value()));
     let accent = theme.accent_primary().to_egui();
@@ -545,7 +548,7 @@ fn floating_selection(p: &egui::Painter, theme: &Theme, center: egui::Pos2) {
         egui::FontId::monospace(theme.font_size_micro.value()),
         theme.text_muted().to_egui(),
     );
-    let hs = FLOAT_HANDLE.value();
+    let hs = theme.image_handle_size().value();
     for x in [sel.left(), sel.center().x, sel.right()] {
         for y in [sel.top(), sel.center().y, sel.bottom()] {
             if x == sel.center().x && y == sel.center().y {
@@ -564,12 +567,13 @@ fn floating_selection(p: &egui::Painter, theme: &Theme, center: egui::Pos2) {
 fn new_image_popup(ui: &mut egui::Ui, theme: &Theme) {
     popup(ui, theme, "New Image", "OK", |ui| {
         ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+            ui.spacing_mut().item_spacing.x = theme.image_popup_btn_gap().value();
+            let input_w = theme.image_size_input_width();
             kit::body(ui, theme, "Width");
-            kit::field(ui, theme, Some(SIZE_INPUT_W), "800", false, false);
+            kit::field(ui, theme, Some(input_w), "800", false, false);
             kit::caption(ui, theme, "×", false);
             kit::body(ui, theme, "Height");
-            kit::field(ui, theme, Some(SIZE_INPUT_W), "600", false, false);
+            kit::field(ui, theme, Some(input_w), "600", false, false);
         });
     });
 }
@@ -578,9 +582,10 @@ fn new_image_popup(ui: &mut egui::Ui, theme: &Theme) {
 fn save_as_popup(ui: &mut egui::Ui, theme: &Theme) {
     popup(ui, theme, "Save As", "Save", |ui| {
         ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = PATH_ROW_GAP.value();
+            let gap = theme.image_path_row_gap().value();
+            ui.spacing_mut().item_spacing.x = gap;
             let browse_w = ControlSize::Sm.height(theme);
-            let field_w = LogicalPx(ui.available_width() - browse_w - PATH_ROW_GAP.value());
+            let field_w = LogicalPx(ui.available_width() - browse_w - gap);
             kit::field(ui, theme, Some(field_w), "path/to/image.png", true, false);
             icon_button(ui, theme, icons::FOLDER_OPEN, true);
         });
@@ -595,50 +600,64 @@ fn popup(
     confirm: &str,
     body: impl FnOnce(&mut egui::Ui),
 ) {
-    kit::frame_card(ui, theme, POPUP_W, kit::panel_fill(theme), |ui| {
-        kit::region(
-            ui,
-            egui::Margin {
-                left: POPUP_PAD_X.value() as i8,
-                right: POPUP_PAD_X.value() as i8,
-                top: theme.spacing_md.value() as i8,
-                bottom: POPUP_TITLE_GAP.value() as i8,
-            },
-            |ui| {
-                kit::title(ui, theme, title);
-                ui.add_space(POPUP_TITLE_GAP.value());
-                body(ui);
-            },
-        );
-        kit::region(
-            ui,
-            egui::Margin {
-                left: POPUP_PAD_X.value() as i8,
-                right: POPUP_PAD_X.value() as i8,
-                top: 0,
-                bottom: theme.spacing_md.value() as i8,
-            },
-            |ui| {
-                // 버튼 높이만큼만 차지해야 카드가 세로로 늘어나지 않는다.
-                let row = egui::vec2(ui.available_width(), ControlSize::Sm.height(theme));
-                ui.allocate_ui_with_layout(
-                    row,
-                    egui::Layout::right_to_left(egui::Align::Center),
-                    |ui| {
-                        ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-                        Button::new(confirm)
-                            .variant(ButtonVariant::Primary)
-                            .size(ControlSize::Sm)
-                            .show(ui, theme);
-                        Button::new("Cancel")
-                            .variant(ButtonVariant::Ghost)
-                            .size(ControlSize::Sm)
-                            .show(ui, theme);
-                    },
-                );
-            },
-        );
-    });
+    let pad_x = theme.image_popup_pad_x().value() as i8;
+    let pad_top = theme.image_popup_pad_top().value() as i8;
+    let gap = theme.image_popup_gap();
+    kit::frame_card(
+        ui,
+        theme,
+        theme.image_popup_width(),
+        kit::panel_fill(theme),
+        |ui| {
+            kit::region(
+                ui,
+                egui::Margin {
+                    left: pad_x,
+                    right: pad_x,
+                    top: pad_top,
+                    bottom: gap.value() as i8,
+                },
+                |ui| {
+                    // 시안 제목은 14 / semibold 다. egui 에 semibold 글꼴이 없어 굵기는 재현하지 않는다.
+                    ui.label(
+                        egui::RichText::new(title)
+                            .size(theme.image_popup_title_font_size().value())
+                            .color(theme.text_primary().to_egui()),
+                    );
+                    ui.add_space(gap.value());
+                    body(ui);
+                },
+            );
+            kit::region(
+                ui,
+                egui::Margin {
+                    left: pad_x,
+                    right: pad_x,
+                    top: 0,
+                    bottom: pad_top,
+                },
+                |ui| {
+                    // 버튼 높이만큼만 차지해야 카드가 세로로 늘어나지 않는다.
+                    let row = egui::vec2(ui.available_width(), ControlSize::Sm.height(theme));
+                    ui.allocate_ui_with_layout(
+                        row,
+                        egui::Layout::right_to_left(egui::Align::Center),
+                        |ui| {
+                            ui.spacing_mut().item_spacing.x = theme.image_popup_btn_gap().value();
+                            Button::new(confirm)
+                                .variant(ButtonVariant::Primary)
+                                .size(ControlSize::Sm)
+                                .show(ui, theme);
+                            Button::new("Cancel")
+                                .variant(ButtonVariant::Ghost)
+                                .size(ControlSize::Sm)
+                                .show(ui, theme);
+                        },
+                    );
+                },
+            );
+        },
+    );
 }
 
 /// 크기 sm IconButton에 tasty-icons 글리프를 그린다.
