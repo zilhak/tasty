@@ -1,10 +1,10 @@
 //! 펼친 사이드바와 접힌 레일의 정적 예제. 워크스페이스·카테고리·상태 배지를 비교한다.
 
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::{TagVariant, brand, tag_caps};
+use tasty_ui_widgets::{ControlSize, IconButton, TagVariant, brand, tag_caps};
 
 use crate::catalog::icons::{
-    CHEVRON_DOWN, CHEVRON_RIGHT, FOLDER, MockGlyph, PLUG, REMOTE, SETTINGS, TERMINAL,
+    CHEVRON_DOWN, CHEVRON_RIGHT, CHEVRONS_LEFT, FOLDER, MockGlyph, PLUG, REMOTE, SETTINGS, TERMINAL,
 };
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
@@ -178,6 +178,42 @@ fn paint_ws_badge_pair(
     );
 }
 
+/// 시안 사이드바 머리(`padding: md md xs`) — 공용 워드마크와 오른쪽 끝 접기 버튼.
+/// 머리 아래 y 를 돌려준다.
+fn sidebar_head(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, y: f32) -> f32 {
+    let pad = theme.spacing_md.value();
+    // 머리 높이는 로고(22)와 접기 버튼(IconButton sm 24) 중 큰 쪽이다.
+    let head_h = theme
+        .sidebar_logo_size
+        .value()
+        .max(ControlSize::Sm.height(theme));
+    // 본체 사이드바 머리와 같은 공용 워드마크(로고 + mono `tasty.`, sidebar-wordmark-tracking).
+    let mut head = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(egui::Rect::from_min_size(
+                egui::pos2(rect.min.x + pad, y),
+                egui::vec2(rect.width() - pad * 2.0, head_h),
+            ))
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+    );
+    brand::draw_wordmark(
+        &mut head,
+        theme,
+        theme.sidebar_logo_size,
+        theme.sidebar_wordmark_font_size,
+        theme.sidebar_wordmark_tracking(theme.sidebar_wordmark_font_size),
+    );
+    // 시안 머리 오른쪽 끝의 접기 버튼(IconButton sm, chevrons) — 본체와 같은 공용 위젯.
+    head.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+        IconButton::new()
+            .size(ControlSize::Sm)
+            .show(ui, theme, &|ui, rect, c| {
+                CHEVRONS_LEFT.image(rect.width(), c).paint_at(ui, rect);
+            });
+    });
+    y + head_h + theme.spacing_xs.value()
+}
+
 fn full(ui: &mut egui::Ui, theme: &Theme) {
     let w = theme.field_width_lg.value() + theme.spacing_md.value(); // 212
     let h = theme.spacing_xl.value() * 15.0; // 360
@@ -193,24 +229,7 @@ fn full(ui: &mut egui::Ui, theme: &Theme) {
     let row_h = theme.item_height_interactive.value(); // 28
     let mut y = rect.min.y + pad;
 
-    let logo = theme.sidebar_logo_size.value(); // 22
-    // 본체 사이드바 머리와 같은 공용 워드마크(로고 + mono `tasty.`, sidebar-wordmark-tracking).
-    let mut head = ui.new_child(
-        egui::UiBuilder::new()
-            .max_rect(egui::Rect::from_min_size(
-                egui::pos2(rect.min.x + pad, y),
-                egui::vec2(w - pad * 2.0, logo),
-            ))
-            .layout(egui::Layout::left_to_right(egui::Align::Center)),
-    );
-    brand::draw_wordmark(
-        &mut head,
-        theme,
-        theme.sidebar_logo_size,
-        theme.sidebar_wordmark_font_size,
-        theme.sidebar_wordmark_tracking(theme.sidebar_wordmark_font_size),
-    );
-    y += logo + theme.spacing_xs.value() + theme.spacing_md.value();
+    y = sidebar_head(ui, theme, rect, y) + theme.spacing_md.value();
 
     let heading = section_heading_galley(ui, theme, "Workspaces", theme.text_muted().into());
     p.galley(
@@ -515,7 +534,7 @@ fn full_categories(ui: &mut egui::Ui, theme: &Theme) {
 
     let pad = theme.spacing_md.value(); // 12
     let row_h = theme.item_height_interactive.value(); // 28
-    let mut y = rect.min.y + pad;
+    let mut y = sidebar_head(ui, theme, rect, rect.min.y + pad);
 
     for (i, (label, collapsed, rows)) in CATEGORY_SECTIONS.iter().enumerate() {
         if i > 0 {

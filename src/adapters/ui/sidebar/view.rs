@@ -4,7 +4,9 @@ use crate::adapters::ui::{brand, icons};
 use crate::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::tokens::{STRUCT_GAP_1, STRUCT_GAP_2, STRUCT_GAP_3};
-use tasty_ui_widgets::{BadgeVariant, TagVariant, badge, hspace, tag_caps, vspace};
+use tasty_ui_widgets::{
+    BadgeVariant, ControlSize, IconButton, TagVariant, badge, hspace, tag_caps, vspace,
+};
 
 /// 드래그 중 표시되는 ghost workspace 이름. DTCG primitive `font-size-12` 는 있으나
 /// semantic role 이 없어 `Theme` 필드가 없다 — ADR-0035 대로 **이름에 primitive 임을 남긴다**.
@@ -837,22 +839,15 @@ fn draw_sidebar_header(ui: &mut egui::Ui, th: &Theme, collapse_hover: &str) -> (
 
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             hspace(ui, th.spacing_md);
-            let (rect, resp) = ui.allocate_exact_size(egui::vec2(24.0, 24.0), egui::Sense::click());
+            // 시안 사이드바 머리의 접기 버튼은 IconButton sm(chevrons)이다.
+            let resp = IconButton::new()
+                .size(ControlSize::Sm)
+                .show(ui, th, &|ui, rect, c| {
+                    icons::CHEVRONS_LEFT
+                        .image(rect.width(), c)
+                        .paint_at(ui, rect);
+                });
             hovered = resp.hovered();
-            if resp.hovered() {
-                ui.painter()
-                    .rect_filled(rect, 4.0, th.hover_overlay.to_egui_premultiplied());
-            }
-            let color: egui::Color32 = if resp.hovered() {
-                th.text_primary().into()
-            } else {
-                th.text_secondary().into()
-            };
-            let sz = th.icon_glyph_size_md.value();
-            icons::CHEVRONS_LEFT.image(sz, color).paint_at(
-                ui,
-                egui::Rect::from_center_size(rect.center(), egui::vec2(sz, sz)),
-            );
             resp.clone().on_hover_text(collapse_hover);
             collapse = resp.clicked();
         });
