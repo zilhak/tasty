@@ -2,12 +2,14 @@
 //! 제목 크기·표·구문 강조·알림은 Theme 값을 사용하되 브라우저와의 픽셀 일치는 보장하지 않는다.
 //! 주소창과 목차는 정적으로 그리며 이미지는 파일을 읽지 않고 대체 영역을 표시한다.
 
+mod callout_kinds;
 mod document;
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::Spinner;
 
+pub use callout_kinds::draw as draw_callout_kinds;
 use document::{document, md_h2_size};
 
 use crate::catalog::icons;

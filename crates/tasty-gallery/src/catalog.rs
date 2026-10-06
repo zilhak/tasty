@@ -2304,6 +2304,14 @@ pub fn pages() -> Vec<Page> {
                             Some("idle · editing · over 1 MB confirm dims only the tile"),
                             plugins_settled::draw_address_states,
                         ),
+                        spec(
+                            "markdown-callout-kinds",
+                            "Markdown callout kinds",
+                            Some(
+                                "Five GFM / Obsidian kinds as the app renders them — icon · label · type fill",
+                            ),
+                            components::markdown_viewer::draw_callout_kinds,
+                        ),
                     ],
                 ),
                 section(
