@@ -11,7 +11,7 @@ use crate::theme;
 use crate::theme::Theme;
 use tasty_settings::KeybindingSettings;
 use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::{KbdKey, margin_all, margin_sym};
+use tasty_ui_widgets::{KbdKey, margin_all};
 
 /// footer 힌트 사이 가로 간격. 디자인 전사값 14 로 4px 그리드 밖이다
 /// (`spacing_md`=12 와 2px 차).
@@ -21,10 +21,6 @@ const PALETTE_HINT_GAP_X: LogicalPx = LogicalPx(14.0);
 
 /// 카드 폭 — 디자인 palette 프레임. 높이와 달리 콘텐츠에 안 따른다.
 const PALETTE_WIDTH: LogicalPx = LogicalPx(540.0);
-/// 목록의 최대 높이. 이 치수에 맞는 semantic 토큰이 없으며 행 높이와 함께 배율을 적용한다.
-const PALETTE_LIST_MAX_H: LogicalPx = LogicalPx(320.0);
-/// 목록과 푸터 사이 여백. spacing 토큰에 대응 값이 없어 별도 상수를 쓴다.
-const PALETTE_LIST_GAP_BOTTOM: LogicalPx = LogicalPx(6.0);
 /// footer 한 줄 높이에 더해지는 상하 패딩 + 보더 몫(디자인 padding 8 12 + borderTop).
 const PALETTE_FOOTER_CHROME: LogicalPx = LogicalPx(20.0);
 
@@ -45,7 +41,8 @@ fn palette_footer_height(theme: &Theme) -> f32 {
     theme.font_size_caption.value() + zoomed(theme, PALETTE_FOOTER_CHROME)
 }
 
-/// 목록 구역이 차지하는 높이 — 표시 항목 수로 정해지고 상한에서 멈춘다.
+/// 목록 구역이 차지하는 높이 — 표시 항목 수로 정해지고 `palette-list-max-height`에서 멈춘다.
+/// 상한과 행 높이가 함께 배율을 따르므로 보이는 행 수는 배율과 관계없이 같다.
 ///
 /// 항목 0 건은 목록 대신 "결과 없음" 한 줄이 그려지므로 행 하나 높이로 둔다.
 fn palette_list_height(theme: &Theme, item_count: usize) -> f32 {
@@ -53,17 +50,14 @@ fn palette_list_height(theme: &Theme, item_count: usize) -> f32 {
     if item_count == 0 {
         return row;
     }
-    (item_count as f32 * row).min(zoomed(theme, PALETTE_LIST_MAX_H))
+    (item_count as f32 * row).min(theme.palette_list_max_height().value())
 }
 
-/// 목록을 뺀 나머지가 늘 차지하는 높이 — 검색 구역 + 목록 프레임 위 여백 +
-/// 목록과 footer 사이 여백 + footer.
+/// 목록을 뺀 나머지가 늘 차지하는 높이 — 검색 구역(사방 space-md) + 목록의 위아래
+/// 여백(space-sm) + footer. 목록과 footer 사이에 따로 두는 간격은 없다.
 fn palette_chrome_height(theme: &Theme) -> f32 {
-    let search_h = 2.0 * theme.spacing_sm.value() + theme.input_height().value();
-    search_h
-        + theme.spacing_xs.value()
-        + zoomed(theme, PALETTE_LIST_GAP_BOTTOM)
-        + palette_footer_height(theme)
+    let search_h = 2.0 * theme.spacing_md.value() + theme.input_height().value();
+    search_h + 2.0 * theme.spacing_sm.value() + palette_footer_height(theme)
 }
 
 /// 콘텐츠 맞춤 카드 높이.
@@ -166,7 +160,7 @@ pub fn draw_command_palette_view(
 
     let mut query_changed = false;
     let search_ir = egui::Frame::NONE
-        .inner_margin(margin_all(theme.spacing_sm))
+        .inner_margin(margin_all(theme.spacing_md))
         .show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.set_min_height(theme.input_height().value()); // 디자인 Input control-height
@@ -203,9 +197,9 @@ pub fn draw_command_palette_view(
     let footer_h = palette_footer_height(theme);
     let footer_top = full.bottom() - footer_h;
 
-    // 가로 여백은 검색 영역과 맞추고 세로 여백은 더 좁게 둔다.
+    // 목록 여백은 사방 space-sm이다.
     egui::Frame::NONE
-        .inner_margin(margin_sym(theme.spacing_sm, theme.spacing_xs))
+        .inner_margin(margin_all(theme.spacing_sm))
         .show(ui, |ui| {
             if props.items.is_empty() {
                 ui.label(
@@ -217,8 +211,8 @@ pub fn draw_command_palette_view(
             }
             let row_height = palette_row_height(theme);
             let selected_idx = props.selected_index;
-            let list_h = (footer_top - ui.cursor().top() - zoomed(theme, PALETTE_LIST_GAP_BOTTOM))
-                .max(row_height);
+            let list_h =
+                (footer_top - ui.cursor().top() - theme.spacing_sm.value()).max(row_height);
             egui::ScrollArea::vertical()
                 .max_height(list_h)
                 .auto_shrink([false, false])
@@ -703,6 +697,34 @@ mod view_tests {
         assert_eq!(palette_height(&th, 2) - palette_height(&th, 1), row);
         assert_eq!(palette_height(&th, 12), palette_height(&th, 1000));
         assert!(palette_height(&th, 11) < palette_height(&th, 12));
+    }
+
+    /// 목록 상한과 행 높이가 함께 배율을 따라 어느 배율에서도 11 행까지 보이고 12 행부터 스크롤한다.
+    #[test]
+    fn the_list_cap_shows_eleven_rows_at_every_ui_scale() {
+        for zoom in [0.85_f32, 1.0, 1.2] {
+            let th = Theme::with_colors_and_zoom(mocha_fallback().to_colors(), false, zoom);
+            assert!(
+                palette_height(&th, 11) < palette_height(&th, 12),
+                "zoom {zoom}: 11 rows should still grow the card"
+            );
+            assert_eq!(
+                palette_height(&th, 12),
+                palette_height(&th, 1000),
+                "zoom {zoom}: the cap should stop the card at 12 rows"
+            );
+        }
+    }
+
+    /// 검색 구역은 사방 space-md, 목록은 위아래 space-sm이고 목록과 footer 사이 간격은 따로 없다.
+    #[test]
+    fn chrome_is_search_space_md_list_space_sm_and_the_footer() {
+        let th = mocha_fallback();
+        let want = 2.0 * th.spacing_md.value()
+            + th.input_height().value()
+            + 2.0 * th.spacing_sm.value()
+            + palette_footer_height(&th);
+        assert_eq!(palette_chrome_height(&th), want);
     }
 
     #[test]

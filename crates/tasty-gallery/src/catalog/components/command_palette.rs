@@ -13,7 +13,7 @@ const WIDTH: LogicalPx = LogicalPx(480.0);
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         kit::frame_card(ui, theme, WIDTH, kit::raised_fill(theme), |ui| {
-            kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
+            kit::region_sym(ui, theme.spacing_md, theme.spacing_md, |ui| {
                 kit::field(ui, theme, None, "Type to search commands…", true, false);
             });
             kit::hsep(ui, theme);
@@ -71,8 +71,19 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         &[
             ("frame", "480px · surface-raised"),
             ("anchor", "top · overlay-top-offset 88"),
-            ("header", "Input · padding 10 · border-bottom"),
-            ("list", "MenuItem · padding 6 · first active · Kbd keycaps"),
+            ("header", "Input · padding space-md · border-bottom"),
+            (
+                "list",
+                "MenuItem · padding space-sm on all four sides · first active · Kbd keycaps",
+            ),
+            (
+                "list cap",
+                "palette-list-max-height 320 · 11 rows then scroll · on-scale with control-height",
+            ),
+            (
+                "list → footer",
+                "no separate gap — the list padding is the gap",
+            ),
             ("footer", "mono hints · padding 8×12 · gap 14"),
         ],
         &[
@@ -82,6 +93,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "active row",
                 theme.surface_active().to_egui(),
             ),
+            TokenChip::without_color("palette-list-max-height", "→ size-320 · list cap"),
             TokenChip::without_color("font-mono", "hints"),
             TokenChip::new("accent-primary", "match", theme.accent_primary().to_egui()),
             TokenChip::new("kbd-bg", "keycap fill", theme.kbd_bg().to_egui()),
