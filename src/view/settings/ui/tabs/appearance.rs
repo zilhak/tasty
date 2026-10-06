@@ -2064,11 +2064,24 @@ fn draw_font_preview(
     let padding = 8.0;
     let block_height = line_height * sample_lines.len() as f32 + padding * 2.0;
 
+    // 두 칸의 배경이 같은 패널 색과 겹쳐도 경계가 보이도록 1px 테두리를 두른다.
+    // Focused 는 border-strong, Unfocused 는 separator(premultiplied 바이트)다.
     let blocks = [
-        ("settings.appearance.preview_focused", focused_bg32),
-        ("settings.appearance.preview_unfocused", unfocused_bg32),
+        (
+            "settings.appearance.preview_focused",
+            focused_bg32,
+            th.border_strong().to_egui(),
+        ),
+        (
+            "settings.appearance.preview_unfocused",
+            unfocused_bg32,
+            th.separator.to_egui_premultiplied(),
+        ),
     ];
-    let block = |ui: &mut egui::Ui, (label_key, bg): (&str, egui::Color32), w: f32| {
+    let radius = th.corner_radius.value();
+    let block = |ui: &mut egui::Ui,
+                 (label_key, bg, edge): (&str, egui::Color32, egui::Color32),
+                 w: f32| {
         ui.spacing_mut().item_spacing.y = th.spacing_xs.value();
         ui.label(
             egui::RichText::new(t(label_key))
@@ -2076,7 +2089,13 @@ fn draw_font_preview(
                 .color(th.text_muted()),
         );
         let (rect, _) = ui.allocate_exact_size(egui::vec2(w, block_height), egui::Sense::hover());
-        ui.painter().rect_filled(rect, 2.0, bg);
+        ui.painter().rect_filled(rect, radius, bg);
+        ui.painter().rect_stroke(
+            rect,
+            radius,
+            egui::Stroke::new(th.border_width.value(), edge),
+            egui::StrokeKind::Inside,
+        );
         for (i, line) in sample_lines.iter().enumerate() {
             let pos = rect.min + egui::vec2(padding, padding + line_height * i as f32);
             ui.painter().text(
