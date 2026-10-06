@@ -70,6 +70,9 @@ pub enum StoreError {
     #[error("journal writer lock is unavailable: {0}")]
     WriterLockUnavailable(std::io::Error),
 
+    #[error("the given writer lock belongs to another journal file")]
+    WriterLockMismatch,
+
     #[error("this store does not hold the journal writer lock")]
     NotWriter,
 

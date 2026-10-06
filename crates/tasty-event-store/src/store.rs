@@ -23,6 +23,44 @@ const WRITER_LOCK_MAX_BACKOFF: Duration = Duration::from_millis(100);
 /// writer 잠금 파일 이름에 붙이는 접미사. journal 파일과 같은 디렉터리에 둔다.
 const WRITER_LOCK_SUFFIX: &str = ".writer-lock";
 
+/// 저장소를 열기 전에 미리 얻은 writer 잠금. drop하면 OS가 잠금을 푼다.
+///
+/// 어느 journal 파일의 잠금인지 함께 기억해, 다른 journal을 연 저장소가 이 잠금으로
+/// writer가 되는 일을 막는다([`EventStore::acquire_writer_with`]).
+#[derive(Debug)]
+pub struct WriterLock {
+    file: File,
+    lock_path: PathBuf,
+}
+
+/// [`preempt_writer_lock`]의 결과.
+#[derive(Debug)]
+pub enum WriterPreempt {
+    /// 잠금을 얻었다. 이 핸들을 쥔 동안 다른 프로세스·저장소는 writer가 될 수 없다.
+    Acquired(WriterLock),
+    /// 다른 프로세스나 같은 프로세스의 다른 저장소가 잠금을 쥐고 있다.
+    Held,
+}
+
+/// journal 파일의 writer 잠금을 기다리지 않고 한 번 시도한다.
+///
+/// 저장소를 열기 전에 부르면 schema migration도 잠금 소유자만 하게 된다. 잠금 파일 이름과
+/// 잠금 방식은 [`EventStore::acquire_writer`]와 같다. journal 파일이 있는 디렉터리가 없으면 만든다.
+/// 잠금을 쓸 수 없는 환경이면 [`StoreError::WriterLockUnavailable`]로 실패한다.
+pub fn preempt_writer_lock(database_path: &Path) -> StoreResult<WriterPreempt> {
+    if let Some(parent) = database_path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent).map_err(StoreError::WriterLockUnavailable)?;
+    }
+    let lock_path = writer_lock_path(database_path);
+    match lock_exclusive(&lock_path) {
+        Ok(file) => Ok(WriterPreempt::Acquired(WriterLock { file, lock_path })),
+        Err(StoreError::WriterLocked) => Ok(WriterPreempt::Held),
+        Err(other) => Err(other),
+    }
+}
+
 /// 한 journal 파일의 저장소. 연결 하나를 가지며 Sync가 아니다.
 ///
 /// 쓰기는 [`EventStore::acquire_writer`]로 독점 파일 잠금과 writer 세대를 얻은 저장소만 한다.
@@ -88,6 +126,24 @@ impl EventStore {
         let fresh_lock = match self.writer_lock {
             Some(_) => None,
             None => Some(lock_exclusive_with_retry(&self.lock_path)?),
+        };
+        let epoch = self.register_epoch()?;
+        if let Some(lock) = fresh_lock {
+            self.writer_lock = Some(lock);
+        }
+        Ok(epoch)
+    }
+
+    /// [`preempt_writer_lock`]으로 미리 얻은 잠금으로 writer가 되고 새 writer 세대를 등록한다.
+    /// 잠금을 다시 시도하지 않는다. 다른 journal 파일의 잠금이면 [`StoreError::WriterLockMismatch`]로
+    /// 실패하고 그 잠금은 놓는다. 이미 잠금을 가진 저장소면 새 잠금을 놓고 세대만 올린다.
+    pub fn acquire_writer_with(&mut self, lock: WriterLock) -> StoreResult<WriterEpoch> {
+        if lock.lock_path != self.lock_path {
+            return Err(StoreError::WriterLockMismatch);
+        }
+        let fresh_lock = match self.writer_lock {
+            Some(_) => None,
+            None => Some(lock.file),
         };
         let epoch = self.register_epoch()?;
         if let Some(lock) = fresh_lock {
