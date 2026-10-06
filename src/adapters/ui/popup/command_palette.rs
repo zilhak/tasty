@@ -19,8 +19,6 @@ const PALETTE_HINT_GAP_X: LogicalPx = LogicalPx(14.0);
 
 // 파일 상수에는 Theme의 배율이 자동 적용되지 않으므로 zoomed()를 거쳐 사용한다.
 
-/// 카드 폭 — 디자인 palette 프레임. 높이와 달리 콘텐츠에 안 따른다.
-const PALETTE_WIDTH: LogicalPx = LogicalPx(540.0);
 /// footer 한 줄 높이에 더해지는 상하 패딩 + 보더 몫(디자인 padding 8 12 + borderTop).
 const PALETTE_FOOTER_CHROME: LogicalPx = LogicalPx(20.0);
 
@@ -379,7 +377,7 @@ pub fn command_palette_sizer(
     let labels: Vec<String> = commands.iter().map(label_for).collect();
     let matched = command_palette::search(&state.command_palette.query, &commands, &labels).len();
     let th = theme::theme();
-    egui::vec2(zoomed(&th, PALETTE_WIDTH), palette_height(&th, matched))
+    egui::vec2(th.palette_width().value(), palette_height(&th, matched))
 }
 
 /// 앱 상태를 화면 입력으로 바꾸고 반환된 동작을 처리한다.
@@ -624,7 +622,7 @@ mod view_tests {
             egui::CentralPanel::default().show(ctx, |ui| {
                 let rect = egui::Rect::from_min_size(
                     egui::pos2(0.0, 0.0),
-                    egui::vec2(zoomed(&theme, PALETTE_WIDTH), card_h),
+                    egui::vec2(theme.palette_width().value(), card_h),
                 );
                 let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
                 let mut props = CommandPaletteProps {
@@ -718,6 +716,15 @@ mod view_tests {
         }
     }
 
+    /// 카드 폭은 palette-width 토큰이며 UI 배율을 곱한다. 디자인이 적은 배율별 폭과 같다.
+    #[test]
+    fn card_width_follows_the_palette_width_token_at_every_ui_scale() {
+        for (zoom, width) in [(0.85_f32, 459.0), (1.0, 540.0), (1.2, 648.0)] {
+            let th = Theme::with_colors_and_zoom(mocha_fallback().to_colors(), false, zoom);
+            assert_eq!(th.palette_width().value(), width, "zoom {zoom}");
+        }
+    }
+
     /// 행 라벨의 시작 x는 목록 여백 + MenuItem 토큰(padding-x · icon-size-md · space-sm)이고
     /// 배율과 함께 커진다.
     #[test]
@@ -738,7 +745,7 @@ mod view_tests {
                 egui::CentralPanel::default().show(ctx, |ui| {
                     let rect = egui::Rect::from_min_size(
                         egui::pos2(0.0, 0.0),
-                        egui::vec2(zoomed(&th, PALETTE_WIDTH), palette_height(&th, 1)),
+                        egui::vec2(th.palette_width().value(), palette_height(&th, 1)),
                     );
                     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
                     let mut props = CommandPaletteProps {

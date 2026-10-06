@@ -1,76 +1,81 @@
 //! 명령 팔레트의 검색 필드, 명령 행, 키보드 안내 예제.
 
 use tasty_type_appearance::theme::Theme;
-use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{MenuItemVariant, menu_item_kbd};
 
 use crate::catalog::icons::{self, MockGlyph};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::catalog::widgets::dialog as kit;
 
-/// 카드 폭 — 디자인 palette 프레임 540. 대응 토큰이 없어 본체 `PALETTE_WIDTH`와 같은 값을 둔다.
-const WIDTH: LogicalPx = LogicalPx(540.0);
-
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
-        kit::frame_card(ui, theme, WIDTH, kit::raised_fill(theme), |ui| {
-            kit::region_sym(ui, theme.spacing_md, theme.spacing_md, |ui| {
-                kit::field(ui, theme, None, "Type to search commands…", true, false);
-            });
-            kit::hsep(ui, theme);
-
-            kit::region_sym(ui, theme.spacing_sm, theme.spacing_sm, |ui| {
-                row(
-                    ui,
-                    theme,
-                    icons::TERMINAL,
-                    "New Terminal",
-                    &["Ctrl", "T"],
-                    true,
-                );
-                row(
-                    ui,
-                    theme,
-                    icons::SPLIT,
-                    "Split Pane Vertical",
-                    &["Ctrl", "D"],
-                    false,
-                );
-                row(
-                    ui,
-                    theme,
-                    icons::PORT,
-                    "Toggle Theme (Mocha / Latte)",
-                    &[],
-                    false,
-                );
-                row(
-                    ui,
-                    theme,
-                    icons::SETTINGS,
-                    "Settings",
-                    &["Ctrl", ","],
-                    false,
-                );
-            });
-            kit::hsep(ui, theme);
-
-            kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = theme.spacing_lg.value();
-                    kit::caption(ui, theme, "↑↓ navigate", true);
-                    kit::caption(ui, theme, "↵ run", true);
-                    kit::caption(ui, theme, "esc close", true);
+        kit::frame_card(
+            ui,
+            theme,
+            theme.palette_width(),
+            kit::raised_fill(theme),
+            |ui| {
+                kit::region_sym(ui, theme.spacing_md, theme.spacing_md, |ui| {
+                    kit::field(ui, theme, None, "Type to search commands…", true, false);
                 });
-            });
-        });
+                kit::hsep(ui, theme);
+
+                kit::region_sym(ui, theme.spacing_sm, theme.spacing_sm, |ui| {
+                    row(
+                        ui,
+                        theme,
+                        icons::TERMINAL,
+                        "New Terminal",
+                        &["Ctrl", "T"],
+                        true,
+                    );
+                    row(
+                        ui,
+                        theme,
+                        icons::SPLIT,
+                        "Split Pane Vertical",
+                        &["Ctrl", "D"],
+                        false,
+                    );
+                    row(
+                        ui,
+                        theme,
+                        icons::PORT,
+                        "Toggle Theme (Mocha / Latte)",
+                        &[],
+                        false,
+                    );
+                    row(
+                        ui,
+                        theme,
+                        icons::SETTINGS,
+                        "Settings",
+                        &["Ctrl", ","],
+                        false,
+                    );
+                });
+                kit::hsep(ui, theme);
+
+                kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = theme.spacing_lg.value();
+                        kit::caption(ui, theme, "↑↓ navigate", true);
+                        kit::caption(ui, theme, "↵ run", true);
+                        kit::caption(ui, theme, "esc close", true);
+                    });
+                });
+            },
+        );
     });
 
     spec::meta(
         ui,
         theme,
         &[
-            ("frame", "540px · surface-raised"),
+            (
+                "frame",
+                "palette-width 540 · on-scale (× UI zoom) · surface-raised",
+            ),
             ("anchor", "top · overlay-top-offset 88"),
             ("header", "Input · padding space-md · border-bottom"),
             (
@@ -79,7 +84,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ),
             (
                 "list cap",
-                "palette-list-max-height 320 · 11 rows then scroll · on-scale with control-height",
+                "palette-list-max-height 320 is the list content · list box = 320 + 2 × space-sm · 11 rows then scroll · on-scale with control-height",
             ),
             (
                 "list → footer",
@@ -94,7 +99,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "active row",
                 theme.surface_active().to_egui(),
             ),
-            TokenChip::without_color("palette-list-max-height", "→ size-320 · list cap"),
+            TokenChip::without_color("palette-width", "→ size-540 · card width"),
+            TokenChip::without_color("palette-list-max-height", "→ size-320 · list content cap"),
             TokenChip::without_color("font-mono", "hints"),
             TokenChip::new("accent-primary", "match", theme.accent_primary().to_egui()),
             TokenChip::new("kbd-bg", "keycap fill", theme.kbd_bg().to_egui()),
