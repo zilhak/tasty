@@ -50,6 +50,13 @@ pub(super) fn agent_err_to_response(id: Value, err: AgentError) -> JsonRpcRespon
             serde_json::json!({ "referenced_by": referenced_by }),
         ),
         TaskRunning(_) => JsonRpcResponse::error(id, -32011, msg),
+        // 실패 단계와 타입 오류(task·경로·기대·실제)를 error.data 로 돌려준다.
+        TypeContract(failure) => JsonRpcResponse::error_with_data(
+            id,
+            -32602,
+            msg,
+            serde_json::to_value(&*failure).unwrap_or(Value::Null),
+        ),
         Memory(_) | Serde(_) => JsonRpcResponse::error(id, -32603, msg),
     }
 }

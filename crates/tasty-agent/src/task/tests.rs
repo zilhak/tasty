@@ -2009,6 +2009,8 @@ fn dag_task(id: &str, depends_on: &[&str], created_at: u64) -> Task {
         on_failure: OnFailure::Abort,
         metadata: serde_json::Value::Null,
         reserved_for_fallback: false,
+        contract: None,
+        typed_result: None,
     }
 }
 

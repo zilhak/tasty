@@ -25,7 +25,8 @@ use serde_json::json;
 use tasty_agent::runner::{DispatchHandle, DispatchOutcome, PollOutcome, TaskExecutor};
 use tasty_agent::{
     AgentError, BarrierState, BarrierStore, ElasticSpec, LeaseMode, LeaseStore, ReducerInput,
-    SemaphoreStore, Task, TaskCommand, TaskId, TaskResult, reduce_with_custom,
+    SemaphoreStore, Task, TaskCommand, TaskId, TaskResult, TypedReducerInput, reduce_typed,
+    reduce_with_custom,
 };
 use tasty_memory::{HOST_OWNER, MemoryStorage, MemoryValue, PutOpts, Scope};
 
@@ -517,6 +518,36 @@ impl TaskExecutor for HostExecutor {
 impl HostExecutor {
     fn dispatch_command(&mut self, task: &Task) -> Result<DispatchHandle, String> {
         match &task.command {
+            TaskCommand::Reduce { inputs, strategy } if task.is_typed() => {
+                let collected: Result<Vec<TypedReducerInput>, String> =
+                    self.ctx.with_memory(|mem| {
+                        let seq = self.ctx.agent_seq.clone();
+                        let store = tasty_agent::TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+                        inputs
+                            .iter()
+                            .map(|tid| {
+                                store
+                                    .get(task.workspace_id, tid)
+                                    .map_err(|e| e.to_string())?
+                                    .map(|t| TypedReducerInput::from_task(&t))
+                                    .ok_or_else(|| format!("input task not found: {tid}"))
+                            })
+                            .collect()
+                    });
+                let collected = collected?;
+                let conflict = task
+                    .contract
+                    .as_ref()
+                    .map(|c| c.merge_conflict())
+                    .unwrap_or(tasty_agent::task::contract::MergeConflict::Error);
+                // 사용자 reduce 작업은 저장소 락 밖에서 실행한다.
+                let value = reduce_typed(strategy, &collected, conflict, run_custom_shell)?;
+                Ok(DispatchHandle::ReduceImmediate(TaskResult {
+                    exit_code: None,
+                    output: Some(value),
+                    error: None,
+                }))
+            }
             TaskCommand::Reduce { inputs, strategy } => {
                 let collected: Result<Vec<ReducerInput>, String> = self.ctx.with_memory(|mem| {
                     use tasty_agent::{TaskState, TaskStore};
@@ -584,6 +615,8 @@ impl HostExecutor {
                 let mem_clone = self.ctx.memory.clone();
                 let task_id_clone = task.id.clone();
                 let ws = task.workspace_id;
+                // v2 는 계약의 허용 종료 코드로 성공을 판정한다. 숫자 코드가 없으면 실패다.
+                let allowed_exit = task.contract.as_ref().map(|c| c.allowed_exit_codes());
                 // 자식 종료 뒤에도 상속된 파이프가 열려 있으면 drain join은 계속 기다릴 수 있다.
                 let watcher = thread::Builder::new()
                     .name(format!("agent-shell-watcher-pid{pid}"))
@@ -592,13 +625,21 @@ impl HostExecutor {
                         let stdout = stdout_thread.join().unwrap_or_default();
                         let stderr = stderr_thread.join().unwrap_or_default();
                         let outcome = match status {
-                            Ok(status) => shell_outcome_from_status(
-                                pid,
-                                status.code(),
-                                status.success(),
-                                stdout,
-                                stderr,
-                            ),
+                            Ok(status) => {
+                                let success = match &allowed_exit {
+                                    None => status.success(),
+                                    Some(codes) => {
+                                        status.code().is_some_and(|c| codes.contains(&c))
+                                    }
+                                };
+                                shell_outcome_from_status(
+                                    pid,
+                                    status.code(),
+                                    success,
+                                    stdout,
+                                    stderr,
+                                )
+                            }
                             Err(e) => PollOutcome::Failed(format!("Run wait: {e}")),
                         };
                         persist_run_result(&mem_clone, ws, &task_id_clone, &outcome);
@@ -886,13 +927,17 @@ fn now_ms() -> u64 {
 }
 
 #[cfg(test)]
+#[path = "runner_host/typed_tests.rs"]
+mod typed_tests;
+
+#[cfg(test)]
 // 이유: 시험의 반환값 무시는 허용하되 제품 코드의 검사는 유지한다.
 #[allow(clippy::let_underscore_must_use)]
 mod tests {
     use super::*;
     use tasty_memory::MemoryStore;
 
-    fn fresh_ctx() -> (tempfile::TempDir, RunnerContext) {
+    pub(super) fn fresh_ctx() -> (tempfile::TempDir, RunnerContext) {
         let td = tempfile::tempdir().unwrap();
         let mem = MemoryStore::open(&td.path().join("mem.db")).unwrap();
         let ctx = RunnerContext {
@@ -1008,6 +1053,8 @@ mod tests {
             on_failure: OnFailure::Abort,
             metadata: serde_json::Value::Null,
             reserved_for_fallback: false,
+            contract: None,
+            typed_result: None,
             result: None,
             created_at: 0,
             started_at: None,
@@ -1101,6 +1148,8 @@ mod tests {
             on_failure: OnFailure::Abort,
             metadata: serde_json::Value::Null,
             reserved_for_fallback: false,
+            contract: None,
+            typed_result: None,
             result: None,
             created_at: 0,
             started_at: None,
@@ -1541,6 +1590,8 @@ mod tests {
             on_failure: OnFailure::Abort,
             metadata: serde_json::Value::Null,
             reserved_for_fallback: false,
+            contract: None,
+            typed_result: None,
             result: None,
             created_at: 0,
             started_at: None,
@@ -1612,6 +1663,8 @@ mod tests {
             on_failure: OnFailure::Abort,
             metadata: serde_json::Value::Null,
             reserved_for_fallback: false,
+            contract: None,
+            typed_result: None,
             result: None,
             created_at: 0,
             started_at: None,
@@ -1694,6 +1747,8 @@ mod tests {
             on_failure: OnFailure::Abort,
             metadata: serde_json::Value::Null,
             reserved_for_fallback: false,
+            contract: None,
+            typed_result: None,
             result: None,
             created_at: 0,
             started_at: None,
@@ -1785,6 +1840,8 @@ mod tests {
             on_failure: OnFailure::Abort,
             metadata: serde_json::Value::Null,
             reserved_for_fallback: false,
+            contract: None,
+            typed_result: None,
             result: None,
             created_at: 0,
             started_at: None,
@@ -1867,6 +1924,8 @@ mod tests {
             on_failure: OnFailure::Abort,
             metadata: serde_json::Value::Null,
             reserved_for_fallback: false,
+            contract: None,
+            typed_result: None,
             result: None,
             created_at: 0,
             started_at: None,
@@ -1922,6 +1981,8 @@ mod tests {
             on_failure: OnFailure::Abort,
             metadata: serde_json::Value::Null,
             reserved_for_fallback: false,
+            contract: None,
+            typed_result: None,
             result: None,
             created_at: 0,
             started_at: None,
@@ -1996,6 +2057,8 @@ mod tests {
             on_failure: OnFailure::Abort,
             metadata: serde_json::Value::Null,
             reserved_for_fallback: false,
+            contract: None,
+            typed_result: None,
             result: None,
             created_at: 0,
             started_at: None,
@@ -2485,6 +2548,8 @@ mod tests {
             started_at: None,
             finished_at: None,
             reserved_for_fallback: false,
+            contract: None,
+            typed_result: None,
         };
 
         let handle = match exec.dispatch(&task) {
@@ -2554,6 +2619,8 @@ mod tests {
             started_at: None,
             finished_at: None,
             reserved_for_fallback: false,
+            contract: None,
+            typed_result: None,
         };
         let handle = match exec.dispatch(&task) {
             DispatchOutcome::Started(h) => h,

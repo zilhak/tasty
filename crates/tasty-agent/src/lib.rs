@@ -19,7 +19,8 @@ pub use barrier::{Barrier, BarrierState, BarrierStore};
 pub use lease::{AcquireAnyOutcome, ElasticSpec, Lease, LeaseMode, LeaseStore};
 pub use rate_limit::{ConsumeOutcome, RateLimit, RateLimitStore};
 pub use reducer::{
-    ReducerInput, extract_paths, reduce_in_process, reduce_with_custom, run_custom_shell,
+    ReducerInput, TypedReducerInput, extract_paths, reduce_in_process, reduce_typed,
+    reduce_with_custom, run_custom_shell,
 };
 pub use runner::{DispatchHandle, DispatchOutcome, PollOutcome, RunnerLoop, TaskExecutor};
 pub use semaphore::{AcquireOutcome, ReleaseOutcome, Semaphore, SemaphoreHolder, SemaphoreStore};
@@ -66,6 +67,9 @@ pub enum AgentError {
     /// `--force` 도 이 제약은 뚫지 못한다.
     #[error("cannot delete task {0} while it is Running — cancel it first")]
     TaskRunning(TaskId),
+    /// v2 task 계약 위반. 실패 단계와 타입 오류(task·경로·기대·실제)를 싣는다.
+    #[error("task contract: {0}")]
+    TypeContract(Box<task::contract::TaskFailure>),
     #[error("memory: {0}")]
     Memory(#[from] tasty_memory::MemoryError),
     #[error("serde: {0}")]

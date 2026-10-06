@@ -6,10 +6,12 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use tasty_memory::{ListOpts, MemoryStorage, MemoryValue, PutOpts, Scope};
 use tasty_utils::id::WorkspaceId;
 
+use super::contract::{FailureStage, Provenance, TaskContract, TaskFailure, TypedResult};
 use super::{
-    InlineFallbackSpec, OnFailure, TASK_KEY_PREFIX, Task, TaskCommand, TaskGraph, TaskId,
-    TaskResult, TaskState, apply_on_failure, is_valid_transition, referencing_task_ids, task_key,
-    transitive_referencing_task_ids,
+    InlineFallbackSpec, OnFailure, TASK_KEY_PREFIX, TYPED_TASK_KEY_PREFIX,
+    TYPED_TASK_RECORD_FORMAT, Task, TaskCommand, TaskGraph, TaskId, TaskResult, TaskState,
+    apply_on_failure, contract, is_valid_transition, referencing_task_ids, task_key,
+    transitive_referencing_task_ids, typed_task_key,
 };
 use crate::{AgentError, Result};
 
@@ -91,44 +93,65 @@ impl<'a> TaskStore<'a> {
         format!("t-{now_ms}-{s:06}")
     }
 
-    /// task 영속. 신규/갱신 모두 동일 (overwrite).
+    /// task 영속. 신규/갱신 모두 동일 (overwrite). v2 task 는 별도 namespace 에
+    /// envelope 로 감싸 저장한다.
     pub fn put(&mut self, task: &Task) -> Result<()> {
         let scope = Scope::Workspace(task.workspace_id);
-        let key = task_key(&task.id)?;
-        let value = MemoryValue::Json(serde_json::to_value(task)?);
-        self.mem
-            .put(&self.owner, &scope, &key, &value, &PutOpts::default())?;
+        let (key, value) = if task.is_typed() {
+            (
+                typed_task_key(&task.id)?,
+                serde_json::json!({
+                    "record_format": TYPED_TASK_RECORD_FORMAT,
+                    "task": serde_json::to_value(task)?,
+                }),
+            )
+        } else {
+            (task_key(&task.id)?, serde_json::to_value(task)?)
+        };
+        self.mem.put(
+            &self.owner,
+            &scope,
+            &key,
+            &MemoryValue::Json(value),
+            &PutOpts::default(),
+        )?;
         Ok(())
     }
 
-    /// 단건 조회.
+    /// 단건 조회. v1·v2 namespace 를 모두 본다.
     pub fn get(&self, workspace_id: WorkspaceId, id: &TaskId) -> Result<Option<Task>> {
         let scope = Scope::Workspace(workspace_id);
-        let entry = self.mem.get(&scope, &task_key(id)?)?;
-        match entry {
-            Some(e) => match e.value {
-                MemoryValue::Json(v) => Ok(Some(serde_json::from_value(v)?)),
-                _ => Err(AgentError::InvalidArgument(format!(
-                    "task entry is not json: {id}"
-                ))),
-            },
+        if let Some(e) = self.mem.get(&scope, &task_key(id)?)? {
+            return decode_v1_record(e.value, id).map(Some);
+        }
+        match self.mem.get(&scope, &typed_task_key(id)?)? {
+            Some(e) => decode_typed_record(e.value, id).map(Some),
             None => Ok(None),
         }
     }
 
-    /// 워크스페이스 전체 task 목록.
+    /// 워크스페이스 전체 task 목록(v1 뒤에 v2).
     pub fn list(&self, workspace_id: WorkspaceId) -> Result<Vec<Task>> {
         let scope = Scope::Workspace(workspace_id);
-        let opts = ListOpts {
-            prefix: Some(TASK_KEY_PREFIX.to_string()),
-            ..Default::default()
+        let list_prefix = |prefix: &str| {
+            self.mem.list(
+                &scope,
+                &ListOpts {
+                    prefix: Some(prefix.to_string()),
+                    ..Default::default()
+                },
+            )
         };
-        let entries = self.mem.list(&scope, &opts)?;
-        let mut out = Vec::with_capacity(entries.len());
-        for e in entries {
-            if let MemoryValue::Json(v) = e.value {
-                out.push(serde_json::from_value(v)?);
+        let v1 = list_prefix(TASK_KEY_PREFIX)?;
+        let v2 = list_prefix(TYPED_TASK_KEY_PREFIX)?;
+        let mut out = Vec::with_capacity(v1.len() + v2.len());
+        for e in v1 {
+            if matches!(e.value, MemoryValue::Json(_)) {
+                out.push(decode_v1_record(e.value, &e.key)?);
             }
+        }
+        for e in v2 {
+            out.push(decode_typed_record(e.value, &e.key)?);
         }
         Ok(out)
     }
@@ -136,13 +159,31 @@ impl<'a> TaskStore<'a> {
     /// task 삭제 (드물게 사용; 보통은 Cancelled 상태로 유지).
     pub fn delete(&mut self, workspace_id: WorkspaceId, id: &TaskId) -> Result<()> {
         let scope = Scope::Workspace(workspace_id);
-        self.mem.delete(&self.owner, &scope, &task_key(id)?, None)?;
+        let key = if self.mem.get(&scope, &typed_task_key(id)?)?.is_some() {
+            typed_task_key(id)?
+        } else {
+            task_key(id)?
+        };
+        self.mem.delete(&self.owner, &scope, &key, None)?;
         Ok(())
     }
 
     /// 신규 task 생성. 사이클 검출 + 초기 state 계산 후 영속.
     /// `now_ms`는 호스트가 주입 (테스트 결정성).
     pub fn create(&mut self, opts: TaskCreateOpts) -> Result<Task> {
+        self.create_with_contract(opts, None)
+    }
+
+    /// v2 계약을 가진 task 를 만든다. 계약 검사가 실패하면 아무것도 저장하지 않는다.
+    pub fn create_typed(&mut self, opts: TaskCreateOpts, contract: TaskContract) -> Result<Task> {
+        self.create_with_contract(opts, Some(contract))
+    }
+
+    fn create_with_contract(
+        &mut self,
+        opts: TaskCreateOpts,
+        contract: Option<TaskContract>,
+    ) -> Result<Task> {
         let TaskCreateOpts {
             workspace_id,
             name,
@@ -201,6 +242,13 @@ impl<'a> TaskStore<'a> {
             }
         }
 
+        if let Some(c) = &contract {
+            contract::check_contract(c, &command, &on_failure, |id| {
+                existing.iter().find(|t| &t.id == id)
+            })
+            .map_err(|f| AgentError::TypeContract(Box::new(f)))?;
+        }
+
         let mut new_task = Task {
             id: id.clone(),
             workspace_id,
@@ -215,6 +263,8 @@ impl<'a> TaskStore<'a> {
             on_failure,
             metadata,
             reserved_for_fallback: false,
+            contract,
+            typed_result: None,
         };
 
         existing.push(new_task.clone());
@@ -285,6 +335,7 @@ impl<'a> TaskStore<'a> {
                 to: new_state.name().to_string(),
             });
         }
+        let new_state = settle_typed_terminal(&mut task, new_state);
         match new_state {
             TaskState::Running => {
                 task.started_at = Some(now_ms);
@@ -462,7 +513,14 @@ impl<'a> TaskStore<'a> {
         let mut task = self
             .get(workspace_id, id)?
             .ok_or_else(|| AgentError::TaskNotFound(id.clone()))?;
-        task.result = Some(result);
+        if let Some(c) = &task.contract {
+            // v2 는 보고된 결과를 계약으로 확정하고, v1 형식 필드에는 그 투영을 둔다.
+            let typed = contract::finalize_result(&task, c, &result);
+            task.result = Some(contract::project_v1(&typed));
+            task.typed_result = Some(typed);
+        } else {
+            task.result = Some(result);
+        }
         self.put(&task)?;
         Ok(task)
     }
@@ -561,6 +619,7 @@ impl<'a> TaskStore<'a> {
         task.started_at = None;
         task.finished_at = None;
         task.result = None;
+        task.typed_result = None;
         self.put(&task)?;
 
         // readiness 즉시 평가 — deps 가 이미 종결(예: 여전히 실패/skip 상태)이면 이 자리에서
@@ -593,6 +652,7 @@ impl<'a> TaskStore<'a> {
                     d.started_at = None;
                     d.finished_at = None;
                     d.result = None;
+                    d.typed_result = None;
                     self.put(&d)?;
                 }
             }
@@ -727,5 +787,103 @@ impl<'a> TaskStore<'a> {
             self.delete(workspace_id, id)?;
         }
         Ok(())
+    }
+}
+
+fn decode_v1_record(value: MemoryValue, label: &str) -> Result<Task> {
+    let MemoryValue::Json(v) = value else {
+        return Err(AgentError::InvalidArgument(format!(
+            "task entry is not json: {label}"
+        )));
+    };
+    let task: Task = serde_json::from_value(v)?;
+    if task.is_typed() {
+        // v2 계약을 가진 레코드는 v2 namespace 에만 저장한다. v1 자리에 있으면 v1 앱이
+        // 계약을 무시하고 실행할 수 있으므로 손상으로 본다.
+        return Err(AgentError::InvalidArgument(format!(
+            "task entry {label} carries a v2 contract in the v1 namespace"
+        )));
+    }
+    Ok(task)
+}
+
+fn decode_typed_record(value: MemoryValue, label: &str) -> Result<Task> {
+    let MemoryValue::Json(mut v) = value else {
+        return Err(AgentError::InvalidArgument(format!(
+            "typed task entry is not json: {label}"
+        )));
+    };
+    let format = v.get("record_format").and_then(|f| f.as_str());
+    if format != Some(TYPED_TASK_RECORD_FORMAT) {
+        return Err(AgentError::InvalidArgument(format!(
+            "typed task entry {label} has unsupported record_format {format:?} \
+             (supported: {TYPED_TASK_RECORD_FORMAT})"
+        )));
+    }
+    let task: Task = serde_json::from_value(v["task"].take())?;
+    if !task.is_typed() {
+        return Err(AgentError::InvalidArgument(format!(
+            "typed task entry {label} has no contract"
+        )));
+    }
+    Ok(task)
+}
+
+/// v2 task 의 종결 전이를 결과와 맞춘다. 확정된 유효 출력이 없으면 성공으로 끝내지
+/// 않고 실패로 바꾼다. 실패로 끝나는데 결과가 없으면 실패 사유를 결과로 남긴다.
+fn settle_typed_terminal(task: &mut Task, requested: TaskState) -> TaskState {
+    if !task.is_typed() {
+        return requested;
+    }
+    let failure_result = |task: &Task, failure: TaskFailure| TypedResult {
+        has_output: false,
+        output: serde_json::Value::Null,
+        raw: Default::default(),
+        artifacts: Vec::new(),
+        error: Some(failure),
+        provenance: Provenance {
+            contract_version: task
+                .contract
+                .as_ref()
+                .map(|c| c.contract_version)
+                .unwrap_or_default(),
+            kind: contract::command_kind(&task.command).to_string(),
+            output_source: "none".to_string(),
+        },
+    };
+    match requested {
+        TaskState::Succeeded => {
+            let failure = match &task.typed_result {
+                Some(t) if t.has_output && t.error.is_none() => return TaskState::Succeeded,
+                Some(t) => t.error.clone().unwrap_or_else(|| {
+                    TaskFailure::new(FailureStage::OutputValidation, "no output was produced")
+                }),
+                None => {
+                    let f = TaskFailure::new(
+                        FailureStage::Persistence,
+                        "no result was recorded before completion",
+                    );
+                    let typed = failure_result(task, f.clone());
+                    task.result = Some(contract::project_v1(&typed));
+                    task.typed_result = Some(typed);
+                    f
+                }
+            };
+            TaskState::Failed {
+                error: failure.message,
+            }
+        }
+        TaskState::Failed { error } => {
+            if task.typed_result.as_ref().is_none_or(|t| t.error.is_none()) {
+                let typed = failure_result(
+                    task,
+                    TaskFailure::new(FailureStage::Execution, error.clone()),
+                );
+                task.result = Some(contract::project_v1(&typed));
+                task.typed_result = Some(typed);
+            }
+            TaskState::Failed { error }
+        }
+        other => other,
     }
 }

@@ -1,0 +1,190 @@
+//! v2 계약 task 의 실행 경계 — Run 허용 종료 코드와 v2 reduce.
+
+use serde_json::{Value, json};
+use tasty_agent::task::contract::TaskContract;
+use tasty_agent::task::{TaskCreateOpts, TaskStore};
+use tasty_agent::{OnFailure, ReducerStrategy, TaskState};
+
+use super::tests::fresh_ctx;
+use super::*;
+
+fn contract(v: Value) -> TaskContract {
+    serde_json::from_value(v).expect("contract")
+}
+
+fn opts(name: &str, command: TaskCommand) -> TaskCreateOpts {
+    TaskCreateOpts {
+        workspace_id: 1,
+        name: name.into(),
+        command,
+        depends_on: vec![],
+        on_failure: OnFailure::Abort,
+        metadata: Value::Null,
+        now_ms: 0,
+    }
+}
+
+fn wait_outcome(exec: &mut HostExecutor, handle: &DispatchHandle) -> PollOutcome {
+    for _ in 0..100 {
+        match exec.poll(handle) {
+            PollOutcome::Active => std::thread::sleep(Duration::from_millis(50)),
+            other => return other,
+        }
+    }
+    panic!("run did not finish");
+}
+
+fn exit_seven() -> TaskCommand {
+    TaskCommand::Run {
+        command: vec!["sh".into(), "-c".into(), "echo out; exit 7".into()],
+        workspace_id: 1,
+        cwd: None,
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn v2_run_accepts_declared_exit_codes_and_reports_the_code_as_output() {
+    let (_td, ctx) = fresh_ctx();
+    let mut exec = HostExecutor::new(ctx.clone());
+    let allowed = contract(json!({"contract_version": 2, "allowed_exit_codes": [0, 7]}));
+    let strict = contract(json!({"contract_version": 2}));
+    let (seven_ok, seven_strict) = ctx.with_memory(|mem| {
+        let seq = ctx.agent_seq.clone();
+        let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+        let a = store
+            .create_typed(opts("allowed", exit_seven()), allowed)
+            .unwrap();
+        let b = store
+            .create_typed(opts("strict", exit_seven()), strict)
+            .unwrap();
+        (a, b)
+    });
+
+    let outcome_of = |exec: &mut HostExecutor, task: &Task| match exec.dispatch(task) {
+        DispatchOutcome::Started(h) => wait_outcome(exec, &h),
+        other => panic!("expected Started, got {other:?}"),
+    };
+    let ok = outcome_of(&mut exec, &seven_ok);
+    let PollOutcome::Done(result) = ok else {
+        panic!("declared exit 7 should succeed: {ok:?}");
+    };
+    assert_eq!(result.exit_code, Some(7));
+    let strict_outcome = outcome_of(&mut exec, &seven_strict);
+    assert!(
+        matches!(strict_outcome, PollOutcome::Failed(_)),
+        "exit 7 outside the declared list fails: {strict_outcome:?}"
+    );
+
+    let finished = ctx.with_memory(|mem| {
+        let seq = ctx.agent_seq.clone();
+        let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+        store
+            .set_state(1, &seven_ok.id, TaskState::Running, 1)
+            .unwrap();
+        store.set_result(1, &seven_ok.id, result).unwrap();
+        store
+            .set_state(1, &seven_ok.id, TaskState::Succeeded, 2)
+            .unwrap()
+            .0
+    });
+    assert_eq!(finished.state, TaskState::Succeeded);
+    let typed = finished.typed_result.unwrap();
+    assert_eq!(typed.output, json!(7));
+    let raw = typed.raw.execution.unwrap();
+    assert_eq!(raw["stdout"]["text"], json!("out\n"));
+}
+
+#[cfg(unix)]
+#[test]
+fn v1_run_keeps_treating_nonzero_exit_as_failure() {
+    let (_td, ctx) = fresh_ctx();
+    let mut exec = HostExecutor::new(ctx.clone());
+    let task = ctx.with_memory(|mem| {
+        let seq = ctx.agent_seq.clone();
+        let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+        store.create(opts("v1", exit_seven())).unwrap()
+    });
+    let outcome = match exec.dispatch(&task) {
+        DispatchOutcome::Started(h) => wait_outcome(&mut exec, &h),
+        other => panic!("expected Started, got {other:?}"),
+    };
+    assert!(matches!(outcome, PollOutcome::Failed(_)), "{outcome:?}");
+}
+
+fn finished_custom(store: &mut TaskStore, name: &str, c: Option<TaskContract>, out: Value) -> Task {
+    let cmd = TaskCommand::Custom {
+        ipc_method: "system.ping".into(),
+        params: Value::Null,
+        poll: None,
+    };
+    let t = match c {
+        Some(c) => store.create_typed(opts(name, cmd), c).unwrap(),
+        None => store.create(opts(name, cmd)).unwrap(),
+    };
+    store.set_state(1, &t.id, TaskState::Running, 1).unwrap();
+    store
+        .set_result(
+            1,
+            &t.id,
+            TaskResult {
+                exit_code: None,
+                output: Some(out),
+                error: None,
+            },
+        )
+        .unwrap();
+    store
+        .set_state(1, &t.id, TaskState::Succeeded, 2)
+        .unwrap()
+        .0
+}
+
+#[test]
+fn v2_reduce_dispatch_uses_typed_inputs_and_v1_reduce_is_unchanged() {
+    let (_td, ctx) = fresh_ctx();
+    let mut exec = HostExecutor::new(ctx.clone());
+    let text = contract(json!({"contract_version": 2, "output_schema": {"type": "string"}}));
+    let (typed_all, typed_concat, legacy_all) = ctx.with_memory(|mem| {
+        let seq = ctx.agent_seq.clone();
+        let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+        let a = finished_custom(&mut store, "a", Some(text.clone()), json!("x"));
+        let b = finished_custom(&mut store, "b", Some(text.clone()), json!("y"));
+        let ids = vec![a.id.clone(), b.id.clone()];
+        let reduce = |strategy| TaskCommand::Reduce {
+            inputs: ids.clone(),
+            strategy,
+        };
+        let v2 = contract(json!({"contract_version": 2}));
+        (
+            store
+                .create_typed(opts("all", reduce(ReducerStrategy::All)), v2.clone())
+                .unwrap(),
+            store
+                .create_typed(opts("concat", reduce(ReducerStrategy::ConcatText)), v2)
+                .unwrap(),
+            store
+                .create(opts("legacy", reduce(ReducerStrategy::All)))
+                .unwrap(),
+        )
+    });
+    let immediate = |exec: &mut HostExecutor, t: &Task| match exec.dispatch(t) {
+        DispatchOutcome::Started(DispatchHandle::ReduceImmediate(r)) => r,
+        other => panic!("expected ReduceImmediate, got {other:?}"),
+    };
+    let all = immediate(&mut exec, &typed_all);
+    assert_eq!(all.exit_code, None);
+    let records = all.output.unwrap();
+    assert_eq!(records[0]["has_output"], json!(true));
+    assert_eq!(records[0]["output"], json!("x"));
+    assert_eq!(records[1]["state"], json!("succeeded"));
+    assert_eq!(
+        immediate(&mut exec, &typed_concat).output,
+        Some(json!("xy"))
+    );
+    // v1 reduce all 은 출력 값만 담은 배열이다.
+    assert_eq!(
+        immediate(&mut exec, &legacy_all).output,
+        Some(json!(["x", "y"]))
+    );
+}

@@ -1210,6 +1210,8 @@ mod graph_edge_tests {
             on_failure: OnFailure::Abort,
             metadata: Value::Null,
             reserved_for_fallback: false,
+            contract: None,
+            typed_result: None,
         }
     }
 
@@ -1379,6 +1381,8 @@ mod state_filter_tests {
             on_failure: OnFailure::Abort,
             metadata: Value::Null,
             reserved_for_fallback: false,
+            contract: None,
+            typed_result: None,
         }
     }
 

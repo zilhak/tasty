@@ -306,6 +306,8 @@ mod tests {
             on_failure: Default::default(),
             metadata: Default::default(),
             reserved_for_fallback: false,
+            contract: None,
+            typed_result: None,
         }
     }
 

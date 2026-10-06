@@ -172,6 +172,154 @@ where
     }
 }
 
+/// v2 reduce 입력 하나. 성공 출력이 없는 입력은 `has_output: false` 다.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TypedReducerInput {
+    pub task_id: TaskId,
+    /// 입력 task 의 상태 이름([`crate::TaskState::name`]).
+    pub state: &'static str,
+    pub has_output: bool,
+    pub output: Value,
+}
+
+impl TypedReducerInput {
+    /// 입력 task 에서 만든다. v2 입력은 확정된 출력만, v1 입력은 성공했을 때의
+    /// `result.output` 만 출력으로 본다.
+    pub fn from_task(task: &crate::Task) -> Self {
+        let succeeded = matches!(task.state, crate::TaskState::Succeeded);
+        let (has_output, output) = match (&task.typed_result, &task.result) {
+            (Some(t), _) => (succeeded && t.has_output, t.output.clone()),
+            (None, Some(r)) => match &r.output {
+                Some(v) if succeeded => (true, v.clone()),
+                _ => (false, Value::Null),
+            },
+            (None, None) => (false, Value::Null),
+        };
+        Self {
+            task_id: task.id.clone(),
+            state: task.state.name(),
+            has_output,
+            output: if has_output { output } else { Value::Null },
+        }
+    }
+
+    fn record(&self) -> Value {
+        let mut m = Map::new();
+        m.insert("task_id".into(), Value::String(self.task_id.clone()));
+        m.insert("state".into(), Value::String(self.state.into()));
+        m.insert("has_output".into(), Value::Bool(self.has_output));
+        if self.has_output {
+            m.insert("output".into(), self.output.clone());
+        }
+        Value::Object(m)
+    }
+
+    fn require_output(&self) -> std::result::Result<&Value, String> {
+        if self.has_output {
+            Ok(&self.output)
+        } else {
+            Err(format!(
+                "input {} has no output (state {})",
+                self.task_id, self.state
+            ))
+        }
+    }
+}
+
+/// v2 reduce. 출력 타입 검사는 결과 확정 단계가 맡는다.
+///
+/// - `first_success`: 선언된 입력 순서에서 처음 성공한 입력의 출력. 성공이 없으면 오류.
+/// - `all`: 입력 순서대로 `{task_id, state, has_output, output?}` 레코드 목록.
+/// - `merge_json`: 모든 입력이 object 출력을 가져야 한다. 중첩 object 는 재귀 병합하고,
+///   같은 경로에 서로 다른 값이 오면 `conflict` 정책을 따른다.
+/// - `concat_text`: 모든 입력이 string 출력을 가져야 한다. 다른 값은 변환하지 않는다.
+/// - `custom`: stdin 으로 `all` 과 같은 레코드 목록을 받고 stdout 의 JSON 한 값을
+///   결과로 쓴다. JSON 이 아니면 오류다.
+pub fn reduce_typed<F>(
+    strategy: &ReducerStrategy,
+    inputs: &[TypedReducerInput],
+    conflict: crate::task::contract::MergeConflict,
+    runner: F,
+) -> std::result::Result<Value, String>
+where
+    F: FnOnce(&str, &str) -> std::io::Result<String>,
+{
+    match strategy {
+        ReducerStrategy::FirstSuccess => inputs
+            .iter()
+            .find(|i| i.has_output)
+            .map(|i| i.output.clone())
+            .ok_or_else(|| "first_success: no input succeeded with an output".to_string()),
+        ReducerStrategy::All => Ok(Value::Array(inputs.iter().map(|i| i.record()).collect())),
+        ReducerStrategy::MergeJson => {
+            let mut acc = Map::new();
+            for input in inputs {
+                let Value::Object(map) = input.require_output()? else {
+                    return Err(format!(
+                        "merge_json: input {} output is {}, not an object",
+                        input.task_id,
+                        type_name(&input.output)
+                    ));
+                };
+                merge_typed(&mut acc, map, conflict, "")?;
+            }
+            Ok(Value::Object(acc))
+        }
+        ReducerStrategy::ConcatText => {
+            let mut out = String::new();
+            for input in inputs {
+                match input.require_output()? {
+                    Value::String(s) => out.push_str(s),
+                    other => {
+                        return Err(format!(
+                            "concat_text: input {} output is {}, not a string; convert it explicitly",
+                            input.task_id,
+                            type_name(other)
+                        ));
+                    }
+                }
+            }
+            Ok(Value::String(out))
+        }
+        ReducerStrategy::Custom { command } => {
+            let stdin = Value::Array(inputs.iter().map(|i| i.record()).collect());
+            let stdin_json = serde_json::to_string(&stdin).map_err(|e| e.to_string())?;
+            let stdout = runner(command, &stdin_json)
+                .map_err(|e| format!("custom reducer command failed: {e}"))?;
+            serde_json::from_str::<Value>(stdout.trim())
+                .map_err(|e| format!("custom reducer stdout is not one JSON value: {e}"))
+        }
+    }
+}
+
+fn merge_typed(
+    dst: &mut Map<String, Value>,
+    src: &Map<String, Value>,
+    conflict: crate::task::contract::MergeConflict,
+    path: &str,
+) -> std::result::Result<(), String> {
+    use crate::task::contract::MergeConflict;
+    for (k, v) in src {
+        let here = format!("{path}/{k}");
+        match (dst.get_mut(k), v) {
+            (Some(Value::Object(d)), Value::Object(s)) => merge_typed(d, s, conflict, &here)?,
+            (Some(existing), _) if existing != v => match conflict {
+                MergeConflict::Overwrite => *existing = v.clone(),
+                MergeConflict::Error => {
+                    return Err(format!(
+                        "merge_json: conflicting values at {here}: {existing} vs {v}"
+                    ));
+                }
+            },
+            (Some(_), _) => {}
+            (None, _) => {
+                dst.insert(k.clone(), v.clone());
+            }
+        }
+    }
+    Ok(())
+}
+
 /// custom 전략의 기본 셸 실행기. 입력 JSON을 stdin으로 보내고 stdout을 반환한다.
 pub fn run_custom_shell(command: &str, stdin_json: &str) -> std::io::Result<String> {
     use std::io::Write;
@@ -380,6 +528,186 @@ mod tests {
         );
         let out = reduce_in_process(&ReducerStrategy::ConcatText, &extracted).unwrap();
         assert_eq!(out, json!("out1\n"));
+    }
+
+    fn typed(id: &str, state: &'static str, output: Option<Value>) -> TypedReducerInput {
+        TypedReducerInput {
+            task_id: id.to_string(),
+            state,
+            has_output: output.is_some(),
+            output: output.unwrap_or(Value::Null),
+        }
+    }
+
+    use crate::task::contract::MergeConflict;
+
+    fn no_shell(_: &str, _: &str) -> std::io::Result<String> {
+        panic!("runner should not be called")
+    }
+
+    #[test]
+    fn typed_all_returns_records_without_inventing_failed_outputs() {
+        let inputs = vec![
+            typed("a", "succeeded", Some(json!(1))),
+            typed("b", "failed", None),
+            typed("c", "succeeded", Some(json!(null))),
+        ];
+        let out = reduce_typed(
+            &ReducerStrategy::All,
+            &inputs,
+            MergeConflict::Error,
+            no_shell,
+        )
+        .unwrap();
+        assert_eq!(
+            out,
+            json!([
+                {"task_id": "a", "state": "succeeded", "has_output": true, "output": 1},
+                {"task_id": "b", "state": "failed", "has_output": false},
+                {"task_id": "c", "state": "succeeded", "has_output": true, "output": null},
+            ])
+        );
+        let schema = crate::task::contract::reduce_all_record_list_schema();
+        assert!(
+            crate::task::types::TypeDefs::default()
+                .validate(&schema, &out)
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn typed_first_success_follows_declared_order_and_errors_without_success() {
+        let inputs = vec![
+            typed("a", "failed", None),
+            typed("b", "succeeded", Some(json!("second"))),
+            typed("c", "succeeded", Some(json!("third"))),
+        ];
+        let out = reduce_typed(
+            &ReducerStrategy::FirstSuccess,
+            &inputs,
+            MergeConflict::Error,
+            no_shell,
+        )
+        .unwrap();
+        assert_eq!(out, json!("second"));
+        let none = vec![typed("a", "failed", None), typed("b", "skipped", None)];
+        assert!(
+            reduce_typed(
+                &ReducerStrategy::FirstSuccess,
+                &none,
+                MergeConflict::Error,
+                no_shell
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn typed_merge_json_reports_conflicts_unless_overwrite_is_chosen() {
+        let inputs = vec![
+            typed("a", "succeeded", Some(json!({"x": 1, "n": {"p": 1}}))),
+            typed("b", "succeeded", Some(json!({"x": 2, "n": {"q": 2}}))),
+        ];
+        let e = reduce_typed(
+            &ReducerStrategy::MergeJson,
+            &inputs,
+            MergeConflict::Error,
+            no_shell,
+        )
+        .unwrap_err();
+        assert!(e.contains("/x"), "{e}");
+        let out = reduce_typed(
+            &ReducerStrategy::MergeJson,
+            &inputs,
+            MergeConflict::Overwrite,
+            no_shell,
+        )
+        .unwrap();
+        assert_eq!(out, json!({"x": 2, "n": {"p": 1, "q": 2}}));
+        // 같은 값은 충돌이 아니다.
+        let same = vec![
+            typed("a", "succeeded", Some(json!({"x": 1}))),
+            typed("b", "succeeded", Some(json!({"x": 1}))),
+        ];
+        assert!(
+            reduce_typed(
+                &ReducerStrategy::MergeJson,
+                &same,
+                MergeConflict::Error,
+                no_shell
+            )
+            .is_ok()
+        );
+        let failed = vec![typed("a", "failed", None)];
+        assert!(
+            reduce_typed(
+                &ReducerStrategy::MergeJson,
+                &failed,
+                MergeConflict::Error,
+                no_shell
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn typed_concat_text_refuses_non_strings_and_missing_outputs() {
+        let ok = vec![
+            typed("a", "succeeded", Some(json!("a"))),
+            typed("b", "succeeded", Some(json!("b"))),
+        ];
+        assert_eq!(
+            reduce_typed(
+                &ReducerStrategy::ConcatText,
+                &ok,
+                MergeConflict::Error,
+                no_shell
+            )
+            .unwrap(),
+            json!("ab")
+        );
+        let num = vec![typed("a", "succeeded", Some(json!(42)))];
+        assert!(
+            reduce_typed(
+                &ReducerStrategy::ConcatText,
+                &num,
+                MergeConflict::Error,
+                no_shell
+            )
+            .is_err()
+        );
+        let failed = vec![typed("a", "failed", None)];
+        assert!(
+            reduce_typed(
+                &ReducerStrategy::ConcatText,
+                &failed,
+                MergeConflict::Error,
+                no_shell
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn typed_custom_reducer_gets_records_and_rejects_non_json_stdout() {
+        let inputs = vec![typed("a", "succeeded", Some(json!(1)))];
+        let strategy = ReducerStrategy::Custom {
+            command: "x".into(),
+        };
+        let out = reduce_typed(&strategy, &inputs, MergeConflict::Error, |_, stdin| {
+            let v: Value = serde_json::from_str(stdin).unwrap();
+            assert_eq!(
+                v,
+                json!([{"task_id": "a", "state": "succeeded", "has_output": true, "output": 1}])
+            );
+            Ok(" 7 \n".to_string())
+        })
+        .unwrap();
+        assert_eq!(out, json!(7));
+        let e = reduce_typed(&strategy, &inputs, MergeConflict::Error, |_, _| {
+            Ok("not json".to_string())
+        });
+        assert!(e.is_err(), "v2 는 문자열로 조용히 바꾸지 않는다");
     }
 
     #[test]
