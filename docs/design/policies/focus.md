@@ -242,6 +242,7 @@ GUI 창 종료는 window.close를 사용하되 headless에는 이 API가 없어 
   - macOS · Windows: 사용자 창 바로 아래에 둔다. 키 포커스를 가져가지 않는다.
   - X11: 창 관리자에게 **요청한다** — `_NET_WM_USER_TIME = 0`(포커스를 주지 말라)과
     `_NET_RESTACK_WINDOW`(사용자 창 아래). 창 관리자가 무시하거나 "맨 아래" 로 다룰 수 있다.
+    사용자 창을 트레이로 숨겼으면 restack 없이 보이기만 한다(숨긴 창을 형제로 가리키면 openbox 3.6.1이 죽는다).
     `_NET_WM_USER_TIME` 은 map 된 뒤 지운다 — 사용자가 나중에 그 창을 고를 때 걸림이 없게.
   - Wayland: 할 수단이 없다. 컴포지터가 정한다.
   - 네이티브 호출이 실패하면 경고 뒤 winit 기본 경로로 보인다.

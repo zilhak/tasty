@@ -48,7 +48,7 @@ const ALLOWLIST_PATH_PREFIXES: &[(&str, &str)] = &[
     ),
     (
         "src/boot/single_instance/launch_log.rs",
-        "launch.log 진단 줄과 그 stderr 사본이다. 내부 진단 로그와 같은 자리이며 사용자 표면이 아니다(i18n.md 예외).",
+        "launch.log 진단 줄과 그 stderr 사본이다. 내부 진단 로그와 같은 자리이며 사용자 표면이 아니다(i18n.md 예외). release stderr tracing은 warn 이상만 보여 eprint를 쓰므로 .githooks/pre-commit C.11도 같은 파일을 면제한다.",
     ),
     (
         "crates/tasty-doc-guards/src/bin/",
