@@ -32,12 +32,15 @@
   - `cancelled`: 사용자가 취소했거나 러너가 멈췄다. 다시 실행하면 취소한 의도를 거스른다.
   - `outcome_unknown`: 실행이 끝났는지 모른다. 다시 실행하면 같은 후처리가 두 번 실행될 수 있다.
 - 러너가 멈추면(workspace 정리·앱 종료) 진행 중인 후처리를 `cancelled` 로 중단하고 그 보고를 저장한다. 재시작 뒤에는 그 보고로 실패가 확정되며 다시 실행하지 않는다. 멈춘 시점에 프로세스를 끝냈으므로 결과가 불명인 것이 아니라 중단된 것이고, 재시작 뒤 자동으로 다시 실행하면 사용자가 모르는 사이에 외부 CLI 가 다시 불린다. 보고를 저장하기 전에 호스트가 끝나면 `outcome_unknown` 이 된다.
+- 정상 종료 때는 그룹 종료와 보고 저장을 짧게 기다린다. executor 는 후처리 작업 스레드를 최대 3초(그룹 종료 뒤 파이프 EOF 를 기다리는 2초에 저장 시간을 더한 값), runner registry 는 runner 스레드를 최대 4초 기다린다. 기다리지 않으면 정지 표지를 세운 직후 프로세스가 끝나 그룹이 남고 재시작 뒤 `cancelled` 대신 `outcome_unknown` 이 된다. 상한을 두는 것은 멈춘 runner 가 앱 종료를 막지 않게 하기 위해서다.
+- 비정상 종료(SIGTERM 등)에는 Tasty 가 개입할 수 없다. Linux 는 후처리를 `tasty_reaper::spawn_bound_to_host` 로 띄워 그룹 리더가 PDEATHSIG 로 SIGTERM 을 받게 한다. 리더가 직접 실행한 CLI 이면 그것으로 끝나지만, 그룹의 다른 프로세스는 신호를 받지 않아 리더가 전달하지 않으면 남는다. Windows 는 실행별 KILL_ON_JOB_CLOSE job 이 호스트 종료와 함께 닫혀 job 안의 프로세스가 끝난다. macOS 는 묶지 않는다. 그룹 전체를 끝내려면 Tasty 에 SIGTERM 처리기가 필요하고 그것은 후처리만의 문제가 아니다(기존 run 도 같다).
+- 완료 보고 밖에서 task 가 끝나면(취소 등) `attempt.postprocess.phase` 를 `finished` 로 닫는다. `run` 은 마지막으로 시작한 실행 번호다(없으면 0). 끝난 task 의 기록을 읽는 쪽이 진행 중으로 보지 않게 한다.
 - 상한은 다음과 같다. 계약 검사가 범위 밖 값을 생성 때 거절한다.
   - stdout 수집 256 KiB(`MAX_POSTPROCESS_STDOUT_BYTES`): 출력은 task 레코드의 `typed_result.output` 과 v1 투영 `result.output` 에 두 번 들어가고, pointer 를 쓰면 `raw.postprocess.stdout` 에도 들어간다. 레코드 하나가 memory 값 상한 1 MiB 안에 남도록 그 3분의 1 아래로 잡았다. 넘으면 잘린 값으로 성공시키지 않고 실패한다.
   - stderr 16 KiB tail(`POSTPROCESS_STDERR_TAIL_BYTES`): 진단용이며 같은 레코드에 들어간다. 마지막 실행의 것만 남긴다.
   - `timeout_ms` 1 ms ~ 24시간(`MAX_POSTPROCESS_TIMEOUT_MS`): 무기한 대기는 받지 않는다. 모델 호출 같은 긴 작업을 담되 permit 을 하루 넘게 쥐지 않게 한다.
   - `max_retries` 1 ~ 10(`MAX_POSTPROCESS_RETRIES`), `delay_ms` 최대 1시간(`MAX_POSTPROCESS_RETRY_DELAY_MS`): 재시도 동안 permit 을 쥐므로 횟수와 대기를 유한하게 묶는다. 재시도로 넘어간 실행의 요약도 레코드에 쌓인다.
-- 후처리 자식은 Tasty 프로세스의 환경을 받되, 바깥 Claude Code 세션이 남긴 표지·비밀(`CLAUDECODE`, `CLAUDE_CODE_SESSION_ID` 등 세션 식별 변수, `CLAUDE_PLUGIN_OPTION_*`, Claude Code 가 넣은 `AI_AGENT` 값)은 지운다. 목록은 터미널 셸이 쓰는 것과 같다(`tasty_utils::process::is_stripped_inherited_env`). 이 값이 남으면 후처리가 부르는 Claude Code 가 자신을 바깥 세션의 자식으로 오인하고 세션 비밀이 무관한 프로세스로 샌다. 사용자가 넣는 설정·인증(`CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY` 등)과 `TASTY_*` 는 그대로 넘긴다. Tasty 가 task 별 변수를 더하지는 않는다.
+- 후처리 자식은 Tasty 프로세스의 환경을 받되, 바깥 Claude Code 세션이 남긴 표지·비밀(`CLAUDECODE`, `CLAUDE_CODE_SESSION_ID` 등 세션 식별 변수, `CLAUDE_PLUGIN_OPTION_*`, Claude Code 가 넣은 `AI_AGENT` 값)은 지운다. 목록은 터미널 셸이 쓰는 것과 같다(`tasty_utils::process::is_stripped_inherited_env`). 이 값이 남으면 후처리가 부르는 Claude Code 가 자신을 바깥 세션의 자식으로 오인하고 세션 비밀이 무관한 프로세스로 샌다. 바깥 Tasty 인스턴스의 신원 변수(`TASTY_SESSION_TOKEN`, `TASTY_SURFACE_ID`, `TASTY_PARENT_HOME`, `TASTY_AGENT_ID`)도 지운다. 이 Tasty 를 다른 Tasty 의 터미널에서 띄웠으면 이 값들은 다른 인스턴스의 surface·세션 토큰·완료 알림 경로를 가리키고, 터미널 셸과 달리 후처리에는 자기 값으로 덮어쓸 surface 가 없다. 남겨 두면 후처리 CLI 가 부른 `tasty` 가 다른 인스턴스의 신원으로 요청한다. 사용자가 넣는 설정·인증(`CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY` 등)과 그 밖의 `TASTY_*`(`TASTY_HOME`, `TASTY_LOCALE` 등)는 그대로 넘긴다. Tasty 가 task 별 변수를 더하지는 않는다.
 
 계약 형식, stdout 해석, 실패 원인 목록은 [agent runner 가이드](../dev-guide/agent-runner.md)의 "후처리 CLI" 절에 있다.
 
@@ -60,6 +63,7 @@
 
 - 후처리 CLI 가 실행마다 멱등 키를 받아 중복 실행을 스스로 막을 수 있게 되면 결과 불명을 재시도 대상으로 다시 검토한다.
 - memory 값 상한이 바뀌거나 결과를 artifact 로 따로 저장하게 되면 stdout 상한을 다시 정한다(`MAX_POSTPROCESS_STDOUT_BYTES`).
+- Tasty 에 SIGTERM 처리기가 생기면 비정상 종료 때 그룹 전체를 끝내는 경로로 바꾼다.
 - 후처리 단계를 두 개 이상 잇는 요구가 생기면 진행 기록을 단계 목록으로 넓히는 것을 검토한다.
 
 ## References

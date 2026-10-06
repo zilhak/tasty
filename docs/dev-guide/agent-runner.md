@@ -613,7 +613,7 @@ run·custom task 는 본 작업 뒤 CLI 하나를 실행해 그 stdout 을 최�
 ```
 
 - `command`: 실행 파일과 인자. 셸을 거치지 않고 직접 실행한다. 셸이 필요하면 `["sh", "-c", ...]` 처럼 셸을 명시한다. 입력 값은 명령 문자열에 끼워 넣지 않고 stdin 으로만 간다. TTY 가 없는 CLI 만 지원한다.
-- 환경변수: Tasty 프로세스의 환경을 받는다. 바깥 Claude Code 세션의 표지·비밀(터미널 셸에서도 지우는 `CLAUDECODE`·`CLAUDE_CODE_SESSION_ID`·`CLAUDE_CODE_ENTRYPOINT`·`CLAUDE_CODE_MESSAGING_TOKEN` 등의 고정 목록, `CLAUDE_PLUGIN_OPTION_*`·`CMUX_*`, `claude-code_`·`claude-code/` 로 시작하는 `AI_AGENT`)만 지운다. 목록은 `tasty_utils::process` 의 `STRIPPED_ENV_*` 다. `CLAUDE_CODE_OAUTH_TOKEN`·`ANTHROPIC_API_KEY` 같은 사용자 설정·인증과, Tasty 프로세스에 있는 `TASTY_*`(예: `TASTY_HOME`, 부팅 때 정한 `TASTY_LOCALE`)는 그대로 넘긴다. Tasty 는 task 별 변수(`TASTY_SURFACE_ID` 등)를 더하지 않는다.
+- 환경변수: Tasty 프로세스의 환경을 받는다. 바깥 Claude Code 세션의 표지·비밀(터미널 셸에서도 지우는 `CLAUDECODE`·`CLAUDE_CODE_SESSION_ID`·`CLAUDE_CODE_ENTRYPOINT`·`CLAUDE_CODE_MESSAGING_TOKEN` 등의 고정 목록, `CLAUDE_PLUGIN_OPTION_*`·`CMUX_*`, `claude-code_`·`claude-code/` 로 시작하는 `AI_AGENT`)만 지운다. 목록은 `tasty_utils::process` 의 `STRIPPED_ENV_*` 다. 바깥 Tasty 인스턴스의 신원 변수 `TASTY_SESSION_TOKEN`·`TASTY_SURFACE_ID`·`TASTY_PARENT_HOME`·`TASTY_AGENT_ID` 도 지운다. 이 Tasty 를 다른 Tasty 의 터미널에서 띄웠으면 그 값은 다른 인스턴스의 surface·세션·완료 알림 경로를 가리킨다. 터미널 셸은 자기 값으로 덮어쓰지만 후처리에는 덮어쓸 surface 가 없다. 그래서 후처리 자식에는 이 네 변수가 없다. `CLAUDE_CODE_OAUTH_TOKEN`·`ANTHROPIC_API_KEY` 같은 사용자 설정·인증과, 그 밖의 `TASTY_*`(예: `TASTY_HOME`, 부팅 때 정한 `TASTY_LOCALE`)는 그대로 넘긴다. Tasty 가 task 별 변수를 더하지는 않는다.
 - `cwd`: 생략하면 run 의 `cwd`, 그것도 없으면 호스트 프로세스의 디렉터리.
 - `stdin`: stdin 에 쓸 JSON object 의 필드별 출처. `from` 은 `input`(이 회차의 입력 snapshot, wire 형식), `raw`(본 작업 원본 `{exit_code?, execution?}`), `artifacts` 이고 `pointer` 로 그 안의 위치를 고른다. 위치에 값이 없으면 실행하지 않고 `stdin_mapping` 실패다. 생략하면 `{}` 를 쓴다. 문서 하나를 쓰고 stdin 을 닫는다.
 - `stdout.format`: `json`(기본)은 JSON 값 정확히 하나, `text` 는 UTF-8 문자열 그대로. json 형식이 실패해도 text 로 바꾸지 않는다. `stdout.pointer` 는 json 형식에서만 쓰며 그 위치의 값을 출력 후보로 고른다. 생략하면 값 전체다.
@@ -628,7 +628,20 @@ run·custom task 는 본 작업 뒤 CLI 하나를 실행해 그 stdout 을 최�
 3. 실행 보고가 재시도 대상 실패이고 횟수가 남았으면 `phase` 는 `pending`(다음 `run`, `not_before_ms`)이 되고 task 는 Running 이다. 아니면 그 보고로 결과를 확정하고 종결한다. 종결·`on_failure`·하류 반영은 이때 한 번 일어난다.
 4. 세마포어·lease 는 본 작업부터 마지막 종결까지 쥔다. 다음 task 는 후처리가 끝난 뒤에야 Ready 가 된다.
 
-`agent.task_get` 은 후처리 단계의 Running task 에 `phase`(`postprocessing`, 재시도 대기 중이면 `retry_wait`)를 싣는다.
+`agent.task_get` 은 후처리 단계의 Running task 에 `phase`(`postprocessing`, 재시도 대기 중이면 `retry_wait`)를 싣는다. task 가 끝나면 `attempt.postprocess.phase` 는 `finished` 다. 보고로 확정했으면 그 실행 번호, 취소 등으로 먼저 끝났으면 마지막으로 시작한 실행 번호(없으면 0)를 `run` 에 둔다.
+
+CLI `tasty agent task-get` 은 같은 정보를 줄로 보인다. 진행 중에는 `state` 다음 줄에 단계와 실행 번호를, 끝난 뒤에는 마지막 실행의 결과와 재시도로 넘어간 실행의 원인을 보인다.
+
+```text
+state: running
+phase: retry_wait (run 2)
+```
+
+```text
+state: failed (postprocess nonzero_exit: exited with code 3)
+postprocess: run 2 failed (nonzero_exit), exit_code 3
+postprocess retried after: run 1 nonzero_exit, exit_code 3
+```
 
 stdout 해석과 성공 판정:
 
@@ -667,6 +680,8 @@ stdout 해석과 성공 판정:
 - 취소된 task 의 permit 은 실행이 끝난 것을 확인한 다음 tick 에 놓는다.
 - 각 실행 보고는 `tasty.agent.postprocess_result.<task id>` 에 회차 id 와 함께 저장한다. 재시작하면 `phase` 로 복원한다. `pending` 은 예약대로 실행하고, `started` 는 같은 회차·번호의 저장된 보고가 있으면 그것으로 확정하며 없으면 `outcome_unknown` 으로 끝낸다. 결과 불명인 실행은 재시도 예산이 남아도 다시 실행하지 않는다. 다시 실행하려면 `retry` 로 새 회차를 연다(본 작업부터 실행한다).
 - 러너가 멈추면(workspace 정리·앱 종료) 진행 중인 후처리를 `cancelled` 로 중단하고 보고를 저장한다. 재시작 뒤 그 task 는 이 보고로 실패하며 재시도 예산이 남아도 다시 실행하지 않는다. 보고를 저장하기 전에 호스트가 끝났으면 `outcome_unknown` 이다.
+- 정상 종료 때는 그룹 종료와 보고 저장을 기다린다. executor 는 작업 스레드를 최대 3초, runner registry 는 runner 스레드를 최대 4초 기다린 뒤 경고하고 돌아간다. 보통은 수십 ms 안에 끝난다.
+- 비정상 종료(SIGTERM 등, Tasty 에는 SIGTERM 처리기가 없다): Linux 는 후처리를 호스트 수명에 묶어(`tasty_reaper::spawn_bound_to_host`, PDEATHSIG) 그룹 리더가 SIGTERM 을 받는다. 그룹의 다른 프로세스는 신호를 받지 않아, 리더가 전달하지 않으면 남는다. Windows 는 실행별 KILL_ON_JOB_CLOSE job 이 호스트 종료와 함께 닫혀 job 안의 프로세스가 끝난다. macOS 는 묶지 않아 그룹 전체가 남는다. 남은 프로세스는 재시작 뒤에도 정리하지 않으며, task 는 `outcome_unknown` 으로 끝난다.
 
 ### 입력 binding
 
@@ -714,7 +729,7 @@ stdout 해석과 성공 판정:
       "input_mapping": {"args": ["/code"]}}]}}
 ```
 
-- task 키: `id`(필수, 호출자가 정하는 task id), `name`, `command`, `depends_on`, `on_failure`, `metadata`, `input_schema`, `output_schema`, `bindings`, `input_mapping`, `allowed_exit_codes`, `merge_conflict`. 모르는 키는 거절한다. `types` 는 모든 task 가 함께 쓴다.
+- task 키: `id`(필수, 호출자가 정하는 task id), `name`, `command`, `depends_on`, `on_failure`, `metadata`, `input_schema`, `output_schema`, `bindings`, `input_mapping`, `allowed_exit_codes`, `merge_conflict`, `postprocess`. 모르는 키는 거절한다. `types` 는 모든 task 가 함께 쓴다.
 - 검증: id 형식과 중복(그래프 안·workspace), `depends_on`·fallback·reduce 입력·binding 원본의 존재, 계약과 binding 의 타입, 매핑, 위 조합 규칙, 순환. 그래프 task 의 command 에 v1 출력 placeholder(`${task.…}`)가 있으면 거절하고 binding 을 쓰라고 안내한다.
 - 그래프 하나에는 task 를 1000 개(`MAX_GRAPH_TASKS`)까지 담는다. 제출이 memory 잠금을 쥔 채 앱의 IPC 처리 경로에서 활성화하기 때문이다(근거 ADR-0069). 그동안 러너 tick 과 memory 를 쓰지 않는 요청을 포함한 다른 IPC 전체가 기다린다. 1000 개 제출 중 다른 연결의 `system.ping` 은 0.25~1.4s 기다렸다(격리 인스턴스, dev 빌드 실측, 표는 ADR-0069). 초과하면 `location: /tasks` 로 거절한다.
 - 실패하면 아무것도 저장하지 않고 `-32602` 로 답한다. `error.data` 는 실패 단계·task id·타입 오류와 함께 `location`(제출한 그래프 안의 JSON Pointer, 예: `/tasks/1/bindings/label`, 순환은 `/tasks`)을 싣는다.

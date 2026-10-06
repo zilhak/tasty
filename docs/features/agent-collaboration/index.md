@@ -70,7 +70,7 @@ v2 의 int64 값은 내부에서는 정수로 들고, 직렬화할 때(저장·I
 
 #### 후처리 CLI
 
-v2 run·custom task 는 계약의 `postprocess` 로 본 작업 뒤 CLI 하나를 실행해 그 stdout 을 최종 출력으로 받을 수 있다. 명령은 셸 없이 직접 실행하고, 입력 snapshot·본 작업 원본·artifact 에서 고른 값을 JSON 문서 하나로 stdin 에 쓴다. stdout 은 JSON 값 하나(선택 pointer) 또는 UTF-8 text 이고 출력 타입으로 검증한다. 후처리가 끝날 때까지 task 는 Running 이고 permit 을 쥐며 하류는 기다린다. 실패 원인(종료 코드·시작 실패·시간 초과·취소·형식 오류 등)을 구분해 기록하고, 명시한 횟수만큼 저장한 본 작업 결과로 후처리만 다시 실행한다. 시작했지만 결과를 받지 못한 실행은 재시작 뒤 다시 실행하지 않는다. `task_get` 은 이 단계의 task 에 `phase`(`postprocessing`·`retry_wait`)를 싣는다. 형식과 규칙은 [작업 러너 §후처리 CLI](../../dev-guide/agent-runner.md#후처리-cli-postprocess).
+v2 run·custom task 는 계약의 `postprocess` 로 본 작업 뒤 CLI 하나를 실행해 그 stdout 을 최종 출력으로 받을 수 있다. 명령은 셸 없이 직접 실행하고, 입력 snapshot·본 작업 원본·artifact 에서 고른 값을 JSON 문서 하나로 stdin 에 쓴다. stdout 은 JSON 값 하나(선택 pointer) 또는 UTF-8 text 이고 출력 타입으로 검증한다. 후처리가 끝날 때까지 task 는 Running 이고 permit 을 쥐며 하류는 기다린다. 실패 원인(종료 코드·시작 실패·시간 초과·취소·형식 오류 등)을 구분해 기록하고, 명시한 횟수만큼 저장한 본 작업 결과로 후처리만 다시 실행한다. 시작했지만 결과를 받지 못한 실행은 재시작 뒤 다시 실행하지 않는다. `task_get` 은 이 단계의 task 에 `phase`(`postprocessing`·`retry_wait`)를 싣고, CLI `task-get` 은 단계와 실행 번호, 끝난 뒤에는 마지막 실행의 원인·종료 코드와 재시도로 넘어간 실행의 원인을 줄로 보인다. 후처리 자식은 바깥 Claude Code 세션 변수와 바깥 Tasty 인스턴스의 신원 변수를 받지 않는다. 앱을 정상 종료하면 진행 중인 후처리 그룹을 끝내고 보고를 저장할 때까지 짧게 기다린다. 형식과 규칙은 [작업 러너 §후처리 CLI](../../dev-guide/agent-runner.md#후처리-cli-postprocess).
 
 `task_get`의 CLI 출력에는 command 종류, `depends_on`, `on_failure`, `metadata`가 포함된다. `task_graph`의 노드는 `command_kind`·`on_failure_kind`를, 엣지는 `depends_on`·`fallback`·`reduce`·`binding`(v2 입력 binding 의 원본 → 받는 task) 종류를 제공한다. dot에서는 각각 실선·주황 점선·파랑 점선·실선으로 표시한다. DAG 화면도 `binding` 엣지를 `depends_on` 과 같은 모양으로 그린다.
 

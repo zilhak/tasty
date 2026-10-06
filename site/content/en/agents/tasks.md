@@ -1,4 +1,4 @@
-<!-- source-hash: 83d9c3d6ef91 -->
+<!-- source-hash: 40d6d50b64cb -->
 <a id="task-dag"></a>
 
 # Task workflows (DAG)
@@ -104,13 +104,15 @@ To run a task's result through another command (a judge or summary tool, say) an
                  "retry": {"max_retries": 1}}}
 ```
 
-- The command runs as is, without a shell. If you need one, write it out, as in `["sh", "-c", "..."]`. Sign-in uses the environment Tasty was started from. If you started Tasty inside Claude Code, the variables that point at that session are not passed on (the same as in the terminal).
+- The command runs as is, without a shell. If you need one, write it out, as in `["sh", "-c", "..."]`. Sign-in uses the environment Tasty was started from. If you started Tasty inside Claude Code, the variables that point at that session are not passed on (the same as in the terminal). If you started Tasty from another Tasty's terminal, variables such as `TASTY_SURFACE_ID` that point at that Tasty's terminal are not passed on either.
 - `stdin` sets the fields of the JSON written to standard input. `from` is `input` (the task's input), `raw` (the main work's result) or `artifacts`, and `pointer` picks a value inside it.
 - By default standard output must be exactly one JSON value. With `"stdout": {"format": "text"}` the text is taken as is. Progress logs sent to standard error stay out of the result.
 - `timeout_ms` is required. When it runs out or the task is cancelled, the command and the processes it started are stopped.
 - With `retry`, a failure reruns only the postprocess that many times; the main work does not run again.
-- Until the postprocess finishes, the task shows as running (`phase` in `task-get`) and the next tasks wait. The reason for a failure is in the task result's `raw.postprocess`.
+- Until the postprocess finishes, the task shows as running and the next tasks wait. `task-get` shows `phase: postprocessing (run 1)` on the line after `state: running` (`phase: retry_wait (run 2)` while it waits to retry).
+- If the postprocess fails, the `state` line in `task-get` gives the reason. The lines under it give the last run's cause and exit code, such as `postprocess: run 2 failed (nonzero_exit), exit_code 3`, and the causes of the runs that were retried (`postprocess retried after: ...`).
 - If Tasty quits or restarts while a postprocess runs, that postprocess is not run again and the task fails. To try again, rerun the task with `task-retry`.
+- If Tasty is killed (with `kill`, for example), other processes the postprocess command started can be left running. On Linux the postprocess command itself gets a termination signal, on Windows they end with Tasty, and on macOS they are all left running.
 
 While Tasty runs on [temporary memory](cli.md#memory-shared-between-agents) because it could not open its memory file, a graph would not survive a restart, so sending it as is gets refused. For a graph that may be lost on restart, add `"durability": "best_effort"`.
 
