@@ -11,6 +11,7 @@ repository = "https://github.com/zilhak/tasty"
 tasty-remote-profiles = { path = "../tasty-remote-profiles" }
 tasty-utils = { path = "../tasty-utils" }
 tasty-i18n = { path = "../tasty-i18n" }
+tasty-reaper = { path = "../tasty-reaper" }
 
 # Logging
 tracing = "0.1"

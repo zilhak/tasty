@@ -2,6 +2,7 @@
 //! 등록된 프로세스는 호스트의 마지막 job 핸들이 닫힐 때 OS가 종료한다.
 //! 생성·등록 실패는 경고하고 호스트 실행을 계속하므로 모든 자식의 정리를 보장하지는 않는다.
 //! 비 Windows에서는 아무 작업도 하지 않는다. 해당 플랫폼의 PTY·자식 종료 처리는 호출자 책임이다.
+//! 예외로 [`spawn_bound_to_host`]는 Linux에서 PDEATHSIG로 자식을 호스트 수명에 묶는다.
 
 use std::sync::OnceLock;
 
@@ -43,6 +44,118 @@ pub fn adopt_pid(pid: Option<u32>) {
     };
     if let Err(e) = job.assign_pid(pid) {
         tracing::warn!("reaper adopt pid {pid} failed: {e}");
+    }
+}
+
+/// 호스트가 비정상 종료해도 남지 않아야 하는 자식(SSH 터널 등)을 실행한다.
+///
+/// Linux는 부모가 죽으면 자식이 SIGTERM을 받도록 PDEATHSIG를 설정한다. PDEATHSIG는 fork한
+/// 스레드의 종료에 반응하므로 짧게 사는 워커 대신 프로세스 수명 동안 남는 spawner 스레드에서
+/// 실행한다. Windows는 [`init_host_reaper`]로 만든 호스트 job에 등록한다(초기화하지 않은
+/// CLI 등에서는 등록하지 않는다). 다른 OS는 결속하지 않고 그대로 실행한다.
+pub fn spawn_bound_to_host(cmd: std::process::Command) -> std::io::Result<std::process::Child> {
+    bound::spawn(cmd)
+}
+
+#[cfg(target_os = "linux")]
+mod bound {
+    use std::io;
+    use std::os::unix::process::CommandExt;
+    use std::process::{Child, Command};
+    use std::sync::OnceLock;
+    use std::sync::mpsc::{self, Sender, SyncSender};
+
+    type SpawnJob = (Command, SyncSender<io::Result<Child>>);
+
+    /// 스레드를 만들지 못하면 None이며, 호출자 스레드에서 실행한다.
+    fn spawner() -> Option<&'static Sender<SpawnJob>> {
+        static TX: OnceLock<Option<Sender<SpawnJob>>> = OnceLock::new();
+        TX.get_or_init(|| {
+            let (tx, rx) = mpsc::channel::<SpawnJob>();
+            let spawned = std::thread::Builder::new()
+                .name("bound-spawner".into())
+                .spawn(move || {
+                    while let Ok((mut cmd, reply)) = rx.recv() {
+                        deliver(&reply, cmd.spawn());
+                    }
+                });
+            match spawned {
+                Ok(_) => Some(tx),
+                Err(e) => {
+                    tracing::warn!(
+                        "bound-spawner thread creation failed; PDEATHSIG follows the caller thread: {e}"
+                    );
+                    None
+                }
+            }
+        })
+        .as_ref()
+    }
+
+    // 요청자가 떠나 전달하지 못한 자식은 Child drop만으로 회수되지 않으므로 직접 끝낸다.
+    fn deliver(reply: &SyncSender<io::Result<Child>>, result: io::Result<Child>) {
+        let Err(mpsc::SendError(Ok(mut child))) = reply.send(result) else {
+            return;
+        };
+        let pid = child.id();
+        if let Err(error) = child.kill() {
+            tracing::warn!(pid, %error, "could not stop an unclaimed bound child");
+        }
+        if let Err(error) = child.wait() {
+            tracing::warn!(pid, %error, "could not reap an unclaimed bound child");
+        }
+    }
+
+    pub(super) fn spawn(mut cmd: Command) -> io::Result<Child> {
+        let parent = std::process::id();
+        // SAFETY: pre_exec 클로저는 fork 뒤 exec 전 자식에서 실행된다. 아래 함수는
+        // async-signal-safe인 prctl·getppid·_exit만 호출하고 할당하지 않는다.
+        unsafe {
+            cmd.pre_exec(move || exit_with_parent(parent));
+        }
+        let Some(tx) = spawner() else {
+            return cmd.spawn();
+        };
+        let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+        if tx.send((cmd, reply_tx)).is_err() {
+            return Err(io::Error::other("bound-spawner thread is gone"));
+        }
+        reply_rx
+            .recv()
+            .map_err(|_| io::Error::other("bound-spawner thread dropped its reply"))?
+    }
+
+    fn exit_with_parent(parent: u32) -> io::Result<()> {
+        // SAFETY: fork 뒤 자식에서 인자만 정수인 prctl을 호출한다.
+        let set = unsafe { libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM) };
+        if set != 0 {
+            return Err(io::Error::last_os_error());
+        }
+        // 설정 전에 부모가 이미 끝났으면 신호가 오지 않는다. 부모가 subreaper(systemd --user 등)로
+        // 바뀌므로 1과 비교하지 않고 fork 전 PID와 비교한다.
+        // SAFETY: getppid는 실패하지 않는 async-signal-safe 호출이다.
+        let now = unsafe { libc::getppid() };
+        if u32::try_from(now).ok() != Some(parent) {
+            // SAFETY: exec 전 자식을 즉시 끝낸다. 부모의 atexit·버퍼를 실행하지 않는다.
+            unsafe { libc::_exit(0) };
+        }
+        Ok(())
+    }
+}
+
+#[cfg(windows)]
+mod bound {
+    pub(super) fn spawn(mut cmd: std::process::Command) -> std::io::Result<std::process::Child> {
+        let child = cmd.spawn()?;
+        super::adopt_pid(Some(child.id()));
+        Ok(child)
+    }
+}
+
+#[cfg(not(any(target_os = "linux", windows)))]
+mod bound {
+    pub(super) fn spawn(mut cmd: std::process::Command) -> std::io::Result<std::process::Child> {
+        cmd.spawn()
     }
 }
 

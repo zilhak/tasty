@@ -49,8 +49,8 @@ impl SshTunnel {
         // 호스트 GUI(windows subsystem, 콘솔 없음)가 in-process 로 이 함수를 호출하므로
         // CREATE_NO_WINDOW 를 걸지 않으면 Windows 가 ssh.exe 용 새 콘솔 창을 띄운다.
         tasty_utils::process::hide_console(&mut cmd);
-        let child = cmd
-            .spawn()
+        // 호스트가 SIGTERM 등으로 끝나도 터널이 고아로 남지 않게 호스트 수명에 묶는다.
+        let child = tasty_reaper::spawn_bound_to_host(cmd)
             .map_err(|e| anyhow::anyhow!("ssh 터널 spawn 실패({}): {e}", ssh.display()))?;
 
         let mut tunnel = SshTunnel { child, local_port };

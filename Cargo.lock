@@ -6376,6 +6376,7 @@ dependencies = [
 name = "tasty-reaper"
 version = "0.1.0"
 dependencies = [
+ "libc",
  "tracing",
  "windows-sys 0.59.0",
 ]
@@ -6450,6 +6451,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "tasty-i18n",
+ "tasty-reaper",
  "tasty-remote-profiles",
  "tasty-utils",
  "tracing",
