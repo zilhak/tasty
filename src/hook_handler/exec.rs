@@ -171,8 +171,8 @@ pub fn spawn_shell(command: String, args: Vec<String>, env: Vec<(String, String)
     }
 }
 
-/// 셸을 거치지 않는 훅 Command를 만든다. `strip` 키는 터미널 셸과 같은 목록으로
-/// 상속 환경에서 지운다(`tasty_utils::process::is_stripped_inherited_env`).
+/// 셸을 거치지 않는 훅 Command를 만든다. `strip` 키는 상속 환경에서 지운다. 터미널 셸과 같은
+/// 판정에 바깥 인스턴스의 호출자 신원을 더한 목록이다(`tasty_utils::process::hook_env_keys_to_strip`).
 fn hook_exec_command(
     command: &str,
     args: &[String],
@@ -192,19 +192,22 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    /// 직접 실행 훅도 터미널 셸과 같은 목록으로 Claude Code 세션 키와 CMUX_* 를 지운다.
+    /// 직접 실행 훅도 터미널 셸과 같은 목록으로 Claude Code 세션 키와 CMUX_* 를 지우고,
+    /// 바깥 인스턴스의 세션 토큰·에이전트 ID 도 지운다.
     #[test]
     fn hook_exec_strips_claude_session_and_cmux_env() {
         use tasty_test_support::strip_env_keys::{KEPT, STRIPPED, inherited};
-        use tasty_utils::process::env_keys_to_strip;
+        use tasty_utils::process::{OUTER_CALLER_ENV, hook_env_keys_to_strip};
         let env = KEPT
             .iter()
             .map(|k| ((*k).to_owned(), "1".to_owned()))
             .collect();
-        let strip = env_keys_to_strip(inherited());
+        let mut inherited = inherited();
+        inherited.extend(OUTER_CALLER_ENV.iter().map(|k| (k.into(), "outer".into())));
+        let strip = hook_env_keys_to_strip(inherited);
         let cmd = hook_exec_command("true", &[], env, strip);
         let envs: Vec<_> = cmd.get_envs().collect();
-        for key in STRIPPED {
+        for key in STRIPPED.iter().chain(OUTER_CALLER_ENV) {
             assert!(
                 envs.contains(&(std::ffi::OsStr::new(key), None)),
                 "{key} 는 지워져야 한다"

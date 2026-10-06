@@ -102,9 +102,31 @@ pub fn env_keys_to_strip(
         .collect()
 }
 
-/// 현재 프로세스 환경에서 자식에게 넘기지 않을 키.
+/// 바깥 Tasty 인스턴스에서 상속한 호출자 신원. 이 Tasty 를 다른 Tasty 의 터미널에서 띄웠으면
+/// 그 인스턴스가 발급한 세션 토큰과 에이전트 ID 다. 자식이 부른 `tasty` 가 이 토큰을 실으면 이
+/// 인스턴스는 모르는 토큰이라 요청을 거절한다. 터미널 셸과 훅 실행은 이 인스턴스가 발급한 값이
+/// 없으므로 덮어쓰지 않고 지운다. 자식 에이전트의 값은 플러그인이 실행 명령 앞에 직접 붙인다.
+pub const OUTER_CALLER_ENV: &[&str] = &["TASTY_SESSION_TOKEN", "TASTY_AGENT_ID"];
+
+/// 훅 실행(surface 훅·전역 훅·hook_handler)이 상속 환경에서 지울 키. [`env_keys_to_strip`] 에
+/// 상속된 [`OUTER_CALLER_ENV`] 를 더한다. 터미널 셸은 셸 설정 환경변수를 지키려고 두 목록을
+/// 따로 적용한다.
+pub fn hook_env_keys_to_strip(
+    inherited: impl IntoIterator<Item = (OsString, OsString)>,
+) -> Vec<OsString> {
+    inherited
+        .into_iter()
+        .filter(|(k, v)| {
+            k.to_str()
+                .is_some_and(|k| OUTER_CALLER_ENV.contains(&k) || is_stripped_inherited_env(k, v))
+        })
+        .map(|(k, _)| k)
+        .collect()
+}
+
+/// 현재 프로세스 환경에서 훅 실행에 넘기지 않을 키([`hook_env_keys_to_strip`]).
 pub fn process_env_keys_to_strip() -> Vec<OsString> {
-    env_keys_to_strip(std::env::vars_os())
+    hook_env_keys_to_strip(std::env::vars_os())
 }
 
 /// 현재 실행 파일의 디렉터리를 base PATH 앞에 붙인다. 패키징된 앱의 제한된 PATH에서도
@@ -123,6 +145,25 @@ pub fn path_prepending_self_dir(base: Option<OsString>) -> Option<OsString> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 훅 실행은 Claude Code 세션 키에 더해 바깥 인스턴스의 세션 토큰·에이전트 ID 를 지운다.
+    #[test]
+    fn hook_keys_add_the_outer_caller_identity() {
+        let inherited = [
+            ("CLAUDECODE", "1"),
+            ("TASTY_SESSION_TOKEN", "outer"),
+            ("TASTY_AGENT_ID", "outer"),
+            ("TASTY_SURFACE_ID", "3"),
+            ("TASTY_HOME", "/h"),
+        ]
+        .map(|(k, v)| (OsString::from(k), OsString::from(v)));
+        let keys = hook_env_keys_to_strip(inherited.clone());
+        assert_eq!(
+            keys,
+            ["CLAUDECODE", "TASTY_SESSION_TOKEN", "TASTY_AGENT_ID"].map(OsString::from)
+        );
+        assert_eq!(env_keys_to_strip(inherited), [OsString::from("CLAUDECODE")]);
+    }
 
     /// self-binary 디렉토리가 최소 PATH 맨 앞에 붙는지 검증한다 — 패키징된
     /// macOS `.app` 이 받는 `/usr/bin:/bin:...` 같은 최소 PATH 를 흉내낸다.

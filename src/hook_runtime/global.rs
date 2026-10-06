@@ -198,8 +198,8 @@ fn file_mtime(path: &std::path::Path) -> Option<SystemTime> {
     std::fs::metadata(path).and_then(|m| m.modified()).ok()
 }
 
-/// 전역 훅 명령을 sh/cmd로 감싼 Command를 만든다. `strip` 키는 터미널 셸과 같은 목록으로
-/// 상속 환경에서 지운다(`tasty_utils::process::is_stripped_inherited_env`).
+/// 전역 훅 명령을 sh/cmd로 감싼 Command를 만든다. `strip` 키는 상속 환경에서 지운다. 터미널 셸과 같은
+/// 판정에 바깥 인스턴스의 호출자 신원을 더한 목록이다(`tasty_utils::process::hook_env_keys_to_strip`).
 fn global_hook_command(command: &str, strip: Vec<std::ffi::OsString>) -> std::process::Command {
     #[cfg(windows)]
     let mut cmd = {
@@ -223,19 +223,22 @@ fn global_hook_command(command: &str, strip: Vec<std::ffi::OsString>) -> std::pr
 mod tests {
     use super::*;
 
-    /// 전역 훅도 터미널 셸과 같은 목록으로 Claude Code 세션 키와 CMUX_* 를 지우고 나머지는 남긴다.
+    /// 전역 훅도 터미널 셸과 같은 목록으로 Claude Code 세션 키와 CMUX_* 를 지우고,
+    /// 바깥 인스턴스의 세션 토큰·에이전트 ID 도 지운다. 나머지는 남긴다.
     #[test]
     fn global_hook_strips_claude_session_and_cmux_env() {
         use tasty_test_support::strip_env_keys::{KEPT, STRIPPED, inherited};
-        use tasty_utils::process::env_keys_to_strip;
-        let strip = env_keys_to_strip(inherited());
+        use tasty_utils::process::{OUTER_CALLER_ENV, hook_env_keys_to_strip};
+        let mut inherited = inherited();
+        inherited.extend(OUTER_CALLER_ENV.iter().map(|k| (k.into(), "outer".into())));
+        let strip = hook_env_keys_to_strip(inherited);
         let cmd = global_hook_command("true", strip);
         let removed: Vec<_> = cmd
             .get_envs()
             .filter(|(_, v)| v.is_none())
             .map(|(k, _)| k.to_owned())
             .collect();
-        for key in STRIPPED {
+        for key in STRIPPED.iter().chain(OUTER_CALLER_ENV) {
             assert!(
                 removed.iter().any(|k| k == std::ffi::OsStr::new(key)),
                 "{key} 는 지워져야 한다"

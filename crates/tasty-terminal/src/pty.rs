@@ -606,14 +606,10 @@ fn strip_inherited_env(
     }
 }
 
-/// 바깥 Tasty 인스턴스에서 상속한 호출자 신원. 이 Tasty 를 다른 Tasty 의 터미널에서 띄웠으면 그
-/// 인스턴스가 발급한 세션 토큰과 에이전트 ID 다. 셸에서 부른 `tasty` 가 이 토큰을 실으면 이
-/// 인스턴스는 모르는 토큰이라 요청을 거절한다. 일반 셸은 이 인스턴스가 발급한 값이 없으므로
-/// 덮어쓰지 않고 지운다. 자식 에이전트의 값은 플러그인이 실행 명령 앞에 직접 붙인다.
-const OUTER_CALLER_ENV: &[&str] = &["TASTY_SESSION_TOKEN", "TASTY_AGENT_ID"];
+use tasty_utils::process::OUTER_CALLER_ENV;
 
-/// [`OUTER_CALLER_ENV`] 를 자식 환경에서 지운다. 셸 설정의 환경변수보다 먼저 적용해 사용자가
-/// 설정에 넣은 값은 남긴다.
+/// 바깥 인스턴스의 호출자 신원([`OUTER_CALLER_ENV`])을 자식 환경에서 지운다. 셸 설정의
+/// 환경변수보다 먼저 적용해 사용자가 설정에 넣은 값은 남긴다.
 fn drop_outer_caller_env(cmd: &mut CommandBuilder) {
     for key in OUTER_CALLER_ENV {
         cmd.env_remove(key);

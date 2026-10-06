@@ -9,7 +9,7 @@
 - Tasty 가 실행 중이어야 합니다. CLI 는 `~/.tasty/tasty.port` 에 적힌 포트로 실행 중인 인스턴스에 접속합니다.
 - Tasty 가 띄운 터미널 안에서는 `tasty` 가 이미 PATH 에 있습니다. 밖(다른 터미널 앱)에서 쓰려면 Tasty 실행 파일이 있는 경로를 PATH 에 넣습니다. 설치 방식별 경로는 [설치](../getting-started/install.md#설치-위치) 에 있습니다.
 - Tasty 가 띄운 셸에는 `TASTY_SURFACE_ID` 환경변수가 들어 있습니다. `--surface` 를 생략한 명령은 대부분 이 값을 쓰므로(`tasty new workspace` · `tasty output observe start` 는 예외), 자기 터미널을 조작할 때는 ID 를 적지 않아도 됩니다.
-- 다른 Tasty 의 터미널에서 Tasty 를 실행해도, 새 Tasty 가 띄운 셸은 바깥 Tasty 의 세션 토큰(`TASTY_SESSION_TOKEN`)과 에이전트 ID(`TASTY_AGENT_ID`)를 물려받지 않습니다. 그 셸의 `tasty` 명령은 새 Tasty 에 일반 사용자로 접속합니다.
+- 다른 Tasty 의 터미널에서 Tasty 를 실행해도, 새 Tasty 가 띄운 셸과 훅 명령은 바깥 Tasty 의 세션 토큰(`TASTY_SESSION_TOKEN`)과 에이전트 ID(`TASTY_AGENT_ID`)를 물려받지 않습니다. 그 안에서 부른 `tasty` 명령은 새 Tasty 에 일반 사용자로 접속합니다.
 
 ```sh
 echo $TASTY_SURFACE_ID     # 예: 42
