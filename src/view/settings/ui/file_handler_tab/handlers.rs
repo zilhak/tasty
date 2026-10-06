@@ -145,21 +145,24 @@ fn draw_add_handler_form(
                     ui.end_row();
 
                     ui.label(t("settings.file_handler.handlers.field_detector"));
-                    egui::ComboBox::from_id_salt("file_handler_handlers_add_detector")
-                        .selected_text(if fh.add_handler_form.detector_id_input.is_empty() {
-                            t("settings.file_handler.handlers.field_detector_select").to_string()
-                        } else {
-                            fh.add_handler_form.detector_id_input.clone()
-                        })
-                        .show_ui(ui, |ui| {
-                            for id in &detector_ids {
-                                ui.selectable_value(
-                                    &mut fh.add_handler_form.detector_id_input,
-                                    id.as_str().to_string(),
-                                    id.as_str(),
-                                );
-                            }
-                        });
+                    tasty_egui_theme::with_popover_frame(ui, &th, |ui| {
+                        egui::ComboBox::from_id_salt("file_handler_handlers_add_detector")
+                            .selected_text(if fh.add_handler_form.detector_id_input.is_empty() {
+                                t("settings.file_handler.handlers.field_detector_select")
+                                    .to_string()
+                            } else {
+                                fh.add_handler_form.detector_id_input.clone()
+                            })
+                            .show_ui(ui, |ui| {
+                                for id in &detector_ids {
+                                    ui.selectable_value(
+                                        &mut fh.add_handler_form.detector_id_input,
+                                        id.as_str().to_string(),
+                                        id.as_str(),
+                                    );
+                                }
+                            })
+                    });
                     ui.end_row();
 
                     ui.label(t("settings.file_handler.handlers.field_priority"));
@@ -171,35 +174,38 @@ fn draw_add_handler_form(
                     ui.end_row();
 
                     ui.label(t("settings.file_handler.handlers.field_action_kind"));
-                    egui::ComboBox::from_id_salt("file_handler_handlers_add_action_kind")
-                        .selected_text(match fh.add_handler_form.action_kind {
-                            AddHandlerActionKind::OpenSurface => {
-                                t("settings.file_handler.handlers.action_open_surface").to_string()
-                            }
-                            AddHandlerActionKind::Ipc => {
-                                t("settings.file_handler.handlers.action_ipc").to_string()
-                            }
-                            AddHandlerActionKind::System => {
-                                t("settings.file_handler.handlers.action_system").to_string()
-                            }
-                        })
-                        .show_ui(ui, |ui| {
-                            ui.selectable_value(
-                                &mut fh.add_handler_form.action_kind,
-                                AddHandlerActionKind::OpenSurface,
-                                t("settings.file_handler.handlers.action_open_surface"),
-                            );
-                            ui.selectable_value(
-                                &mut fh.add_handler_form.action_kind,
-                                AddHandlerActionKind::Ipc,
-                                t("settings.file_handler.handlers.action_ipc"),
-                            );
-                            ui.selectable_value(
-                                &mut fh.add_handler_form.action_kind,
-                                AddHandlerActionKind::System,
-                                t("settings.file_handler.handlers.action_system"),
-                            );
-                        });
+                    tasty_egui_theme::with_popover_frame(ui, &th, |ui| {
+                        egui::ComboBox::from_id_salt("file_handler_handlers_add_action_kind")
+                            .selected_text(match fh.add_handler_form.action_kind {
+                                AddHandlerActionKind::OpenSurface => {
+                                    t("settings.file_handler.handlers.action_open_surface")
+                                        .to_string()
+                                }
+                                AddHandlerActionKind::Ipc => {
+                                    t("settings.file_handler.handlers.action_ipc").to_string()
+                                }
+                                AddHandlerActionKind::System => {
+                                    t("settings.file_handler.handlers.action_system").to_string()
+                                }
+                            })
+                            .show_ui(ui, |ui| {
+                                ui.selectable_value(
+                                    &mut fh.add_handler_form.action_kind,
+                                    AddHandlerActionKind::OpenSurface,
+                                    t("settings.file_handler.handlers.action_open_surface"),
+                                );
+                                ui.selectable_value(
+                                    &mut fh.add_handler_form.action_kind,
+                                    AddHandlerActionKind::Ipc,
+                                    t("settings.file_handler.handlers.action_ipc"),
+                                );
+                                ui.selectable_value(
+                                    &mut fh.add_handler_form.action_kind,
+                                    AddHandlerActionKind::System,
+                                    t("settings.file_handler.handlers.action_system"),
+                                );
+                            })
+                    });
                     ui.end_row();
 
                     match fh.add_handler_form.action_kind {

@@ -470,32 +470,34 @@ fn draw_trigger_row(
             })
             .collect();
         if !available.is_empty() {
-            egui::ComboBox::from_id_salt(("script_trigger_add", id))
-                .selected_text(
-                    egui::RichText::new(t("settings.scripts.trigger_add"))
-                        .size(th.font_size_caption.value())
-                        .color(th.text_muted()),
-                )
-                .show_ui(ui, |ui| {
-                    for ev in available {
-                        if ui
-                            .selectable_label(
-                                false,
-                                egui::RichText::new(ev)
-                                    .monospace()
-                                    .size(th.font_size_term_sm.value()),
-                            )
-                            .clicked()
-                        {
-                            *pending = Some(Pending::AddTrigger(
-                                id.to_string(),
-                                AutoTrigger::Event {
-                                    name: ev.to_string(),
-                                },
-                            ));
+            tasty_egui_theme::with_popover_frame(ui, th, |ui| {
+                egui::ComboBox::from_id_salt(("script_trigger_add", id))
+                    .selected_text(
+                        egui::RichText::new(t("settings.scripts.trigger_add"))
+                            .size(th.font_size_caption.value())
+                            .color(th.text_muted()),
+                    )
+                    .show_ui(ui, |ui| {
+                        for ev in available {
+                            if ui
+                                .selectable_label(
+                                    false,
+                                    egui::RichText::new(ev)
+                                        .monospace()
+                                        .size(th.font_size_term_sm.value()),
+                                )
+                                .clicked()
+                            {
+                                *pending = Some(Pending::AddTrigger(
+                                    id.to_string(),
+                                    AutoTrigger::Event {
+                                        name: ev.to_string(),
+                                    },
+                                ));
+                            }
                         }
-                    }
-                });
+                    })
+            });
         }
     });
 }

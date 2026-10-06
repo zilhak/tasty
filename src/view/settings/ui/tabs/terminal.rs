@@ -34,23 +34,25 @@ pub fn draw_terminal_tab(ui: &mut egui::Ui, settings: &mut Settings) {
             #[cfg(windows)]
             {
                 ui.label(t("settings.terminal.shell_mode_label"));
-                egui::ComboBox::from_id_salt("shell_mode")
-                    .selected_text(match settings.general.shell_mode.as_str() {
-                        "tasty" => t("settings.terminal.shell_mode_tasty"),
-                        _ => t("settings.terminal.shell_mode_default"),
-                    })
-                    .show_ui(ui, |ui| {
-                        ui.selectable_value(
-                            &mut settings.general.shell_mode,
-                            "default".to_string(),
-                            t("settings.terminal.shell_mode_default"),
-                        );
-                        ui.selectable_value(
-                            &mut settings.general.shell_mode,
-                            "tasty".to_string(),
-                            t("settings.terminal.shell_mode_tasty"),
-                        );
-                    });
+                tasty_egui_theme::with_popover_frame(ui, &th, |ui| {
+                    egui::ComboBox::from_id_salt("shell_mode")
+                        .selected_text(match settings.general.shell_mode.as_str() {
+                            "tasty" => t("settings.terminal.shell_mode_tasty"),
+                            _ => t("settings.terminal.shell_mode_default"),
+                        })
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(
+                                &mut settings.general.shell_mode,
+                                "default".to_string(),
+                                t("settings.terminal.shell_mode_default"),
+                            );
+                            ui.selectable_value(
+                                &mut settings.general.shell_mode,
+                                "tasty".to_string(),
+                                t("settings.terminal.shell_mode_tasty"),
+                            );
+                        })
+                });
                 ui.end_row();
             }
 
@@ -104,29 +106,31 @@ pub fn draw_terminal_tab(ui: &mut egui::Ui, settings: &mut Settings) {
             ui.end_row();
 
             ui.label(t("settings.terminal.link_modifier_label"));
-            egui::ComboBox::from_id_salt("link_modifier")
-                .selected_text(match settings.general.link_click_modifier.as_str() {
-                    "alt" => t("settings.terminal.link_modifier_alt"),
-                    "none" => t("settings.terminal.link_modifier_none"),
-                    _ => t("settings.terminal.link_modifier_ctrl"),
-                })
-                .show_ui(ui, |ui| {
-                    ui.selectable_value(
-                        &mut settings.general.link_click_modifier,
-                        "ctrl".to_string(),
-                        t("settings.terminal.link_modifier_ctrl"),
-                    );
-                    ui.selectable_value(
-                        &mut settings.general.link_click_modifier,
-                        "alt".to_string(),
-                        t("settings.terminal.link_modifier_alt"),
-                    );
-                    ui.selectable_value(
-                        &mut settings.general.link_click_modifier,
-                        "none".to_string(),
-                        t("settings.terminal.link_modifier_none"),
-                    );
-                });
+            tasty_egui_theme::with_popover_frame(ui, &th, |ui| {
+                egui::ComboBox::from_id_salt("link_modifier")
+                    .selected_text(match settings.general.link_click_modifier.as_str() {
+                        "alt" => t("settings.terminal.link_modifier_alt"),
+                        "none" => t("settings.terminal.link_modifier_none"),
+                        _ => t("settings.terminal.link_modifier_ctrl"),
+                    })
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(
+                            &mut settings.general.link_click_modifier,
+                            "ctrl".to_string(),
+                            t("settings.terminal.link_modifier_ctrl"),
+                        );
+                        ui.selectable_value(
+                            &mut settings.general.link_click_modifier,
+                            "alt".to_string(),
+                            t("settings.terminal.link_modifier_alt"),
+                        );
+                        ui.selectable_value(
+                            &mut settings.general.link_click_modifier,
+                            "none".to_string(),
+                            t("settings.terminal.link_modifier_none"),
+                        );
+                    })
+            });
             ui.end_row();
 
             // Option as Meta 는 macOS 전용 — 다른 OS 에는 Option 키가 없어 노출하지 않는다.

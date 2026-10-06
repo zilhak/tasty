@@ -1616,55 +1616,57 @@ fn font_family_picker(
     // 공용 Select 에는 검색 필터가 없어 egui ComboBox 를 유지한다. 그래서 disabled 모양은
     // 아직 egui fade 를 따른다.
     ui.add_enabled_ui(enabled, |ui| {
-        egui::ComboBox::from_id_salt(combo_id)
-            .selected_text(&display_name)
-            .width(th.field_width_lg.value())
-            .height(300.0)
-            .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
-            .show_ui(ui, |ui| {
-                ui.add(
-                    egui::TextEdit::singleline(filter)
-                        .hint_text(tasty_egui_theme::hint_text(
-                            &crate::theme::theme(),
-                            t("settings.appearance.search_hint"),
-                        ))
-                        .desired_width(190.0),
-                );
-                ui.separator();
-
-                let filter_lower = filter.to_lowercase();
-                if (filter_lower.is_empty() || "monospace".contains(&filter_lower))
-                    && ui
-                        .selectable_label(value.is_empty(), "monospace (default)")
-                        .clicked()
-                {
-                    value.clear();
-                }
-
-                if let Some(families) = font_families {
-                    egui::ScrollArea::vertical()
-                        .max_height(th.font_family_menu_max_height().value())
-                        .drag_to_scroll(false)
-                        .show(ui, |ui| {
-                            for family in families {
-                                if !filter_lower.is_empty()
-                                    && !family.to_lowercase().contains(&filter_lower)
-                                {
-                                    continue;
-                                }
-                                let selected = value == family;
-                                if ui.selectable_label(selected, family).clicked() {
-                                    *value = family.clone();
-                                }
-                            }
-                        });
-                } else {
-                    ui.label(
-                        egui::RichText::new(t("settings.appearance.loading_fonts"))
-                            .color(th.text_muted()),
+        tasty_egui_theme::with_popover_frame(ui, &th, |ui| {
+            egui::ComboBox::from_id_salt(combo_id)
+                .selected_text(&display_name)
+                .width(th.field_width_lg.value())
+                .height(300.0)
+                .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+                .show_ui(ui, |ui| {
+                    ui.add(
+                        egui::TextEdit::singleline(filter)
+                            .hint_text(tasty_egui_theme::hint_text(
+                                &crate::theme::theme(),
+                                t("settings.appearance.search_hint"),
+                            ))
+                            .desired_width(190.0),
                     );
-                }
-            });
+                    ui.separator();
+
+                    let filter_lower = filter.to_lowercase();
+                    if (filter_lower.is_empty() || "monospace".contains(&filter_lower))
+                        && ui
+                            .selectable_label(value.is_empty(), "monospace (default)")
+                            .clicked()
+                    {
+                        value.clear();
+                    }
+
+                    if let Some(families) = font_families {
+                        egui::ScrollArea::vertical()
+                            .max_height(th.font_family_menu_max_height().value())
+                            .drag_to_scroll(false)
+                            .show(ui, |ui| {
+                                for family in families {
+                                    if !filter_lower.is_empty()
+                                        && !family.to_lowercase().contains(&filter_lower)
+                                    {
+                                        continue;
+                                    }
+                                    let selected = value == family;
+                                    if ui.selectable_label(selected, family).clicked() {
+                                        *value = family.clone();
+                                    }
+                                }
+                            });
+                    } else {
+                        ui.label(
+                            egui::RichText::new(t("settings.appearance.loading_fonts"))
+                                .color(th.text_muted()),
+                        );
+                    }
+                })
+        });
     });
 }
 

@@ -136,70 +136,72 @@ fn display_style_combo(
     if resp.clicked() {
         ui.memory_mut(|m| m.toggle_popup(popup_id));
     }
-    egui::popup_below_widget(
-        ui,
-        popup_id,
-        &resp,
-        egui::PopupCloseBehavior::CloseOnClick,
-        |ui| {
-            let sz = theme.icon_glyph_size_md.value();
-            let pad_x = theme.menu_item_padding_x().value();
-            let gap = theme.spacing_sm.value();
-            let body = theme.font_size_body.value();
-            // 아이콘만 있는 버튼 폭으로는 목록의 라벨·체크마크가 겹치므로 추가 폭을 확보한다.
-            let content_width = options
-                .iter()
-                .map(|opt| {
-                    let label_w = ui
-                        .painter()
-                        .layout_no_wrap(
-                            opt.label.to_string(),
-                            egui::FontId::proportional(body),
-                            egui::Color32::PLACEHOLDER,
-                        )
-                        .rect
-                        .width();
-                    let icon_w = if opt.icon.is_some() { sz + gap } else { 0.0 };
-                    pad_x * 2.0 + icon_w + label_w + gap + sz
-                })
-                .fold(0.0_f32, f32::max);
-            ui.set_min_width(resp.rect.width().max(content_width));
-            let mut picked: Option<&'static str> = None;
-            for opt in options {
-                let is_active = opt.value == value.as_str();
-                let icon_closure = opt.icon.map(|icon| {
-                    move |ui: &mut egui::Ui, rect: egui::Rect, color: egui::Color32| {
-                        icon.image(rect.height(), color).paint_at(ui, rect);
+    tasty_egui_theme::with_popover_frame(ui, theme, |ui| {
+        egui::popup_below_widget(
+            ui,
+            popup_id,
+            &resp,
+            egui::PopupCloseBehavior::CloseOnClick,
+            |ui| {
+                let sz = theme.icon_glyph_size_md.value();
+                let pad_x = theme.menu_item_padding_x().value();
+                let gap = theme.spacing_sm.value();
+                let body = theme.font_size_body.value();
+                // 아이콘만 있는 버튼 폭으로는 목록의 라벨·체크마크가 겹치므로 추가 폭을 확보한다.
+                let content_width = options
+                    .iter()
+                    .map(|opt| {
+                        let label_w = ui
+                            .painter()
+                            .layout_no_wrap(
+                                opt.label.to_string(),
+                                egui::FontId::proportional(body),
+                                egui::Color32::PLACEHOLDER,
+                            )
+                            .rect
+                            .width();
+                        let icon_w = if opt.icon.is_some() { sz + gap } else { 0.0 };
+                        pad_x * 2.0 + icon_w + label_w + gap + sz
+                    })
+                    .fold(0.0_f32, f32::max);
+                ui.set_min_width(resp.rect.width().max(content_width));
+                let mut picked: Option<&'static str> = None;
+                for opt in options {
+                    let is_active = opt.value == value.as_str();
+                    let icon_closure = opt.icon.map(|icon| {
+                        move |ui: &mut egui::Ui, rect: egui::Rect, color: egui::Color32| {
+                            icon.image(rect.height(), color).paint_at(ui, rect);
+                        }
+                    });
+                    let icon_paint = icon_closure
+                        .as_ref()
+                        .map(|f| f as &dyn Fn(&mut egui::Ui, egui::Rect, egui::Color32));
+                    let row = menu_item(
+                        ui,
+                        theme,
+                        icon_paint,
+                        opt.label,
+                        None,
+                        MenuItemVariant::Normal,
+                        is_active,
+                        true,
+                    );
+                    if is_active {
+                        let center =
+                            egui::pos2(row.rect.right() - pad_x - sz * 0.5, row.rect.center().y);
+                        let r = egui::Rect::from_center_size(center, egui::vec2(sz, sz));
+                        tasty_icons::CHECK
+                            .image(sz, theme.text_primary().to_egui())
+                            .paint_at(ui, r);
                     }
-                });
-                let icon_paint = icon_closure
-                    .as_ref()
-                    .map(|f| f as &dyn Fn(&mut egui::Ui, egui::Rect, egui::Color32));
-                let row = menu_item(
-                    ui,
-                    theme,
-                    icon_paint,
-                    opt.label,
-                    None,
-                    MenuItemVariant::Normal,
-                    is_active,
-                    true,
-                );
-                if is_active {
-                    let center =
-                        egui::pos2(row.rect.right() - pad_x - sz * 0.5, row.rect.center().y);
-                    let r = egui::Rect::from_center_size(center, egui::vec2(sz, sz));
-                    tasty_icons::CHECK
-                        .image(sz, theme.text_primary().to_egui())
-                        .paint_at(ui, r);
+                    if row.clicked() && !is_active {
+                        picked = Some(opt.value);
+                    }
                 }
-                if row.clicked() && !is_active {
-                    picked = Some(opt.value);
+                if let Some(v) = picked {
+                    *value = v.to_string();
                 }
-            }
-            if let Some(v) = picked {
-                *value = v.to_string();
-            }
-        },
-    );
+            },
+        )
+    });
 }

@@ -741,6 +741,9 @@ mod mesh_bootstrap_order;
 mod theme_changed_after_install;
 
 #[cfg(test)]
+mod popover_frame_call_sites;
+
+#[cfg(test)]
 mod modifier_hint_paint_order;
 
 #[cfg(test)]

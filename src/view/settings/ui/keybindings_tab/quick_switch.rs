@@ -240,20 +240,22 @@ pub(super) fn draw_quick_switch_section(
                 KeybindingSettings::format_display(modifier, general)
             };
             // 플랫폼에서 허용하는 수식키 조합을 나열하고 개별 지정 항목을 별도로 추가한다.
-            egui::ComboBox::from_id_salt(kind.modifier_field_id())
-                .selected_text(selected_text)
-                .show_ui(ui, |ui| {
-                    for combo in all_modifier_combos() {
-                        let name = combo.name();
-                        let display = KeybindingSettings::format_display(&name, general);
-                        ui.selectable_value(modifier, name, display);
-                    }
-                    ui.selectable_value(
-                        modifier,
-                        KeybindingSettings::INDIVIDUAL_SWITCH_MODIFIER.to_string(),
-                        t("settings.keybindings.quick_switch_individual_label"),
-                    );
-                });
+            tasty_egui_theme::with_popover_frame(ui, &th, |ui| {
+                egui::ComboBox::from_id_salt(kind.modifier_field_id())
+                    .selected_text(selected_text)
+                    .show_ui(ui, |ui| {
+                        for combo in all_modifier_combos() {
+                            let name = combo.name();
+                            let display = KeybindingSettings::format_display(&name, general);
+                            ui.selectable_value(modifier, name, display);
+                        }
+                        ui.selectable_value(
+                            modifier,
+                            KeybindingSettings::INDIVIDUAL_SWITCH_MODIFIER.to_string(),
+                            t("settings.keybindings.quick_switch_individual_label"),
+                        );
+                    })
+            });
             ui.end_row();
         });
 

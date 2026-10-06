@@ -104,13 +104,15 @@ pub(super) fn draw_plugins_subtab(
                     .map(|(_, n)| *n)
             })
             .unwrap_or("");
-        egui::ComboBox::from_id_salt("plugin_shortcuts_combo")
-            .selected_text(current_label)
-            .show_ui(ui, |ui| {
-                for (id, name) in &plugin_ids {
-                    ui.selectable_value(selected, Some(id.to_string()), *name);
-                }
-            });
+        tasty_egui_theme::with_popover_frame(ui, &th, |ui| {
+            egui::ComboBox::from_id_salt("plugin_shortcuts_combo")
+                .selected_text(current_label)
+                .show_ui(ui, |ui| {
+                    for (id, name) in &plugin_ids {
+                        ui.selectable_value(selected, Some(id.to_string()), *name);
+                    }
+                })
+        });
     });
     vspace(ui, th.spacing_sm);
 
@@ -171,25 +173,27 @@ fn draw_plugin_command_row(
         };
         let combo_id = format!("plugin_mode::{}::{}", row.plugin_id, row.command_id);
         let mut new_mode = mode;
-        egui::ComboBox::from_id_salt(combo_id)
-            .selected_text(mode_label)
-            .show_ui(ui, |ui| {
-                ui.selectable_value(
-                    &mut new_mode,
-                    RowMode::Inherit,
-                    t("settings.keybindings.plugins.mode_inherit"),
-                );
-                ui.selectable_value(
-                    &mut new_mode,
-                    RowMode::Custom,
-                    t("settings.keybindings.plugins.mode_custom"),
-                );
-                ui.selectable_value(
-                    &mut new_mode,
-                    RowMode::None,
-                    t("settings.keybindings.plugins.mode_none_label"),
-                );
-            });
+        tasty_egui_theme::with_popover_frame(ui, &th, |ui| {
+            egui::ComboBox::from_id_salt(combo_id)
+                .selected_text(mode_label)
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(
+                        &mut new_mode,
+                        RowMode::Inherit,
+                        t("settings.keybindings.plugins.mode_inherit"),
+                    );
+                    ui.selectable_value(
+                        &mut new_mode,
+                        RowMode::Custom,
+                        t("settings.keybindings.plugins.mode_custom"),
+                    );
+                    ui.selectable_value(
+                        &mut new_mode,
+                        RowMode::None,
+                        t("settings.keybindings.plugins.mode_none_label"),
+                    );
+                })
+        });
         if new_mode != mode {
             apply_mode_change(
                 row,
@@ -219,13 +223,15 @@ fn draw_plugin_command_row(
                 };
                 let combo_id = format!("plugin_inherit_src::{}::{}", row.plugin_id, row.command_id);
                 let mut new_source = active_source.clone();
-                egui::ComboBox::from_id_salt(combo_id)
-                    .selected_text(&active_source)
-                    .show_ui(ui, |ui| {
-                        for src in host_actions::INHERITABLE_HOST_ACTIONS {
-                            ui.selectable_value(&mut new_source, src.to_string(), *src);
-                        }
-                    });
+                tasty_egui_theme::with_popover_frame(ui, &th, |ui| {
+                    egui::ComboBox::from_id_salt(combo_id)
+                        .selected_text(&active_source)
+                        .show_ui(ui, |ui| {
+                            for src in host_actions::INHERITABLE_HOST_ACTIONS {
+                                ui.selectable_value(&mut new_source, src.to_string(), *src);
+                            }
+                        })
+                });
                 if new_source != active_source {
                     commit_row_change(
                         draft,
