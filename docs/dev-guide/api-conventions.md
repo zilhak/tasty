@@ -185,6 +185,41 @@ arm(gui 창 라우터)이 있어 `plugin_only` 표식을 달지 않는다. 그�
 
 근거: [IPC 지원 조건과 오류](../adr/0004-ipc-discovery-and-errors.md).
 
+### 도메인 오류 코드 — `-32003..-32059`
+
+이름·지원 조건 계열(`-32002`·`-32015..-32017`)과 전송 대역(`-32060..-32069`) 밖의 코드는 도메인이 정한다. 표는 지금 응답에 쓰이는 코드와 그 뜻이다.
+
+| 코드 | 쓰는 곳 | 뜻 |
+|---|---|---|
+| `-32003` | plugin.* | 대상 plugin이 설치돼 있지 않다 |
+| `-32003` | plugin namespace 로 넘기는 호출 | plugin에 요청을 보내지 못했다 |
+| `-32004` | agent.*, memory.* 등 | 대상이 없다(not found) |
+| `-32005` | memory.* | 버전 비교 쓰기 충돌(cas_conflict) |
+| `-32006` | memory.* | 다른 소유자의 값이다(owned_by_other) |
+| `-32007` | memory.* | 용량·크기 상한 초과(quota_exceeded·value_too_large) |
+| `-32007` | 권한 상승 게이트(전 메서드) | 정책이 막았다(cap_blocked) |
+| `-32008` | agent.* | task 가 이미 끝났다(already terminal) |
+| `-32009` | agent.* | lease 충돌 |
+| `-32009` | memory.* | 이미 있다(already_exists) |
+| `-32010` | agent.* | task 를 다른 task 가 참조한다(`data.referenced_by`) |
+| `-32010` | rate limit 게이트(전 메서드) | 호출자의 `ipc_calls` 버킷이 비었다 |
+| `-32011` | agent.* | task 가 실행 중이라 삭제할 수 없다 |
+| `-32011` | approval.* | 요청자가 스스로 응답했다(self_response_forbidden) |
+| `-32012` | agent.* | lease pool 소진 |
+| `-32012` | approval.* | 응답 대기 시간 초과(timed_out) |
+| `-32013` | approval.* | 요청이 취소됐다(cancelled) |
+| `-32014` | approval.* | 승인 저장소 락이 poison 됐다(store_poisoned) |
+| `-32018` | agent.* | 회차에 묶인 결과 쓰기(`task_set_result` 완료 보고·`task_submit_result` 제출)를 거절했다. `data` 에 `reason`·`attempt_id`·`current_attempt_id` |
+| `-32020` | attach.*, terminal 점유 | 다른 소유자가 이미 점유했다 |
+| `-32021` | attach.release | 해제하지 못했다(점유자가 아니다 등) |
+| `-32040` | passkey.*, remote.profile.* | 이름으로 찾지 못했다 |
+| `-32041` | remote.profile.* | 이름이 이미 쓰인다 |
+| `-32050` | remote 조회 | 원격 호출이 실패했다 |
+
+- 새 도메인 오류를 만들 때는 이 표에서 뜻이 같은 코드를 쓰고, 같은 뜻이 없으면 표에 없는 코드를 새로 잡는다. 이미 다른 뜻으로 쓰이는 코드를 다시 쓰지 않는다.
+- 표에서 같은 코드가 두 줄인 것(`-32003`·`-32007`·`-32009`·`-32010`·`-32011`·`-32012`)은 이 규칙 전에 생긴 겹침이다. 호출자는 코드와 함께 메서드 namespace 와 메시지로 구별한다. 겹침을 없애는 것은 배포된 응답을 바꾸므로 따로 정한다.
+- 코드를 추가·변경하면 이 표를 같은 커밋에서 고친다.
+
 ### 전송 계층이 직접 내는 코드 — `-32060..-32069`
 
 이 코드들은 수신·대기·멱등 처리에서 생긴다. 범위만 보고 실행 여부를 판단하지 말고 각 코드의 의미를 따른다.

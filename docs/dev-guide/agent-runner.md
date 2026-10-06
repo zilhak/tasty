@@ -582,7 +582,7 @@ v2 task 의 fallback 이 이미 실행됐으면(Ready·Running·Succeeded) 그 t
 - v2 는 결과 확정(출력 검증 포함)과 종결 상태, 성공했을 때 고른 경로(`route`, 아래 §전이 조건과 경로 선택)를 레코드 한 번의 쓰기로 저장한다. 쓰기가 실패하면 상태·결과가 그대로이고 하류 readiness·fallback 도 움직이지 않는다. 그 쓰기가 끝난 뒤에야 하류를 평가하고 대기자에게 종결을 알린다.
 - 보고의 회차가 지금 회차와 다르면 적용하지 않는다(`stale_attempt`). 회차 id 를 생략하면 지금 회차로 본다.
 - 이미 끝난 회차에 같은 내용(결과·종결 종류)의 보고가 다시 오면 같은 레코드를 `duplicate: true` 로 돌려주고 하류 반영만 다시 시도한다. 다른 내용이면 거절한다(`different_report`). 회차를 끝낸 보고의 지문은 `attempt.completion.digest` 에 남는다. 보고 없이 끝난 task(취소·건너뜀)에 온 보고는 `already_terminal` 로 거절한다.
-- 거절은 IPC 에서 `-32014` 이고 `error.data` 에 `reason`·`attempt_id`(보고한 회차)·`current_attempt_id` 를 싣는다.
+- 거절은 IPC 에서 `-32018` 이고 `error.data` 에 `reason`·`attempt_id`(보고한 회차)·`current_attempt_id` 를 싣는다.
 - 러너는 기록하지 못한 보고를 보관하고 다음 tick 에 같은 보고를 다시 낸다. 그동안 그 task 를 다시 poll 하지 않고 handle 과 permit(세마포어·lease)을 유지한다. 거절된 보고는 다시 내지 않는다.
 - 저장소가 계속 실패하면 permit 을 쥐는 시간에 상한이 없다. 재시도 횟수나 시간으로 포기하지 않는다. 포기하면 결과가 기록되지 않은 채 Running 인 task 의 permit 을 풀어 같은 자원을 다른 task 에 넘기게 되기 때문이다. 묶이는 permit 은 보고가 보류된 task 마다 하나다. 풀리는 시점은 셋이다.
   1. 저장이 회복돼 같은 보고가 기록되거나 거절될 때.
@@ -599,7 +599,7 @@ v2 task 의 fallback 이 이미 실행됐으면(Ready·Running·Succeeded) 그 t
 | 두 쓰기 사이 실패 | 결과만 남은 Running task 가 될 수 있다. 같은 보고를 다시 내면 결과를 덮어쓰고 전이한다 | 해당 없음. 쓰기가 실패하면 아무것도 바뀌지 않는다 |
 | 회차 | 없음 | Running 전이마다 `<id>#<번호>` |
 | 같은 보고 재전송 | 이미 종결이면 전이 오류(`-32602`) | `duplicate: true` 로 같은 응답 |
-| 다른 회차·다른 내용 보고 | 구별하지 않는다 | `-32014` 거절 |
+| 다른 회차·다른 내용 보고 | 구별하지 않는다 | `-32018` 거절 |
 
 v1 이 v2 결과를 읽는 경로는 `-32602`(`error.data.task_id` 에 참조 대상)로 거절한다. 대상은 v1 출력 placeholder(`${task.<id>.output…}`)로 v2 task 를 참조하는 생성, `inputs` 에 v2 task 가 든 v1 `Reduce` 생성, v2 task 를 입력으로 준 단발 `agent.task_reduce` 다. 이미 저장된 v1 task 가 v2 를 가리키면 실행 직전 치환·reduce 수집이 실패로 끝낸다. 허용 범위는 입력 binding 이 정한다.
 
@@ -816,7 +816,7 @@ DAG 요약(`agent.dag_list`·`agent.dag_get`)의 `state_counts.not_selected` 는
 
 - 출력 타입이 `string`(기본)이면 최종 답변이 출력이다(`provenance.output_source`: `agent.final_answer`).
 - 그 밖의 타입은 같은 회차에 명시 제출한 값이 출력이다(`agent.submitted`). 지시문 끝에 제출 방법(`tasty agent task-submit --workspace-id … --id … --attempt-id … --output '<JSON>'`)과 출력 스키마를 붙인다. 후처리가 있으면 제출이 필요 없고 후처리가 받는 실행 결과에 최종 답변이 든다.
-- `agent.task_submit_result` 는 값이 도착할 때 출력 타입으로 검사하고(실패하면 `-32602` 와 `output_validation`) 턴이 끝날 때 결과로 확정한다. 응답 `final: false` 는 task 가 아직 끝나지 않았다는 뜻이다. 같은 값을 다시 내면 `duplicate: true`, 거절은 `-32014` 와 `error.data.reason`: `not_running`·`stale_attempt`·`conflict`(같은 회차의 다른 값)·`turn_ended`·`not_the_session`(세션 토큰의 agent 가 그 task 의 세션이 아님).
+- `agent.task_submit_result` 는 값이 도착할 때 출력 타입으로 검사하고(실패하면 `-32602` 와 `output_validation`) 턴이 끝날 때 결과로 확정한다. 응답 `final: false` 는 task 가 아직 끝나지 않았다는 뜻이다. 같은 값을 다시 내면 `duplicate: true`, 거절은 `-32018` 과 `error.data.reason`: `not_running`·`stale_attempt`·`conflict`(같은 회차의 다른 값)·`turn_ended`·`not_the_session`(세션 토큰의 agent 가 그 task 의 세션이 아님).
 - 원본 보고(`provider`·`surface_id`·`final_answer`·`submitted`)는 `raw.execution` 에 남는다.
 
 | 상황 | 결과 |

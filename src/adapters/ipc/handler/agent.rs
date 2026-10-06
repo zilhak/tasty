@@ -9,6 +9,10 @@ use tasty_agent::{AgentError, TaskId};
 
 use tasty_ipc::protocol::JsonRpcResponse;
 
+/// 회차에 묶인 결과 쓰기(완료 보고·결과 제출)를 거절했다. approval.* 의 `-32014`(store_poisoned)와
+/// 뜻이 달라 따로 둔다. 도메인 코드 표는 docs/dev-guide/api-conventions.md 에 있다.
+const AGENT_ATTEMPT_REJECTED: i32 = -32018;
+
 pub(super) fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -65,7 +69,7 @@ pub(super) fn agent_err_to_response(id: Value, err: AgentError) -> JsonRpcRespon
             ..
         } => JsonRpcResponse::error_with_data(
             id,
-            -32014,
+            AGENT_ATTEMPT_REJECTED,
             msg,
             serde_json::json!({
                 "reason": reason,
@@ -81,7 +85,7 @@ pub(super) fn agent_err_to_response(id: Value, err: AgentError) -> JsonRpcRespon
             ..
         } => JsonRpcResponse::error_with_data(
             id,
-            -32014,
+            AGENT_ATTEMPT_REJECTED,
             msg,
             serde_json::json!({
                 "reason": reason,
@@ -159,7 +163,7 @@ mod tests {
             reason: CompletionRejection::StaleAttempt,
         };
         let e = agent_err_to_response(json!(1), err).error.expect("error");
-        assert_eq!(e.code, -32014);
+        assert_eq!(e.code, -32018);
         let data = e.data.expect("data");
         assert_eq!(data["reason"], json!("stale_attempt"));
         assert_eq!(data["attempt_id"], json!("p#1"));
