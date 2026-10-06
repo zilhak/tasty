@@ -90,6 +90,7 @@
 | `file_handler.define` · `file_handler.handle:<종류>` | 파일 종류 식별 규칙 정의, 그 종류의 파일 열기 담당 |
 | `memory.read` · `memory.write` · `memory.secret` | 에이전트 메모리 저장소 접근 |
 | `agent` · `approval` · `telemetry` | 에이전트 협업 · 승인 게이트 · 텔레메트리 |
+| `agent.turn_report` | 에이전트 작업의 턴 시작·끝 보고만(다른 에이전트 협업 기능은 열지 않음) |
 
 기본 제공 플러그인이 받는 권한:
 
@@ -100,8 +101,8 @@
 | HTML Viewer | `surface.read` `surface.write` `file_handler.define` `file_handler.handle:html` `file_handler.handle:svg` `ui.settings_page` |
 | Clipboard Viewer | `clipboard.read` `ui.popup` `ui.tool_item` |
 | Git Viewer | `ui.popup` `ui.tool_item` `fs.read` |
-| Claude Code | `surface.read` `surface.write` `terminal.spawn` `terminal.write` `terminal.read` `fs.read` `fs.write` `notification` `telemetry` `agent` `ui.settings_page` `completion_strategy.define` `memory.read` `ipc.invoke:codex` |
-| Codex | `surface.read` `surface.write` `terminal.spawn` `terminal.write` `terminal.read` `fs.write` `notification` `ui.settings_page` `completion_strategy.define` |
+| Claude Code | `surface.read` `surface.write` `terminal.spawn` `terminal.write` `terminal.read` `fs.read` `fs.write` `notification` `telemetry` `agent` `agent.turn_report` `ui.settings_page` `completion_strategy.define` `memory.read` `ipc.invoke:codex` |
+| Codex | `surface.read` `surface.write` `terminal.spawn` `terminal.write` `terminal.read` `fs.write` `notification` `ui.settings_page` `completion_strategy.define` `agent.turn_report` |
 
 권한을 개별로 빼거나 되돌리는 것은 CLI 로만 합니다(아래).
 

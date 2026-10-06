@@ -15,7 +15,7 @@ idle 은 턴이 끝났다는 신호로 부족하다. 사용자가 같은 세션�
 
 v2 계약에 `agent` command 를 둔다. provider 는 결과 수집을 구현한 `claude`·`codex` 만 받는다.
 
-- 턴 경계는 provider 플러그인이 훅에서 보고한다(`agent.task_turn_report`. 다른 `agent.*` 메서드처럼 `agent` 권한을 요구하고, 호출 플러그인이 그 provider namespace 를 소유해야 한다). 시작은 프롬프트 제출, 끝은 턴을 끝내는 Stop(최종 답변 포함)이나 오류다. 호스트는 surface 에 묶인 회차가 있을 때만 적용한다.
+- 턴 경계는 provider 플러그인이 훅에서 보고한다(`agent.task_turn_report`. 이 메서드 하나만 여는 `agent.turn_report` 권한을 요구하고, 호출 플러그인이 그 provider namespace 를 소유해야 한다. provider 플러그인이 턴을 보고하려고 다른 `agent.*` 를 얻지 않도록 `agent` 와 나눴다). 시작은 프롬프트 제출, 끝은 턴을 끝내는 Stop(최종 답변 포함)이나 오류다. 호스트는 surface 에 묶인 회차가 있을 때만 적용한다.
 - 턴 표는 surface 마다 회차 하나만 묶는다. 기존 세션은 idle 이고 묶을 수 있을 때만 지시를 보내며, 그 뒤 시작 보고를 받은 다음의 종료만 이 회차의 것으로 본다. 새 세션은 spawn 의 지시가 첫 턴이다.
 - 기본 출력은 `string`(최종 답변)이다. 다른 출력 타입은 같은 회차의 명시 제출(`agent.task_submit_result`)이 필요하다. 제출은 도착할 때 출력 타입으로 검사하고 턴이 끝날 때 결과가 된다. 제출 성공은 task 성공이 아니다. 같은 회차의 다른 값은 거절한다.
 - idle 만으로는 성공하지 않는다. 결과 없이 끝난 턴은 `result_missing`, 오류로 끝난 턴은 `agent_turn_error`, 세션 종료는 `agent_exited`, 기한 초과는 `timed_out`, provider 호출 불가와 재시작으로 잃은 귀속은 `agent_unavailable` 로 끝나고 `typed_result.error.code` 로 구별한다. 입력 대기는 실패가 아니라 Running 의 `awaiting_input` phase 다.

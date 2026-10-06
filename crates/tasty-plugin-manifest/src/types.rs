@@ -120,6 +120,9 @@ pub enum Permission {
     Telemetry,
     /// agent.*의 작업·동기화·실행 조정 기능. 토큰은 agent다.
     AgentManage,
+    /// provider 플러그인이 agent task 의 턴 시작·끝을 보고하는 `agent.task_turn_report` 하나만 연다.
+    /// `agent` 와 달리 다른 agent.* 메서드는 열지 않는다. 토큰은 agent.turn_report다.
+    AgentTurnReport,
     /// 다른 plugin이 점유한 IPC namespace prefix의 메서드 호출.
     /// 토큰 형식: `ipc.invoke:<prefix>` (예: `ipc.invoke:codex`).
     IpcInvoke(String),
@@ -177,6 +180,7 @@ impl Permission {
             "approval" => Self::Approval,
             "telemetry" => Self::Telemetry,
             "agent" => Self::AgentManage,
+            "agent.turn_report" => Self::AgentTurnReport,
             "ui.tool_item" => Self::UiToolItem,
             "ui.popup" => Self::UiPopup,
             "ui.banner" => Self::UiBanner,
@@ -244,6 +248,7 @@ impl Permission {
             Self::Approval => "approval".into(),
             Self::Telemetry => "telemetry".into(),
             Self::AgentManage => "agent".into(),
+            Self::AgentTurnReport => "agent.turn_report".into(),
             Self::IpcInvoke(prefix) => format!("ipc.invoke:{prefix}"),
             Self::Extension(target) => format!("ext:{target}"),
             Self::UiToolItem => "ui.tool_item".into(),

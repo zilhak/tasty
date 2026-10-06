@@ -1,4 +1,4 @@
-<!-- source-hash: 3fe5407faa8c -->
+<!-- source-hash: 3a8e323e0b57 -->
 # Plugins
 
 Use plugins for tools such as Markdown and image viewers or AI agent integrations. Explore the bundled plugins, add new ones, and manage which tools run and what permissions they have.
@@ -91,6 +91,7 @@ A plugin declares the permissions it needs in advance. Tasty rejects requests to
 | `file_handler.define` · `file_handler.handle:<kind>` | Defining file-kind detection rules, being the one that opens files of that kind |
 | `memory.read` · `memory.write` · `memory.secret` | Access to the agent memory store |
 | `agent` · `approval` · `telemetry` | Agent collaboration · approval gates · telemetry |
+| `agent.turn_report` | Reporting the start and end of an agent task turn only (opens no other agent collaboration feature) |
 
 Permissions granted to the bundled plugins:
 
@@ -101,8 +102,8 @@ Permissions granted to the bundled plugins:
 | HTML Viewer | `surface.read` `surface.write` `file_handler.define` `file_handler.handle:html` `file_handler.handle:svg` `ui.settings_page` |
 | Clipboard Viewer | `clipboard.read` `ui.popup` `ui.tool_item` |
 | Git Viewer | `ui.popup` `ui.tool_item` `fs.read` |
-| Claude Code | `surface.read` `surface.write` `terminal.spawn` `terminal.write` `terminal.read` `fs.read` `fs.write` `notification` `telemetry` `agent` `ui.settings_page` `completion_strategy.define` `memory.read` `ipc.invoke:codex` |
-| Codex | `surface.read` `surface.write` `terminal.spawn` `terminal.write` `terminal.read` `fs.write` `notification` `ui.settings_page` `completion_strategy.define` |
+| Claude Code | `surface.read` `surface.write` `terminal.spawn` `terminal.write` `terminal.read` `fs.read` `fs.write` `notification` `telemetry` `agent` `agent.turn_report` `ui.settings_page` `completion_strategy.define` `memory.read` `ipc.invoke:codex` |
+| Codex | `surface.read` `surface.write` `terminal.spawn` `terminal.write` `terminal.read` `fs.write` `notification` `ui.settings_page` `completion_strategy.define` `agent.turn_report` |
 
 Removing or restoring individual permissions is done only from the CLI (below).
 

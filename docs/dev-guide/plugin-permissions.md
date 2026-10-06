@@ -61,7 +61,8 @@ alias는 canonical 이름으로 판정·집계한다.
 | `memory.secret` | `memory.secret.*` 전부 | — |
 | `approval` | `approval.*` 전부 · `plugin.request_permission`. `approval.summary.get/set` 은 `memory.read`/`memory.write` 를 함께 요구 | — |
 | `telemetry` | `telemetry.*` 전부(기록·조회·cap·anomaly) | — |
-| `agent` | `agent.*` 협업 primitive 전부 · `session.issue` · `session.revoke` | — |
+| `agent` | `agent.*` 협업 primitive(턴 보고 하나만 아래 `agent.turn_report` 행) · `session.issue` · `session.revoke` | — |
+| `agent.turn_report` | `agent.task_turn_report` **하나뿐** | 핸들러가 호출 플러그인이 보고하는 provider namespace 의 소유자인지도 확인한다. provider 플러그인이 다른 agent.* 를 얻지 않고 턴만 보고하도록 `agent` 와 나눴다 |
 | `ui.tool_item` | 없음 | `[[contributes.tool]]` 매니페스트 게이트 + 도구 메뉴 노출 조건(grant 없으면 항목이 뜨지 않음) |
 | `ui.popup` | `popup.close` | `[[contributes.popup]]` · `[[contributes.commands]]`(`action.kind = "open_popup"`) 매니페스트 게이트 + popup contribute 노출 조건 |
 | `ui.banner` | `banner.open` · `banner.close` | `[[contributes.banner]]` 매니페스트 게이트 |

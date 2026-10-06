@@ -2132,6 +2132,19 @@ fn file_handler_unknown_sentinel_token_rejected() {
 }
 
 #[test]
+fn agent_turn_report_token_parses_apart_from_agent() {
+    assert_eq!(
+        Permission::from_token("agent.turn_report"),
+        Some(Permission::AgentTurnReport)
+    );
+    assert_eq!(Permission::AgentTurnReport.as_token(), "agent.turn_report");
+    assert_ne!(
+        Permission::from_token("agent.turn_report"),
+        Permission::from_token("agent")
+    );
+}
+
+#[test]
 fn hook_handler_define_token_parses() {
     assert_eq!(
         Permission::from_token("hook_handler.define"),

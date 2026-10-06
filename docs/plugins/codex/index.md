@@ -68,7 +68,7 @@ POSIX는 `if [ -n "$TASTY_SURFACE_ID" ]; then … || true; fi`로 Tasty 안에�
 
 ### agent task 턴 보고
 
-훅은 [agent task](../../dev-guide/agent-runner.md#agent-task)의 턴 경계를 `agent.task_turn_report`(`provider: "codex"`)로 호스트에 알린다. `terminal.set_state` 보다 먼저 보낸다. 호스트는 그 surface 에 묶인 agent task 회차가 있을 때만 적용한다. 보고 실패는 경고 로그만 남긴다. 변환은 `task_turn.rs` 에 있다.
+훅은 [agent task](../../dev-guide/agent-runner.md#agent-task)의 턴 경계를 `agent.task_turn_report`(`provider: "codex"`)로 호스트에 알린다. 이 호출에는 매니페스트의 `agent.turn_report` 권한을 쓴다(다른 agent.* 는 열지 않는 권한). `terminal.set_state` 보다 먼저 보낸다. 호스트는 그 surface 에 묶인 agent task 회차가 있을 때만 적용한다. 보고 실패는 경고 로그만 남긴다. 변환은 `task_turn.rs` 에 있다.
 
 | 훅 token | 보고 |
 |---|---|

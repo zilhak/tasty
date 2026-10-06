@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.claude"
 name = "Claude Code"
-version = "0.1.174"
+version = "0.1.175"
 description = "Claude Code CLI integration for Tasty"
 api_version = "1"
 permissions = [
@@ -16,6 +16,8 @@ permissions = [
     "telemetry",
     # 자식의 호스트 IPC 인증에 사용할 세션 토큰을 발급한다.
     "agent",
+    # agent task 의 턴 시작·끝을 호스트에 보고한다(`agent.task_turn_report`).
+    "agent.turn_report",
     "ui.settings_page",
     # `claude.spawn`/`claude.tell` 기본 완료 전략 선언에 필요.
     "completion_strategy.define",

@@ -359,6 +359,22 @@ fn agent_rate_limit_methods_require_agent_manage() {
     }
 }
 
+/// 턴 보고는 전용 권한만 요구한다. 그 권한이 다른 agent.* 를 열지 않는지도 본다.
+#[test]
+fn agent_turn_report_needs_only_its_own_permission() {
+    let m = method_meta("agent.task_turn_report").expect("registered");
+    assert!(m.plugin_callable);
+    assert_eq!(m.required, &[Permission::AgentTurnReport][..]);
+    let opened: Vec<&str> = METHOD_TABLE
+        .iter()
+        .filter(|(_, meta)| meta.required.contains(&Permission::AgentTurnReport))
+        .map(|(name, _)| *name)
+        .collect();
+    assert_eq!(opened, ["agent.task_turn_report"]);
+    let submit = method_meta("agent.task_submit_result").expect("registered");
+    assert_eq!(submit.required, &[Permission::AgentManage][..]);
+}
+
 #[test]
 fn session_issue_revoke_require_agent_manage() {
     for name in ["session.issue", "session.revoke"] {

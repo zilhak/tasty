@@ -261,7 +261,7 @@ if [ -n "$TASTY_SURFACE_ID" ]; then tasty claude hook <token> || true; fi
 
 #### agent task 턴 보고
 
-훅은 [agent task](../../dev-guide/agent-runner.md#agent-task)의 턴 경계를 `agent.task_turn_report`(`provider: "claude"`)로 호스트에 알린다. 상태 갱신보다 먼저 보낸다. 호스트는 그 surface 에 묶인 agent task 회차가 있을 때만 적용하므로 일반 세션에는 영향이 없다. 보고 실패는 경고 로그만 남기고 훅의 다른 처리를 막지 않는다. 변환은 `task_turn.rs` 에 있다.
+훅은 [agent task](../../dev-guide/agent-runner.md#agent-task)의 턴 경계를 `agent.task_turn_report`(`provider: "claude"`)로 호스트에 알린다. 이 호출에는 매니페스트의 `agent.turn_report` 권한을 쓴다(다른 agent.* 는 열지 않는 권한). 상태 갱신보다 먼저 보낸다. 호스트는 그 surface 에 묶인 agent task 회차가 있을 때만 적용하므로 일반 세션에는 영향이 없다. 보고 실패는 경고 로그만 남기고 훅의 다른 처리를 막지 않는다. 변환은 `task_turn.rs` 에 있다.
 
 | 훅 token | 보고 |
 |---|---|
