@@ -896,14 +896,13 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Stop admission and retain the original owners while observing shutdown receipts.
+/// A retirement awaiting receipts does not defer Shutdown. Finish it first so its close replies
+/// once and records its outcome; the receipt deadline bounds this wait.
 #[cfg(not(feature = "gui"))]
-fn finish_headless_shutdown(
+fn drain_headless_publication(
     app: &mut crate::app::App,
     session: &mut crate::runtime::engine_session::EngineSession,
 ) {
-    // A retirement awaiting receipts does not defer Shutdown. Finish it first so its close replies
-    // once and records its outcome; the receipt deadline bounds this wait.
     while app.journal.shutdown_waits_for_publication() && !app.journal.is_halted() {
         if let Some(plugins) = app.plugin_manager.as_mut()
             && let Err(error) = plugins.poll_publication_retirements()
@@ -920,6 +919,15 @@ fn finish_headless_shutdown(
             .deliver_plugin_replies(app.plugin_manager.as_mut());
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
+}
+
+/// Stop admission and retain the original owners while observing shutdown receipts.
+#[cfg(not(feature = "gui"))]
+fn finish_headless_shutdown(
+    app: &mut crate::app::App,
+    session: &mut crate::runtime::engine_session::EngineSession,
+) {
+    drain_headless_publication(app, session);
     app.journal.begin_process_shutdown();
     // Begin stop now; the loop below observes this same retained receipt until its deadline.
     let _ = session.poll_runner_stop(&app.services.tasks);
