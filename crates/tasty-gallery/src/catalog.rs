@@ -904,7 +904,7 @@ pub fn pages() -> Vec<Page> {
                     vec![spec(
                         "palette",
                         "Top-anchored, fuzzy, keyboard-first",
-                        Some("480px · surface-raised · spawns under the title bar"),
+                        Some("540px · surface-raised · spawns under the title bar"),
                         components::command_palette::draw,
                     )],
                 ),
