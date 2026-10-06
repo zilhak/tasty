@@ -1,4 +1,12 @@
-/* Shared frames for the landing demo and guide diagrams; component styles come from the kit. */
+/* Shared frames for the landing demo and guide diagrams; component styles come from the kit.
+
+   Dimensions follow the two sources in docs/dev-guide/site.md. Rules that reproduce
+   the kit's app chrome (.shell, .shell__*, .shell-overlays*) use --tasty-* tokens.
+   Guide labels (.anat*) and guide composition (.workflow-diagram*) are the site's
+   own and use the site scale. Literal values left without a line comment belong
+   to axes neither scale has here: font sizes, element and page sizes (how large the
+   window is shown on the page), and stroke widths. Container and media query
+   conditions stay literal because a query condition cannot read a custom property. */
 
 /* Keep the kit text size; change the visible columns instead of scaling the shell. */
 .shell {
@@ -40,11 +48,11 @@
 .anat::after {
   content: attr(data-label);
   position: absolute;
-  top: 4px;
-  right: 4px;
+  top: var(--sp-1);
+  right: var(--sp-1);
   z-index: 5;
-  padding: 1px 6px;
-  border-radius: 4px;
+  padding: 1px 6px; /* no site step: --sp-* has no 1 or 6 */
+  border-radius: 4px; /* no site radius: the radius scale is 6/8/14 */
   background: var(--brand);
   color: var(--tasty-color-neutral-100);
   font-family: var(--font-mono);
@@ -73,6 +81,8 @@
    readable, then allow horizontal scrolling. */
 .anat-settings__stage {
   position: relative;
+  /* The kit's own Settings window size (settings_window.jsx draws it inline at
+     1100x700). No token carries it yet; a design request asks for one. */
   width: 1100px;
   height: 700px;
   zoom: 0.7;
