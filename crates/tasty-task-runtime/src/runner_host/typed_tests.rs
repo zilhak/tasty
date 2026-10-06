@@ -90,7 +90,7 @@ fn v2_run_accepts_declared_exit_codes_and_reports_the_code_as_output() {
     });
     assert_eq!(finished.state, TaskState::Succeeded);
     let typed = finished.typed_result.unwrap();
-    assert_eq!(typed.output, json!("7"));
+    assert_eq!(typed.output, json!(7));
     let raw = typed.raw.execution.unwrap();
     assert_eq!(raw["stdout"]["text"], json!("out\n"));
 }

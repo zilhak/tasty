@@ -21,11 +21,11 @@ fn parsed(text: &str) -> Value {
 #[test]
 fn int64_reads_integer_tokens_and_decimal_strings_and_rejects_fractions_and_overflow() {
     let s = TypeSchema::int64();
-    // 검증된 int64 는 10진 문자열로 정규화된다.
-    assert_eq!(check(&s, json!(42)).unwrap(), json!("42"));
-    assert_eq!(check(&s, json!("42")).unwrap(), json!("42"));
-    assert_eq!(check(&s, json!("-7")).unwrap(), json!("-7"));
-    assert_eq!(check(&s, json!("0")).unwrap(), json!("0"));
+    // 검증 결과는 내부 표현(JSON 정수)이다. 10진 문자열 입력도 정수가 된다.
+    assert_eq!(check(&s, json!(42)).unwrap(), json!(42));
+    assert_eq!(check(&s, json!("42")).unwrap(), json!(42));
+    assert_eq!(check(&s, json!("-7")).unwrap(), json!(-7));
+    assert_eq!(check(&s, json!("0")).unwrap(), json!(0));
     assert_eq!(kind_of(check(&s, json!(1.5))), TypeErrorKind::NotInteger);
     assert_eq!(kind_of(check(&s, json!("1.5"))), TypeErrorKind::NotInteger);
     // 정수처럼 보여도 f64 로 읽힌 값은 원래 정수를 알 수 없다.
@@ -65,23 +65,53 @@ fn int64_reads_integer_tokens_and_decimal_strings_and_rejects_fractions_and_over
 }
 
 #[test]
-fn int64_boundaries_and_beyond_2_pow_53_keep_their_value_as_decimal_strings() {
+fn int64_is_an_integer_inside_and_a_decimal_string_only_on_the_wire() {
     let s = TypeSchema::int64();
+    let defs = TypeDefs::default();
     for (text, n) in [
         ("-9223372036854775808", i64::MIN),
         ("9223372036854775807", i64::MAX),
         ("9007199254740993", 9_007_199_254_740_993),
     ] {
-        // 정수 토큰으로 받아도, 문자열로 받아도 같은 wire 값이 된다.
+        // 정수 토큰으로 받아도, 문자열로 받아도 같은 내부 값(정수)이 된다.
         let from_token = check(&s, parsed(text)).unwrap();
         let from_string = check(&s, json!(text)).unwrap();
-        assert_eq!(from_token, json!(text));
+        assert_eq!(from_token.as_i64(), Some(n));
         assert_eq!(from_string, from_token);
-        // wire 값을 f64 숫자로 읽는 소비자를 거쳐도 문자열은 바뀌지 않는다.
-        let wire = serde_json::to_string(&from_token).unwrap();
-        assert_eq!(wire, format!("\"{text}\""));
-        assert_eq!(int64_of(&parsed(&wire)), Ok(n));
+        // 직렬화 경계에서만 문자열이 되고, 읽을 때 정수로 돌아온다.
+        let wire = defs.encode_wire(&s, &from_token);
+        assert_eq!(wire, json!(text));
+        assert_eq!(defs.decode_wire(&s, &wire).unwrap(), from_token);
+        // JavaScript 처럼 숫자를 f64 로 읽어도 문자열은 바뀌지 않는다.
+        assert_eq!(serde_json::to_string(&wire).unwrap(), format!("\"{text}\""));
     }
+}
+
+#[test]
+fn wire_conversion_follows_the_schema_and_leaves_strings_and_json_alone() {
+    let mut types = std::collections::BTreeMap::new();
+    types.insert("Count".to_string(), schema(json!({"type": "int64"})));
+    let defs = TypeDefs::new(types);
+    let s = schema(json!({"type": "object", "fields": {
+        "n": {"ref": "Count"},
+        "maybe": {"type": "int64", "nullable": true},
+        "label": {"type": "string"},
+        "raw": {"type": "json"},
+        "rows": {"type": "list", "items": {"type": "object", "fields": {"id": {"type": "int64"}}}}
+    }}));
+    let inside = json!({"n": 7, "maybe": null, "label": "8", "raw": {"k": 9},
+                        "rows": [{"id": -1}, {"id": 9007199254740993_i64}]});
+    let wire = defs.encode_wire(&s, &inside);
+    assert_eq!(
+        wire,
+        json!({"n": "7", "maybe": null, "label": "8", "raw": {"k": 9},
+               "rows": [{"id": "-1"}, {"id": "9007199254740993"}]})
+    );
+    assert_eq!(defs.decode_wire(&s, &wire).unwrap(), inside);
+    let bad = json!({"n": "7.5", "maybe": null, "label": "x", "raw": null, "rows": []});
+    let e = defs.decode_wire(&s, &bad).unwrap_err();
+    assert_eq!(e.path, "/n");
+    assert_eq!(e.kind, TypeErrorKind::NotInteger);
 }
 
 #[test]
@@ -148,10 +178,7 @@ fn object_distinguishes_required_optional_nullable_and_default() {
     let s = review_object();
     let v = check(&s, json!({"verdict": "pass", "reviewer": null})).unwrap();
     // optional 은 빠진 채로 두고, default 는 채운다. nullable 의 null 은 그대로다.
-    assert_eq!(
-        v,
-        json!({"verdict": "pass", "reviewer": null, "round": "1"})
-    );
+    assert_eq!(v, json!({"verdict": "pass", "reviewer": null, "round": 1}));
 
     let missing = check(&s, json!({"reviewer": null})).unwrap_err();
     assert_eq!(missing.kind, TypeErrorKind::MissingField);

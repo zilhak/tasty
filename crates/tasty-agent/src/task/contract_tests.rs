@@ -192,7 +192,7 @@ fn run_output_is_the_exit_code_with_streams_kept_as_raw() {
     let streams = json!({"pid": 1, "stdout": {"text": "hi\n"}});
     let r = finalize_result(&t, &v2(), &reported(Some(7), Some(streams.clone()), None));
     assert!(r.has_output);
-    assert_eq!(r.output, json!("7"));
+    assert_eq!(r.output, json!(7));
     assert_eq!(r.raw.exit_code, Some(7));
     assert_eq!(r.raw.execution, Some(streams));
     assert_eq!(r.provenance.output_source, "run.exit_code");
@@ -283,6 +283,6 @@ fn execution_failures_keep_the_reported_error_and_project_to_v1_fields() {
 
     let ok = finalize_result(&t, &v2(), &reported(Some(0), Some(json!({})), None));
     let v1 = project_v1(&ok);
-    assert_eq!(v1.output, Some(json!("0")));
+    assert_eq!(v1.output, Some(json!(0)));
     assert_eq!(v1.exit_code, Some(0));
 }

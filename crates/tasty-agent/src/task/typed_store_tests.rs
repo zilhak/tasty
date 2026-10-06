@@ -388,23 +388,23 @@ fn int64_extremes_survive_the_memory_store_exactly() {
     let mut mem = MemoryStore::open(&td.path().join("mem.db")).expect("reopen");
     let store = TaskStore::new(&mut mem, "_host", &seq);
     let t = store.get(1, &id).unwrap().unwrap();
-    let out = t.typed_result.unwrap().output;
-    // 저장된 wire 값은 10진 문자열이다.
+    // 읽은 task 의 값은 내부 표현(정수)이다.
+    assert_eq!(t.typed_result.as_ref().unwrap().output, values);
+    assert_eq!(t.result.as_ref().unwrap().output, Some(values.clone()));
+    // 저장된 레코드에서는 출력과 v1 투영 모두 10진 문자열이다.
+    let stored = raw_json(&mem, &format!("{TYPED_TASK_KEY_PREFIX}{id}"));
+    let wire = json!([
+        "-9223372036854775808",
+        "9223372036854775807",
+        "9007199254740993"
+    ]);
+    assert_eq!(stored["task"]["typed_result"]["output"], wire);
+    assert_eq!(stored["task"]["result"]["output"], wire);
+    // IPC 응답도 같은 serde 경계를 지난다.
     assert_eq!(
-        out,
-        json!([
-            "-9223372036854775808",
-            "9223372036854775807",
-            "9007199254740993"
-        ])
+        serde_json::to_value(&t).unwrap()["typed_result"]["output"],
+        wire
     );
-    let ints: Vec<i64> = out
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|v| super::types::int64_of(v).unwrap())
-        .collect();
-    assert_eq!(ints, vec![i64::MIN, i64::MAX, 9007199254740993]);
 }
 
 #[test]
@@ -430,7 +430,7 @@ fn run_exit_code_is_the_output_and_execution_failures_keep_their_stage() {
     );
     assert_eq!(t.state, TaskState::Succeeded);
     let typed = t.typed_result.unwrap();
-    assert_eq!(typed.output, json!("7"));
+    assert_eq!(typed.output, json!(7));
     assert_eq!(typed.raw.execution, Some(streams));
 
     let f = store
@@ -486,4 +486,31 @@ fn retry_clears_the_typed_result_and_delete_removes_the_typed_record() {
             .unwrap();
     }
     assert!(raw_keys(&mem, TYPED_TASK_KEY_PREFIX).is_empty());
+}
+
+#[test]
+fn stored_int64_that_is_not_an_integer_fails_to_read() {
+    let (_td, mut mem, seq) = fresh_store();
+    let id = {
+        let mut store = TaskStore::new(&mut mem, "_host", &seq);
+        let c = contract(json!({"contract_version": 2, "output_schema": {"type": "int64"}}));
+        let t = store.create_typed(opts("i", custom()), c).unwrap();
+        finish(&mut store, &t.id, output(json!(5)), TaskState::Succeeded);
+        t.id
+    };
+    let key = format!("{TYPED_TASK_KEY_PREFIX}{id}");
+    let mut record = raw_json(&mem, &key);
+    assert_eq!(record["task"]["typed_result"]["output"], json!("5"));
+    record["task"]["typed_result"]["output"] = json!("5.5");
+    mem.put(
+        "_host",
+        &Scope::Workspace(1),
+        &key,
+        &MemoryValue::Json(record),
+        &PutOpts::default(),
+    )
+    .expect("put");
+    let store = TaskStore::new(&mut mem, "_host", &seq);
+    let e = store.get(1, &id).unwrap_err().to_string();
+    assert!(e.contains("stored output"), "{e}");
 }

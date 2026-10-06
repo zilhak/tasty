@@ -736,17 +736,15 @@ impl TypeDefs {
         };
         match resolved.kind {
             TypeKind::Boolean => value.as_bool().map(|_| value.clone()).ok_or_else(mismatch),
-            TypeKind::Int64 => int64_of(value)
-                .map(|i| Value::String(i.to_string()))
-                .map_err(|kind| {
-                    let want = match kind {
-                        TypeErrorKind::OutOfRange => {
-                            format!("int64 in [{}, {}]", i64::MIN, i64::MAX)
-                        }
-                        _ => expected(),
-                    };
-                    err(kind, path, want, describe_value(value))
-                }),
+            TypeKind::Int64 => int64_of(value).map(Value::from).map_err(|kind| {
+                let want = match kind {
+                    TypeErrorKind::OutOfRange => {
+                        format!("int64 in [{}, {}]", i64::MIN, i64::MAX)
+                    }
+                    _ => expected(),
+                };
+                err(kind, path, want, describe_value(value))
+            }),
             TypeKind::Float64 { min, max } => {
                 let Value::Number(n) = value else {
                     return Err(mismatch());
@@ -831,7 +829,7 @@ impl TypeDefs {
                             );
                         }
                         None => match &field.default {
-                            // 기본값도 같은 경로로 정규화한다(int64 는 10진 문자열).
+                            // 기본값도 같은 경로로 내부 표현으로 바꾼다(int64 문자열 → 정수).
                             Some(d) => {
                                 out.insert(
                                     name.clone(),
@@ -904,8 +902,7 @@ pub struct ResolvedSchema<'a> {
     pub nullable: bool,
 }
 
-/// int64 값을 wire 형식에서 읽는다. 검증을 통과한 값은 10진 문자열이고(JavaScript 의
-/// f64 숫자를 지나도 같은 정수로 돌아오게 하기 위해), 입력으로는 JSON 정수 토큰도 받는다.
+/// int64 값을 읽는다. 10진 문자열(wire 형식, [`TypeDefs::encode_wire`])과 JSON 정수 토큰을 받는다.
 /// 문자열은 `-?(0|[1-9][0-9]*)` 꼴만 받는다. `-0`·앞자리 0·`+`·공백은 거절한다.
 pub fn int64_of(value: &Value) -> Result<i64, TypeErrorKind> {
     match value {
@@ -978,6 +975,7 @@ fn json_depth(v: &Value) -> usize {
 
 mod assign;
 pub use assign::check_assignable;
+mod wire;
 
 #[cfg(test)]
 #[path = "types_tests.rs"]
