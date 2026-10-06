@@ -262,6 +262,10 @@ CI 는 `.github/workflows/crossplatform-check.yml` 의 `check-headless` 잡이 �
   않는다. 응답을 잃었거나 잠금을 기다리며 멈춘 worker는 잠들어 있으므로 그대로 10초 안에
   실패한다. 쉬지 않고 도는 worker는 벽시계 상한 300초로 잡는다. worker 상태는 Linux의
   `/proc/<pid>/task/<tid>/stat` 에서만 읽고, 다른 OS에서는 쉰 시간을 모두 센다.
+  - 상태가 `R`이어도 flags에 `PF_EXITING`(0x4)이 서 있으면 일하는 중으로 보지 않는다. join이
+    돌아온 직후에도 커널이 그 스레드의 종료 경로를 아직 실행하고 있어 `R`로 읽힐 수 있다.
+    worker가 시작할 때 기록한 시작 시각(`stat` 22번째 필드)과 다른 스레드도 일하는 중으로 보지
+    않는다. 같은 TID를 물려받은 다른 스레드를 worker로 읽지 않기 위해서다.
   - 정체로 판정하면 패닉 전에 그 worker를 버린다고 표시한다. `JournalWorker` 의 Drop은 평소
     worker를 join하는데, 표시가 있으면 join하지 않고 스레드를 떼어 낸다. 그래서 멈춘 worker가
     있어도 시험은 그 자리에서 걸리지 않고 실패로 끝난다.
