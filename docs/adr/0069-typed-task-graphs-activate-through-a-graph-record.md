@@ -26,8 +26,17 @@ v2 task 는 그래프 단위로 제출한다(`agent.task_graph_submit`, 검증�
 - 3단계 도중 호스트가 죽어도 같다. 반영하지 못한 의존 없는 task 는 Waiting 으로 남는다. 결정 당시에는 재시작이 readiness 를 다시 평가하지 않아 수동 복구가 필요했다. 2026-10-07 부터 부팅·러너 시작이 Waiting task 를 다시 평가해 남은 task 를 활성화한다([ADR-0071](0071-typed-task-completion-is-one-write-per-attempt.md) 과 같은 변경). 다시 제출하는 절차는 [작업 러너 §한계](../dev-guide/agent-runner.md#한계).
 - 2단계에서 롤백까지 실패하면 활성화되지 않은 task 가 남는다. 실행되지 않으며 삭제·purge 로 지운다.
 - readiness 평가는 task 마다 그래프 레코드 존재를 확인해야 한다(`TaskStore::readiness_graph`).
-- 제출 전체가 memory 잠금 안에서 돈다. 그동안 memory 를 쓰는 다른 IPC 와 러너 tick 이 기다린다. 처음 구현은 3단계가 task 마다 workspace 목록을 저장소에서 다시 읽어 1000 개 제출이 5.7s 걸렸고, 그동안 다른 연결의 `memory.get` 이 5369ms 를 기다렸다(호스트 IPC 실측). 그래서 상한을 200 으로 두었다.
+- 제출 전체가 memory 잠금 안에서, 앱의 IPC 처리 경로(main 스레드의 IPC 큐) 위에서 돈다. 그동안 memory 를 쓰는 러너 tick 과 같은 경로의 다른 IPC 요청 전체가 기다린다. memory 를 쓰지 않는 `system.ping` 도 제출이 끝날 때까지 기다렸다(아래 실측). 처음 구현은 3단계가 task 마다 workspace 목록을 저장소에서 다시 읽어 1000 개 제출이 5.7s 걸렸고, 그동안 다른 연결의 `memory.get` 이 5369ms 를 기다렸다(호스트 IPC 실측). 그래서 상한을 200 으로 두었다.
 - 지금은 3단계와 하류 전파(`TaskStore::settle_waiting`)가 저장소 목록을 한 번 읽고 작업본을 갱신한다. 메모리 안의 readiness 그래프 재구성은 task 마다 남아 있어 비용은 여전히 제곱이지만 상수가 작다. `TaskStore::submit_graph` 를 같은 머신에서 번갈아 잰 값(dev 프로필, 3회 최소~최대)은 이전 구현이 200 개 178~539ms · 1000 개 3781~5441ms, 지금 구현이 200 개 38~85ms · 1000 개 181~488ms 다. 지금 구현의 1000 개가 이전 구현의 200 개와 같은 범위라 상한을 1000 으로 둔다. 초과는 `-32602`(`location: /tasks`)로 거절한다.
+- 호스트 IPC 실측(격리 GUI 인스턴스, dev 빌드, 러너 정지, 제출 동안 다른 연결이 10ms 간격으로 `system.ping`, 측정 전 ping 기준선 0.09~0.10s):
+
+  | 형태 | 제출 시간 | 제출 중 ping 최대 |
+  |---|---|---|
+  | 독립 1000(기존 task 1000 개가 있는 workspace, 1회) | 0.356s | 0.258s |
+  | 독립 1000(새 workspace, 2회) | 1.515s / 0.390s | 1.404s / 0.285s |
+  | 사슬 1000(새 workspace, 2회) | 0.354s / 0.391s | 0.247s / 0.285s |
+
+  상한 크기의 그래프를 제출하면 그동안 호스트의 다른 IPC 가 최악 약 1.4s 멈출 수 있다. 이 지연을 받아들이고 상한을 1000 으로 유지한다. release 빌드는 재지 않았다.
 
 ## Alternatives Considered
 
