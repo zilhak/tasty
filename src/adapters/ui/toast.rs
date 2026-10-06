@@ -190,14 +190,9 @@ impl ToastManager {
                     alpha: compute_alpha(t, now, reduced_motion),
                 })
                 .collect();
-            // 창 전체를 덮는 스코프는 상태바를 피해 창 하단의 스택 거리 위에 쌓는다.
-            let bottom = match scope {
-                ToastScope::Window | ToastScope::Workspace(_) => ToastStackBottom::Window,
-                ToastScope::Pane(_) | ToastScope::Surface(_) => ToastStackBottom::ScopeMargin,
-            };
             scopes.push(ToastScopeView {
                 scope_rect,
-                bottom,
+                bottom: stack_bottom(scope),
                 entries,
             });
         }
@@ -236,6 +231,15 @@ impl ToastManager {
                 .find(|(id, _)| id == surface_id)
                 .map(|(_, r)| *r),
         }
+    }
+}
+
+/// 스택 맨 아래 카드의 기준. 창 전체 rect에 그리는 Window·Workspace는 상태바를 피해
+/// 창 하단의 스택 거리 위에 쌓고, 화면 일부를 덮는 Pane·Surface는 가장자리 여백만 둔다.
+fn stack_bottom(scope: &ToastScope) -> ToastStackBottom {
+    match scope {
+        ToastScope::Window | ToastScope::Workspace(_) => ToastStackBottom::Window,
+        ToastScope::Pane(_) | ToastScope::Surface(_) => ToastStackBottom::ScopeMargin,
     }
 }
 
@@ -385,6 +389,23 @@ mod tests {
             };
             draw_toast_view(ctx, &props);
         }));
+    }
+
+    #[test]
+    fn window_wide_scopes_stack_above_the_window_offset_and_regions_keep_the_margin() {
+        assert_eq!(stack_bottom(&ToastScope::Window), ToastStackBottom::Window);
+        assert_eq!(
+            stack_bottom(&ToastScope::Workspace(0)),
+            ToastStackBottom::Window
+        );
+        assert_eq!(
+            stack_bottom(&ToastScope::Pane(1)),
+            ToastStackBottom::ScopeMargin
+        );
+        assert_eq!(
+            stack_bottom(&ToastScope::Surface(1)),
+            ToastStackBottom::ScopeMargin
+        );
     }
 
     #[test]
