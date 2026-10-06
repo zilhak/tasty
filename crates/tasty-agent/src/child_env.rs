@@ -10,16 +10,11 @@
 
 use std::ffi::OsString;
 
-/// 바깥 Tasty 인스턴스가 이 프로세스에 남긴 신원 변수. 이 Tasty 를 다른 Tasty 의 터미널에서
-/// 띄웠으면 그 surface·세션·완료 알림 경로를 가리킨다.
-pub const OUTER_IDENTITY_ENV: &[&str] = &[
-    "TASTY_SESSION_TOKEN",
-    "TASTY_SURFACE_ID",
-    "TASTY_PARENT_HOME",
-    "TASTY_AGENT_ID",
-];
+/// 바깥 Tasty 인스턴스가 이 프로세스에 남긴 신원 변수. 터미널 셸·훅과 같은 목록이다.
+pub use tasty_utils::process::OUTER_IDENTITY_ENV;
 
-/// 작업 자식의 환경. 상속 환경에서 두 종류를 뺀다.
+/// 작업 자식의 환경. 상속 환경에서 두 종류를 뺀다(`tasty_utils::process::is_child_stripped_env`,
+/// 훅 실행과 같은 판정).
 /// - 바깥 Claude Code 세션의 표지·비밀처럼 터미널 셸에도 넘기지 않는 변수
 ///   (`tasty_utils::process::is_stripped_inherited_env`).
 /// - 바깥 Tasty 인스턴스의 신원 변수([`OUTER_IDENTITY_ENV`]).
@@ -32,10 +27,8 @@ pub fn child_env(
     inherited
         .into_iter()
         .filter(|(k, v)| {
-            !k.to_str().is_some_and(|k| {
-                OUTER_IDENTITY_ENV.contains(&k)
-                    || tasty_utils::process::is_stripped_inherited_env(k, v)
-            })
+            !k.to_str()
+                .is_some_and(|k| tasty_utils::process::is_child_stripped_env(k, v))
         })
         .collect()
 }

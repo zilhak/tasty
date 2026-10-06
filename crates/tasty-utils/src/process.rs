@@ -102,24 +102,34 @@ pub fn env_keys_to_strip(
         .collect()
 }
 
-/// 바깥 Tasty 인스턴스에서 상속한 호출자 신원. 이 Tasty 를 다른 Tasty 의 터미널에서 띄웠으면
-/// 그 인스턴스가 발급한 세션 토큰과 에이전트 ID 다. 자식이 부른 `tasty` 가 이 토큰을 실으면 이
-/// 인스턴스는 모르는 토큰이라 요청을 거절한다. 터미널 셸과 훅 실행은 이 인스턴스가 발급한 값이
-/// 없으므로 덮어쓰지 않고 지운다. 자식 에이전트의 값은 플러그인이 실행 명령 앞에 직접 붙인다.
-pub const OUTER_CALLER_ENV: &[&str] = &["TASTY_SESSION_TOKEN", "TASTY_AGENT_ID"];
+/// 바깥 Tasty 인스턴스가 이 프로세스에 남긴 신원 변수. 이 Tasty 를 다른 Tasty 의 터미널에서
+/// 띄웠으면 그 인스턴스의 세션 토큰·에이전트 ID·surface·완료 알림 경로를 가리킨다. 자식이 부른
+/// `tasty` 가 이 토큰을 실으면 이 인스턴스는 모르는 토큰이라 요청을 거절하고, surface 를 생략한
+/// 명령은 엉뚱한 surface 를 가리킨다. Tasty 가 띄우는 자식(터미널 셸·훅·작업 자식)은 모두 이
+/// 값을 물려주지 않는다. 터미널 셸은 지운 뒤 자기 `TASTY_SURFACE_ID`·`TASTY_PARENT_HOME` 을
+/// 넣는다. 세션 토큰·에이전트 ID 는 이 인스턴스가 발급한 값이 없으므로 덮어쓰지 않는다. 자식
+/// 에이전트의 값은 플러그인이 실행 명령 앞에 직접 붙인다.
+pub const OUTER_IDENTITY_ENV: &[&str] = &[
+    "TASTY_SESSION_TOKEN",
+    "TASTY_SURFACE_ID",
+    "TASTY_PARENT_HOME",
+    "TASTY_AGENT_ID",
+];
 
-/// 훅 실행(surface 훅·전역 훅·hook_handler)이 상속 환경에서 지울 키. [`env_keys_to_strip`] 에
-/// 상속된 [`OUTER_CALLER_ENV`] 를 더한다. 터미널 셸은 셸 설정 환경변수를 지키려고 두 목록을
-/// 따로 적용한다.
+/// `key=value` 가 Tasty 가 띄우는 자식(훅·작업 자식)에게 넘기지 않는 상속 환경변수인지 판정한다.
+/// [`is_stripped_inherited_env`] 에 [`OUTER_IDENTITY_ENV`] 를 더한다.
+pub fn is_child_stripped_env(key: &str, value: &std::ffi::OsStr) -> bool {
+    OUTER_IDENTITY_ENV.contains(&key) || is_stripped_inherited_env(key, value)
+}
+
+/// 훅 실행(surface 훅·전역 훅·hook_handler)이 상속 환경에서 지울 키([`is_child_stripped_env`]).
+/// 터미널 셸은 셸 설정 환경변수를 지키려고 [`OUTER_IDENTITY_ENV`] 를 따로 먼저 지운다.
 pub fn hook_env_keys_to_strip(
     inherited: impl IntoIterator<Item = (OsString, OsString)>,
 ) -> Vec<OsString> {
     inherited
         .into_iter()
-        .filter(|(k, v)| {
-            k.to_str()
-                .is_some_and(|k| OUTER_CALLER_ENV.contains(&k) || is_stripped_inherited_env(k, v))
-        })
+        .filter(|(k, v)| k.to_str().is_some_and(|k| is_child_stripped_env(k, v)))
         .map(|(k, _)| k)
         .collect()
 }
@@ -146,7 +156,7 @@ pub fn path_prepending_self_dir(base: Option<OsString>) -> Option<OsString> {
 mod tests {
     use super::*;
 
-    /// 훅 실행은 Claude Code 세션 키에 더해 바깥 인스턴스의 세션 토큰·에이전트 ID 를 지운다.
+    /// 훅 실행은 Claude Code 세션 키에 더해 바깥 인스턴스의 신원 변수를 지운다.
     #[test]
     fn hook_keys_add_the_outer_caller_identity() {
         let inherited = [
@@ -160,7 +170,13 @@ mod tests {
         let keys = hook_env_keys_to_strip(inherited.clone());
         assert_eq!(
             keys,
-            ["CLAUDECODE", "TASTY_SESSION_TOKEN", "TASTY_AGENT_ID"].map(OsString::from)
+            [
+                "CLAUDECODE",
+                "TASTY_SESSION_TOKEN",
+                "TASTY_AGENT_ID",
+                "TASTY_SURFACE_ID"
+            ]
+            .map(OsString::from)
         );
         assert_eq!(env_keys_to_strip(inherited), [OsString::from("CLAUDECODE")]);
     }

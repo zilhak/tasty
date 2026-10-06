@@ -606,12 +606,13 @@ fn strip_inherited_env(
     }
 }
 
-use tasty_utils::process::OUTER_CALLER_ENV;
+use tasty_utils::process::OUTER_IDENTITY_ENV;
 
-/// 바깥 인스턴스의 호출자 신원([`OUTER_CALLER_ENV`])을 자식 환경에서 지운다. 셸 설정의
-/// 환경변수보다 먼저 적용해 사용자가 설정에 넣은 값은 남긴다.
-fn drop_outer_caller_env(cmd: &mut CommandBuilder) {
-    for key in OUTER_CALLER_ENV {
+/// 바깥 인스턴스의 신원 변수([`OUTER_IDENTITY_ENV`])를 자식 환경에서 지운다. 셸 설정의
+/// 환경변수보다 먼저 적용해 사용자가 설정에 넣은 값은 남기고, 그 뒤 이 셸의
+/// `TASTY_SURFACE_ID`·`TASTY_PARENT_HOME` 을 넣는다.
+fn drop_outer_identity_env(cmd: &mut CommandBuilder) {
+    for key in OUTER_IDENTITY_ENV {
         cmd.env_remove(key);
     }
 }
@@ -640,7 +641,7 @@ fn build_shell_command(
             cmd.arg(arg);
         }
     }
-    drop_outer_caller_env(&mut cmd);
+    drop_outer_identity_env(&mut cmd);
     for (key, value) in extra_env {
         cmd.env(key, value);
     }
@@ -731,15 +732,15 @@ mod tests {
         }
     }
 
-    /// 바깥 인스턴스의 세션 토큰·에이전트 ID 는 지우고, 셸 설정에 넣은 값은 남긴다.
+    /// 바깥 인스턴스의 신원 변수는 지우고 이 셸의 surface 를 넣는다. 셸 설정에 넣은 값은 남긴다.
     #[test]
     fn outer_session_token_and_agent_id_are_dropped_but_settings_values_win() {
         let mut cmd = CommandBuilder::new("/bin/sh");
-        for key in OUTER_CALLER_ENV {
+        for key in OUTER_IDENTITY_ENV {
             cmd.env(key, "outer");
         }
-        drop_outer_caller_env(&mut cmd);
-        for key in OUTER_CALLER_ENV {
+        drop_outer_identity_env(&mut cmd);
+        for key in OUTER_IDENTITY_ENV {
             assert_eq!(cmd.get_env(key), None, "{key} 는 지워져야 한다");
         }
 

@@ -224,13 +224,17 @@ mod tests {
     use super::*;
 
     /// 전역 훅도 터미널 셸과 같은 목록으로 Claude Code 세션 키와 CMUX_* 를 지우고,
-    /// 바깥 인스턴스의 세션 토큰·에이전트 ID 도 지운다. 나머지는 남긴다.
+    /// 바깥 인스턴스의 신원 변수도 지운다. 나머지는 남긴다.
     #[test]
     fn global_hook_strips_claude_session_and_cmux_env() {
         use tasty_test_support::strip_env_keys::{KEPT, STRIPPED, inherited};
-        use tasty_utils::process::{OUTER_CALLER_ENV, hook_env_keys_to_strip};
+        use tasty_utils::process::{OUTER_IDENTITY_ENV, hook_env_keys_to_strip};
         let mut inherited = inherited();
-        inherited.extend(OUTER_CALLER_ENV.iter().map(|k| (k.into(), "outer".into())));
+        inherited.extend(
+            OUTER_IDENTITY_ENV
+                .iter()
+                .map(|k| (k.into(), "outer".into())),
+        );
         let strip = hook_env_keys_to_strip(inherited);
         let cmd = global_hook_command("true", strip);
         let removed: Vec<_> = cmd
@@ -238,13 +242,13 @@ mod tests {
             .filter(|(_, v)| v.is_none())
             .map(|(k, _)| k.to_owned())
             .collect();
-        for key in STRIPPED.iter().chain(OUTER_CALLER_ENV) {
+        for key in STRIPPED.iter().chain(OUTER_IDENTITY_ENV) {
             assert!(
                 removed.iter().any(|k| k == std::ffi::OsStr::new(key)),
                 "{key} 는 지워져야 한다"
             );
         }
-        for key in KEPT {
+        for key in KEPT.iter().filter(|k| !OUTER_IDENTITY_ENV.contains(k)) {
             assert!(
                 !removed.iter().any(|k| k == std::ffi::OsStr::new(key)),
                 "{key} 는 남아야 한다"

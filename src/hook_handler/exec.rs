@@ -193,27 +193,31 @@ mod tests {
     use serde_json::json;
 
     /// 직접 실행 훅도 터미널 셸과 같은 목록으로 Claude Code 세션 키와 CMUX_* 를 지우고,
-    /// 바깥 인스턴스의 세션 토큰·에이전트 ID 도 지운다.
+    /// 바깥 인스턴스의 신원 변수도 지운다.
     #[test]
     fn hook_exec_strips_claude_session_and_cmux_env() {
         use tasty_test_support::strip_env_keys::{KEPT, STRIPPED, inherited};
-        use tasty_utils::process::{OUTER_CALLER_ENV, hook_env_keys_to_strip};
+        use tasty_utils::process::{OUTER_IDENTITY_ENV, hook_env_keys_to_strip};
         let env = KEPT
             .iter()
             .map(|k| ((*k).to_owned(), "1".to_owned()))
             .collect();
         let mut inherited = inherited();
-        inherited.extend(OUTER_CALLER_ENV.iter().map(|k| (k.into(), "outer".into())));
+        inherited.extend(
+            OUTER_IDENTITY_ENV
+                .iter()
+                .map(|k| (k.into(), "outer".into())),
+        );
         let strip = hook_env_keys_to_strip(inherited);
         let cmd = hook_exec_command("true", &[], env, strip);
         let envs: Vec<_> = cmd.get_envs().collect();
-        for key in STRIPPED.iter().chain(OUTER_CALLER_ENV) {
+        for key in STRIPPED.iter().chain(OUTER_IDENTITY_ENV) {
             assert!(
                 envs.contains(&(std::ffi::OsStr::new(key), None)),
                 "{key} 는 지워져야 한다"
             );
         }
-        for key in KEPT {
+        for key in KEPT.iter().filter(|k| !OUTER_IDENTITY_ENV.contains(k)) {
             assert!(
                 envs.iter()
                     .any(|(k, v)| *k == std::ffi::OsStr::new(key) && v.is_some()),
