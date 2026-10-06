@@ -584,6 +584,8 @@ fn draw_occupied_overlays(
         pane_id: u32,
         sid: u32,
         hard: bool,
+        // 응답 대기 테두리가 같은 자리에 오면 점유선은 그리지 않는다(강제 해제 버튼은 남긴다).
+        edge: bool,
         x: f32,
         y: f32,
         w: f32,
@@ -622,6 +624,9 @@ fn draw_occupied_overlays(
                     pane_id,
                     sid: r.id,
                     hard,
+                    edge: tasty_ui_widgets::occupancy_edge_shows(
+                        engine.attention_kind(r.id).map(Into::into),
+                    ),
                     x: logical.x.value().round_ui(),
                     y: logical.y.value().round_ui(),
                     w: logical.width.value().round_ui(),
@@ -636,7 +641,7 @@ fn draw_occupied_overlays(
 
     // 장식 테두리는 입력을 받는 Area 대신 painter로 그려 터미널·구분선 입력을 가로채지 않는다.
     // 페인 탭 바 레이어에 그려 팝업 아래에 두고, 뒤에 그리는 이동 링이 이 테두리를 덮게 한다.
-    for o in &occ {
+    for o in occ.iter().filter(|o| o.edge) {
         let painter =
             ctx.layer_painter(crate::adapters::ui::tab_bar::pane_tab_bar_layer(o.pane_id));
         let rect = egui::Rect::from_min_size(egui::pos2(o.x, o.y), egui::vec2(o.w, o.h));

@@ -33,6 +33,12 @@ pub fn surface_edge_attention(attention: Option<Attention>, occupied: bool) -> O
     }
 }
 
+/// 점유 테두리를 그릴지. NeedsInput 테두리가 같은 자리에 오면 점유선은 그리지 않는다.
+/// 한 테두리에는 선 하나만 남긴다(시안 Tab title & surface border — 두 선을 겹치지 않는다).
+pub fn occupancy_edge_shows(attention: Option<Attention>) -> bool {
+    attention != Some(Attention::NeedsInput)
+}
+
 /// attention 테두리의 선. 두 종류 모두 2px(focus-ring-width)이다.
 pub fn attention_edge_stroke(theme: &Theme, attention: Attention) -> egui::Stroke {
     match attention {
@@ -170,6 +176,13 @@ mod tests {
             Some(Completion)
         );
         assert_eq!(surface_edge_attention(None, false), None);
+    }
+
+    #[test]
+    fn needs_input_replaces_the_occupancy_edge_and_completion_does_not() {
+        assert!(!occupancy_edge_shows(Some(Attention::NeedsInput)));
+        assert!(occupancy_edge_shows(Some(Attention::Completion)));
+        assert!(occupancy_edge_shows(None));
     }
 
     #[test]

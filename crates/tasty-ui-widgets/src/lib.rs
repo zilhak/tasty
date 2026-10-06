@@ -59,8 +59,9 @@ mod tree_row;
 mod two_depth;
 mod warning_callout;
 pub use attention::{
-    Attention, RailDot, attention_count_label, attention_edge_stroke, occupancy_edge_stroke,
-    paint_rail_dot, surface_edge_attention, tab_title_color, workspace_attention_badges,
+    Attention, RailDot, attention_count_label, attention_edge_stroke, occupancy_edge_shows,
+    occupancy_edge_stroke, paint_rail_dot, surface_edge_attention, tab_title_color,
+    workspace_attention_badges,
 };
 pub use autocomplete::{
     AutoComplete, AutoCompleteAction, AutoCompleteResponse, MatchMode, autocomplete_dropdown,

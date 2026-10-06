@@ -5,8 +5,8 @@
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{
-    Attention, RailDot, attention_edge_stroke, occupancy_edge_stroke, paint_rail_dot,
-    surface_edge_attention, tab_title_color, workspace_attention_badges,
+    Attention, RailDot, attention_edge_stroke, occupancy_edge_shows, occupancy_edge_stroke,
+    paint_rail_dot, surface_edge_attention, tab_title_color, workspace_attention_badges,
 };
 
 use crate::catalog::icons::{MockGlyph, TERMINAL};
@@ -450,13 +450,17 @@ const PANE_CASES: &[PaneCase] = &[
     ),
 ];
 
-/// 공용 순위 판정으로 남은 선 하나만 그린다. 두 선을 겹쳐 그리지 않는다.
-fn pane_stroke(theme: &Theme, kind: Option<Attention>, occupied: bool) -> egui::Stroke {
-    match surface_edge_attention(kind, occupied) {
-        Some(k) => attention_edge_stroke(theme, k),
-        None if occupied => occupancy_edge_stroke(theme, false),
-        None => egui::Stroke::NONE,
+/// 본체와 같은 순서로 테두리를 모은다: attention 선, 그 위에 점유선. 두 판정 함수가
+/// 한 자리에 선 하나만 남긴다.
+fn pane_strokes(theme: &Theme, kind: Option<Attention>, occupied: bool) -> Vec<egui::Stroke> {
+    let mut strokes = Vec::new();
+    if let Some(k) = surface_edge_attention(kind, occupied) {
+        strokes.push(attention_edge_stroke(theme, k));
     }
+    if occupied && occupancy_edge_shows(kind) {
+        strokes.push(occupancy_edge_stroke(theme, false));
+    }
+    strokes
 }
 
 fn ladder_pane(ui: &mut egui::Ui, theme: &Theme, w: f32, case: &PaneCase) {
@@ -465,13 +469,15 @@ fn ladder_pane(ui: &mut egui::Ui, theme: &Theme, w: f32, case: &PaneCase) {
         ui.allocate_exact_size(egui::vec2(w, LADDER_PANE_H.value()), egui::Sense::hover());
     let p = ui.painter_at(rect);
     let term = theme.surface("terminal");
-    let stroke = pane_stroke(theme, kind, occupied);
+    let strokes = pane_strokes(theme, kind, occupied);
+    // 머리줄 라벨은 맨 위에 보이는 선의 색을 따른다.
+    let stroke = strokes.last().copied().unwrap_or(egui::Stroke::NONE);
+    let edge_w = strokes.iter().map(|s| s.width).fold(0.0, f32::max);
     let radius = theme.corner_radius.value();
     p.rect_filled(rect, radius, ec(term.focused_bg));
     let pad = theme.spacing_sm.value();
     let head_h = theme.font_size_caption.value() + pad * 2.0;
-    let head =
-        egui::Rect::from_min_size(rect.min, egui::vec2(rect.width(), head_h)).shrink(stroke.width);
+    let head = egui::Rect::from_min_size(rect.min, egui::vec2(rect.width(), head_h)).shrink(edge_w);
     p.rect_filled(head, 0.0, ec(theme.bg_panel()));
     p.hline(
         head.x_range(),
@@ -519,7 +525,9 @@ fn ladder_pane(ui: &mut egui::Ui, theme: &Theme, w: f32, case: &PaneCase) {
         mono,
         ec(term.focused_fg),
     );
-    p.rect_stroke(rect, radius, stroke, egui::StrokeKind::Inside);
+    for s in strokes {
+        p.rect_stroke(rect, radius, s, egui::StrokeKind::Inside);
+    }
 }
 
 fn draw_ladder(ui: &mut egui::Ui, theme: &Theme) {
