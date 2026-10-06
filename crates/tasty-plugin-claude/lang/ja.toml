@@ -178,7 +178,7 @@ description = "~/.claude/settings.json に tasty フックを設定するか、m
 description = "~/.claude/settings.jsonからtastyフックを削除"
 
 [claude.cli.sub.hook]
-description = "Claude Codeフック連携。Claude Codeのフックシステムから呼び出されるとstdinからJSONペイロード（session_id、cwd、prompt_id、message、notification_type、error、agent_id、background_tasks、tool_name、tool_response、prompt、source、reason）を読み取ります。公式 hooks ドキュメントと実測 payload にはありませんが、waiting_on_background_work も防御的に読み取ります。"
+description = "Claude Codeフック連携。Claude Codeのフックシステムから呼び出されるとstdinからJSONペイロード（session_id、cwd、prompt_id、message、notification_type、error、agent_id、background_tasks、tool_name、tool_response、prompt、source、reason、last_assistant_message）を読み取ります。公式 hooks ドキュメントと実測 payload にはありませんが、waiting_on_background_work も防御的に読み取ります。"
 
 [claude.cli.sub.checklist-hook]
 description = "Stopフックゲートの判定。stdinからJSON（session_id、prompt_id、stop_hook_active、last_assistant_message）を読み取ります。--gateで判定する登録ゲートを選択（既定値：continue-checklist）。"
@@ -443,6 +443,9 @@ help = "Claude セッションの作業フォルダー。stdin JSON 'cwd' から
 
 [claude.cli.arg.hook_args.reason]
 help = "セッションが終わった理由（clear、resume、logout、prompt_input_exit、other）。SessionEnd の stdin JSON 'reason' から自動で埋めます。clear と resume 以外の値は Claude プロセスが終わったことを意味するため、そのプロセスに記録した settings を消します。"
+
+[claude.cli.arg.hook_args.last_assistant_message]
+help = "ターンの最後の assistant メッセージ。Stop フックの stdin JSON 'last_assistant_message' から自動で埋めます。この surface が Tasty の agent task を実行中なら、そのターンの最終回答として報告します。"
 
 [claude.cli.arg.checklist_hook_args.surface]
 help = "ゲート対象サーフェスID。セッションの目標照会に使用。既定値は呼び出し元のTASTY_SURFACE_ID"

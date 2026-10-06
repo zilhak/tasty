@@ -618,6 +618,8 @@ pub(crate) fn handle_hook<H: HostCall>(
     {
         host_call_failures += record_session_meta(host, surface_id, session);
     }
+    // agent task 의 턴 결과를 idle 상태보다 먼저 보고한다.
+    crate::task_turn::report(host, event, surface_id, params);
     // 상태 갱신 실패는 호출자에게 알린다. 뒤의 알림 실패는 집계하고 계속한다.
     host_call(
         host,

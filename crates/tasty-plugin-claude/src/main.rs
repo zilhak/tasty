@@ -20,6 +20,7 @@ mod reboot;
 mod retrack;
 mod state;
 mod stop_pairing;
+mod task_turn;
 mod task_watch;
 
 use std::collections::HashSet;

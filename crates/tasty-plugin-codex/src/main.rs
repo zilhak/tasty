@@ -13,6 +13,7 @@ const POSIX_CODEX_COMMAND: &str = "command codex";
 mod handlers;
 mod install;
 mod reboot;
+mod task_turn;
 
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};

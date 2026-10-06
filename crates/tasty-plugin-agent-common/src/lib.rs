@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
-//! Claude와 Codex 플러그인의 공용 헬퍼: 프롬프트 파일, 자식 조회, 요청 인자, 완료 알림 훅.
+//! Claude와 Codex 플러그인의 공용 헬퍼: 프롬프트 파일, 자식 조회, 요청 인자, 완료 알림 훅,
+//! agent task 턴 보고.
 //!
 //! CLI별 종료 대기 시간·키 입력·이벤트 목록은 각 플러그인에서 정한다.
 //! 오류 판정은 공유하지만 메시지와 번역 키는 각 플러그인이 제공한다.
@@ -21,3 +22,4 @@ pub mod host_call;
 pub mod params;
 pub mod prompt_file;
 pub mod reboot;
+pub mod task_turn;

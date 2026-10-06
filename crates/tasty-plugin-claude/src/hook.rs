@@ -287,6 +287,7 @@ pub(crate) fn handle_claude_hook<H: HostCallSink>(
         return Ok(response);
     }
 
+    crate::task_turn::report(host, event, surface_id, params);
     // 새 프롬프트가 왔다면 보류 중인 Stop 에서 턴이 끝났다. 새 턴의 active 보다 먼저 idle 을 보고한다.
     let settled_failures = tail.settle_at_turn_boundary(event, session.as_deref());
 

@@ -178,7 +178,7 @@ description = "Install tasty hooks into ~/.claude/settings.json, or update exist
 description = "Uninstall tasty hooks from ~/.claude/settings.json"
 
 [claude.cli.sub.hook]
-description = "Claude Code hook integration. Reads JSON payload from stdin (session_id, cwd, prompt_id, message, notification_type, error, agent_id, background_tasks, tool_name, tool_response, prompt, source, reason) when invoked by Claude Code's hook system. Also reads waiting_on_background_work defensively, although neither the official hooks documentation nor observed payloads include it."
+description = "Claude Code hook integration. Reads JSON payload from stdin (session_id, cwd, prompt_id, message, notification_type, error, agent_id, background_tasks, tool_name, tool_response, prompt, source, reason, last_assistant_message) when invoked by Claude Code's hook system. Also reads waiting_on_background_work defensively, although neither the official hooks documentation nor observed payloads include it."
 
 [claude.cli.sub.checklist-hook]
 description = "Stop-hook gate decision. Reads JSON payload from stdin (session_id, prompt_id, stop_hook_active, last_assistant_message); --gate selects which registered gate decides (default: continue-checklist)."
@@ -443,6 +443,9 @@ help = "Working directory of the Claude session. Auto-populated from stdin JSON 
 
 [claude.cli.arg.hook_args.reason]
 help = "Why the session ended (clear, resume, logout, prompt_input_exit, other). Auto-populated from stdin JSON 'reason' on SessionEnd. Any value but clear and resume means the Claude process ended, so the settings recorded for it are forgotten."
+
+[claude.cli.arg.hook_args.last_assistant_message]
+help = "The assistant's final message of the turn. Auto-populated from stdin JSON 'last_assistant_message' on the Stop hook. When the surface runs a Tasty agent task, it is reported as that turn's final answer."
 
 [claude.cli.arg.checklist_hook_args.surface]
 help = "Surface ID the gate is firing for, used to look up that session's goal. Defaults to the caller's TASTY_SURFACE_ID."

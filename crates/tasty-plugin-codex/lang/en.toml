@@ -108,7 +108,7 @@ description = "Install Tasty hook into Codex CLI configuration"
 description = "Uninstall Tasty hook from Codex CLI configuration"
 
 [codex.cli.sub.hook]
-description = "Codex hook integration (called by Codex CLI's hook system). Reads JSON payload from stdin (session_id) when invoked by Codex's hook system."
+description = "Codex hook integration (called by Codex CLI's hook system). Reads JSON payload from stdin (session_id, last_assistant_message) when invoked by Codex's hook system."
 
 [codex.cli.arg.launch_args.workspace]
 help = "Workspace name to create (defaults to \"codex\")"
@@ -259,3 +259,6 @@ help = "Surface ID the hook is firing for"
 
 [codex.cli.arg.hook_args.session]
 help = "Codex session ID. Auto-populated from stdin JSON 'session_id' when Codex invokes the hook."
+
+[codex.cli.arg.hook_args.last_assistant_message]
+help = "The assistant's final message of the turn. Auto-populated from stdin JSON 'last_assistant_message' on the Stop hook. When the surface runs a Tasty agent task, it is reported as that turn's final answer."
