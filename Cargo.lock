@@ -6247,7 +6247,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-image"
-version = "0.1.93"
+version = "0.1.94"
 dependencies = [
  "anyhow",
  "arboard",
@@ -6260,6 +6260,7 @@ dependencies = [
  "tasty-plugin-protocol",
  "tasty-plugin-sdk",
  "tasty-type-appearance",
+ "tasty-ui-widgets",
  "tracing",
  "tracing-subscriber",
  "usvg",

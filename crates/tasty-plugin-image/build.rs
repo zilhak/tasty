@@ -13,6 +13,7 @@ const ICONS: &[(&str, tasty_icons::Icon)] = &[
     ("CHEVRON_RIGHT", tasty_icons::CHEVRON_RIGHT),
     ("EDIT", tasty_icons::EDIT),
     ("PLUS", tasty_icons::PLUS),
+    ("MINUS", tasty_icons::MINUS),
     ("FOLDER_OPEN", tasty_icons::FOLDER_OPEN),
     ("UNDO", tasty_icons::UNDO),
     ("REDO", tasty_icons::REDO),

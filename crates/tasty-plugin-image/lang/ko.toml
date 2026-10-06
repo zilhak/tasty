@@ -25,6 +25,9 @@ save_path_title = "다른 이름으로 저장"
 browse = "찾아보기…"
 undo = "실행 취소"
 redo = "다시 실행"
+fit = "맞춤"
+zoom_in = "확대"
+zoom_out = "축소"
 
 [button]
 ok = "확인"

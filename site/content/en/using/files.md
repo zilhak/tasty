@@ -1,4 +1,4 @@
-<!-- source-hash: bcc42aead244 -->
+<!-- source-hash: 32cd4664c50c -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.

@@ -9,6 +9,7 @@ mod baked_icons {
 use egui::emath::GuiRounding as _;
 use tasty_plugin_sdk::Translator;
 use tasty_type_appearance::theme::Theme;
+use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, IconButton};
 
 use crate::doc::{DragState, EditState, ImageDoc, ResizeHandle};
 
@@ -126,12 +127,17 @@ fn draw_viewer_controls(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, doc: 
     }
 
     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-        draw_zoom_controls(ui, theme, doc);
+        draw_zoom_controls(ui, theme, tr, doc);
     });
 }
 
 fn draw_edit_controls(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, doc: &mut ImageDoc) {
-    if text_button(ui, theme, tr.t("image_viewer.save")).clicked() {
+    if Button::new(tr.t("image_viewer.save"))
+        .variant(ButtonVariant::Secondary)
+        .size(ControlSize::Sm)
+        .show(ui, theme)
+        .clicked()
+    {
         if let Some(path) = doc.save_path() {
             if let Err(e) = doc.save_png(&path) {
                 tracing::warn!("failed to save image: {e}");
@@ -145,7 +151,12 @@ fn draw_edit_controls(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, doc: &m
         }
     }
 
-    if text_button(ui, theme, tr.t("image_viewer.cancel")).clicked() {
+    if Button::new(tr.t("image_viewer.cancel"))
+        .variant(ButtonVariant::Ghost)
+        .size(ControlSize::Sm)
+        .show(ui, theme)
+        .clicked()
+    {
         doc.exit_edit_mode();
     }
 
@@ -193,21 +204,27 @@ fn draw_edit_controls(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, doc: &m
     }
 
     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-        draw_zoom_controls(ui, theme, doc);
+        draw_zoom_controls(ui, theme, tr, doc);
     });
 }
 
-fn draw_zoom_controls(ui: &mut egui::Ui, theme: &Theme, doc: &mut ImageDoc) {
+/// 시안 ZoomGroup: Fit은 Secondary sm Button, +/−는 sm IconButton이다.
+fn draw_zoom_controls(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, doc: &mut ImageDoc) {
     // right_to_left layout: add in reverse visual order (-, %, +, Fit).
-    if text_button(ui, theme, "-").clicked() {
+    if zoom_icon_button(ui, theme, baked_icons::MINUS, tr.t("image_viewer.zoom_out")).clicked() {
         doc.zoom = (doc.zoom / 1.25).max(0.1);
     }
     let zoom_pct = format!("{}%", (doc.zoom * 100.0).round_ui() as i32);
     ui.label(caption(theme, &zoom_pct));
-    if text_button(ui, theme, "+").clicked() {
+    if zoom_icon_button(ui, theme, baked_icons::PLUS, tr.t("image_viewer.zoom_in")).clicked() {
         doc.zoom = (doc.zoom * 1.25).min(20.0);
     }
-    if text_button(ui, theme, "Fit").clicked() {
+    if Button::new(tr.t("image_viewer.fit"))
+        .variant(ButtonVariant::Secondary)
+        .size(ControlSize::Sm)
+        .show(ui, theme)
+        .clicked()
+    {
         doc.zoom = 1.0;
         doc.pan_offset = egui::Vec2::ZERO;
     }
@@ -506,7 +523,20 @@ fn draw_new_image_popup(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, doc: 
 
         ui.add_space(theme.spacing_md.value());
         ui.horizontal(|ui| {
-            if text_button(ui, theme, tr.t("button.ok")).clicked() {
+            if Button::new(tr.t("button.cancel"))
+                .variant(ButtonVariant::Ghost)
+                .size(ControlSize::Sm)
+                .show(ui, theme)
+                .clicked()
+            {
+                doc.new_image_popup = false;
+            }
+            if Button::new(tr.t("button.ok"))
+                .variant(ButtonVariant::Primary)
+                .size(ControlSize::Sm)
+                .show(ui, theme)
+                .clicked()
+            {
                 let w = doc
                     .new_image_width
                     .parse::<usize>()
@@ -518,9 +548,6 @@ fn draw_new_image_popup(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, doc: 
                     .unwrap_or(600)
                     .clamp(1, 8192);
                 doc.create_blank_canvas(w, h);
-            }
-            if text_button(ui, theme, tr.t("button.cancel")).clicked() {
-                doc.new_image_popup = false;
             }
         });
     });
@@ -560,7 +587,19 @@ fn draw_save_path_popup(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, doc: 
 
         ui.add_space(theme.spacing_md.value());
         ui.horizontal(|ui| {
-            if text_button(ui, theme, tr.t("button.save")).clicked()
+            if Button::new(tr.t("button.cancel"))
+                .variant(ButtonVariant::Ghost)
+                .size(ControlSize::Sm)
+                .show(ui, theme)
+                .clicked()
+            {
+                doc.save_path_popup = false;
+            }
+            if Button::new(tr.t("button.save"))
+                .variant(ButtonVariant::Primary)
+                .size(ControlSize::Sm)
+                .show(ui, theme)
+                .clicked()
                 && !doc.save_path_buffer.is_empty()
             {
                 let mut path = doc.save_path_buffer.clone();
@@ -574,9 +613,6 @@ fn draw_save_path_popup(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, doc: 
                     doc.save_path_popup = false;
                     doc.exit_edit_mode();
                 }
-            }
-            if text_button(ui, theme, tr.t("button.cancel")).clicked() {
-                doc.save_path_popup = false;
             }
         });
     });
@@ -681,8 +717,23 @@ fn baked_icon_button_enabled(
     resp
 }
 
-/// Text button (Save / Cancel / Fit / zoom +/-, popup buttons). Auto width.
-fn text_button(ui: &mut egui::Ui, theme: &Theme, label: &str) -> egui::Response {
-    let h = theme.spacing_lg.value() + theme.spacing_xs.value();
-    ui.add(styled_button(theme, label).min_size(egui::vec2(0.0, h)))
+/// zoom 그룹의 sm IconButton. 위젯이 정한 글리프 칸과 상태별 색으로 폴리라인 아이콘을 그린다.
+fn zoom_icon_button(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    icon: &'static [&'static [[f32; 2]]],
+    tooltip: &str,
+) -> egui::Response {
+    IconButton::new()
+        .size(ControlSize::Sm)
+        .show(ui, theme, &|ui, rect, color| {
+            tasty_plugin_sdk::baked_icon::draw(
+                ui.painter(),
+                icon,
+                rect.center(),
+                rect.height(),
+                color,
+            );
+        })
+        .on_hover_text(tooltip)
 }

@@ -25,6 +25,9 @@ save_path_title = "Save As"
 browse = "Browse…"
 undo = "Undo"
 redo = "Redo"
+fit = "Fit"
+zoom_in = "Zoom in"
+zoom_out = "Zoom out"
 
 [button]
 ok = "OK"

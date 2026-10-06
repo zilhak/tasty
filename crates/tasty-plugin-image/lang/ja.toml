@@ -25,6 +25,9 @@ save_path_title = "名前を付けて保存"
 browse = "参照…"
 undo = "元に戻す"
 redo = "やり直し"
+fit = "フィット"
+zoom_in = "拡大"
+zoom_out = "縮小"
 
 [button]
 ok = "OK"
