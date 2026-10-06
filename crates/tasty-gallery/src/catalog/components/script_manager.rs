@@ -16,6 +16,8 @@ const FRAME_MAX_W: LogicalPx = LogicalPx(560.0);
 const ROW_LINE_GAP: LogicalPx = LogicalPx(2.0);
 /// 트리거 칩과 Add trigger… 컨트롤 높이(jsx `height: 16`, changed 배지와 같은 높이).
 const CHIP_H: LogicalPx = LogicalPx(16.0);
+/// 캡션과 프레임 사이 간격(jsx 무대 열 `gap: 6`).
+const CAPTION_GAP: LogicalPx = LogicalPx(6.0);
 
 /// RTL 클러스터에서 kbd 키캡이 역순으로 그려지는 것을 상쇄하려 combo 파트를 미리
 /// 뒤집는다(`"Ctrl+Shift+J"` → `"J+Shift+Ctrl"` → RTL 렌더 후 화면상 정순).
@@ -71,7 +73,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 for (caption, empty) in [("registered scripts", false), ("empty state", true)] {
                     spec::wrap_item(ui, |ui| {
                         ui.push_id(caption, |ui| {
-                            ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
+                            ui.spacing_mut().item_spacing.y = CAPTION_GAP.value();
                             ui.label(
                                 egui::RichText::new(caption)
                                     .size(theme.font_size_caption.value())
