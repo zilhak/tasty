@@ -406,6 +406,43 @@ fn seed_category(worker: &JournalWorker) {
     finished(worker, 100).unwrap();
 }
 
+/// A live engine whose only surface cannot collide with the journal's reservations.
+///
+/// A fresh journal hands out surface IDs from 1 (`seed_category` takes 1, `prepare_workspace`
+/// takes 2). `test_state()` numbers its surface from a process-wide counter, so its ID depends
+/// on how many fixtures ran before in this process; when it lands on the reserved ID, preparation
+/// rejects the claim as already owned. The engine therefore owns a fixed, unrelated surface.
+fn unrelated_owner_state() -> (
+    crate::state::RequestContext,
+    crate::runtime::engine_session::EngineSession,
+) {
+    crate::state::tests::test_state_from_model(crate::state::tests::test_model(vec![
+        tasty_core::DomainEvent::CategoryCreated {
+            id: 0,
+            name: "normal".into(),
+            index: 0,
+        },
+        tasty_core::DomainEvent::WorkspaceCreated {
+            id: 100,
+            name: "unrelated".into(),
+            category: 0,
+            index: 0,
+            pane: 100,
+        },
+        tasty_core::DomainEvent::TabCreated {
+            id: 100,
+            pane: 100,
+            index: 0,
+            name: "unrelated".into(),
+            surface: tasty_core::SurfaceSpec {
+                id: 100,
+                kind: "empty".into(),
+                data: None,
+            },
+        },
+    ]))
+}
+
 fn claim(
     worker: &JournalWorker,
     ticket: u64,
@@ -511,7 +548,7 @@ fn a_durable_claim_precedes_real_pty_preparation_and_the_candidate_stays_private
         runtime_epoch: claimed.lease.runtime_epoch,
         engine_incarnation: claimed.engine_incarnation,
     };
-    let (_view, mut session) = crate::state::tests::test_state();
+    let (_view, mut session) = unrelated_owner_state();
     let mut engine = session.borrow_mut();
     let old_ids = engine.live_surface_ids();
     let reserved_surface = claimed.plan.surface.id;
@@ -718,7 +755,7 @@ fn kind_withdrawal_after_claim_prevents_factory_execution() {
         runtime_epoch: claimed.lease.runtime_epoch,
         engine_incarnation: claimed.engine_incarnation,
     };
-    let (_view, mut session) = crate::state::tests::test_state();
+    let (_view, mut session) = unrelated_owner_state();
     let mut engine = session.borrow_mut();
     let (sender, receiver) = std::sync::mpsc::channel();
     let declaration = serde_json::from_value(serde_json::json!({"kind":"late-kind", "display_name_i18n_key":"surface.kind.markdown", "rendering":"remote"})).unwrap();
@@ -928,34 +965,7 @@ fn kind_withdrawal_or_replacement_after_prepare_rejects_installation_before_publ
             runtime_epoch: claimed.lease.runtime_epoch,
             engine_incarnation: claimed.engine_incarnation,
         };
-        // The journal reserves surface 1. Use an explicit unrelated owner so this test also
-        // works alone, when the process-wide presentation fixture counter still starts at 1.
-        let model = crate::state::tests::test_model(vec![
-            tasty_core::DomainEvent::CategoryCreated {
-                id: 0,
-                name: "normal".into(),
-                index: 0,
-            },
-            tasty_core::DomainEvent::WorkspaceCreated {
-                id: 100,
-                name: "unrelated".into(),
-                category: 0,
-                index: 0,
-                pane: 100,
-            },
-            tasty_core::DomainEvent::TabCreated {
-                id: 100,
-                pane: 100,
-                index: 0,
-                name: "unrelated".into(),
-                surface: tasty_core::SurfaceSpec {
-                    id: 100,
-                    kind: "empty".into(),
-                    data: None,
-                },
-            },
-        ]);
-        let (_view, mut session) = crate::state::tests::test_state_from_model(model);
+        let (_view, mut session) = unrelated_owner_state();
         let mut engine = session.borrow_mut();
         let original_ids = engine.live_surface_ids();
         let (sender, receiver) = std::sync::mpsc::channel();
