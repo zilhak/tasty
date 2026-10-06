@@ -580,6 +580,11 @@ fn cell(ui: &mut egui::Ui, theme: &Theme, row: &PortRow, c: usize) {
     };
     // Workspace 컬럼은 이 예제에서 숨긴다.
     let _ = row.ws; // Workspace 는 chooser 로 숨겨 렌더 안 함 — 필드 미사용(값 drop, Result 아님).
+    // 값 셀은 본체·kit `Table` td 처럼 정렬 쪽에 table-cell-padding-x 를 둔다. 오른쪽 정렬 열은
+    // 오른쪽에서 왼쪽으로 쌓으므로 같은 여백이 값 오른쪽에 붙는다. 별 열은 kit 의 tight 열이다.
+    if (1..=5).contains(&c) {
+        ui.add_space(theme.table_cell_padding_x().value());
+    }
     match c {
         0 => star(ui, theme, row.favorited),
         1 => mono(ui, row.port, theme.text_primary().to_egui()),
