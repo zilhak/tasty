@@ -1028,6 +1028,20 @@ pub fn pages() -> Vec<Page> {
                             components::remote::draw_attach_form,
                         ),
                         spec(
+                            "remote-profile-form",
+                            "Profile form — SSH (the [112px · 1fr] row grid)",
+                            Some(
+                                "add route inside the window · fixed 112 label column · pinned footer",
+                            ),
+                            components::remote::draw_profile_form,
+                        ),
+                        spec(
+                            "remote-generic-passkey-forms",
+                            "Generic & Passkey forms · badges",
+                            Some("key-value fields · Unknown type badge · passkey path / inline"),
+                            components::remote::draw_generic_passkey_forms,
+                        ),
+                        spec(
                             "remote-passkeys",
                             "Passkeys tab — reveal states",
                             Some("right tab · hidden / revealed (active) / unknown kind"),

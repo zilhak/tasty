@@ -14,7 +14,9 @@ use crate::catalog::icons;
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::catalog::widgets::dialog as kit;
 
+mod forms;
 mod passkeys;
+pub use forms::{draw_generic_passkey_forms, draw_profile_form};
 pub use passkeys::draw_passkeys;
 
 const WIDTH: LogicalPx = LogicalPx(520.0);
