@@ -232,11 +232,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ],
         &[
             TokenChip::new(
-                "accent-warning",
-                "needs-input edge (→ yellow)",
-                theme.accent_warning().into(),
-            ),
-            TokenChip::new(
                 "accent-occupied-soft",
                 "soft edge (→ green)",
                 theme.accent_occupied_soft().into(),
@@ -245,11 +240,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "accent-occupied-hard",
                 "hard edge (→ peach)",
                 theme.accent_occupied_hard().into(),
-            ),
-            TokenChip::new(
-                "accent-primary",
-                "completion edge (→ blue)",
-                theme.accent_primary().into(),
             ),
             TokenChip::new(
                 "accent-danger",

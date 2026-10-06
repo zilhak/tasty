@@ -59,16 +59,6 @@ pub fn draw_badge(ui: &mut egui::Ui, theme: &Theme) {
         ],
         &[
             TokenChip::new(
-                "accent-danger",
-                "count fill",
-                egui::Color32::from(theme.accent_danger()),
-            ),
-            TokenChip::new(
-                "accent-agent",
-                "agent fill",
-                egui::Color32::from(theme.accent_agent()),
-            ),
-            TokenChip::new(
                 "badge-danger-bg",
                 "default",
                 egui::Color32::from(theme.badge_danger_bg()),

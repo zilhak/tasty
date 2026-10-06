@@ -782,13 +782,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ),
             TokenChip::new(
                 "accent-primary",
-                "inset bar + logo + completion badge/dot",
+                "inset bar + logo",
                 theme.accent_primary().into(),
-            ),
-            TokenChip::new(
-                "accent-warning",
-                "needs-input badge/dot",
-                theme.accent_warning().into(),
             ),
             TokenChip::new(
                 "workspace-mirror-fg",

@@ -209,13 +209,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::new("bg-panel", "active tab", theme.bg_panel().into()),
             TokenChip::new(
                 "accent-primary",
-                "active top bar · completion title",
+                "active top bar",
                 theme.accent_primary().into(),
-            ),
-            TokenChip::new(
-                "accent-warning",
-                "needs-input title",
-                theme.accent_warning().into(),
             ),
             TokenChip::new(
                 "tab-separator",
