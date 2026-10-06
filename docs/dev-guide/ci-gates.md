@@ -516,6 +516,7 @@ ASCII 중심 `strings`는 한글 이름을 놓친다. 로그에서 ignored와 �
 |---|---|---|
 | 기본 feature 전체 스위트 | `cargo test --workspace --locked` | 병합 후 최종 트리. test.yml의 전체 실행 잡은 수동 전용 |
 | Linux 기본 feature clippy | `cargo clippy --workspace --all-targets --locked` | 해당 작업의 최종 검증. 패키지만 지정한 결과로 대신하지 않음 |
+| headless clippy | `cargo clippy --workspace --all-targets --no-default-features --locked` (`check-headless` 의 `cargo clippy (headless)` 스텝과 같은 명령) | headless 경로나 `cfg(not(feature = "gui"))` 코드를 바꿨을 때. 그 코드는 위 기본 feature clippy 에 보이지 않는다. `check-headless` 도 같은 명령을 돌리지만 경고만으로는 실패하지 않으므로 출력의 `warning` 줄을 직접 읽는다. `let_underscore_must_use` 경고는 막지 않는 명부다([error-handling](error-handling.md)의 「`clippy::let_underscore_must_use` 는 무엇을 세는가」) |
 | dist 빌드 | `bash scripts/build-macos-dmg.sh` · `./scripts/build-windows.ps1` · `bash scripts/build-linux.sh` | build-check.yml 수동 실행 |
 
 ### 크레이트를 지목한 clippy 는 push 와 다른 feature 집합을 잰다
