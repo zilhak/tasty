@@ -123,7 +123,9 @@ plugin hop은 원 번호와 host_request_id로 연결하지만 plugin→host 부
 intent 뒤 파일 핸들러 forward와 큐를 안 지난 host-call은 연계되지 않는다.
 IPC 명령 하나가 plugin namespace 메서드로 오면 plugin 전달은 한 번이고, 그 대기 항목이 명령의 RequestSeq를 든다.
 각 dispatch의 `namespace_forward_tests`가 namespace를 소유한 stub plugin으로 전달 수와 번호를 확인하지만 범위가 다르다.
-GUI 시험은 namespace 단계 함수(`forward_owned_namespace`) 안의 전달만 잰다. GUI App은 시험에서 만들 수 없어 `ipc_step_routing`에서 그 함수 밖에 둔 전달은 덮지 않는다.
+GUI 단위 시험은 namespace 단계 함수(`forward_owned_namespace`) 안의 전달만 잰다. GUI App은 시험에서 만들 수 없어 `ipc_step_routing`에서 그 함수 밖에 둔 전달은 단위 시험이 덮지 않는다.
+그 전달은 실제 인스턴스 e2e `a_plugin_namespace_call_is_forwarded_to_the_plugin_exactly_once`(`tests/e2e_tests.rs`)가 덮는다. `markdown.recent` 하나를 보낸 전후로 `system.pressure`의 `plugin_round_trip.matched`(응답이 매칭된 plugin 왕복 수)가 멈출 때까지 기다려 차분이 1인지 본다. `ipc_step_routing`에서 그 함수 밖에 추가 전달을 넣은 변이는 기본(gui) 조합에서 이 시험을 실패시켰다(차분 2).
+세는 것은 응답이 매칭된 왕복이라, tasty-host-plugin 내부에서 pending 없이 보낸 중복은 이 e2e가 검출하지 못하고 stub 단위 시험(`namespace_forward_tests`)이 검출한다.
 헤드리스 시험은 `dispatch_command` 전체를 지나므로 구조상 그 단계 밖의 전달도 드러나지만, 그 위치의 변이는 재지 않았다. 헤드리스 쪽은 `--no-default-features` 조합에서만 실행된다.
 이 기록은 재시작하면 사라진다. 지연 원인을 볼 때 전체 histogram과 함께 확인한다.
 

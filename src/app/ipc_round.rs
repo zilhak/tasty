@@ -432,8 +432,9 @@ mod tests {
     /// 주석·문자열도 포함한 원문 검사이며 호출 횟수나 c의 실제 바인딩은 확인하지 않는다.
     /// 다른 파일의 전달 경로는 대상이 아니다. 명령당 전달 횟수와 넘긴 번호는 stub 플러그인을
     /// 쓰는 행동 시험이 잰다. gui 의 `app::ipc::routing::namespace_forward_tests` 는
-    /// `forward_owned_namespace` 안의 전달만 재고 `ipc_step_routing` 에서 그 함수 밖에 둔 전달은
-    /// 덮지 않는다(GUI App 을 시험에서 만들 수 없다). headless 의
+    /// `forward_owned_namespace` 안의 전달만 잰다(GUI App 을 시험에서 만들 수 없다).
+    /// `ipc_step_routing` 에서 그 함수 밖에 둔 전달은 e2e
+    /// `a_plugin_namespace_call_is_forwarded_to_the_plugin_exactly_once` 가 잰다. headless 의
     /// `boot::headless_dispatch::namespace_forward_tests`(`--no-default-features`)는
     /// `dispatch_command` 전체를 지나므로 구조상 그 밖의 전달도 덮지만 그 위치의 변이는 재지 않았다.
     /// 키를 뗀 사본의 번호 보존은 idempotency 시험이 확인한다.

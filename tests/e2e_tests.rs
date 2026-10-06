@@ -1737,6 +1737,58 @@ fn a_request_naming_an_unowned_target_is_rejected() {
     );
 }
 
+/// `system.pressure` 의 plugin 왕복 수가 한동안 그대로일 때 그 값을 돌려준다.
+/// 늦게 도착한 plugin 응답까지 센 뒤에 비교하려고 기다린다.
+fn settled_plugin_round_trips(tasty: &TastyInstance) -> u64 {
+    let read = || {
+        tasty.call("system.pressure", json!({}))["plugin_round_trip"]["matched"]
+            .as_u64()
+            .expect("system.pressure 에 plugin_round_trip.matched 가 있어야 한다")
+    };
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    let mut last = read();
+    loop {
+        std::thread::sleep(Duration::from_millis(500));
+        let now = read();
+        if now == last {
+            return now;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "plugin 왕복 수가 10초 동안 멈추지 않았다: {last} → {now}"
+        );
+        last = now;
+    }
+}
+
+/// 실제 인스턴스에서 plugin namespace 메서드 IPC 하나가 plugin 에 정확히 한 번 전달되는지
+/// 응답이 매칭된 plugin 왕복 수의 차분으로 잰다. 단위 시험이 지나지 않는 GUI
+/// `ipc_step_routing` 의 namespace 단계 밖 추가 전달도 여기서 드러난다.
+/// `markdown` namespace 에 IPC pre/post hook 을 건 활성 extension 이 없다는 것이 전제다.
+/// 그런 extension 이 있으면 호출 하나에 hook 왕복이 더해져 차분이 2 이상이 된다.
+#[test]
+fn a_plugin_namespace_call_is_forwarded_to_the_plugin_exactly_once() {
+    let _lane = exclusive_lane();
+    let tasty = common::shared();
+    // 첫 호출은 plugin 기동·연결 지연을 흡수한다. 그 뒤 기준값을 읽는다.
+    let warm = tasty.call_raw("markdown.recent", json!({}));
+    assert!(
+        warm.get("result").is_some(),
+        "markdown.recent 가 plugin 에서 답해야 한다: {warm}{}",
+        common::bundle_staging_note()
+    );
+    let before = settled_plugin_round_trips(tasty);
+    let resp = tasty.call_raw("markdown.recent", json!({}));
+    assert!(resp.get("result").is_some(), "{resp}");
+    let after = settled_plugin_round_trips(tasty);
+    assert_eq!(
+        after - before,
+        1,
+        "namespace 메서드 하나에 plugin 왕복이 {} 번 기록됐다 (전: {before}, 후: {after})",
+        after - before
+    );
+}
+
 /// 환경 의존적인 성공 대신 메서드 부재·빌드 미지원 오류가 아닌지 검사해 라우팅을 확인한다.
 #[test]
 fn app_layer_methods_that_need_no_window_answer_in_both_combos() {
