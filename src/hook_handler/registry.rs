@@ -738,7 +738,6 @@ pub fn global() -> &'static HookHandlerRegistry {
     REGISTRY.get_or_init(HookHandlerRegistry::new)
 }
 
-/// 사용자 설정 경로. 홈을 못 찾으면 None이다.
 /// 사용자 action 을 TOML 값으로 바꾼다. TOML 에는 null 이 없으므로 `params` 가 null 인 호출은 키를 뺀다.
 /// 읽을 때 `IpcCall::params` 의 serde 기본값이 다시 null 을 채운다. params 안쪽의 null 은 표현할 수
 /// 없어 오류로 남는다.
@@ -754,6 +753,7 @@ fn action_toml(action: &HookHandlerAction) -> Result<toml::Value, String> {
     toml::Value::try_from(json).map_err(|e| e.to_string())
 }
 
+/// 사용자 설정 경로. 홈을 못 찾으면 None이다.
 pub fn user_config_path() -> Option<PathBuf> {
     tasty_utils::path::tasty_home().map(|d| d.join("hook-handlers.toml"))
 }
