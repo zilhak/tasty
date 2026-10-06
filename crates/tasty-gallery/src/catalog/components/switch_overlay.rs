@@ -712,25 +712,21 @@ fn rail_cat(ui: &mut egui::Ui, theme: &Theme, held: bool) {
 }
 
 pub fn draw_category(ui: &mut egui::Ui, theme: &Theme) {
+    // 표기는 본체 KeybindingSettings 기본값(category_switch_modifier)을 따른다.
+    let held = crate::catalog::modifier_label(
+        &tasty_settings::keybindings::KeybindingSettings::default().category_switch_modifier,
+    );
+    let full_held = format!("{held} held — keycap right-aligned on each header");
+    let rail_held = format!("{held} held — keycap centered on each --- boundary");
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         spec::cluster(ui, theme, "released — full sidebar", |ui| {
             full_cat(ui, theme, false)
         });
-        spec::cluster(
-            ui,
-            theme,
-            "Ctrl+Shift held — keycap right-aligned on each header",
-            |ui| full_cat(ui, theme, true),
-        );
+        spec::cluster(ui, theme, &full_held, |ui| full_cat(ui, theme, true));
         spec::cluster(ui, theme, "released — collapsed rail", |ui| {
             rail_cat(ui, theme, false)
         });
-        spec::cluster(
-            ui,
-            theme,
-            "Ctrl+Shift held — keycap centered on each --- boundary",
-            |ui| rail_cat(ui, theme, true),
-        );
+        spec::cluster(ui, theme, &rail_held, |ui| rail_cat(ui, theme, true));
     });
 
     spec::meta(

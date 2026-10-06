@@ -29,7 +29,7 @@ use tasty_settings::{GeneralSettings, KeybindingSettings};
 use tasty_type_appearance::theme::Theme;
 
 /// 기본 키바인딩을 본체 설정 UI와 같은 규칙으로 표시한다.
-fn modifier_label(combo: &str) -> String {
+pub(crate) fn modifier_label(combo: &str) -> String {
     KeybindingSettings::format_display(combo, &GeneralSettings::default())
 }
 
@@ -1034,8 +1034,8 @@ pub fn pages() -> Vec<Page> {
                     "Tools menu",
                     vec![spec(
                         "tools",
-                        "Anchored to the sidebar, no scrim",
-                        Some("160px popover · builtin actions + plugins"),
+                        "Tools menu — anchored, no scrim",
+                        Some("160px popover · built-in tools, then plugin tools · no icons"),
                         components::tools_menu::draw,
                     )],
                 ),
@@ -2072,8 +2072,10 @@ pub fn pages() -> Vec<Page> {
                     "Clipboard viewer popup",
                     vec![spec(
                         "clipboard-viewer",
-                        "Current clipboard, master-detail",
-                        Some("480×360 · splitter 0.3 · type list → preview · empty / read-failed"),
+                        "Clipboard viewer — read-only snapshot popup",
+                        Some(
+                            "480×360 · single column · type bar → code well · empty / read-failed",
+                        ),
                         components::clipboard_viewer::draw,
                     )],
                 ),

@@ -1,26 +1,39 @@
 //! 사이드바 Tools 버튼에 붙는 팝오버 예제. 배경을 어둡게 하지 않는다.
+//! 항목은 본체 `tools_menu.rs` 의 내장 도구 순서와 번들 플러그인이 기여하는 도구(order_hint 순)다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{MenuItemVariant, menu_item, menu_separator};
 
-use crate::catalog::icons::{self, MockGlyph};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::catalog::widgets::dialog as kit;
 
 const WIDTH: LogicalPx = LogicalPx(160.0);
 
+/// 본체 내장 도구의 영어 라벨(lang/en.toml) — 본체 `BUILTIN_TOOLS` 순서.
+const BUILTIN: &[&str] = &[
+    "Command palette…",
+    "Listening ports...",
+    "Remote connections…",
+    "Presets",
+    "Tutorial…",
+    "Task DAGs",
+    "Open File…",
+];
+/// 번들 플러그인이 기여하는 도구 — clipboard-viewer(order_hint 100), git-viewer(130).
+const PLUGIN: &[&str] = &["Clipboard Viewer", "Git"];
+
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         kit::frame_card_popover(ui, theme, WIDTH, kit::raised_fill(theme), |ui| {
             kit::region_sym(ui, theme.spacing_sm, theme.spacing_sm, |ui| {
-                row(ui, theme, icons::PORT, "Command palette…", false);
-                row(ui, theme, icons::REMOTE, "Listening ports...", false);
-                row(ui, theme, icons::SETTINGS, "Remote connections…", false);
-                row(ui, theme, icons::PLUG, "Presets", false);
+                for label in BUILTIN {
+                    row(ui, theme, label);
+                }
                 menu_separator(ui, theme);
-                row(ui, theme, icons::CLIPBOARD, "Clipboard Viewer", false);
-                row(ui, theme, icons::SEARCH, "Git", false);
+                for label in PLUGIN {
+                    row(ui, theme, label);
+                }
             });
         });
     });
@@ -29,44 +42,39 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         &[
-            ("frame", "160px · surface-raised"),
-            ("anchor", "sidebar Tools button · no scrim"),
-            ("shadow", "shadow-popover — anchored, no scrim"),
-            ("groups", "builtin · separator · plugins"),
+            ("width", "160px"),
+            ("anchor", "above button, left-aligned"),
+            ("rows", "28px MenuItem, no icons"),
+            ("scrim", "none"),
+            ("dismiss", "outside click · Esc"),
         ],
         &[
-            TokenChip::new("surface-raised", "frame", theme.surface_raised().to_egui()),
+            TokenChip::new(
+                "surface-raised",
+                "menu fill",
+                theme.surface_raised().to_egui(),
+            ),
+            TokenChip::new("border-strong", "edge", theme.border_strong().to_egui()),
             TokenChip::without_color("shadow-popover", "lift"),
-            TokenChip::new(
-                "overlay-hover",
-                "row hover",
-                theme.overlay_hover().to_egui_premultiplied(),
-            ),
-            TokenChip::new(
-                "separator",
-                "group divide",
-                theme.separator.to_egui_premultiplied(),
-            ),
         ],
     );
 
     spec::note(
         ui,
         theme,
-        "Unlike a modal this is a lightweight popover — no scrim, anchored to its \
-         trigger, and it closes when focus leaves. Plugins append below a separator.",
+        "Plugins extend the list below the separator only — built-in order is fixed. This is a popover, not a dialog: it never dims the app.",
     );
 }
 
-fn row(ui: &mut egui::Ui, theme: &Theme, glyph: MockGlyph, label: &str, active: bool) {
+fn row(ui: &mut egui::Ui, theme: &Theme, label: &str) {
     menu_item(
         ui,
         theme,
-        Some(&|ui, rect, c| glyph.image(rect.height(), c).paint_at(ui, rect)),
+        None,
         label,
         None,
         MenuItemVariant::Normal,
-        active,
+        false,
         true,
     );
 }
