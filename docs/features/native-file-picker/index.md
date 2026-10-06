@@ -139,7 +139,7 @@ micro 대문자로 쓰고, 열 위치는 행과 같은 계산을 써서 값 바�
 높이를 본문(목록·상태 화면)에 준다. 그래서 footer 가 커지는 경우(저장 모드의 덮어쓰기 경고 줄)에도
 줄어드는 쪽은 본문이다.
 
-- **path bar**: 상위 폴더·새로고침 버튼이 오른쪽 끝을 먼저 차지하고, breadcrumb 은 남은 폭 안에서만
+- **path bar**: 상위 폴더·새로고침 버튼이 오른쪽 끝을 먼저 차지하고(경로·버튼 사이는 `fp-section-gap`), breadcrumb 은 남은 폭 안에서만
   그려지고 그 밖은 잘린다. 가로 스크롤은 없다.
 - **가운데 생략**: 전체 breadcrumb 이 그 폭에 안 들어가면 `crumb_alloc::plan`(`crates/tasty-ui-widgets/src/crumb_alloc.rs`)
   순서로 줄인다 — 조상 한 칸씩 `…` 로 → 부모 축소 → 현재 폴더 축소 → `root › … › current` → `… › current`. 들어가면 접지 않는다. 성분 하나는 180px 에서 말줄임한다.

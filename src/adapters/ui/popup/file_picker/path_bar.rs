@@ -9,7 +9,8 @@ use super::{CRUMB_GLYPH, FilePickerAction, FilePickerProps};
 use crate::adapters::ui::icons;
 use crate::theme::Theme;
 
-/// 오른쪽 버튼 폭을 먼저 확보하고 남은 폭에 breadcrumb을 그린다.
+/// 오른쪽 버튼 폭을 먼저 확보하고 남은 폭에 breadcrumb을 그린다. 경로·Up·Refresh 사이는 모두
+/// `fp-section-gap` 이다.
 pub(super) fn path_bar(
     ui: &mut egui::Ui,
     props: &FilePickerProps<'_>,
@@ -26,7 +27,7 @@ pub(super) fn path_bar(
             .max_rect(row)
             .layout(egui::Layout::right_to_left(egui::Align::Center)),
     );
-    buttons.spacing_mut().item_spacing.x = STRUCT_GAP_2.value();
+    buttons.spacing_mut().item_spacing.x = th.fp_section_gap().value();
     if IconButton::new()
         .variant(IconButtonVariant::Ghost)
         .size(ControlSize::Sm)
@@ -154,14 +155,20 @@ fn menu_band(th: &Theme) -> (f32, f32) {
     )
 }
 
-/// 폴더 아이콘·간격·라벨·패딩을 합친 폭을 최소·최대 범위 안으로 제한한다.
+/// 메뉴 틀의 안쪽 여백(`popup-content-margin`)과 테두리를 합친 좌우 폭.
+fn menu_chrome(th: &Theme) -> f32 {
+    (th.popup_content_margin().value() + th.border_width.value()) * 2.0
+}
+
+/// 메뉴의 바깥 폭. 행(폴더 아이콘·간격·라벨·패딩)에 틀을 더한 border-box 폭을 최소·최대 범위 안으로
+/// 제한한다.
 fn menu_width(widest_label: f32, th: &Theme) -> f32 {
     let (floor, ceiling) = menu_band(th);
     let row = widest_label
         + th.menu_item_padding_x().value() * 2.0
         + th.icon_glyph_size_md.value()
         + th.spacing_sm.value();
-    row.clamp(floor, ceiling)
+    (row + menu_chrome(th)).clamp(floor, ceiling)
 }
 
 /// 경계 폭에서 표시 방식이 매 프레임 바뀌지 않도록 직전 단계를 기억한다.
@@ -259,6 +266,10 @@ fn hidden_crumbs(
     if resp.clicked() {
         ui.memory_mut(|m| m.toggle_popup(popup_id));
     }
+    // 앵커 메뉴의 안쪽 여백은 네 변 모두 popup-content-margin 이다. 팝업 틀이 부모 스타일을 읽으므로
+    // 여는 동안만 바꾸고 되돌린다(scope 는 크럼 줄에 빈 칸과 간격을 더해 쓰지 않는다).
+    let prev_margin = ui.spacing().menu_margin;
+    ui.spacing_mut().menu_margin = egui::Margin::same(th.popup_content_margin().value() as i8);
     tasty_egui_theme::with_popover_frame(ui, th, |ui| {
         egui::popup_below_widget(
             ui,
@@ -280,9 +291,10 @@ fn hidden_crumbs(
                             .x
                     })
                     .fold(0.0_f32, f32::max);
+                // 밴드는 테두리까지 포함한 바깥 폭이라 안쪽 폭은 틀을 뺀 값이다.
                 let band = menu_band(th);
-                ui.set_min_width(menu_width(widest, th));
-                ui.set_max_width(band.1);
+                ui.set_min_width(menu_width(widest, th) - menu_chrome(th));
+                ui.set_max_width(band.1 - menu_chrome(th));
                 let folder = th.accent_primary().to_egui();
                 for i in range.clone() {
                     let glyph = |ui: &mut egui::Ui, rect: egui::Rect, _c: egui::Color32| {
@@ -308,6 +320,7 @@ fn hidden_crumbs(
             },
         )
     });
+    ui.spacing_mut().menu_margin = prev_margin;
 }
 
 #[cfg(test)]
@@ -334,13 +347,13 @@ mod menu_width_tests {
             "긴 경로에 최대 너비가 적용되지 않았다"
         );
 
-        let chrome = menu_width(0.0, &th) - floor; // 0 — 바닥에 걸려 안 보인다
-        assert_eq!(chrome, 0.0);
+        let at_floor = menu_width(0.0, &th) - floor; // 0 — 바닥에 걸려 안 보인다
+        assert_eq!(at_floor, 0.0);
         let mid_label = (floor + ceiling) * 0.5;
         let mid = menu_width(mid_label, &th);
         assert!(
-            mid > mid_label,
-            "행 chrome(글리프 · gap · 좌우 패딩)을 안 셌다 — {mid} <= {mid_label}"
+            mid > mid_label + menu_chrome(&th),
+            "행 chrome(글리프 · gap · 좌우 패딩)과 틀(여백·테두리)을 안 셌다 — {mid} <= {mid_label}"
         );
         assert!(
             mid < ceiling,
