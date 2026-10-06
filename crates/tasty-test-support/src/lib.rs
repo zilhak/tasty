@@ -143,3 +143,42 @@ impl Drop for EnvVarGuard {
         }
     }
 }
+
+/// 상속 환경변수 제거(`tasty_utils::process::is_stripped_inherited_env`) 시험이 공유하는 키 목록.
+/// 터미널 셸·surface 훅·전역 훅·hook_handler 실행 네 경로의 시험이 같은 목록을 쓴다.
+/// 출하 크레이트 밖에 두어 목록을 고쳐도 번들 플러그인의 배포 내용이 바뀌지 않는다.
+pub mod strip_env_keys {
+    /// 지워야 하는 키.
+    pub const STRIPPED: &[&str] = &[
+        "CLAUDECODE",
+        "CLAUDE_PID",
+        "CLAUDE_EFFORT",
+        "CLAUDE_PLUGIN_DATA",
+        "CLAUDE_CODE_SESSION_ID",
+        "CLAUDE_CODE_CHILD_SESSION",
+        "CLAUDE_CODE_SESSION_ATTENDED",
+        "CLAUDE_CODE_EXECPATH",
+        "CLAUDE_CODE_ENTRYPOINT",
+        "CLAUDE_CODE_MESSAGING_SOCKET",
+        "CLAUDE_CODE_MESSAGING_TOKEN",
+        "CLAUDE_CODE_INVOKED_SKILLS",
+        "CLAUDE_CODE_BRIDGE_SESSION_ID",
+        "CMUX_SOCKET_PATH",
+    ];
+
+    /// 지우지 않아야 하는 키. 사용자가 넣는 Claude Code 설정과 Claude 전용이 아닌 이름을 포함한다.
+    pub const KEPT: &[&str] = &[
+        "TASTY_SURFACE_ID",
+        "TASTY_PARENT_HOME",
+        "TERM",
+        "CLAUDE_CONFIG_DIR",
+        "CLAUDE_CODE_GIT_BASH_PATH",
+        "CLAUDE_CODE_OAUTH_TOKEN",
+        "CLAUDE_CODE_FORCE_SESSION_PERSISTENCE",
+        "CLAUDE_CODE_USE_BEDROCK",
+        "AI_AGENT",
+        "TRACEPARENT",
+        "ANTHROPIC_API_KEY",
+        "MY_CLAUDECODE",
+    ];
+}

@@ -88,59 +88,9 @@ pub fn path_prepending_self_dir(base: Option<OsString>) -> Option<OsString> {
     std::env::join_paths(entries).ok()
 }
 
-/// 제거·보존 판정 시험이 공유하는 키 목록. 터미널 셸과 훅 실행 경로의 시험도 이 목록을 쓴다.
-/// 출하 코드에 들어가지 않도록 test 와 `test-support` feature 에서만 컴파일한다.
-#[cfg(any(test, feature = "test-support"))]
-pub mod strip_test_keys {
-    /// 지워야 하는 키.
-    pub const STRIPPED: &[&str] = &[
-        "CLAUDECODE",
-        "CLAUDE_PID",
-        "CLAUDE_EFFORT",
-        "CLAUDE_PLUGIN_DATA",
-        "CLAUDE_CODE_SESSION_ID",
-        "CLAUDE_CODE_CHILD_SESSION",
-        "CLAUDE_CODE_SESSION_ATTENDED",
-        "CLAUDE_CODE_EXECPATH",
-        "CLAUDE_CODE_ENTRYPOINT",
-        "CLAUDE_CODE_MESSAGING_SOCKET",
-        "CLAUDE_CODE_MESSAGING_TOKEN",
-        "CLAUDE_CODE_INVOKED_SKILLS",
-        "CLAUDE_CODE_BRIDGE_SESSION_ID",
-        "CMUX_SOCKET_PATH",
-    ];
-
-    /// 지우지 않아야 하는 키. 사용자가 넣는 Claude Code 설정과 Claude 전용이 아닌 이름을 포함한다.
-    pub const KEPT: &[&str] = &[
-        "TASTY_SURFACE_ID",
-        "TASTY_PARENT_HOME",
-        "TERM",
-        "CLAUDE_CONFIG_DIR",
-        "CLAUDE_CODE_GIT_BASH_PATH",
-        "CLAUDE_CODE_OAUTH_TOKEN",
-        "CLAUDE_CODE_FORCE_SESSION_PERSISTENCE",
-        "CLAUDE_CODE_USE_BEDROCK",
-        "AI_AGENT",
-        "TRACEPARENT",
-        "ANTHROPIC_API_KEY",
-        "MY_CLAUDECODE",
-    ];
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// Claude Code 세션 키와 CMUX_* 는 고르고 TASTY_*·일반 키는 남긴다.
-    #[test]
-    fn claude_session_and_cmux_keys_are_stripped_but_others_are_kept() {
-        let stripped = strip_test_keys::STRIPPED;
-        let kept = strip_test_keys::KEPT;
-        let all = stripped.iter().chain(kept).map(OsString::from);
-        let picked = env_keys_to_strip(all);
-        let expected: Vec<OsString> = stripped.iter().map(OsString::from).collect();
-        assert_eq!(picked, expected);
-    }
 
     /// self-binary 디렉토리가 최소 PATH 맨 앞에 붙는지 검증한다 — 패키징된
     /// macOS `.app` 이 받는 `/usr/bin:/bin:...` 같은 최소 PATH 를 흉내낸다.
