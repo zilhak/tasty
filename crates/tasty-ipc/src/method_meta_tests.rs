@@ -806,3 +806,20 @@ fn the_since_answer_comes_from_the_frozen_file_not_from_a_second_list() {
         Some(MethodSince::AfterFrozenBaseline)
     );
 }
+
+#[test]
+#[cfg(debug_assertions)]
+fn toast_debug_method_is_local_only() {
+    let m = method_meta("debug.toast").expect("registered (debug build)");
+    assert!(!m.plugin_callable, "debug.toast must be local_only");
+}
+
+/// 토스트는 사용자 행동의 결과에만 뜬다. 범위를 지정해 띄우는 경로는 release에 없다.
+#[test]
+#[cfg(not(debug_assertions))]
+fn toast_debug_method_absent_in_release() {
+    assert!(
+        method_meta("debug.toast").is_none(),
+        "debug.toast must not exist in release"
+    );
+}
