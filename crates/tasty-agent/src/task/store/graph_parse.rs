@@ -8,12 +8,15 @@
 //!   키 안에서 바꿨을 때 오류가 달라질 때만 내려간다. 태그 enum 의 `kind` 처럼 빼면 먼저
 //!   걸리는 필수 키를 탓하지 않기 위해서다. 더 내려갈 수 없는 object 에서 메시지가 그 object 의
 //!   키를 이름으로 가리키면(모르는 키) 그 키가 위치다. 아니면 그 object 에서 멈춘다.
+//!
+//! `command`·`on_failure` 의 타입은 v1 생성과 저장된 기록도 읽으므로 모르는 키를 무시한다.
+//! 그래프 제출은 task 수준과 같은 규칙으로 그 안의 모르는 키도 거절한다([`ignored_key`]).
 
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
-use super::super::TaskId;
 use super::super::contract::{FailureStage, TaskFailure};
+use super::super::{OnFailure, TaskCommand, TaskId};
 use super::TaskGraphSpec;
 use super::graph_submit::GraphTaskSpec;
 use crate::{AgentError, Result};
@@ -22,7 +25,14 @@ impl TaskGraphSpec {
     /// 그래프 JSON 을 읽는다. 실패하면 `AgentError::TypeContract` 로 위치와 task id 를 싣는다.
     pub fn from_json(value: &Value) -> Result<Self> {
         let error = match serde_json::from_value::<Self>(value.clone()) {
-            Ok(spec) => return Ok(spec),
+            Ok(spec) => {
+                return match first_ignored_key(value) {
+                    None => Ok(spec),
+                    Some((location, key, task_id)) => {
+                        Err(located(location, format!("unknown field `{key}`"), task_id))
+                    }
+                };
+            }
             Err(e) => e.to_string(),
         };
         // task 목록은 task 하나씩 읽어 틀린 task 를 찾는다. 그래프 전체를 task 수만큼 다시 읽지 않는다.
@@ -61,6 +71,43 @@ fn tasks(value: &Value) -> impl Iterator<Item = (usize, &Value)> {
 
 fn task_id(task: &Value) -> Option<TaskId> {
     task.get("id").and_then(Value::as_str).map(str::to_string)
+}
+
+/// 읽기에 성공한 그래프에서 `command`·`on_failure` 안의 모르는 키를 찾는다.
+fn first_ignored_key(value: &Value) -> Option<(String, String, Option<TaskId>)> {
+    tasks(value).find_map(|(i, task)| {
+        let found = task
+            .get("command")
+            .and_then(|c| ignored_key::<TaskCommand>(c).map(|p| format!("/command{p}")))
+            .or_else(|| {
+                task.get("on_failure")
+                    .and_then(|f| ignored_key::<OnFailure>(f).map(|p| format!("/on_failure{p}")))
+            })?;
+        let key = found.rsplit('/').next().unwrap_or_default().to_string();
+        Some((format!("/tasks/{i}{found}"), unescape(&key), task_id(task)))
+    })
+}
+
+/// `root` 안에서 읽는 쪽이 쓰지 않는 키의 JSON Pointer. 값을 아무 타입도 받지 않을 표지 object
+/// 로 바꿔도 읽힌 결과가 같으면 그 키는 읽히지 않은 것이다. 쓰는 키는 오류가 나거나(타입이
+/// 다름) 결과가 달라진다(`params`·`metadata` 같은 JSON 값 필드).
+fn ignored_key<T: DeserializeOwned + PartialEq>(root: &Value) -> Option<String> {
+    let original: T = serde_json::from_value(root.clone()).ok()?;
+    let marker = serde_json::json!({ "\u{0}tasty-unread-key-probe": null });
+    object_paths(root).into_iter().find_map(|path| {
+        let keys: Vec<String> = root
+            .pointer(&pointer(&path))?
+            .as_object()?
+            .keys()
+            .cloned()
+            .collect();
+        keys.into_iter().find_map(|key| {
+            let mut probe = root.clone();
+            *probe.pointer_mut(&pointer(&path))?.get_mut(&key)? = marker.clone();
+            let unread = serde_json::from_value::<T>(probe).is_ok_and(|p| p == original);
+            unread.then(|| format!("{}/{}", pointer(&path), escape(&key)))
+        })
+    })
 }
 
 /// `root` 를 `T` 로 읽지 못하게 만드는 자리의 JSON Pointer(`root` 기준, 루트면 빈 문자열).
@@ -326,6 +373,10 @@ fn escape(key: &str) -> String {
     key.replace('~', "~0").replace('/', "~1")
 }
 
+fn unescape(key: &str) -> String {
+    key.replace("~1", "/").replace("~0", "~")
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;
@@ -491,10 +542,47 @@ mod tests {
                 "/tasks/0/command",
             ),
             (graph(json!([{"command": run(json!({}))}])), "/tasks/0"),
+            // command·on_failure 안의 모르는 키(그래프 제출에서만 거절).
+            (
+                graph(json!([{"id": "x", "command": run(json!({"bogus": 1}))}])),
+                "/tasks/0/command/bogus",
+            ),
+            (
+                graph(json!([run_task(
+                    json!({"on_failure": {"kind": "abort", "bogus": 1}})
+                )])),
+                "/tasks/0/on_failure/bogus",
+            ),
+            (
+                graph(
+                    json!([{"id": "x", "command": {"kind": "custom", "ipc_method": "m", "poll": {"strategy": "s", "bogus": 1}}}]),
+                ),
+                "/tasks/0/command/poll/bogus",
+            ),
         ];
         for (input, expected) in cases {
             assert_eq!(location(input.clone()), expected, "{input}");
         }
+    }
+
+    #[test]
+    fn an_unknown_command_key_is_rejected_with_its_name() {
+        let f = located(graph(
+            json!([run_task(json!({})), {"id": "y", "command": {"kind": "run", "workspace_id": 1, "command": ["true"], "a/b": 1}}]),
+        ));
+        assert_eq!(f.location.as_deref(), Some("/tasks/1/command/a~1b"));
+        assert_eq!(f.task_id.as_deref(), Some("y"));
+        assert!(f.message.contains("unknown field `a/b`"), "{}", f.message);
+    }
+
+    /// JSON 값 필드(`params`·`metadata`)의 키와 기본값을 적은 키는 모르는 키가 아니다.
+    #[test]
+    fn keys_inside_json_value_fields_are_not_unknown() {
+        let g = graph(json!([
+            {"id": "x", "command": {"kind": "custom", "ipc_method": "m", "params": {"any": {"thing": 1}}, "poll": null}},
+            run_task(json!({"id": "y", "on_failure": {"kind": "fallback", "inline": {"name": "f", "command": {"kind": "run", "workspace_id": 1, "command": ["true"], "cwd": null}, "metadata": {"k": 1}}}})),
+        ]));
+        assert_eq!(TaskGraphSpec::from_json(&g).unwrap().tasks.len(), 2);
     }
 
     #[test]

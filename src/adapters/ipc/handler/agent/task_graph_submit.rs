@@ -106,6 +106,20 @@ mod tests {
         assert_eq!(data["stage"], json!("input"));
     }
 
+    // command 안의 모르는 키도 그래프 제출에서는 위치를 실어 거절한다.
+    #[test]
+    fn an_unknown_command_key_answers_with_the_location() {
+        let graph = json!({"contract_version": 2, "tasks": [{"id": "x",
+            "command": {"kind": "run", "workspace_id": 1, "command": ["true"], "bogus": 1}}]});
+        let err = TaskGraphSpec::from_json(&graph).expect_err("unknown command key");
+        let e = agent_err_to_response(json!(7), err).error.expect("error");
+        assert_eq!(e.code, -32602);
+        let data = e.data.expect("data");
+        assert_eq!(data["location"], json!("/tasks/0/command/bogus"));
+        assert_eq!(data["task_id"], json!("x"));
+        assert_eq!(data["stage"], json!("input"));
+    }
+
     #[test]
     fn a_partially_activated_graph_answers_with_its_graph_id() {
         let err = AgentError::GraphPartiallyActivated {

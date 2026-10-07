@@ -754,7 +754,7 @@ stdout 해석과 성공 판정:
       "input_mapping": {"args": ["/code"]}}]}}
 ```
 
-- task 키: `id`(필수, 호출자가 정하는 task id), `name`, `command`, `depends_on`, `on_failure`, `metadata`, `input_schema`, `output_schema`, `bindings`, `input_mapping`, `allowed_exit_codes`, `merge_conflict`, `postprocess`, `transitions`. 모르는 키는 거절한다. `types` 는 모든 task 가 함께 쓴다.
+- task 키: `id`(필수, 호출자가 정하는 task id), `name`, `command`, `depends_on`, `on_failure`, `metadata`, `input_schema`, `output_schema`, `bindings`, `input_mapping`, `allowed_exit_codes`, `merge_conflict`, `postprocess`, `transitions`. 모르는 키는 거절한다. `command`·`on_failure` 안(`poll`·inline fallback 포함)의 모르는 키도 거절한다. 이 둘의 타입은 v1 `task_create` 와 저장된 기록도 읽으므로 타입 자체는 모르는 키를 무시한다. 그래프 제출만 값을 표지 값으로 바꿔 다시 읽어 보고 결과가 같은 키를 모르는 키로 본다(`params`·`metadata` 같은 JSON 값 필드 안의 키는 결과가 달라지므로 받는다). `types` 는 모든 task 가 함께 쓴다.
 - 검증: id 형식과 중복(그래프 안·workspace), `depends_on`·fallback·reduce 입력·binding 원본의 존재, 계약과 binding 의 타입, 매핑, 전이(아래 절), 위 조합 규칙, 순환(전이 간선 포함). 그래프 task 의 command 에 v1 출력 placeholder(`${task.…}`)가 있으면 거절하고 binding 을 쓰라고 안내한다.
 - 그래프 하나에는 task 를 1000 개(`MAX_GRAPH_TASKS`)까지 담는다. 제출이 memory 잠금을 쥔 채 앱의 IPC 처리 경로에서 활성화하기 때문이다(근거 ADR-0068). 그동안 러너 tick 과 memory 를 쓰지 않는 요청을 포함한 다른 IPC 전체가 기다린다. 1000 개 제출 중 다른 연결의 `system.ping` 은 0.25~1.4s 기다렸다(아래 측정). 초과하면 `location: /tasks` 로 거절한다.
 - 실패하면 아무것도 저장하지 않고 `-32602` 로 답한다. `error.data` 는 실패 단계·task id·타입 오류와 함께 `location`(제출한 그래프 안의 JSON Pointer, 예: `/tasks/1/bindings/label`, 순환은 `/tasks`)을 싣는다. JSON 형식 오류(모르는 키, 필수 필드 누락, 타입이 다른 값)도 같다(`TaskGraphSpec::from_json`, `store/graph_parse.rs`). 형식 오류의 위치는 다음과 같다.
