@@ -812,8 +812,8 @@ impl<'a> TaskStore<'a> {
         ) {
             return Err(AgentError::InvalidArgument(format!(
                 "typed task {} cannot be retried: its branch was not selected and is still not \
-                 selected, so it would be skipped again without running; retry the task that \
-                 chooses the branch, or submit a new task",
+                 selected, so it would be skipped again without running; submit a new task to \
+                 run it",
                 task.id
             )));
         }
