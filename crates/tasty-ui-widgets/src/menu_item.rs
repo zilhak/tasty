@@ -436,6 +436,33 @@ mod fit_width_tests {
         assert_eq!(ink, th.menu_item_fg().to_egui());
     }
 
+    /// 한국어·일본어 라벨도 글자 경계에서 끝을 줄이는지 검사한다. 남은 글자는 원문의 앞부분과
+    /// 글자 단위로 같고(멀티바이트 글자가 중간에서 갈라지지 않는다) 말줄임표 하나로 끝난다.
+    /// 시험 Context 는 egui 기본 폰트라 CJK 글자는 대체 글리프로 측정되지만, 줄이는 단위는 글자다.
+    #[test]
+    fn a_cjk_label_past_the_cap_ends_in_an_ellipsis_at_a_char_boundary() {
+        const CAP: f32 = 60.0;
+        let th = theme();
+        for label in ["연결 대기 중인 포트…", "クリップボードビューア"] {
+            let (full, cut, cut_w) = with_ui(|ctx, ui| {
+                let cut = menu_label_galley(ui, &th, label, egui::Color32::WHITE, CAP);
+                (
+                    label_width(ctx, &th, label),
+                    cut.rows
+                        .iter()
+                        .flat_map(|r| r.glyphs.iter().map(|g| g.chr))
+                        .collect::<String>(),
+                    cut.rect.width(),
+                )
+            });
+            assert!(full > CAP, "{label}: {full}");
+            assert!(cut_w <= CAP, "{label}: {cut_w}");
+            let kept = cut.strip_suffix('…').unwrap_or_else(|| panic!("{cut}"));
+            assert!(!kept.is_empty(), "{label}: {cut}");
+            assert!(label.starts_with(kept), "{label} -> {cut}");
+        }
+    }
+
     #[test]
     fn a_label_past_the_cap_ends_in_an_ellipsis() {
         let th = theme();
