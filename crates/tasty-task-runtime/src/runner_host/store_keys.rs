@@ -1,7 +1,7 @@
 //! runner 가 workspace 메모리에 남기는 실행 handle·실행 결과의 키와 handle 읽기.
 
 use tasty_agent::runner::DispatchHandle;
-use tasty_memory::{MemoryValue, Scope};
+use tasty_memory::{MemoryStorage, MemoryValue, Scope};
 
 use super::RunnerContext;
 
@@ -10,6 +10,18 @@ pub(crate) const HANDLE_KEY_PREFIX: &str = "tasty.agent.handle.";
 
 pub(crate) fn handle_key(task_id: &str) -> String {
     format!("{HANDLE_KEY_PREFIX}{task_id}")
+}
+
+/// task 한 건의 handle 이 남았는가. 키 하나만 읽는다(목록 읽기는 워크스페이스의 레코드 수에
+/// 비례한다). 읽기에 실패하면 경고를 남기고 남지 않은 것으로 본다.
+pub(crate) fn has_stored_handle(mem: &dyn MemoryStorage, workspace_id: u32, task_id: &str) -> bool {
+    match mem.get(&Scope::Workspace(workspace_id), &handle_key(task_id)) {
+        Ok(entry) => entry.is_some(),
+        Err(error) => {
+            tracing::warn!(%error, "agent task {task_id} (ws {workspace_id}): handle read failed");
+            false
+        }
+    }
 }
 
 /// IPC 조회가 외부 완료 신호의 wait_key·deadline도 보여줄 수 있도록 저장된 handle을 읽는다.
