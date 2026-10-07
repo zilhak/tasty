@@ -1106,6 +1106,7 @@ Mocha·Latte는 고정 테마(`mocha_fallback`·`latte_theme`)로 위아래에 �
 | `elbow()` | `canvas::orthogonalize` + `round_corners` | `dag/edges.rs::elbow` / `orthogonalize` / `round_corners` |
 | `DagNode` | `node::paint_node` | `dag/node.rs::paint_card` (`dag-node`/`dag-kinds`/`dag-lod` spec) |
 | `DAG_STATUS` / `DAG_KIND` / `DAG_REL` | `model::{DagStatus, DagRelation}` | `dag.rs::{Status, Kind, Rel}` |
+| 전이 선택·미선택 노드(`routes` 섹션) | `model::{DagRelation, EdgeSelection}` + `node::paint_node` 의 skip 라벨·툴팁 | `dag/routes.rs::draw` (`dag-routes` spec) |
 | `RunnerBadge` | `chrome::runner_badge` + `resume_hint` (헤더 우측) | `dag/runner.rs::paint_badge` + `row` (`dag-runner` spec) |
 | 재개 힌트 캡션 | `chrome::resume_hint` — lead 비례폭 + 명령 mono 2 조각 | `dag/runner.rs::row` (동일 2 조각) |
 | `ZoomCluster` | `chrome::draw_zoom_cluster` (캔버스 우하단 — `draw_canvas_chrome` 안) | `dag/chrome.rs::paint_zoom_cluster` (`dag-chrome` spec) |

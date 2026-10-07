@@ -71,13 +71,13 @@ pub fn elbow(s: egui::Pos2, t: egui::Pos2, top_down: bool, r: f32) -> Vec<egui::
     round_corners(&orthogonalize(&[s, t], top_down), r)
 }
 
-/// 폴리라인 한 줄. `dash` 가 있으면 파선으로 끊어 그린다.
+/// 폴리라인 한 줄. `dash` 가 있으면 SVG `stroke-dasharray` 처럼 선·틈 길이를 번갈아 끊어 그린다.
 pub fn paint_path(
     painter: &egui::Painter,
     points: &[egui::Pos2],
     color: egui::Color32,
     width: f32,
-    dash: Option<(f32, f32)>,
+    dash: Option<&[f32]>,
 ) {
     if points.len() < 2 {
         return;
@@ -85,9 +85,13 @@ pub fn paint_path(
     let stroke = egui::Stroke::new(width, color);
     match dash {
         None => painter.add(egui::Shape::line(points.to_vec(), stroke)),
-        Some((on, off)) => painter.add(egui::Shape::Vec(egui::Shape::dashed_line(
-            points, stroke, on, off,
-        ))),
+        Some(pattern) => {
+            let on: Vec<f32> = pattern.iter().step_by(2).copied().collect();
+            let off: Vec<f32> = pattern.iter().skip(1).step_by(2).copied().collect();
+            painter.add(egui::Shape::Vec(egui::Shape::dashed_line_with_offset(
+                points, stroke, &on, &off, 0.0,
+            )))
+        }
     };
 }
 
@@ -126,35 +130,44 @@ pub fn dim_factor() -> f32 {
     EDGE_DIM_OPACITY
 }
 
-/// 디자인 `EdgeSpecimen` — 시안 뷰박스 120×56 안의 elbow 한 줄 + 관계 이름 + 라벨.
+/// 엣지 견본 한 줄의 그리기 값. 선택 상태가 바꾸는 것은 굵기와 불투명도뿐이다.
+pub(super) struct EdgeLook {
+    pub color: egui::Color32,
+    pub dash: Option<&'static [f32]>,
+    pub width: f32,
+    pub alpha: f32,
+}
+
+/// 디자인 `EdgeSpecimen` — 시안 뷰박스 120×56 안의 elbow 한 줄 + 이름 + 라벨.
 ///
 /// `node_box` 와 같은 이유로 한 번의 `allocate_exact_size` 로 자리를 잡는다.
-fn edge_specimen(ui: &mut egui::Ui, theme: &Theme, rel: Rel) {
+pub(super) fn specimen(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    stroke: EdgeLook,
+    key: &str,
+    label: Option<&str>,
+) {
     let gap = theme.spacing_sm.value();
     let caption = theme.font_size_caption.value();
     let font = egui::FontId::proportional(caption);
     let line_h = super::node::row_height(ui, &font);
+    let lines = if label.is_some() { 2.0 } else { 1.0 };
     // 시안 120×56: 카드 폭에서 레이어 간격과 여백을 뺀 값 / 카드 높이 + 8.
     let w =
         theme.dag_node_width().value() - theme.dag_layer_gap().value() - theme.spacing_lg.value();
     let h = theme.dag_node_height().value() + gap;
     let (outer, _) = ui.allocate_exact_size(
-        egui::vec2(w, h + gap + line_h * 2.0 + gap),
+        egui::vec2(w, h + gap + line_h * lines + gap),
         egui::Sense::hover(),
     );
     let rect = egui::Rect::from_min_size(outer.min, egui::vec2(w, h));
     let inset = theme.spacing_md.value();
     let s = egui::pos2(rect.min.x + inset, rect.min.y + gap);
     let t = egui::pos2(rect.max.x - inset, rect.max.y - gap);
-    let color = rel.color(theme).to_egui();
+    let color = stroke.color.gamma_multiply(stroke.alpha);
     let path = elbow(s, t, true, theme.dag_edge_corner_radius().value());
-    paint_path(
-        ui.painter(),
-        &path,
-        color,
-        theme.dag_edge_width().value(),
-        rel.dash(),
-    );
+    paint_path(ui.painter(), &path, color, stroke.width, stroke.dash);
     paint_arrow(
         ui.painter(),
         t,
@@ -167,23 +180,35 @@ fn edge_specimen(ui: &mut egui::Ui, theme: &Theme, rel: Rel) {
     ui.painter().text(
         egui::pos2(cx, rect.max.y + gap),
         egui::Align2::CENTER_TOP,
-        rel.key(),
+        key,
         egui::FontId::monospace(caption),
-        color,
+        stroke.color,
     );
-    ui.painter().text(
-        egui::pos2(cx, rect.max.y + gap + line_h),
-        egui::Align2::CENTER_TOP,
-        rel.label(),
-        font,
-        theme.text_muted().to_egui(),
-    );
+    if let Some(label) = label {
+        ui.painter().text(
+            egui::pos2(cx, rect.max.y + gap + line_h),
+            egui::Align2::CENTER_TOP,
+            label,
+            font,
+            theme.text_muted().to_egui(),
+        );
+    }
 }
 
-/// `edges` 섹션 Spec — 관계 3 종.
+fn edge_specimen(ui: &mut egui::Ui, theme: &Theme, rel: Rel) {
+    let stroke = EdgeLook {
+        color: rel.color(theme).to_egui(),
+        dash: rel.dash(),
+        width: theme.dag_edge_width().value(),
+        alpha: 1.0,
+    };
+    specimen(ui, theme, stroke, rel.key(), Some(rel.label()));
+}
+
+/// `edges` 섹션 Spec — 관계 5 종.
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
-        for rel in [Rel::DependsOn, Rel::Fallback, Rel::Reduce] {
+        for rel in Rel::ALL {
             edge_specimen(ui, theme, rel);
         }
     });
@@ -195,6 +220,13 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("width", "1px"),
             ("fallback dash", "6 3"),
             ("reduce dash", "2 3"),
+            ("binding dash", "8 2 2 2"),
+            ("transition dash", "10 4"),
+            ("same pair", "binding replaces depends_on"),
+            (
+                "detail label",
+                "binding \u{2192} \u{201c}binds input\u{201d} \u{b7} transition \u{2192} \u{201c}transition\u{201d}",
+            ),
             ("arrow", "8px triangle at target"),
             ("selected node", "its edges take the accent"),
         ],
@@ -214,6 +246,16 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "reduce",
                 theme.dag_edge_reduce().to_egui(),
             ),
+            TokenChip::new(
+                "dag-edge-binding",
+                "binding \u{2192} accent-data",
+                theme.dag_edge_binding().to_egui(),
+            ),
+            TokenChip::new(
+                "dag-edge-transition",
+                "transition \u{2192} accent-route",
+                theme.dag_edge_transition().to_egui(),
+            ),
             TokenChip::without_color("dag-edge-dim-opacity", "dead path"),
             TokenChip::new(
                 "dag-edge-highlight",
@@ -221,6 +263,12 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 theme.dag_edge_highlight().to_egui(),
             ),
         ],
+    );
+    spec::note(
+        ui,
+        theme,
+        "When a pair has both depends_on and binding, only the binding is drawn \u{2014} a \
+         binding already implies the order. A one_of binding draws one binding edge per source.",
     );
     spec::do_(
         ui,

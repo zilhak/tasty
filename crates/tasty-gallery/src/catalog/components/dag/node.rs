@@ -213,7 +213,7 @@ pub fn paint_card(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, node: &Nod
         ui.painter().text(
             egui::pos2(inner.min.x + gw, meta_y),
             egui::Align2::LEFT_CENTER,
-            ellipsize(ui, &node.status.label().to_uppercase(), &meta_font, label_w),
+            ellipsize(ui, &node.status_label().to_uppercase(), &meta_font, label_w),
             meta_font,
             tone(label_fg, dim),
         );
@@ -272,7 +272,7 @@ pub(super) fn ellipsize(ui: &egui::Ui, text: &str, font: &egui::FontId, max_w: f
 }
 
 /// 줄바꿈 배치가 크기를 알 수 있도록 중첩 Ui 대신 한 번에 카드 영역을 예약한다.
-fn node_box(ui: &mut egui::Ui, theme: &Theme, node: &Node, vis: NodeVis, caption: &str) {
+pub(super) fn node_box(ui: &mut egui::Ui, theme: &Theme, node: &Node, vis: NodeVis, caption: &str) {
     let w = theme.dag_node_width().value();
     let h = theme.dag_node_height().value();
     let gap = theme.spacing_sm.value();
@@ -284,10 +284,13 @@ fn node_box(ui: &mut egui::Ui, theme: &Theme, node: &Node, vis: NodeVis, caption
     } else {
         0.0
     };
-    let (outer, _) = ui.allocate_exact_size(
+    let (outer, response) = ui.allocate_exact_size(
         egui::vec2(w + pad * 2.0, h + pad * 2.0 + gap + cap_h),
         egui::Sense::hover(),
     );
+    if let Some(tip) = node.skip_tooltip() {
+        response.on_hover_text(tip);
+    }
     let rect = egui::Rect::from_min_size(outer.min + egui::vec2(pad, pad), egui::vec2(w, h));
     paint_card(ui, theme, rect, node, vis);
     ui.painter().text(
@@ -299,7 +302,7 @@ fn node_box(ui: &mut egui::Ui, theme: &Theme, node: &Node, vis: NodeVis, caption
     );
 }
 
-fn sample(status: Status, name: &str, dur: Option<&str>) -> Node {
+pub(super) fn sample(status: Status, name: &str, dur: Option<&str>) -> Node {
     let mut n = super::Node {
         id: "spec".into(),
         name: name.into(),
@@ -311,6 +314,7 @@ fn sample(status: Status, name: &str, dur: Option<&str>) -> Node {
         cmd: "cargo build".into(),
         err: None,
         deps: Vec::new(),
+        skip: None,
     };
     n.kind = Kind::Run;
     n

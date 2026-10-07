@@ -143,6 +143,7 @@ fn dag_node_specimen_3종은_헤드리스로_렌더된다() {
 fn dag_edges_specimen_은_헤드리스로_렌더된다() {
     let theme = tasty_themes::mocha_fallback();
     run_frames(|ui| dag::edges::draw(ui, &theme));
+    run_frames(|ui| dag::routes::draw(ui, &theme));
 }
 
 #[test]

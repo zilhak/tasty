@@ -2052,9 +2052,17 @@ pub fn pages() -> Vec<Page> {
                             "dag-edges",
                             "Dependency edges",
                             Some(
-                                "depends_on 실선 · fallback 6 3 · reduce 2 3, 화살촉은 의존하는 쪽",
+                                "depends_on 실선 · fallback 6 3 · reduce 2 3 · binding 8 2 2 2 · transition 10 4, 화살촉은 의존하는 쪽",
                             ),
                             components::dag::edges::draw,
+                        ),
+                        spec(
+                            "dag-routes",
+                            "Transitions · not selected",
+                            Some(
+                                "전이 선택 4 상태는 굵기·불투명도만 바뀐다 · 미선택 노드는 skipped 카드에 라벨·툴팁만 다르다",
+                            ),
+                            components::dag::routes::draw,
                         ),
                     ],
                 ),

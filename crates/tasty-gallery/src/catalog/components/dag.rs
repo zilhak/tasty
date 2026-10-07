@@ -7,6 +7,7 @@ pub mod chrome;
 pub mod detail;
 pub mod edges;
 pub mod node;
+pub mod routes;
 pub mod rows;
 pub mod runner;
 pub mod states;
@@ -191,20 +192,34 @@ impl Kind {
     }
 }
 
-/// 의존 관계 3 종 (`DAG_REL`) — 색과 파선 패턴을 **함께** 써서 구분한다.
+/// 작업 관계 5 종 (`DAG_REL`) — 색과 파선 패턴을 **함께** 써서 구분한다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Rel {
     DependsOn,
     Fallback,
     Reduce,
+    /// 입력 binding — 값이 원본에서 받는 task 로 넘어간다.
+    Binding,
+    /// 전이 — 원본의 성공 출력으로 고른 경로.
+    Transition,
 }
 
 impl Rel {
+    pub const ALL: [Rel; 5] = [
+        Rel::DependsOn,
+        Rel::Fallback,
+        Rel::Reduce,
+        Rel::Binding,
+        Rel::Transition,
+    ];
+
     pub fn key(self) -> &'static str {
         match self {
             Rel::DependsOn => "depends_on",
             Rel::Fallback => "fallback",
             Rel::Reduce => "reduce",
+            Rel::Binding => "binding",
+            Rel::Transition => "transition",
         }
     }
 
@@ -213,6 +228,8 @@ impl Rel {
             Rel::DependsOn => "depends on",
             Rel::Fallback => "fallback",
             Rel::Reduce => "reduce",
+            Rel::Binding => "binds input",
+            Rel::Transition => "transition",
         }
     }
 
@@ -221,17 +238,30 @@ impl Rel {
             Rel::DependsOn => theme.dag_edge_depends(),
             Rel::Fallback => theme.dag_edge_fallback(),
             Rel::Reduce => theme.dag_edge_reduce(),
+            Rel::Binding => theme.dag_edge_binding(),
+            Rel::Transition => theme.dag_edge_transition(),
         }
     }
 
-    /// `strokeDasharray` — `(on, off)` 길이. 실선이면 `None`.
-    pub fn dash(self) -> Option<(f32, f32)> {
+    /// `strokeDasharray` — 선·틈 길이를 번갈아 적은 패턴. 실선이면 `None`.
+    pub fn dash(self) -> Option<&'static [f32]> {
         match self {
             Rel::DependsOn => None,
-            Rel::Fallback => Some((6.0, 3.0)),
-            Rel::Reduce => Some((2.0, 3.0)),
+            Rel::Fallback => Some(&[6.0, 3.0]),
+            Rel::Reduce => Some(&[2.0, 3.0]),
+            Rel::Binding => Some(&[8.0, 2.0, 2.0, 2.0]),
+            Rel::Transition => Some(&[10.0, 4.0]),
         }
     }
+}
+
+/// 건너뛴 task 의 이유. 카드 모양은 같고 라벨과 툴팁만 다르다.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Skip {
+    /// 다른 경로가 선택되어 실행하지 않았다.
+    BranchNotSelected,
+    /// 선행 task 의 결과를 쓸 수 없어 건너뛰었다.
+    UpstreamUnavailable { source: String, state: String },
 }
 
 /// 카드 한 장이 표현하는 task.
@@ -247,9 +277,34 @@ pub struct Node {
     pub cmd: String,
     pub err: Option<String>,
     pub deps: Vec<(String, Rel)>,
+    /// `Skipped` 일 때만 의미가 있다.
+    pub skip: Option<Skip>,
 }
 
 impl Node {
+    /// 카드의 철자 라벨. 경로가 선택되지 않은 skipped 는 상태 이름 대신 그 사실을 적는다.
+    pub fn status_label(&self) -> &'static str {
+        match (&self.status, &self.skip) {
+            (Status::Skipped, Some(Skip::BranchNotSelected)) => "Not selected",
+            (status, _) => status.label(),
+        }
+    }
+
+    /// 건너뛴 이유 툴팁. 이유가 없으면 `None`.
+    pub fn skip_tooltip(&self) -> Option<String> {
+        if self.status != Status::Skipped {
+            return None;
+        }
+        match self.skip.as_ref()? {
+            Skip::BranchNotSelected => {
+                Some("Not taken \u{2014} another branch was selected.".into())
+            }
+            Skip::UpstreamUnavailable { source, state } => {
+                Some(format!("Skipped \u{2014} {source} {state}."))
+            }
+        }
+    }
+
     fn new(id: &str, name: &str, kind: Kind, status: Status, cmd: &str) -> Self {
         Self {
             id: id.to_owned(),
@@ -262,6 +317,7 @@ impl Node {
             cmd: cmd.to_owned(),
             err: None,
             deps: Vec::new(),
+            skip: None,
         }
     }
 
