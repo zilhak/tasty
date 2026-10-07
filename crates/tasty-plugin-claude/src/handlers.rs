@@ -595,7 +595,7 @@ pub(crate) fn start_claude_in_surface(
 
 /// 프롬프트를 실어 실행하는지 기록한다. SessionStart 가 이 표시로 시작 상태를 정한다.
 fn record_launch_prompt(host: &HostHandle, surface_id: u32, with_prompt: bool) {
-    let key = crate::hook::LAUNCH_PROMPT_META_KEY;
+    let key = crate::session_start::LAUNCH_PROMPT_META_KEY;
     let result = if with_prompt {
         host.call(
             "surface.meta.set",

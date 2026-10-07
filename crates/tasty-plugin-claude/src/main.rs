@@ -18,6 +18,7 @@ mod profile_attach;
 mod profile_merge;
 mod reboot;
 mod retrack;
+mod session_start;
 mod state;
 mod stop_pairing;
 mod task_turn;
