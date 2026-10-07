@@ -6286,12 +6286,14 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-markdown"
-version = "0.1.263"
+version = "0.1.264"
 dependencies = [
  "ammonia",
  "anyhow",
  "base64 0.22.1",
  "egui",
+ "gtk",
+ "javascriptcore-rs",
  "pulldown-cmark",
  "serde",
  "serde_json",
@@ -6307,6 +6309,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "usvg",
+ "webkit2gtk",
 ]
 
 [[package]]

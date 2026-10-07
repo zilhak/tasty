@@ -22,6 +22,8 @@ use tasty_plugin_sdk::Translator;
 use tasty_type_appearance::theme::Theme;
 
 mod callout;
+#[cfg(all(test, target_os = "linux"))]
+mod webview_layout_tests;
 use callout::{CALLOUT_KINDS, alert_css, alert_icon_data_uri, find_callout_kind};
 
 /// 내부 이동 URL의 마커. 생성 코드와 parse_nav_fragment에서 함께 사용한다.
