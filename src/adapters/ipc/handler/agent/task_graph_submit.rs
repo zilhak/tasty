@@ -71,9 +71,7 @@ fn submit(
             "Missing required 'graph'",
         ));
     };
-    let spec: TaskGraphSpec = serde_json::from_value(raw.clone()).map_err(|e| {
-        JsonRpcResponse::invalid_params(id.clone(), format!("invalid 'graph': {e}"))
-    })?;
+    let spec = TaskGraphSpec::from_json(raw).map_err(|e| agent_err_to_response(id.clone(), e))?;
     let durability = spec.durability;
     let outcome = core
         .tasks
@@ -93,6 +91,20 @@ mod tests {
     use tasty_agent::AgentError;
 
     use super::*;
+
+    // 형식 오류도 의미 검증 오류처럼 error.data 에 위치와 task id 를 싣는다.
+    #[test]
+    fn a_malformed_graph_answers_with_the_location() {
+        let graph = json!({"contract_version": 2, "tasks": [{"id": "x",
+            "command": {"kind": "run", "workspace_id": 1, "command": ["true"]}, "bogus": 1}]});
+        let err = TaskGraphSpec::from_json(&graph).expect_err("unknown key");
+        let e = agent_err_to_response(json!(7), err).error.expect("error");
+        assert_eq!(e.code, -32602);
+        let data = e.data.expect("data");
+        assert_eq!(data["location"], json!("/tasks/0/bogus"));
+        assert_eq!(data["task_id"], json!("x"));
+        assert_eq!(data["stage"], json!("input"));
+    }
 
     #[test]
     fn a_partially_activated_graph_answers_with_its_graph_id() {

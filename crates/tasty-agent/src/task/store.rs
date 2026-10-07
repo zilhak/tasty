@@ -1044,6 +1044,7 @@ mod agent;
 mod complete;
 #[cfg(test)]
 pub(super) use complete::FAIL_COMPLETION_PUT;
+mod graph_parse;
 mod graph_submit;
 pub use graph_submit::*;
 mod postprocess;
