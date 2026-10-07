@@ -1043,7 +1043,9 @@ pub fn pages() -> Vec<Page> {
                     "tools",
                     "Tools menu",
                     "Tools menu — anchored, no scrim",
-                    Some("160px popover · built-in tools, then plugin tools · no icons"),
+                    Some(
+                        "content-width popover (160–240) · built-in tools, then plugin tools · no icons",
+                    ),
                     components::tools_menu::draw,
                 ),
                 section(

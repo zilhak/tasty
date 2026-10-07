@@ -3,12 +3,10 @@
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::{MenuItemVariant, menu_item, menu_separator};
+use tasty_ui_widgets::{MenuItemVariant, fit_menu_width, menu_item, menu_separator};
 
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::catalog::widgets::dialog as kit;
-
-const WIDTH: LogicalPx = LogicalPx(160.0);
 
 /// 본체 내장 도구의 영어 라벨(lang/en.toml) — 본체 `BUILTIN_TOOLS` 순서.
 const BUILTIN: &[&str] = &[
@@ -24,8 +22,18 @@ const BUILTIN: &[&str] = &[
 const PLUGIN: &[&str] = &["Clipboard Viewer", "Git"];
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
+    // 본체 `tools_menu.rs` 와 같은 계산: 가장 넓은 행을 min..max(테두리 포함)로 제한하고,
+    // 셸 테두리는 바깥에 그리므로 테두리를 뺀 폭을 카드에 준다.
+    let outer = fit_menu_width(
+        ui.ctx(),
+        theme,
+        BUILTIN.iter().chain(PLUGIN).copied(),
+        theme.tools_menu_min_width().value(),
+        theme.tools_menu_max_width().value(),
+    );
+    let width = LogicalPx(outer - theme.border_width.value() * 2.0);
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
-        kit::frame_card_menu(ui, theme, WIDTH, |ui| {
+        kit::frame_card_menu(ui, theme, width, |ui| {
             let ring = theme.popup_content_margin();
             kit::region_sym(ui, ring, ring, |ui| {
                 for label in BUILTIN {
@@ -43,7 +51,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         &[
-            ("width", "160px"),
+            (
+                "width",
+                "fit content · min 160 tools-menu-min-width · max 240 tools-menu-max-width",
+            ),
+            ("overflow", "end ellipsis past max"),
             ("anchor", "above button, left-aligned"),
             ("rows", "28px MenuItem, no icons"),
             ("built-in", "7 — fixed order"),
@@ -59,6 +71,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 theme.menu_border().to_egui(),
             ),
             TokenChip::without_color("popup-content-margin", "→ space-xs 4"),
+            TokenChip::without_color("tools-menu-min-width", "→ size-160"),
+            TokenChip::without_color("tools-menu-max-width", "→ size-240"),
             TokenChip::without_color("shadow-popover", "lift"),
         ],
     );

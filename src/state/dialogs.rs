@@ -106,6 +106,8 @@ pub struct DialogState {
     pub(crate) mouse_capture_banner_menu_target: Option<u32>,
     /// 마우스 캡처 배너 메뉴를 열 때 잰 셸 안쪽 폭. 프로그램 이름에 따라 달라진다.
     pub(crate) mouse_capture_banner_menu_width: Option<tasty_type_geometry::length::LogicalPx>,
+    /// 도구 메뉴 셸 안쪽 폭. 열 때와 그릴 때 가장 넓은 라벨로 잰다.
+    pub(crate) tools_menu_width: Option<tasty_type_geometry::length::LogicalPx>,
     /// 변환 팝업 대상. None이면 닫힌 상태다.
     pub(crate) convert_popup: Option<u32>,
     pub(crate) convert_popup_selected: Option<usize>,
@@ -192,6 +194,7 @@ impl DialogState {
             rename: None,
             mouse_capture_banner_menu_target: None,
             mouse_capture_banner_menu_width: None,
+            tools_menu_width: None,
             convert_popup: None,
             convert_popup_selected: None,
             pending_native_menu: None,

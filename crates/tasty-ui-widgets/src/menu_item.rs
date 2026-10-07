@@ -179,6 +179,50 @@ fn menu_item_inner(
     resp
 }
 
+/// 아이콘·단축키 없는 메뉴 행을 내용 폭에 맞춘 메뉴의 border-box 폭.
+/// 가장 넓은 라벨 + 행 패딩(`menu-item-padding-x`) 양쪽 + 안쪽 고리(`popup-content-margin`) 양쪽
+/// + 테두리 양쪽을 `min`..`max` 로 제한한다. 상한에 걸린 라벨은 [`menu_label_galley`] 가 끝을 줄인다.
+pub fn fit_menu_width<'a>(
+    ctx: &egui::Context,
+    theme: &Theme,
+    labels: impl IntoIterator<Item = &'a str>,
+    min: f32,
+    max: f32,
+) -> f32 {
+    let font = egui::FontId::proportional(theme.font_size_body.value());
+    let widest = ctx.fonts(|f| {
+        labels
+            .into_iter()
+            .map(|l| {
+                f.layout_no_wrap(l.to_owned(), font.clone(), egui::Color32::PLACEHOLDER)
+                    .rect
+                    .width()
+            })
+            .fold(0.0_f32, f32::max)
+    });
+    let chrome = theme.menu_item_padding_x().value() * 2.0
+        + theme.popup_content_margin().value() * 2.0
+        + theme.border_width.value() * 2.0;
+    (widest.ceil() + chrome).clamp(min, max.max(min))
+}
+
+/// 한 줄 메뉴 라벨. `max_width` 를 넘으면 끝을 말줄임표로 줄인다.
+pub fn menu_label_galley(
+    ui: &egui::Ui,
+    theme: &Theme,
+    label: &str,
+    color: egui::Color32,
+    max_width: f32,
+) -> std::sync::Arc<egui::Galley> {
+    let mut job = egui::text::LayoutJob::simple_singleline(
+        label.to_owned(),
+        egui::FontId::proportional(theme.font_size_body.value()),
+        color,
+    );
+    job.wrap = egui::text::TextWrapping::truncate_at_width(max_width.max(0.0));
+    ui.painter().layout_job(job)
+}
+
 /// 메뉴 구분선 (디자인 `.tasty-menu-sep` — 1px separator, 상하 space-xs).
 pub fn menu_separator(ui: &mut egui::Ui, theme: &Theme) {
     let xs = theme.spacing_xs.value();
@@ -191,4 +235,98 @@ pub fn menu_separator(ui: &mut egui::Ui, theme: &Theme) {
         egui::Stroke::new(theme.border_width.value(), theme.border_strong().to_egui()),
     );
     ui.add_space(xs);
+}
+
+/// 내용 폭 메뉴가 가장 넓은 라벨에 행 패딩·안쪽 고리·테두리를 더해 하한·상한으로 제한하는지,
+/// 상한에 걸린 라벨의 끝이 줄어드는지 검사한다.
+#[cfg(test)]
+mod fit_width_tests {
+    use super::{fit_menu_width, menu_label_galley};
+    use egui::RawInput;
+    use tasty_type_appearance::theme::Theme;
+
+    const LONG: &str = "A plugin tool label that is far too long for any menu to show in full";
+
+    fn theme() -> Theme {
+        Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0)
+    }
+
+    fn label_width(ctx: &egui::Context, th: &Theme, label: &str) -> f32 {
+        ctx.fonts(|f| {
+            f.layout_no_wrap(
+                label.to_owned(),
+                egui::FontId::proportional(th.font_size_body.value()),
+                egui::Color32::PLACEHOLDER,
+            )
+            .rect
+            .width()
+        })
+    }
+
+    /// 폰트가 준비된 Context 에서 `f` 를 실행한다. 첫 프레임은 폰트 준비 전이라 두 번 돌린다.
+    fn with_ui<R>(mut f: impl FnMut(&egui::Context, &egui::Ui) -> R) -> R {
+        let ctx = egui::Context::default();
+        let mut out = None;
+        for _ in 0..2 {
+            // 프레임 출력(그린 도형)은 이 검사에 필요 없다. 측정값은 `out`으로 받는다.
+            let frame = ctx.run(RawInput::default(), |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| out = Some(f(ctx, ui)));
+            });
+            drop(frame);
+        }
+        out.expect("frame ran")
+    }
+
+    #[test]
+    fn menu_width_is_the_widest_row_clamped_between_min_and_max() {
+        let th = theme();
+        let (min, max) = (
+            th.tools_menu_min_width().value(),
+            th.tools_menu_max_width().value(),
+        );
+        let chrome = th.menu_item_padding_x().value() * 2.0
+            + th.popup_content_margin().value() * 2.0
+            + th.border_width.value() * 2.0;
+        let (short, mid_label, mid, long) = with_ui(|ctx, _| {
+            let mid_label = "Remote connections… extra";
+            (
+                fit_menu_width(ctx, &th, ["Git", "Presets"], min, max),
+                label_width(ctx, &th, mid_label),
+                fit_menu_width(ctx, &th, ["Git", mid_label], min, max),
+                fit_menu_width(ctx, &th, ["Git", LONG], min, max),
+            )
+        });
+        assert_eq!(short, min);
+        assert!(
+            mid_label.ceil() + chrome > min && mid_label.ceil() + chrome < max,
+            "{mid_label} + {chrome} not in ({min}, {max})"
+        );
+        assert_eq!(mid, mid_label.ceil() + chrome);
+        assert_eq!(long, max);
+    }
+
+    #[test]
+    fn a_label_past_the_cap_ends_in_an_ellipsis() {
+        let th = theme();
+        let (full, cut, cut_w, fit) = with_ui(|ctx, ui| {
+            let cut = menu_label_galley(ui, &th, LONG, egui::Color32::WHITE, 120.0);
+            let fit = menu_label_galley(ui, &th, "Git", egui::Color32::WHITE, 120.0);
+            (
+                label_width(ctx, &th, LONG),
+                cut.rows
+                    .iter()
+                    .flat_map(|r| r.glyphs.iter().map(|g| g.chr))
+                    .collect::<String>(),
+                cut.rect.width(),
+                fit.rows
+                    .iter()
+                    .flat_map(|r| r.glyphs.iter().map(|g| g.chr))
+                    .collect::<String>(),
+            )
+        });
+        assert!(full > 120.0);
+        assert!(cut_w <= 120.0, "{cut_w}");
+        assert!(cut.ends_with('…'), "{cut}");
+        assert_eq!(fit, "Git");
+    }
 }

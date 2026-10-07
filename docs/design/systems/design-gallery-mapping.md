@@ -271,7 +271,7 @@ crate 쪽 view 가 **소유하지 않는 것**(=본체 wrapper 잔류): `egui::A
 | 디자인 원본 | 본체 view | 갤러리 specimen |
 |---|---|---|
 | `overlays/search_bar.jsx` (360×28) | `src/adapters/ui/search_bar.rs::draw_search_bar` | `search_bar` (Overlays) |
-| `overlays/tools_menu.jsx` (160px) | `src/adapters/ui/tools_menu.rs::draw_tools_menu` | `tools_menu` (Overlays) |
+| `overlays/tools_menu.jsx` (내용 폭, `tools-menu-min-width` 160 ~ `tools-menu-max-width` 240) | `src/adapters/ui/tools_menu.rs::draw_tools_menu` | `tools_menu` (Overlays) |
 | `overlays/command_palette.jsx` (`palette-width` 540, × UI 배율) | `src/adapters/ui/popup/command_palette.rs::draw_command_palette_view` | `command_palette` (Overlays "Command palette") |
 | `gallery/overlays-dialogs.jsx` §`convert` · kit `info_modal.jsx` `ConvertSurfacePopup` (`convert-popup-width` 240 × ui_scale) | `src/adapters/ui/popup/convert.rs::draw_convert_view`(공용 `menu_item` 행) | `convert` · `convert-narrow` (Overlays "Convert surface", `components/convert.rs::draw`·`draw_narrow`) |
 | `gallery/overlays-dialogs.jsx` §`filehandler` (420px · 프레임은 `gallery/overlays-shared.jsx` `FileHandlerFrame`) | `src/adapters/ui/popup/file_handler_picker.rs::draw_file_handler_picker_view` | `file_handler_picker` (Overlays "File handler picker", `components/file_handler_picker.rs::draw`) |

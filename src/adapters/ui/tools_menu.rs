@@ -11,10 +11,8 @@ use crate::state::MainViewState;
 use crate::theme;
 use egui::emath::GuiRounding as _;
 use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::menu_separator;
+use tasty_ui_widgets::{fit_menu_width, menu_label_galley, menu_separator};
 
-/// Popup width (도구 항목 라벨이 모두 들어가는 baseline). 사이드바 도구 버튼 좌측 정렬.
-const POPUP_WIDTH: LogicalPx = LogicalPx(160.0);
 /// 도구 항목 한 줄 높이. draw 와 sizer 가 같은 값을 참조해야 잘림 방지.
 const ITEM_HEIGHT: LogicalPx = LogicalPx(28.0);
 
@@ -88,7 +86,10 @@ pub fn draw_tools_menu(
     }
 
     let th = theme::theme();
+    state.dialogs.tools_menu_width = Some(measure_inner_width(ui.ctx(), state));
     let width = ui.available_width();
+    let pad_x = th.menu_item_padding_x().value();
+    let label_max = width - pad_x * 2.0;
 
     let mut open_popup: Option<&'static str> = None;
     let mut open_workspace_popup: Option<&'static str> = None;
@@ -101,17 +102,7 @@ pub fn draw_tools_menu(
             ui.painter()
                 .rect_filled(rect, 4.0, th.hover_overlay.to_egui_premultiplied());
         }
-        ui.painter().text(
-            egui::pos2(rect.min.x + th.spacing_sm.value(), rect.center().y),
-            egui::Align2::LEFT_CENTER,
-            t(entry.label_key),
-            egui::FontId::proportional(th.font_size_body.value()),
-            if resp.hovered() {
-                th.text_primary().into()
-            } else {
-                th.text_muted().into()
-            },
-        );
+        paint_label(ui, &th, rect, t(entry.label_key), resp.hovered(), label_max);
         if resp.clicked() {
             match entry.action {
                 BuiltinAction::Popup(id) => open_popup = Some(id),
@@ -173,17 +164,7 @@ pub fn draw_tools_menu(
                 .rect_filled(rect, 4.0, th.hover_overlay.to_egui_premultiplied());
         }
         let label = crate::adapters::ui::label_or_raw_key(&item.label_i18n_key);
-        ui.painter().text(
-            egui::pos2(rect.min.x + th.spacing_sm.value(), rect.center().y),
-            egui::Align2::LEFT_CENTER,
-            label,
-            egui::FontId::proportional(th.font_size_body.value()),
-            if resp.hovered() {
-                th.text_primary().into()
-            } else {
-                th.text_muted().into()
-            },
-        );
+        paint_label(ui, &th, rect, &label, resp.hovered(), label_max);
         if resp.clicked() {
             clicked = Some(item.clone());
         }
@@ -194,6 +175,63 @@ pub fn draw_tools_menu(
         return PopupAction::Close;
     }
     PopupAction::None
+}
+
+/// 행 라벨. 행 패딩(`menu-item-padding-x`) 안쪽에 그리고, 폭 상한을 넘으면 끝을 줄인다.
+fn paint_label(
+    ui: &egui::Ui,
+    th: &theme::Theme,
+    rect: egui::Rect,
+    label: &str,
+    hovered: bool,
+    max_width: f32,
+) {
+    let color = if hovered {
+        th.text_primary().into()
+    } else {
+        th.text_muted().into()
+    };
+    let galley = menu_label_galley(ui, th, label, color, max_width);
+    let pos = egui::pos2(
+        rect.min.x + th.menu_item_padding_x().value(),
+        rect.center().y - galley.rect.height() * 0.5,
+    );
+    ui.painter().galley(pos, galley, color);
+}
+
+/// 메뉴 셸 안쪽 폭. 내장·플러그인 라벨 중 가장 넓은 것에 맞추고
+/// `tools-menu-min-width`..`tools-menu-max-width`(테두리 포함 폭)로 제한한 뒤 테두리를 뺀다.
+fn measure_inner_width(ctx: &egui::Context, state: &MainViewState) -> LogicalPx {
+    let th = theme::theme();
+    let plugin_labels: Vec<String> = state
+        .tool_registry
+        .visible_items()
+        .iter()
+        .map(|i| crate::adapters::ui::label_or_raw_key(&i.label_i18n_key))
+        .collect();
+    let labels = BUILTIN_TOOLS
+        .iter()
+        .map(|e| t(e.label_key))
+        .chain(plugin_labels.iter().map(String::as_str));
+    let outer = fit_menu_width(
+        ctx,
+        &th,
+        labels,
+        th.tools_menu_min_width().value(),
+        th.tools_menu_max_width().value(),
+    );
+    LogicalPx(outer - th.border_width.value() * 2.0)
+}
+
+/// 하한 폭의 셸 안쪽 폭. 아직 재지 않았을 때 쓴다.
+fn min_inner_width() -> LogicalPx {
+    let th = theme::theme();
+    LogicalPx(th.tools_menu_min_width().value() - th.border_width.value() * 2.0)
+}
+
+/// 열기 전에 현재 라벨로 폭을 잰다. 첫 프레임부터 내용 폭으로 연다.
+pub fn measure_on_open(ctx: &egui::Context, state: &mut MainViewState) {
+    state.dialogs.tools_menu_width = Some(measure_inner_width(ctx, state));
 }
 
 /// 사용자 클릭의 플러그인 도구를 실행한다. debug.tool.invoke는 대상 ID를 받는 별도 경로다.
@@ -242,7 +280,12 @@ fn effective_item_spacing(_engine: &crate::runtime::engine_read::EngineRead<'_>)
 }
 
 /// 본체·플러그인 항목과 구분선 여백을 포함한 메뉴 크기. 타이틀바는 없는 팝업이다.
-fn tools_menu_size_for(builtin_count: usize, plugin_count: usize, item_spacing: f32) -> egui::Vec2 {
+fn tools_menu_size_for(
+    width: LogicalPx,
+    builtin_count: usize,
+    plugin_count: usize,
+    item_spacing: f32,
+) -> egui::Vec2 {
     let total = builtin_count + plugin_count;
     let total = total.max(1);
     let mut content_h = ITEM_HEIGHT.scaled(total as f32)
@@ -253,7 +296,7 @@ fn tools_menu_size_for(builtin_count: usize, plugin_count: usize, item_spacing: 
     // round_ui 누적 오차 / 초기 cursor 미세 padding 흡수용 1 px 마진.
     let safety_margin = 1.0;
     egui::vec2(
-        POPUP_WIDTH.value(),
+        width.value(),
         (popup::content_margin().scaled(2.0) + content_h + LogicalPx(safety_margin)).value(),
     )
 }
@@ -265,6 +308,10 @@ pub fn tools_menu_sizer(
 ) -> egui::Vec2 {
     let plugin_count = state.tool_registry.visible_items().len();
     tools_menu_size_for(
+        state
+            .dialogs
+            .tools_menu_width
+            .unwrap_or_else(min_inner_width),
         BUILTIN_TOOLS.len(),
         plugin_count,
         effective_item_spacing(engine),
@@ -273,7 +320,12 @@ pub fn tools_menu_sizer(
 
 /// 등록 시에는 본체 항목으로 계산하고 렌더링 때 sizer로 갱신한다.
 pub fn tools_menu_default_size() -> egui::Vec2 {
-    tools_menu_size_for(BUILTIN_TOOLS.len(), 0, theme::theme().spacing_xs.value())
+    tools_menu_size_for(
+        min_inner_width(),
+        BUILTIN_TOOLS.len(),
+        0,
+        theme::theme().spacing_xs.value(),
+    )
 }
 
 /// 메뉴 위치 계산에 사용할 현재 본체·플러그인 항목의 크기.
@@ -288,9 +340,11 @@ pub fn tools_menu_current_size(
 mod size_tests {
     use super::*;
 
+    const W: LogicalPx = LogicalPx(158.0);
+
     #[test]
     fn fits_builtin_only_medium_scale() {
-        let size = tools_menu_size_for(4, 0, 4.0);
+        let size = tools_menu_size_for(W, 4, 0, 4.0);
         let needed =
             popup::content_margin().scaled(2.0) + ITEM_HEIGHT.scaled(4.0) + LogicalPx(3.0 * 4.0);
         assert!(
@@ -299,12 +353,12 @@ mod size_tests {
             size.y,
             needed
         );
-        assert_eq!(size.x, POPUP_WIDTH.value());
+        assert_eq!(size.x, W.value());
     }
 
     #[test]
     fn fits_builtin_plus_plugin_with_separator() {
-        let size = tools_menu_size_for(4, 3, 4.0);
+        let size = tools_menu_size_for(W, 4, 3, 4.0);
         let needed = popup::content_margin().scaled(2.0)
             + ITEM_HEIGHT.scaled(7.0)
             + LogicalPx(6.0 * 4.0)  // item_spacing between 7 items
@@ -319,7 +373,7 @@ mod size_tests {
 
     #[test]
     fn fits_plugin_only_no_separator() {
-        let size = tools_menu_size_for(0, 5, 4.0);
+        let size = tools_menu_size_for(W, 0, 5, 4.0);
         let needed =
             popup::content_margin().scaled(2.0) + ITEM_HEIGHT.scaled(5.0) + LogicalPx(4.0 * 4.0);
         assert!(LogicalPx(size.y) >= needed);
@@ -327,13 +381,13 @@ mod size_tests {
 
     #[test]
     fn empty_does_not_underflow() {
-        let size = tools_menu_size_for(0, 0, 4.0);
+        let size = tools_menu_size_for(W, 0, 0, 4.0);
         assert!(LogicalPx(size.y) >= popup::content_margin().scaled(2.0) + ITEM_HEIGHT);
     }
 
     #[test]
     fn scales_with_ui_scale_1_2() {
-        let size = tools_menu_size_for(4, 0, 4.78);
+        let size = tools_menu_size_for(W, 4, 0, 4.78);
         let needed =
             popup::content_margin().scaled(2.0) + ITEM_HEIGHT.scaled(4.0) + LogicalPx(3.0 * 4.78);
         assert!(LogicalPx(size.y) >= needed);
