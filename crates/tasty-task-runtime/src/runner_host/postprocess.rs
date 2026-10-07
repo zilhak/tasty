@@ -45,27 +45,22 @@ static POSTPROCESS_CELL_POISON_REPORTED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
 impl PostprocessRuns {
-    pub(crate) fn poll(&mut self, pid: u32, run: u32) -> PollOutcome {
-        let Some(entry) = self.active.get(&pid) else {
-            return PollOutcome::Postprocessed(PostprocessReport::failed(
-                run,
-                PostprocessCause::OutcomeUnknown,
-                format!("postprocess pid {pid} is not tracked by this host"),
-            ));
-        };
+    /// 이 executor 가 띄운 실행이면 그 보고. 아니면 `None`.
+    fn poll(&mut self, pid: u32) -> Option<PollOutcome> {
+        let entry = self.active.get(&pid)?;
         let taken = tasty_utils::poison::recover_mutex(
             entry.report.lock(),
             "agent postprocess result cell",
             &POSTPROCESS_CELL_POISON_REPORTED,
         )
         .take();
-        match taken {
+        Some(match taken {
             Some(report) => {
                 self.active.remove(&pid);
                 PollOutcome::Postprocessed(report)
             }
             None => PollOutcome::Active,
-        }
+        })
     }
 
     /// task 가 종결됐다. 진행 중인 실행이 있으면 취소를 요청하고 `true` 를 돌려준다. 그때는
@@ -137,6 +132,31 @@ impl Drop for PostprocessRuns {
 }
 
 impl HostExecutor {
+    /// 후처리 실행 하나를 확인한다. 이 executor 가 띄우지 않은 실행(재시작 뒤 넘겨받은 것)은
+    /// 출력을 받을 수 없어, 같은 프로세스가 살아 있는 동안 기다리고 끝나면 결과 불명이다.
+    pub(super) fn poll_postprocess(&mut self, pid: u32, run: u32) -> PollOutcome {
+        if let Some(outcome) = self.postprocess.poll(pid) {
+            return outcome;
+        }
+        let restored = self.run_procs.values().find(|p| p.pid == pid).copied();
+        if restored.is_some_and(|p| p.started_at.is_some() && p.is_running()) {
+            return PollOutcome::Active;
+        }
+        let message = if restored.is_some() {
+            format!(
+                "postprocess pid {pid} ended after a host restart and its result could not be collected; \
+                 it is not run again automatically"
+            )
+        } else {
+            format!("postprocess pid {pid} is not tracked by this host")
+        };
+        PollOutcome::Postprocessed(PostprocessReport::failed(
+            run,
+            PostprocessCause::OutcomeUnknown,
+            message,
+        ))
+    }
+
     /// 예약된 후처리 실행을 시작한다. 시작을 기록한 뒤에만 프로세스를 띄운다.
     pub(super) fn start_postprocess_run(
         &mut self,
@@ -197,6 +217,11 @@ impl HostExecutor {
             }
         };
         let pid = started.pid;
+        // 프로세스를 회수하기 전이라 PID 가 다른 프로세스에 쓰이지 않는다. 재시작 뒤 같은 프로세스인지
+        // 확인하도록 handle 과 함께 저장한다.
+        let started_at = tasty_agent::platform::process_start::start_time(pid);
+        self.run_procs
+            .insert(task.id.clone(), RunProc { pid, started_at });
         let stop = Arc::new(AtomicU8::new(process::STOP_NONE));
         let cell: Arc<Mutex<Option<PostprocessReport>>> = Arc::new(Mutex::new(None));
         let done = Arc::new(AtomicBool::new(false));
@@ -335,12 +360,16 @@ pub(crate) fn evict_postprocess_result(ctx: &RunnerContext, workspace_id: u32, t
 
 /// 재시작 때 후처리 단계에 있는 Running task 의 handle. 저장된 handle 대신 회차의 진행으로 정한다.
 ///
-/// 시작을 기록했는데 결과가 저장되지 않았으면 같은 실행을 다시 하지 않고 결과 불명으로 끝낸다.
-/// 살아 있는 PID 가 있어도 같은 프로세스라는 증거가 아니므로 쓰지 않는다.
+/// 시작을 기록했는데 결과가 저장되지 않았으면 같은 실행을 다시 하지 않는다. 저장한 handle 의
+/// PID·시작 시각이 가리키는 같은 프로세스가 살아 있으면 끝날 때까지 그 handle 로 기다려 점유를
+/// 유지하고, 아니면 결과 불명으로 끝낸다. 시작 시각이 없는 handle 의 PID 는 같은 프로세스라는
+/// 증거가 아니므로 쓰지 않는다. 어느 쪽이든 재시작한 호스트는 그 출력을 받을 수 없다.
 pub(crate) fn restored_handle(
     ctx: &RunnerContext,
     workspace_id: u32,
     task: &Task,
+    stored: &DispatchHandle,
+    proc: Option<RunProc>,
 ) -> Option<DispatchHandle> {
     let attempt = task.attempt.as_ref()?;
     let progress = attempt.postprocess.as_ref()?;
@@ -348,16 +377,28 @@ pub(crate) fn restored_handle(
         PostprocessPhase::Pending { run, not_before_ms } => {
             Some(DispatchHandle::PostprocessPending { run, not_before_ms })
         }
-        PostprocessPhase::Started { run, .. } => Some(DispatchHandle::PostprocessResolved(
-            load_report(ctx, workspace_id, &task.id, &attempt.id, run).unwrap_or_else(|| {
+        PostprocessPhase::Started { run, .. } => {
+            if let Some(report) = load_report(ctx, workspace_id, &task.id, &attempt.id, run) {
+                return Some(DispatchHandle::PostprocessResolved(report));
+            }
+            if let DispatchHandle::PostprocessProcess {
+                pid,
+                run: stored_run,
+            } = stored
+                && *stored_run == run
+                && proc.is_some_and(|p| p.pid == *pid && p.started_at.is_some() && p.is_running())
+            {
+                return Some(stored.clone());
+            }
+            Some(DispatchHandle::PostprocessResolved(
                 PostprocessReport::failed(
                     run,
                     PostprocessCause::OutcomeUnknown,
                     "the host restarted before the postprocess result was recorded; \
-                     it is not run again automatically",
-                )
-            }),
-        )),
+                 it is not run again automatically",
+                ),
+            ))
+        }
         PostprocessPhase::Finished { .. } => None,
     }
 }

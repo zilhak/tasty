@@ -114,6 +114,7 @@ tasty agent task-graph-submit --workspace-id 2 --graph @graph.json
 - 후처리가 끝날 때까지 작업은 실행 중으로 보이고 다음 작업은 기다립니다. `task-get` 은 `state: running` 다음 줄에 `phase: postprocessing (run 1)`(재시도를 기다리는 중이면 `phase: retry_wait (run 2)`)을 보여 줍니다.
 - 후처리가 실패하면 `task-get` 의 `state` 줄에 이유가 나오고, 그 아래에 `postprocess: run 2 failed (nonzero_exit), exit_code 3` 처럼 마지막 실행의 원인과 종료 코드, 재시도로 넘어간 실행의 원인(`postprocess retried after: ...`)이 나옵니다.
 - 후처리가 도는 중에 Tasty 를 끄거나 다시 시작하면 그 후처리는 다시 실행되지 않고 실패로 끝납니다. 다시 하려면 `task-retry` 로 작업을 다시 실행합니다.
+- 다시 시작한 뒤에도 후처리 명령이 아직 실행 중이면, 그 명령이 끝날 때까지 작업은 실행 중으로 남고 세마포어·lease 도 계속 쥡니다. 명령이 끝나면 결과를 받을 수 없어 실패로 끝내고 그때 자원을 내놓습니다.
 - Tasty 가 강제로 끝나면(`kill` 등) 후처리 명령이 띄운 다른 프로세스는 남을 수 있습니다. Linux 에서는 후처리 명령 자체에 종료 신호가 가고, Windows 에서는 함께 끝나며, macOS 에서는 모두 남습니다.
 
 Tasty 가 메모리 파일을 열지 못해 [임시 메모리](cli.md#에이전트가-함께-쓰는-메모리)로 동작하는 동안에는 그래프가 재시작 뒤에 남지 않으므로 그냥 보내면 거부됩니다. 재시작하면 사라져도 괜찮은 그래프는 `"durability": "best_effort"` 를 넣어 보냅니다.

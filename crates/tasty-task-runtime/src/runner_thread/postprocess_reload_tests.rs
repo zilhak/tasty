@@ -282,3 +282,199 @@ fn dropping_the_registry_waits_until_the_postprocess_is_stopped_and_recorded() {
         "{stored}"
     );
 }
+
+/// 세마포어 gpu(permit 1)를 쥔 채 후처리 실행 1 을 시작한 judge. 이전 호스트가 저장한 후처리
+/// handle 은 `pid`·`started_at` 를 가리킨다.
+fn holding_judge_in_postprocess(ctx: &RunnerContext, pid: u32, started_at: u64) {
+    let spec: TaskGraphSpec = serde_json::from_value(json!({
+        "contract_version": 2,
+        "tasks": [{"id": JUDGE, "output_schema": {"type": "boolean"},
+                   "metadata": {"semaphore": {"name": "gpu"}},
+                   "postprocess": {"command": ["true"], "timeout_ms": 10000,
+                                   "retry": {"max_retries": 3}},
+                   "command": {"kind": "run", "workspace_id": 1, "command": ["true"]}}]
+    }))
+    .expect("graph");
+    let id = JUDGE.to_string();
+    let attempt = store_op(ctx, |s| {
+        s.submit_graph(1, spec, 0).unwrap();
+        s.set_state(1, &id, TaskState::Running, 1).unwrap();
+        s.get(1, &id).unwrap().unwrap().attempt.unwrap().id
+    });
+    let main = TaskResult {
+        exit_code: Some(0),
+        output: None,
+        error: None,
+    };
+    store_op(ctx, |s| {
+        s.complete(
+            1,
+            &id,
+            Completion::succeeded(Some(attempt.clone()), main),
+            2,
+        )
+        .unwrap()
+    });
+    begin(ctx, &attempt, 1);
+    ctx.with_memory(|mem| {
+        let mut sem = tasty_agent::SemaphoreStore::new(mem, HOST_OWNER);
+        sem.create(1, "gpu", 1, 1).unwrap();
+        assert!(sem.acquire(1, "gpu", JUDGE, None, 1).unwrap().acquired);
+    });
+    let handle = handle_value(
+        serde_json::to_value(DispatchHandle::PostprocessProcess { pid, run: 1 }).unwrap(),
+        Some(&attempt),
+    );
+    let MemoryValue::Json(mut handle) = handle else {
+        panic!("handle value is JSON");
+    };
+    handle["started_at"] = json!(started_at);
+    put(ctx, &handle_key(&id), handle);
+}
+
+fn gpu_holders(ctx: &RunnerContext) -> Vec<String> {
+    ctx.with_memory(|mem| {
+        tasty_agent::SemaphoreStore::new(mem, HOST_OWNER)
+            .get(1, "gpu")
+            .unwrap()
+            .unwrap()
+            .holders
+            .into_iter()
+            .map(|h| h.id)
+            .collect()
+    })
+}
+
+/// 이전 호스트가 띄운 후처리처럼 새 프로세스 그룹에서 오래 도는 프로세스. 회수는 별도 스레드가 한다.
+fn spawn_postprocess_like() -> (u32, u64) {
+    use std::os::unix::process::CommandExt;
+    let mut child = std::process::Command::new("sleep")
+        .arg("60")
+        .process_group(0)
+        .spawn()
+        .unwrap();
+    let pid = child.id();
+    let started_at = tasty_agent::platform::process_start::start_time(pid).unwrap();
+    std::thread::spawn(move || child.wait());
+    (pid, started_at)
+}
+
+/// 러너 시작처럼 정리·복원한 뒤 복원한 회차를 넘겨받은 runner.
+fn restarted_runner(ctx: &RunnerContext) -> RunnerLoop<HostExecutor> {
+    let mut runner = RunnerLoop::new(HostExecutor::new(ctx.clone()));
+    for (task_id, handle) in purge_and_reload_on_restart(ctx, 1) {
+        if let Some(task) = load_task(ctx, 1, &task_id)
+            && ctx.with_memory(|mem| resumes_after_restart(mem, 1, &task))
+        {
+            runner.executor.adopt_restored_run(1, &task);
+        }
+        runner.running.insert(task_id, handle);
+    }
+    runner
+}
+
+fn tick(ctx: &RunnerContext, runner: &mut RunnerLoop<HostExecutor>) {
+    let snapshot = store_op(ctx, |s| s.list(1).unwrap());
+    let (a, b) = (ctx.clone(), ctx.clone());
+    runner.tick(
+        1,
+        now_ms(),
+        &snapshot,
+        move |ws, id, st, n| store_op(&a, |s| s.set_state(ws, id, st, n).map(|_| ())),
+        move |ws, id, c, n| store_op(&b, |s| s.complete(ws, id, c, n).map(|_| ())),
+    );
+}
+
+fn tick_until(
+    ctx: &RunnerContext,
+    runner: &mut RunnerLoop<HostExecutor>,
+    what: &str,
+    done: impl Fn() -> bool,
+) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while !done() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "{what}: {:?}",
+            judge(ctx).state
+        );
+        tick(ctx, runner);
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+}
+
+/// 재시작 뒤에도 살아 있는 후처리는 끝날 때까지 permit 을 쥔다. 끝나면 결과를 받을 수 없어 결과
+/// 불명으로 끝나고 그때 반환한다. 다시 실행하지 않는다.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_live_postprocess_keeps_its_permit_across_a_restart_until_it_ends() {
+    let (_td, ctx) = fresh_ctx();
+    let (pid, started_at) = spawn_postprocess_like();
+    holding_judge_in_postprocess(&ctx, pid, started_at);
+
+    let mut runner = restarted_runner(&ctx);
+    for _ in 0..5 {
+        tick(&ctx, &mut runner);
+    }
+    assert_eq!(judge(&ctx).state, TaskState::Running);
+    assert_eq!(
+        gpu_holders(&ctx),
+        vec![JUDGE.to_string()],
+        "살아 있는 후처리의 permit 을 풀었다"
+    );
+
+    // SAFETY: 이 시험이 띄운 프로세스 그룹이다.
+    assert_eq!(unsafe { libc::kill(-(pid as i32), libc::SIGKILL) }, 0);
+    tick_until(&ctx, &mut runner, "unknown after the end", || {
+        judge(&ctx).state.is_terminal()
+    });
+    let state = judge(&ctx).state;
+    assert!(
+        matches!(&state, TaskState::Failed { error } if error.contains("outcome_unknown") && error.contains("ended after a host restart")),
+        "{state:?}"
+    );
+    tick_until(&ctx, &mut runner, "permit returned", || {
+        gpu_holders(&ctx).is_empty()
+    });
+}
+
+/// 재시작 동안 끝난 후처리(저장된 보고 없음)는 부팅 정리가 결과 불명으로 끝내고 permit 을 반환한다.
+/// 점유를 쥐었다는 이유로 `host restart` 실패가 되지 않는다.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_postprocess_that_ended_during_the_restart_ends_unknown_at_the_cleanup() {
+    let (_td, ctx) = fresh_ctx();
+    let (pid, started_at) = spawn_postprocess_like();
+    // SAFETY: 이 시험이 띄운 프로세스 그룹이다.
+    assert_eq!(unsafe { libc::kill(-(pid as i32), libc::SIGKILL) }, 0);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while !gone(pid as i32) {
+        assert!(std::time::Instant::now() < deadline);
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    holding_judge_in_postprocess(&ctx, pid, started_at);
+
+    purge_stale_agent_state_on_boot(&ctx, &[1]);
+    let state = judge(&ctx).state;
+    assert!(
+        matches!(&state, TaskState::Failed { error } if error.contains("outcome_unknown")),
+        "{state:?}"
+    );
+    assert!(gpu_holders(&ctx).is_empty());
+}
+
+/// 재시작 뒤 넘겨받은 살아 있는 후처리를 취소하면 그 그룹을 끝내고, 끝난 것을 확인한 뒤 반환한다.
+#[cfg(target_os = "linux")]
+#[test]
+fn cancelling_a_restored_postprocess_kills_it_before_its_permit_returns() {
+    let (_td, ctx) = fresh_ctx();
+    let (pid, started_at) = spawn_postprocess_like();
+    holding_judge_in_postprocess(&ctx, pid, started_at);
+    let mut runner = restarted_runner(&ctx);
+    tick(&ctx, &mut runner);
+    store_op(&ctx, |s| s.cancel(1, &JUDGE.to_string(), 5).unwrap());
+    tick_until(&ctx, &mut runner, "permit returned", || {
+        gpu_holders(&ctx).is_empty()
+    });
+    assert!(gone(pid as i32), "취소한 후처리가 남았다");
+}

@@ -1,12 +1,12 @@
 //! Reconcile task-owned semaphore and lease holders before runner restart.
 
 use super::{RunnerContext, now_ms};
-use crate::runner_host::{own_lease, own_semaphore, resumes_as_a_run};
+use crate::runner_host::{own_lease, own_semaphore, resumes_after_restart};
 use tasty_agent::{LeaseStore, SemaphoreStore, Task, TaskResult, TaskState, TaskStore};
 use tasty_memory::{HOST_OWNER, MemoryStorage};
 
-/// 재시작 정리 대상: Running 이고 자기 id 로 점유를 쥔 task. 저장된 Run handle 로 다시 감시할
-/// 회차는 뺀다. 그 프로세스는 살아 있을 수 있어 handle 복원이 점유를 유지하거나, 끝난 것을
+/// 재시작 정리 대상: Running 이고 자기 id 로 점유를 쥔 task. 저장된 Run·후처리 handle 로 다시
+/// 감시할 회차는 뺀다. 그 프로세스는 살아 있을 수 있어 handle 복원이 점유를 유지하거나, 끝난 것을
 /// 확인한 뒤 반환한다([`crate::runner_host::release_own_holdings`]).
 fn restart_candidates(
     ctx: &RunnerContext,
@@ -23,7 +23,7 @@ fn restart_candidates(
         tasks
             .into_iter()
             .filter(|t| matches!(t.state, TaskState::Running))
-            .filter(|t| !resumes_as_a_run(mem, workspace_id, t))
+            .filter(|t| !resumes_after_restart(mem, workspace_id, t))
             .filter_map(|t| {
                 let held = holding(&t)?;
                 let holder = t.id.clone();

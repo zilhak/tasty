@@ -564,7 +564,8 @@ mod through_the_runner {
         let judge = get(&ctx, "judge");
         assert_eq!(judge.state, TaskState::Running);
         // 재시작 복원은 저장된 보고를 쓰고, 재시도가 남아 있어도 다시 실행하지 않는다.
-        match super::super::restored_handle(&ctx, 1, &judge) {
+        let stored = DispatchHandle::ShellProcess { pid: 0 };
+        match super::super::restored_handle(&ctx, 1, &judge, &stored, None) {
             Some(DispatchHandle::PostprocessResolved(report)) => {
                 assert_eq!(report.cause(), Some(PostprocessCause::Cancelled));
                 assert!(

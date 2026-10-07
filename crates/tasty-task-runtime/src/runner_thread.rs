@@ -24,9 +24,10 @@ use tasty_memory::{HOST_OWNER, ListOpts, MemoryValue, Scope};
 use super::runner_host::{
     HANDLE_ATTEMPT_FIELD, HANDLE_KEY_PREFIX, HostExecutor, RUN_RESULT_LOST, RunnerContext,
     evict_run_result, evict_task_side_keys, handle_key, load_run_result, process_of_record,
-    release_own_holdings, restored_postprocess_handle,
+    release_own_holdings, restored_postprocess_handle, resumes_after_restart,
 };
 use tasty_agent::runner::PollOutcome;
+use tasty_agent::task::postprocess::PostprocessCause;
 
 // The join slot only transfers an owned handle; recovery never treats a missing handle as joined.
 static JOIN_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
@@ -559,7 +560,18 @@ fn classify_persisted_handle(
         return HandleClassification::NotRunning(Box::new(task));
     }
     // 본 작업을 마친 후처리 단계는 저장된 handle 이 아니라 회차의 진행으로 복원한다.
-    if let Some(h) = restored_postprocess_handle(ctx, workspace_id, &task) {
+    if let Some(h) = restored_postprocess_handle(ctx, workspace_id, &task, &handle, proc) {
+        // 결과 불명은 다시 실행하지 않는 종결이라 Run 의 결과 불명처럼 지금 확정하고 점유를 반환한다.
+        // 저장된 보고는 재시도로 이어질 수 있어 러너가 처리한다.
+        if let DispatchHandle::PostprocessResolved(report) = &h
+            && report.cause() == Some(PostprocessCause::OutcomeUnknown)
+        {
+            return HandleClassification::Precise(
+                task_id,
+                attempt,
+                PollOutcome::Postprocessed(report.clone()),
+            );
+        }
         return HandleClassification::Alive(task_id, h);
     }
 
@@ -905,9 +917,9 @@ fn run_loop(
     let executor = HostExecutor::new(ctx.clone());
     let mut runner = RunnerLoop::new(executor);
     for (task_id, handle) in reloaded {
-        // 복원한 Run 은 부팅 정리가 남겨 둔 점유를 쥐고 있다. 끝날 때 반환하도록 넘겨받는다.
-        if matches!(handle, DispatchHandle::ShellProcess { .. })
-            && let Some(task) = load_task(&ctx, workspace_id, &task_id)
+        // 복원한 Run·후처리는 부팅 정리가 남겨 둔 점유를 쥐고 있다. 끝날 때 반환하도록 넘겨받는다.
+        if let Some(task) = load_task(&ctx, workspace_id, &task_id)
+            && ctx.with_memory(|mem| resumes_after_restart(mem, workspace_id, &task))
         {
             runner.executor.adopt_restored_run(workspace_id, &task);
         }

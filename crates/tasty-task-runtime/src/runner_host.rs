@@ -26,7 +26,7 @@ use run_result::{drain_capped, summarize_poll_response};
 pub(crate) use attempt_record::{HANDLE_ATTEMPT_FIELD, dispatch_attempt, handle_value};
 use clock::now_ms;
 use command_inputs::{substitute_lease_resource, substitute_task_outputs};
-pub(crate) use holdings::{own_lease, own_semaphore, release_own_holdings, resumes_as_a_run};
+pub(crate) use holdings::{own_lease, own_semaphore, release_own_holdings, resumes_after_restart};
 #[cfg(all(test, unix))]
 pub(crate) use postprocess::postprocess_result_key;
 pub(crate) use postprocess::restored_handle as restored_postprocess_handle;
@@ -1012,7 +1012,7 @@ impl HostExecutor {
             DispatchHandle::PostprocessResolved(report) => {
                 PollOutcome::Postprocessed(report.clone())
             }
-            DispatchHandle::PostprocessProcess { pid, run } => self.postprocess.poll(*pid, *run),
+            DispatchHandle::PostprocessProcess { pid, run } => self.poll_postprocess(*pid, *run),
             DispatchHandle::AgentTurn { .. } => self.poll_agent(handle),
         }
     }
