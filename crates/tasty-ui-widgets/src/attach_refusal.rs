@@ -194,7 +194,7 @@ pub fn attach_refusal_mark(ui: &mut egui::Ui, theme: &Theme, tooltip: &str) -> e
     let size = attach_refusal_mark_size(theme);
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::hover());
     tasty_icons::ALERT_TRIANGLE
-        .image(size, theme.accent_warning().to_egui())
+        .image(size, theme.attach_refusal_glyph().to_egui())
         .paint_at(ui, rect);
     if tooltip_hover_delay_elapsed(ui.ctx(), theme, resp.id, resp.hovered()) {
         Tooltip::new(tooltip)
@@ -202,6 +202,44 @@ pub fn attach_refusal_mark(ui: &mut egui::Ui, theme: &Theme, tooltip: &str) -> e
             .show(ui, theme, rect);
     }
     resp
+}
+
+/// 접힌 레일 아바타의 왼쪽 위 모서리에 경고 칩을 그리고 칩 rect를 돌려준다.
+/// 오른쪽 위는 알림 점, 오른쪽 아래는 mirror 칩, 왼쪽 아래는 move 칩이 쓴다. 네 표시는 함께 나올 수 있다.
+/// 칩은 아바타 밖으로 border 폭만큼 나온다. `bed`는 칩 바탕색으로, 레일 배경과 같게 전달한다.
+pub fn paint_attach_refusal_chip(
+    ui: &egui::Ui,
+    theme: &Theme,
+    avatar: egui::Rect,
+    bed: egui::Color32,
+) -> egui::Rect {
+    let chip = theme.attach_refusal_chip_size().value();
+    let outset = theme.border_width.value();
+    let rect = egui::Rect::from_min_size(
+        egui::pos2(avatar.min.x - outset, avatar.min.y - outset),
+        egui::vec2(chip, chip),
+    );
+    ui.painter().circle_filled(rect.center(), chip * 0.5, bed);
+    let glyph = theme.attach_refusal_chip_glyph_size().value();
+    let glyph_rect = egui::Rect::from_center_size(rect.center(), egui::vec2(glyph, glyph));
+    tasty_icons::ALERT_TRIANGLE
+        .image(glyph, theme.attach_refusal_glyph().to_egui())
+        .paint_at(ui, glyph_rect);
+    rect
+}
+
+/// 레일 아바타 hover 때 행 표지와 같은 `tooltip`을 아바타 옆에 보인다. 칩은 따로 클릭을 받지 않는다.
+pub fn attach_refusal_avatar_tooltip(
+    ui: &egui::Ui,
+    theme: &Theme,
+    avatar: &egui::Response,
+    tooltip: &str,
+) {
+    if tooltip_hover_delay_elapsed(ui.ctx(), theme, avatar.id, avatar.hovered()) {
+        Tooltip::new(tooltip)
+            .id_source(avatar.id)
+            .show(ui, theme, avatar.rect);
+    }
 }
 
 #[cfg(test)]
@@ -279,5 +317,31 @@ mod tests {
                 assert!(b.right() <= rect.right() + 0.5, "{b:?} past {rect:?}");
             }
         }
+    }
+
+    #[test]
+    fn the_rail_chip_takes_the_top_left_corner_outside_the_avatar() {
+        let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
+        let ctx = egui::Context::default();
+        let side = theme.sidebar_collapsed_workspace_height.value();
+        let avatar = egui::Rect::from_min_size(egui::pos2(40.0, 30.0), egui::Vec2::splat(side));
+        let mut chip = egui::Rect::NOTHING;
+        let out = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                chip = paint_attach_refusal_chip(ui, &theme, avatar, theme.bg_sidebar().into());
+            });
+        });
+        let size = theme.attach_refusal_chip_size().value();
+        let outset = theme.border_width.value();
+        assert_eq!(chip.size(), egui::vec2(size, size));
+        assert_eq!(chip.min, avatar.min - egui::vec2(outset, outset));
+        // 바탕 원은 칩 가운데에 칩 지름으로 그려진다. 글리프는 SVG 로더가 없는 시험에서 그려지지 않는다.
+        let bed = out.shapes.iter().any(|c| match &c.shape {
+            egui::Shape::Circle(circle) => {
+                circle.center == chip.center() && (circle.radius - size * 0.5).abs() < 0.01
+            }
+            _ => false,
+        });
+        assert!(bed, "chip bed circle at {chip:?}");
     }
 }

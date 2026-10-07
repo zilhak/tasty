@@ -1,4 +1,4 @@
-<!-- source-hash: bd742e411dc4 -->
+<!-- source-hash: c02a3dc69f69 -->
 <a id="remote-attach"></a>
 
 # Working remotely (attach)
@@ -126,7 +126,7 @@ tasty set workspace --id 5 --clear-mapping                              # remove
 - A mapped mirror keeps the Workspace and its scrollback as they are when the connection drops and reconnects in the background (retrying with intervals growing from 0.5 seconds up to 30 seconds; at 30-second intervals when the remote is occupied by someone else). After 20 failures it stops and notifies you with a toast — leaving that Workspace and coming back triggers one more attempt immediately.
 - If the first connection fails (a profile, port or SSH problem), it retries with intervals growing from 0.5 seconds up to 30 seconds. Switching back to that Workspace or changing the mapping triggers one more attempt immediately.
 - If the mapped target is this same Tasty, it does not connect. A mapping set with `--ssh` is not retried until you change the mapping, and a profile mapping is checked once more when you switch back to that Workspace. `tasty remote refusals` lists the refused attempts.
-- If a mapping cannot connect (the target is this same Tasty, the SSH profile does not exist, or the endpoint cannot be prepared), a warning mark appears at the end of that Workspace's row in the sidebar. Hover it to see the target and the reason. Opening that Workspace shows a banner at the top with the same details, and **Remove mapping** clears the mapping right there. × closes the banner for this visit only; it comes back when you leave the Workspace and return. The mark goes away when you change or remove the mapping, or when the connection succeeds.
+- If a mapping cannot connect (the target is this same Tasty, the SSH profile does not exist, or the endpoint cannot be prepared), a warning mark appears on that Workspace's row in the sidebar, after the name and to the left of the notification count badges. When the sidebar is collapsed, a small warning mark sits on the top-left corner of the Workspace icon. Hover it to see the target and the reason. Opening that Workspace shows a banner at the top with the same details, and **Remove mapping** clears the mapping right there. × closes the banner for this visit only; it comes back when you leave the Workspace and return. The mark goes away when you change or remove the mapping, or when the connection succeeds.
 - A mirror attached without a mapping disappears from the window when the connection drops. If it was the only Workspace left in that window, the window stays open and a new terminal Workspace takes its place.
 
 ## What you can do inside a mirror

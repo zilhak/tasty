@@ -1049,7 +1049,7 @@ pub fn pages() -> Vec<Page> {
                     "Auto-attach refused",
                     "Persistent row mark + workspace banner, no toast",
                     Some(
-                        "alertTriangle on the sidebar row · Workspace banner with Remove mapping and ×",
+                        "alertTriangle on the sidebar row and the rail avatar · Workspace banner with Remove mapping and ×",
                     ),
                     widgets::attach_refusal::draw,
                 ),

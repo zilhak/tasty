@@ -63,8 +63,9 @@ mod tree_row;
 mod two_depth;
 mod warning_callout;
 pub use attach_refusal::{
-    AttachRefusalBannerClicks, AttachRefusalBannerView, attach_refusal_banner,
-    attach_refusal_banner_content, attach_refusal_mark, attach_refusal_mark_size,
+    AttachRefusalBannerClicks, AttachRefusalBannerView, attach_refusal_avatar_tooltip,
+    attach_refusal_banner, attach_refusal_banner_content, attach_refusal_mark,
+    attach_refusal_mark_size, paint_attach_refusal_chip,
 };
 pub use attention::{
     Attention, RailDot, attention_count_label, attention_edge_stroke, occupancy_edge_shows,

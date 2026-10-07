@@ -1222,6 +1222,7 @@ fn draw_collapsed_avatar(
         );
     }
     // 상태는 오른쪽 위 점, mirror는 오른쪽 아래 표시, 다른 클라이언트 점유는 둘레 링이다.
+    // 왼쪽 아래는 move 칩, 왼쪽 위는 attach 거절 칩이다.
     // 점 하나로 NeedsInput > Completion > running 순서의 상태를 표시한다.
     if let Some(dot) = tasty_ui_widgets::RailDot::resolve(
         ws.needs_input_count > 0,
@@ -1244,6 +1245,11 @@ fn draw_collapsed_avatar(
     // 이동 대기 칩은 알림 점·mirror 칩과 겹치지 않도록 왼쪽 아래에 둔다.
     if ws.move_source {
         tasty_ui_widgets::paint_move_source_chip(ui, th, rect, th.bg_sidebar().into());
+    }
+    // 자동 attach 거절 칩은 남은 왼쪽 위 모서리에 둔다. 툴팁은 펼친 행 표지와 같다.
+    if let Some(tooltip) = &ws.attach_refusal {
+        tasty_ui_widgets::paint_attach_refusal_chip(ui, th, rect, th.bg_sidebar().into());
+        tasty_ui_widgets::attach_refusal_avatar_tooltip(ui, th, &resp, tooltip);
     }
     // mirror 표시는 배경색으로 둘러 다른 알림·점유 표시와 구분한다.
     if ws.is_mirror {
@@ -1345,19 +1351,26 @@ fn draw_workspace_card(
 
             // 배지 폭을 먼저 확보하고 남은 폭에 이름을 줄여 표시한다.
             // 오른쪽부터 그리므로 Completion 뒤에 NeedsInput을 넣어 왼쪽에 배치한다.
+            // 이름 뒤 순서는 move 글리프 · 거절 표지 · 배지 묶음이고 배지가 가장 오른쪽이다.
+            // 끝 칸 항목 사이는 행 간격(space-sm)이다.
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if let Some(tooltip) = &ws.attach_refusal {
-                    tasty_ui_widgets::attach_refusal_mark(ui, th, tooltip);
-                }
-                let badged = tasty_ui_widgets::workspace_attention_badges(
+                let item_gap = (th.spacing_sm.value() - ui.spacing().item_spacing.x).max(0.0);
+                let mut placed = tasty_ui_widgets::workspace_attention_badges(
                     ui,
                     th,
                     ws.needs_input_count,
                     ws.completion_count,
                 );
+                if let Some(tooltip) = &ws.attach_refusal {
+                    if placed {
+                        ui.add_space(item_gap);
+                    }
+                    tasty_ui_widgets::attach_refusal_mark(ui, th, tooltip);
+                    placed = true;
+                }
                 if ws.move_source {
-                    if badged {
-                        ui.add_space(th.spacing_xs.value());
+                    if placed {
+                        ui.add_space(item_gap);
                     }
                     paint_move_source_row_glyph(ui, th);
                 }

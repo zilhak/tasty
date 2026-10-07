@@ -864,7 +864,8 @@ fn the_blind_spots_are_still_the_size_they_say() {
         // 좁은 폭 배너 시험의 화면 높이 400 하나가 test 전용으로 들어왔다.
         // 도구 메뉴 높이 시험의 고정 폭 W(158) 하나가 test 전용으로 들어왔다.
         // 표 띠·선택 행 글자색 시험(table_band_and_ink)의 화면 크기·열 폭 리터럴 셋이 test 전용으로 들어왔다.
-        (221, 523),
+        // 레일 거절 칩 위치 시험의 아바타 원점 pos2(40, 30) 중 스케일 값 40 하나가 test 전용으로 들어왔다.
+        (221, 524),
         "제외한 0과 test 전용 코드의 수가 달라졌다. 실제 사용과 수집 범위의 변경을 확인하고 기록을 갱신한다."
     );
     let roster: usize = UNIT_SPACE_SITES.iter().map(|(.., n, _)| n).sum();
