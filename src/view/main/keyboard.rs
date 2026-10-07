@@ -738,9 +738,9 @@ fn is_printable_char(chr: char) -> bool {
 fn win32_key_press(virtual_key: u8, character: u8, modifiers: ModifiersState) -> Vec<u8> {
     // Win32 KEY_EVENT_RECORD flags: LEFT_ALT_PRESSED, LEFT_CTRL_PRESSED,
     // SHIFT_PRESSED. Winit's aggregate modifiers do not retain left/right.
-    let control_state = u8::from(modifiers.alt_key()) * 2
-        | u8::from(modifiers.control_key()) * 8
-        | u8::from(modifiers.shift_key()) * 16;
+    let control_state = (u8::from(modifiers.alt_key()) * 2)
+        | (u8::from(modifiers.control_key()) * 8)
+        | (u8::from(modifiers.shift_key()) * 16);
     format!(
         "\x1b[{virtual_key};0;{character};1;{control_state};1_\x1b[{virtual_key};0;{character};0;{control_state};1_"
     )

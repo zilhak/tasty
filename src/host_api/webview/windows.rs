@@ -89,7 +89,10 @@ impl PlatformWebView {
             let wc = WNDCLASSEXW {
                 cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
                 style: CS_HREDRAW | CS_VREDRAW,
-                lpfnWndProc: Some(std::mem::transmute(DefWindowProcW as *const () as usize)),
+                lpfnWndProc: Some(std::mem::transmute::<
+                    usize,
+                    unsafe extern "system" fn(HWND, u32, WPARAM, LPARAM) -> LRESULT,
+                >(DefWindowProcW as *const () as usize)),
                 hInstance: GetModuleHandleW(None).unwrap_or_default().into(),
                 lpszClassName: class_name,
                 ..Default::default()
@@ -493,8 +496,12 @@ impl PlatformWebView {
         // SAFETY: parent_hwnd 는 이 webview 를 만든 winit 창이고 self 가 살아있는
         // 동안 valid. 호출은 main thread(winit event loop).
         unsafe {
-            let _ = windows::Win32::UI::Input::KeyboardAndMouse::SetFocus(Some(self.parent_hwnd));
-            // reason: 반환은 이전 포커스 핸들이며 None만으로 실패를 판별할 수 없어 무시한다.
+            // 반환은 이전 포커스 핸들이다. 이전 포커스가 없을 때도 오류로 오므로 실패로 단정하지 않는다.
+            if let Err(e) =
+                windows::Win32::UI::Input::KeyboardAndMouse::SetFocus(Some(self.parent_hwnd))
+            {
+                tracing::debug!("WebView focus release: SetFocus returned {e}");
+            }
         }
     }
 
@@ -563,7 +570,7 @@ impl PlatformWebView {
         // SAFETY: self가 살아있으면 hwnd/controller 모두 valid (Drop이 정리).
         unsafe {
             // 반환값은 이전 표시 상태이며 현재 표시 요청의 성공 여부로 해석하지 않는다.
-            let _ = ShowWindow(self.hwnd, if visible { SW_SHOW } else { SW_HIDE }); // 이유: 이전 표시 상태 반환은 사용하지 않는다.
+            let _was_visible = ShowWindow(self.hwnd, if visible { SW_SHOW } else { SW_HIDE });
             if let Err(e) = self.controller.SetIsVisible(visible) {
                 tracing::warn!("WebView2 SetIsVisible failed: {e}");
             }
