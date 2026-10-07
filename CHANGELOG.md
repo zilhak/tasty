@@ -162,6 +162,7 @@
 
 ### Fixed
 
+- **`agent task-get` 이 후처리 실패의 error 줄에 단계 이름을 두 번 적지 않는다.** `error: postprocess: postprocess nonzero_exit: …` 가 `error: postprocess nonzero_exit: …` 로 보인다.
 - **실패한 run 작업의 오류 문구가 종료 코드를 그대로 적는다.** `Run exited non-zero: code=Some(7)` 대신 `Run exited with code 7` 이고, 종료 코드 없이 신호로 끝났으면 `Run ended without an exit code (terminated by a signal)` 다. 뒤따르는 stdout·stderr 꼬리는 그대로다.
 - **문법 오류가 있는 `webhooks.toml` 을 덮어써 저장한 웹훅과 포트를 잃던 문제를 고쳤다.** 이전에는 `--persistent` 웹훅을 등록·해제하거나 만료로 정리할 때 파일을 읽지 못하면 그 웹훅 목록만으로 파일을 새로 써서, 다른 저장 웹훅(인증 토큰 포함)과 포트 설정이 사라졌다. 이제 파일을 읽지 못하면 쓰지 않는다. 등록·해제는 오류로 답하고 아무것도 바꾸지 않으며, 파일을 고친 뒤 다시 시도하면 된다.
 - **점유된 서피스에 입력 요청이 오면 테두리가 노란 2px 한 줄로만 보인다.** 이전에는 1px 점유선(초록·주황)이 노란 선 바깥쪽을 덮어 두 색이 겹쳐 보였다. 입력 요청이 없는 점유 서피스의 테두리는 그대로다.

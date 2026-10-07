@@ -284,7 +284,8 @@ fn task_typed_lines(task: &serde_json::Value) -> Vec<String> {
     lines
 }
 
-/// `TaskFailure` 한 줄: `<단계>[/<코드>]: <메시지>`.
+/// `TaskFailure` 한 줄: `<단계>[/<코드>]: <메시지>`. 메시지가 이미 단계 이름으로 시작하면
+/// (후처리 실패의 `postprocess <원인>: …`) 단계를 다시 붙이지 않는다.
 fn failure_summary(failure: &serde_json::Value) -> String {
     let stage = failure.get("stage").and_then(|v| v.as_str()).unwrap_or("?");
     let message = failure
@@ -293,6 +294,12 @@ fn failure_summary(failure: &serde_json::Value) -> String {
         .unwrap_or("");
     match failure.get("code").and_then(|v| v.as_str()) {
         Some(code) => format!("{stage}/{code}: {message}"),
+        None if message
+            .strip_prefix(stage)
+            .is_some_and(|rest| rest.starts_with([' ', ':'])) =>
+        {
+            message.to_string()
+        }
         None => format!("{stage}: {message}"),
     }
 }
@@ -926,6 +933,22 @@ mod tests {
                 "error: execution/result_missing: turn ended without a result",
             ]
         );
+        let lines = task_typed_lines(&json!({
+            "typed_result": {"has_output": false, "output": null,
+                             "error": {"stage": "postprocess", "message": "postprocess nonzero_exit: exited with code 3"}},
+        }));
+        assert_eq!(
+            lines,
+            [
+                "output: none",
+                "error: postprocess nonzero_exit: exited with code 3",
+            ]
+        );
+        let lines = task_typed_lines(&json!({
+            "typed_result": {"has_output": false, "output": null,
+                             "error": {"stage": "input", "message": "inputs: binding failed"}},
+        }));
+        assert_eq!(lines[1], "error: input: inputs: binding failed");
     }
 
     #[test]
