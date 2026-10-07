@@ -546,7 +546,7 @@ fn classify_persisted_handle(
                     task_id,
                     attempt,
                     PollOutcome::Lost(format!(
-                        "{RUN_RESULT_LOST}: pid {pid} ended while the host was down and no exit status was saved"
+                        "{RUN_RESULT_LOST}: pid {pid} ended before the runner resumed watching it and no exit status was saved"
                     )),
                 )
             }
@@ -1253,7 +1253,8 @@ mod tests {
             TaskState::Unknown {
                 reason: Some(reason),
             } => assert!(
-                reason.starts_with(RUN_RESULT_LOST) && reason.contains("host was down"),
+                reason.starts_with(RUN_RESULT_LOST)
+                    && reason.contains("before the runner resumed watching it"),
                 "unexpected reason: {reason}"
             ),
             other => panic!("expected Unknown, got {other:?}"),
