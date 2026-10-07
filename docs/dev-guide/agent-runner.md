@@ -349,13 +349,25 @@ task 와 함께 취소된 하류 중 handle 이 남은 task 의 프로세스 묶
 지우고 그 task 가 자기 id 로 쥔 semaphore·lease 를 반환한다. 확인하기 전까지 점유는 그대로 남아 다른
 task 에 배정되지 않는다. IPC 는 앱의 처리 경로에서 차례로 처리되므로, SIGKILL 이 늦게 듣는
 프로세스(D 상태 등)를 기다리느라 다른 IPC 를 막지 않게 하려는 것이다. 이 스레드는
-`BACKGROUND_CONFIRM_WAIT`(10분)까지 기다리고, 넘으면 둘 다 남겨 다음 reload 에 맡긴다. 스레드가
+`BACKGROUND_CONFIRM_WAIT`(10분)까지 기다리고, 넘으면 둘 다 남겨 러너에 맡긴다. 스레드가
 끝없이 남지 않게 하는 상한이다.
 
 reload(러너 시작·부팅 정리)의 NotRunning 정리는 같은 정리를 그 자리에서 하며
-`KILL_CONFIRM_WAIT`(2초)까지 기다린다(`settle_ended_task`). 확인하지 못하면 handle·점유를 남겨 다음
-reload 가 다시 시도한다. 2초는 SIGKILL·job 종료와 회수에 충분하면서 부팅이 오래 멈추지 않을 만큼
-짧게 정한 값이다. 러너가 있으면 다음 tick 이 종결을 흡수해 위의 러너 경로로 정리한다.
+`KILL_CONFIRM_WAIT`(2초)까지 기다린다(`settle_ended_task`). 2초는 SIGKILL·job 종료와 회수에
+충분하면서 부팅이 오래 멈추지 않을 만큼 짧게 정한 값이다. 러너가 있으면 다음 tick 이 종결을
+흡수해 위의 러너 경로로 정리한다.
+
+두 상한 안에 확인하지 못한 handle 은 러너가 tick 마다 다시 본다(`settle_unwatched_handles`). 대상은
+러너가 넘겨받지 않았고 task 가 없거나 Running 이 아닌 handle 이다. 신호를 한 번 보내고 기다리지 않고
+종료를 확인해, 확인한 tick 에 위와 같이 정리한다. 러너가 켜져 있는 동안은 점유가 다음 재시작까지
+묶이지 않는다. 시작 시각이 없는 옛 레코드는 같은 프로세스인지 알 수 없어 기다리지 않고 정리한다.
+
+이 정리들은 확인한 handle 의 회차 id·프로세스(PID·시작 시각)가 지울 때도 그대로일 때만 handle 을
+지우고 점유를 반환한다(`settle::finalize`, 한 잠금 안). 그 사이 다른 정리가 지웠거나 다른 회차의
+handle 이 들어왔으면 손대지 않는다. 그리고 task 에 이전 회차의 handle 이 남은 동안 러너는 그 task 의
+새 회차(retry 로 다시 Ready 가 된 task)를 시작하지 않고 Ready 로 둔다(`HostExecutor::dispatch` 가
+미룬다). 점유의 holder 는 task id 라서 새 회차가 같은 holder 로 다시 얻으면 멱등으로 통과해, 끝나지
+않은 옛 프로세스 묶음과 새 회차가 같은 permit 을 함께 쓰게 되기 때문이다.
 
 TTL을 생략하면 자동 만료하지 않는다.
 

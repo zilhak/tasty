@@ -5,7 +5,7 @@
 #[cfg(test)]
 mod attempt_tests;
 mod restart_holders;
-mod settle;
+pub(crate) mod settle;
 use restart_holders::{purge_stale_lease_holders, purge_stale_semaphore_holders};
 pub(crate) use settle::{settle_ended_task, settle_ended_tasks_in_background};
 
@@ -934,6 +934,9 @@ fn run_loop(
         // 만료 작업의 종결 상태를 이번 snapshot에서도 보고 handle·점유를 정리할 수 있도록 먼저 처리한다.
         let now = now_ms();
         expire_overdue_hook_waits(&ctx, now);
+
+        // 러너가 지켜보지 않는 남은 handle(취소된 회차 등)의 종료를 다시 확인한다.
+        settle::settle_unwatched_handles(&ctx, workspace_id, |id| runner.executor.watches(id));
 
         let snapshot = tick_snapshot(&ctx, workspace_id, list_failures);
 

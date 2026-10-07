@@ -96,7 +96,7 @@ regular(`put/get/delete/list/exists/count/scopes/stats/query/export/import`) · 
 
 `task_delete`와 `task_purge`는 `depends_on`, `Fallback.task`, `Reduce.inputs` 참조를 검사한다. 참조가 남으면 기본적으로 거절하고 참조자 목록을 반환한다. `--cascade`는 연쇄 삭제, `--force`는 참조 검사만 우회한다. **`running` 상태의 제약은 `--force`로 우회할 수 없다.**
 
-`task_command.kind = "run"`은 surface 없이 자식 프로세스를 실행한다. `task_get`과 `task_await`의 `result.output`에 stdout/stderr 각각 마지막 64KiB와 `truncated`/`dropped_bytes`를 반환한다. 0이 아닌 종료 코드로 실패하면 `result.error` 문자열에도 같은 출력이 포함된다. 실행이 끝나는 때는 명령이 끝나고 stdout·stderr 가 모두 닫힌 때다. 실행 중에 `task_cancel` 하면 명령이 이미 끝났어도 그 명령이 띄운 프로세스(Unix 프로세스 그룹 전체, Windows job)를 끝내고, 모두 끝난 것을 확인한 뒤 semaphore·lease 를 반환한다. 러너가 꺼져 있으면 `task_cancel` 은 종료를 기다리지 않고 응답하며, 종료 확인과 반환은 백그라운드에서 한다. 반환 전까지 점유는 그대로다.
+`task_command.kind = "run"`은 surface 없이 자식 프로세스를 실행한다. `task_get`과 `task_await`의 `result.output`에 stdout/stderr 각각 마지막 64KiB와 `truncated`/`dropped_bytes`를 반환한다. 0이 아닌 종료 코드로 실패하면 `result.error` 문자열에도 같은 출력이 포함된다. 실행이 끝나는 때는 명령이 끝나고 stdout·stderr 가 모두 닫힌 때다. 실행 중에 `task_cancel` 하면 명령이 이미 끝났어도 그 명령이 띄운 프로세스(Unix 프로세스 그룹 전체, Windows job)를 끝내고, 모두 끝난 것을 확인한 뒤 semaphore·lease 를 반환한다. 러너가 꺼져 있으면 `task_cancel` 은 종료를 기다리지 않고 응답하며, 종료 확인과 반환은 백그라운드에서 한다. 반환 전까지 점유는 그대로다. 그 사이 `task_retry` 한 task 는 이전 회차의 프로세스가 모두 끝난 것을 확인할 때까지 `ready` 로 남고 시작하지 않는다.
 
 작업 metadata 의 `lease.ttl_ms`·`semaphore.ttl_ms` 는 러너가 갱신하며, 하한(1000ms)보다 짧으면 `task_create`·`task_graph_submit` 이 `-32602` 로 거절한다. 갱신하기 전에 TTL 이 지나 다른 holder 가 자원을 가져가면 `task_get` 응답에 `holding_warnings` 배열(`kind`·`name`·`holder`·`at_ms`·`message`)이 실린다. 없으면 키가 없다.
 

@@ -524,3 +524,241 @@ fn cancel_with_no_runner_answers_before_the_exit_is_confirmed() {
     );
     assert!(!handle_left(&mem, &task.id));
 }
+
+/// 그룹 안에 시험이 회수하지 않은 구성원(좀비)을 남기는 이전 회차. SIGKILL 뒤에도 그룹이 비지 않아
+/// 종료 확인이 기다린다. 리더는 별도 스레드가 회수한다.
+fn spawn_unconfirmable_group() -> (u32, u64, std::process::Child) {
+    let mut leader = std::process::Command::new("sleep")
+        .arg("60")
+        .process_group(0)
+        .spawn()
+        .unwrap();
+    let pid = leader.id();
+    let started_at = process_start::start_time(pid).unwrap();
+    let member = spawn_member(pid);
+    std::thread::spawn(move || leader.wait());
+    (pid, started_at, member)
+}
+
+/// Running 으로 바꾸고 회차 id(v1 task 는 없음)를 돌려준다.
+fn running_attempt(
+    mem: &Arc<Mutex<dyn MemoryStorage>>,
+    seq: &AtomicU64,
+    id: &str,
+) -> Option<String> {
+    let mut guard = mem.lock().unwrap();
+    let (task, _) = TaskStore::new(&mut *guard, HOST_OWNER, seq)
+        .set_state(1, &id.to_string(), TaskState::Running, 1100)
+        .unwrap();
+    task.attempt.map(|a| a.id)
+}
+
+fn handle_record(pid: u32, t: u64, attempt: Option<&str>) -> serde_json::Value {
+    let mut v = serde_json::json!({
+        "kind": "shell_process", "data": {"pid": pid}, "started_at": t});
+    if let Some(a) = attempt {
+        v[crate::runner_host::HANDLE_ATTEMPT_FIELD] = a.into();
+    }
+    v
+}
+
+fn put_handle(mem: &Arc<Mutex<dyn MemoryStorage>>, id: &str, record: &serde_json::Value) {
+    mem.lock()
+        .unwrap()
+        .put(
+            HOST_OWNER,
+            &Scope::Workspace(1),
+            &handle_key(id),
+            &MemoryValue::Json(record.clone()),
+            &PutOpts::default(),
+        )
+        .unwrap();
+}
+
+/// 저장된 handle 의 프로세스 PID.
+fn stored_pid(mem: &Arc<Mutex<dyn MemoryStorage>>, id: &str) -> Option<u32> {
+    let guard = mem.lock().unwrap();
+    crate::runner_host::stored_process(&*guard, 1, id).map(|p| p.pid)
+}
+
+fn state_of(mem: &Arc<Mutex<dyn MemoryStorage>>, seq: &AtomicU64, id: &str) -> TaskState {
+    let mut guard = mem.lock().unwrap();
+    TaskStore::new(&mut *guard, HOST_OWNER, seq)
+        .get(1, &id.to_string())
+        .unwrap()
+        .unwrap()
+        .state
+}
+
+/// 러너가 꺼진 동안 취소한 회차의 그룹이 비기 전에 retry 하고 러너를 켜도, 새 회차는 옛 handle 이
+/// 정리될 때까지 시작하지 않는다(옛 그룹과 permit 을 함께 쓰지 않는다). 옛 그룹이 빈 뒤 시작한 새
+/// 회차의 점유와 handle 은 옛 회차의 정리가 건드리지 않는다.
+#[test]
+fn a_retry_waits_until_the_cancelled_attempts_group_is_confirmed_empty() {
+    let td = tempfile::tempdir().unwrap();
+    let mem = memory(td.path());
+    let svc = TaskService::new(
+        mem.clone(),
+        Arc::new(OnceLock::new()),
+        Arc::new(crate::completion::fixture::Resolver::default()),
+    );
+    let scope = TaskScope::new(svc.runner_registry().clone());
+    let pid_file = td.path().join("new-attempt.pid");
+    let task = run_task(&mem, scope.agent_seq(), &pid_file);
+    let (pid, started_at, mut member) = spawn_unconfirmable_group();
+    let old = running_attempt(&mem, scope.agent_seq(), &task.id);
+    assert!(
+        SemaphoreStore::new(&mut *mem.lock().unwrap(), HOST_OWNER)
+            .acquire(1, "gpu", &task.id, None, 1100)
+            .unwrap()
+            .acquired
+    );
+    put_handle(
+        &mem,
+        &task.id,
+        &handle_record(pid, started_at, old.as_deref()),
+    );
+
+    svc.task_cancel(&scope, 1, &task.id, 2000).unwrap();
+    svc.task_retry(&scope, 1, &task.id, false, 2100).unwrap();
+    assert!(svc.runner_registry().start(svc.runner_context(&scope), 1));
+    // 러너 시작 때 reload 정리가 2초(`KILL_CONFIRM_WAIT`) 기다린 뒤 tick 이 돈다. 그 뒤 몇 tick 을 본다.
+    std::thread::sleep(super::settle::KILL_CONFIRM_WAIT + Duration::from_millis(1500));
+    assert!(
+        matches!(
+            state_of(&mem, scope.agent_seq(), &task.id),
+            TaskState::Ready
+        ),
+        "옛 그룹이 비기 전에 새 회차가 시작했다: {:?}",
+        state_of(&mem, scope.agent_seq(), &task.id)
+    );
+    assert!(!pid_file.exists());
+    assert_eq!(gpu_holders(&mem), vec![task.id.clone()]);
+    assert_eq!(stored_pid(&mem, &task.id), Some(pid));
+
+    member.wait().unwrap();
+    let new_child = read_pid(&pid_file);
+    let deadline = Instant::now() + WAIT;
+    while !matches!(
+        state_of(&mem, scope.agent_seq(), &task.id),
+        TaskState::Running
+    ) {
+        assert!(Instant::now() < deadline, "새 회차가 시작하지 않았다");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    // 옛 회차의 백그라운드·tick 정리가 끝날 시간을 준다.
+    std::thread::sleep(Duration::from_millis(1500));
+    let new = stored_pid(&mem, &task.id).expect("새 회차의 handle 이 지워졌다");
+    assert_ne!(new, pid);
+    assert_eq!(
+        gpu_holders(&mem),
+        vec![task.id.clone()],
+        "새 회차의 permit 을 놓았다"
+    );
+    assert!(!gone(new_child));
+
+    svc.task_cancel(&scope, 1, &task.id, 3000).unwrap();
+    let deadline = Instant::now() + WAIT;
+    while !gpu_holders(&mem).is_empty() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(gpu_holders(&mem).is_empty());
+    assert!(eventually_gone(new_child));
+    assert!(svc.runner_registry().stop(1));
+}
+
+/// 정리는 확인한 handle(회차·프로세스)일 때만 지우고 반환한다. 그 사이 다른 회차의 handle 이
+/// 들어왔으면 그 회차의 handle 과 점유를 건드리지 않는다.
+#[test]
+fn settling_an_attempt_leaves_another_attempts_handle_and_holdings_alone() {
+    let td = tempfile::tempdir().unwrap();
+    let mem = memory(td.path());
+    let ctx = ctx_on(mem.clone());
+    let pid_file = td.path().join("unused.pid");
+    let task = run_task(&mem, &ctx.agent_seq, &pid_file);
+    running_attempt(&mem, &ctx.agent_seq, &task.id);
+    assert!(
+        SemaphoreStore::new(&mut *mem.lock().unwrap(), HOST_OWNER)
+            .acquire(1, "gpu", &task.id, None, 1100)
+            .unwrap()
+            .acquired
+    );
+    let current = handle_record(7, 70, Some("t#2"));
+    put_handle(&mem, &task.id, &current);
+    {
+        let mut guard = mem.lock().unwrap();
+        TaskStore::new(&mut *guard, HOST_OWNER, ctx.agent_seq.as_ref())
+            .cancel(1, &task.id, 2000)
+            .unwrap();
+    }
+    use super::settle::{Stored, finalize};
+    // 회차가 다르거나(같은 PID 라도) 프로세스가 다르면(v1 처럼 회차가 없어도) 손대지 않는다.
+    for earlier in [
+        handle_record(7, 70, Some("t#1")),
+        handle_record(6, 60, Some("t#2")),
+        handle_record(6, 60, None),
+    ] {
+        finalize(&ctx, 1, &task.id, &Stored::of(&earlier));
+        assert_eq!(stored_pid(&mem, &task.id), Some(7), "{earlier}");
+        assert_eq!(gpu_holders(&mem), vec![task.id.clone()], "{earlier}");
+    }
+    finalize(&ctx, 1, &task.id, &Stored::of(&current));
+    assert_eq!(stored_pid(&mem, &task.id), None);
+    assert!(gpu_holders(&mem).is_empty());
+}
+
+/// reload 정리(2초)가 종료를 확인하지 못해 남긴 handle 은 러너가 켜져 있는 동안 tick 이 계속 다시
+/// 본다. 그룹이 빈 뒤 정리해 점유를 반환한다(다음 재시작까지 묶이지 않는다).
+#[test]
+fn a_handle_the_reload_could_not_settle_is_settled_by_the_running_runner() {
+    let td = tempfile::tempdir().unwrap();
+    let mem = memory(td.path());
+    let svc = TaskService::new(
+        mem.clone(),
+        Arc::new(OnceLock::new()),
+        Arc::new(crate::completion::fixture::Resolver::default()),
+    );
+    let scope = TaskScope::new(svc.runner_registry().clone());
+    let pid_file = td.path().join("unused.pid");
+    let task = run_task(&mem, scope.agent_seq(), &pid_file);
+    let (pid, started_at, mut member) = spawn_unconfirmable_group();
+    let attempt = running_attempt(&mem, scope.agent_seq(), &task.id);
+    assert!(
+        SemaphoreStore::new(&mut *mem.lock().unwrap(), HOST_OWNER)
+            .acquire(1, "gpu", &task.id, None, 1100)
+            .unwrap()
+            .acquired
+    );
+    put_handle(
+        &mem,
+        &task.id,
+        &handle_record(pid, started_at, attempt.as_deref()),
+    );
+    // 이전 호스트가 꺼진 동안 취소된 회차(백그라운드 정리가 없다).
+    {
+        let mut guard = mem.lock().unwrap();
+        TaskStore::new(&mut *guard, HOST_OWNER, scope.agent_seq())
+            .cancel(1, &task.id, 2000)
+            .unwrap();
+    }
+    assert!(svc.runner_registry().start(svc.runner_context(&scope), 1));
+    std::thread::sleep(super::settle::KILL_CONFIRM_WAIT + Duration::from_millis(1000));
+    assert_eq!(
+        gpu_holders(&mem),
+        vec![task.id.clone()],
+        "그룹이 비기 전에 반환했다"
+    );
+    assert!(eventually_gone(pid));
+
+    member.wait().unwrap();
+    let deadline = Instant::now() + WAIT;
+    while !gpu_holders(&mem).is_empty() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(
+        gpu_holders(&mem).is_empty(),
+        "러너가 남은 handle 을 다시 보지 않았다"
+    );
+    assert_eq!(stored_pid(&mem, &task.id), None);
+    assert!(svc.runner_registry().stop(1));
+}

@@ -389,6 +389,20 @@ impl HostExecutor {
         self.held_handles.insert(task_id.clone(), ws);
     }
 
+    fn has_stored_handle(&self, task: &Task) -> bool {
+        self.ctx.with_memory(|mem| {
+            mem.get(&Scope::Workspace(task.workspace_id), &handle_key(&task.id))
+                .ok()
+                .flatten()
+                .is_some()
+        })
+    }
+
+    /// 이 executor 가 handle 을 저장했거나 넘겨받아 아직 정리하지 않은 task 인가.
+    pub(crate) fn watches(&self, task_id: &TaskId) -> bool {
+        self.held_handles.contains_key(task_id)
+    }
+
     fn evict_handle(&mut self, task_id: &TaskId) {
         let Some(ws) = self.held_handles.remove(task_id) else {
             return;
@@ -481,6 +495,15 @@ impl HostExecutor {
 
 impl TaskExecutor for HostExecutor {
     fn dispatch(&mut self, task: &Task) -> DispatchOutcome {
+        // 이전 회차의 handle 이 남았으면 그 프로세스가 끝난 것을 아직 확인하지 못했다. 같은 holder id 로
+        // 점유를 다시 얻으면 옛 프로세스와 새 회차가 자원을 함께 쓰므로, 정리될 때까지 Ready 로 둔다.
+        if self.has_stored_handle(task) {
+            tracing::debug!(
+                "agent task {}: an earlier attempt's handle is still being settled; deferring",
+                task.id
+            );
+            return DispatchOutcome::Deferred;
+        }
         match self.try_acquire_lease(task) {
             Ok(None) => {}
             Ok(Some(true)) => {}
