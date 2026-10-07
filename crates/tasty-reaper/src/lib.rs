@@ -169,7 +169,7 @@ mod imp {
     use windows_sys::Win32::System::JobObjects::{
         AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
         JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectExtendedLimitInformation,
-        SetInformationJobObject,
+        SetInformationJobObject, TerminateJobObject,
     };
     use windows_sys::Win32::System::Threading::{
         OpenProcess, PROCESS_SET_QUOTA, PROCESS_TERMINATE,
@@ -185,14 +185,7 @@ mod imp {
     impl JobObject {
         /// Job 을 생성하고 `KILL_ON_JOB_CLOSE` 를 설정한다.
         pub fn new() -> io::Result<Self> {
-            // SAFETY: lpJobAttributes/lpName 둘 다 NULL → 기본 보안 속성의 익명 job.
-            let raw = unsafe { CreateJobObjectW(ptr::null(), ptr::null()) };
-            if raw.is_null() {
-                return Err(io::Error::last_os_error());
-            }
-            // SAFETY: raw 는 CreateJobObjectW 가 막 반환한 유효·단독 소유 핸들이며,
-            // OwnedHandle 이 소유권을 가져가 drop 시 CloseHandle 한다.
-            let job = unsafe { OwnedHandle::from_raw_handle(raw as RawHandle) };
+            let Self { job } = Self::new_detached()?;
 
             // SAFETY: JOBOBJECT_EXTENDED_LIMIT_INFORMATION 은 POD 이며 all-zero 가
             // 유효한 초기 상태다.
@@ -212,6 +205,30 @@ mod imp {
                 return Err(io::Error::last_os_error());
             }
             Ok(Self { job })
+        }
+
+        /// 닫혀도 안의 프로세스를 끝내지 않는 job 을 만든다. 호스트보다 오래 살아야 하는 자식을
+        /// 묶어 두었다가 [`Self::terminate`] 로 한꺼번에 끝낼 때 쓴다.
+        pub fn new_detached() -> io::Result<Self> {
+            // SAFETY: lpJobAttributes/lpName 둘 다 NULL → 기본 보안 속성의 익명 job.
+            let raw = unsafe { CreateJobObjectW(ptr::null(), ptr::null()) };
+            if raw.is_null() {
+                return Err(io::Error::last_os_error());
+            }
+            // SAFETY: raw 는 CreateJobObjectW 가 막 반환한 유효·단독 소유 핸들이며,
+            // OwnedHandle 이 소유권을 가져가 drop 시 CloseHandle 한다.
+            let job = unsafe { OwnedHandle::from_raw_handle(raw as RawHandle) };
+            Ok(Self { job })
+        }
+
+        /// job 의 모든 프로세스를 끝낸다.
+        pub fn terminate(&self) -> io::Result<()> {
+            // SAFETY: job 핸들은 자기 소유의 유효한 핸들이다.
+            let ok = unsafe { TerminateJobObject(self.job.as_raw_handle() as HANDLE, 1) };
+            if ok == 0 {
+                return Err(io::Error::last_os_error());
+            }
+            Ok(())
         }
 
         /// 이미 열린 프로세스 핸들을 job 에 assign 한다.
@@ -262,7 +279,15 @@ mod imp {
             Ok(Self)
         }
 
+        pub fn new_detached() -> io::Result<Self> {
+            Ok(Self)
+        }
+
         pub fn assign_pid(&self, _pid: u32) -> io::Result<()> {
+            Ok(())
+        }
+
+        pub fn terminate(&self) -> io::Result<()> {
             Ok(())
         }
     }

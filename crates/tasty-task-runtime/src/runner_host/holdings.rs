@@ -80,6 +80,12 @@ impl HostExecutor {
     /// 그래야 회차가 끝날 때 `release_resources` 가 반환한다.
     pub(crate) fn adopt_restored_run(&mut self, workspace_id: u32, task: &Task) {
         self.held_handles.insert(task.id.clone(), workspace_id);
+        let proc = self
+            .ctx
+            .with_memory(|mem| super::stored_process(mem, workspace_id, &task.id));
+        if let Some(proc) = proc {
+            self.adopt_process(&task.id, proc);
+        }
         if let Some(name) = own_semaphore(task) {
             self.held_permits
                 .insert(task.id.clone(), (workspace_id, name, task.id.clone()));

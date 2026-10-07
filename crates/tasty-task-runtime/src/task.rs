@@ -166,6 +166,14 @@ impl TaskService {
             for d in downstream {
                 self.fire_waker_if_terminal(scope, workspace_id, d);
             }
+            // 러너가 있으면 다음 tick 이 종결을 흡수해 프로세스를 끝내고 점유를 정리한다. 없으면
+            // 지금 정리한다. 지켜보는 러너가 없어 취소한 Run 이 계속 실행되지 않게 하기 위해서다.
+            if !self.runner_registry().has_live_runner(workspace_id) {
+                let ctx = self.runner_context(scope);
+                for t in std::iter::once(task).chain(downstream) {
+                    crate::runner_thread::settle_ended_task(&ctx, workspace_id, t);
+                }
+            }
         }
         result
     }

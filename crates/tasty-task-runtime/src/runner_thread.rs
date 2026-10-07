@@ -5,7 +5,9 @@
 #[cfg(test)]
 mod attempt_tests;
 mod restart_holders;
+mod settle;
 use restart_holders::{purge_stale_lease_holders, purge_stale_semaphore_holders};
+pub(crate) use settle::settle_ended_task;
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -21,8 +23,8 @@ use tasty_memory::{HOST_OWNER, ListOpts, MemoryValue, Scope};
 
 use super::runner_host::{
     HANDLE_ATTEMPT_FIELD, HANDLE_KEY_PREFIX, HostExecutor, RUN_RESULT_LOST, RunnerContext,
-    evict_run_result, evict_task_side_keys, handle_key, load_run_result, release_own_holdings,
-    restored_postprocess_handle,
+    evict_run_result, evict_task_side_keys, handle_key, load_run_result, process_of_record,
+    release_own_holdings, restored_postprocess_handle,
 };
 use tasty_agent::runner::PollOutcome;
 
@@ -324,6 +326,15 @@ impl RunnerRegistry {
             false
         }
     }
+    /// workspace 에 멈추지 않은 러너가 있는가. 어느 engine 의 러너인지는 보지 않는다.
+    pub(crate) fn has_live_runner(&self, workspace: u32) -> bool {
+        self.lock_recovering()
+            .get(&workspace)
+            .is_some_and(|control| {
+                !control.stopping.load(Ordering::Acquire)
+                    && !control.crashed.load(Ordering::Acquire)
+            })
+    }
     pub(crate) fn scoped_liveness(
         &self,
         owner: &Arc<crate::task_waker::TaskWakerHub>,
@@ -463,10 +474,7 @@ fn reload_persistent_handles(
             HandleClassification::Alive(task_id, handle) => alive.push((task_id, handle)),
             HandleClassification::Dead(task_id, attempt, err) => dead.push((task_id, attempt, err)),
             HandleClassification::Stale(task_id) => stale.push(task_id),
-            HandleClassification::NotRunning(task) => {
-                stale.push(task.id.clone());
-                settled.push(*task);
-            }
+            HandleClassification::NotRunning(task) => settled.push(*task),
             HandleClassification::Precise(task_id, attempt, outcome) => {
                 precise.push((task_id, attempt, outcome))
             }
@@ -474,16 +482,24 @@ fn reload_persistent_handles(
     }
 
     evict_stale_handles(ctx, &scope, &stale);
-    release_settled_holdings(ctx, workspace_id, &settled);
+    for task in &settled {
+        settle_ended_task(ctx, workspace_id, task);
+    }
     mark_dead_tasks(ctx, workspace_id, &scope, now, &dead);
     finalize_precise_tasks(ctx, workspace_id, &scope, now, &precise);
 
-    if !alive.is_empty() || !dead.is_empty() || !stale.is_empty() || !precise.is_empty() {
+    if !alive.is_empty()
+        || !dead.is_empty()
+        || !stale.is_empty()
+        || !settled.is_empty()
+        || !precise.is_empty()
+    {
         tracing::info!(
-            "agent runner ws{workspace_id}: reload handles — alive={}, dead={}, stale={}, precise={}",
+            "agent runner ws{workspace_id}: reload handles — alive={}, dead={}, stale={}, ended={}, precise={}",
             alive.len(),
             dead.len(),
             stale.len(),
+            settled.len(),
             precise.len()
         );
     }
@@ -495,8 +511,9 @@ enum HandleClassification {
     Alive(TaskId, DispatchHandle),
     Dead(TaskId, Option<String>, String),
     Stale(TaskId),
-    /// handle 이 남았는데 task 는 이미 Running 이 아니다(러너가 꺼진 동안 취소 등). handle 을
-    /// 지우고, 그 task 가 자기 id 로 쥔 점유도 반환한다. 반환할 러너가 그때 없었기 때문이다.
+    /// handle 이 남았는데 task 는 이미 Running 이 아니다(러너가 꺼진 동안 취소 등). 남은 프로세스를
+    /// 끝내고 종료를 확인한 뒤 handle 을 지우고 그 task 가 자기 id 로 쥔 점유도 반환한다
+    /// ([`settle_ended_task`]). 반환할 러너가 그때 없었기 때문이다.
     NotRunning(Box<tasty_agent::Task>),
     Precise(TaskId, Option<String>, PollOutcome),
 }
@@ -516,6 +533,7 @@ fn classify_persisted_handle(
     let MemoryValue::Json(v) = e.value else {
         return HandleClassification::Stale(task_id);
     };
+    let proc = process_of_record(&v);
     let attempt = v
         .get(HANDLE_ATTEMPT_FIELD)
         .and_then(|a| a.as_str())
@@ -547,7 +565,8 @@ fn classify_persisted_handle(
 
     match &handle {
         DispatchHandle::ShellProcess { pid } => {
-            if tasty_agent::platform::process_alive::is_alive(*pid) {
+            // 저장한 시작 시각과 같아야 같은 프로세스다(PID 는 다시 쓰일 수 있다).
+            if proc.is_some_and(|p| p.is_running()) {
                 HandleClassification::Alive(task_id, handle)
             } else if let Some(outcome) = load_run_result(ctx, workspace_id, &task_id) {
                 HandleClassification::Precise(task_id, attempt, outcome)
@@ -605,18 +624,6 @@ fn evict_stale_handles(ctx: &RunnerContext, scope: &Scope, stale: &[TaskId]) {
             mem.delete(HOST_OWNER, scope, &handle_key(tid), None).unwrap_or_else(|error| {
                 tracing::warn!(%error, "failed to evict a stale task handle; reload will retry");
             });
-        }
-    });
-}
-
-/// Running 이 아닌 task 는 점유를 쥐지 않는다. 러너가 꺼진 동안 끝나(취소 등) 남은 점유를 반환한다.
-fn release_settled_holdings(ctx: &RunnerContext, workspace_id: u32, settled: &[tasty_agent::Task]) {
-    if settled.is_empty() {
-        return;
-    }
-    ctx.with_memory(|mem| {
-        for task in settled {
-            release_own_holdings(mem, workspace_id, task);
         }
     });
 }
@@ -1894,3 +1901,7 @@ mod lifecycle_tests {
 #[cfg(all(test, unix))]
 #[path = "runner_thread/postprocess_reload_tests.rs"]
 mod postprocess_reload_tests;
+
+#[cfg(all(test, unix))]
+#[path = "runner_thread/cancel_stop_tests.rs"]
+mod cancel_stop_tests;

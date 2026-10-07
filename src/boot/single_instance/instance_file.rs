@@ -140,75 +140,7 @@ pub(crate) fn remove_owned() {
 
 /// PID의 프로세스 시작 시각. 프로세스가 없거나 읽을 수 없으면 None.
 pub(crate) fn process_start_time(pid: u32) -> Option<u64> {
-    imp::process_start_time(pid)
-}
-
-#[cfg(target_os = "linux")]
-mod imp {
-    /// `/proc/<pid>/stat`의 22번째 필드(부팅 이후 clock tick).
-    pub(super) fn process_start_time(pid: u32) -> Option<u64> {
-        let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
-        parse_start_time(&stat)
-    }
-
-    /// 2번째 필드(comm)는 공백·괄호를 담을 수 있으므로 마지막 `)` 뒤부터 센다.
-    pub(super) fn parse_start_time(stat: &str) -> Option<u64> {
-        let (_, rest) = stat.rsplit_once(')')?;
-        rest.split_whitespace().nth(19)?.parse().ok()
-    }
-}
-
-#[cfg(target_os = "macos")]
-mod imp {
-    /// `proc_pidinfo(PROC_PIDTBSDINFO)`의 시작 시각(마이크로초).
-    pub(super) fn process_start_time(pid: u32) -> Option<u64> {
-        let mut info: libc::proc_bsdinfo = unsafe { std::mem::zeroed() };
-        let size = std::mem::size_of::<libc::proc_bsdinfo>() as libc::c_int;
-        // SAFETY: info는 proc_bsdinfo 크기의 쓰기 가능한 버퍼이고 size가 그 크기다.
-        let written = unsafe {
-            libc::proc_pidinfo(
-                pid as libc::c_int,
-                libc::PROC_PIDTBSDINFO,
-                0,
-                (&mut info as *mut libc::proc_bsdinfo).cast(),
-                size,
-            )
-        };
-        (written == size).then(|| info.pbi_start_tvsec * 1_000_000 + info.pbi_start_tvusec)
-    }
-}
-
-#[cfg(windows)]
-mod imp {
-    use windows::Win32::Foundation::{CloseHandle, FILETIME};
-    use windows::Win32::System::Threading::{
-        GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
-    };
-
-    /// `GetProcessTimes`의 생성 시각(100ns FILETIME).
-    pub(super) fn process_start_time(pid: u32) -> Option<u64> {
-        // SAFETY: 반환한 핸들은 아래에서 닫고, FILETIME 출력 버퍼는 지역 변수다.
-        unsafe {
-            let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
-            let mut created = FILETIME::default();
-            let mut exited = FILETIME::default();
-            let mut kernel = FILETIME::default();
-            let mut user = FILETIME::default();
-            let result = GetProcessTimes(handle, &mut created, &mut exited, &mut kernel, &mut user);
-            if let Err(e) = CloseHandle(handle) {
-                tracing::debug!("CloseHandle after GetProcessTimes failed: {e}");
-            }
-            result.ok()?;
-            Some((u64::from(created.dwHighDateTime) << 32) | u64::from(created.dwLowDateTime))
-        }
-    }
-}
-
-#[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
-mod imp {
-    pub(super) fn process_start_time(_pid: u32) -> Option<u64> {
-        None
-    }
+    tasty_agent::platform::process_start::start_time(pid)
 }
 
 #[cfg(test)]
@@ -270,16 +202,5 @@ mod tests {
             read_state(home.path()),
             InstanceState::Booting(BootingReason::Unreadable(_))
         ));
-    }
-
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn the_linux_start_time_skips_a_command_name_with_spaces_and_parens() {
-        let mut fields = vec!["S".to_string()];
-        fields.extend((4..=21).map(|n| n.to_string()));
-        fields.push("987654".into());
-        fields.push("0".into());
-        let stat = format!("42 (we (ird) name) {}", fields.join(" "));
-        assert_eq!(imp::parse_start_time(&stat), Some(987654));
     }
 }

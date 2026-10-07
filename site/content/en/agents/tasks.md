@@ -1,4 +1,4 @@
-<!-- source-hash: ed8917b88d0d -->
+<!-- source-hash: 90adb8ce088d -->
 <a id="task-dag"></a>
 
 # Task workflows (DAG)
@@ -272,6 +272,7 @@ tasty agent task-purge --workspace-id 2 --states succeeded
 - `task-set-result` is for reporting that something the runner did not run is done — a check a person does by hand, for example.
   - A typed task gets an attempt ID (`<task ID>#<number>`) each time it runs. Name the attempt with `--attempt-id`. If the task has run again since, the old report is refused instead of finishing the new run.
   - Sending the same report again returns the same answer as the first time. A different result for an attempt that has already finished is refused.
+- Cancelling a running command task with `task-cancel` stops the command and the processes it started. The semaphore or lease is given back only after they have ended, so a task waiting for the same resource starts after the earlier command has really stopped. This also happens right away when the runner is off. On Windows, for a command started before Tasty restarted, only that command itself is stopped.
 - `task-delete` is refused while another task references it, and tells you the ID of the referencing side. A running task has to be cancelled first.
 
 ## Receiving finished work as events

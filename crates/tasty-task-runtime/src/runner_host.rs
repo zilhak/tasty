@@ -8,7 +8,9 @@ mod clock;
 mod command_inputs;
 mod holdings;
 mod postprocess;
+mod run_group;
 mod run_result;
+mod run_stop;
 mod store_keys;
 mod typed_inputs;
 #[cfg(test)]
@@ -28,6 +30,7 @@ pub(crate) use holdings::{own_lease, own_semaphore, release_own_holdings, resume
 #[cfg(all(test, unix))]
 pub(crate) use postprocess::postprocess_result_key;
 pub(crate) use postprocess::restored_handle as restored_postprocess_handle;
+pub(crate) use run_stop::{RunProc, process_of_record, stored_process};
 
 use std::collections::HashMap;
 use std::sync::atomic::AtomicU64;
@@ -143,7 +146,7 @@ impl RunnerContext {
 }
 
 /// watcher가 자식 종료와 두 출력 파이프의 EOF를 기다린 뒤 결과를 채운다.
-/// 취소·permit 해제는 자식을 종료시키지 않는다. executor가 사라져도 watcher는 분리되어 계속 기다릴 수 있다.
+/// executor가 사라져도(러너 정지) watcher는 분리되어 계속 기다린다. 취소는 [`run_group`] 으로 끝낸다.
 struct ShellChildEntry {
     result: Arc<Mutex<Option<PollOutcome>>>,
     _watcher: thread::JoinHandle<()>,
@@ -164,6 +167,10 @@ pub(crate) struct HostExecutor {
     /// workspace executor의 모든 PolledDispatch가 공유한다. 한 poll이라도 성공하면 유예를 초기화한다.
     injector_grace_deadline_ms: Option<u64>,
     postprocess: postprocess::PostprocessRuns,
+    /// task 별로 마지막에 시작한(또는 재시작 뒤 넘겨받은) 프로세스. 끝낼 대상을 PID·시작 시각으로 확인한다.
+    run_procs: HashMap<TaskId, RunProc>,
+    /// 종결돼 프로세스 묶음을 끝냈고 종료를 기다리는 task. 끝난 것을 확인한 뒤에야 점유를 놓는다.
+    stopping_runs: Vec<TaskId>,
 }
 
 impl HostExecutor {
@@ -177,6 +184,8 @@ impl HostExecutor {
             held_turns: HashMap::new(),
             injector_grace_deadline_ms: None,
             postprocess: Default::default(),
+            run_procs: HashMap::new(),
+            stopping_runs: Vec::new(),
         }
     }
 
@@ -339,7 +348,11 @@ impl HostExecutor {
             return;
         }
         let value = match serde_json::to_value(handle) {
-            Ok(v) => handle_value(v, attempt),
+            Ok(v) => run_stop::with_started_at(
+                handle_value(v, attempt),
+                self.run_procs.get(task_id),
+                handle,
+            ),
             Err(e) => {
                 tracing::warn!("persist handle {task_id} serialize: {e}");
                 return;
@@ -514,8 +527,8 @@ impl TaskExecutor for HostExecutor {
     }
 
     fn release_permit(&mut self, task_id: &TaskId) {
-        // 실행 중인 후처리는 취소하고, 종료를 확인한 뒤(maintain)에야 자원을 놓는다.
-        if !self.postprocess.cancel(task_id) {
+        // 실행 중인 후처리·Run 은 끝내고, 종료를 확인한 뒤(maintain)에야 자원을 놓는다.
+        if !self.postprocess.cancel(task_id) && !self.stop_run(task_id) {
             self.release_resources(task_id);
         }
     }
@@ -528,12 +541,16 @@ impl TaskExecutor for HostExecutor {
         for task_id in self.postprocess.terminated() {
             self.release_resources(&task_id);
         }
+        for task_id in self.stopped_runs() {
+            self.release_resources(&task_id);
+        }
     }
 }
 
 impl HostExecutor {
     fn release_resources(&mut self, task_id: &TaskId) {
-        // permit뿐 아니라 lease·저장된 handle도 정리한다. Run 자식 프로세스는 종료시키지 않는다.
+        // permit뿐 아니라 lease·저장된 handle도 정리한다. 프로세스는 이미 끝났다(release_permit).
+        self.run_procs.remove(task_id);
         if let Some((ws, name, holder)) = self.held_permits.remove(task_id) {
             let res: Result<(), String> = self.ctx.with_memory(|mem| {
                 let mut store = SemaphoreStore::new(mem, HOST_OWNER);
@@ -644,6 +661,7 @@ impl HostExecutor {
                 }
                 cmd.stdout(std::process::Stdio::piped());
                 cmd.stderr(std::process::Stdio::piped());
+                run_group::configure(&mut cmd);
                 if stdin_payload.is_some() {
                     cmd.stdin(std::process::Stdio::piped());
                 }
@@ -651,6 +669,10 @@ impl HostExecutor {
                     .spawn()
                     .map_err(|e| format!("Run spawn '{program}': {e}"))?;
                 let pid = child.id();
+                // 자식을 회수하기 전이라 PID 가 다른 프로세스에 쓰이지 않는다.
+                let started_at = run_group::adopt(pid);
+                self.run_procs
+                    .insert(task.id.clone(), RunProc { pid, started_at });
                 if let (Some(payload), Some(mut pipe)) = (stdin_payload, child.stdin.take()) {
                     // 자식이 stdin 을 읽지 않아도 실행이 막히지 않도록 별도 스레드에서 쓰고 닫는다.
                     thread::Builder::new()
@@ -686,6 +708,7 @@ impl HostExecutor {
                     .name(format!("agent-shell-watcher-pid{pid}"))
                     .spawn(move || {
                         let status = child.wait();
+                        run_group::forget(pid);
                         let stdout = stdout_thread.join().unwrap_or_default();
                         let stderr = stderr_thread.join().unwrap_or_default();
                         let outcome = match status {
@@ -946,10 +969,10 @@ impl HostExecutor {
                     }
                     return PollOutcome::Active;
                 }
-                // 이 executor의 watcher가 없으면(재시작 뒤 복원한 handle) PID 생존 여부만 본다. 재사용된
-                // PID가 원래 자식인지 확인하지 않는다. 살아 있는 동안은 permit 을 쥐고 기다린다.
+                // 이 executor의 watcher가 없으면(재시작 뒤 복원한 handle) 저장한 PID·시작 시각으로
+                // 같은 프로세스가 살아 있는지 본다. 살아 있는 동안은 permit 을 쥐고 기다린다.
                 // 끝난 뒤에는 그 종료 코드를 받을 수 없으므로(부모가 아니다) 결과 불명으로 둔다.
-                if tasty_agent::platform::process_alive::is_alive(*pid) {
+                if self.restored_run_alive(*pid) {
                     return PollOutcome::Active;
                 }
                 PollOutcome::Lost(format!(
