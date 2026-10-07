@@ -10,18 +10,28 @@ pub struct GraphEdge<'a> {
     pub selection: Option<&'static str>,
 }
 
+/// DOT·DAG 화면이 그릴 간선. binding 이 이미 순서를 뜻하므로 같은 쌍의 depends_on 은 그리지 않는다.
+pub fn drawn_edges(edges: Vec<GraphEdge<'_>>) -> Vec<GraphEdge<'_>> {
+    let bound: Vec<(&TaskId, &TaskId)> = edges
+        .iter()
+        .filter(|e| e.kind == "binding")
+        .map(|e| (e.from, e.to))
+        .collect();
+    edges
+        .into_iter()
+        .filter(|e| e.kind != "depends_on" || !bound.contains(&(e.from, e.to)))
+        .collect()
+}
+
 /// 직접 참조는 그대로 연결한다. inline fallback은 실패 뒤 만든 작업의 fallback_of를 역조회한다.
 /// 원래 작업이 삭제될 수 있어 fallback_of 대상이 없으면 그 연결은 생략한다.
-/// 같은 원본에서 depends_on 과 binding 이 함께 오면 binding 만 남긴다. binding 이 이미 순서를 뜻하므로
-/// JSON·DOT·DAG 화면이 같은 한 줄을 보인다.
+/// 같은 쌍에 depends_on 과 binding 이 함께 있어도 둘 다 낸다. JSON 은 선언을 그대로 전하는 API 이고,
+/// 한 줄로 줄이는 것은 [`drawn_edges`] 를 쓰는 그리기 쪽의 일이다.
 pub fn collect_graph_edges(tasks: &[Task]) -> Vec<GraphEdge<'_>> {
     let mut edges = Vec::new();
     for t in tasks {
         let bound = tasty_agent::task::binding_task_ids(t);
         for dep in &t.depends_on {
-            if bound.contains(&dep) {
-                continue;
-            }
             edges.push(GraphEdge {
                 from: dep,
                 to: &t.id,

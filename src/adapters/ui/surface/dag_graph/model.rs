@@ -3,7 +3,9 @@
 use tasty_agent::{DagSummary, Task, TaskCommand, TaskState};
 
 use crate::i18n::{t, t_fmt, t_fmt2};
-use tasty_task_runtime::graph_view::{collect_graph_edges, on_failure_kind, task_command_kind};
+use tasty_task_runtime::graph_view::{
+    collect_graph_edges, drawn_edges, on_failure_kind, task_command_kind,
+};
 
 /// 색·기호·번역 라벨로 함께 표시하는 노드 상태.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -362,7 +364,7 @@ pub fn build_graph(summary: &DagSummary, tasks: &[Task]) -> DagGraphData {
 
     let mut edges = Vec::new();
     let mut incoming: Vec<Vec<(usize, DagRelation)>> = vec![Vec::new(); tasks.len()];
-    for edge in collect_graph_edges(tasks) {
+    for edge in drawn_edges(collect_graph_edges(tasks)) {
         let (Some(&from), Some(&to)) = (index.get(edge.from.as_str()), index.get(edge.to.as_str()))
         else {
             continue;

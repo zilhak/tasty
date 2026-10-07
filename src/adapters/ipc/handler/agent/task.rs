@@ -14,7 +14,9 @@ use tasty_agent::{
 };
 use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
-use tasty_task_runtime::graph_view::{collect_graph_edges, on_failure_kind, task_command_kind};
+use tasty_task_runtime::graph_view::{
+    collect_graph_edges, drawn_edges, on_failure_kind, task_command_kind,
+};
 
 use super::super::memory::mark_durability;
 use super::{agent_err_to_response, escape_dot, now_ms, task_id_param, workspace_id_param};
@@ -513,7 +515,7 @@ fn render_graph_dot(tasks: &[Task]) -> String {
             color
         ));
     }
-    for edge in collect_graph_edges(tasks) {
+    for edge in drawn_edges(collect_graph_edges(tasks)) {
         out.push_str(&format!(
             "  \"{}\" -> \"{}\"{};\n",
             edge.from,
@@ -1462,7 +1464,7 @@ mod graph_edge_tests {
     /// 같은 원본을 depends_on 과 binding 으로 함께 가리키면 binding 한 줄만 나온다. one_of 는
     /// 원본마다 한 줄이다.
     #[test]
-    fn binding_replaces_depends_on_on_the_same_pair() {
+    fn binding_replaces_depends_on_only_where_the_edge_is_drawn() {
         let a = task("a", "a", TaskState::Succeeded);
         let b = task("b", "b", TaskState::Succeeded);
         let c = task("c", "c", TaskState::Succeeded);
@@ -1478,11 +1480,23 @@ mod graph_edge_tests {
             .expect("contract"),
         );
         let tasks = [a, b, c, join];
+        let want = |from: &str, kind: &'static str| (from.to_string(), "join".to_string(), kind);
         let mut edges = edges_debug(&collect_graph_edges(&tasks));
         edges.sort();
-        let want = |from: &str, kind: &'static str| (from.to_string(), "join".to_string(), kind);
         assert_eq!(
             edges,
+            vec![
+                want("a", "binding"),
+                want("a", "depends_on"),
+                want("b", "binding"),
+                want("c", "depends_on"),
+            ],
+            "the JSON edge list keeps both declarations"
+        );
+        let mut drawn = edges_debug(&drawn_edges(collect_graph_edges(&tasks)));
+        drawn.sort();
+        assert_eq!(
+            drawn,
             vec![
                 want("a", "binding"),
                 want("b", "binding"),

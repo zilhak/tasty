@@ -43,7 +43,8 @@ tasty split --level surface --target-surface <SID> --type dag_graph
 - **엣지**는 관계 5종을 색과 파선으로 함께 구분한다: `depends_on` 실선, `fallback` 6·3 파선,
   `reduce` 2·3 점선, `binding`(v2 입력 연결, 상세 라벨 "binds input") 8·2·2·2 일점쇄선,
   `transition`(v2 전이) 10·4 긴 파선. 같은 원본에서 `depends_on` 과 `binding` 이 함께 오면
-  binding 한 줄만 그린다(binding 이 순서를 이미 뜻한다). `one_of` binding 은 원본마다 한 줄이다.
+  binding 한 줄만 그린다(binding 이 순서를 이미 뜻한다). 이 축약은 그리기에서만 하고
+  `agent.task_graph` JSON 엣지는 두 선언을 모두 낸다. `one_of` binding 은 원본마다 한 줄이다.
   전이 엣지는 선택 상태에 따라 굵기와 불투명도만 바뀐다: `pending` 1px, `selected` 2px,
   `not_selected`·`unavailable` 은 죽은 경로처럼 흐리게 둔다(숨기지 않는다).
   선택 노드에 연결된 엣지는 강조색으로 표시한다.
