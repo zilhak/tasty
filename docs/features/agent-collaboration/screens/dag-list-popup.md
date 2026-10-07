@@ -48,6 +48,9 @@ trailing 클러스터. trailing 은 세 조각이다:
   `-label` 색상에서 읽는다.
 - **`완료/전체`** — 고정폭 숫자로 정확한 수를 보여준다. 진행 막대는 쓰지 않는다.
   완료 수에는 성공뿐 아니라 실패·취소·건너뜀처럼 더 이상 진행되지 않는 task도 포함한다.
+  건너뛴 task 가 있으면 같은 글자 뒤에 ` · {n} skipped ({k} not selected)` 를 붙인다. 괄호는
+  경로가 선택되지 않아 건너뛴 task(`state_counts.not_selected`)가 있을 때만 붙고, 누를 수 없다.
+  문구는 `dag.count.skipped` · `dag.count.not_selected` 다.
 
 ### 상태 필터
 

@@ -1850,6 +1850,10 @@ progress = "{} / {} 完了"
 no_dag = "DAG なし"
 entry = "{}（タスク {} 件）"
 
+[dag.count]
+skipped = "{} 件スキップ"
+not_selected = "(未選択 {} 件)"
+
 [dag.runner]
 running = "ランナー · {} 件実行 · 待機 {} 件"
 idle = "ランナー停止 · 作業なし"

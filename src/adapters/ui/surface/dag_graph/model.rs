@@ -221,6 +221,23 @@ impl NodeSkip {
     }
 }
 
+/// 완료/전체 뒤에 붙이는 건너뜀 수 ` · {n} skipped ({k} not selected)`.
+/// 건너뛴 task 가 없으면 빈 문자열이고, 괄호는 미선택이 있을 때만 붙는다.
+pub fn skip_count_suffix(skipped: usize, not_selected: usize) -> String {
+    if skipped == 0 {
+        return String::new();
+    }
+    let mut text = format!(
+        " \u{b7} {}",
+        t_fmt("dag.count.skipped", &skipped.to_string())
+    );
+    if not_selected > 0 {
+        text.push(' ');
+        text.push_str(&t_fmt("dag.count.not_selected", &not_selected.to_string()));
+    }
+    text
+}
+
 /// task 종류의 철자 라벨.
 pub fn kind_label(command_kind: &str) -> &'static str {
     match command_kind {
@@ -308,6 +325,16 @@ pub struct DagGraphData {
 impl DagGraphData {
     pub fn total(&self) -> usize {
         self.nodes.len()
+    }
+
+    /// 건너뛴 task 수와 그중 경로가 선택되지 않은 수.
+    pub fn skip_counts(&self) -> (usize, usize) {
+        let skipped = self.nodes.iter().filter(|n| n.status == DagStatus::Skipped);
+        let not_selected = skipped
+            .clone()
+            .filter(|n| matches!(n.skip, Some(NodeSkip::BranchNotSelected)))
+            .count();
+        (skipped.count(), not_selected)
     }
 
     pub fn index_of(&self, id: &str) -> Option<usize> {
@@ -741,5 +768,36 @@ mod tests {
         assert_eq!(glyphs.len(), all.len(), "{glyphs:?}");
         assert_eq!(DagStatus::Skipped.glyph(), "\u{2298}");
         assert_eq!(DagStatus::Cancelled.glyph(), "\u{2212}");
+    }
+
+    /// 건너뜀 수는 하나 이상일 때만, 미선택 괄호는 미선택이 있을 때만 붙는다.
+    #[test]
+    fn skip_count_suffix_shows_only_what_is_there() {
+        crate::i18n::init("en");
+        assert_eq!(skip_count_suffix(0, 0), "");
+        let skipped = skip_count_suffix(2, 0);
+        assert!(skipped.starts_with(" \u{b7} "), "{skipped:?}");
+        assert!(
+            skipped.contains('2') && !skipped.contains('('),
+            "{skipped:?}"
+        );
+        assert_eq!(
+            skip_count_suffix(3, 1),
+            " \u{b7} 3 skipped (1 not selected)"
+        );
+    }
+
+    /// 탭 머리글의 건너뜀 수는 skipped 노드를, 미선택 수는 그중 경로 미선택을 센다.
+    #[test]
+    fn graph_skip_counts_split_out_the_not_selected_branch() {
+        let mut fix = task("fix", TaskState::Skipped);
+        fix.skip = Some(SkipReason::BranchNotSelected);
+        let mut notify = task("notify", TaskState::Skipped);
+        notify.skip = Some(SkipReason::UpstreamUnavailable {
+            source: "a".into(),
+            source_state: "failed".into(),
+        });
+        let graph = build_graph(&summary(), &[task("a", TaskState::Succeeded), fix, notify]);
+        assert_eq!(graph.skip_counts(), (2, 1));
     }
 }

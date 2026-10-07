@@ -119,11 +119,16 @@ fn identity_group(
     }
     if let Some(graph) = &data.current {
         hspace(ui, theme.spacing_sm);
+        let (skipped, not_selected) = graph.skip_counts();
         ui.label(
-            egui::RichText::new(t_fmt2(
-                "dag.header.progress",
-                &graph.done.to_string(),
-                &graph.total().to_string(),
+            egui::RichText::new(format!(
+                "{}{}",
+                t_fmt2(
+                    "dag.header.progress",
+                    &graph.done.to_string(),
+                    &graph.total().to_string(),
+                ),
+                super::model::skip_count_suffix(skipped, not_selected)
             ))
             .size(theme.dag_row_count_font_size().value())
             .color(theme.dag_row_count_fg().to_egui()),

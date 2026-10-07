@@ -1856,6 +1856,10 @@ refresh = "Refresh now"
 no_dag = "No DAG"
 entry = "{} ({} tasks)"
 
+[dag.count]
+skipped = "{} skipped"
+not_selected = "({} not selected)"
+
 [dag.runner]
 running = "Runner · {} running · {} ready"
 idle = "Runner stopped · no work"

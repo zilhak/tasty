@@ -269,6 +269,27 @@ pub enum Skip {
     UpstreamUnavailable { source: String, state: String },
 }
 
+/// 완료/전체 뒤의 건너뜀 수 — 본체 `skip_count_suffix` 와 같은 규칙.
+/// 건너뛴 task 가 있을 때만 붙고, 괄호는 미선택이 있을 때만 붙는다.
+pub fn skip_count_suffix(nodes: &[Node]) -> String {
+    let skipped: Vec<&Node> = nodes
+        .iter()
+        .filter(|n| n.status == Status::Skipped)
+        .collect();
+    if skipped.is_empty() {
+        return String::new();
+    }
+    let not_selected = skipped
+        .iter()
+        .filter(|n| matches!(n.skip, Some(Skip::BranchNotSelected)))
+        .count();
+    let mut text = format!(" \u{b7} {} skipped", skipped.len());
+    if not_selected > 0 {
+        text.push_str(&format!(" ({not_selected} not selected)"));
+    }
+    text
+}
+
 /// 카드 한 장이 표현하는 task.
 #[derive(Debug, Clone)]
 pub struct Node {

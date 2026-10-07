@@ -1850,6 +1850,10 @@ progress = "{} / {} 완료"
 no_dag = "DAG 없음"
 entry = "{} (작업 {}개)"
 
+[dag.count]
+skipped = "{}개 건너뜀"
+not_selected = "(선택 안 됨 {}개)"
+
 [dag.runner]
 running = "러너 · {} 개 실행 · 대기 {} 개"
 idle = "러너 정지 · 할 일 없음"

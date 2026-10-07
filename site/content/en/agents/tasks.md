@@ -1,4 +1,4 @@
-<!-- source-hash: f3429c57bb37 -->
+<!-- source-hash: c082460d2450 -->
 <a id="task-dag"></a>
 
 # Task workflows (DAG)
@@ -228,6 +228,8 @@ There are two screens for seeing how the work flows. Both look at the same data.
 The lines in the graph differ by relation. A dependency that only sets the order is solid, an input connection (`bindings`) is a teal dash-dot line, and a branch chosen from a result (`transitions`) is a lavender dashed line. A branch that was chosen is drawn thicker, and branches that were not chosen or did not run are faded. When two tasks have both an order dependency and an input connection, only the input connection is drawn. A task skipped because its branch was not chosen is marked **Not selected**, and hovering over the node shows why it was skipped. `task-graph --format dot` draws the same distinctions.
 
 The small picture at the top left of a node is the task kind: a terminal for a shell command, a plug for an internal call, stacked layers for collecting results, a padlock for a wait, and a speech bubble for one Claude or Codex turn. Claude and Codex share the speech bubble; click the node to see which one ran it in the details.
+
+Each list row and the top line of a DAG tab show finished tasks out of the total. When some tasks were skipped, the count follows, as in `· 2 skipped (1 not selected)`; the parenthesis appears only when some of them were skipped because another branch was chosen.
 
 You can run several unrelated graphs in one Workspace. The list groups a chunk connected by dependencies into a single DAG. Attach `--metadata '{"dag":"name"}'` to a task and everything with the same name is grouped together regardless of whether it is connected.
 

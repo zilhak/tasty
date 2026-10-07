@@ -97,7 +97,11 @@ fn header(
             ),
         );
     let name_font = egui::FontId::proportional(theme.font_size_body.value());
-    let count = format!("{} tasks", graph.nodes.len());
+    let count = format!(
+        "{} tasks{}",
+        graph.nodes.len(),
+        super::skip_count_suffix(&graph.nodes)
+    );
     let count_font = egui::FontId::monospace(theme.font_size_caption.value());
     let count_w = super::node::text_width(ui, &count, &count_font);
     let name_x = ident.min.x + icon + gap;

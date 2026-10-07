@@ -79,10 +79,15 @@ pub fn trailing(ui: &mut egui::Ui, theme: &Theme, entry: &Entry) {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = theme.dag_row_summary_gap().value();
         ui.label(
-            egui::RichText::new(format!("{}/{}", entry.done(), entry.total()))
-                .monospace()
-                .size(theme.dag_row_count_font_size().value())
-                .color(theme.dag_row_count_fg().to_egui()),
+            egui::RichText::new(format!(
+                "{}/{}{}",
+                entry.done(),
+                entry.total(),
+                super::skip_count_suffix(&entry.graph.nodes)
+            ))
+            .monospace()
+            .size(theme.dag_row_count_font_size().value())
+            .color(theme.dag_row_count_fg().to_egui()),
         );
         let status = entry.rollup();
         ui.label(
@@ -158,6 +163,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("label", "13 — DAG name"),
             ("description", "11 — workspace · last update"),
             ("trailing", "origin tag · rollup · done/total"),
+            (
+                "skip count",
+                "after done/total: · {n} skipped ({k} not selected) — only when n > 0, parenthesis only when k > 0 · same mono caption · dag-row-count-fg · not clickable · also on the DAG tab header",
+            ),
             ("counter", "mono, never a progress bar"),
             ("scope", "all workspaces, filterable"),
         ],

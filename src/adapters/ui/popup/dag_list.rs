@@ -20,7 +20,7 @@ use crate::adapters::ui::surface::dag_graph::{
     DagChrome, DagTarget,
     chrome::{ChromeAction, draw_detail_backbar_actions},
     draw_dag_graph,
-    model::{DagStatus, format_clock},
+    model::{DagStatus, format_clock, skip_count_suffix},
     node::status_colors,
     view::{DagGraphView, POLL_INTERVAL},
 };
@@ -55,6 +55,9 @@ pub struct DagRow {
     rollup: DagStatus,
     done: usize,
     total: usize,
+    /// 건너뛴 task 수와 그중 경로가 선택되지 않은 수. 완료/전체 뒤에 붙인다.
+    skipped: usize,
+    not_selected: usize,
     updated_at: u64,
 }
 
@@ -169,6 +172,8 @@ impl DagListState {
                                 rollup: DagStatus::from_name(s.rollup_state),
                                 done: c.succeeded + c.failed + c.cancelled + c.skipped,
                                 total: s.task_count,
+                                skipped: c.skipped,
+                                not_selected: c.not_selected,
                                 updated_at: s.updated_at,
                             }
                         })
@@ -497,16 +502,21 @@ fn draw_list(
     close
 }
 
-/// 출처·상태와 정확한 완료/전체 개수를 표시한다.
+/// 출처·상태와 정확한 완료/전체 개수, 건너뛴 수를 표시한다.
 fn draw_row_trailing(ui: &mut egui::Ui, theme: &Theme, row: &DagRow) {
     // trailing 영역은 오른쪽부터 채우므로 화면 순서의 역순으로 그린다.
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = theme.dag_row_summary_gap().value();
         ui.label(
-            egui::RichText::new(format!("{}/{}", row.done, row.total))
-                .monospace()
-                .size(theme.dag_row_count_font_size().value())
-                .color(theme.dag_row_count_fg().to_egui()),
+            egui::RichText::new(format!(
+                "{}/{}{}",
+                row.done,
+                row.total,
+                skip_count_suffix(row.skipped, row.not_selected)
+            ))
+            .monospace()
+            .size(theme.dag_row_count_font_size().value())
+            .color(theme.dag_row_count_fg().to_egui()),
         );
         // 작은 글자의 대비를 확보하는 상태별 label 색을 사용한다.
         let (_, _, label_fg) = status_colors(theme, row.rollup);
@@ -588,6 +598,8 @@ mod tests {
             rollup: DagStatus::Waiting,
             done: 0,
             total: 0,
+            skipped: 0,
+            not_selected: 0,
             updated_at,
         }
     }
