@@ -22,6 +22,8 @@ use tasty_ipc::admission::{
 use tasty_ipc::stream_hub::{StreamClientId, StreamContext, StreamInbound};
 
 mod accept_clock;
+#[cfg(windows)]
+mod closing_drain;
 mod first_line;
 
 use tasty_ipc::protocol::MAX_REQUEST_LINE_BYTES;
@@ -813,6 +815,8 @@ impl TcpIpcServer {
         if let Err(e) = flush_result {
             tracing::debug!("IPC oversize refusal flush failed for {peer:?}: {e}");
         }
+        #[cfg(windows)]
+        closing_drain::drain_before_close(writer);
     }
 
     /// 첫 줄 기한 만료를 알리고 연결을 끝낸다. 미완성 줄이므로 id는 null이다.
