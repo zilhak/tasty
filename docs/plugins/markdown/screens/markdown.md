@@ -243,6 +243,8 @@ semantic accent(`accent_primary`/`accent_info`/`accent_success`/`accent_warning`
 `accent_attention`/`accent_danger`/`accent_agent`)를 나눠 쓴다 — 전용 색 토큰 신설 없음,
 겹치는 조합은 아이콘·라벨 텍스트로 구분). 상자 바탕은 종류 색을 `tint-fill-alpha`(0.12, CSS 알파 31)로 칠한다(`render/callout.rs::tint_fill_alpha`). highlight.js 의 diff 추가·삭제 줄 배경도 같은 알파로 `accent_success`·`accent_danger`를 칠한다.
 
+콜아웃 머리는 접힘 마커 → 종류 아이콘 → 라벨 순서이고 사이 간격은 `md_callout_icon_gap()`(space-xs 4)이다. 종류 아이콘은 `icon_glyph_size_md`(16)이며, 마커 없는 콜아웃의 라벨은 아이콘과 간격만큼(`calc(var(--md-callout-icon) + var(--md-callout-icon-gap))`, 20) 들여 쓴다. 접히는 콜아웃은 브라우저 기본 `<details>` 마커를 숨기고(`list-style:none`, `::-webkit-details-marker{display:none}`) summary 배경에 종류 색 chevron을 `md_callout_marker_size()`(icon-size-sm 14) 크기로 그린다. 닫혀 있으면 `chevronRight`, 열리면 `chevronDown`이다(`render/callout.rs::alert_css`). 세 값은 `theme_css()`가 `--md-callout-icon`·`--md-callout-icon-gap`·`--md-callout-marker`로 쓴다.
+
 태그가 없거나 지원하지 않는 종류의 Markdown 인용문은 일반 인용문으로 남는다.
 콜아웃 변환은 파서 이벤트와 인용문 첫 줄을 처리한다. Raw HTML에 class만 넣었다고
 자동으로 data-label을 추가하지는 않는다. 다만 sanitize가 class·data-label·summary를

@@ -111,11 +111,12 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "body",
                 "13 · text-secondary · CSS line-height (full control)",
             ),
-            ("h1", "Heading anchor prose-h1 20 · text-primary"),
+            ("h1", "prose-h1 — the only cap-exempt content size"),
             (
-                "h2–h6",
-                "CSS 5-step interpolation 20→13 (--md-h1…--md-h6) · strong",
+                "headings",
+                "h1 20 → h6 13, 5-step CSS interpolation (20 · 18.6 · 17.2 · 15.8 · 14.4 · 13)",
             ),
+            ("heading style", "600 · text-primary at every level"),
             ("leading", "CSS line-height 1.6 · block spacing CSS"),
             ("small", "11 · muted"),
             (
@@ -144,7 +145,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("states", "failed=accent-danger · empty=muted"),
             (
                 "callouts",
-                "blockquote + collapsible details — md-quote-bar-width bar · type fill at tint-fill-alpha · 16px icon · radius",
+                "blockquote + collapsible details — md-quote-bar-width bar · type fill at tint-fill-alpha · 16px icon · radius · marker → icon → label 4 each (md-callout-icon-gap) · chevron marker md-callout-marker-size, right closed / down open",
             ),
         ],
         &[
@@ -156,19 +157,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ),
             TokenChip::new(
                 "text-primary",
-                "h1–h3 · bold",
+                "headings · strong",
                 theme.text_primary().to_egui(),
             ),
-            TokenChip::new(
-                "text-secondary",
-                "body · h4",
-                theme.text_secondary().to_egui(),
-            ),
-            TokenChip::new(
-                "text-muted",
-                "h5/h6 · caption",
-                theme.text_muted().to_egui(),
-            ),
+            TokenChip::new("text-secondary", "body", theme.text_secondary().to_egui()),
+            TokenChip::new("text-muted", "caption", theme.text_muted().to_egui()),
             TokenChip::new(
                 "accent-primary",
                 "link · note alert",

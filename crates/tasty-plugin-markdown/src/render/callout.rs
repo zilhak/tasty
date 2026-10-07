@@ -192,11 +192,22 @@ pub(super) fn alert_css(theme: &Theme) -> String {
     let mut rules = String::new();
     for kind in CALLOUT_KINDS {
         let color = (kind.accent)(theme);
-        let icon_uri = alert_icon_data_uri(kind.icon.body, kind.icon.filled, &color.to_hex());
+        let hex = color.to_hex();
+        let icon_uri = alert_icon_data_uri(kind.icon.body, kind.icon.filled, &hex);
+        // 접힘 마커는 summary 배경의 chevron 이다. 닫히면 오른쪽, 열리면 아래를 가리킨다.
+        let closed_uri = alert_icon_data_uri(
+            tasty_icons::CHEVRON_RIGHT.body,
+            tasty_icons::CHEVRON_RIGHT.filled,
+            &hex,
+        );
+        let open_uri = alert_icon_data_uri(
+            tasty_icons::CHEVRON_DOWN.body,
+            tasty_icons::CHEVRON_DOWN.filled,
+            &hex,
+        );
         rules.push_str(&format!(
-            ".{class}{{border-left-color:{hex};background:{bg};}}.{class}::before,.{class}>summary::before{{color:{hex};background-image:url(\"{icon_uri}\");}}\n",
+            ".{class}{{border-left-color:{hex};background:{bg};}}.{class}::before,.{class}>summary::before{{color:{hex};background-image:url(\"{icon_uri}\");}}.{class}>summary{{background-image:url(\"{closed_uri}\");}}.{class}[open]>summary{{background-image:url(\"{open_uri}\");}}\n",
             class = kind.class,
-            hex = color.to_hex(),
             bg = color.with_alpha(bg_alpha).to_hex(),
         ));
     }
@@ -234,5 +245,36 @@ mod tests {
             .with_alpha(PREVIOUS_CSS_ALPHA)
             .to_hex();
         assert!(css.contains(&format!("background:{note};")), "{css}");
+    }
+
+    /// 접힘 마커는 종류 색 chevron 이다. 닫힘은 오른쪽, 열림은 아래 글리프로 서로 다르다.
+    #[test]
+    fn foldable_marker_is_a_kind_coloured_chevron_that_turns_when_open() {
+        let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
+        let css = super::alert_css(&theme);
+        let hex = theme.accent_primary().to_hex();
+        let closed = super::alert_icon_data_uri(
+            tasty_icons::CHEVRON_RIGHT.body,
+            tasty_icons::CHEVRON_RIGHT.filled,
+            &hex,
+        );
+        let open = super::alert_icon_data_uri(
+            tasty_icons::CHEVRON_DOWN.body,
+            tasty_icons::CHEVRON_DOWN.filled,
+            &hex,
+        );
+        assert_ne!(closed, open);
+        assert!(
+            css.contains(&format!(
+                ".markdown-alert-note>summary{{background-image:url(\"{closed}\");}}"
+            )),
+            "{css}"
+        );
+        assert!(
+            css.contains(&format!(
+                ".markdown-alert-note[open]>summary{{background-image:url(\"{open}\");}}"
+            )),
+            "{css}"
+        );
     }
 }

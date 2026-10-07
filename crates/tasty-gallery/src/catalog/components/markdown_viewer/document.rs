@@ -94,62 +94,22 @@ pub(super) fn document(ui: &mut egui::Ui, theme: &Theme) {
         });
 }
 
-/// H2 크기 — `render.rs::heading_sizes_px` 가 `font-size-prose-h1`(h1)↔`font-size-body`(h6)
-/// 사이를 5단계로 선형보간한다(h1..h6, 5개 구간). h2 는 h1 에서 1구간 내려온 지점이므로
-/// 계수는 4/5 = 0.8 — specimen 은 이 계수를 그대로 미러해 H2 크기를 근사한다.
-pub(super) fn md_h2_size(theme: &Theme) -> f32 {
-    let min = theme.font_size_body.value();
-    min + (theme.font_size_prose_h1.value() - min) * 0.8
-}
-
-/// heading 한 줄 — level 별 size/color/case (디자인 MD_H 전사).
+/// heading 한 줄 — 디자인 MD_H 전사. 크기는 렌더러와 같은 6단계 보간이고 모든 단계가 text-primary 다.
 fn heading(ui: &mut egui::Ui, theme: &Theme, level: u8, text: &str) {
-    let body = theme.font_size_body.value();
-    let (size, color, upper, top) = match level {
-        1 => (
-            theme.font_size_prose_h1.value(),
-            theme.text_primary().to_egui(),
-            false,
-            0.0,
-        ),
-        2 => (
-            md_h2_size(theme),
-            theme.text_primary().to_egui(),
-            false,
-            theme.spacing_md.value(),
-        ),
-        3 => (
-            theme.font_size_max.value(),
-            theme.text_primary().to_egui(),
-            false,
-            theme.spacing_sm.value(),
-        ),
-        4 => (
-            body,
-            theme.text_secondary().to_egui(),
-            false,
-            theme.spacing_sm.value(),
-        ),
-        5 => (
-            body,
-            theme.text_muted().to_egui(),
-            false,
-            theme.spacing_xs.value(),
-        ),
-        _ => (
-            body,
-            theme.text_muted().to_egui(),
-            true,
-            theme.spacing_xs.value(),
-        ),
+    let idx = usize::from(level.clamp(1, 6)) - 1;
+    let size = super::css_path::heading_sizes(theme)[idx];
+    let top = match level {
+        1 => 0.0,
+        2 => theme.spacing_md.value(),
+        3 | 4 => theme.spacing_sm.value(),
+        _ => theme.spacing_xs.value(),
     };
     ui.add_space(top);
-    let label = if upper {
-        text.to_uppercase()
-    } else {
-        text.to_string()
-    };
-    ui.label(egui::RichText::new(label).size(size).color(color));
+    ui.label(
+        egui::RichText::new(text)
+            .size(size)
+            .color(theme.text_primary().to_egui()),
+    );
 }
 
 /// 한 inline run.

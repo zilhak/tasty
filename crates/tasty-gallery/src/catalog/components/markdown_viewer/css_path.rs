@@ -189,7 +189,7 @@ fn draw_heading_hierarchy(ui: &mut egui::Ui, theme: &Theme) {
 }
 
 /// 렌더러 `heading_sizes_px`와 같은 계산: h1 = prose-h1, h6 = body, 그 사이는 같은 간격이다.
-fn heading_sizes(theme: &Theme) -> [f32; 6] {
+pub(super) fn heading_sizes(theme: &Theme) -> [f32; 6] {
     let h1 = theme.font_size_prose_h1.value();
     let body = theme.font_size_body.value();
     let step = (h1 - body) / 5.0;

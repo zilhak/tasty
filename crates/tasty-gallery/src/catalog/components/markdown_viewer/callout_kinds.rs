@@ -144,14 +144,18 @@ pub(super) fn callout_box(
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = theme.spacing_xs.value();
+                ui.spacing_mut().item_spacing.x = theme.md_callout_icon_gap().value();
                 let glyph = |ui: &mut egui::Ui, g: icons::MockGlyph, sz: f32| {
                     let (rect, _) =
                         ui.allocate_exact_size(egui::vec2(sz, sz), egui::Sense::hover());
                     g.image(sz, color.to_egui()).paint_at(ui, rect);
                 };
                 if folded {
-                    glyph(ui, icons::CHEVRON_RIGHT, theme.icon_glyph_size_sm.value());
+                    glyph(
+                        ui,
+                        icons::CHEVRON_RIGHT,
+                        theme.md_callout_marker_size().value(),
+                    );
                 }
                 glyph(ui, icon, theme.icon_glyph_size_md.value());
                 ui.label(

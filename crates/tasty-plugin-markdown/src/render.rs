@@ -1433,6 +1433,9 @@ fn theme_css(theme: &Theme) -> String {
 --md-space-xs:{space_xs}px;
 --md-space-sm:{space_sm}px;
 --md-space-md:{space_md}px;
+--md-callout-icon:{callout_icon}px;
+--md-callout-icon-gap:{callout_icon_gap}px;
+--md-callout-marker:{callout_marker}px;
 --md-addr-bar-h:40px;
 --md-font-body:{body}px;
 --md-h1:{h1}px;--md-h2:{h2}px;--md-h3:{h3}px;--md-h4:{h4}px;--md-h5:{h5}px;--md-h6:{h6}px;
@@ -1489,10 +1492,11 @@ th,td{{border:var(--md-border-w) solid var(--md-border);padding:var(--md-space-x
 tr:nth-child(even){{background:var(--md-zebra);}}
 blockquote{{border-left:var(--md-quote-bar-w) solid var(--md-quote-bar);margin:0.5em 0;padding:0.1em var(--md-space-md);opacity:0.9;}}
 blockquote[class^="markdown-alert-"]{{opacity:1;border-radius:var(--md-radius);padding:var(--md-space-sm) var(--md-space-md);}}
-blockquote[class^="markdown-alert-"]::before{{content:attr(data-label);display:block;font-weight:600;margin-bottom:var(--md-space-xs);padding-left:22px;background-repeat:no-repeat;background-position:left center;background-size:16px 16px;}}
+blockquote[class^="markdown-alert-"]::before{{content:attr(data-label);display:block;font-weight:600;margin-bottom:var(--md-space-xs);padding-left:calc(var(--md-callout-icon) + var(--md-callout-icon-gap));background-repeat:no-repeat;background-position:left center;background-size:var(--md-callout-icon) var(--md-callout-icon);}}
 details[class^="markdown-alert-"]{{border-radius:var(--md-radius);padding:var(--md-space-sm) var(--md-space-md);border-left-width:var(--md-quote-bar-w);border-left-style:solid;}}
-details[class^="markdown-alert-"]>summary{{cursor:pointer;font-weight:600;}}
-details[class^="markdown-alert-"]>summary::before{{content:"";display:inline-block;width:16px;height:16px;margin-right:6px;vertical-align:middle;background-repeat:no-repeat;background-position:center;background-size:16px 16px;}}
+details[class^="markdown-alert-"]>summary{{cursor:pointer;font-weight:600;list-style:none;padding-left:calc(var(--md-callout-marker) + var(--md-callout-icon-gap));background-repeat:no-repeat;background-position:left center;background-size:var(--md-callout-marker) var(--md-callout-marker);}}
+details[class^="markdown-alert-"]>summary::-webkit-details-marker{{display:none;}}
+details[class^="markdown-alert-"]>summary::before{{content:"";display:inline-block;width:var(--md-callout-icon);height:var(--md-callout-icon);margin-right:var(--md-callout-icon-gap);vertical-align:middle;background-repeat:no-repeat;background-position:center;background-size:var(--md-callout-icon) var(--md-callout-icon);}}
 details[class^="markdown-alert-"][open]>summary{{margin-bottom:var(--md-space-xs);}}
 {alert_rules}
 {hljs_rules}
@@ -1530,6 +1534,9 @@ li input[type=checkbox]{{margin-right:0.4em;}}
         space_xs = theme.spacing_xs.value(),
         space_sm = theme.spacing_sm.value(),
         space_md = theme.spacing_md.value(),
+        callout_icon = theme.icon_glyph_size_md.value(),
+        callout_icon_gap = theme.md_callout_icon_gap().value(),
+        callout_marker = theme.md_callout_marker_size().value(),
         body = body,
         h1 = h1,
         h2 = h2,
@@ -3022,6 +3029,29 @@ mod tests {
             css.contains("blockquote{border-left:var(--md-quote-bar-w) solid"),
             "인용문 왼쪽 막대는 --md-quote-bar-w 를 읽어야 한다"
         );
+    }
+
+    /// 콜아웃 머리의 아이콘 간격과 접힘 마커 크기는 토큰에서 온다. 기본 details 마커는 숨긴다.
+    #[test]
+    fn callout_header_reads_the_icon_gap_and_marker_tokens() {
+        let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
+        let css = theme_css(&theme);
+        assert!(css.contains(&format!(
+            "--md-callout-icon-gap:{}px;",
+            theme.md_callout_icon_gap().value()
+        )));
+        assert!(css.contains(&format!(
+            "--md-callout-marker:{}px;",
+            theme.md_callout_marker_size().value()
+        )));
+        assert!(
+            css.contains("padding-left:calc(var(--md-callout-icon) + var(--md-callout-icon-gap));")
+        );
+        assert!(css.contains("margin-right:var(--md-callout-icon-gap);"));
+        assert!(css.contains("list-style:none;"));
+        assert!(css.contains(
+            r#"details[class^="markdown-alert-"]>summary::-webkit-details-marker{display:none;}"#
+        ));
     }
 
     /// 접히는 콜아웃(details)도 인용문과 같은 md-quote-bar-width 막대를 그린다.
