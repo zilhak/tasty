@@ -497,16 +497,16 @@ fn start_ipc_and_seed(
         .hub
         .start_ipc(waker.ipc_waker(), stream_ctx, connections)
     {
+        if let Some(server) = app.hub.ipc_server.as_ref() {
+            app.services.record_ipc_port(server.port());
+        }
         // 웹훅이 참조할 기본 훅 핸들러를 먼저 등록한다.
         crate::hook_handler::install_default_sources();
         // 완료 전략의 notify_via 검증이 훅 핸들러를 참조한다.
         crate::completion_strategy::install_default_sources();
         // 헤드리스에는 toast가 없어 초기화 실패는 함수 내부 경고 로그로만 알린다.
-        let _ = crate::webhook::init_from_config(injector.clone());
+        let _ = crate::webhook::init_from_config(injector.clone(), app.services.ports.clone());
         app.services.set_host_ipc_injector(injector);
-        if let Some(server) = app.hub.ipc_server.as_ref() {
-            app.services.set_own_ipc_port(server.port());
-        }
     }
 }
 

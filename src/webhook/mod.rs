@@ -59,16 +59,19 @@ impl WebhookInitReport {
 
 /// 설정과 injector 준비 후 호출하는 GUI·headless 공통 초기화 함수.
 /// 포트가 없으면 리스너를 시작하지 않고, 결과 보고서는 호출자가 표시한다.
-pub fn init_from_config(injector: HostIpcInjector) -> WebhookInitReport {
+pub fn init_from_config(
+    injector: HostIpcInjector,
+    ports: std::sync::Arc<crate::runtime_ports::RuntimePorts>,
+) -> WebhookInitReport {
     match config::load_or_seed() {
         Some(port) => {
             // 복원 항목의 URL을 만들기 전에 runtime의 주소·포트를 설정한다.
-            let report = listener::init(injector, BIND_ADDR, port);
+            let report = listener::init(injector, ports, BIND_ADDR, port);
             persist::restore_into_registry();
             report
         }
         None => {
-            registry::set_runtime(injector, BIND_ADDR, None);
+            registry::set_runtime(injector, ports);
             tracing::warn!(
                 "webhook port not configured; listener not started \
                  (set one via `tasty webhook config --port <N>`)"

@@ -17,21 +17,36 @@ use crate::hook_handler::{SequenceOrigin, SubstitutionContext, execute_sequence}
 use tasty_ipc::host_call::HostIpcInjector;
 
 /// 설정 포트에 bind한다. 실패하면 다른 포트로 재시도하지 않고 보고서를 반환한다.
-pub fn init(injector: HostIpcInjector, bind_addr: &str, port: u16) -> WebhookInitReport {
-    registry::set_runtime(injector, bind_addr, Some(port));
+pub fn init(
+    injector: HostIpcInjector,
+    ports: std::sync::Arc<crate::runtime_ports::RuntimePorts>,
+    bind_addr: &str,
+    port: u16,
+) -> WebhookInitReport {
+    registry::set_runtime(injector, ports.clone());
     if registry::is_bound() {
         tracing::debug!("webhook listener already bound; skip re-init");
         return WebhookInitReport::Bound;
     }
     let addr = format!("{bind_addr}:{port}");
     match tiny_http::Server::http(addr.as_str()) {
-        Ok(server) => on_bind_success(server, &addr),
+        Ok(server) => on_bind_success(server, &addr, &ports),
         Err(e) => on_bind_failed(e.to_string(), &addr, port),
     }
 }
 
-fn on_bind_success(server: tiny_http::Server, addr: &str) -> WebhookInitReport {
+fn on_bind_success(
+    server: tiny_http::Server,
+    addr: &str,
+    ports: &crate::runtime_ports::RuntimePorts,
+) -> WebhookInitReport {
     registry::mark_bound();
+    if let Some(bound) = server.server_addr().to_ip() {
+        ports.record_webhook(crate::runtime_ports::BoundPort {
+            addr: bound,
+            source: crate::runtime_ports::PortSource::Config,
+        });
+    }
     tracing::info!("webhook listener bound on {addr}");
     spawn_accept_thread(server);
     WebhookInitReport::Bound

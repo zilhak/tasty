@@ -53,8 +53,8 @@ pub(crate) struct AppServices {
     /// IPC 서버 시작 뒤 주입한다. runner 등 다른 스레드가 host IPC를 호출할 때 쓴다.
     pub(crate) host_ipc_injector: Arc<OnceLock<tasty_ipc::host_call::HostIpcInjector>>,
 
-    /// IPC 서버가 받은 이 인스턴스의 포트. 자기 자신을 향한 attach 요청을 처리기에서 거절할 때 쓴다.
-    own_ipc_port: OnceLock<u16>,
+    /// 이 인스턴스가 bind한 IPC·웹훅 포트. 포트가 필요한 곳은 여기서 읽는다.
+    pub(crate) ports: Arc<crate::runtime_ports::RuntimePorts>,
 
     /// 러너·완료 대기·훅-작업 연결을 가진 작업 실행 서비스.
     pub(crate) tasks: tasty_task_runtime::TaskService,
@@ -299,16 +299,17 @@ impl AppServices {
         }
     }
 
-    /// IPC 서버 시작 뒤 한 번 주입한다.
-    pub(crate) fn set_own_ipc_port(&self, port: u16) {
-        if self.own_ipc_port.set(port).is_err() {
-            tracing::warn!("own IPC port already initialized");
-        }
+    /// IPC 서버 bind 뒤 한 번 기록한다. IPC 서버는 loopback의 OS 지정 포트를 쓴다.
+    pub(crate) fn record_ipc_port(&self, port: u16) {
+        self.ports.record_ipc(crate::runtime_ports::BoundPort {
+            addr: std::net::SocketAddr::from(([127, 0, 0, 1], port)),
+            source: crate::runtime_ports::PortSource::Dynamic,
+        });
     }
 
-    /// IPC 서버가 없으면 None이다.
+    /// 자기 자신을 향한 attach 요청을 거절할 때 쓴다. IPC 서버가 없으면 None이다.
     pub(crate) fn own_ipc_port(&self) -> Option<u16> {
-        self.own_ipc_port.get().copied()
+        self.ports.ipc_port()
     }
 
     pub(crate) fn host_ipc_injector_arc(

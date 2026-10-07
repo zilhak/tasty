@@ -713,11 +713,15 @@ impl App {
         };
         let connections = self.services.connections().clone();
         if let Some(injector) = self.hub.start_ipc(ipc_waker, stream_ctx, connections) {
+            if let Some(server) = self.hub.ipc_server.as_ref() {
+                self.services.record_ipc_port(server.port());
+            }
             self.start_single_instance_service();
             // 리스너가 참조할 훅 레지스트리를 먼저 채운다. 웹훅 시작 실패는 비치명적 경고로 알린다.
             crate::hook_handler::install_default_sources();
             crate::completion_strategy::install_default_sources();
-            let report = crate::webhook::init_from_config(injector.clone());
+            let report =
+                crate::webhook::init_from_config(injector.clone(), self.services.ports.clone());
             if let Some(msg) = report.user_warning() {
                 state.toasts.push(
                     msg,
@@ -726,15 +730,12 @@ impl App {
                 );
             }
             self.services.set_host_ipc_injector(injector);
-            if let Some(server) = self.hub.ipc_server.as_ref() {
-                self.services.set_own_ipc_port(server.port());
-            }
         }
     }
 
     /// IPC가 열린 뒤 인스턴스 파일에 포트를 쓰고, 두 번째 프로세스의 활성화 요청을 받을 경로를 연다.
     fn start_single_instance_service(&mut self) {
-        let Some(port) = self.hub.ipc_server.as_ref().map(|server| server.port()) else {
+        let Some(port) = self.services.ports.ipc_port() else {
             return;
         };
         crate::boot::single_instance::instance_file::publish_port(port);

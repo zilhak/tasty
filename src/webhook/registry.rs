@@ -2,7 +2,7 @@
 //! Mutex로 접근을 직렬화하며 만료는 요청·복원·sweep에서 확인한다.
 
 use std::collections::BTreeMap;
-use std::sync::{Mutex, MutexGuard, OnceLock};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 use super::auth::WebhookAuth;
 use super::lifetime::{Lifetime, now_unix};
@@ -26,10 +26,8 @@ pub struct WebhookEntry {
 
 #[derive(Default)]
 struct WebhookState {
-    /// bind 주소(예: `0.0.0.0`).
-    bind_addr: String,
-    /// 설정 포트(bind 성공 여부와 무관하게 URL 표기에 사용).
-    port: Option<u16>,
+    /// 이 인스턴스의 포트 기록. 리스너가 bind한 주소를 URL 표기에 쓴다.
+    ports: Option<Arc<crate::runtime_ports::RuntimePorts>>,
     /// path(opaque id) → 엔트리.
     entries: BTreeMap<String, WebhookEntry>,
     /// off-main thread → 메인루프 IPC 주입기.
@@ -58,21 +56,27 @@ fn lock() -> MutexGuard<'static, WebhookState> {
     lock_state(state())
 }
 
-/// bind 전에 주소·포트·injector를 설정한다. port가 None이면 URL에도 포트가 빠진다.
-pub(super) fn set_runtime(injector: HostIpcInjector, bind_addr: &str, port: Option<u16>) {
+/// bind 전에 injector와 포트 기록을 연결한다. 리스너가 bind하지 못하면 URL에 포트가 빠진다.
+pub(super) fn set_runtime(
+    injector: HostIpcInjector,
+    ports: Arc<crate::runtime_ports::RuntimePorts>,
+) {
     let mut s = lock();
     s.injector = Some(injector);
-    s.bind_addr = bind_addr.to_string();
-    s.port = port;
+    s.ports = Some(ports);
+}
+
+fn bound_addr(s: &WebhookState) -> Option<std::net::SocketAddr> {
+    s.ports.as_ref()?.webhook().map(|b| b.addr)
 }
 
 pub(super) fn is_bound() -> bool {
     lock().bound
 }
 
-/// 현재 설정된 포트(`webhook.config` get 용). 미설정이면 `None`.
-pub fn configured_port() -> Option<u16> {
-    lock().port
+/// 리스너가 bind한 포트(`webhook.config` 조회용). bind하지 못했으면 `None`.
+pub fn bound_port() -> Option<u16> {
+    lock().ports.as_ref()?.webhook_port()
 }
 
 pub fn is_listener_bound() -> bool {
@@ -96,20 +100,19 @@ fn gen_opaque_id(entries: &BTreeMap<String, WebhookEntry>) -> String {
     }
 }
 
-/// URL 표기용 host — `0.0.0.0` bind 는 curl/클릭 가능하도록 loopback 으로 치환.
-fn display_host(bind_addr: &str) -> &str {
-    if bind_addr == "0.0.0.0" || bind_addr.is_empty() {
-        "127.0.0.1"
+/// URL 표기용 host. 모든 인터페이스 bind는 curl로 바로 부를 수 있게 loopback으로 적는다.
+fn display_host(addr: std::net::SocketAddr) -> std::net::IpAddr {
+    if addr.ip().is_unspecified() {
+        std::net::IpAddr::from([127, 0, 0, 1])
     } else {
-        bind_addr
+        addr.ip()
     }
 }
 
 fn build_url(s: &WebhookState, id: &str) -> String {
-    let host = display_host(&s.bind_addr);
-    match s.port {
-        Some(port) => format!("http://{host}:{port}/{id}"),
-        None => format!("http://{host}/{id}"),
+    match bound_addr(s) {
+        Some(addr) => format!("http://{}:{}/{id}", display_host(addr), addr.port()),
+        None => format!("http://127.0.0.1/{id}"),
     }
 }
 
@@ -320,10 +323,9 @@ mod tests {
         .expect_err("패닉한 스레드는 Err 로 join 된다");
         assert!(shared.lock().is_err(), "poison 이 실제로 걸려야 한다");
 
-        lock_state(&shared).port = Some(8123);
-        assert_eq!(
-            lock_state(&shared).port,
-            Some(8123),
+        lock_state(&shared).bound = true;
+        assert!(
+            lock_state(&shared).bound,
             "poison 뒤에도 설정이 읽고 쓰여야 한다"
         );
 

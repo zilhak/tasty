@@ -270,7 +270,7 @@ pub fn handle_config(id: serde_json::Value, params: &serde_json::Value) -> JsonR
                     format!("failed to persist webhook port: {e}"),
                 );
             }
-            let restart_required = webhook::registry::configured_port() != Some(port);
+            let restart_required = webhook::registry::bound_port() != Some(port);
             JsonRpcResponse::success(
                 id,
                 json!({
@@ -282,7 +282,7 @@ pub fn handle_config(id: serde_json::Value, params: &serde_json::Value) -> JsonR
         None => JsonRpcResponse::success(
             id,
             json!({
-                "port": webhook::registry::configured_port(),
+                "port": webhook::registry::bound_port(),
                 "bound": webhook::registry::is_listener_bound(),
                 // 파일의 현재 값(런타임 set 후 재시작 전이면 활성값과 다를 수 있음).
                 "configured_port": webhook::config::read_port(),
