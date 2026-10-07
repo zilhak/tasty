@@ -98,7 +98,7 @@ regular(`put/get/delete/list/exists/count/scopes/stats/query/export/import`) · 
 
 `task_command.kind = "run"`은 surface 없이 자식 프로세스를 실행한다. `task_get`과 `task_await`의 `result.output`에 stdout/stderr 각각 마지막 64KiB와 `truncated`/`dropped_bytes`를 반환한다. 0이 아닌 종료 코드로 실패하면 `result.error` 문자열에도 같은 출력이 포함된다.
 
-`task_get` 은 레코드 `revision`(쓸 때마다 커지는 값)을 싣는다. `task_await` 의 종결 응답은 `state`·`result` 와 함께 v2 task 의 `attempt_id`, `revision`, 건너뛴 이유 `skip` 을 싣는다. 이 셋은 종결 사건 `agent.task_finished` 의 같은 이름 필드와 같은 값이다([사건 목록](event-catalog.md#agent-scopesystem-experimental)).
+`task_get` 은 레코드 `revision`(쓸 때마다 커지는 값)을 싣는다. revision 은 같은 레코드의 수명 안에서만 비교한다. task 를 지우고 같은 id 로 다시 제출하면 1부터 다시 센다. `task_await` 의 종결 응답은 `state`·`result` 와 함께 v2 task 의 `attempt_id`, `revision`, 건너뛴 이유 `skip` 을 싣는다. 이 셋은 종결 사건 `agent.task_finished` 의 같은 이름 필드와 같은 값이다([사건 목록](event-catalog.md#agent-scopesystem-experimental)).
 
 `semaphore_set_permits`는 세마포어를 삭제하지 않고 한도를 바꾼다. 한도를 줄여도 기존 사용 권한을 강제로 회수하지 않고 새 acquire를 거절한다. `semaphore_acquire`의 `ttl_ms`는 선택 사항이다. 지정한 경우에만 사용 권한이 만료되어 회수되며, 기본값은 만료 없음이다([ADR-0042](../adr/0042-agent-coordination-and-task-views.md)).
 
