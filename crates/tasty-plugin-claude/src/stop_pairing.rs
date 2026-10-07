@@ -71,6 +71,8 @@ pub(crate) struct Settled {
     pub kind: StopKind,
     /// 턴이 끝났는가. 게이트가 block 했고 Claude Code 가 그 block 을 받아들이면 false 다.
     pub turn_ended: bool,
+    /// 이 Stop 의 최종 답변(`last_assistant_message`). 턴이 끝나면 agent task 턴 끝 보고에 싣는다.
+    pub final_answer: Option<String>,
 }
 
 impl Settled {
@@ -93,6 +95,7 @@ struct PendingStop {
     surface_id: u32,
     prompt_id: Option<String>,
     kind: StopKind,
+    final_answer: Option<String>,
     expected: usize,
     verdicts: Vec<Verdict>,
     block_cap: Option<u32>,
@@ -138,6 +141,7 @@ impl StopPairing {
         surface_id: u32,
         prompt_id: Option<String>,
         kind: StopKind,
+        final_answer: Option<String>,
         expected: usize,
         now: Instant,
     ) -> Vec<Settled> {
@@ -153,6 +157,7 @@ impl StopPairing {
             surface_id,
             prompt_id,
             kind,
+            final_answer,
             expected,
             verdicts: Vec::new(),
             block_cap: None,
@@ -268,6 +273,7 @@ impl StopPairing {
             surface_id: e.surface_id,
             kind: e.kind,
             turn_ended: true,
+            final_answer: e.final_answer,
         })
     }
 
@@ -323,6 +329,7 @@ impl StopPairing {
             surface_id: entry.surface_id,
             kind: entry.kind,
             turn_ended,
+            final_answer: entry.final_answer,
         }
     }
 }
@@ -499,6 +506,7 @@ mod tests {
             surface_id,
             kind: StopKind::Idle,
             turn_ended: true,
+            final_answer: None,
         }
     }
 
@@ -511,6 +519,7 @@ mod tests {
             surface_id,
             kind: StopKind::Idle,
             turn_ended: false,
+            final_answer: None,
         }
     }
 
@@ -519,7 +528,7 @@ mod tests {
         let t = Instant::now();
         // Stop 먼저.
         let mut a = StopPairing::default();
-        assert!(a.stop(S, 3, p("x"), StopKind::Idle, 1, t).is_empty());
+        assert!(a.stop(S, 3, p("x"), StopKind::Idle, None, 1, t).is_empty());
         assert_eq!(
             a.verdict(S, p("x"), Verdict::Block, None, t),
             Some(blocked(3))
@@ -527,14 +536,17 @@ mod tests {
         // 판정 먼저.
         let mut b = StopPairing::default();
         assert_eq!(b.verdict(S, p("x"), Verdict::Block, None, t), None);
-        assert_eq!(b.stop(S, 3, p("x"), StopKind::Idle, 1, t), vec![blocked(3)]);
+        assert_eq!(
+            b.stop(S, 3, p("x"), StopKind::Idle, None, 1, t),
+            vec![blocked(3)]
+        );
     }
 
     #[test]
     fn a_stop_every_gate_passed_ends_the_turn() {
         let t = Instant::now();
         let mut a = StopPairing::default();
-        assert!(a.stop(S, 3, p("x"), StopKind::Idle, 2, t).is_empty());
+        assert!(a.stop(S, 3, p("x"), StopKind::Idle, None, 2, t).is_empty());
         assert_eq!(a.verdict(S, p("x"), Verdict::Pass, None, t), None);
         let settled = a.verdict(S, p("x"), Verdict::Pass, None, t).unwrap();
         assert_eq!(settled, idle(3));
@@ -545,7 +557,7 @@ mod tests {
     fn one_block_among_several_gates_keeps_the_turn() {
         let t = Instant::now();
         let mut a = StopPairing::default();
-        a.stop(S, 3, p("x"), StopKind::Idle, 2, t);
+        a.stop(S, 3, p("x"), StopKind::Idle, None, 2, t);
         a.verdict(S, p("x"), Verdict::Pass, None, t);
         assert_eq!(
             a.verdict(S, p("x"), Verdict::Block, None, t),
@@ -557,7 +569,7 @@ mod tests {
     fn a_missing_decision_ends_the_turn_after_the_timeout_once() {
         let t = Instant::now();
         let mut a = StopPairing::default();
-        a.stop(S, 3, p("x"), StopKind::Idle, 1, t);
+        a.stop(S, 3, p("x"), StopKind::Idle, None, 1, t);
         assert!(a.expire(t + GATE_DECISION_TIMEOUT / 2).is_empty());
         assert_eq!(settled(a.expire(t + GATE_DECISION_TIMEOUT)), vec![idle(3)]);
         assert!(
@@ -567,7 +579,7 @@ mod tests {
         // 늦게 온 판정은 확정된 Stop 을 다시 바꾸지 않고 다음 Stop 과도 짝짓지 않는다.
         assert_eq!(a.verdict(S, p("x"), Verdict::Block, None, t), None);
         let later = t + GATE_DECISION_TIMEOUT * 3;
-        a.stop(S, 3, p("y"), StopKind::Idle, 1, later);
+        a.stop(S, 3, p("y"), StopKind::Idle, None, 1, later);
         assert_eq!(
             a.verdict(S, p("y"), Verdict::Pass, None, later),
             Some(idle(3))
@@ -579,13 +591,13 @@ mod tests {
         let t = Instant::now();
         let mut a = StopPairing::default();
         for _ in 0..DEFAULT_BLOCK_CAP {
-            a.stop(S, 3, p("x"), StopKind::Idle, 1, t);
+            a.stop(S, 3, p("x"), StopKind::Idle, None, 1, t);
             assert_eq!(
                 a.verdict(S, p("x"), Verdict::Block, None, t),
                 Some(blocked(3))
             );
         }
-        a.stop(S, 3, p("x"), StopKind::Idle, 1, t);
+        a.stop(S, 3, p("x"), StopKind::Idle, None, 1, t);
         assert_eq!(
             a.verdict(S, p("x"), Verdict::Block, None, t),
             Some(idle(3)),
@@ -597,12 +609,12 @@ mod tests {
     fn the_block_cap_from_the_gate_command_replaces_the_default() {
         let t = Instant::now();
         let mut a = StopPairing::default();
-        a.stop(S, 3, p("x"), StopKind::Idle, 1, t);
+        a.stop(S, 3, p("x"), StopKind::Idle, None, 1, t);
         assert_eq!(
             a.verdict(S, p("x"), Verdict::Block, Some(1), t),
             Some(blocked(3))
         );
-        a.stop(S, 3, p("x"), StopKind::Idle, 1, t);
+        a.stop(S, 3, p("x"), StopKind::Idle, None, 1, t);
         assert_eq!(
             a.verdict(S, p("x"), Verdict::Block, Some(1), t),
             Some(idle(3))
@@ -613,9 +625,9 @@ mod tests {
     fn a_new_prompt_resets_the_consecutive_blocks() {
         let t = Instant::now();
         let mut a = StopPairing::default();
-        a.stop(S, 3, p("x"), StopKind::Idle, 1, t);
+        a.stop(S, 3, p("x"), StopKind::Idle, None, 1, t);
         a.verdict(S, p("x"), Verdict::Block, Some(1), t);
-        a.stop(S, 3, p("y"), StopKind::Idle, 1, t);
+        a.stop(S, 3, p("y"), StopKind::Idle, None, 1, t);
         assert_eq!(
             a.verdict(S, p("y"), Verdict::Block, Some(1), t),
             Some(blocked(3))
@@ -626,12 +638,12 @@ mod tests {
     fn a_waiting_stop_consumes_its_gate_decision() {
         let t = Instant::now();
         let mut a = StopPairing::default();
-        a.stop(S, 3, p("x"), StopKind::Waiting, 1, t);
+        a.stop(S, 3, p("x"), StopKind::Waiting, None, 1, t);
         let settled = a.verdict(S, p("x"), Verdict::Block, None, t).unwrap();
         assert_eq!(settled.kind, StopKind::Waiting);
         assert!(!settled.runs_idle());
         // 대기 Stop 의 판정이 다음 Stop 에 섞이지 않는다.
-        a.stop(S, 3, p("x"), StopKind::Idle, 1, t);
+        a.stop(S, 3, p("x"), StopKind::Idle, None, 1, t);
         assert_eq!(a.verdict(S, p("x"), Verdict::Pass, None, t), Some(idle(3)));
     }
 
@@ -639,8 +651,11 @@ mod tests {
     fn a_second_stop_before_the_first_is_decided_settles_the_first_as_blocked() {
         let t = Instant::now();
         let mut a = StopPairing::default();
-        a.stop(S, 3, p("x"), StopKind::Idle, 1, t);
-        assert_eq!(a.stop(S, 3, p("x"), StopKind::Idle, 1, t), vec![blocked(3)]);
+        a.stop(S, 3, p("x"), StopKind::Idle, None, 1, t);
+        assert_eq!(
+            a.stop(S, 3, p("x"), StopKind::Idle, None, 1, t),
+            vec![blocked(3)]
+        );
         // 둘째 Stop 이 왔으면 첫 Stop 의 판정은 더 오지 않는다. 이어서 오는 판정은 둘째 Stop 의 것이다.
         assert_eq!(a.verdict(S, p("x"), Verdict::Pass, None, t), Some(idle(3)));
     }
@@ -652,7 +667,7 @@ mod tests {
         let t = Instant::now();
         let mut a = StopPairing::default();
         // 게이트 둘. Stop1 에서 A 는 block, B 의 판정은 오지 않는다.
-        assert!(a.stop(S, 3, p("x"), StopKind::Idle, 2, t).is_empty());
+        assert!(a.stop(S, 3, p("x"), StopKind::Idle, None, 2, t).is_empty());
         assert_eq!(a.verdict(S, p("x"), Verdict::Block, None, t), None);
         assert_eq!(
             settled(a.expire(t + GATE_DECISION_TIMEOUT)),
@@ -660,7 +675,7 @@ mod tests {
         );
         // 턴이 이어져 같은 prompt 의 Stop2 가 오고 A 가 다시 block 한다.
         let t2 = t + GATE_DECISION_TIMEOUT * 2;
-        assert!(a.stop(S, 3, p("x"), StopKind::Idle, 2, t2).is_empty());
+        assert!(a.stop(S, 3, p("x"), StopKind::Idle, None, 2, t2).is_empty());
         assert_eq!(a.verdict(S, p("x"), Verdict::Block, None, t2), None);
         assert_eq!(
             settled(a.expire(t2 + GATE_DECISION_TIMEOUT)),
@@ -676,7 +691,10 @@ mod tests {
         a.verdict(S, p("old"), Verdict::Block, None, t);
         a.verdict(S, p("x"), Verdict::Block, None, t);
         let late = t + GATE_DECISION_TIMEOUT;
-        assert!(a.stop(S, 3, p("x"), StopKind::Idle, 1, late).is_empty());
+        assert!(
+            a.stop(S, 3, p("x"), StopKind::Idle, None, 1, late)
+                .is_empty()
+        );
         assert_eq!(
             a.verdict(S, p("x"), Verdict::Pass, None, late),
             Some(idle(3))
@@ -684,17 +702,17 @@ mod tests {
         // 다른 세션의 판정과도 섞이지 않는다.
         let mut b = StopPairing::default();
         b.verdict("other", p("x"), Verdict::Block, None, t);
-        assert!(b.stop(S, 3, p("x"), StopKind::Idle, 1, t).is_empty());
+        assert!(b.stop(S, 3, p("x"), StopKind::Idle, None, 1, t).is_empty());
     }
 
     #[test]
     fn a_new_turn_settles_the_pending_stop_as_ended_and_session_end_drops_it() {
         let t = Instant::now();
         let mut a = StopPairing::default();
-        a.stop(S, 3, p("x"), StopKind::Idle, 1, t);
+        a.stop(S, 3, p("x"), StopKind::Idle, None, 1, t);
         assert_eq!(a.new_turn(S), Some(idle(3)));
         assert_eq!(a.new_turn(S), None);
-        a.stop(S, 3, p("y"), StopKind::Idle, 1, t);
+        a.stop(S, 3, p("y"), StopKind::Idle, None, 1, t);
         a.end_session(S);
         assert!(a.expire(t + GATE_DECISION_TIMEOUT).is_empty());
     }
@@ -703,7 +721,7 @@ mod tests {
     fn a_timed_out_stop_knows_whether_a_new_turn_started_since() {
         let t = Instant::now();
         let mut a = StopPairing::default();
-        a.stop(S, 3, p("x"), StopKind::Idle, 1, t);
+        a.stop(S, 3, p("x"), StopKind::Idle, None, 1, t);
         let expired = a.expire(t + GATE_DECISION_TIMEOUT);
         assert_eq!(expired.len(), 1);
         let e = &expired[0];

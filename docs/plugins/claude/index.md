@@ -266,7 +266,7 @@ if [ -n "$TASTY_SURFACE_ID" ]; then tasty claude hook <token> || true; fi
 | 훅 token | 보고 |
 |---|---|
 | `prompt-submit` | `turn_started` |
-| `stop` | `turn_ended` + `final_answer`(stdin `last_assistant_message`). 백그라운드 작업을 기다리는 Stop 과 게이트가 보류한 Stop 은 턴을 끝내지 않으므로 보고하지 않는다. 보류가 나중에 풀려 턴이 끝나는 경로(다음 프롬프트·게이트 판정)는 보고하지 않으므로, Stop 게이트를 붙인 세션의 agent task 는 그 턴의 끝을 받지 못하고 `timeout_ms` 로 끝난다 |
+| `stop` | `turn_ended` + `final_answer`(stdin `last_assistant_message`). 백그라운드 작업을 기다리는 Stop 은 턴을 끝내지 않으므로 보고하지 않는다. 게이트가 보류한 Stop 은 그 자리에서 보고하지 않고, 보류가 턴 종료로 확정될 때(모든 판정 통과, 연속 block 상한, 판정 시간 초과, 같은 세션의 새 턴) 보류할 때 보관한 그 Stop 의 `final_answer` 로 한 번 보고한다. block 으로 확정된 Stop 은 턴이 이어지므로 보고하지 않는다. 새 턴으로 확정될 때는 앞 턴의 끝을 새 턴의 `turn_started` 보다 먼저 보낸다 |
 | `stop-failure` | `turn_ended` + `error`(stdin `error`, 없으면 `unknown`) |
 
 #### Notification 유형별 상태

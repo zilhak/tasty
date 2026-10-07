@@ -91,6 +91,7 @@ impl<H: HostCallSink> StopTail<'_, H> {
         surface_id: u32,
         prompt_id: Option<String>,
         kind: StopKind,
+        final_answer: Option<String>,
         gates: usize,
     ) -> usize {
         let Some(session_id) = session.filter(|_| gates > 0) else {
@@ -101,6 +102,7 @@ impl<H: HostCallSink> StopTail<'_, H> {
             surface_id,
             prompt_id,
             kind,
+            final_answer,
             gates,
             std::time::Instant::now(),
         );
@@ -122,8 +124,8 @@ impl<H: HostCallSink> StopTail<'_, H> {
         0
     }
 
-    /// 확정된 Stop 을 처리한다. 턴이 끝났으면 보류했던 idle 처리를 실행하고,
-    /// 게이트가 턴을 이어 가게 했으면 보류 때 보낸 active 를 그대로 둔다.
+    /// 확정된 Stop 을 처리한다. 턴이 끝났으면 agent task 턴 끝을 보고하고 보류했던 idle 처리를
+    /// 실행한다. 게이트가 턴을 이어 가게 했으면 보류 때 보낸 active 를 그대로 두고 보고하지 않는다.
     pub(crate) fn finish(&self, settled: impl IntoIterator<Item = Settled>) -> usize {
         let mut failures = 0;
         for s in settled {
@@ -132,6 +134,7 @@ impl<H: HostCallSink> StopTail<'_, H> {
                     "claude stop s{}: every gate let the turn end — reporting idle",
                     s.surface_id
                 );
+                crate::task_turn::report_ended(self.host, s.surface_id, s.final_answer.as_deref());
                 failures += self.run_idle_stop(s.surface_id);
             } else if s.kind == StopKind::Idle {
                 tracing::info!(
@@ -287,9 +290,10 @@ pub(crate) fn handle_claude_hook<H: HostCallSink>(
         return Ok(response);
     }
 
-    crate::task_turn::report(host, event, surface_id, params);
-    // 새 프롬프트가 왔다면 보류 중인 Stop 에서 턴이 끝났다. 새 턴의 active 보다 먼저 idle 을 보고한다.
+    // 새 프롬프트가 왔다면 보류 중인 Stop 에서 턴이 끝났다. 새 턴의 active 보다 먼저 idle 을 보고하고,
+    // agent task 에도 앞 턴의 끝을 새 턴의 시작보다 먼저 보고한다.
     let settled_failures = tail.settle_at_turn_boundary(event, session.as_deref());
+    crate::task_turn::report(host, event, surface_id, params);
 
     let mut calls = apply_hook(
         event,
@@ -390,7 +394,14 @@ fn stop_that_does_not_end_the_turn<H: HostCallSink>(
         let calls = background_wait_calls(tail, surface_id, now_ms, types, watch);
         // 게이트는 대기 Stop 도 판정한다. 그 판정이 다음 Stop 과 섞이지 않도록 이 Stop 과 짝짓는다.
         let host_call_failures = deliver_all(tail.host, &calls)
-            + tail.pair_stop(session, surface_id, prompt_id, StopKind::Waiting, gates);
+            + tail.pair_stop(
+                session,
+                surface_id,
+                prompt_id,
+                StopKind::Waiting,
+                None,
+                gates,
+            );
         return Some(json!({
             "ok": true,
             "surface_id": surface_id,
@@ -410,7 +421,14 @@ fn stop_that_does_not_end_the_turn<H: HostCallSink>(
             state: "active",
         }];
         let host_call_failures = deliver_all(tail.host, &active)
-            + tail.pair_stop(session, surface_id, prompt_id, StopKind::Idle, gates);
+            + tail.pair_stop(
+                session,
+                surface_id,
+                prompt_id,
+                StopKind::Idle,
+                crate::task_turn::final_answer(params),
+                gates,
+            );
         return Some(json!({
             "ok": true,
             "surface_id": surface_id,
@@ -1319,6 +1337,21 @@ mod tests {
                 .collect()
         }
 
+        /// agent task 턴 보고를 (event, final_answer) 로 차례대로 꺼낸다. 시작은 답이 없다.
+        fn turn_reports(&self) -> Vec<(String, Option<String>)> {
+            self.seen
+                .borrow()
+                .iter()
+                .filter(|(m, _)| m == "agent.task_turn_report")
+                .map(|(_, p)| {
+                    (
+                        p["event"].as_str().unwrap_or("").to_string(),
+                        p["final_answer"].as_str().map(String::from),
+                    )
+                })
+                .collect()
+        }
+
         fn unset_keys(&self) -> Vec<String> {
             self.seen
                 .borrow()
@@ -1517,6 +1550,79 @@ mod tests {
         rig.gate(json!({}), "p1");
         assert_eq!(rig.host.states(), vec!["active", "active", "idle"]);
         assert_eq!(rig.host.fired(), vec!["claude-idle"]);
+    }
+
+    fn gated_stop_answering(prompt_id: &str, answer: &str) -> Value {
+        let mut stop = gated_stop(prompt_id);
+        stop["last_assistant_message"] = json!(answer);
+        stop
+    }
+
+    fn ended(answer: &str) -> (String, Option<String>) {
+        ("turn_ended".to_string(), Some(answer.to_string()))
+    }
+
+    /// 게이트가 두 번 이어 간 턴은 통과한 마지막 Stop 에서 한 번만 끝을 보고한다. 이어 간 Stop 의 답은 싣지 않는다.
+    #[test]
+    fn a_gated_turn_reports_its_end_once_at_the_stop_the_gates_let_through() {
+        for gate_first in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let mut rig = HookRig::with_gates(dir.path(), 1);
+            for (answer, decision) in [
+                ("draft 1", json!({ "decision": "block" })),
+                ("draft 2", json!({ "decision": "block" })),
+                ("final", json!({})),
+            ] {
+                if gate_first {
+                    rig.gate(decision.clone(), "p1");
+                }
+                rig.run(gated_stop_answering("p1", answer));
+                if !gate_first {
+                    rig.gate(decision, "p1");
+                }
+            }
+            assert_eq!(
+                rig.host.turn_reports(),
+                vec![ended("final")],
+                "gate_first={gate_first}"
+            );
+        }
+    }
+
+    /// 판정이 다 오지 않아 시간 초과로 끝을 확정한 Stop 도 한 번 보고한다.
+    #[test]
+    fn a_gated_stop_settled_by_the_timeout_reports_the_turn_end() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut rig = HookRig::with_gates(dir.path(), 1);
+        rig.run(gated_stop_answering("p1", "late gate"));
+        assert!(rig.host.turn_reports().is_empty());
+        rig.tail().finish_expired(rig.take_expired());
+        assert_eq!(rig.host.turn_reports(), vec![ended("late gate")]);
+    }
+
+    /// 판정 전에 새 프롬프트가 오면 보류한 Stop 의 끝을 새 턴의 시작보다 먼저 보고한다.
+    #[test]
+    fn a_new_prompt_reports_the_pending_stop_end_before_the_new_start() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut rig = HookRig::with_gates(dir.path(), 1);
+        rig.run(gated_stop_answering("p1", "answer"));
+        rig.run(
+            json!({ "event": "prompt-submit", "surface": HookRig::SURFACE, "session": "sess-1" }),
+        );
+        assert_eq!(
+            rig.host.turn_reports(),
+            vec![ended("answer"), ("turn_started".to_string(), None)]
+        );
+    }
+
+    /// 백그라운드 작업을 기다리는 Stop 은 게이트가 통과시켜도 턴 끝이 아니다.
+    #[test]
+    fn a_gated_waiting_stop_does_not_report_the_turn_end() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut rig = HookRig::with_gates(dir.path(), 1);
+        rig.run(gated_waiting_stop("p1"));
+        rig.gate(json!({}), "p1");
+        assert!(rig.host.turn_reports().is_empty());
     }
 
     fn gated_waiting_stop(prompt_id: &str) -> Value {
