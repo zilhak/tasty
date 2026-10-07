@@ -309,14 +309,22 @@ pub use crate::macos_permission_notice::{
     FdaNoticeBranch, permission_notice_body, permission_notice_paragraph_keys,
 };
 
+/// 마지막 측정에서 고른 FDA 문단 갈래. 측정할 때만 기록 파일과 서명 해시를 보므로, 매 프레임
+/// 읽는 설정 탭은 이 값을 쓴다.
+static FDA_NOTICE_BRANCH: std::sync::RwLock<FdaNoticeBranch> =
+    std::sync::RwLock::new(FdaNoticeBranch::Never);
+
 /// 이번 부팅 안내에 쓸 FDA 문단 갈래와 직접 빌드 여부.
 ///
-/// 갈래를 가르려면 Full Disk Access를 보유했던 관측과 그때의 서명 해시를 저장해 두고 지금
-/// 해시와 비교해야 한다. 그 기록을 남기는 곳과 해시를 얻는 방법이 아직 없어 보유 이력이
-/// 없는 것으로 보고 [`FdaNoticeBranch::Never`]를 돌려준다. 직접 빌드 여부도 아직 구분할
-/// 신호가 없어 서명 안내 문단을 계속 보인다.
+/// 갈래는 마지막 측정([`refresh_permission_snapshot`])에서 보유 기록과 자기 서명 해시로
+/// 고른 값이다(`macos_fda_history`). 직접 빌드 여부는 아직 구분할 신호가 없어 서명 안내
+/// 문단을 계속 보인다. 배포 DMG도 ad-hoc 서명이라 서명 방식으로는 가를 수 없다.
 pub fn notice_inputs() -> (FdaNoticeBranch, bool) {
-    (FdaNoticeBranch::Never, true)
+    // 이유: poison 된 값은 믿을 수 없고, 기본 문단은 어느 상태에서도 틀린 처방을 주지 않는다.
+    let branch = FDA_NOTICE_BRANCH
+        .read()
+        .map_or(FdaNoticeBranch::Never, |guard| *guard);
+    (branch, true)
 }
 
 /// 보호 경로를 열어 FDA 상태를 추정한다.
@@ -379,14 +387,24 @@ pub fn permission_snapshot() -> PermissionSnapshot {
 /// 지금 상태를 다시 측정해 보관하고 그 값을 돌려준다.
 pub fn refresh_permission_snapshot() -> PermissionSnapshot {
     let snapshot = measure_permissions();
+    let branch = crate::macos_fda_history::observe(snapshot.full_disk_access);
     // 측정이 이 함수에서만 일어나는지 로그로 확인할 수 있게 남긴다.
-    tracing::debug!(?snapshot, "권한 상태 스냅샷 갱신");
+    tracing::debug!(?snapshot, ?branch, "권한 상태 스냅샷 갱신");
     match PERMISSION_SNAPSHOT.write() {
         Ok(mut guard) => *guard = Some(snapshot),
         // 보관에만 실패했으므로 이번 측정값은 그대로 쓰고, 다음 갱신에서 다시 시도한다.
         Err(err) => tracing::warn!(%err, "권한 상태 스냅샷 보관 실패"),
     }
+    store_notice_branch(branch);
     snapshot
+}
+
+fn store_notice_branch(branch: FdaNoticeBranch) {
+    match FDA_NOTICE_BRANCH.write() {
+        Ok(mut guard) => *guard = branch,
+        // 보관에 실패하면 `notice_inputs()`가 이전 갈래를 읽는다. 다음 측정에서 다시 시도한다.
+        Err(err) => tracing::warn!(%err, "FDA 안내 갈래 보관 실패"),
+    }
 }
 
 /// 실제 측정을 수행한다. TCC를 조회하는 곳은 여기뿐이다.

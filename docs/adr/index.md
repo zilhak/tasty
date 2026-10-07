@@ -35,6 +35,7 @@ App·Core·View 계층과 상태 소유, 구조 도메인 이벤트 소싱, 크�
 | 0065 | [0.x에서는 호환성을 깨는 변경을 유예 기간 없이 `(BREAK)`로 낸다](0065-pre-1-0-breaking-changes-ship-without-deprecation-period.md) | Accepted | 2026-10-06 | ipc, compatibility, versioning, changelog |
 | 0071 | [닫기의 자원 receipt 대기는 관측을 멈추지 않는다](0071-close-receipt-wait-does-not-pause-observation.md) | Accepted | 2026-10-07 | event-sourcing, effects, close, retirement, ipc, plugin |
 | 0073 | [토큰 없는 로컬 호출자의 agent ID 는 요청 봉투로 받는 자기 신고 표시값이다](0073-local-caller-agent-id-is-a-self-reported-label.md) | Accepted | 2026-10-07 | ipc, telemetry, audit, compatibility, security |
+| 0074 | [macOS Full Disk Access 보유 기록은 안내 원인을 고르는 데만 쓰고 cdhash로 앱을 식별한다](0074-macos-fda-grant-record-picks-the-notice-cause.md) | Accepted | 2026-10-08 | macos, permissions, tcc, full-disk-access, boot, codesign, adr-0052 |
 <!-- adr-rows:end foundation -->
 
 ## 터미널과 원격 연결

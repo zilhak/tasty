@@ -18,6 +18,9 @@ pub mod macos_permission_notice;
 // 컴파일한다 — 실제 파일 접근부만 모듈 안에서 macOS 로 좁힌다.
 #[cfg(feature = "gui")]
 pub mod macos_permissions;
+// FDA 보유 기록과 안내 갈래 판정. 판정은 순수부라 macos_permissions 와 같은 범위에서 컴파일한다.
+#[cfg(feature = "gui")]
+mod macos_fda_history;
 #[cfg(feature = "gui")]
 pub mod native_menu;
 #[cfg(all(windows, feature = "gui"))]
