@@ -112,7 +112,7 @@ Claude 자식이 API 에러로 턴을 끝냈으면 완료 알림 줄 끝에 그 
 Monitor({ command: "tail -n0 -F \"$TASTY_PARENT_HOME/notify/$TASTY_SURFACE_ID.log\"", timeout_ms: 1800000 })
 ```
 
-Monitor는 최대 30분 뒤 만료됩니다. 만료 알림을 받으면 같은 명령으로 다시 구독하고, 바로 `tasty claude children`으로 자식 상태를 한 번 확인하세요. 구독이 끊긴 사이에 끝난 자식을 놓치지 않습니다.
+Monitor는 최대 30분 뒤 만료됩니다. 만료 알림을 받으면 같은 명령으로 다시 구독하고, 바로 `tasty claude children`으로 자식 상태를 한 번 확인하세요. 이 목록에는 Codex 자식도 함께 나옵니다(`tasty codex children`도 같은 자식을 보여 줍니다). 구독이 끊긴 사이에 끝난 자식을 놓치지 않습니다.
 
 로그 문구는 앱 언어를 따릅니다. Claude와 Codex 자식이 같은 파일에 알림을 한 줄씩 기록합니다. **Tasty를 다시 시작하면 이전 실행의 완료 로그는 지워집니다.** Monitor 없이 파일을 직접 읽는 것만으로 자동 재개나 영구 보관이 되지는 않습니다.
 

@@ -199,6 +199,7 @@ Monitor({ command: "tail -n0 -F \"$TASTY_PARENT_HOME/notify/$TASTY_SURFACE_ID.lo
 `-n0`은 구독 시작 이전의 줄을 건너뛴다. Monitor에는 `persistent` 같은 상시 유지 옵션이 없고
 `timeout_ms`의 최댓값은 30분이다. 만료 알림을 받으면 같은 명령으로 다시 구독하고, 직후
 `tasty claude children`으로 자식 상태를 한 번 조회해 만료와 재구독 사이에 끝난 자식을 놓치지 않는다.
+두 plugin 의 `children` 이 모두 호스트 `terminal.children` 을 읽으므로 이 목록에는 Codex 자식도 나온다(`tasty codex children` 도 같은 자식을 보인다).
 도구 제공 여부와 실제 전달은 아래 상류 제약을 확인한다.
 
 #### Monitor 사용 시 주의 (상류 제약)

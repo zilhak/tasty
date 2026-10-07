@@ -1,4 +1,4 @@
-<!-- source-hash: 06b52c56d64e -->
+<!-- source-hash: 2775be418375 -->
 # Working with Claude and Codex
 
 Connect Claude Code and Codex CLI to share work across several agents. One agent can launch others and receive their results, so implementation, testing, and review can run alongside each other.
@@ -114,7 +114,7 @@ When the parent is Claude Code, subscribe to the completion log with Monitor.
 Monitor({ command: "tail -n0 -F \"$TASTY_PARENT_HOME/notify/$TASTY_SURFACE_ID.log\"", timeout_ms: 1800000 })
 ```
 
-Monitor expires after at most 30 minutes. When you get the expiry notice, subscribe again with the same command, then check child states once with `tasty claude children`. That way you do not miss a child that finished while the subscription was down.
+Monitor expires after at most 30 minutes. When you get the expiry notice, subscribe again with the same command, then check child states once with `tasty claude children`. The list includes Codex children too (`tasty codex children` shows the same children). That way you do not miss a child that finished while the subscription was down.
 
 Log messages follow the app language. Claude and Codex children record notifications one line at a time in the same file. **Restarting Tasty deletes completion logs from the previous run.** Reading a log without Monitor does not provide automatic resumption or permanent storage.
 
