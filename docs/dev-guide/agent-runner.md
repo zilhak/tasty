@@ -803,7 +803,7 @@ DAG 요약(`agent.dag_list`·`agent.dag_get`)의 `state_counts.not_selected` 는
 
 ### agent task
 
-`{"kind": "agent", "provider": "claude"|"codex", "workspace_id": N, "session": ..., "instruction": "...", "timeout_ms"?: N}` 는 provider 세션에 지시 하나를 보내고 그 턴의 끝을 task 결과로 만든다. v2 계약이 필요하다(`task_create` 는 `-32602`). 근거는 ADR-0078. 명령의 `workspace_id` 는 새 세션이 뜨는 workspace 다. 회차 기록, 제출 안내의 `--workspace-id`, 턴 표의 키는 task 자신의 workspace 를 쓴다.
+`{"kind": "agent", "provider": "claude"|"codex", "workspace_id": N, "session": ..., "instruction": "...", "timeout_ms"?: N}` 는 provider 세션에 지시 하나를 보내고 그 턴의 끝을 task 결과로 만든다. v2 계약이 필요하다(`task_create` 는 `-32602`). 근거는 [ADR-0071](../adr/0071-typed-task-completion-is-one-write-per-attempt.md)의 "agent task 회차의 결과" 절. 명령의 `workspace_id` 는 새 세션이 뜨는 workspace 다. 회차 기록, 제출 안내의 `--workspace-id`, 턴 표의 키는 task 자신의 workspace 를 쓴다.
 
 | `session` | 동작 |
 |---|---|
