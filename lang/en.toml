@@ -1898,6 +1898,7 @@ cancelled = "CANCELLED"
 skipped = "SKIPPED"
 not_selected = "NOT SELECTED"
 unknown = "UNKNOWN"
+partially_failed = "PARTIALLY FAILED"
 
 [dag.rel]
 depends_on = "depends on"

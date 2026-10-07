@@ -73,9 +73,10 @@ trailing 클러스터. trailing 은 세 조각이다:
 알 수 없음이 남으면 대기로 집계한다. 필터 값과 실제 rollup 값이 일치하는지는 시험으로 확인한다.
 
 rollup 의 일곱째 값인 부분 오류(`partially_failed`, 실패가 섞였지만 끝까지 성공한 갈래도 있는
-채 끝난 DAG)는 화면 표시(글리프·색·라벨)가 아직 정해지지 않았다. 그전까지 DAG 목록과 DAG
-화면의 DAG 선택 목록은 이 값을 실패 표시로 바꿔 보이지 않고 알 수 없음(`?`)으로 보이며,
-필터에도 없다.
+채 끝난 DAG)는 글리프·색이 아직 정해지지 않았다. 그전까지 DAG 목록과 DAG 화면의 DAG 선택
+목록은 이 값을 실패 표시로 바꿔 보이지 않고 알 수 없음의 글리프(`?`)와 색을 쓰되, 라벨은
+`dag.status.partially_failed`(en `PARTIALLY FAILED`, ko `부분 오류`, ja `一部失敗`)로 따로 둔다.
+task 상태 `unknown` 과 라벨로 구별된다. 필터에는 없다.
 시험이 이 값을 표시 미정 목록(`ROLLUP_WITHOUT_DISPLAY`)으로 따로 확인한다.
 
 ### 목록의 범위 — 전 workspace

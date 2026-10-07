@@ -18,6 +18,9 @@ pub enum DagStatus {
     Cancelled,
     Skipped,
     Unknown,
+    /// DAG 요약 전용(`rollup_state: partially_failed`). 표시 디자인이 정해지기 전까지 글리프·색은
+    /// `Unknown` 과 같고 라벨만 다르다.
+    PartiallyFailed,
 }
 
 impl DagStatus {
@@ -68,6 +71,7 @@ impl DagStatus {
             "failed" => DagStatus::Failed,
             "cancelled" => DagStatus::Cancelled,
             "skipped" => DagStatus::Skipped,
+            "partially_failed" => DagStatus::PartiallyFailed,
             _ => DagStatus::Unknown,
         }
     }
@@ -83,7 +87,7 @@ impl DagStatus {
             DagStatus::Cancelled => "\u{2212}", // − 빼기 기호
             // 두 건너뜀 이유(미선택·선행 결과 없음)가 같은 글리프를 쓴다.
             DagStatus::Skipped => "\u{2298}", // ⊘ 사선 원
-            DagStatus::Unknown => "?",
+            DagStatus::Unknown | DagStatus::PartiallyFailed => "?",
         }
     }
 
@@ -98,6 +102,7 @@ impl DagStatus {
             DagStatus::Cancelled => t("dag.status.cancelled"),
             DagStatus::Skipped => t("dag.status.skipped"),
             DagStatus::Unknown => t("dag.status.unknown"),
+            DagStatus::PartiallyFailed => t("dag.status.partially_failed"),
         }
     }
 
@@ -115,7 +120,11 @@ impl DagStatus {
     pub fn is_terminal(self) -> bool {
         matches!(
             self,
-            DagStatus::Succeeded | DagStatus::Failed | DagStatus::Cancelled | DagStatus::Skipped
+            DagStatus::Succeeded
+                | DagStatus::Failed
+                | DagStatus::PartiallyFailed
+                | DagStatus::Cancelled
+                | DagStatus::Skipped
         )
     }
 }

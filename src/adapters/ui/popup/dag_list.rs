@@ -808,18 +808,23 @@ mod tests {
         out
     }
 
-    /// 화면 표시(글리프·색·라벨)가 아직 정해지지 않은 rollup 값. 정해지기 전에는 다른 상태의
-    /// 표시를 빌려 쓰지 않고 `Unknown` 으로 받는다. 표시가 정해지면 `DagStatus` 와 필터에 넣고
-    /// 여기서 뺀다.
+    /// 글리프·색 디자인이 아직 정해지지 않은 rollup 값. 정해지기 전에는 `Unknown` 의 글리프·색을
+    /// 쓰고 라벨만 따로 두며, 상태 필터에는 넣지 않는다. 디자인이 정해지면 필터에 넣고 여기서 뺀다.
     const ROLLUP_WITHOUT_DISPLAY: &[&str] = &["partially_failed"];
 
-    /// 표시가 없는 rollup 값은 다른 상태로 보이지 않는다.
+    /// 디자인이 없는 rollup 값도 다른 상태로 읽히지 않는다. 라벨이 `Unknown` 과 다르다.
     #[test]
     fn 표시가_없는_rollup_값은_다른_상태를_빌리지_않는다() {
         let produced = all_rollup_outputs();
         for name in ROLLUP_WITHOUT_DISPLAY {
             assert!(produced.contains(name), "'{name}' 을 rollup 이 내지 않는다");
-            assert_eq!(DagStatus::from_name(name), DagStatus::Unknown);
+            let s = DagStatus::from_name(name);
+            assert!(
+                !DagStatus::ALL.contains(&s),
+                "'{name}' 이 task 상태 {s:?} 로 읽힌다"
+            );
+            assert_eq!(s.glyph(), DagStatus::Unknown.glyph());
+            assert_ne!(s.label(), DagStatus::Unknown.label());
         }
     }
 

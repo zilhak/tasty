@@ -1892,6 +1892,7 @@ cancelled = "取消"
 skipped = "スキップ"
 not_selected = "未選択"
 unknown = "不明"
+partially_failed = "一部失敗"
 
 [dag.rel]
 depends_on = "依存"
