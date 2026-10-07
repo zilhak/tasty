@@ -5314,7 +5314,7 @@ help = "後のtask-create --on-failure fallback:<this-id>で主タスクに関�
 
 [cli.help._root.agent.task-graph-submit]
 about = "型付き（contract_version 2）のタスクグラフを一度に送信します"
-long = "型付き（contract_version 2）のタスクグラフを一度に送信します。\n\nまずグラフ全体を検証します。id、参照、入力 binding、型、マッピング、fallback、循環を確認します。検証に失敗したグラフは何も保存せず、エラーにはタスクと送信したグラフ内の JSON Pointer の位置が示されます。正しいグラフはまとめて保存して有効化するため、すべてのタスクが保存されるまでどのタスクも実行されません。`workspace_id` のない run コマンドには `--workspace-id` の値を補います。"
+long = "型付き（contract_version 2）のタスクグラフを一度に送信します。\n\nまずグラフ全体を検証します。id、参照、入力 binding、型、マッピング、fallback、循環を確認します。検証に失敗したグラフは何も保存せず、エラーにはタスクと送信したグラフ内の JSON Pointer の位置が示されます。正しいグラフはまとめて保存して有効化するため、すべてのタスクが保存されるまでどのタスクも実行されません。`workspace_id` のない run・agent コマンド（inline fallback のコマンドを含む）には `--workspace-id` の値を補います。ほかの種類のコマンドにはこのフィールドがないため、そのまま送ります。"
 
 [cli.help._root.agent.task-graph-submit.arg.workspace_id]
 help = "ワークスペース id（フォーカス非依存 — 必須）"

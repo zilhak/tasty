@@ -955,6 +955,41 @@ mod workspace_category_tests {
         assert_eq!(r.method, "agent.task_graph_validate");
     }
 
+    /// workspace_id 는 그 필드가 있는 run·agent command(inline fallback 포함)에만 넣는다.
+    #[test]
+    fn task_graph_submit_fills_workspace_only_where_the_command_has_it() {
+        let graph = r#"{"contract_version":2,"tasks":[
+            {"id":"r","command":{"kind":"run","command":["true"]}},
+            {"id":"a","command":{"kind":"agent","provider":"claude","instruction":"i","session":{"kind":"existing","surface_id":1}}},
+            {"id":"w","command":{"kind":"wait_barrier","name":"b"}},
+            {"id":"d","command":{"kind":"reduce","inputs":["r"],"strategy":{"kind":"all"}}},
+            {"id":"c","command":{"kind":"custom","ipc_method":"system.ping"},
+             "on_failure":{"kind":"fallback","inline":{"name":"f","command":{"kind":"run","command":["true"]}}}}]}"#;
+        let r = req(&[
+            "tasty",
+            "agent",
+            "task-graph-submit",
+            "--workspace-id",
+            "3",
+            "--graph",
+            graph,
+        ]);
+        let tasks = &r.params["graph"]["tasks"];
+        assert_eq!(tasks[0]["command"]["workspace_id"], 3);
+        assert_eq!(tasks[1]["command"]["workspace_id"], 3);
+        for i in 2..5 {
+            assert!(
+                tasks[i]["command"].get("workspace_id").is_none(),
+                "{}",
+                tasks[i]["command"]
+            );
+        }
+        assert_eq!(
+            tasks[4]["on_failure"]["inline"]["command"]["workspace_id"],
+            3
+        );
+    }
+
     #[test]
     fn task_create_concurrency_limit_sets_semaphore_metadata() {
         let r = req(&[

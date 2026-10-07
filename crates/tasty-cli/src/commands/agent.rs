@@ -72,8 +72,9 @@ pub enum AgentCommands {
     /// types, mappings, fallbacks and cycles. A graph that fails validation
     /// stores nothing; the error names the task and a JSON pointer into the
     /// submitted graph. A valid graph is stored and activated together, so no
-    /// task of it runs before every task exists. Run commands without a
-    /// `workspace_id` get `--workspace-id`.
+    /// task of it runs before every task exists. Run and agent commands without
+    /// a `workspace_id`, including inline fallback commands, get `--workspace-id`.
+    /// Other command kinds have no such field and are sent unchanged.
     TaskGraphSubmit {
         /// Workspace id (focus-independent — required).
         #[arg(long)]

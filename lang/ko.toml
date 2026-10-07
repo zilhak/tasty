@@ -5314,7 +5314,7 @@ help = "나중에 task-create --on-failure fallback:<this-id>로 본 작업과 �
 
 [cli.help._root.agent.task-graph-submit]
 about = "타입 계약(contract_version 2) 작업 그래프를 한 번에 제출합니다"
-long = "타입 계약(contract_version 2) 작업 그래프를 한 번에 제출합니다.\n\n먼저 그래프 전체를 검증합니다. id, 참조, 입력 binding, 타입, 매핑, fallback, 순환을 확인합니다. 검증에 실패한 그래프는 아무것도 저장하지 않으며, 오류에는 작업과 제출한 그래프 안의 JSON Pointer 위치가 나옵니다. 올바른 그래프는 한꺼번에 저장하고 활성화하므로 모든 작업이 저장되기 전에는 어떤 작업도 실행되지 않습니다. `workspace_id`가 없는 run 명령에는 `--workspace-id` 값을 채웁니다."
+long = "타입 계약(contract_version 2) 작업 그래프를 한 번에 제출합니다.\n\n먼저 그래프 전체를 검증합니다. id, 참조, 입력 binding, 타입, 매핑, fallback, 순환을 확인합니다. 검증에 실패한 그래프는 아무것도 저장하지 않으며, 오류에는 작업과 제출한 그래프 안의 JSON Pointer 위치가 나옵니다. 올바른 그래프는 한꺼번에 저장하고 활성화하므로 모든 작업이 저장되기 전에는 어떤 작업도 실행되지 않습니다. `workspace_id`가 없는 run·agent 명령(inline fallback 명령 포함)에는 `--workspace-id` 값을 채웁니다. 다른 종류의 명령에는 이 필드가 없어 그대로 보냅니다."
 
 [cli.help._root.agent.task-graph-submit.arg.workspace_id]
 help = "워크스페이스 id (포커스 무관 — 필수)"

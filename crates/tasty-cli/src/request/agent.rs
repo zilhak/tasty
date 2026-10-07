@@ -432,7 +432,12 @@ fn build_task_create_params(
     ("agent.task_create", p)
 }
 
-/// 그래프 안의 run command 에 `workspace_id` 가 없으면 `--workspace-id` 를 채운다.
+/// `workspace_id` 필드를 가진 command 종류. 그래프 제출은 다른 종류의 command 에 이 키가
+/// 있으면 모르는 키로 거절한다.
+const COMMAND_KINDS_WITH_WORKSPACE_ID: [&str; 2] = ["run", "agent"];
+
+/// 그래프 안의 run·agent command(on_failure 의 inline fallback 포함)에 `workspace_id` 가
+/// 없으면 `--workspace-id` 를 채운다. 다른 종류의 command 는 그대로 보낸다.
 fn build_task_graph_params(
     workspace_id: u32,
     graph: &str,
@@ -442,8 +447,14 @@ fn build_task_graph_params(
     let mut warnings = Vec::new();
     if let Some(tasks) = graph_val.get_mut("tasks").and_then(|t| t.as_array_mut()) {
         for task in tasks {
-            if let Some(command) = task.get_mut("command") {
-                warnings.extend(inject_command_workspace_id(command, workspace_id));
+            for pointer in ["/command", "/on_failure/inline/command"] {
+                let Some(command) = task.pointer_mut(pointer) else {
+                    continue;
+                };
+                let kind = command.get("kind").and_then(|k| k.as_str());
+                if kind.is_some_and(|k| COMMAND_KINDS_WITH_WORKSPACE_ID.contains(&k)) {
+                    warnings.extend(inject_command_workspace_id(command, workspace_id));
+                }
             }
         }
     }

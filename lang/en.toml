@@ -5320,7 +5320,7 @@ help = "Keep this fallback candidate waiting until a later task-create links it 
 
 [cli.help._root.agent.task-graph-submit]
 about = "Submit a typed (contract_version 2) task graph in one call"
-long = "Submit a typed (contract_version 2) task graph in one call.\n\nThe whole graph is validated first: ids, references, input bindings, types, mappings, fallbacks and cycles. A graph that fails validation stores nothing; the error names the task and a JSON pointer into the submitted graph. A valid graph is stored and activated together, so no task of it runs before every task exists. Run commands without a `workspace_id` get `--workspace-id`."
+long = "Submit a typed (contract_version 2) task graph in one call.\n\nThe whole graph is validated first: ids, references, input bindings, types, mappings, fallbacks and cycles. A graph that fails validation stores nothing; the error names the task and a JSON pointer into the submitted graph. A valid graph is stored and activated together, so no task of it runs before every task exists. Run and agent commands without a `workspace_id`, including inline fallback commands, get `--workspace-id`. Other command kinds have no such field and are sent unchanged."
 
 [cli.help._root.agent.task-graph-submit.arg.workspace_id]
 help = "Workspace id (focus-independent — required)"
