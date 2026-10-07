@@ -993,8 +993,9 @@ kind](design-token-mapping.md#attention-kind--needsinputcompletion-surface-highl
 §attention kind](design-token-mapping.md#attention-kind--needsinputcompletion-surface-highlight-adr-0062)
 참조). `AttentionKind`(host, `src/core/state/attention.rs`)는 `divider.rs`의 `From` 변환으로 공용
 `Attention`이 된다. 갤러리는 라이브 attention 상태에 연결되지 않고 경우 데이터를 공용 함수에 넘긴다.
-레일 점은 본체가 그리는 compact 지름(`status-dot-size-compact`)이고 실행 중 점에는 배경 고리가 없다.
-시안 무대는 8px 점(`status-dot-size`)에 모든 점을 고리로 두르므로 이 두 값은 시안과 다르다.
+레일 점은 compact 지름(`status-dot-size-compact` 6)이고 실행 중 점을 포함한 모든 점을
+`status_dot_ring()`(→ bg-sidebar) 색, `status_dot_ring_width()` 1.5px 고리로 두른다. 고리 두께는
+hairline이라 UI 배율을 적용하지 않는다.
 
 ## 첫 실행 셸 설정 (Chrome)
 

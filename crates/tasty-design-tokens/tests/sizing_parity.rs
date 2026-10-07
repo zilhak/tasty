@@ -53,6 +53,7 @@ fn sizing_value(field: &str) -> f32 {
         "tint_edge_width" => SIZING.tint_edge_width.0,
         "border_dash" => SIZING.border_dash.0,
         "border_dash_gap" => SIZING.border_dash_gap.0,
+        "status_dot_ring_width" => SIZING.status_dot_ring_width.0,
         "sidebar_logo_size" => SIZING.sidebar_logo_size.0,
         "sidebar_logo_collapsed_size" => SIZING.sidebar_logo_collapsed_size.0,
         "sidebar_wordmark_font_size" => SIZING.sidebar_wordmark_font_size.0,

@@ -364,6 +364,8 @@ component 접근자(`tab_fg_*()`·`surface_highlight_*_border()`·`status_dot_*(
 | `--tasty-surface-highlight-input-width` | → `focus-ring-width`(2px) | `Theme::focus_ring_width` | Completion 테두리와 동일 굵기 |
 | `--tasty-surface-highlight-done-border` | = attention-completion | `surface_highlight_done_border()` | 완료 테두리 |
 | `--tasty-status-dot-needs-input`/`-completion` | = attention-* | `status_dot_needs_input()`/`status_dot_completion()` | collapsed rail dot, 공용 StatusDot의 attention 종류 |
+| `--tasty-status-dot-ring` | → `bg-sidebar` | `status_dot_ring()` | collapsed rail dot의 배경 고리 색. 실행 중 점을 포함한 모든 점에 두른다 |
+| `--tasty-status-dot-ring-width` | → `size-1-5`(1.5px) | `Theme::status_dot_ring_width` (배율 제외 hairline) | collapsed rail dot 고리 두께 |
 
 예약(아직 미구현, 토큰만 존재): `error` rank 40 → `accent-danger`, `approval` rank 20 →
 `accent-agent`. Catppuccin 매핑에 추가할 hue 없음 — Latte 는 기존 accent role 을 통해

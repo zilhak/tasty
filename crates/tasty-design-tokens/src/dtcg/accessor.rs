@@ -105,6 +105,7 @@ pub const SEMANTIC_DIM_TO_THEME_FIELD: &[(&str, &str)] = &[
     ("component.toast-max-width", "toast_max_width"),
     ("component.toast-accent-width", "toast_accent_width"),
     ("component.status-dot-size", "status_dot_size"),
+    ("component.status-dot-ring-width", "status_dot_ring_width"),
     ("component.spinner-size", "spinner_size"),
     // 위의 배율 적용 필드가 먼저 선택된다. 아래 필드는 치수 검사에 필요하다.
     ("semantic.control-height-tab", "tab_bar_height"),

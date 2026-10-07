@@ -125,8 +125,8 @@ impl RailDot {
     }
 }
 
-/// 아바타 오른쪽 위에 레일 점을 그린다. attention 점은 사이드바 배경 고리로 둘러 아바타
-/// 위에서도 읽히게 한다.
+/// 아바타 오른쪽 위에 레일 점을 그린다. 실행 중 점을 포함한 모든 점을 사이드바 배경 고리로
+/// 둘러 아바타와 겹쳐도 점이 떨어져 보이게 한다.
 pub fn paint_rail_dot(painter: &egui::Painter, theme: &Theme, avatar: egui::Rect, dot: RailDot) {
     let radius = theme.status_dot_size_compact().value() * 0.5;
     let pad = theme.spacing_xs.value();
@@ -136,14 +136,13 @@ pub fn paint_rail_dot(painter: &egui::Painter, theme: &Theme, avatar: egui::Rect
         RailDot::Completion => theme.status_dot_completion(),
         RailDot::Busy => theme.status_dot_success(),
     };
-    if dot != RailDot::Busy {
-        painter.circle_filled(center, radius + RAIL_DOT_RING, theme.bg_sidebar());
-    }
+    painter.circle_filled(
+        center,
+        radius + theme.status_dot_ring_width().value(),
+        theme.status_dot_ring(),
+    );
     painter.circle_filled(center, radius, color);
 }
-
-/// 레일 attention 점의 배경 고리 두께(시안 1.5px). 대응하는 토큰이 없다.
-const RAIL_DOT_RING: f32 = 1.5;
 
 #[cfg(test)]
 mod tests {

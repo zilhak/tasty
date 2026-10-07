@@ -2989,7 +2989,7 @@ impl crate::theme::Theme {
     /// `component.status-dot-ring-width` → `{primitive.size-1-5}` = 1.5px
     #[inline]
     pub fn status_dot_ring_width(&self) -> LogicalPx {
-        LogicalPx((1.5 * self.ui_zoom).round())
+        self.status_dot_ring_width
     }
 
     /// `component.status-dot-size` → `{primitive.size-8}` = 8px

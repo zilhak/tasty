@@ -141,6 +141,8 @@ pub(crate) enum EngineAction {
     #[cfg(feature = "gui")]
     FocusObserved {
         target: SurfaceBinding,
+        /// 창이 OS 포커스를 가졌는지. attention은 사용자가 실제로 볼 때만 지운다.
+        window_focused: bool,
     },
     RecordTyping {
         target: SurfaceBinding,
@@ -325,9 +327,14 @@ impl EngineAction {
             #[cfg(feature = "gui")]
             Self::RemoteMesh { .. } => self.apply_remote_mesh(engine),
             #[cfg(feature = "gui")]
-            Self::FocusObserved { target } => {
+            Self::FocusObserved {
+                target,
+                window_focused,
+            } => {
                 if target.current(&engine.as_ref()) {
-                    engine.clear_attention_local(target.surface_id());
+                    if *window_focused {
+                        engine.clear_attention_local(target.surface_id());
+                    }
                     engine.reconcile_soft_occupancy_on_focus(target.surface_id());
                 }
             }
@@ -598,5 +605,44 @@ fn send_saved_image_path(
             bytes.extend_from_slice(b"\x1b[201~");
         }
         terminal.send_bytes(&bytes);
+    }
+}
+
+#[cfg(all(test, feature = "gui"))]
+mod tests {
+    use super::EngineAction;
+    use crate::core::state::attention::AttentionKind;
+    use crate::runtime::surface_binding::SurfaceBinding;
+
+    /// 창이 OS 포커스를 잃은 동안 그린 포커스 surface는 attention을 지우지 않는다.
+    #[test]
+    fn focus_observation_clears_attention_only_while_the_window_is_focused() {
+        let mut session = crate::state::tests::test_state().1;
+        let sid = session
+            .borrow_mut()
+            .workspace_at(0)
+            .expect("workspace index is valid")
+            .all_surface_ids()[0];
+        let target = SurfaceBinding::capture(&session.read(), sid).expect("binding");
+        session
+            .borrow_mut()
+            .raise_attention(sid, AttentionKind::NeedsInput);
+
+        EngineAction::FocusObserved {
+            target: target.clone(),
+            window_focused: false,
+        }
+        .apply(&mut session.borrow_mut(), None);
+        assert_eq!(
+            session.borrow_mut().attention_kind(sid),
+            Some(AttentionKind::NeedsInput)
+        );
+
+        EngineAction::FocusObserved {
+            target,
+            window_focused: true,
+        }
+        .apply(&mut session.borrow_mut(), None);
+        assert_eq!(session.borrow_mut().attention_kind(sid), None);
     }
 }

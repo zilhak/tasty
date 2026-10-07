@@ -358,6 +358,8 @@ pub struct ThemeSizing {
     pub border_dash: LogicalPx,
     /// 1px 점선 테두리의 대시 사이 간격 (4px).
     pub border_dash_gap: LogicalPx,
+    /// 접힌 레일 상태 점의 배경 고리 두께 (1.5px).
+    pub status_dot_ring_width: LogicalPx,
     /// 상단 정렬 모달(command palette) 상단 gap (88px).
     pub overlay_top_offset: LogicalPx,
     /// 한 글 묶음 안에서 라벨 줄과 그 부연 줄 사이 간격 (2px).
@@ -429,6 +431,7 @@ pub const SIZING: ThemeSizing = ThemeSizing {
     tint_edge_width: LogicalPx(2.0),
     border_dash: LogicalPx(4.0),
     border_dash_gap: LogicalPx(4.0),
+    status_dot_ring_width: LogicalPx(1.5),
     overlay_top_offset: LogicalPx(88.0),
     label_detail_gap: LogicalPx(2.0),
 };
@@ -957,6 +960,9 @@ pub struct Theme {
     pub border_dash: LogicalPx,
     /// 1px 점선 테두리의 대시 사이 간격. hairline 테두리의 무늬라 UI zoom 제외.
     pub border_dash_gap: LogicalPx,
+    /// 접힌 레일 상태 점을 아바타에서 떼어 내는 배경 고리 두께. design
+    /// `--tasty-status-dot-ring-width`. hairline이라 UI zoom 제외.
+    pub status_dot_ring_width: LogicalPx,
     pub overlay_top_offset: LogicalPx,
     /// 라벨 줄 ↔ 부연 줄 간격. 글자와 함께 커지므로 UI zoom 적용.
     pub label_detail_gap: LogicalPx,
@@ -1127,6 +1133,7 @@ impl Theme {
             tint_edge_width: SIZING.tint_edge_width,
             border_dash: SIZING.border_dash,
             border_dash_gap: SIZING.border_dash_gap,
+            status_dot_ring_width: SIZING.status_dot_ring_width,
             overlay_top_offset: zoomed(SIZING.overlay_top_offset),
             label_detail_gap: zoomed(SIZING.label_detail_gap),
             ui_zoom,
@@ -2069,6 +2076,15 @@ mod tests {
                 ring <= t.workspace_dot_slot().value(),
                 "배율 {z}에서 ring {ring}이 슬롯을 넘는다"
             );
+        }
+    }
+
+    /// 레일 점 고리는 hairline이라 배율과 무관하게 1.5다. 배율 경로로 반올림하면 2가 된다.
+    #[test]
+    fn rail_dot_ring_stays_one_and_a_half_at_every_zoom() {
+        for z in [0.85, 1.0, 1.2, 1.5, 2.0] {
+            let t = Theme::with_colors_and_zoom(dummy_colors(), false, z);
+            assert_eq!(t.status_dot_ring_width(), LogicalPx(1.5), "배율 {z}");
         }
     }
 

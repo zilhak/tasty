@@ -71,7 +71,7 @@ type RowCase = (&'static str, &'static str, bool, usize, usize);
 const ROW_CASES: &[RowCase] = &[
     ("Completion only", "docs-site", true, 0, 3),
     ("NeedsInput only — same slot", "data-etl", true, 1, 0),
-    ("Both — needs-input leads", "tasty-core", true, 2, 5),
+    ("Both — needs-input leads", "tasty-core", false, 2, 5),
     ("Overflow — 99+ on both", "monorepo", true, 120, 140),
     ("Quiet", "scratch", false, 0, 0),
 ];
@@ -292,9 +292,10 @@ fn draw_rail(ui: &mut egui::Ui, theme: &Theme) {
         theme,
         &[
             ("slot", "1 dot, top-right of the avatar"),
+            ("size", "6 · status-dot-size-compact"),
             (
                 "ring",
-                "1.5px bg-sidebar — keeps the dot legible over any avatar",
+                "1.5px status-dot-ring (→ bg-sidebar) on every dot, busy included — keeps the dot legible over any avatar",
             ),
             ("order", "needs-input › completion › busy"),
             ("count", "not shown — expand the sidebar"),
@@ -315,13 +316,19 @@ fn draw_rail(ui: &mut egui::Ui, theme: &Theme) {
                 "rail dot — busy/running",
                 ec(theme.status_dot_success()),
             ),
-            TokenChip::without_color("status-dot-size-compact", "6px — what the rail draws"),
+            TokenChip::without_color("status-dot-size-compact", "6px"),
+            TokenChip::new(
+                "status-dot-ring",
+                "cut-out ring (→ bg-sidebar)",
+                ec(theme.status_dot_ring()),
+            ),
+            TokenChip::without_color("status-dot-ring-width", "1.5px — OFF-SCALE hairline"),
         ],
     );
     note(
         ui,
         theme,
-        "Attention beats activity. Busy-green says “something is happening”, which is the normal state of this product and the least actionable thing on the rail; both attention kinds are events that want a human.",
+        "Attention beats activity. Busy-green says “something is happening”, which is the normal state of this product and the least actionable thing on the rail; both attention kinds are events that want a human. The previous code already preferred highlight over busy — this makes it a rule.",
     );
 }
 
@@ -581,7 +588,7 @@ fn draw_ladder(ui: &mut egui::Ui, theme: &Theme) {
     note(
         ui,
         theme,
-        "Why NeedsInput outranks occupancy. Occupancy reads as “held, working, as expected” — which is exactly the state a blocked prompt would hide behind. Completion stays below occupancy. Because attention clears on focus, an active tab or a focused surface never renders an attention tint; the ordering above only settles the unfocused cases.",
+        "Why NeedsInput outranks occupancy. Occupancy reads as “held, working, as expected” — which is exactly the state a blocked prompt would hide behind. A session that has stopped to ask you something must not look like a session that is busy. Completion stays below occupancy, as before. Attention clears only when the surface actually receives focus (focused pane, current workspace, window focused). The visible focused tab therefore never shows a tint; an active tab in an unfocused pane or another workspace can hold attention and keeps its tint by the ladder above (needs-input / completion over active).",
     );
     dont(
         ui,

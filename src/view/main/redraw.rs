@@ -261,9 +261,17 @@ impl MainView {
             && let Some(target) =
                 crate::runtime::surface_binding::SurfaceBinding::capture(engine, sid)
         {
+            // 포커스 surface는 포커스 pane과 현재 workspace의 것이다. 창까지 OS 포커스를
+            // 가져야 사용자가 실제로 본 것으로 보고 attention을 지운다.
+            let window_focused = host_window_has_os_focus(self.base.state.focused, || {
+                self.webviews.values().any(|wv| wv.holds_keyboard_focus())
+            });
             self.state.dispatch_intent(
                 crate::intent::Intent::Engine(
-                    crate::app::engine_action::EngineAction::FocusObserved { target },
+                    crate::app::engine_action::EngineAction::FocusObserved {
+                        target,
+                        window_focused,
+                    },
                 )
                 .from_user_menu("render-focus"),
             );
