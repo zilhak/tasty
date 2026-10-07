@@ -169,7 +169,7 @@
 - **`agent task-get` 이 후처리 실패의 error 줄에 단계 이름을 두 번 적지 않는다.** `error: postprocess: postprocess nonzero_exit: …` 가 `error: postprocess nonzero_exit: …` 로 보인다.
 - **실패한 run 작업의 오류 문구가 종료 코드를 그대로 적는다.** `Run exited non-zero: code=Some(7)` 대신 `Run exited with code 7` 이고, 종료 코드 없이 신호로 끝났으면 `Run ended without an exit code (terminated by a signal)` 다. 뒤따르는 stdout·stderr 꼬리는 그대로다.
 - `tasty agent task-graph --format dot`·`tasty agent dag-get --format dot` 가 JSON 봉투 대신 DOT 본문만 stdout 에 쓴다. 순환 안내와 러너 상태는 stderr 로 간다. 이전 출력은 Graphviz 에 바로 넘길 수 없었다. 응답 전체가 필요하면 `--format json` 을 쓴다.
-- `agent.task_graph_submit`·`agent.task_graph_validate`(CLI `tasty agent task-graph-submit`)가 JSON 형식 오류(모르는 키, 필수 필드 누락, 타입이 다른 값)에도 `error.data` 에 `location`·`task_id`·`stage` 를 싣는다. 이전에는 메시지만 와서 어느 task 의 어느 키인지 알 수 없었다.
+- `agent.task_graph_submit`·`agent.task_graph_validate`(CLI `tasty agent task-graph-submit`)가 JSON 형식 오류(모르는 키, 필수 필드 누락, 타입이 다른 값)에도 `error.data` 에 `location`·`task_id`·`stage` 를 싣는다. 위치는 틀린 키나 필드(`kind` 태그 enum 안이면 그 안의 필드), 필수 필드가 빠졌으면 그 object 다. 이전에는 메시지만 와서 어느 task 의 어느 키인지 알 수 없었다.
 - **문법 오류가 있는 `webhooks.toml` 을 덮어써 저장한 웹훅과 포트를 잃던 문제를 고쳤다.** 이전에는 `--persistent` 웹훅을 등록·해제하거나 만료로 정리할 때 파일을 읽지 못하면 그 웹훅 목록만으로 파일을 새로 써서, 다른 저장 웹훅(인증 토큰 포함)과 포트 설정이 사라졌다. 이제 파일을 읽지 못하면 쓰지 않는다. 등록·해제는 오류로 답하고 아무것도 바꾸지 않으며, 파일을 고친 뒤 다시 시도하면 된다.
 - **점유된 서피스에 입력 요청이 오면 테두리가 노란 2px 한 줄로만 보인다.** 이전에는 1px 점유선(초록·주황)이 노란 선 바깥쪽을 덮어 두 색이 겹쳐 보였다. 입력 요청이 없는 점유 서피스의 테두리는 그대로다.
 - **입력 없이 바뀐 이미지가 화면에 늦게 나오던 문제를 고쳤다.** 열어 둔 이미지 파일을 밖에서 덮어쓰면 다시 읽기는 1 초 안에 됐지만, 마우스를 움직이는 등 다른 이유로 창이 다시 그려질 때까지 화면에 나오지 않을 수 있었다. 이제 다시 읽은 그림이 바로 그려진다.
