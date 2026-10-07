@@ -64,14 +64,16 @@ const DECLARATION_SITES: &[(&str, usize, &str)] = &[
         "crates/tasty-design-tokens/src/generated/",
         // size-540·700·1100 선언과 letter-spacing-n1px 의 LogicalPx(-1.0)(값 1로 읽힌다)이 네 자리를 더한다.
         // size-20·40 선언 두 자리와, 값이 스케일에 들어온 기존 font-size-20 선언 한 자리를 더한다.
-        63,
+        // 상태 점 고리 굵기의 primitive size-1-5 선언 LogicalPx(1.5) 한 자리를 더한다.
+        64,
         "스케일 자신 — 이 파일이 곧 size-* 의 정본이다",
     ),
     (
         "crates/tasty-type-appearance/src/theme.rs",
         // 스케일에 size-20이 들어오면서 font_size_prose_h1 의 기존 값 20이 새로 집계됐다.
         // 점선 무늬 border_dash·border_dash_gap 의 기본값 4 두 개가 더해졌다.
-        56,
+        // 레일 점 고리 굵기 status_dot_ring_width 의 기본값 1.5 와 배율 무관 단언 두 자리가 더해졌다.
+        58,
         "Theme 의 값표 — 다른 자리가 참조해야 할 이름(border_width 등)이 여기 산다",
     ),
 ];
