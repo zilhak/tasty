@@ -863,7 +863,8 @@ fn the_blind_spots_are_still_the_size_they_say() {
         // 자동 attach 거절 배너 위젯의 글리프 세로 오프셋 vec2(0, nudge)와 갤러리 행의 Margin::symmetric 세로 0이 0 둘을 더하고,
         // 좁은 폭 배너 시험의 화면 높이 400 하나가 test 전용으로 들어왔다.
         // 도구 메뉴 높이 시험의 고정 폭 W(158) 하나가 test 전용으로 들어왔다.
-        (221, 520),
+        // 표 띠·선택 행 글자색 시험(table_band_and_ink)의 화면 크기·열 폭 리터럴 셋이 test 전용으로 들어왔다.
+        (221, 523),
         "제외한 0과 test 전용 코드의 수가 달라졌다. 실제 사용과 수집 범위의 변경을 확인하고 기록을 갱신한다."
     );
     let roster: usize = UNIT_SPACE_SITES.iter().map(|(.., n, _)| n).sum();

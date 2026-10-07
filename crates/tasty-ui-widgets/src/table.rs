@@ -244,11 +244,18 @@ impl<'a, K> Table<'a, K> {
             table.body(|mut body| {
                 for (i, row) in rows.iter().enumerate() {
                     body.row(row_h.value(), |mut tr| {
-                        tr.set_selected(is_selected(row));
+                        let selected = is_selected(row);
+                        tr.set_selected(selected);
                         for (c, col) in columns.iter().enumerate() {
                             tr.col(|ui| {
                                 ui.visuals_mut().selection.bg_fill = text_selection_fill;
                                 ui.visuals_mut().widgets.hovered.bg_fill = widget_hover_fill;
+                                // egui_extras 는 선택 행 셀의 기본 글자색을 선택 테두리색(accent)으로 바꾼다.
+                                // 시안의 선택 행 글자색은 text-primary 다. 색을 명시한 라벨에는 영향이 없다.
+                                if selected {
+                                    ui.visuals_mut().override_text_color =
+                                        Some(theme.text_primary().to_egui());
+                                }
                                 // 본문 라벨이 행 클릭을 가로채지 않게 한다. 헤더의 정렬 클릭에는 적용하지 않는다.
                                 if selectable {
                                     ui.style_mut().interaction.selectable_labels = false;
@@ -282,6 +289,13 @@ impl<'a, K> Table<'a, K> {
             // 표 뒤의 위젯에는 scope 밖에서 부모의 간격이 그대로 적용된다.
             ui.scope(|ui| {
                 ui.spacing_mut().item_spacing.y = 0.0;
+                // 선택·hover·줄무늬 띠는 가로로도 item_spacing.x 의 절반만큼 셀 밖으로 넓어진다. 열 사이
+                // 간격은 그대로 두고, 표 영역의 좌우 끝을 넘는 부분만 잘라 띠가 표 폭 안에 머물게 한다.
+                let clip = ui.clip_rect();
+                ui.set_clip_rect(clip.intersect(egui::Rect::from_x_y_ranges(
+                    ui.available_rect_before_wrap().x_range(),
+                    clip.y_range(),
+                )));
                 if horizontal_scroll {
                     // 헤더와 행을 같은 가로 스크롤 안에 놓는다.
                     egui::ScrollArea::horizontal()
