@@ -44,7 +44,7 @@
 
 ### 예산을 다 쓴 후처리 실패
 
-재시도 예산을 다 쓴 후처리 실패는 그 task 의 실패로 끝내고, 후처리만 다시 실행하는 수동 재시도는 두지 않는다. 그 갈래는 일반 실패와 같이 실패 정책(하류 건너뛰기·`on_failure` fallback)을 따른다. 그래프 전체의 결과는 DAG 요약이 나눠 보인다. 진행할 작업이 남은 동안은 진행 상태이고, 끝났을 때 끝까지 성공한 다른 갈래가 있으면 `partially_failed` 로, 성공한 갈래가 없는 그래프(`failed`)와 구별한다. 판단 순서는 [agent-collaboration](../features/agent-collaboration/index.md)에 있다.
+재시도 예산을 다 쓴 후처리 실패는 그 task 의 실패로 끝내고, 후처리만 다시 실행하는 수동 재시도는 두지 않는다. 그 갈래는 일반 실패와 같이 실패 정책(하류 건너뛰기·`on_failure` fallback)을 따른다. 그래프 전체의 결과는 DAG 요약이 실패와 부분 오류를 나눠 보인다. 그 집계 결정은 [ADR-0072](0072-typed-task-transitions-select-paths-from-the-producer-output.md)에 있다.
 
 ## Consequences
 
@@ -68,7 +68,7 @@
 - memory 값 상한이 바뀌거나 결과를 artifact 로 따로 저장하게 되면 stdout 상한을 다시 정한다(`MAX_POSTPROCESS_STDOUT_BYTES`).
 - Tasty 에 SIGTERM 처리기가 생기면 비정상 종료 때 그룹 전체를 끝내는 경로로 바꾼다.
 - 후처리 단계를 두 개 이상 잇는 요구가 생기면 진행 기록을 단계 목록으로 넓히는 것을 검토한다.
-- 본 작업의 부작용이 커서 후처리만 다시 실행해야 하는 사용 사례가 반복되면 후처리 전용 수동 재시도를 다시 검토한다.
+- 본 작업의 부작용이 커서 후처리만 다시 실행해야 하는 사용 사례가 반복되면 후처리 전용 수동 재시도를 다시 검토한다. 후처리 실패로 끝난 task 를 `retry` 로 다시 실행한 사례에서 본 작업의 부작용(중복 비용·중복 변경)이 문제로 보고되는지로 확인한다. 후처리만 실패했는지는 그 task 의 `typed_result.error.stage` 가 `postprocess` 이고 `typed_result.raw` 에 본 작업 결과와 `postprocess` 보고가 남았는지로 가린다.
 
 ## References
 
