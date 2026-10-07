@@ -779,6 +779,27 @@ fn reset_downstream_is_refused_for_typed_tasks_and_a_new_attempt_clears_the_rout
 }
 
 #[test]
+fn retrying_a_task_whose_branch_was_not_selected_is_refused() {
+    let (_td, mut mem, seq) = fresh();
+    let mut store = TaskStore::new(&mut mem, "_host", &seq);
+    submit(&mut store, review_graph(three_way())).expect("submit");
+    run(
+        &mut store,
+        "review",
+        json!({"verdict": "revise", "confidence": 1}),
+    );
+    assert!(not_selected(&store, "ship"));
+    let e = store.retry(1, &"ship".to_string(), false, 3).unwrap_err();
+    assert!(
+        matches!(e, AgentError::InvalidArgument(ref m) if m.contains("not selected")),
+        "{e:?}"
+    );
+    // 거절은 레코드를 바꾸지 않는다.
+    assert!(not_selected(&store, "ship"));
+    assert_eq!(get(&store, "ship").finished_at, Some(2));
+}
+
+#[test]
 fn transitions_are_only_accepted_through_a_graph_submission() {
     let (_td, mut mem, seq) = fresh();
     let mut store = TaskStore::new(&mut mem, "_host", &seq);

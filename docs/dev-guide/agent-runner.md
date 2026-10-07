@@ -575,7 +575,7 @@ task 는 선택적으로 타입 계약(`TaskContract`)을 가진다. 계약이 �
 
 v2 task 는 Running 이 될 때마다 새 회차(`attempt`: `id` 는 `<task id>#<번호>`, `number`, `started_at`)를 받는다. `retry` 는 회차를 지우지 않으므로 다음 실행은 번호를 이어 간다. v1 task 에는 회차가 없다.
 
-v2 task 의 fallback 이 이미 실행됐으면(Ready·Running·Succeeded) 그 task 의 `retry` 는 `-32602` 로 거절한다. 본 작업이 다시 성공하면 `one_of` 소비자가 성공한 원본 둘을 보게 되고(input 단계 실패), 이미 끝난 fallback 의 결과와 전파를 되돌릴 수 없기 때문이다. 다시 실행하려면 새 task 로 제출한다. fallback 이 실패했거나 실행 전에 끝났으면(Failed·Skipped·Cancelled) 재시도할 수 있다. v2 task 의 `retry` 는 `reset_downstream: true` 도 `-32602` 로 거절한다. 하류는 이전 회차의 실패 전파나 경로 선택으로 이미 판정됐고, 되감으면 두 회차의 판단이 섞이기 때문이다(근거 ADR-0072). 재시도는 그 task 만 새 회차로 다시 실행하며 저장된 경로(`route`)와 skip 이유를 지운다. v1 task 는 이 제한이 없다.
+v2 task 의 fallback 이 이미 실행됐으면(Ready·Running·Succeeded) 그 task 의 `retry` 는 `-32602` 로 거절한다. 본 작업이 다시 성공하면 `one_of` 소비자가 성공한 원본 둘을 보게 되고(input 단계 실패), 이미 끝난 fallback 의 결과와 전파를 되돌릴 수 없기 때문이다. 다시 실행하려면 새 task 로 제출한다. fallback 이 실패했거나 실행 전에 끝났으면(Failed·Skipped·Cancelled) 재시도할 수 있다. v2 task 의 `retry` 는 `reset_downstream: true` 도 `-32602` 로 거절한다. 하류는 이전 회차의 실패 전파나 경로 선택으로 이미 판정됐고, 되감으면 두 회차의 판단이 섞이기 때문이다(근거 ADR-0072). 재시도는 그 task 만 새 회차로 다시 실행하며 저장된 경로(`route`)와 skip 이유를 지운다. 경로가 선택되지 않아 건너뛴(`branch_not_selected`) v2 task 는 다시 판정해도 선택되지 않으면 `retry` 를 `-32602` 로 거절한다(메시지에 `not selected`). 받아들이면 곧장 같은 이유로 건너뛰어 아무것도 실행하지 않은 채 성공 응답만 남기 때문이다. v1 task 는 이 제한이 없다.
 
 완료 보고(`Completion`: 회차 id·결과·성공/실패)는 저장소의 `complete` 하나로 기록한다(근거 ADR-0069).
 

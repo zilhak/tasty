@@ -691,6 +691,7 @@ impl<'a> TaskStore<'a> {
             }
         }
         self.refuse_retry_after_fallback(workspace_id, &task)?;
+        self.refuse_retry_of_unselected(workspace_id, &task)?;
         if reset_downstream && task.is_typed() {
             return Err(AgentError::InvalidArgument(format!(
                 "typed task {id} cannot be retried with reset_downstream: downstream tasks already \
@@ -781,6 +782,28 @@ impl<'a> TaskStore<'a> {
                  stays the outcome of this run; submit a new task to run it again",
                 task.id,
                 fallback.state.name()
+            )));
+        }
+        Ok(())
+    }
+
+    /// 경로가 선택되지 않아 건너뛴 v2 task 를 다시 판정해도 선택되지 않으면 재시도를 거절한다.
+    /// 받아들이면 같은 판정으로 곧장 건너뛰어 아무것도 실행하지 않은 채 성공 응답만 남는다.
+    fn refuse_retry_of_unselected(&self, workspace_id: WorkspaceId, task: &Task) -> Result<()> {
+        if !task.is_typed() || !route::is_not_selected(task) {
+            return Ok(());
+        }
+        let all = self.list(workspace_id)?;
+        if matches!(
+            self.readiness_graph(workspace_id, &all)?
+                .readiness(&task.id),
+            Some(Readiness::NotSelected)
+        ) {
+            return Err(AgentError::InvalidArgument(format!(
+                "typed task {} cannot be retried: its branch was not selected and is still not \
+                 selected, so it would be skipped again without running; retry the task that \
+                 chooses the branch, or submit a new task",
+                task.id
             )));
         }
         Ok(())
