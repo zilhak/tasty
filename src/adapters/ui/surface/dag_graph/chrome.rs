@@ -796,6 +796,8 @@ mod tests {
     /// 툴팁은 화면 배치와 달리 읽는 순서대로 이어 붙인다.
     #[test]
     fn the_tooltip_reads_forwards_while_the_line_paints_backwards() {
+        // 다른 시험의 전역 번역 초기화와 경쟁하지 않도록 툴팁 문구를 만들기 전에 초기화한다.
+        crate::i18n::init("en");
         let reading: Vec<&str> = RESUME_HINT_PARTS.iter().map(|(key, _)| *key).collect();
         let painted: Vec<&str> = resume_hint_paint_order().map(|(key, _)| *key).collect();
         assert_ne!(

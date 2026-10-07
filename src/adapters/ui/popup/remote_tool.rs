@@ -2619,6 +2619,8 @@ mod tests {
 
     #[test]
     fn local_section_shows_empty_note_instead_of_hiding() {
+        // 다른 시험의 전역 번역 초기화와 경쟁하지 않도록 그리기 전에 초기화한다.
+        crate::i18n::init("en");
         let profiles = RemoteProfiles::default();
         let mut st = UiState {
             local: Some(LocalSshCache {
@@ -2640,6 +2642,8 @@ mod tests {
 
     #[test]
     fn local_section_distinguishes_unreadable_config_from_empty_one() {
+        // 다른 시험의 전역 번역 초기화와 경쟁하지 않도록 그리기 전에 초기화한다.
+        crate::i18n::init("en");
         let profiles = RemoteProfiles::default();
         let mut st = UiState {
             local: Some(LocalSshCache {

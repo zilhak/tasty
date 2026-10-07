@@ -430,6 +430,8 @@ mod tests {
     }
     #[test]
     fn long_translations_keep_actions_inside_a_small_viewport() {
+        // 다른 시험의 전역 번역 초기화와 경쟁하지 않도록 크기를 재기 전에 초기화한다.
+        crate::i18n::init("en");
         let theme = crate::theme::theme();
         let ctx = egui::Context::default();
         let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(420.0, 300.0));

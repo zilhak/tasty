@@ -1449,6 +1449,8 @@ mod tests {
     /// 경로 자리에 URL 원문이 파일 경로와 같은 앞자름 규칙으로 들어간다.
     #[test]
     fn a_url_target_shows_format_unknown_and_the_front_elided_url() {
+        // 다른 시험의 전역 번역 초기화와 경쟁하지 않도록 그리기 전에 초기화한다.
+        crate::i18n::init("en");
         let url = "https://example.com/docs/guides/handlers/picker/canonical/form/\
                    with/a/very/long/tail/index.html";
         let (mut state, mut session) = crate::state::tests::test_state();
