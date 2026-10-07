@@ -1294,6 +1294,12 @@ impl crate::theme::Theme {
         self.separator
     }
 
+    /// `component.explorer-state-compact-below` → `{primitive.size-120}` = 120px
+    #[inline]
+    pub fn explorer_state_compact_below(&self) -> LogicalPx {
+        LogicalPx((120.0 * self.ui_zoom).round())
+    }
+
     /// `component.fh-when-width` → `{primitive.size-56}` = 56px
     #[inline]
     pub fn fh_when_width(&self) -> LogicalPx {
@@ -1922,6 +1928,18 @@ impl crate::theme::Theme {
     #[inline]
     pub fn loading_lockup_tracking(&self) -> LogicalPx {
         LogicalPx((-(1.0 * self.ui_zoom)).round())
+    }
+
+    /// `component.md-callout-icon-gap` → `{semantic.space-xs}` = 4px
+    #[inline]
+    pub fn md_callout_icon_gap(&self) -> LogicalPx {
+        self.spacing_xs
+    }
+
+    /// `component.md-callout-marker-size` → `{semantic.icon-size-sm}` = 14px
+    #[inline]
+    pub fn md_callout_marker_size(&self) -> LogicalPx {
+        self.icon_glyph_size_sm
     }
 
     /// `component.md-code-bg` → `{semantic.surface-raised}`
@@ -2962,6 +2980,18 @@ impl crate::theme::Theme {
         Millis(1600.0)
     }
 
+    /// `component.status-dot-ring` → `{semantic.bg-sidebar}`
+    #[inline]
+    pub fn status_dot_ring(&self) -> HexColor {
+        self.bg_sidebar()
+    }
+
+    /// `component.status-dot-ring-width` → `{primitive.size-1-5}` = 1.5px
+    #[inline]
+    pub fn status_dot_ring_width(&self) -> LogicalPx {
+        LogicalPx((1.5 * self.ui_zoom).round())
+    }
+
     /// `component.status-dot-size` → `{primitive.size-8}` = 8px
     #[inline]
     pub fn status_dot_size(&self) -> LogicalPx {
@@ -3662,6 +3692,18 @@ impl crate::theme::Theme {
     #[inline]
     pub fn toast_stack_offset_bottom_settings(&self) -> LogicalPx {
         LogicalPx((64.0 * self.ui_zoom).round())
+    }
+
+    /// `component.tools-menu-max-width` → `{primitive.size-240}` = 240px
+    #[inline]
+    pub fn tools_menu_max_width(&self) -> LogicalPx {
+        LogicalPx((240.0 * self.ui_zoom).round())
+    }
+
+    /// `component.tools-menu-min-width` → `{primitive.size-160}` = 160px
+    #[inline]
+    pub fn tools_menu_min_width(&self) -> LogicalPx {
+        LogicalPx((160.0 * self.ui_zoom).round())
     }
 
     /// `component.tooltip-bg` → `{semantic.surface-raised}`

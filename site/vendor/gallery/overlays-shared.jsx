@@ -393,7 +393,7 @@ function ToolsMenuFrame() {
         <Button variant="ghost" size="sm" block leadingIcon={ic.tools} style={{ justifyContent: "flex-start", background: "var(--tasty-surface-active)" }}>Tools</Button>
       </div>
       {/* the menu, anchored above the button */}
-      <div role="menu" aria-label="Tools" style={{ position: "absolute", left: 12, bottom: 52, width: 160,
+      <div role="menu" aria-label="Tools" style={{ position: "absolute", left: 12, bottom: 52, width: "max-content", minWidth: "var(--tasty-tools-menu-min-width)", maxWidth: "var(--tasty-tools-menu-max-width)", boxSizing: "border-box", whiteSpace: "nowrap",
         background: "var(--tasty-menu-bg)", border: "var(--tasty-border-width) solid var(--tasty-menu-border)",
         borderRadius: "var(--tasty-menu-radius)", padding: "var(--tasty-popup-content-margin)", boxShadow: "var(--tasty-shadow-popover)" }}>
         {builtin.map((l) => <MenuItem key={l} label={l} />)}

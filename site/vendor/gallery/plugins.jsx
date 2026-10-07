@@ -435,12 +435,25 @@ function CtxMenu({ title, children }) {
   );
 }
 
-function ExpState({ glyph, glyphColor, title, sub, reason, actions }) {
+// 2026-10-07 batch 4 — compact: content body under --tasty-explorer-state-compact-below (120) → one row:
+// glyph (unscaled 16) · title (ellipsis; reason / sub move to its tooltip) · actions. Retry / Go up stay.
+function ExpState({ glyph, glyphColor, title, sub, reason, actions, compact, bodyHeight }) {
+  const titleFg = glyphColor === "var(--tasty-accent-warning)" || glyphColor === "var(--tasty-explorer-error-fg)" ? glyphColor : "var(--tasty-text-secondary)";
+  if (compact) return (
+    <div style={{ flex: 1, minWidth: 0, height: bodyHeight || 62, display: "flex", alignItems: "center", justifyContent: "center", boxSizing: "border-box",
+      background: "var(--tasty-bg-panel)", border: "1px solid var(--tasty-separator)", borderRadius: "var(--tasty-radius)", padding: "0 var(--tasty-space-sm)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", minWidth: 0, maxWidth: "100%" }}>
+        <span style={{ display: "inline-flex", flex: "none", color: glyphColor || "var(--tasty-text-muted)" }}>{glyph}</span>
+        <span title={reason || sub} style={{ minWidth: 0, fontSize: 13, color: titleFg, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{title}</span>
+        {actions && <div style={{ display: "flex", flex: "none", gap: "var(--tasty-space-xs)" }}>{actions}</div>}
+      </div>
+    </div>
+  );
   return (
     <div style={{ flex: 1, minWidth: 0, height: 180, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8,
       background: "var(--tasty-bg-panel)", border: "1px solid var(--tasty-separator)", borderRadius: "var(--tasty-radius)", textAlign: "center", padding: 16 }}>
       <span style={{ display: "inline-flex", color: glyphColor || "var(--tasty-text-muted)", transform: "scale(1.6)" }}>{glyph}</span>
-      <div style={{ fontSize: 13, color: glyphColor === "var(--tasty-accent-warning)" || glyphColor === "var(--tasty-explorer-error-fg)" ? glyphColor : "var(--tasty-text-secondary)" }}>{title}</div>
+      <div style={{ fontSize: 13, color: titleFg }}>{title}</div>
       {sub && <div style={{ fontSize: 11, color: "var(--tasty-text-muted)", maxWidth: 200 }}>{sub}</div>}
       {reason && <div style={{ fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)", maxWidth: 200, overflowWrap: "anywhere" }}>{reason}</div>}
       {actions && <div style={{ display: "flex", gap: "var(--tasty-space-sm)", marginTop: "var(--tasty-space-xs)" }}>{actions}</div>}
@@ -451,13 +464,16 @@ function ExpState({ glyph, glyphColor, title, sub, reason, actions }) {
 // ════════════════════════════════════════════════════════════
 //  CONTENT VIEWERS (markdown / html / image)
 // ════════════════════════════════════════════════════════════
+// 2026-10-07 batch 4 — matches render.rs heading_sizes_px(): 5-step interpolation prose-h1 (20) → body (13),
+// i.e. 20 · 18.6 · 17.2 · 15.8 · 14.4 · 13, every level text-primary · 600.
+const mdHSize = (n) => `calc(var(--tasty-font-size-prose-h1) - (var(--tasty-font-size-prose-h1) - var(--tasty-font-size-body)) * ${(n - 1) / 5})`;
 const MD_H = {
-  1: { fontSize: "var(--tasty-font-size-prose-h1)", fontWeight: 700, color: "var(--tasty-text-primary)", margin: "0 0 10px", lineHeight: 1.3 },
-  2: { fontSize: "var(--tasty-font-size-max)", fontWeight: 700, color: "var(--tasty-text-primary)", margin: "20px 0 8px", lineHeight: 1.3 },
-  3: { fontSize: "var(--tasty-font-size-max)", fontWeight: 600, color: "var(--tasty-text-primary)", margin: "16px 0 6px" },
-  4: { fontSize: "var(--tasty-font-size-body)", fontWeight: 600, color: "var(--tasty-text-secondary)", margin: "14px 0 4px" },
-  5: { fontSize: "var(--tasty-font-size-body)", fontWeight: 600, color: "var(--tasty-text-muted)", margin: "12px 0 4px" },
-  6: { fontSize: "var(--tasty-font-size-body)", fontWeight: 500, color: "var(--tasty-text-muted)", margin: "12px 0 4px", textTransform: "uppercase", letterSpacing: ".06em" },
+  1: { fontSize: mdHSize(1), fontWeight: 600, color: "var(--tasty-text-primary)", margin: "0 0 10px", lineHeight: 1.3 },
+  2: { fontSize: mdHSize(2), fontWeight: 600, color: "var(--tasty-text-primary)", margin: "20px 0 8px", lineHeight: 1.3 },
+  3: { fontSize: mdHSize(3), fontWeight: 600, color: "var(--tasty-text-primary)", margin: "16px 0 6px" },
+  4: { fontSize: mdHSize(4), fontWeight: 600, color: "var(--tasty-text-primary)", margin: "14px 0 4px" },
+  5: { fontSize: mdHSize(5), fontWeight: 600, color: "var(--tasty-text-primary)", margin: "12px 0 4px" },
+  6: { fontSize: mdHSize(6), fontWeight: 600, color: "var(--tasty-text-primary)", margin: "12px 0 4px" },
 };
 function MdH({ level, children }) { return <div style={MD_H[level]}>{children}</div>; }
 const mdBody = { fontSize: "var(--tasty-font-size-body)", color: "var(--tasty-text-secondary)", lineHeight: 1.6, margin: "0 0 10px" };
@@ -604,7 +620,7 @@ function MarkdownDoc({ editing = false }) {
       {/* 2026-10-07: drawn as the renderer does — type colour at tint-fill-alpha, 16px type icon before the label, radius; note = accent-primary */}
       {[["Note", "var(--tasty-accent-primary)", "alertCircle", "Non-collapsible: > [!note]", false], ["Warning", "var(--tasty-accent-warning)", "alertTriangle", "Collapsible: > [!warning]- (closed until clicked)", true]].map(([t, c, glyph, body, fold]) => (
         <div key={t} style={{ borderLeft: "var(--tasty-md-quote-bar-width) solid " + c, borderRadius: "var(--tasty-radius)", background: "color-mix(in srgb, " + c + " calc(var(--tasty-tint-fill-alpha) * 100%), transparent)", padding: "var(--tasty-space-sm) var(--tasty-space-md)", margin: "0 0 12px", fontSize: 13, lineHeight: 1.6, color: "var(--tasty-md-quote-fg)" }}>
-          <div style={{ color: c, fontWeight: 600, display: "flex", alignItems: "center", gap: "var(--tasty-space-xs)" }}>{fold ? <PIcon name="chevronRight" size="var(--tasty-icon-size-sm)" /> : null}<PIcon name={glyph} size="var(--tasty-icon-size-md)" />{t}</div>
+          <div style={{ color: c, fontWeight: 600, display: "flex", alignItems: "center", gap: "var(--tasty-md-callout-icon-gap)" }}>{fold ? <PIcon name="chevronRight" size="var(--tasty-md-callout-marker-size)" /> : null}<PIcon name={glyph} size="var(--tasty-icon-size-md)" />{t}</div>
           {!fold && <div>{body}</div>}
           {fold && <div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>{body}</div>}
         </div>
@@ -616,32 +632,31 @@ function MarkdownDoc({ editing = false }) {
   );
 }
 
-// ── Markdown color injection — the ONLY thing parity binds in md CONTENT.
-// egui_commonmark reads all color from egui::Visuals; we override those fields
-// with Tasty theme tokens. Size ladder / leading / block spacing stay the
-// library's (library-driven). Rendered as text+swatch so the mapping is the
-// source of truth, not a pixel drawing.
+// ── Markdown content colour (WebView path, 2026-10-07 batch 4): render.rs theme_css()
+// writes Tasty tokens into --md-* CSS variables; hljs_css() maps highlight.js classes
+// to palette roles. Rendered as text+swatch so the mapping is the source of truth.
 function Sw({ c }) {
   return <span style={{ display: "inline-block", width: 12, height: 12, flex: "none", borderRadius: 2, border: "1px solid var(--tasty-separator)", background: c, verticalAlign: "middle" }} />;
 }
-const VIS_MAP = [
-  ["override_text_color", "body text", "--tasty-text-secondary"],
-  ["strong_text_color", "headings · strong · table header", "--tasty-text-primary"],
-  ["hyperlink_color", "links", "--tasty-accent-primary"],
-  ["code_bg_color", "inline code fill", "--tasty-surface-raised"],
-  ["extreme_bg_color", "code-block fill", "--tasty-surface-raised"],
-  ["weak_text_color", "blockquote accent bar", "--tasty-border-strong"],
-  ["noninteractive.bg_stroke", "code-block border", "--tasty-separator"],
+const MD_VAR_MAP = [
+  ["--md-fg", "body text", "--tasty-text-secondary"],
+  ["--md-strong", "headings · strong · table header", "--tasty-text-primary"],
+  ["--md-link", "links", "--tasty-accent-primary"],
+  ["--md-code-bg", "inline code · code-block fill", "--tasty-surface-raised"],
+  ["--md-code-border", "code-block border", "--tasty-separator"],
+  ["--md-quote-bar", "blockquote bar", "--tasty-border-strong"],
+  ["--md-rule", "horizontal rule", "--tasty-separator"],
 ];
-const SYNTECT_MAP = [
-  ["keyword", "--tasty-color-mauve"],
-  ["string", "--tasty-color-green"],
-  ["function · method", "--tasty-color-blue"],
-  ["number · constant · bool", "--tasty-color-peach"],
-  ["type · class", "--tasty-color-yellow"],
-  ["comment (italic)", "--tasty-text-muted"],
-  ["operator · punctuation", "--tasty-text-secondary"],
-  ["variable · identifier", "--tasty-text-primary"],
+const HLJS_MAP = [
+  ["hljs-keyword", "--tasty-color-mauve"],
+  ["hljs-string", "--tasty-color-green"],
+  ["hljs-title · function", "--tasty-color-blue"],
+  ["hljs-number", "--tasty-color-peach"],
+  ["hljs-type", "--tasty-color-yellow"],
+  ["hljs-comment (italic)", "--tasty-text-muted"],
+  ["hljs-tag", "--tasty-color-teal"],
+  ["hljs-variable", "--tasty-color-lavender"],
+  ["hljs-built_in", "--tasty-color-red"],
 ];
 function MdInjectionMap() {
   const cell = { padding: "6px 10px", fontSize: 12, color: "var(--tasty-text-secondary)", borderBottom: "1px solid var(--tasty-separator)", textAlign: "left", verticalAlign: "middle" };
@@ -650,16 +665,16 @@ function MdInjectionMap() {
   return (
     <div style={{ display: "flex", flexWrap: "wrap", gap: 24, alignItems: "flex-start" }}>
       <div style={{ flex: "1 1 380px", minWidth: 320 }}>
-        <div style={{ fontSize: 11, color: "var(--tasty-text-muted)", marginBottom: 6, textTransform: "uppercase", letterSpacing: ".05em" }}>egui::Visuals → Tasty token</div>
+        <div style={{ fontSize: 11, color: "var(--tasty-text-muted)", marginBottom: 6, textTransform: "uppercase", letterSpacing: ".05em" }}>theme_css() --md-* → Tasty token</div>
         <div style={{ border: "1px solid var(--tasty-border-default)", borderRadius: "var(--tasty-radius)", overflow: "hidden", background: "var(--tasty-bg-panel)" }}>
           <table style={{ borderCollapse: "collapse", width: "100%" }}>
-            <thead><tr><th style={head}>Visuals field</th><th style={head}>draws</th><th style={head}>token</th></tr></thead>
+            <thead><tr><th style={head}>CSS variable</th><th style={head}>draws</th><th style={head}>token</th></tr></thead>
             <tbody>
-              {VIS_MAP.map(([f, d, t], i) => (
+              {MD_VAR_MAP.map(([f, d, t], i) => (
                 <tr key={i}>
                   <td style={{ ...cell, ...mono, color: "var(--tasty-accent-agent)" }}>{f}</td>
                   <td style={cell}>{d}</td>
-                  <td style={{ ...cell, borderBottom: i === VIS_MAP.length - 1 ? "none" : cell.borderBottom }}>
+                  <td style={{ ...cell, borderBottom: i === MD_VAR_MAP.length - 1 ? "none" : cell.borderBottom }}>
                     <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><Sw c={`var(${t})`} /><span style={mono}>{t}</span></span>
                   </td>
                 </tr>
@@ -669,14 +684,14 @@ function MdInjectionMap() {
         </div>
       </div>
       <div style={{ flex: "1 1 240px", minWidth: 220 }}>
-        <div style={{ fontSize: 11, color: "var(--tasty-text-muted)", marginBottom: 6, textTransform: "uppercase", letterSpacing: ".05em" }}>syntect code theme (Tasty palette)</div>
+        <div style={{ fontSize: 11, color: "var(--tasty-text-muted)", marginBottom: 6, textTransform: "uppercase", letterSpacing: ".05em" }}>hljs_css() highlight role → palette</div>
         <div style={{ border: "1px solid var(--tasty-border-default)", borderRadius: "var(--tasty-radius)", overflow: "hidden", background: "var(--tasty-bg-panel)" }}>
           <table style={{ borderCollapse: "collapse", width: "100%" }}>
             <tbody>
-              {SYNTECT_MAP.map(([role, t], i) => (
+              {HLJS_MAP.map(([role, t], i) => (
                 <tr key={i}>
-                  <td style={{ ...cell, borderBottom: i === SYNTECT_MAP.length - 1 ? "none" : cell.borderBottom }}>{role}</td>
-                  <td style={{ ...cell, textAlign: "right", borderBottom: i === SYNTECT_MAP.length - 1 ? "none" : cell.borderBottom }}>
+                  <td style={{ ...cell, fontFamily: "var(--tasty-font-mono)", fontSize: 11, borderBottom: i === HLJS_MAP.length - 1 ? "none" : cell.borderBottom }}>{role}</td>
+                  <td style={{ ...cell, textAlign: "right", borderBottom: i === HLJS_MAP.length - 1 ? "none" : cell.borderBottom }}>
                     <span style={{ display: "inline-flex", alignItems: "center", gap: 6, justifyContent: "flex-end" }}><span style={{ ...mono, color: `var(${t})` }}>{t.replace("--tasty-", "")}</span><Sw c={`var(${t})`} /></span>
                   </td>
                 </tr>
@@ -931,7 +946,7 @@ function Page() {
         </Spec>
 
         <Spec title="Short cell — Favorites drops below 240, the cell stops at 160 (2026-10-07)"
-          when={<>When the explorer is split low, the sidebar body can be shorter than the Favorites floor. Below <b>240</b> (<span className="tok">--tasty-explorer-favorites-hide-below</span> = the 120 Favorites floor + 120 for Files) the <b>Favorites region is not drawn</b> and Files takes the whole body; it comes back as soon as the body reaches 240 again. The explorer cell itself has a floor: the split drag stops at <b>160</b> (<span className="tok">--tasty-explorer-min-height</span> — toolbar + status line + two rows), so the status line always has its place and the Files caption plus at least one row stay visible. Nothing is cut mid-row.</>}>
+          when={<>When the explorer is split low, the sidebar body can be shorter than the Favorites floor. Below <b>240</b> (<span className="tok">--tasty-explorer-favorites-hide-below</span> = the 120 Favorites floor + 120 for Files) the <b>Favorites region is not drawn</b> and Files takes the whole body; it comes back as soon as the body reaches 240 again. The explorer cell itself has a floor: the split drag stops at <b>160</b> (<span className="tok">--tasty-explorer-min-height</span> — toolbar + status line + two rows), so the status line always has its place and the Files caption plus at least one row stay visible. Nothing is cut mid-row. <b>Outside a drag (2026-10-07 batch 4)</b>: a <b>split</b> (<code>tasty split</code> or the split menu) that would leave an explorer cell under 160 places the new divider so the explorer keeps 160 and the sibling takes the rest; when the sibling would then fall under its own minimum, the split is refused (no change). A <b>window resize</b> does not hold the floor — the cell may shrink below 160. <b>Short body</b>: when the content body is under <b>120</b> (<span className="tok">--tasty-explorer-state-compact-below</span>) every status screen switches to a <b>one-line compact row</b> — 16px glyph, title (ellipsis), and the state's buttons; the OS reason and the sub line move to the title tooltip. Retry and Go up stay on the row. Nothing is clipped.</>}>
           <Stage variant="solo center" style={{ padding: 20, background: "var(--tasty-bg-app)", gap: 18, flexWrap: "wrap", alignItems: "flex-start" }}>
             {[300, 240, 200, 90].map((h) => (
               <div key={h} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -942,9 +957,19 @@ function Page() {
               </div>
             ))}
           </Stage>
+          <Stage variant="solo center" style={{ padding: 20, background: "var(--tasty-bg-app)", gap: 12, flexDirection: "column", alignItems: "stretch" }}>
+            <div style={{ fontFamily: "var(--tasty-font-mono)", fontSize: 10, color: "var(--tasty-text-muted)" }}>content body 62 (cell at 160) → compact row</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12, width: "100%", maxWidth: 440 }}>
+              <ExpState compact glyph={<PIcon name="alertTriangle" size="var(--tasty-icon-size-md)" />} glyphColor="var(--tasty-explorer-error-fg)" title="Can't read this folder" reason="No such file or directory (os error 2)"
+                actions={<><Button variant="secondary" size="sm">Retry</Button><Button variant="ghost" size="sm">Go up</Button></>} />
+              <ExpState compact glyph={ic.lock} glyphColor="var(--tasty-accent-warning)" title="Permission denied" sub="You don't have access to read this folder." />
+              <ExpState compact glyph={ic.folderOpen} title="This folder is empty" />
+            </div>
+          </Stage>
           <Meta
-            specs={[["hide Favorites", <>body &lt; 240 · <span className="tok">--tasty-explorer-favorites-hide-below</span></>], ["Files only", "caption + tree, own scroll, full body"], ["return", "body ≥ 240 → pin ladder as before (120 floor)"], ["cell floor", <>160 · <span className="tok">--tasty-explorer-min-height</span> · split drag stops here</>], ["scope", "explorer only — other surfaces keep their own minimums"], ["sidebar", "never hidden as a whole"]]}
-            tokens={[{ tok: "--tasty-explorer-favorites-hide-below", use: "→ size-240" }, { tok: "--tasty-explorer-min-height", use: "→ size-160" }, { tok: "--tasty-explorer-favorites-pin-min-height", use: "120 floor (unchanged)" }]} />
+            specs={[["hide Favorites", <>body &lt; 240 · <span className="tok">--tasty-explorer-favorites-hide-below</span></>], ["Files only", "caption + tree, own scroll, full body"], ["return", "body ≥ 240 → pin ladder as before (120 floor)"], ["cell floor", <>160 · <span className="tok">--tasty-explorer-min-height</span> · split drag stops here</>], ["split", "explorer keeps 160, sibling takes the rest; refused if the sibling can't"], ["window resize", "floor not held"], ["compact state", <>content body &lt; 120 · <span className="tok">--tasty-explorer-state-compact-below</span> · glyph · title · buttons on one row, reason in tooltip</>], ["scope", "explorer only — other surfaces keep their own minimums"], ["sidebar", "never hidden as a whole"]]}
+            tokens={[{ tok: "--tasty-explorer-favorites-hide-below", use: "→ size-240" }, { tok: "--tasty-explorer-min-height", use: "→ size-160" }, { tok: "--tasty-explorer-state-compact-below", use: "→ size-120" }, { tok: "--tasty-explorer-favorites-pin-min-height", use: "120 floor (unchanged)" }]} />
+          <Note>The Favorites height rule already reads tokens (<span className="tok">--tasty-explorer-favorites-pin-height</span> 240, <span className="tok">-pin-threshold</span> 600, <span className="tok">-pin-ratio</span> 0.4, <span className="tok">-pin-min-height</span> 120). The three dimensions scale with the UI zoom like the other explorer tokens; the ratio is unitless and does not.</Note>
         </Spec>
 
         <Spec title="View modes — Grid · List · Detail">
@@ -1050,14 +1075,14 @@ function Page() {
 
       <Section id="markdown" title="Markdown viewer">
         <Spec title="Markdown — read-only viewer (address bar + body)"
-          when={<><b style={{ color: "var(--tasty-accent-attention)" }}>Library-driven content (parity exception).</b> The markdown surface is an <b>address-bar chrome</b> over a single vertical scroll body that fills the tile (body on <span className="tok">--tasty-md-doc-bg</span> = crust, reloads on file change). The <b>chrome keeps strict pixel parity</b>; the <b>rendered content below it does not</b> — it renders through <code>egui_commonmark</code>, so the heading size ladder, paragraph leading, and block spacing follow the <b>library's form</b>. What parity binds in the content is <b>color only</b>: Tasty tokens are injected into <code>egui::Visuals</code> (mapping in the next specimen). The drawing below is an <i>approximate</i> reference, not a pixel spec.</>}>
+          when={<>The markdown surface is an <b>address-bar chrome</b> over a single vertical scroll body that fills the tile (body on <span className="tok">--tasty-md-doc-bg</span> = crust, reloads on file change). The chrome is native UI. The body is an HTML/CSS document in a <b>WebView</b>: colour, heading sizes, leading and block spacing all come from Tasty tokens through <code>theme_css()</code> (maps in <b>content colour</b> and <b>heading hierarchy</b> below). The drawing uses the same values.</>}>
           <Stage variant="solo center" style={{ padding: 20, background: "var(--tasty-bg-app)" }}>
             <MarkdownDoc />
           </Stage>
           <Meta
-            specs={[["chrome", <>40px address bar + Go, on <span className="tok">--tasty-bg-sidebar</span></>], ["body", <>13px · line-height 1.6 (library-owned)</>], ["h1", "20px / 700 / primary (content, cap-exempt)"], ["h2", "14px / 700 / primary"], ["h3", "14px / 600 / primary"], ["h4–h6", "13px · weight + color + UPPER steps"], ["code", <>mono on <span className="tok">--tasty-surface-raised</span></>], ["link", <span className="tok">--tasty-accent-primary</span>], ["table", <>grid + zebra, read-only — <span className="tok">--tasty-md-table-*</span></>]]}
-            tokens={[{ tok: "--tasty-bg-sidebar", use: "chrome bar", color: "var(--tasty-bg-sidebar)" }, { tok: "--tasty-md-doc-bg", use: "document bed (crust)", color: "var(--tasty-md-doc-bg)" }, { tok: "--tasty-input-bg", use: "address field", color: "var(--tasty-input-bg)" }, { tok: "--tasty-text-secondary", use: "body + headings", color: "var(--tasty-text-secondary)" }, { tok: "--tasty-surface-raised", use: "code bg + inline chip", color: "var(--tasty-surface-raised)" }, { tok: "--tasty-accent-primary", use: "links + Go", color: "var(--tasty-accent-primary)" }, { tok: "--tasty-md-table-border", use: "table grid (surface1)", color: "var(--tasty-md-table-border)" }, { tok: "--tasty-md-table-header-bg", use: "table header (surface0)", color: "var(--tasty-md-table-header-bg)" }, { tok: "--tasty-md-table-row-bg-zebra", use: "zebra row (mantle)", color: "var(--tasty-md-table-row-bg-zebra)" }, { tok: "--tasty-font-size-prose-h1", use: "h1 (cap-exempt)" }]} />
-          <Note>Reverses the earlier “no toolbar” decision: the surface now leads with a browser-style <b>address bar</b> (path display/edit) + <b>Go</b> button — <b>chrome, so it stays pixel-parity</b>. The body is <b>library-driven</b> (egui_commonmark): sizes/leading/spacing are the library's, only color is injected. The removed/redefined content tokens (<span className="tok">--tasty-font-size-prose-h2</span>, <span className="tok">--tasty-line-height-prose</span> now removed; <span className="tok">--tasty-font-size-prose-h1</span> → Heading anchor) are covered in the heading-hierarchy specimen.</Note>
+            specs={[["chrome", <>40px address bar + Go, on <span className="tok">--tasty-bg-sidebar</span></>], ["body", <>13px · CSS line-height 1.6</>], ["headings", "h1 20 → h6 13, 5-step CSS interpolation (20 · 18.6 · 17.2 · 15.8 · 14.4 · 13)"], ["heading style", "600 · text-primary at every level"], ["h1", "prose-h1 — the only cap-exempt content size"], ["code", <>mono on <span className="tok">--tasty-surface-raised</span></>], ["link", <span className="tok">--tasty-accent-primary</span>], ["table", <>grid + zebra, read-only — <span className="tok">--tasty-md-table-*</span></>]]}
+            tokens={[{ tok: "--tasty-bg-sidebar", use: "chrome bar", color: "var(--tasty-bg-sidebar)" }, { tok: "--tasty-md-doc-bg", use: "document bed (crust)", color: "var(--tasty-md-doc-bg)" }, { tok: "--tasty-input-bg", use: "address field", color: "var(--tasty-input-bg)" }, { tok: "--tasty-text-secondary", use: "body", color: "var(--tasty-text-secondary)" }, { tok: "--tasty-text-primary", use: "headings · strong", color: "var(--tasty-text-primary)" }, { tok: "--tasty-surface-raised", use: "code bg + inline chip", color: "var(--tasty-surface-raised)" }, { tok: "--tasty-accent-primary", use: "links + Go", color: "var(--tasty-accent-primary)" }, { tok: "--tasty-md-table-border", use: "table grid (surface1)", color: "var(--tasty-md-table-border)" }, { tok: "--tasty-md-table-header-bg", use: "table header (surface0)", color: "var(--tasty-md-table-header-bg)" }, { tok: "--tasty-md-table-row-bg-zebra", use: "zebra row (mantle)", color: "var(--tasty-md-table-row-bg-zebra)" }, { tok: "--tasty-font-size-prose-h1", use: "h1 (cap-exempt)" }]} />
+          <Note>The surface leads with a browser-style <b>address bar</b> (path display/edit) + <b>Go</b> button. The body follows the WebView/CSS path (2026-10-07); the earlier egui_commonmark renderer and its library-owned sizes are retired. Removed/redefined content tokens (<span className="tok">--tasty-font-size-prose-h2</span>, <span className="tok">--tasty-line-height-prose</span> removed; <span className="tok">--tasty-font-size-prose-h1</span> → Heading anchor) are covered in the heading-hierarchy specimen.</Note>
         </Spec>
         <Spec title="Markdown — document background (single bed, webview render path)"
           when={<>Under the webview render channel the markdown body is an HTML/CSS document drawn by the host WebView — there is <b>no focused/unfocused signal</b> on that path, so markdown has exactly <b>one</b> background (unlike the terminal, which swaps two). That bed is <span className="tok">--tasty-md-doc-bg</span> → <span className="tok">--tasty-surface-markdown-focused-bg</span> = <b>crust</b>. Pure black is a <i>terminal</i> convention (raw TTY) and sits outside the Catppuccin ramp; prose at the 14px cap on #000 halates. crust is the palette's deepest tone, so every content fill still steps up and stays discriminable: <b>crust</b> (page) &lt; <b>mantle</b> (table zebra) &lt; <b>base</b> &lt; <b>surface0</b> (code + table header) &lt; <b>surface1</b> (table grid). mantle would have swallowed the zebra stripe; base would have flattened the table's own fill against the page.</>}>
@@ -1085,9 +1110,9 @@ function Page() {
             <div style={{ width: "100%", maxWidth: 720 }}><MdInjectionMap /></div>
           </Stage>
           <Meta
-            specs={[["path", "WebView · theme_css() → CSS variables"], ["--md-fg", <><span className="tok">--tasty-text-secondary</span></>], ["--md-strong", <><span className="tok">--tasty-text-primary</span></>], ["--md-link", <><span className="tok">--tasty-accent-primary</span></>], ["--md-code-bg / -border", <><span className="tok">--tasty-surface-raised</span> / <span className="tok">--tasty-separator</span></>], ["--md-quote-bar · --md-rule", <><span className="tok">--tasty-border-strong</span> · <span className="tok">--tasty-separator</span></>], ["hljs", "keyword mauve · string green · title/function blue · number peach · type yellow · comment text-muted italic · tag teal · variable lavender · built_in red"], ["diff", "deletion / addition bg = accent-danger / accent-success at tint-fill-alpha"], ["callouts", "type colour bar (md-quote-bar-width) + type colour fill at tint-fill-alpha + radius + 16px type icon before the label · note accent-primary · tip accent-success · important accent-agent · warning accent-warning · caution accent-danger"]]}
+            specs={[["path", "WebView · theme_css() → CSS variables"], ["--md-fg", <><span className="tok">--tasty-text-secondary</span></>], ["--md-strong", <><span className="tok">--tasty-text-primary</span></>], ["--md-link", <><span className="tok">--tasty-accent-primary</span></>], ["--md-code-bg / -border", <><span className="tok">--tasty-surface-raised</span> / <span className="tok">--tasty-separator</span></>], ["--md-quote-bar · --md-rule", <><span className="tok">--tasty-border-strong</span> · <span className="tok">--tasty-separator</span></>], ["hljs", "keyword mauve · string green · title/function blue · number peach · type yellow · comment text-muted italic · tag teal · variable lavender · built_in red"], ["diff", "deletion / addition bg = accent-danger / accent-success at tint-fill-alpha"], ["callouts", "type colour bar (md-quote-bar-width) + type colour fill at tint-fill-alpha + radius + 16px type icon before the label · gaps 4 (md-callout-icon-gap) · collapsible: chevronRight at md-callout-marker-size (→ icon-size-sm) in the type colour, chevronDown when open, default <details> marker hidden · note accent-primary · tip accent-success · important accent-agent · warning accent-warning · caution accent-danger"]]}
             tokens={[{ tok: "--tasty-text-secondary", use: "body", color: "var(--tasty-text-secondary)" }, { tok: "--tasty-text-primary", use: "headings / strong", color: "var(--tasty-text-primary)" }, { tok: "--tasty-accent-primary", use: "links", color: "var(--tasty-accent-primary)" }, { tok: "--tasty-surface-raised", use: "code fills", color: "var(--tasty-surface-raised)" }, { tok: "--tasty-border-strong", use: "blockquote bar", color: "var(--tasty-border-strong)" }, { tok: "--tasty-separator", use: "code-block border", color: "var(--tasty-separator)" }]} />
-          <Note>The right-hand table lists the original six highlight roles; the product adds <b>tag → teal</b>, <b>variable → lavender</b>, <b>built_in → red</b> and the two diff backgrounds. Both themes follow automatically because the palette roles re-point per theme.</Note>
+          <Note>Both tables follow <code>theme_css()</code> / <code>hljs_css()</code> one row per variable or class; the two diff backgrounds are in the Meta. Both themes follow automatically because the palette roles re-point per theme.</Note>
         </Spec>
         <Spec title="Address bar states · large-file confirm"
           when={<>The address bar is a browser-style path field. <b>Display</b> shows the current file path (mono, secondary); <b>click</b> to edit (focus ring + caret) and type a new path — <span className="ic">↵</span> or the <b>Go</b> button opens it in place, <span className="ic">Esc</span> reverts to the original. A non-<code>.md</code> extension still opens as markdown. Opening a file <b>over 1 MB</b> first raises a <b>surface-scoped</b> confirm — clamped to the tile (not a window scrim), same 360px shell as <code>markdown_open</code> — with Open / Cancel; Cancel opens nothing.</>}>
@@ -1123,7 +1148,7 @@ function Page() {
             </div>
           </Stage>
           <Meta
-            specs={[["ladder", "CSS — 5-step interpolation 20 → 13 (--md-h1 … --md-h6)"], ["h1", "prose-h1 (20) · cap-exempt"], ["h6", "body 13"], ["leading", "CSS line-height 1.6"], ["block spacing", "CSS"], ["small", "11 · muted"]]}
+            specs={[["ladder", "CSS — 5-step interpolation 20 → 13 (--md-h1 … --md-h6)"], ["h1", "prose-h1 (20) · cap-exempt"], ["h2 … h5", "18.6 · 17.2 · 15.8 · 14.4"], ["h6", "body 13"], ["weight · colour", "600 · text-primary, every level"], ["leading", "CSS line-height 1.6"], ["block spacing", "CSS"], ["small", "11 · muted"]]}
             tokens={[{ tok: "--tasty-font-size-prose-h1", use: "Heading anchor (cap-exempt)" }, { tok: "--tasty-text-primary", use: "headings / strong", color: "var(--tasty-text-primary)" }, { tok: "--tasty-text-secondary", use: "body", color: "var(--tasty-text-secondary)" }, { tok: "--tasty-text-muted", use: "de-emphasis", color: "var(--tasty-text-muted)" }]} />
           <Note>Load-fail / empty / loading states (proposed): a peach-toned <b>"Failed to load"</b> instead of raw <InlineCode>Error:</InlineCode> text, a centered <b>"This file is empty"</b>, and the Spinner for slow loads — all in the Explorer states pattern above. Markdown font gets its own <b>Appearance › Markdown</b> sub-tab. Size, leading and spacing are all Tasty's (CSS).</Note>
         </Spec>

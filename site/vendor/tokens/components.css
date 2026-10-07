@@ -420,14 +420,19 @@
   --tasty-status-dot-danger:       var(--tasty-accent-danger);
   --tasty-status-dot-agent:        var(--tasty-accent-agent);
   /* Attention kinds on the dot channel (collapsed rail). ONE dot, one color:
-     needs-input > completion > running/busy. Two dots were rejected — at 8px on
-     a 32px rail a second dot reads as noise and still can't carry a count. */
+     needs-input > completion > running/busy. Two dots were rejected — at the
+     compact 6px rail dot a second dot reads as noise and still can't carry a count. */
   --tasty-status-dot-needs-input:  var(--tasty-attention-needs-input);
   --tasty-status-dot-completion:   var(--tasty-attention-completion);
   --tasty-status-dot-attached-ring: var(--tasty-accent-attached);
   --tasty-status-dot-attached-ring-width:  var(--tasty-size-2);
   --tasty-status-dot-attached-ring-offset: var(--tasty-size-2);
   --tasty-status-dot-pulse-duration: var(--tasty-duration-1600);
+  /* Collapsed-rail cut-out ring (2026-10-07 batch 4): drawn on EVERY rail dot,
+     busy included, so the dot separates from the avatar it overlaps. OFF-SCALE
+     hairline (outside the UI zoom), like the other edge widths. */
+  --tasty-status-dot-ring:         var(--tasty-bg-sidebar);
+  --tasty-status-dot-ring-width:   var(--tasty-size-1-5);
 
   /* Workspace status bar (24px host chrome) */
   --tasty-statusbar-dot-size:      var(--tasty-status-dot-size-compact); /* 6 — same dense-chrome member as the tab dot */
@@ -504,7 +509,7 @@
        needs-input (2px yellow) > occupancy (1px green/peach) > completion (2px blue)
      NeedsInput outranks occupancy because occupancy means "held, working, as
      expected" — exactly the reading that would hide a session that has STOPPED
-     to ask the human something. Completion stays below occupancy (ADR-0040). */
+     to ask the human something. Completion stays below occupancy (completion is drawn under the occupancy edge). */
   --tasty-surface-highlight-input-border: var(--tasty-attention-needs-input);
   --tasty-surface-highlight-input-width:  var(--tasty-focus-ring-width);  /* 2px */
   --tasty-surface-highlight-done-width:  var(--tasty-focus-ring-width);  /* 2px */
@@ -1098,7 +1103,7 @@
 
   /* 2026-10-07 (batch 3) */
   --tasty-search-bar-border:           var(--tasty-menu-border);   /* floating find band — same edge as menus (→ border-strong) */
-  --tasty-popup-content-margin:        var(--tasty-space-xs);      /* inner ring of EVERY anchored menu popup (Tools menu, rail category menu, banner more-menu, multiselect) — 4 */
+  --tasty-popup-content-margin:        var(--tasty-space-xs);      /* inner ring of EVERY popup frame: anchored menus (Tools menu, rail category menu, banner more-menu, multiselect) AND dialog-type popups that share popup::content_margin() — 4 */
   --tasty-modhint-grip-size:           var(--tasty-icon-size-xs);  /* 12 corner resize grip */
   --tasty-modhint-grip-inset:          var(--tasty-size-2);        /* grip offset from the right / bottom edge; ON-SCALE */
   --tasty-modhint-row-font-size:       var(--tasty-font-size-caption); /* 11 — chord row label · role row text · empty row (was raw 12) */
@@ -1128,4 +1133,10 @@
   --tasty-dag-edge-dash-transition:    10 4;                       /* @kind other */ /* long dash */
   --tasty-dag-edge-selected-width:     var(--tasty-focus-ring-width); /* the SELECTED transition draws 2 */
   --tasty-toast-stack-offset-bottom-settings: var(--tasty-size-64); /* Settings window-scope stack: footer 52 + 12. ON-SCALE — the footer is inside the UI zoom */
+  /* 2026-10-07 (batch 4) */
+  --tasty-tools-menu-min-width:        var(--tasty-size-160);      /* Tools menu grows to its longest label; 160 is the floor */
+  --tasty-tools-menu-max-width:        var(--tasty-size-240);      /* past this a label ellipsizes at the END */
+  --tasty-explorer-state-compact-below: var(--tasty-size-120);     /* content body under this → status screens switch to the one-line compact row */
+  --tasty-md-callout-icon-gap:         var(--tasty-space-xs);      /* callout header: marker → type icon → label, 4 each */
+  --tasty-md-callout-marker-size:      var(--tasty-icon-size-sm);  /* collapsible callout chevron (replaces the <details> default marker) */
 }

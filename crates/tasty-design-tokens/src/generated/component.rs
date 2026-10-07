@@ -380,6 +380,9 @@ pub mod explorer {
 
     /// `component.explorer-sidebar-width` → `{primitive.size-196}` = 196px
     pub const SIDEBAR_WIDTH: LogicalPx = crate::generated::primitive::SIZE_196;
+
+    /// `component.explorer-state-compact-below` → `{primitive.size-120}` = 120px
+    pub const STATE_COMPACT_BELOW: LogicalPx = crate::generated::primitive::SIZE_120;
 }
 
 pub mod fh {
@@ -659,6 +662,12 @@ pub mod loading {
 
 pub mod md {
     use tasty_type_geometry::length::LogicalPx;
+
+    /// `component.md-callout-icon-gap` → `{semantic.space-xs}` = 4px
+    pub const CALLOUT_ICON_GAP: LogicalPx = crate::generated::semantic::SPACE_XS;
+
+    /// `component.md-callout-marker-size` → `{semantic.icon-size-sm}` = 14px
+    pub const CALLOUT_MARKER_SIZE: LogicalPx = crate::generated::semantic::ICON_SIZE_SM;
 
     /// `component.md-quote-bar-width` → `{semantic.selection-edge-width}` = 2px
     pub const QUOTE_BAR_WIDTH: LogicalPx = crate::generated::semantic::SELECTION_EDGE_WIDTH;
@@ -1073,6 +1082,9 @@ pub mod status_dot {
     /// `component.status-dot-pulse-duration` → `{primitive.duration-1600}` = 1600ms (ms)
     pub const PULSE_DURATION: f32 = crate::generated::primitive::DURATION_1600;
 
+    /// `component.status-dot-ring-width` → `{primitive.size-1-5}` = 1.5px
+    pub const RING_WIDTH: LogicalPx = crate::generated::primitive::SIZE_1_5;
+
     /// `component.status-dot-size` → `{primitive.size-8}` = 8px
     pub const SIZE: LogicalPx = crate::generated::primitive::SIZE_8;
 
@@ -1283,6 +1295,16 @@ pub mod toast {
 
     /// `component.toast-stack-offset-bottom-settings` → `{primitive.size-64}` = 64px
     pub const STACK_OFFSET_BOTTOM_SETTINGS: LogicalPx = crate::generated::primitive::SIZE_64;
+}
+
+pub mod tools {
+    use tasty_type_geometry::length::LogicalPx;
+
+    /// `component.tools-menu-max-width` → `{primitive.size-240}` = 240px
+    pub const MENU_MAX_WIDTH: LogicalPx = crate::generated::primitive::SIZE_240;
+
+    /// `component.tools-menu-min-width` → `{primitive.size-160}` = 160px
+    pub const MENU_MIN_WIDTH: LogicalPx = crate::generated::primitive::SIZE_160;
 }
 
 pub mod tooltip {

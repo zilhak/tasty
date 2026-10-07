@@ -83,6 +83,7 @@
   /* ── Dimension scale (value = px) ─────────────────────────── */
   --tasty-size-0:   0;
   --tasty-size-1:   1px;
+  --tasty-size-1-5: 1.5px; /* rail dot cut-out ring — OFF-SCALE hairline (2026-10-07) */
   --tasty-size-2:   2px;
   --tasty-size-3:   3px;
   --tasty-size-4:   4px;

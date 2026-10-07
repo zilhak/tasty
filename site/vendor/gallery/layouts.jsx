@@ -83,7 +83,7 @@ function FullSidebar() {
             background: a ? "var(--tasty-surface-active)" : "transparent",
             boxShadow: a ? "inset var(--tasty-selection-edge-width) 0 0 var(--tasty-accent-primary)" : "none" }}>
             <span style={{ flex: "none", display: "inline-flex", alignItems: "center", height: "calc(13px * var(--tasty-line-height-ui))" }}>
-              <StatusDot status={st} pulse={st === "agent" || st === "running"} />
+              <StatusDot status={st === "agent" ? "running" : st} />
             </span>
             <span style={{ flex: 1, minWidth: 0 }}>
               <span style={{ display: "block", minWidth: 0, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: a ? "var(--tasty-text-primary)" : "var(--tasty-text-secondary)" }}>{n}</span>
@@ -180,7 +180,7 @@ function catRows(rows) {
           {i > 0 && <div style={{ height: 1, background: "var(--tasty-separator)", margin: "0 0 0 32px" }} />}
           <div style={{ display: "flex", alignItems: "flex-start", gap: 9, padding: "7px 9px",
             background: a ? "var(--tasty-surface-active)" : "transparent", boxShadow: a ? "inset var(--tasty-selection-edge-width) 0 0 var(--tasty-accent-primary)" : "none" }}>
-            <span style={{ height: 18, display: "inline-flex", alignItems: "center", flex: "none" }}><StatusDot status={st} pulse={st === "agent" || st === "running"} /></span>
+            <span style={{ height: 18, display: "inline-flex", alignItems: "center", flex: "none" }}><StatusDot status={st === "agent" ? "running" : st} /></span>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 13, color: a ? "var(--tasty-text-primary)" : "var(--tasty-text-secondary)" }}>{n}</div>
               {sub && <div style={{ fontSize: 11, color: "var(--tasty-text-muted)", marginTop: 1 }}>{sub}</div>}
@@ -359,7 +359,7 @@ function AttRow({ name, status, ni, done, active }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "6px 9px", borderRadius: "var(--tasty-radius-sm)",
       background: active ? "var(--tasty-surface-active)" : "transparent", boxShadow: active ? "inset var(--tasty-selection-edge-width) 0 0 var(--tasty-accent-primary)" : "none" }}>
-      <StatusDot status={status} pulse={status === "agent" || status === "running"} />
+      <StatusDot status={status} />
       <span style={{ flex: 1, minWidth: 0, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
         color: active ? "var(--tasty-text-primary)" : "var(--tasty-text-secondary)" }}>{name}</span>
       <BadgeGroup>
@@ -372,8 +372,8 @@ function AttRow({ name, status, ni, done, active }) {
 function AttentionRows() {
   const cases = [
     ["Completion only", { name: "docs-site", status: "running", done: 3 }],
-    ["NeedsInput only — same slot", { name: "data-etl", status: "agent", ni: 1 }],
-    ["Both — needs-input leads", { name: "tasty-core", status: "agent", ni: 2, done: 5 }],
+    ["NeedsInput only — same slot", { name: "data-etl", status: "running", ni: 1 }],
+    ["Both — needs-input leads", { name: "tasty-core", status: "idle", ni: 2, done: 5 }],
     ["Overflow — 99+ on both", { name: "monorepo", status: "running", ni: "99+", done: "99+" }],
     ["Quiet", { name: "scratch", status: "idle" }],
   ];
@@ -395,9 +395,9 @@ function RailAvatar({ ch, dot, busy }) {
       <IconButton aria-label={ch}><span style={{ fontFamily: "var(--tasty-font-mono)", fontWeight: 700, fontSize: 13 }}>{ch}</span></IconButton>
       {(dot || busy) && (
         <span aria-hidden style={{ position: "absolute", top: 1, right: 1, pointerEvents: "none",
-          width: "var(--tasty-status-dot-size)", height: "var(--tasty-status-dot-size)", borderRadius: "var(--tasty-radius-pill)",
+          width: "var(--tasty-status-dot-size-compact)", height: "var(--tasty-status-dot-size-compact)", borderRadius: "var(--tasty-radius-pill)",
           background: dot ? `var(--tasty-status-dot-${dot})` : "var(--tasty-status-dot-success)",
-          boxShadow: "0 0 0 1.5px var(--tasty-bg-sidebar)" }} />
+          boxShadow: "0 0 0 var(--tasty-status-dot-ring-width) var(--tasty-status-dot-ring)" }} />
       )}
     </div>
   );
@@ -437,7 +437,7 @@ function AttTab({ label, kind, active }) {
       {active && <span style={{ position: "absolute", top: 0, left: 0, right: 0, height: "var(--tasty-tab-indicator-width)", background: "var(--tasty-tab-indicator)" }} />}
       <span style={{ display: "inline-flex", width: 13, height: 13, color: fg }}>{ic.term}</span>
       <span style={{ flex: 1, minWidth: 0, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: fg }}>{label}</span>
-      <span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: 9, color: "var(--tasty-text-muted)" }}>
+      <span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-micro)", color: "var(--tasty-text-muted)" }}>
         {kind === "needs-input" ? "blocked" : kind === "completion" ? "done" : active ? "active" : "rest"}
       </span>
     </div>
@@ -846,16 +846,16 @@ function Layouts() {
         </Spec>
 
         <Spec title="Collapsed rail — one dot, highest rank wins"
-          when={<>The rail has one 8px slot per workspace and no room for a number, so the dot answers <b>“what is the most urgent thing here”</b>, not “how many”. It is <b>always a single dot</b>, colored by the highest-ranked live state: <b>NeedsInput › Completion › busy/running</b>. Two dots were considered and rejected — at 8px on a 52px rail a second dot reads as noise, still carries no count, and breaks the one-slot alignment the rail depends on. The count is one click away in the expanded sidebar.</>}>
+          when={<>The rail has one dot slot per workspace (the <b>compact 6px</b> dot, <span className="tok">--tasty-status-dot-size-compact</span> — the rail is 24px-class chrome) and no room for a number, so the dot answers <b>“what is the most urgent thing here”</b>, not “how many”. It is <b>always a single dot</b>, colored by the highest-ranked live state: <b>NeedsInput › Completion › busy/running</b>. Two dots were considered and rejected — at 6px on the rail a second dot reads as noise, still carries no count, and breaks the one-slot alignment the rail depends on. The count is one click away in the expanded sidebar.</>}>
           <Stage variant="tight" grid><AttentionRail /></Stage>
           <Meta
-            specs={[["slot", "1 dot, top-right of the avatar"], ["ring", <>1.5px <span className="tok">--tasty-bg-sidebar</span> — keeps the dot legible over any avatar</>], ["order", "needs-input › completion › busy"], ["count", "not shown — expand the sidebar"]]}
-            tokens={[{ tok: "--tasty-status-dot-needs-input", use: "rail dot — NeedsInput", color: "var(--tasty-status-dot-needs-input)" }, { tok: "--tasty-status-dot-completion", use: "rail dot — Completion", color: "var(--tasty-status-dot-completion)" }, { tok: "--tasty-status-dot-success", use: "rail dot — busy/running", color: "var(--tasty-status-dot-success)" }, { tok: "--tasty-status-dot-size", use: "8px" }]} />
+            specs={[["slot", "1 dot, top-right of the avatar"], ["size", <>6 · <span className="tok">--tasty-status-dot-size-compact</span></>], ["ring", <>1.5px <span className="tok">--tasty-status-dot-ring</span> (→ bg-sidebar) on <b>every</b> dot, busy included — keeps the dot legible over any avatar</>], ["order", "needs-input › completion › busy"], ["count", "not shown — expand the sidebar"]]}
+            tokens={[{ tok: "--tasty-status-dot-needs-input", use: "rail dot — NeedsInput", color: "var(--tasty-status-dot-needs-input)" }, { tok: "--tasty-status-dot-completion", use: "rail dot — Completion", color: "var(--tasty-status-dot-completion)" }, { tok: "--tasty-status-dot-success", use: "rail dot — busy/running", color: "var(--tasty-status-dot-success)" }, { tok: "--tasty-status-dot-size-compact", use: "6px" }, { tok: "--tasty-status-dot-ring", use: "cut-out ring (→ bg-sidebar)", color: "var(--tasty-status-dot-ring)" }, { tok: "--tasty-status-dot-ring-width", use: "1.5px — OFF-SCALE hairline" }]} />
           <Note><b>Attention beats activity.</b> Busy-green says “something is happening”, which is the normal state of this product and the least actionable thing on the rail; both attention kinds are events that want a human. The previous code already preferred highlight over busy — this makes it a rule.</Note>
         </Spec>
 
         <Spec title="Tab title & surface border — the priority ladder"
-          when={<>The pane tab strip tints the <b>title color</b> and the surface tints its <b>border</b>. Both are single channels shared with non-attention states, so both resolve by rank. Tab title: <b>NeedsInput → Completion → active → rest</b>. Surface border: <b>NeedsInput (2px yellow) → occupancy (1px green/peach) → Completion (2px blue)</b> — NeedsInput steps <i>above</i> occupancy, the one place it changes an existing ADR-0040 order.</>}>
+          when={<>The pane tab strip tints the <b>title color</b> and the surface tints its <b>border</b>. Both are single channels shared with non-attention states, so both resolve by rank. Tab title: <b>NeedsInput → Completion → active → rest</b>. Surface border: <b>NeedsInput (2px yellow) → occupancy (1px green/peach) → Completion (2px blue)</b> — NeedsInput steps <i>above</i> occupancy, the one change to the earlier occupancy-over-completion order.</>}>
           <Stage variant="tight" grid>
             <div style={{ display: "flex", background: "var(--tasty-bg-sidebar)", borderBottom: "1px solid var(--tasty-separator)" }}>
               <AttTab label="build.log" kind="needs-input" />
@@ -874,7 +874,7 @@ function Layouts() {
           <Meta
             specs={[["tab — needs-input", <span className="tok">--tasty-tab-fg-needs-input</span>], ["tab — completion", <span className="tok">--tasty-tab-fg-completion</span>], ["tab — active", <span className="tok">--tasty-tab-fg-active</span>], ["tab — rest", <span className="tok">--tasty-tab-fg</span>], ["border — needs-input", "2px, inside"], ["border priority", "needs-input > occupancy > completion"]]}
             tokens={[{ tok: "--tasty-tab-fg-needs-input", use: "blocked tab title", color: "var(--tasty-tab-fg-needs-input)" }, { tok: "--tasty-tab-fg-completion", use: "finished tab title", color: "var(--tasty-tab-fg-completion)" }, { tok: "--tasty-surface-highlight-input-border", use: "blocked surface edge", color: "var(--tasty-surface-highlight-input-border)" }, { tok: "--tasty-surface-highlight-input-width", use: "2px — matches completion" }]} />
-          <Note><b>Why NeedsInput outranks occupancy.</b> Occupancy reads as “held, working, as expected” — which is exactly the state a blocked prompt would hide behind. A session that has stopped to ask you something must not look like a session that is busy. Completion stays below occupancy. Because attention clears on focus, an <i>active</i> tab or a <i>focused</i> surface never renders an attention tint; the ordering above only settles the unfocused cases.</Note>
+          <Note><b>Why NeedsInput outranks occupancy.</b> Occupancy reads as “held, working, as expected” — which is exactly the state a blocked prompt would hide behind. A session that has stopped to ask you something must not look like a session that is busy. Completion stays below occupancy, as before. Attention clears only when the surface <b>actually receives focus</b> (focused pane, current workspace, window focused). The <b>visible focused tab</b> therefore never shows a tint; an <i>active</i> tab in an unfocused pane or another workspace can hold attention and keeps its tint by the ladder above (needs-input / completion over active).</Note>
           <Dont><b>Don't</b> stack the two edges (a 1px occupancy line inside a 2px NeedsInput line). One channel, one color — stacked edges read as a rendering bug at these widths.</Dont>
         </Spec>
       </Section>

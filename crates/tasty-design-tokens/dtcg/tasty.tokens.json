@@ -297,6 +297,10 @@
       "$type": "dimension",
       "$value": "1px"
     },
+    "size-1-5": {
+      "$type": "dimension",
+      "$value": "1.5px"
+    },
     "size-2": {
       "$type": "dimension",
       "$value": "2px"
@@ -2549,6 +2553,14 @@
       "$type": "duration",
       "$value": "{primitive.duration-1600}"
     },
+    "status-dot-ring": {
+      "$type": "color",
+      "$value": "{semantic.bg-sidebar}"
+    },
+    "status-dot-ring-width": {
+      "$type": "dimension",
+      "$value": "{primitive.size-1-5}"
+    },
     "statusbar-dot-size": {
       "$type": "dimension",
       "$value": "{component.status-dot-size-compact}"
@@ -4211,6 +4223,26 @@
     "toast-stack-offset-bottom-settings": {
       "$type": "dimension",
       "$value": "{primitive.size-64}"
+    },
+    "tools-menu-min-width": {
+      "$type": "dimension",
+      "$value": "{primitive.size-160}"
+    },
+    "tools-menu-max-width": {
+      "$type": "dimension",
+      "$value": "{primitive.size-240}"
+    },
+    "explorer-state-compact-below": {
+      "$type": "dimension",
+      "$value": "{primitive.size-120}"
+    },
+    "md-callout-icon-gap": {
+      "$type": "dimension",
+      "$value": "{semantic.space-xs}"
+    },
+    "md-callout-marker-size": {
+      "$type": "dimension",
+      "$value": "{semantic.icon-size-sm}"
     },
     "modhint-empty-row-min-height": {
       "$type": "dimension",
