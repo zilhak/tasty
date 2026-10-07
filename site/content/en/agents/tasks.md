@@ -1,4 +1,4 @@
-<!-- source-hash: c32b22de215c -->
+<!-- source-hash: 18eb59fb417e -->
 <a id="task-dag"></a>
 
 # Task workflows (DAG)
@@ -251,6 +251,8 @@ tasty agent task-list --workspace-id 2 --state waiting,ready,running
 tasty agent task-get --workspace-id 2 --id "$BUILD"
 tasty agent task-graph --workspace-id 2 --format dot   # draw it with Graphviz
 ```
+
+`--format dot` writes only the graph to standard output, so you can hand it straight to Graphviz (for example `... --format dot | dot -Tsvg > graph.svg`). A cycle warning and the runner status go to standard error. `dag-get --format dot` works the same way.
 
 ## Waiting and fixing up
 

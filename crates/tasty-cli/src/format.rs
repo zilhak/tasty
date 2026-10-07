@@ -1,3 +1,5 @@
+mod graph_dot;
+
 use anyhow::Result;
 
 use super::{AgentCommands, Commands, ListCommands};
@@ -13,12 +15,17 @@ pub fn format_output(command: &Commands, result: &serde_json::Value) -> Result<(
     }
 }
 
-/// 작업 목록·상세·runner 상태는 텍스트로 표시하고 나머지는 JSON으로 출력한다.
+/// 작업 목록·상세·runner 상태는 텍스트로, 그래프의 DOT 응답은 DOT 본문으로 표시하고 나머지는 JSON으로 출력한다.
 fn format_agent_output(command: &AgentCommands, result: &serde_json::Value) -> Result<()> {
     match command {
         AgentCommands::TaskList { .. } => format_task_list(result),
         AgentCommands::TaskGet { .. } => format_task_get(result),
         AgentCommands::TaskRun { .. } => format_task_run(result),
+        AgentCommands::TaskGraph { .. } | AgentCommands::DagGet { .. }
+            if graph_dot::write_dot_response(result)? =>
+        {
+            Ok(())
+        }
         _ => outln!("{}", serde_json::to_string_pretty(result).unwrap()),
     }
 }

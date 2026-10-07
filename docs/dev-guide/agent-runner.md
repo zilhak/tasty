@@ -497,6 +497,8 @@ tasty agent dag-get --id c:t-1716800000123-1           # 그 DAG 만의 nodes/ed
 tasty agent dag-get --id d:build --workspace-id 1 --format dot
 ```
 
+`task-graph`·`dag-get` 의 `--format dot` 은 응답의 `dot` 본문만 stdout 에 쓰고 `cycle`·`runner` 는 stderr 에 한 줄씩 쓴다(`crates/tasty-cli/src/format/graph_dot.rs`). stdout 을 그대로 Graphviz 에 넘기기 위해서다. 응답 전체(JSON)가 필요하면 `--format json` 이나 IPC `agent.task_graph`·`agent.dag_get` 을 쓴다.
+
 DAG 는 영속 레코드가 아니라 `metadata.dag`(explicit, id `d:<값>`) 또는 그래프 연결성
 (derived, id `c:<root task id>`)에서 도출된다 — 같은 task 집합이면 id 가 항상 같다.
 `dag-list` 는 `--workspace-id` 를 생략하면 *살아있는* workspace 전부를 순회하며
