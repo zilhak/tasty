@@ -166,7 +166,7 @@ fn row(ui: &mut egui::Ui, th: &theme::Theme, label: &str) -> egui::Response {
         None,
         label,
         None,
-        MenuItemVariant::Secondary,
+        MenuItemVariant::Normal,
         false,
         true,
     )

@@ -11,10 +11,8 @@ use crate::icon_button::IconPainter;
 /// MenuItem variant.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum MenuItemVariant {
+    /// 글자가 `menu-item-fg`이고 호버·선택 때 `menu-item-fg-hover`로 바뀐다.
     Normal,
-    /// 글자가 `menu-item-fg`(text-secondary)이고 호버·선택 때 `menu-item-fg-hover`(text-primary)로 밝아진다.
-    /// 디자인 Tools menu 행(`tasty-toolsmenu-item`)이 이 색을 쓴다.
-    Secondary,
     Danger,
 }
 
@@ -118,17 +116,15 @@ fn menu_item_inner(
         );
     }
 
-    // 일반 항목은 현재 text_primary를 사용한다. 디자인의 text-secondary와는 차이가 있다.
     let fg = match variant {
-        MenuItemVariant::Normal => theme.text_primary().to_egui(),
-        MenuItemVariant::Secondary if active || (enabled && resp.hovered()) => {
+        MenuItemVariant::Normal if active || (enabled && resp.hovered()) => {
             theme.menu_item_fg_hover().to_egui()
         }
-        MenuItemVariant::Secondary => theme.menu_item_fg().to_egui(),
+        MenuItemVariant::Normal => theme.menu_item_fg().to_egui(),
         MenuItemVariant::Danger => theme.accent_danger().to_egui(),
     };
     let icon_color = match variant {
-        MenuItemVariant::Normal | MenuItemVariant::Secondary => theme.text_muted().to_egui(),
+        MenuItemVariant::Normal => theme.text_muted().to_egui(),
         MenuItemVariant::Danger => theme.accent_danger().to_egui(),
     };
 
@@ -323,7 +319,7 @@ mod fit_width_tests {
                             None,
                             LONG,
                             None,
-                            super::MenuItemVariant::Secondary,
+                            super::MenuItemVariant::Normal,
                             false,
                             true,
                         )

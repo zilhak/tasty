@@ -66,7 +66,7 @@
 ## 구현
 
 - `src/adapters/ui/tools_menu.rs` — `BUILTIN_TOOLS`, `draw_tools_menu`, `invoke_tool`, `tools_menu_sizer`.
-- `src/adapters/ui/sidebar/tools.rs` — `open_tools_menu` (도구 버튼 → 메뉴 popup). 열기 전에 `measure_on_open`으로 폭을 재고, 그리는 동안에도 매 프레임 다시 재어 플러그인 항목 변화를 따른다. 폭 계산은 `tasty-ui-widgets`의 `fit_menu_width`, 행은 `menu_item`(`MenuItemVariant::Secondary`)을 갤러리와 함께 쓴다. 라벨 말줄임은 공용 행이 처리한다.
+- `src/adapters/ui/sidebar/tools.rs` — `open_tools_menu` (도구 버튼 → 메뉴 popup). 열기 전에 `measure_on_open`으로 폭을 재고, 그리는 동안에도 매 프레임 다시 재어 플러그인 항목 변화를 따른다. 폭 계산은 `tasty-ui-widgets`의 `fit_menu_width`, 행은 `menu_item`을 갤러리와 함께 쓴다. 라벨 말줄임은 공용 행이 처리한다.
 - 플러그인 항목: `MainViewState::tool_registry` (plugin `[[contributes.tool]]` 동기화).
 
 ## 화면

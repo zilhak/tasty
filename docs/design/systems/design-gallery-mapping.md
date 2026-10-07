@@ -326,7 +326,7 @@ crate 쪽 view 가 **소유하지 않는 것**(=본체 wrapper 잔류): `egui::A
 | 디자인 원본 | 본체 view | 갤러리 specimen |
 |---|---|---|
 | `overlays/search_bar.jsx` (360×28) | `src/adapters/ui/search_bar.rs::draw_search_bar` | `search_bar` (Overlays) |
-| `overlays/tools_menu.jsx` (내용 폭, `tools-menu-min-width` 160 ~ `tools-menu-max-width` 240) | `src/adapters/ui/tools_menu.rs::draw_tools_menu`(공용 `menu_item` `Secondary` 행) | `tools_menu` (Overlays) |
+| `overlays/tools_menu.jsx` (내용 폭, `tools-menu-min-width` 160 ~ `tools-menu-max-width` 240) | `src/adapters/ui/tools_menu.rs::draw_tools_menu`(공용 `menu_item` 행) | `tools_menu` (Overlays) |
 | `overlays/command_palette.jsx` (`palette-width` 540, × UI 배율) | `src/adapters/ui/popup/command_palette.rs::draw_command_palette_view` | `command_palette` (Overlays "Command palette") |
 | `gallery/overlays-dialogs.jsx` §`convert` · kit `info_modal.jsx` `ConvertSurfacePopup` (`convert-popup-width` 240 × ui_scale) | `src/adapters/ui/popup/convert.rs::draw_convert_view`(공용 `menu_item` 행) | `convert` · `convert-narrow` (Overlays "Convert surface", `components/convert.rs::draw`·`draw_narrow`) |
 | `gallery/overlays-dialogs.jsx` §`filehandler` (420px · 프레임은 `gallery/overlays-shared.jsx` `FileHandlerFrame`) | `src/adapters/ui/popup/file_handler_picker.rs::draw_file_handler_picker_view` | `file_handler_picker` (Overlays "File handler picker", `components/file_handler_picker.rs::draw`) |
@@ -458,7 +458,7 @@ specimen 간 중복 chrome 을 한 곳으로 모은 카탈로그 헬퍼 (`crates
 | `feedback/CenterState` · `gallery/components.jsx` `CenterStateG`(Section `centerstate`) | `CenterState` / `CenterStateVariant` / `CenterStateOutput` / `CENTER_STATE_ERROR_GLYPH` (loading·empty·error, 글리프 24 · 제목 · 보조 줄 슬롯 항상 예약, 받은 영역 안 세로 가운데, 오류 글리프 alertTriangle 부품 소유, 선택 액션은 가운데 정렬 밖 보조 슬롯 아래 `center-state-action-gap`, 높이 없는 호스트는 대칭 자연 높이 — 액션이 있으면 위아래 48) | `prim_center_state` (Components `CenterState — empty · loading · error` 의 `center-state` · `center-state-action` · `center-state-unsized` spec) |
 | `feedback/Tooltip` | `Tooltip`(text/placement/id_source · `placement_top_then_bottom` · 탭 스트립 규칙 `placement_clear_of_native` · painter 전용 호출부의 `show_in`) · 호버 지연 `tooltip_hover_delay_elapsed` | `prim_help_hint` · convert(잘린 제목) |
 | `feedback/HelpHint` | `HelpHint`(text/placement/open/id_source) — `(?)` 글리프 painter 직접 드로잉 + `Tooltip` 조합. `open`은 글리프가 클립 안에 보일 때만 버블을 띄운다 | `prim_help_hint` |
-| `navigation/MenuItem` | `menu_item` / `menu_separator`(넘친 라벨은 끝 말줄임. `Secondary` 변형은 `menu-item-fg`, 호버 `menu-item-fg-hover`) | `prim_nav` |
+| `navigation/MenuItem` | `menu_item` / `menu_separator`(글자 `menu-item-fg`, 호버·선택 `menu-item-fg-hover`. 넘친 라벨은 끝 말줄임) | `prim_nav` |
 | `navigation/TreeRow` | `tree_row` | `prim_nav` |
 | `navigation/Tab` | `horizontal_tab_bar_with_arrows`(기존) | `prim_layout_shell` (Components `Layout shell widgets`) |
 | `navigation/DrillDown` | `DrillDown` / `DrillDownView` / `DrillDownOutput` (controlled list⇄detail content-swap, back bar ←(ghost IconButton sm)+제목+actions 슬롯, 본문 내부 스크롤, 0ms 즉시 전환 — opt-in animate 는 장식이라 미전사) | `prim_drilldown` |
@@ -1013,7 +1013,8 @@ C 프레임보더) 중 **A 배지가 사용자 확정**되었다. 본체와 갤�
 단계를 적는다. `…` 메뉴 예제는 깊은 경로가 접히는 피커 바닥 폭(`fp-popup-min-width`, 320×420) 카드에 둔다. 갤러리
 카드는 크기가 고정이라 직전 단계(히스테리시스)를 넘기지 않는다. 디자인 · 갤러리 · 본체의 path bar 는 모두 Up 버튼을 두고,
 경로 가용 폭은 막대에서 Up · refresh 와 간격을 뺀 폭이다. `…` 메뉴(`FpCrumbMenu`) 행은 갤러리와 본체 모두 공용
-`menu_item`(높이 28 · padding `menu-item-padding-x` 12 · 아이콘 `icon-size-md` 16 · `text-primary`)이고 시안도 같은 값이다.
+`menu_item`(높이 28 · padding `menu-item-padding-x` 12 · 아이콘 `icon-size-md` 16 · 글자 `menu-item-fg`, 호버 `menu-item-fg-hover`)이다.
+시안 `FpCrumbMenu` 견본은 행 글자를 모두 `text-primary`로 그려 공용 행의 `menu-item-fg`(text-secondary)와 다르다.
 메뉴 폭의 180~320 밴드는 테두리를 포함한 바깥 폭(border-box)이다. 현재 폴더 crumb 은 보통 굵기 `text-primary`, crumb 글자는
 `font-size-caption`(11)이다. 색·간격은 전부 기존 semantic 접근자
 (`accent_info`/`surface_active`/`accent_primary`/`text_placeholder`/`bg_sidebar` 등)와

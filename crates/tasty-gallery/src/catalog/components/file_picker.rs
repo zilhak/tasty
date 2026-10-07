@@ -527,7 +527,7 @@ pub fn draw_gesture_table(ui: &mut egui::Ui, theme: &Theme) {
             ),
             (
                 "… menu rows",
-                "shared MenuItem — 28 · pad-x 12 · folder 16 · text-primary",
+                "shared MenuItem — 28 · pad-x 12 · folder 16 · menu-item-fg (hover menu-item-fg-hover)",
             ),
             (
                 "specimen",

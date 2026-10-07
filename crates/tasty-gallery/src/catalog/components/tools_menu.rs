@@ -95,7 +95,7 @@ fn row(ui: &mut egui::Ui, theme: &Theme, label: &str) {
         None,
         label,
         None,
-        MenuItemVariant::Secondary,
+        MenuItemVariant::Normal,
         false,
         true,
     );
