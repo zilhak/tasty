@@ -474,6 +474,8 @@ fn run_client_inner(command: Commands, port_file: Option<&str>, envelope: Envelo
 #[derive(Clone, Copy)]
 struct OfflinePortChange {
     port: Option<u16>,
+    /// 이전 이름 `webhook config`로 불렀다.
+    deprecated_name: bool,
 }
 
 fn offline_webhook_port(command: &Commands) -> Option<OfflinePortChange> {
@@ -481,21 +483,24 @@ fn offline_webhook_port(command: &Commands) -> Option<OfflinePortChange> {
     let Commands::Webhook { command } = command else {
         return None;
     };
-    let port = match command {
+    let (port, deprecated_name) = match command {
         W::Port {
             port: Some(port), ..
-        } => Some(*port),
+        } => (Some(*port), false),
         W::Port {
             port: None,
             unset: true,
-        } => None,
+        } => (None, false),
         // 이전 이름은 범위 검사가 없다. 0은 실행 중인 Tasty의 범위 오류와 같은 경로로 보낸다.
         W::Config {
             port: Some(port @ 1..),
-        } => Some(*port),
+        } => (Some(*port), true),
         _ => return None,
     };
-    Some(OfflinePortChange { port })
+    Some(OfflinePortChange {
+        port,
+        deprecated_name,
+    })
 }
 
 /// 실행 중인 Tasty가 없을 때 webhooks.toml을 직접 고치고, 그렇게 했다는 사실을 함께 출력한다.
@@ -516,13 +521,19 @@ fn save_webhook_port_offline(change: OfflinePortChange) -> Result<()> {
         )
     })?;
     let file = path.display().to_string();
-    let value = serde_json::json!({
+    let mut value = serde_json::json!({
         "saved_port": change.port,
         "applies_from": "next_start",
         "instance_running": false,
         "file": file,
         "message": tasty_i18n::t_fmt("cli.webhook.port_saved_offline", &file),
     });
+    if change.deprecated_name {
+        merge_cli_warnings(
+            &mut value,
+            vec![super::request::WEBHOOK_CONFIG_DEPRECATED.to_string()],
+        );
+    }
     outln!(
         "{}",
         serde_json::to_string_pretty(&value).unwrap_or_default()

@@ -180,7 +180,7 @@ GUI(`boot::run_gui`)와 headless(`boot::run_headless`)는 설정을 읽은 직�
 | `webhook.info` | `tasty webhook info --id <id>` | 단일 상세 |
 | `webhook.unregister` | `tasty webhook unregister --id <id>` | 등록 해제(path 회수) |
 | `webhook.sweep` | `tasty webhook sweep` | 만료 웹훅 일괄 정리 → 제거된 id 목록 |
-| `webhook.config` | `tasty webhook port [<N> \| --unset]` · `tasty webhook allow-external [on\|off]` · `tasty webhook config [--port <N>]`(이전 이름) | 인자 없으면 실행 중인 리스너를 조회한다: `port`·`address`·`bound`·`source`(`argument`/`config`/`probe`)·`explicit`·`saved_port`(다음 실행 값)·`allow_external`(다음 실행 값). `port`로 저장, `unset_port: true`로 저장 값 삭제, `allow_external`로 외부 수신 설정 변경. 변경은 모두 다음 실행부터 적용된다(`applies_from: "next_start"`, `restart_required`) |
+| `webhook.config` | `tasty webhook port [<N> \| --unset]` · `tasty webhook allow-external [on\|off]` · `tasty webhook config [--port <N>]`(deprecated, 동작은 `webhook port`와 같고 출력의 `warnings`에 `deprecated: tasty webhook config, use tasty webhook port`를 싣는다) | 인자 없으면 실행 중인 리스너를 조회한다: `port`·`address`·`bound`·`source`(`argument`/`config`/`probe`)·`explicit`·`saved_port`(다음 실행 값)·`allow_external`(다음 실행 값). `port`로 저장, `unset_port: true`로 저장 값 삭제, `allow_external`로 외부 수신 설정 변경. 변경은 모두 다음 실행부터 적용된다(`applies_from: "next_start"`, `restart_required`) |
 
 - **register 게이트**: `methods` 빈 배열 거부, `handler`/`sequence` 정확히 하나. `handler` 는 `validate_binding(handler, Webhook)` 로 검증 — 셸/hook-전용 핸들러는 거부([ADR-0027](../../adr/0027-lua-and-hook-execution.md)). 인라인 `sequence` 는 익명 핸들러(`user/wh-<slug>`)로 레지스트리에 등록된다.
 - **lifetime 파라미터**: `--persistent`(bool), `--ttl-secs` xor `--count`(둘 다 없으면 `Unlimited`).

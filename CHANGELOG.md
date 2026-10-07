@@ -18,7 +18,7 @@
 
 ### Added
 
-- **웹훅 포트를 직접 정하고 조회하는 `tasty webhook port` 와 실행 인자 `--webhook-port` 가 생겼다.** `tasty webhook port` 는 실행 중인 Tasty에 리스너가 실제로 연 주소·포트와 정한 방법(`argument`·`config`·`probe`), 다음 시작에 쓸 저장 포트를 묻는다. `tasty webhook port <N>` 은 데이터 폴더의 `webhooks.toml` 에 저장하고 `--unset` 은 저장 값을 지운다. 둘 다 다음 시작부터 적용된다. Tasty가 실행 중이 아니면 `webhooks.toml` 을 직접 고치고 출력에 `instance_running: false` 와 고친 파일을 적는다. 그래서 저장한 포트가 막혀 Tasty가 뜨지 않을 때 이 명령으로 풀 수 있고, 오류 안내도 이 명령을 알려 준다. 기존 `tasty webhook config [--port <N>]` 도 같은 동작으로 남는다. `--webhook-port <N>` 은 GUI·헤드리스 모두 이번 실행에만 쓰며 저장 값보다 우선한다. 정한 포트를 열 수 없으면 Tasty가 오류를 보이고 시작하지 않는다(GUI는 오류 화면 뒤 종료 코드 1, 헤드리스는 종료 코드 1). Tasty가 이미 실행 중인데 다른 `--webhook-port` 로 다시 실행하면 실행 중인 Tasty로 넘기지 않고 안내 후 종료 코드 1로 끝난다. IPC `webhook.config` 는 `address`·`bound`·`source`·`explicit`·`saved_port`·`allow_external` 를 돌려주고 `unset_port`·`allow_external` 인자를 받는다.
+- **웹훅 포트를 직접 정하고 조회하는 `tasty webhook port` 와 실행 인자 `--webhook-port` 가 생겼다.** `tasty webhook port` 는 실행 중인 Tasty에 리스너가 실제로 연 주소·포트와 정한 방법(`argument`·`config`·`probe`), 다음 시작에 쓸 저장 포트를 묻는다. `tasty webhook port <N>` 은 데이터 폴더의 `webhooks.toml` 에 저장하고 `--unset` 은 저장 값을 지운다. 둘 다 다음 시작부터 적용된다. Tasty가 실행 중이 아니면 `webhooks.toml` 을 직접 고치고 출력에 `instance_running: false` 와 고친 파일을 적는다. 그래서 저장한 포트가 막혀 Tasty가 뜨지 않을 때 이 명령으로 풀 수 있고, 오류 안내도 이 명령을 알려 준다. `--webhook-port <N>` 은 GUI·헤드리스 모두 이번 실행에만 쓰며 저장 값보다 우선한다. 정한 포트를 열 수 없으면 Tasty가 오류를 보이고 시작하지 않는다(GUI는 오류 화면 뒤 종료 코드 1, 헤드리스는 종료 코드 1). Tasty가 이미 실행 중인데 다른 `--webhook-port` 로 다시 실행하면 실행 중인 Tasty로 넘기지 않고 안내 후 종료 코드 1로 끝난다. IPC `webhook.config` 는 `address`·`bound`·`source`·`explicit`·`saved_port`·`allow_external` 를 돌려주고 `unset_port`·`allow_external` 인자를 받는다.
 - **다른 컴퓨터의 웹훅 호출을 받을지 고르는 설정이 생겼다.** 설정 › 일반의 "다른 컴퓨터의 웹훅 호출 받기", config.toml `[webhook] allow_external`, `tasty webhook allow-external on|off`. 기본은 끔이고 다음 시작부터 적용된다.
 
 - **고친 내장·플러그인 훅 핸들러에 "edited" 표시와 Revert가 생겼다.** 설정 › 핸들러 › 훅 핸들러에서 Tasty나 플러그인이 등록한 핸들러를 고치면(시퀀스·명령·켜고 끄기) 출처 옆에 "edited" 표시가 붙고, 둘째 줄의 Revert로 기본값으로 돌아간다. 되돌리기는 Save 때 적용되며 그전에는 같은 자리의 Undo와 "reverts on save" 표시로 대기한다. 이전에는 고친 행의 출처가 `you`로, 자물쇠 자리가 휴지통으로 보였다.
@@ -145,6 +145,10 @@
 - **첫 실행 셸 설정 화면이 부팅 화면과 같은 모양이다.** 설정한 셸을 쓸 수 없고 bash도 자동으로 찾지 못하면 뜨는 이 화면에서 카드와 "Tasty" 제목을 걷어내고, 부팅 화면의 로고 아래에 "셸 선택" 제목·설명·경로 입력칸·검증 줄·버튼을 360 폭으로 쌓는다. 검증 줄은 경로가 비었으면 비어 있고, 파일이 없을 때("이 경로에 파일이 없습니다")와 파일은 있지만 bash·zsh 실행 파일이 아닐 때("bash 또는 zsh 실행 파일이 아닙니다")를 나눠 알린다. 쓸 수 있으면 "셸을 찾았습니다"를 보인다. Git Bash 안내는 Windows에서만 상자 없이 경고색 한 줄로 나온다. 취소 버튼은 앱을 끝내므로 이름이 [종료]로 바뀌었다.
 - **탭 스트립 스크롤 화살표 아이콘이 12px에서 14px로 커졌다.** 12px에서는 1px 선이 픽셀 경계에 걸려 화살표가 옅게 보였다. 화살표 칸의 크기(24)와 색은 그대로다.
 - **마크다운 뷰어의 인용문 왼쪽 막대가 3px에서 2px로 얇아졌다.** 디자인의 인용 막대 두께(2px)를 따른다. 접지 않는 콜아웃(`> [!note]` 등)도 인용문 규칙을 이어받아 2px로 그린다. 접는 콜아웃(`> [!note]-`)의 막대는 3px 그대로다.
+
+### Deprecated
+
+- **`tasty webhook config [--port <N>]`** — `tasty webhook port [<N>]` 를 쓴다. 동작은 같고, 도움말에 Deprecated로 표시하며 출력의 `warnings` 에 `deprecated: tasty webhook config, use tasty webhook port` 를 싣는다.
 
 ### Removed
 

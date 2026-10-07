@@ -1,4 +1,4 @@
-<!-- source-hash: ab006fd6106f -->
+<!-- source-hash: ae4f1e805542 -->
 # Hooks, notifications and webhooks
 
 Get a notification when a build finishes, or run a command when a message appears in the logs. **Hooks** run commands in response to events, and **notifications** let you know when to check back. Use **webhooks** to send requests to Tasty from an external service.
@@ -174,6 +174,7 @@ tasty --webhook-port 28500          # start with this port for this run only
 
 - **If you do not choose a port**, Tasty tries `28429` and counts up, using the first free port (up to 64 ports, through `28492`). Webhooks work even when another Tasty already uses `28429`. If all are taken, Tasty shows a warning and runs without webhooks.
 - **If you chose a port** (`--webhook-port` or `tasty webhook port <N>`; with both, `--webhook-port` wins), Tasty uses only that port. If another program holds it, Tasty shows an error and does not start (headless exits with code 1). Start with another port, or, for a saved port, run `tasty webhook port --unset` (remove) or `tasty webhook port <free port>` (replace) and start again. These two commands edit `~/.tasty/webhooks.toml` directly when Tasty is not running and say so. When Tasty is running, they apply from the next start.
+- `tasty webhook config --port <N>` is the earlier name and is deprecated. It still works exactly like `tasty webhook port <N>`.
 - If the port moved off `28429` and you have webhooks saved with `--persistent`, Tasty shows a warning. The saved webhooks' URLs change port too, so check the new URLs with `tasty webhook list`. Choose a port if the URLs must not change.
 - If Tasty is already running and you launch it again with a different `--webhook-port`, the launch is not handed to the running Tasty; it explains why and ends. With the same port it opens a new window in the running Tasty as usual.
 - A `port = 28429` that an earlier version wrote automatically is removed on the first start, so the port is chosen automatically. Any other port you set stays.

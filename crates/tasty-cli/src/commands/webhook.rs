@@ -119,7 +119,7 @@ pub enum WebhookCommands {
         #[arg(value_parser = ["on", "off"])]
         value: Option<String>,
     },
-    /// Same as `tasty webhook port`. Kept for scripts written before it.
+    /// Deprecated: use `tasty webhook port` instead. It still works the same way.
     Config {
         /// Save the listener port (1-65535). Applies from the next start.
         #[arg(long)]

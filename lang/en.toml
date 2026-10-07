@@ -5996,7 +5996,7 @@ long = "Show or change whether other computers can call webhooks.\n\nOff by defa
 help = "`on` or `off`"
 
 [cli.help._root.webhook.config]
-about = "Same as `tasty webhook port`. Kept for scripts written before it"
+about = "Deprecated: use `tasty webhook port` instead. It still works the same way"
 
 [cli.help._root.webhook.config.arg.port]
 help = "Save the listener port (1-65535). Applies from the next start"

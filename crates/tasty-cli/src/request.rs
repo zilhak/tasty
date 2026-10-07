@@ -38,6 +38,10 @@ use tasty_ipc::protocol::JsonRpcRequest;
 /// 응답 출력 시 top-level `warnings` 필드로 병합한다.
 pub(crate) const CLI_WARNINGS_PARAMS_KEY: &str = "__cli_warnings";
 
+/// 이전 이름 `webhook config`를 쓰면 응답의 `warnings`에 싣는 안내(API 규칙의 deprecation 절차).
+pub(crate) const WEBHOOK_CONFIG_DEPRECATED: &str =
+    "deprecated: tasty webhook config, use tasty webhook port";
+
 /// `tasty remote ...` → JsonRpcRequest 매핑. non-force/non-into_gui attach 는
 /// run_client 에서 raw 스트림으로 선처리되므로, 여기 도달하는 remote attach 는
 /// `--into-gui`(원격 GUI mirror 위임) 또는 `--force-detach`(이 서버에 붙은 원격
@@ -799,7 +803,13 @@ fn webhook_command_to_method_params(
             "webhook.config",
             serde_json::json!({ "allow_external": value.as_deref().map(|v| v == "on") }),
         ),
-        W::Config { port } => ("webhook.config", serde_json::json!({ "port": port })),
+        W::Config { port } => (
+            "webhook.config",
+            serde_json::json!({
+                "port": port,
+                CLI_WARNINGS_PARAMS_KEY: [WEBHOOK_CONFIG_DEPRECATED],
+            }),
+        ),
     }
 }
 

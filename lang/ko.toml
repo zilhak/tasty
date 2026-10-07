@@ -5990,7 +5990,7 @@ long = "다른 컴퓨터가 웹훅을 부를 수 있는지 보거나 바꿉니�
 help = "`on` 또는 `off`"
 
 [cli.help._root.webhook.config]
-about = "`tasty webhook port`와 같다. 그 이전에 작성한 스크립트를 위해 남겨 둔다"
+about = "Deprecated: 대신 `tasty webhook port`를 쓴다. 동작은 그대로다"
 
 [cli.help._root.webhook.config.arg.port]
 help = "리스너 포트를 저장한다(1-65535). 다음 실행부터 적용된다"
