@@ -21,7 +21,7 @@ use tasty_memory::{HOST_OWNER, ListOpts, MemoryValue, Scope};
 
 use super::runner_host::{
     HANDLE_ATTEMPT_FIELD, HANDLE_KEY_PREFIX, HostExecutor, RUN_RESULT_LOST, RunnerContext,
-    evict_run_result, evict_task_side_keys, handle_key, load_run_result,
+    evict_run_result, evict_task_side_keys, handle_key, load_run_result, release_own_holdings,
     restored_postprocess_handle,
 };
 use tasty_agent::runner::PollOutcome;
@@ -662,11 +662,26 @@ fn finalize_precise_tasks(
                 continue;
             }
         };
+        // 확정 전의 task 가 쥔 점유. 부팅 정리가 이 회차의 점유를 남겨 두었으므로(살아 있었을
+        // 수 있는 Run) 끝난 것을 확인한 지금 반환한다.
+        let held = load_task(ctx, workspace_id, task_id);
         if record_reload_completion(ctx, workspace_id, task_id, completion, now) {
+            if let Some(task) = held {
+                ctx.with_memory(|mem| release_own_holdings(mem, workspace_id, &task));
+            }
             evict_handle(ctx, scope, task_id);
             evict_run_result(ctx, workspace_id, task_id);
         }
     }
+}
+
+fn load_task(ctx: &RunnerContext, workspace_id: u32, task_id: &str) -> Option<tasty_agent::Task> {
+    ctx.with_memory(|mem| {
+        TaskStore::new(mem, HOST_OWNER, ctx.agent_seq.as_ref())
+            .get(workspace_id, &task_id.to_string())
+            .ok()
+            .flatten()
+    })
 }
 
 /// 대기 매핑을 먼저 회수한 뒤 만료 작업을 실패로 표시하고 대기자를 깨운다.
@@ -859,6 +874,12 @@ fn run_loop(
     let executor = HostExecutor::new(ctx.clone());
     let mut runner = RunnerLoop::new(executor);
     for (task_id, handle) in reloaded {
+        // 복원한 Run 은 부팅 정리가 남겨 둔 점유를 쥐고 있다. 끝날 때 반환하도록 넘겨받는다.
+        if matches!(handle, DispatchHandle::ShellProcess { .. })
+            && let Some(task) = load_task(&ctx, workspace_id, &task_id)
+        {
+            runner.executor.adopt_restored_run(workspace_id, &task);
+        }
         runner.running.insert(task_id, handle);
     }
     loop {

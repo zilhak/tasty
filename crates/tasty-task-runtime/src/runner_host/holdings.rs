@@ -1,0 +1,92 @@
+//! task 가 metadata 로 자기 id 를 holder 삼아 쥐는 semaphore·lease 와, 재시작 뒤 그 점유를
+//! 누가 정리하는가. 부팅 정리·handle 복원·복원한 회차의 확정이 같은 판정을 쓴다.
+//!
+//! 재시작 뒤에도 Run 의 프로세스는 살아 있을 수 있다. 생사를 모르는 동안 같은 자원을 다른
+//! task 에 넘기지 않도록, 저장된 Run handle 로 다시 감시할 회차는 부팅 정리가 점유를 풀지 않는다.
+//! 프로세스가 살아 있으면 점유를 유지하고, 끝난 것을 확인한 뒤(저장 결과로 확정하거나 결과
+//! 불명) 반환한다.
+
+use serde_json::Value;
+use tasty_agent::runner::DispatchHandle;
+use tasty_agent::{LeaseStore, SemaphoreStore, Task};
+use tasty_memory::{HOST_OWNER, MemoryStorage, MemoryValue, Scope};
+
+use super::{HANDLE_ATTEMPT_FIELD, HostExecutor, handle_key};
+
+/// task 가 자기 id 로 쥐는 semaphore 이름. 다른 holder 를 지정한 외부 점유는 러너가 다루지 않는다.
+pub(crate) fn own_semaphore(task: &Task) -> Option<String> {
+    own_holding(task, "semaphore", "name")
+}
+
+/// task 가 자기 id 로 쥐는 lease 자원. `candidates` 만 지정한 pool 은 얻은 자원을 metadata 에
+/// 남기지 않아 여기서 찾지 못한다.
+pub(crate) fn own_lease(task: &Task) -> Option<String> {
+    own_holding(task, "lease", "resource")
+}
+
+fn own_holding(task: &Task, kind: &str, field: &str) -> Option<String> {
+    let meta = task.metadata.get(kind)?.as_object()?;
+    let holder = meta.get("holder").and_then(Value::as_str);
+    if holder.is_some_and(|h| h != task.id) {
+        return None;
+    }
+    Some(meta.get(field)?.as_str()?.to_string())
+}
+
+/// 저장된 Run handle(지금 회차의 것)로 다시 감시할 Running task 인가. 후처리 단계의 회차는
+/// 본 작업이 이미 끝났으므로 아니다.
+pub(crate) fn resumes_as_a_run(mem: &dyn MemoryStorage, workspace_id: u32, task: &Task) -> bool {
+    let attempt = task.attempt.as_ref();
+    if attempt.is_some_and(|a| a.postprocess.is_some()) {
+        return false;
+    }
+    let Some(entry) = mem
+        .get(&Scope::Workspace(workspace_id), &handle_key(&task.id))
+        .ok()
+        .flatten()
+    else {
+        return false;
+    };
+    let MemoryValue::Json(value) = entry.value else {
+        return false;
+    };
+    let saved_attempt = value.get(HANDLE_ATTEMPT_FIELD).and_then(Value::as_str);
+    saved_attempt == attempt.map(|a| a.id.as_str())
+        && matches!(
+            serde_json::from_value::<DispatchHandle>(value),
+            Ok(DispatchHandle::ShellProcess { .. })
+        )
+}
+
+/// 끝난 것을 확인한 회차의 점유를 반환한다. 그 사이 TTL 이 지나 다른 holder 가 쥔 자원은
+/// holder 가 달라 건드리지 않는다.
+pub(crate) fn release_own_holdings(mem: &mut dyn MemoryStorage, workspace_id: u32, task: &Task) {
+    if let Some(name) = own_semaphore(task)
+        && let Err(e) =
+            SemaphoreStore::new(&mut *mem, HOST_OWNER).release(workspace_id, &name, &task.id)
+    {
+        tracing::warn!("semaphore '{name}' release for {} failed: {e}", task.id);
+    }
+    if let Some(resource) = own_lease(task)
+        && let Err(e) =
+            LeaseStore::new(&mut *mem, HOST_OWNER).release(workspace_id, &resource, &task.id)
+    {
+        tracing::warn!("lease '{resource}' release for {} failed: {e}", task.id);
+    }
+}
+
+impl HostExecutor {
+    /// 재시작 뒤 복원한 Run 회차의 점유와 저장된 handle 을 이 executor 의 기록으로 되살린다.
+    /// 그래야 회차가 끝날 때 `release_resources` 가 반환한다.
+    pub(crate) fn adopt_restored_run(&mut self, workspace_id: u32, task: &Task) {
+        self.held_handles.insert(task.id.clone(), workspace_id);
+        if let Some(name) = own_semaphore(task) {
+            self.held_permits
+                .insert(task.id.clone(), (workspace_id, name, task.id.clone()));
+        }
+        if let Some(resource) = own_lease(task) {
+            self.held_leases
+                .insert(task.id.clone(), (workspace_id, resource, task.id.clone()));
+        }
+    }
+}

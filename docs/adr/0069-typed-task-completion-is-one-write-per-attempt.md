@@ -51,9 +51,11 @@ v2 task 는 Ready → Running 전이마다 새 실행 회차를 받는다(`Task.
 - 완료 보고에 결과 불명(`CompletionOutcome::Lost`, 사유 포함)을 둔다. 저장소는 이 보고를 받으면 task 를 `Unknown { reason }` 으로 쓰고 결과·경로·회차 지문을 남기지 않는다. 같은 한 번의 쓰기 경로(`TaskStore::complete`)를 지나며 v1·v2 모두 같다.
 - `Unknown` 은 종결이 아니다. 하류는 실패 전파 없이 기다리고 fallback 은 실행되지 않는다. 사람이 `retry`(새 회차) 나 `cancel` 로 정한다. 같은 회차의 늦은 보고는 Running 이 아니라 받지 않는다.
 - 저장된 실행 결과(`run_result`)가 있으면 그것으로 확정한다. 없을 때만 결과 불명이다. PID 가 살아 있다는 사실만으로 결과를 회수했다고 보지 않으며, 자동으로 다시 실행하지 않는다.
-- 복원한 자식이 살아 있는 동안은 Running 으로 두고 permit 을 쥔다. 같은 자원을 다른 task 에 넘기지 않기 위해서다.
+- 생사를 모르는 동안 같은 자원을 다른 task 에 넘기지 않는다. 저장된 Run handle(지금 회차의 것)로 다시 감시할 task 는 부팅 정리가 semaphore·lease 를 풀지 않는다. 프로세스가 살아 있으면 Running 으로 두고 점유를 유지하며, 러너가 넘겨받아 끝날 때 반환한다. 끝난 것을 확인하면(저장된 결과로 확정하거나 결과 불명) 그때 반환한다.
+- 결과 불명이 된 task 는 점유를 쥐지 않는다. 프로세스가 끝난 것은 확인했고 모르는 것은 결과뿐이므로, `retry`·`cancel` 까지 쥐면 아무도 쓰지 않는 자원을 막는다. `retry` 는 새 회차로 점유를 다시 얻는다.
+- 점유의 TTL 은 재시작과 무관하게 적용된다. 살아 있는 동안 TTL 이 지나 다른 holder 가 얻은 자원은 반환 때 holder 가 달라 건드리지 않는다.
 
-적용 범위는 Run 의 종료 결과다. 재시작으로 턴 귀속을 잃은 agent task(위 절)와 결과가 불명인 후처리 실행([ADR-0070](0070-typed-task-postprocess-runs-inside-the-attempt.md)의 `outcome_unknown`)은 각 결정대로 실패로 끝난다. semaphore·lease 를 쥔 Running task 를 부팅 정리가 실패로 끝내는 규칙도 그대로다.
+적용 범위는 Run 의 종료 결과다. 재시작으로 턴 귀속을 잃은 agent task(위 절)와 결과가 불명인 후처리 실행([ADR-0070](0070-typed-task-postprocess-runs-inside-the-attempt.md)의 `outcome_unknown`)은 프로세스 결과가 아니라 귀속·기록을 잃은 경우라 각 결정대로 실패로 끝난다. 감시할 Run handle 이 없는 Running task(그 밖의 dispatch, 후처리 단계)가 쥔 점유는 이전처럼 부팅 정리가 반환하고 `Failed("host restart")` 로 끝낸다.
 
 ## Consequences
 
@@ -82,6 +84,8 @@ v2 task 는 Ready → Running 전이마다 새 실행 회차를 받는다(`Task.
 - **agent task: 회차 id 만 맞으면 제출을 받는다.** 회차 id 는 `<task id>#<번호>` 라 짐작할 수 있어 같은 그래프를 돌리는 다른 호출자의 실수를 막지 못한다.
 - **agent task: 토큰을 보안 경계로 삼는다.** 같은 컴퓨터의 호출자는 세션 화면과 실행 기록을 읽을 수 있어 비밀로 지킬 수 없다. 로컬 IPC 신뢰 경계를 바꾸는 일은 이 결정의 범위가 아니다.
 - **결과를 회수할 수 없는 Run 을 실패로 끝낸다.** 이전 동작이다. 명령이 성공했어도 하류가 건너뛰어지고 fallback 이 실행돼, 사람이 결과를 확인할 기회 없이 실패 정책이 소비된다.
+- **재시작 때 점유를 쥔 Run 을 실패로 끝내고 점유를 반환한다.** 이전 동작이다. 프로세스가 살아 있는데 같은 permit 을 다른 task 가 얻어 두 프로세스가 한 자원을 함께 쓴다.
+- **결과 불명이 된 task 가 `retry`·`cancel` 까지 점유를 쥔다.** 프로세스가 끝난 것은 확인했으므로 아무도 쓰지 않는 자원을 사람이 정할 때까지 막는다.
 - **감시 프로세스가 자식을 띄우고 종료 코드를 파일에 남긴다.** 재시작 뒤에도 결과를 회수할 수 있지만 모든 Run 의 프로세스 모델(취소 대상 pid, Windows job, 호스트 수명 묶기)이 바뀌고, 감시 프로세스 자체가 죽으면 같은 문제가 남는다.
 - **validating·persisting 같은 중간 phase 를 상태로 둔다.** 완료가 한 번의 쓰기라 바깥에서 관측할 수 없는 상태다. 후처리 단계가 생기면 그때 phase 를 정한다.
 
@@ -95,7 +99,6 @@ v2 task 는 Ready → Running 전이마다 새 실행 회차를 받는다(`Task.
 - agent task: claude·codex 외의 provider 가 턴 경계를 보고하게 되면 provider 목록을 넓힌다. provider 가 턴 id 를 지시와 함께 돌려주게 되면 시작 보고와 표지 대신 턴 id 로 귀속한다.
 - agent task: 턴 보고를 하는 provider 훅이 프롬프트를 넘기지 못하게 되면(`prompt_seen` 이 없는 시작 보고) 기존 세션의 사용자 턴을 가릴 수 없다. 그 provider 의 귀속 방식을 다시 정한다.
 - agent task: 로컬 IPC 밖(원격 attach 등)의 호출자가 제출할 수 있게 되면 회차 토큰을 보안 경계로 다룰지 다시 정한다.
-
 - Run 이 감시 프로세스(종료 코드를 남기는 래퍼)로 실행되게 되면 결과 불명 대신 그 기록으로 확정한다.
 
 실행 결과로 확인:
