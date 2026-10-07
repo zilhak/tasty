@@ -34,7 +34,7 @@ impl App {
         workspace: u32,
         tunnel: Option<tasty_ssh::SshTunnel>,
     ) -> anyhow::Result<()> {
-        let own_port = self.hub.ipc_server.as_ref().map(|server| server.port());
+        let own_port = self.services.own_ipc_port();
         let mut tunnel = tunnel;
         let outcome = dispatch_attach(own_port, port, workspace, AttachSource::User, || {
             self.queue_mirror_connection(target, port, workspace, tunnel.take())
@@ -55,7 +55,7 @@ impl App {
         workspace: u32,
         tunnel: Option<tasty_ssh::SshTunnel>,
     ) -> Option<anyhow::Result<()>> {
-        let own_port = self.hub.ipc_server.as_ref().map(|server| server.port());
+        let own_port = self.services.own_ipc_port();
         let mut tunnel = tunnel;
         let outcome = dispatch_attach(own_port, port, workspace, AttachSource::Endpoint, || {
             self.queue_mirror_connection(target, port, workspace, tunnel.take())
@@ -82,7 +82,7 @@ impl App {
     }
 
     fn try_dispatch_one_gui_attach_ipc(&mut self, engine: EngineId, port: u16, workspace: u32) {
-        let own_port = self.hub.ipc_server.as_ref().map(|s| s.port());
+        let own_port = self.services.own_ipc_port();
         if let Outcome::Connected(Err(e)) =
             dispatch_attach(own_port, port, workspace, AttachSource::Ipc, || {
                 let target = self.mirror_install_target(Some(engine), None, None, false)?;
