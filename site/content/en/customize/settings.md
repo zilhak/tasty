@@ -1,4 +1,4 @@
-<!-- source-hash: 716cf23aa6e1 -->
+<!-- source-hash: d1ab1345be6e -->
 # Settings
 
 Adjust your shell, fonts, and workspace preferences to suit the way you work. Use the settings window or edit `~/.tasty/config.toml` directly. For key combinations and colours, see [Keybindings](keybindings.md) and [Themes](themes.md).
@@ -34,7 +34,7 @@ Press the same shortcut again to close the settings window.
 
 | Section | Entries |
 |------|------|
-| **General** | **Restore layout on startup** · **Restore surface content on restart** (terminal scrollback) · **Workspace categories (folders)** · **Next/prev workspace crosses categories** · **Close behavior** (Ask / Minimize to background / Quit) · **Wheel scroll distance** (10-200pt, default 50) - how far one wheel notch scrolls, applied the same everywhere in the window · **Language** (English / 한국어 / 日本語 plus any [language pack](#adding-a-language-language-packs) you install) |
+| **General** | **Restore layout on startup** · **Restore surface content on restart** (terminal scrollback) · **Workspace categories (folders)** · **Next/prev workspace crosses categories** · **Close behavior** (Ask / Minimize to background / Quit) · **Wheel scroll distance** (10-200pt, default 50) - how far one wheel notch scrolls, applied the same everywhere in the window · **Language** (English / 한국어 / 日本語 plus any [language pack](#adding-a-language-language-packs) you install) · **Accept webhook calls from other computers** (off by default, applies from the next start — [webhooks](../agents/hooks-notifications.md)) |
 | **Notifications** | **Notifications enabled** · **Sound** · **Coalesce interval (ms)** |
 | **Accessibility** | **Reduced motion** (turns off toast and overlay fades, the loading spinner's rotation, and the modal shake) · **Show modifier key hints** |
 | **Overlay** | **Toast duration** (1~10 seconds) |
@@ -278,6 +278,9 @@ scrollback_disk_swap = false
 [remote_transfer]
 dir = ""                         # empty = ~/.tasty/transfers/
 max_mb = 500
+
+[webhook]
+allow_external = false           # true = also accept webhook calls from other computers (from the next start)
 
 [keybindings]
 new_tab = ["alt+t"]              # the rest is in keybindings.md

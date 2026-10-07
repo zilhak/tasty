@@ -110,6 +110,15 @@ impl Default for NotificationSettings {
     }
 }
 
+/// 웹훅 리스너 설정. 포트는 데이터 폴더의 webhooks.toml에 따로 저장한다.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct WebhookSettings {
+    /// true면 리스너가 모든 IPv4 인터페이스(0.0.0.0)에서 받는다. 기본은 loopback(127.0.0.1)만이다.
+    /// 다음 실행부터 적용된다.
+    pub allow_external: bool,
+}
+
 /// 원격 파일 수신 폴더와 용량 상한. 호스트는 begin의 total_size와 현재 폴더 사용량을 비교한다.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]

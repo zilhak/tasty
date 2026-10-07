@@ -33,7 +33,7 @@ pub use scripts::{
 };
 pub use types::{
     AccessibilitySettings, MemorySettings, ModifierHintSettings, NotificationSettings,
-    OverlaySettings, PerformanceSettings, RemoteTransferSettings,
+    OverlaySettings, PerformanceSettings, RemoteTransferSettings, WebhookSettings,
 };
 
 /// 로드 출처에 따른 저장 정책. 파싱 실패로 기본값을 쓸 때 원본을 바로 덮어쓰지 않는다.
@@ -70,6 +70,8 @@ pub struct Settings {
     /// 원격 전송(bulk 파일 전송 채널, docs/dev-guide/attach-behavior.md#커스텀-이벤트-확장-streamcontrol-밖-raw-json-event-태그) 수신측 저장 폴더 + 용량 상한.
     /// `#[serde(default)]` 로 기존 config.toml 마이그레이션 안전(누락 시 dir="", max_mb=500).
     pub remote_transfer: RemoteTransferSettings,
+    /// 웹훅 리스너의 외부 수신 허용. `#[serde(default)]`로 누락 시 loopback만 받는다.
+    pub webhook: WebhookSettings,
     /// Plugin-contributed settings page 의 generic 값 저장소.
     /// `plugin_settings[plugin_id][storage_key]` = `PluginSettingValue`.
     /// FontOverride(`appearance.plugin_font_overrides`)와 별개 네임스페이스.

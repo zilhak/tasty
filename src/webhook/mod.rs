@@ -69,13 +69,25 @@ impl WebhookInitReport {
     }
 }
 
-/// 모든 IPv4 인터페이스에서 수신한다.
-const BIND_ADDR: std::net::IpAddr = std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED);
+/// 리스너 주소. 기본은 이 컴퓨터에서만 받는 loopback이고, 설정으로 켜면 모든 IPv4 인터페이스에서 받는다.
+pub fn bind_ip(settings: &tasty_settings::WebhookSettings) -> std::net::IpAddr {
+    if settings.allow_external {
+        std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED)
+    } else {
+        std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)
+    }
+}
 
 /// 부팅 초기에 GUI·headless가 부른다. 실행 인자(`--webhook-port`)가 설정 파일보다 우선하며,
 /// 명시 지정 포트를 bind하지 못하면 오류를 돌려줘 호출자가 실행을 막는다.
-pub fn prepare(argument: Option<u16>) -> Result<Reservation, ExplicitBindError> {
-    bind::reserve(bind::request(argument, config::read_port()), BIND_ADDR)
+pub fn prepare(
+    argument: Option<u16>,
+    settings: &tasty_settings::WebhookSettings,
+) -> Result<Reservation, ExplicitBindError> {
+    bind::reserve(
+        bind::request(argument, config::read_port()),
+        bind_ip(settings),
+    )
 }
 
 /// IPC와 injector가 준비된 뒤 GUI·headless가 부른다. 선점한 소켓으로 리스너를 시작하고
@@ -109,6 +121,14 @@ mod tests {
             addr: std::net::SocketAddr::from(([127, 0, 0, 1], port)),
             source,
         })
+    }
+
+    #[test]
+    fn the_listener_is_loopback_unless_external_calls_are_allowed() {
+        let mut settings = tasty_settings::WebhookSettings::default();
+        assert!(bind_ip(&settings).is_loopback());
+        settings.allow_external = true;
+        assert!(bind_ip(&settings).is_unspecified());
     }
 
     #[test]

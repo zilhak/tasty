@@ -352,6 +352,8 @@ close_behavior_minimize = "Minimize to background"
 close_behavior_quit = "Quit"
 language_label = "Language:"
 language_restart_notice = "Language change will take effect after restart."
+webhook_allow_external_label = "Accept webhook calls from other computers:"
+webhook_allow_external_notice = "When on, the webhook listener takes every network interface, so anyone who can reach its port can call your registered webhooks. When off, only programs on this computer can. Applies from the next start."
 language_missing_suffix = "(not found)"
 wheel_line_scroll_desc = "How far one wheel notch scrolls. The same distance applies everywhere in the window - plugin surfaces, popups, and the settings and sidebar lists."
 alt_display_style_label = "Cmd key display:"
@@ -2003,6 +2005,9 @@ about = "GPU-accelerated terminal emulator for AI coding agents"
 
 [cli.help._root.arg.port_file]
 help = "Custom port file path (for test isolation)"
+
+[cli.help._root.arg.webhook_port]
+help = "Webhook listener port for this run. Overrides the port saved with `tasty webhook port`. If the port cannot be opened, Tasty does not start (headless exits with code 1). Without this option and without a saved port, Tasty tries 28429 and the next 63 ports and takes the first free one"
 
 [cli.help._root.arg.response_timeout_ms]
 help = "Set the server's response wait limit for a single request, in milliseconds. If it expires after processing starts, the server returns -32061: the outcome is unknown and the request may still run. If it expires while queued, the server returns -32067 and the request did not run. 0 or no flag means no response wait limit. The instance must declare ipc.response-timeout; otherwise the original request is not sent. Time spent checking support is subtracted from the request's remaining budget. If the check times out or uses up that budget, the result is -32067 and the original request is not sent. The check also sets a timeout for each socket read. This option is not an absolute deadline covering connection setup, sending, and repeated reads. Commands that loop or stream refuse the flag"
@@ -5920,7 +5925,7 @@ about = "Manage inbound webhooks (register/list/info/unregister) — HTTP → Ip
 
 [cli.help._root.webhook.register]
 about = "Register an inbound webhook and print its issued URL"
-long = "Register an inbound webhook and print its issued URL.\n\nProvide exactly one of `--handler <id>` (bind a registered hook handler) or `--sequence <json>` (define an inline IpcSequence). The external HTTP payload only fills `${body.x}` / `${header.x}` / `${query.x}` value slots.\n\nThe listener binds every interface, not loopback. The printed URL reads `127.0.0.1` because that is the convenient way to curl it, but whoever can reach the port reaches this webhook. There is no signature verification of any kind: `--auth-token` is one fixed shared secret, and with no `--auth-*` the sequence fires for whoever asks. `--persistent` writes that token in plain text into `~/.tasty/webhooks.toml`.\n\nThe HTTP answer is a fixed acknowledgement chosen before the sequence runs, so `200` says the call matched and was handed off, never that it worked. A step that fails neither stops the steps after it nor changes the answer, which leaves a partly applied sequence as an ordinary outcome; the log is the only place that failure appears."
+long = "Register an inbound webhook and print its issued URL.\n\nProvide exactly one of `--handler <id>` (bind a registered hook handler) or `--sequence <json>` (define an inline IpcSequence). The external HTTP payload only fills `${body.x}` / `${header.x}` / `${query.x}` value slots.\n\nThe listener takes 127.0.0.1 only unless `tasty webhook allow-external on` was set before this start; then it takes every IPv4 interface and the printed `127.0.0.1` URL is just the convenient way to curl it, while whoever can reach the port reaches this webhook. There is no signature verification of any kind: `--auth-token` is one fixed shared secret, and with no `--auth-*` the sequence fires for whoever asks. `--persistent` writes that token in plain text into `~/.tasty/webhooks.toml`.\n\nThe HTTP answer is a fixed acknowledgement chosen before the sequence runs, so `200` says the call matched and was handed off, never that it worked. A step that fails neither stops the steps after it nor changes the answer, which leaves a partly applied sequence as an ordinary outcome; the log is the only place that failure appears."
 
 [cli.help._root.webhook.register.arg.methods]
 help = "Allowed HTTP methods (repeatable). Defaults to POST"
@@ -5969,12 +5974,28 @@ help = "Webhook opaque id"
 about = "Sweep (bulk-remove) all expired webhooks (time-elapsed / count-exhausted)"
 long = "Sweep (bulk-remove) all expired webhooks (time-elapsed / count-exhausted).\n\nNothing expires on a timer, so an expired webhook stays registered until something looks at it. A call to its path removes it right then and answers `410` that once — every later call gets `404` — a restart drops the expired persistent ones, and this command clears the whole set at once without waiting for either."
 
+[cli.help._root.webhook.port]
+about = "Show the running listener's port, or save the port for the next start"
+long = "Show the running listener's port, or save the port for the next start.\n\nWith no argument, asks the running Tasty which address the listener actually opened and how that port was chosen (`argument`, `config` or `probe`), plus the port saved for the next start. With a port, saves it to the data folder's webhooks.toml; with `--unset`, removes the saved port. Either change applies from the next start. A saved port is explicit: if it cannot be opened, Tasty does not start. Without a saved port and without `--webhook-port`, Tasty tries 28429 and the next 63 ports and takes the first free one."
+
+[cli.help._root.webhook.port.arg.port]
+help = "Port to save (1-65535)"
+
+[cli.help._root.webhook.port.arg.unset]
+help = "Remove the saved port so the next start picks a free one"
+
+[cli.help._root.webhook.allow-external]
+about = "Show or change whether other computers can call webhooks"
+long = "Show or change whether other computers can call webhooks.\n\nOff by default: the listener takes 127.0.0.1 only, so only programs on this computer reach it. `on` makes the listener take every IPv4 interface (0.0.0.0) from the next start; then whoever can reach the port reaches the registered webhooks. With no argument, shows the saved value and the address the running listener actually opened."
+
+[cli.help._root.webhook.allow-external.arg.value]
+help = "`on` or `off`"
+
 [cli.help._root.webhook.config]
-about = "Get or set the listener bind port (persisted to ~/.tasty/webhooks.toml)"
-long = "Get or set the listener bind port (persisted to ~/.tasty/webhooks.toml).\n\nWith no `--port`, prints the active port and bound status. With `--port`, persists the new port; the listener rebinds only on the next restart. The port is config-only — tasty never silently binds a fallback port. The bind address is not configurable and is not loopback: the listener takes every interface, so this port is the whole of the exposure."
+about = "Same as `tasty webhook port`. Kept for scripts written before it"
 
 [cli.help._root.webhook.config.arg.port]
-help = "Set the listener port (1-65535). Requires restart to take effect"
+help = "Save the listener port (1-65535). Applies from the next start"
 
 [cli.help._root.port]
 about = "Print this instance's IPC port to stdout (first step of the auto remote port-discovery chain, `ssh host tasty port`). Reads the port file only — no IPC"

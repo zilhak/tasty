@@ -256,13 +256,40 @@ pub fn handle_unregister(id: serde_json::Value, params: &serde_json::Value) -> J
     JsonRpcResponse::success(id, json!({ "unregistered": removed, "id": wid }))
 }
 
-/// 인자가 없으면 실행 중인 리스너를 조회한다(실제로 bind한 주소와 정한 방법, 파일에 저장한 값).
-/// `port`를 주면 설정 파일에 저장하고, `unset_port`가 true면 저장한 값을 지운다. 둘 다 다음 실행부터 적용된다.
+/// 인자가 없으면 실행 중인 리스너를 조회한다(실제로 bind한 주소와 정한 방법, 다음 실행에 쓸 값).
+/// `port`를 주면 webhooks.toml에 저장하고, `unset_port`가 true면 저장한 값을 지운다.
+/// `allow_external`은 설정(config.toml)의 외부 수신 허용을 바꾼다. 모두 다음 실행부터 적용된다.
 pub fn handle_config(
     ports: &crate::runtime_ports::RuntimePorts,
+    out: &mut crate::ipc::window_port::IntentOutbox,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
+    if let Some(value) = params.get("allow_external").filter(|v| !v.is_null()) {
+        let Some(allow) = value.as_bool() else {
+            return JsonRpcResponse::invalid_params(id, "'allow_external' must be a boolean");
+        };
+        if params.get("port").is_some_and(|v| !v.is_null())
+            || params.get("unset_port").is_some_and(|v| v == &json!(true))
+        {
+            return JsonRpcResponse::invalid_params(
+                id,
+                "'allow_external' is set on its own, without 'port' or 'unset_port'",
+            );
+        }
+        let mut settings = engine.settings.clone();
+        settings.webhook.allow_external = allow;
+        out.push(crate::app::command::DomainIntent::UpdateSettings(settings).from_agent_ipc());
+        return JsonRpcResponse::success(
+            id,
+            json!({
+                "allow_external": allow,
+                "applies_from": "next_start",
+                "restart_required": ports.webhook().map(|b| !b.addr.ip().is_loopback()) != Some(allow),
+            }),
+        );
+    }
     let unset = params
         .get("unset_port")
         .and_then(serde_json::Value::as_bool)
@@ -277,7 +304,12 @@ pub fn handle_config(
         }
         (Some(port), false) => webhook::config::set_port(port).map(|()| Some(port)),
         (None, true) => webhook::config::clear_port().map(|()| None),
-        (None, false) => return JsonRpcResponse::success(id, listener_status(ports)),
+        (None, false) => {
+            return JsonRpcResponse::success(
+                id,
+                listener_status(ports, engine.settings.webhook.allow_external),
+            );
+        }
     };
     match saved {
         Ok(saved_port) => JsonRpcResponse::success(
@@ -295,9 +327,13 @@ pub fn handle_config(
 }
 
 /// 실행 중인 리스너의 상태. 파일에 저장한 값은 다음 실행에 쓸 값이라 따로 적는다.
-fn listener_status(ports: &crate::runtime_ports::RuntimePorts) -> serde_json::Value {
+fn listener_status(
+    ports: &crate::runtime_ports::RuntimePorts,
+    allow_external: bool,
+) -> serde_json::Value {
     let bound = ports.webhook();
     json!({
+        "allow_external": allow_external,
         "port": bound.map(|b| b.addr.port()),
         "address": bound.map(|b| b.addr.to_string()),
         "bound": bound.is_some(),

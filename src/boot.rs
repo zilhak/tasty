@@ -197,8 +197,9 @@ fn run_gui(
 ) -> anyhow::Result<std::process::ExitCode> {
     locale::init();
 
+    let boot_settings = crate::settings::Settings::load();
     // 명시 지정한 웹훅 포트를 열지 못하면 이벤트 루프·메모리·저널을 만들기 전에 오류 화면으로 끝낸다.
-    let webhook = match crate::webhook::prepare(cli.webhook_port) {
+    let webhook = match crate::webhook::prepare(cli.webhook_port, &boot_settings.webhook) {
         Ok(reservation) => reservation,
         Err(error) => {
             let (title, body, hint) = error.message();
@@ -215,7 +216,6 @@ fn run_gui(
     // 탭의 CWD 표시는 OSC 7을 사용한다. bash는 PROMPT_COMMAND 설정이 필요하다.
 
     // App을 만들기 전에 메모리 저장소를 열어 Core에 같은 Arc를 전달한다.
-    let boot_settings = crate::settings::Settings::load();
     let memory_config = tasty_memory::MemoryConfig {
         entry_max_bytes: boot_settings
             .memory
@@ -807,13 +807,13 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<std::process::ExitCode> {
     let (tx, rx) = mpsc::channel::<crate::AppEvent>();
     let waker = HeadlessWaker::new(tx);
 
+    let boot_settings = crate::settings::Settings::load();
     // 명시 지정한 웹훅 포트를 열지 못하면 다른 상태를 만들기 전에 종료 코드 1로 끝낸다.
-    let webhook = match crate::webhook::prepare(cli.webhook_port) {
+    let webhook = match crate::webhook::prepare(cli.webhook_port, &boot_settings.webhook) {
         Ok(reservation) => reservation,
         Err(error) => return Ok(refuse_headless_webhook_port(&error)),
     };
 
-    let boot_settings = crate::settings::Settings::load();
     let memory_arc = boot_memory(&boot_settings);
 
     let mut app = App::new_headless(waker.journal_waker(), cli.port_file, memory_arc)?;

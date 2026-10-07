@@ -682,7 +682,9 @@ fn route_engine_handler(
         "webhook.info" => webhook::handle_info(id, &request.params),
         "webhook.unregister" => webhook::handle_unregister(id, &request.params),
         "webhook.sweep" => webhook::handle_sweep(id),
-        "webhook.config" => webhook::handle_config(&core.ports, id, &request.params),
+        "webhook.config" => {
+            webhook::handle_config(&core.ports, out, &engine.read(), id, &request.params)
+        }
         #[cfg(feature = "gui")]
         "webview.set_url" => webview::handle_set_url(&engine.as_ref(), caller, id, &request.params),
         #[cfg(feature = "gui")]

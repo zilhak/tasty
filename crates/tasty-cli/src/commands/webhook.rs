@@ -13,9 +13,10 @@ pub enum WebhookCommands {
     /// or `--sequence <json>` (define an inline IpcSequence). The external HTTP
     /// payload only fills `${body.x}` / `${header.x}` / `${query.x}` value slots.
     ///
-    /// The listener binds every interface, not loopback. The printed URL reads
-    /// `127.0.0.1` because that is the convenient way to curl it, but whoever
-    /// can reach the port reaches this webhook. There is no signature
+    /// The listener takes 127.0.0.1 only unless `tasty webhook allow-external on`
+    /// was set before this start; then it takes every IPv4 interface and the
+    /// printed `127.0.0.1` URL is just the convenient way to curl it, while
+    /// whoever can reach the port reaches this webhook. There is no signature
     /// verification of any kind: `--auth-token` is one fixed shared secret,
     /// and with no `--auth-*` the sequence fires for whoever asks. `--persistent` writes that token in plain text into
     /// `~/.tasty/webhooks.toml`.
@@ -104,6 +105,18 @@ pub enum WebhookCommands {
         /// Remove the saved port so the next start picks a free one.
         #[arg(long, conflicts_with = "port")]
         unset: bool,
+    },
+    /// Show or change whether other computers can call webhooks.
+    ///
+    /// Off by default: the listener takes 127.0.0.1 only, so only programs on
+    /// this computer reach it. `on` makes the listener take every IPv4
+    /// interface (0.0.0.0) from the next start; then whoever can reach the
+    /// port reaches the registered webhooks. With no argument, shows the saved
+    /// value and the address the running listener actually opened.
+    AllowExternal {
+        /// `on` or `off`.
+        #[arg(value_parser = ["on", "off"])]
+        value: Option<String>,
     },
     /// Same as `tasty webhook port`. Kept for scripts written before it.
     Config {

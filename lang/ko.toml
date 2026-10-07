@@ -352,6 +352,8 @@ close_behavior_minimize = "백그라운드로 최소화"
 close_behavior_quit = "종료"
 language_label = "언어:"
 language_restart_notice = "언어 변경은 재시작 후 적용됩니다."
+webhook_allow_external_label = "다른 컴퓨터의 웹훅 호출 받기:"
+webhook_allow_external_notice = "켜면 웹훅 리스너가 모든 네트워크 인터페이스에서 받으므로, 포트에 닿을 수 있는 누구나 등록한 웹훅을 부를 수 있습니다. 끄면 이 컴퓨터의 프로그램만 부를 수 있습니다. 다음 실행부터 적용됩니다."
 language_missing_suffix = "(없음)"
 wheel_line_scroll_desc = "휠을 한 칸 돌릴 때 스크롤하는 거리입니다. 플러그인 서피스, 팝업, 설정과 사이드바 목록에 같은 거리를 적용합니다."
 alt_display_style_label = "Cmd 키 표시:"
@@ -1997,6 +1999,9 @@ about = "AI 코딩 에이전트를 위한 GPU 가속 터미널 에뮬레이터"
 
 [cli.help._root.arg.port_file]
 help = "포트 파일 경로 지정 (테스트 격리용)"
+
+[cli.help._root.arg.webhook_port]
+help = "이번 실행의 웹훅 리스너 포트. `tasty webhook port`로 저장한 포트보다 우선한다. 포트를 열 수 없으면 Tasty가 시작하지 않는다(헤드리스는 종료 코드 1). 이 옵션도 저장한 포트도 없으면 28429와 그다음 63개 포트를 차례로 시도해 처음 비어 있는 포트를 쓴다"
 
 [cli.help._root.arg.response_timeout_ms]
 help = "단일 요청에 대한 서버의 응답 대기 제한을 밀리초로 지정합니다. 처리 시작 후 제한에 도달하면 서버가 -32061을 반환합니다. 결과는 알 수 없으며 요청은 계속 실행될 수 있습니다. 큐에서 기다리던 요청은 -32067을 반환하며 실행되지 않습니다. 0이거나 옵션을 지정하지 않으면 응답 대기 제한이 없습니다. 인스턴스가 ipc.response-timeout 지원을 알리지 않으면 원래 요청은 보내지 않습니다. 지원 여부를 확인한 시간은 요청에 남은 시간에서 차감합니다. 확인 중 timeout이 나거나 남은 시간을 다 쓰면 -32067을 반환하고 원래 요청은 보내지 않습니다. 확인 과정에서는 개별 소켓 읽기에도 timeout을 설정합니다. 이 옵션은 연결, 송신, 반복 읽기를 포함한 전체 호출의 절대 기한이 아닙니다. 반복하거나 스트리밍하는 명령은 이 옵션을 사용할 수 없습니다"
@@ -5914,7 +5919,7 @@ about = "인바운드 웹훅 관리 (등록/목록/정보/해제) — HTTP → I
 
 [cli.help._root.webhook.register]
 about = "인바운드 웹훅을 등록하고 발급된 URL 을 출력한다"
-long = "인바운드 웹훅을 등록하고 발급된 URL을 출력합니다.\n\n`--handler <id>`(등록된 hook handler 사용)와 `--sequence <json>`(인라인 IpcSequence 정의) 중 하나만 지정합니다. 외부 HTTP 요청은 `${body.x}` / `${header.x}` / `${query.x}`에 들어갈 값만 전달합니다.\n\n리스너는 loopback에 한정하지 않고 모든 인터페이스에서 연결을 받습니다. 출력 URL의 `127.0.0.1`은 curl 예시에 편리한 주소일 뿐이며, 포트에 접근할 수 있는 누구나 웹훅에 요청할 수 있습니다. 서명 검증은 없습니다. `--auth-token`은 고정 공유 토큰이며, `--auth-*`를 생략하면 인증 없이 시퀀스를 실행합니다. `--persistent`는 토큰을 `~/.tasty/webhooks.toml`에 평문으로 저장합니다.\n\nHTTP 응답은 시퀀스를 실행하기 전에 정해집니다. `200`은 요청이 일치해 실행을 넘겼다는 뜻이며 실행 성공을 보장하지 않습니다. 단계가 실패해도 나머지 단계는 계속 실행하고 응답도 바뀌지 않으므로 일부만 적용될 수 있습니다. 실행 실패는 로그에만 남습니다."
+long = "인바운드 웹훅을 등록하고 발급된 URL을 출력합니다.\n\n`--handler <id>`(등록된 hook handler 사용)와 `--sequence <json>`(인라인 IpcSequence 정의) 중 하나만 지정합니다. 외부 HTTP 요청은 `${body.x}` / `${header.x}` / `${query.x}`에 들어갈 값만 전달합니다.\n\n이 실행 전에 `tasty webhook allow-external on`을 설정하지 않았다면 리스너는 127.0.0.1에서만 받습니다. 설정했다면 모든 IPv4 인터페이스에서 받으며, 출력된 `127.0.0.1` URL은 curl로 부르기 편한 표기일 뿐 포트에 닿을 수 있는 누구나 이 웹훅을 부를 수 있습니다. 서명 검증은 없습니다. `--auth-token`은 고정된 공유 비밀 하나이고, `--auth-*`가 없으면 누가 요청하든 시퀀스가 실행됩니다. `--persistent`는 그 토큰을 `~/.tasty/webhooks.toml`에 평문으로 씁니다.\n\nHTTP 응답은 시퀀스를 실행하기 전에 정해집니다. `200`은 요청이 일치해 실행을 넘겼다는 뜻이며 실행 성공을 보장하지 않습니다. 단계가 실패해도 나머지 단계는 계속 실행하고 응답도 바뀌지 않으므로 일부만 적용될 수 있습니다. 실행 실패는 로그에만 남습니다."
 
 [cli.help._root.webhook.register.arg.methods]
 help = "허용할 HTTP 메서드(반복 가능). 기본값은 POST"
@@ -5963,12 +5968,28 @@ help = "웹훅 opaque id"
 about = "만료된 웹훅을 한꺼번에 쓸어 제거한다(시간 초과 · 횟수 소진)"
 long = "만료된 웹훅을 한꺼번에 제거합니다(시간 초과 또는 횟수 소진).\n\n타이머로 제거하지 않으므로 만료된 웹훅도 등록 상태로 남아 있습니다. 해당 경로에 요청하면 웹훅을 제거하고 `410`을 한 번 반환하며, 이후 요청에는 `404`를 반환합니다. 재시작할 때는 만료된 영속 웹훅을 버립니다. 이 명령은 요청이나 재시작을 기다리지 않고 만료된 항목을 모두 제거합니다."
 
+[cli.help._root.webhook.port]
+about = "실행 중인 리스너의 포트를 보거나, 다음 실행에 쓸 포트를 저장한다"
+long = "실행 중인 리스너의 포트를 보거나, 다음 실행에 쓸 포트를 저장합니다.\n\n인자 없이 실행하면 실행 중인 Tasty에 리스너가 실제로 연 주소와 그 포트를 정한 방법(`argument`, `config`, `probe`), 다음 실행에 쓸 저장 포트를 묻습니다. 포트를 주면 데이터 폴더의 webhooks.toml에 저장하고, `--unset`이면 저장한 포트를 지웁니다. 두 변경 모두 다음 실행부터 적용됩니다. 저장한 포트는 명시 지정이라 열 수 없으면 Tasty가 시작하지 않습니다. 저장한 포트도 `--webhook-port`도 없으면 28429와 그다음 63개 포트를 차례로 시도해 처음 비어 있는 포트를 씁니다."
+
+[cli.help._root.webhook.port.arg.port]
+help = "저장할 포트(1-65535)"
+
+[cli.help._root.webhook.port.arg.unset]
+help = "저장한 포트를 지워 다음 실행이 빈 포트를 고르게 한다"
+
+[cli.help._root.webhook.allow-external]
+about = "다른 컴퓨터가 웹훅을 부를 수 있는지 보거나 바꾼다"
+long = "다른 컴퓨터가 웹훅을 부를 수 있는지 보거나 바꿉니다.\n\n기본은 꺼짐입니다. 리스너가 127.0.0.1에서만 받으므로 이 컴퓨터의 프로그램만 부를 수 있습니다. `on`이면 다음 실행부터 리스너가 모든 IPv4 인터페이스(0.0.0.0)에서 받고, 포트에 닿을 수 있는 누구나 등록한 웹훅을 부를 수 있습니다. 인자 없이 실행하면 저장한 값과 실행 중인 리스너가 실제로 연 주소를 보여 줍니다."
+
+[cli.help._root.webhook.allow-external.arg.value]
+help = "`on` 또는 `off`"
+
 [cli.help._root.webhook.config]
-about = "리스너 bind 포트를 읽거나 설정한다(`~/.tasty/webhooks.toml` 에 영속화)"
-long = "리스너의 포트를 조회하거나 설정합니다(`~/.tasty/webhooks.toml`에 저장).\n\n`--port`를 생략하면 현재 포트와 bind 상태를 출력합니다. 지정하면 새 포트를 저장하고 다음 재시작 때 적용합니다. 설정한 포트만 사용하며 실패해도 다른 포트로 바꾸지 않습니다. 수신 주소는 설정할 수 없고 loopback에 한정되지 않습니다. 모든 인터페이스에서 이 포트로 연결을 받습니다."
+about = "`tasty webhook port`와 같다. 그 이전에 작성한 스크립트를 위해 남겨 둔다"
 
 [cli.help._root.webhook.config.arg.port]
-help = "리스너 포트를 설정한다(1-65535). 적용되려면 재시작이 필요하다"
+help = "리스너 포트를 저장한다(1-65535). 다음 실행부터 적용된다"
 
 [cli.help._root.port]
 about = "이 인스턴스의 IPC 포트를 stdout 에 출력 (원격 포트 자동 발견 사슬의 첫 걸음, `ssh host tasty port`). 포트 파일만 읽으며 IPC 는 쓰지 않는다"

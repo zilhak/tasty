@@ -136,4 +136,22 @@ pub fn draw_general_tab(ui: &mut egui::Ui, settings: &mut Settings, languages: &
             .small()
             .color(th.accent_warning()),
     );
+
+    // 웹훅 외부 수신 허용. 토글 아래 경고 callout은 Terminal › TUI의 OSC 52 행과 같은 모양이다.
+    vspace(ui, th.spacing_md);
+    ui.horizontal(|ui| {
+        ui.label(t("settings.general.webhook_allow_external_label"));
+        tasty_ui_widgets::switch(ui, &th, &mut settings.webhook.allow_external, None, true);
+    });
+    vspace(ui, th.spacing_sm);
+    tasty_ui_widgets::warning_callout(
+        ui,
+        &th,
+        t("settings.general.webhook_allow_external_notice"),
+        &|ui, rect, c| {
+            crate::adapters::ui::icons::ALERT_TRIANGLE
+                .image(rect.height(), c)
+                .paint_at(ui, rect);
+        },
+    );
 }

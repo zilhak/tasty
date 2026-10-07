@@ -795,6 +795,10 @@ fn webhook_command_to_method_params(
             "webhook.config",
             serde_json::json!({ "port": port, "unset_port": unset }),
         ),
+        W::AllowExternal { value } => (
+            "webhook.config",
+            serde_json::json!({ "allow_external": value.as_deref().map(|v| v == "on") }),
+        ),
         W::Config { port } => ("webhook.config", serde_json::json!({ "port": port })),
     }
 }
