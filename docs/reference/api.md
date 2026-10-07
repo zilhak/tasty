@@ -96,7 +96,7 @@ regular(`put/get/delete/list/exists/count/scopes/stats/query/export/import`) · 
 
 `task_delete`와 `task_purge`는 `depends_on`, `Fallback.task`, `Reduce.inputs` 참조를 검사한다. 참조가 남으면 기본적으로 거절하고 참조자 목록을 반환한다. `--cascade`는 연쇄 삭제, `--force`는 참조 검사만 우회한다. **`running` 상태의 제약은 `--force`로 우회할 수 없다.**
 
-`task_command.kind = "run"`은 surface 없이 자식 프로세스를 실행한다. `task_get`과 `task_await`의 `result.output`에 stdout/stderr 각각 마지막 64KiB와 `truncated`/`dropped_bytes`를 반환한다. 0이 아닌 종료 코드로 실패하면 `result.error` 문자열에도 같은 출력이 포함된다. 실행 중에 `task_cancel` 하면 그 명령과 명령이 띄운 프로세스(Unix 프로세스 그룹, Windows job)를 끝내고, 끝난 것을 확인한 뒤 semaphore·lease 를 반환한다. 러너가 꺼져 있으면 `task_cancel` 응답 전에 끝내고 반환한다.
+`task_command.kind = "run"`은 surface 없이 자식 프로세스를 실행한다. `task_get`과 `task_await`의 `result.output`에 stdout/stderr 각각 마지막 64KiB와 `truncated`/`dropped_bytes`를 반환한다. 0이 아닌 종료 코드로 실패하면 `result.error` 문자열에도 같은 출력이 포함된다. 실행이 끝나는 때는 명령이 끝나고 stdout·stderr 가 모두 닫힌 때다. 실행 중에 `task_cancel` 하면 명령이 이미 끝났어도 그 명령이 띄운 프로세스(Unix 프로세스 그룹 전체, Windows job)를 끝내고, 모두 끝난 것을 확인한 뒤 semaphore·lease 를 반환한다. 러너가 꺼져 있으면 `task_cancel` 응답 전에 끝내고 반환한다.
 
 `task_get` 은 레코드 `revision`(쓸 때마다 커지는 값)을 싣는다. revision 은 같은 레코드의 수명 안에서만 비교한다. task 를 지우고 같은 id 로 다시 제출하면 1부터 다시 센다. `task_await` 의 종결 응답은 `state`·`result` 와 함께 v2 task 의 `attempt_id`, `revision`, 건너뛴 이유 `skip` 을 싣는다. 이 셋은 종결 사건 `agent.task_finished` 의 같은 이름 필드와 같은 값이다([사건 목록](event-catalog.md#agent-scopesystem-experimental)).
 

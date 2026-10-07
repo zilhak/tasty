@@ -57,7 +57,7 @@ pub(crate) fn settle_ended_task(ctx: &RunnerContext, workspace_id: u32, task: &T
 fn wait_until_ended(proc: RunProc, limit: Duration) -> bool {
     let deadline = Instant::now() + limit;
     loop {
-        if !proc.is_running() {
+        if proc.has_ended() {
             return true;
         }
         if Instant::now() >= deadline {

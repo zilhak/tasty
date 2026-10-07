@@ -717,9 +717,10 @@ impl HostExecutor {
                     .name(format!("agent-shell-watcher-pid{pid}"))
                     .spawn(move || {
                         let status = child.wait();
-                        run_group::forget(pid);
                         let stdout = stdout_thread.join().unwrap_or_default();
                         let stderr = stderr_thread.join().unwrap_or_default();
+                        // 리더와 출력이 모두 끝나야 Run 이 끝난다. 그 전의 취소는 그룹을 끝낸다.
+                        run_group::forget(pid);
                         let outcome = match status {
                             Ok(status) => {
                                 let success = match &allowed_exit {

@@ -26,9 +26,15 @@ impl RunProc {
         run_group::is_running(self.pid, self.started_at)
     }
 
-    /// 같은 프로세스가 살아 있으면 묶음을 끝낸다. 신호를 보냈으면 `true`.
+    /// 같은 프로세스가 살아 있거나 이 호스트의 Run 이 아직 끝나지 않았으면 묶음을 끝낸다.
+    /// 신호를 보냈으면 `true`.
     pub(crate) fn terminate(&self) -> bool {
         run_group::terminate(self.pid, self.started_at)
+    }
+
+    /// 끝낸 묶음이 모두 끝났는가(리더와 남은 그룹 구성원).
+    pub(crate) fn has_ended(&self) -> bool {
+        run_group::has_ended(self.pid, self.started_at)
     }
 }
 
@@ -107,7 +113,7 @@ impl HostExecutor {
     pub(super) fn stopped_runs(&mut self) -> Vec<TaskId> {
         let (done, waiting): (Vec<_>, Vec<_>) = std::mem::take(&mut self.stopping_runs)
             .into_iter()
-            .partition(|id| self.run_procs.get(id).is_none_or(|p| !p.is_running()));
+            .partition(|id| self.run_procs.get(id).is_none_or(|p| p.has_ended()));
         self.stopping_runs = waiting;
         done
     }

@@ -217,8 +217,12 @@ fn cancelling_with_no_runner_kills_the_run_then_returns_its_permit() {
     hold(&mem, scope.agent_seq(), &task.id, pid, started_at);
 
     svc.task_cancel(&scope, 1, &task.id, 2000).unwrap();
-    assert!(gone(pid), "취소한 Run 이 남았다");
+    assert!(eventually_gone(pid), "취소한 Run 이 남았다");
     assert!(eventually_gone(grandchild), "Run 이 만든 프로세스가 남았다");
+    let deadline = Instant::now() + WAIT;
+    while !gpu_holders(&mem).is_empty() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
     assert!(
         gpu_holders(&mem).is_empty(),
         "취소한 Run 의 permit 이 남았다"
@@ -315,4 +319,159 @@ fn a_reused_pid_is_neither_killed_nor_taken_for_the_run() {
     });
     assert!(super::settle_ended_task(&ctx, 1, &ended));
     assert!(gpu_holders(&mem).is_empty());
+}
+
+/// 리더는 끝났지만 그룹 구성원이 출력을 쥐고 있어 Run 이 끝나지 않은 명령. 구성원의 PID 를 쓴다.
+fn leader_exits_member_holds_output(pid_file: &Path) -> Vec<String> {
+    vec![
+        "sh".into(),
+        "-c".into(),
+        format!("sleep 60 & echo $! > {}; exit 0", pid_file.display()),
+    ]
+}
+
+fn set_command(task: &mut Task, argv: Vec<String>) {
+    task.command = TaskCommand::Run {
+        command: argv,
+        workspace_id: 1,
+        cwd: None,
+    };
+}
+
+/// 리더가 끝날 때까지 기다린다. watcher 가 회수하므로 PID 가 사라진다.
+fn wait_leader_reaped(pid: u32) {
+    let deadline = Instant::now() + WAIT;
+    while process_start::start_time(pid).is_some() {
+        assert!(Instant::now() < deadline, "leader did not end");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+/// 리더가 먼저 끝나고 구성원이 출력을 쥔 채 남은 Run 은 아직 Running 이다. 취소하면 리더 생존과
+/// 관계없이 그룹을 끝내고, 그룹이 빈 뒤에 반환한다.
+#[test]
+fn cancelling_a_run_whose_leader_ended_kills_the_members_still_holding_its_output() {
+    let td = tempfile::tempdir().unwrap();
+    let mem = memory(td.path());
+    let ctx = ctx_on(mem.clone());
+    let pid_file = td.path().join("member.pid");
+    let mut task = run_task(&mem, &ctx.agent_seq, &pid_file);
+    set_command(&mut task, leader_exits_member_holds_output(&pid_file));
+    let mut exec = HostExecutor::new(ctx.clone());
+    let DispatchOutcome::Started(handle) = exec.dispatch(&task) else {
+        panic!("dispatch");
+    };
+    let tasty_agent::runner::DispatchHandle::ShellProcess { pid } = handle else {
+        panic!("{handle:?}");
+    };
+    let member = read_pid(&pid_file);
+    wait_leader_reaped(pid);
+    assert!(
+        matches!(exec.poll(&handle), PollOutcome::Active),
+        "출력을 쥔 구성원이 남아 Run 은 끝나지 않았다"
+    );
+
+    exec.release_permit(&task.id);
+    let deadline = Instant::now() + WAIT;
+    while !gpu_holders(&mem).is_empty() && Instant::now() < deadline {
+        exec.maintain();
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(gpu_holders(&mem).is_empty(), "반환하지 않았다");
+    assert!(gone(member), "반환했는데 출력을 쥔 구성원이 살아 있다");
+}
+
+/// 러너가 꺼진 동안의 취소도 같다. watcher 는 러너가 멈춰도 출력을 기다리므로 이 호스트의 Run 이다.
+#[test]
+fn cancelling_with_no_runner_kills_the_members_left_after_the_leader() {
+    let td = tempfile::tempdir().unwrap();
+    let mem = memory(td.path());
+    let svc = TaskService::new(
+        mem.clone(),
+        Arc::new(OnceLock::new()),
+        Arc::new(crate::completion::fixture::Resolver::default()),
+    );
+    let scope = TaskScope::new(svc.runner_registry().clone());
+    let ctx = ctx_on(mem.clone());
+    let pid_file = td.path().join("member.pid");
+    let mut task = run_task(&mem, scope.agent_seq(), &pid_file);
+    set_command(&mut task, leader_exits_member_holds_output(&pid_file));
+    {
+        let mut exec = HostExecutor::new(ctx.clone());
+        let DispatchOutcome::Started(handle) = exec.dispatch(&task) else {
+            panic!("dispatch");
+        };
+        let tasty_agent::runner::DispatchHandle::ShellProcess { pid } = handle else {
+            panic!("{handle:?}");
+        };
+        {
+            let mut guard = mem.lock().unwrap();
+            TaskStore::new(&mut *guard, HOST_OWNER, scope.agent_seq())
+                .set_state(1, &task.id, TaskState::Running, 1100)
+                .unwrap();
+        }
+        wait_leader_reaped(pid);
+        // 러너가 멈춘다(executor 가 사라진다). permit 과 handle 은 남는다.
+    }
+    let member = read_pid(&pid_file);
+    assert!(!gone(member));
+    assert_eq!(gpu_holders(&mem), vec![task.id.clone()]);
+
+    svc.task_cancel(&scope, 1, &task.id, 2000).unwrap();
+    let deadline = Instant::now() + WAIT;
+    while !gpu_holders(&mem).is_empty() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(gpu_holders(&mem).is_empty(), "반환하지 않았다");
+    assert!(gone(member), "반환했는데 출력을 쥔 구성원이 살아 있다");
+    assert!(!handle_left(&mem, &task.id));
+}
+
+/// 이 시험 프로세스의 자식으로 `pgid` 그룹에 들어가는 구성원. 시험이 회수하기 전까지 좀비로 그룹에 남는다.
+fn spawn_member(pgid: u32) -> std::process::Child {
+    std::process::Command::new("sleep")
+        .arg("60")
+        .process_group(pgid as i32)
+        .spawn()
+        .unwrap()
+}
+
+/// 재시작 뒤 넘겨받은 Run 도 취소하면 그룹 전체를 끝내고, 그룹이 빈 뒤에야 반환한다(리더만 보지 않는다).
+#[test]
+fn a_restored_run_returns_its_holdings_only_after_its_group_is_empty() {
+    let td = tempfile::tempdir().unwrap();
+    let mem = memory(td.path());
+    let ctx = ctx_on(mem.clone());
+    let pid_file = td.path().join("grandchild.pid");
+    let task = run_task(&mem, &ctx.agent_seq, &pid_file);
+    let (pid, started_at, _grandchild) = spawn_family(&pid_file);
+    let mut member = spawn_member(pid);
+    hold(&mem, &ctx.agent_seq, &task.id, pid, started_at);
+    let mut exec = HostExecutor::new(ctx.clone());
+    assert_eq!(super::purge_and_reload_on_restart(&ctx, 1).len(), 1);
+    let task = super::load_task(&ctx, 1, &task.id).unwrap();
+    exec.adopt_restored_run(1, &task);
+
+    exec.release_permit(&task.id);
+    assert!(eventually_gone(pid), "리더가 남았다");
+    // 구성원은 SIGKILL 을 받았지만 회수 전(좀비)이라 그룹이 비지 않았다.
+    for _ in 0..30 {
+        exec.maintain();
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(
+        gpu_holders(&mem),
+        vec![task.id.clone()],
+        "그룹이 비기 전에 반환했다"
+    );
+    member.wait().unwrap();
+    let deadline = Instant::now() + WAIT;
+    while !gpu_holders(&mem).is_empty() && Instant::now() < deadline {
+        exec.maintain();
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(
+        gpu_holders(&mem).is_empty(),
+        "그룹이 빈 뒤에도 반환하지 않았다"
+    );
 }
