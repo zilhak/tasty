@@ -36,6 +36,10 @@ pub struct DagStateCounts {
     /// 건너뛰지 않고 대기로 남겨 둔 경우다(자기 실패에 쓸 fallback 을 둔 v1 task). rollup 은
     /// 이 수를 진행 가능한 대기에서 뺀다.
     pub blocked: usize,
+    /// 그룹의 끝 task(그룹 안에 하류가 없는 task) 중 성공한 수. fallback 이 대신 성공한 끝도
+    /// 센다. fallback task 자신은 main 을 대신하므로 끝으로 세지 않는다. 실패가 섞인 DAG 가
+    /// 부분 오류인지(끝까지 성공한 갈래가 있는지) 가르는 데 쓴다.
+    pub succeeded_ends: usize,
 }
 
 impl DagStateCounts {
@@ -59,7 +63,8 @@ impl DagStateCounts {
     ///
     /// 진행할 수 있는 task 가 있으면 실패가 섞여 있어도 진행 상태다: `running` → `ready` →
     /// `waiting`(실행될 수 있는 대기나 unknown). 더 진행할 수 없으면 fallback 이 대신하지 못한
-    /// 실패가 있을 때 `partially_failed`(성공한 task 가 하나라도 있음) 또는 `failed`(성공 없음)다.
+    /// 실패가 있을 때 `partially_failed`(성공한 끝 task 가 하나라도 있음, `succeeded_ends`) 또는
+    /// `failed`(끝까지 성공한 갈래 없음)다.
     /// 실패 없이 막힌 대기만 남으면 `waiting` 이다. 나머지는 전부 terminal 이며 `succeeded`
     /// (succeeded 와 선택되지 않은 경로뿐) 또는 `skipped`(cancelled 나 skip 된 task 섞임)다.
     ///
@@ -75,7 +80,7 @@ impl DagStateCounts {
             return "waiting";
         }
         if self.failed > self.recovered {
-            return if self.succeeded > 0 {
+            return if self.succeeded_ends > 0 {
                 "partially_failed"
             } else {
                 "failed"
@@ -257,6 +262,32 @@ fn recovered_by_fallback<'a>(task: &'a Task, group: &[&'a Task], seen: &mut Vec<
     }
 }
 
+/// 그룹의 끝 task: 그룹 안 다른 task 가 결과·순서로 기다리지 않고 전이로 이어지는 task 도
+/// 없다. fallback 간선은 하류로 보지 않는다. fallback task 자신(`fallback_task_ids`)은 main 을
+/// 대신하므로 끝이 아니며, main 의 끝 여부와 복구 여부로 센다.
+fn is_end(
+    task: &Task,
+    group: &[&Task],
+    member_ids: &BTreeSet<&str>,
+    fallback_task_ids: &BTreeSet<&str>,
+) -> bool {
+    if fallback_task_ids.contains(task.id.as_str()) {
+        return false;
+    }
+    let flows_on = super::route::transition_targets(task)
+        .into_iter()
+        .any(|t| member_ids.contains(t.as_str()));
+    let awaited = group.iter().any(|m| {
+        m.id != task.id && {
+            let forward = forward_refs(m);
+            referenced_task_ids(m)
+                .iter()
+                .any(|r| r == &task.id && !forward.contains(&r.as_str()))
+        }
+    });
+    !flows_on && !awaited
+}
+
 /// task 가 참조하지만 흐름은 task 에서 그쪽으로 가는 id: 전이 대상과 fallback task.
 fn forward_refs(task: &Task) -> Vec<&str> {
     let mut out: Vec<&str> = super::route::transition_targets(task)
@@ -343,6 +374,33 @@ fn summarize(
                 .map(|t| t.id.as_str()),
         )
         .collect();
+    // main 을 대신하는 fallback task: `Fallback.task` 대상과 `fallback_of` 로 main 을 가리키는 것.
+    let fallback_task_ids: BTreeSet<&str> = sorted
+        .iter()
+        .filter_map(|t| match &t.on_failure {
+            OnFailure::Fallback { task: Some(fb), .. } => Some(fb.as_str()),
+            _ => None,
+        })
+        .chain(
+            sorted
+                .iter()
+                .filter(|t| {
+                    t.metadata
+                        .get("fallback_of")
+                        .and_then(|v| v.as_str())
+                        .is_some_and(|main| member_ids.contains(main))
+                })
+                .map(|t| t.id.as_str()),
+        )
+        .collect();
+    state_counts.succeeded_ends = sorted
+        .iter()
+        .filter(|t| is_end(t, &sorted, &member_ids, &fallback_task_ids))
+        .filter(|t| {
+            t.state == TaskState::Succeeded || recovered_by_fallback(t, &sorted, &mut Vec::new())
+        })
+        .count();
+
     let root_task_ids: Vec<TaskId> = sorted
         .iter()
         .filter(|t| {

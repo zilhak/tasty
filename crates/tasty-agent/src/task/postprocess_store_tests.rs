@@ -564,5 +564,7 @@ fn a_branch_whose_postprocess_runs_out_leaves_the_dag_partially_failed() {
     assert_eq!(get(&store, "other_after").state, TaskState::Succeeded);
     let d = &group_tasks_into_dags(&store.list(1).unwrap())[0];
     assert_eq!((d.state_counts.failed, d.state_counts.succeeded), (1, 2));
+    // 끝 task 는 after(건너뜀)와 other_after(성공)다.
+    assert_eq!(d.state_counts.succeeded_ends, 1);
     assert_eq!(d.rollup_state, "partially_failed");
 }

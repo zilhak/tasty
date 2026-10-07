@@ -325,9 +325,11 @@ fn a_selected_branch_that_fails_is_not_hidden_by_the_join() {
             source_state: "failed".into()
         })
     );
-    // 선택된 갈래의 실패는 합류에서 가려지지 않는다. 앞선 a 가 성공했으므로 부분 오류다.
+    // 선택된 갈래의 실패는 합류에서 가려지지 않는다. 끝 d 가 건너뛰어졌으니 앞선 a 가
+    // 성공했어도 끝까지 성공한 갈래가 없어 실패다.
     let dags = group_tasks_into_dags(&store.list(1).unwrap());
-    assert_eq!(dags[0].rollup_state, "partially_failed");
+    assert_eq!(dags[0].state_counts.succeeded_ends, 0);
+    assert_eq!(dags[0].rollup_state, "failed");
 }
 
 #[test]

@@ -2130,6 +2130,74 @@ fn a_waiting_task_its_failed_upstream_blocks_does_not_keep_the_dag_running() {
     assert_eq!(d.rollup_state, "waiting");
 }
 
+/// 부분 오류는 끝까지 성공한 갈래가 있을 때만이다. 앞단만 성공한 단일 사슬은 실패다.
+/// fallback 이 대신 성공한 끝은 성공한 끝으로 세고, 건너뛴 fallback 은 끝이 아니다.
+#[test]
+fn only_a_branch_that_succeeded_to_its_end_makes_the_dag_partially_failed() {
+    let ok = TaskState::Succeeded;
+    let skip = TaskState::Skipped;
+
+    // a 성공 → b 실패 → c 건너뜀: 끝 c 가 성공하지 않았다.
+    let chain = vec![
+        with_state(dag_task("a", &[], 1000), ok.clone()),
+        with_state(
+            failed_with("b", None, 1001),
+            TaskState::Failed { error: "x".into() },
+        ),
+        with_state(dag_task("c", &["b"], 1002), skip.clone()),
+    ];
+    let mut chain = chain;
+    chain[1].depends_on = vec!["a".into()];
+    let d = &group_tasks_into_dags(&chain)[0];
+    assert_eq!(d.state_counts.succeeded_ends, 0);
+    assert_eq!(d.rollup_state, "failed");
+
+    // 두 갈래 중 하나가 끝까지 성공했다.
+    let mut b = failed_with("b", None, 1001);
+    b.depends_on = vec!["a".into()];
+    let two = vec![
+        with_state(dag_task("a", &[], 1000), ok.clone()),
+        b.clone(),
+        with_state(dag_task("c", &["b"], 1002), skip.clone()),
+        with_state(dag_task("x", &["a"], 1003), ok.clone()),
+        with_state(dag_task("y", &["x"], 1004), ok.clone()),
+    ];
+    let d = &group_tasks_into_dags(&two)[0];
+    assert_eq!(d.state_counts.succeeded_ends, 1);
+    assert_eq!(d.rollup_state, "partially_failed");
+
+    // 끝 m 이 실패했지만 fallback 이 대신 성공했다. 다른 갈래의 끝 c 는 실패로 건너뛰었다.
+    let mut m = failed_with("m", Some("fb"), 1001);
+    m.depends_on = vec!["a".into()];
+    let recovered_end = vec![
+        with_state(dag_task("a", &[], 1000), ok.clone()),
+        m,
+        with_state(dag_task("fb", &[], 1002), ok.clone()),
+        b.clone(),
+        with_state(dag_task("c", &["b"], 1003), skip.clone()),
+    ];
+    let d = &group_tasks_into_dags(&recovered_end)[0];
+    assert_eq!(d.state_counts.succeeded_ends, 1);
+    assert_eq!(d.rollup_state, "partially_failed");
+
+    // 끝 m 이 성공해 fallback 은 건너뛰었다. 건너뛴 fallback 은 끝이 아니다.
+    let mut m = with_state(dag_task("m", &["a"], 1001), ok);
+    m.on_failure = OnFailure::Fallback {
+        task: Some("fb".into()),
+        inline: None,
+    };
+    let fallback_skipped = vec![
+        with_state(dag_task("a", &[], 1000), TaskState::Succeeded),
+        m,
+        with_state(dag_task("fb", &[], 1002), skip.clone()),
+        b,
+        with_state(dag_task("c", &["b"], 1003), skip),
+    ];
+    let d = &group_tasks_into_dags(&fallback_skipped)[0];
+    assert_eq!(d.state_counts.succeeded_ends, 1);
+    assert_eq!(d.rollup_state, "partially_failed");
+}
+
 /// fallback 이 대신 성공한 실패는 DAG 를 실패로 만들지 않는다. fallback 도 실패하면 그 fallback 의
 /// fallback 을 따라가고, 끝내 성공하지 못하면 실패다.
 #[test]
