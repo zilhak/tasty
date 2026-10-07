@@ -121,7 +121,8 @@ pub use mac_permissions::{
     MacPermissionsOutput, MacPermissionsView, PermRow, PermState, mac_permissions,
 };
 pub use menu_item::{
-    MenuItemVariant, fit_menu_width, menu_item, menu_item_kbd, menu_label_galley, menu_separator,
+    MenuItemVariant, fit_menu_width, menu_item, menu_item_kbd, menu_item_with_hover,
+    menu_label_galley, menu_separator,
 };
 pub use move_source::{
     move_source_glyph_size, paint_move_source_chip, paint_move_source_glyph, paint_move_source_ring,

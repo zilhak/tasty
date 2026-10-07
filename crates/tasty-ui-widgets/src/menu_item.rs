@@ -43,6 +43,35 @@ pub fn menu_item(
         variant,
         active,
         enabled,
+        false,
+    )
+}
+
+/// [`menu_item`] 에 호버 상태를 직접 지정한다. `hovered` 가 참이면 포인터가 없어도
+/// 실제 호버와 같은 배경(`menu-item-bg-hover`)과 글자(`menu-item-fg-hover`)로 그린다.
+/// 상태 견본처럼 포인터 없이 호버 모습을 보여 줘야 하는 곳에서 쓴다.
+#[allow(clippy::too_many_arguments)] // reason: [`menu_item`] 과 같은 스펙에 호버 상태 하나를 더한다
+pub fn menu_item_with_hover(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    icon: Option<IconPainter<'_>>,
+    label: &str,
+    shortcut: Option<&str>,
+    variant: MenuItemVariant,
+    active: bool,
+    enabled: bool,
+    hovered: bool,
+) -> egui::Response {
+    menu_item_inner(
+        ui,
+        theme,
+        icon,
+        label,
+        shortcut.map(Shortcut::Text),
+        variant,
+        active,
+        enabled,
+        hovered,
     )
 }
 
@@ -68,10 +97,11 @@ pub fn menu_item_kbd(
         variant,
         active,
         enabled,
+        false,
     )
 }
 
-#[allow(clippy::too_many_arguments)] // reason: 두 공개 함수가 공유하는 구현이며 두 함수에 필요한 인자를 받는다.
+#[allow(clippy::too_many_arguments)] // reason: 세 공개 함수가 공유하는 구현이며 세 함수에 필요한 인자를 받는다.
 fn menu_item_inner(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -81,6 +111,7 @@ fn menu_item_inner(
     variant: MenuItemVariant,
     active: bool,
     enabled: bool,
+    force_hover: bool,
 ) -> egui::Response {
     let height = theme.menu_item_height().value();
     let pad_x = theme.menu_item_padding_x().value();
@@ -96,6 +127,7 @@ fn menu_item_inner(
         egui::Sense::hover()
     };
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, height), sense);
+    let hovered = enabled && (force_hover || resp.hovered());
     // disabled 항목의 아이콘·라벨·단축키 문구는 opacity 없이 disabled ink를 쓴다.
     let dim = |c: egui::Color32| {
         if enabled {
@@ -108,7 +140,7 @@ fn menu_item_inner(
     if active {
         ui.painter()
             .rect_filled(rect, radius, theme.surface_active().to_egui());
-    } else if enabled && resp.hovered() {
+    } else if hovered {
         ui.painter().rect_filled(
             rect,
             radius,
@@ -117,9 +149,7 @@ fn menu_item_inner(
     }
 
     let fg = match variant {
-        MenuItemVariant::Normal if active || (enabled && resp.hovered()) => {
-            theme.menu_item_fg_hover().to_egui()
-        }
+        MenuItemVariant::Normal if active || hovered => theme.menu_item_fg_hover().to_egui(),
         MenuItemVariant::Normal => theme.menu_item_fg().to_egui(),
         MenuItemVariant::Danger => theme.accent_danger().to_egui(),
     };
@@ -352,6 +382,58 @@ mod fit_width_tests {
             rect.right() <= row_rect.right() - th.menu_item_padding_x().value() + 0.5,
             "{rect:?} past {row_rect:?}"
         );
+    }
+
+    /// 지정한 호버 상태로 행 하나를 그리고 (호버 배경 사각형 수, 라벨 글자색)을 돌려준다.
+    /// 포인터는 화면 밖이라 실제 호버는 생기지 않는다.
+    fn draw_row_with_hover(th: &Theme, hovered: bool) -> (usize, egui::Color32) {
+        let ctx = egui::Context::default();
+        let mut out = (0, egui::Color32::TRANSPARENT);
+        for _ in 0..2 {
+            let frame = ctx.run(RawInput::default(), |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    super::menu_item_with_hover(
+                        ui,
+                        th,
+                        None,
+                        "Split pane",
+                        None,
+                        super::MenuItemVariant::Normal,
+                        false,
+                        true,
+                        hovered,
+                    );
+                });
+            });
+            let bg = th.menu_item_bg_hover().to_egui_premultiplied();
+            let fills = frame
+                .shapes
+                .iter()
+                .filter(|c| matches!(&c.shape, egui::Shape::Rect(r) if r.fill == bg))
+                .count();
+            let ink = frame
+                .shapes
+                .iter()
+                .find_map(|c| match &c.shape {
+                    egui::Shape::Text(t) => Some(t.fallback_color),
+                    _ => None,
+                })
+                .expect("label drawn");
+            out = (fills, ink);
+        }
+        out
+    }
+
+    /// 상태 견본이 포인터 없이 실제 호버와 같은 배경·글자로 그려지는지 검사한다.
+    #[test]
+    fn a_forced_hover_row_paints_the_hover_fill_and_hover_ink() {
+        let th = theme();
+        let (fills, ink) = draw_row_with_hover(&th, true);
+        assert_eq!(fills, 1, "hover fill");
+        assert_eq!(ink, th.menu_item_fg_hover().to_egui());
+        let (fills, ink) = draw_row_with_hover(&th, false);
+        assert_eq!(fills, 0, "no hover fill at rest");
+        assert_eq!(ink, th.menu_item_fg().to_egui());
     }
 
     #[test]

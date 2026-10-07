@@ -2,7 +2,9 @@
 
 use tasty_ui_widgets::crumb_alloc::{Caps, CrumbSlot, Measure, Plan, Role, plan};
 use tasty_ui_widgets::tokens::STRUCT_GAP_2;
-use tasty_ui_widgets::{ControlSize, IconButton, IconButtonVariant, MenuItemVariant, menu_item};
+use tasty_ui_widgets::{
+    ControlSize, IconButton, IconButtonVariant, MenuItemVariant, menu_item_with_hover,
+};
 
 use super::{CRUMB_GLYPH, HOST, Variant, path_bar_height};
 use crate::catalog::icons;
@@ -345,13 +347,13 @@ pub(super) fn crumb_menu(ui: &mut egui::Ui, theme: &Theme, hidden: &HiddenCrumbs
             ui.spacing_mut().item_spacing.y = 0.0;
             let folder = theme.accent_primary().to_egui();
             for (i, label) in hidden.labels.iter().enumerate() {
-                let bed = ui.painter().add(egui::Shape::Noop);
                 let glyph = |ui: &mut egui::Ui, rect: egui::Rect, _c: egui::Color32| {
                     icons::FOLDER
                         .image(rect.height(), folder)
                         .paint_at(ui, rect)
                 };
-                let resp = menu_item(
+                // 첫 행은 hover 상태로 보여 준다.
+                menu_item_with_hover(
                     ui,
                     theme,
                     Some(&glyph),
@@ -360,17 +362,8 @@ pub(super) fn crumb_menu(ui: &mut egui::Ui, theme: &Theme, hidden: &HiddenCrumbs
                     MenuItemVariant::Normal,
                     false,
                     true,
+                    i == 0,
                 );
-                if i == 0 {
-                    ui.painter().set(
-                        bed,
-                        egui::Shape::rect_filled(
-                            resp.rect,
-                            theme.corner_radius_sm.value(),
-                            theme.menu_item_bg_hover().to_egui_premultiplied(),
-                        ),
-                    );
-                }
             }
         });
 }

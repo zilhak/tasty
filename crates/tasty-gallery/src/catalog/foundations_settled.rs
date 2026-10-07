@@ -3,7 +3,7 @@
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, MenuItemVariant, menu_item};
+use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, MenuItemVariant, menu_item_with_hover};
 
 use crate::catalog::spec::{StageVariant, TokenChip, do_, dont, meta, note, stage};
 use crate::catalog::widgets::dialog;
@@ -86,9 +86,8 @@ fn float_menu(ui: &mut egui::Ui, theme: &Theme) {
             dialog::region_sym(ui, theme.spacing_xs, theme.spacing_xs, |ui| {
                 ui.spacing_mut().item_spacing.y = 0.0;
                 for (i, label) in ["Split pane", "New tab", "Rename…"].into_iter().enumerate() {
-                    // 첫 행은 hover 상태로 보여 준다. 글자 아래에 깔리도록 자리를 먼저 잡는다.
-                    let under = ui.painter().add(egui::Shape::Noop);
-                    let resp = menu_item(
+                    // 첫 행은 hover 상태로 보여 준다.
+                    menu_item_with_hover(
                         ui,
                         theme,
                         None,
@@ -97,17 +96,8 @@ fn float_menu(ui: &mut egui::Ui, theme: &Theme) {
                         MenuItemVariant::Normal,
                         false,
                         true,
+                        i == 0,
                     );
-                    if i == 0 {
-                        ui.painter().set(
-                            under,
-                            egui::Shape::rect_filled(
-                                resp.rect,
-                                theme.corner_radius_sm.value(),
-                                theme.overlay_hover().to_egui_premultiplied(),
-                            ),
-                        );
-                    }
                 }
             });
         },
