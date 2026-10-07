@@ -244,6 +244,7 @@ impl Rel {
     }
 
     /// `strokeDasharray` — 선·틈 길이를 번갈아 적은 패턴. 실선이면 `None`.
+    /// 값은 토큰 `dag-edge-dash-*` 와 같아야 하며 이 파일의 `dash_tokens` 시험이 대조한다.
     pub fn dash(self) -> Option<&'static [f32]> {
         match self {
             Rel::DependsOn => None,
@@ -683,5 +684,82 @@ pub fn dense_dag() -> Graph {
             ready: 6,
             active: 4,
         },
+    }
+}
+
+/// 파선 배열이 vendor 토큰 `dag-edge-dash-*` 의 strokeStyle 값과 같은지 본다.
+/// 본체 `DagRelation::dash` 는 루트 패키지 시험이 같은 토큰과 따로 대조한다.
+#[cfg(test)]
+mod dash_tokens {
+    use std::collections::BTreeMap;
+
+    use super::Rel;
+
+    const PREFIX: &str = "dag-edge-dash-";
+
+    fn dash_tokens() -> BTreeMap<String, Vec<f32>> {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../tasty-design-tokens/dtcg/tasty.tokens.json"
+        );
+        let text = std::fs::read_to_string(path).expect("read vendor tokens");
+        let root: serde_json::Value = serde_json::from_str(&text).expect("parse vendor tokens");
+        let mut out = BTreeMap::new();
+        collect(&root, &mut out);
+        out
+    }
+
+    fn collect(value: &serde_json::Value, out: &mut BTreeMap<String, Vec<f32>>) {
+        let Some(map) = value.as_object() else { return };
+        for (key, child) in map {
+            if let Some(slug) = key.strip_prefix(PREFIX) {
+                assert_eq!(child["$type"], "strokeStyle", "{key}");
+                let pattern = child["$value"].as_str().expect("strokeStyle string");
+                let dashes = pattern
+                    .split_whitespace()
+                    .map(|n| n.parse::<f32>().expect("dash number"))
+                    .collect();
+                assert!(
+                    out.insert(slug.to_string(), dashes).is_none(),
+                    "{key} twice"
+                );
+            } else {
+                collect(child, out);
+            }
+        }
+    }
+
+    fn slug(rel: Rel) -> Option<&'static str> {
+        match rel {
+            Rel::DependsOn => None,
+            Rel::Fallback => Some("fallback"),
+            Rel::Reduce => Some("reduce"),
+            Rel::Binding => Some("binding"),
+            Rel::Transition => Some("transition"),
+        }
+    }
+
+    #[test]
+    fn gallery_edge_dashes_match_the_vendor_tokens() {
+        let tokens = dash_tokens();
+        let mut seen = Vec::new();
+        for rel in Rel::ALL {
+            match slug(rel) {
+                Some(slug) => {
+                    let want = tokens
+                        .get(slug)
+                        .unwrap_or_else(|| panic!("no token {PREFIX}{slug}"));
+                    assert_eq!(rel.dash(), Some(want.as_slice()), "{rel:?}");
+                    seen.push(slug.to_string());
+                }
+                None => assert_eq!(rel.dash(), None, "{rel:?} is drawn solid"),
+            }
+        }
+        seen.sort();
+        assert_eq!(
+            tokens.keys().cloned().collect::<Vec<_>>(),
+            seen,
+            "every dash token belongs to one relation"
+        );
     }
 }

@@ -5923,6 +5923,7 @@ dependencies = [
  "image",
  "png 0.18.1",
  "pollster",
+ "serde_json",
  "tasty-dag-layout",
  "tasty-design-tokens",
  "tasty-egui-theme",

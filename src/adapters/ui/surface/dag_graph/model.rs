@@ -156,7 +156,7 @@ impl DagRelation {
     ///
     /// 디자인 토큰 `dag-edge-dash-*`(fallback "6 3" · reduce "2 3" · binding "8 2 2 2" ·
     /// transition "10 4")는 SVG `stroke-dasharray` 라 색/길이 토큰 타입 체계 밖이다(생성기가
-    /// 다루지 않는다). 값은 그 토큰과 같게 유지한다.
+    /// 다루지 않는다). 시험 `edge_dashes_match_the_vendor_tokens` 가 토큰 JSON 과 대조한다.
     pub fn dash(self) -> Option<&'static [f32]> {
         match self {
             DagRelation::DependsOn => None,
@@ -585,8 +585,69 @@ mod tests {
         ] {
             assert_eq!(DagRelation::from_kind(kind), rel, "{kind}");
         }
-        assert_eq!(DagRelation::Binding.dash(), Some(&[8.0, 2.0, 2.0, 2.0][..]));
-        assert_eq!(DagRelation::Transition.dash(), Some(&[10.0, 4.0][..]));
+    }
+
+    /// 파선 배열은 vendor 토큰 `dag-edge-dash-*` 의 strokeStyle 값과 같아야 한다.
+    /// 갤러리 `Rel::dash` 는 tasty-gallery 의 시험이 같은 토큰과 대조한다.
+    #[test]
+    fn edge_dashes_match_the_vendor_tokens() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/crates/tasty-design-tokens/dtcg/tasty.tokens.json"
+        );
+        let root: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(path).expect("read vendor tokens"))
+                .expect("parse vendor tokens");
+        let mut tokens = std::collections::BTreeMap::new();
+        let mut stack = vec![&root];
+        while let Some(value) = stack.pop() {
+            let Some(map) = value.as_object() else {
+                continue;
+            };
+            for (key, child) in map {
+                match key.strip_prefix("dag-edge-dash-") {
+                    Some(slug) => {
+                        assert_eq!(child["$type"], "strokeStyle", "{key}");
+                        let dashes: Vec<f32> = child["$value"]
+                            .as_str()
+                            .expect("strokeStyle string")
+                            .split_whitespace()
+                            .map(|n| n.parse().expect("dash number"))
+                            .collect();
+                        assert!(tokens.insert(slug.to_string(), dashes).is_none(), "{key}");
+                    }
+                    None => stack.push(child),
+                }
+            }
+        }
+        let mut seen = Vec::new();
+        for rel in [
+            DagRelation::DependsOn,
+            DagRelation::Fallback,
+            DagRelation::Reduce,
+            DagRelation::Binding,
+            DagRelation::Transition,
+        ] {
+            let slug = match rel {
+                DagRelation::DependsOn => None,
+                DagRelation::Fallback => Some("fallback"),
+                DagRelation::Reduce => Some("reduce"),
+                DagRelation::Binding => Some("binding"),
+                DagRelation::Transition => Some("transition"),
+            };
+            match slug {
+                Some(slug) => {
+                    let want = tokens
+                        .get(slug)
+                        .unwrap_or_else(|| panic!("no token for {slug}"));
+                    assert_eq!(rel.dash(), Some(want.as_slice()), "{rel:?}");
+                    seen.push(slug.to_string());
+                }
+                None => assert_eq!(rel.dash(), None, "{rel:?} is drawn solid"),
+            }
+        }
+        seen.sort();
+        assert_eq!(tokens.into_keys().collect::<Vec<_>>(), seen);
     }
 
     /// 경로를 고른 뒤 전이 엣지는 선택 상태를, 고르지 않은 노드는 skip 이유를 싣는다.

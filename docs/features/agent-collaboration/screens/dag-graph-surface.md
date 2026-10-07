@@ -47,6 +47,10 @@ tasty split --level surface --target-surface <SID> --type dag_graph
   `agent.task_graph` JSON 엣지는 두 선언을 모두 낸다. `one_of` binding 은 원본마다 한 줄이다.
   전이 엣지는 선택 상태에 따라 굵기와 불투명도만 바뀐다: `pending` 1px, `selected` 2px,
   `not_selected`·`unavailable` 은 죽은 경로처럼 흐리게 둔다(숨기지 않는다).
+- 파선 배열은 vendor 토큰 `dag-edge-dash-*`(strokeStyle)를 본체 `DagRelation::dash` 와 갤러리
+  `Rel::dash` 두 곳에 옮겨 둔 것이다. 루트 패키지 시험 `edge_dashes_match_the_vendor_tokens` 와
+  갤러리 `dash_tokens` 시험(`crates/tasty-gallery/src/catalog/components/dag.rs`)이 각각 토큰 JSON 원본과 양방향으로 대조한다(토큰마다 관계 하나,
+  실선 관계에는 토큰 없음). 색은 두 곳 모두 같은 Theme 접근자를 쓴다.
   선택 노드에 연결된 엣지는 강조색으로 표시한다.
 - **러너 배지**는 `idle` / `active` / `stopped` / `crashed`를 구분한다.
   `stopped`는 할 일이 남았는데 러너가 없는 상태다. `stopped`·`crashed`는 경고색을 쓰고,
