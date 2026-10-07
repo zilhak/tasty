@@ -386,7 +386,7 @@ pub fn draw_permissions(ui: &mut egui::Ui, theme: &Theme) {
         ),
         (
             "perm-revoked",
-            "FDA granted before, turned off outside Tasty",
+            "FDA granted before, turned off or reset outside Tasty",
             theme,
             0.0,
             FdaNoticeBranch::Revoked,

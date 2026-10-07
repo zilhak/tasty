@@ -141,7 +141,7 @@ FDA(`kTCCServiceSystemPolicyAllFiles`)를 허용하면 "다른 앱의 데이터"
 |---|---|---|
 | `Never` | 보유한 기록이 없다 | 시스템 설정에서 직접 추가하라는 기본 문단(`fda_never`) |
 | `Stale` | 보유했고, 그 뒤 앱의 서명 해시가 바뀌었다(업데이트·재빌드) | 목록의 항목이 켜져 보이거나 사라졌을 수 있으니 지우고 다시 추가하라는 문단(`fda_stale`). 그래도 실패하면 종료 후 다시 열라고 덧붙이며, 재시작이 꼭 필요하다고 단정하지 않는다 |
-| `Revoked` | 보유했고 해시가 같은데 꺼졌다 | Tasty 밖에서 꺼졌으니 다시 켜라는 문단(`fda_revoked`) |
+| `Revoked` | 보유했고 해시가 같은데 꺼졌다 | Tasty 밖에서 꺼졌으니 다시 켜고, `tccutil reset` 등으로 목록에서 사라졌으면 다시 추가하라는 문단(`fda_revoked`) |
 
 `Stale`과 `Revoked`는 원인 문단 뒤에 "무엇을 덮는지" 문단(`fda_covers`)을 붙인다. 문단 순서와
 조립은 `permission_notice_paragraph_keys`·`permission_notice_body`가 정하고 본체와 갤러리가 함께
