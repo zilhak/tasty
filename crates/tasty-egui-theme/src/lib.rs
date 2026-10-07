@@ -150,6 +150,12 @@ pub fn apply_theme_to_egui(theme: &Theme, ctx: &egui::Context) {
         theme.spacing_sm.value().round_ui(),
         theme.spacing_xs.value().round_ui(),
     );
+    // 기본 tooltip 틀은 전역 스타일의 `menu_margin` 을 안쪽 여백으로 쓴다. 팝오버는
+    // `with_popover_frame` 이 부모 스타일에서 메뉴 둘레로 바꾸므로 전역 값은 tooltip 토큰이다.
+    style.spacing.menu_margin = egui::Margin::symmetric(
+        theme.tooltip_padding_x().value().round() as i8,
+        theme.tooltip_padding_y().value().round() as i8,
+    );
     // 스크롤에는 transition을 적용하지 않는다.
     style.scroll_animation = egui::style::ScrollAnimation::none();
     ctx.set_style(style);

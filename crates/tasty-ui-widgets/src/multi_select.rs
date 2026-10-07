@@ -53,7 +53,7 @@ pub fn popup_chrome_width(theme: &Theme) -> f32 {
 
 /// 메뉴 프레임용 style. egui 팝업은 부모 style로 프레임을 만들므로 그림자만 바꾼 사본을 넘긴다.
 /// 채움·테두리·반경은 `with_popover_frame`이 메뉴 토큰으로 정하며 multiselect-menu-bg·border·
-/// radius 는 그 별칭이다. 안쪽 여백은 래퍼 안에서 [`menu_margin`]으로 정한다. 메뉴 안의 행 style은
+/// radius 는 그 별칭이다. 안쪽 여백은 [`menu_margin`]을 래퍼에 넘겨 정한다. 메뉴 안의 행 style은
 /// 바뀌지 않는다.
 fn menu_style(base: &egui::Style, theme: &Theme) -> egui::Style {
     let mut style = base.clone();

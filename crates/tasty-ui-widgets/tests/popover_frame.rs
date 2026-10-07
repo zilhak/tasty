@@ -106,3 +106,21 @@ fn a_popover_opened_inside_the_wrapper_keeps_the_menu_inner_ring() {
     let inset = th.border_width.value() + th.popup_content_margin().value();
     assert_eq!(row - area.min, vec2(inset, inset));
 }
+
+/// 기본 tooltip 틀(`Frame::popup(전역 style)`)의 안쪽 여백은 tooltip-padding-x · tooltip-padding-y 다.
+#[test]
+fn the_default_tooltip_frame_uses_the_tooltip_padding_tokens() {
+    let th = theme();
+    let ctx = egui::Context::default();
+    tasty_egui_theme::apply_theme_to_egui(&th, &ctx);
+    let margin = egui::Frame::popup(&ctx.style()).inner_margin;
+    assert_eq!(
+        (margin.left, margin.right, margin.top, margin.bottom),
+        (
+            th.tooltip_padding_x().value() as i8,
+            th.tooltip_padding_x().value() as i8,
+            th.tooltip_padding_y().value() as i8,
+            th.tooltip_padding_y().value() as i8,
+        )
+    );
+}
