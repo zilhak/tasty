@@ -165,12 +165,65 @@ Tasty 가 메모리 파일을 열지 못해 [임시 메모리](cli.md#에이전�
 - 새 세션이 30초 안에 뜨지 않으면 작업은 실패합니다. 그 뒤에 늦게 뜬 세션은 작업이 닫습니다. 이미 열려 있던 세션은 닫지 않습니다.
 - Codex 를 네트워크가 막힌 샌드박스에서 실행하면 `task-submit` 이 Tasty 에 닿지 못해, 결과 타입을 정한 작업은 실패합니다. 결과 타입을 정하지 않은 작업(마지막 답변이 결과)은 영향이 없습니다.
 
+### 예: 구현하고 검토한 뒤 판정대로 갈라졌다 다시 모이기
+
+위의 기능을 하나로 엮은 그래프입니다. `implement` 가 바꾼 내용을 문장으로 내면 `review` 가 그 문장을 입력으로 받아 판정과 확신도를 냅니다. 확신도가 0.9 이상인 `pass` 면 `ship`, 확신도가 0.9 이상인 `revise` 면 `fix`, 그 밖이면 `human_review` 로 가고, 세 갈래는 `report` 에서 다시 만납니다. `make-change`·`review-tool` 은 각자의 도구로 바꿉니다. 에이전트에게 맡기려면 위의 `agent` 작업으로 바꿉니다.
+
+```json
+{"contract_version": 2,
+ "types": {"ReviewResult": {"type": "object", "fields": {
+   "verdict": {"type": "enum", "values": ["pass", "revise", "review"]},
+   "confidence": {"type": "float64", "min": 0, "max": 1}}}},
+ "tasks": [
+  {"id": "implement", "command": {"kind": "run", "command": ["make-change"]},
+   "output_schema": {"type": "string"},
+   "postprocess": {"command": ["summarize-tool"], "timeout_ms": 10000,
+                   "stdin": {"text": {"from": "raw", "pointer": "/execution/stdout/text"}}}},
+  {"id": "review", "command": {"kind": "run", "command": ["review-tool"]},
+   "input_schema": {"type": "object", "fields": {"summary": {"type": "string"}}},
+   "bindings": {"summary": {"from_task": "implement"}},
+   "input_mapping": {"args": ["/summary"]},
+   "output_schema": {"ref": "ReviewResult"},
+   "transitions": {"cases": [
+     {"when": {"all": [{"compare": {"path": "/verdict", "op": "eq", "value": "pass"}},
+                       {"compare": {"path": "/confidence", "op": "ge", "value": 0.9}}]}, "to": ["ship"]},
+     {"when": {"all": [{"compare": {"path": "/verdict", "op": "eq", "value": "revise"}},
+                       {"compare": {"path": "/confidence", "op": "ge", "value": 0.9}}]}, "to": ["fix"]}],
+     "otherwise": ["human_review"]}},
+  {"id": "ship", "command": {"kind": "run", "command": ["ship-tool"]}},
+  {"id": "fix", "command": {"kind": "run", "command": ["fix-tool"]}},
+  {"id": "human_review", "command": {"kind": "run", "command": ["notify-reviewer"]}},
+  {"id": "report", "command": {"kind": "run", "command": ["report-tool"]},
+   "depends_on": ["ship", "fix", "human_review"]}]}
+```
+
+`review` 가 확신도 0.95 로 `pass` 를 내면 `task-get` 은 이렇게 보여 줍니다.
+
+```text
+state: succeeded
+route: ship
+attempt: review#1
+revision: 7
+input: summary <- implement (attempt implement#1)
+output: {"confidence":0.95,"verdict":"pass"} (from postprocess.stdout.json)
+```
+
+- `input:` 줄은 어느 작업의 몇 번째 실행 결과를 받았는지, `output:` 줄은 결과가 어디서 왔는지 알려 줍니다. 결과 없이 끝난 작업은 `output: none` 과 함께 실패 단계와 이유가 `error:` 줄에 나옵니다.
+- `fix`·`human_review` 는 `skip: branch_not_selected` 로 끝나고, `report` 는 실행된 `ship` 만 기다렸다가 성공합니다.
+- `review` 가 실패하면 세 갈래와 `report` 는 모두 건너뜀이 되고, `skip: upstream_unavailable (review failed)` 처럼 원인 작업이 나옵니다.
+- `revision` 은 작업 기록이 저장될 때마다 커집니다. 같은 작업의 두 조회 결과 중 어느 쪽이 나중 것인지 가릴 때 씁니다.
+- `confidence` 는 작업이 결과 타입에 선언한 값이라 갈래 조건에 쓸 수 있습니다. 터미널 상태 조회가 돌려주는 `confidence` 는 세션 상태 판단의 확실성이므로 이 값과 다릅니다.
+
+타입을 정하지 않은 작업도 같은 워크스페이스에서 함께 쓸 수 있습니다. `task-create --depends-on report` 로 만든 작업은 `report` 가 끝나면 실행됩니다. 다만 `${task.review.output}` 같은 자리표시자로 타입을 정한 작업의 결과를 읽으려 하면 만들 때 거부됩니다. 결과를 넘기려면 받는 작업도 그래프에 넣고 `bindings` 로 받습니다.
+
 ## 진행 보기
 
 작업이 어떻게 흘러가는지 보는 화면이 둘입니다. 둘 다 같은 데이터를 봅니다.
 
 - **작업 DAG** <!-- en: Task DAGs --> 창 — `Ctrl+Shift+G`, 또는 사이드바 **도구** <!-- en: Tools --> 메뉴. 목록에서 하나를 골라 잠깐 보고 닫는 용도입니다. 검색과 상태 필터가 있습니다. 하나를 고르면 같은 자리가 그래프로 바뀌고, 맨 윗줄의 돌아가기 화살표 옆에 확대·축소·전체 맞춤·방향 전환과 러너 표시가 놓입니다.
 - **DAG 탭** — 탭 하나를 차지하고 계속 띄워 두는 그래프입니다. `tasty new tab --pane <ID> --type dag_graph` 로 열거나, 이미 있는 서피스에서 `Alt+'` 를 눌러 **DAG** 로 바꿉니다. 확대와 축소, 전체 맞춤, 방향 전환이 있고, 노드를 누르면 명령 · 의존성 · 소요 시간 · 종료 코드 · 출력이 보입니다.
+
+그래프의 선은 관계마다 모양이 다릅니다. 순서만 묶은 의존은 실선, 입력을 받는 연결(`bindings`)은 청록 점·파선, 결과에 따른 갈래(`transitions`)는 보라 파선입니다. 고른 갈래는 굵게, 고르지 않았거나 실행되지 않은 갈래는 흐리게 그립니다. 두 작업 사이에 순서 의존과 입력 연결이 함께 있으면 입력 연결 하나만 그립니다. 고르지 않아 건너뛴 작업에는 **선택 안 됨** <!-- en: Not selected --> 이 붙고, 노드에 마우스를 올리면 건너뛴 이유가 나옵니다. `task-graph --format dot` 도 같은 구분으로 그립니다.
 
 한 워크스페이스에서 서로 무관한 그래프를 여럿 돌려도 됩니다. 목록은 의존 관계로 이어진 덩어리를 하나의 DAG 로 묶어 보여줍니다. 작업에 `--metadata '{"dag":"이름"}'` 을 붙이면 연결 여부와 무관하게 같은 이름끼리 묶입니다.
 
@@ -181,6 +234,7 @@ Tasty 가 메모리 파일을 열지 못해 [임시 메모리](cli.md#에이전�
 | **실행** <!-- en: Running --> | 실행 중 |
 | **성공** <!-- en: Succeeded --> · **실패** <!-- en: Failed --> | 끝났습니다 |
 | **취소** <!-- en: Cancelled --> · **건너뜀** <!-- en: Skipped --> | 사람이 취소했거나, 앞이 실패해 건너뛰었습니다 |
+| **선택 안 됨** <!-- en: Not selected --> | 갈래에서 다른 쪽이 골라져 실행하지 않았습니다. 실패가 아닙니다 |
 | **알수없음** <!-- en: Unknown --> | 판정할 수 없습니다 |
 
 터미널에서 보려면:
@@ -232,7 +286,7 @@ done
 - 사건은 메모리에만 남고 최근 것만 보관합니다. 너무 오래 끊겨 있어 그 사이가 밀려났으면 **조용히 처음부터 주지 않고** 몇 건을 못 줬는지 알려 줍니다. 그 알림은 사건 목록과 섞이지 않게 따로 나오므로 위의 `while read` 가 방해받지 않습니다.
 - Tasty 를 다시 켜면 사건은 사라지고 위치도 처음부터 다시 매겨집니다. 답에 함께 오는 `epoch` 이 지난번과 다르면 저장한 위치는 재시작 전 실행의 값입니다.
 - 연결이 끊기면 `follow` 는 다시 붙을 때 줄 `--offset` 과 `--epoch` 을 알려 주고 끝납니다. 그대로 붙여 다시 실행하면, 그 사이 Tasty 가 다시 켜졌을 때 그렇다고 알리고 새로 시작된 사건의 처음부터 받습니다. `--reconnect` 를 주면 끝나지 않고 1초마다 다시 붙어 이어 갑니다.
-- 지금 나오는 것은 **작업이 끝났을 때**와 **배리어가 닫혔을 때** 둘입니다. 왜 실패했는지는 사건에 실리지 않으니 그때는 `tasty agent task-get` 으로 봅니다.
+- 지금 나오는 것은 **작업이 끝났을 때**와 **배리어가 닫혔을 때** 둘입니다. 작업 사건에는 상태와 함께 실행 회차(`attempt_id`), 기록 버전(`revision`), 건너뛴 이유(`skip`, 앞 작업 때문이면 그 작업과 상태)가 실립니다. 왜 실패했는지는 사건에 실리지 않으니 그때는 `tasty agent task-get` 으로 봅니다.
 - 읽기가 느린 수신자를 위해 별도 대기열을 계속 늘리지는 않습니다. 최근 이벤트의 공용 보관 범위를 벗어나면 누락을 확인해야 합니다.
 
 ## 동시 실행 제한과 신호

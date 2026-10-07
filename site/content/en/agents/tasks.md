@@ -1,4 +1,4 @@
-<!-- source-hash: 4a6b93b0164e -->
+<!-- source-hash: 6fb6959c4bbc -->
 <a id="task-dag"></a>
 
 # Task workflows (DAG)
@@ -166,12 +166,65 @@ An `agent` task sends one instruction to a Claude or Codex session and takes the
 - If a new session does not come up within 30 seconds, the task fails. A session that comes up later is closed by the task. A session that was already open is never closed.
 - When Codex runs in a sandbox that blocks the network, `task-submit` cannot reach Tasty, so a task with a result type fails. Tasks without a result type (the last answer is the result) are not affected.
 
+### Example: implement, review, branch on the verdict, and meet again
+
+This graph puts the features above together. `implement` hands out a sentence describing its change, and `review` takes that sentence as input and returns a verdict with a confidence. A `pass` with confidence 0.9 or more goes to `ship`, a `revise` with confidence 0.9 or more goes to `fix`, and anything else goes to `human_review`. The three branches meet again at `report`. Replace `make-change`, `review-tool` and the rest with your own tools. To hand the work to an agent, use the `agent` task above instead.
+
+```json
+{"contract_version": 2,
+ "types": {"ReviewResult": {"type": "object", "fields": {
+   "verdict": {"type": "enum", "values": ["pass", "revise", "review"]},
+   "confidence": {"type": "float64", "min": 0, "max": 1}}}},
+ "tasks": [
+  {"id": "implement", "command": {"kind": "run", "command": ["make-change"]},
+   "output_schema": {"type": "string"},
+   "postprocess": {"command": ["summarize-tool"], "timeout_ms": 10000,
+                   "stdin": {"text": {"from": "raw", "pointer": "/execution/stdout/text"}}}},
+  {"id": "review", "command": {"kind": "run", "command": ["review-tool"]},
+   "input_schema": {"type": "object", "fields": {"summary": {"type": "string"}}},
+   "bindings": {"summary": {"from_task": "implement"}},
+   "input_mapping": {"args": ["/summary"]},
+   "output_schema": {"ref": "ReviewResult"},
+   "transitions": {"cases": [
+     {"when": {"all": [{"compare": {"path": "/verdict", "op": "eq", "value": "pass"}},
+                       {"compare": {"path": "/confidence", "op": "ge", "value": 0.9}}]}, "to": ["ship"]},
+     {"when": {"all": [{"compare": {"path": "/verdict", "op": "eq", "value": "revise"}},
+                       {"compare": {"path": "/confidence", "op": "ge", "value": 0.9}}]}, "to": ["fix"]}],
+     "otherwise": ["human_review"]}},
+  {"id": "ship", "command": {"kind": "run", "command": ["ship-tool"]}},
+  {"id": "fix", "command": {"kind": "run", "command": ["fix-tool"]}},
+  {"id": "human_review", "command": {"kind": "run", "command": ["notify-reviewer"]}},
+  {"id": "report", "command": {"kind": "run", "command": ["report-tool"]},
+   "depends_on": ["ship", "fix", "human_review"]}]}
+```
+
+When `review` returns `pass` with confidence 0.95, `task-get` shows:
+
+```text
+state: succeeded
+route: ship
+attempt: review#1
+revision: 7
+input: summary <- implement (attempt implement#1)
+output: {"confidence":0.95,"verdict":"pass"} (from postprocess.stdout.json)
+```
+
+- The `input:` line tells you which run of which task the value came from, and the `output:` line tells you where the result came from. A task that ended without a result shows `output: none`, with the failing stage and reason on an `error:` line.
+- `fix` and `human_review` end with `skip: branch_not_selected`, and `report` waits only for `ship`, which ran, and succeeds.
+- If `review` fails, the three branches and `report` are all skipped, and the cause shows as in `skip: upstream_unavailable (review failed)`.
+- `revision` grows each time the task's record is saved. Use it to tell which of two reads of the same task is the later one.
+- `confidence` here is a value the task declared in its result type, so branch conditions can use it. The `confidence` returned by a terminal state query is how sure Tasty is about the session's state, which is a different thing.
+
+Tasks without a declared type can live in the same Workspace. A task made with `task-create --depends-on report` runs once `report` finishes. Reading a typed task's result through a placeholder such as `${task.review.output}` is rejected when you create the task, though. To pass a result along, put the receiving task in the graph too and take the value with `bindings`.
+
 ## Watching progress
 
 There are two screens for seeing how the work flows. Both look at the same data.
 
 - **Task DAGs** window — `Ctrl+Shift+G`, or the sidebar **Tools** menu. It is for picking one from a list, taking a quick look, and closing it. It has search and a state filter. Pick one and the same area becomes the graph, with zoom in and out, fit to view, direction switching, and the runner pill sitting on the top line next to the back arrow.
 - **DAG tab** — a graph that takes up a whole Tab and stays open. Open it with `tasty new tab --pane <ID> --type dag_graph`, or press `Alt+'` on an existing Surface and switch it to **DAG**. It has zoom in and out, fit to view, and direction switching, and clicking a node shows the command, dependencies, elapsed time, exit code, and output.
+
+The lines in the graph differ by relation. A dependency that only sets the order is solid, an input connection (`bindings`) is a teal dash-dot line, and a branch chosen from a result (`transitions`) is a lavender dashed line. A branch that was chosen is drawn thicker, and branches that were not chosen or did not run are faded. When two tasks have both an order dependency and an input connection, only the input connection is drawn. A task skipped because its branch was not chosen is marked **Not selected**, and hovering over the node shows why it was skipped. `task-graph --format dot` draws the same distinctions.
 
 You can run several unrelated graphs in one Workspace. The list groups a chunk connected by dependencies into a single DAG. Attach `--metadata '{"dag":"name"}'` to a task and everything with the same name is grouped together regardless of whether it is connected.
 
@@ -182,6 +235,7 @@ You can run several unrelated graphs in one Workspace. The list groups a chunk c
 | **Running** | Running |
 | **Succeeded** · **Failed** | Finished |
 | **Cancelled** · **Skipped** | A person cancelled it, or something before it failed and it was skipped |
+| **Not selected** | Another branch was chosen, so it did not run. This is not a failure |
 | **Unknown** | Cannot be determined |
 
 To see it from a terminal:
@@ -231,7 +285,7 @@ done
 - Events live in memory only, and only the most recent ones are kept. If you were away long enough for the ones in between to fall out, you are **not** quietly given the oldest ones instead — you are told how many were missed. That notice is kept out of the event stream, so the `while read` above is not disturbed.
 - Restarting Tasty clears the events and starts positions over. If the `epoch` that comes with an answer differs from the one your position came from, that position belongs to the previous Tasty run.
 - If the connection drops, `follow` tells you the `--offset` and `--epoch` to reattach with and exits. Run it again with those, and if Tasty restarted in the meantime you are told so and get the new events from their start. With `--reconnect` it does not exit but reconnects every second and carries on.
-- What comes out today is **a task finishing** and **a barrier closing**. Why something failed is not carried in the event — use `tasty agent task-get` for that.
+- What comes out today is **a task finishing** and **a barrier closing**. A task event carries its state together with the run (`attempt_id`), the record version (`revision`) and why it was skipped (`skip`, with the task and state that caused it when an earlier task was the reason). Why something failed is not carried in the event — use `tasty agent task-get` for that.
 - Tasty does not keep growing a separate queue for a slow reader. Check for missed events if the reader falls behind the shared recent-event history.
 
 ## Concurrency limits and signals
