@@ -382,6 +382,8 @@ TTL 의 하한은 `MIN_HOLDING_TTL_MS`(1초 = tick 500ms 의 두 배)다. 갱신
 처음 오는 tick 시작(`maintain`)에 하고, 그 tick 은 늦어도 절반 + tick 간격에 오므로 TTL 이 tick 의
 두 배 이상이어야 만료 전에 갱신된다. `task_create`·`task_graph_submit` 은 metadata(inline fallback
 포함)의 `lease.ttl_ms`·`semaphore.ttl_ms` 가 하한보다 짧으면 `-32602` 로 거절한다(`check_holding_ttls`).
+하한 검사가 생기기 전 버전에서 저장된 task 는 다시 검사하지 않으므로, 하한보다 짧은 TTL 을 가진 채
+남아 있으면 갱신 전에 만료될 수 있다.
 
 만료 시각이 지났어도 다른 holder 가 가져가지 않았으면 다시 늦춘다. 이미 다른 holder 가 쥐었으면
 되찾지 않고 갱신을 멈추며, task 는 계속 실행된다(프로세스를 멈출 근거가 없다). 이 일은 task 조회의
