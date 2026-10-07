@@ -133,7 +133,8 @@ const AREAS: &[(&str, usize, &str)] = &[
         // 탐색기 상태 화면 보조 줄 최대 폭 200은 시안 ExpState 의 raw maxWidth 라 대응 토큰이 없다.
         // 마우스 캡처 배너 메뉴 폭은 banner-more-menu 토큰으로 옮겨 빠졌다.
         // 스케일에 size-20·40이 들어오면서 기존 값 20·40 여섯 자리가 새로 집계됐다.
-        57,
+        // 도구 메뉴 폭 160은 tools-menu-min-width·max-width 토큰과 내용 폭 계산으로 옮겨 빠졌다.
+        56,
         "나머지 host chrome(사이드바·타이틀바·서피스 장식)",
     ),
     (
@@ -861,7 +862,8 @@ fn the_blind_spots_are_still_the_size_they_say() {
         // popover_frame 의 안쪽 둘레 시험이 화면 사각형 pos2(0,0)·vec2(400,300) 넷을 test 전용으로 더한다.
         // 자동 attach 거절 배너 위젯의 글리프 세로 오프셋 vec2(0, nudge)와 갤러리 행의 Margin::symmetric 세로 0이 0 둘을 더하고,
         // 좁은 폭 배너 시험의 화면 높이 400 하나가 test 전용으로 들어왔다.
-        (221, 519),
+        // 도구 메뉴 높이 시험의 고정 폭 W(158) 하나가 test 전용으로 들어왔다.
+        (221, 520),
         "제외한 0과 test 전용 코드의 수가 달라졌다. 실제 사용과 수집 범위의 변경을 확인하고 기록을 갱신한다."
     );
     let roster: usize = UNIT_SPACE_SITES.iter().map(|(.., n, _)| n).sum();
