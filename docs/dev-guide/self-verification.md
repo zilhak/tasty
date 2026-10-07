@@ -38,7 +38,7 @@ Tasty 를 개발하는 환경이 곧 Tasty 다 (dogfooding). 보통 사용자·�
 | layout | `~/.tasty/layouts/NN.json` | `~/.tasty-debug/layouts/NN.json` |
 
 - 파일명은 양쪽 모두 동일(`tasty.port` 등) — 구분은 **루트** 가 한다. (`-debug` 파일명 접미사는 쓰지 않는다.)
-- 웹훅 리스너 포트는 예외다. 설정 파일(`webhooks.toml`)은 루트마다 있지만 처음 기록하는 포트가 같아서, 사용자 인스턴스가 떠 있으면 검증 인스턴스는 웹훅 bind 실패 경고와 함께 웹훅 없이 뜬다. 웹훅을 검증하려면 실행 전에 격리 홈의 `webhooks.toml`에 `port = <빈 포트>`를 적는다([웹훅 포트 설정](../features/webhook/index.md#포트-설정-설정값-only)).
+- 웹훅 리스너 포트는 포트를 정하지 않으면 28429부터 비어 있는 포트를 찾으므로, 사용자 인스턴스가 떠 있어도 검증 인스턴스는 다음 빈 포트에 웹훅 리스너를 띄운다. 실제 포트는 `tasty webhook port`로 확인한다. 고정 포트가 필요하면 `--webhook-port <빈 포트>`로 실행한다. 그 포트가 막혀 있으면 실행이 종료 코드 1로 끝난다([리스너 주소와 포트](../features/webhook/index.md#리스너-주소와-포트)).
 - `target/debug/tasty` (debug 바이너리)는 `~/.tasty-debug/` 루트를 읽으므로 CLI 조작이 **debug 인스턴스에만** 간다. 사용자의 release 인스턴스는 건드리지 않는다.
 - **`TASTY_HOME` env override**: 비어있지 않으면 그 경로를 루트로 강제한다(테스트/샌드박스/다중 인스턴스용) — debug/release 자동 분기보다 우선.
 - 구현: `crates/tasty-utils/src/path.rs` (`tasty_home()` — `TASTY_HOME` 우선, 없으면 `cfg!(debug_assertions)`→`.tasty-debug`), `crates/tasty-ipc/src/port_file.rs`, `src/store/scrollback.rs`, `src/core/layout_persistence.rs`.

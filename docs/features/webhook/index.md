@@ -8,7 +8,7 @@
 
 ## 목적
 
-GitHub Action 처럼 **외부 이벤트가 HTTP 로 들어오면 tasty 를 구동**하는 경량 인바운드 서버다. tasty 의 제어용 IPC 포트(loopback 전용, [ADR-0006](../../adr/0006-bounded-ipc-transport.md))와 별개로, `0.0.0.0` 의 설정 포트를 열어 외부 발신자의 통지를 받는다. 실제 외부→내부 포워딩은 공유기/OS 몫이고, tasty 가 제공하는 건 "특정 포트에 특정 규칙으로 데이터가 들어오면 지정 핸들러를 구동하라" 이다.
+GitHub Action 처럼 **외부 이벤트가 HTTP 로 들어오면 tasty 를 구동**하는 경량 인바운드 서버다. tasty 의 제어용 IPC 포트(loopback 전용, [ADR-0006](../../adr/0006-bounded-ipc-transport.md))와 별개의 HTTP 포트로 통지를 받는다. 기본은 이 컴퓨터(127.0.0.1)에서 오는 호출만 받고, 설정 `[webhook] allow_external = true`(Settings › General · `tasty webhook allow-external on`)를 켜면 모든 IPv4 인터페이스(0.0.0.0)에서 받는다. 실제 외부→내부 포워딩은 공유기/OS 몫이고, tasty 가 제공하는 건 "특정 포트에 특정 규칙으로 데이터가 들어오면 지정 핸들러를 구동하라" 이다.
 
 대표 흐름: tasty 의 어떤 기능이 외부에 작업을 걸어둠 → 그 작업이 완료/오류나면 외부가 웹훅으로 통지 → tasty 가 내부적으로 반응(예: `notification.create`). 웹훅 응답은 "잘 전달됨" ACK 뿐이다.
 
@@ -19,7 +19,7 @@ GitHub Action 처럼 **외부 이벤트가 HTTP 로 들어오면 tasty 를 구�
 프로세스당 리스너는 **단 하나**다. 다수의 웹훅 등록을 opaque path 로 멀티플렉싱하며, 개별 웹훅은 port/path 를 지정하지 못한다 — 리스너가 발급·은닉한다. 라우팅 키는 `(port, opaque path)` 로, 현재는 단일 포트만 실사용한다.
 
 - **opaque id**: 등록 시 랜덤 8 바이트 → 16 hex 소문자(`gen_opaque_id`). **비순차**라 열거를 막고, keyspace 스캔은 남용차단으로 보완한다.
-- **발급 URL**: `http://{host}:{port}/{id}`. `0.0.0.0`/빈 호스트는 표기상 `127.0.0.1` 로 치환.
+- **발급 URL**: `http://{host}:{port}/{id}`. host·port는 리스너가 실제로 bind한 주소(`RuntimePorts`의 웹훅 기록)에서 온다. `0.0.0.0` bind는 표기상 `127.0.0.1` 로 적는다. 리스너가 없으면(탐색 범위가 모두 막힘) 포트 없이 `http://127.0.0.1/{id}` 로 적는다. 저장한 Persistent 웹훅의 URL도 재시작 뒤 그 실행의 포트를 따른다.
 
 ### 요청 처리 흐름
 
@@ -63,7 +63,7 @@ HTTP 응답은 **고정 상태코드 + 고정 문자열 바디**뿐이다. `buil
 
 ### 영속화 (`~/.tasty/webhooks.toml`)
 
-`Persistent` 웹훅만 저장한다(`Temporary` 는 저장 안 함). 저장 항목: `id`, `methods`, `handler`(또는 인라인 `sequence`), `limit`(kind + `deadline_unix`/`remaining`), `auth`. `TimeLimit` deadline 은 절대 Unix 시각이라 재시작 후에도 정확히 만료한다. 재시작 복원(`restore_into_registry`)은 이미 만료된 엔트리를 등록하지 않고 파일에서 정리한다. 최상위 `port` 키(포트 설정)과 `[[webhook]]` 배열이 같은 파일을 공유하며, 각각의 writer 가 상대 섹션을 보존한다.
+`Persistent` 웹훅만 저장한다(`Temporary` 는 저장 안 함). 저장 항목: `id`, `methods`, `handler`(또는 인라인 `sequence`), `limit`(kind + `deadline_unix`/`remaining`), `auth`. `TimeLimit` deadline 은 절대 Unix 시각이라 재시작 후에도 정확히 만료한다. 재시작 복원(`restore_into_registry`)은 이미 만료된 엔트리를 등록하지 않고 파일에서 정리한다. 최상위 `port`(명시 지정 포트)·`format`(파일 형식 표시)과 `[[webhook]]` 배열이 같은 파일을 공유하며, 각각의 writer 가 상대 섹션을 보존한다.
 
 ### 선택적 인증 (가벼운 발신자 확인)
 
@@ -122,18 +122,39 @@ vendor 업데이트는 응답 수신과 worker·수신 방향 종료를 별도�
 정상 200은 실패 수를 올리지 않지만 이미 같은 IP가 차단돼 있으면 정상 요청도 429를 받는다.
 IPv6·proxy 출처 처리나 실제 메모리 제한을 추가할 때는 차단 항목을 밀어내 우회하지 못하도록 함께 설계한다.
 
-### 포트 설정 (설정값 only)
+### 리스너 주소와 포트
 
-리스너 포트는 **오로지 설정값**에서 온다 — tasty가 임의의 다른 포트에 바인딩하지 않는다(자동 폴백 없음).
+결정의 근거와 대안은 [ADR-0032](../../adr/0032-webhook-admission.md#리스너-주소와-포트-2026-10-07-개정)에 있다.
 
-- 설정 파일이 처음 없으면 시드 포트 `28429`(User Ports 범위 임의값, 알려진 서비스 포트 아님)를 기록한다.
-- 포트가 비면 리스너를 띄우지 않고 경고한다(`PortNotConfigured`). bind 실패(충돌/권한)도 경고하고 사용자가 설정을 고치게 위임한다(`BindFailed`, 자동 회피 없음).
-- 설정 파일은 데이터 루트마다 따로 있지만 시드 포트는 루트와 관계없이 같다. 같은 컴퓨터에서 release·debug·격리 홈 인스턴스를 함께 띄우면 처음 실행한 각 루트가 모두 `28429`를 기록하고, 나중에 뜬 인스턴스는 `BindFailed` 경고와 함께 웹훅 없이 실행된다(측정). 함께 쓰려면 루트마다 `tasty webhook config --port <N>`으로 다른 포트를 정한다.
-- 경고는 **기존 인프라 재사용** — GUI 는 toast(`ToastManager`), headless 는 `tracing::warn!`. 신규 디자인 컴포넌트가 없어 화면이 없다.
+**주소**: 기본 `127.0.0.1`. config.toml의 `[webhook] allow_external = true`면 `0.0.0.0`(`webhook::bind_ip`). 다음 실행부터 적용된다.
+
+**포트 결정 순서** (`webhook::bind`):
+
+1. 실행 인자 `--webhook-port <N>`(GUI·headless 공통). 있으면 명시 지정이다.
+2. 데이터 폴더 `webhooks.toml`의 `port`(`tasty webhook port <N>`으로 저장). 인자가 없을 때만 쓰며 명시 지정이다.
+3. 둘 다 없으면 탐색: `28429`부터 하나씩 올리며 bind를 시도해 처음 성공한 포트를 쓴다. 상한은 64개(`28429..=28492`, `PROBE_COUNT`).
+
+- 점유 여부는 미리 조회하지 않고 실제 bind 결과로 판단한다.
+- **명시 지정 포트를 bind하지 못하면 실행을 막는다.** 이벤트 루프·메모리 저장소·저널을 만들기 전에 판단한다. GUI는 부팅 오류 화면(제목 "Webhook port in use", Quit)을 띄우고 종료 코드 1로 끝나며, headless는 같은 문구를 오류 로그로 남기고 종료 코드 1로 끝난다. 이때 데이터 폴더에는 저널 writer 잠금 파일만 남는다(측정).
+- 탐색 범위가 모두 막히면 리스너 없이 실행하고 경고한다(`WebhookInitReport::Unavailable`).
+- 탐색으로 `28429`가 아닌 포트를 얻었고 복원한 Persistent 웹훅이 있으면 경고한다(`MovedWithPersistent`). 새 URL은 `tasty webhook list`로 확인한다. 저장한 웹훅이 없으면 경고하지 않는다.
+- 경고는 GUI toast(Warning, Window 범위)와 headless `tracing::warn!`이다.
+- bind한 포트는 설정 파일에 써 넣지 않는다. 써 넣으면 다음 실행부터 명시 지정이 되기 때문이다.
+- **이전 형식 파일**: 이전 버전은 파일이 없을 때 `port = 28429`를 자동으로 써 넣었다. `format = 2` 표시가 없는 파일의 `port = 28429`는 그 자동 값으로 보고 처음 읽을 때 지운다(탐색으로 바뀐다). 다른 값은 사용자가 정한 명시 지정으로 남긴다. 이 모듈이 파일을 쓸 때마다 `format = 2`를 함께 쓴다.
+- 같은 컴퓨터에서 release·debug·격리 홈 인스턴스를 함께 띄우면 각 인스턴스가 비어 있는 다음 포트를 쓴다(측정: 다른 프로세스가 28429를 쥔 상태에서 격리 인스턴스가 28430).
+
+**단일 실행 넘김**: release에서 같은 데이터 폴더의 Tasty가 이미 실행 중이고 두 번째 실행에 `--webhook-port`가 있으면, 실행 중인 쪽에 `webhook.config`로 포트를 묻는다. 다르면(리스너가 없는 경우 포함) 넘기지 않고 메시지 상자로 알린 뒤 종료 코드 1로 끝낸다. 같으면 평소처럼 넘긴다. 조회하지 못하면 평소처럼 넘긴다.
+
+### 포트 기록 (`RuntimePorts`)
+
+이 인스턴스가 bind에 성공한 IPC 포트와 웹훅 포트를 `src/runtime_ports.rs`의 `RuntimePorts`가 한 번씩 기록한다. 포트가 필요한 곳(웹훅 URL, `webhook.config` 조회, 자기 자신 attach 거절, 인스턴스 파일)은 여기서 읽는다.
+
+- `AppServices`가 GUI·headless 공통 앱 초기화에서 하나 만들어 소유한다. 프로세스 전역 static으로 두지 않아, 한 시험 프로세스가 여러 `AppServices`를 병렬로 만들어도 서로의 기록을 보지 않는다. 웹훅 레지스트리는 리스너 시작 때 같은 기록을 넘겨받는다.
+- 기록은 bind 성공 뒤에만 한다. 각 항목은 주소와 정한 방법(`argument`·`config`·`probe`·`dynamic`)을 가진다.
 
 ### 부팅 초기화
 
-공용 헬퍼 `webhook::init_from_config(injector)` 를 두 진입점에서 호출한다 — GUI 는 `src/app/boot_machine.rs` 의 `start_ipc`/injector 확보 직후, headless 는 `boot` 의 IPC 시작 이후. 두 전제(core config 로드 + 메인 루프 IPC 처리 가능)를 만족한 시점이다. 중복 호출은 리스너 내부 bind 가드로 무해하다. init 후 `Persistent` 웹훅을 복원한다.
+GUI(`boot::run_gui`)와 headless(`boot::run_headless`)는 설정을 읽은 직후 `webhook::prepare(--webhook-port, &settings.webhook)`로 소켓을 선점하고 `Hub::webhook`에 둔다. IPC와 injector가 준비되면 `webhook::start`가 그 소켓으로 accept 스레드를 시작하고 포트를 기록한 뒤 `Persistent` 웹훅을 복원한다(GUI `src/app/boot_machine.rs`, headless `boot::start_ipc_and_seed`).
 
 ## 인터페이스
 
@@ -146,13 +167,14 @@ IPv6·proxy 출처 처리나 실제 메모리 제한을 추가할 때는 차단 
 | `webhook.info` | `tasty webhook info --id <id>` | 단일 상세 |
 | `webhook.unregister` | `tasty webhook unregister --id <id>` | 등록 해제(path 회수) |
 | `webhook.sweep` | `tasty webhook sweep` | 만료 웹훅 일괄 정리 → 제거된 id 목록 |
-| `webhook.config` | `tasty webhook config [--port <N>]` | 포트 조회/설정(설정은 재시작 후 반영) |
+| `webhook.config` | `tasty webhook port [<N> \| --unset]` · `tasty webhook allow-external [on\|off]` · `tasty webhook config [--port <N>]`(이전 이름) | 인자 없으면 실행 중인 리스너를 조회한다: `port`·`address`·`bound`·`source`(`argument`/`config`/`probe`)·`explicit`·`saved_port`(다음 실행 값)·`allow_external`(다음 실행 값). `port`로 저장, `unset_port: true`로 저장 값 삭제, `allow_external`로 외부 수신 설정 변경. 변경은 모두 다음 실행부터 적용된다(`applies_from: "next_start"`, `restart_required`) |
 
 - **register 게이트**: `methods` 빈 배열 거부, `handler`/`sequence` 정확히 하나. `handler` 는 `validate_binding(handler, Webhook)` 로 검증 — 셸/hook-전용 핸들러는 거부([ADR-0027](../../adr/0027-lua-and-hook-execution.md)). 인라인 `sequence` 는 익명 핸들러(`user/wh-<slug>`)로 레지스트리에 등록된다.
 - **lifetime 파라미터**: `--persistent`(bool), `--ttl-secs` xor `--count`(둘 다 없으면 `Unlimited`).
 - **auth 파라미터**: `--auth-location <query|bearer|body|header>` + `--auth-token`(상호 requires), bearer 외에는 `--auth-key`.
 - **핸들러**가 소비하는 페이로드→params 치환·source 게이트는 [공유 훅 핸들러 레지스트리(ADR-0027)](../../adr/0027-lua-and-hook-execution.md) 참조.
-- **핸들러 레지스트리 GUI**: [Settings › Handler › Hook Handlers](../settings/screens/settings.md) 서브탭에서 레지스트리(host 기본 + plugin 기여 + user 매핑)를 조회·편집한다(토글/셸 명령 인라인 편집/user 행 추가·제거, `~/.tasty/hook-handlers.toml` 영속). **제거는 user 행만** — host/plugin 행은 그 자리에 자물쇠 글리프가 오고, 지워도 finalize 가 되살린다. host/plugin 행을 고치면(시퀀스·명령·Switch) 같은 id 의 user patch 로 저장되고, 그 행은 출처 Tag 뒤에 "edited" Tag 와 Revert 를 단다. Revert 는 Save 때 patch 를 지워(`tasty hook-handler remove --id` 와 같은 효과) 기본값으로 돌아가며, Save 전에는 Undo 와 "reverts on save" Tag 로 대기한다. `IpcSequence` 행은 mono 한 줄 요약과 `Edit`(그 자리 문자열 편집기)이고, 한 줄 형식으로 쓸 수 없는 시퀀스는 [`tasty hook-handler get`/`upsert`](../hooks/index.md#핸들러-레지스트리-hook_handler) 로 고친다(TOML 손편집 + `reload` 도 그대로 된다). **고쳐도 이미 등록된 웹훅은 안 바뀐다** — 엔트리가 등록 시점 스냅샷을 소유하므로 다시 등록해야 한다. **리스너(bind/port/secret) 설정은 이 서브탭에 없다** — 위 CLI(`webhook.config`) 전용.
+- **리스너 설정 GUI**: Settings › General 의 "Accept webhook calls from other computers" 스위치와 경고 callout이 `webhook.allow_external`을 바꾼다. 포트는 CLI 전용이다.
+- **핸들러 레지스트리 GUI**: [Settings › Handler › Hook Handlers](../settings/screens/settings.md) 서브탭에서 레지스트리(host 기본 + plugin 기여 + user 매핑)를 조회·편집한다(토글/셸 명령 인라인 편집/user 행 추가·제거, `~/.tasty/hook-handlers.toml` 영속). **제거는 user 행만** — host/plugin 행은 그 자리에 자물쇠 글리프가 오고, 지워도 finalize 가 되살린다. host/plugin 행을 고치면(시퀀스·명령·Switch) 같은 id 의 user patch 로 저장되고, 그 행은 출처 Tag 뒤에 "edited" Tag 와 Revert 를 단다. Revert 는 Save 때 patch 를 지워(`tasty hook-handler remove --id` 와 같은 효과) 기본값으로 돌아가며, Save 전에는 Undo 와 "reverts on save" Tag 로 대기한다. `IpcSequence` 행은 mono 한 줄 요약과 `Edit`(그 자리 문자열 편집기)이고, 한 줄 형식으로 쓸 수 없는 시퀀스는 [`tasty hook-handler get`/`upsert`](../hooks/index.md#핸들러-레지스트리-hook_handler) 로 고친다(TOML 손편집 + `reload` 도 그대로 된다). **고쳐도 이미 등록된 웹훅은 안 바뀐다** — 엔트리가 등록 시점 스냅샷을 소유하므로 다시 등록해야 한다. **리스너(bind/port/secret) 설정은 이 서브탭에 없다** — 외부 수신 허용은 Settings › General, 포트는 CLI(`webhook.config`).
 
 ## 비-목표 (Out of scope)
 
@@ -174,6 +196,12 @@ IPv6·proxy 출처 처리나 실제 메모리 제한을 추가할 때는 차단 
 - Given 없는 path 를 임계치 초과 반복 When 같은 출처 재요청 Then 쿨다운 동안 `429`(다른 출처의 정상 웹훅은 계속 처리).
 - Given 인증 설정된 웹훅 When 같은 출처가 틀린 토큰을 임계치 초과 반복 Then 쿨다운 동안 `429`.
 - Given `ShellCommand` 핸들러 When 웹훅 바인딩 시도 Then source 게이트로 거부.
+- Given 다른 프로세스가 28429를 점유 When 인자 없이 실행 Then 28430에 bind하고 `tasty webhook port`가 `port: 28430`, `source: "probe"`를 돌려준다.
+- Given 28429 점유 When `--webhook-port 28429`로 실행 Then 오류 메시지와 함께 종료 코드 1로 끝난다(GUI는 오류 화면의 Quit 뒤).
+- Given 기본 설정 Then 리스너는 `127.0.0.1`에만 있다. `allow_external = true`로 다시 실행하면 `0.0.0.0`.
+- Given 두 인스턴스(다른 데이터 폴더)를 함께 실행 Then 둘 다 서로 다른 포트에 리스너를 띄운다.
+- Given 포트가 탐색으로 밀렸고 Persistent 웹훅이 있음 When 실행 Then 경고가 뜨고 `tasty webhook list`의 URL이 새 포트를 쓴다.
+- Given release 인스턴스가 웹훅 포트 P로 실행 중 When 같은 데이터 폴더에서 `--webhook-port Q`(Q≠P)로 다시 실행 Then 메시지 상자 뒤 종료 코드 1, Q=P면 평소처럼 넘긴다.
 
 ## 관련
 

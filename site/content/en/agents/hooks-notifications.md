@@ -1,4 +1,4 @@
-<!-- source-hash: afdc965737f7 -->
+<!-- source-hash: 1643415ff905 -->
 # Hooks, notifications and webhooks
 
 Get a notification when a build finishes, or run a command when a message appears in the logs. **Hooks** run commands in response to events, and **notifications** let you know when to check back. Use **webhooks** to send requests to Tasty from an external service.
@@ -158,20 +158,26 @@ tasty approval await --id "$ID"            # wait until a response arrives, prin
 
 ## Webhooks (outside → Tasty)
 
-Let CI or other services send an HTTP request to trigger an action inside Tasty. Tasty opens one designated port and issues a URL that is difficult to guess for each webhook.
+Let CI or other services send an HTTP request to trigger an action inside Tasty. Tasty opens one port for webhooks and issues a URL that is difficult to guess for each webhook.
 
 Webhooks use a URL that is difficult to guess and an optional fixed token (`--auth-*`). **HMAC signature verification is not supported**, so signature headers from external services are not checked. **Without authentication, anyone who can reach the URL can request the action.** Include the authentication options you need when registering a webhook.
 
-### Port settings
+### Port and calls from other computers
 
 ```sh
-tasty webhook config                # current port and whether it is bound
-tasty webhook config --port 28429   # change the port — applied after restart
+tasty webhook port                  # address and port of the running listener, and how the port was chosen
+tasty webhook port 28500            # use this port from the next start
+tasty webhook port --unset          # remove the saved port so the next start picks a free one
+tasty webhook allow-external on     # also accept calls from other computers from the next start (off to undo)
+tasty --webhook-port 28500          # start with this port for this run only
 ```
 
-- The settings file is `~/.tasty/webhooks.toml`. On first run, `28429` is written as the default.
-- If the port is empty or the bind fails, Tasty keeps the configured port and displays a warning. Check the port setting and restart Tasty.
-- **The webhook server accepts connections on all network interfaces.** If the host firewall allows it, devices on the same network, such as an office LAN or public Wi-Fi, can reach it without router forwarding. Check firewall and authentication settings even if you do not expose it to the internet. Use a reverse proxy for HTTPS.
+- **If you do not choose a port**, Tasty tries `28429` and counts up, using the first free port (up to 64 ports, through `28492`). Webhooks work even when another Tasty already uses `28429`. If all are taken, Tasty shows a warning and runs without webhooks.
+- **If you chose a port** (`--webhook-port` or `tasty webhook port <N>`; with both, `--webhook-port` wins), Tasty uses only that port. If another program holds it, Tasty shows an error and does not start (headless exits with code 1). Start with another port, or, for a saved port, delete the `port` line from `~/.tasty/webhooks.toml` and start again.
+- If the port moved off `28429` and you have webhooks saved with `--persistent`, Tasty shows a warning. The saved webhooks' URLs change port too, so check the new URLs with `tasty webhook list`. Choose a port if the URLs must not change.
+- If Tasty is already running and you launch it again with a different `--webhook-port`, the launch is not handed to the running Tasty; it explains why and ends. With the same port it opens a new window in the running Tasty as usual.
+- A `port = 28429` that an earlier version wrote automatically is removed on the first start, so the port is chosen automatically. Any other port you set stays.
+- **By default the webhook server accepts calls from this computer (`127.0.0.1`) only.** If other computers or CI must call it directly, turn on **Settings → General → Accept webhook calls from other computers** or run `tasty webhook allow-external on`, then restart Tasty. When on, it accepts connections on all network interfaces, so if the host firewall allows it, devices on the same network, such as an office LAN or public Wi-Fi, can reach it without router forwarding. Check firewall and authentication settings. Use a reverse proxy for HTTPS.
 
 ### Registering
 
@@ -186,7 +192,7 @@ tasty webhook register --method POST \
   --auth-location header --auth-key X-Token --auth-token s3cret
 ```
 
-Registering prints a URL of the form `http://127.0.0.1:28429/<16-character id>`. When calling from outside, replace the host part with the real address — that host is printed so you can `curl` it right there, and is not the address the listener binds. Use the returned path unchanged; do not add a `/webhook/` prefix.
+Registering prints a URL of the form `http://127.0.0.1:<port>/<16-character id>`. The port is the one this run actually opened. If you turned on calls from other computers, replace the host part with the real address when calling from outside — that host is printed so you can `curl` it right there. Use the returned path unchanged; do not add a `/webhook/` prefix.
 
 | Option | Meaning |
 |---|---|
