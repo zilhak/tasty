@@ -1,8 +1,10 @@
 //! 사용자 설정 파일(hook-handlers.toml)에서 IpcSequence 호출의 params를 표현하는 방법.
 //! TOML에는 null이 없다. params 자체가 null이면 키를 빼고, 읽을 때 null로 채운다.
-//! 안쪽에 null이 있는 params는 JSON 문자열 `params_json`으로 쓴다.
+//! 안쪽에 null이 있는 params는 JSON 문자열 `params_json`으로 쓴다. null 키를 지우지 않는 것은
+//! 받는 IPC 메서드가 키의 존재 여부로 동작을 가를 수 있어서다.
 //! null이 없는 params는 TOML 표로 쓰므로 이 형식 이전에 만든 파일도 그대로 읽힌다.
-//! 읽기는 TOML에서 바로 역직렬화해 타입 오류에도 toml이 줄·열 위치를 붙인다.
+//! 읽기는 TOML에서 바로 역직렬화해 타입 오류에도 toml이 줄·열 위치를 붙인다. TOML을 JSON 값으로
+//! 바꾼 뒤 역직렬화하면 그 위치와 원문 발췌가 경고 로그에서 빠진다.
 
 use serde::Deserialize;
 
@@ -12,6 +14,7 @@ const PARAMS: &str = "params";
 const PARAMS_JSON: &str = "params_json";
 
 /// 파일에 적힌 사용자 action. 호출 형식만 IPC 선언(`UserHookHandlerActionDecl`)과 다르다.
+/// action 종류나 필드를 추가하면 두 타입을 함께 고친다.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(super) enum UserFileActionDecl {
