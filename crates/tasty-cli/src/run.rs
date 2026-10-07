@@ -462,12 +462,38 @@ fn run_client_inner(command: Commands, port_file: Option<&str>, envelope: Envelo
             merge_cli_warnings(&mut value, cli_warnings);
             format_output(&command, &value)?;
         }
+        // JSON-RPC 오류가 아니면 그 포트의 상대가 Tasty가 아닐 수 있다. 파일은 고치지 않고 직접 고치는 방법을 알린다.
+        Err(e)
+            if offline.is_some()
+                && e.downcast_ref::<tasty_ipc::client::JsonRpcCallError>()
+                    .is_none() =>
+        {
+            crate::out::errln!("{}", crate::rpc_error::render(&e));
+            crate::out::errln!("{}", not_tasty_hint(port_file, port));
+            std::process::exit(1);
+        }
         Err(e) => {
             crate::rpc_error::exit_with(&e);
         }
     }
 
     Ok(())
+}
+
+/// 포트 파일의 포트에서 Tasty가 아닌 상대가 답했을 때의 안내.
+fn not_tasty_hint(port_file: Option<&str>, port: u16) -> String {
+    let port_file = port_file
+        .map(std::path::PathBuf::from)
+        .or_else(tasty_ipc::port_file::port_file_path)
+        .map(|p| p.display().to_string())
+        .unwrap_or_default();
+    let webhooks_file = tasty_settings::webhook_port_file::path()
+        .display()
+        .to_string();
+    tasty_i18n::t_args(
+        "cli.webhook.port_not_tasty",
+        &[&port_file, &port.to_string(), &webhooks_file],
+    )
 }
 
 /// 인스턴스 없이 처리할 수 있는 웹훅 포트 변경. `port`가 Some이면 저장, None이면 삭제다.

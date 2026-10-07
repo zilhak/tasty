@@ -1566,6 +1566,7 @@ invalid_contents = "Invalid port file contents"
 
 # 직접 출력하는 문구는 오류·경고 접두어를 포함한다. 나머지는 호출자가 접두어를 붙인다.
 [cli.webhook]
+port_not_tasty = "The port file {} points at port {}, but the program there did not answer as Tasty, so the saved webhook port was not changed. If Tasty is not running, another program may now hold that port. To change the port without Tasty, edit the `port` line in {} (delete the line to let Tasty choose a free port), or remove the stale port file and run this command again."
 port_saved_offline = "Tasty is not running, so {} was edited directly. The port applies from the next start."
 port_file_write_failed = "Could not write {}: {}"
 
