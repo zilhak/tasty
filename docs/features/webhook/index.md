@@ -164,6 +164,7 @@ IPv6·proxy 출처 처리나 실제 메모리 제한을 추가할 때는 차단 
 
 - `AppServices`가 GUI·headless 공통 앱 초기화에서 하나 만들어 소유한다. 프로세스 전역 static으로 두지 않아, 한 시험 프로세스가 여러 `AppServices`를 병렬로 만들어도 서로의 기록을 보지 않는다. 웹훅 레지스트리는 리스너 시작 때 같은 기록을 넘겨받는다.
 - 기록은 bind 성공 뒤에만 한다. 각 항목은 주소와 정한 방법(`argument`·`config`·`probe`·`dynamic`)을 가진다.
+- 데이터 폴더의 `tasty.port` 파일은 매니저가 아니라 IPC 서버가 bind 시점에 직접 쓴다(`src/adapters/production/tcp_ipc_server.rs`). 이전 완료 알림 로그(notify)를 지운 뒤에 주소를 공개하는 순서를 서버 안에서 지키기 위해서다. 값은 매니저에 기록한 것과 같은 bind 결과(`listener.local_addr()`)다.
 
 ### 부팅 초기화
 
