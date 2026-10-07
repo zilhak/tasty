@@ -342,6 +342,11 @@ function DagSurface({ dags = [window.TastyDag.DAG_BUILD], initialId, narrow: for
 // ── DAG list row (popup) ────────────────────────────────────────────
 // A ListCtrl row + the one new part: a trailing rollup chip and a mono
 // done/total counter. Origin (declared vs derived) rides as a Tag.
+// "· {n} skipped ({k} not selected)" — only when n > 0; the parenthesis only when k > 0.
+function dagSkipText(e) {
+  if (!e.skipped) return "";
+  return ` \u00b7 ${e.skipped} skipped${e.notSelected ? ` (${e.notSelected} not selected)` : ""}`;
+}
 function dagRowItems(entries) {
   return entries.map((e) => ({
     id: e.dag.id,
@@ -356,7 +361,7 @@ function dagRowItems(entries) {
           <span aria-hidden="true">{DAG_STATUS[e.rollup].glyph}</span>{DAG_STATUS[e.rollup].label}
         </span>
         <span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-dag-row-count-font-size)",
-          color: "var(--tasty-dag-row-count-fg)" }}>{e.done}/{e.total}</span>
+          color: "var(--tasty-dag-row-count-fg)" }}>{e.done}/{e.total}{dagSkipText(e)}</span>
       </span>
     ),
   }));

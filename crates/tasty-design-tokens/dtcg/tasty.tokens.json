@@ -2641,6 +2641,18 @@
       "$type": "dimension",
       "$value": "{primitive.size-8}"
     },
+    "attach-refusal-glyph": {
+      "$type": "color",
+      "$value": "{semantic.accent-warning}"
+    },
+    "attach-refusal-chip-size": {
+      "$type": "dimension",
+      "$value": "{component.move-source-chip-size}"
+    },
+    "attach-refusal-chip-glyph-size": {
+      "$type": "dimension",
+      "$value": "{component.move-source-chip-glyph-size}"
+    },
     "spinner-size": {
       "$type": "dimension",
       "$value": "{primitive.size-16}"

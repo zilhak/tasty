@@ -167,6 +167,12 @@ stroke_icon!(
     "terminal",
     r#"<rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3M13 15h4"/>"#
 );
+// DAG agent 작업(Claude·Codex 한 턴)의 종류 글리프(design `agent`).
+stroke_icon!(
+    AGENT,
+    "agent",
+    r#"<path d="M4 5h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1h-9l-4 3v-3H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/><path d="m8 9 2 2-2 2M13 13h3"/>"#
+);
 stroke_icon!(
     MARKDOWN,
     "markdown",

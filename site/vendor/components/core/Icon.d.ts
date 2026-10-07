@@ -4,7 +4,7 @@ import * as React from "react";
 export type IconName =
   | "plus" | "close" | "refresh" | "edit" | "trash" | "copy" | "check" | "search" | "filter" | "swap" | "more" | "download" | "star" | "starFill"
   | "chevronRight" | "chevronDown" | "chevronUp" | "chevronLeft" | "chevronsLeft" | "chevronsRight" | "move" | "fit"
-  | "terminal" | "markdown" | "html" | "split" | "splitH" | "paneEmpty" | "folder" | "folderOpen" | "file" | "image" | "list" | "layoutGrid" | "layoutDetail" | "listView" | "layers" | "columns"
+  | "terminal" | "agent" | "markdown" | "html" | "split" | "splitH" | "paneEmpty" | "folder" | "folderOpen" | "file" | "image" | "list" | "layoutGrid" | "layoutDetail" | "listView" | "layers" | "columns"
   | "clipboard" | "textLeft" | "scriptFile" | "remote" | "port" | "gitBranch" | "gitTree"
   | "eye" | "eyeOff" | "lock"
   | "alertTriangle" | "alertCircle" | "helpCircle" | "shieldCheck" | "bell"

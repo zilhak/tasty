@@ -106,15 +106,15 @@ function Page() {
         </Spec>
 
         <Spec title="Task kinds"
-          when={<>Four task kinds, told apart by the leading glyph: <code>run</code> (shell), <code>custom</code> (IPC call), <code>reduce</code> (result fan-in), <code>wait_barrier</code> (gate).</>}>
+          when={<>Five task kinds, told apart by the leading glyph: <code>run</code> (shell), <code>custom</code> (IPC call), <code>reduce</code> (result fan-in), <code>wait_barrier</code> (gate), <code>agent</code> (one Claude / Codex turn, 2026-10-07). Claude and Codex share the <code>agent</code> glyph; the provider is a detail-panel field, not a second shape.</>}>
           <Stage variant="grid" style={{ display: "flex", flexWrap: "wrap", gap: 16, padding: 20 }}>
             {Object.keys(DAG_KIND).map((k) => (
               <NodeBox key={k} node={mk({ kind: k, status: "succeeded", name: `${DAG_KIND[k].label}:step`, dur: "4s" })} caption={k} />
             ))}
           </Stage>
-          <Meta specs={[["glyph", "14px, muted, leading"], ["run", "terminal"], ["custom", "plug"], ["reduce", "layers"], ["wait_barrier", "lock"]]}
+          <Meta specs={[["glyph", "14px, muted, leading"], ["run", "terminal"], ["custom", "plug"], ["reduce", "layers"], ["wait_barrier", "lock"], ["agent", "agent (new) · stroke = icon-stroke-width like the rest · detail kind label “Agent”"]]}
             tokens={[{ tok: "--tasty-dag-node-meta-fg", use: "kind glyph", color: "var(--tasty-dag-node-meta-fg)" }]} />
-          <Note>New glyphs requested from <code>icons/</code>: none — <code>terminal</code>, <code>plug</code>, <code>layers</code> and <code>lock</code> already carry these four kinds. A dedicated <code>barrier</code> glyph would read better than <code>lock</code> if one is ever drawn.</Note>
+          <Note>New glyph: <code>icons/agent.svg</code> — a speech bubble carrying the prompt chevron (an agent turn is a conversation that runs commands). <code>terminal</code>, <code>plug</code>, <code>layers</code> and <code>lock</code> carry the other four. A dedicated <code>barrier</code> glyph would read better than <code>lock</code> if one is ever drawn.</Note>
         </Spec>
 
         <Spec title="Level of detail · selection · overflow"
@@ -169,7 +169,7 @@ function Page() {
             <NodeBox node={mk({ status: "skipped", name: "notify:ops", kind: "custom", dur: null })} dimmed caption="skipped — upstream unavailable" />
           </Stage>
           <Meta
-            specs={[["pending", "1px · full opacity"], ["selected", "2px · dag-edge-selected-width"], ["not_selected", "1px · dim 0.4"], ["unavailable", "dead-path dim, as from a failed task"], ["not-selected node", "skipped look (dimmed card, − glyph) · label NOT SELECTED · tooltip “Not taken — another branch was selected.”"], ["upstream-unavailable node", "skipped look · label SKIPPED · tooltip “Skipped — {source} {state}.”"], ["rollup", "succeeded + not selected only → succeeded"], ["DAG list", "no new filter; the skipped count reads “{n} skipped ({k} not selected)”"], ["legend", "binding and transition join the edge legend"]]}
+            specs={[["pending", "1px · full opacity"], ["selected", "2px · dag-edge-selected-width"], ["not_selected", "1px · dim 0.4"], ["unavailable", "dead-path dim, as from a failed task"], ["not-selected node", "skipped look (dimmed card, ⊘ glyph — canonical for both skip reasons; − is cancelled) · label NOT SELECTED · tooltip “Not taken — another branch was selected.”"], ["upstream-unavailable node", "skipped look · label SKIPPED · tooltip “Skipped — {source} {state}.”"], ["rollup", "succeeded + not selected only → succeeded"], ["skip count", "DAG list row + DAG tab header, after done/total: “{done}/{total} · {n} skipped ({k} not selected)” — shown only when n > 0, parenthesis only when k > 0 · same mono caption, dag-row-count-fg · not clickable"], ["filter", "no new list filter"], ["legend", "none — the relation reads from the dependency rows in Node detail; the canvas carries no legend"]]}
             tokens={[{ tok: "--tasty-dag-edge-transition", use: "route", color: "var(--tasty-dag-edge-transition)" }, { tok: "--tasty-dag-edge-selected-width", use: "→ focus-ring-width 2" }, { tok: "--tasty-dag-edge-dim-opacity", use: "not selected / unavailable" }, { tok: "--tasty-dag-status-skipped", use: "both skip reasons", color: "var(--tasty-dag-status-skipped)" }]} />
           <Note>A branch that was not taken is a normal outcome, so it gets <b>no new colour</b>: it shares the skipped card and differs only in its spelled label and tooltip. i18n: <code>dag.status.not_selected</code> “not selected” · <code>dag.skip.branch_not_selected</code> · <code>dag.skip.upstream_unavailable</code> · <code>dag.rel.binding</code> “binds input” · <code>dag.rel.transition</code> “transition”.</Note>
         </Spec>
@@ -218,7 +218,7 @@ function Page() {
             </div>
           </Stage>
           <Meta
-            specs={[["row", "36px min · ListCtrl density"], ["label", "13 — DAG name"], ["description", "11 — workspace · updated"], ["trailing", "origin tag · rollup · n/total"], ["scope", "all workspaces, filterable"]]}
+            specs={[["row", "36px min · ListCtrl density"], ["label", "13 — DAG name"], ["description", "11 — workspace · updated"], ["trailing", "origin tag · rollup · n/total · skip count when > 0"], ["scope", "all workspaces, filterable"]]}
             tokens={[{ tok: "--tasty-dag-row-height", use: "36 row", }, { tok: "--tasty-dag-row-count-fg", use: "n/total", color: "var(--tasty-dag-row-count-fg)" }, { tok: "--tasty-listctrl-row-bg-hover", use: "hover" }]} />
           <Note>The workspace name is part of the description line, not a separate column — the popup lists every workspace, and a column would waste the width the DAG name needs.</Note>
         </Spec>

@@ -54,6 +54,11 @@ const VIEW: &[Entry] = &[
 
 const SURFACES: &[Entry] = &[
     (TERMINAL, "terminal", "terminal surface / tab"),
+    (
+        AGENT,
+        "agent",
+        "agent turn — DAG agent task (Claude / Codex)",
+    ),
     (MARKDOWN, "markdown", "markdown surface / tab"),
     (IMAGE, "image", "image surface / fallback"),
     (HTML, "html", "html surface / web view"),

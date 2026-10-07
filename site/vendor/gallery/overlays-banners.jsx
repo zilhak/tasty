@@ -7,7 +7,7 @@ const { IconButton, Kbd, Tag } = window.TastyDesignSystem_41fd3f;
 const { BannerScope, MouseCaptureBannerG, MouseCaptureHitZone, BlacklistEditorG, BannerShellG, TtlBannerG, StackDemoG, BannerMoreMenuG, BannerMoreDemoG, ic } = window.OverlaysShared;
 
 const { HtmlScriptBanner, HtmlSurfaceG, TermSurfaceG } = window.TastyKit;
-const { Button: BButton, Icon: BIcon } = window.TastyDesignSystem_41fd3f;
+const { Button: BButton, Icon: BIcon, Badge: BBadge, BadgeGroup: BBadgeGroup } = window.TastyDesignSystem_41fd3f;
 
 // 2026-10-07 — auto-attach mapping refused. Workspace-scope banner + a persistent sidebar row mark.
 const REFUSAL = {
@@ -33,13 +33,34 @@ function AttachRefusalBannerG({ kind = "self" }) {
     </BannerShellG>
   );
 }
-function RefusalRowG({ name, active, refused }) {
+function RefusalRowG({ name, active, refused, move, ni, done }) {
   return (
     <div title={refused ? "Remote not attached — 127.0.0.1:7420 points at this Tasty." : undefined} style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", height: "var(--tasty-size-28)", padding: "0 var(--tasty-space-sm)", borderRadius: "var(--tasty-radius-sm)",
       background: active ? "var(--tasty-surface-active)" : "transparent", color: active ? "var(--tasty-text-primary)" : "var(--tasty-text-secondary)", fontSize: "var(--tasty-font-size-body)" }}>
       <span style={{ width: "var(--tasty-status-dot-size)", height: "var(--tasty-status-dot-size)", borderRadius: "var(--tasty-radius-pill)", background: "var(--tasty-status-idle)", flex: "none" }} />
       <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>
-      {refused && <span style={{ display: "inline-flex", flex: "none", color: "var(--tasty-accent-warning)" }}><BIcon name="alertTriangle" size="var(--tasty-icon-size-sm)" /></span>}
+      {move && <span aria-label="Move source inside" style={{ display: "inline-flex", flex: "none", color: "var(--tasty-move-source-glyph)" }}><BIcon name="move" size="var(--tasty-move-source-glyph-size)" /></span>}
+      {refused && <span style={{ display: "inline-flex", flex: "none", color: "var(--tasty-attach-refusal-glyph)" }}><BIcon name="alertTriangle" size="var(--tasty-icon-size-sm)" /></span>}
+      {(ni != null || done != null) && BBadgeGroup && (
+        <BBadgeGroup>
+          {ni != null && <BBadge variant="warning">{ni}</BBadge>}
+          {done != null && <BBadge variant="primary">{done}</BBadge>}
+        </BBadgeGroup>
+      )}
+    </div>
+  );
+}
+
+// Collapsed rail: the refusal chip takes the free top-left corner (TR attention dot · BR mirror chip · BL move chip).
+function RefusalRailG({ ch, refused, dot, move }) {
+  const chip = { position: "absolute", pointerEvents: "none", display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: "var(--tasty-radius-pill)", background: "var(--tasty-bg-sidebar)" };
+  return (
+    <div title={refused ? "Remote not attached — 127.0.0.1:7420 points at this Tasty." : undefined} style={{ position: "relative", width: "var(--tasty-size-28)", height: "var(--tasty-size-28)", display: "inline-flex", alignItems: "center", justifyContent: "center",
+      borderRadius: "var(--tasty-radius)", background: "var(--tasty-surface-raised)", fontFamily: "var(--tasty-font-mono)", fontWeight: "var(--tasty-font-weight-bold)", fontSize: "var(--tasty-font-size-body)", color: "var(--tasty-text-secondary)" }}>
+      {ch}
+      {refused && <span aria-label="Remote not attached" style={{ ...chip, top: "calc(-1 * var(--tasty-border-width))", left: "calc(-1 * var(--tasty-border-width))", width: "var(--tasty-attach-refusal-chip-size)", height: "var(--tasty-attach-refusal-chip-size)", color: "var(--tasty-attach-refusal-glyph)" }}><BIcon name="alertTriangle" size="var(--tasty-attach-refusal-chip-glyph-size)" /></span>}
+      {dot && <span aria-hidden style={{ ...chip, top: "var(--tasty-size-1)", right: "var(--tasty-size-1)", width: "var(--tasty-status-dot-size-compact)", height: "var(--tasty-status-dot-size-compact)", background: `var(--tasty-status-dot-${dot})`, boxShadow: "0 0 0 var(--tasty-status-dot-ring-width) var(--tasty-status-dot-ring)" }} />}
+      {move && <span aria-label="Move source inside" style={{ ...chip, bottom: "calc(-1 * var(--tasty-border-width))", left: "calc(-1 * var(--tasty-border-width))", width: "var(--tasty-move-source-chip-size)", height: "var(--tasty-move-source-chip-size)", color: "var(--tasty-move-source-glyph)" }}><BIcon name="move" size="var(--tasty-move-source-chip-glyph-size)" /></span>}
     </div>
   );
 }
@@ -306,7 +327,7 @@ function Page() {
       </Section>
       <Section id="attachrefusal" title="Auto-attach refused — mapping notice (2026-10-07)">
         <Spec title="Persistent row mark + workspace banner, no toast"
-          when={<>A workspace mapped with <code>tasty set workspace --ssh / --ssh-profile</code> whose target <b>is this Tasty</b> is not attached (a self-mirror would lock local input). Two signals, both <b>persistent</b> and neither takes focus: a <b>warning glyph</b> on the workspace's <b>sidebar row</b> (visible whether or not it is active, tooltip = target + reason), and a <b>Workspace-scope banner</b> at the top of that workspace's content while it is active — target in mono, the reason, and what to do. <b>Remove mapping</b> (banner button) clears the mapping as <code>tasty set workspace --id … --no-remote</code> would; × hides the banner for this activation only — the row mark stays until the mapping changes, is removed, or a profile re-check succeeds. <b>No toast</b>: the condition outlives a toast and must be findable later. The same pair covers the other mapping errors (profile not found, endpoint not resolvable) with their own reason line.</>}>
+          when={<>A workspace mapped with <code>tasty set workspace --ssh / --ssh-profile</code> whose target <b>is this Tasty</b> is not attached (a self-mirror would lock local input). Two signals, both <b>persistent</b> and neither takes focus: a <b>warning glyph</b> on the workspace's <b>sidebar row</b> (visible whether or not it is active, tooltip = target + reason), and a <b>Workspace-scope banner</b> at the top of that workspace's content while it is active — target in mono, the reason, and what to do. <b>Remove mapping</b> (banner button) clears the mapping as <code>tasty set workspace --id … --clear-mapping</code> would; × hides the banner for this activation only — the row mark stays until the mapping changes, is removed, or a profile re-check succeeds. <b>No toast</b>: the condition outlives a toast and must be findable later. The same pair covers the other mapping errors (profile not found, endpoint not resolvable) with their own reason line.</>}>
           <Stage variant="solo" style={{ padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-app)", gap: "var(--tasty-space-lg)", flexWrap: "wrap", alignItems: "flex-start" }}>
             {[["Mocha", null], ["Latte", "latte"]].map(([label, th]) => (
               <div key={label} {...(th ? { "data-theme": th } : {})} style={{ display: "flex", gap: "var(--tasty-space-md)", padding: "var(--tasty-space-md)", background: "var(--tasty-bg-app)", border: "var(--tasty-border-width) solid var(--tasty-border-default)", borderRadius: "var(--tasty-radius)", alignItems: "flex-start" }}>
@@ -331,6 +352,28 @@ function Page() {
             specs={[["row mark", "alertTriangle 14 · accent-warning · trailing slot of the workspace row · tooltip = target + reason"], ["banner scope", "Workspace · shown while that workspace is active"], ["glyph", "alertTriangle 16 · accent-warning"], ["title", "Remote not attached — {target} (target mono)"], ["body", "{reason} Change or remove the mapping for this workspace."], ["action", "Remove mapping · banner button (secondary sm on banner-button tokens)"], ["×", "hides for this activation; the row mark stays"], ["clears", "mapping changed / removed · profile re-check succeeds"], ["focus", "never moved — agent-made mappings included"], ["toast", "none"]]}
             tokens={[{ tok: "--tasty-accent-warning", use: "glyph + row mark", color: "var(--tasty-accent-warning)" }, { tok: "--tasty-banner-bg", use: "shell", color: "var(--tasty-banner-bg)" }, { tok: "--tasty-banner-button-bg", use: "Remove mapping", color: "var(--tasty-banner-button-bg)" }, { tok: "--tasty-banner-body-font-size", use: "reason 11" }]} />
           <Note>Strings (en): <code>remote.refusal.title</code> “Remote not attached — {"{target}"}” · <code>remote.refusal.self</code> “This mapping points at this Tasty, so it was not attached.” · <code>remote.refusal.profile_missing</code> “No SSH profile with this name.” · <code>remote.refusal.unresolved</code> “The endpoint could not be resolved.” · <code>remote.refusal.hint</code> “Change or remove the mapping for this workspace.” · <code>remote.refusal.remove</code> “Remove mapping”. No new tokens.</Note>
+        </Spec>
+        <Spec title="Collapsed rail · beside the attention badges (2026-10-07 batch 5)"
+          when={<><b>Rail:</b> the refusal takes the one free avatar corner, <b>top-left</b>, as a 12px chip (alertTriangle 8 on bg-sidebar) — top-right stays the attention dot, bottom-right the mirror chip, bottom-left the move chip; all four can show at once, so there is no priority rule. Same tooltip as the row. <b>Row:</b> order after the name is <b>move glyph · refusal mark · badge group</b>, gap = the row item spacing (space-sm). The badges stay rightmost so the counts line up down the list; the two persistent marks sit before them. The mark never replaces a badge.</>}>
+          <Stage variant="solo" style={{ padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-app)", gap: "var(--tasty-space-lg)", flexWrap: "wrap", alignItems: "flex-start" }}>
+            {[["Mocha", null], ["Latte", "latte"]].map(([label, th]) => (
+              <div key={label} {...(th ? { "data-theme": th } : {})} style={{ display: "flex", gap: "var(--tasty-space-md)", padding: "var(--tasty-space-md)", background: "var(--tasty-bg-app)", border: "var(--tasty-border-width) solid var(--tasty-border-default)", borderRadius: "var(--tasty-radius)", alignItems: "flex-start" }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-sm)", padding: "var(--tasty-space-sm)", background: "var(--tasty-bg-sidebar)", borderRadius: "var(--tasty-radius)" }}>
+                  <RefusalRailG ch="T" />
+                  <RefusalRailG ch="S" refused />
+                  <RefusalRailG ch="D" refused dot="warning" move />
+                </div>
+                <div style={{ width: "var(--tasty-size-200)", display: "flex", flexDirection: "column", gap: "var(--tasty-size-1)", padding: "var(--tasty-space-xs)", background: "var(--tasty-bg-sidebar)", borderRadius: "var(--tasty-radius)" }}>
+                  <RefusalRowG name="tasty-core" done={3} />
+                  <RefusalRowG name="staging-mirror" active refused ni={1} done={5} />
+                  <RefusalRowG name="data-etl" refused move ni={2} />
+                </div>
+              </div>
+            ))}
+          </Stage>
+          <Meta
+            specs={[["rail chip", "top-left · 12 · alertTriangle 8 · accent-warning on bg-sidebar"], ["rail corners", "TR attention dot · BR mirror · BL move · TL refusal — no priority"], ["row order", "name · move · refusal · badges"], ["row gap", "space-sm (row item spacing)"], ["tooltip", "same as the row · not clickable"]]}
+            tokens={[{ tok: "--tasty-attach-refusal-glyph", use: "→ accent-warning", color: "var(--tasty-attach-refusal-glyph)" }, { tok: "--tasty-attach-refusal-chip-size", use: "→ move-source-chip-size 12" }, { tok: "--tasty-attach-refusal-chip-glyph-size", use: "→ move-source-chip-glyph-size 8" }]} />
         </Spec>
       </Section>
     </>

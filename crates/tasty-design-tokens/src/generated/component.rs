@@ -5,6 +5,16 @@
 //! 위젯의 치수는 Theme 필드나 접근자로 읽어 UI 배율 정책을 따른다.
 //! 색 접근자는 tasty-type-appearance에 생성한다.
 
+pub mod attach {
+    use tasty_type_geometry::length::LogicalPx;
+
+    /// `component.attach-refusal-chip-glyph-size` → `{component.move-source-chip-glyph-size}` = 8px
+    pub const REFUSAL_CHIP_GLYPH_SIZE: LogicalPx = super::move_source::CHIP_GLYPH_SIZE;
+
+    /// `component.attach-refusal-chip-size` → `{component.move-source-chip-size}` = 12px
+    pub const REFUSAL_CHIP_SIZE: LogicalPx = super::move_source::CHIP_SIZE;
+}
+
 pub mod autocomplete {
     use tasty_type_geometry::length::LogicalPx;
 

@@ -482,6 +482,11 @@
   --tasty-move-source-chip-size:   var(--tasty-size-12);           /* rail avatar corner chip (bottom-left) */
   --tasty-move-source-chip-glyph-size: var(--tasty-size-8);
 
+  /* Auto-attach refused — rail avatar corner chip (top-left) · 2026-10-07 batch 5 */
+  --tasty-attach-refusal-glyph:           var(--tasty-accent-warning);
+  --tasty-attach-refusal-chip-size:       var(--tasty-move-source-chip-size);       /* 12 */
+  --tasty-attach-refusal-chip-glyph-size: var(--tasty-move-source-chip-glyph-size); /* 8 */
+
   /* Spinner — indeterminate scan/install progress */
   --tasty-spinner-size:            var(--tasty-size-16);
   --tasty-spinner-track:           var(--tasty-surface-active);

@@ -1,6 +1,6 @@
 [package]
 name = "tasty-plugin-claude"
-version = "0.1.187"
+version = "0.1.188"
 edition = "2024"
 license = "MIT"
 description = "External Tasty plugin: Claude Code CLI integration"

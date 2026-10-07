@@ -42,6 +42,7 @@ const DAG_KIND = {
   custom:       { icon: "plug",     label: "custom" },
   reduce:       { icon: "layers",   label: "reduce" },
   wait_barrier: { icon: "lock",     label: "barrier" },
+  agent:        { icon: "agent",    label: "agent" },
 };
 const DAG_REL = {
   depends_on: { label: "depends on", color: "var(--tasty-dag-edge-depends)",  dash: null },
@@ -141,7 +142,7 @@ const DAG_DENSE = (() => {
 
 const DAG_LIST = [
   { dag: DAG_BUILD, done: 4, total: 12, rollup: "failed" },
-  { dag: DAG_INDEX, done: 2, total: 5, rollup: "running" },
+  { dag: DAG_INDEX, done: 2, total: 5, rollup: "running", skipped: 2, notSelected: 2 },
   { dag: DAG_DENSE, done: 26, total: 55, rollup: "running" },
   { dag: DAG_CYCLE, done: 1, total: 4, rollup: "unknown" },
   { dag: { id: "nightly-bench", name: "nightly-bench", workspace: "tasty-bench", origin: "declared", updated: "1h ago", nodes: DAG_INDEX.nodes, runner: { running: false, crashed: false, ready: 0, active: 0 } }, done: 8, total: 8, rollup: "succeeded" },

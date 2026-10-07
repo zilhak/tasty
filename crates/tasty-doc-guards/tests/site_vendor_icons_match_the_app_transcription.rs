@@ -40,6 +40,7 @@ const PAIRS: &[(&str, &str)] = &[
     ("move", "move"),
     ("fit", "fit"),
     ("terminal", "terminal"),
+    ("agent", "agent"),
     ("markdown", "markdown"),
     ("html", "html"),
     ("split", "split"),

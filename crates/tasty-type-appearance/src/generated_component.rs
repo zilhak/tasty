@@ -10,6 +10,24 @@ use crate::motion::Millis;
 use tasty_type_geometry::length::LogicalPx;
 
 impl crate::theme::Theme {
+    /// `component.attach-refusal-chip-glyph-size` → `{component.move-source-chip-glyph-size}` = 8px
+    #[inline]
+    pub fn attach_refusal_chip_glyph_size(&self) -> LogicalPx {
+        self.move_source_chip_glyph_size()
+    }
+
+    /// `component.attach-refusal-chip-size` → `{component.move-source-chip-size}` = 12px
+    #[inline]
+    pub fn attach_refusal_chip_size(&self) -> LogicalPx {
+        self.move_source_chip_size()
+    }
+
+    /// `component.attach-refusal-glyph` → `{semantic.accent-warning}`
+    #[inline]
+    pub fn attach_refusal_glyph(&self) -> HexColor {
+        self.accent_warning()
+    }
+
     /// `component.autocomplete-empty-fg` → `{semantic.text-muted}`
     #[inline]
     pub fn autocomplete_empty_fg(&self) -> HexColor {

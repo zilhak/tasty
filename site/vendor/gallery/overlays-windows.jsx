@@ -166,13 +166,13 @@ function HookOverrideG() {
               {r.edited && !r.pending && <span title="Changed in your settings. Updates to the default no longer apply." style={{ display: "inline-flex" }}><WTag>edited</WTag></span>}
               {r.pending && <WTag disabled>reverts on save</WTag>}
               <span style={{ flex: 1 }} />
-              <WSwitch checked={shownOn} onChange={() => {}} aria-label="Enabled" />
+              <span title={r.pending ? "Reverts on save. Undo to change it." : undefined} style={{ display: "inline-flex" }}><WSwitch checked={shownOn} disabled={r.pending} onChange={() => {}} aria-label="Enabled" /></span>
               <span title={"Provided by " + r.origin + " — can't be removed"} style={{ display: "inline-flex", color: "var(--tasty-glyph-dim)" }}><WIcon name="lock" size="var(--tasty-icon-size-sm)" /></span>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)" }}>
-              <span style={{ flex: 1, minWidth: 0, fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.pending ? r.def : r.act}</span>
+              <span style={{ flex: 1, minWidth: 0, fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-term-sm)", color: "var(--tasty-text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.pending ? r.def : r.act}</span>
               {r.edited && (r.pending ? <Button variant="ghost" size="sm">Undo</Button> : <span title={"Go back to the default from " + r.origin + "."}><Button variant="ghost" size="sm">Revert</Button></span>)}
-              {r.act.startsWith("ipc:") && <Button variant="ghost" size="sm">Edit</Button>}
+              {r.act.startsWith("ipc:") && <Button variant="ghost" size="sm" disabled={r.pending}>Edit</Button>}
             </div>
           </div>
         );
@@ -1225,9 +1225,9 @@ function Page() {
             <ThemePair><HookOverrideG /></ThemePair>
           </Stage>
           <Meta
-            specs={[["mark", "Tag (neutral) “edited” after the origin Tag — host / plugin rows with a user patch only"], ["mark tooltip", "Changed in your settings. Updates to the default no longer apply."], ["action", "Revert · ghost Button sm · action line, left of Edit"], ["Revert tooltip", "Go back to the default from {origin}."], ["pending", "button → Undo (same slot) · Tag “reverts on save” (disabled) · summary shows the default"], ["scope", "sequence edit · Switch off · both — any user patch"], ["Save / Cancel", "Save removes the patch · Cancel restores it"], ["user rows", "never marked — they are the user's own"]]}
+            specs={[["mark", "Tag (neutral) “edited” after the origin Tag — host / plugin rows with a user patch only"], ["mark tooltip", "Changed in your settings. Updates to the default no longer apply."], ["action", "Revert · ghost Button sm · action line, left of Edit"], ["Revert tooltip", "Go back to the default from {origin}."], ["pending", "button → Undo (same slot) · Tag “reverts on save” (disabled) · summary shows the default · Switch (at the default) and Edit disabled until Undo or Save — tooltip “Reverts on save. Undo to change it.” (batch 5)"], ["summary line", "mono term-sm · text-secondary — the Handler › Hook Handlers HookRow type on every row (batch 5)"], ["scope", "sequence edit · Switch off · both — any user patch"], ["Save / Cancel", "Save removes the patch · Cancel restores it"], ["user rows", "never marked — they are the user's own"]]}
             tokens={[{ tok: "--tasty-tag-disabled-bg", use: "pending Tag", color: "var(--tasty-tag-disabled-bg)" }, { tok: "--tasty-glyph-dim", use: "padlock", color: "var(--tasty-glyph-dim)" }, { tok: "--tasty-accent-agent", use: "plugin origin", color: "var(--tasty-accent-agent)" }]} />
-          <Note>No new tokens: the mark is the shared Tag, the pending state reuses the extension-mapping Undo + disabled Tag pair. Strings: <code>hook_handler.edited</code> “edited” · <code>hook_handler.edited_tip</code> · <code>hook_handler.revert</code> “Revert” · <code>hook_handler.revert_tip</code> · <code>hook_handler.reverts_on_save</code> “reverts on save” · <code>common.undo</code>.</Note>
+          <Note>No new tokens: the mark is the shared Tag, the pending state reuses the extension-mapping Undo + disabled Tag pair. Strings: <code>hook_handler.edited</code> “edited” · <code>hook_handler.edited_tip</code> · <code>hook_handler.revert</code> “Revert” · <code>hook_handler.revert_tip</code> · <code>hook_handler.reverts_on_save</code> “reverts on save” · <code>hook_handler.pending_locked_tip</code> “Reverts on save. Undo to change it.” · <code>common.undo</code>.</Note>
         </Spec>
         <Spec title="Appearance › colour rows — the Default hex is read-only, not disabled (2026-09-29)"
           when={<>With <b>Default</b> checked, a colour row has no override and its hex field cannot be edited. The field still carries the <b>base value in use</b>, the only text value on the row, so it is <b>read-only</b>, not disabled: the same neutral box as a disabled Input, with the value in <span className="tok">--tasty-input-readonly-fg</span> (text-secondary) instead of the disabled ink. The value can be selected and copied; the field takes focus (1px focus edge, no ring). Unchecking Default starts the override and the field becomes a normal Input. Applies to the Tasty colour rows, the terminal surface background row and the Colors group.</>}>
@@ -1376,12 +1376,19 @@ function Page() {
                   <span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)", overflowWrap: "anywhere" }}>TOML parse error at line 4, column 9: expected `=`</span>
                 </span>
               </div>
+              <div style={{ width: "var(--tasty-size-400)", display: "flex", alignItems: "flex-start", gap: "var(--tasty-space-sm)", padding: "var(--tasty-size-14) var(--tasty-space-lg)", borderRadius: "var(--tasty-radius)", border: "var(--tasty-border-width) solid var(--tasty-accent-danger)" }}>
+                <span style={{ display: "inline-flex", flex: "none", color: "var(--tasty-accent-danger)" }}><WIcon name="alertTriangle" size="var(--tasty-icon-size-md)" /></span>
+                <span style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-label-detail-gap)", minWidth: 0 }}>
+                  <span style={{ fontSize: "var(--tasty-font-size-body)", color: "var(--tasty-accent-danger)" }}>tasty-plugin.toml is not valid</span>
+                  <span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)", overflowWrap: "anywhere" }}>binary "bin/imgview" not found in the plugin folder</span>
+                </span>
+              </div>
             </ThemePair>
           </Stage>
           <Meta
-            specs={[["empty hint", "dashed 1px border-default · radius · pad 14 / 16"], ["dash", <>4 on / 4 off · <span className="tok">--tasty-border-dash</span> · <span className="tok">--tasty-border-dash-gap</span> · OFF-SCALE</>], ["corners", "solid arc; dashes on straight edges only, centred"], ["read error", "same box · solid accent-danger edge · no fill"], ["title", "Can't read tasty-plugin.toml · body · accent-danger"], ["reason", "mono caption · text-muted · untranslated"], ["action", "none — fix the path above and Verify again"]]}
+            specs={[["empty hint", "dashed 1px border-default · radius · pad 14 / 16"], ["dash", <>4 on / 4 off · <span className="tok">--tasty-border-dash</span> · <span className="tok">--tasty-border-dash-gap</span> · OFF-SCALE</>], ["corners", "solid arc; dashes on straight edges only, centred"], ["read error", "same box · solid accent-danger edge · no fill"], ["title", "Can't read tasty-plugin.toml · body · accent-danger"], ["reason", "mono caption · text-muted · untranslated"], ["invalid", "read but fails validation (binary path · extras) — same box · title “tasty-plugin.toml is not valid” · reason = validation message (batch 5)"], ["slot width", "measure-xl (560) capped by the column — unchanged (batch 5)"], ["action", "none — fix the path above and Verify again"]]}
             tokens={[{ tok: "--tasty-border-dash", use: "→ size-4" }, { tok: "--tasty-border-dash-gap", use: "→ size-4" }, { tok: "--tasty-border-default", use: "hint edge", color: "var(--tasty-border-default)" }, { tok: "--tasty-accent-danger", use: "read error", color: "var(--tasty-accent-danger)" }]} />
-          <Note>The same dash pair draws the Scripts <b>Add trigger…</b> control (Misc › Scripts). String: <code>plugins.add.read_error</code> “Can't read tasty-plugin.toml”.</Note>
+          <Note>The same dash pair draws the Scripts <b>Add trigger…</b> control (Misc › Scripts). Strings: <code>plugins.add.read_error</code> “Can't read tasty-plugin.toml” · <code>plugins.add.invalid</code> “tasty-plugin.toml is not valid”.</Note>
         </Spec>
       </Section>
 

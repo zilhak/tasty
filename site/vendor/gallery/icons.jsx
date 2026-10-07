@@ -58,6 +58,7 @@ const GROUPS = [
     when: <>The nouns of the workspace — what a <b>tab</b>, <b>tree row</b>, or new-surface button shows. <code>terminal</code> and <code>markdown</code> are the two core surface kinds.</>,
     icons: [
       { name: "terminal", role: "terminal surface / tab" },
+      { name: "agent", role: "agent turn — DAG agent task (Claude / Codex)" },
       { name: "markdown", role: "markdown surface / tab" },
       { name: "html", role: "html / web surface (URL tab)" },
       { name: "split", role: "split a pane (vertical divider)" },
