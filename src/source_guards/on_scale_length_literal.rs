@@ -848,7 +848,8 @@ fn the_blind_spots_are_still_the_size_they_say() {
         // 점선 무늬의 배율 무관 단언이 test 코드에 값 4를 둘 더한다.
         // HelpHint 강제 버블 시험의 클립 사각형이 세 개를 더한다.
         // 탐색기 분할 하한 시험의 분할 사각형 PhysicalPx(0)·PhysicalPx(0)·PhysicalPx(600) 셋이 test 전용으로 들어왔다.
-        (219, 514),
+        // popover_frame 의 안쪽 둘레 시험이 화면 사각형 pos2(0,0)·vec2(400,300) 넷을 test 전용으로 더한다.
+        (219, 518),
         "제외한 0과 test 전용 코드의 수가 달라졌다. 실제 사용과 수집 범위의 변경을 확인하고 기록을 갱신한다."
     );
     let roster: usize = UNIT_SPACE_SITES.iter().map(|(.., n, _)| n).sum();

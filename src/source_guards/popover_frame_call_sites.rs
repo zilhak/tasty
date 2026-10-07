@@ -1,4 +1,5 @@
-//! 버튼에 붙는 egui 팝오버는 `tasty_egui_theme::with_popover_frame` 클로저 안에서 열어야 메뉴 틀
+//! 버튼에 붙는 egui 팝오버는 `tasty_egui_theme::with_popover_frame`(또는 안쪽 둘레를 받는
+//! `with_popover_frame_ring`) 클로저 안에서 열어야 메뉴 틀
 //! (menu-bg · menu-border · menu-radius)로 그려진다. 전역 스타일은 tooltip 토큰을 담으므로 감싸지 않은
 //! 팝오버는 tooltip 틀로 그려진다(docs/design/systems/theme.md).
 //!
@@ -13,7 +14,8 @@ const ENTRIES: &[&str] = &[
     "egui::popup::popup_above_or_below_widget(",
     "egui::ComboBox::from_id_salt(",
 ];
-const WRAPPER: &str = "with_popover_frame(";
+/// 기본 둘레 래퍼와 둘레를 받는 래퍼. 어느 쪽이든 메뉴 틀을 정한다.
+const WRAPPERS: &[&str] = &["with_popover_frame(", "with_popover_frame_ring("];
 const GUARD_DIR: &str = "src/source_guards/";
 /// 현재 감싼 호출부는 25곳이다. 순회가 비거나 진입 문자열이 낡아 0건으로 통과하는 것을 막는 하한이다.
 const MIN_SITES: usize = 20;
@@ -26,8 +28,10 @@ fn opened_inside_the_wrapper(code: &str, at: usize) -> bool {
     let Some(head) = head.trim_end().strip_suffix("|ui|") else {
         return false;
     };
-    head.rfind(WRAPPER)
-        .is_some_and(|w| !head[w..].contains([';', '{', '}']))
+    WRAPPERS.iter().any(|wrapper| {
+        head.rfind(wrapper)
+            .is_some_and(|w| !head[w..].contains([';', '{', '}']))
+    })
 }
 
 /// 감싸지 않은 진입 호출의 줄 번호와 검사한 진입 호출 수.
@@ -82,6 +86,11 @@ fn the_judge_tells_a_wrapped_popover_from_a_bare_one() {
     // 다른 함수의 `|ui| {` 클로저는 래퍼로 치지 않는다.
     let other = "with_popover_frame(ui, th, |ui| {});\nui.horizontal(|ui| {\n    egui::popup::popup_above_or_below_widget(ui, id, &r, a, b, |ui| {});\n});";
     assert_eq!(judge(other), (vec![3], 1));
+    // 둘레를 받는 래퍼도 래퍼다. 이름만 비슷한 다른 함수는 래퍼가 아니다.
+    let ring = "tasty_egui_theme::with_popover_frame_ring(ui, th, egui::Margin::ZERO, |ui| {\n    egui::popup_below_widget(ui, id, &r, c, |ui| {});\n});";
+    assert_eq!(judge(ring), (vec![], 1));
+    let lookalike = "with_popover_frame_like(ui, th, |ui| {\n    egui::popup_below_widget(ui, id, &r, c, |ui| {});\n});";
+    assert_eq!(judge(lookalike), (vec![2], 1));
     // 주석 안의 진입 문자열은 세지 않는다.
     assert_eq!(judge("// egui::popup_below_widget(\n"), (vec![], 0));
 }

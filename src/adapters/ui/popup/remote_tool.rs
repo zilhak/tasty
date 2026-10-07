@@ -756,15 +756,13 @@ fn draw_protocol_filter(
         unknown_hint: t("remote_tool.type_unknown_hint"),
     };
     let mut applied: Option<HashSet<String>> = None;
-    // 본문의 구획이 프레임 끝까지 닿도록 popup 프레임의 안쪽 여백을 없앤다. 래퍼가 안쪽 둘레를
-    // 메뉴 기본값으로 정하므로 래퍼 안에서도 다시 없앤다.
+    // 본문의 구획이 프레임 끝까지 닿도록 popup 프레임의 안쪽 여백을 없앤다. 래퍼에도 둘레 0 을 넘긴다.
     ui.scope(|ui| {
         ui.spacing_mut().menu_margin = egui::Margin::ZERO;
         // 프레임은 이 scope 의 스타일로 그려지고 popup 안쪽 Ui 는 컨텍스트 스타일을 받으므로,
         // 테두리 + 안쪽 여백은 여기서 잰다. 토큰은 테두리를 포함한 폭이다.
         let frame_x = egui::Frame::popup(ui.style()).total_margin().sum().x;
-        tasty_egui_theme::with_popover_frame(ui, th, |ui| {
-            ui.spacing_mut().menu_margin = egui::Margin::ZERO;
+        tasty_egui_theme::with_popover_frame_ring(ui, th, egui::Margin::ZERO, |ui| {
             egui::popup::popup_above_or_below_widget(
                 ui,
                 popup_id,

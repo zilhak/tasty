@@ -61,7 +61,7 @@ fn menu_style(base: &egui::Style, theme: &Theme) -> egui::Style {
     style
 }
 
-/// 메뉴 안쪽 여백 `multiselect-menu-padding`. 래퍼가 메뉴 공통 둘레로 덮어쓰므로 래퍼 안에서 넣는다.
+/// 메뉴 안쪽 여백 `multiselect-menu-padding`. 래퍼가 팝오버 틀에 넣는다.
 fn menu_margin(theme: &Theme) -> egui::Margin {
     egui::Margin::same(theme.multiselect_menu_padding().value() as i8)
 }
@@ -421,8 +421,7 @@ pub fn multi_select(
     anchor.rect = resp
         .rect
         .translate(egui::vec2(0.0, theme.multiselect_menu_gap().value()));
-    tasty_egui_theme::with_popover_frame(&mut menu_parent, theme, |ui| {
-        ui.spacing_mut().menu_margin = menu_margin(theme);
+    tasty_egui_theme::with_popover_frame_ring(&mut menu_parent, theme, menu_margin(theme), |ui| {
         egui::popup_below_widget(
             ui,
             popup_id,
