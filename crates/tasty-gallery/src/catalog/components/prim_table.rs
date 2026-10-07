@@ -162,22 +162,18 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                                 };
                                 status_dot(ui, th, kind, row.state, listen, false);
                             }
+                            // kit 의 Port·Proto·Address 는 mono 열이라 text-primary 다.
                             _ => {
-                                let (text, muted) = match col {
-                                    0 => (row.port.to_string(), false),
-                                    1 => (row.proto.to_string(), true),
-                                    _ => (row.addr.to_string(), true),
-                                };
-                                let color = if muted {
-                                    egui::Color32::from(th.text_muted())
-                                } else {
-                                    egui::Color32::from(th.text_primary())
+                                let text = match col {
+                                    0 => row.port.to_string(),
+                                    1 => row.proto.to_string(),
+                                    _ => row.addr.to_string(),
                                 };
                                 ui.label(
                                     egui::RichText::new(text)
                                         .size(th.font_size_body.value())
                                         .monospace()
-                                        .color(color),
+                                        .color(egui::Color32::from(th.text_primary())),
                                 );
                             }
                         },
