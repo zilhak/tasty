@@ -2574,6 +2574,8 @@ mod tests {
 
     #[test]
     fn protocol_filter_does_not_hide_local_section() {
+        // 다른 시험의 전역 번역 초기화와 경쟁하지 않도록 그리기 전에 초기화한다.
+        crate::i18n::init("en");
         let mut profiles = RemoteProfiles::default();
         profiles.upsert(RemoteProfile::new("my-gpu", "ssh").with_field("host", "other"));
         let mut st = UiState {
@@ -2595,6 +2597,8 @@ mod tests {
 
     #[test]
     fn empty_profiles_still_renders_local_section() {
+        // 다른 시험의 전역 번역 초기화와 경쟁하지 않도록 그리기 전에 초기화한다.
+        crate::i18n::init("en");
         let profiles = RemoteProfiles::default();
         let mut st = UiState {
             local: Some(cache(vec![host("gx10", Some("10.0.0.5"), Some(2200))])),

@@ -533,6 +533,8 @@ mod preset_failure_tests {
     }
     #[test]
     fn failed_user_preset_displays_the_original_view_error() {
+        // 다른 시험의 전역 번역 초기화와 경쟁하지 않도록 문구를 만들기 전에 초기화한다.
+        crate::i18n::init("en");
         let view = crate::view::state::ViewState::default();
         let mut toasts = crate::adapters::ui::toast::ToastManager::new();
         show_failed_preset(&mut toasts, &view, &continuation(&view), &user(), false);

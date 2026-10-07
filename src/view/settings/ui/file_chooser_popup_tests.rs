@@ -71,6 +71,8 @@ fn header_rect(ctx: &egui::Context, st: &mut SettingsUiState) -> egui::Rect {
 /// 셸 타이틀바가 없으니 제목은 한 번만 칠해지고 popup 윗변의 헤더 줄 안에 있다.
 #[test]
 fn the_settings_chooser_has_no_shell_title_bar() {
+    // 다른 시험의 전역 번역 초기화와 경쟁하지 않도록 그리기 전에 초기화한다.
+    crate::i18n::init("en");
     let mut st = opened();
     let ctx = egui::Context::default();
     let header = header_rect(&ctx, &mut st);

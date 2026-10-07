@@ -457,6 +457,8 @@ mod tests {
     /// 충분히 높은 창이면 신뢰 상자 제목도 보인다.
     #[test]
     fn action_bar_stays_inside_the_window_below_a_trust_warning() {
+        // 다른 시험의 전역 번역 초기화와 경쟁하지 않도록 그리기 전에 초기화한다.
+        crate::i18n::init("en");
         let states = [
             AddTrustState::UntrustedNoPubkey {
                 fingerprint: "16:43:83:e3:a7:6d:5c:20".into(),
