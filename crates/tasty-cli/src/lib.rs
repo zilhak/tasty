@@ -499,6 +499,8 @@ mod attach_surface_tests {
 
     #[test]
     fn remote_attach_ssh_force_detach_rejected() {
+        // 다른 시험의 전역 번역 초기화와 경쟁하지 않도록 오류 문구를 만들기 전에 초기화한다.
+        tasty_i18n::init("en");
         let cli = Cli::try_parse_from([
             "tasty",
             "remote",
@@ -567,6 +569,8 @@ mod attach_surface_tests {
 
     #[test]
     fn remote_check_ssh_profile_rejected() {
+        // 다른 시험의 전역 번역 초기화와 경쟁하지 않도록 오류 문구를 만들기 전에 초기화한다.
+        tasty_i18n::init("en");
         let cli = Cli::try_parse_from(["tasty", "remote", "check", "--ssh", "h", "--profile", "p"])
             .unwrap();
         let err = run::run_client(cli.command.unwrap(), None).unwrap_err();
@@ -579,6 +583,8 @@ mod attach_surface_tests {
 
     #[test]
     fn remote_check_no_target_rejected() {
+        // 다른 시험의 전역 번역 초기화와 경쟁하지 않도록 오류 문구를 만들기 전에 초기화한다.
+        tasty_i18n::init("en");
         let cli = Cli::try_parse_from(["tasty", "remote", "check"]).unwrap();
         let err = run::run_client(cli.command.unwrap(), None).unwrap_err();
         assert!(
@@ -621,6 +627,8 @@ mod attach_surface_tests {
 
     #[test]
     fn remote_workspaces_ssh_profile_rejected() {
+        // 다른 시험의 전역 번역 초기화와 경쟁하지 않도록 오류 문구를 만들기 전에 초기화한다.
+        tasty_i18n::init("en");
         let cli = Cli::try_parse_from([
             "tasty",
             "remote",
@@ -651,6 +659,8 @@ mod attach_surface_tests {
 
     #[test]
     fn remote_check_unknown_profile_rejected() {
+        // 다른 시험의 전역 번역 초기화와 경쟁하지 않도록 오류 문구를 만들기 전에 초기화한다.
+        tasty_i18n::init("en");
         let cli =
             Cli::try_parse_from(["tasty", "remote", "check", "--profile", "__nope__"]).unwrap();
         let err = run::run_client(cli.command.unwrap(), None).unwrap_err();
@@ -683,6 +693,8 @@ mod attach_surface_tests {
 
     #[test]
     fn remote_attach_without_target_rejected() {
+        // 다른 시험의 전역 번역 초기화와 경쟁하지 않도록 오류 문구를 만들기 전에 초기화한다.
+        tasty_i18n::init("en");
         let cli = Cli::try_parse_from(["tasty", "remote", "attach", "5"]).unwrap();
         let err = run::run_client(cli.command.unwrap(), None).unwrap_err();
         assert!(
@@ -694,6 +706,8 @@ mod attach_surface_tests {
 
     #[test]
     fn remote_attach_surface_workspace_exclusive() {
+        // 다른 시험의 전역 번역 초기화와 경쟁하지 않도록 오류 문구를 만들기 전에 초기화한다.
+        tasty_i18n::init("en");
         let cli = Cli::try_parse_from([
             "tasty",
             "remote",
@@ -715,6 +729,8 @@ mod attach_surface_tests {
 
     #[test]
     fn remote_attach_ssh_profile_exclusive() {
+        // 다른 시험의 전역 번역 초기화와 경쟁하지 않도록 오류 문구를 만들기 전에 초기화한다.
+        tasty_i18n::init("en");
         let cli = Cli::try_parse_from([
             "tasty",
             "remote",
