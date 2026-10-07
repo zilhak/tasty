@@ -697,6 +697,12 @@ pub fn pages() -> Vec<Page> {
                     "Explorer sidebar",
                     vec![
                         spec(
+                            "explorer-sidebar-favorites",
+                            "Sidebar Favorites — populated vs. empty state",
+                            Some("caption always shown · faint star + caption + hint when empty"),
+                            components::explorer_sidebar::draw_favorites,
+                        ),
+                        spec(
                             "explorer-sidebar",
                             "Sidebar layout — Favorites PINNED to the bottom (2-region split)",
                             Some(
@@ -711,12 +717,6 @@ pub fn pages() -> Vec<Page> {
                                 "Files only below a 240 body · split drag floor 160 · compact state row below 120",
                             ),
                             components::explorer_sidebar::draw_short_cell,
-                        ),
-                        spec(
-                            "explorer-sidebar-favorites",
-                            "Sidebar Favorites — populated vs. empty state",
-                            Some("caption always shown · faint star + caption + hint when empty"),
-                            components::explorer_sidebar::draw_favorites,
                         ),
                     ],
                 ),
