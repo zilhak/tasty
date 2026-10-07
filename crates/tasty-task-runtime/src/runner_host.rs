@@ -34,7 +34,7 @@ pub(crate) use holdings::{own_lease, own_semaphore, release_own_holdings, resume
 pub(crate) use postprocess::postprocess_result_key;
 pub(crate) use postprocess::restored_handle as restored_postprocess_handle;
 pub(crate) use run_stop::{RunProc, process_of_record, stored_process};
-#[cfg(test)]
+#[cfg(all(test, unix))]
 pub(crate) use ttl_renewal::MIN_HOLDING_TTL_MS;
 pub(crate) use ttl_renewal::check_holding_ttls;
 
