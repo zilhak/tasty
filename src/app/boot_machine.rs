@@ -740,11 +740,11 @@ impl App {
             return;
         };
         crate::boot::single_instance::instance_file::publish_port(port);
-        if !crate::boot::single_instance::service_enabled() {
-            return;
-        }
+        // Windows 는 이벤트 루프의 메시지 훅으로 받으므로 여기서 여는 경로는 Linux D-Bus 뿐이다.
         #[cfg(target_os = "linux")]
-        if let Some(home) = tasty_utils::path::tasty_home() {
+        if crate::boot::single_instance::service_enabled()
+            && let Some(home) = tasty_utils::path::tasty_home()
+        {
             let proxy = self.view.proxy.clone();
             crate::boot::single_instance::dbus::start_service(
                 &home,

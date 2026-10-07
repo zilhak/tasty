@@ -13,8 +13,9 @@ pub(crate) mod second;
 #[cfg(target_os = "linux")]
 pub(crate) mod dbus;
 
-/// 실행 중인 쪽의 활성화 서비스(Linux D-Bus 이름)를 등록할지. release는 항상, debug는 검증용
-/// 환경변수 `TASTY_DEBUG_SINGLE_INSTANCE=1`일 때만 등록한다.
+/// 실행 중인 쪽의 활성화 서비스(Linux D-Bus 이름, Windows 등록 메시지)를 등록할지. release는 항상,
+/// debug는 검증용 환경변수 `TASTY_DEBUG_SINGLE_INSTANCE=1`일 때만 등록한다. macOS 는 받는 경로가 없다.
+#[cfg(any(windows, target_os = "linux"))]
 pub(crate) fn service_enabled() -> bool {
     !cfg!(debug_assertions) || std::env::var("TASTY_DEBUG_SINGLE_INSTANCE").is_ok_and(|v| v == "1")
 }
