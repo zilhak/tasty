@@ -57,6 +57,7 @@ release 파일 필터가 `warn` 이상으로 제한된 이유는 상시 전체 d
 `tasty` 바이너리는 GUI(host)와 CLI 클라이언트를 겸한다. **파일 로그는 host(GUI / headless)만 연다** — `tasty list info` 같은 CLI 서브커맨드는 stderr 로만 로깅하고 공유 로그 파일을 건드리지 않는다. 그래서 에이전트가 CLI 를 아무리 자주 호출해도 실행 중인 host 의 로그는 그대로 남는다. 근거·대안은 [ADR-0043](../adr/0043-cli-errors-and-diagnostic-logs.md).
 
 - **CLI 프로세스의 진단**은 stderr(대화형 실패는 사용자가 즉시 본다)와, agent hook 전달 실패 전용 append-only 기록 `$TASTY_HOME/hook-failures.log` 로 한다. 공유 로그에서 찾지 않는다.
+- **CLI 의 stderr 로그 수준도 `TASTY_LOG` 를 따르고 기본은 `warn` 이다.** 그래서 `tasty claude hook`·`tasty agent task-submit` 같은 에이전트용 명령은 평소 stderr 에 성공 출력 외 줄을 내지 않는다(설정·번역 적재 같은 `info` 줄은 숨는다). `TASTY_LOG` 는 터미널·runner 자식 환경에서 지우는 변수가 아니므로, host 를 `TASTY_LOG=info` 등으로 띄우면 그 값이 터미널 셸과 그 안의 에이전트·후처리 프로세스로 상속돼 CLI 도 같은 수준으로 stderr 에 쓴다. stderr 를 오류로 읽는 도구가 터미널 안에 있으면 host 를 `TASTY_LOG` 없이 띄우거나 그 셸에서 변수를 지운다.
 - 파일에 남는 host 로그는 여전히 **직전 host 실행분**이다(host 가 뜰 때 truncate). tasty 를 재시작하면 이전 실행의 로그는 사라지므로, 재시작을 넘겨 보존해야 하는 증거는 전용 파일(`crash-*.log` / `hang-*.log` / `hook-failures.log`)로 남긴다.
 
 ```bash
