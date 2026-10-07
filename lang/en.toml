@@ -1100,6 +1100,7 @@ favorites_not_running = "not running"
 state_none_label = "NONE"
 favorite_add_tooltip = "Add {key} to favorites"
 favorite_remove_tooltip = "Remove {key} from favorites"
+pid_tooltip = "PID {pid}"
 
 [remote_tool]
 heading = "Remote connections"

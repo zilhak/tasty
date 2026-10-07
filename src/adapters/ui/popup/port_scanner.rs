@@ -359,6 +359,8 @@ pub struct PortScannerProps<'a> {
     /// Star tooltip format string with `{key}`, shown when the row is already
     /// favorited (click removes it).
     pub label_favorite_remove: &'a str,
+    /// PID Tag 툴팁 형식 문자열(`{pid}`). Tag 는 kit 처럼 숫자만 보이므로 뜻은 호버로 알린다.
+    pub label_pid_tooltip: &'a str,
 }
 
 /// 화면에서 요청한 동작. 호출부가 설정·클립보드·조회에 반영한다.
@@ -563,6 +565,7 @@ pub fn draw_port_scanner_popup(
         label_favorites_not_running: t("port_scanner.favorites_not_running"),
         label_state_none: t("port_scanner.state_none_label"),
         label_favorite_add: t("port_scanner.favorite_add_tooltip"),
+        label_pid_tooltip: t("port_scanner.pid_tooltip"),
         label_favorite_remove: t("port_scanner.favorite_remove_tooltip"),
     };
 
@@ -1913,7 +1916,9 @@ fn draw_table(
                                 .monospace(),
                         );
                     }),
-                    ColumnId::Process => cell_l(ui, |ui| draw_process_cell(ui, th, row)),
+                    ColumnId::Process => cell_l(ui, |ui| {
+                        draw_process_cell(ui, th, row, props.label_pid_tooltip)
+                    }),
                     ColumnId::Workspace => cell_l(ui, |ui| {
                         draw_workspace_cell(ui, th, row, props.label_external_dash)
                     }),
@@ -2009,9 +2014,10 @@ fn compute_column_widths(
     widths
 }
 
-/// Process 셀: process_name + PID 배지.
-fn draw_process_cell(ui: &mut egui::Ui, th: &Theme, row: &PortRowView) {
+/// Process 셀: process_name + PID 배지. kit 처럼 배지는 숫자만이고 이름과 `spacing_sm` 간격을 둔다.
+fn draw_process_cell(ui: &mut egui::Ui, th: &Theme, row: &PortRowView, pid_tooltip: &str) {
     ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
         let name = row.process_name.as_deref().unwrap_or("—");
         ui.label(
             egui::RichText::new(name)
@@ -2019,7 +2025,9 @@ fn draw_process_cell(ui: &mut egui::Ui, th: &Theme, row: &PortRowView) {
                 .size(th.font_size_body.value()),
         );
         if let Some(pid) = row.pid {
-            tag(ui, th, &format!("PID {pid}"), TagVariant::Default, false);
+            let pid = pid.to_string();
+            tag(ui, th, &pid, TagVariant::Default, false)
+                .on_hover_text(pid_tooltip.replace("{pid}", &pid));
         }
     });
 }
@@ -2169,6 +2177,7 @@ mod tests {
             label_favorites_not_running: "not running",
             label_state_none: "NONE",
             label_favorite_add: "Add {key} to favorites",
+            label_pid_tooltip: "PID {pid}",
             label_favorite_remove: "Remove {key} from favorites",
         }
     }

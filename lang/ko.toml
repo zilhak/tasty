@@ -1096,6 +1096,7 @@ favorites_not_running = "실행 중 아님"
 state_none_label = "NONE"
 favorite_add_tooltip = "{key} 즐겨찾기에 추가"
 favorite_remove_tooltip = "{key} 즐겨찾기에서 제거"
+pid_tooltip = "PID {pid}"
 
 [remote_tool]
 heading = "원격 접속"

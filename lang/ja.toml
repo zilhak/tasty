@@ -1096,6 +1096,7 @@ favorites_not_running = "実行されていません"
 state_none_label = "NONE"
 favorite_add_tooltip = "{key} をお気に入りに追加"
 favorite_remove_tooltip = "{key} をお気に入りから削除"
+pid_tooltip = "PID {pid}"
 
 [remote_tool]
 heading = "リモート接続"
