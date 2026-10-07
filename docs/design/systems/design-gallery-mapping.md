@@ -239,6 +239,60 @@ mock 데이터로 주입한다. 앵커 메뉴 팝업(Tools 메뉴·레일 카테
 `approval` · `file_handler_picker` · `markdown_open` · `rename_popup` · `toast` ·
 `sidebar` · `tab_bar` · `apply_preset`. 이들은 props 분리가 돼 있어 갤러리로 즉시 검증 가능.
 
+<a id="디자인-spec-제목과-갤러리-예제"></a>
+
+## 디자인 Spec 제목과 갤러리 예제
+
+시안 카탈로그(`site/vendor/gallery/*.jsx`)의 `<Spec title>` 과 갤러리 예제 제목은 맞추지 않는다. 디자인
+Spec 하나가 갤러리 예제 둘이거나, 둘이 하나이거나, 경계가 다른 경우가 있어 제목만 바꿔서는 1:1 이 되지
+않기 때문이다. 아래는 제목이 서로 달라 제목 대조로는 찾을 수 없는 Spec 의 대응이다. 제목 전체나 " — " 앞부분이
+같은 Spec 은 제목으로 찾을 수 있어 싣지 않는다. 컴포넌트·본체 함수 대응이 이미 다른 절에 있으면 마지막 열이
+그 절을 가리킨다.
+
+| 디자인 Spec | 갤러리 예제 | 컴포넌트 대응 · 비고 |
+|---|---|---|
+| `gallery/dag.jsx` "Transition selection — four states on one edge style" | `dag-routes` | 아래 Task DAG 절 `routes` 행 |
+| `gallery/dag.jsx` "One row per DAG — across all workspaces" | `dag-rows` | 아래 Task DAG 절 `dagRowItems` 행 |
+| `gallery/foundations.jsx` "Depth reads through surface tint, never shadow" | `elevation` | 떠 있는 표면의 두 그림자는 `floating` |
+| `gallery/layouts.jsx` "Full sidebar ↔ collapsed rail" | `sidebar` |  |
+| `gallery/layouts.jsx` "Workspace categories (sidebar folders)" | `sidebar` "Categories · full" · "Categories · rail" | [workspace-category](#workspace-category-layouts--overlays) |
+| `gallery/layouts.jsx` "Category quick-switch — Ctrl+Shift held" | `switch-cat` (Overlays) | [switch_overlay](#switch_overlay-overlays) `CatSwitchSidebarMock` 행. 디자인은 Layouts, 갤러리는 Overlays 페이지 |
+| `gallery/layouts.jsx` "One sidebar, one detail pane" | `onedepth` | [1 depth](#1-depth-general-list--detail) |
+| `gallery/layouts.jsx` "Top tabs over a filterable section list" | `twodepth` | [2 depth](#2-depth-settings-idiom) |
+| `gallery/layouts.jsx` "Stacked tab tiers — workspace over panes" | `multitab` |  |
+| `gallery/layouts.jsx` "Focused · unfocused · agent" | `surface` | `components/surface_highlights.rs` |
+| `gallery/layouts.jsx` "Occupancy & completion borders" | `occupancy` | `components/occupancy_borders.rs` |
+| `gallery/layouts.jsx` "What the 24px bar carries, and what goes first when it can't" | `statusbar` | [공용 그리기 함수](#공용-crate-view-specimen-복제-0--본체와-같은-함수-호출) status bar 행. 탈락 단계는 `components/status_bar.rs` 의 cluster 셋 |
+| `gallery/loading.jsx` "Boot screen — full client area, centered stack" | `boot-loading-default` |  |
+| `gallery/loading.jsx` "Same stack, no responsive shrink" | `boot-loading-min` |  |
+| `gallery/loading.jsx` "Fixed-height phase slot — swap/omit never shifts the stack" | `boot-loading-phases` · `boot-loading-no-text` | 디자인 한 Spec ↔ 갤러리 둘 |
+| `gallery/loading.jsx` "Spinner.jsx reused — size 16 → 32 for boot hero" | `boot-loading-spinner` |  |
+| `gallery/overlays-banners.jsx` "Per-program capture opt-out — list editor" | `banner-blacklist` |  |
+| `gallery/overlays-dialogs.jsx` "Every overlay sits on the same scrim" | `scrim` |  |
+| `gallery/overlays-dialogs.jsx` "Scope — a surface-bound popup dims its surface, not the window" | `scrim-scope` | 디자인의 rejected 비교 두 장(window scrim·scrim 없음)은 갤러리에 없고 "window scope" 장을 둔다 |
+| `gallery/overlays-dialogs.jsx` "Both split directions, a clamped popup, and a child picker" | `scrim-scope`(top/bottom split · narrow clamp) · `scrim-scope-child` | 디자인 두 Spec 과 갤러리 두 예제의 경계가 다르다(N:M) |
+| `gallery/overlays-dialogs.jsx` "Approval popup — the mauve gate" | `approval` |  |
+| `gallery/overlays-dialogs.jsx` "New / rename category — the Rename dialog, reused" | `workspace-categories` | [workspace-category](#workspace-category-layouts--overlays) `CategoryEditFrame` 행 |
+| `gallery/overlays-popups.jsx` "Tab switch overlay — modifier held" | `switch-tab` | [switch_overlay](#switch_overlay-overlays) |
+| `gallery/overlays-popups.jsx` "Workspace switch overlay — modifier held" | `switch-ws` | [switch_overlay](#switch_overlay-overlays) |
+| `gallery/overlays-popups.jsx` "Category switch overlay — Ctrl+Shift held" | `switch-cat` | [switch_overlay](#switch_overlay-overlays) |
+| `gallery/overlays-tutorial.jsx` "Step 1 / 4 — 워크스페이스" | `tutorial-composite` | `widgets/tutorial.rs` |
+| `gallery/overlays-windows.jsx` "Two-pane remote-workspace picker — 4 states" | `remote-workspace-attach` · `remote-workspace-attach-states` | 아래 remote_attach 절(디자인 한 Spec ↔ 갤러리 둘) |
+| `gallery/overlays-windows.jsx` "“+ New workspace” row — the escape from a dead-end remote" | `remote-workspace-attach-new-row` | 아래 remote_attach 절 `RaNewWsRow` 행 |
+| `gallery/overlays-windows.jsx` "Gestures & folder targets — the six open branches" | `filepicker-gesture-table` | [파일 피커](#파일-피커-overlays) |
+| `gallery/overlays-windows.jsx` "Settings · General › Remote transfer — 5th L2 subtab" | `settings-remote-transfer` | [Remote transfer](#settings--general--remote-transfer) |
+| `gallery/overlays-windows.jsx` "FileHandler › File Extension Mapping — order + Add" | `settings-file-extension-mapping` | [Handler 하위 탭](#settings--handler-하위-탭) |
+| `gallery/overlays-windows.jsx` "Status table, one action per row, one request button" | `settings-macos-permissions` | [Permissions (macOS)](#settings--general--permissions-macos) |
+| `gallery/overlays-windows.jsx` "Copy fingerprint · Add plugin that can't be added" | `plugins-window` · `plugin-add-hint-slot` | [plugins window](#overlays--plugins-window) |
+| `gallery/overlays-windows.jsx` "Diff variant — file row → unified diff" | `git-viewer`(diff cluster) · `git-diff-toolbar` | [git-viewer](#git-viewer-plugins) |
+| `gallery/plugins.jsx` "Sidebar Favorites — populated vs. empty state" | `explorer-sidebar` |  |
+| `gallery/plugins.jsx` "Sidebar layout — Favorites PINNED to the bottom (2-region split)" | `explorer-sidebar` | 디자인 두 Spec ↔ 갤러리 하나 |
+| `gallery/plugins.jsx` "Right-click context menu — target resolves to 4 shapes" | `explorer-context` (Overlays) |  |
+| `gallery/plugins.jsx` "HTML — webview chrome (4 states)" | `html-chrome` | [surface viewers](#surface-viewers-plugins) |
+| `gallery/plugins.jsx` "HTML — settings (Appearance › HTML viewer)" | `plugin-settings` (Components) | [플러그인 설정 페이지](#플러그인-설정-페이지) |
+| `gallery/plugins.jsx` "Image — viewer & edit (paint) modes" | `image-viewer` · `image-paint` | [surface viewers](#surface-viewers-plugins)(디자인 한 Spec ↔ 갤러리 둘) |
+| `gallery/preset_editor.jsx` "WYSIWYG edit mode — direct manipulation of STRUCTURE" | `preseteditor` | [preset demo-layout](#preset-demo-layout-overlays) |
+
 <a id="공용-crate-view-specimen-복제-0--본체와-같은-함수-호출"></a>
 
 ## 공용 그리기 함수를 사용하는 예제
