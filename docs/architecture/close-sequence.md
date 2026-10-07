@@ -19,11 +19,27 @@ App은 journal 사실을 게시하는 동안 관측을 멈춘다. 이 동안 IPC
 
 3·4단계 사이의 receipt 대기에서는 관측을 멈추지 않는다. 닫히는 surface는 이미 구조와 View에서 빠졌으므로, 이때의 조회와 입력은 닫기가 반영된 구조를 본다. 닫힘 이벤트와 닫기 응답은 결과 확정 뒤에 나간다. receipt 대기로 넘어가는 즉시 plugin 회수 게시를 적용한다. 그래서 claim 이후에 처리되는 enable은 파괴 중인 surface를 새 프로세스에 다시 게시하지 않는다.
 
-닫기는 접수한 뒤 대상을 해석하기까지 시간이 걸린다. 그 사이에 plugin 프로세스가 새로 떠도 접수된 닫기가 회수할 수 있는 surface는 다시 게시하지 않는다. App은 IPC 명령마다 처리 직전에, 그리고 journal 턴마다 이 목록을 plugin host에 넘긴다. 아직 해석하지 않은 닫기는 현재 구조로 해석해 대상을 구한다. 닫기가 그 surface를 회수하지 않고 끝나면(실패·취소) 목록에서 빠질 때 다시 게시한다. Tasty가 닫기보다 enable을 먼저 처리했다면 그 시점의 surface는 살아 있으므로 새 프로세스에 게시한다. 이후의 닫기는 새 프로세스에 파괴 요청을 보내고 그 응답으로 확정하므로, 닫힌 surface의 인스턴스는 새 프로세스에 남지 않는다. 서로 다른 IPC 연결로 보낸 요청은 보낸 순서대로 처리된다는 보장이 없고, Tasty는 그 순서를 맞추지 않는다([ADR-0077](../adr/0077-close-and-plugin-start-across-connections-are-not-serialized.md)).
+닫기는 접수한 뒤 대상을 해석하기까지 시간이 걸린다. 그 사이에 plugin 프로세스가 새로 떠도 접수된 닫기가 회수할 수 있는 surface는 다시 게시하지 않는다. App은 IPC 명령마다 처리 직전에, 그리고 journal 턴마다 이 목록을 plugin host에 넘긴다. 아직 해석하지 않은 닫기는 현재 구조로 해석해 대상을 구한다. 닫기가 그 surface를 회수하지 않고 끝나면(실패·취소) 목록에서 빠질 때 다시 게시한다. Tasty가 닫기보다 enable을 먼저 처리했다면 그 시점의 surface는 살아 있으므로 새 프로세스에 게시한다. 이후의 닫기는 새 프로세스에 파괴 요청을 보내고 그 응답으로 확정하므로, 닫힌 surface의 인스턴스는 새 프로세스에 남지 않는다. 서로 다른 IPC 연결로 보낸 요청은 보낸 순서대로 처리된다는 보장이 없고, Tasty는 그 순서를 맞추지 않는다([ADR-0074](../adr/0074-close-receipt-wait-does-not-pause-observation.md)의 다른 연결 절).
 
 앱 종료는 receipt 대기도 기다린다. 닫기가 한 번 응답하고 결과(시한이 지나면 `Uncertain`)를 기록한 뒤 종료가 진행된다([종료 시퀀스](shutdown-sequence.md)).
 
 생산 경로는 `src/app/journal/commands/close.rs`, `src/runtime/resource_retirement.rs`, `src/app/journal/resource_cleanup.rs`다. GUI의 cache·선택 보정과 toast는 이 실행 원본을 대신하지 않는다.
+
+## 같은 자원을 다루는 다른 명령
+
+receipt 대기 중 관측이 재개돼도 같은 자원을 다루는 다른 명령에 대해 다음을 보장한다([ADR-0074](../adr/0074-close-receipt-wait-does-not-pause-observation.md)).
+
+| 상황 | 보장 | 근거 |
+|---|---|---|
+| 같은 surface·workspace id | 회수 중인 id는 다시 쓰이지 않는다 | id 예약은 단조 증가하며 되감지 않는다. 닫은 항목 복원도 새 id를 받는다. metadata 정리는 id가 다시 살아 있으면 거절한다 |
+| 같은 plugin disable·재기동 | 먼저 보낸 파괴 요청은 원 세대 회수로 확정된다. 닫기를 접수한 뒤에 처리되는 enable은 그 닫기가 회수할 수 있는 surface를 새 프로세스에 다시 게시하지 않는다. 접수 뒤 해석 전까지는 접수된 닫기 목록이, claim 이후에는 회수 게시 즉시 적용이 막는다. 닫기보다 먼저 처리된 enable의 경우는 아래 행 | 세대 회수 확정, 접수된 닫기의 재게시 보류, 회수 게시 즉시 적용 |
+| 다른 연결의 enable이 닫기 접수보다 먼저 처리됨 | 닫힌 surface의 인스턴스가 새 프로세스에 남지 않는다. 새 프로세스가 잠깐 열었다가 파괴 요청으로 닫는다 | enable 시점에 살아 있는 surface를 게시하고, 뒤이은 닫기는 새 세대에 `surface.destroy`를 보내 그 응답으로 확정한다. plugin SDK는 호스트 요청을 한 워커에서 순서대로 처리한다 |
+| 엔진 은퇴 | receipt가 남은 엔진은 해제하지 않는다 | 엔진 해제는 정리 항목·보류 회수가 빌 때까지 기다린다 |
+| 같은 워크스페이스의 다른 닫기 | 같은 자원을 두 번 회수하지 않는다 | 회수 대상은 이미 구조에서 빠졌다. 뒤 명령의 `Claim`·`Finish`는 여전히 일시정지한다 |
+| 사용자 창 입력 | 입력은 닫기가 반영된 구조를 대상으로 바로 처리된다 | 닫힌 surface는 이미 View·구조에 없다. 일시정지 단계의 입력 보류·재검사는 그대로다 |
+| 앱 종료 | 종료가 걸린 닫기도 응답을 한 번 보내고, 종료 전에 결과를 기록한다 | 종료는 `Running` 정리를 기다리고 그동안 회수 응답을 직접 처리한다. 상한은 receipt 시한이다 |
+| 레이아웃 저장·surface capture·preset capture | 닫히는 surface를 저장하거나 되살리지 않는다 | 닫히는 surface는 구조와 runtime 표에서 빠져 `ResourceRetirement`만 쥐고 있다. 저장·capture는 닫기가 반영된 상태를 읽는다 |
+| 원격 attach 갱신·해석 대기 요청 | 클라이언트가 닫기 중간 상태를 받지 않는다 | 구조 변경은 이미 확정·게시됐다. 클라이언트는 닫기가 반영된 구조를 받는다. 닫힘 이벤트는 결과 확정 뒤에 나간다 |
 
 ## 실패와 불명 결과
 
