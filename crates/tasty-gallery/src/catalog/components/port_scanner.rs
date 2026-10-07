@@ -360,7 +360,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "Cells are monospace for scannable columns. Each column has a minimum \
+        "Port, Proto and Address cells are monospace so they line up by glyph; \
+         Process and the other cells use the UI font. Each column has a minimum \
          width; when the visible columns' minimums exceed the frame the table \
          scrolls horizontally (instead of ellipsizing). The columns chooser \
          (header) toggles which columns show — here Workspace is hidden. \
