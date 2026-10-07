@@ -254,21 +254,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ],
         &[
             TokenChip::new(
-                "accent-primary",
-                "match highlight",
-                egui::Color32::from(theme.accent_primary()),
-            ),
-            TokenChip::new(
-                "surface-active",
-                "keyboard-active row",
-                egui::Color32::from(theme.surface_active()),
-            ),
-            TokenChip::new(
-                "surface-raised",
-                "dropdown fill",
-                egui::Color32::from(theme.surface_raised()),
-            ),
-            TokenChip::new(
                 "input-bg",
                 "trigger fill",
                 egui::Color32::from(theme.input_bg()),
