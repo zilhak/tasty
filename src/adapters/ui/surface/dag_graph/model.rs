@@ -80,8 +80,9 @@ impl DagStatus {
             DagStatus::Running => "\u{25D1}",   // ◑ 반쯤 채운 원
             DagStatus::Succeeded => "\u{25CF}", // ● 채운 원
             DagStatus::Failed => "\u{00D7}",    // × 곱셈 기호
-            DagStatus::Cancelled => "\u{2298}", // ⊘ 사선 원
-            DagStatus::Skipped => "\u{25C7}",   // ◇ 흰 마름모
+            DagStatus::Cancelled => "\u{2212}", // − 빼기 기호
+            // 두 건너뜀 이유(미선택·선행 결과 없음)가 같은 글리프를 쓴다.
+            DagStatus::Skipped => "\u{2298}", // ⊘ 사선 원
             DagStatus::Unknown => "?",
         }
     }
@@ -730,5 +731,15 @@ mod tests {
             kind_icon("unknown").uri,
             crate::adapters::ui::icons::TERM.uri
         );
+    }
+
+    /// 상태 글리프는 서로 겹치지 않고, 건너뜀은 시안의 ⊘ 를 쓴다.
+    #[test]
+    fn status_glyphs_are_distinct_and_skipped_is_the_slashed_circle() {
+        let all = DagStatus::ALL;
+        let glyphs: std::collections::BTreeSet<_> = all.iter().map(|s| s.glyph()).collect();
+        assert_eq!(glyphs.len(), all.len(), "{glyphs:?}");
+        assert_eq!(DagStatus::Skipped.glyph(), "\u{2298}");
+        assert_eq!(DagStatus::Cancelled.glyph(), "\u{2212}");
     }
 }

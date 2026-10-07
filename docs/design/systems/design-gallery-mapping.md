@@ -1186,7 +1186,7 @@ Mocha·Latte는 고정 테마(`mocha_fallback`·`latte_theme`)로 위아래에 �
 **디자인과 구현의 차이**
 
 - **상태 글리프**: 시안의 `❯`(U+276F) `✓`(U+2713) `✗`(U+2717) 은 Dingbats 블록이라 UI 비례
-  폰트에서 tofu 로 떨어진다. 본체는 기하 도형(`◦ ▷ ◑ ● × ⊘ ◇ ?`)으로 치환했고
+  폰트에서 tofu 로 떨어진다. 본체는 기하·수학 기호(`◦ ▷ ◑ ● × − ⊘ ?`)로 치환했고 — 시안과 같은 `−`(cancelled)·`⊘`(skipped, 두 건너뜀 이유 공통)는 그대로 쓴다 —
   `crates/tasty-doc-guards/tests/design_token_adherence.rs::no_raw_pictographic_glyph` 가 그 블록을 host UI 소스에서
   금지한다. 갤러리도 같은 치환 세트를 쓴다 — 렌더되지 않는 글자를 전시하면 정합 판정 자체가
   무의미하기 때문이다.

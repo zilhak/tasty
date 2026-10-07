@@ -91,8 +91,8 @@ impl Status {
             Status::Running => "\u{25D1}",   // ◑
             Status::Succeeded => "\u{25CF}", // ●
             Status::Failed => "\u{00D7}",    // ×
-            Status::Cancelled => "\u{2298}", // ⊘
-            Status::Skipped => "\u{25C7}",   // ◇
+            Status::Cancelled => "\u{2212}", // −
+            Status::Skipped => "\u{2298}",   // ⊘
             Status::Unknown => "?",
         }
     }
