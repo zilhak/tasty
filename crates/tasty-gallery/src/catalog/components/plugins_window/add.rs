@@ -121,7 +121,7 @@ fn manifest_card(ui: &mut egui::Ui, theme: &Theme, open_values: bool) {
     );
 }
 
-/// Verify 전 안내 상자(점선)와 매니페스트 읽기 오류 상자. 본체 열 폭 `width` 안에 둘을 쌓는다.
+/// Verify 전 안내 상자(점선), 매니페스트 읽기 오류 상자, 검증 실패 상자. 본체 열 폭 `width` 안에 셋을 쌓는다.
 pub(super) fn hint_slot(ui: &mut egui::Ui, theme: &Theme, width: f32) {
     ui.vertical(|ui| {
         ui.set_width(width);
@@ -138,6 +138,12 @@ pub(super) fn hint_slot(ui: &mut egui::Ui, theme: &Theme, width: f32) {
             theme,
             "Can't read tasty-plugin.toml",
             "TOML parse error at line 4, column 9: expected `=`",
+        );
+        plugin_add_read_error(
+            ui,
+            theme,
+            "tasty-plugin.toml is not valid",
+            "binary \"bin/imgview\" not found in the plugin folder",
         );
     });
 }

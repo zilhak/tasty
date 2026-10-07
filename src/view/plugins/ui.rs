@@ -205,8 +205,34 @@ pub struct PluginsUiState {
     pub add_path_input: String,
     /// 검증 후 preview 정보. 있으면 추가/취소 화면을 보여준다.
     pub add_preview: Option<AddPreview>,
-    /// 매니페스트를 읽지 못한 이유의 원문. 있으면 안내 상자 자리에 읽기 오류 상자를 둔다.
-    pub add_error: Option<String>,
+    /// 매니페스트를 읽지 못했거나 검사에 실패한 이유. 있으면 안내 상자 자리에 오류 상자를 둔다.
+    pub add_error: Option<AddError>,
+}
+
+/// `Add` 탭 오류 상자의 종류. 제목만 다르고 둘째 줄은 원문 메시지를 번역하지 않고 보인다.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AddError {
+    /// 파일이 없거나 TOML로 읽을 수 없다.
+    Read(String),
+    /// 읽었지만 선언 검사(바이너리 경로·감지기 등)에 실패했다.
+    Invalid(String),
+}
+
+impl AddError {
+    /// 상자 제목의 번역 키.
+    pub fn title_key(&self) -> &'static str {
+        match self {
+            AddError::Read(_) => "plugins.add_read_error",
+            AddError::Invalid(_) => "plugins.add_invalid",
+        }
+    }
+
+    /// 상자 둘째 줄에 보일 원문.
+    pub fn reason(&self) -> &str {
+        match self {
+            AddError::Read(reason) | AddError::Invalid(reason) => reason,
+        }
+    }
 }
 
 /// modal 메인 그리기. snapshot은 읽기 전용, action은 큐에 추가.

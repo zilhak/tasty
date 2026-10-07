@@ -10,7 +10,8 @@ use tasty_ui_widgets::{
 
 use super::attention::fingerprint_line;
 use super::{
-    AddPreview, AddTrustReason, AddTrustState, PluginsAction, PluginsSnapshot, PluginsUiState,
+    AddError, AddPreview, AddTrustReason, AddTrustState, PluginsAction, PluginsSnapshot,
+    PluginsUiState,
 };
 
 pub(super) fn draw_add_tab(
@@ -59,8 +60,8 @@ fn draw_add_form(
             ui.set_width(column_width);
             ui.spacing_mut().item_spacing.y = th.spacing_lg.value();
             draw_path_picker(ui, snapshot, ui_state, th);
-            if let Some(reason) = &ui_state.add_error {
-                plugin_add_read_error(ui, th, t("plugins.add_read_error"), reason);
+            if let Some(error) = &ui_state.add_error {
+                plugin_add_read_error(ui, th, t(error.title_key()), error.reason());
             } else if let Some(preview) = &ui_state.add_preview {
                 draw_preview(ui, preview, th);
             } else {
@@ -298,10 +299,16 @@ fn try_validate_path(ui_state: &mut PluginsUiState, snapshot: &PluginsSnapshot) 
         return;
     }
     let path = std::path::PathBuf::from(&raw);
-    match crate::plugin::Manifest::load(&path).and_then(|m| {
-        crate::plugin_bridge::manifest_validate::validate_bin_extras(&m)?;
-        Ok(m)
-    }) {
+    // 읽기·파싱 실패와 선언 검사 실패는 상자 제목이 다르다.
+    let checked = match crate::plugin::Manifest::read(&path) {
+        Err(e) => Err(AddError::Read(e.to_string())),
+        Ok(m) => m
+            .validate()
+            .and_then(|()| crate::plugin_bridge::manifest_validate::validate_bin_extras(&m))
+            .map(|()| m)
+            .map_err(|e| AddError::Invalid(e.to_string())),
+    };
+    match checked {
         Ok(manifest) => {
             let already = snapshot.plugins.iter().any(|p| p.id == manifest.id);
             let trust_state = compute_trust_state(&path);
@@ -323,9 +330,9 @@ fn try_validate_path(ui_state: &mut PluginsUiState, snapshot: &PluginsSnapshot) 
                 trust_state,
             });
         }
-        Err(e) => {
-            // 읽기 오류 원문은 번역하지 않고 상자의 둘째 줄에 그대로 보인다.
-            ui_state.add_error = Some(e.to_string());
+        Err(error) => {
+            // 오류 원문은 번역하지 않고 상자의 둘째 줄에 그대로 보인다.
+            ui_state.add_error = Some(error);
         }
     }
 }
@@ -508,5 +515,51 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// 매니페스트 읽기 실패와 선언 검사 실패는 서로 다른 제목의 오류 상자로 남는다.
+    #[test]
+    fn validation_failure_is_told_apart_from_a_read_failure() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let validate = |ui_state: &mut PluginsUiState| {
+            ui_state.add_path_input = dir.path().to_string_lossy().into_owned();
+            try_validate_path(ui_state, &PluginsSnapshot::default());
+        };
+        let mut ui_state = PluginsUiState::default();
+
+        // 파일이 없으면 읽기 실패다.
+        validate(&mut ui_state);
+        let missing = ui_state.add_error.clone().expect("missing manifest");
+        assert_eq!(missing.title_key(), "plugins.add_read_error");
+
+        // TOML로 읽을 수 없어도 읽기 실패다.
+        std::fs::write(dir.path().join("tasty-plugin.toml"), "id = ").expect("write");
+        validate(&mut ui_state);
+        let broken = ui_state.add_error.clone().expect("broken toml");
+        assert_eq!(broken.title_key(), "plugins.add_read_error");
+
+        // 읽었지만 선언 검사에 실패하면 검증 실패이고, 둘째 줄은 검사 메시지다.
+        std::fs::write(
+            dir.path().join("tasty-plugin.toml"),
+            r#"
+                manifest_version = 1
+                id = "Not A Valid Id"
+                name = "X"
+                version = "0.1"
+                api_version = "1"
+                [entry]
+                type = "process"
+                command = "x"
+            "#,
+        )
+        .expect("write");
+        validate(&mut ui_state);
+        let invalid = ui_state.add_error.clone().expect("invalid manifest");
+        assert_eq!(invalid.title_key(), "plugins.add_invalid");
+        assert!(
+            invalid.reason().contains("invalid plugin id"),
+            "{invalid:?}"
+        );
+        assert!(ui_state.add_preview.is_none());
     }
 }

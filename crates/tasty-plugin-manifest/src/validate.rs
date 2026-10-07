@@ -21,14 +21,20 @@ use super::validators::{
 
 impl Manifest {
     pub fn load(dir: &Path) -> anyhow::Result<Self> {
-        let path = dir.join("tasty-plugin.toml");
-        let s = std::fs::read_to_string(&path)
-            .map_err(|e| anyhow::anyhow!("cannot read {}: {}", path.display(), e))?;
-        let manifest: Manifest = toml::from_str(&s)
-            .map_err(|e| anyhow::anyhow!("invalid manifest at {}: {}", path.display(), e))?;
+        let manifest = Self::read(dir)?;
         manifest.validate()?;
         // 호스트 타입이 필요한 감지기·핸들러 본문 검사는 호출자가 추가로 수행한다.
         Ok(manifest)
+    }
+
+    /// `dir`의 `tasty-plugin.toml`을 읽고 파싱만 한다. 선언 검사는 [`Manifest::validate`]가 맡는다.
+    /// 파일이 없거나 TOML·스키마로 읽을 수 없을 때만 실패한다.
+    pub fn read(dir: &Path) -> anyhow::Result<Self> {
+        let path = dir.join("tasty-plugin.toml");
+        let s = std::fs::read_to_string(&path)
+            .map_err(|e| anyhow::anyhow!("cannot read {}: {}", path.display(), e))?;
+        toml::from_str(&s)
+            .map_err(|e| anyhow::anyhow!("invalid manifest at {}: {}", path.display(), e))
     }
 
     pub fn validate(&self) -> anyhow::Result<()> {

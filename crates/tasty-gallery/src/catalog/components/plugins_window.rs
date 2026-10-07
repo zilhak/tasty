@@ -443,6 +443,10 @@ pub fn draw_hint_slot(ui: &mut egui::Ui, theme: &Theme) {
                 "Can't read tasty-plugin.toml · body · accent-danger",
             ),
             ("reason", "mono caption · text-muted · untranslated"),
+            (
+                "invalid",
+                "read but fails validation (binary path · extras) — same box · title “tasty-plugin.toml is not valid” · reason = validation message",
+            ),
             ("action", "none — fix the path above and Verify again"),
         ],
         &[
@@ -463,7 +467,7 @@ pub fn draw_hint_slot(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "The same dash pair draws the Scripts Add trigger… control (Misc › Scripts). Both boxes are the shared paint_dashed_outline and plugin_add_read_error widgets the host calls.",
+        "The same dash pair draws the Scripts Add trigger… control (Misc › Scripts). The boxes are the shared paint_dashed_outline and plugin_add_read_error widgets the host calls. Strings: plugins.add_read_error “Can't read tasty-plugin.toml” · plugins.add_invalid “tasty-plugin.toml is not valid”.",
     );
 }
 
