@@ -385,7 +385,9 @@ TTL 의 하한은 `MIN_HOLDING_TTL_MS`(1초 = tick 500ms 의 두 배)다. 갱신
 
 만료 시각이 지났어도 다른 holder 가 가져가지 않았으면 다시 늦춘다. 이미 다른 holder 가 쥐었으면
 되찾지 않고 갱신을 멈추며, task 는 계속 실행된다(프로세스를 멈출 근거가 없다). 이 일은 task 조회의
-`holding_warnings`(`kind`·`name`·`holder`·`at_ms`·`message`)에 남는다(`runner_host/holding_warning.rs`,
+`holding_warnings`(`kind`·`name`·`holder`·`at_ms`·`message`·`attempt_id`)에 남는다. 기록은 그때의
+회차 id 를 담고, 조회는 지금 회차의 것만 보인다(retry 뒤에는 이전 회차의 경고가 보이지 않는다,
+v1 task 는 회차 id 가 없다)(`runner_host/holding_warning.rs`,
 memory 키 `tasty.agent.holding_warning.<task_id>`, task 당 최근 16건, task 를 지울 때 함께 지운다).
 러너가 tick 을 오래 건너뛴 경우(앱 멈춤·저장소 대기)에만 생긴다. 러너가 꺼진 동안에는 아무도
 갱신하지 않으므로, 그 사이 TTL 이 지나면 다른 holder 가 얻을 수 있다. TTL 은 이제 "task 를

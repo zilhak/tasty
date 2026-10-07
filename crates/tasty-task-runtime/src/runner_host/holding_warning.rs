@@ -1,9 +1,11 @@
 //! 러너가 TTL 을 갱신하지 못해 task 가 점유를 잃은 기록. task 조회(`holding_warnings`)로 드러낸다.
 //!
 //! 점유를 잃어도 task 는 계속 실행된다(프로세스를 멈출 근거가 없다). 다른 holder 가 같은 자원을
-//! 함께 쓰고 있을 수 있음을 호출자가 알 수 있게 남긴다. task 를 지울 때 함께 지운다.
+//! 함께 쓰고 있을 수 있음을 호출자가 알 수 있게 남긴다. 기록마다 그때의 회차 id(`attempt_id`,
+//! v1 task 는 없음)를 담고 조회는 지금 회차의 것만 보인다. task 를 지울 때 함께 지운다.
 
 use serde_json::Value;
+use tasty_agent::TaskStore;
 use tasty_memory::{HOST_OWNER, MemoryStorage, MemoryValue, PutOpts, Scope};
 
 use super::RunnerContext;
@@ -36,14 +38,48 @@ pub(crate) fn holding_warnings(
     }
 }
 
-/// 기록을 하나 더한다.
+/// 지금 회차의 기록. 오래된 것부터.
+pub(crate) fn current_holding_warnings(
+    mem: &mut dyn MemoryStorage,
+    agent_seq: &std::sync::atomic::AtomicU64,
+    workspace_id: u32,
+    task_id: &str,
+) -> Vec<Value> {
+    let attempt = current_attempt(mem, agent_seq, workspace_id, task_id);
+    holding_warnings(&*mem, workspace_id, task_id)
+        .into_iter()
+        .filter(|w| w.get("attempt_id").and_then(Value::as_str) == attempt.as_deref())
+        .collect()
+}
+
+fn current_attempt(
+    mem: &mut dyn MemoryStorage,
+    agent_seq: &std::sync::atomic::AtomicU64,
+    workspace_id: u32,
+    task_id: &str,
+) -> Option<String> {
+    TaskStore::new(mem, HOST_OWNER, agent_seq)
+        .get(workspace_id, &task_id.to_string())
+        .ok()
+        .flatten()?
+        .attempt
+        .map(|a| a.id)
+}
+
+/// 기록을 하나 더한다. 지금 회차의 id 를 `attempt_id` 로 붙인다.
 pub(crate) fn record_holding_warning(
     ctx: &RunnerContext,
     workspace_id: u32,
     task_id: &str,
-    warning: Value,
+    mut warning: Value,
 ) {
     let res = ctx.with_memory(|mem| {
+        if let (Some(attempt), Some(obj)) = (
+            current_attempt(&mut *mem, ctx.agent_seq.as_ref(), workspace_id, task_id),
+            warning.as_object_mut(),
+        ) {
+            obj.insert("attempt_id".into(), attempt.into());
+        }
         let mut items = holding_warnings(&*mem, workspace_id, task_id);
         items.push(warning);
         let excess = items.len().saturating_sub(MAX_HOLDING_WARNINGS);

@@ -370,25 +370,85 @@ fn a_holding_ttl_shorter_than_two_ticks_is_rejected_at_create_and_submit() {
 #[test]
 fn a_lease_lost_before_renewal_is_reported_on_the_task() {
     let (_td, ctx) = ctx();
-    let (svc, _scope) = service(&ctx);
+    let (svc, scope) = service(&ctx);
     let task = sleeper(&ctx);
     let mut exec = HostExecutor::new(ctx.clone());
     let outcome = exec.dispatch(&task);
     let DispatchOutcome::Started(_) = outcome else {
         panic!("dispatch: {outcome:?}");
     };
-    assert!(svc.task_holding_warnings(1, &task.id).is_empty());
+    assert!(svc.task_holding_warnings(&scope, 1, &task.id).is_empty());
     // 러너가 tick 을 건너뛴 사이 TTL 이 지나 다른 holder 가 얻는다.
     std::thread::sleep(Duration::from_millis(TTL_MS + 50));
     assert!(other_gets_db(&ctx));
     exec.maintain();
-    let warnings = svc.task_holding_warnings(1, &task.id);
+    let warnings = svc.task_holding_warnings(&scope, 1, &task.id);
     assert_eq!(warnings.len(), 1, "{warnings:?}");
     assert_eq!(warnings[0]["kind"], "lease");
     assert_eq!(warnings[0]["name"], DB);
     assert_eq!(db_holder(&ctx).as_deref(), Some("other"));
     // 잃은 점유는 다시 갱신하지 않아 기록이 늘지 않는다.
     keep_ticking(&mut exec, Duration::from_millis(TTL_MS));
-    assert_eq!(svc.task_holding_warnings(1, &task.id).len(), 1);
+    assert_eq!(svc.task_holding_warnings(&scope, 1, &task.id).len(), 1);
     exec.release_permit(&task.id);
+}
+
+/// 기록은 그때의 회차 id 를 담고, 조회는 지금 회차의 것만 보인다. retry 로 연 새 회차에 이전 회차의
+/// 경고가 섞이지 않는다.
+#[test]
+fn holding_warnings_show_only_the_current_attempts_records() {
+    let (_td, ctx) = ctx();
+    let (svc, scope) = service(&ctx);
+    let id = "g".to_string();
+    let spec: tasty_agent::task::TaskGraphSpec = serde_json::from_value(serde_json::json!({
+        "contract_version": 2,
+        "tasks": [{"id": id, "command": {"kind": "run", "workspace_id": 1, "command": ["true"]}}]}))
+    .unwrap();
+    let running = |now| {
+        ctx.with_memory(|mem| {
+            TaskStore::new(mem, HOST_OWNER, ctx.agent_seq.as_ref())
+                .set_state(1, &id, TaskState::Running, now)
+                .unwrap()
+                .0
+                .attempt
+                .unwrap()
+                .id
+        })
+    };
+    ctx.with_memory(|mem| {
+        TaskStore::new(mem, HOST_OWNER, ctx.agent_seq.as_ref())
+            .submit_graph(1, spec, 0)
+            .unwrap();
+    });
+    let first = running(10);
+    let record = || {
+        crate::runner_host::holding_warning::record_holding_warning(
+            &ctx,
+            1,
+            &id,
+            serde_json::json!({"kind": "lease", "name": DB, "message": "lost"}),
+        )
+    };
+    record();
+    let shown = svc.task_holding_warnings(&scope, 1, &id);
+    assert_eq!(shown.len(), 1);
+    assert_eq!(shown[0]["attempt_id"], first.as_str());
+
+    ctx.with_memory(|mem| {
+        let mut store = TaskStore::new(mem, HOST_OWNER, ctx.agent_seq.as_ref());
+        store
+            .set_state(1, &id, TaskState::Failed { error: "x".into() }, 20)
+            .unwrap();
+        store.retry(1, &id, false, 30).unwrap();
+    });
+    let second = running(40);
+    assert_ne!(first, second);
+    assert!(
+        svc.task_holding_warnings(&scope, 1, &id).is_empty(),
+        "이전 회차의 경고가 새 회차에 보인다"
+    );
+    record();
+    let shown = svc.task_holding_warnings(&scope, 1, &id);
+    assert_eq!(shown.len(), 1);
+    assert_eq!(shown[0]["attempt_id"], second.as_str());
 }

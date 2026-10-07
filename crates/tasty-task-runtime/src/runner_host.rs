@@ -6,7 +6,7 @@ mod attempt_record;
 mod child_env;
 mod clock;
 mod command_inputs;
-mod holding_warning;
+pub(crate) mod holding_warning;
 mod holdings;
 mod postprocess;
 mod run_group;
@@ -28,7 +28,7 @@ use run_result::{drain_capped, summarize_poll_response};
 pub(crate) use attempt_record::{HANDLE_ATTEMPT_FIELD, dispatch_attempt, handle_value};
 use clock::now_ms;
 use command_inputs::{substitute_lease_resource, substitute_task_outputs};
-pub(crate) use holding_warning::holding_warnings;
+pub(crate) use holding_warning::current_holding_warnings;
 pub(crate) use holdings::{own_lease, own_semaphore, release_own_holdings, resumes_after_restart};
 #[cfg(all(test, unix))]
 pub(crate) use postprocess::postprocess_result_key;

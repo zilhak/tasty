@@ -136,13 +136,17 @@ impl TaskService {
         })
     }
 
-    /// 러너가 TTL 을 갱신하지 못해 task 가 점유를 잃은 기록. 없으면 빈 목록.
+    /// 러너가 TTL 을 갱신하지 못해 task 의 지금 회차가 점유를 잃은 기록. 없으면 빈 목록.
     pub fn task_holding_warnings(
         &self,
+        scope: &TaskScope,
         workspace_id: u32,
         task_id: &TaskId,
     ) -> Vec<serde_json::Value> {
-        self.with_memory(|mem| crate::runner_host::holding_warnings(&*mem, workspace_id, task_id))
+        let seq = scope.agent_seq().clone();
+        self.with_memory(|mem| {
+            crate::runner_host::current_holding_warnings(mem, seq.as_ref(), workspace_id, task_id)
+        })
     }
 
     /// task 와 그 레코드 revision 을 한 번의 잠금 안에서 읽는다.

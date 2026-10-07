@@ -328,7 +328,9 @@ pub fn handle_task_get(
         Ok(Some((t, revision))) => {
             let is_running = matches!(t.state, TaskState::Running);
             let phase = t.phase();
-            let holding_warnings = core.tasks.task_holding_warnings(workspace_id, &task_id);
+            let holding_warnings =
+                core.tasks
+                    .task_holding_warnings(engine.task_scope, workspace_id, &task_id);
             let mut v = serde_json::to_value(t).unwrap_or(Value::Null);
             // 러너가 TTL 을 갱신하지 못해 lease·permit 을 잃은 기록. 없으면 키를 싣지 않는다.
             if !holding_warnings.is_empty()
