@@ -507,11 +507,19 @@ fn render_graph_dot(tasks: &[Task]) -> String {
             TaskState::Waiting => "white",
             TaskState::Unknown => "orange",
         };
+        // 갈래에서 고르지 않아 건너뛴 task 는 실패 전파로 건너뛴 task 와 구분해 라벨과 테두리를 바꾼다.
+        let not_selected = matches!(t.skip, Some(tasty_agent::SkipReason::BranchNotSelected));
+        let (status, style) = if not_selected {
+            ("not selected", "\"filled,dashed\"")
+        } else {
+            (t.state.name(), "filled")
+        };
         out.push_str(&format!(
-            "  \"{}\" [label=\"{}\\n{}\", style=filled, fillcolor={}];\n",
+            "  \"{}\" [label=\"{}\\n{}\", style={}, fillcolor={}];\n",
             t.id,
             escape_dot(&t.name),
-            t.state.name(),
+            status,
+            style,
             color
         ));
     }
@@ -1447,6 +1455,22 @@ mod graph_edge_tests {
         assert_eq!(nodes[2]["skip"], json!({"reason": "branch_not_selected"}));
         assert_eq!(nodes[1]["skip"], Value::Null);
         let dot = render_graph_dot(&decided);
+        assert!(
+            dot.contains(
+                "\"fix\" [label=\"fix\\nnot selected\", style=\"filled,dashed\", fillcolor=lightgray];"
+            ),
+            "{dot}"
+        );
+        let mut cut = decided[2].clone();
+        cut.skip = Some(tasty_agent::SkipReason::UpstreamUnavailable {
+            source: "review".into(),
+            source_state: "failed".into(),
+        });
+        assert!(
+            render_graph_dot(std::slice::from_ref(&cut))
+                .contains("\"fix\" [label=\"fix\\nskipped\", style=filled, fillcolor=lightgray];"),
+            "an upstream skip keeps the skipped label"
+        );
         assert!(
             dot.contains(
                 "\"review\" -> \"fix\" [style=dashed, color=\"#6a5acd66\", fontcolor=gray, label=\"not_selected\"];"

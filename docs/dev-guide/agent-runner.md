@@ -818,7 +818,7 @@ v2 task 의 readiness:
 
 선택되지 않을 수 있는 task(전이 대상, 또는 들어오는 경로가 모두 그런 task 에서만 오는 task)의 출력을 필수 `from_task` 로 읽는 task 는, 그 원본 말고 다른 경로로도 실행될 수 있으면 제출할 때 거절한다. 대안 경로의 값은 `one_of` 로, 없어도 되는 값은 optional·`default` 로 적는다. 같은 갈래 안의 사슬처럼 들어오는 경로가 그 원본뿐이면 받는다.
 
-DAG 요약(`agent.dag_list`·`agent.dag_get`)의 `state_counts.not_selected` 는 `skipped` 중 선택되지 않은 수다. `recovered` 는 `failed` 중 같은 그룹의 fallback 이 대신 성공한 수다(fallback 의 fallback 을 따라간다). 성공·선택되지 않음·fallback 이 대신한 실패만 있으면 `rollup_state` 는 `succeeded` 다. v1 task 의 fallback 에도 같다. `agent.task_graph` 는 전이를 `kind: "transition"` 간선으로 내고 `selection`(`pending`·`selected`·`not_selected`·`unavailable`)을 싣는다. 노드는 `skip` 을 싣고, DOT 형식은 전이 간선에 선택 상태를 라벨로 붙인다(선택된 간선은 굵게, 선택되지 않았거나 쓸 수 없는 간선은 반투명). DAG 화면은 전이 간선을 긴 파선으로 그리고 선택 상태를 굵기와 불투명도로, 선택되지 않은 노드를 `NOT SELECTED` 라벨로 보인다.
+DAG 요약(`agent.dag_list`·`agent.dag_get`)의 `state_counts.not_selected` 는 `skipped` 중 선택되지 않은 수다. `recovered` 는 `failed` 중 같은 그룹의 fallback 이 대신 성공한 수다(fallback 의 fallback 을 따라간다). 성공·선택되지 않음·fallback 이 대신한 실패만 있으면 `rollup_state` 는 `succeeded` 다. v1 task 의 fallback 에도 같다. `agent.task_graph` 는 전이를 `kind: "transition"` 간선으로 내고 `selection`(`pending`·`selected`·`not_selected`·`unavailable`)을 싣는다. 노드는 `skip` 을 싣고, DOT 형식은 전이 간선에 선택 상태를 라벨로 붙이고(선택된 간선은 굵게, 선택되지 않았거나 쓸 수 없는 간선은 반투명), 선택되지 않은 노드를 `not selected` 라벨과 파선 테두리로 그린다. DAG 화면은 전이 간선을 긴 파선으로 그리고 선택 상태를 굵기와 불투명도로, 선택되지 않은 노드를 `NOT SELECTED` 라벨로 보인다.
 
 ### agent task
 
