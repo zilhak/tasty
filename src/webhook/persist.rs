@@ -2,8 +2,8 @@
 //! Temporary는 제외하며 ID·메서드·핸들러·시퀀스·인증·남은 제한을 저장한다.
 //! URL의 포트는 리스너 설정을 따르므로 재시작 후에도 반드시 같은 URL인 것은 아니다.
 //!
-//! 설정 파일의 webhook 배열만 바꾼다. 읽기·파싱에 실패하면 빈 테이블에서 시작하므로
-//! 그 경우 다른 키는 보존되지 않는다. 쓰기 실패는 경고하며 호출자에게 성공을 보장하지 않는다.
+//! 설정 파일의 webhook 배열만 바꾼다. 파일을 읽거나 파싱하지 못하면 쓰지 않고 오류를 돌려준다.
+//! 그 테이블로 다시 쓰면 포트 설정과 다른 등록이 모두 사라지기 때문이다.
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -101,51 +101,33 @@ fn load_persisted() -> Vec<PersistedWebhook> {
     }
 }
 
-/// 읽어 온 설정에서 webhook 배열을 교체한다. 저장 실패는 경고로 남긴다.
-pub(super) fn write(persistent: &[PersistedWebhook]) {
-    let path = config_path();
-    let Some(doc) = merge_webhook_section(&path, persistent) else {
-        return;
-    };
-    render_and_write(&path, &doc);
+/// 읽어 온 설정에서 webhook 배열을 교체한다. 읽기·파싱·저장 실패는 쓰지 않고 오류다.
+pub(super) fn write(persistent: &[PersistedWebhook]) -> Result<(), String> {
+    write_to(&config_path(), persistent)
 }
 
-/// 읽기·파싱 실패는 빈 테이블로 시작한다. 직렬화 실패는 경고 후 None이다.
-fn merge_webhook_section(path: &Path, persistent: &[PersistedWebhook]) -> Option<toml::Table> {
-    let mut doc: toml::Table = std::fs::read_to_string(path)
-        .ok()
-        .and_then(|s| toml::from_str::<toml::Table>(&s).ok())
-        .unwrap_or_default();
+fn write_to(path: &Path, persistent: &[PersistedWebhook]) -> Result<(), String> {
+    let doc = merge_webhook_section(path, persistent)?;
+    let text =
+        toml::to_string_pretty(&doc).map_err(|e| format!("webhooks.toml render failed: {e}"))?;
+    atomic_write(path, &text)
+        .map_err(|e| format!("webhooks.toml write failed ({}): {e}", path.display()))
+}
 
+/// 파일이 없으면 빈 테이블에서 시작한다. 읽기·파싱 실패는 포트 설정과 같은 규칙으로 오류다.
+fn merge_webhook_section(
+    path: &Path,
+    persistent: &[PersistedWebhook],
+) -> Result<toml::Table, String> {
+    let mut doc = tasty_settings::webhook_port_file::read_table(path).map_err(|e| e.to_string())?;
     if persistent.is_empty() {
         doc.remove("webhook");
     } else {
-        match toml::Value::try_from(persistent) {
-            Ok(v) => {
-                doc.insert("webhook".to_string(), v);
-            }
-            Err(e) => {
-                tracing::warn!("webhook persist serialize failed: {e}");
-                return None;
-            }
-        }
+        let value = toml::Value::try_from(persistent)
+            .map_err(|e| format!("webhook persist serialize failed: {e}"))?;
+        doc.insert("webhook".to_string(), value);
     }
-    Some(doc)
-}
-
-/// TOML을 렌더해 저장한다. 실패를 경고하며 호출자에게 Result는 반환하지 않는다.
-fn render_and_write(path: &Path, doc: &toml::Table) {
-    let text = match toml::to_string_pretty(doc) {
-        Ok(t) => t,
-        Err(e) => {
-            tracing::warn!("webhooks.toml render failed: {e}");
-            return;
-        }
-    };
-
-    if let Err(e) = atomic_write(path, &text) {
-        tracing::warn!("webhooks.toml write failed ({}): {e}", path.display());
-    }
+    Ok(doc)
 }
 
 fn atomic_write(path: &Path, text: &str) -> std::io::Result<()> {
@@ -239,6 +221,25 @@ mod tests {
             parsed.webhooks[0].limit,
             PersistedLimit::Count { remaining: 3 }
         ));
+    }
+
+    #[test]
+    fn a_file_that_does_not_parse_is_not_overwritten() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("webhooks.toml");
+        let broken = "port = 40123\n[[webhook]]\nid = \"keepme\"\nthis is not toml\n";
+        std::fs::write(&path, broken).unwrap();
+        let items = vec![PersistedWebhook {
+            id: "deadbeefdeadbeef".to_string(),
+            methods: vec!["POST".to_string()],
+            handler: None,
+            calls: vec![],
+            limit: PersistedLimit::Unlimited,
+            auth: None,
+        }];
+        assert!(write_to(&path, &items).is_err());
+        assert!(write_to(&path, &[]).is_err());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), broken);
     }
 
     #[test]

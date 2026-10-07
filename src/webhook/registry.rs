@@ -113,31 +113,39 @@ pub struct RegisterOutcome {
     pub url: String,
 }
 
-/// 락 안에서 Persistent 항목의 저장을 시도한다. Temporary만 남았으면 webhook 키를 지운다.
-fn persist_locked(s: &WebhookState) {
+/// 락 안에서 Persistent 항목을 저장한다. Temporary만 남았으면 webhook 키를 지운다.
+/// 파일을 읽거나 파싱하지 못하면 쓰지 않고 오류를 돌려준다.
+fn persist_locked(s: &WebhookState) -> Result<(), String> {
     let persistent: Vec<_> = s
         .entries
         .values()
         .filter(|e| e.lifetime.is_persistent())
         .map(super::persist::to_persisted)
         .collect();
-    super::persist::write(&persistent);
+    super::persist::write(&persistent)
+}
+
+/// 응답할 호출자가 없는 저장(만료 정리·호출 차감·복원 정리)은 실패를 경고로 남긴다. 파일은 쓰지 않았다.
+fn persist_or_warn(s: &WebhookState) {
+    if let Err(e) = persist_locked(s) {
+        tracing::warn!("webhook persist skipped: {e}");
+    }
 }
 
 /// 재시작 필터 후 등 외부에서 현재 영속 상태를 파일에 재기록한다.
 pub(super) fn persist_now() {
     let s = lock();
-    persist_locked(&s);
+    persist_or_warn(&s);
 }
 
-/// ID를 발급해 등록하고 URL을 반환한다. Persistent면 저장도 시도한다.
+/// ID를 발급해 등록하고 URL을 반환한다. Persistent면 저장하고, 저장하지 못하면 등록을 되돌리고 오류다.
 pub fn register(
     methods: Vec<String>,
     handler_id: Option<HookHandlerId>,
     calls: Vec<IpcCall>,
     lifetime: Lifetime,
     auth: Option<WebhookAuth>,
-) -> RegisterOutcome {
+) -> Result<RegisterOutcome, String> {
     let mut s = lock();
     let id = gen_opaque_id(&s.entries);
     let url = build_url(&s, &id);
@@ -152,10 +160,13 @@ pub fn register(
             auth,
         },
     );
-    if lifetime.is_persistent() {
-        persist_locked(&s);
+    if lifetime.is_persistent()
+        && let Err(e) = persist_locked(&s)
+    {
+        s.entries.remove(&id);
+        return Err(e);
     }
-    RegisterOutcome { id, url }
+    Ok(RegisterOutcome { id, url })
 }
 
 /// 재시작 복원용 — 영속화된 엔트리를 그대로 in-memory 로 복원한다(id 유지, 저장
@@ -180,18 +191,20 @@ pub fn info(id: &str) -> Option<(WebhookEntry, String)> {
     s.entries.get(id).map(|e| (e.clone(), build_url(&s, &e.id)))
 }
 
-/// 항목이 있었으면 제거하고 true를 반환한다. Persistent면 파일 갱신도 시도한다.
-pub fn unregister(id: &str) -> bool {
+/// 항목이 있었으면 제거하고 true를 반환한다. Persistent면 파일도 갱신하고, 갱신하지 못하면
+/// 제거를 되돌리고 오류다. 되돌리지 않으면 재시작 때 파일에서 다시 살아난다.
+pub fn unregister(id: &str) -> Result<bool, String> {
     let mut s = lock();
-    match s.entries.remove(id) {
-        Some(removed) => {
-            if removed.lifetime.is_persistent() {
-                persist_locked(&s);
-            }
-            true
-        }
-        None => false,
+    let Some(removed) = s.entries.remove(id) else {
+        return Ok(false);
+    };
+    if removed.lifetime.is_persistent()
+        && let Err(e) = persist_locked(&s)
+    {
+        s.entries.insert(id.to_string(), removed);
+        return Err(e);
     }
+    Ok(true)
 }
 
 /// 만료된 항목을 제거하고 ID 목록을 반환한다. Persistent를 제거하면 파일도 갱신하려고 시도한다.
@@ -213,7 +226,7 @@ pub fn sweep() -> Vec<String> {
         }
     }
     if persistent_removed {
-        persist_locked(&s);
+        persist_or_warn(&s);
     }
     expired
 }
@@ -251,7 +264,7 @@ pub(super) fn match_request(
         let persistent = entry.lifetime.is_persistent();
         s.entries.remove(path);
         if persistent {
-            persist_locked(&s);
+            persist_or_warn(&s);
         }
         return MatchResult::Expired;
     }
@@ -275,7 +288,7 @@ pub(super) fn match_request(
         s.entries.remove(path);
     }
     if persistent {
-        persist_locked(&s);
+        persist_or_warn(&s);
     }
     MatchResult::Matched { calls, injector }
 }
@@ -326,6 +339,56 @@ mod tests {
         );
     }
 
+    // 파싱하지 못하는 webhooks.toml을 Persistent 등록·해제가 덮어쓰면 포트 설정과 다른 등록이 사라진다.
+    #[test]
+    fn persistent_changes_leave_an_unparsable_file_byte_for_byte() {
+        let _serial = serial();
+        let _home = crate::test_support::TastyHomeGuard::new();
+        let path = super::super::persist::config_path();
+        let persistent = Lifetime {
+            persistence: Persistence::Persistent,
+            limit: Limit::Unlimited,
+        };
+
+        // 정상 파일에서 하나를 등록해 둔 뒤 파일을 깨뜨린다.
+        let kept = register(vec!["POST".into()], None, vec![], persistent, None)
+            .expect("a readable file accepts the registration");
+        let broken = "port = 40123\n[[webhook]]\nid = \"keepme\"\nthis is not toml\n";
+        std::fs::write(&path, broken).unwrap();
+
+        // 다른 시험도 전역 목록을 쓰므로 거절 전후의 Persistent 수로 비교한다.
+        let persistent_count = || {
+            list()
+                .iter()
+                .filter(|(e, _)| e.lifetime.is_persistent())
+                .count()
+        };
+        let before = persistent_count();
+        let refused = register(vec!["POST".into()], None, vec![], persistent, None);
+        assert!(
+            refused.is_err(),
+            "registration must report the unreadable file"
+        );
+        assert_eq!(
+            persistent_count(),
+            before,
+            "the refused registration is rolled back"
+        );
+
+        assert!(
+            unregister(&kept.id).is_err(),
+            "removal must report the unreadable file"
+        );
+        assert!(
+            info(&kept.id).is_some(),
+            "the refused removal is rolled back"
+        );
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), broken);
+
+        std::fs::remove_file(&path).unwrap();
+        assert_eq!(unregister(&kept.id), Ok(true));
+    }
+
     #[test]
     fn register_list_info_unregister_roundtrip() {
         let _g = serial();
@@ -339,7 +402,8 @@ mod tests {
             calls.clone(),
             temp(Limit::Unlimited),
             None,
-        );
+        )
+        .expect("test register must not fail");
         assert_eq!(out.id.len(), 16); // 8바이트 → 16 hex
         assert!(out.url.contains(&out.id));
 
@@ -359,7 +423,7 @@ mod tests {
             MatchResult::NotFound
         ));
 
-        assert!(unregister(&out.id));
+        assert!(unregister(&out.id).expect("test unregister must not fail"));
         assert!(info(&out.id).is_none());
         assert!(matches!(
             match_request(&out.id, "POST", |_| true),
@@ -376,17 +440,19 @@ mod tests {
             vec![],
             temp(Limit::Unlimited),
             None,
-        );
+        )
+        .expect("test register must not fail");
         let b = register(
             vec!["POST".to_string()],
             None,
             vec![],
             temp(Limit::Unlimited),
             None,
-        );
+        )
+        .expect("test register must not fail");
         assert_ne!(a.id, b.id);
-        unregister(&a.id);
-        unregister(&b.id);
+        unregister(&a.id).expect("test unregister must not fail");
+        unregister(&b.id).expect("test unregister must not fail");
     }
 
     #[test]
@@ -398,7 +464,8 @@ mod tests {
             vec![],
             temp(Limit::CountLimit { remaining: 2 }),
             None,
-        );
+        )
+        .expect("test register must not fail");
         assert!(matches!(
             match_request(&out.id, "POST", |_| true),
             MatchResult::Matched { .. }
@@ -427,7 +494,8 @@ mod tests {
             vec![],
             temp(Limit::TimeLimit { deadline_unix: 1 }),
             None,
-        );
+        )
+        .expect("test register must not fail");
         assert!(matches!(
             match_request(&out.id, "POST", |_| true),
             MatchResult::Expired
@@ -448,7 +516,8 @@ mod tests {
             vec![],
             temp(Limit::CountLimit { remaining: 1 }),
             None,
-        );
+        )
+        .expect("test register must not fail");
         assert!(matches!(
             match_request(&out.id, "GET", |_| true),
             MatchResult::MethodNotAllowed
@@ -457,7 +526,7 @@ mod tests {
             info(&out.id).unwrap().0.lifetime.limit,
             Limit::CountLimit { remaining: 1 }
         ));
-        unregister(&out.id);
+        unregister(&out.id).expect("test unregister must not fail");
     }
 
     #[test]
@@ -469,14 +538,16 @@ mod tests {
             vec![],
             temp(Limit::Unlimited),
             None,
-        );
+        )
+        .expect("test register must not fail");
         let expired = register(
             vec!["POST".to_string()],
             None,
             vec![],
             temp(Limit::TimeLimit { deadline_unix: 1 }),
             None,
-        );
+        )
+        .expect("test register must not fail");
         let swept = sweep();
         assert!(swept.contains(&expired.id));
         assert!(!swept.contains(&live.id));
@@ -486,6 +557,6 @@ mod tests {
             !sweep().contains(&expired.id),
             "한 번 걷어 낸 만료 웹훅을 다음 sweep 이 다시 돌려줬다"
         );
-        unregister(&live.id);
+        unregister(&live.id).expect("test unregister must not fail");
     }
 }

@@ -266,6 +266,7 @@ mod tests {
                 token: "right".into(),
             }),
         )
+        .expect("test register must not fail")
         .id;
 
         let mut wrong = BTreeMap::new();

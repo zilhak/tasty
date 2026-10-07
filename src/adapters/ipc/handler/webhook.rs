@@ -143,7 +143,16 @@ pub fn handle_register(
     };
 
     let auth_json = auth.as_ref().map(auth_summary);
-    let outcome = webhook::register(methods.clone(), handler_id.clone(), calls, lifetime, auth);
+    let outcome =
+        match webhook::register(methods.clone(), handler_id.clone(), calls, lifetime, auth) {
+            Ok(outcome) => outcome,
+            Err(e) => {
+                return JsonRpcResponse::internal_error(
+                    id,
+                    format!("failed to save the persistent webhook; nothing was registered: {e}"),
+                );
+            }
+        };
     JsonRpcResponse::success(
         id,
         json!({
@@ -252,8 +261,13 @@ pub fn handle_unregister(id: serde_json::Value, params: &serde_json::Value) -> J
     let Some(wid) = params.get("id").and_then(|v| v.as_str()) else {
         return JsonRpcResponse::invalid_params(id, "Missing required 'id' parameter");
     };
-    let removed = webhook::unregister(wid);
-    JsonRpcResponse::success(id, json!({ "unregistered": removed, "id": wid }))
+    match webhook::unregister(wid) {
+        Ok(removed) => JsonRpcResponse::success(id, json!({ "unregistered": removed, "id": wid })),
+        Err(e) => JsonRpcResponse::internal_error(
+            id,
+            format!("failed to update the saved webhooks; '{wid}' is still registered: {e}"),
+        ),
+    }
 }
 
 /// 인자가 없으면 실행 중인 리스너를 조회한다(실제로 bind한 주소와 정한 방법, 다음 실행에 쓸 값).
