@@ -109,8 +109,6 @@ fn format_task_list(result: &serde_json::Value) -> Result<()> {
         outln!("No tasks")?;
     } else {
         for t in tasks {
-            let id = t.get("id").and_then(|v| v.as_str()).unwrap_or("?");
-            let name = t.get("name").and_then(|v| v.as_str()).unwrap_or("?");
             outln!("{}", task_list_row(t))?;
         }
     }
