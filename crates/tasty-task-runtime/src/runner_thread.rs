@@ -455,6 +455,7 @@ fn reload_persistent_handles(
     let mut alive: Vec<(TaskId, DispatchHandle)> = Vec::new();
     let mut dead: Vec<(TaskId, Option<String>, String)> = Vec::new();
     let mut stale: Vec<TaskId> = Vec::new();
+    let mut settled: Vec<tasty_agent::Task> = Vec::new();
     let mut precise: Vec<(TaskId, Option<String>, PollOutcome)> = Vec::new();
 
     for e in entries {
@@ -462,6 +463,10 @@ fn reload_persistent_handles(
             HandleClassification::Alive(task_id, handle) => alive.push((task_id, handle)),
             HandleClassification::Dead(task_id, attempt, err) => dead.push((task_id, attempt, err)),
             HandleClassification::Stale(task_id) => stale.push(task_id),
+            HandleClassification::NotRunning(task) => {
+                stale.push(task.id.clone());
+                settled.push(*task);
+            }
             HandleClassification::Precise(task_id, attempt, outcome) => {
                 precise.push((task_id, attempt, outcome))
             }
@@ -469,6 +474,7 @@ fn reload_persistent_handles(
     }
 
     evict_stale_handles(ctx, &scope, &stale);
+    release_settled_holdings(ctx, workspace_id, &settled);
     mark_dead_tasks(ctx, workspace_id, &scope, now, &dead);
     finalize_precise_tasks(ctx, workspace_id, &scope, now, &precise);
 
@@ -489,6 +495,9 @@ enum HandleClassification {
     Alive(TaskId, DispatchHandle),
     Dead(TaskId, Option<String>, String),
     Stale(TaskId),
+    /// handle 이 남았는데 task 는 이미 Running 이 아니다(러너가 꺼진 동안 취소 등). handle 을
+    /// 지우고, 그 task 가 자기 id 로 쥔 점유도 반환한다. 반환할 러너가 그때 없었기 때문이다.
+    NotRunning(Box<tasty_agent::Task>),
     Precise(TaskId, Option<String>, PollOutcome),
 }
 
@@ -519,15 +528,18 @@ fn classify_persisted_handle(
         }
     };
 
-    // Running이 아닌 작업은 handle만 지운다. 현재 구현은 task 조회 오류도 None으로 보아 같은 분류를 한다.
+    // task 가 없으면(조회 오류 포함) handle 만 지운다. Running 이 아니면 쥔 점유도 반환한다.
     let task_opt = ctx.with_memory(|mem| {
         let seq = ctx.agent_seq.clone();
         let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
         store.get(workspace_id, &task_id).ok().flatten()
     });
-    let Some(task) = task_opt.filter(|t| matches!(t.state, TaskState::Running)) else {
+    let Some(task) = task_opt else {
         return HandleClassification::Stale(task_id);
     };
+    if !matches!(task.state, TaskState::Running) {
+        return HandleClassification::NotRunning(Box::new(task));
+    }
     // 본 작업을 마친 후처리 단계는 저장된 handle 이 아니라 회차의 진행으로 복원한다.
     if let Some(h) = restored_postprocess_handle(ctx, workspace_id, &task) {
         return HandleClassification::Alive(task_id, h);
@@ -593,6 +605,18 @@ fn evict_stale_handles(ctx: &RunnerContext, scope: &Scope, stale: &[TaskId]) {
             mem.delete(HOST_OWNER, scope, &handle_key(tid), None).unwrap_or_else(|error| {
                 tracing::warn!(%error, "failed to evict a stale task handle; reload will retry");
             });
+        }
+    });
+}
+
+/// Running 이 아닌 task 는 점유를 쥐지 않는다. 러너가 꺼진 동안 끝나(취소 등) 남은 점유를 반환한다.
+fn release_settled_holdings(ctx: &RunnerContext, workspace_id: u32, settled: &[tasty_agent::Task]) {
+    if settled.is_empty() {
+        return;
+    }
+    ctx.with_memory(|mem| {
+        for task in settled {
+            release_own_holdings(mem, workspace_id, task);
         }
     });
 }

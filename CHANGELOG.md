@@ -165,6 +165,7 @@
 
 ### Fixed
 
+- 러너가 꺼진 동안(러너를 멈췄거나 Tasty 재시작 뒤 아직 켜지 않음) 실행 중인 작업을 취소하면 그 작업이 쥔 세마포어·lease 가 반환되지 않고 남던 문제를 고쳤다. 이제 다음 러너 시작이나 Tasty 시작 때 반환된다. 이전에는 같은 자원을 요구하는 작업이 계속 기다렸다.
 - **Tasty 를 재시작한 뒤 시계가 뒤로 가도 새 작업·그래프가 저장된 작업의 id 를 다시 받지 않는다.** id 순번은 프로세스마다 0 부터 시작하므로, 같은 ms 에 같은 순번이 다시 나오면 이전에는 저장된 작업을 조용히 덮어썼다. 이제 이미 쓰인 id 는 건너뛴다.
 - **`agent dag-list` 도움말이 DAG 를 묶는 연결에 v2 `bindings`·`transitions` 를 함께 적는다.** 목록은 이미 이 연결로 묶고 있었고 도움말만 빠져 있었다.
 - **`agent task-get` 이 후처리 실패의 error 줄에 단계 이름을 두 번 적지 않는다.** `error: postprocess: postprocess nonzero_exit: …` 가 `error: postprocess nonzero_exit: …` 로 보인다.

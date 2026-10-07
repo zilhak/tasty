@@ -240,3 +240,88 @@ fn the_runner_returns_the_permit_of_a_run_it_adopted() {
     exec.release_permit(&id);
     assert!(gpu_holders(&ctx).is_empty());
 }
+
+fn cancel(ctx: &RunnerContext, id: &str) {
+    ctx.with_memory(|mem| {
+        TaskStore::new(mem, HOST_OWNER, ctx.agent_seq.as_ref())
+            .set_state(1, &id.to_string(), TaskState::Cancelled, 3000)
+            .unwrap();
+    });
+}
+
+/// 점유(semaphore·lease)를 쥔 Running run 하나. 프로세스는 살아 있다.
+fn running_run_with_holdings(ctx: &RunnerContext) -> String {
+    let id = running_holder(
+        ctx,
+        serde_json::json!({"semaphore": {"name": "gpu"}, "lease": {"resource": "db"}}),
+    );
+    gpu_with_one_permit(ctx, &id);
+    ctx.with_memory(|mem| {
+        let acquired = LeaseStore::new(mem, HOST_OWNER)
+            .acquire(1, "db", &id, None, LeaseMode::Fail, 1000)
+            .unwrap()
+            .acquired;
+        assert!(acquired);
+    });
+    put_run_handle(ctx, &id, std::process::id());
+    id
+}
+
+fn lease_holder(ctx: &RunnerContext) -> Option<String> {
+    ctx.with_memory(|mem| {
+        LeaseStore::new(mem, HOST_OWNER)
+            .get(1, "db")
+            .unwrap()
+            .map(|l| l.holder)
+    })
+}
+
+fn handle_left(ctx: &RunnerContext, id: &str) -> bool {
+    ctx.with_memory(|mem| {
+        mem.get(&Scope::Workspace(1), &handle_key(id))
+            .unwrap()
+            .is_some()
+    })
+}
+
+/// 재시작 뒤 러너를 켜기 전에 취소한 run: 다음 부팅 정리가 남은 점유를 반환한다.
+#[test]
+fn a_run_cancelled_while_no_runner_watched_it_returns_its_holdings_on_restart() {
+    let (_td, ctx) = ctx();
+    let id = running_run_with_holdings(&ctx);
+    // 재시작: 살아 있는 Run 이라 점유를 유지한다.
+    super::super::purge_stale_agent_state_on_boot(&ctx, &[1]);
+    assert_eq!(gpu_holders(&ctx), vec![id.clone()]);
+
+    cancel(&ctx, &id);
+    super::super::purge_stale_agent_state_on_boot(&ctx, &[1]);
+    assert!(
+        gpu_holders(&ctx).is_empty(),
+        "취소한 run 의 permit 이 남았다"
+    );
+    assert_eq!(lease_holder(&ctx), None, "취소한 run 의 lease 가 남았다");
+    assert!(!handle_left(&ctx, &id));
+    assert!(another_task_gets_gpu(&ctx));
+}
+
+/// 러너를 멈춘 동안 취소한 run: 러너를 다시 켤 때 정리가 남은 점유를 반환한다.
+#[test]
+fn a_run_cancelled_while_the_runner_was_stopped_returns_its_holdings_on_start() {
+    let (_td, ctx) = ctx();
+    let id = running_run_with_holdings(&ctx);
+    cancel(&ctx, &id);
+
+    let registry = crate::runner_thread::RunnerRegistry::new();
+    assert!(registry.start(ctx.clone(), 1));
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while !gpu_holders(&ctx).is_empty() && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    registry.stop(1);
+    assert!(
+        gpu_holders(&ctx).is_empty(),
+        "취소한 run 의 permit 이 남았다"
+    );
+    assert_eq!(lease_holder(&ctx), None, "취소한 run 의 lease 가 남았다");
+    assert!(!handle_left(&ctx, &id));
+}
