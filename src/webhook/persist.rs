@@ -15,12 +15,9 @@ use super::lifetime::{Lifetime, Limit, Persistence, now_unix};
 use super::registry::WebhookEntry;
 use crate::hook_handler::{HookHandlerId, IpcCall};
 
-/// 데이터 루트가 없으면 임시 디렉터리의 공유 경로를 사용한다.
+/// 포트 설정과 같은 파일이어야 하므로 경로 규칙은 `webhook_port_file::path` 하나를 쓴다.
 pub(super) fn config_path() -> PathBuf {
-    tasty_utils::path::tasty_home()
-        .map(|d| d.join("webhooks.toml"))
-        // 이유: 홈이 없을 때도 포트 설정과 영속 등록이 같은 사용자 설정 파일을 공유한다.
-        .unwrap_or_else(|| std::env::temp_dir().join("tasty-webhooks.toml"))
+    tasty_settings::webhook_port_file::path()
 }
 
 /// 영속화된 웹훅 한 건 (`[[webhook]]`).
