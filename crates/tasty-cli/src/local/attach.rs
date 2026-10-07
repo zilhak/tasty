@@ -95,6 +95,14 @@ impl DumpHeartbeat {
     }
 }
 
+/// 수집 루프가 `wait` 동안 다음 프레임을 기다린다. 시험의 가짜 시계는 실제 경과 대신
+/// 루프가 넘긴 이 대기만큼 간다 — 루프가 계산과 다른 시간을 기다리면 Ping 수가 달라진다.
+fn dump_recv<T>(rx: &mpsc::Receiver<T>, wait: Duration) -> Result<T, mpsc::RecvTimeoutError> {
+    #[cfg(test)]
+    dump_heartbeat_tests::advance_fake(wait);
+    rx.recv_timeout(wait)
+}
+
 /// dump 수집 창과 heartbeat 이 읽는 시계. 시험은 스레드별 가짜 시계를 끼워 스케줄러
 /// 지연과 무관하게 Ping 수를 잰다.
 fn dump_now() -> Instant {
@@ -605,7 +613,7 @@ fn run_workspace_mirror_dump(
     let mut lost = 0u64;
     let mut heartbeat = DumpHeartbeat::start(dump_now());
     while let Some(wait) = heartbeat.next_wait(&mut writer, deadline) {
-        match rx.recv_timeout(wait) {
+        match dump_recv(&rx, wait) {
             Ok(frame) => match frame.tag {
                 StreamTag::Data => {
                     if let Some((sid, payload)) = stream::decode_mux(&frame.payload)
@@ -718,7 +726,7 @@ fn run_mirror_dump(
     let mut lost = 0u64;
     let mut heartbeat = DumpHeartbeat::start(dump_now());
     while let Some(wait) = heartbeat.next_wait(&mut writer, deadline) {
-        match rx.recv_timeout(wait) {
+        match dump_recv(&rx, wait) {
             Ok(frame) => match frame.tag {
                 StreamTag::Data => {
                     mirror.feed_bytes(&frame.payload);
@@ -1495,21 +1503,21 @@ mod dump_heartbeat_tests {
     };
 
     thread_local! {
-        /// (기준 시각, 읽은 횟수). 설정된 스레드에서 `dump_now` 는 읽을 때마다 한 주기씩 간다.
-        static FAKE_CLOCK: Cell<Option<(Instant, u32)>> = const { Cell::new(None) };
+        /// 설정된 스레드의 가짜 현재 시각. 읽어도 가지 않고 `dump_recv` 의 대기만큼만 간다.
+        static FAKE_CLOCK: Cell<Option<Instant>> = const { Cell::new(None) };
     }
 
     pub(super) fn fake_now() -> Option<Instant> {
-        FAKE_CLOCK.with(|c| {
-            let (base, reads) = c.get()?;
-            c.set(Some((base, reads + 1)));
-            Some(base + dump_heartbeat_interval() * reads)
-        })
+        FAKE_CLOCK.with(Cell::get)
+    }
+
+    pub(super) fn advance_fake(wait: Duration) {
+        FAKE_CLOCK.with(|c| c.set(c.get().map(|now| now + wait)));
     }
 
     /// `f` 를 가짜 시계로 돌린다. 시험 스레드에만 걸리고 reader 스레드는 시계를 읽지 않는다.
     fn with_fake_clock<R>(f: impl FnOnce() -> R) -> R {
-        FAKE_CLOCK.with(|c| c.set(Some((Instant::now(), 0))));
+        FAKE_CLOCK.with(|c| c.set(Some(Instant::now())));
         let out = f();
         FAKE_CLOCK.with(|c| c.set(None));
         out
@@ -1590,11 +1598,11 @@ mod dump_heartbeat_tests {
         let seen = server.join().expect("server thread");
         assert!(!seen.timed_out, "dump 가 끝났는데 Detach 가 오지 않았다");
         assert!(seen.detached, "dump 가 끝나면 Detach 로 놓아야 한다");
-        // 가짜 시계는 읽을 때마다 한 주기 간다. 창 끝·시작 시각을 읽은 뒤 루프 머리가 매번
-        // 주기에 닿으므로, 창의 주기 수에서 그 두 번을 뺀 만큼 Ping 이 나간다.
+        // 가짜 시계는 루프가 기다린 만큼 간다. 첫 Ping 은 한 주기 뒤이고 창 끝에서는 보내지
+        // 않으므로, 창 안의 주기 경계마다 한 번씩 창의 주기 수보다 하나 적게 나간다.
         assert_eq!(
             seen.pings,
-            (LONG_DUMP_PERIODS - 2) as usize,
+            (LONG_DUMP_PERIODS - 1) as usize,
             "창 동안 주기마다 Ping 을 보내야 한다"
         );
     }
