@@ -44,7 +44,7 @@
 
 ### 예산을 다 쓴 후처리 실패
 
-재시도 예산을 다 쓴 후처리 실패는 그 task 의 실패로 끝내고, 후처리만 다시 실행하는 수동 재시도는 두지 않는다. 그 갈래는 일반 실패와 같이 실패 정책(하류 건너뛰기·`on_failure` fallback)을 따른다. 그래프 전체의 결과는 DAG 요약이 나눠 보인다. 진행할 작업이 남은 동안은 진행 상태이고, 끝났을 때 실패와 성공이 섞였으면 `partially_failed` 로 실패만 있는 그래프와 구별한다. 판단 순서는 [agent-collaboration](../features/agent-collaboration/index.md)에 있다.
+재시도 예산을 다 쓴 후처리 실패는 그 task 의 실패로 끝내고, 후처리만 다시 실행하는 수동 재시도는 두지 않는다. 그 갈래는 일반 실패와 같이 실패 정책(하류 건너뛰기·`on_failure` fallback)을 따른다. 그래프 전체의 결과는 DAG 요약이 나눠 보인다. 진행할 작업이 남은 동안은 진행 상태이고, 끝났을 때 끝까지 성공한 다른 갈래가 있으면 `partially_failed` 로, 성공한 갈래가 없는 그래프(`failed`)와 구별한다. 판단 순서는 [agent-collaboration](../features/agent-collaboration/index.md)에 있다.
 
 ## Consequences
 
