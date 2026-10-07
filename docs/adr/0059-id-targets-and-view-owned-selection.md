@@ -61,7 +61,7 @@ surface ID와 standalone PTY ID는 겹치지 않는 범위를 쓰며([headless P
 - 인스턴스 기록 파일, D-Bus 이름, 대기 기한, 응답 없음·연결 끊김 처리, `launch.log`는 [레이아웃 저장](../features/layout-persistence/index.md#같은-홈의-다시-실행)에, OS별 활성화 경로는 [포커스 정책](../design/policies/focus.md#같은-홈으로-다시-실행했을-때-release-단일-실행)에 있다.
 - 알려진 한계
   - X11에는 위조할 수 없는 사용자 조작 증거가 없다. startup id와 타임스탬프는 같은 사용자의 어떤 프로세스든 만들 수 있다. 같은 프로세스는 원래 `xdotool windowactivate`로 같은 일을 할 수 있다.
-  - Windows에서 증거는 실행 방식이 아니라 포그라운드 권한이다. 사용자가 앞에 있는 터미널에서 `tasty`를 치면 그 실행도 권한을 받아 기존 창을 올리는 쪽으로 간다(Linux 터미널 실행과 다르다, 실기 미측정).
+  - Windows에서 증거는 실행 방식이 아니라 포그라운드 권한이다. 사용자가 앞에 있는 터미널에서 `tasty`를 치면 그 실행도 권한을 받아 기존 창을 올리는 쪽으로 간다(Linux 터미널 실행과 다르다, 실 기기 미측정).
   - Windows 등록 메시지는 같은 데스크톱의 어떤 프로세스든 보낼 수 있고, `AllowSetForegroundWindow`는 포그라운드 잠금 시간이 지나면 사용자가 실행하지 않은 프로세스에서도 성공한다. 같은 사용자의 프로세스는 원래 `ShowWindow`·`SetForegroundWindow`로 같은 일을 할 수 있다.
   - Wayland에는 트레이 숨김 상태가 없다(winit의 Wayland `set_visible`이 동작하지 않는다). 상류 winit에는 외부 xdg-activation 토큰으로 이미 있는 창을 활성화하는 API가 없어, Tasty가 쓰는 winit 포크에 `WindowExtWayland::activate_with_token`을 더했다. 두 번째 실행이 받은 토큰으로 기존 창에 `xdg_activation_v1.activate`를 보낸다. 앞으로 올릴지는 컴포지터가 토큰의 시각으로 정하며, 오래된 토큰이면 주의 표시만 할 수 있다. 토큰이 없거나 컴포지터가 `xdg_activation_v1`을 제공하지 않으면 다시 보이기만 하고 앞으로 가져오지 못해 무반응이 되므로, 그때는 기존 창을 두고 새 창을 연다. 토큰이 없으면 토큰 없는 새 창이고, `xdg_activation_v1`이 없으면 토큰을 실은 새 창이다. 새 창에 실은 토큰은 생성 때 한 번만 쓴다. X11처럼 등록 뒤 다시 요청하지 않는 것은 컴포지터가 한 번 쓴 토큰을 무효로 할 수 있어서다.
 

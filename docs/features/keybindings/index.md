@@ -227,8 +227,8 @@ Option 시퀀스·튜플 원소와 중첩 Option의 Some(None)은 표현을 다�
   재현해도 결과가 같다).
 - 실행 검증은 Linux/X11 만 됐다. Windows 는 `cargo check --target x86_64-pc-windows-gnu`
   타입 검증까지, macOS 는 로컬 크로스 툴체인이 없어 컴파일 검증도 하지 못했다 — 둘 다
-  실기 미검증이다. 스캔코드 → `PhysicalKey` 변환도 같은 경계다(Linux 만 실측, 나머지 둘은
-  winit 구현 대조까지). 비라틴 레이아웃 실기 전환 확인도 Linux/X11 에서만 했다.
+  실 기기 미검증이다. 스캔코드 → `PhysicalKey` 변환도 같은 경계다(Linux 만 실측, 나머지 둘은
+  winit 구현 대조까지). 비라틴 레이아웃 전환의 실 기기 확인도 Linux/X11 에서만 했다.
 
 ### 오버레이가 열려 있을 때 — 단축키는 **전부** 막히고, Escape 가 푼다
 

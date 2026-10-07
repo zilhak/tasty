@@ -136,7 +136,7 @@ define_class!(
             tracing::debug!("WebView surface {sid}: load started");
             self.ivars().nav_state.set(NavState::Loading);
             *self.ivars().chrome_navigation.borrow_mut() = navigation.map(|n| n.retain());
-            // 정책 결정에서 게이트가 시작한 로드라면 이 navigation이 새 세대다(실기 미측정).
+            // 정책 결정에서 게이트가 시작한 로드라면 이 navigation이 새 세대다(실 기기 미측정).
             if self.ivars().gate_load_pending.replace(false) {
                 *self.ivars().gate_navigation.borrow_mut() = navigation.map(|n| n.retain());
             }
@@ -196,7 +196,7 @@ define_class!(
             self.ivars().gate_navigation_failed(navigation);
         }
 
-        /// web content process가 끝나면 Linux처럼 게이트 로드를 끝낸다(ADR-0053, 실기 미측정).
+        /// web content process가 끝나면 Linux처럼 게이트 로드를 끝낸다(ADR-0053, 실 기기 미측정).
         /// 실패 콜백이 뒤따라 와도 finished()는 로드 중이 아닐 때 아무것도 하지 않는다.
         #[unsafe(method(webViewWebContentProcessDidTerminate:))]
         fn web_content_process_did_terminate(&self, _web_view: &WKWebView) {
@@ -253,7 +253,7 @@ define_class!(
                         // SAFETY: main thread WebKit delegate 호출. preferences는 이 호출 동안 유효하다.
                         unsafe { preferences.setAllowsContentJavaScript(js) };
                     }
-                    // 서브프레임은 기본 preferences(JS 켬) 대신 main frame 문서에 대한 판단을 받는다(실기 미측정).
+                    // 서브프레임은 기본 preferences(JS 켬) 대신 main frame 문서에 대한 판단을 받는다(실 기기 미측정).
                     Some(false) => {
                         let js = gate.effective_js();
                         // SAFETY: main thread WebKit delegate 호출. preferences는 이 호출 동안 유효하다.

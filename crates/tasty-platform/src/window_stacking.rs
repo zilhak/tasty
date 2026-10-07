@@ -16,7 +16,7 @@
 //!   (`SW_SHOWNOACTIVATE` — 활성화 없음)으로 하고, z-order 만 `SetWindowPos` 로 사용자 창
 //!   바로 아래에 건다. 보이기 전과 뒤에 한 번씩 건다. 그 사이에 창이 맨 위에 보이는 틈은
 //!   생기지 않을 것으로 본다 — winit 의 `set_visible` 은 이벤트 루프 스레드에서 동기로 돌고,
-//!   `apply_diff` 는 `SW_SHOWNOACTIVATE` 만 부르며 z-order 를 올리는 호출이 없다. 실기
+//!   `apply_diff` 는 `SW_SHOWNOACTIVATE` 만 부르며 z-order 를 올리는 호출이 없다. 실 기기
 //!   미측정이다.
 //! - **X11**: winit 이 `with_active` 를 무시하고, 보일 때 `stack_mode=ABOVE` 를 건다.
 //!   map 전에 EWMH `_NET_WM_USER_TIME = 0`(초기 포커스를 주지 말라)을 걸고, map 은 winit 으로
@@ -97,7 +97,7 @@ mod imp {
         place_below(new, below)?;
         // `with_active(false)` 로 만든 창이라 winit 은 `SW_SHOWNOACTIVATE` 로 보인다.
         window.set_visible(true);
-        // 보이는 순간 z-order 가 바뀌지는 않을 것으로 보지만(모듈 문서) 실기로 재지 못해
+        // 보이는 순간 z-order 가 바뀌지는 않을 것으로 보지만(모듈 문서) 실 기기로 재지 못해
         // 한 번 더 건다. 여기서 실패해도 창은 이미
         // 보이고, 호출자의 `set_visible(true)` 폴백은 winit 안에서 아무것도 안 한다.
         place_below(new, below)

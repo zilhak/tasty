@@ -388,7 +388,7 @@ impl PlatformWebView {
                 .add_NavigationCompleted(&h_done, &mut tok_done)
                 .map_err(|e| transient(format!("add_NavigationCompleted failed: {e}")))?;
 
-            // main frame 문서를 그리던 process가 끝나면 Linux처럼 게이트 로드를 끝낸다(ADR-0053, 실기 미측정).
+            // main frame 문서를 그리던 process가 끝나면 Linux처럼 게이트 로드를 끝낸다(ADR-0053, 실 기기 미측정).
             // NavigationCompleted가 뒤따라 와도 finished()는 로드 중이 아닐 때 아무것도 하지 않는다.
             // iframe·GPU·utility process 종료는 main frame 로드를 끝내지 않으므로 건너뛴다.
             let nav_failed = nav_state.clone();

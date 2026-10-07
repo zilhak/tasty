@@ -44,7 +44,7 @@ native webview 창은 egui보다 위에서 마우스를 직접 받는다. 그래
 Linux에서는 webview가 surface를 꽉 채우고, 분할선 hit 띠와 창 리사이즈 밴드에 겹치는 부분만 X 창의 input shape에서 뺀다.
 X 서버는 input shape 밖의 포인터 이벤트를 자손 창으로 내려보내지 않고 부모 창(winit)에 보낸다. 화면에는 그 띠에도 페이지가 보인다.
 구멍은 host 판정(분할선 `|p - d| < reach`, 창 가장자리 `x <= band`·`x >= 너비 - band`)이 보는 정수 픽셀과 같게 만들고, X 창에 XFixes로 물리 px 그대로 설정한다. GDK input shape는 GDK 논리 px 단위라 배율 2에서 홀수 경계를 나타내지 못한다.
-macOS와 Windows는 아직 같은 방법을 구현하지 않았다. 코드 경로는 pane 콘텐츠 영역 외곽에 닿는 변에 분할선 입력 폭만큼 여백을 두고, 그 여백의 chrome 글자를 webview 영역 안으로 자른다. 이 경로는 이 결정 이후 macOS·Windows 실기에서 측정하지 않았다.
+macOS와 Windows는 아직 같은 방법을 구현하지 않았다. 코드 경로는 pane 콘텐츠 영역 외곽에 닿는 변에 분할선 입력 폭만큼 여백을 두고, 그 여백의 chrome 글자를 webview 영역 안으로 자른다. 이 경로는 이 결정 이후 macOS·Windows 실 기기에서 측정하지 않았다.
 
 ## Consequences
 

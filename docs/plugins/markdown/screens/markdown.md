@@ -142,7 +142,7 @@ macOS·Windows에서 실제 실행한 결과는 없다.
   치환된 뒤의 코드는 어차피 원본과 다른 모양이라 "복사"의 의미가 모호해지기 때문). highlight.js
   는 반대로 순서 문제가 없다 — `highlightElement` 는 기존 문자를 `<span class="hljs-*">` 로
   감쌀 뿐 절대 바꾸지 않으므로(실제 vendor 번들을 WebKitGTK 엔진에 로드해 하이라이팅 전/후
-  `textContent` 를 직접 비교 — 아래 "실기 검증" 참조), 클릭 시점에 `code.textContent` 를 읽으면
+  `textContent` 를 직접 비교 — 아래 "실제 실행 검증" 참조), 클릭 시점에 `code.textContent` 를 읽으면
   하이라이팅 완료 여부와 무관하게 항상 원본 코드 텍스트가 나온다.
 - **클립보드**: 우선 `navigator.clipboard.writeText()`, 실패(구현 부재 또는 promise reject) 시
   오프스크린 `<textarea>` + `document.execCommand('copy')` 로 폴백한다.
