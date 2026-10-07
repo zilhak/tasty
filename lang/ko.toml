@@ -2002,7 +2002,7 @@ fda_stale = "**전체 디스크 접근 권한:** Tasty 에 이 권한이 있었�
 fda_revoked = "**전체 디스크 접근 권한:** Tasty 에 이 권한이 있었지만 Tasty 밖에서 꺼졌습니다. *시스템 설정 > 개인정보 보호 및 보안 > 전체 디스크 접근 권한*에서 Tasty 를 다시 켜 주세요."
 fda_covers = "**이 권한이 덮는 범위:** 이 권한을 주면 파일 접근 프롬프트(다른 앱의 데이터, 다운로드, 문서, 데스크탑, 마운트된 볼륨)가 사라집니다. 다만 다른 앱 제어(Automation / Apple Events, 예: osascript)·화면 기록·손쉬운 사용은 별개 권한이라 그대로 남습니다."
 screen_recording = "**화면 기록:** 스크린샷 기능이 사용합니다. *시스템 설정 > 개인정보 보호 및 보안 > 화면 및 시스템 오디오 기록*에서 켭니다. 한 번 거부하면 앱이 다시 물을 수 없고 시스템 설정에서만 켤 수 있습니다."
-self_built = "Tasty 를 직접 빌드해 쓴다면 먼저 \"Tasty Dev\" 인증서로 서명하세요(`./scripts/macos-codesign-identity.sh --create`). ad-hoc 서명 빌드는 재빌드할 때마다 macOS 에 다른 앱으로 보여서 권한이 매번 초기화됩니다."
+self_built = "내려받은 배포본과 직접 빌드한 Tasty 모두 ad-hoc 서명이라, 업데이트하거나 다시 빌드할 때마다 macOS 에 다른 앱으로 보여 이전 권한이 더 이상 적용되지 않습니다. Tasty 를 직접 빌드해 쓴다면 먼저 \"Tasty Dev\" 인증서로 서명하세요(`./scripts/macos-codesign-identity.sh --create`)."
 closing = "권한을 주면 이 안내는 더 이상 뜨지 않습니다. 안내를 끄는 설정은 없습니다. 껐다는 기록을 남기면 나중에 권한이 초기화됐을 때 알려줄 방법이 없어지기 때문입니다."
 open_settings = "권한 설정 열기"
 

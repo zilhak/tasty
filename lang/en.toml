@@ -2008,7 +2008,7 @@ fda_stale = "**Full Disk Access:** Tasty had this permission, but Tasty has chan
 fda_revoked = "**Full Disk Access:** Tasty had this permission, and it was turned off outside Tasty. Turn it back on for Tasty in *System Settings > Privacy & Security > Full Disk Access*."
 fda_covers = "**What it covers:** Granting it removes the file-access prompts (other apps' data, Downloads, Documents, Desktop and mounted volumes). It does not cover controlling other apps (Automation / Apple Events, e.g. osascript), screen recording, or accessibility: those are separate permissions and will still prompt."
 screen_recording = "**Screen recording:** this is used by the screenshot feature. Turn it on in *System Settings > Privacy & Security > Screen & System Audio Recording*. Once you deny it, the app cannot ask again and only System Settings can turn it back on."
-self_built = "If you build Tasty yourself, sign it with the \"Tasty Dev\" certificate first (`./scripts/macos-codesign-identity.sh --create`). Ad-hoc signed builds look like a different app to macOS after every rebuild, so the permission is discarded each time."
+self_built = "Downloaded releases and builds you make yourself are both ad-hoc signed, so after every update or rebuild macOS sees a different app and the earlier permission no longer applies. If you build Tasty yourself, sign it with the \"Tasty Dev\" certificate first (`./scripts/macos-codesign-identity.sh --create`)."
 closing = "Once you grant them, this notice stops appearing. There is no setting to turn it off, because recording that you dismissed it would leave no way to tell you when a permission is reset later."
 open_settings = "Open permission settings"
 
