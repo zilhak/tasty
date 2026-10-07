@@ -8,7 +8,8 @@
 //! 처음 읽을 때 지운다. 다른 값은 사용자가 정한 것으로 남긴다. 이 모듈이 파일을 쓸 때마다 형식 표시를 함께 쓴다.
 //!
 //! TOML 테이블에서 port만 바꿔 읽어 온 다른 키(`[[webhook]]` 영속 등록 등)를 보존한다.
-//! 읽기·파싱 실패 시에는 빈 테이블로 처리하므로 기존 키 보존을 보장하지 못한다.
+//! 파일을 읽거나 파싱하지 못하면 쓰지 않는다. 그 테이블로 다시 쓰면 다른 키가 모두 사라지기 때문이다.
+//! 읽기는 저장 포트가 없는 것으로 다루고(경고), 저장·삭제는 오류를 돌려준다.
 
 use std::path::{Path, PathBuf};
 
@@ -27,19 +28,19 @@ pub fn path() -> PathBuf {
         .unwrap_or_else(|| std::env::temp_dir().join("tasty-webhooks.toml"))
 }
 
-/// 파일을 `toml::Table` 로 읽는다. 없거나 파싱 실패면 빈 테이블(파싱 실패는 warn).
-pub fn read_table(path: &Path) -> toml::Table {
+/// 파일을 `toml::Table` 로 읽는다. 파일이 없으면 빈 테이블이고, 읽기·파싱 실패는 오류다.
+pub fn read_table(path: &Path) -> std::io::Result<toml::Table> {
     let text = match std::fs::read_to_string(path) {
         Ok(t) => t,
-        Err(_) => return toml::Table::new(),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(toml::Table::new()),
+        Err(e) => return Err(e),
     };
-    match text.parse::<toml::Table>() {
-        Ok(t) => t,
-        Err(e) => {
-            tracing::warn!("webhooks.toml parse failed ({e}); treating as empty");
-            toml::Table::new()
-        }
-    }
+    text.parse::<toml::Table>().map_err(|e| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("{} is not valid TOML: {e}", path.display()),
+        )
+    })
 }
 
 /// 같은 디렉터리의 임시 파일을 쓴 뒤 대상 경로로 교체한다.
@@ -91,8 +92,17 @@ fn migrate(path: &Path, table: &mut toml::Table) {
 }
 
 /// 사용자가 명시로 정한 포트. 없거나 범위 밖이면 None이다. 읽을 때 이전 파일을 정리한다.
+/// 파일을 읽지 못하면 경고하고 None이며 파일은 그대로 둔다.
 pub fn read_port(path: &Path) -> Option<u16> {
-    let mut table = read_table(path);
+    let mut table = match read_table(path) {
+        Ok(table) => table,
+        Err(e) => {
+            tracing::warn!(
+                "webhooks.toml unreadable ({e}); ignoring its port and leaving the file as it is"
+            );
+            return None;
+        }
+    };
     migrate(path, &mut table);
     port_from_table(&table)
 }
@@ -112,7 +122,7 @@ pub fn clear_port(path: &Path) -> std::io::Result<()> {
 }
 
 fn update(path: &Path, change: impl FnOnce(&mut toml::Table)) -> std::io::Result<()> {
-    let mut table = read_table(path);
+    let mut table = read_table(path)?;
     migrate(path, &mut table);
     change(&mut table);
     table.insert(FORMAT_KEY.into(), toml::Value::Integer(FORMAT));
@@ -141,7 +151,7 @@ mod tests {
         let (_dir, path) = file();
         std::fs::write(&path, "port = 28429\n[[webhook]]\nid = \"a\"\n").unwrap();
         assert_eq!(read_port(&path), None);
-        let table = read_table(&path);
+        let table = read_table(&path).unwrap();
         assert!(table.get("port").is_none());
         assert_eq!(table.get("format").and_then(|v| v.as_integer()), Some(2));
         assert!(table.get("webhook").is_some(), "other keys stay");
@@ -164,13 +174,25 @@ mod tests {
         let (_dir, path) = file();
         std::fs::write(&path, "keep_me = \"s5\"\nport = 100\n").unwrap();
         set_port(&path, 40000).unwrap();
-        let table = read_table(&path);
+        let table = read_table(&path).unwrap();
         assert_eq!(table.get("port").and_then(|v| v.as_integer()), Some(40000));
         assert_eq!(
             table.get("keep_me").and_then(|v| v.as_str()),
             Some("s5"),
             "set_port가 다른 설정 키를 보존해야 한다"
         );
+    }
+
+    #[test]
+    fn a_file_that_does_not_parse_is_left_byte_for_byte() {
+        let (_dir, path) = file();
+        let broken = "port = 40123\n[[webhook]]\nid = \"keepme\"\nthis is not toml\n";
+        std::fs::write(&path, broken).unwrap();
+        assert_eq!(read_port(&path), None);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), broken);
+        assert!(set_port(&path, 40000).is_err());
+        assert!(clear_port(&path).is_err());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), broken);
     }
 
     #[test]
