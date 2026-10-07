@@ -720,9 +720,10 @@ impl App {
             // 리스너가 참조할 훅 레지스트리를 먼저 채운다. 웹훅 시작 실패는 비치명적 경고로 알린다.
             crate::hook_handler::install_default_sources();
             crate::completion_strategy::install_default_sources();
+            let reservation = self.hub.webhook.take();
             let report =
-                crate::webhook::init_from_config(injector.clone(), self.services.ports.clone());
-            if let Some(msg) = report.user_warning() {
+                crate::webhook::start(reservation, injector.clone(), self.services.ports.clone());
+            if let Some(msg) = report.warning() {
                 state.toasts.push(
                     msg,
                     crate::adapters::ui::ToastKind::Warning,

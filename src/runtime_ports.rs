@@ -13,10 +13,21 @@ use std::sync::OnceLock;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum PortSource {
+    /// 실행 인자로 지정했다.
+    Argument,
     /// 설정 파일에 저장한 값이다.
     Config,
+    /// 명시 지정 없이 기본값부터 차례로 시도해 얻었다.
+    Probe,
     /// OS가 고른 빈 포트다(IPC).
     Dynamic,
+}
+
+impl PortSource {
+    /// 실행 인자나 설정으로 직접 지정한 포트인지.
+    pub(crate) fn is_explicit(self) -> bool {
+        matches!(self, Self::Argument | Self::Config)
+    }
 }
 
 /// bind에 성공한 주소와 그 출처.

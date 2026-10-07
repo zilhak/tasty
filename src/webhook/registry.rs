@@ -74,15 +74,6 @@ pub(super) fn is_bound() -> bool {
     lock().bound
 }
 
-/// 리스너가 bind한 포트(`webhook.config` 조회용). bind하지 못했으면 `None`.
-pub fn bound_port() -> Option<u16> {
-    lock().ports.as_ref()?.webhook_port()
-}
-
-pub fn is_listener_bound() -> bool {
-    lock().bound
-}
-
 pub(super) fn mark_bound() {
     lock().bound = true;
 }

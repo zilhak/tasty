@@ -9,70 +9,26 @@ use std::thread;
 
 use serde_json::Value;
 
-use super::WebhookInitReport;
 use super::abuse;
 use super::ack::{AckStatus, build_ack};
 use super::registry::{self, MatchResult};
 use crate::hook_handler::{SequenceOrigin, SubstitutionContext, execute_sequence};
 use tasty_ipc::host_call::HostIpcInjector;
 
-/// 설정 포트에 bind한다. 실패하면 다른 포트로 재시도하지 않고 보고서를 반환한다.
-pub fn init(
-    injector: HostIpcInjector,
-    ports: std::sync::Arc<crate::runtime_ports::RuntimePorts>,
-    bind_addr: &str,
-    port: u16,
-) -> WebhookInitReport {
-    registry::set_runtime(injector, ports.clone());
-    if registry::is_bound() {
-        tracing::debug!("webhook listener already bound; skip re-init");
-        return WebhookInitReport::Bound;
-    }
-    let addr = format!("{bind_addr}:{port}");
-    match tiny_http::Server::http(addr.as_str()) {
-        Ok(server) => on_bind_success(server, &addr, &ports),
-        Err(e) => on_bind_failed(e.to_string(), &addr, port),
-    }
-}
-
-fn on_bind_success(
+/// 선점한 소켓으로 accept를 시작하고 포트 기록에 남긴다.
+pub(super) fn start(
     server: tiny_http::Server,
-    addr: &str,
+    bound: crate::runtime_ports::BoundPort,
     ports: &crate::runtime_ports::RuntimePorts,
-) -> WebhookInitReport {
+) {
+    if registry::is_bound() {
+        tracing::debug!("webhook listener already started; skip");
+        return;
+    }
     registry::mark_bound();
-    if let Some(bound) = server.server_addr().to_ip() {
-        ports.record_webhook(crate::runtime_ports::BoundPort {
-            addr: bound,
-            source: crate::runtime_ports::PortSource::Config,
-        });
-    }
-    tracing::info!("webhook listener bound on {addr}");
+    ports.record_webhook(bound);
+    tracing::info!("webhook listener bound on {}", bound.addr);
     spawn_accept_thread(server);
-    WebhookInitReport::Bound
-}
-
-fn on_bind_failed(
-    error: String,
-    addr: &str,
-    #[cfg_attr(
-        not(feature = "gui"),
-        expect(
-            unused_variables,
-            reason = "only the gui bind failure report carries the port"
-        )
-    )]
-    port: u16,
-) -> WebhookInitReport {
-    tracing::warn!(
-        "webhook listener bind {addr} failed: {error} — set a free port and check firewall (no auto-fallback)"
-    );
-    WebhookInitReport::BindFailed {
-        #[cfg(feature = "gui")]
-        port,
-        #[cfg(feature = "gui")]
-        error,
-    }
 }
 
 /// accept 스레드 생성에 실패하면 경고만 남긴다. bound 표시는 되돌리지 않아 자동 재시도하지 않는다.

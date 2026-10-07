@@ -1,4 +1,4 @@
-//! IPC 서버와 포트 파일 설정을 보관한다.
+//! IPC 서버와 포트 파일 설정, 부팅 초기에 선점한 웹훅 소켓을 보관한다.
 
 use crate::adapters::production::tcp_ipc_server::TcpIpcServer;
 use crate::ipc::server::IpcWaker;
@@ -9,6 +9,8 @@ use tasty_ipc::stream_hub::StreamContext;
 pub(crate) struct Hub {
     pub ipc_server: Option<Box<dyn IpcServerPort>>,
     pub port_file: Option<String>,
+    /// 부팅 초기에 선점한 웹훅 소켓. IPC가 열린 뒤 리스너를 시작할 때 꺼낸다.
+    pub webhook: Option<crate::webhook::Reservation>,
 }
 
 impl Hub {
@@ -16,6 +18,7 @@ impl Hub {
         Self {
             ipc_server: None,
             port_file,
+            webhook: None,
         }
     }
 

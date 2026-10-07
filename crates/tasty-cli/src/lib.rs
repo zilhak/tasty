@@ -51,6 +51,13 @@ pub struct Cli {
     #[arg(long)]
     pub port_file: Option<String>,
 
+    /// Webhook listener port for this run. Overrides the port saved with
+    /// `tasty webhook port`. If the port cannot be opened, Tasty does not start
+    /// (headless exits with code 1). Without this option and without a saved
+    /// port, Tasty tries 28429 and the next 63 ports and takes the first free one.
+    #[arg(long, value_name = "PORT", value_parser = clap::value_parser!(u16).range(1..))]
+    pub webhook_port: Option<u16>,
+
     /// Set the server's response wait limit for a single request, in milliseconds.
     /// If it expires after processing starts, the server returns -32061: the outcome is
     /// unknown and the request may still run. If it expires while queued, the server

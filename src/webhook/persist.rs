@@ -163,8 +163,8 @@ fn atomic_write(path: &Path, text: &str) -> std::io::Result<()> {
     Ok(())
 }
 
-/// 시간·횟수가 만료된 항목을 제외하고 복원한다. 제외한 항목이 있으면 파일 정리도 시도한다.
-pub(super) fn restore_into_registry() {
+/// 시간·횟수가 만료된 항목을 제외하고 복원한 수를 돌려준다. 제외한 항목이 있으면 파일 정리도 시도한다.
+pub(super) fn restore_into_registry() -> usize {
     let now = now_unix();
     let mut restored = 0usize;
     let mut filtered = 0usize;
@@ -197,6 +197,7 @@ pub(super) fn restore_into_registry() {
     if filtered > 0 {
         super::registry::persist_now();
     }
+    restored
 }
 
 #[cfg(test)]

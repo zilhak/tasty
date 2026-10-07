@@ -1,14 +1,21 @@
-//! 데이터 루트의 webhooks.toml에서 리스너 포트를 읽고 쓴다.
-//! 파일이 없으면 SEED_PORT를 저장하려고 시도하고 이번 실행에서도 그 값을 사용한다.
-//! 기존 파일에 유효한 port가 없으면 리스너를 시작하지 않으며 다른 포트로 재시도하지 않는다.
+//! 데이터 루트의 webhooks.toml에서 명시 지정 포트를 읽고 쓴다.
+//! 값이 없으면 리스너가 기본 포트부터 빈 포트를 찾는다. 이 모듈은 값을 새로 만들어 넣지 않는다.
+//!
+//! 이전 버전은 파일이 없을 때 기본 포트 28429를 자동으로 써 넣었다. 그 값은 사용자가 정한 것과
+//! 구별할 수 없으므로, 형식 표시(`format = 2`)가 없는 파일의 `port = 28429`는 자동으로 들어간 값으로 보고
+//! 처음 읽을 때 지운다. 다른 값은 사용자가 정한 것으로 남긴다. 이 모듈이 파일을 쓸 때마다 형식 표시를 함께 쓴다.
 //!
 //! TOML 테이블에서 port만 바꿔 읽어 온 다른 키를 보존한다.
 //! 읽기·파싱 실패 시에는 빈 테이블로 처리하므로 기존 키 보존을 보장하지 못한다.
 
 use std::path::PathBuf;
 
-/// 설정 파일이 없을 때 사용할 초기 포트.
-pub const SEED_PORT: u16 = 28429;
+/// 명시 지정이 없을 때 리스너가 처음 시도하는 포트. 이전 버전이 자동으로 써 넣던 값이기도 하다.
+pub const DEFAULT_PORT: u16 = 28429;
+
+/// 자동으로 써 넣은 포트를 정리한 뒤의 파일 형식 표시.
+const FORMAT_KEY: &str = "format";
+const FORMAT: i64 = 2;
 
 /// 데이터 루트가 없으면 임시 디렉터리의 공유 경로를 사용한다.
 pub fn config_path() -> PathBuf {
@@ -62,31 +69,53 @@ fn port_from_table(table: &toml::Table) -> Option<u16> {
     }
 }
 
-/// 파일이 없으면 초기 포트를 반환한다. 기존 파일의 유효하지 않은 port는 None이다.
-pub fn load_or_seed() -> Option<u16> {
-    let path = config_path();
-    if !path.exists() {
-        let mut table = toml::Table::new();
-        table.insert("port".into(), toml::Value::Integer(SEED_PORT as i64));
-        if let Err(e) = write_table(&path, &table) {
-            tracing::warn!("webhooks.toml seed write failed: {e}");
-            // 파일을 못 만들어도 시드값 자체는 이번 세션에 쓸 수 있게 반환.
-        }
-        return Some(SEED_PORT);
+/// 형식 표시가 없는 파일의 자동 기록 포트를 지운다. 바꾼 내용이 있으면 파일에 다시 쓴다.
+/// 쓰기에 실패하면 이번 실행에서만 지운 값으로 다룬다.
+fn migrate(path: &std::path::Path, table: &mut toml::Table) {
+    if !path.exists() || table.get(FORMAT_KEY).is_some() {
+        return;
     }
-    port_from_table(&read_table(&path))
+    if table.get("port").and_then(|v| v.as_integer()) == Some(DEFAULT_PORT as i64) {
+        table.remove("port");
+        tracing::info!(
+            "webhooks.toml: dropped the port {DEFAULT_PORT} an older version wrote automatically"
+        );
+    }
+    table.insert(FORMAT_KEY.into(), toml::Value::Integer(FORMAT));
+    if let Err(e) = write_table(path, table) {
+        tracing::warn!("webhooks.toml format update failed: {e}");
+    }
 }
 
-/// 파일의 현재 `port` 를 읽는다(시드하지 않음). `webhook.config` get 용.
+/// 사용자가 명시로 정한 포트(`tasty webhook port <N>`). 없거나 범위 밖이면 None이다.
+/// 다음 실행에 쓸 값이라 실행 중인 리스너와 다를 수 있다. 읽을 때 이전 파일을 정리한다.
 pub fn read_port() -> Option<u16> {
-    port_from_table(&read_table(&config_path()))
-}
-
-/// port를 저장한다. 읽어 온 다른 키는 보존하며 리스너에는 재시작 후 적용된다.
-pub fn set_port(port: u16) -> std::io::Result<()> {
     let path = config_path();
     let mut table = read_table(&path);
-    table.insert("port".into(), toml::Value::Integer(port as i64));
+    migrate(&path, &mut table);
+    port_from_table(&table)
+}
+
+/// port를 저장한다. 읽어 온 다른 키는 보존하며 리스너에는 다음 실행부터 적용된다.
+pub fn set_port(port: u16) -> std::io::Result<()> {
+    update(|table| {
+        table.insert("port".into(), toml::Value::Integer(port as i64));
+    })
+}
+
+/// 저장한 port를 지운다. 다음 실행부터 기본 포트부터 빈 포트를 찾는다.
+pub fn clear_port() -> std::io::Result<()> {
+    update(|table| {
+        table.remove("port");
+    })
+}
+
+fn update(change: impl FnOnce(&mut toml::Table)) -> std::io::Result<()> {
+    let path = config_path();
+    let mut table = read_table(&path);
+    migrate(&path, &mut table);
+    change(&mut table);
+    table.insert(FORMAT_KEY.into(), toml::Value::Integer(FORMAT));
     write_table(&path, &table)
 }
 
@@ -98,19 +127,32 @@ mod tests {
     use crate::test_support::TastyHomeGuard as HomeGuard;
 
     #[test]
-    fn seeds_default_port_when_absent() {
+    fn nothing_is_written_when_the_file_is_absent() {
         let _home = HomeGuard::new();
-        assert_eq!(load_or_seed(), Some(SEED_PORT));
-        assert!(config_path().exists());
-        assert_eq!(load_or_seed(), Some(SEED_PORT));
-        assert_eq!(read_port(), Some(SEED_PORT));
+        assert_eq!(read_port(), None);
+        assert!(!config_path().exists(), "no seed port is written any more");
     }
 
     #[test]
-    fn empty_port_yields_none() {
+    fn an_old_seeded_port_is_dropped_once_and_other_keys_stay() {
         let _home = HomeGuard::new();
-        std::fs::write(config_path(), "other_key = 1\n").unwrap();
-        assert_eq!(load_or_seed(), None);
+        std::fs::write(config_path(), "port = 28429\n[[webhook]]\nid = \"a\"\n").unwrap();
+        assert_eq!(read_port(), None);
+        let table = read_table(&config_path());
+        assert!(table.get("port").is_none());
+        assert_eq!(table.get("format").and_then(|v| v.as_integer()), Some(2));
+        assert!(table.get("webhook").is_some(), "other keys stay");
+        // 형식 표시 뒤에 사용자가 같은 값을 정하면 명시 지정으로 남는다.
+        set_port(DEFAULT_PORT).unwrap();
+        assert_eq!(read_port(), Some(DEFAULT_PORT));
+    }
+
+    #[test]
+    fn an_old_user_port_stays_explicit() {
+        let _home = HomeGuard::new();
+        std::fs::write(config_path(), "port = 40000\n").unwrap();
+        assert_eq!(read_port(), Some(40000));
+        clear_port().unwrap();
         assert_eq!(read_port(), None);
     }
 
@@ -131,9 +173,9 @@ mod tests {
     #[test]
     fn out_of_range_port_ignored() {
         let _home = HomeGuard::new();
-        std::fs::write(config_path(), "port = 70000\n").unwrap();
+        std::fs::write(config_path(), "format = 2\nport = 70000\n").unwrap();
         assert_eq!(read_port(), None);
-        std::fs::write(config_path(), "port = 0\n").unwrap();
+        std::fs::write(config_path(), "format = 2\nport = 0\n").unwrap();
         assert_eq!(read_port(), None);
     }
 }

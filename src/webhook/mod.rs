@@ -8,6 +8,7 @@
 pub mod abuse;
 pub mod ack;
 pub mod auth;
+pub mod bind;
 pub mod config;
 pub mod lifetime;
 pub mod listener;
@@ -15,68 +16,111 @@ pub mod persist;
 pub mod registry;
 
 pub use auth::{AuthLocation, WebhookAuth, auth_summary};
+pub use bind::{ExplicitBindError, Reservation};
 pub use lifetime::{Lifetime, Limit, Persistence};
 pub use registry::{WebhookEntry, info, list, register, sweep, unregister};
 
 use tasty_ipc::host_call::HostIpcInjector;
 
-/// 모든 IPv4 인터페이스에서 수신한다.
-const BIND_ADDR: &str = "0.0.0.0";
-
-/// 리스너 초기화 결과. 설정 포트를 사용하며 다른 포트로 재시도하지 않는다.
-#[derive(Debug)]
+/// 리스너 시작 결과. 명시 지정 포트의 bind 실패는 부팅 초기의 [`prepare`]가 실행을 막으므로 여기 없다.
+#[derive(Debug, PartialEq, Eq)]
 pub enum WebhookInitReport {
-    /// bind 표시가 설정됐다. accept 스레드 실행까지 보장하는 결과는 아니다.
+    /// 기본 포트나 명시 지정 포트에 bind했다.
     Bound,
-    /// 설정 포트가 비어 리스너를 띄우지 않았다.
-    PortNotConfigured,
-    /// 설정 포트 bind 실패. 세부 값은 GUI 경고에 쓰고 headless에서는 로그만 남긴다.
-    BindFailed {
-        #[cfg(feature = "gui")]
-        port: u16,
-        #[cfg(feature = "gui")]
-        error: String,
-    },
+    /// 기본 포트가 막혀 다른 포트에 bind했고 복원한 Persistent 웹훅이 있다. URL의 포트가 바뀌었다.
+    MovedWithPersistent { port: u16 },
+    /// 탐색 범위가 모두 막혀 리스너 없이 실행한다.
+    Unavailable,
 }
 
 impl WebhookInitReport {
-    /// GUI에 표시할 경고. Bound면 None이며 headless는 로그를 사용한다.
-    #[cfg(feature = "gui")]
-    pub fn user_warning(&self) -> Option<String> {
-        match self {
-            WebhookInitReport::Bound => None,
-            WebhookInitReport::PortNotConfigured => {
-                Some(crate::i18n::t("webhook.warn.port_not_configured").to_string())
+    fn from_bound(bound: Option<crate::runtime_ports::BoundPort>, has_persistent: bool) -> Self {
+        match bound {
+            None => Self::Unavailable,
+            Some(b) if !b.source.is_explicit() && b.addr.port() != config::DEFAULT_PORT => {
+                if has_persistent {
+                    Self::MovedWithPersistent {
+                        port: b.addr.port(),
+                    }
+                } else {
+                    Self::Bound
+                }
             }
-            WebhookInitReport::BindFailed { port, error } => Some(crate::i18n::t_fmt2(
-                "webhook.warn.bind_failed",
+            Some(_) => Self::Bound,
+        }
+    }
+
+    /// 사용자에게 알릴 경고. GUI는 toast로, headless는 로그로 낸다.
+    pub fn warning(&self) -> Option<String> {
+        let last = config::DEFAULT_PORT + bind::PROBE_COUNT - 1;
+        match self {
+            Self::Bound => None,
+            Self::MovedWithPersistent { port } => Some(crate::i18n::t_fmt2(
+                "webhook.warn.moved",
+                &config::DEFAULT_PORT.to_string(),
                 &port.to_string(),
-                error,
+            )),
+            Self::Unavailable => Some(crate::i18n::t_fmt2(
+                "webhook.warn.unavailable",
+                &config::DEFAULT_PORT.to_string(),
+                &last.to_string(),
             )),
         }
     }
 }
 
-/// 설정과 injector 준비 후 호출하는 GUI·headless 공통 초기화 함수.
-/// 포트가 없으면 리스너를 시작하지 않고, 결과 보고서는 호출자가 표시한다.
-pub fn init_from_config(
+/// 모든 IPv4 인터페이스에서 수신한다.
+const BIND_ADDR: std::net::IpAddr = std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED);
+
+/// 부팅 초기에 GUI·headless가 부른다. 실행 인자(`--webhook-port`)가 설정 파일보다 우선하며,
+/// 명시 지정 포트를 bind하지 못하면 오류를 돌려줘 호출자가 실행을 막는다.
+pub fn prepare(argument: Option<u16>) -> Result<Reservation, ExplicitBindError> {
+    bind::reserve(bind::request(argument, config::read_port()), BIND_ADDR)
+}
+
+/// IPC와 injector가 준비된 뒤 GUI·headless가 부른다. 선점한 소켓으로 리스너를 시작하고
+/// Persistent 웹훅을 복원한다. 결과의 경고는 호출자가 표시한다.
+pub fn start(
+    reservation: Option<Reservation>,
     injector: HostIpcInjector,
     ports: std::sync::Arc<crate::runtime_ports::RuntimePorts>,
 ) -> WebhookInitReport {
-    match config::load_or_seed() {
-        Some(port) => {
-            // 복원 항목의 URL을 만들기 전에 runtime의 주소·포트를 설정한다.
-            let report = listener::init(injector, ports, BIND_ADDR, port);
-            persist::restore_into_registry();
-            report
-        }
-        None => {
-            registry::set_runtime(injector, ports);
-            tracing::warn!(
-                "webhook port not configured; listener not started \
-                 (set one via `tasty webhook config --port <N>`)"
-            );
-            WebhookInitReport::PortNotConfigured
-        }
+    // 복원 항목의 URL을 만들기 전에 포트 기록을 연결한다.
+    registry::set_runtime(injector, ports.clone());
+    let bound = reservation.as_ref().and_then(Reservation::bound);
+    if let Some((server, bound)) = reservation.and_then(|r| r.listener) {
+        listener::start(server, bound, &ports);
+    }
+    let restored = persist::restore_into_registry();
+    let report = WebhookInitReport::from_bound(bound, restored > 0);
+    if let Some(message) = report.warning() {
+        tracing::warn!("{message}");
+    }
+    report
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::runtime_ports::{BoundPort, PortSource};
+
+    fn at(port: u16, source: PortSource) -> Option<BoundPort> {
+        Some(BoundPort {
+            addr: std::net::SocketAddr::from(([127, 0, 0, 1], port)),
+            source,
+        })
+    }
+
+    #[test]
+    fn only_a_probed_move_with_saved_webhooks_warns() {
+        use WebhookInitReport as R;
+        assert_eq!(R::from_bound(at(28429, PortSource::Probe), true), R::Bound);
+        assert_eq!(
+            R::from_bound(at(28430, PortSource::Probe), true),
+            R::MovedWithPersistent { port: 28430 }
+        );
+        assert_eq!(R::from_bound(at(28430, PortSource::Probe), false), R::Bound);
+        assert_eq!(R::from_bound(at(40000, PortSource::Config), true), R::Bound);
+        assert_eq!(R::from_bound(None, true), R::Unavailable);
     }
 }

@@ -3,6 +3,7 @@
 //! 부팅 첫머리에서 저널 writer 잠금을 선점하지 못하면 이 경로로 온다. 실행 중인 인스턴스의 홈에
 //! 부작용을 내지 않도록 로그 파일·memory.db·저널·설정 저장·플러그인·테마·IPC·트레이를 만들지 않고,
 //! 창과 GPU만 만들어 기존 부팅 오류 화면을 보여 준다. 종료는 실패 코드 1이다.
+//! 명시 지정한 웹훅 포트를 열지 못했을 때도 같은 화면([`run_screen`])으로 실행을 막는다.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -31,7 +32,11 @@ pub(crate) fn error_info(home: &Path) -> BootErrorInfo {
 /// 창이나 GPU를 만들지 못하면 화면 없이 같은 코드로 끝낸다. 문구는 이미 stderr에 남았다.
 pub(crate) fn run(home: &Path) -> anyhow::Result<std::process::ExitCode> {
     crate::boot::locale::init();
-    let info = error_info(home);
+    run_screen(error_info(home))
+}
+
+/// 주어진 문구로 오류 화면만 띄운다. 호출자가 문구를 로그에 남긴다.
+pub(crate) fn run_screen(info: BootErrorInfo) -> anyhow::Result<std::process::ExitCode> {
     let (event_loop, proxy) = crate::boot::event_loop::build()?;
     let mut screen = HomeInUseScreen {
         info,

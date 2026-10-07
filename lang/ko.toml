@@ -38,6 +38,14 @@ hint = "config.toml의 general.shell이 실제 셸 경로인지 확인한 뒤 �
 [boot.already_running]
 body = "이미 실행 중인 Tasty가 있습니다."
 
+[boot.webhook_port]
+title = "웹훅 포트 사용 중"
+body = "웹훅 포트 {}을(를) 열 수 없습니다: {}"
+hint_argument = "--webhook-port로 지정한 포트입니다. 빈 포트로 실행하거나, 옵션 없이 실행해 Tasty가 고르게 하세요."
+hint_config = "`tasty webhook port`로 저장한 포트입니다. --webhook-port <빈 포트>로 한 번 실행한 뒤 `tasty webhook port --unset`을 실행하거나, {}에서 port 줄을 지우세요."
+differs = "이 데이터 폴더의 Tasty가 웹훅 포트 {}로 이미 실행 중입니다. --webhook-port {}로 실행하려면 먼저 종료하세요."
+differs_none = "이 데이터 폴더의 Tasty가 웹훅 리스너 없이 이미 실행 중입니다. --webhook-port {}로 실행하려면 먼저 종료하세요."
+
 [boot.home_in_use]
 title = "이미 사용 중인 데이터 폴더"
 body = "다른 Tasty가 이 데이터 폴더를 이미 사용하고 있습니다: {}"
@@ -1001,8 +1009,8 @@ vi_copy_macro_recording_stopped = "매크로 기록을 멈췄습니다"
 vi_copy_macro_replay_failed = "매크로 재생 실패(빈 레지스터 또는 재귀 한도 초과)"
 
 [webhook.warn]
-port_not_configured = "웹훅 포트가 설정되지 않아 인바운드 리스너를 시작하지 못했습니다. `tasty webhook config --port <번호>` 로 지정하세요."
-bind_failed = "웹훅 포트 {} 를 바인드하지 못했습니다({}). 빈 포트를 지정하고 방화벽을 확인하세요. 리스너가 시작되지 않았습니다."
+moved = "웹훅 포트 {}이(가) 사용 중이어서 리스너가 {}을(를) 사용합니다. 저장한 웹훅은 이 포트로 받습니다. URL은 `tasty webhook list`로 확인하세요."
+unavailable = "웹훅 포트 {}–{}가 모두 사용 중이어서 인바운드 리스너를 시작하지 않았습니다."
 
 [i18n.warn]
 pack_missing = "언어 '{}'가 설치되어 있지 않아 영어로 표시합니다. {}에 언어팩을 두고 재시작하세요."

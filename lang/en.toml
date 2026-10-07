@@ -38,6 +38,14 @@ hint = "Check general.shell in your config.toml and make sure the shell exists, 
 [boot.already_running]
 body = "Tasty is already running."
 
+[boot.webhook_port]
+title = "Webhook port in use"
+body = "The webhook port {} could not be opened: {}"
+hint_argument = "It was given with --webhook-port. Start with a free port, or without the option to let Tasty choose one."
+hint_config = "It was saved with `tasty webhook port`. Start once with --webhook-port <free port> and run `tasty webhook port --unset`, or remove the port line from {}."
+differs = "Tasty is already running in this data folder with webhook port {}. Quit it first to start with --webhook-port {}."
+differs_none = "Tasty is already running in this data folder without a webhook listener. Quit it first to start with --webhook-port {}."
+
 [boot.home_in_use]
 title = "Data folder already in use"
 body = "Another Tasty is already using this data folder: {}"
@@ -1005,8 +1013,8 @@ vi_copy_macro_recording_stopped = "Macro recording stopped"
 vi_copy_macro_replay_failed = "Macro replay failed (empty register or recursion limit)"
 
 [webhook.warn]
-port_not_configured = "Webhook port not set — the inbound listener did not start. Set one with `tasty webhook config --port <N>`."
-bind_failed = "Webhook port {} could not be bound ({}). Choose a free port and check your firewall; the listener did not start."
+moved = "Webhook port {} was in use, so the listener took {}. Saved webhooks now answer on that port; `tasty webhook list` shows their URLs."
+unavailable = "Webhook ports {}–{} are all in use, so the inbound listener did not start."
 
 [i18n.warn]
 pack_missing = "Language '{}' is not installed — showing English. Put a language pack at {}, then restart."

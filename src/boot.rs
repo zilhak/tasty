@@ -105,7 +105,7 @@ pub fn run() -> anyhow::Result<std::process::ExitCode> {
                 HomeWriterLock::Held(home) if cfg!(debug_assertions) => {
                     return home_in_use::run(&home);
                 }
-                HomeWriterLock::Held(home) => match single_instance::second::handle_held(&home) {
+                HomeWriterLock::Held(home) => match single_instance::second::handle_held(&home, cli.webhook_port) {
                     single_instance::second::HeldOutcome::Exit(code) => return Ok(code),
                     single_instance::second::HeldOutcome::BootNormally(lock) => {
                         single_instance::instance_file::publish_started(&home);
@@ -130,7 +130,7 @@ pub fn run() -> anyhow::Result<std::process::ExitCode> {
             }
             #[cfg(not(feature = "gui"))]
             {
-                run_headless(cli)
+                return run_headless(cli);
             }
         }
     }.map(|()| std::process::ExitCode::SUCCESS)
@@ -197,6 +197,18 @@ fn run_gui(
 ) -> anyhow::Result<std::process::ExitCode> {
     locale::init();
 
+    // 명시 지정한 웹훅 포트를 열지 못하면 이벤트 루프·메모리·저널을 만들기 전에 오류 화면으로 끝낸다.
+    let webhook = match crate::webhook::prepare(cli.webhook_port) {
+        Ok(reservation) => reservation,
+        Err(error) => {
+            let (title, body, hint) = error.message();
+            tracing::error!("boot refused: webhook port\n{title}\n{body}\n{hint}");
+            let code = home_in_use::run_screen(crate::gpu::BootErrorInfo { title, body, hint });
+            single_instance::instance_file::remove_owned();
+            return code;
+        }
+    };
+
     let (event_loop, proxy) = event_loop::build()?;
     os::install_macos_delegate(&proxy);
 
@@ -237,6 +249,7 @@ fn run_gui(
         #[cfg(debug_assertions)]
         cli.enable_input_simulation,
     )?;
+    app.hub.webhook = Some(webhook);
     hooks::lua::fire(
         app.lua_engine.as_ref(),
         hooks::lua::AutofireCtx {
@@ -504,8 +517,10 @@ fn start_ipc_and_seed(
         crate::hook_handler::install_default_sources();
         // 완료 전략의 notify_via 검증이 훅 핸들러를 참조한다.
         crate::completion_strategy::install_default_sources();
-        // 헤드리스에는 toast가 없어 초기화 실패는 함수 내부 경고 로그로만 알린다.
-        let _ = crate::webhook::init_from_config(injector.clone(), app.services.ports.clone());
+        // 헤드리스에는 toast가 없어 경고는 함수 안의 warn 로그로만 알린다.
+        let reservation = app.hub.webhook.take();
+        let _report =
+            crate::webhook::start(reservation, injector.clone(), app.services.ports.clone());
         app.services.set_host_ipc_injector(injector);
     }
 }
@@ -769,9 +784,19 @@ fn ipc_commands_left(core: &crate::app::services::AppServices) -> bool {
         .is_some_and(|ledger| ledger.snapshot().queued_commands > 0)
 }
 
+/// 명시 지정한 웹훅 포트를 열지 못했을 때 headless가 남기는 오류와 종료 코드.
+#[cfg(not(feature = "gui"))]
+fn refuse_headless_webhook_port(
+    error: &crate::webhook::ExplicitBindError,
+) -> std::process::ExitCode {
+    let (title, body, hint) = error.message();
+    tracing::error!("boot refused: webhook port\n{title}\n{body}\n{hint}");
+    std::process::ExitCode::from(1)
+}
+
 /// gui feature 없는 빌드의 호스트 루프. IPC·PTY·플러그인 이벤트와 타이머를 처리한다.
 #[cfg(not(feature = "gui"))]
-fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
+fn run_headless(cli: cli::Cli) -> anyhow::Result<std::process::ExitCode> {
     use std::sync::mpsc;
 
     use crate::adapters::production::headless_waker::HeadlessWaker;
@@ -782,10 +807,17 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
     let (tx, rx) = mpsc::channel::<crate::AppEvent>();
     let waker = HeadlessWaker::new(tx);
 
+    // 명시 지정한 웹훅 포트를 열지 못하면 다른 상태를 만들기 전에 종료 코드 1로 끝낸다.
+    let webhook = match crate::webhook::prepare(cli.webhook_port) {
+        Ok(reservation) => reservation,
+        Err(error) => return Ok(refuse_headless_webhook_port(&error)),
+    };
+
     let boot_settings = crate::settings::Settings::load();
     let memory_arc = boot_memory(&boot_settings);
 
     let mut app = App::new_headless(waker.journal_waker(), cli.port_file, memory_arc)?;
+    app.hub.webhook = Some(webhook);
     start_ipc_and_seed(&mut app, &waker);
 
     let mut session = bootstrap_engine(&mut app, &boot_settings, &waker)?;
@@ -894,7 +926,7 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
         }
     }
     finish_headless_shutdown(&mut app, &mut session);
-    Ok(())
+    Ok(std::process::ExitCode::SUCCESS)
 }
 
 /// A retirement awaiting receipts does not defer Shutdown. Finish it first so its close replies

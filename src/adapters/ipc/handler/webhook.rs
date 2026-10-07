@@ -256,39 +256,55 @@ pub fn handle_unregister(id: serde_json::Value, params: &serde_json::Value) -> J
     JsonRpcResponse::success(id, json!({ "unregistered": removed, "id": wid }))
 }
 
-/// port가 없거나 null이면 조회한다. 지정하면 설정 파일에 저장하며 재시작 후 적용한다.
-/// 자동 대체 포트 없이 1..=65535만 허용한다.
-pub fn handle_config(id: serde_json::Value, params: &serde_json::Value) -> JsonRpcResponse {
-    match p_try!(params::opt_int::<u16>(params, "port", &id)) {
-        Some(port) => {
-            if port == 0 {
-                return JsonRpcResponse::invalid_params(id, "'port' must be in range 1..=65535");
-            }
-            if let Err(e) = webhook::config::set_port(port) {
-                return JsonRpcResponse::internal_error(
-                    id,
-                    format!("failed to persist webhook port: {e}"),
-                );
-            }
-            let restart_required = webhook::registry::bound_port() != Some(port);
-            JsonRpcResponse::success(
-                id,
-                json!({
-                    "port": port,
-                    "restart_required": restart_required,
-                }),
-            )
+/// 인자가 없으면 실행 중인 리스너를 조회한다(실제로 bind한 주소와 정한 방법, 파일에 저장한 값).
+/// `port`를 주면 설정 파일에 저장하고, `unset_port`가 true면 저장한 값을 지운다. 둘 다 다음 실행부터 적용된다.
+pub fn handle_config(
+    ports: &crate::runtime_ports::RuntimePorts,
+    id: serde_json::Value,
+    params: &serde_json::Value,
+) -> JsonRpcResponse {
+    let unset = params
+        .get("unset_port")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+    let port = p_try!(params::opt_int::<u16>(params, "port", &id));
+    let saved = match (port, unset) {
+        (Some(_), true) => {
+            return JsonRpcResponse::invalid_params(id, "'port' and 'unset_port' are exclusive");
         }
-        None => JsonRpcResponse::success(
+        (Some(0), false) => {
+            return JsonRpcResponse::invalid_params(id, "'port' must be in range 1..=65535");
+        }
+        (Some(port), false) => webhook::config::set_port(port).map(|()| Some(port)),
+        (None, true) => webhook::config::clear_port().map(|()| None),
+        (None, false) => return JsonRpcResponse::success(id, listener_status(ports)),
+    };
+    match saved {
+        Ok(saved_port) => JsonRpcResponse::success(
             id,
             json!({
-                "port": webhook::registry::bound_port(),
-                "bound": webhook::registry::is_listener_bound(),
-                // 파일의 현재 값(런타임 set 후 재시작 전이면 활성값과 다를 수 있음).
-                "configured_port": webhook::config::read_port(),
+                "saved_port": saved_port,
+                "applies_from": "next_start",
+                "restart_required": ports.webhook_port() != saved_port,
             }),
         ),
+        Err(e) => {
+            JsonRpcResponse::internal_error(id, format!("failed to persist webhook port: {e}"))
+        }
     }
+}
+
+/// 실행 중인 리스너의 상태. 파일에 저장한 값은 다음 실행에 쓸 값이라 따로 적는다.
+fn listener_status(ports: &crate::runtime_ports::RuntimePorts) -> serde_json::Value {
+    let bound = ports.webhook();
+    json!({
+        "port": bound.map(|b| b.addr.port()),
+        "address": bound.map(|b| b.addr.to_string()),
+        "bound": bound.is_some(),
+        "source": bound.map(|b| b.source),
+        "explicit": bound.is_some_and(|b| b.source.is_explicit()),
+        "saved_port": webhook::config::read_port(),
+    })
 }
 
 fn parse_methods(params: &serde_json::Value) -> Vec<String> {

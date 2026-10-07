@@ -87,15 +87,27 @@ pub enum WebhookCommands {
     /// the expired persistent ones, and this command clears the whole set at
     /// once without waiting for either.
     Sweep,
-    /// Get or set the listener bind port (persisted to ~/.tasty/webhooks.toml).
+    /// Show the running listener's port, or save the port for the next start.
     ///
-    /// With no `--port`, prints the active port and bound status. With `--port`,
-    /// persists the new port; the listener rebinds only on the next restart.
-    /// The port is config-only — tasty never silently binds a fallback port.
-    /// The bind address is not configurable and is not loopback: the listener
-    /// takes every interface, so this port is the whole of the exposure.
+    /// With no argument, asks the running Tasty which address the listener
+    /// actually opened and how that port was chosen (`argument`, `config` or
+    /// `probe`), plus the port saved for the next start. With a port, saves it
+    /// to the data folder's webhooks.toml; with `--unset`, removes the saved
+    /// port. Either change applies from the next start. A saved port is
+    /// explicit: if it cannot be opened, Tasty does not start. Without a saved
+    /// port and without `--webhook-port`, Tasty tries 28429 and the next 63
+    /// ports and takes the first free one.
+    Port {
+        /// Port to save (1-65535).
+        #[arg(value_parser = clap::value_parser!(u16).range(1..))]
+        port: Option<u16>,
+        /// Remove the saved port so the next start picks a free one.
+        #[arg(long, conflicts_with = "port")]
+        unset: bool,
+    },
+    /// Same as `tasty webhook port`. Kept for scripts written before it.
     Config {
-        /// Set the listener port (1-65535). Requires restart to take effect.
+        /// Save the listener port (1-65535). Applies from the next start.
         #[arg(long)]
         port: Option<u16>,
     },

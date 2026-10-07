@@ -9,6 +9,8 @@
 //! - 요청을 썼지만 기한 안에 확인을 못 받았고 실행 중인 쪽이 살아 있으면 경고만 남기고 성공으로 끝낸다.
 //!   늦게라도 그쪽이 처리한다.
 //! - 요청을 넘기지 못했고 잠금도 얻지 못하면 Tasty 창 없이 OS 메시지 상자로 알리고 종료한다.
+//! - `--webhook-port`로 실행했는데 실행 중인 쪽의 웹훅 포트와 다르면 넘기지 않고 같은 방법으로 알린 뒤
+//!   종료 코드 1로 끝낸다. 같으면 평소처럼 넘긴다. 실행 중인 쪽의 포트를 조회하지 못하면 평소처럼 넘긴다.
 
 use std::path::Path;
 use std::process::ExitCode;
@@ -95,7 +97,7 @@ fn display_backend() -> &'static str {
 }
 
 /// 같은 홈의 writer 잠금이 다른 프로세스에 있을 때 release가 부른다.
-pub(crate) fn handle_held(home: &Path) -> HeldOutcome {
+pub(crate) fn handle_held(home: &Path, webhook_port: Option<u16>) -> HeldOutcome {
     let started = Instant::now();
     let log = LaunchLog::new(Some(home));
     let canonical = std::fs::canonicalize(home).unwrap_or_else(|_| home.to_path_buf());
@@ -108,7 +110,7 @@ pub(crate) fn handle_held(home: &Path) -> HeldOutcome {
         display_backend(),
         evidence.kinds()
     ));
-    let code = match hand_over(home, &evidence, &log, started) {
+    let code = match hand_over(home, &evidence, webhook_port, &log, started) {
         Handover::Delivered => ExitCode::SUCCESS,
         Handover::Unconfirmed(reason) => {
             log.line(&format!(
@@ -125,6 +127,9 @@ pub(crate) fn handle_held(home: &Path) -> HeldOutcome {
             return HeldOutcome::BootNormally(lock);
         }
         Handover::GiveUp(reason) => give_up(&log, &evidence, &reason),
+        Handover::WebhookPortDiffers { wanted, running } => {
+            refuse_webhook_port(&log, wanted, running)
+        }
     };
     log.line(&format!(
         "second launch done in {} ms",
@@ -143,6 +148,11 @@ enum Handover {
     BootNormally(tasty_event_store::WriterLock),
     /// 넘기지 못했고 잠금도 얻지 못했다.
     GiveUp(String),
+    /// 실행 인자의 웹훅 포트가 실행 중인 쪽과 다르다. 넘기지 않는다.
+    WebhookPortDiffers {
+        wanted: u16,
+        running: Option<u16>,
+    },
 }
 
 /// 넘기다 실패한 이유. `written`은 실행 중인 쪽에 연결된 뒤 실패해 요청이 닿았을 수 있다는 뜻이다.
@@ -165,6 +175,7 @@ impl Undelivered {
 fn hand_over(
     home: &Path,
     evidence: &LaunchEvidence,
+    webhook_port: Option<u16>,
     log: &LaunchLog,
     started: Instant,
 ) -> Handover {
@@ -185,6 +196,21 @@ fn hand_over(
             record.port,
             started.elapsed().as_millis()
         ));
+        if let Some(wanted) = webhook_port {
+            match running_webhook_port(&record) {
+                Ok(running) if running == Some(wanted) => {
+                    log.line(&format!(
+                        "webhook port {wanted} matches the running instance"
+                    ));
+                }
+                Ok(running) => return Handover::WebhookPortDiffers { wanted, running },
+                Err(reason) => {
+                    log.line(&format!(
+                        "webhook port check failed ({reason}); handing over"
+                    ));
+                }
+            }
+        }
         let failure = match deliver(home, &record, evidence, log) {
             Ok(()) => return Handover::Delivered,
             Err(failure) => failure,
@@ -586,6 +612,55 @@ fn activation_turn(home: &Path) -> std::io::Result<std::fs::File> {
     }
 }
 
+/// 실행 중인 쪽의 리스너 포트를 `webhook.config` 조회로 묻는다. 리스너가 없으면 `Ok(None)`이다.
+fn running_webhook_port(record: &InstanceRecord) -> Result<Option<u16>, String> {
+    let port = record.port.ok_or("instance record has no port")?;
+    let address = std::net::SocketAddr::from(([127, 0, 0, 1], port));
+    let stream =
+        std::net::TcpStream::connect_timeout(&address, IPC_DEADLINE).map_err(|e| e.to_string())?;
+    stream
+        .set_read_timeout(Some(IPC_DEADLINE))
+        .map_err(|e| e.to_string())?;
+    let mut connection =
+        tasty_ipc::client::IpcConnection::new(stream).map_err(|e| e.to_string())?;
+    let request = tasty_ipc::protocol::JsonRpcRequest {
+        caller_agent_id: None,
+        jsonrpc: "2.0".to_string(),
+        method: "webhook.config".to_string(),
+        params: serde_json::json!({}),
+        id: Some(serde_json::json!(1)),
+        session_token: None,
+        response_timeout_ms: None,
+        idempotency_key: None,
+    };
+    let status = connection.send(&request).map_err(|e| e.to_string())?;
+    Ok(status
+        .get("port")
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|p| u16::try_from(p).ok()))
+}
+
+/// `--webhook-port`가 실행 중인 쪽과 달라 넘기지 않고 끝낸다. launch.log(표준 오류 사본 포함)와 메시지 상자로 알린다.
+fn refuse_webhook_port(log: &LaunchLog, wanted: u16, running: Option<u16>) -> ExitCode {
+    crate::boot::locale::init();
+    let title = crate::i18n::t("boot.webhook_port.title").to_string();
+    let body = match running {
+        Some(running) => crate::i18n::t_fmt2(
+            "boot.webhook_port.differs",
+            &running.to_string(),
+            &wanted.to_string(),
+        ),
+        None => crate::i18n::t_fmt("boot.webhook_port.differs_none", &wanted.to_string()),
+    };
+    // launch.log 줄은 표준 오류에도 같이 나간다.
+    log.line(&format!(
+        "refused: --webhook-port {wanted} differs from the running instance ({running:?}): {body}"
+    ));
+    let shown = show_notice(&title, &body);
+    log.line(&format!("notice: {shown}; exit code {FALLBACK_EXIT}"));
+    ExitCode::from(FALLBACK_EXIT)
+}
+
 /// Tasty 창 없이 원인을 알리고 끝낸다. 문구는 하나이고 상세는 launch.log에 있다.
 fn fallback(log: &LaunchLog, reason: &str) -> ExitCode {
     log.line(&format!("fallback: {reason}"));
@@ -785,7 +860,7 @@ mod tests {
         });
         let log = LaunchLog::new(Some(home.path()));
         let started = Instant::now();
-        let outcome = hand_over(home.path(), &LaunchEvidence::default(), &log, started);
+        let outcome = hand_over(home.path(), &LaunchEvidence::default(), None, &log, started);
         killer.join().unwrap();
         let text = std::fs::read_to_string(super::super::launch_log::path(home.path())).unwrap();
         assert!(

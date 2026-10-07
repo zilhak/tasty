@@ -38,6 +38,14 @@ hint = "config.toml の general.shell が実在するシェルを指している
 [boot.already_running]
 body = "Tasty はすでに実行中です。"
 
+[boot.webhook_port]
+title = "Webhook ポートが使用中"
+body = "Webhook ポート {} を開けませんでした: {}"
+hint_argument = "--webhook-port で指定したポートです。空いているポートで起動するか、オプションなしで起動して Tasty に選ばせてください。"
+hint_config = "`tasty webhook port` で保存したポートです。--webhook-port <空きポート> で一度起動して `tasty webhook port --unset` を実行するか、{} から port の行を削除してください。"
+differs = "このデータフォルダの Tasty は Webhook ポート {} ですでに実行中です。--webhook-port {} で起動するには、先に終了してください。"
+differs_none = "このデータフォルダの Tasty は Webhook リスナーなしですでに実行中です。--webhook-port {} で起動するには、先に終了してください。"
+
 [boot.home_in_use]
 title = "データフォルダーは使用中です"
 body = "別の Tasty がこのデータフォルダーをすでに使用しています: {}"
@@ -1001,8 +1009,8 @@ vi_copy_macro_recording_stopped = "マクロの記録を停止しました"
 vi_copy_macro_replay_failed = "マクロ再生に失敗しました (空のレジスタ または再帰回数超過)"
 
 [webhook.warn]
-port_not_configured = "Webhook ポートが未設定のため、インバウンドリスナーを起動できませんでした。`tasty webhook config --port <番号>` で指定してください。"
-bind_failed = "Webhook ポート {} をバインドできませんでした（{}）。空きポートを指定しファイアウォールを確認してください。リスナーは起動していません。"
+moved = "Webhook ポート {} が使用中のため、リスナーは {} を使用します。保存済みの Webhook はこのポートで受け付けます。URL は `tasty webhook list` で確認してください。"
+unavailable = "Webhook ポート {}–{} がすべて使用中のため、インバウンドリスナーを起動しませんでした。"
 
 [i18n.warn]
 pack_missing = "言語 '{}' は未インストールのため英語で表示します。{} に言語パックを置いて再起動してください。"
