@@ -5392,7 +5392,7 @@ help = "Workspace id (focus-independent — required)"
 help = "Format: json | dot. Default: json"
 
 [cli.help._root.agent.dag-list]
-about = "List every registered DAG. A DAG is derived, not stored: tasks tagged with the same `metadata.dag` string form one explicit group, and the rest are grouped by weak connectivity (`depends_on` / `Fallback.task` / `Reduce.inputs` / `metadata.fallback_of`). Omit `--workspace-id` to scan every live workspace"
+about = "List every registered DAG. A DAG is derived, not stored: tasks tagged with the same `metadata.dag` string form one explicit group, and the rest are grouped by weak connectivity (`depends_on` / `Fallback.task` / `Reduce.inputs` / `metadata.fallback_of` / v2 `bindings` / v2 `transitions`). Omit `--workspace-id` to scan every live workspace"
 
 [cli.help._root.agent.dag-list.arg.workspace_id]
 help = "Restrict to one workspace. Omitted = every live workspace"

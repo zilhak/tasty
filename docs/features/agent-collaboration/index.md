@@ -85,7 +85,7 @@ v2 run·custom task 는 계약의 `postprocess` 로 본 작업 뒤 CLI 하나를
 DAG는 별도 영속 레코드가 아니라 workspace의 task에서 도출한다.
 
 1. `task.metadata.dag`가 문자열이면 같은 값끼리 explicit 그룹으로 묶는다. 연결 여부와 무관하다.
-2. 나머지는 `depends_on`·`Fallback.task`·`Reduce.inputs`·`metadata.fallback_of` 역참조를 무방향으로 본 약연결 컴포넌트로 묶는다(derived).
+2. 나머지는 `depends_on`·`Fallback.task`·`Reduce.inputs`·`metadata.fallback_of`·v2 `bindings`(입력을 주는 task)·v2 `transitions`(전이 대상) 참조를 무방향으로 본 약연결 컴포넌트로 묶는다(derived).
 
 `metadata.dag_name`을 표시 이름으로 쓰고 없으면 explicit 키, root task 이름 순서로 선택한다. metadata와 관계로 도출하므로 새 DAG 필드를 추가하는 마이그레이션 없이 기존 작업도 포함한다.
 

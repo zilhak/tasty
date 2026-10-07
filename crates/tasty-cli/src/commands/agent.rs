@@ -153,8 +153,8 @@ pub enum AgentCommands {
     /// List every registered DAG. A DAG is derived, not stored: tasks tagged
     /// with the same `metadata.dag` string form one explicit group, and the
     /// rest are grouped by weak connectivity (`depends_on` / `Fallback.task` /
-    /// `Reduce.inputs` / `metadata.fallback_of`). Omit `--workspace-id` to scan
-    /// every live workspace.
+    /// `Reduce.inputs` / `metadata.fallback_of` / v2 `bindings` / v2
+    /// `transitions`). Omit `--workspace-id` to scan every live workspace.
     DagList {
         /// Restrict to one workspace. Omitted = every live workspace.
         #[arg(long)]

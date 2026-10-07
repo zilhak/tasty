@@ -5386,7 +5386,7 @@ help = "ワークスペース id（フォーカス非依存 — 必須）"
 help = "形式: json | dot。デフォルト: json"
 
 [cli.help._root.agent.dag-list]
-about = "登録済みタスクから DAG 一覧を計算します。同じ `metadata.dag` 文字列を持つタスクを 1 つのグループにし、残りは `depends_on` / `Fallback.task` / `Reduce.inputs` / `metadata.fallback_of` の接続を方向に関係なくたどってまとめます。DAG を別に保存することはありません。`--workspace-id` を省略すると現在の全ワークスペースを調べます。"
+about = "登録済みタスクから DAG 一覧を計算します。同じ `metadata.dag` 文字列を持つタスクを 1 つのグループにし、残りは `depends_on` / `Fallback.task` / `Reduce.inputs` / `metadata.fallback_of` / v2 `bindings` / v2 `transitions` の接続を方向に関係なくたどってまとめます。DAG を別に保存することはありません。`--workspace-id` を省略すると現在の全ワークスペースを調べます。"
 
 [cli.help._root.agent.dag-list.arg.workspace_id]
 help = "1 つのワークスペースに絞る。省略すると生きているワークスペース全部"

@@ -5386,7 +5386,7 @@ help = "워크스페이스 id (포커스 무관 — 필수)"
 help = "형식: json | dot. 기본값: json"
 
 [cli.help._root.agent.dag-list]
-about = "등록된 작업에서 DAG 목록을 계산합니다. 같은 `metadata.dag` 문자열을 가진 작업을 묶고, 나머지는 `depends_on` / `Fallback.task` / `Reduce.inputs` / `metadata.fallback_of` 연결을 방향과 무관하게 따라 묶습니다. DAG를 별도로 저장하지 않습니다. `--workspace-id`를 생략하면 현재 있는 모든 워크스페이스를 조회합니다."
+about = "등록된 작업에서 DAG 목록을 계산합니다. 같은 `metadata.dag` 문자열을 가진 작업을 묶고, 나머지는 `depends_on` / `Fallback.task` / `Reduce.inputs` / `metadata.fallback_of` / v2 `bindings` / v2 `transitions` 연결을 방향과 무관하게 따라 묶습니다. DAG를 별도로 저장하지 않습니다. `--workspace-id`를 생략하면 현재 있는 모든 워크스페이스를 조회합니다."
 
 [cli.help._root.agent.dag-list.arg.workspace_id]
 help = "한 워크스페이스로 좁힌다. 생략하면 살아 있는 워크스페이스 전부"
