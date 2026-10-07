@@ -1588,7 +1588,6 @@ mod tests {
         cell_h: f32,
     ) -> Option<(egui::Rect, egui::Rect)> {
         // 상태줄 문구를 그릴 때와 찾을 때 같은 번역을 쓰도록 그리기 전에 전역 번역을 고정한다.
-        // 고정하지 않으면 그 사이 다른 시험의 초기화로 키 원문과 번역문이 갈린다.
         crate::i18n::init("en");
         let ctx = egui::Context::default();
         let cell = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1100.0, cell_h));

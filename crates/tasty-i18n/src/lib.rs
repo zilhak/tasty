@@ -2,6 +2,8 @@
 
 //! Shared translations for the host and CLI, initialized once at startup.
 //! general.language selects the language; changing it requires a restart.
+//! Lookups before [`init`] read the embedded English table, so a value read
+//! before and after an English `init` is the same string.
 //!
 //! Built-in en/ko/ja text is embedded in the binary. A user `<code>.toml` file
 //! overrides a built-in language. Other languages need `<code>/pack.toml` with
@@ -26,6 +28,11 @@ use tasty_utils::path::tasty_home;
 
 /// Global translation store, initialized once at startup.
 static TRANSLATIONS: OnceLock<Translations> = OnceLock::new();
+/// Embedded English for lookups before [`init`]. It skips the user `en.toml`
+/// override so that a lookup never reads files before the language is chosen.
+static BUILTIN_EN: OnceLock<Translations> = OnceLock::new();
+/// Whether the first lookup before [`init`] was already logged.
+static PRE_INIT_READ_LOGGED: AtomicBool = AtomicBool::new(false);
 /// What [`init`] decided at boot (requested vs. effective language). The GUI
 /// reads it once after boot to surface the English-fallback warning as a toast.
 static LOAD_REPORT: OnceLock<LoadReport> = OnceLock::new();
@@ -1017,10 +1024,24 @@ pub fn load_report() -> Option<&'static LoadReport> {
     LOAD_REPORT.get()
 }
 
-/// Get a translated string by key.
-/// Shorthand for accessing the global store.
+/// The table lookups read: the initialized store, or embedded English before
+/// [`init`]. The first lookup before `init` is logged once at debug level with
+/// its key, which is how a missing `init` on a product path shows up now that
+/// the raw key is no longer returned.
+fn store(key: &str) -> &'static Translations {
+    if let Some(tr) = TRANSLATIONS.get() {
+        return tr;
+    }
+    if !PRE_INIT_READ_LOGGED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+        tracing::debug!("i18n: '{key}' read before init — serving built-in English");
+    }
+    BUILTIN_EN.get_or_init(|| Translations::load_from("en", None).0)
+}
+
+/// Get a translated string by key. Before [`init`] this is the embedded
+/// English text; a key missing from the table comes back unchanged.
 pub fn t(key: &str) -> &str {
-    TRANSLATIONS.get().map(|tr| tr.get(key)).unwrap_or(key)
+    store(key).get(key)
 }
 
 /// 활성 language code — [`init`] 이 실제로 적용한 언어(언어팩 부재로 영어 폴백이 일어났으면
@@ -1033,39 +1054,26 @@ pub fn current_language() -> &'static str {
         .unwrap_or("en")
 }
 
-/// Get a translated string with a format argument.
+/// Get a translated string with a format argument. Before [`init`] this uses
+/// the embedded English text, like [`t`].
 pub fn t_fmt(key: &str, arg: &str) -> String {
-    TRANSLATIONS
-        .get()
-        .map(|tr| tr.get_fmt(key, arg))
-        .unwrap_or_else(|| key.replace("{}", arg))
+    store(key).get_fmt(key, arg)
 }
 
 /// Get a translated string with two format arguments replacing the first two `{}` placeholders in order.
 pub fn t_fmt2(key: &str, arg1: &str, arg2: &str) -> String {
-    TRANSLATIONS
-        .get()
-        .map(|tr| tr.get_fmt2(key, arg1, arg2))
-        .unwrap_or_else(|| key.replacen("{}", arg1, 1).replacen("{}", arg2, 1))
+    store(key).get_fmt2(key, arg1, arg2)
 }
 
 /// Get a translated string with N format arguments replacing `{}` placeholders in order.
-/// Falls back to substituting into the raw key if the store is not initialized.
 pub fn t_args(key: &str, args: &[&str]) -> String {
-    TRANSLATIONS
-        .get()
-        .map(|tr| tr.get_args(key, args))
-        .unwrap_or_else(|| {
-            let mut out = key.to_string();
-            for arg in args {
-                out = out.replacen("{}", arg, 1);
-            }
-            out
-        })
+    store(key).get_args(key, args)
 }
 
-/// Register a plugin's translation namespace. No-op if `init` has not been
-/// called yet (translations not initialized).
+/// Register a plugin's translation namespace. No-op with a warning if `init`
+/// has not been called yet: the embedded English table that serves lookups
+/// before `init` takes no namespaces, so a plugin key read then comes back
+/// unchanged.
 pub fn register_namespace(namespace: &str, lang_dir: &Path) {
     if let Some(tr) = TRANSLATIONS.get() {
         tr.register_namespace(namespace, lang_dir);
@@ -1087,6 +1095,31 @@ pub fn unregister_namespace(namespace: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// init 전 조회는 영어로 init 한 뒤의 조회와 같은 문자열이다. 그래서 한 프로세스에서
+    /// 영어 init 을 사이에 두고 따로 계산한 두 문구가 갈리지 않는다(docs/dev-guide/i18n.md).
+    #[test]
+    fn a_lookup_before_init_reads_the_same_english_as_an_english_init() {
+        assert!(
+            TRANSLATIONS.get().is_none(),
+            "이 시험 바이너리의 다른 시험이 전역 init 을 부르면 미초기화 경로를 잴 수 없다"
+        );
+        let english = Translations::load_from("en", None).0;
+        assert!(!english.base.is_empty(), "내장 영어 표가 비었다");
+        for (key, value) in &english.base {
+            assert_eq!(t(key), *value, "{key}");
+        }
+        assert_eq!(
+            t_fmt("explorer.status.items", "3"),
+            english.get_fmt("explorer.status.items", "3")
+        );
+        assert_eq!(t("no.such.key"), "no.such.key", "없는 키는 그대로 돌아온다");
+        assert!(
+            TRANSLATIONS.get().is_none(),
+            "조회가 전역 저장소를 정하면 안 된다"
+        );
+        assert_eq!(current_language(), "en");
+    }
 
     /// 테스트 전용 임시 디렉토리 (프로세스 id + 단조 카운터로 유일).
     fn temp_dir(tag: &str) -> PathBuf {
