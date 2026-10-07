@@ -150,13 +150,14 @@ tasty split --level pane --target-surface this --type markdown --file /path/doc.
 
 ### 분할 비율과 탐색기 칸 하한
 
-새 분할의 비율은 0.5 다. 다만 그 split 으로 탐색기 칸이 `explorer_min_height`(160px) 아래가 되면, 하한을 지키는 비율 가운데 0.5 에 가장 가까운 값으로 분할선을 옮긴다. 판정과 보정은 엔진이 분할을 확정할 때 한 번 한다(`src/app/journal/commands/split_floor.rs`). IPC·CLI·분할 메뉴·단축키가 모두 이 경로를 지난다.
+새 분할의 비율은 0.5 다. 다만 그 split 으로 탐색기 칸이 `explorer_min_height`(기본 160px, UI zoom 을 곱해 반올림한 논리 px) 아래가 되면, 하한을 지키는 비율 가운데 0.5 에 가장 가까운 값으로 분할선을 옮긴다. 판정과 보정은 엔진이 분할을 확정할 때 한 번 한다(`src/app/journal/commands/split_floor.rs`). IPC·CLI·분할 메뉴·단축키가 모두 이 경로를 지난다.
 
 - 판정 대상은 split 으로 높이가 바뀌는 탐색기 칸이다. surface 분할에서는 대상 surface 와 새 surface 다. pane 분할에서는 대상 pane 의 모든 탭(활성 탭이 아니어도)에 있는 탐색기 칸과 새 pane 의 칸이다. 다른 칸은 보지 않는다.
 - 이미 하한보다 낮은 탐색기 칸(창이 작아서)은 지금 높이 아래로만 줄지 않으면 된다. 그래서 옆으로 나누는 split 처럼 높이가 바뀌지 않는 분할은 그대로 받는다. 분할선 드래그 하한과 같은 규칙이다.
-- 형제 칸의 최소: 탐색기면 같은 160px, 다른 종류면 분할선 드래그와 같은 비율 범위(`DIVIDER_RATIO_MIN`·`DIVIDER_RATIO_MAX`, 0.1~0.9)다. 이 범위 안에서 모든 탐색기 칸이 하한을 지키는 비율이 없으면 split 을 거절하고 레이아웃을 바꾸지 않는다.
-- 거절 응답: `-32602`, 메시지 `split refused: no divider position keeps every explorer cell at least 160px tall while the other cell keeps its own minimum; …`, `error.data` `{"reason": "explorer_min_height", "explorer_min_height": 160}`. CLI 는 이 메시지와 `data:` 줄을 stderr 에 내고 종료 코드 1 로 끝난다. 분할 메뉴·단축키로 거절되면 화면에는 아무 변화가 없다(알림 없음).
+- 형제 칸의 최소: 탐색기면 같은 하한, 다른 종류면 분할선 드래그와 같은 비율 범위(`DIVIDER_RATIO_MIN`·`DIVIDER_RATIO_MAX`, 0.1~0.9)다. 이 범위 안에서 모든 탐색기 칸이 하한을 지키는 비율이 없으면 split 을 거절하고 레이아웃을 바꾸지 않는다.
+- 거절 응답: `-32602`, 메시지 `split refused: no divider position keeps every explorer cell at least <N>px tall while the other cell keeps its own minimum; make the area taller or split another cell`, `error.data` `{"reason": "explorer_min_height", "explorer_min_height": <N>}`. `<N>` 은 UI zoom 을 곱한 하한(기본 160, 예: zoom 1.25 면 200)이며 `data` 에는 실수(`160.0`)로 실린다. CLI 는 이 메시지와 `data:` 줄을 stderr 에 내고 종료 코드 1 로 끝난다. 분할 메뉴·단축키로 거절되면 화면에는 아무 변화가 없다(알림 없음).
 - 픽셀 높이는 그 엔진을 보여 주는 창의 터미널 영역·탭 바 높이·배율로 계산한다. 창이 journal 을 돌릴 때마다 엔진별로 기록하며 journal 에 저장하지 않는다. 창이 없는 엔진(헤드리스)은 칸을 그리지 않으므로 하한 없이 0.5 로 나눈다.
+- attach mirror 워크스페이스의 split 은 원격(서버) 엔진으로 넘어가므로 서버 창의 크기로 판정한다(서버에 그 엔진을 보여 주는 창이 없으면 하한 없이 0.5). client 창이 서버 창보다 낮으면 client 화면의 탐색기 칸은 160 아래로 보일 수 있다.
 - 창 크기 변경은 하한을 지키지 않는다([탐색기](../explorer/index.md)의 compact 상태가 그 경우를 맡는다).
 
 ### cwd 결정 (우선순위)
