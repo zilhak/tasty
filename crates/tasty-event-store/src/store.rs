@@ -248,15 +248,30 @@ fn writer_lock_path(path: &Path) -> PathBuf {
 }
 
 fn lock_exclusive_with_retry(path: &Path) -> StoreResult<File> {
+    retry_while_held(|| match lock_exclusive(path) {
+        Ok(file) => Ok(Some(file)),
+        Err(StoreError::WriterLocked) => Ok(None),
+        Err(err) => Err(err),
+    })?
+    .ok_or(StoreError::WriterLocked)
+}
+
+/// 잠금 시도를 writer 잠금과 같은 구간([`WRITER_LOCK_WAIT`])·간격으로 다시 한다. `attempt`가
+/// `Ok(None)`을 돌려주면 잠금이 잡혀 있다는 뜻이고, 구간이 끝나도 잡혀 있으면 `Ok(None)`을 돌려준다.
+/// 같은 디렉터리의 다른 잠금 파일도 fork한 자식이 exec 전까지 방금 놓은 잠금을 쥘 수 있어 이 재시도를 쓴다.
+pub fn retry_while_held<T, E>(
+    mut attempt: impl FnMut() -> Result<Option<T>, E>,
+) -> Result<Option<T>, E> {
     let deadline = Instant::now() + WRITER_LOCK_WAIT;
     let mut backoff = WRITER_LOCK_FIRST_BACKOFF;
     loop {
-        match lock_exclusive(path) {
-            Err(StoreError::WriterLocked) if Instant::now() < deadline => {
+        match attempt()? {
+            Some(value) => return Ok(Some(value)),
+            None if Instant::now() < deadline => {
                 std::thread::sleep(backoff.min(deadline.saturating_duration_since(Instant::now())));
                 backoff = (backoff * 2).min(WRITER_LOCK_MAX_BACKOFF);
             }
-            other => return other,
+            None => return Ok(None),
         }
     }
 }

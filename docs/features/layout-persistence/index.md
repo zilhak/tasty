@@ -85,7 +85,8 @@ GUI 부팅은 가장 먼저 데이터 홈의 구조 저널 writer 잠금(`<홈>/
 - Given debug GUI를 실행할 때, Then 증거 환경변수(`XDG_ACTIVATION_TOKEN`·`DESKTOP_STARTUP_ID`)를 시작 직후 지우고, 잠금을 얻으면 `tasty.instance`를 쓰고 종료 때 지우는 것은 release와 같다. 두 번째 실행을 넘기는 동작과 D-Bus 등록만 release 전용이다.
 - Given 같은 조건에서, When debug GUI를 실행하면, Then 그 홈의 파일을 만들거나 바꾸지 않고 창과 GPU만 만들어 "이미 사용 중인 데이터 폴더" 부팅 오류 화면(`boot.home_in_use.*`)을 띄운다. 본문에 홈 경로를 넣고 같은 문구를 `tracing::error!`로 stderr에 남긴다. Quit 버튼이나 창 닫기로 종료 코드 1로 끝난다.
 - Given 잠금을 얻었을 때, When 부팅이 이어지면, Then 그 잠금을 저널 worker에 넘겨 저장소가 그 잠금으로 writer가 된다. 저널 schema migration은 잠금을 쥔 뒤에만 실행된다.
-- Given 잠금 시도를 판정할 수 없을 때(홈을 알 수 없거나 잠금 파일을 쓸 수 없음), When 부팅이 이어지면, Then 저널 worker가 저장소를 연 뒤 다시 잠근다. 이때 잠금이 이미 쥐어져 있거나 다른 프로세스가 저널 binding(`journal.binding-lock`)을 초기화하고 있으면 worker는 실패 종류를 "홈 사용 중"으로 보내고, 부팅 오류 화면은 엔진 오류 대신 같은 "이미 사용 중" 문구를 고른다. 오류 문자열은 해석하지 않는다.
+- Given 잠금 시도를 판정할 수 없을 때(홈을 알 수 없거나 잠금 파일을 쓸 수 없음), When 부팅이 이어지면, Then 저널 worker가 저장소를 연 뒤 다시 잠근다. 이때 잠금이 이미 쥐어져 있거나 다른 프로세스가 저널 binding(`journal.binding-lock`)을 writer 잠금과 같은 재시도 구간 내내 초기화하고 있으면 worker는 실패 종류를 "홈 사용 중"으로 보내고, 부팅 오류 화면은 엔진 오류 대신 같은 "이미 사용 중" 문구를 고른다. 오류 문자열은 해석하지 않는다.
+- Given 같은 프로세스가 fork한 자식이 exec 전까지 방금 놓은 binding 잠금의 열린 파일 설명을 공유할 때, When worker가 저장소를 다시 열면, Then 재시도 구간 안에 풀리는 잠금을 기다려 얻고 "홈 사용 중"으로 보내지 않는다. writer 잠금도 같은 이유로 같은 재시도를 쓴다.
 
 헤드리스 빌드는 첫머리 선점을 하지 않는다. 같은 홈의 두 번째 헤드리스 프로세스는 저널 worker의 잠금에서 시작에 실패한다.
 

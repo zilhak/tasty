@@ -6,7 +6,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use tasty_event_store::{
-    EventStore, StoreError, WRITER_LOCK_WAIT, WriterPreempt, preempt_writer_lock,
+    EventStore, StoreError, WRITER_LOCK_WAIT, WriterPreempt, preempt_writer_lock, retry_while_held,
 };
 
 const JOURNAL: &str = "journal-preempt";
@@ -145,4 +145,23 @@ fn concurrent_preempts_yield_exactly_one_owner() {
             .count();
         assert_eq!(owners, 1, "exactly one contender must own the writer lock");
     }
+}
+
+/// 다른 잠금 파일(구조 저널 binding)도 쓰는 재시도. 잡혀 있다는 답 뒤에도 구간 안에서 다시 묻는다.
+#[test]
+fn retry_while_held_asks_again_until_the_lock_is_free() {
+    let mut attempts = 0;
+    let outcome: Result<Option<u32>, ()> = retry_while_held(|| {
+        attempts += 1;
+        Ok((attempts > 3).then_some(attempts))
+    });
+    assert_eq!(outcome, Ok(Some(4)));
+}
+
+#[test]
+fn retry_while_held_gives_up_after_the_retry_window() {
+    let started = Instant::now();
+    let outcome: Result<Option<()>, ()> = retry_while_held(|| Ok(None));
+    assert_eq!(outcome, Ok(None));
+    assert!(started.elapsed() >= WRITER_LOCK_WAIT);
 }

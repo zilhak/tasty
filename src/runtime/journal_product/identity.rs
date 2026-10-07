@@ -71,15 +71,21 @@ fn lock_initialization(directory: &Path) -> Result<File, StartupFailure> {
         .open(directory.join("journal.binding-lock"))
         .map_err(|e| e.to_string())?;
     // Keep the lock file: deleting it could let two processes lock different inodes.
-    match file.try_lock() {
-        Ok(()) => Ok(file),
-        // 다른 프로세스가 같은 홈의 저널을 초기화하는 중이다.
-        Err(std::fs::TryLockError::WouldBlock) => Err(StartupFailure::HomeInUse(
-            "structure journal binding is held by another process".into(),
-        )),
+    // 같은 프로세스가 fork한 자식은 exec 전까지 방금 놓은 잠금의 열린 파일 설명을 쥐고 있을 수 있어,
+    // writer 잠금과 같은 구간 동안 다시 시도한다.
+    let locked = tasty_event_store::retry_while_held(|| match file.try_lock() {
+        Ok(()) => Ok(Some(())),
+        Err(std::fs::TryLockError::WouldBlock) => Ok(None),
         Err(std::fs::TryLockError::Error(e)) => Err(StartupFailure::Other(format!(
             "structure journal binding is unavailable: {e}"
         ))),
+    })?;
+    match locked {
+        Some(()) => Ok(file),
+        // 다른 프로세스가 같은 홈의 저널을 초기화하는 중이다.
+        None => Err(StartupFailure::HomeInUse(
+            "structure journal binding is held by another process".into(),
+        )),
     }
 }
 
@@ -159,4 +165,49 @@ fn decode(bytes: &[u8]) -> Result<Binding, String> {
         return Err("unsupported or invalid structure journal binding".into());
     }
     Ok(binding)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs::{File, OpenOptions};
+    use std::path::Path;
+    use std::time::{Duration, Instant};
+
+    use tasty_event_store::WRITER_LOCK_WAIT;
+
+    fn hold(directory: &Path) -> File {
+        let file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(directory.join("journal.binding-lock"))
+            .unwrap();
+        file.try_lock().unwrap();
+        file
+    }
+
+    #[test]
+    fn a_binding_lock_held_through_the_retry_window_is_home_in_use() {
+        let home = tempfile::tempdir().unwrap();
+        let held = hold(home.path());
+        let started = Instant::now();
+        let error = super::lock_initialization(home.path()).unwrap_err();
+        assert!(error.is_home_in_use(), "{error}");
+        assert!(started.elapsed() >= WRITER_LOCK_WAIT);
+        drop(held);
+    }
+
+    /// fork한 자식이 exec 전까지 binding 잠금을 잠깐 공유하는 경우처럼, 재시도 구간 안에 풀리는 잠금은 기다려 얻는다.
+    #[test]
+    fn a_binding_lock_released_within_the_retry_window_is_acquired() {
+        let home = tempfile::tempdir().unwrap();
+        let held = hold(home.path());
+        let holder = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(200));
+            drop(held);
+        });
+        let locked = super::lock_initialization(home.path());
+        holder.join().unwrap();
+        assert!(locked.is_ok(), "{:?}", locked.err());
+    }
 }
