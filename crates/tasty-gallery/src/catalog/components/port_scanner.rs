@@ -605,14 +605,16 @@ fn cell(ui: &mut egui::Ui, theme: &Theme, row: &PortRow, c: usize) {
     if (1..=5).contains(&c) {
         ui.add_space(theme.table_cell_padding_x().value());
     }
+    // kit 열 정의: Port·Proto·Address 는 mono, Process 는 strong 이라 모두 text-primary 다.
+    let ink = theme.text_primary().to_egui();
     match c {
         0 => star(ui, theme, row.favorited),
-        1 => mono(ui, row.port, theme.text_primary().to_egui()),
-        2 => mono(ui, row.proto, theme.text_muted().to_egui()),
-        3 => mono(ui, row.addr, theme.text_secondary().to_egui()),
+        1 => mono(ui, row.port, ink),
+        2 => mono(ui, row.proto, ink),
+        3 => mono(ui, row.addr, ink),
         4 => {
             // Process name + pid Tag (design: <span>{proc}<Tag>{pid}</Tag></span>).
-            mono(ui, row.proc, theme.text_secondary().to_egui());
+            mono(ui, row.proc, ink);
             tag(ui, theme, row.pid, TagVariant::Default, false);
         }
         _ => {
