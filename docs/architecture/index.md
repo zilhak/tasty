@@ -101,7 +101,7 @@ OS 호출은 `tasty-platform` 크레이트에 둬 본체 타입에 직접 의존
 - effect 상태(Pending·Running·Deferred·Succeeded·Failed·Cancelled·Superseded·Uncertain)의 허용 전이, activation claim과 attempt 기록, 이전 attempt·generation의 늦은 결과 거절.
 - domain snapshot(파생 cache)과 snapshot+tail 읽기, consumer checkpoint, 불변 payload와 참조 기반 GC. retention anchor 이후 재구성 가능한 snapshot만 fallback 후보로 사용한다. 필요한 history가 이미 정리됐으면 전체 로그가 있는 것처럼 성공하지 않고 resync 또는 복구 오류를 반환한다.
 - projection 출력 행(consumer·projection version별 key→바이트)과 consumer 위치를 한 transaction으로 확정한다. 전역 cut API와 고정 stream scope API를 구별하며 부분 cut도 실제 batch에서만 추출한다. scope 변경에는 새 version이 필요하고, 같은 batch의 다른 write·위치 역행·없는 batch는 행 변경 없이 거절한다. 선택 stream의 retention floor 이전 cursor는 ResyncRequired이며 명시한 전체 출력 교체로 재동기화한다. 행을 가진 consumer는 위치만 저장하는 API로 위치를 옮길 수 없다.
-- 새 명령 admission은 활성 DB 페이지와 실제 WAL 바이트에 미확정 명령 credit을 더해 내부 예산을 검사한다. 신규 effect commit은 Pending·Deferred·Running·Uncertain 총수 한도를 검사한다. 원 key 응답·이미 수락된 효과의 전이·cleanup은 이 압력 때문에 차단하지 않는다. 물리 디스크 hard cap은 아니며 수치·WAL 회복·reader pin을 지키는 GC 경계는 [ADR-0063](../adr/0063-event-store-storage-fencing-and-effect-states.md)에 정의한다.
+- 새 명령 admission은 활성 DB 페이지와 실제 WAL 바이트에 미확정 명령 credit을 더해 내부 예산을 검사한다. 신규 effect commit은 Pending·Deferred·Running·Uncertain 총수 한도를 검사한다. 원 key 응답·이미 수락된 효과의 전이·cleanup은 이 압력 때문에 차단하지 않는다. 물리 디스크 hard cap은 아니며 수치·WAL 회복·reader pin을 지키는 GC 경계는 [이벤트 저장소](event-store.md)에 있다.
 - kind별 영속 ID 예약. 예약한 범위는 재오픈 뒤에도 다시 내주지 않으며, 예약 뒤 commit이 실패해 쓰지 않은 구간은 빈 채로 남는다. 상한을 넘는 예약은 되감지 않고 거절한다.
 
 이 크레이트는 도메인 타입을 모른다. 이벤트·effect·snapshot 내용은 type tag·schema version·바이트로 저장하고 해석은 호출자의 codec이 맡는다. WAL과 `synchronous=FULL`이 실제로 적용되지 않거나 journal의 스키마 버전이 이 빌드보다 새로우면 열지 않는다. 비어 있지 않은데 journal 버전 표가 없는 SQLite 파일은 설정을 바꾸기 전에 거절하며 파일을 변경하지 않는다. memory.db·state.db와 독립된 저장소이며 그 DB들과의 원자성은 없다.
@@ -230,6 +230,7 @@ ports-and-adapters 배치:
 | [boot-sequence](boot-sequence.md) | 첫 윈도우 부팅 상태 머신(BootPhase) — hidden 생성→로딩 프레임→표시, 프레임 구동 대기, 부팅 계측(T1~T7) |
 | [shutdown-sequence](shutdown-sequence.md) | 정상·오류 모달의 공통 종료와 exit status, 종료 확정 시 native webview 숨김 + cascade(layout flush→surface close→plugin 종료) + `event_loop.exit()` 이후 Drop tail, 종료 계측(S1~S5) |
 | [close-sequence](close-sequence.md) | 확정 닫기 · 원 자원 retirement receipt · 불명 결과와 명령 완료 · engine/슬롯 해제 |
+| [event-store](event-store.md) | 구조 journal 저장 계약의 수치·보조 규칙 — import 전송 identity, 잠금 없는 쓰기, ID 예약 경계, 로그 보존, projection 출력, 신규 admission 예산·쓰기 크기 상한 |
 | [multi-window](multi-window.md) | AppServices·EngineSession·ViewRegistry 소유, parked/pending/retiring, 모달과 읽기 대여 |
 | [input-layer](input-layer.md) | 마우스 입력 z-order 계층 — 소비/버블링 + 커서 결정 |
 | [data-flows](data-flows.md) | 주요 데이터 흐름 (파일+함수 기준) |
