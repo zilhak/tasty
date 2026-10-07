@@ -478,3 +478,111 @@ fn cancelling_a_restored_postprocess_kills_it_before_its_permit_returns() {
     });
     assert!(gone(pid as i32), "취소한 후처리가 남았다");
 }
+
+/// gpu(permit 1)를 쥔 채 후처리를 기다리는 judge. `retry_wait` 이면 실행 1 이 실패해 실행 2 를
+/// 기다리고(저장된 handle 은 끝난 실행 1 의 후처리 handle), 아니면 본 작업만 끝났다(저장된 handle 은
+/// 본 작업의 Run handle). 후처리는 실행되면 `log` 에 한 줄을 남기고 true 를 낸다.
+fn holding_judge_pending(ctx: &RunnerContext, log: &std::path::Path, retry_wait: bool) {
+    let script = format!("echo pp >> '{}'; printf true", log.display());
+    let spec: TaskGraphSpec = serde_json::from_value(json!({
+        "contract_version": 2,
+        "tasks": [{"id": JUDGE, "output_schema": {"type": "boolean"},
+                   "metadata": {"semaphore": {"name": "gpu"}},
+                   "postprocess": {"command": ["sh", "-c", script], "timeout_ms": 10000,
+                                   "retry": {"max_retries": 3, "delay_ms": 200}},
+                   "command": {"kind": "run", "workspace_id": 1, "command": ["true"]}}]
+    }))
+    .expect("graph");
+    let id = JUDGE.to_string();
+    let attempt = store_op(ctx, |s| {
+        s.submit_graph(1, spec, 0).unwrap();
+        s.set_state(1, &id, TaskState::Running, 1).unwrap();
+        s.get(1, &id).unwrap().unwrap().attempt.unwrap().id
+    });
+    let main = TaskResult {
+        exit_code: Some(0),
+        output: None,
+        error: None,
+    };
+    store_op(ctx, |s| {
+        s.complete(
+            1,
+            &id,
+            Completion::succeeded(Some(attempt.clone()), main),
+            2,
+        )
+        .unwrap()
+    });
+    ctx.with_memory(|mem| {
+        let mut sem = tasty_agent::SemaphoreStore::new(mem, HOST_OWNER);
+        sem.create(1, "gpu", 1, 1).unwrap();
+        assert!(sem.acquire(1, "gpu", JUDGE, None, 1).unwrap().acquired);
+    });
+    let handle = if retry_wait {
+        begin(ctx, &attempt, 1);
+        let failed = PostprocessReport::failed(
+            1,
+            tasty_agent::task::postprocess::PostprocessCause::NonzeroExit,
+            "exited with code 1",
+        );
+        store_op(ctx, |s| {
+            s.complete(
+                1,
+                &id,
+                Completion::postprocessed(Some(attempt.clone()), failed),
+                now_ms(),
+            )
+            .unwrap()
+        });
+        DispatchHandle::PostprocessProcess {
+            pid: 0xFFFF_FFFE,
+            run: 1,
+        }
+    } else {
+        DispatchHandle::ShellProcess { pid: 0xFFFF_FFFE }
+    };
+    let phase = judge(ctx).attempt.unwrap().postprocess.unwrap().phase;
+    assert!(
+        matches!(phase, tasty_agent::task::postprocess::PostprocessPhase::Pending { run, .. } if run == if retry_wait { 2 } else { 1 }),
+        "{phase:?}"
+    );
+    let MemoryValue::Json(handle) =
+        handle_value(serde_json::to_value(handle).unwrap(), Some(&attempt))
+    else {
+        panic!("handle value is JSON");
+    };
+    put(ctx, &handle_key(&id), handle);
+}
+
+/// 후처리를 기다리던 회차는 점유를 쥔 채 재시작을 넘어 예약대로 후처리를 실행하고, 끝난 뒤 반환한다.
+/// 점유를 쥐었다는 이유로 `host restart` 실패가 되지 않는다.
+#[test]
+fn a_pending_postprocess_keeps_its_permit_and_runs_as_scheduled_after_a_restart() {
+    for retry_wait in [false, true] {
+        let (td, ctx) = fresh_ctx();
+        let log = td.path().join("pp.log");
+        holding_judge_pending(&ctx, &log, retry_wait);
+
+        purge_stale_agent_state_on_boot(&ctx, &[1]);
+        assert_eq!(
+            judge(&ctx).state,
+            TaskState::Running,
+            "retry_wait={retry_wait}"
+        );
+        assert_eq!(gpu_holders(&ctx), vec![JUDGE.to_string()]);
+
+        let mut runner = restarted_runner(&ctx);
+        tick_until(&ctx, &mut runner, "postprocess ran", || {
+            judge(&ctx).state.is_terminal()
+        });
+        assert_eq!(
+            judge(&ctx).state,
+            TaskState::Succeeded,
+            "retry_wait={retry_wait}"
+        );
+        assert_eq!(runs(&log), 1);
+        tick_until(&ctx, &mut runner, "permit returned", || {
+            gpu_holders(&ctx).is_empty()
+        });
+    }
+}

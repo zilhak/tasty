@@ -34,9 +34,11 @@ fn own_holding(task: &Task, kind: &str, field: &str) -> Option<String> {
     Some(meta.get(field)?.as_str()?.to_string())
 }
 
-/// 저장된 handle(지금 회차의 것)로 다시 감시할 Running task 인가. 본 작업 중이면 Run handle,
-/// 후처리 실행을 시작한(`Started`) 회차면 후처리 handle 이다. 후처리를 기다리는(`Pending`) 회차는
-/// 실행 중인 프로세스가 없어 아니다.
+/// 저장된 handle(지금 회차의 것)로 다시 이어 갈 Running task 인가. 본 작업 중이면 Run handle,
+/// 후처리 실행을 시작한(`Started`) 회차면 후처리 handle 이다. 후처리를 기다리는(`Pending`, 재시도
+/// 대기 포함) 회차는 실행 중인 프로세스가 없지만 예약대로 후처리를 실행하므로 점유를 쥔 채
+/// 이어 간다(점유가 없는 같은 단계의 task 와 같다). 그때 저장된 handle 은 직전 본 작업이나
+/// 후처리 실행의 것이다.
 pub(crate) fn resumes_after_restart(
     mem: &dyn MemoryStorage,
     workspace_id: u32,
@@ -66,6 +68,10 @@ pub(crate) fn resumes_after_restart(
             Ok(DispatchHandle::PostprocessProcess { run, .. }),
             Some(PostprocessPhase::Started { run: started, .. }),
         ) => run == started,
+        (
+            Ok(DispatchHandle::ShellProcess { .. } | DispatchHandle::PostprocessProcess { .. }),
+            Some(PostprocessPhase::Pending { .. }),
+        ) => true,
         _ => false,
     }
 }
