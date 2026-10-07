@@ -7,7 +7,7 @@ mod attempt_tests;
 mod restart_holders;
 mod settle;
 use restart_holders::{purge_stale_lease_holders, purge_stale_semaphore_holders};
-pub(crate) use settle::settle_ended_task;
+pub(crate) use settle::{settle_ended_task, settle_ended_tasks_in_background};
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};

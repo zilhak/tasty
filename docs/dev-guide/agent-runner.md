@@ -344,12 +344,18 @@ Run 의 끝과 취소 때 끝내는 범위는 다르다.
 쓰이는 짧은 틈은 막지 않는다.
 
 러너가 없을 때(러너를 멈췄거나 Tasty 재시작 뒤 아직 켜지 않음) 취소하면 `TaskService::task_cancel`
-이 그 자리에서 정리한다(`settle_ended_task`). 취소한 task 와 함께 취소된 하류 중 handle 이 남은
-task 의 프로세스 묶음을 끝내고, `KILL_CONFIRM_WAIT`(2초) 안에 종료를 확인하면 handle 을 지우고
-그 task 가 자기 id 로 쥔 semaphore·lease 를 반환한다. 확인하지 못하면 둘 다 남겨 다음 reload
-(러너 시작·부팅 정리)가 같은 정리를 다시 한다. 2초는 SIGKILL·job 종료와 회수에 충분하면서 취소
-IPC 와 부팅이 오래 멈추지 않을 만큼 짧게 정한 값이다. 러너가 있으면 다음 tick 이 종결을 흡수해
-위의 러너 경로로 정리한다.
+이 정리를 시작하고 기다리지 않고 응답한다(`settle_ended_tasks_in_background`). 별도 스레드가 취소한
+task 와 함께 취소된 하류 중 handle 이 남은 task 의 프로세스 묶음을 끝내고, 종료를 확인하면 handle 을
+지우고 그 task 가 자기 id 로 쥔 semaphore·lease 를 반환한다. 확인하기 전까지 점유는 그대로 남아 다른
+task 에 배정되지 않는다. IPC 는 앱의 처리 경로에서 차례로 처리되므로, SIGKILL 이 늦게 듣는
+프로세스(D 상태 등)를 기다리느라 다른 IPC 를 막지 않게 하려는 것이다. 이 스레드는
+`BACKGROUND_CONFIRM_WAIT`(10분)까지 기다리고, 넘으면 둘 다 남겨 다음 reload 에 맡긴다. 스레드가
+끝없이 남지 않게 하는 상한이다.
+
+reload(러너 시작·부팅 정리)의 NotRunning 정리는 같은 정리를 그 자리에서 하며
+`KILL_CONFIRM_WAIT`(2초)까지 기다린다(`settle_ended_task`). 확인하지 못하면 handle·점유를 남겨 다음
+reload 가 다시 시도한다. 2초는 SIGKILL·job 종료와 회수에 충분하면서 부팅이 오래 멈추지 않을 만큼
+짧게 정한 값이다. 러너가 있으면 다음 tick 이 종결을 흡수해 위의 러너 경로로 정리한다.
 
 러너는 실행 중인 task의 세마포어 TTL을 자동 갱신하지 않는다.
 `metadata.semaphore.ttl_ms`를 지정한다면 task의 최대 소요시간보다 길게 잡는다.

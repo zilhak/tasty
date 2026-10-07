@@ -475,3 +475,52 @@ fn a_restored_run_returns_its_holdings_only_after_its_group_is_empty() {
         "그룹이 빈 뒤에도 반환하지 않았다"
     );
 }
+
+/// 러너가 꺼진 동안의 취소는 종료 확인을 기다리지 않고 응답한다. 확인 전까지 점유는 남고, 확인한 뒤
+/// 백그라운드에서 반환한다.
+#[test]
+fn cancel_with_no_runner_answers_before_the_exit_is_confirmed() {
+    let td = tempfile::tempdir().unwrap();
+    let mem = memory(td.path());
+    let svc = TaskService::new(
+        mem.clone(),
+        Arc::new(OnceLock::new()),
+        Arc::new(crate::completion::fixture::Resolver::default()),
+    );
+    let scope = TaskScope::new(svc.runner_registry().clone());
+    let pid_file = td.path().join("unused.pid");
+    let task = run_task(&mem, scope.agent_seq(), &pid_file);
+    // 시험이 회수하기 전까지 좀비로 남아 끝난 것이 확인되지 않는 Run.
+    let mut leader = std::process::Command::new("sleep")
+        .arg("60")
+        .process_group(0)
+        .spawn()
+        .unwrap();
+    let pid = leader.id();
+    let started_at = process_start::start_time(pid).unwrap();
+    hold(&mem, scope.agent_seq(), &task.id, pid, started_at);
+
+    let t0 = Instant::now();
+    svc.task_cancel(&scope, 1, &task.id, 2000).unwrap();
+    let took = t0.elapsed();
+    assert!(
+        took < super::settle::KILL_CONFIRM_WAIT,
+        "취소 응답이 종료 확인을 기다렸다: {took:?}"
+    );
+    std::thread::sleep(Duration::from_millis(300));
+    assert_eq!(
+        gpu_holders(&mem),
+        vec![task.id.clone()],
+        "종료 확인 전에 반환했다"
+    );
+    leader.wait().unwrap();
+    let deadline = Instant::now() + WAIT;
+    while !gpu_holders(&mem).is_empty() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(
+        gpu_holders(&mem).is_empty(),
+        "확인한 뒤에도 반환하지 않았다"
+    );
+    assert!(!handle_left(&mem, &task.id));
+}

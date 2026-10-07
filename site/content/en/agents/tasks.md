@@ -1,4 +1,4 @@
-<!-- source-hash: edad543a0ea1 -->
+<!-- source-hash: 91728d2c8cc2 -->
 <a id="task-dag"></a>
 
 # Task workflows (DAG)
@@ -273,7 +273,7 @@ tasty agent task-purge --workspace-id 2 --states succeeded
 - `task-set-result` is for reporting that something the runner did not run is done — a check a person does by hand, for example.
   - A typed task gets an attempt ID (`<task ID>#<number>`) each time it runs. Name the attempt with `--attempt-id`. If the task has run again since, the old report is refused instead of finishing the new run.
   - Sending the same report again returns the same answer as the first time. A different result for an attempt that has already finished is refused.
-- Cancelling a running command task with `task-cancel` stops the command and the processes it started. This includes the case where the command has already ended but a process it started still holds its output, so the task still shows as running. A daemon that closed its output and stays behind is not treated as part of the task once the task ends. The semaphore or lease is given back only after they have ended, so a task waiting for the same resource starts after the earlier command has really stopped. This also happens right away when the runner is off. On Windows, for a command started before Tasty restarted, only that command itself is stopped, so processes it started may stay behind.
+- Cancelling a running command task with `task-cancel` stops the command and the processes it started. This includes the case where the command has already ended but a process it started still holds its output, so the task still shows as running. A daemon that closed its output and stays behind is not treated as part of the task once the task ends. The semaphore or lease is given back only after they have ended, so a task waiting for the same resource starts after the earlier command has really stopped. This also starts right away when the runner is off. In that case the cancel command returns without waiting for them to end, and the semaphore or lease is given back once they have. On Windows, for a command started before Tasty restarted, only that command itself is stopped, so processes it started may stay behind.
 - `task-delete` is refused while another task references it, and tells you the ID of the referencing side. A running task has to be cancelled first.
 
 ## Receiving finished work as events
