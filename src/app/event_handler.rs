@@ -146,6 +146,7 @@ impl ApplicationHandler<AppEvent> for App {
                     self.view.views.len()
                 );
             }
+            #[cfg(any(windows, target_os = "linux"))]
             AppEvent::ExternalActivate(request) => {
                 self.handle_external_activation(event_loop, request);
             }

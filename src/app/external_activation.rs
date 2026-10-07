@@ -9,14 +9,21 @@
 //! 기존 창을 건드리지 않고 토큰 없는 새 창을 연다([`can_raise_existing_view`]). 컴포지터가
 //! `xdg_activation_v1`을 제공하지 않아 요청하지 못하면 토큰을 실은 새 창을 연다. 다시 보이기만 한 창은
 //! 앞으로 오지 않아 무반응으로 보이기 때문이다.
+//!
+//! 요청을 받는 경로는 Windows·Linux 에만 있다(Linux D-Bus `Activate`, Windows 등록 메시지). macOS 는
+//! 같은 앱을 다시 열면 OS 가 기존 프로세스에 전달하므로 받는 쪽 처리를 빌드하지 않는다. 만드는 중인 창에
+//! 걸어 둔 요청을 적용하는 경로는 창 생성 흐름이 모든 OS 에서 부르므로 남긴다.
 
+#[cfg(any(windows, target_os = "linux"))]
 use winit::event_loop::ActiveEventLoop;
 use winit::window::WindowId;
 
 use crate::app::App;
+#[cfg(any(windows, target_os = "linux"))]
 use crate::app::event::WindowRequestOrigin;
 use crate::boot::single_instance::ExternalActivation;
 
+#[cfg(any(windows, target_os = "linux"))]
 /// 외부 활성화 요청으로 할 일.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum ActivationPlan<W> {
@@ -28,6 +35,7 @@ pub(crate) enum ActivationPlan<W> {
     Restore { views: Vec<W>, target: W },
 }
 
+#[cfg(any(windows, target_os = "linux"))]
 /// `views`는 (창, MainView 여부) 목록이다. 대상은 마지막으로 포커스를 가졌던 View이고, 그 값이 없거나
 /// 이미 닫힌 창이면 가장 작은 id의 MainView다. `raise_existing`이 거짓인 백엔드에서는 창이 있어도 새 창을
 /// 연다. 기존 창을 다시 보이기만 하고 앞으로 가져오지 못하면 사용자에게는 무반응으로 보이기 때문이다.
@@ -59,15 +67,18 @@ pub(crate) fn plan_activation<W: Copy + Ord>(
     ActivationPlan::Restore { views: all, target }
 }
 
+#[cfg(any(windows, target_os = "linux"))]
 /// 이 요청으로 이미 떠 있는 창을 활성화할 수 있는지. Wayland는 xdg-activation 토큰이 있어야 한다.
 fn can_raise_existing_view(wayland: bool, request: &ExternalActivation) -> bool {
     raises_existing_view(wayland, request.evidence.wayland_token.is_some())
 }
 
+#[cfg(any(windows, target_os = "linux"))]
 fn raises_existing_view(wayland: bool, has_wayland_token: bool) -> bool {
     !wayland || has_wayland_token
 }
 
+#[cfg(any(windows, target_os = "linux"))]
 /// 새로 연 창이 등록된 뒤 OS 활성화를 한 번 더 요청할지. X11은 생성 때 startup id를 싣고 등록 뒤
 /// `_NET_ACTIVE_WINDOW`를 보내는 두 단계를 쓴다. Wayland는 생성 속성에 실은 토큰 한 번으로 끝낸다.
 /// xdg-activation 토큰은 컴포지터가 한 번 쓰면 무효로 할 수 있다.
@@ -85,6 +96,7 @@ enum OsActivation {
 }
 
 impl App {
+    #[cfg(any(windows, target_os = "linux"))]
     pub(crate) fn handle_external_activation(
         &mut self,
         event_loop: &ActiveEventLoop,
@@ -117,6 +129,7 @@ impl App {
         }
     }
 
+    #[cfg(any(windows, target_os = "linux"))]
     /// 트레이 복원과 같은 방식이되 focus_window()는 부르지 않는다. 포커스는 OS가 정한다.
     fn restore_and_activate(
         &mut self,
@@ -144,6 +157,7 @@ impl App {
         }
     }
 
+    #[cfg(any(windows, target_os = "linux"))]
     /// 증거를 창 생성 속성에 실어 새 창을 만든다. Wayland는 그중 xdg-activation 토큰만 싣는다.
     /// `activate_after`가 참이면 등록 뒤 같은 증거로 OS 활성화를 한 번 더 요청한다
     /// ([`activates_after_creation`]).
@@ -225,7 +239,7 @@ fn log_os_activation_error(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, any(windows, target_os = "linux")))]
 mod tests {
     use super::*;
 

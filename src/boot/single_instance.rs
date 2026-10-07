@@ -24,11 +24,13 @@ pub(crate) fn service_enabled() -> bool {
 pub(crate) struct ExternalActivation {
     pub(crate) evidence: evidence::LaunchEvidence,
     /// OS가 포그라운드 권한을 넘겨 준 요청(Windows 등록 메시지). 메시지에는 증거가 실리지 않는다.
+    #[cfg(any(windows, target_os = "linux"))]
     pub(crate) os_granted: bool,
 }
 
 impl ExternalActivation {
     /// 증거가 없는 요청은 아무것도 바꾸지 않는다.
+    #[cfg(any(windows, target_os = "linux"))]
     pub(crate) fn has_evidence(&self) -> bool {
         self.os_granted || self.evidence.is_present()
     }
