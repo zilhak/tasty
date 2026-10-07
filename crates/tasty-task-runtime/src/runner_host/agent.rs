@@ -1,11 +1,16 @@
 //! agent task 실행. provider 플러그인의 spawn·tell·state 를 재사용하고, 턴의 귀속과 결과는
 //! [`crate::agent_turns`] 의 표로 판단한다. 세션을 닫거나 사용자 프로세스를 끝내지 않는다.
 
+use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex, mpsc};
+use std::time::Duration;
+
 use serde_json::json;
 use tasty_agent::runner::{DispatchHandle, PollOutcome};
 use tasty_agent::task::FailureCode;
 use tasty_agent::task::agent::{self, AgentLink, AgentSession};
 use tasty_agent::{Task, TaskCommand, TaskStore};
+use tasty_ipc::host_call::HostIpcInjector;
 use tasty_memory::HOST_OWNER;
 
 use super::{HostExecutor, INJECTOR_UNINIT_MSG, now_ms};
@@ -14,7 +19,96 @@ use crate::agent_turns::{TurnBinding, TurnPoll, decide};
 /// provider spawn 의 응답 대기. spawn 은 셸을 띄우고 CLI 를 실행한 뒤 답하므로 일반 호출(5초)보다
 /// 오래 걸린다(실측 약 4초, 동시 spawn 이면 5초 초과). 다시 보내면 세션이 하나 더 생기므로
 /// 넉넉히 기다린다.
-const SPAWN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+const SPAWN_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// task 가 포기한 뒤에도 spawn 응답을 기다리는 상한. 그 안에 세션이 뜨면 task 가 닫는다.
+const SPAWN_CLEANUP_WAIT: Duration = Duration::from_secs(300);
+
+/// spawn 응답을 넘겨받을 자리. task 가 기다리기를 그만두면 늦은 응답의 세션을 닫는다.
+enum SpawnSlot {
+    Waiting,
+    Abandoned,
+}
+
+/// `<provider>.spawn` 을 부르고 `wait` 까지 응답을 기다린다. 그 뒤에 성공한 spawn 이 만든 세션은
+/// 이 task 에 묶이지 않으므로 `surface.close` 로 닫는다. 사용자가 연 세션은 건드리지 않는다.
+fn spawn_session(
+    inj: &HostIpcInjector,
+    method: &str,
+    params: serde_json::Value,
+    wait: Duration,
+    cleanup_wait: Duration,
+) -> Result<serde_json::Value, String> {
+    let slot = Arc::new(Mutex::new(SpawnSlot::Waiting));
+    let (tx, rx) = mpsc::channel();
+    let (inj2, slot2, method2) = (inj.clone(), slot.clone(), method.to_string());
+    std::thread::spawn(move || {
+        let res = inj2
+            .dispatch(&method2, params, cleanup_wait)
+            .map_err(|e| e.to_string());
+        let g = lock_slot(&slot2);
+        match *g {
+            SpawnSlot::Waiting => {
+                if tx.send(res).is_err() {
+                    tracing::warn!("{method2}: the waiting task is gone");
+                }
+            }
+            SpawnSlot::Abandoned => {
+                drop(g);
+                close_late_session(&inj2, &method2, res);
+            }
+        }
+    });
+    match rx.recv_timeout(wait) {
+        Ok(res) => res,
+        Err(_) => {
+            let mut g = lock_slot(&slot);
+            // 잠금 사이에 응답이 왔으면 그것을 쓴다.
+            if let Ok(res) = rx.try_recv() {
+                return res;
+            }
+            *g = SpawnSlot::Abandoned;
+            Err(format!(
+                "no reply within {}s (a session that starts later is closed by the task)",
+                wait.as_secs()
+            ))
+        }
+    }
+}
+
+static SLOT_POISONED: AtomicBool = AtomicBool::new(false);
+
+fn lock_slot(slot: &Mutex<SpawnSlot>) -> std::sync::MutexGuard<'_, SpawnSlot> {
+    tasty_utils::poison::recover_mutex(slot.lock(), "agent spawn reply slot", &SLOT_POISONED)
+}
+
+/// 늦은 spawn 응답이 띄운 세션의 surface.
+fn late_surface(method: &str, res: Result<serde_json::Value, String>) -> Option<u64> {
+    match res {
+        Ok(v) => v.get("child_surface_id").and_then(|v| v.as_u64()),
+        Err(e) => {
+            tracing::info!("{method}: late spawn did not start a session: {e}");
+            None
+        }
+    }
+}
+
+fn close_late_session(inj: &HostIpcInjector, method: &str, res: Result<serde_json::Value, String>) {
+    let Some(surface) = late_surface(method, res) else {
+        return;
+    };
+    let closed = inj.dispatch(
+        "surface.close",
+        json!({ "surface_id": surface }),
+        Duration::from_secs(5),
+    );
+    match closed {
+        Ok(_) => {
+            tracing::info!("{method}: closed late session surface {surface} the task gave up on")
+        }
+        Err(e) => tracing::warn!("{method}: could not close late session surface {surface}: {e}"),
+    }
+}
 
 /// 회차 토큰. 회차 id 와 달리 예측할 수 없다.
 fn new_attempt_token() -> String {
@@ -106,12 +200,8 @@ impl HostExecutor {
                     .host_ipc
                     .get()
                     .ok_or_else(|| unavailable(format!("{method}: {INJECTOR_UNINIT_MSG}")))?;
-                let resp = inj.dispatch(&method, params, SPAWN_TIMEOUT).map_err(|e| {
-                    // 응답이 늦었을 뿐 spawn 이 실행됐을 수 있다. 그 세션은 이 회차에 묶이지 않는다.
-                    unavailable(format!(
-                        "{method}: {e} (the session may still start; it is not bound to this task)"
-                    ))
-                })?;
+                let resp = spawn_session(inj, &method, params, SPAWN_TIMEOUT, SPAWN_CLEANUP_WAIT)
+                    .map_err(|e| unavailable(format!("{method}: {e}")))?;
                 let surface = resp
                     .get("child_surface_id")
                     .and_then(|v| v.as_u64())

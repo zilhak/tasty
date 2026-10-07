@@ -807,7 +807,7 @@ DAG 요약(`agent.dag_list`·`agent.dag_get`)의 `state_counts.not_selected` 는
 
 | `session` | 동작 |
 |---|---|
-| `{"kind": "new", "parent_surface": N, "cwd"?: "..."}` | `<provider>.spawn` 으로 자식을 띄우고 지시를 첫 프롬프트로 준다. 그 자식의 첫 턴이 이 회차의 턴이다. spawn 은 다시 보내면 세션이 하나 더 생기므로 일반 호출(5초)보다 긴 30초까지 응답을 기다린다. 그래도 답이 없으면 `agent_unavailable` 로 끝나고, 늦게 뜬 세션은 이 task 에 묶이지 않은 채 남는다 |
+| `{"kind": "new", "parent_surface": N, "cwd"?: "..."}` | `<provider>.spawn` 으로 자식을 띄우고 지시를 첫 프롬프트로 준다. 그 자식의 첫 턴이 이 회차의 턴이다. spawn 은 다시 보내면 세션이 하나 더 생기므로 일반 호출(5초)보다 긴 30초까지 응답을 기다린다. 그래도 답이 없으면 `agent_unavailable` 로 끝난다. 그 뒤에도 spawn 응답을 5분까지 기다려, 그 사이 뜬 세션은 task 가 `surface.close` 로 닫는다(이 task 가 만든 세션이라 회차에 묶이지 않은 채 남기지 않는다). 5분이 지나도 답이 없으면 결과를 알 수 없어 닫지 못한다 |
 | `{"kind": "existing", "surface_id": N}` | 세션이 idle 이고 다른 task 가 쥐지 않았을 때만 `<provider>.tell` 로 보낸다. 사용자의 턴이 진행 중이거나 입력을 기다리면 끼어들지 않고 기다린다(`timeout_ms` 가 지나면 `timed_out`) |
 
 턴 귀속은 메모리의 턴 표(`AgentTurns`)가 한다. surface 하나에 회차 하나만 묶이므로 같은 세션의 agent task 는 차례로 실행된다. task id 는 workspace 마다 정해지므로 표는 회차를 (workspace, task) 로 찾고 풀며, 다른 workspace 의 같은 이름 task 와 섞이지 않는다. provider 플러그인은 훅에서 `agent.task_turn_report` 로 턴 시작(`turn_started`)과 끝(`turn_ended`: `final_answer` 또는 `error`)을 알린다. 이 메서드는 `agent.turn_report` 권한(이 메서드만 연다)을 가진 플러그인 중 그 provider namespace 를 소유한 플러그인만 부를 수 있다(그 밖의 호출은 `-32001`). 기존 세션은 시작 보고를 받은 뒤의 종료만 이 회차의 것으로 본다(앞선 사용자 턴의 늦은 종료를 섞지 않는다). 지시 끝에는 회차 표지 줄(`[tasty-task-attempt:<회차 토큰>]`)을 붙이고, provider 플러그인은 시작 보고에 프롬프트에서 찾은 표지 토큰을 싣는다(`prompt_seen: true`·`attempt_marker`). 기존 세션의 시작 보고는 표지가 그 회차 토큰일 때만 받으므로, 묶은 뒤 지시가 전달되기 전에 사용자가 시작한 턴은 이 회차의 턴이 되지 않는다. 훅이 프롬프트를 넘기지 않은 시작 보고(`prompt_seen` 없음)는 가릴 수 없어 그대로 받는다. 이때는 묶음과 지시 전달 사이의 짧은 창에 시작한 사용자 턴이 섞일 수 있다. 다른 provider 의 보고와 종결 뒤 보고는 무시한다.
@@ -830,9 +830,15 @@ DAG 요약(`agent.dag_list`·`agent.dag_get`)의 `state_counts.not_selected` 는
 | 입력 대기(`needs_input`) | Running 유지. 회차에 `agent: {provider, surface_id, awaiting_input_since}` 를 남기고 `task_get` 의 `phase` 는 `awaiting_input`(그 밖의 Running agent task 는 `executing`) |
 | idle 인데 종료 보고가 없다 | Running 유지. 성공으로 보지 않는다 |
 
-실패 코드는 `typed_result.error.code` 다. 업무 값 `"revise"` 같은 출력은 성공이다. 취소·실패·종결 때 턴 묶음만 풀고 세션은 닫지 않는다. 턴 표는 영속하지 않으므로 호스트가 재시작되면 실행 중이던 agent task 는 `agent_unavailable` 로 끝난다.
+실패 코드는 `typed_result.error.code` 다. 업무 값 `"revise"` 같은 출력은 성공이다. 취소·실패·종결 때 턴 묶음만 풀고 세션은 닫지 않는다(사용자가 결과를 확인할 수 있게 둔다). 예외는 위의 늦게 뜬 spawn 세션 하나다. 기존 세션(`existing`)은 어떤 경우에도 닫지 않는다. 턴 표는 영속하지 않으므로 호스트가 재시작되면 실행 중이던 agent task 는 `agent_unavailable` 로 끝난다.
 
 세션은 provider 의 spawn 이 만드는 터미널 surface 이고, 그 셸 환경은 터미널 규칙을 따른다. 위 §runner 자식의 환경의 규칙은 러너가 직접 띄우는 프로세스에만 적용된다.
+
+한계:
+
+- Claude 세션에 Stop 게이트를 붙이면 게이트가 보류한 Stop 이 나중에 풀려 턴이 끝나는 경로를 보고하지 않으므로, 그 턴의 끝을 받지 못하고 `timeout_ms` 로 끝난다([Claude 플러그인](../plugins/claude/index.md)).
+- Codex 세션이 샌드박스(네트워크·loopback 차단) 안에서 돌면 `tasty agent task-submit` 이 호스트에 닿지 못한다. 구조화 출력은 제출이 없어 `result_missing` 으로 끝난다. 기본 `string` 출력은 턴 보고로 받으므로 영향이 없다. 구조화 출력이 필요한 Codex agent task 는 loopback 을 허용하는 실행 모드로 띄운다.
+- 훅이 프롬프트를 넘기지 않는 provider 의 기존 세션은 묶음과 지시 전달 사이에 사용자가 시작한 턴을 가리지 못한다(위 턴 귀속 문단).
 
 ### v2 reduce
 

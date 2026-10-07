@@ -507,3 +507,31 @@ fn the_plugins_read_the_marker_the_host_writes() {
     );
     assert_eq!(plugin::attempt_marker(&prompt), Some(token.as_str()));
 }
+
+/// 기다리는 동안 답한 spawn 은 그대로 쓰고, 포기한 뒤에 뜬 세션은 task 가 닫는다.
+#[test]
+fn a_session_that_starts_after_the_task_gave_up_is_closed() {
+    let (_td, ctx) = fresh_ctx();
+    let fake = FakeProvider::install_with(&ctx, "idle", Duration::from_millis(300));
+    let inj = ctx.host_ipc.get().expect("injector").clone();
+    let long = Duration::from_secs(5);
+    let got = super::spawn_session(&inj, "claude.spawn", json!({}), long, long);
+    assert_eq!(got.expect("in time")["child_surface_id"], 42);
+    assert!(fake.sent("surface.close").is_empty());
+
+    let got = super::spawn_session(
+        &inj,
+        "claude.spawn",
+        json!({}),
+        Duration::from_millis(50),
+        long,
+    );
+    assert!(got.is_err());
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while fake.sent("surface.close").is_empty() && std::time::Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let closed = fake.sent("surface.close");
+    assert_eq!(closed.len(), 1);
+    assert_eq!(closed[0]["surface_id"], 42);
+}

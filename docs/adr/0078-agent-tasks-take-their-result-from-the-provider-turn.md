@@ -21,7 +21,7 @@ v2 계약에 `agent` command 를 둔다. provider 는 결과 수집을 구현한
 - 회차마다 예측할 수 없는 회차 토큰을 만들어 지시에 싣고, 제출은 그 토큰을 함께 내야 받는다. 회차 id 는 `<task id>#<n>` 이라 짐작할 수 있어서, 다른 회차나 다른 호출자(같은 그래프를 돌리는 다른 에이전트 등)가 실수로 낸 값이 들어올 수 있기 때문이다. **이 토큰은 보안 경계가 아니다.** 로컬 IPC 는 신뢰 경계로 둔다([ADR-0011](0011-secrets-and-local-trust.md)). 같은 컴퓨터의 호출자는 세션 화면이나 실행 기록에서 토큰을 읽을 수 있고, 토큰은 실수 제출을 막는 데만 쓴다.
 - idle 만으로는 성공하지 않는다. 결과 없이 끝난 턴은 `result_missing`, 오류로 끝난 턴은 `agent_turn_error`, 세션 종료는 `agent_exited`, 기한 초과는 `timed_out`, provider 호출 불가와 재시작으로 잃은 귀속은 `agent_unavailable` 로 끝나고 `typed_result.error.code` 로 구별한다. 입력 대기는 실패가 아니라 Running 의 `awaiting_input` phase 다.
 - 턴 표는 영속하지 않는다. 재시작 뒤에는 보고를 어느 회차에 귀속할지 알 수 없으므로 실행 중이던 agent task 는 `agent_unavailable` 로 끝난다.
-- task 는 세션을 닫지 않는다. 취소·종결 때 턴 묶음만 푼다.
+- task 는 세션을 닫지 않는다. 취소·종결 때 턴 묶음만 푼다. 예외로, task 가 spawn 을 기다리다 포기한 뒤에 뜬 새 세션은 task 가 닫는다. 그 세션은 이 task 가 만들었지만 회차에 묶이지 않아 아무도 쓰지 않는 세션이기 때문이다. 기존 세션은 닫지 않는다.
 
 현재 동작은 [agent runner 가이드](../dev-guide/agent-runner.md)의 "agent task" 절에 있다.
 

@@ -1,4 +1,4 @@
-<!-- source-hash: df110c97dc01 -->
+<!-- source-hash: 11b636670179 -->
 <a id="task-dag"></a>
 
 # Task workflows (DAG)
@@ -162,6 +162,8 @@ An `agent` task sends one instruction to a Claude or Codex session and takes the
 - The task fails when the turn ends without an answer, the turn ends with an error, the session ends, or `timeout_ms` passes. `task-get` shows which one happened. When the turn ends without the value being handed in, the first 2000 characters of the turn's last answer stay in the failure record.
 - While the agent waits for input such as a permission prompt, the task stays running and `task-get` shows a `phase: awaiting_input` line and a line like `agent session: claude surface 12, awaiting input since …`.
 - Finishing or cancelling the task does not close the session. If Tasty restarts, running agent tasks fail.
+- If a new session does not come up within 30 seconds, the task fails. A session that comes up later is closed by the task. A session that was already open is never closed.
+- When Codex runs in a sandbox that blocks the network, `task-submit` cannot reach Tasty, so a task with a result type fails. Tasks without a result type (the last answer is the result) are not affected.
 
 ## Watching progress
 
