@@ -2,7 +2,7 @@
 //!
 //! 생성 CSS 문자열 시험은 선언이 있는지만 본다. 여기서는 엔진이 그 CSS 로 주소창을 문서 어느
 //! 위치에서도 상단에 붙이는지를 `getBoundingClientRect()` 로 판정한다. GTK3 는 디스플레이가 있어야
-//! 하므로 `#[ignore]` 로 두고, 디스플레이를 주는 게이트가 이름으로 부른다
+//! 하므로 `#[ignore]` 로 두고, 디스플레이를 주는 CI 단계가 이름으로 부른다
 //! (`docs/dev-guide/ci-gates.md`). 실행:
 //! `xvfb-run -a cargo test -p tasty-plugin-markdown -- --ignored --exact render::webview_layout_tests::address_bar_stays_on_top_in_webkitgtk`
 
@@ -22,7 +22,7 @@ use super::{DocumentInput, render_document};
 /// 측정 뷰포트. 회귀를 처음 잰 값과 같게 둔다.
 const VIEW_W: i32 = 1000;
 const VIEW_H: i32 = 800;
-/// 엔진 응답 한 번을 기다리는 상한. 넘기면 엔진이 멈춘 것으로 보고 실패한다.
+/// 엔진 응답 한 번을 기다리는 최대 시간. 넘기면 엔진이 멈춘 것으로 보고 실패한다.
 const WAIT: Duration = Duration::from_secs(20);
 
 fn document(source: &str) -> String {
@@ -127,7 +127,7 @@ const BAR_TOP: &str =
 ///
 /// `body{height:100%}` 로 되돌리면 첫 단언이, `html` 의 확정 높이를 빼면 마지막 단언이 실패한다.
 #[test]
-#[ignore = "WebKitGTK 를 띄울 디스플레이가 필요하다 — 게이트가 xvfb-run 으로 이름을 지정해 실행한다"]
+#[ignore = "WebKitGTK 를 띄울 디스플레이가 필요하다 — CI 단계가 xvfb-run 안에서 이름으로 실행한다"]
 fn address_bar_stays_on_top_in_webkitgtk() {
     let display = std::env::var("DISPLAY").unwrap_or_default();
     assert!(

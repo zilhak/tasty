@@ -1645,6 +1645,7 @@ fn the_gui_suite_channel_claim_points_the_same_way_as_the_workflows() {
         })
         // --include-ignored는 --ignored를 부분문자열로 포함하지 않아 따로 확인한다.
         .filter(|c| c.contains("--ignored") || c.contains("--include-ignored"))
+        .filter(|c| can_reach_gui_tests(c))
         .collect();
 
     let doc_text = std::fs::read_to_string(root.join(CLAIM_DOC))
@@ -1667,6 +1668,44 @@ fn the_gui_suite_channel_claim_points_the_same_way_as_the_workflows() {
             firing.join("\n  ")
         );
     }
+}
+
+/// 루트 패키지의 `gui_tests` 타깃을 실행할 수 있는 호출인지 본다. 다른 패키지만 지목하거나
+/// 다른 통합 타깃만 지목한 호출은 ignored 플래그가 있어도 이 스위트를 돌리지 않는다.
+fn can_reach_gui_tests(command: &str) -> bool {
+    let words: Vec<&str> = command.split_whitespace().collect();
+    let value_of = |flag: &str| -> Vec<&str> {
+        words
+            .windows(2)
+            .filter(|w| w[0] == flag)
+            .map(|w| w[1])
+            .collect()
+    };
+    let packages = value_of("-p");
+    if !words.contains(&"--workspace") && !packages.is_empty() && !packages.contains(&"tasty") {
+        return false;
+    }
+    let targets = value_of("--test");
+    targets.is_empty() || targets.contains(&"gui_tests")
+}
+
+#[test]
+fn only_calls_that_can_build_gui_tests_count_for_its_channel() {
+    assert!(!can_reach_gui_tests(
+        "cargo test -p tasty-plugin-markdown --locked -- --ignored --exact x"
+    ));
+    assert!(!can_reach_gui_tests(
+        "cargo test --workspace --locked --test e2e_tests -- --ignored"
+    ));
+    assert!(can_reach_gui_tests(
+        "cargo test --workspace --locked --test gui_tests -- --ignored"
+    ));
+    assert!(can_reach_gui_tests(
+        "cargo test --workspace --locked -- --ignored"
+    ));
+    assert!(can_reach_gui_tests(
+        "cargo test -p tasty --locked -- --include-ignored"
+    ));
 }
 
 /// 이름 열거 검사를 생략할 때 근거가 되는 제한 없는 자동 호출이 있는지 별도로 확인한다.
@@ -3199,9 +3238,10 @@ fn every_time_marker_carries_its_own_reason() {
 /// YAML 주석을 제외한 사본에서 센다. 실제 실행 결과를 수집한 수는 아니다.
 const SWALLOWABLE_STEPS: usize = 6;
 
-/// 같은 측정에서 if가 있는 검증 스텝 수. 조건식을 계산하지 않아 앞선 실패 뒤 실행을 보장하지 않는다.
+/// if가 있는 검증 스텝 수(2026-10-07, check-headless의 webview 레이아웃 관측 단계를 더해 7).
+/// 조건식을 계산하지 않아 앞선 실패 뒤 실행을 보장하지 않는다.
 /// 두 분류를 함께 대조하지만 수만으로 스텝 삭제와 조건 변경을 구별할 수는 없다.
-const PROTECTED_STEPS: usize = 6;
+const PROTECTED_STEPS: usize = 7;
 
 fn workflow_texts() -> Vec<(String, String)> {
     let root = repo_root();

@@ -20,7 +20,7 @@ DPI 수동 변환 검사는 `src/`와 `crates/`의 파일 수 하한을 각각 �
 | SemVer 가드 | `cargo test --locked --no-default-features --no-fail-fast --test api_baseline_0_7 --test changelog_unreleased --test cli_naming_count_drift` | `test.yml` 의 `semver-guards` (self-hosted Linux X64) | main push · 수동 | [실측] |
 | macOS 컴파일 + 단위테스트 | `cargo check --workspace --locked` · `cargo test --workspace --lib --bins --locked --no-fail-fast` | `crossplatform-check.yml` 의 `check-macos` (self-hosted macOS) | main push(문서·site 제외) · PR · 수동 | [실측] |
 | Windows lint + 단위테스트 **+ 지목 통합** | `cargo clippy --workspace --all-targets --locked` · `cargo test --workspace --lib --bins --locked --no-fail-fast` · `cargo test -p tasty-shm -p tasty-doc-guards --locked --no-fail-fast` | `crossplatform-check.yml` (self-hosted Windows) | main push(문서·site 제외) · PR · 수동 | [실측] |
-| headless 컴파일 · **전체 스위트** · lint **+ Linux gui 단위테스트** | `cargo check --workspace --no-default-features --locked` · `cargo test --workspace --no-default-features --locked --no-fail-fast` · `cargo clippy --workspace --all-targets --no-default-features --locked` · `cargo test --workspace --lib --bins --locked --no-fail-fast`(스텝 `cargo test (linux, gui, unit)` — 기본 feature, 아래 [조합 격자의 빈 칸](#조합-격자의-빈-칸--linux--gui--debug-지금은-채워져-있다)) · **관측(비차단)** `xvfb-run … cargo test --workspace --locked --no-fail-fast --test e2e_tests -- multi_window_owner_routing --exact`(스텝 `cargo test (linux, gui, e2e — 관측용)`, `continue-on-error: true` — 헤드리스 조합에서 컴파일하지 않는 이 시험을 돌리되 실패해도 잡을 차단하지 않는다) | `crossplatform-check.yml` 의 `check-headless` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동 | [실측] |
+| headless 컴파일 · **전체 스위트** · lint **+ Linux gui 단위테스트** | `cargo check --workspace --no-default-features --locked` · `cargo test --workspace --no-default-features --locked --no-fail-fast` · `cargo clippy --workspace --all-targets --no-default-features --locked` · `cargo test --workspace --lib --bins --locked --no-fail-fast`(스텝 `cargo test (linux, gui, unit)` — 기본 feature, 아래 [조합 격자의 빈 칸](#조합-격자의-빈-칸--linux--gui--debug-지금은-채워져-있다)) · **관측(비차단)** `xvfb-run … cargo test --workspace --locked --no-fail-fast --test e2e_tests -- multi_window_owner_routing --exact`(스텝 `cargo test (linux, gui, e2e — 관측용)`, `continue-on-error: true` — 헤드리스 조합에서 컴파일하지 않는 이 시험을 돌리되 실패해도 잡을 차단하지 않는다) · **관측(비차단)** `xvfb-run … cargo test -p tasty-plugin-markdown --locked --no-fail-fast -- --ignored --exact render::webview_layout_tests::address_bar_stays_on_top_in_webkitgtk`(스텝 `cargo test (linux, gui, webview layout — 관측용)`, `continue-on-error: true` — markdown 주소창 배치를 WebKitGTK 로 재는 Linux 전용 시험, 아래 [webview 레이아웃 시험](#webview-레이아웃-시험)) | `crossplatform-check.yml` 의 `check-headless` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동 | [실측] |
 | **not-debug(release) 컴파일 · gui** | `cargo check --workspace --release --locked` | `crossplatform-check.yml` 의 `check-release` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동 | [실측] |
 | 문서 가드 | `cargo test -p tasty-doc-guards --locked --no-fail-fast` | `doc-guards.yml` (ubuntu-latest) | main push · PR · 수동 — **경로 필터 없음**([ADR-0048](../adr/0048-source-guards-and-exemptions.md)) | [실측] |
 | 파일 SLOC | `bash scripts/check-file-size.sh` | `complexity-check.yml` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동 | [실측] |
@@ -484,7 +484,7 @@ Linux는 직접 실행한 테스트 PID의 `/proc/<pid>/fd`, macOS는 `lsof -p <
 | macOS + gui | check-macos: 컴파일·유닛 | — |
 | Windows + gui | check-windows: 컴파일·유닛·지목 통합 | — |
 | Linux + headless | check-headless: 컴파일·전체 스위트(skip 제외) | — |
-| Linux + gui | check-headless의 gui 유닛 단계·관측용 E2E | check-release: 컴파일 |
+| Linux + gui | check-headless의 gui 유닛 단계·관측용 E2E·관측용 webview 레이아웃 | check-release: 컴파일 |
 
 잡 성공만으로 표의 모든 단계를 실행했다고 판단하지 않는다. 단계별 conclusion을 읽는다.
 GUI feature 또는 OS 전용 모듈 안의 테스트는 다른 조합에서 컴파일 대상에서 사라질 수 있다.
@@ -597,6 +597,29 @@ cargo clippy --workspace --all-targets \
 이 시험이 들어가지 않고 이름 제외도 필요 없다. 같은 잡의 관측용 GUI/Xvfb 단계가 실행하지만
 `continue-on-error: true`이므로 실패가 잡을 차단하지 않는다. 차단 검사로 승격할 때는
 러너의 Xvfb 가용성과 연속 성공 기록을 확인한다. 필요한 연속 횟수 N은 아직 정하지 않았다.
+
+### webview 레이아웃 시험
+
+`crates/tasty-plugin-markdown/src/render/webview_layout_tests.rs` 는 `render_document` 의 HTML 을
+화면 밖 WebKitGTK 창에 띄우고 `getBoundingClientRect()` 로 주소창 배치를 잰다. 긴 문서 끝과 앵커
+이동 뒤에 주소창 `top` 이 0 인지, 짧은 문서의 `body` 가 뷰포트 높이를 채우는지를 본다. 생성 CSS
+문자열 시험은 선언만 보므로, 같은 CSS 를 두고 엔진이 바를 붙이지 않는 경우는 이 시험만 실패한다.
+
+- **Linux 전용이다.** 모듈이 `#[cfg(all(test, target_os = "linux"))]` 이고 dev 의존성(webkit2gtk·gtk·
+  javascriptcore)도 Linux 대상에만 있다. macOS(WKWebView)·Windows(WebView2)의 배치는 이 시험이 재지 않는다.
+- **디스플레이가 필요해 `#[ignore]` 다.** 그래서 `check-headless` 의 gui 유닛 단계(`--lib --bins`)에서는
+  ignored 로만 세고 실행하지 않는다. 실행은 같은 잡의 `cargo test (linux, gui, webview layout — 관측용)`
+  단계가 xvfb-run 안에서 이름으로 지목해서 한다. `DISPLAY` 가 없으면 조용히 통과하지 않고 실패한다.
+- **관측용이다.** e2e 단계와 같이 `continue-on-error: true` 라 실패해도 잡을 차단하지 않으므로, 결과는
+  단계 conclusion 으로 확인한다. 차단으로 승격하는 기준(연속 통과 횟수)은 e2e 와 함께 아직 정하지 않았다. X64 러너에서 이 단계의 실행 결과는
+  아직 관측 기록이 없다. 러너에 xvfb-run 이 있고 같은 잡의 e2e 단계가 Xvfb 안에서 gui 바이너리를 띄운다는 것만 확인했다.
+- 로컬 실행:
+
+```bash
+env -u WAYLAND_DISPLAY -u DISPLAY xvfb-run -a --server-args="-screen 0 1920x1080x24" \
+  cargo test -p tasty-plugin-markdown --locked --no-fail-fast -- --ignored --exact \
+  render::webview_layout_tests::address_bar_stays_on_top_in_webkitgtk
+```
 
 `gui_tests` 에 자동 채널이 없다. 각 시험이 `#[ignore]`이므로 디스플레이만 제공해서는
 실행되지 않는다. 수동 실행은 `--ignored`가 필요하며, 전용 디스플레이와 격리된 TASTY_HOME을

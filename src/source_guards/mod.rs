@@ -617,8 +617,8 @@ const MIN_GIT_LISTED_WORKFLOWS: usize = 5;
 /// 합계만 보면 한 파일의 삭제와 다른 파일의 추가가 상쇄되므로 파일별로 고정한다.
 /// 같은 파일 안의 호출 교체는 구별하지 못한다.
 const EXPECTED_TEST_INVOCATIONS: &[(&str, usize)] = &[
-    // macOS·Windows·Linux GUI 단위 시험, 헤드리스 전체 시험, Linux GUI E2E와 Windows 통합 시험.
-    ("crossplatform-check.yml", 6),
+    // macOS·Windows·Linux GUI 단위 시험, 헤드리스 전체 시험, Linux GUI E2E·webview 레이아웃과 Windows 통합 시험.
+    ("crossplatform-check.yml", 7),
     ("doc-guards.yml", 1),
     ("test.yml", 3),
 ];

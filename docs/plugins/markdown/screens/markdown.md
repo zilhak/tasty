@@ -415,18 +415,15 @@ CSS 클래스(`--md-space-sm` 배수)로 표현된다. 접기/펼치기는 `nav_
 사용한다. `body`를 고정 높이로 제한하면 긴 문서에서 주소창의 고정 범위가 한 화면에 그친다.
 반대로 `html` 높이가 확정되지 않으면 짧은 문서의 `body`가 화면 높이를 채우지 못할 수 있다.
 
-Linux/WebKitGTK에서 긴 문서 끝의 주소창 `rect.top`이 0이고 짧은 문서 배경이 화면을
-채우는 것을 확인한 이력이 있다. macOS·Windows의 실제 레이아웃 결과는 확인되지 않았다.
-
 `stylesheet_lets_body_grow_while_html_stays_definite`와
 `bar_height_is_declared_once_and_read_by_four_rules`는 생성 CSS의 선언만 검사한다.
-브라우저가 그 CSS를 어떻게 배치하는지 자동으로 확인하는 시험은 아니다.
-
-직접 검증할 때에는 `render_document`의 HTML을 WebKitGTK에 띄우고 화면보다 긴 문서의
-끝까지 스크롤한 뒤 `#tasty-addr-bar.getBoundingClientRect().top`을 확인한다.
-`scrollTop`도 함께 읽어 실제 스크롤이 일어났는지 확인한다. 짧은 문서나
-`getComputedStyle(bar).position == 'sticky'`만으로는 이 동작을 구별할 수 없다.
-GTK3 실행에는 실제 또는 가상 디스플레이가 필요하다.
+엔진의 실제 배치는 Linux 전용 시험 `render::webview_layout_tests::address_bar_stays_on_top_in_webkitgtk`가
+화면 밖 WebKitGTK 창(본체와 같은 webkit2gtk 4.1)에서 `getBoundingClientRect()`로 잰다.
+뷰포트 1000×800에서 긴 문서를 끝까지 스크롤한 뒤와 앵커 이동 뒤에 주소창 `rect.top`이 0인지
+(`scrollTop`으로 실제 스크롤도 확인한다), 짧은 문서의 `body` 높이가 800인지를 본다.
+GTK3는 디스플레이가 있어야 하므로 이 시험은 `#[ignore]`이고, `check-headless`의 관측용 단계가
+xvfb-run 안에서 이름으로 실행한다([CI 가이드](../../../dev-guide/ci-gates.md#webview-레이아웃-시험)).
+macOS(WKWebView)·Windows(WebView2)의 실제 레이아웃 결과는 확인되지 않았다.
 
 모든 heading 에 `scroll-margin-top:calc(var(--md-addr-bar-h) + var(--md-space-sm))` 을 줘, 앵커
 이동한 heading이 주소창 아래에 가려지지 않게 한다.
