@@ -69,8 +69,6 @@ surface는 살아 있으므로 `surface.locate`로 대신 판단하면 감시를
 release는 해당 자식의 `claude-error` 알림도 중단한다
 ([Claude 플러그인](../../plugins/claude/index.md)의 PTY 오류 스캔 범위 참고).
 
-<a id="상태-판정-hook--관측-융합--adr-0072"></a>
-
 ## 훅과 출력 관측을 함께 사용하는 상태 판정
 
 설계 근거는 [ADR-0041](../../adr/0041-agent-state-and-completion.md)이다.
