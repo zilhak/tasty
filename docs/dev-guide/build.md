@@ -73,6 +73,18 @@ cargo build --workspace --no-default-features   # headless 빌드
 `CARGO_TARGET_DIR=target/headless` 로 같은 프로필의 루트 패키지를 `--no-default-features` 로 한 번 더 빌드해 헤드리스 압축 파일을 만든다.
 GUI 패키지가 읽는 `target/<프로필>/tasty` 를 덮지 않으려고 target 디렉터리를 나눈다. 산출물 이름과 검증은 [릴리스 절차](release.md#헤드리스-산출물).
 
+#### Linux 시험 빌드의 시스템 라이브러리
+
+Linux 에서 `tasty-plugin-markdown` 의 시험을 빌드하려면 GTK3·WebKitGTK 개발 패키지가 필요하다. 그 크레이트의
+Linux 전용 dev 의존성(webkit2gtk·gtk·javascriptcore — [webview 레이아웃 시험](ci-gates.md#webview-레이아웃-시험))은
+feature 와 무관하게 시험 빌드에 들어오므로, `cargo test --workspace`·`cargo clippy --workspace --all-targets` 는
+`--no-default-features` 조합에서도 이 라이브러리를 요구한다. 없으면 플러그인 시험 전체가 -sys 빌드 스크립트에서
+실패한다. 시험을 빌드하지 않는 `cargo check -p tasty-plugin-markdown` 은 이 라이브러리 없이도 통과한다.
+
+```bash
+sudo apt install libgtk-3-dev libwebkit2gtk-4.1-dev   # Debian·Ubuntu 계열
+```
+
 <a id="컴파일된다-와-그래프에-안-들어온다-는-다른-좌변이다"></a>
 
 #### 컴파일 성공과 GUI 의존성 제외는 따로 확인한다

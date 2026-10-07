@@ -603,10 +603,16 @@ cargo clippy --workspace --all-targets \
 `crates/tasty-plugin-markdown/src/render/webview_layout_tests.rs` 는 `render_document` 의 HTML 을
 화면 밖 WebKitGTK 창에 띄우고 `getBoundingClientRect()` 로 주소창 배치를 잰다. 긴 문서 끝과 앵커
 이동 뒤에 주소창 `top` 이 0 인지, 짧은 문서의 `body` 가 뷰포트 높이를 채우는지를 본다. 생성 CSS
-문자열 시험은 선언만 보므로, 같은 CSS 를 두고 엔진이 바를 붙이지 않는 경우는 이 시험만 실패한다.
+문자열 시험은 선언만 보므로, 문자열 시험이 보지 않는 선언이 배치를 깨는 경우는 이 시험만 실패한다.
+하네스는 같은 HTML 을 같은 엔진의 기본 설정으로 배치한다. 호스트가 WebView 에 주는 zoom·JS 게이트·콘텐츠
+필터는 재현하지 않는다.
 
 - **Linux 전용이다.** 모듈이 `#[cfg(all(test, target_os = "linux"))]` 이고 dev 의존성(webkit2gtk·gtk·
   javascriptcore)도 Linux 대상에만 있다. macOS(WKWebView)·Windows(WebView2)의 배치는 이 시험이 재지 않는다.
+- **Linux 에서 플러그인 시험을 빌드하려면 GTK3·WebKitGTK 개발 패키지가 필요하다.** dev 의존성은 feature 와
+  무관하므로 `cargo test -p tasty-plugin-markdown`·`cargo test --workspace`·`cargo clippy --all-targets` 가
+  `--no-default-features` 조합에서도 그 -sys 크레이트를 빌드한다. 라이브러리가 없으면 레이아웃 시험만 빠지는
+  것이 아니라 플러그인 시험 전체가 컴파일 단계에서 실패한다. 설치 패키지는 [빌드 가이드](build.md#linux-시험-빌드의-시스템-라이브러리)에 있다.
 - **디스플레이가 필요해 `#[ignore]` 다.** 그래서 `check-headless` 의 gui 유닛 단계(`--lib --bins`)에서는
   ignored 로만 세고 실행하지 않는다. 실행은 같은 잡의 `cargo test (linux, gui, webview layout — 관측용)`
   단계가 xvfb-run 안에서 이름으로 지목해서 한다. `DISPLAY` 가 없으면 조용히 통과하지 않고 실패한다.

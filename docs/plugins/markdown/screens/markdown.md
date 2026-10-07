@@ -419,6 +419,7 @@ CSS 클래스(`--md-space-sm` 배수)로 표현된다. 접기/펼치기는 `nav_
 `bar_height_is_declared_once_and_read_by_four_rules`는 생성 CSS의 선언만 검사한다.
 엔진의 실제 배치는 Linux 전용 시험 `render::webview_layout_tests::address_bar_stays_on_top_in_webkitgtk`가
 화면 밖 WebKitGTK 창(본체와 같은 webkit2gtk 4.1)에서 `getBoundingClientRect()`로 잰다.
+하네스는 같은 HTML을 같은 엔진의 기본 설정으로 배치한다. 호스트가 WebView에 주는 zoom·JS 게이트·콘텐츠 필터는 재현하지 않는다.
 뷰포트 1000×800에서 긴 문서를 끝까지 스크롤한 뒤와 앵커 이동 뒤에 주소창 `rect.top`이 0인지
 (`scrollTop`으로 실제 스크롤도 확인한다), 짧은 문서의 `body` 높이가 800인지를 본다.
 GTK3는 디스플레이가 있어야 하므로 이 시험은 `#[ignore]`이고, `check-headless`의 관측용 단계가
