@@ -1368,7 +1368,7 @@ mod tests {
             &task_id,
             serde_json::json!({
                 "kind": "failed",
-                "error": "Run exited non-zero: code=Some(2)",
+                "error": "Run exited with code 2",
             }),
         );
 
@@ -1381,7 +1381,9 @@ mod tests {
             store.get(1, &task_id).unwrap().unwrap()
         });
         match &task.state {
-            TaskState::Failed { error } => assert!(error.contains("non-zero"), "got {error}"),
+            TaskState::Failed { error } => {
+                assert!(error.contains("exited with code 2"), "got {error}")
+            }
             other => panic!("expected Failed, got {other:?}"),
         }
         assert!(

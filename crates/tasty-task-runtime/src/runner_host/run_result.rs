@@ -103,11 +103,19 @@ pub(crate) fn shell_outcome_from_status(
             String::new()
         };
         PollOutcome::Failed(format!(
-            "Run exited non-zero: code={:?}\n--- stdout{stdout_note} ---\n{}\n--- stderr{stderr_note} ---\n{}",
-            code,
+            "{}\n--- stdout{stdout_note} ---\n{}\n--- stderr{stderr_note} ---\n{}",
+            exit_summary(code),
             stdout.text(),
             stderr.text(),
         ))
+    }
+}
+
+/// 실패한 실행의 첫 줄. 종료 코드가 없으면(Unix 에서 신호로 끝남) 그렇게 적는다.
+fn exit_summary(code: Option<i32>) -> String {
+    match code {
+        Some(c) => format!("Run exited with code {c}"),
+        None => "Run ended without an exit code (terminated by a signal)".to_string(),
     }
 }
 
@@ -229,5 +237,35 @@ pub(super) fn run_outcome_from_value(v: &serde_json::Value) -> Option<PollOutcom
         }
         "failed" => Some(PollOutcome::Failed(v.get("error")?.as_str()?.to_string())),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn failure_text(code: Option<i32>) -> String {
+        match shell_outcome_from_status(
+            1,
+            code,
+            false,
+            DrainedStream::default(),
+            DrainedStream::default(),
+        ) {
+            PollOutcome::Failed(e) => e,
+            other => panic!("expected a failure, got {other:?}"),
+        }
+    }
+
+    /// 실패 문구는 Rust 의 `Option` 표기(`Some(7)`) 없이 종료 코드를 적는다.
+    #[test]
+    fn a_failed_run_names_its_exit_code_in_plain_words() {
+        let e = failure_text(Some(7));
+        assert!(e.starts_with("Run exited with code 7\n"), "{e}");
+        let e = failure_text(None);
+        assert!(e.starts_with("Run ended without an exit code"), "{e}");
+        for e in [failure_text(Some(7)), failure_text(None)] {
+            assert!(!e.contains("Some(") && !e.contains("None"), "{e}");
+        }
     }
 }

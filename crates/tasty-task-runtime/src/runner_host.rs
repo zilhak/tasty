@@ -1117,11 +1117,11 @@ mod tests {
 
     #[test]
     fn run_outcome_failed_serde_round_trip() {
-        let outcome = PollOutcome::Failed("Run exited non-zero: code=Some(1)".into());
+        let outcome = PollOutcome::Failed("Run exited with code 1".into());
         let v = run_outcome_to_value(&outcome);
         let back = run_outcome_from_value(&v).expect("round trip");
         match back {
-            PollOutcome::Failed(err) => assert!(err.contains("non-zero")),
+            PollOutcome::Failed(err) => assert_eq!(err, "Run exited with code 1"),
             other => panic!("expected Failed, got {other:?}"),
         }
     }
@@ -1320,7 +1320,7 @@ mod tests {
         };
         match poll_until_terminal(&mut exec, &handle, 40) {
             PollOutcome::Failed(err) => assert!(
-                err.contains("Some(3)"),
+                err.starts_with("Run exited with code 3\n"),
                 "expected error to mention exit code 3, got {err}"
             ),
             other => panic!("expected Failed, got {other:?}"),
