@@ -98,10 +98,12 @@ pub mod populations {
 
     /// 루트 패키지의 통합 테스트 타깃 — `tests/` 바로 아래 한 겹.
     pub const ROOT_TEST_TARGETS: Population = Population {
-        measured: 46,
-        measured_on: "2026-09-23",
+        measured: 47,
+        measured_on: "2026-10-07",
         counted_on: super::CountedOn::Tree(
-            "cc2e5e72e — 루트 tests/ 바로 아래 통합 테스트 타깃 46개를 확인했다.",
+            "79d3ac373 — 루트 tests/ 바로 아래 통합 테스트 타깃 47개를 확인했다. \
+             46 -> 47 이고 더해진 하나는 `tests/cli_task_graph_command_kinds.rs` 다. \
+             이전 회차: cc2e5e72e — 46개.",
         ),
         how: "`tests/` 바로 아래 `.rs` — **한 겹만**이다. 더 깊은 것은 타깃이 아니라 그 \
               타깃의 모듈이라 `cargo test` 가 따로 안 돌린다. 재는 법: 경로가 `tests/` 로 \
