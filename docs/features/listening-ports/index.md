@@ -151,6 +151,7 @@ Port / Proto / Address / Process / Workspace / Tab / State.
   - 각 컬럼 최소폭 보유 — 보이는 컬럼 최소폭 합 > 본문 폭이면 본문이 **가로 스크롤**(말줄임 대신). sticky 헤더는 본문과 수평 동기 이동.
   - 정렬 가능 헤더(Port/Address/Process/Workspace/Tab) 클릭 시 `▲`/`▼` 인디케이터. Proto/State 헤더는 비정렬.
   - State 셀: 상태 dot(색 + pulse) + 상태 텍스트.
+  - 셀 글꼴: Port·Proto·Address 는 mono 열이라 고정폭 글꼴이고, Process 이름과 나머지 열은 UI 글꼴이다. 크기는 모두 font-size-body 다.
   - 셀 글자색: Port·Proto·Address(mono 열)와 Process 이름은 text-primary 다. Workspace·Tab 이름은 색을 두지 않아 공용 표의 행 글자색(쉬는 행 table-row-fg, hover·선택 행 text-primary)을 따른다. 빈 값 대시는 text-muted, State 라벨은 StatusDot 의 글자색이다.
   - 행 클릭: 선택 토글(선택 행 강조). 브라우저 오픈 없음. 별 클릭은 행 선택에 영향을 주지 않는다.
 - **footer**: `{shown} of {total} ports` 카운터 + `Copy address`(선택 없으면 disabled) + `Close`.

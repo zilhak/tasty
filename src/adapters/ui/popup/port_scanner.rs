@@ -1877,7 +1877,8 @@ fn draw_table(
                     }
                     return;
                 }
-                // kit 의 mono 열(Port·Proto·Address)과 strong 열(Process)은 text-primary 다.
+                // kit 의 mono 열(Port·Proto·Address)은 font-mono 이고, strong 열(Process)은 UI 글꼴이다.
+                // 둘 다 text-primary 다.
                 // Workspace·Tab 은 색을 두지 않아 표의 행 글자색을 따른다.
                 match visible[col_index - 1] {
                     ColumnId::Port => {
@@ -1885,7 +1886,8 @@ fn draw_table(
                         ui.label(
                             egui::RichText::new(row.port.to_string())
                                 .color(th.text_primary())
-                                .size(th.font_size_body.value()),
+                                .size(th.font_size_body.value())
+                                .monospace(),
                         );
                     }
                     ColumnId::Proto => cell_l(ui, |ui| {
@@ -1899,7 +1901,8 @@ fn draw_table(
                         ui.label(
                             egui::RichText::new(proto)
                                 .color(th.text_primary())
-                                .size(th.font_size_body.value()),
+                                .size(th.font_size_body.value())
+                                .monospace(),
                         );
                     }),
                     ColumnId::Address => cell_l(ui, |ui| {
