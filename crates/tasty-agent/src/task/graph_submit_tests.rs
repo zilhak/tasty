@@ -669,3 +669,24 @@ fn a_typed_task_whose_fallback_failed_is_retried_without_rewinding_its_consumer(
     assert_eq!(get(&store, "main").state, TaskState::Succeeded);
     assert_eq!(get(&store, "use").state, TaskState::Skipped);
 }
+
+/// 재시작 뒤 순번이 0 부터 다시 시작해도 살아 있는 그래프의 ID 를 다시 쓰지 않는다.
+#[test]
+fn a_restarted_sequence_does_not_reuse_a_live_graph_id() {
+    let (_td, mut mem, seq) = fresh();
+    let graph = |id: &str| {
+        spec(json!({"contract_version": 2, "tasks": [
+        {"id": id, "command": custom(json!({}))}]}))
+    };
+    let (first, _) = TaskStore::new(&mut mem, "_host", &seq)
+        .submit_graph(1, graph("before"), 0)
+        .unwrap();
+    let restarted = AtomicU64::new(0);
+    let mut store = TaskStore::new(&mut mem, "_host", &restarted);
+    let (second, _) = store.submit_graph(1, graph("after"), 0).unwrap();
+    assert_ne!(second, first);
+    assert_eq!(
+        get(&store, "before").graph_id.as_deref(),
+        Some(first.as_str())
+    );
+}

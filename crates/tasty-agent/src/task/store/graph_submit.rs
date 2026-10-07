@@ -142,11 +142,20 @@ impl TaskStore<'_> {
                 "/tasks",
             ));
         }
-        let graph_id = format!(
-            "g-{now_ms}-{:06}",
-            self.seq.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-        );
         let existing = self.list(workspace_id)?;
+        // task ID 와 같은 이유로, 살아 있는 그래프가 이미 쓰는 ID 는 건너뛴다.
+        let graph_id = loop {
+            let id = format!(
+                "g-{now_ms}-{:06}",
+                self.seq.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            );
+            if !existing
+                .iter()
+                .any(|t| t.graph_id.as_deref() == Some(id.as_str()))
+            {
+                break id;
+            }
+        };
         let existing_ids: HashSet<&TaskId> = existing.iter().map(|t| &t.id).collect();
 
         let durability = spec.durability;

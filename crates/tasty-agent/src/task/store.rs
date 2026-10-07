@@ -93,6 +93,17 @@ impl<'a> TaskStore<'a> {
         format!("t-{now_ms}-{s:06}")
     }
 
+    /// 이 workspace 에 아직 없는 새 task ID. 순번은 프로세스마다 0 부터라, 재시작 앞뒤로 시계가
+    /// 뒤로 가면 같은 ID 가 다시 나올 수 있다. 그때 저장된 task 를 덮어쓰지 않고 다음 순번을 쓴다.
+    fn unused_id(&self, now_ms: u64, existing: &[Task]) -> TaskId {
+        loop {
+            let id = self.new_id(now_ms);
+            if !existing.iter().any(|t| t.id == id) {
+                return id;
+            }
+        }
+    }
+
     /// task 영속. 신규/갱신 모두 동일 (overwrite). v2 task 는 별도 namespace 에
     /// envelope 로 감싸 저장한다.
     pub fn put(&mut self, task: &Task) -> Result<()> {
@@ -211,8 +222,8 @@ impl<'a> TaskStore<'a> {
                 super::agent::AGENT_NEEDS_CONTRACT.into(),
             ));
         }
-        let id = self.new_id(now_ms);
         let mut existing = self.list(workspace_id)?;
+        let id = self.unused_id(now_ms, &existing);
 
         if let OnFailure::Fallback {
             task: fb_task,

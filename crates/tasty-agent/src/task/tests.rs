@@ -2526,3 +2526,30 @@ fn revision_grows_with_each_write_of_the_record() {
     assert!(running > created, "{created} -> {running}");
     assert_eq!(store.revision(1, &"missing".to_string()).unwrap(), None);
 }
+
+/// 재시작 뒤 순번이 0 부터 다시 시작하고 시계가 같은 ms 로 돌아와도 저장된 task 를 덮어쓰지 않는다.
+#[test]
+fn a_restarted_sequence_does_not_reuse_a_stored_task_id() {
+    let (_td, mut mem, seq) = fresh_store();
+    let opts = |name: &str| TaskCreateOpts {
+        workspace_id: 1,
+        name: name.to_string(),
+        command: run_cmd(),
+        depends_on: vec![],
+        on_failure: OnFailure::Abort,
+        metadata: serde_json::Value::Null,
+        now_ms: 1000,
+    };
+    let first = TaskStore::new(&mut mem, "_host", &seq)
+        .create(opts("before"))
+        .unwrap();
+    let restarted = AtomicU64::new(0);
+    let mut store = TaskStore::new(&mut mem, "_host", &restarted);
+    let second = store.create(opts("after")).unwrap();
+    assert_ne!(second.id, first.id);
+    assert_eq!(
+        store.get(1, &first.id).unwrap().expect("kept").name,
+        "before"
+    );
+    assert_eq!(store.list(1).unwrap().len(), 2);
+}

@@ -162,6 +162,7 @@
 
 ### Fixed
 
+- **Tasty 를 재시작한 뒤 시계가 뒤로 가도 새 작업·그래프가 저장된 작업의 id 를 다시 받지 않는다.** id 순번은 프로세스마다 0 부터 시작하므로, 같은 ms 에 같은 순번이 다시 나오면 이전에는 저장된 작업을 조용히 덮어썼다. 이제 이미 쓰인 id 는 건너뛴다.
 - **`agent dag-list` 도움말이 DAG 를 묶는 연결에 v2 `bindings`·`transitions` 를 함께 적는다.** 목록은 이미 이 연결로 묶고 있었고 도움말만 빠져 있었다.
 - **`agent task-get` 이 후처리 실패의 error 줄에 단계 이름을 두 번 적지 않는다.** `error: postprocess: postprocess nonzero_exit: …` 가 `error: postprocess nonzero_exit: …` 로 보인다.
 - **실패한 run 작업의 오류 문구가 종료 코드를 그대로 적는다.** `Run exited non-zero: code=Some(7)` 대신 `Run exited with code 7` 이고, 종료 코드 없이 신호로 끝났으면 `Run ended without an exit code (terminated by a signal)` 다. 뒤따르는 stdout·stderr 꼬리는 그대로다.
