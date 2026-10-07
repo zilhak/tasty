@@ -569,7 +569,7 @@ task 는 선택적으로 타입 계약(`TaskContract`)을 가진다. 계약이 �
 | `reduce` | 전략별(아래) | reducer 값 |
 | `agent` | `string` | 턴의 최종 답변. string 이 아닌 출력은 명시 제출 값(아래 §agent task) |
 
-결과는 `typed_result` 에 저장한다: `has_output`·`output`(최종 출력), `raw`(`exit_code`, `execution`, 후처리가 있으면 `postprocess`), `artifacts`, `error`(`stage`: `input`·`execution`·`postprocess`·`output_validation`·`persistence`·`route`, agent task 는 `code` 도 싣는다), `provenance`(`contract_version`, `kind`, `output_source`). `has_output: true` 이고 `output: null` 이면 unit 또는 nullable 출력이 확정된 것이고, `has_output: false` 는 출력이 없다는 뜻이다. v1 호환을 위해 `result` 에는 최종 출력이 `output` 으로 투영된다.
+결과는 `typed_result` 에 저장한다: `has_output`·`output`(최종 출력), `raw`(`exit_code`, `execution`, 후처리가 있으면 `postprocess`), `artifacts`(산출물 참조 자리. 지금은 채우는 실행기가 없어 항상 빈 목록이다), `error`(`stage`: `input`·`execution`·`postprocess`·`output_validation`·`persistence`·`route`, agent task 는 `code` 도 싣는다), `provenance`(`contract_version`, `kind`, `output_source`). `has_output: true` 이고 `output: null` 이면 unit 또는 nullable 출력이 확정된 것이고, `has_output: false` 는 출력이 없다는 뜻이다. v1 호환을 위해 `result` 에는 최종 출력이 `output` 으로 투영된다.
 
 보고된 결과는 계약에 맞춰 확정하고, 유효한 출력 없이 성공으로 가려는 v2 task 는 Failed 로 끝낸다. 러너·재시작 복구·훅 완료·훅 만료·IPC `task_set_result` 가 모두 같은 완료 경로(아래 §실행 회차와 완료)를 지나므로 완료 경로마다 따로 검사하지 않는다. 비즈니스 값(`"revise"`, `false`)은 정상 출력이다. 출력 타입에 맞지 않는 값만 `output_validation` 실패가 된다. `retry` 는 `typed_result` 를 지운다.
 

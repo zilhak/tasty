@@ -36,7 +36,7 @@ v2 그래프는 depends_on·binding 으로 순서와 값을 잇지만, 결과에
 - fallback 으로 복구한 그래프는 v1·v2 모두 DAG 목록에서 `failed` 가 아니라 `succeeded` 로 보인다. 실패한 main 은 `state_counts.failed`·`recovered` 와 task 상태로 그대로 확인한다. main 의 실패로 건너뛴 소비자가 있으면 rollup 은 `skipped` 다.
 - 한 갈래가 실패해도 다른 갈래가 도는 동안 DAG 목록은 진행 상태를 보이고, 끝난 뒤 성공한 갈래가 있으면 부분 오류로 보인다. `failed` 는 그래프가 더 진행할 수 없을 때만 나오므로, 실패를 바로 알아야 하는 클라이언트는 `state_counts.failed`·`recovered` 를 본다. `rollup_state` 값을 모두 나열해 처리하던 클라이언트는 새 값 `partially_failed` 를 처리해야 한다.
 - 실패 없이 막힌 대기나 `unknown` 만 남은 그래프는 `waiting` 으로 남는다. 끝난 것으로 보이면 사람이 개입해야 하는 task 가 가려지기 때문이다.
-- DAG 화면은 전이 간선을 아직 depends_on 과 같은 모양으로 그린다. 선택 상태를 구분하는 표현은 디자인을 받은 뒤 반영한다.
+- DAG 화면과 DOT 출력은 전이 간선을 depends_on 과 다른 모양으로 그리고 선택 상태를 굵기와 불투명도로 구분한다. 표현은 디자인을 받아 정했고 현재 모양은 [작업 러너 §전이 조건과 경로 선택](../dev-guide/agent-runner.md#전이-조건과-경로-선택)에 있다.
 
 ## Alternatives Considered
 
