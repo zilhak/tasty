@@ -187,8 +187,8 @@ fn option_menu(ui: &mut egui::Ui, theme: &Theme) {
     let bw = theme.border_width.value();
     egui::Frame::new()
         .fill(theme.menu_bg().to_egui())
-        .stroke(egui::Stroke::new(bw, theme.border_default().to_egui()))
-        .corner_radius(theme.corner_radius.value())
+        .stroke(egui::Stroke::new(bw, theme.menu_border().to_egui()))
+        .corner_radius(theme.menu_radius().value())
         .shadow(theme.shadow_popover().to_egui())
         .inner_margin(egui::Margin::same(pad as i8))
         .show(ui, |ui| {
