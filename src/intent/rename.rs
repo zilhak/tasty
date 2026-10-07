@@ -27,13 +27,6 @@ pub enum DirectRename {
         name: Option<String>,
     },
     /// 자동 attach 매핑을 지운다. 연결하지 않은 매핑 배너의 매핑 지우기 버튼이 보낸다.
-    #[cfg_attr(
-        all(not(feature = "gui"), test),
-        expect(
-            dead_code,
-            reason = "the GUI refusal banner raises it; headless tests clear mappings through the journal tests"
-        )
-    )]
     ClearWorkspaceMapping {
         workspace_id: u32,
     },
