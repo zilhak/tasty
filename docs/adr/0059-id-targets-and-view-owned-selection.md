@@ -31,38 +31,9 @@
 
 ### 유지하는 제품 규칙
 
-아래 규칙은 새 배치에서도 그대로 유지한다. 현재 동작의 세부는 [포커스 정책](../design/policies/focus.md)과 각 기능 문서가 설명한다.
-
-- 앞쪽 항목이 지워져도 활성 workspace·tab은 같은 ID의 대상을 계속 가리키고, 보던 대상이 사라졌을 때만 다른 대상으로 옮긴다.
-  pane도 닫힌 pane이 포커스였을 때만 다시 선택한다. 이 보정은 사용자·에이전트·원격 요청 모두에 적용하며 GUI와 헤드리스가 같은 보정을 수행한다.
-  이미 지워진 workspace의 위치와 ID는 한 삭제 사실에 함께 싣는다.
-- 활성 workspace는 전체 workspace 순서 기준으로 표현하고, 카테고리 안의 위치는 사이드바·단축키 입력 단계에서 변환한다.
-  카테고리 변경만으로 workspace의 물리 순서와 사용자 활성 상태를 바꾸지 않는다.
-  카테고리 복귀 기록은 workspace ID로 저장하고, 돌아갈 때 현재 소속을 확인해 없으면 그 카테고리의 첫 workspace를 고른다.
-- 에이전트의 `workspace.close`는 마지막 workspace, mirror workspace, hard 점유 surface를 포함한 workspace, 호출자 자신의 작업이 포함된 대상을 거절한다.
-  이 거절은 도메인 불변식이며 진입점 권한 검사와 별개다. 창 종료와 attach 해제는 각 전용 API를 사용한다.
-  헤드리스에는 `window.close`가 없으므로 마지막 workspace를 닫을 수 없다. 닫기는 되돌릴 수 없음을 도움말과 사용자 가이드에서 알리며 별도 force 확인은 요구하지 않는다.
-  점유된 일부만 남기는 부분 close는 제공하지 않으며, 에이전트가 닫은 항목과 scrollback은 사용자 복원 기록에 넣지 않는다.
-- 새 창은 요청 출처(`WindowRequestOrigin`)로 사용자와 에이전트를 구분한다. 사용자 요청은 새 창을 라우팅 문맥으로 선택한다.
-  에이전트 요청은 기존 라우팅 문맥을 유지하고, 기존 main 창이 없을 때만 새 창을 기본 대상으로 삼는다.
-  에이전트 창은 비활성·숨김 상태로 만들고 OS가 허용하는 방식으로 사용자 창 뒤에 표시하며, 사용자가 직접 창을 선택한 뒤에는 정상 Focused 이벤트를 따른다.
-  OS의 실제 focus·쌓임 순서는 플랫폼이 결정한다. X11에서는 초기 focus 금지와 restack 요청을 보내고, Wayland에서는 활성화를 요청하지 않는다.
-  비활성 표시에 실패하면 경고를 남기고 기본 표시로 복구한다.
-- 새 탭의 선택 여부는 종류가 아니라 사용자 요청 여부로 정한다. CreateTab의 activate 값을 모든 호출자가 전달하며 에이전트 요청은 기존 탭을 보존한다.
-  생성은 journal 경계에서 완료하고, 사용자 요청의 선택 후처리는 `commands/view_completion.rs`가 원 View identity와 선택 generation을 확인한 뒤 적용한다. terminal도 이 경계를 사용하며 도메인 생성 자체가 사용자 선택을 바꾸지 않는다.
-  에이전트가 만든 새 비터미널 탭은 사용자가 선택하기 전까지 렌더되지 않는다.
-- 대상을 지정하지 않는 창 소유 자원 목록은 살아 있는 모든 엔진(창이 있는 엔진과 parked 엔진)의 결과를 합친다. 메서드 이름에 list가 있는지나 params 유무로 분류하지 않고,
-  필터는 대상 지정과 다르다. tree도 `workspace.list`와 같은 workspace 집합을 반환한다. 집계한 active는 엔진별 활성 상태이므로 여러 개가 true일 수 있다.
-  합산하는 ID는 엔진을 넘어 유일해야 한다. hook·global hook·notification ID는 공유 카운터를 쓰고 approval 저장소는 엔진 생성 때 같은 것을 공유한다.
-  알림의 전역 목록은 생성 ID 역순 50개를 반환하고 엔진별 보존·병합·읽음 상태와 UI는 따로 유지한다.
-- 명시 대상 없이 라우팅되는 메서드는 저장소가 전역인지, 목록 합산인지, 새 대상 생성인지, 다른 단계에서 대상을 찾는지, 아직 해결되지 않은 문제인지 사유를 명부에 남긴다.
-  `system.info`처럼 엔진별 관측을 반환하면 소유 ID와 scope를 함께 보여준다.
-- 요청이 대상을 지정했다면 기록의 소속도 그 대상에서 찾는다. `approval.request`는 명시 `workspace_id`, 지정 surface의 workspace, 활성 workspace 순서로 정한다.
-  telemetry는 workspace 명시를 권장하되 생략 시 활성 기본값을 유지한다. 대상 정보가 전혀 없는 요청의 활성 workspace 기본값은 호환을 위해 유지한다.
-  호스트가 자동 발행한 권한 격상·누적 비용 승인·알림과 번들 plugin의 workspace 없는 telemetry도 활성 workspace를 쓴다.
-  누적 비용은 여러 workspace의 합이라 이벤트 하나로 귀속할 수 없으며, 영속 승인 기록이 활성 workspace에 남는 한계는 해결되지 않았다.
-- surface ID와 standalone PTY ID는 겹치지 않는 범위를 쓴다. surface는 1 이상 PTY ID 기준값 미만이며 명령 해석·IPC 입력·복원 카운터 초기화가 같은 범위 판정을 사용한다.
-  PTY ID를 surface scope로 저장하지 않는다. 새 구조에서는 IdentityAllocator가 재사용하지 않는 typed ID를 예약하되 기존 범위와 wire 표현은 유지한다.
+삭제·재정렬 뒤의 선택 보존, 카테고리 복귀, `workspace.close`의 거절 조건, 새 창·새 탭의 사용자/에이전트 구분, 창 소유 자원 목록의 합산,
+기본 라우팅 메서드의 사유 명부, 기록의 workspace 귀속은 새 배치에서도 그대로 유지한다. 현재 규칙은 [포커스 정책](../design/policies/focus.md)에 있다.
+surface ID와 standalone PTY ID는 겹치지 않는 범위를 쓰며([headless PTY](../features/headless-pty/index.md)), 새 구조에서도 IdentityAllocator가 재사용하지 않는 typed ID를 예약하되 기존 범위와 wire 표현은 유지한다.
 
 ### 레이아웃 슬롯
 
@@ -81,18 +52,13 @@
 
 - release는 데이터 홈 하나에 프로세스 하나를 둔다. 홈 단위이므로 다른 `TASTY_HOME`으로 띄운 격리 인스턴스는 사용자 release와 함께 뜬다.
   같은 홈의 writer 잠금이 다른 프로세스에 있으면 두 번째 프로세스는 창·GPU·이벤트 루프 없이 실행 중인 Tasty에 요청을 넘기고 끝난다. debug는 "홈 사용 중" 오류 화면으로 끝난다.
-- 넘기는 요청은 OS가 사용자 실행에 붙여 준 활성화 증거로 나눈다. 실행 인자로 사용자와 에이전트를 나누지 않는다.
-  - 증거는 Linux Wayland `XDG_ACTIVATION_TOKEN`, X11 `DESKTOP_STARTUP_ID`, Windows에서 실행 중인 Tasty에 `AllowSetForegroundWindow`가 성공한 것이다. macOS의 Finder·Dock 실행은 LaunchServices가 처리해 두 번째 프로세스가 생기지 않으므로 두 번째 프로세스는 항상 증거 없음이다.
-  - 증거가 있으면 Linux는 D-Bus `org.freedesktop.Application.Activate`의 `platform_data`로, Windows는 MainView 창에 보내는 등록 창 메시지로 넘긴다. 실행 중인 Tasty는 증거가 있는 요청에서만 숨기거나 최소화한 View를 트레이 복원처럼 다시 보이고 마지막 포커스 View의 활성화를 OS에 요청한다. `focus_window()`는 부르지 않는다. MainView가 없으면 증거를 실은 새 창을 연다.
-  - 증거가 없으면 `tasty new window`와 같은 `window.create` 하나로 끝난다. 숨긴 창과 최소화한 창, 내부 포커스는 그대로다.
-- 원칙 3은 그대로다. 포커스를 주는 IPC 메서드는 없고, 창을 실제로 앞으로 올릴지는 컴포지터·창 관리자·포그라운드 잠금이 정한다. OS가 거절해도 두 번째 프로세스는 성공으로 끝난다.
-- 실행 중인 인스턴스는 `<home>/tasty.instance`에 PID·프로세스 시작 시각·IPC 포트를 원자적으로 기록한다. 포트는 IPC 서버가 열린 뒤 넣으며 정상 종료 때 잠금을 놓기 전에 지운다. 두 번째 프로세스는 PID와 시작 시각이 일치하고 포트가 있는 기록만 믿는다. 그렇지 않으면 상한까지 기다리며, 그 사이 잠금이 풀리면 평소처럼 부팅한다.
-- D-Bus 이름은 정규화한 기본 홈이면 `io.github.zilhak.tasty`, 다른 홈이면 정규화 경로 해시를 붙인 `io.github.zilhak.tasty.h<16진>`이다. 객체 경로는 `/io/github/zilhak/tasty`다.
-- 두 증거 환경변수는 `run()` 첫머리에서 읽어 보관하고 환경에서 지운다. 셸·플러그인에 아직 쓰지 않은 토큰이 넘어가지 않게 하기 위해서다. 이 정리와 `tasty.instance` 기록·삭제는 debug에서도 같다. debug에서 다른 것은 두 번째 실행을 넘기지 않는 점과 D-Bus 등록이 선택이라는 점이다. 첫 창은 자기 실행의 토큰을 받아 실행기의 대기 표시를 끝낸다.
-- 넘기는 중에 연결이 끊기거나 D-Bus 이름 소유자가 사라지면, 기록의 프로세스가 아직 살아 있는지 확인한다. 끝났으면 기다림과 같은 규칙으로 기록과 writer 잠금을 다시 확인하고, 잠금을 얻으면 평소처럼 부팅한다. 실행 중이던 쪽이 비정상 종료해도 실행 요청이 사라지지 않게 하기 위해서다.
-- `window.create`나 `Activate`를 보냈는데 기한 안에 응답이 없고 실행 중인 쪽이 살아 있으면, 상자 없이 경고만 남기고 종료 코드 0으로 끝낸다. 늦게라도 그쪽이 처리하므로 상자를 띄우면 새 창과 "이미 실행 중" 상자가 함께 보인다. 기능 확인에 답하지 않아 본 요청을 보내지 못한 경우는 보낸 것으로 보지 않는다.
-- 요청을 넘기지 못했고 잠금도 얻지 못했을 때만 Tasty 창 없이 OS 메시지 상자로 한 문장을 알리고 종료 코드 1로 끝낸다. 상세는 `<home>/launch.log`에 남기며 토큰 값은 기록하지 않는다. 실행 중인 인스턴스의 `debug.log`는 열지 않는다.
+- 넘기는 요청은 OS가 사용자 실행에 붙여 준 활성화 증거(Linux 실행기 토큰, Windows `AllowSetForegroundWindow` 성공)로 나눈다. 실행 인자로 사용자와 에이전트를 나누지 않는다.
+  증거가 있는 요청에서만 실행 중인 Tasty가 숨기거나 최소화한 View를 다시 보이고 마지막 포커스 View의 활성화를 OS에 요청한다. 증거가 없으면 `tasty new window`와 같은 `window.create` 하나로 끝난다.
+- 원칙 3은 그대로다. 포커스를 주는 IPC 메서드는 없고, 창을 실제로 앞으로 올릴지는 컴포지터·창 관리자·포그라운드 잠금이 정한다.
+- 증거 환경변수는 시작 직후 읽어 보관하고 환경에서 지운다. 셸·플러그인에 아직 쓰지 않은 토큰이 넘어가지 않게 하기 위해서다.
+- 넘기는 중에 실행 중이던 쪽이 끝나면 잠금을 다시 확인해 평소처럼 부팅한다. 실행 요청이 사라지지 않게 하기 위해서다. 요청을 넘기지 못했고 잠금도 얻지 못했을 때만 Tasty 창 없이 OS 메시지 상자로 알린다.
 - `--launch`는 debug 전용이다. Tasty 터미널 안 판정(`TASTY_SURFACE_ID`)을 건너뛰는 옵션일 뿐 보안 경계가 아니었고, 증거 규칙이 생긴 뒤 release에서는 `tasty new window`와 결과가 같다.
+- 인스턴스 기록 파일, D-Bus 이름, 대기 기한, 응답 없음·연결 끊김 처리, `launch.log`는 [레이아웃 저장](../features/layout-persistence/index.md#같은-홈의-다시-실행)에, OS별 활성화 경로는 [포커스 정책](../design/policies/focus.md#같은-홈으로-다시-실행했을-때-release-단일-실행)에 있다.
 - 알려진 한계
   - X11에는 위조할 수 없는 사용자 조작 증거가 없다. startup id와 타임스탬프는 같은 사용자의 어떤 프로세스든 만들 수 있다. 같은 프로세스는 원래 `xdotool windowactivate`로 같은 일을 할 수 있다.
   - Windows에서 증거는 실행 방식이 아니라 포그라운드 권한이다. 사용자가 앞에 있는 터미널에서 `tasty`를 치면 그 실행도 권한을 받아 기존 창을 올리는 쪽으로 간다(Linux 터미널 실행과 다르다, 실기 미측정).

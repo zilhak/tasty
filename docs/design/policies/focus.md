@@ -286,6 +286,7 @@ Tasty에는 포커스를 주는 IPC 메서드가 없다.
     파일 열기 항목 · [ADR-0031](../../adr/0031-file-handler-routing.md)).
 - terminal kind 는 `activate` 와 무관하게 background 다. 사용자의 새 터미널 탭은 이 인텐트가
   아니라 `MainViewState::add_tab` 이 연다.
+- 에이전트가 만든 새 비터미널 탭은 사용자가 선택하기 전까지 렌더되지 않는다.
 - 응답의 `active_tab` 은 "생성 뒤 그 pane 의 활성 탭" 이다 — 에이전트가 만든 탭이면 사용자가
   보던 탭의 인덱스다. 새 탭은 응답의 `surface_id` 로 다룬다.
 
