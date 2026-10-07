@@ -762,3 +762,129 @@ fn a_handle_the_reload_could_not_settle_is_settled_by_the_running_runner() {
     assert_eq!(stored_pid(&mem, &task.id), None);
     assert!(svc.runner_registry().stop(1));
 }
+
+/// 러너가 꺼진 동안 취소해 이전 회차의 종료를 확인하는 중인 task 는 지울 수 없다(지우면 handle 이
+/// 사라져 확인 뒤 permit 을 반환할 정리가 없어진다). purge 는 건너뛰고 `skipped` 로 알린다. 그룹이
+/// 빈 뒤 permit 이 반환되면 지울 수 있다.
+#[test]
+fn a_task_still_confirming_its_exit_is_kept_from_delete_and_purge() {
+    use tasty_agent::AgentError;
+    use tasty_agent::task::{TaskDeleteOpts, TaskPurgeFilter};
+
+    let td = tempfile::tempdir().unwrap();
+    let mem = memory(td.path());
+    let svc = TaskService::new(
+        mem.clone(),
+        Arc::new(OnceLock::new()),
+        Arc::new(crate::completion::fixture::Resolver::default()),
+    );
+    let scope = TaskScope::new(svc.runner_registry().clone());
+    let task = run_task(&mem, scope.agent_seq(), &td.path().join("unused.pid"));
+    let (pid, started_at, mut member) = spawn_unconfirmable_group();
+    let attempt = running_attempt(&mem, scope.agent_seq(), &task.id);
+    assert!(
+        SemaphoreStore::new(&mut *mem.lock().unwrap(), HOST_OWNER)
+            .acquire(1, "gpu", &task.id, None, 1100)
+            .unwrap()
+            .acquired
+    );
+    put_handle(
+        &mem,
+        &task.id,
+        &handle_record(pid, started_at, attempt.as_deref()),
+    );
+    svc.task_cancel(&scope, 1, &task.id, 2000).unwrap();
+
+    let delete = |cascade| {
+        svc.task_delete(
+            &scope,
+            1,
+            &task.id,
+            TaskDeleteOpts {
+                cascade,
+                force: false,
+            },
+        )
+    };
+    for cascade in [false, true] {
+        match delete(cascade) {
+            Err(AgentError::InvalidArgument(msg)) => {
+                assert!(msg.contains("exit confirmation"), "{msg}")
+            }
+            other => panic!("종료 확인 중인 task 를 지웠다(cascade={cascade}): {other:?}"),
+        }
+    }
+    let purge = |dry_run| {
+        svc.task_purge(
+            &scope,
+            1,
+            TaskPurgeFilter {
+                states: Some(vec!["cancelled".into()]),
+                older_than_ms: None,
+                now_ms: 3000,
+            },
+            dry_run,
+        )
+        .unwrap()
+    };
+    for dry_run in [true, false] {
+        let plan = purge(dry_run);
+        assert_eq!(plan.skipped, vec![task.id.clone()], "{plan:?}");
+        assert!(plan.deleted.is_empty(), "{plan:?}");
+    }
+    assert_eq!(stored_pid(&mem, &task.id), Some(pid));
+    assert_eq!(gpu_holders(&mem), vec![task.id.clone()]);
+
+    member.wait().unwrap();
+    let deadline = Instant::now() + WAIT;
+    while !gpu_holders(&mem).is_empty() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(gpu_holders(&mem).is_empty(), "그룹이 빈 뒤 반환하지 않았다");
+    assert_eq!(delete(false).unwrap().deleted, vec![task.id.clone()]);
+}
+
+/// cascade 삭제는 함께 지울 참조자 중 종료 확인 중인 task 가 있어도 거절한다.
+#[test]
+fn a_cascade_delete_is_refused_when_a_referencer_is_still_confirming_its_exit() {
+    use tasty_agent::AgentError;
+    use tasty_agent::task::TaskDeleteOpts;
+
+    let td = tempfile::tempdir().unwrap();
+    let mem = memory(td.path());
+    let svc = TaskService::new(
+        mem.clone(),
+        Arc::new(OnceLock::new()),
+        Arc::new(crate::completion::fixture::Resolver::default()),
+    );
+    let scope = TaskScope::new(svc.runner_registry().clone());
+    let up = run_task(&mem, scope.agent_seq(), &td.path().join("unused.pid"));
+    let down = {
+        let mut guard = mem.lock().unwrap();
+        TaskStore::new(&mut *guard, HOST_OWNER, scope.agent_seq())
+            .create(TaskCreateOpts {
+                workspace_id: 1,
+                name: "down".into(),
+                command: TaskCommand::Run {
+                    command: vec!["true".into()],
+                    workspace_id: 1,
+                    cwd: None,
+                },
+                depends_on: vec![up.id.clone()],
+                on_failure: OnFailure::Abort,
+                metadata: serde_json::json!({}),
+                now_ms: 1000,
+            })
+            .unwrap()
+    };
+    put_handle(&mem, &down.id, &handle_record(1, 1, None));
+    let opts = TaskDeleteOpts {
+        cascade: true,
+        force: false,
+    };
+    match svc.task_delete(&scope, 1, &up.id, opts) {
+        Err(AgentError::InvalidArgument(msg)) => assert!(msg.contains(&down.id), "{msg}"),
+        other => panic!("종료 확인 중인 참조자를 함께 지웠다: {other:?}"),
+    }
+    assert!(svc.task_get(&scope, 1, &up.id).unwrap().is_some());
+}

@@ -535,7 +535,7 @@ fn plan_sweep_ages_skipped_task_from_finish_time_not_creation_time() {
         older_than_ms: Some(10_000),
         now_ms: 55_000,
     };
-    let plan = store.plan_sweep(1, &filter).unwrap();
+    let plan = store.plan_sweep(1, &filter, &Default::default()).unwrap();
     assert!(
         plan.deleted.is_empty() && plan.retained.is_empty(),
         "방금 skip 된 task 가 생성 시각 기준으로 오판돼 즉시 purge 후보가 되면 안 된다: {plan:?}"
@@ -1899,7 +1899,7 @@ fn plan_sweep_drains_entangled_waiting_reduce_graph() {
         older_than_ms: Some(1000),
         now_ms: 50_000,
     };
-    let plan = store.plan_sweep(1, &filter).unwrap();
+    let plan = store.plan_sweep(1, &filter, &Default::default()).unwrap();
     assert!(plan.retained.is_empty(), "retained: {:?}", plan.retained);
     assert!(plan.deleted.contains(&x.id));
     assert!(plan.deleted.contains(&y.id));
@@ -1943,7 +1943,7 @@ fn plan_sweep_retains_task_referenced_from_outside_candidate_set() {
         older_than_ms: Some(10_000),
         now_ms: 50_000,
     };
-    let plan = store.plan_sweep(1, &filter).unwrap();
+    let plan = store.plan_sweep(1, &filter, &Default::default()).unwrap();
     assert_eq!(plan.deleted, Vec::<TaskId>::new());
     assert_eq!(plan.retained, vec![a.id.clone()]);
 
@@ -1989,7 +1989,7 @@ fn plan_sweep_filters_by_state_name() {
         older_than_ms: None,
         now_ms: 50_000,
     };
-    let plan = store.plan_sweep(1, &filter).unwrap();
+    let plan = store.plan_sweep(1, &filter, &Default::default()).unwrap();
     assert_eq!(plan.deleted, vec![term.id.clone()]);
     assert!(!plan.deleted.contains(&ready.id));
 }

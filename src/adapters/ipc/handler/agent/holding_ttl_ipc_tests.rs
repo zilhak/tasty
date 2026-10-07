@@ -1,4 +1,5 @@
 //! 작업 점유 TTL 의 하한 거절과, 러너가 갱신하지 못해 잃은 점유의 경고가 IPC 로 오가는지 확인한다.
+//! 이전 회차의 종료를 확인하는 중인 task 의 삭제·purge 거절도 함께 본다.
 
 use serde_json::{Value, json};
 use tasty_ipc::caller::CallerContext;
@@ -86,4 +87,40 @@ fn task_get_carries_the_holdings_lost_before_renewal() {
         )
         .unwrap();
     assert_eq!(get(&mut core)["holding_warnings"], json!([warning]));
+}
+
+#[test]
+fn a_task_with_a_leftover_handle_is_kept_from_delete_and_purge() {
+    let (mut core, memory) = core();
+    let task = create(&mut core, 1000).result.expect("create");
+    let id = task["id"].as_str().unwrap().to_string();
+    memory
+        .lock()
+        .unwrap()
+        .put(
+            HOST_OWNER,
+            &Scope::Workspace(1),
+            &format!("tasty.agent.handle.{id}"),
+            &MemoryValue::Json(json!({"kind": "shell_process", "data": {"pid": 1}})),
+            &PutOpts::default(),
+        )
+        .unwrap();
+    let deleted = call(
+        &mut core,
+        "agent.task_delete",
+        json!({"workspace_id": 1, "id": id}),
+    );
+    let err = deleted.error.expect("종료 확인 중인 task 를 지웠다");
+    assert_eq!(err.code, -32602, "{err:?}");
+    assert!(err.message.contains("exit confirmation"), "{}", err.message);
+    let purged = call(
+        &mut core,
+        "agent.task_purge",
+        json!({"workspace_id": 1, "states": ["ready"]}),
+    )
+    .result
+    .expect("purge");
+    assert_eq!(purged["skipped_count"], 1, "{purged}");
+    assert_eq!(purged["skipped"], json!([id]));
+    assert_eq!(purged["deleted"], json!([]));
 }

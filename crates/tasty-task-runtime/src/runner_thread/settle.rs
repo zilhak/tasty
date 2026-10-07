@@ -131,6 +131,22 @@ pub(crate) fn settle_unwatched_handles(
     }
 }
 
+/// handle 이 남은 task id. Running 이 아닌 task 에 남았으면 이전 회차의 종료를 확인하는 중이다.
+pub(crate) fn stored_handle_ids(
+    mem: &dyn tasty_memory::MemoryStorage,
+    workspace_id: u32,
+) -> std::collections::HashSet<TaskId> {
+    let opts = ListOpts {
+        prefix: Some(HANDLE_KEY_PREFIX.to_string()),
+        ..Default::default()
+    };
+    mem.list(&Scope::Workspace(workspace_id), &opts)
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|e| e.key.strip_prefix(HANDLE_KEY_PREFIX).map(str::to_string))
+        .collect()
+}
+
 /// 저장된 handle 한 건의 프로세스와 회차. 정리할 handle 이 확인한 그 handle 인지 가리는 데 쓴다
 /// (v1 task 는 회차 id 가 없어 프로세스로 가린다).
 #[derive(Debug, Clone, PartialEq, Eq)]

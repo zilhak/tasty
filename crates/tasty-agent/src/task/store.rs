@@ -71,6 +71,8 @@ pub struct TaskSweepPlan {
     /// 에서는 제외된 task id — 그 참조자가 먼저(또는 같이) 지워지면 이후 sweep
     /// 에서 지워진다.
     pub retained: Vec<TaskId>,
+    /// 필터는 만족했지만 호출자가 지키라고 넘긴(`plan_sweep` 의 `keep`) task id. Running 처럼 다룬다.
+    pub skipped: Vec<TaskId>,
 }
 
 impl<'a> TaskStore<'a> {
@@ -879,7 +881,7 @@ impl<'a> TaskStore<'a> {
     }
 
     /// `filter` 를 만족하는 task 중 안전하게 지울 수 있는 것만 골라낸다
-    /// (순수 함수, 영속 변경 없음). Running 은 항상 후보에서 제외되고,
+    /// (순수 함수, 영속 변경 없음). Running 과 `keep`(`skipped` 로 보고)은 후보에서 제외되고,
     /// 후보 집합 밖에서 여전히 참조되는 task 는 fixed-point 로 반복 제외한다 —
     /// 그래야 "후보 A 를 참조하는 후보 B" 처럼 후보끼리의 참조는 함께 지워지되,
     /// 후보 밖 task 의 참조는 안전하게 보존된다. dry-run 은 이 결과를 그대로
@@ -888,9 +890,10 @@ impl<'a> TaskStore<'a> {
         &self,
         workspace_id: WorkspaceId,
         filter: &TaskPurgeFilter,
+        keep: &HashSet<TaskId>,
     ) -> Result<TaskSweepPlan> {
         let all = self.list(workspace_id)?;
-        let candidates: HashSet<TaskId> = all
+        let mut candidates: HashSet<TaskId> = all
             .iter()
             .filter(|t| !matches!(t.state, TaskState::Running))
             .filter(|t| match &filter.states {
@@ -906,6 +909,9 @@ impl<'a> TaskStore<'a> {
             })
             .map(|t| t.id.clone())
             .collect();
+        let mut skipped: Vec<TaskId> = candidates.intersection(keep).cloned().collect();
+        skipped.sort();
+        candidates.retain(|id| !keep.contains(id));
 
         let mut eligible = candidates.clone();
         loop {
@@ -930,7 +936,11 @@ impl<'a> TaskStore<'a> {
         deleted.sort();
         let mut retained: Vec<TaskId> = candidates.difference(&eligible).cloned().collect();
         retained.sort();
-        Ok(TaskSweepPlan { deleted, retained })
+        Ok(TaskSweepPlan {
+            deleted,
+            retained,
+            skipped,
+        })
     }
 
     /// [`Self::plan_sweep`] 이 만든 계획을 실제로 적용(삭제)한다. 계획 자체가

@@ -284,7 +284,7 @@ tick 머리의 `TaskStore::list` 가 실패하면 **빈 목록으로 흡수하�
 `purge_stale_agent_state_on_boot`(`crates/tasty-task-runtime/src/runner_thread.rs`)의 같은 루프 안에서, 위 3종 세트 정화 직후 `gc_stale_tasks(ctx, workspace_id)` 가 한 번 더 돈다 — task 삭제 경로(`agent.task_delete`/`agent.task_purge`, `crates/tasty-agent/src/task/store.rs::{delete_checked,plan_sweep,apply_sweep_plan}`)와 정확히 같은 참조 안전 로직을 태우는 자동 스윕이다.
 
 - **임계값**: `AGENT_TASK_GC_MIN_AGE_MS`(`runner_thread.rs`, 잠정 7일) — 상태와 무관하게 `now - 기준시각 >= 임계값` 인 task 가 후보. 기준시각은 terminal task 는 `finished_at`, 그 외(`waiting`/`ready`)는 `created_at`. 값 자체는 provisional — 실사용 데이터가 쌓이면 재검토 대상.
-- **상태를 terminal 로 제한하지 않는 이유**: 방치된 `waiting` task(예: 입력이 끝나지 않는 `Reduce`)를 terminal-only 로 제약하면 영원히 못 지우고, 그게 참조로 자기 입력들을 붙잡아 그 입력들도 영영 GC 대상에서 빠진다. `running` 은 `plan_sweep` 이 항상 후보에서 제외하므로 별도 처리가 필요 없다.
+- **상태를 terminal 로 제한하지 않는 이유**: 방치된 `waiting` task(예: 입력이 끝나지 않는 `Reduce`)를 terminal-only 로 제약하면 영원히 못 지우고, 그게 참조로 자기 입력들을 붙잡아 그 입력들도 영영 GC 대상에서 빠진다. `running` 은 `plan_sweep` 이 항상 후보에서 제외하므로 별도 처리가 필요 없다. handle 이 남은 task(종료 확인 중)도 `keep` 으로 넘겨 제외한다.
 - **`PutOpts.expires_at` 류의 memory 자체 TTL 은 쓰지 않는다** — TTL 만료는 참조 무결성·상태 검사를 완전히 우회한 채 그냥 지워버려, dangling 참조·자원 누수를 다시 끌어들이기 때문이다. 항상 `plan_sweep`(순수 함수, 후보 선정) → `apply_sweep_plan`(실제 삭제) 을 거치고, 실제로 지워진 task 마다 `tasty.agent.handle.<id>`/`tasty.agent.run_result.<id>` side-key 도 `evict_task_side_keys` 로 정리한다.
 - `plan_sweep` 은 fixed-point 로 "후보 집합 밖에서 참조되는 task"만 반복 제외한다 — 즉 서로를 참조하는 방치 task 끼리는(예: `waiting` `Reduce`(X)가 그 input(Y)을 참조) 후보 집합 안에서 함께 드레인되고, 후보 밖의 살아있는 task 가 참조하는 대상만 보존(`retained`)된다.
 
@@ -368,6 +368,12 @@ handle 이 들어왔으면 손대지 않는다. 그리고 task 에 이전 회차
 새 회차(retry 로 다시 Ready 가 된 task)를 시작하지 않고 Ready 로 둔다(`HostExecutor::dispatch` 가
 미룬다). 점유의 holder 는 task id 라서 새 회차가 같은 holder 로 다시 얻으면 멱등으로 통과해, 끝나지
 않은 옛 프로세스 묶음과 새 회차가 같은 permit 을 함께 쓰게 되기 때문이다.
+
+handle 이 남은 Running 아닌 task(종료 확인 중)는 지우지 않는다. `task_delete` 는 그 task 나 cascade 로
+함께 지울 참조자 중 하나라도 그렇다면 `-32602` 로 거절하고 이유(exit confirmation)를 싣는다.
+`task_purge` 와 자동 GC 는 그런 task 를 Running 처럼 후보에서 빼고, purge 는 `skipped`·`skipped_count`
+로 알린다(`TaskStore::plan_sweep` 의 `keep`). 지우면 handle 이 함께 지워져 확인 뒤 점유를 반환할
+정리가 없어지고, 반환은 task metadata 에서 자원 이름을 읽으므로 task 가 없으면 permit 이 남는다.
 
 TTL을 생략하면 자동 만료하지 않는다.
 

@@ -7,7 +7,7 @@ mod attempt_tests;
 mod restart_holders;
 pub(crate) mod settle;
 use restart_holders::{purge_stale_lease_holders, purge_stale_semaphore_holders};
-pub(crate) use settle::{settle_ended_task, settle_ended_tasks_in_background};
+pub(crate) use settle::{settle_ended_task, settle_ended_tasks_in_background, stored_handle_ids};
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -823,9 +823,12 @@ fn gc_plan_sweep(
         now_ms: now_ms(),
     };
     let seq = ctx.agent_seq.clone();
+    // 이전 회차의 종료를 확인하는 중인 task 는 지우지 않는다. 지우면 handle 이 사라져 점유를 반환할
+    // 정리가 없어진다.
     let plan = ctx.with_memory(|mem| {
+        let keep = stored_handle_ids(&*mem, workspace_id);
         let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
-        store.plan_sweep(workspace_id, &filter)
+        store.plan_sweep(workspace_id, &filter, &keep)
     });
     match plan {
         Ok(p) => Some(p),

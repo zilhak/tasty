@@ -1,5 +1,7 @@
 //! TaskService의 작업 API. 원본은 memory의 TaskStore이며 engine별 순번·허브는 TaskScope로 받는다.
 
+use std::collections::HashSet;
+
 use tasty_agent::task::{
     Completion, CompletionOutcome, CompletionReceipt, GraphDurability, TaskCreateOpts,
     TaskDeleteOpts, TaskDeleteReport, TaskGraphSpec, TaskPurgeFilter, TaskSweepPlan,
@@ -361,7 +363,9 @@ impl TaskService {
     ) -> Result<TaskDeleteReport, AgentError> {
         let seq = scope.agent_seq().clone();
         let report = self.with_memory(|mem| {
+            let settling = crate::runner_thread::stored_handle_ids(&*mem, workspace_id);
             let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+            reject_settling_targets(&store, workspace_id, task_id, opts.cascade, &settling)?;
             store.delete_checked(workspace_id, task_id, opts)
         })?;
         let ctx = self.runner_context(scope);
@@ -386,9 +390,11 @@ impl TaskService {
             ));
         }
         let seq = scope.agent_seq().clone();
+        // 이전 회차의 종료를 확인하는 중인 task 는 건너뛴다(`skipped`). 지우면 점유를 반환할 정리가 없어진다.
         let plan = self.with_memory(|mem| {
+            let keep = crate::runner_thread::stored_handle_ids(&*mem, workspace_id);
             let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
-            store.plan_sweep(workspace_id, &filter)
+            store.plan_sweep(workspace_id, &filter, &keep)
         })?;
         if dry_run {
             return Ok(plan);
@@ -509,6 +515,40 @@ fn typed_read_refused(tid: &TaskId, why: &str) -> AgentError {
     let mut failure = TaskFailure::new(FailureStage::Input, format!("task '{tid}' {why}"));
     failure.task_id = Some(tid.clone());
     AgentError::TypeContract(Box::new(failure))
+}
+
+/// 지울 task(cascade 면 그 참조자 포함) 중 Running 이 아닌데 handle 이 남은 것이 있으면 거절한다.
+/// 그 task 는 이전 회차의 프로세스가 끝난 것을 아직 확인하지 못했다. 지우면 handle 이 사라져 확인 뒤
+/// semaphore·lease 를 반환할 정리가 없어진다. Running 은 `delete_checked` 가 거절한다.
+fn reject_settling_targets(
+    store: &TaskStore<'_>,
+    workspace_id: u32,
+    task_id: &TaskId,
+    cascade: bool,
+    settling: &HashSet<TaskId>,
+) -> Result<(), AgentError> {
+    if settling.is_empty() {
+        return Ok(());
+    }
+    let all = store.list(workspace_id)?;
+    let mut targets = vec![task_id.clone()];
+    if cascade {
+        targets.extend(tasty_agent::task::transitive_referencing_task_ids(
+            &all, task_id,
+        ));
+    }
+    let blocked = all.iter().find(|t| {
+        targets.contains(&t.id)
+            && settling.contains(&t.id)
+            && !matches!(t.state, TaskState::Running)
+    });
+    match blocked {
+        Some(t) => Err(AgentError::InvalidArgument(format!(
+            "task {} is waiting for exit confirmation: the processes of its previous attempt have not been confirmed ended, and its semaphore and lease are returned after that; delete it once they end",
+            t.id
+        ))),
+        None => Ok(()),
+    }
 }
 
 #[cfg(test)]

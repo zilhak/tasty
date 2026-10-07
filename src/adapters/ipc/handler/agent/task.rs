@@ -1053,6 +1053,8 @@ pub fn handle_task_purge(
                 json!({
                     "deleted": plan.deleted,
                     "retained": plan.retained,
+                    "skipped_count": plan.skipped.len(),
+                    "skipped": plan.skipped,
                     "dry_run": dry_run,
                 }),
             ),
@@ -1703,7 +1705,9 @@ mod purge_state_filter_tests {
                 .expect("create");
         }
         let filter = purge_filter_from_params(params, 100_000).expect("픽스처 params 는 정상");
-        store.plan_sweep(1, &filter).expect("plan_sweep")
+        store
+            .plan_sweep(1, &filter, &Default::default())
+            .expect("plan_sweep")
     }
 
     #[test]

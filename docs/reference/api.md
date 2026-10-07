@@ -94,7 +94,7 @@ regular(`put/get/delete/list/exists/count/scopes/stats/query/export/import`) · 
 | `task_await` | 완료까지 호출을 대기시킨다. `approval.await`와 마찬가지로 플러그인 SDK의 단일 워커를 막지 않도록 제한한다. 기본 timeout은 10분이고 `timeout_ms:0`은 무한 대기다. |
 | `task_set_result` | 외부에서 작업 완료를 알린다. 결과와 종결 상태를 함께 기록하며, 타입을 정한 작업은 `attempt_id` 로 보고할 실행 회차를 지정한다. 플러그인의 Custom task는 러너가 상태를 관리하므로 플러그인이 직접 완료 상태를 바꾸지 않고 완료 판정 전략을 선언한다. |
 
-`task_delete`와 `task_purge`는 `depends_on`, `Fallback.task`, `Reduce.inputs` 참조를 검사한다. 참조가 남으면 기본적으로 거절하고 참조자 목록을 반환한다. `--cascade`는 연쇄 삭제, `--force`는 참조 검사만 우회한다. **`running` 상태의 제약은 `--force`로 우회할 수 없다.**
+`task_delete`와 `task_purge`는 `depends_on`, `Fallback.task`, `Reduce.inputs` 참조를 검사한다. 참조가 남으면 기본적으로 거절하고 참조자 목록을 반환한다. `--cascade`는 연쇄 삭제, `--force`는 참조 검사만 우회한다. **`running` 상태의 제약은 `--force`로 우회할 수 없다.** 이전 회차의 프로세스 종료를 확인하는 중인 task(러너가 꺼진 동안 취소한 뒤 아직 확인하지 못한 task 등)도 지우지 않는다. `task_delete` 는 대상이나 cascade 로 함께 지울 task 중 하나라도 그렇다면 `-32602` 와 이유(`exit confirmation`)를 돌려주고, `task_purge` 는 그런 task 를 건너뛰고 응답의 `skipped`(id 목록)·`skipped_count` 로 알린다. 확인이 끝나 semaphore·lease 가 반환되면 지울 수 있다.
 
 `task_command.kind = "run"`은 surface 없이 자식 프로세스를 실행한다. `task_get`과 `task_await`의 `result.output`에 stdout/stderr 각각 마지막 64KiB와 `truncated`/`dropped_bytes`를 반환한다. 0이 아닌 종료 코드로 실패하면 `result.error` 문자열에도 같은 출력이 포함된다. 실행이 끝나는 때는 명령이 끝나고 stdout·stderr 가 모두 닫힌 때다. 실행 중에 `task_cancel` 하면 명령이 이미 끝났어도 그 명령이 띄운 프로세스(Unix 프로세스 그룹 전체, Windows job)를 끝내고, 모두 끝난 것을 확인한 뒤 semaphore·lease 를 반환한다. 러너가 꺼져 있으면 `task_cancel` 은 종료를 기다리지 않고 응답하며, 종료 확인과 반환은 백그라운드에서 한다. 반환 전까지 점유는 그대로다. 그 사이 `task_retry` 한 task 는 이전 회차의 프로세스가 모두 끝난 것을 확인할 때까지 `ready` 로 남고 시작하지 않는다.
 
