@@ -228,7 +228,7 @@ fn run_pre_push_fixture(
     cargo_rc: i32,
 ) -> (bool, String, String, String) {
     use std::io::Write;
-    use std::process::{Command, Stdio};
+    use std::process::Stdio;
     use tasty_doc_guards::temp_scratch::Scratch;
 
     let scratch = Scratch::new("pre-push-hook");
@@ -265,8 +265,7 @@ cargo() {
 "#,
     )
     .unwrap();
-    let bash = hook_bash();
-    let mut child = Command::new(bash)
+    let mut child = hook_bash_command()
         .arg(hook_path(&repo_root().join(".githooks/pre-push")))
         .args(["origin", "unused"])
         .env("BASH_ENV", hook_path(&env_file))
@@ -397,7 +396,7 @@ fn pre_push_handles_new_deleted_multiple_and_empty_refs() {
 #[test]
 fn pre_push_checks_do_not_inherit_the_pushing_repository_environment() {
     let scratch = tasty_doc_guards::temp_scratch::Scratch::new("pre-push-git-env");
-    let output = std::process::Command::new(hook_bash())
+    let output = hook_bash_command()
         .arg(hook_path(
             &repo_root().join("scripts/tests/pre-push-git-environment.sh"),
         ))
@@ -430,6 +429,25 @@ fn hook_bash() -> std::path::PathBuf {
     } else {
         std::path::PathBuf::from("bash")
     }
+}
+
+/// hook 을 실행할 Bash. Windows 에서 Git 의 `usr\bin\bash.exe` 를 비대화형으로 띄우면 PATH 에 자기
+/// 디렉터리가 없어 `mkdir` 같은 coreutils 를 찾지 못한다. Git 이 hook 을 실행할 때처럼 그
+/// 디렉터리를 PATH 앞에 둔다.
+fn hook_bash_command() -> std::process::Command {
+    let bash = hook_bash();
+    #[cfg(windows)]
+    {
+        let dir = bash.parent().expect("bash has a directory").to_path_buf();
+        let rest = std::env::var_os("PATH").unwrap_or_default();
+        let path = std::env::join_paths(std::iter::once(dir).chain(std::env::split_paths(&rest)))
+            .expect("PATH entries join");
+        let mut command = std::process::Command::new(bash);
+        command.env("PATH", path);
+        command
+    }
+    #[cfg(not(windows))]
+    std::process::Command::new(bash)
 }
 
 fn hook_path(path: &std::path::Path) -> String {
