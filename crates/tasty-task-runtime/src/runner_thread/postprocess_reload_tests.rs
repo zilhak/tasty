@@ -285,6 +285,7 @@ fn dropping_the_registry_waits_until_the_postprocess_is_stopped_and_recorded() {
 
 /// 세마포어 gpu(permit 1)를 쥔 채 후처리 실행 1 을 시작한 judge. 이전 호스트가 저장한 후처리
 /// handle 은 `pid`·`started_at` 를 가리킨다.
+#[cfg(target_os = "linux")]
 fn holding_judge_in_postprocess(ctx: &RunnerContext, pid: u32, started_at: u64) {
     let spec: TaskGraphSpec = serde_json::from_value(json!({
         "contract_version": 2,
@@ -346,6 +347,7 @@ fn gpu_holders(ctx: &RunnerContext) -> Vec<String> {
 }
 
 /// 이전 호스트가 띄운 후처리처럼 새 프로세스 그룹에서 오래 도는 프로세스. 회수는 별도 스레드가 한다.
+#[cfg(target_os = "linux")]
 fn spawn_postprocess_like() -> (u32, u64) {
     use std::os::unix::process::CommandExt;
     let mut child = std::process::Command::new("sleep")
