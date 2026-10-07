@@ -191,7 +191,7 @@ fn a_late_restart_report_from_an_earlier_attempt_leaves_the_retried_run_alone() 
     // 지금 회차의 handle 은 그대로 보고한다.
     put_dead_handle(&ctx, "p#2");
     purge_and_reload_on_restart(&ctx, 1);
-    assert!(matches!(state(&ctx), TaskState::Failed { .. }));
+    assert!(matches!(state(&ctx), TaskState::Unknown { .. }));
     let attempt = with_store(&ctx, |s| s.get(1, &"p".into()).unwrap().unwrap().attempt);
     assert_eq!(attempt.expect("attempt").id, "p#2");
 }

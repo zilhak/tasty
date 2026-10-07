@@ -350,3 +350,87 @@ fn a_reduce_all_record_reads_back_as_its_input_type_and_names_the_attempt() {
     let not_all = reduce_all_record_output(&get(&store, "p"), &get(&store, "q"));
     assert!(not_all.is_err());
 }
+
+// 결과를 회수할 수 없는 회차는 Unknown 으로 남는다. 하류는 실패 전파 없이 기다리고, 늦은
+// 보고는 받지 않으며, retry 가 새 회차를 연다.
+#[test]
+fn a_lost_result_leaves_the_task_unknown_until_a_retry() {
+    let (_td, mut mem, seq) = fresh();
+    let mut store = TaskStore::new(&mut mem, "_host", &seq);
+    submit_pair(&mut store);
+    let attempt = start(&mut store, "p", 1);
+    let p = "p".to_string();
+    let receipt = store
+        .complete(
+            1,
+            &p,
+            Completion::lost(Some(attempt.clone()), "run result lost: pid 7".into()),
+            2,
+        )
+        .expect("lost");
+    assert!(receipt.transitioned.is_empty());
+    let task = get(&store, "p");
+    assert_eq!(
+        task.state,
+        TaskState::Unknown {
+            reason: Some("run result lost: pid 7".into())
+        }
+    );
+    assert!(task.typed_result.is_none(), "no result is made up");
+    assert_eq!(task.finished_at, None, "unknown is not a terminal state");
+    assert!(matches!(get(&store, "c").state, TaskState::Waiting));
+
+    // 같은 회차의 늦은 보고는 Unknown 을 끝내지 않는다.
+    assert!(
+        store
+            .complete(1, &p, Completion::succeeded(Some(attempt), ok(1)), 3)
+            .is_err()
+    );
+    assert!(matches!(get(&store, "p").state, TaskState::Unknown { .. }));
+
+    store.retry(1, &p, false, 4).expect("retry from unknown");
+    assert_eq!(start(&mut store, "p", 5), "p#2");
+    store
+        .complete(1, &p, Completion::succeeded(Some("p#2".into()), ok(3)), 6)
+        .expect("second attempt");
+    assert!(matches!(get(&store, "c").state, TaskState::Ready));
+}
+
+#[test]
+fn a_lost_v1_result_leaves_the_task_unknown_and_its_dependents_waiting() {
+    let (_td, mut mem, seq) = fresh();
+    let mut store = TaskStore::new(&mut mem, "_host", &seq);
+    let opts = |name: &str, depends_on: Vec<TaskId>| TaskCreateOpts {
+        workspace_id: 1,
+        name: name.into(),
+        command: TaskCommand::WaitBarrier { name: "b".into() },
+        depends_on,
+        on_failure: OnFailure::default(),
+        metadata: Value::Null,
+        now_ms: 0,
+    };
+    let a = store.create(opts("a", vec![])).expect("a");
+    let b = store.create(opts("b", vec![a.id.clone()])).expect("b");
+    store
+        .set_state(1, &a.id, TaskState::Running, 1)
+        .expect("running");
+    store
+        .complete(1, &a.id, Completion::lost(None, "gone".into()), 2)
+        .expect("lost");
+    assert!(matches!(
+        get(&store, &a.id).state,
+        TaskState::Unknown { .. }
+    ));
+    assert!(matches!(get(&store, &b.id).state, TaskState::Waiting));
+}
+
+// 이전 레코드의 unknown(이유 없음)도 그대로 읽힌다.
+#[test]
+fn an_unknown_state_without_a_reason_still_reads() {
+    let state: TaskState = serde_json::from_value(json!({"kind": "unknown"})).expect("old form");
+    assert_eq!(state, TaskState::Unknown { reason: None });
+    assert_eq!(
+        serde_json::to_value(&state).unwrap(),
+        json!({"kind": "unknown"})
+    );
+}

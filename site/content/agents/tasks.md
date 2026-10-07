@@ -241,7 +241,7 @@ output: {"confidence":0.95,"verdict":"pass"} (from postprocess.stdout.json)
 | **성공** <!-- en: Succeeded --> · **실패** <!-- en: Failed --> | 끝났습니다 |
 | **취소** <!-- en: Cancelled --> · **건너뜀** <!-- en: Skipped --> | 사람이 취소했거나, 앞이 실패해 건너뛰었습니다 |
 | **선택 안 됨** <!-- en: Not selected --> | 갈래에서 다른 쪽이 골라져 실행하지 않았습니다. 실패가 아닙니다 |
-| **알수없음** <!-- en: Unknown --> | 판정할 수 없습니다 |
+| **알수없음** <!-- en: Unknown --> | 결과를 알 수 없습니다. Tasty 가 다시 시작되는 사이 명령이 끝나 종료 코드를 받지 못한 경우입니다. 뒤 작업은 기다리고, 다시 실행(`task-retry`)하거나 취소해야 진행됩니다 |
 
 터미널에서 보려면:
 

@@ -325,9 +325,10 @@ fn format_task_get(result: &serde_json::Value) -> Result<()> {
     let state = task_state_kind(result);
     outln!("id: {id}")?;
     outln!("name: {name}")?;
+    // 실패는 error, 결과 불명은 reason 에 사유가 있다.
     if let Some(error) = result
         .get("state")
-        .and_then(|s| s.get("error"))
+        .and_then(|s| s.get("error").or_else(|| s.get("reason")))
         .and_then(|v| v.as_str())
     {
         outln!("state: {state} ({error})")?;

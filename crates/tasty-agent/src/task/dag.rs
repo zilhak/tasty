@@ -60,7 +60,7 @@ impl DagStateCounts {
             TaskState::Failed { .. } => self.failed += 1,
             TaskState::Cancelled => self.cancelled += 1,
             TaskState::Skipped => self.skipped += 1,
-            TaskState::Unknown => self.unknown += 1,
+            TaskState::Unknown { .. } => self.unknown += 1,
         }
     }
 
@@ -357,7 +357,7 @@ fn blocked_task_ids(all: &[Task]) -> BTreeSet<String> {
         .collect();
     let unknown: BTreeSet<&str> = all
         .iter()
-        .filter(|t| t.state == TaskState::Unknown)
+        .filter(|t| matches!(t.state, TaskState::Unknown { .. }))
         .map(|t| t.id.as_str())
         .collect();
     let waiting: Vec<(&Task, Vec<&str>)> = all

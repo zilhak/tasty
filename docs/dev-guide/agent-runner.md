@@ -448,7 +448,7 @@ tasty agent lease-list --workspace-id 1  # 3개 원본 + wt-3-overflow-1/-2 총 
 `held_permits`/`held_handles` 는 in-memory only이라 재시작 시 비지만, store 의 holders/handle 은 영속이라 leak 가능. `purge_and_reload_on_restart`(`crates/tasty-task-runtime/src/runner_thread.rs`)로 묶여 있고, **runner thread 없이도** 호출 가능하다 — 부팅 경로(위 "재시작 계약")와 `run_loop` 진입부(수동/plugin start) 양쪽이 이 함수 하나를 공유한다:
 
 - `purge_stale_{semaphore,lease}_holders` — Running task 중 `metadata.*.holder == task.id` 만 release + task=Failed("host restart").
-- `reload_persistent_handles`(key `tasty.agent.handle.<task_id>`, workspace scope) — `ShellProcess` 는 `process_alive::is_alive(pid)` 검사(alive 복원 / dead 는 영속 `run_result`로 저장된 exit_code를 반영 또는 Failed). `PolledDispatch`/`BarrierPoll` 은 insert-only 복원(다음 tick poll). PolledDispatch 첫 poll 이 injector 미준비면 `INJECTOR_GRACE_MS=30s` 안에서 Active 유지. `AwaitExternal { deadline_ms, .. }` 은 `deadline_ms` 가 이미 지났으면 즉시 `Failed`(구 포맷도 `deadline_ms` 기본값 0 이라 이 분기), 아직이면 insert-only 복원 — 단 poll 이 절대 관여하지 않는 계약이라 다음 재시작 전까지는 deadline 이 재판정되지 않는다(위 "재시작 계약" 참조).
+- `reload_persistent_handles`(key `tasty.agent.handle.<task_id>`, workspace scope) — `ShellProcess` 는 `process_alive::is_alive(pid)` 검사(alive 복원 / dead 는 영속 `run_result`로 저장된 결과를 반영, 없으면 `unknown`). 복원한 `ShellProcess` 는 이 executor 의 watcher 가 없어(Tasty 는 그 프로세스의 부모가 아니다) 종료 코드와 출력을 받을 수 없다. 프로세스가 살아 있는 동안 task 는 Running 이고 permit 을 쥐며, 끝나면 `unknown`(`reason`: `run result lost: pid N ended after a host restart …`)이 된다. 저장된 결과가 없는 죽은 pid 도 `unknown`(`… ended while the host was down …`)이다. `PolledDispatch`/`BarrierPoll` 은 insert-only 복원(다음 tick poll). PolledDispatch 첫 poll 이 injector 미준비면 `INJECTOR_GRACE_MS=30s` 안에서 Active 유지. `AwaitExternal { deadline_ms, .. }` 은 `deadline_ms` 가 이미 지났으면 즉시 `Failed`(구 포맷도 `deadline_ms` 기본값 0 이라 이 분기), 아직이면 insert-only 복원 — 단 poll 이 절대 관여하지 않는 계약이라 다음 재시작 전까지는 deadline 이 재판정되지 않는다(위 "재시작 계약" 참조).
 
 `ReduceImmediate`/`CustomImmediate`/`ImmediateFail` 은 영속 안 함(다음 tick 즉시 흡수 + reload 시 재dispatch side-effect 위험).
 
@@ -883,7 +883,7 @@ v2 task 는 `tasty.agent.typed_task.<id>` 키에 `{"record_format": "tasty.task/
 
 ## 한계
 
-호스트가 ShellProcess spawn 과 watcher 완료 영속 사이에 죽으면 자식이 init(1) reparent 되어 exit_code 손실 → reload 시 `Failed("exit_code unknown")`. (cross-platform 으로 회피 불가.)
+호스트가 Run 의 자식이 끝나기 전에 죽으면 자식은 init(1) 등으로 넘어가 Tasty 가 종료 코드를 받을 수 없다. 재시작 뒤 그 task 는 결과를 꾸미지 않고 `unknown`(`state.reason` 에 사유)이 된다. 프로세스가 아직 살아 있으면 끝날 때까지 Running 으로 기다린 뒤 `unknown` 이 된다. `unknown` 은 종결이 아니다. 하류는 실패 전파 없이 기다리고(DAG 집계에서는 `blocked`), fallback 도 실행되지 않는다. 사람이 결과를 확인한 뒤 `retry`(새 회차로 다시 실행)나 `cancel` 로 정한다. 근거는 ADR-0069 "결과를 회수할 수 없는 회차" 절. 감시 프로세스를 두어 종료 코드를 남기는 방식은 쓰지 않는다(같은 절의 대안). semaphore·lease 를 쥔 Running task 는 이 판정보다 먼저 부팅 정리(`purge_stale_{semaphore,lease}_holders`)가 `Failed("host restart")` 로 끝낸다.
 
 같은 이유로 **캡처한 stdout/stderr 도 유실된다** — 자식은 호스트 재시작 후에도 살아남지만(수명 계약은 그대로 유지), 파이프를 들고 있던 드레인 스레드는 호스트와 함께 사라지므로 그 사이의 출력은 다시 읽을 방법이 없다. 장시간 작업(빌드/배포)의 결과 보존이 중요해지면 `pty.*` 기반 별도 경로가 더 맞다.
 

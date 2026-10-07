@@ -14,11 +14,11 @@ mod typed_inputs;
 use run_result::{
     CAPTURE_TAIL_CAP, POLL_FAILURE_SUMMARY_CAP, run_outcome_from_value, run_outcome_to_value,
 };
-use run_result::{drain_capped, summarize_poll_response};
 pub(crate) use run_result::{
-    evict_run_result, evict_task_side_keys, load_run_result, persist_run_result,
+    RUN_RESULT_LOST, evict_run_result, evict_task_side_keys, load_run_result, persist_run_result,
     shell_outcome_from_status,
 };
+use run_result::{drain_capped, summarize_poll_response};
 
 pub(crate) use attempt_record::{HANDLE_ATTEMPT_FIELD, dispatch_attempt, handle_value};
 use clock::now_ms;
@@ -944,12 +944,15 @@ impl HostExecutor {
                     }
                     return PollOutcome::Active;
                 }
-                // 이 executor의 watcher가 없으면 PID 생존 여부만 본다. 재사용된 PID가 원래 자식인지 확인하지 않는다.
-                // 저장된 종료 결과의 적용은 reload 단계가 담당한다.
+                // 이 executor의 watcher가 없으면(재시작 뒤 복원한 handle) PID 생존 여부만 본다. 재사용된
+                // PID가 원래 자식인지 확인하지 않는다. 살아 있는 동안은 permit 을 쥐고 기다린다.
+                // 끝난 뒤에는 그 종료 코드를 받을 수 없으므로(부모가 아니다) 결과 불명으로 둔다.
                 if tasty_agent::platform::process_alive::is_alive(*pid) {
                     return PollOutcome::Active;
                 }
-                PollOutcome::Failed(format!("Run handle lost (pid {pid} no longer tracked)"))
+                PollOutcome::Lost(format!(
+                    "{RUN_RESULT_LOST}: pid {pid} ended after a host restart and its exit status could not be collected"
+                ))
             }
             DispatchHandle::ImmediateFail(err) => PollOutcome::Failed(err.clone()),
             DispatchHandle::BarrierPoll { workspace_id, name } => {
@@ -1227,6 +1230,22 @@ mod tests {
             other => panic!("poison 된 cell 에서도 결과를 꺼내야 한다, got {other:?}"),
         }
         assert!(!exec.shell_children.contains_key(&pid));
+    }
+
+    /// 재시작 뒤 복원한 Run handle(이 executor 의 watcher 가 없음)의 프로세스가 사라지면 종료
+    /// 결과를 받을 수 없어 실패가 아니라 결과 불명이다.
+    #[test]
+    fn a_restored_run_whose_process_is_gone_reports_a_lost_result() {
+        let (_td, ctx) = fresh_ctx();
+        let mut exec = HostExecutor::new(ctx);
+        let pid = 0xFFFF_FFFE;
+        match exec.poll(&DispatchHandle::ShellProcess { pid }) {
+            PollOutcome::Lost(reason) => {
+                assert!(reason.starts_with(RUN_RESULT_LOST), "{reason}");
+                assert!(reason.contains(&pid.to_string()), "{reason}");
+            }
+            other => panic!("expected a lost result, got {other:?}"),
+        }
     }
 
     /// 값만 만드는 공용 task 빌더. 실제 프로세스 실행 시험에는 별도 Unix 조건을 둔다.

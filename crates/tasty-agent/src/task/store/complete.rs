@@ -5,7 +5,7 @@
 //! 후속 효과가 실패하면 오류를 돌려주고, 같은 보고를 다시 내면 후속 효과만 다시 적용한다.
 //! 다시 낼 보고가 없는 재시작 뒤에는 [`TaskStore::resettle_waiting`] 이 남은 Waiting 을 마무리한다.
 
-use super::super::attempt::{Completion, CompletionReceipt, CompletionRecord};
+use super::super::attempt::{Completion, CompletionOutcome, CompletionReceipt, CompletionRecord};
 use super::super::{Task, TaskId, TaskState, is_valid_transition};
 use super::postprocess::PostprocessStep;
 use super::{TaskStore, WorkspaceId, record_result, settle_typed_terminal};
@@ -91,6 +91,18 @@ impl TaskStore<'_> {
         }
 
         let mut task = task;
+        // 결과를 회수할 수 없으면 결과·경로를 정하지 않고 Unknown 으로 둔다. 종결이 아니라
+        // 하류·fallback 은 그대로 기다리고, 회차 지문도 남기지 않는다(retry 가 새 회차를 연다).
+        if matches!(completion.outcome, CompletionOutcome::Lost { .. }) {
+            task.state = requested;
+            super::super::postprocess::close_phase(&mut task);
+            self.put(&task)?;
+            return Ok(CompletionReceipt {
+                task,
+                transitioned: Vec::new(),
+                duplicate: false,
+            });
+        }
         match self.postprocess_step(&mut task, &completion, now_ms)? {
             PostprocessStep::Continue(receipt) => return Ok(*receipt),
             PostprocessStep::Finalize => {}

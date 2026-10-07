@@ -513,7 +513,7 @@ fn render_graph_dot(tasks: &[Task]) -> String {
             TaskState::Cancelled => "gray",
             TaskState::Skipped => "lightgray",
             TaskState::Waiting => "white",
-            TaskState::Unknown => "orange",
+            TaskState::Unknown { .. } => "orange",
         };
         // 갈래에서 고르지 않아 건너뛴 task 는 실패 전파로 건너뛴 task 와 구분해 라벨과 테두리를 바꾼다.
         let not_selected = matches!(t.skip, Some(tasty_agent::SkipReason::BranchNotSelected));

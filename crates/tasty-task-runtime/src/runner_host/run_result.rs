@@ -199,6 +199,9 @@ pub(crate) fn evict_task_side_keys(ctx: &RunnerContext, workspace_id: u32, task_
     evict_run_result(ctx, workspace_id, task_id);
 }
 
+/// 재시작 뒤 Run 의 종료 결과를 회수할 수 없을 때 Unknown 사유의 머리말.
+pub(crate) const RUN_RESULT_LOST: &str = "run result lost";
+
 pub(super) fn run_outcome_to_value(outcome: &PollOutcome) -> serde_json::Value {
     match outcome {
         PollOutcome::Done(r) => json!({
@@ -210,6 +213,10 @@ pub(super) fn run_outcome_to_value(outcome: &PollOutcome) -> serde_json::Value {
         PollOutcome::Failed(e) => json!({
             "kind": "failed",
             "error": e,
+        }),
+        PollOutcome::Lost(reason) => json!({
+            "kind": "lost",
+            "reason": reason,
         }),
         PollOutcome::Active => json!({ "kind": "active" }),
         // Run 의 결과 셀에는 후처리 보고가 들어가지 않는다.
@@ -236,6 +243,7 @@ pub(super) fn run_outcome_from_value(v: &serde_json::Value) -> Option<PollOutcom
             }))
         }
         "failed" => Some(PollOutcome::Failed(v.get("error")?.as_str()?.to_string())),
+        "lost" => Some(PollOutcome::Lost(v.get("reason")?.as_str()?.to_string())),
         _ => None,
     }
 }

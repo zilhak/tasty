@@ -2374,9 +2374,12 @@ fn rollup_state_precedence_progress_over_failure_over_terminal() {
     assert_eq!(states(&[failed(), TaskState::Ready]), "ready");
     assert_eq!(states(&[failed(), TaskState::Waiting]), "waiting");
     // unknown 은 사람이 개입해야 진행되므로 진행할 수 있는 것으로 보지 않는다.
-    assert_eq!(states(&[failed(), TaskState::Unknown]), "failed");
     assert_eq!(
-        states(&[TaskState::Succeeded, TaskState::Unknown]),
+        states(&[failed(), TaskState::Unknown { reason: None }]),
+        "failed"
+    );
+    assert_eq!(
+        states(&[TaskState::Succeeded, TaskState::Unknown { reason: None }]),
         "waiting"
     );
     // 더 진행할 수 없으면 성공이 섞였는지로 부분 오류와 실패를 가른다.
@@ -2396,7 +2399,10 @@ fn rollup_state_precedence_progress_over_failure_over_terminal() {
     );
     assert_eq!(states(&[TaskState::Skipped]), "skipped");
     assert_eq!(states(&[TaskState::Waiting, TaskState::Ready]), "ready");
-    assert_eq!(states(&[TaskState::Waiting, TaskState::Unknown]), "waiting");
+    assert_eq!(
+        states(&[TaskState::Waiting, TaskState::Unknown { reason: None }]),
+        "waiting"
+    );
 
     let tasks: Vec<Task> = [TaskState::Running, TaskState::Running, TaskState::Waiting]
         .iter()

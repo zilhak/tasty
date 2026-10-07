@@ -693,7 +693,7 @@ impl<'a> TaskStore<'a> {
             TaskState::Failed { .. }
             | TaskState::Cancelled
             | TaskState::Skipped
-            | TaskState::Unknown => {}
+            | TaskState::Unknown { .. } => {}
             other => {
                 return Err(AgentError::InvalidTransition {
                     from: other.name().to_string(),

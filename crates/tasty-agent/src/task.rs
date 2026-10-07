@@ -28,6 +28,7 @@ pub type TaskId = String;
 /// - `Running → Succeeded`
 /// - `Running → Failed`
 /// - `Running → Cancelled`
+/// - `Running → Unknown` (실행 결과를 회수할 수 없게 됨. 재시작 뒤 감시하던 프로세스를 잃은 경우 등)
 /// - `Unknown → Ready` (사용자 명시 retry)
 /// - `Unknown → Cancelled`
 ///
@@ -39,10 +40,16 @@ pub enum TaskState {
     Ready,
     Running,
     Succeeded,
-    Failed { error: String },
+    Failed {
+        error: String,
+    },
     Cancelled,
     Skipped,
-    Unknown,
+    /// 실행이 끝났을 수 있지만 결과를 회수할 수 없다. 종결이 아니며 사람이 retry·cancel 한다.
+    Unknown {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
+    },
 }
 
 impl TaskState {
@@ -55,7 +62,7 @@ impl TaskState {
             TaskState::Failed { .. } => "failed",
             TaskState::Cancelled => "cancelled",
             TaskState::Skipped => "skipped",
-            TaskState::Unknown => "unknown",
+            TaskState::Unknown { .. } => "unknown",
         }
     }
 
@@ -371,9 +378,10 @@ pub(super) fn is_valid_transition(from: &TaskState, to: &TaskState) -> bool {
         | (Running, Succeeded)
         | (Running, Failed { .. })
         | (Running, Cancelled)
-        | (Unknown, Ready)
-        | (Unknown, Cancelled)
-        | (Unknown, Waiting) => true,
+        | (Running, Unknown { .. })
+        | (Unknown { .. }, Ready)
+        | (Unknown { .. }, Cancelled)
+        | (Unknown { .. }, Waiting) => true,
         // retry 경로는 별도 메서드에서 처리. 직접 set_state로는 거부.
         _ => false,
     }

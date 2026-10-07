@@ -20,8 +20,9 @@ use tasty_agent::{TaskId, TaskState, TaskStore};
 use tasty_memory::{HOST_OWNER, ListOpts, MemoryValue, Scope};
 
 use super::runner_host::{
-    HANDLE_ATTEMPT_FIELD, HANDLE_KEY_PREFIX, HostExecutor, RunnerContext, evict_run_result,
-    evict_task_side_keys, handle_key, load_run_result, restored_postprocess_handle,
+    HANDLE_ATTEMPT_FIELD, HANDLE_KEY_PREFIX, HostExecutor, RUN_RESULT_LOST, RunnerContext,
+    evict_run_result, evict_task_side_keys, handle_key, load_run_result,
+    restored_postprocess_handle,
 };
 use tasty_agent::runner::PollOutcome;
 
@@ -539,10 +540,14 @@ fn classify_persisted_handle(
             } else if let Some(outcome) = load_run_result(ctx, workspace_id, &task_id) {
                 HandleClassification::Precise(task_id, attempt, outcome)
             } else {
-                HandleClassification::Dead(
+                // 저장된 종료 결과가 없으면 그 종료 코드를 받을 방법이 없다(부모가 아니다). 실패로
+                // 꾸미지 않고 결과 불명으로 둔다.
+                HandleClassification::Precise(
                     task_id,
                     attempt,
-                    format!("host restart: pid {pid} died (exit_code unknown)"),
+                    PollOutcome::Lost(format!(
+                        "{RUN_RESULT_LOST}: pid {pid} ended while the host was down and no exit status was saved"
+                    )),
                 )
             }
         }
@@ -649,6 +654,7 @@ fn finalize_precise_tasks(
         let completion = match outcome {
             PollOutcome::Done(r) => Completion::succeeded(attempt.clone(), r.clone()),
             PollOutcome::Failed(err) => Completion::failed(attempt.clone(), err.clone()),
+            PollOutcome::Lost(reason) => Completion::lost(attempt.clone(), reason.clone()),
             PollOutcome::Postprocessed(r) => Completion::postprocessed(attempt.clone(), r.clone()),
             // 저장된 결과가 종결이 아니면 이전처럼 handle 만 지운다.
             PollOutcome::Active => {
@@ -1203,7 +1209,7 @@ mod tests {
     }
 
     #[test]
-    fn reload_persistent_handles_marks_dead_pid_as_failed() {
+    fn reload_persistent_handles_marks_dead_pid_as_unknown() {
         let (_td, ctx) = fresh_ctx();
         let task_id = ctx.with_memory(|mem| {
             let seq = ctx.agent_seq.clone();
@@ -1244,11 +1250,13 @@ mod tests {
             store.get(1, &task_id).unwrap().unwrap().state
         });
         match final_state {
-            TaskState::Failed { error } => assert!(
-                error.contains("host restart") && error.contains("died"),
-                "unexpected error: {error}"
+            TaskState::Unknown {
+                reason: Some(reason),
+            } => assert!(
+                reason.starts_with(RUN_RESULT_LOST) && reason.contains("host was down"),
+                "unexpected reason: {reason}"
             ),
-            other => panic!("expected Failed, got {other:?}"),
+            other => panic!("expected Unknown, got {other:?}"),
         }
 
         let still_there: bool = ctx.with_memory(|mem| {
@@ -1412,12 +1420,22 @@ mod tests {
             let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             store.get(1, &task_id).unwrap().unwrap()
         });
+        // 종료 결과를 받을 수 없으므로 실패로 꾸미지 않고 결과 불명으로 둔다.
         match &task.state {
-            TaskState::Failed { error } => {
-                assert!(error.contains("exit_code unknown"), "got {error}")
-            }
-            other => panic!("expected Failed, got {other:?}"),
+            TaskState::Unknown {
+                reason: Some(reason),
+            } => assert!(reason.starts_with(RUN_RESULT_LOST), "got {reason}"),
+            other => panic!("expected Unknown, got {other:?}"),
         }
+        let handle_left = ctx.with_memory(|mem| {
+            mem.get(&Scope::Workspace(1), &handle_key(&task_id))
+                .unwrap()
+                .is_some()
+        });
+        assert!(
+            !handle_left,
+            "the handle is dropped once the task is unknown"
+        );
     }
 
     #[test]

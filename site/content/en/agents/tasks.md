@@ -1,4 +1,4 @@
-<!-- source-hash: 5c753659ae61 -->
+<!-- source-hash: 557c24a1f8fa -->
 <a id="task-dag"></a>
 
 # Task workflows (DAG)
@@ -242,7 +242,7 @@ You can run several unrelated graphs in one Workspace. The list groups a chunk c
 | **Succeeded** · **Failed** | Finished |
 | **Cancelled** · **Skipped** | A person cancelled it, or something before it failed and it was skipped |
 | **Not selected** | Another branch was chosen, so it did not run. This is not a failure |
-| **Unknown** | Cannot be determined |
+| **Unknown** | The result is not known. The command ended while Tasty was restarting, so its exit code could not be collected. Later tasks wait until you run it again (`task-retry`) or cancel it |
 
 To see it from a terminal:
 

@@ -118,6 +118,8 @@ pub enum PollOutcome {
     Active,
     Done(TaskResult),
     Failed(String),
+    /// 실행은 끝났을 수 있지만 결과를 회수할 수 없다. task 는 Unknown 이 된다.
+    Lost(String),
     /// 후처리 실행 하나가 끝났다.
     Postprocessed(PostprocessReport),
 }
@@ -335,6 +337,7 @@ impl<E: TaskExecutor> RunnerLoop<E> {
                         PollOutcome::Active => continue,
                         PollOutcome::Done(result) => Completion::succeeded(attempt, result),
                         PollOutcome::Failed(err) => Completion::failed(attempt, err),
+                        PollOutcome::Lost(reason) => Completion::lost(attempt, reason),
                         PollOutcome::Postprocessed(report) => {
                             Completion::postprocessed(attempt, report)
                         }

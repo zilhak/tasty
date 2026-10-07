@@ -60,7 +60,13 @@ pub fn next_attempt(task: &Task, now_ms: u64) -> Option<TaskAttempt> {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum CompletionOutcome {
     Succeeded,
-    Failed { error: String },
+    Failed {
+        error: String,
+    },
+    /// 실행 결과를 회수할 수 없다. task 는 Unknown 으로 남고 하류·fallback 은 움직이지 않는다.
+    Lost {
+        reason: String,
+    },
 }
 
 impl CompletionOutcome {
@@ -69,6 +75,9 @@ impl CompletionOutcome {
             CompletionOutcome::Succeeded => TaskState::Succeeded,
             CompletionOutcome::Failed { error } => TaskState::Failed {
                 error: error.clone(),
+            },
+            CompletionOutcome::Lost { reason } => TaskState::Unknown {
+                reason: Some(reason.clone()),
             },
         }
     }
@@ -105,6 +114,20 @@ impl Completion {
                 error: Some(error.clone()),
             },
             outcome: CompletionOutcome::Failed { error },
+            postprocess: None,
+        }
+    }
+
+    /// 결과를 회수할 수 없다는 보고. 결과의 `error` 에도 같은 사유를 싣는다.
+    pub fn lost(attempt_id: Option<String>, reason: String) -> Self {
+        Self {
+            attempt_id,
+            result: TaskResult {
+                exit_code: None,
+                output: None,
+                error: Some(reason.clone()),
+            },
+            outcome: CompletionOutcome::Lost { reason },
             postprocess: None,
         }
     }

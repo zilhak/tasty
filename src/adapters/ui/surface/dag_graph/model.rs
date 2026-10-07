@@ -57,7 +57,7 @@ impl DagStatus {
             TaskState::Failed { .. } => DagStatus::Failed,
             TaskState::Cancelled => DagStatus::Cancelled,
             TaskState::Skipped => DagStatus::Skipped,
-            TaskState::Unknown => DagStatus::Unknown,
+            TaskState::Unknown { .. } => DagStatus::Unknown,
         }
     }
 

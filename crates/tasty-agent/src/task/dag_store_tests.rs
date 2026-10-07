@@ -168,7 +168,7 @@ fn an_unknown_task_does_not_keep_a_failed_dag_in_progress() {
         .set_state(1, &lost.id, TaskState::Running, 2000)
         .unwrap();
     let mut lost = store.get(1, &lost.id).unwrap().expect("task");
-    lost.state = TaskState::Unknown;
+    lost.state = TaskState::Unknown { reason: None };
     store.put(&lost).unwrap();
     assert_eq!(state(&store, &after.id), TaskState::Waiting);
 
