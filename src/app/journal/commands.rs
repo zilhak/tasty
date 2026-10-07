@@ -19,6 +19,7 @@ pub(crate) mod live_resume;
 mod notification;
 mod replacement;
 mod scheduling;
+pub(crate) mod split_floor;
 mod tab;
 #[cfg(feature = "gui")]
 mod view_completion;

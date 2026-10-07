@@ -39,6 +39,11 @@ pub const PANE_BORDER_WIDTH: LogicalPx = LogicalPx(2.0);
 /// 별도의 디자인 의도가 확인된 값이라는 뜻은 아니며 현재 좌표계 계약을 나타낸다.
 pub const SURFACE_BORDER_WIDTH: PhysicalPx = PhysicalPx(1.0);
 
+/// 분할 비율의 허용 범위. 분할 경계 드래그와 split 의 비율 보정이 같은 범위를 쓴다.
+/// 첫째 칸이 이 비율 아래로 줄거나 둘째 칸이 `1 - DIVIDER_RATIO_MAX` 아래로 줄지 않는다.
+pub const DIVIDER_RATIO_MIN: f32 = 0.1;
+pub const DIVIDER_RATIO_MAX: f32 = 0.9;
+
 /// Compute the terminal area rectangle (everything right of the sidebar, below the
 /// titlebar) in physical pixels.
 ///

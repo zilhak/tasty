@@ -44,6 +44,8 @@ pub(crate) struct JournalApplication {
     replacements: Vec<(EngineId, tasty_core::Replacement)>,
     changed_engines: std::collections::HashSet<EngineId>,
     completion_views: HashMap<EngineId, crate::runtime::journal_product::CompletionView>,
+    /// 엔진을 보여 주는 창의 터미널 영역. split 의 탐색기 하한 판정에만 쓰며 journal 에 저장하지 않는다.
+    split_geometries: HashMap<EngineId, commands::split_floor::SplitGeometry>,
     wake: Arc<dyn Fn() + Send + Sync>,
     opening: HashMap<EngineId, Opening>,
     creations: HashMap<(EngineId, u64), creation::Creation>,
@@ -67,6 +69,22 @@ pub(crate) struct JournalApplication {
 }
 
 impl JournalApplication {
+    /// 엔진을 보여 주는 창의 터미널 영역을 기록한다. 기록이 없는 엔진의 split 에는 하한이 없다.
+    #[cfg(feature = "gui")]
+    pub(crate) fn update_split_geometry(
+        &mut self,
+        id: EngineId,
+        geometry: commands::split_floor::SplitGeometry,
+    ) {
+        self.split_geometries.insert(id, geometry);
+    }
+
+    /// 창이 닫힌 엔진의 기록을 지운다.
+    #[cfg(feature = "gui")]
+    pub(crate) fn retain_split_geometries(&mut self, shown: impl Fn(EngineId) -> bool) {
+        self.split_geometries.retain(|id, _| shown(*id));
+    }
+
     pub(crate) fn update_completion_view(
         &mut self,
         id: EngineId,
@@ -129,6 +147,7 @@ impl JournalApplication {
             changed_engines: Default::default(),
             replacements: Vec::new(),
             completion_views: Default::default(),
+            split_geometries: Default::default(),
             wake,
             opening: HashMap::new(),
             creations: HashMap::new(),

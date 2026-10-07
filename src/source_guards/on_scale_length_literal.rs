@@ -866,7 +866,8 @@ fn the_blind_spots_are_still_the_size_they_say() {
         // 표 띠·선택 행 글자색 시험(table_band_and_ink)의 화면 크기·열 폭 리터럴 셋이 test 전용으로 들어왔다.
         // 레일 거절 칩 위치 시험의 아바타 원점 pos2(40, 30) 중 스케일 값 40 하나가 test 전용으로 들어왔다.
         // 훅 행 대기 잠금 시험의 화면 높이 200 하나가 test 전용으로 들어왔다.
-        (221, 525),
+        // split 탐색기 하한 시험의 영역 원점 PhysicalPx(0) 여섯과 pane 높이 300 하나가 test 전용으로 들어왔다.
+        (221, 532),
         "제외한 0과 test 전용 코드의 수가 달라졌다. 실제 사용과 수집 범위의 변경을 확인하고 기록을 갱신한다."
     );
     let roster: usize = UNIT_SPACE_SITES.iter().map(|(.., n, _)| n).sum();
@@ -874,7 +875,8 @@ fn the_blind_spots_are_still_the_size_they_say() {
         (floors, unit_space),
         // 값 1의 clamp·서브픽셀 비교 문턱을 별도로 센다.
         // 탐색기 분할 하한이 pane 내용 높이를 resize_all 과 같은 1px 하한으로 잡아 하나를 더한다.
-        (20, roster),
+        // split 의 탐색기 하한(split_floor)이 같은 내용 높이 1px 하한을 하나 더한다.
+        (21, roster),
         "값 1의 하한·정규화 좌표 수가 달라졌다. 별도 집계 대상의 변경을 확인하고 기록을 갱신한다."
     );
     for (path, head, budget, why) in UNIT_SPACE_SITES {

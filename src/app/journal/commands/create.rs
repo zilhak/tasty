@@ -567,6 +567,9 @@ impl JournalApplication {
                 services,
             )
             .and_then(|spec| Request::from_spec(spec, session))
+            .and_then(|request| {
+                hold_explorer_floor(request, session, self.split_geometries.get(&session.id))
+            })
         };
         match resolved {
             Ok(mut resource) => {
@@ -642,6 +645,7 @@ impl JournalApplication {
             return;
         }
         let has_creation = self.has_creation(session.id);
+        let geometry = self.split_geometries.get(&session.id).copied();
         let Some(pending) = self.commands.pending.get_mut(&ticket) else {
             return;
         };
@@ -654,7 +658,8 @@ impl JournalApplication {
                 .map_err(|error| {
                     JsonRpcResponse::invalid_params(serde_json::Value::Null, error.to_string())
                 })
-                .and_then(|spec| Request::from_spec(spec, session));
+                .and_then(|spec| Request::from_spec(spec, session))
+                .and_then(|request| hold_explorer_floor(request, session, geometry.as_ref()));
         match result {
             Ok(mut resource) => {
                 if session
@@ -866,4 +871,19 @@ impl Completed {
             });
         }
     }
+}
+
+/// split 이면 탐색기 칸 하한에 맞게 비율을 고치거나 거절한다([`super::split_floor`]).
+fn hold_explorer_floor(
+    mut request: Request,
+    session: &EngineSession,
+    geometry: Option<&super::split_floor::SplitGeometry>,
+) -> Result<Request, JsonRpcResponse> {
+    super::split_floor::hold(
+        &mut request.plan.destination,
+        &request.plan.surface.kind,
+        &session.core_state,
+        geometry,
+    )?;
+    Ok(request)
 }

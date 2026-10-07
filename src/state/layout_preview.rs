@@ -153,7 +153,10 @@ impl LayoutPreviews {
         else {
             return false;
         };
-        preview.commit.ratio = ratio.clamp(0.1, 0.9);
+        preview.commit.ratio = ratio.clamp(
+            crate::model::DIVIDER_RATIO_MIN,
+            crate::model::DIVIDER_RATIO_MAX,
+        );
         true
     }
 

@@ -69,11 +69,19 @@ impl App {
                             engine.categories(),
                             &main.state.navigation,
                         ),
+                        crate::app::journal::commands::split_floor::SplitGeometry {
+                            terminal_rect: main.compute_terminal_rect(),
+                            tab_bar_height: main.state.tab_bar_height,
+                            scale: main.base.gpu.scale_factor(),
+                        },
                     )
                 })
             })
             .collect();
-        for (id, presentation) in projections {
+        self.journal
+            .retain_split_geometries(|id| projections.iter().any(|(shown, _, _)| *shown == id));
+        for (id, presentation, geometry) in projections {
+            self.journal.update_split_geometry(id, geometry);
             if let Some(session) = self.engines.session_mut(id) {
                 self.journal
                     .update_completion_view(id, &session.core_state, &presentation);
