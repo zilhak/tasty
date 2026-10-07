@@ -520,7 +520,12 @@ fn typed_read_refused(tid: &TaskId, why: &str) -> AgentError {
 /// 러너가 task 에 다는 단계 표지. `Task::phase` 에 더해, handle 이 남은 Ready task 는 이전 회차의
 /// 프로세스가 끝난 것을 확인할 때까지 시작하지 않으므로 [`WAITING_PREVIOUS_ATTEMPT`] 이다.
 pub fn task_phase(task: &Task, stored_handles: &HashSet<TaskId>) -> Option<&'static str> {
-    if matches!(task.state, TaskState::Ready) && stored_handles.contains(&task.id) {
+    task_phase_with_handle(task, stored_handles.contains(&task.id))
+}
+
+/// [`task_phase`] 의 task 한 건 판. handle 이 남았는지(`has_stored_handle`)를 직접 받는다.
+pub fn task_phase_with_handle(task: &Task, has_stored_handle: bool) -> Option<&'static str> {
+    if matches!(task.state, TaskState::Ready) && has_stored_handle {
         return Some(WAITING_PREVIOUS_ATTEMPT);
     }
     task.phase()
@@ -533,6 +538,20 @@ impl TaskService {
     /// handle 이 남은 task id(이전 회차 종료 확인 중이거나 실행 중). [`task_phase`] 에 넘긴다.
     pub fn stored_handle_ids(&self, workspace_id: u32) -> HashSet<TaskId> {
         self.with_memory(|mem| crate::runner_thread::stored_handle_ids(&*mem, workspace_id))
+    }
+
+    /// task 한 건의 handle 이 남았는가. 목록을 읽는 [`Self::stored_handle_ids`] 와 달리 키 하나만
+    /// 읽는다(목록 읽기는 워크스페이스의 레코드 수에 비례한다).
+    pub fn has_stored_handle(&self, workspace_id: u32, task_id: &TaskId) -> bool {
+        self.with_memory(|mem| {
+            mem.get(
+                &tasty_memory::Scope::Workspace(workspace_id),
+                &crate::runner_host::handle_key(task_id),
+            )
+            .ok()
+            .flatten()
+            .is_some()
+        })
     }
 }
 
