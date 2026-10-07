@@ -141,13 +141,13 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                         &rows,
                         |row: &Row| rows.iter().position(|r| r.port == row.port) == Some(selected),
                         |ui, th, row, col| match col {
+                            // kit 의 Process 는 strong 열이라 UI 글꼴 · text-primary 다.
                             3 => {
                                 ui.horizontal(|ui| {
                                     ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
                                     ui.label(
                                         egui::RichText::new(row.proc)
                                             .size(th.font_size_body.value())
-                                            .monospace()
                                             .color(egui::Color32::from(th.text_primary())),
                                     );
                                     tag(ui, th, &row.pid.to_string(), TagVariant::Default, false);
@@ -191,7 +191,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         &[
             ("row", "28 · dense 22"),
             ("header", "sticky bg-sidebar"),
-            ("cell", "mono"),
+            ("cell font", "mono columns → font-mono"),
             ("selected", "surface-active"),
             ("hover", "overlay-hover"),
         ],

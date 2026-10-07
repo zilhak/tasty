@@ -590,13 +590,12 @@ fn star(ui: &mut egui::Ui, theme: &Theme, on: bool) {
 }
 
 fn cell(ui: &mut egui::Ui, theme: &Theme, row: &PortRow, c: usize) {
-    let mono = |ui: &mut egui::Ui, text: &str, color: egui::Color32| {
-        ui.label(
-            egui::RichText::new(text)
-                .monospace()
-                .size(theme.font_size_term_sm.value())
-                .color(color),
-        );
+    // kit `Table` 의 td 는 font-size-body 이고 mono 열만 font-mono 다.
+    let text = |ui: &mut egui::Ui, text: &str, mono: bool| {
+        let rich = egui::RichText::new(text)
+            .size(theme.font_size_body.value())
+            .color(theme.text_primary().to_egui());
+        ui.label(if mono { rich.monospace() } else { rich });
     };
     // Workspace 컬럼은 이 예제에서 숨긴다.
     let _ = row.ws; // Workspace 는 chooser 로 숨겨 렌더 안 함 — 필드 미사용(값 drop, Result 아님).
@@ -605,25 +604,29 @@ fn cell(ui: &mut egui::Ui, theme: &Theme, row: &PortRow, c: usize) {
     if (1..=5).contains(&c) {
         ui.add_space(theme.table_cell_padding_x().value());
     }
-    // kit 열 정의: Port·Proto·Address 는 mono, Process 는 strong 이라 모두 text-primary 다.
-    let ink = theme.text_primary().to_egui();
+    // kit 열 정의: Port·Proto·Address 는 mono, Process 는 strong(UI 글꼴)이라 모두
+    // text-primary 다. State 는 StatusDot 이다.
     match c {
         0 => star(ui, theme, row.favorited),
-        1 => mono(ui, row.port, ink),
-        2 => mono(ui, row.proto, ink),
-        3 => mono(ui, row.addr, ink),
+        1 => text(ui, row.port, true),
+        2 => text(ui, row.proto, true),
+        3 => text(ui, row.addr, true),
         4 => {
-            // Process name + pid Tag (design: <span>{proc}<Tag>{pid}</Tag></span>).
-            mono(ui, row.proc, ink);
-            tag(ui, theme, row.pid, TagVariant::Default, false);
+            // Process name + pid Tag. kit 은 한 inline-flex(가운데 정렬, gap 8)로 묶는다.
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+                text(ui, row.proc, false);
+                tag(ui, theme, row.pid, TagVariant::Default, false);
+            });
         }
         _ => {
-            let v = if row.state == "LISTEN" {
-                TagVariant::Success
+            let listen = row.state == "LISTEN";
+            let kind = if listen {
+                StatusKind::Running
             } else {
-                TagVariant::Default
+                StatusKind::Waiting
             };
-            tag(ui, theme, row.state, v, true);
+            status_dot(ui, theme, kind, row.state, listen, false);
         }
     }
 }
