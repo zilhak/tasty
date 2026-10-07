@@ -390,10 +390,16 @@ pub fn draw_states(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
-/// `node` 섹션 Spec 2 — task 종류 4 종.
+/// `node` 섹션 Spec 2 — task 종류 5 종.
 pub fn draw_kinds(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
-        for k in [Kind::Run, Kind::Custom, Kind::Reduce, Kind::WaitBarrier] {
+        for k in [
+            Kind::Run,
+            Kind::Custom,
+            Kind::Reduce,
+            Kind::WaitBarrier,
+            Kind::Agent,
+        ] {
             let mut node = sample(
                 Status::Succeeded,
                 &format!("{}:step", k.label()),
@@ -412,6 +418,10 @@ pub fn draw_kinds(ui: &mut egui::Ui, theme: &Theme) {
             ("custom", "plug"),
             ("reduce", "layers"),
             ("wait_barrier", "lock"),
+            (
+                "agent",
+                "agent · stroke = icon-stroke-width like the rest · detail kind label “Agent”",
+            ),
         ],
         &[TokenChip::new(
             "dag-node-meta-fg",
@@ -422,8 +432,10 @@ pub fn draw_kinds(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "No new glyphs requested — terminal, plug, layers and lock already carry these four kinds. \
-         A dedicated barrier glyph would read better than lock if one is ever drawn.",
+        "agent is a speech bubble carrying the prompt chevron — one Claude or Codex turn; the two \
+         providers share it and the provider stays a detail-panel field. terminal, plug, layers and \
+         lock carry the other four. A dedicated barrier glyph would read better than lock if one is \
+         ever drawn.",
     );
 }
 

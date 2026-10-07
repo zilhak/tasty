@@ -162,6 +162,8 @@ pub enum Kind {
     Custom,
     Reduce,
     WaitBarrier,
+    /// Claude·Codex 한 턴. 두 provider 가 같은 글리프를 쓴다.
+    Agent,
 }
 
 impl Kind {
@@ -171,6 +173,7 @@ impl Kind {
             Kind::Custom => tasty_icons::PLUG,
             Kind::Reduce => tasty_icons::LAYERS,
             Kind::WaitBarrier => tasty_icons::LOCK,
+            Kind::Agent => tasty_icons::AGENT,
         }
     }
 
@@ -180,10 +183,11 @@ impl Kind {
             Kind::Custom => "custom",
             Kind::Reduce => "reduce",
             Kind::WaitBarrier => "barrier",
+            Kind::Agent => "agent",
         }
     }
 
-    /// 명세 키 (`run` / `custom` / `reduce` / `wait_barrier`).
+    /// 명세 키 (`run` / `custom` / `reduce` / `wait_barrier` / `agent`).
     pub fn key(self) -> &'static str {
         match self {
             Kind::WaitBarrier => "wait_barrier",

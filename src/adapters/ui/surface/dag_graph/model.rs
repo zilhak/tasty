@@ -717,4 +717,18 @@ mod tests {
         );
         assert_eq!(g.nodes[1].skip_tooltip(), None);
     }
+
+    /// agent 작업은 provider 와 관계없이 전용 글리프로 그리고, 모르는 종류만 run 글리프로 둔다.
+    #[test]
+    fn agent_tasks_take_the_agent_glyph() {
+        use super::super::node::kind_icon;
+        assert_eq!(
+            kind_icon("agent").uri,
+            crate::adapters::ui::icons::AGENT.uri
+        );
+        assert_eq!(
+            kind_icon("unknown").uri,
+            crate::adapters::ui::icons::TERM.uri
+        );
+    }
 }

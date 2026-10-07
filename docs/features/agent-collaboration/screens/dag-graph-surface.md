@@ -37,9 +37,9 @@ tasty split --level surface --target-surface <SID> --type dag_graph
   skipped 카드 그대로 라벨만 `NOT SELECTED` 로 읽고, 호버 툴팁이 "다른 경로가 선택되었다"고
   설명한다. 선행 결과를 쓸 수 없어 건너뛴 task(`upstream_unavailable`)는 `SKIPPED` 라벨에
   원본 task 와 그 상태를 툴팁으로 보인다. 정상적인 미선택이라 새 상태색을 쓰지 않는다.
-- **카드 좌상단 아이콘**은 상태와 별개로 task 종류(`run` / `custom` / `reduce` /
-  `wait_barrier`)를 나타낸다. `agent` task 는 아직 전용 아이콘이 없어 `run` 아이콘을 쓰고,
-  상세의 종류 태그만 `Agent` 로 읽는다.
+- **카드 좌상단 아이콘**은 상태와 별개로 task 종류(`run` 터미널 / `custom` 플러그 / `reduce` 레이어 /
+  `wait_barrier` 자물쇠 / `agent` 말풍선)를 나타낸다. Claude·Codex agent task 는 같은 `agent`
+  아이콘을 쓰고, provider 는 상세 패널에서 읽는다. 상세의 종류 태그는 `Agent` 다.
 - **엣지**는 관계 5종을 색과 파선으로 함께 구분한다: `depends_on` 실선, `fallback` 6·3 파선,
   `reduce` 2·3 점선, `binding`(v2 입력 연결, 상세 라벨 "binds input") 8·2·2·2 일점쇄선,
   `transition`(v2 전이) 10·4 긴 파선. 같은 원본에서 `depends_on` 과 `binding` 이 함께 오면
@@ -148,7 +148,7 @@ tasty split --level surface --target-surface <SID> --type dag_graph
 ## 갤러리 specimen
 
 `cargo run -p tasty-gallery` → **Layouts** 페이지의 `Task DAG · canvas & nodes` /
-`Task DAG · chrome, detail & surface` 두 섹션. 캔버스 · 노드 8 상태 · 종류 4 · LOD 3 티어 ·
+`Task DAG · chrome, detail & surface` 두 섹션. 캔버스 · 노드 8 상태 · 종류 5 · LOD 3 티어 ·
 엣지 5 관계 · 전이 선택 4 상태와 미선택 노드 · 줌 클러스터 + 미니맵 · 러너 배지 5 상태 · 노드 상세 · 빈 상태와 사이클 배너 ·
 풀탭 서피스(넓은/320px) 를 전시한다.
 

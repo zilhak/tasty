@@ -110,10 +110,12 @@ pub fn status_border(theme: &Theme, status: DagStatus) -> HexColor {
     }
 }
 
-/// task 종류 4 종의 선두 아이콘. 종류는 캔버스에서 이 아이콘으로만 구분된다.
+/// task 종류 5 종의 선두 아이콘. 종류는 캔버스에서 이 아이콘으로만 구분된다.
+/// Claude·Codex agent 작업은 provider 와 관계없이 `AGENT` 하나를 쓴다.
 pub fn kind_icon(command_kind: &str) -> icons::Icon {
     match command_kind {
         "custom" => icons::PLUG,
+        "agent" => icons::AGENT,
         "reduce" => icons::LAYERS,
         "wait_barrier" => icons::LOCK,
         _ => icons::TERMINAL,
