@@ -181,8 +181,7 @@ mod tests {
     #[test]
     fn first_boot_prefers_a_live_journal_slot_and_explicit_reuse_advances_retired_incarnation() {
         let mut settings = crate::settings::Settings::default();
-        settings.general.shell = "/bin/sh".into();
-        settings.general.startup_command = "exec sleep 60".into();
+        crate::app::journal::test_shell::use_quiet_shell(&mut settings);
         let mut session = EngineSession::new_with_ids_and_settings(
             crate::runtime::engine_session::EngineSessionSpec {
                 cols: 80,
@@ -294,8 +293,7 @@ mod tests {
     #[test]
     fn retirement_drains_an_accepted_materialization_before_releasing_its_owner() {
         let mut settings = crate::settings::Settings::default();
-        settings.general.shell = "/bin/sh".into();
-        settings.general.startup_command = "exec sleep 60".into();
+        crate::app::journal::test_shell::use_quiet_shell(&mut settings);
         let mut session = EngineSession::new_with_ids_and_settings(
             crate::runtime::engine_session::EngineSessionSpec {
                 cols: 80,

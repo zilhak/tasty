@@ -148,8 +148,7 @@ fn boot() -> (EngineSession, JournalApplication) {
 fn boot_with_layout(layout: Option<serde_json::Value>) -> (EngineSession, JournalApplication) {
     let resume = layout.is_some();
     let mut settings = crate::settings::Settings::default();
-    settings.general.shell = "/bin/sh".into();
-    settings.general.startup_command = "exec sleep 60".into();
+    crate::app::journal::test_shell::use_quiet_shell(&mut settings);
     let mut session = EngineSession::new_with_ids_and_settings(
         crate::runtime::engine_session::EngineSessionSpec {
             cols: 80,
