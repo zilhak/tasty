@@ -55,6 +55,7 @@ v2 task 는 Ready → Running 전이마다 새 실행 회차를 받는다(`Task.
 - agent task: 에이전트의 답이나 구조화 판정을 binding·전이 조건으로 바로 쓸 수 있다. 사용자가 쓰는 세션을 넘겨도 사용자의 턴과 섞이지 않는 대신, 사용자가 세션을 계속 쓰면 task 는 기다린다(task 기한이 상한이다).
 - agent task: 턴 보고를 구현하지 않은 provider 는 agent task 로 쓸 수 없다. 결과를 내지 않고 턴을 끝낸 에이전트에게 다시 묻지 않으며, 재시작하면 실행 중이던 agent task 는 실패하고 세션에 남은 답은 결과가 되지 않는다.
 - 종결 이벤트(`agent.task_finished`)는 회차 id 와 레코드 revision 을 싣는다. 페이로드는 번들 플러그인이 공유하는 프로토콜 크레이트에 있어 바꾸면 모든 번들 플러그인의 버전을 올려야 하며, 새 필드는 생략할 수 있어 이전 페이로드도 읽힌다.
+- revision 은 task 레코드를 담은 memory 키의 version 이다. 저장소가 쓰기마다 이미 올리는 값이라, 레코드에 별도 카운터를 두고 모든 쓰기 경로에서 올리지 않아도 `task_get` 과 이벤트가 같은 값을 읽는다. 대신 키가 지워졌다 같은 task id 로 다시 만들어지면 1부터 다시 세므로, 한 레코드의 수명 안에서만 비교할 수 있다.
 
 ## Alternatives Considered
 
@@ -77,7 +78,7 @@ v2 task 는 Ready → Running 전이마다 새 실행 회차를 받는다(`Task.
 
 - 후처리(postprocess) 단계나 사람 입력 대기처럼 완료가 두 번 이상의 외부 작업으로 나뉘면 phase 와 회차 상태를 다시 정한다. `TaskStore::complete` 가 두 번 이상 `put` 하게 되면 이 결정의 전제가 깨진 것이다.
 - 하류 반영을 한 트랜잭션으로 묶을 수 있는 저장소 API(여러 키 원자 쓰기)가 생기면 `propagate_transition` 의 부분 반영 한계를 다시 본다.
-- 종결 이벤트 페이로드를 바꿀 다른 이유가 생기면 회차 id 와 레코드 버전을 함께 싣는다.
+- 종결 이벤트 페이로드를 바꿀 다른 이유가 생기면 회차 id 와 레코드 버전을 함께 싣는다. 이 조건은 충족됐다: 종결 이벤트가 회차 id 와 레코드 revision 을 싣는다(Consequences 참고).
 - agent task: claude·codex 외의 provider 가 턴 경계를 보고하게 되면 provider 목록을 넓힌다. provider 가 턴 id 를 지시와 함께 돌려주게 되면 시작 보고와 표지 대신 턴 id 로 귀속한다.
 - agent task: 턴 보고를 하는 provider 훅이 프롬프트를 넘기지 못하게 되면(`prompt_seen` 이 없는 시작 보고) 기존 세션의 사용자 턴을 가릴 수 없다. 그 provider 의 귀속 방식을 다시 정한다.
 - agent task: 로컬 IPC 밖(원격 attach 등)의 호출자가 제출할 수 있게 되면 회차 토큰을 보안 경계로 다룰지 다시 정한다.
