@@ -123,10 +123,10 @@ pub mod populations {
 
     /// Git이 추적하는 `docs/` 아래 Markdown 파일 수.
     pub const DOCS_MD: Population = Population {
-        measured: 238,
+        measured: 239,
         measured_on: "2026-10-06",
         counted_on: super::CountedOn::Tree(
-            "953217de4 — 이 트리에서 Git이 추적하는 docs/ 아래 .md 파일 238개를 다시 확인했다.",
+            "c92f4bfe2 — 이 트리에서 Git이 추적하는 docs/ 아래 .md 파일 239개를 다시 확인했다.",
         ),
         how: "git ls-files에서 docs/로 시작하고 .md로 끝나는 경로를 센다. 깊이는 제한하지 않는다.",
     };
