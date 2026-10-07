@@ -140,6 +140,18 @@ impl crate::theme::Theme {
         self.pink
     }
 
+    /// `semantic.accent-data` → `{primitive.color-teal}`
+    #[inline]
+    pub fn accent_data(&self) -> HexColor {
+        self.teal
+    }
+
+    /// `semantic.accent-route` → `{primitive.color-lavender}`
+    #[inline]
+    pub fn accent_route(&self) -> HexColor {
+        self.lavender
+    }
+
     /// `semantic.accent-decorative` → `{primitive.color-peach}`
     #[inline]
     pub fn accent_decorative(&self) -> HexColor {

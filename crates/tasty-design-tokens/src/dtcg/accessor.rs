@@ -119,6 +119,7 @@ pub const SEMANTIC_COLOR_TO_THEME_ACCESSOR: &[(&str, &str)] = &[
     ("semantic.accent-attached", "border_attached()"),
     ("semantic.accent-attention", "accent_attention()"),
     ("semantic.accent-danger", "accent_danger()"),
+    ("semantic.accent-data", "accent_data()"),
     ("semantic.accent-decorative", "accent_decorative()"),
     ("semantic.accent-info", "accent_info()"),
     ("semantic.accent-macos-close", "accent_macos_close()"),
@@ -129,6 +130,7 @@ pub const SEMANTIC_COLOR_TO_THEME_ACCESSOR: &[(&str, &str)] = &[
     ("semantic.accent-occupied-soft", "accent_occupied_soft()"),
     ("semantic.accent-primary", "accent_primary()"),
     ("semantic.accent-remote", "accent_remote()"),
+    ("semantic.accent-route", "accent_route()"),
     ("semantic.accent-success", "accent_success()"),
     ("semantic.accent-warning", "accent_warning()"),
     ("semantic.accent-window-close", "accent_window_close()"),
@@ -216,6 +218,9 @@ pub const SEMANTIC_COLOR_ACCESSOR_GEN: &[(&str, &str, &str)] = &[
     ("semantic.accent-attached", "border_attached", "lavender"),
     // 이동 대기 표시는 상태나 알림 종류가 아닌 별도 역할이다.
     ("semantic.accent-move", "accent_move", "pink"),
+    // DAG 입력 binding(값 전달)과 결과로 고른 전이 경로. 원격 연결·연결 표시와 색이 같아도 역할을 구분한다.
+    ("semantic.accent-data", "accent_data", "teal"),
+    ("semantic.accent-route", "accent_route", "lavender"),
     // 장식과 주의 환기는 색이 같아도 역할을 구분한다.
     ("semantic.accent-decorative", "accent_decorative", "peach"),
     // 알림 종류(attention kind)는 경고·기본 강조와 색이 같아도 별도 역할이다.

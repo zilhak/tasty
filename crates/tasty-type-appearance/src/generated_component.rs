@@ -790,6 +790,12 @@ impl crate::theme::Theme {
         LogicalPx((8.0 * self.ui_zoom).round())
     }
 
+    /// `component.dag-edge-binding` → `{semantic.accent-data}`
+    #[inline]
+    pub fn dag_edge_binding(&self) -> HexColor {
+        self.accent_data()
+    }
+
     /// `component.dag-edge-corner-radius` → `{semantic.radius}` = 4px
     #[inline]
     pub fn dag_edge_corner_radius(&self) -> LogicalPx {
@@ -824,6 +830,12 @@ impl crate::theme::Theme {
     #[inline]
     pub fn dag_edge_selected_width(&self) -> LogicalPx {
         self.focus_ring_width
+    }
+
+    /// `component.dag-edge-transition` → `{semantic.accent-route}`
+    #[inline]
+    pub fn dag_edge_transition(&self) -> HexColor {
+        self.accent_route()
     }
 
     /// `component.dag-edge-width` → `{primitive.size-1}` = 1px

@@ -27,6 +27,8 @@ Claude Design의 `tokens/semantic.css`·`tokens/primitives.css`와 Tasty Theme�
 | `accent-primary` | `accent_primary()` | `#89b4fa` | primary 버튼·포커스·활성 탭 언더라인 |
 | `accent-danger` | `accent_danger()` | — | |
 | `accent-move` | `pink` | `#f5c2e7` | 이동 대기 대상 표시(`move-source-ring`·`move-source-glyph`). 상태나 알림 종류가 아닌 대기 중 동작 표시라 다른 accent와 겹치지 않는 색을 쓴다. Latte `#ea76cb` |
+| `accent-data` | `teal` | `#94e2d5` | DAG 입력 binding 엣지(`dag-edge-binding`). 한 task 의 값이 다른 task 로 넘어간다는 데이터 흐름 표시이며 상태색이 아니다 |
+| `accent-route` | `lavender` | `#b4befe` | DAG 전이 엣지(`dag-edge-transition`). 결과로 고른 경로 표시. `accent-attached`(`border_attached()`)와 primitive 가 같아도 역할이 다르다 |
 | `os-macos-close` | `accent_macos_close()` | `#ec6a5e` | macOS 신호등 close (테마 불변 OS 리터럴, const `OS_MACOS_CLOSE`) |
 | `os-macos-min` | `accent_macos_min()` | `#f4bf4f` | macOS 신호등 minimize (const `OS_MACOS_MIN`) |
 | `os-macos-zoom` | `accent_macos_zoom()` | `#61c554` | macOS 신호등 zoom (const `OS_MACOS_ZOOM`) |

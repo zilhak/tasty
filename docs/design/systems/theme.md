@@ -108,6 +108,7 @@ host UI와 공용 위젯은 semantic 접근자를 사용한다. 원시 팔레트
 | 장식 accent | `accent_decorative()` |
 | 주의 환기 accent | `accent_attention()` |
 | 이동 대기 대상 표시 | `accent_move()` (component `move_source_ring()`·`move_source_glyph()`) |
+| DAG 입력 binding·전이 엣지 | `accent_data()`·`accent_route()` (component `dag_edge_binding()`·`dag_edge_transition()`) |
 
 값이 같더라도 프레임 선과 선택 배경, 장식과 주의 환기를 같은 역할로 묶지 않는다. 선의 단계는 명도 순서가 아니라 배경과의 대비로 확인한다. Latte에서는 더 강한 선이 더 어두울 수 있다. 현재 타이틀바 아래 선은 `titlebar_border()`를 호출하며 이 접근자는 separator를 반환한다. 프레임 선 역할 설명과 실제 CSD 매핑을 혼동하지 않는다.
 
