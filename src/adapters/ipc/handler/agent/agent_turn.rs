@@ -146,9 +146,17 @@ pub fn task_turn_report(
         }
         Err(e) => return e,
     };
+    let kind = match event {
+        TurnEvent::Started(_) => "turn_started",
+        TurnEvent::Ended(_) => "turn_ended",
+    };
     let body = match core.tasks.agent_turn_report(surface, provider, event) {
         ReportOutcome::Unbound => json!({ "bound": false }),
         ReportOutcome::Applied { task, attempt } => {
+            // 성공한 보고는 응답 말고는 흔적이 없다. 실기 진단에서 보고 횟수와 귀속을 셀 수 있게 남긴다.
+            tracing::debug!(
+                "agent turn report applied: {provider} surface {surface} {kind} -> task {task} attempt {attempt}"
+            );
             json!({ "bound": true, "applied": true, "task_id": task, "attempt_id": attempt })
         }
         ReportOutcome::Ignored(why) => json!({ "bound": true, "applied": false, "reason": why }),
