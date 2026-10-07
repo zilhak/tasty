@@ -220,13 +220,19 @@ pub(super) fn alert_icon_data_uri(icon_body: &str, filled: bool, color_hex: &str
 mod tests {
     use tasty_type_appearance::theme::Theme;
 
-    /// 토큰 0.12 는 CSS 알파 31(`#rrggbb1f`)이다. 콜아웃 채움과 diff 줄 배경의 출력이 그대로여야 한다.
+    /// 토큰으로 옮기기 전 stylesheet 가 쓰던 CSS 알파 바이트(`#rrggbb1f`). 출력 불변을 확인하는 기준값이다.
+    const PREVIOUS_CSS_ALPHA: u8 = 31;
+
+    /// 토큰 0.12 는 CSS 알파 31 이다. 콜아웃 채움과 diff 줄 배경의 출력이 그대로여야 한다.
     #[test]
     fn tint_fill_alpha_is_the_31_byte_the_stylesheet_writes() {
         let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
-        assert_eq!(super::tint_fill_alpha(&theme), 31);
+        assert_eq!(super::tint_fill_alpha(&theme), PREVIOUS_CSS_ALPHA);
         let css = super::alert_css(&theme);
-        let note = theme.accent_primary().with_alpha(31).to_hex();
+        let note = theme
+            .accent_primary()
+            .with_alpha(PREVIOUS_CSS_ALPHA)
+            .to_hex();
         assert!(css.contains(&format!("background:{note};")), "{css}");
     }
 }
