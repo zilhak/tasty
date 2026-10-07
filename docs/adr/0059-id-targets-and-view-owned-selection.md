@@ -63,7 +63,7 @@ surface ID와 standalone PTY ID는 겹치지 않는 범위를 쓰며([headless P
   - X11에는 위조할 수 없는 사용자 조작 증거가 없다. startup id와 타임스탬프는 같은 사용자의 어떤 프로세스든 만들 수 있다. 같은 프로세스는 원래 `xdotool windowactivate`로 같은 일을 할 수 있다.
   - Windows에서 증거는 실행 방식이 아니라 포그라운드 권한이다. 사용자가 앞에 있는 터미널에서 `tasty`를 치면 그 실행도 권한을 받아 기존 창을 올리는 쪽으로 간다(Linux 터미널 실행과 다르다, 실기 미측정).
   - Windows 등록 메시지는 같은 데스크톱의 어떤 프로세스든 보낼 수 있고, `AllowSetForegroundWindow`는 포그라운드 잠금 시간이 지나면 사용자가 실행하지 않은 프로세스에서도 성공한다. 같은 사용자의 프로세스는 원래 `ShowWindow`·`SetForegroundWindow`로 같은 일을 할 수 있다.
-  - Wayland에는 트레이 숨김 상태가 없다(winit의 Wayland `set_visible`이 동작하지 않는다). 사용하는 winit에는 외부 xdg-activation 토큰으로 이미 있는 창을 활성화하는 API가 없다. 창을 다시 보이기만 하고 앞으로 가져오지 못하면 사용자에게는 무반응이므로, 현재 Wayland에서는 증거가 있어도 기존 창을 건드리지 않고 토큰을 실은 새 창을 연다(증거가 없을 때와 같은 새 View이되 토큰으로 앞에 뜬다). 기존 창 활성화 경로는 `can_raise_existing_view`가 거짓인 동안 쓰지 않는다.
+  - Wayland에는 트레이 숨김 상태가 없다(winit의 Wayland `set_visible`이 동작하지 않는다). 상류 winit에는 외부 xdg-activation 토큰으로 이미 있는 창을 활성화하는 API가 없어, Tasty가 쓰는 winit 포크에 `WindowExtWayland::activate_with_token`을 더했다. 두 번째 실행이 받은 토큰으로 기존 창에 `xdg_activation_v1.activate`를 보낸다. 앞으로 올릴지는 컴포지터가 토큰의 시각으로 정하며, 오래된 토큰이면 주의 표시만 할 수 있다. 토큰이 없거나 컴포지터가 `xdg_activation_v1`을 제공하지 않으면 다시 보이기만 하고 앞으로 가져오지 못해 무반응이 되므로, 그때는 기존 창을 두고 새 창을 연다. 토큰이 없으면 토큰 없는 새 창이고, `xdg_activation_v1`이 없으면 토큰을 실은 새 창이다. 새 창에 실은 토큰은 생성 때 한 번만 쓴다. X11처럼 등록 뒤 다시 요청하지 않는 것은 컴포지터가 한 번 쓴 토큰을 무효로 할 수 있어서다.
 
 ## Consequences
 
@@ -117,7 +117,7 @@ OS의 실제 focus·쌓임 순서는 플랫폼이 결정하므로 새 창을 만
 - telemetry가 workspace를 항상 지정하거나 비용 상한이 workspace별로 나뉘면 기본 귀속 정책을 검토한다. 자동 승인에 실제 대상 surface가 생기면 그 소속을 사용한다.
 - 엔진별 중복 ID나 여러 active 값이 소비자에 문제를 만들면 집계 형식을 함께 고친다. 라우팅 규칙이 바뀌면 명부의 예외를 줄인다.
 - 런타임 scrollback 정리나 재시작을 넘어 보존할 surface 메타가 필요해지면 슬롯·ID 정책을 검토한다.
-- winit에 외부 활성화 토큰으로 이미 있는 창을 활성화하는 API가 생기면 Wayland의 `can_raise_existing_view`를 켜 기존 창 활성화로 바꾸고, X11 직접 구현(`crates/tasty-platform/src/window_activation.rs`)을 그 API로 옮긴다.
+- 상류 winit에 Wayland·X11 두 백엔드를 덮는 외부 토큰 활성화 API가 생기면 포크의 `WindowExtWayland::activate_with_token`과 X11 직접 구현(`crates/tasty-platform/src/window_activation.rs`)을 걷어내고 그 API로 옮긴다. 포크 핀의 전환 조건은 [의존성 이슈](../dev-guide/dep-issues.md)의 winit 절에 있다.
 - 같은 홈을 여러 프로세스가 공유하거나 다시 실행에 실행 인자(파일 열기 등)를 넘겨야 하면 단일 실행의 요청 형식과 `Open` 미지원을 다시 정한다.
 - 데스크톱 파일 이름·앱 ID를 바꾸게 되면 `DBusActivatable`을 다시 검토한다.
 - category ID 탐색이 느려질 규모가 되면 조회 맵을 고려하며, 다중 재정렬은 단일 from/to 보정을 일반화해야 한다.

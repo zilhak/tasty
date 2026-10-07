@@ -25,22 +25,28 @@ cargo tree -i block@0.1.6     # 빈 출력이면 본 항목 삭제
 
 다음 중 하나면 대기 종료 후 우회 적용: Rust release note 에 hard-error 화 버전 공지 / 경고가 deny 승격으로 빌드 실패. 전환 시 ① `[patch.crates-io]` 로 fixed fork 대체(ABI 호환 필수) ② wgpu 를 block2 기반으로 선제 업그레이드.
 
-## `winit` — 개인 포크 핀 (한글 IME 수정, 공식 버전 전환 대기)
+## `winit` — 개인 포크 핀 (한글 IME 수정 · 외부 토큰 활성화, 공식 버전 전환 대기)
 
-`Cargo.toml` 의 `[patch.crates-io]` 가 winit 을 개인 포크에 핀:
+`Cargo.toml` 의 `[patch.crates-io]` 가 winit 을 개인 포크 `zilhak/winit-ime-fix` 의 `tasty/xdg-activation-external-token` 브랜치 커밋에 핀:
 
 ```toml
-winit = { git = "https://github.com/zilhak/winit-ime-fix.git", rev = "dfe2ec8d5bf55bfbca274a7cf56e5fae0d20c1f5" }
+winit = { git = "https://github.com/zilhak/winit-ime-fix.git", rev = "3a9a9af880191b40ce8131b6a2ab44159857f855" }
 ```
 
-- **왜 포크인가**: 업스트림 winit 0.30 의 한글 IME 입력 버그를 수정한 포크가 필요. 수정은 업스트림 PR [#4478](https://github.com/rust-windowing/winit/pull/4478) 로 제출돼 있다.
+- **포크가 담은 패치**: 업스트림 winit 0.30.13 위에 아래 변경을 얹었다.
+  - 한글·CJK IME 입력 수정(macOS 한글 IME 트리거 키, 입력 소스 전환 뒤 첫 글자, Cmd 키를 누른 동안 IME 처리 건너뛰기). 업스트림 PR [#4478](https://github.com/rust-windowing/winit/pull/4478) 로 제출돼 있다.
+  - macOS `NSApplicationDelegate` 를 외부에서 바꿔도 panic 하지 않게 하는 수정.
+  - Wayland 외부 xdg-activation 토큰으로 이미 있는 창을 활성화하는 `WindowExtWayland::activate_with_token`. 업스트림에는 대응 API 가 없다. Tasty 는 이 API 를 직접 호출한다(`crates/tasty-platform/src/window_activation.rs`). 그래서 `[patch.crates-io]` 를 걷으면 컴파일이 실패한다.
 - **왜 `rev` 핀인가**: `branch =` 핀은 브랜치가 움직이면(force-push 포함) 빌드 입력이 조용히 바뀌어 재현성이 깨진다. 고정 commit(`rev`)에 핀해 빌드 입력을 동결한다. 포크 갱신이 필요하면 `rev` 를 의도적으로 갱신한다.
-- **리스크**: 포크 레포가 사라지거나 commit 이 GC 되면 빌드 재현 불가. winit 0.30 업스트림 업그레이드는 포크가 따라가야 가능(wgpu/egui-winit 업글과 충돌 여지).
+- **리스크**: 포크 레포가 사라지거나 commit 이 GC 되면 빌드 재현 불가. 핀한 커밋은 포크의 기본 브랜치가 아니라 `tasty/xdg-activation-external-token` 브랜치에만 있으므로, 이 브랜치를 지우거나 force-push 하면 커밋이 도달 불가가 되어 GC 대상이 된다. 포크 rev 를 바꿀 때는 새 커밋이 원격 브랜치에 push 된 뒤 바꾼다(그 전에는 새 clone 의 `--locked` 빌드가 fetch 에 실패한다). winit 0.30 업스트림 업그레이드는 포크가 따라가야 가능(wgpu/egui-winit 업글과 충돌 여지).
 
 ### 점검 / 전환 트리거
 
-- 전환 조건: 업스트림 winit 이 PR #4478(한글 IME 수정)을 머지·릴리스 → `[patch.crates-io]` 항목 제거하고 공식 crates.io 버전으로 교체.
-- PR #4478 상태를 주기적으로 확인한다(머지/클로즈/대체 PR 여부).
+- 전환 조건: 아래가 모두 공식 crates.io 버전에 들어오면 `[patch.crates-io]` 항목을 제거한다.
+  - PR #4478(한글 IME 수정)의 머지·릴리스.
+  - 이미 있는 창을 외부 xdg-activation 토큰으로 활성화하는 상류 API. 들어오면 `window_activation.rs` 의 Wayland 호출을 그 API 로 바꾼다.
+  - `NSApplicationDelegate` 교체 수정의 상류 반영. 또는 Tasty 가 이 수정에 의존하지 않는지 확인한다(Tasty 는 위임자를 바꾸지 않고 winit 위임자 클래스에 메서드를 주입한다, `crates/tasty-platform/src/macos_delegate.rs`).
+- PR #4478 상태와 외부 토큰 활성화 API 의 상류 진행을 주기적으로 확인한다(머지/클로즈/대체 PR 여부).
 - **대비책**(포크 레포 소실 시): 해당 commit 을 조직 레포에 미러링하거나 `vendor/` 로 캐싱. 핀 고정으로 충분할 수 있으므로 레포 소실 징후가 보일 때만 착수(과투자 주의).
 
 ## `tiny_http` — 레포 사본 + 최소 패치 (공식 버전 전환 대기)

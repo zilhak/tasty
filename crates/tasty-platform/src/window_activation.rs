@@ -8,7 +8,9 @@
 //! - **X11**: 창에 `_NET_STARTUP_ID`를 걸고, startup id의 `_TIME<ts>`를 사용자 조작 시각으로 실어
 //!   EWMH `_NET_ACTIVE_WINDOW`를 루트에 보낸다(source indication 1 = 응용). 이어서 startup-notification
 //!   "remove" 메시지로 실행기의 대기 표시를 끝낸다. winit의 Xlib 연결을 그대로 쓴다.
-//! - **Wayland**: 기존 창을 외부 xdg-activation 토큰으로 활성화하는 API가 winit에 없다. 미지원으로 돌려준다.
+//! - **Wayland**: 두 번째 실행이 받은 xdg-activation 토큰으로 기존 창의 surface에 `xdg_activation_v1.activate`를
+//!   보낸다(winit 포크의 `WindowExtWayland::activate_with_token`). 토큰이 없거나 컴포지터가
+//!   `xdg_activation_v1`을 제공하지 않으면 [`ActivationError::WaylandUnsupported`]다.
 //! - **Windows**: 대상 HWND에 `SetForegroundWindow`. 두 번째 프로세스가 `AllowSetForegroundWindow`로
 //!   넘긴 권한을 쓴다. 권한이 없으면 OS가 작업 표시줄 깜빡임으로 바꾼다.
 //! - **macOS**: Finder·Dock 실행은 LaunchServices가 reopen으로 처리하므로 이 경로를 쓰지 않는다.
@@ -28,14 +30,33 @@ pub struct ActivationEvidence {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ActivationRequested {
     X11ActiveWindow,
+    WaylandXdgActivation,
     WindowsSetForeground,
+}
+
+/// 활성화를 요청하지 못한 이유.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ActivationError {
+    /// Wayland 창인데 토큰이 없거나 컴포지터가 `xdg_activation_v1`을 제공하지 않는다.
+    /// 기존 창을 앞으로 가져올 수 없으므로 호출자는 토큰을 실은 새 창으로 대신한다.
+    WaylandUnsupported(String),
+    /// 그 밖의 실패. 로그만 남긴다.
+    Other(String),
+}
+
+impl std::fmt::Display for ActivationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::WaylandUnsupported(why) | Self::Other(why) => f.write_str(why),
+        }
+    }
 }
 
 /// `window`의 활성화를 OS에 요청한다.
 pub fn request_activation(
     window: &Window,
     evidence: &ActivationEvidence,
-) -> Result<ActivationRequested, String> {
+) -> Result<ActivationRequested, ActivationError> {
     imp::request_activation(window, evidence)
 }
 
@@ -87,7 +108,7 @@ mod imp {
     use winit::window::Window;
     use x11_dl::xlib;
 
-    use super::{ActivationEvidence, ActivationRequested};
+    use super::{ActivationError, ActivationEvidence, ActivationRequested};
 
     /// EWMH source indication 1 = 응용. 타임스탬프로 창 관리자의 포커스 빼앗기 방지 판정을 받는다.
     const SOURCE_APPLICATION: c_long = 1;
@@ -217,17 +238,44 @@ mod imp {
         Ok(())
     }
 
+    /// 두 번째 실행이 받은 토큰으로 기존 Wayland 창의 활성화를 요청한다.
+    fn request_wayland_activation(
+        window: &Window,
+        evidence: &ActivationEvidence,
+    ) -> Result<ActivationRequested, ActivationError> {
+        use winit::platform::wayland::WindowExtWayland;
+        use winit::window::ActivationToken;
+
+        let Some(token) = &evidence.wayland_token else {
+            return Err(ActivationError::WaylandUnsupported(
+                "no xdg-activation token came with the launch".to_string(),
+            ));
+        };
+        window
+            .activate_with_token(ActivationToken::from_raw(token.clone()))
+            .map(|()| ActivationRequested::WaylandXdgActivation)
+            .map_err(|e| {
+                ActivationError::WaylandUnsupported(format!(
+                    "the compositor does not offer xdg_activation_v1: {e}"
+                ))
+            })
+    }
+
     pub(super) fn request_activation(
         window: &Window,
         evidence: &ActivationEvidence,
-    ) -> Result<ActivationRequested, String> {
-        let Some(win) = xlib_window(window)? else {
-            return Err(
-                "activating an existing Wayland window with an xdg-activation token is not \
-                 supported by the windowing library"
-                    .to_string(),
-            );
+    ) -> Result<ActivationRequested, ActivationError> {
+        let Some(win) = xlib_window(window).map_err(ActivationError::Other)? else {
+            return request_wayland_activation(window, evidence);
         };
+        x11_request_activation(window, win, evidence).map_err(ActivationError::Other)
+    }
+
+    fn x11_request_activation(
+        window: &Window,
+        win: c_ulong,
+        evidence: &ActivationEvidence,
+    ) -> Result<ActivationRequested, String> {
         let dpy = xlib_display(window)?;
         let x = xlib::Xlib::open().map_err(|e| format!("Xlib::open: {e}"))?;
         if let Some(id) = &evidence.x11_startup_id {
@@ -271,19 +319,23 @@ mod imp {
     use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
     use winit::window::Window;
 
-    use super::{ActivationEvidence, ActivationRequested};
+    use super::{ActivationError, ActivationEvidence, ActivationRequested};
 
     pub(super) fn request_activation(
         window: &Window,
         _evidence: &ActivationEvidence,
-    ) -> Result<ActivationRequested, String> {
+    ) -> Result<ActivationRequested, ActivationError> {
         let hwnd = match window
             .window_handle()
-            .map_err(|e| format!("window handle: {e}"))?
+            .map_err(|e| ActivationError::Other(format!("window handle: {e}")))?
             .as_raw()
         {
             RawWindowHandle::Win32(h) => HWND(h.hwnd.get() as *mut std::ffi::c_void),
-            other => return Err(format!("not a Win32 window handle: {other:?}")),
+            other => {
+                return Err(ActivationError::Other(format!(
+                    "not a Win32 window handle: {other:?}"
+                )));
+            }
         };
         // SAFETY: hwnd 는 winit 이 만든 살아 있는 창이다. 거절은 FALSE 반환이며 부작용이 없다.
         let granted = unsafe { SetForegroundWindow(hwnd) }.as_bool();
@@ -302,13 +354,15 @@ mod imp {
 mod imp {
     use winit::window::Window;
 
-    use super::{ActivationEvidence, ActivationRequested};
+    use super::{ActivationError, ActivationEvidence, ActivationRequested};
 
     pub(super) fn request_activation(
         _window: &Window,
         _evidence: &ActivationEvidence,
-    ) -> Result<ActivationRequested, String> {
-        Err("activation by a launch evidence is not used on this platform".to_string())
+    ) -> Result<ActivationRequested, ActivationError> {
+        Err(ActivationError::Other(
+            "activation by a launch evidence is not used on this platform".to_string(),
+        ))
     }
 
     pub(super) fn x11_startup_complete(_startup_id: &str) -> Result<(), String> {

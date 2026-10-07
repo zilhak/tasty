@@ -418,10 +418,11 @@ sysinfo = "0.35"
 name = "gui_tests"
 required-features = ["gui"]
 
-# IME 수정을 위한 winit 포크는 재현 가능한 커밋으로 고정한다.
-# 상류 반영 후 교체 조건: docs/dev-guide/dep-issues.md
+# winit 포크(IME 수정과 Wayland 외부 토큰 활성화 API)는 재현 가능한 커밋으로 고정한다.
+# Tasty가 포크 전용 API를 호출하므로 패치만 걷으면 컴파일이 실패한다.
+# 포크가 담은 패치와 상류 반영 후 교체 조건: docs/dev-guide/dep-issues.md
 [patch.crates-io]
-winit = { git = "https://github.com/zilhak/winit-ime-fix.git", rev = "dfe2ec8d5bf55bfbca274a7cf56e5fae0d20c1f5" }
+winit = { git = "https://github.com/zilhak/winit-ime-fix.git", rev = "3a9a9af880191b40ce8131b6a2ab44159857f855" }
 # 413 응답 뒤 남은 본문을 읽지 않고 닫도록 패치한 사본이다.
 # 패치 범위와 상류 버전으로 돌아갈 조건: vendor/tiny_http/PATCHES.md
 tiny_http = { path = "vendor/tiny_http" }

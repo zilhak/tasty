@@ -5,9 +5,10 @@
 //! 부르지 않는다(원칙 3). MainView가 없으면 토큰을 실어 새 창 하나를 만든다. 만드는 중인 창이 있으면
 //! 새로 만들지 않고 그 창이 등록될 때 활성화를 요청한다.
 //!
-//! Wayland에서는 이미 떠 있는 창을 외부 토큰으로 활성화할 수 없다(winit에 API가 없다). 그래서 증거가
-//! 있어도 기존 창을 건드리지 않고 토큰을 실은 새 창을 연다. 기존 창 활성화 경로는
-//! [`can_raise_existing_view`]가 참을 돌려주는 백엔드에서만 쓴다.
+//! Wayland에서는 두 번째 실행이 받은 xdg-activation 토큰으로 기존 창의 활성화를 요청한다. 토큰이 없으면
+//! 기존 창을 건드리지 않고 토큰 없는 새 창을 연다([`can_raise_existing_view`]). 컴포지터가
+//! `xdg_activation_v1`을 제공하지 않아 요청하지 못하면 토큰을 실은 새 창을 연다. 다시 보이기만 한 창은
+//! 앞으로 오지 않아 무반응으로 보이기 때문이다.
 
 use winit::event_loop::ActiveEventLoop;
 use winit::window::WindowId;
@@ -58,10 +59,29 @@ pub(crate) fn plan_activation<W: Copy + Ord>(
     ActivationPlan::Restore { views: all, target }
 }
 
-/// 이 백엔드가 외부 토큰으로 이미 떠 있는 창을 활성화할 수 있는지. Wayland는 winit 포크에 그 API가
-/// 생길 때까지 거짓이다.
-fn can_raise_existing_view(event_loop: &ActiveEventLoop) -> bool {
-    !crate::boot::single_instance::is_wayland(event_loop)
+/// 이 요청으로 이미 떠 있는 창을 활성화할 수 있는지. Wayland는 xdg-activation 토큰이 있어야 한다.
+fn can_raise_existing_view(wayland: bool, request: &ExternalActivation) -> bool {
+    raises_existing_view(wayland, request.evidence.wayland_token.is_some())
+}
+
+fn raises_existing_view(wayland: bool, has_wayland_token: bool) -> bool {
+    !wayland || has_wayland_token
+}
+
+/// 새로 연 창이 등록된 뒤 OS 활성화를 한 번 더 요청할지. X11은 생성 때 startup id를 싣고 등록 뒤
+/// `_NET_ACTIVE_WINDOW`를 보내는 두 단계를 쓴다. Wayland는 생성 속성에 실은 토큰 한 번으로 끝낸다.
+/// xdg-activation 토큰은 컴포지터가 한 번 쓰면 무효로 할 수 있다.
+fn activates_after_creation(wayland: bool, raise_existing: bool) -> bool {
+    raise_existing && !wayland
+}
+
+/// OS 활성화 요청의 결과 중 호출자가 다르게 처리할 것.
+#[derive(Debug, PartialEq, Eq)]
+enum OsActivation {
+    /// 요청했거나, 요청하지 못한 이유를 로그로 남겼다.
+    Done,
+    /// Wayland에서 기존 창의 활성화를 요청할 수 없다.
+    WaylandUnsupported,
 }
 
 impl App {
@@ -76,7 +96,8 @@ impl App {
             .iter()
             .map(|(id, view)| (*id, view.as_main().is_some()))
             .collect();
-        let raise_existing = can_raise_existing_view(event_loop);
+        let wayland = crate::boot::single_instance::is_wayland(event_loop);
+        let raise_existing = can_raise_existing_view(wayland, &request);
         match plan_activation(
             request.has_evidence(),
             raise_existing,
@@ -87,45 +108,62 @@ impl App {
                 tracing::info!("external activation without launch evidence: nothing changed");
             }
             ActivationPlan::OpenWindow => {
-                self.open_activated_window(event_loop, request, raise_existing);
+                let activate_after = activates_after_creation(wayland, raise_existing);
+                self.open_activated_window(event_loop, request, activate_after);
             }
             ActivationPlan::Restore { views, target } => {
-                // 트레이 복원과 같은 방식이되 focus_window()는 부르지 않는다. 포커스는 OS가 정한다.
-                for id in &views {
-                    if let Some(view) = self.view.views.get(id) {
-                        let window = &view.base().winit;
-                        window.set_visible(true);
-                        window.set_minimized(false);
-                    }
-                }
-                tracing::info!(
-                    "external activation: restored {} view(s), requesting OS activation of {target:?}",
-                    views.len()
-                );
-                self.request_os_activation(target, &request);
+                self.restore_and_activate(event_loop, &views, target, request);
             }
         }
     }
 
-    /// 토큰을 실은 새 창을 만든다. 등록 뒤의 OS 활성화 요청은 기존 창을 활성화할 수 있는 백엔드에서만
-    /// 건다. Wayland에서는 창을 만들 때 실은 토큰이 그 역할을 한다.
+    /// 트레이 복원과 같은 방식이되 focus_window()는 부르지 않는다. 포커스는 OS가 정한다.
+    fn restore_and_activate(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        views: &[WindowId],
+        target: WindowId,
+        request: ExternalActivation,
+    ) {
+        for id in views {
+            if let Some(view) = self.view.views.get(id) {
+                let window = &view.base().winit;
+                window.set_visible(true);
+                window.set_minimized(false);
+            }
+        }
+        tracing::info!(
+            "external activation: restored {} view(s), requesting OS activation of {target:?}",
+            views.len()
+        );
+        if self.request_os_activation(target, &request) == OsActivation::WaylandUnsupported {
+            tracing::info!(
+                "external activation: the existing window cannot be raised; opening a new one"
+            );
+            self.open_activated_window(event_loop, request, false);
+        }
+    }
+
+    /// 증거를 창 생성 속성에 실어 새 창을 만든다. Wayland는 그중 xdg-activation 토큰만 싣는다.
+    /// `activate_after`가 참이면 등록 뒤 같은 증거로 OS 활성화를 한 번 더 요청한다
+    /// ([`activates_after_creation`]).
     fn open_activated_window(
         &mut self,
         event_loop: &ActiveEventLoop,
         request: ExternalActivation,
-        raise_existing: bool,
+        activate_after: bool,
     ) {
         if self.pending_window.is_some() {
             tracing::info!(
                 "external activation: a window is being created; activating it when ready"
             );
-            if raise_existing {
+            if activate_after {
                 self.pending_external_activation = Some(request);
             }
             return;
         }
         self.next_window_activation = Some(request.evidence.clone());
-        if raise_existing {
+        if activate_after {
             self.pending_external_activation = Some(request);
         }
         let outcome = self.create_new_window(event_loop, WindowRequestOrigin::User);
@@ -143,15 +181,46 @@ impl App {
         }
     }
 
-    fn request_os_activation(&self, id: WindowId, request: &ExternalActivation) {
+    fn request_os_activation(&self, id: WindowId, request: &ExternalActivation) -> OsActivation {
         let Some(view) = self.view.views.get(&id) else {
-            return;
+            return OsActivation::Done;
         };
         let evidence = request.platform_evidence();
-        match crate::platform::window_activation::request_activation(&view.base().winit, &evidence)
-        {
-            Ok(kind) => tracing::info!("external activation: requested {kind:?} for {id:?}"),
-            Err(e) => tracing::warn!("external activation: OS activation not requested: {e}"),
+        let result =
+            crate::platform::window_activation::request_activation(&view.base().winit, &evidence);
+        log_os_activation(id, result)
+    }
+}
+
+fn log_os_activation(
+    id: WindowId,
+    result: Result<
+        crate::platform::window_activation::ActivationRequested,
+        crate::platform::window_activation::ActivationError,
+    >,
+) -> OsActivation {
+    match result {
+        Ok(kind) => {
+            tracing::info!("external activation: requested {kind:?} for {id:?}");
+            OsActivation::Done
+        }
+        Err(e) => log_os_activation_error(e),
+    }
+}
+
+fn log_os_activation_error(
+    error: crate::platform::window_activation::ActivationError,
+) -> OsActivation {
+    use crate::platform::window_activation::ActivationError;
+
+    match error {
+        ActivationError::WaylandUnsupported(why) => {
+            tracing::info!("external activation: Wayland activation not requested: {why}");
+            OsActivation::WaylandUnsupported
+        }
+        ActivationError::Other(why) => {
+            tracing::warn!("external activation: OS activation not requested: {why}");
+            OsActivation::Done
         }
     }
 }
@@ -225,8 +294,26 @@ mod tests {
     }
 
     #[test]
+    fn wayland_raises_an_existing_view_only_with_a_token() {
+        assert!(raises_existing_view(true, true));
+        assert!(!raises_existing_view(true, false));
+        // X11·Windows 는 토큰과 무관하게 기존 창 경로를 쓴다.
+        assert!(raises_existing_view(false, false));
+        assert!(raises_existing_view(false, true));
+    }
+
+    #[test]
+    fn only_x11_and_windows_activate_a_new_window_again_after_creation() {
+        // Wayland: 생성 속성의 토큰 한 번만 쓴다. 토큰이 있어 기존 창을 올릴 수 있는 요청도 같다.
+        assert!(!activates_after_creation(true, true));
+        assert!(!activates_after_creation(true, false));
+        // X11·Windows: 생성 뒤 OS 활성화를 한 번 더 요청한다.
+        assert!(activates_after_creation(false, true));
+    }
+
+    #[test]
     fn a_backend_that_cannot_raise_an_existing_view_always_opens_a_new_one() {
-        // Wayland: 증거가 있고 MainView가 있어도 숨김·최소화 창을 건드리지 않고 새 창을 연다.
+        // 토큰 없는 Wayland 요청: MainView가 있어도 숨김·최소화 창을 건드리지 않고 새 창을 연다.
         assert_eq!(
             plan_activation(true, false, &[(2, true), (1, true)], Some(1)),
             ActivationPlan::OpenWindow
