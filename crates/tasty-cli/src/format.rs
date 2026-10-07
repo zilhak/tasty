@@ -418,6 +418,10 @@ pub fn task_postprocess_lines(result: &serde_json::Value) -> Vec<String> {
             .pointer("/attempt/postprocess/phase/run")
             .and_then(|v| v.as_u64());
         lines.push(match run {
+            // 재시도한 task 가 이전 회차의 프로세스 종료를 확인할 때까지 시작하지 않고 기다린다.
+            _ if phase == "waiting_previous_attempt" => format!(
+                "phase: {phase} (starts after the previous attempt's processes are confirmed ended)"
+            ),
             Some(run) => format!("phase: {phase} (run {run})"),
             None => format!("phase: {phase}"),
         });
@@ -873,6 +877,18 @@ mod tests {
         );
         assert_eq!(task_postprocess_lines(&task), ["phase: awaiting_input"]);
         assert_eq!(task_agent_line(&json!({"phase": "retry_wait"})), None);
+        let waiting = json!({"id": "t-1", "name": "z", "state": {"kind": "ready"},
+                             "phase": "waiting_previous_attempt"});
+        assert_eq!(
+            task_list_row(&waiting),
+            "ready      t-1  z  (waiting_previous_attempt)"
+        );
+        assert_eq!(
+            task_postprocess_lines(&waiting),
+            [
+                "phase: waiting_previous_attempt (starts after the previous attempt's processes are confirmed ended)"
+            ]
+        );
     }
 
     #[test]

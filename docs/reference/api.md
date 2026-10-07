@@ -102,7 +102,7 @@ regular(`put/get/delete/list/exists/count/scopes/stats/query/export/import`) · 
 
 `task_get` 은 레코드 `revision`(쓸 때마다 커지는 값)을 싣는다. revision 은 같은 레코드의 수명 안에서만 비교한다. task 를 지우고 같은 id 로 다시 제출하면 1부터 다시 센다. `task_await` 의 종결 응답은 `state`·`result` 와 함께 v2 task 의 `attempt_id`, `revision`, 건너뛴 이유 `skip` 을 싣는다. 이 셋은 종결 사건 `agent.task_finished` 의 같은 이름 필드와 같은 값이다([사건 목록](event-catalog.md#agent-scopesystem-experimental)).
 
-`task_get` 과 `task_list` 의 각 task 는 실행 중인 타입 작업(`contract_version: 2`)에 실행 단계 `phase` 를 싣는다. 값은 `executing`(본 작업 실행), `awaiting_input`(agent 세션이 사람 입력을 기다림), `postprocessing`(후처리 실행 중), `retry_wait`(후처리 재시도 대기)다. v1 task 와 실행 중이 아닌 task 에는 없다. `state.kind` 가 `unknown` 인 task 는 결과를 알 수 없게 된 이유를 `state.reason` 에 싣는다(예: 호스트 재시작 사이 run 의 종료 코드를 받지 못함, `run result lost: …`). 이유가 없는 옛 레코드는 `reason` 이 없다. unknown 은 종결이 아니며 `task_retry`·`task_cancel` 로 정한다.
+`task_get` 과 `task_list` 의 각 task 는 실행 중인 타입 작업(`contract_version: 2`)에 실행 단계 `phase` 를 싣는다. 값은 `executing`(본 작업 실행), `awaiting_input`(agent 세션이 사람 입력을 기다림), `postprocessing`(후처리 실행 중), `retry_wait`(후처리 재시도 대기)다. v1 task 와 실행 중이 아닌 task 에는 없다. 예외로 `ready` task 가 이전 회차의 프로세스 종료 확인을 기다리느라 시작하지 못하면(v1 포함) `waiting_previous_attempt` 를 싣는다. `state.kind` 가 `unknown` 인 task 는 결과를 알 수 없게 된 이유를 `state.reason` 에 싣는다(예: 호스트 재시작 사이 run 의 종료 코드를 받지 못함, `run result lost: …`). 이유가 없는 옛 레코드는 `reason` 이 없다. unknown 은 종결이 아니며 `task_retry`·`task_cancel` 로 정한다.
 
 `semaphore_set_permits`는 세마포어를 삭제하지 않고 한도를 바꾼다. 한도를 줄여도 기존 사용 권한을 강제로 회수하지 않고 새 acquire를 거절한다. `semaphore_acquire`의 `ttl_ms`는 선택 사항이다. 지정한 경우에만 사용 권한이 만료되어 회수되며, 기본값은 만료 없음이다([ADR-0042](../adr/0042-agent-coordination-and-task-views.md)).
 

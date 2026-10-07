@@ -17,6 +17,7 @@ use tasty_ipc::protocol::JsonRpcResponse;
 use tasty_task_runtime::graph_view::{
     collect_graph_edges, drawn_edges, on_failure_kind, task_command_kind,
 };
+use tasty_task_runtime::task::task_phase;
 
 use super::super::memory::mark_durability;
 use super::{agent_err_to_response, escape_dot, now_ms, task_id_param, workspace_id_param};
@@ -242,7 +243,8 @@ pub fn handle_task_list(
         Err(e) => agent_err_to_response(id, e),
         Ok(mut tasks) => {
             retain_by_state(&mut tasks, state_filter.as_deref());
-            let rows: Vec<Value> = tasks.iter().map(task_with_phase).collect();
+            let handles = core.tasks.stored_handle_ids(workspace_id);
+            let rows: Vec<Value> = tasks.iter().map(|t| task_with_phase(t, &handles)).collect();
             JsonRpcResponse::success(
                 id,
                 json!({
@@ -255,10 +257,10 @@ pub fn handle_task_list(
     }
 }
 
-/// 목록의 task 하나. Running 인 v2 task 에는 `task_get` 과 같은 `phase` 를 싣는다.
-fn task_with_phase(task: &Task) -> Value {
+/// 목록의 task 하나. `task_get` 과 같은 `phase` 를 싣는다([`task_phase`]).
+fn task_with_phase(task: &Task, handles: &std::collections::HashSet<TaskId>) -> Value {
     let mut v = serde_json::to_value(task).unwrap_or(Value::Null);
-    if let (Some(phase), Some(obj)) = (task.phase(), v.as_object_mut()) {
+    if let (Some(phase), Some(obj)) = (task_phase(task, handles), v.as_object_mut()) {
         obj.insert("phase".to_string(), Value::from(phase));
     }
     v
@@ -327,7 +329,7 @@ pub fn handle_task_get(
         Ok(None) => JsonRpcResponse::error(id, -32004, format!("task not found: {task_id}")),
         Ok(Some((t, revision))) => {
             let is_running = matches!(t.state, TaskState::Running);
-            let phase = t.phase();
+            let phase = task_phase(&t, &core.tasks.stored_handle_ids(workspace_id));
             let holding_warnings =
                 core.tasks
                     .task_holding_warnings(engine.task_scope, workspace_id, &task_id);

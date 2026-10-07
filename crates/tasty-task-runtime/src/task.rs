@@ -517,6 +517,25 @@ fn typed_read_refused(tid: &TaskId, why: &str) -> AgentError {
     AgentError::TypeContract(Box::new(failure))
 }
 
+/// 러너가 task 에 다는 단계 표지. `Task::phase` 에 더해, handle 이 남은 Ready task 는 이전 회차의
+/// 프로세스가 끝난 것을 확인할 때까지 시작하지 않으므로 [`WAITING_PREVIOUS_ATTEMPT`] 이다.
+pub fn task_phase(task: &Task, stored_handles: &HashSet<TaskId>) -> Option<&'static str> {
+    if matches!(task.state, TaskState::Ready) && stored_handles.contains(&task.id) {
+        return Some(WAITING_PREVIOUS_ATTEMPT);
+    }
+    task.phase()
+}
+
+/// 이전 회차의 종료 확인을 기다리는 Ready task 의 단계 이름.
+pub const WAITING_PREVIOUS_ATTEMPT: &str = "waiting_previous_attempt";
+
+impl TaskService {
+    /// handle 이 남은 task id(이전 회차 종료 확인 중이거나 실행 중). [`task_phase`] 에 넘긴다.
+    pub fn stored_handle_ids(&self, workspace_id: u32) -> HashSet<TaskId> {
+        self.with_memory(|mem| crate::runner_thread::stored_handle_ids(&*mem, workspace_id))
+    }
+}
+
 /// 지울 task(cascade 면 그 참조자 포함) 중 Running 이 아닌데 handle 이 남은 것이 있으면 거절한다.
 /// 그 task 는 이전 회차의 프로세스가 끝난 것을 아직 확인하지 못했다. 지우면 handle 이 사라져 확인 뒤
 /// semaphore·lease 를 반환할 정리가 없어진다. Running 은 `delete_checked` 가 거절한다.

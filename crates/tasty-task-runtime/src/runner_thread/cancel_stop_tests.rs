@@ -635,6 +635,11 @@ fn a_retry_waits_until_the_cancelled_attempts_group_is_confirmed_empty() {
     assert!(!pid_file.exists());
     assert_eq!(gpu_holders(&mem), vec![task.id.clone()]);
     assert_eq!(stored_pid(&mem, &task.id), Some(pid));
+    let ready = svc.task_get(&scope, 1, &task.id).unwrap().unwrap();
+    assert_eq!(
+        crate::task::task_phase(&ready, &svc.stored_handle_ids(1)),
+        Some(crate::task::WAITING_PREVIOUS_ATTEMPT)
+    );
 
     member.wait().unwrap();
     let new_child = read_pid(&pid_file);
@@ -842,6 +847,23 @@ fn a_task_still_confirming_its_exit_is_kept_from_delete_and_purge() {
     }
     assert!(gpu_holders(&mem).is_empty(), "그룹이 빈 뒤 반환하지 않았다");
     assert_eq!(delete(false).unwrap().deleted, vec![task.id.clone()]);
+}
+
+/// 이전 회차의 handle 이 남은 Ready task 의 단계는 `waiting_previous_attempt` 다. Running 이거나
+/// handle 이 없으면 원래 단계(`Task::phase`)를 따른다.
+#[test]
+fn a_ready_task_with_a_leftover_handle_is_waiting_for_its_previous_attempt() {
+    use crate::task::{WAITING_PREVIOUS_ATTEMPT, task_phase};
+    let td = tempfile::tempdir().unwrap();
+    let mem = memory(td.path());
+    let seq = AtomicU64::new(0);
+    let mut task = run_task(&mem, &seq, &td.path().join("unused.pid"));
+    let handles: std::collections::HashSet<String> = [task.id.clone()].into();
+    task.state = TaskState::Ready;
+    assert_eq!(task_phase(&task, &handles), Some(WAITING_PREVIOUS_ATTEMPT));
+    assert_eq!(task_phase(&task, &Default::default()), None);
+    task.state = TaskState::Running;
+    assert_eq!(task_phase(&task, &handles), task.phase());
 }
 
 /// cascade 삭제는 함께 지울 참조자 중 종료 확인 중인 task 가 있어도 거절한다.

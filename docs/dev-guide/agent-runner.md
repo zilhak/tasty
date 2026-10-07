@@ -367,7 +367,8 @@ reload(러너 시작·부팅 정리)의 NotRunning 정리는 같은 정리를 �
 handle 이 들어왔으면 손대지 않는다. 그리고 task 에 이전 회차의 handle 이 남은 동안 러너는 그 task 의
 새 회차(retry 로 다시 Ready 가 된 task)를 시작하지 않고 Ready 로 둔다(`HostExecutor::dispatch` 가
 미룬다). 점유의 holder 는 task id 라서 새 회차가 같은 holder 로 다시 얻으면 멱등으로 통과해, 끝나지
-않은 옛 프로세스 묶음과 새 회차가 같은 permit 을 함께 쓰게 되기 때문이다.
+않은 옛 프로세스 묶음과 새 회차가 같은 permit 을 함께 쓰게 되기 때문이다. 이렇게 기다리는 task 는
+`task_get`·`task_list` 의 `phase` 가 `waiting_previous_attempt` 다.
 
 handle 이 남은 Running 아닌 task(종료 확인 중)는 지우지 않는다. `task_delete` 는 그 task 나 cascade 로
 함께 지울 참조자 중 하나라도 그렇다면 `-32602` 로 거절하고 이유(exit confirmation)를 싣는다.
@@ -692,7 +693,7 @@ v2 task 의 fallback 이 이미 실행됐으면(Ready·Running·Succeeded) 그 t
 | 같은 보고 재전송 | 이미 종결이면 전이 오류(`-32602`) | `duplicate: true` 로 같은 응답 |
 | 다른 회차·다른 내용 보고 | 구별하지 않는다 | `-32018` 거절 |
 
-Running 인 v2 task 는 `agent.task_get` 과 `agent.task_list` 의 각 task 에 세부 단계 `phase` 를 싣는다(`Task::phase`). `postprocessing`·`retry_wait` 는 후처리(아래 §후처리 CLI), `awaiting_input` 은 입력을 기다리는 agent task(아래 §agent task), 그 밖은 `executing` 이다. Running 이 아니거나 v1 task 면 없다. 완료는 한 번의 쓰기라 출력 검증·저장 중인 단계(`validating`)는 바깥에서 관측되지 않아 두지 않는다(ADR-0069). CLI `task-list` 는 줄 끝에 `(phase)` 를, `task-get` 은 `phase:` 줄을 보인다.
+Running 인 v2 task 는 `agent.task_get` 과 `agent.task_list` 의 각 task 에 세부 단계 `phase` 를 싣는다(`Task::phase`). `postprocessing`·`retry_wait` 는 후처리(아래 §후처리 CLI), `awaiting_input` 은 입력을 기다리는 agent task(아래 §agent task), 그 밖은 `executing` 이다. Running 이 아니거나 v1 task 면 없다. 예외로 handle 이 남은 Ready task(v1 포함)는 `waiting_previous_attempt` 다(`tasty_task_runtime::task::task_phase`). 이전 회차의 프로세스가 끝난 것을 확인할 때까지 러너가 시작하지 않고 있다는 뜻이다(위 §dispatch 게이트 아래 취소·정리 설명). 완료는 한 번의 쓰기라 출력 검증·저장 중인 단계(`validating`)는 바깥에서 관측되지 않아 두지 않는다(ADR-0069). CLI `task-list` 는 줄 끝에 `(phase)` 를, `task-get` 은 `phase:` 줄을 보인다.
 
 v1 이 v2 결과를 읽는 경로는 `-32602`(`error.data.task_id` 에 참조 대상)로 거절한다. 대상은 v1 출력 placeholder(`${task.<id>.output…}`)로 v2 task 를 참조하는 생성, `inputs` 에 v2 task 가 든 v1 `Reduce` 생성, v2 task 를 입력으로 준 단발 `agent.task_reduce` 다. 이미 저장된 v1 task 가 v2 를 가리키면 실행 직전 치환·reduce 수집이 실패로 끝낸다. 허용 범위는 입력 binding 이 정한다.
 

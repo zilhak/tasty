@@ -1,5 +1,5 @@
 //! 작업 점유 TTL 의 하한 거절과, 러너가 갱신하지 못해 잃은 점유의 경고가 IPC 로 오가는지 확인한다.
-//! 이전 회차의 종료를 확인하는 중인 task 의 삭제·purge 거절도 함께 본다.
+//! 이전 회차의 종료를 확인하는 중인 task 의 단계 표지와 삭제·purge 거절도 함께 본다.
 
 use serde_json::{Value, json};
 use tasty_ipc::caller::CallerContext;
@@ -90,7 +90,7 @@ fn task_get_carries_the_holdings_lost_before_renewal() {
 }
 
 #[test]
-fn a_task_with_a_leftover_handle_is_kept_from_delete_and_purge() {
+fn a_task_with_a_leftover_handle_shows_its_wait_and_is_kept_from_delete_and_purge() {
     let (mut core, memory) = core();
     let task = create(&mut core, 1000).result.expect("create");
     let id = task["id"].as_str().unwrap().to_string();
@@ -105,6 +105,20 @@ fn a_task_with_a_leftover_handle_is_kept_from_delete_and_purge() {
             &PutOpts::default(),
         )
         .unwrap();
+    let got = call(
+        &mut core,
+        "agent.task_get",
+        json!({"workspace_id": 1, "id": id}),
+    );
+    assert_eq!(
+        got.result.expect("get")["phase"],
+        "waiting_previous_attempt"
+    );
+    let listed = call(&mut core, "agent.task_list", json!({"workspace_id": 1}));
+    assert_eq!(
+        listed.result.expect("list")["tasks"][0]["phase"],
+        "waiting_previous_attempt"
+    );
     let deleted = call(
         &mut core,
         "agent.task_delete",
