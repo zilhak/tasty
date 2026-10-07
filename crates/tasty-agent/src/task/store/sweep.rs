@@ -3,7 +3,7 @@
 use std::collections::HashSet;
 
 use super::super::{TaskId, TaskState, referencing_task_ids, transitive_referencing_task_ids};
-use super::*;
+use super::{TaskStore, WorkspaceId};
 use crate::{AgentError, Result};
 
 /// [`TaskStore::delete_checked`] 옵션.
@@ -51,7 +51,7 @@ pub struct TaskSweepPlan {
 
 impl TaskStore<'_> {
     /// 참조 무결성 + 상태 제약을 지키는 task 삭제. `raw delete`
-    /// (위 [`Self::delete`])는 이 검사들을 전혀 하지 않으므로 직접 호출하면
+    /// ([`Self::delete`])는 이 검사들을 전혀 하지 않으므로 직접 호출하면
     /// dangling 참조·영구 `Waiting`·자원 누수를 만들 수 있다 — 호스트/CLI 는
     /// 항상 이 메서드를 거쳐야 한다.
     ///

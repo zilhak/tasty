@@ -1,7 +1,7 @@
 //! 종결된 task 의 retry.
 
 use super::super::{OnFailure, Readiness, Task, TaskGraph, TaskId, TaskState, route};
-use super::*;
+use super::{TaskStore, WorkspaceId, settle_target};
 use crate::{AgentError, Result};
 
 impl TaskStore<'_> {

@@ -4,7 +4,9 @@ use super::super::{
     InlineFallbackSpec, OnFailure, Task, TaskGraph, TaskId, TaskResult, TaskState,
     is_valid_transition,
 };
-use super::*;
+use super::{
+    TaskCreateOpts, TaskStore, WorkspaceId, record_result, settle_target, settle_typed_terminal,
+};
 use crate::{AgentError, Result};
 
 impl TaskStore<'_> {
@@ -298,7 +300,7 @@ impl TaskStore<'_> {
                     nt.state = next;
                     nt.skip = skip;
                     #[cfg(test)]
-                    if graph_submit::FAIL_ACTIVATION_PUT.with(|f| f.replace(false)) {
+                    if super::graph_submit::FAIL_ACTIVATION_PUT.with(|f| f.replace(false)) {
                         return Err(AgentError::InvalidArgument(
                             "injected activation failure".into(),
                         ));

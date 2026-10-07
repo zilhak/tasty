@@ -1,4 +1,9 @@
 //! `TaskStore` — task 의 persistent CRUD + state 전이.
+//!
+//! 이 파일은 레코드 읽기·쓰기, 생성, 취소를 둔다. 나머지는 책임별 하위 모듈에 있다.
+//! 상태 전이와 하류 전파는 `transition`, retry 는 `retry`, 참조 검사를 거치는 삭제와 purge·GC
+//! 계획은 `sweep`, 그래프 검증·활성화는 `graph_submit`·`graph_parse`, 결과 보고는 `complete`,
+//! 후처리 보고는 `postprocess`, agent 세션 연결은 `agent` 다.
 
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicU64, Ordering};
