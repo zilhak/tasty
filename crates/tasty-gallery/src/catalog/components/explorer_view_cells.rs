@@ -253,6 +253,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("sort", "header indicator (accent-primary)"),
         ],
         &[
+            TokenChip::without_color("tree-row-height", "List row (22)"),
+            TokenChip::without_color("table-cell-height", "Detail row + header (28)"),
+            TokenChip::without_color("overlay-hover", "row hover (8%)"),
             TokenChip::new(
                 "surface-raised",
                 "icon box",
