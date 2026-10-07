@@ -8,8 +8,8 @@
 ## Context
 
 [ADR-0055](0055-structural-domain-event-sourcing.md)는 적용 범위 안의 구조 원본을 확정 이벤트로 정했고,
-[ADR-0064](0064-journal-domain-model-crate.md)는 그 이벤트를 재생하는 구조 모델(JournalModel)을 `tasty-domain`에 새로 작성했다.
-0064는 제품에 연결하기 전까지 JournalModel이 CoreState와 동시에 원본이 아니라고만 정했고, 연결한 뒤 두 모델의 관계와 전환 절차는 정하지 않았다.
+그 이벤트를 재생하는 구조 모델(JournalModel)은 `tasty-core`에 있다([ADR-0056](0056-crate-boundaries-for-core-event-store-and-task-runtime.md)의 도메인 경계 절).
+제품에 연결하기 전까지는 JournalModel을 CoreState와 동시에 원본으로 두지 않았고, 연결한 뒤 두 모델의 관계와 전환 절차가 이 ADR의 대상이다.
 
 두 모델은 모양이 다르다. JournalModel(현재 `crates/tasty-core/src/model.rs`)은 ID 키 map에 이름·소속·분할 트리·kind·자료 참조·metadata만 담는다.
 결정 당시 `tasty-model`의 CoreState 트리는 surface 실행 인스턴스(`Box<dyn Surface>`), 사용자 선택 필드(`Workspace.focused_pane`·`Pane.active_tab`·`Tab.focused_surface`),
@@ -24,7 +24,12 @@ IPC 응답과 GUI는 CoreState 트리를 읽는다.
 - CoreState 트리는 commit된 batch를 적용받아 갱신되는 live projection이다. 실행 인스턴스는 EngineRuntime으로 분리하고 트리에는 descriptor를 둔다. IPC 응답과 GUI는 계속 이 읽기 트리에서 값을 만든다.
 - 활성화한 엔진에서 로컬 구조 트리의 writer는 projection 적용기 하나뿐이다. CommandExecutor가 commit에 성공한 batch만 적용기로 넘기며, 다른 경로가 트리를 직접 바꾸지 않는다.
   원격 mirror 구조는 로컬 트리와 다른 필드에 있고 쓰는 창구도 다르다([ADR-0061](0061-external-remote-module-and-attach-sync.md)).
+- 사용자와 에이전트가 명시적으로 쓰는 속성은 JournalModel의 typed 필드와 전용 이벤트로 둔다. workspace의 subtitle·description·attach 매핑과 tab의 명시 이름이 여기에 든다.
+  attach 매핑은 workspace와 원격 프로필·원격 workspace를 잇는 사용자 설정이며 `RemoteState`가 소유하는 runtime ID mapping과 다르다.
+  generic metadata 이벤트(`MetadataSet`·`MetadataRemoved`)는 사용자 정의 키에만 쓰고 이 속성들을 예약 키로 넣지 않는다. legacy importer도 이 속성을 typed 이벤트로 기록하며 `import.` 접두 metadata 키를 쓰지 않는다. memory DB의 `surface.meta`는 이 metadata와 별개다.
 - 이벤트에 넣지 않는 값:
+  - 관측값. terminal의 cwd·복원 명령·scrollback 참조는 surface kind별 저장 자료(자료 참조가 가리키는 payload)로 저장·닫기 시점에 캡처한다.
+    cwd가 바뀔 때마다 commit하지 않으며 replay가 과거 cwd를 명령으로 다시 실행하지 않는다.
   - 사용자 선택은 [ADR-0059](0059-id-targets-and-view-owned-selection.md)에 따라 View의 NavigationState가 소유한다. 구조 삭제 뒤의 선택 보정은 View에 적용한다.
   - `focus_second`는 적용기가 기존 hint 규칙대로 채운다.
   - `osc_title`과 표시 이름 같은 Terminal 파생값은 적용 뒤 기존 계산으로 다시 만든다.
@@ -81,7 +86,7 @@ CoreState의 leaf를 SurfaceDescriptor로 바꾸고 사용자 선택을 View로 
 IPC 응답 형식은 CoreState에서 계속 만들므로 바뀌지 않는다. 선택이 이벤트 밖에 있어 replay가 사용자 포커스를 다시 실행하지 않는다.
 
 이벤트를 CoreState에 적용하는 대응 코드를 따로 유지해야 한다. 적용기 결함은 digest 비교로만 드러난다.
-0064의 재검토 조건인 두 모델 유지 비용 판단도 계속 해야 한다.
+두 모델 유지 비용 판단도 계속 해야 한다(재검토 조건).
 활성화한 엔진과 아직 켜지 않은 엔진이 한 프로세스에 함께 있는 기간이 생긴다. 엔진마다 어느 쪽이 원본인지 명확해야 한다.
 
 ## Alternatives Considered
@@ -104,5 +109,5 @@ IPC 응답 형식은 CoreState에서 계속 만들므로 바뀌지 않는다. �
 ## References
 
 - [ADR-0055](0055-structural-domain-event-sourcing.md) · [ADR-0059](0059-id-targets-and-view-owned-selection.md) · [ADR-0061](0061-external-remote-module-and-attach-sync.md) · [ADR-0063](0063-event-store-storage-fencing-and-effect-states.md)
-- [ADR-0064](0064-journal-domain-model-crate.md) — JournalModel 추출의 결정 이력
+- [ADR-0056](0056-crate-boundaries-for-core-event-store-and-task-runtime.md) — JournalModel·codec·ID 예약이 놓인 `tasty-core`의 경계
 - 현재 구현: `crates/tasty-core/src/{model,state,projection}.rs`, `crates/tasty-model/src/{workspace,tab}.rs`, `src/runtime/command_executor.rs`, `src/runtime/journal_product/view_record.rs`, `src/core/layout_persistence/import.rs`, `src/app/journal/{creation,resource_cleanup,retirement}.rs`.

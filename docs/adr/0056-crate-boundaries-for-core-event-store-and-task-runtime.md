@@ -55,6 +55,23 @@ AppState·CoreState·ViewState 전용 crate나 모든 trait을 모으는 ports c
 - 새 crate는 별도 프로세스·daemon·thread를 뜻하지 않는다. 배포 단위는 계속 하나의 `tasty`일 수 있다.
 - crate 분리는 이벤트 소싱 범위를 넓히지 않는다. 여러 저장 crate를 한 실행 파일에 링크했다고 cross-DB 원자성이 생기지 않는다.
 
+### tasty-core 안의 도메인 경계
+
+`tasty-core`를 추출하기 전에 저장 계약을 도메인 수준에서 검증하려고 같은 역할의 임시 crate(`tasty-domain`)를 `src/core`를 옮기지 않고 새 코드로 작성했고,
+추출 때 그 모델·명령·사건·codec을 `tasty-core`로 합쳤다. 그때 정한 경계 중 지금도 유지하는 것은 다음과 같다.
+
+- `tasty-core`의 normal 의존은 값·ID 타입을 재사용하는 `tasty-model`뿐이다. `tasty-event-store`·root·GUI·PTY·SQL 계층을 의존하지 않는다.
+  ID와 분할 방향처럼 `tasty-model`에 같은 역할의 타입이 있으면 그 타입을 쓰고, 직렬화 형식이 없으면(`SplitDirection`) serde remote 정의를 `tasty-core`에 둔다.
+  저널에만 필요한 값(revision·batch ID·비율 비트 표현 `Ratio`·자료 참조 `DataRef`·분할 트리 `SplitTree`·ID 종류 `IdKind`)은 `tasty-core`에 둔다.
+  `tasty-model`의 `PaneNode`·`SurfaceLayout`은 비율을 `f32` 값으로 들고 있어(결정 당시에는 pane·surface 실행 인스턴스도 담았다) 저널 값으로 쓸 수 없기 때문이다.
+- 도메인 payload codec은 명시적인 type tag·schema version으로 바이트와 도메인 이벤트를 변환한다. 모르는 type tag나 schema version을 만나면
+  명시 오류로 재구성을 멈추며 건너뛰고 계속하지 않는다. 옛 payload를 새 형식으로 바꾸는 변환(upcast)도 이 codec이 맡는다.
+  EventStore는 봉투의 저장 형식 버전과 migration만 맡는다. `tasty-event-store`와 `tasty-core`는 서로 의존하지 않는다.
+- ID 예약은 실행 계층에서 실패 가능한 작업으로 먼저 끝내고 명령에 고정 값을 넣는다. 순수 decide에는 저장소를 숨길 수 있는 ID supplier를 넘기지 않는다.
+- Decider에 대해 generic한 CommandExecutor와 저장 batch(`StoredBatch`)·도메인 batch 변환 어댑터는 root runtime 모듈에 둔다.
+  명령 identity 조회(대상 해소보다 먼저, [ADR-0057](0057-command-identity-for-mutation-retries.md)), decide, 한 transaction의 commit,
+  commit 성공 뒤의 메모리 `evolve`, 응답 순서를 그 모듈이 구현한다. 저장소와 도메인을 함께 쓰는 시험(commit 실패 시 상태 불변, 같은 명령 재시도)은 root runtime 시험에서 돈다.
+
 ## Consequences
 
 순수 도메인 검사를 GUI·SQLite·PTY 없이 package 단위로 실행할 수 있고, 도메인이 상위 계층을 참조하면 컴파일 오류가 난다.
@@ -74,6 +91,8 @@ crate 목록 문서·README·가드의 crate 수를 추출마다 함께 갱신�
 - 기존 `tasty-agent`에 호스트 실행을 넣는 안: 작은 협업 API 소비자에 plugin·IPC 실행 의존이 얹힌다.
 - `tasty-hooks`를 HookRuntime으로 확장하는 안: 작은 매칭 라이브러리에 registry·plugin manifest·IPC worker 의존이 들어간다.
 - `tasty-model`을 두고 `tasty-domain-types`를 새로 만드는 안: 같은 역할의 crate가 둘이 된다.
+- 저널 도메인 모델을 root 안의 새 journal 모듈에 두는 안: 충돌은 작지만 root 컴파일 단위에 묶여 root 전체 lib 시험으로만 검증할 수 있다.
+- CommandExecutor와 저장 어댑터를 도메인 crate에 함께 두는 안: 도메인 crate가 `tasty-event-store`를 의존하게 되어 위 방향 규칙을 어긴다.
 
 ## Reconsideration Triggers
 
@@ -85,6 +104,9 @@ crate 목록 문서·README·가드의 crate 수를 추출마다 함께 갱신�
   도메인 payload codec과 버전 변환은 tasty-core, 저장 봉투 형식과 migration은 EventStore 소유다.
 - TaskService API와 host port가 정리되면 `tasty-task-runtime` 추출 시점을 판단한다.
 - HookRuntime의 공개 API가 안정되고 root 밖 소비자가 생기면 별도 crate 추출을 검토한다.
+- `tasty-core`가 `tasty-model` 외의 저장·실행 계층을 의존해야 하는 요구가 생기면 도메인 경계를 다시 정한다. `cargo tree -p tasty-core --edges normal`로 확인한다.
+- root 배선에서 Decider 문맥에 권한·대상 해소 같은 root 전용 값이 들어가야 하면 Decider trait과 root runtime의 경계를 다시 본다.
+- 저널 ID와 runtime ID는 `tasty-model`이 재수출하는 같은 `u32` 별칭이다. 두 공간을 데이터 홈의 구조 journal 예약 하나로 합쳤으므로([ADR-0063](0063-event-store-storage-fencing-and-effect-states.md)) newtype으로 나누지 않는다. 다른 발급원이 같은 별칭을 쓰게 되면 구분 방식을 다시 정한다.
 - 순수 터미널 재생·원격 mirror·renderer 테스트에서 PTY 의존을 빼야 하면 별도 PTY crate 추출을 검토한다.
 - CLI에 GUI·host 전용 큰 의존이 `tasty-remote`를 통해 들어오면 그 부분만 optional feature나 새 crate로 나눈다.
 
@@ -96,7 +118,6 @@ crate 목록 문서·README·가드의 crate 수를 추출마다 함께 갱신�
 
 - 대체 대상: [ADR-0002](0002-domain-execution-and-ports.md) — crate 배치 부분. 계층·상태 소유는 [ADR-0054](0054-app-core-view-layers-and-state-ownership.md)
 - [ADR-0063](0063-event-store-storage-fencing-and-effect-states.md) — `tasty-event-store`의 payload 저장·writer 잠금·effect 전이·schema 버전 결정
-- [ADR-0064](0064-journal-domain-model-crate.md) — `tasty-core` 추출 전에 저널 도메인 모델·evolve·Decider를 새로 작성하는 순수 도메인 crate `tasty-domain`. 이 ADR의 배치를 바꾸지 않는다
 - [ADR-0001](0001-crate-dependency-boundaries.md) · [ADR-0055](0055-structural-domain-event-sourcing.md) · [ADR-0062](0062-task-service-and-hook-runtime.md)
 - 현재 빌드 구조: [빌드 가이드](../dev-guide/build.md), [헤드리스 컴파일 경계](../dev-guide/headless-build-boundaries.md), [아키텍처](../architecture/index.md)
-- 현재 구현: `crates/tasty-model`, `crates/tasty-agent`, `crates/tasty-hooks`, `crates/tasty-remote`, `crates/tasty-terminal/src/lib.rs`.
+- 현재 구현: `crates/tasty-core/src/{model,ids}.rs`(저널 모델·저널 전용 값), `src/runtime/{command_executor,journal}.rs`(executor·저장 batch 변환), `crates/tasty-model`, `crates/tasty-agent`, `crates/tasty-hooks`, `crates/tasty-remote`, `crates/tasty-terminal/src/lib.rs`.

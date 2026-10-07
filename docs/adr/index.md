@@ -31,7 +31,6 @@ App·Core·View 계층과 상태 소유, 구조 도메인 이벤트 소싱, 크�
 | 0057 | [변경 요청 재시도는 호출자별 명령 identity로 구분하고 기록 범위에서는 이벤트와 함께 확정한다](0057-command-identity-for-mutation-retries.md) | Accepted | 2026-09-30 | ipc, idempotency, retry, event-sourcing |
 | 0058 | [헤드리스는 로컬 View 없이 같은 명령 실행 경계로 작업을 완료한다](0058-headless-without-local-views.md) | Accepted | 2026-09-30 | headless, lifecycle, features, architecture |
 | 0063 | [이벤트 저장소는 payload를 journal DB에 두고 파일 잠금과 writer 세대로 쓰기를 제한한다](0063-event-store-storage-fencing-and-effect-states.md) | Accepted | 2026-09-30 | event-sourcing, storage, sqlite, durability, effects, fencing |
-| 0064 | [저널 도메인 모델은 `tasty-core` 추출 전에 순수 도메인 crate `tasty-domain`에 새로 작성한다](0064-journal-domain-model-crate.md) | Accepted | 2026-09-30 | architecture, crates, domain, event-sourcing, commands |
 | 0065 | [구조 journal이 원본이고 CoreState 트리는 확정 이벤트로 갱신하는 live projection이다](0065-journal-source-and-core-state-projection.md) | Accepted | 2026-09-30 | architecture, event-sourcing, domain, projection, migration |
 | 0066 | [0.x에서는 호환성을 깨는 변경을 유예 기간 없이 `(BREAK)`로 낸다](0066-pre-1-0-breaking-changes-ship-without-deprecation-period.md) | Accepted | 2026-10-06 | ipc, compatibility, versioning, changelog |
 | 0074 | [닫기의 자원 receipt 대기는 관측을 멈추지 않는다](0074-close-receipt-wait-does-not-pause-observation.md) | Accepted | 2026-10-07 | event-sourcing, effects, close, retirement, ipc, plugin |

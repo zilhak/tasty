@@ -1,5 +1,5 @@
 //! 순수 tasty-core와 구조 값 tasty-model의 제품 코드가 상위 host·GUI를 참조하는지 검사한다.
-//! root src/core와 ports는 실행 adapter이므로 이 순수 crate 검사 범위가 아니다(ADR-0054/0064).
+//! root src/core와 ports는 실행 adapter이므로 이 순수 crate 검사 범위가 아니다(ADR-0054/0056).
 //! root 실행 owner는 engine_resource_ownership, 지정 writer 호출은 별도 shell guard가 검사한다.
 //! 상위 모듈 참조, gui 조건의 개수, GUI 크레이트 경로를 각각 검사한다.
 //! 기존 gui 조건 안에 새 GUI 참조를 넣으면 조건 수는 그대로라 경로 검사도 필요하다.
@@ -230,7 +230,7 @@ fn the_domain_does_not_name_an_upper_layer() {
     );
     assert!(
         offenders.is_empty(),
-        "도메인 제품 코드가 상위 계층을 참조한다:\n{}\nADR-0054/0064에 따라 순수 모델과 적용기는 host 실행 객체를 참조하지 않는다. 실행과 GUI adapter는 root에 둔다. 예외 목록을 추가해 통과시키지 않는다.",
+        "도메인 제품 코드가 상위 계층을 참조한다:\n{}\nADR-0054/0056에 따라 순수 모델과 적용기는 host 실행 객체를 참조하지 않는다. 실행과 GUI adapter는 root에 둔다. 예외 목록을 추가해 통과시키지 않는다.",
         offenders.join("\n")
     );
 }

@@ -421,7 +421,7 @@ cargo modules / cargo depgraph    # 모듈/크레이트 의존 그래프 (크레
 순수 명령 판단·이벤트 적용과 구조 projection은 `tasty-core`, 구조 값은 `tasty-model`에 있다.
 root의 `src/core/`·`src/ports/`는 실행 adapter와 호환 조회 경계를 포함하므로 순수 domain crate와 동일하게 취급하지 않는다.
 배치 근거는 [ADR-0054](../adr/0054-app-core-view-layers-and-state-ownership.md)와
-[ADR-0064](../adr/0064-journal-domain-model-crate.md)를 따른다.
+[ADR-0056](../adr/0056-crate-boundaries-for-core-event-store-and-task-runtime.md)의 도메인 경계 절을 따른다.
 
 `domain_does_not_reach_up.rs`는 두 crate의 제품 source에서 지정 상위 모듈·host crate 및 GUI 경로를 검사한다.
 package별 anchor와 Git 추적 Rust 파일 명부를 순회 결과와 대조하고, 제품 GUI 조건은 0으로 고정한다.
