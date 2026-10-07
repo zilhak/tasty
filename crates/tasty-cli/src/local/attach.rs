@@ -68,24 +68,44 @@ impl DumpHeartbeat {
     /// 수집 루프 머리: 주기가 됐으면 Ping 을 보내고, 다음 대기 시간(창 끝과 다음 Ping 중
     /// 이른 쪽)을 돌려준다. 창이 끝났거나 Ping 을 못 썼으면 `None` — 루프를 끝낸다.
     fn next_wait(&mut self, writer: &mut TcpStream, deadline: Instant) -> Option<Duration> {
-        let now = Instant::now();
+        let (ping, wait) = self.plan(dump_now(), deadline)?;
+        if ping && let Err(e) = stream::write_frame(writer, StreamTag::Ping, &[]) {
+            tracing::warn!("attach: mirror-dump heartbeat was not written: {e}");
+            self.broken = true;
+            return None;
+        }
+        Some(wait)
+    }
+
+    /// 시각 `now` 의 할 일 — 창이 끝났으면 `None`, 아니면 (Ping 을 보낼지, 다음 대기 시간).
+    /// 늦게 깨어나도 Ping 은 한 번만 보내고 다음 주기를 `now` 에서 다시 센다.
+    fn plan(&mut self, now: Instant, deadline: Instant) -> Option<(bool, Duration)> {
         let remaining = deadline.saturating_duration_since(now);
         if remaining.is_zero() {
             return None;
         }
-        if now >= self.next {
-            if let Err(e) = stream::write_frame(writer, StreamTag::Ping, &[]) {
-                tracing::warn!("attach: mirror-dump heartbeat was not written: {e}");
-                self.broken = true;
-                return None;
-            }
+        let ping = now >= self.next;
+        if ping {
             self.next = now + self.every;
         }
-        Some(remaining.min(self.next.saturating_duration_since(now)))
+        Some((
+            ping,
+            remaining.min(self.next.saturating_duration_since(now)),
+        ))
     }
 }
 
-/// dump heartbeat 주기. 시험은 서버 시한을 줄인 가짜 서버로 재므로 주기도 같은 비율로 줄인다.
+/// dump 수집 창과 heartbeat 이 읽는 시계. 시험은 스레드별 가짜 시계를 끼워 스케줄러
+/// 지연과 무관하게 Ping 수를 잰다.
+fn dump_now() -> Instant {
+    #[cfg(test)]
+    if let Some(now) = dump_heartbeat_tests::fake_now() {
+        return now;
+    }
+    Instant::now()
+}
+
+/// dump heartbeat 주기. 시험의 수집 루프는 주기마다 실제로 `recv_timeout` 을 기다리므로 주기를 줄인다.
 fn dump_heartbeat_interval() -> Duration {
     #[cfg(test)]
     {
@@ -578,12 +598,12 @@ fn run_workspace_mirror_dump(
         }
     });
 
-    let deadline = Instant::now() + Duration::from_millis(collect_ms);
+    let deadline = dump_now() + Duration::from_millis(collect_ms);
     let mut forced = false;
     let mut disconnected = false;
     let mut desynced = false;
     let mut lost = 0u64;
-    let mut heartbeat = DumpHeartbeat::start(Instant::now());
+    let mut heartbeat = DumpHeartbeat::start(dump_now());
     while let Some(wait) = heartbeat.next_wait(&mut writer, deadline) {
         match rx.recv_timeout(wait) {
             Ok(frame) => match frame.tag {
@@ -691,12 +711,12 @@ fn run_mirror_dump(
     });
 
     let mut mirror = Terminal::new_detached(cols, rows);
-    let deadline = Instant::now() + Duration::from_millis(collect_ms);
+    let deadline = dump_now() + Duration::from_millis(collect_ms);
     let mut forced = false;
     let mut disconnected = false;
     let mut desynced = false;
     let mut lost = 0u64;
-    let mut heartbeat = DumpHeartbeat::start(Instant::now());
+    let mut heartbeat = DumpHeartbeat::start(dump_now());
     while let Some(wait) = heartbeat.next_wait(&mut writer, deadline) {
         match rx.recv_timeout(wait) {
             Ok(frame) => match frame.tag {
@@ -1455,19 +1475,45 @@ mod raw_bridge_tests {
 }
 
 /// 서버 시한보다 긴 dump에서 Ping으로 연결을 유지하는지 확인한다.
-/// 가짜 서버의 timeout과 Ping 주기는 실제 비율을 유지해 줄인다.
+/// 수집 창과 Ping 주기는 가짜 시계로 잰다 — 실제 시계로 재면 부하로 스레드가 주기보다
+/// 오래 못 돌 때 Ping 이 늦어 시험이 실패한다(제품의 주기 5 s·시한 20 s 와 달리 시험 크기에서는
+/// 여유가 150 ms 뿐이다). 서버의 read timeout 은 Detach 가 오지 않을 때 멈추지 않게 하는 상한이다.
 #[cfg(test)]
 mod dump_heartbeat_tests {
+    use std::cell::Cell;
     use std::io::{BufRead, BufReader};
     use std::net::{TcpListener, TcpStream};
     use std::thread;
+    use std::time::{Duration, Instant};
 
     use tasty_ipc::client::StreamConnection;
     use tasty_ipc::stream::{self, STREAM_PROTO, StreamTag};
 
     use super::{
-        AttachExit, SessionEnd, dump_heartbeat_interval, run_mirror_dump, run_workspace_mirror_dump,
+        AttachExit, DumpHeartbeat, SessionEnd, dump_heartbeat_interval, run_mirror_dump,
+        run_workspace_mirror_dump,
     };
+
+    thread_local! {
+        /// (기준 시각, 읽은 횟수). 설정된 스레드에서 `dump_now` 는 읽을 때마다 한 주기씩 간다.
+        static FAKE_CLOCK: Cell<Option<(Instant, u32)>> = const { Cell::new(None) };
+    }
+
+    pub(super) fn fake_now() -> Option<Instant> {
+        FAKE_CLOCK.with(|c| {
+            let (base, reads) = c.get()?;
+            c.set(Some((base, reads + 1)));
+            Some(base + dump_heartbeat_interval() * reads)
+        })
+    }
+
+    /// `f` 를 가짜 시계로 돌린다. 시험 스레드에만 걸리고 reader 스레드는 시계를 읽지 않는다.
+    fn with_fake_clock<R>(f: impl FnOnce() -> R) -> R {
+        FAKE_CLOCK.with(|c| c.set(Some((Instant::now(), 0))));
+        let out = f();
+        FAKE_CLOCK.with(|c| c.set(None));
+        out
+    }
 
     /// 가짜 서버가 dump 동안 본 것.
     struct Seen {
@@ -1492,7 +1538,7 @@ mod dump_heartbeat_tests {
             .expect("ack");
             reader
                 .get_ref()
-                .set_read_timeout(Some(dump_heartbeat_interval() * 4))
+                .set_read_timeout(Some(Duration::from_secs(30)))
                 .expect("read timeout");
             let mut seen = Seen {
                 pings: 0,
@@ -1523,9 +1569,11 @@ mod dump_heartbeat_tests {
         })
     }
 
-    /// 서버 시한(주기 × 4)의 세 배.
+    /// 수집 창의 주기 수 — 서버 시한(주기 × 4)의 세 배.
+    const LONG_DUMP_PERIODS: u32 = 12;
+
     fn long_dump_ms() -> u64 {
-        (dump_heartbeat_interval() * 12).as_millis() as u64
+        (dump_heartbeat_interval() * LONG_DUMP_PERIODS).as_millis() as u64
     }
 
     fn connect() -> (StreamConnection, thread::JoinHandle<Seen>) {
@@ -1540,38 +1588,87 @@ mod dump_heartbeat_tests {
     fn assert_kept_alive(end: SessionEnd, server: thread::JoinHandle<Seen>) {
         assert!(matches!(end, SessionEnd::Exit(AttachExit::Completed)));
         let seen = server.join().expect("server thread");
-        assert!(
-            !seen.timed_out,
-            "서버 read 가 heartbeat 시한에 걸렸다 — dump 가 Ping 을 안 보냈다"
-        );
+        assert!(!seen.timed_out, "dump 가 끝났는데 Detach 가 오지 않았다");
         assert!(seen.detached, "dump 가 끝나면 Detach 로 놓아야 한다");
-        assert!(
-            seen.pings >= 3,
-            "Ping {} 회 — 주기마다 보내야 한다",
-            seen.pings
+        // 가짜 시계는 읽을 때마다 한 주기 간다. 창 끝·시작 시각을 읽은 뒤 루프 머리가 매번
+        // 주기에 닿으므로, 창의 주기 수에서 그 두 번을 뺀 만큼 Ping 이 나간다.
+        assert_eq!(
+            seen.pings,
+            (LONG_DUMP_PERIODS - 2) as usize,
+            "창 동안 주기마다 Ping 을 보내야 한다"
         );
     }
 
     #[test]
     fn a_surface_dump_longer_than_the_server_timeout_keeps_the_connection_alive() {
         let (conn, server) = connect();
-        let end = run_mirror_dump(conn, 80, 24, Some(long_dump_ms()), None, false).expect("dump");
+        let end = with_fake_clock(|| {
+            run_mirror_dump(conn, 80, 24, Some(long_dump_ms()), None, false).expect("dump")
+        });
         assert_kept_alive(end, server);
     }
 
     #[test]
     fn a_workspace_dump_longer_than_the_server_timeout_keeps_the_connection_alive() {
         let (conn, server) = connect();
-        let end = run_workspace_mirror_dump(
-            conn,
-            Vec::new(),
-            Vec::new(),
-            Some(long_dump_ms()),
-            None,
-            None,
-            false,
-        )
-        .expect("dump");
+        let end = with_fake_clock(|| {
+            run_workspace_mirror_dump(
+                conn,
+                Vec::new(),
+                Vec::new(),
+                Some(long_dump_ms()),
+                None,
+                None,
+                false,
+            )
+            .expect("dump")
+        });
         assert_kept_alive(end, server);
+    }
+
+    fn heartbeat_at(t0: Instant) -> (DumpHeartbeat, Duration) {
+        let every = dump_heartbeat_interval();
+        let hb = DumpHeartbeat {
+            every,
+            next: t0 + every,
+            broken: false,
+        };
+        (hb, every)
+    }
+
+    #[test]
+    fn the_first_ping_waits_one_period_and_the_wait_ends_at_it() {
+        let t0 = Instant::now();
+        let (mut hb, every) = heartbeat_at(t0);
+        let deadline = t0 + every * 10;
+        assert_eq!(hb.plan(t0, deadline), Some((false, every)));
+        let quarter = every / 4;
+        assert_eq!(
+            hb.plan(t0 + quarter, deadline),
+            Some((false, every - quarter))
+        );
+        assert_eq!(hb.plan(t0 + every, deadline), Some((true, every)));
+        assert_eq!(hb.plan(t0 + every, deadline), Some((false, every)));
+    }
+
+    #[test]
+    fn a_late_wakeup_sends_one_ping_and_counts_the_next_period_from_then() {
+        let t0 = Instant::now();
+        let (mut hb, every) = heartbeat_at(t0);
+        let deadline = t0 + every * 10;
+        let late = t0 + every * 3 + every / 2;
+        assert_eq!(hb.plan(late, deadline), Some((true, every)));
+        assert_eq!(hb.plan(late, deadline), Some((false, every)));
+        assert_eq!(hb.plan(late + every, deadline), Some((true, every)));
+    }
+
+    #[test]
+    fn the_wait_stops_at_the_window_end_and_the_window_end_finishes() {
+        let t0 = Instant::now();
+        let (mut hb, every) = heartbeat_at(t0);
+        let deadline = t0 + every / 2;
+        assert_eq!(hb.plan(t0, deadline), Some((false, every / 2)));
+        assert_eq!(hb.plan(deadline, deadline), None);
+        assert_eq!(hb.plan(deadline + every, deadline), None);
     }
 }
