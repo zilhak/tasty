@@ -62,10 +62,7 @@ fn narrow<T: DeserializeOwned>(root: &Value) -> String {
     // 원래 오류가 필드 누락이면 다른 필수 필드를 빼서 생긴 누락 오류를 그 필드의 탓으로 보지 않는다.
     let missing_field_error = fails(root).is_some_and(|e| e.starts_with("missing field"));
     let mut path: Vec<String> = Vec::new();
-    'descend: loop {
-        let Some(node) = root.pointer(&pointer(&path)) else {
-            break;
-        };
+    'descend: while let Some(node) = root.pointer(&pointer(&path)) {
         let children: Vec<String> = match node {
             Value::Object(map) => map.keys().cloned().collect(),
             Value::Array(items) => (0..items.len()).map(|i| i.to_string()).collect(),
