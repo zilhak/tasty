@@ -242,16 +242,26 @@ pub fn handle_task_list(
         Err(e) => agent_err_to_response(id, e),
         Ok(mut tasks) => {
             retain_by_state(&mut tasks, state_filter.as_deref());
+            let rows: Vec<Value> = tasks.iter().map(task_with_phase).collect();
             JsonRpcResponse::success(
                 id,
                 json!({
-                    "total": tasks.len(),
-                    "tasks": tasks,
+                    "total": rows.len(),
+                    "tasks": rows,
                     "runner": runner_status_json(core, &engine.as_ref(), workspace_id),
                 }),
             )
         }
     }
+}
+
+/// 목록의 task 하나. Running 인 v2 task 에는 `task_get` 과 같은 `phase` 를 싣는다.
+fn task_with_phase(task: &Task) -> Value {
+    let mut v = serde_json::to_value(task).unwrap_or(Value::Null);
+    if let (Some(phase), Some(obj)) = (task.phase(), v.as_object_mut()) {
+        obj.insert("phase".to_string(), Value::from(phase));
+    }
+    v
 }
 
 /// 러너가 꺼져 있어도 저장소를 조회해 실제 작업 수를 반환한다.
@@ -317,9 +327,7 @@ pub fn handle_task_get(
         Ok(None) => JsonRpcResponse::error(id, -32004, format!("task not found: {task_id}")),
         Ok(Some((t, revision))) => {
             let is_running = matches!(t.state, TaskState::Running);
-            let phase = t
-                .postprocess_phase()
-                .or_else(|| tasty_agent::task::agent::phase(&t));
+            let phase = t.phase();
             let mut v = serde_json::to_value(t).unwrap_or(Value::Null);
             if let (Some(phase), Some(obj)) = (phase, v.as_object_mut()) {
                 obj.insert("phase".to_string(), Value::from(phase));

@@ -314,6 +314,19 @@ impl Task {
     pub fn is_typed(&self) -> bool {
         self.contract.is_some()
     }
+
+    /// Running 인 v2 task 의 세부 단계. 후처리(`postprocessing`·`retry_wait`), agent 입력 대기
+    /// (`awaiting_input`), 그 밖의 실행(`executing`)이다. v1 task 와 Running 이 아닌 task 는 없다.
+    pub fn phase(&self) -> Option<&'static str> {
+        if !self.is_typed() || !matches!(self.state, TaskState::Running) {
+            return None;
+        }
+        Some(
+            self.postprocess_phase()
+                .or_else(|| agent::phase(self))
+                .unwrap_or("executing"),
+        )
+    }
 }
 
 /// v1 task 레코드의 memory 키 접두사.

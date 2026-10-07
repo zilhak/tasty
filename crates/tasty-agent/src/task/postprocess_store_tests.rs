@@ -568,3 +568,45 @@ fn a_branch_whose_postprocess_runs_out_leaves_the_dag_partially_failed() {
     assert_eq!(d.state_counts.succeeded_ends, 1);
     assert_eq!(d.rollup_state, "partially_failed");
 }
+
+// 조회의 phase 는 Running 인 v2 task 마다 있다. 본 작업 중 executing, 후처리 중 postprocessing,
+// 끝나면 없다. v1 task 는 Running 이어도 없다.
+#[test]
+fn every_running_typed_task_reports_a_phase() {
+    let (_td, mut mem, seq) = fresh();
+    let mut store = TaskStore::new(&mut mem, "_host", &seq);
+    submit_plain(&mut store);
+    assert_eq!(get(&store, "judge").phase(), None, "ready is not running");
+    store
+        .set_state(1, &judge(), TaskState::Running, 10)
+        .expect("running");
+    assert_eq!(get(&store, "judge").phase(), Some("executing"));
+    let attempt = get(&store, "judge").attempt.expect("attempt").id;
+    store
+        .complete(
+            1,
+            &judge(),
+            Completion::succeeded(Some(attempt.clone()), main_ok()),
+            11,
+        )
+        .expect("main completion");
+    assert_eq!(get(&store, "judge").phase(), Some("postprocessing"));
+    report(&mut store, &attempt, collected(1, json!(true)), 12).expect("report");
+    assert_eq!(get(&store, "judge").phase(), None);
+
+    let v1 = store
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "v1".into(),
+            command: TaskCommand::WaitBarrier { name: "b".into() },
+            depends_on: vec![],
+            on_failure: OnFailure::default(),
+            metadata: Value::Null,
+            now_ms: 20,
+        })
+        .expect("v1 task");
+    store
+        .set_state(1, &v1.id, TaskState::Running, 21)
+        .expect("running");
+    assert_eq!(get(&store, &v1.id).phase(), None);
+}

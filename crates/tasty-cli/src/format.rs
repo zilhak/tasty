@@ -88,6 +88,17 @@ fn task_state_kind(task: &serde_json::Value) -> &str {
         .unwrap_or("?")
 }
 
+/// 목록의 한 줄. Running 인 v2 task 는 세부 단계를 괄호로 붙인다(`task-get` 의 `phase` 줄과 같은 값).
+fn task_list_row(t: &serde_json::Value) -> String {
+    let id = t.get("id").and_then(|v| v.as_str()).unwrap_or("?");
+    let name = t.get("name").and_then(|v| v.as_str()).unwrap_or("?");
+    let state = task_state_kind(t);
+    match t.get("phase").and_then(|v| v.as_str()) {
+        Some(phase) => format!("{state:<10} {id}  {name}  ({phase})"),
+        None => format!("{state:<10} {id}  {name}"),
+    }
+}
+
 fn format_task_list(result: &serde_json::Value) -> Result<()> {
     let tasks = result.get("tasks").and_then(|v| v.as_array());
     let Some(tasks) = tasks else {
@@ -100,8 +111,7 @@ fn format_task_list(result: &serde_json::Value) -> Result<()> {
         for t in tasks {
             let id = t.get("id").and_then(|v| v.as_str()).unwrap_or("?");
             let name = t.get("name").and_then(|v| v.as_str()).unwrap_or("?");
-            let state = task_state_kind(t);
-            outln!("{state:<10} {id}  {name}")?;
+            outln!("{}", task_list_row(t))?;
         }
     }
     if let Some(runner) = result.get("runner") {
@@ -821,11 +831,20 @@ fn format_notification_list(result: &serde_json::Value) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{
-        format_runner_summary, format_workspace_row, render_layout, task_agent_line,
+        format_runner_summary, format_workspace_row, render_layout, task_agent_line, task_list_row,
         task_postprocess_lines, task_route_line, task_skip_line, task_typed_lines,
         timer_hard_deadline_line, timer_row_line, timer_row_text,
     };
     use serde_json::json;
+
+    #[test]
+    fn a_running_typed_task_row_shows_its_phase() {
+        let row = task_list_row(&json!({"id": "judge", "name": "Judge",
+            "state": {"kind": "running"}, "phase": "awaiting_input"}));
+        assert_eq!(row, "running    judge  Judge  (awaiting_input)");
+        let row = task_list_row(&json!({"id": "a", "name": "A", "state": {"kind": "ready"}}));
+        assert_eq!(row, "ready      a  A");
+    }
 
     #[test]
     fn task_get_shows_the_agent_session_and_leaves_the_phase_to_the_phase_line() {
