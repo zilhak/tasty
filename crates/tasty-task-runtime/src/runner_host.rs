@@ -92,16 +92,27 @@ impl RunnerContext {
     ) {
         for task in tasks {
             if task.state.is_terminal() {
+                let revision = self.task_revision(workspace_id, &task.id);
                 self.task_waker_hub.fire(
                     workspace_id,
                     &task.id,
-                    crate::task_waker::TerminalSnapshot {
-                        state: task.state,
-                        result: task.result,
-                    },
+                    crate::task_waker::TerminalSnapshot::of(&task, revision),
                 );
             }
         }
+    }
+
+    /// 사건에 실을 레코드 revision. 읽지 못하면 로그를 남기고 revision 없이 알린다.
+    fn task_revision(&self, workspace_id: u32, task_id: &tasty_agent::TaskId) -> Option<u64> {
+        let seq = std::sync::atomic::AtomicU64::new(0);
+        self.with_memory(|mem| {
+            tasty_agent::TaskStore::new(mem, tasty_memory::HOST_OWNER, &seq)
+                .revision(workspace_id, task_id)
+        })
+        .unwrap_or_else(|error| {
+            tracing::warn!(%error, workspace_id, %task_id, "task revision lookup failed");
+            None
+        })
     }
 
     /// poison은 로그로 알리고 남은 저장소를 계속 사용한다. 임의 MemoryStorage 호출의 중간 실패를 복구하는 것은 아니다.

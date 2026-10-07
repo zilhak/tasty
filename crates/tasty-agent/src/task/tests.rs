@@ -2369,3 +2369,26 @@ fn list_reports_error_on_corrupt_task_entry() {
         "손상된 엔트리가 빈 목록으로 흡수되면 러너가 실패를 관측할 수 없다"
     );
 }
+
+/// revision 은 레코드를 쓸 때마다 커지고, 없는 task 는 `None` 이다.
+#[test]
+fn revision_grows_with_each_write_of_the_record() {
+    let (_td, mut mem, seq) = fresh_store();
+    let mut store = TaskStore::new(&mut mem, "_host", &seq);
+    let t = store
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "a".to_string(),
+            command: run_cmd(),
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1000,
+        })
+        .unwrap();
+    let created = store.revision(1, &t.id).unwrap().expect("revision");
+    store.set_state(1, &t.id, TaskState::Running, 1100).unwrap();
+    let running = store.revision(1, &t.id).unwrap().expect("revision");
+    assert!(running > created, "{created} -> {running}");
+    assert_eq!(store.revision(1, &"missing".to_string()).unwrap(), None);
+}

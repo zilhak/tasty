@@ -12,6 +12,24 @@ use tasty_agent::{TaskId, TaskResult, TaskState};
 pub struct TerminalSnapshot {
     pub state: TaskState,
     pub result: Option<TaskResult>,
+    /// v2 task 의 실행 회차 id. 회차가 없는 task 는 `None`.
+    pub attempt_id: Option<String>,
+    /// 건너뛴 이유. 이유가 기록된 v2 task 만 있다.
+    pub skip: Option<tasty_agent::SkipReason>,
+    /// 종결을 기록한 뒤 읽은 레코드 revision([`tasty_agent::TaskStore::revision`]).
+    pub revision: Option<u64>,
+}
+
+impl TerminalSnapshot {
+    pub fn of(task: &tasty_agent::Task, revision: Option<u64>) -> Self {
+        Self {
+            state: task.state.clone(),
+            result: task.result.clone(),
+            attempt_id: task.attempt.as_ref().map(|a| a.id.clone()),
+            skip: task.skip.clone(),
+            revision,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -128,6 +146,9 @@ impl TaskWakerHub {
                 workspace_id,
                 task_id: task_id.clone(),
                 state: snapshot.state.name(),
+                attempt_id: snapshot.attempt_id.clone(),
+                revision: snapshot.revision,
+                skip: snapshot.skip.clone(),
             });
         }
         let mut g = self.lock_recovering();
@@ -155,6 +176,9 @@ mod tests {
         TerminalSnapshot {
             state,
             result: None,
+            attempt_id: None,
+            skip: None,
+            revision: None,
         }
     }
 
@@ -265,6 +289,42 @@ mod tests {
                 workspace_id: 7,
                 task_id: "t-9".to_string(),
                 state: "cancelled",
+                attempt_id: None,
+                revision: None,
+                skip: None,
+            }]
+        );
+    }
+
+    /// 사건은 회차·revision·skip 이유를 싣고 결과는 싣지 않는다.
+    #[test]
+    fn a_finished_event_carries_the_attempt_revision_and_skip_reason() {
+        use crate::event_feed::{AgentEvent, AgentEventQueue};
+        let feed = Arc::new(AgentEventQueue::new());
+        let hub = TaskWakerHub::with_feed(Arc::clone(&feed));
+        let skip = tasty_agent::SkipReason::UpstreamUnavailable {
+            source: "a".to_string(),
+            source_state: "failed".to_string(),
+        };
+        hub.fire(
+            7,
+            &"t-9".to_string(),
+            TerminalSnapshot {
+                attempt_id: Some("t-9#2".to_string()),
+                skip: Some(skip.clone()),
+                revision: Some(5),
+                ..snap(TaskState::Skipped)
+            },
+        );
+        assert_eq!(
+            feed.take_pending().0,
+            vec![AgentEvent::TaskFinished {
+                workspace_id: 7,
+                task_id: "t-9".to_string(),
+                state: "skipped",
+                attempt_id: Some("t-9#2".to_string()),
+                revision: Some(5),
+                skip: Some(skip),
             }]
         );
     }
@@ -304,6 +364,9 @@ mod poison_tests {
                 Some(TerminalSnapshot {
                     state: TaskState::Running,
                     result: None,
+                    attempt_id: None,
+                    skip: None,
+                    revision: None,
                 })
             })
         });
@@ -311,6 +374,9 @@ mod poison_tests {
         let snapshot = TerminalSnapshot {
             state: TaskState::Succeeded,
             result: None,
+            attempt_id: None,
+            skip: None,
+            revision: None,
         };
         for _ in 0..200 {
             std::thread::sleep(std::time::Duration::from_millis(5));

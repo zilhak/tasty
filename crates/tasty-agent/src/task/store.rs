@@ -130,6 +130,19 @@ impl<'a> TaskStore<'a> {
         }
     }
 
+    /// 레코드 revision. task 를 담은 memory 키의 version 이며 쓸 때마다 커진다. 사건을 받은 쪽이
+    /// 다시 읽은 레코드가 그 사건 이후의 것인지 비교할 때 쓴다. 레코드가 없으면 `None`.
+    pub fn revision(&self, workspace_id: WorkspaceId, id: &TaskId) -> Result<Option<u64>> {
+        let scope = Scope::Workspace(workspace_id);
+        if let Some(e) = self.mem.get(&scope, &task_key(id)?)? {
+            return Ok(Some(e.version));
+        }
+        Ok(self
+            .mem
+            .get(&scope, &typed_task_key(id)?)?
+            .map(|e| e.version))
+    }
+
     /// 워크스페이스 전체 task 목록(v1 뒤에 v2).
     pub fn list(&self, workspace_id: WorkspaceId) -> Result<Vec<Task>> {
         let scope = Scope::Workspace(workspace_id);

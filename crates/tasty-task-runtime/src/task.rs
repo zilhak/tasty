@@ -132,6 +132,23 @@ impl TaskService {
         })
     }
 
+    /// task 와 그 레코드 revision 을 한 번의 잠금 안에서 읽는다.
+    pub fn task_get_with_revision(
+        &self,
+        scope: &TaskScope,
+        workspace_id: u32,
+        task_id: &TaskId,
+    ) -> Result<Option<(Task, Option<u64>)>, AgentError> {
+        let seq = scope.agent_seq().clone();
+        self.with_memory(|mem| {
+            let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+            match store.get(workspace_id, task_id)? {
+                Some(t) => Ok(Some((t, store.revision(workspace_id, task_id)?))),
+                None => Ok(None),
+            }
+        })
+    }
+
     pub fn task_cancel(
         &self,
         scope: &TaskScope,
@@ -158,13 +175,19 @@ impl TaskService {
         if !task.state.is_terminal() {
             return;
         }
+        let seq = scope.agent_seq().clone();
+        let revision = self
+            .with_memory(|mem| {
+                TaskStore::new(mem, HOST_OWNER, seq.as_ref()).revision(workspace_id, &task.id)
+            })
+            .unwrap_or_else(|error| {
+                tracing::warn!(%error, workspace_id, task_id = %task.id, "task revision lookup failed");
+                None
+            });
         scope.waker_hub().fire(
             workspace_id,
             &task.id,
-            crate::task_waker::TerminalSnapshot {
-                state: task.state.clone(),
-                result: task.result.clone(),
-            },
+            crate::task_waker::TerminalSnapshot::of(task, revision),
         );
     }
 

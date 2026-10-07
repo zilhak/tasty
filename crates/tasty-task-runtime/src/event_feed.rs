@@ -10,10 +10,14 @@ const MAX_PENDING: usize = 4096;
 #[derive(Debug, Clone, PartialEq)]
 pub enum AgentEvent {
     /// 종료 상태만 알린다. 중간 상태의 모든 변경을 추적하는 피드는 아니다.
+    /// 다시 조회할 때 쓰는 식별자(회차·revision)와 건너뛴 이유만 싣는다.
     TaskFinished {
         workspace_id: u32,
         task_id: String,
         state: &'static str,
+        attempt_id: Option<String>,
+        revision: Option<u64>,
+        skip: Option<tasty_agent::SkipReason>,
     },
     BarrierClosed {
         workspace_id: u32,
@@ -88,6 +92,9 @@ mod tests {
             workspace_id: 1,
             task_id: id.to_string(),
             state: "succeeded",
+            attempt_id: None,
+            revision: None,
+            skip: None,
         }
     }
 

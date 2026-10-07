@@ -1673,16 +1673,14 @@ mod tests {
         let (events, dropped) = origin_feed.take_pending();
         assert_eq!(dropped, 0);
         assert_eq!(events.len(), 2);
-        assert!(events.contains(&AgentEvent::TaskFinished {
-            workspace_id: 7,
-            task_id: parent,
-            state: "failed",
-        }));
-        assert!(events.contains(&AgentEvent::TaskFinished {
-            workspace_id: 7,
-            task_id: child,
-            state: "skipped",
-        }));
+        let finished = |id: &str, want: &str| {
+            events.iter().any(|e| {
+                matches!(e, AgentEvent::TaskFinished { workspace_id: 7, task_id, state, revision: Some(_), .. }
+                    if task_id == id && *state == want)
+            })
+        };
+        assert!(finished(&parent, "failed"), "{events:?}");
+        assert!(finished(&child, "skipped"), "{events:?}");
         assert!(sweeping_feed.take_pending().0.is_empty());
         expire_overdue_hook_waits(&sweeping, 5000);
         assert!(origin_feed.take_pending().0.is_empty());

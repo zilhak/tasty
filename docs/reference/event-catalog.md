@@ -172,10 +172,11 @@ scope=global command 단축키는 조합키만, scope=surface 는 단일 키도 
 
 | 키 | 시점 | payload | 등급 |
 |----|------|---------|------|
-| `agent.task_finished` | task 가 종결 상태에 들어간 직후 | `workspace_id, task_id, state` | Experimental |
+| `agent.task_finished` | task 가 종결 상태에 들어간 직후 | `workspace_id, task_id, state`, 선택 `attempt_id, revision, skip` | Experimental |
 | `agent.barrier_closed` | barrier 가 요구 수를 채워 닫힌 직후 | `workspace_id, name, count_required` | Experimental |
 
 - `state` 는 `succeeded` · `failed` · `cancelled` · `skipped` 넷 중 하나다. **비종결 전이(`waiting`/`ready`/`running`)는 발행하지 않는다** — 종결에는 모든 진입 경로가 지나는 공통 처리 지점이 있고(`agent.task_await` 가 그것으로 깨어난다) 비종결에는 없다.
+- `attempt_id` 는 v2 task 의 실행 회차 id(`agent.task_get` 의 `attempt.id`)이고 회차가 없는 task 는 생략한다. `revision` 은 종결을 기록한 뒤 읽은 레코드 revision 으로 `agent.task_get`·`agent.task_await` 의 `revision` 과 같은 값이다. 레코드는 쓸 때마다 revision 이 커지므로, 다시 읽은 레코드의 `revision` 이 사건의 값보다 작지 않으면 이 사건 이후의 레코드다. 읽지 못했으면 생략한다. `skip` 은 건너뛴 이유가 기록된 v2 task 에만 실리며 `agent.task_get` 의 `skip` 과 같은 모양이다(`{"reason": "branch_not_selected"}` 또는 `{"reason": "upstream_unavailable", "source", "source_state"}`). 경로가 선택되지 않아 끝난 task 와 선행 실패로 건너뛴 task 를 이 필드로 구분한다.
 - **실패 사유·task 결과·명령 출력을 안 싣는다.** 그 문자열은 task 가 돌린 명령의 출력을 담을 수 있고 피드는 구독 권한만 있으면 받는다. 필요하면 `task_id` 로 `agent.task_get` 을 부른다.
 - **`agent.barrier_closed` 에 시간 초과는 안 온다.** barrier 의 `timed_out` 은 전이가 일어나는 순간이 없고 조회할 때 현재 시각으로 판단한다.
 - **lease 만료는 사건이 아니다.** 같은 이유다 — 만료는 읽을 때 확인하는 조건이고, 그것을 사건으로 내면 발생 시점이 "누가 언제 조회했나" 에 달린다.

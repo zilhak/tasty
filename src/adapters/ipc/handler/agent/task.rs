@@ -309,11 +309,11 @@ pub fn handle_task_get(
     };
     match core
         .tasks
-        .task_get(engine.task_scope, workspace_id, &task_id)
+        .task_get_with_revision(engine.task_scope, workspace_id, &task_id)
     {
         Err(e) => agent_err_to_response(id, e),
         Ok(None) => JsonRpcResponse::error(id, -32004, format!("task not found: {task_id}")),
-        Ok(Some(t)) => {
+        Ok(Some((t, revision))) => {
             let is_running = matches!(t.state, TaskState::Running);
             let phase = t
                 .postprocess_phase()
@@ -321,6 +321,9 @@ pub fn handle_task_get(
             let mut v = serde_json::to_value(t).unwrap_or(Value::Null);
             if let (Some(phase), Some(obj)) = (phase, v.as_object_mut()) {
                 obj.insert("phase".to_string(), Value::from(phase));
+            }
+            if let (Some(revision), Some(obj)) = (revision, v.as_object_mut()) {
+                obj.insert("revision".to_string(), Value::from(revision));
             }
             if is_running
                 && let Some(obj) = v.as_object_mut()
@@ -437,6 +440,15 @@ pub fn await_task_blocking(
             });
             if let Some(r) = snap.result {
                 resp["result"] = serde_json::to_value(r).unwrap_or(Value::Null);
+            }
+            if let Some(attempt_id) = snap.attempt_id {
+                resp["attempt_id"] = Value::from(attempt_id);
+            }
+            if let Some(revision) = snap.revision {
+                resp["revision"] = Value::from(revision);
+            }
+            if let Some(skip) = snap.skip {
+                resp["skip"] = serde_json::to_value(skip).unwrap_or(Value::Null);
             }
             JsonRpcResponse::success(rpc_id, resp)
         }

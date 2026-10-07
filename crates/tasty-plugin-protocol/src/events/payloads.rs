@@ -461,6 +461,29 @@ pub struct AgentTaskFinished {
     pub task_id: String,
     /// `succeeded` · `failed` · `cancelled` · `skipped` 넷 중 하나.
     pub state: String,
+    /// v2 task 의 실행 회차 id(`agent.task_get` 의 `attempt.id`). 회차가 없는 task 는 생략한다.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attempt_id: Option<String>,
+    /// 종결을 기록한 뒤 읽은 레코드 revision(`agent.task_get` 의 `revision`). 다시 읽은 레코드의
+    /// revision 이 이 값보다 작지 않으면 이 사건 이후의 레코드다. 읽지 못했으면 생략한다.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revision: Option<u64>,
+    /// 건너뛴 이유. 이유가 기록된 v2 task 만 싣는다.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skip: Option<AgentTaskSkip>,
+}
+
+/// `agent.task_finished` 의 건너뛴 이유. `agent.task_get` 의 `skip` 과 같은 모양이다.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+pub struct AgentTaskSkip {
+    /// `branch_not_selected`(경로가 선택되지 않음) 또는 `upstream_unavailable`(선행 결과를 쓸 수 없음).
+    pub reason: String,
+    /// `upstream_unavailable` 의 원본 task id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+    /// `upstream_unavailable` 의 원본 상태.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_state: Option<String>,
 }
 
 /// 요구한 신호 수를 채워 barrier가 닫혔을 때 보내는 이벤트.
@@ -554,12 +577,36 @@ mod tests {
             workspace_id: 3,
             task_id: "t-1716800000123-7".into(),
             state: "failed".into(),
+            attempt_id: Some("t-1716800000123-7#2".into()),
+            revision: Some(9),
+            skip: None,
         };
         let s = serde_json::to_string(&p).unwrap();
         assert!(s.contains("\"state\":\"failed\""), "{s}");
+        assert!(s.contains("\"attempt_id\":\"t-1716800000123-7#2\""), "{s}");
+        assert!(s.contains("\"revision\":9"), "{s}");
+        assert!(!s.contains("skip"), "{s}");
         assert!(!s.contains("error"), "실패 사유가 실렸다: {s}");
         assert!(!s.contains("result"), "결과가 실렸다: {s}");
         assert!(!s.contains("output"), "출력이 실렸다: {s}");
+    }
+
+    /// 이전 버전 호스트가 보낸 세 필드 페이로드도 읽힌다.
+    #[test]
+    fn a_finished_task_without_attempt_revision_or_skip_still_parses() {
+        let p: AgentTaskFinished = serde_json::from_value(serde_json::json!({
+            "workspace_id": 1, "task_id": "t", "state": "skipped"
+        }))
+        .unwrap();
+        assert_eq!(p.attempt_id, None);
+        assert_eq!(p.revision, None);
+        assert_eq!(p.skip, None);
+        let p: AgentTaskFinished = serde_json::from_value(serde_json::json!({
+            "workspace_id": 1, "task_id": "t", "state": "skipped",
+            "skip": {"reason": "upstream_unavailable", "source": "a", "source_state": "failed"}
+        }))
+        .unwrap();
+        assert_eq!(p.skip.and_then(|s| s.source).as_deref(), Some("a"));
     }
 
     #[test]

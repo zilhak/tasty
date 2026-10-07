@@ -107,6 +107,9 @@ fn session_drop_joins_observer_and_preserves_external_task_handles() {
         TerminalSnapshot {
             state: tasty_agent::TaskState::Succeeded,
             result: None,
+            attempt_id: None,
+            skip: None,
+            revision: None,
         },
     );
     assert_eq!(
@@ -115,7 +118,10 @@ fn session_drop_joins_observer_and_preserves_external_task_handles() {
             vec![AgentEvent::TaskFinished {
                 workspace_id: 1,
                 task_id: "held-task".into(),
-                state: "succeeded"
+                state: "succeeded",
+                attempt_id: None,
+                revision: None,
+                skip: None,
             }],
             0
         )

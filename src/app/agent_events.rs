@@ -11,6 +11,28 @@ pub(crate) fn take_from(q: &Arc<AgentEventQueue>, events: &mut Vec<AgentEvent>, 
     *dropped = dropped.saturating_add(d);
 }
 
+/// 저장 레코드의 skip 이유를 플러그인 프로토콜 모양으로 옮긴다.
+fn task_skip_payload(
+    skip: tasty_agent::SkipReason,
+) -> tasty_plugin_protocol::events::payloads::AgentTaskSkip {
+    use tasty_plugin_protocol::events::payloads::AgentTaskSkip;
+    match skip {
+        tasty_agent::SkipReason::BranchNotSelected => AgentTaskSkip {
+            reason: "branch_not_selected".to_string(),
+            source: None,
+            source_state: None,
+        },
+        tasty_agent::SkipReason::UpstreamUnavailable {
+            source,
+            source_state,
+        } => AgentTaskSkip {
+            reason: "upstream_unavailable".to_string(),
+            source: Some(source),
+            source_state: Some(source_state),
+        },
+    }
+}
+
 /// 매니저가 없어도 호출자는 먼저 큐를 비운다. 수신자가 없는 실행에서 이벤트가 계속 쌓이지 않게 한다.
 pub(crate) fn emit(mgr: Option<&mut PluginManager>, events: Vec<AgentEvent>, dropped: u64) {
     use tasty_plugin_protocol::EventScope;
@@ -34,11 +56,17 @@ pub(crate) fn emit(mgr: Option<&mut PluginManager>, events: Vec<AgentEvent>, dro
                 workspace_id,
                 task_id,
                 state,
+                attempt_id,
+                revision,
+                skip,
             } => {
                 let payload = AgentTaskFinished {
                     workspace_id,
                     task_id,
                     state: state.to_string(),
+                    attempt_id,
+                    revision,
+                    skip: skip.map(task_skip_payload),
                 };
                 mgr.emit_host_event("agent.task_finished", &payload, EventScope::System);
             }
@@ -69,6 +97,9 @@ mod tests {
             workspace_id: 1,
             task_id: "t-1".to_string(),
             state: "succeeded",
+            attempt_id: None,
+            revision: None,
+            skip: None,
         });
         q.push(AgentEvent::BarrierClosed {
             workspace_id: 1,

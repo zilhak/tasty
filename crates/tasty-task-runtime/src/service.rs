@@ -250,11 +250,12 @@ impl TaskAwaiter {
                 tasty_memory::HOST_OWNER,
                 self.agent_seq.as_ref(),
             );
-            match store.get(workspace_id, task_id) {
-                Ok(Some(t)) => Some(TerminalSnapshot {
-                    state: t.state,
-                    result: t.result,
-                }),
+            let found = store.get(workspace_id, task_id).and_then(|t| match t {
+                Some(t) => Ok(Some((t, store.revision(workspace_id, task_id)?))),
+                None => Ok(None),
+            });
+            match found {
+                Ok(Some((t, revision))) => Some(TerminalSnapshot::of(&t, revision)),
                 Ok(None) => None,
                 Err(error) => {
                     tracing::warn!(%error, workspace_id, %task_id, "task await lookup failed");
