@@ -1,6 +1,6 @@
 # ADR-0059: 구조 명령은 ID로 대상을 정하고 사용자 선택은 View가 소유한다
 
-- **Status**: Accepted — 구조 선택·카테고리 접힘·terminal viewport는 View가 소유하고 headless는 별도 명령 기본 문맥을 사용한다. 로컬 구조는 journal, View 선택 복원은 DB manifest/checkpoint가 원본이며 legacy 파일은 최초 이관에 사용한다(ADR-0064). 실제 복원·다중 창 실행 검증은 별도다. 2026-10-06 보강: release는 같은 홈의 다시 실행을 실행 중인 Tasty에 넘긴다(단일 실행). Wayland에서 이미 있는 창의 활성화는 미구현이다.
+- **Status**: Accepted — 구조 선택·카테고리 접힘·terminal viewport는 View가 소유하고 headless는 별도 명령 기본 문맥을 사용한다. 로컬 구조는 journal, View 선택 복원은 DB manifest/checkpoint가 원본이며 legacy 파일은 최초 이관에 사용한다(ADR-0064). 실제 복원·다중 창 실행 검증은 별도다. 2026-10-06 보강: release는 같은 홈의 다시 실행을 실행 중인 Tasty에 넘긴다(단일 실행). Wayland에서 이미 있는 창의 활성화는 미구현이다. 2026-10-08 보강: 화면 크기에 따라 정하는 구조 명령(split 의 탐색기 하한)은 View 가 넘긴 크기 사본으로 확정 시점에 한 번 정한다.
 - **Date**: 2026-09-30
 - **Tags**: workspace, focus, routing, identity, layout
 - **Group**: terminal
@@ -65,6 +65,13 @@ surface ID와 standalone PTY ID는 겹치지 않는 범위를 쓰며([headless P
   - Windows 등록 메시지는 같은 데스크톱의 어떤 프로세스든 보낼 수 있고, `AllowSetForegroundWindow`는 포그라운드 잠금 시간이 지나면 사용자가 실행하지 않은 프로세스에서도 성공한다. 같은 사용자의 프로세스는 원래 `ShowWindow`·`SetForegroundWindow`로 같은 일을 할 수 있다.
   - Wayland에는 트레이 숨김 상태가 없다(winit의 Wayland `set_visible`이 동작하지 않는다). 상류 winit에는 외부 xdg-activation 토큰으로 이미 있는 창을 활성화하는 API가 없어, Tasty가 쓰는 winit 포크에 `WindowExtWayland::activate_with_token`을 더했다. 두 번째 실행이 받은 토큰으로 기존 창에 `xdg_activation_v1.activate`를 보낸다. 앞으로 올릴지는 컴포지터가 토큰의 시각으로 정하며, 오래된 토큰이면 주의 표시만 할 수 있다. 토큰이 없거나 컴포지터가 `xdg_activation_v1`을 제공하지 않으면 다시 보이기만 하고 앞으로 가져오지 못해 무반응이 되므로, 그때는 기존 창을 두고 새 창을 연다. 토큰이 없으면 토큰 없는 새 창이고, `xdg_activation_v1`이 없으면 토큰을 실은 새 창이다. 새 창에 실은 토큰은 생성 때 한 번만 쓴다. X11처럼 등록 뒤 다시 요청하지 않는 것은 컴포지터가 한 번 쓴 토큰을 무효로 할 수 있어서다.
 
+### 화면 크기에 따라 정하는 구조 명령 (2026-10-08 보강)
+
+- 칸의 픽셀 크기도 View 가 소유한다(창 크기·사이드바·탭 바·배율). 구조 명령의 결과가 픽셀 크기에 달린 경우(현재는 split 이 탐색기 칸을 하한 아래로 만들지 않게 비율을 고치는 것)에는 엔진이 확정 시점에 View 가 넘긴 크기 사본을 읽고, 계산한 결과(비율)만 명령과 기록에 고정한다.
+- 크기 사본은 엔진별로 하나이며, 엔진을 보여 주는 창이 journal 을 돌릴 때마다 덮어쓴다. journal 과 completion view 에는 저장하지 않는다. replay·지연 완료는 고정된 비율을 그대로 쓰고 크기를 다시 읽지 않는다.
+- 창이 없는 엔진(헤드리스)에는 사본이 없고, 크기에 따른 보정·거절을 하지 않는다. 같은 요청이 창의 유무에 따라 다른 비율로 확정될 수 있다.
+- 규칙(대상 칸, 형제 칸의 최소, 거절 응답)은 [split 명령](../features/work-area/index.md#분할-비율과-탐색기-칸-하한)에 있다.
+
 ## Consequences
 
 replay와 지연 완료가 사용자 선택을 다시 실행하지 않는다. 에이전트 요청이 선택을 바꾸는 경로는 View 경계에서만 생길 수 있어 검사하기 쉽다.
@@ -102,13 +109,17 @@ OS의 실제 focus·쌓임 순서는 플랫폼이 결정하므로 새 창을 만
 - 실행 인자로 사용자와 에이전트를 나누는 안: 실행기도 같은 바이너리를 실행하고 에이전트도 인자 없이 실행할 수 있어 구분이 되지 않는다.
 - 증거가 있어도 숨긴 창을 두고 새 창을 여는 안: 트레이로 숨긴 사용자는 앱 아이콘으로 자기 창을 다시 찾지 못한다.
 - 두 번째 프로세스가 다른 프로세스의 창에 직접 `ShowWindow`를 부르는 안: winit이 들고 있는 보임 상태와 어긋나 이후 트레이 숨김이 깨진다.
+- split 직후 GUI 가 View 쪽에서 비율만 고치는 안(2026-10-08 보강): 분할은 이미 확정됐으므로 거절할 수 없고, 비율 수정이 별도 기록이 되어 replay 와 다른 창에 두 단계로 보인다.
+- 호출자가 IPC 요청에 칸 크기를 싣는 안: 에이전트는 화면 크기를 모르고, 사용자 메뉴 경로와 결과가 달라진다.
+- 크기 사본을 completion view 에 넣어 journal 에 함께 저장하는 안: 화면 크기는 구조 원본이 아니며, 저장하면 다른 창·다음 실행의 replay 가 과거 크기를 다시 읽을 수 있다.
 - 키보드 포커스만 유지하고 창을 앞에 띄우는 안: 새 창이 사용자의 내용을 가린다. tab 생성 뒤 호출자가 선택을 되돌리는 안은 누락하기 쉬워 선택 여부를 입력으로 전달한다.
 
 ## Reconsideration Triggers
 
 ### 코드와 설정에서 확인
 
-- 한 엔진을 여러 로컬 View가 함께 표시하게 되면 선택 소유 단위와 보정 규칙을 다시 정한다.
+- 한 엔진을 여러 로컬 View가 함께 표시하게 되면 선택 소유 단위와 보정 규칙을 다시 정한다. 크기 사본도 엔진별 하나라서 어느 View 의 크기로 판정할지 다시 정한다.
+- 크기에 따라 정하는 구조 명령이 split 밖으로 늘거나(이동·프리셋 적용 등), 헤드리스 stream 이 칸 크기를 보고하게 되면 크기 사본의 출처와 저장 여부를 다시 검토한다.
 - 카테고리별 상태가 늘어 변환 계층이 복잡해지거나 다중 카테고리 동시 표시가 필요해지면 선택 표현을 다시 검토한다.
 - 슬롯 파일 누적, 창 위치·크기 저장, 여러 프로세스의 홈 공유가 필요해지면 슬롯 정책을 검토한다.
 - 제3의 ID 종류가 생기거나 범위가 고갈되면 ID 할당과 wire 표현을 재검토한다.
@@ -137,4 +148,5 @@ OS의 실제 focus·쌓임 순서는 플랫폼이 결정하므로 새 창을 만
 - [워크스페이스 카테고리](../features/workspace-category/index.md)
 - [레이아웃 저장](../features/layout-persistence/index.md)
 - 단일 실행 구현: `src/boot/single_instance/`, `src/app/external_activation.rs`, `crates/tasty-platform/src/window_activation.rs`, `crates/tasty-platform/src/single_instance_windows.rs`.
+- 크기 사본과 split 하한: `src/app/journal/commands/split_floor.rs`, `src/app/window_lifecycle/pending.rs`.
 - 현재 구현: `src/state/navigation.rs`, `src/app/journal/commands/view_completion.rs`, `src/runtime/journal_product/view_record.rs`, `src/core/layout_persistence`, `src/adapters/ipc/request_scope.rs`.
