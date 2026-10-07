@@ -770,14 +770,15 @@ mod tests {
         }
     }
 
-    /// `rollup()` 은 카운터를 `> 0` / `== 0` 와 skipped·not_selected, failed·recovered 의
-    /// 대소로만 보므로, 8 개 카운터와 not_selected(skipped 의 부분)·recovered(failed 의 부분)를
-    /// 각각 0/1 로 둔 1024 조합이 도달 가능한 분기를 **전부** 훑는다.
+    /// `rollup()` 은 카운터를 `> 0` / `== 0` 와 skipped·not_selected, failed·recovered,
+    /// waiting·blocked 의 대소로만 보므로, 8 개 카운터와 not_selected(skipped 의 부분)·
+    /// recovered(failed 의 부분)·blocked(waiting 의 부분)를 각각 0/1 로 둔 2048 조합이 도달 가능한
+    /// 분기를 **전부** 훑는다.
     fn all_rollup_outputs() -> std::collections::BTreeSet<&'static str> {
         let mut out = std::collections::BTreeSet::new();
-        for bits in 0u32..1024 {
+        for bits in 0u32..2048 {
             let c = tasty_agent::DagStateCounts {
-                waiting: usize::from(bits & 1 != 0),
+                waiting: usize::from(bits & 1 != 0) + usize::from(bits & 1024 != 0),
                 ready: usize::from(bits & 2 != 0),
                 running: usize::from(bits & 4 != 0),
                 succeeded: usize::from(bits & 8 != 0),
@@ -787,16 +788,35 @@ mod tests {
                 unknown: usize::from(bits & 128 != 0),
                 not_selected: usize::from(bits & 256 != 0),
                 recovered: usize::from(bits & 512 != 0),
+                blocked: usize::from(bits & 1024 != 0),
             };
             out.insert(c.rollup());
         }
         out
     }
 
+    /// 화면 표시(글리프·색·라벨)가 아직 정해지지 않은 rollup 값. 정해지기 전에는 다른 상태의
+    /// 표시를 빌려 쓰지 않고 `Unknown` 으로 받는다. 표시가 정해지면 `DagStatus` 와 필터에 넣고
+    /// 여기서 뺀다.
+    const ROLLUP_WITHOUT_DISPLAY: &[&str] = &["partially_failed"];
+
+    /// 표시가 없는 rollup 값은 다른 상태로 보이지 않는다.
+    #[test]
+    fn 표시가_없는_rollup_값은_다른_상태를_빌리지_않는다() {
+        let produced = all_rollup_outputs();
+        for name in ROLLUP_WITHOUT_DISPLAY {
+            assert!(produced.contains(name), "'{name}' 을 rollup 이 내지 않는다");
+            assert_eq!(DagStatus::from_name(name), DagStatus::Unknown);
+        }
+    }
+
     /// rollup이 반환하는 상태는 모두 필터에 있어야 한다.
     #[test]
     fn rollup_이_내는_값은_전부_필터_목록에_있다() {
         for name in all_rollup_outputs() {
+            if ROLLUP_WITHOUT_DISPLAY.contains(&name) {
+                continue;
+            }
             let s = DagStatus::from_name(name);
             assert!(
                 DagStatus::ROLLUP_ALL.contains(&s),

@@ -639,6 +639,8 @@ run·custom task 는 본 작업 뒤 CLI 하나를 실행해 그 stdout 을 최�
 3. 실행 보고가 재시도 대상 실패이고 횟수가 남았으면 `phase` 는 `pending`(다음 `run`, `not_before_ms`)이 되고 task 는 Running 이다. 아니면 그 보고로 결과를 확정하고 종결한다. 종결·`on_failure`·하류 반영은 이때 한 번 일어난다.
 4. 세마포어·lease 는 본 작업부터 마지막 종결까지 쥔다. 다음 task 는 후처리가 끝난 뒤에야 Ready 가 된다.
 
+재시도 예산을 다 쓴 후처리 실패는 task 의 실패로 끝난다. 후처리만 다시 실행하는 수동 재시도는 없다. 그 task 의 하류는 일반 실패와 같이 실패 정책을 따른다(`depends_on` 하류는 `upstream_unavailable` 로 건너뛰고, `on_failure` fallback 이 있으면 실행한다). 다른 갈래는 계속 진행하고, DAG 요약은 진행할 작업이 남아 있는 동안 진행 상태다. 끝까지 진행한 뒤 성공한 작업이 있으면 `partially_failed` 다. 다시 실행하려면 `retry` 로 본 작업부터 새 회차를 연다.
+
 `agent.task_get` 은 후처리 단계의 Running task 에 `phase`(`postprocessing`, 재시도 대기 중이면 `retry_wait`)를 싣는다. task 가 끝나면 `attempt.postprocess.phase` 는 `finished` 다. 보고로 확정했으면 그 실행 번호, 취소 등으로 먼저 끝났으면 마지막으로 시작한 실행 번호(없으면 0)를 `run` 에 둔다.
 
 CLI `tasty agent task-get` 은 같은 정보를 줄로 보인다. 진행 중에는 `state` 다음 줄에 단계와 실행 번호를, 끝난 뒤에는 마지막 실행의 결과와 재시도로 넘어간 실행의 원인을 보인다.
@@ -818,7 +820,7 @@ v2 task 의 readiness:
 
 선택되지 않을 수 있는 task(전이 대상, 또는 들어오는 경로가 모두 그런 task 에서만 오는 task)의 출력을 필수 `from_task` 로 읽는 task 는, 그 원본 말고 다른 경로로도 실행될 수 있으면 제출할 때 거절한다. 대안 경로의 값은 `one_of` 로, 없어도 되는 값은 optional·`default` 로 적는다. 같은 갈래 안의 사슬처럼 들어오는 경로가 그 원본뿐이면 받는다.
 
-DAG 요약(`agent.dag_list`·`agent.dag_get`)의 `state_counts.not_selected` 는 `skipped` 중 선택되지 않은 수다. `recovered` 는 `failed` 중 같은 그룹의 fallback 이 대신 성공한 수다(fallback 의 fallback 을 따라간다). 성공·선택되지 않음·fallback 이 대신한 실패만 있으면 `rollup_state` 는 `succeeded` 다. v1 task 의 fallback 에도 같다. `agent.task_graph` 는 전이를 `kind: "transition"` 간선으로 내고 `selection`(`pending`·`selected`·`not_selected`·`unavailable`)을 싣는다. 노드는 `skip` 을 싣고, DOT 형식은 전이 간선에 선택 상태를 라벨로 붙이고(선택된 간선은 굵게, 선택되지 않았거나 쓸 수 없는 간선은 반투명), 선택되지 않은 노드를 `not selected` 라벨과 파선 테두리로 그린다. DAG 화면은 전이 간선을 긴 파선으로 그리고 선택 상태를 굵기와 불투명도로, 선택되지 않은 노드를 `NOT SELECTED` 라벨로 보인다.
+DAG 요약(`agent.dag_list`·`agent.dag_get`)의 `state_counts.not_selected` 는 `skipped` 중 선택되지 않은 수다. `recovered` 는 `failed` 중 같은 그룹의 fallback 이 대신 성공한 수다(fallback 의 fallback 을 따라간다). 성공·선택되지 않음·fallback 이 대신한 실패만 있으면 `rollup_state` 는 `succeeded` 다. v1 task 의 fallback 에도 같다. 진행할 수 있는 작업(running·ready, `blocked` 가 아닌 waiting)이 남아 있으면 실패가 섞여 있어도 `rollup_state` 는 진행 상태이고, 더 진행할 수 없을 때 복구되지 않은 실패와 성공한 작업이 함께 있으면 `partially_failed`, 성공이 없으면 `failed` 다. 판단 순서는 [agent-collaboration](../features/agent-collaboration/index.md)에 있다. `agent.task_graph` 는 전이를 `kind: "transition"` 간선으로 내고 `selection`(`pending`·`selected`·`not_selected`·`unavailable`)을 싣는다. 노드는 `skip` 을 싣고, DOT 형식은 전이 간선에 선택 상태를 라벨로 붙이고(선택된 간선은 굵게, 선택되지 않았거나 쓸 수 없는 간선은 반투명), 선택되지 않은 노드를 `not selected` 라벨과 파선 테두리로 그린다. DAG 화면은 전이 간선을 긴 파선으로 그리고 선택 상태를 굵기와 불투명도로, 선택되지 않은 노드를 `NOT SELECTED` 라벨로 보인다.
 
 ### agent task
 

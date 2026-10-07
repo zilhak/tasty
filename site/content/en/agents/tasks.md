@@ -1,4 +1,4 @@
-<!-- source-hash: 6fb6959c4bbc -->
+<!-- source-hash: 21ad3376b016 -->
 <a id="task-dag"></a>
 
 # Task workflows (DAG)
@@ -110,7 +110,7 @@ To run a task's result through another command (a judge or summary tool, say) an
 - `stdin` sets the fields of the JSON written to standard input. `from` is `input` (the task's input), `raw` (the main work's result) or `artifacts`, and `pointer` picks a value inside it.
 - By default standard output must be exactly one JSON value. With `"stdout": {"format": "text"}` the text is taken as is. Progress logs sent to standard error stay out of the result.
 - `timeout_ms` is required. When it runs out or the task is cancelled, the command and the processes it started are stopped.
-- With `retry`, a failure reruns only the postprocess that many times; the main work does not run again.
+- With `retry`, a failure reruns only the postprocess that many times; the main work does not run again. Once the retries are used up, the task fails and the tasks after it follow their failure policies as for any failure. There is no way to rerun only the postprocess. To try again, rerun the task from the main work with `task-retry`.
 - Until the postprocess finishes, the task shows as running and the next tasks wait. `task-get` shows `phase: postprocessing (run 1)` on the line after `state: running` (`phase: retry_wait (run 2)` while it waits to retry).
 - If the postprocess fails, the `state` line in `task-get` gives the reason. The lines under it give the last run's cause and exit code, such as `postprocess: run 2 failed (nonzero_exit), exit_code 3`, and the causes of the runs that were retried (`postprocess retried after: ...`).
 - If Tasty quits or restarts while a postprocess runs, that postprocess is not run again and the task fails. To try again, rerun the task with `task-retry`.
@@ -139,6 +139,7 @@ Give a task `transitions` and it picks which tasks run next from its result. In 
 - Tasks that were not chosen, and tasks reached only through them, end as "not selected", not as failures. A task where branches meet waits only for the branches that ran. If a branch that ran fails, that failure still passes on.
 - Taking a required input from a branch that may not run is rejected when you send the graph. If each branch produces the value in a different task, take it with `one_of`. If the value may be missing, make the input field optional or give it a default.
 - A task's `route` shows the tasks it chose, and a task that was not chosen shows why in `skip`. When every task succeeded or was not selected, the DAG shows as succeeded. A failed task whose fallback succeeded in its place does not make the DAG fail.
+- When one branch fails, the DAG still shows as running while another branch can go on. When everything has finished, a DAG with both failures and successes is `partially_failed`, and one with no successful task is `failed`. This appears as `rollup_state` in `agent dag-list`. The Task DAGs list does not show this state on its own yet and shows `?` (unknown) instead.
 
 ### Asking an agent and taking its answer as the result
 

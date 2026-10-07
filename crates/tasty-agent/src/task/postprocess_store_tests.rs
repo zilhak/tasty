@@ -483,3 +483,86 @@ fn cancelling_closes_the_postprocess_phase() {
     let (task, _) = store.cancel(1, &judge(), 40).expect("cancel");
     assert_eq!(phase(&task), PostprocessPhase::Finished { run: 1 });
 }
+
+/// 두 갈래 그래프에서 한 갈래의 후처리가 재시도 예산을 다 써 실패해도, 다른 갈래가 진행할
+/// 수 있는 동안 DAG 는 진행 상태다. 다른 갈래가 끝까지 성공하면 부분 오류로 끝난다.
+#[test]
+fn a_branch_whose_postprocess_runs_out_leaves_the_dag_partially_failed() {
+    let (_td, mut mem, seq) = fresh();
+    let mut store = TaskStore::new(&mut mem, "_host", &seq);
+    let spec: TaskGraphSpec = serde_json::from_value(json!({
+    "contract_version": 2,
+    "tasks": [
+        {"id": "judge", "command": {"kind": "custom", "ipc_method": "system.ping", "params": {}},
+         "output_schema": {"type": "boolean"},
+         "postprocess": {"command": ["judge"], "timeout_ms": 1000, "retry": {"max_retries": 1, "delay_ms": 50}}},
+        {"id": "after", "command": {"kind": "custom", "ipc_method": "system.ping", "params": {}},
+         "depends_on": ["judge"]},
+        {"id": "other", "command": {"kind": "custom", "ipc_method": "system.ping", "params": {}}},
+        {"id": "other_after", "command": {"kind": "custom", "ipc_method": "system.ping", "params": {}},
+         "depends_on": ["other"]}
+    ]}))
+    .expect("spec");
+    store.submit_graph(1, spec, 0).expect("submit");
+    let rollup = |store: &TaskStore| group_tasks_into_dags(&store.list(1).unwrap())[0].rollup_state;
+    let finish_ok = |store: &mut TaskStore, id: &str, now: u64| {
+        let id = id.to_string();
+        store
+            .set_state(1, &id, TaskState::Running, now)
+            .expect("running");
+        let attempt = get(store, &id).attempt.expect("attempt").id;
+        store
+            .complete(
+                1,
+                &id,
+                Completion::succeeded(Some(attempt), main_ok()),
+                now + 1,
+            )
+            .expect("completion");
+    };
+
+    let attempt = main_done(&mut store, 10);
+    let mut now = 100;
+    for run in 1..=2 {
+        store
+            .begin_postprocess_run(1, &judge(), &attempt, run, now)
+            .expect("begin");
+        report(
+            &mut store,
+            &attempt,
+            failed(run, PostprocessCause::NonzeroExit),
+            now + 1,
+        )
+        .expect("report");
+        now += 100;
+    }
+    assert!(matches!(
+        get(&store, "judge").state,
+        TaskState::Failed { .. }
+    ));
+    assert_eq!(get(&store, "after").state, TaskState::Skipped);
+    assert_eq!(get(&store, "other").state, TaskState::Ready);
+    assert_eq!(rollup(&store), "ready");
+
+    store
+        .set_state(1, &"other".to_string(), TaskState::Running, now)
+        .expect("running");
+    assert_eq!(rollup(&store), "running");
+    let other_attempt = get(&store, "other").attempt.expect("attempt").id;
+    store
+        .complete(
+            1,
+            &"other".to_string(),
+            Completion::succeeded(Some(other_attempt), main_ok()),
+            now + 1,
+        )
+        .expect("completion");
+    assert_eq!(get(&store, "other_after").state, TaskState::Ready);
+    assert_eq!(rollup(&store), "ready");
+
+    finish_ok(&mut store, "other_after", now + 10);
+    assert_eq!(get(&store, "other_after").state, TaskState::Succeeded);
+    let d = &group_tasks_into_dags(&store.list(1).unwrap())[0];
+    assert_eq!((d.state_counts.failed, d.state_counts.succeeded), (1, 2));
+    assert_eq!(d.rollup_state, "partially_failed");
+}

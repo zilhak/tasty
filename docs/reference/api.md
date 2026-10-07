@@ -102,7 +102,7 @@ regular(`put/get/delete/list/exists/count/scopes/stats/query/export/import`) · 
 
 `semaphore_set_permits`는 세마포어를 삭제하지 않고 한도를 바꾼다. 한도를 줄여도 기존 사용 권한을 강제로 회수하지 않고 새 acquire를 거절한다. `semaphore_acquire`의 `ttl_ms`는 선택 사항이다. 지정한 경우에만 사용 권한이 만료되어 회수되며, 기본값은 만료 없음이다([ADR-0042](../adr/0042-agent-coordination-and-task-views.md)).
 
-DAG는 별도로 저장하지 않고 `metadata.dag`의 명시적 지정 또는 작업 그래프의 연결 관계에서 도출한다. `dag_list`에서 `workspace_id`를 생략하면 현재 살아 있는 모든 workspace를 조회하고 `scope: "live_workspaces"`를 반환한다. `dag_get`은 해당 DAG의 작업만 골라 `task_graph`와 같은 `nodes`/`edges` 또는 dot 형식으로 반환한다. 전이는 `kind: "transition"` 간선이며 `selection`(`pending`·`selected`·`not_selected`·`unavailable`)을 싣는다. DAG 요약의 `state_counts.not_selected` 는 경로가 선택되지 않아 끝난 작업 수이고, `recovered` 는 fallback 이 대신 성공한 실패 수다. 성공·선택되지 않음·fallback 이 대신한 실패만 있으면 `rollup_state` 는 `succeeded` 다. 자세한 흐름은 [agent-collaboration](../features/agent-collaboration/index.md)을 따른다.
+DAG는 별도로 저장하지 않고 `metadata.dag`의 명시적 지정 또는 작업 그래프의 연결 관계에서 도출한다. `dag_list`에서 `workspace_id`를 생략하면 현재 살아 있는 모든 workspace를 조회하고 `scope: "live_workspaces"`를 반환한다. `dag_get`은 해당 DAG의 작업만 골라 `task_graph`와 같은 `nodes`/`edges` 또는 dot 형식으로 반환한다. 전이는 `kind: "transition"` 간선이며 `selection`(`pending`·`selected`·`not_selected`·`unavailable`)을 싣는다. DAG 요약의 `state_counts.not_selected` 는 경로가 선택되지 않아 끝난 작업 수이고, `recovered` 는 fallback 이 대신 성공한 실패 수다. 성공·선택되지 않음·fallback 이 대신한 실패만 있으면 `rollup_state` 는 `succeeded` 다. `blocked` 는 선행 결과를 쓸 수 없어 더 실행되지 않는 대기 수다. 진행할 수 있는 작업이 남아 있으면 실패가 섞여 있어도 `rollup_state` 는 `running`·`ready`·`waiting` 중 하나이고, 더 진행할 수 없을 때 복구되지 않은 실패가 있으면 성공한 작업이 있을 때 `partially_failed`, 없을 때 `failed` 다. 자세한 흐름은 [agent-collaboration](../features/agent-collaboration/index.md)을 따른다.
 
 ### 사건 피드 (`events.*`)
 

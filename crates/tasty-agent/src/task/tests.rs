@@ -2079,6 +2079,57 @@ fn with_state(mut t: Task, state: TaskState) -> Task {
     t
 }
 
+/// 자기 실패에 쓸 fallback 을 둔 v1 task 는 선행이 실패하면 건너뛰지 않고 대기에 남는다.
+/// 이 대기는 더 진행되지 않으므로 rollup 은 진행 상태로 두지 않는다.
+#[test]
+fn a_waiting_task_its_failed_upstream_blocks_does_not_keep_the_dag_running() {
+    let mut stuck = dag_task("use", &["main"], 1002);
+    stuck.on_failure = OnFailure::Fallback {
+        task: Some("use_fb".into()),
+        inline: None,
+    };
+    let in_g = |mut ts: Vec<Task>| {
+        for t in &mut ts {
+            t.metadata = serde_json::json!({"dag": "g"});
+        }
+        ts
+    };
+    let tasks = in_g(vec![
+        failed_with("main", None, 1000),
+        with_state(dag_task("other", &[], 1001), TaskState::Succeeded),
+        stuck.clone(),
+    ]);
+    let d = &group_tasks_into_dags(&tasks)[0];
+    assert_eq!((d.state_counts.waiting, d.state_counts.blocked), (1, 1));
+    assert_eq!(d.rollup_state, "partially_failed");
+
+    let d = &group_tasks_into_dags(&[failed_with("main", None, 1000), stuck.clone()])[0];
+    assert_eq!(d.rollup_state, "failed");
+
+    // 선행이 아직 끝나지 않은 대기는 막힌 것이 아니다.
+    let mut pending = in_g(vec![
+        failed_with("x", None, 999),
+        with_state(dag_task("main", &[], 1000), TaskState::Running),
+        stuck.clone(),
+    ]);
+    let d = &group_tasks_into_dags(&pending)[0];
+    assert_eq!(d.state_counts.blocked, 0);
+    assert_eq!(d.rollup_state, "running");
+    pending[1].state = TaskState::Succeeded;
+    let d = &group_tasks_into_dags(&pending)[0];
+    assert_eq!(d.state_counts.blocked, 0);
+    assert_eq!(d.rollup_state, "waiting");
+
+    // 실패 없이 막힌 대기(선행 취소)는 이전처럼 대기로 보인다.
+    let tasks = vec![
+        with_state(dag_task("main", &[], 1000), TaskState::Cancelled),
+        stuck,
+    ];
+    let d = &group_tasks_into_dags(&tasks)[0];
+    assert_eq!(d.state_counts.blocked, 1);
+    assert_eq!(d.rollup_state, "waiting");
+}
+
 /// fallback 이 대신 성공한 실패는 DAG 를 실패로 만들지 않는다. fallback 도 실패하면 그 fallback 의
 /// fallback 을 따라가고, 끝내 성공하지 못하면 실패다.
 #[test]
@@ -2227,7 +2278,7 @@ fn reduce_fallback_and_fallback_of_edges_join_one_dag() {
 }
 
 #[test]
-fn rollup_state_precedence_running_over_failed_over_terminal() {
+fn rollup_state_precedence_progress_over_failure_over_terminal() {
     let states = |ss: &[TaskState]| -> &'static str {
         let tasks: Vec<Task> = ss
             .iter()
@@ -2251,7 +2302,17 @@ fn rollup_state_precedence_running_over_failed_over_terminal() {
         states(&[TaskState::Running, failed(), TaskState::Ready]),
         "running"
     );
-    assert_eq!(states(&[failed(), TaskState::Ready]), "failed");
+    // 실패가 있어도 진행할 수 있는 task 가 있으면 진행 상태다.
+    assert_eq!(states(&[failed(), TaskState::Ready]), "ready");
+    assert_eq!(states(&[failed(), TaskState::Waiting]), "waiting");
+    assert_eq!(states(&[failed(), TaskState::Unknown]), "waiting");
+    // 더 진행할 수 없으면 성공이 섞였는지로 부분 오류와 실패를 가른다.
+    assert_eq!(
+        states(&[failed(), TaskState::Succeeded, TaskState::Skipped]),
+        "partially_failed"
+    );
+    assert_eq!(states(&[failed(), failed(), TaskState::Skipped]), "failed");
+    assert_eq!(states(&[failed(), TaskState::Cancelled]), "failed");
     assert_eq!(
         states(&[TaskState::Succeeded, TaskState::Succeeded]),
         "succeeded"
