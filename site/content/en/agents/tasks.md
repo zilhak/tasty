@@ -1,4 +1,4 @@
-<!-- source-hash: 2bdaf53af855 -->
+<!-- source-hash: ed8917b88d0d -->
 <a id="task-dag"></a>
 
 # Task workflows (DAG)
@@ -242,7 +242,7 @@ You can run several unrelated graphs in one Workspace. The list groups a chunk c
 | **Succeeded** · **Failed** | Finished |
 | **Cancelled** · **Skipped** | A person cancelled it, or something before it failed and it was skipped |
 | **Not selected** | Another branch was chosen, so it did not run. This is not a failure |
-| **Unknown** | The result is not known. The command ended while Tasty was restarting, so its exit code could not be collected. Later tasks wait until you run it again (`task-retry`) or cancel it. Tasks holding a semaphore or lease behave the same way: if the command is still running, it keeps the resource until it ends and then gives it back |
+| **Unknown** | The result is not known. The command ended while Tasty was restarting, or Tasty kept watching it after the restart and it ended later; either way its exit code could not be collected (a restarted Tasty cannot receive that command's exit code). Later tasks wait until you run it again (`task-retry`) or cancel it. Tasks holding a semaphore or lease behave the same way: if the command is still running, it keeps the resource until it ends and then gives it back |
 
 To see it from a terminal:
 
