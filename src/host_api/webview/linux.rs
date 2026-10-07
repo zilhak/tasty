@@ -419,7 +419,7 @@ impl PlatformWebView {
             let nav = nav_state.clone();
             let loads = loads.clone();
             let gate = script_gate.clone();
-            // load-changed는 main frame 로드에서만 온다(ADR-0053 측정). 화면 문서는 commit에서 기록한다.
+            // load-changed는 main frame 로드에서만 온다(측정은 docs/plugins/html/index.md의 OS별 적용 절). 화면 문서는 commit에서 기록한다.
             webview.connect_load_changed(move |wv, event| match event {
                 LoadEvent::Started => {
                     tracing::debug!("WebView surface {surface_id}: load started");
