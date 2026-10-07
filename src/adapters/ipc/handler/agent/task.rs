@@ -502,28 +502,35 @@ fn render_graph_dot(tasks: &[Task]) -> String {
         ));
     }
     for edge in collect_graph_edges(tasks) {
-        if let Some(selection) = edge.selection {
-            out.push_str(&format!(
-                "  \"{}\" -> \"{}\" [label=\"{}\"];\n",
-                edge.from, edge.to, selection
-            ));
-            continue;
-        }
-        let (style, color) = match edge.kind {
-            "fallback" => ("dashed", "orangered"),
-            "reduce" => ("dotted", "blue"),
-            _ => {
-                out.push_str(&format!("  \"{}\" -> \"{}\";\n", edge.from, edge.to));
-                continue;
-            }
-        };
         out.push_str(&format!(
-            "  \"{}\" -> \"{}\" [style={}, color={}, label=\"{}\"];\n",
-            edge.from, edge.to, style, color, edge.kind
+            "  \"{}\" -> \"{}\"{};\n",
+            edge.from,
+            edge.to,
+            dot_edge_attrs(edge.kind, edge.selection)
         ));
     }
     out.push_str("}\n");
     out
+}
+
+/// DOT 간선 속성. 관계는 선 모양·색과 라벨로 구분한다. Graphviz 에는 임의 파선 배열이 없어
+/// 파선 관계(fallback·binding·transition)는 색과 라벨로 가른다. 전이는 선택 상태를 라벨로 싣고,
+/// 선택된 간선은 굵게, 선택되지 않았거나 쓸 수 없는 간선은 반투명으로 그린다.
+fn dot_edge_attrs(kind: &str, selection: Option<&str>) -> String {
+    match (kind, selection) {
+        ("fallback", _) => " [style=dashed, color=orangered, label=\"fallback\"]".to_string(),
+        ("reduce", _) => " [style=dotted, color=blue, label=\"reduce\"]".to_string(),
+        ("binding", _) => " [style=dashed, color=darkcyan, label=\"binding\"]".to_string(),
+        ("transition", Some(sel)) => {
+            let attrs = match sel {
+                "selected" => "color=slateblue, penwidth=2",
+                "not_selected" | "unavailable" => "color=\"#6a5acd66\", fontcolor=gray",
+                _ => "color=slateblue",
+            };
+            format!(" [style=dashed, {attrs}, label=\"{sel}\"]")
+        }
+        _ => String::new(),
+    }
 }
 
 fn render_graph_nodes(tasks: &[Task]) -> Vec<Value> {
@@ -1427,9 +1434,55 @@ mod graph_edge_tests {
         assert_eq!(nodes[1]["skip"], Value::Null);
         let dot = render_graph_dot(&decided);
         assert!(
-            dot.contains("\"review\" -> \"fix\" [label=\"not_selected\"];"),
+            dot.contains(
+                "\"review\" -> \"fix\" [style=dashed, color=\"#6a5acd66\", fontcolor=gray, label=\"not_selected\"];"
+            ),
             "{dot}"
         );
+        assert!(
+            dot.contains(
+                "\"review\" -> \"ship\" [style=dashed, color=slateblue, penwidth=2, label=\"selected\"];"
+            ),
+            "{dot}"
+        );
+    }
+
+    /// 같은 원본을 depends_on 과 binding 으로 함께 가리키면 binding 한 줄만 나온다. one_of 는
+    /// 원본마다 한 줄이다.
+    #[test]
+    fn binding_replaces_depends_on_on_the_same_pair() {
+        let a = task("a", "a", TaskState::Succeeded);
+        let b = task("b", "b", TaskState::Succeeded);
+        let c = task("c", "c", TaskState::Succeeded);
+        let mut join = task("join", "join", TaskState::Waiting);
+        join.depends_on = vec!["a".to_string(), "c".to_string()];
+        join.contract = Some(
+            serde_json::from_value(json!({"contract_version": 2,
+                "input_schema": {"type": "object", "fields": {
+                    "x": {"type": "json"}, "y": {"type": "json"}}},
+                "bindings": {
+                    "x": {"from_task": "a"},
+                    "y": {"one_of": [{"from_task": "a"}, {"from_task": "b"}]}}}))
+            .expect("contract"),
+        );
+        let tasks = [a, b, c, join];
+        let mut edges = edges_debug(&collect_graph_edges(&tasks));
+        edges.sort();
+        let want = |from: &str, kind: &'static str| (from.to_string(), "join".to_string(), kind);
+        assert_eq!(
+            edges,
+            vec![
+                want("a", "binding"),
+                want("b", "binding"),
+                want("c", "depends_on"),
+            ]
+        );
+        let dot = render_graph_dot(&tasks);
+        assert!(
+            dot.contains("\"a\" -> \"join\" [style=dashed, color=darkcyan, label=\"binding\"];"),
+            "{dot}"
+        );
+        assert!(dot.contains("\"c\" -> \"join\";"), "{dot}");
     }
 
     fn edges_debug(edges: &[GraphEdge<'_>]) -> Vec<(String, String, &'static str)> {

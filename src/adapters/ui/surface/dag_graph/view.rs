@@ -772,6 +772,7 @@ mod tests {
                     error_tail: None,
                     output_tail: None,
                     incoming: Vec::new(),
+                    skip: None,
                 })
                 .collect(),
             edges: (1..nodes.len())
@@ -779,6 +780,7 @@ mod tests {
                     from: i - 1,
                     to: i,
                     relation: DagRelation::DependsOn,
+                    selection: None,
                 })
                 .collect(),
             cycle: None,

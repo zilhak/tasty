@@ -33,9 +33,19 @@ tasty split --level surface --target-surface <SID> --type dag_graph
 - **노드 상태**는 색·글리프·텍스트로 함께 표시한다. 축소하면 글리프와 텍스트가
   숨겨지므로 테두리와 배경에도 상태색을 쓴다. `waiting`·`cancelled`·`skipped`는
   중립 테두리를 유지해 실행 중인 노드와 구분한다.
+- **건너뛴 이유**: 경로가 선택되지 않아 실행하지 않은 task(`skip.reason: branch_not_selected`)는
+  skipped 카드 그대로 라벨만 `NOT SELECTED` 로 읽고, 호버 툴팁이 "다른 경로가 선택되었다"고
+  설명한다. 선행 결과를 쓸 수 없어 건너뛴 task(`upstream_unavailable`)는 `SKIPPED` 라벨에
+  원본 task 와 그 상태를 툴팁으로 보인다. 정상적인 미선택이라 새 상태색을 쓰지 않는다.
 - **카드 좌상단 아이콘**은 상태와 별개로 task 종류(`run` / `custom` / `reduce` /
-  `wait_barrier`)를 나타낸다.
-- **엣지**는 `depends_on` / `fallback` / `reduce`를 색과 파선으로 구분한다.
+  `wait_barrier`)를 나타낸다. `agent` task 는 아직 전용 아이콘이 없어 `run` 아이콘을 쓰고,
+  상세의 종류 태그만 `Agent` 로 읽는다.
+- **엣지**는 관계 5종을 색과 파선으로 함께 구분한다: `depends_on` 실선, `fallback` 6·3 파선,
+  `reduce` 2·3 점선, `binding`(v2 입력 연결, 상세 라벨 "binds input") 8·2·2·2 일점쇄선,
+  `transition`(v2 전이) 10·4 긴 파선. 같은 원본에서 `depends_on` 과 `binding` 이 함께 오면
+  binding 한 줄만 그린다(binding 이 순서를 이미 뜻한다). `one_of` binding 은 원본마다 한 줄이다.
+  전이 엣지는 선택 상태에 따라 굵기와 불투명도만 바뀐다: `pending` 1px, `selected` 2px,
+  `not_selected`·`unavailable` 은 죽은 경로처럼 흐리게 둔다(숨기지 않는다).
   선택 노드에 연결된 엣지는 강조색으로 표시한다.
 - **러너 배지**는 `idle` / `active` / `stopped` / `crashed`를 구분한다.
   `stopped`는 할 일이 남았는데 러너가 없는 상태다. `stopped`·`crashed`는 경고색을 쓰고,
@@ -134,7 +144,7 @@ tasty split --level surface --target-surface <SID> --type dag_graph
 
 `cargo run -p tasty-gallery` → **Layouts** 페이지의 `Task DAG · canvas & nodes` /
 `Task DAG · chrome, detail & surface` 두 섹션. 캔버스 · 노드 8 상태 · 종류 4 · LOD 3 티어 ·
-엣지 3 관계 · 줌 클러스터 + 미니맵 · 러너 배지 5 상태 · 노드 상세 · 빈 상태와 사이클 배너 ·
+엣지 5 관계 · 전이 선택 4 상태와 미선택 노드 · 줌 클러스터 + 미니맵 · 러너 배지 5 상태 · 노드 상세 · 빈 상태와 사이클 배너 ·
 풀탭 서피스(넓은/320px) 를 전시한다.
 
 갤러리는 main 바이너리를 의존할 수 없어 이 화면의 specimen 은 **별도 구현**이다(좌표 계산만은

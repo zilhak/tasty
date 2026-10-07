@@ -173,7 +173,7 @@ fn header(ui: &mut egui::Ui, theme: &Theme, node: &DagNodeData) -> bool {
                 .color(bar.to_egui()),
         );
         ui.label(
-            egui::RichText::new(node.status.label())
+            egui::RichText::new(node.status_label())
                 .size(theme.font_size_caption.value())
                 .color(label_fg.to_egui()),
         );

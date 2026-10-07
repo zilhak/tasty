@@ -117,12 +117,16 @@ impl DagStatus {
     }
 }
 
-/// 엣지 관계 3종. dash 패턴과 색 **둘 다**로 구분한다.
+/// 엣지 관계 5종. dash 패턴과 색 **둘 다**로 구분한다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DagRelation {
     DependsOn,
     Fallback,
     Reduce,
+    /// v2 입력 binding — 값이 원본에서 받는 task 로 넘어간다.
+    Binding,
+    /// v2 전이 — 원본의 성공 출력으로 고른 경로.
+    Transition,
 }
 
 impl DagRelation {
@@ -130,6 +134,8 @@ impl DagRelation {
         match kind {
             "fallback" => DagRelation::Fallback,
             "reduce" => DagRelation::Reduce,
+            "binding" => DagRelation::Binding,
+            "transition" => DagRelation::Transition,
             _ => DagRelation::DependsOn,
         }
     }
@@ -139,27 +145,84 @@ impl DagRelation {
             DagRelation::DependsOn => t("dag.rel.depends_on"),
             DagRelation::Fallback => t("dag.rel.fallback"),
             DagRelation::Reduce => t("dag.rel.reduce"),
+            DagRelation::Binding => t("dag.rel.binding"),
+            DagRelation::Transition => t("dag.rel.transition"),
         }
     }
 
-    /// 파선 패턴 `(on, off)` — `None` 이면 실선.
+    /// 선·틈 길이를 번갈아 적은 파선 패턴. `None` 이면 실선.
     ///
-    /// 디자인 토큰 `dag-edge-dash-fallback "6 3"` / `dag-edge-dash-reduce "2 3"` 는
-    /// SVG `stroke-dasharray` 라 색/길이 토큰 타입 체계 밖이다(생성기가 다루지
-    /// 않는다). 값은 그 토큰과 같게 유지한다.
-    pub fn dash(self) -> Option<(f32, f32)> {
+    /// 디자인 토큰 `dag-edge-dash-*`(fallback "6 3" · reduce "2 3" · binding "8 2 2 2" ·
+    /// transition "10 4")는 SVG `stroke-dasharray` 라 색/길이 토큰 타입 체계 밖이다(생성기가
+    /// 다루지 않는다). 값은 그 토큰과 같게 유지한다.
+    pub fn dash(self) -> Option<&'static [f32]> {
         match self {
             DagRelation::DependsOn => None,
-            DagRelation::Fallback => Some((6.0, 3.0)),
-            DagRelation::Reduce => Some((2.0, 3.0)),
+            DagRelation::Fallback => Some(&[6.0, 3.0]),
+            DagRelation::Reduce => Some(&[2.0, 3.0]),
+            DagRelation::Binding => Some(&[8.0, 2.0, 2.0, 2.0]),
+            DagRelation::Transition => Some(&[10.0, 4.0]),
         }
     }
 }
 
-/// task 종류 4종 — 노드 카드 선두 아이콘.
+/// 전이 엣지의 선택 상태. 색·파선은 같고 굵기와 불투명도만 바뀐다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EdgeSelection {
+    /// 원본이 아직 끝나지 않았다.
+    Pending,
+    Selected,
+    NotSelected,
+    /// 원본이 성공 결과를 내지 못했다. 죽은 경로와 같이 흐리게 그린다.
+    Unavailable,
+}
+
+impl EdgeSelection {
+    pub fn from_name(name: &str) -> Self {
+        match name {
+            "selected" => EdgeSelection::Selected,
+            "not_selected" => EdgeSelection::NotSelected,
+            "unavailable" => EdgeSelection::Unavailable,
+            _ => EdgeSelection::Pending,
+        }
+    }
+
+    /// 흐리게 그리는 상태.
+    pub fn is_dimmed(self) -> bool {
+        matches!(
+            self,
+            EdgeSelection::NotSelected | EdgeSelection::Unavailable
+        )
+    }
+}
+
+/// 건너뛴 task 의 이유. 카드 모양은 skipped 그대로이고 라벨·툴팁만 다르다.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NodeSkip {
+    BranchNotSelected,
+    UpstreamUnavailable { source: String, state: String },
+}
+
+impl NodeSkip {
+    fn from_reason(reason: &tasty_agent::SkipReason) -> Self {
+        match reason {
+            tasty_agent::SkipReason::BranchNotSelected => NodeSkip::BranchNotSelected,
+            tasty_agent::SkipReason::UpstreamUnavailable {
+                source,
+                source_state,
+            } => NodeSkip::UpstreamUnavailable {
+                source: source.clone(),
+                state: source_state.clone(),
+            },
+        }
+    }
+}
+
+/// task 종류의 철자 라벨.
 pub fn kind_label(command_kind: &str) -> &'static str {
     match command_kind {
         "custom" => t("dag.kind.custom"),
+        "agent" => t("dag.kind.agent"),
         "reduce" => t("dag.kind.reduce"),
         "wait_barrier" => t("dag.kind.wait_barrier"),
         _ => t("dag.kind.run"),
@@ -186,6 +249,33 @@ pub struct DagNodeData {
     /// 이 노드로 **들어오는** 엣지 — `(상대 노드 인덱스, 관계)`. 상세 패널의
     /// 의존성 행이 그대로 쓴다(클릭하면 그 노드로 선택 점프).
     pub incoming: Vec<(usize, DagRelation)>,
+    /// 건너뛴 이유. 이유가 기록된 v2 task 만 있다.
+    pub skip: Option<NodeSkip>,
+}
+
+impl DagNodeData {
+    /// 카드·상세의 상태 라벨. 경로가 선택되지 않은 skipped 는 그 사실을 적는다.
+    pub fn status_label(&self) -> &'static str {
+        match (self.status, &self.skip) {
+            (DagStatus::Skipped, Some(NodeSkip::BranchNotSelected)) => t("dag.status.not_selected"),
+            (status, _) => status.label(),
+        }
+    }
+
+    /// 건너뛴 이유 툴팁. 이유가 없으면 `None`.
+    pub fn skip_tooltip(&self) -> Option<String> {
+        if self.status != DagStatus::Skipped {
+            return None;
+        }
+        match self.skip.as_ref()? {
+            NodeSkip::BranchNotSelected => Some(t("dag.skip.branch_not_selected").to_string()),
+            NodeSkip::UpstreamUnavailable { source, state } => Some(t_fmt2(
+                "dag.skip.upstream_unavailable",
+                source,
+                &DagStatus::from_name(state).label().to_lowercase(),
+            )),
+        }
+    }
 }
 
 /// 엣지 하나.
@@ -194,6 +284,8 @@ pub struct DagEdgeData {
     pub from: usize,
     pub to: usize,
     pub relation: DagRelation,
+    /// 전이 엣지의 선택 상태. 다른 관계는 `None`.
+    pub selection: Option<EdgeSelection>,
 }
 
 /// 한 DAG 의 그래프 전부.
@@ -276,7 +368,12 @@ pub fn build_graph(summary: &DagSummary, tasks: &[Task]) -> DagGraphData {
             continue;
         };
         let relation = DagRelation::from_kind(edge.kind);
-        edges.push(DagEdgeData { from, to, relation });
+        edges.push(DagEdgeData {
+            from,
+            to,
+            relation,
+            selection: edge.selection.map(EdgeSelection::from_name),
+        });
         incoming[to].push((from, relation));
     }
 
@@ -300,6 +397,7 @@ pub fn build_graph(summary: &DagSummary, tasks: &[Task]) -> DagGraphData {
                 .and_then(|r| r.output.as_ref())
                 .map(output_tail),
             incoming,
+            skip: t.skip.as_ref().map(NodeSkip::from_reason),
         })
         .collect();
 
@@ -419,5 +517,141 @@ pub fn node_duration(node: &DagNodeData, now_ms: u64) -> Option<String> {
         _ => node
             .finished_at
             .map(|end| format_duration_ms(end.saturating_sub(started))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use tasty_agent::{OnFailure, RouteDecision, SkipReason};
+
+    fn task(id: &str, state: TaskState) -> Task {
+        Task {
+            id: id.to_string(),
+            workspace_id: 1,
+            name: id.to_string(),
+            command: TaskCommand::Run {
+                command: vec!["true".to_string()],
+                workspace_id: 1,
+                cwd: None,
+            },
+            depends_on: Vec::new(),
+            state,
+            created_at: 0,
+            started_at: None,
+            finished_at: None,
+            result: None,
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            reserved_for_fallback: false,
+            contract: None,
+            typed_result: None,
+            graph_id: None,
+            input_snapshot: None,
+            attempt: None,
+            route: None,
+            skip: None,
+        }
+    }
+
+    fn summary() -> DagSummary {
+        DagSummary {
+            id: "d:t".to_string(),
+            workspace_id: 1,
+            name: "t".to_string(),
+            source: "explicit",
+            task_count: 0,
+            state_counts: Default::default(),
+            rollup_state: "waiting",
+            created_at: 0,
+            updated_at: 0,
+            root_task_ids: Vec::new(),
+            has_cycle: false,
+            task_ids: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn every_edge_kind_maps_to_its_own_relation() {
+        for (kind, rel) in [
+            ("depends_on", DagRelation::DependsOn),
+            ("fallback", DagRelation::Fallback),
+            ("reduce", DagRelation::Reduce),
+            ("binding", DagRelation::Binding),
+            ("transition", DagRelation::Transition),
+        ] {
+            assert_eq!(DagRelation::from_kind(kind), rel, "{kind}");
+        }
+        assert_eq!(DagRelation::Binding.dash(), Some(&[8.0, 2.0, 2.0, 2.0][..]));
+        assert_eq!(DagRelation::Transition.dash(), Some(&[10.0, 4.0][..]));
+    }
+
+    /// 경로를 고른 뒤 전이 엣지는 선택 상태를, 고르지 않은 노드는 skip 이유를 싣는다.
+    /// 같은 쌍의 depends_on 은 binding 한 줄로 합쳐진다.
+    #[test]
+    fn build_graph_carries_selection_skip_and_binding() {
+        crate::i18n::init("en");
+        let mut review = task("review", TaskState::Succeeded);
+        review.contract = Some(
+            serde_json::from_value(json!({"contract_version": 2,
+                "transitions": {"cases": [
+                    {"when": {"compare": {"path": "", "op": "eq", "value": 1}}, "to": ["ship"]},
+                    {"when": {"compare": {"path": "", "op": "eq", "value": 2}}, "to": ["fix"]}],
+                    "no_match": "finish"}}))
+            .expect("contract"),
+        );
+        review.route = Some(RouteDecision {
+            attempt_id: Some("review#1".into()),
+            matched: vec![0],
+            otherwise: false,
+            selected: vec!["ship".into()],
+        });
+        let mut ship = task("ship", TaskState::Running);
+        ship.depends_on = vec!["review".into()];
+        ship.contract = Some(
+            serde_json::from_value(json!({"contract_version": 2,
+                "input_schema": {"type": "object", "fields": {"v": {"type": "json"}}},
+                "bindings": {"v": {"from_task": "review"}}}))
+            .expect("contract"),
+        );
+        let mut fix = task("fix", TaskState::Skipped);
+        fix.skip = Some(SkipReason::BranchNotSelected);
+        let mut notify = task("notify", TaskState::Skipped);
+        notify.skip = Some(SkipReason::UpstreamUnavailable {
+            source: "ship".into(),
+            source_state: "failed".into(),
+        });
+
+        let g = build_graph(&summary(), &[review, ship, fix, notify]);
+        let edges: Vec<(usize, usize, DagRelation, Option<EdgeSelection>)> = g
+            .edges
+            .iter()
+            .map(|e| (e.from, e.to, e.relation, e.selection))
+            .collect();
+        assert_eq!(
+            edges,
+            vec![
+                (0, 1, DagRelation::Transition, Some(EdgeSelection::Selected)),
+                (
+                    0,
+                    2,
+                    DagRelation::Transition,
+                    Some(EdgeSelection::NotSelected)
+                ),
+                (0, 1, DagRelation::Binding, None),
+            ]
+        );
+        assert_eq!(g.nodes[2].status_label(), "NOT SELECTED");
+        assert_eq!(
+            g.nodes[2].skip_tooltip().as_deref(),
+            Some("Not taken — another branch was selected.")
+        );
+        assert_eq!(g.nodes[3].status_label(), "SKIPPED");
+        assert_eq!(
+            g.nodes[3].skip_tooltip().as_deref(),
+            Some("Skipped — ship failed.")
+        );
+        assert_eq!(g.nodes[1].skip_tooltip(), None);
     }
 }

@@ -7,7 +7,7 @@ use tasty_model::DagDirection;
 use tasty_type_appearance::theme::Theme;
 
 use super::chrome::ChromeAction;
-use super::model::{DagGraphData, DagRelation};
+use super::model::{DagEdgeData, DagGraphData, DagRelation, EdgeSelection};
 use super::node::{NodeVisual, paint_node, paint_selection_ring};
 use super::view::{DagGraphView, Lod};
 
@@ -82,18 +82,11 @@ pub fn draw_canvas(
     let selected_idx = view.selected.as_deref().and_then(|id| graph.index_of(id));
 
     for (edge, route) in graph.edges.iter().zip(layout.edges.iter()) {
-        let dim = dead[route.from] || dead[route.to];
+        let dim = dead[route.from]
+            || dead[route.to]
+            || edge.selection.is_some_and(EdgeSelection::is_dimmed);
         let highlight = selected_idx == Some(route.from) || selected_idx == Some(route.to);
-        paint_edge(
-            &painter,
-            theme,
-            &tr,
-            route,
-            edge.relation,
-            direction,
-            dim,
-            highlight,
-        );
+        paint_edge(&painter, theme, &tr, route, edge, direction, dim, highlight);
     }
 
     let hovered = response
@@ -127,6 +120,14 @@ pub fn draw_canvas(
         if vis.selected {
             paint_selection_ring(&painter, theme, r, view.zoom);
         }
+    }
+
+    // 건너뛴 이유는 카드에 다 쓰지 못하므로 호버 툴팁으로 보인다.
+    if let Some(tip) = hovered
+        .and_then(|i| graph.nodes.get(i))
+        .and_then(|n| n.skip_tooltip())
+    {
+        response.clone().on_hover_text(tip);
     }
 
     // 양수 request_repaint_after는 GPU 콜백이 무시하므로 타이머 허브에서 보이는 뷰만 예약한다.
@@ -235,11 +236,12 @@ fn paint_edge(
     theme: &Theme,
     tr: &Transform,
     route: &tasty_dag_layout::EdgeRoute,
-    relation: DagRelation,
+    edge: &DagEdgeData,
     direction: DagDirection,
     dim: bool,
     highlight: bool,
 ) {
+    let relation = edge.relation;
     let base = if highlight {
         theme.dag_edge_highlight()
     } else {
@@ -247,13 +249,21 @@ fn paint_edge(
             DagRelation::DependsOn => theme.dag_edge_depends(),
             DagRelation::Fallback => theme.dag_edge_fallback(),
             DagRelation::Reduce => theme.dag_edge_reduce(),
+            DagRelation::Binding => theme.dag_edge_binding(),
+            DagRelation::Transition => theme.dag_edge_transition(),
         }
     };
     let mut color = base.to_egui();
     if dim {
         color = color.gamma_multiply(EDGE_DIM_OPACITY);
     }
-    let stroke = egui::Stroke::new(theme.dag_edge_width().value().max(1.0), color);
+    // 선택된 전이 경로만 굵게 그린다.
+    let width = if edge.selection == Some(EdgeSelection::Selected) {
+        theme.dag_edge_selected_width()
+    } else {
+        theme.dag_edge_width()
+    };
+    let stroke = egui::Stroke::new(width.value().max(1.0), color);
 
     let raw: Vec<egui::Pos2> = route
         .points
@@ -267,12 +277,18 @@ fn paint_edge(
     let rounded = round_corners(&ortho, theme.dag_edge_corner_radius().value() * tr.zoom);
 
     match relation.dash() {
-        Some((on, off)) => painter.add(egui::Shape::dashed_line(
-            &rounded,
-            stroke,
-            on * tr.zoom,
-            off * tr.zoom,
-        )),
+        Some(pattern) => {
+            let on: Vec<f32> = pattern.iter().step_by(2).map(|v| v * tr.zoom).collect();
+            let off: Vec<f32> = pattern
+                .iter()
+                .skip(1)
+                .step_by(2)
+                .map(|v| v * tr.zoom)
+                .collect();
+            painter.add(egui::Shape::dashed_line_with_offset(
+                &rounded, stroke, &on, &off, 0.0,
+            ))
+        }
         None => painter.add(egui::Shape::line(rounded.clone(), stroke)),
     };
 

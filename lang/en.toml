@@ -1875,18 +1875,26 @@ succeeded = "SUCCEEDED"
 failed = "FAILED"
 cancelled = "CANCELLED"
 skipped = "SKIPPED"
+not_selected = "NOT SELECTED"
 unknown = "UNKNOWN"
 
 [dag.rel]
 depends_on = "depends on"
 fallback = "fallback"
 reduce = "reduce input"
+binding = "binds input"
+transition = "transition"
 
 [dag.kind]
 run = "Run"
 custom = "Custom"
 reduce = "Reduce"
 wait_barrier = "Wait barrier"
+agent = "Agent"
+
+[dag.skip]
+branch_not_selected = "Not taken — another branch was selected."
+upstream_unavailable = "Skipped — {} {}."
 
 [dag.on_failure]
 abort = "Abort"

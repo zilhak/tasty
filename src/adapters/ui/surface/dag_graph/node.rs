@@ -276,7 +276,7 @@ pub fn paint_node(
         painter.text(
             egui::pos2(inner.min.x + gw, meta_y),
             egui::Align2::LEFT_CENTER,
-            ellipsize(painter, node.status.label(), &meta_font, label_w),
+            ellipsize(painter, node.status_label(), &meta_font, label_w),
             meta_font,
             tone(label_fg, dim),
         );

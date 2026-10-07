@@ -1869,18 +1869,26 @@ succeeded = "成功"
 failed = "失敗"
 cancelled = "取消"
 skipped = "スキップ"
+not_selected = "未選択"
 unknown = "不明"
 
 [dag.rel]
 depends_on = "依存"
 fallback = "フォールバック"
 reduce = "結果をまとめる入力"
+binding = "入力の受け渡し"
+transition = "遷移"
 
 [dag.kind]
 run = "実行"
 custom = "カスタム"
 reduce = "リデュース"
 wait_barrier = "バリア待機"
+agent = "エージェント"
+
+[dag.skip]
+branch_not_selected = "実行されませんでした。別の経路が選択されました。"
+upstream_unavailable = "スキップ — {} {}。"
 
 [dag.on_failure]
 abort = "中断"
