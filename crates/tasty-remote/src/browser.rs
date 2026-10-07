@@ -332,6 +332,8 @@ mod tests {
 
     #[test]
     fn the_popup_asks_a_tunnel_peer_before_listing_and_shows_the_notice() {
+        // 다른 시험의 전역 번역 초기화와 경쟁하지 않도록 오류 문구를 만들기 전에 초기화한다.
+        tasty_i18n::init("en");
         let (port, server) =
             serve_once(serde_json::json!({ "instance_id": tasty_ipc::instance::instance_id() }));
         let (_remote, token) = token();
