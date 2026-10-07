@@ -1,4 +1,4 @@
-<!-- source-hash: 91728d2c8cc2 -->
+<!-- source-hash: be686e5f404d -->
 <a id="task-dag"></a>
 
 # Task workflows (DAG)
@@ -305,7 +305,7 @@ Coordination devices for running several tasks at once come along with it.
 
 | Device | Use |
 |---|---|
-| Semaphore | Decides how many tasks carrying the same name may run at once. `--concurrency-limit <name>` at task creation is the short form |
+| Semaphore | Decides how many tasks carrying the same name may run at once. `--concurrency-limit <name>` at task creation is the short form. As with a lease, the runner keeps pushing back the expiry of a semaphore attached to a task while it watches the task |
 | Barrier | Blocks until the set number of signals have gathered. Slot it into the graph as a `wait_barrier` task |
 | Lease | Makes something like a file be held by only one holder at a time. It has an expiry, and on a conflict it either fails or returns at once saying it was not acquired — it does not wait. For a lease attached to a task (`metadata.lease`), the runner keeps pushing the expiry back while it watches the task, so a long task does not lose its lease midway. It is not pushed back while the runner is off |
 | Reducer | Merges the results of several tasks into one. Choose between first success only, all of them, JSON merge, or text concatenation |

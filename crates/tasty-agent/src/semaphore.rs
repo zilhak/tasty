@@ -340,6 +340,28 @@ impl<'a> SemaphoreStore<'a> {
         })
     }
 
+    /// `holder` 가 아직 permit 을 쥐고 있으면 만료 시각을 `now_ms + ttl_ms` 로 늦추고 `true`. 획득
+    /// 시각은 그대로 둔다. 만료됐어도 아직 회수되지 않았으면 다시 늦춘다. 쥐고 있지 않으면 아무것도
+    /// 바꾸지 않고 `false`.
+    pub fn renew(
+        &mut self,
+        workspace_id: WorkspaceId,
+        name: &str,
+        holder: &str,
+        ttl_ms: u64,
+        now_ms: u64,
+    ) -> Result<bool> {
+        let Some(mut s) = self.get(workspace_id, name)? else {
+            return Ok(false);
+        };
+        let Some(h) = s.holders.iter_mut().find(|h| h.id == holder) else {
+            return Ok(false);
+        };
+        h.expires_at = Some(now_ms.saturating_add(ttl_ms));
+        self.put(&s)?;
+        Ok(true)
+    }
+
     /// permit 반환. holder 가 점유 중이 아니면 no-op.
     pub fn release(
         &mut self,
@@ -400,6 +422,25 @@ mod tests {
         assert!(!r3.acquired);
         assert_eq!(r3.semaphore.permits_available, 0);
         assert_eq!(ids(&r3.semaphore), vec!["h1", "h2"]);
+    }
+
+    #[test]
+    fn renew_extends_only_a_held_permit_and_keeps_its_acquire_time() {
+        let (_td, mut mem) = fresh();
+        let mut store = SemaphoreStore::new(&mut mem, "_host");
+        store.create(1, "s1", 1, 1000).unwrap();
+        store.acquire(1, "s1", "h1", Some(100), 1000).unwrap();
+        assert!(store.renew(1, "s1", "h1", 100, 1080).unwrap());
+        let h = store.get(1, "s1").unwrap().unwrap().holders[0].clone();
+        assert_eq!((h.acquired_at, h.expires_at), (Some(1000), Some(1180)));
+        // 만료 뒤에도 아직 회수되지 않았으면 다시 늦춘다.
+        assert!(store.renew(1, "s1", "h1", 100, 1500).unwrap());
+        assert!(!store.renew(1, "s1", "h2", 100, 1500).unwrap());
+        // 회수돼 다른 holder 가 쥐면 늦추지 않는다.
+        assert!(store.acquire(1, "s1", "h2", None, 1700).unwrap().acquired);
+        assert!(!store.renew(1, "s1", "h1", 100, 1710).unwrap());
+        assert_eq!(ids(&store.get(1, "s1").unwrap().unwrap()), vec!["h2"]);
+        assert!(!store.renew(1, "none", "h1", 100, 1710).unwrap());
     }
 
     #[test]

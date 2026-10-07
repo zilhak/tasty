@@ -298,7 +298,7 @@ runner thread 는 off-main 이라 `PluginManager`(App main thread 단독 소유)
 
 | primitive | 통합 위치 | 결합 |
 |-----------|----------|------|
-| `Semaphore` | RunnerLoop dispatch | `task.metadata.semaphore = { name, holder?, ttl_ms? }` — `ttl_ms` 는 task 최대 소요보다 길게(아래 dispatch 게이트) |
+| `Semaphore` | RunnerLoop dispatch | `task.metadata.semaphore = { name, holder?, ttl_ms? }`. `ttl_ms` 는 러너가 갱신(아래 dispatch 게이트) |
 | `Lease` | RunnerLoop dispatch | `task.metadata.lease = { resource, holder?, ttl_ms?, mode? }` 또는 pool 모드(`candidates`/`elastic` — 아래 "자원 풀 배정"). `ttl_ms` 는 러너가 갱신(아래 dispatch 게이트) |
 | `Barrier` | dispatch/poll | `WaitBarrier { name }` task(DAG 안 명시 gate) |
 | `RateLimit` | IPC dispatcher 미들웨어 | `(agent, "ipc_calls")` 호출당 1 차감 |
@@ -357,22 +357,19 @@ reload(러너 시작·부팅 정리)의 NotRunning 정리는 같은 정리를 �
 reload 가 다시 시도한다. 2초는 SIGKILL·job 종료와 회수에 충분하면서 부팅이 오래 멈추지 않을 만큼
 짧게 정한 값이다. 러너가 있으면 다음 tick 이 종결을 흡수해 위의 러너 경로로 정리한다.
 
-러너는 실행 중인 task의 세마포어 TTL을 자동 갱신하지 않는다.
-`metadata.semaphore.ttl_ms`를 지정한다면 task의 최대 소요시간보다 길게 잡는다.
-실행 중 만료되면 대기 task가 같은 permit을 얻어 두 작업이 동시에 자원을 사용할 수 있다.
 TTL을 생략하면 자동 만료하지 않는다.
 
-task 의 lease TTL(`metadata.lease.ttl_ms`)은 러너가 갱신한다(`runner_host/lease_renewal.rs`).
-러너가 그 lease 를 쥐고 있는 동안(task 가 종결돼 프로세스 종료를 기다리는 동안 포함, 반환 전까지)
-TTL 의 절반이 지날 때마다 만료 시각을 지금 + TTL 로 늦춘다. 획득 시각은 바꾸지 않는다
-(`LeaseStore::renew`). 절반 주기는 다음 갱신이 tick 지연·저장소 대기로 늦어져도 남은 절반 안에
+task 의 lease·semaphore TTL(`metadata.lease.ttl_ms`·`metadata.semaphore.ttl_ms`)은 러너가 갱신한다
+(`runner_host/ttl_renewal.rs`). 러너가 그 점유를 쥐고 있는 동안(task 가 종결돼 프로세스 종료를
+기다리는 동안 포함, 반환 전까지) TTL 의 절반이 지날 때마다 만료 시각을 지금 + TTL 로 늦춘다. 획득
+시각은 바꾸지 않는다(`LeaseStore::renew`·`SemaphoreStore::renew`). 절반 주기는 다음 갱신이 tick 지연·저장소 대기로 늦어져도 남은 절반 안에
 들면 만료되지 않게 하는 여유다. 갱신은 tick 시작(`maintain`, tick 500ms)에 하므로 TTL 이 1초보다
-짧으면 갱신 사이에 만료될 수 있다. 재시작 뒤 넘겨받은 Run·후처리의 lease 도 넘겨받은 다음 tick 에
+짧으면 갱신 사이에 만료될 수 있다. 재시작 뒤 넘겨받은 Run·후처리의 lease·permit 도 넘겨받은 다음 tick 에
 바로 늦추고 이어서 갱신한다. 만료 시각이 지났어도 다른 holder 가 가져가지 않았으면 다시 늦추고,
 이미 다른 holder 가 쥐었으면 되찾지 않고 경고한 뒤 갱신을 멈춘다. 러너가 꺼진 동안에는 아무도
 갱신하지 않으므로, 그 사이 TTL 이 지나면 다른 holder 가 얻을 수 있다. TTL 은 이제 "task 를
-지켜보는 러너가 없어진 뒤 자원을 돌려받을 시간" 으로 정한다. 근거는 ADR-0042 의 "task lease
-TTL 갱신" 절.
+지켜보는 러너가 없어진 뒤 자원을 돌려받을 시간" 으로 정한다. 근거는 ADR-0042 의 "task
+lease·semaphore TTL 갱신" 절.
 
 호스트 재시작 시에는 `holder == task.id`인 러너 소유 점유만 정리한다.
 다른 holder로 잡은 외부 도구의 점유는 그 도구나 운영자가 정리해야 한다.

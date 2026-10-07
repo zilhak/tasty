@@ -98,16 +98,20 @@ impl HostExecutor {
         if let Some(proc) = proc {
             self.adopt_process(&task.id, proc);
         }
+        use super::ttl_renewal::{Holding, holding_ttl};
         if let Some(name) = own_semaphore(task) {
             self.held_permits
                 .insert(task.id.clone(), (workspace_id, name, task.id.clone()));
+            // 내려가 있던 동안 지난 시간을 모르니 다음 tick 에 바로 늦춘다.
+            if let Some(ttl) = holding_ttl(task, Holding::Permit) {
+                self.track_renewal(&task.id, Holding::Permit, ttl, 0);
+            }
         }
         if let Some(resource) = own_lease(task) {
             self.held_leases
                 .insert(task.id.clone(), (workspace_id, resource, task.id.clone()));
-            // 내려가 있던 동안 지난 시간을 모르니 다음 tick 에 바로 늦춘다.
-            if let Some(ttl) = super::lease_renewal::lease_ttl(task) {
-                self.track_lease_renewal(&task.id, ttl, 0);
+            if let Some(ttl) = holding_ttl(task, Holding::Lease) {
+                self.track_renewal(&task.id, Holding::Lease, ttl, 0);
             }
         }
     }

@@ -109,7 +109,7 @@ N회 signal을 받으면 닫힌다. `timeout_ms`가 지났는지는 signal·stat
 
 #### Semaphore
 
-N개 permit으로 동시 점유를 제한한다. 같은 holder의 재획득은 중복 점유를 만들지 않고 `acquired_at`·`expires_at`을 갱신한다. permit은 holder가 반납하거나 명시한 `--ttl-ms`가 만료될 때 회수한다. 기본은 만료 없음이다. 정상 작업 도중 permit을 회수하면 다른 작업이 같은 자원에 들어갈 수 있기 때문이다.
+N개 permit으로 동시 점유를 제한한다. 같은 holder의 재획득은 중복 점유를 만들지 않고 `acquired_at`·`expires_at`을 갱신한다. permit은 holder가 반납하거나 명시한 `--ttl-ms`가 만료될 때 회수한다. 기본은 만료 없음이다. 작업의 `metadata.semaphore.ttl_ms` 는 러너가 permit 을 쥔 동안 TTL 의 절반마다 갱신한다(lease 와 같다). 정상 작업 도중 permit을 회수하면 다른 작업이 같은 자원에 들어갈 수 있기 때문이다.
 
 `semaphore-set-permits`로 한도를 줄여도 기존 holder는 강제로 회수하지 않는다. 반납될 때까지 새 획득을 거절한다([ADR-0042](../../adr/0042-agent-coordination-and-task-views.md)).
 

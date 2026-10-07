@@ -1919,5 +1919,5 @@ mod postprocess_reload_tests;
 mod cancel_stop_tests;
 
 #[cfg(all(test, unix))]
-#[path = "runner_thread/lease_renewal_tests.rs"]
-mod lease_renewal_tests;
+#[path = "runner_thread/ttl_renewal_tests.rs"]
+mod ttl_renewal_tests;
