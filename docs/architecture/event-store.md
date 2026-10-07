@@ -1,6 +1,6 @@
 # 이벤트 저장소 (`tasty-event-store`)
 
-데이터 홈 구조 journal의 저장 계약 중 수치·형식·보조 규칙을 적는다. 결정과 기각한 대안은 [ADR-0063](../adr/0063-event-store-storage-fencing-and-effect-states.md),
+데이터 홈 구조 journal의 저장 계약 중 수치·형식·보조 규칙과, App이 그 journal을 원본으로 연결한 현재 상태를 적는다. 결정과 기각한 대안은 [ADR-0063](../adr/0063-event-store-storage-fencing-and-effect-states.md),
 저장소가 제공하는 기능의 개요는 [아키텍처](index.md)의 `tasty-event-store` 문단에 있다. 구현은 `crates/tasty-event-store/src/`다.
 
 ## import의 전송 identity
@@ -118,3 +118,34 @@ consumer·scope 이름·upsert key와 row payload·모든 delete key를 합산�
 거절하는 경계다. 초과하면 WriteSizeExceeded로 transaction을 되돌린다. 기존 의무/claim을
 없애거나 결과 bytes를 잘라 성공으로 저장하지 않는다. effect 오류·Uncertain 대조와
 checkpoint의 이전 snapshot/pin 유지·다음 기회 재시도는 기존 오류 처리 경로를 따른다.
+
+## 구조 journal의 App 연결
+
+원본과 projection의 관계는 [ADR-0065](../adr/0065-journal-source-and-core-state-projection.md)가 정한다.
+
+`src/app/journal.rs`가 데이터 홈의 worker 하나와 엔진별 비동기 continuation을 연결한다.
+worker의 순수 구조 모델을 초기 논리 projection과 확정 batch 적용에 사용하며,
+App이 별도 가변 JournalModel 원본을 유지하지 않는다. 준비 요청·완료 채널과 복원 읽기 개수,
+App 한 회의 완료 처리량은 제한한다.
+
+생성·변환은 Pending operation과 outbox를 확정하고 claim한 뒤 후보를 만든다.
+준비 성공 다음 commit은 설치 권한·옛 owner 정리 의무만 확정한다. 외부 게시·설치와 정확한
+옛 PTY 회수 뒤 최종 commit이 구조 변경·Ready·원 요청 완료를 함께 확정하고 공개한다.
+설치 전 kind 철회·등록 교체는 후보를 폐기하고 기존 인스턴스를 유지한다.
+외부 게시 이후의 불명 결과는 Recovery의 원 attempt·receipt 증거와 대조하며, 알려진 실패로
+바꿔 자동 재실행하지 않는다.
+
+표시면은 첫 capture 전에도 생성 자료 참조를 유지한다. 복원은 snapshot을 우선하고,
+없으면 generic 생성 params/CWD를 사용한다. terminal은 현재 셸 설정과 저장된 명시적
+복원 명령을 사용하며 과거 실행 인자·입력을 자동 재전송하지 않는다.
+복원 capture는 기존 DataRef로 읽고, 같은 자료를 준비 요청에 복사해 다시 저장하지 않는다.
+선택되지 않은 terminal과 아직 등록되지 않은 kind는 지연 활성화하며, 일반 명령도 필요한 원 대상의 activation에 합류한다. source 경계가 존재한다는 사실을 모든 writer·장애 복구 시나리오의 검증 완료로 해석하지 않는다.
+
+선택한 legacy slot은 worker가 원본 파일과 자료를 읽어 한 import batch로 확정하고 초기 View의
+ID 대응을 함께 보존한다. 이미 journal stream이 있으면 legacy 파일을 다시 원본으로 읽지 않는다.
+CoreState 생성자도 제품에서 legacy 파일을 선행 해석하지 않는다. 기존 위치가 범위를 벗어나면
+workspace와 tab은 마지막 항목, pane은 첫 항목을 고르는 복원 규칙을 유지한다.
+
+정상 resume는 journal/stream/incarnation과 확정 cut/revision을 붙인 최신 View checkpoint를 초기 import 선택보다 우선한다. 이 선택은 구조 이벤트가 아니다. `src/runtime/journal_product/view_record.rs`는 DB restore manifest를 먼저 읽고 그 domain checkpoint와 View의 binding을 대조한다. DB 원본이 없는 경우에만 legacy sidecar를 최초 이관 자료로 읽으며, DB 자료가 손상됐다고 옛 sidecar로 조용히 돌아가지 않는다.
+
+현재 incarnation을 선택하지 않은 시작에서는 과거 View를 읽지 않는다. worker는 옛 incarnation과 더 늦게 도착한 과거 sequence의 저장을 거절한다. 저장 실패의 후보와 dirty 상태는 재시도를 위해 남기며 종료는 기존 tick 저장과 별도로 최신 final capture를 요청한다. View manifest와 도메인 checkpoint·payload 참조를 연결하는 pin/보존 구현은 저장 계층에 있다([ADR-0063](0063-event-store-storage-fencing-and-effect-states.md)). 해당 코드의 존재가 crash·전원 장애 검증을 완료했다는 뜻은 아니다.
