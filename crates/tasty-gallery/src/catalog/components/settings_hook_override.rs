@@ -104,7 +104,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("Revert tooltip", "Go back to the default from {origin}."),
             (
                 "pending",
-                "button → Undo (same slot) · Tag \"reverts on save\" (disabled) · summary shows the default",
+                "button → Undo (same slot) · Tag \"reverts on save\" (disabled) · summary shows the default · Switch (at the default) and Edit disabled until Undo or Save · Switch tooltip \"Reverts on save. Undo to change it.\"",
             ),
             (
                 "scope",
@@ -133,7 +133,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "No new tokens: the mark is the shared Tag, the pending state reuses the extension-mapping Undo + disabled Tag pair.",
+        "No new tokens: the mark is the shared Tag, the pending state reuses the extension-mapping Undo + disabled Tag pair. The second line keeps the HookRow type on every row: mono term-sm · text-secondary. Strings: settings.file_handler.hook_handlers.pending_locked_tip \"Reverts on save. Undo to change it.\".",
     );
 }
 
@@ -174,8 +174,12 @@ fn draw_row(ui: &mut egui::Ui, th: &Theme, r: &mut Row) {
                         .image(side, th.glyph_dim().into())
                         .paint_at(ui, rect);
                     lock.on_hover_text(format!("Provided by {} — can't be removed", r.origin));
+                    // 되돌리기 대기 중에는 기본값(켜짐)을 보이고 Undo나 Save 전까지 잠근다.
                     let mut shown_on = if r.pending { true } else { r.on };
-                    if switch(ui, th, &mut shown_on, None, true).changed() && !r.pending {
+                    let resp = switch(ui, th, &mut shown_on, None, !r.pending);
+                    if r.pending {
+                        resp.on_hover_text("Reverts on save. Undo to change it.");
+                    } else if resp.changed() {
                         r.on = shown_on;
                     }
                     ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
@@ -206,10 +210,12 @@ fn draw_row(ui: &mut egui::Ui, th: &Theme, r: &mut Row) {
                 ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let summary = if r.pending { r.default } else { r.action };
-                    if summary.starts_with("ipc:") {
+                    // 시안처럼 Edit 은 행의 동작(사용자 patch)을 기준으로 보이고, 대기 중에는 잠긴다.
+                    if r.action.starts_with("ipc:") {
                         Button::new("Edit")
                             .variant(ButtonVariant::Ghost)
                             .size(ControlSize::Sm)
+                            .enabled(!r.pending)
                             .show(ui, th);
                     }
                     if r.edited {
@@ -232,8 +238,8 @@ fn draw_row(ui: &mut egui::Ui, th: &Theme, r: &mut Row) {
                             egui::Label::new(
                                 egui::RichText::new(summary)
                                     .monospace()
-                                    .size(th.font_size_caption.value())
-                                    .color(th.text_primary().to_egui()),
+                                    .size(th.font_size_term_sm.value())
+                                    .color(th.text_secondary().to_egui()),
                             )
                             .truncate(),
                         );

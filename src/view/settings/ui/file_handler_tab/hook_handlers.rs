@@ -349,6 +349,7 @@ fn draw_hook_row(
         Some(d) if pending_revert => d,
         _ => h,
     };
+    // 되돌리기를 걸면 그 행의 Switch 편집이 지워지므로 대기 중에는 기본값이 보인다.
     let on = hh.enabled.get(&h.id).copied().unwrap_or(!shown.disabled);
     let pending_remove = hh.remove.contains(&h.id);
     let is_shell = matches!(shown.action, HookHandlerAction::ShellCommand { .. });
@@ -418,8 +419,14 @@ fn draw_hook_row(
                                 .color(th.text_muted()),
                             );
                         }
+                        // 되돌리기 대기 중에는 Undo 나 Save 전까지 Switch 를 잠근다.
                         let mut checked = on;
-                        if switch(ui, th, &mut checked, None, true).changed() {
+                        let switch_resp = switch(ui, th, &mut checked, None, !pending_revert);
+                        if pending_revert {
+                            switch_resp.on_hover_text(t(
+                                "settings.file_handler.hook_handlers.pending_locked_tip",
+                            ));
+                        } else if switch_resp.changed() {
                             **toggle = Some((h.id.clone(), checked));
                         }
                         // 좌측 나머지 (LTR 로 되돌림): id + Tag + prio.
@@ -486,9 +493,12 @@ fn draw_hook_row(
                         seq_summary_line(
                             ui,
                             th,
-                            h,
-                            calls,
-                            cmd_display,
+                            SeqLine {
+                                h,
+                                calls,
+                                summary: cmd_display,
+                                locked: pending_revert,
+                            },
                             seq_event,
                             &mut revert_slot,
                         );
@@ -674,23 +684,37 @@ fn origin_tag(owner: &HookHandlerOwner) -> (&str, TagVariant) {
     }
 }
 
+/// IpcSequence 요약 줄이 그리는 행 내용.
+struct SeqLine<'a> {
+    h: &'a HookHandler,
+    calls: &'a [IpcCall],
+    summary: String,
+    /// 되돌리기 대기 중이면 Undo 나 Save 전까지 Edit 을 잠근다.
+    locked: bool,
+}
+
 /// IpcSequence 요약 줄 — mono 한 줄 요약(줄어드는 항목) · 오른쪽 끝 Edit. 한 줄 형식으로 쓸 수 없는
 /// 시퀀스는 Edit 대신 "Edit with CLI"(툴팁 = 명령) + 명령 복사 IconButton 이다.
 fn seq_summary_line(
     ui: &mut egui::Ui,
     th: &tasty_type_appearance::theme::Theme,
-    h: &HookHandler,
-    calls: &[IpcCall],
-    summary: String,
+    line: SeqLine<'_>,
     seq_event: &mut Option<SeqRowEvent>,
     revert_slot: &mut dyn FnMut(&mut egui::Ui),
 ) {
+    let SeqLine {
+        h,
+        calls,
+        summary,
+        locked,
+    } = line;
     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
         match format_sequence(calls) {
             Ok(text) => {
                 if Button::new(t("settings.file_handler.hook_handlers.seq_edit"))
                     .variant(ButtonVariant::Ghost)
                     .size(ControlSize::Sm)
+                    .enabled(!locked)
                     .show(ui, th)
                     .clicked()
                 {
@@ -1114,5 +1138,150 @@ mod tests {
         commit_add(&mut hh, &rows);
         assert_eq!(hh.add.len(), 2);
         assert_eq!(hh.add[1].priority, 50);
+    }
+
+    /// 행 하나를 그리고 Switch·Edit 을 누른 결과.
+    struct RowClicks {
+        switch_on: bool,
+        switch_disabled: bool,
+        toggled: Option<(HookHandlerId, bool)>,
+        edit_opened: bool,
+    }
+
+    /// 한 프레임을 그려 Switch 트랙과 Edit 글자의 중심을 찾고, 그 자리를 누른 결과를 돌려준다.
+    fn click_row_controls(pending: bool) -> RowClicks {
+        let th = tasty_themes::mocha_fallback();
+        let id = HookHandlerId::new("host/notify");
+        let handler = |label: &str| HookHandler {
+            id: id.clone(),
+            source: HookSource::Hook,
+            priority: 10,
+            owner: HookHandlerOwner::Host,
+            action: HookHandlerAction::IpcSequence {
+                calls: parse_sequence(label).unwrap(),
+            },
+            display_name_i18n_key: None,
+            disabled: false,
+        };
+        // 사용자 patch 가 Switch 를 끈 행이다. 기본값은 켜짐이다.
+        let mut merged = handler("system.info");
+        merged.owner = HookHandlerOwner::User;
+        merged.disabled = true;
+        let default = handler("system.info");
+        let mut hh = HookHandlerEditDraft::default();
+        if pending {
+            hh.toggle_revert(id.clone());
+        }
+        let kb = crate::settings::KeybindingSettings::default();
+        let ctx = egui::Context::default();
+        // 테스트에서는 번역 키가 그대로 그려져 글자가 길다. 첫 줄 글자가 Switch 를 덮지 않도록 넓게 둔다.
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1600.0, 200.0));
+        let edit_label = t("settings.file_handler.hook_handlers.seq_edit").to_string();
+        let track = egui::vec2(
+            th.switch_track_width().value(),
+            th.switch_track_height().value(),
+        );
+        let frame = |events: Vec<egui::Event>| {
+            let mut out = (None, None, None, None, None);
+            let output = ctx.run(
+                egui::RawInput {
+                    screen_rect: Some(screen),
+                    events,
+                    ..Default::default()
+                },
+                |ctx| {
+                    egui::CentralPanel::default().show(ctx, |ui| {
+                        let item = RowItem {
+                            h: &merged,
+                            default: Some(&default),
+                        };
+                        draw_hook_row(
+                            ui,
+                            &th,
+                            &hh,
+                            &item,
+                            &kb,
+                            &mut None,
+                            &mut RowOutput {
+                                toggle: &mut out.0,
+                                cmd_edit: &mut out.1,
+                                remove_toggle: &mut out.2,
+                                revert_toggle: &mut out.3,
+                                seq_event: &mut out.4,
+                            },
+                        );
+                    });
+                },
+            );
+            (output, out)
+        };
+        let (output, _) = frame(Vec::new());
+        let mut switch_at = None;
+        let mut edit_at = None;
+        let mut switch_fill = None;
+        let mut thumbs = Vec::new();
+        let mut shapes: Vec<egui::Shape> = output.shapes.into_iter().map(|c| c.shape).collect();
+        while let Some(shape) = shapes.pop() {
+            match shape {
+                egui::Shape::Vec(inner) => shapes.extend(inner),
+                egui::Shape::Rect(r) if (r.rect.size() - track).length() < 0.5 => {
+                    switch_at = Some(r.rect.center());
+                    switch_fill = Some(r.fill);
+                }
+                egui::Shape::Circle(c) => thumbs.push(c.center),
+                egui::Shape::Text(text) if text.galley.text() == edit_label => {
+                    edit_at = Some(text.galley.rect.translate(text.pos.to_vec2()).center());
+                }
+                _ => {}
+            }
+        }
+        let switch_at = switch_at.expect("switch track");
+        // 썸이 트랙 중심보다 오른쪽이면 켜짐이다.
+        let thumb = thumbs
+            .into_iter()
+            .find(|c| (c.y - switch_at.y).abs() < 0.5 && (c.x - switch_at.x).abs() <= track.x)
+            .expect("switch thumb");
+        let switch_on = thumb.x > switch_at.x;
+        let switch_disabled = switch_fill == Some(th.state_disabled_fill().to_egui());
+        // 이동·누름·뗌을 프레임마다 나눠 실제 입력처럼 클릭한다. 뗀 프레임의 출력을 돌려준다.
+        let click = |at: egui::Pos2| {
+            let button = |pressed| egui::Event::PointerButton {
+                pos: at,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: egui::Modifiers::NONE,
+            };
+            frame(vec![egui::Event::PointerMoved(at)]);
+            frame(vec![button(true)]);
+            frame(vec![button(false)]).1
+        };
+        let toggled = click(switch_at);
+        let edited = click(edit_at.expect("Edit label"));
+        RowClicks {
+            switch_on,
+            switch_disabled,
+            toggled: toggled.0,
+            edit_opened: edited.4.is_some(),
+        }
+    }
+
+    /// 되돌리기 대기 중인 행은 Switch 를 기본값으로 보이고, Undo 나 Save 전까지 Switch·Edit 을 잠근다.
+    #[test]
+    fn pending_revert_locks_the_switch_at_the_default_and_the_edit_button() {
+        let row = click_row_controls(false);
+        assert!(!row.switch_on, "patched row shows its own off state");
+        assert!(!row.switch_disabled);
+        assert!(
+            row.toggled.as_ref().is_some_and(|(_, enabled)| *enabled),
+            "{:?}",
+            row.toggled
+        );
+        assert!(row.edit_opened);
+
+        let row = click_row_controls(true);
+        assert!(row.switch_on, "pending row shows the default on state");
+        assert!(row.switch_disabled, "pending row draws a disabled Switch");
+        assert_eq!(row.toggled, None);
+        assert!(!row.edit_opened);
     }
 }

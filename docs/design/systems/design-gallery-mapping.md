@@ -804,7 +804,7 @@ L1 "File Handler" 를 **Handler** 로 일반화(내부 key `FileHandler` 유지)
 | `body()` File Detectors 분기 | `view/settings/ui/file_handler_tab/detectors.rs` | `::draw_detectors` | name 13 `text-secondary` + desc 12 `text-muted` · Switch 우측 |
 | `body()` File Handlers 분기 | `view/settings/ui/file_handler_tab/handlers.rs` | `::draw_file_handlers` | name 13 + `Tag`(kind) + Switch(marginLeft auto) |
 | `HookHandlers` (intro+add card+list) | `view/settings/ui/file_handler_tab/hook_handlers.rs::draw_hook_handlers` | `::draw_hook_handlers` | intro 12 `text-muted`/`measure-md` · add card `surface-raised`+`border-default`+`radius`, 라벨폭 100 |
-| `HookRow` (2줄 행) | `hook_handlers.rs::draw_hook_row` | specimen 내 `draw_hook_row` | id mono 13/600 `text-primary` · origin `Tag`(`host` · `you` · plugin id = `agent` variant) · `prio N` mono `font-size-micro` · 우측 끝은 user 행이면 휴지통 IconButton, 아니면 **자물쇠 글리프**(`glyph-dim` + tooltip) · disabled 시 row `state-dim-opacity` · 하단 `separator` · Shell cmd 라벨폭 74/`font-size-caption` + mono `Input`(IpcSequence 는 mono 한 줄 요약) |
+| `HookRow` (2줄 행) | `hook_handlers.rs::draw_hook_row` | specimen 내 `draw_hook_row` | id mono 13/600 `text-primary` · origin `Tag`(`host` · `you` · plugin id = `agent` variant) · `prio N` mono `font-size-micro` · 우측 끝은 user 행이면 휴지통 IconButton, 아니면 **자물쇠 글리프**(`glyph-dim` + tooltip) · disabled 시 row `state-dim-opacity` · 하단 `separator` · Shell cmd 라벨폭 74/`font-size-caption` + mono `Input`(IpcSequence 는 mono `font-size-term-sm` `text-secondary` 한 줄 요약 — 갤러리 `HookOverrideG` 행도 같다) |
 
 **전사 노트**:
 - jsx `headStyle`(mono 10 uppercase `letter-spacing-caps`)은 기존 관례(mono
@@ -828,7 +828,8 @@ L1 "File Handler" 를 **Handler** 로 일반화(내부 key `FileHandler` 유지)
   "edited"(툴팁 "Changed in your settings. Updates to the default no longer apply.")를 단다. 둘째 줄에는
   `Edit` 왼쪽(셸 행은 Input 오른쪽)에 Revert(ghost sm, 툴팁 "Go back to the default from {origin}.")가
   온다. 누르면 확장자 연결의 대기 모양을 따른다 — 같은 자리 Undo, `tag_disabled` "reverts on save",
-  요약·Switch 는 기본값을 보인다. 그 행의 초안 편집도 함께 버리고, Save 가 `RemoveHook`(patch 삭제)을
+  요약·Switch 는 기본값을 보인다. 대기 중에는 Switch(`switch` disabled, 툴팁
+  `hook_handlers.pending_locked_tip`)와 `Edit`(`enabled(false)`)을 Undo 나 Save 전까지 잠근다. 그 행의 초안 편집도 함께 버리고, Save 가 `RemoveHook`(patch 삭제)을
   다른 편집보다 먼저 적용한다. Cancel 은 초안을 버리므로 patch 가 그대로 남는다. user 행에는 달지 않는다.
 - **`IpcSequence` 행**: 요약 한 줄(줄어드는 항목) · 오른쪽 끝 `Edit`(ghost sm). 한 줄 형식으로
   쓸 수 없는 시퀀스(`sequence_text::format_sequence` 가 거절)는 `Edit` 대신 caption

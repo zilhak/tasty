@@ -338,6 +338,7 @@ edited_tip = "設定で変更した項目です。既定値が更新されても
 revert = "元に戻す"
 revert_tip = "{} の既定値に戻します。"
 reverts_on_save = "保存時に元に戻す"
+pending_locked_tip = "保存時に元に戻ります。変更するには取り消してください。"
 undo = "取り消す"
 
 [settings.general]

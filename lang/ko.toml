@@ -338,6 +338,7 @@ edited_tip = "설정에서 바꾼 항목입니다. 기본값이 갱신되어도 
 revert = "되돌리기"
 revert_tip = "{}의 기본값으로 되돌립니다."
 reverts_on_save = "저장 시 되돌림"
+pending_locked_tip = "저장하면 되돌립니다. 바꾸려면 실행 취소하세요."
 undo = "실행 취소"
 
 [settings.general]

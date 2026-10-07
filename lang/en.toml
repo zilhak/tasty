@@ -338,6 +338,7 @@ edited_tip = "Changed in your settings. Updates to the default no longer apply."
 revert = "Revert"
 revert_tip = "Go back to the default from {}."
 reverts_on_save = "reverts on save"
+pending_locked_tip = "Reverts on save. Undo to change it."
 undo = "Undo"
 
 [settings.general]
