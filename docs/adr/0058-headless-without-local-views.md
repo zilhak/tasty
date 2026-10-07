@@ -23,24 +23,19 @@
 헤드리스에는 로컬 View와 `ViewState`가 없다. 도메인 명령은 GUI와 같은 CommandExecutor 경계를 거쳐 응답 전에 완료한다.
 헤드리스만을 위한 별도 도메인 실행 경로를 두지 않는다. 원격 표시에 필요한 순수 타입·계산·전송 adapter는 존재할 수 있다.
 
-비저널 입력·관측·host event는 IPC·plugin 응답 전과 메인 루프 대기 전에 처리한다.
-한 번의 intent drain은 최대 8라운드이며 남은 것은 다음 처리에 넘긴다. 구조 명령은 별도 journal admission·publication·effect 완료 경계를 따른다.
-8라운드 제한에 닿으면 제한을 올리기 전에 이벤트가 반복해서 생기는 원인을 찾는다.
+비저널 입력·관측·host event는 IPC·plugin 응답 전과 메인 루프 대기 전에 처리한다. 한 번의 intent drain에는 반복 상한을 두고, 남은 것은 다음 처리에 넘긴다.
+구조 명령은 별도 journal admission·publication·effect 완료 경계를 따른다.
 
-지원 범위는 다음과 같다.
+지원 범위는 다음과 같이 정한다.
 
-- 도메인 적용과 엔진 상태 변경은 수행하고 GUI redraw·메뉴·알림음은 실행하지 않는다.
-  OSC 7 cwd는 헤드리스에서도 탭 이름과 레이아웃 변경 상태를 갱신한다.
-- `HookFired`는 agent task 대기를 완료한다. host event의 일반 plugin bus 전달은 지원하지 않는다.
-- plugin 조회는 설치·권한 부여·실행을 하지 않는다. 메타데이터 조회와 실제 기동을 분리하고, enable·disable은 공용 핸들러로 지정한 plugin만 처리한다.
-  enable·disable 외의 설치·삭제·권한 변경 기능까지 지원한다고 해석하지 않는다.
-  명시한 호스트 대상 ID는 실행 전에 확인하며 plugin 자체 ID 공간은 호스트가 추정하지 않는다.
-- 헤드리스는 로컬 View의 레이아웃을 저장·복원하지 않는다. workspace는 프로세스 수명 동안 유지된다.
-  복원 설정이 켜져 있으면 부팅 경고를 남기고 `system.info.layout_slot`은 `null`이다.
-  구조 저널을 외부 자원 없이 재생·검증하는 기능은 가능하지만, 그것이 로컬 View 자동 복원을 지원한다는 뜻은 아니다.
-- attach 서버 기능은 제공하고 attach client 기능은 제공하지 않는다. mirror 구조 요청은 실행할 전송 경로가 없으므로 큐에 넣지 않고 거절한다.
-- 사용하지 않는 GUI 정의는 feature에서 제외한다. 테스트가 실제로 쓰는 정의만 test 조건에 남기고,
-  특정 빌드에서만 읽히는 값에는 항목별 이유를 적은 `expect`를 쓴다. 모듈 전체 dead-code 허용은 공용 테스트와 생성 코드의 특별한 계약에만 둔다.
+- 도메인 적용과 엔진 상태 변경은 수행하고 GUI에만 있는 효과(redraw·메뉴·알림음)는 실행하지 않는다.
+- host event는 agent task 대기를 푸는 데에만 쓰고 일반 plugin bus로 전달하지 않는다.
+- plugin 조회는 설치·권한 부여·실행을 부수효과로 하지 않는다. enable·disable은 지정한 plugin만 처리하며, 그 밖의 설치·삭제·권한 변경 기능까지 지원한다고 해석하지 않는다.
+- 로컬 View의 레이아웃을 저장·복원하지 않는다. workspace는 프로세스 수명 동안 유지된다. 구조 저널을 외부 자원 없이 재생·검증할 수 있다는 것이 로컬 View 자동 복원을 지원한다는 뜻은 아니다.
+- attach 서버 기능은 제공하고 attach client 기능은 제공하지 않는다. 실행할 전송 경로가 없는 mirror 구조 요청은 큐에 넣지 않고 거절한다.
+- 사용하지 않는 GUI 정의는 feature에서 제외하고, 모듈 전체 dead-code 허용으로 경계를 숨기지 않는다.
+
+항목별 동작(반복 상한 값, OSC 7 cwd 갱신, `system.info.layout_slot`, 오류 코드, 정의별 `expect` 규칙)은 [헤드리스 정의 경계](../dev-guide/headless-build-boundaries.md)와 [헤드리스 IPC 지원표](../dev-guide/headless-ipc-surface.md)에 있다.
 
 ## Consequences
 
@@ -63,12 +58,12 @@ GUI와 헤드리스의 효과는 완전히 같지 않다. host event 소비, plu
 
 - plugin 이벤트 구독, attach client, 재시작 후 workspace 복원이 헤드리스의 제품 요구가 되면 지원 범위를 다시 정한다.
 - 새 non-Domain 생산자나 host event 소비자가 생기면 헤드리스 처리 결과를 확인한다.
-- 모든 도메인 명령이 CommandExecutor로 합류하면 intent 큐 처리와 8라운드 제한을 제거한다.
+- 모든 도메인 명령이 CommandExecutor로 합류하면 intent 큐 처리와 반복 상한을 제거한다.
 
 ### 실행 결과로 확인
 
 - 컴파일 경계를 바꾸면 GUI·헤드리스, debug·release, lib·all-targets 조합을 확인한다.
-- 8라운드 제한에 닿는 사례가 관측되면 반복 발생 원인을 먼저 조사한다.
+- 반복 상한에 닿는 사례가 관측되면 상한을 올리기 전에 반복 발생 원인을 먼저 조사한다.
 
 ## References
 
