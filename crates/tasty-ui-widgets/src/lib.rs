@@ -17,6 +17,7 @@ mod chip;
 mod chrome_slot;
 mod clipboard_viewer;
 mod code_area;
+mod compact_state;
 mod control;
 pub mod crumb_alloc;
 mod dashed_edge;
@@ -89,6 +90,7 @@ pub use clipboard_viewer::{
     SEG_COMPACT_AT, SegmentIconPainter, TypeSegment, draw_type_segments, seg_shows_label,
 };
 pub use code_area::{CodeArea, CodeAreaKeys, CodeAreaOutput};
+pub use compact_state::{CompactStateGlyph, CompactStateRow, compact_state_row};
 pub use control::ControlSize;
 pub use dashed_edge::paint_dashed_outline;
 pub use drilldown::{DrillDown, DrillDownActions, DrillDownOutput, DrillDownView};

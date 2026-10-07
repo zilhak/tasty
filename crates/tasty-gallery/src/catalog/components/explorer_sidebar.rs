@@ -3,9 +3,11 @@
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::tree_row;
+use tasty_ui_widgets::{
+    ButtonVariant, CompactStateGlyph, CompactStateRow, compact_state_row, tree_row,
+};
 
-use crate::catalog::icons::{FOLDER, STAR, STAR_FILL};
+use crate::catalog::icons::{ALERT_TRIANGLE, FOLDER, FOLDER_OPEN, LOCK, STAR, STAR_FILL};
 use crate::catalog::spec::{StageVariant, TokenChip, body_column, cluster, meta, note, stage};
 
 /// 시안 `TreeNode` 의 chevron 자리: 펼침 · 접힘 · 없음(leaf).
@@ -102,6 +104,9 @@ const SHORT_STRIP_BODY_H: [LogicalPx; 4] = [
 ];
 /// 시안 Short cell 라벨이 칸 하한을 적는 body 높이(`h === 90`).
 const SHORT_FLOOR_BODY_H: LogicalPx = SHORT_STRIP_BODY_H[3];
+/// 시안 compact 무대의 내용 높이(`bodyHeight || 62`, 칸 하한 160 일 때)와 줄 최대 폭(`maxWidth: 440`).
+const COMPACT_BODY_H: LogicalPx = LogicalPx(62.0);
+const COMPACT_ROW_MAX_W: LogicalPx = LogicalPx(440.0);
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     cluster(
@@ -169,6 +174,12 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         &SHORT_STRIP_BODY_H,
         |body_h| short_strip_label(theme, body_h),
     );
+    cluster(
+        ui,
+        theme,
+        "content body 62 (cell at 160) → compact row",
+        |ui| compact_rows(ui, theme),
+    );
 
     cluster(ui, theme, "with favorites", |ui| {
         stage(ui, theme, StageVariant::Tight, |ui| {
@@ -229,6 +240,15 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "160 · split drag stops here · sidebar never hidden",
             ),
             (
+                "split",
+                "explorer keeps 160, sibling takes the rest; refused if the sibling can't",
+            ),
+            ("window resize", "floor not held"),
+            (
+                "compact state",
+                "content body < 120 · glyph · title · buttons on one row, reason in tooltip",
+            ),
+            (
                 "row visuals",
                 "unchanged (tree row · star row · empty state)",
             ),
@@ -260,6 +280,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::without_color("explorer-sidebar-width", "196 column"),
             TokenChip::without_color("explorer-favorites-hide-below", "Files-only switch"),
             TokenChip::without_color("explorer-min-height", "cell floor (split drag)"),
+            TokenChip::without_color("explorer-state-compact-below", "→ size-120"),
             TokenChip::new(
                 "bg-sidebar",
                 "both regions' fill",
@@ -301,6 +322,67 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
 
 /// body 높이마다 사이드바 하나를 위쪽에 맞춰 늘어놓는 비교 줄. 네 예제가 창 끝을 넘지 않고
 /// 줄을 바꾸도록 본문 컬럼 폭 안에 둔다.
+/// 시안 Short cell 의 compact 줄 세 개(읽기 오류 · 권한 거부 · 빈 폴더). 본체와 같은 공용 함수가 그린다.
+fn compact_rows(ui: &mut egui::Ui, theme: &Theme) {
+    let muted = theme.text_muted().to_egui();
+    let error = theme.explorer_error_fg().to_egui();
+    let warning = theme.accent_warning().to_egui();
+    let rows = [
+        CompactStateRow {
+            glyph: CompactStateGlyph::Icon(ALERT_TRIANGLE),
+            glyph_color: error,
+            title: "Can't read this folder",
+            title_color: error,
+            tooltip: Some("No such file or directory (os error 2)"),
+            actions: &[
+                ("Retry", ButtonVariant::Secondary),
+                ("Go up", ButtonVariant::Ghost),
+            ],
+        },
+        CompactStateRow {
+            glyph: CompactStateGlyph::Icon(LOCK),
+            glyph_color: warning,
+            title: "Permission denied",
+            title_color: warning,
+            tooltip: Some("You don't have access to read this folder."),
+            actions: &[],
+        },
+        CompactStateRow {
+            glyph: CompactStateGlyph::Icon(FOLDER_OPEN),
+            glyph_color: muted,
+            title: "This folder is empty",
+            title_color: theme.text_secondary().to_egui(),
+            tooltip: None,
+            actions: &[],
+        },
+    ];
+    stage(ui, theme, StageVariant::Tight, |ui| {
+        ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing.y = theme.spacing_md.value();
+            let w = COMPACT_ROW_MAX_W.value().min(ui.available_width());
+            for (i, row) in rows.iter().enumerate() {
+                let (rect, _) = ui.allocate_exact_size(
+                    egui::vec2(w, COMPACT_BODY_H.value()),
+                    egui::Sense::hover(),
+                );
+                let radius = theme.corner_radius.value();
+                ui.painter()
+                    .rect_filled(rect, radius, theme.bg_panel().to_egui());
+                ui.painter().rect_stroke(
+                    rect,
+                    radius,
+                    egui::Stroke::new(
+                        theme.border_width.value(),
+                        theme.separator.to_egui_premultiplied(),
+                    ),
+                    egui::StrokeKind::Inside,
+                );
+                ui.push_id(i, |ui| compact_state_row(ui, theme, rect, row));
+            }
+        });
+    });
+}
+
 fn body_strip(
     ui: &mut egui::Ui,
     theme: &Theme,

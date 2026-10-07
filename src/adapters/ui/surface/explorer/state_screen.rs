@@ -6,12 +6,17 @@
 //! 글리프 자리에 Spinner 를 둔다. 읽기 오류는 OS 이유 문구를 번역하지 않고 보이며 Retry(같은 경로를
 //! 다시 읽음)와 Go up(상위 폴더, 루트에서는 숨김)을 둔다.
 //! 시안의 패널 배경·테두리는 갤러리 전시 칸이고 본체에서는 내용 영역 자체가 그 자리다.
+//! 내용 영역 높이가 `explorer_state_compact_below()` 미만이면 공용 compact 한 줄(글리프 · 제목 ·
+//! 버튼)로 바꾸고 보조 줄과 이유 문구는 제목 툴팁으로 옮긴다. 블록이 잘리지 않게 하기 위해서다.
 
 use std::path::Path;
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, Spinner};
+use tasty_ui_widgets::{
+    Button, ButtonVariant, CompactStateGlyph, CompactStateRow, ControlSize, Spinner,
+    compact_state_row,
+};
 
 use super::ExplorerAction;
 use super::view::{ExplorerView, LoadState};
@@ -118,18 +123,11 @@ fn show(ui: &mut egui::Ui, theme: &Theme, s: &StateScreen<'_>) -> Option<Explore
         egui::vec2(ui.available_width(), ui.available_height()),
         egui::Sense::hover(),
     );
+    if rect.height() < theme.explorer_state_compact_below().value() {
+        return show_compact(ui, theme, rect, s);
+    }
     let muted = theme.text_muted().to_egui();
-    let (glyph_fg, title_fg) = match s.tone {
-        Tone::Neutral => (muted, theme.text_secondary().to_egui()),
-        Tone::Warning => {
-            let c = theme.accent_warning().to_egui();
-            (c, c)
-        }
-        Tone::Error => {
-            let c = theme.explorer_error_fg().to_egui();
-            (c, c)
-        }
-    };
+    let (glyph_fg, title_fg) = tone_colors(theme, s.tone);
     // transform: scale 은 배치에 영향이 없다. 배치는 원래 글리프 크기로 하고 그림만 확대한다.
     let glyph_box = theme.icon_glyph_size_md.value();
     let glyph = glyph_box * GLYPH_SCALE;
@@ -192,6 +190,60 @@ fn show(ui: &mut egui::Ui, theme: &Theme, s: &StateScreen<'_>) -> Option<Explore
     let actions = s.actions?;
     y += gap + theme.spacing_xs.value();
     action_row(ui, theme, rect, y, actions)
+}
+
+/// (글리프 색, 제목 색). 중립은 글리프 text-muted · 제목 text-secondary 다.
+fn tone_colors(theme: &Theme, tone: Tone) -> (egui::Color32, egui::Color32) {
+    match tone {
+        Tone::Neutral => (
+            theme.text_muted().to_egui(),
+            theme.text_secondary().to_egui(),
+        ),
+        Tone::Warning => {
+            let c = theme.accent_warning().to_egui();
+            (c, c)
+        }
+        Tone::Error => {
+            let c = theme.explorer_error_fg().to_egui();
+            (c, c)
+        }
+    }
+}
+
+/// 낮은 내용 영역의 한 줄 상태. 보조 줄·이유 문구는 제목 툴팁이고 Retry · Go up 은 줄에 남는다.
+fn show_compact(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    rect: egui::Rect,
+    s: &StateScreen<'_>,
+) -> Option<ExplorerAction> {
+    let (glyph_color, title_color) = tone_colors(theme, s.tone);
+    let retry = t("explorer.state.read_error_retry");
+    let go_up = t("explorer.state.read_error_go_up");
+    let with_go_up = [
+        (retry, ButtonVariant::Secondary),
+        (go_up, ButtonVariant::Ghost),
+    ];
+    let actions: &[(&str, ButtonVariant)] = match s.actions {
+        Some(ReadErrorActions { go_up: true }) => &with_go_up,
+        Some(ReadErrorActions { go_up: false }) => &with_go_up[..1],
+        None => &[],
+    };
+    let row = CompactStateRow {
+        glyph: match s.glyph {
+            StateGlyph::Icon(icon) => CompactStateGlyph::Icon(icon),
+            StateGlyph::Spinner => CompactStateGlyph::Spinner,
+        },
+        glyph_color,
+        title: s.title,
+        title_color,
+        tooltip: s.reason.or(s.sub),
+        actions,
+    };
+    match compact_state_row(ui, theme, rect, &row)? {
+        0 => Some(ExplorerAction::Refresh),
+        _ => Some(ExplorerAction::GoUp),
+    }
 }
 
 /// 시안 버튼 줄(`display: flex; gap: space-sm`)을 가운데에 놓는다. Retry 는 Secondary, Go up 은 Ghost.
