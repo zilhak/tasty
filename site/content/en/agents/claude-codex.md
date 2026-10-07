@@ -1,4 +1,4 @@
-<!-- source-hash: 99ed5c3f9f3c -->
+<!-- source-hash: 06b52c56d64e -->
 # Working with Claude and Codex
 
 Connect Claude Code and Codex CLI to share work across several agents. One agent can launch others and receive their results, so implementation, testing, and review can run alongside each other.
@@ -90,6 +90,8 @@ tasty claude kill --child 0                                 # terminate by index
 tasty claude respawn --child 0 --prompt "Start over"          # restart in the same place
 tasty claude parent --surface 57                            # the parent of this child
 ```
+
+A Claude child started without a prompt is `idle` once its input screen appears. No completion notice is sent then; a completion notice comes only when a response ends. A child started with `--prompt` is `active` while it works on that prompt.
 
 `tasty codex …` has the same subcommands (`tell` / `children` / `state` / `broadcast` / `kill` / `respawn` / `parent`).
 

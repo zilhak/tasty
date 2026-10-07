@@ -483,7 +483,7 @@ pub(crate) fn settings_file_after_session_end(
     ]
 }
 
-fn meta_value<H: HostCall>(host: &H, surface_id: u32, key: &str) -> Option<String> {
+pub(crate) fn meta_value<H: HostCall>(host: &H, surface_id: u32, key: &str) -> Option<String> {
     host.call(
         "surface.meta.get",
         json!({ "surface_id": surface_id, "key": key }),

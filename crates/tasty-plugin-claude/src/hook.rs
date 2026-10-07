@@ -302,6 +302,14 @@ pub(crate) fn handle_claude_hook<H: HostCallSink>(
         error,
         tr,
     )?;
+    if event == "session-start" {
+        session_start_state(
+            &mut calls,
+            host,
+            surface_id,
+            params.get("source").and_then(Value::as_str),
+        );
+    }
 
     session_lifecycle_calls(
         &mut calls,
@@ -640,6 +648,46 @@ fn pending_background_task_types(value: &Value) -> Option<Vec<String>> {
 /// 새 턴으로 처리할 이벤트. 이전 턴의 오류가 새 알림을 막지 않도록 중복 기록을 초기화한다.
 fn is_new_turn_event(event: &str) -> bool {
     matches!(event, "prompt-submit" | "session-start" | "active")
+}
+
+/// 입력을 기다리는 화면으로 시작한 세션인가. `compact` 는 턴 도중 자동 압축에서도 오므로 제외하고,
+/// 값이 없거나 모르는 값이면 판단하지 않는다.
+fn session_start_waits_for_input(source: Option<&str>) -> bool {
+    matches!(source, Some("startup" | "resume" | "clear" | "fork"))
+}
+
+/// surface meta 키 — 플러그인이 프롬프트를 실어 Claude 를 실행했다는 표시. 실행 기록이 쓰고 지우며,
+/// 그 실행의 SessionStart 가 읽고 지운다. 그 세션은 시작하자마자 프롬프트를 처리하므로 idle 로 두지 않는다.
+pub(crate) const LAUNCH_PROMPT_META_KEY: &str = "claude-launch-prompt";
+
+/// 입력 대기로 시작한 세션은 첫 Stop 전에도 idle 로 기록한다. 그래야 기존 세션 agent task 처럼
+/// idle 을 기다리는 소비자가 사용자 턴 없이 진행한다. 완료 훅(`claude-idle`)·화면 알림·
+/// telemetry 는 턴이 끝난 것이 아니므로 만들지 않는다. 상태 값만 바꾼다.
+/// 프롬프트를 실어 실행한 세션은 곧 그 턴이 시작되므로 active 로 둔다. idle 을 거치면
+/// spawn 노드처럼 idle 을 완료로 보는 소비자가 프롬프트를 처리하기 전에 끝난다.
+fn session_start_state<H: HostCallSink>(
+    calls: &mut Vec<HostCall>,
+    host: &H,
+    surface_id: u32,
+    source: Option<&str>,
+) {
+    if !session_start_waits_for_input(source) {
+        return;
+    }
+    if crate::stop_pairing::meta_value(host, surface_id, LAUNCH_PROMPT_META_KEY).is_some() {
+        calls.push(HostCall::MetaUnset {
+            surface_id,
+            key: LAUNCH_PROMPT_META_KEY,
+        });
+        return;
+    }
+    for call in calls.iter_mut() {
+        if let HostCall::SetState { state, .. } = call
+            && *state == "active"
+        {
+            *state = "idle";
+        }
+    }
 }
 
 /// 오류 감시 중인 surface에만 중복 기록 초기화를 적용한다.
@@ -1282,6 +1330,8 @@ mod tests {
         seen: std::cell::RefCell<Vec<(String, Value)>>,
         settings_file: Option<String>,
         settings_session: Option<String>,
+        /// 프롬프트를 실어 실행했다는 meta 가 있는가.
+        launch_prompt: bool,
     }
 
     impl HostCallSink for RecordingHost {
@@ -1297,6 +1347,12 @@ mod tests {
                     Some(crate::stop_pairing::SETTINGS_FILE_META_KEY),
                 ) => {
                     json!({ "value": path })
+                }
+                _ if self.launch_prompt
+                    && method == "surface.meta.get"
+                    && params["key"] == LAUNCH_PROMPT_META_KEY =>
+                {
+                    json!({ "value": "1" })
                 }
                 _ if method == "surface.meta.get"
                     && params["key"] == crate::stop_pairing::SETTINGS_SESSION_META_KEY =>
@@ -1983,6 +2039,60 @@ mod tests {
                 && p["value"] == "s-9"
         });
         assert!(owner);
+    }
+
+    fn session_start(source: Option<&str>) -> Value {
+        let mut p =
+            json!({ "event": "session-start", "surface": HookRig::SURFACE, "session": "s-9" });
+        if let Some(source) = source {
+            p["source"] = json!(source);
+        }
+        p
+    }
+
+    /// 입력 대기 화면으로 시작한 세션은 idle 이다. 턴이 끝난 것이 아니므로 완료 훅·화면 알림·
+    /// wall_time 은 만들지 않는다(spawn·tell 완료 알림은 `claude-idle` 훅으로 나간다).
+    #[test]
+    fn a_session_that_starts_waiting_for_input_is_idle_without_a_completion() {
+        for source in ["startup", "resume", "clear", "fork"] {
+            let mut rig = HookRig::new();
+            rig.run(session_start(Some(source)));
+            assert_eq!(rig.host.states(), vec!["idle"], "{source}");
+            assert!(rig.host.fired().is_empty(), "{source}");
+            assert!(
+                !rig.host
+                    .methods()
+                    .iter()
+                    .any(|m| m == "surface.completion" || m == "telemetry.record"),
+                "{source}"
+            );
+            assert!(rig.wall_time_open(), "{source}");
+        }
+    }
+
+    /// 압축(`compact`)은 턴 도중에도 오고, source 가 없거나 모르는 값이면 판단하지 않는다.
+    #[test]
+    fn a_compaction_or_an_unknown_start_stays_active() {
+        for source in [Some("compact"), None, Some("future")] {
+            let mut rig = HookRig::new();
+            rig.run(session_start(source));
+            assert_eq!(rig.host.states(), vec!["active"], "{source:?}");
+        }
+    }
+
+    /// 프롬프트를 실어 실행한 세션은 곧 그 턴을 시작하므로 active 로 두고 표시를 지운다.
+    #[test]
+    fn a_session_launched_with_a_prompt_stays_active_and_drops_the_mark() {
+        let mut rig = HookRig::new();
+        rig.host.launch_prompt = true;
+        rig.run(session_start(Some("startup")));
+        assert_eq!(rig.host.states(), vec!["active"]);
+        assert!(
+            rig.host
+                .unset_keys()
+                .iter()
+                .any(|k| k == LAUNCH_PROMPT_META_KEY)
+        );
     }
 
     /// 2.1.290 실측 `PostToolUse` 처럼 Bash 를 백그라운드로 띄운 도구 호출을 알린다.

@@ -556,6 +556,7 @@ pub(crate) fn start_claude_in_surface(
 ) {
     // Stop 이 부착 게이트 수를 셀 수 있도록 붙인 settings 경로를 남긴다.
     crate::stop_pairing::record_settings_file(host, surface_id, profile_file);
+    record_launch_prompt(host, surface_id, prompt.is_some());
     let agent_id = format!("claude_s{surface_id}");
     let session_token = issue_session_token(host, &agent_id);
     let agent_prefix = match session_token {
@@ -589,6 +590,25 @@ pub(crate) fn start_claude_in_surface(
         json!({ "surface_id": surface_id, "text": text }),
     ) {
         tracing::warn!("surface.send (claude) failed: {e}");
+    }
+}
+
+/// 프롬프트를 실어 실행하는지 기록한다. SessionStart 가 이 표시로 시작 상태를 정한다.
+fn record_launch_prompt(host: &HostHandle, surface_id: u32, with_prompt: bool) {
+    let key = crate::hook::LAUNCH_PROMPT_META_KEY;
+    let result = if with_prompt {
+        host.call(
+            "surface.meta.set",
+            json!({ "surface_id": surface_id, "key": key, "value": "1" }),
+        )
+    } else {
+        host.call(
+            "surface.meta.unset",
+            json!({ "surface_id": surface_id, "key": key }),
+        )
+    };
+    if let Err(e) = result {
+        tracing::warn!("claude s{surface_id}: failed to record the launch prompt mark: {e}");
     }
 }
 

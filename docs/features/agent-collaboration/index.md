@@ -142,6 +142,8 @@ tasty agent task-create --workspace-id 1 --name spawn-worker \
 
 **`poll` 을 주지 않는 것이 요점이다.** 두 plugin 이 자기 매니페스트에 `[[contributes.completion_strategy]]` 를 선언하면서 `default_for_methods` 로 자기 `spawn`/`tell` 메서드를 지목해 두었으므로, 러너가 dispatch 시점에 그 전략을 자동으로 집어 폴링 모드로 전이한다. 전략이 없으면(= 해당 plugin 이 비활성이면) `custom` 노드는 dispatch 성공 즉시 `Succeeded` 가 되므로, 자식이 도는 동안 기다려주지 않는다.
 
+Claude 자식은 입력 대기 화면으로 시작하면 `idle` 이므로, 프롬프트 없이 띄운 `claude.spawn` 노드는 세션이 준비되면 끝난다. `prompt` 를 주면 그 턴이 끝날 때 끝난다([Claude 플러그인](../../plugins/claude/index.md)의 `SessionStart` 행).
+
 `params.surface_id` 는 자식을 매달 **부모** surface 다. spawn 응답의 `child_surface_id` 가 `map_from_response` 를 타고 poll 호출의 파라미터로 옮겨간다.
 
 두 plugin 의 전략 값이 다르므로 그대로 옮겨 쓰면 안 된다:

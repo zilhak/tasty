@@ -90,6 +90,8 @@ tasty claude respawn --child 0 --prompt "다시 시작"          # 같은 자리
 tasty claude parent --surface 57                            # 이 자식의 부모
 ```
 
+프롬프트 없이 띄운 Claude 자식은 입력 대기 화면이 뜨면 `idle` 입니다. 이때는 완료 알림이 오지 않습니다. 완료 알림은 응답을 마쳤을 때만 옵니다. `--prompt` 로 띄운 자식은 그 프롬프트를 처리하는 동안 `active` 입니다.
+
 `tasty codex …` 도 같은 서브커맨드(`tell` / `children` / `state` / `broadcast` / `kill` / `respawn` / `parent`)를 가집니다.
 
 자식이 너무 많아지면 spawn 응답에 경고가 붙습니다. 임계치는 **설정** <!-- en: Settings --> › **플러그인** <!-- en: Plugins --> › **Claude Code** / **Codex** 의 **Spawn child 경고 임계치** <!-- en: Spawn child warning threshold --> 에서 바꿉니다 (Codex 기본 6).
