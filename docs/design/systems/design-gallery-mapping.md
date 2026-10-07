@@ -1170,9 +1170,9 @@ Mocha·Latte는 고정 테마(`mocha_fallback`·`latte_theme`)로 위아래에 �
 | `DagEmpty` | `chrome::draw_empty` | `dag/chrome.rs::paint_empty` (`dag-states` spec) |
 | `DagDetail` / `DetailRow` / `LogBlock` | `detail::draw_detail` / `row` / `labeled_block` | `dag/detail.rs::draw_body` (`dag-detail` spec) |
 | `DagSurface` | `render::draw_dag_graph` + `DagChrome::Own` (헤더는 `chrome::draw_header`) | `dag/surface.rs::paint` (`dag-surface` spec) |
-| `DagWindow` 디테일 back bar actions | `chrome::draw_detail_backbar_actions` (줌 클러스터 + 러너 배지) | `dag/window.rs::detail_view` (`dag-window` spec) |
+| `DagWindow` 디테일 back bar actions | `chrome::draw_detail_backbar_actions` (줌 클러스터 + 러너 배지) | `dag/window.rs::detail_view` (`dag-window-detail` spec) |
 | `dagRowItems` (DAG 목록 행) | `popup::dag_list::draw_row_trailing` | `dag/rows.rs::trailing` (`dag-rows` spec) |
-| `DagWindow` (워크스페이스 popup) | `popup::dag_list::draw_dag_list_popup` | `dag/window.rs::paint` (`dag-window` spec) |
+| `DagWindow` (워크스페이스 popup) | `popup::dag_list::draw_dag_list_popup` | `dag/window.rs::paint` (`dag-window` · `dag-window-detail` spec) |
 
 **전사 미러인 이유**: `render::draw_dag_graph` 는 `(ui, DagTarget<'_>, &mut DagGraphView, DagChrome)`
 로 호스트 상태(폴링 스냅샷 · 줌/오프셋 · 선택)에 의존하고, 갤러리는 main 바이너리를 의존할
@@ -1213,5 +1213,5 @@ Mocha·Latte는 고정 테마(`mocha_fallback`·`latte_theme`)로 위아래에 �
   호출로 넘긴다.
 
   그래서 두 specimen 은 **차이가 아니라 두 갈래**를 전시한다 — `dag-surface`
-  (`dag/surface.rs::paint`)가 `Own`, `dag-window`(`dag/window.rs::detail_view`)가 `BackBar`
+  (`dag/surface.rs::paint`)가 `Own`, `dag-window-detail`(`dag/window.rs::detail_view`)가 `BackBar`
   이고, 둘 다 본체와 1:1 이다.

@@ -171,6 +171,7 @@ fn dag_rows_와_window_specimen_은_헤드리스로_렌더된다() {
     let theme = tasty_themes::mocha_fallback();
     run_frames(|ui| dag::rows::draw(ui, &theme));
     run_frames(|ui| dag::window::draw(ui, &theme));
+    run_frames(|ui| dag::window::draw_detail(ui, &theme));
 }
 
 /// 부팅·종료 예제가 공유하는 그리기 경로를 여러 상태로 실행한다.
@@ -249,7 +250,7 @@ fn 시안에서_옮긴_결정_specimen_은_id_충돌_없이_렌더된다() {
         components_settled, foundations_settled, layouts_settled, overlays_settled, plugins_settled,
     };
     let theme = tasty_themes::mocha_fallback();
-    let specs: [(&str, SpecFn); 20] = [
+    let specs: [(&str, SpecFn); 21] = [
         ("shadows", foundations_settled::draw_shadows),
         ("half-pixel", foundations_settled::draw_half_pixel),
         ("tint", foundations_settled::draw_tint),
@@ -267,6 +268,7 @@ fn 시안에서_옮긴_결정_specimen_은_id_충돌_없이_렌더된다() {
         ("drag-handles", overlays_settled::draw_drag_handles),
         ("spinner-hero", chrome_loading::draw_spinner_hero),
         ("dag-window", dag::window::draw),
+        ("dag-window-detail", dag::window::draw_detail),
         ("doc-background", plugins_settled::draw_doc_background),
         ("address-states", plugins_settled::draw_address_states),
         (

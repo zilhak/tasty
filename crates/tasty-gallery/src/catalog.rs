@@ -692,12 +692,33 @@ pub fn pages() -> Vec<Page> {
                     ),
                     components::explorer_toolbar::draw,
                 ),
-                single(
+                section(
                     "explorer-sidebar",
                     "Explorer sidebar",
-                    "Files tree + Favorites (populated / empty)",
-                    Some("tree active highlight · section separator · filled star · empty state"),
-                    components::explorer_sidebar::draw,
+                    vec![
+                        spec(
+                            "explorer-sidebar",
+                            "Sidebar layout — Favorites PINNED to the bottom (2-region split)",
+                            Some(
+                                "Files scrolls on top · Favorites pinned at a computed height · fixed 1px boundary",
+                            ),
+                            components::explorer_sidebar::draw,
+                        ),
+                        spec(
+                            "explorer-sidebar-short-cell",
+                            "Short cell — Favorites drops below 240, the cell stops at 160",
+                            Some(
+                                "Files only below a 240 body · split drag floor 160 · compact state row below 120",
+                            ),
+                            components::explorer_sidebar::draw_short_cell,
+                        ),
+                        spec(
+                            "explorer-sidebar-favorites",
+                            "Sidebar Favorites — populated vs. empty state",
+                            Some("caption always shown · faint star + caption + hint when empty"),
+                            components::explorer_sidebar::draw_favorites,
+                        ),
+                    ],
                 ),
                 single(
                     "layout-shell",
@@ -2121,6 +2142,14 @@ pub fn pages() -> Vec<Page> {
                                 "560 × 460, DrillDown 전면 교체. 상세는 640 아래라 항상 하단 시트",
                             ),
                             components::dag::window::draw,
+                        ),
+                        spec(
+                            "dag-window-detail",
+                            "Detail view — the header keeps the runner badge only",
+                            Some(
+                                "No second header — the back bar carries the compact zoom cluster and the runner badge",
+                            ),
+                            components::dag::window::draw_detail,
                         ),
                     ],
                 ),

@@ -171,4 +171,4 @@ popup 상태에서 받는다. popup 폭 560은 상세 도킹 기준 640보다 �
 ## 갤러리 specimen
 
 `cargo run -p tasty-gallery` → **Layouts** 페이지의 `Task DAG · list rows & workspace popup`
-섹션. 목록 행 4 종(`dag-rows`)과 560 × 460 popup 두 뷰(`dag-window`)를 전시한다.
+섹션. 목록 행 4 종(`dag-rows`), 560 × 460 popup 목록 뷰(`dag-window`), 목록·디테일 두 뷰를 나란히 놓은 Detail view(`dag-window-detail`)를 전시한다.

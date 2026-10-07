@@ -108,6 +108,7 @@ const SHORT_FLOOR_BODY_H: LogicalPx = SHORT_STRIP_BODY_H[3];
 const COMPACT_BODY_H: LogicalPx = LogicalPx(62.0);
 const COMPACT_ROW_MAX_W: LogicalPx = LogicalPx(440.0);
 
+/// 시안 "Sidebar layout — Favorites PINNED to the bottom (2-region split)".
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     cluster(
         ui,
@@ -165,88 +166,31 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         &PIN_STRIP_BODY_H,
         pin_strip_label,
     );
-    // 시안 Short cell: 240 미만에서 Favorites 가 빠지고 90 은 칸 하한 160 에 닿은 본문이다.
-    body_strip(
-        ui,
-        theme,
-        "short cell — favorites drops below 240",
-        "short",
-        &SHORT_STRIP_BODY_H,
-        |body_h| short_strip_label(theme, body_h),
-    );
-    cluster(
-        ui,
-        theme,
-        "content body 62 (cell at 160) → compact row",
-        |ui| compact_rows(ui, theme),
-    );
-
-    cluster(ui, theme, "with favorites", |ui| {
-        stage(ui, theme, StageVariant::Tight, |ui| {
-            panel(ui, theme, FAVORITES_BODY_H, |ui| {
-                two_region(ui, theme, "e", FAVORITES_BODY_H, TREE_SHORT, FAVS_FEW);
-            });
-        });
-    });
-
-    cluster(ui, theme, "empty — caption persists", |ui| {
-        stage(ui, theme, StageVariant::Tight, |ui| {
-            panel(ui, theme, FAVORITES_BODY_H, |ui| {
-                two_region(ui, theme, "f", FAVORITES_BODY_H, TREE_SHORT, &[]);
-            });
-        });
-    });
-
     meta(
         ui,
         theme,
         &[
             ("structure", "2 regions · independent scroll state"),
-            ("width", "196 (design ExpSidebar)"),
             (
-                "example body",
-                "620 → pin 240 · populated/empty 300 → pin 120",
+                "Files region",
+                "flex 1 · own scroll · caption pinned at its top",
             ),
-            ("pin strip", "body 620·560·420·300 → pin 240·224·168·120"),
             (
-                "split",
-                "Files flex(top) → fixed border → Favorites pinned(bottom)",
+                "Favorites region",
+                "fixed height, bottom-pinned · explorer-favorites-pin-height",
             ),
             (
                 "pin height",
-                "body>=600 → 240 fixed, else round(body×0.4/4)×4, min 120",
+                "body ≥ 600 → 240 · else 40% (4px-snapped) · min 120",
             ),
             (
-                "pin transition",
-                "hard switch at 600 threshold — no interpolation",
+                "boundary",
+                "1px explorer-split-border at a fixed coordinate",
             ),
-            (
-                "scroll",
-                "Files/Favorites independent ScrollArea, id_salt 분리",
-            ),
-            ("tree active", "surface-active + text-primary"),
-            ("fav star", "starFill · accent-warning"),
-            ("empty", "faint star + caption + hint"),
+            ("sidebar width", "196 unchanged · explorer-sidebar-width"),
             (
                 "resize",
                 "recomputed from the live body height — no drag handle",
-            ),
-            (
-                "hide Favorites",
-                "body < 240 → Files only, full body · back at 240",
-            ),
-            (
-                "cell floor",
-                "160 · split drag stops here · sidebar never hidden",
-            ),
-            (
-                "split",
-                "explorer keeps 160, sibling takes the rest; refused if the sibling can't",
-            ),
-            ("window resize", "floor not held"),
-            (
-                "compact state",
-                "content body < 120 · glyph · title · buttons on one row, reason in tooltip",
             ),
             (
                 "row visuals",
@@ -254,37 +198,24 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ),
         ],
         &[
-            TokenChip::new(
-                "surface-active",
-                "active row",
-                egui::Color32::from(theme.surface_active()),
-            ),
-            TokenChip::new(
-                "accent-warning",
-                "filled star",
-                egui::Color32::from(theme.accent_warning()),
-            ),
+            TokenChip::without_color("explorer-sidebar-width", "196 column"),
+            TokenChip::without_color("explorer-favorites-pin-height", "pinned region height"),
+            TokenChip::without_color("explorer-favorites-pin-threshold", "small-surface switch"),
+            TokenChip::without_color("explorer-favorites-pin-min-height", "lower clamp"),
             TokenChip::new(
                 "explorer-split-border",
                 "fixed boundary line",
                 theme.explorer_split_border().to_egui_premultiplied(),
             ),
             TokenChip::new(
-                "text-placeholder",
-                "empty hint",
-                egui::Color32::from(theme.text_placeholder()),
-            ),
-            TokenChip::without_color("explorer-favorites-pin-min-height", "lower clamp"),
-            TokenChip::without_color("explorer-favorites-pin-threshold", "small-surface switch"),
-            TokenChip::without_color("explorer-favorites-pin-height", "pinned region height"),
-            TokenChip::without_color("explorer-sidebar-width", "196 column"),
-            TokenChip::without_color("explorer-favorites-hide-below", "→ size-240"),
-            TokenChip::without_color("explorer-min-height", "→ size-160"),
-            TokenChip::without_color("explorer-state-compact-below", "→ size-120"),
-            TokenChip::new(
                 "bg-sidebar",
                 "both regions' fill",
                 egui::Color32::from(theme.bg_sidebar()),
+            ),
+            TokenChip::new(
+                "accent-warning",
+                "filled star",
+                egui::Color32::from(theme.accent_warning()),
             ),
         ],
     );
@@ -309,6 +240,62 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
          \"pinned\" is communicated by behaviour (the line never moves, each side scrolls \
          alone), not by extra decoration.",
     );
+}
+
+/// 시안 "Short cell — Favorites drops below 240, the cell stops at 160".
+pub fn draw_short_cell(ui: &mut egui::Ui, theme: &Theme) {
+    // 시안 Short cell: 240 미만에서 Favorites 가 빠지고 90 은 칸 하한 160 에 닿은 본문이다.
+    body_strip(
+        ui,
+        theme,
+        "short cell — favorites drops below 240",
+        "short",
+        &SHORT_STRIP_BODY_H,
+        |body_h| short_strip_label(theme, body_h),
+    );
+    cluster(
+        ui,
+        theme,
+        "content body 62 (cell at 160) → compact row",
+        |ui| compact_rows(ui, theme),
+    );
+
+    meta(
+        ui,
+        theme,
+        &[
+            (
+                "hide Favorites",
+                "body < 240 · explorer-favorites-hide-below",
+            ),
+            ("Files only", "caption + tree, own scroll, full body"),
+            ("return", "body ≥ 240 → pin ladder as before (120 floor)"),
+            (
+                "cell floor",
+                "160 · explorer-min-height · split drag stops here",
+            ),
+            (
+                "split",
+                "explorer keeps 160, sibling takes the rest; refused if the sibling can't",
+            ),
+            ("window resize", "floor not held"),
+            (
+                "compact state",
+                "content body < 120 · explorer-state-compact-below · glyph · title · buttons on one row, reason in tooltip",
+            ),
+            (
+                "scope",
+                "explorer only — other surfaces keep their own minimums",
+            ),
+            ("sidebar", "never hidden as a whole"),
+        ],
+        &[
+            TokenChip::without_color("explorer-favorites-hide-below", "→ size-240"),
+            TokenChip::without_color("explorer-min-height", "→ size-160"),
+            TokenChip::without_color("explorer-state-compact-below", "→ size-120"),
+            TokenChip::without_color("explorer-favorites-pin-min-height", "120 floor (unchanged)"),
+        ],
+    );
     note(
         ui,
         theme,
@@ -317,6 +304,64 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
          The explorer cell itself stops at 160 (toolbar + status line + two rows) while a \
          split is dragged, so the Files caption and at least one row stay visible. The \
          sidebar is never hidden as a whole.",
+    );
+    note(
+        ui,
+        theme,
+        "The Favorites height rule already reads tokens (explorer-favorites-pin-height 240, \
+         -pin-threshold 600, -pin-ratio 0.4, -pin-min-height 120). The three dimensions scale \
+         with the UI zoom like the other explorer tokens; the ratio is unitless and does not.",
+    );
+}
+
+/// 시안 "Sidebar Favorites — populated vs. empty state".
+pub fn draw_favorites(ui: &mut egui::Ui, theme: &Theme) {
+    cluster(ui, theme, "with favorites", |ui| {
+        stage(ui, theme, StageVariant::Tight, |ui| {
+            panel(ui, theme, FAVORITES_BODY_H, |ui| {
+                two_region(ui, theme, "e", FAVORITES_BODY_H, TREE_SHORT, FAVS_FEW);
+            });
+        });
+    });
+
+    cluster(ui, theme, "empty — caption persists", |ui| {
+        stage(ui, theme, StageVariant::Tight, |ui| {
+            panel(ui, theme, FAVORITES_BODY_H, |ui| {
+                two_region(ui, theme, "f", FAVORITES_BODY_H, TREE_SHORT, &[]);
+            });
+        });
+    });
+
+    meta(
+        ui,
+        theme,
+        &[
+            ("caption", "always shown — micro caps, text-muted"),
+            (
+                "empty line",
+                "outline star + \"No favorites yet\" · text-muted",
+            ),
+            ("hint", "1 line · text-placeholder"),
+            ("align", "left, inside 196px column"),
+            ("condition", "was: hide section at 0 → now: always show"),
+        ],
+        &[
+            TokenChip::new(
+                "text-muted",
+                "caption + empty line",
+                egui::Color32::from(theme.text_muted()),
+            ),
+            TokenChip::new(
+                "text-placeholder",
+                "hint line",
+                egui::Color32::from(theme.text_placeholder()),
+            ),
+            TokenChip::new(
+                "accent-warning",
+                "filled star (populated)",
+                egui::Color32::from(theme.accent_warning()),
+            ),
+        ],
     );
 }
 

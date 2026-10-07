@@ -319,54 +319,29 @@ fn paint(
     });
 }
 
-/// `dag-window` 섹션 Spec — 목록 뷰와 디테일 뷰를 나란히.
+/// 시안 "Workspace popup — list ⇄ single DAG" — 목록 뷰 popup 한 장.
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     let entries = rows::entries();
     let size = popup_size(theme);
     spec::stage(ui, theme, StageVariant::Tight, |ui| {
-        // 두 팝업이 칸에 함께 들어가지 않으면 시안처럼 위아래로 쌓는다.
-        ui.horizontal_wrapped(|ui| {
-            ui.spacing_mut().item_spacing =
-                egui::vec2(theme.spacing_lg.value(), theme.spacing_lg.value());
-            for (salt, open) in [("list", None), ("detail", Some(&entries[0]))] {
-                let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
-                paint(ui, theme, rect, &entries, open, salt);
-            }
-        });
+        let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+        paint(ui, theme, rect, &entries, None, "list");
     });
     spec::meta(
         ui,
         theme,
         &[
-            ("popup", "560 × 460 · movable · resizable"),
-            ("shadow", "shadow-modal — occupies the viewport (centered)"),
-            ("titlebar", "28 · gitTree + name + close"),
-            ("filter band", "8/12 · search + status"),
-            ("toggle band", "4/12 · this workspace only"),
-            ("footer", "8/12 · count + Close"),
-            ("detail", "back bar + canvas + 220 sheet"),
-            ("detail header", "none — the back bar is the chrome"),
-            ("back bar actions", "compact zoom cluster + runner badge"),
-            ("DAG selector", "hidden in detail"),
-            ("back bar", "36 — drilldown-backbar-height"),
-            ("back", "restores the list, keeps the selection"),
-            ("close / reset", "unchanged host contract"),
+            ("frame", "560 × 460 · resizable"),
+            ("titlebar", "28px drag strip"),
+            ("list rows", "36px · ~8 visible"),
+            ("swap", "DrillDown, 0ms"),
+            ("dismiss", "outside click · Esc · ×"),
         ],
         &[
             TokenChip::without_color("dag-popup-width", "560 frame"),
-            TokenChip::without_color("shadow-modal", "lift"),
-            TokenChip::without_color("drilldown-backbar-height", "36 back bar"),
             TokenChip::without_color("dag-popup-height", "460 frame"),
-            TokenChip::new(
-                "separator",
-                "band hairlines",
-                theme.separator.to_egui_premultiplied(),
-            ),
-            TokenChip::new(
-                "drilldown-backbar-border",
-                "back bar rule",
-                theme.drilldown_backbar_border().to_egui_premultiplied(),
-            ),
+            TokenChip::without_color("drilldown-backbar-height", "36 back bar"),
+            TokenChip::without_color("shadow-modal", "lift"),
         ],
     );
     spec::note(
@@ -384,13 +359,55 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
          for a side-by-side split that keeps both readable, and the back bar makes the swap \
          cheap to undo.",
     );
+}
+
+/// 시안 "Detail view — the header keeps the runner badge only" — 목록 뷰와 디테일 뷰를 나란히.
+pub fn draw_detail(ui: &mut egui::Ui, theme: &Theme) {
+    let entries = rows::entries();
+    let size = popup_size(theme);
+    spec::stage(ui, theme, StageVariant::Tight, |ui| {
+        // 두 팝업이 칸에 함께 들어가지 않으면 시안처럼 위아래로 쌓는다.
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing =
+                egui::vec2(theme.spacing_lg.value(), theme.spacing_lg.value());
+            for (label, salt, open) in [
+                ("list — full header", "list", None),
+                (
+                    "detail — open a row above: the back bar carries zoom + runner badge",
+                    "detail",
+                    Some(&entries[0]),
+                ),
+            ] {
+                spec::cluster(ui, theme, label, |ui| {
+                    let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+                    paint(ui, theme, rect, &entries, open, salt);
+                });
+            }
+        });
+    });
+    spec::meta(
+        ui,
+        theme,
+        &[
+            ("frame", "560×460 — unchanged"),
+            ("detail header", "none — the back bar is the chrome"),
+            ("back bar actions", "compact zoom cluster + runner badge"),
+            ("DAG selector", "hidden in detail"),
+            ("back bar", "36 — drilldown-backbar-height"),
+            ("back", "restores the list, keeps the selection"),
+            ("close / reset", "unchanged host contract"),
+        ],
+        &[
+            TokenChip::without_color("drilldown-backbar-height", "back bar"),
+            TokenChip::without_color("dag-popup-width", "560 frame"),
+            TokenChip::without_color("dag-popup-height", "460 frame"),
+        ],
+    );
     spec::note(
         ui,
         theme,
-        "Detail has no second header. The back bar's actions slot carries the compact zoom \
-         cluster and the runner badge; the DAG selector is hidden because the back-bar title \
-         already names the DAG. If a future detail view needs no zoom, the slot goes back to \
-         empty.",
+        "The actions slot was empty in the current build; this fills it rather than inventing a \
+         second bar. If a future detail view needs no zoom, the slot simply goes back to empty.",
     );
 }
 
