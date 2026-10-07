@@ -64,7 +64,7 @@ v2 그래프는 depends_on·binding 으로 순서와 값을 잇지만, 결과에
 
 - `crates/tasty-agent/src/task/route.rs` — 전이 형식, 제출 검사, 경로 선택.
 - `crates/tasty-agent/src/task/graph.rs` — 제어 엣지와 합류 판정.
-- `crates/tasty-agent/src/task/store.rs` — 경로 저장, skip 이유, retry 규칙.
+- `crates/tasty-agent/src/task/store.rs`·`store/transition.rs`·`store/retry.rs` — 경로 저장, skip 이유, retry 규칙.
 - `crates/tasty-agent/src/task/dag.rs` — DAG 집계(`rollup_state`, 막힌 대기, 끝 task).
 - `crates/tasty-task-runtime/src/graph_view.rs` — `transition` 간선.
 - [ADR-0068](0068-typed-task-graphs-activate-through-a-graph-record.md) — 그래프 활성화.
