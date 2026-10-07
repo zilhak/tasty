@@ -147,6 +147,10 @@ pub use task_graph_submit::*;
 #[cfg(test)]
 mod postprocess_ipc_tests;
 
+#[path = "agent/holding_ttl_ipc_tests.rs"]
+#[cfg(test)]
+mod holding_ttl_ipc_tests;
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;

@@ -299,6 +299,19 @@ fn task_typed_lines(task: &serde_json::Value) -> Vec<String> {
     lines
 }
 
+/// 러너가 TTL 을 갱신하지 못해 lease·permit 을 잃은 기록(`holding_warnings`) 한 줄씩.
+fn task_holding_warning_lines(task: &serde_json::Value) -> Vec<String> {
+    task.get("holding_warnings")
+        .and_then(|v| v.as_array())
+        .into_iter()
+        .flatten()
+        .map(|w| {
+            let message = w.get("message").and_then(|v| v.as_str()).unwrap_or("?");
+            format!("warning: {message}")
+        })
+        .collect()
+}
+
 /// `TaskFailure` 한 줄: `<단계>[/<코드>]: <메시지>`. 메시지가 이미 단계 이름으로 시작하면
 /// (후처리 실패의 `postprocess <원인>: …`) 단계를 다시 붙이지 않는다.
 fn failure_summary(failure: &serde_json::Value) -> String {
@@ -336,6 +349,9 @@ fn format_task_get(result: &serde_json::Value) -> Result<()> {
         outln!("state: {state}")?;
     }
     for line in task_postprocess_lines(result) {
+        outln!("{line}")?;
+    }
+    for line in task_holding_warning_lines(result) {
         outln!("{line}")?;
     }
     if let Some(wait) = result.get("awaiting_external") {
@@ -830,9 +846,9 @@ fn format_notification_list(result: &serde_json::Value) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{
-        format_runner_summary, format_workspace_row, render_layout, task_agent_line, task_list_row,
-        task_postprocess_lines, task_route_line, task_skip_line, task_typed_lines,
-        timer_hard_deadline_line, timer_row_line, timer_row_text,
+        format_runner_summary, format_workspace_row, render_layout, task_agent_line,
+        task_holding_warning_lines, task_list_row, task_postprocess_lines, task_route_line,
+        task_skip_line, task_typed_lines, timer_hard_deadline_line, timer_row_line, timer_row_text,
     };
     use serde_json::json;
 
@@ -857,6 +873,17 @@ mod tests {
         );
         assert_eq!(task_postprocess_lines(&task), ["phase: awaiting_input"]);
         assert_eq!(task_agent_line(&json!({"phase": "retry_wait"})), None);
+    }
+
+    #[test]
+    fn task_get_shows_each_lost_holding_as_a_warning_line() {
+        assert!(task_holding_warning_lines(&json!({"state": {"kind": "running"}})).is_empty());
+        let lost = json!({"holding_warnings": [
+            {"kind": "lease", "name": "db", "message": "lease 'db' is no longer held by 't1'"}]});
+        assert_eq!(
+            task_holding_warning_lines(&lost),
+            ["warning: lease 'db' is no longer held by 't1'"]
+        );
     }
 
     #[test]

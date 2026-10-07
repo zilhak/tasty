@@ -98,6 +98,8 @@ regular(`put/get/delete/list/exists/count/scopes/stats/query/export/import`) · 
 
 `task_command.kind = "run"`은 surface 없이 자식 프로세스를 실행한다. `task_get`과 `task_await`의 `result.output`에 stdout/stderr 각각 마지막 64KiB와 `truncated`/`dropped_bytes`를 반환한다. 0이 아닌 종료 코드로 실패하면 `result.error` 문자열에도 같은 출력이 포함된다. 실행이 끝나는 때는 명령이 끝나고 stdout·stderr 가 모두 닫힌 때다. 실행 중에 `task_cancel` 하면 명령이 이미 끝났어도 그 명령이 띄운 프로세스(Unix 프로세스 그룹 전체, Windows job)를 끝내고, 모두 끝난 것을 확인한 뒤 semaphore·lease 를 반환한다. 러너가 꺼져 있으면 `task_cancel` 은 종료를 기다리지 않고 응답하며, 종료 확인과 반환은 백그라운드에서 한다. 반환 전까지 점유는 그대로다.
 
+작업 metadata 의 `lease.ttl_ms`·`semaphore.ttl_ms` 는 러너가 갱신하며, 하한(1000ms)보다 짧으면 `task_create`·`task_graph_submit` 이 `-32602` 로 거절한다. 갱신하기 전에 TTL 이 지나 다른 holder 가 자원을 가져가면 `task_get` 응답에 `holding_warnings` 배열(`kind`·`name`·`holder`·`at_ms`·`message`)이 실린다. 없으면 키가 없다.
+
 `task_get` 은 레코드 `revision`(쓸 때마다 커지는 값)을 싣는다. revision 은 같은 레코드의 수명 안에서만 비교한다. task 를 지우고 같은 id 로 다시 제출하면 1부터 다시 센다. `task_await` 의 종결 응답은 `state`·`result` 와 함께 v2 task 의 `attempt_id`, `revision`, 건너뛴 이유 `skip` 을 싣는다. 이 셋은 종결 사건 `agent.task_finished` 의 같은 이름 필드와 같은 값이다([사건 목록](event-catalog.md#agent-scopesystem-experimental)).
 
 `task_get` 과 `task_list` 의 각 task 는 실행 중인 타입 작업(`contract_version: 2`)에 실행 단계 `phase` 를 싣는다. 값은 `executing`(본 작업 실행), `awaiting_input`(agent 세션이 사람 입력을 기다림), `postprocessing`(후처리 실행 중), `retry_wait`(후처리 재시도 대기)다. v1 task 와 실행 중이 아닌 task 에는 없다. `state.kind` 가 `unknown` 인 task 는 결과를 알 수 없게 된 이유를 `state.reason` 에 싣는다(예: 호스트 재시작 사이 run 의 종료 코드를 받지 못함, `run result lost: …`). 이유가 없는 옛 레코드는 `reason` 이 없다. unknown 은 종결이 아니며 `task_retry`·`task_cancel` 로 정한다.

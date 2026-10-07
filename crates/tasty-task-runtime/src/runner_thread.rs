@@ -32,7 +32,7 @@ use tasty_agent::task::postprocess::PostprocessCause;
 // The join slot only transfers an owned handle; recovery never treats a missing handle as joined.
 static JOIN_POISON_REPORTED: AtomicBool = AtomicBool::new(false);
 
-const TICK_INTERVAL: Duration = Duration::from_millis(500);
+pub(crate) const TICK_INTERVAL: Duration = Duration::from_millis(500);
 
 /// 조회가 반복 실패할 때 error로 올릴 횟수. tick 소요가 달라질 수 있어 시간 상한은 아니다.
 const STORE_LIST_ERROR_AFTER: u32 = 6;

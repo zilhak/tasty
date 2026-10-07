@@ -5,12 +5,53 @@
 //! 기다리는 동안 포함) TTL 의 절반이 지날 때마다 만료 시각을 지금 + TTL 로 늦춘다. 절반 주기는 다음
 //! 갱신이 tick 지연·저장소 대기로 늦어져도 남은 절반 안에 들면 만료되지 않게 하는 여유다. 갱신은
 //! tick 시작(`maintain`)에 하므로 TTL 은 tick 간격의 두 배 이상이어야 한다(작업 생성·제출 때
-//! 검사한다, `holding_ttl`). 러너가 꺼진 동안에는 아무도 갱신하지 않는다.
+//! 검사한다, [`check_holding_ttls`]). 러너가 꺼진 동안에는 아무도 갱신하지 않는다. 갱신하지 못해
+//! 점유를 잃으면 task 조회에 남긴다([`super::holding_warning`]).
 
-use tasty_agent::{LeaseStore, SemaphoreStore, Task, TaskId};
+use serde_json::{Value, json};
+use tasty_agent::{LeaseStore, OnFailure, SemaphoreStore, Task, TaskId};
 use tasty_memory::HOST_OWNER;
 
 use super::{HostExecutor, now_ms};
+
+/// 작업 생성·제출 때 받는 점유 TTL 의 하한(1초). 갱신은 TTL 의 절반이 지난 뒤 처음 오는 tick 에
+/// 한다. 그 tick 은 늦어도 절반 + tick 간격에 오므로, TTL 이 tick 간격의 두 배 이상이어야 만료
+/// 전에 갱신된다. 이보다 짧으면 갱신 사이에 만료돼 다른 holder 가 같은 자원을 얻는다.
+pub(crate) const MIN_HOLDING_TTL_MS: u64 =
+    2 * crate::runner_thread::TICK_INTERVAL.as_millis() as u64;
+
+/// 작업 metadata(와 inline fallback 의 metadata)의 lease·semaphore `ttl_ms` 가 하한보다 짧으면 거절한다.
+pub(crate) fn check_holding_ttls(
+    task: &str,
+    metadata: &Value,
+    on_failure: &OnFailure,
+) -> Result<(), String> {
+    for kind in [Holding::Lease, Holding::Permit] {
+        if let Some(ttl) = metadata
+            .get(kind.label())
+            .and_then(|m| m.get("ttl_ms"))
+            .and_then(Value::as_u64)
+            && ttl < MIN_HOLDING_TTL_MS
+        {
+            return Err(format!(
+                "task {task}: metadata.{}.ttl_ms {ttl} is below the minimum {MIN_HOLDING_TTL_MS} ms; \
+                 the runner renews it once per tick and a shorter TTL can run out between renewals",
+                kind.label()
+            ));
+        }
+    }
+    if let OnFailure::Fallback {
+        inline: Some(spec), ..
+    } = on_failure
+    {
+        check_holding_ttls(
+            &format!("{task} (inline fallback {})", spec.name),
+            &spec.metadata,
+            &spec.on_failure,
+        )?;
+    }
+    Ok(())
+}
 
 /// TTL 을 두고 쥐는 점유의 종류.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -86,9 +127,22 @@ impl HostExecutor {
             match renewed {
                 Ok(true) => self.track_renewal(task_id, *kind, r.ttl_ms, now),
                 Ok(false) => {
-                    tracing::warn!(
-                        "agent task {task_id}: {} '{name}' is no longer held by '{holder}' (its TTL ran out before it was renewed); not renewing it",
+                    let message = format!(
+                        "{} '{name}' is no longer held by '{holder}': its TTL ran out before it was renewed, so another holder may be using it while this task keeps running",
                         kind.label()
+                    );
+                    tracing::warn!("agent task {task_id}: {message}; not renewing it");
+                    super::holding_warning::record_holding_warning(
+                        &self.ctx,
+                        ws,
+                        task_id,
+                        json!({
+                            "kind": kind.label(),
+                            "name": name,
+                            "holder": holder,
+                            "at_ms": now,
+                            "message": message,
+                        }),
                     );
                     self.ttl_renewals.remove(&key);
                 }

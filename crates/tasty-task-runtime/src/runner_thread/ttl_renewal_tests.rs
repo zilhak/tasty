@@ -278,3 +278,117 @@ fn a_restored_run_keeps_its_ttl_permit_after_a_restart() {
     );
     assert_eq!(gpu_holder(&ctx)[0].0, id);
 }
+
+fn service(ctx: &RunnerContext) -> (crate::TaskService, crate::TaskScope) {
+    let svc = crate::TaskService::new(
+        ctx.memory.clone(),
+        Arc::new(OnceLock::new()),
+        Arc::new(crate::completion::fixture::Resolver::default()),
+    );
+    let scope = crate::TaskScope::new(svc.runner_registry().clone());
+    (svc, scope)
+}
+
+fn create_opts(metadata: serde_json::Value, on_failure: OnFailure) -> TaskCreateOpts {
+    TaskCreateOpts {
+        workspace_id: 1,
+        name: "t".into(),
+        command: TaskCommand::Run {
+            command: vec!["true".into()],
+            workspace_id: 1,
+            cwd: None,
+        },
+        depends_on: vec![],
+        on_failure,
+        metadata,
+        now_ms: 1000,
+    }
+}
+
+/// tick 두 번 안에 갱신하지 못할 만큼 짧은 TTL 은 생성·제출 때 거절한다(-32602 로 나가는 InvalidArgument).
+#[test]
+fn a_holding_ttl_shorter_than_two_ticks_is_rejected_at_create_and_submit() {
+    let (_td, ctx) = ctx();
+    let (svc, scope) = service(&ctx);
+    let min = crate::runner_host::MIN_HOLDING_TTL_MS;
+    assert_eq!(min, 1000);
+    for meta in [
+        serde_json::json!({"lease": {"resource": DB, "ttl_ms": min - 1}}),
+        serde_json::json!({"semaphore": {"name": "gpu", "ttl_ms": 300}}),
+    ] {
+        let err = svc
+            .task_create(&scope, create_opts(meta, OnFailure::Abort), false)
+            .unwrap_err();
+        assert!(
+            matches!(err, tasty_agent::AgentError::InvalidArgument(_)),
+            "{err:?}"
+        );
+    }
+    let inline = OnFailure::Fallback {
+        task: None,
+        inline: Some(Box::new(tasty_agent::task::InlineFallbackSpec {
+            name: "fb".into(),
+            command: TaskCommand::Run {
+                command: vec!["true".into()],
+                workspace_id: 1,
+                cwd: None,
+            },
+            depends_on_override: None,
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::json!({"lease": {"resource": DB, "ttl_ms": 10}}),
+        })),
+    };
+    assert!(matches!(
+        svc.task_create(&scope, create_opts(serde_json::json!({}), inline), false),
+        Err(tasty_agent::AgentError::InvalidArgument(_))
+    ));
+    svc.task_create(
+        &scope,
+        create_opts(
+            serde_json::json!({"lease": {"resource": DB, "ttl_ms": min}}),
+            OnFailure::Abort,
+        ),
+        false,
+    )
+    .expect("하한과 같은 TTL 은 받는다");
+
+    let spec: tasty_agent::task::TaskGraphSpec = serde_json::from_value(serde_json::json!({
+        "contract_version": 2,
+        "tasks": [{"id": "g", "command": {"kind": "run", "workspace_id": 1, "command": ["true"]},
+                   "metadata": {"semaphore": {"name": "gpu", "ttl_ms": 500}}}]}))
+    .unwrap();
+    let Err(err) = svc.task_graph_submit(&scope, 1, spec, false, 2000) else {
+        panic!("짧은 TTL 의 그래프를 받았다");
+    };
+    assert!(
+        matches!(err, tasty_agent::AgentError::InvalidArgument(_)),
+        "{err:?}"
+    );
+}
+
+/// 갱신 전에 TTL 이 지나 다른 holder 가 자원을 가져가면 task 조회에 경고가 남는다.
+#[test]
+fn a_lease_lost_before_renewal_is_reported_on_the_task() {
+    let (_td, ctx) = ctx();
+    let (svc, _scope) = service(&ctx);
+    let task = sleeper(&ctx);
+    let mut exec = HostExecutor::new(ctx.clone());
+    let outcome = exec.dispatch(&task);
+    let DispatchOutcome::Started(_) = outcome else {
+        panic!("dispatch: {outcome:?}");
+    };
+    assert!(svc.task_holding_warnings(1, &task.id).is_empty());
+    // 러너가 tick 을 건너뛴 사이 TTL 이 지나 다른 holder 가 얻는다.
+    std::thread::sleep(Duration::from_millis(TTL_MS + 50));
+    assert!(other_gets_db(&ctx));
+    exec.maintain();
+    let warnings = svc.task_holding_warnings(1, &task.id);
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    assert_eq!(warnings[0]["kind"], "lease");
+    assert_eq!(warnings[0]["name"], DB);
+    assert_eq!(db_holder(&ctx).as_deref(), Some("other"));
+    // 잃은 점유는 다시 갱신하지 않아 기록이 늘지 않는다.
+    keep_ticking(&mut exec, Duration::from_millis(TTL_MS));
+    assert_eq!(svc.task_holding_warnings(1, &task.id).len(), 1);
+    exec.release_permit(&task.id);
+}

@@ -21,6 +21,8 @@ impl TaskService {
         opts: TaskCreateOpts,
         reserved_for_fallback: bool,
     ) -> Result<Task, AgentError> {
+        crate::runner_host::check_holding_ttls(&opts.name, &opts.metadata, &opts.on_failure)
+            .map_err(AgentError::InvalidArgument)?;
         let seq = scope.agent_seq().clone();
         self.with_memory(|mem| {
             let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
@@ -57,6 +59,8 @@ impl TaskService {
             let plan = store.plan_graph(workspace_id, spec, now_ms)?;
             for (i, t) in plan.tasks.iter().enumerate() {
                 reject_output_placeholders(i, t)?;
+                crate::runner_host::check_holding_ttls(&t.id, &t.metadata, &t.on_failure)
+                    .map_err(AgentError::InvalidArgument)?;
             }
             if dry_run {
                 return Ok(GraphSubmitOutcome {
@@ -130,6 +134,15 @@ impl TaskService {
             let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             store.get(workspace_id, task_id)
         })
+    }
+
+    /// 러너가 TTL 을 갱신하지 못해 task 가 점유를 잃은 기록. 없으면 빈 목록.
+    pub fn task_holding_warnings(
+        &self,
+        workspace_id: u32,
+        task_id: &TaskId,
+    ) -> Vec<serde_json::Value> {
+        self.with_memory(|mem| crate::runner_host::holding_warnings(&*mem, workspace_id, task_id))
     }
 
     /// task 와 그 레코드 revision 을 한 번의 잠금 안에서 읽는다.

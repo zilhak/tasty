@@ -197,6 +197,7 @@ pub(crate) fn evict_handle_key(ctx: &RunnerContext, workspace_id: u32, task_id: 
 pub(crate) fn evict_task_side_keys(ctx: &RunnerContext, workspace_id: u32, task_id: &str) {
     evict_handle_key(ctx, workspace_id, task_id);
     evict_run_result(ctx, workspace_id, task_id);
+    super::holding_warning::evict_holding_warnings(ctx, workspace_id, task_id);
 }
 
 /// 재시작 뒤 Run 의 종료 결과를 회수할 수 없을 때 Unknown 사유의 머리말.

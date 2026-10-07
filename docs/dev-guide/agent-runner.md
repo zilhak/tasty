@@ -362,11 +362,20 @@ TTL을 생략하면 자동 만료하지 않는다.
 task 의 lease·semaphore TTL(`metadata.lease.ttl_ms`·`metadata.semaphore.ttl_ms`)은 러너가 갱신한다
 (`runner_host/ttl_renewal.rs`). 러너가 그 점유를 쥐고 있는 동안(task 가 종결돼 프로세스 종료를
 기다리는 동안 포함, 반환 전까지) TTL 의 절반이 지날 때마다 만료 시각을 지금 + TTL 로 늦춘다. 획득
-시각은 바꾸지 않는다(`LeaseStore::renew`·`SemaphoreStore::renew`). 절반 주기는 다음 갱신이 tick 지연·저장소 대기로 늦어져도 남은 절반 안에
-들면 만료되지 않게 하는 여유다. 갱신은 tick 시작(`maintain`, tick 500ms)에 하므로 TTL 이 1초보다
-짧으면 갱신 사이에 만료될 수 있다. 재시작 뒤 넘겨받은 Run·후처리의 lease·permit 도 넘겨받은 다음 tick 에
-바로 늦추고 이어서 갱신한다. 만료 시각이 지났어도 다른 holder 가 가져가지 않았으면 다시 늦추고,
-이미 다른 holder 가 쥐었으면 되찾지 않고 경고한 뒤 갱신을 멈춘다. 러너가 꺼진 동안에는 아무도
+시각은 바꾸지 않는다(`LeaseStore::renew`·`SemaphoreStore::renew`). 절반 주기는 다음 갱신이 tick
+지연·저장소 대기로 늦어져도 남은 절반 안에 들면 만료되지 않게 하는 여유다. 재시작 뒤 넘겨받은
+Run·후처리의 lease·permit 도 넘겨받은 다음 tick 에 바로 늦추고 이어서 갱신한다.
+
+TTL 의 하한은 `MIN_HOLDING_TTL_MS`(1초 = tick 500ms 의 두 배)다. 갱신은 TTL 의 절반이 지난 뒤
+처음 오는 tick 시작(`maintain`)에 하고, 그 tick 은 늦어도 절반 + tick 간격에 오므로 TTL 이 tick 의
+두 배 이상이어야 만료 전에 갱신된다. `task_create`·`task_graph_submit` 은 metadata(inline fallback
+포함)의 `lease.ttl_ms`·`semaphore.ttl_ms` 가 하한보다 짧으면 `-32602` 로 거절한다(`check_holding_ttls`).
+
+만료 시각이 지났어도 다른 holder 가 가져가지 않았으면 다시 늦춘다. 이미 다른 holder 가 쥐었으면
+되찾지 않고 갱신을 멈추며, task 는 계속 실행된다(프로세스를 멈출 근거가 없다). 이 일은 task 조회의
+`holding_warnings`(`kind`·`name`·`holder`·`at_ms`·`message`)에 남는다(`runner_host/holding_warning.rs`,
+memory 키 `tasty.agent.holding_warning.<task_id>`, task 당 최근 16건, task 를 지울 때 함께 지운다).
+러너가 tick 을 오래 건너뛴 경우(앱 멈춤·저장소 대기)에만 생긴다. 러너가 꺼진 동안에는 아무도
 갱신하지 않으므로, 그 사이 TTL 이 지나면 다른 holder 가 얻을 수 있다. TTL 은 이제 "task 를
 지켜보는 러너가 없어진 뒤 자원을 돌려받을 시간" 으로 정한다. 근거는 ADR-0042 의 "task
 lease·semaphore TTL 갱신" 절.
