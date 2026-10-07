@@ -5,7 +5,7 @@ Tasty를 개발하는 에이전트가 UI·렌더링·입력을 직접 재현하�
 | 문서 | 내용 |
 |---|---|
 | [스크린샷](screenshot-methods.md) | 캡처 대상과 수단, ID 지정, 격리 실행, 픽셀 비교. native WebView는 OS 화면 캡처가 필요하다. [시각 판정 체크리스트](screenshot-methods.md#시각-판정-체크리스트)도 참고한다. |
-| [IPC](ipc-usage.md) | IPC 조작, Enter 전송, 줄 단위 응답 읽기, 전용 PTY를 통한 대화형 작업 |
+| [IPC](ipc-usage.md) | IPC 조작, Enter 전송, 줄 단위 응답 읽기, 언어 전환 뒤 재시작, 전용 PTY를 통한 대화형 작업 |
 | [DPI 배율](dpi-scale-verification.md) | DPI가 1이 아닌 환경을 만들고 설정값과 실제 창 크기를 대조하는 방법 |
 | [IME](ime-testing.md) | debug의 surface.ime_*로 한글·CJK 입력을 재현하는 방법과 한계 |
 

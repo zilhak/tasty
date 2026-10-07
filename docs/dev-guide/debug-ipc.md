@@ -238,6 +238,9 @@ tasty debug settings apply --json '{"general":{"workspace_categories_enabled":fa
 
 `settings apply`는 `--file <path>`도 받는다. JSON·파일 오류는 CLI가 먼저 거절하고,
 서버는 `settings`가 object인지 확인한다.
+적용은 설정 창 저장과 같은 `UpdateSettings` 경로를 거친다. 그래서 `general.language`를 바꾸면
+설정은 저장되지만 실행 중인 GUI의 라벨은 재시작 뒤에 바뀐다. 검증 순서는
+[IPC 함정 3](../ai-verification/ipc-usage.md#함정-3--언어-전환은-재시작-뒤-화면에-반영된다)을 따른다.
 
 ### `tasty debug attach` (JSON-RPC 메서드 아님)
 
