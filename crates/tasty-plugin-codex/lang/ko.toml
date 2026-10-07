@@ -108,7 +108,7 @@ description = "Codex CLI 설정에 Tasty 훅 설치"
 description = "Codex CLI 설정에서 Tasty 훅 제거"
 
 [codex.cli.sub.hook]
-description = "Codex 훅 연동(Codex CLI 훅 시스템에서 호출). 호출 시 stdin에서 JSON payload(session_id, last_assistant_message)를 읽습니다."
+description = "Codex 훅 연동(Codex CLI 훅 시스템에서 호출). 호출 시 stdin에서 JSON payload(session_id, prompt, last_assistant_message)를 읽습니다."
 
 [codex.cli.arg.launch_args.workspace]
 help = "생성할 워크스페이스 이름(기본값: \"codex\")"
@@ -259,6 +259,9 @@ help = "훅 대상 서피스 ID"
 
 [codex.cli.arg.hook_args.session]
 help = "Codex 세션 ID. Codex 훅 호출 시 stdin JSON의 'session_id'에서 자동 입력"
+
+[codex.cli.arg.hook_args.prompt]
+help = "제출된 프롬프트. UserPromptSubmit 훅의 stdin JSON 'prompt'에서 자동 입력. 턴이 Tasty agent task의 지시인지 가리는 데만 쓰고 본문은 Tasty에 보내지 않음"
 
 [codex.cli.arg.hook_args.last_assistant_message]
 help = "턴의 마지막 assistant 메시지. Stop 훅의 stdin JSON 'last_assistant_message'에서 자동 입력. 이 surface가 Tasty agent task를 실행 중이면 그 턴의 최종 답변으로 보고"

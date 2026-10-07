@@ -70,6 +70,8 @@ impl HostExecutor {
                 &schema,
             ));
         }
+        text.push_str("\n\n");
+        text.push_str(&agent::attempt_marker_line(&attempt_token));
         let deadline_ms = timeout_ms.map(|t| now_ms().saturating_add(t));
         // 회차 기록·제출·턴 표는 task 자신의 workspace 를 쓴다. 명령의 workspace_id 는 새 세션이
         // 뜨는 곳일 뿐이다.

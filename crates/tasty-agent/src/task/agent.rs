@@ -113,6 +113,15 @@ pub(crate) fn candidate(
         .map(|v| (v.clone(), "agent.final_answer"))
 }
 
+/// 지시 끝에 붙이는 회차 표지의 앞부분. provider 플러그인이 프롬프트에서 같은 앞부분으로 토큰을
+/// 찾는다(`tasty_plugin_agent_common::task_turn::ATTEMPT_MARKER_PREFIX`).
+pub const ATTEMPT_MARKER_PREFIX: &str = "[tasty-task-attempt:";
+
+/// 지시의 마지막 줄. 세션이 받은 프롬프트가 이 회차의 지시인지 가리는 데 쓴다.
+pub fn attempt_marker_line(attempt_token: &str) -> String {
+    format!("Tasty task attempt marker (no action needed): {ATTEMPT_MARKER_PREFIX}{attempt_token}]")
+}
+
 /// 입력 블록의 머리말. 세션이 지시와 입력을 구별할 수 있게 고정 문구로 둔다.
 pub const INPUT_BLOCK_HEADER: &str = "Task input (JSON):";
 

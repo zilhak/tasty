@@ -13,6 +13,11 @@ fn binding(task: &str, attempt: &str, armed: bool) -> TurnBinding {
     )
 }
 
+/// 이 회차의 지시로 시작한 턴.
+fn ours() -> TurnEvent {
+    TurnEvent::Started(StartPrompt::Seen(Some(TOKEN.into())))
+}
+
 fn answer(s: &str) -> TurnEvent {
     TurnEvent::Ended(TurnEnd::Answer(Some(s.into())))
 }
@@ -38,7 +43,7 @@ fn an_end_before_the_turn_started_belongs_to_the_previous_turn() {
         ReportOutcome::Ignored("the bound turn has not started yet")
     );
     assert!(matches!(
-        t.report(7, "claude", TurnEvent::Started),
+        t.report(7, "claude", ours()),
         ReportOutcome::Applied { .. }
     ));
     assert!(matches!(
@@ -56,13 +61,52 @@ fn an_end_before_the_turn_started_belongs_to_the_previous_turn() {
     );
 }
 
+/// 기존 세션은 지시를 보내기 전후에 사용자가 시작한 턴을 받지 않는다. 프롬프트를 받지 못한
+/// provider 의 시작 보고는 가릴 수 없어 받는다.
+#[test]
+fn only_a_start_whose_prompt_carries_this_attempt_marker_arms_the_turn() {
+    let t = AgentTurns::new();
+    t.bind(7, binding("a", "a#1", false)).unwrap();
+    let start = |p| TurnEvent::Started(p);
+    for user in [
+        StartPrompt::Seen(None),
+        StartPrompt::Seen(Some("other".into())),
+    ] {
+        assert_eq!(
+            t.report(7, "claude", start(user)),
+            ReportOutcome::Ignored("the started turn is not this attempt's instruction")
+        );
+    }
+    // 사용자 턴의 끝은 시작 전 종료라 받지 않는다.
+    assert_eq!(
+        t.report(7, "claude", answer("user's")),
+        ReportOutcome::Ignored("the bound turn has not started yet")
+    );
+    assert!(matches!(
+        t.report(7, "claude", ours()),
+        ReportOutcome::Applied { .. }
+    ));
+    assert!(matches!(
+        t.report(7, "claude", answer("ours")),
+        ReportOutcome::Applied { .. }
+    ));
+    assert_eq!(
+        t.get(7).unwrap().ended,
+        Some(TurnEnd::Answer(Some("ours".into())))
+    );
+
+    let u = AgentTurns::new();
+    u.bind(7, binding("a", "a#1", false)).unwrap();
+    assert!(matches!(
+        u.report(7, "claude", start(StartPrompt::Unknown)),
+        ReportOutcome::Applied { .. }
+    ));
+}
+
 #[test]
 fn another_provider_and_unbound_surfaces_do_not_apply() {
     let t = AgentTurns::new();
-    assert_eq!(
-        t.report(9, "claude", TurnEvent::Started),
-        ReportOutcome::Unbound
-    );
+    assert_eq!(t.report(9, "claude", ours()), ReportOutcome::Unbound);
     t.bind(7, binding("a", "a#1", true)).unwrap();
     assert_eq!(
         t.report(7, "codex", answer("x")),

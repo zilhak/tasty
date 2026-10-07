@@ -6,22 +6,49 @@ use serde_json::{Value, json};
 
 use crate::host_call::HostCall;
 
+/// 호스트가 agent task 지시 끝에 붙이는 회차 표지의 앞부분. 표지는 `[tasty-task-attempt:<token>]`
+/// 이다. 호스트 쪽 같은 상수(`tasty_agent::task::agent::ATTEMPT_MARKER_PREFIX`)와 같아야 한다.
+pub const ATTEMPT_MARKER_PREFIX: &str = "[tasty-task-attempt:";
+
+/// 프롬프트에 실린 회차 표지의 토큰. 마지막 표지를 쓴다.
+pub fn attempt_marker(prompt: &str) -> Option<&str> {
+    let start = prompt.rfind(ATTEMPT_MARKER_PREFIX)? + ATTEMPT_MARKER_PREFIX.len();
+    let rest = &prompt[start..];
+    let token = &rest[..rest.find(']')?];
+    (!token.is_empty() && token.chars().all(|c| c.is_ascii_alphanumeric())).then_some(token)
+}
+
 /// 훅 이벤트가 뜻하는 턴 보고.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TurnReport<'a> {
-    Started,
-    Ended { final_answer: Option<&'a str> },
-    Failed { error: &'a str },
+    /// 턴 시작. `prompt` 는 훅이 넘겨 준 프롬프트이고, 받지 못했으면 없다.
+    Started {
+        prompt: Option<&'a str>,
+    },
+    Ended {
+        final_answer: Option<&'a str>,
+    },
+    Failed {
+        error: &'a str,
+    },
 }
 
 /// 보고 params.
 pub fn report_params(provider: &str, surface_id: u32, report: &TurnReport<'_>) -> Value {
     match report {
-        TurnReport::Started => json!({
-            "provider": provider,
-            "surface_id": surface_id,
-            "event": "turn_started",
-        }),
+        TurnReport::Started { prompt } => {
+            let mut p = json!({
+                "provider": provider,
+                "surface_id": surface_id,
+                "event": "turn_started",
+            });
+            // 프롬프트를 받았으면 표지 유무를 알린다. 프롬프트 본문은 보내지 않는다.
+            if let Some(prompt) = prompt {
+                p["prompt_seen"] = json!(true);
+                p["attempt_marker"] = json!(attempt_marker(prompt));
+            }
+            p
+        }
         TurnReport::Ended { final_answer } => json!({
             "provider": provider,
             "surface_id": surface_id,
@@ -71,9 +98,31 @@ mod tests {
             },
         );
         assert_eq!(p["error"], "overloaded");
+        let p = report_params("claude", 3, &TurnReport::Started { prompt: None });
+        assert_eq!(p["event"], "turn_started");
+        assert!(p.get("prompt_seen").is_none() && p.get("attempt_marker").is_none());
+    }
+
+    #[test]
+    fn a_start_names_the_attempt_marker_of_its_prompt() {
+        let started = |prompt| report_params("codex", 3, &TurnReport::Started { prompt });
+        let p = started(Some("review\n\nmarker: [tasty-task-attempt:ab12]"));
+        assert_eq!(p["prompt_seen"], true);
+        assert_eq!(p["attempt_marker"], "ab12");
+        assert!(p.get("prompt").is_none(), "본문은 보내지 않는다");
+        let p = started(Some("just a user prompt"));
+        assert_eq!(p["prompt_seen"], true);
+        assert!(p["attempt_marker"].is_null());
+    }
+
+    #[test]
+    fn only_a_closed_marker_with_a_plain_token_counts() {
         assert_eq!(
-            report_params("claude", 3, &TurnReport::Started)["event"],
-            "turn_started"
+            attempt_marker("x [tasty-task-attempt:aa] y [tasty-task-attempt:bb]"),
+            Some("bb")
         );
+        assert_eq!(attempt_marker("[tasty-task-attempt:open"), None);
+        assert_eq!(attempt_marker("[tasty-task-attempt:]"), None);
+        assert_eq!(attempt_marker("[tasty-task-attempt:a b]"), None);
     }
 }

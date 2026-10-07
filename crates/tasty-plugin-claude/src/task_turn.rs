@@ -15,7 +15,9 @@ pub(crate) fn report<H: HostCall>(host: &H, event: &str, surface_id: u32, params
 fn turn_report<'a>(event: &str, params: &'a Value) -> Option<TurnReport<'a>> {
     let text = |k: &str| params.get(k).and_then(|v| v.as_str());
     match event {
-        "prompt-submit" => Some(TurnReport::Started),
+        "prompt-submit" => Some(TurnReport::Started {
+            prompt: text("prompt"),
+        }),
         "stop" => Some(TurnReport::Ended {
             final_answer: text("last_assistant_message"),
         }),
@@ -34,7 +36,14 @@ mod tests {
     #[test]
     fn only_turn_boundaries_become_reports() {
         let p = json!({ "last_assistant_message": "answer", "error": "rate_limit" });
-        assert_eq!(turn_report("prompt-submit", &p), Some(TurnReport::Started));
+        assert_eq!(
+            turn_report("prompt-submit", &p),
+            Some(TurnReport::Started { prompt: None })
+        );
+        assert_eq!(
+            turn_report("prompt-submit", &json!({ "prompt": "hi" })),
+            Some(TurnReport::Started { prompt: Some("hi") })
+        );
         assert_eq!(
             turn_report("stop", &p),
             Some(TurnReport::Ended {

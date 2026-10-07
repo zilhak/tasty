@@ -5,7 +5,9 @@ use serde_json::{Value, json};
 use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
 use tasty_task_runtime::agent_task::{AttemptRef, Submitter};
-use tasty_task_runtime::agent_turns::{ReportOutcome, SubmitOutcome, TurnEnd, TurnEvent};
+use tasty_task_runtime::agent_turns::{
+    ReportOutcome, StartPrompt, SubmitOutcome, TurnEnd, TurnEvent,
+};
 
 use crate::app::services::AppServices;
 use crate::runtime::engine_access::EngineMut;
@@ -16,6 +18,20 @@ fn required_str<'a>(params: &'a Value, key: &str, id: &Value) -> Result<&'a str,
     params.get(key).and_then(|v| v.as_str()).ok_or_else(|| {
         JsonRpcResponse::invalid_params(id.clone(), format!("Missing required '{key}'"))
     })
+}
+
+/// 시작 보고의 프롬프트 정보. `prompt_seen` 이 없으면 provider 가 프롬프트를 받지 못한 것이다.
+fn start_prompt(params: &Value) -> StartPrompt {
+    if params.get("prompt_seen").and_then(Value::as_bool) != Some(true) {
+        tracing::debug!("agent turn start without a prompt; the attempt marker is not checked");
+        return StartPrompt::Unknown;
+    }
+    StartPrompt::Seen(
+        params
+            .get("attempt_marker")
+            .and_then(|v| v.as_str())
+            .map(str::to_string),
+    )
 }
 
 /// 세션 토큰의 agent id(`<provider>_s<surface>`)에서 세션 surface 를 읽는다.
@@ -114,7 +130,7 @@ pub fn task_turn_report(
         Err(e) => return e,
     };
     let event = match required_str(params, "event", &id) {
-        Ok("turn_started") => TurnEvent::Started,
+        Ok("turn_started") => TurnEvent::Started(start_prompt(params)),
         Ok("turn_ended") => {
             let text = |k: &str| params.get(k).and_then(|v| v.as_str()).map(str::to_string);
             TurnEvent::Ended(match text("error") {
@@ -142,7 +158,21 @@ pub fn task_turn_report(
 
 #[cfg(test)]
 mod tests {
-    use super::session_surface;
+    use super::{StartPrompt, session_surface, start_prompt};
+    use serde_json::json;
+
+    #[test]
+    fn a_start_report_says_whether_its_prompt_carried_a_marker() {
+        assert_eq!(start_prompt(&json!({})), StartPrompt::Unknown);
+        assert_eq!(
+            start_prompt(&json!({ "prompt_seen": true, "attempt_marker": null })),
+            StartPrompt::Seen(None)
+        );
+        assert_eq!(
+            start_prompt(&json!({ "prompt_seen": true, "attempt_marker": "ab" })),
+            StartPrompt::Seen(Some("ab".into()))
+        );
+    }
 
     #[test]
     fn the_session_surface_comes_from_the_issued_agent_id() {

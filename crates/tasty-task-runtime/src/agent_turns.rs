@@ -74,10 +74,19 @@ pub enum TurnEnd {
     Error(String),
 }
 
+/// 턴을 시작한 프롬프트에 대해 provider 가 알려 준 것.
+#[derive(Debug, Clone, PartialEq)]
+pub enum StartPrompt {
+    /// 훅이 프롬프트를 넘기지 않았다. 표지를 확인할 수 없다.
+    Unknown,
+    /// 프롬프트를 봤다. 값은 거기 실린 회차 표지의 토큰이다(없으면 사용자의 프롬프트다).
+    Seen(Option<String>),
+}
+
 /// provider 의 턴 보고.
 #[derive(Debug, Clone, PartialEq)]
 pub enum TurnEvent {
-    Started,
+    Started(StartPrompt),
     Ended(TurnEnd),
 }
 
@@ -191,7 +200,17 @@ impl AgentTurns {
             return ReportOutcome::Ignored("the bound turn already ended");
         }
         match event {
-            TurnEvent::Started => b.armed = true,
+            TurnEvent::Started(_) if b.armed => {}
+            // 지시를 보내기 전후에 사용자가 시작한 턴은 이 회차의 것이 아니다. 프롬프트의 표지로
+            // 가린다. 프롬프트를 받지 못하면 가릴 수 없어 시작 보고를 그대로 받는다.
+            TurnEvent::Started(StartPrompt::Seen(marker))
+                if marker.as_deref() != Some(&b.token) =>
+            {
+                return ReportOutcome::Ignored(
+                    "the started turn is not this attempt's instruction",
+                );
+            }
+            TurnEvent::Started(_) => b.armed = true,
             TurnEvent::Ended(_) if !b.armed => {
                 return ReportOutcome::Ignored("the bound turn has not started yet");
             }

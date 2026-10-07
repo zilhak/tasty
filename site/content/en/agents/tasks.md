@@ -1,4 +1,4 @@
-<!-- source-hash: 6e5058ac2968 -->
+<!-- source-hash: df110c97dc01 -->
 <a id="task-dag"></a>
 
 # Task workflows (DAG)
@@ -155,7 +155,7 @@ An `agent` task sends one instruction to a Claude or Codex session and takes the
 
 - The `workspace_id` in `command` is the workspace a new session opens in. `task-submit` hands the value to the workspace the task lives in, and the guidance appended to the instruction carries that number.
 - With `session` set to `{"kind": "new", "parent_surface": <surface>}`, a new session starts under that surface and gets the instruction. With `{"kind": "existing", "surface_id": <surface>}`, the instruction goes to a session that is already open.
-- An open session gets the instruction only when it is idle. If you are talking to it, the task waits until you finish, so the conversations do not mix. Tasks that use the same session run one after another.
+- An open session gets the instruction only when it is idle. If you are talking to it, the task waits until you finish, so the conversations do not mix. A one-line marker for that run is added to the end of the instruction, and only a turn started with that marker counts as the task's turn. Tasks that use the same session run one after another.
 - Without a result type, the last answer of the turn becomes a string result.
 - With a result type, as in the example, the agent has to hand in a value with `tasty agent task-submit`. How to do that, the type and a token used only for that run are added to the end of the instruction. A value with another token is refused, so a value handed in by mistake for another task or an earlier run does not get mixed in. The value is checked right away and becomes the result when the turn ends. A verdict such as `revise` is a successful result.
 - A task that takes input adds `"input_mapping": {"input_block": true}`. The input is appended to the instruction as JSON.

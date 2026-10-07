@@ -108,7 +108,7 @@ description = "Codex CLI設定にTastyフックをインストール"
 description = "Codex CLI設定からTastyフックを削除"
 
 [codex.cli.sub.hook]
-description = "Codexフック連携（Codex CLIのフックシステムから呼び出し）。呼び出し時にstdinからJSONペイロード（session_id、last_assistant_message）を読み取ります。"
+description = "Codexフック連携（Codex CLIのフックシステムから呼び出し）。呼び出し時にstdinからJSONペイロード（session_id、prompt、last_assistant_message）を読み取ります。"
 
 [codex.cli.arg.launch_args.workspace]
 help = "作成するワークスペース名（既定値：\"codex\"）"
@@ -259,6 +259,9 @@ help = "フック対象サーフェスID"
 
 [codex.cli.arg.hook_args.session]
 help = "CodexセッションID。Codexフック呼び出し時にstdin JSONの 'session_id' から自動設定"
+
+[codex.cli.arg.hook_args.prompt]
+help = "送信されたプロンプト。UserPromptSubmitフックのstdin JSONの 'prompt' から自動設定。ターンがTastyのagent taskの指示かどうかの判定にだけ使い、本文はTastyに送らない"
 
 [codex.cli.arg.hook_args.last_assistant_message]
 help = "ターンの最後のassistantメッセージ。Stopフックのstdin JSONの 'last_assistant_message' から自動設定。このsurfaceがTastyのagent taskを実行中なら、そのターンの最終回答として報告"

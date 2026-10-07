@@ -17,7 +17,7 @@ use tasty_ipc::server::IpcCommand;
 use tasty_memory::HOST_OWNER;
 
 use super::HostExecutor;
-use crate::agent_turns::{TurnEnd, TurnEvent};
+use crate::agent_turns::{StartPrompt, TurnEnd, TurnEvent};
 use crate::runner_host::RunnerContext;
 use crate::runner_host::tests::fresh_ctx;
 
@@ -84,6 +84,12 @@ impl FakeProvider {
     }
 }
 
+/// surface 에 묶인 회차의 지시로 시작한 턴. 프롬프트의 표지가 그 회차 토큰이다.
+fn ours(ctx: &RunnerContext, surface: u32) -> TurnEvent {
+    let token = ctx.agent_turns.get(surface).expect("bound").token;
+    TurnEvent::Started(StartPrompt::Seen(Some(token)))
+}
+
 fn contract(v: Value) -> TaskContract {
     serde_json::from_value(v).expect("contract")
 }
@@ -148,6 +154,43 @@ fn existing() -> AgentSession {
     AgentSession::Existing { surface_id: 7 }
 }
 
+/// 기존 세션에 보낸 지시는 회차 표지로 끝난다. 표지가 없는 사용자 턴은 이 회차의 턴이 아니다.
+#[test]
+fn the_instruction_ends_with_the_attempt_marker_and_a_user_turn_is_not_taken() {
+    let (_td, ctx) = fresh_ctx();
+    let fake = FakeProvider::install(&ctx, "idle");
+    let mut exec = HostExecutor::new(ctx.clone());
+    let task = create(&ctx, existing(), v2());
+    let h = dispatch(&mut exec, &ctx, &task);
+    assert!(matches!(exec.poll(&h), PollOutcome::Active));
+    let token = ctx.agent_turns.get(7).expect("bound").token;
+    let message = fake.sent(".tell")[0]["message"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let marker = format!("[tasty-task-attempt:{token}]");
+    assert!(message.trim_end().ends_with(&marker), "{message}");
+    // 사용자가 그 사이 시작한 턴과 그 끝은 받지 않는다.
+    ctx.agent_turns
+        .report(7, "claude", TurnEvent::Started(StartPrompt::Seen(None)));
+    ctx.agent_turns.report(
+        7,
+        "claude",
+        TurnEvent::Ended(TurnEnd::Answer(Some("user's".into()))),
+    );
+    assert!(matches!(exec.poll(&h), PollOutcome::Active));
+    ctx.agent_turns.report(7, "claude", ours(&ctx, 7));
+    ctx.agent_turns.report(
+        7,
+        "claude",
+        TurnEvent::Ended(TurnEnd::Answer(Some("mine".into()))),
+    );
+    let PollOutcome::Done(r) = exec.poll(&h) else {
+        panic!("expected done");
+    };
+    assert_eq!(r.output.unwrap()[report::FINAL_ANSWER], "mine");
+}
+
 #[test]
 fn a_busy_session_gets_no_instruction_until_it_is_idle() {
     let (_td, ctx) = fresh_ctx();
@@ -185,7 +228,7 @@ fn an_idle_session_without_a_turn_end_report_does_not_succeed() {
         TurnEvent::Ended(TurnEnd::Answer(Some("old".into()))),
     );
     assert!(matches!(exec.poll(&h), PollOutcome::Active));
-    ctx.agent_turns.report(7, "claude", TurnEvent::Started);
+    ctx.agent_turns.report(7, "claude", ours(&ctx, 7));
     ctx.agent_turns.report(
         7,
         "claude",
@@ -205,7 +248,7 @@ fn needs_input_is_recorded_as_awaiting_input_and_does_not_finish() {
     let task = create(&ctx, existing(), v2());
     let h = dispatch(&mut exec, &ctx, &task);
     assert!(matches!(exec.poll(&h), PollOutcome::Active));
-    ctx.agent_turns.report(7, "claude", TurnEvent::Started);
+    ctx.agent_turns.report(7, "claude", ours(&ctx, 7));
     fake.set("needs_input");
     assert!(matches!(exec.poll(&h), PollOutcome::Active));
     let seq = ctx.agent_seq.clone();
@@ -321,7 +364,7 @@ fn the_same_task_name_in_two_workspaces_keeps_its_own_turn() {
     assert_eq!(fake.sent(".tell").len(), 2);
     for (surface, answer) in [(7, "one"), (9, "two")] {
         ctx.agent_turns
-            .report(surface, "claude", TurnEvent::Started);
+            .report(surface, "claude", ours(&ctx, surface));
         ctx.agent_turns.report(
             surface,
             "claude",
@@ -446,4 +489,21 @@ fn attempt_tokens_are_fresh_for_every_attempt() {
         a.len() == 32 && a.chars().all(|c| c.is_ascii_hexdigit()),
         "{a}"
     );
+}
+
+/// 호스트가 붙이는 표지를 provider 플러그인이 같은 토큰으로 읽는다. 두 크레이트가 같은 앞부분을
+/// 따로 갖고 있어 여기서 맞춰 본다.
+#[test]
+fn the_plugins_read_the_marker_the_host_writes() {
+    use tasty_plugin_agent_common::task_turn as plugin;
+    assert_eq!(
+        plugin::ATTEMPT_MARKER_PREFIX,
+        tasty_agent::task::agent::ATTEMPT_MARKER_PREFIX
+    );
+    let token = super::new_attempt_token();
+    let prompt = format!(
+        "review\n\n{}",
+        tasty_agent::task::agent::attempt_marker_line(&token)
+    );
+    assert_eq!(plugin::attempt_marker(&prompt), Some(token.as_str()));
 }

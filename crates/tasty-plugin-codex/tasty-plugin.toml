@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.codex"
 name = "Codex"
-version = "0.1.133"
+version = "0.1.134"
 description = "Codex CLI integration for Tasty"
 api_version = "1"
 permissions = [
@@ -54,7 +54,7 @@ subcommands = [
     { name = "reboot",        ipc_method = "codex.reboot",        args = "reboot_args",        description = "Restart the Codex instance in a surface and resume the same session (delayed kill + codex resume). Call this as the LAST action of a turn — anything after the delay is cut off.", description_i18n_key = "codex.cli.sub.reboot.description" },
     { name = "install",       ipc_method = "codex.install",       args = "install_args",            description = "Install Tasty hook into Codex CLI configuration", description_i18n_key = "codex.cli.sub.install.description" },
     { name = "uninstall",     ipc_method = "codex.uninstall",     args = "install_args",            description = "Uninstall Tasty hook from Codex CLI configuration", description_i18n_key = "codex.cli.sub.uninstall.description" },
-    { name = "hook",          ipc_method = "codex.hook",          args = "hook_args",          stdin_json = true, description = "Codex hook integration (called by Codex CLI's hook system). Reads JSON payload from stdin (session_id, last_assistant_message) when invoked by Codex's hook system.", description_i18n_key = "codex.cli.sub.hook.description" },
+    { name = "hook",          ipc_method = "codex.hook",          args = "hook_args",          stdin_json = true, description = "Codex hook integration (called by Codex CLI's hook system). Reads JSON payload from stdin (session_id, prompt, last_assistant_message) when invoked by Codex's hook system.", description_i18n_key = "codex.cli.sub.hook.description" },
 ]
 
 [contributes.cli.arg_groups.launch_args]
@@ -157,6 +157,7 @@ positional = [
 flags = [
     { name = "surface", type = "u32",    flag = "--surface", required = false, help = "Surface ID the hook is firing for", help_i18n_key = "codex.cli.arg.hook_args.surface.help" },
     { name = "session", type = "string", flag = "--session", required = false, stdin_field = "session_id", help = "Codex session ID. Auto-populated from stdin JSON 'session_id' when Codex invokes the hook.", help_i18n_key = "codex.cli.arg.hook_args.session.help" },
+    { name = "prompt", type = "string", flag = "--prompt", required = false, stdin_field = "prompt", help = "The submitted prompt. Auto-populated from stdin JSON 'prompt' on the UserPromptSubmit hook. Only used to tell whether a turn is a Tasty agent task's instruction; its text is not sent to Tasty.", help_i18n_key = "codex.cli.arg.hook_args.prompt.help" },
     { name = "last_assistant_message", type = "string", flag = "--last-assistant-message", required = false, stdin_field = "last_assistant_message", help = "The assistant's final message of the turn. Auto-populated from stdin JSON 'last_assistant_message' on the Stop hook. When the surface runs a Tasty agent task, it is reported as that turn's final answer.", help_i18n_key = "codex.cli.arg.hook_args.last_assistant_message.help" },
 ]
 
