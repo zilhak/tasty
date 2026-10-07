@@ -78,7 +78,7 @@ v2 `agent` task 는 Claude·Codex 세션(새로 띄우거나 이미 열린 세�
 
 v2 run·custom task 는 계약의 `postprocess` 로 본 작업 뒤 CLI 하나를 실행해 그 stdout 을 최종 출력으로 받을 수 있다. 명령은 셸 없이 직접 실행하고, 입력 snapshot·본 작업 원본·artifact 에서 고른 값을 JSON 문서 하나로 stdin 에 쓴다. stdout 은 JSON 값 하나(선택 pointer) 또는 UTF-8 text 이고 출력 타입으로 검증한다. 후처리가 끝날 때까지 task 는 Running 이고 permit 을 쥐며 하류는 기다린다. 실패 원인(종료 코드·시작 실패·시간 초과·취소·형식 오류 등)을 구분해 기록하고, 명시한 횟수만큼 저장한 본 작업 결과로 후처리만 다시 실행한다. 시작했지만 결과를 받지 못한 실행은 재시작 뒤 다시 실행하지 않는다. `task_get` 은 이 단계의 task 에 `phase`(`postprocessing`·`retry_wait`)를 싣고, CLI `task-get` 은 단계와 실행 번호, 끝난 뒤에는 마지막 실행의 원인·종료 코드와 재시도로 넘어간 실행의 원인을 줄로 보인다. 후처리 자식은 바깥 Claude Code 세션 변수와 바깥 Tasty 인스턴스의 신원 변수를 받지 않는다. 앱을 정상 종료하면 진행 중인 후처리 그룹을 끝내고 보고를 저장할 때까지 짧게 기다린다. 형식과 규칙은 [작업 러너 §후처리 CLI](../../dev-guide/agent-runner.md#후처리-cli-postprocess).
 
-`task_get`의 CLI 출력에는 command 종류, `depends_on`, `on_failure`, `metadata`가 포함된다. `task_graph`의 노드는 `command_kind`·`on_failure_kind`·`skip` 을, 엣지는 `depends_on`·`fallback`·`reduce`·`binding`(v2 입력 binding 의 원본 → 받는 task)·`transition`(전이, `selection` 포함) 종류를 제공한다. 같은 원본에서 `depends_on` 과 `binding` 이 함께 오면 `binding` 한 줄만 낸다. dot 에서는 depends_on 실선, fallback 주황 파선, reduce 파랑 점선, binding 청록 파선, transition 남보라 파선이고 전이는 선택 상태를 라벨로 붙여 선택된 간선은 굵게, 선택되지 않았거나 쓸 수 없는 간선은 반투명으로 그린다. JSON·dot·DAG 화면은 같은 간선 집합을 쓴다. DAG 화면의 표시는 [DAG 그래프 surface](screens/dag-graph-surface.md)에 있다.
+`task_get`의 CLI 출력에는 command 종류, `depends_on`, `on_failure`, `metadata`가 포함된다. v2 task 는 회차(`attempt:`), 레코드 revision(`revision:`), 입력 출처(`input: <필드> <- <원본 task><포인터> (attempt <원본 회차>)`), 최종 출력(`output: <값> (from <출력 자리>)`)을 더한다. 출력이 없으면 `output: none` 과 실패 단계·코드를 적어(`error: execution/result_missing: ...`) 결과를 내지 않고 끝난 task 가 성공처럼 보이지 않는다. `task_graph`의 노드는 `command_kind`·`on_failure_kind`·`skip` 을, 엣지는 `depends_on`·`fallback`·`reduce`·`binding`(v2 입력 binding 의 원본 → 받는 task)·`transition`(전이, `selection` 포함) 종류를 제공한다. 같은 원본에서 `depends_on` 과 `binding` 이 함께 오면 `binding` 한 줄만 낸다. dot 에서는 depends_on 실선, fallback 주황 파선, reduce 파랑 점선, binding 청록 파선, transition 남보라 파선이고 전이는 선택 상태를 라벨로 붙여 선택된 간선은 굵게, 선택되지 않았거나 쓸 수 없는 간선은 반투명으로 그린다. JSON·dot·DAG 화면은 같은 간선 집합을 쓴다. DAG 화면의 표시는 [DAG 그래프 surface](screens/dag-graph-surface.md)에 있다.
 
 **fallback 참조는 사이클 검사 대상이 아니다.** `detect_cycles()`·`TaskGraph::dfs_cycle`은 `depends_on`과 `Reduce.inputs`만 순회한다. A와 F가 서로를 fallback으로 참조해도 존재 검사만 통과하면 저장된다. 그래프에는 보이지만 `-32602`로 차단되지 않는다.
 
@@ -182,6 +182,8 @@ claude 의 `needs_input`(사람 승인 대기)은 **성공** 쪽에 남는다. �
 전략 레지스트리·dispatch 배선 상세는 [dev-guide/agent-runner](../../dev-guide/agent-runner.md#hostexecutor-매핑).
 
 ### 사건으로 받기 — 폴링하지 않고
+
+task 조회의 어떤 필드도 세션 생존 판단의 신뢰도를 싣지 않는다. 터미널 상태 조회(`terminal.state`)의 `confidence` 는 상태 관측(idle·needs_input 등)을 얼마나 믿을지에 대한 값이고, v1 custom task 가 Claude·Codex 완료 전략으로 끝나면 그 상태 응답이 `result.output` 에 그대로 남을 뿐이다. 모델이 내린 판단의 확신도는 사용자가 출력 타입에 선언한 필드(예: `{"verdict": ..., "confidence": float64}`)로만 오며, 전이 조건은 그 필드를 비교한다. 두 값은 이름이 같아도 서로 대신하지 않는다.
 
 종결 사실은 Event Bus 로도 나간다. plugin 이 `agent.task_finished` · `agent.barrier_closed` 를 구독하면 `task_get` 을 되풀이해 묻지 않아도 된다. 두 키의 payload·등급·구독 조건은 [reference/event-catalog](../../reference/event-catalog.md#agent-scopesystem-experimental) 이 정본이고, 무엇을 싣고 무엇을 안 싣는지의 근거는 [ADR-0033](../../adr/0033-event-feed-delivery.md) 이다.
 

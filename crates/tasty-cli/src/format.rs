@@ -230,6 +230,73 @@ fn task_skip_line(task: &serde_json::Value) -> Option<String> {
     }
 }
 
+/// v2 task 의 회차·revision·입력 출처·최종 출력. 결과가 없거나 출력이 없으면 성공처럼 보이지
+/// 않도록 `output: none` 과 실패 단계를 적는다. v1 task 는 revision 줄만 낸다.
+fn task_typed_lines(task: &serde_json::Value) -> Vec<String> {
+    let mut lines = Vec::new();
+    if let Some(attempt) = task.get("attempt").filter(|v| !v.is_null()) {
+        let id = attempt.get("id").and_then(|v| v.as_str()).unwrap_or("?");
+        lines.push(format!("attempt: {id}"));
+    }
+    if let Some(revision) = task.get("revision").and_then(|v| v.as_u64()) {
+        lines.push(format!("revision: {revision}"));
+    }
+    if let Some(snapshot) = task.get("input_snapshot").filter(|v| !v.is_null()) {
+        let sources = snapshot.get("sources").and_then(|v| v.as_array());
+        for source in sources.into_iter().flatten() {
+            let field = source.get("field").and_then(|v| v.as_str()).unwrap_or("?");
+            let from = source
+                .get("from_task")
+                .and_then(|v| v.as_str())
+                .unwrap_or("?");
+            let pointer = source.get("pointer").and_then(|v| v.as_str()).unwrap_or("");
+            let mut line = format!("input: {field} <- {from}{pointer}");
+            if let Some(a) = source.get("producer_attempt").and_then(|v| v.as_str()) {
+                line.push_str(&format!(" (attempt {a})"));
+            }
+            lines.push(line);
+        }
+        if let Some(failure) = snapshot.get("failure").filter(|v| !v.is_null()) {
+            lines.push(format!("input failed: {}", failure_summary(failure)));
+        }
+    }
+    let Some(typed) = task.get("typed_result").filter(|v| !v.is_null()) else {
+        return lines;
+    };
+    let has_output = typed.get("has_output").and_then(|v| v.as_bool()) == Some(true);
+    let source = typed
+        .get("provenance")
+        .and_then(|p| p.get("output_source"))
+        .and_then(|v| v.as_str());
+    match (has_output, typed.get("output")) {
+        (true, Some(output)) => {
+            let value = serde_json::to_string(output).unwrap_or_else(|_| output.to_string());
+            match source {
+                Some(src) => lines.push(format!("output: {value} (from {src})")),
+                None => lines.push(format!("output: {value}")),
+            }
+        }
+        _ => lines.push("output: none".to_string()),
+    }
+    if let Some(error) = typed.get("error").filter(|v| !v.is_null()) {
+        lines.push(format!("error: {}", failure_summary(error)));
+    }
+    lines
+}
+
+/// `TaskFailure` 한 줄: `<단계>[/<코드>]: <메시지>`.
+fn failure_summary(failure: &serde_json::Value) -> String {
+    let stage = failure.get("stage").and_then(|v| v.as_str()).unwrap_or("?");
+    let message = failure
+        .get("message")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    match failure.get("code").and_then(|v| v.as_str()) {
+        Some(code) => format!("{stage}/{code}: {message}"),
+        None => format!("{stage}: {message}"),
+    }
+}
+
 fn format_task_get(result: &serde_json::Value) -> Result<()> {
     let id = result.get("id").and_then(|v| v.as_str()).unwrap_or("?");
     let name = result.get("name").and_then(|v| v.as_str()).unwrap_or("?");
@@ -279,6 +346,9 @@ fn format_task_get(result: &serde_json::Value) -> Result<()> {
         outln!("{line}")?;
     }
     if let Some(line) = task_agent_line(result) {
+        outln!("{line}")?;
+    }
+    for line in task_typed_lines(result) {
         outln!("{line}")?;
     }
     if let Some(metadata) = result.get("metadata")
@@ -738,8 +808,8 @@ fn format_notification_list(result: &serde_json::Value) -> Result<()> {
 mod tests {
     use super::{
         format_runner_summary, format_workspace_row, render_layout, task_agent_line,
-        task_postprocess_lines, task_route_line, task_skip_line, timer_hard_deadline_line,
-        timer_row_line, timer_row_text,
+        task_postprocess_lines, task_route_line, task_skip_line, task_typed_lines,
+        timer_hard_deadline_line, timer_row_line, timer_row_text,
     };
     use serde_json::json;
 
@@ -819,6 +889,42 @@ mod tests {
                 &json!({"skip": {"reason": "upstream_unavailable", "source": "flaky", "source_state": "failed"}})
             ),
             Some("skip: upstream_unavailable (flaky failed)".into())
+        );
+    }
+
+    #[test]
+    fn typed_task_detail_shows_sources_output_and_a_missing_output() {
+        assert_eq!(task_typed_lines(&json!({"revision": 4})), ["revision: 4"]);
+        let lines = task_typed_lines(&json!({
+            "attempt": {"id": "review#2", "number": 2},
+            "revision": 9,
+            "input_snapshot": {"sources": [
+                {"field": "summary", "from_task": "implement", "pointer": "", "producer_attempt": "implement#1"},
+                {"field": "n", "from_task": "count", "pointer": "/total"}]},
+            "typed_result": {"has_output": true, "output": {"verdict": "pass"},
+                             "provenance": {"contract_version": 2, "kind": "agent", "output_source": "agent.submission"}},
+        }));
+        assert_eq!(
+            lines,
+            [
+                "attempt: review#2",
+                "revision: 9",
+                "input: summary <- implement (attempt implement#1)",
+                "input: n <- count/total",
+                "output: {\"verdict\":\"pass\"} (from agent.submission)",
+            ]
+        );
+        let lines = task_typed_lines(&json!({
+            "typed_result": {"has_output": false, "output": null,
+                             "error": {"stage": "execution", "code": "result_missing", "message": "turn ended without a result"},
+                             "provenance": {"contract_version": 2, "kind": "agent", "output_source": "agent.final_answer"}},
+        }));
+        assert_eq!(
+            lines,
+            [
+                "output: none",
+                "error: execution/result_missing: turn ended without a result",
+            ]
         );
     }
 
