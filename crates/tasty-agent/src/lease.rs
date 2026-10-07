@@ -470,6 +470,28 @@ impl<'a> LeaseStore<'a> {
         }
     }
 
+    /// `holder` 가 아직 쥐고 있으면 만료 시각을 `now_ms + ttl_ms` 로 늦추고 `true`. 획득 시각은
+    /// 그대로 둔다. 만료됐어도 다른 holder 가 가져가지 않았으면 다시 늦춘다. 다른 holder 가
+    /// 쥐었거나 점유가 없으면 아무것도 바꾸지 않고 `false`.
+    pub fn renew(
+        &mut self,
+        workspace_id: WorkspaceId,
+        resource: &str,
+        holder: &str,
+        ttl_ms: u64,
+        now_ms: u64,
+    ) -> Result<bool> {
+        let Some(mut cur) = self.get(workspace_id, resource)? else {
+            return Ok(false);
+        };
+        if cur.holder != holder {
+            return Ok(false);
+        }
+        cur.expires_at = Some(now_ms.saturating_add(ttl_ms));
+        self.put(&cur)?;
+        Ok(true)
+    }
+
     /// 점유 holder 만 release 가능. 다른 holder 가 호출하면 no-op (현 점유는 유지).
     pub fn release(
         &mut self,
@@ -508,6 +530,29 @@ mod tests {
         let td = tempfile::tempdir().unwrap();
         let mem = MemoryStore::open(&td.path().join("mem.db")).unwrap();
         (td, mem)
+    }
+
+    #[test]
+    fn renew_extends_only_the_holders_lease_and_keeps_its_acquire_time() {
+        let (_td, mut mem) = fresh();
+        let mut store = LeaseStore::new(&mut mem, "_host");
+        store
+            .acquire(1, "db", "h1", Some(100), LeaseMode::Fail, 1000)
+            .unwrap();
+        assert!(store.renew(1, "db", "h1", 100, 1080).unwrap());
+        let l = store.get(1, "db").unwrap().unwrap();
+        assert_eq!((l.acquired_at, l.expires_at), (1000, Some(1180)));
+        // 만료 뒤에도 아무도 가져가지 않았으면 다시 늦춘다.
+        assert!(store.renew(1, "db", "h1", 100, 1500).unwrap());
+        assert_eq!(store.get(1, "db").unwrap().unwrap().expires_at, Some(1600));
+        // 다른 holder 의 점유는 건드리지 않는다.
+        assert!(!store.renew(1, "db", "h2", 100, 1500).unwrap());
+        store
+            .acquire(1, "db", "h2", Some(100), LeaseMode::Fail, 1700)
+            .unwrap();
+        assert!(!store.renew(1, "db", "h1", 100, 1710).unwrap());
+        assert_eq!(store.get(1, "db").unwrap().unwrap().holder, "h2");
+        assert!(!store.renew(1, "none", "h1", 100, 1710).unwrap());
     }
 
     #[test]

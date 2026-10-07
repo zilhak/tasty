@@ -105,6 +105,10 @@ impl HostExecutor {
         if let Some(resource) = own_lease(task) {
             self.held_leases
                 .insert(task.id.clone(), (workspace_id, resource, task.id.clone()));
+            // 내려가 있던 동안 지난 시간을 모르니 다음 tick 에 바로 늦춘다.
+            if let Some(ttl) = super::lease_renewal::lease_ttl(task) {
+                self.track_lease_renewal(&task.id, ttl, 0);
+            }
         }
     }
 }

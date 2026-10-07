@@ -7,6 +7,7 @@ mod child_env;
 mod clock;
 mod command_inputs;
 mod holdings;
+mod lease_renewal;
 mod postprocess;
 mod run_group;
 mod run_result;
@@ -171,6 +172,8 @@ pub(crate) struct HostExecutor {
     run_procs: HashMap<TaskId, RunProc>,
     /// 종결돼 프로세스 묶음을 끝냈고 종료를 기다리는 task. 끝난 것을 확인한 뒤에야 점유를 놓는다.
     stopping_runs: Vec<TaskId>,
+    /// TTL 을 둔 lease 의 갱신 상태. `held_leases` 와 함께 놓는다.
+    lease_renewals: HashMap<TaskId, lease_renewal::LeaseRenewal>,
 }
 
 impl HostExecutor {
@@ -186,6 +189,7 @@ impl HostExecutor {
             postprocess: Default::default(),
             run_procs: HashMap::new(),
             stopping_runs: Vec::new(),
+            lease_renewals: HashMap::new(),
         }
     }
 
@@ -325,6 +329,9 @@ impl HostExecutor {
             let resource = resource.expect("acquire_any: acquired=true implies resource");
             self.held_leases
                 .insert(task.id.clone(), (ws, resource, holder));
+            if let Some(ttl) = ttl_ms {
+                self.track_lease_renewal(&task.id, ttl, now);
+            }
         }
         Ok(Some(acquired))
     }
@@ -393,6 +400,7 @@ impl HostExecutor {
     }
 
     fn release_lease(&mut self, task_id: &TaskId) {
+        self.lease_renewals.remove(task_id);
         let Some((ws, resource, holder)) = self.held_leases.remove(task_id) else {
             return;
         };
@@ -544,6 +552,7 @@ impl TaskExecutor for HostExecutor {
         for task_id in self.stopped_runs() {
             self.release_resources(&task_id);
         }
+        self.renew_leases();
     }
 }
 

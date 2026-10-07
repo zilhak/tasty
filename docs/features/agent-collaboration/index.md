@@ -117,7 +117,7 @@ N개 permit으로 동시 점유를 제한한다. 같은 holder의 재획득은 �
 
 #### Lease
 
-TTL이 있는 협조적 자원 점유 표시이며 OS 잠금은 아니다. 충돌 시 mode `fail`은 `-32009`, `block`은 `acquired:false`를 반환한다. 만료된 항목은 list·acquire 때 정리한다.
+TTL이 있는 협조적 자원 점유 표시이며 OS 잠금은 아니다. 충돌 시 mode `fail`은 `-32009`, `block`은 `acquired:false`를 반환한다. 만료된 항목은 list·acquire 때 정리한다. 작업의 `metadata.lease.ttl_ms` 는 러너가 그 lease 를 쥔 동안 TTL 의 절반마다 갱신해, 실행 중인 작업의 lease 가 TTL 뒤 다른 holder 에게 넘어가지 않는다. 재시작 뒤 이어서 지켜보는 작업도 같다. 러너가 꺼진 동안에는 갱신하지 않는다([agent runner 가이드](../../dev-guide/agent-runner.md#dispatch-게이트-lease--semaphore)).
 
 풀 모드는 `task.metadata.lease.candidates`에서 하나를 배정한다. 실제 자원은 `${lease.resource}`를 치환해 Run.cwd·Custom.params에 전달한다. 기본 fixed 모드는 후보 안에서만 선택한다. 명시적으로 elastic을 켜면 소진 시 `overflow_prefix+N` 후보를 원자적으로 만들며, `fail` 모드에서 풀을 사용할 수 없으면 `-32012`를 반환한다([자원 풀](../../dev-guide/agent-runner.md#자원-풀-배정-lease-pool--candidateselastic)).
 

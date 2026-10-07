@@ -1917,3 +1917,7 @@ mod postprocess_reload_tests;
 #[cfg(all(test, unix))]
 #[path = "runner_thread/cancel_stop_tests.rs"]
 mod cancel_stop_tests;
+
+#[cfg(all(test, unix))]
+#[path = "runner_thread/lease_renewal_tests.rs"]
+mod lease_renewal_tests;
