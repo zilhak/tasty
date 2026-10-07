@@ -61,7 +61,10 @@ impl<'a> HelpHint<'a> {
 
         let resp = resp.on_hover_cursor(egui::CursorIcon::Help);
 
-        let show = self.open || tooltip_hover_delay_elapsed(ui.ctx(), theme, resp.id, hovered);
+        // 강제 open이라도 글리프가 잘려 안 보이면 띄우지 않는다. 버블 Area는 화면 안으로 당겨져
+        // 스크롤로 사라진 앵커의 버블들이 창 가장자리에 모여 겹친다.
+        let forced = self.open && ui.is_rect_visible(rect);
+        let show = forced || tooltip_hover_delay_elapsed(ui.ctx(), theme, resp.id, hovered);
         if show {
             let tip_id = self.id.unwrap_or_else(|| resp.id.with("tooltip"));
             Tooltip::new(self.text)
@@ -123,4 +126,47 @@ fn paint_help_glyph(painter: &egui::Painter, rect: egui::Rect, color: egui::Colo
 
     // 점 — `M12 17 h.01` (round-cap 0-length line = 지름 stroke 의 점).
     painter.circle_filled(map(12.0, 17.0), stroke_w * 0.5, color);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn theme() -> Theme {
+        Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0)
+    }
+
+    /// 강제 open 버블이 그려졌는지(Tooltip 순위 레이어가 생겼는지) 한 프레임으로 확인한다.
+    fn forced_bubble_shown(clip: Option<egui::Rect>) -> bool {
+        let theme = theme();
+        let ctx = egui::Context::default();
+        let id = egui::Id::new("forced-hint");
+        let _output = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                if let Some(clip) = clip {
+                    ui.set_clip_rect(clip);
+                }
+                HelpHint::new("tip")
+                    .open(true)
+                    .id_source(id)
+                    .show(ui, &theme);
+            });
+        });
+        ctx.memory(|m| {
+            m.layer_ids()
+                .any(|layer| layer.order == egui::Order::Tooltip)
+        })
+    }
+
+    #[test]
+    fn a_forced_bubble_shows_while_its_glyph_is_visible() {
+        assert!(forced_bubble_shown(None));
+    }
+
+    /// 스크롤로 글리프가 클립 밖에 있으면 화면 가장자리로 당겨진 버블을 그리지 않는다.
+    #[test]
+    fn a_forced_bubble_hides_while_its_glyph_is_clipped() {
+        let away = egui::Rect::from_min_size(egui::pos2(0.0, 5000.0), egui::vec2(10.0, 10.0));
+        assert!(!forced_bubble_shown(Some(away)));
+    }
 }

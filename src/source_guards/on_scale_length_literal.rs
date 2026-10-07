@@ -843,7 +843,8 @@ fn the_blind_spots_are_still_the_size_they_say() {
         // Attention kinds 무대의 설명 열·레일 열이 높이 0으로 칸을 요청해 0 리터럴 둘을 더한다.
         // 토스트 같은 모서리 합치기 시험의 화면·pane 사각형과 Settings 하단 거리 시험이 열한 개를 더한다.
         // 점선 무늬의 배율 무관 단언이 test 코드에 값 4를 둘 더한다.
-        (219, 508),
+        // HelpHint 강제 버블 시험의 클립 사각형이 세 개를 더한다.
+        (219, 511),
         "제외한 0과 test 전용 코드의 수가 달라졌다. 실제 사용과 수집 범위의 변경을 확인하고 기록을 갱신한다."
     );
     let roster: usize = UNIT_SPACE_SITES.iter().map(|(.., n, _)| n).sum();
