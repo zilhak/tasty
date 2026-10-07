@@ -148,4 +148,4 @@ workspace와 tab은 마지막 항목, pane은 첫 항목을 고르는 복원 규
 
 정상 resume는 journal/stream/incarnation과 확정 cut/revision을 붙인 최신 View checkpoint를 초기 import 선택보다 우선한다. 이 선택은 구조 이벤트가 아니다. `src/runtime/journal_product/view_record.rs`는 DB restore manifest를 먼저 읽고 그 domain checkpoint와 View의 binding을 대조한다. DB 원본이 없는 경우에만 legacy sidecar를 최초 이관 자료로 읽으며, DB 자료가 손상됐다고 옛 sidecar로 조용히 돌아가지 않는다.
 
-현재 incarnation을 선택하지 않은 시작에서는 과거 View를 읽지 않는다. worker는 옛 incarnation과 더 늦게 도착한 과거 sequence의 저장을 거절한다. 저장 실패의 후보와 dirty 상태는 재시도를 위해 남기며 종료는 기존 tick 저장과 별도로 최신 final capture를 요청한다. View manifest와 도메인 checkpoint·payload 참조를 연결하는 pin/보존 구현은 저장 계층에 있다([ADR-0063](0063-event-store-storage-fencing-and-effect-states.md)). 해당 코드의 존재가 crash·전원 장애 검증을 완료했다는 뜻은 아니다.
+현재 incarnation을 선택하지 않은 시작에서는 과거 View를 읽지 않는다. worker는 옛 incarnation과 더 늦게 도착한 과거 sequence의 저장을 거절한다. 저장 실패의 후보와 dirty 상태는 재시도를 위해 남기며 종료는 기존 tick 저장과 별도로 최신 final capture를 요청한다. View manifest와 도메인 checkpoint·payload 참조를 연결하는 pin/보존 구현은 저장 계층에 있다([ADR-0063](../adr/0063-event-store-storage-fencing-and-effect-states.md)). 해당 코드의 존재가 crash·전원 장애 검증을 완료했다는 뜻은 아니다.
