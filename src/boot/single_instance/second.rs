@@ -802,6 +802,21 @@ mod tests {
         record
     }
 
+    /// 시험이 끝낼 때까지 살아 있는 자식. Windows 에는 `sleep` 이 없어 `ping` 으로 기다린다.
+    fn long_lived_child() -> std::process::Child {
+        #[cfg(unix)]
+        let mut command = std::process::Command::new("sleep");
+        #[cfg(unix)]
+        command.arg("30");
+        #[cfg(windows)]
+        let mut command = std::process::Command::new("ping");
+        #[cfg(windows)]
+        command
+            .args(["-n", "30", "127.0.0.1"])
+            .stdout(std::process::Stdio::null());
+        command.spawn().unwrap()
+    }
+
     fn closed_port() -> u16 {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         listener.local_addr().unwrap().port()
@@ -838,10 +853,7 @@ mod tests {
         else {
             panic!("the test home lock must be free");
         };
-        let mut a = std::process::Command::new("sleep")
-            .arg("30")
-            .spawn()
-            .unwrap();
+        let mut a = long_lived_child();
         // 연결은 받지만(backlog) 응답하지 않는 멈춘 A의 포트.
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let record = InstanceRecord {
