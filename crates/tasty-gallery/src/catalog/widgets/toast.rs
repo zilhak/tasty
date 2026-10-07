@@ -224,7 +224,7 @@ pub fn draw_stack(ui: &mut egui::Ui, theme: &Theme) {
             ),
         ],
         &[
-            TokenChip::without_color("space-sm", "card gap"),
+            TokenChip::without_color("space-sm", "stack gap"),
             TokenChip::new(
                 "surface-raised",
                 "card fill",

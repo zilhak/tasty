@@ -605,8 +605,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 theme.surface_active().to_egui(),
             ),
             TokenChip::new("bg-sidebar", "header · list", theme.bg_sidebar().to_egui()),
-            TokenChip::without_color("tint-fill-alpha", "trust box fill"),
-            TokenChip::without_color("tint-border-alpha", "trust box edge"),
+            TokenChip::without_color("tint-fill-alpha", "box fill"),
+            TokenChip::without_color("tint-border-alpha", "box edge"),
             TokenChip::new(
                 "accent-warning",
                 "add + trust",

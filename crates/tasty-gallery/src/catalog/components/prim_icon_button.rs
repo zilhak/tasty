@@ -42,7 +42,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("overlay", "hover 8%"),
         ],
         &[
-            TokenChip::without_color("overlay-hover", "hover 8%"),
+            TokenChip::without_color("overlay-hover", "hover tint"),
             TokenChip::new(
                 "accent-primary",
                 "active fill",

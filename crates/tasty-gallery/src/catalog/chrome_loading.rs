@@ -148,7 +148,10 @@ pub fn draw_phases(ui: &mut egui::Ui, theme: &Theme) {
             ("WaitingPlugins", "\"Loading plugins…\""),
             ("RestoringLayout", "\"Restoring layout…\""),
         ],
-        &[],
+        &[
+            TokenChip::without_color("size-16", "fixed phase-slot height"),
+            TokenChip::new("text-muted", "phase color", theme.text_muted().to_egui()),
+        ],
     );
 }
 

@@ -156,7 +156,7 @@ pub fn draw_tree_row(ui: &mut egui::Ui, theme: &Theme) {
                 "selected row",
                 egui::Color32::from(theme.surface_active()),
             ),
-            TokenChip::without_color("overlay-hover", "hover row"),
+            TokenChip::without_color("overlay-hover", "hover"),
             TokenChip::new(
                 "text-muted",
                 "meta value",

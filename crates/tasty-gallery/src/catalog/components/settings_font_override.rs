@@ -310,10 +310,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("summary", "mono caption · text-muted"),
         ],
         &[
-            TokenChip::without_color("settings-label-width", "→ size-150"),
+            TokenChip::without_color("settings-label-width", "150 label column (new name)"),
             TokenChip::without_color("field-width-lg", "family · file"),
-            TokenChip::without_color("field-width-xs", "size · line height"),
-            TokenChip::without_color("field-width-md", "DPI scaling"),
+            TokenChip::without_color("field-width-md", "DPI"),
+            TokenChip::without_color("field-width-xs", "numbers"),
+            TokenChip::without_color("settings-row-min-height", "row"),
             TokenChip::without_color(
                 "font-preview-min-width",
                 "→ field-width-lg 200 · stack below",

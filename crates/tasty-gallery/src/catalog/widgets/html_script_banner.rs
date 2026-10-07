@@ -412,7 +412,7 @@ pub fn draw_placement(ui: &mut egui::Ui, theme: &Theme) {
             ("TTL", "none — stays until allow or ×"),
         ],
         &[
-            TokenChip::without_color("banner-inset-gap", "8 — banner → page"),
+            TokenChip::without_color("banner-inset-gap", "8 — banner → page (new)"),
             TokenChip::without_color("banner-margin", "8 top / sides"),
             TokenChip::new("banner-bg", "shell", theme.banner_bg().to_egui()),
             TokenChip::new("banner-border", "edge", theme.banner_border().to_egui()),

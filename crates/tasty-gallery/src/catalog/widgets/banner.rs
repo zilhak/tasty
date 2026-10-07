@@ -403,7 +403,7 @@ pub fn draw_blacklist(ui: &mut egui::Ui, theme: &Theme) {
             ("default", "empty list"),
         ],
         &[
-            TokenChip::without_color("overlay-hover", "row hover"),
+            TokenChip::without_color("overlay-hover", "row hover (8%)"),
             TokenChip::new(
                 "accent-warning",
                 "match-rule notice",

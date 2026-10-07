@@ -353,7 +353,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("close / reset", "unchanged host contract"),
         ],
         &[
-            TokenChip::without_color("dag-popup-width", "560"),
+            TokenChip::without_color("dag-popup-width", "560 frame"),
             TokenChip::without_color("shadow-modal", "lift"),
             TokenChip::without_color("drilldown-backbar-height", "36 back bar"),
             TokenChip::without_color("dag-popup-height", "460 frame"),

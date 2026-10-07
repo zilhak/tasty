@@ -83,8 +83,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "agent fill",
                 egui::Color32::from(theme.accent_agent()),
             ),
-            TokenChip::without_color("overlay-hover", "hover 8%"),
-            TokenChip::without_color("text-on-accent", "label on fill"),
+            TokenChip::without_color("overlay-hover", "8% hover"),
+            TokenChip::without_color("text-on-accent", "filled label"),
         ],
     );
 }

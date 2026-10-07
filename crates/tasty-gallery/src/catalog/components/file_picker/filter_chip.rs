@@ -65,7 +65,7 @@ pub fn draw_filter_chip(ui: &mut egui::Ui, theme: &Theme) {
         ],
         &[
             TokenChip::without_color("fp-filter-height", "28 — matches the Input"),
-            TokenChip::without_color("fp-filter-max-width", "160 cap"),
+            TokenChip::without_color("fp-filter-max-width", "160 cap (new)"),
             TokenChip::new(
                 "separator",
                 "chip edge",

@@ -278,8 +278,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::without_color("explorer-favorites-pin-threshold", "small-surface switch"),
             TokenChip::without_color("explorer-favorites-pin-height", "pinned region height"),
             TokenChip::without_color("explorer-sidebar-width", "196 column"),
-            TokenChip::without_color("explorer-favorites-hide-below", "Files-only switch"),
-            TokenChip::without_color("explorer-min-height", "cell floor (split drag)"),
+            TokenChip::without_color("explorer-favorites-hide-below", "→ size-240"),
+            TokenChip::without_color("explorer-min-height", "→ size-160"),
             TokenChip::without_color("explorer-state-compact-below", "→ size-120"),
             TokenChip::new(
                 "bg-sidebar",

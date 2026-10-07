@@ -210,7 +210,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "selected row",
                 egui::Color32::from(theme.surface_active()),
             ),
-            TokenChip::without_color("overlay-hover", "hover row"),
+            TokenChip::without_color("overlay-hover", "row hover"),
             TokenChip::new(
                 "accent-primary",
                 "sort indicator",

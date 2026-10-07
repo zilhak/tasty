@@ -120,7 +120,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "invalid edge",
                 egui::Color32::from(theme.accent_danger()),
             ),
-            TokenChip::without_color("text-placeholder", "placeholder"),
+            TokenChip::without_color("text-placeholder", "hint"),
             TokenChip::new(
                 "input-readonly-fg",
                 "read-only value → text-secondary",

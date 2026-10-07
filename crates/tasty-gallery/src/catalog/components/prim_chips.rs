@@ -83,7 +83,7 @@ pub fn draw_badge(ui: &mut egui::Ui, theme: &Theme) {
                 "disabled fill",
                 egui::Color32::from(theme.badge_disabled_bg()),
             ),
-            TokenChip::without_color("font-size-caption", "label 11px"),
+            TokenChip::without_color("font-size-caption", "11px"),
         ],
     );
 }
@@ -117,7 +117,7 @@ pub fn draw_tag(ui: &mut egui::Ui, theme: &Theme) {
             ("dot", "leading status-dot"),
         ],
         &[
-            TokenChip::without_color("font-mono", "label face"),
+            TokenChip::without_color("font-mono", "label"),
             TokenChip::without_color("border-default", "outline"),
             TokenChip::new(
                 "accent-info",
@@ -153,13 +153,13 @@ pub fn draw_kbd(ui: &mut egui::Ui, theme: &Theme) {
             ("fill", "surface-raised"),
         ],
         &[
-            TokenChip::without_color("font-mono", "keycap face"),
+            TokenChip::without_color("font-mono", "keycap"),
             TokenChip::new(
                 "surface-raised",
                 "keycap fill",
                 egui::Color32::from(theme.surface_raised()),
             ),
-            TokenChip::without_color("border-default", "keycap edge"),
+            TokenChip::without_color("border-default", "cap border"),
         ],
     );
 }

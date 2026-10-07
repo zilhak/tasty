@@ -65,11 +65,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("heights", "control heights use their own tokens"),
         ],
         &[
-            TokenChip::without_color("space-xs", "4 · tight"),
-            TokenChip::without_color("space-sm", "8 · pair"),
-            TokenChip::without_color("space-md", "12 · padding"),
-            TokenChip::without_color("space-lg", "16 · column"),
-            TokenChip::without_color("space-xl", "24 · region"),
+            TokenChip::without_color("space-xs", "4 · icon gaps"),
+            TokenChip::without_color("space-sm", "8 · control gaps"),
+            TokenChip::without_color("space-md", "12 · card pad"),
+            TokenChip::without_color("space-lg", "16 · sections"),
+            TokenChip::without_color("space-xl", "24 · regions"),
         ],
     );
     note(

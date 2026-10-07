@@ -85,8 +85,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "hint color",
                 egui::Color32::from(theme.text_muted()),
             ),
-            TokenChip::without_color("font-size-caption", "hint size"),
-            TokenChip::without_color("font-mono", "id hint"),
+            TokenChip::without_color("font-size-caption", "11px"),
+            TokenChip::without_color("font-mono", "inline code"),
         ],
     );
 }

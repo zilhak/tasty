@@ -33,10 +33,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("control", "Appearance › Display"),
         ],
         &[
-            TokenChip::without_color("ui-scale-sm", "0.8"),
-            TokenChip::without_color("ui-scale-md", "1.0"),
-            TokenChip::without_color("ui-scale-lg", "1.2"),
-            TokenChip::without_color("ui-scale", "active"),
+            TokenChip::without_color("ui-scale-sm", "0.8 · compact"),
+            TokenChip::without_color("ui-scale-md", "1.0 · default"),
+            TokenChip::without_color("ui-scale-lg", "1.2 · roomy"),
+            TokenChip::without_color("ui-scale", "active — the only one read"),
         ],
     );
     note(

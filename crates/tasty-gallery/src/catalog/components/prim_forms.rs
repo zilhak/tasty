@@ -113,7 +113,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "control fill",
                 egui::Color32::from(theme.surface_raised()),
             ),
-            TokenChip::without_color("border-default", "control edge"),
+            TokenChip::without_color("border-default", "outline"),
         ],
     );
 }
