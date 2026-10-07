@@ -197,6 +197,12 @@ impl<'a, K> Table<'a, K> {
         let total_w = fixed_total_width(columns, LogicalPx(ui.spacing().item_spacing.x));
 
         let mut draw_core = |ui: &mut egui::Ui, band_w: LogicalPx| {
+            // egui_extras 는 hover 행을 앞 프레임의 응답으로 정하고 그 값을 밖에 내주지 않는다.
+            // 같은 방식으로 앞 프레임의 hover 행을 따로 기억해 그 행의 글자색을 정한다.
+            let ctx = ui.ctx().clone();
+            let hover_id = ui.id().with("tasty_table_hovered_row");
+            let prev_hovered: Option<usize> = ctx.data(|d| d.get_temp(hover_id));
+            let mut now_hovered: Option<usize> = None;
             // 셀 배경 API 대신 헤더 배경을 직접 그린다.
             if let Some(fill) = header_fill {
                 let rect = egui::Rect::from_min_size(
@@ -246,16 +252,21 @@ impl<'a, K> Table<'a, K> {
                     body.row(row_h.value(), |mut tr| {
                         let selected = is_selected(row);
                         tr.set_selected(selected);
+                        // hover 띠는 행 선택 표의 선택하지 않은 행에만 그려진다. 글자색도 같은 행에만 바꾼다.
+                        let hovered = selectable && !selected && prev_hovered == Some(i);
                         for (c, col) in columns.iter().enumerate() {
                             tr.col(|ui| {
                                 ui.visuals_mut().selection.bg_fill = text_selection_fill;
                                 ui.visuals_mut().widgets.hovered.bg_fill = widget_hover_fill;
-                                // egui_extras 는 선택 행 셀의 기본 글자색을 선택 테두리색(accent)으로 바꾼다.
-                                // 시안의 선택 행 글자색은 text-primary 다. 색을 명시한 라벨에는 영향이 없다.
-                                if selected {
-                                    ui.visuals_mut().override_text_color =
-                                        Some(theme.text_primary().to_egui());
-                                }
+                                // 시안의 행 글자색은 table-row-fg 이고 선택 행과 hover 행에서 text-primary 가
+                                // 된다. egui_extras 가 선택 행에 거는 선택 테두리색(accent)도 여기서 덮는다.
+                                // 색을 명시한 라벨에는 영향이 없다.
+                                let ink = if selected || hovered {
+                                    theme.text_primary()
+                                } else {
+                                    theme.table_row_fg()
+                                };
+                                ui.visuals_mut().override_text_color = Some(ink.to_egui());
                                 // 본문 라벨이 행 클릭을 가로채지 않게 한다. 헤더의 정렬 클릭에는 적용하지 않는다.
                                 if selectable {
                                     ui.style_mut().interaction.selectable_labels = false;
@@ -272,6 +283,9 @@ impl<'a, K> Table<'a, K> {
                             });
                         }
                         let row_resp = tr.response();
+                        if row_resp.hovered() {
+                            now_hovered = Some(i);
+                        }
                         if row_resp.clicked() {
                             clicked_row = Some(i);
                         }
@@ -279,6 +293,12 @@ impl<'a, K> Table<'a, K> {
                             secondary_clicked_row = Some(i);
                         }
                     });
+                }
+            });
+            ctx.data_mut(|d| match now_hovered {
+                Some(i) => d.insert_temp(hover_id, i),
+                None => {
+                    d.remove_temp::<usize>(hover_id);
                 }
             });
         };

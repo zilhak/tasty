@@ -1,5 +1,5 @@
-//! 선택 행 띠가 표 영역의 좌우 끝을 넘어 보이지 않는지, 선택 행에서 색을 지정하지 않은 라벨이
-//! accent 가 아니라 text-primary 로 그려지는지 검사한다. 계약은 docs/architecture/ui-widgets-crate.md 를 따른다.
+//! 선택 행 띠가 표 영역의 좌우 끝을 넘어 보이지 않는지, 색을 지정하지 않은 라벨이 행에서는
+//! table-row-fg, 선택·hover 행에서는 accent 가 아니라 text-primary 로 그려지는지 검사한다. 계약은 docs/architecture/ui-widgets-crate.md 를 따른다.
 
 use std::cell::RefCell;
 
@@ -106,5 +106,62 @@ fn an_uncoloured_label_in_the_selected_row_uses_text_primary() {
     assert!(
         !ink.is_empty() && ink.iter().all(|c| *c == expected),
         "selected row ink {ink:?}, expected text-primary {expected:?}"
+    );
+}
+
+/// 포인터를 둔 채 여러 프레임을 그려, 마지막 프레임에서 행별 셀의 기본 글자색과 셀 영역을 돌려준다.
+fn render_hovering(
+    theme: &Theme,
+    pointer: Option<Pos2>,
+) -> std::collections::HashMap<&'static str, (egui::Color32, Rect)> {
+    let ctx = egui::Context::default();
+    tasty_egui_theme::apply_theme_to_egui(theme, &ctx);
+    let cells = RefCell::new(std::collections::HashMap::new());
+    for _ in 0..3 {
+        cells.borrow_mut().clear();
+        let mut input = raw();
+        if let Some(p) = pointer {
+            input.events.push(egui::Event::PointerMoved(p));
+        }
+        let _out = ctx.run(input, |c| {
+            egui::CentralPanel::default().show(c, |ui| {
+                Table::new(columns()).selectable(true).show(
+                    ui,
+                    theme,
+                    ROWS,
+                    |row: &&str| *row == SELECTED,
+                    |ui, _th, row: &&str, col| {
+                        if col == 0 {
+                            cells
+                                .borrow_mut()
+                                .insert(*row, (ui.visuals().text_color(), ui.max_rect()));
+                        }
+                        ui.label(*row);
+                    },
+                );
+            });
+        });
+    }
+    cells.into_inner()
+}
+
+/// 시안의 행 글자색은 table-row-fg 이고, hover 행에서 text-primary 가 된다.
+#[test]
+fn an_uncoloured_label_uses_table_row_fg_and_text_primary_when_hovered() {
+    let theme = tasty_themes::mocha_fallback();
+    let primary = theme.text_primary().to_egui();
+    let row_fg = theme.table_row_fg().to_egui();
+    assert_ne!(
+        row_fg, primary,
+        "the two inks must differ for the check to mean anything"
+    );
+    let idle = render_hovering(&theme, None);
+    assert_eq!(idle["alpha"].0, row_fg, "rest row ink");
+    let target = idle["alpha"].1.center();
+    let hovered = render_hovering(&theme, Some(target));
+    assert_eq!(hovered["alpha"].0, primary, "hovered row ink");
+    assert_eq!(
+        hovered["charlie"].0, row_fg,
+        "a row the pointer is not on keeps the row ink"
     );
 }
