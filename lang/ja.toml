@@ -42,7 +42,7 @@ body = "Tasty はすでに実行中です。"
 title = "Webhook ポートが使用中"
 body = "Webhook ポート {} を開けませんでした: {}"
 hint_argument = "--webhook-port で指定したポートです。空いているポートで起動するか、オプションなしで起動して Tasty に選ばせてください。"
-hint_config = "`tasty webhook port` で保存したポートです。--webhook-port <空きポート> で一度起動して `tasty webhook port --unset` を実行するか、{} から port の行を削除してください。"
+hint_config = "`tasty webhook port` で保存したポートです。Tasty が実行されていないときに `tasty webhook port --unset` で削除するか `tasty webhook port <空きポート>` で置き換えてから、もう一度起動してください。または一度だけ --webhook-port <空きポート> で起動してください。"
 differs = "このデータフォルダの Tasty は Webhook ポート {} ですでに実行中です。--webhook-port {} で起動するには、先に終了してください。"
 differs_none = "このデータフォルダの Tasty は Webhook リスナーなしですでに実行中です。--webhook-port {} で起動するには、先に終了してください。"
 
@@ -1559,6 +1559,10 @@ home_unresolved = "設定ディレクトリを特定できません"
 invalid_contents = "ポートファイルの内容が不正です"
 
 # 직접 출력하는 문구는 오류·경고 접두어를 포함한다. 나머지는 호출자가 접두어를 붙인다.
+[cli.webhook]
+port_saved_offline = "Tasty が実行されていないため、{} を直接編集しました。ポートは次回の起動から適用されます。"
+port_file_write_failed = "{} に書き込めませんでした: {}"
+
 [cli.request]
 cwd_invalid = "エラー: --cwd: {}"
 json_arg_invalid = "エラー: {}: 有効な JSON ではありません: {}"
@@ -5970,7 +5974,7 @@ long = "期限切れの Webhook を一括削除します (時間超過または�
 
 [cli.help._root.webhook.port]
 about = "実行中のリスナーのポートを表示するか、次回の起動で使うポートを保存する"
-long = "実行中のリスナーのポートを表示するか、次回の起動で使うポートを保存します。\n\n引数なしで実行すると、実行中の Tasty に、リスナーが実際に開いたアドレスとそのポートの決め方(`argument`、`config`、`probe`)、次回の起動で使う保存済みポートを問い合わせます。ポートを指定するとデータフォルダの webhooks.toml に保存し、`--unset` なら保存済みポートを削除します。どちらの変更も次回の起動から適用されます。保存済みポートは明示指定なので、開けなければ Tasty は起動しません。保存済みポートも `--webhook-port` もなければ、28429 から続く 63 個のポートを順に試し、最初に空いているポートを使います。"
+long = "実行中のリスナーのポートを表示するか、次回の起動で使うポートを保存します。\n\n引数なしで実行すると、実行中の Tasty に、リスナーが実際に開いたアドレスとそのポートの決め方(`argument`、`config`、`probe`)、次回の起動で使う保存済みポートを問い合わせます。ポートを指定するとデータフォルダの webhooks.toml に保存し、`--unset` なら保存済みポートを削除します。Tasty が実行されていなければファイルを直接編集し、その旨を出力します。どちらの変更も次回の起動から適用されます。保存済みポートは明示指定なので、開けなければ Tasty は起動しません。保存済みポートも `--webhook-port` もなければ、28429 から続く 63 個のポートを順に試し、最初に空いているポートを使います。"
 
 [cli.help._root.webhook.port.arg.port]
 help = "保存するポート(1-65535)"

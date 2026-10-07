@@ -22,6 +22,9 @@ sha2 = "0.10"
 # Logging
 tracing = "0.1"
 
+# webhooks.toml을 임시 파일로 쓴 뒤 교체한다
+tempfile = "3"
+
 # Error handling
 anyhow = "1"
 

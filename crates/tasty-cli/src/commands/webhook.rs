@@ -94,7 +94,8 @@ pub enum WebhookCommands {
     /// actually opened and how that port was chosen (`argument`, `config` or
     /// `probe`), plus the port saved for the next start. With a port, saves it
     /// to the data folder's webhooks.toml; with `--unset`, removes the saved
-    /// port. Either change applies from the next start. A saved port is
+    /// port. If Tasty is not running, the file is edited directly and the output
+    /// says so. Either change applies from the next start. A saved port is
     /// explicit: if it cannot be opened, Tasty does not start. Without a saved
     /// port and without `--webhook-port`, Tasty tries 28429 and the next 63
     /// ports and takes the first free one.

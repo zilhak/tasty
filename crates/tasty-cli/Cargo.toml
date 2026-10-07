@@ -22,6 +22,7 @@ tasty-plugin-protocol = { path = "../tasty-plugin-protocol" }
 tasty-host-plugin = { path = "../tasty-host-plugin" }
 tasty-approval = { path = "../tasty-approval" }
 tasty-utils = { path = "../tasty-utils" }
+tasty-settings = { path = "../tasty-settings" }
 tasty-i18n = { path = "../tasty-i18n" }
 tasty-remote = { path = "../tasty-remote" }
 tasty-remote-profiles = { path = "../tasty-remote-profiles" }

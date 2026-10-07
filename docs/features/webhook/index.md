@@ -140,10 +140,23 @@ IPv6·proxy 출처 처리나 실제 메모리 제한을 추가할 때는 차단 
 - 탐색으로 `28429`가 아닌 포트를 얻었고 복원한 Persistent 웹훅이 있으면 경고한다(`MovedWithPersistent`). 새 URL은 `tasty webhook list`로 확인한다. 저장한 웹훅이 없으면 경고하지 않는다.
 - 경고는 GUI toast(Warning, Window 범위)와 headless `tracing::warn!`이다.
 - bind한 포트는 설정 파일에 써 넣지 않는다. 써 넣으면 다음 실행부터 명시 지정이 되기 때문이다.
+- **Tasty 없이 바꾸기**: `tasty webhook port <N>`·`tasty webhook port --unset`(이전 이름 `tasty webhook config --port <N>`)은 실행 중인 인스턴스가 있으면 IPC `webhook.config`로 저장한다. 포트 파일(`tasty.port`)이 없거나 그 포트로의 연결이 거절되면(인스턴스 없음) CLI가 webhooks.toml을 직접 고치고 `{saved_port, applies_from: "next_start", instance_running: false, file, message}`를 출력한다. 연결 시간 초과 같은 다른 실패는 고치지 않고 오류로 끝난다. 파일 규칙(형식 표시, 이전 자동 기록 포트 정리, 다른 키 보존)은 `tasty_settings::webhook_port_file` 한 곳에 있고 인스턴스와 CLI가 같이 쓴다. 저장한 포트가 막혀 Tasty가 뜨지 않을 때 오류 안내가 이 명령을 알려 준다. 인자 없는 조회는 실행 중인 인스턴스가 있어야 한다.
 - **이전 형식 파일**: 이전 버전은 파일이 없을 때 `port = 28429`를 자동으로 써 넣었다. `format = 2` 표시가 없는 파일의 `port = 28429`는 그 자동 값으로 보고 처음 읽을 때 지운다(탐색으로 바뀐다). 다른 값은 사용자가 정한 명시 지정으로 남긴다. 이 모듈이 파일을 쓸 때마다 `format = 2`를 함께 쓴다.
 - 같은 컴퓨터에서 release·debug·격리 홈 인스턴스를 함께 띄우면 각 인스턴스가 비어 있는 다음 포트를 쓴다(측정: 다른 프로세스가 28429를 쥔 상태에서 격리 인스턴스가 28430).
 
 **단일 실행 넘김**: release에서 같은 데이터 폴더의 Tasty가 이미 실행 중이고 두 번째 실행에 `--webhook-port`가 있으면, 실행 중인 쪽에 `webhook.config`로 포트를 묻는다. 다르면(리스너가 없는 경우 포함) 넘기지 않고 메시지 상자로 알린 뒤 종료 코드 1로 끝낸다. 같으면 평소처럼 넘긴다. 조회하지 못하면 평소처럼 넘긴다.
+
+**값이 저장되는 파일**:
+
+| 값 | 파일 | 바꾸는 방법 | 적용 |
+|---|---|---|---|
+| 외부 수신 허용 `allow_external` | config.toml `[webhook]` | Settings › General(Save/Cancel), `tasty webhook allow-external on\|off` | 다음 실행 |
+| 명시 지정 포트 `port` | webhooks.toml 최상위 | `tasty webhook port <N>`·`--unset`(Tasty 없이도 가능) | 다음 실행 |
+| 파일 형식 표시 `format` | webhooks.toml 최상위 | 포트를 쓸 때 자동 | — |
+| Persistent 등록 `[[webhook]]` | webhooks.toml | `tasty webhook register --persistent`·`unregister` | 즉시 |
+| 이번 실행만의 포트 | 저장 안 함 | `--webhook-port <N>` | 그 실행 |
+
+외부 수신 허용은 설정 윈도우의 저장·취소 흐름을 따르도록 config.toml에, 포트는 인스턴스 없이도 고칠 수 있도록 웹훅 파일에 둔다.
 
 ### 포트 기록 (`RuntimePorts`)
 

@@ -42,7 +42,7 @@ body = "Tasty is already running."
 title = "Webhook port in use"
 body = "The webhook port {} could not be opened: {}"
 hint_argument = "It was given with --webhook-port. Start with a free port, or without the option to let Tasty choose one."
-hint_config = "It was saved with `tasty webhook port`. Start once with --webhook-port <free port> and run `tasty webhook port --unset`, or remove the port line from {}."
+hint_config = "It was saved with `tasty webhook port`. While Tasty is not running, `tasty webhook port --unset` removes it and `tasty webhook port <free port>` replaces it; then start again. Or start once with --webhook-port <free port>."
 differs = "Tasty is already running in this data folder with webhook port {}. Quit it first to start with --webhook-port {}."
 differs_none = "Tasty is already running in this data folder without a webhook listener. Quit it first to start with --webhook-port {}."
 
@@ -1565,6 +1565,10 @@ home_unresolved = "Could not determine config directory"
 invalid_contents = "Invalid port file contents"
 
 # 직접 출력하는 문구는 오류·경고 접두어를 포함한다. 나머지는 호출자가 접두어를 붙인다.
+[cli.webhook]
+port_saved_offline = "Tasty is not running, so {} was edited directly. The port applies from the next start."
+port_file_write_failed = "Could not write {}: {}"
+
 [cli.request]
 cwd_invalid = "Error: --cwd: {}"
 json_arg_invalid = "Error: {}: not valid JSON: {}"
@@ -5976,7 +5980,7 @@ long = "Sweep (bulk-remove) all expired webhooks (time-elapsed / count-exhausted
 
 [cli.help._root.webhook.port]
 about = "Show the running listener's port, or save the port for the next start"
-long = "Show the running listener's port, or save the port for the next start.\n\nWith no argument, asks the running Tasty which address the listener actually opened and how that port was chosen (`argument`, `config` or `probe`), plus the port saved for the next start. With a port, saves it to the data folder's webhooks.toml; with `--unset`, removes the saved port. Either change applies from the next start. A saved port is explicit: if it cannot be opened, Tasty does not start. Without a saved port and without `--webhook-port`, Tasty tries 28429 and the next 63 ports and takes the first free one."
+long = "Show the running listener's port, or save the port for the next start.\n\nWith no argument, asks the running Tasty which address the listener actually opened and how that port was chosen (`argument`, `config` or `probe`), plus the port saved for the next start. With a port, saves it to the data folder's webhooks.toml; with `--unset`, removes the saved port. If Tasty is not running, the file is edited directly and the output says so. Either change applies from the next start. A saved port is explicit: if it cannot be opened, Tasty does not start. Without a saved port and without `--webhook-port`, Tasty tries 28429 and the next 63 ports and takes the first free one."
 
 [cli.help._root.webhook.port.arg.port]
 help = "Port to save (1-65535)"

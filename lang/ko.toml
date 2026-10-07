@@ -42,7 +42,7 @@ body = "이미 실행 중인 Tasty가 있습니다."
 title = "웹훅 포트 사용 중"
 body = "웹훅 포트 {}을(를) 열 수 없습니다: {}"
 hint_argument = "--webhook-port로 지정한 포트입니다. 빈 포트로 실행하거나, 옵션 없이 실행해 Tasty가 고르게 하세요."
-hint_config = "`tasty webhook port`로 저장한 포트입니다. --webhook-port <빈 포트>로 한 번 실행한 뒤 `tasty webhook port --unset`을 실행하거나, {}에서 port 줄을 지우세요."
+hint_config = "`tasty webhook port`로 저장한 포트입니다. Tasty가 실행 중이 아닐 때 `tasty webhook port --unset`으로 지우거나 `tasty webhook port <빈 포트>`로 바꾼 뒤 다시 시작하세요. 또는 한 번 --webhook-port <빈 포트>로 시작하세요."
 differs = "이 데이터 폴더의 Tasty가 웹훅 포트 {}로 이미 실행 중입니다. --webhook-port {}로 실행하려면 먼저 종료하세요."
 differs_none = "이 데이터 폴더의 Tasty가 웹훅 리스너 없이 이미 실행 중입니다. --webhook-port {}로 실행하려면 먼저 종료하세요."
 
@@ -1559,6 +1559,10 @@ home_unresolved = "설정 디렉토리를 찾을 수 없습니다"
 invalid_contents = "포트 파일 내용이 올바르지 않습니다"
 
 # 직접 출력하는 문구는 오류·경고 접두어를 포함한다. 나머지는 호출자가 접두어를 붙인다.
+[cli.webhook]
+port_saved_offline = "Tasty가 실행 중이 아니어서 {}를 직접 고쳤습니다. 포트는 다음 시작부터 적용됩니다."
+port_file_write_failed = "{}에 쓰지 못했습니다: {}"
+
 [cli.request]
 cwd_invalid = "오류: --cwd: {}"
 json_arg_invalid = "오류: {}: 올바른 JSON이 아닙니다: {}"
@@ -5970,7 +5974,7 @@ long = "만료된 웹훅을 한꺼번에 제거합니다(시간 초과 또는 �
 
 [cli.help._root.webhook.port]
 about = "실행 중인 리스너의 포트를 보거나, 다음 실행에 쓸 포트를 저장한다"
-long = "실행 중인 리스너의 포트를 보거나, 다음 실행에 쓸 포트를 저장합니다.\n\n인자 없이 실행하면 실행 중인 Tasty에 리스너가 실제로 연 주소와 그 포트를 정한 방법(`argument`, `config`, `probe`), 다음 실행에 쓸 저장 포트를 묻습니다. 포트를 주면 데이터 폴더의 webhooks.toml에 저장하고, `--unset`이면 저장한 포트를 지웁니다. 두 변경 모두 다음 실행부터 적용됩니다. 저장한 포트는 명시 지정이라 열 수 없으면 Tasty가 시작하지 않습니다. 저장한 포트도 `--webhook-port`도 없으면 28429와 그다음 63개 포트를 차례로 시도해 처음 비어 있는 포트를 씁니다."
+long = "실행 중인 리스너의 포트를 보거나, 다음 실행에 쓸 포트를 저장합니다.\n\n인자 없이 실행하면 실행 중인 Tasty에 리스너가 실제로 연 주소와 그 포트를 정한 방법(`argument`, `config`, `probe`), 다음 실행에 쓸 저장 포트를 묻습니다. 포트를 주면 데이터 폴더의 webhooks.toml에 저장하고, `--unset`이면 저장한 포트를 지웁니다. Tasty가 실행 중이 아니면 파일을 직접 고치고 그렇게 했다고 출력합니다. 두 변경 모두 다음 실행부터 적용됩니다. 저장한 포트는 명시 지정이라 열 수 없으면 Tasty가 시작하지 않습니다. 저장한 포트도 `--webhook-port`도 없으면 28429와 그다음 63개 포트를 차례로 시도해 처음 비어 있는 포트를 씁니다."
 
 [cli.help._root.webhook.port.arg.port]
 help = "저장할 포트(1-65535)"

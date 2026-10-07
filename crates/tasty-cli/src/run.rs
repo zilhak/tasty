@@ -429,8 +429,24 @@ fn run_client_inner(command: Commands, port_file: Option<&str>, envelope: Envelo
     envelope.apply(&mut request);
     let cli_warnings = take_cli_warnings(&mut request);
 
-    let port = crate::port_file::read_port(port_file)?;
-    let stream = connect_ipc(port)?;
+    // 포트 저장·삭제는 실행 중인 Tasty가 없으면 파일을 직접 고친다. 저장한 포트가 막혀 Tasty가
+    // 뜨지 못할 때 이 명령으로 풀 수 있어야 하기 때문이다.
+    let offline = offline_webhook_port(&command);
+    let port = match (crate::port_file::read_port_diagnosed(port_file), offline) {
+        (Ok(port), _) => port,
+        (Err(tasty_ipc::port_file::PortFileError::NotFound { .. }), Some(change)) => {
+            return save_webhook_port_offline(change);
+        }
+        (Err(e), _) => return Err(anyhow::anyhow!("{}", crate::port_file::localize(&e))),
+    };
+    let stream = match (connect_ipc(port), offline) {
+        (Ok(stream), _) => stream,
+        // 포트 파일이 남아 있어도 연결이 거절되면 그 포트에 인스턴스가 없다.
+        (Err(e), Some(change)) if e.source.kind() == std::io::ErrorKind::ConnectionRefused => {
+            return save_webhook_port_offline(change);
+        }
+        (Err(e), _) => return Err(e.into()),
+    };
 
     let mut conn = IpcConnection::new(stream)?;
 
@@ -451,6 +467,66 @@ fn run_client_inner(command: Commands, port_file: Option<&str>, envelope: Envelo
         }
     }
 
+    Ok(())
+}
+
+/// 인스턴스 없이 처리할 수 있는 웹훅 포트 변경. `port`가 Some이면 저장, None이면 삭제다.
+#[derive(Clone, Copy)]
+struct OfflinePortChange {
+    port: Option<u16>,
+}
+
+fn offline_webhook_port(command: &Commands) -> Option<OfflinePortChange> {
+    use crate::commands::WebhookCommands as W;
+    let Commands::Webhook { command } = command else {
+        return None;
+    };
+    let port = match command {
+        W::Port {
+            port: Some(port), ..
+        } => Some(*port),
+        W::Port {
+            port: None,
+            unset: true,
+        } => None,
+        // 이전 이름은 범위 검사가 없다. 0은 실행 중인 Tasty의 범위 오류와 같은 경로로 보낸다.
+        W::Config {
+            port: Some(port @ 1..),
+        } => Some(*port),
+        _ => return None,
+    };
+    Some(OfflinePortChange { port })
+}
+
+/// 실행 중인 Tasty가 없을 때 webhooks.toml을 직접 고치고, 그렇게 했다는 사실을 함께 출력한다.
+fn save_webhook_port_offline(change: OfflinePortChange) -> Result<()> {
+    let path = tasty_settings::webhook_port_file::path();
+    match change.port {
+        Some(port) => tasty_settings::webhook_port_file::set_port(&path, port),
+        None => tasty_settings::webhook_port_file::clear_port(&path),
+    }
+    .map_err(|e| {
+        anyhow::anyhow!(
+            "{}",
+            tasty_i18n::t_fmt2(
+                "cli.webhook.port_file_write_failed",
+                &path.display().to_string(),
+                &e.to_string()
+            )
+        )
+    })?;
+    let file = path.display().to_string();
+    let value = serde_json::json!({
+        "saved_port": change.port,
+        "applies_from": "next_start",
+        "instance_running": false,
+        "file": file,
+        "message": tasty_i18n::t_fmt("cli.webhook.port_saved_offline", &file),
+    });
+    outln!(
+        "{}",
+        serde_json::to_string_pretty(&value).unwrap_or_default()
+    )?;
     Ok(())
 }
 
