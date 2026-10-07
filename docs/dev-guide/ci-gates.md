@@ -610,6 +610,11 @@ cargo clippy --workspace --all-targets \
 - **디스플레이가 필요해 `#[ignore]` 다.** 그래서 `check-headless` 의 gui 유닛 단계(`--lib --bins`)에서는
   ignored 로만 세고 실행하지 않는다. 실행은 같은 잡의 `cargo test (linux, gui, webview layout — 관측용)`
   단계가 xvfb-run 안에서 이름으로 지목해서 한다. `DISPLAY` 가 없으면 조용히 통과하지 않고 실패한다.
+- 지목 실행은 이름이 어긋나면 `0 passed` 로 통과하므로, 문서 가드
+  `the_webview_layout_step_names_the_one_layout_test`(`ci_channel_claims_match_workflows.rs`)가 그 파일의
+  `#[ignore]` 시험이 하나뿐인지와, 자동 잡의 호출이 `-p tasty-plugin-markdown … -- --ignored --exact
+  render::webview_layout_tests::<그 이름>` 으로 고르는지를 함께 본다. e2e 단계의
+  `the_gui_layer_a_display_revives_is_exactly_the_one_named_test` 와 같은 형태다.
 - **관측용이다.** e2e 단계와 같이 `continue-on-error: true` 라 실패해도 잡을 차단하지 않으므로, 결과는
   단계 conclusion 으로 확인한다. 차단으로 승격하는 기준(연속 통과 횟수)은 e2e 와 함께 아직 정하지 않았다. X64 러너에서 이 단계의 실행 결과는
   아직 관측 기록이 없다. 러너에 xvfb-run 이 있고 같은 잡의 e2e 단계가 Xvfb 안에서 gui 바이너리를 띄운다는 것만 확인했다.

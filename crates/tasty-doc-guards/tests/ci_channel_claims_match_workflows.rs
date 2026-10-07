@@ -1501,6 +1501,54 @@ fn the_gui_layer_a_display_revives_is_exactly_the_one_named_test() {
     );
 }
 
+/// markdown webview 레이아웃 시험을 이름으로 고르는 자동 호출이 실제 시험 이름과 맞는지 확인한다.
+/// 지목 실행은 이름이 어긋나면 `0 passed` 로 통과하므로, 시험 이름과 호출을 여기서 함께 대조한다.
+#[test]
+fn the_webview_layout_step_names_the_one_layout_test() {
+    const PACKAGE: &str = "tasty-plugin-markdown";
+    const MODULE: &str = "render::webview_layout_tests";
+    const FILE: &str = "crates/tasty-plugin-markdown/src/render/webview_layout_tests.rs";
+    const PARENT: &str = "crates/tasty-plugin-markdown/src/render.rs";
+    let root = repo_root();
+
+    let parent = std::fs::read_to_string(root.join(PARENT)).expect("render.rs 를 읽지 못했다");
+    assert!(
+        parent.contains("mod webview_layout_tests;"),
+        "{PARENT} 가 webview_layout_tests 모듈을 선언하지 않는다. 모듈 경로 {MODULE} 가 바뀌었다면 이 검사와 워크플로를 함께 고친다."
+    );
+    let text =
+        std::fs::read_to_string(root.join(FILE)).expect("webview_layout_tests.rs 를 읽지 못했다");
+    let fns = test_fns_with_ignore(&text);
+    assert_eq!(
+        fns.len(),
+        1,
+        "{FILE} 의 시험이 {}개다({fns:?}). 지목 실행은 한 이름만 고르므로 시험을 늘리면 워크플로 호출과 이 검사를 함께 바꾼다.",
+        fns.len()
+    );
+    let (name, ignored) = &fns[0];
+    assert!(
+        *ignored,
+        "{name} 에 #[ignore] 가 없다. 디스플레이 없는 --lib --bins 단계에서도 실행돼 실패한다."
+    );
+    let full = format!("{MODULE}::{name}");
+
+    let invocations = automatic_test_invocations(&root);
+    assert!(
+        !invocations.is_empty(),
+        "자동 잡의 cargo test 호출을 찾지 못했다. 수집 범위와 명령 판독을 확인한다."
+    );
+    let selected = invocations.iter().any(|(_, tail)| {
+        let words: Vec<&str> = tail.split_whitespace().collect();
+        let package = words.windows(2).any(|w| w[0] == "-p" && w[1] == PACKAGE);
+        let (filters, exact) = positive_filters(tail);
+        package && exact && words.contains(&"--ignored") && filters.iter().any(|f| *f == full)
+    });
+    assert!(
+        selected,
+        "`-p {PACKAGE} … -- --ignored --exact {full}` 로 이 시험을 고르는 자동 호출이 없다. 시험 이름이 바뀌었다면 워크플로의 webview layout 단계를 함께 고친다."
+    );
+}
+
 /// gui_tests 전체가 #[ignore] 상태인지 확인한다. 디스플레이만 있어서는 일반 실행에 포함되지 않는다.
 #[test]
 fn the_gui_suite_needs_a_flag_not_a_display() {
