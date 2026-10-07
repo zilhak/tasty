@@ -15,17 +15,16 @@ v2 그래프는 depends_on·binding 으로 순서와 값을 잇지만, 결과에
 
 생산자 task 의 계약에 `transitions` 를 둔다. 조건은 그 task 의 확정된 출력(출력 검증을 통과한 값)만 읽는 제한된 순수 식이다.
 
-- 조건 형식은 `compare`(eq·ne·lt·le·gt·ge), `in`(값 목록), `all`·`any`·`not` 이다. 셸·네트워크·시각·다른 task 의 상태를 읽지 않는다. reduce `all` 은 `input` 으로 입력 task 하나의 레코드 출력을 그 입력의 선언 타입으로 읽는다.
-- 그래프 제출 때 조건이 읽는 위치의 타입을 구해 검사한다. 비교 대상은 boolean·int64·float64·string·enum 이고, float64 는 범위 비교만 받는다. 상수는 그 위치의 타입으로 검사한다. 단건 생성은 전이를 받지 않는다(대상이 함께 제출돼야 한다).
-- `mode` 는 `exclusive`(기본, 참인 case 가 정확히 하나)와 `all_matches` 다. 맞는 case 가 없을 때의 처리(`otherwise` 대상 또는 `no_match: "finish"`)를 반드시 적는다. exclusive 에서 같은 조건이나 같은 위치의 eq·in 값이 겹치는 case 는 제출 때 거절하고, 나머지 다중 참은 실행 때 경로 오류로 처리한다.
+- 조건은 비교·값 목록·논리 조합으로 된 제한된 형식이다. 셸·네트워크·시각·다른 task 의 상태를 읽지 않는다. 단건 생성은 전이를 받지 않는다(대상이 함께 제출돼야 한다).
+- 그래프 제출 때 조건이 읽는 위치의 타입, 상수, case 겹침을 검사한다. 기본은 참인 case 가 정확히 하나여야 하는 배타 모드이고, 맞는 case 가 없을 때의 처리를 반드시 적는다. 제출 때 가릴 수 없는 다중 참은 실행 때 경로 오류로 처리한다.
 - 고른 경로(`route`: 회차·참인 case·`otherwise` 여부·고른 대상)는 결과·종결과 같은 레코드 쓰기로 저장한다([ADR-0071](0071-typed-task-completion-is-one-write-per-attempt.md)). 경로를 고르지 못하면(값 없음·null·exclusive 다중 참) 그 task 는 실패 단계 `route` 로 끝나고 출력은 진단용으로 남는다.
 - 고르지 않은 대상과, 들어오는 경로가 모두 선택되지 않은 task 는 실행 없이 Skipped 가 되고 `skip.reason: branch_not_selected` 를 남긴다. 실패 정책을 적용하지 않는다. 선행이 성공 결과를 내지 못해 건너뛴 v2 task 는 `upstream_unavailable` 과 그 선행·상태를 남긴다.
 - 전이 대상은 제어 엣지로 들어온다. 그 엣지가 하나라도 고르기 전에는 실행하지 않는다. depends_on·binding·reduce 입력은 선택되지 않은 선행을 기다리지 않는다(합류). 선택된 선행이 실패하면 합류 task 는 실패 전파를 받는다.
 - 선택되지 않을 수 있는 task 의 출력을 필수 입력으로 읽으면서 그 task 가 아닌 경로로도 실행될 수 있는 task 는 제출 때 거절한다. 대안 경로의 값은 `one_of`, 없어도 되는 값은 optional·default 로 적는다. 전이 대상은 continue_downstream 을 쓸 수 없고 fallback 대상일 수 없다.
 - v2 task 의 `retry` 는 `reset_downstream` 을 거절한다. 하류는 이미 이전 회차의 실패나 경로로 판정됐고, 되감으면 같은 그래프에서 두 회차의 판단이 섞인다. 새 회차를 열면 저장된 경로와 skip 이유를 지운다.
-- DAG 집계는 선택되지 않은 task 를 `not_selected` 로 센다. fallback 이 대신 성공한 실패는 `recovered` 로 세고 실패로 보지 않는다(설계 §10 확장: fallback 은 실패를 처리한 정상 경로다). 성공·선택되지 않음·fallback 이 대신한 실패만 있으면 그래프를 `succeeded` 로 본다. 이 집계 규칙은 v1 fallback 에도 적용한다. fallback 이 끝내 성공하지 못하면 `failed` 다. `task_graph` 는 전이를 `transition` 간선과 선택 상태(`pending`·`selected`·`not_selected`·`unavailable`)로 보인다.
+- DAG 집계는 선택되지 않은 task 와 fallback 이 대신 성공한 실패를 실패로 보지 않는다. fallback 은 실패를 처리한 정상 경로이므로, 성공·선택되지 않음·fallback 이 대신한 실패만 있으면 그래프를 성공으로 본다. 이 집계 규칙은 v1 fallback 에도 적용한다. fallback 이 끝내 성공하지 못하면 실패다.
 
-현재 동작은 [agent runner 가이드](../dev-guide/agent-runner.md)의 "전이 조건과 경로 선택" 절에 있다.
+조건 형식·모드·집계 필드는 [agent runner 가이드](../dev-guide/agent-runner.md)의 "전이 조건과 경로 선택" 절에 있다.
 
 ## Consequences
 

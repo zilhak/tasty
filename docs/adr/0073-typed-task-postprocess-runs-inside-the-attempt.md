@@ -26,23 +26,15 @@
 - 재시도가 남은 실패 보고는 다음 실행을 `Pending` 으로 예약하고 task 를 Running 으로 둔다. 마지막 보고에서만 결과를 확정하고 종결하므로 `on_failure` 와 하류 반영은 한 번 일어난다. permit 은 그 종결 때 놓는다.
 - 재시작 때 `Started` 인데 저장된 보고가 없으면 `outcome_unknown` 실패로 끝내고 재시도 예산이 남아도 다시 실행하지 않는다. 살아 있는 PID 는 같은 프로세스라는 증거가 아니므로 쓰지 않는다. 저장된 보고가 있으면 그것으로 확정하고, `Pending` 이면 예약대로 실행한다.
 - 취소·시간 초과는 그 실행이 만든 프로세스 그룹(Windows 는 job)만 종료하고, 종료를 확인한 뒤에 permit 을 놓는다.
-- 재시도 대상에서 넷을 뺀다. 나머지 실패(시작 실패·0 이 아닌 종료·신호·시간 초과·stdin 쓰기·stdout 수집과 형식 오류)는 CLI 의 일시적 상태로 달라질 수 있어 예산 안에서 다시 실행한다.
-  - `output_validation`: CLI 가 형식에 맞는 값을 냈지만 선언한 타입이 아니다. 계약과 CLI 가 어긋난 것이라 같은 입력으로 다시 실행해 고쳐질 근거가 없고, 다시 실행하면 비용만 반복된다.
-  - `stdin_mapping`: 저장한 본 작업 결과에 선언한 위치가 없다. 재시도도 같은 결과로 하므로 결과가 바뀌지 않는다.
-  - `cancelled`: 사용자가 취소했거나 러너가 멈췄다. 다시 실행하면 취소한 의도를 거스른다.
-  - `outcome_unknown`: 실행이 끝났는지 모른다. 다시 실행하면 같은 후처리가 두 번 실행될 수 있다.
+- 같은 입력으로 다시 실행해 결과가 바뀔 근거가 없는 실패(`output_validation`·`stdin_mapping`), 사용자의 중단 의도를 거스르는 실패(`cancelled`), 다시 실행하면 같은 후처리가 두 번 실행될 수 있는 실패(`outcome_unknown`)는 재시도하지 않는다. 나머지 실패는 CLI 의 일시적 상태로 달라질 수 있어 예산 안에서 다시 실행한다. 원인별 표와 이유는 가이드에 있다.
 - 러너가 멈추면(workspace 정리·앱 종료) 진행 중인 후처리를 `cancelled` 로 중단하고 그 보고를 저장한다. 재시작 뒤에는 그 보고로 실패가 확정되며 다시 실행하지 않는다. 멈춘 시점에 프로세스를 끝냈으므로 결과가 불명인 것이 아니라 중단된 것이고, 재시작 뒤 자동으로 다시 실행하면 사용자가 모르는 사이에 외부 CLI 가 다시 불린다. 보고를 저장하기 전에 호스트가 끝나면 `outcome_unknown` 이 된다.
-- 정상 종료 때는 그룹 종료와 보고 저장을 짧게 기다린다. executor 는 후처리 작업 스레드를 최대 3초(그룹 종료 뒤 파이프 EOF 를 기다리는 2초에 저장 시간을 더한 값), runner registry 는 runner 스레드를 최대 4초 기다린다. 기다리지 않으면 정지 표지를 세운 직후 프로세스가 끝나 그룹이 남고 재시작 뒤 `cancelled` 대신 `outcome_unknown` 이 된다. 상한을 두는 것은 멈춘 runner 가 앱 종료를 막지 않게 하기 위해서다.
+- 정상 종료 때는 그룹 종료와 보고 저장을 짧은 상한 안에서 기다린다. 기다리지 않으면 정지 표지를 세운 직후 프로세스가 끝나 그룹이 남고 재시작 뒤 `cancelled` 대신 `outcome_unknown` 이 된다. 상한을 두는 것은 멈춘 runner 가 앱 종료를 막지 않게 하기 위해서다. 값은 가이드에 있다.
 - 비정상 종료(SIGTERM 등)에는 Tasty 가 개입할 수 없다. Linux 는 후처리를 `tasty_reaper::spawn_bound_to_host` 로 띄워 그룹 리더가 PDEATHSIG 로 SIGTERM 을 받게 한다. 리더가 직접 실행한 CLI 이면 그것으로 끝나지만, 그룹의 다른 프로세스는 신호를 받지 않아 리더가 전달하지 않으면 남는다. Windows 는 실행별 KILL_ON_JOB_CLOSE job 이 호스트 종료와 함께 닫혀 job 안의 프로세스가 끝난다. macOS 는 묶지 않는다. 그룹 전체를 끝내려면 Tasty 에 SIGTERM 처리기가 필요하고 그것은 후처리만의 문제가 아니다(기존 run 도 같다).
 - 완료 보고 밖에서 task 가 끝나면(취소 등) `attempt.postprocess.phase` 를 `finished` 로 닫는다. `run` 은 마지막으로 시작한 실행 번호다(없으면 0). 끝난 task 의 기록을 읽는 쪽이 진행 중으로 보지 않게 한다.
-- 상한은 다음과 같다. 계약 검사가 범위 밖 값을 생성 때 거절한다.
-  - stdout 수집 256 KiB(`MAX_POSTPROCESS_STDOUT_BYTES`): 출력은 task 레코드의 `typed_result.output` 과 v1 투영 `result.output` 에 두 번 들어가고, pointer 를 쓰면 `raw.postprocess.stdout` 에도 들어간다. 레코드 하나가 memory 값 상한 1 MiB 안에 남도록 그 3분의 1 아래로 잡았다. 넘으면 잘린 값으로 성공시키지 않고 실패한다.
-  - stderr 16 KiB tail(`POSTPROCESS_STDERR_TAIL_BYTES`): 진단용이며 같은 레코드에 들어간다. 마지막 실행의 것만 남긴다.
-  - `timeout_ms` 1 ms ~ 24시간(`MAX_POSTPROCESS_TIMEOUT_MS`): 무기한 대기는 받지 않는다. 모델 호출 같은 긴 작업을 담되 permit 을 하루 넘게 쥐지 않게 한다.
-  - `max_retries` 1 ~ 10(`MAX_POSTPROCESS_RETRIES`), `delay_ms` 최대 1시간(`MAX_POSTPROCESS_RETRY_DELAY_MS`): 재시도 동안 permit 을 쥐므로 횟수와 대기를 유한하게 묶는다. 재시도로 넘어간 실행의 요약도 레코드에 쌓인다.
-- 후처리 자식은 Tasty 프로세스의 환경을 받되, 바깥 Claude Code 세션이 남긴 표지·비밀(`CLAUDECODE`, `CLAUDE_CODE_SESSION_ID` 등 세션 식별 변수, `CLAUDE_PLUGIN_OPTION_*`, Claude Code 가 넣은 `AI_AGENT` 값)은 지운다. 목록은 터미널 셸이 쓰는 것과 같다(`tasty_utils::process::is_stripped_inherited_env`). 이 값이 남으면 후처리가 부르는 Claude Code 가 자신을 바깥 세션의 자식으로 오인하고 세션 비밀이 무관한 프로세스로 샌다. 바깥 Tasty 인스턴스의 신원 변수(`TASTY_SESSION_TOKEN`, `TASTY_SURFACE_ID`, `TASTY_PARENT_HOME`, `TASTY_AGENT_ID`)도 지운다. 이 Tasty 를 다른 Tasty 의 터미널에서 띄웠으면 이 값들은 다른 인스턴스의 surface·세션 토큰·완료 알림 경로를 가리키고, 터미널 셸과 달리 후처리에는 자기 값으로 덮어쓸 surface 가 없다. 남겨 두면 후처리 CLI 가 부른 `tasty` 가 다른 인스턴스의 신원으로 요청한다. 사용자가 넣는 설정·인증(`CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY` 등)과 그 밖의 `TASTY_*`(`TASTY_HOME`, `TASTY_LOCALE` 등)는 그대로 넘긴다. Tasty 가 task 별 변수를 더하지는 않는다.
+- stdout 수집·stderr 보존·실행 시간·재시도 횟수와 대기에 유한한 상한을 두고, 계약 검사가 범위 밖 값을 생성 때 거절한다. stdout 은 상한을 넘으면 잘린 값으로 성공시키지 않고 실패한다. 값과 각 상한의 근거는 가이드에 있다.
+- 후처리 자식은 Tasty 프로세스의 환경을 받되, 바깥 Claude Code 세션이 남긴 표지·비밀과 바깥 Tasty 인스턴스의 신원 변수는 지운다. 남기면 후처리가 부르는 Claude Code 가 자신을 바깥 세션의 자식으로 오인하고 세션 비밀이 무관한 프로세스로 새며, 후처리 CLI 가 부른 `tasty` 가 다른 인스턴스의 신원으로 요청한다. 터미널 셸과 달리 후처리에는 자기 값으로 덮어쓸 surface 가 없다. 사용자가 넣는 설정·인증과 그 밖의 `TASTY_*` 는 그대로 넘기며, Tasty 가 task 별 변수를 더하지는 않는다. 목록은 가이드의 "runner 자식의 환경" 절에 있다.
 
-계약 형식, stdout 해석, 실패 원인 목록은 [agent runner 가이드](../dev-guide/agent-runner.md)의 "후처리 CLI" 절에 있다.
+계약 형식, 상한, stdout 해석, 실패 원인 목록은 [agent runner 가이드](../dev-guide/agent-runner.md)의 "후처리 CLI" 절에 있다.
 
 ### Run·custom 자식으로 범위 확장
 
@@ -55,7 +47,7 @@
 - 하류·permit·`on_failure` 의 시점이 task 하나의 종결로 정해진다. 본 작업 결과와 후처리 원본은 `raw` 에 따로 남는다.
 - 재시도는 저장한 본 작업 결과로만 한다. 본 작업의 부작용이 반복되지 않는다.
 - 결과가 불명인 실행은 자동으로 회복하지 않는다. 사용자가 확인하고 `retry` 해야 하며, 이때는 본 작업부터 새 회차로 실행한다.
-- 후처리 보고와 stdout 은 task 레코드에 들어가므로 memory 값 상한(1 MiB) 안에 있어야 한다. 그래서 stdout 수집 상한을 256 KiB 로 두고 stderr 는 마지막 16 KiB 만 남긴다. 재시도로 넘어간 실행은 원인·종료 코드만 남긴다.
+- 후처리 보고와 stdout 은 task 레코드에 들어가므로 memory 값 상한 안에 있어야 한다. 그래서 stdout 수집과 stderr 보존에 상한을 두고, 재시도로 넘어간 실행은 원인·종료 코드만 남긴다.
 - macOS 등 Linux 가 아닌 Unix 는 종료한 리더를 회수한 뒤에는 그룹 id 재사용을 막을 수 없어, 직접 자식이 끝난 뒤 파이프를 쥔 자손은 그룹 종료 대상에서 빠진다.
 
 ## Alternatives Considered

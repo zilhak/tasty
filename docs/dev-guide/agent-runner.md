@@ -581,7 +581,7 @@ v2 task 의 fallback 이 이미 실행됐으면(Ready·Running·Succeeded) 그 t
 
 - v2 는 결과 확정(출력 검증 포함)과 종결 상태, 성공했을 때 고른 경로(`route`, 아래 §전이 조건과 경로 선택)를 레코드 한 번의 쓰기로 저장한다. 쓰기가 실패하면 상태·결과가 그대로이고 하류 readiness·fallback 도 움직이지 않는다. 그 쓰기가 끝난 뒤에야 하류를 평가하고 대기자에게 종결을 알린다.
 - 보고의 회차가 지금 회차와 다르면 적용하지 않는다(`stale_attempt`). 회차 id 를 생략하면 지금 회차로 본다.
-- 이미 끝난 회차에 같은 내용(결과·종결 종류)의 보고가 다시 오면 같은 레코드를 `duplicate: true` 로 돌려주고 하류 반영만 다시 시도한다. 다른 내용이면 거절한다(`different_report`). 회차를 끝낸 보고의 지문은 `attempt.completion.digest` 에 남는다. 보고 없이 끝난 task(취소·건너뜀)에 온 보고는 `already_terminal` 로 거절한다.
+- 이미 끝난 회차에 같은 내용(결과·종결 종류)의 보고가 다시 오면 같은 레코드를 `duplicate: true` 로 돌려주고 하류 반영만 다시 시도한다. 다른 내용이면 거절한다(`different_report`). 회차를 끝낸 보고의 지문(결과와 종결 종류의 FNV-1a 64 해시)은 `attempt.completion.digest` 에 남는다. 보고 없이 끝난 task(취소·건너뜀)에 온 보고는 `already_terminal` 로 거절한다.
 - 거절은 IPC 에서 `-32018` 이고 `error.data` 에 `reason`·`attempt_id`(보고한 회차)·`current_attempt_id` 를 싣는다.
 - 러너는 기록하지 못한 보고를 보관하고 다음 tick 에 같은 보고를 다시 낸다. 그동안 그 task 를 다시 poll 하지 않고 handle 과 permit(세마포어·lease)을 유지한다. 거절된 보고는 다시 내지 않는다.
 - 저장소가 계속 실패하면 permit 을 쥐는 시간에 상한이 없다. 재시도 횟수나 시간으로 포기하지 않는다. 포기하면 결과가 기록되지 않은 채 Running 인 task 의 permit 을 풀어 같은 자원을 다른 task 에 넘기게 되기 때문이다. 묶이는 permit 은 보고가 보류된 task 마다 하나다. 풀리는 시점은 셋이다.
@@ -677,7 +677,13 @@ stdout 해석과 성공 판정:
 
 출력 후보가 출력 타입에 맞지 않으면 `output_validation` 실패이고 재시도하지 않는다.
 
-재시도하지 않는 이유: `output_validation` 은 CLI 와 계약이 어긋난 것이라 같은 입력으로 다시 실행해도 고쳐질 근거가 없다. `stdin_mapping` 은 재시도도 같은 본 작업 결과를 쓰므로 바뀌지 않는다. `cancelled` 는 사용자·러너의 중단 의도이고, `outcome_unknown` 은 다시 실행하면 같은 후처리가 두 번 실행될 수 있다. 상한(stdout 256 KiB, stderr 16 KiB, 24시간, 재시도 10번·대기 1시간)의 근거는 ADR-0073 에 있다.
+재시도하지 않는 이유: `output_validation` 은 CLI 와 계약이 어긋난 것이라 같은 입력으로 다시 실행해도 고쳐질 근거가 없다. `stdin_mapping` 은 재시도도 같은 본 작업 결과를 쓰므로 바뀌지 않는다. `cancelled` 는 사용자·러너의 중단 의도이고, `outcome_unknown` 은 다시 실행하면 같은 후처리가 두 번 실행될 수 있다. 상한의 근거:
+
+- stdout 256 KiB(`MAX_POSTPROCESS_STDOUT_BYTES`): 출력은 task 레코드의 `typed_result.output` 과 v1 투영 `result.output` 에 두 번 들어가고, pointer 를 쓰면 `raw.postprocess.stdout` 에도 들어간다. 레코드 하나가 memory 값 상한 1 MiB 안에 남도록 그 3분의 1 아래로 잡았다.
+- stderr 16 KiB tail(`POSTPROCESS_STDERR_TAIL_BYTES`): 진단용이며 같은 레코드에 들어간다. 마지막 실행의 것만 남긴다.
+- `timeout_ms` 24시간(`MAX_POSTPROCESS_TIMEOUT_MS`): 무기한 대기는 받지 않는다. 모델 호출 같은 긴 작업을 담되 permit 을 하루 넘게 쥐지 않게 한다.
+- 재시도 10번(`MAX_POSTPROCESS_RETRIES`)·대기 1시간(`MAX_POSTPROCESS_RETRY_DELAY_MS`): 재시도 동안 permit 을 쥐므로 횟수와 대기를 유한하게 묶는다. 재시도로 넘어간 실행의 요약도 레코드에 쌓인다.
+- 정상 종료 대기(executor 3초 = 그룹 종료 뒤 파이프 EOF 를 기다리는 2초 + 저장 시간, runner registry 4초): 멈춘 runner 가 앱 종료를 막지 않게 한다.
 
 결과:
 
@@ -744,13 +750,26 @@ stdout 해석과 성공 판정:
 
 - task 키: `id`(필수, 호출자가 정하는 task id), `name`, `command`, `depends_on`, `on_failure`, `metadata`, `input_schema`, `output_schema`, `bindings`, `input_mapping`, `allowed_exit_codes`, `merge_conflict`, `postprocess`, `transitions`. 모르는 키는 거절한다. `types` 는 모든 task 가 함께 쓴다.
 - 검증: id 형식과 중복(그래프 안·workspace), `depends_on`·fallback·reduce 입력·binding 원본의 존재, 계약과 binding 의 타입, 매핑, 전이(아래 절), 위 조합 규칙, 순환(전이 간선 포함). 그래프 task 의 command 에 v1 출력 placeholder(`${task.…}`)가 있으면 거절하고 binding 을 쓰라고 안내한다.
-- 그래프 하나에는 task 를 1000 개(`MAX_GRAPH_TASKS`)까지 담는다. 제출이 memory 잠금을 쥔 채 앱의 IPC 처리 경로에서 활성화하기 때문이다(근거 ADR-0069). 그동안 러너 tick 과 memory 를 쓰지 않는 요청을 포함한 다른 IPC 전체가 기다린다. 1000 개 제출 중 다른 연결의 `system.ping` 은 0.25~1.4s 기다렸다(격리 인스턴스, dev 빌드 실측, 표는 ADR-0069). 초과하면 `location: /tasks` 로 거절한다.
+- 그래프 하나에는 task 를 1000 개(`MAX_GRAPH_TASKS`)까지 담는다. 제출이 memory 잠금을 쥔 채 앱의 IPC 처리 경로에서 활성화하기 때문이다(근거 ADR-0069). 그동안 러너 tick 과 memory 를 쓰지 않는 요청을 포함한 다른 IPC 전체가 기다린다. 1000 개 제출 중 다른 연결의 `system.ping` 은 0.25~1.4s 기다렸다(아래 측정). 초과하면 `location: /tasks` 로 거절한다.
 - 실패하면 아무것도 저장하지 않고 `-32602` 로 답한다. `error.data` 는 실패 단계·task id·타입 오류와 함께 `location`(제출한 그래프 안의 JSON Pointer, 예: `/tasks/1/bindings/label`, 순환은 `/tasks`)을 싣는다.
 - 통과하면 task 를 활성화 전 상태로 모두 저장한 뒤 그래프 레코드(`tasty.agent.task_graph.<그래프 id>`, `tasty.task_graph/v1`) 하나를 쓰고 readiness 를 평가한다. 그래프 레코드가 없는 task 는 Ready 가 되지 않으므로 저장 도중 러너가 돌아도 실행되지 않는다. task 나 그래프 레코드를 쓰다 실패하면 저장한 task 를 지운다. 레코드를 쓴 뒤 readiness 반영이 실패하면 지우지 않고 `-32603` 으로 답하며 `error.data` 에 `graph_id`·`possibly_active: true`·`cause` 를 싣는다(복구는 아래 §한계). 응답은 `{valid, activated, graph_id, durability, tasks}` 다.
 - 그래프 id 는 `g-<ms>-<순번>` 이며 task 의 `graph_id` 에 기록한다. `metadata.dag` 가 없으면 그래프 id 를 넣어 DAG 로 묶는다. 그래프의 task 가 모두 삭제되면 그래프 레코드도 지운다.
 - `agent.task_graph_validate` 는 같은 검증만 하고 저장하지 않는다(`{valid, activated: false, durability, tasks}`). CLI 는 `--dry-run` 이다.
-- 그래프의 `durability` 는 `required`(기본) 또는 `best_effort` 다. memory 저장소가 대체 모드(`memory_init_fallback`, 재시작하면 사라진다)일 때 `required` 그래프는 검증·제출 모두 `-32602`(`error.data`: `location: /durability`, `store_durable: false`, `cause`)로 거절하고 아무것도 저장하지 않는다. `best_effort` 는 그대로 실행하되 재시작 복구를 약속하지 않는다. 판정은 `TaskService::task_graph_submit` 이 하므로(`AgentError::StoreNotDurable`) IPC 를 거치지 않는 호출자도 같다. 그래프 레코드에 `durability` 를 남기고, 제출 응답은 `durability` 와(대체 모드면) `durable: false` 를 싣는다(근거 ADR-0072).
+- 그래프의 `durability` 는 `required`(기본) 또는 `best_effort` 다. memory 저장소가 대체 모드(`memory_init_fallback`, 재시작하면 사라진다)일 때 `required` 그래프는 검증·제출 모두 `-32602`(`error.data`: `location: /durability`, `store_durable: false`, `cause`)로 거절하고 아무것도 저장하지 않는다. `best_effort` 는 그대로 실행하되 재시작 복구를 약속하지 않는다. 판정은 `TaskService::task_graph_submit` 이 하므로(`AgentError::StoreNotDurable`) IPC 를 거치지 않는 호출자도 같다. 그래프 레코드에 `durability` 를 남기고, 제출 응답은 `durability` 와(대체 모드면) `durable: false` 를 싣는다(근거 ADR-0069).
 - 러너는 켜지 않는다. 정지한 러너에서는 활성화된 task 가 Ready 로 남는다.
+
+그래프 한도의 측정:
+
+- 지금은 3단계와 하류 전파(`TaskStore::settle_waiting`)가 저장소 목록을 한 번 읽고 작업본을 갱신한다. 메모리 안의 readiness 그래프 재구성은 task 마다 남아 있어 비용은 여전히 제곱이지만 상수가 작다. `TaskStore::submit_graph` 를 같은 머신에서 번갈아 잰 값(dev 프로필, 3회 최소~최대)은 이전 구현이 200 개 178~539ms · 1000 개 3781~5441ms, 지금 구현이 200 개 38~85ms · 1000 개 181~488ms 다. 지금 구현의 1000 개가 이전 구현의 200 개와 같은 범위라 한도을 1000 으로 둔다. 초과는 `-32602`(`location: /tasks`)로 거절한다.
+- 호스트 IPC 실측(격리 GUI 인스턴스, dev 빌드, 러너 정지, 제출 동안 다른 연결이 10ms 간격으로 `system.ping`, 측정 전 ping 기준선 0.09~0.10s):
+
+  | 형태 | 제출 시간 | 제출 중 ping 최대 |
+  |---|---|---|
+  | 독립 1000(기존 task 1000 개가 있는 workspace, 1회) | 0.356s | 0.258s |
+  | 독립 1000(새 workspace, 2회) | 1.515s / 0.390s | 1.404s / 0.285s |
+  | 사슬 1000(새 workspace, 2회) | 0.354s / 0.391s | 0.247s / 0.285s |
+
+  한도 크기의 그래프를 제출하면 그동안 호스트의 다른 IPC 가 최악 약 1.4s 멈출 수 있다. 이 지연을 받아들이고 한도을 1000 으로 유지한다. release 빌드는 재지 않았다.
 
 ### 전이 조건과 경로 선택
 
