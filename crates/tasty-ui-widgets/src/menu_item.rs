@@ -12,6 +12,9 @@ use crate::icon_button::IconPainter;
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum MenuItemVariant {
     Normal,
+    /// 글자가 `menu-item-fg`(text-secondary)이고 호버·선택 때 `menu-item-fg-hover`(text-primary)로 밝아진다.
+    /// 디자인 Tools menu 행(`tasty-toolsmenu-item`)이 이 색을 쓴다.
+    Secondary,
     Danger,
 }
 
@@ -86,7 +89,6 @@ fn menu_item_inner(
     // gap/label body/icon 글리프 = 대응 menu-item component 토큰 없음 → semantic.
     let gap = theme.spacing_sm.value();
     let radius = theme.menu_item_radius().value();
-    let body = theme.font_size_body.value();
     let icon_glyph = theme.icon_glyph_size_md.value();
     let width = ui.available_width();
 
@@ -119,10 +121,14 @@ fn menu_item_inner(
     // 일반 항목은 현재 text_primary를 사용한다. 디자인의 text-secondary와는 차이가 있다.
     let fg = match variant {
         MenuItemVariant::Normal => theme.text_primary().to_egui(),
+        MenuItemVariant::Secondary if active || (enabled && resp.hovered()) => {
+            theme.menu_item_fg_hover().to_egui()
+        }
+        MenuItemVariant::Secondary => theme.menu_item_fg().to_egui(),
         MenuItemVariant::Danger => theme.accent_danger().to_egui(),
     };
     let icon_color = match variant {
-        MenuItemVariant::Normal => theme.text_muted().to_egui(),
+        MenuItemVariant::Normal | MenuItemVariant::Secondary => theme.text_muted().to_egui(),
         MenuItemVariant::Danger => theme.accent_danger().to_egui(),
     };
 
@@ -162,19 +168,11 @@ fn menu_item_inner(
         None => {}
     }
 
-    let g = ui.painter().layout_no_wrap(
-        label.to_owned(),
-        egui::FontId::proportional(body),
-        egui::Color32::PLACEHOLDER,
-    );
-    let label_rect = egui::Rect::from_min_max(
-        egui::pos2(x, rect.top()),
-        egui::pos2(right.max(x), rect.bottom()),
-    );
+    // 디자인 `.tasty-menuitem__label` 처럼 남은 폭을 넘는 라벨은 끝을 말줄임표로 줄인다.
+    let ink = dim(fg);
+    let g = menu_label_galley(ui, theme, label, ink, right - x);
     let pos = egui::pos2(x, rect.center().y - g.rect.height() * 0.5);
-    ui.painter()
-        .with_clip_rect(label_rect)
-        .galley(pos, g, dim(fg));
+    ui.painter().galley(pos, g, ink);
 
     resp
 }
@@ -246,6 +244,8 @@ mod fit_width_tests {
     use tasty_type_appearance::theme::Theme;
 
     const LONG: &str = "A plugin tool label that is far too long for any menu to show in full";
+    /// 시험용 좁은 행 폭. LONG 라벨보다 좁다.
+    const NARROW: f32 = 120.0;
 
     fn theme() -> Theme {
         Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0)
@@ -303,6 +303,59 @@ mod fit_width_tests {
         );
         assert_eq!(mid, mid_label.ceil() + chrome);
         assert_eq!(long, max);
+    }
+
+    /// 공용 행이 남은 폭보다 넓은 라벨을 잘라 내지 않고 끝을 말줄임표로 줄여 행 안에 그리는지 검사한다.
+    #[test]
+    fn a_menu_item_row_ellipsizes_an_overflowing_label() {
+        let th = theme();
+        let ctx = egui::Context::default();
+        let mut texts: Vec<(String, egui::Rect)> = Vec::new();
+        let mut row_rect = egui::Rect::NOTHING;
+        for _ in 0..2 {
+            let frame = ctx.run(RawInput::default(), |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    ui.allocate_ui(egui::vec2(NARROW, NARROW), |ui| {
+                        ui.set_max_width(NARROW);
+                        row_rect = super::menu_item(
+                            ui,
+                            &th,
+                            None,
+                            LONG,
+                            None,
+                            super::MenuItemVariant::Secondary,
+                            false,
+                            true,
+                        )
+                        .rect;
+                    });
+                });
+            });
+            texts = frame
+                .shapes
+                .iter()
+                .filter_map(|c| match &c.shape {
+                    egui::Shape::Text(t) => Some((
+                        t.galley
+                            .rows
+                            .iter()
+                            .flat_map(|r| r.glyphs.iter().map(|g| g.chr))
+                            .collect(),
+                        t.visual_bounding_rect(),
+                    )),
+                    _ => None,
+                })
+                .collect();
+        }
+        let (text, rect) = texts
+            .iter()
+            .find(|(t, _)| t.starts_with('A'))
+            .expect("label drawn");
+        assert!(text.ends_with('…'), "{text}");
+        assert!(
+            rect.right() <= row_rect.right() - th.menu_item_padding_x().value() + 0.5,
+            "{rect:?} past {row_rect:?}"
+        );
     }
 
     #[test]

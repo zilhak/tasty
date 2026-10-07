@@ -9,12 +9,8 @@ use crate::plugin::tool_registry::ToolItem;
 use crate::runtime::engine_read::EngineRead;
 use crate::state::MainViewState;
 use crate::theme;
-use egui::emath::GuiRounding as _;
 use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::{fit_menu_width, menu_label_galley, menu_separator};
-
-/// 도구 항목 한 줄 높이. draw 와 sizer 가 같은 값을 참조해야 잘림 방지.
-const ITEM_HEIGHT: LogicalPx = LogicalPx(28.0);
+use tasty_ui_widgets::{MenuItemVariant, fit_menu_width, menu_item, menu_separator};
 
 /// Built-in tool entries that are not contributed by any plugin.
 /// `action` 으로 popup / 별도 winit 윈도우 오픈을 구분한다.
@@ -87,23 +83,15 @@ pub fn draw_tools_menu(
 
     let th = theme::theme();
     state.dialogs.tools_menu_width = Some(measure_inner_width(ui.ctx(), state));
-    let width = ui.available_width();
-    let pad_x = th.menu_item_padding_x().value();
-    let label_max = width - pad_x * 2.0;
+    // 디자인처럼 행 사이 간격 없이 쌓는다.
+    ui.spacing_mut().item_spacing.y = 0.0;
 
     let mut open_popup: Option<&'static str> = None;
     let mut open_workspace_popup: Option<&'static str> = None;
     let mut open_window: Option<WindowKind> = None;
     let mut open_file_picker = false;
     for entry in BUILTIN_TOOLS {
-        let (rect, resp) =
-            ui.allocate_exact_size(egui::vec2(width, ITEM_HEIGHT.value()), egui::Sense::click());
-        if resp.hovered() {
-            ui.painter()
-                .rect_filled(rect, 4.0, th.hover_overlay.to_egui_premultiplied());
-        }
-        paint_label(ui, &th, rect, t(entry.label_key), resp.hovered(), label_max);
-        if resp.clicked() {
+        if row(ui, &th, t(entry.label_key)).clicked() {
             match entry.action {
                 BuiltinAction::Popup(id) => open_popup = Some(id),
                 BuiltinAction::WorkspacePopup(id) => open_workspace_popup = Some(id),
@@ -157,15 +145,8 @@ pub fn draw_tools_menu(
 
     let mut clicked: Option<ToolItem> = None;
     for item in &items {
-        let (rect, resp) =
-            ui.allocate_exact_size(egui::vec2(width, ITEM_HEIGHT.value()), egui::Sense::click());
-        if resp.hovered() {
-            ui.painter()
-                .rect_filled(rect, 4.0, th.hover_overlay.to_egui_premultiplied());
-        }
         let label = crate::adapters::ui::label_or_raw_key(&item.label_i18n_key);
-        paint_label(ui, &th, rect, &label, resp.hovered(), label_max);
-        if resp.clicked() {
+        if row(ui, &th, &label).clicked() {
             clicked = Some(item.clone());
         }
     }
@@ -177,26 +158,18 @@ pub fn draw_tools_menu(
     PopupAction::None
 }
 
-/// 행 라벨. 행 패딩(`menu-item-padding-x`) 안쪽에 그리고, 폭 상한을 넘으면 끝을 줄인다.
-fn paint_label(
-    ui: &egui::Ui,
-    th: &theme::Theme,
-    rect: egui::Rect,
-    label: &str,
-    hovered: bool,
-    max_width: f32,
-) {
-    let color = if hovered {
-        th.text_primary().into()
-    } else {
-        th.text_muted().into()
-    };
-    let galley = menu_label_galley(ui, th, label, color, max_width);
-    let pos = egui::pos2(
-        rect.min.x + th.menu_item_padding_x().value(),
-        rect.center().y - galley.rect.height() * 0.5,
-    );
-    ui.painter().galley(pos, galley, color);
+/// 아이콘·단축키 없는 공용 MenuItem 행. 넘친 라벨은 공용 행이 끝을 줄인다.
+fn row(ui: &mut egui::Ui, th: &theme::Theme, label: &str) -> egui::Response {
+    menu_item(
+        ui,
+        th,
+        None,
+        label,
+        None,
+        MenuItemVariant::Secondary,
+        false,
+        true,
+    )
 }
 
 /// 메뉴 셸 안쪽 폭. 내장·플러그인 라벨 중 가장 넓은 것에 맞추고
@@ -274,24 +247,19 @@ pub fn invoke_tool(state: &mut MainViewState, engine: &EngineRead<'_>, item: &To
     }
 }
 
-/// 실제 렌더링과 같은 항목 간격. Theme에 이미 배율이 적용돼 있다.
-fn effective_item_spacing(_engine: &crate::runtime::engine_read::EngineRead<'_>) -> f32 {
-    theme::theme().spacing_xs.value().round_ui()
-}
-
-/// 본체·플러그인 항목과 구분선 여백을 포함한 메뉴 크기. 타이틀바는 없는 팝업이다.
+/// 본체·플러그인 항목과 구분선 여백을 포함한 메뉴 크기. 행은 간격 없이 쌓고
+/// 구분선은 위아래 `space-xs` 를 차지한다. 타이틀바는 없는 팝업이다.
 fn tools_menu_size_for(
     width: LogicalPx,
     builtin_count: usize,
     plugin_count: usize,
-    item_spacing: f32,
+    row_height: LogicalPx,
+    separator_gap: LogicalPx,
 ) -> egui::Vec2 {
-    let total = builtin_count + plugin_count;
-    let total = total.max(1);
-    let mut content_h = ITEM_HEIGHT.scaled(total as f32)
-        + LogicalPx((total.saturating_sub(1)) as f32 * item_spacing);
+    let total = (builtin_count + plugin_count).max(1);
+    let mut content_h = row_height.scaled(total as f32);
     if builtin_count > 0 && plugin_count > 0 {
-        content_h += LogicalPx(2.0 * item_spacing);
+        content_h += separator_gap.scaled(2.0);
     }
     // round_ui 누적 오차 / 초기 cursor 미세 padding 흡수용 1 px 마진.
     let safety_margin = 1.0;
@@ -304,8 +272,9 @@ fn tools_menu_size_for(
 /// PopupDef.sizer — 매 프레임 plugin tool registry 의 실제 항목 수로 height 재계산.
 pub fn tools_menu_sizer(
     state: &MainViewState,
-    engine: &crate::runtime::engine_read::EngineRead<'_>,
+    _engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) -> egui::Vec2 {
+    let th = theme::theme();
     let plugin_count = state.tool_registry.visible_items().len();
     tools_menu_size_for(
         state
@@ -314,17 +283,20 @@ pub fn tools_menu_sizer(
             .unwrap_or_else(min_inner_width),
         BUILTIN_TOOLS.len(),
         plugin_count,
-        effective_item_spacing(engine),
+        th.menu_item_height(),
+        th.spacing_xs,
     )
 }
 
 /// 등록 시에는 본체 항목으로 계산하고 렌더링 때 sizer로 갱신한다.
 pub fn tools_menu_default_size() -> egui::Vec2 {
+    let th = theme::theme();
     tools_menu_size_for(
         min_inner_width(),
         BUILTIN_TOOLS.len(),
         0,
-        theme::theme().spacing_xs.value(),
+        th.menu_item_height(),
+        th.spacing_xs,
     )
 }
 
@@ -341,28 +313,27 @@ mod size_tests {
     use super::*;
 
     const W: LogicalPx = LogicalPx(158.0);
+    const ROW: LogicalPx = LogicalPx(28.0);
+    const GAP: LogicalPx = LogicalPx(4.0);
 
     #[test]
-    fn fits_builtin_only_medium_scale() {
-        let size = tools_menu_size_for(W, 4, 0, 4.0);
-        let needed =
-            popup::content_margin().scaled(2.0) + ITEM_HEIGHT.scaled(4.0) + LogicalPx(3.0 * 4.0);
+    fn fits_builtin_only_rows_flush() {
+        let size = tools_menu_size_for(W, 4, 0, ROW, GAP);
+        let needed = popup::content_margin().scaled(2.0) + ROW.scaled(4.0);
         assert!(
             LogicalPx(size.y) >= needed,
             "size.y ({}) < needed ({}) for 4 builtin items",
             size.y,
             needed
         );
+        assert!(LogicalPx(size.y) < needed + ROW, "no gap between rows");
         assert_eq!(size.x, W.value());
     }
 
     #[test]
     fn fits_builtin_plus_plugin_with_separator() {
-        let size = tools_menu_size_for(W, 4, 3, 4.0);
-        let needed = popup::content_margin().scaled(2.0)
-            + ITEM_HEIGHT.scaled(7.0)
-            + LogicalPx(6.0 * 4.0)  // item_spacing between 7 items
-            + LogicalPx(2.0 * 4.0); // menu_separator = 2·spacing_xs
+        let size = tools_menu_size_for(W, 4, 3, ROW, GAP);
+        let needed = popup::content_margin().scaled(2.0) + ROW.scaled(7.0) + GAP.scaled(2.0); // menu_separator = 2·spacing_xs
         assert!(
             LogicalPx(size.y) >= needed,
             "size.y ({}) < needed ({}) for 4+3 items",
@@ -373,23 +344,23 @@ mod size_tests {
 
     #[test]
     fn fits_plugin_only_no_separator() {
-        let size = tools_menu_size_for(W, 0, 5, 4.0);
-        let needed =
-            popup::content_margin().scaled(2.0) + ITEM_HEIGHT.scaled(5.0) + LogicalPx(4.0 * 4.0);
+        let size = tools_menu_size_for(W, 0, 5, ROW, GAP);
+        let needed = popup::content_margin().scaled(2.0) + ROW.scaled(5.0);
         assert!(LogicalPx(size.y) >= needed);
+        assert!(LogicalPx(size.y) < needed + GAP);
     }
 
     #[test]
     fn empty_does_not_underflow() {
-        let size = tools_menu_size_for(W, 0, 0, 4.0);
-        assert!(LogicalPx(size.y) >= popup::content_margin().scaled(2.0) + ITEM_HEIGHT);
+        let size = tools_menu_size_for(W, 0, 0, ROW, GAP);
+        assert!(LogicalPx(size.y) >= popup::content_margin().scaled(2.0) + ROW);
     }
 
     #[test]
     fn scales_with_ui_scale_1_2() {
-        let size = tools_menu_size_for(W, 4, 0, 4.78);
-        let needed =
-            popup::content_margin().scaled(2.0) + ITEM_HEIGHT.scaled(4.0) + LogicalPx(3.0 * 4.78);
+        let row = LogicalPx(28.0 * 1.2);
+        let size = tools_menu_size_for(W, 4, 0, row, LogicalPx(4.0 * 1.2));
+        let needed = popup::content_margin().scaled(2.0) + row.scaled(4.0);
         assert!(LogicalPx(size.y) >= needed);
     }
 }

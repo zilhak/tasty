@@ -57,7 +57,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ),
             ("overflow", "end ellipsis past max"),
             ("anchor", "above button, left-aligned"),
-            ("rows", "28px MenuItem, no icons"),
+            ("rows", "28px MenuItem, flush, no icons"),
+            (
+                "label",
+                "menu-item-fg → text-secondary · hover menu-item-fg-hover → text-primary",
+            ),
             ("built-in", "7 — fixed order"),
             ("inner ring", "4 · popup-content-margin"),
             ("scrim", "none"),
@@ -91,7 +95,7 @@ fn row(ui: &mut egui::Ui, theme: &Theme, label: &str) {
         None,
         label,
         None,
-        MenuItemVariant::Normal,
+        MenuItemVariant::Secondary,
         false,
         true,
     );

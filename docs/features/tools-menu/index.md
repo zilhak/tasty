@@ -59,13 +59,14 @@
 - 등록 항목 수에 따라 메뉴 높이가 달라진다.
 - 메뉴 폭은 가장 넓은 항목 라벨에 행 패딩(`menu-item-padding-x` 양쪽), 안쪽 고리(`popup-content-margin` 양쪽), 테두리를 더한 값이다. 테두리를 포함해 `tools-menu-min-width`(160)보다 좁아지지 않고 `tools-menu-max-width`(240)보다 넓어지지 않는다.
 - 상한에 걸린 라벨은 끝을 말줄임표로 줄인다. 번역 라벨도 언어별 폭 없이 같은 규칙으로 맞춘다.
+- 항목 행은 공용 MenuItem(`menu-item-height` 28, 행 사이 간격 0)이다. 글자는 `menu-item-fg`(text-secondary)이고 호버하면 `menu-item-fg-hover`(text-primary)와 `menu-item-bg-hover` 배경(`menu-item-radius`)으로 바뀐다.
 
 > GUI 메뉴라 시각 검증은 스크린샷, 항목 등록/실행은 `debug.tool.list`/`debug.tool.invoke`(debug IPC)로 검증 가능.
 
 ## 구현
 
 - `src/adapters/ui/tools_menu.rs` — `BUILTIN_TOOLS`, `draw_tools_menu`, `invoke_tool`, `tools_menu_sizer`.
-- `src/adapters/ui/sidebar/tools.rs` — `open_tools_menu` (도구 버튼 → 메뉴 popup). 열기 전에 `measure_on_open`으로 폭을 재고, 그리는 동안에도 매 프레임 다시 재어 플러그인 항목 변화를 따른다. 폭 계산은 `tasty-ui-widgets`의 `fit_menu_width`, 라벨 말줄임은 `menu_label_galley`를 갤러리와 함께 쓴다.
+- `src/adapters/ui/sidebar/tools.rs` — `open_tools_menu` (도구 버튼 → 메뉴 popup). 열기 전에 `measure_on_open`으로 폭을 재고, 그리는 동안에도 매 프레임 다시 재어 플러그인 항목 변화를 따른다. 폭 계산은 `tasty-ui-widgets`의 `fit_menu_width`, 행은 `menu_item`(`MenuItemVariant::Secondary`)을 갤러리와 함께 쓴다. 라벨 말줄임은 공용 행이 처리한다.
 - 플러그인 항목: `MainViewState::tool_registry` (plugin `[[contributes.tool]]` 동기화).
 
 ## 화면
