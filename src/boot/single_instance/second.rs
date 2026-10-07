@@ -204,10 +204,13 @@ fn hand_over(
                     ));
                 }
                 Ok(running) => return Handover::WebhookPortDiffers { wanted, running },
+                // 묻지 못했다는 이유로 실행을 막지 않는다. 포트가 다를 수 있으니 경고로 남긴다.
                 Err(reason) => {
-                    log.line(&format!(
-                        "webhook port check failed ({reason}); handing over"
-                    ));
+                    let message = format!(
+                        "warning: could not ask the running instance for its webhook port ({reason}); handing over without checking --webhook-port {wanted}"
+                    );
+                    tracing::warn!("{message}");
+                    log.line(&message);
                 }
             }
         }
