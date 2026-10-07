@@ -47,31 +47,15 @@ OS 자원을 가질 수 없고, 같은 자원을 여러 Store·Registry에 반�
 
 ### 유지하는 동작 규칙
 
-- 각 터미널의 PTY 읽기 worker가 VT 파싱과 grid 갱신을 맡고, 메인 이벤트 루프는 VT를 파싱하지 않는다. 같은 worker가 read→ingest를 수행해도 논리 소유와 OS 책임은 나뉜다.
-- `TerminalState`는 터미널별 잠금으로 공유한다. 읽기 worker는 8KB 청크를 처리한 뒤 잠금을 놓고, 렌더링은 필요한 값을 한 번의 잠금에서 읽는다. 잠금 밖으로 grid 참조를 반환하지 않는다.
-- snapshot과 출력 tap은 parser와 같은 일관성 경계에서 처리한다. 타입을 나누면서 각자 잠금을 잡는 두 호출로 만들지 않는다.
+객체를 나누면서도 다음 선택은 유지한다. 현재 동작의 세부(청크 크기, EOF 뒤 재확인 간격, 잠금 규칙, 절전 복귀 절차, OS별 자식 종료 차이)는
+[터미널](../features/terminal/index.md)·[헤드리스 PTY](../features/headless-pty/index.md)·[터미널 출력](../features/terminal-output/index.md) 문서에 있다.
+
+- VT 파싱과 grid 갱신은 각 터미널의 PTY 읽기 worker가 맡고 메인 이벤트 루프는 VT를 파싱하지 않는다. snapshot과 출력 tap은 parser와 같은 일관성 경계에서 처리한다.
 - resize는 grid 변경과 tap 통지가 먼저이고 OS resize는 예약 후 flush한다. tap을 OS resize 성공 확인으로 취급하지 않는다.
-- PTY 자식은 PTY를 소유한 호스트와 수명을 함께한다. Windows는 `tasty-reaper`의 `KILL_ON_JOB_CLOSE` Job Object에 셸을 등록하고, 정상 닫기에서는 Pty가 자식을 명시적으로 종료한다.
-  Unix의 비정상 종료는 PTY hangup과 SIGHUP에 의존한다. kill·wait 소유자는 한 곳이다. 닫기 완료·종료 신호 전달·실제 exit·reap 완료를 같은 것으로 보고하지 않는다.
-- Windows 절전 복귀는 `WM_POWERBROADCAST`로 감지해 종료한 자식을 정리하고 살아 있는 PTY에 현재 크기로 resize를 보낸다. 응답이 없다는 이유로 자식을 강제 종료하거나 재생성하지 않는다.
-- PTY EOF는 자식 종료와 구분한다. EOF 뒤에는 종료가 확인되거나 소유권이 이전되거나 Terminal이 사라질 때까지 10ms부터 두 배씩 최대 500ms 간격으로 host를 깨운다.
-- EOF 직후 한 번의 `try_wait`가 아직 실행 중이라고 반환해도 나중에 종료를 확인할 수 있어야 한다. parser가 child wait를 직접 소유하지 않는다.
-  PTY를 닫고 계속 실행하는 자식은 최대 500ms마다 host를 깨우며, Terminal을 버릴 때 parser 종료를 기다리지 않는다(최대 한 대기 간격 뒤 종료).
-  targeted polling은 해당 터미널만 처리하지만 GUI에서 보이는 surface는 그 창을 다시 그릴 수 있다. targeted polling을 끄면 전체 터미널을 처리하고 모든 창을 다시 그릴 수 있다.
-- 새 접근자는 상태 잠금을 거친다. mutex가 poison 상태이면 내부 값을 꺼내 복구한다. 백그라운드 터미널의 잠금은 사용자가 보는 터미널의 잠금과 독립이다.
-- Windows 절전 복귀 처리에서 복구가 어려울 수 있는 surface는 사용자에게 알린다. 이 처리는 Windows에만 적용한다.
-- Windows에서는 호스트 종료 시 `nohup`·백그라운드 작업도 종료되고, Unix에서는 SIGHUP을 무시한 프로세스가 남을 수 있다.
-  Job 등록 실패는 경고를 남기고 기존 정리 방법을 사용한다. 플러그인과 터미널은 종료 구현을 공유하되 Job Object는 각 소유자가 따로 보관한다.
-  클라이언트의 attach·detach는 서버가 소유한 셸의 수명을 바꾸지 않는다.
-- standalone PTY(`pty.*`)는 surface를 만들지 않고 실제 종료 코드를 보관한다. 사용자가 탭을 보고 정리할 수 없으므로 개수 제한과 유휴 세션 회수를 두며,
-  PtyState·Terminal·wake 등록을 같은 정리 경로에서 함께 정리한다.
-- `pty.*`는 별도 Pty 권한을 만들지 않고 기존 `TerminalRead`·`TerminalWrite`·`TerminalSpawn`으로 설명한다. 화면 없는 작업을 `terminal.*` 옵션으로 넣지 않는다.
-- 출력 스캐너는 에이전트 mark와 독립된 scan 커서를 쓰며, `take_since_scan_mark`는 읽기와 커서 전진을 한 번에 한다. 에이전트의 set/read/parse mark API는 그대로 유지한다.
-  `surface.read_since_scan_mark`는 `TerminalRead` 권한으로 호출하고, 커서를 소비하므로 재전달 분류가 Mutate다.
-  CLI 명령은 만들지 않지만 일반 로컬 IPC 호출을 막는 API는 아니다.
-- scan 커서는 surface마다 하나다. 소비자가 둘이면 서로 읽을 데이터를 가져갈 수 있으므로 소비자는 하나라는 전제다. 첫 호출은 현재 보관한 출력을 모두,
-  이후 호출은 새 출력만 반환한다. plugin은 새 출력만 자기 제한된 버퍼에 모으며, host와 plugin의 보관 상한은 같은 값이어야 한다.
-  여러 소비자의 독립 읽기는 [ADR-0034](0034-output-cursor-contract.md)의 cursor 계약을 쓴다.
+- PTY 자식은 PTY를 소유한 호스트와 수명을 함께하며 kill·wait 소유자는 Pty 하나다. 닫기 완료·종료 신호 전달·실제 exit·reap 완료를 같은 것으로 보고하지 않는다. PTY EOF는 자식 종료와 구분한다.
+- Windows 절전 복귀에서는 응답이 없다는 이유로 자식을 강제 종료하거나 재생성하지 않는다. 이 처리는 Windows에만 적용한다.
+- standalone PTY(`pty.*`)는 surface를 만들지 않고 개수 제한과 유휴 회수를 둔다. 별도 Pty 권한을 만들지 않고 기존 `TerminalRead`·`TerminalWrite`·`TerminalSpawn`으로 설명한다. 화면 없는 작업을 `terminal.*` 옵션으로 넣지 않는다.
+- 출력 스캐너는 에이전트 mark와 독립된 surface별 scan 커서 하나를 쓰고 소비자는 하나라는 전제다. 여러 소비자의 독립 읽기는 [ADR-0034](0034-output-cursor-contract.md)의 cursor 계약을 쓴다.
 
 ## Consequences
 
