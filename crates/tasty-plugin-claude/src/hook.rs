@@ -97,15 +97,14 @@ impl<H: HostCallSink> StopTail<'_, H> {
         let Some(session_id) = session.filter(|_| gates > 0) else {
             return 0;
         };
-        let settled = lock_pairing(self.pairing).stop(
-            session_id,
+        let held = crate::stop_pairing::HeldStop {
             surface_id,
             prompt_id,
             kind,
             final_answer,
-            gates,
-            std::time::Instant::now(),
-        );
+        };
+        let settled =
+            lock_pairing(self.pairing).stop(session_id, held, gates, std::time::Instant::now());
         self.finish(settled)
     }
 
