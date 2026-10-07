@@ -428,5 +428,9 @@ mod postprocess_store_tests;
 mod route_tests;
 
 #[cfg(test)]
+#[path = "task/dag_store_tests.rs"]
+mod dag_store_tests;
+
+#[cfg(test)]
 #[path = "task/agent_tests.rs"]
 mod agent_tests;

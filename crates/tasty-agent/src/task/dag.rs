@@ -9,7 +9,10 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use serde::Serialize;
 use tasty_utils::id::WorkspaceId;
 
-use super::{OnFailure, Task, TaskGraph, TaskId, TaskState, referenced_task_ids};
+use super::{
+    OnFailure, Task, TaskCommand, TaskGraph, TaskId, TaskState, binding_task_ids,
+    referenced_task_ids,
+};
 use crate::AgentError;
 
 /// `DagSummary::id` 접두 — explicit(=`metadata.dag`) 그룹.
@@ -32,9 +35,11 @@ pub struct DagStateCounts {
     pub not_selected: usize,
     /// `failed` 중 같은 그룹의 fallback 이 성공해 대신한 task. rollup 에서 실패로 세지 않는다.
     pub recovered: usize,
-    /// `waiting` 중 선행 결과를 쓸 수 없어 더는 실행되지 않는 task. 실패 정책이 이 task 를
-    /// 건너뛰지 않고 대기로 남겨 둔 경우다(자기 실패에 쓸 fallback 을 둔 v1 task). rollup 은
-    /// 이 수를 진행 가능한 대기에서 뺀다.
+    /// `waiting` 중 저절로는 더 실행되지 않는 task. 선행 결과를 쓸 수 없는데 실패 정책이
+    /// 건너뛰지 않고 대기로 남겨 둔 task(자기 실패에 쓸 fallback 을 둔 v1 task)에서 시작해,
+    /// 그런 task 나 `unknown` task 를 기다리는 대기(하류, 입력으로 기다리는 Reduce, main 이
+    /// 끝나지 않아 깨어날 수 없는 fallback)까지 전이적으로 닫는다. rollup 은 이 수를 진행
+    /// 가능한 대기에서 뺀다.
     pub blocked: usize,
     /// 그룹의 끝 task(그룹 안에 하류가 없는 task) 중 성공한 수. fallback 이 대신 성공한 끝도
     /// 센다. fallback task 자신은 main 을 대신하므로 끝으로 세지 않는다. 실패가 섞인 DAG 가
@@ -61,12 +66,14 @@ impl DagStateCounts {
 
     /// DAG 하나의 대표 상태. 판정 순서는 화면의 상태칩 색과 직결되므로 고정이다.
     ///
-    /// 진행할 수 있는 task 가 있으면 실패가 섞여 있어도 진행 상태다: `running` → `ready` →
-    /// `waiting`(실행될 수 있는 대기나 unknown). 더 진행할 수 없으면 fallback 이 대신하지 못한
-    /// 실패가 있을 때 `partially_failed`(성공한 끝 task 가 하나라도 있음, `succeeded_ends`) 또는
+    /// 저절로 진행할 수 있는 task 가 있으면 실패가 섞여 있어도 진행 상태다: `running` →
+    /// `ready` → `waiting`(막히지 않은 대기). `unknown` 은 사람이 retry·cancel 해야 진행되므로
+    /// 진행할 수 있는 것으로 보지 않는다. 더 진행할 수 없으면 fallback 이 대신하지 못한 실패가
+    /// 있을 때 `partially_failed`(성공한 끝 task 가 하나라도 있음, `succeeded_ends`) 또는
     /// `failed`(끝까지 성공한 갈래 없음)다.
-    /// 실패 없이 막힌 대기만 남으면 `waiting` 이다. 나머지는 전부 terminal 이며 `succeeded`
-    /// (succeeded 와 선택되지 않은 경로뿐) 또는 `skipped`(cancelled 나 skip 된 task 섞임)다.
+    /// 실패 없이 막힌 대기나 `unknown` 이 남으면 `waiting` 이다(끝난 것으로 보이면 개입이 필요한
+    /// task 가 가려진다). 나머지는 전부 terminal 이며 `succeeded`(succeeded 와 선택되지 않은
+    /// 경로뿐) 또는 `skipped`(cancelled 나 skip 된 task 섞임)다.
     ///
     /// 반환 가능한 상태는 위 일곱 가지이며 cancelled와 unknown은 직접 반환하지 않는다.
     pub fn rollup(&self) -> &'static str {
@@ -76,7 +83,7 @@ impl DagStateCounts {
         if self.ready > 0 {
             return "ready";
         }
-        if self.waiting > self.blocked || self.unknown > 0 {
+        if self.waiting > self.blocked {
             return "waiting";
         }
         if self.failed > self.recovered {
@@ -86,7 +93,7 @@ impl DagStateCounts {
                 "failed"
             };
         }
-        if self.blocked > 0 {
+        if self.blocked > 0 || self.unknown > 0 {
             return "waiting";
         }
         if self.cancelled == 0 && self.skipped <= self.not_selected {
@@ -161,15 +168,15 @@ fn group_within_workspace(workspace_id: WorkspaceId, tasks: &[&Task]) -> Vec<Dag
         }
     }
 
-    // 막힌 대기 판정은 그룹 밖 선행도 봐야 하므로 workspace 전체 그래프로 한다.
+    // 막힌 대기 판정은 그룹 밖 선행도 봐야 하므로 workspace 전체로 한다.
     let owned: Vec<Task> = tasks.iter().map(|t| (*t).clone()).collect();
-    let graph = TaskGraph::build(&owned);
+    let blocked = blocked_task_ids(&owned);
 
     let mut out: Vec<DagSummary> = explicit
         .into_iter()
         .map(|(key, group)| {
             summarize(
-                &graph,
+                &blocked,
                 workspace_id,
                 format!("{EXPLICIT_ID_PREFIX}{key}"),
                 "explicit",
@@ -187,7 +194,14 @@ fn group_within_workspace(workspace_id: WorkspaceId, tasks: &[&Task]) -> Vec<Dag
             .min_by_key(|t| (t.created_at, t.id.as_str()))
             .expect("component is never empty");
         let id = format!("{DERIVED_ID_PREFIX}{}", root.id);
-        out.push(summarize(&graph, workspace_id, id, "derived", None, &group));
+        out.push(summarize(
+            &blocked,
+            workspace_id,
+            id,
+            "derived",
+            None,
+            &group,
+        ));
     }
 
     out.sort_by(|a, b| a.id.cmp(&b.id));
@@ -263,7 +277,7 @@ fn recovered_by_fallback<'a>(task: &'a Task, group: &[&'a Task], seen: &mut Vec<
 }
 
 /// 그룹의 끝 task: 그룹 안 다른 task 가 결과·순서로 기다리지 않고 전이로 이어지는 task 도
-/// 없다. fallback 간선은 하류로 보지 않는다. fallback task 자신(`fallback_task_ids`)은 main 을
+/// 없다. fallback 간선과 경로가 선택되지 않아 건너뛴 task 는 하류로 보지 않는다. fallback task 자신(`fallback_task_ids`)은 main 을
 /// 대신하므로 끝이 아니며, main 의 끝 여부와 복구 여부로 센다.
 fn is_end(
     task: &Task,
@@ -274,11 +288,16 @@ fn is_end(
     if fallback_task_ids.contains(task.id.as_str()) {
         return false;
     }
+    let selectable = |id: &str| {
+        group
+            .iter()
+            .any(|m| m.id.as_str() == id && !super::route::is_not_selected(m))
+    };
     let flows_on = super::route::transition_targets(task)
         .into_iter()
-        .any(|t| member_ids.contains(t.as_str()));
+        .any(|t| member_ids.contains(t.as_str()) && selectable(t.as_str()));
     let awaited = group.iter().any(|m| {
-        m.id != task.id && {
+        m.id != task.id && !super::route::is_not_selected(m) && {
             let forward = forward_refs(m);
             referenced_task_ids(m)
                 .iter()
@@ -300,17 +319,71 @@ fn forward_refs(task: &Task) -> Vec<&str> {
     out
 }
 
-/// Waiting 인데 선행 결과를 쓸 수 없는 task. 실패 정책이 대기로 남겨 두어 더는 실행되지 않는다.
-fn is_blocked(graph: &TaskGraph<'_>, task: &Task) -> bool {
-    task.state == TaskState::Waiting
-        && matches!(
-            graph.readiness(&task.id),
-            Some(super::graph::Readiness::Unavailable(_))
-        )
+/// task 가 실행되려면 먼저 끝나야 하는 task id: `depends_on`·binding·`Reduce.inputs`, 자기를
+/// 전이 대상으로 둔 task, 자기가 fallback 인 main.
+fn awaited_ids<'a>(task: &'a Task, all: &'a [Task]) -> Vec<&'a str> {
+    let mut out: Vec<&str> = task.depends_on.iter().map(|id| id.as_str()).collect();
+    if let TaskCommand::Reduce { inputs, .. } = &task.command {
+        out.extend(inputs.iter().map(|id| id.as_str()));
+    }
+    out.extend(binding_task_ids(task).into_iter().map(|id| id.as_str()));
+    out.extend(
+        all.iter()
+            .filter(|m| m.id != task.id && forward_refs(m).contains(&task.id.as_str()))
+            .map(|m| m.id.as_str()),
+    );
+    if let Some(main) = task.metadata.get("fallback_of").and_then(|v| v.as_str()) {
+        out.push(main);
+    }
+    out
+}
+
+/// 저절로는 더 실행되지 않는 Waiting task 의 id. 선행 결과를 쓸 수 없는데 대기로 남은 task
+/// (readiness `Unavailable`)에서 시작해, 막힌 task 나 `unknown` task 를 기다리는 Waiting task 를
+/// 고정점까지 더한다. 영구 대기 main 의 dormant fallback 과 막힌 입력을 기다리는 Reduce 도
+/// 이렇게 닫힌다.
+fn blocked_task_ids(all: &[Task]) -> BTreeSet<String> {
+    let graph = TaskGraph::build(all);
+    let mut blocked: BTreeSet<String> = all
+        .iter()
+        .filter(|t| {
+            t.state == TaskState::Waiting
+                && matches!(
+                    graph.readiness(&t.id),
+                    Some(super::graph::Readiness::Unavailable(_))
+                )
+        })
+        .map(|t| t.id.to_string())
+        .collect();
+    let unknown: BTreeSet<&str> = all
+        .iter()
+        .filter(|t| t.state == TaskState::Unknown)
+        .map(|t| t.id.as_str())
+        .collect();
+    let waiting: Vec<(&Task, Vec<&str>)> = all
+        .iter()
+        .filter(|t| t.state == TaskState::Waiting)
+        .map(|t| (t, awaited_ids(t, all)))
+        .collect();
+    loop {
+        let before = blocked.len();
+        for (t, awaited) in &waiting {
+            if !blocked.contains(t.id.as_str())
+                && awaited
+                    .iter()
+                    .any(|a| blocked.contains(*a) || unknown.contains(a))
+            {
+                blocked.insert(t.id.to_string());
+            }
+        }
+        if blocked.len() == before {
+            return blocked;
+        }
+    }
 }
 
 fn summarize(
-    graph: &TaskGraph<'_>,
+    blocked: &BTreeSet<String>,
     workspace_id: WorkspaceId,
     id: String,
     source: &'static str,
@@ -328,7 +401,7 @@ fn summarize(
         if recovered_by_fallback(t, &sorted, &mut Vec::new()) {
             state_counts.recovered += 1;
         }
-        if is_blocked(graph, t) {
+        if blocked.contains(t.id.as_str()) {
             state_counts.blocked += 1;
         }
         created_at = created_at.min(t.created_at);

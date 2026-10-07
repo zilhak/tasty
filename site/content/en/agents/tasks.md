@@ -1,4 +1,4 @@
-<!-- source-hash: 15d4ce718e05 -->
+<!-- source-hash: 95361190aef1 -->
 <a id="task-dag"></a>
 
 # Task workflows (DAG)
@@ -139,7 +139,7 @@ Give a task `transitions` and it picks which tasks run next from its result. In 
 - Tasks that were not chosen, and tasks reached only through them, end as "not selected", not as failures. A task where branches meet waits only for the branches that ran. If a branch that ran fails, that failure still passes on.
 - Taking a required input from a branch that may not run is rejected when you send the graph. If each branch produces the value in a different task, take it with `one_of`. If the value may be missing, make the input field optional or give it a default.
 - A task's `route` shows the tasks it chose, and a task that was not chosen shows why in `skip`. When every task succeeded or was not selected, the DAG shows as succeeded. A failed task whose fallback succeeded in its place does not make the DAG fail.
-- When one branch fails, the DAG still shows as running while another branch can go on. When everything has finished, a DAG where some branch succeeded all the way to its last task is `partially_failed`, and one with no such branch is `failed`. A single line of tasks where only the early tasks succeeded and the last one failed or was skipped is `failed`. A last task that failed but whose fallback succeeded in its place counts as a success. This appears as `rollup_state` in `agent dag-list`. The Task DAGs list does not show this state on its own yet and shows `?` (unknown) instead.
+- When one branch fails, the DAG still shows an in-progress state (running, ready or waiting) while another branch can go on. A task whose result became unknown (`unknown`) only moves on after you retry or cancel it, so it does not count as in progress. When everything has finished, a DAG where some branch succeeded all the way to its last task is `partially_failed`, and one with no such branch is `failed`. A single line of tasks where only the early tasks succeeded and the last one failed or was skipped is `failed`. A last task that failed but whose fallback succeeded in its place counts as a success. This appears as `rollup_state` in `agent dag-list`. The Task DAGs list does not show this state on its own yet and shows `?` (unknown) instead, and while any status filter is on, partially failed DAGs do not appear in the list.
 
 ### Asking an agent and taking its answer as the result
 

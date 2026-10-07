@@ -854,3 +854,61 @@ fn a_selected_branch_recovered_by_its_fallback_rolls_up_as_succeeded() {
     assert_eq!(d.state_counts.not_selected, 1);
     assert_eq!(d.rollup_state, "succeeded");
 }
+
+/// 경로를 고르지 않고 끝난 성공 task 는 끝까지 성공한 갈래다. 선택되지 않아 건너뛴 하류는
+/// 하류로 보지 않으므로, 무관한 갈래가 실패해도 DAG 는 실패가 아니라 부분 오류다.
+#[test]
+fn a_success_whose_downstream_was_not_selected_counts_as_a_succeeded_end() {
+    let finish = json!({"cases": [{"when": verdict_is("pass"), "to": ["ship"]}],
+                        "no_match": "finish"});
+
+    // 반례 3: review 가 아무 경로도 고르지 않고 끝나고, 독립 z 가 실패한다.
+    let (_td, mut mem, seq) = fresh();
+    let mut store = TaskStore::new(&mut mem, "_host", &seq);
+    submit(
+        &mut store,
+        json!({"contract_version": 2, "types": review_types(), "tasks": [
+            {"id": "review", "command": custom(), "output_schema": {"ref": "ReviewResult"},
+             "transitions": finish},
+            {"id": "ship", "command": custom()},
+            {"id": "z", "command": custom()}]}),
+    )
+    .expect("submit");
+    run(
+        &mut store,
+        "review",
+        json!({"verdict": "revise", "confidence": 0.2}),
+    );
+    run_fail(&mut store, "z");
+    assert!(not_selected(&store, "ship"));
+    let dags = group_tasks_into_dags(&store.list(1).unwrap());
+    assert_eq!(dags[0].state_counts.succeeded_ends, 1);
+    assert_eq!(dags[0].rollup_state, "partially_failed");
+
+    // 반례 4: x 가 성공했고 그 하류 y 는 r 의 전이 대상인데 선택되지 않았다. 독립 z 가 실패한다.
+    let (_td, mut mem, seq) = fresh();
+    let mut store = TaskStore::new(&mut mem, "_host", &seq);
+    submit(
+        &mut store,
+        json!({"contract_version": 2, "types": review_types(), "tasks": [
+            {"id": "r", "command": custom(), "output_schema": {"ref": "ReviewResult"},
+             "transitions": {"cases": [{"when": verdict_is("pass"), "to": ["y"]}],
+                             "no_match": "finish"}},
+            {"id": "x", "command": custom()},
+            {"id": "y", "command": custom(), "depends_on": ["x"]},
+            {"id": "z", "command": custom()}]}),
+    )
+    .expect("submit");
+    run(&mut store, "x", json!({}));
+    run(
+        &mut store,
+        "r",
+        json!({"verdict": "revise", "confidence": 0.2}),
+    );
+    run_fail(&mut store, "z");
+    assert!(not_selected(&store, "y"));
+    let dags = group_tasks_into_dags(&store.list(1).unwrap());
+    // 끝은 r(하류 y 미선택)과 x(하류 y 미선택)다.
+    assert_eq!(dags[0].state_counts.succeeded_ends, 2);
+    assert_eq!(dags[0].rollup_state, "partially_failed");
+}
