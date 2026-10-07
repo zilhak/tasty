@@ -1541,7 +1541,7 @@ fn the_webview_layout_step_names_the_one_layout_test() {
         let words: Vec<&str> = tail.split_whitespace().collect();
         let package = words.windows(2).any(|w| w[0] == "-p" && w[1] == PACKAGE);
         let (filters, exact) = positive_filters(tail);
-        package && exact && words.contains(&"--ignored") && filters.iter().any(|f| *f == full)
+        package && exact && words.contains(&"--ignored") && filters.contains(&full)
     });
     assert!(
         selected,
