@@ -1877,6 +1877,8 @@ fn draw_table(
                     }
                     return;
                 }
+                // kit 의 mono 열(Port·Proto·Address)과 strong 열(Process)은 text-primary 다.
+                // Workspace·Tab 은 색을 두지 않아 표의 행 글자색을 따른다.
                 match visible[col_index - 1] {
                     ColumnId::Port => {
                         hspace(ui, th.spacing_md);
@@ -1896,14 +1898,14 @@ fn draw_table(
                         };
                         ui.label(
                             egui::RichText::new(proto)
-                                .color(th.text_muted())
+                                .color(th.text_primary())
                                 .size(th.font_size_body.value()),
                         );
                     }),
                     ColumnId::Address => cell_l(ui, |ui| {
                         ui.label(
                             egui::RichText::new(&row.addr_display)
-                                .color(th.text_muted())
+                                .color(th.text_primary())
                                 .size(th.font_size_body.value())
                                 .monospace(),
                         );
@@ -2022,12 +2024,9 @@ fn draw_process_cell(ui: &mut egui::Ui, th: &Theme, row: &PortRowView) {
 /// Workspace 셀: Tasty → workspace_name, External → dash.
 fn draw_workspace_cell(ui: &mut egui::Ui, th: &Theme, row: &PortRowView, dash: &str) {
     match &row.source {
+        // 글자색은 표가 정한다(쉬는 행 table-row-fg, hover·선택 행 text-primary).
         SourceTag::Tasty { workspace_name, .. } => {
-            ui.label(
-                egui::RichText::new(workspace_name)
-                    .color(th.text_primary())
-                    .size(th.font_size_body.value()),
-            );
+            ui.label(egui::RichText::new(workspace_name).size(th.font_size_body.value()));
         }
         SourceTag::External => {
             ui.colored_label(th.text_muted(), dash);
@@ -2044,12 +2043,9 @@ fn draw_tab_cell(ui: &mut egui::Ui, th: &Theme, row: &PortRowView, dash: &str) {
         _ => None,
     };
     match tab_name {
+        // 글자색은 표가 정한다(쉬는 행 table-row-fg, hover·선택 행 text-primary).
         Some(name) => {
-            ui.label(
-                egui::RichText::new(name)
-                    .color(th.text_muted())
-                    .size(th.font_size_body.value()),
-            );
+            ui.label(egui::RichText::new(name).size(th.font_size_body.value()));
         }
         None => {
             ui.colored_label(th.text_muted(), dash);
