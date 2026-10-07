@@ -79,7 +79,7 @@ pub enum CallerContext {
     Local {
         /// 호출자가 요청 봉투의 `caller_agent_id` 로 밝힌 agent ID. 검증할 수 없는 자기 신고라
         /// 텔레메트리·감사·헤드리스 PTY 소유자 표시에만 쓰고 권한·memory owner·rate limit
-        /// 판단에는 쓰지 않는다(ADR-0076). 형식이 틀렸거나 없으면 None 이다.
+        /// 판단에는 쓰지 않는다(ADR-0073). 형식이 틀렸거나 없으면 None 이다.
         claimed_agent_id: Option<tasty_telemetry::AgentId>,
     },
     /// 외부 plugin process가 호출. 매니페스트의 `permissions`만 허용.

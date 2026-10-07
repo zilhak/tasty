@@ -4,7 +4,7 @@
 - **Date**: 2026-09-24
 - **Tags**: ipc, compatibility, capabilities
 - **Group**: foundation
-- **부분 개정**: [ADR-0066](0066-pre-1-0-breaking-changes-ship-without-deprecation-period.md) — 호환성을 깨는 변경의 유예 조항
+- **부분 개정**: [ADR-0065](0065-pre-1-0-breaking-changes-ship-without-deprecation-period.md) — 호환성을 깨는 변경의 유예 조항
 
 ## Context
 
@@ -28,7 +28,7 @@
 가능하면 실제 프로토콜 상수에서 버전을 파생하고 미구현 기능을 미리 선언하지 않는다.
 메서드의 baseline 포함 여부는 동결 파일에서 파생하며 정확한 도입 버전을 추정해 만들지 않는다.
 
-호환성을 깨는 변경을 언제 어떻게 내는지는 [ADR-0066](0066-pre-1-0-breaking-changes-ship-without-deprecation-period.md)이 정한다.
+호환성을 깨는 변경을 언제 어떻게 내는지는 [ADR-0065](0065-pre-1-0-breaking-changes-ship-without-deprecation-period.md)이 정한다.
 
 ## Consequences
 

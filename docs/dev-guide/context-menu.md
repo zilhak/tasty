@@ -97,7 +97,7 @@ PendingNativeMenu::MyMenu { data, x, y } => {
 
 `macos.rs` / `windows.rs` / `linux.rs` 가 플랫폼 구현.
 
-<a id="해소-타이밍은-플랫폼별로-다르다-adr-0071"></a>
+<a id="해소-타이밍은-플랫폼별로-다르다-adr-0069"></a>
 
 ### 메뉴 선택을 처리하는 시점은 플랫폼별로 다르다
 

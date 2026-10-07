@@ -31,10 +31,10 @@ App·Core·View 계층과 상태 소유, 구조 도메인 이벤트 소싱, 크�
 | 0057 | [변경 요청 재시도는 호출자별 명령 identity로 구분하고 기록 범위에서는 이벤트와 함께 확정한다](0057-command-identity-for-mutation-retries.md) | Accepted | 2026-09-30 | ipc, idempotency, retry, event-sourcing |
 | 0058 | [헤드리스는 로컬 View 없이 같은 명령 실행 경계로 작업을 완료한다](0058-headless-without-local-views.md) | Accepted | 2026-09-30 | headless, lifecycle, features, architecture |
 | 0063 | [이벤트 저장소는 payload를 journal DB에 두고 파일 잠금과 writer 세대로 쓰기를 제한한다](0063-event-store-storage-fencing-and-effect-states.md) | Accepted | 2026-09-30 | event-sourcing, storage, sqlite, durability, effects, fencing |
-| 0065 | [구조 journal이 원본이고 CoreState 트리는 확정 이벤트로 갱신하는 live projection이다](0065-journal-source-and-core-state-projection.md) | Accepted | 2026-09-30 | architecture, event-sourcing, domain, projection, migration |
-| 0066 | [0.x에서는 호환성을 깨는 변경을 유예 기간 없이 `(BREAK)`로 낸다](0066-pre-1-0-breaking-changes-ship-without-deprecation-period.md) | Accepted | 2026-10-06 | ipc, compatibility, versioning, changelog |
-| 0074 | [닫기의 자원 receipt 대기는 관측을 멈추지 않는다](0074-close-receipt-wait-does-not-pause-observation.md) | Accepted | 2026-10-07 | event-sourcing, effects, close, retirement, ipc, plugin |
-| 0076 | [토큰 없는 로컬 호출자의 agent ID 는 요청 봉투로 받는 자기 신고 표시값이다](0076-local-caller-agent-id-is-a-self-reported-label.md) | Accepted | 2026-10-07 | ipc, telemetry, audit, compatibility, security |
+| 0064 | [구조 journal이 원본이고 CoreState 트리는 확정 이벤트로 갱신하는 live projection이다](0064-journal-source-and-core-state-projection.md) | Accepted | 2026-09-30 | architecture, event-sourcing, domain, projection, migration |
+| 0065 | [0.x에서는 호환성을 깨는 변경을 유예 기간 없이 `(BREAK)`로 낸다](0065-pre-1-0-breaking-changes-ship-without-deprecation-period.md) | Accepted | 2026-10-06 | ipc, compatibility, versioning, changelog |
+| 0071 | [닫기의 자원 receipt 대기는 관측을 멈추지 않는다](0071-close-receipt-wait-does-not-pause-observation.md) | Accepted | 2026-10-07 | event-sourcing, effects, close, retirement, ipc, plugin |
+| 0073 | [토큰 없는 로컬 호출자의 agent ID 는 요청 봉투로 받는 자기 신고 표시값이다](0073-local-caller-agent-id-is-a-self-reported-label.md) | Accepted | 2026-10-07 | ipc, telemetry, audit, compatibility, security |
 <!-- adr-rows:end foundation -->
 
 ## 터미널과 원격 연결
@@ -116,11 +116,11 @@ Terminal·Pty 분리와 터미널 호환성, 입력·포커스, 점유와 원격
 | 0043 | [CLI 오류 정보는 보존하고 진단 로그는 기록 주체를 나눈다](0043-cli-errors-and-diagnostic-logs.md) | Accepted | 2026-09-24 | cli, errors, logging, hooks |
 | 0044 | [에이전트 응답은 transcript에서 수집해 별도 SSE로 중계한다](0044-agent-transcript-stream.md) | Accepted | 2026-09-24 | agents, transcript, sse, recovery |
 | 0062 | [작업 실행은 TaskService가, 훅 감시와 실행은 HookRuntime이 소유한다](0062-task-service-and-hook-runtime.md) | Accepted | 2026-09-30 | agents, tasks, hooks, ownership, architecture |
-| 0068 | [타입 계약을 가진 task는 별도 저장 namespace에 버전 envelope로 둔다](0068-typed-task-contracts-live-in-a-separate-record-namespace.md) | Accepted | 2026-10-06 | agents, tasks, types, compatibility, storage |
-| 0069 | [v2 task 그래프는 전체 검증 뒤 그래프 레코드 하나로 활성화한다](0069-typed-task-graphs-activate-through-a-graph-record.md) | Accepted | 2026-10-06 | agents, tasks, types, dag, storage |
-| 0071 | [v2 task 완료는 실행 회차마다 레코드 한 번의 쓰기로 확정한다](0071-typed-task-completion-is-one-write-per-attempt.md) | Accepted | 2026-10-07 | agents, tasks, types, idempotency, storage |
-| 0073 | [v2 task 의 후처리 CLI 는 같은 실행 회차 안에서 실행하고 결과가 불명이면 다시 실행하지 않는다](0073-typed-task-postprocess-runs-inside-the-attempt.md) | Accepted | 2026-10-07 | agents, tasks, types, postprocess, idempotency |
-| 0075 | [v2 task 의 후속 경로는 생산자의 확정된 출력으로 고르고 고르지 않은 경로는 실패로 보지 않는다](0075-typed-task-transitions-select-paths-from-the-producer-output.md) | Accepted | 2026-10-07 | agents, tasks, types, dag, routing |
+| 0067 | [타입 계약을 가진 task는 별도 저장 namespace에 버전 envelope로 둔다](0067-typed-task-contracts-live-in-a-separate-record-namespace.md) | Accepted | 2026-10-06 | agents, tasks, types, compatibility, storage |
+| 0068 | [v2 task 그래프는 전체 검증 뒤 그래프 레코드 하나로 활성화한다](0068-typed-task-graphs-activate-through-a-graph-record.md) | Accepted | 2026-10-06 | agents, tasks, types, dag, storage |
+| 0069 | [v2 task 완료는 실행 회차마다 레코드 한 번의 쓰기로 확정한다](0069-typed-task-completion-is-one-write-per-attempt.md) | Accepted | 2026-10-07 | agents, tasks, types, idempotency, storage |
+| 0070 | [v2 task 의 후처리 CLI 는 같은 실행 회차 안에서 실행하고 결과가 불명이면 다시 실행하지 않는다](0070-typed-task-postprocess-runs-inside-the-attempt.md) | Accepted | 2026-10-07 | agents, tasks, types, postprocess, idempotency |
+| 0072 | [v2 task 의 후속 경로는 생산자의 확정된 출력으로 고르고 고르지 않은 경로는 실패로 보지 않는다](0072-typed-task-transitions-select-paths-from-the-producer-output.md) | Accepted | 2026-10-07 | agents, tasks, types, dag, routing |
 <!-- adr-rows:end agents -->
 
 ## 개발·검증·문서·배포
@@ -139,5 +139,5 @@ Terminal·Pty 분리와 터미널 호환성, 입력·포커스, 점유와 원격
 | 0049 | [문서는 현재 동작을 설명하고 근거를 다시 확인할 수 있게 쓴다](0049-documentation-structure-and-evidence.md) | Accepted | 2026-09-24 | documentation, architecture, evidence |
 | 0050 | [ADR은 중요한 선택을 기록하고 현재 규칙은 가이드에서 관리한다](0050-architecture-decision-records.md) | Accepted | 2026-09-24 | documentation, adr, architecture |
 | 0051 | [릴리스는 서명과 고지문을 갖춘 번들로 만들고 내용 변경에 버전을 올린다](0051-release-artifacts-and-versioning.md) | Accepted | 2026-09-24 | release, plugins, versioning |
-| 0067 | [헤드리스 빌드를 OS별 압축 파일로 릴리스에 함께 올린다](0067-headless-build-ships-as-a-per-os-archive.md) | Accepted | 2026-10-06 | release, headless, packaging |
+| 0066 | [헤드리스 빌드를 OS별 압축 파일로 릴리스에 함께 올린다](0066-headless-build-ships-as-a-per-os-archive.md) | Accepted | 2026-10-06 | release, headless, packaging |
 <!-- adr-rows:end rules -->

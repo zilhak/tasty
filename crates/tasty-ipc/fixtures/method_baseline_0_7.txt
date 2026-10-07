@@ -3,7 +3,7 @@
 # 본 파일은 0.7.0 시점의 IPC 메서드 목록이다. 여기 있는 이름이 METHOD_TABLE 에서
 # 사라지면 tests/api_baseline_0_7.rs 가 실패한다 — 의도하지 않은 제거를 검출하는 목록이다.
 #
-# 0.x 에서는 의도한 제거·이름 변경을 유예 없이 낸다 (ADR-0066). 그때는 같은 커밋에서
+# 0.x 에서는 의도한 제거·이름 변경을 유예 없이 낸다 (ADR-0065). 그때는 같은 커밋에서
 # CHANGELOG.md 에 `(BREAK)` 로 적고, 이 파일에서 이름을 빼 아래에 사유를 남기고,
 # 시험의 BASELINE_METHOD_COUNT 를 고친다.
 # 정책: docs/dev-guide/api-conventions.md 「안정성 정책」.

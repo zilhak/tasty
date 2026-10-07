@@ -1,4 +1,4 @@
-# ADR-0074: 닫기의 자원 receipt 대기는 관측을 멈추지 않는다
+# ADR-0071: 닫기의 자원 receipt 대기는 관측을 멈추지 않는다
 
 - **Status**: Accepted
 - **Date**: 2026-10-07
@@ -8,7 +8,7 @@
 ## Context
 
 닫기는 구조 변경을 확정해 게시하고, 원 실행 자원(PTY·plugin surface)을 회수한 뒤 응답한다([닫기와 실행 자원 회수](../architecture/close-sequence.md)).
-App은 journal 사실을 게시하는 동안 관측을 멈춘다. 이 동안 IPC·창 입력을 보류하고 plugin pump도 돌리지 않는다. 다른 관측자가 게시 중간 상태를 보지 않게 하는 장치다([ADR-0065](0065-journal-source-and-core-state-projection.md)의 게시 순서).
+App은 journal 사실을 게시하는 동안 관측을 멈춘다. 이 동안 IPC·창 입력을 보류하고 plugin pump도 돌리지 않는다. 다른 관측자가 게시 중간 상태를 보지 않게 하는 장치다([ADR-0064](0064-journal-source-and-core-state-projection.md)의 게시 순서).
 
 이 일시정지가 닫기 정리의 receipt 대기에도 걸려 있었다. 이 단계에서는 이미 구조가 게시됐고 자원 owner는 `ResourceRetirement`가 쥐고 있으며 plugin·PTY의 회수 증거만 기다린다. plugin 프로세스가 멈추면 이 대기가 receipt 시한(5초) 동안 이어졌다.
 - 그동안 `list info` 같은 무관한 IPC도 답하지 못했다.
@@ -70,6 +70,6 @@ plugin SDK는 호스트 요청을 워커 스레드 하나에서 받은 순서대
 - [닫기와 실행 자원 회수](../architecture/close-sequence.md) — 현재 닫기 단계와 관측 범위.
 - [ADR-0055](0055-structural-domain-event-sourcing.md) — 구조 명령의 확정과 응답 순서. 이 결정은 응답 순서를 바꾸지 않는다.
 - [ADR-0063](0063-event-store-storage-fencing-and-effect-states.md) — effect 상태와 receipt 계약. 상태 전이는 바꾸지 않고 관측 일시정지 범위만 줄인다.
-- [ADR-0065](0065-journal-source-and-core-state-projection.md) — 확정 batch 게시와 관측 보류. 구조 게시 단계의 보류는 그대로다.
+- [ADR-0064](0064-journal-source-and-core-state-projection.md) — 확정 batch 게시와 관측 보류. 구조 게시 단계의 보류는 그대로다.
 - [플러그인 개발](../dev-guide/plugin-development.md)의 Surface kind 절 — 재기동 때 남은 surface의 재게시.
 - `src/app/journal/resource_cleanup.rs`, `src/app/journal/commands.rs`, `src/app/publication_input.rs`, `crates/tasty-host-plugin/src/manager/pump/retirement.rs`, `crates/tasty-host-plugin/src/manager/reattach.rs`.

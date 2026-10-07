@@ -121,7 +121,7 @@ checkpoint의 이전 snapshot/pin 유지·다음 기회 재시도는 기존 오�
 
 ## 구조 journal의 App 연결
 
-원본과 projection의 관계는 [ADR-0065](../adr/0065-journal-source-and-core-state-projection.md)가 정한다.
+원본과 projection의 관계는 [ADR-0064](../adr/0064-journal-source-and-core-state-projection.md)가 정한다.
 
 `src/app/journal.rs`가 데이터 홈의 worker 하나와 엔진별 비동기 continuation을 연결한다.
 worker의 순수 구조 모델을 초기 논리 projection과 확정 batch 적용에 사용하며,

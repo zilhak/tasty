@@ -1,4 +1,4 @@
-# ADR-0065: 구조 journal이 원본이고 CoreState 트리는 확정 이벤트로 갱신하는 live projection이다
+# ADR-0064: 구조 journal이 원본이고 CoreState 트리는 확정 이벤트로 갱신하는 live projection이다
 
 - **Status**: Accepted — journal worker의 원본 모델과 확정 batch projection, 별도 실행 인스턴스, 명시 activation·retirement receipt가 구현돼 있다. View 복원 원본은 DB restore manifest와 연결된 checkpoint이며 sidecar는 최초 이관에만 사용한다. 타입/cfg·전체 writer 소비 및 crash/플랫폼 실행 검증은 구현 존재와 별개다.
 - **Date**: 2026-09-30

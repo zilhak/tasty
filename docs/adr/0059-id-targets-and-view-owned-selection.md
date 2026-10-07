@@ -1,6 +1,6 @@
 # ADR-0059: 구조 명령은 ID로 대상을 정하고 사용자 선택은 View가 소유한다
 
-- **Status**: Accepted — 구조 선택·카테고리 접힘·terminal viewport는 View가 소유하고 headless는 별도 명령 기본 문맥을 사용한다. 로컬 구조는 journal, View 선택 복원은 DB manifest/checkpoint가 원본이며 legacy 파일은 최초 이관에 사용한다(ADR-0065). 실제 복원·다중 창 실행 검증은 별도다. 2026-10-06 보강: release는 같은 홈의 다시 실행을 실행 중인 Tasty에 넘긴다(단일 실행). Wayland에서 이미 있는 창의 활성화는 미구현이다.
+- **Status**: Accepted — 구조 선택·카테고리 접힘·terminal viewport는 View가 소유하고 headless는 별도 명령 기본 문맥을 사용한다. 로컬 구조는 journal, View 선택 복원은 DB manifest/checkpoint가 원본이며 legacy 파일은 최초 이관에 사용한다(ADR-0064). 실제 복원·다중 창 실행 검증은 별도다. 2026-10-06 보강: release는 같은 홈의 다시 실행을 실행 중인 Tasty에 넘긴다(단일 실행). Wayland에서 이미 있는 창의 활성화는 미구현이다.
 - **Date**: 2026-09-30
 - **Tags**: workspace, focus, routing, identity, layout
 - **Group**: terminal
@@ -12,7 +12,7 @@
 [ADR-0017](0017-workspace-identity-and-focus.md)은 이 요구를 당시 구조 안에서 풀었다. 사용자 선택(활성 workspace·tab 인덱스, 카테고리 복귀 기록)을
 도메인 트리와 같은 `CoreState`에 두고, 삭제 때 공용 제거 함수가 선택을 보정하며, 레이아웃은 엔진별 슬롯 파일을 원본으로 저장했다.
 선택을 도메인과 분리하면 저장 형식과 UI 전반이 함께 바뀐다는 비용 때문에 이 배치를 유지했다.
-당시 슬롯 파일은 임시 파일 뒤 rename으로 저장했고, terminal 탭의 사용자 선택은 도메인의 background 생성과 별도 `MainViewState::add_tab` 경로로 처리했다. 현재 저장 원본과 완료 후 선택은 아래 결정 및 ADR-0065를 따른다.
+당시 슬롯 파일은 임시 파일 뒤 rename으로 저장했고, terminal 탭의 사용자 선택은 도메인의 background 생성과 별도 `MainViewState::add_tab` 경로로 처리했다. 현재 저장 원본과 완료 후 선택은 아래 결정 및 ADR-0064를 따른다.
 
 [ADR-0054](0054-app-core-view-layers-and-state-ownership.md)와 [ADR-0055](0055-structural-domain-event-sourcing.md)에서는 전제가 다르다.
 재생 가능한 도메인 모델에 사용자 선택이 있으면 replay나 지연 완료가 과거 선택을 다시 실행한다.
@@ -39,7 +39,7 @@ surface ID와 standalone PTY ID는 겹치지 않는 범위를 쓰며([headless P
 
 - 슬롯이 있는 GUI 엔진은 하나의 슬롯을 사용하고, 점유 여부는 살아 있는 엔진의 슬롯에서 계산한다. parked 엔진도 슬롯을 유지한다.
   새 창은 비어 있는 가장 낮은 슬롯을 복원하고, 모두 사용 중이면 새 번호를 만든다. 부팅에서는 첫 창 하나만 복원한다. headless의 새 stream은 로컬 View 슬롯을 갖지 않는다.
-- 현재 로컬 구조의 복원 원본은 journal이며, View 선택은 DB restore manifest와 연결된 domain checkpoint에서 복원한다([ADR-0065](0065-journal-source-and-core-state-projection.md)).
+- 현재 로컬 구조의 복원 원본은 journal이며, View 선택은 DB restore manifest와 연결된 domain checkpoint에서 복원한다([ADR-0064](0064-journal-source-and-core-state-projection.md)).
   `restore_layout`은 복원과 capture 요청을 제어한다. 저장 실패의 후보는 재시도를 위해 유지하고, 정상 종료는 최신 final capture와 회수 완료를 구분한다.
 - legacy 슬롯 파일·sidecar는 DB 원본이 없는 최초 이관의 입력이다. DB 자료가 손상됐다고 옛 파일로 fallback하지 않는다.
   호환 export는 고정 journal 모델과 별도 View checkpoint로 만드는 파생값이며, 슬롯 파일을 View 선택의 별도 원본으로 두지 않는다.

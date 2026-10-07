@@ -1,4 +1,4 @@
-//! CLI 가 자기 환경의 `TASTY_AGENT_ID` 를 봉투의 `caller_agent_id` 에 싣는다(ADR-0076).
+//! CLI 가 자기 환경의 `TASTY_AGENT_ID` 를 봉투의 `caller_agent_id` 에 싣는다(ADR-0073).
 //! 환경변수를 바꾸지 않으려고 시험 바이너리를 그 값을 둔 자식 프로세스로 다시 실행한다.
 
 use clap::Parser;

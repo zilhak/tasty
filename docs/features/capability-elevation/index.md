@@ -31,7 +31,7 @@ Agent 가 권한 부족으로 거부되면 호스트가 (같은 (agent, permissi
 
 ### Audit log
 
-레코드: `ts_ms, seq, caller_kind(local/plugin/agent), caller_id, method, decision(allow/deny), reason?, workspace_id?`. `local` 의 `caller_id` 는 호출자가 요청 봉투로 밝힌 자기 신고 agent ID 이고 없으면 빈 값이다([ADR-0076](../../adr/0076-local-caller-agent-id-is-a-self-reported-label.md)). 영속 키 `tasty.audit.{ts}.{seq}`(global, query 시 lazy evict). `seq` 는 telemetry 와 공유 단조 증가.
+레코드: `ts_ms, seq, caller_kind(local/plugin/agent), caller_id, method, decision(allow/deny), reason?, workspace_id?`. `local` 의 `caller_id` 는 호출자가 요청 봉투로 밝힌 자기 신고 agent ID 이고 없으면 빈 값이다([ADR-0073](../../adr/0073-local-caller-agent-id-is-a-self-reported-label.md)). 영속 키 `tasty.audit.{ts}.{seq}`(global, query 시 lazy evict). `seq` 는 telemetry 와 공유 단조 증가.
 
 **권한 거부(`deny`)만 기록한다.** 허용된 호출까지 저장하면 반복 조회가 대부분인 에이전트
 작업에서 불필요한 데이터가 계속 쌓인다. 따라서 이 로그로 허용된 작업의 수행 이력을

@@ -520,7 +520,7 @@ tasty agent task-purge --workspace-id 1 --states succeeded,failed --older-than-m
 
 ## v2 타입 계약 (`contract_version: 2`)
 
-task 는 선택적으로 타입 계약(`TaskContract`)을 가진다. 계약이 없는 task 가 v1 이며, 결과 형식·reducer 동작·저장 형식이 바뀌지 않는다. v2 task 는 IPC `agent.task_graph_submit`(CLI `tasty agent task-graph-submit`)으로 그래프 단위로 만들거나 Rust API `TaskStore::create_typed` 로 하나씩 만든다. `task_create` 는 계약을 받지 않는다. 결정 근거는 [ADR-0068](../adr/0068-typed-task-contracts-live-in-a-separate-record-namespace.md).
+task 는 선택적으로 타입 계약(`TaskContract`)을 가진다. 계약이 없는 task 가 v1 이며, 결과 형식·reducer 동작·저장 형식이 바뀌지 않는다. v2 task 는 IPC `agent.task_graph_submit`(CLI `tasty agent task-graph-submit`)으로 그래프 단위로 만들거나 Rust API `TaskStore::create_typed` 로 하나씩 만든다. `task_create` 는 계약을 받지 않는다. 결정 근거는 [ADR-0067](../adr/0067-typed-task-contracts-live-in-a-separate-record-namespace.md).
 
 코드: 타입 `crates/tasty-agent/src/task/types.rs`, 계약·결과 `crates/tasty-agent/src/task/contract.rs`, 입력 binding `crates/tasty-agent/src/task/binding.rs`, 그래프 제출 `crates/tasty-agent/src/task/store/graph_submit.rs`, 실행 시 입력 해석 `crates/tasty-task-runtime/src/runner_host/typed_inputs.rs`, 회차 완료 기록과 handle 의 회차 `crates/tasty-task-runtime/src/runner_host/attempt_record.rs`, v2 reduce `crates/tasty-agent/src/reducer.rs::reduce_typed`, 후처리 계약·결과 확정 `crates/tasty-agent/src/task/postprocess.rs`, 후처리 단계의 완료 기록 `crates/tasty-agent/src/task/store/postprocess.rs`, 후처리 프로세스 실행 `crates/tasty-task-runtime/src/runner_host/postprocess.rs`, 전이와 경로 선택 `crates/tasty-agent/src/task/route.rs`, 자식 환경 `crates/tasty-agent/src/child_env.rs`, agent task 계약 `crates/tasty-agent/src/task/agent.rs`, 턴 표 `crates/tasty-task-runtime/src/agent_turns.rs`, agent task 실행 `crates/tasty-task-runtime/src/runner_host/agent.rs`.
 
@@ -543,7 +543,7 @@ task 는 선택적으로 타입 계약(`TaskContract`)을 가진다. 계약이 �
 - 이름 붙은 타입은 `types` 에 선언하며 재귀를 허용하지 않는다.
 - `nullable` 은 값 자리에 null 을 허용한다. `unit`·`json` 에는 쓸 수 없다. 필드 전용 키는 `optional`(생략 가능)과 `default`(생략 시 채울 값)다. 기본값은 선언할 때 그 필드 타입으로 검사한다.
 - 선언하지 않은 필드는 오류다. int64 의 10진 문자열(아래) 외에는 암묵 변환이 없다. `42.0` 은 int64 가 아니고 정수는 float64 로 바꾸지 않는다.
-- 한도: 스키마 깊이 32, 값 깊이 64, 값의 직렬화 크기 256KiB(`types.rs` 의 `MAX_SCHEMA_DEPTH`·`MAX_VALUE_DEPTH`·`MAX_VALUE_BYTES`). 근거는 ADR-0068.
+- 한도: 스키마 깊이 32, 값 깊이 64, 값의 직렬화 크기 256KiB(`types.rs` 의 `MAX_SCHEMA_DEPTH`·`MAX_VALUE_DEPTH`·`MAX_VALUE_BYTES`). 근거는 ADR-0067.
 - 오류(`TypeError`)는 종류, JSON Pointer 경로, 기대 타입, 실제 값 요약을 가진다. 결과 검증 실패는 task id 도 싣는다. IPC 는 `AgentError::TypeContract` 를 `-32602` 로 돌려주고 `error.data` 에 실패 단계와 타입 오류를 싣는다.
 
 ### int64 와 JSON 숫자
@@ -575,9 +575,9 @@ task 는 선택적으로 타입 계약(`TaskContract`)을 가진다. 계약이 �
 
 v2 task 는 Running 이 될 때마다 새 회차(`attempt`: `id` 는 `<task id>#<번호>`, `number`, `started_at`)를 받는다. `retry` 는 회차를 지우지 않으므로 다음 실행은 번호를 이어 간다. v1 task 에는 회차가 없다.
 
-v2 task 의 fallback 이 이미 실행됐으면(Ready·Running·Succeeded) 그 task 의 `retry` 는 `-32602` 로 거절한다. 본 작업이 다시 성공하면 `one_of` 소비자가 성공한 원본 둘을 보게 되고(input 단계 실패), 이미 끝난 fallback 의 결과와 전파를 되돌릴 수 없기 때문이다. 다시 실행하려면 새 task 로 제출한다. fallback 이 실패했거나 실행 전에 끝났으면(Failed·Skipped·Cancelled) 재시도할 수 있다. v2 task 의 `retry` 는 `reset_downstream: true` 도 `-32602` 로 거절한다. 하류는 이전 회차의 실패 전파나 경로 선택으로 이미 판정됐고, 되감으면 두 회차의 판단이 섞이기 때문이다(근거 ADR-0075). 재시도는 그 task 만 새 회차로 다시 실행하며 저장된 경로(`route`)와 skip 이유를 지운다. v1 task 는 이 제한이 없다.
+v2 task 의 fallback 이 이미 실행됐으면(Ready·Running·Succeeded) 그 task 의 `retry` 는 `-32602` 로 거절한다. 본 작업이 다시 성공하면 `one_of` 소비자가 성공한 원본 둘을 보게 되고(input 단계 실패), 이미 끝난 fallback 의 결과와 전파를 되돌릴 수 없기 때문이다. 다시 실행하려면 새 task 로 제출한다. fallback 이 실패했거나 실행 전에 끝났으면(Failed·Skipped·Cancelled) 재시도할 수 있다. v2 task 의 `retry` 는 `reset_downstream: true` 도 `-32602` 로 거절한다. 하류는 이전 회차의 실패 전파나 경로 선택으로 이미 판정됐고, 되감으면 두 회차의 판단이 섞이기 때문이다(근거 ADR-0072). 재시도는 그 task 만 새 회차로 다시 실행하며 저장된 경로(`route`)와 skip 이유를 지운다. v1 task 는 이 제한이 없다.
 
-완료 보고(`Completion`: 회차 id·결과·성공/실패)는 저장소의 `complete` 하나로 기록한다(근거 ADR-0071).
+완료 보고(`Completion`: 회차 id·결과·성공/실패)는 저장소의 `complete` 하나로 기록한다(근거 ADR-0069).
 
 - v2 는 결과 확정(출력 검증 포함)과 종결 상태, 성공했을 때 고른 경로(`route`, 아래 §전이 조건과 경로 선택)를 레코드 한 번의 쓰기로 저장한다. 쓰기가 실패하면 상태·결과가 그대로이고 하류 readiness·fallback 도 움직이지 않는다. 그 쓰기가 끝난 뒤에야 하류를 평가하고 대기자에게 종결을 알린다.
 - 보고의 회차가 지금 회차와 다르면 적용하지 않는다(`stale_attempt`). 회차 id 를 생략하면 지금 회차로 본다.
@@ -607,7 +607,7 @@ inline fallback 은 v2 에서 거절한다.
 
 ### 후처리 CLI (`postprocess`)
 
-run·custom task 는 본 작업 뒤 CLI 하나를 실행해 그 stdout 을 최종 출력으로 삼을 수 있다. 모델 접속·인증·질문 작성은 CLI 의 일이고, Tasty 는 명령 실행·입출력·타입 검증·실패 처리만 한다. 인증은 기존 환경을 쓴다. 근거는 [ADR-0073](../adr/0073-typed-task-postprocess-runs-inside-the-attempt.md).
+run·custom task 는 본 작업 뒤 CLI 하나를 실행해 그 stdout 을 최종 출력으로 삼을 수 있다. 모델 접속·인증·질문 작성은 CLI 의 일이고, Tasty 는 명령 실행·입출력·타입 검증·실패 처리만 한다. 인증은 기존 환경을 쓴다. 근거는 [ADR-0070](../adr/0070-typed-task-postprocess-runs-inside-the-attempt.md).
 
 ```json
 {"id": "judge",
@@ -750,12 +750,12 @@ stdout 해석과 성공 판정:
 
 - task 키: `id`(필수, 호출자가 정하는 task id), `name`, `command`, `depends_on`, `on_failure`, `metadata`, `input_schema`, `output_schema`, `bindings`, `input_mapping`, `allowed_exit_codes`, `merge_conflict`, `postprocess`, `transitions`. 모르는 키는 거절한다. `types` 는 모든 task 가 함께 쓴다.
 - 검증: id 형식과 중복(그래프 안·workspace), `depends_on`·fallback·reduce 입력·binding 원본의 존재, 계약과 binding 의 타입, 매핑, 전이(아래 절), 위 조합 규칙, 순환(전이 간선 포함). 그래프 task 의 command 에 v1 출력 placeholder(`${task.…}`)가 있으면 거절하고 binding 을 쓰라고 안내한다.
-- 그래프 하나에는 task 를 1000 개(`MAX_GRAPH_TASKS`)까지 담는다. 제출이 memory 잠금을 쥔 채 앱의 IPC 처리 경로에서 활성화하기 때문이다(근거 ADR-0069). 그동안 러너 tick 과 memory 를 쓰지 않는 요청을 포함한 다른 IPC 전체가 기다린다. 1000 개 제출 중 다른 연결의 `system.ping` 은 0.25~1.4s 기다렸다(아래 측정). 초과하면 `location: /tasks` 로 거절한다.
+- 그래프 하나에는 task 를 1000 개(`MAX_GRAPH_TASKS`)까지 담는다. 제출이 memory 잠금을 쥔 채 앱의 IPC 처리 경로에서 활성화하기 때문이다(근거 ADR-0068). 그동안 러너 tick 과 memory 를 쓰지 않는 요청을 포함한 다른 IPC 전체가 기다린다. 1000 개 제출 중 다른 연결의 `system.ping` 은 0.25~1.4s 기다렸다(아래 측정). 초과하면 `location: /tasks` 로 거절한다.
 - 실패하면 아무것도 저장하지 않고 `-32602` 로 답한다. `error.data` 는 실패 단계·task id·타입 오류와 함께 `location`(제출한 그래프 안의 JSON Pointer, 예: `/tasks/1/bindings/label`, 순환은 `/tasks`)을 싣는다.
 - 통과하면 task 를 활성화 전 상태로 모두 저장한 뒤 그래프 레코드(`tasty.agent.task_graph.<그래프 id>`, `tasty.task_graph/v1`) 하나를 쓰고 readiness 를 평가한다. 그래프 레코드가 없는 task 는 Ready 가 되지 않으므로 저장 도중 러너가 돌아도 실행되지 않는다. task 나 그래프 레코드를 쓰다 실패하면 저장한 task 를 지운다. 레코드를 쓴 뒤 readiness 반영이 실패하면 지우지 않고 `-32603` 으로 답하며 `error.data` 에 `graph_id`·`possibly_active: true`·`cause` 를 싣는다(복구는 아래 §한계). 응답은 `{valid, activated, graph_id, durability, tasks}` 다.
 - 그래프 id 는 `g-<ms>-<순번>` 이며 task 의 `graph_id` 에 기록한다. `metadata.dag` 가 없으면 그래프 id 를 넣어 DAG 로 묶는다. 그래프의 task 가 모두 삭제되면 그래프 레코드도 지운다.
 - `agent.task_graph_validate` 는 같은 검증만 하고 저장하지 않는다(`{valid, activated: false, durability, tasks}`). CLI 는 `--dry-run` 이다.
-- 그래프의 `durability` 는 `required`(기본) 또는 `best_effort` 다. memory 저장소가 대체 모드(`memory_init_fallback`, 재시작하면 사라진다)일 때 `required` 그래프는 검증·제출 모두 `-32602`(`error.data`: `location: /durability`, `store_durable: false`, `cause`)로 거절하고 아무것도 저장하지 않는다. `best_effort` 는 그대로 실행하되 재시작 복구를 약속하지 않는다. 판정은 `TaskService::task_graph_submit` 이 하므로(`AgentError::StoreNotDurable`) IPC 를 거치지 않는 호출자도 같다. 그래프 레코드에 `durability` 를 남기고, 제출 응답은 `durability` 와(대체 모드면) `durable: false` 를 싣는다(근거 ADR-0069).
+- 그래프의 `durability` 는 `required`(기본) 또는 `best_effort` 다. memory 저장소가 대체 모드(`memory_init_fallback`, 재시작하면 사라진다)일 때 `required` 그래프는 검증·제출 모두 `-32602`(`error.data`: `location: /durability`, `store_durable: false`, `cause`)로 거절하고 아무것도 저장하지 않는다. `best_effort` 는 그대로 실행하되 재시작 복구를 약속하지 않는다. 판정은 `TaskService::task_graph_submit` 이 하므로(`AgentError::StoreNotDurable`) IPC 를 거치지 않는 호출자도 같다. 그래프 레코드에 `durability` 를 남기고, 제출 응답은 `durability` 와(대체 모드면) `durable: false` 를 싣는다(근거 ADR-0068).
 - 러너는 켜지 않는다. 정지한 러너에서는 활성화된 task 가 Ready 로 남는다.
 
 그래프 한도의 측정:
@@ -773,7 +773,7 @@ stdout 해석과 성공 판정:
 
 ### 전이 조건과 경로 선택
 
-생산자 task 의 `transitions` 는 성공한 출력으로 후속 task 를 고른다(근거 ADR-0075). 대상이 함께 제출돼야 하므로 그래프 제출로만 정한다. 저장소의 단건 생성(`TaskStore::create_typed`)은 전이가 든 계약을 거절한다.
+생산자 task 의 `transitions` 는 성공한 출력으로 후속 task 를 고른다(근거 ADR-0072). 대상이 함께 제출돼야 하므로 그래프 제출로만 정한다. 저장소의 단건 생성(`TaskStore::create_typed`)은 전이가 든 계약을 거절한다.
 
 ```json
 {"id": "review", "output_schema": {"ref": "ReviewResult"},
@@ -822,7 +822,7 @@ DAG 요약(`agent.dag_list`·`agent.dag_get`)의 `state_counts.not_selected` 는
 
 ### agent task
 
-`{"kind": "agent", "provider": "claude"|"codex", "workspace_id": N, "session": ..., "instruction": "...", "timeout_ms"?: N}` 는 provider 세션에 지시 하나를 보내고 그 턴의 끝을 task 결과로 만든다. v2 계약이 필요하다(`task_create` 는 `-32602`). 근거는 [ADR-0071](../adr/0071-typed-task-completion-is-one-write-per-attempt.md)의 "agent task 회차의 결과" 절. 명령의 `workspace_id` 는 새 세션이 뜨는 workspace 다. 회차 기록, 제출 안내의 `--workspace-id`, 턴 표의 키는 task 자신의 workspace 를 쓴다.
+`{"kind": "agent", "provider": "claude"|"codex", "workspace_id": N, "session": ..., "instruction": "...", "timeout_ms"?: N}` 는 provider 세션에 지시 하나를 보내고 그 턴의 끝을 task 결과로 만든다. v2 계약이 필요하다(`task_create` 는 `-32602`). 근거는 [ADR-0069](../adr/0069-typed-task-completion-is-one-write-per-attempt.md)의 "agent task 회차의 결과" 절. 명령의 `workspace_id` 는 새 세션이 뜨는 workspace 다. 회차 기록, 제출 안내의 `--workspace-id`, 턴 표의 키는 task 자신의 workspace 를 쓴다.
 
 | `session` | 동작 |
 |---|---|

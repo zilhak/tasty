@@ -22,7 +22,7 @@
 
 첫 적용 범위는 engine/workspace/category/pane/tab/surface 구조와 이름·소속·분할 비율, 논리 터미널 세션의 수명 사실,
 구조 작업의 진행·보상·정리와 사용자 undo가 참조하는 구조 기록이다.
-여기서 이름에는 workspace·tab 이름과 함께 workspace의 subtitle·description·attach 매핑, tab의 명시 이름이 든다([ADR-0065](0065-journal-source-and-core-state-projection.md)).
+여기서 이름에는 workspace·tab 이름과 함께 workspace의 subtitle·description·attach 매핑, tab의 명시 이름이 든다([ADR-0064](0064-journal-source-and-core-state-projection.md)).
 이 범위에서는 영속 이벤트가 유일한 원본이고
 domain snapshot과 조회 모델은 파생값이다. 범위 안의 모든 writer가 새 경계로 옮겨지기 전에는 해당 범위의 저널을 원본으로 활성화하지 않으며,
 같은 대상에 옛 writer와 새 writer를 섞지 않는다.

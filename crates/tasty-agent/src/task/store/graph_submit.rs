@@ -27,7 +27,7 @@ use super::{TaskStore, graph_key};
 use crate::{AgentError, Result};
 
 /// 그래프 하나에 담을 수 있는 task 수의 상한. 제출은 memory 잠금을 쥔 채 활성화하고
-/// 활성화 비용이 task 수의 제곱으로 늘어난다. 측정값과 근거는 ADR-0069.
+/// 활성화 비용이 task 수의 제곱으로 늘어난다. 측정값과 근거는 ADR-0068.
 pub const MAX_GRAPH_TASKS: usize = 1000;
 
 #[cfg(test)]

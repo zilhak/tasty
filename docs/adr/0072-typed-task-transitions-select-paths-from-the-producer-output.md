@@ -1,4 +1,4 @@
-# ADR-0075: v2 task 의 후속 경로는 생산자의 확정된 출력으로 고르고 고르지 않은 경로는 실패로 보지 않는다
+# ADR-0072: v2 task 의 후속 경로는 생산자의 확정된 출력으로 고르고 고르지 않은 경로는 실패로 보지 않는다
 
 - **Status**: Accepted
 - **Date**: 2026-10-07
@@ -17,7 +17,7 @@ v2 그래프는 depends_on·binding 으로 순서와 값을 잇지만, 결과에
 
 - 조건은 비교·값 목록·논리 조합으로 된 제한된 형식이다. 셸·네트워크·시각·다른 task 의 상태를 읽지 않는다. 단건 생성은 전이를 받지 않는다(대상이 함께 제출돼야 한다).
 - 그래프 제출 때 조건이 읽는 위치의 타입, 상수, case 겹침을 검사한다. 기본은 참인 case 가 정확히 하나여야 하는 배타 모드이고, 맞는 case 가 없을 때의 처리를 반드시 적는다. 제출 때 가릴 수 없는 다중 참은 실행 때 경로 오류로 처리한다.
-- 고른 경로(`route`: 회차·참인 case·`otherwise` 여부·고른 대상)는 결과·종결과 같은 레코드 쓰기로 저장한다([ADR-0071](0071-typed-task-completion-is-one-write-per-attempt.md)). 경로를 고르지 못하면(값 없음·null·exclusive 다중 참) 그 task 는 실패 단계 `route` 로 끝나고 출력은 진단용으로 남는다.
+- 고른 경로(`route`: 회차·참인 case·`otherwise` 여부·고른 대상)는 결과·종결과 같은 레코드 쓰기로 저장한다([ADR-0069](0069-typed-task-completion-is-one-write-per-attempt.md)). 경로를 고르지 못하면(값 없음·null·exclusive 다중 참) 그 task 는 실패 단계 `route` 로 끝나고 출력은 진단용으로 남는다.
 - 고르지 않은 대상과, 들어오는 경로가 모두 선택되지 않은 task 는 실행 없이 Skipped 가 되고 `skip.reason: branch_not_selected` 를 남긴다. 실패 정책을 적용하지 않는다. 선행이 성공 결과를 내지 못해 건너뛴 v2 task 는 `upstream_unavailable` 과 그 선행·상태를 남긴다.
 - 전이 대상은 제어 엣지로 들어온다. 그 엣지가 하나라도 고르기 전에는 실행하지 않는다. depends_on·binding·reduce 입력은 선택되지 않은 선행을 기다리지 않는다(합류). 선택된 선행이 실패하면 합류 task 는 실패 전파를 받는다.
 - 선택되지 않을 수 있는 task 의 출력을 필수 입력으로 읽으면서 그 task 가 아닌 경로로도 실행될 수 있는 task 는 제출 때 거절한다. 대안 경로의 값은 `one_of`, 없어도 되는 값은 optional·default 로 적는다. 전이 대상은 continue_downstream 을 쓸 수 없고 fallback 대상일 수 없다.
@@ -60,5 +60,5 @@ v2 그래프는 depends_on·binding 으로 순서와 값을 잇지만, 결과에
 - `crates/tasty-agent/src/task/graph.rs` — 제어 엣지와 합류 판정.
 - `crates/tasty-agent/src/task/store.rs` — 경로 저장, skip 이유, retry 규칙.
 - `crates/tasty-task-runtime/src/graph_view.rs` — `transition` 간선.
-- [ADR-0069](0069-typed-task-graphs-activate-through-a-graph-record.md) — 그래프 활성화.
-- [ADR-0071](0071-typed-task-completion-is-one-write-per-attempt.md) — 결과와 종결의 한 번 쓰기.
+- [ADR-0068](0068-typed-task-graphs-activate-through-a-graph-record.md) — 그래프 활성화.
+- [ADR-0069](0069-typed-task-completion-is-one-write-per-attempt.md) — 결과와 종결의 한 번 쓰기.

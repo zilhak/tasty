@@ -1,4 +1,4 @@
-# ADR-0073: v2 task 의 후처리 CLI 는 같은 실행 회차 안에서 실행하고 결과가 불명이면 다시 실행하지 않는다
+# ADR-0070: v2 task 의 후처리 CLI 는 같은 실행 회차 안에서 실행하고 결과가 불명이면 다시 실행하지 않는다
 
 - **Status**: Accepted
 - **Date**: 2026-10-07
@@ -19,7 +19,7 @@
 
 ## Decision
 
-후처리는 계약의 선택 슬롯(`TaskContract.postprocess`)이고 run·custom task 에만 둔다. 본 작업과 후처리는 같은 실행 회차(ADR-0071)에 속한다.
+후처리는 계약의 선택 슬롯(`TaskContract.postprocess`)이고 run·custom task 에만 둔다. 본 작업과 후처리는 같은 실행 회차(ADR-0069)에 속한다.
 
 - 본 작업의 성공 보고는 task 를 끝내지 않는다. 저장소는 회차에 본 작업 결과와 후처리 진행(`Pending` → `Started` → `Finished`)을 기록하고 task 를 Running 으로 둔다. 본 작업이 실패하면 후처리 없이 끝낸다.
 - 호스트는 `Started` 를 기록한 뒤에만 프로세스를 띄운다. 실행 보고는 회차 id 와 실행 번호를 지니며, 호스트는 보고를 회차·번호와 함께 별도 키에 저장한다.
@@ -67,5 +67,5 @@
 ## References
 
 - [agent runner 가이드](../dev-guide/agent-runner.md) — 후처리 CLI 절
-- [ADR-0071](0071-typed-task-completion-is-one-write-per-attempt.md) — 실행 회차와 한 번의 완료 쓰기
+- [ADR-0069](0069-typed-task-completion-is-one-write-per-attempt.md) — 실행 회차와 한 번의 완료 쓰기
 - 구현: `crates/tasty-agent/src/child_env.rs`(작업 자식의 환경), `crates/tasty-agent/src/task/postprocess.rs`, `crates/tasty-agent/src/task/store/postprocess.rs`, `crates/tasty-task-runtime/src/runner_host/postprocess.rs`

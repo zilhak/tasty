@@ -437,7 +437,7 @@ Codex는 대응 훅에서 `codex notify-caller`를 호출한다([Codex](../plugi
 ### Deprecation 절차
 
 0.x 에는 deprecation 유예 기간 규칙이 없다 — break 는 위 표대로 바로 낸다
-([ADR-0066](../adr/0066-pre-1-0-breaking-changes-ship-without-deprecation-period.md)).
+([ADR-0065](../adr/0065-pre-1-0-breaking-changes-ship-without-deprecation-period.md)).
 이전 이름을 잠시 남기고 싶을 때만 아래처럼 표기한다.
 
 1. 기존 API를 유지하면서 새 API를 추가한다.

@@ -60,7 +60,7 @@ $ TASTY_SURFACE_ID=<surface_id> TASTY_AGENT_ID=claude_s<surface_id> TASTY_SESSIO
 | `CallerContext::owner()` | Local → `_host`, Plugin → `plugin_id`, Agent → `agent_id` |
 | `CallerContext::agent_id()` | Local → 봉투의 `caller_agent_id` 또는 `_host`, Plugin → `plugin_id`, Agent → `agent_id` |
 
-Local 분기에서 `owner()` 는 항상 `_host` 이고 `agent_id()` 는 호출자가 봉투로 밝힌 `caller_agent_id` 다. 이 값은 검증할 수 없는 자기 신고라 텔레메트리 기록(`telemetry record` 의 기본 agent, `ipc_calls` 집계)·감사 `caller_id`·헤드리스 PTY `owner_agent_id` 표시에만 쓰고, 권한·memory owner·rate limit·cap 차단 판단에는 쓰지 않는다([ADR-0076](../../adr/0076-local-caller-agent-id-is-a-self-reported-label.md)). 형식(`[a-zA-Z0-9_-]`, 64자 이하)이 틀리면 버리고 `_host` 로 기록하며 요청은 거절하지 않는다. 세션 토큰이 있으면 세션의 ID 가 우선한다. 호스트 프로세스 자신의 `TASTY_AGENT_ID` 는 이 Tasty 를 띄운 바깥 인스턴스에서 상속한 값이라 읽지 않는다. 구 서버는 봉투 필드를 무시하고 `_host` 로 기록하며, 지원 여부는 capability `ipc.caller-agent-id` 로 확인한다.
+Local 분기에서 `owner()` 는 항상 `_host` 이고 `agent_id()` 는 호출자가 봉투로 밝힌 `caller_agent_id` 다. 이 값은 검증할 수 없는 자기 신고라 텔레메트리 기록(`telemetry record` 의 기본 agent, `ipc_calls` 집계)·감사 `caller_id`·헤드리스 PTY `owner_agent_id` 표시에만 쓰고, 권한·memory owner·rate limit·cap 차단 판단에는 쓰지 않는다([ADR-0073](../../adr/0073-local-caller-agent-id-is-a-self-reported-label.md)). 형식(`[a-zA-Z0-9_-]`, 64자 이하)이 틀리면 버리고 `_host` 로 기록하며 요청은 거절하지 않는다. 세션 토큰이 있으면 세션의 ID 가 우선한다. 호스트 프로세스 자신의 `TASTY_AGENT_ID` 는 이 Tasty 를 띄운 바깥 인스턴스에서 상속한 값이라 읽지 않는다. 구 서버는 봉투 필드를 무시하고 `_host` 로 기록하며, 지원 여부는 capability `ipc.caller-agent-id` 로 확인한다.
 
 #### 보안 한계
 

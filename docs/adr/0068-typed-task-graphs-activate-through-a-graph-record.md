@@ -1,4 +1,4 @@
-# ADR-0069: v2 task 그래프는 전체 검증 뒤 그래프 레코드 하나로 활성화한다
+# ADR-0068: v2 task 그래프는 전체 검증 뒤 그래프 레코드 하나로 활성화한다
 
 - **Status**: Accepted — 3단계를 목록 한 번으로 평가하게 바꾼 뒤 재측정해 상한을 1000 으로 올렸다(2026-10-07, 재검토 조건 3)
 - **Date**: 2026-10-06
@@ -23,7 +23,7 @@ v2 task 는 그래프 단위로 제출한다(`agent.task_graph_submit`, 검증�
 
 - 검증 실패는 아무것도 쓰지 않는다. 2단계(task 기록)와 그래프 레코드 쓰기의 저장 실패는 쓴 task 를 지워 남는 task 가 없다. 러너 tick 이 끼어도 활성화 전 task 는 실행되지 않으므로, 활성화의 정확성은 잠금에 기대지 않는다.
 - 3단계(readiness 반영)는 레코드를 쓴 뒤라 롤백하지 않는다. 이 단계의 저장 실패는 그래프가 이미 활성일 수 있다는 표지와 함께 오류로 돌려준다. 이미 Ready 가 된 task 는 러너가 실행하고, 같은 id 로 다시 제출하면 거절된다.
-- 3단계 도중 호스트가 죽어도 같다. 반영하지 못한 의존 없는 task 는 Waiting 으로 남는다. 결정 당시에는 재시작이 readiness 를 다시 평가하지 않아 수동 복구가 필요했다. 2026-10-07 부터 부팅·러너 시작이 Waiting task 를 다시 평가해 남은 task 를 활성화한다([ADR-0071](0071-typed-task-completion-is-one-write-per-attempt.md) 과 같은 변경). 다시 제출하는 절차는 [작업 러너 §한계](../dev-guide/agent-runner.md#한계).
+- 3단계 도중 호스트가 죽어도 같다. 반영하지 못한 의존 없는 task 는 Waiting 으로 남는다. 결정 당시에는 재시작이 readiness 를 다시 평가하지 않아 수동 복구가 필요했다. 2026-10-07 부터 부팅·러너 시작이 Waiting task 를 다시 평가해 남은 task 를 활성화한다([ADR-0069](0069-typed-task-completion-is-one-write-per-attempt.md) 과 같은 변경). 다시 제출하는 절차는 [작업 러너 §한계](../dev-guide/agent-runner.md#한계).
 - 2단계에서 롤백까지 실패하면 활성화되지 않은 task 가 남는다. 실행되지 않으며 삭제·purge 로 지운다.
 - readiness 평가는 task 마다 그래프 레코드 존재를 확인해야 한다(`TaskStore::readiness_graph`).
 - 제출 전체가 memory 잠금 안에서 앱의 IPC 처리 경로(main 스레드의 IPC 큐) 위에서 돈다. 그동안 러너 tick 과 같은 경로의 다른 IPC 요청 전체가 기다린다. 그래서 그래프의 task 수에 상한을 둔다. 상한은 같은 머신의 제출 시간과 제출 중 다른 IPC 의 지연을 재서 정했고, 상한 크기의 제출 동안 다른 IPC 가 최악 약 1.4s 멈출 수 있다는 지연을 받아들인다. 처음 구현은 3단계가 task 마다 저장소를 다시 읽어 상한을 200 으로 두었고, 목록을 한 번 읽게 바꾼 뒤 재측정해 1000 으로 올렸다. 측정값은 [작업 러너 §그래프 제출](../dev-guide/agent-runner.md#그래프-제출)에 있다.
@@ -62,7 +62,7 @@ memory 파일을 열지 못하면 Tasty 는 멈추지 않고 임시 메모리로
 
 ## References
 
-- [ADR-0068](0068-typed-task-contracts-live-in-a-separate-record-namespace.md) — v2 task 의 저장 namespace 와 envelope.
+- [ADR-0067](0067-typed-task-contracts-live-in-a-separate-record-namespace.md) — v2 task 의 저장 namespace 와 envelope.
 - [ADR-0042](0042-agent-coordination-and-task-views.md) — 작업 조율과 DAG 화면.
 - [ADR-0010](0010-storage-failure-reporting.md) — 대체 모드의 쓰기 응답.
 - `crates/tasty-agent/src/task/store/graph_submit.rs` — 제출 단계, `GraphDurability`, 그래프 레코드.

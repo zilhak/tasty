@@ -175,7 +175,7 @@ cd ~/actions-runner && ./config.sh remove --token <REMOVAL_TOKEN>   # token: Set
 ## 헤드리스 산출물
 
 릴리스는 GUI 산출물과 함께 `gui` feature를 끈 헤드리스 빌드를 OS별 압축 파일로 올린다.
-선택 근거와 대안은 [ADR-0067](../adr/0067-headless-build-ships-as-a-per-os-archive.md)에 있다.
+선택 근거와 대안은 [ADR-0066](../adr/0066-headless-build-ships-as-a-per-os-archive.md)에 있다.
 
 | OS | 파일 | 만드는 스크립트 |
 |---|---|---|

@@ -1,4 +1,4 @@
-# ADR-0071: v2 task 완료는 실행 회차마다 레코드 한 번의 쓰기로 확정한다
+# ADR-0069: v2 task 완료는 실행 회차마다 레코드 한 번의 쓰기로 확정한다
 
 - **Status**: Accepted
 - **Date**: 2026-10-07
@@ -99,5 +99,5 @@ v2 task 는 Ready → Running 전이마다 새 실행 회차를 받는다(`Task.
 - `crates/tasty-task-runtime/src/agent_turns.rs` — agent task 턴 표(회차 묶음·표지 대조·제출).
 - `crates/tasty-task-runtime/src/runner_host/agent.rs` — agent task dispatch(회차 토큰·표지·늦은 세션 닫기).
 - [ADR-0011](0011-secrets-and-local-trust.md) — 로컬 IPC 신뢰 경계.
-- [ADR-0068](0068-typed-task-contracts-live-in-a-separate-record-namespace.md) — v2 레코드 형식.
-- [ADR-0069](0069-typed-task-graphs-activate-through-a-graph-record.md) — 그래프 활성화와 readiness.
+- [ADR-0067](0067-typed-task-contracts-live-in-a-separate-record-namespace.md) — v2 레코드 형식.
+- [ADR-0068](0068-typed-task-graphs-activate-through-a-graph-record.md) — 그래프 활성화와 readiness.

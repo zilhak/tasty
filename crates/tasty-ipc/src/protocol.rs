@@ -72,7 +72,7 @@ pub struct JsonRpcRequest {
     pub session_token: Option<String>,
     /// 호출자가 스스로 밝힌 agent ID(CLI 는 자기 환경의 `TASTY_AGENT_ID`). 텔레메트리·감사·
     /// 헤드리스 PTY 소유자 표시에만 쓰는 **자기 신고 값**이다. 로컬 IPC 에서는 누구나 아무 값이나
-    /// 적을 수 있으므로 권한·memory owner·rate limit 판단에 쓰지 않는다(ADR-0076).
+    /// 적을 수 있으므로 권한·memory owner·rate limit 판단에 쓰지 않는다(ADR-0073).
     /// `session_token` 이 있으면 세션이 정한 agent ID 가 우선하고 이 값은 무시한다.
     /// 구 서버는 모르는 봉투 필드를 무시하고 `_host` 로 기록한다. 선언은 `ipc.caller-agent-id`.
     #[serde(default, skip_serializing_if = "Option::is_none")]

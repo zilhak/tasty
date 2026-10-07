@@ -1,5 +1,5 @@
 //! Local 호출자가 봉투의 `caller_agent_id` 로 밝힌 ID 가 텔레메트리 기록에 쓰이는지 확인한다.
-//! 이 값은 권한·rate limit 에 쓰이지 않는다(ADR-0076).
+//! 이 값은 권한·rate limit 에 쓰이지 않는다(ADR-0073).
 
 use serde_json::json;
 

@@ -134,7 +134,7 @@ const EXCLUDED: &[(&str, Kind, &str)] = &[
         "task 그래프 하나의 task 수 상한 1000 이며 파일 SLOC 임계값이 아니다",
     ),
     (
-        "docs/adr/0069-typed-task-graphs-activate-through-a-graph-record.md",
+        "docs/adr/0068-typed-task-graphs-activate-through-a-graph-record.md",
         Kind::OtherMeaning,
         "task 그래프 하나의 task 수 상한 1000 과 그 측정값이며 파일 SLOC 임계값이 아니다",
     ),

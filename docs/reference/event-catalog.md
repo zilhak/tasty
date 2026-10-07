@@ -214,7 +214,7 @@ scope=global command 단축키는 조합키만, scope=surface 는 단일 키도 
 
 ## 후속 변경 정책
 
-Stable 키/필수 필드 제거는 깨지는 변경이다. 0.x 에서는 버전을 올리거나 유예를 두지 않고 `CHANGELOG.md` 에 `(BREAK)` 로 적어 바로 낸다([ADR-0066](../adr/0066-pre-1-0-breaking-changes-ship-without-deprecation-period.md)). 안정선 이후 정책은 안정선에 진입할 때 정한다. 옵션 필드 추가·새 이벤트 추가·Experimental→Stable 승격 → minor 이하(plugin 호환 유지). 새 예약 네임스페이스 추가는 충돌 가능 → `(BREAK)` 와 마이그레이션 안내.
+Stable 키/필수 필드 제거는 깨지는 변경이다. 0.x 에서는 버전을 올리거나 유예를 두지 않고 `CHANGELOG.md` 에 `(BREAK)` 로 적어 바로 낸다([ADR-0065](../adr/0065-pre-1-0-breaking-changes-ship-without-deprecation-period.md)). 안정선 이후 정책은 안정선에 진입할 때 정한다. 옵션 필드 추가·새 이벤트 추가·Experimental→Stable 승격 → minor 이하(plugin 호환 유지). 새 예약 네임스페이스 추가는 충돌 가능 → `(BREAK)` 와 마이그레이션 안내.
 
 ## 관련
 

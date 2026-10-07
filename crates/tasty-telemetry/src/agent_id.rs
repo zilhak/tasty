@@ -2,7 +2,7 @@
 //! 타입 자체는 문자열을 검증하지 않는다. CallerContext가 Agent 세션의 에이전트 ID와
 //! 호스트 레지스트리의 Plugin ID를 가져온다. Local은 요청 봉투의 `caller_agent_id`(CLI 가 자기
 //! 환경의 TASTY_AGENT_ID 를 싣는다)를 사용하며, 이 값은 Local의 권한을 제한하거나 추가하는
-//! 수단이 아니다(ADR-0076).
+//! 수단이 아니다(ADR-0073).
 
 use std::fmt;
 
