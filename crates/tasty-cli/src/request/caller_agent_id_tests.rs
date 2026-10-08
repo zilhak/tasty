@@ -4,7 +4,8 @@
 use clap::Parser;
 
 fn request_in_child(test: &str, agent_id: &str) {
-    let status = std::process::Command::new(std::env::current_exe().expect("exe"))
+    // 자식의 결과 줄이 부모 시험의 출력에 섞이지 않게 캡처하고, 실패할 때만 보여 준다.
+    let output = std::process::Command::new(std::env::current_exe().expect("exe"))
         .args([
             "--exact",
             &format!("request::caller_agent_id_tests::{test}"),
@@ -14,9 +15,15 @@ fn request_in_child(test: &str, agent_id: &str) {
         .env("TASTY_TEST_CALLER_AGENT_ID_CHILD", "1")
         .env("TASTY_AGENT_ID", agent_id)
         .env_remove("TASTY_SESSION_TOKEN")
-        .status()
+        .output()
         .expect("child");
-    assert!(status.success(), "child run failed: {status}");
+    assert!(
+        output.status.success(),
+        "child run failed: {}\nstdout:\n{}\nstderr:\n{}",
+        output.status,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 fn in_child() -> bool {

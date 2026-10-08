@@ -49,12 +49,20 @@ fn reach_and_abort(dir: &Path, note: &str) -> ! {
     std::process::abort();
 }
 
+/// 자식의 stdout·stderr 를 모으는 파일. 부모 시험의 출력에 자식의 줄이 섞이지 않게 한다.
+fn child_log(dir: &Path, role: &str) -> PathBuf {
+    dir.join(format!("child{role}.out"))
+}
+
 fn spawn_child(test: &str, dir: &Path, role: &str) -> Child {
+    let out = std::fs::File::create(child_log(dir, role)).expect("child log");
     Command::new(std::env::current_exe().expect("test binary"))
         .args(["--exact", test, "--test-threads=1", "--nocapture"])
         .env(ENV_CHILD, test)
         .env(ENV_DIR, dir)
         .env(ENV_ROLE, role)
+        .stdout(out.try_clone().expect("child log handle"))
+        .stderr(out)
         .spawn()
         .expect("spawn child")
 }
@@ -76,13 +84,27 @@ fn wait_child(mut child: Child) -> ExitStatus {
 /// 자식이 표시 지점에 도달한 뒤 abort로 끝났는지 확인하고 표시 내용을 돌려준다.
 /// 표시가 없으면 자식이 그 전에 실패한 것이다.
 fn assert_aborted_at_marker(status: ExitStatus, dir: &Path, role: &str) -> String {
-    let note = std::fs::read_to_string(marker(dir, role))
-        .unwrap_or_else(|_| panic!("child {role:?} did not reach its point: {status:?}"));
-    assert!(!status.success(), "child {role:?} was expected to abort");
+    let log = || std::fs::read_to_string(child_log(dir, role)).unwrap_or_default();
+    let note = std::fs::read_to_string(marker(dir, role)).unwrap_or_else(|_| {
+        panic!(
+            "child {role:?} did not reach its point: {status:?}\nchild output:\n{}",
+            log()
+        )
+    });
+    assert!(
+        !status.success(),
+        "child {role:?} was expected to abort\nchild output:\n{}",
+        log()
+    );
     #[cfg(unix)]
     {
         use std::os::unix::process::ExitStatusExt;
-        assert_eq!(status.signal(), Some(6), "child {role:?} ended by SIGABRT");
+        assert_eq!(
+            status.signal(),
+            Some(6),
+            "child {role:?} ended by SIGABRT\nchild output:\n{}",
+            log()
+        );
     }
     note
 }

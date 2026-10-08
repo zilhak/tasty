@@ -63,9 +63,14 @@ fn a_bound_child_ends_with_its_host() {
     if pid_file.exists() {
         std::fs::remove_file(&pid_file).expect("clear a stale pid file");
     }
+    // 호스트의 stdout·stderr 는 파일로 모은다. 부모 시험의 출력에 호스트의 줄이 섞이지 않게 한다.
+    let host_log = pid_file.with_extension("out");
+    let out = std::fs::File::create(&host_log).expect("host log");
     let mut host = Command::new(std::env::current_exe().expect("test binary"))
         .args(["--exact", "a_bound_child_ends_with_its_host"])
         .env(HOST_ENV, &pid_file)
+        .stdout(out.try_clone().expect("host log handle"))
+        .stderr(out)
         .spawn()
         .expect("host process");
     let deadline = Instant::now() + Duration::from_secs(10);
@@ -75,7 +80,11 @@ fn a_bound_child_ends_with_its_host() {
         {
             break pid;
         }
-        assert!(Instant::now() < deadline, "host never reported its child");
+        assert!(
+            Instant::now() < deadline,
+            "host never reported its child\nhost output:\n{}",
+            std::fs::read_to_string(&host_log).unwrap_or_default()
+        );
         std::thread::sleep(Duration::from_millis(50));
     };
     std::fs::remove_file(&pid_file).expect("remove the pid file");
@@ -89,6 +98,7 @@ fn a_bound_child_ends_with_its_host() {
         .expect("kill");
     assert!(status.success());
     host.wait().expect("host exit");
+    std::fs::remove_file(&host_log).expect("remove the host log");
     let gone = wait_gone(pid);
     if !gone {
         // 시험이 실패해도 고아를 남기지 않는다.

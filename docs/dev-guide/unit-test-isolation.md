@@ -104,6 +104,23 @@ tasty-settings 테스트의 SERIAL은 각자의 테스트 프로세스에서 사
 TASTY_AGENT_ID를 보호하는 ENV_LOCK이나 cwd를 보호하는 CWD_LOCK은 자원이 다르다.
 락 개수만 보고 합치지 말고 보호하는 상태와 프로세스 경계를 확인한다.
 
+### 시험 바이너리를 자식으로 다시 띄울 때는 출력을 캡처한다
+
+환경변수를 바꾸지 않으려고 시험이 자기 바이너리(`std::env::current_exe()`)를 `--exact <시험>` 필터와
+다른 환경으로 다시 띄우는 경우가 있다. 자식도 시험 하네스라 `running 1 test`, 시험 줄, `test result:`
+줄을 찍는다. `status()`·`spawn()` 처럼 stdout·stderr 를 물려받으면 이 줄이 부모 시험의 출력에 섞인다.
+결과 줄이 실행 타깃보다 많아지고, 병렬로 찍히던 부모의 시험 줄과 한 줄에 엉켜 `okok` 같은 줄이 생긴다.
+결과 줄을 읽는 판정([자체 검증](self-verification.md)의 "검사 결과를 읽는다")이 이것을 오판한다.
+
+- 끝까지 기다리는 자식은 `output()` 으로 캡처하고, 실패할 때만 상태·stdout·stderr 를 실패 메시지에 싣는다.
+- 폴링하며 기다리거나 도중에 종료시키는 자식은 파이프가 차서 멈추지 않게 시험의 임시 경로에 있는 파일로
+  stdout·stderr 를 보내고, 실패 메시지에 그 내용을 싣는다(`crates/tasty-event-store/tests/crash.rs`,
+  `crates/tasty-reaper/tests/bound_spawn.rs`).
+- 출력이 필요 없으면 `Stdio::null()` 로 버린다.
+
+실패 경로에서는 자식의 `test result: FAILED` 줄이 부모의 실패 메시지 안에 그대로 나온다. 이때 부모 실행도
+실패이므로 판정은 바뀌지 않는다.
+
 ### 락은 **키 단위**로 하나 — 모듈마다 따로 두지 않는다
 
 같은 crate 안에서 같은 키(또는 서로를 덮는 키 쌍)를 건드리는 테스트가 **서로 다른 락**을

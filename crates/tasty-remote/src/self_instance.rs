@@ -111,7 +111,8 @@ mod tests {
     fn the_self_check_does_not_carry_the_inherited_session_token() {
         const CHILD: &str = "TASTY_TEST_INHERITED_TOKEN_CHILD";
         if std::env::var_os(CHILD).is_none() {
-            let status = std::process::Command::new(std::env::current_exe().expect("exe"))
+            // 자식의 결과 줄이 부모 시험의 출력에 섞이지 않게 캡처하고, 실패할 때만 보여 준다.
+            let output = std::process::Command::new(std::env::current_exe().expect("exe"))
                 .args([
                     "--exact",
                     "self_instance::tests::the_self_check_does_not_carry_the_inherited_session_token",
@@ -120,9 +121,15 @@ mod tests {
                 ])
                 .env(CHILD, "1")
                 .env("TASTY_SESSION_TOKEN", "ab".repeat(32))
-                .status()
+                .output()
                 .expect("child");
-            assert!(status.success(), "child run failed: {status}");
+            assert!(
+                output.status.success(),
+                "child run failed: {}\nstdout:\n{}\nstderr:\n{}",
+                output.status,
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
             return;
         }
         assert_eq!(
