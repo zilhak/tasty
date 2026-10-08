@@ -39,7 +39,7 @@ enum Scenario {
     FdaUnknown,
     /// 보유했다가 업데이트·재빌드로 잃었다. 상태는 Not granted, FDA 행에 처방 줄이 붙는다.
     FdaStale,
-    /// 보유했고 앱은 그대로인데 Tasty 밖에서 꺼졌다. 상태는 Not granted, 다시 켜라는 줄이 붙는다.
+    /// 보유했고 앱은 그대로인데 Tasty 밖에서 꺼졌다. 상태는 Not granted, 다시 켜라는 처방과 재추가 문장이 한 줄에 붙는다.
     FdaRevoked,
     Requesting,
 }
@@ -179,7 +179,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ),
             (
                 "revoked",
-                "same pattern — Not granted + caption line \"turn it back on\"; no chip, no new status for either branch",
+                "same pattern — Not granted + one caption paragraph: turn it back on, then the re-add sentence (no longer in the list, e.g. after tccutil reset → add it again with +); wraps, no second element; no chip, no new status for either branch",
             ),
         ],
         &[
