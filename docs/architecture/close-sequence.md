@@ -123,6 +123,10 @@ Releasing 단계는 원 runner의 실제 join과 `EngineRelease`의 물리 자�
   비용이 계측 구간 밖으로 새어나간다. 종료 계측 S5b 도 같은 누적기를 쓴다.
 - **C5b 는 자식이 죽기를 기다리지 않는다** — unix 는 SIGHUP 만 보내고 유예 폴링과
   SIGKILL escalation 을 detached reap 스레드에 넘긴다([ADR-0016](../adr/0016-window-platform-and-shutdown.md)).
+  SIGHUP 을 무시하는 자식은 이 escalation 으로만 끝나며, tasty-terminal 의
+  `retiring_a_child_that_ignores_hangup_kills_and_reaps_it` 가 그 경로를 지킨다(SIGKILL 을 빼면
+  자식이 스스로 정상 종료해 실패한다). 마스터를 닫을 때 커널이 보내는 SIGHUP 으로 죽는 자식만 쓰는
+  다른 retire 시험들은 이 경로가 없어도 통과한다.
   그래서 C5b 는 "종료 신호 발사 + master 해제" 비용이지 "자식 종료 확인" 비용이
   아니다. 자식이 실제로 회수됐는지는 이 마커로 판정할 수 없다.
 - **C5c 는 observer 워커를 join 하지 않는다** — surface close 로 인한 자동 해제는
