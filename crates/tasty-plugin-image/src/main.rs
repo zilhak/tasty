@@ -232,6 +232,12 @@ impl ImagePlugin {
             IpcMethodError::invalid_params(&format!("Surface {sid} is not an image"))
         })?;
         doc.ensure_loaded();
+        // 편집 중 이동하면 화면은 그대로인데 저장·감시 경로만 바뀐다. 편집을 끝낸 뒤 이동하게 한다.
+        if doc.is_editing() {
+            return Err(IpcMethodError::invalid_params(
+                "Image is being edited: save or cancel the edit before moving to another image",
+            ));
+        }
         let new_path = if forward {
             doc.step_next()
         } else {
@@ -607,9 +613,10 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir); // best-effort 정리 — 실패 무시.
     }
 
-    /// 편집 중에는 이동을 적용하지 않으므로 호스트에 알리지 않는다. 알리면 다시 만들면서 편집을 잃는다.
+    /// 편집 중 next/prev 는 거절한다. 문서 경로·위치가 바뀌면 이후 저장이 다른 파일에 쓰고,
+    /// 호스트에 알리면 다시 만들면서 편집을 잃는다.
     #[test]
-    fn stepping_during_an_edit_does_not_move_the_surface() {
+    fn stepping_during_an_edit_is_refused_and_keeps_the_document_path() {
         let (dir, first, _second) = two_image_dir("step-edit");
         let mut p = plugin_with_file(&first);
         p.docs
@@ -617,10 +624,16 @@ mod tests {
             .expect("문서가 있어야 한다")
             .enter_edit_mode();
 
-        p.image_step(&json!({ "surface": 1 }), true)
-            .expect("이동 요청 자체는 받아야 한다");
+        for forward in [true, false] {
+            let err = p
+                .image_step(&json!({ "surface": 1 }), forward)
+                .expect_err("편집 중 이동은 거절해야 한다");
+            assert_eq!(err.code, -32602);
+        }
         let doc = p.docs.get_mut(&1).expect("문서가 있어야 한다");
         assert!(doc.is_editing(), "편집 세션이 유지되어야 한다");
+        assert_eq!(doc.file_path.as_deref(), Some(first.as_str()));
+        assert_eq!(doc.current_index, 0);
         assert_eq!(doc.take_path_for_host(), None);
         let _ = std::fs::remove_dir_all(&dir); // best-effort 정리 — 실패 무시.
     }
