@@ -151,6 +151,21 @@ pub enum EditState {
     },
 }
 
+/// 경로 없는 저장의 쓰기 실패.
+#[derive(Debug, PartialEq, Eq)]
+pub enum SaveFailure {
+    /// 새 파일로 만들 경로가 이미 있다. `SaveTarget::Exists` 와 같이 처리한다.
+    Exists(String),
+    Failed(String),
+}
+
+/// 확장자가 대소문자와 관계없이 `png` 인지.
+fn is_png_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("png"))
+}
+
 /// 경로를 주지 않은 저장(도구 모음 Save, 경로 없는 `image.save`)이 쓸 곳.
 #[derive(Debug, PartialEq, Eq)]
 pub enum SaveTarget {
@@ -346,13 +361,16 @@ impl ImageDoc {
         self.path_for_host.take()
     }
 
-    /// Default save destination for the current image (always `.png`).
+    /// 경로 없는 저장의 기본 대상(항상 PNG). 확장자가 대소문자와 관계없이 `png` 이면 문서 파일
+    /// 자체다. 그 밖에는 같은 폴더의 같은 이름 `.png` 다.
     pub fn save_path(&self) -> Option<String> {
         self.file_path.as_ref().map(|p| {
-            Path::new(p)
-                .with_extension("png")
-                .to_string_lossy()
-                .to_string()
+            let path = Path::new(p);
+            if is_png_path(path) {
+                p.clone()
+            } else {
+                path.with_extension("png").to_string_lossy().to_string()
+            }
         })
     }
 
@@ -378,11 +396,22 @@ impl ImageDoc {
         }
     }
 
+    /// `save_target` 이 고른 경로에 쓴다. 문서 자기 파일은 덮어쓰고, 옆 `.png` 는 새 파일로만
+    /// 만든다 — 판단과 쓰기 사이에 다른 프로세스가 같은 이름을 만들었어도 덮어쓰지 않는다.
+    pub fn write_save_target(&self, path: &str) -> Result<(), SaveFailure> {
+        if self.file_path.as_deref() == Some(path) {
+            self.save_png(path).map_err(SaveFailure::Failed)
+        } else {
+            self.save_png_new(path)
+        }
+    }
+
     /// 도구 모음 Save. 대상에 쓰고 편집을 끝내거나, 쓸 곳이 없으면 경로 입력 팝업을 연다.
     pub fn save_from_toolbar(&mut self) {
         match self.save_target() {
-            SaveTarget::Write(path) => match self.save_png(&path) {
-                Err(e) => tracing::warn!("failed to save image: {e}"),
+            SaveTarget::Write(path) => match self.write_save_target(&path) {
+                Err(SaveFailure::Exists(_)) => self.save_path_popup = true,
+                Err(SaveFailure::Failed(e)) => tracing::warn!("failed to save image: {e}"),
                 Ok(()) => {
                     self.adopt_if_saved_elsewhere(&path);
                     self.exit_edit_mode();
@@ -656,6 +685,42 @@ impl ImageDoc {
 
     /// Save the composited image (original + overlay + active floating selection) as PNG.
     pub fn save_png(&self, path: &str) -> Result<(), String> {
+        self.composited_rgba()?
+            .save(path)
+            .map_err(|e| format!("Failed to save PNG: {}", e))
+    }
+
+    /// 합성 이미지를 PNG 로 쓰되 파일이 없을 때만 만든다. 이미 있으면 `Exists` 다.
+    pub fn save_png_new(&self, path: &str) -> Result<(), SaveFailure> {
+        let img = self.composited_rgba().map_err(SaveFailure::Failed)?;
+        let file = match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(path)
+        {
+            Ok(file) => file,
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                return Err(SaveFailure::Exists(path.to_string()));
+            }
+            Err(e) => return Err(SaveFailure::Failed(format!("Failed to create {path}: {e}"))),
+        };
+        let mut writer = std::io::BufWriter::new(file);
+        let written = img
+            .write_to(&mut writer, image::ImageFormat::Png)
+            .map_err(|e| e.to_string())
+            .and_then(|()| std::io::Write::flush(&mut writer).map_err(|e| e.to_string()));
+        if let Err(e) = written {
+            // 만든 파일이 반쯤 쓰인 채 남지 않게 지운다.
+            if let Err(rm) = std::fs::remove_file(path) {
+                tracing::warn!("image: failed to remove partial {path}: {rm}");
+            }
+            return Err(SaveFailure::Failed(format!("Failed to save PNG: {e}")));
+        }
+        Ok(())
+    }
+
+    /// 원본 + 그리기 층 + 떠 있는 선택을 합친 RGBA 이미지.
+    fn composited_rgba(&self) -> Result<image::RgbaImage, String> {
         let original = self.original_image.as_ref().ok_or("No image to save")?;
         let [w, h] = original.size;
 
@@ -687,12 +752,8 @@ impl ImageDoc {
             rgba_data.push(pixel.a());
         }
 
-        let img_buf: image::RgbaImage = image::RgbaImage::from_raw(w as u32, h as u32, rgba_data)
-            .ok_or("Failed to create image buffer")?;
-
-        img_buf
-            .save(path)
-            .map_err(|e| format!("Failed to save PNG: {}", e))
+        image::RgbaImage::from_raw(w as u32, h as u32, rgba_data)
+            .ok_or_else(|| "Failed to create image buffer".to_string())
     }
 }
 
@@ -1109,6 +1170,79 @@ mod tests {
         assert_eq!(doc.file_path.as_deref(), Some(jpg_s.as_str()));
         assert_eq!(doc.take_path_for_host(), None);
         assert_eq!(std::fs::read(&png).expect("png 읽기"), png_bytes);
+        let _ = std::fs::remove_file(&jpg); // best-effort 정리 — 실패 무시.
+        let _ = std::fs::remove_file(&png); // best-effort 정리 — 실패 무시.
+    }
+
+    /// 이 시험만 쓰는 빈 폴더. 대소문자만 다른 파일명이 다른 시험과 겹치지 않게 한다.
+    fn probe_dir(what: &str) -> PathBuf {
+        let dir = probe_png_path(what).with_extension("");
+        std::fs::create_dir_all(&dir).expect("시험 폴더 생성");
+        dir
+    }
+
+    /// 확장자가 대문자인 PNG 문서도 자기 파일에 쓰고, 소문자 사본을 만들거나 문서를 옮기지 않는다.
+    #[test]
+    fn an_upper_case_png_document_saves_over_its_own_file() {
+        let dir = probe_dir("save-upper-png");
+        let path = dir.join("IMG.PNG");
+        write_probe_png(&path, [255, 0, 0]);
+        let before = std::fs::read(&path).expect("png 읽기");
+        let file = path.to_string_lossy().into_owned();
+        let mut doc = ImageDoc::new(Some(file.clone()));
+        doc.ensure_loaded();
+        assert_eq!(doc.save_target(), SaveTarget::Write(file.clone()));
+
+        doc.paste_image(ColorImage::new([2, 2], Color32::BLUE));
+        doc.save_from_toolbar();
+        assert!(!doc.save_path_popup);
+        assert_eq!(doc.file_path.as_deref(), Some(file.as_str()));
+        assert_eq!(doc.take_path_for_host(), None);
+        assert_ne!(
+            std::fs::read(&path).expect("png 읽기"),
+            before,
+            "자기 파일에 편집을 써야 한다"
+        );
+        let names: Vec<_> = std::fs::read_dir(&dir)
+            .expect("폴더 읽기")
+            .map(|e| e.expect("항목").file_name())
+            .collect();
+        assert_eq!(names, vec![std::ffi::OsString::from("IMG.PNG")]);
+        let _ = std::fs::remove_dir_all(&dir); // best-effort 정리 — 실패 무시.
+    }
+
+    /// 확장자가 대문자인 비-PNG 문서는 같은 이름의 소문자 `.png` 를 대상으로 한다.
+    #[test]
+    fn an_upper_case_jpg_document_targets_the_png_beside_it() {
+        let dir = probe_dir("save-upper-jpg");
+        let jpg = dir.join("IMG.JPG");
+        image::RgbImage::from_pixel(4, 4, image::Rgb([255, 0, 0]))
+            .save_with_format(&jpg, image::ImageFormat::Jpeg)
+            .expect("probe jpg 저장 실패");
+        let doc = ImageDoc::new(Some(jpg.to_string_lossy().into_owned()));
+        assert_eq!(
+            doc.save_target(),
+            SaveTarget::Write(dir.join("IMG.png").to_string_lossy().into_owned())
+        );
+        let _ = std::fs::remove_dir_all(&dir); // best-effort 정리 — 실패 무시.
+    }
+
+    /// 판단 뒤 쓰기 전에 옆 `.png` 가 생겼으면 덮어쓰지 않고 Exists 로 끝난다.
+    #[test]
+    fn a_png_created_after_the_decision_is_not_overwritten() {
+        let (jpg, png) = probe_jpg("save-race");
+        let mut doc = ImageDoc::new(Some(jpg.to_string_lossy().into_owned()));
+        doc.ensure_loaded();
+        let png_s = png.to_string_lossy().into_owned();
+        assert_eq!(doc.save_target(), SaveTarget::Write(png_s.clone()));
+
+        write_probe_png(&png, [0, 255, 0]);
+        let other = std::fs::read(&png).expect("png 읽기");
+        assert_eq!(
+            doc.write_save_target(&png_s),
+            Err(SaveFailure::Exists(png_s.clone()))
+        );
+        assert_eq!(std::fs::read(&png).expect("png 읽기"), other);
         let _ = std::fs::remove_file(&jpg); // best-effort 정리 — 실패 무시.
         let _ = std::fs::remove_file(&png); // best-effort 정리 — 실패 무시.
     }

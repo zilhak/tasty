@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::mpsc;
 
-use doc::{ImageDoc, SaveTarget};
+use doc::{ImageDoc, SaveFailure, SaveTarget};
 use serde_json::{Value, json};
 use tasty_plugin_protocol::{RawInputEventWire, ThemeWire};
 use tasty_plugin_sdk::file_watch::{self, StatGatedDigest, WatchCmd};
@@ -181,7 +181,13 @@ impl ImagePlugin {
                 }
             },
         };
-        match doc.save_png(&final_path) {
+        // 경로 없는 저장은 옆 `.png` 를 새 파일로만 만든다. 명시한 경로는 덮어쓴다.
+        let written = if explicit_given {
+            doc.save_png(&final_path).map_err(SaveFailure::Failed)
+        } else {
+            doc.write_save_target(&final_path)
+        };
+        match written {
             Ok(()) => {
                 if doc.is_blank() {
                     doc.adopt_saved_path(final_path.clone());
@@ -193,7 +199,10 @@ impl ImagePlugin {
                 self.watch_register(sid, watched);
                 Ok(json!({ "ok": true, "path": final_path }))
             }
-            Err(e) => Err(IpcMethodError::new(format!("save failed: {e}"))),
+            Err(SaveFailure::Exists(p)) => Err(IpcMethodError::invalid_params(&format!(
+                "Save target already exists: {p}. Provide 'path' to save elsewhere"
+            ))),
+            Err(SaveFailure::Failed(e)) => Err(IpcMethodError::new(format!("save failed: {e}"))),
         }
     }
 
