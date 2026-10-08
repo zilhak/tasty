@@ -310,7 +310,8 @@ pub struct Task {
     /// 마지막 실행 직전에 해석한 v2 입력. 원본 정의(계약·command)와 따로 둔다.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub input_snapshot: Option<InputSnapshot>,
-    /// 마지막 dispatch 에서 custom 비동기 task 가 받은 접수 응답. 결과의 `raw.accepted` 로도 싣는다.
+    /// 마지막 dispatch 에서 custom 비동기 task 가 받은 접수 응답. 결과를 확정하면 `raw.accepted` 로
+    /// 옮기고 여기서는 비운다(한 벌만 남는다).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub accepted: Option<contract::AcceptedResponse>,
     /// 마지막 dispatch 가 발급한 report 토큰. 이 회차가 열려 있는 동안 custom 기록을 받는다.
