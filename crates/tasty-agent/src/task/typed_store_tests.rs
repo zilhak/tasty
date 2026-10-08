@@ -639,3 +639,36 @@ fn an_accepted_response_over_the_cap_keeps_a_char_aligned_prefix() {
     assert!(full.starts_with(&text));
     assert_eq!(big.dropped_bytes as usize, full.len() - text.len());
 }
+
+/// `artifacts` 를 없애기 전에 저장한 결과에 그 키가 남아 있어도 읽힌다.
+#[test]
+fn a_stored_result_with_the_removed_artifacts_key_still_reads() {
+    let (_td, mut mem, seq) = fresh_store();
+    let id = {
+        let mut store = TaskStore::new(&mut mem, "_host", &seq);
+        let c = contract(json!({"contract_version": 2}));
+        let t = store.create_typed(opts("a", custom()), c).unwrap();
+        finish(&mut store, &t.id, output(json!(1)), TaskState::Succeeded);
+        t.id
+    };
+    let key = format!("{TYPED_TASK_KEY_PREFIX}{id}");
+    let mut record = raw_json(&mem, &key);
+    record["task"]["typed_result"]["artifacts"] =
+        json!([{"name": "log", "uri": "file:///tmp/log", "bytes": 3}]);
+    mem.put(
+        "_host",
+        &Scope::Workspace(1),
+        &key,
+        &MemoryValue::Json(record),
+        &PutOpts::default(),
+    )
+    .expect("put");
+    let store = TaskStore::new(&mut mem, "_host", &seq);
+    let t = store.get(1, &id).unwrap().expect("task");
+    assert_eq!(t.state, TaskState::Succeeded);
+    assert!(
+        !serde_json::to_string(&t.typed_result.unwrap())
+            .unwrap()
+            .contains("artifacts")
+    );
+}

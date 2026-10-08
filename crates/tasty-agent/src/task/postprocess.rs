@@ -67,8 +67,10 @@ pub enum SourceDocument {
     Input,
     /// 본 작업의 원본 결과 `{exit_code?, execution?}`.
     Raw,
-    /// 산출물 참조 목록.
-    Artifacts,
+    /// 없어진 출처 `artifacts`. 저장된 레코드를 읽을 수 있게 해석만 하고, 제출은 거절하며
+    /// 저장된 task 에서는 빈 배열이다.
+    #[serde(rename = "artifacts")]
+    RemovedArtifacts,
 }
 
 /// stdout 수집 방식.
@@ -150,6 +152,12 @@ pub fn check_spec(spec: &PostprocessSpec) -> Result<(), TaskFailure> {
         }
     }
     for (field, source) in &spec.stdin {
+        if source.from == SourceDocument::RemovedArtifacts {
+            return Err(err(
+                &format!("/stdin/{field}/from"),
+                "the artifacts source was removed".to_string(),
+            ));
+        }
         if let Some(p) = &source.pointer {
             pointer_tokens(p).map_err(|m| err(&format!("/stdin/{field}/pointer"), m))?;
         }
@@ -321,17 +329,13 @@ pub fn stdin_document(
         raw.insert("accepted".into(), v);
     }
     let raw = Value::Object(raw);
-    let artifacts = task
-        .typed_result
-        .as_ref()
-        .map(|r| serde_json::to_value(&r.artifacts).unwrap_or(Value::Array(Vec::new())))
-        .unwrap_or(Value::Array(Vec::new()));
+    let removed_artifacts = Value::Array(Vec::new());
     let mut doc = serde_json::Map::new();
     for (field, source) in &spec.stdin {
         let base = match source.from {
             SourceDocument::Input => &input,
             SourceDocument::Raw => &raw,
-            SourceDocument::Artifacts => &artifacts,
+            SourceDocument::RemovedArtifacts => &removed_artifacts,
         };
         let value = match &source.pointer {
             None => base.clone(),
@@ -558,7 +562,6 @@ pub fn finalize_postprocessed(
         has_output: false,
         output: TypedValue::Null,
         raw,
-        artifacts: Vec::new(),
         error: Some(failure),
         provenance: provenance(source),
     };
@@ -594,7 +597,6 @@ pub fn finalize_postprocessed(
             has_output: true,
             output,
             raw,
-            artifacts: Vec::new(),
             error: None,
             provenance: provenance(source),
         },

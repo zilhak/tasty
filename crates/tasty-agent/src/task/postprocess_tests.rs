@@ -238,8 +238,7 @@ fn the_stdin_document_holds_only_the_mapped_fields() {
             "all_raw": {"from": "raw"},
             "text": {"from": "raw", "pointer": "/execution/stdout/text"},
             "code": {"from": "raw", "pointer": "/exit_code"},
-            "input": {"from": "input"},
-            "artifacts": {"from": "artifacts"}
+            "input": {"from": "input"}
         }
     }));
     let doc = stdin_document(&t, &s, &execution).unwrap();
@@ -249,8 +248,7 @@ fn the_stdin_document_holds_only_the_mapped_fields() {
             "all_raw": {"exit_code": 0, "execution": {"stdout": {"text": "hello"}}},
             "text": "hello",
             "code": 0,
-            "input": null,
-            "artifacts": []
+            "input": null
         })
     );
     let empty = spec(json!({"command": ["x"], "timeout_ms": 1}));
@@ -332,4 +330,27 @@ fn only_cancellation_unknown_outcomes_and_stdin_mapping_skip_retries() {
     ] {
         assert!(c.retryable(), "{}", c.name());
     }
+}
+
+/// 없어진 `artifacts` 출처는 제출 때 거절하지만, 저장된 레코드는 그대로 읽고 빈 배열로 둔다.
+#[test]
+fn the_removed_artifacts_source_is_refused_but_still_read_back() {
+    let legacy = spec(json!({"command": ["x"], "timeout_ms": 1,
+        "stdin": {"a": {"from": "artifacts"}}}));
+    let f = check_spec(&legacy).expect_err("refused");
+    assert_eq!(f.location.as_deref(), Some("/postprocess/stdin/a/from"));
+    let t = task(run(), json!({"contract_version": 2}));
+    let execution = crate::task::TaskResult {
+        exit_code: None,
+        output: None,
+        error: None,
+    };
+    assert_eq!(
+        stdin_document(&t, &legacy, &execution).unwrap(),
+        json!({"a": []})
+    );
+    assert_eq!(
+        serde_json::to_value(&legacy).unwrap()["stdin"]["a"]["from"],
+        json!("artifacts")
+    );
 }

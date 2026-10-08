@@ -211,9 +211,6 @@ pub struct TypedResult {
     /// 본 작업의 원본 결과. 최종 출력과 따로 보존한다.
     #[serde(default, skip_serializing_if = "RawResult::is_empty")]
     pub raw: RawResult,
-    /// 산출물 참조. 생산자는 아직 없다.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub artifacts: Vec<ArtifactRef>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<TaskFailure>,
     pub provenance: Provenance,
@@ -288,17 +285,6 @@ impl AcceptedResponse {
             truncated: true,
         }
     }
-}
-
-/// 산출물 참조. 경로만으로 영속·무결성을 보증하지 않으므로 식별 정보를 함께 둔다.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ArtifactRef {
-    pub name: String,
-    pub uri: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sha256: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub bytes: Option<u64>,
 }
 
 /// 실패 단계.
@@ -769,7 +755,6 @@ pub fn finalize_result(task: &Task, contract: &TaskContract, reported: &TaskResu
         has_output: false,
         output: TypedValue::Null,
         raw: raw.clone(),
-        artifacts: Vec::new(),
         error: Some(TaskFailure { stage, ..failure }),
         provenance: provenance(source),
     };
@@ -871,7 +856,6 @@ pub fn finalize_result(task: &Task, contract: &TaskContract, reported: &TaskResu
                 },
                 _ => raw.clone(),
             },
-            artifacts: Vec::new(),
             error: None,
             provenance: provenance(source),
         },
@@ -902,8 +886,6 @@ pub(crate) struct TypedResultWire {
     #[serde(default)]
     raw: RawResult,
     #[serde(default)]
-    artifacts: Vec<ArtifactRef>,
-    #[serde(default)]
     error: Option<TaskFailure>,
     provenance: Provenance,
 }
@@ -924,7 +906,6 @@ impl TypedResult {
             has_output: wire.has_output,
             output,
             raw: wire.raw,
-            artifacts: wire.artifacts,
             error: wire.error,
             provenance: wire.provenance,
         })

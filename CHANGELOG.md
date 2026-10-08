@@ -178,6 +178,7 @@
 
 ### Removed
 
+- **(BREAK) 타입 계약(v2) task 결과의 `artifacts` 필드와 후처리 stdin 출처 `artifacts` 가 없어졌다.** 채우는 실행기가 없어 늘 빈 목록이었다. 후처리 stdin 에 `{"from": "artifacts"}` 를 쓴 그래프는 제출 때 거절된다. 이미 저장된 task 는 그대로 읽히고 그 출처는 빈 배열이 된다.
 - **(BREAK) release 빌드에서 `tasty --launch` 옵션이 없어졌다.** 이 옵션은 Tasty 터미널 안에서 인자 없이 `tasty`를 실행하면 도움말을 보여 주는 판정을 건너뛰고 GUI를 띄웠다. release에서는 이제 알 수 없는 인자 오류로 끝나고 `tasty --help`에도 나오지 않는다. 새 윈도우는 `tasty new window`로 연다. debug 빌드에는 검증용으로 남아 있다.
 
 ### Fixed

@@ -1,4 +1,4 @@
-<!-- source-hash: c7a928b980be -->
+<!-- source-hash: 63d127a1029f -->
 <a id="task-dag"></a>
 
 # Task workflows (DAG)
@@ -128,7 +128,7 @@ To run a task's result through another command (a judge or summary tool, say) an
 ```
 
 - The command runs as is, without a shell. If you need one, write it out, as in `["sh", "-c", "..."]`. Sign-in uses the environment Tasty was started from. If you started Tasty inside Claude Code, the variables that point at that session are not passed on (the same as in the terminal). If you started Tasty from another Tasty's terminal, variables such as `TASTY_SURFACE_ID` that point at that Tasty's terminal are not passed on either.
-- `stdin` sets the fields of the JSON written to standard input. `from` is `input` (the task's input), `raw` (the main work's result) or `artifacts`, and `pointer` picks a value inside it.
+- `stdin` sets the fields of the JSON written to standard input. `from` is `input` (the task's input) or `raw` (the main work's result), and `pointer` picks a value inside it.
 - By default standard output must be exactly one JSON value. With `"stdout": {"format": "text"}` the text is taken as is. Progress logs sent to standard error stay out of the result.
 - `timeout_ms` is required. When it runs out or the task is cancelled, the command and the processes it started are stopped.
 - With `retry`, a failure reruns only the postprocess that many times; the main work does not run again. Once the retries are used up, the task fails and the tasks after it follow their failure policies as for any failure. There is no way to rerun only the postprocess. To try again, rerun the task from the main work with `task-retry`.

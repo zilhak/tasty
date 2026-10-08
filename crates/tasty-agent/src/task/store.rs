@@ -565,7 +565,6 @@ fn settle_typed_terminal(task: &mut Task, requested: TaskState) -> TaskState {
             }),
             ..Default::default()
         },
-        artifacts: Vec::new(),
         error: Some(failure),
         provenance: Provenance {
             contract_version: task
