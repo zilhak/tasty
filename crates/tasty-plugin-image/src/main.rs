@@ -292,15 +292,9 @@ impl ImagePlugin {
         let doc = self.docs.entry(sid).or_insert_with(|| ImageDoc::new(None));
         doc.ensure_loaded();
         doc.ensure_brush_themed(theme.accent_danger().to_egui());
-        // 호스트가 붙여넣기 단축키를 Paste 이벤트로 보낸다. 이미지는 이 프로세스가 클립보드에서 읽는다.
-        if ctx
-            .params
-            .raw_input
-            .events
-            .contains(&RawInputEventWire::Paste)
-        {
-            doc.paste_from_clipboard(|| read_clipboard_image().map_err(|e| e.message));
-        }
+        apply_paste_events(doc, &ctx.params.raw_input.events, || {
+            read_clipboard_image().map_err(|e| e.message)
+        });
 
         let is_new = !self.meshes.contains_key(&sid);
         let mesh = self
@@ -397,6 +391,17 @@ fn require_surface(params: &Value) -> Result<u32, IpcMethodError> {
         .and_then(|v| v.as_u64())
         .map(|v| v as u32)
         .ok_or_else(|| IpcMethodError::invalid_params("missing 'surface'"))
+}
+
+/// 호스트가 붙여넣기 단축키를 Paste 이벤트로 보낸다. 이번 입력에 Paste 가 있을 때만 클립보드를
+/// 읽어 이미지를 붙인다(이미지는 이 프로세스가 직접 읽는다). 붙였으면 true 다.
+#[cfg(any(unix, windows))]
+fn apply_paste_events(
+    doc: &mut ImageDoc,
+    events: &[RawInputEventWire],
+    read: impl FnOnce() -> Result<egui::ColorImage, String>,
+) -> bool {
+    events.contains(&RawInputEventWire::Paste) && doc.paste_from_clipboard(read)
 }
 
 /// Read the system clipboard image into a `ColorImage` (paste → floating selection).
@@ -770,6 +775,37 @@ mod tests {
         assert_eq!(std::fs::read(&jpg).expect("jpg 읽기"), jpg_bytes);
         let _ = std::fs::remove_file(&jpg); // best-effort 정리 — 실패 무시.
         let _ = std::fs::remove_file(&png); // best-effort 정리 — 실패 무시.
+    }
+
+    /// 이번 입력에 Paste 가 있을 때만 클립보드를 읽어 붙이고, 없으면 읽지도 않는다.
+    #[cfg(any(unix, windows))]
+    #[test]
+    fn a_paste_event_in_the_frame_input_pastes_the_clipboard_image() {
+        let (dir, first, _second) = two_image_dir("paste-event");
+        let mut p = plugin_with_file(&first);
+        let doc = p.docs.get_mut(&1).expect("문서가 있어야 한다");
+        let key = RawInputEventWire::Key {
+            key: "V".into(),
+            pressed: true,
+            repeat: false,
+            modifiers: Default::default(),
+        };
+
+        let pasted = apply_paste_events(doc, std::slice::from_ref(&key), || {
+            panic!("Paste 가 없으면 클립보드를 읽지 않아야 한다")
+        });
+        assert!(!pasted);
+        assert!(!doc.is_editing());
+
+        let pasted = apply_paste_events(doc, &[key, RawInputEventWire::Paste], || {
+            Ok(egui::ColorImage::new([2, 2], egui::Color32::YELLOW))
+        });
+        assert!(pasted);
+        assert!(
+            doc.is_editing(),
+            "떠 있는 선택으로 편집 모드에 들어가야 한다"
+        );
+        let _ = std::fs::remove_dir_all(&dir); // best-effort 정리 — 실패 무시.
     }
 
     #[test]
