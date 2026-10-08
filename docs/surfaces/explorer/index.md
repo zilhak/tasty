@@ -10,7 +10,47 @@
 
 OS 파일 관리자에 의존하지 않고 tasty surface 안에서 디렉토리를 탐색하고 파일을 열기 위한 내장 파일 관리자다. 다른 surface(terminal/markdown/image)와 동일하게 pane/tab 레이아웃에 들어가고, surface 변환·이동·레이아웃 영속화 대상이 된다. surface kind `"explorer"`는 부팅 시 `register_builtin_kinds`가 등록한다.
 
-## 내부 동작 (headless-valid)
+## 상태 소유자
+
+| 상태 | 소유자 | 바꾸는 경로 |
+|---|---|---|
+| 구조 트리의 leaf(`SurfaceDescriptor`, kind `explorer`) | engine 의 구조 트리 | 공통 생성·닫기·이동·변환([작업 영역](../../features/work-area/index.md)) |
+| 내비게이션 모델 `ExplorerPanel`(내부 탭·cwd·current·히스토리·뷰 모드·정렬) | engine 의 surface 실행 객체(`EngineRuntime::surfaces`) | View 가 `EngineAction::Explorer`·`EngineAction::ExplorerCwd` 로 요청하고, App 이 요청에 담긴 `SurfaceBinding` 이 아직 그 surface 를 가리킬 때만 적용한 뒤 레이아웃을 dirty 로 표시한다(`src/app/engine_action.rs`) |
+| 즐겨찾기 목록 | engine 의 `EngineRuntime::explorer_favorites` | `EngineAction::AddExplorerFavorite`·`RemoveExplorerFavorite` 가 바꾸고 바로 파일에 쓴다(아래 "즐겨찾기") |
+| 목록 캐시·로딩 상태·선택·트리 펼침·주소창 편집·타입어헤드 | 창의 View 상태 `MainViewState::explorer_views`(surface id 별 `ExplorerView`) | View 가 직접 바꾼다. 저장하지 않는다 |
+| 파일 클립보드 | 창의 View 상태 `MainViewState::explorer_clipboard` | 복사·잘라내기가 채우고 붙여넣기가 소비한다. 저장하지 않는다 |
+| 로컬 디렉터리 읽기 | App 의 읽기 worker(`src/app/local_reads.rs`, 동시 실행 최대 4개) | View 가 요청을 만들고 받은 receipt 로 결과를 가져간다 |
+| 파일 변경 작업 | App 의 `explorer_files` worker(한 번에 한 작업) | View 가 대상 경로와 binding 을 고정한 요청을 넘긴다([파일 작업 계약](file-operations.md)) |
+| mirror 목록 조회 | 원격 attach 채널(`list_dir_request`/`list_dir_result`) | View 가 요청을 outbox 에 쌓고 렌더 뒤 App 이 원격으로 보낸다 |
+
+View 는 모델을 직접 바꾸지 않고 파일시스템도 직접 읽지 않는다. 경계 전체는 [Model·View 분리](../../dev-guide/model-view-split.md)에 있다.
+
+## 생성·갱신·종료
+
+- **생성**: 공통 생성 경로(`tasty new tab --type explorer`, split, 변환, 단축키 `open_explorer`, 메뉴 "새 탭으로 열기")가 kind `explorer` 의 `create` 를 부른다. params 는 `path`(선택)와 `view_mode`(선택, 없으면 설정의 마지막 뷰 모드)다. root 결정 규칙은 아래 [인터페이스](#ai-agent-ipccli)에 있다. 메뉴 "새 탭으로 열기"는 우클릭한 surface 의 소유 pane 을 찾아 `DomainIntent::CreateTab` 을 보낸다(`RequestContext::add_kind_tab_by_owner`, `src/state/tab.rs`). Pane 을 직접 바꾸지 않는다.
+- **목록 갱신**: View 를 그릴 때 `sync` 가 활성 탭의 (current, 정렬) 이 마지막으로 읽은 값과 다르거나 새로고침이 요청됐으면 읽기 요청을 새로 만든다. 상태는 `Loading` 이 되고, 이전 요청의 receipt 는 버린다. 버린 receipt 의 결과는 새 목록에 반영되지 않는다. 폴더가 바뀌었을 때만 선택을 비운다.
+- **결과 상태**: 읽은 목록은 `Ok`(항목 0개면 빈 폴더 화면), 권한 거부는 `NoPermission`, 그 밖의 실패(경로 없음·폴더 아님·IO 오류·worker 끊김)는 `Error` 다. 자동 재시도는 없고 Retry(새로고침)가 같은 경로를 다시 읽는다. mirror 는 응답이 8초 안에 오지 않으면 `Error`(시간 초과)로 바꾼다.
+- **보이지 않는 동안**: 읽기 요청은 View 를 그릴 때만 만든다. 이미 보낸 요청의 결과는 그 View 가 남아 있는 한 다른 탭에 가려져 있어도 받아 둔다.
+- **늦은 결과**: 목록 결과는 receipt 를 가진 View 에만 들어간다. 그 사이 사용자가 바꾼 선택은 지우지 않는다. 파일 작업 완료는 원 View 와 binding 이 유효할 때만 목록 갱신과 오류 토스트를 낸다. 실패한 rename·trash 는 선택을 유지하고 목록을 다시 읽는다. 부분 성공한 붙여넣기는 실패 경로를 보이고 cut 클립보드를 유지한다. 사용자가 그 사이 새로 담은 클립보드는 건드리지 않는다.
+- **종료**: surface 를 닫으면 engine 이 모델을 지우고, 창은 `release_surface_views` 로 그 surface 의 `ExplorerView` 를 지운다. 대기 중인 로컬 읽기의 receipt 도 함께 버려지고, 늦게 온 원격 응답은 기다리는 View 가 없어 버려진다. 아직 시작하지 않은 파일 작업 요청은 binding 이 더는 그 surface 를 가리키지 않아 시작하지 않는다. 이미 시작한 작업은 끝까지 실행되고 결과 토스트·목록 갱신만 생략된다(`src/app/explorer_files.rs`).
+
+## 저장·복원
+
+- **저장하는 값**: 내부 탭마다 cwd·current(`root`)·뷰 모드·정렬 열·정렬 방향, 그리고 활성 내부 탭 번호(`register_explorer` 의 `snapshot`). 레이아웃 journal 에 들어간다.
+- **저장하지 않는 값**: back/forward 히스토리, 목록 캐시, 선택, 트리 펼침, 주소창 편집, 타입어헤드, 파일 클립보드. 복원하면 히스토리는 비어 있고 목록은 다시 읽는다.
+- **복원**: `restore` 가 저장한 탭으로 `ExplorerPanel` 을 만든다. 탭이 없으면 홈 하나로, 활성 번호가 범위를 넘으면 마지막 탭으로 맞춘다. 경로가 없거나 상대 경로면 홈으로 교정한다. 복원은 create 를 거치지 않으므로 설정의 뷰 모드가 아니라 저장한 탭별 값을 쓴다. 저장한 폴더가 사라졌으면 복원은 성공하고 목록 자리에 읽기 오류 화면이 나온다.
+- **즐겨찾기**는 레이아웃이 아니라 별도 파일에 저장한다(아래 "즐겨찾기").
+- mirror workspace 는 로컬에 저장하지 않는다([원격 attach](../../features/remote-attach/index.md)).
+
+## headless·원격 제약
+
+- **headless**: kind 는 GUI 와 관계없이 부팅 때 등록된다. 생성·조회·닫기·변환·저장·복원은 모델만으로 동작한다. 목록 읽기·화면·컨텍스트 메뉴·파일 작업은 View 가 있는 창에서만 일어난다.
+- **mirror**: 목록은 원격 조회로 받고 로컬 파일시스템을 읽지 않는다. 파일 변경과 즐겨찾기 추가는 막고, 파일 열기는 원격에 탭을 만든다. 아래 "mirror(attach) explorer 의 파일 변경 차단"과 "mirror explorer 의 파일 열기"에 있다.
+
+## 화면과 상호작용
+
+화면의 픽셀·색 값은 Theme 토큰의 scale 1 값이다. 정본은 토큰과 [디자인·갤러리 매핑](../../design/systems/design-gallery-mapping.md)이다.
+
 
 ### 모델 (`ExplorerPanel`)
 
@@ -24,7 +64,7 @@ OS 파일 관리자에 의존하지 않고 tasty surface 안에서 디렉토리�
 
 디렉토리 엔트리 캐시·선택 집합·트리 펼침 같은 무거운 GUI 상태는 모델이 아니라 per-surface 뷰 스토어에 둔다.
 
-- **엔트리 캐시**: `sync(panel)` 이 활성 탭의 `(root, sort_column, sort_dir)` 키를 보고 디렉토리/정렬이 바뀌었거나 새로고침이 요청됐을 때만 디스크에서 다시 읽는다. 디렉토리가 바뀌면 선택을 초기화한다. 읽기 실패는 `LoadState::NoPermission`(권한 거부) / `LoadState::Error(msg)` 로 분류해 콘텐츠 중앙 상태 화면으로 표현한다.
+- **엔트리 캐시**: `sync(panel)` 이 활성 탭의 `(root, sort_column, sort_dir)` 키를 보고 디렉토리/정렬이 바뀌었거나 새로고침이 요청됐을 때만 App 읽기 worker 에 다시 읽기를 요청한다(위 "생성·갱신·종료"). 디렉토리가 바뀌면 선택을 초기화한다. 읽기 실패는 `LoadState::NoPermission`(권한 거부) / `LoadState::Error(msg)` 로 분류해 콘텐츠 중앙 상태 화면으로 표현한다.
 - **상태 화면**: 내용 영역이 목록 대신 가운데 정렬한 글리프 · 제목 · 선택 보조 줄을 보여 준다(`explorer/state_screen.rs`, 시안 `ExpState`).
   - **compact 한 줄**: 내용 영역 높이가 `explorer_state_compact_below()`(120px) 미만이면 모든 상태 화면이 한 줄로 바뀐다. 확대하지 않은 16px 글리프(`icon_glyph_size_md`) · 제목(body, 넘치면 끝 말줄임) · 그 상태의 버튼(읽기 오류의 Retry · Go up, 간격 space-xs)을 space-sm 간격으로 놓고 줄 전체를 내용 영역 가운데에 둔다. 보조 줄과 OS 이유 문구는 제목의 툴팁으로 옮긴다. 창을 줄여 탐색기 칸이 하한 아래가 돼도 블록이 잘리지 않게 하기 위한 형태다. 공용 `tasty_ui_widgets::compact_state_row` 가 그리며 갤러리 Short cell 예제와 같은 함수다.
   - 빈 폴더(`Ok`이고 항목 0개): `folderOpen` 글리프(text-muted) + "This folder is empty"(text-secondary). 시안 탐색기 Spec 은 항목 0개와 빈 폴더를 구분하지 않는다.
@@ -75,7 +115,7 @@ OS 파일 관리자에 의존하지 않고 tasty surface 안에서 디렉토리�
 - **복사 / 잘라내기 / 붙여넣기** — explorer 내부 파일 클립보드(`MainViewState::explorer_clipboard`, 창마다 단일 슬롯·세션 종료 시 폐기)에 경로+cut 플래그를 담고, 붙여넣기에서 소비한다.
   파일 복사·이동·휴지통·이름 변경·시스템 열기는 View가 고정 경로와 원 surface/View identity를 요청으로 넘기고 App의 `explorer_files` worker가 실행한다. 파일 이동 헬퍼는 `src/app/explorer_files/ops.rs`에 있으며 충돌 시 `(copy)` 접미사를 붙이며 목적지 공개는 OS의 덮어쓰기 금지 rename으로 수행한다. 복사는 목적지의 전용 임시 디렉터리에서 준비하고 실패 시 제거한다. 심볼릭 링크는 따라가지 않고 링크로 복사하며 별칭을 해소한 실제 하위 디렉터리로의 복사는 거부한다. cut은 교차 파일시스템 오류일 때만 copy+remove로 전환한다.
   View별 대기 요청은 8개, 요청 경로·이름 자료는 1MiB 이내이며 App은 한 작업씩 실행한다. 시작 전 원 대상과 mirror 제한을 다시 검사한다. 완료 뒤 원 View/surface가 살아 있을 때만 목록 갱신을 요청하고, 변경된 선택이나 새 클립보드는 지우지 않는다. cut은 전부 성공한 원 클립보드만 소진하며 부분 성공은 기존 목록을 유지한다.
-  종료는 신규 실행을 막고 최대 5초 실제 worker join을 관측한다. 기한이 지나도 작업 취소나 완료로 기록하지 않으며 남은 worker를 경고한다. 로컬 디렉터리 목록·metadata 조회는 기존 동기 표시 경로로 남아 있어 모든 파일 I/O가 worker로 옮겨진 것은 아니다.
+  종료는 신규 실행을 막고 최대 5초 실제 worker join을 관측한다. 기한이 지나도 작업 취소나 완료로 기록하지 않으며 남은 worker를 경고한다. 로컬 목록·트리 읽기는 이 worker 와 분리된 읽기 worker 가 맡아 대형 복사가 목록 조회를 막지 않는다.
   잘라내기는 이동 성공 시 클립보드를 비운다.
   우클릭 메뉴뿐 아니라 키보드 단축키(기본 `copy`/`cut`/`paste` 바인딩, explorer 포커스 시)로도 동일하게 동작한다 — `handle_explorer_shortcut`(`src/adapters/ui/input/shortcuts/copy_paste.rs`)가 선택 항목을 모아 컨텍스트 메뉴와 같은 `explorer_menu_set_clipboard`/`explorer_menu_paste` 를 호출하므로 fs 동작이 두 경로에서 갈라지지 않는다.
   단축키 붙여넣기 대상은 현재 폴더(current)다(선택된 폴더 안으로의 paste-into 는 컨텍스트 메뉴 전용).
@@ -84,8 +124,8 @@ OS 파일 관리자에 의존하지 않고 tasty surface 안에서 디렉토리�
 - **이름 변경** (`rename`, 단일만) — 공용 rename 팝업(`PopupDef`)을 재사용한다. 이름은 드라이브 접두어·경로 구분자 없는 단일 파일명이어야 하며 기존 항목을 덮어쓰지 않는다. mirror 에서 차단(가드가 먼저 막아 팝업 자체가 열리지 않는다).
 - **OS 기본 앱으로 열기** (`open_in_system`, 단일 폴더만) — `platform::reveal::open_path`(Windows `explorer` / macOS `open` / Linux `xdg-open`). mirror 에서 차단.
 - **즐겨찾기 추가** (`add_to_favorites`, 단일 폴더 또는 빈 영역) — 아래 참조. mirror 에서 차단.
-- **새 탭으로 열기** (`open_in_new_tab`, 단일 폴더) — 그 폴더를 cwd 로 하는 새 explorer 를 **Pane 탭**(explorer 내부 탭이 아님)으로 연다. 우클릭 대상 surface 의 **소유 pane** 에 추가해(`MainViewState::add_kind_tab_by_owner`) focused pane 이 아니어도 올바른 pane 에 열린다. 기존 explorer 는 불변. mirror 에서 메뉴 자체가 숨겨지고 클릭 시에도 차단된다(아래 참고 — `add_kind_tab_by_owner` 는 mirror 구조 변경 forward 를 거치지 않는다).
-- **이 폴더로 루트 설정** (`set_as_root`, 단일 폴더) — **현재 explorer** 의 cwd 를 그 폴더로 이동한다(`MainViewState::set_explorer_cwd` → `ExplorerTab::set_cwd`: 좌측 트리 루트·current 이동 + 히스토리 초기화 + 뷰 리로드). 순수 로컬 뷰 상태 이동이라 mirror 에서도 그대로 동작.
+- **새 탭으로 열기** (`open_in_new_tab`, 단일 폴더) — 그 폴더를 cwd 로 하는 새 explorer 를 **Pane 탭**(explorer 내부 탭이 아님)으로 연다. 우클릭 대상 surface 의 **소유 pane** 에 추가해(`MainViewState::add_kind_tab_by_owner`) focused pane 이 아니어도 올바른 pane 에 열린다. 기존 explorer 는 불변. mirror 에서 메뉴 자체가 숨겨지고 핸들러도 막는다(아래 참고).
+- **이 폴더로 루트 설정** (`set_as_root`, 단일 폴더) — **현재 explorer** 의 cwd 를 그 폴더로 이동한다(`RequestContext::set_explorer_cwd` 가 `EngineAction::ExplorerCwd` 를 보내고 App 이 `ExplorerTab::set_cwd` 를 적용: 좌측 트리 루트·current 이동 + 히스토리 초기화 + 뷰 리로드). 파일시스템을 바꾸지 않으므로 mirror 에서도 그대로 동작.
 
 ### mirror(attach) explorer 의 파일 변경 차단
 
@@ -95,7 +135,7 @@ ADR-0022에 따라 mirror explorer 는 파일 변경(rename/delete/새 폴더 �
 - **액션별 개별 가드**: 메뉴가 아닌 다른 경로(키보드 단축키 등)로 같은 핸들러가 호출되는 경우를 방어하기 위해, 각 핸들러(`explorer_menu_paste`/`_trash`/`_rename`/`_open_in_system`/`_add_favorite`/`_open_in_new_tab`, `explorer_menu_set_clipboard`의 `cut=true`)가 진입부에서 `CoreState::is_mirror_surface(surface_id)` 로 재확인하고, mirror 면 로컬 fs 를 건드리지 않고 `explorer.state.remote_write_unsupported` toast 로 안내한 뒤 반환한다.
 - **rename 팝업의 `path.exists()` 게이트**(`draw_rename_popup`, `src/adapters/ui/dialog.rs`)는 위 가드가 먼저 막기 때문에 mirror 경로에서는 도달하지 않는다 — 이 게이트는 로컬(비-mirror) 시나리오에서 대상이 그 사이 사라진 경우를 위한 안전장치로만 남는다.
 - **즐겨찾기**: `~/.tasty/explorer-favorites.toml` 는 surface/host 무관 전역 저장소다. mirror explorer 의 경로(원격 호스트 경로)가 이 전역 목록에 섞이면 로컬/다른 호스트 explorer 의 사이드바를 오염시키므로, 즐겨찾기 추가는 mirror 에서 팝업을 열기 전에 차단된다.
-- **새 탭으로 열기가 차단되는 이유**: `MainViewState::add_kind_tab_by_owner`(`src/state/tab.rs`)는 `add_tab`/`add_kind_tab`과 달리 mirror 구조 변경을 원격으로 forward하는 `forward_mirror_structural` 을 거치지 않고 로컬 pane을 직접 변경한다. mirror 트리 동기화(`apply_mirror_structural_delta`, `src/app/attach_client.rs`)는 원격 authoritative 트리 기준 전체 재구성이므로, 이렇게 로컬에서만 생긴 탭은 원격 트리에 없어 다음 구조 델타 수신 시 제거된다 — 사용자가 연 탭이 다음 동기화 때 사라질 수 있다. 이 기능을 지원하려면 소유 surface를 기준으로 `StructuralOp::NewTab`을 원격에 전달해야 한다.
+- **새 탭으로 열기**: 메뉴 숨김(탐색기 항목 메뉴와 즐겨찾기 행 메뉴)과 핸들러 가드(`explorer_menu_open_in_new_tab`, `remote_write_unsupported` 토스트)로 막는다. 파일을 바꾸는 작업이 아니므로 ADR-0022 의 파일 변경 미지원과는 별개의 제한이다. 이 메뉴가 쓰는 `DomainIntent::CreateTab` 은 mirror pane 이면 App 이 원격 `StructuralOp::NewTab` 으로 전달하므로(`src/app/services/impl_mirror.rs`) 탭이 로컬에만 생기는 경로는 없다. 이 제한을 유지할지는 정해지지 않았다.
 
 ### mirror explorer 의 파일 열기
 
@@ -108,13 +148,13 @@ mirror explorer 에서 파일을 더블클릭하면 원격 호스트에 그 파�
 
 ### 즐겨찾기 (favorites)
 
-전역(surface 무관)·영속 즐겨찾기 — **로컬 client 파일시스템 경로 전용**. `~/.tasty/explorer-favorites.toml`(`[[favorite]]` 배열, label+path)에 저장되며 부팅 시 `CoreState::explorer_favorites`(`ExplorerFavorites`)로 로드된다. 메모리 mutator(`add`/`remove`)는 순수하고 디스크 반영은 호출처가 `save()` 로 한다(테스트가 디스크를 건드리지 않게 분리). mirror(attach 원격 점유) explorer 의 경로는 원격 호스트의 경로라 이 전역 목록에 섞일 수 없다 — "즐겨찾기 추가"는 mirror explorer 에서 차단된다(위 "mirror(attach) explorer 의 파일 변경 차단" 참고).
+전역(surface 무관)·영속 즐겨찾기 — **로컬 client 파일시스템 경로 전용**. `~/.tasty/explorer-favorites.toml`(`[[favorite]]` 배열, label+path)에 저장된다. engine 을 만들 때(`EngineRuntime::new`) 파일을 읽어 `EngineRuntime::explorer_favorites`(`ExplorerFavorites`)에 사본을 둔다. 새 창은 새 engine 을 만들므로 창마다 사본이 따로 있다. 추가·제거는 `EngineAction` 으로 그 engine 의 사본을 바꾸고 곧바로 사본 전체를 파일에 쓴다. 이미 떠 있는 다른 engine 은 파일을 다시 읽지 않는다. 메모리 mutator(`add`/`remove`)는 순수하고 디스크 반영은 호출처가 `save()` 로 한다(테스트가 디스크를 건드리지 않게 분리). mirror(attach 원격 점유) explorer 의 경로는 원격 호스트의 경로라 이 전역 목록에 섞일 수 없다 — "즐겨찾기 추가"는 mirror explorer 에서 차단된다(위 "mirror(attach) explorer 의 파일 변경 차단" 참고).
 
 - **추가**: 컨텍스트 메뉴 "Add to favorites" → rename 팝업과 동일 골격의 입력 팝업(`RenameTarget::ExplorerAddFavorite`, 확정 버튼 라벨만 "Add")으로 라벨을 받아 등록(같은 경로 재등록 시 라벨만 갱신).
 - **표시/이동**: 사이드바 하단 고정(pin) "Favorites" 영역(사이드바 본문이 240px 이상이면 캡션 **항상 표시**)에 **채운 별(STAR_FILL) + accent-warning(골드)** 행으로 나열, 클릭 시 해당 경로로 이동. 현재 폴더인 즐겨찾기는 surface-active 하이라이트. 이 영역은 위 "사이드바 트리"에 서술한 고정 높이로 보이며 자체 스크롤된다. 본문이 240px 미만인 낮은 칸에서는 영역 전체를 숨긴다.
 - **빈 상태(empty state)**: 즐겨찾기가 0개여도 섹션이 사라지지 않는다(발견성) — 흐린 별(opacity 0.55) + `explorer.sidebar.favorites_empty`("No favorites yet") + 우클릭 힌트(`favorites_empty_hint`, "Add to favorites" 스팬만 text-muted, 나머지 text-placeholder)를 표시한다(design `FavoritesEmpty`).
 - **제거/열기/루트 설정**: 즐겨찾기 행 우클릭 → `PendingNativeMenu::ExplorerFavorite`(우클릭 explorer 의 `surface_id` 동봉) → "새 탭으로 열기" / "이 폴더로 루트 설정" / "즐겨찾기에서 제거". 제거는 전역이라 경로만으로 하지만, "루트 설정" 은 `surface_id` 로 대상 explorer 를 지정한다.
-- 즐겨찾기 목록은 프레임당 1회 스냅샷으로 `draw_explorer` 에 전달된다(렌더 루프에서 `engine` 가변 차용 충돌 회피).
+- 즐겨찾기 목록은 `EngineRead` 가 빌려 주는 읽기 전용 slice 로 `draw_explorer` 에 전달된다. 화면은 목록을 바꾸지 않고 추가·제거를 요청만 한다.
 
 ## 인터페이스
 
@@ -167,10 +207,16 @@ Appearance → **Explorer** 서브탭에서 surface 폰트를 오버라이드한
 - 파일 식별/렌더 정책 — explorer 는 열기를 [file-handler](../../features/file-handler/index.md) 에 위임한다.
 - 컨텍스트 메뉴 파일 조작(복사/잘라내기/붙여넣기/이름변경)은 **에이전트(IPC/CLI) 노출 대상이 아니다** — 사용자 우클릭 조작 전용. surface 단위 이동은 [surface-move](../../features/surface-move/index.md) 가 별도 제공한다.
 
+## 검증 기준
+
+- Given 로컬 explorer When 하위 폴더로 이동한다 Then 목록이 `Loading` 을 거쳐 새 폴더의 항목으로 바뀌고, 이전 폴더의 늦은 결과는 반영되지 않는다(`src/app/local_reads.rs` 의 `replaced_directory_receipt_cannot_publish_its_old_result`, mirror 는 `view.rs` 의 `apply_remote_list_dir_result_ignores_stale_request_id`).
+- Given 읽기 권한이 없는 폴더 When 들어간다 Then 권한 거부 화면이 나오고 툴바·트리는 그대로 쓸 수 있다.
+- Given 폴더를 우클릭한다 When "새 탭으로 열기"를 고른다 Then 우클릭한 surface 의 pane 에 그 폴더를 cwd 로 하는 explorer Pane 탭이 생기고 원래 explorer 는 바뀌지 않는다.
+- Given mirror explorer When 폴더를 탐색하고 파일을 더블클릭한다 Then 목록은 원격 조회로 오고, 파일은 원격에 탭으로 열리거나 열 수 없다는 토스트가 나온다. 로컬 파일시스템은 읽지 않는다.
+- Given mirror explorer When 잘라내기·붙여넣기·휴지통·이름 변경·새 탭 열기를 단축키나 메뉴로 시도한다 Then 메뉴에 없거나 `remote_write_unsupported` 토스트가 나오고 아무것도 바뀌지 않는다.
+- Given 붙여넣기가 진행 중이다 When 그 surface 를 닫는다 Then 이미 시작한 작업은 끝까지 실행되고 닫힌 surface 에 토스트나 목록 갱신을 내지 않는다. 아직 시작하지 않은 요청은 실행되지 않는다.
+- Given 내부 탭 둘을 열고 정렬을 바꾼 explorer When 재시작한다 Then 탭·cwd·current·뷰 모드·정렬이 복원되고 히스토리와 선택은 비어 있다.
+
 ## 관련
 
 - [work-area](../../features/work-area/index.md)(Surface/Tab/Pane 계층) · [file-handler](../../features/file-handler/index.md)(파일 열기 위임) · [convert-surface](../../features/convert-surface/index.md)(explorer 로/에서 변환) · [keybindings](../../features/keybindings/index.md) · [settings](../../features/settings/index.md)(폰트/단축키 탭)
-
-파일 작업 실패는 원 View와 surface binding이 유효할 때 오류 토스트로 알린다. 실패한 rename/trash는 기존 선택을 유지하고 목록을 다시 읽는다. 부분 성공한 붙여넣기는 실패 경로를 표시하며 cut clipboard를 유지한다.
-
-로컬 목록·디렉터리 트리 읽기는 App의 최대 4개 read worker를 사용한다. 경로 전환은 이전 receipt를 버리고 기존 로딩 화면에서 새 결과를 기다린다. 파일 변경 worker와 분리돼 대형 복사가 목록 조회 큐를 점유하지 않는다.
