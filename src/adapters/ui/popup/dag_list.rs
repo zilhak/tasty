@@ -808,33 +808,21 @@ mod tests {
         out
     }
 
-    /// 글리프·색 디자인이 아직 정해지지 않은 rollup 값. 정해지기 전에는 `Unknown` 의 글리프·색을
-    /// 쓰고 라벨만 따로 두며, 상태 필터에는 넣지 않는다. 디자인이 정해지면 필터에 넣고 여기서 뺀다.
-    const ROLLUP_WITHOUT_DISPLAY: &[&str] = &["partially_failed"];
-
-    /// 디자인이 없는 rollup 값도 다른 상태로 읽히지 않는다. 라벨이 `Unknown` 과 다르다.
+    /// 부분 실패는 요약 전용 상태다. task 상태로 읽히지 않고 자기 글리프·라벨을 가진다.
     #[test]
-    fn 표시가_없는_rollup_값은_다른_상태를_빌리지_않는다() {
-        let produced = all_rollup_outputs();
-        for name in ROLLUP_WITHOUT_DISPLAY {
-            assert!(produced.contains(name), "'{name}' 을 rollup 이 내지 않는다");
-            let s = DagStatus::from_name(name);
-            assert!(
-                !DagStatus::ALL.contains(&s),
-                "'{name}' 이 task 상태 {s:?} 로 읽힌다"
-            );
-            assert_eq!(s.glyph(), DagStatus::Unknown.glyph());
-            assert_ne!(s.label(), DagStatus::Unknown.label());
-        }
+    fn partially_failed_has_its_own_display_and_is_not_a_task_state() {
+        assert!(all_rollup_outputs().contains("partially_failed"));
+        let s = DagStatus::from_name("partially_failed");
+        assert_eq!(s, DagStatus::PartiallyFailed);
+        assert!(!DagStatus::ALL.contains(&s));
+        assert_eq!(s.glyph(), "\u{25D2}");
+        assert_ne!(s.label(), DagStatus::Unknown.label());
     }
 
     /// rollup이 반환하는 상태는 모두 필터에 있어야 한다.
     #[test]
     fn rollup_이_내는_값은_전부_필터_목록에_있다() {
         for name in all_rollup_outputs() {
-            if ROLLUP_WITHOUT_DISPLAY.contains(&name) {
-                continue;
-            }
             let s = DagStatus::from_name(name);
             assert!(
                 DagStatus::ROLLUP_ALL.contains(&s),

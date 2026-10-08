@@ -18,8 +18,7 @@ pub enum DagStatus {
     Cancelled,
     Skipped,
     Unknown,
-    /// DAG 요약 전용(`rollup_state: partially_failed`). 표시 디자인이 정해지기 전까지 글리프·색은
-    /// `Unknown` 과 같고 라벨만 다르다.
+    /// DAG 요약 전용(`rollup_state: partially_failed`). task 하나의 상태로는 나오지 않는다.
     PartiallyFailed,
 }
 
@@ -37,13 +36,14 @@ impl DagStatus {
         DagStatus::Unknown,
     ];
 
-    /// DAG 집계에서 반환하는 여섯 상태. Cancelled는 Skipped로, Unknown은 Waiting으로
-    /// 집계되므로 목록 필터에서는 두 개별 상태를 제외한다.
-    pub const ROLLUP_ALL: [DagStatus; 6] = [
+    /// DAG 집계에서 반환하는 일곱 상태와 목록 필터 순서. Cancelled는 Skipped로, Unknown은
+    /// Waiting으로 집계되므로 목록 필터에서는 두 개별 상태를 제외한다.
+    pub const ROLLUP_ALL: [DagStatus; 7] = [
         DagStatus::Waiting,
         DagStatus::Ready,
         DagStatus::Running,
         DagStatus::Succeeded,
+        DagStatus::PartiallyFailed,
         DagStatus::Failed,
         DagStatus::Skipped,
     ];
@@ -87,7 +87,8 @@ impl DagStatus {
             DagStatus::Cancelled => "\u{2212}", // − 빼기 기호
             // 두 건너뜀 이유(미선택·선행 결과 없음)가 같은 글리프를 쓴다.
             DagStatus::Skipped => "\u{2298}", // ⊘ 사선 원
-            DagStatus::Unknown | DagStatus::PartiallyFailed => "?",
+            DagStatus::Unknown => "?",
+            DagStatus::PartiallyFailed => "\u{25D2}", // ◒ 아래 반을 채운 원
         }
     }
 

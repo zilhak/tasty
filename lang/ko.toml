@@ -1919,7 +1919,7 @@ cancelled = "취소"
 skipped = "건너뜀"
 not_selected = "선택 안 됨"
 unknown = "알 수 없음"
-partially_failed = "부분 오류"
+partially_failed = "일부 실패"
 
 [dag.rel]
 depends_on = "의존"

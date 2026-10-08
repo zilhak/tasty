@@ -75,10 +75,15 @@ pub fn status_colors(theme: &Theme, status: DagStatus) -> (HexColor, HexColor, H
             theme.dag_status_skipped_bg(),
             theme.dag_status_skipped_label(),
         ),
-        DagStatus::Unknown | DagStatus::PartiallyFailed => (
+        DagStatus::Unknown => (
             theme.dag_status_unknown(),
             theme.dag_status_unknown_bg(),
             theme.dag_status_unknown_label(),
+        ),
+        DagStatus::PartiallyFailed => (
+            theme.dag_status_partially_failed(),
+            theme.dag_status_partially_failed_bg(),
+            theme.dag_status_partially_failed_label(),
         ),
     }
 }
