@@ -29,6 +29,8 @@ impl App {
         self.run_domain_cascade(domain_batch);
 
         self.refresh_approval_presentations();
+        #[cfg(feature = "gui")]
+        self.redraw_windows_for_favorites();
     }
 
     /// A projection of pending popup records, refreshed after every source of store changes.

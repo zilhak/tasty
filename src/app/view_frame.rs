@@ -8,7 +8,6 @@ impl App {
         }
         self.poll_port_scans();
         self.refresh_approval_presentations();
-        let favorites_seen = self.services.registries.explorer_favorites.revision();
         let Some(engine) = self.engines.of_window(id) else {
             return;
         };
@@ -97,19 +96,63 @@ impl App {
         );
         self.process_remote_tool_requests(id);
         self.poll_port_scans();
-        if self.services.registries.explorer_favorites.revision() != favorites_seen {
-            self.redraw_other_windows(id);
-        }
+        self.redraw_windows_for_favorites();
     }
 
-    /// 이 윈도우에서 바뀐 공용 상태를 다른 윈도우가 다음 프레임에 받아 그리게 한다.
-    fn redraw_other_windows(&mut self, changed_in: winit::window::WindowId) {
-        for (window, view) in self.view.views.iter_mut() {
-            if *window != changed_in
-                && let Some(view) = view.as_main_mut()
-            {
-                crate::view::ui::View::mark_dirty(view);
-            }
-        }
+    /// Explorer 즐겨찾기 원본이 마지막으로 알린 리비전 뒤에 바뀌었으면 모든 메인 윈도우를 다시 그리게 한다.
+    /// 변경은 프레임 안의 intent 루프에서도, 프레임 밖의 `dispatch_pending_intents` 에서도 적용되므로
+    /// 두 곳 모두 이것을 부른다. 각 윈도우는 그리기 전에 사본을 맞춘다.
+    pub(crate) fn redraw_windows_for_favorites(&mut self) {
+        redraw_other_windows(
+            &self.services.registries.explorer_favorites,
+            &mut self.favorites_announced,
+            self.view
+                .views
+                .values_mut()
+                .filter_map(|view| view.as_main_mut()),
+            |view| crate::view::ui::View::mark_dirty(view),
+        );
+    }
+}
+
+/// `announced` 뒤에 원본이 바뀌었으면 기준을 올리고 모든 윈도우에 `redraw` 를 부른다.
+fn redraw_other_windows<W>(
+    favorites: &crate::core::explorer_favorites::SharedExplorerFavorites,
+    announced: &mut u64,
+    windows: impl IntoIterator<Item = W>,
+    mut redraw: impl FnMut(W),
+) {
+    let revision = favorites.revision();
+    if revision == *announced {
+        return;
+    }
+    *announced = revision;
+    for window in windows {
+        redraw(window);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// 프레임 밖에서 적용된 제거도 다음 확인 때 모든 윈도우를 한 번 깨운다.
+    #[test]
+    fn a_favorites_change_redraws_every_window_once() {
+        let _home = crate::test_support::IsolatedHome::new();
+        let favorites = crate::core::explorer_favorites::SharedExplorerFavorites::default();
+        let mut announced = favorites.revision();
+        let mut redrawn = [0, 0];
+        let mut check = |announced: &mut u64, redrawn: &mut [i32; 2]| {
+            super::redraw_other_windows(&favorites, announced, redrawn.iter_mut(), |n| *n += 1)
+        };
+        check(&mut announced, &mut redrawn);
+        assert_eq!(redrawn, [0, 0], "nothing changed");
+
+        let path = crate::test_support::abs_path("w/alpha");
+        favorites.update(|f| f.add(path.clone(), String::new()));
+        favorites.update(|f| f.remove(&path));
+        check(&mut announced, &mut redrawn);
+        assert_eq!(redrawn, [1, 1]);
+        check(&mut announced, &mut redrawn);
+        assert_eq!(redrawn, [1, 1], "already announced");
     }
 }
