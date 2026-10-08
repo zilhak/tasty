@@ -323,6 +323,12 @@ impl MdDoc {
         }
     }
 
+    /// 본문 자리에 대용량 대기 상태를 보이는가. 커진 파일의 확인을 기다리는 동안에는
+    /// 이전 내용을 보이므로 대기 상태가 아니다.
+    fn shows_large_deferred(&self) -> bool {
+        self.pending_large && self.content.is_empty()
+    }
+
     /// 대용량 확인을 취소했다. 확인을 기다리는 동안 보이던 이전 내용을 버린다.
     fn decline_large(&mut self) {
         self.content.clear();
@@ -891,6 +897,7 @@ impl MarkdownPlugin {
             base_dir: doc.base_dir.as_deref(),
             recent: &recent,
             remote: doc.remote_view(),
+            large_deferred: doc.shows_large_deferred(),
         });
         push_html(host, surface_id, file_path, html);
     }

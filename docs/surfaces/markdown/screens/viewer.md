@@ -22,7 +22,17 @@
 
 ## 상태별 시각
 
-- 파일 없음/로드 실패 등은 문서 내 `.tasty-state` div 로 표시.
+- 파일 없음/로드 실패 등은 문서 내 `.tasty-state` div 로 표시. 본문 자리의 상태는 다음 순서로 하나만 고른다(`render_document`).
+
+  | 순서 | 조건 | 표시 | 배치·색 |
+  |---|---|---|---|
+  | 1 | mirror 연결 끊김 | `markdown.remote.disconnected` | `.tasty-state-error` |
+  | 2 | mirror 원문을 아직 못 받음(실패 없음) | `markdown.remote.loading` | `.tasty-state` |
+  | 3 | 읽기 실패 | `markdown.state.failed` + 사유 | `.tasty-state-error` |
+  | 4 | 대용량 확인 대기 또는 취소이고 보일 이전 내용이 없음(`shows_large_deferred`). 읽어 둔 파일이 커져 확인을 기다리는 동안에는 이전 내용을 그대로 보인다 | `markdown.state.large_deferred` | `.tasty-state` |
+  | 5 | 원문이 공백뿐 | `markdown.state.empty` | `.tasty-state` |
+
+  대용량 대기 상태는 빈 파일 상태와 같은 배치·색에 문구만 다르다. 이 상태에서 다시 열기 버튼은 그리지 않는다.
 
 ## Mermaid 다이어그램
 

@@ -37,6 +37,7 @@ fn document(source: &str) -> String {
         base_dir: Some(Path::new("/a")),
         recent: &[],
         remote: None,
+        large_deferred: false,
     })
 }
 

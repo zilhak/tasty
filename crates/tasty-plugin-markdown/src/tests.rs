@@ -818,3 +818,54 @@ fn reload_reports_whether_the_read_was_deferred() {
     assert_eq!(resp["deferred"], json!(false));
     let _ = std::fs::remove_file(&path); // best-effort 정리 — 실패 무시(테스트 결과 무관).
 }
+
+fn deferred_state_document(source: &str, load_error: Option<&str>, large_deferred: bool) -> String {
+    let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
+    let tr = Translator::default();
+    render::render_document(render::DocumentInput {
+        theme: &theme,
+        tr: &tr,
+        file_path: "/a/big.md",
+        source,
+        load_error,
+        base_dir: None,
+        recent: &[],
+        remote: None,
+        large_deferred,
+    })
+}
+
+/// 대용량 확인을 기다리거나 취소한 문서는 빈 파일로 보이지 않는다.
+#[test]
+fn a_deferred_large_document_is_not_shown_as_empty() {
+    let tr = Translator::default();
+    let deferred = tr.t("markdown.state.large_deferred");
+    let empty = tr.t("markdown.state.empty");
+
+    let html = deferred_state_document("", None, true);
+    assert!(html.contains(deferred));
+    assert!(!html.contains(empty));
+
+    // 같은 빈 원문이라도 읽은 문서는 빈 파일 상태다.
+    let html = deferred_state_document("", None, false);
+    assert!(html.contains(empty));
+    assert!(!html.contains(deferred));
+
+    // 읽기 실패는 대기 상태보다 앞선다.
+    let html = deferred_state_document("", Some("boom"), true);
+    assert!(html.contains(tr.t("markdown.state.failed")));
+    assert!(!html.contains(deferred));
+}
+
+/// 처음 열 때와 취소한 뒤에는 대기 상태를, 커진 파일을 묻는 동안에는 이전 내용을 보인다.
+#[test]
+fn the_deferred_state_is_shown_only_without_previous_content() {
+    let mut doc = MdDoc::new_deferred(None);
+    assert!(doc.shows_large_deferred());
+    doc.content = "# previous".into();
+    assert!(!doc.shows_large_deferred());
+    doc.decline_large();
+    assert!(doc.shows_large_deferred());
+    doc.pending_large = false;
+    assert!(!doc.shows_large_deferred());
+}

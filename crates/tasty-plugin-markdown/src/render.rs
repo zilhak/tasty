@@ -84,6 +84,8 @@ pub struct DocumentInput<'a> {
     /// (`docs/dev-guide/attach-behavior.md#markdown-content-채널`). 주소창은
     /// 읽기 전용이 되고 우측 상단에 새로고침 버튼이 붙는다.
     pub remote: Option<RemoteView>,
+    /// 대용량 확인을 기다리거나 취소해 파일을 읽지 않은 문서다. 빈 파일과 구분해 표시한다.
+    pub large_deferred: bool,
 }
 
 /// attach mirror 문서의 표시 상태.
@@ -109,6 +111,7 @@ pub(crate) fn render_document(input: DocumentInput) -> String {
         base_dir,
         recent,
         remote,
+        large_deferred,
     } = input;
 
     let (body_html, headings) = if remote.is_some_and(|r| r.disconnected) {
@@ -133,6 +136,14 @@ pub(crate) fn render_document(input: DocumentInput) -> String {
                 r#"<div class="tasty-state tasty-state-error"><div class="tasty-state-title">{}</div><pre class="tasty-state-detail">{}</pre></div>"#,
                 html_escape(tr.t("markdown.state.failed")),
                 html_escape(err)
+            ),
+            Vec::new(),
+        )
+    } else if large_deferred {
+        (
+            format!(
+                r#"<div class="tasty-state">{}</div>"#,
+                html_escape(tr.t("markdown.state.large_deferred"))
             ),
             Vec::new(),
         )
@@ -3015,6 +3026,7 @@ mod tests {
             base_dir: Some(Path::new("/a")),
             recent: &recent,
             remote: None,
+            large_deferred: false,
         })
     }
 
@@ -3223,6 +3235,7 @@ mod tests {
             base_dir: Some(Path::new("/a")),
             recent: &recent,
             remote: None,
+            large_deferred: false,
         });
         assert!(html.contains("<style>"));
         assert!(html.contains("tasty-addr-bar"));
@@ -3239,6 +3252,7 @@ mod tests {
             theme: &theme,
             tr: &tr,
             file_path: "/remote/notes.md",
+            large_deferred: false,
             source,
             load_error,
             base_dir: None,
@@ -3407,6 +3421,7 @@ mod tests {
             base_dir: None,
             recent: &[],
             remote: None,
+            large_deferred: false,
         });
         assert!(html.contains("No such file"));
     }
@@ -3424,6 +3439,7 @@ mod tests {
             base_dir: None,
             recent: &[],
             remote: None,
+            large_deferred: false,
         });
         assert!(with_mermaid.contains(r#"class="language-mermaid""#));
         assert!(with_mermaid.contains("mermaid.initialize"));
@@ -3440,6 +3456,7 @@ mod tests {
             base_dir: None,
             recent: &[],
             remote: None,
+            large_deferred: false,
         });
         assert!(without_mermaid.contains(r#"class="language-rust""#));
         assert!(!without_mermaid.contains("mermaid.initialize"));
@@ -3508,6 +3525,7 @@ mod tests {
             base_dir: None,
             recent: &[],
             remote: None,
+            large_deferred: false,
         });
         assert!(with_code.contains(r#"class="language-rust""#));
         assert!(with_code.contains("hljs.getLanguage"));
@@ -3522,6 +3540,7 @@ mod tests {
             base_dir: None,
             recent: &[],
             remote: None,
+            large_deferred: false,
         });
         assert!(!without_code.contains("hljs.getLanguage"));
         assert!(!without_code.contains("hljs.highlightElement"));
@@ -3588,6 +3607,7 @@ mod tests {
             base_dir: None,
             recent: &[],
             remote: None,
+            large_deferred: false,
         });
         assert!(html.contains("&lt;script&gt;alert(1)&lt;/script&gt;"));
         // The only `<script` occurrences in the whole document must be tasty's own trusted
@@ -3632,6 +3652,7 @@ mod tests {
             base_dir: None,
             recent: &[],
             remote: None,
+            large_deferred: false,
         });
         // `.tasty-copy-btn` itself is always in the document (it's a CSS rule in `theme_css`,
         // emitted unconditionally like every other selector) — the actual conditional signal is
@@ -3647,6 +3668,7 @@ mod tests {
             base_dir: None,
             recent: &[],
             remote: None,
+            large_deferred: false,
         });
         assert!(!without_code.contains("#tasty-md-body pre > code"));
     }
@@ -3668,6 +3690,7 @@ mod tests {
             base_dir: None,
             recent: &[],
             remote: None,
+            large_deferred: false,
         });
         assert!(html.contains("<pre><code>"));
         assert!(html.contains("#tasty-md-body pre > code"));
@@ -3687,6 +3710,7 @@ mod tests {
             base_dir: None,
             recent: &[],
             remote: None,
+            large_deferred: false,
         });
         assert!(html.contains("tasty-state-detail"));
         assert!(!html.contains("#tasty-md-body pre > code"));
@@ -3777,6 +3801,7 @@ mod tests {
             base_dir: None,
             recent: &[],
             remote: None,
+            large_deferred: false,
         });
         assert!(with_image.contains("<img"));
         assert!(with_image.contains("#tasty-md-body img"));
@@ -3790,6 +3815,7 @@ mod tests {
             base_dir: None,
             recent: &[],
             remote: None,
+            large_deferred: false,
         });
         assert!(!without_image.contains("#tasty-md-body img"));
     }
@@ -3809,6 +3835,7 @@ mod tests {
             base_dir: None,
             recent: &[],
             remote: None,
+            large_deferred: false,
         });
         assert!(!html.contains("#tasty-md-body img"));
     }
@@ -3892,6 +3919,7 @@ mod tests {
             base_dir: None,
             recent: &[],
             remote: None,
+            large_deferred: false,
         });
         assert!(with_math.contains(r#"class="math math-inline""#));
         assert!(with_math.contains(r#"class="math math-display""#));
@@ -3906,6 +3934,7 @@ mod tests {
             base_dir: None,
             recent: &[],
             remote: None,
+            large_deferred: false,
         });
         assert!(!without_math.contains("katex.render"));
     }
@@ -3926,6 +3955,7 @@ mod tests {
             base_dir: None,
             recent: &[],
             remote: None,
+            large_deferred: false,
         });
         assert!(html.contains("a &lt; b"), "got: {html}");
     }
@@ -3943,6 +3973,7 @@ mod tests {
             base_dir: None,
             recent: &[],
             remote: None,
+            large_deferred: false,
         });
         assert!(!html.contains("katex.render"));
     }
@@ -4404,6 +4435,7 @@ Outro\n";
             base_dir: None,
             recent: &[],
             remote: None,
+            large_deferred: false,
         });
         // `#tasty-toc{...}` still appears in the static `<style>` block regardless of
         // headings (theme_css isn't conditional) — assert on the actual `<nav>` element, not
@@ -4424,6 +4456,7 @@ Outro\n";
             base_dir: None,
             recent: &[],
             remote: None,
+            large_deferred: false,
         });
         assert!(html.contains(r#"id="tasty-toc""#), "got: {html}");
         assert!(html.contains(r##"href="#intro""##), "got: {html}");
@@ -4452,6 +4485,7 @@ Outro\n";
             base_dir: Some(Path::new("/a")),
             recent: &[],
             remote: None,
+            large_deferred: false,
         });
         assert!(!html.contains("<base"), "got: {html}");
         // 문서가 실제로 그려졌다는 것을 먼저 못박는다 — 빈 출력이면 위 부정은 공허하다.
@@ -4473,6 +4507,7 @@ Outro\n";
             base_dir: Some(Path::new("/a")),
             recent: &[],
             remote: None,
+            large_deferred: false,
         });
         for (href, id_tag) in [
             (r##"href="#start""##, r#"<h1 id="start">"#),
@@ -4505,6 +4540,7 @@ Outro\n";
             base_dir: Some(Path::new("/a")),
             recent: &[],
             remote: None,
+            large_deferred: false,
         });
         assert!(html.contains(r##"href="#fndef-n""##), "got: {html}");
         assert!(html.contains(r#"id="fndef-n""#), "got: {html}");
@@ -4543,6 +4579,7 @@ Outro\n";
             base_dir: None,
             recent: &[],
             remote: None,
+            large_deferred: false,
         });
         // Match the actual elements, not the bare id substrings — those also appear earlier,
         // in the static `<style>` block's `#tasty-addr-bar{...}`/`#tasty-md-body{...}`/
@@ -4575,6 +4612,7 @@ Outro\n";
             base_dir: None,
             recent: &[],
             remote: None,
+            large_deferred: false,
         });
         assert!(html.contains(r#"id="tasty-find-bar""#), "got: {html}");
         // hidden by default — the bar only appears on Ctrl+F, never on load.
