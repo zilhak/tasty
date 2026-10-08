@@ -59,6 +59,7 @@
 
 ### Changed
 
+- **`tasty list tabs`(IPC `tab.list`)도 attach mirror 의 plugin 대기 자리 탭을 `type:"Pending"` 으로 보고한다.** 복원을 기다리는 탭과 같은 값이다. 이전에는 `Empty` 로 나왔다. 탭 제목은 바뀌지 않는다.
 - **`tasty list surfaces`(IPC `surface.list`)가 attach mirror 의 plugin 대기 자리를 `Empty` 가 아니라 `Pending` 으로 보고한다.** 로컬에 markdown kind 가 없어 원격 markdown 문서를 아직 보여 주지 못하는 자리는 이제 `type:"Pending"`, `kind:"markdown"`, `pty_ready:false`, `restore_error:null`, `pending_reason:"plugin_not_loaded"` 로 나온다. 복원을 기다리는 surface 와 같은 모양이고, `type`·`kind`·`pending_reason` 은 `tasty list tree` 와 같다(`list tree` 의 `ready` 는 싣지 않는다). 이전에는 `type:"Empty"` 로만 나와 진짜 빈 자리와 구분할 수 없었다.
 - **`tasty list surfaces`(IPC `surface.list`)가 복원을 기다리는 surface 를 탭 분할 여부와 관계없이 같은 필드로 보고한다.** 앱을 다시 시작한 뒤 아직 활성화하지 않은 surface 는 `type:"Pending"`, 복원할 `kind`, `pty_ready:false`, `restore_error` 로 나온다(`tasty list tree` 와 같은 필드). 이전에는 surface 가 하나뿐인 탭이면 kind 와 관계없이 `type:"Terminal"` 로, 분할된 탭이면 `kind` 와 `pty_ready` 없이 `type:"Pending"` 으로 보고했다. 복원 대기 터미널을 `type:"Terminal"` 로 찾던 스크립트는 `kind:"terminal"` 과 `pty_ready:false` 로 찾는다.
 - **설정 › 단축키 › 플러그인 서브탭이 명령마다 한 줄로 정리됐다.** 플러그인 선택과 모든 명령이 같은 제목 열을 쓰므로 드롭다운이 같은 x 에서 시작하고, 한 줄의 방식 드롭다운 · 키 칸 · **초기화** 가 모두 같은 높이(28px)다. 상속이면 줄 아래에 따르는 키("Inherited (Ctrl+Shift+V)" 또는 "None")가 보인다. 직접 입력한 키가 어떤 입력과도 맞을 수 없으면(예: `ctrl+shft+h`) 입력칸 테두리가 바뀌고 "Unrecognized key: …" 가 붙는다. 이 표시는 경고이며 저장은 이전처럼 된다. 저장하지 않은 변경은 명령 이름 뒤 점으로 보이고, 개별 설정이 없는 명령의 **초기화** 는 누를 수 없다. 방식 선택지의 단축키 없음은 "None", 그 칸의 문구는 "(Unassigned)" 다.

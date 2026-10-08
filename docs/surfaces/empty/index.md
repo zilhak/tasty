@@ -48,6 +48,7 @@
 
 - `tasty list tree`: 빈 자리는 `type:"Empty"`로 보고한다. plugin 대기 자리는 `type:"Pending"`, `kind:<목표 kind>`, `ready:false`, `pending_reason:"plugin_not_loaded"`로, 복원 자리는 `type:"Pending"`, `kind:<목표 kind>`, `pty_ready:false`, `restore_error:<실패 이유 또는 null>`로 보고한다.
 - `tasty list surfaces`(IPC `surface.list`): 복원 자리는 탭이 분할됐는지와 관계없이 `type:"Pending"`, `kind:<목표 kind>`, `pty_ready:false`, `restore_error:<실패 이유 또는 null>`로 보고한다(`list tree`와 같은 필드). plugin 대기 자리도 같은 모양으로 `type:"Pending"`, `kind:<목표 kind>`, `pty_ready:false`, `restore_error:null`이고, `list tree`와 같은 `pending_reason:"plugin_not_loaded"`가 붙는다. 빈 자리는 `type:"Empty"`로 보고한다.
+- `tasty list tabs`(IPC `tab.list`): 탭의 `type`은 plugin 대기 자리와 복원 자리 모두 `Pending`, 빈 자리는 `Empty`다. `kind`·`pending_reason` 같은 상세 필드는 싣지 않는다.
 - `tasty wake --surface <ID>`: 터미널 복원 자리만 받는다. 이미 PTY가 있으면 `{"woke":false,"pty_ready":true}`를 돌려준다. 터미널 복원 자리가 아니면 `Surface <ID> not found`로 거절한다.
 
 ## headless·원격 제약
