@@ -2922,12 +2922,20 @@ fn through_javascript(v: &serde_json::Value) -> serde_json::Value {
         .spawn();
     match spawned {
         Ok(mut child) => {
-            child
+            // node 가 입력을 읽기 전에 실패로 끝나면 쓰기가 파이프 끊김으로 끝난다. 그때는 아래
+            // 종료 상태 검사가 실패 이유를 보여 준다(node 의 stderr 는 시험 출력에 그대로 나온다).
+            let written = child
                 .stdin
                 .take()
                 .expect("stdin")
-                .write_all(text.as_bytes())
-                .expect("write node stdin");
+                .write_all(text.as_bytes());
+            if let Err(e) = written {
+                assert_eq!(
+                    e.kind(),
+                    std::io::ErrorKind::BrokenPipe,
+                    "write node stdin: {e}"
+                );
+            }
             let out = child.wait_with_output().expect("node");
             assert!(out.status.success(), "node failed: {}", out.status);
             serde_json::from_slice(&out.stdout).expect("node output is json")
