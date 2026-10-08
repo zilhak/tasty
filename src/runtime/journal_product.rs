@@ -10,6 +10,8 @@ mod identity;
 mod preparation;
 mod response;
 #[cfg(test)]
+pub(crate) mod stall_budget;
+#[cfg(test)]
 pub(crate) mod thread_probe;
 pub(crate) mod view_record;
 mod worker;

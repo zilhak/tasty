@@ -257,7 +257,7 @@ CI 는 `.github/workflows/crossplatform-check.yml` 의 `check-headless` 잡이 �
   교착 없이 실패했다. 호출 안에서 시험 스레드가 직접 하는 작업(디버그 빌드에서 64 MiB 응답 크기
   계산 한 번에 수 초)이 기한에 들어갔고, 같은 디스크를 쓰는 다른 프로세스 때문에 worker의
   fsync가 몇 초씩 늦어졌다(worker가 `D` 상태로 ext4 저널 커밋을 기다렸다). 지금은
-  `StallBudget`(`src/app/journal/stall_budget.rs`)이 폴링 사이에 쉰 시간 가운데 worker가 잠든
+  `StallBudget`(`src/runtime/journal_product/stall_budget.rs`)이 폴링 사이에 쉰 시간 가운데 worker가 잠든
   상태(`S`)였던 시간만 10초 한도로 센다. 실행 중(`R`)이거나 끊을 수 없는 대기(`D`)인 시간은 세지
   않는다. 응답을 잃었거나 잠금을 기다리며 멈춘 worker는 잠들어 있으므로 그대로 10초 안에
   실패한다. 쉬지 않고 도는 worker는 벽시계 상한 300초로 잡는다. worker 상태는 Linux의
@@ -269,6 +269,10 @@ CI 는 `.github/workflows/crossplatform-check.yml` 의 `check-headless` 잡이 �
   - 정체로 판정하면 패닉 전에 그 worker를 버린다고 표시한다. `JournalWorker` 의 Drop은 평소
     worker를 join하는데, 표시가 있으면 join하지 않고 스레드를 떼어 낸다. 그래서 멈춘 worker가
     있어도 시험은 그 자리에서 걸리지 않고 실패로 끝난다.
+  - `runtime::journal_product` 시험도 worker의 완료를 같은 `StallBudget`으로 기다린다(`receive`).
+    완료 하나를 `recv_timeout(10초)`로 받던 때는 부하 평균이 코어 수의 두세 배인 병렬 실행에서
+    실행마다 다른 시험이 `Timeout`으로 실패했다. worker가 완료 채널을 닫으면 정체 한도를 기다리지
+    않고 바로 실패한다.
 - **타임아웃 상향은 처방이 아니다** — 발생 빈도만 낮추고(확률 저감) 부하가 그 상한을 넘는
   날 다시 깨진다. 근거는 [유닛 테스트 격리](unit-test-isolation.md).
 

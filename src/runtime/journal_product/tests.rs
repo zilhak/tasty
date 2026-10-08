@@ -2,17 +2,26 @@ mod aggregate;
 mod pressure;
 mod retirement;
 
+use super::stall_budget::StallBudget;
 use super::*;
 use std::time::Duration;
 use tasty_core::{StructuralCommand, StructureModels, evolve_streams};
 
+/// worker의 다음 완료를 기다린다. 기한은 [`StallBudget`]이 정한다. worker가 일하거나 디스크 I/O를
+/// 기다리는 시간은 세지 않으므로 부하로 늦어진 완료는 기다리고, 잠든 채 답하지 않는 worker는 정체로
+/// 실패한다. worker가 끝나 채널이 끊기면 바로 실패한다.
 fn receive(worker: &JournalWorker) -> Completion {
-    worker
-        .completions
-        .as_ref()
-        .unwrap()
-        .recv_timeout(Duration::from_secs(10))
-        .unwrap()
+    let completions = worker.completions.as_ref().unwrap();
+    let mut stall = StallBudget::for_worker(worker);
+    loop {
+        match completions.try_recv() {
+            Ok(completion) => return completion,
+            Err(mpsc::TryRecvError::Disconnected) => {
+                panic!("the journal worker closed its completion channel before answering")
+            }
+            Err(mpsc::TryRecvError::Empty) => stall.nap("journal completion"),
+        }
+    }
 }
 
 fn start(home: &std::path::Path) -> JournalWorker {
