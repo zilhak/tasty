@@ -1,4 +1,4 @@
-<!-- source-hash: d9310c7a9f4d -->
+<!-- source-hash: 279adb5dff44 -->
 # Plugins
 
 Use plugins for tools such as Markdown and image viewers or AI agent integrations. Explore the bundled plugins, add new ones, and manage which tools run and what permissions they have.
@@ -44,13 +44,15 @@ Press the **Plugins** button at the very bottom of the sidebar. It has three tab
 
 The **Installed** tab. Pick one from the list on the left and the details appear on the right. **Filter installed…** above the list filters by name.
 
-- **Status** — **Enabled** / **Disabled**, **Running**. If a plugin is enabled but fails to run, a red marker appears with the notice **Failed to connect. Check the plugin's configuration in Settings.**
-- The enable toggle — Turning it off cleans up the process; turning it on starts it again.
+- The line under the name at the top of the details shows the authors and the plugin id. If the plugin has a homepage, it appears separately under the description.
+- Rows in the list are marked **Disabled** or **Running**. If a plugin is enabled but fails to run, a red marker appears with the notice **Failed to connect. Check the plugin's configuration in Settings.**
 - **Permissions** — The list of permissions this plugin has been granted. Read-only here; it cannot be changed.
-- **Commands** — Keybinding commands added by the plugin. Change the keys under **Settings** > **Keybindings** > **Plugins**.
-- **Install path** · **Log** — At the bottom of the details. A long path wraps so it is shown in full, and you can drag to select and copy it. **Open folder** on the right of the heading row opens the install folder in your file manager.
-- **Configure** — Goes to the plugin's page in the settings window.
-- **Uninstall** — Deletes the install folder. For a plugin with the **built-in** badge, one more warning appears saying it will not be installed automatically on the next launch either.
+- **Commands** — Keybinding commands added by the plugin, one command and its shortcut per line. Change the keys under **Settings** > **Keybindings** > **Plugins**.
+- **Install path** · **Log** — The last section of the details. A long path wraps so it is shown in full, and you can drag to select and copy it. **Open folder** on the right of the heading row opens the install folder in your file manager.
+- The bar under the details stays visible while you scroll the details.
+  - The switch on the left — The label next to it shows **Enabled** / **Disabled**. Clicking the label also toggles it. Turning it off cleans up the process; turning it on starts it again.
+  - **Configure** — Goes to the plugin's page in the settings window.
+  - **Uninstall** — A warning with **Confirm uninstall** · **Cancel** buttons appears at the end of the details, and the details scroll to it. Confirming deletes the install folder. For a plugin with the **built-in** badge, the warning says it will not be installed automatically on the next launch either.
 
 ### Attention
 

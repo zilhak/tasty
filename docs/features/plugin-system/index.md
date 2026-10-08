@@ -17,12 +17,14 @@
 ### 창 — 세 탭
 
 - **Installed (list)**: 설치된 플러그인 목록. 각 항목:
-  - **enable/disable** 토글.
+  - **메타 줄**: 상세 이름 줄 아래에 작성자와 id 를 ` · ` 로 이은 mono caption·text-muted 한 줄. 작성자가 여럿이면 쉼표로 잇고, 작성자가 없으면 id 만 보인다. 홈페이지는 본문 `Homepage: <주소>` 줄에 따로 있다.
+  - **액션 바**: 상세 아래, 본문 스크롤 밖에 늘 보이는 바(위 1px 구분선). 왼쪽에 enable/disable Switch 와 현재 상태 라벨(`Enabled`/`Disabled`, 라벨을 눌러도 전환), 오른쪽에 `Configure`(ghost, 톱니 아이콘, 설정 창 Plugins 탭으로 이동)와 `Uninstall`(secondary, 위험 색 글자).
   - **health error** 인디케이터 (enable 상태인데 오류인 플러그인).
   - **권한 read-only 표시** (창에서 권한을 토글하지 않는다).
   - **절 배치**: 상세의 절 사이에는 구분선이 없고 `space-lg` 만큼 띄운다. `SURFACE KINDS`·`PERMISSIONS`·`COMMANDS`·`INSTALL PATH` 머리글은 대문자 mono micro·text-muted 이며 본문과 `space-sm` 떨어진다.
   - **설치 경로 절**(상세의 마지막 절, Commands 뒤): 머리글 줄에 대문자 mono `INSTALL PATH` 와 오른쪽 끝 `Open folder`(secondary sm, 폴더 아이콘, OS 파일 관리자로 연다). 그 아래 설치 경로 한 줄과 `Log: <경로>` 한 줄은 mono caption·text-muted 이고, 공백이 없어도 아무 문자에서 줄바꿈하며 선택할 수 있다. 말줄임·툴팁은 없다. 버튼이 경로 줄에 없으므로 창 최소 폭 720 과 기본 폭 880 에서 긴 경로가 버튼을 밀어내지 않는다.
-  - **uninstall**.
+  - **Commands 절**: 명령마다 한 행. 왼쪽에 명령 제목(mono term-sm·text-secondary, 길면 말줄임), 오른쪽에 단축키 키캡(할당이 없으면 없음), 행 아래 1px 구분선. 행 높이는 구분선을 포함해 32 다.
+  - **uninstall**: 액션 바의 `Uninstall` 을 누르면 본문 끝에 경고 문구와 `Confirm uninstall`·`Cancel` 이 나타나고, 그 위치로 스크롤된다. 기본 제공 플러그인은 다음 실행에서 다시 설치되지 않는다는 경고를 쓴다.
 - **Attention (확인 필요)**: 등록 거부(서명/신뢰) 또는 실행 실패(health error) plugin 을 사유·조치와 함께 보여준다. 탭 라벨에 개수를 danger 배지로 표시. 사유별 절 머리글(Permission changes · Signature · Log)은 상세 절처럼 대문자 mono micro·text-muted 다. Signature invalid 항목은 `Signature` 머리글 아래에 고정 설명 `The signature does not match this plugin's files.`과 서명 검증이 실패한 원인(사이드카 파일 없음 · 읽기 오류 · 서명 길이 오류 등) 한 줄을 mono 글자로 보인다.
 - **fingerprint 줄**: Attention 서명 절과 Add 신뢰 상자가 같은 줄을 쓴다. colon-hex 값이 16바이트를 넘으면 앞 8바이트와 뒤 8바이트를 ` … `로 이어 한 줄로 보이고, 툴팁과 복사 버튼은 전체 값을 쓴다.
 - **Install (add)**: 디렉터리(`tasty-plugin.toml`)에서 설치. 제목 없이 한 화면에서 진행한다.
@@ -119,7 +121,7 @@ kind 대기 placeholder 로 두었다가 다시 켜면 채운다.
 
 - **탭**: Installed / Attention(확인 필요 — 등록 거부·실행 실패 plugin, 개수 danger 배지) / Install.
 - **Installed 항목**:
-  - enable/disable 토글, health error 인디케이터(오류 플러그인).
+  - 상세 아래 액션 바의 enable/disable Switch·Configure·Uninstall, health error 인디케이터(오류 플러그인).
   - 권한 표시 — **read-only** (창에서 권한 토글 없음).
   - 설치 경로 절 — `INSTALL PATH` 머리글 줄 오른쪽 `Open folder`, 줄바꿈·선택 가능한 설치 경로와 로그 경로. **uninstall**.
 - **Install 폼**:

@@ -4,8 +4,10 @@ use crate::theme;
 use super::{PluginsAction, PluginsSnapshot, PluginsUiState};
 use tasty_ui_widgets::tokens::{PLUGIN_LIST_ROW_HEIGHT, STRUCT_GAP_2};
 use tasty_ui_widgets::{
-    PluginAvatarSize, PluginInstallPathsView, margin_sym, paint_plugin_avatar, plugin_avatar,
-    plugin_detail_section, plugin_detail_section_gap, plugin_install_paths, vspace,
+    PluginAvatarSize, PluginDetailBarView, PluginInstallPathsView, margin_sym, paint_plugin_avatar,
+    plugin_avatar, plugin_command_row, plugin_detail_bar, plugin_detail_bar_height,
+    plugin_detail_meta, plugin_detail_section, plugin_detail_section_gap, plugin_install_paths,
+    vspace,
 };
 
 pub(super) fn draw_list_tab(
@@ -154,171 +156,205 @@ pub(super) fn draw_list_tab(
         };
 
         vspace(ui, th.spacing_sm);
+        // 액션 바가 창 안에 남도록 본문 스크롤 높이에서 바 높이를 뺀다.
+        let scroll_height =
+            (ui.available_height() - plugin_detail_bar_height(&th) - ui.spacing().item_spacing.y)
+                .max(0.0);
+        let confirming = ui_state.confirm_uninstall_id.as_ref() == Some(&entry.id);
         egui::ScrollArea::vertical()
+            .auto_shrink([false, false])
+            .max_height(scroll_height)
             .drag_to_scroll(false)
             .show(ui, |ui| {
-                // identity — 디자인은 아바타(46) 좌, 이름줄 + 메타줄을 오른쪽 열에 쌓는다.
-                ui.horizontal_top(|ui| {
-                    plugin_avatar(ui, &th, &entry.name, PluginAvatarSize::Detail);
-                    ui.vertical(|ui| {
-                        ui.horizontal(|ui| {
-                            ui.heading(&entry.name);
-                            super::tag(ui, &th, &format!("v{}", entry.version));
-                            if entry.builtin {
-                                ui.label(
-                                    egui::RichText::new(t("plugins.builtin_badge"))
-                                        .small()
-                                        .color(egui::Color32::from(th.accent_agent())),
-                                );
-                            }
-                        });
-                        ui.label(
-                            egui::RichText::new(&entry.id)
-                                .small()
-                                .color(egui::Color32::from(th.text_muted())),
-                        );
-                    });
-                });
-                vspace(ui, th.spacing_sm);
-
-                if !entry.description.is_empty() {
-                    ui.label(&entry.description);
-                    vspace(ui, th.spacing_sm);
-                }
-
-                // 디자인 error 경고 박스: spawn 반복 실패로 자동 비활성화된 plugin 에
-                // 빨간 박스로 안내. config 상 enable 상태일 때만 (사용자가 끈 plugin 은
-                // 정상 종료이므로 error 가 아님).
-                if entry.health_error && entry.enabled {
-                    let danger = egui::Color32::from(th.accent_danger());
-                    // tinted 채움/테두리 짝 — `tint-fill-alpha` / `tint-border-alpha`.
-                    egui::Frame::new()
-                        .fill(danger.gamma_multiply(th.tint_fill_alpha()))
-                        .stroke(egui::Stroke::new(
-                            th.border_width.value(),
-                            danger.gamma_multiply(th.tint_border_alpha()),
-                        ))
-                        .corner_radius(th.corner_radius.value())
-                        .inner_margin(margin_sym(th.spacing_md, th.spacing_sm))
-                        .show(ui, |ui| {
-                            ui.label(egui::RichText::new(t("plugins.health_error")).color(danger));
-                        });
-                    vspace(ui, th.spacing_sm);
-                }
-
-                if !entry.authors.is_empty() {
-                    ui.label(format!(
-                        "{}: {}",
-                        t("plugins.authors"),
-                        entry.authors.join(", ")
-                    ));
-                }
-                if !entry.homepage.is_empty() {
-                    ui.label(format!("{}: {}", t("plugins.homepage"), entry.homepage));
-                }
-
-                // 디자인 상세는 절 사이에 구분선 없이 space-lg 만 띄운다.
-                plugin_detail_section_gap(ui, &th);
-                ui.horizontal(|ui| {
-                    ui.label(format!("{}:", t("plugins.status")));
-                    let mut enabled = entry.enabled;
-                    if ui.checkbox(&mut enabled, t("plugins.enabled")).changed() {
-                        actions.push(PluginsAction::SetEnabled {
-                            id: entry.id.clone(),
-                            enabled,
-                        });
-                    }
-                    if ui.button(t("plugins.configure")).clicked() {
-                        actions.push(PluginsAction::OpenSettings);
-                    }
-                });
-
-                vspace(ui, th.spacing_sm);
-                plugin_detail_section(ui, &th, t("plugins.surface_kinds"), |ui| {
-                    if entry.surface_kinds.is_empty() {
-                        ui.label(t("plugins.none"));
-                    } else {
-                        ui.label(entry.surface_kinds.join(", "));
-                    }
-                });
-
-                plugin_detail_section_gap(ui, &th);
-                plugin_detail_section(ui, &th, t("plugins.permissions"), |ui| {
-                    if entry.manifest_permissions.is_empty() {
-                        ui.label(t("plugins.none"));
-                    } else {
-                        ui.horizontal_wrapped(|ui| {
-                            for token in &entry.manifest_permissions {
-                                super::tag(ui, &th, token);
-                            }
-                        });
-                    }
-                });
-
-                if !entry.commands.is_empty() {
-                    plugin_detail_section_gap(ui, &th);
-                    plugin_detail_section(ui, &th, t("plugins.commands"), |ui| {
-                        for cmd in &entry.commands {
-                            ui.horizontal(|ui| {
-                                ui.label(t(&cmd.title_key));
-                                if let Some(kb) = &cmd.keybinding {
-                                    ui.with_layout(
-                                        egui::Layout::right_to_left(egui::Align::Center),
-                                        |ui| {
-                                            super::tag(ui, &th, kb);
-                                        },
-                                    );
-                                }
-                            });
-                        }
-                    });
-                }
-
-                plugin_detail_section_gap(ui, &th);
-                let log_line = format!("{}: {}", t("plugins.log_path"), entry.log_path);
-                let open_folder = plugin_install_paths(
-                    ui,
-                    &th,
-                    &PluginInstallPathsView {
-                        label: t("plugins.install_path"),
-                        open_folder: t("plugins.open_folder"),
-                        install_dir: &entry.install_dir,
-                        log_line: &log_line,
-                    },
-                );
-                if open_folder {
-                    actions.push(PluginsAction::OpenInstallDir {
-                        path: entry.install_dir.clone(),
-                    });
-                }
-
-                vspace(ui, th.spacing_lg);
-                if ui_state.confirm_uninstall_id.as_ref() == Some(&entry.id) {
-                    let warn_key = if entry.builtin {
-                        "plugins.uninstall_builtin_warning"
-                    } else {
-                        "plugins.uninstall_warning"
-                    };
-                    ui.label(
-                        egui::RichText::new(t(warn_key))
-                            .color(egui::Color32::from(th.accent_attention())),
-                    );
-                    ui.horizontal(|ui| {
-                        if ui.button(t("plugins.uninstall_confirm")).clicked() {
-                            actions.push(PluginsAction::Uninstall {
-                                id: entry.id.clone(),
-                            });
-                            ui_state.confirm_uninstall_id = None;
-                        }
-                        if ui.button(t("button.cancel")).clicked() {
-                            ui_state.confirm_uninstall_id = None;
-                        }
-                    });
-                } else if ui.button(t("plugins.uninstall")).clicked() {
-                    ui_state.confirm_uninstall_id = Some(entry.id.clone());
+                draw_detail_body(ui, &th, &entry, actions);
+                if confirming {
+                    vspace(ui, th.spacing_lg);
+                    draw_uninstall_confirm(ui, &th, &entry, ui_state, actions);
                 }
             });
+
+        let bar = plugin_detail_bar(
+            ui,
+            &th,
+            &PluginDetailBarView {
+                enabled: entry.enabled,
+                enabled_label: t("plugins.enabled"),
+                disabled_label: t("plugins.disabled"),
+                configure: t("plugins.configure"),
+                uninstall: t("plugins.uninstall"),
+            },
+        );
+        if bar.toggled {
+            actions.push(PluginsAction::SetEnabled {
+                id: entry.id.clone(),
+                enabled: !entry.enabled,
+            });
+        }
+        if bar.configure {
+            actions.push(PluginsAction::OpenSettings);
+        }
+        if bar.uninstall && !confirming {
+            ui_state.confirm_uninstall_id = Some(entry.id.clone());
+            ui.ctx()
+                .data_mut(|d| d.insert_temp(confirm_scroll_id(), true));
+        }
     });
+}
+
+/// 제거 확인 블록이 처음 그려질 때 스크롤해 보이게 하는 일회성 표시.
+fn confirm_scroll_id() -> egui::Id {
+    egui::Id::new("plugins_uninstall_confirm_scroll")
+}
+
+/// 상세 본문 — identity, 설명, 오류 상자, Homepage, 절들, 설치 경로.
+fn draw_detail_body(
+    ui: &mut egui::Ui,
+    th: &theme::Theme,
+    entry: &super::PluginEntry,
+    actions: &mut Vec<PluginsAction>,
+) {
+    // identity — 디자인은 아바타(46) 좌, 이름줄 + 메타줄을 오른쪽 열에 쌓는다.
+    ui.horizontal_top(|ui| {
+        plugin_avatar(ui, th, &entry.name, PluginAvatarSize::Detail);
+        ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing.y = th.spacing_xs.value();
+            ui.horizontal(|ui| {
+                ui.heading(&entry.name);
+                super::tag(ui, th, &format!("v{}", entry.version));
+                if entry.builtin {
+                    ui.label(
+                        egui::RichText::new(t("plugins.builtin_badge"))
+                            .small()
+                            .color(egui::Color32::from(th.accent_agent())),
+                    );
+                }
+            });
+            // 디자인 메타 줄은 `author · cat` 이다. 매니페스트에 분류가 없어 두 번째 자리에 id 를 둔다.
+            let authors = entry.authors.join(", ");
+            plugin_detail_meta(ui, th, &[&authors, &entry.id]);
+        });
+    });
+    vspace(ui, th.spacing_sm);
+
+    if !entry.description.is_empty() {
+        ui.label(&entry.description);
+        vspace(ui, th.spacing_sm);
+    }
+
+    // 디자인 error 경고 박스: spawn 반복 실패로 자동 비활성화된 plugin 에
+    // 빨간 박스로 안내. config 상 enable 상태일 때만 (사용자가 끈 plugin 은
+    // 정상 종료이므로 error 가 아님).
+    if entry.health_error && entry.enabled {
+        let danger = egui::Color32::from(th.accent_danger());
+        // tinted 채움/테두리 짝 — `tint-fill-alpha` / `tint-border-alpha`.
+        egui::Frame::new()
+            .fill(danger.gamma_multiply(th.tint_fill_alpha()))
+            .stroke(egui::Stroke::new(
+                th.border_width.value(),
+                danger.gamma_multiply(th.tint_border_alpha()),
+            ))
+            .corner_radius(th.corner_radius.value())
+            .inner_margin(margin_sym(th.spacing_md, th.spacing_sm))
+            .show(ui, |ui| {
+                ui.label(egui::RichText::new(t("plugins.health_error")).color(danger));
+            });
+        vspace(ui, th.spacing_sm);
+    }
+
+    if !entry.homepage.is_empty() {
+        ui.label(format!("{}: {}", t("plugins.homepage"), entry.homepage));
+    }
+
+    // 디자인 상세는 절 사이에 구분선 없이 space-lg 만 띄운다.
+    plugin_detail_section_gap(ui, th);
+    plugin_detail_section(ui, th, t("plugins.surface_kinds"), |ui| {
+        if entry.surface_kinds.is_empty() {
+            ui.label(t("plugins.none"));
+        } else {
+            ui.label(entry.surface_kinds.join(", "));
+        }
+    });
+
+    plugin_detail_section_gap(ui, th);
+    plugin_detail_section(ui, th, t("plugins.permissions"), |ui| {
+        if entry.manifest_permissions.is_empty() {
+            ui.label(t("plugins.none"));
+        } else {
+            ui.horizontal_wrapped(|ui| {
+                for token in &entry.manifest_permissions {
+                    super::tag(ui, th, token);
+                }
+            });
+        }
+    });
+
+    if !entry.commands.is_empty() {
+        plugin_detail_section_gap(ui, th);
+        plugin_detail_section(ui, th, t("plugins.commands"), |ui| {
+            for cmd in &entry.commands {
+                plugin_command_row(ui, th, t(&cmd.title_key), cmd.keybinding.as_deref());
+            }
+        });
+    }
+
+    plugin_detail_section_gap(ui, th);
+    let log_line = format!("{}: {}", t("plugins.log_path"), entry.log_path);
+    let open_folder = plugin_install_paths(
+        ui,
+        th,
+        &PluginInstallPathsView {
+            label: t("plugins.install_path"),
+            open_folder: t("plugins.open_folder"),
+            install_dir: &entry.install_dir,
+            log_line: &log_line,
+        },
+    );
+    if open_folder {
+        actions.push(PluginsAction::OpenInstallDir {
+            path: entry.install_dir.clone(),
+        });
+    }
+}
+
+/// 액션 바의 Uninstall 을 누른 뒤 본문 끝에 보이는 경고와 확인·취소 버튼.
+/// 디자인에는 이 단계가 없어 기존 모양을 유지한다.
+fn draw_uninstall_confirm(
+    ui: &mut egui::Ui,
+    th: &theme::Theme,
+    entry: &super::PluginEntry,
+    ui_state: &mut PluginsUiState,
+    actions: &mut Vec<PluginsAction>,
+) {
+    let warn_key = if entry.builtin {
+        "plugins.uninstall_builtin_warning"
+    } else {
+        "plugins.uninstall_warning"
+    };
+    let block = ui
+        .vertical(|ui| {
+            ui.label(
+                egui::RichText::new(t(warn_key)).color(egui::Color32::from(th.accent_attention())),
+            );
+            ui.horizontal(|ui| {
+                if ui.button(t("plugins.uninstall_confirm")).clicked() {
+                    actions.push(PluginsAction::Uninstall {
+                        id: entry.id.clone(),
+                    });
+                    ui_state.confirm_uninstall_id = None;
+                }
+                if ui.button(t("button.cancel")).clicked() {
+                    ui_state.confirm_uninstall_id = None;
+                }
+            });
+        })
+        .response;
+    let scroll = ui
+        .ctx()
+        .data_mut(|d| d.remove_temp::<bool>(confirm_scroll_id()))
+        .unwrap_or(false);
+    if scroll {
+        ui.scroll_to_rect(block.rect, Some(egui::Align::Max));
+    }
 }
 
 #[cfg(test)]
