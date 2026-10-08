@@ -106,3 +106,63 @@ fn the_saturated_refusal_reads_away_what_the_client_already_sent() {
         other => panic!("닫기 전 수신 큐에 읽지 않은 요청이 남았다: {other:?}"),
     }
 }
+
+// -32060: 상한을 넘는 줄을 다 보낸 클라이언트가 거절을 읽은 뒤 연결 재설정이 아니라 정상 종료를 받는다.
+// 남는 바이트를 BufReader 버퍼(8 KiB)보다 크게 보내 서버 수신 큐에 읽지 않은 데이터가 남게 한다.
+// Linux 는 쓰기 쪽만 닫아도 응답 뒤 EOF 를 보이므로, 닫기 전에 수신 큐가 비었는지도 본다.
+// macOS 는 이 경로를 바꾸지 않았고 측정하지 않아 대상에서 뺀다.
+#[cfg(any(windows, target_os = "linux"))]
+#[test]
+fn an_oversized_line_refusal_is_read_and_then_closes_without_reset() {
+    use crate::ipc::protocol::MAX_REQUEST_LINE_BYTES;
+    let (client, server_side) = pair();
+    let mut sending = client.try_clone().expect("clone");
+    let sender = std::thread::spawn(move || {
+        let chunk = vec![b'a'; 64 * 1024];
+        let mut left = MAX_REQUEST_LINE_BYTES + 64 * 1024;
+        while left > 0 {
+            let n = left.min(chunk.len());
+            sending.write_all(&chunk[..n]).expect("send");
+            left -= n;
+        }
+        sending.write_all(b"\n").expect("send newline");
+    });
+
+    let mut writer = server_side.try_clone().expect("clone");
+    let probe = server_side.try_clone().expect("clone");
+    let mut reader = BufReader::new(server_side);
+    let mut line = String::new();
+    let outcome = TcpIpcServer::read_line_capped(&mut reader, &mut line, None);
+    assert!(matches!(outcome, super::LineRead::TooLong));
+    // 요청을 다 보낸 뒤 거절하는 경우다.
+    sender.join().expect("sender");
+    TcpIpcServer::refuse_oversized_line(&mut writer, None);
+    probe.set_nonblocking(true).expect("nonblocking");
+    let mut b = [0u8; 1];
+    match probe.peek(&mut b) {
+        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+        other => panic!("닫기 전 수신 큐에 읽지 않은 요청이 남았다: {other:?}"),
+    }
+    drop(probe);
+    drop(writer);
+    drop(reader);
+
+    client
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .expect("timeout");
+    let mut client_reader = BufReader::new(client);
+    let mut got = String::new();
+    client_reader
+        .read_line(&mut got)
+        .expect("거절 응답을 읽어야 한다");
+    let resp: JsonRpcResponse = serde_json::from_str(got.trim()).expect("JSON 한 줄");
+    assert_eq!(
+        resp.error.expect("에러 응답").code,
+        crate::ipc::protocol::ERR_REQUEST_LINE_TOO_LONG
+    );
+    let mut rest = [0u8; 16];
+    match client_reader.read(&mut rest) {
+        Ok(0) => {}
+        other => panic!("거절 뒤 정상 종료가 아니다: {other:?}"),
+    }
+}

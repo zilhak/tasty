@@ -820,6 +820,8 @@ impl TcpIpcServer {
         }
         #[cfg(windows)]
         closing_drain::drain_before_close(writer);
+        #[cfg(target_os = "linux")]
+        closing_drain::half_close_and_discard_arrived(writer);
     }
 
     /// 첫 줄 기한 만료를 알리고 연결을 끝낸다. 미완성 줄이므로 id는 null이다.
