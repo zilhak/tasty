@@ -1,11 +1,13 @@
 //! 설치된 플러그인의 목록·상세·제거 확인 예제.
 //! 본체 상세는 스크롤하지만 갤러리는 전체 내용을 비교할 수 있게 예제 높이를 늘린다.
 
+use crate::catalog::spec::{self, StageVariant, TokenChip};
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::tokens::{PLUGIN_LIST_ROW_HEIGHT, STRUCT_GAP_2};
 use tasty_ui_widgets::{
-    Button, ButtonVariant, PluginAvatarSize, TagVariant, checkbox, margin_sym, paint_plugin_avatar,
-    plugin_avatar, tag,
+    Button, ButtonVariant, PluginAvatarSize, PluginInstallPathsView, TagVariant, checkbox,
+    margin_sym, paint_plugin_avatar, plugin_avatar, plugin_install_paths, tag,
 };
 
 /// 상세 컬럼이 그릴 것 — 본체는 선택 상태와 uninstall 확인 상태로 갈린다.
@@ -256,17 +258,19 @@ fn commands(ui: &mut egui::Ui, theme: &Theme, row: &Row) {
     }
 }
 
-/// 설치 경로 + 로그 경로. 경로는 길어서 본체도 muted small 로 흘린다.
+/// 설치 경로 + 로그 경로. 본체와 같은 공용 위젯 — `Open folder` 는 머리글 줄 오른쪽, 경로는 줄바꿈.
 fn paths(ui: &mut egui::Ui, theme: &Theme, row: &Row) {
     ui.separator();
-    caption(ui, theme, "Install path:");
-    ui.horizontal(|ui| {
-        muted(ui, theme, row.install_dir);
-        Button::new("Open folder")
-            .variant(ButtonVariant::Secondary)
-            .show(ui, theme);
-    });
-    muted(ui, theme, &format!("Log: {}", row.log_path));
+    plugin_install_paths(
+        ui,
+        theme,
+        &PluginInstallPathsView {
+            label: "Install path",
+            open_folder: "Open folder",
+            install_dir: row.install_dir,
+            log_line: &format!("Log: {}", row.log_path),
+        },
+    );
 }
 
 /// 본체와 같은 일반 버튼으로 제거 동작과 확인·취소를 표시한다.
@@ -373,5 +377,72 @@ pub(super) fn detail_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, de
         theme,
         row,
         matches!(detail, Detail::ConfirmUninstall(_)),
+    );
+}
+
+/// 시안 Spec "Installed detail — install path" 의 두 상세 열 폭. 720(최소)·880(기본) 창의 상세 열에
+/// 해당하는 예제 무대 전용 값이며 역할 토큰이 없다.
+const DETAIL_WIDTHS: [LogicalPx; 2] = [LogicalPx(380.0), LogicalPx(540.0)];
+
+/// 긴 설치 경로의 예시. 공백이 없어 아무 문자에서 줄바꿈하는 것을 보인다.
+const LONG_ID: &str = "com.example.image-viewer-with-a-long-plugin-identifier";
+
+/// 설치 경로 절 — 두 열 폭에서 `Open folder` 가 머리글 줄 오른쪽에 온전히 남고 경로가 줄바꿈한다.
+pub fn draw_install_paths(ui: &mut egui::Ui, theme: &Theme) {
+    let install_dir = format!("/home/tasty/.local/share/tasty/plugins/{LONG_ID}");
+    let log_line = format!("Log: /home/tasty/.local/state/tasty/plugins/{LONG_ID}/plugin.log");
+    spec::stage(ui, theme, StageVariant::Wrap, |ui| {
+        ui.horizontal_top(|ui| {
+            ui.spacing_mut().item_spacing.x = theme.spacing_lg.value();
+            for width in DETAIL_WIDTHS {
+                egui::Frame::new()
+                    .fill(theme.bg_panel().to_egui())
+                    .stroke(egui::Stroke::new(
+                        theme.border_width.value(),
+                        theme.border_default().to_egui(),
+                    ))
+                    .inner_margin(egui::Margin::same(theme.spacing_lg.value() as i8))
+                    .show(ui, |ui| {
+                        ui.set_width(width.value() - 2.0 * theme.spacing_lg.value());
+                        plugin_install_paths(
+                            ui,
+                            theme,
+                            &PluginInstallPathsView {
+                                label: "Install path",
+                                open_folder: "Open folder",
+                                install_dir: &install_dir,
+                                log_line: &log_line,
+                            },
+                        );
+                    });
+            }
+        });
+    });
+    spec::meta(
+        ui,
+        theme,
+        &[
+            ("order", "… Permissions · Command · Install path"),
+            (
+                "caption row",
+                "INSTALL PATH (mono 10 caps) · flex · Open folder",
+            ),
+            (
+                "Open folder",
+                "Button secondary sm · folder icon · opens the OS file manager",
+            ),
+            (
+                "path",
+                "mono caption 11 · text-muted · break-all · selectable",
+            ),
+            ("log", "same style, “Log: ” prefix, own line"),
+            ("widths", "left 380 ≈ 720 window · right 540 ≈ 880 window"),
+            ("shown", "installed plugins only"),
+        ],
+        &[
+            TokenChip::new("text-muted", "path text", theme.text_muted().to_egui()),
+            TokenChip::without_color("font-size-caption", "11 path"),
+            TokenChip::without_color("space-sm", "8 row gap"),
+        ],
     );
 }

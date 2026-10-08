@@ -387,6 +387,8 @@ fn theme_pair(
     });
 }
 
+pub use installed::draw_install_paths;
+
 /// Add plugin의 안내 상자 자리 — 점선 빈 안내와 매니페스트 읽기 오류. Mocha·Latte 짝.
 pub fn draw_hint_slot(ui: &mut egui::Ui, theme: &Theme) {
     let latte = crate::host_shell::latte_theme();

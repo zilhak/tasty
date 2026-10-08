@@ -1861,6 +1861,14 @@ pub fn pages() -> Vec<Page> {
                             components::plugins_window::draw_hint_slot,
                         ),
                         spec(
+                            "plugins-install-path",
+                            "Installed detail — install path · log path · Open folder",
+                            Some(
+                                "Open folder on the caption row, right · paths mono caption muted, wrap at any character, selectable · 380 ≈ 720 window, 540 ≈ 880 window",
+                            ),
+                            components::plugins_window::draw_install_paths,
+                        ),
+                        spec(
                             "plugin-identity-mark",
                             "Plugin identity mark — one component, two sizes",
                             Some(

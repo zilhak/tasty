@@ -41,6 +41,7 @@ mod override_row;
 mod path_field;
 mod plugin_add;
 mod plugin_avatar;
+mod plugin_paths;
 mod popup_title;
 mod remote_tool;
 mod resize_grip;
@@ -138,6 +139,7 @@ pub use plugin_add::{
     plugin_signature_invalid_detail, plugin_trust_box, short_fingerprint,
 };
 pub use plugin_avatar::{PluginAvatarSize, paint_plugin_avatar, plugin_avatar};
+pub use plugin_paths::{PluginInstallPathsView, plugin_install_paths};
 pub use popup_title::{
     elide_popup_title, paint_popup_title_glyph, popup_title_font, popup_title_text_rect,
     show_popup_title_tooltip,
