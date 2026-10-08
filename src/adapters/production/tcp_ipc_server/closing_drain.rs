@@ -11,7 +11,7 @@
 //! - [`discard_arrived_then_close`]: accept 스레드의 -32062 포화 거절(모든 OS). accept 를 막지 않도록
 //!   기다리지 않고 이미 도착한 바이트만 읽어 버린다. 닫은 뒤에 도착한 바이트는 여전히 RST 를 부른다.
 //!
-//! 두 경로 모두 상한을 넘으면 그대로 닫으며, 그때의 RST 는 받아들인다(최선 노력).
+//! 두 경로 모두 상한을 넘으면 그대로 닫으며, 그때의 RST 는 받아들인다(최선 노력 범위 밖).
 
 use std::io::Read;
 use std::net::{Shutdown, TcpStream};
@@ -24,8 +24,12 @@ const DRAIN_WINDOW: Duration = Duration::from_millis(500);
 /// 새 바이트가 이만큼 오지 않으면 상대가 보내기를 마친 것으로 보고 멈춘다.
 #[cfg(windows)]
 const DRAIN_IDLE: Duration = Duration::from_millis(50);
-/// 비우는 바이트 상한. 요청 한 줄의 상한과 같다. 두 경로가 함께 쓴다.
+/// -32060 경로가 비우는 바이트 상한. 요청 한 줄의 상한과 같다.
+#[cfg(windows)]
 const DRAIN_MAX_BYTES: usize = crate::ipc::protocol::MAX_REQUEST_LINE_BYTES;
+/// -32062 경로가 비우는 바이트 상한. 과부하 때 accept 스레드에서 읽으므로 요청 줄 상한보다 작게 둔다.
+/// 이보다 큰 요청을 이미 보낸 클라이언트는 거절 대신 연결 재설정을 받을 수 있다.
+const SATURATED_DISCARD_MAX_BYTES: usize = 1024 * 1024;
 
 #[cfg(windows)]
 pub(super) fn drain_before_close(stream: &mut TcpStream) {
@@ -64,7 +68,7 @@ pub(super) fn drain_before_close(stream: &mut TcpStream) {
 
 /// 포화 거절을 쓴 연결의 쓰기 쪽을 닫고, 이미 도착한 바이트만 읽어 버린 뒤 닫는다.
 /// `stream` 은 non-blocking 이어야 한다. 읽을 것이 없으면(`WouldBlock`) 바로 멈추므로 accept 스레드를
-/// 기다리게 하지 않는다. 계속 보내는 상대도 [`DRAIN_MAX_BYTES`] 에서 멈춘다.
+/// 기다리게 하지 않는다. 계속 보내는 상대도 [`SATURATED_DISCARD_MAX_BYTES`] 에서 멈춘다.
 pub(super) fn discard_arrived_then_close(mut stream: TcpStream) {
     match stream
         .shutdown(Shutdown::Write)
@@ -82,7 +86,7 @@ pub(super) fn discard_arrived_then_close(mut stream: TcpStream) {
 fn discard_arrived(stream: &mut TcpStream) -> std::io::Result<Option<usize>> {
     let mut drained = 0usize;
     let mut buf = [0u8; 64 * 1024];
-    while drained < DRAIN_MAX_BYTES {
+    while drained < SATURATED_DISCARD_MAX_BYTES {
         match stream.read(&mut buf) {
             Ok(0) => return Ok(None),
             Ok(n) => drained += n,
