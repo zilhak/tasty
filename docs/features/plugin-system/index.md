@@ -20,7 +20,8 @@
   - **enable/disable** 토글.
   - **health error** 인디케이터 (enable 상태인데 오류인 플러그인).
   - **권한 read-only 표시** (창에서 권한을 토글하지 않는다).
-  - **install dir 열기**, **uninstall**.
+  - **설치 경로 절**(상세의 마지막 절, Commands 뒤): 머리글 줄에 대문자 mono `INSTALL PATH` 와 오른쪽 끝 `Open folder`(secondary sm, 폴더 아이콘, OS 파일 관리자로 연다). 그 아래 설치 경로 한 줄과 `Log: <경로>` 한 줄은 mono caption·text-muted 이고, 공백이 없어도 아무 문자에서 줄바꿈하며 선택할 수 있다. 말줄임·툴팁은 없다. 버튼이 경로 줄에 없으므로 창 최소 폭 720 과 기본 폭 880 에서 긴 경로가 버튼을 밀어내지 않는다.
+  - **uninstall**.
 - **Attention (확인 필요)**: 등록 거부(서명/신뢰) 또는 실행 실패(health error) plugin 을 사유·조치와 함께 보여준다. 탭 라벨에 개수를 danger 배지로 표시. Signature invalid 항목은 `Signature` 머리글 아래에 고정 설명 `The signature does not match this plugin's files.`과 서명 검증이 실패한 원인(사이드카 파일 없음 · 읽기 오류 · 서명 길이 오류 등) 한 줄을 mono 글자로 보인다.
 - **fingerprint 줄**: Attention 서명 절과 Add 신뢰 상자가 같은 줄을 쓴다. colon-hex 값이 16바이트를 넘으면 앞 8바이트와 뒤 8바이트를 ` … `로 이어 한 줄로 보이고, 툴팁과 복사 버튼은 전체 값을 쓴다.
 - **Install (add)**: 디렉터리(`tasty-plugin.toml`)에서 설치. 제목 없이 한 화면에서 진행한다.
@@ -68,6 +69,7 @@ kind 대기 placeholder 로 두었다가 다시 켜면 채운다.
 
 - 사이드바 플러그인 버튼 클릭 시 관리 창이 열린다 (Installed / Attention / Install 탭).
 - Installed 에서 enable/disable 토글이 동작하고, 오류 플러그인에 health 인디케이터가 뜬다.
+- Given 창 최소 폭 720 또는 기본 폭 880 과 열 폭보다 긴 설치 경로, When 그 플러그인을 고르면, Then `Open folder` 와 설치 경로·로그 경로 전체가 창 안에 보인다.
 - Install 탭에서 디렉터리 설치 시 매니페스트·권한 미리보기와 신뢰 검증을 거친다.
 - `tasty plugin list/install/remove/enable/disable` CLI 가 동일 동작을 수행한다.
 - 미설치 ID의 enable/disable은 GUI·headless 모두 실패하고, 기존 설정 파일은 바이트 단위로 유지되며 없던 설정 파일을 만들지 않는다.
@@ -118,7 +120,7 @@ kind 대기 placeholder 로 두었다가 다시 켜면 채운다.
 - **Installed 항목**:
   - enable/disable 토글, health error 인디케이터(오류 플러그인).
   - 권한 표시 — **read-only** (창에서 권한 토글 없음).
-  - install dir 열기, **uninstall**.
+  - 설치 경로 절 — `INSTALL PATH` 머리글 줄 오른쪽 `Open folder`, 줄바꿈·선택 가능한 설치 경로와 로그 경로. **uninstall**.
 - **Install 폼**:
   - 디렉터리 경로(`tasty-plugin.toml`).
   - 매니페스트 + 권한 **미리보기**.

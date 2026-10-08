@@ -1,4 +1,4 @@
-<!-- source-hash: d32318a851ef -->
+<!-- source-hash: d9310c7a9f4d -->
 # Plugins
 
 Use plugins for tools such as Markdown and image viewers or AI agent integrations. Explore the bundled plugins, add new ones, and manage which tools run and what permissions they have.
@@ -48,7 +48,7 @@ The **Installed** tab. Pick one from the list on the left and the details appear
 - The enable toggle — Turning it off cleans up the process; turning it on starts it again.
 - **Permissions** — The list of permissions this plugin has been granted. Read-only here; it cannot be changed.
 - **Commands** — Keybinding commands added by the plugin. Change the keys under **Settings** > **Keybindings** > **Plugins**.
-- **Log** · **Install path** · **Open folder**.
+- **Install path** · **Log** — At the bottom of the details. A long path wraps so it is shown in full, and you can drag to select and copy it. **Open folder** on the right of the heading row opens the install folder in your file manager.
 - **Configure** — Goes to the plugin's page in the settings window.
 - **Uninstall** — Deletes the install folder. For a plugin with the **built-in** badge, one more warning appears saying it will not be installed automatically on the next launch either.
 
