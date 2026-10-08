@@ -15,10 +15,10 @@
 | 상태 | 객체 | 트리의 `type` | 뜻 |
 |---|---|---|---|
 | 빈 자리 | `EmptySurface`(`deferred` 없음) | `Empty` | 정상 상태. 사용자가 다른 kind로 변환하기 전까지 빈 칸으로 남는다 |
-| plugin 대기 자리 | `EmptySurface`(`deferred = Plugin`) | `Pending` | attach mirror에서 원격 markdown 문서를 보여 줄 plugin kind가 아직 등록되지 않은 자리 |
+| plugin 대기 자리 | `EmptySurface`(`deferred` 있음) | `Pending` | attach mirror에서 원격 markdown 문서를 보여 줄 plugin kind가 아직 등록되지 않은 자리 |
 | 복원 자리 | `JournalPlaceholder` | `Pending` | 앱을 다시 시작했을 때 아직 활성화하지 않은 surface. 목표 kind(`terminal`·`markdown` 등)를 따로 기록한다 |
 
-`EmptySurface`의 `deferred = Terminal` 값은 모델에 남아 있지만 이 값을 만드는 생성자가 없다. 앱 재시작 때 터미널을 지연 생성하는 일은 복원 자리가 맡는다.
+`EmptySurface`의 `deferred`는 plugin 복원 정보(kind·snapshot)만 담는다. 앱 재시작 때 터미널을 지연 생성하는 일은 복원 자리가 맡는다.
 
 ## 상태 소유자
 
