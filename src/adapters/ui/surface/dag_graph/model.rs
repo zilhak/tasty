@@ -108,6 +108,21 @@ impl DagStatus {
         }
     }
 
+    /// 호버 첫 줄에 쓰는 문장형 라벨(번역).
+    pub fn tooltip_label(self) -> &'static str {
+        match self {
+            DagStatus::Waiting => t("dag.tooltip.waiting"),
+            DagStatus::Ready => t("dag.tooltip.ready"),
+            DagStatus::Running => t("dag.tooltip.running"),
+            DagStatus::Succeeded => t("dag.tooltip.succeeded"),
+            DagStatus::Failed => t("dag.tooltip.failed"),
+            DagStatus::Cancelled => t("dag.tooltip.cancelled"),
+            DagStatus::Skipped => t("dag.tooltip.skipped"),
+            DagStatus::Unknown => t("dag.tooltip.unknown"),
+            DagStatus::PartiallyFailed => t("dag.tooltip.partially_failed"),
+        }
+    }
+
     /// 취소·스킵 상태의 카드는 흐리게 표시한다.
     pub fn is_dimmed(self) -> bool {
         matches!(self, DagStatus::Cancelled | DagStatus::Skipped)
@@ -339,28 +354,64 @@ impl NodePhase {
     }
 }
 
+/// 카드 라벨과 호버 라벨이 함께 쓰는 라벨 종류.
+#[derive(Clone, Copy)]
+enum LabelPart {
+    AwaitingInput,
+    Postprocessing(u32),
+    RetryWait(u32),
+    NotSelected,
+    Status(DagStatus),
+}
+
 impl DagNodeData {
     /// 카드·상세의 상태 라벨. 실행 중 세부 단계가 있으면 그 단계를, 경로가 선택되지 않은
-    /// skipped 는 그 사실을 적는다.
+    /// skipped 는 그 사실을 적는다. 라틴 문자는 카드처럼 대문자다.
     pub fn status_label(&self) -> String {
-        match (&self.phase, self.status, &self.skip) {
-            (Some(NodePhase::AwaitingInput { .. }), _, _) => {
-                t("dag.phase.awaiting_input").to_string()
-            }
-            (Some(NodePhase::Postprocessing { run }), _, _) => format!(
+        match self.label_part() {
+            LabelPart::AwaitingInput => t("dag.phase.awaiting_input").to_string(),
+            LabelPart::Postprocessing(run) => format!(
                 "{}{}",
                 t("dag.phase.postprocessing"),
                 t_fmt("dag.phase.run", &run.to_string())
             ),
-            (Some(NodePhase::RetryWait { run }), _, _) => format!(
+            LabelPart::RetryWait(run) => format!(
                 "{}{}",
                 t("dag.phase.retry_wait"),
                 t_fmt("dag.phase.run", &run.to_string())
             ),
-            (None, DagStatus::Skipped, Some(NodeSkip::BranchNotSelected)) => {
-                t("dag.status.not_selected").to_string()
-            }
-            (None, status, _) => status.label().to_string(),
+            LabelPart::NotSelected => t("dag.status.not_selected").to_string(),
+            LabelPart::Status(status) => status.label().to_string(),
+        }
+    }
+
+    /// 호버 첫 줄의 상태 라벨. `status_label` 과 같은 경우를 고르되 시안 `nodeTitle` 처럼
+    /// 문장형 문구(`dag.tooltip.*`)를 쓴다.
+    pub fn tooltip_label(&self) -> String {
+        match self.label_part() {
+            LabelPart::AwaitingInput => t("dag.tooltip.awaiting_input").to_string(),
+            LabelPart::Postprocessing(run) => format!(
+                "{}{}",
+                t("dag.tooltip.postprocessing"),
+                t_fmt("dag.tooltip.run", &run.to_string())
+            ),
+            LabelPart::RetryWait(run) => format!(
+                "{}{}",
+                t("dag.tooltip.retry_wait"),
+                t_fmt("dag.tooltip.run", &run.to_string())
+            ),
+            LabelPart::NotSelected => t("dag.tooltip.not_selected").to_string(),
+            LabelPart::Status(status) => status.tooltip_label().to_string(),
+        }
+    }
+
+    fn label_part(&self) -> LabelPart {
+        match (&self.phase, self.status, &self.skip) {
+            (Some(NodePhase::AwaitingInput { .. }), _, _) => LabelPart::AwaitingInput,
+            (Some(NodePhase::Postprocessing { run }), _, _) => LabelPart::Postprocessing(*run),
+            (Some(NodePhase::RetryWait { run }), _, _) => LabelPart::RetryWait(*run),
+            (None, DagStatus::Skipped, Some(NodeSkip::BranchNotSelected)) => LabelPart::NotSelected,
+            (None, status, _) => LabelPart::Status(status),
         }
     }
 
@@ -379,7 +430,7 @@ impl DagNodeData {
 
     /// 호버 문구 — `이름 — 라벨` 다음에 건너뜀·알 수 없음·입력 대기의 이유 줄.
     pub fn hover_text(&self, now_ms: u64) -> String {
-        let mut lines = vec![format!("{} \u{2014} {}", self.name, self.status_label())];
+        let mut lines = vec![format!("{} \u{2014} {}", self.name, self.tooltip_label())];
         if let Some((provider, _, since)) = self.awaiting() {
             lines.push(t_fmt2(
                 "dag.why.awaiting",
@@ -858,7 +909,7 @@ mod tests {
         assert_eq!(
             g.nodes[2].hover_text(0),
             format!(
-                "{} — NOT SELECTED\nWhy: Not selected by the upstream result",
+                "{} — Not selected\nWhy: Not selected by the upstream result",
                 name(2)
             )
         );
@@ -866,7 +917,7 @@ mod tests {
         assert_eq!(
             g.nodes[3].hover_text(0),
             format!(
-                "{} — SKIPPED\nWhy: An upstream task did not succeed",
+                "{} — Skipped\nWhy: An upstream task did not succeed",
                 name(3)
             )
         );
@@ -936,12 +987,18 @@ mod tests {
         assert_eq!(
             n("review").hover_text(65_000),
             format!(
-                "review — NEEDS INPUT\nWaiting for a person in the claude session · {}",
+                "review — Needs input\nWaiting for a person in the claude session · {}",
                 format_duration_ms(60_000)
             )
         );
         assert_eq!(n("post").status_label(), "POSTPROCESS · RUN 1");
         assert_eq!(n("retry").status_label(), "RETRY WAIT · RUN 2");
+        assert_eq!(
+            n("post").tooltip_label(),
+            "Postprocess · run 1",
+            "호버는 갤러리·시안 nodeTitle 처럼 문장형이다"
+        );
+        assert_eq!(n("retry").tooltip_label(), "Retry wait · run 2");
         assert_eq!(n("retry").glyph(), DagStatus::Running.glyph());
         assert_eq!(n("plain").phase, None, "executing 은 일반 실행 중이다");
         assert_eq!(n("plain").status_label(), "RUNNING");
@@ -966,9 +1023,9 @@ mod tests {
         );
         assert_eq!(
             g.nodes[0].hover_text(0),
-            "deploy — UNKNOWN\nWhy: run result lost\nRetry or cancel it to let the graph continue."
+            "deploy — Unknown\nWhy: run result lost\nRetry or cancel it to let the graph continue."
         );
-        assert_eq!(g.nodes[1].hover_text(0), "bare — UNKNOWN");
+        assert_eq!(g.nodes[1].hover_text(0), "bare — Unknown");
     }
 
     /// agent 작업은 provider 와 관계없이 전용 글리프로 그리고, 모르는 종류만 run 글리프로 둔다.

@@ -1942,6 +1942,23 @@ postprocessing = "後処理"
 retry_wait = "再試行待ち"
 run = " · {}回目"
 
+[dag.tooltip]
+# 노드 호버 첫 줄의 상태 라벨. 카드는 라틴 문자를 대문자로 쓰지만 툴팁은 시안 nodeTitle 처럼 문장형이다.
+waiting = "待機"
+ready = "準備"
+running = "実行"
+succeeded = "成功"
+failed = "失敗"
+cancelled = "取消"
+skipped = "スキップ"
+not_selected = "未選択"
+unknown = "不明"
+partially_failed = "一部失敗"
+awaiting_input = "入力待ち"
+postprocessing = "後処理"
+retry_wait = "再試行待ち"
+run = " · {}回目"
+
 [dag.why]
 # 노드 호버의 이유 줄. lead 의 자리표시자는 이유 문구, awaiting 은 provider 와 대기 시간이다.
 lead = "理由: {}"

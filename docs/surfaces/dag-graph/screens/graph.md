@@ -35,7 +35,8 @@ tasty split --level surface --target-surface <SID> --type dag_graph
   skipped 카드 그대로 라벨만 `NOT SELECTED` 로 읽는다. 정상적인 미선택이라 새 상태색을 쓰지
   않는다. 선행 결과를 쓸 수 없어 건너뛴 task(`upstream_unavailable`)는 `SKIPPED` 라벨이다.
   어느 선행이 실패했는지는 상세의 의존성 행에서 읽는다.
-- **호버 툴팁**은 `이름 — 라벨` 한 줄 뒤에 이유 줄을 붙인다. 미선택은 "Why: Not selected by the
+- **호버 툴팁**은 `이름 — 라벨` 한 줄 뒤에 이유 줄을 붙인다. 첫 줄의 라벨은 카드와 같은 경우를
+  고르지만 대문자가 아닌 문장형 문구(`dag.tooltip.*`, 예: `Needs input`, `Postprocess · run 1`)다. 미선택은 "Why: Not selected by the
   upstream result", 선행 실패는 "Why: An upstream task did not succeed", 알 수 없음은 기록된
   이유(`Why: {reason}`)와 "Retry or cancel it to let the graph continue.", 입력 대기는 "Waiting for
   a person in the {provider} session · {대기 시간}" 이다. 이유가 없는 노드는 첫 줄만 보인다.
