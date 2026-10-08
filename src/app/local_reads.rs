@@ -72,7 +72,7 @@ impl Request {
                 sender.send(wait.recv().map_err(io::Error::other)).is_ok()
             }
             Self::Directory(path, sender) => sender
-                .send(crate::core::fs_list::read_dir_entries(&path))
+                .send(crate::core::fs_list::read_dir_entries(&path).map_err(|e| missing(&path, e)))
                 .is_ok(),
             Self::Git(path, sender) => sender.send(Ok(git_branch(&path))).is_ok(),
             Self::Script(path, sender) => {
@@ -95,6 +95,38 @@ impl Request {
             tracing::debug!("discarded local read result for a closed request");
         }
     }
+}
+/// 폴더가 없어 읽지 못했을 때 남아 있는 가장 가까운 상위 폴더. 오류 문구는 OS 문구 그대로다.
+#[derive(Debug)]
+pub(crate) struct MissingFolder {
+    message: String,
+    pub(crate) existing_ancestor: Option<PathBuf>,
+}
+impl std::fmt::Display for MissingFolder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+impl std::error::Error for MissingFolder {}
+
+/// 경로가 없거나 폴더가 아니면 worker 에서 상위 폴더를 확인해 오류에 붙인다. UI 스레드는 파일시스템을 읽지 않는다.
+fn missing(path: &std::path::Path, error: io::Error) -> io::Error {
+    let kind = error.kind();
+    if !matches!(kind, io::ErrorKind::NotFound | io::ErrorKind::NotADirectory) {
+        return error;
+    }
+    let existing_ancestor = path
+        .ancestors()
+        .skip(1)
+        .find(|a| a.is_dir())
+        .map(PathBuf::from);
+    io::Error::new(
+        kind,
+        MissingFolder {
+            message: error.to_string(),
+            existing_ancestor,
+        },
+    )
 }
 pub(crate) fn directory(path: PathBuf) -> Query<Vec<DirEntryInfo>> {
     Query::new(|sender| Request::Directory(path, sender))
@@ -405,5 +437,27 @@ mod tests {
         while owner.poll_shutdown() != 0 {
             std::thread::yield_now();
         }
+    }
+
+    #[test]
+    fn a_missing_folder_names_its_nearest_existing_ancestor() {
+        let dir = tempfile::tempdir().unwrap();
+        let gone = dir.path().join("gone").join("inner");
+        let text = std::fs::read_dir(&gone).unwrap_err().to_string();
+        let mut owner = LocalReads::default();
+        let error = owner.finish(&mut directory(gone.clone())).err().unwrap();
+        while owner.poll_shutdown() != 0 {
+            std::thread::yield_now();
+        }
+        assert_eq!(error.kind(), io::ErrorKind::NotFound);
+        assert_eq!(error.to_string(), text, "the OS message is kept");
+        let found = error
+            .get_ref()
+            .and_then(|e| e.downcast_ref::<MissingFolder>())
+            .and_then(|m| m.existing_ancestor.clone());
+        assert_eq!(found.as_deref(), Some(dir.path()));
+
+        let other = missing(&gone, io::Error::from(io::ErrorKind::PermissionDenied));
+        assert!(other.get_ref().is_none(), "other errors pass through");
     }
 }

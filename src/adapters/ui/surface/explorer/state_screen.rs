@@ -4,7 +4,8 @@
 //! 선택 버튼 줄을 space-sm 간격으로 쌓고, 버튼 줄은 space-xs 를 더 띄운다.
 //! 권한 거부는 글리프와 제목을 accent-warning, 읽기 오류는 explorer-error-fg 로 칠하고, 불러오는 중은
 //! 글리프 자리에 Spinner 를 둔다. 읽기 오류는 OS 이유 문구를 번역하지 않고 보이며 Retry(같은 경로를
-//! 다시 읽음)와 Go up(상위 폴더, 루트에서는 숨김)을 둔다.
+//! 다시 읽음)와 Go up(상위 폴더, 루트에서는 숨김)을 둔다. 바로 위 폴더도 사라졌으면 Go up 은 남아 있는
+//! 가장 가까운 상위 폴더로 간다.
 //! 시안의 패널 배경·테두리는 갤러리 전시 칸이고 본체에서는 내용 영역 자체가 그 자리다.
 //! 내용 영역 높이가 `explorer_state_compact_below()` 미만이면 공용 compact 한 줄(글리프 · 제목 ·
 //! 버튼)로 바꾸고 보조 줄과 이유 문구는 제목 툴팁으로 옮긴다. 블록이 잘리지 않게 하기 위해서다.
@@ -112,7 +113,10 @@ pub(super) fn show_for(
     if let Some(clicked) = show(ui, theme, &screen)
         && action.is_none()
     {
-        *action = Some(clicked);
+        *action = Some(match clicked {
+            ExplorerAction::GoUp => view.go_up_action(root),
+            other => other,
+        });
     }
     true
 }

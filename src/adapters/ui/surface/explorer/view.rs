@@ -67,6 +67,8 @@ pub struct ExplorerView {
     pub tree_children: HashMap<PathBuf, Vec<DirEntryInfo>>,
     /// 강제 새로고침 요청 플래그 (F5 / refresh 버튼).
     reload_requested: bool,
+    /// 현재 폴더가 없어 읽지 못했을 때 남아 있는 가장 가까운 상위 폴더. 읽기 오류 화면의 "상위 폴더로" 가 쓴다.
+    existing_ancestor: Option<PathBuf>,
     /// 주소창(PathField) 편집 버퍼. 비편집 시 `sync()` 가 활성 탭 cwd 로 재동기화한다.
     pub addr_buffer: String,
     /// 주소창 편집(=트리거 포커스) 여부. PathField 가 매 프레임 갱신.
@@ -108,6 +110,12 @@ impl ExplorerView {
                     }
                     Err(error) => {
                         self.entries.clear();
+                        self.existing_ancestor = error
+                            .get_ref()
+                            .and_then(|e| {
+                                e.downcast_ref::<crate::app::local_reads::MissingFolder>()
+                            })
+                            .and_then(|m| m.existing_ancestor.clone());
                         self.state = if error.kind() == std::io::ErrorKind::PermissionDenied {
                             LoadState::NoPermission
                         } else {
@@ -153,6 +161,7 @@ impl ExplorerView {
             expanded: HashSet::new(),
             tree_children: HashMap::new(),
             reload_requested: false,
+            existing_ancestor: None,
             addr_buffer: String::new(),
             addr_editing: false,
             addr_active: None,
@@ -196,6 +205,17 @@ impl ExplorerView {
         self.selection_identity = std::sync::Arc::new(());
         self.selected.clear();
         self.anchor = None;
+    }
+
+    /// 읽기 오류 화면의 "상위 폴더로" 가 할 일. 바로 위 폴더도 사라졌으면 남아 있는 가장 가까운 상위 폴더로 간다.
+    /// 확인한 상위 폴더가 없으면(원격, 다른 오류) 한 단계 위로 간다.
+    pub(crate) fn go_up_action(&self, root: &Path) -> super::ExplorerAction {
+        match &self.existing_ancestor {
+            Some(ancestor) if Some(ancestor.as_path()) != root.parent() => {
+                super::ExplorerAction::Navigate(ancestor.clone())
+            }
+            _ => super::ExplorerAction::GoUp,
+        }
     }
 
     /// 다음 렌더에서 현재 디렉토리를 다시 읽도록 표시.
@@ -266,6 +286,7 @@ impl ExplorerView {
         if dir_changed {
             self.clear_selection();
         }
+        self.existing_ancestor = None;
         self.local_query = Some(crate::app::local_reads::directory(tab.root.clone()));
         self.entries.clear();
         self.state = LoadState::Loading;
@@ -1012,5 +1033,28 @@ mod tests {
             "a mirror view shows remote files"
         );
         assert!(!store.invalidate_local(&["/w/none".into()], &[]));
+    }
+
+    #[test]
+    fn go_up_from_a_vanished_folder_skips_vanished_parents() {
+        use super::super::ExplorerAction as A;
+        let root = Path::new("/w/a/b/c");
+        let mut view = ExplorerView::new();
+        assert!(
+            matches!(view.go_up_action(root), A::GoUp),
+            "unknown ancestor"
+        );
+        view.existing_ancestor = Some("/w/a/b".into());
+        assert!(
+            matches!(view.go_up_action(root), A::GoUp),
+            "the parent exists"
+        );
+        view.existing_ancestor = Some("/w".into());
+        assert!(matches!(view.go_up_action(root), A::Navigate(p) if p == Path::new("/w")));
+
+        // 새로 읽기 시작하면 이전 오류의 상위 폴더를 쓰지 않는다.
+        let panel = ExplorerPanel::new(1, root.to_path_buf());
+        view.sync(&panel, None);
+        assert!(matches!(view.go_up_action(root), A::GoUp));
     }
 }

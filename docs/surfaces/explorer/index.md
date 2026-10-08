@@ -45,7 +45,7 @@ View 는 모델을 직접 바꾸지 않고 파일시스템도 직접 읽지 않�
 - **결과 상태**: 읽은 목록은 `Ok`(항목 0개면 빈 폴더 화면), 권한 거부는 `NoPermission`, 그 밖의 실패(경로 없음·폴더 아님·IO 오류·worker 끊김)는 `Error` 다. 자동 재시도는 없고 Retry(새로고침)가 같은 경로를 다시 읽는다. mirror 는 응답이 8초 안에 오지 않으면 `Error`(시간 초과)로 바꾼다.
 - **보이지 않는 동안**: 읽기 요청은 View 를 그릴 때만 만든다. 이미 보낸 요청의 결과는 그 View 가 남아 있는 한 다른 탭에 가려져 있어도 받아 둔다.
 - **파일 작업 뒤 갱신**: 로컬 파일 작업이 끝나면 성공·실패와 관계없이 모든 윈도우의 로컬 explorer 중 작업이 바꿀 수 있는 폴더를 보는 View 를 다시 읽고, 그 폴더의 트리 캐시를 지운다. 범위는 [파일 조작](file-operations.md#작업-뒤-목록-갱신) 에 있다. mirror explorer 는 원격 파일을 보므로 제외한다.
-- **현재 폴더가 사라짐**: 다시 읽은 결과가 경로 없음이면 읽기 오류 화면(다시 시도 · 상위 폴더로)을 보인다. 다른 경로로 자동으로 옮기지 않는다. 외부 프로그램의 변경은 감시하지 않으므로 새로고침해야 보인다.
+- **현재 폴더가 사라짐**: 다시 읽은 결과가 경로 없음이면 읽기 오류 화면(다시 시도 · 상위 폴더로)을 보인다. 다른 경로로 자동으로 옮기지 않는다. 상위 폴더도 함께 사라졌으면 "상위 폴더로" 는 남아 있는 가장 가까운 상위 폴더로 간다. 외부 프로그램의 변경은 감시하지 않으므로 새로고침해야 보인다.
 - **늦은 결과**: 목록 결과는 receipt 를 가진 View 에만 들어간다. 그 사이 사용자가 바꾼 선택은 지우지 않는다. 파일 작업 완료의 선택 정리와 오류 토스트는 원 View 와 binding 이 유효할 때만 낸다. 실패한 rename·trash 는 선택을 유지하고 목록을 다시 읽는다. 부분 성공한 붙여넣기는 실패 경로를 보이고 cut 클립보드를 유지한다. 사용자가 그 사이 새로 담은 클립보드는 건드리지 않는다.
 - **종료**: surface 를 닫으면 engine 이 모델을 지우고, 창은 `release_surface_views` 로 그 surface 의 `ExplorerView` 를 지운다. 대기 중인 로컬 읽기의 receipt 도 함께 버려지고, 늦게 온 원격 응답은 기다리는 View 가 없어 버려진다. 아직 시작하지 않은 파일 작업 요청은 binding 이 더는 그 surface 를 가리키지 않아 시작하지 않는다. 이미 시작한 작업은 끝까지 실행되고 결과 토스트·목록 갱신만 생략된다(`src/app/explorer_files.rs`).
 
@@ -109,7 +109,7 @@ mirror explorer 에서 파일을 더블클릭하면 원격 호스트에 그 파�
 - **상태 화면**: 내용 영역이 목록 대신 가운데 정렬한 글리프 · 제목 · 선택 보조 줄을 보여 준다(`explorer/state_screen.rs`, 시안 `ExpState`).
   - **compact 한 줄**: 내용 영역 높이가 `explorer_state_compact_below()`(120px) 미만이면 모든 상태 화면이 한 줄로 바뀐다. 확대하지 않은 16px 글리프(`icon_glyph_size_md`) · 제목(body, 넘치면 끝 말줄임) · 그 상태의 버튼(읽기 오류의 Retry · Go up, 간격 space-xs)을 space-sm 간격으로 놓고 줄 전체를 내용 영역 가운데에 둔다. 보조 줄과 OS 이유 문구는 제목의 툴팁으로 옮긴다. 창을 줄여 탐색기 칸이 하한 아래가 돼도 블록이 잘리지 않게 하기 위한 형태다. 공용 `tasty_ui_widgets::compact_state_row` 가 그리며 갤러리 Short cell 예제와 같은 함수다.
   - 빈 폴더(`Ok`이고 항목 0개): `folderOpen` 글리프(text-muted) + "This folder is empty"(text-secondary). 시안 탐색기 Spec 은 항목 0개와 빈 폴더를 구분하지 않는다.
-  - 읽기 오류(`Error`, 권한 거부 밖의 실패 — 경로 없음, 디렉터리 아님, 로컬 IO 오류, 원격 읽기 실패·응답 시간 초과): `alertTriangle` 글리프와 제목 "Can't read this folder"를 `explorer_error_fg`(→ accent-danger)로 칠한다. 그 아래 받은 오류 문구를 mono caption(text-muted, 최대 폭 200) 한 줄로 번역하지 않고 보인다(원격 시간 초과는 `explorer.state.error_conn_timeout`). 버튼 줄은 space-xs 를 더 띄우고 Retry(Secondary sm, 같은 경로를 다시 읽음 = `ExplorerAction::Refresh`)와 Go up(Ghost sm, 상위 폴더 = `ExplorerAction::GoUp`)을 space-sm 간격으로 가운데에 둔다. 현재 경로에 상위가 없으면(루트) Go up 을 숨긴다. 툴바·트리·상태줄은 그대로 쓸 수 있다(design `ExpState` read error).
+  - 읽기 오류(`Error`, 권한 거부 밖의 실패 — 경로 없음, 디렉터리 아님, 로컬 IO 오류, 원격 읽기 실패·응답 시간 초과): `alertTriangle` 글리프와 제목 "Can't read this folder"를 `explorer_error_fg`(→ accent-danger)로 칠한다. 그 아래 받은 오류 문구를 mono caption(text-muted, 최대 폭 200) 한 줄로 번역하지 않고 보인다(원격 시간 초과는 `explorer.state.error_conn_timeout`). 버튼 줄은 space-xs 를 더 띄우고 Retry(Secondary sm, 같은 경로를 다시 읽음 = `ExplorerAction::Refresh`)와 Go up(Ghost sm, 상위 폴더 = `ExplorerAction::GoUp`)을 space-sm 간격으로 가운데에 둔다. 로컬 폴더가 없거나 폴더가 아니어서 실패했으면 읽기 worker 가 남아 있는 가장 가까운 상위 폴더를 오류에 붙여 보내고(`local_reads::MissingFolder`), 그 폴더가 바로 위 폴더가 아니면 Go up 은 그 폴더로 `Navigate` 한다. 툴바의 위로·`Alt+Up` 은 한 단계 위 그대로다. 현재 경로에 상위가 없으면(루트) Go up 을 숨긴다. 툴바·트리·상태줄은 그대로 쓸 수 있다(design `ExpState` read error).
   - 권한 거부(`NoPermission`): `lock` 글리프와 제목 "Permission denied"를 accent-warning으로 칠하고, 보조 줄(caption, text-muted, 최대 폭 200)에 이유를 적는다.
   - 불러오는 중(`Loading`): 글리프 자리에 Spinner + "Loading…".
   - 글리프 배치 크기는 `icon-glyph-size-md`이고 그림만 그 칸 가운데에서 1.6배로 그린다(시안 `transform: scale(1.6)`은 배치에 영향이 없다). 줄 간격은 `space-sm`이다.
@@ -245,6 +245,7 @@ Appearance → **Explorer** 서브탭에서 surface 폰트를 오버라이드한
 
 - Given 로컬 explorer When 하위 폴더로 이동한다 Then 목록이 `Loading` 을 거쳐 새 폴더의 항목으로 바뀌고, 이전 폴더의 늦은 결과는 반영되지 않는다(`src/app/local_reads.rs` 의 `replaced_directory_receipt_cannot_publish_its_old_result`, mirror 는 `view.rs` 의 `apply_remote_list_dir_result_ignores_stale_request_id`).
 - Given 사이드바 트리에서 하위 폴더를 펼친 로컬 explorer When 외부 프로그램이 그 하위 폴더에 폴더를 만든 뒤 `F5` 를 누른다 Then 목록과 펼친 트리가 함께 다시 읽혀 새 폴더가 트리에도 보인다(`view.rs` 의 `an_explicit_reload_of_the_same_folder_rereads_the_tree`).
+- Given 로컬 explorer 가 A/B/C 를 보고 있다 When B 가 통째로 지워져 읽기 오류 화면에서 "상위 폴더로" 를 누른다 Then A 로 간다(`local_reads.rs` 의 `a_missing_folder_names_its_nearest_existing_ancestor`, `view.rs` 의 `go_up_from_a_vanished_folder_skips_vanished_parents`).
 - Given 읽기 권한이 없는 폴더 When 들어간다 Then 권한 거부 화면이 나오고 툴바·트리는 그대로 쓸 수 있다.
 - Given 폴더를 우클릭한다 When "새 탭으로 열기"를 고른다 Then 우클릭한 surface 의 pane 에 그 폴더를 cwd 로 하는 explorer Pane 탭이 생기고 원래 explorer 는 바뀌지 않는다.
 - Given mirror explorer When 폴더를 탐색하고 파일을 더블클릭한다 Then 목록은 원격 조회로 오고, 파일은 원격에 탭으로 열리거나 열 수 없다는 토스트가 나온다. 로컬 파일시스템은 읽지 않는다.
