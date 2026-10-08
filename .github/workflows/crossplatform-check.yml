@@ -1,6 +1,6 @@
 name: Cross-platform Check
 
-# OS별 컴파일과 테스트를 실행한다.
+# Windows·Linux 컴파일과 테스트를 실행한다. macOS 잡은 crossplatform-check-macos.yml에 있다.
 on:
   push:
     branches: [main]
@@ -15,49 +15,13 @@ on:
 
 # main push는 실행 중인 run을 취소하지 않는다. 잡이 push 간격보다 길어 취소하면 끝까지 가는 run이 없다.
 # 대기 run은 새 push가 대신하므로 대기열은 쌓이지 않는다. PR은 최신 커밋만 보면 되므로 취소한다.
+# 러너가 offline일 수 있는 macOS 잡은 이 그룹을 붙잡지 않도록 별도 워크플로로 나눴다.
 # 기준: docs/dev-guide/ci-gates.md#연속-push와-실행-취소
 concurrency:
   group: crossplatform-check-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  check-macos:
-    runs-on: [self-hosted, macOS]
-    # 실측 최대 12.4분 × 3. 기준: docs/dev-guide/ci-gates.md#잡-시간-상한
-    timeout-minutes: 40
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: cargo check
-        run: cargo check --workspace --locked
-
-      # 테스트가 PTY와 자식 셸을 사용하므로 fd soft 상한을 먼저 확인한다.
-      # 4096은 측정된 사용량에 여유를 둔 하한이다. 실패하면 실제 최고 사용량을
-      # 다시 측정하고 원인을 확인한다. 하한만 낮추지 않는다.
-      # 측정 절차: docs/dev-guide/ci-gates.md
-      # soft/hard와 커널 상한을 출력하되 이 스텝에서 상한을 변경하지 않는다.
-      - name: fd budget
-        run: |
-          soft="$(ulimit -n)"
-          echo "soft: $soft"
-          echo "hard: $(ulimit -Hn)"
-          sysctl -n kern.maxfilesperproc kern.maxfiles
-          if [ "$soft" = "unlimited" ]; then
-            echo "soft 상한이 unlimited이므로 fd 하한 검사를 생략합니다."
-            exit 0
-          fi
-          if [ "$soft" -lt 4096 ]; then
-            echo "::error::fd soft 상한이 $soft 입니다(필요한 하한: 4096)."
-            echo "::error::테스트에서 EMFILE 오류가 발생할 수 있습니다."
-            echo "::error::하한을 낮추기 전에 실제 최고 fd 사용량을 측정해 주세요."
-            echo "::error::측정 절차: docs/dev-guide/ci-gates.md"
-            exit 1
-          fi
-
-      # macOS 전용 분기를 포함한 단위 테스트를 실행한다.
-      - name: cargo test (macos, gui, unit)
-        run: cargo test --workspace --lib --bins --locked --no-fail-fast
-
   check-windows:
     runs-on: [self-hosted, Windows]
     # 실측 최대 13.7분 × 3. 기준: docs/dev-guide/ci-gates.md#잡-시간-상한

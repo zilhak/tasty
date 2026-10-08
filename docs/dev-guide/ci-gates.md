@@ -18,7 +18,7 @@ DPI 수동 변환 검사는 `src/`와 `crates/`의 파일 수 하한을 각각 �
 |---|---|---|---|---|
 | 포맷 | `cargo fmt --check` (+ `crates/tasty-plugin-sdk-wasm/` 매니페스트) | `format-check.yml` (ubuntu-latest) | main push · PR · 수동 | [실측] |
 | SemVer 가드 | `cargo test --locked --no-default-features --no-fail-fast --test api_baseline_0_7 --test changelog_unreleased --test cli_naming_count_drift` | `test.yml` 의 `semver-guards` (self-hosted Linux X64) | main push · 수동 | [실측] |
-| macOS 컴파일 + 단위테스트 | `cargo check --workspace --locked` · `cargo test --workspace --lib --bins --locked --no-fail-fast` | `crossplatform-check.yml` 의 `check-macos` (self-hosted macOS) | main push(문서·site 제외) · PR · 수동 | [실측] |
+| macOS 컴파일 + 단위테스트 | `cargo check --workspace --locked` · `cargo test --workspace --lib --bins --locked --no-fail-fast` | `crossplatform-check-macos.yml` 의 `check-macos` (self-hosted macOS) | main push(문서·site 제외) · PR · 수동 | [실측] |
 | Windows lint + 단위테스트 **+ 지목 통합** | `cargo clippy --workspace --all-targets --locked` · `cargo test --workspace --lib --bins --locked --no-fail-fast` · `cargo test -p tasty-shm -p tasty-doc-guards --locked --no-fail-fast` | `crossplatform-check.yml` (self-hosted Windows) | main push(문서·site 제외) · PR · 수동 | [실측] |
 | headless 컴파일 · **전체 스위트** · lint **+ Linux gui 단위테스트** | `cargo check --workspace --no-default-features --locked` · `cargo test --workspace --no-default-features --locked --no-fail-fast` · `cargo clippy --workspace --all-targets --no-default-features --locked` · `cargo test --workspace --lib --bins --locked --no-fail-fast`(스텝 `cargo test (linux, gui, unit)` — 기본 feature, 아래 [조합 격자의 빈 칸](#조합-격자의-빈-칸--linux--gui--debug-지금은-채워져-있다)) · **관측(비차단)** `xvfb-run … cargo test --workspace --locked --no-fail-fast --test e2e_tests -- multi_window_owner_routing --exact`(스텝 `cargo test (linux, gui, e2e — 관측용)`, `continue-on-error: true` — 헤드리스 조합에서 컴파일하지 않는 이 시험을 돌리되 실패해도 잡을 차단하지 않는다) · **관측(비차단)** `xvfb-run … cargo test -p tasty-plugin-markdown --locked --no-fail-fast -- --ignored --exact render::webview_layout_tests::address_bar_stays_on_top_in_webkitgtk`(스텝 `cargo test (linux, gui, webview layout — 관측용)`, `continue-on-error: true` — markdown 주소창 배치를 WebKitGTK 로 재는 Linux 전용 시험, 아래 [webview 레이아웃 시험](#webview-레이아웃-시험)) | `crossplatform-check.yml` 의 `check-headless` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동 | [실측] |
 | **not-debug(release) 컴파일 · gui** | `cargo check --workspace --release --locked` | `crossplatform-check.yml` 의 `check-release` (self-hosted Linux X64) | main push(문서·site 제외) · PR · 수동 | [실측] |
@@ -257,7 +257,7 @@ checkout의 정리로 `target/`이 삭제되는 구성에는 로컬 증분 빌�
 | build-check.yml | build-linux-x64 | 0 | 0 | 9.3 (release 대리) | 5 | 50 |
 | build-check.yml | build-linux-arm64 | 0 | 0 | 7.2 (release 대리) | 5 | 40 |
 | complexity-check.yml | check-file-size | 24 | 0 | 0.3 | 3 | 10 |
-| crossplatform-check.yml | check-macos | 6 | 86 | 12.4 | 3 | 40 |
+| crossplatform-check-macos.yml | check-macos | 6 | 86 | 12.4 | 3 | 40 |
 | crossplatform-check.yml | check-windows | 5 | 81 | 13.7 | 3 | 45 |
 | crossplatform-check.yml | check-headless | 26 | 38 | 15.7 | 3 | 50 |
 | crossplatform-check.yml | check-release | 93 | 3 | 1.7 | 3 | 10 |
@@ -296,7 +296,13 @@ checkout의 정리로 `target/`이 삭제되는 구성에는 로컬 증분 빌�
 - 대기(GitHub Actions 문서 기준): 그룹마다 실행 중 run 하나와 대기 run 하나를 둔다. 새 push가 오면
   대기 run이 새 run으로 바뀌므로 대기열은 쌓이지 않는다. 그래서 끝난 run의 다음 실행은 그때의
   최신 커밋을 잰다. 결과는 최신 push보다 한두 커밋 늦을 수 있고, 그 사이 커밋은 따로 재지 않는다.
-- 비용: main push가 이어지는 동안 Windows·X64·macOS 러너가 계속 이 그룹의 run을 실행한다.
+- 비용: main push가 이어지는 동안 Windows·X64 러너가 계속 이 그룹의 run을 실행한다.
+- macOS 잡은 이 그룹에 없다. `crossplatform-check-macos.yml`이 같은 트리거로 따로 실행하고
+  `cancel-in-progress: true`로 이전 run을 취소한다. macOS 러너가 offline이면 잡이 러너를 기다리며
+  run이 끝나지 않는다. 같은 그룹에 두면 그 run이 그룹의 실행 자리를 차지해 이후 run이 모두
+  대기하다 교체된다. 분리하면 Windows·Linux 잡은 macOS 러너 상태와 관계없이 끝까지 가고, macOS
+  대기 run은 새 push가 취소하므로 쌓이지 않는다. 대신 macOS 잡도 실행 도중 다음 push에
+  취소될 수 있다.
 - 다른 워크플로는 잡이 몇 분 안에 끝나 실행 도중 취소되는 일이 드물어 그대로 취소한다.
   잡이 push 간격만큼 길어지면 같은 방식을 검토한다.
 
@@ -475,7 +481,7 @@ cargo build -p tasty-doc-guards --bin workflow-channels
 
 | 테스트가 어디 있나 | 자동 **실행** | 자동 **컴파일** | 실례 |
 |---|---|---|---|
-| lib 유닛 테스트 (`src/`·`crates/*/src/` 안의 `#[cfg(test)] mod tests`) | **있다** — 두 조합 모두가 유닛 타깃을 포함한다. 기본 조합은 `crossplatform-check` 의 **세 잡 모두**가 `--lib --bins` 로 돌린다(`check-macos` · `check-windows` · `check-headless` 의 `cargo test (linux, gui, unit)` 스텝), 헤드리스 조합은 `check-headless` 의 전체 스위트가 담는다. 한때 조합 격자에 빈 칸(Linux + gui + debug)이 있었고 지금은 그 gui 스텝이 채운다 — 아래 절 | 있다 | `ui_font_size_tokens_are_integers_at_every_zoom` |
+| lib 유닛 테스트 (`src/`·`crates/*/src/` 안의 `#[cfg(test)] mod tests`) | **있다** — 두 조합 모두가 유닛 타깃을 포함한다. 기본 조합은 `crossplatform-check`·`crossplatform-check-macos` 의 **세 잡 모두**가 `--lib --bins` 로 돌린다(`check-macos` · `check-windows` · `check-headless` 의 `cargo test (linux, gui, unit)` 스텝), 헤드리스 조합은 `check-headless` 의 전체 스위트가 담는다. 한때 조합 격자에 빈 칸(Linux + gui + debug)이 있었고 지금은 그 gui 스텝이 채운다 — 아래 절 | 있다 | `ui_font_size_tokens_are_integers_at_every_zoom` |
 | 통합 테스트 (`tests/*.rs`) | **헤드리스 조합에만 있다** — `check-headless` 가 전체 스위트를 돌린다(gui feature 로 묶여 이 조합에서 컴파일하지 않는 `multi_window_owner_routing` 은 같은 잡의 관측용 gui/Xvfb 스텝이 돌리지만 `continue-on-error` 라 **차단하지 않는다**). **기본 조합에는 없다** — 그 조합의 세 잡은 `--lib --bins` 이고(예외는 Windows 잡이 지목하는 `-p tasty-shm -p tasty-doc-guards` 뿐이다) `test.yml` 의 전체 스위트는 `workflow_dispatch` 전용 그리고 `check-headless` 는 `paths-ignore: docs/** · site/** · **/*.md` 뒤에 있어 **문서만 바뀐 push 에서는 이 칸이 통째로 비는 것**에 유의한다 | **있다** — clippy `--all-targets` 가 타깃으로 잡는다 | `tests/i18n_key_parity.rs` |
 | 문서 가드 통합 테스트 (`crates/tasty-doc-guards/tests/*.rs`) | **있다 — 두 조합과 무관하게** `doc-guards.yml` 이 `-p tasty-doc-guards` 로 돌리고, **Windows 잡도 같은 지목으로 돌린다**(그쪽은 OS 축을 연다). 이 잡에는 경로 필터가 없어 문서만 바뀐 push에서도 실행한다([ADR-0048](../adr/0048-source-guards-and-exemptions.md)). `check-headless` 의 전체 스위트에서도 함께 돈다 | 있다 | `crates/tasty-doc-guards/tests/no_checkbox_in_docs.rs` |
 | SemVer 가드 3종 | **있다** — `semver-guards` 가 `--test` 로 이름을 지목한다 (main push) | 있다 | `api_baseline_0_7` · `changelog_unreleased` · `cli_naming_count_drift` |

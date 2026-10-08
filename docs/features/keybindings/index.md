@@ -216,7 +216,7 @@ Option 시퀀스·튜플 원소와 중첩 Option의 Some(None)은 표현을 다�
   펌프한다. macOS/Windows 는 native 키 콜백이 winit 과 같은 이벤트 루프에서 발생해 폴링이
   필요 없다. **이 한정은 조건부 컴파일이 아니라 런타임 arm 분기다** — `Tick::WebviewKeyPoll`
   과 `WEBVIEW_KEY_POLL_INTERVAL`(`src/app/timers.rs`)은 `#[cfg(feature = "gui")]` 로만 게이트돼
-  세 OS 모두 컴파일되고 (출처: 세 OS **컴파일** 채널 — `.github/workflows/crossplatform-check.yml` 의 `check-macos`·`check-windows`·`check-headless`. **런타임 동작은 그 채널 밖이다** — integration·e2e 는 Linux 뿐이다), `reschedule_webview_key_poll` 의
+  세 OS 모두 컴파일되고 (출처: 세 OS **컴파일** 채널 — `.github/workflows/crossplatform-check-macos.yml` 의 `check-macos`, `crossplatform-check.yml` 의 `check-windows`·`check-headless`. **런타임 동작은 그 채널 밖이다** — integration·e2e 는 Linux 뿐이다), `reschedule_webview_key_poll` 의
   `let arm = needs_poll && cfg!(target_os = "linux")` 가 Linux 에서만 tick 을 세운다(non-Linux 는
   `hub.cancel` 만 탄다). `cfg!` 은 컴파일타임 상수라 접히므로 다른 두 OS 의 폴링 비용은
   실질 0 이다. `#[cfg(target_os = "linux")]` 가 실제로 걸린 곳은 GTK 펌프 호출

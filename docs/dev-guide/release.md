@@ -98,7 +98,7 @@ GitHub Releases 에서 노트 + 플랫폼별 아티팩트 확인:
 
 macOS/Windows 러너도 동일 패턴(라벨만 `[self-hosted, macOS]` / `[self-hosted, Windows]`).
 
-같은 mac/win 러너를 `.github/workflows/crossplatform-check.yml` 이 재사용한다 — dist 빌드 없이 컴파일 정합성만 확인하는 가벼운 가드다. **언제 도는가**: `main` 에 push 될 때(문서·사이트·마크다운만 바뀐 push 는 제외) · `main` 대상 PR · 수동 dispatch. 이 저장소는 PR 없이 main 에 직접 push 하는 흐름이라 push 가 실효 트리거이고, PR 트리거는 PR 흐름을 쓰게 될 때를 위해 남아 있다(선택 근거는 워크플로 파일 상단 주석). **무엇을 도는가**: 잡은 넷(`check-macos` · `check-windows` · `check-headless` · `check-release`)이고 잡별 명령은 [ci-gates](ci-gates.md) 의 표가 정본이다. 네이티브 host 타깃이 곧 `x86_64-pc-windows-msvc` / `aarch64-apple-darwin` 이라 `--target` 지정은 불필요. 잡들이 병렬로 돌고 같은 ref 의 앞선 실행은 취소되므로 같은 ref의 중복 실행을 줄인다. (무거운 dist 빌드 검증은 여전히 수동 `build-check.yml`.)
+같은 mac/win 러너를 `.github/workflows/crossplatform-check.yml` 이 재사용한다 — dist 빌드 없이 컴파일 정합성만 확인하는 가벼운 가드다. **언제 도는가**: `main` 에 push 될 때(문서·사이트·마크다운만 바뀐 push 는 제외) · `main` 대상 PR · 수동 dispatch. 이 저장소는 PR 없이 main 에 직접 push 하는 흐름이라 push 가 실효 트리거이고, PR 트리거는 PR 흐름을 쓰게 될 때를 위해 남아 있다(선택 근거는 워크플로 파일 상단 주석). **무엇을 도는가**: 잡은 셋(`check-windows` · `check-headless` · `check-release`)이고, macOS 잡 `check-macos` 는 같은 트리거의 `.github/workflows/crossplatform-check-macos.yml` 에 따로 있다. 잡별 명령은 [ci-gates](ci-gates.md) 의 표가 정본이다. 네이티브 host 타깃이 곧 `x86_64-pc-windows-msvc` / `aarch64-apple-darwin` 이라 `--target` 지정은 불필요. 잡들이 병렬로 돈다. 같은 ref 의 앞선 실행을 취소하는 조건은 두 워크플로가 다르다([연속 push와 실행 취소](ci-gates.md#연속-push와-실행-취소)). (무거운 dist 빌드 검증은 여전히 수동 `build-check.yml`.)
 
 ### 1회 도구 설치 (러너 추가 / 새 도구 의존성 시)
 
