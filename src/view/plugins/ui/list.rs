@@ -285,8 +285,8 @@ pub(super) fn draw_list_tab(
                     ui,
                     &th,
                     &PluginInstallPathsView {
-                        label: &t("plugins.install_path"),
-                        open_folder: &t("plugins.open_folder"),
+                        label: t("plugins.install_path"),
+                        open_folder: t("plugins.open_folder"),
                         install_dir: &entry.install_dir,
                         log_line: &log_line,
                     },
