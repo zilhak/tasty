@@ -17,11 +17,7 @@ pub struct WebViewKeyEvent {
 }
 
 fn shortcut_lookup_key(key: Key, physical: &PhysicalKey, mods: ModifiersState) -> Key {
-    if mods.control_key() || mods.super_key() || mods.alt_key() {
-        tasty_key_match::physical_key_to_logical(physical).unwrap_or(key)
-    } else {
-        key
-    }
+    tasty_key_match::shortcut_lookup_key(&key, physical, mods)
 }
 
 #[derive(Debug, Clone, Default)]

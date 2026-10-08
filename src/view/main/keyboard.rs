@@ -133,17 +133,13 @@ impl MainView {
         }
     }
 
-    /// 수식키를 누른 동안 IME가 logical_key를 바꿔도 physical key에서 US 문자를 찾는다.
+    /// 단축키를 찾을 키. 규칙은 [`crate::shortcuts::shortcut_lookup_key`] 가 정한다.
     fn shortcut_lookup_key(&self, event: &winit::event::KeyEvent) -> Key {
-        if self.base.state.modifiers.control_key()
-            || self.base.state.modifiers.super_key()
-            || self.base.state.modifiers.alt_key()
-        {
-            crate::shortcuts::physical_key_to_logical(&event.physical_key)
-                .unwrap_or_else(|| event.logical_key.clone())
-        } else {
-            event.logical_key.clone()
-        }
+        crate::shortcuts::shortcut_lookup_key(
+            &event.logical_key,
+            &event.physical_key,
+            self.base.state.modifiers,
+        )
     }
 
     /// 전체화면 무대가 열려 있으면 배경 단축키와 Escape 처리를 막는다.

@@ -143,14 +143,8 @@ impl App {
         let Some(main) = self.view.views.get_mut(&id).and_then(|w| w.as_main_mut()) else {
             return false;
         };
-        // IME가 바꾼 문자 대신 물리 키를 우선해 수정키 조합을 해석한다.
         let mods = main.base.state.modifiers;
-        let shortcut_key = if mods.control_key() || mods.super_key() || mods.alt_key() {
-            shortcuts::physical_key_to_logical(&ke.physical_key)
-                .unwrap_or_else(|| ke.logical_key.clone())
-        } else {
-            ke.logical_key.clone()
-        };
+        let shortcut_key = shortcuts::shortcut_lookup_key(&ke.logical_key, &ke.physical_key, mods);
         self.dispatch_plugin_shortcut_key(id, &shortcut_key, mods)
     }
 

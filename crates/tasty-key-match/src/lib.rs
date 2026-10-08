@@ -269,6 +269,48 @@ pub fn binding_key_recognized(binding: &str) -> bool {
         || NAMED_KEY_TOKENS.iter().any(|(_, name)| *name == token)
 }
 
+/// 단축키를 찾을 때 쓸 키를 정한다. 단축키 경로(본 창·plugin·webview)가 같은 규칙을 쓴다.
+///
+/// - 물리 키가 F13~F24 인데 논리 키가 이름 키가 아니면 그 F 키로 본다. macOS winit 은 F21~F24 의
+///   논리 키를 AppKit 사설 영역 문자(`U+F718` 등)로 올리고 물리 키만 `KeyCode::F21` 로 준다.
+/// - ctrl·alt·super 가 눌렸으면 IME 가 바꾼 논리 문자 대신 물리 키의 US 배열 문자를 쓴다
+///   ([`physical_key_to_logical`]).
+pub fn shortcut_lookup_key(logical: &Key, physical: &PhysicalKey, mods: ModifiersState) -> Key {
+    if !matches!(logical, Key::Named(_))
+        && let Some(named) = physical_function_key(physical)
+    {
+        return Key::Named(named);
+    }
+    if (mods.control_key() || mods.super_key() || mods.alt_key())
+        && let Some(key) = physical_key_to_logical(physical)
+    {
+        return key;
+    }
+    logical.clone()
+}
+
+/// 물리 키 F13~F24 의 이름 키. 논리 키가 그 키로 오지 않는 플랫폼의 폴백이다.
+fn physical_function_key(physical: &PhysicalKey) -> Option<NamedKey> {
+    let PhysicalKey::Code(code) = physical else {
+        return None;
+    };
+    Some(match code {
+        KeyCode::F13 => NamedKey::F13,
+        KeyCode::F14 => NamedKey::F14,
+        KeyCode::F15 => NamedKey::F15,
+        KeyCode::F16 => NamedKey::F16,
+        KeyCode::F17 => NamedKey::F17,
+        KeyCode::F18 => NamedKey::F18,
+        KeyCode::F19 => NamedKey::F19,
+        KeyCode::F20 => NamedKey::F20,
+        KeyCode::F21 => NamedKey::F21,
+        KeyCode::F22 => NamedKey::F22,
+        KeyCode::F23 => NamedKey::F23,
+        KeyCode::F24 => NamedKey::F24,
+        _ => return None,
+    })
+}
+
 /// Convert a physical key code to a Key::Character for shortcut matching.
 /// On macOS, when IME is composing (e.g. Korean), logical_key may contain
 /// the composed character (e.g. "ㅇ" instead of "d"). This function extracts
@@ -460,6 +502,51 @@ mod tests {
             &Key::Named(NamedKey::F24),
             ModifiersState::SHIFT
         ));
+    }
+
+    /// macOS winit 이 F21 을 논리 키 `Character("\u{F718}")` + 물리 키 `F21` 로 올려도 `f21` 바인딩에 맞는다.
+    #[test]
+    fn a_private_use_logical_key_on_a_physical_f21_matches_f21() {
+        let logical = Key::Character("\u{F718}".into());
+        let physical = PhysicalKey::Code(KeyCode::F21);
+        for mods in [ModifiersState::empty(), ModifiersState::CONTROL] {
+            let key = shortcut_lookup_key(&logical, &physical, mods);
+            assert_eq!(key, Key::Named(NamedKey::F21), "{mods:?}");
+        }
+        let key = shortcut_lookup_key(&logical, &physical, ModifiersState::empty());
+        assert!(matches_binding("f21", &key, ModifiersState::empty()));
+        let key = shortcut_lookup_key(&logical, &physical, ModifiersState::CONTROL);
+        assert!(matches_binding("ctrl+f21", &key, ModifiersState::CONTROL));
+        assert!(!matches_binding("f21", &logical, ModifiersState::empty()));
+    }
+
+    /// 폴백은 논리 키가 이름 키가 아닐 때만이고, 수식키 조합의 US 문자 대체는 그대로다.
+    #[test]
+    fn lookup_key_keeps_named_logical_keys_and_the_us_letter_fallback() {
+        let named = Key::Named(NamedKey::Escape);
+        let f13 = PhysicalKey::Code(KeyCode::F13);
+        assert_eq!(
+            shortcut_lookup_key(&named, &f13, ModifiersState::empty()),
+            named
+        );
+        let hangul = Key::Character("ㅇ".into());
+        let d = PhysicalKey::Code(KeyCode::KeyD);
+        assert_eq!(
+            shortcut_lookup_key(&hangul, &d, ModifiersState::CONTROL),
+            Key::Character("d".into())
+        );
+        assert_eq!(
+            shortcut_lookup_key(&hangul, &d, ModifiersState::empty()),
+            hangul
+        );
+        for code in [KeyCode::F12, KeyCode::F25] {
+            let key = Key::Character("x".into());
+            assert_eq!(
+                shortcut_lookup_key(&key, &PhysicalKey::Code(code), ModifiersState::empty()),
+                key,
+                "{code:?}"
+            );
+        }
     }
 
     #[test]

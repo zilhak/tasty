@@ -14,6 +14,7 @@ pub(crate) use webview_claims::webview_shortcut_policy;
 
 pub(crate) use tasty_key_match::{
     any_binding_pressed_egui, consume_binding_egui, matches_any_binding, physical_key_to_logical,
+    shortcut_lookup_key,
 };
 use winit::event_loop::EventLoopProxy;
 
