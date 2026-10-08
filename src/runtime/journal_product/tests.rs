@@ -6,8 +6,8 @@ use super::stall_budget::StallBudget;
 use super::*;
 use tasty_core::{StructuralCommand, StructureModels, evolve_streams};
 
-/// PTY 자식처럼 `pid` 프로세스가 진행을 맡는 조건을 기다린다. 기한은
-/// [`StallBudget::for_process`]가 정한다.
+/// PTY 출력·회수처럼 `pid` 자식과 관련된 조건을 기다린다. 기한은
+/// [`StallBudget::for_process`]가 정한다(사실상 쉰 시간 10초).
 #[cfg(unix)]
 fn wait_for(what: &str, pid: Option<u32>, mut done: impl FnMut() -> bool) {
     let mut stall = StallBudget::for_process(pid);
