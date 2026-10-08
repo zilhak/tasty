@@ -281,6 +281,7 @@ Spec 하나가 갤러리 예제 둘이거나, 둘이 하나이거나, 경계가 
 | `gallery/overlays-windows.jsx` "“+ New workspace” row — the escape from a dead-end remote" | `remote-workspace-attach-new-row` | 아래 remote_attach 절 `RaNewWsRow` 행 |
 | `gallery/overlays-windows.jsx` "Gestures & folder targets — the six open branches" | `filepicker-gesture-table` | [파일 피커](#파일-피커-overlays) |
 | `gallery/overlays-windows.jsx` "Settings · General › Remote transfer — 5th L2 subtab" | `settings-remote-transfer` | [Remote transfer](#settings--general--remote-transfer) |
+| `gallery/overlays-windows.jsx` "General › General — Accept webhook calls from other computers (2026-10-07)" | `settings-general-webhook-external` | [웹훅 외부 수신 행](#settings--general--general--웹훅-외부-수신-행) |
 | `gallery/overlays-windows.jsx` "FileHandler › File Extension Mapping — order + Add" | `settings-file-extension-mapping` | [Handler 하위 탭](#settings--handler-하위-탭) |
 | `gallery/overlays-windows.jsx` "Status table, one action per row, one request button" | `settings-macos-permissions` | [Permissions (macOS)](#settings--general--permissions-macos) |
 | `gallery/overlays-windows.jsx` "Copy fingerprint · Add plugin that can't be added" | `plugins-window` · `plugin-add-hint-slot` | [plugins window](#overlays--plugins-window) |
@@ -884,6 +885,25 @@ TCC 상태 하나만 그린다. 손쉬운 사용 행은 본체에서 debug 빌�
 때문이며, 디자인은 이 색 근사를 받아들였다. 명령 칩은 mono 글자에 `surface-raised` 배경색만
 두고 반경과 좌우 여백은 없다. `PermRow`의 라벨 줄과 부연 줄 사이는 semantic
 `label-detail-gap`(Theme `label_detail_gap`)이다.
+
+## Settings › General › General — 웹훅 외부 수신 행
+
+General L1 의 첫 L2 "General" 마지막 행. 디자인: `ui_kits/terminal/overlays/settings_window.jsx`(General/General 의
+`Row` + 경고 callout) · `gallery/overlays-windows.jsx` "General › General — Accept webhook calls from other computers" spec.
+디자인 회신(2026-10-07)의 위치·행 격자·문구·callout 항상 표시를 갤러리 spec 과 본체에 반영했다.
+
+| 디자인 jsx 컴포넌트 | 본체 함수 | 갤러리 항목 |
+|---|---|---|
+| `Row`("Accept webhook calls from other computers:" + `Switch`) | `src/view/settings/ui/tabs/general.rs::draw_general_tab` — `general_grid` 의 마지막 행. 라벨은 `Label::wrap` 으로 라벨 열 안에서 줄바꿈 | `components/settings_general_webhook.rs::draw` (`settings` 섹션 `settings-general-webhook-external` spec) — Restore layout · Close behavior · Language · 웹훅 네 행 |
+| 경고 callout(`alertTriangle` 16 · accent-warning 40% 테두리 · 12% tint · caption) | 같은 함수 — 격자와 callout 을 `item_spacing.y = space-sm` 묶음에 두고 `measure_md` 폭 안에서 `tasty_ui_widgets::warning_callout` | 동(`warning_callout`, `measure_md`) |
+
+**전사 노트**:
+- 구조: 행은 다른 General 행과 같은 격자(라벨 열 · 컨트롤)에 있고 별도 가로 행·추가 `space-md` 간격은 없다. callout 은 행
+  바로 아래, 행 간격(`space-sm`)만큼 띄워 스위치 상태와 관계없이 항상 그린다. 휠 거리 설명과 언어 재시작 안내는 callout 아래에 온다.
+- 라벨 열: 디자인 `Row` 는 라벨 열 150(`settings-label-width`) · gap 16 이다. 갤러리 spec 은 이 값을 따른다. 본체 General 격자는
+  egui `Grid` 가 가장 긴 라벨에 맞춰 열 폭을 정하고 칸 사이 12 를 쓰는 기존 구조라, 웹훅 행은 그 열 폭 안에서 줄을 바꾼다
+  (en·ja 두 줄, ko 한 줄).
+- 토큰: 새 토큰 없음. `settings-row-min-height`(갤러리 행 하한), `accent-warning`, `measure-md`, `space-sm`.
 
 ## Settings › General › Overlay — toast duration
 
