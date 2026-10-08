@@ -7,7 +7,7 @@
 
 양식: [`_feature.template.md`](_feature.template.md) (기획) · [`_screen.template.md`](_screen.template.md) (화면). 새 기능은 양식을 복사해 채운다.
 
-Surface 종류(kind)마다의 명세는 제공 주체와 관계없이 [`surfaces/`](../surfaces/index.md)에 있다 — terminal · empty · explorer · dag_graph · markdown · image · html. 여러 kind 가 공유하는 구조 트리와 생성 경계는 이 카탈로그의 [work-area](work-area/index.md)에 남는다.
+Surface 종류(kind)마다의 명세는 제공 주체와 관계없이 [`surfaces/`](../surfaces/index.md)에 있다. 아래 표의 terminal·explorer 행도 그 정본으로 연결한다.
 
 
 ## 카탈로그
@@ -16,6 +16,7 @@ Surface 종류(kind)마다의 명세는 제공 주체와 관계없이 [`surfaces
 |------|------|------|
 | [main-view](main-view/index.md) — MainView (engine을 표시하는 메인 윈도우) | 로컬 사용자 · AI Agent · 원격 | [전체 레이아웃](main-view/index.md#화면) |
 | [work-area](work-area/index.md) — 작업 영역 (Workspace/Pane/Tab/Surface 도메인) | 로컬 사용자 · AI Agent · 원격 | [화면](work-area/index.md#화면) |
+| [terminal](../surfaces/terminal/index.md) — 터미널 (PTY·VTE·앱별 Shift+Enter·보조키 방향키·scrollback·표시면별 viewport·GPU) | 로컬 사용자 · AI Agent · 원격 | GPU 그리드 |
 | [terminal-search](terminal-search/index.md) — 터미널 검색 (스크롤백+화면) | 로컬 사용자 | 검색 바 popup |
 | [terminal-link](terminal-link/index.md) — 링크 hover·수식키 좌클릭·좌클릭 열기 끄기 · 우클릭 메뉴 | 로컬 사용자 | hover 하이라이트 |
 | [workspace-tabs](workspace-tabs/index.md) — 탭 스트립 (Pane 별 탭 바) | 로컬 사용자 | [화면](workspace-tabs/index.md#화면) · [구현](workspace-tabs/index.md#구현) |
@@ -54,6 +55,7 @@ Surface 종류(kind)마다의 명세는 제공 주체와 관계없이 [`surfaces
 | [closed-tab-restore](closed-tab-restore/index.md) — 닫힌 항목 복원 (`Ctrl+Shift+T`) | 로컬 사용자 | 없음 |
 | [convert-surface](convert-surface/index.md) — Surface 타입 전환 (`Alt+'`) | 로컬 사용자 · AI Agent | convert popup |
 | [surface-move](surface-move/index.md) — Surface·Tab·Pane 위치 이동 (이동/이곳으로 이동) | 로컬 사용자 | OS 컨텍스트 메뉴 |
+| [explorer](../surfaces/explorer/index.md) — 내장 파일 관리자 surface (탐색/열기/뷰모드·파일 충돌 보호, [파일 작업 계약](../surfaces/explorer/file-operations.md)) | 로컬 사용자 · AI Agent | host surface |
 | [layout-persistence](layout-persistence/index.md) — 레이아웃 영속화 (journal·View checkpoint·복원 입력과 저장 대기의 수명) | 로컬 사용자 | 없음 |
 | [layout-presets](layout-presets/index.md) — 레이아웃 프리셋 (`preset.*`) | 로컬 사용자 · AI Agent | PresetView |
 | [accessibility](accessibility/index.md) — 접근성 (reduced motion 등) | 로컬 사용자 | [설정 탭](settings/screens/settings.md) |
