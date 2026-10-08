@@ -13,9 +13,12 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# main push는 실행 중인 run을 취소하지 않는다. 잡이 push 간격보다 길어 취소하면 끝까지 가는 run이 없다.
+# 대기 run은 새 push가 대신하므로 대기열은 쌓이지 않는다. PR은 최신 커밋만 보면 되므로 취소한다.
+# 기준: docs/dev-guide/ci-gates.md#연속-push와-실행-취소
 concurrency:
   group: crossplatform-check-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   check-macos:
