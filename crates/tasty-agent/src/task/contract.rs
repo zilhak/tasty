@@ -222,9 +222,13 @@ pub struct RawResult {
     /// 프로세스 종료 코드. 숫자 코드가 없으면(신호 종료 등) 비어 있다.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exit_code: Option<i32>,
-    /// 실행 응답 원문(Run 의 stdout·stderr tail, Custom 의 IPC 응답 등).
+    /// 실행 응답 원문(Run 의 stdout·stderr tail, Custom 의 IPC 응답 등). Custom 의 응답이
+    /// [`EXECUTION_RESPONSE_CAP`] 을 넘으면 비우고 앞부분을 `execution_truncated` 에 둔다.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub execution: Option<Value>,
+    /// 상한을 넘어 잘린 Custom 응답의 앞부분. 응답이 상한 안이면 없다.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution_truncated: Option<CappedJson>,
     /// 후처리 CLI 의 원본 결과. 후처리가 없거나 실행 전에 끝났으면 비어 있다.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub postprocess: Option<PostprocessRaw>,
@@ -238,6 +242,7 @@ impl RawResult {
     pub fn is_empty(&self) -> bool {
         self.exit_code.is_none()
             && self.execution.is_none()
+            && self.execution_truncated.is_none()
             && self.postprocess.is_none()
             && self.accepted.is_none()
     }
@@ -246,11 +251,17 @@ impl RawResult {
 /// [`AcceptedResponse`] 에 응답을 그대로 두는 직렬화 크기 상한(바이트). Run 출력 한 줄기와 같다.
 pub const ACCEPTED_RESPONSE_CAP: usize = 64 * 1024;
 
-/// custom 비동기 task 의 접수 응답. 직렬화한 JSON 이 [`ACCEPTED_RESPONSE_CAP`] 이하면 `response`
-/// 에 값 그대로, 넘으면 `text` 에 그 JSON 의 앞부분(문자 경계)만 두고 `truncated`·`dropped_bytes`
-/// 로 잘린 것을 알린다.
+/// Custom 의 최종 응답을 [`RawResult::execution`] 에 그대로 두는 직렬화 크기 상한(바이트).
+/// 접수 응답과 같다. 최종 출력은 따로 저장하므로 raw 를 잘라도 출력은 바뀌지 않는다.
+pub const EXECUTION_RESPONSE_CAP: usize = ACCEPTED_RESPONSE_CAP;
+
+/// custom 비동기 task 의 접수 응답.
+pub type AcceptedResponse = CappedJson;
+
+/// 크기 상한을 둔 JSON 값. 직렬화한 JSON 이 상한 이하면 `response` 에 값 그대로, 넘으면
+/// `text` 에 그 JSON 의 앞부분(문자 경계)만 두고 `truncated`·`dropped_bytes` 로 잘린 것을 알린다.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct AcceptedResponse {
+pub struct CappedJson {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub response: Option<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -265,16 +276,21 @@ fn is_zero(n: &u64) -> bool {
     *n == 0
 }
 
-impl AcceptedResponse {
+impl CappedJson {
+    /// 접수 응답을 [`ACCEPTED_RESPONSE_CAP`] 으로 담는다.
     pub fn capture(value: &Value) -> Self {
+        Self::capture_within(value, ACCEPTED_RESPONSE_CAP)
+    }
+
+    pub fn capture_within(value: &Value, cap: usize) -> Self {
         let text = value.to_string();
-        if text.len() <= ACCEPTED_RESPONSE_CAP {
+        if text.len() <= cap {
             return Self {
                 response: Some(value.clone()),
                 ..Self::default()
             };
         }
-        let mut cut = ACCEPTED_RESPONSE_CAP;
+        let mut cut = cap;
         while !text.is_char_boundary(cut) {
             cut -= 1;
         }
@@ -284,6 +300,25 @@ impl AcceptedResponse {
             text: Some(text[..cut].to_string()),
             truncated: true,
         }
+    }
+}
+
+/// raw 에 둘 본 작업 응답. Custom 의 응답이 [`EXECUTION_RESPONSE_CAP`] 을 넘으면 `execution` 을
+/// 비우고 앞부분을 돌려준다. 다른 종류는 실행기가 이미 상한을 둔다(Run 출력 꼬리 등).
+pub fn raw_execution(
+    command: &TaskCommand,
+    execution: Option<&Value>,
+) -> (Option<Value>, Option<CappedJson>) {
+    match (command, execution) {
+        (TaskCommand::Custom { .. }, Some(v)) => {
+            let capped = CappedJson::capture_within(v, EXECUTION_RESPONSE_CAP);
+            if capped.truncated {
+                (None, Some(capped))
+            } else {
+                (capped.response, None)
+            }
+        }
+        (_, v) => (v.cloned(), None),
     }
 }
 
@@ -745,9 +780,11 @@ pub fn finalize_result(task: &Task, contract: &TaskContract, reported: &TaskResu
         kind: kind.to_string(),
         output_source: source.to_string(),
     };
+    let (execution, execution_truncated) = raw_execution(&task.command, reported.output.as_ref());
     let raw = RawResult {
         exit_code: reported.exit_code,
-        execution: reported.output.clone(),
+        execution,
+        execution_truncated,
         postprocess: None,
         accepted: task.accepted.clone(),
     };
@@ -851,6 +888,7 @@ pub fn finalize_result(task: &Task, contract: &TaskContract, reported: &TaskResu
                 TaskCommand::Reduce { .. } => RawResult {
                     exit_code: raw.exit_code,
                     execution: None,
+                    execution_truncated: None,
                     postprocess: None,
                     accepted: None,
                 },

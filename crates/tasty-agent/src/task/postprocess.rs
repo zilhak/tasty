@@ -538,9 +538,12 @@ pub fn finalize_postprocessed(
     progress: &PostprocessProgress,
     report: &PostprocessReport,
 ) -> TypedResult {
+    let (execution, execution_truncated) =
+        super::contract::raw_execution(&task.command, progress.execution.output.as_ref());
     let mut raw = RawResult {
         exit_code: progress.execution.exit_code,
-        execution: progress.execution.output.clone(),
+        execution,
+        execution_truncated,
         postprocess: Some(PostprocessRaw {
             command: spec.command.clone(),
             run: report.run,

@@ -698,6 +698,13 @@ task 는 선택적으로 타입 계약(`TaskContract`)을 가진다. 계약이 �
 - v1 task 에는 저장하지 않는다.
 - 저장에 실패하면 경고 로그를 남기고 실행은 계속한다. 요청은 이미 실행됐기 때문이다.
 
+custom 의 최종 응답(`raw.execution`)에도 같은 상한을 둔다. 출력은 `typed_result.output` 에 따로 저장하므로 raw 를 잘라도 출력은 바뀌지 않는다.
+
+- 직렬화한 응답이 64 KiB(`EXECUTION_RESPONSE_CAP`, 접수 응답과 같다)를 넘으면 `raw.execution` 을 비우고 `raw.execution_truncated` 에 `{"text": <JSON 앞부분>, "truncated": true, "dropped_bytes": <버린 바이트 수>}` 를 둔다. 자르는 자리는 UTF-8 문자 경계다. 상한 안이면 `execution_truncated` 는 없다.
+- 응답이 출력이 되는 custom 은 출력 값 상한(256 KiB, `MAX_VALUE_BYTES`)을 넘으면 `output_validation` 실패로 끝난다. raw 는 잘린 앞부분만 남으므로 응답이 memory 값 상한(1 MiB)보다 커도 결과를 저장한다.
+- 후처리가 있는 custom 은 응답을 회차에 저장해 후처리 입력(`raw.execution`)으로 쓴다. 입력은 자를 수 없으므로 응답이 출력 값 상한을 넘으면 후처리를 실행하지 않고 같은 `output_validation` 실패로 끝낸다.
+- 다른 종류의 `raw.execution` 은 자르지 않는다. run 은 실행기가 stdout·stderr 를 각 64 KiB 꼬리로 모은다.
+
 보고된 결과는 계약에 맞춰 확정하고, 유효한 출력 없이 성공으로 가려는 v2 task 는 Failed 로 끝낸다. 러너·재시작 복구·훅 완료·훅 만료·IPC `task_set_result` 가 모두 같은 완료 경로(아래 §실행 회차와 완료)를 지나므로 완료 경로마다 따로 검사하지 않는다. 비즈니스 값(`"revise"`, `false`)은 정상 출력이다. 출력 타입에 맞지 않는 값만 `output_validation` 실패가 된다. `retry` 는 `typed_result` 를 지운다.
 
 ### 실행 회차와 완료
@@ -831,7 +838,7 @@ stdout 해석과 성공 판정:
 
 결과:
 
-- `raw.exit_code`·`raw.execution` 은 본 작업 원본 그대로다. `raw.postprocess` 에 `command`, 회차 안의 실행 번호 `run`, `exit_code`, `stderr`(tail)·`stderr_truncated`, 실패면 `cause`, pointer 를 썼으면 stdout 전체(`stdout`), 재시도로 넘어간 앞선 실행(`failed_runs`: 번호·원인·종료 코드·메시지)이 있다.
+- `raw.exit_code`·`raw.execution` 은 본 작업 원본 그대로다(custom 응답의 raw 상한은 위 §결과 확정과 같다). `raw.postprocess` 에 `command`, 회차 안의 실행 번호 `run`, `exit_code`, `stderr`(tail)·`stderr_truncated`, 실패면 `cause`, pointer 를 썼으면 stdout 전체(`stdout`), 재시도로 넘어간 앞선 실행(`failed_runs`: 번호·원인·종료 코드·메시지)이 있다.
 - `provenance.output_source` 는 `postprocess.stdout.json` 또는 `postprocess.stdout.text` 다. 모델 이름 같은 메타데이터는 CLI 가 stdout 에 담았을 때만 남는다.
 
 프로세스 소유와 재시작:

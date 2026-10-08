@@ -672,3 +672,59 @@ fn a_stored_result_with_the_removed_artifacts_key_still_reads() {
             .contains("artifacts")
     );
 }
+
+/// Custom 의 최종 응답은 raw 에 상한까지만 둔다. 출력은 따로 저장하므로 상한을 넘는 응답도
+/// 출력 값 상한 안이면 그대로 출력이 되고, 그보다 크면 출력 검증 실패로 끝나되 저장은 된다.
+#[test]
+fn a_custom_response_over_the_raw_cap_is_truncated_in_raw_but_not_in_the_output() {
+    use super::attempt::Completion;
+    use super::contract::EXECUTION_RESPONSE_CAP;
+    use super::types::MAX_VALUE_BYTES;
+    let (_td, mut mem, seq) = fresh_store();
+    let mut store = TaskStore::new(&mut mem, "_host", &seq);
+    let c = contract(json!({"contract_version": 2}));
+    let complete = |store: &mut TaskStore, response: Value| {
+        let t = store.create_typed(opts("c", custom()), c.clone()).unwrap();
+        store.set_state(1, &t.id, TaskState::Running, 1).unwrap();
+        let done = Completion::succeeded(None, output(response));
+        let t = store.complete(1, &t.id, done, 2).expect("stored").task;
+        // 조회도 저장된 레코드에서 같은 값을 읽는다.
+        assert_eq!(store.get(1, &t.id).unwrap().as_ref(), Some(&t));
+        t
+    };
+
+    let t = complete(&mut store, json!({"ok": true}));
+    let raw = &t.typed_result.as_ref().unwrap().raw;
+    assert_eq!(raw.execution, Some(json!({"ok": true})));
+    assert!(raw.execution_truncated.is_none());
+
+    // raw 상한은 넘지만 출력 값 상한 안이다.
+    let mid = json!("가".repeat(EXECUTION_RESPONSE_CAP / 2));
+    let t = complete(&mut store, mid.clone());
+    assert_eq!(t.state, TaskState::Succeeded);
+    let typed = t.typed_result.as_ref().unwrap();
+    assert_eq!(typed.output.to_wire(), mid);
+    assert!(typed.raw.execution.is_none());
+    let head = typed.raw.execution_truncated.as_ref().expect("truncated");
+    let full = mid.to_string();
+    let text = head.text.as_deref().expect("text");
+    assert!(head.truncated && head.response.is_none());
+    assert!(text.len() <= EXECUTION_RESPONSE_CAP && full.starts_with(text));
+    assert_eq!(head.dropped_bytes as usize, full.len() - text.len());
+
+    // memory 값 상한(1 MiB)보다 큰 응답.
+    let huge = json!("x".repeat(1024 * 1024 + 1));
+    let t = complete(&mut store, huge);
+    assert!(matches!(t.state, TaskState::Failed { .. }), "{:?}", t.state);
+    let typed = t.typed_result.as_ref().unwrap();
+    assert!(!typed.has_output);
+    let error = typed.error.as_ref().unwrap();
+    assert_eq!(error.stage, super::contract::FailureStage::OutputValidation);
+    assert!(
+        error.message.contains(&MAX_VALUE_BYTES.to_string()),
+        "{}",
+        error.message
+    );
+    assert!(typed.raw.execution.is_none());
+    assert!(typed.raw.execution_truncated.as_ref().unwrap().truncated);
+}

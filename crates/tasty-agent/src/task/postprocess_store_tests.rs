@@ -641,3 +641,33 @@ fn the_accepted_response_moves_into_raw_when_the_postprocess_settles() {
     assert_eq!(t.typed_result.unwrap().raw.accepted, Some(accepted));
     assert_eq!(count(&get(&store, "judge")), 1);
 }
+
+/// 후처리 입력으로 쓸 custom 응답이 값 상한을 넘으면 자르지 않고, 후처리 없이 출력 검증 실패로
+/// 끝낸다. 회차에 응답을 저장하지 않으므로 memory 값 상한을 넘는 응답도 저장 실패가 없다.
+#[test]
+fn a_custom_response_too_large_for_the_postprocess_input_fails_without_running_it() {
+    let (_td, mut mem, seq) = fresh();
+    let mut store = TaskStore::new(&mut mem, "_host", &seq);
+    submit_plain(&mut store);
+    store
+        .set_state(1, &judge(), TaskState::Running, 10)
+        .expect("running");
+    let huge = TaskResult {
+        exit_code: None,
+        output: Some(json!("x".repeat(1024 * 1024 + 1))),
+        error: None,
+    };
+    let receipt = store
+        .complete(1, &judge(), Completion::succeeded(None, huge), 11)
+        .expect("stored");
+    let t = receipt.task;
+    assert!(matches!(t.state, TaskState::Failed { .. }), "{:?}", t.state);
+    assert!(t.attempt.as_ref().unwrap().postprocess.is_none());
+    let typed = t.typed_result.as_ref().unwrap();
+    assert_eq!(
+        typed.error.as_ref().unwrap().stage,
+        super::contract::FailureStage::OutputValidation
+    );
+    assert!(typed.raw.execution_truncated.as_ref().unwrap().truncated);
+    assert_eq!(get(&store, "judge"), t);
+}
