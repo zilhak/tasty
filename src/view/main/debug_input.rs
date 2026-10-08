@@ -196,14 +196,18 @@ impl MainView {
     /// 문자열 전체를 한 egui Text 이벤트로 넣는다. 빈 값·제어문자 등 실입력에서
     /// 전달되지 않는 문자열은 거절한다. Enter·Tab 같은 키 동작은 키 주입을 사용한다.
     pub(crate) fn debug_inject_egui_text(&mut self, text: &str) -> bool {
-        if !text_reaches_egui_as_typed(text) {
-            return false;
-        }
-        self.base
-            .gpu
-            .debug_push_egui_events(vec![egui::Event::Text(text.to_string())]);
-        true
+        push_egui_text(&mut self.base.gpu, text)
     }
+}
+
+/// 창 종류와 관계없이 그 창의 egui 입력 큐에 문자열을 한 Text 이벤트로 넣는다.
+/// 거절 조건은 [`MainView::debug_inject_egui_text`]와 같다.
+pub(crate) fn push_egui_text(gpu: &mut crate::gpu::GpuState, text: &str) -> bool {
+    if !text_reaches_egui_as_typed(text) {
+        return false;
+    }
+    gpu.debug_push_egui_events(vec![egui::Event::Text(text.to_string())]);
+    true
 }
 
 /// egui-winit의 문자 판정을 따르고 TextEdit이 무시하는 빈 값은 제외한다.

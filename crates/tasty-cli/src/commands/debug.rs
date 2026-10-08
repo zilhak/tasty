@@ -687,6 +687,9 @@ pub enum InjectDebugCommands {
         /// input path never carries them and the text field drops them.
         #[arg(long)]
         text: String,
+        /// Target window, main or auxiliary (Settings, Preset, Plugins). Omit to type into the focused main window
+        #[arg(long)]
+        window_id: Option<u64>,
     },
 }
 

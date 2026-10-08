@@ -35,6 +35,13 @@ impl App {
             send_response(&cmd.response_tx, response);
             return IpcStep::Handled;
         }
+        // 창을 지정한 문자 주입은 설정 같은 보조 창까지 가리킬 수 있어 App에서 처리한다.
+        #[cfg(feature = "gui")]
+        if cmd.request.method == "debug.inject_egui_text"
+            && cmd.request.params.get("window_id").is_some()
+        {
+            return self.ipc_handle_debug_egui_text_to_window(cmd);
+        }
         // 토스트 스택은 창마다 따로 있어 보조 창까지 볼 수 있는 App에서 처리한다.
         #[cfg(feature = "gui")]
         if cmd.request.method == "debug.toast" {

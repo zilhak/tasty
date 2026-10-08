@@ -3642,6 +3642,9 @@ about = "GUIビルドでフォーカス中のeguiテキストフィールドに�
 [cli.help._root.debug.inject.egui-text.arg.text]
 help = "入力する文字です。通常のテキスト入力では送られず、テキストフィールドでも無視される制御文字は使用できません。"
 
+[cli.help._root.debug.inject.egui-text.arg.window_id]
+help = "対象ウィンドウ。メインまたは補助ウィンドウ（Settings、Preset、Plugins）。省略するとフォーカス中のメインウィンドウに入力します"
+
 [cli.help._root.debug.plugin-banner]
 about = "プラグインを経由せず、そのプラグインのバナーを直接開閉します (debug ビルド専用)。ホストの組み込みバナーには `debug banner` を使います。"
 

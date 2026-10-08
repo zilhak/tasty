@@ -376,6 +376,11 @@ const DEBUG_NOT_IN_HEADLESS: &[(&str, &str)] = &[
         "토스트 스택은 창마다 따로 있다 — 메인 창은 `MainViewState.toasts`, 설정·preset·plugins 창은 \
          각 view 의 `toasts` 를 `self.view.views` 에서 고른다. view 가 없다",
     ),
+    (
+        "debug.inject_egui_text",
+        "`window_id` 를 준 문자 주입은 `self.view.views` 에서 그 창의 egui 입력을 고른다. \
+         헤드리스엔 egui 창이 없다",
+    ),
     // fullscreen.list는 창 없이 제공할 수 있지만 open/close/state는 창이 필요해 각각 기록한다.
     (
         "debug.fullscreen.open",

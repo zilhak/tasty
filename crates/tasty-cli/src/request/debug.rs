@@ -537,10 +537,13 @@ pub(super) fn inject_debug_command_to_method_params(
             "debug.inject_egui_key",
             serde_json::json!({ "key": key, "pressed": pressed }),
         ),
-        InjectDebugCommands::EguiText { text } => (
-            "debug.inject_egui_text",
-            serde_json::json!({ "text": text }),
-        ),
+        InjectDebugCommands::EguiText { text, window_id } => {
+            let mut params = serde_json::json!({ "text": text });
+            if let Some(wid) = window_id {
+                params["window_id"] = serde_json::json!(wid);
+            }
+            ("debug.inject_egui_text", params)
+        }
     }
 }
 
@@ -586,5 +589,38 @@ pub(super) fn plugin_banner_debug_command_to_method_params(
             "debug.plugin_banner.close",
             serde_json::json!({ "instance_id": instance_id }),
         ),
+    }
+}
+
+#[cfg(all(test, debug_assertions))]
+mod tests {
+    use clap::Parser;
+    use serde_json::json;
+
+    fn egui_text(args: &[&str]) -> (String, serde_json::Value) {
+        let mut argv = vec!["tasty", "debug", "inject", "egui-text", "--text", "ab"];
+        argv.extend_from_slice(args);
+        let cli = crate::Cli::try_parse_from(argv).expect("파싱");
+        let r = crate::request::command_to_request(&cli.command.expect("명령"));
+        (r.method, r.params)
+    }
+
+    /// 창을 지정하지 않은 호출은 예전과 같은 요청이고, 지정하면 `window_id`가 실린다.
+    #[test]
+    fn egui_text_carries_the_window_id_only_when_given() {
+        assert_eq!(
+            egui_text(&[]),
+            (
+                "debug.inject_egui_text".to_string(),
+                json!({ "text": "ab" })
+            )
+        );
+        assert_eq!(
+            egui_text(&["--window-id", "4194311"]),
+            (
+                "debug.inject_egui_text".to_string(),
+                json!({ "text": "ab", "window_id": 4194311u64 })
+            )
+        );
     }
 }

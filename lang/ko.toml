@@ -3642,6 +3642,9 @@ about = "GUI 빌드의 포커스된 egui 텍스트 필드에 물리 키 입력 �
 [cli.help._root.debug.inject.egui-text.arg.text]
 help = "입력할 문자입니다. 일반 텍스트 입력에서 전달하지 않고 텍스트 필드도 무시하는 제어문자는 사용할 수 없습니다."
 
+[cli.help._root.debug.inject.egui-text.arg.window_id]
+help = "대상 윈도우. 메인 또는 보조 윈도우(Settings, Preset, Plugins). 생략하면 포커스된 메인 윈도우에 입력합니다"
+
 [cli.help._root.debug.plugin-banner]
 about = "플러그인을 거치지 않고 해당 플러그인의 배너를 직접 열거나 닫습니다(debug 빌드 전용). 호스트 내장 배너는 `debug banner`로 다룹니다."
 

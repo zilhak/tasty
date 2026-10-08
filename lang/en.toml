@@ -3648,6 +3648,9 @@ about = "Type characters into a focused egui text field in a GUI build without p
 [cli.help._root.debug.inject.egui-text.arg.text]
 help = "Characters to type. Control characters are refused, since the real input path never carries them and the text field drops them"
 
+[cli.help._root.debug.inject.egui-text.arg.window_id]
+help = "Target window, main or auxiliary (Settings, Preset, Plugins). Omit to type into the focused main window"
+
 [cli.help._root.debug.plugin-banner]
 about = "Plugin-contributed banner force-open/close, bypassing the owning plugin. Debug builds only — `debug banner` is the host built-in banner instead"
 

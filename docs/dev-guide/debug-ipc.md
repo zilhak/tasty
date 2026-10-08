@@ -47,7 +47,7 @@ debug 메서드는 모두 `local_only()` — plugin caller 는 호출 불가, CL
 | `debug.inject_window_mouse` | `surface_id?`, `fx?`/`fy?`(기본 0.5, 창 정규화 좌표), `event_type?`, `button?`, `scroll_dx?`/`scroll_dy?`, `unit?`(기본 `line`) | winit 레벨 마우스 이벤트 주입 — 포커스된 창에 작용한다. 스크롤 단위는 아래 [휠 주입의 단위](#휠-주입의-단위-unit) |
 | `debug.inject_egui_mouse` | 위와 같음, `unit?` 기본 `point`, `modifiers?`(`shift`·`ctrl`·`alt`·`command` 배열) | egui 레벨 마우스 이벤트 주입 — winit 환산 경로를 건너뛰고 egui 입력에 직접 넣는다. `modifiers` 를 주면 egui 가 누른 것으로 보는 수식 키를 그 값으로 바꾸고 다음 `modifiers` 주입까지 유지한다(빈 배열은 모두 뗀다, 생략하면 그대로 둔다). CLI 는 `--modifiers shift,ctrl` · `--modifiers none` |
 | `debug.inject_egui_key` | `key?`(기본 `Escape`), `pressed?`(기본 `true`) | egui 레벨 키 이벤트 주입 |
-| `debug.inject_egui_text` | `text`(필수, 문자열) | egui 레벨 **문자** 이벤트 주입 — 포커스된 `TextEdit`(command palette 쿼리 등)에 글자를 넣는다. 아래 [문자 주입은 키 주입과 다른 채널이다](#문자-주입은-키-주입과-다른-채널이다) |
+| `debug.inject_egui_text` | `text`(필수, 문자열), `window_id?` | egui 레벨 **문자** 이벤트 주입 — 포커스된 `TextEdit`(command palette 쿼리 등)에 글자를 넣는다. `window_id` 를 주면 그 창(메인 또는 설정·Preset·Plugins 같은 보조 창)의 egui 입력에 넣고 응답에 `window_id` 를 싣는다. 없는 창이면 `-32602`. 생략하면 포커스된 메인 창이다. 아래 [문자 주입은 키 주입과 다른 채널이다](#문자-주입은-키-주입과-다른-채널이다) |
 | `debug.selection` | `{}` | focused window 의 로컬 텍스트 선택 상태 read-only 덤프(`present`·`surface_id`·`mode`·`dragging`·`empty`·`anchor/cursor/start/end{col,row}`). 마우스 라우팅 회귀 net 의 관찰면 — 순수 관찰(사용자 상태 불변) |
 | `debug.pending_menu` | `{}` | 대기 중 컨텍스트 메뉴 read-only 덤프(`present`·`kind`·`surface_id?`). live pending 우선, 없으면 주입 포획본(`debug_captured_menu`). 우클릭 라우팅 회귀 관찰용 |
 | `debug.native_menu.answer` | `menu`(필수) + `item` · `label` · `dismiss: true` 중 하나 | 포커스된 창이 **다음에 여는 `menu` 종류의** native 메뉴 하나를 OS 팝업 없이 지정 항목을 고른 것으로 끝낸다(`menu`는 `debug.pending_menu`의 `kind`와 같은 이름, `item`은 항목 id, `label`은 표시 문구, `dismiss`는 고르지 않고 닫기). 다른 종류의 메뉴에는 쓰지 않는다. 응답은 그 종류의 메뉴가 열릴 때까지 남아 있고 새 응답이 덮어쓴다. 아래 [native 메뉴 항목 선택 재현](#native-메뉴-항목-선택-재현-debugnative_menuanswer) |
@@ -183,8 +183,10 @@ egui의 `Event::Text(String)`은 문자를 입력하고 `Event::Key`는 키 동�
   않고, 받는 끝인 `TextEdit` 은 빈 문자열과 `"\n"`·`"\r"` 를 **조용히 버린다.** 거르지 않으면
   `injected: true` 를 받고도 화면이 안 바뀌어, 이 채널이 메우려던 사각(주입을 믿고 찍은
   스크린샷이 빈 쿼리다)이 그대로 돌아온다. Enter·Tab·Backspace 는 `debug.inject_egui_key` 쪽이다.
-- 대상은 **지금 포커스를 가진 위젯**이다. 창을 ID 로 지목하지 않으므로 이 메서드는 다른 주입과
-  같이 focused window step(`src/app/ipc/window_required.rs`)에 산다.
+- 대상은 그 창에서 **지금 egui 포커스를 가진 위젯**이다. 창은 두 갈래로 고른다.
+  - `window_id` 생략: 포커스된 메인 창. 다른 주입과 같이 focused window step(`src/app/ipc/window_required.rs`)에서 처리한다.
+  - `window_id` 지정: 그 창. 설정처럼 별도 winit 창으로 뜨는 화면은 메인 창의 egui 입력과 따로 있어 생략한 경로로는 닿지 않는다. App 단계(`src/app/ipc/debug_egui_text.rs`)가 창 ID로 찾아 넣고 포커스는 바꾸지 않는다. 창 ID는 [스크린샷 방법](../ai-verification/screenshot-methods.md#모달-창의-id-를-얻는-법)의 "모달 창의 ID 를 얻는 법"으로 얻는다.
+- 이 메서드는 입력칸에 egui 포커스를 주지 않는다. 설정 창 입력칸은 먼저 클릭해 포커스를 준다(Xvfb 에서는 `xdotool mousemove --window <id> X Y click 1`).
 
 CLI 는 `tasty debug inject egui-text --text <s>` 다. command palette 를 열어 쿼리를 넣는
 전체 절차는 이렇다(`host-popup open` 이 사용자 단축키 경로를 대신한다):
@@ -193,6 +195,16 @@ CLI 는 `tasty debug inject egui-text --text <s>` 다. command palette 를 열�
 tasty debug host-popup open --popup-id command_palette
 tasty debug inject egui-text --text split      # {"injected":true}
 tasty screenshot --window <id> --path /tmp/palette-filtered.png
+```
+
+설정 창의 입력칸에 넣는 절차는 이렇다:
+
+```bash
+tasty debug settings open --tab general
+# X11 창 목록에서 제목 "Tasty Settings" 인 창의 id 를 고른다
+xdotool mousemove --window <settings-id> 100 66 click 1   # Filter sections 입력칸에 포커스
+tasty debug inject egui-text --text notif --window-id <settings-id>   # {"injected":true,"window_id":<settings-id>}
+tasty screenshot --window <settings-id> --path /tmp/settings-filtered.png
 ```
 
 ### 휠 주입의 단위 (`unit`)
