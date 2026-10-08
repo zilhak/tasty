@@ -193,8 +193,13 @@ impl MainView {
             );
         }
         let st = self.state.focused_surface_type(engine);
-        // egui_paste는 플러그인이 처리하므로 터미널 입력으로 넘기지 않는다.
+        // egui_paste는 플러그인이 처리하므로 터미널 입력으로 넘기지 않고, 포커스된 egui-mesh
+        // surface에 Paste 이벤트를 보낸다. 클립보드에서 필요한 형식은 플러그인이 직접 읽는다.
         if st.kind_capability(engine, |d| d.egui_paste) {
+            if let Some(sid) = self.focused_egui_mesh_surface_id(engine) {
+                self.egui_mesh_push_paste(sid);
+                self.mark_dirty();
+            }
             return true;
         }
         self.paste_to_terminal(engine);

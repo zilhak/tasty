@@ -191,6 +191,12 @@ impl MainView {
         st.events.push(RawInputEventWire::Copy);
     }
 
+    /// 플러그인이 클립보드를 직접 읽어 붙여넣도록 Paste 이벤트를 누적한다.
+    pub(crate) fn egui_mesh_push_paste(&mut self, surface_id: u32) {
+        let st = self.egui_mesh.entry(surface_id).or_default();
+        st.events.push(RawInputEventWire::Paste);
+    }
+
     /// 포커스된 EguiMeshSurface의 ID. 다른 종류에는 입력을 전달하지 않는다.
     pub(crate) fn focused_egui_mesh_surface_id(
         &self,

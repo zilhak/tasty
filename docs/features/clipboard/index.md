@@ -54,6 +54,10 @@ host 가 아니라 plugin 자신의 egui `Context` 로 텍스트를 그리는 ki
 
 plugin 쪽(`tasty-plugin-sdk`)은 이 wire 이벤트를 `egui::Event::Copy` 로 매핑해 자기 `Context::run` 에 흘린다. selectable label/`TextEdit` 등 egui 내장 선택-복사 로직이 텍스트를 만들면 plugin 이 그 값을 `EguiMeshSurface::take_copied_text()` 로 회수해 **자기 프로세스에서 직접** OS 클립보드에 쓴다([ADR-0025](../../adr/0025-plugin-trust-and-distribution.md) — clipboard-viewer plugin 의 read 선례와 동일한 write 대응, host round-trip 없음). 메커니즘 자체는 host 코드([`src/view/main/egui_mesh.rs`](../../../src/view/main/egui_mesh.rs) 등)에 남아 있으나, `markdown` 이 webview 로 전환된 뒤([ADR-0029](../../adr/0029-webview-host-integration.md)) 현재 이를 선언하는 번들 plugin 은 없다 — webview surface 는 native WebView 가 Ctrl+C 를 자체 처리하므로 이 wire 이벤트 자체가 불필요하다.
 
+### egui-mesh plugin 의 붙여넣기 (`egui_paste` capability)
+
+매니페스트에서 `egui_paste = true` 를 선언한 kind 에 포커스가 있으면, paste 단축키(위 `KeybindingSettings` 바인딩)와 팔레트의 붙여넣기는 터미널로 가지 않고 그 surface 에 `Paste` wire 이벤트로 전달된다(`src/adapters/ui/input/shortcuts/copy_paste.rs` `run_paste` → `src/view/main/egui_mesh.rs`). 이벤트에는 클립보드 내용이 없다. plugin 이 이 이벤트를 보고 필요한 형식을 **자기 프로세스에서 직접** 읽는다(위 복사와 같은 ADR-0025 근거). 현재 이를 선언하는 번들 plugin 은 image 다.
+
 ### 현재 클립보드 뷰어
 
 지금 시스템 클립보드에 담긴 내용은 [clipboard-viewer plugin](../../plugins/clipboard-viewer/index.md) 이 popup 으로 보여준다. host 백엔드 없이 **plugin 프로세스가 `arboard` 로 직접 read** 한다([ADR-0025](../../adr/0025-plugin-trust-and-distribution.md) — plugin 은 비-샌드박스 OS 프로세스라 host 가 OS 클립보드 접근을 막을 수 없으므로, 단발 read 는 host 를 경유하지 않는다). 히스토리 누적·재복사는 없다.

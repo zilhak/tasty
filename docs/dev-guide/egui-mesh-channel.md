@@ -299,6 +299,7 @@ host 가 받은 **실제 사용자 입력**만 surface-local 좌표로 변환해
 | 텍스트 입력 | `Text { text }` | `egui_mesh_push_text` (게이트 `should_forward_text`) |
 | IME 조합(라이브 preedit + commit) | `Ime { event: ImeWire::… }` | `egui_mesh_push_ime` ← `ime.rs` `forward_ime_to_egui_mesh` |
 | 복사 단축키(`egui_copy` capability 를 가진 kind 한정) | `Copy` | `egui_mesh_push_copy` ← `copy_paste.rs` `handle_copy_shortcut` |
+| 붙여넣기 단축키·팔레트 붙여넣기(`egui_paste` capability 를 가진 kind 한정) | `Paste`(클립보드 내용 없음) | `egui_mesh_push_paste` ← `copy_paste.rs` `run_paste` |
 
 **스크롤은 한 pass 에 전량 전달된다.** SDK 의 와이어→egui 매핑(`egui_surface.rs` 의
 `push_scroll_events`)이 `Scroll` 한 건을 egui 의 "이미 부드러운 입력" 판정선(8pt) 아래
@@ -395,9 +396,10 @@ non-modal 공지) `BannerPaintFrame` 에는 그 칸이 없다.
 (`tasty-ipc` `mesh_stream`)로 나르고 거기에는 `ime_cursor` 칸이 없다. 원격 mesh surface 를
 편집할 때 후보창은 여전히 마지막 위치나 창 원점 근처에 뜬다.
 
-Copy 는 위 표대로 `egui_copy` capability 를 가진 kind 한정으로 wire 에 있다. `Paste` 는 wire 와
-SDK 변환(내용 없는 `egui::Event::Paste`)만 있고 host 는 아직 보내지 않는다. Cut 은 wire 에 없다.
-그래서 egui-mesh 필드에서 Ctrl+V/X 는 동작하지 않는다(popup 미러 경로와 동일 한계).
+Copy·Paste 는 위 표대로 각각 `egui_copy`·`egui_paste` capability 를 가진 kind 한정으로 wire 에 있다.
+`Paste` 는 클립보드 내용을 싣지 않고 SDK 가 내용 없는 `egui::Event::Paste` 로 바꾸므로, egui `TextEdit`
+에 텍스트가 들어가지 않는다 — plugin 이 이벤트를 보고 필요한 형식을 클립보드에서 직접 읽는다.
+Cut 은 wire 에 없다. attach mesh mirror 와 popup 미러 경로에는 Copy·Paste 전달이 없다.
 
 ## crash 격리
 
