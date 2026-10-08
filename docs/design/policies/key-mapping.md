@@ -43,6 +43,8 @@ macOS 에서만 `alt` 토큰이 Cmd(⌘)에 매핑된다(물리 위치가 Win/Li
 
 키 토큰은 문자 하나, 기호 별칭 `plus`·`minus`·`equals`, 이름 키 `tab`·`space`·`enter`·`backspace`·`delete`·`insert`·`home`·`end`·`pageup`·`pagedown`·`up`·`down`·`left`·`right`·`escape`·`f1`~`f24` 다. 매칭(`tasty-key-match` 의 `NAMED_KEY_TOKENS`)·설정 녹화·webview 포커스 중 호스트로 넘기는 네이티브 키 변환이 같은 이름 집합을 쓴다. 그 밖의 토큰(`f25`, 오타 `shft+h` 등)은 어떤 입력과도 맞지 않는다.
 
+단축키를 찾을 키는 `tasty_key_match::shortcut_lookup_key` 가 정하고 본 창·plugin·webview 경로가 같이 쓴다. 물리 키가 F13~F24 인데 논리 키가 이름 키가 아니면 그 F 키로 본다. macOS winit 은 F21~F24 의 논리 키를 AppKit 사설 영역 문자(`U+F718` 등)로 올리고 물리 키만 F21~F24 로 주기 때문이다. ctrl·alt·super 가 눌렸으면 IME 가 바꾼 문자 대신 물리 키의 US 배열 문자를 쓴다.
+
 - **modifier 없는 일반 키 등록 방지**: 설정 캡처 시 알파벳/숫자/스페이스 등 타이핑 키는 수정자 1개 이상과 함께여야 등록된다(`w` 단독 무시). F1~F24·Tab·Enter 등 비타이핑 키는 수정자 없이 가능.
 - **모디파이어 단독 입력(Ctrl/Shift/Alt/Super/Meta/Fn)은 어떤 바인딩과도 매칭 안 됨** — 매처가 구조적으로 차단.
 - **Escape 는 설정 UI 녹화에서 "슬롯 비우기"로 예약** — 녹화 중 ESC 를 누르면 그 슬롯이
