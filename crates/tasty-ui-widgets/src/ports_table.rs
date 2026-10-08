@@ -4,6 +4,7 @@ use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 
 use crate::chip::{TagVariant, tag, tag_width};
+use crate::status_dot::{StatusKind, status_dot};
 use crate::table::{Table, TableAlign, TableColumn, TableColumnWidth};
 
 /// 포트 표의 일곱 열. 별 열은 항상 맨 앞에 있으며 이 목록에 넣지 않는다.
@@ -70,6 +71,66 @@ impl PortsColumn {
     }
 }
 
+/// 포트 popup 좌우 안쪽 여백. 디자인 `port_scanner.jsx`의 `--tasty-size-14`로 4px 그리드 밖이다
+/// (가장 가까운 `spacing_md` 12와 2px 차). 헤더·필터·즐겨찾기 캡션·푸터가 같은 세로선에 서야 해서
+/// 본체 popup과 갤러리 예제가 한 값을 쓴다. `egui::Margin` 필드가 `i8`이라 타입을 맞춘다.
+pub const PORTS_PANEL_PAD_X: i8 = 14;
+
+/// 즐겨찾기 행 오른쪽 상태 칸의 최소 폭. 디자인 `port_scanner.jsx`의 `--tasty-size-112`이며
+/// 역할 토큰이 없다. 토큰처럼 UI 배율을 곱한다.
+pub fn ports_favorite_state_min_width(theme: &Theme) -> LogicalPx {
+    LogicalPx((112.0 * theme.ui_zoom).round())
+}
+
+/// 즐겨찾기 행에서 주소 뒤에 오는 상세와 상태 칸. 행의 남은 폭을 모두 차지한다.
+/// 상세는 주소에서 `spacing_md` 떨어져 왼쪽에 붙고 넘치면 말줄임한다. 상태 점과 라벨은 행
+/// 오른쪽 끝의 최소 폭 칸 안에서 오른쪽에 붙으므로 상세가 길어도 점에 닿지 않는다.
+/// 상세 라벨과 상태 점의 응답을 차례로 돌려준다.
+pub fn ports_favorite_detail_and_state(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    detail: &str,
+    kind: StatusKind,
+    state: &str,
+    pulse: bool,
+    reduced_motion: bool,
+) -> (egui::Response, egui::Response) {
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(
+            ui.available_width(),
+            theme.port_favorites_row_height().value(),
+        ),
+        egui::Sense::hover(),
+    );
+    let state_left =
+        (rect.right() - ports_favorite_state_min_width(theme).value()).max(rect.left());
+    let detail_left = (rect.left() + theme.spacing_md.value()).min(state_left);
+    let detail_rect = egui::Rect::from_x_y_ranges(detail_left..=state_left, rect.y_range());
+    let state_rect = egui::Rect::from_x_y_ranges(state_left..=rect.right(), rect.y_range());
+
+    let mut detail_ui = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(detail_rect)
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+    );
+    let detail = detail_ui.add(
+        egui::Label::new(
+            egui::RichText::new(detail)
+                .color(theme.text_muted().to_egui())
+                .size(theme.font_size_caption.value()),
+        )
+        .truncate(),
+    );
+
+    let mut state_ui = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(state_rect)
+            .layout(egui::Layout::right_to_left(egui::Align::Center)),
+    );
+    let state = status_dot(&mut state_ui, theme, kind, state, pulse, reduced_motion);
+    (detail, state)
+}
+
 /// 맨 앞 별 열의 폭.
 pub fn ports_star_column_width(theme: &Theme) -> TableColumnWidth {
     TableColumnWidth::Exact(theme.port_star_col_width())
@@ -112,4 +173,86 @@ pub fn ports_process_cell(
         pid.map(|p| tag(ui, theme, p, TagVariant::Default, false))
     })
     .inner
+}
+
+#[cfg(test)]
+mod favorite_row_tests {
+    use super::*;
+
+    fn theme(zoom: f32) -> Theme {
+        Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, zoom)
+    }
+
+    /// 행 폭 `width` 안에서 주소 다음 자리부터 상세와 상태를 그리고 (행, 상세, 상태) 사각형을 돌려준다.
+    fn draw(detail: &str, width: f32) -> (egui::Rect, egui::Rect, egui::Rect) {
+        let theme = theme(1.0);
+        let ctx = egui::Context::default();
+        let mut out = None;
+        for _ in 0..2 {
+            drop(ctx.run(egui::RawInput::default(), |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(width, theme.port_favorites_row_height().value()),
+                        egui::Layout::left_to_right(egui::Align::Center),
+                        |ui| {
+                            ui.spacing_mut().item_spacing.x = 0.0;
+                            let row_left = ui.cursor().left();
+                            let (d, s) = ports_favorite_detail_and_state(
+                                ui,
+                                &theme,
+                                detail,
+                                StatusKind::Running,
+                                "LISTEN",
+                                false,
+                                true,
+                            );
+                            let row = egui::Rect::from_x_y_ranges(
+                                row_left..=row_left + width,
+                                d.rect.y_range(),
+                            );
+                            out = Some((row, d.rect, s.rect));
+                        },
+                    );
+                });
+            }));
+        }
+        out.expect("drawn")
+    }
+
+    #[test]
+    fn a_short_detail_starts_one_spacing_md_after_the_address() {
+        let theme = theme(1.0);
+        let (row, detail, state) = draw("node · 48213", 480.0);
+        assert_eq!(detail.left(), row.left() + theme.spacing_md.value());
+        assert_eq!(state.right(), row.right());
+        let gap = state.left() - detail.right();
+        assert!(
+            gap >= theme.spacing_md.value(),
+            "detail {detail:?} sits {gap}px from the state {state:?}"
+        );
+    }
+
+    #[test]
+    fn a_long_detail_ellipsizes_before_the_state_column() {
+        let (row, detail, state) = draw(
+            "node · 48213 · a workspace name long enough to run past the state column",
+            320.0,
+        );
+        let state_left = row.right() - ports_favorite_state_min_width(&theme(1.0)).value();
+        assert!(
+            detail.right() <= state_left,
+            "detail {detail:?} runs into the state column at {state_left}"
+        );
+        assert!(
+            state.left() >= state_left,
+            "state {state:?} left of {state_left}"
+        );
+        assert_eq!(state.right(), row.right());
+    }
+
+    #[test]
+    fn the_state_column_floor_scales_with_ui_zoom() {
+        assert_eq!(ports_favorite_state_min_width(&theme(1.0)).value(), 112.0);
+        assert_eq!(ports_favorite_state_min_width(&theme(1.2)).value(), 134.0);
+    }
 }

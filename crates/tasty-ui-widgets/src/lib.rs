@@ -156,7 +156,10 @@ pub use popup_title::{
     elide_popup_title, paint_popup_title_glyph, popup_title_font, popup_title_text_rect,
     show_popup_title_tooltip,
 };
-pub use ports_table::{PortsColumn, ports_process_cell, ports_star_column_width, ports_table};
+pub use ports_table::{
+    PORTS_PANEL_PAD_X, PortsColumn, ports_favorite_detail_and_state,
+    ports_favorite_state_min_width, ports_process_cell, ports_star_column_width, ports_table,
+};
 pub use remote_tool::{
     FILTER_DROPDOWN_MAX_HEIGHT, LocalSshHost, LocalSshSectionData, ProtocolFilterItem,
     ProtocolFilterLabels, RemoteRowChip, TabStripData, TextWrap, draw_local_ssh_section,

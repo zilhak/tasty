@@ -3,7 +3,6 @@
 
 use tasty_type_appearance::theme::Theme;
 
-const GAP: f32 = 6.0;
 const RING_INSET: f32 = 3.0; // CSS inset:-3px → base 반경 dot/2 + 3
 const PULSE_SCALE_MIN: f32 = 0.6;
 const PULSE_SCALE_RANGE: f32 = 1.2;
@@ -46,6 +45,8 @@ pub fn status_dot(
     reduced_motion: bool,
 ) -> egui::Response {
     let dot = theme.status_dot_size().value();
+    // 디자인 `.tasty-statusdot`의 점과 라벨 사이 `space-xs`.
+    let gap = theme.spacing_xs.value();
     let caption = theme.font_size_caption.value();
     let galley = ui.painter().layout_no_wrap(
         label.to_owned(),
@@ -57,7 +58,7 @@ pub fn status_dot(
         + if label.is_empty() {
             0.0
         } else {
-            GAP + galley.rect.width()
+            gap + galley.rect.width()
         };
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
 
@@ -78,11 +79,61 @@ pub fn status_dot(
 
     if !label.is_empty() {
         let pos = egui::pos2(
-            rect.left() + dot + GAP,
+            rect.left() + dot + gap,
             rect.center().y - galley.rect.height() * 0.5,
         );
         ui.painter()
             .galley(pos, galley, theme.text_secondary().to_egui());
     }
     resp
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 배율 `zoom` 에서 라벨 `label` 로 그린 상태 점의 폭과, 같은 글꼴로 잰 라벨 폭을 돌려준다.
+    fn draw(zoom: f32, label: &str) -> (f32, f32) {
+        let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, zoom);
+        let ctx = egui::Context::default();
+        let mut out = None;
+        for _ in 0..2 {
+            drop(ctx.run(egui::RawInput::default(), |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    let resp = status_dot(ui, &theme, StatusKind::Idle, label, false, true);
+                    let label_w = ui
+                        .painter()
+                        .layout_no_wrap(
+                            label.to_owned(),
+                            egui::FontId::proportional(theme.font_size_caption.value()),
+                            egui::Color32::PLACEHOLDER,
+                        )
+                        .rect
+                        .width();
+                    out = Some((resp.rect.width(), label_w));
+                });
+            }));
+        }
+        out.expect("drawn")
+    }
+
+    #[test]
+    fn a_labelled_dot_is_dot_plus_space_xs_plus_label_wide() {
+        for zoom in [1.0, 1.2] {
+            let theme =
+                Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, zoom);
+            let (width, label_w) = draw(zoom, "LISTEN");
+            assert_eq!(
+                width,
+                theme.status_dot_size().value() + theme.spacing_xs.value() + label_w,
+                "zoom {zoom}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_dot_without_a_label_is_only_the_dot_wide() {
+        let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
+        assert_eq!(draw(1.0, "").0, theme.status_dot_size().value());
+    }
 }

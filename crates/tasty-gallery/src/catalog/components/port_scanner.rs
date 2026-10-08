@@ -3,9 +3,10 @@
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{
-    Button, ButtonVariant, IconButton, IconButtonVariant, PortsColumn, StatusKind, TableAlign,
-    TableColumn, TableColumnWidth, TagVariant, fixed_total_width, ports_process_cell,
-    ports_star_column_width, ports_table, status_dot, tag,
+    Button, ButtonVariant, IconButton, IconButtonVariant, PORTS_PANEL_PAD_X, PortsColumn,
+    StatusKind, TableAlign, TableColumn, TableColumnWidth, TagVariant, fixed_total_width,
+    ports_favorite_detail_and_state, ports_process_cell, ports_star_column_width, ports_table,
+    status_dot, tag,
 };
 
 use crate::catalog::icons;
@@ -176,18 +177,17 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
 
             // 본체 popup 과 같은 열 정의(공용 PortsColumn)와 표 꾸밈을 쓴다. 열 하한의 합이 넘치면
             // 가로로 스크롤한다. Workspace·Tab 은 열 선택에서 숨긴 예제다.
-            kit::region_sym(ui, theme.spacing_sm, LogicalPx(0.0), |ui| {
-                ports_table(columns(theme, FRAME_COLUMNS), theme)
-                    .id_salt("ports_table")
-                    .max_scroll_height(theme.measure_md * 0.7)
-                    .show(
-                        ui,
-                        theme,
-                        ROWS,
-                        |r| r.selected,
-                        |ui, theme, row, c| cell(ui, theme, row, column_at(FRAME_COLUMNS, c)),
-                    );
-            });
+            // 디자인 표는 popup 가장자리에서 별 열(28)부터 시작한다. 즐겨찾기 행도 같다.
+            ports_table(columns(theme, FRAME_COLUMNS), theme)
+                .id_salt("ports_table")
+                .max_scroll_height(theme.measure_md * 0.7)
+                .show(
+                    ui,
+                    theme,
+                    ROWS,
+                    |r| r.selected,
+                    |ui, theme, row, c| cell(ui, theme, row, column_at(FRAME_COLUMNS, c)),
+                );
             kit::hsep(ui, theme);
 
             kit::region_sym(ui, theme.spacing_md, theme.spacing_sm, |ui| {
@@ -345,7 +345,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
          filter — its LISTEN/NONE judgment is system-wide. Its list is bounded \
          to 112px (5 rows) before scrolling; a leading 28px star column (no \
          header label, not hideable) toggles favorites in both the section and \
-         the main table.",
+         the main table. In a favorites row the detail starts space-md after \
+         addr:port and ellipsizes; the state dot sits right-aligned in a column \
+         at least 112px (size-112) wide at the row end, so a long detail never \
+         touches the dot.",
     );
     spec::do_(
         ui,
@@ -482,11 +485,21 @@ fn draw_favorites_section(ui: &mut egui::Ui, theme: &Theme, favorites: &[Favorit
     let fav_ir = egui::Frame::NONE
         .fill(theme.bg_sidebar().to_egui())
         .show(ui, |ui| {
-            kit::region_sym(ui, theme.spacing_md, LogicalPx(0.0), |ui| {
+            // 행은 왼쪽 여백 없이 별 칸부터 시작하고, 캡션과 빈 안내 줄만 왼쪽 여백을 둔다.
+            // 본체 popup과 같은 좌우 여백(디자인 `--tasty-size-14`).
+            let inset = f32::from(PORTS_PANEL_PAD_X);
+            let margin = egui::Margin {
+                left: 0,
+                right: PORTS_PANEL_PAD_X,
+                top: 0,
+                bottom: 0,
+            };
+            kit::region(ui, margin, |ui| {
                 ui.allocate_ui_with_layout(
                     egui::vec2(ui.available_width(), fav_row_h),
                     egui::Layout::left_to_right(egui::Align::Center),
                     |ui| {
+                        ui.add_space(inset);
                         let heading = if favorites.is_empty() {
                             "Favorites".to_string()
                         } else {
@@ -504,6 +517,7 @@ fn draw_favorites_section(ui: &mut egui::Ui, theme: &Theme, favorites: &[Favorit
                         egui::vec2(ui.available_width(), fav_row_h),
                         egui::Layout::left_to_right(egui::Align::Center),
                         |ui| {
+                            ui.add_space(inset);
                             ui.spacing_mut().item_spacing.x = theme.spacing_xs.value();
                             let sz = theme.icon_glyph_size_sm.value();
                             let (r, _) =
@@ -540,37 +554,13 @@ fn draw_favorites_section(ui: &mut egui::Ui, theme: &Theme, favorites: &[Favorit
                                         .size(theme.font_size_caption.value())
                                         .color(theme.text_primary().to_egui()),
                                 );
-                                ui.with_layout(
-                                    egui::Layout::right_to_left(egui::Align::Center),
-                                    |ui| {
-                                        match fav.listening {
-                                            Some(true) => status_dot(
-                                                ui,
-                                                theme,
-                                                StatusKind::Running,
-                                                "LISTEN",
-                                                true,
-                                                false,
-                                            ),
-                                            Some(false) => status_dot(
-                                                ui,
-                                                theme,
-                                                StatusKind::Waiting,
-                                                "CLOSE_WAIT",
-                                                false,
-                                                false,
-                                            ),
-                                            None => status_dot(
-                                                ui,
-                                                theme,
-                                                StatusKind::Idle,
-                                                "NONE",
-                                                false,
-                                                false,
-                                            ),
-                                        };
-                                        kit::caption(ui, theme, fav.detail, false);
-                                    },
+                                let (kind, state, pulse) = match fav.listening {
+                                    Some(true) => (StatusKind::Running, "LISTEN", true),
+                                    Some(false) => (StatusKind::Waiting, "CLOSE_WAIT", false),
+                                    None => (StatusKind::Idle, "NONE", false),
+                                };
+                                ports_favorite_detail_and_state(
+                                    ui, theme, fav.detail, kind, state, pulse, false,
                                 );
                             },
                         );
@@ -592,6 +582,8 @@ fn draw_favorites_section(ui: &mut egui::Ui, theme: &Theme, favorites: &[Favorit
 /// + text-muted). 본체 `port_scanner.rs::draw_port_star` 전사.
 fn star(ui: &mut egui::Ui, theme: &Theme, on: bool) {
     let side = theme.item_height_tree.value();
+    // 표의 tight 열과 즐겨찾기 행의 별 칸 모두 디자인처럼 가운데 둔다.
+    ui.add_space(((ui.available_width() - side) * 0.5).max(0.0));
     let (rect, _) = ui.allocate_exact_size(egui::vec2(side, side), egui::Sense::hover());
     let glyph = theme.icon_glyph_size_sm.value();
     let icon_rect = egui::Rect::from_center_size(rect.center(), egui::vec2(glyph, glyph));

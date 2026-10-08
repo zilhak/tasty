@@ -21,15 +21,14 @@ use crate::theme::Theme;
 use tasty_portscan::PortState;
 use tasty_ui_widgets::tokens::{STRUCT_GAP_1, STRUCT_GAP_2, STRUCT_GAP_4, TAG_PILL_CORNER_RADIUS};
 use tasty_ui_widgets::{
-    Button, ButtonVariant, IconButton, IconButtonVariant, Input, PortsColumn, StatusKind,
-    TableAlign, TableColumn, TableColumnWidth, TableSortDir, checkbox, hspace, margin_sym,
-    ports_process_cell, ports_star_column_width, ports_table, status_dot, vspace,
+    Button, ButtonVariant, IconButton, IconButtonVariant, Input, PORTS_PANEL_PAD_X, PortsColumn,
+    StatusKind, TableAlign, TableColumn, TableColumnWidth, TableSortDir, checkbox, hspace,
+    margin_sym, ports_favorite_detail_and_state, ports_process_cell, ports_star_column_width,
+    ports_table, status_dot, vspace,
 };
 
-/// popup 좌우 안쪽 여백. 디자인 전사값 14 로 4px 그리드 밖이다(가장 가까운
-/// `spacing_md`=12 와 2px 차) — 헤더·필터·리스트·푸터가 같은 세로선에 서야 해서
-/// 한 값을 공유한다. `egui::Margin` 필드가 `i8` 이라 타입을 맞춰 둔다.
-const PANEL_PAD_X: i8 = 14;
+/// popup 좌우 안쪽 여백. 갤러리 예제와 같은 값을 쓰도록 공용 위젯 크레이트에 둔다.
+const PANEL_PAD_X: i8 = PORTS_PANEL_PAD_X;
 /// 푸터 상하 여백. 디자인 전사값 9 로 그리드 밖이다(`spacing_sm`=8 과 1px 차).
 const FOOTER_PAD_Y: i8 = 9;
 
@@ -1522,6 +1521,14 @@ fn draw_port_star(ui: &mut egui::Ui, th: &Theme, on: bool) -> egui::Response {
     resp
 }
 
+/// 별 열(`port_star_col_width`) 안 가운데에 별을 둔다. 디자인 표의 tight 열과 즐겨찾기 행의
+/// 별 칸이 모두 가운데 정렬이라 두 영역의 별이 같은 세로선에 선다.
+fn draw_port_star_centered(ui: &mut egui::Ui, th: &Theme, on: bool) -> egui::Response {
+    let side = th.item_height_tree.value();
+    ui.add_space(((ui.available_width() - side) * 0.5).max(0.0));
+    draw_port_star(ui, th, on)
+}
+
 /// `FavoritesSection` (design `FavoritesSection`) — 상단 즐겨찾기 섹션. 항상 노출되는
 /// 캡션(22px: "Favorites"(+개수) · 우측 "system-wide") + 빈 상태(37% 투명 별 + 안내
 /// 22px) 또는 스크롤 리스트(최대 112px, 행 22px). 배경 bg-sidebar + 하단 separator.
@@ -1536,8 +1543,10 @@ fn draw_favorites_section(
 
     let ir = egui::Frame::NONE
         .fill(th.bg_sidebar().into())
+        // 디자인 즐겨찾기 행은 왼쪽 여백 없이 별 칸(28)부터 시작해 표의 별 열과 맞는다.
+        // 캡션과 빈 안내 줄만 popup 좌우 여백을 둔다.
         .inner_margin(egui::Margin {
-            left: PANEL_PAD_X,
+            left: 0,
             right: PANEL_PAD_X,
             top: 0,
             bottom: 0,
@@ -1549,6 +1558,7 @@ fn draw_favorites_section(
                 egui::vec2(ui.available_width(), row_h),
                 egui::Layout::left_to_right(egui::Align::Center),
                 |ui| {
+                    ui.add_space(f32::from(PANEL_PAD_X));
                     let heading = if props.favorites.is_empty() {
                         props.label_favorites_heading.to_string()
                     } else {
@@ -1577,6 +1587,7 @@ fn draw_favorites_section(
                     egui::vec2(ui.available_width(), row_h),
                     egui::Layout::left_to_right(egui::Align::Center),
                     |ui| {
+                        ui.add_space(f32::from(PANEL_PAD_X));
                         ui.spacing_mut().item_spacing.x = th.spacing_xs.value();
                         let sz = th.icon_glyph_size_sm.value();
                         let (r, _) =
@@ -1644,11 +1655,13 @@ fn draw_favorite_row(
         egui::vec2(ui.available_width(), row_h),
         egui::Layout::left_to_right(egui::Align::Center),
         |ui| {
+            // 디자인 행은 별 칸·주소·상세·상태를 간격 없이 잇는다. 상세 앞 간격은 위젯이 둔다.
+            ui.spacing_mut().item_spacing.x = 0.0;
             ui.allocate_ui_with_layout(
                 egui::vec2(th.port_star_col_width().value(), row_h),
                 egui::Layout::left_to_right(egui::Align::Center),
                 |ui| {
-                    let resp = draw_port_star(ui, th, true)
+                    let resp = draw_port_star_centered(ui, th, true)
                         .on_hover_text(props.label_favorite_remove.replace("{key}", &key));
                     if resp.clicked() {
                         out = Some(PortScannerAction::ToggleFavorite(
@@ -1664,60 +1677,35 @@ fn draw_favorite_row(
                     .color(th.text_primary())
                     .size(th.font_size_caption.value()),
             );
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                match &fav.matched {
-                    Some(m) if m.state.is_listen() => {
-                        status_dot(
-                            ui,
-                            th,
-                            StatusKind::Running,
-                            m.state.label(),
-                            true,
-                            props.reduced_motion,
-                        );
+            let (kind, state, pulse) = match &fav.matched {
+                Some(m) if m.state.is_listen() => (StatusKind::Running, m.state.label(), true),
+                Some(m) => (StatusKind::Waiting, m.state.label(), false),
+                None => (StatusKind::Idle, props.label_state_none, false),
+            };
+            let detail = match &fav.matched {
+                Some(m) => {
+                    let proc = m.process_name.as_deref().unwrap_or("—");
+                    let mut s = match m.pid {
+                        Some(pid) => format!("{proc} · {pid}"),
+                        None => proc.to_string(),
+                    };
+                    if let Some(ws) = &m.workspace_name {
+                        s.push_str(" · ");
+                        s.push_str(ws);
                     }
-                    Some(m) => {
-                        status_dot(
-                            ui,
-                            th,
-                            StatusKind::Waiting,
-                            m.state.label(),
-                            false,
-                            props.reduced_motion,
-                        );
-                    }
-                    None => {
-                        status_dot(
-                            ui,
-                            th,
-                            StatusKind::Idle,
-                            props.label_state_none,
-                            false,
-                            props.reduced_motion,
-                        );
-                    }
+                    s
                 }
-                let detail = match &fav.matched {
-                    Some(m) => {
-                        let proc = m.process_name.as_deref().unwrap_or("—");
-                        let mut s = match m.pid {
-                            Some(pid) => format!("{proc} · {pid}"),
-                            None => proc.to_string(),
-                        };
-                        if let Some(ws) = &m.workspace_name {
-                            s.push_str(" · ");
-                            s.push_str(ws);
-                        }
-                        s
-                    }
-                    None => props.label_favorites_not_running.to_string(),
-                };
-                ui.label(
-                    egui::RichText::new(detail)
-                        .color(th.text_muted())
-                        .size(th.font_size_caption.value()),
-                );
-            });
+                None => props.label_favorites_not_running.to_string(),
+            };
+            ports_favorite_detail_and_state(
+                ui,
+                th,
+                &detail,
+                kind,
+                state,
+                pulse,
+                props.reduced_motion,
+            );
         },
     );
     out
@@ -1867,7 +1855,8 @@ fn draw_table(
                     } else {
                         props.label_favorite_add.replace("{key}", &key)
                     };
-                    let resp = draw_port_star(ui, th, row.favorited).on_hover_text(tooltip);
+                    let resp =
+                        draw_port_star_centered(ui, th, row.favorited).on_hover_text(tooltip);
                     if resp.clicked() {
                         fav_click = Some((row.addr_display.clone(), row.port));
                     }

@@ -165,11 +165,11 @@ rest/hover/active/focus/disabled **정지 상태가 canonical** — 파리티는
 
 ## port_scanner — State 컬럼 140px 에 가장 긴 라벨(ESTABLISHED)이 들어간다
 
-State 셀은 `status_dot`(점 `status_dot_size` 8 + gap 6 + caption 11px proportional 라벨)이고, 폭은
+State 셀은 `status_dot`(점 `status_dot_size` 8 + `space-xs` 4 + caption 11px proportional 라벨)이고, 폭은
 `PortsColumn` 의 **최소폭** 140 이다(공용 Table 이 남는 폭을 flex 열에 나누고, 최소폭
 합이 넘치면 가로 스크롤 — 위 전환 항목). 가장 긴 상태값 `ESTABLISHED` 는 egui 기본 proportional
-폰트(Ubuntu-Light) advance 로 11px 에서 66.6px, 셀 전체 약 81px 이다. 1.2 배율(caption 13, 점 10)에서도
-약 95px 라 140 안에 들어간다. 재는 법: `epaint_default_fonts` 의 `Ubuntu-Light.ttf` 로 문자열 advance
+폰트(Ubuntu-Light) advance 로 11px 에서 66.6px, 셀 전체 약 79px 이다. 1.2 배율(caption 13, 점 10, 간격 5)에서도
+약 94px 라 140 안에 들어간다. 재는 법: `epaint_default_fonts` 의 `Ubuntu-Light.ttf` 로 문자열 advance
 를 잰다(예: PIL `ImageFont.truetype(path, px).getlength("ESTABLISHED")`). 셀 폰트나 라벨 크기가
 바뀌면 다시 잰다.
 
