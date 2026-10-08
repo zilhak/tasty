@@ -544,17 +544,25 @@ fn record_result(task: &mut Task, result: TaskResult) {
     }
     task.result = Some(contract::project_v1(&typed));
     task.typed_result = Some(typed);
+    // 접수 응답은 결과의 raw 로 옮겼다. 같은 값을 두 곳에 두지 않는다.
+    task.accepted = None;
 }
 
 fn settle_typed_terminal(task: &mut Task, requested: TaskState) -> TaskState {
     if !task.is_typed() {
         return requested;
     }
-    let failure_result = |task: &Task, failure: TaskFailure| TypedResult {
+    // 실패 결과로 바꿀 때도 접수 응답은 한 벌만 결과에 남긴다. 확정 전이면 task 에서 옮기고,
+    // 이미 확정한 결과를 바꾸는 경우면 그 결과의 것을 이어받는다.
+    let failure_result = |task: &mut Task, failure: TaskFailure| TypedResult {
         has_output: false,
         output: super::types::TypedValue::Null,
         raw: contract::RawResult {
-            accepted: task.accepted.clone(),
+            accepted: task.accepted.take().or_else(|| {
+                task.typed_result
+                    .as_ref()
+                    .and_then(|t| t.raw.accepted.clone())
+            }),
             ..Default::default()
         },
         artifacts: Vec::new(),

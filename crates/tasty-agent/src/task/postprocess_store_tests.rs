@@ -612,3 +612,32 @@ fn every_running_typed_task_reports_a_phase() {
         .expect("running");
     assert_eq!(get(&store, &v1.id).phase(), None);
 }
+
+/// 후처리로 확정할 때도 접수 응답은 task 에서 `raw.accepted` 로 옮겨 한 벌만 남는다. 후처리가 도는
+/// 동안에는 task 쪽에 있어 stdin 의 `raw` 문서가 읽는다.
+#[test]
+fn the_accepted_response_moves_into_raw_when_the_postprocess_settles() {
+    use super::contract::AcceptedResponse;
+    let (_td, mut mem, seq) = fresh();
+    let mut store = TaskStore::new(&mut mem, "_host", &seq);
+    submit_plain(&mut store);
+    let accepted = AcceptedResponse::capture(&json!({"job": "J"}));
+    store.set_accepted(1, &judge(), accepted.clone()).unwrap();
+    let attempt = main_done(&mut store, 10);
+    let t = get(&store, "judge");
+    assert_eq!(t.accepted.as_ref(), Some(&accepted));
+    let count = |t: &Task| {
+        serde_json::to_string(t)
+            .unwrap()
+            .matches("\"accepted\"")
+            .count()
+    };
+    assert_eq!(count(&t), 1);
+    let t = report(&mut store, &attempt, collected(1, json!(true)), 20)
+        .unwrap()
+        .task;
+    assert_eq!(t.state, TaskState::Succeeded);
+    assert!(t.accepted.is_none());
+    assert_eq!(t.typed_result.unwrap().raw.accepted, Some(accepted));
+    assert_eq!(count(&get(&store, "judge")), 1);
+}

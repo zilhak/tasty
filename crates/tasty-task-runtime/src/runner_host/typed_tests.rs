@@ -394,6 +394,8 @@ fn an_async_custom_keeps_its_accepted_response_apart_from_the_final_one() {
 
     let small = get("small");
     assert_eq!(small.state, TaskState::Succeeded, "{:?}", small.result);
+    // 확정하면 접수 응답은 결과로 옮겨 task 쪽에는 남지 않는다.
+    assert!(small.accepted.is_none());
     let raw = &small.typed_result.as_ref().unwrap().raw;
     let accepted = raw.accepted.as_ref().expect("accepted response");
     assert_eq!(accepted.response, Some(json!({"job": "J1"})));

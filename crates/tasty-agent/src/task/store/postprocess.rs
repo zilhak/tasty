@@ -124,6 +124,8 @@ impl TaskStore<'_> {
                 }
                 task.result = Some(contract::project_v1(&typed));
                 task.typed_result = Some(typed);
+                // 접수 응답은 결과의 raw 로 옮겼다.
+                task.accepted = None;
                 Ok(PostprocessStep::Finalize)
             }
         }

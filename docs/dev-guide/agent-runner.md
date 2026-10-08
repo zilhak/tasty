@@ -683,10 +683,19 @@ task 는 선택적으로 타입 계약(`TaskContract`)을 가진다. 계약이 �
 
 결과는 `typed_result` 에 저장한다: `has_output`·`output`(최종 출력), `raw`(`exit_code`, `execution`, 후처리가 있으면 `postprocess`, 완료를 따로 기다린 custom 이면 `accepted`), `artifacts`(산출물 참조 자리. 지금은 채우는 실행기가 없어 항상 빈 목록이다), `error`(`stage`: `input`·`execution`·`postprocess`·`output_validation`·`persistence`·`route`, agent task 는 `code` 도 싣는다), `provenance`(`contract_version`, `kind`, `output_source`). `has_output: true` 이고 `output: null` 이면 unit 또는 nullable 출력이 확정된 것이고, `has_output: false` 는 출력이 없다는 뜻이다. v1 호환을 위해 `result` 에는 최종 출력이 `output` 으로 투영된다.
 
-완료를 따로 기다리는 custom(`poll` 이 있거나 메서드에 기본 완료 전략이 있는 경우)은 dispatch 응답을 접수 응답으로 보고 task 의 `accepted` 에 저장한다. 결과를 확정할 때는 성공·실패와 관계없이 같은 값을 `raw.accepted` 에 싣는다. `raw.execution` 은 완료를 알린 응답(poll 이면 마지막 poll 응답)이다. 응답으로 바로 끝나는 custom 은 그 응답이 출력이라 `accepted` 가 없다.
+완료를 따로 기다리는 custom(`poll` 이 있거나 메서드에 기본 완료 전략이 있는 경우)은 dispatch 응답을 접수 응답으로 보고 저장한다. 레코드에는 시점마다 한 곳에만 있다.
+
+| 시점 | 위치 |
+|---|---|
+| dispatch 뒤 결과 확정 전(실행 중·후처리 중, `task_get`·`task_list` 의 Running task) | task 의 `accepted` |
+| 결과 확정 뒤(성공·실패·후처리 확정, 결과 없이 실패로 끝난 경우 포함) | `typed_result.raw.accepted`. task 의 `accepted` 는 비운다 |
+| 결과 불명(`unknown`) | 결과를 확정하지 않으므로 task 의 `accepted` 에 남는다 |
+| `retry` 뒤 | 어디에도 없다 |
+
+`raw.execution` 은 완료를 알린 응답(poll 이면 마지막 poll 응답)이다. 응답으로 바로 끝나는 custom 은 그 응답이 출력이라 `accepted` 가 없다.
 
 - 형식은 `{"response": <응답>}` 이다. 직렬화한 JSON 이 64 KiB(`ACCEPTED_RESPONSE_CAP`, Run 출력 한 줄기의 상한과 같다)를 넘으면 `{"text": <JSON 앞부분>, "truncated": true, "dropped_bytes": <버린 바이트 수>}` 로 둔다. 자르는 자리는 UTF-8 문자 경계다. 잘린 `text` 는 JSON 으로 읽을 수 없고 출력 검증에 쓰지 않는다.
-- `retry` 가 지운다. v1 task 에는 저장하지 않는다.
+- v1 task 에는 저장하지 않는다.
 - 저장에 실패하면 경고 로그를 남기고 실행은 계속한다. 요청은 이미 실행됐기 때문이다.
 
 보고된 결과는 계약에 맞춰 확정하고, 유효한 출력 없이 성공으로 가려는 v2 task 는 Failed 로 끝낸다. 러너·재시작 복구·훅 완료·훅 만료·IPC `task_set_result` 가 모두 같은 완료 경로(아래 §실행 회차와 완료)를 지나므로 완료 경로마다 따로 검사하지 않는다. 비즈니스 값(`"revise"`, `false`)은 정상 출력이다. 출력 타입에 맞지 않는 값만 `output_validation` 실패가 된다. `retry` 는 `typed_result` 를 지운다.

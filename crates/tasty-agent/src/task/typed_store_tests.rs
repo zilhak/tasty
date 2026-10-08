@@ -529,41 +529,92 @@ fn stored_int64_that_is_not_an_integer_fails_to_read() {
     assert!(e.contains("stored output"), "{e}");
 }
 
-/// 접수 응답은 성공·실행 실패·결과 없는 실패 모두의 `raw.accepted` 에 실리고, 실패한 task 를
-/// retry 하면 지워진다.
+/// 직렬화한 task 레코드에서 접수 응답이 몇 벌인지 센다.
+fn accepted_copies(t: &Task) -> usize {
+    serde_json::to_string(t)
+        .unwrap()
+        .matches("\"accepted\"")
+        .count()
+}
+
+/// 접수 응답은 확정 전에는 task 의 `accepted` 에만, 결과를 확정하면 `raw.accepted` 에만 있다.
+/// 러너·재시작 복구·외부 보고가 지나는 `complete`(성공·실패·결과 불명), 결과 없는 실패 전이,
+/// 성공 결과를 기록한 뒤의 실패 전이 모두 한 벌이고 retry 뒤에는 없다.
 #[test]
-fn the_accepted_response_reaches_every_raw_and_retry_clears_it() {
+fn the_accepted_response_is_kept_once_before_and_after_the_result_is_settled() {
+    use super::attempt::Completion;
     use super::contract::AcceptedResponse;
     let (_td, mut mem, seq) = fresh_store();
     let mut store = TaskStore::new(&mut mem, "_host", &seq);
     let c = contract(json!({"contract_version": 2}));
     let accepted = AcceptedResponse::capture(&json!({"job": "J"}));
-    let failed = TaskResult {
-        exit_code: None,
-        output: None,
-        error: Some("poll failed".into()),
-    };
-    for (result, state) in [
-        (Some(output(json!({"state": "done"}))), TaskState::Succeeded),
-        (Some(failed), TaskState::Failed { error: "x".into() }),
-        (None, TaskState::Failed { error: "x".into() }),
-    ] {
+    let start = |store: &mut TaskStore| {
         let t = store.create_typed(opts("c", custom()), c.clone()).unwrap();
         store.set_accepted(1, &t.id, accepted.clone()).unwrap();
-        store.set_state(1, &t.id, TaskState::Running, 1).unwrap();
-        if let Some(r) = result {
-            store.set_result(1, &t.id, r).unwrap();
-        }
-        let (t, _) = store.set_state(1, &t.id, state, 2).unwrap();
-        let raw = &t.typed_result.as_ref().expect("typed result").raw;
-        assert_eq!(raw.accepted.as_ref(), Some(&accepted), "{:?}", t.state);
-        if t.state == TaskState::Succeeded {
-            continue;
-        }
-        let t = store.retry(1, &t.id, false, 3).unwrap();
-        assert!(t.accepted.is_none());
-        assert!(store.get(1, &t.id).unwrap().unwrap().accepted.is_none());
-    }
+        let (t, _) = store.set_state(1, &t.id, TaskState::Running, 1).unwrap();
+        // 확정 전 조회에서는 task 쪽에 보인다.
+        assert_eq!(t.accepted.as_ref(), Some(&accepted));
+        assert!(t.typed_result.is_none());
+        assert_eq!(accepted_copies(&t), 1);
+        assert_eq!(
+            serde_json::to_value(&t).unwrap()["accepted"]["response"],
+            json!({"job": "J"})
+        );
+        t.id
+    };
+    let settled = |t: &Task, label: &str| {
+        assert!(t.accepted.is_none(), "{label}");
+        let raw = &t.typed_result.as_ref().expect(label).raw;
+        assert_eq!(raw.accepted.as_ref(), Some(&accepted), "{label}");
+        assert_eq!(accepted_copies(t), 1, "{label}");
+    };
+
+    let id = start(&mut store);
+    let done = Completion::succeeded(None, output(json!({"state": "done"})));
+    let t = store.complete(1, &id, done, 2).unwrap().task;
+    assert_eq!(t.state, TaskState::Succeeded);
+    settled(&t, "complete succeeded");
+
+    let id = start(&mut store);
+    let t = store
+        .complete(1, &id, Completion::failed(None, "poll failed".into()), 2)
+        .unwrap()
+        .task;
+    assert!(matches!(t.state, TaskState::Failed { .. }));
+    settled(&t, "complete failed");
+    let t = store.retry(1, &t.id, false, 3).unwrap();
+    assert!(t.accepted.is_none() && t.typed_result.is_none());
+    assert_eq!(accepted_copies(&store.get(1, &t.id).unwrap().unwrap()), 0);
+
+    let id = start(&mut store);
+    let (t, _) = store
+        .set_state(1, &id, TaskState::Failed { error: "x".into() }, 2)
+        .unwrap();
+    settled(&t, "failed without a result");
+
+    // 성공 결과를 기록한 뒤 실패로 바꾸면 그 결과의 접수 응답을 이어받는다.
+    let id = start(&mut store);
+    let t = store.set_result(1, &id, output(json!(1))).unwrap();
+    settled(&t, "result recorded");
+    let (t, _) = store
+        .set_state(1, &id, TaskState::Failed { error: "x".into() }, 2)
+        .unwrap();
+    settled(&t, "failed after a result");
+
+    // 결과 불명은 결과를 확정하지 않으므로 task 쪽에 한 벌 남고 retry 가 지운다.
+    let id = start(&mut store);
+    let lost = Completion::lost(None, "host restart".into());
+    let t = store.complete(1, &id, lost, 2).unwrap().task;
+    assert!(
+        matches!(t.state, TaskState::Unknown { .. }),
+        "{:?}",
+        t.state
+    );
+    assert_eq!(t.accepted.as_ref(), Some(&accepted));
+    assert_eq!(accepted_copies(&t), 1);
+    let t = store.retry(1, &t.id, false, 3).unwrap();
+    assert_eq!(accepted_copies(&t), 0);
+
     let v1 = store.create(opts("v1", custom())).unwrap();
     assert!(store.set_accepted(1, &v1.id, accepted).is_err());
 }
