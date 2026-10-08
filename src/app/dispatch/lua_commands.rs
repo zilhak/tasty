@@ -62,15 +62,16 @@ impl App {
             if pending.result != Some(true) {
                 continue; // 취소 — 폐기(이미 take 됨).
             }
-            if let Some((main, engine)) = engines_mut!(self).window_pair(id) {
-                engine
-                    .runtime
-                    .settings
-                    .scripts
-                    .update_hash(&pending.script_id, pending.new_hash.clone());
-                if let Err(e) = engine.runtime.settings.save() {
-                    tracing::warn!(target: "tasty_lua", "script hash persist failed: {e}");
-                }
+            // 설정은 engine 마다 같은 사본을 둔다. 승인한 윈도우의 사본만 바꾸면 다른 윈도우가 자기 사본을
+            // 저장할 때 이 해시를 지우므로 모든 사본에 넣은 뒤 저장한다.
+            let copies = self
+                .engines
+                .all_sessions_mut()
+                .map(|session| &mut session.runtime.settings);
+            if let Err(e) = record_script_hash(copies, &pending.script_id, &pending.new_hash) {
+                tracing::warn!(target: "tasty_lua", "script hash persist failed: {e}");
+            }
+            if let Some((main, _)) = engines_mut!(self).window_pair(id) {
                 main.mark_dirty();
             }
             // 승인한 내용과 실행할 내용이 달라지지 않도록 파일을 다시 읽지 않는다.
@@ -78,5 +79,57 @@ impl App {
                 engine.run_script(&pending.source, Some(&pending.name));
             }
         }
+    }
+}
+
+/// 승인한 해시를 모든 설정 사본에 넣고 그중 하나를 저장한다. 사본이 없으면 저장하지 않는다.
+fn record_script_hash<'a>(
+    copies: impl IntoIterator<Item = &'a mut crate::settings::Settings>,
+    script_id: &str,
+    hash: &str,
+) -> anyhow::Result<()> {
+    let mut saved = None;
+    for settings in copies {
+        settings.scripts.update_hash(script_id, hash.to_string());
+        saved = Some(settings);
+    }
+    match saved {
+        Some(settings) => settings.save(),
+        None => Ok(()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::settings::Settings;
+
+    /// 두 스크립트를 해시 없이 등록한 사본과 그 id.
+    fn with_scripts() -> (Settings, [String; 2]) {
+        let mut settings = Settings::default();
+        let ids = ["one", "two"].map(|name| {
+            settings
+                .scripts
+                .add(name.into(), format!("/{name}.lua").into(), String::new())
+        });
+        (settings, ids)
+    }
+
+    /// 윈도우 둘이 각자 다른 스크립트를 승인해도 두 해시가 모두 저장된다.
+    #[test]
+    fn script_hashes_approved_in_two_windows_both_survive_a_restart() {
+        let _home = crate::test_support::IsolatedHome::new();
+        let (mut first, [one, two]) = with_scripts();
+        let (mut second, _) = with_scripts();
+        super::record_script_hash([&mut first, &mut second], &one, "hash-one").expect("save");
+        super::record_script_hash([&mut second, &mut first], &two, "hash-two").expect("save");
+
+        let restarted = Settings::load();
+        let hash = |id: &str| restarted.scripts.get(id).map(|entry| entry.sha256.clone());
+        assert_eq!(hash(&one).as_deref(), Some("hash-one"));
+        assert_eq!(hash(&two).as_deref(), Some("hash-two"));
+        assert_eq!(
+            first.scripts.get(&two).map(|e| e.sha256.as_str()),
+            Some("hash-two")
+        );
     }
 }

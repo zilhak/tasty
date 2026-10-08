@@ -1,4 +1,4 @@
-<!-- source-hash: 0db376c49e89 -->
+<!-- source-hash: 261b0de80dcb -->
 # Lua scripts
 
 Turn repeated tasks into Lua scripts. Run them with a shortcut, or set them to run when a window, workspace, or tab opens or closes.
@@ -63,7 +63,7 @@ File I/O and running external commands from the Lua standard library are availab
 
 The file's hash is recorded at registration time and compared against the current file on every run. Edit the script in an editor and a **changed** badge appears in the list.
 
-- **Running from a keybinding** — A confirmation dialog appears. Approve it and the new contents run and the hash is updated.
+- **Running from a keybinding** — A confirmation dialog appears. Approve it and the new contents run and the hash is updated. The updated hash applies to every window, so running it from another window does not ask again.
 - **Auto-run** — It is blocked and does not run. This is to stop a script that changed while nobody was looking from running. Check the badge in the list and run it by hand once to approve it, and it runs again.
 
 Other files pulled in with `require` are not checked.

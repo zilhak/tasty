@@ -45,6 +45,9 @@ Lua5.4의 instruction-count hook이 기한을 확인해 초과 job을 오류로 
 - **단축키(수동)**: 불일치 시 실행 전 **확인 popup**(승인 시 해시 갱신 후 실행). 사용자가 계기이므로 popup 이 정당.
 - **자동실행**: 불일치 시 **실행 차단 + `tracing::warn`** — 관리 창의 changed 배지로 확인하고 재승인해야 한다. 사용자 개입 없이 발생하므로 popup/배너를 띄우지 않고, 해시도 자동 갱신하지 않는다(자동 승인은 TOFU 무의미).
 
+- **갱신한 해시의 저장**: 설정은 윈도우(engine)마다 같은 사본을 둔다. 확인 popup 에서 승인하면 `dispatch_pending_script_confirm` 이 모든 engine 의 설정 사본(창·parked)에 새 해시를 넣은 뒤 저장한다. 그래서 다른 윈도우가 다른 스크립트를 승인해 자기 사본을 저장해도 이 해시가 지워지지 않고, 다른 윈도우에서 같은 스크립트를 실행할 때 다시 묻지 않는다. 설정 modal 이 열려 있는 동안 승인한 해시는 modal 을 Save 로 닫을 때 modal 이 연 시점의 사본으로 덮인다.
+- Given 윈도우 두 개 When 각 윈도우에서 다른 스크립트의 변경을 승인한다 Then 재시작 뒤 두 해시가 모두 남는다(`lua_commands.rs` 의 `script_hashes_approved_in_two_windows_both_survive_a_restart`).
+
 `require`로 간접 로드하는 파일의 해시는 확인하지 않는다.
 
 ### 호스트 API
