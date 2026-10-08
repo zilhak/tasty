@@ -311,7 +311,26 @@ fn request_new_view(
     record: &InstanceRecord,
     log: &LaunchLog,
 ) -> Result<u64, Undelivered> {
-    request_new_view_within(home, record, log, IPC_DEADLINE)
+    request_new_view_within(home, record, log, IPC_DEADLINE, &WallClock)
+}
+
+/// 재시도 루프가 마감을 판단할 시각과 재시도 사이의 대기. 시험은 가짜 시계를 넣어 기계 부하와 무관하게
+/// 마감 동작을 판정한다.
+trait RetryClock {
+    fn now(&self) -> Instant;
+    fn pause(&self, duration: Duration);
+}
+
+struct WallClock;
+
+impl RetryClock for WallClock {
+    fn now(&self) -> Instant {
+        Instant::now()
+    }
+
+    fn pause(&self, duration: Duration) {
+        std::thread::sleep(duration);
+    }
 }
 
 fn request_new_view_within(
@@ -319,17 +338,18 @@ fn request_new_view_within(
     record: &InstanceRecord,
     log: &LaunchLog,
     limit: Duration,
+    clock: &dyn RetryClock,
 ) -> Result<u64, Undelivered> {
     let Some(port) = record.port else {
         return Err(Undelivered::lost("instance record has no port"));
     };
-    let deadline = Instant::now() + limit;
+    let deadline = clock.now() + limit;
     let mut key = new_key();
     let mut attempt = 0u32;
     let mut written = false;
     loop {
         attempt += 1;
-        let left = deadline.saturating_duration_since(Instant::now());
+        let left = deadline.saturating_duration_since(clock.now());
         if left.is_zero() {
             return Err(Undelivered {
                 written,
@@ -373,7 +393,7 @@ fn request_new_view_within(
                 });
             }
         }
-        std::thread::sleep(Duration::from_millis(200).min(left));
+        clock.pause(Duration::from_millis(200).min(left));
     }
 }
 
@@ -817,6 +837,41 @@ mod tests {
         command.spawn().unwrap()
     }
 
+    /// 재시도 사이 대기만큼만 흐르는 시계. 마감 판정이 기계 부하에 흔들리지 않는다. 마감을 넘겨 기다리거나
+    /// 남은 시간 없이 다시 기다리면 마감을 무시한 것이므로 그 자리에서 실패한다(무한 재시도 대신).
+    struct FakeClock {
+        base: Instant,
+        elapsed: std::cell::Cell<Duration>,
+        limit: Duration,
+    }
+
+    impl FakeClock {
+        fn new(limit: Duration) -> Self {
+            Self {
+                base: Instant::now(),
+                elapsed: std::cell::Cell::new(Duration::ZERO),
+                limit,
+            }
+        }
+    }
+
+    impl RetryClock for FakeClock {
+        fn now(&self) -> Instant {
+            self.base + self.elapsed.get()
+        }
+
+        fn pause(&self, duration: Duration) {
+            let elapsed = self.elapsed.get() + duration;
+            assert!(
+                !duration.is_zero() && elapsed <= self.limit,
+                "retried past the deadline: paused {duration:?} at {:?} of {:?}",
+                self.elapsed.get(),
+                self.limit
+            );
+            self.elapsed.set(elapsed);
+        }
+    }
+
     fn closed_port() -> u16 {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         listener.local_addr().unwrap().port()
@@ -828,15 +883,17 @@ mod tests {
         let home = tempfile::tempdir().unwrap();
         let record = publish_self(home.path(), closed_port());
         let log = LaunchLog::new(Some(home.path()));
-        let started = Instant::now();
+        // 기한은 가짜 시계로 잰다. 재시도 간격 200ms로 800ms를 채우면 다섯 번째 시도에서 남은 시간이 0이다.
         let limit = Duration::from_millis(800);
-        let error = request_new_view_within(home.path(), &record, &log, limit).unwrap_err();
+        let clock = FakeClock::new(limit);
+        let error = request_new_view_within(home.path(), &record, &log, limit, &clock).unwrap_err();
         assert!(
             error.reason.contains("window.create gave no result"),
             "{error:?}"
         );
+        assert!(error.reason.contains("(5 attempts)"), "{error:?}");
         assert!(!error.written);
-        assert!(started.elapsed() < limit + Duration::from_secs(1));
+        assert_eq!(clock.elapsed.get(), limit);
         let text = std::fs::read_to_string(super::super::launch_log::path(home.path())).unwrap();
         assert!(text.contains("transport error"), "{text}");
     }
@@ -866,10 +923,13 @@ mod tests {
             serde_json::to_vec(&record).unwrap(),
         )
         .unwrap();
+        // 고정 지연 대신 B의 연결을 받은 뒤 A를 죽인다. 부하로 B가 늦어도 "요청을 받아 둔 채 죽음" 순서가
+        // 지켜진다.
         let killer = std::thread::spawn(move || {
-            std::thread::sleep(Duration::from_millis(500));
+            let (held, _) = listener.accept().unwrap();
             a.kill().unwrap();
             a.wait().unwrap();
+            drop(held);
             drop(listener);
             drop(lock);
         });
@@ -882,13 +942,13 @@ mod tests {
             matches!(outcome, Handover::BootNormally(_)),
             "{outcome:?}\n{text}"
         );
-        assert!(
-            started.elapsed() < IPC_DEADLINE,
-            "{:?}\n{text}",
-            started.elapsed()
-        );
+        // 기한(10초)까지 기다렸다면 사유가 "gave no result within"이다. 벽시계 대신 끝난 사유로 판정한다.
         assert!(text.contains("instance live"), "{text}");
-        assert!(text.contains("not delivered"), "{text}");
+        assert!(
+            text.contains("not delivered: the running instance ended"),
+            "{text}"
+        );
+        assert!(!text.contains("gave no result"), "{text}");
     }
 
     #[test]
@@ -899,8 +959,14 @@ mod tests {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let record = publish_self(home.path(), listener.local_addr().unwrap().port());
         let log = LaunchLog::new(Some(home.path()));
-        let error = request_new_view_within(home.path(), &record, &log, Duration::from_millis(600))
-            .unwrap_err();
+        let error = request_new_view_within(
+            home.path(),
+            &record,
+            &log,
+            Duration::from_millis(600),
+            &WallClock,
+        )
+        .unwrap_err();
         assert!(!error.written, "{error:?}");
         assert!(is_running(home.path(), &record));
         drop(listener);
@@ -908,8 +974,11 @@ mod tests {
 
     #[test]
     fn a_request_sent_to_a_live_instance_that_never_answers_is_written() {
-        // 기능 확인에는 답하고 window.create는 받기만 하는 인스턴스(이벤트 루프가 늦은 A).
+        // 기능 확인에는 답하고 window.create는 받기만 한 채 답하지 않는 인스턴스(이벤트 루프가 늦은 A).
         // 요청이 닿았으므로 "썼다"이고, A가 살아 있으면 상자 없이 성공으로 끝낼 근거가 된다.
+        // 서버는 요청을 읽은 뒤 답 없이 연결을 닫는다. 응답 대기를 실제 시간으로 채우지 않으므로 기한은
+        // 가짜 시계로 재고, 첫 시도의 소켓 대기(= 기한 2초)는 기능 확인 응답이 부하로 늦어도 넉넉하다.
+        // 시도마다 실행 기록을 디스크에 동기화하므로 기한을 더 늘리면 시험 시간이 그만큼 길어진다.
         use std::io::{BufRead, Write};
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let home = tempfile::tempdir().unwrap();
@@ -932,8 +1001,9 @@ mod tests {
             request
         });
         let log = LaunchLog::new(Some(home.path()));
-        let error = request_new_view_within(home.path(), &record, &log, Duration::from_millis(800))
-            .unwrap_err();
+        let limit = Duration::from_secs(2);
+        let clock = FakeClock::new(limit);
+        let error = request_new_view_within(home.path(), &record, &log, limit, &clock).unwrap_err();
         assert!(error.written, "{error:?}");
         let request = server.join().unwrap();
         assert!(request.contains("window.create"), "{request}");
