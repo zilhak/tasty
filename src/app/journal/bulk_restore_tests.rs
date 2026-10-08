@@ -272,9 +272,10 @@ fn selected_terminal_restores_capture_while_other_tabs_remain_resource_free() {
         session.runtime.terminals.scrollback_persist_id(ids[1]),
         Some("saved")
     );
+    // The OS reports the resolved cwd; macOS temp dirs sit behind /var -> /private/var.
     assert_eq!(
-        session.runtime.terminals.cwd(ids[1]).as_deref(),
-        Some(home.as_path())
+        session.runtime.terminals.cwd(ids[1]),
+        Some(home.canonicalize().unwrap())
     );
     for sid in [ids[0], ids[2]] {
         assert!(session.runtime.terminals.get(sid).is_none());

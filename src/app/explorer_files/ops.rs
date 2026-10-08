@@ -304,7 +304,8 @@ mod tests {
         let outside = dir.path().join("outside");
         symlink(&outside, dest.join("value")).unwrap();
         let copied = transfer(&src, &dest, false).unwrap();
-        assert_eq!(copied, dest.join("value (copy)"));
+        // transfer publishes under the canonical destination; macOS temp dirs sit behind /var -> /private/var.
+        assert_eq!(copied, dest.canonicalize().unwrap().join("value (copy)"));
         assert!(!outside.exists());
         assert!(
             dest.join("value")
