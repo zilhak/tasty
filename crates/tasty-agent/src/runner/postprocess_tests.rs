@@ -238,3 +238,32 @@ fn an_executor_without_postprocess_support_fails_the_task_once() {
     assert_eq!(runner.executor.released, vec!["judge".to_string()]);
     assert!(matches!(tasks["after"].state, TaskState::Skipped));
 }
+
+/// 기록하지 못할 만큼 큰 후처리 보고는 `result_too_large` 실패로 회차를 확정하고 permit 을
+/// 한 번 놓는다. 줄이지 않으면 같은 보고를 매 tick 다시 내며 Running 에 머문다.
+#[test]
+fn a_postprocess_report_too_large_to_record_fails_the_task_and_releases_the_permit() {
+    let (_td, mut runner) = setup(
+        json!({"command": ["judge"], "timeout_ms": 1000, "retry": {"max_retries": 2, "delay_ms": 0}}),
+        true,
+    );
+    // 사유 하나가 memory 값 상한을 넘는다. 재시도가 남아도 다시 실행하지 않는다.
+    runner.executor.script.insert(
+        1,
+        PostprocessReport::failed(1, PostprocessCause::Spawn, "x".repeat(1100 * 1024)),
+    );
+    for now in [10, 20, 30] {
+        tick(&mut runner, now);
+    }
+    let tasks = tick(&mut runner, 40);
+    let TaskState::Failed { error } = &tasks["judge"].state else {
+        panic!("expected failed, got {:?}", tasks["judge"].state);
+    };
+    assert!(
+        error.starts_with("postprocess result_too_large: "),
+        "{error}"
+    );
+    assert_eq!(runner.executor.starts.len(), 1);
+    assert_eq!(runner.executor.released, vec!["judge".to_string()]);
+    assert!(runner.pending.is_empty());
+}

@@ -244,6 +244,9 @@ pub enum PostprocessCause {
     PointerMissing,
     /// 실행이 시작됐지만 호스트가 결과를 받기 전에 끝났다. 자동으로 다시 실행하지 않는다.
     OutcomeUnknown,
+    /// 보고를 실은 레코드가 memory 값 상한을 넘어 기록하지 못했다. 같은 실행을 다시 해도 같은
+    /// 크기라 자동으로 다시 실행하지 않는다.
+    ResultTooLarge,
 }
 
 impl PostprocessCause {
@@ -255,6 +258,7 @@ impl PostprocessCause {
             PostprocessCause::StdinMapping
                 | PostprocessCause::Cancelled
                 | PostprocessCause::OutcomeUnknown
+                | PostprocessCause::ResultTooLarge
         )
     }
 
@@ -275,6 +279,7 @@ impl PostprocessCause {
             PostprocessCause::EmptyOutput => "empty_output",
             PostprocessCause::PointerMissing => "pointer_missing",
             PostprocessCause::OutcomeUnknown => "outcome_unknown",
+            PostprocessCause::ResultTooLarge => "result_too_large",
         }
     }
 }

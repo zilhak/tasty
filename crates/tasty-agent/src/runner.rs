@@ -195,14 +195,20 @@ pub fn completion_retryable(e: &AgentError) -> bool {
 
 /// 레코드가 memory 값 상한을 넘어 기록하지 못한 보고를 같은 회차의 짧은 실패로 바꾼다. 같은
 /// 보고는 다시 내도 같은 크기라 기록되지 않고 task 가 Running 에 머문다. 출력을 싣지 않은 짧은
-/// 보고와 후처리 보고(회차 진행과 맞아야 한다)는 바꾸지 않는다. 바꾼 보고는 출력이 없고 사유가
-/// [`SHRUNK_ERROR_LIMIT`] 안이라 다시 바꾸지 않으므로, 기록을 다시 시도하는 호출자의 재귀는 한
-/// 번에 끝난다.
+/// 보고는 바꾸지 않는다. 바꾼 보고는 출력이 없고 사유가 [`SHRUNK_ERROR_LIMIT`] 안이라 다시
+/// 바꾸지 않으므로, 기록을 다시 시도하는 호출자의 재귀는 한 번에 끝난다.
+///
+/// 후처리 실행 보고는 회차 진행과 맞아야 하므로 같은 실행의 `result_too_large` 실패로 바꾼다
+/// ([`Completion::postprocess_too_large_to_store`]). 저장소는 이 보고로 회차를 확정하며 레코드의
+/// 큰 몫(본 작업 결과 사본)을 비운다.
 pub fn shrink_too_large_completion(e: &AgentError, completion: &Completion) -> Option<Completion> {
     let too_large = matches!(
         e,
         AgentError::Memory(tasty_memory::MemoryError::ValueTooLarge { .. })
     );
+    if too_large && completion.postprocess.is_some() {
+        return completion.postprocess_too_large_to_store(&e.to_string());
+    }
     let carries_bulk = completion.result.output.is_some()
         || completion
             .result

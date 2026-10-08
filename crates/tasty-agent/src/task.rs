@@ -472,6 +472,10 @@ mod completion_tests;
 mod postprocess_store_tests;
 
 #[cfg(test)]
+#[path = "task/postprocess_too_large_tests.rs"]
+mod postprocess_too_large_tests;
+
+#[cfg(test)]
 #[path = "task/route_tests.rs"]
 mod route_tests;
 

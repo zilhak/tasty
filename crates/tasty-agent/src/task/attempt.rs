@@ -7,7 +7,9 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::postprocess::{PostprocessOutcome, PostprocessProgress, PostprocessReport};
+use super::postprocess::{
+    PostprocessCause, PostprocessOutcome, PostprocessProgress, PostprocessReport,
+};
 use super::{Task, TaskId, TaskResult, TaskState};
 
 /// 한 실행 회차. `id` 는 `<task id>#<number>` 다.
@@ -177,6 +179,33 @@ impl Completion {
             outcome: CompletionOutcome::Failed { error },
             postprocess: None,
         }
+    }
+
+    /// 기록할 수 없을 만큼 큰 후처리 실행 보고를 대신하는 같은 실행의 실패 보고. stdout·stderr 를
+    /// 버리고 원인을 [`PostprocessCause::ResultTooLarge`] 로 둔다. 회차 진행과 맞도록 실행 번호와
+    /// 종료 코드는 유지한다. 이미 바꾼 보고면 `None` 이다(다시 바꿔도 줄지 않는다).
+    pub fn postprocess_too_large_to_store(&self, why: &str) -> Option<Self> {
+        let report = self.postprocess.as_ref()?;
+        if report.cause() == Some(PostprocessCause::ResultTooLarge) {
+            return None;
+        }
+        let message = head_within(
+            &format!("the postprocess result could not be stored: {why}"),
+            SHRUNK_ERROR_LIMIT,
+        );
+        Some(Self::postprocessed(
+            self.attempt_id.clone(),
+            PostprocessReport {
+                run: report.run,
+                exit_code: report.exit_code,
+                stderr: None,
+                stderr_truncated: false,
+                outcome: PostprocessOutcome::Failed {
+                    cause: PostprocessCause::ResultTooLarge,
+                    message,
+                },
+            },
+        ))
     }
 
     /// 결과를 회수할 수 없다는 보고. 결과의 `error` 에도 같은 사유를 싣는다.

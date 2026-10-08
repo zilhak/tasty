@@ -6,8 +6,8 @@
 
 use super::super::attempt::{Completion, CompletionOutcome, CompletionReceipt};
 use super::super::postprocess::{
-    PostprocessOutcome, PostprocessPhase, PostprocessProgress, PostprocessRunSummary,
-    PostprocessSpec, finalize_postprocessed, next_run,
+    PostprocessCause, PostprocessOutcome, PostprocessPhase, PostprocessProgress,
+    PostprocessRunSummary, PostprocessSpec, finalize_postprocessed, next_run,
 };
 use super::super::types::MAX_VALUE_BYTES;
 use super::super::{Task, TaskCommand, TaskId, TaskResult, TaskState, contract};
@@ -122,6 +122,11 @@ impl TaskStore<'_> {
                         not_before_ms: now_ms.saturating_add(spec.retry_delay_ms()),
                     };
                     return self.keep_running(task, p, false);
+                }
+                if report.cause() == Some(PostprocessCause::ResultTooLarge) {
+                    // 기록하지 못한 보고를 대신한 실패다. 레코드의 큰 몫인 본 작업 결과 사본(회차
+                    // 진행과 raw)을 비워야 이 실패가 들어간다.
+                    p.execution.output = None;
                 }
                 let typed = finalize_postprocessed(task, &contract, &spec, &p, report);
                 p.phase = PostprocessPhase::Finished { run: report.run };
