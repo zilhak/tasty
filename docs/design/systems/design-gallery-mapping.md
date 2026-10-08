@@ -918,22 +918,20 @@ TCC 상태 하나만 그린다. 손쉬운 사용 행은 본체에서 debug 빌�
 
 ## Settings › General › General — 행 격자와 웹훅 외부 수신 행
 
-General L1 의 첫 L2 "General" 마지막 행. 디자인: `ui_kits/terminal/overlays/settings_window.jsx`(General/General 의
-`Row` + 경고 callout) · `gallery/overlays-windows.jsx` "General › General — Accept webhook calls from other computers" spec.
-디자인 회신(2026-10-07)의 위치·행 격자·문구·callout 항상 표시를 갤러리 spec 과 본체에 반영했다.
+General L1 의 첫 L2 "General". 디자인: `ui_kits/terminal/overlays/settings_window.jsx`(General/General 의
+`Row` · `RowCaption` · `WarnCallout`) · `gallery/overlays-windows.jsx` "General › General — row grid, row captions, webhook row" spec.
 
 | 디자인 jsx 컴포넌트 | 본체 함수 | 갤러리 항목 |
 |---|---|---|
-| `Row`("Accept webhook calls from other computers:" + `Switch`) | `src/view/settings/ui/tabs/general.rs::draw_general_tab` — `general_grid` 의 마지막 행. 라벨은 `Label::wrap` 으로 라벨 열 안에서 줄바꿈 | `components/settings_general_grid.rs::draw` (`settings` 섹션 `settings-general-row-grid` spec) — Restore layout · Close behavior · Wheel scroll distance(caption) · Language(caption) · 웹훅(callout) 다섯 행, `tasty_ui_widgets::SettingsRow` |
-| 경고 callout(`alertTriangle` 16 · accent-warning 40% 테두리 · 12% tint · caption) | 같은 함수 — 격자와 callout 을 `item_spacing.y = space-sm` 묶음에 두고 `measure_md` 폭 안에서 `tasty_ui_widgets::warning_callout` | 동(`warning_callout`, `measure_md`) |
+| `Row`(라벨 열 · gap 16 · 컨트롤) | `src/view/settings/ui/tabs/general.rs::draw_general_tab` — 행마다 `tasty_ui_widgets::SettingsRow`, 열 폭은 `settings_label_column` | `components/settings_general_grid.rs::draw` (`settings` 섹션 `settings-general-row-grid` spec) — Restore layout · Close behavior · Wheel scroll distance · Language · 웹훅 다섯 행 |
+| `RowCaption`(Wheel scroll distance · Language) | 같은 함수 — `SettingsRow::caption` 로 휠 거리 설명과 언어 재시작 안내를 각 행 아래에 | 동 |
+| `WarnCallout`(웹훅 행) | 같은 함수 — `SettingsRow::warning` 이 `measure_md` 폭 안에서 `warning_callout` 을 그린다 | 동 |
 
 **전사 노트**:
-- 구조: 행은 다른 General 행과 같은 격자(라벨 열 · 컨트롤)에 있고 별도 가로 행·추가 `space-md` 간격은 없다. callout 은 행
-  바로 아래, 행 간격(`space-sm`)만큼 띄워 스위치 상태와 관계없이 항상 그린다. 휠 거리 설명과 언어 재시작 안내는 callout 아래에 온다.
-- 라벨 열: 디자인 `Row` 는 라벨 열 150(`settings-label-width`) · gap 16 이다. 갤러리 spec 은 이 값을 따른다. 본체 General 격자는
-  egui `Grid` 가 가장 긴 라벨에 맞춰 열 폭을 정하고 칸 사이 12 를 쓰는 기존 구조라, 웹훅 행은 그 열 폭 안에서 줄을 바꾼다
-  (en·ja 두 줄, ko 한 줄).
-- 토큰: 새 토큰 없음. `settings-row-min-height`(갤러리 행 하한), `accent-warning`, `measure-md`, `space-sm`.
+- 라벨 열: 서브탭의 가장 긴 라벨 폭을 `settings-label-width`(150) … `settings-label-max-width`(240)로 clamp 한다. 더 긴 라벨은 열 안에서 줄을 바꾼다(en·ja 웹훅 라벨). 열은 언어마다 그 화면을 그릴 때 잰다. 라벨은 본문 크기 `text-secondary` 다.
+- 행 아래 caption 과 callout 은 행과 `settings-row-caption-gap`(4) 만큼 떨어지고 폭은 `measure-md` 까지다. callout 은 스위치 상태와 관계없이 항상 그린다. caption 글자는 `font-size-caption` · `text-muted` 다(언어 재시작 안내도 같은 caption 이다).
+- 행 사이는 `space-sm` 이다.
+- 토큰: `settings-label-width` · `settings-label-max-width` · `settings-label-gap` · `settings-row-caption-gap` · `settings-row-min-height` · `measure-md` · `accent-warning`.
 
 ## Settings › General › Overlay — toast duration
 
@@ -955,15 +953,15 @@ General L1 에 5번째 L2 서브탭 "Remote transfer" 추가 — 원격 mirror �
 |---|---|---|
 | `SettingsRemoteTransferFrame`(콘텐츠 컬럼) | `src/view/settings/ui/tabs/remote_transfer.rs::draw_remote_transfer_tab` | `components/settings_remote_transfer.rs::draw` (`settings` 섹션 `settings-remote-transfer` spec) |
 | `Mono`("Received files") | `mono` 헤딩(micro uppercase muted) | `mono_head` |
-| `Row`(Save folder, grid 150px + control) | `settings_row` + right_to_left(Browse→Input) | `xfer_row` |
+| `Row`(Save folder) | `SettingsRow` + right_to_left(Browse→Input) | `SettingsRow` |
 | `Input block mono` + `Button secondary sm folder`(Browse…) | `Input::mono` + `Button::Secondary/Sm/FOLDER` + `rfd::FileDialog::pick_folder` | 동(rfd 없이 시각만) |
-| `Row`(Maximum size) + `Input mono width90` + 정적 `MiB` | `settings_row` + `number::number_field`(`NumberSpec{suffix: Some("MiB")}`) | `xfer_row` + 동 |
-| `Note`(행별 muted 설명) | `row_desc`(caption muted) | `row_desc` |
+| `Row`(Maximum size) + `Input mono width90` + 정적 `MiB` | `SettingsRow` + `number::number_field`(`NumberSpec{suffix: Some("MiB")}`) | `SettingsRow` + 동 |
+| `Note`(행별 muted 설명) | `SettingsRow::caption` | `SettingsRow::caption` |
 | 행 사이 `borderTop separator` | `row_separator`(`th.separator` hline) | `separator_line` |
 
 **전사 노트**:
-- 라벨 컬럼 150px(`gridTemplateColumns: "150px 1fr"`)·행 gap 12(space-md)·행 높이
-  `settings_row_min_height`(32). 콘텐츠 wrapper 패딩은 공유 `tab_content_frame`(space-lg)
+- 행은 설정 공용 행 격자다(라벨 열 = 가장 긴 라벨을 150 … 240 으로 clamp, gap 16, 행 높이
+  `settings_row_min_height`(32), 설명은 행 아래 caption). 콘텐츠 wrapper 패딩은 공유 `tab_content_frame`(space-lg)
   가 제공(형제 탭 관례 — 재패딩 안 함).
 - 최대 크기 입력 폭은 승인된 90px인 `field_width_xs`를 사용한다. field-width 토큰 세트는 90/110/160/180/200이다. 2026-09-17 결정에서 예제의 88px 대신 90px를 승인했다. 2026-09-20 확인한 `gallery/overlays-shared.jsx`의 `style={{ width: 88 }}`에는 아직 반영되지 않았으므로 그 값으로 되돌리지 않는다.
 
@@ -993,14 +991,14 @@ General L1 에 5번째 L2 서브탭 "Remote transfer" 추가 — 원격 mirror �
 
 Misc L1 의 두 번째 L2 서브탭 "Task pipeline" — 작업 그래프 report 의 두 크기 상한
 (`TaskPipelineSettings{report_append_bytes, report_block_bytes}`) 편집. 디자인 카탈로그에는 아직
-프레임이 없다. 새 시각 값 없이 Remote transfer 의 숫자 행(`settings_row` + `number_field`)을 그대로
+프레임이 없다. 새 시각 값 없이 Remote transfer 의 숫자 행(`SettingsRow` + `number_field`)을 그대로
 쓰고 단위만 `B` 다. 카탈로그 등록은 디자인 요청으로 보완한다.
 
 | 디자인 jsx 컴포넌트 | 본체 함수 | 갤러리 항목 |
 |---|---|---|
 | (미수록) 콘텐츠 컬럼 | `src/view/settings/ui/tabs/task_pipeline.rs::draw_task_pipeline_tab` | `components/settings_task_pipeline.rs::draw` (`settings` 섹션 `settings-task-pipeline` spec) |
-| (미수록) 숫자 행 두 개 + 정적 `B` | `settings_row` + `number::number_field`(`NumberSpec{suffix: Some("B")}`), 두 칸의 범위가 서로의 현재 값으로 좁혀진다 | `bytes_row` |
-| (미수록) 행별 muted 설명 · 행 사이 separator | `row_desc` · `row_separator`(Remote transfer 와 공유) | `row_desc` · `separator_line` |
+| (미수록) 숫자 행 두 개 + 정적 `B` | `SettingsRow` + `number::number_field`(`NumberSpec{suffix: Some("B")}`), 두 칸의 범위가 서로의 현재 값으로 좁혀진다 | `SettingsRow` + `bytes_control` |
+| (미수록) 행별 muted 설명 · 행 사이 separator | `SettingsRow::caption` · `row_separator`(Remote transfer 와 공유) | `SettingsRow::caption` · `separator_line` |
 
 ## 파일 피커 (Overlays)
 

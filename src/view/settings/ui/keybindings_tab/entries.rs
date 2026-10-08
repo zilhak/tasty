@@ -1,7 +1,7 @@
 use crate::i18n::t;
 use crate::settings::{GeneralSettings, KeybindingSettings};
 use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::{HelpHint, TooltipPlacement};
+use tasty_ui_widgets::{settings_label_cell, settings_label_gap};
 
 use super::{FieldKind, KeyCapture, PendingBinding, RecordingSlot};
 
@@ -65,30 +65,21 @@ pub(super) fn draw_keybinding_entries(
     const BUTTON_HEIGHT: LogicalPx = LogicalPx(24.0);
     const BUTTON_WIDTH: LogicalPx = LogicalPx(140.0);
     const ADD_BUTTON_WIDTH: LogicalPx = LogicalPx(32.0);
-    const LABEL_GAP: LogicalPx = LogicalPx(12.0);
     // 행 간격과 도움말 아이콘 간격도 Theme를 사용해 배율을 함께 반영한다.
     let row_gap = th.spacing_xs;
-    let help_hint_gap = th.spacing_xs;
 
     for (field_id, label_key, desc_key) in entries.iter() {
         ui.horizontal_top(|ui| {
-            // 공통 폭의 열에 라벨과 도움말 아이콘을 왼쪽부터 배치한다.
-            ui.allocate_ui_with_layout(
-                egui::vec2(super::LABEL_COL_WIDTH.value(), BUTTON_HEIGHT.value()),
-                egui::Layout::left_to_right(egui::Align::Center),
-                |ui| {
-                    ui.label(t(label_key));
-                    ui.add_space(help_hint_gap.value());
-                    if let Some(desc_key) = desc_key {
-                        HelpHint::new(t(desc_key))
-                            .placement(TooltipPlacement::Bottom)
-                            .show(ui, &th);
-                    } else {
-                        ui.add_space(th.icon_glyph_size_sm.value());
-                    }
-                },
+            // 서브탭 공유 폭의 라벨 열. 라벨이 짧아도 열 폭을 그대로 차지하고 도움말 아이콘은 열 안에 둔다.
+            settings_label_cell(
+                ui,
+                &th,
+                super::LABEL_COL_WIDTH,
+                BUTTON_HEIGHT,
+                t(label_key),
+                desc_key.map(t),
             );
-            ui.add_space(LABEL_GAP.value());
+            settings_label_gap(ui, &th);
 
             // 버튼 영역: 남은 폭을 모두 사용. 폭을 초과하면 자동 줄바꿈.
             ui.horizontal_wrapped(|ui| {

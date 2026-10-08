@@ -6,7 +6,9 @@ use crate::i18n::t;
 use crate::settings::Settings;
 use tasty_icons::Icon;
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::{Button, ButtonVariant, menu_option_icon, vspace};
+use tasty_ui_widgets::{
+    Button, ButtonVariant, SettingsRow, menu_option_icon, settings_label_column, vspace,
+};
 
 /// 표시 스타일 항목. symbol을 선택하면 버튼에는 아이콘만, 목록에는 아이콘과 라벨을 표시한다.
 struct DisplayStyleOption {
@@ -19,78 +21,81 @@ pub fn draw_general_display_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     let th = crate::theme::theme();
     vspace(ui, th.spacing_sm);
 
-    egui::Grid::new("general_display_grid")
-        .num_columns(2)
-        .spacing([12.0, 8.0])
-        .show(ui, |ui| {
-            ui.label(t("settings.general.alt_display_style_label"));
-            display_style_combo(
-                ui,
-                &th,
-                "alt_display_style",
-                &mut settings.general.alt_display_style,
-                &[
-                    DisplayStyleOption {
-                        value: "alt",
-                        label: t("settings.general.alt_display_style_alt"),
-                        icon: None,
-                    },
-                    DisplayStyleOption {
-                        value: "cmd",
-                        label: t("settings.general.alt_display_style_cmd"),
-                        icon: None,
-                    },
-                    DisplayStyleOption {
-                        value: "symbol",
-                        label: t("settings.general.alt_display_style_symbol"),
-                        icon: Some(tasty_icons::CMD_KEY),
-                    },
-                ],
-            );
-            ui.end_row();
+    let rows = [
+        SettingsRow::new(t("settings.general.alt_display_style_label")),
+        SettingsRow::new(t("settings.general.option_display_style_label")),
+        SettingsRow::new(t("settings.general.shift_display_style_label")),
+    ];
+    let col = settings_label_column(ui, &th, &rows);
+    let [alt, option, shift] = rows;
+    ui.spacing_mut().item_spacing.y = th.spacing_sm.value();
+    alt.show(ui, &th, col, |ui| {
+        display_style_combo(
+            ui,
+            &th,
+            "alt_display_style",
+            &mut settings.general.alt_display_style,
+            &[
+                DisplayStyleOption {
+                    value: "alt",
+                    label: t("settings.general.alt_display_style_alt"),
+                    icon: None,
+                },
+                DisplayStyleOption {
+                    value: "cmd",
+                    label: t("settings.general.alt_display_style_cmd"),
+                    icon: None,
+                },
+                DisplayStyleOption {
+                    value: "symbol",
+                    label: t("settings.general.alt_display_style_symbol"),
+                    icon: Some(tasty_icons::CMD_KEY),
+                },
+            ],
+        )
+    });
 
-            ui.label(t("settings.general.option_display_style_label"));
-            display_style_combo(
-                ui,
-                &th,
-                "option_display_style",
-                &mut settings.general.option_display_style,
-                &[
-                    DisplayStyleOption {
-                        value: "option",
-                        label: t("settings.general.option_display_style_option"),
-                        icon: None,
-                    },
-                    DisplayStyleOption {
-                        value: "symbol",
-                        label: t("settings.general.option_display_style_symbol"),
-                        icon: Some(tasty_icons::OPTION_KEY),
-                    },
-                ],
-            );
-            ui.end_row();
+    option.show(ui, &th, col, |ui| {
+        display_style_combo(
+            ui,
+            &th,
+            "option_display_style",
+            &mut settings.general.option_display_style,
+            &[
+                DisplayStyleOption {
+                    value: "option",
+                    label: t("settings.general.option_display_style_option"),
+                    icon: None,
+                },
+                DisplayStyleOption {
+                    value: "symbol",
+                    label: t("settings.general.option_display_style_symbol"),
+                    icon: Some(tasty_icons::OPTION_KEY),
+                },
+            ],
+        )
+    });
 
-            ui.label(t("settings.general.shift_display_style_label"));
-            display_style_combo(
-                ui,
-                &th,
-                "shift_display_style",
-                &mut settings.general.shift_display_style,
-                &[
-                    DisplayStyleOption {
-                        value: "shift",
-                        label: t("settings.general.shift_display_style_shift"),
-                        icon: None,
-                    },
-                    DisplayStyleOption {
-                        value: "symbol",
-                        label: t("settings.general.shift_display_style_symbol"),
-                        icon: Some(tasty_icons::SHIFT_KEY),
-                    },
-                ],
-            );
-            ui.end_row();
-        });
+    shift.show(ui, &th, col, |ui| {
+        display_style_combo(
+            ui,
+            &th,
+            "shift_display_style",
+            &mut settings.general.shift_display_style,
+            &[
+                DisplayStyleOption {
+                    value: "shift",
+                    label: t("settings.general.shift_display_style_shift"),
+                    icon: None,
+                },
+                DisplayStyleOption {
+                    value: "symbol",
+                    label: t("settings.general.shift_display_style_symbol"),
+                    icon: Some(tasty_icons::SHIFT_KEY),
+                },
+            ],
+        )
+    });
 }
 
 /// 아이콘을 지원하는 표시 스타일 드롭다운 하나. 닫힌 트리거는 현재 선택이

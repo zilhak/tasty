@@ -3,7 +3,7 @@ use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, IconButton, IconButto
 use crate::adapters::ui::icons;
 use crate::i18n::t;
 use crate::settings::{GeneralSettings, Settings};
-use tasty_ui_widgets::vspace;
+use tasty_ui_widgets::{SettingsRow, settings_label_column, vspace};
 
 pub fn draw_terminal_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     let th = crate::theme::theme();
@@ -16,143 +16,166 @@ pub fn draw_terminal_tab(ui: &mut egui::Ui, settings: &mut Settings) {
         vspace(ui, th.spacing_xs);
     }
 
-    egui::Grid::new("terminal_grid")
-        .num_columns(2)
-        .spacing([12.0, 8.0])
-        .show(ui, |ui| {
-            ui.label(t("settings.terminal.shell_label"));
-            if let Some(detected) = GeneralSettings::detect_bash()
-                && (settings.general.shell.is_empty() || !settings.general.is_shell_valid())
-            {
-                settings.general.shell = detected;
-            }
-            ui.text_edit_singleline(&mut settings.general.shell);
-            ui.end_row();
-
-            // 셸 모드는 Windows 전용 — OSC7/MSYS PATH 빌트인 적용 여부 결정.
-            // 비-Windows 에서는 의미가 없어 UI 에서도 노출하지 않는다.
+    let shell = SettingsRow::new(t("settings.terminal.shell_label"));
+    #[cfg(windows)]
+    let shell_mode = SettingsRow::new(t("settings.terminal.shell_mode_label"));
+    let startup = SettingsRow::new(t("settings.terminal.startup_command_label"));
+    let scrollback_row = SettingsRow::new(t("settings.terminal.scrollback_lines_label"));
+    let confirm_close = SettingsRow::new(t("settings.terminal.confirm_close_label"));
+    let inherit_cwd = SettingsRow::new(t("settings.terminal.inherit_cwd_label"));
+    let reverse_screen = SettingsRow::new(t("settings.terminal.reverse_screen_label"));
+    let bell = SettingsRow::new(t("settings.terminal.bell_notification_label"));
+    let link_modifier = SettingsRow::new(t("settings.terminal.link_modifier_label"));
+    #[cfg(target_os = "macos")]
+    let option_as_meta = SettingsRow::new(t("settings.terminal.option_as_meta_label"));
+    let col = settings_label_column(
+        ui,
+        &th,
+        [
+            &shell,
             #[cfg(windows)]
-            {
-                ui.label(t("settings.terminal.shell_mode_label"));
-                tasty_egui_theme::with_popover_frame(ui, &th, |ui| {
-                    egui::ComboBox::from_id_salt("shell_mode")
-                        .selected_text(match settings.general.shell_mode.as_str() {
-                            "tasty" => t("settings.terminal.shell_mode_tasty"),
-                            _ => t("settings.terminal.shell_mode_default"),
-                        })
-                        .show_ui(ui, |ui| {
-                            ui.spacing_mut().item_spacing.y = 0.0;
-                            tasty_ui_widgets::menu_option_value(
-                                ui,
-                                &th,
-                                &mut settings.general.shell_mode,
-                                "default".to_string(),
-                                t("settings.terminal.shell_mode_default"),
-                            );
-                            tasty_ui_widgets::menu_option_value(
-                                ui,
-                                &th,
-                                &mut settings.general.shell_mode,
-                                "tasty".to_string(),
-                                t("settings.terminal.shell_mode_tasty"),
-                            );
-                        })
-                });
-                ui.end_row();
-            }
-
-            ui.label(t("settings.terminal.startup_command_label"));
-            ui.text_edit_singleline(&mut settings.general.startup_command);
-            ui.end_row();
-
-            ui.label(t("settings.terminal.scrollback_lines_label"));
-            let mut scrollback = settings.general.scrollback_lines as f64;
-            if super::number::number_field(
-                ui,
-                &th,
-                "terminal_scrollback_lines",
-                &super::number::NumberSpec::int(0.0, 100_000.0),
-                &mut scrollback,
-            ) {
-                settings.general.scrollback_lines = scrollback as usize;
-            }
-            ui.end_row();
-
-            ui.label(t("settings.terminal.confirm_close_label"));
-            tasty_ui_widgets::switch(
-                ui,
-                &th,
-                &mut settings.general.confirm_close_running,
-                None,
-                true,
-            );
-            ui.end_row();
-
-            ui.label(t("settings.terminal.inherit_cwd_label"));
-            tasty_ui_widgets::switch(ui, &th, &mut settings.general.inherit_cwd, None, true);
-            ui.end_row();
-
-            // DECSCNM(화면 반전, mode 5) 렌더 토글. off 면 셸의 visible-bell 등이
-            // `\e[?5h` 를 보내도 전체 화면 반전 플래시를 그리지 않는다(모드 플래그는
-            // 여전히 추적 — 프로그램 조회 응답은 정상).
-            ui.label(t("settings.terminal.reverse_screen_label"));
-            tasty_ui_widgets::switch(
-                ui,
-                &th,
-                &mut settings.general.reverse_screen_enabled,
-                None,
-                true,
-            );
-            ui.end_row();
-
-            // BEL 토스트·소리를 꺼도 사용자가 등록한 bell 훅은 계속 실행한다.
-            ui.label(t("settings.terminal.bell_notification_label"));
-            tasty_ui_widgets::switch(ui, &th, &mut settings.general.bell_notification, None, true);
-            ui.end_row();
-
-            ui.label(t("settings.terminal.link_modifier_label"));
-            tasty_egui_theme::with_popover_frame(ui, &th, |ui| {
-                egui::ComboBox::from_id_salt("link_modifier")
-                    .selected_text(match settings.general.link_click_modifier.as_str() {
-                        "alt" => t("settings.terminal.link_modifier_alt"),
-                        "none" => t("settings.terminal.link_modifier_none"),
-                        _ => t("settings.terminal.link_modifier_ctrl"),
-                    })
-                    .show_ui(ui, |ui| {
-                        ui.spacing_mut().item_spacing.y = 0.0;
-                        tasty_ui_widgets::menu_option_value(
-                            ui,
-                            &th,
-                            &mut settings.general.link_click_modifier,
-                            "ctrl".to_string(),
-                            t("settings.terminal.link_modifier_ctrl"),
-                        );
-                        tasty_ui_widgets::menu_option_value(
-                            ui,
-                            &th,
-                            &mut settings.general.link_click_modifier,
-                            "alt".to_string(),
-                            t("settings.terminal.link_modifier_alt"),
-                        );
-                        tasty_ui_widgets::menu_option_value(
-                            ui,
-                            &th,
-                            &mut settings.general.link_click_modifier,
-                            "none".to_string(),
-                            t("settings.terminal.link_modifier_none"),
-                        );
-                    })
-            });
-            ui.end_row();
-
-            // Option as Meta 는 macOS 전용 — 다른 OS 에는 Option 키가 없어 노출하지 않는다.
+            &shell_mode,
+            &startup,
+            &scrollback_row,
+            &confirm_close,
+            &inherit_cwd,
+            &reverse_screen,
+            &bell,
+            &link_modifier,
             #[cfg(target_os = "macos")]
-            {
-                ui.label(t("settings.terminal.option_as_meta_label"));
-                tasty_ui_widgets::switch(ui, &th, &mut settings.general.option_as_meta, None, true);
-                ui.end_row();
-            }
+            &option_as_meta,
+        ],
+    );
+    ui.spacing_mut().item_spacing.y = th.spacing_sm.value();
+
+    shell.show(ui, &th, col, |ui| {
+        if let Some(detected) = GeneralSettings::detect_bash()
+            && (settings.general.shell.is_empty() || !settings.general.is_shell_valid())
+        {
+            settings.general.shell = detected;
+        }
+        ui.text_edit_singleline(&mut settings.general.shell);
+    });
+
+    // 셸 모드는 Windows 전용 — OSC7/MSYS PATH 빌트인 적용 여부 결정.
+    // 비-Windows 에서는 의미가 없어 UI 에서도 노출하지 않는다.
+    #[cfg(windows)]
+    shell_mode.show(ui, &th, col, |ui| {
+        tasty_egui_theme::with_popover_frame(ui, &th, |ui| {
+            egui::ComboBox::from_id_salt("shell_mode")
+                .selected_text(match settings.general.shell_mode.as_str() {
+                    "tasty" => t("settings.terminal.shell_mode_tasty"),
+                    _ => t("settings.terminal.shell_mode_default"),
+                })
+                .show_ui(ui, |ui| {
+                    ui.spacing_mut().item_spacing.y = 0.0;
+                    tasty_ui_widgets::menu_option_value(
+                        ui,
+                        &th,
+                        &mut settings.general.shell_mode,
+                        "default".to_string(),
+                        t("settings.terminal.shell_mode_default"),
+                    );
+                    tasty_ui_widgets::menu_option_value(
+                        ui,
+                        &th,
+                        &mut settings.general.shell_mode,
+                        "tasty".to_string(),
+                        t("settings.terminal.shell_mode_tasty"),
+                    );
+                })
         });
+    });
+
+    startup.show(ui, &th, col, |ui| {
+        ui.text_edit_singleline(&mut settings.general.startup_command);
+    });
+
+    scrollback_row.show(ui, &th, col, |ui| {
+        let mut scrollback = settings.general.scrollback_lines as f64;
+        if super::number::number_field(
+            ui,
+            &th,
+            "terminal_scrollback_lines",
+            &super::number::NumberSpec::int(0.0, 100_000.0),
+            &mut scrollback,
+        ) {
+            settings.general.scrollback_lines = scrollback as usize;
+        }
+    });
+
+    confirm_close.show(ui, &th, col, |ui| {
+        tasty_ui_widgets::switch(
+            ui,
+            &th,
+            &mut settings.general.confirm_close_running,
+            None,
+            true,
+        );
+    });
+
+    inherit_cwd.show(ui, &th, col, |ui| {
+        tasty_ui_widgets::switch(ui, &th, &mut settings.general.inherit_cwd, None, true);
+    });
+
+    // DECSCNM(화면 반전, mode 5) 렌더 토글. off 면 셸의 visible-bell 등이
+    // `\e[?5h` 를 보내도 전체 화면 반전 플래시를 그리지 않는다(모드 플래그는
+    // 여전히 추적 — 프로그램 조회 응답은 정상).
+    reverse_screen.show(ui, &th, col, |ui| {
+        tasty_ui_widgets::switch(
+            ui,
+            &th,
+            &mut settings.general.reverse_screen_enabled,
+            None,
+            true,
+        );
+    });
+
+    // BEL 토스트·소리를 꺼도 사용자가 등록한 bell 훅은 계속 실행한다.
+    bell.show(ui, &th, col, |ui| {
+        tasty_ui_widgets::switch(ui, &th, &mut settings.general.bell_notification, None, true);
+    });
+
+    link_modifier.show(ui, &th, col, |ui| {
+        tasty_egui_theme::with_popover_frame(ui, &th, |ui| {
+            egui::ComboBox::from_id_salt("link_modifier")
+                .selected_text(match settings.general.link_click_modifier.as_str() {
+                    "alt" => t("settings.terminal.link_modifier_alt"),
+                    "none" => t("settings.terminal.link_modifier_none"),
+                    _ => t("settings.terminal.link_modifier_ctrl"),
+                })
+                .show_ui(ui, |ui| {
+                    ui.spacing_mut().item_spacing.y = 0.0;
+                    tasty_ui_widgets::menu_option_value(
+                        ui,
+                        &th,
+                        &mut settings.general.link_click_modifier,
+                        "ctrl".to_string(),
+                        t("settings.terminal.link_modifier_ctrl"),
+                    );
+                    tasty_ui_widgets::menu_option_value(
+                        ui,
+                        &th,
+                        &mut settings.general.link_click_modifier,
+                        "alt".to_string(),
+                        t("settings.terminal.link_modifier_alt"),
+                    );
+                    tasty_ui_widgets::menu_option_value(
+                        ui,
+                        &th,
+                        &mut settings.general.link_click_modifier,
+                        "none".to_string(),
+                        t("settings.terminal.link_modifier_none"),
+                    );
+                })
+        });
+    });
+
+    // Option as Meta 는 macOS 전용 — 다른 OS 에는 Option 키가 없어 노출하지 않는다.
+    #[cfg(target_os = "macos")]
+    option_as_meta.show(ui, &th, col, |ui| {
+        tasty_ui_widgets::switch(ui, &th, &mut settings.general.option_as_meta, None, true);
+    });
 }
 
 /// TUI의 OSC 52 클립보드 읽기 허용 설정과 권한 안내. 기본값은 꺼짐이다.
@@ -160,9 +183,16 @@ pub fn draw_terminal_tui_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     let th = crate::theme::theme();
     vspace(ui, th.spacing_sm);
 
-    // OSC 52 클립보드 읽기 허용 토글.
-    ui.horizontal(|ui| {
-        ui.label(t("settings.terminal.allow_clipboard_read_label"));
+    // OSC 52 클립보드 읽기 허용 토글과 그 행의 경고 callout(스위치 상태와 관계없이 항상 표시).
+    let alert = |ui: &mut egui::Ui, rect: egui::Rect, c: egui::Color32| {
+        icons::ALERT_TRIANGLE
+            .image(rect.height(), c)
+            .paint_at(ui, rect);
+    };
+    let row = SettingsRow::new(t("settings.terminal.allow_clipboard_read_label"))
+        .warning(t("settings.terminal.allow_clipboard_read_notice"), &alert);
+    let col = settings_label_column(ui, &th, [&row]);
+    row.show(ui, &th, col, |ui| {
         tasty_ui_widgets::switch(
             ui,
             &th,
@@ -171,19 +201,6 @@ pub fn draw_terminal_tui_tab(ui: &mut egui::Ui, settings: &mut Settings) {
             true,
         );
     });
-
-    // 토글 바로 아래 경고 callout — 아이콘은 본체 `ALERT_TRIANGLE` 를 IconPainter 로 주입.
-    vspace(ui, th.spacing_sm);
-    tasty_ui_widgets::warning_callout(
-        ui,
-        &th,
-        t("settings.terminal.allow_clipboard_read_notice"),
-        &|ui, rect, c| {
-            icons::ALERT_TRIANGLE
-                .image(rect.height(), c)
-                .paint_at(ui, rect);
-        },
-    );
 }
 
 /// 마우스 캡처 안내와 제외 목록을 편집한다.
@@ -193,8 +210,9 @@ pub fn draw_terminal_mouse_capture_tab(ui: &mut egui::Ui, settings: &mut Setting
     vspace(ui, th.spacing_sm);
 
     // 안내 배너 표시 토글.
-    ui.horizontal(|ui| {
-        ui.label(t("settings.terminal.mouse_capture_hint_label"));
+    let row = SettingsRow::new(t("settings.terminal.mouse_capture_hint_label"));
+    let col = settings_label_column(ui, &th, [&row]);
+    row.show(ui, &th, col, |ui| {
         tasty_ui_widgets::switch(
             ui,
             &th,

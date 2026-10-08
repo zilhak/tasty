@@ -1,34 +1,36 @@
 use crate::i18n::t;
 use crate::settings::Settings;
-use tasty_ui_widgets::vspace;
+use tasty_ui_widgets::{SettingsRow, settings_label_column, vspace};
 
 pub fn draw_notifications_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     let th = crate::theme::theme();
     vspace(ui, th.spacing_sm);
 
-    egui::Grid::new("notification_grid")
-        .num_columns(2)
-        .spacing([12.0, 8.0])
-        .show(ui, |ui| {
-            ui.label(t("settings.notifications.enabled"));
-            tasty_ui_widgets::switch(ui, &th, &mut settings.notification.enabled, None, true);
-            ui.end_row();
+    let rows = [
+        SettingsRow::new(t("settings.notifications.enabled")),
+        SettingsRow::new(t("settings.notifications.sound")),
+        SettingsRow::new(t("settings.notifications.coalesce_interval_label")),
+    ];
+    let col = settings_label_column(ui, &th, &rows);
+    let [enabled, sound, coalesce_row] = rows;
+    ui.spacing_mut().item_spacing.y = th.spacing_sm.value();
 
-            ui.label(t("settings.notifications.sound"));
-            tasty_ui_widgets::switch(ui, &th, &mut settings.notification.sound, None, true);
-            ui.end_row();
-
-            ui.label(t("settings.notifications.coalesce_interval_label"));
-            let mut coalesce = settings.notification.coalesce_ms as f64;
-            if super::number::number_field(
-                ui,
-                &th,
-                "notification_coalesce_ms",
-                &super::number::NumberSpec::int(0.0, 5000.0),
-                &mut coalesce,
-            ) {
-                settings.notification.coalesce_ms = coalesce as u64;
-            }
-            ui.end_row();
-        });
+    enabled.show(ui, &th, col, |ui| {
+        tasty_ui_widgets::switch(ui, &th, &mut settings.notification.enabled, None, true);
+    });
+    sound.show(ui, &th, col, |ui| {
+        tasty_ui_widgets::switch(ui, &th, &mut settings.notification.sound, None, true);
+    });
+    coalesce_row.show(ui, &th, col, |ui| {
+        let mut coalesce = settings.notification.coalesce_ms as f64;
+        if super::number::number_field(
+            ui,
+            &th,
+            "notification_coalesce_ms",
+            &super::number::NumberSpec::int(0.0, 5000.0),
+            &mut coalesce,
+        ) {
+            settings.notification.coalesce_ms = coalesce as u64;
+        }
+    });
 }

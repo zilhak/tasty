@@ -9,14 +9,13 @@ use crate::settings::{KeybindingSettings, Settings};
 use tasty_type_geometry::length::LogicalPx;
 
 use super::{FieldKind, KeyCapture, RecordingSlot};
-use tasty_ui_widgets::vspace;
+use tasty_ui_widgets::{settings_label_cell, settings_label_gap, vspace};
 
 /// `RecordingSlot.field_id` 가 이 접두사면 스크립트 바인딩 슬롯.
 const SCRIPT_SLOT_PREFIX: &str = "script:";
 
 const BUTTON_HEIGHT: LogicalPx = LogicalPx(24.0);
 const BUTTON_WIDTH: LogicalPx = LogicalPx(140.0);
-const LABEL_GAP: LogicalPx = LogicalPx(12.0);
 
 pub(super) fn draw_script_bindings(
     ui: &mut egui::Ui,
@@ -91,16 +90,9 @@ pub(super) fn draw_script_bindings(
             .to_string();
 
         ui.horizontal_top(|ui| {
-            // 긴 사용자 스크립트 이름은 말줄임하고 툴팁에 전체 이름을 표시한다.
-            ui.allocate_ui_with_layout(
-                egui::vec2(super::LABEL_COL_WIDTH.value(), BUTTON_HEIGHT.value()),
-                egui::Layout::left_to_right(egui::Align::Center),
-                |ui| {
-                    ui.add(egui::Label::new(name).truncate())
-                        .on_hover_text(name);
-                },
-            );
-            ui.add_space(LABEL_GAP.value());
+            // 서브탭 공유 폭의 라벨 열. 긴 사용자 스크립트 이름은 열 안에서 줄을 바꾼다.
+            settings_label_cell(ui, &th, super::LABEL_COL_WIDTH, BUTTON_HEIGHT, name, None);
+            settings_label_gap(ui, &th);
 
             let display = if is_recording {
                 t("settings.keybindings.hint_press_key").to_string()

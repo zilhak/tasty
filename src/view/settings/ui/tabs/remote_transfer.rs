@@ -1,15 +1,12 @@
 //! 원격 파일 수신 폴더와 용량 상한을 편집한다. 저장소는 RemoteTransferSettings다.
 
-use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, Input, vspace};
+use tasty_ui_widgets::{
+    Button, ButtonVariant, ControlSize, Input, SettingsRow, settings_label_column, vspace,
+};
 
 use crate::adapters::ui::icons;
 use crate::i18n::t;
 use crate::settings::Settings;
-
-/// 디자인 settings-row 라벨 컬럼 폭(`gridTemplateColumns: "150px 1fr"`). 4px 그리드
-/// 밖 화면 전용 고정 치수(token-policy §c) — 대응 Theme 필드 없음.
-const LABEL_COL_WIDTH: LogicalPx = LogicalPx(150.0);
 
 pub fn draw_remote_transfer_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     let th = crate::theme::theme();
@@ -24,8 +21,17 @@ pub fn draw_remote_transfer_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     );
     vspace(ui, th.spacing_sm);
 
+    let rows = [
+        SettingsRow::new(t("settings.remote_transfer.dir"))
+            .caption(t("settings.remote_transfer.dir_desc")),
+        SettingsRow::new(t("settings.remote_transfer.max_capacity"))
+            .caption(t("settings.remote_transfer.max_capacity_desc")),
+    ];
+    let col = settings_label_column(ui, &th, &rows);
+    let [dir_row, capacity_row] = rows;
+
     // ── 행 1: Save folder — mono path Input + Browse…(secondary, folder 아이콘) ──
-    settings_row(ui, &th, t("settings.remote_transfer.dir"), |ui| {
+    dir_row.show(ui, &th, col, |ui| {
         // 디자인: [Input flex:1][Browse flex:none], gap 8. right_to_left 로 Browse 를
         // 먼저(우측) 배치하고 Input 이 남은 폭을 채운다(misc add_card 선례).
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -50,13 +56,12 @@ pub fn draw_remote_transfer_tab(ui: &mut egui::Ui, settings: &mut Settings) {
                 .show(ui, &th, &mut settings.remote_transfer.dir);
         });
     });
-    row_desc(ui, &th, t("settings.remote_transfer.dir_desc"));
     row_separator(ui, &th);
 
     // 용량은 1MiB 이상이며 입력 상한은 두지 않는다. 단위는 입력 칸 밖에 표시한다.
     let mut max_mb = settings.remote_transfer.max_mb as f64;
     let mut committed = false;
-    settings_row(ui, &th, t("settings.remote_transfer.max_capacity"), |ui| {
+    capacity_row.show(ui, &th, col, |ui| {
         ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
             committed = super::number::number_field(
@@ -79,46 +84,6 @@ pub fn draw_remote_transfer_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     if committed {
         settings.remote_transfer.max_mb = max_mb as u64;
     }
-    row_desc(ui, &th, t("settings.remote_transfer.max_capacity_desc"));
-}
-
-/// 고정 폭 라벨과 입력 위젯을 배치하고 Theme의 행 높이·간격을 적용한다.
-pub(super) fn settings_row(
-    ui: &mut egui::Ui,
-    th: &tasty_type_appearance::theme::Theme,
-    label: &str,
-    control: impl FnOnce(&mut egui::Ui),
-) {
-    let min_h = th.settings_row_min_height().value();
-    ui.horizontal(|ui| {
-        ui.set_min_height(min_h);
-        ui.spacing_mut().item_spacing.x = 0.0;
-        ui.allocate_ui_with_layout(
-            egui::vec2(LABEL_COL_WIDTH.value(), min_h),
-            egui::Layout::left_to_right(egui::Align::Center),
-            |ui| {
-                // 할당 크기는 최대치라 라벨이 짧으면 열이 줄어든다. 행마다 컨트롤 x 가 같도록 폭을 채운다.
-                ui.set_min_width(LABEL_COL_WIDTH.value());
-                ui.label(
-                    egui::RichText::new(label)
-                        .size(th.font_size_body.value())
-                        .color(th.text_primary()),
-                );
-            },
-        );
-        ui.add_space(th.spacing_md.value());
-        control(ui);
-    });
-}
-
-/// 행 아래 muted 설명줄(caption · text-muted, 가용폭 wrap).
-pub(super) fn row_desc(ui: &mut egui::Ui, th: &tasty_type_appearance::theme::Theme, text: &str) {
-    vspace(ui, th.spacing_xs);
-    ui.label(
-        egui::RichText::new(text)
-            .size(th.font_size_caption.value())
-            .color(th.text_muted()),
-    );
 }
 
 /// 행 사이 1px separator(디자인 `borderTop: 1px solid separator`). base bg 위이므로

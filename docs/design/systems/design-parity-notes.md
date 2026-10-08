@@ -234,6 +234,19 @@ State 셀은 `status_dot`(점 `status_dot_size` 8 + `space-xs` 4 + caption 11px 
   컬럼에 정렬.
 - **근거**: `src/adapters/ui/popup/remote_tool.rs`.
 
+## 설정 라벨 열 — 왼쪽 정렬 자식 영역은 내용 폭으로 줄어든다
+
+- **증상**: 디자인 `Row` 의 라벨 열은 폭이 정해진 칸이라 라벨 길이와 관계없이 컨트롤이 같은 x 에서
+  시작한다. egui `allocate_ui_with_layout(vec2(W, h), Layout::left_to_right(..))` 는 부모 커서를 자식의
+  실제 내용 폭만큼만 옮겨, 라벨이 짧은 행의 컨트롤이 왼쪽으로 당겨진다. `right_to_left` 는 폭을
+  유지하지만 라벨이 오른쪽에 붙는다. 칸 안에 `ui.put` 으로 위젯을 놓으면 부모 커서가 그 rect 뒤로
+  되돌아가 같은 일이 생긴다.
+- **처방**: `tasty_ui_widgets::settings_label_cell` 이 열 폭을 `allocate_exact_size` 로 정확히 할당하고,
+  라벨(열 폭에서 줄바꿈한 galley)과 도움말 아이콘은 커서와 무관한 자식 Ui 에 놓는다. 열 폭은
+  `settings_label_column` 이 서브탭 라벨을 재서 정한다. 칸과 컨트롤 사이는 `settings_label_gap`
+  (가로 줄의 `item_spacing.x` 를 빼고 16)이다.
+- **근거**: `crates/tasty-ui-widgets/src/settings_row.rs`, 시험 `crates/tasty-ui-widgets/tests/settings_row_grid.rs`.
+
 ## footer 우측정렬 — flex `justify-end` 흉내
 
 - **증상**: 디자인 footer 버튼군은 `justify-content: flex-end` 로 우측에 붙는데 egui 엔

@@ -12,12 +12,11 @@ use crate::settings::{GeneralSettings, KeybindingSettings, SwitchStep};
 use tasty_type_geometry::length::LogicalPx;
 
 use super::{BareTarget, FieldKind, KeyCapture, PendingBinding, RecordingSlot};
-use tasty_ui_widgets::vspace;
+use tasty_ui_widgets::{settings_label_cell, settings_label_gap, vspace};
 
 /// 버튼/간격 치수. 4px 그리드 준수 (entries.rs 와 동일 값).
 const BUTTON_HEIGHT: LogicalPx = LogicalPx(24.0);
 const BUTTON_WIDTH: LogicalPx = LogicalPx(140.0);
-const LABEL_GAP: LogicalPx = LogicalPx(12.0);
 
 /// 설정의 SwitchAxis를 화면의 녹화 대상과 연결한다.
 pub(super) use tasty_settings::SwitchAxis as QuickSwitchKind;
@@ -223,44 +222,50 @@ pub(super) fn draw_quick_switch_section(
     // 수식키가 실제로 바뀌었을 때만 슬롯 값을 변환하거나 복원한다.
     let old_modifier = kind.modifier(keybindings).to_string();
 
-    egui::Grid::new(format!("{}_modifier_grid", kind.modifier_field_id()))
-        .num_columns(2)
-        .spacing([LABEL_GAP.value(), 8.0])
-        .show(ui, |ui| {
-            ui.label(t(kind.modifier_label_key()));
-            let modifier = match kind {
-                QuickSwitchKind::Tab => &mut keybindings.tab_switch_modifier,
-                QuickSwitchKind::Workspace => &mut keybindings.workspace_switch_modifier,
-                QuickSwitchKind::Category => &mut keybindings.category_switch_modifier,
-            };
-            let is_individual = modifier.as_str() == KeybindingSettings::INDIVIDUAL_SWITCH_MODIFIER;
-            let selected_text = if is_individual {
-                t("settings.keybindings.quick_switch_individual_label").to_string()
-            } else {
-                KeybindingSettings::format_display(modifier, general)
-            };
-            // 플랫폼에서 허용하는 수식키 조합을 나열하고 개별 지정 항목을 별도로 추가한다.
-            tasty_egui_theme::with_popover_frame(ui, &th, |ui| {
-                egui::ComboBox::from_id_salt(kind.modifier_field_id())
-                    .selected_text(selected_text)
-                    .show_ui(ui, |ui| {
-                        ui.spacing_mut().item_spacing.y = 0.0;
-                        for combo in all_modifier_combos() {
-                            let name = combo.name();
-                            let display = KeybindingSettings::format_display(&name, general);
-                            tasty_ui_widgets::menu_option_value(ui, &th, modifier, name, &display);
-                        }
-                        tasty_ui_widgets::menu_option_value(
-                            ui,
-                            &th,
-                            modifier,
-                            KeybindingSettings::INDIVIDUAL_SWITCH_MODIFIER.to_string(),
-                            t("settings.keybindings.quick_switch_individual_label"),
-                        );
-                    })
-            });
-            ui.end_row();
+    // 수식키 행도 아래 슬롯 행과 같은 라벨 열을 쓴다.
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 0.0;
+        settings_label_cell(
+            ui,
+            &th,
+            super::LABEL_COL_WIDTH,
+            BUTTON_HEIGHT,
+            t(kind.modifier_label_key()),
+            None,
+        );
+        settings_label_gap(ui, &th);
+        let modifier = match kind {
+            QuickSwitchKind::Tab => &mut keybindings.tab_switch_modifier,
+            QuickSwitchKind::Workspace => &mut keybindings.workspace_switch_modifier,
+            QuickSwitchKind::Category => &mut keybindings.category_switch_modifier,
+        };
+        let is_individual = modifier.as_str() == KeybindingSettings::INDIVIDUAL_SWITCH_MODIFIER;
+        let selected_text = if is_individual {
+            t("settings.keybindings.quick_switch_individual_label").to_string()
+        } else {
+            KeybindingSettings::format_display(modifier, general)
+        };
+        // 플랫폼에서 허용하는 수식키 조합을 나열하고 개별 지정 항목을 별도로 추가한다.
+        tasty_egui_theme::with_popover_frame(ui, &th, |ui| {
+            egui::ComboBox::from_id_salt(kind.modifier_field_id())
+                .selected_text(selected_text)
+                .show_ui(ui, |ui| {
+                    ui.spacing_mut().item_spacing.y = 0.0;
+                    for combo in all_modifier_combos() {
+                        let name = combo.name();
+                        let display = KeybindingSettings::format_display(&name, general);
+                        tasty_ui_widgets::menu_option_value(ui, &th, modifier, name, &display);
+                    }
+                    tasty_ui_widgets::menu_option_value(
+                        ui,
+                        &th,
+                        modifier,
+                        KeybindingSettings::INDIVIDUAL_SWITCH_MODIFIER.to_string(),
+                        t("settings.keybindings.quick_switch_individual_label"),
+                    );
+                })
         });
+    });
 
     // modifier 가 실제로 바뀌었으면 슬롯 값을 이관(규칙→개별)하거나 복원(개별→규칙)한다.
     let new_modifier = kind.modifier(keybindings).to_string();
@@ -376,15 +381,10 @@ fn slot_row(
     );
 
     ui.horizontal_top(|ui| {
-        // 라벨 컬럼: 서브탭 공유 고정 폭(`super::LABEL_COL_WIDTH`), 좌측 정렬(entries.rs 와 동일 관례).
-        ui.allocate_ui_with_layout(
-            egui::vec2(super::LABEL_COL_WIDTH.value(), BUTTON_HEIGHT.value()),
-            egui::Layout::left_to_right(egui::Align::Center),
-            |ui| {
-                ui.label(format!("{}:", bare_display_label(target)));
-            },
-        );
-        ui.add_space(LABEL_GAP.value());
+        // 서브탭 공유 폭의 라벨 열(entries.rs 와 같은 칸).
+        let label = format!("{}:", bare_display_label(target));
+        settings_label_cell(ui, &th, super::LABEL_COL_WIDTH, BUTTON_HEIGHT, &label, None);
+        settings_label_gap(ui, &th);
 
         let combo = bare_combo(keybindings, target);
         let display = if is_recording {
