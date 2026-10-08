@@ -27,6 +27,15 @@ impl ClientCommand for Port {
     }
 }
 
+/// `tasty agent report usage` — report 기록 방법을 출력한다(통신 없음).
+pub struct ReportUsage;
+impl ClientCommand for ReportUsage {
+    fn run(self: Box<Self>, _ctx: &ClientCtx<'_>) -> Result<()> {
+        crate::out::outln!("{}", tasty_i18n::t("cli.agent.report_usage"))?;
+        Ok(())
+    }
+}
+
 /// `tasty tool ssh <profile>` — 저장된 ssh 프로필로 대화형 ssh 접속(로컬, IPC 미경유).
 /// remote-profiles.toml 은 client 로컬 파일이라 직접 resolve → 시스템 ssh spawn.
 pub struct ToolSsh<'a> {

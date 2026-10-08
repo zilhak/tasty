@@ -7,7 +7,7 @@ use super::super::report::{
 };
 use super::super::{Task, TaskId, TaskState};
 use super::{TaskStore, WorkspaceId};
-use crate::{AgentError, Result};
+use crate::{AgentError, ReportRejection, Result};
 
 impl TaskStore<'_> {
     /// dispatch 가 회차 `attempt` 의 토큰을 task 에 남긴다. v2 task 만 report 를 둔다.
@@ -46,19 +46,17 @@ impl TaskStore<'_> {
             .report_token
             .as_ref()
             .is_some_and(|t| t.token == addr.token && t.attempt == addr.attempt);
+        let reject = |reason, state| AgentError::ReportRejected {
+            task_id: addr.task_id.clone(),
+            attempt: addr.attempt,
+            reason,
+            state,
+        };
         if !open {
-            return Err(AgentError::InvalidArgument(format!(
-                "report: the token does not open a block of task {} attempt {}",
-                addr.task_id, addr.attempt
-            )));
+            return Err(reject(ReportRejection::TokenMismatch, None));
         }
         if !matches!(task.state, TaskState::Ready | TaskState::Running) {
-            return Err(AgentError::InvalidArgument(format!(
-                "report: task {} attempt {} is closed ({})",
-                addr.task_id,
-                addr.attempt,
-                task.state.name()
-            )));
+            return Err(reject(ReportRejection::Closed, Some(task.state.name())));
         }
         let mut block = self
             .report_block(addr.workspace_id, &addr.task_id, addr.attempt)?

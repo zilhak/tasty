@@ -345,6 +345,11 @@ const ROSTER: &[(&str, Why, &str)] = &[
         "`completion_strategy::global()` — 프로세스 전역",
     ),
     (
+        "agent.report_append",
+        NotWindowOwned,
+        "workspace ID는 주소 문자열 안에 있고 task 저장소는 모든 창이 같은 memory store다. 핸들러는 engine의 공유 task_scope만 사용한다.",
+    ),
+    (
         "agent.rate_limit_set",
         NotWindowOwned,
         "한도는 core가 소유하며 핸들러는 state·engine 인자를 사용하지 않는다.",

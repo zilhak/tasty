@@ -29,7 +29,7 @@ pub mod terminal;
 pub mod webhook;
 pub mod workspace_category;
 
-pub use agent::AgentCommands;
+pub use agent::{AgentCommands, ReportCommands};
 pub use approval::{ApprovalCommands, ApprovalSummaryCommands};
 pub use clipboard::ClipboardCommands;
 pub use completion_strategy::CompletionStrategyCommands;

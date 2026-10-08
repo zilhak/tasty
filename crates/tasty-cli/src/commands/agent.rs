@@ -178,6 +178,31 @@ pub enum AgentCommands {
         #[arg(long, default_value = "json")]
         format: String,
     },
+    /// Output a DAG's report: for each task, the automatic part projected from its
+    /// stored state and the custom notes of every attempt. Standard output and
+    /// error are left out unless `--include-raw` is given.
+    DagReport {
+        /// DAG id from `dag-list` (`d:<metadata.dag>` or `c:<root task id>`).
+        dag: String,
+        /// Restrict the lookup to one workspace. Omitted = every live workspace.
+        #[arg(long)]
+        workspace_id: Option<u32>,
+        /// Only this task.
+        #[arg(long)]
+        task: Option<String>,
+        /// Only this attempt of `--task`. The automatic part appears only when it is
+        /// the task's latest attempt.
+        #[arg(long, requires = "task")]
+        attempt: Option<u32>,
+        /// Include the stored standard output and error.
+        #[arg(long, default_value_t = false)]
+        include_raw: bool,
+    },
+    /// Write custom notes to the report of the task attempt you are running.
+    Report {
+        #[command(subcommand)]
+        command: ReportCommands,
+    },
     /// Start, stop, or inspect a workspace runner. Starting it twice is idempotent.
     /// The host restores saved state at startup but leaves runners stopped.
     ///
@@ -528,4 +553,21 @@ pub enum AgentCommands {
         #[arg(long)]
         metric: Option<String>,
     },
+}
+
+/// `tasty agent report ...`.
+#[derive(Subcommand)]
+pub enum ReportCommands {
+    /// Append one text note to the attempt's report block. Without `--address` the
+    /// address comes from `TASTY_TASK_REPORT`, which the task runner gives to the
+    /// processes it starts. Notes over the limits are cut or counted, not refused.
+    Append {
+        /// Report address (`TASTY_TASK_REPORT` value or the one in an agent instruction).
+        #[arg(long)]
+        address: Option<String>,
+        /// The note. Plain text; one call is one entry.
+        text: String,
+    },
+    /// Print how to write report notes.
+    Usage,
 }

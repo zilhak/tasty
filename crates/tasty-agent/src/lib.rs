@@ -105,6 +105,15 @@ pub enum AgentError {
         current_attempt_id: Option<String>,
         reason: SubmissionRejection,
     },
+    /// report 블록에 쓰지 않았다. 토큰이 그 회차를 열지 않거나 회차가 이미 닫혔다.
+    #[error("report append for task {task_id} attempt {attempt} was rejected ({reason:?})")]
+    ReportRejected {
+        task_id: TaskId,
+        attempt: u32,
+        reason: ReportRejection,
+        /// 닫힌 회차면 지금 task 상태 이름.
+        state: Option<&'static str>,
+    },
     #[error("memory: {0}")]
     Memory(#[from] tasty_memory::MemoryError),
     #[error("serde: {0}")]
@@ -123,6 +132,16 @@ pub enum CompletionRejection {
     DifferentReport,
     /// 회차 지문 없이 이미 종결된 task 다.
     AlreadyTerminal,
+}
+
+/// [`AgentError::ReportRejected`] 의 사유.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReportRejection {
+    /// 토큰이 그 task 의 마지막 dispatch 회차와 맞지 않는다(다른 task·이전 회차의 토큰 포함).
+    TokenMismatch,
+    /// 회차가 끝나 블록이 닫혔다.
+    Closed,
 }
 
 /// [`AgentError::SubmissionRejected`] 의 사유.

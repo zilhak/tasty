@@ -5795,6 +5795,7 @@ dependencies = [
  "clap",
  "serde",
  "serde_json",
+ "tasty-agent",
  "tasty-approval",
  "tasty-doc-guards",
  "tasty-host-plugin",

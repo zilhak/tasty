@@ -1605,6 +1605,22 @@ flag_not_json = "エラー: {} を JSON として解析できませんでした:
 purge_filter_required = "エラー: --states または --older-than-ms を指定してください。条件なしでワークスペース内の全タスクを削除することはできません。"
 metadata_not_object = "エラー: --concurrency-limit と併用するには --metadata は JSON オブジェクトである必要があります"
 metadata_semaphore_conflict = "エラー: --metadata に既に 'semaphore' が設定されています — 削除するか --concurrency-limit を外してください"
+report_address_missing = "エラー: report アドレスがありません。--address を指定するか、タスクランナーが起動したプロセス (TASTY_TASK_REPORT があります) から実行してください。"
+report_address_invalid = "エラー: {}"
+report_usage = """
+タスク report: 実行中のタスク試行に記録を残します。
+
+  tasty agent report append --address '<アドレス>' '<テキスト>'
+
+アドレスは渡された値を使います (agent の指示文には "Report address" として表示されます)。タスクランナーが起動したプロセス (run タスク、その後処理コマンド、custom reduce シェル) は TASTY_TASK_REPORT にアドレスがあるため --address を省略できます。
+
+  tasty agent report append '<テキスト>'
+
+- プレーンテキストで書きます。1 回の呼び出しが 1 項目で、後続タスクが読むデータではなく人が読む記録です。
+- append 上限 (設定で変えていなければ 1 KiB) を超える項目は切り詰められ omit_by_limit が付きます。試行のブロックがいっぱいになると、以降の記録は omitted_appends として数えるだけです。どちらの場合もコマンドは成功します。
+- 試行の実行中だけ受け付けます。試行が終わるとアドレスは閉じられ、コマンドは失敗します。
+- run タスクはこのコマンドの代わりに ::tasty-report:: で始まる標準エラー行を出力してもかまいません。
+- report の参照: tasty agent dag-report <DAG ID> [--task <タスク ID> [--attempt <番号>]]"""
 
 [cli.telemetry]
 tags_not_object = "エラー: --tags は有効な JSON オブジェクトである必要があります: {}"
@@ -5412,6 +5428,39 @@ help = "照会するワークスペースを 1 つ指定します。ユーザー
 
 [cli.help._root.agent.dag-get.arg.format]
 help = "形式: json | dot。デフォルト: json"
+
+[cli.help._root.agent.dag-report]
+about = "DAG の report を出す — task ごとに保存された状態から作る自動項目と、試行ごとの custom 記録だ。`--include-raw` を付けなければ標準出力・エラーは含まない"
+
+[cli.help._root.agent.dag-report.arg.dag]
+help = "`dag-list` の DAG id (`d:<metadata.dag>` または `c:<ルート task id>`)"
+
+[cli.help._root.agent.dag-report.arg.workspace_id]
+help = "1 つのワークスペースだけで探す。省略すると稼働中の全ワークスペース"
+
+[cli.help._root.agent.dag-report.arg.task]
+help = "この task だけ"
+
+[cli.help._root.agent.dag-report.arg.attempt]
+help = "`--task` のこの試行だけ。自動項目はその task の最新の試行のときだけ出る"
+
+[cli.help._root.agent.dag-report.arg.include_raw]
+help = "保存された標準出力・エラーも含める"
+
+[cli.help._root.agent.report]
+about = "実行中のタスク試行の report に custom 記録を残す"
+
+[cli.help._root.agent.report.append]
+about = "試行の report ブロックにテキスト記録を 1 つ追加する。`--address` がなければタスクランナーが起動したプロセスに渡す `TASTY_TASK_REPORT` からアドレスを読む。上限を超える記録は拒否せず切り詰めるか数える"
+
+[cli.help._root.agent.report.append.arg.address]
+help = "report アドレス (`TASTY_TASK_REPORT` の値または agent の指示文にある値)"
+
+[cli.help._root.agent.report.append.arg.text]
+help = "記録。プレーンテキストで、1 回の呼び出しが 1 項目だ"
+
+[cli.help._root.agent.report.usage]
+about = "report の書き方を出力する"
 
 [cli.help._root.agent.task-run]
 about = "ワークスペースのrunnerを起動・停止し、状態を確認します。startを繰り返しても重複起動しません。ホスト起動時に保存済みの状態は復元されますが、runnerは停止したままです"

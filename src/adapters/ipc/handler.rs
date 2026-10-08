@@ -913,6 +913,10 @@ fn route_engine_handler(
         }
         "agent.dag_list" => agent::handle_dag_list(core, engine, caller, id, &request.params),
         "agent.dag_get" => agent::handle_dag_get(core, engine, caller, id, &request.params),
+        "agent.dag_report" => agent::handle_dag_report(core, engine, caller, id, &request.params),
+        "agent.report_append" => {
+            agent::handle_report_append(core, engine, caller, id, &request.params)
+        }
         "agent.task_set_result" => {
             agent::handle_task_set_result(core, engine, caller, id, &request.params)
         }

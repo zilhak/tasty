@@ -949,6 +949,57 @@ mod tests {
         );
     }
 
+    fn parsed(args: &[&str]) -> Commands {
+        use clap::Parser;
+        crate::Cli::try_parse_from(args)
+            .unwrap_or_else(|e| panic!("{args:?}: {e}"))
+            .command
+            .expect("subcommand")
+    }
+
+    #[test]
+    fn report_commands_map_to_their_methods() {
+        let req = command_to_request(&parsed(&[
+            "tasty",
+            "agent",
+            "dag-report",
+            "d:rep",
+            "--task",
+            "a",
+            "--attempt",
+            "2",
+        ]));
+        assert_eq!(req.method, "agent.dag_report");
+        assert_eq!(
+            req.params,
+            serde_json::json!({"id": "d:rep", "task": "a", "attempt": 2, "include_raw": false})
+        );
+        let req = command_to_request(&parsed(&[
+            "tasty",
+            "agent",
+            "report",
+            "append",
+            "--address",
+            "1/1/run/t0k/a",
+            "checked",
+        ]));
+        assert_eq!(req.method, "agent.report_append");
+        assert_eq!(
+            req.params,
+            serde_json::json!({"address": "1/1/run/t0k/a", "text": "checked"})
+        );
+        // 회차만 고를 수는 없다.
+        use clap::Parser;
+        assert!(
+            crate::Cli::try_parse_from(["tasty", "agent", "dag-report", "d:rep", "--attempt", "1"])
+                .is_err()
+        );
+        assert!(matches!(
+            parsed(&["tasty", "agent", "report", "usage"]).dispatch(),
+            Ok(crate::dispatch::Dispatch::ClientDriven(_))
+        ));
+    }
+
     // 환경변수는 프로세스 전체가 공유하므로 모든 변경 시나리오를 한 시험 안에서 직렬화한다.
     #[test]
     fn surface_id_env_scenarios() {

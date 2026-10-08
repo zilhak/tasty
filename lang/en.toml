@@ -1611,6 +1611,22 @@ flag_not_json = "Error: parsing {} as JSON: {}"
 purge_filter_required = "Error: specify --states or --older-than-ms. Deleting every task in the workspace without a condition is not allowed."
 metadata_not_object = "Error: --metadata must be a JSON object to combine with --concurrency-limit"
 metadata_semaphore_conflict = "Error: --metadata already sets 'semaphore' — remove it or drop --concurrency-limit"
+report_address_missing = "Error: no report address. Pass --address, or run this from a process the task runner started (it sets TASTY_TASK_REPORT)."
+report_address_invalid = "Error: {}"
+report_usage = """
+Task report: write notes for the task attempt you are running.
+
+  tasty agent report append --address '<address>' '<text>'
+
+The address is the one given to you (an agent instruction shows it as "Report address"). A process started by the task runner (a run task, its postprocess command, a custom reduce shell) has it in TASTY_TASK_REPORT and can leave out --address:
+
+  tasty agent report append '<text>'
+
+- Write plain text. Each call adds one entry; it is a record for people, not data for later tasks.
+- An entry over the append limit (1 KiB unless changed in settings) is cut and marked with omit_by_limit. Once the attempt's block is full, further notes are only counted as omitted_appends. Either way the command succeeds.
+- Notes are accepted only while the attempt runs. After it ends the address is closed and the command fails.
+- A run task can also print a standard error line that starts with ::tasty-report:: instead of calling this command.
+- Read a report: tasty agent dag-report <dag id> [--task <task id> [--attempt <n>]]"""
 
 [cli.telemetry]
 tags_not_object = "Error: --tags must be valid JSON object: {}"
@@ -5418,6 +5434,39 @@ help = "Restrict the lookup to one workspace. Explicit ids are user-chosen, so t
 
 [cli.help._root.agent.dag-get.arg.format]
 help = "Format: json | dot. Default: json"
+
+[cli.help._root.agent.dag-report]
+about = "Output a DAG's report: for each task, the automatic part projected from its stored state and the custom notes of every attempt. Standard output and error are left out unless `--include-raw` is given"
+
+[cli.help._root.agent.dag-report.arg.dag]
+help = "DAG id from `dag-list` (`d:<metadata.dag>` or `c:<root task id>`)"
+
+[cli.help._root.agent.dag-report.arg.workspace_id]
+help = "Restrict the lookup to one workspace. Omitted = every live workspace"
+
+[cli.help._root.agent.dag-report.arg.task]
+help = "Only this task"
+
+[cli.help._root.agent.dag-report.arg.attempt]
+help = "Only this attempt of `--task`. The automatic part appears only when it is the task's latest attempt"
+
+[cli.help._root.agent.dag-report.arg.include_raw]
+help = "Include the stored standard output and error"
+
+[cli.help._root.agent.report]
+about = "Write custom notes to the report of the task attempt you are running"
+
+[cli.help._root.agent.report.append]
+about = "Append one text note to the attempt's report block. Without `--address` the address comes from `TASTY_TASK_REPORT`, which the task runner gives to the processes it starts. Notes over the limits are cut or counted, not refused"
+
+[cli.help._root.agent.report.append.arg.address]
+help = "Report address (`TASTY_TASK_REPORT` value or the one in an agent instruction)"
+
+[cli.help._root.agent.report.append.arg.text]
+help = "The note. Plain text; one call is one entry"
+
+[cli.help._root.agent.report.usage]
+about = "Print how to write report notes"
 
 [cli.help._root.agent.task-run]
 about = "Start, stop, or inspect a workspace runner. Starting it twice is idempotent. The host restores saved state at startup but leaves runners stopped"

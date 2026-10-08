@@ -714,7 +714,7 @@ mod tests {
     // 수집 누락이나 새 namespace를 놓치지 않도록 개수도 확인한다.
     #[test]
     fn every_declared_host_key_space_is_inside_the_reservation() {
-        const EXPECTED: usize = 24;
+        const EXPECTED: usize = 25;
         // 이름만으로 구별할 수 없는 memory 외 저장소 키.
         const NOT_MEMORY_KEYS: &[(&str, &str)] = &[(
             "HOOKS_REGISTRY_KEY",

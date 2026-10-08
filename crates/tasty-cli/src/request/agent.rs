@@ -1,6 +1,6 @@
 //! `tasty agent ...` CLI → JsonRpcRequest 매핑.
 
-use crate::commands::AgentCommands;
+use crate::commands::{AgentCommands, ReportCommands};
 
 pub(super) fn agent_command_to_method_params(
     command: &AgentCommands,
@@ -111,6 +111,14 @@ pub(super) fn agent_command_to_method_params(
             }
             ("agent.dag_get", p)
         }
+        DagReport {
+            dag,
+            workspace_id,
+            task,
+            attempt,
+            include_raw,
+        } => dag_report_params(dag, *workspace_id, task.as_deref(), *attempt, *include_raw),
+        Report { command } => report_params(command),
         TaskRun {
             workspace_id,
             action,
@@ -619,4 +627,49 @@ fn parse_on_failure(s: &str) -> serde_json::Value {
     } else {
         serde_json::json!({ "kind": s })
     }
+}
+
+fn dag_report_params(
+    dag: &str,
+    workspace_id: Option<u32>,
+    task: Option<&str>,
+    attempt: Option<u32>,
+    include_raw: bool,
+) -> (&'static str, serde_json::Value) {
+    let mut p = serde_json::json!({ "id": dag, "include_raw": include_raw });
+    if let Some(w) = workspace_id {
+        p["workspace_id"] = serde_json::Value::from(w);
+    }
+    if let Some(t) = task {
+        p["task"] = serde_json::Value::from(t);
+    }
+    if let Some(a) = attempt {
+        p["attempt"] = serde_json::Value::from(a);
+    }
+    ("agent.dag_report", p)
+}
+
+/// `report append` 는 주소가 없거나 틀리면 통신 전에 끝낸다. `usage` 는 `dispatch.rs` 가 통신 없이 처리한다.
+fn report_params(command: &ReportCommands) -> (&'static str, serde_json::Value) {
+    let ReportCommands::Append { address, text } = command else {
+        return ("report.noop", serde_json::json!({}));
+    };
+    let address = match address {
+        Some(a) => a.clone(),
+        None => std::env::var(tasty_agent::task::report::REPORT_ENV).unwrap_or_else(|_| {
+            crate::out::errln!("{}", tasty_i18n::t("cli.agent.report_address_missing"));
+            std::process::exit(1);
+        }),
+    };
+    if let Err(e) = tasty_agent::task::report::ReportAddress::parse(&address) {
+        crate::out::errln!(
+            "{}",
+            tasty_i18n::t_fmt("cli.agent.report_address_invalid", &e)
+        );
+        std::process::exit(1);
+    }
+    (
+        "agent.report_append",
+        serde_json::json!({ "address": address, "text": text }),
+    )
 }

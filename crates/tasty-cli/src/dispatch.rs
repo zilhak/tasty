@@ -5,7 +5,9 @@
 use anyhow::Result;
 
 use crate::Commands;
-use crate::commands::{EventsCommands, PluginCommands, RemoteCommands, ToolCommands};
+use crate::commands::{
+    AgentCommands, EventsCommands, PluginCommands, RemoteCommands, ReportCommands, ToolCommands,
+};
 
 /// 클라이언트 실행에 전달할 공통 옵션.
 pub struct ClientCtx<'a> {
@@ -62,6 +64,12 @@ fn classify(command: &Commands) -> Result<Option<Box<dyn ClientCommand + '_>>> {
         Commands::Plugin {
             command: PluginCommands::Doctor { id },
         } => Box::new(crate::local::PluginDoctor { id }),
+        Commands::Agent {
+            command:
+                AgentCommands::Report {
+                    command: ReportCommands::Usage,
+                },
+        } => Box::new(crate::local::ReportUsage),
 
         // ── raw 스트림 / 터널 경유 조회 ─────────────────────────────────────
         Commands::Tool {

@@ -93,6 +93,23 @@ pub(super) fn agent_err_to_response(id: Value, err: AgentError) -> JsonRpcRespon
                 "current_attempt_id": current_attempt_id,
             }),
         ),
+        // report 블록에 쓰지 않았다. 회차에 묶인 쓰기 거절과 같은 코드다.
+        ReportRejected {
+            task_id,
+            attempt,
+            reason,
+            state,
+        } => JsonRpcResponse::error_with_data(
+            id,
+            AGENT_ATTEMPT_REJECTED,
+            msg,
+            serde_json::json!({
+                "reason": reason,
+                "task_id": task_id,
+                "attempt": attempt,
+                "state": state,
+            }),
+        ),
         // 실패 단계와 타입 오류(task·경로·기대·실제)를 error.data 로 돌려준다.
         TypeContract(failure) => JsonRpcResponse::error_with_data(
             id,
@@ -131,6 +148,7 @@ mod agent_turn;
 mod barrier;
 mod lease;
 mod ratelimit;
+mod report;
 mod semaphore;
 pub(crate) mod task;
 mod task_graph_submit;
@@ -139,6 +157,7 @@ pub use agent_turn::*;
 pub use barrier::*;
 pub use lease::*;
 pub use ratelimit::*;
+pub use report::*;
 pub use semaphore::*;
 pub use task::*;
 pub use task_graph_submit::*;
@@ -146,6 +165,10 @@ pub use task_graph_submit::*;
 #[path = "agent/postprocess_ipc_tests.rs"]
 #[cfg(test)]
 mod postprocess_ipc_tests;
+
+#[path = "agent/report_ipc_tests.rs"]
+#[cfg(test)]
+mod report_ipc_tests;
 
 #[path = "agent/holding_ttl_ipc_tests.rs"]
 #[cfg(test)]

@@ -193,7 +193,7 @@ fn appends_are_refused_once_the_attempt_settles_and_for_another_tasks_token() {
         ..addr_a.clone()
     };
     let e = store.append_report(&forged, "x", l, 12).unwrap_err();
-    assert!(e.to_string().contains("does not open"), "{e}");
+    assert!(e.to_string().contains("TokenMismatch"), "{e}");
     // 회차 번호만 바꿔도 거절한다.
     let other_attempt = ReportAddress {
         attempt: 2,
@@ -205,7 +205,17 @@ fn appends_are_refused_once_the_attempt_settles_and_for_another_tasks_token() {
         .complete(1, &a, Completion::failed(None, "boom".into()), 20)
         .unwrap();
     let e = store.append_report(&addr_a, "late", l, 21).unwrap_err();
-    assert!(e.to_string().contains("closed (failed)"), "{e}");
+    assert!(
+        matches!(
+            e,
+            crate::AgentError::ReportRejected {
+                reason: crate::ReportRejection::Closed,
+                state: Some("failed"),
+                ..
+            }
+        ),
+        "{e}"
+    );
     let blocks = store
         .report_blocks(&store.get(1, &a).unwrap().unwrap())
         .unwrap();
