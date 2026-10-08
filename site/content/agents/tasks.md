@@ -263,7 +263,7 @@ tasty agent dag-report d:review-loop --task build --attempt 2   # 작업 하나�
 tasty agent dag-report d:review-loop --include-raw         # 표준 출력·오류도 함께
 ```
 
-DAG id 는 `tasty agent dag-list` 에서 봅니다. 이전 실행은 끝난 상태와 메모만 나오고, 자동 부분은 마지막 실행에 대해서만 나옵니다.
+DAG id 는 `tasty agent dag-list` 에서 봅니다. 다시 실행(retry)한 작업의 이전 실행도 끝난 상태·메모와 함께, 다시 실행을 시작할 때 저장한 자동 부분이 나옵니다.
 
 ## 진행 보기
 

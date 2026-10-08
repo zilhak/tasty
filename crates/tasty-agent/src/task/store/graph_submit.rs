@@ -162,7 +162,9 @@ impl TaskStore<'_> {
         let mut planned: Vec<Task> = Vec::with_capacity(spec.tasks.len());
         for (i, t) in spec.tasks.into_iter().enumerate() {
             let at = format!("/tasks/{i}");
-            if let Err(e) = typed_task_key(&t.id) {
+            if let Err(e) = typed_task_key(&t.id)
+                .and_then(|_| super::super::report::check_report_key_room(&t.id))
+            {
                 return Err(graph_error(e.to_string(), format!("{at}/id")));
             }
             if existing_ids.contains(&t.id) {

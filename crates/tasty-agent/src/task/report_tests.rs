@@ -275,16 +275,82 @@ fn each_attempt_keeps_its_own_block_across_retry_and_a_reopened_store() {
     assert_eq!(texts(&blocks[1]), ["try 2", "after restart"]);
     assert_eq!(blocks[1].settled, None);
 
-    let report = project_task(&task, &blocks, None, false);
+    // retry 가 닫은 회차 #1 의 auto 는 retry 때 한 번 굳혀 저장했다. 두 번째 retry 는 덮지 않는다.
+    let sealed = store.sealed_autos(&task).unwrap();
+    assert_eq!(sealed.len(), 1);
+    assert_eq!(sealed[0].0, 1);
+    assert_eq!(sealed[0].1["state"]["kind"], json!("failed"));
+    assert_eq!(sealed[0].1["failure"]["message"], json!("boom"));
+
+    let report = project_task(&task, &blocks, &sealed, None, false);
     let attempts = report["attempts"].as_array().unwrap();
     assert_eq!(attempts.len(), 2);
     assert_eq!(attempts[0]["state"]["kind"], json!("failed"));
+    assert_eq!(attempts[0]["auto"]["failure"]["message"], json!("boom"));
     assert_eq!(attempts[1]["state"]["kind"], json!("succeeded"));
+    // 지금 회차의 auto 는 맨 위에만 있고 레코드에서 투영한다.
+    assert!(attempts[1].get("auto").is_none());
     assert_eq!(report["auto"]["exit_code"], json!(0));
-    // 이전 회차만 고르면 auto 는 없다.
-    let only_first = project_task(&task, &blocks, Some(1), false);
-    assert_eq!(only_first["auto"], Value::Null);
+    // 이전 회차만 고르면 맨 위 auto 는 그 회차의 굳힌 값이다.
+    let only_first = project_task(&task, &blocks, &sealed, Some(1), false);
+    assert_eq!(only_first["auto"]["state"]["kind"], json!("failed"));
     assert_eq!(only_first["attempts"].as_array().unwrap().len(), 1);
+}
+
+/// 굳힌 auto 는 raw 를 담아 저장하고, 조회가 raw 를 원할 때만 보인다.
+#[test]
+fn a_retried_attempt_keeps_its_auto_and_raw_only_shows_when_asked() {
+    let (_td, mut mem, seq) = fresh();
+    let mut store = TaskStore::new(&mut mem, "_host", &seq);
+    let id = typed_run(&mut store, "s");
+    let first = open_attempt(&mut store, &id, 1, "t1");
+    let mut failed = Completion::failed(None, "exit 2".into());
+    failed.result.exit_code = Some(2);
+    failed.result.output = Some(json!({"stdout": {"text": "o1"}, "stderr": {"text": "e1"}}));
+    store.complete(1, &id, failed, 5).unwrap();
+    store.retry(1, &id, false, 6).unwrap();
+    // 다음 회차가 열리기 전에도(레코드는 Ready, 토큰은 이전 회차 것) 닫힌 회차에는 쓰지 못한다.
+    assert!(matches!(
+        store.append_report(&first, "late", ReportLimits::default(), 7),
+        Err(crate::AgentError::ReportRejected {
+            reason: crate::ReportRejection::Closed,
+            ..
+        })
+    ));
+    let task = store.get(1, &id).unwrap().unwrap();
+    // retry 가 원본을 지웠다.
+    assert!(task.typed_result.is_none());
+    let sealed = store.sealed_autos(&task).unwrap();
+    let blocks = store.report_blocks(&task).unwrap();
+    let plain = project_task(&task, &blocks, &sealed, Some(1), false);
+    assert_eq!(plain["auto"]["exit_code"], json!(2));
+    assert_eq!(plain["auto"]["failure"]["message"], json!("exit 2"));
+    assert!(plain["auto"].get("raw").is_none());
+    // 다음 회차가 열리기 전에도 닫힌 회차는 굳힌 값으로 보이고, 맨 위 auto 는 지금 레코드다.
+    let whole = project_task(&task, &blocks, &sealed, None, false);
+    assert_eq!(whole["auto"]["state"]["kind"], json!("ready"));
+    assert_eq!(whole["attempts"][0]["auto"]["exit_code"], json!(2));
+    assert_eq!(whole["attempts"][0]["state"]["kind"], json!("failed"));
+    let raw = project_task(&task, &blocks, &sealed, Some(1), true);
+    assert_eq!(raw["auto"]["raw"]["stdout"]["text"], json!("o1"));
+    assert_eq!(
+        raw["attempts"][0]["auto"]["raw"]["stderr"]["text"],
+        json!("e1")
+    );
+}
+
+/// report 키가 memory 키 길이를 넘는 task id 는 제출 때 거절한다.
+#[test]
+fn a_task_id_too_long_for_its_report_keys_is_refused() {
+    let longest = "a".repeat(
+        tasty_memory::MAX_KEY_LEN - REPORT_AUTO_KEY_PREFIX.len() - format!(".{}", u32::MAX).len(),
+    );
+    assert!(check_report_key_room(&longest).is_ok());
+    let over = format!("{longest}a");
+    let err = check_report_key_room(&over).unwrap_err().to_string();
+    assert!(err.contains("too long for its report keys"), "{err}");
+    // 레코드 키에는 들어가는 길이라 레코드 키 검사만으로는 받았을 id 다.
+    assert!(crate::task::typed_task_key(&over).is_ok());
 }
 
 #[test]
@@ -301,8 +367,30 @@ fn deleting_a_task_removes_its_blocks() {
     store
         .append_report(&kept, "y", ReportLimits::default(), 1)
         .unwrap();
+    store
+        .complete(1, &id, Completion::failed(None, "x".into()), 2)
+        .unwrap();
+    // retry 가 굳힌 auto 키도 함께 지운다.
+    store.retry(1, &id, false, 3).unwrap();
+    assert_eq!(
+        store
+            .sealed_autos(&store.get(1, &id).unwrap().unwrap())
+            .unwrap()
+            .len(),
+        1
+    );
     store.delete(1, &id).unwrap();
     drop(store);
+    let autos = mem
+        .list(
+            &Scope::Workspace(1),
+            &ListOpts {
+                prefix: Some(REPORT_AUTO_KEY_PREFIX.to_string()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert!(autos.is_empty());
     let keys: Vec<String> = mem
         .list(
             &Scope::Workspace(1),
@@ -333,14 +421,14 @@ fn the_auto_part_projects_stored_values_and_hides_streams_unless_asked() {
         .complete(1, &ok, Completion::succeeded(None, result), 5)
         .unwrap();
     let task = store.get(1, &ok).unwrap().unwrap();
-    let r = project_task(&task, &[], None, false);
+    let r = project_task(&task, &[], &[], None, false);
     assert_eq!(r["auto"]["kind"], json!("run"));
     assert_eq!(r["auto"]["state"]["kind"], json!("succeeded"));
     assert_eq!(r["auto"]["exit_code"], json!(0));
     // int64 출력은 wire 형식(10진 문자열)이다.
     assert_eq!(r["auto"]["output"], json!("0"));
     assert!(r["auto"].get("raw").is_none());
-    let with_raw = project_task(&task, &[], None, true);
+    let with_raw = project_task(&task, &[], &[], None, true);
     assert_eq!(with_raw["auto"]["raw"]["stdout"]["text"], json!("out"));
     assert_eq!(with_raw["auto"]["raw"]["stderr"]["text"], json!("err"));
     // 블록이 없어도 실행한 회차는 나온다.
@@ -353,7 +441,7 @@ fn the_auto_part_projects_stored_values_and_hides_streams_unless_asked() {
         .complete(1, &bad, Completion::failed(None, "exit 3".into()), 6)
         .unwrap();
     let task = store.get(1, &bad).unwrap().unwrap();
-    let r = project_task(&task, &[], None, false);
+    let r = project_task(&task, &[], &[], None, false);
     assert_eq!(r["auto"]["failure"]["stage"], json!("execution"));
     assert_eq!(r["auto"]["failure"]["message"], json!("exit 3"));
     assert_eq!(r["auto"]["output"], Value::Null);

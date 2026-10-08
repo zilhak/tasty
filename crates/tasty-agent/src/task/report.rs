@@ -1,7 +1,9 @@
 //! DAG report. task 회차마다 블록 하나를 둔다.
 //!
-//! 블록은 auto 와 custom 으로 이뤄진다. auto 는 저장하지 않고 조회 때 task 레코드(회차·입력
-//! snapshot·결과·실패·skip)에서 투영한다([`project_task`]). custom 은 회차가 실행되는 동안
+//! 블록은 auto 와 custom 으로 이뤄진다. auto 는 원본인 task 레코드(회차·입력 snapshot·결과·
+//! 실패·skip)가 살아 있는 동안 복사하지 않고 조회 때 투영한다([`project_task`]). retry 는 다음
+//! 회차를 열면서 그 원본을 지우므로, 그때 닫히는 회차의 투영을 한 번 굳혀 저장한다
+//! ([`report_auto_key`]). 원본이 사라진 뒤의 유일한 사본이라 두 번째 원본이 생기지 않는다. custom 은 회차가 실행되는 동안
 //! 실행 중인 프로그램이 텍스트로 더하는 기록이며, 회차마다 memory 키 하나([`report_key`])에
 //! 저장한다. task 레코드와 키를 나눠 report 크기가 task 상태 전이의 저장을 막지 않게 한다.
 //!
@@ -16,6 +18,9 @@ use super::{Task, TaskCommand, TaskId, TaskState};
 
 /// custom 블록을 저장하는 memory 키 접두. 뒤에 `<task id>.<회차 번호>` 가 온다.
 pub const REPORT_KEY_PREFIX: &str = "tasty.agent.task_report.";
+
+/// retry 로 닫힌 회차의 굳힌 auto 를 저장하는 memory 키 접두. 뒤에 `<task id>.<회차 번호>` 가 온다.
+pub const REPORT_AUTO_KEY_PREFIX: &str = "tasty.agent.task_report_auto.";
 
 /// 실행 중인 자식에게 자기 블록을 알려 주는 환경 변수.
 pub const REPORT_ENV: &str = "TASTY_TASK_REPORT";
@@ -212,6 +217,30 @@ pub fn report_key(task_id: &TaskId, attempt: u32) -> crate::Result<String> {
     )
 }
 
+/// retry 로 닫힌 회차의 굳힌 auto 를 두는 memory 키.
+pub fn report_auto_key(task_id: &TaskId, attempt: u32) -> crate::Result<String> {
+    crate::component_key(
+        REPORT_AUTO_KEY_PREFIX,
+        "task id",
+        &format!("{task_id}.{attempt}"),
+    )
+}
+
+/// task id 로 report 키를 만들 수 있는지 본다. 가장 긴 파생 키(굳힌 auto, 최대 회차 번호)가
+/// memory 키 길이 안에 들어가야 한다. task 레코드 키만 검사하면 report 키가 길이를 넘는 id 를
+/// 받아 append·retry 가 실패한다.
+pub fn check_report_key_room(task_id: &TaskId) -> crate::Result<()> {
+    if report_auto_key(task_id, u32::MAX).is_ok() {
+        return Ok(());
+    }
+    let budget = tasty_memory::MAX_KEY_LEN
+        .saturating_sub(REPORT_AUTO_KEY_PREFIX.len() + format!(".{}", u32::MAX).len());
+    Err(crate::AgentError::InvalidArgument(format!(
+        "task id {task_id:?}: too long for its report keys: {} bytes > {budget}",
+        task_id.len()
+    )))
+}
+
 /// append 가 찾아갈 블록. [`REPORT_ENV`] 값의 형식은 `<workspace>/<회차>/<source>/<토큰>/<task id>` 다.
 /// task id 를 맨 뒤에 두어 그 안의 문자와 구분자가 섞이지 않게 한다.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -264,20 +293,35 @@ impl ReportAddress {
     }
 }
 
-/// task 하나의 report. `attempt` 를 주면 그 회차의 블록만 싣고, auto 는 그 회차가 마지막
-/// 회차일 때만 싣는다(이전 회차의 결과는 retry 가 지워 투영할 수 없다).
+/// task 하나의 report. `attempt` 를 주면 그 회차의 블록만 싣는다. 맨 위 `auto` 는 고른 회차
+/// (주지 않으면 지금 회차)의 auto 다. 지금 회차는 레코드에서 투영하고, retry 로 닫힌 회차는
+/// `sealed` 의 굳힌 값을 쓰며 각 `attempts[]` 항목에도 `auto` 로 싣는다. 굳힌 값이 없는 회차
+/// (이 기능 전에 닫힌 회차)는 `null`.
 pub fn project_task(
     task: &Task,
     blocks: &[ReportBlock],
+    sealed: &[(u32, Value)],
     attempt: Option<u32>,
     include_raw: bool,
 ) -> Value {
-    let current = current_attempt(task);
+    // retry 뒤 다음 회차가 열리기 전에는 레코드가 아직 닫힌 회차 번호를 가리킨다. 굳힌 값이
+    // 있는 회차는 닫혔으므로 레코드에서 투영하지 않는다.
+    let current = current_attempt(task).filter(|n| !sealed.iter().any(|(a, _)| a == n));
+    let sealed_view = |n: u32| {
+        sealed
+            .iter()
+            .find(|(a, _)| *a == n)
+            .map_or(Value::Null, |(_, v)| without_raw(v, include_raw))
+    };
     let auto = match attempt {
-        Some(n) if Some(n) != current => Value::Null,
+        Some(n) if Some(n) != current => sealed_view(n),
         _ => project_auto(task, include_raw),
     };
-    let mut numbers: Vec<u32> = blocks.iter().map(|b| b.attempt).collect();
+    let mut numbers: Vec<u32> = blocks
+        .iter()
+        .map(|b| b.attempt)
+        .chain(sealed.iter().map(|(a, _)| *a))
+        .collect();
     if let Some(n) = current
         && !matches!(task.state, TaskState::Skipped)
     {
@@ -295,14 +339,18 @@ pub fn project_task(
             } else {
                 block.and_then(|b| b.settled.clone())
             };
-            json!({
+            let mut entry = json!({
                 "attempt": n,
                 "state": state,
                 "custom": block.map_or_else(|| json!({"entries": [], "omitted_appends": 0}), |b| json!({
                     "entries": b.entries,
                     "omitted_appends": b.omitted_appends,
                 })),
-            })
+            });
+            if Some(n) != current {
+                entry["auto"] = sealed_view(n);
+            }
+            entry
         })
         .collect();
     json!({
@@ -326,7 +374,16 @@ pub fn max_attempt(task: &Task) -> u32 {
     current_attempt(task).unwrap_or(0)
 }
 
-fn project_auto(task: &Task, include_raw: bool) -> Value {
+/// 굳힌 auto 는 raw 를 담아 저장한다. 조회가 raw 를 원하지 않으면 뺀다.
+fn without_raw(auto: &Value, include_raw: bool) -> Value {
+    let mut v = auto.clone();
+    if !include_raw && let Some(map) = v.as_object_mut() {
+        map.remove("raw");
+    }
+    v
+}
+
+pub(super) fn project_auto(task: &Task, include_raw: bool) -> Value {
     let typed = task.typed_result.as_ref();
     let mut auto = json!({
         "kind": super::contract::command_kind(&task.command),

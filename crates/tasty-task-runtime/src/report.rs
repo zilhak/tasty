@@ -65,6 +65,7 @@ impl TaskService {
                     Ok(project_task(
                         t,
                         &store.report_blocks(t)?,
+                        &store.sealed_autos(t)?,
                         attempt,
                         include_raw,
                     ))

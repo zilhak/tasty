@@ -1,4 +1,4 @@
-<!-- source-hash: e92547ba0bec -->
+<!-- source-hash: 5c54fa3b0f36 -->
 <a id="task-dag"></a>
 
 # Task workflows (DAG)
@@ -264,7 +264,7 @@ tasty agent dag-report d:review-loop --task build --attempt 2   # the second run
 tasty agent dag-report d:review-loop --include-raw         # with standard output and error
 ```
 
-Find the DAG id with `tasty agent dag-list`. Earlier runs show only their final state and notes; the automatic part covers the latest run.
+Find the DAG id with `tasty agent dag-list`. Earlier runs that were retried keep their own automatic part, saved when the retry started, alongside their final state and notes.
 
 ## Watching progress
 
