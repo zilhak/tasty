@@ -698,11 +698,11 @@ task 는 선택적으로 타입 계약(`TaskContract`)을 가진다. 계약이 �
 - v1 task 에는 저장하지 않는다.
 - 저장에 실패하면 경고 로그를 남기고 실행은 계속한다. 요청은 이미 실행됐기 때문이다.
 
-custom 의 최종 응답(`raw.execution`)에도 같은 상한을 둔다. 출력은 `typed_result.output` 에 따로 저장하므로 raw 를 잘라도 출력은 바뀌지 않는다.
+custom 의 최종 응답과 agent 의 실행 보고(`raw.execution`)에도 같은 상한을 둔다. 출력은 `typed_result.output` 에 따로 저장하므로 raw 를 잘라도 출력은 바뀌지 않는다. 레코드에는 출력이 두 벌(`typed_result.output` 과 v1 투영 `result.output`) 있고 각각 출력 값 상한 안이라, raw 를 상한으로 막으면 레코드가 memory 값 상한(1 MiB) 안에 든다. agent 의 최종 답변은 출력과 별개로 길이 제한이 없어, 막지 않으면 유효한 제출이 있어도 레코드를 저장하지 못했다.
 
 - 직렬화한 응답이 64 KiB(`EXECUTION_RESPONSE_CAP`, 접수 응답과 같다)를 넘으면 `raw.execution` 을 비우고 `raw.execution_truncated` 에 `{"text": <JSON 앞부분>, "truncated": true, "dropped_bytes": <버린 바이트 수>}` 를 둔다. 자르는 자리는 UTF-8 문자 경계다. 상한 안이면 `execution_truncated` 는 없다.
-- 응답이 출력이 되는 custom 은 출력 값 상한(256 KiB, `MAX_VALUE_BYTES`)을 넘으면 `output_validation` 실패로 끝난다. raw 는 잘린 앞부분만 남으므로 응답이 memory 값 상한(1 MiB)보다 커도 결과를 저장한다.
-- 후처리가 있는 custom 은 응답을 회차에 저장해 후처리 입력(`raw.execution`)으로 쓴다. 입력은 자를 수 없으므로 응답이 출력 값 상한을 넘으면 후처리를 실행하지 않고 같은 `output_validation` 실패로 끝낸다.
+- 응답이 출력이 되는 custom 과 최종 답변·제출이 출력이 되는 agent 는 출력 값 상한(256 KiB, `MAX_VALUE_BYTES`)을 넘으면 `output_validation` 실패로 끝난다. raw 는 잘린 앞부분만 남으므로 응답이 memory 값 상한(1 MiB)보다 커도 결과를 저장한다. agent 의 출력이 제출이면 최종 답변이 아무리 길어도 출력은 그대로다.
+- 후처리가 있는 custom·agent 는 응답(agent 는 실행 보고)을 회차에 저장해 후처리 입력(`raw.execution`)으로 쓴다. 입력은 자를 수 없으므로 응답이 출력 값 상한을 넘으면 후처리를 실행하지 않고 같은 `output_validation` 실패로 끝낸다.
 - 다른 종류의 `raw.execution` 은 자르지 않는다. run 은 실행기가 stdout·stderr 를 각 64 KiB 꼬리로 모은다.
 
 보고된 결과는 계약에 맞춰 확정하고, 유효한 출력 없이 성공으로 가려는 v2 task 는 Failed 로 끝낸다. 러너·재시작 복구·훅 완료·훅 만료·IPC `task_set_result` 가 모두 같은 완료 경로(아래 §실행 회차와 완료)를 지나므로 완료 경로마다 따로 검사하지 않는다. 비즈니스 값(`"revise"`, `false`)은 정상 출력이다. 출력 타입에 맞지 않는 값만 `output_validation` 실패가 된다. `retry` 는 `typed_result` 를 지운다.
@@ -1044,7 +1044,7 @@ DAG 요약(`agent.dag_list`·`agent.dag_get`)의 `state_counts.not_selected` 는
 - 그 밖의 타입은 같은 회차에 명시 제출한 값이 출력이다(`agent.submitted`). 지시문 끝에 제출 방법(`tasty agent task-submit --workspace-id … --id … --attempt-id … --token … --output '<JSON>'`)과 출력 스키마를 붙인다. 후처리가 있으면 제출이 필요 없고 후처리가 받는 실행 결과에 최종 답변이 든다.
 - `agent.task_submit_result` 는 값이 도착할 때 출력 타입으로 검사하고(실패하면 `-32602` 와 `output_validation`) 턴이 끝날 때 결과로 확정한다. 응답 `final: false` 는 task 가 아직 끝나지 않았다는 뜻이다. 같은 값을 다시 내면 `duplicate: true`, 거절은 `-32018` 과 `error.data.reason`: `not_running`·`stale_attempt`·`conflict`(같은 회차의 다른 값)·`turn_ended`·`not_the_session`(세션 토큰의 agent 가 그 task 의 세션이 아님)·`wrong_token`(회차 토큰이 다름).
 - 회차마다 예측할 수 없는 회차 토큰(16바이트 난수, 16진수 32자)을 새로 만들어 지시의 제출 안내에 싣고(`--token`), 제출은 `token` 이 그 회차의 것과 같아야 받는다. 회차 id(`<task id>#<n>`)는 짐작할 수 있어 다른 회차나 다른 호출자가 실수로 낸 값을 막지 못하기 때문이다. 로컬 IPC 가 신뢰 경계라는 원칙은 그대로이고, 토큰은 보안 경계가 아니다(같은 컴퓨터의 호출자는 세션 화면이나 handle 기록에서 토큰을 읽을 수 있다).
-- 원본 보고(`provider`·`surface_id`·`final_answer`·`submitted`)는 `raw.execution` 에 남는다.
+- 원본 보고(`provider`·`surface_id`·`final_answer`·`submitted`)는 `raw.execution` 에 남는다. 직렬화가 64 KiB 를 넘으면 앞부분만 `raw.execution_truncated` 에 남는다(위 §결과 확정의 응답 상한).
 
 | 상황 | 결과 |
 |---|---|

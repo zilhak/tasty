@@ -46,7 +46,7 @@ impl TaskStore<'_> {
                     // 본 작업이 실패했으면 후처리를 실행하지 않는다.
                     return Ok(PostprocessStep::NotApplicable);
                 }
-                if custom_response_too_large(task, &completion.result) {
+                if response_too_large(task, &completion.result) {
                     // 후처리 입력으로 쓸 응답은 자를 수 없다. 출력과 같은 값 상한을 넘으면 후처리 없이
                     // 일반 확정 경로에서 출력 검증 실패로 끝낸다. 회차에 응답을 저장하지도 않는다.
                     return Ok(PostprocessStep::NotApplicable);
@@ -208,11 +208,14 @@ impl TaskStore<'_> {
     }
 }
 
-/// Custom 응답이 값 상한([`MAX_VALUE_BYTES`])을 넘는지. 후처리 진행에 그대로 저장할 수 없는 크기다.
-fn custom_response_too_large(task: &Task, result: &TaskResult) -> bool {
-    matches!(task.command, TaskCommand::Custom { .. })
-        && result
-            .output
-            .as_ref()
-            .is_some_and(|v| serde_json::to_vec(v).map_or(true, |b| b.len() > MAX_VALUE_BYTES))
+/// Custom 응답이나 Agent 실행 보고가 값 상한([`MAX_VALUE_BYTES`])을 넘는지. 후처리 진행에 그대로
+/// 저장할 수 없는 크기다.
+fn response_too_large(task: &Task, result: &TaskResult) -> bool {
+    matches!(
+        task.command,
+        TaskCommand::Custom { .. } | TaskCommand::Agent { .. }
+    ) && result
+        .output
+        .as_ref()
+        .is_some_and(|v| serde_json::to_vec(v).map_or(true, |b| b.len() > MAX_VALUE_BYTES))
 }

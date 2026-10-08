@@ -222,11 +222,12 @@ pub struct RawResult {
     /// 프로세스 종료 코드. 숫자 코드가 없으면(신호 종료 등) 비어 있다.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exit_code: Option<i32>,
-    /// 실행 응답 원문(Run 의 stdout·stderr tail, Custom 의 IPC 응답 등). Custom 의 응답이
-    /// [`EXECUTION_RESPONSE_CAP`] 을 넘으면 비우고 앞부분을 `execution_truncated` 에 둔다.
+    /// 실행 응답 원문(Run 의 stdout·stderr tail, Custom 의 IPC 응답, Agent 의 실행 보고 등).
+    /// Custom·Agent 의 응답이 [`EXECUTION_RESPONSE_CAP`] 을 넘으면 비우고 앞부분을
+    /// `execution_truncated` 에 둔다.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub execution: Option<Value>,
-    /// 상한을 넘어 잘린 Custom 응답의 앞부분. 응답이 상한 안이면 없다.
+    /// 상한을 넘어 잘린 Custom·Agent 응답의 앞부분. 응답이 상한 안이면 없다.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub execution_truncated: Option<CappedJson>,
     /// 후처리 CLI 의 원본 결과. 후처리가 없거나 실행 전에 끝났으면 비어 있다.
@@ -251,8 +252,9 @@ impl RawResult {
 /// [`AcceptedResponse`] 에 응답을 그대로 두는 직렬화 크기 상한(바이트). Run 출력 한 줄기와 같다.
 pub const ACCEPTED_RESPONSE_CAP: usize = 64 * 1024;
 
-/// Custom 의 최종 응답을 [`RawResult::execution`] 에 그대로 두는 직렬화 크기 상한(바이트).
-/// 접수 응답과 같다. 최종 출력은 따로 저장하므로 raw 를 잘라도 출력은 바뀌지 않는다.
+/// Custom 의 최종 응답과 Agent 의 실행 보고(최종 답변·제출)를 [`RawResult::execution`] 에 그대로
+/// 두는 직렬화 크기 상한(바이트). 접수 응답과 같다. 최종 출력은 따로 저장하므로 raw 를 잘라도
+/// 출력은 바뀌지 않는다.
 pub const EXECUTION_RESPONSE_CAP: usize = ACCEPTED_RESPONSE_CAP;
 
 /// custom 비동기 task 의 접수 응답.
@@ -303,14 +305,14 @@ impl CappedJson {
     }
 }
 
-/// raw 에 둘 본 작업 응답. Custom 의 응답이 [`EXECUTION_RESPONSE_CAP`] 을 넘으면 `execution` 을
-/// 비우고 앞부분을 돌려준다. 다른 종류는 실행기가 이미 상한을 둔다(Run 출력 꼬리 등).
+/// raw 에 둘 본 작업 응답. Custom·Agent 의 응답이 [`EXECUTION_RESPONSE_CAP`] 을 넘으면 `execution`
+/// 을 비우고 앞부분을 돌려준다. 다른 종류는 실행기가 이미 상한을 둔다(Run 출력 꼬리 등).
 pub fn raw_execution(
     command: &TaskCommand,
     execution: Option<&Value>,
 ) -> (Option<Value>, Option<CappedJson>) {
     match (command, execution) {
-        (TaskCommand::Custom { .. }, Some(v)) => {
+        (TaskCommand::Custom { .. } | TaskCommand::Agent { .. }, Some(v)) => {
             let capped = CappedJson::capture_within(v, EXECUTION_RESPONSE_CAP);
             if capped.truncated {
                 (None, Some(capped))

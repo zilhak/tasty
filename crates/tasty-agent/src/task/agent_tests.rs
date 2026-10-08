@@ -360,3 +360,89 @@ fn failure_codes_round_trip_through_the_message() {
     assert_eq!(FailureCode::parse_message("plain error"), None);
     assert_eq!(FailureCode::parse_message("other_code: x"), None);
 }
+
+/// 실행 보고는 raw 에 상한까지만 둔다. 출력은 따로 저장하므로 최종 답변이 아무리 길어도 유효한
+/// 제출은 출력이 되고, 레코드는 memory 값 상한 안에 머문다.
+#[test]
+fn an_agent_report_over_the_raw_cap_keeps_its_output_and_only_a_head_in_raw() {
+    use super::contract::EXECUTION_RESPONSE_CAP;
+    let (_td, mut mem, seq) = fresh_store();
+    let mut store = TaskStore::new(&mut mem, "host", &seq);
+    let string_out = contract(json!({"contract_version": 2, "output_schema": {"type": "string"}}));
+    let mut complete = |c: TaskContract, report: Value| {
+        let t = store.create_typed(opts(agent_cmd("codex")), c).unwrap();
+        let attempt = start(&mut store, &t.id);
+        let mut d = done(report);
+        d.attempt_id = Some(attempt);
+        let t = store.complete(1, &t.id, d, 2).expect("stored").task;
+        assert_eq!(store.get(1, &t.id).unwrap().as_ref(), Some(&t));
+        t
+    };
+
+    let small = json!({"provider": "codex", "surface_id": 7, "final_answer": "approve"});
+    let t = complete(v2(), small.clone());
+    let raw = &t.typed_result.as_ref().unwrap().raw;
+    assert_eq!(raw.execution, Some(small));
+    assert!(raw.execution_truncated.is_none());
+
+    // 제출 250 KiB 와 memory 값 상한보다 긴 최종 답변. 변경 전에는 레코드가 1 MiB 를 넘어
+    // 저장에 실패했다.
+    let submitted = "y".repeat(250 * 1024);
+    let report = json!({
+        "provider": "codex", "surface_id": 7,
+        "final_answer": "x".repeat(1100 * 1024), "submitted": submitted,
+    });
+    let t = complete(string_out, report.clone());
+    assert_eq!(t.state, TaskState::Succeeded);
+    let typed = t.typed_result.as_ref().unwrap();
+    assert_eq!(typed.output.to_wire(), json!(submitted));
+    assert!(typed.raw.execution.is_none());
+    let head = typed.raw.execution_truncated.as_ref().expect("truncated");
+    let full = report.to_string();
+    let text = head.text.as_deref().expect("text");
+    assert!(head.truncated && head.response.is_none());
+    assert!(text.len() <= EXECUTION_RESPONSE_CAP && full.starts_with(text));
+    assert_eq!(head.dropped_bytes as usize, full.len() - text.len());
+
+    // 출력이 되는 최종 답변이 출력 값 상한을 넘으면 출력 검증 실패로 끝나되 저장은 된다.
+    let t = complete(
+        v2(),
+        json!({"provider": "codex", "surface_id": 7, "final_answer": "x".repeat(1100 * 1024)}),
+    );
+    assert!(matches!(t.state, TaskState::Failed { .. }), "{:?}", t.state);
+    let typed = t.typed_result.as_ref().unwrap();
+    assert_eq!(
+        typed.error.as_ref().unwrap().stage,
+        FailureStage::OutputValidation
+    );
+    assert!(typed.raw.execution_truncated.as_ref().unwrap().truncated);
+}
+
+/// 후처리 입력으로 쓸 실행 보고가 값 상한을 넘으면 자르지 않고, 후처리 없이 출력 검증 실패로
+/// 끝낸다. 회차에 보고를 저장하지 않으므로 memory 값 상한을 넘는 보고도 저장 실패가 없다.
+#[test]
+fn an_agent_report_too_large_for_the_postprocess_input_fails_without_running_it() {
+    let (_td, mut mem, seq) = fresh_store();
+    let mut store = TaskStore::new(&mut mem, "host", &seq);
+    let c = contract(json!({
+        "contract_version": 2,
+        "output_schema": {"type": "boolean"},
+        "postprocess": {"command": ["judge"], "timeout_ms": 1000},
+    }));
+    let t = store.create_typed(opts(agent_cmd("codex")), c).unwrap();
+    let attempt = start(&mut store, &t.id);
+    let mut d = done(json!({
+        "provider": "codex", "surface_id": 7, "final_answer": "x".repeat(1100 * 1024),
+    }));
+    d.attempt_id = Some(attempt);
+    let t = store.complete(1, &t.id, d, 2).expect("stored").task;
+    assert!(matches!(t.state, TaskState::Failed { .. }), "{:?}", t.state);
+    assert!(t.attempt.as_ref().unwrap().postprocess.is_none());
+    let typed = t.typed_result.as_ref().unwrap();
+    assert_eq!(
+        typed.error.as_ref().unwrap().stage,
+        FailureStage::OutputValidation
+    );
+    assert!(typed.raw.execution_truncated.as_ref().unwrap().truncated);
+    assert_eq!(store.get(1, &t.id).unwrap().as_ref(), Some(&t));
+}
