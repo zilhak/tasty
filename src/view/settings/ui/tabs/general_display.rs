@@ -6,7 +6,7 @@ use crate::i18n::t;
 use crate::settings::Settings;
 use tasty_icons::Icon;
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::{Button, ButtonVariant, MenuItemVariant, menu_item, vspace};
+use tasty_ui_widgets::{Button, ButtonVariant, menu_option_icon, vspace};
 
 /// 표시 스타일 항목. symbol을 선택하면 버튼에는 아이콘만, 목록에는 아이콘과 라벨을 표시한다.
 struct DisplayStyleOption {
@@ -161,10 +161,11 @@ fn display_style_combo(
                             .rect
                             .width();
                         let icon_w = if opt.icon.is_some() { sz + gap } else { 0.0 };
-                        pad_x * 2.0 + icon_w + label_w + gap + sz
+                        pad_x * 2.0 + icon_w + label_w + gap + theme.menu_item_check_size().value()
                     })
                     .fold(0.0_f32, f32::max);
                 ui.set_min_width(resp.rect.width().max(content_width));
+                ui.spacing_mut().item_spacing.y = 0.0;
                 let mut picked: Option<&'static str> = None;
                 for opt in options {
                     let is_active = opt.value == value.as_str();
@@ -176,24 +177,8 @@ fn display_style_combo(
                     let icon_paint = icon_closure
                         .as_ref()
                         .map(|f| f as &dyn Fn(&mut egui::Ui, egui::Rect, egui::Color32));
-                    let row = menu_item(
-                        ui,
-                        theme,
-                        icon_paint,
-                        opt.label,
-                        None,
-                        MenuItemVariant::Normal,
-                        is_active,
-                        true,
-                    );
-                    if is_active {
-                        let center =
-                            egui::pos2(row.rect.right() - pad_x - sz * 0.5, row.rect.center().y);
-                        let r = egui::Rect::from_center_size(center, egui::vec2(sz, sz));
-                        tasty_icons::CHECK
-                            .image(sz, theme.text_primary().to_egui())
-                            .paint_at(ui, r);
-                    }
+                    // 현재 값은 공용 옵션 행의 selected(글자 + 오른쪽 체크, 채움 없음)다.
+                    let row = menu_option_icon(ui, theme, icon_paint, opt.label, is_active);
                     if row.clicked() && !is_active {
                         picked = Some(opt.value);
                     }

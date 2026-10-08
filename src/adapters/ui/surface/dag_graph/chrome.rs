@@ -171,6 +171,7 @@ fn dag_picker(ui: &mut egui::Ui, theme: &Theme, data: &DagData) -> Option<String
         egui::ComboBox::from_id_salt("dag_picker")
             .selected_text(current_name)
             .show_ui(ui, |ui| {
+                ui.spacing_mut().item_spacing.y = 0.0;
                 for entry in &data.dags {
                     let selected = data.current.as_ref().is_some_and(|g| g.id == entry.id);
                     let label = t_fmt2(
@@ -178,9 +179,8 @@ fn dag_picker(ui: &mut egui::Ui, theme: &Theme, data: &DagData) -> Option<String
                         &entry.name,
                         &entry.task_count.to_string(),
                     );
-                    let text = egui::RichText::new(format!("{} {}", entry.rollup.glyph(), label))
-                        .size(theme.font_size_caption.value());
-                    if ui.selectable_label(selected, text).clicked() {
+                    let text = format!("{} {}", entry.rollup.glyph(), label);
+                    if tasty_ui_widgets::menu_option(ui, theme, &text, selected).clicked() {
                         picked = Some(entry.id.clone());
                     }
                 }

@@ -113,10 +113,21 @@ pub fn menu_option(
     label: &str,
     selected: bool,
 ) -> egui::Response {
+    menu_option_icon(ui, theme, None, label, selected)
+}
+
+/// 앞에 아이콘이 있는 [`menu_option`].
+pub fn menu_option_icon(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    icon: Option<IconPainter<'_>>,
+    label: &str,
+    selected: bool,
+) -> egui::Response {
     menu_item_inner(
         ui,
         theme,
-        None,
+        icon,
         label,
         None,
         MenuItemVariant::Normal,

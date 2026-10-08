@@ -1623,6 +1623,7 @@ fn font_family_picker(
                 .height(300.0)
                 .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
                 .show_ui(ui, |ui| {
+                    ui.spacing_mut().item_spacing.y = 0.0;
                     ui.add(
                         egui::TextEdit::singleline(filter)
                             .hint_text(tasty_egui_theme::hint_text(
@@ -1635,9 +1636,13 @@ fn font_family_picker(
 
                     let filter_lower = filter.to_lowercase();
                     if (filter_lower.is_empty() || "monospace".contains(&filter_lower))
-                        && ui
-                            .selectable_label(value.is_empty(), "monospace (default)")
-                            .clicked()
+                        && tasty_ui_widgets::menu_option(
+                            ui,
+                            &th,
+                            "monospace (default)",
+                            value.is_empty(),
+                        )
+                        .clicked()
                     {
                         value.clear();
                     }
@@ -1654,7 +1659,9 @@ fn font_family_picker(
                                         continue;
                                     }
                                     let selected = value == family;
-                                    if ui.selectable_label(selected, family).clicked() {
+                                    if tasty_ui_widgets::menu_option(ui, &th, family, selected)
+                                        .clicked()
+                                    {
                                         *value = family.clone();
                                     }
                                 }

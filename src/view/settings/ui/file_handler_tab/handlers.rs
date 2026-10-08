@@ -154,8 +154,11 @@ fn draw_add_handler_form(
                                 fh.add_handler_form.detector_id_input.clone()
                             })
                             .show_ui(ui, |ui| {
+                                ui.spacing_mut().item_spacing.y = 0.0;
                                 for id in &detector_ids {
-                                    ui.selectable_value(
+                                    tasty_ui_widgets::menu_option_value(
+                                        ui,
+                                        &th,
                                         &mut fh.add_handler_form.detector_id_input,
                                         id.as_str().to_string(),
                                         id.as_str(),
@@ -189,17 +192,24 @@ fn draw_add_handler_form(
                                 }
                             })
                             .show_ui(ui, |ui| {
-                                ui.selectable_value(
+                                ui.spacing_mut().item_spacing.y = 0.0;
+                                tasty_ui_widgets::menu_option_value(
+                                    ui,
+                                    &th,
                                     &mut fh.add_handler_form.action_kind,
                                     AddHandlerActionKind::OpenSurface,
                                     t("settings.file_handler.handlers.action_open_surface"),
                                 );
-                                ui.selectable_value(
+                                tasty_ui_widgets::menu_option_value(
+                                    ui,
+                                    &th,
                                     &mut fh.add_handler_form.action_kind,
                                     AddHandlerActionKind::Ipc,
                                     t("settings.file_handler.handlers.action_ipc"),
                                 );
-                                ui.selectable_value(
+                                tasty_ui_widgets::menu_option_value(
+                                    ui,
+                                    &th,
                                     &mut fh.add_handler_form.action_kind,
                                     AddHandlerActionKind::System,
                                     t("settings.file_handler.handlers.action_system"),

@@ -1073,11 +1073,14 @@ fn draw_profile_form(ui: &mut egui::Ui, th: &Theme, st: &mut UiState, passkeys: 
                                             .selected_text("▾")
                                             .width(combo_w)
                                             .show_ui(ui, |ui| {
+                                                ui.spacing_mut().item_spacing.y = 0.0;
                                                 for kt in KNOWN_TYPES {
-                                                    ui.selectable_value(
+                                                    tasty_ui_widgets::menu_option_value(
+                                                        ui,
+                                                        th,
                                                         &mut f.kind,
                                                         (*kt).to_string(),
-                                                        *kt,
+                                                        kt,
                                                     );
                                                 }
                                             })
@@ -1141,11 +1144,14 @@ fn draw_profile_form(ui: &mut egui::Ui, th: &Theme, st: &mut UiState, passkeys: 
                                             .selected_text(f.shell.clone())
                                             .width(ui.available_width())
                                             .show_ui(ui, |ui| {
+                                                ui.spacing_mut().item_spacing.y = 0.0;
                                                 for sh in SHELLS {
-                                                    ui.selectable_value(
+                                                    tasty_ui_widgets::menu_option_value(
+                                                        ui,
+                                                        th,
                                                         &mut f.shell,
                                                         (*sh).to_string(),
-                                                        *sh,
+                                                        sh,
                                                     );
                                                 }
                                             })
@@ -1268,9 +1274,16 @@ fn passkey_dropdown_row(ui: &mut egui::Ui, th: &Theme, value: &mut String, passk
                 .selected_text(sel)
                 .width(ui.available_width())
                 .show_ui(ui, |ui| {
-                    ui.selectable_value(value, String::new(), t("remote_tool.passkey_none"));
+                    ui.spacing_mut().item_spacing.y = 0.0;
+                    tasty_ui_widgets::menu_option_value(
+                        ui,
+                        th,
+                        value,
+                        String::new(),
+                        t("remote_tool.passkey_none"),
+                    );
                     for k in &passkeys.passkeys {
-                        ui.selectable_value(value, k.name.clone(), &k.name);
+                        tasty_ui_widgets::menu_option_value(ui, th, value, k.name.clone(), &k.name);
                     }
                 })
         });
@@ -1634,6 +1647,7 @@ fn draw_attach_form(
                                             .selected_text(sel)
                                             .width(ui.available_width())
                                             .show_ui(ui, |ui| {
+                                                ui.spacing_mut().item_spacing.y = 0.0;
                                                 for sp in profiles
                                                     .profiles
                                                     .iter()
@@ -1645,10 +1659,12 @@ fn draw_attach_form(
                                                         }
                                                         _ => sp.name.clone(),
                                                     };
-                                                    ui.selectable_value(
+                                                    tasty_ui_widgets::menu_option_value(
+                                                        ui,
+                                                        th,
                                                         &mut f.ssh_ref,
                                                         sp.name.clone(),
-                                                        display,
+                                                        &display,
                                                     );
                                                 }
                                             })
@@ -1685,11 +1701,14 @@ fn draw_attach_form(
                                             .selected_text(f.shell.clone())
                                             .width(ui.available_width())
                                             .show_ui(ui, |ui| {
+                                                ui.spacing_mut().item_spacing.y = 0.0;
                                                 for sh in SHELLS {
-                                                    ui.selectable_value(
+                                                    tasty_ui_widgets::menu_option_value(
+                                                        ui,
+                                                        th,
                                                         &mut f.shell,
                                                         (*sh).to_string(),
-                                                        *sh,
+                                                        sh,
                                                     );
                                                 }
                                             })
@@ -1720,11 +1739,14 @@ fn draw_attach_form(
                                         .selected_text(f.port_mode.clone())
                                         .width(ui.available_width())
                                         .show_ui(ui, |ui| {
+                                            ui.spacing_mut().item_spacing.y = 0.0;
                                             for m in PORT_MODES {
-                                                ui.selectable_value(
+                                                tasty_ui_widgets::menu_option_value(
+                                                    ui,
+                                                    th,
                                                     &mut f.port_mode,
                                                     (*m).to_string(),
-                                                    *m,
+                                                    m,
                                                 );
                                             }
                                         })

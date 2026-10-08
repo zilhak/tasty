@@ -41,12 +41,17 @@ pub fn draw_terminal_tab(ui: &mut egui::Ui, settings: &mut Settings) {
                             _ => t("settings.terminal.shell_mode_default"),
                         })
                         .show_ui(ui, |ui| {
-                            ui.selectable_value(
+                            ui.spacing_mut().item_spacing.y = 0.0;
+                            tasty_ui_widgets::menu_option_value(
+                                ui,
+                                &th,
                                 &mut settings.general.shell_mode,
                                 "default".to_string(),
                                 t("settings.terminal.shell_mode_default"),
                             );
-                            ui.selectable_value(
+                            tasty_ui_widgets::menu_option_value(
+                                ui,
+                                &th,
                                 &mut settings.general.shell_mode,
                                 "tasty".to_string(),
                                 t("settings.terminal.shell_mode_tasty"),
@@ -114,17 +119,24 @@ pub fn draw_terminal_tab(ui: &mut egui::Ui, settings: &mut Settings) {
                         _ => t("settings.terminal.link_modifier_ctrl"),
                     })
                     .show_ui(ui, |ui| {
-                        ui.selectable_value(
+                        ui.spacing_mut().item_spacing.y = 0.0;
+                        tasty_ui_widgets::menu_option_value(
+                            ui,
+                            &th,
                             &mut settings.general.link_click_modifier,
                             "ctrl".to_string(),
                             t("settings.terminal.link_modifier_ctrl"),
                         );
-                        ui.selectable_value(
+                        tasty_ui_widgets::menu_option_value(
+                            ui,
+                            &th,
                             &mut settings.general.link_click_modifier,
                             "alt".to_string(),
                             t("settings.terminal.link_modifier_alt"),
                         );
-                        ui.selectable_value(
+                        tasty_ui_widgets::menu_option_value(
+                            ui,
+                            &th,
                             &mut settings.general.link_click_modifier,
                             "none".to_string(),
                             t("settings.terminal.link_modifier_none"),

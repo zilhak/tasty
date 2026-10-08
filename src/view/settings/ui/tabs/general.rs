@@ -83,17 +83,24 @@ pub fn draw_general_tab(ui: &mut egui::Ui, settings: &mut Settings, languages: &
                             _ => t("settings.general.close_behavior_ask"),
                         })
                         .show_ui(ui, |ui| {
-                            ui.selectable_value(
+                            ui.spacing_mut().item_spacing.y = 0.0;
+                            tasty_ui_widgets::menu_option_value(
+                                ui,
+                                &th,
                                 &mut settings.general.close_behavior,
                                 "ask".to_string(),
                                 t("settings.general.close_behavior_ask"),
                             );
-                            ui.selectable_value(
+                            tasty_ui_widgets::menu_option_value(
+                                ui,
+                                &th,
                                 &mut settings.general.close_behavior,
                                 "minimize".to_string(),
                                 t("settings.general.close_behavior_minimize"),
                             );
-                            ui.selectable_value(
+                            tasty_ui_widgets::menu_option_value(
+                                ui,
+                                &th,
                                 &mut settings.general.close_behavior,
                                 "quit".to_string(),
                                 t("settings.general.close_behavior_quit"),

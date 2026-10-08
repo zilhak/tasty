@@ -244,12 +244,15 @@ pub(super) fn draw_quick_switch_section(
                 egui::ComboBox::from_id_salt(kind.modifier_field_id())
                     .selected_text(selected_text)
                     .show_ui(ui, |ui| {
+                        ui.spacing_mut().item_spacing.y = 0.0;
                         for combo in all_modifier_combos() {
                             let name = combo.name();
                             let display = KeybindingSettings::format_display(&name, general);
-                            ui.selectable_value(modifier, name, display);
+                            tasty_ui_widgets::menu_option_value(ui, &th, modifier, name, &display);
                         }
-                        ui.selectable_value(
+                        tasty_ui_widgets::menu_option_value(
+                            ui,
+                            &th,
                             modifier,
                             KeybindingSettings::INDIVIDUAL_SWITCH_MODIFIER.to_string(),
                             t("settings.keybindings.quick_switch_individual_label"),

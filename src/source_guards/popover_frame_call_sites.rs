@@ -6,6 +6,10 @@
 //! 주석을 가린 본체·크레이트 소스에서 세 진입 호출을 찾고, 바로 앞 코드가 래퍼 호출의 `|ui| {` 클로저
 //! 시작인지 텍스트로 확인한다. 래퍼를 다른 함수로 한 번 더 감싼 호출, `Frame::popup`을 직접 그리는 경로,
 //! 진입 호출을 `use`로 줄여 부른 형태는 보지 않는다.
+//!
+//! 열린 ComboBox 목록의 행은 공용 옵션 행(`menu_option` · `menu_option_value`)으로 그린다. egui 기본
+//! 선택 행(`selectable_value` · `selectable_label`)은 현재 값을 accent 채움으로 칠하므로 디자인의 선택
+//! 표현(글자 + 오른쪽 체크, 채움 없음)과 다르다. `show_ui` 클로저 본문을 중괄호 짝으로 잘라 확인한다.
 
 use super::rust_sources;
 
@@ -93,4 +97,79 @@ fn the_judge_tells_a_wrapped_popover_from_a_bare_one() {
     assert_eq!(judge(lookalike), (vec![2], 1));
     // 주석 안의 진입 문자열은 세지 않는다.
     assert_eq!(judge("// egui::popup_below_widget(\n"), (vec![], 0));
+}
+
+/// egui 기본 선택 행. 열린 ComboBox 목록 안에서는 쓰지 않는다.
+const EGUI_SELECTABLE: &[&str] = &["selectable_value(", "selectable_label("];
+
+/// `open` 위치의 `{` 와 짝이 되는 `}` 까지의 본문.
+fn brace_body(code: &str, open: usize) -> &str {
+    let mut depth = 0usize;
+    for (i, c) in code[open..].char_indices() {
+        match c {
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return &code[open..open + i];
+                }
+            }
+            _ => {}
+        }
+    }
+    &code[open..]
+}
+
+/// egui 기본 선택 행을 쓰는 ComboBox 의 줄 번호와 검사한 ComboBox 수.
+fn combo_rows(src: &str) -> (Vec<usize>, usize) {
+    let code = tasty_doc_guards::source_text::mask_comments_aligned(src);
+    let mut offenders = Vec::new();
+    let mut seen = 0;
+    for (at, _) in code.match_indices("egui::ComboBox::from_id_salt(") {
+        let Some(rel) = code[at..].find(".show_ui(ui, |ui| {") else {
+            continue;
+        };
+        seen += 1;
+        let open = at + rel + ".show_ui(ui, |ui| ".len();
+        if EGUI_SELECTABLE
+            .iter()
+            .any(|e| brace_body(&code, open).contains(e))
+        {
+            offenders.push(code[..at].matches('\n').count() + 1);
+        }
+    }
+    (offenders, seen)
+}
+
+#[test]
+fn every_open_combo_box_list_draws_shared_option_rows() {
+    let mut offenders = Vec::new();
+    let mut seen = 0;
+    for (rel, src) in rust_sources() {
+        let rel = rel.to_string_lossy().replace('\\', "/");
+        if rel.starts_with(GUARD_DIR) {
+            continue;
+        }
+        let (lines, n) = combo_rows(&src);
+        seen += n;
+        offenders.extend(lines.into_iter().map(|l| format!("{rel}:{l}")));
+    }
+    // 현재 ComboBox 는 14곳이다. 순회가 비거나 진입 문자열이 낡아 0건으로 통과하는 것을 막는 하한이다.
+    assert!(
+        seen >= 12,
+        "ComboBox 를 {seen}곳만 찾았다(하한 12). 순회 범위와 진입 문자열을 확인한다."
+    );
+    assert!(
+        offenders.is_empty(),
+        "열린 ComboBox 목록이 egui 기본 선택 행을 쓴다. 공용 menu_option · menu_option_value 로 그린다:\n{}",
+        offenders.join("\n")
+    );
+}
+
+#[test]
+fn the_combo_judge_tells_shared_rows_from_egui_selectable_rows() {
+    let shared = "egui::ComboBox::from_id_salt(\"a\").show_ui(ui, |ui| {\n    menu_option_value(ui, th, &mut v, 1, \"x\");\n});\nui.selectable_value(&mut w, 2, \"y\");";
+    assert_eq!(combo_rows(shared), (vec![], 1));
+    let egui_row = "\negui::ComboBox::from_id_salt(\"a\").show_ui(ui, |ui| {\n    if ui.selectable_label(true, \"x\").clicked() {}\n});";
+    assert_eq!(combo_rows(egui_row), (vec![2], 1));
 }
