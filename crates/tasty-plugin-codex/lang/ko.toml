@@ -144,7 +144,7 @@ help = "메시지를 받을 Codex 서피스 ID(기본값: 호출자의 TASTY_SUR
 help = "대상이 종료 상태에 도달하면 알릴 서피스 ID(기본값: 호출자의 TASTY_SURFACE_ID)"
 
 [codex.cli.arg.spawn_args.surface]
-help = "부모 서피스 ID(기본값: 포커스된 Codex 서피스)"
+help = "부모 서피스 ID(기본값: 호출자의 TASTY_SURFACE_ID)"
 
 [codex.cli.arg.spawn_args.workspace]
 help = "대상 워크스페이스(ID 또는 이름)"
@@ -174,7 +174,7 @@ help = "샌드박스 모드(read-only|workspace-write|danger-full-access). 이�
 help = "승인과 샌드박스를 모두 우회(--dangerously-bypass-approvals-and-sandbox). --approval/--sandbox와 함께 사용 불가"
 
 [codex.cli.arg.children_args.surface]
-help = "부모 서피스 ID(기본값: 포커스된 Codex 서피스)"
+help = "부모 서피스 ID(기본값: 호출자의 TASTY_SURFACE_ID, 없으면 부모가 하나뿐일 때 그 부모)"
 
 [codex.cli.arg.notify_caller_args.caller]
 help = "알림을 받을 서피스 ID"
@@ -189,19 +189,19 @@ help = "명령: spawn | tell"
 help = "일괄 전송할 텍스트. 제출하려면 \\r 사용(예: \"hello\\r\")"
 
 [codex.cli.arg.broadcast_args.surface]
-help = "부모 서피스 ID(기본값: 포커스된 Codex 서피스)"
+help = "부모 서피스 ID(기본값: 호출자의 TASTY_SURFACE_ID, 없으면 부모가 하나뿐일 때 그 부모)"
 
 [codex.cli.arg.broadcast_args.role]
 help = "이 역할 라벨의 자식에게만 전송"
 
 [codex.cli.arg.kill_args.surface]
-help = "부모 서피스 ID(기본값: 포커스된 Codex 서피스)"
+help = "부모 서피스 ID(기본값: 호출자의 TASTY_SURFACE_ID, 없으면 부모가 하나뿐일 때 그 부모)"
 
 [codex.cli.arg.kill_args.child]
 help = "종료할 자식 인덱스"
 
 [codex.cli.arg.respawn_args.surface]
-help = "부모 서피스 ID(기본값: 포커스된 Codex 서피스)"
+help = "부모 서피스 ID(기본값: 호출자의 TASTY_SURFACE_ID, 없으면 부모가 하나뿐일 때 그 부모)"
 
 [codex.cli.arg.respawn_args.child]
 help = "재생성할 자식 인덱스"

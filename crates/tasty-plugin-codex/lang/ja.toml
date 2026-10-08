@@ -144,7 +144,7 @@ help = "メッセージを受け取るCodexサーフェスID（既定値：呼�
 help = "対象が終了状態に達したとき通知するサーフェスID（既定値：呼び出し元のTASTY_SURFACE_ID）"
 
 [codex.cli.arg.spawn_args.surface]
-help = "親サーフェスID（既定値：フォーカス中のCodexサーフェス）"
+help = "親サーフェスID（既定値：呼び出し元のTASTY_SURFACE_ID）"
 
 [codex.cli.arg.spawn_args.workspace]
 help = "対象ワークスペース（IDまたは名前）"
@@ -174,7 +174,7 @@ help = "サンドボックスモード（read-only|workspace-write|danger-full-a
 help = "承認とサンドボックスを両方省略（--dangerously-bypass-approvals-and-sandbox）。--approval/--sandboxと併用不可"
 
 [codex.cli.arg.children_args.surface]
-help = "親サーフェスID（既定値：フォーカス中のCodexサーフェス）"
+help = "親サーフェスID（既定値：呼び出し元のTASTY_SURFACE_ID、なければ親が一つだけのときその親）"
 
 [codex.cli.arg.notify_caller_args.caller]
 help = "通知を受け取るサーフェスID"
@@ -189,19 +189,19 @@ help = "コマンド: spawn | tell"
 help = "一斉送信するテキスト。確定には \\r を使用（例：\"hello\\r\"）"
 
 [codex.cli.arg.broadcast_args.surface]
-help = "親サーフェスID（既定値：フォーカス中のCodexサーフェス）"
+help = "親サーフェスID（既定値：呼び出し元のTASTY_SURFACE_ID、なければ親が一つだけのときその親）"
 
 [codex.cli.arg.broadcast_args.role]
 help = "この役割ラベルの子だけに送信"
 
 [codex.cli.arg.kill_args.surface]
-help = "親サーフェスID（既定値：フォーカス中のCodexサーフェス）"
+help = "親サーフェスID（既定値：呼び出し元のTASTY_SURFACE_ID、なければ親が一つだけのときその親）"
 
 [codex.cli.arg.kill_args.child]
 help = "終了する子インデックス"
 
 [codex.cli.arg.respawn_args.surface]
-help = "親サーフェスID（既定値：フォーカス中のCodexサーフェス）"
+help = "親サーフェスID（既定値：呼び出し元のTASTY_SURFACE_ID、なければ親が一つだけのときその親）"
 
 [codex.cli.arg.respawn_args.child]
 help = "再生成する子インデックス"

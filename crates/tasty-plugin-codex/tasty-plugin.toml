@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.codex"
 name = "Codex"
-version = "0.1.143"
+version = "0.1.144"
 description = "Codex CLI integration for Tasty"
 api_version = "1"
 permissions = [
@@ -88,7 +88,7 @@ flags = [
 
 [contributes.cli.arg_groups.spawn_args]
 flags = [
-    { name = "surface",   type = "u32",    flag = "--surface",   required = false, help = "Parent surface ID (defaults to the focused Codex surface)", help_i18n_key = "codex.cli.arg.spawn_args.surface.help" },
+    { name = "surface",   type = "u32",    flag = "--surface",   required = false, help = "Parent surface ID (defaults to caller's TASTY_SURFACE_ID)", help_i18n_key = "codex.cli.arg.spawn_args.surface.help" },
     { name = "workspace", type = "string", flag = "--workspace", required = true,  help = "Target workspace (ID or name)", help_i18n_key = "codex.cli.arg.spawn_args.workspace.help" },
     { name = "pane",      type = "u32",    flag = "--pane",      required = false, help = "Target pane ID (defaults to the first pane in the workspace)", help_i18n_key = "codex.cli.arg.spawn_args.pane.help" },
     { name = "cwd",       type = "string", flag = "--cwd",       required = false, path_kind = "directory", help = "Working directory for the child Codex process", help_i18n_key = "codex.cli.arg.spawn_args.cwd.help" },
@@ -102,7 +102,7 @@ flags = [
 
 [contributes.cli.arg_groups.children_args]
 flags = [
-    { name = "surface", type = "u32", flag = "--surface", required = false, help = "Parent surface ID (defaults to the focused Codex surface)", help_i18n_key = "codex.cli.arg.children_args.surface.help" },
+    { name = "surface", type = "u32", flag = "--surface", required = false, help = "Parent surface ID (defaults to caller's TASTY_SURFACE_ID; without it, the only parent when exactly one exists)", help_i18n_key = "codex.cli.arg.children_args.surface.help" },
 ]
 
 [contributes.cli.arg_groups.notify_caller_args]
@@ -117,19 +117,19 @@ positional = [
     { name = "text", type = "string", required = true, help = "Text to broadcast. Use \\r to submit (e.g. \"hello\\r\")", help_i18n_key = "codex.cli.arg.broadcast_args.text.help" },
 ]
 flags = [
-    { name = "surface", type = "u32",    flag = "--surface", required = false, help = "Parent surface ID (defaults to the focused Codex surface)", help_i18n_key = "codex.cli.arg.broadcast_args.surface.help" },
+    { name = "surface", type = "u32",    flag = "--surface", required = false, help = "Parent surface ID (defaults to caller's TASTY_SURFACE_ID; without it, the only parent when exactly one exists)", help_i18n_key = "codex.cli.arg.broadcast_args.surface.help" },
     { name = "role",    type = "string", flag = "--role",    required = false, help = "Only send to children with this role label", help_i18n_key = "codex.cli.arg.broadcast_args.role.help" },
 ]
 
 [contributes.cli.arg_groups.kill_args]
 flags = [
-    { name = "surface", type = "u32", flag = "--surface", required = false, help = "Parent surface ID (defaults to the focused Codex surface)", help_i18n_key = "codex.cli.arg.kill_args.surface.help" },
+    { name = "surface", type = "u32", flag = "--surface", required = false, help = "Parent surface ID (defaults to caller's TASTY_SURFACE_ID; without it, the only parent when exactly one exists)", help_i18n_key = "codex.cli.arg.kill_args.surface.help" },
     { name = "child",   type = "u32", flag = "--child",   required = true,  help = "Child index to kill", help_i18n_key = "codex.cli.arg.kill_args.child.help" },
 ]
 
 [contributes.cli.arg_groups.respawn_args]
 flags = [
-    { name = "surface",   type = "u32",    flag = "--surface",   required = false, help = "Parent surface ID (defaults to the focused Codex surface)", help_i18n_key = "codex.cli.arg.respawn_args.surface.help" },
+    { name = "surface",   type = "u32",    flag = "--surface",   required = false, help = "Parent surface ID (defaults to caller's TASTY_SURFACE_ID; without it, the only parent when exactly one exists)", help_i18n_key = "codex.cli.arg.respawn_args.surface.help" },
     { name = "child",     type = "u32",    flag = "--child",     required = true,  help = "Child index to respawn", help_i18n_key = "codex.cli.arg.respawn_args.child.help" },
     { name = "cwd",       type = "string", flag = "--cwd",       required = false, path_kind = "directory", help = "Override working directory for the respawned process", help_i18n_key = "codex.cli.arg.respawn_args.cwd.help" },
     { name = "prompt",    type = "string", flag = "--prompt",    required = false, help = "Initial prompt sent to the respawned child", help_i18n_key = "codex.cli.arg.respawn_args.prompt.help" },

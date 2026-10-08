@@ -144,7 +144,7 @@ help = "Target Codex surface ID to send the message to (defaults to caller's TAS
 help = "Surface ID to notify when the target reaches a terminal state (defaults to caller's TASTY_SURFACE_ID)"
 
 [codex.cli.arg.spawn_args.surface]
-help = "Parent surface ID (defaults to the focused Codex surface)"
+help = "Parent surface ID (defaults to caller's TASTY_SURFACE_ID)"
 
 [codex.cli.arg.spawn_args.workspace]
 help = "Target workspace (ID or name)"
@@ -174,7 +174,7 @@ help = "Sandbox mode (read-only|workspace-write|danger-full-access). Overrides t
 help = "Bypass approvals and sandbox entirely (--dangerously-bypass-approvals-and-sandbox). Cannot be combined with --approval/--sandbox"
 
 [codex.cli.arg.children_args.surface]
-help = "Parent surface ID (defaults to the focused Codex surface)"
+help = "Parent surface ID (defaults to caller's TASTY_SURFACE_ID; without it, the only parent when exactly one exists)"
 
 [codex.cli.arg.notify_caller_args.caller]
 help = "Surface ID to notify"
@@ -189,19 +189,19 @@ help = "spawn | tell"
 help = "Text to broadcast. Use \\r to submit (e.g. \"hello\\r\")"
 
 [codex.cli.arg.broadcast_args.surface]
-help = "Parent surface ID (defaults to the focused Codex surface)"
+help = "Parent surface ID (defaults to caller's TASTY_SURFACE_ID; without it, the only parent when exactly one exists)"
 
 [codex.cli.arg.broadcast_args.role]
 help = "Only send to children with this role label"
 
 [codex.cli.arg.kill_args.surface]
-help = "Parent surface ID (defaults to the focused Codex surface)"
+help = "Parent surface ID (defaults to caller's TASTY_SURFACE_ID; without it, the only parent when exactly one exists)"
 
 [codex.cli.arg.kill_args.child]
 help = "Child index to kill"
 
 [codex.cli.arg.respawn_args.surface]
-help = "Parent surface ID (defaults to the focused Codex surface)"
+help = "Parent surface ID (defaults to caller's TASTY_SURFACE_ID; without it, the only parent when exactly one exists)"
 
 [codex.cli.arg.respawn_args.child]
 help = "Child index to respawn"
