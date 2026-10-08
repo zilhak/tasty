@@ -1,7 +1,10 @@
 //! DAG report 조회와 custom 기록. 저장 규칙은 [`tasty_agent::task::report`] 에 있다.
 
 use serde_json::{Value, json};
+use tasty_agent::task::attempt::attempt_id;
 use tasty_agent::task::report::{AppendOutcome, ReportAddress, ReportLimits, project_task};
+
+use crate::agent_task::Submitter;
 use tasty_agent::{AgentError, TaskStore};
 use tasty_memory::HOST_OWNER;
 
@@ -13,19 +16,32 @@ impl TaskService {
         self.report_limits().set(limits);
     }
 
-    /// custom 기록 한 줄을 지금 상한으로 저장한다.
+    /// custom 기록 한 줄을 지금 상한으로 저장한다. 세션 토큰으로 부른 agent 세션
+    /// ([`Submitter::Session`])은 `agent.task_submit_result` 처럼 자기 세션에 지시를 보낸 회차에만
+    /// 쓴다. 사용자 CLI·플러그인은 주소의 토큰만 본다.
     pub fn report_append(
         &self,
         scope: &TaskScope,
         addr: &ReportAddress,
         text: &str,
+        writer: Submitter,
     ) -> Result<AppendOutcome, AgentError> {
+        let bound_here = || match writer {
+            Submitter::Trusted => true,
+            Submitter::Session(surface) => self
+                .agent_turns()
+                .find(addr.workspace_id, &addr.task_id)
+                .is_some_and(|(s, b)| {
+                    s == surface && b.attempt == attempt_id(&addr.task_id, addr.attempt)
+                }),
+        };
         crate::runner_host::report_append(
             self.memory(),
             scope.agent_seq(),
             self.report_limits().get(),
             addr,
             text,
+            bound_here,
         )
     }
 

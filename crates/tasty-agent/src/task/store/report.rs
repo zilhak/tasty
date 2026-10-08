@@ -41,6 +41,20 @@ impl TaskStore<'_> {
         limits: ReportLimits,
         now_ms: u64,
     ) -> Result<AppendOutcome> {
+        self.append_report_by(addr, text, limits, now_ms, || true)
+    }
+
+    /// [`Self::append_report`] 에 호출자 검사를 더한다. `writer_may` 는 토큰·닫힘 검사를 통과한
+    /// 뒤에 부르며, `false` 면 `not_the_session` 으로 거절한다. 끝난 회차에 대한 늦은 쓰기는
+    /// 호출자와 상관없이 `closed` 로 거절된다.
+    pub fn append_report_by(
+        &mut self,
+        addr: &ReportAddress,
+        text: &str,
+        limits: ReportLimits,
+        now_ms: u64,
+        writer_may: impl FnOnce() -> bool,
+    ) -> Result<AppendOutcome> {
         let task = self
             .get(addr.workspace_id, &addr.task_id)?
             .ok_or_else(|| AgentError::TaskNotFound(addr.task_id.clone()))?;
@@ -66,6 +80,9 @@ impl TaskStore<'_> {
         // retry 가 닫은 회차. 다음 dispatch 전에는 레코드가 Ready 이고 토큰도 이 회차 것이다.
         if let Some(settled) = &block.settled {
             return Err(reject(ReportRejection::Closed, Some(settled.name())));
+        }
+        if !writer_may() {
+            return Err(reject(ReportRejection::NotTheSession, None));
         }
         let outcome = block.append(addr.source, text, limits, now_ms);
         self.put_report_block(addr.workspace_id, &addr.task_id, &block)?;

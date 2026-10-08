@@ -37,6 +37,27 @@ fn call_raw(
     super::super::handle_with_caller(core, &mut state, &mut engine, &req, &CallerContext::local())
 }
 
+fn call_as(
+    core: &mut crate::app::services::AppServices,
+    caller: &CallerContext,
+    method: &str,
+    params: Value,
+) -> tasty_ipc::protocol::JsonRpcResponse {
+    let (mut state, mut engine_session) = crate::state::tests::test_state();
+    let mut engine = engine_session.borrow_mut();
+    let req = tasty_ipc::protocol::JsonRpcRequest {
+        caller_agent_id: None,
+        response_timeout_ms: None,
+        idempotency_key: None,
+        session_token: None,
+        jsonrpc: "2.0".into(),
+        id: Some(json!(1)),
+        method: method.into(),
+        params,
+    };
+    super::super::handle_with_caller(core, &mut state, &mut engine, &req, caller)
+}
+
 fn call(core: &mut crate::app::services::AppServices, method: &str, params: Value) -> Value {
     let resp = call_raw(core, method, params);
     resp.result
@@ -176,4 +197,101 @@ fn a_binding_cannot_read_a_report() {
         let e = resp.error.unwrap_or_else(|| panic!("accepted: {source}"));
         assert_eq!(e.code, -32602, "{source}: {}", e.message);
     }
+}
+
+fn session(agent_id: &str) -> CallerContext {
+    CallerContext::Agent {
+        agent_id: agent_id.into(),
+        permissions: std::sync::Arc::new(
+            [tasty_plugin_manifest::Permission::AgentManage]
+                .into_iter()
+                .collect(),
+        ),
+    }
+}
+
+/// 세션 토큰의 agent 는 자기 세션에 지시를 보낸 회차에만 쓴다. 토큰이 맞아도 다른 세션은 거절한다.
+#[test]
+fn an_agent_session_writes_only_to_the_attempt_bound_to_its_session() {
+    let (mut core, memory) = core();
+    call(
+        &mut core,
+        "agent.task_graph_submit",
+        json!({"workspace_id": 1, "graph": {"contract_version": 2, "tasks": [
+            {"id": "s", "command": {"kind": "run", "workspace_id": 1, "command": ["true"]}}]}}),
+    );
+    let id = "s".to_string();
+    with_store(&memory, |s| {
+        s.issue_report_token(
+            1,
+            &id,
+            tasty_agent::task::report::ReportToken {
+                attempt: 1,
+                token: "tk".into(),
+            },
+        )
+        .expect("token");
+        s.set_state(1, &id, tasty_agent::TaskState::Running, 1)
+            .expect("running");
+    });
+    let append = |core: &mut _, caller: &CallerContext| {
+        call_as(
+            core,
+            caller,
+            "agent.report_append",
+            json!({"address": "1/1/agent/tk/s", "text": "note"}),
+        )
+    };
+    // 지시를 보낸 세션이 없으면 세션 호출은 받지 않는다.
+    let e = append(&mut core, &session("claude_s7"))
+        .error
+        .expect("rejected");
+    assert_eq!(e.code, -32018);
+    assert_eq!(e.data.expect("data")["reason"], json!("not_the_session"));
+
+    core.tasks
+        .agent_turns()
+        .bind(
+            7,
+            tasty_task_runtime::agent_turns::TurnBinding::new(
+                1,
+                id.clone(),
+                tasty_agent::task::attempt::attempt_id(&id, 1),
+                "claude".into(),
+                "turn".into(),
+                true,
+            ),
+        )
+        .expect("bind");
+    let ok = append(&mut core, &session("claude_s7"));
+    assert!(ok.error.is_none(), "{:?}", ok.error);
+    assert_eq!(ok.result.expect("result")["result"], json!("stored"));
+    // 다른 세션은 주소의 토큰을 알아도 쓰지 못한다.
+    let e = append(&mut core, &session("claude_s8"))
+        .error
+        .expect("rejected");
+    assert_eq!(e.data.expect("data")["reason"], json!("not_the_session"));
+    // 세션이 아닌 agent id 는 회차에 묶을 수 없다.
+    let e = append(&mut core, &session("child-1"))
+        .error
+        .expect("rejected");
+    assert_eq!(e.code, -32001);
+    // 사용자 CLI 는 토큰만 본다.
+    let local = append(&mut core, &CallerContext::local());
+    assert!(local.error.is_none(), "{:?}", local.error);
+
+    // 끝난 회차에는 묶인 세션이라도 closed 로 거절된다.
+    with_store(&memory, |s| {
+        s.complete(
+            1,
+            &id,
+            tasty_agent::task::Completion::failed(None, "boom".into()),
+            2,
+        )
+        .expect("failed");
+    });
+    let e = append(&mut core, &session("claude_s7"))
+        .error
+        .expect("rejected");
+    assert_eq!(e.data.expect("data")["reason"], json!("closed"));
 }

@@ -40,6 +40,17 @@ fn session_surface(agent_id: &str) -> Option<u32> {
     surface.parse().ok()
 }
 
+/// 호출자가 회차에 쓸 수 있는 범위. 세션 토큰의 agent 는 자기 세션의 회차로 묶이고, 사용자
+/// CLI·플러그인은 묶이지 않는다. 세션이 아닌 agent id 면 그 id 를 돌려준다.
+pub(super) fn session_writer(caller: &CallerContext) -> Result<Submitter, &str> {
+    match caller {
+        CallerContext::Agent { agent_id, .. } => session_surface(agent_id)
+            .map(Submitter::Session)
+            .ok_or(agent_id.as_str()),
+        CallerContext::Local { .. } | CallerContext::Plugin { .. } => Ok(Submitter::Trusted),
+    }
+}
+
 /// 같은 회차의 구조화 결과를 제출한다. 출력 타입으로 검증하고 받은 값은 턴이 끝날 때 결과가
 /// 된다. 응답 `final: false` 는 task 가 아직 끝나지 않았다는 뜻이다.
 pub fn task_submit(
@@ -68,18 +79,15 @@ pub fn task_submit(
     let Some(output) = params.get("output") else {
         return JsonRpcResponse::invalid_params(id, "Missing required 'output'");
     };
-    let submitter = match caller {
-        CallerContext::Agent { agent_id, .. } => match session_surface(agent_id) {
-            Some(s) => Submitter::Session(s),
-            None => {
-                return JsonRpcResponse::error(
-                    id,
-                    -32001,
-                    format!("agent '{agent_id}' is not a session that can submit a task result"),
-                );
-            }
-        },
-        CallerContext::Local { .. } | CallerContext::Plugin { .. } => Submitter::Trusted,
+    let submitter = match session_writer(caller) {
+        Ok(s) => s,
+        Err(agent_id) => {
+            return JsonRpcResponse::error(
+                id,
+                -32001,
+                format!("agent '{agent_id}' is not a session that can submit a task result"),
+            );
+        }
     };
     match core.tasks.agent_submit_result(
         engine.task_scope,

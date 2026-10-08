@@ -142,6 +142,8 @@ pub enum ReportRejection {
     TokenMismatch,
     /// 회차가 끝나 블록이 닫혔다.
     Closed,
+    /// 세션 토큰으로 부른 agent 세션이 그 회차가 지시를 보낸 세션이 아니다.
+    NotTheSession,
 }
 
 /// [`AgentError::SubmissionRejected`] 의 사유.

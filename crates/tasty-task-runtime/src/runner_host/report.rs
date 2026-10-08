@@ -86,20 +86,28 @@ pub(crate) fn report_env(task: &Task, source: ReportSource) -> Vec<(OsString, Os
         .unwrap_or_default()
 }
 
-/// custom 기록 한 줄을 저장한다. 러너의 stderr 표지 줄과 IPC 가 같이 쓴다.
+/// custom 기록 한 줄을 저장한다. 러너의 stderr 표지 줄과 IPC 가 같이 쓴다. `writer_may` 는
+/// 저장소 잠금 안에서 토큰·닫힘 검사 뒤에 부른다.
 pub(crate) fn append(
     memory: &Mutex<dyn MemoryStorage>,
     seq: &std::sync::atomic::AtomicU64,
     limits: ReportLimits,
     addr: &ReportAddress,
     text: &str,
+    writer_may: impl FnOnce() -> bool,
 ) -> Result<AppendOutcome, AgentError> {
     let mut guard = tasty_utils::poison::recover_mutex(
         memory.lock(),
         tasty_memory::STORE_LOCK_WHAT,
         &tasty_memory::STORE_LOCK_POISONED,
     );
-    TaskStore::new(&mut *guard, HOST_OWNER, seq).append_report(addr, text, limits, now_ms())
+    TaskStore::new(&mut *guard, HOST_OWNER, seq).append_report_by(
+        addr,
+        text,
+        limits,
+        now_ms(),
+        writer_may,
+    )
 }
 
 /// 표지 줄 하나로 받는 최대 바이트. 더 긴 줄은 앞부분만 쓴다(append 상한이 다시 자른다).
@@ -185,7 +193,7 @@ fn store_marker(
     addr: &ReportAddress,
     text: &str,
 ) {
-    if let Err(e) = append(memory, seq, limits.get(), addr, text) {
+    if let Err(e) = append(memory, seq, limits.get(), addr, text, || true) {
         tracing::warn!(
             "agent task {}: stderr report line not stored: {e}",
             addr.task_id

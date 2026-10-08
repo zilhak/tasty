@@ -18,7 +18,7 @@ use crate::adapters::ipc::handler::params::optional_u32;
 pub fn handle_report_append(
     core: &AppServices,
     engine: &mut EngineMut<'_>,
-    _caller: &CallerContext,
+    caller: &CallerContext,
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
@@ -32,9 +32,22 @@ pub fn handle_report_append(
         Ok(a) => a,
         Err(e) => return JsonRpcResponse::invalid_params(id, e),
     };
+    let writer = match super::agent_turn::session_writer(caller) {
+        Ok(w) => w,
+        Err(agent_id) => {
+            return JsonRpcResponse::error(
+                id,
+                -32001,
+                format!("agent '{agent_id}' is not a session that can write a task report"),
+            );
+        }
+    };
     mark_durability(
         core,
-        match core.tasks.report_append(engine.task_scope, &addr, text) {
+        match core
+            .tasks
+            .report_append(engine.task_scope, &addr, text, writer)
+        {
             Ok(outcome) => JsonRpcResponse::success(id, json!(outcome)),
             Err(e) => agent_err_to_response(id, e),
         },
