@@ -3587,6 +3587,9 @@ help = "Horizontal scroll delta (with `--event-type scroll`)"
 [cli.help._root.debug.inject.egui-mouse.arg.scroll_dy]
 help = "Vertical scroll delta (with `--event-type scroll`)"
 
+[cli.help._root.debug.inject.egui-mouse.arg.modifiers]
+help = "Modifier keys egui treats as held from this event on (comma-separated `shift`, `ctrl`, `alt`, `command`, or `none` to release; omit to keep them)"
+
 [cli.help._root.debug.inject.egui-key]
 about = "Inject a key event into the egui layer"
 

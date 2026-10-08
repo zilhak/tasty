@@ -3581,6 +3581,9 @@ help = "가로 스크롤 변화량(`--event-type scroll`과 함께 사용)"
 [cli.help._root.debug.inject.egui-mouse.arg.scroll_dy]
 help = "세로 스크롤 변화량(`--event-type scroll`과 함께 사용)"
 
+[cli.help._root.debug.inject.egui-mouse.arg.modifiers]
+help = "이 이벤트부터 egui가 누른 것으로 보는 수식 키(쉼표로 구분한 `shift`·`ctrl`·`alt`·`command`, 모두 떼려면 `none`, 생략하면 그대로 유지)"
+
 [cli.help._root.debug.inject.egui-key]
 about = "egui 계층에 키 이벤트 주입"
 

@@ -666,6 +666,10 @@ pub enum InjectDebugCommands {
         /// Vertical scroll delta (with `--event-type scroll`).
         #[arg(long, default_value_t = 0.0)]
         scroll_dy: f64,
+        /// Modifier keys egui treats as held from this event on (comma-separated
+        /// `shift`, `ctrl`, `alt`, `command`, or `none` to release; omit to keep them).
+        #[arg(long, value_delimiter = ',')]
+        modifiers: Option<Vec<String>>,
     },
     /// Inject a key event into the egui layer.
     EguiKey {

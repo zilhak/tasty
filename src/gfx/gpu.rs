@@ -788,6 +788,13 @@ impl GpuState {
         self.egui_ctx.request_repaint();
     }
 
+    /// debug 전용: egui 가 누른 것으로 보는 수식 키를 바꾼다. egui-winit 은 실제
+    /// `ModifiersChanged` 가 올 때만 이 값을 고치므로 다음 주입까지 유지된다.
+    #[cfg(debug_assertions)]
+    pub fn debug_set_egui_modifiers(&mut self, modifiers: egui::Modifiers) {
+        self.egui_state.egui_input_mut().modifiers = modifiers;
+    }
+
     /// Get egui's zoom factor.
     // 이유: 호출부가 debug_info.rs/debug_input.rs(개발자 로컬 디버그 전용) 뿐이라
     // release 빌드에서 미사용으로 잡힌다.

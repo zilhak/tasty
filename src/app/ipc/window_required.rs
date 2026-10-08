@@ -74,6 +74,40 @@ fn read_pointer_params(
     Ok((fx, fy, action))
 }
 
+/// `modifiers` 가 없으면 `None`(현재 수식 키 유지), 배열이면 그 키만 누른 상태다.
+/// 이름은 `shift`·`ctrl`·`alt`·`command` 이고 빈 배열은 모두 뗀다.
+#[cfg(debug_assertions)]
+fn read_egui_modifiers(p: &serde_json::Value) -> Result<Option<egui::Modifiers>, String> {
+    let Some(v) = p.get("modifiers") else {
+        return Ok(None);
+    };
+    let names = v
+        .as_array()
+        .ok_or_else(|| "modifiers must be an array of strings".to_string())?;
+    let mut m = egui::Modifiers::default();
+    for name in names {
+        match name.as_str() {
+            Some("shift") => m.shift = true,
+            Some("alt") => m.alt = true,
+            // egui-winit 과 같이 macOS 가 아니면 Ctrl 이 command 다.
+            Some("ctrl") => {
+                m.ctrl = true;
+                m.command |= !cfg!(target_os = "macos");
+            }
+            Some("command") => {
+                m.mac_cmd = cfg!(target_os = "macos");
+                m.command = true;
+            }
+            _ => {
+                return Err(format!(
+                    "unknown modifier {name}; use shift, ctrl, alt or command"
+                ));
+            }
+        }
+    }
+    Ok(Some(m))
+}
+
 /// `menu`(메뉴 종류, 필수)와 `item`(항목 id)·`label`(표시 문구)·`dismiss`(true) 중 하나를 받는다.
 #[cfg(debug_assertions)]
 fn read_menu_answer(
@@ -202,7 +236,12 @@ impl App {
                 Ok(v) => v,
                 Err(msg) => return reject_bad_params(cmd, &msg),
             };
-            let ok = w.debug_inject_egui_pointer(&engine.read(), fx, fy, surface_id, action);
+            let modifiers = match read_egui_modifiers(params) {
+                Ok(v) => v,
+                Err(msg) => return reject_bad_params(cmd, &msg),
+            };
+            let ok =
+                w.debug_inject_egui_pointer(&engine.read(), fx, fy, surface_id, action, modifiers);
             let response = host_ipc::protocol::JsonRpcResponse::success(
                 cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
                 serde_json::json!({ "injected": ok }),

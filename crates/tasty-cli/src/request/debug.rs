@@ -518,12 +518,21 @@ pub(super) fn inject_debug_command_to_method_params(
             unit,
             scroll_dx,
             scroll_dy,
-        } => (
-            "debug.inject_egui_mouse",
-            pointer_params(
+            modifiers,
+        } => {
+            let mut params = pointer_params(
                 *surface, *fx, *fy, event_type, *button, unit, *scroll_dx, *scroll_dy,
-            ),
-        ),
+            );
+            if let Some(names) = modifiers {
+                let held: Vec<&str> = names
+                    .iter()
+                    .map(String::as_str)
+                    .filter(|n| *n != "none")
+                    .collect();
+                params["modifiers"] = serde_json::json!(held);
+            }
+            ("debug.inject_egui_mouse", params)
+        }
         InjectDebugCommands::EguiKey { key, pressed } => (
             "debug.inject_egui_key",
             serde_json::json!({ "key": key, "pressed": pressed }),

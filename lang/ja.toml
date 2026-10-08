@@ -3581,6 +3581,9 @@ help = "横スクロール量（`--event-type scroll` と併用）"
 [cli.help._root.debug.inject.egui-mouse.arg.scroll_dy]
 help = "縦スクロール量（`--event-type scroll` と併用）"
 
+[cli.help._root.debug.inject.egui-mouse.arg.modifiers]
+help = "このイベント以降に egui が押下中とみなす修飾キー（カンマ区切りの `shift`・`ctrl`・`alt`・`command`、すべて離すには `none`、省略すると現状維持）"
+
 [cli.help._root.debug.inject.egui-key]
 about = "egui層にキーイベントを注入"
 

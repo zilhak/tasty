@@ -127,6 +127,7 @@ impl MainView {
         fy: f32,
         surface_id: Option<u32>,
         action: InjectPointer,
+        modifiers: Option<egui::Modifiers>,
     ) -> bool {
         let ppp = self.base.gpu.egui_pixels_per_point().max(f32::EPSILON);
         // surface를 지정했으면 그 영역, 아니면 창 전체에 대한 정규화 좌표다.
@@ -151,6 +152,10 @@ impl MainView {
         };
         // 이번 입력이 메뉴를 만들지 않았을 때 이전 결과가 남지 않게 한다.
         self.debug_captured_menu = None;
+        if let Some(m) = modifiers {
+            self.base.gpu.debug_set_egui_modifiers(m);
+        }
+        let modifiers = modifiers.unwrap_or_default();
         let events = match action {
             // 클릭 전 hover 를 같은 pos 로 세팅해야 plugin egui 가 위젯 hit-test 를 맞춘다.
             InjectPointer::Move => vec![egui::Event::PointerMoved(pos)],
@@ -160,13 +165,13 @@ impl MainView {
                     pos,
                     button: map_egui_button(button),
                     pressed,
-                    modifiers: egui::Modifiers::default(),
+                    modifiers,
                 },
             ],
             InjectPointer::Scroll { dx, dy, unit } => vec![egui::Event::MouseWheel {
                 unit: unit.to_egui(),
                 delta: egui::vec2(dx, dy),
-                modifiers: egui::Modifiers::default(),
+                modifiers,
             }],
         };
         self.base.gpu.debug_push_egui_events(events);
