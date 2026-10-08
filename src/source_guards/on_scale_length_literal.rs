@@ -895,7 +895,8 @@ fn the_blind_spots_are_still_the_size_they_say() {
         // 공용 설정 행 격자(settings_row.rs)와 그 통합 시험이 들어오고 설정 탭의 행 코드가 그리로 모이며
         // 0 리터럴이 둘, test 전용 리터럴이 일곱 늘었다.
         // Appearance 기본 글꼴 두 열 시험이 화면 폭·높이와 ▼ 자리 오프셋 세 자리를 더한다.
-        (222, 546),
+        // 원격 attach 두 목록 열이 titled_column 하나로 모이며 간격 vec2(0, 0)의 0 둘이 빠졌다.
+        (220, 546),
         "제외한 0과 test 전용 코드의 수가 달라졌다. 실제 사용과 수집 범위의 변경을 확인하고 기록을 갱신한다."
     );
     let roster: usize = UNIT_SPACE_SITES.iter().map(|(.., n, _)| n).sum();

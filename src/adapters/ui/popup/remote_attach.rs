@@ -416,14 +416,14 @@ fn draw_header(ui: &mut egui::Ui, th: &Theme, rect: egui::Rect) -> bool {
     close
 }
 
-fn draw_left_pane(
+/// 제목 줄 아래에 목록 영역을 둔 열. 목록 영역의 Ui를 돌려준다.
+fn titled_column(
     ui: &mut egui::Ui,
     th: &Theme,
     rect: egui::Rect,
-    profiles: &[ProfileSummary],
-    selected: Option<&str>,
-) -> Option<String> {
-    let mut clicked: Option<String> = None;
+    title: &str,
+    suffix: Option<&str>,
+) -> egui::Ui {
     let mut col = ui.new_child(
         egui::UiBuilder::new()
             .max_rect(rect)
@@ -431,7 +431,7 @@ fn draw_left_pane(
     );
     col.set_clip_rect(rect);
     col.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
-    caps_header(&mut col, th, t("remote_attach.attach_profiles"), None);
+    caps_header(&mut col, th, title, suffix);
     let list_rect = egui::Rect::from_min_max(
         egui::pos2(rect.left(), rect.top() + CAPS_H.value()),
         rect.max,
@@ -442,6 +442,18 @@ fn draw_left_pane(
             .layout(egui::Layout::top_down(egui::Align::Min)),
     );
     list.set_clip_rect(list_rect);
+    list
+}
+
+fn draw_left_pane(
+    ui: &mut egui::Ui,
+    th: &Theme,
+    rect: egui::Rect,
+    profiles: &[ProfileSummary],
+    selected: Option<&str>,
+) -> Option<String> {
+    let mut clicked: Option<String> = None;
+    let mut list = titled_column(ui, th, rect, t("remote_attach.attach_profiles"), None);
     egui::ScrollArea::vertical()
         .id_salt("remote_attach.profiles")
         .drag_to_scroll(false)
@@ -656,29 +668,13 @@ fn draw_ws_list(
     scroll_to_sel: bool,
 ) -> Option<ListAction> {
     let mut action = None;
-    let mut col = ui.new_child(
-        egui::UiBuilder::new()
-            .max_rect(rect)
-            .layout(egui::Layout::top_down(egui::Align::Min)),
-    );
-    col.set_clip_rect(rect);
-    col.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
-    caps_header(
-        &mut col,
+    let mut list = titled_column(
+        ui,
         th,
+        rect,
         t("remote_attach.remote_workspaces"),
         Some(profile_name),
     );
-    let list_rect = egui::Rect::from_min_max(
-        egui::pos2(rect.left(), rect.top() + CAPS_H.value()),
-        rect.max,
-    );
-    let mut list = col.new_child(
-        egui::UiBuilder::new()
-            .max_rect(list_rect)
-            .layout(egui::Layout::top_down(egui::Align::Min)),
-    );
-    list.set_clip_rect(list_rect);
     egui::ScrollArea::vertical()
         .id_salt("remote_attach.workspaces")
         .drag_to_scroll(false)
@@ -740,35 +736,12 @@ fn new_ws_row(
 ) -> Option<ListAction> {
     let creating = *phase == NewWsPhase::Creating;
     let failed = matches!(phase, NewWsPhase::Failed(_));
-    let width = ui.available_width();
     let sense = if creating {
         egui::Sense::hover()
     } else {
         egui::Sense::click()
     };
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, WS_ROW_H.value()), sense);
-    if selected {
-        ui.painter().rect_filled(rect, 0.0, th.surface_active());
-        let bar = egui::Rect::from_min_size(
-            rect.min,
-            egui::vec2(th.selection_edge_width.value(), rect.height()),
-        );
-        ui.painter().rect_filled(bar, 0.0, th.accent_primary());
-    } else if !creating && resp.hovered() {
-        ui.painter()
-            .rect_filled(rect, 0.0, th.hover_overlay.to_egui_premultiplied());
-    }
-    let inner = egui::Rect::from_min_max(
-        egui::pos2(rect.left() + th.spacing_md.value(), rect.top()),
-        egui::pos2(rect.right() - th.spacing_md.value(), rect.bottom()),
-    );
-    let mut child = ui.new_child(
-        egui::UiBuilder::new()
-            .max_rect(inner)
-            .layout(egui::Layout::left_to_right(egui::Align::Center)),
-    );
-    child.shrink_clip_rect(inner);
-    child.spacing_mut().item_spacing.x = th.spacing_sm.value();
+    let (resp, mut child) = ws_row_frame(ui, th, sense, selected, !creating);
     let glyph_c: egui::Color32 = if creating {
         th.text_muted().into()
     } else if failed {
@@ -927,20 +900,15 @@ fn row_separator(ui: &mut egui::Ui, th: &Theme) {
     );
 }
 
-fn ws_row(
+/// 워크스페이스 행의 바탕(선택 막대·호버)을 그리고 안쪽 가로 배치 영역을 돌려준다.
+fn ws_row_frame(
     ui: &mut egui::Ui,
     th: &Theme,
-    w: &RemoteWorkspace,
+    sense: egui::Sense,
     selected: bool,
-    interactive: bool,
-) -> bool {
+    hoverable: bool,
+) -> (egui::Response, egui::Ui) {
     let width = ui.available_width();
-    let disabled = w.attached;
-    let sense = if disabled || !interactive {
-        egui::Sense::hover()
-    } else {
-        egui::Sense::click()
-    };
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, WS_ROW_H.value()), sense);
     if selected {
         ui.painter().rect_filled(rect, 0.0, th.surface_active());
@@ -949,7 +917,7 @@ fn ws_row(
             egui::vec2(th.selection_edge_width.value(), rect.height()),
         );
         ui.painter().rect_filled(bar, 0.0, th.accent_primary());
-    } else if !disabled && interactive && resp.hovered() {
+    } else if hoverable && resp.hovered() {
         ui.painter()
             .rect_filled(rect, 0.0, th.hover_overlay.to_egui_premultiplied());
     }
@@ -964,6 +932,23 @@ fn ws_row(
     );
     child.shrink_clip_rect(inner);
     child.spacing_mut().item_spacing.x = th.spacing_sm.value();
+    (resp, child)
+}
+
+fn ws_row(
+    ui: &mut egui::Ui,
+    th: &Theme,
+    w: &RemoteWorkspace,
+    selected: bool,
+    interactive: bool,
+) -> bool {
+    let disabled = w.attached;
+    let sense = if disabled || !interactive {
+        egui::Sense::hover()
+    } else {
+        egui::Sense::click()
+    };
+    let (resp, mut child) = ws_row_frame(ui, th, sense, selected, !disabled && interactive);
     let kind = if w.busy_count > 0 {
         StatusKind::Running
     } else {
