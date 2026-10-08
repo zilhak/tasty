@@ -63,6 +63,17 @@ impl<'a> SettingsRow<'a> {
         LogicalPx(text) + hint_width(theme, self.hint.is_some())
     }
 
+    /// 라벨 칸만 그린다. 컨트롤 줄을 직접 짜는 행(override 행 등)이 쓴다. caption 은 그리지 않는다.
+    pub fn show_label(
+        &self,
+        ui: &mut egui::Ui,
+        theme: &Theme,
+        label_col: LogicalPx,
+        row_h: LogicalPx,
+    ) -> egui::Response {
+        settings_label_cell(ui, theme, label_col, row_h, self.label, self.hint)
+    }
+
     /// 행을 그린다. caption·callout 이 있으면 행과 `settings-row-caption-gap` 만큼 띄운다.
     pub fn show(
         self,

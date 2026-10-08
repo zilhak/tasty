@@ -1,4 +1,4 @@
-//! 설정의 override 한 행 — 라벨(`settings-label-width`) · 컨트롤(자기 필드 폭) · 뒤따르는 "Use default".
+//! 설정의 override 한 행 — 라벨 열(설정 행 격자의 열 폭) · 컨트롤(자기 필드 폭) · 뒤따르는 "Use default".
 //! 색 override 행과 같은 형태로, 글꼴 override 격자가 이 행을 쌓는다.
 
 use tasty_type_appearance::theme::Theme;
@@ -17,29 +17,38 @@ pub enum OverrideCell {
 /// 체크박스가 컨트롤 오른쪽에 들어가는지. 들어가지 않으면 컨트롤 아래 줄로 내린다.
 pub fn override_row_fits(
     theme: &Theme,
+    label_col: LogicalPx,
     available: LogicalPx,
     control_w: LogicalPx,
     check_w: LogicalPx,
 ) -> bool {
-    let gap = theme.spacing_lg;
-    theme.settings_label_width() + gap + control_w + gap + check_w <= available
+    let gap = theme.settings_label_gap();
+    label_col + gap + control_w + gap + check_w <= available
 }
 
-/// override 한 행을 그린다. 칸 사이 `space-lg`, 위아래 `space-xs`, 최소 높이
+/// override 한 행을 그린다. 라벨 칸은 `label_col` 폭(보통 [`crate::settings_label_column`] 의 값)이고,
+/// 라벨은 그 칸 안에 [`crate::settings_label_cell`] 로 그린다. 칸 사이 `settings-label-gap`, 위아래 `space-xs`, 최소 높이
 /// `settings-row-min-height`. 체크박스가 남은 폭에 들어가지 않으면 컨트롤 아래 줄로 내려가며
 /// 줄 사이는 `space-xs`다. `check_label` 은 체크박스 폭을 재는 데만 쓴다.
 pub fn override_row(
     ui: &mut egui::Ui,
     theme: &Theme,
+    label_col: LogicalPx,
     control_w: LogicalPx,
     check_label: &str,
     mut cell: impl FnMut(&mut egui::Ui, OverrideCell),
 ) {
-    let label_w = theme.settings_label_width();
-    let gap = theme.spacing_lg;
+    let label_w = label_col;
+    let gap = theme.settings_label_gap();
     let row_h = theme.settings_row_min_height().value();
     let check_w = LogicalPx(checkbox_width(ui, theme, check_label));
-    let fits = override_row_fits(theme, LogicalPx(ui.available_width()), control_w, check_w);
+    let fits = override_row_fits(
+        theme,
+        label_w,
+        LogicalPx(ui.available_width()),
+        control_w,
+        check_w,
+    );
     let pad_y = theme.spacing_xs.value().round() as i8;
     egui::Frame::new()
         .inner_margin(egui::Margin {
@@ -87,14 +96,17 @@ mod tests {
         let th = tasty_themes::mocha_fallback();
         let control = th.field_width_lg;
         let check = LogicalPx(100.0);
-        let gap = th.spacing_lg;
-        let exact = th.settings_label_width() + gap + control + gap + check;
-        assert!(override_row_fits(&th, exact, control, check));
-        assert!(!override_row_fits(
-            &th,
-            exact - LogicalPx(1.0),
-            control,
-            check
-        ));
+        let gap = th.settings_label_gap();
+        for col in [th.settings_label_width(), th.settings_label_max_width()] {
+            let exact = col + gap + control + gap + check;
+            assert!(override_row_fits(&th, col, exact, control, check));
+            assert!(!override_row_fits(
+                &th,
+                col,
+                exact - LogicalPx(1.0),
+                control,
+                check
+            ));
+        }
     }
 }

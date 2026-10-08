@@ -6,7 +6,9 @@ use std::cell::RefCell;
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::{Input, OverrideCell, checkbox, override_row, select};
+use tasty_ui_widgets::{
+    Input, OverrideCell, SettingsRow, checkbox, override_row, select, settings_label_column,
+};
 
 use crate::catalog::icons::SEARCH;
 use crate::catalog::spec::{StageVariant, TokenChip, meta, stage, wrap_item};
@@ -22,6 +24,13 @@ const ROWS: [(&str, bool); 5] = [
     ("Line height", true),
     ("Font DPI scaling", true),
 ];
+
+/// 본체 settings.appearance.*_tooltip 의 영어 문구.
+const LINE_HEIGHT_HINT: &str =
+    "Line height multiplier. 1.0 = tight (best for ASCII art), 1.2 = comfortable reading.";
+const SCALE_MODE_HINT: &str = "Auto: Adjusts font rendering to match monitor DPI.\nSame physical \
+     text size across different monitors.\n\nFixed: Uses the same pixel size regardless of DPI.\n\
+     More cells on high-DPI monitors, smaller text.";
 
 thread_local! {
     // 짝 둘 × 테마 둘 × 행 다섯의 (입력 버퍼, Use default) 상태.
@@ -145,20 +154,28 @@ fn font_override(ui: &mut egui::Ui, th: &Theme, long: bool, state: &mut [(String
     };
     ui.vertical(|ui| {
         ui.spacing_mut().item_spacing.y = 0.0;
-        for (i, ((label, _), (buf, def))) in ROWS.iter().zip(state.iter_mut()).enumerate() {
+        // 본체처럼 line height · DPI scaling 라벨 뒤에 도움말 아이콘이 붙는다.
+        let labels: Vec<SettingsRow<'_>> = ROWS
+            .iter()
+            .enumerate()
+            .map(|(i, (label, _))| match i {
+                3 => SettingsRow::new(label).hint(LINE_HEIGHT_HINT),
+                4 => SettingsRow::new(label).hint(SCALE_MODE_HINT),
+                _ => SettingsRow::new(label),
+            })
+            .collect();
+        let col = settings_label_column(ui, th, &labels);
+        let row_h = th.settings_row_min_height();
+        for (i, (row, (buf, def))) in labels.iter().zip(state.iter_mut()).enumerate() {
             let control_w = match i {
                 0 | 1 => th.field_width_lg,
                 2 | 3 => th.field_width_xs,
                 _ => th.field_width_md,
             };
             ui.push_id(i, |ui| {
-                override_row(ui, th, control_w, use_default, |ui, cell| match cell {
+                override_row(ui, th, col, control_w, use_default, |ui, cell| match cell {
                     OverrideCell::Label => {
-                        ui.label(
-                            egui::RichText::new(*label)
-                                .size(th.font_size_body.value())
-                                .color(th.text_secondary().to_egui()),
-                        );
+                        row.show_label(ui, th, col, row_h);
                     }
                     OverrideCell::Control => control(ui, th, i, buf, !*def),
                     OverrideCell::UseDefault => {

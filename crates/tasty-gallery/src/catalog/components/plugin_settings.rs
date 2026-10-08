@@ -5,7 +5,7 @@ use std::cell::RefCell;
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::{Input, select, switch};
+use tasty_ui_widgets::{Input, SettingsRow, select, settings_label_column, switch};
 
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::catalog::widgets::dialog as kit;
@@ -62,15 +62,21 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                         .size(theme.font_size_micro.value())
                         .color(theme.text_muted().to_egui()),
                 );
+                let labels = [
+                    "Default zoom:",
+                    "Color scheme:",
+                    "Allow remote content:",
+                    "Sandbox scripts:",
+                    "Approval policy:",
+                ]
+                .map(SettingsRow::new);
+                let col = settings_label_column(ui, theme, &labels);
+                let [zoom, scheme, remote, sandbox, approval] = labels;
                 STATE.with(|s| {
                     let st = &mut *s.borrow_mut();
                     // 확정할 때만 25..=500 범위로 제한한다. suffix는 입력 오른쪽에 둔다.
-                    row(ui, theme, "Default zoom:", |ui| {
-                        ui.label(
-                            egui::RichText::new("%")
-                                .size(theme.font_size_term_sm.value())
-                                .color(theme.text_muted().to_egui()),
-                        );
+                    row(ui, theme, zoom, col, |ui| {
+                        ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
                         let pending = zoom_out_of_range(&st.zoom_buf);
                         let resp = Input::new()
                             .mono(true)
@@ -91,8 +97,13 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                                 st.zoom_buf = synced;
                             }
                         }
+                        ui.label(
+                            egui::RichText::new("%")
+                                .size(theme.font_size_term_sm.value())
+                                .color(theme.text_muted().to_egui()),
+                        );
                     });
-                    row(ui, theme, "Color scheme:", |ui| {
+                    row(ui, theme, scheme, col, |ui| {
                         select(
                             ui,
                             theme,
@@ -103,15 +114,15 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                             true,
                         );
                     });
-                    row(ui, theme, "Allow remote content:", |ui| {
+                    row(ui, theme, remote, col, |ui| {
                         switch(ui, theme, &mut st.allow_remote, None, true);
                     });
-                    row(ui, theme, "Sandbox scripts:", |ui| {
+                    row(ui, theme, sandbox, col, |ui| {
                         switch(ui, theme, &mut st.sandbox, None, true);
                     });
                     // Approval policy (long text) — 디자인 미러 아님, select 긴 텍스트
                     // 말줄임 회귀 방지 전용 케이스.
-                    row(ui, theme, "Approval policy:", |ui| {
+                    row(ui, theme, approval, col, |ui| {
                         select(
                             ui,
                             theme,
@@ -140,7 +151,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         &[
-            ("row", "label 좌 / control 우 (right_to_left)"),
+            ("row", "settings row grid · label column 150 … 240 · gap 16"),
             ("row gap", "spacing_sm"),
             ("select width", "field_width_md"),
             ("switch", "28×16 track"),
@@ -152,7 +163,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("sandbox scripts", "switch (on default)"),
         ],
         &[
-            TokenChip::new("text", "row label", theme.text_primary().to_egui()),
+            TokenChip::new(
+                "text-secondary",
+                "row label",
+                theme.text_secondary().to_egui(),
+            ),
             TokenChip::new("text-muted", "suffix · note", theme.text_muted().to_egui()),
             TokenChip::new(
                 "accent-primary",
@@ -181,14 +196,16 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
-/// 본체 `plugin_setting_row` 미러 — label 좌(`th.text`) / control 우(`right_to_left`),
-/// 앞에 `spacing_sm` 여백.
-fn row(ui: &mut egui::Ui, theme: &Theme, label: &str, control: impl FnOnce(&mut egui::Ui)) {
+/// 본체 `plugin_setting_row` 미러 — 앞에 `spacing_sm` 여백을 두고 설정 행 격자로 그린다.
+fn row(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    row: SettingsRow<'_>,
+    col: LogicalPx,
+    control: impl FnOnce(&mut egui::Ui),
+) {
     ui.add_space(theme.spacing_sm.value());
-    ui.horizontal(|ui| {
-        ui.label(egui::RichText::new(label).color(theme.text_primary().to_egui()));
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), control);
-    });
+    row.show(ui, theme, col, control);
 }
 
 /// 확정 시 범위 제한으로 값이 바뀔 입력인지 확인한다. 해당 입력은 오류 테두리로 표시한다.

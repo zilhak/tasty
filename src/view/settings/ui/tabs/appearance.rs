@@ -11,8 +11,8 @@ use tasty_type_appearance::theme::{
 };
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{
-    Button, ButtonVariant, ControlSize, HelpHint, Input, OverrideCell, TooltipPlacement,
-    override_row, vspace,
+    Button, ButtonVariant, ControlSize, Input, OverrideCell, SettingsRow, override_row,
+    settings_label_column, vspace,
 };
 
 /// plugin ID와 page ID를 함께 비교해 다른 plugin의 같은 이름 페이지와 구분한다.
@@ -24,18 +24,6 @@ pub(super) fn find_plugin_settings_entry<'a>(
     entries
         .iter()
         .find(|e| e.plugin_id == plugin_id && e.page.id == page_id)
-}
-
-/// Draw a label followed by a HelpHint (?) glyph with tooltip. For use inside Grid rows.
-fn label_with_tooltip(ui: &mut egui::Ui, label: &str, tooltip: &str) {
-    let th = crate::theme::theme();
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = th.spacing_xs.value();
-        ui.label(label);
-        HelpHint::new(tooltip)
-            .placement(TooltipPlacement::Bottom)
-            .show(ui, &th);
-    });
 }
 
 /// 선택한 Appearance 섹션을 그린다. 섹션 목록과 필터는 설정 창이 관리한다.
@@ -280,9 +268,16 @@ fn draw_appearance_general(
     );
     vspace(ui, th.spacing_sm);
 
+    // 글꼴 격자와 아래 합자·배경 투명도 행이 한 서브탭의 라벨 열을 같이 쓴다.
+    let ligatures = SettingsRow::new(t("settings.appearance.ligatures_label"));
+    let opacity = SettingsRow::new(t("settings.appearance.background_opacity_label"));
+    let font_rows = font_setting_rows();
+    let col = settings_label_column(ui, &th, font_rows.iter().chain([&ligatures, &opacity]));
     ui.columns(2, |columns| {
         font_settings_grid(
             &mut columns[0],
+            font_rows,
+            col,
             &mut settings.appearance.default_font,
             font_families,
             font_filter,
@@ -305,22 +300,16 @@ fn draw_appearance_general(
     ui.separator();
     vspace(ui, th.spacing_sm);
 
-    egui::Grid::new("appearance_general_grid")
-        .num_columns(2)
-        .spacing([12.0, 8.0])
-        .show(ui, |ui| {
-            // 디자인 settings_window.jsx:225 — Ligatures Switch 행.
-            ui.label(t("settings.appearance.ligatures_label"));
-            tasty_ui_widgets::switch(ui, &th, &mut settings.appearance.ligatures, None, true);
-            ui.end_row();
-
-            ui.label(t("settings.appearance.background_opacity_label"));
-            ui.add(egui::Slider::new(
-                &mut settings.appearance.background_opacity,
-                0.0..=1.0,
-            ));
-            ui.end_row();
-        });
+    ui.spacing_mut().item_spacing.y = th.spacing_sm.value();
+    ligatures.show(ui, &th, col, |ui| {
+        tasty_ui_widgets::switch(ui, &th, &mut settings.appearance.ligatures, None, true);
+    });
+    opacity.show(ui, &th, col, |ui| {
+        ui.add(egui::Slider::new(
+            &mut settings.appearance.background_opacity,
+            0.0..=1.0,
+        ));
+    });
 }
 
 /// UI 배율 선택 카드의 고정 치수.
@@ -1389,6 +1378,18 @@ pub(super) fn draw_plugin_settings_page(
     plugin_id: &str,
     page: &SettingsPageContribute,
 ) {
+    // 한 페이지의 행은 같은 라벨 열을 쓴다. 글꼴 override 는 자기 격자를 따로 그린다.
+    let row_labels: Vec<SettingsRow<'_>> = page
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            SettingsItemDecl::Toggle { label_key, .. }
+            | SettingsItemDecl::Select { label_key, .. }
+            | SettingsItemDecl::Number { label_key, .. } => Some(SettingsRow::new(t(label_key))),
+            SettingsItemDecl::FontOverride { .. } => None,
+        })
+        .collect();
+    let col = settings_label_column(ui, &crate::theme::theme(), &row_labels);
     for item in &page.items {
         match item {
             SettingsItemDecl::FontOverride {
@@ -1413,7 +1414,15 @@ pub(super) fn draw_plugin_settings_page(
                 storage_key,
                 default,
             } => {
-                draw_plugin_toggle(ui, settings, plugin_id, label_key, storage_key, *default);
+                draw_plugin_toggle(
+                    ui,
+                    settings,
+                    col,
+                    plugin_id,
+                    label_key,
+                    storage_key,
+                    *default,
+                );
             }
             SettingsItemDecl::Select {
                 id: _,
@@ -1425,6 +1434,7 @@ pub(super) fn draw_plugin_settings_page(
                 draw_plugin_select(
                     ui,
                     settings,
+                    col,
                     plugin_id,
                     label_key,
                     storage_key,
@@ -1444,6 +1454,7 @@ pub(super) fn draw_plugin_settings_page(
                 draw_plugin_number(
                     ui,
                     settings,
+                    col,
                     plugin_id,
                     label_key,
                     storage_key,
@@ -1457,20 +1468,23 @@ pub(super) fn draw_plugin_settings_page(
     }
 }
 
-/// plugin 설정의 라벨을 왼쪽, 입력 위젯을 오른쪽에 배치한다.
-fn plugin_setting_row(ui: &mut egui::Ui, label: &str, control: impl FnOnce(&mut egui::Ui)) {
+/// plugin 설정 한 행. 페이지가 정한 라벨 열과 설정 행 격자를 쓴다.
+fn plugin_setting_row(
+    ui: &mut egui::Ui,
+    col: LogicalPx,
+    label: &str,
+    control: impl FnOnce(&mut egui::Ui),
+) {
     let th = crate::theme::theme();
     ui.add_space(th.spacing_sm.value());
-    ui.horizontal(|ui| {
-        ui.label(egui::RichText::new(label).color(th.text_primary()));
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), control);
-    });
+    SettingsRow::new(label).show(ui, &th, col, control);
 }
 
 /// `Toggle` → 디자인 Switch (host `tasty_ui_widgets::switch`). bool read/write.
 fn draw_plugin_toggle(
     ui: &mut egui::Ui,
     settings: &mut Settings,
+    col: LogicalPx,
     plugin_id: &str,
     label_key: &str,
     storage_key: &str,
@@ -1482,7 +1496,7 @@ fn draw_plugin_toggle(
     };
     let mut val = cur;
     let th = crate::theme::theme();
-    plugin_setting_row(ui, t(label_key), |ui| {
+    plugin_setting_row(ui, col, t(label_key), |ui| {
         tasty_ui_widgets::switch(ui, &th, &mut val, None, true);
     });
     if val != cur {
@@ -1496,9 +1510,11 @@ fn draw_plugin_toggle(
 
 /// `Select` → 디자인 Select (host `tasty_ui_widgets::select`). options label_key 를
 /// `t()` 로 표시하고 선택 `value`(String) read/write.
+#[allow(clippy::too_many_arguments)] // 이유: 매니페스트 Select 선언의 필드 하나당 인자 하나 — 형제 draw_plugin_* 와 같은 모양
 fn draw_plugin_select(
     ui: &mut egui::Ui,
     settings: &mut Settings,
+    col: LogicalPx,
     plugin_id: &str,
     label_key: &str,
     storage_key: &str,
@@ -1518,7 +1534,7 @@ fn draw_plugin_select(
     let th = crate::theme::theme();
     let salt = format!("plugin_select_{plugin_id}_{storage_key}");
     let mut changed = false;
-    plugin_setting_row(ui, t(label_key), |ui| {
+    plugin_setting_row(ui, col, t(label_key), |ui| {
         changed = tasty_ui_widgets::select(
             ui,
             &th,
@@ -1546,6 +1562,7 @@ fn draw_plugin_select(
 fn draw_plugin_number(
     ui: &mut egui::Ui,
     settings: &mut Settings,
+    col: LogicalPx,
     plugin_id: &str,
     label_key: &str,
     storage_key: &str,
@@ -1573,8 +1590,7 @@ fn draw_plugin_number(
 
     let mut val = cur;
     let mut committed = false;
-    plugin_setting_row(ui, t(label_key), |ui| {
-        // right_to_left 안이라 칸 묶음이 통째로 오른쪽에 붙는다.
+    plugin_setting_row(ui, col, t(label_key), |ui| {
         committed = super::number::number_field(
             ui,
             &th,
@@ -1678,86 +1694,71 @@ fn font_family_picker(
 }
 
 /// Edit a `FontSettings` (no fallback semantics — every field is always set).
+/// 기본 글꼴 격자의 다섯 행(family · custom font · size · line height · scale mode).
+fn font_setting_rows() -> [SettingsRow<'static>; 5] {
+    [
+        SettingsRow::new(t("settings.appearance.font_family_label")),
+        SettingsRow::new(t("settings.appearance.custom_font_label")),
+        SettingsRow::new(t("settings.appearance.font_size_label")),
+        SettingsRow::new(t("settings.appearance.line_height_label"))
+            .hint(t("settings.appearance.line_height_tooltip")),
+        SettingsRow::new(t("settings.appearance.font_scale_mode_label"))
+            .hint(t("settings.appearance.font_scale_mode_tooltip")),
+    ]
+}
+
 fn font_settings_grid(
     ui: &mut egui::Ui,
+    rows: [SettingsRow<'_>; 5],
+    col: LogicalPx,
     font: &mut FontSettings,
     font_families: &mut Option<Vec<String>>,
     font_filter: &mut HashMap<String, String>,
     salt: &str,
 ) {
     let th = crate::theme::theme();
-    egui::Grid::new(format!("font_settings_grid_{}", salt))
-        .num_columns(2)
-        .spacing([12.0, 8.0])
-        .show(ui, |ui| {
-            ui.label(t("settings.appearance.font_family_label"));
-            font_family_picker(
-                ui,
-                &mut font.font_family,
-                font_families,
-                font_filter,
-                salt,
-                true,
-            );
-            ui.end_row();
-
-            ui.label(t("settings.appearance.custom_font_label"));
-            ui.text_edit_singleline(&mut font.custom_font_path);
-            ui.end_row();
-
-            ui.label(t("settings.appearance.font_size_label"));
-            let mut size_value = font.font_size as f64;
-            if super::number::number_field(
-                ui,
-                &th,
-                ("appearance_font_size", salt),
-                &font_size_spec(),
-                &mut size_value,
-            ) {
-                font.font_size = size_value as f32;
-            }
-            ui.end_row();
-
-            label_with_tooltip(
-                ui,
-                t("settings.appearance.line_height_label"),
-                t("settings.appearance.line_height_tooltip"),
-            );
-            let mut lh_value = font.line_height as f64;
-            if super::number::number_field(
-                ui,
-                &th,
-                ("appearance_line_height", salt),
-                &line_height_spec(),
-                &mut lh_value,
-            ) {
-                font.line_height = lh_value as f32;
-            }
-            ui.end_row();
-
-            label_with_tooltip(
-                ui,
-                t("settings.appearance.font_scale_mode_label"),
-                t("settings.appearance.font_scale_mode_tooltip"),
-            );
-            font_scale_mode_combo(ui, &mut font.font_scale_mode, salt, true, None);
-            ui.end_row();
-        });
-}
-
-/// override 행 라벨 — 본문 크기 `text-secondary`, 설명이 있으면 HelpHint 를 붙인다.
-fn override_label(ui: &mut egui::Ui, th: &crate::theme::Theme, label: &str, hint: Option<&str>) {
-    ui.spacing_mut().item_spacing.x = th.spacing_xs.value();
-    ui.label(
-        egui::RichText::new(label)
-            .size(th.font_size_body.value())
-            .color(th.text_secondary()),
-    );
-    if let Some(hint) = hint {
-        HelpHint::new(hint)
-            .placement(TooltipPlacement::Bottom)
-            .show(ui, th);
-    }
+    let [family, custom, size, line_height, scale_mode] = rows;
+    ui.spacing_mut().item_spacing.y = th.spacing_sm.value();
+    family.show(ui, &th, col, |ui| {
+        font_family_picker(
+            ui,
+            &mut font.font_family,
+            font_families,
+            font_filter,
+            salt,
+            true,
+        );
+    });
+    custom.show(ui, &th, col, |ui| {
+        ui.text_edit_singleline(&mut font.custom_font_path);
+    });
+    size.show(ui, &th, col, |ui| {
+        let mut size_value = font.font_size as f64;
+        if super::number::number_field(
+            ui,
+            &th,
+            ("appearance_font_size", salt),
+            &font_size_spec(),
+            &mut size_value,
+        ) {
+            font.font_size = size_value as f32;
+        }
+    });
+    line_height.show(ui, &th, col, |ui| {
+        let mut lh_value = font.line_height as f64;
+        if super::number::number_field(
+            ui,
+            &th,
+            ("appearance_line_height", salt),
+            &line_height_spec(),
+            &mut lh_value,
+        ) {
+            font.line_height = lh_value as f32;
+        }
+    });
+    scale_mode.show(ui, &th, col, |ui| {
+        font_scale_mode_combo(ui, &mut font.font_scale_mode, salt, true, None);
+    });
 }
 
 /// Edit a `FontOverride` against a `FontSettings` default. Each row has a
@@ -1774,6 +1775,18 @@ fn font_override_grid(
 ) {
     let th = crate::theme::theme();
     let use_default = t("settings.appearance.font.use_default_label");
+    let rows = [
+        SettingsRow::new(t("settings.appearance.font.override_family_label")),
+        SettingsRow::new(t("settings.appearance.font.override_custom_font_label")),
+        SettingsRow::new(t("settings.appearance.font.override_size_label")),
+        SettingsRow::new(t("settings.appearance.font.override_line_height_label"))
+            .hint(t("settings.appearance.line_height_tooltip")),
+        SettingsRow::new(t("settings.appearance.font.override_scale_mode_label"))
+            .hint(t("settings.appearance.font_scale_mode_tooltip")),
+    ];
+    let col = settings_label_column(ui, &th, &rows);
+    let row_h = th.settings_row_min_height();
+    let [family, custom, size, line_height, scale_mode] = rows;
     ui.push_id(("font_override_grid", salt), |ui| {
         ui.spacing_mut().item_spacing.y = 0.0;
 
@@ -1781,15 +1794,13 @@ fn font_override_grid(
         override_row(
             ui,
             &th,
+            col,
             th.field_width_lg,
             use_default,
             |ui, cell| match cell {
-                OverrideCell::Label => override_label(
-                    ui,
-                    &th,
-                    t("settings.appearance.font.override_family_label"),
-                    None,
-                ),
+                OverrideCell::Label => {
+                    family.show_label(ui, &th, col, row_h);
+                }
                 OverrideCell::Control => {
                     let mut family_value = ov
                         .font_family
@@ -1817,15 +1828,13 @@ fn font_override_grid(
         override_row(
             ui,
             &th,
+            col,
             th.field_width_lg,
             use_default,
             |ui, cell| match cell {
-                OverrideCell::Label => override_label(
-                    ui,
-                    &th,
-                    t("settings.appearance.font.override_custom_font_label"),
-                    None,
-                ),
+                OverrideCell::Label => {
+                    custom.show_label(ui, &th, col, row_h);
+                }
                 OverrideCell::Control => {
                     let mut path_value = ov
                         .custom_font_path
@@ -1850,15 +1859,13 @@ fn font_override_grid(
         override_row(
             ui,
             &th,
+            col,
             th.field_width_xs,
             use_default,
             |ui, cell| match cell {
-                OverrideCell::Label => override_label(
-                    ui,
-                    &th,
-                    t("settings.appearance.font.override_size_label"),
-                    None,
-                ),
+                OverrideCell::Label => {
+                    size.show_label(ui, &th, col, row_h);
+                }
                 OverrideCell::Control => {
                     let mut size_value = ov.font_size.unwrap_or(default.font_size) as f64;
                     super::number::number_field(
@@ -1882,15 +1889,13 @@ fn font_override_grid(
         override_row(
             ui,
             &th,
+            col,
             th.field_width_xs,
             use_default,
             |ui, cell| match cell {
-                OverrideCell::Label => override_label(
-                    ui,
-                    &th,
-                    t("settings.appearance.font.override_line_height_label"),
-                    Some(t("settings.appearance.line_height_tooltip")),
-                ),
+                OverrideCell::Label => {
+                    line_height.show_label(ui, &th, col, row_h);
+                }
                 OverrideCell::Control => {
                     let mut lh_value = ov.line_height.unwrap_or(default.line_height) as f64;
                     super::number::number_field(
@@ -1914,15 +1919,13 @@ fn font_override_grid(
         override_row(
             ui,
             &th,
+            col,
             th.field_width_md,
             use_default,
             |ui, cell| match cell {
-                OverrideCell::Label => override_label(
-                    ui,
-                    &th,
-                    t("settings.appearance.font.override_scale_mode_label"),
-                    Some(t("settings.appearance.font_scale_mode_tooltip")),
-                ),
+                OverrideCell::Label => {
+                    scale_mode.show_label(ui, &th, col, row_h);
+                }
                 OverrideCell::Control => {
                     let mut mode_value = ov
                         .font_scale_mode
