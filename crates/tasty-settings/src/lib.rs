@@ -1,6 +1,7 @@
 mod appearance;
 /// 단축키 설정 — `KeybindingSettings` 와 그 값의 해석 규칙([`keybindings::parse`]).
 pub mod keybindings;
+pub mod merge;
 mod port;
 mod port_impl;
 mod scripts;
