@@ -143,28 +143,8 @@ fn display_style_combo(
             &resp,
             egui::PopupCloseBehavior::CloseOnClick,
             |ui| {
-                let sz = theme.icon_glyph_size_md.value();
-                let pad_x = theme.menu_item_padding_x().value();
-                let gap = theme.spacing_sm.value();
-                let body = theme.font_size_body.value();
-                // 아이콘만 있는 버튼 폭으로는 목록의 라벨·체크마크가 겹치므로 추가 폭을 확보한다.
-                let content_width = options
-                    .iter()
-                    .map(|opt| {
-                        let label_w = ui
-                            .painter()
-                            .layout_no_wrap(
-                                opt.label.to_string(),
-                                egui::FontId::proportional(body),
-                                egui::Color32::PLACEHOLDER,
-                            )
-                            .rect
-                            .width();
-                        let icon_w = if opt.icon.is_some() { sz + gap } else { 0.0 };
-                        pad_x * 2.0 + icon_w + label_w + gap + theme.menu_item_check_size().value()
-                    })
-                    .fold(0.0_f32, f32::max);
-                ui.set_min_width(resp.rect.width().max(content_width));
+                // 목록은 트리거 폭 이상이고, 옵션 행이 라벨·아이콘·체크 자리에 맞춰 더 넓힌다.
+                ui.set_min_width(resp.rect.width());
                 ui.spacing_mut().item_spacing.y = 0.0;
                 let mut picked: Option<&'static str> = None;
                 for opt in options {

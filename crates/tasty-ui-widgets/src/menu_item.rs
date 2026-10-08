@@ -124,6 +124,15 @@ pub fn menu_option_icon(
     label: &str,
     selected: bool,
 ) -> egui::Response {
+    // 열린 목록은 트리거 폭을 최소 폭으로 받고 내용에 맞춰 커진다. 행이 가용 폭만 쓰면 목록이 트리거 폭에
+    // 묶여 라벨이 잘리므로, 라벨을 줄이지 않고 그리는 폭만큼 목록의 최소 폭을 넓힌다. 체크 자리는 선택과
+    // 관계없이 모든 옵션에 잡아 선택이 바뀌어도 목록 폭이 같다.
+    ui.set_min_width(menu_option_natural_width(
+        ui.ctx(),
+        theme,
+        icon.is_some(),
+        label,
+    ));
     menu_item_inner(
         ui,
         theme,
@@ -136,6 +145,32 @@ pub fn menu_option_icon(
         false,
         Some(selected),
     )
+}
+
+/// 옵션 행을 줄이지 않고 그리는 폭 — 행 패딩 양쪽 + (아이콘 + 간격) + 라벨 + 간격 + 체크.
+fn menu_option_natural_width(
+    ctx: &egui::Context,
+    theme: &Theme,
+    has_icon: bool,
+    label: &str,
+) -> f32 {
+    let font = egui::FontId::proportional(theme.font_size_body.value());
+    let label_w = ctx.fonts(|f| {
+        f.layout_no_wrap(label.to_owned(), font, egui::Color32::PLACEHOLDER)
+            .rect
+            .width()
+    });
+    let gap = theme.spacing_sm.value();
+    let icon_w = if has_icon {
+        theme.icon_glyph_size_md.value() + gap
+    } else {
+        0.0
+    };
+    theme.menu_item_padding_x().value() * 2.0
+        + icon_w
+        + label_w.ceil()
+        + gap
+        + theme.menu_item_check_size().value()
 }
 
 /// [`menu_option`] 을 `egui::Ui::selectable_value` 처럼 쓴다. 누르면 `current` 를 `value` 로 바꾸고
