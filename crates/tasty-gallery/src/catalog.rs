@@ -1673,6 +1673,14 @@ pub fn pages() -> Vec<Page> {
                             components::settings_general_grid::draw,
                         ),
                         spec(
+                            "settings-keybinding-rows",
+                            "Keybindings — binding rows on the shared label column",
+                            Some(
+                                "label column 288 held in full · gap 16 · hint inside the column · long script name wraps",
+                            ),
+                            components::settings_keybinding_rows::draw,
+                        ),
+                        spec(
                             "settings-macos-permissions",
                             "General › Permissions (macOS)",
                             Some(

@@ -82,6 +82,7 @@ pub mod settings_general_grid;
 pub mod settings_handler;
 pub mod settings_hook_override;
 pub mod settings_hook_seq;
+pub mod settings_keybinding_rows;
 pub mod settings_macos_permissions;
 pub mod settings_number;
 pub mod settings_remote_transfer;

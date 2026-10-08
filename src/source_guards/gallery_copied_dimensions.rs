@@ -28,6 +28,19 @@ enum Side {
 
 const COPIED: &[(&str, Side, Side)] = &[
     (
+        "단축키 탭 라벨 열 폭",
+        Side::Lit("src/view/settings/ui/keybindings_tab.rs", "LABEL_COL_WIDTH"),
+        Side::Lit(GALLERY_KB_ROWS, "LABEL_COL"),
+    ),
+    (
+        "단축키 바인딩 버튼 폭",
+        Side::Lit(
+            "src/view/settings/ui/keybindings_tab/entries.rs",
+            "BUTTON_WIDTH",
+        ),
+        Side::Lit(GALLERY_KB_ROWS, "SLOT_W"),
+    ),
+    (
         "Plugins 세그먼트 탭 라벨 폰트(primitive 12 — semantic role 없음)",
         Side::Lit("src/view/plugins/ui.rs", "SEGMENT_TAB_LABEL_PRIMITIVE_12"),
         Side::Lit(GALLERY_PLUGINS_WINDOW, "SEGMENT_TAB_LABEL_PRIMITIVE_12"),
@@ -229,6 +242,8 @@ const COPIED: &[(&str, Side, Side)] = &[
     ),
 ];
 
+const GALLERY_KB_ROWS: &str =
+    "crates/tasty-gallery/src/catalog/components/settings_keybinding_rows.rs";
 const GALLERY_QUIT_MODAL: &str = "crates/tasty-gallery/src/catalog/components/quit_modal.rs";
 const GALLERY_REMOTE_ATTACH: &str = "crates/tasty-gallery/src/catalog/components/remote_attach.rs";
 const GALLERY_FILE_PICKER: &str = "crates/tasty-gallery/src/catalog/components/file_picker.rs";
@@ -383,11 +398,11 @@ fn resolve(side: &Side, theme: &str, semantic: &str, primitive: &str) -> (String
 
 #[test]
 fn the_gallery_still_agrees_with_the_dimensions_it_restates() {
-    // 등록된 비교 쌍은 38개다. 항목을 삭제해 불일치를 숨기지 않도록 하한 대신 정확한 수를 확인한다.
+    // 등록된 비교 쌍은 40개다. 항목을 삭제해 불일치를 숨기지 않도록 하한 대신 정확한 수를 확인한다.
     assert_eq!(
         COPIED.len(),
-        38,
-        "비교 명부가 {}쌍이다(기록 38). 복사본이 실제로 사라졌는지 또는 새로 생겼는지 확인하고 명부와 기록을 함께 갱신한다.",
+        40,
+        "비교 명부가 {}쌍이다(기록 40). 복사본이 실제로 사라졌는지 또는 새로 생겼는지 확인하고 명부와 기록을 함께 갱신한다.",
         COPIED.len()
     );
     let theme = read(THEME);
@@ -660,6 +675,8 @@ fn the_checkable_roster_premises_still_hold() {
 
 /// 주석의 본체 언급을 지워 대상을 줄이지 못하도록 이름을 고정한다. 주석과 명부를 함께 지우는 변경은 별도 검토가 필요하다.
 const CONFESSED: &[(&str, &str)] = &[
+    (GALLERY_KB_ROWS, "LABEL_COL"),
+    (GALLERY_KB_ROWS, "SLOT_W"),
     (GALLERY_POPUP_FRAME, "TITLE_BAR_HEIGHT"),
     (GALLERY_POPUP_FRAME, "CONTENT_MARGIN"),
     (GALLERY_QUIT_MODAL, "WINDOW_W"),
