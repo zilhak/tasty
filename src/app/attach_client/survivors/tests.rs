@@ -463,3 +463,59 @@ fn markdown_role_waits_for_the_plugin_kind_and_reifies_as_a_mirror_document() {
     assert_eq!(restored[0]["display_name"], "README.md");
     assert!(restored[0].get("file").is_none());
 }
+
+fn terminal_dims(engine: &mut EngineMut<'_>, local: u32) -> (usize, usize) {
+    let t = engine
+        .runtime
+        .terminals
+        .get_mut(local)
+        .expect("terminal mirror");
+    (t.cols(), t.rows())
+}
+
+/// 재연결에서 kind 가 그대로인 terminal mirror 는 병합만으로는 옛 grid 를 유지한다. 재연결 설치는
+/// descriptor 가 알린 서버 크기로 맞춰야 하고, 크기가 없는 descriptor 는 건드리지 않는다.
+#[test]
+fn reconnect_sizes_a_surviving_terminal_mirror_to_the_server_grid() {
+    let (_, mut engine_session) = crate::state::tests::test_state();
+    let mut engine = engine_session.borrow_mut();
+    supply_ids(&engine);
+    let ids = test_ids();
+    let (tx, _rx) = tasty_remote::connection::channel();
+    let frame_tx: SharedFrameSender = tx;
+
+    let v1 = vec![serde_json::json!({
+        "remote_id": 10, "role": "terminal", "cols": 100, "rows": 30,
+    })];
+    let m1 = merge_survivor_mapping(&HashMap::new(), &v1, &ids, &frame_tx, &mut engine)
+        .expect("fixture construction");
+    let local = m1.remote_to_local[&10];
+    assert_eq!(terminal_dims(&mut engine, local), (100, 30));
+
+    let v2 = vec![serde_json::json!({
+        "remote_id": 10, "role": "terminal", "cols": 120, "rows": 40,
+    })];
+    let m2 = merge_survivor_mapping(&m1.remote_to_local, &v2, &ids, &frame_tx, &mut engine)
+        .expect("reconnect merge");
+    assert_eq!(m2.remote_to_local[&10], local, "같은 로컬 ID 를 재사용한다");
+    assert_eq!(
+        terminal_dims(&mut engine, local),
+        (100, 30),
+        "병합은 살아남은 mirror 의 크기를 바꾸지 않는다 — 이 시험의 전제"
+    );
+
+    let sizeless = vec![serde_json::json!({ "remote_id": 10, "role": "terminal" })];
+    apply_reconnect_terminal_sizes(
+        &m2.remote_to_local,
+        &sizeless,
+        &mut engine.runtime.terminals,
+    );
+    assert_eq!(
+        terminal_dims(&mut engine, local),
+        (100, 30),
+        "크기가 없는 descriptor 로 기본값에 맞추지 않는다"
+    );
+
+    apply_reconnect_terminal_sizes(&m2.remote_to_local, &v2, &mut engine.runtime.terminals);
+    assert_eq!(terminal_dims(&mut engine, local), (120, 40));
+}

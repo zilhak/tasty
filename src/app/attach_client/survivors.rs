@@ -29,6 +29,44 @@ fn mirror_descriptor_kind(s: &Value, markdown_available: bool) -> &str {
     }
 }
 
+/// 재연결에서 살아남은 terminal mirror의 grid를 descriptor가 알린 서버 크기로 맞춘다.
+///
+/// mirror grid는 서버 echo로만 바뀌므로, 끊긴 연결과 함께 사라진 echo가 있으면 재연결 뒤에도
+/// 서버 grid와 다르게 남는다. 재연결 descriptor는 새 snapshot과 같은 순간의 크기이고 새 연결의
+/// 프레임보다 먼저 적용되므로, 여기서 맞추면 snapshot이 맞는 grid에 그려진다.
+/// 구조 delta의 descriptor는 출력과 같은 순서의 값이 아니어서 이 함수를 부르지 않는다.
+/// 크기가 없는 descriptor는 건너뛴다.
+pub(super) fn apply_reconnect_terminal_sizes(
+    remote_to_local: &HashMap<u32, u32>,
+    surfaces: &[Value],
+    terminals: &mut crate::runtime::terminal_store::TerminalStore,
+) {
+    for s in surfaces {
+        if s.get("role").and_then(|v| v.as_str()) != Some("terminal") {
+            continue;
+        }
+        let Some(remote_id) = s
+            .get("remote_id")
+            .and_then(|v| v.as_u64())
+            .and_then(|v| u32::try_from(v).ok())
+        else {
+            continue;
+        };
+        let dims = (
+            s.get("cols").and_then(|v| v.as_u64()),
+            s.get("rows").and_then(|v| v.as_u64()),
+        );
+        let (Some(cols), Some(rows)) = dims else {
+            continue;
+        };
+        if let Some(&local) = remote_to_local.get(&remote_id)
+            && let Some(t) = terminals.get_mut(local)
+        {
+            t.resize(cols as usize, rows as usize);
+        }
+    }
+}
+
 /// 기존 원격 surface의 로컬 ID·자원을 재사용하고 추가·삭제·kind 변경을 반영한다.
 /// markdown은 기존 핸들을 공유해 구조 변경 때마다 문서를 다시 만들지 않는다.
 pub(super) fn merge_survivor_mapping(

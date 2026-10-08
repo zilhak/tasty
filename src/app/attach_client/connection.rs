@@ -11,7 +11,7 @@ use super::resources::{
     bind_mirror_input, destroy_mirror_markdown_surfaces, install_mirror_fallbacks,
     markdown_content_failure, push_markdown_changed, push_markdown_content_result,
 };
-use super::survivors::merge_survivor_mapping;
+use super::survivors::{apply_reconnect_terminal_sizes, merge_survivor_mapping};
 use crate::app::App;
 use crate::app::window_access::{EngineScanMut, engines_mut};
 use crate::ipc::stream::StreamTag;
@@ -270,6 +270,11 @@ impl App {
                 &mut engine,
             )?;
             sess.state.remote_to_local = std::mem::take(&mut mapping.remote_to_local);
+            apply_reconnect_terminal_sizes(
+                &sess.state.remote_to_local,
+                &surfaces,
+                &mut engine.runtime.terminals,
+            );
             // 연결 사이에 빠진 출력을 연속된 스트림으로 읽지 않도록 표지를 바꾼다.
             for (&remote, &local) in &sess.state.remote_to_local {
                 if let Some(terminal) = engine.runtime.terminals.get_mut(local) {

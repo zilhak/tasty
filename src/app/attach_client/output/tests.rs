@@ -792,3 +792,64 @@ fn parked_mirror_deltas_reclaim_retired_navigation_without_a_redraw() {
         assert!(!state.tab_bar_scroll.contains_key(&previous_pane));
     }
 }
+
+/// 구조 delta 의 descriptor 크기는 출력과 같은 순서의 값이 아니다. 살아남은 terminal mirror 의
+/// grid 는 echo 로만 바뀌어야 하므로, delta 가 다른 크기를 실어도 그대로 둔다.
+#[test]
+fn a_structural_delta_keeps_the_surviving_terminal_mirror_size() {
+    let mut navigation = crate::state::navigation::NavigationState::default();
+    let mut structure_ids = MirrorStructureIds::default();
+    let (_, mut engine_session) = crate::state::tests::test_state();
+    let mut engine = engine_session.borrow_mut();
+    supply_ids(&engine);
+    let ids = test_ids();
+    let (tx, _frames) = tasty_remote::connection::channel();
+    let frame_tx: SharedFrameSender = tx;
+
+    let mut m1 = merge_survivor_mapping(
+        &HashMap::new(),
+        &[serde_json::json!({ "remote_id": 10, "role": "terminal", "cols": 100, "rows": 30 })],
+        &ids,
+        &frame_tx,
+        &mut engine,
+    )
+    .expect("fixture construction");
+    let local = m1.remote_to_local[&10];
+    let ws_id = 999;
+    let mut ws = build_mirror_workspace(
+        &mut structure_ids,
+        &mut navigation,
+        ws_id,
+        "mirror",
+        &single_leaf_tree(10),
+        &ids,
+        &m1.remote_to_local,
+        &m1.terminals,
+        &m1.mesh,
+        &m1.explorer,
+        &mut m1.markdown,
+    )
+    .expect("fixture construction");
+    ws.mirror = true;
+    engine.push_mirror_workspace(ws);
+
+    let mut sess = test_session(ws_id, m1.remote_to_local.clone());
+    let removed = apply_mirror_structural_delta(
+        &mut navigation,
+        &mut sess,
+        &mut engine,
+        7,
+        &single_leaf_tree(10),
+        &[serde_json::json!({ "remote_id": 10, "role": "terminal", "cols": 120, "rows": 40 })],
+        None,
+    )
+    .expect("mirror delta");
+    assert!(removed.is_empty());
+    assert_eq!(sess.state.remote_to_local[&10], local);
+    let t = engine
+        .runtime
+        .terminals
+        .get_mut(local)
+        .expect("terminal mirror");
+    assert_eq!((t.cols(), t.rows()), (100, 30));
+}
