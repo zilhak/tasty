@@ -42,6 +42,7 @@ impl App {
             let kind = match cmd.request.method.as_str() {
                 "debug.inject_egui_text" => Some(EguiInjection::Text),
                 "debug.inject_egui_key" => Some(EguiInjection::Key),
+                "debug.inject_egui_mouse" => Some(EguiInjection::Pointer),
                 _ => None,
             };
             if let Some(kind) = kind {

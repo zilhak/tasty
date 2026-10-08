@@ -45,7 +45,7 @@ debug 메서드는 모두 `local_only()` — plugin caller 는 호출 불가, CL
 | `debug.inject_mouse` | `surface_id, row, col, button?, event_type?` | SGR mouse(1006) 시퀀스로 마우스 이벤트 주입 † |
 | `debug.inject_key` | `surface_id, bytes(hex)` 또는 `text` | 키 이벤트 주입 † |
 | `debug.inject_window_mouse` | `surface_id?`, `fx?`/`fy?`(기본 0.5, 창 정규화 좌표), `event_type?`, `button?`, `scroll_dx?`/`scroll_dy?`, `unit?`(기본 `line`) | winit 레벨 마우스 이벤트 주입 — 포커스된 창에 작용한다. 스크롤 단위는 아래 [휠 주입의 단위](#휠-주입의-단위-unit) |
-| `debug.inject_egui_mouse` | 위와 같음, `unit?` 기본 `point`, `modifiers?`(`shift`·`ctrl`·`alt`·`command` 배열) | egui 레벨 마우스 이벤트 주입 — winit 환산 경로를 건너뛰고 egui 입력에 직접 넣는다. `modifiers` 를 주면 egui 가 누른 것으로 보는 수식 키를 그 값으로 바꾸고 다음 `modifiers` 주입까지 유지한다(빈 배열은 모두 뗀다, 생략하면 그대로 둔다). CLI 는 `--modifiers shift,ctrl` · `--modifiers none` |
+| `debug.inject_egui_mouse` | 위와 같음, `unit?` 기본 `point`, `modifiers?`(`shift`·`ctrl`·`alt`·`command` 배열) | egui 레벨 마우스 이벤트 주입 — winit 환산 경로를 건너뛰고 egui 입력에 직접 넣는다. `modifiers` 를 주면 egui 가 누른 것으로 보는 수식 키를 그 값으로 바꾸고 다음 `modifiers` 주입까지 유지한다(빈 배열은 모두 뗀다, 생략하면 그대로 둔다). CLI 는 `--modifiers shift,ctrl` · `--modifiers none`. `window_id?` 를 주면 그 창(메인 또는 설정·Preset·Plugins)의 egui 입력에 넣고, 좌표는 **그 창 전체에 대한 정규화 좌표**(`fx`/`fy`)만 받는다. 보조 창에는 surface 가 없으므로 `surface_id` 와 함께 주면 `-32602` 로 거절한다(CLI 는 `--window-id` 와 `--surface` 를 함께 받지 않고, `TASTY_SURFACE_ID` 로 채우지도 않는다). 응답에 `window_id` 를 싣고, 없는 창은 `-32602` |
 | `debug.inject_egui_key` | `key?`(기본 `Escape`), `pressed?`(기본 `true`), `window_id?` | egui 레벨 키 이벤트 주입. 매핑할 수 없는 키 이름이면 `injected:false`. `window_id` 는 `debug.inject_egui_text` 와 같은 규칙이다(그 창의 egui 입력, 응답에 `window_id`, 없는 창 `-32602`, 생략하면 포커스된 메인 창) |
 | `debug.inject_egui_text` | `text`(필수, 문자열), `window_id?` | egui 레벨 **문자** 이벤트 주입 — 포커스된 `TextEdit`(command palette 쿼리 등)에 글자를 넣는다. `window_id` 를 주면 그 창(메인 또는 설정·Preset·Plugins 같은 보조 창)의 egui 입력에 넣고 응답에 `window_id` 를 싣는다. 없는 창이면 `-32602`. 생략하면 포커스된 메인 창이다. 아래 [문자 주입은 키 주입과 다른 채널이다](#문자-주입은-키-주입과-다른-채널이다) |
 | `debug.selection` | `{}` | focused window 의 로컬 텍스트 선택 상태 read-only 덤프(`present`·`surface_id`·`mode`·`dragging`·`empty`·`anchor/cursor/start/end{col,row}`). 마우스 라우팅 회귀 net 의 관찰면 — 순수 관찰(사용자 상태 불변) |
@@ -185,8 +185,8 @@ egui의 `Event::Text(String)`은 문자를 입력하고 `Event::Key`는 키 동�
   스크린샷이 빈 쿼리다)이 그대로 돌아온다. Enter·Tab·Backspace 는 `debug.inject_egui_key` 쪽이다.
 - 대상은 그 창에서 **지금 egui 포커스를 가진 위젯**이다. 창은 두 갈래로 고른다.
   - `window_id` 생략: 포커스된 메인 창. 다른 주입과 같이 focused window step(`src/app/ipc/window_required.rs`)에서 처리한다.
-  - `window_id` 지정: 그 창. 설정처럼 별도 winit 창으로 뜨는 화면은 메인 창의 egui 입력과 따로 있어 생략한 경로로는 닿지 않는다. App 단계(`src/app/ipc/debug_egui_window.rs`)가 창 ID로 찾아 넣고 포커스는 바꾸지 않는다. `debug.inject_egui_key` 도 같은 두 갈래다. 창 ID는 [스크린샷 방법](../ai-verification/screenshot-methods.md#모달-창의-id-를-얻는-법)의 "모달 창의 ID 를 얻는 법"으로 얻는다.
-- 이 메서드는 입력칸에 egui 포커스를 주지 않는다. 설정 창 입력칸은 먼저 클릭해 포커스를 준다(Xvfb 에서는 `xdotool mousemove --window <id> X Y click 1`).
+  - `window_id` 지정: 그 창. 설정처럼 별도 winit 창으로 뜨는 화면은 메인 창의 egui 입력과 따로 있어 생략한 경로로는 닿지 않는다. App 단계(`src/app/ipc/debug_egui_window.rs`)가 창 ID로 찾아 넣고 포커스는 바꾸지 않는다. `debug.inject_egui_key`·`debug.inject_egui_mouse` 도 같은 두 갈래다. 창 ID는 [스크린샷 방법](../ai-verification/screenshot-methods.md#모달-창의-id-를-얻는-법)의 "모달 창의 ID 를 얻는 법"으로 얻는다.
+- 이 메서드는 입력칸에 egui 포커스를 주지 않는다. 설정 창 입력칸은 먼저 `debug.inject_egui_mouse` 에 같은 `window_id` 를 주어 그 칸을 클릭한다(`move`·`press`·`release`). 포커스부터 입력·확인까지 debug IPC 만으로 끝나서 OS 입력 도구가 필요 없다.
 
 CLI 는 `tasty debug inject egui-text --text <s>` 다. command palette 를 열어 쿼리를 넣는
 전체 절차는 이렇다(`host-popup open` 이 사용자 단축키 경로를 대신한다):
@@ -201,11 +201,18 @@ tasty screenshot --window <id> --path /tmp/palette-filtered.png
 
 ```bash
 tasty debug settings open --tab general
-# X11 창 목록에서 제목 "Tasty Settings" 인 창의 id 를 고른다
-xdotool mousemove --window <settings-id> 100 66 click 1   # Filter sections 입력칸에 포커스
-tasty debug inject egui-text --text notif --window-id <settings-id>   # {"injected":true,"window_id":<settings-id>}
-tasty screenshot --window <settings-id> --path /tmp/settings-filtered.png
+# 창 ID: 스크린샷 방법 문서의 "모달 창의 ID 를 얻는 법"(제목 "Tasty Settings")
+S=<settings-id>
+# Filter sections 입력칸(1100x700 창의 100,66 → 창 정규화 0.0909,0.0943)을 클릭해 egui 포커스를 준다
+for e in move press release; do
+  tasty debug inject egui-mouse --window-id $S --fx 0.0909 --fy 0.0943 --event-type $e
+done
+tasty debug inject egui-text --text notif --window-id $S   # {"injected":true,"window_id":<S>}
+tasty debug inject egui-key --key Backspace --window-id $S # 마지막 글자를 지운다
+tasty screenshot --window $S --path /tmp/settings-filtered.png
 ```
+
+토글·버튼(Save 등)도 같은 `egui-mouse` 세 번으로 누른다. `Enter` 는 한 줄 입력칸의 포커스를 놓게 하므로 그 뒤의 `egui-text` 는 칸에 붙지 않는다.
 
 ### 휠 주입의 단위 (`unit`)
 

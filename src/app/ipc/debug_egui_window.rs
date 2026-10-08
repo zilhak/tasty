@@ -7,13 +7,16 @@ use crate::app::App;
 use crate::app::ipc::IpcStep;
 use crate::ipc::protocol::JsonRpcResponse;
 use crate::ipc::server::{IpcCommand, send_response};
-use crate::view::main::debug_input::{push_egui_key, push_egui_text};
+use crate::view::main::debug_input::{
+    ScrollUnit, push_egui_key, push_egui_pointer, push_egui_text,
+};
 use crate::view::ui::View;
 
 /// 창을 지정해 넣을 egui 입력 종류. 메서드 이름 분기는 라우터(`debug_methods.rs`)가 맡는다.
 pub(super) enum EguiInjection {
     Text,
     Key,
+    Pointer,
 }
 
 impl App {
@@ -27,6 +30,7 @@ impl App {
         let result = match kind {
             EguiInjection::Text => self.debug_egui_text_to_window(params),
             EguiInjection::Key => self.debug_egui_key_to_window(params),
+            EguiInjection::Pointer => self.debug_egui_mouse_to_window(params),
         };
         let response = match result {
             Ok(body) => JsonRpcResponse::success(id, body),
@@ -70,6 +74,43 @@ impl App {
             view.mark_dirty();
         }
         Ok(serde_json::json!({ "injected": injected, "window_id": wid }))
+    }
+
+    /// 좌표는 그 창 전체에 대한 정규화 좌표(fx, fy)만 받는다. 보조 창에는 surface가 없으므로
+    /// `surface_id`와 함께 주면 거절한다. 단위·버튼·수식 키는 focused window 경로와 같다.
+    fn debug_egui_mouse_to_window(
+        &mut self,
+        params: &serde_json::Value,
+    ) -> Result<serde_json::Value, (i32, String)> {
+        if params.get("surface_id").is_some_and(|v| !v.is_null()) {
+            return Err((
+                -32602,
+                "'surface_id' cannot be combined with 'window_id'; give fx/fy relative to the window"
+                    .to_string(),
+            ));
+        }
+        let unit_name = params
+            .get("unit")
+            .and_then(|v| v.as_str())
+            .unwrap_or("point");
+        let Some(unit) = ScrollUnit::from_name(unit_name) else {
+            return Err((
+                -32602,
+                "unknown scroll unit: expected \"line\", \"point\" or \"page\"".to_string(),
+            ));
+        };
+        let (fx, fy, action) =
+            super::window_required::read_pointer_params(params, unit).map_err(|m| (-32602, m))?;
+        let modifiers =
+            super::window_required::read_egui_modifiers(params).map_err(|m| (-32602, m))?;
+        let (wid, view) = self.debug_egui_target(params)?;
+        // 메인 창이면 focused window 경로처럼 이전 메뉴 포획 결과를 지운다.
+        if let Some(main) = view.as_main_mut() {
+            main.debug_captured_menu = None;
+        }
+        push_egui_pointer(&mut view.base_mut().gpu, fx, fy, action, modifiers);
+        view.mark_dirty();
+        Ok(serde_json::json!({ "injected": true, "window_id": wid }))
     }
 
     /// 창은 ID로만 고른다. 포커스된 창으로 대신하지 않는다.

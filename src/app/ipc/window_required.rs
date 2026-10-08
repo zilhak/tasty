@@ -37,7 +37,7 @@ fn reject_bad_params(cmd: &IpcCommand, msg: &str) -> IpcStep {
 /// 두 포인터 주입 경로에서 숫자 인자를 같은 방식으로 읽는다.
 /// 알 수 없는 버튼 번호는 Left, event_type은 Move가 된다.
 #[cfg(debug_assertions)]
-fn read_pointer_params(
+pub(super) fn read_pointer_params(
     p: &serde_json::Value,
     unit: crate::view::main::debug_input::ScrollUnit,
 ) -> Result<(f32, f32, crate::view::main::debug_input::InjectPointer), String> {
@@ -77,7 +77,9 @@ fn read_pointer_params(
 /// `modifiers` 가 없으면 `None`(현재 수식 키 유지), 배열이면 그 키만 누른 상태다.
 /// 이름은 `shift`·`ctrl`·`alt`·`command` 이고 빈 배열은 모두 뗀다.
 #[cfg(debug_assertions)]
-fn read_egui_modifiers(p: &serde_json::Value) -> Result<Option<egui::Modifiers>, String> {
+pub(super) fn read_egui_modifiers(
+    p: &serde_json::Value,
+) -> Result<Option<egui::Modifiers>, String> {
     let Some(v) = p.get("modifiers") else {
         return Ok(None);
     };

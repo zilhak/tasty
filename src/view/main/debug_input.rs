@@ -145,36 +145,11 @@ impl MainView {
             let line = PhysicalPx(rect.y.value() + fy * rect.height.value());
             egui::pos2(point.to_logical(ppp).value(), line.to_logical(ppp).value())
         } else {
-            let (w, h) = self.base.gpu.surface_config_size();
-            let logical_w = PhysicalPx(w as f32).to_logical(ppp).value();
-            let logical_h = PhysicalPx(h as f32).to_logical(ppp).value();
-            egui::pos2(logical_w * fx, logical_h * fy)
+            window_egui_pos(&self.base.gpu, fx, fy)
         };
         // 이번 입력이 메뉴를 만들지 않았을 때 이전 결과가 남지 않게 한다.
         self.debug_captured_menu = None;
-        if let Some(m) = modifiers {
-            self.base.gpu.debug_set_egui_modifiers(m);
-        }
-        let modifiers = modifiers.unwrap_or_default();
-        let events = match action {
-            // 클릭 전 hover 를 같은 pos 로 세팅해야 plugin egui 가 위젯 hit-test 를 맞춘다.
-            InjectPointer::Move => vec![egui::Event::PointerMoved(pos)],
-            InjectPointer::Button { button, pressed } => vec![
-                egui::Event::PointerMoved(pos),
-                egui::Event::PointerButton {
-                    pos,
-                    button: map_egui_button(button),
-                    pressed,
-                    modifiers,
-                },
-            ],
-            InjectPointer::Scroll { dx, dy, unit } => vec![egui::Event::MouseWheel {
-                unit: unit.to_egui(),
-                delta: egui::vec2(dx, dy),
-                modifiers,
-            }],
-        };
-        self.base.gpu.debug_push_egui_events(events);
+        push_egui_pointer_at(&mut self.base.gpu, pos, action, modifiers);
         true
     }
 
@@ -188,6 +163,60 @@ impl MainView {
     pub(crate) fn debug_inject_egui_text(&mut self, text: &str) -> bool {
         push_egui_text(&mut self.base.gpu, text)
     }
+}
+
+/// 창 전체에 대한 정규화 좌표(fx, fy)를 그 창의 egui 논리 좌표로 바꾼다.
+fn window_egui_pos(gpu: &crate::gpu::GpuState, fx: f32, fy: f32) -> egui::Pos2 {
+    let ppp = gpu.egui_pixels_per_point().max(f32::EPSILON);
+    let (w, h) = gpu.surface_config_size();
+    let logical_w = PhysicalPx(w as f32).to_logical(ppp).value();
+    let logical_h = PhysicalPx(h as f32).to_logical(ppp).value();
+    egui::pos2(logical_w * fx, logical_h * fy)
+}
+
+/// 창 종류와 관계없이 그 창 전체에 대한 정규화 좌표에 egui 포인터 동작을 넣는다.
+/// surface가 없는 설정 같은 보조 창은 이 좌표 기준만 쓴다.
+pub(crate) fn push_egui_pointer(
+    gpu: &mut crate::gpu::GpuState,
+    fx: f32,
+    fy: f32,
+    action: InjectPointer,
+    modifiers: Option<egui::Modifiers>,
+) {
+    let pos = window_egui_pos(gpu, fx, fy);
+    push_egui_pointer_at(gpu, pos, action, modifiers);
+}
+
+/// `modifiers`를 주면 egui가 누른 것으로 보는 수식 키를 그 값으로 바꾼 뒤 이벤트를 넣는다.
+fn push_egui_pointer_at(
+    gpu: &mut crate::gpu::GpuState,
+    pos: egui::Pos2,
+    action: InjectPointer,
+    modifiers: Option<egui::Modifiers>,
+) {
+    if let Some(m) = modifiers {
+        gpu.debug_set_egui_modifiers(m);
+    }
+    let modifiers = modifiers.unwrap_or_default();
+    let events = match action {
+        // 클릭 전 hover 를 같은 pos 로 세팅해야 plugin egui 가 위젯 hit-test 를 맞춘다.
+        InjectPointer::Move => vec![egui::Event::PointerMoved(pos)],
+        InjectPointer::Button { button, pressed } => vec![
+            egui::Event::PointerMoved(pos),
+            egui::Event::PointerButton {
+                pos,
+                button: map_egui_button(button),
+                pressed,
+                modifiers,
+            },
+        ],
+        InjectPointer::Scroll { dx, dy, unit } => vec![egui::Event::MouseWheel {
+            unit: unit.to_egui(),
+            delta: egui::vec2(dx, dy),
+            modifiers,
+        }],
+    };
+    gpu.debug_push_egui_events(events);
 }
 
 /// 창 종류와 관계없이 그 창의 egui 입력 큐에 키 이벤트를 넣는다. 매핑 불가 키면 `false`.

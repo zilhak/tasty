@@ -670,6 +670,9 @@ pub enum InjectDebugCommands {
         /// `shift`, `ctrl`, `alt`, `command`, or `none` to release; omit to keep them).
         #[arg(long, value_delimiter = ',')]
         modifiers: Option<Vec<String>>,
+        /// Target window, main or auxiliary (Settings, Preset, Plugins). Then fx/fy are relative to that whole window and --surface is refused
+        #[arg(long, conflicts_with = "surface")]
+        window_id: Option<u64>,
     },
     /// Inject a key event into the egui layer.
     EguiKey {

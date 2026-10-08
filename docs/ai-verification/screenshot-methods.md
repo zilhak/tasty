@@ -306,8 +306,11 @@ WebView surface(html·markdown)와 Tasty 가 그리는 surface(터미널·image 
 바이트를 넣는 경로라 호스트 단축키를 재현하지 못한다.
 
 포커스와 무관하게 `TextEdit` 에 쿼리를 넣어 **목록이 줄어든 화면**을 찍으려면 egui 입력 큐로
-직접 주입한다(`tasty debug inject egui-text`). 설정 같은 별도 창의 입력칸은 `--window-id <id>` 로
-그 창을 지목한다(창 ID는 위 "모달 창의 ID 를 얻는 법"). 절차·거절 조건은
+직접 주입한다(`tasty debug inject egui-text`). 설정 같은 별도 창은 `--window-id <id>` 로
+그 창을 지목한다(창 ID는 위 "모달 창의 ID 를 얻는 법"). 그 창의 입력칸 포커스·토글·버튼 클릭은
+`xdotool` 대신 `tasty debug inject egui-mouse --window-id <id> --fx .. --fy ..`(창 기준 정규화
+좌표)로, Enter·Backspace 는 `egui-key --window-id <id>` 로 넣는다. 포커스부터 입력까지 debug
+IPC 만으로 끝나므로 X11 이 아닌 환경에서도 같은 절차다(창 ID 를 얻는 방법만 플랫폼마다 다르다). 절차·거절 조건은
 [debug-ipc.md](../dev-guide/debug-ipc.md) "문자 주입은 키 주입과 다른 채널이다" 가 정본이다.
 
 그 밖에 이 조합에서 지키는 것:

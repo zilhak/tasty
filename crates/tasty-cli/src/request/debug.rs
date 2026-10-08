@@ -519,10 +519,18 @@ pub(super) fn inject_debug_command_to_method_params(
             scroll_dx,
             scroll_dy,
             modifiers,
+            window_id,
         } => {
             let mut params = pointer_params(
                 *surface, *fx, *fy, event_type, *button, unit, *scroll_dx, *scroll_dy,
             );
+            // 창 기준 좌표에는 surface가 없다. TASTY_SURFACE_ID로 채운 값도 보내지 않는다.
+            if let Some(wid) = window_id {
+                if let Some(obj) = params.as_object_mut() {
+                    obj.remove("surface_id");
+                }
+                params["window_id"] = serde_json::json!(wid);
+            }
             if let Some(names) = modifiers {
                 let held: Vec<&str> = names
                     .iter()
@@ -610,6 +618,42 @@ mod tests {
         let cli = crate::Cli::try_parse_from(argv).expect("파싱");
         let r = crate::request::command_to_request(&cli.command.expect("명령"));
         (r.method, r.params)
+    }
+
+    /// 창을 지정한 포인터 주입은 `window_id`만 싣고 `surface_id`는 보내지 않는다.
+    #[test]
+    fn egui_mouse_with_a_window_id_drops_the_surface_id() {
+        use clap::Parser;
+        let cli = crate::Cli::try_parse_from([
+            "tasty",
+            "debug",
+            "inject",
+            "egui-mouse",
+            "--window-id",
+            "9",
+            "--fx",
+            "0.1",
+            "--event-type",
+            "press",
+        ])
+        .expect("파싱");
+        let r = crate::request::command_to_request(&cli.command.expect("명령"));
+        assert_eq!(r.method, "debug.inject_egui_mouse");
+        assert_eq!(r.params["window_id"], 9);
+        assert!(r.params.get("surface_id").is_none(), "{}", r.params);
+        assert!(
+            crate::Cli::try_parse_from([
+                "tasty",
+                "debug",
+                "inject",
+                "egui-mouse",
+                "--window-id",
+                "9",
+                "--surface",
+                "3",
+            ])
+            .is_err()
+        );
     }
 
     fn egui_key(args: &[&str]) -> (String, serde_json::Value) {

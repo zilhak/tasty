@@ -382,6 +382,11 @@ const DEBUG_NOT_IN_HEADLESS: &[(&str, &str)] = &[
          헤드리스엔 egui 창이 없다",
     ),
     (
+        "debug.inject_egui_mouse",
+        "`window_id` 를 준 포인터 주입은 `self.view.views` 에서 그 창의 egui 입력을 고른다. \
+         헤드리스엔 egui 창이 없다",
+    ),
+    (
         "debug.inject_egui_key",
         "`window_id` 를 준 키 주입은 `self.view.views` 에서 그 창의 egui 입력을 고른다. \
          헤드리스엔 egui 창이 없다",
