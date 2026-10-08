@@ -47,7 +47,23 @@ L2 섹션은 좌측에 목록으로 뜨고 **필터 텍스트로 검색** 가능
 
 ### draft / save 모델
 
-편집은 **작업 사본(`draft`)** 에 쌓이고, Save 시 영속 `Settings` 로 커밋, Cancel 시 폐기. 일부 항목(FileHandler 의 파일 서브탭 → `~/.tasty/file-handlers.toml`, Hook Handlers → `~/.tasty/hook-handlers.toml`)은 Save 시 각 registry commit 후 user TOML 에 직접 atomic write.
+편집은 **작업 사본(`draft`)** 에 쌓이고, Save 시 영속 `Settings` 로 커밋, Cancel 시 폐기.
+
+**Save 는 필드 단위 3-way 병합으로 커밋한다**(`tasty_settings::merge::merge_settings_edit`, 호출은 `src/app/modal.rs` `close_active_modal`). 창은 열 때의 설정(`SettingsView::opened_settings`)을 들고 있다가, Save 때 그것·창의 결과·저장 시점의 현재 설정을 비교한다. 창이 열린 동안 agent IPC(입력 규칙·원격 전송·웹훅 외부 허용 등)나 스크립트 승인이 현재 설정을 바꿀 수 있기 때문이다.
+
+- 창이 바꾸지 않은 필드는 현재 값, 바꾼 필드는 창의 값을 쓴다. 표·맵은 키마다 내려가 비교한다.
+- 양쪽이 같은 필드를 다른 값으로 바꿨으면 창(사용자) 값을 쓰고, 그 경로들을 `settings save: fields also changed elsewhere …` warn 로그로 남긴다.
+- 목록은 기본적으로 값 하나로 비교한다. 아래 목록은 항목 단위로 맞춘다. 순서는 창의 결과를 따르고, 창을 연 뒤 다른 경로가 더한 항목은 뒤에 붙는다. 창이 지운 항목을 다른 경로가 바꿨으면 창의 삭제를 따르고 충돌로 남긴다.
+
+| 목록 | 항목 키 |
+|---|---|
+| `terminal_input.rules` | `app` |
+| `scripts.scripts` | `id` (승인 해시 `sha256` 등 필드는 항목 안에서 다시 3-way) |
+| `scripts.scripts[].triggers` | 항목 값 |
+| `keybindings.script_bindings` | 항목 값 |
+
+- 직렬화·역직렬화에 실패하면 창의 결과를 그대로 쓰고 사유를 같은 warn 로그로 남긴다. 저장 정책(`origin`)은 창의 사본 것을 잇는다.
+- 사용자 입력으로 바꾸는 설정(테마 토글·줌·힌트 위치·마우스 캡처 메뉴 등)은 modal 이 열린 동안 메인 윈도우 입력이 막혀 이 병합에 들어오지 않는다(`src/view/main.rs` `handle_engine_event`). 일부 항목(FileHandler 의 파일 서브탭 → `~/.tasty/file-handlers.toml`, Hook Handlers → `~/.tasty/hook-handlers.toml`)은 Save 시 각 registry commit 후 user TOML 에 직접 atomic write.
 
 **저장 실패는 오류 토스트로 알린다.** Tastyrc(Windows) 편집 저장이 실패하면 그 사유를 모달이 들고 있다가, 창이 닫힐 때 host 가 회수해 main window 에 Error 토스트(`toast.bashrc_save_failed`)로 띄운다 — Save 는 곧바로 설정 창을 닫으므로 설정 창 안에 띄우면 보이지 않는다. 사유에는 대상 경로와 OS 에러가 들어 있어 문구에 함께 싣되, 토스트 200자 캡에 맞춰 **가운데를 생략**한다(`tasty_i18n::t_fmt_fit`) — 호스트 기본 잘림은 꼬리(=OS 에러)를 버린다. 성공 토스트는 없다(저장은 기본 기대 동작이라 매번 알리면 소음). → [toast](../../design/systems/toast.md)
 
@@ -78,6 +94,8 @@ L2 섹션은 좌측에 목록으로 뜨고 **필터 텍스트로 검색** 가능
 - 사이드바 설정 버튼 클릭 시 설정 모달이 열린다 (L1 7탭).
 - L1 탭 전환 시 좌측 L2 섹션 목록이 그 탭의 것으로 바뀌고 필터가 클리어된다.
 - 편집 후 Save 시 영속 Settings 에 반영되고, Cancel 시 폐기된다.
+- Given 설정 창이 열려 있다 When agent IPC 가 입력 규칙·원격 전송 폴더·웹훅 외부 허용을 바꾼 뒤 창에서 다른 항목을 바꾸고 Save 한다 Then IPC 가 바꾼 값과 창의 변경이 모두 남는다(`merge.rs` 의 `fields_the_window_did_not_change_keep_their_current_values`, `input_rules_merge_per_app`).
+- Given 창과 다른 경로가 같은 필드를 다른 값으로 바꿨다 When Save 한다 Then 창의 값이 남고 그 경로가 warn 로그에 남는다(`a_field_changed_on_both_sides_takes_the_windows_value_and_is_reported`).
 - Keybindings 에서 키 조합 녹화 시 충돌이 있으면 확인 팝업이 뜬다.
 - 플러그인이 설정 페이지를 contribute 하면 Plugins 탭/Appearance sub-tab 에 나타난다.
 

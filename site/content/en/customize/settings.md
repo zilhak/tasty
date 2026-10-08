@@ -1,4 +1,4 @@
-<!-- source-hash: 97f060cec7bb -->
+<!-- source-hash: b7d3ca47c2da -->
 # Settings
 
 Adjust your shell, fonts, and workspace preferences to suit the way you work. Use the settings window or edit `~/.tasty/config.toml` directly. For key combinations and colours, see [Keybindings](keybindings.md) and [Themes](themes.md).
@@ -25,6 +25,7 @@ Press the same shortcut again to close the settings window.
 - Seven top tabs: **General** · **Terminal** · **Appearance** · **Keybindings** · **Handler** · **Misc** · **Plugins**.
 - The list on the left holds that tab's sections. Typing into **Filter sections…** above it filters the list. Switching tabs clears the filter text.
 - Changes are written to the file and applied on screen only when you press **Save**. **Cancel** discards them all. There is no close button in the header.
+- Settings an agent changes by command while the settings window is open (input rules, remote transfer, accepting webhooks from other computers, and so on) stay as they are when you press **Save**. Saving only writes what you changed in this window. If both sides changed the same item, this window's value wins.
 - Changes to **Language** and performance settings marked as requiring a restart take effect after you save and restart Tasty.
 - Numeric entries are **typed**, never dragged. Values are not adjusted while you type; they are brought into the allowed range when you leave the field or press `Enter`. Type something outside the range and the field turns red with one line under it naming the range and the value that will actually be saved.
 
