@@ -147,6 +147,9 @@ impl<'a> TaskStore<'a> {
     pub fn delete(&mut self, workspace_id: WorkspaceId, id: &TaskId) -> Result<()> {
         let scope = Scope::Workspace(workspace_id);
         let key = if self.mem.get(&scope, &typed_task_key(id)?)?.is_some() {
+            if let Some(task) = self.get(workspace_id, id)? {
+                self.delete_report_blocks(&task)?;
+            }
             typed_task_key(id)?
         } else {
             task_key(id)?
@@ -259,6 +262,7 @@ impl<'a> TaskStore<'a> {
             graph_id: None,
             input_snapshot: None,
             accepted: None,
+            report_token: None,
             attempt: None,
             route: None,
             skip: None,
@@ -465,6 +469,7 @@ mod graph_parse;
 mod graph_submit;
 pub use graph_submit::*;
 mod postprocess;
+mod report;
 mod retry;
 mod sweep;
 pub use sweep::{TaskDeleteOpts, TaskDeleteReport, TaskPurgeFilter, TaskSweepPlan};

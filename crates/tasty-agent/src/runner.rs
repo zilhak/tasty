@@ -499,6 +499,7 @@ mod tests {
             graph_id: None,
             input_snapshot: None,
             accepted: None,
+            report_token: None,
             attempt: None,
             route: None,
             skip: None,

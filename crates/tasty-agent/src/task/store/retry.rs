@@ -38,6 +38,9 @@ impl TaskStore<'_> {
                  or submit a new graph for the follow-up work"
             )));
         }
+        if task.is_typed() {
+            self.settle_report_block(&task)?;
+        }
         task.state = TaskState::Waiting;
         task.started_at = None;
         task.finished_at = None;

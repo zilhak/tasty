@@ -48,6 +48,8 @@ pub(crate) struct TaskWire {
     #[serde(default)]
     accepted: Option<super::contract::AcceptedResponse>,
     #[serde(default)]
+    report_token: Option<super::report::ReportToken>,
+    #[serde(default)]
     attempt: Option<TaskAttempt>,
     #[serde(default)]
     route: Option<RouteDecision>,
@@ -78,6 +80,7 @@ impl TryFrom<TaskWire> for Task {
             graph_id,
             input_snapshot,
             accepted,
+            report_token,
             attempt,
             route,
             skip,
@@ -121,6 +124,7 @@ impl TryFrom<TaskWire> for Task {
             graph_id,
             input_snapshot,
             accepted,
+            report_token,
             attempt,
             route,
             skip,

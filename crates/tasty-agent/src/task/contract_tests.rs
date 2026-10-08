@@ -28,6 +28,7 @@ fn task(id: &str, command: TaskCommand, contract: Option<TaskContract>) -> Task 
         graph_id: None,
         input_snapshot: None,
         accepted: None,
+        report_token: None,
         attempt: None,
         route: None,
         skip: None,

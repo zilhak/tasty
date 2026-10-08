@@ -313,6 +313,9 @@ pub struct Task {
     /// 마지막 dispatch 에서 custom 비동기 task 가 받은 접수 응답. 결과의 `raw.accepted` 로도 싣는다.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub accepted: Option<contract::AcceptedResponse>,
+    /// 마지막 dispatch 가 발급한 report 토큰. 이 회차가 열려 있는 동안 custom 기록을 받는다.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub report_token: Option<report::ReportToken>,
     /// v2 task 의 마지막 실행 회차. Running 전이마다 새 회차를 만든다.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attempt: Option<TaskAttempt>,
@@ -432,6 +435,7 @@ pub mod dag;
 mod graph;
 pub mod postprocess;
 mod record;
+pub mod report;
 pub mod route;
 mod store;
 pub mod types;
