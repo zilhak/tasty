@@ -273,6 +273,15 @@ CI 는 `.github/workflows/crossplatform-check.yml` 의 `check-headless` 잡이 �
     완료 하나를 `recv_timeout(10초)`로 받던 때는 부하 평균이 코어 수의 두세 배인 병렬 실행에서
     실행마다 다른 시험이 `Timeout`으로 실패했다. worker가 완료 채널을 닫으면 정체 한도를 기다리지
     않고 바로 실패한다.
+  - headless 부트 시험(`boot::journal_event_tests`)은 엔진 준비와 `workspace.create` 완료까지 받는 깨움이
+    모두 저널 worker 에서 온다. 두 구간을 벽시계 10초 하나로 묶었을 때는 부하 평균이 코어 수의 두세 배인
+    단독 실행에서도 깨움 사이가 수 초씩 벌어져 `bootstrap wake: Timeout` 으로 실패했다. 지금은 같은
+    `StallBudget` 으로 기다린다. 쉰 시간은 깨움이 와도 되돌리지 않고 두 단계를 합쳐 누적하므로, worker 가
+    잠든 채 기다린 시간이 시험 전체에서 10초를 넘으면 실패한다. 정리 기한이 지났을 때만 깨움을 대신 만드는
+    규칙은 그대로이고, 그때도 nap 을 거쳐 쉰 시간을 센다. 기한이 과거에 머문 채 응답이 오지 않아도 한도
+    안에서 실패한다. 정리 기한까지 기다리는 시간도 worker 는 잠들어 있으므로 쉰 시간에 들어간다. 이 시험의
+    정리 기한은 측정한 실행에서 늘 없었다. 정리 경로를 오래 타는 시험을 이 방식으로 바꿀 때는 기한 대기를
+    따로 다룬다.
   - PTY 출력·자식 회수 대기는 `StallBudget::for_process(pid)`로 PTY 자식을 본다
     (`ThreadProbe::process`, `/proc/<pid>/stat`). 자식이 실행 중이거나 디스크 대기인 시간은
     세지 않는다. 그러나 출력 전달과 회수는 Tasty 안의 PTY 읽기 스레드와 회수 스레드가 맡고,

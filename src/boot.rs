@@ -1035,7 +1035,7 @@ mod tests {
 mod journal_event_tests {
     use super::*;
     use std::sync::{Arc, Mutex, mpsc};
-    use std::time::{Duration, Instant};
+    use std::time::Instant;
 
     #[test]
     fn public_creation_finishes_using_only_real_journal_wakes_and_cleanup_deadlines() {
@@ -1076,11 +1076,20 @@ mod journal_event_tests {
             app.services.preset_store.clone(),
         );
         state.engine_id = Some(session.id);
-        let until = Instant::now() + Duration::from_secs(10);
+        // 기다리는 깨움은 모두 저널 worker 가 보낸다. 부하로 worker 의 fsync 가 늦어진 시간은 세지 않고
+        // worker 가 잠들어 있던 시간을 센다. 깨움이 와도 되돌리지 않고 두 단계를 합쳐 누적하며, 정리 기한을
+        // 기다리는 동안도 worker 는 잠들어 있으므로 센다(docs/dev-guide/unit-test-isolation.md).
+        let mut stall =
+            crate::runtime::journal_product::stall_budget::StallBudget::new(&app.journal);
         while !app.journal.is_ready(session.id) {
-            let event = events
-                .recv_timeout(until.saturating_duration_since(Instant::now()))
-                .expect("bootstrap wake");
+            let event = match events.try_recv() {
+                Ok(event) => event,
+                Err(mpsc::TryRecvError::Empty) => {
+                    stall.nap("bootstrap wake");
+                    continue;
+                }
+                Err(mpsc::TryRecvError::Disconnected) => panic!("bootstrap wake: disconnected"),
+            };
             assert!(
                 dispatch_headless_event(&mut app, &mut state, &mut session, &waker, event)
                     .is_continue()
@@ -1096,25 +1105,27 @@ mod journal_event_tests {
             if let Ok(response) = rx.try_recv() {
                 break response;
             }
-            assert!(
-                Instant::now() < until,
-                "no worker wake after queued cleanup"
-            );
-            let deadline = app
-                .journal
-                .cleanup_poll_deadline()
-                .unwrap_or(until)
-                .min(until);
-            let event =
-                match events.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
-                    Ok(event) => event,
-                    Err(mpsc::RecvTimeoutError::Timeout)
-                        if app.journal.cleanup_poll_deadline().is_some() =>
-                    {
-                        crate::AppEvent::JournalReady
-                    }
-                    Err(error) => panic!("missing event-driven continuation: {error}"),
-                };
+            // 정리 기한은 메인 루프의 타이머처럼 지났을 때만 깨움으로 대신한다. 이때도 nap 을 거쳐야 기한이
+            // 과거에 머문 채 응답이 오지 않는 정체가 한도 안에서 실패한다.
+            let event = match events.try_recv() {
+                Ok(event) => event,
+                Err(mpsc::TryRecvError::Empty)
+                    if app
+                        .journal
+                        .cleanup_poll_deadline()
+                        .is_some_and(|deadline| Instant::now() >= deadline) =>
+                {
+                    stall.nap("cleanup deadline wake");
+                    crate::AppEvent::JournalReady
+                }
+                Err(mpsc::TryRecvError::Empty) => {
+                    stall.nap("missing event-driven continuation");
+                    continue;
+                }
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    panic!("missing event-driven continuation: disconnected")
+                }
+            };
             assert!(
                 dispatch_headless_event(&mut app, &mut state, &mut session, &waker, event)
                     .is_continue()
