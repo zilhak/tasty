@@ -37,7 +37,11 @@ pub fn draw_macos_permissions_tab(ui: &mut egui::Ui) {
         PermRow {
             label: t("settings.macos_permissions.full_disk_access_label"),
             hint: Some(t("settings.macos_permissions.full_disk_access_hint")),
-            detail: fda_detail(fda, crate::macos_permissions::notice_inputs().0),
+            detail: crate::macos_permissions::fda_settings_detail_key(
+                fda == PermState::Missing,
+                crate::macos_permissions::notice_inputs(),
+            )
+            .map(t),
             tag: None,
             state: fda,
             state_label: state_label(fda),
@@ -125,16 +129,6 @@ fn fda_state(access: crate::macos_permissions::FullDiskAccess) -> PermState {
     }
 }
 
-/// Full Disk Access 행의 보조 줄. 보유했다가 앱이 바뀐 뒤 잃은 경우에만 처방을 적는다.
-/// 상태는 그대로 "허용 안 됨"이고 다섯 번째 상태를 만들지 않는다.
-fn fda_detail(
-    fda: PermState,
-    branch: crate::macos_permissions::FdaNoticeBranch,
-) -> Option<&'static str> {
-    (fda == PermState::Missing && branch == crate::macos_permissions::FdaNoticeBranch::Stale)
-        .then(|| t("settings.macos_permissions.full_disk_access_stale_detail"))
-}
-
 fn bool_state(granted: bool) -> PermState {
     if granted {
         PermState::Granted
@@ -149,19 +143,5 @@ fn state_label(state: PermState) -> &'static str {
         PermState::Missing => t("settings.macos_permissions.status_missing"),
         PermState::Unknown => t("settings.macos_permissions.status_unknown"),
         PermState::NotObservable => t("settings.macos_permissions.status_not_observable"),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::macos_permissions::FdaNoticeBranch;
-
-    #[test]
-    fn only_a_stale_grant_adds_the_remedy_line_to_a_missing_row() {
-        assert!(fda_detail(PermState::Missing, FdaNoticeBranch::Stale).is_some());
-        assert!(fda_detail(PermState::Missing, FdaNoticeBranch::Never).is_none());
-        assert!(fda_detail(PermState::Missing, FdaNoticeBranch::Revoked).is_none());
-        assert!(fda_detail(PermState::Granted, FdaNoticeBranch::Stale).is_none());
     }
 }

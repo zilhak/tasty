@@ -1816,6 +1816,14 @@ pub fn pages() -> Vec<Page> {
                             ),
                             components::info_modal::draw_permissions,
                         ),
+                        spec(
+                            "info-modal-permission-branches",
+                            "Permissions notice — FDA branches · signing aside",
+                            Some(
+                                "never / stale / stale Latte / revoked · scrolled to the end · stale steps as a numbered two-step list · signing paragraph last in every notice as secondary text",
+                            ),
+                            components::info_modal::draw_permission_branches,
+                        ),
                     ],
                 ),
                 single(

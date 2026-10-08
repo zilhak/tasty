@@ -108,9 +108,9 @@ pub use icon_button::{
     IconButton, IconButtonState, IconButtonVariant, IconPainter, paint_icon_button_state,
 };
 pub use info_modal::{
-    InfoModalButton, InfoModalOutput, InfoModalSpan, InfoModalSpanKind, InfoModalView,
-    footer_height as info_modal_footer_height, info_modal, parse_emphasis as info_modal_parse,
-    shell_height as info_modal_shell_height,
+    InfoModalButton, InfoModalOutput, InfoModalParagraph, InfoModalParagraphKind, InfoModalSpan,
+    InfoModalSpanKind, InfoModalView, footer_height as info_modal_footer_height, info_modal,
+    parse_emphasis as info_modal_parse, shell_height as info_modal_shell_height,
 };
 pub use input::Input;
 pub use language_select::{LanguageOption, LanguageSelectLabels, language_select};

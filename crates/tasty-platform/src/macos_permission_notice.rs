@@ -15,102 +15,184 @@ pub enum FdaNoticeBranch {
     Revoked,
 }
 
-/// 안내 본문을 이루는 문단의 번역 키를 순서대로 돌려준다. 문단은 빈 줄 하나로 잇는다.
-///
-/// `self_built`이면 직접 빌드한 사용자에게 인증서 서명을 권하는 문단을 넣는다. 배포본
-/// 사용자에게는 서명할 것이 없어 넣지 않는다.
-pub fn permission_notice_paragraph_keys(
-    fda: FdaNoticeBranch,
-    self_built: bool,
-) -> Vec<&'static str> {
-    let mut keys = vec!["macos_permissions.notice.intro"];
-    match fda {
-        FdaNoticeBranch::Never => keys.push("macos_permissions.notice.fda_never"),
-        FdaNoticeBranch::Stale => keys.extend([
-            "macos_permissions.notice.fda_stale",
-            "macos_permissions.notice.fda_covers",
-        ]),
-        FdaNoticeBranch::Revoked => keys.extend([
-            "macos_permissions.notice.fda_revoked",
-            "macos_permissions.notice.fda_covers",
-        ]),
-    }
-    keys.push("macos_permissions.notice.screen_recording");
-    if self_built {
-        keys.push("macos_permissions.notice.self_built");
-    }
-    keys.push("macos_permissions.notice.closing");
-    keys
+/// 안내 본문 문단 하나. 값은 번역 키다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NoticeParagraph {
+    /// 일반 문단.
+    Text(&'static str),
+    /// 번호 목록 항목. 번호는 이어진 항목끼리 1부터 매긴다.
+    Step(&'static str),
+    /// 본문 맨 끝의 보조 문단(작은 글씨·옅은 색).
+    Aside(&'static str),
 }
 
-/// [`permission_notice_paragraph_keys`]의 문단을 `t`로 번역해 이은 안내 본문.
+impl NoticeParagraph {
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::Text(k) | Self::Step(k) | Self::Aside(k) => k,
+        }
+    }
+}
+
+/// 안내 본문을 이루는 문단을 순서대로 돌려준다. 문단은 빈 줄 하나로 잇는다.
+///
+/// 서명 문단(`self_built`)은 모든 안내의 맨 끝에 보조 문단으로 둔다. 배포본도 직접 빌드도
+/// ad-hoc 서명이라 앱이 둘을 가를 수 없고, 둘 다 업데이트·재빌드마다 권한을 잃는다.
+pub fn permission_notice_paragraphs(fda: FdaNoticeBranch) -> Vec<NoticeParagraph> {
+    use NoticeParagraph::{Aside, Step, Text};
+    let mut out = vec![Text("macos_permissions.notice.intro")];
+    match fda {
+        FdaNoticeBranch::Never => out.push(Text("macos_permissions.notice.fda_never")),
+        FdaNoticeBranch::Stale => out.extend([
+            Text("macos_permissions.notice.fda_stale"),
+            Step("macos_permissions.notice.fda_stale_step_remove"),
+            Step("macos_permissions.notice.fda_stale_step_add"),
+            Text("macos_permissions.notice.fda_stale_retry"),
+            Text("macos_permissions.notice.fda_covers"),
+        ]),
+        FdaNoticeBranch::Revoked => out.extend([
+            Text("macos_permissions.notice.fda_revoked"),
+            Text("macos_permissions.notice.fda_covers"),
+        ]),
+    }
+    out.extend([
+        Text("macos_permissions.notice.screen_recording"),
+        Text("macos_permissions.notice.closing"),
+        Aside("macos_permissions.notice.self_built"),
+    ]);
+    out
+}
+
+/// [`permission_notice_paragraphs`]의 문단을 `t`로 번역해 이은 안내 본문. 번호 항목은
+/// `1. `, 보조 문단은 `> `를 앞에 붙인다 — 안내 모달의 강조 표기다(`tasty_ui_widgets::info_modal`).
 pub fn permission_notice_body(
     fda: FdaNoticeBranch,
-    self_built: bool,
     t: impl Fn(&'static str) -> &'static str,
 ) -> String {
-    permission_notice_paragraph_keys(fda, self_built)
+    let mut step = 0;
+    permission_notice_paragraphs(fda)
         .into_iter()
-        .map(t)
+        .map(|p| match p {
+            NoticeParagraph::Text(k) => {
+                step = 0;
+                t(k).to_string()
+            }
+            NoticeParagraph::Step(k) => {
+                step += 1;
+                format!("{step}. {}", t(k))
+            }
+            NoticeParagraph::Aside(k) => {
+                step = 0;
+                format!("> {}", t(k))
+            }
+        })
         .collect::<Vec<_>>()
         .join("\n\n")
+}
+
+/// 설정 탭 Full Disk Access 행의 보조 줄 번역 키. 허용 안 됨인데 보유 이력이 있으면 갈래별
+/// 처방을 적는다(앱이 바뀌었으면 제거 후 재추가, 밖에서 꺼졌으면 다시 켜기). 상태는 그대로
+/// "허용 안 됨"이고 별도 상태나 칩을 만들지 않는다.
+pub fn fda_settings_detail_key(missing: bool, fda: FdaNoticeBranch) -> Option<&'static str> {
+    match (missing, fda) {
+        (true, FdaNoticeBranch::Stale) => {
+            Some("settings.macos_permissions.full_disk_access_stale_detail")
+        }
+        (true, FdaNoticeBranch::Revoked) => {
+            Some("settings.macos_permissions.full_disk_access_revoked_detail")
+        }
+        _ => None,
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn keys(fda: FdaNoticeBranch) -> Vec<String> {
+        permission_notice_paragraphs(fda)
+            .into_iter()
+            .map(|p| {
+                let k = p.key().trim_start_matches("macos_permissions.notice.");
+                match p {
+                    NoticeParagraph::Text(_) => k.to_string(),
+                    NoticeParagraph::Step(_) => format!("step:{k}"),
+                    NoticeParagraph::Aside(_) => format!("aside:{k}"),
+                }
+            })
+            .collect()
+    }
+
     /// 갈래는 FDA 문단만 바꾸고 나머지 문단의 순서는 그대로다. 갈래 (b)·(c)는 기본 문단
-    /// 대신 원인 문단과 "무엇을 덮는지" 문단을 넣는다.
+    /// 대신 원인 문단과 "무엇을 덮는지" 문단을 넣고, (b)는 처방을 두 단계 목록으로 적는다.
+    /// 서명 문단은 어느 갈래에서나 맨 끝의 보조 문단이다.
     #[test]
     fn notice_branches_change_only_the_fda_paragraph() {
         use FdaNoticeBranch::*;
-        let k = |fda, self_built| permission_notice_paragraph_keys(fda, self_built);
-        let p = |s: &str| format!("macos_permissions.notice.{s}");
         assert_eq!(
-            k(Never, true),
+            keys(Never),
             [
                 "intro",
                 "fda_never",
                 "screen_recording",
-                "self_built",
-                "closing"
+                "closing",
+                "aside:self_built"
             ]
-            .map(p)
         );
         assert_eq!(
-            k(Stale, true),
+            keys(Stale),
             [
                 "intro",
                 "fda_stale",
+                "step:fda_stale_step_remove",
+                "step:fda_stale_step_add",
+                "fda_stale_retry",
                 "fda_covers",
                 "screen_recording",
-                "self_built",
-                "closing"
+                "closing",
+                "aside:self_built"
             ]
-            .map(p)
         );
         assert_eq!(
-            k(Revoked, false),
+            keys(Revoked),
             [
                 "intro",
                 "fda_revoked",
                 "fda_covers",
                 "screen_recording",
-                "closing"
+                "closing",
+                "aside:self_built"
             ]
-            .map(p)
         );
-        assert!(!k(Never, false).contains(&"macos_permissions.notice.self_built"));
     }
 
     #[test]
-    fn notice_body_joins_paragraphs_with_one_blank_line() {
-        let body = permission_notice_body(FdaNoticeBranch::Never, false, |key| key);
+    fn notice_body_numbers_steps_and_marks_the_aside() {
+        let body = permission_notice_body(FdaNoticeBranch::Stale, |key| key);
+        let paras: Vec<&str> = body.split("\n\n").collect();
         assert_eq!(
-            body,
-            "macos_permissions.notice.intro\n\nmacos_permissions.notice.fda_never\n\n\
-             macos_permissions.notice.screen_recording\n\nmacos_permissions.notice.closing"
+            paras[2],
+            "1. macos_permissions.notice.fda_stale_step_remove"
         );
+        assert_eq!(paras[3], "2. macos_permissions.notice.fda_stale_step_add");
+        assert_eq!(paras[4], "macos_permissions.notice.fda_stale_retry");
+        assert_eq!(paras.last(), Some(&"> macos_permissions.notice.self_built"));
+        assert_eq!(paras.len(), 9);
+    }
+
+    #[test]
+    fn only_a_lost_grant_adds_a_remedy_line_to_a_missing_row() {
+        use FdaNoticeBranch::*;
+        assert_eq!(
+            fda_settings_detail_key(true, Stale),
+            Some("settings.macos_permissions.full_disk_access_stale_detail")
+        );
+        assert_eq!(
+            fda_settings_detail_key(true, Revoked),
+            Some("settings.macos_permissions.full_disk_access_revoked_detail")
+        );
+        assert_eq!(fda_settings_detail_key(true, Never), None);
+        assert_eq!(fda_settings_detail_key(false, Stale), None);
+        assert_eq!(fda_settings_detail_key(false, Revoked), None);
     }
 }

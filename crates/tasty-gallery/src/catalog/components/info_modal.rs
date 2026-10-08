@@ -22,7 +22,7 @@ const DB_LOCKED: &str = "The database file is locked by another Tasty process. C
                          instance and start Tasty again.";
 /// 권한 안내 본문. 본체와 같은 조립 함수로 `lang/en.toml`의 문단과 강조 표기를 잇는다.
 fn permissions_notice(fda: FdaNoticeBranch) -> String {
-    permission_notice_body(fda, true, crate::i18n::t)
+    permission_notice_body(fda, crate::i18n::t)
 }
 
 const OK: &[InfoModalButton<'static>] = &[InfoModalButton {
@@ -454,5 +454,83 @@ pub fn draw_permissions(ui: &mut egui::Ui, theme: &Theme) {
         theme,
         "[Open permission settings] 는 모달을 닫지 않는다 — 설정 창이 따로 뜨므로 안내를 다시 \
          읽을 수 있어야 한다. 스크롤 경계는 맨 위와 중간에서만 보이고 끝에서는 사라진다.",
+    );
+}
+
+/// 권한 안내의 FDA 갈래와 서명 보조 문단. 시안 "FDA branches · signing aside" 를 옮겼다 —
+/// 갈래와 보조 문단이 함께 보이도록 네 장 모두 끝까지 스크롤한다.
+pub fn draw_permission_branches(ui: &mut egui::Ui, theme: &Theme) {
+    let latte = crate::host_shell::latte_theme();
+    let cases: [(&str, &str, &Theme, FdaNoticeBranch); 4] = [
+        (
+            "perm-branch-never",
+            "never — no grant on record",
+            theme,
+            FdaNoticeBranch::Never,
+        ),
+        (
+            "perm-branch-stale",
+            "stale — granted before, app changed",
+            theme,
+            FdaNoticeBranch::Stale,
+        ),
+        (
+            "perm-branch-stale-latte",
+            "stale — Latte",
+            &latte,
+            FdaNoticeBranch::Stale,
+        ),
+        (
+            "perm-branch-revoked",
+            "revoked — turned off outside Tasty",
+            theme,
+            FdaNoticeBranch::Revoked,
+        ),
+    ];
+    spec::stage(ui, theme, StageVariant::Column, |ui| {
+        for pair in cases.chunks(2) {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = theme.spacing_lg.value();
+                for &(key, label, th, fda) in pair {
+                    spec::cluster(ui, th, label, |ui| {
+                        modal(
+                            ui,
+                            th,
+                            key,
+                            "Some permissions are not granted",
+                            &permissions_notice(fda),
+                            true,
+                            PERMISSIONS_BUTTONS,
+                            Some(1.0),
+                        );
+                    });
+                }
+            });
+        }
+    });
+
+    spec::meta(
+        ui,
+        theme,
+        &[
+            ("branches", "never · stale · revoked — FDA paragraph only"),
+            (
+                "stale steps",
+                "ordered list 1–2 · body 13 · text-primary · indent space-xl · gap space-xs",
+            ),
+            (
+                "signing aside",
+                "every notice · last · caption 12 · text-muted · command chip unchanged",
+            ),
+            (
+                "new strings",
+                "stale step 1 · stale step 2 · stale retry line (split from the old stale paragraph)",
+            ),
+        ],
+        &[
+            TokenChip::new("text-muted", "signing aside", theme.text_muted().to_egui()),
+            TokenChip::without_color("font-size-caption", "signing aside"),
+            TokenChip::without_color("space-xl", "step list indent"),
+        ],
     );
 }

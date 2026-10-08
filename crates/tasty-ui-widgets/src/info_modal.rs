@@ -1,12 +1,12 @@
 //! 안내 모달 셸의 본문과 버튼 행. 본체 `info_modal.rs`와 갤러리 specimen이 함께 호출한다.
 //!
-//! 셸 규칙은 큐의 모든 메시지에 같다. 본문은 문단 사이를 `info-modal-para-gap`만큼 띄우고
-//! 넘치면 스크롤한다. 버튼 행은 스크롤하지 않고 오른쪽 정렬이며, 닫기 버튼(마지막 항목)이
+//! 셸 규칙은 큐의 모든 메시지에 같다. 본문은 문단 사이를 `info-modal-para-gap`만큼(이어진 번호
+//! 항목 사이는 `space-xs`만큼) 띄우고 넘치면 스크롤한다. 버튼 행은 스크롤하지 않고 오른쪽 정렬이며, 닫기 버튼(마지막 항목)이
 //! 가장 오른쪽에 온다. 아래로 가려진 내용이 있을 때만 버튼 행 위에 1px 경계를 긋는다.
 //! 제목은 팝업 타이틀바가 그리므로 여기에는 없다.
 //!
 //! 강조는 메시지가 직접 표시한 구간에만 준다(현재 macOS 권한 안내 하나). 표기는
-//! [`parse_emphasis`]를 따른다. egui는 굵기를 고를 수 없어 도입부·경로는 색으로만 구분되고,
+//! [`parse_emphasis`]를 따르며, 번호 목록 항목과 보조 문단도 같은 표기로 고른다. egui는 굵기를 고를 수 없어 도입부·경로는 색으로만 구분되고,
 //! 명령 칩은 배경색만 칠한다(모서리 반경·좌우 여백은 글자 배치 단위에서 줄 수 없다).
 
 use tasty_type_appearance::theme::Theme;
@@ -26,6 +26,25 @@ pub enum InfoModalSpanKind {
     Path,
     /// 셸 명령(`` `…` ``). 디자인은 mono · caption · surface-raised 칩.
     Command,
+}
+
+/// 문단의 종류. 강조 표기를 해석할 때만 `Text` 밖의 종류가 나온다.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum InfoModalParagraphKind {
+    /// 일반 문단. 본문 크기 · text-secondary.
+    Text,
+    /// 번호 목록 항목(`1. …`). 값은 번호 표지("1."). 본문 크기 · text-primary, 표지 뒤
+    /// `space-xl` 들여쓰기에 줄을 맞추고, 이어진 항목 사이는 `space-xs` 만 띄운다.
+    Step(String),
+    /// 보조 문단(`> …`). caption 크기 · text-muted.
+    Aside,
+}
+
+/// 본문 문단 하나.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InfoModalParagraph {
+    pub kind: InfoModalParagraphKind,
+    pub spans: Vec<InfoModalSpan>,
 }
 
 /// 문단 하나를 이루는 구간.
@@ -83,22 +102,46 @@ pub fn shell_height(
 /// 본문을 문단과 강조 구간으로 나눈다.
 ///
 /// 문단은 빈 줄로 나눈다. `emphasis`가 true면 `**도입부**`, `*경로*`, `` `명령` `` 표기를
-/// 해석하며, 닫히지 않은 표기는 글자 그대로 둔다.
-pub fn parse_emphasis(body: &str, emphasis: bool) -> Vec<Vec<InfoModalSpan>> {
+/// 해석하며, 닫히지 않은 표기는 글자 그대로 둔다. 같은 경우 문단 첫머리의 `1. `(숫자와 점,
+/// 공백)은 번호 목록 항목, `> `는 보조 문단이 된다.
+pub fn parse_emphasis(body: &str, emphasis: bool) -> Vec<InfoModalParagraph> {
     body.split("\n\n")
         .map(str::trim)
         .filter(|p| !p.is_empty())
         .map(|p| {
-            if emphasis {
-                parse_paragraph(p)
-            } else {
-                vec![InfoModalSpan {
-                    kind: InfoModalSpanKind::Plain,
-                    text: p.to_string(),
-                }]
+            if !emphasis {
+                return InfoModalParagraph {
+                    kind: InfoModalParagraphKind::Text,
+                    spans: vec![InfoModalSpan {
+                        kind: InfoModalSpanKind::Plain,
+                        text: p.to_string(),
+                    }],
+                };
+            }
+            let (kind, rest) = paragraph_kind(p);
+            InfoModalParagraph {
+                kind,
+                spans: parse_paragraph(rest),
             }
         })
         .collect()
+}
+
+/// 문단 첫머리 표기로 종류를 고르고, 표기를 뺀 나머지를 돌려준다.
+fn paragraph_kind(p: &str) -> (InfoModalParagraphKind, &str) {
+    if let Some(rest) = p.strip_prefix("> ") {
+        return (InfoModalParagraphKind::Aside, rest);
+    }
+    let digits = p.bytes().take_while(u8::is_ascii_digit).count();
+    if digits > 0
+        && let Some(rest) = p[digits..].strip_prefix(". ")
+    {
+        return (
+            InfoModalParagraphKind::Step(format!("{}.", &p[..digits])),
+            rest,
+        );
+    }
+    (InfoModalParagraphKind::Text, p)
 }
 
 fn parse_paragraph(p: &str) -> Vec<InfoModalSpan> {
@@ -143,21 +186,43 @@ fn parse_paragraph(p: &str) -> Vec<InfoModalSpan> {
     out
 }
 
-fn paragraph_job(theme: &Theme, spans: &[InfoModalSpan], wrap_width: f32) -> egui::text::LayoutJob {
-    let body = theme.font_size_body.value();
-    let line_height = Some(body * theme.line_height_ui);
+/// 문단 종류별 글자 크기와 일반 구간 색.
+fn paragraph_style(theme: &Theme, kind: &InfoModalParagraphKind) -> (f32, egui::Color32) {
+    match kind {
+        InfoModalParagraphKind::Text => (
+            theme.font_size_body.value(),
+            theme.text_secondary().to_egui(),
+        ),
+        InfoModalParagraphKind::Step(_) => {
+            (theme.font_size_body.value(), theme.text_primary().to_egui())
+        }
+        InfoModalParagraphKind::Aside => (
+            theme.font_size_caption.value(),
+            theme.text_muted().to_egui(),
+        ),
+    }
+}
+
+fn paragraph_job(
+    theme: &Theme,
+    kind: &InfoModalParagraphKind,
+    spans: &[InfoModalSpan],
+    wrap_width: f32,
+) -> egui::text::LayoutJob {
+    let (size, plain) = paragraph_style(theme, kind);
+    let line_height = Some(size * theme.line_height_ui);
     let mut job = egui::text::LayoutJob::default();
     job.wrap.max_width = wrap_width;
     for span in spans {
         let format = match span.kind {
             InfoModalSpanKind::Plain => egui::TextFormat {
-                font_id: egui::FontId::proportional(body),
-                color: theme.text_secondary().to_egui(),
+                font_id: egui::FontId::proportional(size),
+                color: plain,
                 line_height,
                 ..Default::default()
             },
             InfoModalSpanKind::Lead | InfoModalSpanKind::Path => egui::TextFormat {
-                font_id: egui::FontId::proportional(body),
+                font_id: egui::FontId::proportional(size),
                 color: theme.text_primary().to_egui(),
                 line_height,
                 ..Default::default()
@@ -208,17 +273,56 @@ pub fn info_modal(ui: &mut egui::Ui, theme: &Theme, view: &InfoModalView<'_>) ->
         ui.spacing_mut().item_spacing.y = 0.0;
         ui.add_space(pad_y);
         let wrap = (ui.available_width() - pad_x * 2.0).max(0.0);
-        for (i, spans) in paragraphs.iter().enumerate() {
+        let indent = theme.spacing_xl.value();
+        for (i, para) in paragraphs.iter().enumerate() {
             if i > 0 {
-                ui.add_space(para_gap);
+                let both_steps = matches!(para.kind, InfoModalParagraphKind::Step(_))
+                    && matches!(paragraphs[i - 1].kind, InfoModalParagraphKind::Step(_));
+                ui.add_space(if both_steps {
+                    theme.spacing_xs.value()
+                } else {
+                    para_gap
+                });
             }
-            let galley = ui.fonts(|f| f.layout_job(paragraph_job(theme, spans, wrap)));
+            // 번호 항목은 표지를 줄 머리에 두고 글은 들여쓰기에 맞춰 감싼다.
+            let text_x = match para.kind {
+                InfoModalParagraphKind::Step(_) => pad_x + indent,
+                _ => pad_x,
+            };
+            let galley = ui.fonts(|f| {
+                f.layout_job(paragraph_job(
+                    theme,
+                    &para.kind,
+                    &para.spans,
+                    (wrap - (text_x - pad_x)).max(0.0),
+                ))
+            });
             let (rect, _) = ui.allocate_exact_size(
                 egui::vec2(ui.available_width(), galley.size().y),
                 egui::Sense::hover(),
             );
+            if let InfoModalParagraphKind::Step(marker) = &para.kind {
+                let (size, color) = paragraph_style(theme, &para.kind);
+                let mut job = egui::text::LayoutJob::default();
+                job.append(
+                    marker,
+                    0.0,
+                    egui::TextFormat {
+                        font_id: egui::FontId::proportional(size),
+                        color,
+                        line_height: Some(size * theme.line_height_ui),
+                        ..Default::default()
+                    },
+                );
+                let marker_galley = ui.fonts(|f| f.layout_job(job));
+                ui.painter().galley(
+                    egui::pos2(rect.min.x + pad_x, rect.min.y),
+                    marker_galley,
+                    egui::Color32::PLACEHOLDER,
+                );
+            }
             ui.painter().galley(
-                egui::pos2(rect.min.x + pad_x, rect.min.y),
+                egui::pos2(rect.min.x + text_x, rect.min.y),
                 galley,
                 egui::Color32::PLACEHOLDER,
             );
@@ -280,15 +384,15 @@ pub fn info_modal(ui: &mut egui::Ui, theme: &Theme, view: &InfoModalView<'_>) ->
 mod tests {
     use super::*;
 
-    fn kinds(p: &[InfoModalSpan]) -> Vec<(InfoModalSpanKind, &str)> {
-        p.iter().map(|s| (s.kind, s.text.as_str())).collect()
+    fn kinds(p: &InfoModalParagraph) -> Vec<(InfoModalSpanKind, &str)> {
+        p.spans.iter().map(|s| (s.kind, s.text.as_str())).collect()
     }
 
     #[test]
     fn paragraphs_split_on_blank_lines() {
         let p = parse_emphasis("one\n\ntwo\nstill two\n\n\n\nthree", false);
         assert_eq!(p.len(), 3);
-        assert_eq!(p[1][0].text, "two\nstill two");
+        assert_eq!(p[1].spans[0].text, "two\nstill two");
     }
 
     #[test]
@@ -333,5 +437,32 @@ mod tests {
                 (InfoModalSpanKind::Path, "설정 > 일반"),
             ]
         );
+    }
+
+    #[test]
+    fn step_and_aside_markers_pick_the_paragraph_kind() {
+        let p = parse_emphasis(
+            "1. remove it\n\n12. add `x`\n\n> signed *aside*\n\n1.5 stays text",
+            true,
+        );
+        assert_eq!(p[0].kind, InfoModalParagraphKind::Step("1.".into()));
+        assert_eq!(kinds(&p[0]), vec![(InfoModalSpanKind::Plain, "remove it")]);
+        assert_eq!(p[1].kind, InfoModalParagraphKind::Step("12.".into()));
+        assert_eq!(p[2].kind, InfoModalParagraphKind::Aside);
+        assert_eq!(
+            kinds(&p[2]),
+            vec![
+                (InfoModalSpanKind::Plain, "signed "),
+                (InfoModalSpanKind::Path, "aside"),
+            ]
+        );
+        assert_eq!(p[3].kind, InfoModalParagraphKind::Text);
+    }
+
+    #[test]
+    fn plain_messages_keep_paragraph_markers() {
+        let p = parse_emphasis("1. not a list\n\n> not an aside", false);
+        assert!(p.iter().all(|p| p.kind == InfoModalParagraphKind::Text));
+        assert_eq!(p[0].spans[0].text, "1. not a list");
     }
 }

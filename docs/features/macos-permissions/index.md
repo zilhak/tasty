@@ -140,13 +140,22 @@ FDA(`kTCCServiceSystemPolicyAllFiles`)를 허용하면 "다른 앱의 데이터"
 | 갈래 | 조건 | 문단 |
 |---|---|---|
 | `Never` | 보유한 기록이 없다 | 시스템 설정에서 직접 추가하라는 기본 문단(`fda_never`) |
-| `Stale` | 보유했고, 그 뒤 앱의 서명 해시가 바뀌었다(업데이트·재빌드) | 목록의 항목이 켜져 보이거나 사라졌을 수 있으니 지우고 다시 추가하라는 문단(`fda_stale`). 그래도 실패하면 종료 후 다시 열라고 덧붙이며, 재시작이 꼭 필요하다고 단정하지 않는다 |
+| `Stale` | 보유했고, 그 뒤 앱의 서명 해시가 바뀌었다(업데이트·재빌드) | 목록의 항목이 켜져 보이거나 사라졌을 수 있다는 문단(`fda_stale`), 지우고 다시 추가하는 번호 2단계 목록(`fda_stale_step_remove`·`fda_stale_step_add`), 그래도 실패하면 종료 후 다시 열라는 줄(`fda_stale_retry`). 재시작이 꼭 필요하다고 단정하지 않는다 |
 | `Revoked` | 보유했고 해시가 같은데 꺼졌다 | Tasty 밖에서 꺼졌으니 다시 켜고, `tccutil reset` 등으로 목록에서 사라졌으면 다시 추가하라는 문단(`fda_revoked`) |
 
 `Stale`과 `Revoked`는 원인 문단 뒤에 "무엇을 덮는지" 문단(`fda_covers`)을 붙인다. 문단 순서와
-조립은 `permission_notice_paragraph_keys`·`permission_notice_body`가 정하고 본체와 갤러리가 함께
-쓴다. 직접 빌드한 사용자에게 인증서 서명을 권하는 문단(`self_built`)은 `self_built` 인자가 참일
-때만 넣는다.
+조립은 `permission_notice_paragraphs`·`permission_notice_body`가 정하고 본체와 갤러리가 함께
+쓴다. 서명 문단(`self_built`)은 갈래와 관계없이 모든 안내의 맨 끝에 보조 문단으로 넣는다.
+
+본문의 모양은 안내 모달(`tasty_ui_widgets::info_modal`)의 강조 표기로 정한다.
+
+| 문단 | 표기 | 모양 |
+|---|---|---|
+| 일반 문단 | 없음 | 본문 크기 · text-secondary, 문단 사이 `info-modal-para-gap` |
+| 번호 목록 항목 | 문단 머리 `1. ` | 본문 크기 · text-primary. 번호는 줄 머리에, 글은 `space-xl` 들여쓰기에 맞춰 감싼다. 이어진 항목 사이는 `space-xs` |
+| 보조 문단 | 문단 머리 `> ` | caption 크기 · text-muted. 명령 칩 모양은 같다 |
+
+번호와 `> `는 번역 문자열이 아니라 `permission_notice_body`가 붙인다.
 
 **갈래를 고르는 근거** — FDA 보유를 관측하면 그때의 자기 서명 해시(cdhash)를 데이터 홈의
 `macos-fda-grant` 파일에 `cdhash=<16진>` 한 줄로 남긴다. 거부로 보이면 이 기록과 지금 해시를
@@ -167,8 +176,7 @@ FDA(`kTCCServiceSystemPolicyAllFiles`)를 허용하면 "다른 앱의 데이터"
   언제나 `Never`다.
 
 결정의 근거와 대안은 [ADR-0074](../../adr/0074-macos-fda-grant-record-picks-the-notice-cause.md)에 있다.
-직접 빌드인지 가를 신호는 아직 없어 서명 문단(`self_built`)은 계속 넣는다. 배포 DMG도 ad-hoc
-서명이라 서명 방식으로는 가를 수 없다.
+배포 DMG도 직접 빌드도 ad-hoc 서명이라 앱이 둘을 가를 수 없으므로 서명 문단은 모든 안내에 넣는다.
 
 **안내 문구가 지켜야 할 것** — FDA 는 파일 접근 프롬프트만 없앤다. **Automation(다른 앱 제어) · 화면 기록 · 손쉬운 사용은 FDA 와 별개 TCC 서비스라 그대로 남는다.** 문구가 "모든 프롬프트가 사라진다" 로 읽히면 안 된다. 또 배포 DMG 와 직접 빌드 모두 ad-hoc 서명이라 업데이트·재빌드마다 다른 앱으로 인식돼 FDA 행이 더 이상 적용되지 않는다. 서명 문단은 이 사실을 배포본 사용자도 자기 이야기로 읽게 쓰고, 직접 빌드하는 사용자에게는 `Tasty Dev` 인증서 서명을 권한다([build.md](../../dev-guide/build.md) 참조).
 
@@ -236,9 +244,18 @@ macOS에서만 보이며, 권한 요청이 시작되는 유일한 화면이다. 
 
 Full Disk Access 행은 허용됨, 허용 안 됨, 확인 불가 세 가지를 그대로 보여준다. 판단할
 근거가 없는 상태를 "허용 안 됨"으로 적으면 이미 허용한 사용자에게 잘못 안내하게 된다.
-보유했다가 앱이 바뀌어 잃은 경우(`Stale`)에도 다섯 번째 상태를 만들지 않는다. 상태는 "허용 안
-됨" 그대로 두고 행 이름 아래 보조 줄에 처방(`full_disk_access_stale_detail`, 목록에서 지우고
-다시 추가)을 적는다. 행 버튼은 같다. 위 갈래와 같은 `notice_inputs()`를 읽는다.
+보유했다가 잃은 경우에도 다섯 번째 상태나 별도 칩을 만들지 않는다. 상태는 "허용 안 됨" 그대로
+두고 행 이름 아래 보조 줄에 갈래별 처방을 적는다. 행 버튼은 같다. 위 갈래와 같은
+`notice_inputs()`를 읽고, 키는 `macos_permission_notice::fda_settings_detail_key`가 고른다.
+
+| 갈래 | 보조 줄 |
+|---|---|
+| `Stale` | 시스템 설정의 항목이 켜져 보여도 더 이상 적용되지 않으니 목록에서 지우고 다시 추가하라(`full_disk_access_stale_detail`) |
+| `Revoked` | Tasty 밖에서 꺼졌으니 목록에서 다시 켜라(`full_disk_access_revoked_detail`) |
+| `Never` | 없음 |
+
+보조 줄은 안내 본문과 다른 키다. 안내 본문의 `fda_revoked`는 목록에서 사라진 경우(`tccutil reset`)의
+재추가까지 적지만, 설정 행의 보조 줄은 시안대로 다시 켜기만 적는다.
 
 폴더 접근 행은 보조 줄에 대상 폴더(다운로드 · 문서 · 데스크탑 · 볼륨)를 적는다. 폴더를
 확인하는 동작 자체가 프롬프트를 띄우므로 상태는 "자동 확인 불가"로 표시하고, 그 이유는 행
@@ -311,9 +328,10 @@ TCC 데몬 응답 대기가 필요하므로 매 프레임 조회하면 설정 �
 - Given 안내를 본 뒤 권한을 부여 When 재부팅 Then 안내가 뜨지 않는다
 - Given 안내를 본 뒤 권한을 주지 않음 When 재부팅 Then 안내가 다시 뜬다
 - Given ad-hoc 서명 빌드에 FDA 를 준 뒤 재빌드 When 부팅 Then 승인이 초기화돼 안내가 다시 뜬다
-- Given FDA 를 보유한 부팅이 기록을 남긴 뒤 업데이트·재빌드로 서명 해시가 바뀌고 FDA 가 거부로 보임 When 부팅 Then 안내의 FDA 문단이 `Stale`(목록에서 지우고 다시 추가)이고 설정 탭 FDA 행에 처방 줄이 붙는다
-- Given FDA 를 보유한 부팅이 기록을 남긴 뒤 서명 해시는 같은데 FDA 가 거부로 보임 When 부팅 Then 안내의 FDA 문단이 `Revoked`(다시 켜기)다
-- Given 보유 기록이 없음 When FDA 가 거부로 보이는 부팅 Then 안내의 FDA 문단은 `Never`(직접 추가)다
+- Given FDA 를 보유한 부팅이 기록을 남긴 뒤 업데이트·재빌드로 서명 해시가 바뀌고 FDA 가 거부로 보임 When 부팅 Then 안내의 FDA 문단이 `Stale`이고 지우고 다시 추가하는 단계가 번호 목록 1·2로 보이며, 설정 탭 FDA 행은 "허용 안 됨" 아래에 "켜져 보여도 적용되지 않는다"는 처방 줄이 붙는다
+- Given FDA 를 보유한 부팅이 기록을 남긴 뒤 서명 해시는 같은데 FDA 가 거부로 보임 When 부팅 Then 안내의 FDA 문단이 `Revoked`(다시 켜기)이고, 설정 탭 FDA 행은 "허용 안 됨" 아래에 다시 켜라는 처방 줄이 붙는다(별도 칩이나 상태는 없다)
+- Given 보유 기록이 없음 When FDA 가 거부로 보이는 부팅 Then 안내의 FDA 문단은 `Never`(직접 추가)다이고 설정 탭 FDA 행에는 처방 줄이 없다
+- Given 어느 갈래든 When 부팅 안내를 끝까지 스크롤 Then 마지막 문단이 서명 문단이고 caption 크기 · text-muted 로 보인다
 - Given 보유 기록이 있음 When FDA 가 거부로 보이는 부팅이 이어짐 Then 기록은 지워지지 않고 같은 갈래가 매 부팅 유지된다. 안내 표시 여부는 기록과 관계없다
 - Given 권한 탭이 열려 있음 When 그 위에서 마우스를 움직여 repaint 가 반복됨 Then TCC 측정은 한 번도 더 일어나지 않는다
 - Given 권한 탭이 열린 설정 창 When 시스템 설정에 다녀와 그 창에 포커스가 돌아옴 Then 상태를 다시 재서 표시가 갱신된다

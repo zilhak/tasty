@@ -306,7 +306,8 @@ fn should_show_permission_notice(full_disk_access: FullDiskAccess, screen_record
 }
 
 pub use crate::macos_permission_notice::{
-    FdaNoticeBranch, permission_notice_body, permission_notice_paragraph_keys,
+    FdaNoticeBranch, NoticeParagraph, fda_settings_detail_key, permission_notice_body,
+    permission_notice_paragraphs,
 };
 
 /// 마지막 측정에서 고른 FDA 문단 갈래. 측정할 때만 기록 파일과 서명 해시를 보므로, 매 프레임
@@ -314,17 +315,15 @@ pub use crate::macos_permission_notice::{
 static FDA_NOTICE_BRANCH: std::sync::RwLock<FdaNoticeBranch> =
     std::sync::RwLock::new(FdaNoticeBranch::Never);
 
-/// 이번 부팅 안내에 쓸 FDA 문단 갈래와 직접 빌드 여부.
+/// 이번 부팅 안내와 설정 탭에 쓸 FDA 문단 갈래.
 ///
-/// 갈래는 마지막 측정([`refresh_permission_snapshot`])에서 보유 기록과 자기 서명 해시로
-/// 고른 값이다(`macos_fda_history`). 직접 빌드 여부는 아직 구분할 신호가 없어 서명 안내
-/// 문단을 계속 보인다. 배포 DMG도 ad-hoc 서명이라 서명 방식으로는 가를 수 없다.
-pub fn notice_inputs() -> (FdaNoticeBranch, bool) {
+/// 마지막 측정([`refresh_permission_snapshot`])에서 보유 기록과 자기 서명 해시로 고른
+/// 값이다(`macos_fda_history`).
+pub fn notice_inputs() -> FdaNoticeBranch {
     // 이유: poison 된 값은 믿을 수 없고, 기본 문단은 어느 상태에서도 틀린 처방을 주지 않는다.
-    let branch = FDA_NOTICE_BRANCH
+    FDA_NOTICE_BRANCH
         .read()
-        .map_or(FdaNoticeBranch::Never, |guard| *guard);
-    (branch, true)
+        .map_or(FdaNoticeBranch::Never, |guard| *guard)
 }
 
 /// 보호 경로를 열어 FDA 상태를 추정한다.

@@ -48,7 +48,7 @@ FDA 추정 자체가 경로 접근 우회 판정이라 그 한계(오탐)는 그
 코드와 설정에서 확인:
 
 - 배포 서명이 Developer ID와 공증으로 바뀌면(`scripts/build-macos-dmg.sh`의 `SIGN_IDENTITY`, `.github/workflows/release.yml`의 `build-macos`) TCC 행이 cdhash가 아닌 조건으로 묶인다. 그때는 비교 대상을 다시 정하거나 `Stale` 갈래를 서명 방식에 따라 끈다.
-- 직접 빌드 구분 신호(`notice_inputs()`의 두 번째 값)가 생기면 이 기록과 같은 자리에서 정할지 다시 본다.
+- 서명 문단은 모든 안내에 넣는다. 배포본도 직접 빌드도 ad-hoc 서명이라 앱이 둘을 가를 수 없기 때문이다. 위 항목처럼 배포 서명이 바뀌면 배포본 안내에서 이 문단을 뺄지도 함께 본다.
 
 실행 결과로 확인:
 
