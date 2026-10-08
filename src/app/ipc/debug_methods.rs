@@ -35,12 +35,18 @@ impl App {
             send_response(&cmd.response_tx, response);
             return IpcStep::Handled;
         }
-        // 창을 지정한 문자 주입은 설정 같은 보조 창까지 가리킬 수 있어 App에서 처리한다.
+        // 창을 지정한 egui 입력 주입은 설정 같은 보조 창까지 가리킬 수 있어 App에서 처리한다.
         #[cfg(feature = "gui")]
-        if cmd.request.method == "debug.inject_egui_text"
-            && cmd.request.params.get("window_id").is_some()
-        {
-            return self.ipc_handle_debug_egui_text_to_window(cmd);
+        if cmd.request.params.get("window_id").is_some() {
+            use super::debug_egui_window::EguiInjection;
+            let kind = match cmd.request.method.as_str() {
+                "debug.inject_egui_text" => Some(EguiInjection::Text),
+                "debug.inject_egui_key" => Some(EguiInjection::Key),
+                _ => None,
+            };
+            if let Some(kind) = kind {
+                return self.ipc_handle_debug_egui_to_window(cmd, kind);
+            }
         }
         // 토스트 스택은 창마다 따로 있어 보조 창까지 볼 수 있는 App에서 처리한다.
         #[cfg(feature = "gui")]

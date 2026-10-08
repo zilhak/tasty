@@ -180,17 +180,7 @@ impl MainView {
 
     /// 키 이벤트를 egui 입력 큐로 주입한다(popup Esc 등 검증용). 매핑 불가 키면 `false`.
     pub(crate) fn debug_inject_egui_key(&mut self, key_name: &str, pressed: bool) -> bool {
-        let Some(key) = egui::Key::from_name(key_name) else {
-            return false;
-        };
-        self.base.gpu.debug_push_egui_events(vec![egui::Event::Key {
-            key,
-            physical_key: None,
-            pressed,
-            repeat: false,
-            modifiers: egui::Modifiers::default(),
-        }]);
-        true
+        push_egui_key(&mut self.base.gpu, key_name, pressed)
     }
 
     /// 문자열 전체를 한 egui Text 이벤트로 넣는다. 빈 값·제어문자 등 실입력에서
@@ -198,6 +188,21 @@ impl MainView {
     pub(crate) fn debug_inject_egui_text(&mut self, text: &str) -> bool {
         push_egui_text(&mut self.base.gpu, text)
     }
+}
+
+/// 창 종류와 관계없이 그 창의 egui 입력 큐에 키 이벤트를 넣는다. 매핑 불가 키면 `false`.
+pub(crate) fn push_egui_key(gpu: &mut crate::gpu::GpuState, key_name: &str, pressed: bool) -> bool {
+    let Some(key) = egui::Key::from_name(key_name) else {
+        return false;
+    };
+    gpu.debug_push_egui_events(vec![egui::Event::Key {
+        key,
+        physical_key: None,
+        pressed,
+        repeat: false,
+        modifiers: egui::Modifiers::default(),
+    }]);
+    true
 }
 
 /// 창 종류와 관계없이 그 창의 egui 입력 큐에 문자열을 한 Text 이벤트로 넣는다.

@@ -3642,6 +3642,9 @@ help = "egui key name (e.g. `Enter`, `Escape`, `ArrowDown`)"
 [cli.help._root.debug.inject.egui-key.arg.pressed]
 help = "Press (default) or release with `--pressed false`"
 
+[cli.help._root.debug.inject.egui-key.arg.window_id]
+help = "Target window, main or auxiliary (Settings, Preset, Plugins). Omit to send to the focused main window"
+
 [cli.help._root.debug.inject.egui-text]
 about = "Type characters into a focused egui text field in a GUI build without physical keyboard input. Enter, Tab, and Backspace use egui-key instead"
 

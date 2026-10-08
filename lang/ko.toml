@@ -3636,6 +3636,9 @@ help = "egui 키 이름(예: `Enter`, `Escape`, `ArrowDown`)"
 [cli.help._root.debug.inject.egui-key.arg.pressed]
 help = "누르기(기본값) 또는 `--pressed false`로 떼기"
 
+[cli.help._root.debug.inject.egui-key.arg.window_id]
+help = "대상 윈도우. 메인 또는 보조 윈도우(Settings, Preset, Plugins). 생략하면 포커스된 메인 윈도우로 보냅니다"
+
 [cli.help._root.debug.inject.egui-text]
 about = "GUI 빌드의 포커스된 egui 텍스트 필드에 물리 키 입력 없이 문자를 넣습니다. Enter·Tab·Backspace는 egui-key를 사용합니다"
 

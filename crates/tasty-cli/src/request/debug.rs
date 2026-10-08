@@ -533,10 +533,17 @@ pub(super) fn inject_debug_command_to_method_params(
             }
             ("debug.inject_egui_mouse", params)
         }
-        InjectDebugCommands::EguiKey { key, pressed } => (
-            "debug.inject_egui_key",
-            serde_json::json!({ "key": key, "pressed": pressed }),
-        ),
+        InjectDebugCommands::EguiKey {
+            key,
+            pressed,
+            window_id,
+        } => {
+            let mut params = serde_json::json!({ "key": key, "pressed": pressed });
+            if let Some(wid) = window_id {
+                params["window_id"] = serde_json::json!(wid);
+            }
+            ("debug.inject_egui_key", params)
+        }
         InjectDebugCommands::EguiText { text, window_id } => {
             let mut params = serde_json::json!({ "text": text });
             if let Some(wid) = window_id {
@@ -603,6 +610,33 @@ mod tests {
         let cli = crate::Cli::try_parse_from(argv).expect("파싱");
         let r = crate::request::command_to_request(&cli.command.expect("명령"));
         (r.method, r.params)
+    }
+
+    fn egui_key(args: &[&str]) -> (String, serde_json::Value) {
+        let mut argv = vec!["tasty", "debug", "inject", "egui-key", "--key", "Enter"];
+        argv.extend_from_slice(args);
+        let cli = crate::Cli::try_parse_from(argv).expect("파싱");
+        let r = crate::request::command_to_request(&cli.command.expect("명령"));
+        (r.method, r.params)
+    }
+
+    /// 키 주입도 창을 지정할 때만 `window_id`가 실린다.
+    #[test]
+    fn egui_key_carries_the_window_id_only_when_given() {
+        assert_eq!(
+            egui_key(&[]),
+            (
+                "debug.inject_egui_key".to_string(),
+                json!({ "key": "Enter", "pressed": true })
+            )
+        );
+        assert_eq!(
+            egui_key(&["--window-id", "7"]),
+            (
+                "debug.inject_egui_key".to_string(),
+                json!({ "key": "Enter", "pressed": true, "window_id": 7u64 })
+            )
+        );
     }
 
     /// 창을 지정하지 않은 호출은 예전과 같은 요청이고, 지정하면 `window_id`가 실린다.

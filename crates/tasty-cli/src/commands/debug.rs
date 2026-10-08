@@ -679,6 +679,9 @@ pub enum InjectDebugCommands {
         /// Press (default) or release with `--pressed false`.
         #[arg(long, default_value_t = true)]
         pressed: bool,
+        /// Target window, main or auxiliary (Settings, Preset, Plugins). Omit to send to the focused main window
+        #[arg(long)]
+        window_id: Option<u64>,
     },
     /// Type characters into a focused egui text field in a GUI build without
     /// physical keyboard input. Enter, Tab, and Backspace use egui-key instead.

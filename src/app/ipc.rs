@@ -4,7 +4,7 @@
 mod app_methods;
 mod caller_gate;
 #[cfg(all(debug_assertions, feature = "gui"))]
-mod debug_egui_text;
+mod debug_egui_window;
 #[cfg(debug_assertions)]
 mod debug_methods;
 #[cfg(all(debug_assertions, feature = "gui"))]
