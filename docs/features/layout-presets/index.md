@@ -28,7 +28,7 @@ WorkspacePreset(전체: 상위 레이아웃 + 모든 pane/tab/surface) · TabPre
 
 저장: 사이드바 워크스페이스 카드 우클릭 · 탭 타이틀/탭바 빈 공간 우클릭 · 도구 메뉴 "프리셋". 위치 `~/.tasty/presets/{kind}/<name>.toml`(파일명 = 정본, 같은 kind 내 중복 불가 — 충돌 시 `-N` suffix).
 
-캡처 시 **deferred(미복원) 터미널 탭** — PTY 가 아직 spawn 되지 않아 트리에서 `EmptySurface { deferred_spawn: Some(..) }` placeholder 로 있는 비활성 탭 — 도 `kind="terminal"` + `cwd`(`DeferredSpawn.working_dir`)로 캡처된다. (`EmptySurface::kind()` 는 항상 `"empty"` 라, 캡처 경로가 `is_deferred()` 가드로 가로채 layout 영속화(`SavedSurface::capture_surface`)와 동형으로 처리한다.) 적용 시 빈 패널이 아니라 해당 cwd 의 터미널로 복원된다. PTY 가 한 번도 안 뜬 placeholder 는 세션 데이터(restore_command·scrollback)가 없으므로 cwd 만 옮긴다. convert 버튼만 보이는 진짜 빈 패널(비-deferred `EmptySurface`)은 그대로 `kind="empty"` 로 캡처된다.
+캡처 시 **아직 실제화되지 않은 탭**은 지금 화면이 아니라 저장된 원본으로 캡처한다. journal 복원을 기다리는 자리(`JournalPlaceholder`)는 고정한 journal 참조(kind·data·creation seed)를 event store에서 풀어 그 surface 값으로 채운다(`PresetCaptureDraft::resolve`). plugin kind 등록을 기다리는 자리(`EmptySurface`의 `deferred`)는 원래 kind와 plugin snapshot으로 캡처한다(`EmptySurface::kind()`는 항상 `"empty"`라 캡처 경로가 먼저 가로챈다). convert 버튼만 보이는 진짜 빈 패널(`deferred` 없는 `EmptySurface`)은 그대로 `kind="empty"`로 캡처된다.
 
 **PresetView**(`View` + `sealed::Sealed` 직접 구현, modeless, 종류별 1 인스턴스 — [hierarchy](../../concepts/hierarchy.md))는 L1 scope 탭(Workspace/Tab/Pane) 아래 2-depth list→detail 본문이다:
 

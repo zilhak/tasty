@@ -85,10 +85,10 @@ pub(crate) fn capture_selected(
             } else if let Some(empty) = owner.as_any().downcast_ref::<crate::model::EmptySurface>()
             {
                 match &empty.deferred {
-                    Some(crate::model::Deferred::Plugin(saved)) => SurfaceData::Generic {
+                    Some(saved) => SurfaceData::Generic {
                         data: saved.snapshot.clone(),
                     },
-                    _ => continue,
+                    None => continue,
                 }
             } else {
                 let definition = engine

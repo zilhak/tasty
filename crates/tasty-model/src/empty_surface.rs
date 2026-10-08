@@ -2,16 +2,13 @@ use std::path::PathBuf;
 
 use super::SurfaceId;
 use super::surface_trait::Surface;
-use super::terminal_surface::{Deferred, DeferredPlugin, DeferredSpawn};
+use super::terminal_surface::DeferredPlugin;
 
-/// 비활성 빈 surface 또는 복원 대기용 placeholder. Deferred::Terminal은 PTY 생성을,
-/// Deferred::Plugin은 kind 등록 뒤 복원을 기다린다.
+/// 비활성 빈 surface 또는 plugin kind 등록 뒤 복원을 기다리는 placeholder.
 pub struct EmptySurface {
     pub id: SurfaceId,
-    /// 교체할 surface의 복원 정보. Terminal과 Plugin 중 하나만 지정할 수 있다.
-    pub deferred: Option<Deferred>,
-    /// PTY 생성의 연속 실패 횟수. 상한 뒤에는 반복 재시도를 멈춘다.
-    pub spawn_attempts: u32,
+    /// kind 등록을 기다리는 plugin surface의 복원 정보. 없으면 비활성 빈 surface다.
+    pub deferred: Option<DeferredPlugin>,
     /// 호스트가 carry 한 시작 cwd. fresh empty 면 None — Surface cwd invariant
     /// (`docs/design/policies/cwd.md#surface-cwd-invariant`) 에 따라 다음 변환 시 후보로 사용.
     pub cwd: Option<PathBuf>,
@@ -22,7 +19,6 @@ impl EmptySurface {
         Self {
             id,
             deferred: None,
-            spawn_attempts: 0,
             cwd: None,
         }
     }
@@ -31,8 +27,7 @@ impl EmptySurface {
     pub fn new_deferred_plugin(id: SurfaceId, plugin: DeferredPlugin) -> Self {
         Self {
             id,
-            deferred: Some(Deferred::Plugin(plugin)),
-            spawn_attempts: 0,
+            deferred: Some(plugin),
             cwd: None,
         }
     }
@@ -43,33 +38,14 @@ impl EmptySurface {
         self
     }
 
-    /// 실제화 대기(terminal 이든 plugin 이든) 상태인지 여부.
+    /// plugin 복원 대기 상태인지 여부.
     pub fn is_deferred(&self) -> bool {
         self.deferred.is_some()
     }
 
-    /// terminal 자리표시자면 그 spawn 파라미터. plugin/비-deferred 면 None.
-    pub fn deferred_spawn(&self) -> Option<&DeferredSpawn> {
-        match &self.deferred {
-            Some(Deferred::Terminal(spawn)) => Some(spawn),
-            _ => None,
-        }
-    }
-
-    /// terminal 자리표시자의 spawn 파라미터를 가변 참조로. plugin/비-deferred 면 None.
-    pub fn deferred_spawn_mut(&mut self) -> Option<&mut DeferredSpawn> {
-        match &mut self.deferred {
-            Some(Deferred::Terminal(spawn)) => Some(spawn),
-            _ => None,
-        }
-    }
-
-    /// plugin 자리표시자면 그 kind/snapshot. terminal/비-deferred 면 None.
+    /// plugin 자리표시자면 그 kind/snapshot. 비활성 빈 surface면 None.
     pub fn deferred_plugin(&self) -> Option<&DeferredPlugin> {
-        match &self.deferred {
-            Some(Deferred::Plugin(p)) => Some(p),
-            _ => None,
-        }
+        self.deferred.as_ref()
     }
 }
 
@@ -92,18 +68,7 @@ impl Surface for EmptySurface {
 
     fn to_tree_json(&self) -> serde_json::Value {
         match &self.deferred {
-            Some(Deferred::Terminal(spawn)) => {
-                // Deferred terminal placeholder — 외부에 Terminal로 보이고 pty_ready: false.
-                serde_json::json!({
-                    "type": "Terminal",
-                    "kind": "terminal",
-                    "id": self.id,
-                    "cols": spawn.cols,
-                    "rows": spawn.rows,
-                    "pty_ready": false,
-                })
-            }
-            Some(Deferred::Plugin(p)) => {
+            Some(p) => {
                 // 원래 kind는 유지하되 아직 사용할 수 없음을 ready:false로 알린다.
                 serde_json::json!({
                     "type": "Pending",

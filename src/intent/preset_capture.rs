@@ -1,7 +1,7 @@
 //! Freeze preset structure and live content; resolve lazy immutable data on the journal worker.
 //! Neither phase activates a terminal/plugin or copies runtime IDs into the preset wire format.
 use crate::intent::ClonedPreset;
-use crate::model::{Deferred, EmptySurface, Pane, PaneNode, SplitDirection, SurfaceLayout, Tab};
+use crate::model::{EmptySurface, Pane, PaneNode, SplitDirection, SurfaceLayout, Tab};
 use crate::runtime::engine_access::EngineRef;
 use crate::runtime::journal_payload::SavedSurfaceSource;
 use crate::runtime::surface_registry::SurfaceKindRegistry;
@@ -239,25 +239,15 @@ impl Builder<'_, '_> {
             ));
             return Ok(blank(&lazy.kind));
         }
-        if let Some(empty) = owner.as_any().downcast_ref::<EmptySurface>() {
-            match &empty.deferred {
-                Some(Deferred::Plugin(saved)) => {
-                    return Ok(PresetSurface {
-                        params: saved.snapshot.clone(),
-                        ..blank(&saved.kind)
-                    });
-                }
-                Some(Deferred::Terminal(spawn)) => {
-                    return Ok(PresetSurface {
-                        cwd: spawn
-                            .working_dir
-                            .as_ref()
-                            .map(|cwd| cwd.to_string_lossy().into_owned()),
-                        ..blank("terminal")
-                    });
-                }
-                None => {}
-            }
+        if let Some(saved) = owner
+            .as_any()
+            .downcast_ref::<EmptySurface>()
+            .and_then(|empty| empty.deferred.as_ref())
+        {
+            return Ok(PresetSurface {
+                params: saved.snapshot.clone(),
+                ..blank(&saved.kind)
+            });
         }
         if owner.kind() == "terminal" {
             return Ok(PresetSurface {

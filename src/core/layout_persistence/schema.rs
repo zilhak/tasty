@@ -87,7 +87,7 @@ pub enum SavedSplitDirection {
 pub enum SavedSurface {
     Terminal {
         cwd: Option<String>,
-        /// 실행할 복원 명령. 실제 터미널은 surface 메타데이터, deferred는 DeferredSpawn에서 가져온다.
+        /// 실행할 복원 명령. 터미널 surface 메타데이터에서 가져온다.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         restore_command: Option<String>,
         /// 별도 scrollback 파일 ID. 저장 설정이 꺼져 있으면 capture에 넣지 않으며 None이면 읽기를 생략한다.

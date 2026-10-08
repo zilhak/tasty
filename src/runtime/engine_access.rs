@@ -89,8 +89,8 @@ impl EngineMut<'_> {
 }
 
 impl EngineRef<'_> {
-    /// leaf를 조회해 attach 후보를 분류한다. Deferred::Terminal만 터미널로 취급하며
-    /// Deferred::Plugin은 PTY 생성 대상이 아닌 플러그인 placeholder다.
+    /// leaf를 조회해 attach 후보를 분류한다. plugin 복원을 기다리는 EmptySurface는
+    /// PTY 생성 대상이 아니므로 터미널이 아니다.
     pub(crate) fn classify_attach_surfaces(
         &self,
         workspace_id: u32,
@@ -131,11 +131,7 @@ impl EngineRef<'_> {
                 .as_any()
                 .downcast_ref::<crate::runtime::surface_restorer::JournalPlaceholder>()
                 .is_some_and(|placeholder| placeholder.kind == "terminal")
-                || s.kind() == "terminal"
-                || s.as_any()
-                    .downcast_ref::<crate::model::EmptySurface>()
-                    .map(|e| e.deferred_spawn().is_some())
-                    .unwrap_or(false);
+                || s.kind() == "terminal";
             if is_terminal {
                 class.terminals.push(id);
             } else {

@@ -99,7 +99,7 @@ crate 목록 문서·README·가드의 crate 수를 추출마다 함께 갱신�
 ### 코드와 설정에서 확인
 
 - `tasty-model`에서 실행 인스턴스(`DeferredSpawn.waker` 등)를 걷어내면 `tasty-core` 추출 시점을 판단한다.
-  현재 상태: `DeferredSpawn`은 waker를 담지 않고 `tasty-model`의 leaf는 `SurfaceDescriptor`다. kind 인스턴스와 Terminal/Pty는 EngineRuntime의 컬렉션으로 이동했다.
+  현재 상태: `DeferredSpawn`은 제거됐다(지연 터미널 자리는 journal 복원 자리로 대체). `tasty-model`의 leaf는 `SurfaceDescriptor`다. kind 인스턴스와 Terminal/Pty는 EngineRuntime의 컬렉션으로 이동했다.
   `tasty-core` 추출 때 임시 `tasty-domain`의 원본 모델/명령/사건/codec을 합쳤다. CoreState의 로컬 가변 트리는 crate 내부 projection만 사용하며 root는 확정 batch의 공개·효과 실행을 조율한다.
   도메인 payload codec과 버전 변환은 tasty-core, 저장 봉투 형식과 migration은 EventStore 소유다.
 - TaskService API와 host port가 정리되면 `tasty-task-runtime` 추출 시점을 판단한다.

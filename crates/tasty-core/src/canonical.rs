@@ -33,7 +33,6 @@ pub const DIGEST_EXCLUDED: &[(&str, &str)] = &[
         "mirror workspaces are remote structure, not local",
     ),
     ("JournalModel.applied", "journal position, not structure"),
-    ("EmptySurface.spawn_attempts", "runtime retry counter"),
 ];
 
 /// CoreState와 가져온 journal 모델 사이의 알려진 불일치. 문서의 목록과 같다.

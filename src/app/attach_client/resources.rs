@@ -207,10 +207,7 @@ impl crate::runtime::engine_access::EngineMut<'_> {
                 .surfaces
                 .get(id)
                 .and_then(|surface| surface.as_any().downcast_ref::<EmptySurface>())
-                .and_then(|empty| match &empty.deferred {
-                    Some(crate::model::Deferred::Plugin(value)) => Some(value.clone()),
-                    _ => None,
-                });
+                .and_then(|empty| empty.deferred.clone());
             let Some(deferred) = deferred else {
                 continue;
             };
