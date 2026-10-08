@@ -1,4 +1,4 @@
-<!-- source-hash: 513a3073ad5d -->
+<!-- source-hash: 7abeeb32794c -->
 <a id="task-dag"></a>
 
 # Task workflows (DAG)
@@ -304,6 +304,8 @@ tasty agent task-graph --workspace-id 2 --format dot   # draw it with Graphviz
 ```
 
 `--format dot` writes only the graph to standard output, so you can hand it straight to Graphviz (for example `... --format dot | dot -Tsvg > graph.svg`). A cycle warning and the runner status go to standard error. `dag-get --format dot` works the same way.
+
+`task-list` and `task-get` print lines for people to read. To use them from a script, or to see the input a task received (`input_snapshot`) and its raw result (`typed_result.raw`), add `--json`. The response from Tasty is printed as JSON as it is.
 
 ## Waiting and fixing up
 

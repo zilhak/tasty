@@ -34,6 +34,7 @@ pub(super) fn agent_command_to_method_params(
         TaskList {
             workspace_id,
             state,
+            ..
         } => {
             let mut p = serde_json::json!({ "workspace_id": *workspace_id });
             // 구 호스트와의 단일값 호환을 위해 하나면 문자열, 여러 개면 배열로 보낸다.
@@ -52,7 +53,9 @@ pub(super) fn agent_command_to_method_params(
             }
             ("agent.task_list", p)
         }
-        TaskGet { workspace_id, id } => (
+        TaskGet {
+            workspace_id, id, ..
+        } => (
             "agent.task_get",
             serde_json::json!({ "workspace_id": *workspace_id, "id": id }),
         ),

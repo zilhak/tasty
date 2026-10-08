@@ -958,6 +958,49 @@ mod tests {
     }
 
     #[test]
+    fn json_output_flag_does_not_change_the_task_request() {
+        for (plain, json) in [
+            (
+                &[
+                    "tasty",
+                    "agent",
+                    "task-get",
+                    "--workspace-id",
+                    "1",
+                    "--id",
+                    "a",
+                ][..],
+                &[
+                    "tasty",
+                    "agent",
+                    "task-get",
+                    "--workspace-id",
+                    "1",
+                    "--id",
+                    "a",
+                    "--json",
+                ][..],
+            ),
+            (
+                &["tasty", "agent", "task-list", "--workspace-id", "1"][..],
+                &[
+                    "tasty",
+                    "agent",
+                    "task-list",
+                    "--workspace-id",
+                    "1",
+                    "--json",
+                ][..],
+            ),
+        ] {
+            let plain = command_to_request(&parsed(plain));
+            let json = command_to_request(&parsed(json));
+            assert_eq!(plain.method, json.method);
+            assert_eq!(plain.params, json.params);
+        }
+    }
+
+    #[test]
     fn report_commands_map_to_their_methods() {
         let req = command_to_request(&parsed(&[
             "tasty",

@@ -97,6 +97,9 @@ pub enum AgentCommands {
         /// (`--state waiting,ready,running` = tasks that have not finished yet).
         #[arg(long = "state", value_delimiter = ',')]
         state: Vec<String>,
+        /// Print the IPC response as JSON instead of text.
+        #[arg(long)]
+        json: bool,
     },
     /// Fetch a single task.
     TaskGet {
@@ -106,6 +109,10 @@ pub enum AgentCommands {
         /// Task id.
         #[arg(long)]
         id: String,
+        /// Print the IPC response as JSON instead of text, including
+        /// `typed_result.raw` and `input_snapshot`.
+        #[arg(long)]
+        json: bool,
     },
     /// Wait for a task to reach a terminal state (blocking). Omitted = wait up
     /// to 10 minutes (provisional default). `--timeout-ms 0` = wait indefinitely.

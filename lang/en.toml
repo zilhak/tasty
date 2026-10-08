@@ -5417,6 +5417,9 @@ help = "Workspace id (focus-independent — required)"
 [cli.help._root.agent.task-list.arg.state]
 help = "Filter by state (comma-separated: waiting,ready,running,succeeded,failed,cancelled,skipped,unknown). With several states, every task matching any of them is returned (`--state waiting,ready,running` = tasks that have not finished yet)"
 
+[cli.help._root.agent.task-list.arg.json]
+help = "Print the IPC response as JSON instead of text"
+
 [cli.help._root.agent.task-get]
 about = "Fetch a single task"
 
@@ -5425,6 +5428,9 @@ help = "Workspace id (focus-independent — required)"
 
 [cli.help._root.agent.task-get.arg.id]
 help = "Task id"
+
+[cli.help._root.agent.task-get.arg.json]
+help = "Print the IPC response as JSON instead of text, including `typed_result.raw` and `input_snapshot`"
 
 [cli.help._root.agent.task-await]
 about = "Wait for a task to reach a terminal state (blocking). Omitted = wait up to 10 minutes (provisional default). `--timeout-ms 0` = wait indefinitely"

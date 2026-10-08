@@ -785,7 +785,7 @@ run·custom task 는 본 작업 뒤 CLI 하나를 실행해 그 stdout 을 최�
 
 `agent.task_get` 은 후처리 단계의 Running task 에 `phase`(`postprocessing`, 재시도 대기 중이면 `retry_wait`)를 싣는다. task 가 끝나면 `attempt.postprocess.phase` 는 `finished` 다. 보고로 확정했으면 그 실행 번호, 취소 등으로 먼저 끝났으면 마지막으로 시작한 실행 번호(없으면 0)를 `run` 에 둔다.
 
-CLI `tasty agent task-get` 은 같은 정보를 줄로 보인다. 진행 중에는 `state` 다음 줄에 단계와 실행 번호를, 끝난 뒤에는 마지막 실행의 결과와 재시도로 넘어간 실행의 원인을 보인다.
+CLI `tasty agent task-get` 은 같은 정보를 줄로 보인다(`--json` 을 주면 `agent.task_get` 응답을 그대로 JSON 으로 낸다. `task-list --json` 도 같다). 진행 중에는 `state` 다음 줄에 단계와 실행 번호를, 끝난 뒤에는 마지막 실행의 결과와 재시도로 넘어간 실행의 원인을 보인다.
 
 ```text
 state: running

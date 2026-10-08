@@ -5411,6 +5411,9 @@ help = "워크스페이스 id (포커스 무관 — 필수)"
 [cli.help._root.agent.task-list.arg.state]
 help = "상태로 거른다 (쉼표로 구분: waiting,ready,running,succeeded,failed,cancelled,skipped,unknown). 여러 상태를 주면 그중 아무거나 맞는 task 를 전부 낸다 (`--state waiting,ready,running` = 아직 안 끝난 task)"
 
+[cli.help._root.agent.task-list.arg.json]
+help = "텍스트 대신 IPC 응답을 JSON 으로 출력한다"
+
 [cli.help._root.agent.task-get]
 about = "task 하나를 가져온다"
 
@@ -5419,6 +5422,9 @@ help = "워크스페이스 id (포커스 무관 — 필수)"
 
 [cli.help._root.agent.task-get.arg.id]
 help = "task id"
+
+[cli.help._root.agent.task-get.arg.json]
+help = "텍스트 대신 IPC 응답을 JSON 으로 출력한다. `typed_result.raw` 와 `input_snapshot` 도 들어 있다"
 
 [cli.help._root.agent.task-await]
 about = "task 가 종료 상태에 이를 때까지 기다린다 (블로킹). 생략하면 최대 10 분 기다린다 (잠정 기본값). `--timeout-ms 0` = 무기한 대기"

@@ -304,6 +304,8 @@ tasty agent task-graph --workspace-id 2 --format dot   # Graphviz 로 그리기
 
 `--format dot` 은 Graphviz 에 바로 넘길 수 있는 그래프만 표준 출력에 씁니다(예: `... --format dot | dot -Tsvg > graph.svg`). 순환이 있다는 안내와 러너 상태는 표준 오류에 나옵니다. `dag-get --format dot` 도 같습니다.
 
+`task-list` 와 `task-get` 은 사람이 읽는 줄을 냅니다. 스크립트에서 쓰거나 작업이 받은 입력(`input_snapshot`)과 결과 원본(`typed_result.raw`)까지 보려면 `--json` 을 붙입니다. Tasty 가 돌려준 응답이 그대로 JSON 으로 나옵니다.
+
 <a id="기다리기와-손보기"></a>
 
 ## 작업 기다리기와 관리

@@ -5411,6 +5411,9 @@ help = "ワークスペース id（フォーカス非依存 — 必須）"
 [cli.help._root.agent.task-list.arg.state]
 help = "状態で絞り込む（カンマ区切り: waiting,ready,running,succeeded,failed,cancelled,skipped,unknown）。複数の状態を与えると、そのいずれかに合う task を全て出す（`--state waiting,ready,running` = まだ終わっていない task）"
 
+[cli.help._root.agent.task-list.arg.json]
+help = "テキストの代わりに IPC 応答を JSON で出力する"
+
 [cli.help._root.agent.task-get]
 about = "task を 1 つ取得する"
 
@@ -5419,6 +5422,9 @@ help = "ワークスペース id（フォーカス非依存 — 必須）"
 
 [cli.help._root.agent.task-get.arg.id]
 help = "task id"
+
+[cli.help._root.agent.task-get.arg.json]
+help = "テキストの代わりに IPC 応答を JSON で出力する。`typed_result.raw` と `input_snapshot` も含む"
 
 [cli.help._root.agent.task-await]
 about = "task が終端状態に達するまで待つ（ブロッキング）。省略すると最大 10 分待つ（暫定のデフォルト）。`--timeout-ms 0` = 無期限に待つ"

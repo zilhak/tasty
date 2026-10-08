@@ -15,11 +15,15 @@ pub fn format_output(command: &Commands, result: &serde_json::Value) -> Result<(
     }
 }
 
-/// 작업 목록·상세·runner 상태는 텍스트로, 그래프의 DOT 응답은 DOT 본문으로 표시하고 나머지는 JSON으로 출력한다.
+/// 작업 목록·상세(`--json` 이 없을 때)·runner 상태는 텍스트로, 그래프의 DOT 응답은 DOT 본문으로 표시하고 나머지는 JSON으로 출력한다.
 fn format_agent_output(command: &AgentCommands, result: &serde_json::Value) -> Result<()> {
+    // 목록·상세는 `--json` 이 없을 때만 텍스트다. 나머지 경우는 아래 기본 갈래의 JSON 이다.
+    match task_text(command) {
+        Some(TaskText::List) => return format_task_list(result),
+        Some(TaskText::Get) => return format_task_get(result),
+        None => {}
+    }
     match command {
-        AgentCommands::TaskList { .. } => format_task_list(result),
-        AgentCommands::TaskGet { .. } => format_task_get(result),
         AgentCommands::TaskRun { .. } => format_task_run(result),
         // 성공하면 아무것도 쓰지 않는다. 이 명령을 부르는 후처리·reduce 셸에서는 표준 출력이
         // 작업의 결과다. 오류는 다른 명령처럼 표준 오류로 나간다.
@@ -30,6 +34,22 @@ fn format_agent_output(command: &AgentCommands, result: &serde_json::Value) -> R
             Ok(())
         }
         _ => outln!("{}", serde_json::to_string_pretty(result).unwrap()),
+    }
+}
+
+/// 텍스트로 내는 작업 명령.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TaskText {
+    List,
+    Get,
+}
+
+/// `task-list`·`task-get` 을 텍스트로 낼지. `--json` 이면 `None` 이라 IPC 응답을 그대로 낸다.
+fn task_text(command: &AgentCommands) -> Option<TaskText> {
+    match command {
+        AgentCommands::TaskList { json: false, .. } => Some(TaskText::List),
+        AgentCommands::TaskGet { json: false, .. } => Some(TaskText::Get),
+        _ => None,
     }
 }
 
@@ -856,11 +876,38 @@ fn format_notification_list(result: &serde_json::Value) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{
-        format_runner_summary, format_workspace_row, render_layout, task_agent_line,
+        TaskText, format_runner_summary, format_workspace_row, render_layout, task_agent_line,
         task_holding_warning_lines, task_list_row, task_postprocess_lines, task_route_line,
-        task_skip_line, task_typed_lines, timer_hard_deadline_line, timer_row_line, timer_row_text,
+        task_skip_line, task_text, task_typed_lines, timer_hard_deadline_line, timer_row_line,
+        timer_row_text,
     };
     use serde_json::json;
+
+    #[test]
+    fn task_list_and_task_get_print_text_unless_json_is_asked() {
+        use clap::Parser;
+        let text = |args: &[&str]| {
+            let cli = crate::Cli::try_parse_from(args).unwrap_or_else(|e| panic!("{args:?}: {e}"));
+            let Some(crate::Commands::Agent { command }) = cli.command else {
+                panic!("{args:?}: not an agent command");
+            };
+            task_text(&command)
+        };
+        let get = [
+            "tasty",
+            "agent",
+            "task-get",
+            "--workspace-id",
+            "1",
+            "--id",
+            "a",
+        ];
+        let list = ["tasty", "agent", "task-list", "--workspace-id", "1"];
+        assert_eq!(text(&get), Some(TaskText::Get));
+        assert_eq!(text(&list), Some(TaskText::List));
+        assert_eq!(text(&[&get[..], &["--json"]].concat()), None);
+        assert_eq!(text(&[&list[..], &["--json"]].concat()), None);
+    }
 
     #[test]
     fn a_running_typed_task_row_shows_its_phase() {
