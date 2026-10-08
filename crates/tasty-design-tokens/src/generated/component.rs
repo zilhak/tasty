@@ -385,8 +385,8 @@ pub mod explorer {
     /// `component.explorer-favorites-pin-threshold` → `{primitive.size-600}` = 600px
     pub const FAVORITES_PIN_THRESHOLD: LogicalPx = crate::generated::primitive::SIZE_600;
 
-    /// `component.explorer-min-height` → `{primitive.size-160}` = 160px
-    pub const MIN_HEIGHT: LogicalPx = crate::generated::primitive::SIZE_160;
+    /// `component.explorer-min-height` → `{primitive.size-180}` = 180px
+    pub const MIN_HEIGHT: LogicalPx = crate::generated::primitive::SIZE_180;
 
     /// `component.explorer-sidebar-width` → `{primitive.size-196}` = 196px
     pub const SIDEBAR_WIDTH: LogicalPx = crate::generated::primitive::SIZE_196;
@@ -611,6 +611,42 @@ pub mod kb {
 
     /// `component.kb-ie-slot-min-width` → `{primitive.size-140}` = 140px
     pub const IE_SLOT_MIN_WIDTH: LogicalPx = crate::generated::primitive::SIZE_140;
+
+    /// `component.kb-plugin-caption-gap` → `{semantic.space-xs}` = 4px
+    pub const PLUGIN_CAPTION_GAP: LogicalPx = crate::generated::semantic::SPACE_XS;
+
+    /// `component.kb-plugin-control-gap` → `{semantic.space-sm}` = 8px
+    pub const PLUGIN_CONTROL_GAP: LogicalPx = crate::generated::semantic::SPACE_SM;
+
+    /// `component.kb-plugin-control-height` → `{semantic.control-height}` = 28px
+    pub const PLUGIN_CONTROL_HEIGHT: LogicalPx = crate::generated::semantic::CONTROL_HEIGHT;
+
+    /// `component.kb-plugin-draft-dot-size` → `{component.status-dot-size-compact}` = 6px
+    pub const PLUGIN_DRAFT_DOT_SIZE: LogicalPx = super::status_dot::SIZE_COMPACT;
+
+    /// `component.kb-plugin-list-gap` → `{semantic.space-md}` = 12px
+    pub const PLUGIN_LIST_GAP: LogicalPx = crate::generated::semantic::SPACE_MD;
+
+    /// `component.kb-plugin-mode-width` → `{semantic.field-width-md}` = 160px
+    pub const PLUGIN_MODE_WIDTH: LogicalPx = crate::generated::semantic::FIELD_WIDTH_MD;
+
+    /// `component.kb-plugin-picker-width` → `{semantic.field-width-lg}` = 200px
+    pub const PLUGIN_PICKER_WIDTH: LogicalPx = crate::generated::semantic::FIELD_WIDTH_LG;
+
+    /// `component.kb-plugin-row-min-height` → `{component.settings-row-min-height}` = 32px
+    pub const PLUGIN_ROW_MIN_HEIGHT: LogicalPx = super::settings::ROW_MIN_HEIGHT;
+
+    /// `component.kb-plugin-row-padding-y` → `{semantic.space-xs}` = 4px
+    pub const PLUGIN_ROW_PADDING_Y: LogicalPx = crate::generated::semantic::SPACE_XS;
+
+    /// `component.kb-plugin-slot-width` → `{semantic.field-width-lg}` = 200px
+    pub const PLUGIN_SLOT_WIDTH: LogicalPx = crate::generated::semantic::FIELD_WIDTH_LG;
+
+    /// `component.kb-plugin-title-gap` → `{component.settings-label-gap}` = 16px
+    pub const PLUGIN_TITLE_GAP: LogicalPx = super::settings::LABEL_GAP;
+
+    /// `component.kb-plugin-title-width` → `{component.settings-label-width}` = 150px
+    pub const PLUGIN_TITLE_WIDTH: LogicalPx = super::settings::LABEL_WIDTH;
 }
 
 pub mod kbd {
@@ -692,6 +728,9 @@ pub mod md {
 pub mod menu {
     use tasty_type_geometry::length::LogicalPx;
 
+    /// `component.menu-item-check-size` → `{semantic.icon-size-sm}` = 14px
+    pub const ITEM_CHECK_SIZE: LogicalPx = crate::generated::semantic::ICON_SIZE_SM;
+
     /// `component.menu-item-height` → `{semantic.control-height}` = 28px
     pub const ITEM_HEIGHT: LogicalPx = crate::generated::semantic::CONTROL_HEIGHT;
 
@@ -703,6 +742,9 @@ pub mod menu {
 
     /// `component.menu-item-shortcut-font-size` → `{semantic.font-size-micro}` = 10px
     pub const ITEM_SHORTCUT_FONT_SIZE: LogicalPx = crate::generated::semantic::FONT_SIZE_MICRO;
+
+    /// `component.menu-item-wrap-padding-y` → `{semantic.space-xs}` = 4px
+    pub const ITEM_WRAP_PADDING_Y: LogicalPx = crate::generated::semantic::SPACE_XS;
 
     /// `component.menu-radius` → `{semantic.radius}` = 4px
     pub const RADIUS: LogicalPx = crate::generated::semantic::RADIUS;
@@ -906,6 +948,9 @@ pub mod popup {
 pub mod port {
     use tasty_type_geometry::length::LogicalPx;
 
+    /// `component.port-addr-col-min-width` → `{primitive.size-140}` = 140px
+    pub const ADDR_COL_MIN_WIDTH: LogicalPx = crate::generated::primitive::SIZE_140;
+
     /// `component.port-favorites-max-height` → `{primitive.size-112}` = 112px
     pub const FAVORITES_MAX_HEIGHT: LogicalPx = crate::generated::primitive::SIZE_112;
 
@@ -1010,8 +1055,17 @@ pub mod settings {
     /// `component.settings-content-max-width` → `{primitive.size-620}` = 620px
     pub const CONTENT_MAX_WIDTH: LogicalPx = crate::generated::primitive::SIZE_620;
 
+    /// `component.settings-label-gap` → `{semantic.space-lg}` = 16px
+    pub const LABEL_GAP: LogicalPx = crate::generated::semantic::SPACE_LG;
+
+    /// `component.settings-label-max-width` → `{primitive.size-240}` = 240px
+    pub const LABEL_MAX_WIDTH: LogicalPx = crate::generated::primitive::SIZE_240;
+
     /// `component.settings-label-width` → `{primitive.size-150}` = 150px
     pub const LABEL_WIDTH: LogicalPx = crate::generated::primitive::SIZE_150;
+
+    /// `component.settings-row-caption-gap` → `{semantic.space-xs}` = 4px
+    pub const ROW_CAPTION_GAP: LogicalPx = crate::generated::semantic::SPACE_XS;
 
     /// `component.settings-row-min-height` → `{primitive.size-32}` = 32px
     pub const ROW_MIN_HEIGHT: LogicalPx = crate::generated::primitive::SIZE_32;

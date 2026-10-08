@@ -101,6 +101,7 @@ host UI와 공용 위젯은 semantic 접근자를 사용한다. 원시 팔레트
 |---|---|
 | 비활성 라벨·글리프 | `text_disabled()` |
 | 탭 스트립 스크롤 화살표 | `tab_scroll_arrow_fg()`(스크롤할 수 있음) · `tab_scroll_arrow_fg_disabled()`(끝에 닿음). 이동 대기 대상 탭 칸이 가려진 쪽은 `tab_scroll_arrow_move_fg()`. hover 채움 `tab_scroll_arrow_hover_bg()`는 disabled가 아닌 쪽에만 깐다 |
+| surface-raised(메뉴·드롭다운 목록) 위의 보조 글자 | `text_secondary_raised()`. Mocha는 `text_secondary()`와 같고 Latte는 `text_primary()`와 같다 |
 | 입력 전 안내 | `text_placeholder()` |
 | 약하게 표시하는 chrome 글리프 | `glyph_dim()` |
 | popup 프레임·pane divider·GPU 비활성 보더 | `border_frame()` |
@@ -315,6 +316,8 @@ text-muted 하나만 어둡게 조정하면 다음 문제가 생긴다.
 - surface0 를 통과시키려면 `subtext0` 이 `#555870` 근처여야 하는데 이는 `subtext1` 보다 **어둡다** — 램프 순서가 뒤집힌다.
 
 즉 surface0 위에서 AA 를 넘는 중성 전경은 `text` 하나뿐이고, surface1/surface2 는 `text` 조차 미달이다. 이는 catppuccin latte 의 raised/hover 배경단이 라이트 테마치고 어둡기 때문이며, 고치려면 중성색 팔레트 전체를 다시 설계하고 저장소의 팔레트 사본과 DTCG export를 함께 갱신해야 한다. 컴포넌트별 회피(해당 화면만 `text_secondary`/`text_primary` 로 승격)는 가능하지만 상태바·탭바의 확정 시안을 바꾸는 일이라 디자인 요청 없이 진행하지 않는다.
+
+메뉴 행 글자는 이 규칙을 역할로 반영한다. `menu_item_fg()`는 semantic `text-secondary-raised`를 가리키며, 이 역할은 Mocha에서 neutral-1000(subtext1), Latte에서 neutral-1100(text, surface0 위 5.17:1)이다. Latte에서는 휴지 글자와 hover 글자가 같고 hover는 `menu_item_bg_hover()` 채움으로 구분한다.
 
 **새 UI 를 그릴 때는 이 표를 근거로 배경을 고른다** — muted 캡션을 얹을 배경은 `base`/`mantle`/`#ffffff` 로 한정하고, `surface0` 이상 어두운 배경 위에는 `text_primary` 를 쓴다.
 

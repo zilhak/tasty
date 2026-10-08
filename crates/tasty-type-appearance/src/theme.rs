@@ -1334,6 +1334,18 @@ impl Theme {
         }
     }
 
+    /// surface-raised(메뉴·드롭다운 목록) 위의 보조 글자. 밝은 테마는 neutral-1000이
+    /// surface0 위에서 4.5:1에 못 미쳐 neutral-1100(text)을 사용한다.
+    /// `semantic.text-secondary-raised`의 Latte remap이다.
+    #[inline]
+    pub fn text_secondary_raised(&self) -> HexColor {
+        if self.is_light {
+            self.text
+        } else {
+            self.subtext1
+        }
+    }
+
     // ── disabled 컨트롤 (state-disabled-*) — opacity 없이 중립 상자와 disabled ink ──
 
     /// disabled 컨트롤의 라벨·글리프 ink. `semantic.state-disabled-fg` → text-disabled.
@@ -1420,6 +1432,18 @@ impl Theme {
     #[inline]
     pub fn dag_status_unknown_bg(&self) -> HexColor {
         mix_srgb(self.accent_warning(), 0.10, self.surface_raised())
+    }
+
+    /// `component.dag-status-partially-failed-bg` = accent-attention 12% + surface-raised.
+    #[inline]
+    pub fn dag_status_partially_failed_bg(&self) -> HexColor {
+        mix_srgb(self.accent_attention(), 0.12, self.surface_raised())
+    }
+
+    /// `component.dag-phase-awaiting-bg` = attention-needs-input 12% + surface-raised.
+    #[inline]
+    pub fn dag_phase_awaiting_bg(&self) -> HexColor {
+        mix_srgb(self.attention_needs_input(), 0.12, self.surface_raised())
     }
 
     /// `component.dag-cycle-bg` = accent-warning 14% + bg-panel.
@@ -1932,6 +1956,7 @@ mod tests {
         assert_eq!(th.text_secondary(), th.subtext1);
         assert_eq!(th.text_muted(), th.subtext0);
         assert_eq!(th.text_disabled(), th.overlay1);
+        assert_eq!(th.text_secondary_raised(), th.subtext1);
         assert_eq!(th.text_placeholder(), th.placeholder);
 
         // 상태 표시
@@ -1944,6 +1969,9 @@ mod tests {
         // light(Latte): 비활성 글자는 neutral-800(overlay2)으로 role-remap.
         assert_eq!(light.text_disabled(), light.overlay2);
         assert_ne!(light.text_disabled(), light.overlay1);
+        // light(Latte): surface-raised 위 보조 글자는 neutral-1100(text)으로 role-remap.
+        assert_eq!(light.text_secondary_raised(), light.text);
+        assert_ne!(light.text_secondary_raised(), light.subtext1);
 
         // 보더
         assert_eq!(th.border_default(), th.surface0);

@@ -260,9 +260,17 @@
   --tasty-menu-item-height:        var(--tasty-control-height);
   --tasty-menu-item-padding-x:     var(--tasty-space-md);
   --tasty-menu-item-radius:        var(--tasty-radius-sm);
-  --tasty-menu-item-fg:            var(--tasty-text-secondary);
+  --tasty-menu-item-fg:            var(--tasty-text-secondary-raised); /* 2026-10-08 (batch 8) — was text-secondary: Latte 4.05:1 on surface-raised. The raised-ground role is secondary in Mocha (7.1) and primary in Latte (5.17) */
   --tasty-menu-item-fg-hover:      var(--tasty-text-primary);
   --tasty-menu-item-bg-hover:      var(--tasty-overlay-hover);
+  /* 2026-10-08 (batch 8) — SELECTED option row (Select / dropdown open list: the current value).
+     Selection = ink + trailing check, NO fill. Fills stay reserved for pointer hover (overlay-hover)
+     and keyboard-active (surface-active), so a selected row that is also hovered reads both. */
+  --tasty-menu-item-selected-fg:   var(--tasty-menu-item-fg-hover);  /* → text-primary */
+  --tasty-menu-item-check-fg:      var(--tasty-accent-primary);      /* trailing check glyph */
+  --tasty-menu-item-check-size:    var(--tasty-icon-size-sm);        /* 14 */
+  /* a label that cannot fit even its FIXED copy inside the menu's max width wraps; the row grows */
+  --tasty-menu-item-wrap-padding-y: var(--tasty-space-xs);           /* 4 top/bottom on a wrapped row (min-height stays menu-item-height) */
   --tasty-menu-item-shortcut-font-size: var(--tasty-font-size-micro);
 
   /* AutoComplete — free-text trigger + floating candidate dropdown (typeahead).
@@ -402,7 +410,8 @@
   --tasty-banner-more-menu-min-width: var(--tasty-size-200);        /* short app names still read as a menu, not a chip */
   --tasty-banner-more-menu-max-width: var(--tasty-size-288);        /* long app names truncate instead of growing past the card */
   --tasty-banner-more-app-font:       var(--tasty-font-mono);       /* the interpolated program name is a process name → mono */
-  --tasty-banner-more-app-fg:         var(--tasty-text-primary);    /* the app name is the only emphasised part of a row */
+  --tasty-banner-more-app-fg:         var(--tasty-menu-item-fg);    /* 2026-10-08 (batch 8) — was text-primary. The whole row (fixed copy + app name) takes the menu row ink; the name is set apart by mono only */
+  --tasty-banner-more-app-fg-hover:   var(--tasty-menu-item-fg-hover);
 
   /* StatusDot — EXECUTION state only (running / idle / agent / waiting / error).
      No mirror/remote color here: the sky "remote-linked" slot was removed so the
@@ -619,6 +628,7 @@
   --tasty-port-favorites-max-height: var(--tasty-size-112);            /* 5 rows, then scroll */
   --tasty-port-star-col-width:       var(--tasty-size-28);             /* leading tight column in the table */
   --tasty-port-process-col-min-width: var(--tasty-size-200);           /* Process column — a MINIMUM, not a fixed width: the column grows with the table and never shrinks below this. The gallery specimen pins 200 only because its stage is fixed. */
+  --tasty-port-addr-col-min-width:   var(--tasty-size-140);            /* 2026-10-08 (batch 8) — Address floor AND width: Address stays here; ALL spare width goes to Process */
   --tasty-port-star-on:              var(--tasty-accent-warning);      /* registered — gold, as Explorer favorites */
   --tasty-port-star-off:             var(--tasty-text-muted);          /* unregistered — muted outline */
   --tasty-port-state-none-dot:       var(--tasty-status-dot-idle);     /* NONE badge (favorite not in the scan) */
@@ -648,6 +658,9 @@
   --tasty-settings-sidebar-width:   var(--tasty-size-200); /* L2 left nav */
   --tasty-settings-row-min-height:  var(--tasty-size-32);  /* one settings/toggle row */
   --tasty-settings-label-width:     var(--tasty-size-150); /* Settings Row label column (name the 150 the rows already used; font-override grid shares it) — 2026-10-06 */
+  --tasty-settings-label-max-width: var(--tasty-size-240); /* 2026-10-08 (batch 8) — label column = the subtab's longest label, clamped to [settings-label-width 150, this]; longer labels wrap */
+  --tasty-settings-label-gap:       var(--tasty-space-lg); /* 16 label column → control column */
+  --tasty-settings-row-caption-gap: var(--tasty-space-xs); /* 4 row → its own caption / callout directly under it */
   --tasty-settings-content-max-width: var(--tasty-size-620); /* content column cap — cards, tables and notice blocks all stop here */
   /* Settings › General › Permissions (macOS) — four states, told apart by
      GLYPH + WORD, colour only as a third channel. Unknown and Not observable
@@ -979,6 +992,7 @@
   --tasty-dag-status-cancelled:    var(--tasty-text-disabled);
   --tasty-dag-status-skipped:      var(--tasty-text-disabled);
   --tasty-dag-status-unknown:      var(--tasty-accent-warning);
+  --tasty-dag-status-partially-failed: var(--tasty-accent-attention); /* 2026-10-07 — ROLLUP only: finished, mixed outcome. Peach = between danger red and success green; not failed red */
   /* node fill per state — only the states that must WIN attention get a wash;
      terminal + idle states stay on the plain raised surface. */
   --tasty-dag-status-waiting-bg:   var(--tasty-dag-node-bg);
@@ -989,6 +1003,7 @@
   --tasty-dag-status-cancelled-bg: var(--tasty-dag-node-bg);
   --tasty-dag-status-skipped-bg:   var(--tasty-dag-node-bg);
   --tasty-dag-status-unknown-bg:   color-mix(in srgb, var(--tasty-accent-warning) 10%, var(--tasty-surface-raised));
+  --tasty-dag-status-partially-failed-bg: color-mix(in srgb, var(--tasty-accent-attention) 12%, var(--tasty-surface-raised));
   /* TEXT tone per state. The state colour is the RECEDE channel (3px bar, border,
      glyph on a chip); at 10px uppercase it is not always readable, so the spelled
      label has its own role. waiting borrows text-muted; the two DIMMED states
@@ -1002,6 +1017,13 @@
   --tasty-dag-status-cancelled-label: var(--tasty-text-secondary);
   --tasty-dag-status-skipped-label:   var(--tasty-text-secondary);
   --tasty-dag-status-unknown-label:   var(--tasty-dag-status-unknown);
+  --tasty-dag-status-partially-failed-label: var(--tasty-dag-status-partially-failed);
+  /* 2026-10-07 — running PHASE: awaiting_input is the only phase with its own tone (needs-input yellow,
+     the same signal as the attention channel). postprocessing / retry_wait keep the running tokens. */
+  --tasty-dag-phase-awaiting:       var(--tasty-attention-needs-input);
+  --tasty-dag-phase-awaiting-bg:    color-mix(in srgb, var(--tasty-attention-needs-input) 12%, var(--tasty-surface-raised));
+  --tasty-dag-phase-awaiting-label: var(--tasty-dag-phase-awaiting);
+  --tasty-dag-header-count-fg:      var(--tasty-dag-row-count-fg); /* 2026-10-07 — tab header "6/8 done" = list row counter */
 
   /* Graph geometry — layer depth + sibling gap (4px grid). */
   --tasty-dag-layer-gap:             var(--tasty-size-32);  /* along the flow axis */
@@ -1129,7 +1151,7 @@
   --tasty-image-path-row-gap:          var(--tasty-size-6);        /* path input → browse IconButton */
   --tasty-image-zoom-font-size:        var(--tasty-font-size-caption); /* "100%" — mono 11 */
   --tasty-image-zoom-min-width:        var(--tasty-size-40);
-  --tasty-explorer-min-height:         var(--tasty-size-160);      /* split-drag stops here: toolbar + status line + 2 rows */
+  --tasty-explorer-min-height:         var(--tasty-size-180);      /* split-drag stops here (2026-10-08, was 160): internal tabs 28 + toolbar 44 + Detail header 28 + 2 rows 56 + status line 24 */
   --tasty-explorer-favorites-hide-below: var(--tasty-size-240);    /* body height under which Favorites hides (Files only): fav floor 120 + Files 120 */
   --tasty-explorer-error-fg:           var(--tasty-accent-danger); /* folder read error glyph */
   --tasty-dag-edge-binding:            var(--tasty-accent-data);   /* input binding — data handed downstream */
@@ -1144,4 +1166,25 @@
   --tasty-explorer-state-compact-below: var(--tasty-size-120);     /* content body under this → status screens switch to the one-line compact row */
   --tasty-md-callout-icon-gap:         var(--tasty-space-xs);      /* callout header: marker → type icon → label, 4 each */
   --tasty-md-callout-marker-size:      var(--tasty-icon-size-sm);  /* collapsible callout chevron (replaces the <details> default marker) */
+  /* 2026-10-08 (batch 8) — Settings › Keybindings › Plugins subtab. Rides the settings Row grid
+     (label 150 + gap 16), NOT the 288 Import/Export column: 288 + 16 + 160 + 8 + 200 + 8 + Reset
+     overflows the 620 content cap. One command = ONE control line; every control on it is md 28. */
+  --tasty-kb-plugin-title-width:    var(--tasty-settings-label-width); /* 150 — command title column; titles wrap, never ellipsise */
+  --tasty-kb-plugin-title-gap:      var(--tasty-settings-label-gap);   /* 16 */
+  --tasty-kb-plugin-picker-width:   var(--tasty-field-width-lg);       /* 200 — "Plugin:" Select */
+  --tasty-kb-plugin-mode-width:     var(--tasty-field-width-md);       /* 160 — Inherit / Custom / None */
+  --tasty-kb-plugin-slot-width:     var(--tasty-field-width-lg);       /* 200 — inherit-source Select · key Input · "(Unassigned)" all occupy this one slot */
+  --tasty-kb-plugin-control-gap:    var(--tasty-space-sm);             /* 8 between controls on the line */
+  --tasty-kb-plugin-control-height: var(--tasty-control-height);       /* 28 — Select, Input and Reset alike */
+  --tasty-kb-plugin-row-min-height: var(--tasty-settings-row-min-height); /* 32 control line */
+  --tasty-kb-plugin-row-padding-y:  var(--tasty-space-xs);             /* 4 above + below a command block */
+  --tasty-kb-plugin-caption-gap:    var(--tasty-space-xs);             /* 4 control line → its caption (resolved key / parse error) */
+  --tasty-kb-plugin-separator:      var(--tasty-separator);            /* 1px between command blocks; none after the last */
+  --tasty-kb-plugin-list-gap:       var(--tasty-space-md);             /* 12 picker row → first command */
+  --tasty-kb-plugin-caption-fg:     var(--tasty-text-muted);           /* "Inherited (Ctrl+C)" */
+  --tasty-kb-plugin-none-fg:        var(--tasty-text-muted);           /* "(Unassigned)" */
+  --tasty-kb-plugin-error-fg:       var(--tasty-accent-danger);        /* key parse error caption */
+  --tasty-kb-plugin-draft-dot:      var(--tasty-accent-primary);       /* unsaved draft change on this command */
+  --tasty-kb-plugin-draft-dot-size: var(--tasty-status-dot-size-compact); /* 6 */
 }
+

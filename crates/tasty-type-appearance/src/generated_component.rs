@@ -286,10 +286,16 @@ impl crate::theme::Theme {
         self.spacing_sm
     }
 
-    /// `component.banner-more-app-fg` → `{semantic.text-primary}`
+    /// `component.banner-more-app-fg` → `{component.menu-item-fg}`
     #[inline]
     pub fn banner_more_app_fg(&self) -> HexColor {
-        self.text_primary()
+        self.menu_item_fg()
+    }
+
+    /// `component.banner-more-app-fg-hover` → `{component.menu-item-fg-hover}`
+    #[inline]
+    pub fn banner_more_app_fg_hover(&self) -> HexColor {
+        self.menu_item_fg_hover()
     }
 
     /// `component.banner-more-column-gap` → `{semantic.space-xs}` = 4px
@@ -862,6 +868,12 @@ impl crate::theme::Theme {
         LogicalPx((1.0 * self.ui_zoom).round())
     }
 
+    /// `component.dag-header-count-fg` → `{component.dag-row-count-fg}`
+    #[inline]
+    pub fn dag_header_count_fg(&self) -> HexColor {
+        self.dag_row_count_fg()
+    }
+
     /// `component.dag-layer-gap` → `{primitive.size-32}` = 32px
     #[inline]
     pub fn dag_layer_gap(&self) -> LogicalPx {
@@ -1006,6 +1018,18 @@ impl crate::theme::Theme {
         LogicalPx((168.0 * self.ui_zoom).round())
     }
 
+    /// `component.dag-phase-awaiting` → `{semantic.attention-needs-input}`
+    #[inline]
+    pub fn dag_phase_awaiting(&self) -> HexColor {
+        self.attention_needs_input()
+    }
+
+    /// `component.dag-phase-awaiting-label` → `{component.dag-phase-awaiting}`
+    #[inline]
+    pub fn dag_phase_awaiting_label(&self) -> HexColor {
+        self.dag_phase_awaiting()
+    }
+
     /// `component.dag-popup-height` → `{primitive.size-460}` = 460px
     #[inline]
     pub fn dag_popup_height(&self) -> LogicalPx {
@@ -1136,6 +1160,18 @@ impl crate::theme::Theme {
     #[inline]
     pub fn dag_status_failed_label(&self) -> HexColor {
         self.dag_status_failed()
+    }
+
+    /// `component.dag-status-partially-failed` → `{semantic.accent-attention}`
+    #[inline]
+    pub fn dag_status_partially_failed(&self) -> HexColor {
+        self.accent_attention()
+    }
+
+    /// `component.dag-status-partially-failed-label` → `{component.dag-status-partially-failed}`
+    #[inline]
+    pub fn dag_status_partially_failed_label(&self) -> HexColor {
+        self.dag_status_partially_failed()
     }
 
     /// `component.dag-status-ready` → `{semantic.accent-info}`
@@ -1306,10 +1342,10 @@ impl crate::theme::Theme {
         LogicalPx((600.0 * self.ui_zoom).round())
     }
 
-    /// `component.explorer-min-height` → `{primitive.size-160}` = 160px
+    /// `component.explorer-min-height` → `{primitive.size-180}` = 180px
     #[inline]
     pub fn explorer_min_height(&self) -> LogicalPx {
-        LogicalPx((160.0 * self.ui_zoom).round())
+        LogicalPx((180.0 * self.ui_zoom).round())
     }
 
     /// `component.explorer-sidebar-width` → `{primitive.size-196}` = 196px
@@ -1798,6 +1834,108 @@ impl crate::theme::Theme {
         LogicalPx((140.0 * self.ui_zoom).round())
     }
 
+    /// `component.kb-plugin-caption-fg` → `{semantic.text-muted}`
+    #[inline]
+    pub fn kb_plugin_caption_fg(&self) -> HexColor {
+        self.text_muted()
+    }
+
+    /// `component.kb-plugin-caption-gap` → `{semantic.space-xs}` = 4px
+    #[inline]
+    pub fn kb_plugin_caption_gap(&self) -> LogicalPx {
+        self.spacing_xs
+    }
+
+    /// `component.kb-plugin-control-gap` → `{semantic.space-sm}` = 8px
+    #[inline]
+    pub fn kb_plugin_control_gap(&self) -> LogicalPx {
+        self.spacing_sm
+    }
+
+    /// `component.kb-plugin-control-height` → `{semantic.control-height}` = 28px
+    #[inline]
+    pub fn kb_plugin_control_height(&self) -> LogicalPx {
+        self.item_height_interactive
+    }
+
+    /// `component.kb-plugin-draft-dot` → `{semantic.accent-primary}`
+    #[inline]
+    pub fn kb_plugin_draft_dot(&self) -> HexColor {
+        self.accent_primary()
+    }
+
+    /// `component.kb-plugin-draft-dot-size` → `{component.status-dot-size-compact}` = 6px
+    #[inline]
+    pub fn kb_plugin_draft_dot_size(&self) -> LogicalPx {
+        self.status_dot_size_compact()
+    }
+
+    /// `component.kb-plugin-error-fg` → `{semantic.accent-danger}`
+    #[inline]
+    pub fn kb_plugin_error_fg(&self) -> HexColor {
+        self.accent_danger()
+    }
+
+    /// `component.kb-plugin-list-gap` → `{semantic.space-md}` = 12px
+    #[inline]
+    pub fn kb_plugin_list_gap(&self) -> LogicalPx {
+        self.spacing_md
+    }
+
+    /// `component.kb-plugin-mode-width` → `{semantic.field-width-md}` = 160px
+    #[inline]
+    pub fn kb_plugin_mode_width(&self) -> LogicalPx {
+        self.field_width_md
+    }
+
+    /// `component.kb-plugin-none-fg` → `{semantic.text-muted}`
+    #[inline]
+    pub fn kb_plugin_none_fg(&self) -> HexColor {
+        self.text_muted()
+    }
+
+    /// `component.kb-plugin-picker-width` → `{semantic.field-width-lg}` = 200px
+    #[inline]
+    pub fn kb_plugin_picker_width(&self) -> LogicalPx {
+        self.field_width_lg
+    }
+
+    /// `component.kb-plugin-row-min-height` → `{component.settings-row-min-height}` = 32px
+    #[inline]
+    pub fn kb_plugin_row_min_height(&self) -> LogicalPx {
+        self.settings_row_min_height()
+    }
+
+    /// `component.kb-plugin-row-padding-y` → `{semantic.space-xs}` = 4px
+    #[inline]
+    pub fn kb_plugin_row_padding_y(&self) -> LogicalPx {
+        self.spacing_xs
+    }
+
+    /// `component.kb-plugin-separator` → `{semantic.separator}`
+    #[inline]
+    pub fn kb_plugin_separator(&self) -> PremulColor {
+        self.separator
+    }
+
+    /// `component.kb-plugin-slot-width` → `{semantic.field-width-lg}` = 200px
+    #[inline]
+    pub fn kb_plugin_slot_width(&self) -> LogicalPx {
+        self.field_width_lg
+    }
+
+    /// `component.kb-plugin-title-gap` → `{component.settings-label-gap}` = 16px
+    #[inline]
+    pub fn kb_plugin_title_gap(&self) -> LogicalPx {
+        self.settings_label_gap()
+    }
+
+    /// `component.kb-plugin-title-width` → `{component.settings-label-width}` = 150px
+    #[inline]
+    pub fn kb_plugin_title_width(&self) -> LogicalPx {
+        self.settings_label_width()
+    }
+
     /// `component.kbd-bg` → `{semantic.surface-raised}`
     #[inline]
     pub fn kbd_bg(&self) -> HexColor {
@@ -2080,10 +2218,22 @@ impl crate::theme::Theme {
         self.overlay_hover()
     }
 
-    /// `component.menu-item-fg` → `{semantic.text-secondary}`
+    /// `component.menu-item-check-fg` → `{semantic.accent-primary}`
+    #[inline]
+    pub fn menu_item_check_fg(&self) -> HexColor {
+        self.accent_primary()
+    }
+
+    /// `component.menu-item-check-size` → `{semantic.icon-size-sm}` = 14px
+    #[inline]
+    pub fn menu_item_check_size(&self) -> LogicalPx {
+        self.icon_glyph_size_sm
+    }
+
+    /// `component.menu-item-fg` → `{semantic.text-secondary-raised}`
     #[inline]
     pub fn menu_item_fg(&self) -> HexColor {
-        self.text_secondary()
+        self.text_secondary_raised()
     }
 
     /// `component.menu-item-fg-hover` → `{semantic.text-primary}`
@@ -2110,10 +2260,22 @@ impl crate::theme::Theme {
         self.corner_radius_sm
     }
 
+    /// `component.menu-item-selected-fg` → `{component.menu-item-fg-hover}`
+    #[inline]
+    pub fn menu_item_selected_fg(&self) -> HexColor {
+        self.menu_item_fg_hover()
+    }
+
     /// `component.menu-item-shortcut-font-size` → `{semantic.font-size-micro}` = 10px
     #[inline]
     pub fn menu_item_shortcut_font_size(&self) -> LogicalPx {
         self.font_size_micro
+    }
+
+    /// `component.menu-item-wrap-padding-y` → `{semantic.space-xs}` = 4px
+    #[inline]
+    pub fn menu_item_wrap_padding_y(&self) -> LogicalPx {
+        self.spacing_xs
     }
 
     /// `component.menu-radius` → `{semantic.radius}` = 4px
@@ -2554,6 +2716,12 @@ impl crate::theme::Theme {
         self.spacing_xs
     }
 
+    /// `component.port-addr-col-min-width` → `{primitive.size-140}` = 140px
+    #[inline]
+    pub fn port_addr_col_min_width(&self) -> LogicalPx {
+        LogicalPx((140.0 * self.ui_zoom).round())
+    }
+
     /// `component.port-favorites-bg` → `{semantic.bg-sidebar}`
     #[inline]
     pub fn port_favorites_bg(&self) -> HexColor {
@@ -2812,10 +2980,28 @@ impl crate::theme::Theme {
         LogicalPx((620.0 * self.ui_zoom).round())
     }
 
+    /// `component.settings-label-gap` → `{semantic.space-lg}` = 16px
+    #[inline]
+    pub fn settings_label_gap(&self) -> LogicalPx {
+        self.spacing_lg
+    }
+
+    /// `component.settings-label-max-width` → `{primitive.size-240}` = 240px
+    #[inline]
+    pub fn settings_label_max_width(&self) -> LogicalPx {
+        LogicalPx((240.0 * self.ui_zoom).round())
+    }
+
     /// `component.settings-label-width` → `{primitive.size-150}` = 150px
     #[inline]
     pub fn settings_label_width(&self) -> LogicalPx {
         LogicalPx((150.0 * self.ui_zoom).round())
+    }
+
+    /// `component.settings-row-caption-gap` → `{semantic.space-xs}` = 4px
+    #[inline]
+    pub fn settings_row_caption_gap(&self) -> LogicalPx {
+        self.spacing_xs
     }
 
     /// `component.settings-row-min-height` → `{primitive.size-32}` = 32px

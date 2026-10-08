@@ -37,6 +37,9 @@
      Same ramp step as placeholder, a DIFFERENT role: placeholder is unentered
      user text, this is chrome. Disabled controls take text-disabled, not this. */
   --tasty-glyph-dim:        var(--tasty-color-neutral-600);
+  /* secondary ink on a RAISED ground (surface-raised: menus, dropdown lists). 2026-10-08 (batch 8):
+     Mocha = text-secondary (7.1:1); Latte → neutral-1100 because n1000 on surface0 is 4.05:1. */
+  --tasty-text-secondary-raised: var(--tasty-color-neutral-1000);
   --tasty-text-on-accent:   var(--tasty-color-neutral-0); /* dark text atop a filled accent (Latte → white) */
   --tasty-text-on-window-close: var(--tasty-color-white); /* glyph atop the (dark) Windows close-hover fill — white in both themes */
 
@@ -343,6 +346,11 @@
      Still strictly below text-muted (n900) → the enabled > disabled order holds.
      No contrast TARGET for disabled (WCAG 1.4.3 / 1.4.11 exempt it). */
   --tasty-text-disabled: var(--tasty-color-neutral-800);
+
+  /* secondary-on-raised — Latte n1000 on surface0 = 4.05:1 (< 4.5). n1100 = 5.17:1. The theme rule
+     "on surface0 or darker, text-primary" applied as a role remap; rest = hover ink in Latte, hover
+     still reads by the overlay-hover fill. */
+  --tasty-text-secondary-raised: var(--tasty-color-neutral-1100);
 
   --tasty-overlay-hover:  var(--tasty-alpha-black-8);
   --tasty-overlay-active: var(--tasty-alpha-black-12);
