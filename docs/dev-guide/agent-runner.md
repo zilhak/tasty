@@ -720,7 +720,13 @@ v2 task 의 fallback 이 이미 실행됐으면(Ready·Running·Succeeded) 그 t
 - 이미 끝난 회차에 같은 내용(결과·종결 종류)의 보고가 다시 오면 같은 레코드를 `duplicate: true` 로 돌려주고 하류 반영만 다시 시도한다. 다른 내용이면 거절한다(`different_report`). 회차를 끝낸 보고의 지문(결과와 종결 종류의 FNV-1a 64 해시)은 `attempt.completion.digest` 에 남는다. 보고 없이 끝난 task(취소·건너뜀)에 온 보고는 `already_terminal` 로 거절한다.
 - 거절은 IPC 에서 `-32018` 이고 `error.data` 에 `reason`·`attempt_id`(보고한 회차)·`current_attempt_id` 를 싣는다.
 - 러너는 기록하지 못한 보고를 보관하고 다음 tick 에 같은 보고를 다시 낸다. 그동안 그 task 를 다시 poll 하지 않고 handle 과 permit(세마포어·lease)을 유지한다. 거절된 보고는 다시 내지 않는다.
-- 레코드가 memory 값 상한을 넘어 기록하지 못한 보고(`ValueTooLarge`)는 다시 내도 같은 크기라 보관하지 않는다. 출력을 싣거나 사유가 4 KiB(`SHRUNK_ERROR_LIMIT`)를 넘는 보고면 출력을 뺀 같은 회차의 실패(`<원래 사유의 첫 줄> (the full result could not be stored: <이유>)`, 종료 코드는 유지)로 바꿔 한 번 기록한다. 바꾼 사유는 4 KiB 안이다. 첫 줄이 길면 UTF-8 문자 경계에서 자르고 `...(truncated)` 를 붙인다. 그래서 바꾼 보고는 다시 바꿀 대상이 아니고, 그것마저 기록하지 못하면 다른 저장 오류처럼 보관해 다음 tick 에 다시 낸다. 재시작 복구의 보고도 같다. 후처리 실행 보고는 회차 진행과 맞도록 같은 실행 번호·종료 코드의 `result_too_large` 실패(`postprocess result_too_large: the postprocess result could not be stored: <이유>`, stdout·stderr 는 버린다)로 바꾼다. 재시도가 남아도 다시 실행하지 않고 이 보고로 회차를 확정하며, 확정할 때 레코드의 본 작업 결과 사본(회차 진행의 `execution` 과 `raw.execution`)을 비운다. 이미 바꾼 보고는 다시 바꾸지 않는다. 사유가 없는 성공 보고는 `the result could not be stored: <이유>` 가 된다. 계약 없는(v1) custom 은 응답이 곧 출력이라 자르지 않고 레코드에 한 벌 두므로, 직렬화가 약 1 MiB(레코드의 나머지 필드 몫을 뺀 크기)를 넘는 응답은 이 경로로 출력 없는 실패가 된다.
+- 레코드가 memory 값 상한을 넘어 기록하지 못한 보고(`ValueTooLarge`)는 다시 내도 같은 크기라 보관하지 않는다. 출력을 싣거나 사유가 4 KiB(`SHRUNK_ERROR_LIMIT`)를 넘는 보고면 출력을 뺀 같은 회차의 실패(`<원래 사유의 첫 줄> (the full result could not be stored: <이유>)`, 종료 코드는 유지)로 바꿔 한 번 기록한다. 바꾼 사유는 4 KiB 안이다. 첫 줄이 길면 UTF-8 문자 경계에서 자르고 `...(truncated)` 를 붙인다. 그래서 바꾼 보고는 다시 바꿀 대상이 아니고, 그것마저 기록하지 못하면 다른 저장 오류처럼 보관해 다음 tick 에 다시 낸다. 재시작 복구의 보고도 같다. 후처리 실행 보고는 회차 진행과 맞도록 같은 실행 번호·종료 코드를 유지한 채 두 단계로 줄인다. 성공 보고는 먼저 진단용 본 작업 결과 사본(회차 진행의 `execution`, 그로 만드는 `raw.execution`·`raw.execution_truncated`)만 비운 성공으로 다시 기록한다. 그래도 넘치거나 실패 보고면 `result_too_large` 실패(`postprocess result_too_large: the postprocess result could not be stored: <이유>`, stdout·stderr 는 버리고 같은 사본도 비운다)로 바꾼다. 이 실패는 재시도가 남아도 다시 실행하지 않고 그 보고로 회차를 확정한다. 이미 바꾼 실패는 다시 바꾸지 않으므로 재기록은 많아야 두 번이다. 사유가 없는 성공 보고는 `the result could not be stored: <이유>` 가 된다. 계약 없는(v1) custom 은 응답이 곧 출력이라 자르지 않고 레코드에 한 벌 두므로, 직렬화가 약 1 MiB(레코드의 나머지 필드 몫을 뺀 크기)를 넘는 응답은 이 경로로 출력 없는 실패가 된다.
+
+| 후처리 보고 | 처음 기록이 넘치면 | 그래도 넘치면 |
+|---|---|---|
+| 성공(`Collected`) | 본 작업 사본만 비운 성공. 정의 760 KiB·본 작업 custom 응답 240 KiB·출력 `"ok"` 는 1,107,029 B 로 넘쳤다가 795,606 B 의 Succeeded 로 기록됐다(시험 `a_collected_report_drops_the_main_result_copy_and_still_succeeds`) | `result_too_large` 실패. 정의 300 KiB·stdout 250 KiB(pointer 사용)는 1,113,107 B → 1,092,601 B → 308,563 B 의 Failed 였다 |
+| 실패 | `result_too_large` 실패 | — |
+
 - 저장소가 계속 실패하면 permit 을 쥐는 시간에 상한이 없다. 재시도 횟수나 시간으로 포기하지 않는다. 포기하면 결과가 기록되지 않은 채 Running 인 task 의 permit 을 풀어 같은 자원을 다른 task 에 넘기게 되기 때문이다. 묶이는 permit 은 보고가 보류된 task 마다 하나다. 줄인 보고마저 기록하지 못하는 경우(레코드의 다른 필드가 커서 출력을 빼도 memory 값 상한을 넘는 경우)도 같다. 그 보고를 보관해 다시 내는 동안 task 는 Running 이고 permit 을 쥔다. 새로 만드는 task 는 아래 §task 레코드 크기의 상한이 이 경우를 실행 전에 막는다. 남는 경우는 상한이 생기기 전에 저장돼 이미 Running 인 task, 결과 몫을 남기지 못할 만큼 memory 값 상한이 작은 경우(아래 표)다. 풀리는 시점은 셋이다.
   1. 저장이 회복돼 같은 보고가 기록되거나 거절될 때.
   2. 러너를 멈춘 뒤 다음 러너 시작·부팅의 정리가 Running task 를 마무리할 때. 보류됐던 보고는 메모리에만 있어 사라진다. Run 은 저장된 실행 결과로 확정하거나(없으면 `unknown`) 그때 점유를 반환한다. 그 밖의 task 는 `purge_stale_semaphore_holders`·`purge_stale_lease_holders` 가 점유를 회수하고 Failed 로 끝낸다.
@@ -826,7 +832,7 @@ stdout 해석과 성공 판정:
 | `stdin_mapping` | stdin 출처의 위치에 값이 없음 | 아니요 |
 | `cancelled` | task 취소 또는 러너 정지로 중단 | 아니요 |
 | `outcome_unknown` | 시작했지만 결과를 받기 전에 호스트가 재시작함 | 아니요 |
-| `result_too_large` | 실행 보고를 실은 레코드가 memory 값 상한을 넘어 기록하지 못함 | 아니요 |
+| `result_too_large` | 실행 보고를 실은 레코드가 memory 값 상한을 넘어 기록하지 못함(성공 보고는 본 작업 사본을 비워도 넘칠 때) | 아니요 |
 
 출력 후보가 출력 타입에 맞지 않으면 `output_validation` 실패이고 재시도하지 않는다.
 
@@ -840,7 +846,7 @@ stdout 해석과 성공 판정:
 
 결과:
 
-- `raw.exit_code`·`raw.execution` 은 본 작업 원본 그대로다(custom 응답의 raw 상한은 위 §결과 확정과 같다). `raw.postprocess` 에 `command`, 회차 안의 실행 번호 `run`, `exit_code`, `stderr`(tail)·`stderr_truncated`, 실패면 `cause`, pointer 를 썼으면 stdout 전체(`stdout`), 재시도로 넘어간 앞선 실행(`failed_runs`: 번호·원인·종료 코드·메시지)이 있다.
+- `raw.exit_code`·`raw.execution` 은 본 작업 원본 그대로다(custom 응답의 raw 상한은 위 §결과 확정과 같다). 예외로, 레코드가 넘쳐 줄인 보고(본 작업 사본을 비운 성공, `result_too_large` 실패)면 `raw.execution`·`raw.execution_truncated` 가 비어 있다. `raw.postprocess` 에 `command`, 회차 안의 실행 번호 `run`, `exit_code`, `stderr`(tail)·`stderr_truncated`, 실패면 `cause`, pointer 를 썼으면 stdout 전체(`stdout`), 재시도로 넘어간 앞선 실행(`failed_runs`: 번호·원인·종료 코드·메시지)이 있다.
 - `provenance.output_source` 는 `postprocess.stdout.json` 또는 `postprocess.stdout.text` 다. 모델 이름 같은 메타데이터는 CLI 가 stdout 에 담았을 때만 남는다.
 
 프로세스 소유와 재시작:

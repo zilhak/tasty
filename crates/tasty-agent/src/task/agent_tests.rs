@@ -85,6 +85,7 @@ fn done(output: Value) -> Completion {
         },
         outcome: CompletionOutcome::Succeeded,
         postprocess: None,
+        main_copy_dropped: false,
     }
 }
 
@@ -98,6 +99,7 @@ fn failed(error: String) -> Completion {
         },
         outcome: CompletionOutcome::Failed { error },
         postprocess: None,
+        main_copy_dropped: false,
     }
 }
 

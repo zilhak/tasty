@@ -198,9 +198,9 @@ pub fn completion_retryable(e: &AgentError) -> bool {
 /// 보고는 바꾸지 않는다. 바꾼 보고는 출력이 없고 사유가 [`SHRUNK_ERROR_LIMIT`] 안이라 다시
 /// 바꾸지 않으므로, 기록을 다시 시도하는 호출자의 재귀는 한 번에 끝난다.
 ///
-/// 후처리 실행 보고는 회차 진행과 맞아야 하므로 같은 실행의 `result_too_large` 실패로 바꾼다
-/// ([`Completion::postprocess_too_large_to_store`]). 저장소는 이 보고로 회차를 확정하며 레코드의
-/// 큰 몫(본 작업 결과 사본)을 비운다.
+/// 후처리 실행 보고는 회차 진행과 맞아야 하므로 같은 실행의 보고로 줄인다
+/// ([`Completion::postprocess_too_large_to_store`]). 성공 보고는 먼저 본 작업 결과 사본만 비운
+/// 성공으로, 그래도 넘치면 `result_too_large` 실패로 바꾼다. 재귀는 많아야 두 번이다.
 pub fn shrink_too_large_completion(e: &AgentError, completion: &Completion) -> Option<Completion> {
     let too_large = matches!(
         e,

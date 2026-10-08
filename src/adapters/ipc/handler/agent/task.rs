@@ -950,6 +950,7 @@ pub fn handle_task_set_result(
         outcome,
         // 외부 보고는 본 작업의 결과다. 후처리가 있으면 이 보고 뒤에 후처리가 실행된다.
         postprocess: None,
+        main_copy_dropped: false,
     };
 
     mark_durability(

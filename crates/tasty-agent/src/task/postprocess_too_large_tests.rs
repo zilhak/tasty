@@ -71,18 +71,35 @@ fn collected(stdout: Value) -> PostprocessReport {
     }
 }
 
-/// 기록을 시도하고, 너무 크면 러너처럼 줄여 다시 기록한다. 줄인 보고를 돌려준다.
-fn record_shrinking(store: &mut TaskStore, completion: Completion) -> Completion {
+/// 기록을 시도하고, 너무 크면 러너처럼 줄여 다시 기록한다. 기록하지 못해 줄인 보고들을 차례로
+/// 돌려준다(마지막이 기록된 보고).
+fn record_shrinking(store: &mut TaskStore, completion: Completion) -> Vec<Completion> {
     let id = "judge".to_string();
-    let e = store
-        .complete(1, &id, completion.clone(), 20)
-        .expect_err("the report is too large to record");
-    assert!(completion_retryable(&e), "{e}");
-    let shrunk = shrink_too_large_completion(&e, &completion).expect("shrinkable");
-    store
-        .complete(1, &id, shrunk.clone(), 21)
-        .expect("the shrunk report is recorded");
-    shrunk
+    let mut shrunk = Vec::new();
+    let mut current = completion;
+    loop {
+        match store.complete(1, &id, current.clone(), 20) {
+            Ok(_) => return shrunk,
+            Err(e) => {
+                assert!(completion_retryable(&e), "{e}");
+                current = shrink_too_large_completion(&e, &current).expect("shrinkable");
+                shrunk.push(current.clone());
+            }
+        }
+    }
+}
+
+/// 진단용 본 작업 결과 사본(회차 진행·`raw.execution`·`raw.execution_truncated`)이 비었다.
+fn assert_main_copy_dropped(task: &Task) {
+    let raw = &task.typed_result.as_ref().expect("typed result").raw;
+    assert_eq!(raw.execution, None);
+    assert_eq!(raw.execution_truncated, None);
+    let progress = task
+        .attempt
+        .as_ref()
+        .and_then(|a| a.postprocess.as_ref())
+        .expect("progress");
+    assert_eq!(progress.execution.output, None);
 }
 
 fn assert_failed_as_too_large(task: &Task) {
@@ -109,28 +126,34 @@ fn assert_failed_as_too_large(task: &Task) {
     assert!(record_bytes(task) < tasty_memory::MAX_VALUE_BYTES);
 }
 
-/// 출력이 레코드에 세 번 들어가 기록하지 못하는 성공 보고.
+/// 출력이 레코드에 세 번 들어가 본 작업 사본을 비워도 기록하지 못하는 성공 보고는 두 단계를
+/// 거쳐 `result_too_large` 실패가 된다.
 #[test]
-fn a_collected_report_too_large_to_record_settles_as_result_too_large() {
+fn a_collected_report_too_large_even_without_the_main_copy_settles_as_result_too_large() {
     let td = tempfile::tempdir().expect("tempdir");
     let mut mem = MemoryStore::open(&td.path().join("mem.db")).expect("mem");
     let seq = AtomicU64::new(0);
     let mut store = TaskStore::new(&mut mem, "_host", &seq);
-    submit(&mut store, 0);
-    let attempt = into_postprocess(&mut store, 250 * KIB);
+    submit(&mut store, 300 * KIB);
+    let attempt = into_postprocess(&mut store, 10 * KIB);
     let report = collected(json!({"v": "o".repeat(250 * KIB)}));
     let shrunk = record_shrinking(&mut store, Completion::postprocessed(Some(attempt), report));
-    assert_failed_as_too_large(&judge(&store));
-    // 줄인 보고는 다시 줄이지 않는다(호출자의 재기록 재귀가 한 번에 끝난다).
+    assert_eq!(shrunk.len(), 2);
+    assert!(shrunk[0].main_copy_dropped);
+    assert_eq!(shrunk[0].postprocess.as_ref().unwrap().cause(), None);
+    let task = judge(&store);
+    assert_failed_as_too_large(&task);
+    assert_main_copy_dropped(&task);
+    // 줄인 실패는 다시 줄이지 않는다(호출자의 재기록 재귀가 끝난다).
     let e =
         crate::AgentError::Memory(tasty_memory::MemoryError::ValueTooLarge { actual: 1, max: 0 });
-    assert!(shrink_too_large_completion(&e, &shrunk).is_none());
+    assert!(shrink_too_large_completion(&e, &shrunk[1]).is_none());
 }
 
-/// 정의가 상한 가까이 크면 본 작업 결과 사본 둘(회차 진행과 raw)만으로 넘친다. 짧은 실패도
-/// 본 작업 결과 사본을 비워야 들어간다.
+/// 정의가 상한 가까이 크면 본 작업 결과 사본(회차 진행 240 KiB 와 raw 의 64 KiB 머리)만으로
+/// 넘친다. 성공 보고는 그 사본만 비운 성공으로 기록된다.
 #[test]
-fn the_shrunk_report_drops_the_main_result_copy_to_fit_beside_a_large_definition() {
+fn a_collected_report_drops_the_main_result_copy_and_still_succeeds() {
     let td = tempfile::tempdir().expect("tempdir");
     let mut mem = MemoryStore::open(&td.path().join("mem.db")).expect("mem");
     let seq = AtomicU64::new(0);
@@ -138,17 +161,25 @@ fn the_shrunk_report_drops_the_main_result_copy_to_fit_beside_a_large_definition
     submit(&mut store, 760 * KIB);
     let attempt = into_postprocess(&mut store, 240 * KIB);
     let report = collected(json!({"v": "ok"}));
-    record_shrinking(&mut store, Completion::postprocessed(Some(attempt), report));
+    let shrunk = record_shrinking(&mut store, Completion::postprocessed(Some(attempt), report));
+    assert_eq!(shrunk.len(), 1);
     let task = judge(&store);
-    assert_failed_as_too_large(&task);
+    assert!(
+        matches!(task.state, TaskState::Succeeded),
+        "{:?}",
+        task.state
+    );
     let typed = task.typed_result.as_ref().expect("typed result");
-    assert_eq!(typed.raw.execution, None);
-    let progress = task
-        .attempt
-        .as_ref()
-        .and_then(|a| a.postprocess.as_ref())
-        .expect("progress");
-    assert_eq!(progress.execution.output, None);
+    assert!(typed.has_output && typed.error.is_none());
+    assert_eq!(
+        task.result.as_ref().and_then(|r| r.output.clone()),
+        Some(json!("ok"))
+    );
+    let pp = typed.raw.postprocess.as_ref().expect("raw postprocess");
+    assert_eq!(pp.cause, None);
+    assert_eq!(pp.stderr.as_deref().map(str::len), Some(16 * KIB));
+    assert_main_copy_dropped(&task);
+    assert!(record_bytes(&task) < tasty_memory::MAX_VALUE_BYTES);
 }
 
 /// 재시도가 남은 실패 보고도 기록하지 못하면 재시도 없이 회차를 확정한다.

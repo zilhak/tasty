@@ -94,6 +94,9 @@ pub struct Completion {
     pub outcome: CompletionOutcome,
     /// 후처리 실행 보고. 있으면 본 작업이 아니라 후처리의 완료다.
     pub postprocess: Option<PostprocessReport>,
+    /// 레코드에 넣으려고 회차 진행의 본 작업 결과 사본(후처리 입력으로 보관한 것과 그로 만드는
+    /// `raw.execution`·`raw.execution_truncated`)을 비우고 확정하라는 표시. 후처리 보고에만 쓴다.
+    pub main_copy_dropped: bool,
 }
 
 /// [`Completion::too_large_to_store`] 가 남기는 사유의 바이트 상한. 이보다 긴 사유를 실은 보고는
@@ -127,6 +130,7 @@ impl Completion {
             result,
             outcome: CompletionOutcome::Succeeded,
             postprocess: None,
+            main_copy_dropped: false,
         }
     }
 
@@ -141,6 +145,7 @@ impl Completion {
             },
             outcome: CompletionOutcome::Failed { error },
             postprocess: None,
+            main_copy_dropped: false,
         }
     }
 
@@ -152,6 +157,7 @@ impl Completion {
             result,
             outcome: CompletionOutcome::Failed { error },
             postprocess: None,
+            main_copy_dropped: false,
         }
     }
 
@@ -178,22 +184,35 @@ impl Completion {
             },
             outcome: CompletionOutcome::Failed { error },
             postprocess: None,
+            main_copy_dropped: false,
         }
     }
 
-    /// 기록할 수 없을 만큼 큰 후처리 실행 보고를 대신하는 같은 실행의 실패 보고. stdout·stderr 를
-    /// 버리고 원인을 [`PostprocessCause::ResultTooLarge`] 로 둔다. 회차 진행과 맞도록 실행 번호와
-    /// 종료 코드는 유지한다. 이미 바꾼 보고면 `None` 이다(다시 바꿔도 줄지 않는다).
+    /// 기록할 수 없을 만큼 큰 후처리 실행 보고를 대신하는 보고. 두 단계로 줄인다.
+    ///
+    /// 1. 성공(`Collected`) 보고면 먼저 같은 보고에 [`Completion::main_copy_dropped`] 를 세운다.
+    ///    진단용 본 작업 결과 사본만 비우고 성공으로 확정한다.
+    /// 2. 그래도 넘치거나 실패 보고면 같은 실행의 실패로 바꾼다. stdout·stderr 를 버리고 원인을
+    ///    [`PostprocessCause::ResultTooLarge`] 로 둔다(이때도 사본을 비운다).
+    ///
+    /// 회차 진행과 맞도록 실행 번호와 종료 코드는 유지한다. 이미 2 단계인 보고면 `None` 이다(다시
+    /// 바꿔도 줄지 않는다).
     pub fn postprocess_too_large_to_store(&self, why: &str) -> Option<Self> {
         let report = self.postprocess.as_ref()?;
         if report.cause() == Some(PostprocessCause::ResultTooLarge) {
             return None;
         }
+        if report.cause().is_none() && !self.main_copy_dropped {
+            return Some(Self {
+                main_copy_dropped: true,
+                ..self.clone()
+            });
+        }
         let message = head_within(
             &format!("the postprocess result could not be stored: {why}"),
             SHRUNK_ERROR_LIMIT,
         );
-        Some(Self::postprocessed(
+        let failed = Self::postprocessed(
             self.attempt_id.clone(),
             PostprocessReport {
                 run: report.run,
@@ -205,7 +224,11 @@ impl Completion {
                     message,
                 },
             },
-        ))
+        );
+        Some(Self {
+            main_copy_dropped: true,
+            ..failed
+        })
     }
 
     /// 결과를 회수할 수 없다는 보고. 결과의 `error` 에도 같은 사유를 싣는다.
@@ -219,6 +242,7 @@ impl Completion {
             },
             outcome: CompletionOutcome::Lost { reason },
             postprocess: None,
+            main_copy_dropped: false,
         }
     }
 
@@ -245,6 +269,7 @@ impl Completion {
             },
             outcome,
             postprocess: Some(report),
+            main_copy_dropped: false,
         }
     }
 
