@@ -86,6 +86,12 @@ struct Request {
 }
 #[derive(Default)]
 pub(crate) struct Requests(VecDeque<Request>);
+#[cfg(test)]
+impl Requests {
+    pub(crate) fn len(&self) -> usize {
+        self.0.len()
+    }
+}
 
 impl crate::state::MainViewState {
     /// This entry is only used by native user menus/shortcuts and the user rename popup.

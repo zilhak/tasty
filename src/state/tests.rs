@@ -516,7 +516,7 @@ fn resolve_inherit_cwd_from_unknown_surface_is_none() {
 }
 
 /// Static descriptors and a runtime Explorer value; no factory or filesystem request.
-fn explorer_fixture(
+pub(crate) fn explorer_fixture(
     mirror: bool,
 ) -> (
     RequestContext,

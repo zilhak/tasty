@@ -1432,6 +1432,8 @@ impl MainView {
         // mirror 경로를 로컬 파일 작업에 사용하지 않도록 쓰기 메뉴를 숨긴다(ADR-0022).
         // 다른 호출 경로도 있으므로 각 핸들러의 검사도 유지한다.
         let is_mirror = engine.is_mirror_surface(surface_id);
+        // 메뉴를 연 surface 세대를 고정한다. 그 사이 닫히거나 바뀐 surface에는 결과를 적용하지 않는다.
+        let binding = crate::runtime::surface_binding::SurfaceBinding::capture(engine, surface_id);
 
         let items = Self::build_explorer_context_menu(
             multi,
@@ -1441,8 +1443,13 @@ impl MainView {
             is_mirror,
         );
         self.open_native_menu(engine, x, y, &items, move |this, engine, result| {
-            // 메뉴가 열려 있는 동안 explorer surface 가 닫혔을 수 있다.
-            if !engine.has_surface(surface_id) {
+            // 경로 복사·복사·루트 설정은 파일시스템을 바꾸지 않아 같은 explorer 인지만 본다.
+            let read_only = matches!(result, Some(1 | 10 | 61));
+            if !crate::state::explorer_menu::explorer_menu_admits(
+                binding.as_ref(),
+                engine,
+                read_only,
+            ) {
                 return;
             }
             match result {
@@ -1469,7 +1476,11 @@ impl MainView {
                 ),
                 Some(30) => this.explorer_menu_trash(engine, surface_id, &paths),
                 Some(20) => this.explorer_menu_open_in_system(engine, surface_id, &paths, &cwd),
-                Some(40) => this.explorer_menu_rename(engine, surface_id, &paths),
+                Some(40) => {
+                    if let Some(binding) = binding {
+                        this.explorer_menu_rename(engine, surface_id, &paths, binding)
+                    }
+                }
                 Some(50) => this.explorer_menu_add_favorite(
                     engine,
                     surface_id,
@@ -1660,39 +1671,13 @@ impl MainView {
         is_folder: bool,
         origin: crate::intent::IntentOrigin,
     ) {
-        // (ADR-0022) mirror explorer 는 파일 변경을 지원하지 않는다 — 표시된 경로는 원격
-        // 호스트의 경로라 로컬 fs 붙여넣기를 그대로 실행하면 로컬을 원격 경로
-        // 문자열로 오조작(우연히 동일 경로 존재)하거나 조용히 실패한다.
-        if engine.is_mirror_surface(surface_id) {
-            self.toast_remote_write_unsupported();
-            return;
-        }
+        // mirror surface 와 원격 클립보드 거부는 `explorer_paste` 가 맡는다.
         let dest = if is_folder {
             paths.first().cloned().unwrap_or_else(|| cwd.to_path_buf())
         } else {
             cwd.to_path_buf()
         };
-        if let Some(clip) = self.state.explorer_clipboard.clone() {
-            // 원격 경로를 같은 문자열의 로컬 파일로 복사하지 않는다.
-            if !clip.is_local() {
-                self.state.toasts.push(
-                    crate::i18n::t("explorer.state.remote_paste_unsupported").to_string(),
-                    crate::adapters::ui::ToastKind::Info,
-                    crate::adapters::ui::ToastScope::Window,
-                );
-                return;
-            }
-            self.state.request_explorer_file(
-                engine,
-                surface_id,
-                crate::app::explorer_files::Operation::Paste {
-                    paths: clip.paths,
-                    destination: dest,
-                    cut: clip.cut,
-                },
-                origin,
-            );
-        }
+        self.state.explorer_paste(engine, surface_id, dest, origin);
     }
 
     /// 휴지통으로 이동 (아이템 30, 가역적이라 별도 확인 모달 없음).
@@ -1747,6 +1732,7 @@ impl MainView {
         engine: &crate::runtime::engine_read::EngineRead<'_>,
         surface_id: u32,
         paths: &[std::path::PathBuf],
+        binding: crate::runtime::surface_binding::SurfaceBinding,
     ) {
         // (ADR-0022) mirror explorer 는 파일 변경을 지원하지 않는다 — 이 가드가 먼저 막아서
         // rename 팝업(`draw_rename_popup`) 자체가 열리지 않는다(팝업의
@@ -1760,7 +1746,11 @@ impl MainView {
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_default();
-            let target = crate::state::RenameTarget::ExplorerEntry { surface_id, path };
+            let target = crate::state::RenameTarget::ExplorerEntry {
+                surface_id,
+                path,
+                binding,
+            };
             self.open_rename_dialog(engine, target, current_name);
         }
     }
@@ -1859,9 +1849,15 @@ impl MainView {
             1,
             crate::i18n::t("explorer.context_menu.remove_from_favorites"),
         ));
+        let binding = crate::runtime::surface_binding::SurfaceBinding::capture(engine, surface_id);
         self.open_native_menu(engine, x, y, &items, move |this, engine, result| {
-            // 메뉴가 열려 있는 동안 explorer surface 가 닫혔을 수 있다.
-            if !engine.has_surface(surface_id) {
+            // 메뉴가 열려 있는 동안 explorer surface 가 닫히거나 바뀌었을 수 있다.
+            // 루트 설정은 파일시스템을 바꾸지 않아 같은 explorer 인지만 본다.
+            if !crate::state::explorer_menu::explorer_menu_admits(
+                binding.as_ref(),
+                engine,
+                result == Some(61),
+            ) {
                 return;
             }
             match result {

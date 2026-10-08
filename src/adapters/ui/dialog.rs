@@ -253,7 +253,9 @@ fn rename_target_exists(
             engine.find_workspace_index_for_id(*workspace_id).is_some()
         }
         RenameTarget::TabName { tab_id } => engine.find_pane_for_tab(*tab_id).is_some(),
-        RenameTarget::ExplorerEntry { path, .. } => path.exists(),
+        RenameTarget::ExplorerEntry { path, binding, .. } => {
+            binding.current_in(engine) && path.exists()
+        }
         RenameTarget::ExplorerAddFavorite { path } => path.exists(),
         RenameTarget::NewCategory => true,
         RenameTarget::CategoryName { cat_id } => engine.category_index(*cat_id).is_some(),
@@ -274,8 +276,15 @@ fn apply_rename(
             apply_rename_workspace_subtitle(state, engine, workspace_id, buffer)
         }
         RenameTarget::TabName { tab_id } => apply_rename_tab_name(state, engine, tab_id, buffer),
-        RenameTarget::ExplorerEntry { surface_id, path } => {
-            apply_rename_explorer_entry(state, engine, surface_id, path, buffer)
+        RenameTarget::ExplorerEntry {
+            surface_id,
+            path,
+            binding,
+        } => {
+            // 팝업이 떠 있는 동안 surface 가 바뀌었으면 새 surface 에 요청하지 않는다.
+            if binding.current_in(engine) {
+                apply_rename_explorer_entry(state, engine, surface_id, path, buffer)
+            }
         }
         RenameTarget::ExplorerAddFavorite { path } => {
             apply_rename_explorer_add_favorite(state, path, buffer)
@@ -561,5 +570,36 @@ mod tests {
             &e.read(),
         );
         assert!(!ok && err.is_some());
+    }
+
+    #[test]
+    fn an_explorer_rename_is_dropped_when_its_surface_changed_while_the_popup_was_open() {
+        let (mut state, mut session) = crate::state::tests::test_state();
+        let sid = session.read().workspace_at(0).unwrap().all_surface_ids()[0];
+        let path = crate::test_support::abs_path("proj/a.txt");
+        let target = |binding| RenameTarget::ExplorerEntry {
+            surface_id: sid,
+            path: path.clone(),
+            binding,
+        };
+        let opened =
+            crate::runtime::surface_binding::SurfaceBinding::capture(&session.read(), sid).unwrap();
+
+        session.borrow_mut().runtime.terminals.insert(
+            sid,
+            tasty_terminal::Terminal::new_detached(80, 24),
+            None,
+        );
+        apply_rename(&mut state, &session.read(), target(opened), "b.txt".into());
+        assert_eq!(state.explorer_file_requests.len(), 0);
+
+        let current =
+            crate::runtime::surface_binding::SurfaceBinding::capture(&session.read(), sid).unwrap();
+        apply_rename(&mut state, &session.read(), target(current), "b.txt".into());
+        assert_eq!(
+            state.explorer_file_requests.len(),
+            1,
+            "an unchanged surface is renamed"
+        );
     }
 }

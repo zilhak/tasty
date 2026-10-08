@@ -367,10 +367,11 @@ pub enum RenameTarget {
     TabName {
         tab_id: u32,
     },
-    /// 이름을 바꿀 파일·폴더와 explorer surface.
+    /// 이름을 바꿀 파일·폴더와 explorer surface. `binding`은 메뉴를 연 시점의 surface 세대다.
     ExplorerEntry {
         surface_id: u32,
         path: std::path::PathBuf,
+        binding: crate::runtime::surface_binding::SurfaceBinding,
     },
     /// 경로를 입력한 표시 이름으로 전역 즐겨찾기에 등록한다.
     ExplorerAddFavorite {
