@@ -459,6 +459,7 @@ fn pending_script_confirm(result: Option<bool>) -> PendingScriptConfirm {
         source: "-- lua source".to_string(),
         new_hash: "deadbeef".to_string(),
         result,
+        content_height: None,
     }
 }
 

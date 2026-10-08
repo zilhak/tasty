@@ -325,6 +325,7 @@ impl crate::view::MainView {
                             source: read.source,
                             new_hash: read.hash,
                             result: None,
+                            content_height: None,
                         });
                     self.state.dispatch_intent(
                         crate::intent::UiIntent::OpenPopup {

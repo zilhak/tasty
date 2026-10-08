@@ -173,6 +173,8 @@ pub struct PendingScriptConfirm {
     pub(crate) new_hash: String,
     /// Some(true)는 실행, Some(false)는 취소다.
     pub(crate) result: Option<bool>,
+    /// 직전 프레임에 잰 popup 콘텐츠 높이. 본문이 줄바꿈되면 popup 높이를 이 값에 맞춘다.
+    pub(crate) content_height: Option<tasty_type_geometry::length::LogicalPx>,
 }
 
 /// Tab drag-and-drop state (UI-only, not persisted).

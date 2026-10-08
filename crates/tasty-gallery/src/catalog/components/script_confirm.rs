@@ -34,7 +34,8 @@ fn card(ui: &mut egui::Ui, theme: &Theme, name: &str) {
                 .truncate(),
             );
 
-            ui.horizontal(|ui| {
+            // 본체와 같이 본문은 카드 폭 안에서 줄바꿈한다.
+            ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
                 tag(ui, theme, "changed", TagVariant::Warning, false);
                 ui.label(
@@ -78,9 +79,15 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         &[
-            ("frame", "360px · bg-panel · popup 기본 크기 360×152"),
+            (
+                "frame",
+                "360px · bg-panel · popup 기본 크기 360×152, 본문이 줄바꿈되면 높이만 늘어난다",
+            ),
             ("name", "font-size-caption mono text-muted · truncate"),
-            ("warning", "tag(Warning) + caption text-secondary"),
+            (
+                "warning",
+                "tag(Warning) + caption text-secondary · 카드 폭 안에서 줄바꿈",
+            ),
             ("footer", "Run anyway(Primary) / Cancel(Ghost) · 우측정렬"),
         ],
         &[

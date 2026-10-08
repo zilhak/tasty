@@ -1,11 +1,12 @@
 //! 등록된 Lua 스크립트와 현재 해시가 다르면 실행 전 확인한다(ADR-0027).
 //! 사용자가 실행을 확정해야 dispatch_pending_script_confirm이 해시를 저장하고 워커를 시작한다.
 
-use crate::adapters::ui::popup::PopupAction;
+use crate::adapters::ui::popup::{self, PopupAction};
 use crate::i18n::t;
 use crate::state::MainViewState;
 use crate::theme;
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{Button, ButtonVariant, TagVariant, tag};
 
 /// Pure view 의 입력. MainViewState/CoreState 를 알지 못한다.
@@ -59,7 +60,8 @@ pub fn draw_script_confirm_view(
         .truncate(),
     );
 
-    ui.horizontal(|ui| {
+    // 본문은 popup 폭 안에서 줄바꿈한다. 한 줄로 두면 긴 번역이 폭을 넘어 버튼까지 밀려 잘린다.
+    ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
         tag(
             ui,
@@ -112,6 +114,39 @@ pub fn on_close_script_confirm_popup(
     }
 }
 
+/// 등록 크기. 본문 높이를 아직 재지 않은 첫 프레임에도 쓴다(배율 전 값).
+const DEFAULT_SIZE: (LogicalPx, LogicalPx) = (LogicalPx(360.0), LogicalPx(152.0));
+
+/// PopupDef.default_size.
+pub fn script_confirm_default_size() -> egui::Vec2 {
+    egui::vec2(DEFAULT_SIZE.0.value(), DEFAULT_SIZE.1.value())
+}
+
+/// PopupDef.sizer — 폭은 기본 폭에 UI 배율을 곱한 값이다. 높이는 기본 높이이고, 직전 프레임에
+/// 잰 콘텐츠가 그보다 크면(본문이 줄바꿈된 경우) 콘텐츠 높이에 타이틀바와 콘텐츠 여백을 더한
+/// 값으로 늘린다. 기본 높이보다 줄이지는 않는다.
+pub fn script_confirm_sizer(
+    state: &MainViewState,
+    _engine: &crate::runtime::engine_read::EngineRead<'_>,
+) -> egui::Vec2 {
+    let th = theme::theme();
+    let width = crate::adapters::ui::zoomed_px(&th, DEFAULT_SIZE.0);
+    let measured = state
+        .dialogs
+        .pending_script_confirm
+        .as_ref()
+        .and_then(|p| p.content_height);
+    let base = crate::adapters::ui::zoomed_px(&th, DEFAULT_SIZE.1);
+    let height = match measured {
+        Some(content) => {
+            let fitted = popup::title_bar_height() + popup::content_margin().scaled(2.0) + content;
+            LogicalPx(fitted.value().max(base.value()))
+        }
+        None => base,
+    };
+    egui::vec2(width.value(), height.value())
+}
+
 /// PopupDef::draw_fn entry.
 pub fn draw_script_confirm_popup(
     ui: &mut egui::Ui,
@@ -129,7 +164,11 @@ pub fn draw_script_confirm_popup(
             theme: &theme_guard,
             name: &name,
         };
-        draw_script_confirm_view(ui, &props)
+        let drawn = ui.scope(|ui| draw_script_confirm_view(ui, &props));
+        if let Some(p) = state.dialogs.pending_script_confirm.as_mut() {
+            p.content_height = Some(LogicalPx(drawn.response.rect.height()));
+        }
+        drawn.inner
     };
 
     match action {
@@ -187,5 +226,113 @@ mod tests {
     #[test]
     fn no_input_returns_none() {
         assert_eq!(run_view_once(Vec::new()), ScriptConfirmAction::None);
+    }
+
+    /// 콘텐츠 폭(popup 폭 − 양쪽 콘텐츠 여백)보다 넓게 그리면 오른쪽이 잘린다. 본문이 한 줄로
+    /// 이어지던 때는 버튼 행까지 그 폭으로 밀려 "Run anyway" 가 잘렸다.
+    #[test]
+    fn the_view_stays_within_the_content_width() {
+        let ctx = egui::Context::default();
+        let theme = tasty_themes::mocha_fallback();
+        let width = 240.0;
+        let mut drawn = egui::Rect::NOTHING;
+        drop(ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let props = ScriptConfirmProps {
+                    theme: &theme,
+                    name: "deploy.lua",
+                };
+                drawn = ui
+                    .allocate_ui(egui::vec2(width, 600.0), |ui| {
+                        draw_script_confirm_view(ui, &props)
+                    })
+                    .response
+                    .rect;
+            });
+        }));
+        assert!(
+            drawn.width() <= width,
+            "the view is {} wide in a {width} wide area",
+            drawn.width()
+        );
+    }
+}
+
+#[cfg(test)]
+mod sizer_wiring_tests {
+    use super::*;
+    use crate::adapters::ui::draw_popups;
+    use crate::model::{PhysicalPx, PhysicalRect};
+    use crate::state::tests::test_state;
+
+    const ID: &str = "script_changed_confirm";
+
+    fn run_one_frame(
+        state: &mut MainViewState,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
+    ) {
+        let ctx = egui::Context::default();
+        let term = PhysicalRect {
+            x: PhysicalPx(0.0),
+            y: PhysicalPx(0.0),
+            width: PhysicalPx(1920.0),
+            height: PhysicalPx(1080.0),
+        };
+        drop(ctx.run(egui::RawInput::default(), |ctx| {
+            draw_popups(ctx, state, engine, &[], term, 1.0);
+        }));
+    }
+
+    fn pending(content_height: Option<LogicalPx>) -> crate::state::PendingScriptConfirm {
+        crate::state::PendingScriptConfirm {
+            script_id: "script-0".to_string(),
+            name: "deploy.lua".to_string(),
+            source: String::new(),
+            new_hash: String::new(),
+            result: None,
+            content_height,
+        }
+    }
+
+    /// 잰 콘텐츠가 기본 높이보다 크면 실제 popup 높이가 그만큼 늘고, 작으면 기본 높이를 지킨다.
+    #[test]
+    fn a_frame_sizes_the_popup_from_the_measured_content() {
+        let th = theme::theme();
+        let chrome = popup::title_bar_height() + popup::content_margin().scaled(2.0);
+        let base = crate::adapters::ui::zoomed_px(&th, DEFAULT_SIZE.1).value();
+        for (content, expected) in [
+            (LogicalPx(400.0), (chrome + LogicalPx(400.0)).value()),
+            (LogicalPx(10.0), base),
+        ] {
+            let (mut state, mut engine_session) = test_state();
+            let engine = engine_session.borrow_mut();
+            // 그리는 프레임이 잰 값으로 덮어쓰므로, sizer 가 먼저 읽는 값만 본다.
+            state.dialogs.pending_script_confirm = Some(pending(Some(content)));
+            state.popups.open_at_focused(ID, egui::pos2(100.0, 100.0));
+            run_one_frame(&mut state, &engine.read());
+            let size = state.popups.get_mut(ID).expect("registered").size;
+            assert_eq!(size.y, expected, "content {content:?}");
+            assert_eq!(
+                size.x,
+                crate::adapters::ui::zoomed_px(&th, DEFAULT_SIZE.0).value()
+            );
+        }
+    }
+
+    /// 그린 프레임이 콘텐츠 높이를 재어 다음 프레임의 sizer 에 넘긴다.
+    #[test]
+    fn drawing_records_the_content_height() {
+        let (mut state, mut engine_session) = test_state();
+        let engine = engine_session.borrow_mut();
+        state.dialogs.pending_script_confirm = Some(pending(None));
+        state.popups.open_at_focused(ID, egui::pos2(100.0, 100.0));
+        run_one_frame(&mut state, &engine.read());
+        let measured = state
+            .dialogs
+            .pending_script_confirm
+            .as_ref()
+            .and_then(|p| p.content_height)
+            .expect("measured");
+        assert!(measured.value() > 0.0);
     }
 }
