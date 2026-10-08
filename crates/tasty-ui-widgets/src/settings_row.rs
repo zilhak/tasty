@@ -151,6 +151,13 @@ pub fn settings_label_cell(
     resp
 }
 
+/// [`settings_label_cell`] 뒤 컨트롤까지의 간격을 `settings-label-gap` 으로 맞춘다. 부모 가로 줄의
+/// `item_spacing.x` 가 칸 사이에 이미 들어가므로 그만큼 빼고 띄운다.
+pub fn settings_label_gap(ui: &mut egui::Ui, theme: &Theme) {
+    let auto = ui.spacing().item_spacing.x;
+    ui.add_space((theme.settings_label_gap().value() - auto).max(0.0));
+}
+
 /// 한 행에 딸린 설명. 행 왼쪽 끝에서 시작하고 `measure-md` 폭에서 줄을 바꾼다.
 /// 행과의 간격은 호출하는 쪽의 세로 간격이 정한다([`SettingsRow::caption`] 은 `settings-row-caption-gap`).
 pub fn settings_row_caption(ui: &mut egui::Ui, theme: &Theme, text: &str) {

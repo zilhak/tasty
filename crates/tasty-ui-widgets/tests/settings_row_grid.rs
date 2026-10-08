@@ -226,3 +226,28 @@ fn the_painted_label_never_crosses_into_the_gap() {
     }
     assert!(seen, "라벨 글자 shape 을 찾지 못했다");
 }
+
+#[test]
+fn a_hand_built_row_keeps_the_same_gap_under_item_spacing() {
+    let th = theme(1.0);
+    let col = LogicalPx(288.0);
+    let mut xs = Vec::new();
+    run(|ui| {
+        xs.clear();
+        for label in ["Copy:", LONG] {
+            ui.horizontal_top(|ui| {
+                ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
+                tasty_ui_widgets::settings_label_cell(ui, &th, col, LogicalPx(24.0), label, None);
+                tasty_ui_widgets::settings_label_gap(ui, &th);
+                xs.push(ui.add(egui::Button::new("x")).rect.left());
+            });
+        }
+    });
+    let expected = ORIGIN.x + (col + th.settings_label_gap()).value();
+    for x in xs {
+        assert!(
+            (x - expected).abs() < 0.5,
+            "컨트롤 x {x} ≠ 열+gap {expected} — 가로 줄의 item_spacing 이 gap 에 더해졌거나 열이 줄었다"
+        );
+    }
+}

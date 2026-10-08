@@ -181,7 +181,8 @@ pub use sequence_editor::{
     SequenceEditorAction, SequenceEditorError, SequenceEditorView, sequence_editor,
 };
 pub use settings_row::{
-    SettingsRow, settings_label_cell, settings_label_column, settings_row_caption,
+    SettingsRow, settings_label_cell, settings_label_column, settings_label_gap,
+    settings_row_caption,
 };
 pub use shell_setup::{
     SHELL_SETUP_FORM_WIDTH, ShellSetupCheck, ShellSetupOutput, ShellSetupView, shell_setup_screen,
