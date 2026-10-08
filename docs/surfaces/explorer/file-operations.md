@@ -37,9 +37,16 @@
 
 단축키와 Command Palette 는 같은 함수(`run_explorer_action`)를 거치고, 복사·잘라내기·붙여넣기는 메뉴와 같은 핸들러(`explorer_menu_set_clipboard`·`explorer_menu_paste`)를 부른다. 같은 대상이면 진입점이 달라도 결과가 같다. 대상 surface 는 포커스된 explorer surface 이고, 메뉴는 우클릭한 surface 의 id 를 지닌다.
 
-### 요청 시점 고정
+### 경로 출처와 작업 대상 (공통 계약)
 
-작업 요청은 View 가 대상 경로와 원 surface·View identity 를 고정해 App 의 `explorer_files` worker 에 넘긴다. 사용자가 그 사이 다른 폴더로 가도 대상은 바뀌지 않는다. worker 는 시작 직전에 원 대상과 mirror 제한을 다시 확인한다. 완료 뒤 원 View 와 surface 가 남아 있을 때만 목록 갱신을 요청하고, 사용자가 그 사이 바꾼 선택이나 새로 담은 클립보드는 건드리지 않는다. 대기 요청 상한과 종료 처리는 [Explorer](index.md#컨텍스트-메뉴--파일-조작) 에 있다.
+탐색기의 파일 작업(지금의 복사·잘라내기·붙여넣기·휴지통·이름 변경·시스템 열기와, 앞으로 더할 만들기·OS 파일 클립보드·드래그·속성 조회)은 아래 규칙을 함께 따른다.
+
+- **경로는 출처와 함께 다룬다.** explorer 경로는 로컬 경로이거나 mirror workspace 에 보이는 원격 호스트의 경로다(`ExplorerPathSource`). 같은 문자열이라도 출처가 다르면 다른 파일이다. 경로를 보관해 나중에 쓰는 자료(클립보드 등)는 출처를 함께 기록하고, 출처가 원격이거나 알 수 없는 경로를 로컬 파일 작업의 입력으로 해석하지 않는다.
+- **대상은 요청할 때 고정한다.** 메뉴·단축키·팝업이 대상 경로와 surface 를 정한 순간의 값을 쓴다. 그 사이 포커스·explorer 내부 탭·선택이 바뀌어도 대상은 바뀌지 않는다. 사용자가 그 사이 다른 폴더로 가도 대상은 바뀌지 않는다.
+- **실행 직전에 surface 세대를 다시 확인한다.** 메뉴는 열 때 그 surface 의 세대(`SurfaceBinding`)를 고정하고, 고른 항목은 `explorer_menu_admits`(`src/state/explorer_menu.rs`)가 허용할 때만 실행한다. 파일을 바꾸는 항목은 세대 전체(surface activation·자원·mirror projection)가 그대로여야 한다. 파일을 바꾸지 않는 항목(경로 복사·복사·이 폴더로 루트 설정)은 같은 explorer surface 이기만 하면 되고, mirror projection 이 다시 만들어진 것은 따지지 않는다. 이름 변경은 메뉴의 세대를 rename 팝업에 그대로 실어, 팝업이 떠 있는 사이 surface 가 바뀌면 팝업을 닫고 확정해도 실행하지 않는다.
+- **worker 도 다시 확인한다.** View 는 대상 경로와 원 surface·View identity 를 고정해 App 의 `explorer_files` worker 에 넘긴다. worker 는 시작 직전에 원 대상과 mirror 제한을 다시 확인하고, 완료 뒤 원 View 와 surface 가 남아 있을 때만 목록 갱신을 요청한다. 사용자가 그 사이 바꾼 선택이나 새로 담은 클립보드는 건드리지 않는다. 대기 요청 상한과 종료 처리는 [Explorer](index.md#컨텍스트-메뉴--파일-조작) 에 있다.
+- **원격 쓰기는 진입점마다 같은 방식으로 거부한다.** mirror explorer 에서는 메뉴 항목을 숨기고, 단축키와 메뉴 핸들러는 `explorer.state.remote_write_unsupported` 로 거부하며, worker 는 대상이 mirror 면 시작하지 않는다. 원격에서 복사한 경로는 로컬 explorer 의 메뉴에 붙여넣기로 나오지 않고, 단축키 붙여넣기는 `explorer.state.remote_paste_unsupported` 로 거부한다. 같은 경로의 로컬 파일을 대신 복사하지 않는다. 외부 파일 드롭은 파일 작업이 아니라 로컬 파일 열기(`DispatchFile`)로 처리하므로 원격 파일시스템에 쓰지 않는다.
+- **주소 입력과 링크**는 [Explorer](index.md) 의 [주소 입력](index.md#주소-입력)·[심볼릭 링크](index.md#심볼릭-링크) 절을 따른다. 로컬 경로는 절대 경로로 확정해 다루고, 원격 경로는 로컬 파일시스템으로 확인하지 않는다.
 
 ### 작업별 계약
 
@@ -70,7 +77,7 @@
 | 부분 성공 | 실패 경로를 토스트로 보인다. 잘라내기 클립보드는 남긴다. 성공한 항목을 되돌리지 않는다 |
 | 이름 충돌 | 붙여넣기는 묻지 않고 `(copy)` 접미사를 붙인 새 이름으로 둔다. 기존 항목을 덮어쓰지 않는다 |
 | 취소 | 진행 중인 작업을 취소하는 수단이 없다. 앱 종료는 새 작업을 막고 worker 를 최대 5초 기다리며, 기한이 지나도 작업을 취소로 기록하지 않는다 |
-| 원격 제한 | mirror explorer 는 쓰기 항목을 메뉴에서 숨기고, 단축키로 부르면 `explorer.state.remote_write_unsupported` 토스트를 띄운다. 복사(클립보드에 담기만 함)·경로 복사·이 폴더로 루트 설정은 그대로 된다 |
+| 원격 제한 | mirror explorer 는 쓰기 항목을 메뉴에서 숨기고, 단축키로 부르면 `explorer.state.remote_write_unsupported` 토스트를 띄운다. 복사(클립보드에 담기만 함)·경로 복사·이 폴더로 루트 설정은 그대로 된다. mirror explorer 에서 복사한 클립보드는 원격 출처로 기록되어, 로컬 explorer 에서는 붙여넣기 메뉴가 나오지 않고 단축키는 `explorer.state.remote_paste_unsupported` 토스트만 띄운다 |
 
 ### 사용자 작업과 에이전트 작업의 경계
 
@@ -98,3 +105,6 @@
 - Given 붙여넣을 위치에 같은 이름이 있다, When 붙여넣는다, Then 기존 항목은 그대로이고 새 항목은 `(copy)` 접미사 이름이다.
 - Given mirror explorer 다, When `cut` 또는 `paste` 를 누른다, Then 로컬 파일시스템은 바뀌지 않고 원격 쓰기 미지원 토스트가 뜬다.
 - Given 붙여넣기가 진행 중이다, When 사용자가 다른 폴더로 이동한다, Then 작업 대상은 요청 시점의 폴더이고 포커스는 바뀌지 않는다.
+- Given mirror explorer 에서 항목을 복사했다, When 로컬 explorer 에서 우클릭하거나 `paste` 를 누른다, Then 메뉴에 붙여넣기가 없고 단축키는 원격 붙여넣기 미지원 토스트만 띄우며 로컬 파일시스템은 바뀌지 않는다.
+- Given 컨텍스트 메뉴가 열려 있다, When 그 사이 surface 가 닫히거나 다른 surface 로 바뀐 뒤 항목을 고른다, Then 아무 작업도 실행하지 않는다. 경로 복사·복사·이 폴더로 루트 설정은 mirror projection 이 다시 만들어지기만 했으면 그대로 실행한다.
+- Given rename 팝업이 떠 있다, When 그 사이 surface 가 다른 surface 로 바뀐다, Then 팝업이 닫히고 확정해도 이름 변경 요청이 나가지 않는다.

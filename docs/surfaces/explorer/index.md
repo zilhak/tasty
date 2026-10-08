@@ -126,7 +126,7 @@ mirror(원격) explorer:
 우클릭 컨텍스트 메뉴는 **2-단계 네이티브 메뉴 패턴**([context-menu](../../dev-guide/context-menu.md))을 따른다: 렌더 중 우클릭을 감지하면 `ExplorerAction::ContextMenu { target, cwd, x, y }` 를 모으고, `apply_explorer_action` 이 이를 `PendingNativeMenu::Explorer`/`ExplorerFavorite` 슬롯에 선점한다.
 비-terminal 컨텍스트 메뉴는 winit 이 만들지 않고 egui 프레임이 단일 생산자다 — explorer 메뉴는 같은 egui 프레임 안에서 `apply_explorer_action`(렌더 루프 종료 직후)이 generic surface fallback(`emit_surface_menu_fallback`)보다 **먼저** 슬롯을 선점하므로, fallback은 `is_none()` 확인 후 건너뛰어 explorer 전용 메뉴를 유지한다.
 이후 `MainView::process_pending_native_menu` 가 `open_native_menu` 로 OS 네이티브 메뉴를 띄우고, 선택 id 를 조작으로 번역하는 처리는 continuation 으로 예약된다(Linux 는 메뉴가 닫힌 뒤 프레임에 실행 — [context-menu](../../dev-guide/context-menu.md) · [ADR-0036](../../adr/0036-overlay-scope-and-lifetime.md)).
-메뉴를 열 때 대상 경로·현재 폴더와 함께 그 surface 의 세대(`SurfaceBinding`: surface activation·터미널 자원·mirror projection)를 고정한다. continuation 은 `explorer_menu_admits`(`src/state/explorer_menu.rs`)로 실행 여부를 정한다. 파일을 바꾸는 항목은 세대 전체가 그대로일 때만 실행한다. 파일시스템을 바꾸지 않는 항목(경로 복사·복사·이 폴더로 루트 설정)은 같은 explorer surface 이기만 하면 실행하고, mirror projection 이 원격 트리를 다시 받아 새로 만들어진 것은 따지지 않는다(`SurfaceBinding::same_surface_in`). 메뉴가 열린 사이 포커스나 explorer 내부 탭이 바뀌어도 고정한 경로와 surface 를 대상으로 하고, surface 가 닫히거나 다른 surface 로 바뀌었으면 아무것도 하지 않는다. 즐겨찾기 행 메뉴도 같다(루트 설정만 읽기 전용으로 본다). 이름 변경은 메뉴의 세대를 rename 팝업 대상(`RenameTarget::ExplorerEntry`)에 그대로 실어, 팝업이 떠 있는 사이 surface 가 바뀌면 팝업을 닫고 확정해도 실행하지 않는다.
+메뉴를 열 때 대상 경로·현재 폴더와 그 surface 의 세대(`SurfaceBinding`)를 고정한다. 고른 항목을 실행할지 정하는 규칙과 rename 팝업의 확인은 [파일 작업 계약](file-operations.md#경로-출처와-작업-대상-공통-계약)에 있다. 즐겨찾기 행 메뉴도 같은 규칙을 쓰며 그중 이 폴더로 루트 설정만 파일을 바꾸지 않는 항목으로 본다.
 
 대상(target)은 우클릭 위치/선택 상태로 결정한다(design §3.3 target rule): 선택 안의 항목 → 선택 전체, 선택 밖 → 그 항목으로 선택 리셋, 빈 영역 → 현재 폴더(current). variant 4종(빈 영역 / 파일 / 폴더 / 다중). 좌측 사이드바 트리 폴더 우클릭도 **단일 폴더 target 을 직접 구성**해(선택집합 미조작) 동일 메뉴를 띄운다.
 
@@ -148,6 +148,10 @@ mirror(원격) explorer:
 - **즐겨찾기 추가** (`add_to_favorites`, 단일 폴더 또는 빈 영역) — 아래 참조. mirror 에서 차단.
 - **새 탭으로 열기** (`open_in_new_tab`, 단일 폴더) — 그 폴더를 cwd 로 하는 새 explorer 를 **Pane 탭**(explorer 내부 탭이 아님)으로 연다. 우클릭 대상 surface 의 **소유 pane** 에 추가해(`MainViewState::add_kind_tab_by_owner`) focused pane 이 아니어도 올바른 pane 에 열린다. 기존 explorer 는 불변. mirror 에서 메뉴 자체가 숨겨지고 핸들러도 막는다(아래 참고).
 - **이 폴더로 루트 설정** (`set_as_root`, 단일 폴더) — **현재 explorer** 의 cwd 를 그 폴더로 이동한다(`RequestContext::set_explorer_cwd` 가 `EngineAction::ExplorerCwd` 를 보내고 App 이 `ExplorerTab::set_cwd` 를 적용: 좌측 트리 루트·current 이동 + 히스토리 초기화 + 뷰 리로드). 파일시스템을 바꾸지 않으므로 mirror 에서도 그대로 동작.
+
+### 경로 출처와 작업 대상
+
+파일 작업이 공유하는 규칙(경로의 출처, 요청 시점의 대상 고정, 진입점별 원격 쓰기 거부)은 [파일 작업 계약](file-operations.md#경로-출처와-작업-대상-공통-계약) 한 곳에 있다.
 
 ### 심볼릭 링크
 
