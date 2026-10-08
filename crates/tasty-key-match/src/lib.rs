@@ -206,37 +206,55 @@ fn key_matches_token(character: &str, token: &str) -> bool {
     )
 }
 
+/// 바인딩 키 토큰으로 쓰는 named key 이름. 매칭과 [`binding_key_recognized`] 가 같은 표를 읽는다.
+const NAMED_KEY_TOKENS: &[(NamedKey, &str)] = &[
+    (NamedKey::Tab, "tab"),
+    (NamedKey::Space, "space"),
+    (NamedKey::Enter, "enter"),
+    (NamedKey::Backspace, "backspace"),
+    (NamedKey::Delete, "delete"),
+    (NamedKey::Insert, "insert"),
+    (NamedKey::Home, "home"),
+    (NamedKey::End, "end"),
+    (NamedKey::PageUp, "pageup"),
+    (NamedKey::PageDown, "pagedown"),
+    (NamedKey::ArrowUp, "up"),
+    (NamedKey::ArrowDown, "down"),
+    (NamedKey::ArrowLeft, "left"),
+    (NamedKey::ArrowRight, "right"),
+    (NamedKey::F1, "f1"),
+    (NamedKey::F2, "f2"),
+    (NamedKey::F3, "f3"),
+    (NamedKey::F4, "f4"),
+    (NamedKey::F5, "f5"),
+    (NamedKey::F6, "f6"),
+    (NamedKey::F7, "f7"),
+    (NamedKey::F8, "f8"),
+    (NamedKey::F9, "f9"),
+    (NamedKey::F10, "f10"),
+    (NamedKey::F11, "f11"),
+    (NamedKey::F12, "f12"),
+    (NamedKey::Escape, "escape"),
+];
+
 fn named_key_to_string(key: &NamedKey) -> Option<&'static str> {
-    Some(match key {
-        NamedKey::Tab => "tab",
-        NamedKey::Space => "space",
-        NamedKey::Enter => "enter",
-        NamedKey::Backspace => "backspace",
-        NamedKey::Delete => "delete",
-        NamedKey::Insert => "insert",
-        NamedKey::Home => "home",
-        NamedKey::End => "end",
-        NamedKey::PageUp => "pageup",
-        NamedKey::PageDown => "pagedown",
-        NamedKey::ArrowUp => "up",
-        NamedKey::ArrowDown => "down",
-        NamedKey::ArrowLeft => "left",
-        NamedKey::ArrowRight => "right",
-        NamedKey::F1 => "f1",
-        NamedKey::F2 => "f2",
-        NamedKey::F3 => "f3",
-        NamedKey::F4 => "f4",
-        NamedKey::F5 => "f5",
-        NamedKey::F6 => "f6",
-        NamedKey::F7 => "f7",
-        NamedKey::F8 => "f8",
-        NamedKey::F9 => "f9",
-        NamedKey::F10 => "f10",
-        NamedKey::F11 => "f11",
-        NamedKey::F12 => "f12",
-        NamedKey::Escape => "escape",
-        _ => return None,
-    })
+    NAMED_KEY_TOKENS
+        .iter()
+        .find(|(k, _)| k == key)
+        .map(|(_, name)| *name)
+}
+
+/// 바인딩의 키 토큰이 어떤 키 입력과도 맞을 수 있는지. 문자 하나, 심볼 별칭(`plus`·`minus`·`equals`),
+/// [`NAMED_KEY_TOKENS`] 의 이름만 받는다. `ctrl+shft+h` 처럼 modifier 를 잘못 쓰면 남은 `shft+h` 가
+/// 키 토큰이 되어 어떤 입력과도 맞지 않으므로 false다. 빈 문자열과 modifier 만 있는 표기도 false다.
+pub fn binding_key_recognized(binding: &str) -> bool {
+    let Some(parsed) = parse_binding(binding) else {
+        return false;
+    };
+    let token = parsed.key.to_ascii_lowercase();
+    token.chars().count() == 1
+        || matches!(token.as_str(), "plus" | "minus" | "equals")
+        || NAMED_KEY_TOKENS.iter().any(|(_, name)| *name == token)
 }
 
 /// Convert a physical key code to a Key::Character for shortcut matching.
@@ -376,5 +394,46 @@ mod egui_tests {
         );
         drop(output);
         assert_eq!((hit, n), (Some(false), 1));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn recognized_keys_are_the_ones_the_matcher_can_match() {
+        for b in [
+            "ctrl+shift+h",
+            "ctrl+f5",
+            "alt+escape",
+            "ctrl+plus",
+            "ctrl++",
+            "option+x",
+            "Ctrl+PageUp",
+        ] {
+            assert!(binding_key_recognized(b), "{b}");
+        }
+        for b in [
+            "ctrl+shft+h",
+            "cmd+k",
+            "ctrl+f13",
+            "ctrl+",
+            "ctrl",
+            "",
+            "ctrl+hello",
+        ] {
+            assert!(!binding_key_recognized(b), "{b}");
+        }
+    }
+
+    #[test]
+    fn every_named_token_matches_its_key() {
+        for (named, name) in NAMED_KEY_TOKENS {
+            assert!(
+                matches_binding(name, &Key::Named(*named), ModifiersState::empty()),
+                "{name}"
+            );
+        }
     }
 }
