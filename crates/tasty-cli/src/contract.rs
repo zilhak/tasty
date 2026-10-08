@@ -58,6 +58,16 @@ pub(crate) fn required(request: &JsonRpcRequest) -> Vec<(&'static str, u32)> {
 /// 원래 요청에는 남은 시간을 내림해 싣는다. 확인이 만료되거나 1ms 미만이 남으면
 /// 원래 요청은 보내지 않고 -32067(실행 안 됨)로 응답한다.
 pub(crate) fn ensure(conn: &mut IpcConnection, request: &mut JsonRpcRequest) -> Result<()> {
+    ensure_on(conn, request, &Instant::now)
+}
+
+/// [`ensure`] 의 본체. 확인에 쓴 시간은 `now` 로 잰다. 시험은 확인이 걸린 시간을 정해 두려고
+/// 가짜 시계를 넣는다.
+fn ensure_on(
+    conn: &mut IpcConnection,
+    request: &mut JsonRpcRequest,
+    now: &dyn Fn() -> Instant,
+) -> Result<()> {
     let needed = required(request);
     if needed.is_empty() {
         return Ok(());
@@ -66,8 +76,8 @@ pub(crate) fn ensure(conn: &mut IpcConnection, request: &mut JsonRpcRequest) -> 
         .response_timeout_ms
         .filter(|&ms| ms > 0)
         .map(Duration::from_millis);
-    let started = Instant::now();
-    let left = |bound: Duration| bound.saturating_sub(started.elapsed());
+    let started = now();
+    let left = |bound: Duration| bound.saturating_sub(now().saturating_duration_since(started));
     for (name, version) in needed {
         conn.require_capability_within(
             name,
@@ -285,10 +295,57 @@ mod tests {
         assert!(r.params.get("cursor").is_none());
     }
 
-    /// 가짜 호스트 — 받은 줄을 돌려주고, `answer` 가 정한 대로 답한다(`None` 이면 답하지 않고
-    /// 소켓을 연 채 둔다 — 메인 스레드가 선 호스트이거나, 봉투 상한을 모르는 구 서버다).
+    /// 확인이 걸린 시간을 정해 두는 시계. 가짜 호스트가 답하기 전에 앞으로 돌린다.
+    #[derive(Clone)]
+    struct FakeClock {
+        base: Instant,
+        elapsed_ms: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    }
+
+    impl FakeClock {
+        fn new() -> Self {
+            Self {
+                base: Instant::now(),
+                elapsed_ms: Default::default(),
+            }
+        }
+
+        fn now(&self) -> Instant {
+            self.base
+                + Duration::from_millis(self.elapsed_ms.load(std::sync::atomic::Ordering::SeqCst))
+        }
+
+        fn advance(&self, by: Duration) {
+            let ms = u64::try_from(by.as_millis()).expect("시험 지연은 u64 밀리초 안이다");
+            self.elapsed_ms
+                .fetch_add(ms, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+
+    /// 가짜 호스트가 답하기 전의 지연을 어떻게 흘려보내는가.
+    #[derive(Clone)]
+    enum Pace {
+        /// 실제로 잠든다.
+        Real,
+        /// 잠들지 않고 가짜 시계만 그만큼 돌린다.
+        Fake(FakeClock),
+    }
+
     fn fake_host(
         answers: Vec<Option<(std::time::Duration, String)>>,
+    ) -> (
+        std::net::SocketAddr,
+        std::sync::mpsc::Receiver<String>,
+        std::thread::JoinHandle<()>,
+    ) {
+        fake_host_on(answers, Pace::Real)
+    }
+
+    /// 가짜 호스트 — 받은 줄을 돌려주고, `answer` 가 정한 대로 답한다(`None` 이면 답하지 않고
+    /// 소켓을 연 채 둔다 — 메인 스레드가 선 호스트이거나, 봉투 상한을 모르는 구 서버다).
+    fn fake_host_on(
+        answers: Vec<Option<(std::time::Duration, String)>>,
+        pace: Pace,
     ) -> (
         std::net::SocketAddr,
         std::sync::mpsc::Receiver<String>,
@@ -312,7 +369,10 @@ mod tests {
                 }
                 match answer {
                     Some((delay, body)) => {
-                        std::thread::sleep(delay);
+                        match &pace {
+                            Pace::Real => std::thread::sleep(delay),
+                            Pace::Fake(clock) => clock.advance(delay),
+                        }
                         if writer.write_all(format!("{body}\n").as_bytes()).is_err() {
                             return;
                         }
@@ -341,14 +401,27 @@ mod tests {
     /// 결함이 있어도 시험이 멈추지 않도록 ensure를 5초까지만 기다린다.
     fn ensure_with_deadline(
         addr: std::net::SocketAddr,
+        request: JsonRpcRequest,
+    ) -> (Result<JsonRpcRequest>, std::time::Duration) {
+        ensure_on_with_deadline(addr, request, None)
+    }
+
+    /// `clock` 이 있으면 ensure 가 그 가짜 시계로 시간을 잰다.
+    fn ensure_on_with_deadline(
+        addr: std::net::SocketAddr,
         mut request: JsonRpcRequest,
+        clock: Option<FakeClock>,
     ) -> (Result<JsonRpcRequest>, std::time::Duration) {
         let (tx, rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
             let stream = std::net::TcpStream::connect(addr).expect("connect");
             let mut conn = IpcConnection::new(stream).expect("conn");
             let started = Instant::now();
-            let r = ensure(&mut conn, &mut request).map(|()| request);
+            let r = match &clock {
+                Some(clock) => ensure_on(&mut conn, &mut request, &|| clock.now()),
+                None => ensure(&mut conn, &mut request),
+            }
+            .map(|()| request);
             // 받는 쪽이 5 s 에 떠났으면 그 결과는 버린다 — 시험은 이미 실패로 끝났다.
             let _ = tx.send((r, started.elapsed(), conn));
         });
@@ -424,42 +497,69 @@ mod tests {
     }
 
     /// 확인이 상한 안에 끝나면 요청은 **남은 시간**을 싣고 나간다 — 두 요청이 상한 하나를 나눠
-    /// 쓴다. 그리고 확인이 건 읽기 기한은 풀려 있어야 한다(본 요청은 서버가 상한으로 끊는다).
+    /// 쓴다. 확인에 걸린 시간은 가짜 시계로 120 ms 로 정한다. 실제 시간으로 재면 부하가 확인을
+    /// 늦춰 남은 값이 흔들리고, 상한을 넘으면 "실행 안 됨" 으로 끝난다. 상한은 확인 요청의 소켓 읽기
+    /// 기한으로도 걸리므로 실제 왕복이 닿지 않을 만큼 크게 둔다.
     #[test]
     fn the_request_carries_what_is_left_after_the_check() {
-        let (addr, _seen, h) = fake_host(vec![Some((
-            Duration::from_millis(120),
-            capabilities_answer(),
-        ))]);
-        let (r, _) = ensure_with_deadline(addr, req("workspace.list", json!({}), Some(500)));
+        let clock = FakeClock::new();
+        let (addr, _seen, h) = fake_host_on(
+            vec![Some((Duration::from_millis(120), capabilities_answer()))],
+            Pace::Fake(clock.clone()),
+        );
+        let (r, _) = ensure_on_with_deadline(
+            addr,
+            req("workspace.list", json!({}), Some(60_000)),
+            Some(clock),
+        );
         let request = r.expect("declared — the check passes");
-        let left = request.response_timeout_ms.expect("still bounded");
-        assert!(left > 0 && left <= 380, "{left}");
+        assert_eq!(request.response_timeout_ms, Some(60_000 - 120));
         h.join().unwrap();
     }
 
     /// 확인 뒤의 연결은 읽기 기한이 없다 — 상한보다 늦게 오는 본 요청의 답도 받는다.
+    ///
+    /// 늦게 답해 기한이 남았는지 보면 확인이 상한 안에 끝나야 하고, 그 상한이 작아야 남은 기한이
+    /// 드러난다. 부하에서는 그 확인이 상한을 넘는다. 그래서 같은 소켓의 사본으로 읽기 기한을 직접
+    /// 읽는다. 사본이 기한을 보는지(이 시험의 전제)는 확인 요청이 도착한 순간 기한이 걸려 있는지로
+    /// 함께 확인한다.
     #[test]
     fn the_check_leaves_no_read_timeout_on_the_connection() {
-        let late = json!({ "jsonrpc": "2.0", "id": 1, "result": { "ok": true } }).to_string();
-        let (addr, _seen, h) = fake_host(vec![
-            Some((Duration::from_millis(0), capabilities_answer())),
-            Some((Duration::from_millis(400), late)),
-        ]);
-        let (tx, rx) = std::sync::mpsc::channel();
-        std::thread::spawn(move || {
-            let stream = std::net::TcpStream::connect(addr).expect("connect");
-            let mut conn = IpcConnection::new(stream).expect("conn");
-            let mut r = req("workspace.list", json!({}), Some(150));
-            ensure(&mut conn, &mut r).expect("declared");
-            // 받는 쪽이 5 s 에 떠났으면 그 결과는 버린다 — 시험은 이미 실패로 끝났다.
-            let _ = tx.send(conn.send(&r).map_err(|e| e.to_string()));
+        use std::io::{BufRead, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let stream = std::net::TcpStream::connect(addr).expect("connect");
+        let observer = stream.try_clone().expect("clone");
+        let host_observer = stream.try_clone().expect("clone");
+        let (during_tx, during_rx) = std::sync::mpsc::channel();
+        let host = std::thread::spawn(move || {
+            let (server, _) = listener.accept().expect("accept");
+            let mut writer = server.try_clone().expect("clone");
+            let mut probe = String::new();
+            std::io::BufReader::new(server)
+                .read_line(&mut probe)
+                .expect("probe line");
+            // 받는 쪽이 이미 실패로 떠났으면 보낼 곳이 없다 — 할 일이 없다.
+            let _ = during_tx.send(host_observer.read_timeout().map_err(|e| e.to_string()));
+            writer
+                .write_all(format!("{}\n", capabilities_answer()).as_bytes())
+                .expect("answer");
         });
-        let answer = rx
-            .recv_timeout(Duration::from_secs(5))
-            .expect("send returned");
-        assert_eq!(answer, Ok(json!({ "ok": true })));
-        h.join().unwrap();
+        let mut conn = IpcConnection::new(stream).expect("conn");
+        let mut r = req("workspace.list", json!({}), Some(60_000));
+        ensure(&mut conn, &mut r).expect("declared");
+        host.join().unwrap();
+        let during = during_rx.recv().expect("the host saw the probe");
+        assert!(
+            matches!(during, Ok(Some(t)) if t <= Duration::from_secs(60)),
+            "확인 중에 사본이 기한을 못 본다 — 이 시험의 전제: {during:?}"
+        );
+        assert_eq!(
+            observer.read_timeout().expect("read back"),
+            None,
+            "확인이 건 읽기 기한이 연결에 남았다"
+        );
+        drop(conn);
     }
 
     /// 상한이 없으면 확인 요청도 종전 그대로다 — 봉투에 아무것도 안 싣는다.
