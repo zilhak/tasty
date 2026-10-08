@@ -1077,6 +1077,8 @@ DAG 요약(`agent.dag_list`·`agent.dag_get`)의 `state_counts.not_selected` 는
 
 v1 reduce 는 기존 동작(`reduce_with_custom`) 그대로다.
 
+custom 셸(v1·v2·`agent.task_reduce` 공통, `run_custom_shell`)의 입력은 별도 스레드에서 stdin 에 쓰고 stdout·stderr 는 종료를 기다리며 모은다. 그래서 입력을 다 읽기 전에 파이프 버퍼보다 많이 출력하는 셸도 막히지 않는다. 셸이 stdin 을 읽지 않고 끝나 쓰기가 파이프 끊김(`EPIPE`)으로 끝나도 실패가 아니며, 성패는 셸의 종료 상태로 정한다(0 이 아니면 `exit_code=<n>, stderr=<…>` 실패). 그 밖의 쓰기 오류는 실패다.
+
 ### DAG report
 
 report 는 사람이 읽는 실행 기록이다. 근거는 [ADR-0075](../adr/0075-typed-task-report-projects-auto-and-seals-custom-per-attempt.md). task 마다 자동 항목(`auto`)과 회차별 custom 기록을 둔다. 뒤 task 가 읽는 데이터가 아니다. binding 은 출력 문서의 위치만 가리키므로 report 를 입력으로 받을 수 없다. 코드: 모델 `crates/tasty-agent/src/task/report.rs`, 저장 `crates/tasty-agent/src/task/store/report.rs`, 주소 발급·stderr 표지 `crates/tasty-task-runtime/src/runner_host/report.rs`, 조회 `crates/tasty-task-runtime/src/report.rs`.

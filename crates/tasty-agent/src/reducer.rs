@@ -405,10 +405,29 @@ pub fn run_custom_shell_with_env(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()?;
-    if let Some(mut sin) = child.stdin.take() {
-        sin.write_all(stdin_json.as_bytes())?;
-    }
+    // 입력은 별도 스레드에서 쓴다. 자식이 stdin 을 다 읽기 전에 stdout 을 채워도 서로 기다리지
+    // 않는다. 자식이 입력을 읽지 않고 끝나면 쓰기는 파이프 끊김(EPIPE)으로 끝나는데, 입력을 쓰지
+    // 않는 reducer 도 정상이므로 실패로 보지 않고 자식의 종료 상태로 성패를 정한다.
+    let writer = match child.stdin.take() {
+        Some(mut sin) => {
+            let payload = stdin_json.as_bytes().to_vec();
+            Some(
+                std::thread::Builder::new()
+                    .name("agent-reducer-stdin".into())
+                    .spawn(move || sin.write_all(&payload))?,
+            )
+        }
+        None => None,
+    };
     let out = child.wait_with_output()?;
+    if let Some(writer) = writer {
+        match writer.join() {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) if e.kind() == std::io::ErrorKind::BrokenPipe => {}
+            Ok(Err(e)) => return Err(e),
+            Err(_) => return Err(std::io::Error::other("reducer stdin writer panicked")),
+        }
+    }
     if !out.status.success() {
         let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
         return Err(std::io::Error::other(format!(
@@ -876,5 +895,42 @@ mod tests {
         assert!(!extracted[0].succeeded);
         assert_eq!(extracted[0].task_id, "t-1");
         assert_eq!(extracted[0].output, json!(1));
+    }
+
+    /// 파이프 버퍼보다 큰 입력. 읽는 쪽이 없으면 쓰기가 끝나지 못해, 자식이 먼저 끝나면 반드시
+    /// 파이프 끊김으로 끝난다.
+    #[cfg(unix)]
+    fn big_input() -> String {
+        format!("[\"{}\"]", "x".repeat(4 * 1024 * 1024))
+    }
+
+    /// 입력을 읽지 않는 reducer 는 정상이다. 성패는 자식의 종료 상태로 정한다.
+    #[cfg(unix)]
+    #[test]
+    fn a_custom_reducer_that_never_reads_its_input_is_judged_by_its_exit_status() {
+        let input = big_input();
+        assert_eq!(run_custom_shell("echo 1", &input).unwrap().trim(), "1");
+        let err = run_custom_shell("exit 3", &input).unwrap_err();
+        assert!(err.to_string().contains("exit_code=3"), "{err}");
+    }
+
+    /// 입력을 다 읽기 전에 파이프 버퍼보다 많이 출력하는 reducer 도 끝난다. 입력을 쓰는 동안
+    /// 출력을 읽지 않으면 둘이 서로 기다린다.
+    #[cfg(unix)]
+    #[test]
+    fn a_custom_reducer_that_writes_before_reading_does_not_deadlock() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let out = run_custom_shell(
+                "head -c 300000 /dev/zero | tr '\\0' a; wc -c >/dev/null",
+                &big_input(),
+            );
+            tx.send(out.map(|o| o.len())).ok();
+        });
+        let len = rx
+            .recv_timeout(std::time::Duration::from_secs(60))
+            .expect("reducer finished")
+            .unwrap();
+        assert_eq!(len, 300_000);
     }
 }
