@@ -150,7 +150,7 @@ tasty split --level pane --target-surface this --type markdown --file /path/doc.
 
 ### 분할 비율과 탐색기 칸 하한
 
-새 분할의 비율은 0.5 다. 다만 그 split 으로 탐색기 칸이 `explorer_min_height`(기본 160px, UI zoom 을 곱해 반올림한 논리 px) 아래가 되면, 하한을 지키는 비율 가운데 0.5 에 가장 가까운 값으로 분할선을 옮긴다. 판정과 보정은 엔진이 분할을 확정할 때 한 번 한다(`src/app/journal/commands/split_floor.rs`). IPC·CLI·분할 메뉴·단축키가 모두 이 경로를 지난다.
+새 분할의 비율은 0.5 다. 다만 그 split 으로 탐색기 칸이 `explorer_min_height`(기본 180px, UI zoom 을 곱해 반올림한 논리 px) 아래가 되면, 하한을 지키는 비율 가운데 0.5 에 가장 가까운 값으로 분할선을 옮긴다. 판정과 보정은 엔진이 분할을 확정할 때 한 번 한다(`src/app/journal/commands/split_floor.rs`). IPC·CLI·분할 메뉴·단축키가 모두 이 경로를 지난다.
 
 - 판정 대상은 split 으로 높이가 바뀌는 탐색기 칸이다. surface 분할에서는 대상 surface 와 새 surface 다. pane 분할에서는 대상 pane 의 모든 탭(활성 탭이 아니어도)에 있는 탐색기 칸과 새 pane 의 칸이다. 다른 칸은 보지 않는다.
 - 이미 하한보다 낮은 탐색기 칸(창이 작아서)은 지금 높이 아래로만 줄지 않으면 된다. 그래서 옆으로 나누는 split 처럼 높이가 바뀌지 않는 분할은 그대로 받는다. 분할선 드래그 하한과 같은 규칙이다.

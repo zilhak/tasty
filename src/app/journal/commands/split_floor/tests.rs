@@ -4,6 +4,11 @@ use tasty_core::{DomainEvent as E, Placement, Ratio, SplitSpec, SurfaceSpec};
 /// 탭 바 높이. 시험의 pane 내용 영역은 pane 높이에서 이 값을 뺀 것이다.
 const TAB_BAR: f32 = 30.0;
 
+/// 탐색기 칸 하한. 시험 geometry 의 scale 이 1.0 이라 논리 px 그대로 물리 px 이다.
+fn floor() -> f32 {
+    crate::theme::theme().explorer_min_height().value()
+}
+
 fn geometry(content_height: f32) -> SplitGeometry {
     SplitGeometry {
         terminal_rect: PhysicalRect {
@@ -107,9 +112,9 @@ fn reason(response: &JsonRpcResponse) -> (i32, String, serde_json::Value) {
 }
 
 /// 636px 열의 탐색기 칸을 두 번 나눈다. 첫 split 은 0.5 그대로 두 칸 모두 하한 이상이고,
-/// 둘째 split 은 탐색기 칸이 160 을 지키도록 비율을 고친다.
+/// 둘째 split 은 탐색기 칸이 하한을 지키도록 비율을 고친다.
 #[test]
-fn splitting_a_636px_explorer_column_twice_keeps_the_explorer_at_160() {
+fn splitting_a_636px_explorer_column_twice_keeps_the_explorer_at_the_floor() {
     let first = session("explorer", None);
     let mut destination = surface_split(1000, SplitDirection::Horizontal);
     hold(
@@ -121,7 +126,7 @@ fn splitting_a_636px_explorer_column_twice_keeps_the_explorer_at_160() {
     .unwrap();
     assert_eq!(ratio(&destination), 0.5);
     let (explorer, _) = halves(636.0, 0.5);
-    assert!(explorer >= 160.0, "{explorer}");
+    assert!(explorer >= floor(), "{explorer}");
 
     // 첫 split 의 결과(위 탐색기 317, 아래 터미널 318)에서 탐색기를 다시 나눈다.
     let second = session("explorer", Some("terminal"));
@@ -140,9 +145,9 @@ fn splitting_a_636px_explorer_column_twice_keeps_the_explorer_at_160() {
         halves(explorer, 0.5).0
     );
     let (kept, sibling) = halves(explorer, r);
-    assert!(kept >= 160.0, "explorer {kept}");
+    assert!(kept >= floor(), "explorer {kept}");
     assert!(
-        kept < 161.0,
+        kept < floor() + 1.0,
         "the divider moves only as far as the floor needs: {kept}"
     );
     assert!(
@@ -151,7 +156,7 @@ fn splitting_a_636px_explorer_column_twice_keeps_the_explorer_at_160() {
     );
 }
 
-/// 형제 칸도 탐색기라 둘 다 160 을 지킬 수 없으면 거절하고, 비율을 바꾸지 않는다.
+/// 형제 칸도 탐색기라 둘 다 하한을 지킬 수 없으면 거절하고, 비율을 바꾸지 않는다.
 #[test]
 fn a_split_that_cannot_keep_both_explorers_is_refused() {
     let second = session("explorer", Some("terminal"));
@@ -166,7 +171,7 @@ fn a_split_that_cannot_keep_both_explorers_is_refused() {
     let (code, message, why) = reason(&refused);
     assert_eq!(code, -32602);
     assert_eq!(why, REFUSAL_REASON);
-    assert!(message.contains("160px"), "{message}");
+    assert!(message.contains(&format!("{}px", floor())), "{message}");
     assert_eq!(ratio(&destination), 0.5);
 }
 
@@ -186,7 +191,7 @@ fn a_new_explorer_cell_gets_the_floor() {
     let (_, terminal_height) = halves(636.0, 0.5);
     let (_, explorer) = halves(terminal_height, r);
     assert!(
-        r < 0.5 && explorer >= 160.0,
+        r < 0.5 && explorer >= floor(),
         "ratio {r}, explorer {explorer}"
     );
 }
@@ -237,7 +242,7 @@ fn a_pane_split_keeps_the_explorer_inside_the_target_pane() {
         PANE_BORDER_WIDTH.to_physical(1.0),
     );
     assert!(
-        top.height.value() - TAB_BAR >= 160.0,
+        top.height.value() - TAB_BAR >= floor(),
         "ratio {r}, top {:?}",
         top.height
     );
