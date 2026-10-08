@@ -62,7 +62,7 @@ L2 섹션은 좌측에 목록으로 뜨고 **필터 텍스트로 검색** 가능
 | `scripts.scripts[].triggers` | 항목 값 |
 | `keybindings.script_bindings` | 항목 값 |
 
-- 직렬화·역직렬화에 실패하면 창의 결과를 그대로 쓰고 사유를 같은 warn 로그로 남긴다. 저장 정책(`origin`)은 창의 사본 것을 잇는다.
+- 직렬화·역직렬화에 실패하면 창의 결과를 그대로 쓰고 사유를 같은 warn 로그로 남긴다. 직렬화하지 않는 필드(`serde` skip — 저장 정책 `origin`, 레거시 `appearance.markdown_font`·`explorer_font`)는 비교에 나타나지 않으므로 `carry_unserialized` 가 창의 결과에서 잇는다. `tasty-settings` 소스의 skip 사용이 이 목록과 다르면 `serde_skipped_fields_match_the_carried_list` 시험이 실패하므로, 새 skip 필드를 더할 때 목록과 잇는 함수를 함께 고친다.
 - 사용자 입력으로 바꾸는 설정(테마 토글·줌·힌트 위치·마우스 캡처 메뉴 등)은 modal 이 열린 동안 메인 윈도우 입력이 막혀 이 병합에 들어오지 않는다(`src/view/main.rs` `handle_engine_event`). 일부 항목(FileHandler 의 파일 서브탭 → `~/.tasty/file-handlers.toml`, Hook Handlers → `~/.tasty/hook-handlers.toml`)은 Save 시 각 registry commit 후 user TOML 에 직접 atomic write.
 
 **저장 실패는 오류 토스트로 알린다.** Tastyrc(Windows) 편집 저장이 실패하면 그 사유를 모달이 들고 있다가, 창이 닫힐 때 host 가 회수해 main window 에 Error 토스트(`toast.bashrc_save_failed`)로 띄운다 — Save 는 곧바로 설정 창을 닫으므로 설정 창 안에 띄우면 보이지 않는다. 사유에는 대상 경로와 OS 에러가 들어 있어 문구에 함께 싣되, 토스트 200자 캡에 맞춰 **가운데를 생략**한다(`tasty_i18n::t_fmt_fit`) — 호스트 기본 잘림은 꼬리(=OS 에러)를 버린다. 성공 토스트는 없다(저장은 기본 기대 동작이라 매번 알리면 소음). → [toast](../../design/systems/toast.md)

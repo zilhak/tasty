@@ -58,7 +58,7 @@ pub fn merge_settings_edit(
         .unwrap_or_else(|| e.clone());
     match merged.try_into::<Settings>() {
         Ok(mut settings) => {
-            settings.origin = edited.origin;
+            carry_unserialized(edited, &mut settings);
             MergeOutcome {
                 settings,
                 conflicts,
@@ -69,6 +69,25 @@ pub fn merge_settings_edit(
             conflicts: vec![format!("<decode failed: {err}>")],
         },
     }
+}
+
+/// 직렬화되지 않는 필드. 병합은 직렬화한 값을 비교하므로 이 필드들은 병합 결과에서 기본값이 된다.
+/// [`carry_unserialized`] 가 창의 결과에서 잇고, 시험이 이 목록과 소스의 `serde` skip 사용을 대조한다.
+#[cfg(test)]
+const UNSERIALIZED_FIELDS: [&str; 3] = ["origin", "markdown_font", "explorer_font"];
+
+/// [`UNSERIALIZED_FIELDS`] 를 창의 결과에서 잇는다. `origin` 은 저장 정책이고, 레거시 폰트 둘은 로드 때
+/// 비워지지만 값이 남아 있으면 창의 사본 것을 쓴다.
+fn carry_unserialized(edited: &Settings, merged: &mut Settings) {
+    merged.origin = edited.origin;
+    merged
+        .appearance
+        .markdown_font
+        .clone_from(&edited.appearance.markdown_font);
+    merged
+        .appearance
+        .explorer_font
+        .clone_from(&edited.appearance.explorer_font);
 }
 
 /// 값 하나를 병합한다. `None` 은 그 필드가 없다는 뜻이다.
@@ -395,6 +414,82 @@ mod tests {
             .map(|b| b.combo.as_str())
             .collect();
         assert_eq!(combos, ["ctrl+alt+2", "ctrl+alt+1"]);
+    }
+
+    /// 직렬화되지 않는 필드는 병합 결과에서 기본값이 되지 않고 창의 결과를 잇는다.
+    #[test]
+    fn unserialized_fields_come_from_the_window() {
+        let opened = Settings::default();
+        let mut edited = opened.clone();
+        edited.origin = crate::SettingsOrigin::ProtectedUnreadable;
+        edited.appearance.markdown_font.font_family = Some("legacy-md".into());
+        edited.appearance.explorer_font.font_family = Some("legacy-ex".into());
+        let out = merge(&opened, &edited, &opened).settings;
+        assert_eq!(out.origin, crate::SettingsOrigin::ProtectedUnreadable);
+        let family = |f: &crate::FontOverride| f.font_family.clone();
+        assert_eq!(
+            family(&out.appearance.markdown_font).as_deref(),
+            Some("legacy-md")
+        );
+        assert_eq!(
+            family(&out.appearance.explorer_font).as_deref(),
+            Some("legacy-ex")
+        );
+    }
+
+    /// `serde` 로 직렬화를 건너뛰는 필드는 병합이 잃으므로 [`UNSERIALIZED_FIELDS`] 와 같아야 한다.
+    /// 새 skip 필드를 더했다면 목록과 [`carry_unserialized`] 를 함께 고친다.
+    #[test]
+    fn serde_skipped_fields_match_the_carried_list() {
+        let mut found = std::collections::BTreeSet::new();
+        let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        for file in rust_files(&src) {
+            let text = std::fs::read_to_string(&file).unwrap();
+            let lines: Vec<&str> = text.lines().collect();
+            for (i, line) in lines.iter().enumerate() {
+                if !skips_serialization(line.trim()) {
+                    continue;
+                }
+                let field = lines[i + 1..]
+                    .iter()
+                    .map(|l| l.trim())
+                    .find(|l| !l.starts_with("#[") && !l.starts_with("//"))
+                    .and_then(|l| l.trim_start_matches("pub ").split(':').next())
+                    .map(|name| name.trim().to_string())
+                    .unwrap_or_else(|| format!("{}:{}", file.display(), i + 1));
+                found.insert(field);
+            }
+        }
+        let expected: std::collections::BTreeSet<String> =
+            UNSERIALIZED_FIELDS.iter().map(|s| s.to_string()).collect();
+        assert_eq!(found, expected);
+    }
+
+    /// `#[serde(...)]` 속성이 직렬화나 역직렬화를 건너뛰는지. `skip_serializing_if` 는 값이 있으면 쓰므로 제외한다.
+    fn skips_serialization(line: &str) -> bool {
+        let Some(inner) = line
+            .strip_prefix("#[serde(")
+            .and_then(|rest| rest.strip_suffix(")]"))
+        else {
+            return false;
+        };
+        inner
+            .split(',')
+            .map(str::trim)
+            .any(|token| matches!(token, "skip" | "skip_serializing" | "skip_deserializing"))
+    }
+
+    fn rust_files(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+        let mut out = Vec::new();
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                out.extend(rust_files(&path));
+            } else if path.extension().is_some_and(|e| e == "rs") {
+                out.push(path);
+            }
+        }
+        out
     }
 
     /// 창이 아무것도 바꾸지 않았으면 저장 시점 설정 그대로다.
