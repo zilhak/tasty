@@ -9,7 +9,7 @@ use tasty_type_geometry::length::LogicalPx;
 
 use crate::app::remote_browser::BrowserRequest;
 use tasty_remote::browse::RemoteWorkspace;
-use tasty_remote_profiles::RemoteProfiles;
+use tasty_remote_profiles::{AttachView, RemoteProfiles};
 use tasty_ui_widgets::{Button, ButtonVariant, CenterState, StatusKind, status_dot};
 
 use crate::adapters::ui::icons;
@@ -119,45 +119,61 @@ struct ProfileSummary {
     inactive: bool,
 }
 
+/// attach 프로필의 연결 상태. 참조한 ssh 프로필이 없으면 `missing`, 그 프로필이 꺼졌거나
+/// 인라인 접속의 감지에 실패했으면 `inactive`다. `target`은 표시용 접속 대상이다.
+pub(super) struct AttachStatus {
+    pub(super) missing: bool,
+    pub(super) inactive: bool,
+    pub(super) target: String,
+}
+
+pub(super) fn attach_status(v: &AttachView<'_>, profiles: &RemoteProfiles) -> AttachStatus {
+    let (missing, inactive) = match v.ssh_ref() {
+        Some(r) => {
+            let referenced = profiles.get(r).filter(|rp| rp.kind == "ssh");
+            let disabled = referenced
+                .and_then(|rp| rp.as_ssh())
+                .map(|s| s.is_disabled())
+                .unwrap_or(false);
+            (referenced.is_none(), disabled)
+        }
+        None => (false, v.detect_failed()),
+    };
+    let target = match v.ssh_ref() {
+        Some(r) => format!("→ {}", if r.is_empty() { "?" } else { r }),
+        None => {
+            let mut s = v.ssh_destination();
+            if s.is_empty() {
+                s = "?".into();
+            }
+            if let Some(port) = v.port()
+                && port != 22
+            {
+                s = format!("{s}:{port}");
+            }
+            s
+        }
+    };
+    AttachStatus {
+        missing,
+        inactive,
+        target,
+    }
+}
+
 fn attach_summaries(profiles: &RemoteProfiles) -> Vec<ProfileSummary> {
     profiles
         .profiles
         .iter()
         .filter(|p| p.kind == ATTACH_KIND)
         .filter_map(|p| {
-            let v = p.as_attach()?;
-            let (missing, inactive) = match v.ssh_ref() {
-                Some(r) => {
-                    let referenced = profiles.get(r).filter(|rp| rp.kind == "ssh");
-                    let disabled = referenced
-                        .and_then(|rp| rp.as_ssh())
-                        .map(|s| s.is_disabled())
-                        .unwrap_or(false);
-                    (referenced.is_none(), disabled)
-                }
-                None => (false, v.detect_failed()),
-            };
-            let target = match v.ssh_ref() {
-                Some(r) => format!("→ {}", if r.is_empty() { "?" } else { r }),
-                None => {
-                    let mut s = v.ssh_destination();
-                    if s.is_empty() {
-                        s = "?".into();
-                    }
-                    if let Some(port) = v.port()
-                        && port != 22
-                    {
-                        s = format!("{s}:{port}");
-                    }
-                    s
-                }
-            };
+            let st = attach_status(&p.as_attach()?, profiles);
             Some(ProfileSummary {
                 name: p.name.clone(),
                 label: p.label.clone().unwrap_or_default(),
-                target,
                 // dangling ref(missing) 도 연결하면 실패하므로 inactive 로 표시.
-                inactive: inactive || missing,
+                inactive: st.inactive || st.missing,
+                target: st.target,
             })
         })
         .collect()

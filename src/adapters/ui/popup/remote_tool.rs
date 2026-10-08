@@ -1372,32 +1372,11 @@ fn draw_attach_row(
 ) -> Option<AttachRowAction> {
     let v = p.as_attach()?;
     // 참조가 없거나 감지에 실패한 프로필은 비활성으로 표시한다.
-    let (missing, inactive) = match v.ssh_ref() {
-        Some(r) => {
-            let referenced = profiles.get(r).filter(|rp| rp.kind == "ssh");
-            let disabled = referenced
-                .and_then(|rp| rp.as_ssh())
-                .map(|s| s.is_disabled())
-                .unwrap_or(false);
-            (referenced.is_none(), disabled)
-        }
-        None => (false, v.detect_failed()),
-    };
-    let target = match v.ssh_ref() {
-        Some(r) => format!("→ {}", if r.is_empty() { "?" } else { r }),
-        None => {
-            let mut s = v.ssh_destination();
-            if s.is_empty() {
-                s = "?".into();
-            }
-            if let Some(port) = v.port()
-                && port != 22
-            {
-                s = format!("{s}:{port}");
-            }
-            s
-        }
-    };
+    let super::remote_attach::AttachStatus {
+        missing,
+        inactive,
+        target,
+    } = super::remote_attach::attach_status(&v, profiles);
     let mode_tag = if v.ssh_ref().is_some() {
         t("remote_tool.attach_tag_profile")
     } else {
