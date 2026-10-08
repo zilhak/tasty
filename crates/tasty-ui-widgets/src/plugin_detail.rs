@@ -4,10 +4,59 @@
 use tasty_type_appearance::theme::Theme;
 
 use crate::button::{Button, ButtonVariant};
-use crate::chip::{kbd, kbd_width};
+use crate::chip::{TagVariant, kbd, kbd_width, tag};
 use crate::control::ControlSize;
 use crate::plugin_add::PLUGIN_ADD_INSET;
 use crate::toggle::switch_with_label_color;
+
+/// 상세 이름 줄. 이름(font-size-max · text-primary), 버전 Tag, 있으면 배지(caption · accent-agent)를
+/// `spacing_sm` 간격으로 잇는다. 디자인의 semibold 는 굵은 UI 글꼴이 없어 크기와 색으로 근사한다.
+pub fn plugin_detail_name_row(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    name: &str,
+    version: &str,
+    badge: Option<&str>,
+) {
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+        ui.label(
+            egui::RichText::new(name)
+                .size(theme.font_size_max.value())
+                .color(theme.text_primary().to_egui()),
+        );
+        tag(
+            ui,
+            theme,
+            &format!("v{version}"),
+            TagVariant::Default,
+            false,
+        );
+        if let Some(badge) = badge {
+            ui.label(
+                egui::RichText::new(badge)
+                    .size(theme.font_size_caption.value())
+                    .color(theme.accent_agent().to_egui()),
+            );
+        }
+    });
+}
+
+/// 상세 설명 문단. body · text-secondary, 폭은 `measure_lg` 를 넘지 않고 줄바꿈한다.
+pub fn plugin_detail_description(ui: &mut egui::Ui, theme: &Theme, text: &str) {
+    let width = theme.measure_lg.value().min(ui.available_width());
+    ui.scope(|ui| {
+        ui.set_max_width(width);
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new(text)
+                    .size(theme.font_size_body.value())
+                    .color(theme.text_secondary().to_egui()),
+            )
+            .wrap(),
+        );
+    });
+}
 
 /// 이름 줄 아래 메타 줄. 항목을 mono caption · text-muted 로 ` · ` 를 사이에 두고 잇는다.
 /// 빈 항목은 건너뛴다.

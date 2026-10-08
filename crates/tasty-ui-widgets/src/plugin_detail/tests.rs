@@ -143,3 +143,22 @@ fn the_action_buttons_end_at_the_bar_inset_and_follow_screen_order() {
         uninstall.right() + pad_x
     );
 }
+
+#[test]
+fn the_description_wraps_within_measure_lg_in_a_wide_column() {
+    let theme = theme();
+    let long =
+        "A plugin description that is much longer than one line of the detail column. ".repeat(4);
+    let rect = drawn_rect(900.0, |ui, theme| {
+        plugin_detail_description(ui, theme, &long);
+    });
+    assert!(
+        rect.width() <= theme.measure_lg.value() + 0.5,
+        "description is {} wide",
+        rect.width()
+    );
+    assert!(
+        rect.height() > theme.font_size_body.value() * 2.0,
+        "it wraps"
+    );
+}

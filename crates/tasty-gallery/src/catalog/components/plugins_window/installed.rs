@@ -8,8 +8,9 @@ use tasty_ui_widgets::tokens::{PLUGIN_LIST_ROW_HEIGHT, STRUCT_GAP_2};
 use tasty_ui_widgets::{
     Button, ButtonVariant, PluginAvatarSize, PluginDetailBarView, PluginInstallPathsView,
     TagVariant, margin_sym, paint_plugin_avatar, plugin_avatar, plugin_command_row,
-    plugin_detail_bar, plugin_detail_bar_height, plugin_detail_meta, plugin_detail_section,
-    plugin_detail_section_gap, plugin_install_paths, tag,
+    plugin_detail_bar, plugin_detail_bar_height, plugin_detail_description, plugin_detail_meta,
+    plugin_detail_name_row, plugin_detail_section, plugin_detail_section_gap, plugin_install_paths,
+    tag,
 };
 
 /// 상세 컬럼이 그릴 것 — 본체는 선택 상태와 uninstall 확인 상태로 갈린다.
@@ -311,32 +312,12 @@ pub(super) fn detail_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, de
         plugin_avatar(ui, theme, row.name, PluginAvatarSize::Detail);
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
-            ui.horizontal(|ui| {
-                ui.label(
-                    egui::RichText::new(row.name)
-                        .size(theme.font_size_max.value())
-                        .strong()
-                        .color(theme.text_primary().to_egui()),
-                );
-                tag(
-                    ui,
-                    theme,
-                    &format!("v{}", row.version),
-                    TagVariant::Default,
-                    false,
-                );
-                if row.builtin {
-                    ui.label(
-                        egui::RichText::new("built-in")
-                            .size(theme.font_size_caption.value())
-                            .color(theme.accent_agent().to_egui()),
-                    );
-                }
-            });
+            let badge = row.builtin.then(|| crate::i18n::t("plugins.builtin_badge"));
+            plugin_detail_name_row(ui, theme, row.name, row.version, badge);
             plugin_detail_meta(ui, theme, &[row.authors, row.id]);
         });
     });
-    caption(&mut child, theme, row.description);
+    plugin_detail_description(&mut child, theme, row.description);
 
     if row.health_error && row.enabled {
         health_box(&mut child, theme);

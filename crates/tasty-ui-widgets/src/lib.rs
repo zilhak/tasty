@@ -155,7 +155,8 @@ pub use plugin_add::{
 pub use plugin_avatar::{PluginAvatarSize, paint_plugin_avatar, plugin_avatar};
 pub use plugin_detail::{
     PluginDetailBarClicks, PluginDetailBarView, plugin_command_row, plugin_detail_bar,
-    plugin_detail_bar_height, plugin_detail_meta,
+    plugin_detail_bar_height, plugin_detail_description, plugin_detail_meta,
+    plugin_detail_name_row,
 };
 pub use plugin_paths::{
     PluginInstallPathsView, plugin_detail_section, plugin_detail_section_gap, plugin_install_paths,

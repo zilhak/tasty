@@ -291,7 +291,6 @@ src/catalog/components/plugins_window/installed.rs	Install path	plugins.install_
 src/catalog/components/plugins_window/installed.rs	Open folder	plugins.open_folder
 src/catalog/components/plugins_window/installed.rs	Permissions	plugins.permissions,settings.tab.macos_permissions
 src/catalog/components/plugins_window/installed.rs	Surface kinds	plugins.surface_kinds
-src/catalog/components/plugins_window/installed.rs	built-in	file_handler.picker.origin_host,plugins.builtin_badge
 src/catalog/components/port_scanner.rs	Address	port_scanner.column_address
 src/catalog/components/port_scanner.rs	Apply	port_scanner.state_filter_apply,preset.popup.apply_button,remote_tool.filter_apply,settings.file_handler.hook_handlers.seq_apply,settings.keybindings.apply_button
 src/catalog/components/port_scanner.rs	Close	dag_list.close,port_scanner.close,remote_attach.close,remote_tool.close,titlebar.close
