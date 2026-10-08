@@ -174,6 +174,10 @@ mod report_ipc_tests;
 #[cfg(test)]
 mod holding_ttl_ipc_tests;
 
+#[path = "agent/record_limit_ipc_tests.rs"]
+#[cfg(test)]
+mod record_limit_ipc_tests;
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;
