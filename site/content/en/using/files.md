@@ -1,4 +1,4 @@
-<!-- source-hash: 27df78f8390f -->
+<!-- source-hash: 7aa121b93a96 -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -64,7 +64,7 @@ Click the address bar to type a path directly; recently visited folders appear a
 | Copy path | `Alt+Shift+C` |
 | Copy / cut / paste | `Ctrl+C` / `Ctrl+X` / `Ctrl+V` (the same bindings as the terminal) |
 
-Click to select, `Ctrl+click` to add, `Shift+click` to select a range.
+Click to select, `Ctrl+click` to add, `Shift+click` to select a range. `Shift+click` selects from the last item you clicked to the one you click, and `Ctrl+Shift+click` adds that range to the current selection. On macOS use `Cmd` instead of `Ctrl`.
 
 ### Type to find
 
