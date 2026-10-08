@@ -12,6 +12,8 @@ pub mod debug_os_open;
 pub mod jump_list;
 #[cfg(all(target_os = "macos", feature = "gui"))]
 pub mod macos_delegate;
+// macOS 메뉴 key equivalent 변환표. OS 호출이 없는 순수부라 모든 OS 에서 컴파일하고 시험한다.
+pub mod menu_key_equivalent;
 // 부팅 권한 안내 문단 조립. OS 접근이 없어 gui 없이도 컴파일한다(갤러리가 쓴다).
 pub mod macos_permission_notice;
 // 순수한 목록 결정 로직이 macOS 밖에서도 유닛테스트되도록 모듈 자체는 gui 빌드 전체에서

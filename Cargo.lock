@@ -6123,6 +6123,7 @@ dependencies = [
  "objc2-foundation 0.3.2",
  "png 0.18.1",
  "tasty-i18n",
+ "tasty-key-match",
  "tasty-settings",
  "tasty-test-support",
  "tasty-utils",

@@ -249,6 +249,12 @@ const NAMED_KEY_TOKENS: &[(NamedKey, &str)] = &[
     (NamedKey::Escape, "escape"),
 ];
 
+/// 바인딩 키 토큰으로 쓰는 이름 키 이름 전부. 다른 표(OS 메뉴 key equivalent 등)가 같은 이름 집합을
+/// 다루는지 시험에서 대조할 때 쓴다.
+pub fn named_key_tokens() -> impl Iterator<Item = &'static str> {
+    NAMED_KEY_TOKENS.iter().map(|(_, name)| *name)
+}
+
 fn named_key_to_string(key: &NamedKey) -> Option<&'static str> {
     NAMED_KEY_TOKENS
         .iter()

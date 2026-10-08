@@ -50,6 +50,8 @@ x11-dl = { version = "2.21", optional = true }
 [dev-dependencies]
 # 시험에서 환경변수와 격리 홈을 원상 복구한다.
 tasty-test-support = { path = "../tasty-test-support" }
+# 메뉴 key equivalent 표가 키 매칭 규칙과 같은 이름 집합을 다루는지 시험에서 대조한다.
+tasty-key-match = { path = "../tasty-key-match" }
 tempfile = "3"
 
 [features]

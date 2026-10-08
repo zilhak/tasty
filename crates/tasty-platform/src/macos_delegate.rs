@@ -323,43 +323,26 @@ fn setup_main_menu(
     app.setMainMenu(Some(&main_menu));
 }
 
-/// binding 문자열 (e.g. `"alt+shift+n"`) 을 NSMenuItem 의 key equivalent + modifier mask 로 변환.
-///
-/// `docs/design/policies/key-mapping.md` 의 macOS 매핑:
-/// - `ctrl` → Control, `shift` → Shift, `option` → Option
-/// - `alt` → **Cmd** (위치 기반 추상화: macOS 의 ⌘ 는 Windows 의 Alt 와 같은 손가락 위치)
-///
-/// 빈 문자열 / prefix 만 있는 경우 key = `""` → 메뉴 항목에 단축키 미표시.
+/// binding 문자열 (e.g. `"alt+shift+n"`) 을 NSMenuItem 의 key equivalent + modifier mask 로 변환한다.
+/// 키 이름·수식키 매핑은 [`crate::menu_key_equivalent::menu_key_equivalent`] 가 정한다. 메뉴로 나타낼 수
+/// 없는 binding 은 key = `""` → 메뉴 항목에 단축키 미표시.
 fn binding_to_nsmenu_key(
     binding: &str,
 ) -> (Retained<NSString>, objc2_app_kit::NSEventModifierFlags) {
     use objc2_app_kit::NSEventModifierFlags;
+    let equivalent = crate::menu_key_equivalent::menu_key_equivalent(binding);
     let mut mods = NSEventModifierFlags::empty();
-    let mut rest = binding;
-    loop {
-        let lower = rest.to_ascii_lowercase();
-        if lower.starts_with("ctrl+") {
-            mods |= NSEventModifierFlags::Control;
-            rest = &rest[5..];
-        } else if lower.starts_with("shift+") {
-            mods |= NSEventModifierFlags::Shift;
-            rest = &rest[6..];
-        } else if lower.starts_with("alt+") {
-            mods |= NSEventModifierFlags::Command;
-            rest = &rest[4..];
-        } else if lower.starts_with("option+") {
-            mods |= NSEventModifierFlags::Option;
-            rest = &rest[7..];
-        } else {
-            break;
+    for (on, flag) in [
+        (equivalent.control, NSEventModifierFlags::Control),
+        (equivalent.shift, NSEventModifierFlags::Shift),
+        (equivalent.option, NSEventModifierFlags::Option),
+        (equivalent.command, NSEventModifierFlags::Command),
+    ] {
+        if on {
+            mods |= flag;
         }
     }
-    let key = if rest.is_empty() {
-        NSString::from_str("")
-    } else {
-        NSString::from_str(&rest.to_ascii_lowercase())
-    };
-    (key, mods)
+    (NSString::from_str(&equivalent.key), mods)
 }
 
 /// 단축키 없는 표준 NSResponder 메뉴 항목. target=nil로 responder chain에 전달한다.
@@ -432,11 +415,42 @@ mod tests {
         assert_eq!(mods, NSEventModifierFlags::empty());
     }
 
+    /// 키 없이 수식키만 있는 값은 메뉴로 나타낼 수 없어 수식키까지 비운다.
     #[test]
-    fn binding_to_nsmenu_key_prefix_only_returns_empty_key() {
+    fn binding_to_nsmenu_key_prefix_only_clears_key_and_modifiers() {
         let (key, mods) = binding_to_nsmenu_key("alt+");
         assert_eq!(key.to_string(), "");
-        assert_eq!(mods, NSEventModifierFlags::Command);
+        assert_eq!(mods, NSEventModifierFlags::empty());
+    }
+
+    /// 순수 변환표(`menu_key_equivalent`)의 숫자 값이 AppKit 상수와 같다.
+    #[test]
+    fn menu_key_table_matches_appkit_constants() {
+        use objc2_app_kit::*;
+        let key = |b: &str| crate::menu_key_equivalent::menu_key_equivalent(b).key;
+        let one = |c: std::ffi::c_uint| char::from_u32(c).unwrap().to_string();
+        let cases = [
+            ("alt+up", NSUpArrowFunctionKey),
+            ("alt+down", NSDownArrowFunctionKey),
+            ("alt+left", NSLeftArrowFunctionKey),
+            ("alt+right", NSRightArrowFunctionKey),
+            ("alt+f1", NSF1FunctionKey),
+            ("alt+f12", NSF12FunctionKey),
+            ("alt+f13", NSF13FunctionKey),
+            ("alt+f24", NSF24FunctionKey),
+            ("alt+insert", NSInsertFunctionKey),
+            ("alt+home", NSHomeFunctionKey),
+            ("alt+end", NSEndFunctionKey),
+            ("alt+pageup", NSPageUpFunctionKey),
+            ("alt+pagedown", NSPageDownFunctionKey),
+            ("alt+backspace", NSBackspaceCharacter),
+            ("alt+delete", NSDeleteCharacter),
+            ("alt+tab", NSTabCharacter),
+            ("alt+enter", NSCarriageReturnCharacter),
+        ];
+        for (binding, constant) in cases {
+            assert_eq!(key(binding), one(constant), "{binding}");
+        }
     }
 
     #[test]
