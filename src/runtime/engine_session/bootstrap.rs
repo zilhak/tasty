@@ -87,7 +87,7 @@ impl EngineSession {
         let next_ids = shared_ids.unwrap_or_default();
         let registries =
             registries.unwrap_or_else(|| super::super::registries::RuntimeRegistries::new(None));
-        let session = Self {
+        let mut session = Self {
             id: EngineId::issue(),
             remote: crate::remote::state::RemoteState::new(),
             live: crate::core::live::LiveDomainState::with_notifications(
@@ -123,6 +123,7 @@ impl EngineSession {
             #[cfg(all(test, feature = "gui"))]
             test_host_commands: None,
         };
+        session.runtime.child_terminals.bind_slot(layout_slot);
 
         Ok(session)
     }

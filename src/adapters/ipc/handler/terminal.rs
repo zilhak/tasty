@@ -102,7 +102,7 @@ fn resolve_parent(
     engine
         .runtime
         .child_terminals
-        .single_parent()
+        .single_parent(&engine.core.live_surface_ids())
         .ok_or_else(|| {
             JsonRpcResponse::invalid_params(
                 id.clone(),

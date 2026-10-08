@@ -35,7 +35,12 @@ impl Request {
             let id = serde_json::Value::Null;
             let parent =
                 crate::ipc::handler::params::optional_u32(&request.params, "surface", &id)?
-                    .or_else(|| session.runtime.child_terminals.single_parent())
+                    .or_else(|| {
+                        session
+                            .runtime
+                            .child_terminals
+                            .single_parent(&session.core_state.live_surface_ids())
+                    })
                     .ok_or_else(|| {
                         JsonRpcResponse::invalid_params(
                             id.clone(),

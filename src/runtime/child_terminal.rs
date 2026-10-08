@@ -3,9 +3,11 @@
 //! 호출자가 실제 surface 목록과 대조해 없어진 항목을 정리한다.
 //!
 //! 윈도우(engine)마다 이 레지스트리를 따로 읽는다. surface 는 한 engine 에만 있으므로 각 engine 은
-//! 자기가 등록·변경했거나 살아 있는 것을 본 surface 의 항목만 소유한다. 저장할 때 파일을 다시 읽어
-//! 소유한 항목은 메모리 값으로, 나머지는 파일 값 그대로 합친다. 정리도 소유한 항목만 지운다.
-//! 그래서 한 윈도우의 저장·정리가 다른 윈도우나 아직 열지 않은 윈도우의 관계를 지우지 않는다.
+//! 자기 레이아웃 슬롯의 항목과, 자기가 등록·변경했거나 살아 있는 것을 본 surface 의 항목만 소유한다.
+//! 저장할 때 파일을 다시 읽어 소유한 항목은 메모리 값으로, 나머지는 파일 값 그대로 합친다. 정리도
+//! 소유한 항목만 지운다. 그래서 한 윈도우의 저장·정리가 다른 윈도우나 아직 열지 않은 윈도우의 관계를
+//! 지우지 않는다. 어느 창에도 돌아오지 않을 항목은 시작할 때([`prune_on_boot`])와 engine 이 사라질 때
+//! ([`ChildTerminalRegistry::release_owned`]) 지운다.
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -47,9 +49,15 @@ pub struct ChildTerminalRegistry {
     /// load로 정하며 default는 저장 경로가 없다.
     #[serde(skip)]
     path: Option<PathBuf>,
+    /// 항목 surface 가 속한 레이아웃 슬롯. 슬롯 engine 의 소유 판정과 시작 시 정리에 쓴다.
+    #[serde(default)]
+    slot_of: HashMap<u32, u32>,
     /// 이 engine 이 소유한 surface. 저장 병합과 정리의 범위를 정한다.
     #[serde(skip)]
     owned: HashSet<u32>,
+    /// 이 engine 의 레이아웃 슬롯. [`Self::bind_slot`] 로 정한다.
+    #[serde(skip)]
+    slot: Option<u32>,
 }
 
 impl ChildTerminalRegistry {
@@ -71,8 +79,39 @@ impl ChildTerminalRegistry {
         self.write_json_to(&path);
     }
 
+    /// 이 engine 의 슬롯을 정하고 그 슬롯의 항목을 소유한다. 슬롯이 없는 engine(headless)은 한
+    /// 프로세스에 하나뿐이므로 읽은 항목을 모두 소유한다.
+    pub(crate) fn bind_slot(&mut self, slot: Option<u32>) {
+        self.slot = slot;
+        let mine: Vec<u32> = self
+            .surfaces()
+            .into_iter()
+            .filter(|s| slot.is_none() || self.slot_of.get(s) == slot.as_ref())
+            .collect();
+        self.owned.extend(mine);
+    }
+
+    /// 항목 어디에든 나오는 surface.
+    fn surfaces(&self) -> HashSet<u32> {
+        let mut all: HashSet<u32> = self.children.keys().copied().collect();
+        all.extend(self.parent_of.keys().copied());
+        all.extend(self.parent_of.values().copied());
+        all.extend(self.next_index.keys().copied());
+        all.extend(self.idle.keys().copied());
+        all.extend(self.needs_input.keys().copied());
+        all.extend(self.last_state_report_at.keys().copied());
+        all
+    }
+
     /// 소유한 surface 의 항목은 그대로 두고, 나머지는 `disk` 의 값으로 바꾼다.
     fn merge_from(&mut self, mut disk: Self) {
+        let present = self.surfaces();
+        self.slot_of.retain(|surface, _| present.contains(surface));
+        if let Some(slot) = self.slot {
+            for surface in present.intersection(&self.owned) {
+                self.slot_of.insert(*surface, slot);
+            }
+        }
         let owned = &self.owned;
         let others = |key: &u32| !owned.contains(key);
         disk.parent_of.retain(|child, _| others(child));
@@ -106,9 +145,39 @@ impl ChildTerminalRegistry {
             &mut self.last_state_report_at,
             owned,
         );
+        merge_owned(&mut disk.slot_of, &mut self.slot_of, owned);
         disk.path = self.path.take();
         disk.owned = std::mem::take(&mut self.owned);
+        disk.slot = self.slot;
         *self = disk;
+    }
+
+    /// engine 이 사라질 때 그 engine 이 소유한 항목(빈 부모 목록·다음 번호 포함)을 지우고 저장한다.
+    #[cfg(feature = "gui")]
+    pub(crate) fn release_owned(&mut self) {
+        let gone = self.owned.clone();
+        self.drop_surfaces(&gone);
+        self.save();
+    }
+
+    /// `gone` surface 의 자식 항목·상태와, 그래서 빈 `gone` 부모의 목록·다음 번호를 지운다.
+    #[cfg(feature = "gui")]
+    fn drop_surfaces(&mut self, gone: &HashSet<u32>) {
+        for list in self.children.values_mut() {
+            list.retain(|c| !gone.contains(&c.child_surface_id));
+        }
+        self.children
+            .retain(|parent, list| !(gone.contains(parent) && list.is_empty()));
+        let children = &self.children;
+        self.next_index
+            .retain(|parent, _| !gone.contains(parent) || children.contains_key(parent));
+        for map in [&mut self.idle, &mut self.needs_input] {
+            map.retain(|surface, _| !gone.contains(surface));
+        }
+        self.parent_of.retain(|child, _| !gone.contains(child));
+        self.last_state_report_at
+            .retain(|surface, _| !gone.contains(surface));
+        self.slot_of.retain(|surface, _| !gone.contains(surface));
     }
 
     fn own(&mut self, surface: u32) {
@@ -261,12 +330,16 @@ impl ChildTerminalRegistry {
         }
     }
 
-    /// 자식이 있는 부모가 정확히 하나일 때만 ID를 반환한다.
-    pub fn single_parent(&self) -> Option<u32> {
+    /// 이 창의 부모 가운데 자식이 있는 것이 정확히 하나일 때만 ID를 반환한다.
+    /// 이 창의 부모는 이 engine 이 소유했거나 `live`(이 engine 의 살아 있는 surface)에 있는 부모다.
+    /// 저장 병합으로 받은 다른 창의 항목은 세지 않는다.
+    pub fn single_parent(&self, live: &HashSet<u32>) -> Option<u32> {
         let parents: Vec<u32> = self
             .children
             .iter()
-            .filter(|(_, v)| !v.is_empty())
+            .filter(|(parent, list)| {
+                !list.is_empty() && (self.owned.contains(parent) || live.contains(parent))
+            })
             .map(|(k, _)| *k)
             .collect();
         if parents.len() == 1 {
@@ -309,6 +382,7 @@ impl ChildTerminalRegistry {
         self.idle.retain(|sid, _| !dead(sid));
         self.needs_input.retain(|sid, _| !dead(sid));
         self.last_state_report_at.retain(|sid, _| !dead(sid));
+        self.slot_of.retain(|sid, _| !dead(sid));
 
         summary
     }
@@ -320,6 +394,38 @@ pub fn now_epoch_ms() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0)
+}
+
+/// 첫 engine 을 만들기 전에 한 번 부른다. 레이아웃을 복원하지 않으면(`restore_layout = false`)
+/// 이전 실행의 surface 는 어느 창에도 돌아오지 않으므로 관계를 모두 버린다. 복원하면 `known_slots`
+/// (복원할 수 있는 슬롯) 밖의 슬롯에 속한 항목을 지운다. 슬롯 표시가 없는 이전 형식의 항목은 첫 창의
+/// 슬롯 `boot_slot` 에 속한 것으로 본다(그 창의 첫 정리가 살아 있지 않은 것을 지운다).
+#[cfg(feature = "gui")]
+pub(crate) fn prune_on_boot(restore_layout: bool, known_slots: &HashSet<u32>, boot_slot: u32) {
+    let Some(path) = tasty_utils::path::tasty_home().map(|d| d.join("child-terminals.json")) else {
+        return;
+    };
+    if !path.exists() {
+        return;
+    }
+    let registry = if restore_layout {
+        let mut registry = read_file(&path);
+        for surface in registry.surfaces() {
+            registry.slot_of.entry(surface).or_insert(boot_slot);
+        }
+        let gone: HashSet<u32> = registry
+            .slot_of
+            .iter()
+            .filter(|(_, slot)| **slot != boot_slot && !known_slots.contains(slot))
+            .map(|(surface, _)| *surface)
+            .collect();
+        registry.drop_surfaces(&gone);
+        registry
+    } else {
+        ChildTerminalRegistry::default()
+    };
+    ensure_parent_dir(&path);
+    registry.write_json_to(&path);
 }
 
 /// 파일 읽기·파싱 실패는 빈 상태로 처리한다.
@@ -535,11 +641,11 @@ mod tests {
     #[test]
     fn single_parent_returns_some_when_one() {
         let mut s = ChildTerminalRegistry::default();
-        assert_eq!(s.single_parent(), None);
+        assert_eq!(s.single_parent(&HashSet::new()), None);
         s.register_child(10, entry(100, 0));
-        assert_eq!(s.single_parent(), Some(10));
+        assert_eq!(s.single_parent(&HashSet::new()), Some(10));
         s.register_child(20, entry(200, 0));
-        assert_eq!(s.single_parent(), None);
+        assert_eq!(s.single_parent(&HashSet::new()), None);
     }
 
     #[test]
@@ -686,5 +792,115 @@ mod tests {
         assert_eq!(summary.removed_children, 1);
         first.save();
         assert_eq!(children_on_disk(), [(1026, 1028)]);
+    }
+
+    /// 슬롯 `slot` 의 창이 읽은 레지스트리.
+    #[cfg(feature = "gui")]
+    fn window(slot: u32) -> ChildTerminalRegistry {
+        let mut registry = ChildTerminalRegistry::load();
+        registry.bind_slot(Some(slot));
+        registry
+    }
+
+    /// 다른 창의 항목을 저장 병합으로 받아도 부모 생략 폴백은 이 창의 부모만 센다. 결과가 마지막 저장
+    /// 시점에 따라 달라지지 않는다.
+    #[cfg(feature = "gui")]
+    #[test]
+    fn single_parent_counts_only_this_windows_parents_after_a_merge() {
+        let _home = tasty_test_support::IsolatedHome::new();
+        let mut first = window(1);
+        let mut second = window(2);
+        first.register_child(513, entry(1027, 0));
+        first.save();
+        second.register_child(1026, entry(1028, 0));
+        second.save();
+        assert_eq!(first.single_parent(&live(&[513, 1027])), Some(513));
+
+        // 첫 창이 다시 저장해 둘째 창의 항목을 받은 뒤에도 같다.
+        first.set_idle(1027, true);
+        first.save();
+        assert_eq!(
+            first.list_children(1026).len(),
+            1,
+            "merged the other window"
+        );
+        assert_eq!(first.single_parent(&live(&[513, 1027])), Some(513));
+        assert_eq!(second.single_parent(&live(&[1026, 1028])), Some(1026));
+
+        // 재시작 뒤 아직 정리하지 않은 창도 자기 슬롯의 부모만 센다.
+        assert_eq!(window(1).single_parent(&live(&[])), Some(513));
+        assert_eq!(window(2).single_parent(&live(&[])), Some(1026));
+    }
+
+    /// 레이아웃을 복원하지 않으면 재시작마다 이전 실행의 관계를 버린다. 다시 열리지 않는 둘째 창의
+    /// 관계도 남지 않으므로 유령이 쌓여 부모 생략 폴백을 막지 않는다.
+    #[cfg(feature = "gui")]
+    #[test]
+    fn relations_do_not_pile_up_across_restarts_without_layout_restore() {
+        let _home = tasty_test_support::IsolatedHome::new();
+        let mut second = window(2);
+        second.register_child(1026, entry(1029, 0));
+        second.save();
+        for (parent, child) in [(1027, 1028), (1541, 1542), (2055, 2056)] {
+            prune_on_boot(false, &HashSet::new(), 1);
+            let mut registry = window(1);
+            registry.reconcile_with_live_surfaces(&live(&[parent, child]));
+            registry.register_child(parent, entry(child, 0));
+            registry.save();
+            assert_eq!(
+                registry.single_parent(&live(&[parent, child])),
+                Some(parent)
+            );
+            assert_eq!(children_on_disk(), [(parent, child)]);
+        }
+    }
+
+    /// 레이아웃을 복원하면 다시 열 수 있는 슬롯의 관계만 남긴다. 슬롯 표시가 없는 이전 형식의 항목은
+    /// 첫 창의 슬롯에 속한다.
+    #[cfg(feature = "gui")]
+    #[test]
+    fn boot_prune_keeps_relations_of_slots_that_can_reopen() {
+        let _home = tasty_test_support::IsolatedHome::new();
+        let mut legacy = ChildTerminalRegistry::load();
+        legacy.register_child(7, entry(8, 0));
+        legacy.save();
+        let mut second = window(2);
+        second.register_child(1026, entry(1028, 0));
+        second.save();
+        let mut third = window(3);
+        third.register_child(1540, entry(1542, 0));
+        third.save();
+
+        prune_on_boot(true, &[1, 2].into_iter().collect(), 1);
+        assert_eq!(children_on_disk(), [(7, 8), (1026, 1028)]);
+        assert_eq!(window(1).single_parent(&live(&[])), Some(7));
+    }
+
+    /// 다시 열지 않는 창이 닫히면 그 창의 관계와 빈 부모 목록·다음 번호를 지우고 다른 창 것은 둔다.
+    #[cfg(feature = "gui")]
+    #[test]
+    fn a_released_window_removes_its_parent_keys() {
+        let _home = tasty_test_support::IsolatedHome::new();
+        let mut first = window(1);
+        let index = first.next_index_for(513);
+        first.register_child(513, entry(1027, index));
+        first.save();
+        let mut second = window(2);
+        let index = second.next_index_for(1026);
+        second.register_child(1026, entry(1028, index));
+        assert!(second.unregister_child_by_surface(1028));
+        second.save();
+        let on_disk = ChildTerminalRegistry::load();
+        assert!(
+            on_disk.next_index.contains_key(&1026),
+            "keys stay while open"
+        );
+
+        second.release_owned();
+        let on_disk = ChildTerminalRegistry::load();
+        assert_eq!(children_on_disk(), [(513, 1027)]);
+        assert!(!on_disk.children.contains_key(&1026));
+        assert!(!on_disk.next_index.contains_key(&1026));
+        assert!(on_disk.next_index.contains_key(&513));
     }
 }

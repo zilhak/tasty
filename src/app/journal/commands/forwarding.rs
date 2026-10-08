@@ -29,8 +29,12 @@ fn local_op(
     };
     match request.method.as_str() {
         "terminal.kill" => {
-            let parent =
-                id("surface").or_else(|| session.runtime.child_terminals.single_parent())?;
+            let parent = id("surface").or_else(|| {
+                session
+                    .runtime
+                    .child_terminals
+                    .single_parent(&session.core.live_surface_ids())
+            })?;
             let entry = session
                 .runtime
                 .child_terminals

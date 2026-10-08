@@ -26,14 +26,22 @@ idle/needs_input 상태를 보관한다. 마지막 상태 보고 시각 `last_st
 호스트는 접근할 때마다 실제 surface 목록과 대조해 사라진 자식을 제거한다. 재시작 후 첫
 접근에서도 이전 세션의 잔재를 정리한다.
 
-윈도우마다 engine 이 이 파일을 따로 읽는다. surface 는 한 engine 에만 있으므로 engine 은
-자기가 등록·변경·해제했거나 살아 있는 것을 본 surface 의 항목만 소유한다.
+윈도우마다 engine 이 이 파일을 따로 읽는다. 항목마다 그 surface 가 속한 레이아웃 슬롯을 함께
+저장한다(`slot_of`). surface 는 한 engine 에만 있으므로 engine 은 자기 슬롯의 항목과, 자기가
+등록·변경·해제했거나 살아 있는 것을 본 surface 의 항목만 소유한다. 슬롯이 없는 headless engine 은
+하나뿐이므로 읽은 항목을 모두 소유한다.
 
 - **저장**: 파일을 다시 읽어 소유한 surface 의 항목은 메모리 값으로, 나머지는 파일 값으로 합친 뒤
   쓴다. 메모리도 합친 결과로 바꾼다. 그래서 한 윈도우의 저장이 다른 윈도우가 등록한 관계를 지우지 않는다.
 - **정리**: 이 engine 이 소유했는데 지금 이 engine 에 없는 surface 만 지운다. 다른 윈도우의 surface 나
   재시작 뒤 아직 열지 않은 윈도우의 surface 는 이 engine 에 없어도 지우지 않는다. 그런 항목은 그 윈도우가
-  열려 정리하거나 surface 가 닫힐 때 지운다. 다시 열리지 않는 윈도우의 항목은 파일에 남는다.
+  다시 열려 정리하거나 surface 가 닫힐 때 지운다.
+- **시작할 때**: 첫 engine 을 만들기 전에 `restore_layout = false` 이면 파일의 관계를 모두 버린다(이전
+  실행의 surface 는 어느 윈도우에도 돌아오지 않는다). 켜져 있으면 다시 열 수 있는 슬롯(슬롯 파일이 있거나
+  journal 이 아는 슬롯) 밖의 항목을 지운다. 슬롯 표시가 없는 이전 형식의 항목은 첫 윈도우의 슬롯에 속한
+  것으로 본다.
+- **윈도우를 닫을 때**: `restore_layout = false` 라 슬롯을 다시 열지 않으면 그 윈도우가 소유한 항목(빈
+  부모 목록·다음 번호 포함)을 지운다. 켜져 있으면 윈도우를 다시 열 수 있으므로 그대로 둔다.
 
 ### 상태 보고와 화면 알림
 
@@ -248,7 +256,8 @@ kill/release/respawn 세 경로가 같은 메시지를 쓴다. 실패는 `exit=1
 
 `kill`/`release`/`respawn`/`broadcast` 는 `--surface`(parent) 를 생략할 수 있다 — host 가
 현재 engine 의 `runtime.child_terminals.single_parent()` 로 폴백한다(parent 가 정확히 1개일 때만
-성공, 0 개·2 개 이상이면 에러). 이 폴백은 **그 engine(= 하나의 main window) 안에서만**
+성공, 0 개·2 개 이상이면 에러). 셈에 넣는 parent 는 그 engine 이 소유했거나 그 engine 에 살아 있는
+surface 뿐이다. 저장 병합으로 받아 온 다른 윈도우의 항목은 세지 않는다. 이 폴백은 **그 engine(= 하나의 main window) 안에서만**
 유일성을 본다 — main window 가 2 개 이상 열린 세션에서는 애초에 어느 window 를 봐야
 하는지가 정해지지 않는다. 그래서 이 4 개 메서드가 `--surface` 없이(그리고 라우팅 가능한
 다른 리소스 id 도 없이) 호출됐는데 main window 가 2 개 이상이면, focused window 로 조용히
@@ -271,6 +280,10 @@ kill/release/respawn 세 경로가 같은 메시지를 쓴다. 실패는 `exit=1
 - Given 죽은 자식이 남은 registry When `terminal.children` Then reconcile 로 목록에서 제거.
 - Given 윈도우 두 개 When 각 윈도우에서 `terminal.adopt` 로 자식을 등록한다 Then 파일에 두 관계가 모두 남는다(`child_terminal.rs` 의 `children_registered_in_two_windows_both_survive_a_restart`).
 - Given 재시작 뒤 윈도우 하나만 열렸다 When 그 윈도우에서 `terminal.children` 이 정리를 돌린다 Then 아직 열지 않은 윈도우의 관계는 지우지 않는다(`reconcile_keeps_children_of_windows_it_does_not_own`).
+- Given 두 윈도우에 각각 부모가 하나씩 있다 When 한 윈도우가 저장해 다른 윈도우의 항목을 받은 뒤 `--surface` 없이 `terminal.children` 을 부른다 Then 그 윈도우의 부모 하나로 폴백한다(`single_parent_counts_only_this_windows_parents_after_a_merge`).
+- Given `restore_layout = false` When 재시작을 세 번 하며 매번 자식을 하나 등록한다 Then 파일에는 마지막 실행의 관계만 남고 `--surface` 생략 폴백이 동작한다(`relations_do_not_pile_up_across_restarts_without_layout_restore`).
+- Given `restore_layout = true` 이고 슬롯 1·2만 다시 열 수 있다 When 시작한다 Then 슬롯 3 의 관계를 지우고 슬롯 1·2 와 슬롯 표시 없는 항목은 남긴다(`boot_prune_keeps_relations_of_slots_that_can_reopen`).
+- Given `restore_layout = false` When 윈도우를 닫는다 Then 그 윈도우의 관계·빈 부모 목록·다음 번호를 지우고 다른 윈도우의 것은 둔다(`a_released_window_removes_its_parent_keys`).
 - Given 이미 존재하는 임의의 surface(spawn 으로 만들지 않은 일반 터미널 탭 포함) When `terminal.adopt{surface=P, target}` Then `occupancy_of(target)==Soft`·`holder.parent==P`·`terminal.children` 목록에 나타남.
 - Given 이미 등록된 child 또는 hard 점유 중인 대상 When `terminal.adopt` Then 에러 반환 + registry 불변.
 - Given 점유된 child C When `terminal.release` Then `occupancy_of(C)==None` + `terminal.children` 목록에서 사라짐 + surface(탭)는 여전히 열려있음(닫히지 않음).

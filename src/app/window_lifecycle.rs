@@ -417,6 +417,10 @@ impl App {
                     .and_then(|(id, binding)| binding.map(|binding| (id, binding)))
             });
             if let Some((id, binding)) = retiring {
+                // 슬롯을 다시 열지 않으므로 이 창이 가진 자식 관계(빈 부모 목록·다음 번호 포함)를 지운다.
+                if let Some(session) = self.engines.session_mut(id) {
+                    session.runtime.child_terminals.release_owned();
+                }
                 self.engines.begin_retiring_window(wid);
                 self.journal.retire_engine(id, binding, true);
                 drop(main);
