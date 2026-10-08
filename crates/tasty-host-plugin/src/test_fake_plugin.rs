@@ -1,7 +1,6 @@
 //! Unix 시험용 플러그인. bash /dev/tcp로 인증한 뒤 요청을 읽기만 하고 응답하지 않는다.
 #![cfg(unix)]
 
-use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
 /// 가짜 plugin 의 id — 매니페스트의 `id` 와 같다.
@@ -29,8 +28,7 @@ pub(crate) fn write(dir: &Path) {
     std::fs::create_dir_all(dir).expect("plugin dir");
     std::fs::write(dir.join("tasty-plugin.toml"), MANIFEST).expect("manifest");
     let entry = dir.join("fake.sh");
-    std::fs::write(&entry, ENTRY).expect("entry");
-    std::fs::set_permissions(&entry, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+    tasty_test_support::write_executable(&entry, ENTRY).expect("entry");
 }
 
 /// `dir` 에 설치된 가짜 plugin 의 package.

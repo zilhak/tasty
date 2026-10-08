@@ -5945,6 +5945,7 @@ dependencies = [
  "tasty-shm",
  "tasty-telemetry",
  "tasty-terminal",
+ "tasty-test-support",
  "tasty-themes",
  "tasty-timer",
  "tasty-type-appearance",

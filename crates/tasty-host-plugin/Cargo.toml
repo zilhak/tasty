@@ -55,6 +55,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # 테스트에서만 tasty_home의 스레드 로컬 override를 사용한다.
 # 격리 규칙: docs/dev-guide/unit-test-isolation.md#형태-d--사용자-홈을-기준선으로-삼는-시험.
 tasty-utils = { path = "../tasty-utils", features = ["test-support"] }
+# 시험용 가짜 플러그인 실행 파일을 ETXTBSY 없이 쓴다.
+tasty-test-support = { path = "../tasty-test-support" }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

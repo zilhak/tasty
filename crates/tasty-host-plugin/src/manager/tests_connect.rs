@@ -2,7 +2,6 @@
 //! 가짜 플러그인은 bash /dev/tcp를 사용하므로 Unix에서만 실행한다.
 #![cfg(unix)]
 
-use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -45,8 +44,7 @@ fn write_plugin(dir: &Path, entry: &str) -> tasty_plugin_manifest::PluginPackage
     std::fs::create_dir_all(dir).expect("plugin dir");
     std::fs::write(dir.join("tasty-plugin.toml"), MANIFEST).expect("manifest");
     let path = dir.join("entry.sh");
-    std::fs::write(&path, entry).expect("entry");
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+    tasty_test_support::write_executable(&path, entry).expect("entry");
     tasty_plugin_manifest::PluginPackage {
         dir: dir.to_path_buf(),
         manifest: toml::from_str(MANIFEST).expect("fixture manifest"),
