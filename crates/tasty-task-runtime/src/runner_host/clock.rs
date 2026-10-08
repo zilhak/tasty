@@ -23,7 +23,8 @@ impl HoldingClock {
     }
 
     /// `start_ms` 에서 멈춰 있는 시계와 그 시각. 시각은 돌려준 값을 바꿀 때만 움직인다.
-    #[cfg(test)]
+    // 사용처인 TTL 갱신 시험이 unix 전용이다.
+    #[cfg(all(test, unix))]
     pub(crate) fn manual(start_ms: u64) -> (Self, std::sync::Arc<std::sync::atomic::AtomicU64>) {
         use std::sync::atomic::{AtomicU64, Ordering};
         let now = std::sync::Arc::new(AtomicU64::new(start_ms));

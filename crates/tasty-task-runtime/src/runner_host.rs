@@ -206,7 +206,8 @@ impl HostExecutor {
     }
 
     /// TTL 점유의 획득·갱신 시각을 `clock` 으로 정한다.
-    #[cfg(test)]
+    // 사용처인 TTL 갱신 시험이 unix 전용이다.
+    #[cfg(all(test, unix))]
     pub(crate) fn with_holding_clock(mut self, clock: HoldingClock) -> Self {
         self.holding_clock = clock;
         self
