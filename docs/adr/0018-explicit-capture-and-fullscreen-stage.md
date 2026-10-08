@@ -25,7 +25,7 @@
 
 가려진 콘텐츠는 다시 그리지 않지만 원격 attach mesh 전달과 스크린샷은 계속 처리한다. GPU 분기는 surface 오프스크린 캡처 뒤, 일반 레이아웃 렌더 앞에 두며 window capture와 present는 유지한다. native WebView는 별도로 숨긴다. PTY grid 변경은 stage를 닫은 첫 프레임까지 보류한다. 원본과 stage 데이터가 함께 바뀌어야 하면 콘텐츠가 그 공유를 명시적으로 구현해야 한다.
 
-modal ID는 OS 창 목록에서 찾는다. X11은 OS ID와 winit ID가 대응하지만 다른 플랫폼에서는 발견이 어려울 수 있다. 새 창 종류는 present 전에 screenshot readback을 처리해야 요청이 끝난다.
+modal ID는 debug 빌드의 `debug.window.list`로 찾는다. 메인 창과 보조 창(설정·Preset·Plugins·종료 확인)을 종류와 함께 나열하며 OS 창 목록에 기대지 않으므로 플랫폼마다 절차가 같다. release에는 modal ID를 얻는 경로가 없고, modal ID를 받는 조작은 debug 입력 주입과 캡처뿐이다. 새 창 종류는 present 전에 screenshot readback을 처리해야 요청이 끝난다.
 
 ## Alternatives Considered
 
@@ -33,7 +33,7 @@ debug 전용으로 유지하면 에이전트가 자신의 결과를 관찰하기
 
 기존 요소 확대는 GPU·egui·WebView·PTY resize·입력 hit test·방향 이동 등 여러 레이아웃 소비자를 함께 수정해야 한다. 전역 stage 상태는 여러 모니터의 독립 창 사용을 막는다. 임의 draw 클로저는 검증 도구가 지정할 콘텐츠 ID가 없으며 선언 목록을 우회한다. dirty 처리를 통째로 생략하면 원격 mesh 화면까지 멈춘다.
 
-modal을 window.list에 넣으면 목록을 받은 모든 조작 API가 다시 제외해야 하므로 사용자 창이 닫힐 위험이 있다. window_kind 인자는 플랫폼별 ID 발견을 해결할 수 있지만 현재 API 범위를 넓히므로 보류한다.
+modal을 window.list에 넣으면 목록을 받은 모든 조작 API가 다시 제외해야 하므로 사용자 창이 닫힐 위험이 있다. 다른 플랫폼에서 modal ID를 찾아야 하는 검증 절차(설정 창 입력 주입)가 생겨 window_kind 인자와 debug 열거를 비교했다. window_kind 인자는 release window.list의 범위를 넓혀 위 위험을 다시 들인다. modal ID는 사용자 입력을 재현하는 debug 메서드와 캡처에만 쓰이므로 debug 전용 목록을 골랐다.
 
 ## Reconsideration Triggers
 
@@ -41,7 +41,7 @@ modal을 window.list에 넣으면 목록을 받은 모든 조작 API가 다시 �
 
 원본과 stage의 실시간 동기화, 한 창의 여러 stage, 공통 레이아웃 계산 도입, stage 중 DPI·모니터 변경 문제가 생기면 독립 인스턴스와 grid 보류 정책을 검토한다.
 
-plugin 캡처 허용 또는 modal 열거가 필요하면 호출자의 신뢰 수준과 행동 대상 목록을 다시 정의한다. 다른 플랫폼에서 modal 자동 검증이 필요하면 window_kind나 debug 열거를 비교한다.
+plugin 캡처 허용 또는 modal 열거가 필요하면 호출자의 신뢰 수준과 행동 대상 목록을 다시 정의한다. release 에이전트가 modal ID를 써야 하는 기능이 생기면 debug 전용 목록을 release로 옮길지 window_kind 인자를 둘지 다시 비교한다.
 
 ## References
 

@@ -108,34 +108,33 @@ border)만 그려진 상태로 찍히면 "mesh 가 안 온다" 로 오진한다 
 
 ### 모달 창의 ID 를 얻는 법
 
-`list windows`(`window.list`)는 위 2 번 때문에 **main 창만** 열거한다. 모달 id 는 OS 창
-목록에서 얻는다 — X11 에서 winit `WindowId` 는 **X11 window id 그 자체**라 그대로 넘길 수
-있다(다른 플랫폼은 대응이 다르므로 이 방법은 X11 한정).
+`list windows`(`window.list`)는 위 2 번 때문에 **main 창만** 열거한다. 설정·Preset·Plugins·종료
+확인 같은 보조 창의 id 는 debug 빌드의 `tasty debug windows`(`debug.window.list`)로 얻는다.
+OS 창 목록을 거치지 않으므로 X11·macOS·Windows 에서 같은 절차다.
 
 ```bash
-# 모달을 띄우고(debug 빌드 전용) X11 창 목록에서 id 를 고른다
+# 모달을 띄우고(debug 빌드 전용) 창 목록에서 kind 로 고른다
 tasty debug settings open --tab general
-for w in $(xdotool search --pid "$TASTY_PID"); do
-  echo "$w  $(xdotool getwindowname "$w" 2>/dev/null)"
+# 창 생성은 예약만 된다 — 나올 때까지 최대 20회 × 100ms 다시 조회하고, 없으면 멈춘다
+S=""
+for _ in $(seq 1 20); do
+  S=$(tasty debug windows | python3 -c "import json,sys; print(next((w['window_id'] for w in json.load(sys.stdin)['windows'] if w['kind']=='settings'), ''))")
+  [ -n "$S" ] && break
+  sleep 0.1
 done
-tasty screenshot --path /abs/settings.png --window <아래 표로 고른 id>
+[ -n "$S" ] || { echo "settings window did not appear in debug windows" >&2; exit 1; }
+tasty screenshot --path /abs/settings.png --window "$S"
 ```
 
-`xdotool` 은 winit 이 만드는 **입력 전용 더미 창**까지 뱉는다. 더미를 "이름이 비어 있는
-것" 으로 거르면 안 된다 — 더미 이름은 비어 있지 않고 소문자 `tasty` 라, 그 필터를 쓰면
-더미가 후보에 그대로 남아 `Window id <id> not found` 로 실패한다. **찍으려는 창을 제목으로
-직접 지목한다:**
+`debug settings open` 은 창 생성을 예약만 하고 돌아오므로 위 블록은 `settings` 가 나올 때까지
+짧게 다시 조회한다. 응답 `windows[]` 의 필드와 `kind` 값은 [debug-ipc.md](../dev-guide/debug-ipc.md)의
+`debug.window.list` 행이 정본이다. 창은 `kind` 로 고른다. `title` 은 winit 이 제목을 돌려주는
+플랫폼에서만 채워지고 X11·Wayland 에서는 `null` 이다.
 
-| 창 | 제목 |
-|---|---|
-| 메인 창 | `Tasty` (debug 빌드는 `Tasty (Debug)`) |
-| 설정 | `Tasty Settings` |
-| Plugin 관리 | `Tasty Plugins` |
-| 종료 확인 | `Tasty` |
-| 프리셋 | 번역 문자열 (`preset.window.title` — en `Layout Presets`) |
-
-프리셋 창만 제목이 i18n 이라 `Tasty` 로 시작하지 않는다. 즉 `Tasty` 접두어 필터는 그
-창을 놓치므로, 접두어를 거르개로 쓸 때는 프리셋 창이 대상이 아닌 경우로 한정한다.
+실측(Xvfb, 2026-10-09): 설정 창을 연 직후 첫 조회에 `kind:"settings"`(1100x700, `modal:true`)가
+나왔고, 그 `window_id` 는 `xdotool search --pid` 가 `Tasty Settings` 로 보여 준 X11 창 id 와
+같았다(X11 에서 winit `WindowId` 는 X11 window id 그 자체다). 같은 id 로 `screenshot --window`,
+`debug toast --window-id`, `debug inject egui-key --window-id` 가 그 창에 닿았다.
 
 존재하지 않는 id 는 `Window id <id> not found` 로 거절된다.
 
@@ -240,7 +239,7 @@ export DISPLAY XAUTHORITY
 ```
 
 **2. 창 id 는 `tasty list windows` 에서 받는다 — `xdotool search --pid` 로 고르지 않는다.**
-그 검색은 main 창이 아닌 작은 창들까지 뱉는다(위 "모달 창의 ID"). 실측하면 창이 셋
+그 검색은 main 창이 아닌 작은 창들까지 뱉는다. 실측하면 창이 셋
 나오고, 그중 둘이 main 창이 아니다:
 
 | `getwindowgeometry` | 정체 |
@@ -309,8 +308,8 @@ WebView surface(html·markdown)와 Tasty 가 그리는 surface(터미널·image 
 직접 주입한다(`tasty debug inject egui-text`). 설정 같은 별도 창은 `--window-id <id>` 로
 그 창을 지목한다(창 ID는 위 "모달 창의 ID 를 얻는 법"). 그 창의 입력칸 포커스·토글·버튼 클릭은
 `xdotool` 대신 `tasty debug inject egui-mouse --window-id <id> --fx .. --fy ..`(창 기준 정규화
-좌표)로, Enter·Backspace 는 `egui-key --window-id <id>` 로 넣는다. 포커스부터 입력까지 debug
-IPC 만으로 끝나므로 X11 이 아닌 환경에서도 같은 절차다(창 ID 를 얻는 방법만 플랫폼마다 다르다). 절차·거절 조건은
+좌표)로, Enter·Backspace 는 `egui-key --window-id <id>` 로 넣는다. 창 ID 를 얻는 것부터 입력까지
+debug IPC 만으로 끝나므로 X11 이 아닌 환경에서도 같은 절차다. 절차·거절 조건은
 [debug-ipc.md](../dev-guide/debug-ipc.md) "문자 주입은 키 주입과 다른 채널이다" 가 정본이다.
 
 그 밖에 이 조합에서 지키는 것:

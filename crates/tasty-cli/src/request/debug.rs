@@ -113,6 +113,7 @@ pub(super) fn debug_command_to_method_params(
         DebugCommands::Modal(sub) => modal_debug_command_to_method_params(sub),
         DebugCommands::Lua(sub) => lua_debug_command_to_method_params(sub),
         DebugCommands::FocusedSurface => ("debug.focused_surface", serde_json::json!({})),
+        DebugCommands::Windows => ("debug.window.list", serde_json::json!({})),
         DebugCommands::SurfaceRect { surface } => (
             "debug.surface_rect",
             serde_json::json!({ "surface_id": surface }),

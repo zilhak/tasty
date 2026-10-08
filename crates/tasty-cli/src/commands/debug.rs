@@ -202,6 +202,11 @@ pub enum DebugCommands {
     /// Dump the focused surface id (debug builds only). Observation only — the
     /// focused view is read, never changed.
     FocusedSurface,
+    /// List every window, including auxiliary ones such as Settings, Preset,
+    /// Plugins and the quit dialog (debug builds only). Gives the window id
+    /// that `--window-id` of the egui inject commands and `debug toast` take.
+    /// Release `window list` covers main windows only.
+    Windows,
     /// Dump the on-screen rect of a surface in the active tab, in physical pixels (debug builds
     /// only). Works for non-terminal surfaces too; null when the surface is not on screen.
     SurfaceRect {

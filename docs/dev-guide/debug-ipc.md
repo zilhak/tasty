@@ -52,6 +52,7 @@ debug 메서드는 모두 `local_only()` — plugin caller 는 호출 불가, CL
 | `debug.pending_menu` | `{}` | 대기 중 컨텍스트 메뉴 read-only 덤프(`present`·`kind`·`surface_id?`). live pending 우선, 없으면 주입 포획본(`debug_captured_menu`). 우클릭 라우팅 회귀 관찰용 |
 | `debug.native_menu.answer` | `menu`(필수) + `item` · `label` · `dismiss: true` 중 하나 | 포커스된 창이 **다음에 여는 `menu` 종류의** native 메뉴 하나를 OS 팝업 없이 지정 항목을 고른 것으로 끝낸다(`menu`는 `debug.pending_menu`의 `kind`와 같은 이름, `item`은 항목 id, `label`은 표시 문구, `dismiss`는 고르지 않고 닫기). 다른 종류의 메뉴에는 쓰지 않는다. 응답은 그 종류의 메뉴가 열릴 때까지 남아 있고 새 응답이 덮어쓴다. 아래 [native 메뉴 항목 선택 재현](#native-메뉴-항목-선택-재현-debugnative_menuanswer) |
 | `debug.pending_move` | `{}` | 포커스된 창의 이동 대기 슬롯 read-only 덤프(`present`·`kind` = `surface`/`tab`/`pane`·`id`) |
+| `debug.window.list` | `{}` | 메인 창과 보조 창(설정·Preset·Plugins·종료 확인)을 모두 나열한다. release `window.list` 는 메인 창만 다룬다([ADR-0018](../adr/0018-explicit-capture-and-fullscreen-stage.md)). 응답 `windows[]` 는 `window_id`·`kind`(`main`·`settings`·`preset`·`plugins`·`quit`)·`title`(winit 이 제목을 돌려주는 플랫폼에서만, X11·Wayland 는 `null`)·`inner_size`(물리 px `width`·`height`)·`scale_factor`·`focused`·`modal` 이며 `window_id` 오름차순이다. 보조 창의 id 는 `window_id` 를 받는 debug 메서드(`debug.inject_egui_*`·`debug.toast`)와 `ui.screenshot` 에 넘기는 값이다. 조회만 한다. CLI 는 `tasty debug windows`. gui 빌드 전용 |
 | `debug.focused_surface` | `{}` | 현재 포커스된 surface id read-only 덤프(`surface_id`, 없으면 null). `surface.list` 가 노출 않는 view-layer 포커스를 관찰 — click-to-activate 라우팅 회귀 net 용 |
 | `debug.surface_rect` | `surface_id` | 활성 탭에 있는 surface 의 화면 사각형 read-only 덤프(`rect` = 물리 px `x`·`y`·`width`·`height`, 화면에 없으면 null, `scale_factor`). 터미널이 아닌 surface 도 같은 leaf rect 다. native WebView 창이 surface 를 채우는지 재는 기준값 |
 | `debug.switch_workspace` | `index` (0-based) | 활성 워크스페이스 전환 — 사용자 포커스 조작 재현. **`index` 는 포커스된 창 안의 순번이라 포커스 독립성을 만족하지 않는다** — 사용자가 보고 있는 창에서 전환하는 것이 이 메서드의 뜻이므로 그것이 정답이다(`surface.ime_*` 와 같은 부류) |
@@ -185,7 +186,7 @@ egui의 `Event::Text(String)`은 문자를 입력하고 `Event::Key`는 키 동�
   스크린샷이 빈 쿼리다)이 그대로 돌아온다. Enter·Tab·Backspace 는 `debug.inject_egui_key` 쪽이다.
 - 대상은 그 창에서 **지금 egui 포커스를 가진 위젯**이다. 창은 두 갈래로 고른다.
   - `window_id` 생략: 포커스된 메인 창. 다른 주입과 같이 focused window step(`src/app/ipc/window_required.rs`)에서 처리한다.
-  - `window_id` 지정: 그 창. 설정처럼 별도 winit 창으로 뜨는 화면은 메인 창의 egui 입력과 따로 있어 생략한 경로로는 닿지 않는다. App 단계(`src/app/ipc/debug_egui_window.rs`)가 창 ID로 찾아 넣고 포커스는 바꾸지 않는다. `debug.inject_egui_key`·`debug.inject_egui_mouse` 도 같은 두 갈래다. 창 ID는 [스크린샷 방법](../ai-verification/screenshot-methods.md#모달-창의-id-를-얻는-법)의 "모달 창의 ID 를 얻는 법"으로 얻는다.
+  - `window_id` 지정: 그 창. 설정처럼 별도 winit 창으로 뜨는 화면은 메인 창의 egui 입력과 따로 있어 생략한 경로로는 닿지 않는다. App 단계(`src/app/ipc/debug_egui_window.rs`)가 창 ID로 찾아 넣고 포커스는 바꾸지 않는다. `debug.inject_egui_key`·`debug.inject_egui_mouse` 도 같은 두 갈래다. 창 ID는 `debug.window.list`(`tasty debug windows`)로 얻는다([스크린샷 방법](../ai-verification/screenshot-methods.md#모달-창의-id-를-얻는-법)의 "모달 창의 ID 를 얻는 법").
 - 이 메서드는 입력칸에 egui 포커스를 주지 않는다. 설정 창 입력칸은 먼저 `debug.inject_egui_mouse` 에 같은 `window_id` 를 주어 그 칸을 클릭한다(`move`·`press`·`release`). 포커스부터 입력·확인까지 debug IPC 만으로 끝나서 OS 입력 도구가 필요 없다.
 
 CLI 는 `tasty debug inject egui-text --text <s>` 다. command palette 를 열어 쿼리를 넣는
@@ -201,8 +202,14 @@ tasty screenshot --window <id> --path /tmp/palette-filtered.png
 
 ```bash
 tasty debug settings open --tab general
-# 창 ID: 스크린샷 방법 문서의 "모달 창의 ID 를 얻는 법"(제목 "Tasty Settings")
-S=<settings-id>
+# 창 생성은 예약만 된다 — 나올 때까지 최대 20회 × 100ms 다시 조회하고, 없으면 멈춘다
+S=""
+for _ in $(seq 1 20); do
+  S=$(tasty debug windows | python3 -c "import json,sys; print(next((w['window_id'] for w in json.load(sys.stdin)['windows'] if w['kind']=='settings'), ''))")
+  [ -n "$S" ] && break
+  sleep 0.1
+done
+[ -n "$S" ] || { echo "settings window did not appear in debug windows" >&2; exit 1; }
 # Filter sections 입력칸(1100x700 창의 100,66 → 창 정규화 0.0909,0.0943)을 클릭해 egui 포커스를 준다
 for e in move press release; do
   tasty debug inject egui-mouse --window-id $S --fx 0.0909 --fy 0.0943 --event-type $e

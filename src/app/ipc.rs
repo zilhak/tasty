@@ -9,6 +9,8 @@ mod debug_egui_window;
 mod debug_methods;
 #[cfg(all(debug_assertions, feature = "gui"))]
 mod debug_toast;
+#[cfg(all(debug_assertions, feature = "gui"))]
+mod debug_window_list;
 mod routing;
 mod window_required;
 

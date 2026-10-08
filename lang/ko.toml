@@ -3472,6 +3472,9 @@ help = "대체 화면에 진입하지 않고 기본 화면에 유지"
 [cli.help._root.debug.focused-surface]
 about = "포커스된 서피스 ID 덤프(debug 빌드 전용). 포커스된 뷰를 읽기만 하며 변경하지 않음"
 
+[cli.help._root.debug.windows]
+about = "보조 윈도우(설정·Preset·Plugins·종료 확인 등)까지 모든 윈도우를 나열(debug 빌드 전용). egui 주입 명령과 `debug toast` 의 `--window-id` 에 넘길 윈도우 ID 를 준다. release `window list` 는 메인 윈도우만 다룸"
+
 [cli.help._root.debug.surface-rect]
 about = "활성 탭에 있는 서피스의 화면 사각형을 물리 픽셀로 덤프(debug 빌드 전용). 터미널이 아닌 서피스도 되며, 화면에 없으면 null"
 

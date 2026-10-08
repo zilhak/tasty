@@ -3472,6 +3472,9 @@ help = "代替画面に入らず主画面を維持"
 [cli.help._root.debug.focused-surface]
 about = "フォーカス中のサーフェスIDをダンプ（debugビルド専用）。フォーカス中のビューを読み取るだけで変更しません"
 
+[cli.help._root.debug.windows]
+about = "設定・Preset・Plugins・終了確認などの補助ウィンドウを含むすべてのウィンドウを一覧表示（debugビルド専用）。egui注入コマンドと`debug toast`の`--window-id`に渡すウィンドウIDを返します。release の`window list`はメインウィンドウのみを扱います"
+
 [cli.help._root.debug.surface-rect]
 about = "アクティブなタブにあるサーフェスの画面上の矩形を物理ピクセルで出力（debug ビルド専用）。ターミナル以外のサーフェスにも使え、画面にない場合は null"
 

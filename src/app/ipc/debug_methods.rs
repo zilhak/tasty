@@ -49,6 +49,11 @@ impl App {
                 return self.ipc_handle_debug_egui_to_window(cmd, kind);
             }
         }
+        // 보조 창까지 나열하려면 App 의 창 목록이 필요하다.
+        #[cfg(feature = "gui")]
+        if cmd.request.method == "debug.window.list" {
+            return self.ipc_handle_debug_window_list(cmd);
+        }
         // 토스트 스택은 창마다 따로 있어 보조 창까지 볼 수 있는 App에서 처리한다.
         #[cfg(feature = "gui")]
         if cmd.request.method == "debug.toast" {

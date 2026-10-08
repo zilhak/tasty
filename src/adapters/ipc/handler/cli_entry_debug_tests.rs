@@ -39,3 +39,14 @@ fn toast_cli_entry_point_defaults_to_the_window_scope() {
     assert!(req.params["window_id"].is_null());
     assert!(req.params["target_id"].is_null());
 }
+
+/// 보조 창까지 나열하는 debug 목록이다. 대상 인자가 없다.
+#[test]
+fn windows_cli_entry_point_matches_the_registered_method() {
+    let req = command_to_request(&Commands::Debug {
+        command: DebugCommands::Windows,
+    });
+    assert_eq!(req.method, "debug.window.list");
+    assert!(req.params.as_object().is_some_and(|o| o.is_empty()));
+    assert!(tasty_ipc::method_meta::method_meta("debug.window.list").is_some());
+}

@@ -861,3 +861,21 @@ fn toast_debug_method_absent_in_release() {
         "debug.toast must not exist in release"
     );
 }
+
+#[test]
+#[cfg(debug_assertions)]
+fn window_list_debug_method_is_local_only_read() {
+    let m = method_meta("debug.window.list").expect("registered (debug build)");
+    assert!(!m.plugin_callable, "debug.window.list must be local_only");
+    assert_eq!(m.effect, crate::method_meta::MethodEffect::Read);
+}
+
+/// 보조 창 ID 는 debug 입력 주입에만 쓰인다. release `window.list` 는 메인 창만 다룬다.
+#[test]
+#[cfg(not(debug_assertions))]
+fn window_list_debug_method_absent_in_release() {
+    assert!(
+        method_meta("debug.window.list").is_none(),
+        "debug.window.list must not exist in release"
+    );
+}

@@ -372,6 +372,10 @@ const DEBUG_NOT_IN_HEADLESS: &[(&str, &str)] = &[
          `self.view.views` 에서 지운다 — view 가 없다",
     ),
     (
+        "debug.window.list",
+        "메인 창과 보조 창을 `self.view.views` 에서 나열한다 — view 가 없다",
+    ),
+    (
         "debug.toast",
         "토스트 스택은 창마다 따로 있다 — 메인 창은 `MainViewState.toasts`, 설정·preset·plugins 창은 \
          각 view 의 `toasts` 를 `self.view.views` 에서 고른다. view 가 없다",
