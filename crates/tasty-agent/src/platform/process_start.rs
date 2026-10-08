@@ -35,22 +35,38 @@ mod imp {
 
 #[cfg(target_os = "macos")]
 mod imp {
-    /// `proc_pidinfo(PROC_PIDTBSDINFO)`의 시작 시각(마이크로초).
+    /// `struct kinfo_proc`의 크기(arm64·x86_64 공통). libc 크레이트가 macOS 용 정의를 주지 않는다.
+    const KINFO_PROC_SIZE: usize = 648;
+
+    /// `sysctl(KERN_PROC_PID)`의 `kp_proc.p_starttime`(마이크로초). `proc_pidinfo(PROC_PIDTBSDINFO)`
+    /// 와 같은 값이지만, 그것은 회수 전 종료 상태(좀비)와 다른 사용자의 프로세스에서 실패한다.
     pub(super) fn start_time(pid: u32) -> Option<u64> {
-        // SAFETY: proc_bsdinfo 는 정수 필드만 가진 POD 라 0 으로 채운 값이 유효하다.
-        let mut info: libc::proc_bsdinfo = unsafe { std::mem::zeroed() };
-        let size = std::mem::size_of::<libc::proc_bsdinfo>() as libc::c_int;
-        // SAFETY: info는 proc_bsdinfo 크기의 쓰기 가능한 버퍼이고 size가 그 크기다.
-        let written = unsafe {
-            libc::proc_pidinfo(
-                pid as libc::c_int,
-                libc::PROC_PIDTBSDINFO,
+        let pid = libc::c_int::try_from(pid).ok()?;
+        let mut mib = [libc::CTL_KERN, libc::KERN_PROC, libc::KERN_PROC_PID, pid];
+        // timeval 을 읽을 수 있게 8 바이트로 정렬한 버퍼.
+        let mut buf = [0u64; KINFO_PROC_SIZE / 8];
+        let mut len = KINFO_PROC_SIZE;
+        // SAFETY: buf 는 len 바이트의 쓰기 가능한 버퍼이고 mib 는 길이 4 의 배열이다.
+        let rc = unsafe {
+            libc::sysctl(
+                mib.as_mut_ptr(),
+                mib.len() as libc::c_uint,
+                buf.as_mut_ptr().cast(),
+                &mut len,
+                std::ptr::null_mut(),
                 0,
-                (&mut info as *mut libc::proc_bsdinfo).cast(),
-                size,
             )
         };
-        (written == size).then(|| info.pbi_start_tvsec * 1_000_000 + info.pbi_start_tvusec)
+        // 없는 PID 는 성공하면서 0 바이트를 돌려준다.
+        if rc != 0 || len != KINFO_PROC_SIZE {
+            return None;
+        }
+        // SAFETY: kinfo_proc 의 맨 앞(kp_proc.p_un.p_starttime)이 struct timeval 이고 buf 는 그 정렬을
+        // 만족한다.
+        let start = unsafe { buf.as_ptr().cast::<libc::timeval>().read() };
+        let sec = u64::try_from(start.tv_sec).ok()?;
+        let usec = u64::try_from(start.tv_usec).ok()?;
+        Some(sec * 1_000_000 + usec)
     }
 }
 
@@ -102,6 +118,33 @@ mod tests {
         let t = start_time(pid).expect("own start time");
         assert!(is_same_process(pid, Some(t)));
         assert!(!is_same_process(pid, Some(t.wrapping_add(1))));
+    }
+
+    /// 회수 전 종료 상태(좀비)도 같은 프로세스로 보고, 회수한 뒤에는 없다고 본다.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn the_macos_start_time_holds_until_the_process_is_reaped() {
+        let mut child = std::process::Command::new("sleep")
+            .arg("0.2")
+            .spawn()
+            .expect("spawn sleep");
+        let pid = child.id();
+        let t = start_time(pid).expect("start time of the running child");
+        std::thread::sleep(std::time::Duration::from_millis(600));
+        assert_eq!(
+            start_time(pid),
+            Some(t),
+            "zombie child keeps its start time"
+        );
+        child.wait().expect("reap");
+        assert_eq!(start_time(pid), None);
+    }
+
+    /// 다른 사용자(root)의 프로세스도 읽는다.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn the_macos_start_time_reads_another_users_process() {
+        assert!(start_time(1).is_some(), "launchd start time");
     }
 
     #[cfg(target_os = "linux")]

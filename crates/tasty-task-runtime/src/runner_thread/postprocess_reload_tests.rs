@@ -219,10 +219,11 @@ fn a_scheduled_run_that_never_started_runs_once_after_the_restart() {
 }
 
 /// 종료됐거나 좀비로 남아 회수를 기다리는 프로세스.
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn gone(pid: i32) -> bool {
+    // /proc 가 없는 macOS 는 kill(pid, 0) 으로 본다(좀비는 남았다고 본다).
     match std::fs::read_to_string(format!("/proc/{pid}/stat")) {
-        Err(_) => true,
+        Err(_) => !tasty_agent::platform::process_alive::is_alive(pid as u32),
         Ok(stat) => stat
             .rsplit(')')
             .next()
@@ -230,7 +231,7 @@ fn gone(pid: i32) -> bool {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn dropping_the_registry_waits_until_the_postprocess_is_stopped_and_recorded() {
     let (td, ctx) = fresh_ctx();
@@ -285,7 +286,7 @@ fn dropping_the_registry_waits_until_the_postprocess_is_stopped_and_recorded() {
 
 /// 세마포어 gpu(permit 1)를 쥔 채 후처리 실행 1 을 시작한 judge. 이전 호스트가 저장한 후처리
 /// handle 은 `pid`·`started_at` 를 가리킨다.
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn holding_judge_in_postprocess(ctx: &RunnerContext, pid: u32, started_at: u64) {
     let spec: TaskGraphSpec = serde_json::from_value(json!({
         "contract_version": 2,
@@ -347,7 +348,7 @@ fn gpu_holders(ctx: &RunnerContext) -> Vec<String> {
 }
 
 /// 이전 호스트가 띄운 후처리처럼 새 프로세스 그룹에서 오래 도는 프로세스. 회수는 별도 스레드가 한다.
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn spawn_postprocess_like() -> (u32, u64) {
     use std::os::unix::process::CommandExt;
     let mut child = std::process::Command::new("sleep")
@@ -407,7 +408,7 @@ fn tick_until(
 
 /// 재시작 뒤에도 살아 있는 후처리는 끝날 때까지 permit 을 쥔다. 끝나면 결과를 받을 수 없어 결과
 /// 불명으로 끝나고 그때 반환한다. 다시 실행하지 않는다.
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn a_live_postprocess_keeps_its_permit_across_a_restart_until_it_ends() {
     let (_td, ctx) = fresh_ctx();
@@ -442,7 +443,7 @@ fn a_live_postprocess_keeps_its_permit_across_a_restart_until_it_ends() {
 
 /// 재시작 동안 끝난 후처리(저장된 보고 없음)는 부팅 정리가 결과 불명으로 끝내고 permit 을 반환한다.
 /// 점유를 쥐었다는 이유로 `host restart` 실패가 되지 않는다.
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn a_postprocess_that_ended_during_the_restart_ends_unknown_at_the_cleanup() {
     let (_td, ctx) = fresh_ctx();
@@ -466,7 +467,7 @@ fn a_postprocess_that_ended_during_the_restart_ends_unknown_at_the_cleanup() {
 }
 
 /// 재시작 뒤 넘겨받은 살아 있는 후처리를 취소하면 그 그룹을 끝내고, 끝난 것을 확인한 뒤 반환한다.
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn cancelling_a_restored_postprocess_kills_it_before_its_permit_returns() {
     let (_td, ctx) = fresh_ctx();

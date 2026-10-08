@@ -343,6 +343,28 @@ Run 의 끝과 취소 때 끝내는 범위는 다르다.
 살아 있는 Run 에만 생기는 한계다. 확인과 신호 사이에 리더가 끝나고 PID 가 다시
 쓰이는 짧은 틈은 막지 않는다.
 
+시작 시각은 Linux 가 `/proc/<pid>/stat` 의 22번째 필드(부팅 이후 clock tick), macOS 가
+`sysctl(KERN_PROC_PID)` 의 `kp_proc.p_starttime`(마이크로초), Windows 가 `GetProcessTimes` 의 생성
+시각에서 읽는다. macOS 의 `proc_pidinfo(PROC_PIDTBSDINFO)` 는 같은 값을 주지만 회수 전 종료
+상태(좀비)와 다른 사용자의 프로세스에서 실패해 쓰지 않는다. 그러면 좀비 리더를 끝난 프로세스로
+보게 되어 Linux 와 판정이 달라진다.
+
+macOS 실 기기 측정(Darwin 27.0 arm64, 격리 debug GUI 인스턴스):
+
+- 시작 시각은 살아 있는 프로세스에서 `ps -o lstart` 의 초와 일치했고 같은 PID 를 다시 읽어도 같았다.
+  좀비와 root 프로세스도 읽었고, 회수한 PID 는 읽지 못했다.
+- `sh -c 'sleep 300 & …; exit 0'` Run 에 permit 1 인 semaphore 를 걸고 취소했다. 리더가 끝나고 sleep 이
+  출력을 쥔 상태에서 그룹 SIGKILL 을 보냈다(01:15:01.202). kqueue 로 잡은 sleep 종료는 .203 이었다. permit 은
+  다음 tick 인 .707 에 반환됐고 기다리던 task 가 그 permit 을 얻었다.
+- 리더가 살아 있는 Run(`sh -c 'sleep 300 & …; wait'`)은 호스트를 종료해도 남았다(부모가 launchd 로
+  바뀐다). 다시 띄우고 러너를 시작한 뒤에도 permit 을 쥐고 있었다. 이 Run 을 취소하면 리더와 sleep 이 같은
+  ms 에 끝났고, 그 뒤 tick 에 permit 이 반환됐다.
+- 호스트가 꺼진 동안 저장한 `started_at` 을 1µs 바꿔 PID 재사용을 흉내 냈다. 부팅 정리는 그 handle 을 다른
+  프로세스로 보았다. task 를 `unknown` 으로 끝내고 permit 을 반환했으며, 살아 있는 리더와 sleep 에는 신호를
+  보내지 않았다.
+- 좀비만 남은 그룹에 `kill(-pgid, 0)` 을 보내면 macOS 는 EPERM 을 돌려준다. 구현은 EPERM 을 구성원이 남은
+  것으로 보므로, 회수되어 ESRCH 가 될 때까지 점유를 쥔다.
+
 러너가 없을 때(러너를 멈췄거나 Tasty 재시작 뒤 아직 켜지 않음) 취소하면 `TaskService::task_cancel`
 이 정리를 시작하고 기다리지 않고 응답한다(`settle_ended_tasks_in_background`). 별도 스레드가 취소한
 task 와 함께 취소된 하류 중 handle 이 남은 task 의 프로세스 묶음을 끝내고, 종료를 확인하면 handle 을

@@ -168,8 +168,9 @@ fn endless_stdout_is_drained_until_the_timeout() {
 
 fn gone(pid: i32) -> bool {
     // 종료된 뒤 init 이 회수하기 전에는 좀비로 남을 수 있다.
+    // /proc 가 없는 macOS 는 kill(pid, 0) 으로 본다(좀비는 남았다고 본다).
     match std::fs::read_to_string(format!("/proc/{pid}/stat")) {
-        Err(_) => true,
+        Err(_) => !tasty_agent::platform::process_alive::is_alive(pid as u32),
         Ok(stat) => stat
             .rsplit(')')
             .next()
@@ -484,7 +485,7 @@ mod through_the_runner {
         assert!(holders(&ctx).is_empty());
     }
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[test]
     fn cancelling_kills_the_postprocess_before_the_permit_is_released() {
         let (td, ctx) = fresh_ctx();
