@@ -5450,7 +5450,7 @@ help = "1 つのワークスペースだけで探す。省略すると稼働中�
 help = "この task だけ"
 
 [cli.help._root.agent.dag-report.arg.attempt]
-help = "`--task` のこの試行だけ。自動項目はその task の最新の試行のときだけ出る"
+help = "`--task` のこの試行だけ。retry で閉じた試行は、その retry のときに一度だけ固定した自動項目を載せる(この保存より前に閉じた試行は null)"
 
 [cli.help._root.agent.dag-report.arg.include_raw]
 help = "保存された標準出力・エラーも含める"

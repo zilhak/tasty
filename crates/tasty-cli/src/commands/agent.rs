@@ -190,8 +190,9 @@ pub enum AgentCommands {
         /// Only this task.
         #[arg(long)]
         task: Option<String>,
-        /// Only this attempt of `--task`. The automatic part appears only when it is
-        /// the task's latest attempt.
+        /// Only this attempt of `--task`. An attempt closed by a retry shows the
+        /// automatic part saved once at that retry (null for an attempt closed before
+        /// this was saved).
         #[arg(long, requires = "task")]
         attempt: Option<u32>,
         /// Include the stored standard output and error.

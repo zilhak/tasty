@@ -5456,7 +5456,7 @@ help = "Restrict the lookup to one workspace. Omitted = every live workspace"
 help = "Only this task"
 
 [cli.help._root.agent.dag-report.arg.attempt]
-help = "Only this attempt of `--task`. The automatic part appears only when it is the task's latest attempt"
+help = "Only this attempt of `--task`. An attempt closed by a retry shows the automatic part saved once at that retry (null for an attempt closed before this was saved)"
 
 [cli.help._root.agent.dag-report.arg.include_raw]
 help = "Include the stored standard output and error"

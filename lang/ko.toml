@@ -5450,7 +5450,7 @@ help = "한 워크스페이스에서만 찾는다. 생략하면 살아 있는 �
 help = "이 task 만"
 
 [cli.help._root.agent.dag-report.arg.attempt]
-help = "`--task` 의 이 회차만. 자동 항목은 그 task 의 마지막 회차일 때만 나온다"
+help = "`--task` 의 이 회차만. retry 로 닫힌 회차는 그 retry 때 한 번 굳힌 자동 항목을 싣는다(이 저장 전에 닫힌 회차는 null)"
 
 [cli.help._root.agent.dag-report.arg.include_raw]
 help = "저장된 표준 출력·오류도 싣는다"
