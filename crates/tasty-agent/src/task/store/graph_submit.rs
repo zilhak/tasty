@@ -17,6 +17,7 @@ use tasty_utils::id::WorkspaceId;
 use super::super::binding::{InputBinding, InputMapping};
 use super::super::contract::{self, FailureStage, MergeConflict, TaskContract, TaskFailure};
 use super::super::postprocess::PostprocessSpec;
+use super::super::record_limit;
 use super::super::route::{self, Transitions};
 use super::super::types::TypeSchema;
 use super::super::{
@@ -263,6 +264,12 @@ impl TaskStore<'_> {
                 return Err(graph_error(
                     format!("task {}: fallback task not found: {fb}", t.id),
                     format!("{at}/on_failure/task"),
+                ));
+            }
+            if let Some(size) = record_limit::record_over_limit(t) {
+                return Err(graph_error(
+                    record_limit::record_too_large_message(&t.id, "the definition", size),
+                    at,
                 ));
             }
             contract::check_task(t, &at, lookup)

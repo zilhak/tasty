@@ -436,6 +436,7 @@ pub mod dag;
 mod graph;
 pub mod postprocess;
 mod record;
+pub mod record_limit;
 pub mod report;
 pub mod route;
 mod store;

@@ -6,6 +6,7 @@ use std::thread;
 
 use serde_json::json;
 use tasty_agent::runner::{DispatchHandle, PollOutcome};
+use tasty_agent::task::record_limit;
 use tasty_agent::task::report::ReportSource;
 use tasty_agent::{
     ReducerInput, Task, TaskCommand, TaskId, TaskResult, TypedReducerInput, reduce_typed,
@@ -58,20 +59,37 @@ impl HostExecutor {
     }
 
     /// 조회에도 실제 실행할 치환값이 보이도록 command를 저장한다. 저장 실패는 경고하고 실행은 계속한다.
-    pub(super) fn persist_substituted_command(&mut self, ws: u32, task: &Task) {
+    /// 치환한 값이 레코드를 결과 전 상한 너머로 키우면 실행하지 않도록 사유를 돌려준다. 그대로
+    /// 실행하면 결과를 줄여도 레코드를 저장할 수 없다.
+    pub(super) fn persist_substituted_command(
+        &mut self,
+        ws: u32,
+        task: &Task,
+    ) -> Result<(), String> {
         let seq = self.ctx.agent_seq.clone();
-        let res: Result<(), String> = self.ctx.with_memory(|mem| {
+        let res: Result<Result<(), String>, String> = self.ctx.with_memory(|mem| {
             use tasty_agent::TaskStore;
             let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             let Some(mut stored) = store.get(ws, &task.id).map_err(|e| e.to_string())? else {
-                return Ok(());
+                return Ok(Ok(()));
             };
             stored.command = task.command.clone();
-            store.put(&stored).map_err(|e| e.to_string())
+            if let Some(size) = record_limit::record_over_limit(&stored) {
+                return Ok(Err(format!(
+                    "task output substitution: {}",
+                    record_limit::record_too_large_message(
+                        &task.id,
+                        "the command with substituted values",
+                        size,
+                    )
+                )));
+            }
+            store.put(&stored).map(Ok).map_err(|e| e.to_string())
         });
-        if let Err(e) = res {
+        res.unwrap_or_else(|e| {
             tracing::warn!("persist lease-substituted command for {}: {e}", task.id);
-        }
+            Ok(())
+        })
     }
 
     pub(super) fn dispatch_command(&mut self, task: &Task) -> Result<DispatchHandle, String> {

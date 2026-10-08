@@ -34,9 +34,10 @@ impl HostExecutor {
                 let lookup = |id: &String| store.get(ws, id).ok().flatten();
                 resolve_inputs(task, &contract, base_params.as_ref(), now_ms(), &lookup)
             };
+            // 저장소가 크기 상한으로 snapshot 을 입력 실패로 바꿀 수 있어 저장한 것을 쓴다.
             store
                 .set_input_snapshot(ws, &task.id, snapshot.clone())
-                .map(|_| snapshot)
+                .map(|t| t.input_snapshot.unwrap_or(snapshot))
                 .map_err(|e| format!("input snapshot could not be stored: {e}"))
         })?;
         if let Some(f) = &snapshot.failure {

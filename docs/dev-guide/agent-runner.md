@@ -721,7 +721,7 @@ v2 task 의 fallback 이 이미 실행됐으면(Ready·Running·Succeeded) 그 t
 - 거절은 IPC 에서 `-32018` 이고 `error.data` 에 `reason`·`attempt_id`(보고한 회차)·`current_attempt_id` 를 싣는다.
 - 러너는 기록하지 못한 보고를 보관하고 다음 tick 에 같은 보고를 다시 낸다. 그동안 그 task 를 다시 poll 하지 않고 handle 과 permit(세마포어·lease)을 유지한다. 거절된 보고는 다시 내지 않는다.
 - 레코드가 memory 값 상한을 넘어 기록하지 못한 보고(`ValueTooLarge`)는 다시 내도 같은 크기라 보관하지 않는다. 출력을 싣거나 사유가 4 KiB(`SHRUNK_ERROR_LIMIT`)를 넘는 보고면 출력을 뺀 같은 회차의 실패(`<원래 사유의 첫 줄> (the full result could not be stored: <이유>)`, 종료 코드는 유지)로 바꿔 한 번 기록한다. 바꾼 사유는 4 KiB 안이다. 첫 줄이 길면 UTF-8 문자 경계에서 자르고 `...(truncated)` 를 붙인다. 그래서 바꾼 보고는 다시 바꿀 대상이 아니고, 그것마저 기록하지 못하면 다른 저장 오류처럼 보관해 다음 tick 에 다시 낸다. 재시작 복구의 보고도 같다. 후처리 실행 보고는 회차 진행과 맞아야 해 바꾸지 않는다. 사유가 없는 성공 보고는 `the result could not be stored: <이유>` 가 된다. 계약 없는(v1) custom 은 응답이 곧 출력이라 자르지 않고 레코드에 한 벌 두므로, 직렬화가 약 1 MiB(레코드의 나머지 필드 몫을 뺀 크기)를 넘는 응답은 이 경로로 출력 없는 실패가 된다.
-- 저장소가 계속 실패하면 permit 을 쥐는 시간에 상한이 없다. 재시도 횟수나 시간으로 포기하지 않는다. 포기하면 결과가 기록되지 않은 채 Running 인 task 의 permit 을 풀어 같은 자원을 다른 task 에 넘기게 되기 때문이다. 묶이는 permit 은 보고가 보류된 task 마다 하나다. 줄인 보고마저 기록하지 못하는 경우(레코드의 다른 필드가 커서 출력을 빼도 memory 값 상한을 넘는 경우)도 같다. 그 보고를 보관해 다시 내는 동안 task 는 Running 이고 permit 을 쥔다. 풀리는 시점은 셋이다.
+- 저장소가 계속 실패하면 permit 을 쥐는 시간에 상한이 없다. 재시도 횟수나 시간으로 포기하지 않는다. 포기하면 결과가 기록되지 않은 채 Running 인 task 의 permit 을 풀어 같은 자원을 다른 task 에 넘기게 되기 때문이다. 묶이는 permit 은 보고가 보류된 task 마다 하나다. 줄인 보고마저 기록하지 못하는 경우(레코드의 다른 필드가 커서 출력을 빼도 memory 값 상한을 넘는 경우)도 같다. 그 보고를 보관해 다시 내는 동안 task 는 Running 이고 permit 을 쥔다. 새로 만드는 task 는 아래 §task 레코드 크기의 상한이 이 경우를 실행 전에 막는다. 남는 경우는 상한이 생기기 전에 저장돼 이미 Running 인 task, 후처리 회차 진행을 저장한 task, memory 값 상한(`entry_max_bytes`)을 1 MiB 아래로 낮춘 경우다. 풀리는 시점은 셋이다.
   1. 저장이 회복돼 같은 보고가 기록되거나 거절될 때.
   2. 러너를 멈춘 뒤 다음 러너 시작·부팅의 정리가 Running task 를 마무리할 때. 보류됐던 보고는 메모리에만 있어 사라진다. Run 은 저장된 실행 결과로 확정하거나(없으면 `unknown`) 그때 점유를 반환한다. 그 밖의 task 는 `purge_stale_semaphore_holders`·`purge_stale_lease_holders` 가 점유를 회수하고 Failed 로 끝낸다.
   3. task 가 밖에서 종결됐을 때(취소 등). 다음 tick 의 종결 흡수가 보류 보고를 한 번 더 내고, 그 보고가 이미 끝난 task 라 거절되면 permit 을 푼다. 저장소가 여전히 실패하면 이 경우에도 계속 쥔다.
@@ -933,6 +933,25 @@ wait_barrier 의 barrier 이름은 command 의 `name`(정적) 이나 `input_mapp
 - 입력에서 받은 이름이 규칙에 맞지 않으면 실행하지 않고 실패 단계 `input`, `error.location` `/input_mapping/barrier` 로 끝난다.
 - v1 `task_create` 의 wait_barrier 는 입력이 없으므로 `name` 이 필요하다(없으면 `-32602`).
 - 이름의 barrier 가 없거나 시간이 지나면 지금처럼 실행 단계에서 실패한다. barrier 를 만드는 일은 그래프를 짜는 쪽이 정한다.
+
+### task 레코드 크기
+
+task 레코드는 memory 값 하나라 직렬화가 memory 값 상한(기본 1 MiB)을 넘으면 저장하지 못한다. 결과가 너무 크면 위 §실행 회차와 완료처럼 출력을 뺀 짧은 실패로 바꿔 기록하는데, 그 짧은 실패마저 들어가지 않으면 같은 보고를 계속 다시 내며 task 가 Running 에 머물고 permit 을 쥔다. 그래서 결과 없이도 레코드를 키우는 몫(정의, 실행 직전에 붙는 입력 snapshot, 치환한 command)을 직렬화 768 KiB(`MAX_RECORD_BEFORE_RESULT_BYTES`, `task/record_limit.rs`)로 막는다.
+
+- 정의에 드는 것: `name`, `command`(run 의 argv·`cwd`, custom 의 `params`, agent 의 지시 등), `metadata`(그래프면 넣어 준 `dag` 포함), `on_failure`(inline fallback 정의), 계약(스키마, literal binding, 매핑, 후처리, 전이).
+- 남은 256 KiB 는 짧은 실패 결과의 몫이다. 줄인 사유(4 KiB)의 사본 셋(상태·`typed_result.error`·v1 `result.error`), 접수 응답 머리, 회차 기록이 든다. 결과 전 레코드가 상한에 닿은 v2 custom 에 이스케이프가 가장 큰 사유(제어 문자, 바이트당 6배)로 줄인 실패와 다시 이스케이프하면 2배가 되는 64 KiB 접수 응답 머리를 함께 실은 레코드는 990,031 B 였다(시험 `a_shrunk_failure_always_fits_beside_a_definition_at_the_limit`).
+
+| 시점 | 상한을 넘으면 |
+|---|---|
+| `agent.task_create`(CLI `task-create`) | 만들지 않는다. `-32602` 와 `invalid argument: task <id>: the definition makes the task record <n> bytes, over the 786432 byte limit for a task before its result; …` |
+| `agent.task_graph_submit`·`agent.task_graph_validate`(CLI `task-graph-submit`, `--dry-run`) | 아무것도 저장하지 않는다. `-32602`, `error.data` 의 단계는 `input`, `location` 은 그 task(`/tasks/<i>`) |
+| 실행 직전 v1 출력·lease 치환 | 실행하지 않고 `task output substitution: task <id>: the command with substituted values makes the task record …` 실패로 끝낸다. 치환한 command 는 저장하지 않는다 |
+| 실행 직전 v2 입력 해석 | 실행하지 않고 입력 단계 실패(`location` 은 `/bindings`)로 끝낸다. snapshot 의 `value`·`execution` 은 비운다 |
+| 상한이 생기기 전에 저장된 레코드의 실행 | 실행하지 않고 `the definition makes the task record …` 실패로 끝낸다 |
+
+- 상한은 저장할 그대로(초기 상태 포함) 잰다. 그래프는 활성화 전 상태(`waiting`)로 잰다.
+- 이미 Running 인 옛 레코드는 바꾸지 않는다. 그 결과를 기록하지 못하면 위 보류 규칙을 따른다.
+- 후처리 회차 진행(`attempt.postprocess` 에 저장하는 본 작업 응답, 256 KiB 까지)은 이 몫에 넣지 않았다.
 
 ### 그래프 제출
 
