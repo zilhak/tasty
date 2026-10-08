@@ -1,4 +1,4 @@
-<!-- source-hash: ed898d30585e -->
+<!-- source-hash: d87022436e64 -->
 # Keybindings
 
 Use Tasty with shortcuts that feel familiar. Choose a preset or assign your preferred keys to actions you use often. Open **Settings** > **Keybindings** to get started.
@@ -177,7 +177,7 @@ Keybindings that contain the Mac `Option` key never work on Windows or Linux. If
 Recording rules:
 
 - Typing keys such as letters · digits · space register only together with at least one modifier (Ctrl/Alt/Shift). `W` alone is ignored.
-- Keys such as `F1`~`F12` · `Tab` · `Enter` register without a modifier.
+- Keys such as `F1`~`F24` · `Tab` · `Enter` register without a modifier.
 - `Esc` is reserved for "empty the slot" and cannot be recorded as a keybinding. To restore **Exit fullscreen stage** or **Cancel in a code field**, whose default is `Esc`, reapply a preset.
 - When a plugin keybinding (the **Plugins** sub-tab) overlaps a core keybinding, **the plugin's runs first**.
 

@@ -778,7 +778,7 @@ props 를 채운다.
 | Reset `disabled={!overridden}` | `Button::enabled(overridden)` | override 가 없으면 disabled. tooltip 은 켜져 있을 때만(시안 disabled 버튼은 `title` 이 뜨지 않는다) |
 
 키 해석 실패 판정은 시안 `kbpParse` 를 옮기지 않고 키 매칭 규칙(`tasty_key_match::binding_key_recognized`)을 쓴다.
-시안은 `cmd`·`super` modifier 와 `f13`~`f24` 를 받지만 매칭 규칙은 이를 맞출 수 없어 해석 실패로 보인다.
+시안은 `cmd`·`super` modifier 도 받지만 매칭 규칙에 그 토큰이 없어 해석 실패로 보인다. `f13`~`f24` 는 매칭 규칙이 받는다.
 
 ## Settings › Keybindings › Import / Export (kbimportexport)
 

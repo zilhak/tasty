@@ -41,7 +41,9 @@ macOS 에서만 `alt` 토큰이 Cmd(⌘)에 매핑된다(물리 위치가 Win/Li
 | `ctrl+shift+=` | Shift 까지 함께 요구 |
 | `ctrl+` / `ctrl` | 무효 (키 부분 없음 / 모디파이어 단독) |
 
-- **modifier 없는 일반 키 등록 방지**: 설정 캡처 시 알파벳/숫자/스페이스 등 타이핑 키는 수정자 1개 이상과 함께여야 등록된다(`w` 단독 무시). F1~F12·Tab·Enter 등 비타이핑 키는 수정자 없이 가능.
+키 토큰은 문자 하나, 기호 별칭 `plus`·`minus`·`equals`, 이름 키 `tab`·`space`·`enter`·`backspace`·`delete`·`insert`·`home`·`end`·`pageup`·`pagedown`·`up`·`down`·`left`·`right`·`escape`·`f1`~`f24` 다. 매칭(`tasty-key-match` 의 `NAMED_KEY_TOKENS`)·설정 녹화·webview 포커스 중 호스트로 넘기는 네이티브 키 변환이 같은 이름 집합을 쓴다. 그 밖의 토큰(`f25`, 오타 `shft+h` 등)은 어떤 입력과도 맞지 않는다.
+
+- **modifier 없는 일반 키 등록 방지**: 설정 캡처 시 알파벳/숫자/스페이스 등 타이핑 키는 수정자 1개 이상과 함께여야 등록된다(`w` 단독 무시). F1~F24·Tab·Enter 등 비타이핑 키는 수정자 없이 가능.
 - **모디파이어 단독 입력(Ctrl/Shift/Alt/Super/Meta/Fn)은 어떤 바인딩과도 매칭 안 됨** — 매처가 구조적으로 차단.
 - **Escape 는 설정 UI 녹화에서 "슬롯 비우기"로 예약** — 녹화 중 ESC 를 누르면 그 슬롯이
   지워지고 녹화가 끝난다. 따라서 `escape` 를 값으로 갖는 바인딩은 프리셋/설정 파일로만
