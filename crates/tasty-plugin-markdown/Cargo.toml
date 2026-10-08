@@ -1,6 +1,6 @@
 [package]
 name = "tasty-plugin-markdown"
-version = "0.1.293"
+version = "0.1.294"
 edition = "2024"
 license = "MIT"
 description = "Markdown viewer surface plugin (webview)"
@@ -43,7 +43,8 @@ tasty-icons = { path = "../tasty-icons", default-features = false }
 
 # 팝업 아이콘의 SVG를 빌드 시점에 폴리라인으로 바꾼다.
 [build-dependencies]
-usvg = "0.37"
+# 아이콘의 경로만 읽는다. 기본 기능(text)은 유지보수가 끝난 rustybuzz(RUSTSEC-2026-0206)를 끌어온다.
+usvg = { version = "0.37", default-features = false }
 tasty-icons = { path = "../tasty-icons", default-features = false }
 
 [dev-dependencies]

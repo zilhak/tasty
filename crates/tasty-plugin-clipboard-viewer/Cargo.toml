@@ -1,6 +1,6 @@
 [package]
 name = "tasty-plugin-clipboard-viewer"
-version = "0.1.213"
+version = "0.1.214"
 edition = "2024"
 license = "MIT"
 description = "External Tasty plugin: read-only viewer of the current system clipboard"
@@ -36,7 +36,8 @@ tasty-plugin-manifest = { path = "../tasty-plugin-manifest" }
 
 # 빌드 때 tasty-icons의 SVG를 폴리라인 상수로 변환한다.
 [build-dependencies]
-usvg = "0.37"
+# 아이콘의 경로만 읽는다. 기본 기능(text)은 유지보수가 끝난 rustybuzz(RUSTSEC-2026-0206)를 끌어온다.
+usvg = { version = "0.37", default-features = false }
 tasty-icons = { path = "../tasty-icons", default-features = false }
 
 # arboard가 제공하지 않는 포맷 열거는 플랫폼 API로 처리한다.

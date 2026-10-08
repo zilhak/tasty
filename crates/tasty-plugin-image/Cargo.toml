@@ -1,6 +1,6 @@
 [package]
 name = "tasty-plugin-image"
-version = "0.1.154"
+version = "0.1.155"
 edition = "2024"
 license = "MIT"
 description = "Image surface viewer / paint canvas plugin (egui-mesh + bitmap texture)"
@@ -37,7 +37,8 @@ egui = { version = "0.31", default-features = false, features = [
 
 # 빌드 때 tasty-icons의 SVG를 폴리라인 상수로 변환한다.
 [build-dependencies]
-usvg = "0.37"
+# 아이콘의 경로만 읽는다. 기본 기능(text)은 유지보수가 끝난 rustybuzz(RUSTSEC-2026-0206)를 끌어온다.
+usvg = { version = "0.37", default-features = false }
 tasty-icons = { path = "../tasty-icons", default-features = false }
 
 [lints]
