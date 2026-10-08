@@ -38,6 +38,7 @@ Claude Code 세션 안에서 Tasty 를 띄워도 그 터미널에서 실행한 C
 EOF와 자식 종료는 같은 사건이 아니다. EOF 직후 자식이 아직 실행 중이면 PTY reader가 10ms부터
 간격을 두 배씩 늘려 최대 500ms마다 다시 깨운다. 종료가 확인되거나 해당 연결이 무효화되거나
 Terminal이 사라지면 멈춘다. 이 처리가 없으면 출력이 끝난 뒤 자식 종료를 확인할 기회가 사라질 수 있다.
+macOS 27.0.1 실 기기에서는 자식이 PTY fd를 모두 닫아도 master EOF가 자식 종료와 함께 왔다. 그래서 EOF 뒤 자식이 살아 있는 구간을 시험으로 만들 수 없어, 이 구간의 시험은 macOS를 제외한 Unix에서만 돈다.
 
 자식은 PTY를 소유한 host와 수명을 함께한다. Windows는 KILL_ON_JOB_CLOSE Job Object를 사용한다.
 Unix는 비정상 host 종료 때 PTY hangup과 SIGHUP에 의존하므로 HUP을 무시하는 자식이 남을 수 있다.

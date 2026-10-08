@@ -1380,7 +1380,8 @@ fn process_exited_eventually_emitted() {
 
 /// 자식이 PTY를 닫고 1초 뒤 종료하게 해 EOF가 종료보다 먼저 오는 상황을 만든다.
 /// 폴링 없이 wake만 받아도 ProcessExited가 나와야 한다.
-#[cfg(unix)]
+/// macOS는 자식이 PTY fd를 모두 닫아도 master EOF가 자식 종료와 함께 와서 이 상황을 만들 수 없다.
+#[cfg(all(unix, not(target_os = "macos")))]
 #[test]
 fn process_exit_after_pty_eof_is_seen_by_wakes_alone() {
     let (tx, rx) = std::sync::mpsc::sync_channel::<()>(1);
