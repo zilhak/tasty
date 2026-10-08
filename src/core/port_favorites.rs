@@ -1,6 +1,7 @@
 //! surface와 무관한 주소·포트 즐겨찾기를 port-favorites.toml에 저장한다.
 //! PID는 재시작하면 바뀌므로 주소·포트가 모두 같은 항목을 찾는다.
 //! add·remove는 메모리만 바꾸고 저장은 호출자가 save로 요청한다.
+//! 프로세스의 원본은 [`crate::core::shared_list::SharedList`] 하나이고, engine은 그리기용 사본만 가진다.
 
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
@@ -94,6 +95,16 @@ impl PortFavorites {
 
     pub fn contains(&self, addr: IpAddr, port: u16) -> bool {
         self.items.iter().any(|f| f.addr == addr && f.port == port)
+    }
+}
+
+impl crate::core::shared_list::PersistedList for PortFavorites {
+    const NAME: &'static str = "port favorites";
+    fn load() -> Self {
+        Self::load()
+    }
+    fn save(&mut self) {
+        Self::save(self)
     }
 }
 

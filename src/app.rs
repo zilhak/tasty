@@ -229,9 +229,9 @@ pub(crate) struct App {
     /// 첫 창의 surface로 선택한 어댑터를 다른 창에서도 재사용한다.
     #[cfg(feature = "gui")]
     pub(crate) gpu_adapter: Option<Arc<wgpu::Adapter>>,
-    /// 다른 윈도우에 마지막으로 알린 Explorer 즐겨찾기 원본 리비전.
+    /// 다른 윈도우에 마지막으로 알린 공용 목록 원본 리비전(Explorer 즐겨찾기, 포트 즐겨찾기).
     #[cfg(feature = "gui")]
-    pub(crate) favorites_announced: u64,
+    pub(crate) shared_lists_announced: [u64; 2],
 }
 
 #[cfg(feature = "gui")]
@@ -350,7 +350,7 @@ impl App {
             transfer_progress_rx,
             gpu_instance: Arc::new(new_gpu_instance()),
             gpu_adapter: None,
-            favorites_announced: 0,
+            shared_lists_announced: [0, 0],
         })
     }
 

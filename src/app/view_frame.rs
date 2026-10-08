@@ -22,9 +22,9 @@ impl App {
         else {
             return;
         };
-        // 다른 윈도우가 바꾼 Explorer 즐겨찾기를 그리기 전에 받는다.
-        if session.runtime.sync_explorer_favorites() {
-            tracing::debug!(window = ?id, "explorer: favorites copy refreshed before redraw");
+        // 다른 윈도우가 바꾼 공용 목록(Explorer·포트 즐겨찾기)을 그리기 전에 받는다.
+        if session.runtime.sync_shared_lists() {
+            tracing::debug!(window = ?id, "shared lists: copy refreshed before redraw");
             crate::view::ui::View::mark_dirty(view);
         }
         view.prepare_redraw(&session.read());
@@ -97,16 +97,20 @@ impl App {
         );
         self.process_remote_tool_requests(id);
         self.poll_port_scans();
-        self.redraw_windows_for_favorites();
+        self.redraw_windows_for_shared_lists();
     }
 
-    /// Explorer 즐겨찾기 원본이 마지막으로 알린 리비전 뒤에 바뀌었으면 모든 메인 윈도우를 다시 그리게 한다.
-    /// 변경은 프레임 안의 intent 루프에서도, 프레임 밖의 `dispatch_pending_intents` 에서도 적용되므로
-    /// 두 곳 모두 이것을 부른다. 각 윈도우는 그리기 전에 사본을 맞춘다.
-    pub(crate) fn redraw_windows_for_favorites(&mut self) {
+    /// 공용 목록(Explorer·포트 즐겨찾기) 원본이 마지막으로 알린 리비전 뒤에 바뀌었으면 모든 메인 윈도우를
+    /// 다시 그리게 한다. 변경은 프레임 안의 intent 루프에서도, 프레임 밖의 `dispatch_pending_intents` 에서도
+    /// 적용되므로 두 곳 모두 이것을 부른다. 각 윈도우는 그리기 전에 사본을 맞춘다.
+    pub(crate) fn redraw_windows_for_shared_lists(&mut self) {
+        let registries = &self.services.registries;
         redraw_other_windows(
-            &self.services.registries.explorer_favorites,
-            &mut self.favorites_announced,
+            [
+                registries.explorer_favorites.revision(),
+                registries.port_favorites.revision(),
+            ],
+            &mut self.shared_lists_announced,
             self.view
                 .views
                 .values_mut()
@@ -116,18 +120,17 @@ impl App {
     }
 }
 
-/// `announced` 뒤에 원본이 바뀌었으면 기준을 올리고 모든 윈도우에 `redraw` 를 부른다.
-fn redraw_other_windows<W>(
-    favorites: &crate::core::explorer_favorites::SharedExplorerFavorites,
-    announced: &mut u64,
+/// `announced` 뒤에 원본 리비전이 바뀌었으면 기준을 올리고 모든 윈도우에 `redraw` 를 부른다.
+fn redraw_other_windows<K: PartialEq + Copy, W>(
+    current: K,
+    announced: &mut K,
     windows: impl IntoIterator<Item = W>,
     mut redraw: impl FnMut(W),
 ) {
-    let revision = favorites.revision();
-    if revision == *announced {
+    if current == *announced {
         return;
     }
-    *announced = revision;
+    *announced = current;
     for window in windows {
         redraw(window);
     }
@@ -135,25 +138,35 @@ fn redraw_other_windows<W>(
 
 #[cfg(test)]
 mod tests {
-    /// 프레임 밖에서 적용된 제거도 다음 확인 때 모든 윈도우를 한 번 깨운다.
+    use crate::core::explorer_favorites::ExplorerFavorites;
+    use crate::core::port_favorites::PortFavorites;
+    use crate::core::shared_list::SharedList;
+
+    /// 프레임 밖에서 적용된 제거도, 다른 목록의 변경도 다음 확인 때 모든 윈도우를 한 번 깨운다.
     #[test]
-    fn a_favorites_change_redraws_every_window_once() {
+    fn a_shared_list_change_redraws_every_window_once() {
         let _home = crate::test_support::IsolatedHome::new();
-        let favorites = crate::core::explorer_favorites::SharedExplorerFavorites::default();
-        let mut announced = favorites.revision();
+        let explorer = SharedList::<ExplorerFavorites>::default();
+        let port = SharedList::<PortFavorites>::default();
+        let current = || [explorer.revision(), port.revision()];
+        let mut announced = current();
         let mut redrawn = [0, 0];
-        let check = |announced: &mut u64, redrawn: &mut [i32; 2]| {
-            super::redraw_other_windows(&favorites, announced, redrawn.iter_mut(), |n| *n += 1)
+        let check = |announced: &mut [u64; 2], redrawn: &mut [i32; 2]| {
+            super::redraw_other_windows(current(), announced, redrawn.iter_mut(), |n| *n += 1)
         };
         check(&mut announced, &mut redrawn);
         assert_eq!(redrawn, [0, 0], "nothing changed");
 
         let path = crate::test_support::abs_path("w/alpha");
-        favorites.update(|f| f.add(path.clone(), String::new()));
-        favorites.update(|f| f.remove(&path));
+        explorer.update(|f| f.add(path.clone(), String::new()));
+        explorer.update(|f| f.remove(&path));
         check(&mut announced, &mut redrawn);
         assert_eq!(redrawn, [1, 1]);
         check(&mut announced, &mut redrawn);
         assert_eq!(redrawn, [1, 1], "already announced");
+
+        port.update(|f| f.add("127.0.0.1".parse().unwrap(), 3000, String::new()));
+        check(&mut announced, &mut redrawn);
+        assert_eq!(redrawn, [2, 2], "a port favorite change also redraws");
     }
 }

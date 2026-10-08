@@ -1,4 +1,4 @@
-<!-- source-hash: bcbba0a263e5 -->
+<!-- source-hash: 45899f1c1861 -->
 # Troubleshooting
 
 If something is not working, find the matching symptom below. Check installation, permissions, terminal connections, and notifications, or use the reporting steps at the end if you still need help.
@@ -143,7 +143,7 @@ Open **Listening ports…** from the **Tools** menu in the sidebar. It shows the
 - By default only the LISTEN state is shown. If the list is empty and "No ports match the state filter" is displayed, ports in other states may still exist — use the **State** button on the right of the filter row to turn on other states and click **Apply**.
 - To include processes outside Tasty, turn on **Show all (system-wide)**.
 - Click a row to select it and use **Copy address** to put `host:port` on the clipboard.
-- Add a port to favorites with the star icon and it always stays at the top, surviving restarts (`~/.tasty/port-favorites.toml`).
+- Add a port to favorites with the star icon and it always stays at the top, surviving restarts (`~/.tasty/port-favorites.toml`). Favorites changed in another window show up right away.
 
 ## Reporting a problem
 

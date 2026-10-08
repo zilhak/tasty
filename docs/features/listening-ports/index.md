@@ -23,7 +23,7 @@
 
 메인 테이블 각 행 leading(Port 컬럼 앞) 28px 별 아이콘으로 `(addr, port)` 를 즐겨찾기에 등록/해제한다. 확인 절차 없이 클릭 즉시 토글.
 
-- **영속**: 전역(surface 무관)·`~/.tasty/port-favorites.toml`. `CoreState.port_favorites`(`PortFavorites`)가 부팅 시 로드하고, 토글 시 즉시 `save()` — 앱 재시작 후에도 유지된다.
+- **영속**: 전역(surface 무관)·`~/.tasty/port-favorites.toml`. 프로세스 원본 하나를 모든 윈도우가 함께 쓰며 토글 시 즉시 저장한다 — 앱 재시작 후에도 유지되고, 다른 윈도우에서 바꾼 즐겨찾기도 바로 보인다.
 - **상단 즐겨찾기 섹션**: 팝업 필터 행과 테이블 사이에 항상 노출되는 높이가 제한된 영역(캡션 22px + 리스트 최대 112px = 5행, 6번째부터 스크롤). 캡션은 "Favorites"(+개수, 0개면 개수 생략) 좌측 / "system-wide" 우측. 0개일 때도 캡션은 유지하고 안내 문구 1행을 보여준다(Explorer 사이드바 즐겨찾기와 동일 관례).
 - **system-wide 판정**: 즐겨찾기 섹션의 LISTEN/NONE 배지는 메인 테이블의 scope(Tasty/System)·검색·상태 필터와 **무관하게 항상 시스템 전체 기준**이다. 즐겨찾기가 1개 이상 등록되면 `scan_all()` 기반 별도 스캔(`MainViewState.port_favorites_scan`)이 병행 실행되어 각 즐겨찾기 항목을 매칭한다(0개면 스캔하지 않음). 매칭 있고 LISTEN → 실행중 배지(pulse), 매칭 있고 다른 상태 → waiting 배지, 매칭 자체가 없음(NONE) → idle 배지 + `NONE` 라벨(기존 `StatusDot` idle 상태 재사용, 새 색 없음).
 - **즐겨찾기 행 요약**: 별(항상 on, 클릭 시 제거) · `{addr}:{port}`(mono) · 매칭 있으면 `{process} · {pid}`(+workspace) 없으면 "not running" · 우측 상태 배지. 메인 테이블의 7컬럼 그리드를 그대로 쓰지 않는 요약형이다. 상세는 주소에서 `space-md` 떨어져 왼쪽에 붙고 넘치면 말줄임한다. 상태 배지는 행 오른쪽 끝의 최소 112px(`size-112`, 역할 토큰 없음, UI 배율을 곱함) 칸 안에서 오른쪽에 붙어 상세가 길어도 점에 닿지 않는다. 행은 왼쪽 여백 없이 28px 별 칸부터 시작하고 별은 칸 가운데에 놓여, 표의 별 열(역시 가운데 정렬)과 같은 세로선에 선다. 캡션과 빈 안내 줄만 popup 좌우 여백을 둔다. 본체 popup과 갤러리 예제는 `tasty_ui_widgets::ports_favorite_detail_and_state` 하나로 그린다.
@@ -118,6 +118,7 @@ Port / Proto / Address / Process / Workspace / Tab / State.
 - 헤더 컬럼 chooser 로 컬럼을 숨기면 폭이 줄고, 팝업을 닫았다 열어도 표시 상태가 유지된다. Port 컬럼은 숨길 수 없다.
 - 메인 테이블 행의 별 아이콘을 클릭하면 즉시 즐겨찾기가 토글되고(확인 절차 없음), 별을 클릭해도 행 선택 상태는 바뀌지 않는다.
 - 즐겨찾기로 등록한 `(addr, port)` 는 앱을 재시작해도 상단 즐겨찾기 섹션에 남아있다.
+- Given 윈도우 두 개 When 각 윈도우의 팝업에서 다른 포트를 즐겨찾기에 넣는다 Then 두 윈도우의 즐겨찾기 섹션에 둘 다 보이고 재시작 뒤에도 남는다.
 - 즐겨찾기 섹션의 LISTEN/NONE 판정은 메인 테이블을 Tasty scope 로 보고 있어도 시스템 전체 기준이다 — Tasty 프로세스가 아닌 포트를 즐겨찾기해도 정상 배지가 뜬다.
 - 즐겨찾기가 0개면 상단 섹션은 캡션 + 안내 문구만 보이고, 5개를 초과하면 리스트가 스크롤된다.
 - Given 즐겨찾기 행이 있을 때 When 상세가 길어도 Then 상세는 상태 칸 앞에서 말줄임되고 상태 점과 닿지 않는다.
@@ -129,7 +130,7 @@ Port / Proto / Address / Process / Workspace / Tab / State.
 - crate `tasty-portscan` — `scan_all()` / `scan_for_pids(pids)` / `collect_descendant_pids(pid)`, OS 백엔드 분기(Linux `/proc/net/tcp`, macOS `lsof`, Windows `GetExtendedTcpTable`), 캐시 `cache.rs`.
 - popup: `src/adapters/ui/popup/port_scanner.rs` — `draw_port_scanner_popup`(상태 연결) + `draw_port_scanner_view`(pure view).
 - 비동기 상태: `MainViewState.port_scan: PortScanState`(메인 테이블, Tasty/System scope) + `MainViewState.port_favorites_scan: PortScanState`(즐겨찾기 전용, 항상 system-wide `scan_all()`, 즐겨찾기 1개 이상일 때만 kick). 둘 다 `kick_off_scan`/`poll_state` 를 공유하는 동일한 `PortScanState` 슬롯이다. 필터 상태: `egui::Memory`.
-- 즐겨찾기 영속: `src/core/port_favorites.rs` 의 `PortFavorites`(`~/.tasty/port-favorites.toml`), `CoreState.port_favorites` 가 부팅 시 불러와 보관한다. 별 토글은 `PortScannerAction::ToggleFavorite` → wrapper 가 `contains`/`add`/`remove` + `save()`.
+- 즐겨찾기 영속: `src/core/port_favorites.rs` 의 `PortFavorites`(`~/.tasty/port-favorites.toml`). 프로세스 원본 `RuntimeRegistries::port_favorites`(`SharedList<PortFavorites>`)를 두고 engine 의 `EngineRuntime::port_favorites` 는 그리기용 사본이다. 별 토글은 `EngineAction::TogglePortFavorite` 가 원본 기준으로 `contains`/`add`/`remove` 한 뒤 원본 전체를 저장한다. 동작 규칙은 [App·Engine·View 상태 소유권](../../dev-guide/app-state-ownership.md#윈도우가-함께-쓰는-영속-목록).
 - gallery 데모: `crates/tasty-gallery/src/catalog/components/port_scanner.rs`.
 
 ## 화면

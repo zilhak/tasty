@@ -40,18 +40,14 @@ pub(crate) struct EngineRuntime {
     #[cfg(feature = "gui")]
     pub(crate) identify_worker:
         Option<std::sync::Arc<dyn crate::core::identify_port::IdentifySpawner>>,
-    /// 프로세스 원본에서 복사한 Explorer 즐겨찾기. 그리기 전용이며 변경은
-    /// [`Self::change_explorer_favorites`] 로 원본에 한다.
+    /// 프로세스 원본에서 복사한 Explorer 즐겨찾기. 변경은 `change` 로 원본에 한다.
     #[cfg(feature = "gui")]
-    pub(crate) explorer_favorites: crate::core::explorer_favorites::ExplorerFavorites,
-    /// `explorer_favorites` 를 복사한 원본 리비전.
+    pub(crate) explorer_favorites:
+        crate::core::shared_list::Replica<crate::core::explorer_favorites::ExplorerFavorites>,
+    /// 프로세스 원본에서 복사한 주소·포트 즐겨찾기. 변경은 `change` 로 원본에 한다.
     #[cfg(feature = "gui")]
-    explorer_favorites_revision: u64,
-    #[cfg(feature = "gui")]
-    explorer_favorites_source: Arc<crate::core::explorer_favorites::SharedExplorerFavorites>,
-    /// 공용 설정 파일에서 읽은 주소·포트 즐겨찾기. 변경 뒤 저장은 호출자가 요청한다.
-    #[cfg(feature = "gui")]
-    pub(crate) port_favorites: crate::core::port_favorites::PortFavorites,
+    pub(crate) port_favorites:
+        crate::core::shared_list::Replica<crate::core::port_favorites::PortFavorites>,
     /// Core와 공유하는 저장소. engine 내부에서 직접 메타데이터를 기록할 때 쓴다.
     pub(crate) memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
 
@@ -88,8 +84,6 @@ impl EngineRuntime {
         rows: usize,
         registries: super::registries::RuntimeRegistries,
     ) -> Self {
-        #[cfg(feature = "gui")]
-        let favorites = registries.explorer_favorites.copy();
         Self {
             #[cfg(feature = "gui")]
             dag_reads: Default::default(),
@@ -114,13 +108,11 @@ impl EngineRuntime {
             #[cfg(feature = "gui")]
             identify_worker: None,
             #[cfg(feature = "gui")]
-            explorer_favorites: favorites.1,
+            explorer_favorites: crate::core::shared_list::Replica::new(
+                registries.explorer_favorites,
+            ),
             #[cfg(feature = "gui")]
-            explorer_favorites_revision: favorites.0,
-            #[cfg(feature = "gui")]
-            explorer_favorites_source: registries.explorer_favorites,
-            #[cfg(feature = "gui")]
-            port_favorites: crate::core::port_favorites::PortFavorites::load(),
+            port_favorites: crate::core::shared_list::Replica::new(registries.port_favorites),
             memory,
 
             surfaces: Default::default(),
@@ -133,27 +125,11 @@ impl EngineRuntime {
         }
     }
 
-    /// Explorer 즐겨찾기 원본을 바꾸고 이 engine 의 사본을 맞춘다. 다른 engine 은 다음 그리기 전에 맞춘다.
+    /// 다른 윈도우가 바꾼 공용 목록을 받아 온다. 하나라도 바뀌었으면 true.
     #[cfg(feature = "gui")]
-    pub(crate) fn change_explorer_favorites(
-        &mut self,
-        change: impl FnOnce(&mut crate::core::explorer_favorites::ExplorerFavorites),
-    ) {
-        self.explorer_favorites_source.update(change);
-        self.sync_explorer_favorites();
-    }
-
-    /// 원본이 이 사본 뒤에 바뀌었으면 다시 복사하고 true 를 돌려준다.
-    #[cfg(feature = "gui")]
-    pub(crate) fn sync_explorer_favorites(&mut self) -> bool {
-        let Some((revision, favorites)) = self
-            .explorer_favorites_source
-            .copy_if_newer(self.explorer_favorites_revision)
-        else {
-            return false;
-        };
-        self.explorer_favorites = favorites;
-        self.explorer_favorites_revision = revision;
-        true
+    pub(crate) fn sync_shared_lists(&mut self) -> bool {
+        let explorer = self.explorer_favorites.sync();
+        let port = self.port_favorites.sync();
+        explorer || port
     }
 }

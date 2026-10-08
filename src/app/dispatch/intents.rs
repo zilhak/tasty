@@ -30,7 +30,7 @@ impl App {
 
         self.refresh_approval_presentations();
         #[cfg(feature = "gui")]
-        self.redraw_windows_for_favorites();
+        self.redraw_windows_for_shared_lists();
     }
 
     /// A projection of pending popup records, refreshed after every source of store changes.

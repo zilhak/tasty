@@ -21,7 +21,7 @@ OS 파일 관리자에 의존하지 않고 tasty surface 안에서 디렉토리�
 |---|---|---|
 | 구조 트리의 leaf(`SurfaceDescriptor`, kind `explorer`) | engine 의 구조 트리 | 공통 생성·닫기·이동·변환([작업 영역](../../features/work-area/index.md)) |
 | 내비게이션 모델 `ExplorerPanel`(내부 탭·cwd·current·히스토리·뷰 모드·정렬) | engine 의 surface 실행 객체(`EngineRuntime::surfaces`) | View 가 `EngineAction::Explorer`·`EngineAction::ExplorerCwd` 로 요청하고, App 이 요청에 담긴 `SurfaceBinding` 이 아직 그 surface 를 가리킬 때만 적용한 뒤 레이아웃을 dirty 로 표시한다(`src/app/engine_action.rs`) |
-| 즐겨찾기 목록 | 프로세스 원본 `RuntimeRegistries::explorer_favorites`(`SharedExplorerFavorites`). engine 의 `EngineRuntime::explorer_favorites` 는 그리기용 사본 | `EngineAction::AddExplorerFavorite`·`RemoveExplorerFavorite` 가 원본을 바꾸고 바로 파일에 쓴다(아래 "즐겨찾기") |
+| 즐겨찾기 목록 | 프로세스 원본 `RuntimeRegistries::explorer_favorites`(`SharedList<ExplorerFavorites>`). engine 의 `EngineRuntime::explorer_favorites` 는 그리기용 사본(`Replica`) | `EngineAction::AddExplorerFavorite`·`RemoveExplorerFavorite` 가 원본을 바꾸고 바로 파일에 쓴다(아래 "즐겨찾기") |
 | 목록 캐시·로딩 상태·선택·트리 펼침·주소창 편집·타입어헤드 | 창의 View 상태 `MainViewState::explorer_views`(surface id 별 `ExplorerView`) | View 가 직접 바꾼다. 저장하지 않는다 |
 | 파일 클립보드 | 창의 View 상태 `MainViewState::explorer_clipboard` | 복사·잘라내기가 채우고 붙여넣기가 소비한다. 저장하지 않는다 |
 | 로컬 디렉터리 읽기 | App 의 읽기 worker(`src/app/local_reads.rs`, 동시 실행 최대 4개) | View 가 요청을 만들고 받은 receipt 로 결과를 가져간다 |
@@ -198,7 +198,7 @@ mirror(원격) explorer:
 
 ### 즐겨찾기 (favorites)
 
-전역(surface 무관)·영속 즐겨찾기 — **로컬 client 파일시스템 경로 전용**. `~/.tasty/explorer-favorites.toml`(`[[favorite]]` 배열, label+path)에 저장된다. 프로세스를 시작할 때 `RuntimeRegistries` 가 파일을 한 번 읽어 원본 `SharedExplorerFavorites` 를 만들고, 모든 engine 이 같은 원본을 받는다. 윈도우마다 있는 engine 은 그리기용 사본(`EngineRuntime::explorer_favorites`)과 그 사본을 복사한 원본 리비전을 가진다. 추가·제거는 `EngineAction` 이 `EngineRuntime::change_explorer_favorites` 로 원본을 바꾸고, 원본 전체를 파일에 쓴 뒤 리비전을 올린다. 그래서 한 윈도우의 저장이 다른 윈도우에서 추가한 항목을 지우지 않는다. 각 윈도우는 그리기 전에(`App::redraw_main_window`) 리비전을 비교해 사본을 다시 복사한다. App 은 다른 윈도우에 마지막으로 알린 리비전(`App::favorites_announced`)을 들고, 대기 intent 를 처리한 뒤(`dispatch_pending_intents`)와 각 그리기 끝에 원본 리비전과 비교해 달라졌으면 모든 메인 윈도우를 다시 그리게 한다(`App::redraw_windows_for_favorites`). 그래서 그리기 밖에서 적용되는 제거(Favorites 행 네이티브 메뉴)도 다른 윈도우에 바로 보인다. 원본은 시작 뒤 파일을 다시 읽지 않으므로 실행 중에 파일을 손으로 고친 내용은 다음 변경 때 덮인다. 메모리 mutator(`add`/`remove`)는 순수하고 디스크 반영은 호출처가 `save()` 로 한다(테스트가 디스크를 건드리지 않게 분리). mirror(attach 원격 점유) explorer 의 경로는 원격 호스트의 경로라 이 전역 목록에 섞일 수 없다 — "즐겨찾기 추가"는 mirror explorer 에서 차단된다(위 "mirror(attach) explorer 의 파일 변경 차단" 참고).
+전역(surface 무관)·영속 즐겨찾기 — **로컬 client 파일시스템 경로 전용**. `~/.tasty/explorer-favorites.toml`(`[[favorite]]` 배열, label+path)에 저장된다. 프로세스에 원본 하나(`RuntimeRegistries::explorer_favorites`)를 두고 윈도우마다 있는 engine 은 그리기용 사본만 가진다. 추가·제거는 `EngineAction` 이 `EngineRuntime::explorer_favorites.change` 로 원본을 바꾸고 원본 전체를 파일에 쓴다. 그래서 한 윈도우의 저장이 다른 윈도우에서 추가한 항목을 지우지 않고, 그리기 밖에서 적용되는 제거(Favorites 행 네이티브 메뉴)도 다른 윈도우에 바로 보인다. 사본 갱신·다른 윈도우 다시 그리기·파일 재읽기 시점은 [App·Engine·View 상태 소유권](../../dev-guide/app-state-ownership.md#윈도우가-함께-쓰는-영속-목록)을 따른다. 메모리 mutator(`add`/`remove`)는 순수하고 디스크 반영은 호출처가 `save()` 로 한다(테스트가 디스크를 건드리지 않게 분리). mirror(attach 원격 점유) explorer 의 경로는 원격 호스트의 경로라 이 전역 목록에 섞일 수 없다 — "즐겨찾기 추가"는 mirror explorer 에서 차단된다(위 "mirror(attach) explorer 의 파일 변경 차단" 참고).
 
 - **추가**: 컨텍스트 메뉴 "Add to favorites" → rename 팝업과 동일 골격의 입력 팝업(`RenameTarget::ExplorerAddFavorite`, 확정 버튼 라벨만 "Add")으로 라벨을 받아 등록(같은 경로 재등록 시 라벨만 갱신).
 - **표시/이동**: 사이드바 하단 고정(pin) "Favorites" 영역(사이드바 본문이 240px 이상이면 캡션 **항상 표시**)에 **채운 별(STAR_FILL) + accent-warning(골드)** 행으로 나열, 클릭 시 해당 경로로 이동. 현재 폴더인 즐겨찾기는 surface-active 하이라이트. 이 영역은 위 "사이드바 트리"에 서술한 고정 높이로 보이며 자체 스크롤된다. 본문이 240px 미만인 낮은 칸에서는 영역 전체를 숨긴다.
@@ -245,7 +245,7 @@ Appearance → **Explorer** 서브탭에서 surface 폰트를 오버라이드한
 ## 검증 기준
 
 - Given 윈도우 두 개 When 각 윈도우의 explorer 에서 다른 폴더를 즐겨찾기에 추가한다 Then 두 윈도우의 Favorites 에 둘 다 보이고 재시작 뒤에도 둘 다 남는다(`engine_action.rs` 의 `favorites_added_in_two_windows_both_survive_a_restart`).
-- Given 윈도우 두 개에 같은 즐겨찾기가 보인다 When 한 윈도우에서 즐겨찾기를 제거한다 Then 다른 윈도우의 Favorites 에서도 바로 사라진다(`view_frame.rs` 의 `a_favorites_change_redraws_every_window_once`).
+- Given 윈도우 두 개에 같은 즐겨찾기가 보인다 When 한 윈도우에서 즐겨찾기를 제거한다 Then 다른 윈도우의 Favorites 에서도 바로 사라진다(`view_frame.rs` 의 `a_shared_list_change_redraws_every_window_once`).
 - Given 로컬 explorer When 하위 폴더로 이동한다 Then 목록이 `Loading` 을 거쳐 새 폴더의 항목으로 바뀌고, 이전 폴더의 늦은 결과는 반영되지 않는다(`src/app/local_reads.rs` 의 `replaced_directory_receipt_cannot_publish_its_old_result`, mirror 는 `view.rs` 의 `apply_remote_list_dir_result_ignores_stale_request_id`).
 - Given 사이드바 트리에서 하위 폴더를 펼친 로컬 explorer When 외부 프로그램이 그 하위 폴더에 폴더를 만든 뒤 `F5` 를 누른다 Then 목록과 펼친 트리가 함께 다시 읽혀 새 폴더가 트리에도 보인다(`view.rs` 의 `an_explicit_reload_of_the_same_folder_rereads_the_tree`).
 - Given 로컬 explorer 가 A/B/C 를 보고 있다 When B 가 통째로 지워져 읽기 오류 화면에서 "상위 폴더로" 를 누른다 Then A 로 간다(`local_reads.rs` 의 `a_missing_folder_names_its_nearest_existing_ancestor`, `view.rs` 의 `go_up_from_a_vanished_folder_skips_vanished_parents`).

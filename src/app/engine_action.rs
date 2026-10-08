@@ -255,9 +255,10 @@ impl EngineAction {
             Self::PasteImage { .. } => self.apply_paste_image(engine),
             #[cfg(feature = "gui")]
             Self::AddExplorerFavorite { path, label } => {
-                engine.runtime.change_explorer_favorites(|favorites| {
-                    favorites.add(path.clone(), label.clone())
-                });
+                engine
+                    .runtime
+                    .explorer_favorites
+                    .change(|favorites| favorites.add(path.clone(), label.clone()));
             }
             #[cfg(feature = "gui")]
             Self::TogglePortFavorite {
@@ -265,15 +266,14 @@ impl EngineAction {
                 port,
                 label,
             } => {
-                if engine.runtime.port_favorites.contains(*address, *port) {
-                    engine.runtime.port_favorites.remove(*address, *port);
-                } else {
-                    engine
-                        .runtime
-                        .port_favorites
-                        .add(*address, *port, label.clone());
-                }
-                engine.runtime.port_favorites.save();
+                // 사본이 아직 다른 윈도우의 변경을 받지 못했을 수 있으므로 원본 기준으로 뒤집는다.
+                engine.runtime.port_favorites.change(|favorites| {
+                    if favorites.contains(*address, *port) {
+                        favorites.remove(*address, *port);
+                    } else {
+                        favorites.add(*address, *port, label.clone());
+                    }
+                });
             }
             #[cfg(feature = "gui")]
             Self::DetachSurface { surface, grant } => {
@@ -308,7 +308,8 @@ impl EngineAction {
             Self::RemoveExplorerFavorite { path } => {
                 engine
                     .runtime
-                    .change_explorer_favorites(|favorites| favorites.remove(path));
+                    .explorer_favorites
+                    .change(|favorites| favorites.remove(path));
             }
             #[cfg(feature = "gui")]
             Self::RemoteMeshFull { targets } => {
@@ -701,9 +702,9 @@ mod tests {
 
         // 첫 윈도우의 사본은 다음 그리기 전에 다른 윈도우의 추가를 받는다.
         assert_eq!(labels(&first.runtime.explorer_favorites), ["alpha"]);
-        assert!(first.runtime.sync_explorer_favorites());
+        assert!(first.runtime.sync_shared_lists());
         assert_eq!(labels(&first.runtime.explorer_favorites), ["alpha", "beta"]);
-        assert!(!first.runtime.sync_explorer_favorites(), "already current");
+        assert!(!first.runtime.sync_shared_lists(), "already current");
 
         EngineAction::RemoveExplorerFavorite {
             path: crate::test_support::abs_path("w/alpha"),
@@ -713,5 +714,41 @@ mod tests {
             labels(&crate::core::explorer_favorites::ExplorerFavorites::load()),
             ["beta"]
         );
+    }
+
+    /// 포트 즐겨찾기도 윈도우마다 다른 항목을 바꿔도 서로 지우지 않는다. 다른 윈도우의 변경을 아직 받지 못한
+    /// 사본에서 같은 항목을 누르면 원본 기준으로 해제된다.
+    #[test]
+    fn port_favorites_toggled_in_two_windows_both_survive_a_restart() {
+        let _home = crate::test_support::IsolatedHome::new();
+        let registries = crate::runtime::registries::RuntimeRegistries::new(None);
+        let mut first = engine_with(&registries);
+        let mut second = engine_with(&registries);
+        let localhost: std::net::IpAddr = "127.0.0.1".parse().expect("address");
+        let toggle = |session: &mut crate::runtime::engine_session::EngineSession, port: u16| {
+            EngineAction::TogglePortFavorite {
+                address: localhost,
+                port,
+                label: format!("p{port}"),
+            }
+            .apply(&mut session.borrow_mut(), None);
+        };
+        let ports = |favorites: &crate::core::port_favorites::PortFavorites| {
+            favorites.items.iter().map(|f| f.port).collect::<Vec<_>>()
+        };
+        toggle(&mut first, 47811);
+        toggle(&mut second, 47812);
+        let restarted = crate::runtime::registries::RuntimeRegistries::new(None);
+        assert_eq!(ports(&restarted.port_favorites.copy().1), [47811, 47812]);
+
+        assert_eq!(ports(&first.runtime.port_favorites), [47811]);
+        toggle(&mut first, 47812);
+        assert_eq!(
+            ports(&crate::core::port_favorites::PortFavorites::load()),
+            [47811]
+        );
+        assert_eq!(ports(&first.runtime.port_favorites), [47811]);
+        assert!(second.runtime.sync_shared_lists());
+        assert_eq!(ports(&second.runtime.port_favorites), [47811]);
     }
 }

@@ -15,6 +15,8 @@ pub(crate) mod origin;
 pub(crate) mod param_bag;
 #[cfg(feature = "gui")]
 pub(crate) mod port_favorites;
+#[cfg(feature = "gui")]
+pub(crate) mod shared_list;
 pub(crate) mod state;
 
 pub(crate) mod request_target;

@@ -98,6 +98,17 @@ CoreState만 필요한 함수에는 구조 참조를, 실행 adapter에는 `Engi
 
 활성 모달의 ID·종류는 MainViewState에 없다. 모달은 앱 전체에 최대 1개라 `ViewRegistry`(`src/view/mod.rs`)가 유일한 원본으로 갖고, `App::open_modal`이 세우고 `App::close_active_modal`과 macOS의 `App::handle_minimize`가 비운다. 이 세 곳 밖에서는 바꾸지 않는다. debug `ui.state`의 `modal_open`·`active_modal_id`·`active_modal_kind`는 handler가 모달 없음으로 채운 뒤 GUI App이 응답을 보내기 전에 이 원본으로 덮어쓴다. 그래서 창과 parked 상태 어느 쪽이 응답해도 같은 값이고, 헤드리스는 늘 모달 없음이다.
 
+## 윈도우가 함께 쓰는 영속 목록
+
+윈도우마다 engine 이 있으므로 engine 에 영속 목록의 사본을 두고 변경마다 사본 전체를 저장하면, 다른 윈도우의 저장이 이 윈도우의 변경을 파일에서 지운다. 파일 하나에 통째로 저장하고 UI 가 그리는 작은 목록은 `src/core/shared_list.rs` 의 `SharedList<T>` 로 프로세스에 원본 하나를 둔다. 대상은 Explorer 즐겨찾기(`explorer-favorites.toml`)와 포트 즐겨찾기(`port-favorites.toml`)다.
+
+- `RuntimeRegistries` 가 시작할 때 파일을 한 번 읽어 원본을 만들고 모든 engine 이 같은 `Arc` 를 받는다. 시작 뒤에는 파일을 다시 읽지 않으므로 실행 중 손으로 고친 내용은 다음 변경 때 덮인다.
+- engine 은 그리기용 사본 `Replica<T>` 를 가진다. 읽기는 `Deref` 로만 열려 있고, 변경은 `Replica::change` 가 원본을 바꾸고 원본 전체를 저장한 뒤 리비전을 올린다. 변경 판단(예: 이미 있으면 해제)도 이 closure 안에서 원본 기준으로 한다.
+- 각 윈도우는 그리기 전에(`App::redraw_main_window`) `EngineRuntime::sync_shared_lists` 로 리비전을 비교해 사본을 다시 복사한다.
+- App 은 다른 윈도우에 마지막으로 알린 리비전(`App::shared_lists_announced`)을 들고, 대기 intent 를 처리한 뒤(`dispatch_pending_intents`)와 각 그리기 끝에 원본 리비전과 비교한다. 달라졌으면 모든 메인 윈도우를 다시 그리게 한다(`App::redraw_windows_for_shared_lists`). 그리기 밖에서 적용되는 변경도 다른 윈도우에 바로 보인다.
+- Given 윈도우 두 개 When 각 윈도우가 같은 목록에 다른 항목을 더한다 Then 재시작 뒤 둘 다 남는다(`engine_action.rs` 의 `favorites_added_in_two_windows_both_survive_a_restart`, `port_favorites_toggled_in_two_windows_both_survive_a_restart`).
+- Given 목록이 바뀌었다 When 다음 확인 지점에 온다 Then 모든 메인 윈도우가 한 번 다시 그려진다(`view_frame.rs` 의 `a_shared_list_change_redraws_every_window_once`).
+
 ## 모듈 단위 예외 없이 가른다
 
 MainViewState와 CommandContext는 별도 struct다. 공통 알고리즘과 값 타입은 재사용하되 GUI popup·hover·렌더 자료는 headless에 만들지 않는다. 실제 승인 레코드는 AppServices에 있고 popup의 pending ID 목록은 View 상태다. intent origin 검사는 사용자 선택·닫은 항목 기록 보호를 위해 계속 유지한다.

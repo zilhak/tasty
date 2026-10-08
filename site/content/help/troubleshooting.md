@@ -144,7 +144,7 @@ tasty codex install     # ~/.codex/config.toml
 - 기본은 LISTEN 상태만 보입니다. 목록이 비고 "상태 필터에 맞는 포트가 없습니다" 가 떠 있으면 다른 상태의 포트가 있을 수 있습니다 — 필터 행 우측의 **상태** <!-- en: State --> 버튼으로 다른 상태를 켜고 **적용** <!-- en: Apply --> 합니다.
 - Tasty 밖 프로세스까지 보려면 **전체 보기** <!-- en: Show all (system-wide) --> 를 켭니다.
 - 행을 클릭해 선택하고 **주소 복사** <!-- en: Copy address --> 로 `host:port` 를 클립보드에 넣습니다.
-- 별 아이콘으로 즐겨찾기에 넣으면 상단에 항상 보이고, 재시작해도 남습니다 (`~/.tasty/port-favorites.toml`).
+- 별 아이콘으로 즐겨찾기에 넣으면 상단에 항상 보이고, 재시작해도 남습니다 (`~/.tasty/port-favorites.toml`). 다른 윈도우에서 바꾼 즐겨찾기도 바로 보입니다.
 
 ## 문제 신고
 

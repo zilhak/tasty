@@ -7,7 +7,12 @@ pub(crate) struct RuntimeRegistries {
     pub(crate) file_handler: Arc<crate::file::handler::FileHandlerRegistry>,
     pub(crate) plugin_hook_events: Arc<crate::core::hook_event_registry::PluginHookEventRegistry>,
     #[cfg(feature = "gui")]
-    pub(crate) explorer_favorites: Arc<crate::core::explorer_favorites::SharedExplorerFavorites>,
+    pub(crate) explorer_favorites: Arc<
+        crate::core::shared_list::SharedList<crate::core::explorer_favorites::ExplorerFavorites>,
+    >,
+    #[cfg(feature = "gui")]
+    pub(crate) port_favorites:
+        Arc<crate::core::shared_list::SharedList<crate::core::port_favorites::PortFavorites>>,
 }
 impl RuntimeRegistries {
     pub(crate) fn new(user_config: Option<&Path>) -> Self {
@@ -30,9 +35,9 @@ impl RuntimeRegistries {
                 crate::core::hook_event_registry::PluginHookEventRegistry::new(),
             ),
             #[cfg(feature = "gui")]
-            explorer_favorites: Arc::new(
-                crate::core::explorer_favorites::SharedExplorerFavorites::load(),
-            ),
+            explorer_favorites: Arc::new(crate::core::shared_list::SharedList::load()),
+            #[cfg(feature = "gui")]
+            port_favorites: Arc::new(crate::core::shared_list::SharedList::load()),
         }
     }
 }
