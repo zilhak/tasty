@@ -786,13 +786,43 @@ function SettingsWindow({ theme, onTheme, uiScale, onUiScale, onClose }) {
   const pickL1 = (t) => { setL1(t); setL2(L2[t][0] || null); setFilter(""); };
   const shown = L2[l1].filter((s) => s.toLowerCase().includes(filter.toLowerCase()));
 
-  const Row = ({ label, hint, children }) => (
-    <div style={{ display: "flex", alignItems: "center", gap: 16, minHeight: "var(--tasty-settings-row-min-height)" }}>
-      <span style={{ width: 150, flex: "none", fontSize: 13, color: "var(--tasty-text-secondary)",
-        display: "inline-flex", alignItems: "center", gap: "var(--tasty-help-hint-gap)" }}>
-        {label}{hint && <HelpHint label={hint} placement="bottom" />}
+  // 2026-10-08 (batch 8) — label column = the SUBTAB's longest label, clamped to
+  // [--tasty-settings-label-width 150, --tasty-settings-label-max-width 240]; longer labels wrap.
+  // Gap = --tasty-settings-label-gap 16. The app measures per subtab + locale; the kit hard-codes the
+  // en result per subtab in LABEL_COL (General › General clamps to 240: the webhook label wraps).
+  const LABEL_COL = { "General/General": "var(--tasty-settings-label-max-width)", "Terminal/TUI": "var(--tasty-settings-label-max-width)" };
+  const labelCol = LABEL_COL[l1 + "/" + l2] || "var(--tasty-settings-label-width)";
+  // caption / callout that belongs to ONE row sits directly under it (gap --tasty-settings-row-caption-gap 4),
+  // at the row's left edge, width measure-md — same as every settings Note.
+  const Row = ({ label, hint, caption, children }) => {
+    const row = (
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-settings-label-gap)", minHeight: "var(--tasty-settings-row-min-height)" }}>
+        <span style={{ width: labelCol, flex: "none", fontSize: 13, color: "var(--tasty-text-secondary)", lineHeight: "var(--tasty-line-height-ui)",
+          display: "inline-flex", alignItems: "center", gap: "var(--tasty-help-hint-gap)" }}>
+          <span>{label}</span>{hint && <HelpHint label={hint} placement="bottom" />}
+        </span>
+        {children}
+      </div>
+    );
+    if (!caption) return row;
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-settings-row-caption-gap)" }}>
+        {row}
+        {caption}
+      </div>
+    );
+  };
+  const RowCaption = ({ children }) => (
+    <p style={{ fontSize: 12, color: "var(--tasty-text-muted)", margin: 0, maxWidth: "var(--tasty-measure-md)", lineHeight: "var(--tasty-line-height-ui)" }}>{children}</p>
+  );
+  const WarnCallout = ({ children }) => (
+    <div style={{ display: "flex", gap: "var(--tasty-space-sm)", padding: "var(--tasty-space-sm) var(--tasty-space-md)", borderRadius: "var(--tasty-radius)", maxWidth: "var(--tasty-measure-md)",
+      border: "var(--tasty-border-width) solid color-mix(in srgb, var(--tasty-accent-warning) 40%, transparent)",
+      background: "color-mix(in srgb, var(--tasty-accent-warning) 12%, transparent)" }}>
+      <span style={{ display: "inline-flex", flex: "none", marginTop: 1, color: "var(--tasty-accent-warning)" }}>
+        <Icon name="alertTriangle" size={16} />
       </span>
-      {children}
+      <p style={{ margin: 0, fontSize: 12, color: "var(--tasty-text-secondary)", lineHeight: "var(--tasty-line-height-ui)" }}>{children}</p>
     </div>
   );
   const Mono = ({ children }) => (
@@ -934,17 +964,8 @@ function SettingsWindow({ theme, onTheme, uiScale, onUiScale, onClose }) {
       if (l2 === "TUI")
         return (
           <>
-            <Row label="Allow clipboard read (OSC 52):"><Switch /></Row>
-            <div style={{ display: "flex", gap: "var(--tasty-space-sm)", padding: "var(--tasty-space-sm) var(--tasty-space-md)", borderRadius: "var(--tasty-radius)", maxWidth: "var(--tasty-measure-md)",
-              border: "var(--tasty-border-width) solid color-mix(in srgb, var(--tasty-accent-warning) 40%, transparent)",
-              background: "color-mix(in srgb, var(--tasty-accent-warning) 12%, transparent)" }}>
-              <span style={{ display: "inline-flex", flex: "none", marginTop: 1, color: "var(--tasty-accent-warning)" }}>
-                <Icon name="alertTriangle" size={16} />
-              </span>
-              <p style={{ margin: 0, fontSize: 12, color: "var(--tasty-text-secondary)", lineHeight: "var(--tasty-line-height-ui)" }}>
-                Turning this on lets programs running in the terminal <b style={{ color: "var(--tasty-text-primary)" }}>read your system clipboard</b> via OSC 52. Leave it off unless you trust everything that runs here.
-              </p>
-            </div>
+            {/* 2026-10-08 (batch 8) — the OSC 52 row is ON the grid; its callout is the row's own (measure-md, gap 4). */}
+            <Row label="Allow clipboard read (OSC 52):" caption={<WarnCallout>Turning this on lets programs running in the terminal <b style={{ color: "var(--tasty-text-primary)" }}>read your system clipboard</b> via OSC 52. Leave it off unless you trust everything that runs here.</WarnCallout>}><Switch /></Row>
           </>
         );
       // Terminal › General — behaviour
@@ -978,13 +999,8 @@ function SettingsWindow({ theme, onTheme, uiScale, onUiScale, onClose }) {
           {l2 === "Preset" && <PresetSubtab />}
           {l2 === "Import / Export" && window.TastyKit.KbImportExportSubtab &&
             <window.TastyKit.KbImportExportSubtab onFlash={setToast} />}
-          {l2 === "Plugins" && <>
-            <Mono>Plugin command shortcuts</Mono>
-            <KeyRow action="git-helper: Stage hunk" keys="Ctrl+Alt+G" />
-            <KeyRow action="ai-review: Explain selection" keys="Ctrl+Alt+E" />
-            <KeyRow action="docker: Attach shell" keys="Ctrl+Alt+D" />
-            <Note>Edit shortcuts contributed by installed plugins. This list is empty when no plugin registers a command.</Note>
-          </>}
+          {/* 2026-10-08 (batch 8) — real structure: plugin picker + per-command mode / slot / Reset (kb_plugins_subtab.jsx). */}
+          {l2 === "Plugins" && window.TastyKit.KbPluginsSubtab && <window.TastyKit.KbPluginsSubtab />}
         </>
       );
 
@@ -1117,7 +1133,13 @@ function SettingsWindow({ theme, onTheme, uiScale, onUiScale, onClose }) {
       <>
         <Row label="Restore layout:"><Switch defaultChecked /></Row>
         <Row label="Close behavior:"><Select options={["Ask", "Minimize to background", "Quit"]} style={{ width: "var(--tasty-field-width-lg)" }} /></Row>
-        <Row label="Language:"><Select options={["English", "한국어", "日本語"]} style={{ width: "var(--tasty-field-width-md)" }} /></Row>
+        {/* 2026-10-08 (batch 8) — the app's two description lines sit under THEIR rows (Row caption), not under the webhook callout. */}
+        <Row label="Wheel scroll distance:" caption={<RowCaption>Lines scrolled per wheel notch in the terminal. Trackpads scroll by distance and ignore this.</RowCaption>}>
+          <Input mono defaultValue="3" style={{ width: "var(--tasty-field-width-xs)" }} /><span style={{ fontSize: 12, color: "var(--tasty-text-muted)" }}>lines</span>
+        </Row>
+        <Row label="Language:" caption={<RowCaption>Changing the language takes effect after Tasty restarts.</RowCaption>}><Select options={["English", "한국어", "日本語"]} style={{ width: "var(--tasty-field-width-md)" }} /></Row>
+        {/* 2026-10-07 — [webhook] allow_external. On the row grid; the warning callout is the row's own and is ALWAYS shown. Save/Cancel flow. */}
+        <Row label="Accept webhook calls from other computers:" caption={<WarnCallout>When on, the webhook listener takes every network interface, so anyone who can reach its port can call your registered webhooks. When off, only programs on this computer can. Applies from the next start.</WarnCallout>}><Switch /></Row>
       </>
     );
   }

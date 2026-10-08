@@ -38,8 +38,8 @@ function FloatMenu() {
       borderRadius: "var(--tasty-radius)", padding: 4, boxShadow: "var(--tasty-shadow-popover)" }}>
       {["Split pane", "New tab", "Rename…"].map((l, i) => (
         <div key={l} style={{ height: 28, display: "flex", alignItems: "center", padding: "0 8px", fontSize: 13,
-          borderRadius: "var(--tasty-radius-sm)", color: "var(--tasty-text-primary)",
-          background: i === 0 ? "var(--tasty-overlay-hover)" : "transparent" }}>{l}</div>
+          borderRadius: "var(--tasty-radius-sm)", color: i === 0 ? "var(--tasty-menu-item-fg-hover)" : "var(--tasty-menu-item-fg)",
+          background: i === 0 ? "var(--tasty-menu-item-bg-hover)" : "transparent" }}>{l}</div>
       ))}
     </div>
   );

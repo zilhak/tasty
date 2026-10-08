@@ -25,7 +25,7 @@ Claude Design 프로젝트 **Tasty Design System**에서 받아온 디자인 사
    - 아이콘 검사는 `icons/*.svg`, `components/core/Icon.jsx`의 `ICON_PATHS`, 앱의 `crates/tasty-icons/src/lib.rs`에 있는 기하를 비교한다. 이름 대응은 명부를 사용한다. 킷의 `list`는 앱의 `log`에, `listView`는 앱의 `list`에 해당한다. 아이콘 추가·삭제 시 명부도 갱신한다.
    - `<svg>`의 `viewBox`, 선 굵기, cap/join도 비교한다. 의도적인 색(`stroke`/`fill`) 차이는 사유와 함께 명부에 남기고, 해소되면 지운다.
    - 이 검사들은 토큰·아이콘을 바꾸지 않는 문구·구성·컨트롤 변경을 검출하지 않는다. **최신 여부는 1~3단계에서 원격과 직접 비교한다.**
-5. **사이트를 빌드한다.** `cd site && npm run build`. 변환기(`scripts/vendor-to-esm.mjs`)가 처리하지 못하는 파일 형식이 없는지 확인한다. 변환기는 파일 전체를 감싼 IIFE, `window.TastyKit`의 구조 분해와 `<window.TastyKit.X />`, `const X = window.<전역>.Y;` 한 줄 별칭, 갤러리 파일이 `window.<이름> = <이름>;`으로 내보낸 컴포넌트를 모듈 import로 바꾼다. 갤러리의 Stage는 화면 근처에 올 때만 그리므로 빌드 성공만으로 예제가 그려진다고 보지 않는다. 새 절은 `npm run preview`로 띄워 해당 앵커로 이동해 확인한다.
+5. **사이트를 빌드한다.** `cd site && npm run build`. 변환기(`scripts/vendor-to-esm.mjs`)가 처리하지 못하는 파일 형식이 없는지 확인한다. 변환기는 파일 전체를 감싼 IIFE, `window.TastyKit`의 구조 분해와 `<window.TastyKit.X />`, `window.TastyKit && window.TastyKit.X` 로드 순서 가드, `const X = window.<전역>.Y;` 한 줄 별칭, 갤러리 파일이 `window.<이름> = <이름>;`으로 내보낸 컴포넌트를 모듈 import로 바꾼다. 갤러리의 Stage는 화면 근처에 올 때만 그리므로 빌드 성공만으로 예제가 그려진다고 보지 않는다. 새 절은 `npm run preview`로 띄워 해당 앵커로 이동해 확인한다.
 6. `site/vendor/` 변경, 필요한 명부 갱신과 변환기 수정을 같은 커밋에 담는다. 생성된 `site/src/{ds,kit,gallery}/` 등은 커밋하지 않는다.
 
 ## 구성
@@ -66,7 +66,7 @@ Claude Design 프로젝트 **Tasty Design System**에서 받아온 디자인 사
     - `ui_kits/terminal/overlays/info_modal.jsx`: 머리 주석, Title bar buttons 주석, Narrow popups 주석.
     - `ui_kits/terminal/overlays/settings_window.jsx`: File Extension Mapping 주석.
     - `ui_kits/terminal/overlays/html_script_banner.jsx`, `ui_kits/terminal/overlays/macos_permissions.jsx`: 머리 주석의 "Design request:" 줄.
-    - `ui_kits/terminal/overlays/dag_view.jsx`, `gallery/dag.jsx`, `ui_kits/terminal/overlays/kb_import_export.jsx`: 머리 주석.
+    - `ui_kits/terminal/overlays/dag_view.jsx`, `gallery/dag.jsx`, `ui_kits/terminal/overlays/kb_import_export.jsx`, `ui_kits/terminal/overlays/kb_plugins_subtab.jsx`: 머리 주석.
     - `ui_kits/terminal/overlays/port_scanner.jsx`: FAVORITES 주석.
 - **옛 ADR 번호 인용**: 원격 사본은 저장소의 ADR을 재정리하기 전 번호를 인용한다. 이 번호는 지금 저장소의 ADR과 맞지 않으므로 인용을 지우거나 현재 ADR·기능 문서로 바꾸고 뜻은 남긴다. `gallery/components.jsx`, `gallery/layouts.jsx`, `gallery/overlays-windows.jsx`, `ui_kits/terminal/overlays/settings_window.jsx`, `ui_kits/terminal/overlays/plugins_window.jsx`에 있다. 갱신할 때는 `git diff`로 이전 사본의 처리 방식을 확인해 같은 방식으로 적용한다.
 - **출처 메타데이터**: 렌더링에 쓰지 않는 base64 C2PA 매니페스트가 사본 크기를 늘리므로 `<metadata>` 요소와 `xmlns:c2pa` 속성을 제거한다. 렌더링 구조와 값은 유지한다. `grep -rl c2pa site/vendor/ --exclude=README.md`의 출력이 없어야 한다. README는 절차 설명이므로 이 검사와 사본 수정일 계산에서 제외한다.

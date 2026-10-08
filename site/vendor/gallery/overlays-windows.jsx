@@ -11,7 +11,9 @@ const WIcon = window.TastyDesignSystem_41fd3f.Icon;
 const WCheckbox = window.TastyDesignSystem_41fd3f.Checkbox;
 const WSelect = window.TastyDesignSystem_41fd3f.Select;
 const WTag = window.TastyDesignSystem_41fd3f.Tag;
-const { Backdrop, PaletteFrame, LocalSshSection, PortsFrame, PortsFavoritesG, PortStarG, RemoteFrame, SettingsFrame, SettingsGeneralOverlayFrame, SettingsRemoteTransferFrame, ToastDragValue, GitViewerFrame, ClipboardFrame, RemoteFormFrame, RemoteAttachFrame, RaNewRow, RaWsPeek, FilePickerFrame, ScriptManagerFrame, ic } = window.OverlaysShared;
+const WTable = window.TastyDesignSystem_41fd3f.Table;
+const WInput = window.TastyDesignSystem_41fd3f.Input;
+const { Backdrop, PaletteFrame, LocalSshSection, PortsFrame, PORTS_COLUMNS, PortsFavoritesG, PortStarG, RemoteFrame, SettingsFrame, SettingsGeneralOverlayFrame, SettingsRemoteTransferFrame, ToastDragValue, GitViewerFrame, ClipboardFrame, RemoteFormFrame, RemoteAttachFrame, RaNewRow, RaWsPeek, FilePickerFrame, ScriptManagerFrame, ic } = window.OverlaysShared;
 
 // 2026-09-29 disabled sites without a screen — static specimens of the kit
 // (plugins_window.jsx FingerprintLine / Add bar, settings_window.jsx ExtensionMapping).
@@ -770,37 +772,26 @@ function Page() {
           <Do><b>Do</b> keep the favorites rows as <b>summary</b> rows (addr:port · process · state), not the 7-column grid — a stopped port has no process/workspace/tab data to show, and the summary row never needs the table's horizontal scroll. The star column width is shared, so stars still line up across both regions.</Do>
           <Note>New strings: <span className="ic">ports.favorites</span> ("Favorites") · <span className="ic">ports.favorites_empty</span> ("No favorites yet") · <span className="ic">ports.favorites_empty_hint</span> · <span className="ic">ports.state_none</span> ("NONE") · <span className="ic">ports.favorites_scope</span> ("system-wide"). Leave 20–40% growth room for ko/ja/de — the caption row and the empty line are single-line by design.</Note>
         </Spec>
-        <Spec title="Process column — a minimum, not a fixed width"
-          when={<>The <b>Process</b> column's 200 is a <b>floor</b>: the column never shrinks below it and takes the table's spare width as the popup grows, because the process line (<code>node /usr/local/bin/vite --host</code>) is the cell most likely to be cut. The name is now public — <span className="tok">--tasty-port-process-col-min-width</span> — so the gallery's fixed 200 and the product's min 200 stop reading as two different numbers that happen to match. <b>No column hides</b> at any width; narrow tables ellipsise.</>}>
-          <Stage variant="solo center" style={{ padding: 20, background: "var(--tasty-bg-app)", flexDirection: "column", gap: 14, alignItems: "flex-start" }}>
-            {[["default — Process takes the spare width", 660], ["narrow (460) — Process gets the remaining 230 and ellipsises; the 200 floor engages only below 430", 460]].map(([label, tw]) => (
-              <div key={label} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>{label}</div>
-                <div style={{ width: tw, border: "1px solid var(--tasty-border-strong)", borderRadius: "var(--tasty-radius)", overflow: "hidden", background: "var(--tasty-bg-panel)" }}>
-                  <div style={{ display: "flex", height: 24, alignItems: "center", fontSize: 11, color: "var(--tasty-text-secondary)", background: "var(--tasty-bg-sidebar)", borderBottom: "1px solid var(--tasty-separator)" }}>
-                    <span style={{ flex: "none", width: "var(--tasty-port-star-col-width)" }} />
-                    <span style={{ flex: "none", width: 64, paddingRight: 8, textAlign: "right" }}>Port</span>
-                    <span style={{ flex: "none", width: 72, paddingLeft: 10 }}>Proto</span>
-                    <span style={{ flex: 1, minWidth: "var(--tasty-port-process-col-min-width)", paddingLeft: 10 }}>Process</span>
-                    <span style={{ flex: "none", width: 64, paddingRight: 10, textAlign: "right" }}>PID</span>
-                  </div>
-                  {[["3000", "tcp", "node /usr/local/bin/vite --host --strictPort", "41822"], ["5432", "tcp", "postgres: checkpointer", "913"]].map((r) => (
-                    <div key={r[0]} style={{ display: "flex", height: 26, alignItems: "center", fontFamily: "var(--tasty-font-mono)", fontSize: 11, color: "var(--tasty-text-secondary)", borderBottom: "1px solid var(--tasty-separator)" }}>
-                      <span style={{ flex: "none", width: "var(--tasty-port-star-col-width)", display: "inline-flex", justifyContent: "center", color: "var(--tasty-port-star-off)" }}><WIcon name="star" size={12} /></span>
-                      <span style={{ flex: "none", width: 64, paddingRight: 8, textAlign: "right" }}>{r[0]}</span>
-                      <span style={{ flex: "none", width: 72, paddingLeft: 10 }}>{r[1]}</span>
-                      <span style={{ flex: 1, minWidth: "var(--tasty-port-process-col-min-width)", paddingLeft: 10, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r[2]}</span>
-                      <span style={{ flex: "none", width: 64, paddingRight: 10, textAlign: "right" }}>{r[3]}</span>
-                    </div>
-                  ))}
+        <Spec title="Process column — a minimum, not a fixed width (on Table, 2026-10-08)"
+          when={<>Drawn on the shared <b>Table</b> with the popup's own columns (star · Port · Proto · Address · Process · Workspace · State), so header, row height, fonts and padding are the popup's. The <b>Process</b> column has a <b>floor</b>, <span className="tok">--tasty-port-process-col-min-width</span> (200), passed as the Table column's <code>minWidth</code>: it takes spare width and never shrinks below the floor. A column's <code>width</code> is also its floor, so the fixed columns never shrink. <b>Address</b> is fixed at its floor <span className="tok">--tasty-port-addr-col-min-width</span> (140, fits <span className="ic">255.255.255.255</span> and <span className="ic">::</span> forms; IPv6 ellipsises). <b>Process takes all the spare width</b>; Address never grows (2026-10-08). The sum is the popup's <b>column budget</b>. At the popup's own 660 the budget is a little wider, so the table body <b>scrolls horizontally</b>, the existing scroll policy of the popup. <b>No column shrinks away or hides</b>. Process text ellipsises inside its cell; the PID Tag stays visible.</>}>
+          <Stage variant="solo center" style={{ padding: 20, background: "var(--tasty-bg-app)", flexDirection: "column", gap: "var(--tasty-space-lg)", alignItems: "flex-start" }}>
+            {[["860 — wider than the column budget: Process takes ALL the spare width, Address stays at 140", 860], ["660 — popup width, under the budget (836): the body scrolls sideways; nothing shrinks or hides", 660]].map(([label, tw]) => (
+              <div key={label} style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-sm)" }}>
+                <div style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>{label}</div>
+                <div className="tasty-scroll" style={{ width: tw, overflowX: "auto", border: "var(--tasty-border-width) solid var(--tasty-border-strong)", borderRadius: "var(--tasty-radius)", background: "var(--tasty-bg-panel)" }}>
+                  <WTable columns={PORTS_COLUMNS} rowKey="port" rows={[
+                    { port: 3000, proto: "tcp", addr: "127.0.0.1", proc: "node /usr/local/bin/vite --host --strictPort", pid: 41822, ws: "Project A", state: "LISTEN" },
+                    { port: 5432, proto: "tcp", addr: "127.0.0.1", proc: "postgres: checkpointer", pid: 913, ws: null, state: "LISTEN" },
+                    { port: 8080, proto: "tcp", addr: "0.0.0.0", proc: "tasty-agent", pid: 50321, ws: "Project B", state: "LISTEN" },
+                  ]} />
                 </div>
               </div>
             ))}
           </Stage>
           <Meta
-            specs={[["role", "minimum width (flex-grow, never shrink)"], ["value", "200 — unchanged"], ["token", <span className="tok">--tasty-port-process-col-min-width</span>], ["zoom", "scales with the UI scale, like every width token"], ["hiding", "none — no column disappears"]]}
-            tokens={[{ tok: "--tasty-port-process-col-min-width", use: "Process floor" }, { tok: "--tasty-port-star-col-width", use: "leading star column" }]} />
-          <Note>The gallery specimen keeps a fixed stage width, so it pins the same 200 — same token, same number, one role.</Note>
+            specs={[["component", "Table — the popup's column defs, shared"], ["Process", <>strong · <code>minWidth</code> = <span className="tok">--tasty-port-process-col-min-width</span> · ellipsis</>], ["value", "200 — unchanged"], ["Address", <>fixed · <span className="tok">--tasty-port-addr-col-min-width</span> 140 (floor = width)</>], ["spare width", "100% to Process"], ["stage gaps", <>gallery Column stage <span className="tok">--tasty-space-lg</span> between tables · cluster caption <span className="tok">--tasty-space-sm</span></>], ["overflow", "body scrolls horizontally below the column budget (also at 660); no column hides"], ["fixed columns", "width = floor (star · Port · Proto · Workspace · State)"], ["metrics", "Table's own — row/header table-cell-height 28 · cell pad 12 · caps header"], ["zoom", "scales with the UI scale, like every width token"]]}
+            tokens={[{ tok: "--tasty-port-process-col-min-width", use: "Process floor" }, { tok: "--tasty-port-addr-col-min-width", use: "Address floor + width" }, { tok: "--tasty-port-star-col-width", use: "leading star column" }, { tok: "--tasty-table-cell-height", use: "header + rows" }]} />
+          <Note>Replaces the hand-built schematic (header 24 · rows 26 · mono 11 · PID column). There are no specimen-only numbers left to name: every metric comes from Table or the popup's column widths. New Table column option <code>minWidth</code> (additive).</Note>
         </Spec>
       </Section>
 
@@ -1119,6 +1110,62 @@ function Page() {
           <Note>L1 stays small forever; growth happens only in L2. Plugins are their <b>own</b> L1 tab — never crammed into another group's sidebar.</Note>
         </Spec>
 
+        <Spec title="General › General — row grid, row captions, webhook row (2026-10-07 · grid 2026-10-08)"
+          when={<>Every settings subtab uses one <b>label column · control</b> grid. <b>Label column</b> = the subtab's longest label, clamped to <span className="tok">--tasty-settings-label-width</span> (150) … <span className="tok">--tasty-settings-label-max-width</span> (240); a label longer than 240 wraps. <b>Gap</b> 16 (<span className="tok">--tasty-settings-label-gap</span>). The app's own fit-to-longest measure is canonical with this clamp; the old 12 gap moves to 16. A description that belongs to <b>one row</b> sits directly under that row (<span className="tok">--tasty-settings-row-caption-gap</span> 4), at the row's left edge, measure-md: that is where the wheel-scroll and language-restart lines go. The webhook row keeps its always-shown warning callout the same way. Terminal › TUI's OSC 52 row follows the same rule (on the grid, callout measure-md).</>}>
+          <Stage variant="solo" style={{ padding: 20, background: "var(--tasty-bg-panel)" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 14, width: 620 }}>
+              {[["Restore layout:", <WSwitch key="s" defaultChecked />], ["Close behavior:", <WSelect key="c" options={["Ask", "Minimize to background", "Quit"]} style={{ width: "var(--tasty-field-width-lg)" }} />],
+                ["Wheel scroll distance:", <><WInput key="w" mono defaultValue="3" style={{ width: "var(--tasty-field-width-xs)" }} /><span style={{ fontSize: 12, color: "var(--tasty-text-muted)" }}>lines</span></>, "Lines scrolled per wheel notch in the terminal. Trackpads scroll by distance and ignore this."],
+                ["Language:", <WSelect key="l" options={["English", "한국어", "日本語"]} style={{ width: "var(--tasty-field-width-md)" }} />, "Changing the language takes effect after Tasty restarts."],
+                ["Accept webhook calls from other computers:", <WSwitch key="h" />, null, true]].map(([label, ctl, cap, warn]) => (
+                <div key={label} style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-settings-row-caption-gap)" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-settings-label-gap)", minHeight: "var(--tasty-settings-row-min-height)" }}>
+                    <span style={{ width: "var(--tasty-settings-label-max-width)", flex: "none", fontSize: 13, color: "var(--tasty-text-secondary)", lineHeight: "var(--tasty-line-height-ui)" }}>{label}</span>{ctl}
+                  </div>
+                  {cap && <p style={{ margin: 0, fontSize: 12, color: "var(--tasty-text-muted)", maxWidth: "var(--tasty-measure-md)", lineHeight: "var(--tasty-line-height-ui)" }}>{cap}</p>}
+                  {warn && <div style={{ display: "flex", gap: "var(--tasty-space-sm)", padding: "var(--tasty-space-sm) var(--tasty-space-md)", borderRadius: "var(--tasty-radius)", maxWidth: "var(--tasty-measure-md)",
+                    border: "var(--tasty-border-width) solid color-mix(in srgb, var(--tasty-accent-warning) 40%, transparent)", background: "color-mix(in srgb, var(--tasty-accent-warning) 12%, transparent)" }}>
+                    <span style={{ display: "inline-flex", flex: "none", marginTop: 1, color: "var(--tasty-accent-warning)" }}><WIcon name="alertTriangle" size={16} /></span>
+                    <p style={{ margin: 0, fontSize: 12, color: "var(--tasty-text-secondary)", lineHeight: "var(--tasty-line-height-ui)" }}>When on, the webhook listener takes every network interface, so anyone who can reach its port can call your registered webhooks. When off, only programs on this computer can. Applies from the next start.</p>
+                  </div>}
+                </div>
+              ))}
+            </div>
+          </Stage>
+          <Meta
+            specs={[["label column", "longest label of the subtab, clamp 150 … 240, wraps past 240 (en: webhook label → 240, 2 lines)"], ["gap", "16 label → control"], ["row caption", "directly under its row · gap 4 · left edge · measure-md · caption 12 muted"], ["callout", "same slot as a caption · warning · alertTriangle 16 · always visible · measure-md"], ["placement", "webhook row last (after Language)"], ["setting", "[webhook] allow_external · default off · Save / Cancel · from next start"]]}
+            tokens={[{ tok: "--tasty-settings-label-width", use: "label column floor 150" }, { tok: "--tasty-settings-label-max-width", use: "label column cap 240" }, { tok: "--tasty-settings-label-gap", use: "16" }, { tok: "--tasty-settings-row-caption-gap", use: "row → caption 4" }, { tok: "--tasty-accent-warning", use: "callout edge + icon", color: "var(--tasty-accent-warning)" }, { tok: "--tasty-measure-md", use: "caption / callout width" }]} />
+          <Note>Copy is confirmed as shipped: label “Accept webhook calls from other computers:”, callout as above (<code>settings.general.webhook_allow_external_*</code>). Wheel / language caption copy here is placeholder for the app's existing strings — keep the app's text, move only the position.</Note>
+        </Spec>
+
+        <Spec title="Keybindings › Plugins — plugin picker + per-command mode (2026-10-08)" badges={<span className="ic">interactive</span>}
+          when={<>Pick a plugin, then edit each of its commands on <b>one control line</b>: <b>mode</b> Select (Inherit / Custom / None) · <b>slot</b> (inherit-source Select, key Input, or “(Unassigned)”) · <b>Reset</b>. Rides the settings Row grid (title column 150 + gap 16, so the picker and every mode Select start at the same x), not the 288 Import/Export column: 288 + the line overflows the 620 cap. <b>Every control on a line is 28</b> (md) — Select, Input and the ghost Reset alike. Titles wrap inside the column, never ellipsise. Inherit adds a caption under the line with the resolved key; a Custom value that fails to parse turns the Input invalid and adds an error caption. An unsaved change shows a 6px accent dot after the title. Reset is <b>disabled</b> when there is no override. Save / Cancel stay in the window footer.</>}>
+          <Stage variant="solo" style={{ padding: 20, background: "var(--tasty-bg-panel)", gap: "var(--tasty-space-xl)", flexDirection: "column", alignItems: "flex-start" }}>
+            {window.TastyKit && window.TastyKit.KbPluginsSubtab && <>
+              <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-sm)", width: 620 }}>
+                <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>default (proposal) — text key entry · row 1 Custom · row 2 Inherit + caption · row 3 overridden (draft = saved, Reset enabled)</span>
+                <window.TastyKit.KbPluginsSubtab />
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-sm)", width: 620 }}>
+                <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>draft + invalid — row 1 edited to an unparsable key (dot + error) · row 2 switched to None (dot)</span>
+                <window.TastyKit.KbPluginsSubtab saved={{}} seedDrafts={{ "clipboard-viewer/open": { mode: "custom", keys: "ctrl+shft+h" }, "clipboard-viewer/paste-plain": { mode: "none" } }} />
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-sm)", width: 620 }}>
+                <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>alternative (needs user decision) — Custom slot = record button, like the other subtabs</span>
+                <window.TastyKit.KbPluginsSubtab recordAlt />
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-sm)", width: 620 }}>
+                <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>empty</span>
+                <window.TastyKit.KbPluginsSubtab plugins={[]} />
+              </div>
+            </>}
+          </Stage>
+          <Meta
+            specs={[["picker", "\"Plugin:\" in the 150 title column · Select 200 · plugins by name"], ["command", "padding-y 4 · 1px separator between commands, none after the last"], ["line", "min-h 32 · mode 160 · gap 8 · slot 200 · gap 8 · Reset (ghost md)"], ["height", "28 for every control on the line"], ["caption", "gap 4 · caption 12 · Inherit: muted \"Inherited (Ctrl+C)\" / \"None\" · parse error: danger"], ["draft", "6px accent-primary dot after the title"], ["Reset", "disabled when no override · tooltip \"Clear the override and use the manifest default.\""], ["list gap", "12 picker → first command"]]}
+            tokens={[{ tok: "--tasty-kb-plugin-title-width", use: "150 title column" }, { tok: "--tasty-kb-plugin-mode-width", use: "160" }, { tok: "--tasty-kb-plugin-slot-width", use: "200" }, { tok: "--tasty-kb-plugin-picker-width", use: "200" }, { tok: "--tasty-kb-plugin-control-height", use: "28" }, { tok: "--tasty-kb-plugin-draft-dot", use: "draft", color: "var(--tasty-kb-plugin-draft-dot)" }, { tok: "--tasty-kb-plugin-error-fg", use: "parse error", color: "var(--tasty-kb-plugin-error-fg)" }, { tok: "--tasty-kb-plugin-separator", use: "between commands", color: "var(--tasty-kb-plugin-separator)" }]} />
+          <Note>Behaviour unchanged from the app: switching to Custom fills the previous Custom value or the manifest key; switching to Inherit fills the manifest source or the first of the four; typing writes the draft at once (commas = several keys, spaces ignored); Reset clears the override in the draft. The record-button alternative is a behaviour change and is shown for the user's decision only.</Note>
+        </Spec>
+
         <Spec title="General › Overlay — toast duration"
           when={<>The <b>General</b> L1 tab gains a fourth L2 section, <b>Overlay</b> (after General / Notifications / Accessibility) — the umbrella term for Toast / Banner / Modifier-hint / Marker overlays. It ships with <b>one row</b>: <b>Toast duration</b>, a mono number field (the <b>Numbers in settings</b> shape — DragValue retired 2026-10-07) that controls how long a toast stays before auto-dismissing (today hardcoded at 2000ms). Exposed in <b>seconds</b> (matches the user's mental model), stored as ms. Same Grid (label + control) and hint-text pattern as the other General sections — no new interaction invented.</>}>
           <Stage variant="solo center" style={{ gap: 24, flexWrap: "wrap" }}>
@@ -1285,7 +1332,7 @@ function Page() {
         <Spec title="Status table, one action per row, one request button"
           when={<>macOS builds only, the last L2 under General. A three-column table: <b>permission</b> · <b>status</b> · <b>row action</b>. The four states are told apart by <b>glyph + word</b>, with colour as a third channel: <b>Granted</b> check / success, <b>Not granted</b> alertCircle / warning, <b>Unknown</b> helpCircle / muted, <b>Cannot check automatically</b> eyeOff / muted. Unknown (inference failed) and Cannot check (deliberately not looked at) share the muted ink but never the glyph, and neither can be misread as granted. The Full Disk Access shortcut moves <b>into its own row</b> as Secondary / Sm <b>[Open System Settings]</b>. What needs explaining per row now lives in HelpHints, so the two notes under the table are short. <b>[Request all permissions]</b> stays Primary / Md under the table. While requesting it is disabled and the line below becomes a spinner + <i>requesting</i> copy; the button carries no spinner. The debug-only Accessibility row carries a <b>debug</b> Tag.</>}>
           <Stage variant="solo" style={{ padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-app)", gap: "var(--tasty-space-lg)", flexWrap: "wrap", alignItems: "flex-start" }}>
-            {[["A · nothing granted — Mocha", "none", false, null], ["A · nothing granted — Latte", "none", false, "latte"], ["B · all granted", "all", false, null], ["C · FDA unknown, screen granted", "fdaUnknown", false, null], ["F · FDA granted before an update — Mocha", "fdaStale", false, null], ["F · FDA granted before an update — Latte", "fdaStale", false, "latte"], ["D · requesting", "requesting", false, null], ["E · debug build (4 rows)", "none", true, null], ["E · debug build — Latte", "all", true, "latte"]].map(([cap, sc, dbg, theme]) => (
+            {[["A · nothing granted — Mocha", "none", false, null], ["A · nothing granted — Latte", "none", false, "latte"], ["B · all granted", "all", false, null], ["C · FDA unknown, screen granted", "fdaUnknown", false, null], ["F · FDA granted before an update — Mocha", "fdaStale", false, null], ["F · FDA granted before an update — Latte", "fdaStale", false, "latte"], ["G · FDA turned off outside Tasty (revoked, 2026-10-08)", "fdaRevoked", false, null], ["D · requesting", "requesting", false, null], ["E · debug build (4 rows)", "none", true, null], ["E · debug build — Latte", "all", true, "latte"]].map(([cap, sc, dbg, theme]) => (
               <div key={cap} {...(theme ? { "data-theme": theme } : {})} style={{ width: "var(--tasty-size-560)", display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)" }}>
                 <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>{cap}</span>
                 <div style={{ padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-panel)", border: "var(--tasty-border-width) solid var(--tasty-border-frame)", borderRadius: "var(--tasty-radius)" }}>
@@ -1295,7 +1342,7 @@ function Page() {
             ))}
           </Stage>
           <Meta
-            specs={[["columns", "label (1fr) · status · row action"], ["row", "min 32 (settings row) · 1px border-default rule"], ["status", "glyph 14 + word · gap 4"], ["FDA action", "Secondary / Sm, in the FDA row"], ["primary", "Request all permissions · Primary / Md"], ["requesting", "button disabled · note line → spinner + copy"], ["notes", "caption 12 · text-muted · wrap at measure-xl"], ["narrow", "status + action wrap under each other, right-aligned; label never truncates"], ["debug row", "Tag \"debug\""], ["stale grant (2026-10-06)", "no 5th state — Not granted + a caption line under the label with the remedy (remove, then add again)"]]}
+            specs={[["columns", "label (1fr) · status · row action"], ["row", "min 32 (settings row) · 1px border-default rule"], ["status", "glyph 14 + word · gap 4"], ["FDA action", "Secondary / Sm, in the FDA row"], ["primary", "Request all permissions · Primary / Md"], ["requesting", "button disabled · note line → spinner + copy"], ["notes", "caption 12 · text-muted · wrap at measure-xl"], ["narrow", "status + action wrap under each other, right-aligned; label never truncates"], ["debug row", "Tag \"debug\""], ["stale grant (2026-10-06)", "no 5th state — Not granted + a caption line under the label with the remedy (remove, then add again)"], ["revoked (2026-10-08)", "same pattern — Not granted + caption line \"turn it back on\"; no chip, no new status for either branch"]]}
             tokens={[{ tok: "--tasty-perm-granted-fg", use: "check", color: "var(--tasty-perm-granted-fg)" }, { tok: "--tasty-perm-missing-fg", use: "alertCircle", color: "var(--tasty-perm-missing-fg)" }, { tok: "--tasty-perm-unknown-fg", use: "helpCircle", color: "var(--tasty-perm-unknown-fg)" }, { tok: "--tasty-perm-unobservable-fg", use: "eyeOff", color: "var(--tasty-perm-unobservable-fg)" }, { tok: "--tasty-perm-row-height", use: "→ settings row 32" }]} />
           <Note><b>Copy changed</b> (en final, in the specimen): FDA button → "Open System Settings"; <i>detection_note</i> and <i>request_note</i> shortened, their per-row parts moved to the FDA and Folder access HelpHints; <i>requesting</i> shortened to two clauses. Status words unchanged.</Note>
           <Dont><b>Don't</b> paint Unknown or Cannot check as a blank or a dash. An empty status cell reads as "fine".</Dont>
@@ -1389,6 +1436,34 @@ function Page() {
             specs={[["empty hint", "dashed 1px border-default · radius · pad 14 / 16"], ["dash", <>4 on / 4 off · <span className="tok">--tasty-border-dash</span> · <span className="tok">--tasty-border-dash-gap</span> · OFF-SCALE</>], ["corners", "solid arc; dashes on straight edges only, centred"], ["read error", "same box · solid accent-danger edge · no fill"], ["title", "Can't read tasty-plugin.toml · body · accent-danger"], ["reason", "mono caption · text-muted · untranslated"], ["invalid", "read but fails validation (binary path · extras) — same box · title “tasty-plugin.toml is not valid” · reason = validation message (batch 5)"], ["slot width", "measure-xl (560) capped by the column — unchanged (batch 5)"], ["action", "none — fix the path above and Verify again"]]}
             tokens={[{ tok: "--tasty-border-dash", use: "→ size-4" }, { tok: "--tasty-border-dash-gap", use: "→ size-4" }, { tok: "--tasty-border-default", use: "hint edge", color: "var(--tasty-border-default)" }, { tok: "--tasty-accent-danger", use: "read error", color: "var(--tasty-accent-danger)" }]} />
           <Note>The same dash pair draws the Scripts <b>Add trigger…</b> control (Misc › Scripts). Strings: <code>plugins.add.read_error</code> “Can't read tasty-plugin.toml” · <code>plugins.add.invalid</code> “tasty-plugin.toml is not valid”.</Note>
+        </Spec>
+        <Spec title="Installed detail — install path · log path · Open folder (2026-10-07)"
+          when={<>Last section of the installed detail, after Command (identity · description · error · Permissions · Command · <b>Install path</b>). <b>Open folder</b> moves to the <b>caption row</b>, right-aligned, so the path never competes with it for width: at the 720 minimum and the 880 default the button is always whole. The install path and the log path are mono caption muted, <b>wrap at any character</b> and stay selectable, so nothing is cut and no tooltip is needed.</>}>
+          <Stage variant="grid" style={{ display: "flex", flexWrap: "wrap", gap: 16, padding: 20, alignItems: "flex-start" }}>
+            <div style={{ width: 380, boxSizing: "border-box", padding: 16, display: "flex", flexDirection: "column", gap: "var(--tasty-space-sm)",
+                border: "var(--tasty-border-width) solid var(--tasty-border-default)", background: "var(--tasty-bg-panel)" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)" }}>
+                  <span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: 10, textTransform: "uppercase", letterSpacing: "var(--tasty-letter-spacing-caps)", color: "var(--tasty-text-muted)" }}>Install path</span>
+                  <div style={{ flex: 1 }} />
+                  <Button variant="secondary" size="sm" leadingIcon={<WIcon name="folder" />}>Open folder</Button>
+                </div>
+                <span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)", wordBreak: "break-all" }}>/home/tasty/.local/share/tasty/plugins/com.example.image-viewer-with-a-long-plugin-identifier</span>
+                <span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)", wordBreak: "break-all" }}>Log: /home/tasty/.local/state/tasty/plugins/com.example.image-viewer-with-a-long-plugin-identifier/plugin.log</span>
+              </div>
+            <div style={{ width: 540, boxSizing: "border-box", padding: 16, display: "flex", flexDirection: "column", gap: "var(--tasty-space-sm)",
+                border: "var(--tasty-border-width) solid var(--tasty-border-default)", background: "var(--tasty-bg-panel)" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)" }}>
+                  <span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: 10, textTransform: "uppercase", letterSpacing: "var(--tasty-letter-spacing-caps)", color: "var(--tasty-text-muted)" }}>Install path</span>
+                  <div style={{ flex: 1 }} />
+                  <Button variant="secondary" size="sm" leadingIcon={<WIcon name="folder" />}>Open folder</Button>
+                </div>
+                <span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)", wordBreak: "break-all" }}>/home/tasty/.local/share/tasty/plugins/com.example.image-viewer-with-a-long-plugin-identifier</span>
+                <span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)", wordBreak: "break-all" }}>Log: /home/tasty/.local/state/tasty/plugins/com.example.image-viewer-with-a-long-plugin-identifier/plugin.log</span>
+              </div>
+          </Stage>
+          <Meta
+            specs={[["order", "… Permissions · Command · Install path"], ["caption row", "INSTALL PATH (mono 10 caps) · flex · Open folder"], ["Open folder", "Button secondary sm · folder icon · opens the OS file manager"], ["path", "mono caption 11 · text-muted · break-all · selectable"], ["log", "same style, “Log: ” prefix, own line"], ["widths", "left 380 ≈ 720 window · right 540 ≈ 880 window"], ["shown", "installed plugins only"]]}
+            tokens={[{ tok: "--tasty-text-muted", use: "path text", color: "var(--tasty-text-muted)" }, { tok: "--tasty-font-size-caption", use: "11 path" }, { tok: "--tasty-space-sm", use: "8 row gap" }]} />
         </Spec>
       </Section>
 

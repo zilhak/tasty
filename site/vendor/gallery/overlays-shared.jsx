@@ -475,8 +475,22 @@ function PortsFavoritesG({ favorites = "mixed" }) {
 }
 
 // ── Listening ports — 660×520 table popup built on the Table component ──
+// Shared with the "Process column" specimen (overlays-windows.jsx) so both draw the same columns.
+const PortsDash = () => <span style={{ color: "var(--tasty-text-muted)" }}>—</span>;
+const PORTS_COLUMNS = [
+  { key: "fav", header: "", tight: true, width: "var(--tasty-port-star-col-width)",
+    render: (_v, row) => <PortStarG on={row.port === 5173 || row.port === 8080} /> },
+  { key: "port", header: "Port", align: "right", mono: true, sortable: true, width: 72 },
+  { key: "proto", header: "Proto", mono: true, width: 64 },
+  // 2026-10-08 (batch 8) — Address is pinned at its 140 floor; Process (width 100%) takes ALL spare width.
+  { key: "addr", header: "Address", mono: true, sortable: true, width: "var(--tasty-port-addr-col-min-width)" },
+  { key: "proc", header: "Process", strong: true, sortable: true, width: "100%", minWidth: "var(--tasty-port-process-col-min-width)",
+    render: (v, row) => (<span style={{ display: "inline-flex", alignItems: "center", gap: 8, minWidth: 0 }}><span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{v}</span><Tag>{row.pid}</Tag></span>) },
+  { key: "ws", header: "Workspace", width: 104, render: (v) => v || <PortsDash /> },
+  { key: "state", header: "State", width: 132,
+    render: (v) => <StatusDot status={v === "LISTEN" ? "running" : "waiting"} pulse={v === "LISTEN"} label={v} /> },
+];
 function PortsFrame({ favorites = "mixed" }) {
-  const Dash = () => <span style={{ color: "var(--tasty-text-muted)" }}>—</span>;
   const rows = [
     { port: 3000, proto: "tcp", addr: "127.0.0.1", proc: "node", pid: 48213, ws: "Project A", tab: "server", state: "LISTEN" },
     { port: 5173, proto: "tcp", addr: "127.0.0.1", proc: "vite", pid: 48990, ws: "Project A", tab: "dev", state: "LISTEN" },
@@ -484,18 +498,7 @@ function PortsFrame({ favorites = "mixed" }) {
     { port: 8443, proto: "tcp6", addr: "::", proc: "tasty-agent", pid: 50321, ws: "Project B", tab: "agent", state: "LISTEN" },
     { port: 9229, proto: "tcp", addr: "127.0.0.1", proc: "node", pid: 48213, ws: "Project A", tab: "server", state: "CLOSE_WAIT" },
   ];
-  const columns = [
-    { key: "fav", header: "", tight: true, width: "var(--tasty-port-star-col-width)",
-      render: (_v, row) => <PortStarG on={row.port === 5173 || row.port === 8080} /> },
-    { key: "port", header: "Port", align: "right", mono: true, sortable: true, width: 72 },
-    { key: "proto", header: "Proto", mono: true, width: 64 },
-    { key: "addr", header: "Address", mono: true, sortable: true },
-    { key: "proc", header: "Process", strong: true, sortable: true,
-      render: (v, row) => (<span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>{v}<Tag>{row.pid}</Tag></span>) },
-    { key: "ws", header: "Workspace", width: 104, render: (v) => v || <Dash /> },
-    { key: "state", header: "State", width: 132,
-      render: (v) => <StatusDot status={v === "LISTEN" ? "running" : "waiting"} pulse={v === "LISTEN"} label={v} /> },
-  ];
+  const columns = PORTS_COLUMNS;
   return (
     <div style={{ width: "100%", maxWidth: 640, height: 460, display: "flex", flexDirection: "column", background: "var(--tasty-bg-panel)",
       border: "1px solid var(--tasty-border-strong)", borderRadius: "var(--tasty-radius)", overflow: "hidden", boxShadow: "var(--tasty-shadow-modal)" }}>
@@ -1403,23 +1406,33 @@ function BannerScope({ height = 240, tab = "vim", children }) {
 // A row's label is fixed text + the interpolated program name; the fixed part
 // never truncates, the app name (mono) shrinks first and ellipsises, so the menu
 // stays inside --tasty-banner-more-menu-max-width in every locale.
-function MoreLabel({ text, app, after }) {
+// 2026-10-08 (batch 8) — the app name takes the ROW ink (banner-more-app-fg → menu-item-fg, hover → -fg-hover),
+// i.e. it inherits; only the mono face sets it apart. wrap: the fixed copy alone is wider than the menu's
+// max width (ja) → the whole label wraps as text, the menu stays at 288; the name never breaks mid-word and
+// ellipsises only if it alone exceeds a full line.
+function MoreLabel({ text, app, after, wrap = false }) {
+  if (wrap) return (
+    <span style={{ display: "block", whiteSpace: "normal" }}>
+      {text}<span style={{ display: "inline-block", maxWidth: "100%", verticalAlign: "bottom", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+        fontFamily: "var(--tasty-banner-more-app-font)", color: "inherit" }} title={app}>{app}</span>{after}
+    </span>
+  );
   return (
     <span style={{ display: "flex", minWidth: 0, whiteSpace: "nowrap" }}>
       <span style={{ flex: "none" }}>{text}</span>
       <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis",
-        fontFamily: "var(--tasty-banner-more-app-font)", color: "var(--tasty-banner-more-app-fg)" }} title={app}>{app}</span>
+        fontFamily: "var(--tasty-banner-more-app-font)", color: "inherit" }} title={app}>{app}</span>
       {after && <span style={{ flex: "none" }}>{after}</span>}
     </span>
   );
 }
 
 // the menu itself — 2 rows, no scrim, anchored under the ⋯ trigger.
-function BannerMoreMenuG({ app = "vim", hovered = -1, danger = false, style }) {
+function BannerMoreMenuG({ app = "vim", hovered = -1, danger = false, texts = null, wrapRows = [], style }) {
   const rows = [
     { icon: <Icon name="bell" />, text: "Turn off this notice for ", danger: false },
     { icon: <Icon name="mouse" />, text: "Disable mouse capture for ", danger },
-  ];
+  ].map((r, i) => (texts ? { ...r, text: texts[i] } : r));
   return (
     <div role="menu" aria-label="Banner options" style={{
       minWidth: "var(--tasty-banner-more-menu-min-width)", maxWidth: "var(--tasty-banner-more-menu-max-width)",
@@ -1427,8 +1440,8 @@ function BannerMoreMenuG({ app = "vim", hovered = -1, danger = false, style }) {
       borderRadius: "var(--tasty-banner-more-menu-radius)", padding: "var(--tasty-banner-more-menu-padding)",
       boxShadow: "var(--tasty-banner-more-menu-shadow)", ...style }}>
       {rows.map((r, i) => (
-        <MenuItem key={r.text} icon={r.icon} danger={r.danger} active={hovered === i}
-          label={<MoreLabel text={r.text} app={app} />} />
+        <MenuItem key={r.text} icon={r.icon} danger={r.danger} active={hovered === i} wrap={wrapRows.includes(i)}
+          label={<MoreLabel text={r.text} app={app} wrap={wrapRows.includes(i)} />} />
       ))}
     </div>
   );
@@ -2702,7 +2715,7 @@ function FpCrumbMenu({ items }) {
       borderRadius: "var(--tasty-menu-radius)", boxShadow: "var(--tasty-shadow-popover)" }}>
       {items.map((l, i) => (
         <div key={l} style={{ display: "flex", alignItems: "center", gap: 8, height: "var(--tasty-menu-item-height)", padding: "0 var(--tasty-menu-item-padding-x)", borderRadius: "var(--tasty-menu-item-radius)",
-          fontSize: "var(--tasty-font-size-body)", background: i === 0 ? "var(--tasty-menu-item-bg-hover)" : "transparent", color: "var(--tasty-text-primary)" }}>
+          fontSize: "var(--tasty-font-size-body)", background: i === 0 ? "var(--tasty-menu-item-bg-hover)" : "transparent", color: i === 0 ? "var(--tasty-menu-item-fg-hover)" : "var(--tasty-menu-item-fg)" }}>
           <span style={{ display: "inline-flex", flex: "none", color: "var(--tasty-accent-primary)" }}><Icon name="folder" size="var(--tasty-icon-size-md)" /></span>
           <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l}</span>
         </div>
@@ -2865,7 +2878,7 @@ function FilePickerFrame({ state = "loaded", remote = false, indicator = "badge"
 window.OverlaysShared = {
   ic, Backdrop,
   PaletteFrame, ApprovalFrame, RenameFrame, SettingsFrame, SettingsGeneralOverlayFrame, SettingsRemoteTransferFrame, TransferProgressFrame, TransferErrorFrame, ToastDurationField, ToastDragValue,
-  ToolsMenuFrame, PortsFrame, PortsFavoritesG, PortStarG, RemoteFrame, LocalSshSection, SearchBarFrame,
+  ToolsMenuFrame, PortsFrame, PORTS_COLUMNS, PortsFavoritesG, PortStarG, RemoteFrame, LocalSshSection, SearchBarFrame,
   FileHandlerFrame, FhFooter, FhRow, FhGroup, PresetFrame, MarkdownOpenFrame,
   NumCap, HeldLabel, TabStripMock, SidebarMock, RailMock, CatSwitchSidebarMock, CatSwitchRailMock,
   BannerShellG, BannerScope, MouseCaptureBannerG, MouseCaptureHitZone, BlacklistEditorG, TtlBannerG, StackDemoG,

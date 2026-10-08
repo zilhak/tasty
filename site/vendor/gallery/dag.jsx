@@ -6,12 +6,13 @@ const { Section, Spec, Stage, Cluster, Meta, Note, Do, Dont } = window.Gallery;
 const { Kbd, Tag, Icon } = window.TastyDesignSystem_41fd3f;
 const { DAG_STATUS, DAG_STATUS_ORDER, DAG_KIND, DAG_REL, sTok, DagNode, RunnerBadge, ZoomCluster, Minimap,
   CycleBanner, DagEmpty, DagCanvas, DagDetail, DagSurface, DagWindow, dagRowItems, dagLayout, elbow,
-  DAG_BUILD, DAG_INDEX, DAG_CYCLE, DAG_DENSE, DAG_LIST } = window.TastyDag;
+  DAG_BUILD, DAG_INDEX, DAG_CYCLE, DAG_DENSE, DAG_LIST, DAG_PARTIAL, DAG_ROLLUP_ORDER, DAG_PHASE, dagRollup, nodeTitle } = window.TastyDag;
 const { ListCtrl } = window.TastyDesignSystem_41fd3f;
 
 const NAV = [
   { id: "canvas", label: "Graph canvas" },
   { id: "node", label: "Node card · 8 states" },
+  { id: "phase", label: "Running phase · unknown reason" },
   { id: "edges", label: "Edges · 5 relations" },
   { id: "routes", label: "Transitions · not selected" },
   { id: "chrome", label: "Canvas chrome" },
@@ -135,6 +136,46 @@ function Page() {
         </Spec>
       </Section>
 
+      <Section id="phase" title="Running phase · unknown reason (2026-10-07)">
+        <Spec title="Running phase — only awaiting_input gets its own look"
+          when={<>Typed (v2) tasks report a step while running. <code>executing</code> is the plain running card. <b><code>awaiting_input</code></b> stops the graph on a person, so it swaps the whole state look to the needs-input yellow — bar, border, wash, glyph <code>!</code> and label — and stays readable at the <b>compact</b> tier (glyph + name). <code>postprocessing</code> and <code>retry_wait</code> keep the running tone and only swap the label, with the run number.</>}>
+          <Stage variant="grid" style={{ display: "flex", flexWrap: "wrap", gap: 16, padding: 20, alignItems: "flex-start" }}>
+            <NodeBox node={mk({ phase: "executing", name: "test:unit" })} caption="executing (default)" />
+            <NodeBox node={mk({ kind: "agent", phase: "awaiting_input", provider: "claude", since: "2m", name: "agent:review", dur: "2m" })} caption="awaiting_input" />
+            <NodeBox node={mk({ kind: "agent", phase: "awaiting_input", provider: "claude", name: "agent:review" })} lod="compact" caption="awaiting_input · compact" />
+            <NodeBox node={mk({ phase: "postprocessing", run: 1, name: "build:docs", dur: "41s" })} caption="postprocessing" />
+            <NodeBox node={mk({ phase: "retry_wait", run: 2, name: "build:docs", dur: "1m 3s" })} caption="retry_wait" />
+          </Stage>
+          <Meta
+            specs={[["executing", "no change — RUNNING"], ["awaiting_input", "! · NEEDS INPUT · yellow · duration = time waiting"], ["postprocessing", "◑ · POSTPROCESS · RUN n"], ["retry_wait", "◑ · RETRY WAIT · RUN n"], ["v1 tasks", "never have a phase → plain running"]]}
+            tokens={[{ tok: "--tasty-dag-phase-awaiting", use: "bar · border", color: "var(--tasty-dag-phase-awaiting)" }, { tok: "--tasty-dag-phase-awaiting-bg", use: "card wash", color: "var(--tasty-dag-phase-awaiting-bg)" }, { tok: "--tasty-dag-phase-awaiting-label", use: "glyph + label", color: "var(--tasty-dag-phase-awaiting-label)" }]} />
+          <Note><b>Labels (i18n).</b> needs input · 입력 대기 · 入力待ち — postprocess · 후처리 · 後処理 — retry wait · 재시도 대기 · 再試行待ち — run {"{n}"} · {"{n}"}회차 · {"{n}"}回目. The meta row is caps for Latin scripts only.</Note>
+          <Note><b>Click.</b> Selecting an awaiting node opens the detail panel with a yellow notice and an <b>Open session</b> button (secondary sm) that focuses the agent session surface. It is a user action only; agents never trigger it. The DAG list row adds a mono <code>! 1 needs input</code> before the rollup chip; the rollup itself stays <b>running</b>.</Note>
+        </Spec>
+        <Spec title="Hover — the why-line for skipped, unknown and awaiting"
+          when={<>The node tooltip is <code>name — label</code> plus one why-line. Unknown also says what unblocks it. The same text sits in the detail panel under <b>Why unknown</b>.</>}>
+          <Stage variant="grid" style={{ display: "flex", flexWrap: "wrap", gap: 16, padding: 20, alignItems: "flex-start" }}>
+            {[mk({ status: "unknown", name: "deploy:site", dur: null, reason: "run result lost: pid 4242 ended after a host restart and its exit status could not be collected" }),
+              mk({ status: "skipped", name: "sign:artifacts", dur: null, skip: "branch_not_selected" }),
+              mk({ kind: "agent", phase: "awaiting_input", provider: "claude", since: "2m", name: "agent:review" })].map((n) => (
+              <div key={n.name} style={{ display: "flex", flexDirection: "column", gap: 8, width: 300 }}>
+                <NodeBox node={n} dimmed={n.status === "skipped"} caption={n.status === "running" ? "awaiting_input" : n.status} />
+                <pre style={{ margin: 0, padding: "6px 8px", whiteSpace: "pre-wrap", fontFamily: "var(--tasty-font-ui)", fontSize: "var(--tasty-font-size-caption)",
+                  color: "var(--tasty-text-primary)", background: "var(--tasty-surface-raised)", border: "var(--tasty-border-width) solid var(--tasty-border-strong)",
+                  borderRadius: "var(--tasty-radius-sm)" }}>{nodeTitle(n)}</pre>
+              </div>
+            ))}
+          </Stage>
+          <Stage style={{ padding: 0, display: "block" }}>
+            <div style={{ display: "flex", height: 360, background: "var(--tasty-bg-panel)" }}>
+              <DagDetail dag={{ nodes: [mk({ id: "a", kind: "agent", phase: "awaiting_input", provider: "claude", since: "2m", name: "agent:review" })] }} id="a" onClose={() => {}} onSelect={() => {}} />
+              <DagDetail dag={{ nodes: [mk({ id: "u", status: "unknown", name: "deploy:site", dur: null, reason: "run result lost: pid 4242 ended after a host restart and its exit status could not be collected" })] }} id="u" onClose={() => {}} onSelect={() => {}} />
+            </div>
+          </Stage>
+          <Note><b>Labels (i18n).</b> Why: · 이유: · 理由: — Why unknown · 알 수 없는 이유 · 不明の理由 — “Retry or cancel it to let the graph continue.” · “다시 실행하거나 취소해야 그래프가 이어집니다.” · “再実行またはキャンセルするとグラフが続行します。” — “Waiting for a person in the {"{provider}"} session” · “{"{provider}"} 세션이 사람의 입력을 기다리는 중” · “{"{provider}"} セッションが入力を待っています”. The reason text is the host's free text, shown as is.</Note>
+        </Spec>
+      </Section>
+
       <Section id="edges" title="Edges · 5 relations">
         <Spec title="Dependency edges"
           when={<>Relation is carried by <b>dash pattern and colour together</b>: <code>depends_on</code> solid neutral, <code>fallback</code> long-dash attention, <code>reduce</code> fine-dash info, <code>binding</code> dash-dot data (teal, 2026-10-07), <code>transition</code> long-dash route (lavender, 2026-10-07). When a pair has both <code>depends_on</code> and <code>binding</code>, <b>only the binding is drawn</b> — a binding already implies the order. A <code>one_of</code> binding draws one binding edge per source. Every edge ends in an arrowhead at the <b>dependent</b> task, so the direction reads as "waits for".</>}>
@@ -220,6 +261,7 @@ function Page() {
           <Meta
             specs={[["row", "36px min · ListCtrl density"], ["label", "13 — DAG name"], ["description", "11 — workspace · updated"], ["trailing", "origin tag · rollup · n/total · skip count when > 0"], ["scope", "all workspaces, filterable"]]}
             tokens={[{ tok: "--tasty-dag-row-height", use: "36 row", }, { tok: "--tasty-dag-row-count-fg", use: "n/total", color: "var(--tasty-dag-row-count-fg)" }, { tok: "--tasty-listctrl-row-bg-hover", use: "hover" }]} />
+          <Note><b>Rollup (2026-10-07).</b> Seven values, in filter order: {DAG_ROLLUP_ORDER.join(" · ")}. <b>partially_failed</b> (◒, peach <code>--tasty-dag-status-partially-failed</code>) = no more progress, an unrecovered failure, and at least one branch succeeded to its end. Precedence is progress first: running → ready → waiting-that-can-run → partially_failed | failed → succeeded | skipped. <code>dagRollup(DAG_PARTIAL.nodes)</code> = <code>{dagRollup(DAG_PARTIAL.nodes)}</code>. Its own filter option, between succeeded and failed. done/total counts its failed tasks as done, same as failed. Label: Partially failed · 일부 실패 · 一部失敗.</Note>
           <Note>The workspace name is part of the description line, not a separate column — the popup lists every workspace, and a column would waste the width the DAG name needs.</Note>
         </Spec>
       </Section>
@@ -265,7 +307,7 @@ function Page() {
 
       <Section id="surfaces" title="Surface · popup">
         <Spec title="Full-tab surface — wide and narrow"
-          when={<>A whole terminal tab. Header: DAG name + task count, the DAG <code>Select</code>, the runner badge, refresh. Under <b>640px</b> the header wraps to two rows (identity above, controls below), the runner hint drops, the minimap goes, and the detail panel becomes a bottom sheet.</>}>
+          when={<>A whole terminal tab. Header: DAG name + <code>{"{done}/{total} done"}</code> (mono caption, <code>--tasty-dag-header-count-fg</code> = the list row counter, skip suffix after it, 2026-10-07), the DAG <code>Select</code>, the runner badge, refresh. Under <b>640px</b> the header wraps to two rows (identity above, controls below), the runner hint drops, the minimap goes, and the detail panel becomes a bottom sheet.</>}>
           <Stage style={{ padding: 16, display: "flex", gap: 16, alignItems: "stretch" }}>
             <div style={{ flex: 1, minWidth: 0, height: 520, border: "var(--tasty-border-width) solid var(--tasty-border-strong)",
               borderRadius: "var(--tasty-radius)", overflow: "hidden" }}>

@@ -574,6 +574,23 @@ function PluginsWindow({ onClose, onFlash, onConfigure }) {
               </div>
             </div>
           )}
+
+          {/* 2026-10-07 — install path + log path. Open folder sits on the caption row (right), never on the
+              path row, so a long path can't push it out at 720 or 880. Paths wrap at any character
+              (break-all), stay selectable — nothing is truncated, so no tooltip is needed. */}
+          {isInstalled && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-sm)", minWidth: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)" }}>
+                <Mono>Install path</Mono>
+                <div style={{ flex: 1 }} />
+                <Button variant="secondary" size="sm" leadingIcon={<Icon name="folder" />}>Open folder</Button>
+              </div>
+              <span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)",
+                wordBreak: "break-all", userSelect: "text" }}>{`/home/tasty/.local/share/tasty/plugins/${sel.id}`}</span>
+              <span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)",
+                wordBreak: "break-all", userSelect: "text" }}>{`Log: /home/tasty/.local/state/tasty/plugins/${sel.id}/plugin.log`}</span>
+            </div>
+          )}
         </div>
 
         {/* action bar */}

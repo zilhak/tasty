@@ -240,11 +240,11 @@ function Icons() {
                   {[["Text — \u201cOption\u201d", null, false], ["Symbol", "optionKey", true]].map(([label, glyph, active]) => (
                     <div key={label} style={{ display: "flex", alignItems: "center", gap: 8, height: "var(--tasty-menu-item-height)", padding: "0 var(--tasty-space-sm)",
                       borderRadius: "var(--tasty-radius-sm)", fontSize: 13,
-                      background: active ? "var(--tasty-overlay-hover)" : "transparent",
-                      color: active ? "var(--tasty-text-primary)" : "var(--tasty-text-secondary)" }}>
+                      background: "transparent",
+                      color: active ? "var(--tasty-menu-item-selected-fg)" : "var(--tasty-menu-item-fg)" }}>
                       <span style={{ width: 16, display: "inline-flex", justifyContent: "center" }}>{glyph ? <Icon name={glyph} size={16} /> : null}</span>
                       <span style={{ flex: 1 }}>{label}</span>
-                      {active && <Icon name="check" size={14} />}
+                      {active && <span style={{ display: "inline-flex", color: "var(--tasty-menu-item-check-fg)" }}><Icon name="check" size={14} /></span>}
                     </div>
                   ))}
                 </div>

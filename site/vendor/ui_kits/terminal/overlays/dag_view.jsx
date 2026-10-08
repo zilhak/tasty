@@ -34,9 +34,68 @@ const DAG_STATUS = {
   cancelled: { label: "Cancelled", glyph: "\u2212" },
   skipped:   { label: "Skipped",   glyph: "\u2298" },
   unknown:   { label: "Unknown",   glyph: "?" },
+  // 2026-10-07 — ROLLUP-ONLY value (a DAG, never a task): no more progress, ≥1 unrecovered
+  // failure, ≥1 branch succeeded to its end. Lower-half disc = "half the graph made it".
+  partially_failed: { label: "Partially failed", glyph: "\u25D2" },
 };
 const DAG_STATUS_ORDER = ["waiting", "ready", "running", "succeeded", "failed", "cancelled", "skipped", "unknown"];
 const DIM_STATUS = new Set(["skipped", "cancelled"]);
+// 2026-10-07 — DAG rollup vocabulary + filter order (the app's 7 values). partially_failed sits
+// between succeeded and failed: finished, outcome mixed.
+const DAG_ROLLUP_ORDER = ["waiting", "ready", "running", "succeeded", "partially_failed", "failed", "skipped"];
+// Rollup rule (mirrors the agent crate). Precedence: progress first, then outcome.
+//  1 running → 2 ready → 3 waiting that can still run → 4 partially_failed | failed → 5 succeeded | skipped
+//  · a failure is "recovered" when a fallback task for it succeeded
+//  · end task = no downstream task; branch_not_selected skips don't count as downstream
+//  · unknown is not progress (it blocks its dependents)
+function dagRollup(nodes) {
+  const by = Object.fromEntries(nodes.map((n) => [n.id, n]));
+  const fallbackOf = (id) => nodes.filter((n) => (n.deps || []).some(([f, r]) => f === id && r === "fallback"));
+  const recovered = (n) => fallbackOf(n.id).some((f) => f.status === "succeeded");
+  const dead = (n) => (n.status === "failed" && !recovered(n)) || n.status === "cancelled" || n.status === "unknown"
+    || (n.status === "skipped" && n.skip !== "branch_not_selected");
+  const canRun = (n) => (n.deps || []).every(([f, r]) => r === "fallback" || !by[f] || !dead(by[f]));
+  if (nodes.some((n) => n.status === "running")) return "running";
+  if (nodes.some((n) => n.status === "ready")) return "ready";
+  if (nodes.some((n) => n.status === "waiting" && canRun(n))) return "waiting";
+  const downstream = (id) => nodes.some((n) => n.skip !== "branch_not_selected" && (n.deps || []).some(([f, r]) => f === id && r !== "fallback"));
+  const failures = nodes.filter((n) => n.status === "failed" && !recovered(n));
+  if (failures.length) {
+    const endOk = nodes.some((n) => !downstream(n.id) && (n.status === "succeeded" || (n.status === "failed" && recovered(n))));
+    return endOk ? "partially_failed" : "failed";
+  }
+  return nodes.some((n) => n.status === "succeeded") ? "succeeded" : "skipped";
+}
+// 2026-10-07 — running PHASE (typed v2 tasks only). executing = the default running look (null).
+// awaiting_input is the one to notice: the graph is stopped on a person. postprocess / retry_wait
+// stay in the running tone and only swap the label, carrying the run number.
+const DAG_PHASE = {
+  executing:      null,
+  awaiting_input: { label: "Needs input", glyph: "!",       tone: "awaiting" },
+  postprocessing: { label: "Postprocess", glyph: "\u25D1", tone: "running", showRun: true },
+  retry_wait:     { label: "Retry wait",  glyph: "\u25D1", tone: "running", showRun: true },
+};
+// One look per node: status unless a phase overrides it.
+function nodeLook(node) {
+  const st = DAG_STATUS[node.status];
+  const ph = node.status === "running" && node.phase ? DAG_PHASE[node.phase] : null;
+  if (!ph) return { glyph: st.glyph, label: st.label, tone: node.status, tok: sTok(node.status), bg: sBg(node.status), lbl: sLabel(node.status) };
+  const label = ph.showRun && node.run ? `${ph.label} \u00b7 run ${node.run}` : ph.label;
+  const t = ph.tone === "awaiting"
+    ? { tok: "var(--tasty-dag-phase-awaiting)", bg: "var(--tasty-dag-phase-awaiting-bg)", lbl: "var(--tasty-dag-phase-awaiting-label)" }
+    : { tok: sTok("running"), bg: sBg("running"), lbl: sLabel("running") };
+  return { glyph: ph.glyph, label, tone: ph.tone, ...t };
+}
+// Hover text: "name — label", then the why-line for skipped / unknown / awaiting.
+const SKIP_WHY = { branch_not_selected: "Not selected by the upstream result", upstream_unavailable: "An upstream task did not succeed" };
+function nodeTitle(node) {
+  const lk = nodeLook(node);
+  const lines = [`${node.name} \u2014 ${lk.label}`];
+  if (node.status === "skipped" && node.skip) lines.push(`Why: ${SKIP_WHY[node.skip] || node.skip}`);
+  if (node.status === "unknown" && node.reason) lines.push(`Why: ${node.reason}`, "Retry or cancel it to let the graph continue.");
+  if (node.phase === "awaiting_input" && node.status === "running") lines.push(`Waiting for a person in the ${node.provider || "agent"} session${node.since ? ` \u00b7 ${node.since}` : ""}`);
+  return lines.join("\n");
+}
 const DAG_KIND = {
   run:          { icon: "terminal", label: "run" },
   custom:       { icon: "plug",     label: "custom" },
@@ -51,10 +110,11 @@ const DAG_REL = {
   binding:    { label: "binds input", color: "var(--tasty-dag-edge-binding)", dash: "8 2 2 2" },   // 2026-10-07 — data edge; replaces depends_on on the same pair
   transition: { label: "transition",  color: "var(--tasty-dag-edge-transition)", dash: "10 4" },  // 2026-10-07 — result-chosen route; selection drawn per edge
 };
-const sTok = (s) => `var(--tasty-dag-status-${s})`;
-const sBg = (s) => `var(--tasty-dag-status-${s}-bg)`;
+const tk = (s) => String(s).replace(/_/g, "-");
+const sTok = (s) => `var(--tasty-dag-status-${tk(s)})`;
+const sBg = (s) => `var(--tasty-dag-status-${tk(s)}-bg)`;
 // Text tone — readable at 10px even for the weak states (see components.css).
-const sLabel = (s) => `var(--tasty-dag-status-${s}-label)`;
+const sLabel = (s) => `var(--tasty-dag-status-${tk(s)}-label)`;
 
 // ── Mock graphs ─────────────────────────────────────────────────────
 const ERR_TAIL = `error: linking with \`cc\` failed: exit status: 1
@@ -105,6 +165,20 @@ const DAG_INDEX = {
   runner: { running: true, crashed: false, ready: 0, active: 1 },
 };
 
+// 2026-10-07 — partially failed: the docs branch reached its end, the site branch's
+// postprocess ran out of retries with no fallback. dagRollup(DAG_PARTIAL.nodes) === "partially_failed".
+const DAG_PARTIAL = {
+  id: "docs-publish", name: "docs-publish", workspace: "tasty-docs", origin: "declared", updated: "8m ago",
+  nodes: [
+    { id: "fetch",  name: "fetch:sources", kind: "run",   status: "succeeded", dur: "2s",  started: "10:12:01", exit: 0, cmd: "git pull --ff-only" },
+    { id: "docs",   name: "build:docs",    kind: "run",   status: "succeeded", dur: "18s", started: "10:12:03", exit: 0, cmd: "mdbook build", deps: [["fetch", "depends_on"]] },
+    { id: "upload", name: "upload:docs",   kind: "custom", status: "succeeded", dur: "4s", started: "10:12:21", exit: 0, cmd: "ipc: storage.put(book/)", deps: [["docs", "depends_on"]] },
+    { id: "site",   name: "build:site",    kind: "run",   status: "succeeded", dur: "31s", started: "10:12:03", exit: 0, cmd: "zola build", deps: [["fetch", "depends_on"]] },
+    { id: "deploy", name: "deploy:site",   kind: "run",   status: "failed",    dur: "1m 2s", started: "10:12:34", exit: 1, cmd: "rsync -a public/ web:/srv", deps: [["site", "depends_on"]] },
+  ],
+  runner: { running: true, crashed: false, ready: 0, active: 0 },
+};
+
 // A cyclic graph — the runner rejects it, the surface still draws it.
 const DAG_CYCLE = {
   id: "release-notes",
@@ -142,11 +216,12 @@ const DAG_DENSE = (() => {
 
 const DAG_LIST = [
   { dag: DAG_BUILD, done: 4, total: 12, rollup: "failed" },
-  { dag: DAG_INDEX, done: 2, total: 5, rollup: "running", skipped: 2, notSelected: 2 },
+  { dag: DAG_INDEX, done: 2, total: 5, rollup: "running", skipped: 2, notSelected: 2, awaiting: 1 },
   { dag: DAG_DENSE, done: 26, total: 55, rollup: "running" },
   { dag: DAG_CYCLE, done: 1, total: 4, rollup: "unknown" },
   { dag: { id: "nightly-bench", name: "nightly-bench", workspace: "tasty-bench", origin: "declared", updated: "1h ago", nodes: DAG_INDEX.nodes, runner: { running: false, crashed: false, ready: 0, active: 0 } }, done: 8, total: 8, rollup: "succeeded" },
   { dag: { id: "migrate-store", name: "migrate-store", workspace: "tasty-lab", origin: "declared", updated: "22m ago", nodes: DAG_INDEX.nodes, runner: { running: false, crashed: true, ready: 3, active: 0 } }, done: 3, total: 9, rollup: "cancelled" },
+  { dag: DAG_PARTIAL, done: 5, total: 5, rollup: "partially_failed" },
 ];
 
 // ── Layout — layered, deterministic, status-independent ──────────────
@@ -206,16 +281,17 @@ function elbow(s, t, td, r) {
 // "block" (status fill only). The BOX never changes size between tiers.
 function DagNode({ node, lod = "full", selected = false, dimmed = false, onSelect, style }) {
   const [hot, setHot] = React.useState(false);
-  const st = DAG_STATUS[node.status];
+  const st = nodeLook(node);
   const kind = DAG_KIND[node.kind] || DAG_KIND.run;
-  const accent = sTok(node.status);
+  const accent = st.tok;
+  const tip = nodeTitle(node);
   const base = {
     position: "absolute", boxSizing: "border-box", textAlign: "left",
     width: "var(--tasty-dag-node-width)", height: "var(--tasty-dag-node-height)",
     display: "flex", alignItems: "stretch", gap: 0, padding: 0, cursor: "pointer",
     borderRadius: "var(--tasty-dag-node-radius)",
     border: `var(--tasty-border-width) solid ${node.status === "waiting" || node.status === "cancelled" || node.status === "skipped" ? "var(--tasty-dag-node-border)" : accent}`,
-    background: sBg(node.status),
+    background: st.bg,
     outline: selected ? `var(--tasty-dag-node-selected-ring-width) solid var(--tasty-dag-node-selected-ring)` : "none",
     outlineOffset: "var(--tasty-size-1)",
     opacity: dimmed ? "var(--tasty-dag-node-dim-opacity)" : 1,
@@ -224,13 +300,13 @@ function DagNode({ node, lod = "full", selected = false, dimmed = false, onSelec
   };
   if (lod === "block") {
     return (
-      <button type="button" aria-label={`${node.name} — ${st.label}`} title={`${node.name} — ${st.label}`}
+      <button type="button" aria-label={`${node.name} — ${st.label}`} title={tip}
         onClick={() => onSelect && onSelect(node.id)} onMouseEnter={() => setHot(true)} onMouseLeave={() => setHot(false)}
         style={{ ...base, background: `color-mix(in srgb, ${accent} 55%, var(--tasty-surface-raised))`, borderColor: accent }} />
     );
   }
   return (
-    <button type="button" aria-label={`${node.name} — ${st.label} — ${kind.label}`} title={`${node.name} — ${st.label}`}
+    <button type="button" aria-label={`${node.name} — ${st.label} — ${kind.label}`} title={tip}
       onClick={() => onSelect && onSelect(node.id)} onMouseEnter={() => setHot(true)} onMouseLeave={() => setHot(false)}
       style={base}>
       {/* leading status bar — the third, position-based state channel */}
@@ -251,9 +327,9 @@ function DagNode({ node, lod = "full", selected = false, dimmed = false, onSelec
         {lod === "full" && (
           <span style={{ display: "flex", alignItems: "center", gap: "var(--tasty-dag-node-gap)", minWidth: 0,
             fontSize: "var(--tasty-dag-node-meta-font-size)", letterSpacing: "var(--tasty-letter-spacing-caps)" }}>
-            <span aria-hidden="true" style={{ flex: "none", color: sLabel(node.status), fontFamily: "var(--tasty-font-mono)" }}>{st.glyph}</span>
+            <span aria-hidden="true" style={{ flex: "none", color: st.lbl, fontFamily: "var(--tasty-font-mono)" }}>{st.glyph}</span>
             <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-              textTransform: "uppercase", color: sLabel(node.status) }}>{st.label}</span>
+              textTransform: "uppercase", color: st.lbl }}>{st.label}</span>
             {node.dur && (
               <span style={{ flex: "none", fontFamily: "var(--tasty-font-mono)", letterSpacing: "var(--tasty-letter-spacing-ui)",
                 color: "var(--tasty-dag-node-meta-fg)" }}>{node.dur}</span>
@@ -384,8 +460,8 @@ function DagEmpty({ variant = "surface", query = "" }) {
 }
 
 window.TastyDag = Object.assign(window.TastyDag || {}, {
-  DAG_STATUS, DAG_STATUS_ORDER, DAG_KIND, DAG_REL, DIM_STATUS, sTok, sBg, sLabel,
-  DAG_BUILD, DAG_INDEX, DAG_CYCLE, DAG_DENSE, DAG_LIST, ERR_TAIL,
+  DAG_STATUS, DAG_STATUS_ORDER, DAG_ROLLUP_ORDER, DAG_PHASE, dagRollup, nodeLook, nodeTitle, DAG_KIND, DAG_REL, DIM_STATUS, sTok, sBg, sLabel,
+  DAG_BUILD, DAG_INDEX, DAG_CYCLE, DAG_DENSE, DAG_PARTIAL, DAG_LIST, ERR_TAIL,
   dagLayout, elbow, DagNode, RunnerBadge, ZoomCluster, Minimap, CycleBanner, DagEmpty,
   NODE_W, NODE_H,
 });

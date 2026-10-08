@@ -36,7 +36,10 @@ const PERM_SCENARIOS = {
   requesting: { fda: "missing", screen: "missing", ax: "missing" },
   // 2026-10-06 — granted once, then the app binary changed (update / rebuild): macOS keeps an entry that no
   // longer matches. Still state "missing" (no fifth state) — the row gains a one-line remedy under the label.
-  fdaStale:   { fda: "missing", screen: "granted", ax: "granted", fdaSub: "Tasty changed since access was granted, so the old entry no longer applies. Remove Tasty from the list, then add it again." },
+  fdaStale:   { fda: "missing", screen: "granted", ax: "granted", fdaSub: "Tasty changed since access was granted. Its entry in System Settings may still look on, but it no longer applies. Remove Tasty from the list, then add it again." },
+  // 2026-10-08 — same hash, turned off outside Tasty: also "missing" + one caption line with its remedy.
+  // 2026-10-08 (batch 8) — the re-add sentence joins the SAME caption paragraph (end of line, wraps); no second line.
+  fdaRevoked: { fda: "missing", screen: "granted", ax: "granted", fdaSub: "Access was turned off outside Tasty. Turn it back on for Tasty in the list. If Tasty is no longer in the list (for example after tccutil reset), add it again with +." },
 };
 
 const mpNote = { margin: 0, fontSize: "var(--tasty-font-size-caption)", lineHeight: "var(--tasty-line-height-ui)", color: "var(--tasty-text-muted)",
@@ -97,25 +100,32 @@ const mpLead = { color: "var(--tasty-text-primary)", fontWeight: "var(--tasty-fo
 // below are the web rendering only; the product may draw them at regular weight (egui has no bold
 // UI family) and that is accepted. Command chip = mono + surface-raised run background ONLY:
 // no radius, no side padding, wraps anywhere (one plain background run per wrapped line).
+// 2026-10-08 — signing paragraph = secondary text; stale steps = numbered list, same body size, list gap = space-xs.
+const mpAside = { margin: 0, fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" };
+const mpSteps = { margin: 0, paddingLeft: "var(--tasty-space-xl)", display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)", color: "var(--tasty-text-primary)" };
 const mpCmd = { fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-primary)",
   background: "var(--tasty-surface-raised)", overflowWrap: "anywhere" };
 
 // fda branch (2026-10-06): "never" = no grant on record · "stale" = granted before, binary hash differs ·
 // "revoked" = granted before, same hash (turned off outside Tasty). Only the FDA paragraph changes; the
 // title, buttons and show/hide rule (current state at every boot) do not. selfBuilt = ad-hoc / locally
-// signed build: the codesign paragraph is shown ONLY then (release users have nothing to sign).
+// signed build. 2026-10-08: the app cannot tell a release from a self-built app, so the signing paragraph is
+// shown in EVERY notice, last, as secondary text (mpAside: text-muted · caption). The stale paragraph carries
+// the remove-and-add step as a numbered two-step list (mpSteps).
 function PermNoticeBody({ fda = "never", selfBuilt = true } = {}) {
   const fdaPane = <span style={mpPath}>System Settings &gt; Privacy &amp; Security &gt; Full Disk Access</span>;
   return (
     <>
       <p>Commands you run in Tasty read and write files on your behalf, and macOS attributes that access to Tasty. Without permission, a prompt may interrupt your work or a feature may not work.</p>
       <p>Some permissions currently look like they are not granted. <span style={mpPath}>Settings &gt; General &gt; Permissions</span> shows which ones and what state they are in.</p>
-      {fda === "stale" && <p><span style={mpLead}>Full Disk Access:</span> Tasty had this permission, but Tasty has changed since (an update or a rebuild) and macOS ties the permission to the exact app. In {fdaPane} the entry for Tasty may still look switched on, or may be missing. Remove Tasty from the list, then add it again. If access still fails afterwards, quit and reopen Tasty.</p>}
-      {fda === "revoked" && <p><span style={mpLead}>Full Disk Access:</span> Tasty had this permission, and it was turned off outside Tasty. Turn it back on for Tasty in {fdaPane}.</p>}
+      {fda === "stale" && <p><span style={mpLead}>Full Disk Access:</span> Tasty had this permission, but Tasty has changed since (an update or a rebuild) and macOS ties the permission to the exact app. In {fdaPane} the entry for Tasty may still look switched on, or may be missing.</p>}
+      {fda === "stale" && <ol style={mpSteps}><li>Select Tasty in the list and remove it with −.</li><li>Add Tasty again with + and switch it on.</li></ol>}
+      {fda === "stale" && <p>If access still fails afterwards, quit and reopen Tasty.</p>}
+      {fda === "revoked" && <p><span style={mpLead}>Full Disk Access:</span> Tasty had this permission, and it was turned off outside Tasty. Turn it back on for Tasty in {fdaPane}. If Tasty is no longer in the list (for example after <span style={mpCmd}>tccutil reset</span>), add it again with + and switch it on.</p>}
       <p><span style={mpLead}>{fda === "never" ? "Full Disk Access:" : "What it covers:"}</span> {fda === "never" ? <>macOS has no way for an app to ask for this, so add Tasty yourself in {fdaPane}. </> : null}Granting it removes the file-access prompts (other apps' data, Downloads, Documents, Desktop and mounted volumes). It does not cover controlling other apps (Automation / Apple Events, e.g. osascript), screen recording, or accessibility: those are separate permissions and will still prompt.</p>
       <p><span style={mpLead}>Screen recording:</span> this is used by the screenshot feature. Turn it on in <span style={mpPath}>System Settings &gt; Privacy &amp; Security &gt; Screen &amp; System Audio Recording</span>. Once you deny it, the app cannot ask again and only System Settings can turn it back on.</p>
-      {selfBuilt && <p>If you build Tasty yourself, sign it with the "Tasty Dev" certificate first (<span style={mpCmd}>./scripts/macos-codesign-identity.sh --create</span>). Ad-hoc signed builds look like a different app to macOS after every rebuild, so the permission is discarded each time.</p>}
       <p>Once you grant them, this notice stops appearing. There is no setting to turn it off, because recording that you dismissed it would leave no way to tell you when a permission is reset later.</p>
+      {selfBuilt && <p style={mpAside}>Downloaded releases and builds you make yourself are both ad-hoc signed, so after every update or rebuild macOS sees a different app and the earlier permission no longer applies. If you build Tasty yourself, sign it with the "Tasty Dev" certificate first (<span style={mpCmd}>./scripts/macos-codesign-identity.sh --create</span>).</p>}
     </>
   );
 }

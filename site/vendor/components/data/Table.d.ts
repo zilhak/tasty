@@ -13,8 +13,10 @@ export interface TableColumn<Row = any> {
   strong?: boolean;
   /** Clickable sort header (pair with `sort`/`onSort`). */
   sortable?: boolean;
-  /** Fixed column width (any CSS length). */
+  /** Fixed column width (any CSS length). Also the column's floor unless `minWidth` is set — a fixed column never shrinks; the table scrolls instead. */
   width?: string;
+  /** Column floor (any CSS length) — the column takes spare width but never shrinks below this; the table scrolls horizontally instead. Set on the header cell. */
+  minWidth?: string;
   /**
    * Zero horizontal padding + centered content — for narrow icon/control
    * columns (a star toggle, a checkbox) where the default 12px cell padding

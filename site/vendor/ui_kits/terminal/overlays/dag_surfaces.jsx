@@ -6,7 +6,7 @@
 //   DagWindow   workspace popup: DrillDown list ⇄ single-DAG detail
 const { Icon, Tag, StatusDot, Input, Select, Checkbox, IconButton, Button, ListCtrl, DrillDown } = window.TastyDesignSystem_41fd3f;
 const { Scrim } = window.TastyKit;
-const { DAG_STATUS, DAG_STATUS_ORDER, DAG_KIND, DAG_REL, DIM_STATUS, sTok, sLabel, DAG_LIST,
+const { DAG_STATUS, DAG_STATUS_ORDER, DAG_ROLLUP_ORDER, nodeLook, DAG_KIND, DAG_REL, DIM_STATUS, sTok, sLabel, DAG_LIST,
   dagLayout, elbow, DagNode, RunnerBadge, ZoomCluster, Minimap, CycleBanner, DagEmpty, NODE_W, NODE_H } = window.TastyDag;
 
 const Z_MIN = 0.2, Z_MAX = 1.5, Z_STEP = 0.1;
@@ -206,8 +206,9 @@ function LogBlock({ label, text, max, onCopy }) {
 function DagDetail({ dag, id, onClose, onSelect, sheet = false }) {
   const node = dag.nodes.find((n) => n.id === id);
   if (!node) return null;
-  const st = DAG_STATUS[node.status];
+  const st = nodeLook(node);
   const kind = DAG_KIND[node.kind] || DAG_KIND.run;
+  const awaiting = node.status === "running" && node.phase === "awaiting_input";
   const deps = (node.deps || []).map(([from, rel]) => ({ rel, node: dag.nodes.find((n) => n.id === from) })).filter((d) => d.node);
   const frame = sheet
     ? { height: "var(--tasty-dag-detail-sheet-height)", borderTop: "var(--tasty-border-width) solid var(--tasty-dag-detail-border)" }
@@ -223,11 +224,30 @@ function DagDetail({ dag, id, onClose, onSelect, sheet = false }) {
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--tasty-space-xs)" }}>
         <span style={{ display: "inline-flex", alignItems: "center", gap: "var(--tasty-space-xs)",
-          fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-caption)", color: sLabel(node.status) }}>
+          fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-caption)", color: st.lbl }}>
           <span aria-hidden="true">{st.glyph}</span>{st.label}
         </span>
         <Tag>{kind.label}</Tag>
       </div>
+      {/* 2026-10-07 — awaiting_input: say who is waiting on whom, and offer the session. User action only. */}
+      {awaiting && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-sm)", boxSizing: "border-box",
+          padding: "var(--tasty-space-sm)", borderRadius: "var(--tasty-radius-sm)",
+          border: "var(--tasty-border-width) solid var(--tasty-dag-phase-awaiting)", background: "var(--tasty-dag-phase-awaiting-bg)" }}>
+          <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-primary)" }}>
+            The {node.provider || "agent"} session is waiting for a person{node.since ? ` \u00b7 ${node.since}` : ""}. The graph continues after you answer it.
+          </span>
+          <span style={{ display: "flex" }}><Button size="sm" variant="secondary">Open session</Button></span>
+        </div>
+      )}
+      {node.status === "unknown" && node.reason && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)", minWidth: 0 }}>
+          <span style={{ fontSize: "var(--tasty-font-size-micro)", textTransform: "uppercase",
+            letterSpacing: "var(--tasty-letter-spacing-caps)", color: "var(--tasty-text-muted)" }}>Why unknown</span>
+          <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-secondary)", wordBreak: "break-word" }}>{node.reason}</span>
+          <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>Retry or cancel it to let the graph continue.</span>
+        </div>
+      )}
       <dl style={{ margin: 0, display: "grid", gridTemplateColumns: "auto 1fr", columnGap: "var(--tasty-space-md)",
         rowGap: "var(--tasty-space-xs)", alignItems: "baseline" }}>
         <DetailRow k="Started" v={node.started || "—"} mono />
@@ -273,6 +293,15 @@ function DagDetail({ dag, id, onClose, onSelect, sheet = false }) {
   );
 }
 
+// 2026-10-07 — header count = the list row's counter: "{done}/{total} done" + the same skip suffix.
+const DONE_STATUS = new Set(["succeeded", "failed", "cancelled", "skipped"]);
+function dagHeaderCount(dag) {
+  const done = dag.nodes.filter((n) => DONE_STATUS.has(n.status)).length;
+  const skipped = dag.nodes.filter((n) => n.status === "skipped").length;
+  const notSelected = dag.nodes.filter((n) => n.status === "skipped" && n.skip === "branch_not_selected").length;
+  return `${done}/${dag.nodes.length} done${dagSkipText({ skipped, notSelected })}`;
+}
+
 // ── Full-tab surface ────────────────────────────────────────────────
 function DagSurface({ dags = [window.TastyDag.DAG_BUILD], initialId, narrow: forceNarrow, style }) {
   const [dagId, setDagId] = React.useState(initialId || dags[0].id);
@@ -315,7 +344,7 @@ function DagSurface({ dags = [window.TastyDag.DAG_BUILD], initialId, narrow: for
         fontFamily: "var(--tasty-font-ui)", fontSize: "var(--tasty-font-size-body)", fontWeight: "var(--tasty-font-weight-semibold)",
         color: "var(--tasty-text-primary)" }}>{dag.name}</span>
       <span style={{ flex: "none", fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-caption)",
-        color: "var(--tasty-text-muted)" }}>{dag.nodes.length} tasks</span>
+        color: "var(--tasty-dag-header-count-fg)" }}>{dagHeaderCount(dag)}</span>
       {narrow && <span style={{ flexBasis: "100%", height: 0 }} />}
       <span style={{ flex: narrow ? "1 1 auto" : "none", minWidth: 0, width: narrow ? "auto" : "var(--tasty-field-width-lg)", display: "flex" }}>
         <Select block value={dagId} onChange={(e) => { setDagId(e.target.value); setSel(null); }}
@@ -356,6 +385,13 @@ function dagRowItems(entries) {
     trailing: (
       <span style={{ display: "inline-flex", alignItems: "center", gap: "var(--tasty-dag-row-summary-gap)" }}>
         {e.dag.origin === "derived" && <Tag>derived</Tag>}
+        {/* 2026-10-07 — a running DAG stopped on a person says so at DAG level; rollup stays "running" */}
+        {e.awaiting > 0 && (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: "var(--tasty-space-xs)",
+            fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-dag-phase-awaiting-label)" }}>
+            <span aria-hidden="true">!</span>{e.awaiting} needs input
+          </span>
+        )}
         <span style={{ display: "inline-flex", alignItems: "center", gap: "var(--tasty-space-xs)",
           fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-caption)", color: sLabel(e.rollup) }}>
           <span aria-hidden="true">{DAG_STATUS[e.rollup].glyph}</span>{DAG_STATUS[e.rollup].label}
@@ -434,7 +470,7 @@ function DagWindow({ onClose, entries = DAG_LIST, scope = "tasty" }) {
               </span>
               <span style={{ flex: "none", width: "var(--tasty-field-width-md)", display: "flex" }}>
                 <Select block value={status} onChange={(e) => setStatus(e.target.value)}
-                  options={[{ value: "all", label: "Any status" }, ...DAG_STATUS_ORDER.map((s) => ({ value: s, label: DAG_STATUS[s].label }))]} />
+                  options={[{ value: "all", label: "Any status" }, ...DAG_ROLLUP_ORDER.map((s) => ({ value: s, label: DAG_STATUS[s].label }))]} />
               </span>
             </div>
             <div style={{ flex: "none", display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)",

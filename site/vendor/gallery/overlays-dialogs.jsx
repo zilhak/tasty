@@ -451,6 +451,20 @@ function Page() {
             tokens={[{ tok: "--tasty-info-modal-width", use: "→ size-440" }, { tok: "--tasty-info-modal-max-height", use: "→ size-360" }, { tok: "--tasty-info-modal-para-gap", use: "→ space-md 12" }, { tok: "--tasty-info-modal-scroll-edge", use: "→ border-default", color: "var(--tasty-info-modal-scroll-edge)" }]} />
           <Note>ko / ja bodies are longer and only scroll further. The shell does not grow for them.</Note>
         </Spec>
+        <Spec title="Permissions notice — FDA branches · signing aside (2026-10-08)"
+          when={<>Only the Full Disk Access paragraph changes between <b>never</b> / <b>stale</b> / <b>revoked</b>; title, buttons and the show rule do not. <b>Stale</b> carries the remove-and-add step as a <b>numbered two-step list</b> (text-primary, body size), followed by the quit-and-reopen line. <b>Revoked</b> stays one paragraph. The <b>signing paragraph</b> now shows in <b>every</b> notice (release and self-built are both ad-hoc signed) as <b>secondary text</b>: last in the body, caption size, text-muted. Shown scrolled to the end, where the branch and the aside sit.</>}>
+          <Stage variant="solo" style={{ padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-app)", gap: "var(--tasty-space-lg)", flexWrap: "wrap", alignItems: "flex-start" }}>
+            {[["never — no grant on record", "never", null], ["stale — granted before, app changed", "stale", null], ["stale — Latte", "stale", "latte"], ["revoked — turned off outside Tasty", "revoked", null]].map(([cap, fda, theme]) => (
+              <div key={cap} {...(theme ? { "data-theme": theme } : {})} style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)", padding: "var(--tasty-space-md)", background: "var(--tasty-bg-app)", borderRadius: "var(--tasty-radius)" }}>
+                <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>{cap}</span>
+                <window.TastyKit.PermissionNoticeModal scroll="bottom" fda={fda} />
+              </div>
+            ))}
+          </Stage>
+          <Meta
+            specs={[["branches", "never · stale · revoked — FDA paragraph only"], ["stale steps", "ordered list 1–2 · body 13 · text-primary · indent space-xl · gap space-xs"], ["signing aside", "every notice · last · caption 12 · text-muted · command chip unchanged"], ["new strings", "stale step 1 · stale step 2 · stale retry line (split from the old stale paragraph)"]]}
+            tokens={[{ tok: "--tasty-text-muted", use: "signing aside", color: "var(--tasty-text-muted)" }, { tok: "--tasty-font-size-caption", use: "signing aside" }, { tok: "--tasty-space-xl", use: "step list indent" }]} />
+        </Spec>
       </Section>
     </>
   );

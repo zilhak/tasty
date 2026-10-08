@@ -11,6 +11,10 @@ export interface MenuItemProps extends React.HTMLAttributes<HTMLDivElement> {
   danger?: boolean;
   /** Highlighted (keyboard-focused) row. */
   active?: boolean;
+  /** Selected option — the current value of a Select-style list. Text-primary ink + trailing accent check; no fill. */
+  selected?: boolean;
+  /** Wrap the label instead of ellipsising — for fixed copy that is wider than the menu's max width. The row grows past 28px. */
+  wrap?: boolean;
   /** Disabled row. */
   disabled?: boolean;
   /** Render a thin separator instead of a row. */

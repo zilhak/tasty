@@ -24,6 +24,8 @@
 //   §6.6 star toggle is LEADING — a tight 28px column before Port, no header
 //        label. Adds 28px to the min-width budget; the existing horizontal
 //        scroll policy absorbs it.
+// 2026-10-08 — Process floor (--tasty-port-process-col-min-width) via Table minWidth; fixed widths are floors.
+//        Column budget > 660, so the table body scrolls horizontally at the default size (accepted).
 const { Input, Checkbox, Button, IconButton, Tag, Table, StatusDot } = window.TastyDesignSystem_41fd3f;
 const { ic, Icon, Scrim, Spinner } = window.TastyKit;
 
@@ -196,8 +198,8 @@ function PortsWindow({ onClose, onFlash, favorites = FAVS_DEFAULT }) {
       } },
     { key: "port", header: "Port", align: "right", mono: true, sortable: true, width: 84 },
     { key: "proto", header: "Proto", mono: true, width: 76 },
-    { key: "addr", header: "Address", mono: true, sortable: true },
-    { key: "proc", header: "Process", strong: true, sortable: true,
+    { key: "addr", header: "Address", mono: true, sortable: true, width: "var(--tasty-port-addr-col-min-width)" }, // 2026-10-08 (batch 8) — pinned at 140
+    { key: "proc", header: "Process", strong: true, sortable: true, width: "100%", minWidth: "var(--tasty-port-process-col-min-width)", // all spare width
       render: (v, row) => (
         <span style={{ display: "inline-flex", alignItems: "center", gap: 8, minWidth: 0 }}>
           <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{v}</span>

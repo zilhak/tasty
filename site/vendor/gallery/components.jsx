@@ -439,8 +439,30 @@ function Components() {
             </div>
           </Stage>
           <Meta
-            specs={[["height", <>28px <span className="tok">--tasty-control-height</span></>], ["active", <span className="tok">--tasty-surface-active</span>], ["danger", <span className="tok">--tasty-accent-danger</span>]]}
-            tokens={[{ tok: "--tasty-surface-active", use: "highlighted", color: "var(--tasty-surface-active)" }, { tok: "--tasty-accent-danger", use: "destructive", color: "var(--tasty-accent-danger)" }, { tok: "--tasty-text-muted", use: "shortcut", color: "var(--tasty-text-muted)" }]} />
+            specs={[["height", <>28px <span className="tok">--tasty-control-height</span></>], ["label · rest", <span className="tok">--tasty-menu-item-fg</span>], ["label · hover/active", <span className="tok">--tasty-menu-item-fg-hover</span>], ["row pitch", "28 — rows flush, no gap (every menu incl. the … menu)"], ["active", <span className="tok">--tasty-surface-active</span>], ["danger", <span className="tok">--tasty-accent-danger</span>]]}
+            tokens={[{ tok: "--tasty-menu-item-fg", use: "resting label → text-secondary", color: "var(--tasty-menu-item-fg)" }, { tok: "--tasty-menu-item-fg-hover", use: "hover / active label → text-primary", color: "var(--tasty-menu-item-fg-hover)" }, { tok: "--tasty-surface-active", use: "highlighted", color: "var(--tasty-surface-active)" }, { tok: "--tasty-accent-danger", use: "destructive", color: "var(--tasty-accent-danger)" }, { tok: "--tasty-text-muted", use: "shortcut", color: "var(--tasty-text-muted)" }]} />
+          <Note><b>Label colour (2026-10-07).</b> The token is canonical: a resting row reads <code>--tasty-menu-item-fg</code> (text-secondary), hover and keyboard-active lift to <code>--tasty-menu-item-fg-hover</code> (text-primary) on top of the background change. The command palette is a list, not a menu, and keeps its own row colours.</Note>
+          <Note><b>Latte contrast (2026-10-08).</b> <code>--tasty-menu-item-fg</code> now reads the semantic role <code>--tasty-text-secondary-raised</code>: Mocha = neutral-1000 (7.1:1 on surface-raised), Latte = neutral-1100 (5.17:1; neutral-1000 was 4.05:1). In Latte the resting and hover inks are the same; hover still reads by the <code>--tasty-menu-item-bg-hover</code> fill.</Note>
+        </Spec>
+
+        <Spec title="MenuItem — selected option (2026-10-08)"
+          when={<>The current value inside an open <b>Select</b>-style list (settings dropdowns, egui ComboBox). <code>selected</code> = <b>text-primary ink + trailing accent check</b>, <b>no fill</b>. Fills keep their two jobs: pointer hover (<code>--tasty-menu-item-bg-hover</code>) and keyboard-active (<code>--tasty-surface-active</code>), so a selected row under the pointer shows both. The egui default selection fill (accent-blue block) is not used.</>}>
+          <Stage variant="solo" style={{ padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-app)", gap: "var(--tasty-space-lg)", flexWrap: "wrap", alignItems: "flex-start" }}>
+            {[["Mocha", null], ["Latte", "latte"]].map(([label, attr]) => (
+              <div key={label} data-theme={attr || undefined} style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-sm)", padding: "var(--tasty-space-md)", background: "var(--tasty-bg-panel)", borderRadius: "var(--tasty-radius)" }}>
+                <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>{label} — rest · selected · rest · keyboard-active</span>
+                <div role="menu" style={{ width: "var(--tasty-field-width-lg)", background: "var(--tasty-menu-bg)", border: "var(--tasty-border-width) solid var(--tasty-menu-border)", borderRadius: "var(--tasty-menu-radius)", padding: "var(--tasty-space-xs)", boxShadow: "var(--tasty-shadow-popover)" }}>
+                  <MenuItem label="Ask" />
+                  <MenuItem label="Minimize to background" selected />
+                  <MenuItem label="Quit" />
+                  <MenuItem label="Quit and save layout" active />
+                </div>
+              </div>
+            ))}
+          </Stage>
+          <Meta
+            specs={[["selected ink", <span className="tok">--tasty-menu-item-selected-fg</span>], ["check", <><span className="ic">check</span> icon · <span className="tok">--tasty-menu-item-check-size</span> 14 · <span className="tok">--tasty-menu-item-check-fg</span> accent-primary · trailing, after any shortcut</>], ["fill", "none — hover / keyboard fills only"], ["a11y", <>role menuitemradio · aria-checked</>]]}
+            tokens={[{ tok: "--tasty-menu-item-selected-fg", use: "selected label → text-primary", color: "var(--tasty-menu-item-selected-fg)" }, { tok: "--tasty-menu-item-check-fg", use: "check glyph", color: "var(--tasty-menu-item-check-fg)" }, { tok: "--tasty-text-secondary-raised", use: "resting label role (Latte → n1100)", color: "var(--tasty-text-secondary-raised)" }]} />
         </Spec>
       </Section>
 

@@ -347,6 +347,9 @@ for (const name of readdirSync(join(vendor, "gallery")).sort()) {
     }
     return "";
   });
+  // `window.TastyKit && window.TastyKit.X` — a load-order guard; the import resolves it.
+  src = src.replace(/window\.TastyKit\s*&&\s*window\.TastyKit\.([A-Za-z_$][\w$]*)/g, (all, sym) =>
+    addKit(sym, sym) ? sym : all);
   src = src.replace(/(<\/?)window\.TastyKit\.([A-Za-z_$][\w$]*)/g, (all, lt, sym) =>
     addKit(sym, sym) ? `${lt}${sym}` : all);
 

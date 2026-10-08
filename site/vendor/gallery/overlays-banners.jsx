@@ -187,7 +187,7 @@ function Page() {
           <Note>While the menu is open the banner is treated as <b>hover-equivalent</b> — a TTL banner would keep its countdown paused, and the affordance column stays drawn even if the pointer has left the card.</Note>
         </Spec>
         <Spec title="Elastic width — the interpolated program name"
-          when={<>Every row interpolates a program name of arbitrary length, and word order differs by locale (en: name last; ko/ja: name first). So a row's label is <b>two parts</b>: the <b>fixed text</b> (never truncates) and the <b>program name</b> in <b>mono / text-primary</b>, which is the part that <b>shrinks and ellipsises</b>. The menu grows with the content between <b>200px</b> and <b>288px</b> — the fixed Tools-menu 160px is too narrow for these strings — and the full name is available as the row's tooltip.</>}>
+          when={<>Every row interpolates a program name of arbitrary length, and word order differs by locale (en: name last; ko/ja: name first). So a row's label is <b>two parts</b>: the <b>fixed text</b> (never truncates) and the <b>program name</b> in <b>mono</b> (same row ink as the fixed text: text-secondary at rest, text-primary on hover — 2026-10-08), which is the part that <b>shrinks and ellipsises</b>. The menu grows with the content between <b>200px</b> and <b>288px</b> (a wider band than the Tools menu's 160–240, since every row carries a program name) and the full name is available as the row's tooltip.</>}>
           <Stage variant="solo center" style={{ padding: 20, background: "var(--tasty-bg-app)", gap: 18, alignItems: "flex-start", flexWrap: "wrap" }}>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               <div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>short name — content-sized (the vim row already passes the 200 floor)</div>
@@ -202,14 +202,18 @@ function Page() {
               <BannerMoreMenuG app="some-very-long-tool-name" />
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>ja — fixed copy alone exceeds 288: that row wraps, menu stays 288 (2026-10-08)</div>
+              <BannerMoreMenuG app="vim" hovered={1} wrapRows={[1]} texts={["vim の通知をオフにする ", "このプログラムのマウスキャプチャを常に無効にする "]} />
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               <div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>rejected — danger tone on the capture row</div>
               <div style={{ opacity: 0.75 }}><BannerMoreMenuG app="vim" danger /></div>
             </div>
           </Stage>
           <Meta
-            specs={[["label", "fixed text + app name (2 spans)"], ["truncates", "the app name only"], ["app name", <>mono · <span className="tok">--tasty-text-primary</span></>], ["width", "content-sized, 200 ≤ w ≤ 288"], ["wrap", "never — 1 line per row"], ["tooltip", "full program name on the row"], ["tone", "both rows neutral (no danger)"]]}
-            tokens={[{ tok: "--tasty-banner-more-app-font", use: "mono program name" }, { tok: "--tasty-banner-more-app-fg", use: "program name tone", color: "var(--tasty-banner-more-app-fg)" }, { tok: "--tasty-menu-item-height", use: "28px rows" }, { tok: "--tasty-accent-danger", use: "rejected variant only", color: "var(--tasty-accent-danger)" }]} />
-          <Do><b>Do</b> keep the program name as the emphasised, mono part of the row — it is the one thing the user must verify before writing a permanent per-app setting, and mono marks it as a process name rather than prose.</Do>
+            specs={[["label", "fixed text + app name (2 spans)"], ["truncates", "the app name only"], ["app name", <>mono · row ink (<span className="tok">--tasty-banner-more-app-fg</span> → menu-item-fg / -fg-hover)</>], ["width", "content-sized, 200 ≤ w ≤ 288 — never widens past 288"], ["wrap", <>only when the FIXED copy + 1 name glyph does not fit: whole label wraps, row grows (min 28, pad-y <span className="tok">--tasty-menu-item-wrap-padding-y</span>); the fixed copy never ellipsises</>], ["tooltip", "full program name on the row"], ["tone", "both rows neutral (no danger)"]]}
+            tokens={[{ tok: "--tasty-banner-more-app-font", use: "mono program name" }, { tok: "--tasty-banner-more-app-fg", use: "program name = row ink", color: "var(--tasty-banner-more-app-fg)" }, { tok: "--tasty-banner-more-app-fg-hover", use: "hover", color: "var(--tasty-banner-more-app-fg-hover)" }, { tok: "--tasty-menu-item-height", use: "28px rows" }, { tok: "--tasty-accent-danger", use: "rejected variant only", color: "var(--tasty-accent-danger)" }]} />
+          <Do><b>Do</b> keep the program name as the mono part of the row — it is the one thing the user must verify before writing a permanent per-app setting, and mono marks it as a process name rather than prose.</Do>
           <Dont><b>Don't</b> paint the “Disable mouse capture” row in <b>danger</b> tone (last card above, shown for the record). Nothing is destroyed and nothing is lost: the setting is reversible from Settings › Terminal, and it <i>returns</i> the mouse to tasty. Danger in this system means delete — spending it here would make the two rows look like different classes of action when they are the same class at two strengths.</Dont>
         </Spec>
       </Section>

@@ -120,7 +120,7 @@ export function Table({
               <th
                 key={c.key}
                 className={thCls}
-                style={c.width ? { width: c.width } : undefined}
+                style={c.width || c.minWidth ? { width: c.width, minWidth: c.minWidth ?? c.width } : undefined}
                 onClick={c.sortable && onSort ? () => onSort(c.key) : undefined}
               >
                 {c.header}
