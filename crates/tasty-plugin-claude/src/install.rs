@@ -732,7 +732,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let log = dir.path().join("calls.log");
         let fake = dir.path().join("tasty");
-        std::fs::write(
+        tasty_test_support::write_executable(
             &fake,
             format!(
                 "#!/bin/sh\n{{ echo \"$*\"; cat; echo; }} >> '{}'\n",
@@ -740,8 +740,6 @@ mod tests {
             ),
         )
         .unwrap();
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
         let path = format!(
             "{}:{}",
             dir.path().display(),

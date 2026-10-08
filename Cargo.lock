@@ -6118,7 +6118,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-claude"
-version = "0.1.191"
+version = "0.1.192"
 dependencies = [
  "anyhow",
  "directories",
@@ -6127,6 +6127,7 @@ dependencies = [
  "shell-escape",
  "tasty-plugin-agent-common",
  "tasty-plugin-sdk",
+ "tasty-test-support",
  "tasty-utils",
  "tempfile",
  "tracing",
