@@ -64,6 +64,7 @@ Claude Design의 `tokens/semantic.css`·`tokens/primitives.css`와 Tasty Theme�
 | toolbar-height | 32 | `toolbar_height` — 뷰 상단 도구 막대 높이(배율 적용). component `git-toolbar-height` 가 이 role 의 alias 다 |
 | git-toolbar-height | 32 | `git_toolbar_height()` — git viewer diff 툴바. **`control-height`(28) 아님**(컨테이너 role) |
 | port-process-col-min-width | 200 | `port_process_col_min_width()` — port scanner Process 컬럼 **최소폭** |
+| port-addr-col-min-width | 140 | `port_addr_col_min_width()` — port scanner Address 컬럼 폭(하한 = 폭, 늘지 않음) |
 | radius / radius-sm | 4 / 2 | `corner_radius` / `corner_radius_sm` |
 | border-width | 1 (항상) | `border_width` |
 

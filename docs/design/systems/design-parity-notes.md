@@ -74,7 +74,7 @@ sizer가 있는 팝업은 등록 시 default_size에 UI 배율을 곱하지 않�
 
 ## port_scanner — 열 최소폭과 가로 스크롤
 
-본문 테이블이 팝업보다 넓어져도 footer가 밀려나서는 안 된다. 열별 최소폭과 가변 여부는 공용 `PortsColumn`(`crates/tasty-ui-widgets/src/ports_table.rs`)이 정한다. 가변 열(Address·Process)은 공용 Table 의 `TableColumnWidth::Flex`로 넘기고, Table 이 남은 폭을 가변 열에 똑같이 나눈다. 최소폭 합이 본문보다 크면 `Table::horizontal_scroll(true)`로 본문만 가로 스크롤한다. 시안 Table 의 열 옵션 `minWidth`(고정 열은 `width`가 곧 하한)를 옮긴 것이다.
+본문 테이블이 팝업보다 넓어져도 footer가 밀려나서는 안 된다. 열별 최소폭과 가변 여부는 공용 `PortsColumn`(`crates/tasty-ui-widgets/src/ports_table.rs`)이 정한다. 가변 열은 Process 하나이며 공용 Table 의 `TableColumnWidth::Flex`로 넘겨 남은 폭을 모두 받는다. Address 는 `port-addr-col-min-width` 폭에 고정된다. 최소폭 합이 본문보다 크면 `Table::horizontal_scroll(true)`로 본문만 가로 스크롤한다. 시안 Table 의 열 옵션 `minWidth`(고정 열은 `width`가 곧 하한)를 옮긴 것이다.
 
 footer는 팝업 전체폭 사각형에 고정하고 sticky 헤더는 스크롤 콘텐츠와 수평으로 함께 이동한다. 과거의 최소폭 제거·무조건 말줄임 방식은 현재 규칙이 아니다. 열별 값은 `ports_table.rs`, 배치는 `src/adapters/ui/popup/port_scanner.rs`를 따른다.
 

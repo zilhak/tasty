@@ -953,10 +953,11 @@ General L1 에 5번째 L2 서브탭 "Remote transfer" 추가 — 원격 mirror �
 디자인 `ui_kits/terminal/overlays/port_scanner.jsx` `PortsWindow` + `gallery/overlays-shared.jsx` `PORTS_COLUMNS`·`PortsFrame` + `gallery/overlays-windows.jsx` Listening ports Section ↔ 갤러리 `catalog/components/port_scanner.rs`(`draw`·`draw_process_column`) ↔ 본체 `src/adapters/ui/popup/port_scanner.rs`의 `draw_table`.
 
 - 시안의 `PORTS_COLUMNS`처럼 본체와 갤러리가 같은 열 정의를 쓴다. 갤러리는 본체에 의존하지 않으므로 정의는 `tasty-ui-widgets`의 `PortsColumn`·`ports_table`·`ports_process_cell`에 있다. 본체 `ColumnId`는 열 선택 상태와 정렬 키를 맡고 `ColumnId::shared`로 이 정의를 찾는다.
-- 열 폭은 본체 값이다(Port 84 · Proto 76 · Address 140 · Process `port-process-col-min-width` · Workspace 120 · Tab 80 · State 140). 시안 갤러리 세트(72·64·104·132, Tab 없음)와 시안 popup 세트(84·76·120·140, Tab 포함)가 다르며, 회신은 앱 갤러리가 popup 정의를 미러하도록 정했다.
+- 열 폭은 본체 값이다(Port 84 · Proto 76 · Address `port-addr-col-min-width` · Process `port-process-col-min-width` · Workspace 120 · Tab 80 · State 140). 시안 갤러리 세트(72·64·104·132, Tab 없음)와 시안 popup 세트(84·76·120·140, Tab 포함)가 다르며, 회신은 앱 갤러리가 popup 정의를 미러하도록 정했다.
 - Process 열은 시안 Table 의 `minWidth` 대응인 `TableColumnWidth::Flex`로 하한을 가진다. 고정 열은 폭이 곧 하한이다. 하한 합보다 좁으면 본문이 가로 스크롤하고 열을 숨기거나 줄이지 않는다. Process 이름은 말줄임하고 PID Tag 는 유지한다.
-- `Process column` 예제는 시안처럼 공용 Table 로 860·660 두 폭을 그린다. 열은 시안 세트와 같은 별 · Port · Proto · Address · Process · Workspace · State(Tab 숨김)다. 캡션의 열 예산은 공용 정의에서 계산한 값이다. 시안의 예제 전용 숫자(머리줄 24 · 행 26 · mono 11 · PID 열)는 없다. 두 예제 사이와 캡션 아래 간격은 갤러리 Column stage·cluster 간격을 쓴다.
-- 남는 폭 분배: 시안 캡션은 860에서 "Process takes the spare width"라고 쓰지만 시안 열 정의는 Address·Process 둘 다 가변이다. 본체와 갤러리는 남는 폭을 두 열에 똑같이 나누고, 갤러리 캡션도 그렇게 적는다.
+- `Process column` 예제는 시안처럼 공용 Table 로 860·660 두 폭을 그린다. 열은 시안 세트와 같은 별 · Port · Proto · Address · Process · Workspace · State(Tab 숨김)다. 캡션의 열 예산은 공용 정의에서 계산한 값이다. 시안의 예제 전용 숫자(머리줄 24 · 행 26 · mono 11 · PID 열)는 없다. 두 예제 사이는 `space-lg`(갤러리 Column stage 간격), 캡션 아래는 `space-sm`(cluster 간격)이며 시안도 같은 토큰을 쓴다.
+- 남는 폭은 모두 Process 가 받는다. Address 는 `port-addr-col-min-width` 에 고정돼 늘지 않는다(시안 Address `width` = 이 토큰, Process `width: 100%` + `minWidth`). 갤러리 860 캡션과 Meta(Address · spare width · stage gaps 행, Address 토큰 칩)도 시안과 같다.
+- 반영 상태: batch 7(Table 기반 specimen)과 batch 8(남는 폭·Address 토큰·stage 간격) 회신이 갤러리와 본체에 모두 반영됐다.
 
 <a id="file-picker-overlays--gallery-first-반영-완료-본체-배선됨"></a>
 
