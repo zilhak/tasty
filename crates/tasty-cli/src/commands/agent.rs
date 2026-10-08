@@ -208,8 +208,10 @@ pub enum AgentCommands {
     /// The host restores saved state at startup but leaves runners stopped.
     ///
     /// Stopping a runner stops completion checks, not its dispatched processes.
-    /// Their tasks remain Running. Starting again restores handles and checks
-    /// whether processes are alive or have a saved exit result.
+    /// Their tasks remain Running. The exception is a running postprocess: it is
+    /// ended and recorded as cancelled, and its task fails when the runner starts
+    /// again. Starting again restores handles and checks whether processes are
+    /// alive or have a saved exit result.
     TaskRun {
         /// Workspace id whose runner is being controlled (focus-independent — required).
         #[arg(long)]
