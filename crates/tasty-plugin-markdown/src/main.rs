@@ -87,6 +87,15 @@ const MIRROR_CHANGED_EVENT: &str = "markdown_mirror.changed";
 /// 않는다(attach 연결이 끊겨 회신이 영영 안 올 때 보낸다).
 const MIRROR_ABANDON_REQUEST_ID: u64 = 0;
 
+/// `markdown.reload`의 대상 surface ID.
+fn reload_surface_param(params: &Value) -> Result<u32, IpcMethodError> {
+    params
+        .get("surface")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32)
+        .ok_or_else(|| IpcMethodError::invalid_params("missing 'surface'"))
+}
+
 /// Surface별 문서 내용, 읽기 결과와 상대경로 기준 디렉터리.
 /// 다시 읽을 시점은 SDK의 파일 감시가 결정한다.
 struct MdDoc {
@@ -397,6 +406,11 @@ impl Plugin for MarkdownPlugin {
 
     fn handle_ipc_method(&mut self, ctx: IpcMethodCtx) -> Result<Value, IpcMethodError> {
         match ctx.method.as_str() {
+            // 파일 감시는 같은 메서드를 자기 호출한다. 닫힌 문서를 가리키는 감시 요청은
+            // surface 해제와 엇갈린 것이므로 오류 대신 무시한다.
+            "markdown.reload" if ctx.caller_plugin_id.as_deref() == Some(PLUGIN_ID) => {
+                self.watch_reload(&ctx.params)
+            }
             "markdown.reload" => self.markdown_reload(&ctx.params),
             // 이 네임스페이스의 외부 요청은 플러그인에 먼저 오므로 호스트 구현에 다시 전달한다.
             "markdown.navigate" => Ok(ctx
@@ -596,25 +610,30 @@ impl MarkdownPlugin {
         }
     }
 
+    /// 파일 감시의 자기 호출. 닫힌 surface면 아무것도 하지 않는다.
+    fn watch_reload(&mut self, params: &Value) -> Result<Value, IpcMethodError> {
+        let surface_id = reload_surface_param(params)?;
+        if !self.docs.contains_key(&surface_id) {
+            return Ok(json!({ "ok": true, "surface_id": surface_id }));
+        }
+        self.markdown_reload(params)
+    }
+
     fn markdown_reload(&mut self, params: &Value) -> Result<Value, IpcMethodError> {
-        let surface_id = params
-            .get("surface")
-            .and_then(|v| v.as_u64())
-            .ok_or_else(|| IpcMethodError::invalid_params("missing 'surface'"))?
-            as u32;
+        let surface_id = reload_surface_param(params)?;
+        // 이 plugin이 연 문서가 아니면 성공으로 답하지 않는다. 오타 ID를 성공으로 오인하게 된다.
+        let Some(doc) = self.docs.get_mut(&surface_id) else {
+            return Err(IpcMethodError::invalid_params(&format!(
+                "Surface {surface_id} is not a markdown surface"
+            )));
+        };
         // 원격 문서는 파일 감시에 등록하지 않는다. 이 IPC에서 시작한 원문 조회에는
         // 에이전트 출처를 표시해 사용자 토스트를 띄우지 않도록 한다.
-        if self
-            .docs
-            .get(&surface_id)
-            .is_some_and(|d| d.remote.is_some())
-        {
+        if doc.remote.is_some() {
             self.request_remote_content(surface_id, RemoteRequester::Agent);
             return Ok(json!({ "ok": true, "surface_id": surface_id }));
         }
-        if let Some(doc) = self.docs.get_mut(&surface_id) {
-            doc.force_reload();
-        }
+        doc.force_reload();
         self.reload_webview(surface_id);
         Ok(json!({ "ok": true, "surface_id": surface_id }))
     }

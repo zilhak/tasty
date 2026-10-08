@@ -24,7 +24,7 @@
   - **표(GFM)**: 실제 `<table>`/`<th>`/`<td>` — header 밴드·zebra(`tr:nth-child(even)`)·셀 패딩 전부 CSS 로 직접 달성(egui `Grid` 우회 불필요).
   - **코드블록**: `sanitize_fence_lang`은 언어 태그를 `[A-Za-z0-9_+-]`로 정리하고 `code`의 class를 유지한다. `render_document`는 생성한 본문 HTML에 `class="language-`가 있으면 highlight.js를, `language-mermaid`가 있으면 mermaid.js를 넣는다. 문자열 포함 검사이므로 실제 코드 블록 외의 본문도 이 조건에 걸릴 수 있다. 실행 스크립트가 코드 요소를 선택해 처리하며, Mermaid는 `code.language-mermaid`를 대상으로 한다. 실패는 console error로 기록한다. 모든 OS·오프라인 환경에서 실행을 확인한 것은 아니다.
 - **sanitize (XSS 방어의 1차 관문)** — `ammonia::Builder` 최소 화이트리스트: `<script>`/이벤트 핸들러 속성(`onerror=` 등)/`javascript:` scheme href 전부 stripped. `classify_link` 도 별도로 `javascript:` 를 판정 불가(`None`)로 취급해 이중 방어. GFM 렌더에 필요한 태그(`table`/체크박스 `input[type=checkbox]`/`del`/footnote `sup`/`div`/이미지/링크)만 허용 — 코드는 `crates/tasty-plugin-markdown/src/render.rs::sanitize_html` 이 정본.
-- **리로드·삭제 처리**: 명시적 `markdown.reload`와 파일 감시 요청은 같은 플러그인 워커에서 처리한다. 로컬 파일을 다시 읽고 HTML을 만들며 읽기에 실패하면 `markdown.state.failed`를 표시한다. 파일이 다시 생긴 것을 감지하면 다시 읽는다. 워커의 직렬 처리가 파일 시스템의 동시 변경까지 막는 것은 아니다.
+- **리로드·삭제 처리**: 명시적 `markdown.reload`와 파일 감시 요청은 같은 플러그인 워커에서 처리한다. 로컬 파일을 다시 읽고 HTML을 만들며 읽기에 실패하면 `markdown.state.failed`를 표시한다. 파일이 다시 생긴 것을 감지하면 다시 읽는다. 워커의 직렬 처리가 파일 시스템의 동시 변경까지 막는 것은 아니다. 명시적 `markdown.reload`가 이 플러그인이 연 문서가 아닌 surface ID를 가리키면 invalid params(`Surface <id> is not a markdown surface`)로 거절한다. 감시의 자기 호출은 surface 해제와 엇갈릴 수 있으므로 닫힌 surface를 가리키면 오류 없이 무시한다.
 - **입력 없는 자동 갱신**: 별도 스레드가 SDK의 `file_watch`를 사용한다([플러그인 개발 가이드](../../dev-guide/plugin-development.md)). 검사 사이의 대기는 `RELOAD_CHECK_INTERVAL_SECS`(1초)이며 조회·읽기 시간을 포함한 전체 갱신 상한은 아니다. 감시에서도 파일을 읽어 내용 해시를 비교하고, 바뀌면 `self_invoke`로 워커의 `markdown.reload`를 요청한다. 자기 namespace를 `host.call`로 부르면 호스트 구현으로 전달되므로 플러그인 내부 호출에는 사용하지 않는다.
 - **콘텐츠 전달** — surface 생성 시 host 가 `surface.create{file}` 를 plugin 에 보낸다. plugin 이 파일을 직접 읽는다(`fs.read`).
 - **Theme parity** — webview-kind surface 는 Theme 이 자동으로 push 되지 않으므로(egui-mesh 의 `set_context.theme` 와 달리), plugin 이 문서를 (재)생성할 때마다 host 의 read-only **`theme.query`** IPC 로 현재 색+`is_light`+UI zoom 을 직접 조회한다. 이후 테마 ID·기본 색·색 override·라이트 여부·UI 배율 중 하나라도 바뀌면 host 가 발행하는 **`theme.changed`** 이벤트(매니페스트 `event_subscribe`)를 구독해 열려 있는 모든 markdown 문서를 재생성한다. 색 override 나 UI 배율만 바뀐 경우에도 이벤트가 오므로, 문서는 다음 재생성을 기다리지 않고 바로 새 색과 zoom 을 따른다. host 는 새 설정의 전역 Theme 를 설치한 뒤에 `theme.changed` 를 발행하므로, 수신 후 호출한 `theme.query` 는 새 테마를 반환한다. `src/app/dispatch_domain/theme_order.rs` 의 시험은 테마를 여러 번 왕복하며 `install_theme_then` 이 설치를 마친 뒤에 발행 클로저를 실행하는지 확인한다. 소스 가드 `src/source_guards/theme_changed_after_install.rs` 는 본체 `src/` 의 `"theme.changed"` 리터럴이 모두 `announce_settings_change` 안에 있고, 그 호출이 모두 `install_theme_then` 의 클로저 인자 안에 있는지, 발행이 `if appearance_changed {` 블록 안에 있는지 텍스트로 확인한다. 어떤 변경이 발행 대상인지는 같은 파일의 `appearance_changed` 시험이 확인한다. 가드는 클로저를 변수로 받아 넘기는 형태, 상수나 매크로로 키를 감춘 발행, `crates/` 의 발행, 클로저 안의 실제 실행 여부는 판정하지 않는다.
@@ -104,6 +104,7 @@
 - Given markdown 플러그인 활성 When 마크다운 파일 열기 Then markdown surface 로 렌더된다.
 - Given `tasty new tab --type markdown --file <f>` Then 그 파일이 렌더된다.
 - Given `tasty list surfaces` Then 해당 surface 가 `kind:"markdown"` 으로 보고된다.
+- Given markdown surface가 아닌 ID When `tasty markdown reload --surface <ID>` Then invalid params 오류로 끝나고 성공으로 답하지 않는다.
 
 ## 화면
 

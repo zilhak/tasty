@@ -1,13 +1,41 @@
 use super::*;
 
 #[test]
-fn reload_with_surface_id_returns_ok() {
+fn reload_of_an_open_document_returns_ok() {
     let mut p = MarkdownPlugin::new(Translator::default());
+    p.docs.insert(42, MdDoc::new(None));
     let resp = p
         .markdown_reload(&json!({ "surface": 42 }))
         .expect("reload should succeed");
     assert_eq!(resp["ok"], json!(true));
     assert_eq!(resp["surface_id"], json!(42));
+}
+
+/// 이 plugin이 모르는 surface ID는 성공으로 답하지 않는다.
+#[test]
+fn reload_of_an_unknown_surface_is_invalid_params() {
+    let mut p = MarkdownPlugin::new(Translator::default());
+    let err = p
+        .markdown_reload(&json!({ "surface": 42 }))
+        .expect_err("unknown surface must be rejected");
+    assert_eq!(err.code, -32602);
+    assert!(err.message.contains("42"), "{}", err.message);
+    assert!(
+        err.message.contains("not a markdown surface"),
+        "{}",
+        err.message
+    );
+}
+
+/// 감시의 자기 호출은 surface 해제와 엇갈릴 수 있어 닫힌 surface를 오류로 다루지 않는다.
+#[test]
+fn watch_reload_of_a_closed_surface_is_ignored() {
+    let mut p = MarkdownPlugin::new(Translator::default());
+    let resp = p
+        .watch_reload(&json!({ "surface": 42 }))
+        .expect("closed surface must not fail the watch request");
+    assert_eq!(resp["ok"], json!(true));
+    assert!(p.docs.is_empty());
 }
 
 #[test]
