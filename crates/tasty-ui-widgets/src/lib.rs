@@ -49,6 +49,7 @@ mod popup_title;
 mod ports_table;
 mod remote_tool;
 mod resize_grip;
+mod script_confirm;
 mod script_trigger;
 mod segmented;
 mod select;
@@ -178,6 +179,7 @@ pub use remote_tool::{
     selectable_text, warn_badge, warn_badge_width,
 };
 pub use resize_grip::{modhint_resize_grip, resize_grip_segments};
+pub use script_confirm::{ScriptConfirmOutput, ScriptConfirmView, script_confirm};
 pub use script_trigger::{
     script_trigger_add_control, script_trigger_menu, script_trigger_menu_frame,
 };

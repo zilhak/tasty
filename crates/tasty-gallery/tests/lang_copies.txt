@@ -505,9 +505,6 @@ src/catalog/components/remote_attach/rows.rs	in use	remote_attach.in_use
 src/catalog/components/remote_attach/rows.rs	inactive	remote_attach.inactive,remote_tool.attach_inactive
 src/catalog/components/rename_popup.rs	Cancel	button.cancel,image_viewer.cancel,preset.popup.cancel_button,quit_modal.cancel_button,remote_attach.cancel,remote_tool.cancel,transfer.progress.cancel
 src/catalog/components/rename_popup.rs	Rename	context_menu.rename_title,explorer.context_menu.rename,explorer.popup.rename.rename,explorer.popup.rename.title,preset.toolbar.rename
-src/catalog/components/script_confirm.rs	Cancel	button.cancel,image_viewer.cancel,preset.popup.cancel_button,quit_modal.cancel_button,remote_attach.cancel,remote_tool.cancel,transfer.progress.cancel
-src/catalog/components/script_confirm.rs	Run anyway	script.confirm.run
-src/catalog/components/script_confirm.rs	changed	script.confirm.changed_tag,settings.scripts.changed_badge
 src/catalog/components/script_manager.rs	Add script	settings.scripts.add
 src/catalog/components/script_manager.rs	Add trigger…	settings.scripts.trigger_add
 src/catalog/components/script_manager.rs	Auto-run:	settings.scripts.autorun_label

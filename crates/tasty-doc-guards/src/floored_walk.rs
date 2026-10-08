@@ -112,11 +112,11 @@ pub mod populations {
 
     /// 크레이트들의 통합 테스트 타깃 — `crates/<크레이트>/tests/` 바로 아래 한 겹.
     pub const CRATE_TEST_TARGETS: Population = Population {
-        measured: 141,
-        measured_on: "2026-10-08",
+        measured: 142,
+        measured_on: "2026-10-09",
         counted_on: super::CountedOn::Tree(
-            "8b71d6256 위 작업 트리 — crates/<crate>/tests/<file>.rs 140개에 tasty-doc-guards의 \
-             ci_job_timeouts_match_the_guide 통합 테스트를 더해 141개를 확인했다.",
+            "66334f329 위 작업 트리 — crates/<crate>/tests/<file>.rs 141개에 tasty-ui-widgets의 \
+             script_confirm_width 통합 테스트를 더해 142개를 확인했다.",
         ),
         how: "crates/<크레이트>/tests/<파일>.rs 형태의 네 구성요소 경로만 센다. 세 번째 요소가 tests이며 파일명이 .rs로 끝나야 한다.",
     };

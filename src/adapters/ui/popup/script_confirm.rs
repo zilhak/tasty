@@ -7,7 +7,7 @@ use crate::state::MainViewState;
 use crate::theme;
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::{Button, ButtonVariant, TagVariant, tag};
+use tasty_ui_widgets::{ScriptConfirmView, script_confirm};
 
 /// Pure view 의 입력. MainViewState/CoreState 를 알지 못한다.
 pub struct ScriptConfirmProps<'a> {
@@ -39,66 +39,25 @@ pub fn draw_script_confirm_view(
         return ScriptConfirmAction::Close;
     }
 
-    let mut action = ScriptConfirmAction::None;
-
-    ui.spacing_mut().item_spacing.y = th.spacing_sm.value();
-
-    ui.label(
-        egui::RichText::new(t("script.confirm.title"))
-            .size(th.font_size_body.value())
-            .strong()
-            .color(th.text_primary().to_egui()),
+    let out = script_confirm(
+        ui,
+        th,
+        &ScriptConfirmView {
+            title: t("script.confirm.title"),
+            name: props.name,
+            changed_tag: t("script.confirm.changed_tag"),
+            body: t("script.confirm.body"),
+            run: t("script.confirm.run"),
+            cancel: t("button.cancel"),
+        },
     );
-
-    ui.add(
-        egui::Label::new(
-            egui::RichText::new(props.name)
-                .size(th.font_size_caption.value())
-                .family(egui::FontFamily::Monospace)
-                .color(th.text_muted().to_egui()),
-        )
-        .truncate(),
-    );
-
-    // 본문은 popup 폭 안에서 줄바꿈한다. 한 줄로 두면 긴 번역이 폭을 넘어 버튼까지 밀려 잘린다.
-    ui.horizontal_wrapped(|ui| {
-        ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
-        tag(
-            ui,
-            th,
-            t("script.confirm.changed_tag"),
-            TagVariant::Warning,
-            false,
-        );
-        ui.label(
-            egui::RichText::new(t("script.confirm.body"))
-                .size(th.font_size_caption.value())
-                .color(th.text_secondary().to_egui()),
-        );
-    });
-
-    ui.add_space(th.spacing_xs.value());
-
-    ui.horizontal(|ui| {
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if Button::new(t("script.confirm.run"))
-                .variant(ButtonVariant::Primary)
-                .show(ui, th)
-                .clicked()
-            {
-                action = ScriptConfirmAction::Run;
-            }
-            if Button::new(t("button.cancel"))
-                .variant(ButtonVariant::Ghost)
-                .show(ui, th)
-                .clicked()
-            {
-                action = ScriptConfirmAction::Cancel;
-            }
-        });
-    });
-
-    action
+    if out.run {
+        ScriptConfirmAction::Run
+    } else if out.cancel {
+        ScriptConfirmAction::Cancel
+    } else {
+        ScriptConfirmAction::None
+    }
 }
 
 /// 결정 없이 닫혔으면 보류 요청을 정리한다. 실행 결정은 다음 프레임에서 읽으므로 지우지 않는다.

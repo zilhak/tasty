@@ -1,9 +1,11 @@
 //! 등록 후 내용이 바뀐 Lua 스크립트의 실행 확인 예제.
-//! 본체 뷰를 직접 호출하지 않고 같은 순서와 Theme 값으로 그린다.
+//! 콘텐츠는 본체 popup 과 같은 `tasty_ui_widgets::script_confirm` 이 그린다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::{Button, ButtonVariant, TagVariant, tag};
+use tasty_ui_widgets::{ScriptConfirmView, script_confirm};
+
+use crate::i18n::t;
 
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::catalog::widgets::dialog as kit;
@@ -14,49 +16,18 @@ const POPUP_WIDTH: LogicalPx = LogicalPx(360.0);
 fn card(ui: &mut egui::Ui, theme: &Theme, name: &str) {
     kit::frame_card(ui, theme, POPUP_WIDTH, kit::panel_fill(theme), |ui| {
         kit::region_sym(ui, theme.spacing_md, theme.spacing_md, |ui| {
-            ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
-
-            // 본체 제목은 kit::title과 다른 font_size_body를 사용한다.
-            ui.label(
-                egui::RichText::new(crate::i18n::t("script.confirm.title"))
-                    .size(theme.font_size_body.value())
-                    .strong()
-                    .color(theme.text_primary().to_egui()),
+            script_confirm(
+                ui,
+                theme,
+                &ScriptConfirmView {
+                    title: t("script.confirm.title"),
+                    name,
+                    changed_tag: t("script.confirm.changed_tag"),
+                    body: t("script.confirm.body"),
+                    run: t("script.confirm.run"),
+                    cancel: t("button.cancel"),
+                },
             );
-
-            ui.add(
-                egui::Label::new(
-                    egui::RichText::new(name)
-                        .size(theme.font_size_caption.value())
-                        .family(egui::FontFamily::Monospace)
-                        .color(theme.text_muted().to_egui()),
-                )
-                .truncate(),
-            );
-
-            // 본체와 같이 본문은 카드 폭 안에서 줄바꿈한다.
-            ui.horizontal_wrapped(|ui| {
-                ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-                tag(ui, theme, "changed", TagVariant::Warning, false);
-                ui.label(
-                    egui::RichText::new(crate::i18n::t("script.confirm.body"))
-                        .size(theme.font_size_caption.value())
-                        .color(theme.text_secondary().to_egui()),
-                );
-            });
-
-            ui.add_space(theme.spacing_xs.value());
-
-            ui.horizontal(|ui| {
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    Button::new("Run anyway")
-                        .variant(ButtonVariant::Primary)
-                        .show(ui, theme);
-                    Button::new("Cancel")
-                        .variant(ButtonVariant::Ghost)
-                        .show(ui, theme);
-                });
-            });
         });
     });
 }
