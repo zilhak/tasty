@@ -821,6 +821,42 @@ mod tests {
         assert!(observe(&completion).exit.is_some());
     }
 
+    /// SIGHUP 을 무시하는 자식은 유예 뒤 SIGKILL 로 끝내고 회수한다. 마스터를 닫을 때 커널이 보내는
+    /// SIGHUP 도 무시하므로, 이 경로가 없으면 자식은 `sleep 60` 을 마치고 스스로 정상 종료한다.
+    /// 그래서 짧은 기한 없이 종료 결과로 판정하고, 회수 결과가 기록되지 않는 결함만 120초 상한으로 잡는다.
+    #[test]
+    fn retiring_a_child_that_ignores_hangup_kills_and_reaps_it() {
+        // 무시한 신호는 exec 뒤에도 무시된 채 남는다. 표지를 본 뒤에 retire 해야 trap 이 걸린 상태다.
+        let (mut pty, reader, _sink) =
+            spawn_sh(&["-c", "trap '' HUP; printf hup-ignored; exec sleep 60"]);
+        let rec = Recorder::default();
+        pty.start_reader(reader, rec.clone()).expect("reader start");
+        wait_until("hangup trap installed", || {
+            String::from_utf8_lossy(&rec.bytes.lock().expect("recorder")).contains("hup-ignored")
+        });
+        let retired = pty.retire();
+        // 상한은 자식의 `sleep 60` 보다 길다. 최종 kill 이 빠지면 자식이 먼저 끝나 아래 단언이 잡고,
+        // 회수 결과가 기록되지 않으면 이 상한이 잡는다. 유예(200ms)와 거리가 멀어 부하로 넘지 않는다.
+        let limit = Instant::now() + Duration::from_secs(120);
+        while !matches!(
+            retired.observation().phase,
+            PtyPhase::Reaped | PtyPhase::WaitFailed
+        ) {
+            assert!(
+                Instant::now() < limit,
+                "retire did not record an exit within 120s"
+            );
+            thread::sleep(Duration::from_millis(10));
+        }
+        let observed = retired.observation();
+        assert_eq!(observed.phase, PtyPhase::Reaped);
+        let exit = observed.exit.expect("a reaped child has an exit");
+        assert!(
+            !exit.success,
+            "the child must end by the final kill, not by finishing its sleep: {exit:?}"
+        );
+    }
+
     /// Fail after the real child exists, at both reader/writer preparation boundaries.
     #[test]
     fn setup_failures_after_spawn_are_reaped_by_the_early_owner() {
