@@ -1,4 +1,4 @@
-<!-- source-hash: 5c54fa3b0f36 -->
+<!-- source-hash: 7d8d463ce7d3 -->
 <a id="task-dag"></a>
 
 # Task workflows (DAG)
@@ -247,7 +247,7 @@ Tasks without a declared type can live in the same Workspace. A task made with `
 A typed group of tasks keeps a run report for people to read later. Each task has a part Tasty fills in automatically and notes the task writes itself while it runs.
 
 - Automatic part: the final state, start and end times, the input actually received and the result produced, the failing stage and reason if it failed, and the reason if it was skipped. Shell command tasks add the exit code, agent tasks the session, and result-gathering tasks the method and number of inputs.
-- Notes: a shell command task, the postprocess command that shapes its result, and a hand-written result-gathering shell get the environment variable `TASTY_TASK_REPORT`. Inside them, write `tasty agent report append 'skipped 3 tests'`. A shell command can also print a standard error line that starts with `::tasty-report::<note>` (the line stays in the standard error as well). An agent task gets, at the end of its instruction, the command that explains how to write notes (`tasty agent report usage`) and its address.
+- Notes: a shell command task, the postprocess command that shapes its result, and a hand-written result-gathering shell get the environment variable `TASTY_TASK_REPORT`. Inside them, write `tasty agent report append 'skipped 3 tests'`. The command prints nothing when it succeeds, so it does not change the task's result; only a failure writes its reason to standard error. A shell command can also print a standard error line that starts with `::tasty-report::<note>` (the line stays in the standard error as well). An agent task gets, at the end of its instruction, the command that explains how to write notes (`tasty agent report usage`) and its address.
 
 ```sh
 #!/bin/sh

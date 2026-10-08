@@ -1631,7 +1631,7 @@ The address is the one given to you (an agent instruction shows it as "Report ad
   tasty agent report append '<text>'
 
 - Write plain text. Each call adds one entry; it is a record for people, not data for later tasks.
-- An entry over the append limit (1 KiB unless changed in settings) is cut and marked with omit_by_limit. Once the attempt's block is full, further notes are only counted as omitted_appends. Either way the command succeeds.
+- An entry over the append limit (1 KiB unless changed in settings) is cut and marked with omit_by_limit. Once the attempt's block is full, further notes are only counted as omitted_appends. Either way the command succeeds and prints nothing, so it does not disturb a command whose standard output is the task's result.
 - Notes are accepted only while the attempt runs. After it ends the address is closed and the command fails.
 - A run task can also print a standard error line that starts with ::tasty-report:: instead of calling this command.
 - Read a report: tasty agent dag-report <dag id> [--task <task id> [--attempt <n>]]"""
