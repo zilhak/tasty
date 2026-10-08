@@ -42,12 +42,13 @@ impl TaskStore<'_> {
         now_ms: u64,
     ) -> Result<AppendOutcome> {
         self.append_report_by(addr, text, 0, limits, now_ms, || true)
+            .map(|(outcome, _)| outcome)
     }
 
     /// [`Self::append_report`] 에 호출자 검사를 더한다. `writer_may` 는 토큰·닫힘 검사를 통과한
     /// 뒤에 부르며, `false` 면 `not_the_session` 으로 거절한다. 끝난 회차에 대한 늦은 쓰기는
     /// 호출자와 상관없이 `closed` 로 거절된다. `cut_before` 는 읽는 쪽이 이미 버린 바이트 수다
-    /// ([`ReportBlock::append_cut`]).
+    /// ([`ReportBlock::append_cut`]). 결과와 함께 블록에 남은 자리(바이트)를 돌려준다.
     pub fn append_report_by(
         &mut self,
         addr: &ReportAddress,
@@ -56,7 +57,27 @@ impl TaskStore<'_> {
         limits: ReportLimits,
         now_ms: u64,
         writer_may: impl FnOnce() -> bool,
-    ) -> Result<AppendOutcome> {
+    ) -> Result<(AppendOutcome, u64)> {
+        let mut block = self.open_report_block(addr, writer_may)?;
+        let outcome = block.append_cut(addr.source, text, cut_before, limits, now_ms);
+        self.put_report_block(addr.workspace_id, &addr.task_id, &block)?;
+        Ok((outcome, block.room(limits)))
+    }
+
+    /// 저장하지 않고 건너뛴 append `count` 개를 `omitted_appends` 에 한 번에 더한다. 받는 조건은
+    /// append 와 같다. 블록이 가득 찬 뒤의 stderr 표지 줄을 모아 쓴다.
+    pub fn count_report_omissions(&mut self, addr: &ReportAddress, count: u64) -> Result<()> {
+        let mut block = self.open_report_block(addr, || true)?;
+        block.omitted_appends += count;
+        self.put_report_block(addr.workspace_id, &addr.task_id, &block)
+    }
+
+    /// 주소가 가리키는 열린 회차의 블록. 토큰·닫힘·호출자 검사를 여기서 한다.
+    fn open_report_block(
+        &self,
+        addr: &ReportAddress,
+        writer_may: impl FnOnce() -> bool,
+    ) -> Result<ReportBlock> {
         let task = self
             .get(addr.workspace_id, &addr.task_id)?
             .ok_or_else(|| AgentError::TaskNotFound(addr.task_id.clone()))?;
@@ -76,7 +97,7 @@ impl TaskStore<'_> {
         if !matches!(task.state, TaskState::Ready | TaskState::Running) {
             return Err(reject(ReportRejection::Closed, Some(task.state.name())));
         }
-        let mut block = self
+        let block = self
             .report_block(addr.workspace_id, &addr.task_id, addr.attempt)?
             .unwrap_or_else(|| ReportBlock::new(addr.attempt));
         // retry 가 닫은 회차. 다음 dispatch 전에는 레코드가 Ready 이고 토큰도 이 회차 것이다.
@@ -86,9 +107,7 @@ impl TaskStore<'_> {
         if !writer_may() {
             return Err(reject(ReportRejection::NotTheSession, None));
         }
-        let outcome = block.append_cut(addr.source, text, cut_before, limits, now_ms);
-        self.put_report_block(addr.workspace_id, &addr.task_id, &block)?;
-        Ok(outcome)
+        Ok(block)
     }
 
     /// 회차 하나의 custom 블록. 기록이 없으면 `None`.

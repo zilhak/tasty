@@ -171,6 +171,57 @@ mod run {
         );
     }
 
+    /// 블록이 가득 차면 뒤 표지 줄은 저장소를 거치지 않고 세기만 하다가, 끝에 한 번에 더한다.
+    #[test]
+    fn markers_past_a_full_block_are_counted_once_at_the_end() {
+        let (_td, ctx) = fresh_ctx();
+        let spec: TaskGraphSpec = serde_json::from_value(json!({"contract_version": 2, "tasks": [
+            {"id": "f", "command": {"kind": "run", "workspace_id": 1, "command": ["true"]}}]}))
+        .unwrap();
+        store_op(&ctx, |s| s.submit_graph(1, spec, 0).unwrap());
+        let id = "f".to_string();
+        store_op(&ctx, |s| {
+            s.issue_report_token(
+                1,
+                &id,
+                tasty_agent::task::report::ReportToken {
+                    attempt: 1,
+                    token: "tk".into(),
+                },
+            )
+            .unwrap();
+            s.set_state(1, &id, TaskState::Running, 1).unwrap();
+        });
+        let addr = ReportAddress::parse("1/1/stderr_marker/tk/f").unwrap();
+        let mut sink = super::super::MarkerSink::new(
+            ctx.memory.clone(),
+            ctx.agent_seq.clone(),
+            ctx.report_limits.clone(),
+            addr,
+        );
+        let limits = ctx.report_limits.get();
+        let line = format!(
+            "::tasty-report::{}\n",
+            "x".repeat(limits.append_bytes as usize)
+        );
+        let fill = (limits.block_bytes / limits.append_bytes) as usize;
+        for _ in 0..fill + 5 {
+            sink.observe(line.as_bytes());
+        }
+        let block = |ctx: &RunnerContext| {
+            let task = get(ctx, "f");
+            store_op(ctx, |s| s.report_blocks(&task).unwrap()).remove(0)
+        };
+        // 가득 찬 뒤의 다섯 줄은 아직 저장소에 닿지 않았다.
+        let before = block(&ctx);
+        assert_eq!(before.entries.len(), fill);
+        assert_eq!(before.omitted_appends, 0);
+        sink.finish();
+        let after = block(&ctx);
+        assert_eq!(after.entries.len(), fill);
+        assert_eq!(after.omitted_appends, 5);
+    }
+
     /// reduce 의 custom 셸도 같은 블록 주소를 받는다.
     #[test]
     fn a_custom_reduce_shell_gets_the_address_of_its_own_block() {

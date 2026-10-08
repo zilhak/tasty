@@ -96,7 +96,7 @@ pub(crate) fn append(
     text: &str,
     cut_before: u64,
     writer_may: impl FnOnce() -> bool,
-) -> Result<AppendOutcome, AgentError> {
+) -> Result<(AppendOutcome, u64), AgentError> {
     let mut guard = tasty_utils::poison::recover_mutex(
         memory.lock(),
         tasty_memory::STORE_LOCK_WHAT,
@@ -166,54 +166,95 @@ impl MarkerScanner {
     }
 }
 
+/// 저장소를 거치지 않고 건너뛴 append 수를 블록에 한 번에 더한다.
+pub(crate) fn count_omitted(
+    memory: &Mutex<dyn MemoryStorage>,
+    seq: &std::sync::atomic::AtomicU64,
+    addr: &ReportAddress,
+    count: u64,
+) -> Result<(), AgentError> {
+    let mut guard = tasty_utils::poison::recover_mutex(
+        memory.lock(),
+        tasty_memory::STORE_LOCK_WHAT,
+        &tasty_memory::STORE_LOCK_POISONED,
+    );
+    TaskStore::new(&mut *guard, HOST_OWNER, seq).count_report_omissions(addr, count)
+}
+
 /// run stderr 를 읽는 스레드가 표지 줄을 이 회차 블록에 append 한다. 실패해도 실행은 그대로다.
+/// 블록에 남은 자리가 0 이 되면 그 뒤 줄은 잠금과 저장 없이 세기만 하고, stderr 를 다 읽은 뒤
+/// (회차가 닫히기 전) 그 수를 `omitted_appends` 에 한 번에 더한다. 그 사이 설정에서 블록 상한을
+/// 올려도 이 회차의 나머지 줄은 세기만 한다.
 pub(crate) struct MarkerSink {
-    pub(crate) memory: Arc<Mutex<dyn MemoryStorage>>,
-    pub(crate) seq: Arc<std::sync::atomic::AtomicU64>,
-    pub(crate) limits: Arc<SharedReportLimits>,
-    pub(crate) addr: ReportAddress,
-    pub(crate) scanner: MarkerScanner,
+    memory: Arc<Mutex<dyn MemoryStorage>>,
+    seq: Arc<std::sync::atomic::AtomicU64>,
+    limits: Arc<SharedReportLimits>,
+    addr: ReportAddress,
+    scanner: MarkerScanner,
+    full: bool,
+    skipped: u64,
 }
 
 impl MarkerSink {
-    pub(crate) fn observe(&mut self, chunk: &[u8]) {
-        let Self {
+    pub(crate) fn new(
+        memory: Arc<Mutex<dyn MemoryStorage>>,
+        seq: Arc<std::sync::atomic::AtomicU64>,
+        limits: Arc<SharedReportLimits>,
+        addr: ReportAddress,
+    ) -> Self {
+        Self {
             memory,
             seq,
             limits,
             addr,
-            scanner,
-        } = self;
-        scanner.feed(chunk, |text, cut| {
-            store_marker(memory, seq, limits, addr, text, cut)
-        });
+            scanner: MarkerScanner::default(),
+            full: false,
+            skipped: 0,
+        }
+    }
+
+    pub(crate) fn observe(&mut self, chunk: &[u8]) {
+        // 스캐너가 줄을 넘기는 동안 저장 상태(`full`·`skipped`)를 바꾸므로 잠시 꺼내 둔다.
+        let mut scanner = std::mem::take(&mut self.scanner);
+        scanner.feed(chunk, |text, cut| self.store(text, cut));
+        self.scanner = scanner;
     }
 
     pub(crate) fn finish(&mut self) {
-        let Self {
-            memory,
-            seq,
-            limits,
-            addr,
-            scanner,
-        } = self;
-        scanner.finish(|text, cut| store_marker(memory, seq, limits, addr, text, cut));
+        let mut scanner = std::mem::take(&mut self.scanner);
+        scanner.finish(|text, cut| self.store(text, cut));
+        if self.skipped > 0
+            && let Err(e) = count_omitted(&self.memory, &self.seq, &self.addr, self.skipped)
+        {
+            tracing::warn!(
+                "agent task {}: {} skipped stderr report lines not counted: {e}",
+                self.addr.task_id,
+                self.skipped
+            );
+        }
     }
-}
 
-fn store_marker(
-    memory: &Arc<Mutex<dyn MemoryStorage>>,
-    seq: &Arc<std::sync::atomic::AtomicU64>,
-    limits: &Arc<SharedReportLimits>,
-    addr: &ReportAddress,
-    text: &str,
-    cut_before: u64,
-) {
-    if let Err(e) = append(memory, seq, limits.get(), addr, text, cut_before, || true) {
-        tracing::warn!(
-            "agent task {}: stderr report line not stored: {e}",
-            addr.task_id
-        );
+    fn store(&mut self, text: &str, cut_before: u64) {
+        if self.full {
+            self.skipped += 1;
+            return;
+        }
+        let limits = self.limits.get();
+        match append(
+            &self.memory,
+            &self.seq,
+            limits,
+            &self.addr,
+            text,
+            cut_before,
+            || true,
+        ) {
+            Ok((_, room)) => self.full = room == 0,
+            Err(e) => tracing::warn!(
+                "agent task {}: stderr report line not stored: {e}",
+                self.addr.task_id
+            ),
+        }
     }
 }
 

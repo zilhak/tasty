@@ -202,13 +202,12 @@ impl HostExecutor {
                 // 끝난 뒤라 표지 줄은 모두 블록이 닫히기 전에 들어간다.
                 let mut markers =
                     report::report_address(task, ReportSource::StderrMarker).map(|addr| {
-                        report::MarkerSink {
-                            memory: self.ctx.memory.clone(),
-                            seq: self.ctx.agent_seq.clone(),
-                            limits: self.ctx.report_limits.clone(),
+                        report::MarkerSink::new(
+                            self.ctx.memory.clone(),
+                            self.ctx.agent_seq.clone(),
+                            self.ctx.report_limits.clone(),
                             addr,
-                            scanner: Default::default(),
-                        }
+                        )
                     });
                 let stderr_thread = thread::Builder::new()
                     .name(format!("agent-shell-stderr-pid{pid}"))

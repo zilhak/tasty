@@ -44,6 +44,7 @@ impl TaskService {
             0,
             bound_here,
         )
+        .map(|(outcome, _)| outcome)
     }
 
     /// DAG 하나의 report. `task` 를 주면 그 task 만, `attempt` 는 그 task 의 회차 하나만 싣는다.
