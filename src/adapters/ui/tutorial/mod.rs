@@ -110,13 +110,8 @@ pub fn draw_tutorial_overlay(
         .flatten();
     let missing = !in_workspace || (step.target != MarkerTarget::Summary && target.is_none());
     let screen = ctx.screen_rect();
-    let painter = ctx.layer_painter(egui::LayerId::new(
-        egui::Order::Tooltip,
-        egui::Id::new("tutorial_marker_layer"),
-    ));
     if let Some(rect) = target {
-        marker::paint_spotlight_scrim(&painter, screen, rect, theme);
-        marker::paint_marker(&painter, rect, theme);
+        marker::paint_spotlight(ctx, screen, rect, theme);
     }
     let mut body = if missing {
         t("tutorial.target_missing").to_owned()

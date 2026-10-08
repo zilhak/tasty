@@ -182,6 +182,12 @@ pub struct CalloutResponse {
     pub clicked: bool,
 }
 
+/// 말풍선 Area의 레이어. 스포트라이트 scrim과 마커도 이 레이어에 말풍선보다 먼저 그려 말풍선
+/// 아래에 합성한다.
+pub fn callout_layer() -> egui::LayerId {
+    egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("tutorial_callout"))
+}
+
 pub fn draw_callout(
     ctx: &egui::Context,
     theme: &Theme,
@@ -189,8 +195,9 @@ pub fn draw_callout(
     props: CalloutProps<'_>,
 ) -> CalloutResponse {
     let mut action = CalloutClick::None;
-    let area = egui::Area::new(egui::Id::new("tutorial_callout"))
-        .order(egui::Order::Tooltip)
+    let layer = callout_layer();
+    let area = egui::Area::new(layer.id)
+        .order(layer.order)
         .fixed_pos(placement.pos)
         .show(ctx, |ui| {
             egui::Frame::new()
