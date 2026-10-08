@@ -5,7 +5,7 @@ use tasty_agent::OnFailure;
 use tasty_agent::TaskState;
 use tasty_agent::runner::RunnerLoop;
 use tasty_agent::task::contract::FailureStage;
-use tasty_agent::task::record_limit::MAX_RECORD_BEFORE_RESULT_BYTES;
+use tasty_agent::task::record_limit::{MAX_RECORD_BEFORE_RESULT_BYTES, REFUSED_TO_START};
 use tasty_agent::task::{TaskCreateOpts, TaskGraphSpec, TaskStore};
 
 use super::tests::fresh_ctx;
@@ -87,15 +87,103 @@ fn a_definition_stored_over_the_limit_fails_without_running() {
         t.id
     });
     let t = run_to_end(&ctx, &id);
-    let error = failure_message(&t);
-    assert!(
-        error.starts_with("task record too large: task ")
-            && error.contains("the definition makes the task record")
-            && error.contains(&format!(
-                "over the {MAX_RECORD_BEFORE_RESULT_BYTES} byte limit"
-            )),
-        "{error}"
-    );
+    assert_refused_to_start(&t);
+}
+
+/// 시작하지 않은 실패는 고정된 사유를 상태에만 싣고 회차 기록·결과를 붙이지 않는다.
+fn assert_refused_to_start(t: &Task) {
+    assert_eq!(failure_message(t), REFUSED_TO_START);
+    assert!(t.attempt.is_none(), "{:?}", t.attempt);
+    assert!(t.result.is_none() && t.typed_result.is_none());
+    assert!(t.started_at.is_none());
+}
+
+/// 직렬화가 정확히 `size` 바이트인 옛 v1 레코드를 저장한다(생성 검사를 거치지 않는다).
+fn old_record_of(ctx: &RunnerContext, size: usize) -> String {
+    store_op(ctx, |s| {
+        let mut t = s
+            .create(v1_run("big", vec!["true".into()], vec![], Value::Null))
+            .unwrap();
+        t.metadata = json!({"x": ""});
+        let base = serde_json::to_vec(&t).unwrap().len();
+        t.metadata = json!({"x": "m".repeat(size - base)});
+        assert_eq!(serde_json::to_vec(&t).unwrap().len(), size);
+        s.put(&t).unwrap();
+        t.id
+    })
+}
+
+/// 직렬화가 정확히 `size` 바이트인 옛 v2 레코드를 저장한다. 저장 값은 봉투만큼 더 크다.
+fn old_v2_record_of(ctx: &RunnerContext, size: usize) -> String {
+    store_op(ctx, |s| {
+        let spec: TaskGraphSpec = serde_json::from_value(json!({"contract_version": 2, "tasks": [
+            {"id": "big", "command": {"kind": "run", "command": ["true"], "workspace_id": 1}}
+        ]}))
+        .unwrap();
+        s.submit_graph(1, spec, 0).unwrap();
+        let mut t = s.get(1, &"big".to_string()).unwrap().unwrap();
+        t.metadata = json!({"x": ""});
+        let base = serde_json::to_vec(&t).unwrap().len();
+        t.metadata = json!({"x": "m".repeat(size - base)});
+        assert_eq!(serde_json::to_vec(&t).unwrap().len(), size);
+        s.put(&t).unwrap();
+        t.id
+    })
+}
+
+/// 실패를 기록할 수 있는 최소 여유(memory 값 상한 − 레코드 직렬화 크기, 바이트). 상태가 `ready`
+/// 에서 고정 사유의 `failed` 로 바뀌고 `finished_at` 이 붙는 만큼이며, v2 는 봉투가 더해진다.
+const V1_MIN_SLACK: usize = 94;
+const V2_MIN_SLACK: usize = 135;
+
+/// memory 값 상한에 수백 바이트 안으로 닿은 옛 레코드도 실패를 기록하고 끝난다. 회차 기록과
+/// 사유 사본이 붙던 때는 남은 몫이 약 0.5 KiB 이하이면 실패조차 기록하지 못해 Running 에 남았다.
+#[test]
+fn an_old_record_just_under_the_memory_entry_limit_still_fails() {
+    for slack in [500, 400, V1_MIN_SLACK, 700, 2000] {
+        let (_td, ctx) = fresh_ctx();
+        let id = old_record_of(&ctx, tasty_memory::MAX_VALUE_BYTES - slack);
+        assert_refused_to_start(&run_to_end(&ctx, &id));
+    }
+    for slack in [500, 400, V2_MIN_SLACK, 2000] {
+        let (_td, ctx) = fresh_ctx();
+        let id = old_v2_record_of(&ctx, tasty_memory::MAX_VALUE_BYTES - slack);
+        assert_refused_to_start(&run_to_end(&ctx, &id));
+    }
+}
+
+/// 최소 여유보다 작으면 실패도 기록하지 못한다. 시작하지 않으므로 Ready 로 남고 회차 기록도
+/// 자원 점유도 없다.
+#[test]
+fn an_old_record_without_room_for_the_failure_stays_ready() {
+    for (slack, v2) in [(V1_MIN_SLACK - 1, false), (V2_MIN_SLACK - 1, true)] {
+        let (_td, ctx) = fresh_ctx();
+        let size = tasty_memory::MAX_VALUE_BYTES - slack;
+        let id = if v2 {
+            old_v2_record_of(&ctx, size)
+        } else {
+            old_record_of(&ctx, size)
+        };
+        let mut runner = RunnerLoop::new(HostExecutor::new(ctx.clone()));
+        for n in 0..3 {
+            let snapshot = store_op(&ctx, |s| s.list(1).unwrap());
+            let set_ctx = ctx.clone();
+            let res_ctx = ctx.clone();
+            runner.tick(
+                1,
+                10 + n,
+                &snapshot,
+                move |ws, id, st, n| store_op(&set_ctx, |s| s.set_state(ws, id, st, n).map(|_| ())),
+                move |ws, id, c, n| store_op(&res_ctx, |s| s.complete(ws, id, c, n).map(|_| ())),
+            );
+        }
+        let t = get(&ctx, &id);
+        assert!(matches!(t.state, TaskState::Ready), "{:?}", t.state);
+        assert!(t.attempt.is_none());
+        // 지우기는 레코드를 다시 쓰지 않으므로 정리할 수 있다.
+        store_op(&ctx, |s| s.delete_checked(1, &id, Default::default())).expect("delete");
+        store_op(&ctx, |s| assert!(s.get(1, &id).unwrap().is_none()));
+    }
 }
 
 /// v1 출력 치환이 레코드를 상한 너머로 키우면 실행하지 않고 실패로 끝낸다. 치환한 command 는

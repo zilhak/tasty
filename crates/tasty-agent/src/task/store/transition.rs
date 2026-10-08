@@ -1,5 +1,6 @@
 //! 상태 전이와 그 뒤의 하류 readiness·fallback 전파.
 
+use super::super::record_limit;
 use super::super::{
     InlineFallbackSpec, OnFailure, Task, TaskGraph, TaskId, TaskResult, TaskState,
     is_valid_transition,
@@ -29,6 +30,11 @@ impl TaskStore<'_> {
                 to: new_state.name().to_string(),
             });
         }
+        if matches!(new_state, TaskState::Running)
+            && let Err(detail) = record_limit::check(&task, "the definition", self.record_limit())
+        {
+            return self.refuse_to_start(workspace_id, task, &detail, now_ms);
+        }
         let new_state = settle_typed_terminal(&mut task, new_state);
         let new_state = self.settle_route(&mut task, new_state);
         match new_state {
@@ -50,6 +56,26 @@ impl TaskStore<'_> {
             _ => {}
         }
         task.state = new_state.clone();
+        self.put(&task)?;
+        let transitioned = self.propagate_transition(workspace_id, &task, now_ms)?;
+        Ok((task, transitioned))
+    }
+
+    /// 결과 전 상한을 넘는 정의(상한이 생기기 전에 저장된 것)를 시작하지 않고 실패로 끝낸다.
+    /// 회차 기록과 결과(v1 `result`, v2 `typed_result`)를 붙이지 않고 고정된 짧은 사유를 상태에만
+    /// 실어, memory 값 상한에 거의 닿은 레코드도 실패를 기록할 수 있게 한다.
+    fn refuse_to_start(
+        &mut self,
+        workspace_id: WorkspaceId,
+        mut task: Task,
+        detail: &str,
+        now_ms: u64,
+    ) -> Result<(Task, Vec<Task>)> {
+        tracing::warn!("{detail}");
+        task.state = TaskState::Failed {
+            error: record_limit::REFUSED_TO_START.to_string(),
+        };
+        task.finished_at = Some(now_ms);
         self.put(&task)?;
         let transitioned = self.propagate_transition(workspace_id, &task, now_ms)?;
         Ok((task, transitioned))

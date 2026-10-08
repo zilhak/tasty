@@ -49,6 +49,11 @@ pub fn warn_if_no_result_room(entry_max_bytes: u64) {
     }
 }
 
+/// 상한을 넘는 정의를 시작하지 않고 실패로 끝낼 때의 사유. memory 값 상한에 거의 닿은 레코드도
+/// 실패를 기록할 수 있도록 크기·id 없이 고정하고 상태에만 싣는다(자세한 크기는 로그에 남긴다).
+pub const REFUSED_TO_START: &str =
+    "task record too large: the definition leaves no room for a result";
+
 /// 레코드의 직렬화 크기가 `limit` 를 넘으면 사유를 돌려준다. `what` 은 레코드를 키운 것을 말한다.
 pub fn check(task: &Task, what: &str, limit: usize) -> Result<(), String> {
     let size = serde_json::to_vec(task).map_or(usize::MAX, |b| b.len());

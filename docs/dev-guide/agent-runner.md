@@ -955,11 +955,12 @@ task 레코드는 memory 값 하나라 직렬화가 memory 값 상한(기본 1 M
 | `agent.task_graph_submit`·`agent.task_graph_validate`(CLI `task-graph-submit`, `--dry-run`) | 아무것도 저장하지 않는다. `-32602`, `error.data` 의 단계는 `input`, `location` 은 그 task(`/tasks/<i>`) |
 | 실행 직전 v1 출력·lease 치환 | 실행하지 않고 `task output substitution: task record too large: task <id>: the command with substituted values makes the task record …` 실패로 끝낸다. 치환한 command 는 저장하지 않는다 |
 | 실행 직전 v2 입력 해석 | 실행하지 않고 입력 단계 실패(`location` 은 `/bindings`)로 끝낸다. snapshot 의 `value`·`execution` 은 비운다 |
-| 상한이 생기기 전에 저장된 레코드의 실행 | 실행하지 않고 `task record too large: task <id>: the definition makes the task record …` 실패로 끝낸다 |
+| 상한이 생기기 전에 저장된 레코드의 실행 | Running 으로 바꾸기 전에 재서 시작하지 않고 Ready 에서 바로 실패로 끝낸다. 사유는 고정된 `task record too large: the definition leaves no room for a result` 이고 상태에만 싣는다. 회차 기록·`started_at`·결과(v1 `result`, v2 `typed_result`)는 붙이지 않는다. 크기를 담은 자세한 사유는 warn 로그에 남긴다 |
 
 - 사유는 모두 `task record too large: ` 로 시작해 다른 입력 오류와 구별된다.
 - 상한은 저장할 그대로(초기 상태 포함) 잰다. 그래프는 활성화 전 상태(`waiting`)로 잰다.
 - 이미 Running 인 옛 레코드는 바꾸지 않는다. 그 결과를 기록하지 못하면 위 보류 규칙을 따른다.
+- 시작하지 않은 실패도 상태가 `ready` 에서 `failed` 와 고정 사유로 바뀌고 `finished_at` 이 붙는 만큼 커진다. memory 값 상한까지 남은 몫이 v1 은 94 B, v2 는 135 B(봉투 포함 전 직렬화 기준) 이상이어야 기록된다(시험 `an_old_record_just_under_the_memory_entry_limit_still_fails`). 그보다 작으면 실패도 기록하지 못해 Ready 로 남는다. 시작하지 않았으므로 회차 기록·permit·lease·semaphore 는 없고, 러너는 tick 마다 다시 시작을 시도하며 warn 로그를 남긴다(시험 `an_old_record_without_room_for_the_failure_stays_ready`). 레코드를 다시 쓰지 않는 `task-delete` 로 정리한다.
 - 후처리 회차 진행(`attempt.postprocess` 에 저장하는 본 작업 응답, 256 KiB 까지)은 이 몫에 넣지 않았다.
 
 ### 그래프 제출
