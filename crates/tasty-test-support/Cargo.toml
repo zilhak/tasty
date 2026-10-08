@@ -3,7 +3,7 @@ name = "tasty-test-support"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
-description = "Test-only RAII guards for Tasty — process-global env and TASTY_HOME isolation, plus platform-correct absolute paths. Consumed as a dev-dependency; nothing here ships."
+description = "Test-only RAII guards for Tasty — process-global env and TASTY_HOME isolation, platform-correct absolute paths and test executables written without ETXTBSY. Consumed as a dev-dependency; nothing here ships."
 
 [dependencies]
 tasty-utils = { path = "../tasty-utils", features = ["test-support"] }

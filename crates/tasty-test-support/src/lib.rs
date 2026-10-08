@@ -1,9 +1,15 @@
 //! 테스트 전용 공용 유틸리티 — 프로세스 전역 상태(env · `TASTY_HOME`)를 테스트 동안만
-//! 갈아끼우는 RAII 가드와, 플랫폼별로 형태가 다른 절대경로 조립.
+//! 갈아끼우는 RAII 가드, 플랫폼별로 형태가 다른 절대경로 조립, 실행 파일 쓰기(unix).
 //!
 //! 소비자의 dev-dependency로만 사용하며 제품 바이너리에는 포함하지 않는다.
 
+#[cfg(unix)]
+mod executable;
+
 use std::sync::{Mutex, MutexGuard};
+
+#[cfg(unix)]
+pub use executable::write_executable;
 
 /// TASTY_HOME 변경 시험의 공통 락. TastyHomeGuard가 이전 값 보관·복원과 함께 관리한다.
 /// 락만 얻고 복원을 빠뜨리는 호출을 막기 위해 크레이트 밖에는 노출하지 않는다.
