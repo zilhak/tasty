@@ -40,7 +40,7 @@ pub enum SendCommands {
     Text {
         /// Text to send
         text: String,
-        /// Target surface ID (default: focused)
+        /// Target surface ID (default: $TASTY_SURFACE_ID, the calling surface)
         #[arg(long)]
         surface: Option<u32>,
         /// Skip the send when the person is typing, deciding and sending in one
@@ -54,7 +54,7 @@ pub enum SendCommands {
     Key {
         /// Key name
         key: String,
-        /// Target surface ID (default: focused)
+        /// Target surface ID (default: $TASTY_SURFACE_ID, the calling surface)
         #[arg(long)]
         surface: Option<u32>,
     },
@@ -66,7 +66,7 @@ pub enum SendCommands {
         /// Message content
         #[arg()]
         content: String,
-        /// Sender surface ID (default: focused)
+        /// Sender surface ID (default: $TASTY_SURFACE_ID, the calling surface)
         #[arg(long)]
         from: Option<u32>,
     },

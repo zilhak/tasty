@@ -76,7 +76,7 @@ pub enum DebugCommands {
         /// Column (0-indexed)
         #[arg(long)]
         col: u64,
-        /// Surface ID (default: focused)
+        /// Surface ID (default: $TASTY_SURFACE_ID, the calling surface)
         #[arg(long)]
         surface: Option<u32>,
     },
@@ -85,7 +85,7 @@ pub enum DebugCommands {
         /// Row (0-indexed)
         #[arg(long)]
         row: u64,
-        /// Surface ID (default: focused)
+        /// Surface ID (default: $TASTY_SURFACE_ID, the calling surface)
         #[arg(long)]
         surface: Option<u32>,
     },
@@ -97,7 +97,7 @@ pub enum DebugCommands {
         /// Column (0-indexed)
         #[arg(long)]
         col: u64,
-        /// Surface ID (default: focused)
+        /// Surface ID (default: $TASTY_SURFACE_ID, the calling surface)
         #[arg(long)]
         surface: Option<u32>,
         /// Background mode: "focused" or "unfocused" (default: focused)

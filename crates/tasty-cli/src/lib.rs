@@ -213,7 +213,7 @@ pub enum Commands {
     },
     /// Check if a surface is currently typing (received key input or a paste within 5 seconds)
     IsTyping {
-        /// Surface ID (default: focused)
+        /// Surface ID (default: $TASTY_SURFACE_ID, the calling surface)
         #[arg(long)]
         surface: Option<u32>,
     },
@@ -221,7 +221,7 @@ pub enum Commands {
     ///
     /// Send commands auto-wake the target; use this only to start the PTY without sending input.
     Wake {
-        /// Surface ID (default: focused)
+        /// Surface ID (default: $TASTY_SURFACE_ID, the calling surface)
         #[arg(long)]
         surface: Option<u32>,
     },

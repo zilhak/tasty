@@ -12,7 +12,7 @@ pub enum SurfaceMetaCommands {
         /// Value
         #[arg(long)]
         value: String,
-        /// Surface ID (default: focused)
+        /// Surface ID (default: $TASTY_SURFACE_ID, the calling surface)
         #[arg(long)]
         surface: Option<u32>,
     },
@@ -21,7 +21,7 @@ pub enum SurfaceMetaCommands {
         /// Key name
         #[arg(long)]
         key: String,
-        /// Surface ID (default: focused)
+        /// Surface ID (default: $TASTY_SURFACE_ID, the calling surface)
         #[arg(long)]
         surface: Option<u32>,
     },
@@ -30,13 +30,13 @@ pub enum SurfaceMetaCommands {
         /// Key name
         #[arg(long)]
         key: String,
-        /// Surface ID (default: focused)
+        /// Surface ID (default: $TASTY_SURFACE_ID, the calling surface)
         #[arg(long)]
         surface: Option<u32>,
     },
     /// List all metadata for a surface
     List {
-        /// Surface ID (default: focused)
+        /// Surface ID (default: $TASTY_SURFACE_ID, the calling surface)
         #[arg(long)]
         surface: Option<u32>,
     },

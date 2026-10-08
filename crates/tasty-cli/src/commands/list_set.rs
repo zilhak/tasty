@@ -125,7 +125,7 @@ pub enum ListCommands {
     },
     /// Show queue status (count + preview of pending messages)
     Queue {
-        /// Surface ID (default: focused)
+        /// Surface ID (default: $TASTY_SURFACE_ID, the calling surface)
         #[arg(long)]
         surface: Option<u32>,
     },
@@ -135,7 +135,7 @@ pub enum ListCommands {
 pub enum SetCommands {
     /// Set a hook on a surface
     Hook {
-        /// Surface ID to hook (default: focused)
+        /// Surface ID to hook (default: $TASTY_SURFACE_ID, the calling surface)
         #[arg(long)]
         surface: Option<u32>,
         /// Event type: process-exit, bell, notification, output-match:PATTERN, idle-timeout:SECS
@@ -155,7 +155,7 @@ pub enum SetCommands {
     },
     /// Set a read mark on a surface
     Mark {
-        /// Surface ID (default: focused terminal)
+        /// Surface ID (default: $TASTY_SURFACE_ID, the calling surface)
         #[arg(long)]
         surface: Option<u32>,
     },

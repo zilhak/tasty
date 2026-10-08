@@ -2234,7 +2234,7 @@ help = "Surface kind to query (e.g. `markdown`). The host does not know the kind
 about = "Show queue status (count + preview of pending messages)"
 
 [cli.help._root.list.queue.arg.surface]
-help = "Surface ID (default: focused)"
+help = "Surface ID (default: $TASTY_SURFACE_ID, the calling surface)"
 
 [cli.help._root.set]
 about = "Set/update resources (hook, mark, workspace, global-hook)"
@@ -2243,7 +2243,7 @@ about = "Set/update resources (hook, mark, workspace, global-hook)"
 about = "Set a hook on a surface"
 
 [cli.help._root.set.hook.arg.surface]
-help = "Surface ID to hook (default: focused)"
+help = "Surface ID to hook (default: $TASTY_SURFACE_ID, the calling surface)"
 
 [cli.help._root.set.hook.arg.event]
 help = "Event type: process-exit, bell, notification, output-match:PATTERN, idle-timeout:SECS"
@@ -2261,7 +2261,7 @@ help = "Remove the hook after it fires once"
 about = "Set a read mark on a surface"
 
 [cli.help._root.set.mark.arg.surface]
-help = "Surface ID (default: focused terminal)"
+help = "Surface ID (default: $TASTY_SURFACE_ID, the calling surface)"
 
 [cli.help._root.set.workspace]
 about = "Update workspace name, subtitle, description, or SSH attach mapping"
@@ -2510,7 +2510,7 @@ about = "Send text to a terminal surface"
 help = "Text to send"
 
 [cli.help._root.send.text.arg.surface]
-help = "Target surface ID (default: focused)"
+help = "Target surface ID (default: $TASTY_SURFACE_ID, the calling surface)"
 
 [cli.help._root.send.text.arg.wait_idle]
 help = "Skip the send when the person is typing, deciding and sending in one step. Reports \"sent\": false with \"reason\": \"typing\" instead. Checking with `tasty is-typing` first cannot do this - they may start typing between the two commands"
@@ -2522,7 +2522,7 @@ about = "Send a key to a terminal surface (enter, tab, escape, up, down, etc.)"
 help = "Key name"
 
 [cli.help._root.send.key.arg.surface]
-help = "Target surface ID (default: focused)"
+help = "Target surface ID (default: $TASTY_SURFACE_ID, the calling surface)"
 
 [cli.help._root.send.queue]
 about = "Send a message to a surface's queue"
@@ -2534,7 +2534,7 @@ help = "Target surface ID"
 help = "Message content"
 
 [cli.help._root.send.queue.arg.from]
-help = "Sender surface ID (default: focused)"
+help = "Sender surface ID (default: $TASTY_SURFACE_ID, the calling surface)"
 
 [cli.help._root.read]
 about = "Read from surface or queue"
@@ -2543,7 +2543,7 @@ about = "Read from surface or queue"
 about = "Read output since last mark"
 
 [cli.help._root.read.since-mark.arg.surface]
-help = "Surface ID (default: focused terminal)"
+help = "Surface ID (default: $TASTY_SURFACE_ID, the calling surface)"
 
 [cli.help._root.read.since-mark.arg.strip_ansi]
 help = "Strip ANSI escape sequences from output"
@@ -2561,7 +2561,7 @@ help = "Upper bound on the raw output bytes this read returns (the server clamps
 about = "Parse output since last mark with builtin parsers (path/url/prompt_boundary/exit_code)"
 
 [cli.help._root.read.parse-since-mark.arg.surface]
-help = "Surface ID (default: focused terminal)"
+help = "Surface ID (default: $TASTY_SURFACE_ID, the calling surface)"
 
 [cli.help._root.read.parse-since-mark.arg.parsers]
 help = "Comma-separated parser ids. Default = all builtins"
@@ -2570,7 +2570,7 @@ help = "Comma-separated parser ids. Default = all builtins"
 about = "Read from a surface's message queue (consumes oldest message)"
 
 [cli.help._root.read.queue.arg.surface]
-help = "Surface ID (default: focused)"
+help = "Surface ID (default: $TASTY_SURFACE_ID, the calling surface)"
 
 [cli.help._root.read.queue.arg.from]
 help = "Filter by sender surface ID"
@@ -2585,7 +2585,7 @@ help = "Clear all messages instead of reading"
 about = "Read current screen text of a surface"
 
 [cli.help._root.read.screen.arg.surface]
-help = "Surface ID (default: focused)"
+help = "Surface ID (default: $TASTY_SURFACE_ID, the calling surface)"
 
 [cli.help._root.read.screen.arg.lines]
 help = "Read up to N lines ending at the last nonblank screen row. Trailing blank screen rows are skipped; any shortfall is filled from the primary scrollback. If the screen content and scrollback together contain fewer than N lines, return all available lines. On the alternate screen (a full-screen TUI), primary scrollback is still prepended without a marker, so the result may include shell history before the TUI's screen text"
@@ -2597,7 +2597,7 @@ help = "Include dim (ghost-suggestion, e.g. Claude Code autocomplete overlay) ce
 about = "List recorded shell commands (OSC 133) for a surface"
 
 [cli.help._root.read.commands.arg.surface]
-help = "Surface ID (default: focused terminal)"
+help = "Surface ID (default: $TASTY_SURFACE_ID, the calling surface)"
 
 [cli.help._root.read.commands.arg.limit]
 help = "Limit number of returned records"
@@ -2609,13 +2609,13 @@ help = "Only include records ended at or after this unix-ms timestamp"
 about = "Most recent recorded command for a surface"
 
 [cli.help._root.read.last-command.arg.surface]
-help = "Surface ID (default: focused terminal)"
+help = "Surface ID (default: $TASTY_SURFACE_ID, the calling surface)"
 
 [cli.help._root.read.command-at]
 about = "Recorded command at index (negative = from end)"
 
 [cli.help._root.read.command-at.arg.surface]
-help = "Surface ID (default: focused terminal)"
+help = "Surface ID (default: $TASTY_SURFACE_ID, the calling surface)"
 
 [cli.help._root.read.command-at.arg.index]
 help = "0-based index; negatives count from the end"
@@ -2657,7 +2657,7 @@ help = "Key name"
 help = "Value"
 
 [cli.help._root.surface-meta.set.arg.surface]
-help = "Surface ID (default: focused)"
+help = "Surface ID (default: $TASTY_SURFACE_ID, the calling surface)"
 
 [cli.help._root.surface-meta.get]
 about = "Get a metadata value by key"
@@ -2666,7 +2666,7 @@ about = "Get a metadata value by key"
 help = "Key name"
 
 [cli.help._root.surface-meta.get.arg.surface]
-help = "Surface ID (default: focused)"
+help = "Surface ID (default: $TASTY_SURFACE_ID, the calling surface)"
 
 [cli.help._root.surface-meta.unset]
 about = "Remove a metadata key"
@@ -2675,13 +2675,13 @@ about = "Remove a metadata key"
 help = "Key name"
 
 [cli.help._root.surface-meta.unset.arg.surface]
-help = "Surface ID (default: focused)"
+help = "Surface ID (default: $TASTY_SURFACE_ID, the calling surface)"
 
 [cli.help._root.surface-meta.list]
 about = "List all metadata for a surface"
 
 [cli.help._root.surface-meta.list.arg.surface]
-help = "Surface ID (default: focused)"
+help = "Surface ID (default: $TASTY_SURFACE_ID, the calling surface)"
 
 [cli.help._root.surface]
 about = "Surface actions (completion signal, queries, …)"
@@ -2991,14 +2991,14 @@ help = "Pane to attach the promoted terminal to (new background tab)"
 about = "Check if a surface is currently typing (received key input or a paste within 5 seconds)"
 
 [cli.help._root.is-typing.arg.surface]
-help = "Surface ID (default: focused)"
+help = "Surface ID (default: $TASTY_SURFACE_ID, the calling surface)"
 
 [cli.help._root.wake]
 about = "Spawn the PTY of a deferred surface (no-op if already running)"
 long = "Spawn the PTY of a deferred surface (no-op if already running)\n\nSend commands auto-wake the target; use this only to start the PTY without sending input."
 
 [cli.help._root.wake.arg.surface]
-help = "Surface ID (default: focused)"
+help = "Surface ID (default: $TASTY_SURFACE_ID, the calling surface)"
 
 [cli.help._root.debug]
 about = "Debug and diagnostic commands (IME simulation, raw key input, etc.) — debug builds only"
@@ -3070,7 +3070,7 @@ help = "Row (0-indexed)"
 help = "Column (0-indexed)"
 
 [cli.help._root.debug.cell-info.arg.surface]
-help = "Surface ID (default: focused)"
+help = "Surface ID (default: $TASTY_SURFACE_ID, the calling surface)"
 
 [cli.help._root.debug.screen-attrs]
 about = "Get all cell attributes for a specific row"
@@ -3079,7 +3079,7 @@ about = "Get all cell attributes for a specific row"
 help = "Row (0-indexed)"
 
 [cli.help._root.debug.screen-attrs.arg.surface]
-help = "Surface ID (default: focused)"
+help = "Surface ID (default: $TASTY_SURFACE_ID, the calling surface)"
 
 [cli.help._root.debug.glyph-color]
 about = "Get the resolved RGBA bg/fg the renderer would push to the GPU for a cell"
@@ -3091,7 +3091,7 @@ help = "Row (0-indexed)"
 help = "Column (0-indexed)"
 
 [cli.help._root.debug.glyph-color.arg.surface]
-help = "Surface ID (default: focused)"
+help = "Surface ID (default: $TASTY_SURFACE_ID, the calling surface)"
 
 [cli.help._root.debug.glyph-color.arg.bg_mode]
 help = "Background mode: \"focused\" or \"unfocused\" (default: focused)"

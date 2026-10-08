@@ -2228,7 +2228,7 @@ help = "照会するサーフェスの種類 (例: `markdown`)。ホストは種
 about = "キューの状態を表示する（保留メッセージ数 + プレビュー）"
 
 [cli.help._root.list.queue.arg.surface]
-help = "サーフェス ID（既定: フォーカス中）"
+help = "サーフェス ID（既定: $TASTY_SURFACE_ID、呼び出し元のサーフェス）"
 
 [cli.help._root.set]
 about = "リソースの設定・更新（フック、マーク、ワークスペース、グローバルフック）"
@@ -2237,7 +2237,7 @@ about = "リソースの設定・更新（フック、マーク、ワークス�
 about = "サーフェスにフックを設定する"
 
 [cli.help._root.set.hook.arg.surface]
-help = "フックを設定するサーフェス ID (既定: フォーカス中)"
+help = "フックを設定するサーフェス ID (既定: $TASTY_SURFACE_ID、呼び出し元のサーフェス)"
 
 [cli.help._root.set.hook.arg.event]
 help = "イベント種別: process-exit, bell, notification, output-match:PATTERN, idle-timeout:SECS"
@@ -2255,7 +2255,7 @@ help = "イベントが一度発生したらフックを削除します。"
 about = "サーフェスに読み取りマークを設定する"
 
 [cli.help._root.set.mark.arg.surface]
-help = "サーフェス ID (既定: フォーカス中のターミナル)"
+help = "サーフェス ID (既定: $TASTY_SURFACE_ID、呼び出し元のサーフェス)"
 
 [cli.help._root.set.workspace]
 about = "ワークスペースの名前・サブタイトル・説明、または SSH アタッチのマッピングを更新する"
@@ -2504,7 +2504,7 @@ about = "ターミナルサーフェスにテキストを送る"
 help = "送るテキスト"
 
 [cli.help._root.send.text.arg.surface]
-help = "対象サーフェス ID（既定: フォーカス中）"
+help = "対象サーフェス ID（既定: $TASTY_SURFACE_ID、呼び出し元のサーフェス）"
 
 [cli.help._root.send.text.arg.wait_idle]
 help = "入力中かどうかの確認と送信を同じ処理内で行います。ユーザーが入力中なら送信せず、\"sent\": false と \"reason\": \"typing\" を返します。`tasty is-typing` を別に呼ぶと、2 つのコマンドの間にユーザーが入力を始める可能性があります。"
@@ -2516,7 +2516,7 @@ about = "ターミナルサーフェスにキーを送る（enter, tab, escape, 
 help = "キー名"
 
 [cli.help._root.send.key.arg.surface]
-help = "対象サーフェス ID（既定: フォーカス中）"
+help = "対象サーフェス ID（既定: $TASTY_SURFACE_ID、呼び出し元のサーフェス）"
 
 [cli.help._root.send.queue]
 about = "サーフェスのキューにメッセージを送る"
@@ -2528,7 +2528,7 @@ help = "対象サーフェス ID"
 help = "メッセージ本文"
 
 [cli.help._root.send.queue.arg.from]
-help = "送信元サーフェス ID（既定: フォーカス中）"
+help = "送信元サーフェス ID（既定: $TASTY_SURFACE_ID、呼び出し元のサーフェス）"
 
 [cli.help._root.read]
 about = "サーフェスまたはキューから読み取る"
@@ -2537,7 +2537,7 @@ about = "サーフェスまたはキューから読み取る"
 about = "最後のマーク以降の出力を読む"
 
 [cli.help._root.read.since-mark.arg.surface]
-help = "サーフェス ID（既定: フォーカス中のターミナル）"
+help = "サーフェス ID（既定: $TASTY_SURFACE_ID、呼び出し元のサーフェス）"
 
 [cli.help._root.read.since-mark.arg.strip_ansi]
 help = "出力から ANSI エスケープシーケンスを取り除く"
@@ -2555,7 +2555,7 @@ help = "今回読み取る生の出力の最大バイト数です。サーバー
 about = "最後のマーク以降の出力を組み込みパーサーで解析する（path/url/prompt_boundary/exit_code）"
 
 [cli.help._root.read.parse-since-mark.arg.surface]
-help = "サーフェス ID（既定: フォーカス中のターミナル）"
+help = "サーフェス ID（既定: $TASTY_SURFACE_ID、呼び出し元のサーフェス）"
 
 [cli.help._root.read.parse-since-mark.arg.parsers]
 help = "カンマ区切りのパーサー id。既定 = 組み込みすべて"
@@ -2564,7 +2564,7 @@ help = "カンマ区切りのパーサー id。既定 = 組み込みすべて"
 about = "サーフェスのメッセージキューから最も古いメッセージを読み取り、取り除きます。"
 
 [cli.help._root.read.queue.arg.surface]
-help = "サーフェス ID（既定: フォーカス中）"
+help = "サーフェス ID（既定: $TASTY_SURFACE_ID、呼び出し元のサーフェス）"
 
 [cli.help._root.read.queue.arg.from]
 help = "送信元サーフェス ID で絞り込む"
@@ -2579,7 +2579,7 @@ help = "読まずにメッセージをすべて消す"
 about = "サーフェスの現在の画面テキストを読む"
 
 [cli.help._root.read.screen.arg.surface]
-help = "サーフェス ID（既定: フォーカス中）"
+help = "サーフェス ID（既定: $TASTY_SURFACE_ID、呼び出し元のサーフェス）"
 
 [cli.help._root.read.screen.arg.lines]
 help = "画面の最後の空でない行を末尾として、最大 N 行を読み取ります。末尾の空行は飛ばし、不足する行を主バッファーのスクロールバックで補います。画面内容とスクロールバックの合計が N 行未満なら、ある行をすべて返します。代替画面 (フルスクリーン TUI) でも主バッファーのスクロールバックを目印なしで前に付けるため、TUI の画面内容の前にシェル履歴が含まれる場合があります。"
@@ -2591,7 +2591,7 @@ help = "淡色で表示されたセルも含めます (例: Claude Code の補�
 about = "サーフェスに記録されたシェルコマンドの一覧（OSC 133）"
 
 [cli.help._root.read.commands.arg.surface]
-help = "サーフェス ID（既定: フォーカス中のターミナル）"
+help = "サーフェス ID（既定: $TASTY_SURFACE_ID、呼び出し元のサーフェス）"
 
 [cli.help._root.read.commands.arg.limit]
 help = "返す記録数の上限"
@@ -2603,13 +2603,13 @@ help = "この unix-ms 時刻以降に終了した記録だけを含める"
 about = "サーフェスに記録された最新のコマンド"
 
 [cli.help._root.read.last-command.arg.surface]
-help = "サーフェス ID（既定: フォーカス中のターミナル）"
+help = "サーフェス ID（既定: $TASTY_SURFACE_ID、呼び出し元のサーフェス）"
 
 [cli.help._root.read.command-at]
 about = "指定位置に記録されたコマンド（負数 = 末尾から）"
 
 [cli.help._root.read.command-at.arg.surface]
-help = "サーフェス ID（既定: フォーカス中のターミナル）"
+help = "サーフェス ID（既定: $TASTY_SURFACE_ID、呼び出し元のサーフェス）"
 
 [cli.help._root.read.command-at.arg.index]
 help = "0 起点の位置。負数は末尾から数える"
@@ -2651,7 +2651,7 @@ help = "キー名"
 help = "値"
 
 [cli.help._root.surface-meta.set.arg.surface]
-help = "サーフェス ID（既定: フォーカス中）"
+help = "サーフェス ID（既定: $TASTY_SURFACE_ID、呼び出し元のサーフェス）"
 
 [cli.help._root.surface-meta.get]
 about = "キーでメタデータ値を取得"
@@ -2660,7 +2660,7 @@ about = "キーでメタデータ値を取得"
 help = "キー名"
 
 [cli.help._root.surface-meta.get.arg.surface]
-help = "サーフェス ID（既定: フォーカス中）"
+help = "サーフェス ID（既定: $TASTY_SURFACE_ID、呼び出し元のサーフェス）"
 
 [cli.help._root.surface-meta.unset]
 about = "メタデータキーを削除"
@@ -2669,13 +2669,13 @@ about = "メタデータキーを削除"
 help = "キー名"
 
 [cli.help._root.surface-meta.unset.arg.surface]
-help = "サーフェス ID（既定: フォーカス中）"
+help = "サーフェス ID（既定: $TASTY_SURFACE_ID、呼び出し元のサーフェス）"
 
 [cli.help._root.surface-meta.list]
 about = "サーフェスの全メタデータを一覧表示"
 
 [cli.help._root.surface-meta.list.arg.surface]
-help = "サーフェス ID（既定: フォーカス中）"
+help = "サーフェス ID（既定: $TASTY_SURFACE_ID、呼び出し元のサーフェス）"
 
 [cli.help._root.surface]
 about = "サーフェスの操作（完了シグナル、照会など）"
@@ -2985,14 +2985,14 @@ help = "ターミナルを新しいバックグラウンドタブとして追加
 about = "サーフェスが現在タイピング中かを確認する（直近 5 秒以内のキー入力・貼り付けの有無）"
 
 [cli.help._root.is-typing.arg.surface]
-help = "サーフェス ID（既定: フォーカス中）"
+help = "サーフェス ID（既定: $TASTY_SURFACE_ID、呼び出し元のサーフェス）"
 
 [cli.help._root.wake]
 about = "遅延サーフェスの PTY を起動する（すでに実行中なら何もしない）"
 long = "起動を保留していたサーフェスの PTY を起動します。既に実行中なら何もしません。入力を送るコマンドは PTY を自動起動するため、入力なしで PTY だけを起動したい場合に使ってください。"
 
 [cli.help._root.wake.arg.surface]
-help = "サーフェス ID（既定: フォーカス中）"
+help = "サーフェス ID（既定: $TASTY_SURFACE_ID、呼び出し元のサーフェス）"
 
 [cli.help._root.debug]
 about = "デバッグ・診断コマンド（IME シミュレーション、生のキー入力など） — debug ビルド専用"
@@ -3064,7 +3064,7 @@ help = "行（0始まり）"
 help = "列（0始まり）"
 
 [cli.help._root.debug.cell-info.arg.surface]
-help = "サーフェス ID（既定: フォーカス中）"
+help = "サーフェス ID（既定: $TASTY_SURFACE_ID、呼び出し元のサーフェス）"
 
 [cli.help._root.debug.screen-attrs]
 about = "指定行の全セル属性を取得"
@@ -3073,7 +3073,7 @@ about = "指定行の全セル属性を取得"
 help = "行（0始まり）"
 
 [cli.help._root.debug.screen-attrs.arg.surface]
-help = "サーフェス ID（既定: フォーカス中）"
+help = "サーフェス ID（既定: $TASTY_SURFACE_ID、呼び出し元のサーフェス）"
 
 [cli.help._root.debug.glyph-color]
 about = "セルについてレンダラーがGPUへ送る確定済みRGBA背景色・前景色を取得"
@@ -3085,7 +3085,7 @@ help = "行（0始まり）"
 help = "列（0始まり）"
 
 [cli.help._root.debug.glyph-color.arg.surface]
-help = "サーフェス ID（既定: フォーカス中）"
+help = "サーフェス ID（既定: $TASTY_SURFACE_ID、呼び出し元のサーフェス）"
 
 [cli.help._root.debug.glyph-color.arg.bg_mode]
 help = "背景モード：\"focused\" または \"unfocused\"（既定値：focused）"

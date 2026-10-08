@@ -7,7 +7,7 @@ pub enum ReadCommands {
     /// Read output since last mark
     #[command(name = "since-mark")]
     SinceMark {
-        /// Surface ID (default: focused terminal)
+        /// Surface ID (default: $TASTY_SURFACE_ID, the calling surface)
         #[arg(long)]
         surface: Option<u32>,
         /// Strip ANSI escape sequences from output
@@ -31,7 +31,7 @@ pub enum ReadCommands {
     /// Parse output since last mark with builtin parsers (path/url/prompt_boundary/exit_code)
     #[command(name = "parse-since-mark")]
     ParseSinceMark {
-        /// Surface ID (default: focused terminal)
+        /// Surface ID (default: $TASTY_SURFACE_ID, the calling surface)
         #[arg(long)]
         surface: Option<u32>,
         /// Comma-separated parser ids. Default = all builtins.
@@ -40,7 +40,7 @@ pub enum ReadCommands {
     },
     /// Read from a surface's message queue (consumes oldest message)
     Queue {
-        /// Surface ID (default: focused)
+        /// Surface ID (default: $TASTY_SURFACE_ID, the calling surface)
         #[arg(long)]
         surface: Option<u32>,
         /// Filter by sender surface ID
@@ -55,7 +55,7 @@ pub enum ReadCommands {
     },
     /// Read current screen text of a surface
     Screen {
-        /// Surface ID (default: focused)
+        /// Surface ID (default: $TASTY_SURFACE_ID, the calling surface)
         #[arg(long)]
         surface: Option<u32>,
         /// Read up to N lines ending at the last nonblank screen row. Trailing blank
@@ -74,7 +74,7 @@ pub enum ReadCommands {
     },
     /// List recorded shell commands (OSC 133) for a surface
     Commands {
-        /// Surface ID (default: focused terminal)
+        /// Surface ID (default: $TASTY_SURFACE_ID, the calling surface)
         #[arg(long)]
         surface: Option<u32>,
         /// Limit number of returned records
@@ -87,14 +87,14 @@ pub enum ReadCommands {
     /// Most recent recorded command for a surface
     #[command(name = "last-command")]
     LastCommand {
-        /// Surface ID (default: focused terminal)
+        /// Surface ID (default: $TASTY_SURFACE_ID, the calling surface)
         #[arg(long)]
         surface: Option<u32>,
     },
     /// Recorded command at index (negative = from end)
     #[command(name = "command-at")]
     CommandAt {
-        /// Surface ID (default: focused terminal)
+        /// Surface ID (default: $TASTY_SURFACE_ID, the calling surface)
         #[arg(long)]
         surface: Option<u32>,
         /// 0-based index; negatives count from the end
