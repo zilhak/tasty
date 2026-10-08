@@ -234,6 +234,18 @@ const NAMED_KEY_TOKENS: &[(NamedKey, &str)] = &[
     (NamedKey::F10, "f10"),
     (NamedKey::F11, "f11"),
     (NamedKey::F12, "f12"),
+    (NamedKey::F13, "f13"),
+    (NamedKey::F14, "f14"),
+    (NamedKey::F15, "f15"),
+    (NamedKey::F16, "f16"),
+    (NamedKey::F17, "f17"),
+    (NamedKey::F18, "f18"),
+    (NamedKey::F19, "f19"),
+    (NamedKey::F20, "f20"),
+    (NamedKey::F21, "f21"),
+    (NamedKey::F22, "f22"),
+    (NamedKey::F23, "f23"),
+    (NamedKey::F24, "f24"),
     (NamedKey::Escape, "escape"),
 ];
 
@@ -371,6 +383,13 @@ mod egui_tests {
         );
     }
 
+    /// F13~F24 는 egui 키 이름으로도 찾는다(egui 경로의 단축키가 winit 경로와 같은 키를 받는다).
+    #[test]
+    fn high_function_keys_map_to_egui_keys() {
+        assert_eq!(token_to_egui_key("f13"), Some(egui::Key::F13));
+        assert_eq!(token_to_egui_key("f24"), Some(egui::Key::F24));
+    }
+
     /// 빈 목록과 맞지 않는 바인딩은 아무것도 지우지 않는다.
     #[test]
     fn consume_without_a_match_keeps_every_event() {
@@ -411,13 +430,15 @@ mod tests {
             "ctrl++",
             "option+x",
             "Ctrl+PageUp",
+            "f13",
+            "ctrl+F24",
         ] {
             assert!(binding_key_recognized(b), "{b}");
         }
         for b in [
             "ctrl+shft+h",
             "cmd+k",
-            "ctrl+f13",
+            "f25",
             "ctrl+",
             "ctrl",
             "",
@@ -425,6 +446,20 @@ mod tests {
         ] {
             assert!(!binding_key_recognized(b), "{b}");
         }
+    }
+
+    #[test]
+    fn high_function_keys_match_with_and_without_modifiers() {
+        let f13 = Key::Named(NamedKey::F13);
+        assert!(matches_binding("f13", &f13, ModifiersState::empty()));
+        assert!(matches_binding("ctrl+f13", &f13, ModifiersState::CONTROL));
+        assert!(!matches_binding("f13", &f13, ModifiersState::CONTROL));
+        assert!(!matches_binding("f14", &f13, ModifiersState::empty()));
+        assert!(matches_binding(
+            "shift+F24",
+            &Key::Named(NamedKey::F24),
+            ModifiersState::SHIFT
+        ));
     }
 
     #[test]
