@@ -22,8 +22,9 @@ use tasty_ipc::admission::{
 use tasty_ipc::stream_hub::{StreamClientId, StreamContext, StreamInbound};
 
 mod accept_clock;
-#[cfg(windows)]
 mod closing_drain;
+#[cfg(test)]
+mod closing_drain_tests;
 mod first_line;
 
 use tasty_ipc::protocol::MAX_REQUEST_LINE_BYTES;
@@ -761,7 +762,8 @@ impl TcpIpcServer {
     }
 
     /// accept 스레드를 막지 않도록 non-blocking 쓰기 한 번으로 포화 거절을 시도하고 닫는다.
-    /// 부분 전송이나 실패 시에는 거절 사유 전달을 보장하지 못한다.
+    /// 닫기 전에 이미 도착한 요청 바이트를 기다리지 않고 비워 RST 가 응답을 지우지 않게 한다.
+    /// 부분 전송이나 실패, 비운 뒤 도착한 바이트가 있으면 거절 사유 전달을 보장하지 못한다.
     /// 업그레이드 판별 전이므로 스트림 클라이언트는 이 JSON을 프레임 오류로 읽을 수 있다(ADR-0006).
     /// 포화 진입의 warn은 슬롯 검사에서 이미 남기므로 여기서는 debug로 기록한다.
     fn refuse_saturated_connection(stream: std::net::TcpStream) {
@@ -773,6 +775,7 @@ impl TcpIpcServer {
         let mut w = stream;
         // 한 번만 쓴다. `write_all` 은 부분 전송에서 다시 시도하므로 여기서는 안 쓴다.
         Self::log_saturation_refusal_write(w.write(line.as_bytes()), line.len());
+        closing_drain::discard_arrived_then_close(w);
     }
 
     fn saturation_refusal_line() -> String {
