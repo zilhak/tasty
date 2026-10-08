@@ -261,11 +261,10 @@ fn tools_menu_size_for(
     if builtin_count > 0 && plugin_count > 0 {
         content_h += separator_gap.scaled(2.0);
     }
-    // round_ui 누적 오차 / 초기 cursor 미세 padding 흡수용 1 px 마진.
-    let safety_margin = 1.0;
+    // 행은 간격 없이 붙으므로 위아래 안쪽 여백이 같은 값으로 남도록 여분을 더하지 않는다.
     egui::vec2(
         width.value(),
-        (popup::content_margin().scaled(2.0) + content_h + LogicalPx(safety_margin)).value(),
+        (popup::content_margin().scaled(2.0) + content_h).value(),
     )
 }
 
@@ -320,13 +319,11 @@ mod size_tests {
     fn fits_builtin_only_rows_flush() {
         let size = tools_menu_size_for(W, 4, 0, ROW, GAP);
         let needed = popup::content_margin().scaled(2.0) + ROW.scaled(4.0);
-        assert!(
-            LogicalPx(size.y) >= needed,
-            "size.y ({}) < needed ({}) for 4 builtin items",
-            size.y,
-            needed
+        assert_eq!(
+            LogicalPx(size.y),
+            needed,
+            "rows flush with the same inner margin above and below"
         );
-        assert!(LogicalPx(size.y) < needed + ROW, "no gap between rows");
         assert_eq!(size.x, W.value());
     }
 
@@ -334,20 +331,14 @@ mod size_tests {
     fn fits_builtin_plus_plugin_with_separator() {
         let size = tools_menu_size_for(W, 4, 3, ROW, GAP);
         let needed = popup::content_margin().scaled(2.0) + ROW.scaled(7.0) + GAP.scaled(2.0); // menu_separator = 2·spacing_xs
-        assert!(
-            LogicalPx(size.y) >= needed,
-            "size.y ({}) < needed ({}) for 4+3 items",
-            size.y,
-            needed
-        );
+        assert_eq!(LogicalPx(size.y), needed);
     }
 
     #[test]
     fn fits_plugin_only_no_separator() {
         let size = tools_menu_size_for(W, 0, 5, ROW, GAP);
         let needed = popup::content_margin().scaled(2.0) + ROW.scaled(5.0);
-        assert!(LogicalPx(size.y) >= needed);
-        assert!(LogicalPx(size.y) < needed + GAP);
+        assert_eq!(LogicalPx(size.y), needed);
     }
 
     #[test]
