@@ -833,6 +833,18 @@ fn ns_chars_to_winit_key(chars: &str) -> Option<winit::keyboard::Key> {
         0xF70D => NamedKey::F10,
         0xF70E => NamedKey::F11,
         0xF70F => NamedKey::F12,
+        0xF710 => NamedKey::F13,
+        0xF711 => NamedKey::F14,
+        0xF712 => NamedKey::F15,
+        0xF713 => NamedKey::F16,
+        0xF714 => NamedKey::F17,
+        0xF715 => NamedKey::F18,
+        0xF716 => NamedKey::F19,
+        0xF717 => NamedKey::F20,
+        0xF718 => NamedKey::F21,
+        0xF719 => NamedKey::F22,
+        0xF71A => NamedKey::F23,
+        0xF71B => NamedKey::F24,
         0xF727 => NamedKey::Insert,
         0xF728 => NamedKey::Delete,
         0xF729 => NamedKey::Home,
@@ -870,6 +882,14 @@ mod tests {
         assert_eq!(
             ns_chars_to_winit_key("\u{1B}"),
             Some(Key::Named(NamedKey::Escape))
+        );
+        assert_eq!(
+            ns_chars_to_winit_key("\u{F710}"),
+            Some(Key::Named(NamedKey::F13))
+        );
+        assert_eq!(
+            ns_chars_to_winit_key("\u{F71B}"),
+            Some(Key::Named(NamedKey::F24))
         );
         assert_eq!(ns_chars_to_winit_key(""), None);
     }

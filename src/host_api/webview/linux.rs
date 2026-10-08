@@ -1056,6 +1056,18 @@ fn gdk_keyval_to_winit_key(keyval: gtk::gdk::keys::Key) -> Option<winit::keyboar
         k::F10 => NamedKey::F10,
         k::F11 => NamedKey::F11,
         k::F12 => NamedKey::F12,
+        k::F13 => NamedKey::F13,
+        k::F14 => NamedKey::F14,
+        k::F15 => NamedKey::F15,
+        k::F16 => NamedKey::F16,
+        k::F17 => NamedKey::F17,
+        k::F18 => NamedKey::F18,
+        k::F19 => NamedKey::F19,
+        k::F20 => NamedKey::F20,
+        k::F21 => NamedKey::F21,
+        k::F22 => NamedKey::F22,
+        k::F23 => NamedKey::F23,
+        k::F24 => NamedKey::F24,
         _ => {
             let c = keyval.to_unicode()?;
             if c.is_control() {
@@ -1088,6 +1100,14 @@ mod tests {
             Some(Key::Named(NamedKey::Escape))
         );
         assert_eq!(gdk_keyval_to_winit_key(k::Control_L), None);
+        assert_eq!(
+            gdk_keyval_to_winit_key(k::F13),
+            Some(Key::Named(NamedKey::F13))
+        );
+        assert_eq!(
+            gdk_keyval_to_winit_key(k::F24),
+            Some(Key::Named(NamedKey::F24))
+        );
     }
 
     #[test]

@@ -747,6 +747,18 @@ fn vk_to_winit_key(vk: u32) -> Option<winit::keyboard::Key> {
         0x79 => NamedKey::F10,
         0x7A => NamedKey::F11,
         0x7B => NamedKey::F12,
+        0x7C => NamedKey::F13,
+        0x7D => NamedKey::F14,
+        0x7E => NamedKey::F15,
+        0x7F => NamedKey::F16,
+        0x80 => NamedKey::F17,
+        0x81 => NamedKey::F18,
+        0x82 => NamedKey::F19,
+        0x83 => NamedKey::F20,
+        0x84 => NamedKey::F21,
+        0x85 => NamedKey::F22,
+        0x86 => NamedKey::F23,
+        0x87 => NamedKey::F24,
         c @ 0x41..=0x5A => {
             return Some(Key::Character(((c as u8 + 32) as char).to_string().into()));
         }
@@ -784,5 +796,7 @@ mod tests {
         assert_eq!(vk_to_winit_key(0xBB), Some(Key::Character("=".into()))); // VK_OEM_PLUS
         assert_eq!(vk_to_winit_key(0x1B), Some(Key::Named(NamedKey::Escape)));
         assert_eq!(vk_to_winit_key(0x11), None); // VK_CONTROL
+        assert_eq!(vk_to_winit_key(0x7C), Some(Key::Named(NamedKey::F13))); // VK_F13
+        assert_eq!(vk_to_winit_key(0x87), Some(Key::Named(NamedKey::F24))); // VK_F24
     }
 }
