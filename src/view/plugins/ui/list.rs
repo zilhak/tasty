@@ -6,8 +6,8 @@ use tasty_ui_widgets::tokens::{PLUGIN_LIST_ROW_HEIGHT, STRUCT_GAP_2};
 use tasty_ui_widgets::{
     PluginAvatarSize, PluginDetailBarView, PluginInstallPathsView, margin_sym, paint_plugin_avatar,
     plugin_avatar, plugin_command_row, plugin_detail_bar, plugin_detail_bar_height,
-    plugin_detail_meta, plugin_detail_section, plugin_detail_section_gap, plugin_install_paths,
-    vspace,
+    plugin_detail_description, plugin_detail_meta, plugin_detail_name_row, plugin_detail_section,
+    plugin_detail_section_gap, plugin_install_paths, vspace,
 };
 
 pub(super) fn draw_list_tab(
@@ -240,17 +240,8 @@ fn draw_detail_body(
         plugin_avatar(ui, th, &entry.name, PluginAvatarSize::Detail);
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing.y = th.spacing_xs.value();
-            ui.horizontal(|ui| {
-                ui.heading(&entry.name);
-                super::tag(ui, th, &format!("v{}", entry.version));
-                if entry.builtin {
-                    ui.label(
-                        egui::RichText::new(t("plugins.builtin_badge"))
-                            .small()
-                            .color(egui::Color32::from(th.accent_agent())),
-                    );
-                }
-            });
+            let badge = entry.builtin.then(|| t("plugins.builtin_badge"));
+            plugin_detail_name_row(ui, th, &entry.name, &entry.version, badge);
             // 디자인 메타 줄은 `author · cat` 이다. 매니페스트에 분류가 없어 두 번째 자리에 id 를 둔다.
             let authors = entry.authors.join(", ");
             plugin_detail_meta(ui, th, &[&authors, &entry.id]);
@@ -259,7 +250,7 @@ fn draw_detail_body(
     vspace(ui, th.spacing_sm);
 
     if !entry.description.is_empty() {
-        ui.label(&entry.description);
+        plugin_detail_description(ui, th, &entry.description);
         vspace(ui, th.spacing_sm);
     }
 

@@ -17,6 +17,7 @@
 ### 창 — 세 탭
 
 - **Installed (list)**: 설치된 플러그인 목록. 각 항목:
+  - **이름 줄과 설명**: 상세 이름은 UI 최대 글자 크기·주 글자색이고, 같은 줄에 버전 Tag 와 기본 제공 플러그인이면 `built-in` 배지(caption · agent 강조색)가 이어진다. 설명은 body 크기·보조 글자색이며, 상세 열이 넓어도 `measure-lg`(460) 폭에서 줄바꿈한다.
   - **메타 줄**: 상세 이름 줄 아래에 작성자와 id 를 ` · ` 로 이은 mono caption·text-muted 한 줄. 작성자가 여럿이면 쉼표로 잇고, 작성자가 없으면 id 만 보인다. 홈페이지는 본문 `Homepage: <주소>` 줄에 따로 있다.
   - **액션 바**: 상세 아래, 본문 스크롤 밖에 늘 보이는 바. 상세 열 폭 전체를 쓰고 열 아래 끝에 붙으며, 위 1px 구분선이 열 양끝에 닿는다. 왼쪽에 enable/disable Switch 와 현재 상태 라벨(`Enabled`/`Disabled`, 스위치와 한 컨트롤이라 라벨을 눌러도 전환되고 키보드 초점은 한 칸), 오른쪽에 `Configure`(ghost, 톱니 아이콘, 설정 창 Plugins 탭으로 이동)와 `Uninstall`(secondary, 위험 색 글자). 키보드 Tab 순서는 본문 다음 스위치 → Configure → Uninstall 로 화면 순서와 같다.
   - **health error** 인디케이터 (enable 상태인데 오류인 플러그인).
