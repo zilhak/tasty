@@ -22,6 +22,14 @@ fn geometry(content_height: f32) -> SplitGeometry {
     }
 }
 
+/// 시험 workspace(1)를 보여 주는 창 하나.
+fn shown(content_height: f32) -> [ShownWorkspace; 1] {
+    [ShownWorkspace {
+        workspace: 1,
+        geometry: geometry(content_height),
+    }]
+}
+
 fn spec(id: u32, kind: &str) -> SurfaceSpec {
     SurfaceSpec {
         id,
@@ -121,7 +129,7 @@ fn splitting_a_636px_explorer_column_twice_keeps_the_explorer_at_the_floor() {
         &mut destination,
         "terminal",
         &first.core_state,
-        Some(&geometry(636.0)),
+        &shown(636.0),
     )
     .unwrap();
     assert_eq!(ratio(&destination), 0.5);
@@ -135,7 +143,7 @@ fn splitting_a_636px_explorer_column_twice_keeps_the_explorer_at_the_floor() {
         &mut destination,
         "terminal",
         &second.core_state,
-        Some(&geometry(636.0)),
+        &shown(636.0),
     )
     .unwrap();
     let r = ratio(&destination);
@@ -150,10 +158,7 @@ fn splitting_a_636px_explorer_column_twice_keeps_the_explorer_at_the_floor() {
         kept < floor() + 1.0,
         "the divider moves only as far as the floor needs: {kept}"
     );
-    assert!(
-        sibling > 0.0 && r <= DIVIDER_RATIO_MAX,
-        "sibling {sibling}, ratio {r}"
-    );
+    assert!(sibling > 0.0 && r < 1.0, "sibling {sibling}, ratio {r}");
 }
 
 /// 형제 칸도 탐색기라 둘 다 하한을 지킬 수 없으면 거절하고, 비율을 바꾸지 않는다.
@@ -165,7 +170,7 @@ fn a_split_that_cannot_keep_both_explorers_is_refused() {
         &mut destination,
         "explorer",
         &second.core_state,
-        Some(&geometry(636.0)),
+        &shown(636.0),
     )
     .unwrap_err();
     let (code, message, why) = reason(&refused);
@@ -184,7 +189,7 @@ fn a_new_explorer_cell_gets_the_floor() {
         &mut destination,
         "explorer",
         &second.core_state,
-        Some(&geometry(636.0)),
+        &shown(636.0),
     )
     .unwrap();
     let r = ratio(&destination);
@@ -205,7 +210,7 @@ fn a_side_by_side_split_of_a_short_explorer_is_left_alone() {
         &mut destination,
         "terminal",
         &short.core_state,
-        Some(&geometry(120.0)),
+        &shown(120.0),
     )
     .unwrap();
     assert_eq!(ratio(&destination), 0.5);
@@ -226,7 +231,7 @@ fn a_pane_split_keeps_the_explorer_inside_the_target_pane() {
         &mut destination,
         "terminal",
         &first.core_state,
-        Some(&geometry(300.0)),
+        &shown(300.0),
     )
     .unwrap();
     let r = ratio(&destination);
@@ -253,7 +258,7 @@ fn a_pane_split_keeps_the_explorer_inside_the_target_pane() {
 fn without_a_window_the_ratio_is_left_alone() {
     let second = session("explorer", Some("terminal"));
     let mut destination = surface_split(1000, SplitDirection::Horizontal);
-    hold(&mut destination, "explorer", &second.core_state, None).unwrap();
+    hold(&mut destination, "explorer", &second.core_state, &[]).unwrap();
     assert_eq!(ratio(&destination), 0.5);
 }
 
@@ -266,8 +271,69 @@ fn a_split_without_explorers_is_left_alone() {
         &mut destination,
         "terminal",
         &terminals.core_state,
-        Some(&geometry(100.0)),
+        &shown(100.0),
     )
     .unwrap();
+    assert_eq!(ratio(&destination), 0.5);
+}
+
+/// 탐색기가 아닌 형제 칸은 최소가 0 이다. 탐색기 칸이 하한을 지키면 형제 칸이 분할선 드래그 범위(10%)보다
+/// 작아져도 split 을 받는다.
+#[test]
+fn a_non_explorer_sibling_has_no_minimum() {
+    let explorer = session("explorer", None);
+    let height = floor() + 20.0;
+    let mut destination = surface_split(1000, SplitDirection::Horizontal);
+    hold(
+        &mut destination,
+        "terminal",
+        &explorer.core_state,
+        &shown(height),
+    )
+    .unwrap();
+    let r = ratio(&destination);
+    let (kept, sibling) = halves(height, r);
+    assert!(kept >= floor(), "explorer {kept}");
+    assert!(
+        r > 0.9 && sibling < height * 0.1,
+        "ratio {r}, sibling {sibling}"
+    );
+}
+
+/// 같은 workspace 를 여러 창이 보여 주면 가장 큰 창으로 판정한다.
+#[test]
+fn the_largest_view_of_the_workspace_decides() {
+    let second = session("explorer", Some("terminal"));
+    let views = [
+        ShownWorkspace {
+            workspace: 1,
+            geometry: geometry(300.0),
+        },
+        ShownWorkspace {
+            workspace: 1,
+            geometry: geometry(900.0),
+        },
+    ];
+    let mut destination = surface_split(1000, SplitDirection::Horizontal);
+    hold(&mut destination, "explorer", &second.core_state, &views).unwrap();
+    let r = ratio(&destination);
+    let (explorer, _) = halves(900.0, 0.5);
+    let (top, bottom) = halves(explorer, r);
+    assert!(
+        top >= floor() && bottom >= floor(),
+        "ratio {r}: {top} / {bottom}"
+    );
+}
+
+/// 그 workspace 를 보여 주는 창이 없으면 다른 workspace 를 보여 주는 창이 있어도 하한을 건너뛴다.
+#[test]
+fn a_workspace_no_window_shows_is_split_without_the_floor() {
+    let second = session("explorer", Some("terminal"));
+    let views = [ShownWorkspace {
+        workspace: 2,
+        geometry: geometry(636.0),
+    }];
+    let mut destination = surface_split(1000, SplitDirection::Horizontal);
+    hold(&mut destination, "explorer", &second.core_state, &views).unwrap();
     assert_eq!(ratio(&destination), 0.5);
 }

@@ -44,8 +44,9 @@ pub(crate) struct JournalApplication {
     replacements: Vec<(EngineId, tasty_core::Replacement)>,
     changed_engines: std::collections::HashSet<EngineId>,
     completion_views: HashMap<EngineId, crate::runtime::journal_product::CompletionView>,
-    /// 엔진을 보여 주는 창의 터미널 영역. split 의 탐색기 하한 판정에만 쓰며 journal 에 저장하지 않는다.
-    split_geometries: HashMap<EngineId, commands::split_floor::SplitGeometry>,
+    /// 엔진의 workspace 를 보여 주는 창마다의 터미널 영역. split 의 탐색기 하한 판정에만 쓰며 journal 에
+    /// 저장하지 않는다.
+    split_geometries: HashMap<EngineId, Vec<commands::split_floor::ShownWorkspace>>,
     wake: Arc<dyn Fn() + Send + Sync>,
     opening: HashMap<EngineId, Opening>,
     creations: HashMap<(EngineId, u64), creation::Creation>,
@@ -69,14 +70,15 @@ pub(crate) struct JournalApplication {
 }
 
 impl JournalApplication {
-    /// 엔진을 보여 주는 창의 터미널 영역을 기록한다. 기록이 없는 엔진의 split 에는 하한이 없다.
+    /// 엔진의 workspace 를 보여 주는 창들의 터미널 영역을 기록한다. 기록이 없는 workspace 의 split 에는
+    /// 하한이 없다.
     #[cfg(feature = "gui")]
     pub(crate) fn update_split_geometry(
         &mut self,
         id: EngineId,
-        geometry: commands::split_floor::SplitGeometry,
+        views: Vec<commands::split_floor::ShownWorkspace>,
     ) {
-        self.split_geometries.insert(id, geometry);
+        self.split_geometries.insert(id, views);
     }
 
     /// 창이 닫힌 엔진의 기록을 지운다.

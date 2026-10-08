@@ -568,7 +568,13 @@ impl JournalApplication {
             )
             .and_then(|spec| Request::from_spec(spec, session))
             .and_then(|request| {
-                hold_explorer_floor(request, session, self.split_geometries.get(&session.id))
+                hold_explorer_floor(
+                    request,
+                    session,
+                    self.split_geometries
+                        .get(&session.id)
+                        .map_or(&[], Vec::as_slice),
+                )
             })
         };
         match resolved {
@@ -645,7 +651,11 @@ impl JournalApplication {
             return;
         }
         let has_creation = self.has_creation(session.id);
-        let geometry = self.split_geometries.get(&session.id).copied();
+        let views = self
+            .split_geometries
+            .get(&session.id)
+            .cloned()
+            .unwrap_or_default();
         let Some(pending) = self.commands.pending.get_mut(&ticket) else {
             return;
         };
@@ -659,7 +669,7 @@ impl JournalApplication {
                     JsonRpcResponse::invalid_params(serde_json::Value::Null, error.to_string())
                 })
                 .and_then(|spec| Request::from_spec(spec, session))
-                .and_then(|request| hold_explorer_floor(request, session, geometry.as_ref()));
+                .and_then(|request| hold_explorer_floor(request, session, &views));
         match result {
             Ok(mut resource) => {
                 if session
@@ -877,13 +887,13 @@ impl Completed {
 fn hold_explorer_floor(
     mut request: Request,
     session: &EngineSession,
-    geometry: Option<&super::split_floor::SplitGeometry>,
+    views: &[super::split_floor::ShownWorkspace],
 ) -> Result<Request, JsonRpcResponse> {
     super::split_floor::hold(
         &mut request.plan.destination,
         &request.plan.surface.kind,
         &session.core_state,
-        geometry,
+        views,
     )?;
     Ok(request)
 }

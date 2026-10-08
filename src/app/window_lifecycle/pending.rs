@@ -69,19 +69,34 @@ impl App {
                             engine.categories(),
                             &main.state.navigation,
                         ),
-                        crate::app::journal::commands::split_floor::SplitGeometry {
-                            terminal_rect: main.compute_terminal_rect(),
-                            tab_bar_height: main.state.tab_bar_height,
-                            scale: main.base.gpu.scale_factor(),
-                        },
+                        shown_workspace(engine.workspaces(), &main.state.navigation).map(
+                            |workspace| {
+                                crate::app::journal::commands::split_floor::ShownWorkspace {
+                                    workspace,
+                                    geometry:
+                                        crate::app::journal::commands::split_floor::SplitGeometry {
+                                            terminal_rect: main.compute_terminal_rect(),
+                                            tab_bar_height: main.state.tab_bar_height,
+                                            scale: main.base.gpu.scale_factor(),
+                                        },
+                                }
+                            },
+                        ),
                     )
                 })
             })
             .collect();
         self.journal
             .retain_split_geometries(|id| projections.iter().any(|(shown, _, _)| *shown == id));
-        for (id, presentation, geometry) in projections {
-            self.journal.update_split_geometry(id, geometry);
+        // 한 엔진을 여러 창이 보여 줄 수 있으므로 창마다의 view 를 엔진별로 모은다.
+        let mut views: std::collections::HashMap<_, Vec<_>> = std::collections::HashMap::new();
+        for (id, _, view) in &projections {
+            views.entry(*id).or_default().extend(*view);
+        }
+        for (id, views) in views {
+            self.journal.update_split_geometry(id, views);
+        }
+        for (id, presentation, _) in projections {
             if let Some(session) = self.engines.session_mut(id) {
                 self.journal
                     .update_completion_view(id, &session.core_state, &presentation);
@@ -367,4 +382,14 @@ impl App {
             completion.reply_window_create(Ok(u64::from(window_id)));
         }
     }
+}
+
+/// 창이 지금 보여 주는 workspace. workspace 가 없으면 `None`.
+fn shown_workspace(
+    workspaces: tasty_core::workspaces::WorkspaceRead<'_>,
+    navigation: &crate::state::navigation::NavigationState,
+) -> Option<crate::model::WorkspaceId> {
+    workspaces
+        .get(navigation.workspace_index(&workspaces))
+        .map(|workspace| workspace.id)
 }
