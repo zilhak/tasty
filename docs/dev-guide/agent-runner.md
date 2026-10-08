@@ -1085,6 +1085,8 @@ report 는 사람이 읽는 실행 기록이다. 근거는 [ADR-0075](../adr/007
 | wait_barrier | `barrier` |
 | `include_raw` 일 때 | `raw: {stdout, stderr}` — 저장된 실행 결과의 출력. 기본으로는 싣지 않는다. 실패한 Run 은 출력 꼬리를 오류 메시지에만 두므로 `raw` 가 비어 있다 |
 
+실패한 Run 은 결과에 종료 코드와 실행 출력을 저장하지 않는다. 그래서 그 회차의 자동 항목은 `exit_code` 가 `null` 이고 `raw` 의 `stdout`·`stderr` 도 `null` 이며, 종료 코드와 출력 꼬리는 `failure.message`(`Run exited with code <n>` 과 뒤따르는 stdout·stderr 꼬리) 문자열 안에만 있다. retry 때 굳힌 자동 항목도 같다.
+
 `retry` 는 다음 회차를 열면서 레코드의 결과·입력 snapshot 을 지운다. 그래서 retry 는 지우기 전에 닫히는 회차의 자동 항목(`raw` 포함)을 `tasty.agent.task_report_auto.<task id>.<n>` 에 한 번 저장하고, 그 회차 블록에 끝난 상태(`settled`)를 남긴다. 원본이 사라진 뒤의 유일한 사본이라 같은 값을 두 곳에 두지 않는다. 자동 항목은 task 레코드의 일부만 담으므로 레코드처럼 memory 값 상한 안에 들어간다. 굳힌 키를 만들 수 있도록 task 제출은 가장 긴 report 키(`tasty.agent.task_report_auto.<task id>.4294967295`)가 memory 키 길이 256 바이트 안에 드는 id 만 받는다. 이 검사 전에 저장된 더 긴 id 의 task 는 retry 때 경고만 남기고 굳히지 않는다.
 
 custom 기록은 회차마다 memory 키 하나(`tasty.agent.task_report.<task id>.<n>`)에 둔다. task 레코드와 키를 나눠 report 크기가 상태 전이 쓰기를 막지 않게 한다.
@@ -1092,7 +1094,7 @@ custom 기록은 회차마다 memory 키 하나(`tasty.agent.task_report.<task i
 - 블록: `{entries: [{seq, at, source, text, omit_by_limit?}], omitted_appends}`. `source` 는 `run`·`postprocess`·`agent`·`reduce_custom`·`stderr_marker` 중 하나이며 호출자가 밝힌 값이다(인증하지 않는다). 텍스트만 받는다. JSON 을 넣어도 문자열로 저장한다.
 - 회차 토큰: 러너가 v2 task 를 dispatch 할 때 그 회차의 report 토큰(16바이트 난수, 16진수)을 만들어 task 레코드에 둔다. 주소는 `<workspace id>/<회차>/<source>/<토큰>/<task id>` 다.
 - 받는 조건: 주소의 토큰·회차가 task 의 마지막 dispatch 회차와 같고 task 가 Ready 또는 Running 이며, 그 회차가 retry 로 닫히지 않았어야 한다(retry 뒤 다음 dispatch 전에는 레코드가 Ready 이고 토큰도 이전 회차 것이므로 블록의 `settled` 로 판정한다). 다른 task·이전 회차의 토큰은 `-32018` `reason: token_mismatch`, 끝난 회차는 `reason: closed`(`state` 에 지금 상태)다. Unknown 도 닫힌 회차다. 세션 토큰으로 부른 agent 세션은 `agent.task_submit_result` 처럼 자기 세션에 지시를 보낸 회차에만 쓴다. 턴 표에서 그 task 의 회차가 이 세션 surface 와 주소의 회차에 묶여 있지 않으면 토큰이 맞아도 `reason: not_the_session` 이다. 이 검사는 토큰·닫힘 검사 뒤에 하므로 끝난 회차에 대한 늦은 쓰기는 세션이어도 `closed` 다. 사용자 CLI 와 플러그인(`agent` 권한) 호출은 주소의 토큰만 본다. 종결 전이는 저장소 잠금 안에서 task 레코드를 쓰므로, 그 쓰기 뒤의 append 는 모두 거절된다. 그래서 블록은 회차가 끝난 순간의 내용으로 확정된다.
-- 상한: append 하나가 append 상한(기본 1 KiB)을 넘으면 UTF-8 경계에서 자르고 항목 끝에 `omit_by_limit`(잘린 바이트 수)를 붙인다. 블록의 저장 텍스트 합이 블록 상한(기본 16 KiB)을 넘게 되면 저장하지 않고 `omitted_appends` 만 늘린다. 어느 경우든 호출은 성공한다. 상한은 설정의 `[task_pipeline]` 이고 `report_append_bytes < report_block_bytes` 여야 한다(범위 64~65536, 128~131072). 설정 적용 때 어긋난 쌍은 거절하고, 설정 파일에 어긋난 쌍이 있으면 기본값으로 읽는다. 블록 상한의 위쪽은 JSON 이스케이프로 텍스트가 몇 배 커져도 memory 값 하나의 상한(1 MiB) 안에 들도록 정했다.
+- 상한: append 하나가 append 상한(기본 1 KiB)을 넘으면 UTF-8 경계에서 자르고 항목 끝에 `omit_by_limit`(잘린 바이트 수)를 붙인다. 블록의 저장 텍스트 합이 블록 상한(기본 16 KiB)을 넘게 되면 저장하지 않고 `omitted_appends` 만 늘린다. 이 판정은 append 마다 하므로, 큰 기록이 한 번 넘쳐 세어진 뒤에도 남은 자리에 들어가는 짧은 기록은 저장된다(`seq` 는 세어진 것까지 이어 매긴다). 어느 경우든 호출은 성공한다. 상한은 설정의 `[task_pipeline]` 이고 `report_append_bytes < report_block_bytes` 여야 한다(범위 64~65536, 128~131072). 설정 적용 때 어긋난 쌍은 거절하고, 설정 파일에 어긋난 쌍이 있으면 기본값으로 읽는다. 블록 상한의 위쪽은 JSON 이스케이프로 텍스트가 몇 배 커져도 memory 값 하나의 상한(1 MiB) 안에 들도록 정했다.
 - 실패·취소·Unknown 회차의 블록도 그 상태로 남는다. Skipped 회차는 실행하지 않아 블록이 없다. retry 는 새 회차 블록(#2, #3 …)을 따로 만든다. task 를 지우거나 GC 하면 블록과 굳힌 자동 항목도 지운다.
 
 경로별 append:
