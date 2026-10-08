@@ -798,6 +798,10 @@ impl HostExecutor {
                     .ctx
                     .dispatch_plugin(ipc_method, params.clone())
                     .map_err(|e| format!("Custom '{ipc_method}': {e}"))?;
+                // 완료를 따로 기다리는 custom 이면 이 응답은 접수 응답이라 결과와 따로 남긴다.
+                if poll.is_some() || self.ctx.completion.default_for_method(ipc_method).is_some() {
+                    self.record_accepted(task, &value);
+                }
                 use tasty_agent::PollSpecRef;
                 let spec: tasty_agent::PollSpec = match poll.as_deref() {
                     Some(PollSpecRef::Inline(spec)) => spec.clone(),
@@ -1217,6 +1221,7 @@ mod tests {
             typed_result: None,
             graph_id: None,
             input_snapshot: None,
+            accepted: None,
             attempt: None,
             route: None,
             skip: None,
@@ -1333,6 +1338,7 @@ mod tests {
             typed_result: None,
             graph_id: None,
             input_snapshot: None,
+            accepted: None,
             attempt: None,
             route: None,
             skip: None,
@@ -1780,6 +1786,7 @@ mod tests {
             typed_result: None,
             graph_id: None,
             input_snapshot: None,
+            accepted: None,
             attempt: None,
             route: None,
             skip: None,
@@ -1858,6 +1865,7 @@ mod tests {
             typed_result: None,
             graph_id: None,
             input_snapshot: None,
+            accepted: None,
             attempt: None,
             route: None,
             skip: None,
@@ -1947,6 +1955,7 @@ mod tests {
             typed_result: None,
             graph_id: None,
             input_snapshot: None,
+            accepted: None,
             attempt: None,
             route: None,
             skip: None,
@@ -2045,6 +2054,7 @@ mod tests {
             typed_result: None,
             graph_id: None,
             input_snapshot: None,
+            accepted: None,
             attempt: None,
             route: None,
             skip: None,
@@ -2134,6 +2144,7 @@ mod tests {
             typed_result: None,
             graph_id: None,
             input_snapshot: None,
+            accepted: None,
             attempt: None,
             route: None,
             skip: None,
@@ -2196,6 +2207,7 @@ mod tests {
             typed_result: None,
             graph_id: None,
             input_snapshot: None,
+            accepted: None,
             attempt: None,
             route: None,
             skip: None,
@@ -2277,6 +2289,7 @@ mod tests {
             typed_result: None,
             graph_id: None,
             input_snapshot: None,
+            accepted: None,
             attempt: None,
             route: None,
             skip: None,
@@ -2773,6 +2786,7 @@ mod tests {
             typed_result: None,
             graph_id: None,
             input_snapshot: None,
+            accepted: None,
             attempt: None,
             route: None,
             skip: None,
@@ -2849,6 +2863,7 @@ mod tests {
             typed_result: None,
             graph_id: None,
             input_snapshot: None,
+            accepted: None,
             attempt: None,
             route: None,
             skip: None,

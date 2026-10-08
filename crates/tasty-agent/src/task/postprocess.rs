@@ -315,6 +315,11 @@ pub fn stdin_document(
     if let Some(v) = &execution.output {
         raw.insert("execution".into(), v.clone());
     }
+    if let Some(a) = &task.accepted
+        && let Ok(v) = serde_json::to_value(a)
+    {
+        raw.insert("accepted".into(), v);
+    }
     let raw = Value::Object(raw);
     let artifacts = task
         .typed_result
@@ -542,6 +547,7 @@ pub fn finalize_postprocessed(
             cause: report.cause(),
             failed_runs: progress.failed_runs.clone(),
         }),
+        accepted: task.accepted.clone(),
     };
     let provenance = |source: &str| Provenance {
         contract_version: contract.contract_version,

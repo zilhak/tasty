@@ -523,3 +523,63 @@ fn stored_int64_that_is_not_an_integer_fails_to_read() {
     let e = store.get(1, &id).unwrap_err().to_string();
     assert!(e.contains("stored output"), "{e}");
 }
+
+/// 접수 응답은 성공·실행 실패·결과 없는 실패 모두의 `raw.accepted` 에 실리고, 실패한 task 를
+/// retry 하면 지워진다.
+#[test]
+fn the_accepted_response_reaches_every_raw_and_retry_clears_it() {
+    use super::contract::AcceptedResponse;
+    let (_td, mut mem, seq) = fresh_store();
+    let mut store = TaskStore::new(&mut mem, "_host", &seq);
+    let c = contract(json!({"contract_version": 2}));
+    let accepted = AcceptedResponse::capture(&json!({"job": "J"}));
+    let failed = TaskResult {
+        exit_code: None,
+        output: None,
+        error: Some("poll failed".into()),
+    };
+    for (result, state) in [
+        (Some(output(json!({"state": "done"}))), TaskState::Succeeded),
+        (Some(failed), TaskState::Failed { error: "x".into() }),
+        (None, TaskState::Failed { error: "x".into() }),
+    ] {
+        let t = store.create_typed(opts("c", custom()), c.clone()).unwrap();
+        store.set_accepted(1, &t.id, accepted.clone()).unwrap();
+        store.set_state(1, &t.id, TaskState::Running, 1).unwrap();
+        if let Some(r) = result {
+            store.set_result(1, &t.id, r).unwrap();
+        }
+        let (t, _) = store.set_state(1, &t.id, state, 2).unwrap();
+        let raw = &t.typed_result.as_ref().expect("typed result").raw;
+        assert_eq!(raw.accepted.as_ref(), Some(&accepted), "{:?}", t.state);
+        if t.state == TaskState::Succeeded {
+            continue;
+        }
+        let t = store.retry(1, &t.id, false, 3).unwrap();
+        assert!(t.accepted.is_none());
+        assert!(store.get(1, &t.id).unwrap().unwrap().accepted.is_none());
+    }
+    let v1 = store.create(opts("v1", custom())).unwrap();
+    assert!(store.set_accepted(1, &v1.id, accepted).is_err());
+}
+
+#[test]
+fn an_accepted_response_over_the_cap_keeps_a_char_aligned_prefix() {
+    use super::contract::{ACCEPTED_RESPONSE_CAP, AcceptedResponse};
+    let small = AcceptedResponse::capture(&json!({"a": 1}));
+    assert_eq!(small.response, Some(json!({"a": 1})));
+    assert!(!small.truncated && small.text.is_none() && small.dropped_bytes == 0);
+    assert_eq!(
+        serde_json::to_value(&small).unwrap(),
+        json!({"response": {"a": 1}})
+    );
+    // `"ab` 세 바이트 뒤에 3바이트 문자가 이어져 상한이 문자 가운데에 걸린다.
+    let v = json!(format!("ab{}", "가".repeat(ACCEPTED_RESPONSE_CAP)));
+    let full = v.to_string();
+    let big = AcceptedResponse::capture(&v);
+    let text = big.text.clone().expect("text");
+    assert!(big.truncated && big.response.is_none());
+    assert_eq!(text.len(), ACCEPTED_RESPONSE_CAP - 1);
+    assert!(full.starts_with(&text));
+    assert_eq!(big.dropped_bytes as usize, full.len() - text.len());
+}

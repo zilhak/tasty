@@ -676,12 +676,18 @@ task 는 선택적으로 타입 계약(`TaskContract`)을 가진다. 계약이 �
 | command | 기본 출력 타입 | 출력 값 |
 |---|---|---|
 | `run` | `int64`(후처리가 없으면 다시 선언 불가) | 종료 코드(wire 에서는 `"0"` 같은 문자열). `allowed_exit_codes`(기본 `[0]`)에 든 코드면 성공. stdout·stderr 는 `raw.execution`, 숫자 종료 코드는 `raw.exit_code` |
-| `custom` | `json` | IPC 응답(최종 응답) |
+| `custom` | `json` | IPC 응답(최종 응답). 완료를 따로 기다리면 dispatch 응답은 `raw.accepted` 에 따로 둔다(아래) |
 | `wait_barrier` | `unit`(다시 선언 불가) | 확정된 null |
 | `reduce` | 전략별(아래) | reducer 값 |
 | `agent` | `string` | 턴의 최종 답변. string 이 아닌 출력은 명시 제출 값(아래 §agent task) |
 
-결과는 `typed_result` 에 저장한다: `has_output`·`output`(최종 출력), `raw`(`exit_code`, `execution`, 후처리가 있으면 `postprocess`), `artifacts`(산출물 참조 자리. 지금은 채우는 실행기가 없어 항상 빈 목록이다), `error`(`stage`: `input`·`execution`·`postprocess`·`output_validation`·`persistence`·`route`, agent task 는 `code` 도 싣는다), `provenance`(`contract_version`, `kind`, `output_source`). `has_output: true` 이고 `output: null` 이면 unit 또는 nullable 출력이 확정된 것이고, `has_output: false` 는 출력이 없다는 뜻이다. v1 호환을 위해 `result` 에는 최종 출력이 `output` 으로 투영된다.
+결과는 `typed_result` 에 저장한다: `has_output`·`output`(최종 출력), `raw`(`exit_code`, `execution`, 후처리가 있으면 `postprocess`, 완료를 따로 기다린 custom 이면 `accepted`), `artifacts`(산출물 참조 자리. 지금은 채우는 실행기가 없어 항상 빈 목록이다), `error`(`stage`: `input`·`execution`·`postprocess`·`output_validation`·`persistence`·`route`, agent task 는 `code` 도 싣는다), `provenance`(`contract_version`, `kind`, `output_source`). `has_output: true` 이고 `output: null` 이면 unit 또는 nullable 출력이 확정된 것이고, `has_output: false` 는 출력이 없다는 뜻이다. v1 호환을 위해 `result` 에는 최종 출력이 `output` 으로 투영된다.
+
+완료를 따로 기다리는 custom(`poll` 이 있거나 메서드에 기본 완료 전략이 있는 경우)은 dispatch 응답을 접수 응답으로 보고 task 의 `accepted` 에 저장한다. 결과를 확정할 때는 성공·실패와 관계없이 같은 값을 `raw.accepted` 에 싣는다. `raw.execution` 은 완료를 알린 응답(poll 이면 마지막 poll 응답)이다. 응답으로 바로 끝나는 custom 은 그 응답이 출력이라 `accepted` 가 없다.
+
+- 형식은 `{"response": <응답>}` 이다. 직렬화한 JSON 이 64 KiB(`ACCEPTED_RESPONSE_CAP`, Run 출력 한 줄기의 상한과 같다)를 넘으면 `{"text": <JSON 앞부분>, "truncated": true, "dropped_bytes": <버린 바이트 수>}` 로 둔다. 자르는 자리는 UTF-8 문자 경계다. 잘린 `text` 는 JSON 으로 읽을 수 없고 출력 검증에 쓰지 않는다.
+- `retry` 가 지운다. v1 task 에는 저장하지 않는다.
+- 저장에 실패하면 경고 로그를 남기고 실행은 계속한다. 요청은 이미 실행됐기 때문이다.
 
 보고된 결과는 계약에 맞춰 확정하고, 유효한 출력 없이 성공으로 가려는 v2 task 는 Failed 로 끝낸다. 러너·재시작 복구·훅 완료·훅 만료·IPC `task_set_result` 가 모두 같은 완료 경로(아래 §실행 회차와 완료)를 지나므로 완료 경로마다 따로 검사하지 않는다. 비즈니스 값(`"revise"`, `false`)은 정상 출력이다. 출력 타입에 맞지 않는 값만 `output_validation` 실패가 된다. `retry` 는 `typed_result` 를 지운다.
 
@@ -742,7 +748,7 @@ run·custom task 는 본 작업 뒤 CLI 하나를 실행해 그 stdout 을 최�
 - `command`: 실행 파일과 인자. 셸을 거치지 않고 직접 실행한다. 셸이 필요하면 `["sh", "-c", ...]` 처럼 셸을 명시한다. 입력 값은 명령 문자열에 끼워 넣지 않고 stdin 으로만 간다. TTY 가 없는 CLI 만 지원한다.
 - 환경변수: `Run` 과 같다(위 "runner 자식의 환경"). 바깥 Claude Code 세션의 표지·비밀과 바깥 Tasty 인스턴스의 신원 변수 네 개를 지우고 나머지는 넘긴다.
 - `cwd`: 생략하면 run 의 `cwd`, 그것도 없으면 호스트 프로세스의 디렉터리.
-- `stdin`: stdin 에 쓸 JSON object 의 필드별 출처. `from` 은 `input`(이 회차의 입력 snapshot, wire 형식), `raw`(본 작업 원본 `{exit_code?, execution?}`), `artifacts` 이고 `pointer` 로 그 안의 위치를 고른다. 위치에 값이 없으면 실행하지 않고 `stdin_mapping` 실패다. 생략하면 `{}` 를 쓴다. 문서 하나를 쓰고 stdin 을 닫는다.
+- `stdin`: stdin 에 쓸 JSON object 의 필드별 출처. `from` 은 `input`(이 회차의 입력 snapshot, wire 형식), `raw`(본 작업 원본 `{exit_code?, execution?, accepted?}`), `artifacts` 이고 `pointer` 로 그 안의 위치를 고른다. 위치에 값이 없으면 실행하지 않고 `stdin_mapping` 실패다. 생략하면 `{}` 를 쓴다. 문서 하나를 쓰고 stdin 을 닫는다.
 - `stdout.format`: `json`(기본)은 JSON 값 정확히 하나, `text` 는 UTF-8 문자열 그대로. json 형식이 실패해도 text 로 바꾸지 않는다. `stdout.pointer` 는 json 형식에서만 쓰며 그 위치의 값을 출력 후보로 고른다. 생략하면 값 전체다.
 - `timeout_ms`: 필수, 1 ~ 86400000. 기본값을 두지 않는다(무기한 대기를 받지 않는 이유는 아래 상한 근거). 프로세스 종료와 stdin 쓰기, 상속된 stdout·stderr 파이프의 EOF 까지 포함한다.
 - `retry`: 생략하면 재시도하지 않는다. `max_retries` 1 ~ 10, `delay_ms` 0 ~ 3600000.

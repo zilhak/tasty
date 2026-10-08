@@ -42,6 +42,7 @@ fn task(command: TaskCommand, contract: Value) -> Task {
         typed_result: None,
         graph_id: None,
         input_snapshot: None,
+        accepted: None,
         attempt: None,
         route: None,
         skip: None,
@@ -260,6 +261,17 @@ fn the_stdin_document_holds_only_the_mapped_fields() {
     assert_eq!(
         stdin_document(&t, &missing, &execution).unwrap_err().0,
         PostprocessCause::StdinMapping
+    );
+    // custom 비동기 task 의 접수 응답도 raw 에서 읽을 수 있다.
+    let mut t = t;
+    t.accepted = Some(crate::task::contract::AcceptedResponse::capture(
+        &json!({"job": "J"}),
+    ));
+    let job = spec(json!({"command": ["x"], "timeout_ms": 1,
+        "stdin": {"job": {"from": "raw", "pointer": "/accepted/response/job"}}}));
+    assert_eq!(
+        stdin_document(&t, &job, &execution).unwrap(),
+        json!({"job": "J"})
     );
 }
 

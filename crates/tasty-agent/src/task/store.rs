@@ -252,6 +252,7 @@ impl<'a> TaskStore<'a> {
             typed_result: None,
             graph_id: None,
             input_snapshot: None,
+            accepted: None,
             attempt: None,
             route: None,
             skip: None,
@@ -416,6 +417,27 @@ impl TaskStore<'_> {
         self.put(&task)?;
         Ok(task)
     }
+
+    /// custom 비동기 task 가 dispatch 때 받은 접수 응답을 저장한다. 결과를 확정할 때
+    /// `raw.accepted` 로 싣는다. `retry` 가 지운다.
+    pub fn set_accepted(
+        &mut self,
+        workspace_id: WorkspaceId,
+        id: &TaskId,
+        accepted: super::contract::AcceptedResponse,
+    ) -> Result<Task> {
+        let mut task = self
+            .get(workspace_id, id)?
+            .ok_or_else(|| AgentError::TaskNotFound(id.clone()))?;
+        if !task.is_typed() {
+            return Err(AgentError::InvalidArgument(format!(
+                "task {id} is not a typed task; it has no raw result"
+            )));
+        }
+        task.accepted = Some(accepted);
+        self.put(&task)?;
+        Ok(task)
+    }
 }
 
 #[cfg(test)]
@@ -525,7 +547,10 @@ fn settle_typed_terminal(task: &mut Task, requested: TaskState) -> TaskState {
     let failure_result = |task: &Task, failure: TaskFailure| TypedResult {
         has_output: false,
         output: super::types::TypedValue::Null,
-        raw: Default::default(),
+        raw: contract::RawResult {
+            accepted: task.accepted.clone(),
+            ..Default::default()
+        },
         artifacts: Vec::new(),
         error: Some(failure),
         provenance: Provenance {

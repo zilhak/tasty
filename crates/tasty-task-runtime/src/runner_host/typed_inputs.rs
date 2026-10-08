@@ -6,6 +6,7 @@
 
 use serde_json::Value;
 use tasty_agent::task::binding::{needs_input, resolve_inputs};
+use tasty_agent::task::contract::AcceptedResponse;
 use tasty_agent::{Task, TaskCommand, TaskStore};
 use tasty_memory::HOST_OWNER;
 
@@ -43,6 +44,26 @@ impl HostExecutor {
         }
         task.input_snapshot = Some(snapshot);
         Ok(())
+    }
+
+    /// v2 custom 의 접수 응답을 크기 상한을 적용해 task 에 저장한다. 요청은 이미 실행됐으므로
+    /// 저장에 실패해도 실행을 막지 않고 경고만 남긴다.
+    pub(super) fn record_accepted(&mut self, task: &Task, value: &Value) {
+        if !task.is_typed() {
+            return;
+        }
+        let accepted = AcceptedResponse::capture(value);
+        let seq = self.ctx.agent_seq.clone();
+        let res = self.ctx.with_memory(|mem| {
+            TaskStore::new(mem, HOST_OWNER, seq.as_ref()).set_accepted(
+                task.workspace_id,
+                &task.id,
+                accepted,
+            )
+        });
+        if let Err(e) = res {
+            tracing::warn!("agent task {}: accepted response not stored: {e}", task.id);
+        }
     }
 }
 

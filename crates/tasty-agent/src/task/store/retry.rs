@@ -44,6 +44,7 @@ impl TaskStore<'_> {
         task.result = None;
         task.typed_result = None;
         task.input_snapshot = None;
+        task.accepted = None;
         task.route = None;
         task.skip = None;
         self.put(&task)?;
@@ -82,6 +83,7 @@ impl TaskStore<'_> {
                     d.result = None;
                     d.typed_result = None;
                     d.input_snapshot = None;
+                    d.accepted = None;
                     d.route = None;
                     d.skip = None;
                     self.put(&d)?;

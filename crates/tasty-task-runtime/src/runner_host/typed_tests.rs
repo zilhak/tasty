@@ -1,4 +1,4 @@
-//! v2 계약 task 의 실행 경계 — Run 허용 종료 코드와 v2 reduce.
+//! v2 계약 task 의 실행 경계 — Run 허용 종료 코드, v2 reduce, custom 접수 응답.
 
 use serde_json::{Value, json};
 use tasty_agent::task::contract::TaskContract;
@@ -290,4 +290,134 @@ fn v1_reduce_cannot_take_typed_inputs() {
         DispatchOutcome::PermanentFail(e) => assert!(e.contains("v1 reduce"), "{e}"),
         other => panic!("expected PermanentFail, got {other:?}"),
     }
+}
+
+/// 완료를 따로 기다리는 v2 custom 은 dispatch 응답을 `raw.accepted` 에, 완료를 알린 poll 응답을
+/// `raw.execution` 에 둔다. 너무 큰 접수 응답은 앞부분만 남기고 잘렸다고 표시한다.
+#[test]
+fn an_async_custom_keeps_its_accepted_response_apart_from_the_final_one() {
+    use std::sync::mpsc;
+    use tasty_agent::runner::RunnerLoop;
+    use tasty_agent::task::TaskGraphSpec;
+    use tasty_agent::task::contract::ACCEPTED_RESPONSE_CAP;
+    use tasty_ipc::host_call::HostIpcInjector;
+    use tasty_ipc::protocol::JsonRpcResponse;
+    use tasty_ipc::server::IpcCommand;
+
+    let (_td, ctx) = fresh_ctx();
+    let (tx, rx) = mpsc::channel::<IpcCommand>();
+    ctx.host_ipc
+        .set(HostIpcInjector::new(tx, std::sync::Arc::new(|| {})))
+        .ok()
+        .expect("set once");
+    let big = "가".repeat(ACCEPTED_RESPONSE_CAP);
+    let big_reply = big.clone();
+    let worker = std::thread::spawn(move || {
+        while let Ok(cmd) = rx.recv_timeout(Duration::from_secs(10)) {
+            let id = cmd.request.id.clone().unwrap_or(Value::Null);
+            let reply = match (cmd.request.method.as_str(), cmd.request.params.get("job")) {
+                ("fake.start", _) => match cmd.request.params.get("big") {
+                    Some(_) => json!({"job": "J2", "blob": big_reply}),
+                    None => json!({"job": "J1"}),
+                },
+                ("fake.poll", Some(job)) => json!({"state": "done", "job": job}),
+                ("system.ping", _) => json!({"pong": true}),
+                other => panic!("unexpected call {other:?}"),
+            };
+            cmd.response_tx
+                .send(JsonRpcResponse::success(id, reply))
+                .expect("reply");
+        }
+    });
+    let poll = json!({"poll_method": "fake.poll", "map_from_response": {"job": "job"},
+        "state_field": "state", "terminal_states": ["done"], "interval_ms": 1});
+    let graph = json!({"contract_version": 2, "tasks": [
+        {"id": "small", "command": {"kind": "custom", "ipc_method": "fake.start", "poll": poll}},
+        {"id": "large", "command": {"kind": "custom", "ipc_method": "fake.start",
+            "params": {"big": true}, "poll": poll}},
+        {"id": "now", "command": {"kind": "custom", "ipc_method": "system.ping"}}
+    ]});
+    let spec: TaskGraphSpec = serde_json::from_value(graph).expect("graph spec");
+    ctx.with_memory(|mem| {
+        let seq = ctx.agent_seq.clone();
+        TaskStore::new(mem, HOST_OWNER, seq.as_ref())
+            .submit_graph(1, spec, 0)
+            .unwrap();
+    });
+    let get = |id: &str| {
+        ctx.with_memory(|mem| {
+            let seq = ctx.agent_seq.clone();
+            TaskStore::new(mem, HOST_OWNER, seq.as_ref())
+                .get(1, &id.to_string())
+                .unwrap()
+                .expect("task")
+        })
+    };
+    let mut runner = RunnerLoop::new(HostExecutor::new(ctx.clone()));
+    for n in 0..200 {
+        let snapshot = ctx.with_memory(|mem| {
+            let seq = ctx.agent_seq.clone();
+            TaskStore::new(mem, HOST_OWNER, seq.as_ref())
+                .list(1)
+                .unwrap()
+        });
+        let (set_ctx, res_ctx) = (ctx.clone(), ctx.clone());
+        runner.tick(
+            1,
+            10 + n,
+            &snapshot,
+            move |ws, id, st, now| {
+                set_ctx.with_memory(|mem| {
+                    let seq = set_ctx.agent_seq.clone();
+                    TaskStore::new(mem, HOST_OWNER, seq.as_ref())
+                        .set_state(ws, id, st, now)
+                        .map(|_| ())
+                })
+            },
+            move |ws, id, c, now| {
+                res_ctx.with_memory(|mem| {
+                    let seq = res_ctx.agent_seq.clone();
+                    TaskStore::new(mem, HOST_OWNER, seq.as_ref())
+                        .complete(ws, id, c, now)
+                        .map(|_| ())
+                })
+            },
+        );
+        if ["small", "large", "now"]
+            .iter()
+            .all(|id| get(id).state.is_terminal())
+        {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+
+    let small = get("small");
+    assert_eq!(small.state, TaskState::Succeeded, "{:?}", small.result);
+    let raw = &small.typed_result.as_ref().unwrap().raw;
+    let accepted = raw.accepted.as_ref().expect("accepted response");
+    assert_eq!(accepted.response, Some(json!({"job": "J1"})));
+    assert!(!accepted.truncated);
+    assert_eq!(raw.execution, Some(json!({"state": "done", "job": "J1"})));
+
+    let large = get("large");
+    assert_eq!(large.state, TaskState::Succeeded, "{:?}", large.result);
+    let accepted = large.typed_result.unwrap().raw.accepted.expect("accepted");
+    let full = json!({"job": "J2", "blob": big}).to_string();
+    let text = accepted.text.expect("truncated text");
+    assert!(accepted.truncated && accepted.response.is_none());
+    assert!(text.len() <= ACCEPTED_RESPONSE_CAP, "{}", text.len());
+    assert!(full.starts_with(&text));
+    assert_eq!(accepted.dropped_bytes as usize, full.len() - text.len());
+
+    // 응답으로 바로 끝나는 custom 은 그 응답이 결과라 접수 응답을 따로 두지 않는다.
+    let now = get("now");
+    assert_eq!(now.state, TaskState::Succeeded, "{:?}", now.result);
+    assert!(now.accepted.is_none());
+    let raw = now.typed_result.unwrap().raw;
+    assert!(raw.accepted.is_none());
+    assert_eq!(raw.execution, Some(json!({"pong": true})));
+    drop(runner);
+    drop(ctx);
+    worker.join().unwrap();
 }

@@ -18,6 +18,7 @@
 
 ### Added
 
+- **v2 custom 작업이 접수 응답을 결과에 남긴다.** 완료를 따로 기다리는 custom(`poll` 또는 메서드의 기본 완료 전략)은 처음 받은 응답을 실행 중에는 task 의 `accepted`, 끝난 뒤에는 결과의 `raw.accepted` 에 둔다. `raw.execution` 은 완료를 알린 응답이다. 직렬화한 JSON 이 64 KiB 를 넘으면 앞부분만 `text` 로 두고 `truncated`·`dropped_bytes` 로 표시한다. 후처리 stdin 의 `raw` 문서에서도 `/accepted` 로 읽는다. 이전에는 이 응답을 poll 인자를 만든 뒤 버렸다.
 - **웹훅 포트를 직접 정하고 조회하는 `tasty webhook port` 와 실행 인자 `--webhook-port` 가 생겼다.** `tasty webhook port` 는 실행 중인 Tasty에 리스너가 실제로 연 주소·포트와 정한 방법(`argument`·`config`·`probe`), 다음 시작에 쓸 저장 포트를 묻는다. `tasty webhook port <N>` 은 데이터 폴더의 `webhooks.toml` 에 저장하고 `--unset` 은 저장 값을 지운다. 둘 다 다음 시작부터 적용된다. Tasty가 실행 중이 아니면 `webhooks.toml` 을 직접 고치고 출력에 `instance_running: false` 와 고친 파일을 적는다. 그래서 저장한 포트가 막혀 Tasty가 뜨지 않을 때 이 명령으로 풀 수 있고, 오류 안내도 이 명령을 알려 준다. `--webhook-port <N>` 은 GUI·헤드리스 모두 이번 실행에만 쓰며 저장 값보다 우선한다. 정한 포트를 열 수 없으면 Tasty가 오류를 보이고 시작하지 않는다(GUI는 오류 화면 뒤 종료 코드 1, 헤드리스는 종료 코드 1). Tasty가 이미 실행 중인데 다른 `--webhook-port` 로 다시 실행하면 실행 중인 Tasty로 넘기지 않고 안내 후 종료 코드 1로 끝난다. IPC `webhook.config` 는 `address`·`bound`·`source`·`explicit`·`saved_port`·`allow_external` 를 돌려주고 `unset_port`·`allow_external` 인자를 받는다.
 - **다른 컴퓨터의 웹훅 호출을 받을지 고르는 설정이 생겼다.** 설정 › 일반의 "다른 컴퓨터의 웹훅 호출 받기", config.toml `[webhook] allow_external`, `tasty webhook allow-external on|off`. 기본은 끔이고 다음 시작부터 적용된다.
 

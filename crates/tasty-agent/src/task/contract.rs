@@ -231,11 +231,62 @@ pub struct RawResult {
     /// 후처리 CLI 의 원본 결과. 후처리가 없거나 실행 전에 끝났으면 비어 있다.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub postprocess: Option<PostprocessRaw>,
+    /// custom 비동기 task 가 dispatch 때 받은 접수 응답. `execution` 은 완료를 알린 응답이다.
+    /// 응답으로 바로 끝나는 custom 과 다른 종류에는 없다.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub accepted: Option<AcceptedResponse>,
 }
 
 impl RawResult {
     pub fn is_empty(&self) -> bool {
-        self.exit_code.is_none() && self.execution.is_none() && self.postprocess.is_none()
+        self.exit_code.is_none()
+            && self.execution.is_none()
+            && self.postprocess.is_none()
+            && self.accepted.is_none()
+    }
+}
+
+/// [`AcceptedResponse`] 에 응답을 그대로 두는 직렬화 크기 상한(바이트). Run 출력 한 줄기와 같다.
+pub const ACCEPTED_RESPONSE_CAP: usize = 64 * 1024;
+
+/// custom 비동기 task 의 접수 응답. 직렬화한 JSON 이 [`ACCEPTED_RESPONSE_CAP`] 이하면 `response`
+/// 에 값 그대로, 넘으면 `text` 에 그 JSON 의 앞부분(문자 경계)만 두고 `truncated`·`dropped_bytes`
+/// 로 잘린 것을 알린다.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct AcceptedResponse {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub response: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub truncated: bool,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub dropped_bytes: u64,
+}
+
+fn is_zero(n: &u64) -> bool {
+    *n == 0
+}
+
+impl AcceptedResponse {
+    pub fn capture(value: &Value) -> Self {
+        let text = value.to_string();
+        if text.len() <= ACCEPTED_RESPONSE_CAP {
+            return Self {
+                response: Some(value.clone()),
+                ..Self::default()
+            };
+        }
+        let mut cut = ACCEPTED_RESPONSE_CAP;
+        while !text.is_char_boundary(cut) {
+            cut -= 1;
+        }
+        Self {
+            response: None,
+            dropped_bytes: (text.len() - cut) as u64,
+            text: Some(text[..cut].to_string()),
+            truncated: true,
+        }
     }
 }
 
@@ -712,6 +763,7 @@ pub fn finalize_result(task: &Task, contract: &TaskContract, reported: &TaskResu
         exit_code: reported.exit_code,
         execution: reported.output.clone(),
         postprocess: None,
+        accepted: task.accepted.clone(),
     };
     let failed = |stage: FailureStage, failure: TaskFailure, source: &str| TypedResult {
         has_output: false,
@@ -815,6 +867,7 @@ pub fn finalize_result(task: &Task, contract: &TaskContract, reported: &TaskResu
                     exit_code: raw.exit_code,
                     execution: None,
                     postprocess: None,
+                    accepted: None,
                 },
                 _ => raw.clone(),
             },

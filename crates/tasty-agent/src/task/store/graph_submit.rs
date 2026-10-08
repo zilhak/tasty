@@ -221,6 +221,7 @@ impl TaskStore<'_> {
                 typed_result: None,
                 graph_id: Some(graph_id.clone()),
                 input_snapshot: None,
+                accepted: None,
                 attempt: None,
                 route: None,
                 skip: None,

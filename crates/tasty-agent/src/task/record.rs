@@ -46,6 +46,8 @@ pub(crate) struct TaskWire {
     #[serde(default)]
     input_snapshot: Option<InputSnapshotWire>,
     #[serde(default)]
+    accepted: Option<super::contract::AcceptedResponse>,
+    #[serde(default)]
     attempt: Option<TaskAttempt>,
     #[serde(default)]
     route: Option<RouteDecision>,
@@ -75,6 +77,7 @@ impl TryFrom<TaskWire> for Task {
             typed_result,
             graph_id,
             input_snapshot,
+            accepted,
             attempt,
             route,
             skip,
@@ -117,6 +120,7 @@ impl TryFrom<TaskWire> for Task {
             typed_result,
             graph_id,
             input_snapshot,
+            accepted,
             attempt,
             route,
             skip,

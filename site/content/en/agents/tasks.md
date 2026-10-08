@@ -1,4 +1,4 @@
-<!-- source-hash: d93b7ce7a4b6 -->
+<!-- source-hash: 4c71ab4b6589 -->
 <a id="task-dag"></a>
 
 # Task workflows (DAG)
@@ -33,7 +33,7 @@ Creating one returns a task ID. Use that ID to define dependencies and to query 
 | Command kind | What it does |
 |---|---|
 | `run` | Runs the specified command. It is a background process that does not occupy a terminal, and it carries up to the last 64KiB each of standard output and standard error in the result. Interactive programs do not fit here. It gets the environment Tasty was started from, with the exceptions below the table |
-| `custom` | Turns one of Tasty's own actions into a task. Things that create a terminal, such as spawning a child agent, belong here |
+| `custom` | Turns one of Tasty's own actions into a task. Things that create a terminal, such as spawning a child agent, belong here. When the action is waited on separately until it finishes, a task sent in a graph keeps the first acceptance reply in the result's `raw.accepted`, apart from the final reply |
 | `reduce` | Merges the results of several tasks into one |
 | `wait_barrier` | Waits until all the signals have gathered at a barrier |
 
