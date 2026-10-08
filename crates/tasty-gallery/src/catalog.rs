@@ -1652,6 +1652,14 @@ pub fn pages() -> Vec<Page> {
                             components::settings_hook_seq::draw,
                         ),
                         spec(
+                            "settings-general-webhook-external",
+                            "General › General — Accept webhook calls from other computers",
+                            Some(
+                                "last row after Language · settings-row grid, label wraps in the label column · warning callout always shown, row gap below the row",
+                            ),
+                            components::settings_general_webhook::draw,
+                        ),
+                        spec(
                             "settings-macos-permissions",
                             "General › Permissions (macOS)",
                             Some(

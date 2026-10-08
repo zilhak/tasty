@@ -77,6 +77,7 @@ pub mod segmented;
 pub mod settings;
 pub mod settings_appearance_colors;
 pub mod settings_font_override;
+pub mod settings_general_webhook;
 pub mod settings_handler;
 pub mod settings_hook_override;
 pub mod settings_hook_seq;
