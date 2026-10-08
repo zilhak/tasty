@@ -1014,7 +1014,7 @@ C 프레임보더) 중 **A 배지가 사용자 확정**되었다. 본체와 갤�
 카드는 크기가 고정이라 직전 단계(히스테리시스)를 넘기지 않는다. 디자인 · 갤러리 · 본체의 path bar 는 모두 Up 버튼을 두고,
 경로 가용 폭은 막대에서 Up · refresh 와 간격을 뺀 폭이다. `…` 메뉴(`FpCrumbMenu`) 행은 갤러리와 본체 모두 공용
 `menu_item`(높이 28 · padding `menu-item-padding-x` 12 · 아이콘 `icon-size-md` 16 · 글자 `menu-item-fg`, 호버 `menu-item-fg-hover`)이다.
-시안 `FpCrumbMenu` 견본은 행 글자를 모두 `text-primary`로 그려 공용 행의 `menu-item-fg`(text-secondary)와 다르다.
+행은 다른 메뉴처럼 간격 없이 붙어 28 간격으로 놓인다.
 메뉴 폭의 180~320 밴드는 테두리를 포함한 바깥 폭(border-box)이다. 현재 폴더 crumb 은 보통 굵기 `text-primary`, crumb 글자는
 `font-size-caption`(11)이다. 색·간격은 전부 기존 semantic 접근자
 (`accent_info`/`surface_active`/`accent_primary`/`text_placeholder`/`bg_sidebar` 등)와

@@ -294,32 +294,71 @@ fn hidden_crumbs(
                 // 밴드는 테두리까지 포함한 바깥 폭이라 안쪽 폭은 틀을 뺀 값이다. 행은 남은 폭을
                 // 모두 차지하므로 상한만 두면 메뉴가 늘 상한까지 늘어난다 — 폭을 고정한다.
                 ui.set_width(menu_width(widest, th) - menu_chrome(th));
-                let folder = th.accent_primary().to_egui();
-                for i in range.clone() {
-                    let glyph = |ui: &mut egui::Ui, rect: egui::Rect, _c: egui::Color32| {
-                        icons::FOLDER
-                            .image(rect.height(), folder)
-                            .paint_at(ui, rect)
-                    };
-                    if menu_item(
-                        ui,
-                        th,
-                        Some(&glyph),
-                        &props.crumbs[i].label,
-                        None,
-                        MenuItemVariant::Normal,
-                        false,
-                        true,
-                    )
-                    .clicked()
-                    {
-                        *action = FilePickerAction::NavigateTo(i);
-                    }
+                let rows = range.clone().map(|i| (i, props.crumbs[i].label.as_str()));
+                if let Some(i) = hidden_menu_rows(ui, th, rows) {
+                    *action = FilePickerAction::NavigateTo(i);
                 }
             },
         )
     });
     ui.spacing_mut().menu_margin = prev_margin;
+}
+
+/// 숨은 조상 폴더 행을 그리고 누른 행의 크럼 번호를 돌려준다. 행은 다른 메뉴처럼
+/// menu-item-height 간격으로 붙인다.
+fn hidden_menu_rows<'a>(
+    ui: &mut egui::Ui,
+    th: &Theme,
+    rows: impl Iterator<Item = (usize, &'a str)>,
+) -> Option<usize> {
+    ui.spacing_mut().item_spacing.y = 0.0;
+    let folder = th.accent_primary().to_egui();
+    let mut clicked = None;
+    for (i, label) in rows {
+        let glyph = |ui: &mut egui::Ui, rect: egui::Rect, _c: egui::Color32| {
+            icons::FOLDER
+                .image(rect.height(), folder)
+                .paint_at(ui, rect)
+        };
+        if menu_item(
+            ui,
+            th,
+            Some(&glyph),
+            label,
+            None,
+            MenuItemVariant::Normal,
+            false,
+            true,
+        )
+        .clicked()
+        {
+            clicked = Some(i);
+        }
+    }
+    clicked
+}
+
+#[cfg(test)]
+mod hidden_menu_row_tests {
+    use super::*;
+
+    /// 기본 item_spacing 이 0 이 아닌 Ui 에서도 세 행의 높이 합이 menu-item-height 의 세 배다.
+    #[test]
+    fn hidden_folder_rows_sit_flush_at_the_menu_item_height() {
+        let th = crate::theme::theme();
+        let ctx = egui::Context::default();
+        let mut height = 0.0;
+        let _frame = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                assert!(ui.spacing().item_spacing.y > 0.0);
+                let top = ui.cursor().top();
+                let rows = ["a", "b", "c"].into_iter().enumerate();
+                hidden_menu_rows(ui, &th, rows);
+                height = ui.cursor().top() - top;
+            });
+        });
+        assert_eq!(height, th.menu_item_height().value() * 3.0);
+    }
 }
 
 #[cfg(test)]

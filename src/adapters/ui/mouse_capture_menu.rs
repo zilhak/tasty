@@ -151,23 +151,7 @@ pub fn draw_menu(
     };
     let th = theme::theme();
     let app_name = engine.foreground_name(surface_id).unwrap_or("").to_string();
-
-    let suppress_resp = draw_menu_row(
-        ui,
-        &th,
-        icons::BELL,
-        t("popup.mouse_capture_banner_menu.suppress_prefix"),
-        &app_name,
-        t("popup.mouse_capture_banner_menu.suppress_suffix"),
-    );
-    let disable_resp = draw_menu_row(
-        ui,
-        &th,
-        icons::MOUSE,
-        t("popup.mouse_capture_banner_menu.disable_prefix"),
-        &app_name,
-        t("popup.mouse_capture_banner_menu.disable_suffix"),
-    );
+    let (suppress_resp, disable_resp) = draw_menu_rows(ui, &th, &app_name);
 
     if suppress_resp.clicked() {
         state.dispatch_intent(
@@ -192,6 +176,32 @@ pub fn draw_menu(
         return PopupAction::Close;
     }
     PopupAction::None
+}
+
+/// 두 행을 그린다. 행은 menu-item-height 간격으로 붙인다. 셸 높이(`menu_size_for`)도 간격 없이 잰다.
+fn draw_menu_rows(
+    ui: &mut egui::Ui,
+    th: &Theme,
+    app_name: &str,
+) -> (egui::Response, egui::Response) {
+    ui.spacing_mut().item_spacing.y = 0.0;
+    let suppress = draw_menu_row(
+        ui,
+        th,
+        icons::BELL,
+        t("popup.mouse_capture_banner_menu.suppress_prefix"),
+        app_name,
+        t("popup.mouse_capture_banner_menu.suppress_suffix"),
+    );
+    let disable = draw_menu_row(
+        ui,
+        th,
+        icons::MOUSE,
+        t("popup.mouse_capture_banner_menu.disable_prefix"),
+        app_name,
+        t("popup.mouse_capture_banner_menu.disable_suffix"),
+    );
+    (suppress, disable)
 }
 
 /// 앞 문구·프로그램 이름·뒤 문구를 따로 배치한다. 이름이 잘리면 툴팁으로 보여 준다.
@@ -307,6 +317,24 @@ mod tests {
     /// 테두리까지 포함한 바깥 폭. 셸 폭에 바깥으로 그리는 테두리 두 줄을 더한다.
     fn outer(th: &Theme, widest: f32) -> f32 {
         menu_inner_width(th, widest).value() + th.border_width.value() * 2.0
+    }
+
+    /// 기본 item_spacing 이 0 이 아닌 Ui 에서도 두 행이 붙어 셸 높이의 행 부분과 같다.
+    #[test]
+    fn the_two_rows_sit_flush_at_the_menu_item_height() {
+        let th = theme::theme();
+        let ctx = egui::Context::default();
+        let mut rows = None;
+        let _frame = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                assert!(ui.spacing().item_spacing.y > 0.0);
+                let (a, b) = draw_menu_rows(ui, &th, "vim");
+                rows = Some((a.rect, b.rect));
+            });
+        });
+        let (a, b) = rows.expect("rows drawn");
+        assert_eq!(b.top() - a.top(), th.menu_item_height().value());
+        assert_eq!(b.bottom() - a.top(), th.menu_item_height().value() * 2.0);
     }
 
     #[test]
