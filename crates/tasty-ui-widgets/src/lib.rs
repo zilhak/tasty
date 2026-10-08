@@ -10,6 +10,7 @@ mod attach_refusal;
 mod attention;
 mod autocomplete;
 mod banner;
+mod banner_more_row;
 pub mod brand;
 mod button;
 mod center_state;
@@ -79,6 +80,9 @@ pub use autocomplete::{
     AutoComplete, AutoCompleteAction, AutoCompleteResponse, MatchMode, autocomplete_dropdown,
 };
 pub use banner::{banner_shell, inset_banner_zone, inset_content_rect};
+pub use banner_more_row::{
+    BannerMoreLabel, banner_more_row, banner_more_row_height, banner_more_row_natural_width,
+};
 pub use button::{Button, ButtonVariant, banner_surface, banner_surface_ctx, in_banner_surface};
 pub use center_state::{
     CENTER_STATE_ERROR_GLYPH, CenterState, CenterStateOutput, CenterStateVariant,

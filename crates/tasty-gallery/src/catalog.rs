@@ -999,11 +999,13 @@ pub fn pages() -> Vec<Page> {
                                 "Every row interpolates a program name of arbitrary length, and \
                                  word order differs by locale (en: name last; ko/ja: name first). \
                                  So a row's label is two parts: the fixed text (never truncates) \
-                                 and the program name in mono / text-primary, which is the part \
-                                 that shrinks and ellipsises. The menu grows with the content \
+                                 and the program name in mono (same row ink as the fixed text: \
+                                 menu-item-fg at rest, menu-item-fg-hover on hover), which is the \
+                                 part that shrinks and ellipsises. The menu grows with the content \
                                  between 200px and 288px (a wider band than the Tools menu's \
                                  160–240, since every row carries a program name) and the full \
-                                 name is available as the row's tooltip.",
+                                 name is available as the row's tooltip. When the fixed text alone \
+                                 does not fit at 288 (ja), that row wraps instead and grows.",
                             ),
                             widgets::banner_mouse_capture::draw_elastic,
                         ),

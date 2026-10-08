@@ -3,11 +3,11 @@
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::banner_shell;
-
-use super::banner::{
-    MoreTriggerState, caption_label, mouse_capture_banner_body, mouse_capture_menu_row_tone,
+use tasty_ui_widgets::{
+    BannerMoreLabel, banner_more_row, banner_more_row_natural_width, banner_shell,
 };
+
+use super::banner::{MoreTriggerState, caption_label, mouse_capture_banner_body};
 use crate::catalog::icons;
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
@@ -25,6 +25,11 @@ const REJECTED_OPACITY: f32 = 0.75;
 /// 메뉴 행의 고정 문구 — 시안 `BannerMoreMenuG` 의 행 문구.
 const SUPPRESS_PREFIX: &str = "Turn off this notice for ";
 const DISABLE_PREFIX: &str = "Disable mouse capture for ";
+/// ja 줄바꿈 예제의 고정 문구 — 시안 `BannerMoreMenuG` 의 `texts`.
+const JA_TEXTS: [&str; 2] = [
+    "vim の通知をオフにする ",
+    "このプログラムのマウスキャプチャを常に無効にする ",
+];
 
 /// bg-app 무대 — 가운데 정렬 세로 묶음.
 fn app_stage(ui: &mut egui::Ui, theme: &Theme, add: impl FnOnce(&mut egui::Ui)) {
@@ -163,6 +168,14 @@ pub fn draw_elastic(ui: &mut egui::Ui, theme: &Theme) {
                     elastic_slot(
                         ui,
                         theme,
+                        "ja — fixed copy alone exceeds 288: that row wraps, menu stays 288 (2026-10-08)",
+                        |ui| {
+                            more_menu_texts(ui, theme, JA_TEXTS, "vim", Some(1), false);
+                        },
+                    );
+                    elastic_slot(
+                        ui,
+                        theme,
                         "rejected — danger tone on the capture row",
                         |ui| {
                             ui.multiply_opacity(REJECTED_OPACITY);
@@ -179,9 +192,19 @@ pub fn draw_elastic(ui: &mut egui::Ui, theme: &Theme) {
         &[
             ("label", "fixed text + app name (2 spans)"),
             ("truncates", "the app name only"),
-            ("app name", "mono · text-primary"),
-            ("width", "content-sized, 200 ≤ w ≤ 288"),
-            ("wrap", "never — 1 line per row"),
+            (
+                "app name",
+                "mono · row ink (banner-more-app-fg → menu-item-fg / -fg-hover)",
+            ),
+            (
+                "width",
+                "content-sized, 200 ≤ w ≤ 288 — never widens past 288",
+            ),
+            (
+                "wrap",
+                "only when the FIXED copy + 1 name glyph does not fit: whole label wraps, row grows \
+                 (min 28, pad-y menu-item-wrap-padding-y); the fixed copy never ellipsises",
+            ),
             ("tooltip", "full program name on the row"),
             ("tone", "both rows neutral (no danger)"),
         ],
@@ -189,9 +212,15 @@ pub fn draw_elastic(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::without_color("banner-more-app-font", "mono program name"),
             TokenChip::new(
                 "banner-more-app-fg",
-                "program name tone",
+                "program name = row ink",
                 theme.banner_more_app_fg().to_egui(),
             ),
+            TokenChip::new(
+                "banner-more-app-fg-hover",
+                "hover",
+                theme.banner_more_app_fg_hover().to_egui(),
+            ),
+            TokenChip::without_color("menu-item-wrap-padding-y", "wrapped row pad-y"),
             TokenChip::without_color("menu-item-height", "28px rows"),
             TokenChip::new(
                 "accent-danger",
@@ -199,14 +228,6 @@ pub fn draw_elastic(ui: &mut egui::Ui, theme: &Theme) {
                 theme.accent_danger().to_egui(),
             ),
         ],
-    );
-    spec::note(
-        ui,
-        theme,
-        "The body menu (src/adapters/ui/mouse_capture_menu.rs) is a fixed 240px wide and its \
-         first row reads \u{201c}Turn off this notification for\u{201d} \
-         (popup.mouse_capture_banner_menu); this spec draws the kit elastic width and the kit \
-         \u{201c}notice\u{201d} copy.",
     );
     spec::do_(
         ui,
@@ -235,32 +256,45 @@ fn elastic_slot(ui: &mut egui::Ui, theme: &Theme, label: &str, add: impl FnOnce(
     });
 }
 
-/// 두 행 메뉴 — 폭은 내용에 맞추되 min/max-width 토큰 사이로 묶는다.
+/// 두 행 메뉴 — 시안의 en 문구.
 fn more_menu(ui: &mut egui::Ui, theme: &Theme, app: &str, hovered: Option<usize>, danger: bool) {
+    more_menu_texts(
+        ui,
+        theme,
+        [SUPPRESS_PREFIX, DISABLE_PREFIX],
+        app,
+        hovered,
+        danger,
+    );
+}
+
+/// 두 행 메뉴 — 폭은 내용에 맞추되 min/max-width 토큰 사이로 묶는다. 상한에서 고정 문구가 들어가지
+/// 않는 행은 공용 행이 줄을 바꾼다. `hovered` 는 시안 MenuItem `active`(surface-active)다.
+fn more_menu_texts(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    texts: [&str; 2],
+    app: &str,
+    hovered: Option<usize>,
+    danger: bool,
+) {
     let pad = theme.banner_more_menu_padding().value();
     let bw = theme.border_width.value();
     let chrome = (pad + bw) * 2.0;
-    let body = theme.font_size_body.value();
-    let text_w = |text: &str, font: egui::FontId| {
-        ui.fonts(|f| {
-            f.layout_no_wrap(text.to_owned(), font, egui::Color32::PLACEHOLDER)
-                .size()
-                .x
-        })
+    let label = |text| BannerMoreLabel {
+        prefix: text,
+        app,
+        suffix: "",
     };
-    let app_w = text_w(app, egui::FontId::monospace(body));
-    let prefix_w = text_w(SUPPRESS_PREFIX, egui::FontId::proportional(body))
-        .max(text_w(DISABLE_PREFIX, egui::FontId::proportional(body)));
-    let row_w = theme.menu_item_padding_x().value() * 2.0
-        + theme.icon_glyph_size_md.value()
-        + theme.spacing_sm.value()
-        + prefix_w
-        + app_w;
+    let row_w = texts
+        .iter()
+        .map(|t| banner_more_row_natural_width(ui.ctx(), theme, label(t)))
+        .fold(0.0_f32, f32::max);
     let outer = (row_w + chrome).clamp(
         theme.banner_more_menu_min_width().value(),
         theme.banner_more_menu_max_width().value(),
     );
-    let resp = egui::Frame::new()
+    egui::Frame::new()
         .fill(theme.banner_more_menu_bg().to_egui())
         .stroke(egui::Stroke::new(
             bw,
@@ -272,32 +306,17 @@ fn more_menu(ui: &mut egui::Ui, theme: &Theme, app: &str, hovered: Option<usize>
         .show(ui, |ui| {
             ui.set_width(outer - chrome);
             ui.spacing_mut().item_spacing.y = 0.0;
-            let rows = [
-                (icons::BELL, SUPPRESS_PREFIX, false),
-                (icons::MOUSE, DISABLE_PREFIX, danger),
-            ];
-            for (i, (icon, prefix, tone)) in rows.into_iter().enumerate() {
-                // 시안 MenuItem `active` 는 surface-active 채움이다. 행 헬퍼의 hover 채움
-                // (overlay-hover)은 쓰지 않고, 행 아래 자리를 먼저 잡아 두었다가 채운다.
-                let fill = ui.painter().add(egui::Shape::Noop);
-                let top = ui.cursor().min;
-                let w = ui.available_width();
-                mouse_capture_menu_row_tone(ui, theme, icon, prefix, app, "", false, tone);
-                if hovered == Some(i) {
-                    let rect = egui::Rect::from_min_size(
-                        top,
-                        egui::vec2(w, theme.menu_item_height().value()),
-                    );
-                    ui.painter().set(
-                        fill,
-                        egui::Shape::rect_filled(
-                            rect,
-                            theme.menu_item_radius().value(),
-                            theme.surface_active().to_egui(),
-                        ),
-                    );
-                }
+            let icons = [icons::BELL, icons::MOUSE];
+            for (i, (icon, text)) in icons.into_iter().zip(texts).enumerate() {
+                let _row = banner_more_row(
+                    ui,
+                    theme,
+                    &|ui, rect, c| icon.image(rect.height(), c).paint_at(ui, rect),
+                    label(text),
+                    hovered == Some(i),
+                    false,
+                    danger && i == 1,
+                );
             }
         });
-    resp.response.on_hover_text(app);
 }

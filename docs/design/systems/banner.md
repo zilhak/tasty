@@ -116,7 +116,8 @@ mouse-capture 배너(`defs::BANNER_MOUSE_CAPTURE`)에 한해, X 왼쪽에 "더�
   click/Esc 로 닫힘(scrim 없음), ↑↓/Enter/Esc 키보드 내비게이션은 기존 headless 메뉴와 동일.
 - **폭**: 테두리까지 포함한 폭(시안의 border-box)이 두 행 중 넓은 쪽의 내용 폭(좌우 행 패딩 + 아이콘 + 간격 +
   고정 문구 + 프로그램 이름)에 메뉴 패딩·테두리를 더한 값이다. `banner-more-menu-min-width`(200)와
-  `banner-more-menu-max-width`(288) 사이로 제한하며, 상한에 걸리면 프로그램 이름만 줄인다. 폭은 메뉴를 열 때
+  `banner-more-menu-max-width`(288) 사이로 제한하며, 상한에 걸리면 프로그램 이름만 줄인다. 고정 문구에 이름 한
+  글자와 말줄임표를 더한 폭도 들어가지 않는 행(ja)은 폭을 288 에 두고 그 행만 줄을 바꾼다. 폭과 셸 높이는 메뉴를 열 때
   포그라운드 프로그램 이름으로 한 번 잰다.
 - **셸**: 내부 패딩 `banner-more-menu-padding`(4), 배경 `banner-more-menu-bg`(surface-raised), 테두리
   `banner-more-menu-border`(border-strong), radius·그림자는 다른 headless 메뉴와 같다.
@@ -126,10 +127,13 @@ mouse-capture 배너(`defs::BANNER_MOUSE_CAPTURE`)에 한해, X 왼쪽에 "더�
      foreground 프로그램 이름 추가 + **배너도 즉시 함께 닫힘**.
   2. **"{app}에 대해 마우스 캡처 비활성화"**(`icons::MOUSE`) — `mouse_capture_blacklist` 에
      추가. **배너는 남는다** — 캡처가 이미 풀렸음을 사용자가 읽고 직접 닫도록.
-- **라벨 렌더**: 고정 텍스트 + 프로그램 이름(mono, 강조) **두 조각**으로 분리 렌더한다 —
-  하나의 문자열로 합쳐 ellipsis 하면 로케일에 따라(특히 en) 프로그램 이름부터 잘리기
-  때문이다. 고정 텍스트는 줄바꿈/truncate 없음, 프로그램 이름 세그먼트만 축소+ellipsis,
-  전체 이름은 항목 tooltip 으로 보완한다.
+- **라벨 렌더**: 공용 `tasty_ui_widgets::banner_more_row`. 고정 텍스트 + 프로그램 이름(mono) **두 조각**으로
+  분리 렌더한다 — 하나의 문자열로 합쳐 ellipsis 하면 로케일에 따라(특히 en) 프로그램 이름부터 잘리기
+  때문이다. 두 조각 모두 행 글자색이다(쉼 `menu-item-fg`, hover·active `menu-item-fg-hover`. 이름은
+  `banner-more-app-fg`·`banner-more-app-fg-hover` 로 같은 값). 고정 텍스트는 truncate 하지 않고, 한 줄이면
+  프로그램 이름 세그먼트만 축소+ellipsis 한다. 줄을 바꾼 행은 최소 `menu-item-height`, 위아래
+  `menu-item-wrap-padding-y`, 줄 높이 `line-height-ui` × 본문 크기이고 아이콘은 세로 가운데다. 이름은 단어
+  중간에서 끊지 않고 혼자 한 줄보다 길 때만 ellipsis 한다. 이름을 줄였으면 전체 이름을 항목 tooltip 으로 보완한다.
 - 두 블랙리스트는 Settings › Terminal › Mouse Capture 탭과 데이터를 공유한다. 메뉴와 설정 화면은 같은 저장·매칭 규칙을 사용한다([ADR-0015](../../adr/0015-terminal-user-input-routing.md)).
 
 ## TTL (살아있는 시간)

@@ -5,8 +5,8 @@
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{
-    Button, ButtonVariant, ControlSize, IconButton, IconButtonVariant, Input, banner_shell, kbd,
-    switch,
+    BannerMoreLabel, Button, ButtonVariant, ControlSize, IconButton, IconButtonVariant, Input,
+    banner_more_row, banner_shell, kbd, switch,
 };
 
 use crate::catalog::icons::{self, MockGlyph};
@@ -734,7 +734,9 @@ pub fn draw_more_menu(ui: &mut egui::Ui, theme: &Theme) {
             caption_label(
                 ui,
                 theme,
-                "min-width (200px) — the app segment ellipsizes, the fixed label text never does",
+                "forced 200px — the fixed copy plus one name glyph does not fit, so that row \
+                 wraps; the fixed text never ellipsizes (the app widens this menu to 288 instead, \
+                 see Elastic width)",
             );
             mouse_capture_menu(ui, theme, "a-very-long-tui-program-name", 200.0);
         });
@@ -878,7 +880,7 @@ fn mouse_capture_menu(ui: &mut egui::Ui, theme: &Theme, app: &str, width: f32) {
         });
 }
 
-/// 고정 라벨은 유지하고 프로그램 이름만 줄인다. 본체 mouse_capture_menu와 같은 배치 원칙이다.
+/// 고정 라벨은 유지하고 프로그램 이름만 줄인다. 본체 mouse_capture_menu와 같은 공용 행이다.
 fn mouse_capture_menu_row(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -888,88 +890,19 @@ fn mouse_capture_menu_row(
     suffix: &str,
     hovered: bool,
 ) {
-    mouse_capture_menu_row_tone(ui, theme, icon, prefix, app, suffix, hovered, false);
-}
-
-/// `danger` 면 아이콘과 고정 문구를 accent-danger 로 칠한다(시안의 기각된 기록용 예).
-/// 프로그램 이름은 어느 쪽이든 banner-more-app-fg 다.
-#[allow(clippy::too_many_arguments)] // reason: 한 행의 아이콘·세 문구·두 상태를 그대로 받는다
-pub(super) fn mouse_capture_menu_row_tone(
-    ui: &mut egui::Ui,
-    theme: &Theme,
-    icon: MockGlyph,
-    prefix: &str,
-    app: &str,
-    suffix: &str,
-    hovered: bool,
-    danger: bool,
-) {
-    let height = theme.menu_item_height().value();
-    let pad_x = theme.menu_item_padding_x().value();
-    let (rect, _) = ui.allocate_exact_size(
-        egui::vec2(ui.available_width(), height),
-        egui::Sense::hover(),
+    let _row = banner_more_row(
+        ui,
+        theme,
+        &|ui, rect, c| icon.image(rect.height(), c).paint_at(ui, rect),
+        BannerMoreLabel {
+            prefix,
+            app,
+            suffix,
+        },
+        false,
+        hovered,
+        false,
     );
-    if hovered {
-        ui.painter().rect_filled(
-            rect,
-            theme.menu_item_radius().value(),
-            theme.menu_item_bg_hover().to_egui_premultiplied(),
-        );
-    }
-    let icon_glyph = theme.icon_glyph_size_md.value();
-    let gap = theme.spacing_sm.value();
-    let mut x = rect.left() + pad_x;
-    let irect = egui::Rect::from_center_size(
-        egui::pos2(x + icon_glyph * 0.5, rect.center().y),
-        egui::vec2(icon_glyph, icon_glyph),
-    );
-    let icon_fg = if danger {
-        theme.accent_danger().to_egui()
-    } else {
-        theme.text_muted().to_egui()
-    };
-    icon.image(icon_glyph, icon_fg).paint_at(ui, irect);
-    x += icon_glyph + gap;
-
-    let label_rect = egui::Rect::from_min_max(
-        egui::pos2(x, rect.top()),
-        egui::pos2(rect.right() - pad_x, rect.bottom()),
-    );
-    let mut child = ui.new_child(
-        egui::UiBuilder::new()
-            .max_rect(label_rect)
-            .layout(egui::Layout::left_to_right(egui::Align::Center)),
-    );
-    child.spacing_mut().item_spacing.x = 0.0;
-    let fg = if danger {
-        theme.accent_danger().to_egui()
-    } else {
-        theme.text_primary().to_egui()
-    };
-    if !prefix.is_empty() {
-        child.label(
-            egui::RichText::new(prefix)
-                .size(theme.font_size_body.value())
-                .color(fg),
-        );
-    }
-    child.add(
-        egui::Label::new(
-            egui::RichText::new(app)
-                .monospace()
-                .size(theme.font_size_body.value())
-                .color(theme.banner_more_app_fg().to_egui()),
-        )
-        .truncate(),
-    );
-    if !suffix.is_empty() {
-        child.label(
-            egui::RichText::new(suffix)
-                .size(theme.font_size_body.value())
-                .color(fg),
-        );
-    }
 }
 
 /// 데모 라벨 — caption(11), text-muted (스테이지 내 상태 주석).

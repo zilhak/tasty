@@ -1,6 +1,6 @@
 //! 마우스 캡처 배너의 더보기 메뉴. 대상 surface는 dialogs에 보관한다.
 //! 알림 끄기는 배너를 닫고, 캡처 비활성화는 배너를 남긴다.
-//! 프로그램 이름만 줄일 수 있도록 라벨과 이름을 나누어 배치한다.
+//! 행은 공용 `banner_more_row` 다. 프로그램 이름만 줄이고, 고정 문구가 상한 폭을 넘으면 그 행만 줄을 바꾼다.
 
 use crate::adapters::ui::banner::BannerScope;
 use crate::adapters::ui::icons;
@@ -11,20 +11,22 @@ use crate::state::MainViewState;
 use crate::theme::{self, Theme};
 use tasty_icons::Icon;
 use tasty_type_geometry::length::LogicalPx;
+use tasty_ui_widgets::{
+    BannerMoreLabel, banner_more_row, banner_more_row_height, banner_more_row_natural_width,
+};
 
 pub const MOUSE_CAPTURE_BANNER_MENU_POPUP_ID: crate::adapters::ui::popup::PopupId =
     "mouse_capture_banner_menu";
 
 /// 셸 크기. 폭은 테두리를 뺀 안쪽 폭이다(셸 테두리는 바깥으로 그린다). 높이는 두 행과 위아래 패딩이다.
-fn menu_size_for(th: &Theme, inner_width: LogicalPx) -> egui::Vec2 {
-    let row = th.menu_item_height().value();
+fn menu_size_for(th: &Theme, inner_width: LogicalPx, rows_height: f32) -> egui::Vec2 {
     let pad = th.banner_more_menu_padding().value();
-    egui::vec2(inner_width.value(), pad * 2.0 + row * 2.0)
+    egui::vec2(inner_width.value(), pad * 2.0 + rows_height)
 }
 
 /// 시안의 메뉴 폭은 테두리까지 포함한 border-box다. 두 행 중 넓은 내용에 맞추고
 /// `banner-more-menu-min-width`..`banner-more-menu-max-width` 로 제한한 뒤 테두리를 뺀 셸 폭을 돌려준다.
-/// 상한에 걸리면 프로그램 이름만 줄인다(`draw_menu_row`).
+/// 상한에 걸리면 프로그램 이름만 줄이고, 고정 문구도 들어가지 않는 행은 줄을 바꾼다(공용 `banner_more_row`).
 fn menu_inner_width(th: &Theme, widest_row: f32) -> LogicalPx {
     let pad = th.banner_more_menu_padding().value();
     let bw = th.border_width.value();
@@ -35,67 +37,61 @@ fn menu_inner_width(th: &Theme, widest_row: f32) -> LogicalPx {
     LogicalPx(outer - bw * 2.0)
 }
 
-/// 등록 시점의 크기. 대상이 정해지기 전이라 하한 폭을 쓴다.
+/// 셸 안쪽 폭에서 위아래 패딩과 같은 좌우 패딩을 뺀 행 폭.
+fn row_width(th: &Theme, inner_width: LogicalPx) -> f32 {
+    inner_width.value() - th.banner_more_menu_padding().value() * 2.0
+}
+
+/// 등록 시점의 크기. 대상이 정해지기 전이라 하한 폭과 한 줄 행 두 개를 쓴다.
 pub fn menu_default_size() -> egui::Vec2 {
     let th = theme::theme();
     let min = th.banner_more_menu_min_width().value() - th.border_width.value() * 2.0;
-    menu_size_for(&th, LogicalPx(min))
+    menu_size_for(&th, LogicalPx(min), th.menu_item_height().value() * 2.0)
 }
 
-/// `PopupDef.sizer` — 열 때 잰 폭을 쓴다. 매 프레임 호출되므로 글꼴 측정은 열 때 한 번만 한다.
+/// `PopupDef.sizer` — 열 때 잰 크기를 쓴다. 매 프레임 호출되므로 글꼴 측정은 열 때 한 번만 한다.
 pub fn menu_sizer(
     state: &MainViewState,
     _engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) -> egui::Vec2 {
-    let th = theme::theme();
-    match state.dialogs.mouse_capture_banner_menu_width {
-        Some(width) => menu_size_for(&th, width),
+    match state.dialogs.mouse_capture_banner_menu_size {
+        Some((width, height)) => egui::vec2(width.value(), height.value()),
         None => menu_default_size(),
     }
 }
 
-/// 한 행을 줄이지 않고 그리는 데 필요한 폭. `draw_menu_row` 와 같은 배치를 잰다.
-fn row_content_width(
-    ctx: &egui::Context,
-    th: &Theme,
-    prefix: &str,
-    app_name: &str,
-    suffix: &str,
-) -> f32 {
-    let body = th.font_size_body.value();
-    let text_w = ctx.fonts(|f| {
-        let w = |text: &str, font: egui::FontId| {
-            f.layout_no_wrap(text.to_owned(), font, egui::Color32::PLACEHOLDER)
-                .rect
-                .width()
-        };
-        w(prefix, egui::FontId::proportional(body))
-            + w(app_name, egui::FontId::monospace(body))
-            + w(suffix, egui::FontId::proportional(body))
-    });
-    th.menu_item_padding_x().value() * 2.0
-        + th.icon_glyph_size_md.value()
-        + th.spacing_sm.value()
-        + text_w
+/// 두 행의 라벨. 언어마다 프로그램 이름의 위치가 달라 앞·뒤 문구를 따로 둔다.
+fn row_labels(app_name: &str) -> [BannerMoreLabel<'_>; 2] {
+    [
+        BannerMoreLabel {
+            prefix: t("popup.mouse_capture_banner_menu.suppress_prefix"),
+            app: app_name,
+            suffix: t("popup.mouse_capture_banner_menu.suppress_suffix"),
+        },
+        BannerMoreLabel {
+            prefix: t("popup.mouse_capture_banner_menu.disable_prefix"),
+            app: app_name,
+            suffix: t("popup.mouse_capture_banner_menu.disable_suffix"),
+        },
+    ]
 }
 
-/// 두 행 중 넓은 쪽의 내용 폭.
-fn widest_row(ctx: &egui::Context, th: &Theme, app_name: &str) -> f32 {
-    let suppress = row_content_width(
-        ctx,
-        th,
-        t("popup.mouse_capture_banner_menu.suppress_prefix"),
-        app_name,
-        t("popup.mouse_capture_banner_menu.suppress_suffix"),
-    );
-    let disable = row_content_width(
-        ctx,
-        th,
-        t("popup.mouse_capture_banner_menu.disable_prefix"),
-        app_name,
-        t("popup.mouse_capture_banner_menu.disable_suffix"),
-    );
-    suppress.max(disable)
+/// 프로그램 이름에 맞춘 셸 크기. 폭은 넓은 행의 한 줄 폭을 상하한으로 묶고, 높이는 그 폭에서 잰 두 행이다.
+fn measured_size(
+    ctx: &egui::Context,
+    th: &Theme,
+    labels: &[BannerMoreLabel<'_>; 2],
+) -> (LogicalPx, LogicalPx) {
+    let widest = labels
+        .iter()
+        .map(|l| banner_more_row_natural_width(ctx, th, *l))
+        .fold(0.0_f32, f32::max);
+    let width = menu_inner_width(th, widest);
+    let rows: f32 = labels
+        .iter()
+        .map(|l| banner_more_row_height(ctx, th, *l, row_width(th, width)))
+        .sum();
+    (width, LogicalPx(menu_size_for(th, width, rows).y))
 }
 
 /// 배너의 더보기 버튼에 맞춰 팝업을 연다. 아래 공간이 부족하면 위에 배치한다.
@@ -113,9 +109,9 @@ pub fn open(
 
     let th = theme::theme();
     let app_name = engine.foreground_name(*surface_id).unwrap_or("");
-    let width = menu_inner_width(&th, widest_row(ctx, &th, app_name));
-    state.dialogs.mouse_capture_banner_menu_width = Some(width);
-    let size = menu_size_for(&th, width);
+    let (width, height) = measured_size(ctx, &th, &row_labels(app_name));
+    state.dialogs.mouse_capture_banner_menu_size = Some((width, height));
+    let size = egui::vec2(width.value(), height.value());
     // 셸 테두리는 바깥으로 그리므로 border-box 의 오른쪽 끝이 트리거 오른쪽에 맞도록 테두리만큼 당긴다.
     let bw = th.border_width.value();
     let offset = th.banner_more_menu_offset().value();
@@ -151,7 +147,7 @@ pub fn draw_menu(
     };
     let th = theme::theme();
     let app_name = engine.foreground_name(surface_id).unwrap_or("").to_string();
-    let (suppress_resp, disable_resp) = draw_menu_rows(ui, &th, &app_name);
+    let (suppress_resp, disable_resp) = draw_menu_rows(ui, &th, row_labels(&app_name));
 
     if suppress_resp.clicked() {
         state.dispatch_intent(
@@ -178,136 +174,33 @@ pub fn draw_menu(
     PopupAction::None
 }
 
-/// 두 행을 그린다. 행은 menu-item-height 간격으로 붙인다. 셸 높이(`menu_size_for`)도 간격 없이 잰다.
+/// 두 행을 간격 없이 붙여 그린다. 셸 높이(`measured_size`)도 간격 없이 잰다.
 fn draw_menu_rows(
     ui: &mut egui::Ui,
     th: &Theme,
-    app_name: &str,
+    [suppress, disable]: [BannerMoreLabel<'_>; 2],
 ) -> (egui::Response, egui::Response) {
     ui.spacing_mut().item_spacing.y = 0.0;
-    let suppress = draw_menu_row(
-        ui,
-        th,
-        icons::BELL,
-        t("popup.mouse_capture_banner_menu.suppress_prefix"),
-        app_name,
-        t("popup.mouse_capture_banner_menu.suppress_suffix"),
-    );
-    let disable = draw_menu_row(
-        ui,
-        th,
-        icons::MOUSE,
-        t("popup.mouse_capture_banner_menu.disable_prefix"),
-        app_name,
-        t("popup.mouse_capture_banner_menu.disable_suffix"),
-    );
+    let suppress = draw_menu_row(ui, th, icons::BELL, suppress);
+    let disable = draw_menu_row(ui, th, icons::MOUSE, disable);
     (suppress, disable)
 }
 
-/// 앞 문구·프로그램 이름·뒤 문구를 따로 배치한다. 이름이 잘리면 툴팁으로 보여 준다.
 fn draw_menu_row(
     ui: &mut egui::Ui,
-    theme: &Theme,
+    th: &Theme,
     icon: Icon,
-    prefix: &str,
-    app_name: &str,
-    suffix: &str,
+    label: BannerMoreLabel<'_>,
 ) -> egui::Response {
-    let height = theme.menu_item_height().value();
-    let pad_x = theme.menu_item_padding_x().value();
-    let gap = theme.spacing_sm.value();
-    let radius = theme.menu_item_radius().value();
-    let body = theme.font_size_body.value();
-    let icon_glyph = theme.icon_glyph_size_md.value();
-    let width = ui.available_width();
-
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::click());
-
-    if resp.hovered() {
-        ui.painter().rect_filled(
-            rect,
-            radius,
-            theme.menu_item_bg_hover().to_egui_premultiplied(),
-        );
-    }
-
-    let mut x = rect.left() + pad_x;
-    let irect = egui::Rect::from_center_size(
-        egui::pos2(x + icon_glyph * 0.5, rect.center().y),
-        egui::vec2(icon_glyph, icon_glyph),
-    );
-    icon.image(icon_glyph, theme.text_muted().to_egui())
-        .paint_at(ui, irect);
-    x += icon_glyph + gap;
-
-    let right = rect.right() - pad_x;
-    let avail_text_w = (right - x).max(0.0);
-
-    let font = egui::FontId::proportional(body);
-    let prefix_galley =
-        ui.painter()
-            .layout_no_wrap(prefix.to_owned(), font.clone(), egui::Color32::PLACEHOLDER);
-    let suffix_galley =
-        ui.painter()
-            .layout_no_wrap(suffix.to_owned(), font, egui::Color32::PLACEHOLDER);
-    let fixed_w = prefix_galley.rect.width() + suffix_galley.rect.width();
-    let app_max_w = (avail_text_w - fixed_w).max(0.0);
-
-    let app_font = egui::FontId::monospace(body);
-    let mut app_text = app_name.to_string();
-    let mut app_galley = ui.painter().layout_no_wrap(
-        app_text.clone(),
-        app_font.clone(),
-        egui::Color32::PLACEHOLDER,
-    );
-    if app_galley.rect.width() > app_max_w {
-        while app_text.chars().count() > 1 {
-            app_text.pop();
-            let candidate = format!("{app_text}…");
-            let g = ui.painter().layout_no_wrap(
-                candidate.clone(),
-                app_font.clone(),
-                egui::Color32::PLACEHOLDER,
-            );
-            if g.rect.width() <= app_max_w {
-                app_galley = g;
-                app_text = candidate;
-                break;
-            }
-        }
-    }
-    let truncated = app_text != app_name;
-
-    let y = rect.center().y;
-    let fg = theme.text_primary().to_egui();
-    let mut cx = x;
-    if !prefix.is_empty() {
-        ui.painter().galley(
-            egui::pos2(cx, y - prefix_galley.rect.height() * 0.5),
-            prefix_galley.clone(),
-            fg,
-        );
-        cx += prefix_galley.rect.width();
-    }
-    ui.painter().galley(
-        egui::pos2(cx, y - app_galley.rect.height() * 0.5),
-        app_galley.clone(),
-        fg,
-    );
-    cx += app_galley.rect.width();
-    if !suffix.is_empty() {
-        ui.painter().galley(
-            egui::pos2(cx, y - suffix_galley.rect.height() * 0.5),
-            suffix_galley.clone(),
-            fg,
-        );
-    }
-
-    if truncated {
-        resp.on_hover_text(app_name.to_string())
-    } else {
-        resp
-    }
+    banner_more_row(
+        ui,
+        th,
+        &|ui, rect, c| icon.image(rect.height(), c).paint_at(ui, rect),
+        label,
+        false,
+        false,
+        false,
+    )
 }
 
 #[cfg(test)]
@@ -328,7 +221,7 @@ mod tests {
         let _frame = ctx.run(egui::RawInput::default(), |ctx| {
             egui::CentralPanel::default().show(ctx, |ui| {
                 assert!(ui.spacing().item_spacing.y > 0.0);
-                let (a, b) = draw_menu_rows(ui, &th, "vim");
+                let (a, b) = draw_menu_rows(ui, &th, row_labels("vim"));
                 rows = Some((a.rect, b.rect));
             });
         });
@@ -370,11 +263,54 @@ mod tests {
         let th = theme::theme();
         let width =
             LogicalPx(th.banner_more_menu_max_width().value() - th.border_width.value() * 2.0);
-        let size = menu_size_for(&th, width);
+        let size = menu_size_for(&th, width, th.menu_item_height().value() * 2.0);
         assert_eq!(size.x, width.value());
         assert_eq!(
             size.y,
             th.banner_more_menu_padding().value() * 2.0 + th.menu_item_height().value() * 2.0
         );
+    }
+
+    /// ja 처럼 고정 문구가 상한 폭을 넘는 행이 있으면 메뉴는 288 에 머물고 셸이 그 행만큼 높아진다.
+    /// 그린 두 행의 높이 합이 열 때 잰 셸 높이와 같아야 셸이 행을 자르지 않는다.
+    #[test]
+    fn a_wrapped_row_keeps_the_max_width_and_the_shell_fits_the_drawn_rows() {
+        let th = theme::theme();
+        let labels = [
+            BannerMoreLabel {
+                prefix: "",
+                app: "vim",
+                suffix: "についてこのお知らせをオフにする",
+            },
+            BannerMoreLabel {
+                prefix: "",
+                app: "vim",
+                suffix: "についてマウスキャプチャを常に無効にする",
+            },
+        ];
+        let ctx = egui::Context::default();
+        let mut measured = None;
+        let mut drawn = None;
+        for _ in 0..2 {
+            let _frame = ctx.run(egui::RawInput::default(), |ctx| {
+                let (width, height) = measured_size(ctx, &th, &labels);
+                measured = Some((width, height));
+                egui::Area::new(egui::Id::new("menu")).show(ctx, |ui| {
+                    ui.set_width(row_width(&th, width));
+                    ui.set_max_width(row_width(&th, width));
+                    let (a, b) = draw_menu_rows(ui, &th, labels);
+                    drawn = Some(b.rect.bottom() - a.rect.top());
+                });
+            });
+        }
+        let (width, height) = measured.expect("measured");
+        assert_eq!(
+            width.value() + th.border_width.value() * 2.0,
+            th.banner_more_menu_max_width().value()
+        );
+        let pad = th.banner_more_menu_padding().value();
+        let rows = height.value() - pad * 2.0;
+        assert!(rows > th.menu_item_height().value() * 2.0, "a row wrapped");
+        assert_eq!(drawn.expect("drawn"), rows);
     }
 }
