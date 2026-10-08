@@ -127,8 +127,23 @@ fn collect_surface_layout_info(
 }
 
 /// 복원 자리는 탭 분할 여부와 관계없이 `list tree`와 같은 필드로 보고한다:
-/// `type:"Pending"`(type_name), 목표 `kind`, `pty_ready:false`, `restore_error`.
+/// `type:"Pending"`, 목표 `kind`, `pty_ready:false`, `restore_error`.
+/// plugin kind 등록을 기다리는 자리(EmptySurface의 deferred)는 type_name이 `Empty`라
+/// type을 덮어쓰고, 실패가 없으므로 `restore_error`는 null, 대기 이유는 `list tree`와 같은
+/// `pending_reason`으로 싣는다.
 fn add_restore_fields(surface: &dyn crate::model::Surface, entry: &mut serde_json::Value) {
+    if let Some(plugin) = surface
+        .as_any()
+        .downcast_ref::<crate::model::EmptySurface>()
+        .and_then(|empty| empty.deferred_plugin())
+    {
+        entry["type"] = json!("Pending");
+        entry["kind"] = json!(plugin.kind);
+        entry["pty_ready"] = json!(false);
+        entry["restore_error"] = serde_json::Value::Null;
+        entry["pending_reason"] = json!("plugin_not_loaded");
+        return;
+    }
     let Some(slot) = surface
         .as_any()
         .downcast_ref::<crate::runtime::surface_restorer::JournalPlaceholder>()
@@ -241,5 +256,87 @@ mod tests {
         assert!(alone["restore_error"].is_null());
         assert_eq!(fields(&alone), fields(&entry(SPLIT)));
         assert_eq!(fields(&alone), fields(&entry(SPLIT_PEER)));
+    }
+
+    fn plugin_wait(id: u32) -> Box<crate::model::EmptySurface> {
+        Box::new(crate::model::EmptySurface::new_deferred_plugin(
+            id,
+            crate::model::DeferredPlugin {
+                kind: "markdown".into(),
+                snapshot: serde_json::json!({ "file": "/a.md" }),
+            },
+        ))
+    }
+
+    /// plugin 등록을 기다리는 자리도 journal 복원 자리와 같은 필드로, 분할 여부와 관계없이
+    /// 보고된다. 비활성 빈 surface는 그대로 Empty다.
+    #[test]
+    fn plugin_wait_slots_report_pending_like_restore_slots() {
+        let model = crate::state::tests::test_model(vec![
+            E::CategoryCreated {
+                id: 0,
+                name: "normal".into(),
+                index: 0,
+            },
+            E::WorkspaceCreated {
+                id: 1,
+                name: "w".into(),
+                category: 0,
+                index: 0,
+                pane: 10,
+            },
+            E::TabCreated {
+                id: 100,
+                pane: 10,
+                index: 0,
+                name: "alone".into(),
+                surface: markdown(ALONE),
+            },
+            E::TabCreated {
+                id: 101,
+                pane: 10,
+                index: 1,
+                name: "split".into(),
+                surface: markdown(SPLIT),
+            },
+            E::SurfaceSplit {
+                target: SPLIT,
+                surface: markdown(SPLIT_PEER),
+                split: SplitSpec {
+                    direction: crate::model::SplitDirection::Horizontal,
+                    ratio: Ratio::from_f32(0.5),
+                    placement: Placement::After,
+                },
+            },
+        ]);
+        let (_state, mut session) = crate::state::tests::test_state_from_model(model);
+        session.runtime.surfaces.insert(ALONE, plugin_wait(ALONE));
+        session.runtime.surfaces.insert(SPLIT, plugin_wait(SPLIT));
+        session.runtime.surfaces.insert(
+            SPLIT_PEER,
+            Box::new(crate::model::EmptySurface::new(SPLIT_PEER)),
+        );
+        let engine = session.borrow_mut();
+        let response = super::handle_surface_list(&engine.as_ref(), serde_json::json!(1));
+        let list = response.result.expect("surface.list result");
+        let entry = |id: u32| {
+            list.as_array()
+                .unwrap()
+                .iter()
+                .find(|e| e["id"] == id)
+                .unwrap_or_else(|| panic!("surface {id} missing: {list}"))
+                .clone()
+        };
+        for id in [ALONE, SPLIT] {
+            let e = entry(id);
+            assert_eq!(e["type"], "Pending", "{e}");
+            assert_eq!(e["kind"], "markdown", "{e}");
+            assert_eq!(e["pty_ready"], false, "{e}");
+            assert!(e.get("restore_error").is_some_and(|v| v.is_null()), "{e}");
+            assert_eq!(e["pending_reason"], "plugin_not_loaded", "{e}");
+        }
+        let empty = entry(SPLIT_PEER);
+        assert_eq!(empty["type"], "Empty", "{empty}");
+        assert!(empty.get("kind").is_none(), "{empty}");
     }
 }
