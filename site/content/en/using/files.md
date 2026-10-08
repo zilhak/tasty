@@ -1,4 +1,4 @@
-<!-- source-hash: 88fe829d8ff7 -->
+<!-- source-hash: d4d97c9080fa -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -124,7 +124,7 @@ View PNG, JPEG, and other images, or add drawings to them. **New Image** starts 
 
 - Toolbar — **Previous image** / **Next image** (within the same folder; the tab is renamed to the file you move to. They do nothing while you are editing — save or cancel first; `tasty image next` and `prev` return an error then), **Refresh**, **Edit**, **New image**, zoom **Fit** / `+` / `-`.
 - Press **Edit** to choose **Brush** · **Color** and draw on top. Undo and redo with `Ctrl+Z` / `Ctrl+Shift+Z`. **Save** writes a PNG. When you save edits to a file that is not a PNG, such as a JPEG, the original stays as it is: a PNG with the same name is created in the same folder and the tab moves to it. If that PNG already exists, Tasty does not overwrite it and asks where to save instead.
-- `tasty image paste --surface <ID>` pastes the clipboard image as a floating selection.
+- Pressing the paste shortcut (`Ctrl+V` by default) on an image pastes the clipboard image as a floating selection. Nothing happens when the clipboard holds no image. `tasty image paste --surface <ID>` does the same.
 - `tasty image list` shows every open image **across all windows**.
 - `tasty image reload --surface <ID>` re-reads the file right now instead of waiting.
 

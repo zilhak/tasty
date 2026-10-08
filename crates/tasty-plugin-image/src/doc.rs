@@ -441,6 +441,24 @@ impl ImageDoc {
         self.new_image_popup = false;
     }
 
+    /// 붙여넣기 단축키. 클립보드에 이미지가 있으면 떠 있는 선택으로 붙인다. 이미지가 없으면
+    /// (텍스트 등) 문서를 바꾸지 않는다. 붙였으면 true 다.
+    pub fn paste_from_clipboard(
+        &mut self,
+        read: impl FnOnce() -> Result<ColorImage, String>,
+    ) -> bool {
+        match read() {
+            Ok(image) => {
+                self.paste_image(image);
+                true
+            }
+            Err(e) => {
+                tracing::debug!("image: paste ignored, no image on the clipboard: {e}");
+                false
+            }
+        }
+    }
+
     /// Paste an image as a floating selection.
     pub fn paste_image(&mut self, image: ColorImage) {
         let size = image.size;
@@ -1103,6 +1121,31 @@ mod tests {
         let file = path.to_string_lossy().into_owned();
         let doc = ImageDoc::new(Some(file.clone()));
         assert_eq!(doc.save_target(), SaveTarget::Write(file));
+        let _ = std::fs::remove_file(&path); // best-effort 정리 — 실패 무시.
+    }
+
+    /// 붙여넣기 단축키는 클립보드 이미지를 떠 있는 선택으로 붙이고, 이미지가 아니면 무시한다.
+    #[test]
+    fn paste_shortcut_floats_a_clipboard_image_and_ignores_other_content() {
+        let path = probe_png_path("paste");
+        write_probe_png(&path, [255, 0, 0]);
+        let mut doc = ImageDoc::new(Some(path.to_string_lossy().into_owned()));
+        doc.ensure_loaded();
+
+        assert!(!doc.paste_from_clipboard(|| Err("text only".into())));
+        assert!(
+            !doc.is_editing(),
+            "이미지가 아니면 문서를 바꾸지 않아야 한다"
+        );
+
+        let clip = ColorImage::new([2, 3], Color32::YELLOW);
+        assert!(doc.paste_from_clipboard(|| Ok(clip)));
+        match &doc.edit_state {
+            EditState::FloatingSelection { selection, .. } => {
+                assert_eq!(selection.size, [2, 3]);
+            }
+            _ => panic!("떠 있는 선택이어야 한다"),
+        }
         let _ = std::fs::remove_file(&path); // best-effort 정리 — 실패 무시.
     }
 

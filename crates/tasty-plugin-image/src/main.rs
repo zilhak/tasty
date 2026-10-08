@@ -16,7 +16,7 @@ use std::sync::mpsc;
 
 use doc::{ImageDoc, SaveTarget};
 use serde_json::{Value, json};
-use tasty_plugin_protocol::ThemeWire;
+use tasty_plugin_protocol::{RawInputEventWire, ThemeWire};
 use tasty_plugin_sdk::file_watch::{self, StatGatedDigest, WatchCmd};
 use tasty_plugin_sdk::{
     IpcMethodCtx, IpcMethodError, Plugin, PluginEnv, SurfaceCreateCtx, SurfaceResult,
@@ -283,6 +283,15 @@ impl ImagePlugin {
         let doc = self.docs.entry(sid).or_insert_with(|| ImageDoc::new(None));
         doc.ensure_loaded();
         doc.ensure_brush_themed(theme.accent_danger().to_egui());
+        // 호스트가 붙여넣기 단축키를 Paste 이벤트로 보낸다. 이미지는 이 프로세스가 클립보드에서 읽는다.
+        if ctx
+            .params
+            .raw_input
+            .events
+            .contains(&RawInputEventWire::Paste)
+        {
+            doc.paste_from_clipboard(|| read_clipboard_image().map_err(|e| e.message));
+        }
 
         let is_new = !self.meshes.contains_key(&sid);
         let mesh = self
