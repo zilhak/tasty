@@ -1818,8 +1818,8 @@ fn draw_table(
     let gap = LogicalPx(ui.spacing().item_spacing.y);
     let max_scroll = (LogicalPx(ui.available_height()) - cell_h - gap).max(cell_h);
 
-    // 열 폭은 공용 포트 표 정의를 따른다. 고정 열은 하한 폭을 유지하고 Address·Process는 남는 폭을
-    // 나눠 받는다. 하한의 합이 가용 폭을 넘으면 열을 줄이지 않고 본문만 가로 스크롤한다.
+    // 열 폭은 공용 포트 표 정의를 따른다. 고정 열(Address 포함)은 하한 폭을 유지하고 Process가 남는
+    // 폭을 모두 받는다. 하한의 합이 가용 폭을 넘으면 열을 줄이지 않고 본문만 가로 스크롤한다.
     let visible: Vec<ColumnId> = ColumnId::ALL
         .into_iter()
         .filter(|c| props.filter.columns.is_visible(*c))
@@ -1949,7 +1949,7 @@ fn sort_key(col: ColumnId) -> Option<SortKey> {
     }
 }
 
-/// 보이는 열의 Table 폭. Address·Process가 모두 숨겨져 있으면 마지막 열이 남는 폭을 받는다.
+/// 보이는 열의 Table 폭. Process가 숨겨져 있으면 마지막 열이 남는 폭을 받는다.
 fn column_widths(visible: &[ColumnId], th: &Theme) -> Vec<TableColumnWidth> {
     let mut widths: Vec<TableColumnWidth> = visible.iter().map(|c| c.shared().width(th)).collect();
     if !visible.iter().any(|c| c.shared().flex())
@@ -2493,7 +2493,7 @@ mod tests {
     }
 
     #[test]
-    fn column_widths_make_address_and_process_flex_with_their_floors() {
+    fn column_widths_make_only_process_flex_and_fix_address_at_its_token() {
         let th = test_theme();
         let visible: Vec<ColumnId> = ColumnId::ALL.to_vec();
         let widths = column_widths(&visible, &th);
@@ -2502,11 +2502,13 @@ mod tests {
                 (ColumnId::Process, TableColumnWidth::Flex { min_width }) => {
                     assert_eq!(min_width, th.port_process_col_min_width());
                 }
-                (ColumnId::Address, TableColumnWidth::Flex { min_width }) => {
-                    assert_eq!(min_width, LogicalPx(140.0));
-                }
-                (ColumnId::Address | ColumnId::Process, _) => {
-                    panic!("{id:?} should take spare width above its floor")
+                (ColumnId::Process, _) => panic!("Process should take the spare width"),
+                (ColumnId::Address, TableColumnWidth::Exact(v)) => {
+                    assert_eq!(
+                        v,
+                        th.port_addr_col_min_width(),
+                        "Address stays at its floor"
+                    );
                 }
                 (_, TableColumnWidth::Exact(v)) => {
                     assert_eq!(v, id.shared().floor(&th), "{id:?} keeps its floor")
@@ -2518,12 +2520,15 @@ mod tests {
 
     #[test]
     fn column_widths_without_flex_columns_let_the_last_column_fill() {
-        // Address·Process가 숨겨져도 표가 가용 폭을 채우도록 마지막 열이 남는 폭을 받는다.
+        // Process가 숨겨져도 표가 가용 폭을 채우도록 마지막 열이 남는 폭을 받는다. Address는 늘지 않는다.
         let th = test_theme();
-        let visible = vec![ColumnId::Port, ColumnId::Proto, ColumnId::State];
+        let visible = vec![ColumnId::Port, ColumnId::Address, ColumnId::State];
         let widths = column_widths(&visible, &th);
         assert!(matches!(widths[0], TableColumnWidth::Exact(_)));
-        assert!(matches!(widths[1], TableColumnWidth::Exact(_)));
+        assert!(
+            matches!(widths[1], TableColumnWidth::Exact(v) if v == th.port_addr_col_min_width()),
+            "Address stays at its floor"
+        );
         match widths[2] {
             TableColumnWidth::Flex { min_width } => {
                 assert_eq!(min_width, ColumnId::State.shared().floor(&th))

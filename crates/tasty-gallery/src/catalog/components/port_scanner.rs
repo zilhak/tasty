@@ -702,13 +702,15 @@ pub fn draw_process_column(ui: &mut egui::Ui, theme: &Theme) {
     let cols = columns(theme, SPECIMEN_COLUMNS);
     let widths: Vec<TableColumnWidth> = cols.iter().map(|c| c.width).collect();
     let budget = fixed_total_width(&widths, LogicalPx(ui.spacing().item_spacing.x));
-    // 두 예제 사이와 캡션 아래 간격은 갤러리 Column stage·cluster 의 간격을 따른다.
+    let addr = theme.port_addr_col_min_width();
+    // 시안대로 두 예제 사이는 space-lg(Column stage 간격), 캡션 아래는 space-sm 이다.
     spec::stage(ui, theme, StageVariant::Column, |ui| {
         for (label, w) in [
             (
                 format!(
-                    "860 — wider than the column budget ({:.0}): Address and Process share the spare width",
-                    budget.value()
+                    "860 — wider than the column budget ({:.0}): Process takes ALL the spare width, Address stays at {:.0}",
+                    budget.value(),
+                    addr.value()
                 ),
                 PROC_TABLE_WIDE,
             ),
@@ -741,6 +743,12 @@ pub fn draw_process_column(ui: &mut egui::Ui, theme: &Theme) {
                 "Flex — min width port-process-col-min-width · ellipsis · PID Tag stays",
             ),
             ("value", "200 — unchanged"),
+            ("Address", "fixed · port-addr-col-min-width (floor = width)"),
+            ("spare width", "100% to Process"),
+            (
+                "stage gaps",
+                "gallery Column stage space-lg between tables · cluster caption space-sm",
+            ),
             (
                 "overflow",
                 "body scrolls horizontally below the column budget (also at 660); no column hides",
@@ -757,6 +765,7 @@ pub fn draw_process_column(ui: &mut egui::Ui, theme: &Theme) {
         ],
         &[
             TokenChip::without_color("port-process-col-min-width", "Process floor"),
+            TokenChip::without_color("port-addr-col-min-width", "Address floor + width"),
             TokenChip::without_color("port-star-col-width", "leading star column"),
             TokenChip::without_color("table-cell-height", "header + rows"),
         ],

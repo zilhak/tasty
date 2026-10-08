@@ -227,8 +227,9 @@ const AREAS: &[(&str, usize, &str)] = &[
         // 첫 실행 셸 설정 폼 폭 360은 디자인 `ShellSetupFrame`의 `--tasty-size-360`이며 역할 토큰이 없다.
         // 플러그인 추가 프리뷰의 가로 여백 14는 디자인 `--tasty-size-14`이며 역할 토큰이 없다.
         // 스케일에 size-20·40이 들어오면서 기존 값 20·40 한 자리가 새로 집계됐다.
-        // 포트 스캐너 열 하한 140·120·140 셋은 popup과 갤러리가 함께 쓰는 ports_table의 표 전용 값이다.
-        25,
+        // 포트 스캐너 열 하한 120·140(Workspace·State) 둘은 popup과 갤러리가 함께 쓰는 ports_table의 표 전용 값이다.
+        // Address 하한 140은 port-addr-col-min-width 토큰을 읽어 집계에서 빠졌다.
+        24,
         "공용 위젯",
     ),
     (
@@ -879,7 +880,8 @@ fn the_blind_spots_are_still_the_size_they_say() {
         // 표 Flex 열 폭 계산(table.rs)의 0 비교·하한 셋이 들어오고, popup 열 폭 계산의 0 셋이 빠졌다.
         // 포트 스캐너 열 폭 분배 시험이 위젯 크레이트의 px() 도우미 시험으로 옮겨 test 전용 리터럴 일곱이 빠졌다.
         // 도구 메뉴 높이 시험이 행 높이 ROW(28)·구분선 여백 GAP(4)을 인자로 넘겨 두 개를 더한다.
-        (221, 527),
+        // 포트 스캐너 열 폭 시험이 Address 폭을 토큰으로 비교해 test 전용 140 하나가 빠졌다.
+        (221, 526),
         "제외한 0과 test 전용 코드의 수가 달라졌다. 실제 사용과 수집 범위의 변경을 확인하고 기록을 갱신한다."
     );
     let roster: usize = UNIT_SPACE_SITES.iter().map(|(.., n, _)| n).sum();

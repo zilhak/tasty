@@ -30,13 +30,13 @@ impl PortsColumn {
         PortsColumn::State,
     ];
 
-    /// 열이 줄어들 수 있는 하한. 고정 열은 이 폭을 그대로 쓴다. Process만 해당 semantic 토큰이
+    /// 열이 줄어들 수 있는 하한. 고정 열은 이 폭을 그대로 쓴다. Address·Process만 해당 토큰이
     /// 있다. 나머지는 이 표 전용 값이며 같은 숫자의 다른 역할 토큰으로 대체하지 않는다.
     pub fn floor(self, theme: &Theme) -> LogicalPx {
         match self {
             PortsColumn::Port => LogicalPx(84.0),
             PortsColumn::Proto => LogicalPx(76.0),
-            PortsColumn::Address => LogicalPx(140.0),
+            PortsColumn::Address => theme.port_addr_col_min_width(),
             PortsColumn::Process => theme.port_process_col_min_width(),
             PortsColumn::Workspace => LogicalPx(120.0),
             PortsColumn::Tab => LogicalPx(80.0),
@@ -44,9 +44,10 @@ impl PortsColumn {
         }
     }
 
-    /// 남는 폭을 받는 열인지. Address·Process만 하한에서 늘어난다.
+    /// 남는 폭을 받는 열인지. Process만 하한에서 늘어나며 남는 폭을 모두 받는다. Address는
+    /// 하한에 고정된다.
     pub fn flex(self) -> bool {
-        matches!(self, PortsColumn::Address | PortsColumn::Process)
+        matches!(self, PortsColumn::Process)
     }
 
     /// 공용 Table 열 폭. 가변 열은 하한을 `Flex` 최소 폭으로, 고정 열은 하한을 `Exact` 폭으로 둔다.
