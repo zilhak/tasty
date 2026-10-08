@@ -6,6 +6,8 @@ pub(crate) struct RuntimeRegistries {
     pub(crate) file_format: Arc<crate::file::format::FileFormatRegistry>,
     pub(crate) file_handler: Arc<crate::file::handler::FileHandlerRegistry>,
     pub(crate) plugin_hook_events: Arc<crate::core::hook_event_registry::PluginHookEventRegistry>,
+    #[cfg(feature = "gui")]
+    pub(crate) explorer_favorites: Arc<crate::core::explorer_favorites::SharedExplorerFavorites>,
 }
 impl RuntimeRegistries {
     pub(crate) fn new(user_config: Option<&Path>) -> Self {
@@ -26,6 +28,10 @@ impl RuntimeRegistries {
             file_handler,
             plugin_hook_events: Arc::new(
                 crate::core::hook_event_registry::PluginHookEventRegistry::new(),
+            ),
+            #[cfg(feature = "gui")]
+            explorer_favorites: Arc::new(
+                crate::core::explorer_favorites::SharedExplorerFavorites::load(),
             ),
         }
     }

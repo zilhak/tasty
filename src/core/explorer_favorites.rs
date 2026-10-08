@@ -1,5 +1,6 @@
 //! surface와 무관한 즐겨찾기 목록을 explorer-favorites.toml에 저장한다.
 //! add·remove는 메모리만 바꾸며 저장은 호출자가 save로 요청한다. layout snapshot에는 포함하지 않는다.
+//! 프로세스의 원본은 [`SharedExplorerFavorites`] 하나이고, engine은 그리기용 사본만 가진다.
 
 use std::path::{Path, PathBuf};
 
@@ -91,6 +92,68 @@ impl ExplorerFavorites {
     /// 해당 경로를 목록에서 지운다. 저장은 호출자가 맡는다.
     pub fn remove(&mut self, path: &Path) {
         self.items.retain(|f| f.path != path);
+    }
+}
+
+/// 프로세스의 모든 engine이 함께 쓰는 즐겨찾기 원본. engine마다 사본 전체로 파일을 덮으면 다른 윈도우의
+/// 변경을 지우므로, 변경은 이 원본에만 하고 저장도 원본으로 한다. engine 사본은 리비전이 바뀌면 다시 복사한다.
+#[derive(Default)]
+pub(crate) struct SharedExplorerFavorites {
+    inner: std::sync::Mutex<SharedState>,
+}
+
+#[derive(Default)]
+struct SharedState {
+    revision: u64,
+    favorites: ExplorerFavorites,
+}
+
+impl SharedExplorerFavorites {
+    pub(crate) fn load() -> Self {
+        Self::from(ExplorerFavorites::load())
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, SharedState> {
+        // 변경은 목록 연산과 파일 쓰기뿐이라 중간에 멈춰도 목록 자체는 쓸 수 있다.
+        self.inner.lock().unwrap_or_else(|poisoned| {
+            tracing::warn!("explorer: favorites lock was poisoned; using the last list");
+            poisoned.into_inner()
+        })
+    }
+
+    /// 원본을 바꾸고 파일에 저장한 뒤 리비전을 올린다.
+    pub(crate) fn update(&self, change: impl FnOnce(&mut ExplorerFavorites)) {
+        let mut state = self.lock();
+        change(&mut state.favorites);
+        state.favorites.save();
+        state.revision += 1;
+    }
+
+    pub(crate) fn revision(&self) -> u64 {
+        self.lock().revision
+    }
+
+    /// 현재 리비전과 목록 사본.
+    pub(crate) fn copy(&self) -> (u64, ExplorerFavorites) {
+        let state = self.lock();
+        (state.revision, state.favorites.clone())
+    }
+
+    /// `known` 리비전 뒤에 바뀌었으면 현재 리비전과 목록 사본을 돌려준다.
+    pub(crate) fn copy_if_newer(&self, known: u64) -> Option<(u64, ExplorerFavorites)> {
+        let state = self.lock();
+        (known != state.revision).then(|| (state.revision, state.favorites.clone()))
+    }
+}
+
+impl From<ExplorerFavorites> for SharedExplorerFavorites {
+    fn from(favorites: ExplorerFavorites) -> Self {
+        Self {
+            inner: std::sync::Mutex::new(SharedState {
+                revision: 0,
+                favorites,
+            }),
+        }
     }
 }
 

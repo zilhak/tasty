@@ -255,11 +255,9 @@ impl EngineAction {
             Self::PasteImage { .. } => self.apply_paste_image(engine),
             #[cfg(feature = "gui")]
             Self::AddExplorerFavorite { path, label } => {
-                engine
-                    .runtime
-                    .explorer_favorites
-                    .add(path.clone(), label.clone());
-                engine.runtime.explorer_favorites.save();
+                engine.runtime.change_explorer_favorites(|favorites| {
+                    favorites.add(path.clone(), label.clone())
+                });
             }
             #[cfg(feature = "gui")]
             Self::TogglePortFavorite {
@@ -308,8 +306,9 @@ impl EngineAction {
             Self::ExplorerCwd { .. } => self.apply_explorer_cwd(engine),
             #[cfg(feature = "gui")]
             Self::RemoveExplorerFavorite { path } => {
-                engine.runtime.explorer_favorites.remove(path);
-                engine.runtime.explorer_favorites.save();
+                engine
+                    .runtime
+                    .change_explorer_favorites(|favorites| favorites.remove(path));
             }
             #[cfg(feature = "gui")]
             Self::RemoteMeshFull { targets } => {
@@ -644,5 +643,75 @@ mod tests {
         }
         .apply(&mut session.borrow_mut(), None);
         assert_eq!(session.borrow_mut().attention_kind(sid), None);
+    }
+
+    fn engine_with(
+        registries: &crate::runtime::registries::RuntimeRegistries,
+    ) -> crate::runtime::engine_session::EngineSession {
+        let memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>> =
+            std::sync::Arc::new(std::sync::Mutex::new(
+                tasty_memory::MemoryStore::open_in_memory().expect("in-memory store"),
+            ));
+        crate::runtime::engine_session::EngineSession::for_journal(
+            crate::runtime::engine_session::EngineSessionSpec {
+                cols: 80,
+                rows: 24,
+                waker: std::sync::Arc::new(|| {}),
+                shared_ids: None,
+                layout_slot: None,
+                memory,
+                runner_registry: std::sync::Arc::new(tasty_task_runtime::RunnerRegistry::new()),
+            },
+            crate::settings::Settings::default(),
+            registries.clone(),
+        )
+        .expect("engine")
+    }
+
+    /// 윈도우마다 engine 이 있어도 즐겨찾기 추가가 서로를 지우지 않고, 다른 윈도우의 사본도 맞춰진다.
+    #[test]
+    fn favorites_added_in_two_windows_both_survive_a_restart() {
+        let _home = crate::test_support::IsolatedHome::new();
+        let registries = crate::runtime::registries::RuntimeRegistries::new(None);
+        let mut first = engine_with(&registries);
+        let mut second = engine_with(&registries);
+        let add = |session: &mut crate::runtime::engine_session::EngineSession, name: &str| {
+            EngineAction::AddExplorerFavorite {
+                path: crate::test_support::abs_path(name),
+                label: String::new(),
+            }
+            .apply(&mut session.borrow_mut(), None);
+        };
+        add(&mut first, "w/alpha");
+        add(&mut second, "w/beta");
+        let labels = |favorites: &crate::core::explorer_favorites::ExplorerFavorites| {
+            favorites
+                .items
+                .iter()
+                .map(|f| f.label.clone())
+                .collect::<Vec<_>>()
+        };
+
+        // 재시작: 새 프로세스 원본은 파일에서 읽는다.
+        let restarted = crate::runtime::registries::RuntimeRegistries::new(None);
+        assert_eq!(
+            labels(&restarted.explorer_favorites.copy().1),
+            ["alpha", "beta"]
+        );
+
+        // 첫 윈도우의 사본은 다음 그리기 전에 다른 윈도우의 추가를 받는다.
+        assert_eq!(labels(&first.runtime.explorer_favorites), ["alpha"]);
+        assert!(first.runtime.sync_explorer_favorites());
+        assert_eq!(labels(&first.runtime.explorer_favorites), ["alpha", "beta"]);
+        assert!(!first.runtime.sync_explorer_favorites(), "already current");
+
+        EngineAction::RemoveExplorerFavorite {
+            path: crate::test_support::abs_path("w/alpha"),
+        }
+        .apply(&mut second.borrow_mut(), None);
+        assert_eq!(
+            labels(&crate::core::explorer_favorites::ExplorerFavorites::load()),
+            ["beta"]
+        );
     }
 }

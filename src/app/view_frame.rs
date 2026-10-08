@@ -8,6 +8,7 @@ impl App {
         }
         self.poll_port_scans();
         self.refresh_approval_presentations();
+        let favorites_seen = self.services.registries.explorer_favorites.revision();
         let Some(engine) = self.engines.of_window(id) else {
             return;
         };
@@ -22,6 +23,10 @@ impl App {
         else {
             return;
         };
+        // 다른 윈도우가 바꾼 Explorer 즐겨찾기를 그리기 전에 받는다.
+        if session.runtime.sync_explorer_favorites() {
+            crate::view::ui::View::mark_dirty(view);
+        }
         view.prepare_redraw(&session.read());
         let pending = view.state.take_pending_intents();
         for intent in pending {
@@ -92,5 +97,19 @@ impl App {
         );
         self.process_remote_tool_requests(id);
         self.poll_port_scans();
+        if self.services.registries.explorer_favorites.revision() != favorites_seen {
+            self.redraw_other_windows(id);
+        }
+    }
+
+    /// 이 윈도우에서 바뀐 공용 상태를 다른 윈도우가 다음 프레임에 받아 그리게 한다.
+    fn redraw_other_windows(&mut self, changed_in: winit::window::WindowId) {
+        for (window, view) in self.view.views.iter_mut() {
+            if *window != changed_in
+                && let Some(view) = view.as_main_mut()
+            {
+                crate::view::ui::View::mark_dirty(view);
+            }
+        }
     }
 }
