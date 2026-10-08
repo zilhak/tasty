@@ -307,6 +307,16 @@ CI 는 `.github/workflows/crossplatform-check.yml` 의 `check-headless` 잡이 �
     남지 않으면 10초 안에 실패한다. 회수할 이전 PTY가 없는 cleanup 대기는 지켜볼 프로세스 없이
     기다린 시간을 모두 센다. 부하 중 이 대기가 "the watched process slept 10s"로 실패하면 그때 읽기·회수 스레드를
     직접 지켜보도록 바꾼다.
+- 다른 스레드의 진행을 기다리면 진행이 멈춘 채 잠든 시간만 센다: tasty-event-store 의
+  `concurrent_reader_never_sees_a_partial_batch` 는 writer 스레드가 batch 200 개를 쓰는 동안 다른
+  연결로 읽는다. 벽시계 60초 기한일 때는 부하 평균 15 에서 writer 가 156 개까지만 써 실패했다.
+  지금은 `ProgressWait`(`crates/tasty-event-store/src/tests/progress_wait.rs`)가 관측한 진행
+  (`last_batch`)이 바뀌면 다시 세고, 바뀌지 않은 동안 writer 가 잠든 시간만 10초 한도로 센다.
+  writer 가 실행 중(`R`)이거나 디스크 대기(`D`)인 시간은 세지 않고, 쉬지 않고 도는 writer 는 벽시계
+  300초로 잡는다. 이 크레이트는 본체의 `StallBudget` 을 쓸 수 없어 판정을 따로 둔다. 같은 한도(10초·300초)와 `R`·`D` 제외를 쓰되, `StallBudget` 과 달리 진행이 보이면 정체 시간을 되돌린다. writer 는
+  시작할 때 `/proc/thread-self` 로 자기 `stat` 경로를 넘기고, Linux 가 아니면 진행 없는 시간을 모두 센다.
+  batch 마다 400ms 쉬게 한 writer 는 예전 기한으로 60.03초에 `last_batch: Some(148)` 에서 실패했고 지금은
+  89.09초에 통과한다. batch 11 뒤 멈춘 writer 는 10.08초에 실패한다.
 - 제품이 시각으로 판정하면 시험이 시각을 정한다: tasty-task-runtime 의 TTL 갱신 시험은 러너가
   tick 마다 갱신하는 lease·permit 이 TTL(300ms) 뒤에도 남는지 본다. 실제 시각으로 tick 을 돌리면
   부하로 tick 이 늦을 때 갱신 전에 만료돼 실패했다. 지금은 `HostExecutor` 가 점유를 얻고 갱신할 때

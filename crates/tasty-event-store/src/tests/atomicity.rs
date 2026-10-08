@@ -1,7 +1,7 @@
 //! 원자 commit·revision 충돌·다중 stream batch 공개.
 
+use std::sync::mpsc;
 use std::thread;
-use std::time::{Duration, Instant};
 
 use crate::{
     CommitOutcome, CommitRequest, EffectState, EventStore, ExpectedRevision, PayloadRef,
@@ -9,6 +9,7 @@ use crate::{
 };
 
 use super::common::{JOURNAL, append, command, db_path, event, fresh, key, new_effect, open};
+use super::progress_wait::{ProgressWait, ThreadState};
 
 fn committed(outcome: CommitOutcome) -> crate::BatchCut {
     match outcome {
@@ -198,7 +199,11 @@ fn concurrent_reader_never_sees_a_partial_batch() {
     let (mut writer, epoch) = open(&path);
     let reader = EventStore::open(&path, JOURNAL).expect("reader");
 
+    let (state_tx, state_rx) = mpsc::channel();
     let handle = thread::spawn(move || {
+        state_tx
+            .send(ThreadState::current())
+            .expect("send the writer state");
         for i in 0..BATCHES {
             let mut request = CommitRequest::new(epoch);
             let a = format!("a{i}");
@@ -216,8 +221,9 @@ fn concurrent_reader_never_sees_a_partial_batch() {
     let a = StreamId::new("engine-a");
     let b = StreamId::new("engine-b");
     let mut observations = 0;
-    // writer가 panic하거나 멈추면 무한 대기하지 않고 실패한다.
-    let deadline = Instant::now() + Duration::from_secs(60);
+    // writer가 panic하면 끝난 것으로 보고 join 에서 실패한다. 진행 없이 잠들어 있으면 정체로
+    // 실패한다. 부하로 느릴 뿐 진행하는 writer 는 기다린다.
+    let mut wait = ProgressWait::new(state_rx.recv().expect("writer state"), None);
     loop {
         let writer_done = handle.is_finished();
         let cut = reader.current_cut().expect("cut");
@@ -235,7 +241,7 @@ fn concurrent_reader_never_sees_a_partial_batch() {
         if cut.heads.get(&a) == Some(&(BATCHES as u64)) || writer_done {
             break;
         }
-        assert!(Instant::now() < deadline, "writer did not finish: {cut:?}");
+        wait.observe(cut.last_batch);
     }
     handle.join().expect("writer thread");
     let last = reader.current_cut().expect("final cut");

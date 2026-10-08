@@ -1,6 +1,7 @@
 //! 실제 SQLite 파일에 대한 저장 계약 시험.
 
 mod common;
+mod progress_wait;
 
 mod atomicity;
 mod commands;
