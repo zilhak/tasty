@@ -120,6 +120,20 @@ pub fn switch(
     label: Option<&str>,
     enabled: bool,
 ) -> egui::Response {
+    let label_color = theme.text_primary().to_egui();
+    switch_with_label_color(ui, theme, checked, label, enabled, label_color)
+}
+
+/// [`switch`] 와 같지만 활성 상태의 라벨 색을 호출자가 정한다. 트랙과 라벨이 한 클릭 영역이라
+/// 키보드 초점도 한 칸이다. disabled 라벨은 다른 컨트롤과 같은 disabled ink 를 쓴다.
+pub fn switch_with_label_color(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    checked: &mut bool,
+    label: Option<&str>,
+    enabled: bool,
+    label_color: egui::Color32,
+) -> egui::Response {
     // gap(라벨)·body 는 대응 switch component 토큰 없음 → semantic.
     let gap = theme.spacing_sm.value();
     let body = theme.font_size_body.value();
@@ -205,8 +219,7 @@ pub fn switch(
 
     if let Some(g) = galley {
         let pos = egui::pos2(track.right() + gap, rect.center().y - g.rect.height() * 0.5);
-        ui.painter()
-            .galley(pos, g, ink(theme.text_primary().to_egui()));
+        ui.painter().galley(pos, g, ink(label_color));
     }
     resp
 }

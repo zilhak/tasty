@@ -71,3 +71,75 @@ fn a_long_command_title_stays_inside_the_column() {
     });
     assert!(rect.width() <= 200.0 + 0.5, "width {}", rect.width());
 }
+
+/// 그린 글자와 그 사각형. 버튼 라벨 위치로 바 안 배치를 잰다.
+fn text_rects(shapes: &[egui::epaint::ClippedShape]) -> Vec<(String, egui::Rect)> {
+    fn walk(shape: &egui::Shape, out: &mut Vec<(String, egui::Rect)>) {
+        match shape {
+            egui::Shape::Vec(v) => v.iter().for_each(|s| walk(s, out)),
+            egui::Shape::Text(t) => out.push((
+                t.galley.text().to_string(),
+                t.galley.rect.translate(t.pos.to_vec2()),
+            )),
+            _ => {}
+        }
+    }
+    let mut out = Vec::new();
+    for c in shapes {
+        walk(&c.shape, &mut out);
+    }
+    out
+}
+
+#[test]
+fn the_action_buttons_end_at_the_bar_inset_and_follow_screen_order() {
+    let theme = theme();
+    let ctx = egui::Context::default();
+    let width = 540.0;
+    let mut bar_rect = egui::Rect::NOTHING;
+    let mut output = None;
+    for _ in 0..2 {
+        output = Some(ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default()
+                .frame(egui::Frame::NONE)
+                .show(ctx, |ui| {
+                    let inner = ui.allocate_ui(egui::vec2(width, f32::INFINITY), |ui| {
+                        ui.set_max_width(width);
+                        plugin_detail_bar(
+                            ui,
+                            &theme,
+                            &PluginDetailBarView {
+                                enabled: true,
+                                enabled_label: "Enabled",
+                                disabled_label: "Disabled",
+                                configure: "Configure",
+                                uninstall: "Uninstall",
+                            },
+                        );
+                    });
+                    bar_rect = inner.response.rect;
+                });
+        }));
+    }
+    let texts = text_rects(&output.expect("drawn").shapes);
+    let find = |label: &str| {
+        texts
+            .iter()
+            .find(|(t, _)| t == label)
+            .map(|(_, r)| *r)
+            .unwrap_or_else(|| panic!("{label} not drawn"))
+    };
+    let enabled = find("Enabled");
+    let configure = find("Configure");
+    let uninstall = find("Uninstall");
+    assert!(enabled.right() < configure.left());
+    assert!(configure.right() < uninstall.left());
+    let pad_x = ControlSize::Md.pad_x(&theme);
+    // 응답 rect 는 내용 폭으로 줄어들 수 있어 바에 준 폭을 기준으로 잰다.
+    let expected_right = bar_rect.left() + width - PLUGIN_ADD_INSET.value();
+    assert!(
+        (uninstall.right() + pad_x - expected_right).abs() <= 1.0,
+        "uninstall button ends at {} but the bar inset is at {expected_right}",
+        uninstall.right() + pad_x
+    );
+}

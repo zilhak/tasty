@@ -286,7 +286,7 @@ fn uninstall_confirm(ui: &mut egui::Ui, theme: &Theme, row: &Row) {
     });
 }
 
-/// 우측 상세 — 본체 `CentralPanel` 블록 전량. 본문 아래에 액션 바 높이를 남긴다.
+/// 우측 상세 — 본체 `CentralPanel` 블록 전량. 액션 바는 열 바닥에 열 폭 전체로 붙는다.
 pub(super) fn detail_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, detail: Detail) {
     ui.painter_at(rect)
         .rect_filled(rect, 0.0, theme.bg_panel().to_egui());
@@ -299,14 +299,11 @@ pub(super) fn detail_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, de
     };
     let row = &ROWS[i];
 
+    // 바는 상세 열의 여백 밖, 열 폭 전체를 쓰며 아래 끝에 붙는다. 본문만 여백 안에 둔다.
     let bar_h = plugin_detail_bar_height(theme);
-    let (body_rect, bar_rect) = {
-        let split = inner.max.y - bar_h;
-        (
-            egui::Rect::from_min_max(inner.min, egui::pos2(inner.max.x, split)),
-            egui::Rect::from_min_max(egui::pos2(inner.min.x, split), inner.max),
-        )
-    };
+    let split = rect.max.y - bar_h;
+    let body_rect = egui::Rect::from_min_max(inner.min, egui::pos2(inner.max.x, split));
+    let bar_rect = egui::Rect::from_min_max(egui::pos2(rect.min.x, split), rect.max);
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(body_rect));
     child.spacing_mut().item_spacing.y = theme.spacing_sm.value();
 

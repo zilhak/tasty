@@ -7,7 +7,7 @@ use crate::button::{Button, ButtonVariant};
 use crate::chip::{kbd, kbd_width};
 use crate::control::ControlSize;
 use crate::plugin_add::PLUGIN_ADD_INSET;
-use crate::toggle::switch;
+use crate::toggle::switch_with_label_color;
 
 /// 이름 줄 아래 메타 줄. 항목을 mono caption · text-muted 로 ` · ` 를 사이에 두고 잇는다.
 /// 빈 항목은 건너뛴다.
@@ -101,13 +101,28 @@ pub fn plugin_detail_bar_height(theme: &Theme) -> f32 {
 }
 
 /// 위 구분선 아래에 왼쪽 스위치와 라벨, 오른쪽 Configure(ghost, settings 아이콘)와
-/// Uninstall(secondary, accent-danger 글자)을 둔다.
+/// Uninstall(secondary, accent-danger 글자)을 둔다. 바는 상세 열 폭 전체를 쓰도록 여백 없는
+/// rect 에 그린다. 키보드 초점이 화면 순서(스위치 → Configure → Uninstall)를 따르도록
+/// 오른쪽 묶음 폭을 먼저 재고 왼쪽에서 오른쪽으로 만든다.
 pub fn plugin_detail_bar(
     ui: &mut egui::Ui,
     theme: &Theme,
     view: &PluginDetailBarView<'_>,
 ) -> PluginDetailBarClicks {
     let mut clicks = PluginDetailBarClicks::default();
+    let gap = theme.spacing_sm.value();
+    let actions_w = {
+        let mut probe = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(ui.available_rect_before_wrap())
+                .layout(egui::Layout::left_to_right(egui::Align::Center))
+                .sizing_pass()
+                .invisible(),
+        );
+        probe.spacing_mut().item_spacing.x = gap;
+        bar_actions(&mut probe, theme, view);
+        probe.min_rect().width()
+    };
     let response = egui::Frame::new()
         .inner_margin(egui::Margin::symmetric(
             PLUGIN_ADD_INSET.value() as i8,
@@ -118,39 +133,28 @@ pub fn plugin_detail_bar(
                 egui::vec2(ui.available_width(), ControlSize::Md.height(theme)),
                 egui::Layout::left_to_right(egui::Align::Center),
                 |ui| {
-                    ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-                    let mut on = view.enabled;
-                    let toggle = switch(ui, theme, &mut on, None, true);
+                    ui.spacing_mut().item_spacing.x = gap;
                     let label = if view.enabled {
                         view.enabled_label
                     } else {
                         view.disabled_label
                     };
-                    let label = ui.add(
-                        egui::Label::new(
-                            egui::RichText::new(label)
-                                .size(theme.font_size_body.value())
-                                .color(theme.text_secondary().to_egui()),
-                        )
-                        .sense(egui::Sense::click()),
-                    );
-                    clicks.toggled = toggle.changed() || label.clicked();
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        clicks.uninstall = Button::new(view.uninstall)
-                            .variant(ButtonVariant::Secondary)
-                            .danger_ink(true)
-                            .show(ui, theme)
-                            .clicked();
-                        clicks.configure = Button::new(view.configure)
-                            .variant(ButtonVariant::Ghost)
-                            .leading_icon(&|ui, rect, c| {
-                                tasty_icons::SETTINGS
-                                    .image(rect.height(), c)
-                                    .paint_at(ui, rect)
-                            })
-                            .show(ui, theme)
-                            .clicked();
-                    });
+                    let mut on = view.enabled;
+                    clicks.toggled = switch_with_label_color(
+                        ui,
+                        theme,
+                        &mut on,
+                        Some(label),
+                        true,
+                        theme.text_secondary().to_egui(),
+                    )
+                    .changed();
+                    // 스위치 뒤 간격은 이미 커서에 들어가 있다. 남는 폭만큼 밀어 오른쪽에 붙인다.
+                    let spare = ui.available_width() - actions_w;
+                    if spare > 0.0 {
+                        ui.add_space(spare);
+                    }
+                    (clicks.configure, clicks.uninstall) = bar_actions(ui, theme, view);
                 },
             );
         })
@@ -165,6 +169,25 @@ pub fn plugin_detail_bar(
         ),
     );
     clicks
+}
+
+/// 오른쪽 묶음 — Configure, Uninstall 순서로 만든다. 눌린 여부를 돌려준다.
+fn bar_actions(ui: &mut egui::Ui, theme: &Theme, view: &PluginDetailBarView<'_>) -> (bool, bool) {
+    let configure = Button::new(view.configure)
+        .variant(ButtonVariant::Ghost)
+        .leading_icon(&|ui, rect, c| {
+            tasty_icons::SETTINGS
+                .image(rect.height(), c)
+                .paint_at(ui, rect)
+        })
+        .show(ui, theme)
+        .clicked();
+    let uninstall = Button::new(view.uninstall)
+        .variant(ButtonVariant::Secondary)
+        .danger_ink(true)
+        .show(ui, theme)
+        .clicked();
+    (configure, uninstall)
 }
 
 #[cfg(test)]

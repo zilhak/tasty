@@ -208,7 +208,7 @@ pub use toast::{
     fade_alpha as toast_fade_alpha, layout_card as toast_layout_card,
     stack_anchor as toast_stack_anchor,
 };
-pub use toggle::{checkbox, checkbox_width, switch};
+pub use toggle::{checkbox, checkbox_width, switch, switch_with_label_color};
 pub use tooltip::{Tooltip, TooltipPlacement, tooltip_hover_delay_elapsed};
 pub use tree_row::tree_row;
 pub use two_depth::{two_depth_layout, two_depth_layout_filtered};
