@@ -12,6 +12,7 @@ use crate::core::CoreState;
 
 impl RequestContext {
     /// Resolve the menu owner once; App admits and executes the explicit creation command.
+    /// cwd comes from the owner surface, not the focused one, so the result does not depend on focus.
     #[cfg(feature = "gui")]
     pub fn add_kind_tab_by_owner(
         &mut self,
@@ -23,7 +24,7 @@ impl RequestContext {
         let (_, pane_id) = engine
             .find_workspace_index_for_surface(owner_surface_id)
             .ok_or_else(|| anyhow::anyhow!("owner surface {owner_surface_id} not found"))?;
-        let cwd = self.resolve_inherit_cwd(engine);
+        let cwd = self.resolve_inherit_cwd_from_surface(engine, owner_surface_id);
         self.dispatch_intent(
             crate::app::command::DomainIntent::CreateTab {
                 pane_id,

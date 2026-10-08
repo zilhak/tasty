@@ -109,7 +109,7 @@ mirror 워크스페이스의 convert 는 로컬에서 실행되지 않고 `Struc
 | `intent/workspace.rs` (새 워크스페이스 intent — GUI 경로) | 새 **로컬** 워크스페이스의 첫 PTY | 상속 원본은 그 창의 포커스 surface. 그것이 mirror 면 `None`(= 홈) |
 | `adapters/ipc/handler/workspace.rs` (`workspace.create`) | 새 **로컬** 워크스페이스의 첫 PTY | 상속 원본은 지목한 `surface_id`, 없으면 그 창의 포커스 surface([ADR-0043](../../adr/0043-cli-errors-and-diagnostic-logs.md)). 그것이 mirror 면 `None`(= 홈). 명시 `cwd` 는 그대로 존중 |
 | `state/tab.rs` (`add_tab` · `add_kind_tab`) | mirror 면 cwd 를 읽기 **전에** forward 로 return | 로컬 워크스페이스에서만 값이 쓰인다 |
-| `state/tab.rs` (`add_kind_tab_by_owner`) | owner surface 의 pane 에 `DomainIntent::CreateTab` 을 보낸다. 상속 원본은 owner 가 아니라 그 창의 포커스 surface 다 | 포커스 surface 가 mirror 면 `None`. owner pane 이 mirror 면 App journal 이 `NewTab` 으로 forward 해 cwd 가 버려진다. 유일한 호출처인 explorer "새 탭으로 열기"는 `path` param 이 root 를 정하고 mirror 에서는 핸들러가 먼저 막는다 |
+| `state/tab.rs` (`add_kind_tab_by_owner`) | owner surface 의 pane 에 `DomainIntent::CreateTab` 을 보낸다. 상속 원본은 owner surface 다. 그 창의 포커스는 결과에 영향을 주지 않는다 | owner surface 가 mirror 면 `None`. owner pane 이 mirror 면 App journal 이 `NewTab` 으로 forward 해 cwd 가 버려진다. 유일한 호출처인 explorer "새 탭으로 열기"는 `path` param 이 root 를 정하고 mirror 에서는 핸들러가 먼저 막는다 |
 | `intent/pane.rs` · `intent/surface.rs` (split) · `intent/tab.rs` · `adapters/ipc/handler/{pane,tab}.rs` | App journal의 mirror 대상 해소가 forward — 그 op(`SplitPane`/`NewTab`/`SplitSurface`)는 cwd 필드가 없다 | mirror 에서는 `None` 이 계산돼 버려진다. 서버가 자기 트리에서 결정 |
 | `intent/surface.rs` (convert) | mirror 면 `StructuralOp::ConvertSurface.cwd` | 명시값만 실린다(§3-1 표) |
 | `core/attach_runtime.rs` (`execute_forwarded_structural_op`) | **서버측** 로컬 실행 | 서버 자기 트리의 surface 라 `Local` — 이 규칙의 대상이 아니다 |

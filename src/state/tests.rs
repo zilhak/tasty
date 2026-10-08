@@ -590,6 +590,76 @@ fn local_explorer_cwd_is_local_and_inherited() {
     );
 }
 
+/// 포커스가 다른 surface 에 있어도 owner 지정 kind 탭은 owner 의 cwd 를 받는다.
+#[cfg(feature = "gui")]
+#[test]
+fn owner_kind_tab_takes_the_owner_cwd_not_the_focused_one() {
+    use tasty_core::DomainEvent as E;
+    let (focused, owner) = (700_101, 700_102);
+    let tab = |id: u32, index: usize| E::TabCreated {
+        id,
+        pane: focused,
+        index,
+        name: "Explorer".into(),
+        surface: tasty_core::SurfaceSpec {
+            id,
+            kind: "explorer".into(),
+            data: None,
+        },
+    };
+    let model = test_model(vec![
+        E::CategoryCreated {
+            id: 0,
+            name: "normal".into(),
+            index: 0,
+        },
+        E::WorkspaceCreated {
+            id: focused,
+            name: "Explorer".into(),
+            category: 0,
+            index: 0,
+            pane: focused,
+        },
+        tab(focused, 0),
+        tab(owner, 1),
+    ]);
+    let (mut state, mut session) = test_state_from_model(model);
+    let (focused_root, owner_root) = (
+        crate::test_support::abs_path("focused/root"),
+        crate::test_support::abs_path("owner/root"),
+    );
+    session.runtime.surfaces.insert(
+        focused,
+        Box::new(crate::model::ExplorerPanel::new(
+            focused,
+            focused_root.clone(),
+        )),
+    );
+    session.runtime.surfaces.insert(
+        owner,
+        Box::new(crate::model::ExplorerPanel::new(owner, owner_root.clone())),
+    );
+    let engine = session.borrow_mut();
+    assert_eq!(state.focused_surface_id(&engine.read()), Some(focused));
+
+    state
+        .add_kind_tab_by_owner(&engine.read(), owner, "explorer", &serde_json::json!({}))
+        .expect("owner 가 있으면 탭 추가 intent 를 낸다");
+    let intents = state.take_pending_intents();
+    assert_eq!(intents.len(), 1);
+    match &intents[0].body {
+        crate::intent::Intent::Domain(crate::app::command::DomainIntent::CreateTab {
+            pane_id,
+            cwd,
+            ..
+        }) => {
+            assert_eq!(*pane_id, focused);
+            assert_eq!(cwd.as_deref(), Some(owner_root.as_path()));
+        }
+        other => panic!("CreateTab 이 아니다: {other:?}"),
+    }
+}
+
 #[test]
 fn mirror_explorer_cwd_is_remote_and_not_inherited_locally() {
     let (state, mut engine_session, sid, root) = explorer_fixture(true);
