@@ -8,6 +8,7 @@ pub mod completion;
 pub mod event_feed;
 pub mod graph_view;
 pub mod hook_wait;
+mod report;
 pub(crate) mod runner_host;
 pub(crate) mod runner_thread;
 mod service;

@@ -207,7 +207,14 @@ impl HostExecutor {
             stdout: spec.stdout.clone(),
             timeout: Duration::from_millis(spec.timeout_ms),
             run,
-            env: super::child_env::inherited(),
+            env: {
+                let mut env = super::child_env::inherited();
+                env.extend(super::report::report_env(
+                    task,
+                    tasty_agent::task::report::ReportSource::Postprocess,
+                ));
+                env
+            },
         };
         let started = match process::spawn(request) {
             Ok(s) => s,

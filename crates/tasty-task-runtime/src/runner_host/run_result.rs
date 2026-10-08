@@ -48,7 +48,15 @@ pub(super) fn summarize_poll_response(resp: &serde_json::Value) -> String {
 
 /// EOF나 읽기 오류까지 읽고 마지막 CAPTURE_TAIL_CAP 바이트만 남긴다.
 /// 파이프가 찬 자식의 종료를 기다리는 교착을 피하려고 child.wait와 별도 스레드에서 실행한다.
-pub(super) fn drain_capped<R: std::io::Read>(mut reader: R) -> DrainedStream {
+pub(super) fn drain_capped<R: std::io::Read>(reader: R) -> DrainedStream {
+    drain_capped_observed(reader, |_| {})
+}
+
+/// [`drain_capped`] 와 같되 읽은 바이트를 잘라내기 전에 `observe` 에 보인다.
+pub(super) fn drain_capped_observed<R: std::io::Read>(
+    mut reader: R,
+    mut observe: impl FnMut(&[u8]),
+) -> DrainedStream {
     let mut data = Vec::with_capacity(CAPTURE_TAIL_CAP);
     let mut dropped_bytes: u64 = 0;
     let mut chunk = [0u8; 8192];
@@ -56,6 +64,7 @@ pub(super) fn drain_capped<R: std::io::Read>(mut reader: R) -> DrainedStream {
         match reader.read(&mut chunk) {
             Ok(0) => break,
             Ok(n) => {
+                observe(&chunk[..n]);
                 data.extend_from_slice(&chunk[..n]);
                 if data.len() > CAPTURE_TAIL_CAP {
                     let excess = data.len() - CAPTURE_TAIL_CAP;

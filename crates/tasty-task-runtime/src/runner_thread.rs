@@ -1027,6 +1027,7 @@ mod tests {
             hook_task_waits: Arc::new(crate::hook_wait::HookTaskWaits::new()),
             agent_turns: Default::default(),
             completion: Arc::new(crate::completion::fixture::Resolver::default()),
+            report_limits: Default::default(),
         };
         (td, ctx)
     }

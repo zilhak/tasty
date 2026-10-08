@@ -319,6 +319,20 @@ fn a_structured_output_needs_a_submission_and_the_new_session_is_told_how() {
     assert_eq!(token.len(), 32, "{token}");
     assert!(prompt.contains(&format!("--token '{token}'")), "{prompt}");
     assert!(!token.contains(&task.id), "{token}");
+    // report 는 사용법을 읽는 명령 한 줄과 이 회차의 주소만 싣는다.
+    let stored = ctx.with_memory(|mem| {
+        TaskStore::new(mem, HOST_OWNER, ctx.agent_seq.as_ref())
+            .get(1, &task.id)
+            .unwrap()
+            .unwrap()
+    });
+    let report = stored.report_token.expect("report token");
+    assert_eq!(report.attempt, 1);
+    assert_ne!(report.token, token);
+    let line =
+        tasty_agent::task::agent::report_line(&format!("1/1/agent/{}/{}", report.token, task.id));
+    assert!(prompt.contains(&line), "{prompt}");
+    assert_eq!(prompt.matches("tasty agent report").count(), 1, "{prompt}");
     // 새 세션의 첫 턴은 spawn 의 지시다. 시작 보고 없이도 종료를 받는다.
     ctx.agent_turns.report(
         42,

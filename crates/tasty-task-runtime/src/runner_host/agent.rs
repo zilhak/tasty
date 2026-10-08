@@ -164,6 +164,12 @@ impl HostExecutor {
                 &schema,
             ));
         }
+        if let Some(addr) =
+            super::report::report_address(task, tasty_agent::task::report::ReportSource::Agent)
+        {
+            text.push_str("\n\n");
+            text.push_str(&agent::report_line(&addr.to_env_value()));
+        }
         text.push_str("\n\n");
         text.push_str(&agent::attempt_marker_line(&attempt_token));
         let deadline_ms = timeout_ms.map(|t| now_ms().saturating_add(t));

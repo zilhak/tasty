@@ -156,6 +156,14 @@ pub fn phase(task: &super::Task) -> Option<&'static str> {
     })
 }
 
+/// 회차 지시문에 붙이는 report 안내 한 줄. 사용법 전문은 붙이지 않고 그것을 출력하는 명령과
+/// 이 회차의 주소만 준다.
+pub fn report_line(address: &str) -> String {
+    format!(
+        "If you need to record notes in this task's report, run `tasty agent report usage` to read how. Report address: {address}"
+    )
+}
+
 /// string 이 아닌 출력을 요구하는 회차에 붙이는 제출 안내. 세션은 이 명령으로 결과를 낸다.
 pub fn submission_instructions(
     workspace_id: u32,

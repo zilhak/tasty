@@ -6,16 +6,17 @@ use std::thread;
 
 use serde_json::json;
 use tasty_agent::runner::{DispatchHandle, PollOutcome};
+use tasty_agent::task::report::ReportSource;
 use tasty_agent::{
     ReducerInput, Task, TaskCommand, TaskId, TaskResult, TypedReducerInput, reduce_typed,
-    reduce_with_custom, run_custom_shell,
+    reduce_with_custom, run_custom_shell, run_custom_shell_with_env,
 };
 use tasty_memory::HOST_OWNER;
 
 use super::{
     HostExecutor, RUN_RESULT_POISON_REPORTED, RunProc, ShellChildEntry, child_env,
-    dispatch_attempt, drain_capped, now_ms, persist_run_result, run_group,
-    shell_outcome_from_status, typed_inputs,
+    dispatch_attempt, drain_capped, drain_capped_observed, now_ms, persist_run_result, report,
+    run_group, shell_outcome_from_status, typed_inputs,
 };
 use crate::task_output_ref;
 
@@ -98,7 +99,10 @@ impl HostExecutor {
                     .map(|c| c.merge_conflict())
                     .unwrap_or(tasty_agent::task::contract::MergeConflict::Error);
                 // 사용자 reduce 작업은 저장소 락 밖에서 실행한다.
-                let value = reduce_typed(strategy, &collected, conflict, run_custom_shell)?;
+                let env = report::report_env(task, ReportSource::ReduceCustom);
+                let value = reduce_typed(strategy, &collected, conflict, |command, stdin| {
+                    run_custom_shell_with_env(command, stdin, &env)
+                })?;
                 Ok(DispatchHandle::ReduceImmediate(TaskResult {
                     exit_code: None,
                     output: Some(value),
@@ -154,7 +158,10 @@ impl HostExecutor {
                 let (program, args) = argv.split_first().expect("non-empty");
                 let mut cmd = std::process::Command::new(program);
                 tasty_utils::process::hide_console(&mut cmd);
-                cmd.args(args).env_clear().envs(child_env::inherited());
+                cmd.args(args)
+                    .env_clear()
+                    .envs(child_env::inherited())
+                    .envs(report::report_env(task, ReportSource::Run));
                 if let Some(c) = cwd {
                     cmd.current_dir(c);
                 }
@@ -191,9 +198,31 @@ impl HostExecutor {
                     .name(format!("agent-shell-stdout-pid{pid}"))
                     .spawn(move || drain_capped(stdout_pipe))
                     .map_err(|e| format!("Run stdout drain spawn '{program}': {e}"))?;
+                // stderr 의 표지 줄은 그 자리에서 이 회차 report 에 쓴다. 결과 확정은 이 스레드가
+                // 끝난 뒤라 표지 줄은 모두 블록이 닫히기 전에 들어간다.
+                let mut markers =
+                    report::report_address(task, ReportSource::StderrMarker).map(|addr| {
+                        report::MarkerSink {
+                            memory: self.ctx.memory.clone(),
+                            seq: self.ctx.agent_seq.clone(),
+                            limits: self.ctx.report_limits.clone(),
+                            addr,
+                            scanner: Default::default(),
+                        }
+                    });
                 let stderr_thread = thread::Builder::new()
                     .name(format!("agent-shell-stderr-pid{pid}"))
-                    .spawn(move || drain_capped(stderr_pipe))
+                    .spawn(move || {
+                        let drained = drain_capped_observed(stderr_pipe, |chunk| {
+                            if let Some(m) = markers.as_mut() {
+                                m.observe(chunk);
+                            }
+                        });
+                        if let Some(m) = markers.as_mut() {
+                            m.finish();
+                        }
+                        drained
+                    })
                     .map_err(|e| format!("Run stderr drain spawn '{program}': {e}"))?;
                 let result_cell: Arc<Mutex<Option<PollOutcome>>> = Arc::new(Mutex::new(None));
                 let cell_clone = result_cell.clone();

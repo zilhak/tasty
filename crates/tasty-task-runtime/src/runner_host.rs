@@ -12,6 +12,7 @@ pub(crate) mod holding_warning;
 mod holdings;
 mod poll;
 mod postprocess;
+mod report;
 mod run_group;
 mod run_result;
 mod run_stop;
@@ -26,7 +27,7 @@ pub(crate) use run_result::{
     RUN_RESULT_LOST, evict_run_result, evict_task_side_keys, load_run_result, persist_run_result,
     shell_outcome_from_status,
 };
-use run_result::{drain_capped, summarize_poll_response};
+use run_result::{drain_capped, drain_capped_observed, summarize_poll_response};
 
 pub(crate) use attempt_record::{HANDLE_ATTEMPT_FIELD, dispatch_attempt, handle_value};
 use clock::now_ms;
@@ -36,6 +37,7 @@ pub(crate) use holdings::{own_lease, own_semaphore, release_own_holdings, resume
 #[cfg(all(test, unix))]
 pub(crate) use postprocess::postprocess_result_key;
 pub(crate) use postprocess::restored_handle as restored_postprocess_handle;
+pub(crate) use report::{SharedReportLimits, append as report_append};
 pub(crate) use run_stop::{RunProc, process_of_record, stored_process};
 #[cfg(all(test, unix))]
 pub(crate) use ttl_renewal::MIN_HOLDING_TTL_MS;
@@ -84,6 +86,8 @@ pub(crate) struct RunnerContext {
     pub(crate) hook_task_waits: Arc<crate::hook_wait::HookTaskWaits>,
     pub(crate) agent_turns: Arc<crate::agent_turns::AgentTurns>,
     pub(crate) completion: Arc<dyn crate::completion::CompletionResolver>,
+    /// 설정이 정하는 report 상한.
+    pub(crate) report_limits: Arc<SharedReportLimits>,
 }
 
 static MEMORY_POISON_REPORTED: std::sync::atomic::AtomicBool =
@@ -301,6 +305,9 @@ impl TaskExecutor for HostExecutor {
         // lease를 먼저, 선행 작업 출력을 나중에 치환한다.
         // 출력 데이터 안의 lease 표식을 다시 해석하지 않기 위한 순서다.
         let mut substituted = task.clone();
+        if substituted.is_typed() {
+            self.issue_report_token(&mut substituted);
+        }
         let leased = self.held_leases.get(&task.id).cloned();
         if let Some((_, resource, _)) = &leased {
             substitute_lease_resource(&mut substituted.command, resource);
@@ -391,6 +398,7 @@ mod tests {
             hook_task_waits: Arc::new(crate::hook_wait::HookTaskWaits::new()),
             agent_turns: Default::default(),
             completion: Arc::new(crate::completion::fixture::Resolver::default()),
+            report_limits: Default::default(),
         };
         (td, ctx)
     }

@@ -371,6 +371,15 @@ fn number_equal(a: &serde_json::Number, b: &serde_json::Number) -> bool {
 /// custom 전략의 기본 셸 실행기. 입력 JSON을 stdin으로 보내고 stdout을 반환한다.
 /// 셸의 환경은 작업 자식 규칙([`crate::child_env`])으로 거른다.
 pub fn run_custom_shell(command: &str, stdin_json: &str) -> std::io::Result<String> {
+    run_custom_shell_with_env(command, stdin_json, &[])
+}
+
+/// [`run_custom_shell`] 에 환경 변수를 더한다. 러너가 report 주소를 넘기는 데 쓴다.
+pub fn run_custom_shell_with_env(
+    command: &str,
+    stdin_json: &str,
+    extra_env: &[(std::ffi::OsString, std::ffi::OsString)],
+) -> std::io::Result<String> {
     use std::io::Write;
     use std::process::{Command, Stdio};
 
@@ -391,6 +400,7 @@ pub fn run_custom_shell(command: &str, stdin_json: &str) -> std::io::Result<Stri
     let mut child = cmd
         .env_clear()
         .envs(crate::child_env::inherited())
+        .envs(extra_env.iter().cloned())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
