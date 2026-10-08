@@ -990,9 +990,9 @@ pub fn pages() -> Vec<Page> {
                                  So a row's label is two parts: the fixed text (never truncates) \
                                  and the program name in mono / text-primary, which is the part \
                                  that shrinks and ellipsises. The menu grows with the content \
-                                 between 200px and 288px — the fixed Tools-menu 160px is too \
-                                 narrow for these strings — and the full name is available as the \
-                                 row's tooltip.",
+                                 between 200px and 288px (a wider band than the Tools menu's \
+                                 160–240, since every row carries a program name) and the full \
+                                 name is available as the row's tooltip.",
                             ),
                             widgets::banner_mouse_capture::draw_elastic,
                         ),
