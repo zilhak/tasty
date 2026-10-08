@@ -6,8 +6,9 @@ use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::tokens::{PLUGIN_LIST_ROW_HEIGHT, STRUCT_GAP_2};
 use tasty_ui_widgets::{
-    Button, ButtonVariant, PluginAvatarSize, PluginInstallPathsView, TagVariant, checkbox,
-    margin_sym, paint_plugin_avatar, plugin_avatar, plugin_detail_section,
+    Button, ButtonVariant, PluginAvatarSize, PluginDetailBarView, PluginInstallPathsView,
+    TagVariant, margin_sym, paint_plugin_avatar, plugin_avatar, plugin_command_row,
+    plugin_detail_bar, plugin_detail_bar_height, plugin_detail_meta, plugin_detail_section,
     plugin_detail_section_gap, plugin_install_paths, tag,
 };
 
@@ -183,14 +184,6 @@ fn caption(ui: &mut egui::Ui, theme: &Theme, text: &str) {
     );
 }
 
-fn muted(ui: &mut egui::Ui, theme: &Theme, text: &str) {
-    ui.label(
-        egui::RichText::new(text)
-            .size(theme.font_size_caption.value())
-            .color(theme.text_muted().to_egui()),
-    );
-}
-
 /// 활성 플러그인의 실행 오류만 강조한다. 사용자가 비활성화한 상태는 오류로 표시하지 않는다.
 fn health_box(ui: &mut egui::Ui, theme: &Theme) {
     let danger = theme.accent_danger().to_egui();
@@ -211,17 +204,19 @@ fn health_box(ui: &mut egui::Ui, theme: &Theme) {
         });
 }
 
-/// `Status:` 행 — 체크박스 + `Configure`. 본체는 egui `ui.checkbox` 를 직접 쓰지만
-/// 갤러리는 공용 위젯(`docs/architecture/ui-widgets-crate.md` 의 "무엇을 공용 위젯으로")을 부른다.
-fn status_row(ui: &mut egui::Ui, theme: &Theme, row: &Row) {
-    ui.horizontal(|ui| {
-        caption(ui, theme, "Status:");
-        let mut enabled = row.enabled;
-        checkbox(ui, theme, &mut enabled, "Enabled", true);
-        Button::new("Configure")
-            .variant(ButtonVariant::Secondary)
-            .show(ui, theme);
-    });
+/// 하단 액션 바 — 본체와 같은 공용 위젯. 스위치·Configure·Uninstall.
+fn action_bar(ui: &mut egui::Ui, theme: &Theme, row: &Row) {
+    plugin_detail_bar(
+        ui,
+        theme,
+        &PluginDetailBarView {
+            enabled: row.enabled,
+            enabled_label: crate::i18n::t("plugins.enabled"),
+            disabled_label: crate::i18n::t("plugins.disabled"),
+            configure: crate::i18n::t("plugins.configure"),
+            uninstall: crate::i18n::t("plugins.uninstall"),
+        },
+    );
 }
 
 /// 목록 값 한 묶음 — 디자인 `Mono` 머리글 절. 비면 본체처럼 `(none)` 을 그린다.
@@ -241,7 +236,7 @@ fn list_or_none(ui: &mut egui::Ui, theme: &Theme, label: &str, values: &[&str], 
     });
 }
 
-/// `Commands` — 제목 좌, 단축키 tag 우. 명령이 없으면 절 자체가 안 나온다.
+/// `Commands` — 행마다 mono 제목과 단축키 Kbd, 아래 구분선. 명령이 없으면 절 자체가 안 나온다.
 fn commands(ui: &mut egui::Ui, theme: &Theme, row: &Row) {
     if row.commands.is_empty() {
         return;
@@ -249,12 +244,7 @@ fn commands(ui: &mut egui::Ui, theme: &Theme, row: &Row) {
     plugin_detail_section_gap(ui, theme);
     plugin_detail_section(ui, theme, "Commands", |ui| {
         for (title, kb) in row.commands {
-            ui.horizontal(|ui| {
-                caption(ui, theme, title);
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    tag(ui, theme, kb, TagVariant::Default, false);
-                });
-            });
+            plugin_command_row(ui, theme, title, Some(kb));
         }
     });
 }
@@ -274,14 +264,8 @@ fn paths(ui: &mut egui::Ui, theme: &Theme, row: &Row) {
     );
 }
 
-/// 본체와 같은 일반 버튼으로 제거 동작과 확인·취소를 표시한다.
-fn uninstall(ui: &mut egui::Ui, theme: &Theme, row: &Row, confirming: bool) {
-    if !confirming {
-        Button::new("Uninstall")
-            .variant(ButtonVariant::Secondary)
-            .show(ui, theme);
-        return;
-    }
+/// 액션 바의 Uninstall 을 누른 뒤 본문 끝에 보이는 경고 문구와 확인·취소 버튼.
+fn uninstall_confirm(ui: &mut egui::Ui, theme: &Theme, row: &Row) {
     let warning = if row.builtin {
         "This is a built-in plugin. Once removed, it will not be auto-reinstalled on next launch."
     } else {
@@ -302,24 +286,34 @@ fn uninstall(ui: &mut egui::Ui, theme: &Theme, row: &Row, confirming: bool) {
     });
 }
 
-/// 우측 상세 — 본체 `CentralPanel` 블록 전량.
+/// 우측 상세 — 본체 `CentralPanel` 블록 전량. 본문 아래에 액션 바 높이를 남긴다.
 pub(super) fn detail_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, detail: Detail) {
     ui.painter_at(rect)
         .rect_filled(rect, 0.0, theme.bg_panel().to_egui());
     let inner = rect.shrink(theme.spacing_md.value());
-    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner));
-    child.spacing_mut().item_spacing.y = theme.spacing_sm.value();
-
     let Some(i) = detail.selected_row() else {
+        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner));
         child.add_space(theme.spacing_xl.value());
         caption(&mut child, theme, crate::i18n::t("plugins.none_selected"));
         return;
     };
     let row = &ROWS[i];
 
+    let bar_h = plugin_detail_bar_height(theme);
+    let (body_rect, bar_rect) = {
+        let split = inner.max.y - bar_h;
+        (
+            egui::Rect::from_min_max(inner.min, egui::pos2(inner.max.x, split)),
+            egui::Rect::from_min_max(egui::pos2(inner.min.x, split), inner.max),
+        )
+    };
+    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(body_rect));
+    child.spacing_mut().item_spacing.y = theme.spacing_sm.value();
+
     child.horizontal_top(|ui| {
         plugin_avatar(ui, theme, row.name, PluginAvatarSize::Detail);
         ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
             ui.horizontal(|ui| {
                 ui.label(
                     egui::RichText::new(row.name)
@@ -342,7 +336,7 @@ pub(super) fn detail_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, de
                     );
                 }
             });
-            muted(ui, theme, row.id);
+            plugin_detail_meta(ui, theme, &[row.authors, row.id]);
         });
     });
     caption(&mut child, theme, row.description);
@@ -351,13 +345,11 @@ pub(super) fn detail_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, de
         health_box(&mut child, theme);
     }
 
-    caption(&mut child, theme, &format!("Authors: {}", row.authors));
     if !row.homepage.is_empty() {
         caption(&mut child, theme, &format!("Homepage: {}", row.homepage));
     }
 
     plugin_detail_section_gap(&mut child, theme);
-    status_row(&mut child, theme, row);
     list_or_none(&mut child, theme, "Surface kinds", row.surface_kinds, false);
 
     plugin_detail_section_gap(&mut child, theme);
@@ -366,13 +358,13 @@ pub(super) fn detail_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, de
     commands(&mut child, theme, row);
     paths(&mut child, theme, row);
 
-    child.add_space(theme.spacing_sm.value());
-    uninstall(
-        &mut child,
-        theme,
-        row,
-        matches!(detail, Detail::ConfirmUninstall(_)),
-    );
+    if matches!(detail, Detail::ConfirmUninstall(_)) {
+        child.add_space(theme.spacing_sm.value());
+        uninstall_confirm(&mut child, theme, row);
+    }
+
+    let mut bar = ui.new_child(egui::UiBuilder::new().max_rect(bar_rect));
+    action_bar(&mut bar, theme, row);
 }
 
 /// 시안 Spec "Installed detail — install path" 의 두 상세 열 폭. 720(최소)·880(기본) 창의 상세 열에

@@ -286,14 +286,11 @@ src/catalog/components/plugins_window/attention.rs	no longer used	plugins.attn_n
 src/catalog/components/plugins_window/installed.rs	(none)	plugins.none,remote_tool.passkey_none
 src/catalog/components/plugins_window/installed.rs	Cancel	button.cancel,image_viewer.cancel,preset.popup.cancel_button,quit_modal.cancel_button,remote_attach.cancel,remote_tool.cancel,transfer.progress.cancel
 src/catalog/components/plugins_window/installed.rs	Commands	plugins.commands
-src/catalog/components/plugins_window/installed.rs	Configure	plugins.configure
 src/catalog/components/plugins_window/installed.rs	Confirm uninstall	plugins.uninstall_confirm
-src/catalog/components/plugins_window/installed.rs	Enabled	plugins.enabled
 src/catalog/components/plugins_window/installed.rs	Install path	plugins.install_path
 src/catalog/components/plugins_window/installed.rs	Open folder	plugins.open_folder
 src/catalog/components/plugins_window/installed.rs	Permissions	plugins.permissions,settings.tab.macos_permissions
 src/catalog/components/plugins_window/installed.rs	Surface kinds	plugins.surface_kinds
-src/catalog/components/plugins_window/installed.rs	Uninstall	plugins.uninstall
 src/catalog/components/plugins_window/installed.rs	built-in	file_handler.picker.origin_host,plugins.builtin_badge
 src/catalog/components/port_scanner.rs	Address	port_scanner.column_address
 src/catalog/components/port_scanner.rs	Apply	port_scanner.state_filter_apply,preset.popup.apply_button,remote_tool.filter_apply,settings.file_handler.hook_handlers.seq_apply,settings.keybindings.apply_button

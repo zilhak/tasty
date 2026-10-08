@@ -43,6 +43,7 @@ mod override_row;
 mod path_field;
 mod plugin_add;
 mod plugin_avatar;
+mod plugin_detail;
 mod plugin_paths;
 mod popup_title;
 mod ports_table;
@@ -152,6 +153,10 @@ pub use plugin_add::{
     plugin_manifest_card, plugin_signature_invalid_detail, plugin_trust_box, short_fingerprint,
 };
 pub use plugin_avatar::{PluginAvatarSize, paint_plugin_avatar, plugin_avatar};
+pub use plugin_detail::{
+    PluginDetailBarClicks, PluginDetailBarView, plugin_command_row, plugin_detail_bar,
+    plugin_detail_bar_height, plugin_detail_meta,
+};
 pub use plugin_paths::{
     PluginInstallPathsView, plugin_detail_section, plugin_detail_section_gap, plugin_install_paths,
 };

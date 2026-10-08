@@ -68,6 +68,8 @@ pub struct Button<'a> {
     leading_icon: Option<IconPainter<'a>>,
     /// 라벨 뒤 trailing 아이콘(디자인 `trailingIcon`). icon-size-md, fg 색으로 그려짐.
     trailing_icon: Option<IconPainter<'a>>,
+    /// 활성 상태의 글자·아이콘을 accent-danger 로 그린다(디자인 secondary 버튼의 `color: accent-danger`).
+    danger_ink: bool,
 }
 
 impl<'a> Button<'a> {
@@ -80,6 +82,7 @@ impl<'a> Button<'a> {
             block: false,
             leading_icon: None,
             trailing_icon: None,
+            danger_ink: false,
         }
     }
 
@@ -113,6 +116,22 @@ impl<'a> Button<'a> {
     pub fn trailing_icon(mut self, icon: IconPainter<'a>) -> Self {
         self.trailing_icon = Some(icon);
         self
+    }
+
+    /// 채움과 테두리는 variant 그대로 두고 글자와 아이콘만 accent-danger 로 그린다.
+    /// disabled 에서는 다른 버튼과 같은 disabled ink 를 쓴다.
+    pub fn danger_ink(mut self, danger_ink: bool) -> Self {
+        self.danger_ink = danger_ink;
+        self
+    }
+
+    /// variant 가 정한 글자색에 `danger_ink` 를 적용한다.
+    fn label_ink(&self, theme: &Theme, fg: egui::Color32) -> egui::Color32 {
+        if self.enabled && self.danger_ink {
+            theme.accent_danger().to_egui()
+        } else {
+            fg
+        }
     }
 
     pub fn show(self, ui: &mut egui::Ui, theme: &Theme) -> egui::Response {
@@ -236,7 +255,7 @@ impl<'a> Button<'a> {
             + (if has_trailing { icon_glyph + gap } else { 0.0 });
         let mut x = rect.center().x - group_w * 0.5;
         let cy = rect.center().y;
-        let fg_col = fg;
+        let fg_col = self.label_ink(theme, fg);
 
         if let Some(paint) = self.leading_icon {
             let irect = egui::Rect::from_center_size(
@@ -280,5 +299,22 @@ mod tests {
                 assert!(!on_banner_surface(ui));
             });
         });
+    }
+
+    #[test]
+    fn danger_ink_paints_the_label_danger_only_while_enabled() {
+        let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
+        let fg = theme.button_fg().to_egui();
+        let danger = theme.accent_danger().to_egui();
+        assert_ne!(fg, danger);
+        let button = |enabled: bool, danger_ink: bool| {
+            Button::new("Uninstall")
+                .variant(ButtonVariant::Secondary)
+                .enabled(enabled)
+                .danger_ink(danger_ink)
+        };
+        assert_eq!(button(true, false).label_ink(&theme, fg), fg);
+        assert_eq!(button(true, true).label_ink(&theme, fg), danger);
+        assert_eq!(button(false, true).label_ink(&theme, fg), fg);
     }
 }
