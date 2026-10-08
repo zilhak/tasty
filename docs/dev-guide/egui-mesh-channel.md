@@ -826,4 +826,4 @@ image는 원본·편집 레이어·floating selection을 egui texture로 올리�
 정적인 이미지의 pan·zoom은 캐시 texture를 참조하는 geometry를 보낸다.
 최초 대형 이미지 업로드와 편집 레이어 갱신 비용은 남는다.
 ImageDelta.pos는 부분 업로드를 표현할 수 있으나 image 편집의 부분 갱신 최적화를 구현된 기능으로 가정하지 않는다.
-데이터·undo·저장은 [image plugin](../plugins/image/index.md)이 소유한다.
+데이터·undo·저장은 [image plugin](../surfaces/image/index.md)이 소유한다.

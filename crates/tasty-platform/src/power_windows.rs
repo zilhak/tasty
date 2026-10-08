@@ -4,7 +4,7 @@
 //! (S3/S0/hibernate)과 매핑되지 않으므로, 메인 윈도우 HWND 에 `SetWindowSubclass`
 //! 로 서브클래스를 붙여 `WM_POWERBROADCAST` 를 가로챈다. resume 신호를 받으면
 //! 호출부가 맡긴 콜백을 부르고, 원 메시지는 `DefSubclassProc` 로 winit 의 WndProc 에
-//! 그대로 넘긴다 (docs/features/terminal/index.md#프로세스-종료--절전-복귀).
+//! 그대로 넘긴다 (docs/surfaces/terminal/index.md#프로세스-종료--절전-복귀).
 //!
 //! 이 모듈은 OS 신호만 전달한다. 앱의 복구 동작은 호스트 콜백이 정한다.
 

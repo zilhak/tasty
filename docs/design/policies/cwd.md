@@ -29,7 +29,7 @@ surface의 현재 폴더(cwd)는 종류 전환, 새 탭·분할의 폴더 상속
 
 OSC 7을 받으면 소속 탭의 이름도 갱신한다. 탭에서 포커스된 surface의 cwd 마지막 경로 요소를 쓰며 홈은 `~`로 표시한다. 명시한 이름과 OSC 제목이 있으면 이를 우선한다. GUI는 `TerminalCwdChanged` → `SurfaceCwdChanged`, 헤드리스는 PTY 처리(`src/boot.rs`)의 `intent::headless::apply_terminal_cwd_changed`로 같은 engine 상태를 갱신한다([헤드리스 가이드](../../dev-guide/headless-build-boundaries.md)). `tests/e2e_tests.rs`의 `an_osc7_cwd_becomes_the_tab_name`이 두 빌드에서 같은 결과를 확인한다.
 
-셸이 OSC 7 을 안 보내면 `cached_cwd` 가 비어, 새 분할의 부모 cwd 상속은 Linux/macOS 에선 위 OS 조회가 대신하고 Windows 에선 동작하지 않는다(프롬프트 설정으로 해결). (Windows 는 합성 rcfile 로 bash 의 OSC 7 emit 강제 — [terminal](../../features/terminal/index.md).)
+셸이 OSC 7 을 안 보내면 `cached_cwd` 가 비어, 새 분할의 부모 cwd 상속은 Linux/macOS 에선 위 OS 조회가 대신하고 Windows 에선 동작하지 않는다(프롬프트 설정으로 해결). (Windows 는 합성 rcfile 로 bash 의 OSC 7 emit 강제 — [terminal](../../surfaces/terminal/index.md).)
 
 ## `surface.set_cwd` IPC (RemoteSurface)
 
@@ -62,7 +62,7 @@ Surface의 `cwd`는 생성·변환 경로 전체에서 전달해야 한다. 빠�
 | `TerminalSurface` | `None` — cwd 는 terminal store(`get_cwd()`) 경유, `EngineRef::surface_cwd()` 가 분기 |
 | `EguiMeshSurface`(plugin egui-mesh surface) | 자신이 연 파일의 부모 디렉터리. 파일이 없으면 None |
 | `EmptySurface` | 전달받은 `self.cwd` (없으면 None) |
-| `ExplorerPanel` | 활성 탭의 **고정 cwd**(프로젝트 루트) — 현재 폴더(current)를 하위로 오가도 스폰 cwd 는 cwd 불변. cwd↔current 분리는 [features/explorer](../../features/explorer/index.md) |
+| `ExplorerPanel` | 활성 탭의 **고정 cwd**(프로젝트 루트) — 현재 폴더(current)를 하위로 오가도 스폰 cwd 는 cwd 불변. cwd↔current 분리는 [explorer surface](../../surfaces/explorer/index.md) |
 | `AttachMeshSurface` / `DagGraphSurface` | `None` |
 | `RemoteSurface`(plugin surface) | 생성 시 전달한 값 또는 `surface.set_cwd`로 갱신한 값을 저장해 반환. 값이 없으면 `None` |
 
@@ -165,4 +165,4 @@ Explorer 는 plugin 이 아니라 본체 builtin surface 다(`register_explorer`
 - [`features/work-area` split 명령](../../features/work-area/index.md#split-명령) — split/새 탭 상속
 - [features/work-area](../../features/work-area/index.md) — Surface 도메인 (`source_cwd` 가 Surface trait 핵심)
 - [concepts/plugins](../../concepts/plugins.md) — RemoteSurface plugin
-- [terminal](../../features/terminal/index.md) · [terminal-link](../../features/terminal-link/index.md)(OSC 7 경로 해석)
+- [terminal](../../surfaces/terminal/index.md) · [terminal-link](../../features/terminal-link/index.md)(OSC 7 경로 해석)

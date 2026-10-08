@@ -313,7 +313,7 @@ fn el1_at_a_parked_cursor_does_not_shift_the_alternate_screen() {
 
 // EL0/ED0은 pending wrap에서도 마지막 한 칸을 지운다. termwiz의 xpos..width는
 // 빈 범위가 되므로 그 칸을 직접 처리한다. 이 선택은 tmux 3.4의 관측 동작과 다르며
-// docs/features/terminal/index.md#스크롤-영역과-소거에 설명한다.
+// docs/surfaces/terminal/index.md#스크롤-영역과-소거에 설명한다.
 
 #[test]
 fn el0_at_a_parked_cursor_erases_the_cell_it_sits_on() {

@@ -60,6 +60,6 @@ OS 휠 설정을 읽을 수 있거나 egui가 시스템 설정을 반영하게 �
 
 ## References
 
-- [터미널 기능](../features/terminal/index.md)
+- [터미널 기능](../surfaces/terminal/index.md)
 - `crates/tasty-terminal/src/mouse_report.rs`
 - `src/view/main/mouse.rs`

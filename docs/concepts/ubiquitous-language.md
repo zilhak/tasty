@@ -11,6 +11,7 @@
 | 주체 | [actors.md](actors.md) | 로컬 사용자 · AI Agent · 원격 사용자 · 점유 |
 | 구조 | [hierarchy.md](hierarchy.md) | Engine · View · Workspace · Pane · Tab · Surface · 두 레벨 레이아웃 |
 | 플러그인 | [plugins.md](plugins.md) | 배포/통합 축 · surface_kind · 권한 |
+| Surface 종류 | [`../surfaces/index.md`](../surfaces/index.md) | kind별 명세 |
 | attach | [`../dev-guide/attach-behavior.md`](../dev-guide/attach-behavior.md) | server/client · mirror · lock |
 | 원격 연결 | [`../features/remote-profiles/index.md`](../features/remote-profiles/index.md) | 원격 접속 프로필 · Passkey · kind |
 | 훅 | [`../features/hooks/index.md`](../features/hooks/index.md) | Surface hook · Global hook · hook handler 레지스트리 |
@@ -45,7 +46,7 @@
 - **Workspace Category(카테고리/사이드바 폴더)** — 워크스페이스를 묶는 **그룹 계층**(사이드바 섹션). `workspace_categories_enabled` 설정으로 on/off. 예약 카테고리 **`normal`**(id `0`, `categories[0]` 위치 고정, rename/delete 불가)가 항상 존재하고, 미지정 워크스페이스의 기본 소속이다. 카테고리 *CRUD·reorder·소속 변경*은 에이전트 작업(IPC/CLI 양면, release) — *선택(active)·접힘 토글*은 사용자 UI 상태(IPC 노출 안 함). 정본 [`features/workspace-category`](../features/workspace-category/index.md).
 - **Pane** — 독립 탭 바를 가진 영역. **상위 레이아웃**이 위치 결정(탭 무관 고정). tasty 고유.
 - **Tab** — Pane 안의 탭 하나. 내부에 Surface 들의 **하위 레이아웃**을 가짐(탭 전환 시 함께 전환).
-- **Surface** — 최하위 컨테이너. `surface_id` + **kind(타입)** 를 가짐. 닫기/포커스/리스트는 kind 무관 동일.
+- **Surface** — 최하위 컨테이너. `surface_id` + **kind(타입)** 를 가짐. 닫기/포커스/리스트는 kind 무관 동일. kind마다의 명세는 [`surfaces/`](../surfaces/index.md).
 - **상위 레이아웃 / 하위 레이아웃** — Pane 배치(탭 무관) / Surface 배치(탭 종속). 두 레벨을 **둘 다** 제공하는 게 tasty 핵심 설계. 동의어: **PaneGroup** = 상위 레이아웃(`PaneNode`), **SurfaceGroup** = 하위 레이아웃(`SurfaceLayout`) — 코드 타입이 아니라 주석·문서가 쓰는 이름이다.
 
 ### 사용자 화면 표기

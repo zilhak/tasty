@@ -166,7 +166,7 @@ pub(crate) struct TerminalState {
     pub(crate) mouse_tracking: modes::MouseTrackingRegisters,
     /// 트래킹 `None → ON` 엣지에서 무장되는 "첫 마우스 캡처 안내 toast" 플래그. 호스트가
     /// `take_mouse_capture_hint()` 로 1회 소비(읽고 disarm)한다. 좌·우 클릭 중 먼저 발생한
-    /// 캡처 상호작용이 소비해 세션당 1회만 안내된다 (docs/features/terminal/index.md#마우스-입력).
+    /// 캡처 상호작용이 소비해 세션당 1회만 안내된다 (docs/surfaces/terminal/index.md#마우스-입력).
     pub(crate) mouse_capture_hint_armed: bool,
     /// SGR mouse encoding (mode 1006).
     pub(crate) sgr_mouse: bool,
@@ -263,13 +263,13 @@ pub struct Terminal {
     /// Last known grid dimensions `(cols, rows)`, mirrored on the handle so
     /// `cols()`/`rows()` and the no-op `resize()` fast path avoid locking the
     /// shared state. The per-frame `resize_all` sweep would otherwise lock every
-    /// terminal (including busy background ones) on each redraw (docs/features/terminal/index.md#vte-에뮬레이션).
+    /// terminal (including busy background ones) on each redraw (docs/surfaces/terminal/index.md#vte-에뮬레이션).
     cached_dims: (usize, usize),
     /// Handle-side mirror of `TerminalState::emit_output_events`, so the host's
     /// per-wake `set_output_events_enabled` (called on every targeted poll) is a
     /// lock-free no-op when the gate is unchanged — otherwise it would wait on a
     /// busy background terminal's parser lock every wake, re-serializing the input
-    /// thread against parsing (docs/features/terminal/index.md#vte-에뮬레이션).
+    /// thread against parsing (docs/surfaces/terminal/index.md#vte-에뮬레이션).
     cached_emit_events: bool,
     /// The reader worker's wake callback, held behind a mutex so it can be
     /// re-targeted after construction. A headless PTY's Terminal is created with

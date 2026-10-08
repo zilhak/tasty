@@ -82,5 +82,5 @@ winit이 자식 창으로의 포커스 이동을 창 비활성과 구분해 알�
 ## References
 
 - [Webview 호스트 계약](../design/systems/webview.md)
-- [Markdown 문서와 링크](../plugins/markdown/index.md)
+- [Markdown 문서와 링크](../surfaces/markdown/index.md)
 - [사용자 파일 열기의 출처](../features/file-handler/index.md)

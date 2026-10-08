@@ -74,5 +74,5 @@ host가 wake와 무관하게 모든 Terminal을 주기적으로 검사하게 되
 
 ## References
 
-- [터미널 기능](../features/terminal/index.md)
+- [터미널 기능](../surfaces/terminal/index.md)
 - `crates/tasty-terminal/src/`

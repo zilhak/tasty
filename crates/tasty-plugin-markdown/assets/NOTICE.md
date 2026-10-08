@@ -94,8 +94,8 @@
   `url(data:font/woff2;base64,<...>) format("woff2")` entry, base64-encoding the vendored
   `include_bytes!` font data directly — consistent with every other asset in this plugin already
   being embedded, not referenced externally. Raw vendored footprint is ~254KB (20 `.woff2` files);
-  base64 inflates that by exactly 4/3 inside the generated CSS (see `docs/plugins/markdown/screens/
-  markdown.md`'s math section for the measured total document/binary impact).
+  base64 inflates that by exactly 4/3 inside the generated CSS (see `docs/surfaces/markdown/screens/
+  viewer.md`'s math section for the measured total document/binary impact).
 - To update: re-run the same jsdelivr fetch against a newer `katex@<version>` (JS, CSS, and every
   file under `dist/fonts/*.woff2`), re-verify the LICENSE at the matching tag, recompute the
   hashes, and update the version/hashes above.

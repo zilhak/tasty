@@ -46,7 +46,7 @@ read·write·wait는 idle 시각을 갱신하며 기본값은 override할 수 �
   Terminal/Pty 쌍과 waker 중복 방지 등록을 함께 정리한다.
 
 자식은 PTY를 소유한 host 수명을 따른다. Windows의 Job Object와 Unix의 hangup 차이는
-[터미널 수명](../terminal/index.md#프로세스-종료--절전-복귀)을 참고한다.
+[터미널 수명](../../surfaces/terminal/index.md#프로세스-종료--절전-복귀)을 참고한다.
 
 ### 화면에 연결하기
 

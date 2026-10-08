@@ -60,7 +60,7 @@ raw HTML 상대 링크와 앵커의 플랫폼 동작은 검증 범위를 구별�
 ## References
 
 - [클립보드 뷰어](../plugins/clipboard-viewer/index.md)
-- [이미지 뷰어와 임시 편집](../plugins/image/index.md)
-- [Explorer 경로](../features/explorer/index.md)
+- [이미지 뷰어와 임시 편집](../surfaces/image/index.md)
+- [Explorer 경로](../surfaces/explorer/index.md)
 - [git 조회 캐시](../plugins/git-viewer/screens/git-viewer.md)
-- [Markdown 로컬 리소스](../plugins/markdown/index.md)
+- [Markdown 로컬 리소스](../surfaces/markdown/index.md)

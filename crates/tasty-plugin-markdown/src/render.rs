@@ -9,7 +9,7 @@
 //! 넣지 않는다. file URL의 base를 넣으면 #slug도 다른 문서로 해석되기 때문이다.
 //! Raw HTML의 상대 링크는 본문을 정리한 뒤에도 남을 수 있다.
 //!
-//! 상세: docs/plugins/markdown/index.md#내부-동작.
+//! 상세: docs/surfaces/markdown/index.md#내부-동작.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -1955,7 +1955,7 @@ fn highlight_script() -> String {
 /// navigator.clipboard.writeText를 사용할 수 없거나 실패하면 execCommand(copy)를
 /// 시도한다. Linux/WebKitGTK에서 확인한 것은 writeText 경로이며, 그 실행에서
 /// fallback이나 macOS·Windows의 동작까지 확인한 것은 아니다.
-/// 기록: docs/plugins/markdown/screens/markdown.md.
+/// 기록: docs/surfaces/markdown/screens/viewer.md.
 fn copy_button_script(tr: &Translator) -> String {
     let json_or_empty = |s: &str| serde_json::to_string(s).unwrap_or_else(|_| "\"\"".to_string());
     format!(
@@ -2194,7 +2194,7 @@ fn katex_css_with_embedded_fonts() -> &'static str {
 ///
 /// Linux/WebKitGTK에서 잘못된 \frac{1}은 원문을 담은 .katex-error로, 함께 둔
 /// 유효한 수식 두 개는 KaTeX MathML로 표시됐다.
-/// 기록: docs/plugins/markdown/screens/markdown.md.
+/// 기록: docs/surfaces/markdown/screens/viewer.md.
 fn katex_script() -> String {
     format!(
         r#"<style>{css}</style><script>{js}</script><script>(function(){{

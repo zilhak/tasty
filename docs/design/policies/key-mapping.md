@@ -142,7 +142,7 @@ explorer 같은 egui surface에 포커스가 있으면 한 번의 키 입력이 
 
 이 중복을 막는 곳은 텍스트를 소비하는 쪽이다. explorer 타입어헤드는
 `unmodified_binding_chars`로 수식 키 없이 등록된 영숫자를 모아 두고, 그 글자는 소비하지
-않고 단축키에 넘긴다([explorer](../../features/explorer/index.md)의 "타입어헤드로 항목
+않고 단축키에 넘긴다([explorer](../../surfaces/explorer/index.md)의 "타입어헤드로 항목
 선택"). Tasty 기본 프리셋에는 그런 단축키가 없으므로 기본 상태에서 넘기는 글자도 없다.
 
 `shift`만 붙은 단축키도 같이 처리한다. shift 조합은 대문자 텍스트 이벤트를 만들어 수식

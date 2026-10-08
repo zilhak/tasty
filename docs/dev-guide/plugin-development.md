@@ -8,8 +8,8 @@
 
 | 만들고 싶은 것 | 보면 되는 번들 플러그인 | 난이도 |
 |---------------|------------------------|--------|
-| **egui-mesh surface** (자가 렌더 mesh 합성) | [image](../plugins/image/index.md) · [mesh-demo](egui-mesh-channel.md)(최소 PoC) | ★★ |
-| **webview surface** | [html](../plugins/html/index.md) · [markdown](../plugins/markdown/index.md)(+파일 핸들러·settings, ADR-0029) | ★★ |
+| **egui-mesh surface** (자가 렌더 mesh 합성) | [image](../surfaces/image/index.md) · [mesh-demo](egui-mesh-channel.md)(최소 PoC) | ★★ |
+| **webview surface** | [html](../surfaces/html/index.md) · [markdown](../surfaces/markdown/index.md)(+파일 핸들러·settings, ADR-0029) | ★★ |
 | **도구 메뉴 항목 + popup** | [git-viewer](../plugins/git-viewer/index.md)(view/logic 분리) · [clipboard-viewer](../plugins/clipboard-viewer/index.md)(master-detail) | ★★ |
 | **CLI + IPC namespace** | [codex](../plugins/codex/index.md) · [claude](../plugins/claude/index.md) | ★★★ |
 | **이벤트 구독 / 훅 / 외부 설치** | [claude](../plugins/claude/index.md)(`surface.closed`·Claude 훅·install) | ★★★ |
@@ -116,7 +116,7 @@ surface kind 선언에는 host 가 kind-agnostic 하게 소비하는 메타가 �
 
 ### 파일 핸들러 (detector + handler)
 
-확장자 → surface 매핑. `[[contributes.detector]]`(확장자 규칙) + `[[contributes.handler]]`(`action = open_surface{surface_kind}`). 권한: `file_handler.define`(신규 detector) / `file_handler.extend:<id>` / `file_handler.handle:<id>`. handler `id` 는 short name — install 단계가 `<plugin_id>/<id>` 로 자동 prefix. priority 동순위면 owner tiebreak `user > plugin > host`. 예: [image](../plugins/image/index.md)·[markdown](../plugins/markdown/index.md).
+확장자 → surface 매핑. `[[contributes.detector]]`(확장자 규칙) + `[[contributes.handler]]`(`action = open_surface{surface_kind}`). 권한: `file_handler.define`(신규 detector) / `file_handler.extend:<id>` / `file_handler.handle:<id>`. handler `id` 는 short name — install 단계가 `<plugin_id>/<id>` 로 자동 prefix. priority 동순위면 owner tiebreak `user > plugin > host`. 예: [image](../surfaces/image/index.md)·[markdown](../surfaces/markdown/index.md).
 
 ### 훅 핸들러 (webhook/hook 트리거)
 
@@ -171,7 +171,7 @@ self-loop·backoff로 건너뛸 hook은 시작하지 않고 소유자 기동 실
 
 ### 설정 페이지
 
-`[[contributes.settings_pages]]`(`ui.settings_page`) — [설정 창](../features/settings/index.md)에 sub-tab 동적 등록. `category`(appearance/general/keybindings/plugin/…). 플러그인 비활성 시 sub-tab 자동 소멸. 예: [markdown](../plugins/markdown/index.md).
+`[[contributes.settings_pages]]`(`ui.settings_page`) — [설정 창](../features/settings/index.md)에 sub-tab 동적 등록. `category`(appearance/general/keybindings/plugin/…). 플러그인 비활성 시 sub-tab 자동 소멸. 예: [markdown](../surfaces/markdown/index.md).
 
 `[[contributes.settings_pages.items]]` 의 `kind` (공통 필드: `id` · `label_key` · `storage_key`):
 
@@ -180,7 +180,7 @@ self-loop·backoff로 건너뛸 hook은 시작하지 않고 소유자 기동 실
 - `select` — 드롭다운. `options = [{ value, label_key }]` + `default`(반드시 options.value 중 하나). Select 로 렌더, 선택 value(문자열) 저장.
 - `number` — 수치. `default`(f64) · `min`/`max`(선택; 주어지면 min≤default≤max) · `suffix_key`(선택, 단위 i18n 키). 설정 창의 [숫자 한 모양](../features/settings/screens/settings.md#숫자-입력-한-모양)으로 렌더(mono Input + 필드 밖 정적 suffix, **확정 때만** min/max 로 끌어온다), f64 저장.
 
-`toggle`/`select`/`number` 값은 `plugin_settings.<plugin_id>.<storage_key>` 슬롯(`PluginSettingValue` = Bool/Text/Number)에 저장·영속된다 — `font_override` 의 전역 슬롯과 충돌하지 않는 plugin-scoped 네임스페이스. 예: [html](../plugins/html/index.md) 이 HTML viewer 설정(zoom/color scheme/allow remote content/sandbox scripts)을 이 방식으로 노출.
+`toggle`/`select`/`number` 값은 `plugin_settings.<plugin_id>.<storage_key>` 슬롯(`PluginSettingValue` = Bool/Text/Number)에 저장·영속된다 — `font_override` 의 전역 슬롯과 충돌하지 않는 plugin-scoped 네임스페이스. 예: [html](../surfaces/html/index.md) 이 HTML viewer 설정(zoom/color scheme/allow remote content/sandbox scripts)을 이 방식으로 노출.
 
 ### 이벤트 구독 / 윈도우 / 확장
 

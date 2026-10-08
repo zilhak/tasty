@@ -2,7 +2,7 @@
 //!
 //! Grid/VTE 상태를 읽는 접근자는 `impl TerminalState` (락 안에서 동작), child/PTY
 //! 를 만지는 접근자는 `impl Terminal` (핸들). 핸들 쪽 메서드는 필요 시 짧게 락을
-//! 잡아 상태 필드를 읽는다 (docs/features/terminal/index.md#vte-에뮬레이션).
+//! 잡아 상태 필드를 읽는다 (docs/surfaces/terminal/index.md#vte-에뮬레이션).
 
 use std::sync::atomic::Ordering;
 

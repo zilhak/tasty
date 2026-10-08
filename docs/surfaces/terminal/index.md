@@ -1,14 +1,14 @@
 # 터미널 (Terminal)
 
 - **Status**: Implemented
-- **주체**: 로컬 사용자 · AI Agent(입력 주입은 [terminal-output](../terminal-output/index.md)/`surface.send*`) · 원격(mirror)
+- **주체**: 로컬 사용자 · AI Agent(입력 주입은 [terminal-output](../../features/terminal-output/index.md)/`surface.send*`) · 원격(mirror)
 - **ADR**: [ADR-0060](../../adr/0060-terminal-and-pty-separation.md) — 파서 스레드와 PTY 수명·절전 복구. [ADR-0014](../../adr/0014-terminal-compatibility-scope.md) — 지원 범위와 인라인 그래픽 보류.
 - **코드**: `crates/tasty-terminal/` (PTY·VTE·grid·scrollback), 렌더 `src/gfx/`
 - **화면**: GPU 렌더링 셀 그리드 (egui 아님)
 
 ## 목적
 
-`terminal` surface kind 의 본체 — PTY 셸 세션을 VTE 파싱해 셀 그리드로 에뮬레이트하고 GPU 로 그린다. host 내장 surface([work-area](../work-area/index.md)의 Surface 종류).
+`terminal` surface kind 의 본체 — PTY 셸 세션을 VTE 파싱해 셀 그리드로 에뮬레이트하고 GPU 로 그린다. host 내장 surface([work-area](../../features/work-area/index.md)의 Surface 종류).
 
 ## 내부 동작
 
@@ -24,7 +24,7 @@ ConPTY(Windows) / Unix PTY 로 네이티브 셸 실행(`TERM=xterm-256color`).
 - `AI_AGENT`: 값이 `claude-code_` 나 `claude-code/` 로 시작할 때만 지운다. Claude Code 가 자기 값으로 보는 형태이고, 사용자나 다른 도구가 넣은 값은 남긴다.
 - 바깥 Tasty 인스턴스의 신원 `TASTY_SESSION_TOKEN`·`TASTY_SURFACE_ID`·`TASTY_PARENT_HOME`·`TASTY_AGENT_ID`: 이 Tasty 를 다른 Tasty 의 터미널에서 띄웠으면 바깥 인스턴스의 세션 토큰·surface·완료 알림 경로·에이전트 ID 가 남아 있다. 셸에서 부른 `tasty` 가 그 토큰을 실으면 이 인스턴스는 모르는 토큰이라 요청을 거절한다. 네 값을 먼저 지우고 `TASTY_SURFACE_ID`·`TASTY_PARENT_HOME` 은 이 셸의 값으로 다시 넣는다. 세션 토큰·에이전트 ID 는 일반 셸에 이 인스턴스가 발급한 값이 없으므로 넣지 않는다. 셸 설정의 환경변수에 같은 이름을 넣으면 그 값은 남는다. Claude 플러그인이 띄우는 자식은 실행 명령 앞에 이 인스턴스가 발급한 값을 붙인다. 목록은 `crates/tasty-utils/src/process.rs` 의 `OUTER_IDENTITY_ENV` 한 곳에 있고, surface 훅·전역 훅·hook_handler 실행과 작업 자식(Run·후처리·reduce custom 셸, [agent runner](../../dev-guide/agent-runner.md))도 같은 목록을 지운다.
 
-Claude Code 세션 안에서 Tasty 를 띄워도 그 터미널에서 실행한 Claude 가 자식 세션 표지(`CLAUDE_CODE_CHILD_SESSION`)를 물려받아 transcript 저장을 끄지 않고, 세션 비밀(`CLAUDE_CODE_MESSAGING_TOKEN`)이 무관한 셸로 새지 않는다. Claude Code 설정은 접두사(`CLAUDE_CODE_*`)로 지우지 않는다 — 그 이름 대부분이 사용자가 넣는 설정(`CLAUDE_CODE_GIT_BASH_PATH`·`CLAUDE_CODE_OAUTH_TOKEN`·`CLAUDE_CODE_USE_BEDROCK` 등)이어서 그대로 넘긴다. `TRACEPARENT` 는 W3C trace-context 표준 이름이라 남는다. 목록은 Claude Code 2.1.291 의 Bash·훅 자식 env 조립, 플러그인 훅·MCP 자식 env 조립(`CLAUDE_PLUGIN_ROOT`·`CLAUDE_PLUGIN_DATA`·`CLAUDE_PROJECT_DIR`·`CLAUDE_ENV_FILE`·`CLAUDE_PLUGIN_OPTION_<KEY>` 를 함께 넣는 자리), 새 Claude 를 띄울 때 스스로 지우는 목록을 기준으로 하며, Claude Code 버전에 따라 늘어날 수 있다. 목록은 `crates/tasty-utils/src/process.rs` 의 `STRIPPED_ENV_PREFIXES`·`STRIPPED_ENV_NAMES`·`STRIPPED_ENV_VALUE_PREFIXES` 한 곳에 있고, 터미널 셸·surface 훅·전역 훅·hook_handler 실행 네 경로가 `is_stripped_inherited_env` 로 같은 판정을 쓴다([훅](../hooks/index.md#셸-핸들러-환경변수-tasty_hook_)). Windows·macOS·Linux 가 같은 코드 경로를 쓴다.
+Claude Code 세션 안에서 Tasty 를 띄워도 그 터미널에서 실행한 Claude 가 자식 세션 표지(`CLAUDE_CODE_CHILD_SESSION`)를 물려받아 transcript 저장을 끄지 않고, 세션 비밀(`CLAUDE_CODE_MESSAGING_TOKEN`)이 무관한 셸로 새지 않는다. Claude Code 설정은 접두사(`CLAUDE_CODE_*`)로 지우지 않는다 — 그 이름 대부분이 사용자가 넣는 설정(`CLAUDE_CODE_GIT_BASH_PATH`·`CLAUDE_CODE_OAUTH_TOKEN`·`CLAUDE_CODE_USE_BEDROCK` 등)이어서 그대로 넘긴다. `TRACEPARENT` 는 W3C trace-context 표준 이름이라 남는다. 목록은 Claude Code 2.1.291 의 Bash·훅 자식 env 조립, 플러그인 훅·MCP 자식 env 조립(`CLAUDE_PLUGIN_ROOT`·`CLAUDE_PLUGIN_DATA`·`CLAUDE_PROJECT_DIR`·`CLAUDE_ENV_FILE`·`CLAUDE_PLUGIN_OPTION_<KEY>` 를 함께 넣는 자리), 새 Claude 를 띄울 때 스스로 지우는 목록을 기준으로 하며, Claude Code 버전에 따라 늘어날 수 있다. 목록은 `crates/tasty-utils/src/process.rs` 의 `STRIPPED_ENV_PREFIXES`·`STRIPPED_ENV_NAMES`·`STRIPPED_ENV_VALUE_PREFIXES` 한 곳에 있고, 터미널 셸·surface 훅·전역 훅·hook_handler 실행 네 경로가 `is_stripped_inherited_env` 로 같은 판정을 쓴다([훅](../../features/hooks/index.md#셸-핸들러-환경변수-tasty_hook_)). Windows·macOS·Linux 가 같은 코드 경로를 쓴다.
 
 윈도우 리사이즈 시 자식에 새 크기 전파 — rows 축소 시 커서 아래 빈 행 먼저 제거 후 부족분은 위쪽 행을 scrollback 으로 캡처(커서-콘텐츠 관계 보존), 확대 시 scrollback 에서 복원.
 
@@ -116,7 +116,7 @@ DECOM(6)은 절대 커서 위치를 스크롤 영역 기준으로 해석하고, 
 | XtGetTcap | 요청별로 `DCS 0+r <hexcap> ST`. 능력 DB가 없어 현재 미지원임을 알리고 요청 hex를 그대로 돌려준다. |
 | XTWINOPS | 셀 크기 `18 t`→`CSI 8;rows;cols t`, `19 t`→`CSI 9;rows;cols t`. 제목 push/pop `22/23 t`는 단일 제목과 최대 64개 항목을 사용한다. |
 | OSC 8 | 이후 출력 셀에 하이퍼링크 URI를 붙이고 빈 URI로 해제한다. DECSTR/RIS도 속성을 초기화한다. |
-| OSC 52 읽기 | host가 `general.allow_clipboard_read`를 확인한 뒤 응답한다. 기본 off이면 응답하지 않는다. [클립보드](../clipboard/index.md) 참조. |
+| OSC 52 읽기 | host가 `general.allow_clipboard_read`를 확인한 뒤 응답한다. 기본 off이면 응답하지 않는다. [클립보드](../../features/clipboard/index.md) 참조. |
 | OSC 10/11/12, OSC 4 질의 | 현재 테마의 전경·배경·커서·ANSI 색을 `rgb:RRRR/GGGG/BBBB`와 ST로 응답한다. host가 생성·테마 변경 시 팔레트를 전달한다. 커서는 전경색이며, 팔레트가 없으면 응답하지 않는다. 색 설정 시퀀스는 무시한다. |
 
 창 이동·크기 변경·최대화·최소화·전체화면·앞뒤 순서 변경은 지원하지 않는다.
@@ -226,7 +226,7 @@ CLI는 `tasty settings get-input-rules`, `set-input-rule --app claude --shift-en
 
 **Windows 줄바꿈 키**: Shift+Enter와 Ctrl+J는 ConPTY의 win32-input 시퀀스(`CSI Vk;Sc;Uc;Kd;Cs;Rc _`)로 key-down/up 한 쌍을 보낸다. Shift+Enter는 VK_RETURN·CR·SHIFT_PRESSED, Ctrl+J는 VK_J·LF·LEFT_CTRL_PRESSED를 보존한다. CSI-u는 ConPTY에서 소실되고, bare LF는 VK_RETURN으로 변환되어 Windows 네이티브 콘솔 앱이 Ctrl+J와 구분하지 못하기 때문이다. 보조키 좌우는 구분하지 않는다. 일반 Enter와 다른 Ctrl+문자는 기존 제어문자를 보내고, Unix에서는 Shift+Enter의 CSI-u와 Ctrl+J의 LF를 유지한다. 별도 설정은 없다. 프로토콜 필드는 [Microsoft Terminal 구현](https://github.com/microsoft/terminal/blob/main/src/terminal/input/terminalInput.cpp)의 `_makeWin32Output`을 따른다. 인코딩 회귀는 `src/view/main/keyboard.rs`의 `newline_keys_*` 시험이 검사하며 실제 콘솔 수신은 Windows에서 별도로 검증한다.
 
-중앙 키보드 디스패처가 focused surface 타입에 따라 정확히 한 대상에만 전달 — Terminal 은 PTY 로 바이트. 특수 키(Enter/Backspace/Tab/Escape/방향키/Home·End/PageUp·Down/Insert·Delete/F1~F12) 매핑, DECCKM 모드에 따라 방향키 시퀀스 전환(`\x1b[{A..D}` ↔ `\x1bO{A..D}`). 복사/붙여넣기/선택/IME 는 [clipboard](../clipboard/index.md).
+중앙 키보드 디스패처가 focused surface 타입에 따라 정확히 한 대상에만 전달 — Terminal 은 PTY 로 바이트. 특수 키(Enter/Backspace/Tab/Escape/방향키/Home·End/PageUp·Down/Insert·Delete/F1~F12) 매핑, DECCKM 모드에 따라 방향키 시퀀스 전환(`\x1b[{A..D}` ↔ `\x1bO{A..D}`). 복사/붙여넣기/선택/IME 는 [clipboard](../../features/clipboard/index.md).
 
 방향키와 함께 누른 Shift·물리 Alt(macOS Option)·Ctrl은 xterm 방식 `CSI 1 ; m A/B/C/D`로 전달한다. `m`은 1 + Shift(1) + Alt(2) + Ctrl(4)이며, 보조키가 있으면 DECCKM on/off 모두 CSI를 쓴다. 예: Option/Alt+↑는 `\x1b[1;3A`, Ctrl+Shift+←는 `\x1b[1;6D`. 보조키 없는 방향키는 위 DECCKM 규칙을 유지한다. 근거: [xterm cursor-key 및 modifier 표](https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h2-PC-Style-Function-Keys)와 [modifyCursorKeys](https://invisible-island.net/xterm/manpage/xterm.html#VT100-Widget-Resources:modifyCursorKeys).
 
@@ -247,12 +247,12 @@ Windows 에서는 focused terminal cursor 를 프로그램 주도 화면 갱신 
 ## 인터페이스
 
 - **사용자**: 키보드/마우스 직접 입력.
-- **AI Agent**: 입력 주입·출력 읽기는 [terminal-output](../terminal-output/index.md) + `surface.send*` ([reference/api](../../reference/api.md#surface-상호작용)). 터미널 surface 생성/닫기는 [work-area](../work-area/index.md).
-- **원격**: PTY 없는 detached mirror 로 grid 재구성 ([remote-attach](../remote-attach/index.md)).
+- **AI Agent**: 입력 주입·출력 읽기는 [terminal-output](../../features/terminal-output/index.md) + `surface.send*` ([reference/api](../../reference/api.md#surface-상호작용)). 터미널 surface 생성/닫기는 [work-area](../../features/work-area/index.md).
+- **원격**: PTY 없는 detached mirror 로 grid 재구성 ([remote-attach](../../features/remote-attach/index.md)).
 
 ## 비-목표
 
-- **인라인 그래픽**(Sixel/Kitty/iTerm 이미지) — 보류([ADR-0014](../../adr/0014-terminal-compatibility-scope.md)). 이미지는 [image surface](../../plugins/image/index.md).
+- **인라인 그래픽**(Sixel/Kitty/iTerm 이미지) — 보류([ADR-0014](../../adr/0014-terminal-compatibility-scope.md)). 이미지는 [image surface](../image/index.md).
 - **XTWINOPS 창 조작·창 탐침·픽셀 크기 리포트** — 미지원([ADR-0014](../../adr/0014-terminal-compatibility-scope.md), 사용자/에이전트 분리).
 - **tmux control mode(DCS)·DECRQSS** — 미지원([ADR-0014](../../adr/0014-terminal-compatibility-scope.md), 범위 밖/드묾).
 - **일부 사설 입력 모드** — Utf8Mouse(1005), SGRPixels(1016), Win32InputMode(9001), DECCOLM(3), ReverseWraparound(45), Meta/AltSendsEscape(1036/1039), GraphemeClustering(2027)은 지원하지 않는다. 표준 입력 방식으로 대신할 수 있어 구현을 보류했다([ADR-0014](../../adr/0014-terminal-compatibility-scope.md)).
@@ -260,7 +260,7 @@ Windows 에서는 focused terminal cursor 를 프로그램 주도 화면 갱신 
 
 ## 관련
 
-- [terminal-search](../terminal-search/index.md) · [terminal-link](../terminal-link/index.md) · [clipboard](../clipboard/index.md)
+- [terminal-search](../../features/terminal-search/index.md) · [terminal-link](../../features/terminal-link/index.md) · [clipboard](../../features/clipboard/index.md)
 - [ADR-0060](../../adr/0060-terminal-and-pty-separation.md) · [dev-guide/gpu-rendering](../../dev-guide/gpu-rendering.md)
 
 ## 휠 스크롤 거리

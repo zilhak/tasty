@@ -83,4 +83,4 @@ hover+수식키 클릭과는 별개 입력 경로 — 사용자가 드래그(또
 
 ## 관련
 
-- [terminal](../terminal/index.md) · [terminal-output](../terminal-output/index.md)(읽기 경로) · [file-handler](../file-handler/index.md)(경로 핸들러)
+- [terminal](../../surfaces/terminal/index.md) · [terminal-output](../terminal-output/index.md)(읽기 경로) · [file-handler](../file-handler/index.md)(경로 핸들러)

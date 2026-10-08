@@ -1,7 +1,7 @@
 //! 여섯 ED/EL 분기에서 지운 셀과 이후 출력의 속성을 각각 확인한다.
 //! 지운 셀은 기본 속성과 현재 배경색을 갖고, 이후 출력은 소거 전 pen을 유지해야 한다.
 //! 화면을 그린 뒤 소거 직전에 배경을 바꿔 지운 범위와 남겨 둔 범위를 구별한다.
-//! 동작 근거: docs/features/terminal/index.md#스크롤-영역과-소거.
+//! 동작 근거: docs/surfaces/terminal/index.md#스크롤-영역과-소거.
 
 use tasty_terminal::Terminal;
 

@@ -85,4 +85,4 @@ StatusBar의 프로세스명도 이 1Hz 캐시(`CoreState::foreground_name`)를 
 
 ## 관련
 
-- [focus](focus.md) · [notifications](../../features/notifications/index.md) · [terminal](../../features/terminal/index.md)
+- [focus](focus.md) · [notifications](../../features/notifications/index.md) · [terminal](../../surfaces/terminal/index.md)

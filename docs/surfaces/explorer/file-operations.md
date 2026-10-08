@@ -51,7 +51,7 @@
 | 복사 | 메뉴, `copy` 단축키, Command Palette | 선택 항목 | 창 단위 explorer 파일 클립보드에 경로를 담는다. 디스크는 바꾸지 않는다 | 없음 |
 | 잘라내기 | 메뉴, `cut` 단축키, Command Palette | 선택 항목 | 클립보드에 잘라내기 표시와 함께 담는다 | 붙여넣기 전까지 잘라낸 항목을 grid·list·detail 에서 흐리게 그린다 (`cut_pending_opacity`) |
 | 붙여넣기 | 메뉴 (빈 영역·"Paste into"), `paste` 단축키, Command Palette | 현재 폴더 또는 메뉴의 폴더 | 복사는 목적지 임시 디렉터리에서 준비한 뒤 덮어쓰기 금지 rename 으로 공개한다. 이동은 rename 하고, 다른 파일시스템이면 복사 뒤 원본을 지운다 | 부분 성공이면 실패 경로를 오류 토스트로 보인다 |
-| 드래그 놓기 | 외부 파일을 창에 놓기 | — | 탐색기로 복사·이동하지 않는다. 놓은 파일은 [파일 핸들러](../file-handler/index.md)로 연다 | — |
+| 드래그 놓기 | 외부 파일을 창에 놓기 | — | 탐색기로 복사·이동하지 않는다. 놓은 파일은 [파일 핸들러](../../features/file-handler/index.md)로 연다 | — |
 | 휴지통 이동 | 메뉴 | 선택 항목 또는 우클릭 항목 | OS 휴지통으로 보낸다. 확인 모달은 없다. 영구 삭제 경로는 없다 | 실패하면 오류 토스트를 띄우고 목록을 다시 읽는다 |
 | 실행 취소 | 없음 | — | 지원하지 않는다. 휴지통 복원은 OS 에서 한다 | — |
 | 검색·필터 | 없음 | — | 지원하지 않는다. 타입어헤드는 선택만 옮긴다 | — |
@@ -87,7 +87,7 @@
 ## 비-목표 (Out of scope)
 
 - 원격 호스트의 파일 쓰기·전송. mirror explorer 는 탐색과 열기만 한다 (ADR-0022).
-- surface 이동. [surface-move](../surface-move/index.md) 가 맡는다.
+- surface 이동. [surface-move](../../features/surface-move/index.md) 가 맡는다.
 
 ## 수용 기준
 

@@ -1,6 +1,6 @@
 //! 설정 적용 때 전역 Theme 설치와 `theme.changed` 발행의 순서를 고정한다.
 //! 구독자는 payload에 색이 없어 수신 시점에 `theme.query`로 전역 Theme를 되읽는다
-//! ([markdown Theme parity](../../../docs/plugins/markdown/index.md)).
+//! ([markdown Theme parity](../../../docs/surfaces/markdown/index.md)).
 //! 발행이 설치보다 앞서면 구독자는 직전 테마를 읽고 한 단계씩 밀린다.
 
 use tasty_settings::{AppearanceSettings, Settings};

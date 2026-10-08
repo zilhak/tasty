@@ -44,4 +44,4 @@ OS 메뉴의 찾기와 탭 스트립의 검색 버튼도 같은 규칙을 따른
 
 ## 관련
 
-- [terminal](../terminal/index.md) · [keybindings](../keybindings/index.md) · [design/systems/popup](../../design/systems/popup.md)
+- [terminal](../../surfaces/terminal/index.md) · [keybindings](../keybindings/index.md) · [design/systems/popup](../../design/systems/popup.md)

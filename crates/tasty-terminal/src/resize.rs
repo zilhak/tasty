@@ -1,6 +1,6 @@
 //! Resize 처리 — grid 크기 변경(`TerminalState`)이 먼저이고, OS 크기 알림은 `Pty`에
 //! 예약한 뒤 다음 `process()`의 강제 flush 또는 throttle된 `flush_pty_resize` 호출에서
-//! 적용한다 (docs/features/terminal/index.md#vte-에뮬레이션).
+//! 적용한다 (docs/surfaces/terminal/index.md#vte-에뮬레이션).
 
 use termwiz::cell::CellAttributes;
 use termwiz::surface::Change;

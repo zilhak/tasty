@@ -17,7 +17,7 @@
 
 Sixel·Kitty·iTerm 인라인 이미지와 관련 능력 조회는 보류한다. 구현할 때는 Kitty를 첫 후보로 비교한다. tmux 제어 모드 통합과 DECRQSS 설정 조회 응답도 보류한다. 일반 tmux 사용과 tmux 제어 모드 통합은 구분한다.
 
-[터미널 기능 문서의 미지원 목록](../features/terminal/index.md#비-목표)에 있는 사설 입력 모드와 셀을 가로지르는 프로그래밍 합자도 보류한다. 번들 폰트에 합자 글리프가 들어 있다는 사실은 터미널이 합자를 지원한다는 뜻이 아니다. 실제 렌더링 지원 없이 설정 토글만 추가하지 않는다.
+[터미널 기능 문서의 미지원 목록](../surfaces/terminal/index.md#비-목표)에 있는 사설 입력 모드와 셀을 가로지르는 프로그래밍 합자도 보류한다. 번들 폰트에 합자 글리프가 들어 있다는 사실은 터미널이 합자를 지원한다는 뜻이 아니다. 실제 렌더링 지원 없이 설정 토글만 추가하지 않는다.
 
 ED/EL로 지운 셀은 기본 문자 속성과 소거 당시 배경색만 가진다. 소거 뒤 현재 문자 속성(`pen`)은 원래대로 복원한다. `TERM=xterm-256color`가 선언하는 back color erase에 맞춘다. 소거는 커서 위치와 줄바꿈 대기 상태를 유지하며, 마지막 열 뒤에 있는 대기 커서는 지울 범위를 계산할 때 마지막 열로 취급한다.
 
@@ -49,7 +49,7 @@ TERM의 BCE 선언을 바꾸거나 역상 화면의 소거 색 처리 방식을 
 
 ## References
 
-- [터미널 기능](../features/terminal/index.md)
+- [터미널 기능](../surfaces/terminal/index.md)
 - [프로젝트 원칙](../identity.md)
 - `crates/tasty-terminal/src/vte_handler.rs`
 - `crates/tasty-terminal/src/vte_handler/osc.rs`

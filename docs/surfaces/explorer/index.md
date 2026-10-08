@@ -38,7 +38,7 @@ OS 파일 관리자에 의존하지 않고 tasty surface 안에서 디렉토리�
 - **사이드바 트리**: `expanded` 펼침 집합 + `tree_children` lazy 하위 디렉토리 캐시. 폭 196(design `ExpSidebar`). 사이드바는 **2-region 고정 분할**이다 — 상단 **Files**(트리, cwd 루트 고정)는 사이드바 본문 남는 공간 전부를 차지하며 자체 스크롤되고, 하단 **Favorites**는 계산된 고정 높이 영역에서 독립적으로 스크롤된다(Files 를 아무리 스크롤해도 Favorites 위치는 움직이지 않고, 반대도 마찬가지). 두 영역 사이 1px 구분선은 **하단 고정 영역의 상단 경계**에 고정 좌표로 그려진다 — 트리 길이와 무관하며, 트리가 짧아도 그 위 빈 공간은 배경만 남고 구분선이 따라 올라오지 않는다. 트리에서 **현재 폴더(current)** 노드는 surface-active 배경 + text-primary 로 하이라이트되고, 폴더 아이콘은 text-muted. 섹션 캡션은 monospace·micro·uppercase(design `SideHead`).
 - **Favorites 고정 높이 계산**(design `favPinHeight`): 사이드바 본문 높이가 600px 이상이면 240px 고정. 600px 미만이면 `round(본문높이 × 0.4 / 4) × 4`(4px 그리드 스냅)와 120px(하한) 중 큰 값. 임계값 전환은 보간 없는 하드 전환이다. 본문 높이가 `explorer_favorites_hide_below`(240px) 미만이면 Favorites 영역과 그 위 구분선을 그리지 않고 Files 가 본문 전체를 쓴다(design Short cell). 본문이 다시 240px 이상이 되면 위 사다리대로 돌아온다. 사이드바 자체는 숨기지 않는다. 본체 구현은 `src/adapters/ui/surface/explorer/favorites_pin.rs`.
 - **낮은 칸**: 툴바 아래 행은 칸에 남은 높이의 고정 사각형이고, 사이드바 열과 내용 열은 각자 자기 사각형 안에서만 그린다. 본문이 240px 미만이면 Favorites 를 빼므로 사이드바는 Files 캡션과 트리만 그리고, 트리는 자기 스크롤 영역 안에서 넘친다. 내용 열과 상태줄은 칸 안에 남는다. 내용 목록의 ScrollArea 는 최소 높이를 0 으로 두어 본문이 낮아도 상태줄을 밀어내지 않는다.
-- **분할 하한**(design Short cell): pane·surface 분할선을 끌어 탐색기 칸을 줄이면 칸 높이 `explorer_min_height`(180px)에서 멈춘다. 대상은 각 pane 의 활성 탭에 보이는 탐색기 surface 다. 드래그 미리보기 비율이 어떤 탐색기 칸을 하한 아래로 줄이면 이분 탐색으로 하한을 지키는 마지막 비율에 둔다. 창 크기 변경처럼 드래그가 아닌 이유로 이미 하한보다 낮은 칸은 드래그로 더 줄지만 않는다. 창 크기 변경은 하한을 지키지 않는다(낮아진 칸은 위 compact 한 줄로 그린다). 분할(`tasty split`·분할 메뉴)은 분할을 확정할 때 같은 하한을 지키도록 분할선을 옮기고, 형제 칸이 자기 최소보다 작아지면 거절한다([split 명령](../work-area/index.md#분할-비율과-탐색기-칸-하한)). 탐색기 칸을 키우는 쪽과 다른 종류의 칸은 제한하지 않는다. 구현은 `src/state/layout_preview/explorer_floor.rs`.
+- **분할 하한**(design Short cell): pane·surface 분할선을 끌어 탐색기 칸을 줄이면 칸 높이 `explorer_min_height`(180px)에서 멈춘다. 대상은 각 pane 의 활성 탭에 보이는 탐색기 surface 다. 드래그 미리보기 비율이 어떤 탐색기 칸을 하한 아래로 줄이면 이분 탐색으로 하한을 지키는 마지막 비율에 둔다. 창 크기 변경처럼 드래그가 아닌 이유로 이미 하한보다 낮은 칸은 드래그로 더 줄지만 않는다. 창 크기 변경은 하한을 지키지 않는다(낮아진 칸은 위 compact 한 줄로 그린다). 분할(`tasty split`·분할 메뉴)은 분할을 확정할 때 같은 하한을 지키도록 분할선을 옮기고, 형제 칸이 자기 최소보다 작아지면 거절한다([split 명령](../../features/work-area/index.md#분할-비율과-탐색기-칸-하한)). 탐색기 칸을 키우는 쪽과 다른 종류의 칸은 제한하지 않는다. 구현은 `src/state/layout_preview/explorer_floor.rs`.
 
 ### 뷰 모드 / 정렬
 
@@ -57,7 +57,7 @@ OS 파일 관리자에 의존하지 않고 tasty surface 안에서 디렉토리�
 
 렌더 중 발생한 사용자 상호작용은 `ExplorerAction`(OpenFile / Navigate / GoBack / GoForward / GoUp / Refresh / SetViewMode / SetSort / NewTab / CloseTab / SelectTab / ContextMenu) 으로 모았다가 `apply_explorer_action(state, engine, sid, act)` 에서 적용한다. 파일 열기/새로고침은 뷰 스토어만, 내비게이션·뷰모드·탭 조작은 **origin surface id 로 직접 지정**한 `ExplorerPanel` 을 가변 차용해 처리한다(포커스 독립). 경로가 바뀌면 `ExplorerView` 가 다음 draw 에서 자동 감지해 재로드한다.
 
-- 파일 열기는 `DomainIntent::DispatchFile { origin_surface_id: Some(sid) }` 로 [file-handler](../file-handler/index.md) 에 위임한다 — explorer 자신은 파일 식별/디스패치 정책을 모른다.
+- 파일 열기는 `DomainIntent::DispatchFile { origin_surface_id: Some(sid) }` 로 [file-handler](../../features/file-handler/index.md) 에 위임한다 — explorer 자신은 파일 식별/디스패치 정책을 모른다.
 
 ### 컨텍스트 메뉴 · 파일 조작
 
@@ -104,7 +104,7 @@ mirror explorer 에서 파일을 더블클릭하면 원격 호스트에 그 파�
 - 식별은 파일 이름만 본다(`DetectDepth::Name` — 확장자·path glob). client 에 같은 경로의 파일·디렉터리가 있어도 읽지 않는다.
 - 매칭 핸들러 중 `open_surface` 이면서 client 가 그 kind 의 콘텐츠를 mirror 하는 것(현재 markdown, 허용된 egui-mesh kind)만 실행한다. 1순위가 그런 핸들러면 바로 열고, 아니면 그런 핸들러만 담은 핸들러 picker 를 띄운다. 선택한 핸들러의 `CreateTab` 은 원격 `StructuralOp::NewTab` 으로 forward 되고 사용자 origin 으로 표시돼 원격과 client 양쪽에서 새 탭이 선택된다.
 - 그런 핸들러가 하나도 없으면(`system`·`ipc` 핸들러뿐, html 처럼 placeholder 로 보이는 kind, 매칭 없음) picker 없이 `explorer.state.remote_open_unsupported` toast 로 안내한다.
-- 원격 경로는 로컬 최근 목록에 기록하지 않는다. 규칙 전체는 [파일 핸들러](../file-handler/index.md) 의 원격 대상 절을 따른다.
+- 원격 경로는 로컬 최근 목록에 기록하지 않는다. 규칙 전체는 [파일 핸들러](../../features/file-handler/index.md) 의 원격 대상 절을 따른다.
 
 ### 즐겨찾기 (favorites)
 
@@ -125,9 +125,9 @@ explorer 는 일반 surface 생성 메커니즘으로 다룬다 (전용 IPC 추�
 - 생성: `tasty new tab --type explorer [--path <dir>]` / `tasty new workspace --type explorer [--path <dir>]`. `--path` 미지정 시 새 탭은 explorer `default_params` 의 `path = "@home"` 로 home 이 주입된다(fresh-context). (IPC: `DomainIntent::CreateTab { kind: "explorer", surface_params }`.)
 - **root 결정 규칙**: `path` param → carry cwd → `$HOME`/`%USERPROFILE%` → (홈 조회 실패 시) 절대경로로 확정한 프로세스 cwd. 앞 두 단계의 값이 **상대경로면 채택하지 않고** 홈으로 내려간다 — explorer root 는 어떤 생성 경로(`split`/`new tab`/`new workspace`/convert)에서도 **항상 절대경로**다. 상대 root 는 프로세스 cwd 를 root 로 승격시키고 그 문자열이 주소창·경로 복사·attach `list_dir` wire 로 새어나가기 때문이다. `"."` 로 저장된 구 `layout.json` 스냅샷도 복원 시 홈으로 교정된다. 근거·강제 수단: [surface cwd 불변식 §5](../../design/policies/cwd.md#5-explorer-root-fallback-host-builtin).
 - 조회/닫기: `tasty list surfaces` 에 `foreground_process`/`pane_id`/`workspace_id` 와 함께 나타나고, `tasty close ...` 로 닫는다 — 전 워크스페이스 순회·ID 직접 지정(포커스 독립).
-- 변환: 다른 surface 를 explorer 로 in-place 변환 — `Intent::ConvertSurface { surface_id, target: ConvertTarget::Kind { kind: "explorer", .. } }`. cwd 미지정 시 source surface 에서 carry. [convert-surface](../convert-surface/index.md) 의 generic convert popup 도 registry kind 열거로 explorer 를 노출한다.
+- 변환: 다른 surface 를 explorer 로 in-place 변환 — `Intent::ConvertSurface { surface_id, target: ConvertTarget::Kind { kind: "explorer", .. } }`. cwd 미지정 시 source surface 에서 carry. [convert-surface](../../features/convert-surface/index.md) 의 generic convert popup 도 registry kind 열거로 explorer 를 노출한다.
 
-### 사용자 트리거 (단축키 — [KeybindingSettings](../keybindings/index.md))
+### 사용자 트리거 (단축키 — [KeybindingSettings](../../features/keybindings/index.md))
 
 모든 단축키는 `KeybindingSettings` 로 노출되며 하드코딩하지 않는다. `convert_to_explorer` 외에는 explorer 포커스에서만 동작:
 
@@ -164,12 +164,12 @@ Appearance → **Explorer** 서브탭에서 surface 폰트를 오버라이드한
 
 ## 비-목표 (Out of scope)
 
-- 파일 식별/렌더 정책 — explorer 는 열기를 [file-handler](../file-handler/index.md) 에 위임한다.
-- 컨텍스트 메뉴 파일 조작(복사/잘라내기/붙여넣기/이름변경)은 **에이전트(IPC/CLI) 노출 대상이 아니다** — 사용자 우클릭 조작 전용. surface 단위 이동은 [surface-move](../surface-move/index.md) 가 별도 제공한다.
+- 파일 식별/렌더 정책 — explorer 는 열기를 [file-handler](../../features/file-handler/index.md) 에 위임한다.
+- 컨텍스트 메뉴 파일 조작(복사/잘라내기/붙여넣기/이름변경)은 **에이전트(IPC/CLI) 노출 대상이 아니다** — 사용자 우클릭 조작 전용. surface 단위 이동은 [surface-move](../../features/surface-move/index.md) 가 별도 제공한다.
 
 ## 관련
 
-- [work-area](../work-area/index.md)(Surface/Tab/Pane 계층) · [file-handler](../file-handler/index.md)(파일 열기 위임) · [convert-surface](../convert-surface/index.md)(explorer 로/에서 변환) · [keybindings](../keybindings/index.md) · [settings](../settings/index.md)(폰트/단축키 탭)
+- [work-area](../../features/work-area/index.md)(Surface/Tab/Pane 계층) · [file-handler](../../features/file-handler/index.md)(파일 열기 위임) · [convert-surface](../../features/convert-surface/index.md)(explorer 로/에서 변환) · [keybindings](../../features/keybindings/index.md) · [settings](../../features/settings/index.md)(폰트/단축키 탭)
 
 파일 작업 실패는 원 View와 surface binding이 유효할 때 오류 토스트로 알린다. 실패한 rename/trash는 기존 선택을 유지하고 목록을 다시 읽는다. 부분 성공한 붙여넣기는 실패 경로를 표시하며 cut clipboard를 유지한다.
 

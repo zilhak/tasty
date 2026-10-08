@@ -14,8 +14,17 @@ Tasty는 GUI 없이도 동작하며 사용자와 에이전트가 서로 다른 �
 ## Decision
 
 기능 문서는 내부 동작을 먼저 설명하고 화면은 그 기능의 절이나 하위 문서로 둔다.
-호스트 기능은 `features/`, 플러그인이 제공하는 기능은 `plugins/`, 개발 절차는 `dev-guide/`에 둔다.
+surface kind 하나의 명세는 제공 주체와 관계없이 `surfaces/<kind>/`에 둔다.
+kind를 제공하는 플러그인의 다른 기여(파일 핸들러·CLI·설정 페이지·popup)도 그 kind 문서에 적는다.
+그 밖의 호스트 기능은 `features/`, surface kind를 제공하지 않는 플러그인의 기능은 `plugins/`, 개발 절차는 `dev-guide/`에 둔다.
+여러 kind가 공유하는 구조 트리와 생성 경계는 `features/work-area/`에 남긴다.
 여러 기능이 공유하는 정책과 시스템은 `design/`, 용어는 `concepts/`, 구조는 `architecture/`에서 설명한다.
+
+이전 결정은 호스트 기능을 `features/`, 플러그인 기능을 `plugins/`에 두는 제공 주체 기준만 썼다.
+그 기준에서는 terminal·explorer·dag_graph가 `features/`에, markdown·image·html이 `plugins/`에 있어
+특정 kind의 명세를 찾으려면 제공 주체를 먼저 알아야 했다.
+kind마다 같은 수명·저장·IPC·headless 항목을 설명해야 하는데 위치가 갈라져 공통 항목과 갱신 범위가 흩어졌다.
+그래서 2026-10-08에 surface kind만 kind 기준으로 모았다. 제공 주체 기준은 surface가 아닌 기능에 그대로 적용한다.
 
 현재 동작과 사용 규칙은 해당 가이드가 설명한다.
 중요한 선택의 이유와 기각한 대안은 ADR에 남긴다.
@@ -41,6 +50,10 @@ Tasty는 GUI 없이도 동작하며 사용자와 에이전트가 서로 다른 �
 
 ## Alternatives Considered
 
+- 제공 주체 기준을 surface kind에도 유지하면 사용자에게 같은 종류인 surface의 명세가 provider에 따라 두 폴더로 나뉜다.
+- 모든 플러그인 문서를 `surfaces/`로 옮기면 surface가 없는 플러그인(claude·codex·git-viewer 등)이 kind가 아닌 문서를 surface 폴더에 두게 된다.
+- `plugins/<id>/`에 연결용 문서를 남기면 같은 계약이 두 곳에 생기고 사본이 따로 변한다.
+
 - 화면을 기준으로 모든 설명을 묶으면 headless 기능과 여러 화면의 공통 동작이 중복된다.
 - 디자인 값을 문서에 복제하면 시안과 문서의 값이 따로 변한다.
 - 모든 측정값을 현재값처럼 남기면 날짜를 붙여도 현재 보장으로 오독하기 쉽다.
@@ -49,10 +62,12 @@ Tasty는 GUI 없이도 동작하며 사용자와 에이전트가 서로 다른 �
 ## Reconsideration Triggers
 
 제품의 디자인 소유 방식이나 기능 제공자가 바뀌면 문서 배치를 다시 판단한다.
+한 플러그인이 surface kind 외의 기여를 kind 문서보다 크게 갖게 되어 kind 문서가 그 플러그인의 다른 기능 설명으로 채워지면 플러그인 기여를 `plugins/<id>/`로 나눌지 다시 판단한다. 확인 방법은 kind 문서에서 surface 공통 항목 밖의 절이 차지하는 비중을 읽는 것이며 자동 검사는 없다.
 값 대신 명령을 제공해 독자의 필요한 판단이 막히면 그 수를 유지할 방법을 정한다.
 
 ## References
 
 - [문서 작성 규칙](../documentation-model.md)
+- [Surface 종류](../surfaces/index.md)
 - [정체성](../identity.md)
 - [디자인 변경 절차](../dev-guide/design-change-workflow.md)

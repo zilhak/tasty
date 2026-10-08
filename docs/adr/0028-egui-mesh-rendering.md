@@ -65,6 +65,6 @@ attach 헤더가 확장 가능해지면 원격 IME 위치를 추가할 수 있�
 ## References
 
 - [egui-mesh 채널 규칙](../dev-guide/egui-mesh-channel.md)
-- [이미지 데이터와 편집](../plugins/image/index.md)
+- [이미지 데이터와 편집](../surfaces/image/index.md)
 - [git-viewer 목록과 조회](../plugins/git-viewer/screens/git-viewer.md)
 - [Webview 통합](0029-webview-host-integration.md)

@@ -109,5 +109,5 @@ Stop 게이트는 반복 작업을 재사용하기 쉽게 하지만 목표 충�
 
 - [에이전트 협업](../features/agent-collaboration/index.md)
 - [작업 러너](../dev-guide/agent-runner.md)
-- [DAG 그래프 화면](../features/agent-collaboration/screens/dag-graph-surface.md)
+- [DAG 그래프 화면](../surfaces/dag-graph/screens/graph.md)
 - [DAG 목록 popup](../features/agent-collaboration/screens/dag-list-popup.md)

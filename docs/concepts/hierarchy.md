@@ -61,7 +61,7 @@ GUI에서는 MainView와 EngineSession의 관계를 App의 EngineRegistry가 관
 | `dag_graph` | **host 내장** | agent task DAG 뷰 | egui |
 | `html` | `com.tasty.html` plugin (`rendering=webview`) | HTML/웹 뷰어 | 네이티브 WebView overlay (`RemoteSurface`) |
 
-Surface는 호스트 내장, egui-mesh 플러그인, webview 플러그인으로 나뉜다. 호스트 내장은 `register_builtin_kinds`로 등록한다. egui-mesh는 허용된 플러그인이 자기 프로세스에서 만든 mesh를 호스트가 합성한다. webview는 호스트의 `RemoteSurface`와 네이티브 WebView를 사용한다. 자세한 동작은 [Surface 종류](../features/work-area/index.md#surface-종류)를 참고한다.
+Surface는 호스트 내장, egui-mesh 플러그인, webview 플러그인으로 나뉜다. 호스트 내장은 `register_builtin_kinds`로 등록한다. egui-mesh는 허용된 플러그인이 자기 프로세스에서 만든 mesh를 호스트가 합성한다. webview는 호스트의 `RemoteSurface`와 네이티브 WebView를 사용한다. 등록·렌더 분기의 공통 규칙은 [작업 영역의 Surface 종류](../features/work-area/index.md#surface-종류), kind마다의 명세는 [Surface 종류 문서](../surfaces/index.md)를 참고한다.
 
 ## 관련
 

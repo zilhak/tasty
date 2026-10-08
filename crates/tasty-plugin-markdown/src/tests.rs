@@ -592,7 +592,7 @@ fn a_file_link_echoes_the_navigation_it_came_from() {
 }
 
 /// 외부 링크는 host `webview.open_external` 로 간다 — host 가 읽는 두 키(`surface_id` · `url`)를
-/// 싣는다. 이 plugin 은 OS 열기를 직접 하지 않는다(docs/plugins/markdown/index.md#내부-동작).
+/// 싣는다. 이 plugin 은 OS 열기를 직접 하지 않는다(docs/surfaces/markdown/index.md#내부-동작).
 #[test]
 fn external_link_params_name_the_clicked_surface_and_the_url() {
     let params = external_link_params(7, "https://example.com/a?b=1");

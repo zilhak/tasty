@@ -37,7 +37,7 @@ DOM을 조사하지 않는 이유는 OS별로 다음과 같다.
 세 OS가 같은 규칙으로 판정해야 하므로, 모두에서 동작하는 원본 스캔을 택한다.
 
 스캔 크기에는 상한을 두고, 내용 지문은 상한과 관계없이 파일 전체를 덮는다. 상한을 넘은 부분에만 스크립트가 있으면 감지하지 못하지만 JS가 꺼진 채 배너가 뜨지 않을 뿐이다. 실패해도 JS가 켜지지 않는 쪽으로 둔다.
-감지 대상의 세부 규칙, 상한 값, 정규 파일 확인은 [HTML Viewer 문서](../plugins/html/index.md#스크립트-감지와-허용-규칙)에 있다.
+감지 대상의 세부 규칙, 상한 값, 정규 파일 확인은 [HTML Viewer 문서](../surfaces/html/index.md#스크립트-감지와-허용-규칙)에 있다.
 
 ### 범위
 
@@ -58,14 +58,14 @@ DOM을 조사하지 않는 이유는 OS별로 다음과 같다.
   설정 경로(`resolve_webview_settings`)는 전역 "Sandbox scripts" 값만 backend에 넘긴다.
 - Linux html surface는 page cache를 끈다. 캐시 복원은 응답 단계 없이 commit돼 지문이 없는 문서를 만들기 때문이다.
 
-허용 수명의 세부 규칙, OS별 콜백과 측정, 로드 세대 판정은 [HTML Viewer 문서](../plugins/html/index.md#스크립트-감지와-허용-규칙)에 있다.
+허용 수명의 세부 규칙, OS별 콜백과 측정, 로드 세대 판정은 [HTML Viewer 문서](../surfaces/html/index.md#스크립트-감지와-허용-규칙)에 있다.
 
 ### 배너 표시 시점
 
 에이전트가 IPC·CLI로 연 문서, 세션 복원으로 열린 문서, 백그라운드 탭의 문서는 감지 결과만 기록한다.
 배너는 사용자가 그 문서를 볼 때 띄운다. 사용자가 직접 문서를 열었거나 그 surface를 선택한 경우다.
 배너를 띄우려고 포커스나 활성 탭을 바꾸지 않는다(원칙 1).
-판정 신호는 [HTML Viewer 문서](../plugins/html/index.md#사용자가-봤다는-판정)에 있다.
+판정 신호는 [HTML Viewer 문서](../surfaces/html/index.md#사용자가-봤다는-판정)에 있다.
 에이전트 동작이 배너로 이어지는 경우에 대한 [ADR-0036](0036-overlay-scope-and-lifetime.md)의 재검토 조건을 이 규칙으로 다룬다. 에이전트 동작은 상태만 만들고, 배너는 사용자 화면에서 사용자가 볼 때만 나타난다.
 
 ### 에이전트 경로
@@ -100,7 +100,7 @@ DOM을 조사하지 않는 이유는 OS별로 다음과 같다.
   - 이 위험은 수용한다. 파일을 쓸 수 있는 에이전트는 이미 셸로 임의 코드를 실행할 수 있다. 따라서 이 창이 새 권한을 주지 않는다. 스크립트 차단이 막는 대상은 신뢰하지 않는 HTML이며, 로컬 에이전트가 아니다.
 - 해제 시점을 navigation 콜백에 두므로 세 백엔드의 콜백 코드를 유지해야 한다.
   - Linux는 `ResponsePolicyDecision::is_main_frame_main_resource()`가 필요해 바인딩 feature를 `v2_40`으로 둔다(`Cargo.toml`). 최소 런타임이 WebKitGTK 2.40이 된다.
-  - Windows·macOS는 앞 로드의 늦은 종료·commit 신호 순서와 bfcache 복원을 측정하지 않았다. Windows는 navigation별 적용 시점도 측정하지 않았다. macOS의 문서 단위 적용과 서브프레임 preferences는 측정했다. 앞 로드의 종료가 새 로드 시작 뒤에 오면 새 문서가 지문 없이 기록될 수 있어 두 OS는 로드 세대로 막는다. 남은 한계는 [HTML Viewer 문서](../plugins/html/index.md#os별-적용)에 있다.
+  - Windows·macOS는 앞 로드의 늦은 종료·commit 신호 순서와 bfcache 복원을 측정하지 않았다. Windows는 navigation별 적용 시점도 측정하지 않았다. macOS의 문서 단위 적용과 서브프레임 preferences는 측정했다. 앞 로드의 종료가 새 로드 시작 뒤에 오면 새 문서가 지문 없이 기록될 수 있어 두 OS는 로드 세대로 막는다. 남은 한계는 [HTML Viewer 문서](../surfaces/html/index.md#os별-적용)에 있다.
 - 에이전트는 release에서 스크립트 문서를 자동으로 실행할 수 없다. 자동화에는 debug 빌드나 전역 설정이 필요하다.
 - 에이전트가 연 문서는 사용자가 그 문서를 보기 전까지 배너 없이 차단 상태로 남는다.
 

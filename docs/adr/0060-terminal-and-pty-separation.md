@@ -48,7 +48,7 @@ OS 자원을 가질 수 없고, 같은 자원을 여러 Store·Registry에 반�
 ### 유지하는 동작 규칙
 
 객체를 나누면서도 다음 선택은 유지한다. 현재 동작의 세부(청크 크기, EOF 뒤 재확인 간격, 잠금 규칙, 절전 복귀 절차, OS별 자식 종료 차이)는
-[터미널](../features/terminal/index.md)·[헤드리스 PTY](../features/headless-pty/index.md)·[터미널 출력](../features/terminal-output/index.md) 문서에 있다.
+[터미널](../surfaces/terminal/index.md)·[헤드리스 PTY](../features/headless-pty/index.md)·[터미널 출력](../features/terminal-output/index.md) 문서에 있다.
 
 - VT 파싱과 grid 갱신은 각 터미널의 PTY 읽기 worker가 맡고 메인 이벤트 루프는 VT를 파싱하지 않는다. snapshot과 출력 tap은 parser와 같은 일관성 경계에서 처리한다.
 - resize는 grid 변경과 tap 통지가 먼저이고 OS resize는 예약 후 flush한다. tap을 OS resize 성공 확인으로 취급하지 않는다.
@@ -103,5 +103,5 @@ Terminal·Pty 등록과 종료 책임이 한 곳에 있어 누락·중복 정리
 
 - 대체 대상: [ADR-0013](0013-terminal-io-and-process-lifetime.md)
 - [ADR-0054](0054-app-core-view-layers-and-state-ownership.md) · [ADR-0055](0055-structural-domain-event-sourcing.md) · [ADR-0056](0056-crate-boundaries-for-core-event-store-and-task-runtime.md) · [ADR-0034](0034-output-cursor-contract.md)
-- [터미널](../features/terminal/index.md), [헤드리스 PTY](../features/headless-pty/index.md)
+- [터미널](../surfaces/terminal/index.md), [헤드리스 PTY](../features/headless-pty/index.md)
 - 현재 구현: `crates/tasty-terminal/src/lib.rs`, `crates/tasty-terminal/src/pty.rs`, `src/runtime/terminal_store.rs`, `src/runtime/terminal_store/standalone.rs`.

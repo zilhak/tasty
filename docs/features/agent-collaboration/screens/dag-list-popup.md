@@ -5,7 +5,7 @@
 - **popup id**: `dag_list` · **스코프**: `PopupScope::Workspace`
 
 DAG 를 **잠깐 확인하고 닫는** 관측 창이다. 탭 하나를 통째로 점유하는
-[DAG 그래프 surface](dag-graph-surface.md) 와 같은 데이터를 보지만, 목록에서 시작해
+[DAG 그래프 surface](../../../surfaces/dag-graph/index.md) 와 같은 데이터를 보지만, 목록에서 시작해
 하나를 고르면 같은 영역이 그 그래프로 교체된다(`DrillDown`). back bar 로 목록에 돌아온다.
 
 `PopupScope::Workspace`에 속하므로 다른 workspace로 전환하면 숨겨지고, 돌아오면
@@ -34,7 +34,7 @@ release에는 에이전트가 이 popup을 강제로 여는 IPC가 없다. 사�
 | 토글 줄 | "이 워크스페이스만" 체크박스 |
 | 목록 | DAG 행(스크롤). 비면 빈 상태 2 종 |
 | 푸터 | `보이는 수 of 전체 수 DAGs`(mono) · 닫기 버튼 |
-| 디테일 | back bar(← + DAG 이름 + actions 슬롯에 줌 클러스터 · 러너 배지) + [그래프 화면 한 벌](dag-graph-surface.md)의 캔버스·시트 |
+| 디테일 | back bar(← + DAG 이름 + actions 슬롯에 줌 클러스터 · 러너 배지) + [그래프 화면 한 벌](../../../surfaces/dag-graph/screens/graph.md)의 캔버스·시트 |
 
 ### 목록 행
 
@@ -143,7 +143,7 @@ popup 상태에서 받는다. popup 폭 560은 상세 도킹 기준 640보다 �
 | 필터가 전부 걸러냄 | "No matching DAGs" + 조건을 바꾸라는 안내 |
 | 목록 폴링 실패 | 마지막으로 성공한 목록을 그대로 둔다(그래프 폴링과 같은 계약) |
 | 다른 workspace 활성 | popup 자체가 그려지지 않는다. 복귀 시 상태 그대로 다시 뜬다 |
-| 디테일 안의 상태들 | [그래프 surface 문서](dag-graph-surface.md#상태별-시각) 와 동일 |
+| 디테일 안의 상태들 | [그래프 surface 문서](../../../surfaces/dag-graph/screens/graph.md#상태별-시각) 와 동일 |
 
 ## 갱신과 비용
 
@@ -152,7 +152,7 @@ popup 상태에서 받는다. popup 폭 560은 상세 도킹 기준 640보다 �
 남지 않는다. 그래프 쪽 폴링 게이트는 surface 와 **같은 함수**(`DagGraphView::poll_if_stale`)를
 쓴다 — 주기와 실패 처리가 두 경로에서 갈라질 수 없게 한 지점으로 모았다.
 
-목록도 [그래프의 App 조회 서비스](dag-graph-surface.md#조회-소유와-취소)를 사용한다.
+목록도 [그래프의 App 조회 서비스](../../../surfaces/dag-graph/index.md#조회-소유와-취소)를 사용한다.
 그리는 함수에서 공유 task store를 잠그지 않는다. 현재 engine의 workspace 목록이
 바뀌면 이전 요청과 행을 버리고 다시 읽으며, 닫기·재열기는 이전 수신 핸들을 폐기한다.
 일시적 읽기 실패에는 마지막 정상 목록을 유지하고, 소유 세대가 달라진 응답은 버린다.

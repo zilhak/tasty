@@ -49,6 +49,7 @@ WezTerm/Alacritty 와 유사한 접근이지만 AI 코딩 에이전트에 특화
 모든 작업 완료 시 docs 를 갱신한다.
 
 - 새 기능이 구현되면 [`docs/features/`](docs/features/index.md) 의 해당 카테고리 문서에 추가 (인덱스는 `docs/features/index.md`).
+- Surface 종류(kind)의 동작은 제공 주체(host·plugin)와 관계없이 [`docs/surfaces/`](docs/surfaces/index.md) 의 kind 문서에 둔다.
 - 기존 기능이 변경되면 해당 문서 업데이트.
 - **사용자에게 보이는 동작**(메뉴·단축키·설정 키·CLI 명령·설치 절차)이 바뀌면 공개 사이트의 사용자 가이드 [`site/content/`](site/content/index.md) 도 같은 커밋에서 갱신한다. 가이드는 `docs/` 명세와 독자가 다르다(설치해서 쓰는 사람) — 소스 경로·ADR·IPC 메서드명을 넣지 않는다. 영어 번역(`site/content/en/`)을 손봤으면 `--stamp` 한다 ([`docs/dev-guide/site.md`](docs/dev-guide/site.md)).
 - 해당 카테고리의 인덱스(예: [`docs/features/index.md`](docs/features/index.md), [`docs/dev-guide/index.md`](docs/dev-guide/index.md))를 갱신. [`docs/index.md`](docs/index.md) 는 카테고리 진입점 표라, 카테고리 자체가 신설/폐지될 때만 손댄다.

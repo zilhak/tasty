@@ -231,7 +231,7 @@ source pin 해제 실패는 보수적으로 참조를 남기고 다음 같은 �
 
 ## 관련
 
-- [closed-tab-restore](../closed-tab-restore/index.md) · [layout-presets](../layout-presets/index.md) · [terminal](../terminal/index.md)(scrollback)
+- [closed-tab-restore](../closed-tab-restore/index.md) · [layout-presets](../layout-presets/index.md) · [terminal](../../surfaces/terminal/index.md)(scrollback)
 - [ADR-0059](../../adr/0059-id-targets-and-view-owned-selection.md) — 슬롯 모델을 고른 이유·대안·재검토 조건
 - [멀티 윈도우 아키텍처](../../architecture/multi-window.md) — GUI 저장 슬롯의 조건부 대응과 parked·retiring engine, headless 수명
 

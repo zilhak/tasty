@@ -1,6 +1,6 @@
-# DAG 그래프 surface
+# DAG 그래프 surface 화면
 
-- **부모 기획**: [../index.md](../index.md)
+- **부모 기획**: [dag-graph](../index.md)
 - **시각 소스**: `ui_kits/terminal/overlays/dag_view.jsx` · `ui_kits/terminal/overlays/dag_surfaces.jsx` · `gallery/dag.jsx` (claude design)
 - **kind**: `dag_graph` (host builtin)
 
@@ -16,7 +16,7 @@ tasty split --level surface --target-surface <SID> --type dag_graph
 ```
 
 - 변환 팝업(`Alt+'`)에도 다른 kind 와 같이 나온다 — 파일 입력이 없어 즉시 변환된다
-  ([../../convert-surface/index.md](../../convert-surface/index.md)).
+  ([surface 변환](../../../features/convert-surface/index.md)).
 - 관찰 대상은 params 로 지정한다: `dag_id`(별칭 `dag`) · `workspace_id`. 둘 다 생략하면
   이 surface 가 **속한** workspace 에서 진행 중인 DAG 를 자동으로 고른다(없으면 가장 최근
   갱신). 활성 workspace 가 아니라 소속 workspace 다(불가침 원칙 3).
@@ -130,12 +130,6 @@ tasty split --level surface --target-surface <SID> --type dag_graph
 - **auto-fit 은 `(DAG, 방향, 뷰포트 버킷)` 조합마다 한 번.** 폴링은 이 키의 어느 성분도
   건드리지 않으므로 데이터 갱신이 사용자의 시야를 리셋하지 못한다.
 
-## 영속
-
-`direction` 과 (지정했다면) `dag_id` / `workspace_id` 만 레이아웃에 저장된다. 줌/팬/선택은
-저장하지 않는다 — 재시작 후 그래프 모양이 달라져 있을 수 있어 예전 뷰포트를 복원하면 엉뚱한
-빈 곳을 보게 된다. 복원 직후에는 auto-fit 이 돈다.
-
 ## 시각 소스
 
 `ui_kits/terminal/overlays/dag_view.jsx` · `dag_surfaces.jsx` · `gallery/dag.jsx` — 픽셀·토큰·
@@ -157,20 +151,3 @@ tasty split --level surface --target-surface <SID> --type dag_graph
 시안 대비 의도적 차이(글리프 치환 · 재개 힌트 문구 · 기본 방향)는
 [design-gallery-mapping](../../../design/systems/design-gallery-mapping.md#task-dag--surface--canvas--node-layouts)
 의 3자 매핑 표에 기록한다.
-
-## 조회 소유와 취소
-
-View는 `EngineRead::dag_source()`로 읽기 요청을 등록하고 완료된 스냅샷만 받는다.
-공유 task store의 잠금 획득·조회·DAG 집계는 App 소유 워커가 수행한다.
-동시에 실행하는 워커는 App 전체 4개, engine별 1개이며 대기 큐는 engine별 16개다.
-큐가 가득 차면 View의 수신 핸들이 요청을 보존해 다음 폴링에 다시 등록한다.
-
-명시한 `workspace_id`가 다른 창의 engine에 속해도 조회할 수 있다. App은 완료 전달 전에
-대상 workspace의 실제 소유 engine과 journal incarnation/runtime epoch를 다시 대조하고,
-러너 표시도 그 소유자의 상태를 사용한다. View는 요청을 낸 engine과 표시 대상 DAG를
-대조한다. surface activation 변경·숨김·닫힘은 진행 중인 수신 핸들을 버린다.
-
-같은 대상의 일시적인 조회 실패는 마지막 정상 화면을 유지한다. 소유 세대가 바뀌거나
-workspace가 사라진 응답은 기존 데이터를 지운다. 저장소 잠금을 기다리는 워커도
-수신 핸들 취소나 App 종료를 관측하면 잠금 해제를 기다리지 않고 반환한다.
-이미 실행 중인 저장소 호출은 강제로 중단하지 않으며 App의 종료 대기 기한을 따른다.

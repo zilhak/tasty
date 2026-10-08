@@ -42,7 +42,7 @@ App·Core·View 계층과 상태 소유, 구조 도메인 이벤트 소싱, 크�
 
 Terminal·Pty 분리와 터미널 호환성, 입력·포커스, 점유와 원격 화면 동기화를 다룬다. [ADR-0060](0060-terminal-and-pty-separation.md)에서 관련 선택을 따라갈 수 있다.
 
-운영 문서: [터미널](../features/terminal/index.md) · [입력과 포커스](../design/policies/focus.md) · [원격 연결](../dev-guide/attach-behavior.md)
+운영 문서: [터미널](../surfaces/terminal/index.md) · [입력과 포커스](../design/policies/focus.md) · [원격 연결](../dev-guide/attach-behavior.md)
 
 <!-- adr-rows:begin terminal -->
 | # | Title | Status | Date | Tags |

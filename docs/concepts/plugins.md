@@ -60,7 +60,7 @@ surface kind 는 콘텐츠를 **누가 렌더하느냐**로 다시 갈린다 (�
 ## 관련
 
 - **관리/설치/권한 UI** (사용자 기능) → [`features/plugin-system/`](../features/plugin-system/index.md)
-- **번들 플러그인 각각의 동작** → [`plugins/`](../plugins/index.md)
+- **번들 플러그인 목록** → [`plugins/`](../plugins/index.md). surface kind 를 제공하는 플러그인(markdown·image·html)의 동작은 [`surfaces/`](../surfaces/index.md)에 있다
 - **제작 가이드** → [dev-guide/plugin-development](../dev-guide/plugin-development.md) (기여 타입별 + 번들 플러그인을 예제로 인용)
 - **권한 모델 / 민감 데이터** → [dev-guide/plugin-permissions](../dev-guide/plugin-permissions.md) · [dev-guide/plugin-development 민감 데이터](../dev-guide/plugin-development.md#민감-데이터--regular--secret--keyring-선택)
-- **surface 종류와 렌더 분기** → [`features/work-area/`](../features/work-area/index.md#surface-종류)
+- **surface 종류와 렌더 분기** → [`features/work-area/`](../features/work-area/index.md#surface-종류) · kind별 명세 [`surfaces/`](../surfaces/index.md)

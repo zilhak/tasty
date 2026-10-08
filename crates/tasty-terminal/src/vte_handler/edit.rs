@@ -12,7 +12,7 @@
 //! Erased cells use default attributes with the current background color. The drawing
 //! pen is restored afterward because termwiz's clear operations reset it. ED2 also
 //! homes the cursor; EL2 moves to column zero here to erase the full line. Both need
-//! cursor restoration. See docs/features/terminal/index.md#스크롤-영역과-소거.
+//! cursor restoration. See docs/surfaces/terminal/index.md#스크롤-영역과-소거.
 
 use termwiz::cell::{CellAttributes, unicode_column_width};
 use termwiz::color::ColorAttribute;
