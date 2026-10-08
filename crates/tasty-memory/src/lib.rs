@@ -588,8 +588,6 @@ impl MemoryStore {
     pub fn list(&self, scope: &Scope, opts: &ListOpts) -> Result<Vec<MemoryEntry>> {
         let scope_token = scope.as_token();
         let now = unix_ms_now();
-        let limit = opts.limit.unwrap_or(usize::MAX) as i64;
-        let offset = opts.offset.unwrap_or(0) as i64;
 
         // 동적 WHERE/parameter 조립. 가독성 우선으로 named-position 대신 `?` 순차 사용.
         let mut sql = String::from(
@@ -600,22 +598,7 @@ impl MemoryStore {
         let mut binds: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
         binds.push(Box::new(scope_token.clone()));
         binds.push(Box::new(now));
-
-        if let Some(prefix) = &opts.prefix {
-            sql.push_str(" AND key LIKE ? ESCAPE '\\'");
-            binds.push(Box::new(format!("{}%", escape_like(prefix))));
-        }
-        if let Some(since) = opts.since {
-            sql.push_str(" AND updated_at >= ?");
-            binds.push(Box::new(since));
-        }
-        if let Some(until) = opts.until {
-            sql.push_str(" AND updated_at < ?");
-            binds.push(Box::new(until));
-        }
-        sql.push_str(" ORDER BY key ASC LIMIT ? OFFSET ?");
-        binds.push(Box::new(limit));
-        binds.push(Box::new(offset));
+        push_list_filters(&mut sql, &mut binds, opts);
 
         let mut stmt = self.conn.prepare(&sql)?;
         let params_iter: Vec<&dyn rusqlite::ToSql> = binds.iter().map(|b| b.as_ref()).collect();
@@ -1050,8 +1033,6 @@ impl MemoryStore {
         validate_owner(owner)?;
         let scope_token = scope.as_token();
         let now = unix_ms_now();
-        let limit = opts.limit.unwrap_or(usize::MAX) as i64;
-        let offset = opts.offset.unwrap_or(0) as i64;
 
         let mut sql = String::from(
             "SELECT key, value, content_type, created_at, updated_at, expires_at, version
@@ -1062,22 +1043,7 @@ impl MemoryStore {
         binds.push(Box::new(owner.to_string()));
         binds.push(Box::new(scope_token.clone()));
         binds.push(Box::new(now));
-
-        if let Some(prefix) = &opts.prefix {
-            sql.push_str(" AND key LIKE ? ESCAPE '\\'");
-            binds.push(Box::new(format!("{}%", escape_like(prefix))));
-        }
-        if let Some(since) = opts.since {
-            sql.push_str(" AND updated_at >= ?");
-            binds.push(Box::new(since));
-        }
-        if let Some(until) = opts.until {
-            sql.push_str(" AND updated_at < ?");
-            binds.push(Box::new(until));
-        }
-        sql.push_str(" ORDER BY key ASC LIMIT ? OFFSET ?");
-        binds.push(Box::new(limit));
-        binds.push(Box::new(offset));
+        push_list_filters(&mut sql, &mut binds, opts);
 
         let mut stmt = self.conn.prepare(&sql)?;
         let params_iter: Vec<&dyn rusqlite::ToSql> = binds.iter().map(|b| b.as_ref()).collect();
@@ -1491,6 +1457,25 @@ pub(crate) fn unix_ms_now() -> i64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0)
+}
+
+/// 목록 조회의 prefix·since·until 조건과 `key ASC` 정렬·limit·offset 을 SQL과 바인드에 붙인다.
+fn push_list_filters(sql: &mut String, binds: &mut Vec<Box<dyn rusqlite::ToSql>>, opts: &ListOpts) {
+    if let Some(prefix) = &opts.prefix {
+        sql.push_str(" AND key LIKE ? ESCAPE '\\'");
+        binds.push(Box::new(format!("{}%", escape_like(prefix))));
+    }
+    if let Some(since) = opts.since {
+        sql.push_str(" AND updated_at >= ?");
+        binds.push(Box::new(since));
+    }
+    if let Some(until) = opts.until {
+        sql.push_str(" AND updated_at < ?");
+        binds.push(Box::new(until));
+    }
+    sql.push_str(" ORDER BY key ASC LIMIT ? OFFSET ?");
+    binds.push(Box::new(opts.limit.unwrap_or(usize::MAX) as i64));
+    binds.push(Box::new(opts.offset.unwrap_or(0) as i64));
 }
 
 fn escape_like(input: &str) -> String {
