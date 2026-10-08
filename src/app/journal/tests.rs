@@ -124,3 +124,56 @@ fn failed_metadata_scope_read_rejects_bootstrap_instead_of_reserving_from_zero()
     assert!(session.core_state.local_workspaces().is_empty());
     assert_eq!(session.runtime.terminals.iter().count(), 0);
 }
+
+/// 시작 복원이 끝나면 열린 슬롯과 다시 열 수 있는 슬롯 밖의 자식 관계를 지우고, 슬롯 표시가 없는
+/// 이전 형식의 관계는 복원한 창의 것으로 남긴다.
+#[cfg(feature = "gui")]
+#[test]
+fn resumed_bootstrap_forgets_child_relations_of_slots_that_cannot_reopen() {
+    let session = EngineSession::new_with_ids_and_settings(
+        crate::runtime::engine_session::EngineSessionSpec {
+            cols: 80,
+            rows: 24,
+            waker: Arc::new(|| {}),
+            shared_ids: None,
+            layout_slot: Some(1),
+            memory: Arc::new(std::sync::Mutex::new(
+                tasty_memory::testing::InMemoryStorage::new(),
+            )),
+            runner_registry: Arc::new(tasty_task_runtime::RunnerRegistry::new()),
+        },
+        crate::settings::Settings::default(),
+    );
+    let mut session = session.unwrap();
+    let path = tasty_utils::path::tasty_home()
+        .unwrap()
+        .join("child-terminals.json");
+    std::fs::write(
+        &path,
+        r#"{"children":{"7":[{"child_surface_id":8,"index":0}],
+            "513":[{"child_surface_id":514,"index":0}],
+            "1026":[{"child_surface_id":1028,"index":0}]},
+            "parent_of":{"8":7,"514":513,"1028":1026},
+            "next_index":{},"idle":{},"needs_input":{},
+            "slot_of":{"513":1,"514":1,"1026":2,"1028":2}}"#,
+    )
+    .unwrap();
+    let mut journal = JournalApplication::new(Arc::new(|| {})).unwrap();
+    journal
+        .begin_engine(
+            &session,
+            EngineSelection::Slot {
+                slot: 1,
+                resume: true,
+            },
+        )
+        .unwrap();
+    let mut stall = StallBudget::new(&journal);
+    while !(session.journal_binding.is_some() && journal.is_ready(session.id)) {
+        journal.poll_bootstrap(&mut [&mut session], None).unwrap();
+        stall.nap("bootstrap");
+    }
+    let on_disk = crate::runtime::child_terminal::ChildTerminalRegistry::load();
+    let children = |parent| on_disk.list_children(parent).len();
+    assert_eq!([children(7), children(513), children(1026)], [1, 1, 0]);
+}

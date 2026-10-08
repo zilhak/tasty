@@ -6,7 +6,8 @@
 //! 자기 레이아웃 슬롯의 항목과, 자기가 등록·변경했거나 살아 있는 것을 본 surface 의 항목만 소유한다.
 //! 저장할 때 파일을 다시 읽어 소유한 항목은 메모리 값으로, 나머지는 파일 값 그대로 합친다. 정리도
 //! 소유한 항목만 지운다. 그래서 한 윈도우의 저장·정리가 다른 윈도우나 아직 열지 않은 윈도우의 관계를
-//! 지우지 않는다. 어느 창에도 돌아오지 않을 항목은 시작할 때([`prune_on_boot`])와 engine 이 사라질 때
+//! 지우지 않는다. 어느 창에도 돌아오지 않을 항목은 시작할 때([`clear_on_boot`],
+//! [`ChildTerminalRegistry::forget_slots_except`])와 engine 이 사라질 때
 //! ([`ChildTerminalRegistry::release_owned`]) 지운다.
 
 use std::collections::{HashMap, HashSet};
@@ -80,9 +81,10 @@ impl ChildTerminalRegistry {
     }
 
     /// 이 engine 의 슬롯을 정하고 그 슬롯의 항목을 소유한다. 슬롯이 없는 engine(headless)은 한
-    /// 프로세스에 하나뿐이므로 읽은 항목을 모두 소유한다.
+    /// 프로세스에 하나뿐이므로 읽은 항목을 모두 소유한다. 시작 복원이 슬롯을 바꾸면 다시 부른다.
     pub(crate) fn bind_slot(&mut self, slot: Option<u32>) {
         self.slot = slot;
+        self.owned.clear();
         let mine: Vec<u32> = self
             .surfaces()
             .into_iter()
@@ -150,6 +152,35 @@ impl ChildTerminalRegistry {
         disk.owned = std::mem::take(&mut self.owned);
         disk.slot = self.slot;
         *self = disk;
+    }
+
+    /// 시작 복원이 끝난 뒤 한 번 부른다. 파일을 다시 읽고, 슬롯 표시가 없는 이전 형식의 항목을 이
+    /// engine 의 슬롯에 넣어 소유한 뒤, `keep`(다시 열 수 있거나 열린 슬롯) 밖의 슬롯에 속한 항목을
+    /// 지우고 쓴다.
+    #[cfg(feature = "gui")]
+    pub(crate) fn forget_slots_except(&mut self, keep: &HashSet<u32>) {
+        let Some(path) = self.path.clone() else {
+            return;
+        };
+        self.merge_from(read_file(&path));
+        if let Some(slot) = self.slot {
+            for surface in self.surfaces() {
+                if let std::collections::hash_map::Entry::Vacant(tag) = self.slot_of.entry(surface)
+                {
+                    tag.insert(slot);
+                    self.owned.insert(surface);
+                }
+            }
+        }
+        let gone: HashSet<u32> = self
+            .slot_of
+            .iter()
+            .filter(|(_, slot)| !keep.contains(slot))
+            .map(|(surface, _)| *surface)
+            .collect();
+        self.drop_surfaces(&gone);
+        ensure_parent_dir(&path);
+        self.write_json_to(&path);
     }
 
     /// engine 이 사라질 때 그 engine 이 소유한 항목(빈 부모 목록·다음 번호 포함)을 지우고 저장한다.
@@ -397,35 +428,17 @@ pub fn now_epoch_ms() -> u64 {
 }
 
 /// 첫 engine 을 만들기 전에 한 번 부른다. 레이아웃을 복원하지 않으면(`restore_layout = false`)
-/// 이전 실행의 surface 는 어느 창에도 돌아오지 않으므로 관계를 모두 버린다. 복원하면 `known_slots`
-/// (복원할 수 있는 슬롯) 밖의 슬롯에 속한 항목을 지운다. 슬롯 표시가 없는 이전 형식의 항목은 첫 창의
-/// 슬롯 `boot_slot` 에 속한 것으로 본다(그 창의 첫 정리가 살아 있지 않은 것을 지운다).
+/// 이전 실행의 surface 는 어느 창에도 돌아오지 않으므로 관계를 모두 버린다. 복원하면 슬롯을 다 알게 된
+/// 뒤 [`ChildTerminalRegistry::forget_slots_except`] 가 정리한다.
 #[cfg(feature = "gui")]
-pub(crate) fn prune_on_boot(restore_layout: bool, known_slots: &HashSet<u32>, boot_slot: u32) {
+pub(crate) fn clear_on_boot(restore_layout: bool) {
     let Some(path) = tasty_utils::path::tasty_home().map(|d| d.join("child-terminals.json")) else {
         return;
     };
-    if !path.exists() {
+    if restore_layout || !path.exists() {
         return;
     }
-    let registry = if restore_layout {
-        let mut registry = read_file(&path);
-        for surface in registry.surfaces() {
-            registry.slot_of.entry(surface).or_insert(boot_slot);
-        }
-        let gone: HashSet<u32> = registry
-            .slot_of
-            .iter()
-            .filter(|(_, slot)| **slot != boot_slot && !known_slots.contains(slot))
-            .map(|(surface, _)| *surface)
-            .collect();
-        registry.drop_surfaces(&gone);
-        registry
-    } else {
-        ChildTerminalRegistry::default()
-    };
-    ensure_parent_dir(&path);
-    registry.write_json_to(&path);
+    ChildTerminalRegistry::default().write_json_to(&path);
 }
 
 /// 파일 읽기·파싱 실패는 빈 상태로 처리한다.
@@ -842,7 +855,7 @@ mod tests {
         second.register_child(1026, entry(1029, 0));
         second.save();
         for (parent, child) in [(1027, 1028), (1541, 1542), (2055, 2056)] {
-            prune_on_boot(false, &HashSet::new(), 1);
+            clear_on_boot(false);
             let mut registry = window(1);
             registry.reconcile_with_live_surfaces(&live(&[parent, child]));
             registry.register_child(parent, entry(child, 0));
@@ -855,8 +868,8 @@ mod tests {
         }
     }
 
-    /// 레이아웃을 복원하면 다시 열 수 있는 슬롯의 관계만 남긴다. 슬롯 표시가 없는 이전 형식의 항목은
-    /// 첫 창의 슬롯에 속한다.
+    /// 레이아웃을 복원하면 시작 복원 뒤 다시 열 수 있는 슬롯의 관계만 남긴다. 슬롯 표시가 없는 이전
+    /// 형식의 항목은 첫 창의 슬롯에 속한다.
     #[cfg(feature = "gui")]
     #[test]
     fn boot_prune_keeps_relations_of_slots_that_can_reopen() {
@@ -871,7 +884,9 @@ mod tests {
         third.register_child(1540, entry(1542, 0));
         third.save();
 
-        prune_on_boot(true, &[1, 2].into_iter().collect(), 1);
+        clear_on_boot(true);
+        assert_eq!(children_on_disk(), [(7, 8), (1026, 1028), (1540, 1542)]);
+        window(1).forget_slots_except(&[1, 2].into_iter().collect());
         assert_eq!(children_on_disk(), [(7, 8), (1026, 1028)]);
         assert_eq!(window(1).single_parent(&live(&[])), Some(7));
     }

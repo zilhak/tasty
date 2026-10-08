@@ -433,17 +433,12 @@ impl App {
 
     /// 빈 슬롯을 고르기만 한다. engine이 만들어져야 실제 점유로 센다.
     pub(crate) fn claim_free_layout_slot(&self) -> LayoutSlotId {
-        pick_free_slot(&self.known_layout_slots(), &self.occupied_layout_slots())
-    }
-
-    /// 창으로 다시 열 수 있는 슬롯(파일이 있거나 journal이 아는 슬롯 가운데 은퇴하지 않은 것).
-    pub(crate) fn known_layout_slots(&self) -> Vec<LayoutSlotId> {
         let mut slots = crate::core::layout_persistence::list_slots();
         slots.retain(|slot| !self.journal.layout_slot_retired(*slot));
         slots.extend(self.journal.known_layout_slots());
         slots.sort_unstable();
         slots.dedup();
-        slots
+        pick_free_slot(&slots, &self.occupied_layout_slots())
     }
 
     pub(crate) fn find_main_with_surface(&self, surface_id: u32) -> Option<WindowId> {

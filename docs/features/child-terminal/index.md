@@ -36,10 +36,11 @@ idle/needs_input 상태를 보관한다. 마지막 상태 보고 시각 `last_st
 - **정리**: 이 engine 이 소유했는데 지금 이 engine 에 없는 surface 만 지운다. 다른 윈도우의 surface 나
   재시작 뒤 아직 열지 않은 윈도우의 surface 는 이 engine 에 없어도 지우지 않는다. 그런 항목은 그 윈도우가
   다시 열려 정리하거나 surface 가 닫힐 때 지운다.
-- **시작할 때**: 첫 engine 을 만들기 전에 `restore_layout = false` 이면 파일의 관계를 모두 버린다(이전
-  실행의 surface 는 어느 윈도우에도 돌아오지 않는다). 켜져 있으면 다시 열 수 있는 슬롯(슬롯 파일이 있거나
-  journal 이 아는 슬롯) 밖의 항목을 지운다. 슬롯 표시가 없는 이전 형식의 항목은 첫 윈도우의 슬롯에 속한
-  것으로 본다.
+- **시작할 때**: `restore_layout = false` 이면 첫 engine 을 만들기 전에 파일의 관계를 모두 버린다(이전
+  실행의 surface 는 어느 윈도우에도 돌아오지 않는다). 켜져 있으면 시작 복원(journal bootstrap)이 슬롯을
+  정한 뒤, 복원한 engine 을 그 슬롯에 다시 묶고 다시 열 수 있는 슬롯(journal 이 아는 은퇴하지 않은
+  슬롯)과 열린 슬롯 밖의 항목을 지운다. 슬롯 표시가 없는 이전 형식의 항목은 첫 복원 윈도우의 슬롯에
+  속한 것으로 본다.
 - **윈도우를 닫을 때**: `restore_layout = false` 라 슬롯을 다시 열지 않으면 그 윈도우가 소유한 항목(빈
   부모 목록·다음 번호 포함)을 지운다. 켜져 있으면 윈도우를 다시 열 수 있으므로 그대로 둔다.
 
@@ -282,7 +283,7 @@ surface 뿐이다. 저장 병합으로 받아 온 다른 윈도우의 항목은 
 - Given 재시작 뒤 윈도우 하나만 열렸다 When 그 윈도우에서 `terminal.children` 이 정리를 돌린다 Then 아직 열지 않은 윈도우의 관계는 지우지 않는다(`reconcile_keeps_children_of_windows_it_does_not_own`).
 - Given 두 윈도우에 각각 부모가 하나씩 있다 When 한 윈도우가 저장해 다른 윈도우의 항목을 받은 뒤 `--surface` 없이 `terminal.children` 을 부른다 Then 그 윈도우의 부모 하나로 폴백한다(`single_parent_counts_only_this_windows_parents_after_a_merge`).
 - Given `restore_layout = false` When 재시작을 세 번 하며 매번 자식을 하나 등록한다 Then 파일에는 마지막 실행의 관계만 남고 `--surface` 생략 폴백이 동작한다(`relations_do_not_pile_up_across_restarts_without_layout_restore`).
-- Given `restore_layout = true` 이고 슬롯 1·2만 다시 열 수 있다 When 시작한다 Then 슬롯 3 의 관계를 지우고 슬롯 1·2 와 슬롯 표시 없는 항목은 남긴다(`boot_prune_keeps_relations_of_slots_that_can_reopen`).
+- Given `restore_layout = true` 이고 슬롯 1·2만 다시 열 수 있다 When 시작 복원이 끝난다 Then 슬롯 3 의 관계를 지우고 슬롯 1·2 와 슬롯 표시 없는 항목은 남긴다(`boot_prune_keeps_relations_of_slots_that_can_reopen`, journal 경로는 `resumed_bootstrap_forgets_child_relations_of_slots_that_cannot_reopen`).
 - Given `restore_layout = false` When 윈도우를 닫는다 Then 그 윈도우의 관계·빈 부모 목록·다음 번호를 지우고 다른 윈도우의 것은 둔다(`a_released_window_removes_its_parent_keys`).
 - Given 이미 존재하는 임의의 surface(spawn 으로 만들지 않은 일반 터미널 탭 포함) When `terminal.adopt{surface=P, target}` Then `occupancy_of(target)==Soft`·`holder.parent==P`·`terminal.children` 목록에 나타남.
 - Given 이미 등록된 child 또는 hard 점유 중인 대상 When `terminal.adopt` Then 에러 반환 + registry 불변.

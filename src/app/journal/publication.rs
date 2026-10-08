@@ -156,12 +156,49 @@ impl JournalApplication {
             );
         }
         drop(bootstrap);
+        #[cfg(feature = "gui")]
+        self.forget_child_relations_of_unknown_slots(&occupied, sessions);
         self.worker
             .acknowledge(cut.unwrap_or(0), Ok(()))
             .map_err(|error| format!("bootstrap ACK: {error:?}"))?;
         self.started = true;
 
         Ok(())
+    }
+
+    /// 복원이 정한 슬롯으로 자식 관계 레지스트리를 다시 묶고, 다시 열 수 없는 슬롯의 관계를 지운다.
+    /// 슬롯 표시가 없는 이전 형식의 항목은 첫 복원 engine 의 슬롯에 속한다.
+    #[cfg(feature = "gui")]
+    fn forget_child_relations_of_unknown_slots(
+        &self,
+        occupied: &[(crate::runtime::engine_session::EngineId, Option<u32>)],
+        sessions: &mut [&mut EngineSession],
+    ) {
+        let mut keep: std::collections::HashSet<u32> = self
+            .known_slots
+            .iter()
+            .filter(|(_, retired)| !**retired)
+            .map(|(slot, _)| *slot)
+            .collect();
+        keep.extend(occupied.iter().filter_map(|(_, slot)| *slot));
+        keep.extend(sessions.iter().filter_map(|s| s.persistence.slot));
+        let mut first = true;
+        for session in sessions.iter_mut() {
+            let resumed = self.opening.get(&session.id).is_some_and(|opening| {
+                matches!(
+                    opening.selection,
+                    EngineSelection::Slot { resume: true, .. }
+                )
+            });
+            if !resumed {
+                continue;
+            }
+            let registry = &mut session.runtime.child_terminals;
+            registry.bind_slot(session.persistence.slot);
+            if std::mem::take(&mut first) {
+                registry.forget_slots_except(&keep);
+            }
+        }
     }
 
     fn publish_batch(
