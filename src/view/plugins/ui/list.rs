@@ -4,10 +4,11 @@ use crate::theme;
 use super::{PluginsAction, PluginsSnapshot, PluginsUiState};
 use tasty_ui_widgets::tokens::{PLUGIN_LIST_ROW_HEIGHT, STRUCT_GAP_2};
 use tasty_ui_widgets::{
-    PluginAvatarSize, PluginDetailBarView, PluginInstallPathsView, margin_sym, paint_plugin_avatar,
-    plugin_avatar, plugin_command_row, plugin_detail_bar, plugin_detail_bar_height,
-    plugin_detail_description, plugin_detail_meta, plugin_detail_name_row, plugin_detail_section,
-    plugin_detail_section_gap, plugin_install_paths, vspace,
+    PluginAvatarSize, PluginDetailBarView, PluginInstallPathsView, TagVariant, margin_sym,
+    paint_plugin_avatar, plugin_avatar, plugin_command_row, plugin_detail_bar,
+    plugin_detail_bar_height, plugin_detail_description, plugin_detail_meta,
+    plugin_detail_name_row, plugin_detail_section, plugin_detail_section_gap, plugin_install_paths,
+    tag, vspace,
 };
 
 pub(super) fn draw_list_tab(
@@ -295,7 +296,7 @@ fn draw_detail_body(
         } else {
             ui.horizontal_wrapped(|ui| {
                 for token in &entry.manifest_permissions {
-                    super::tag(ui, th, token);
+                    tag(ui, th, token, TagVariant::Default, false);
                 }
             });
         }
