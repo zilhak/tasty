@@ -24,6 +24,7 @@ impl App {
         };
         // 다른 윈도우가 바꾼 Explorer 즐겨찾기를 그리기 전에 받는다.
         if session.runtime.sync_explorer_favorites() {
+            tracing::debug!(window = ?id, "explorer: favorites copy refreshed before redraw");
             crate::view::ui::View::mark_dirty(view);
         }
         view.prepare_redraw(&session.read());
