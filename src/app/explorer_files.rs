@@ -204,6 +204,26 @@ impl ExplorerFiles {
     pub(crate) fn begin_shutdown(&mut self) {
         self.stopping = true;
     }
+    /// 끝난 작업을 거둔다. 아직 실행 중이거나 작업이 없으면 None 이다.
+    fn take_finished(&mut self) -> Option<Finished> {
+        if !self.job.as_ref().is_some_and(|j| j.worker.is_finished()) {
+            return None;
+        }
+        let Job {
+            window,
+            engine,
+            target,
+            affected,
+            worker,
+        } = self.job.take().expect("finished job exists");
+        Some(Finished {
+            window,
+            engine,
+            target,
+            affected,
+            result: join(worker),
+        })
+    }
     pub(crate) fn poll_shutdown(&mut self) -> usize {
         self.begin_shutdown();
         if self.job.as_ref().is_some_and(|j| j.worker.is_finished()) {
@@ -220,6 +240,23 @@ impl Drop for ExplorerFiles {
                 "Explorer file worker remains unjoined at App drop; OS file work was not cancelled"
             );
         }
+    }
+}
+struct Finished {
+    window: winit::window::WindowId,
+    engine: crate::runtime::engine_session::EngineId,
+    target: Target,
+    affected: Affected,
+    result: Result<(), String>,
+}
+impl Finished {
+    /// 이 작업이 바꿀 수 있는 경로를 보는 로컬 explorer 를 다시 읽게 한다. 다시 읽은 View 가 있으면 true.
+    fn reload_views(
+        &self,
+        store: &mut crate::adapters::ui::surface::explorer::view::ExplorerViewStore,
+    ) -> bool {
+        let Affected { changed, removed } = &self.affected;
+        (!changed.is_empty() || !removed.is_empty()) && store.invalidate_local(changed, removed)
     }
 }
 fn join(worker: JoinHandle<Result<(), String>>) -> Result<(), String> {
@@ -276,25 +313,26 @@ impl super::App {
         self.start_explorer_file();
     }
     fn finish_explorer_file(&mut self) {
-        if !self
-            .explorer_files
-            .job
-            .as_ref()
-            .is_some_and(|j| j.worker.is_finished())
-        {
+        let Some(finished) = self.explorer_files.take_finished() else {
             return;
+        };
+        // 같은 폴더를 보는 다른 explorer 도 다시 읽는다. 실패·부분 성공도 실제 상태를 다시 읽어야 하고,
+        // 요청한 surface 가 그 사이 닫혔어도 다른 윈도우의 목록은 낡은 채로 남으면 안 된다.
+        // mirror explorer 는 원격 파일을 보므로 `invalidate_local` 이 건너뛴다.
+        for view in self.view.views.values_mut() {
+            if let Some(view) = view.as_main_mut()
+                && finished.reload_views(&mut view.state.explorer_views)
+            {
+                view.mark_dirty();
+            }
         }
-        let Job {
+        let Finished {
             window,
             engine,
             target,
-            affected,
-            worker,
-        } = self.explorer_files.job.take().expect("finished job exists");
-        let result = join(worker);
-        // 같은 폴더를 보는 다른 explorer 도 다시 읽는다. 실패·부분 성공도 실제 상태를 다시 읽어야 하고,
-        // 요청한 surface 가 그 사이 닫혔어도 다른 윈도우의 목록은 낡은 채로 남으면 안 된다.
-        self.reload_local_explorers(&affected);
+            result,
+            ..
+        } = finished;
         let success = result.is_ok();
         let failure = result.as_ref().err().cloned();
         if success && let Some(clipboard) = &target.clipboard {
@@ -330,22 +368,6 @@ impl super::App {
         }
         target.apply(&mut view.state, success);
         view.mark_dirty();
-    }
-    /// 모든 윈도우의 로컬 explorer 중 `affected` 를 보는 것을 다시 읽게 한다. mirror explorer 는 원격 파일을 보므로 제외한다.
-    fn reload_local_explorers(&mut self, affected: &Affected) {
-        if affected.changed.is_empty() && affected.removed.is_empty() {
-            return;
-        }
-        for view in self.view.views.values_mut() {
-            if let Some(view) = view.as_main_mut()
-                && view
-                    .state
-                    .explorer_views
-                    .invalidate_local(&affected.changed, &affected.removed)
-            {
-                view.mark_dirty();
-            }
-        }
     }
     fn start_explorer_file(&mut self) {
         for (&window, view) in &mut self.view.views {

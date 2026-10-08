@@ -312,3 +312,47 @@ fn each_operation_names_the_folders_it_can_change_and_the_paths_it_can_remove() 
     );
     assert_eq!(Operation::Open(b).affected(), Affected::default());
 }
+
+#[test]
+fn a_finished_job_reloads_other_explorers_viewing_the_folders_it_changed() {
+    let (mut state, engine) = crate::state::tests::test_state();
+    let sid = engine.read().workspace_at(0).unwrap().all_surface_ids()[0];
+    let dir = tempfile::tempdir().unwrap();
+    let item = dir.path().join("gone.txt");
+    state.request_explorer_file(
+        &engine.read(),
+        sid,
+        Operation::Trash(vec![item.clone()]),
+        user(),
+    );
+    let Request { target, operation } = state.explorer_file_requests.0.pop_front().unwrap();
+    let mut owner = ExplorerFiles {
+        job: Some(Job {
+            window: winit::window::WindowId::from(1),
+            engine: engine.id,
+            target,
+            affected: operation.affected(),
+            // 휴지통 이동은 실패해도 같은 경로를 다시 읽어야 한다.
+            worker: std::thread::spawn(|| Err("failed".to_string())),
+        }),
+        stopping: false,
+    };
+    let finished = loop {
+        if let Some(finished) = owner.take_finished() {
+            break finished;
+        }
+        std::thread::yield_now();
+    };
+    assert!(finished.result.is_err());
+
+    // 요청한 surface 가 아닌 다른 explorer 가 같은 폴더를 보고 있다.
+    let mut other = crate::adapters::ui::surface::explorer::view::ExplorerViewStore::default();
+    let panel = crate::model::ExplorerPanel::new(sid + 100, dir.path().into());
+    other.get_or_init(&panel, None);
+    let mut unrelated = crate::adapters::ui::surface::explorer::view::ExplorerViewStore::default();
+    let elsewhere = crate::model::ExplorerPanel::new(sid + 101, "/elsewhere".into());
+    unrelated.get_or_init(&elsewhere, None);
+
+    assert!(finished.reload_views(&mut other));
+    assert!(!finished.reload_views(&mut unrelated));
+}
