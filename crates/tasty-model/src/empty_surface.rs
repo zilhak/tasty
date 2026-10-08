@@ -27,16 +27,6 @@ impl EmptySurface {
         }
     }
 
-    /// Deferred PTY spawn 파라미터를 가진 terminal placeholder를 생성.
-    pub fn new_deferred(id: SurfaceId, spawn: DeferredSpawn) -> Self {
-        Self {
-            id,
-            deferred: Some(Deferred::Terminal(spawn)),
-            spawn_attempts: 0,
-            cwd: None,
-        }
-    }
-
     /// plugin kind registry 등록을 기다리는 non-terminal placeholder를 생성.
     pub fn new_deferred_plugin(id: SurfaceId, plugin: DeferredPlugin) -> Self {
         Self {

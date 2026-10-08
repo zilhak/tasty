@@ -18,7 +18,7 @@
 | plugin 대기 자리 | `EmptySurface`(`deferred = Plugin`) | `Pending` | attach mirror에서 원격 markdown 문서를 보여 줄 plugin kind가 아직 등록되지 않은 자리 |
 | 복원 자리 | `JournalPlaceholder` | `Pending` | 앱을 다시 시작했을 때 아직 활성화하지 않은 surface. 목표 kind(`terminal`·`markdown` 등)를 따로 기록한다 |
 
-`EmptySurface`의 `deferred = Terminal` 값(`EmptySurface::new_deferred`)은 모델에 남아 있지만 현재 제품 코드에서 만드는 경로가 없다. 앱 재시작 때 터미널을 지연 생성하는 일은 복원 자리가 맡는다.
+`EmptySurface`의 `deferred = Terminal` 값은 모델에 남아 있지만 이 값을 만드는 생성자가 없다. 앱 재시작 때 터미널을 지연 생성하는 일은 복원 자리가 맡는다.
 
 ## 상태 소유자
 
@@ -47,7 +47,7 @@
 ## IPC·CLI
 
 - `tasty list tree`: 빈 자리는 `type:"Empty"`로 보고한다. plugin 대기 자리는 `type:"Pending"`, `kind:<목표 kind>`, `ready:false`, `pending_reason:"plugin_not_loaded"`로, 복원 자리는 `type:"Pending"`, `kind:<목표 kind>`, `pty_ready:false`, `restore_error:<실패 이유 또는 null>`로 보고한다.
-- `tasty list surfaces`(IPC `surface.list`): 탭에 surface가 하나뿐이면 복원 자리를 목표 kind와 관계없이 `type:"Terminal"`, `pty_ready:false`로 보고한다. 분할된 탭 안에서는 `type:"Pending"`으로 보고하고 `pty_ready`를 싣지 않는다.
+- `tasty list surfaces`(IPC `surface.list`): 복원 자리는 탭이 분할됐는지와 관계없이 `type:"Pending"`, `kind:<목표 kind>`, `pty_ready:false`, `restore_error:<실패 이유 또는 null>`로 보고한다(`list tree`와 같은 필드). 빈 자리와 plugin 대기 자리는 `type:"Empty"`로 보고한다.
 - `tasty wake --surface <ID>`: 터미널 복원 자리만 받는다. 이미 PTY가 있으면 `{"woke":false,"pty_ready":true}`를 돌려준다. 터미널 복원 자리가 아니면 `Surface <ID> not found`로 거절한다.
 
 ## headless·원격 제약
@@ -59,6 +59,7 @@
 
 - Given 실행 중인 Tasty When `tasty new tab --pane <P> --type empty` Then `tasty list tree`에 `type:"Empty"` leaf가 생긴다.
 - Given 비활성 탭에 터미널이 있는 상태로 저장한 레이아웃 When 앱을 다시 시작한다 Then 그 터미널은 `tasty list tree`에서 `type:"Pending"`, `kind:"terminal"`로 보이고, 그 탭을 화면에 보이거나 `tasty wake --surface <ID>`를 보내면 PTY가 생긴다.
+- Given markdown surface 하나만 있는 탭과 분할된 탭의 markdown surface 가 복원 자리로 남은 상태 When `tasty list surfaces` Then 두 항목 모두 `type:"Pending"`, `kind:"markdown"`, `pty_ready:false`, `restore_error:null` 이다.
 - Given 활성화가 계속 실패하는 복원 자리 When 자동 활성화가 5회 실패한다 Then 자동 재시도를 멈추고 `restore_error`에 마지막 이유가 남는다.
 
 ## 화면

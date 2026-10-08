@@ -65,23 +65,16 @@ fn collect_tab_surface_info(
             }
             out.push(entry);
         } else if let Some(id) = surface.surface_id() {
-            // Non-terminal surfaces (Markdown, Explorer, Html, Empty)
-            // EmptySurface placeholders backing a deferred terminal still
-            // expose `type: "Terminal"` so agents can target them like any
-            // other terminal — they just report `pty_ready: false` until the
-            // PTY is spawned (auto on send, manual via `tasty wake`).
-            let deferred = engine.is_surface_deferred(id);
+            // Non-terminal surfaces (Markdown, Explorer, Html, Empty) and restore slots.
             let mut entry = json!({
                 "id": id,
                 "pane_id": pane_id,
                 "workspace_id": workspace_id,
                 "tab_index": tab_idx,
-                "type": if deferred { "Terminal" } else { surface.type_name() },
+                "type": surface.type_name(),
                 "busy": false,
             });
-            if deferred {
-                entry["pty_ready"] = json!(false);
-            }
+            add_restore_fields(surface, &mut entry);
             out.push(entry);
         }
     }
@@ -107,6 +100,9 @@ fn collect_surface_layout_info(
                 "busy": engine.read().is_surface_busy(id),
                 "attached": engine.live.occupancy.is_hard_occupied(id),
             });
+            if let Some(surface) = engine.find_surface_by_id(id) {
+                add_restore_fields(surface, &mut entry);
+            }
             if let Some(terminal) = engine.runtime.terminals.get(id) {
                 entry["cols"] = json!(terminal.cols());
                 entry["rows"] = json!(terminal.rows());
@@ -127,5 +123,123 @@ fn collect_surface_layout_info(
             collect_surface_layout_info(engine, first, pane_id, workspace_id, tab_idx, out);
             collect_surface_layout_info(engine, second, pane_id, workspace_id, tab_idx, out);
         }
+    }
+}
+
+/// 복원 자리는 탭 분할 여부와 관계없이 `list tree`와 같은 필드로 보고한다:
+/// `type:"Pending"`(type_name), 목표 `kind`, `pty_ready:false`, `restore_error`.
+fn add_restore_fields(surface: &dyn crate::model::Surface, entry: &mut serde_json::Value) {
+    let Some(slot) = surface
+        .as_any()
+        .downcast_ref::<crate::runtime::surface_restorer::JournalPlaceholder>()
+    else {
+        return;
+    };
+    entry["kind"] = json!(slot.kind);
+    entry["pty_ready"] = json!(false);
+    entry["restore_error"] = json!(slot.failure);
+}
+
+#[cfg(test)]
+mod tests {
+    use tasty_core::{DomainEvent as E, Placement, Ratio, SplitSpec, SurfaceSpec};
+
+    use crate::runtime::surface_restorer::JournalPlaceholder;
+
+    const ALONE: u32 = 11;
+    const SPLIT: u32 = 21;
+    const SPLIT_PEER: u32 = 22;
+
+    fn markdown(id: u32) -> SurfaceSpec {
+        SurfaceSpec {
+            id,
+            kind: "markdown".into(),
+            data: None,
+        }
+    }
+
+    fn placeholder(id: u32) -> Box<JournalPlaceholder> {
+        Box::new(JournalPlaceholder {
+            id,
+            kind: "markdown".into(),
+            data: None,
+            creation_seed: None,
+            activation: None,
+            attempts: 0,
+            failure: None,
+            recovery_blocked: false,
+        })
+    }
+
+    /// 분할되지 않은 탭과 분할된 탭의 markdown 복원 자리가 같은 필드로 보고된다.
+    #[test]
+    fn restore_slots_report_the_same_fields_in_split_and_single_tabs() {
+        let model = crate::state::tests::test_model(vec![
+            E::CategoryCreated {
+                id: 0,
+                name: "normal".into(),
+                index: 0,
+            },
+            E::WorkspaceCreated {
+                id: 1,
+                name: "w".into(),
+                category: 0,
+                index: 0,
+                pane: 10,
+            },
+            E::TabCreated {
+                id: 100,
+                pane: 10,
+                index: 0,
+                name: "alone".into(),
+                surface: markdown(ALONE),
+            },
+            E::TabCreated {
+                id: 101,
+                pane: 10,
+                index: 1,
+                name: "split".into(),
+                surface: markdown(SPLIT),
+            },
+            E::SurfaceSplit {
+                target: SPLIT,
+                surface: markdown(SPLIT_PEER),
+                split: SplitSpec {
+                    direction: crate::model::SplitDirection::Horizontal,
+                    ratio: Ratio::from_f32(0.5),
+                    placement: Placement::After,
+                },
+            },
+        ]);
+        let (_state, mut session) = crate::state::tests::test_state_from_model(model);
+        for id in [ALONE, SPLIT, SPLIT_PEER] {
+            session.runtime.surfaces.insert(id, placeholder(id));
+        }
+        let engine = session.borrow_mut();
+        let response = super::handle_surface_list(&engine.as_ref(), serde_json::json!(1));
+        let list = response.result.expect("surface.list result");
+        let entry = |id: u32| {
+            list.as_array()
+                .unwrap()
+                .iter()
+                .find(|e| e["id"] == id)
+                .unwrap_or_else(|| panic!("surface {id} missing: {list}"))
+                .clone()
+        };
+        let fields = |e: &serde_json::Value| {
+            (
+                e["type"].clone(),
+                e["kind"].clone(),
+                e["pty_ready"].clone(),
+                e["restore_error"].clone(),
+            )
+        };
+        let alone = entry(ALONE);
+        assert_eq!(alone["type"], "Pending");
+        assert_eq!(alone["kind"], "markdown");
+        assert_eq!(alone["pty_ready"], false);
+        assert!(alone["restore_error"].is_null());
+        assert_eq!(fields(&alone), fields(&entry(SPLIT)));
+        assert_eq!(fields(&alone), fields(&entry(SPLIT_PEER)));
     }
 }
