@@ -39,6 +39,18 @@
 
   `large-file-confirm`도 `scope = "surface"`다. 대용량 파일을 연 markdown surface 가 `surface_id`를 실은 surface 이벤트를 발행하므로, 확인 팝업은 그 surface 영역 가운데에 뜨고 scrim도 그 surface 만 덮는다. surface 가 팝업 선언 크기(360×150)보다 좁거나 낮으면 창 가운데에 연다. host 는 대상이 이 플러그인의 surface 일 때만 연다.
 
+  크기 기준은 `LARGE_FILE_LIMIT_BYTES`(1 MiB)를 넘는 파일이다. 생성·복원뿐 아니라 `markdown.reload`와 파일 감시도 같은 확인을 거친다(`reload_step`).
+
+  | 문서 상태 | 파일 감시 | 명시적 `markdown.reload` |
+  |---|---|---|
+  | 확인 대기 또는 취소 | 읽지 않는다 | 기준을 넘으면 다시 묻는다. 이미 확인을 요청했고 그 팝업이 닫히지 않았으면(팝업이 열리기 전 포함, `confirm_requested`) 겹쳐 띄우지 않는다. 기준 아래로 줄었으면 바로 읽는다 |
+  | 읽음, [열기]를 고른 적 없음 | 기준을 넘게 커지면 묻는다. 답을 받을 때까지 이전 내용을 그대로 보이고, 취소하면 그때 비워 대기 상태가 되며, [열기]면 새 내용을 읽는다 | 같다 |
+  | [열기]를 고른 문서 | 크기와 관계없이 읽는다 | 같다 |
+
+  event bus가 없어 확인을 띄울 수 없으면 생성 때처럼 경고를 남기고 읽는다.
+
+  `markdown.reload` 응답은 `{ok, surface_id, deferred}`다. `deferred`는 로컬 문서가 파일을 읽지 않고 사용자의 대용량 확인을 기다리거나 취소 상태로 남았을 때 `true`, 다시 읽었으면 `false`다. mirror 문서의 응답에는 싣지 않는다.
+
   | 열기 경로 | 동작 |
   |---|---|
   | `convert_input_popup = "file-open"` | host가 convert 팝업, `open_markdown`·`convert_to_markdown` 단축키, context menu에서 `open_popup_instance`로 연다. |
@@ -104,6 +116,8 @@
 - Given markdown 플러그인 활성 When 마크다운 파일 열기 Then markdown surface 로 렌더된다.
 - Given `tasty new tab --type markdown --file <f>` Then 그 파일이 렌더된다.
 - Given `tasty list surfaces` Then 해당 surface 가 `kind:"markdown"` 으로 보고된다.
+- Given 대용량 확인을 취소한 markdown surface When 그 파일이 바뀐다 Then 감시가 파일을 읽지 않는다. When `tasty markdown reload --surface <ID>`를 부른다 Then 확인 팝업이 다시 뜨고 응답의 `deferred`가 `true`다.
+- Given 1 MiB 이하로 읽어 둔 markdown 문서 When 파일이 1 MiB를 넘게 커진다 Then 내용을 다시 읽지 않고 대용량 확인 팝업을 띄우며, 팝업이 떠 있는 동안 이전 내용이 보인다. When 취소한다 Then 이전 내용이 사라지고 대기 상태가 된다. When [열기]를 고른다 Then 새 내용이 보인다.
 - Given markdown surface가 아닌 ID When `tasty markdown reload --surface <ID>` Then invalid params 오류로 끝나고 성공으로 답하지 않는다.
 
 ## 화면

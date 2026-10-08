@@ -655,3 +655,166 @@ fn set_url_without_a_path_omits_the_label() {
     let params = set_url_params(7, "", "<html>body</html>".to_string());
     assert!(params.get("label").is_none());
 }
+
+fn temp_md(tag: &str, body: &[u8]) -> std::path::PathBuf {
+    static SEQ: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let path = std::env::temp_dir().join(format!("tasty-md-{tag}-{}-{seq}.md", std::process::id()));
+    std::fs::write(&path, body).unwrap();
+    path
+}
+
+/// 확인을 기다리거나 취소한 문서는 파일이 바뀌어도 감시로 읽지 않는다.
+#[test]
+fn watch_does_not_read_a_document_waiting_for_the_large_file_answer() {
+    let path = temp_md("watch-pending", b"# changed while pending");
+    let mut p = MarkdownPlugin::new(Translator::default());
+    p.docs.insert(
+        7,
+        MdDoc::new_deferred(Some(path.to_string_lossy().into_owned())),
+    );
+    p.watch_reload(&json!({ "surface": 7 })).unwrap();
+    assert!(p.docs[&7].pending_large);
+    assert!(p.docs[&7].content.is_empty());
+    let _ = std::fs::remove_file(&path); // best-effort 정리 — 실패 무시(테스트 결과 무관).
+}
+
+/// 명시적 reload는 확인을 다시 거친다. 파일이 기준 아래로 줄었으면 바로 읽는다.
+#[test]
+fn explicit_reload_reads_a_pending_document_that_is_now_small() {
+    let path = temp_md("reload-pending", b"# now small");
+    let mut p = MarkdownPlugin::new(Translator::default());
+    p.docs.insert(
+        8,
+        MdDoc::new_deferred(Some(path.to_string_lossy().into_owned())),
+    );
+    // 확인을 취소해 팝업이 닫힌 상태.
+    p.on_large_confirm_closed(8);
+    let resp = p.markdown_reload(&json!({ "surface": 8 })).unwrap();
+    assert_eq!(resp["deferred"], json!(false));
+    assert!(!p.docs[&8].pending_large);
+    assert!(p.docs[&8].content.contains("now small"));
+    let _ = std::fs::remove_file(&path); // best-effort 정리 — 실패 무시(테스트 결과 무관).
+}
+
+#[test]
+fn reload_step_applies_the_large_file_gate() {
+    use ReloadOrigin::{Explicit, Watch};
+    let loaded = MdDoc::new(None);
+    // 확인을 취소한 문서: 대기 상태이고 팝업은 닫혔다.
+    let mut pending = MdDoc::new_deferred(None);
+    pending.confirm_requested = false;
+    // 확인을 요청했고 팝업이 아직 닫히지 않은 문서(팝업이 열리기 전 포함).
+    let asking = MdDoc::new_deferred(None);
+    let mut confirmed = MdDoc::new(None);
+    confirmed.large_confirmed = true;
+    let big = Some(LARGE_FILE_LIMIT_BYTES + 1);
+
+    // 확인을 기다리거나 취소한 문서: 감시는 읽지 않고, 명시 reload는 다시 묻는다.
+    assert_eq!(reload_step(&pending, Watch, big, true), ReloadStep::Skip);
+    assert_eq!(reload_step(&pending, Watch, None, true), ReloadStep::Skip);
+    assert_eq!(
+        reload_step(&pending, Explicit, big, true),
+        ReloadStep::Ask(LARGE_FILE_LIMIT_BYTES + 1)
+    );
+    // 이미 확인을 요청했으면 팝업이 열리기 전이라도 겹쳐 묻지 않는다.
+    assert_eq!(reload_step(&asking, Explicit, big, true), ReloadStep::Skip);
+    assert_eq!(
+        reload_step(&pending, Explicit, None, true),
+        ReloadStep::Read
+    );
+
+    // 읽어 둔 문서가 기준을 넘게 커지면 감시와 명시 reload 모두 묻는다.
+    assert_eq!(
+        reload_step(&loaded, Watch, big, true),
+        ReloadStep::Ask(LARGE_FILE_LIMIT_BYTES + 1)
+    );
+    assert_eq!(
+        reload_step(&loaded, Explicit, big, true),
+        ReloadStep::Ask(LARGE_FILE_LIMIT_BYTES + 1)
+    );
+    assert_eq!(reload_step(&loaded, Watch, None, true), ReloadStep::Read);
+
+    // [열기]를 고른 문서는 다시 묻지 않는다.
+    assert_eq!(reload_step(&confirmed, Watch, big, true), ReloadStep::Read);
+
+    // 확인을 띄울 수 없으면 생성 때처럼 읽는다.
+    assert_eq!(reload_step(&loaded, Watch, big, false), ReloadStep::Read);
+    assert_eq!(
+        reload_step(&pending, Explicit, big, false),
+        ReloadStep::Read
+    );
+}
+
+/// [열기]를 고르면 이후 reload에서 다시 묻지 않도록 기록한다.
+#[test]
+fn resume_load_remembers_the_confirmation() {
+    let path = temp_md("confirm", b"# confirmed body");
+    let mut doc = MdDoc::new_deferred(Some(path.to_string_lossy().into_owned()));
+    assert!(!doc.large_confirmed);
+    doc.resume_load();
+    assert!(doc.large_confirmed);
+    assert!(doc.content.contains("confirmed body"));
+    let _ = std::fs::remove_file(&path); // best-effort 정리 — 실패 무시(테스트 결과 무관).
+}
+
+/// 읽어 둔 문서가 커져 확인을 묻는 동안 이전 내용을 보이고, 취소하면 그때 비운다.
+/// [열기]로 닫히면 새 내용이 남는다.
+#[test]
+fn a_grown_document_keeps_old_content_until_the_answer() {
+    let path = temp_md("grown", b"# old body");
+    let file = path.to_string_lossy().into_owned();
+    let mut p = MarkdownPlugin::new(Translator::default());
+    p.docs.insert(9, MdDoc::new(Some(file.clone())));
+    p.docs.get_mut(&9).unwrap().pending_large = true;
+    std::fs::write(&path, b"# new body").unwrap();
+
+    // 확인을 기다리는 동안 감시는 읽지 않고 이전 내용이 남는다.
+    p.watch_reload(&json!({ "surface": 9 })).unwrap();
+    assert!(p.docs[&9].content.contains("old body"));
+
+    // 취소로 닫히면 비우고 대기 상태로 남는다.
+    p.on_large_confirm_closed(9);
+    assert!(p.docs[&9].pending_large);
+    assert!(p.docs[&9].content.is_empty());
+
+    // [열기]로 닫히면(읽기를 먼저 마친다) 새 내용이 남는다.
+    p.docs.get_mut(&9).unwrap().resume_load();
+    p.on_large_confirm_closed(9);
+    assert!(p.docs[&9].content.contains("new body"));
+    let _ = std::fs::remove_file(&path); // best-effort 정리 — 실패 무시(테스트 결과 무관).
+}
+
+/// 확인 요청 표시는 팝업이 열리기 전부터 서고, 팝업이 닫히면([열기]·취소 모두) 내린다.
+#[test]
+fn the_confirm_request_mark_is_set_before_the_popup_and_cleared_on_close() {
+    let path = temp_md("asking", b"# body");
+    let mut p = MarkdownPlugin::new(Translator::default());
+    p.docs.insert(
+        11,
+        MdDoc::new_deferred(Some(path.to_string_lossy().into_owned())),
+    );
+    assert!(p.docs[&11].confirm_requested);
+    assert!(p.confirm.is_empty(), "팝업은 아직 열리지 않았다");
+    p.on_large_confirm_closed(11);
+    assert!(!p.docs[&11].confirm_requested);
+    let _ = std::fs::remove_file(&path); // best-effort 정리 — 실패 무시(테스트 결과 무관).
+}
+
+/// 파일을 읽지 않고 사용자 확인을 기다리면 reload 응답이 그 사실을 알린다.
+#[test]
+fn reload_reports_whether_the_read_was_deferred() {
+    let path = temp_md("deferred-resp", b"# small");
+    let file = path.to_string_lossy().into_owned();
+    let mut p = MarkdownPlugin::new(Translator::default());
+    // 확인 팝업이 아직 닫히지 않은 대기 문서는 읽지 않는다.
+    p.docs.insert(12, MdDoc::new_deferred(Some(file.clone())));
+    let resp = p.markdown_reload(&json!({ "surface": 12 })).unwrap();
+    assert_eq!(resp["deferred"], json!(true));
+    assert!(p.docs[&12].content.is_empty());
+    // 읽은 문서는 false.
+    p.docs.insert(13, MdDoc::new(Some(file)));
+    let resp = p.markdown_reload(&json!({ "surface": 13 })).unwrap();
+    assert_eq!(resp["deferred"], json!(false));
+    let _ = std::fs::remove_file(&path); // best-effort 정리 — 실패 무시(테스트 결과 무관).
+}

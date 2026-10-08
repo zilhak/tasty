@@ -87,6 +87,46 @@ const MIRROR_CHANGED_EVENT: &str = "markdown_mirror.changed";
 /// 않는다(attach 연결이 끊겨 회신이 영영 안 올 때 보낸다).
 const MIRROR_ABANDON_REQUEST_ID: u64 = 0;
 
+/// 로컬 문서를 다시 읽으라는 요청의 출처.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ReloadOrigin {
+    /// 에이전트·CLI의 `markdown.reload`.
+    Explicit,
+    /// SDK 파일 감시의 자기 호출.
+    Watch,
+}
+
+/// 로컬 문서 reload가 할 일.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ReloadStep {
+    /// 읽지 않는다.
+    Skip,
+    /// 파일을 읽는다.
+    Read,
+    /// 읽지 않고 대용량 확인을 묻는다. 값은 파일 크기다.
+    Ask(u64),
+}
+
+/// 생성 때와 같은 대용량 확인을 reload에도 적용한다.
+///
+/// 확인을 기다리거나 취소한 문서는 감시로 읽지 않는다. 명시적 reload는 확인을 다시 묻되,
+/// 이미 확인을 요청했고 그 팝업이 닫히지 않았으면 겹쳐 띄우지 않는다. 사용자가 [열기]를 고른 문서는 다시 묻지
+/// 않는다. 확인을 띄울 수 없으면 생성 때처럼 그대로 읽는다.
+fn reload_step(
+    doc: &MdDoc,
+    origin: ReloadOrigin,
+    over_limit: Option<u64>,
+    can_ask: bool,
+) -> ReloadStep {
+    if doc.pending_large && (origin == ReloadOrigin::Watch || doc.confirm_requested) {
+        return ReloadStep::Skip;
+    }
+    match over_limit {
+        Some(size) if can_ask && !doc.large_confirmed => ReloadStep::Ask(size),
+        _ => ReloadStep::Read,
+    }
+}
+
 /// `markdown.reload`의 대상 surface ID.
 fn reload_surface_param(params: &Value) -> Result<u32, IpcMethodError> {
     params
@@ -103,9 +143,15 @@ struct MdDoc {
     base_dir: Option<PathBuf>,
     content: String,
     load_error: Option<String>,
-    /// 대용량 확인 대기 중이면 true — 파일을 아직 읽지 않았다(빈 콘텐츠). 확인 팝업의
-    /// [열기] 확정 시 [`MdDoc::resume_load`] 가 실제 read 를 재개한다.
+    /// 대용량 확인 대기 중이면 true — 새 내용을 아직 읽지 않았다. 처음 열 때는 빈 콘텐츠이고,
+    /// 읽어 둔 파일이 커진 경우에는 이전 내용을 그대로 둔다. 확인 팝업의 [열기] 확정 시
+    /// [`MdDoc::resume_load`] 가 실제 read 를 재개한다. 취소한 뒤에도 남는다.
     pending_large: bool,
+    /// 사용자가 이 문서의 대용량 확인에서 [열기]를 골랐다. 이후 파일이 커져도 다시 묻지 않는다.
+    large_confirmed: bool,
+    /// 확인 팝업을 여는 이벤트를 보냈고 그 팝업이 아직 닫히지 않았다. 이벤트 발행 전에
+    /// 세워, 팝업이 열리기 전에 온 reload가 같은 확인을 겹쳐 띄우지 않게 한다.
+    confirm_requested: bool,
     /// 원격 문서 상태. file_path는 표시용 원격 경로이며 로컬에서 읽지 않는다.
     remote: Option<RemoteDoc>,
 }
@@ -165,6 +211,8 @@ impl MdDoc {
             content,
             load_error,
             pending_large: false,
+            large_confirmed: false,
+            confirm_requested: false,
             remote: None,
         }
     }
@@ -178,6 +226,8 @@ impl MdDoc {
             content: String::new(),
             load_error: None,
             pending_large: false,
+            large_confirmed: false,
+            confirm_requested: false,
             remote: Some(RemoteDoc::default()),
         }
     }
@@ -258,6 +308,8 @@ impl MdDoc {
             content: String::new(),
             load_error: None,
             pending_large: true,
+            large_confirmed: false,
+            confirm_requested: true,
             remote: None,
         }
     }
@@ -265,9 +317,16 @@ impl MdDoc {
     /// 대용량 확인 [열기] 후 실제 read 를 재개한다.
     fn resume_load(&mut self) {
         self.pending_large = false;
+        self.large_confirmed = true;
         if let Some(f) = self.file_path.clone() {
             self.read_now(&f);
         }
+    }
+
+    /// 대용량 확인을 취소했다. 확인을 기다리는 동안 보이던 이전 내용을 버린다.
+    fn decline_large(&mut self) {
+        self.content.clear();
+        self.load_error = None;
     }
 
     /// 로컬 파일을 다시 읽는다. IPC와 SDK 파일 감시에서 호출한다.
@@ -487,7 +546,9 @@ impl Plugin for MarkdownPlugin {
             self.popup_fonts_installed.remove(&iid);
         }
         // 확인 없이 닫힘(취소/outside-click/Esc)이면 surface 는 대기(빈) 상태로 유지한다.
-        self.confirm.remove(&iid);
+        if let Some(confirm) = self.confirm.remove(&iid) {
+            self.on_large_confirm_closed(confirm.surface_id);
+        }
         self.file_open.remove(&iid);
         // 이 팝업이 낸 file_picker.trigger 요청이 아직 응답 전이면 상관관계 항목을
         // 같이 정리한다 — 늦게 도착한 결과는 (그때 iid 를 못 찾으므로) 조용히 무시된다.
@@ -613,10 +674,14 @@ impl MarkdownPlugin {
     /// 파일 감시의 자기 호출. 닫힌 surface면 아무것도 하지 않는다.
     fn watch_reload(&mut self, params: &Value) -> Result<Value, IpcMethodError> {
         let surface_id = reload_surface_param(params)?;
-        if !self.docs.contains_key(&surface_id) {
-            return Ok(json!({ "ok": true, "surface_id": surface_id }));
+        if self
+            .docs
+            .get(&surface_id)
+            .is_some_and(|d| d.remote.is_none())
+        {
+            self.reload_local(surface_id, ReloadOrigin::Watch);
         }
-        self.markdown_reload(params)
+        Ok(json!({ "ok": true, "surface_id": surface_id }))
     }
 
     fn markdown_reload(&mut self, params: &Value) -> Result<Value, IpcMethodError> {
@@ -633,9 +698,39 @@ impl MarkdownPlugin {
             self.request_remote_content(surface_id, RemoteRequester::Agent);
             return Ok(json!({ "ok": true, "surface_id": surface_id }));
         }
-        doc.force_reload();
+        self.reload_local(surface_id, ReloadOrigin::Explicit);
+        // 파일을 읽지 않고 사용자의 대용량 확인을 기다리면 알린다. 성공 응답만으로는
+        // 다시 읽은 것으로 오인한다.
+        let deferred = self.docs.get(&surface_id).is_some_and(|d| d.pending_large);
+        Ok(json!({ "ok": true, "surface_id": surface_id, "deferred": deferred }))
+    }
+
+    /// 로컬 문서를 대용량 확인을 거쳐 다시 읽고 화면을 갱신한다.
+    fn reload_local(&mut self, surface_id: u32, origin: ReloadOrigin) {
+        let Some(doc) = self.docs.get(&surface_id) else {
+            return;
+        };
+        let path = doc.file_path.clone();
+        let over_limit = path.as_deref().and_then(file_exceeds_limit);
+        let step = reload_step(doc, origin, over_limit, self.bus.is_some());
+        match (step, path) {
+            (ReloadStep::Skip, _) => return,
+            (ReloadStep::Ask(size), Some(path)) => {
+                // 이전 내용은 답을 받을 때까지 그대로 보인다. 취소하면 그때 비운다.
+                if let Some(doc) = self.docs.get_mut(&surface_id) {
+                    doc.pending_large = true;
+                    doc.confirm_requested = true;
+                }
+                self.publish_large_confirm(surface_id, &path, size);
+            }
+            _ => {
+                if let Some(doc) = self.docs.get_mut(&surface_id) {
+                    doc.pending_large = false;
+                    doc.force_reload();
+                }
+            }
+        }
         self.reload_webview(surface_id);
-        Ok(json!({ "ok": true, "surface_id": surface_id }))
     }
 
     /// 로컬 파일을 열고 경로를 snapshot에 저장한다. 생성과 복원에서 함께 사용한다.
@@ -706,22 +801,41 @@ impl MarkdownPlugin {
         if let Some(path) = file.as_deref()
             && let Some(size) = file_exceeds_limit(path)
         {
-            if let Some(bus) = self.bus.as_ref() {
-                let payload = json!({
-                    "surface_id": surface_id,
-                    "path": path,
-                    "size": size,
-                });
-                if let Err(e) =
-                    bus.publish_fresh(LARGE_FILE_EVENT_KEY, payload, EventScope::Surface)
-                {
-                    tracing::warn!("markdown large-file event publish failed: {e}");
-                }
+            if self.bus.is_some() {
+                self.publish_large_confirm(surface_id, path, size);
                 return MdDoc::new_deferred(file);
             }
             tracing::warn!("markdown large-file gate: event bus unavailable — loading anyway");
         }
         MdDoc::new(file)
+    }
+
+    /// 대용량 확인 팝업이 닫혔다. [열기]는 닫기 전에 읽기를 마치므로 아직 대기 중이면
+    /// 취소(버튼·Esc·바깥 클릭)다.
+    fn on_large_confirm_closed(&mut self, surface_id: u32) {
+        let Some(doc) = self.docs.get_mut(&surface_id) else {
+            return;
+        };
+        doc.confirm_requested = false;
+        if doc.pending_large {
+            doc.decline_large();
+            self.reload_webview(surface_id);
+        }
+    }
+
+    /// 대용량 확인 팝업을 여는 surface 이벤트를 발행한다.
+    fn publish_large_confirm(&self, surface_id: u32, path: &str, size: u64) {
+        let Some(bus) = self.bus.as_ref() else {
+            return;
+        };
+        let payload = json!({
+            "surface_id": surface_id,
+            "path": path,
+            "size": size,
+        });
+        if let Err(e) = bus.publish_fresh(LARGE_FILE_EVENT_KEY, payload, EventScope::Surface) {
+            tracing::warn!("markdown large-file event publish failed: {e}");
+        }
     }
 
     /// 파일 감시 대상을 등록하거나 갱신한다. 워커 생성에 실패했다면 자동 갱신은
