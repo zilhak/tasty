@@ -1530,12 +1530,16 @@ command = "[ -n \"$TASTY_SURFACE_ID\" ] && tasty codex hook stop --surface $TAST
                     .stderr(Stdio::piped())
                     .spawn()
                     .expect("/bin/sh");
-                child
+                // 셸이 입력을 읽기 전에 실패로 끝나면 쓰기가 파이프 끊김으로 끝난다. 그때는 아래
+                // 종료 상태 검사가 실패 이유를 보여 준다.
+                let written = child
                     .stdin
                     .take()
                     .unwrap()
-                    .write_all(b"{\"session_id\":\"test-session\"}\n")
-                    .unwrap();
+                    .write_all(b"{\"session_id\":\"test-session\"}\n");
+                if let Err(e) = written {
+                    assert_eq!(e.kind(), std::io::ErrorKind::BrokenPipe, "{e}");
+                }
                 let out = child.wait_with_output().unwrap();
                 assert!(out.status.success(), "{event}, exit={exit_code}: {out:?}");
                 assert_eq!(out.stdout, b"{}\n", "{event}, exit={exit_code}");
