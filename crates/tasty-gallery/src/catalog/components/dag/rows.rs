@@ -4,7 +4,7 @@ use tasty_icons as icons;
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{ListCtrl, ListCtrlItem, TagVariant, tag};
 
-use super::{Graph, Status};
+use super::{Graph, Node, Rel, Skip, Status};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
 /// 목록 한 줄이 표현하는 DAG — 그래프 + 집계.
@@ -15,19 +15,72 @@ pub struct Entry {
 }
 
 impl Entry {
-    /// 갤러리용 요약. 실행 중·실패가 없고 전부 종료됐으면 취소·건너뜀도 Succeeded로 묶는다.
+    /// 시안 `dagRollup` — 진행이 먼저, 그다음 결과다. running → ready → 실행할 수 있는 waiting →
+    /// partially_failed | failed → succeeded | skipped.
     pub fn rollup(&self) -> Status {
-        let has = |s: Status| self.graph.nodes.iter().any(|n| n.status == s);
+        let nodes = &self.graph.nodes;
+        let not_selected = |n: &Node| matches!(n.skip, Some(Skip::BranchNotSelected));
+        // 폴백 task 가 성공해 대신한 실패는 복구된 것으로 본다.
+        let recovered = |n: &Node| {
+            nodes.iter().any(|f| {
+                f.status == Status::Succeeded
+                    && f.deps
+                        .iter()
+                        .any(|(from, r)| *from == n.id && *r == Rel::Fallback)
+            })
+        };
+        let dead = |n: &Node| match n.status {
+            Status::Failed => !recovered(n),
+            Status::Cancelled | Status::Unknown => true,
+            Status::Skipped => !not_selected(n),
+            _ => false,
+        };
+        let can_run = |n: &Node| {
+            n.deps.iter().all(|(from, r)| {
+                *r == Rel::Fallback || self.graph.node(from).is_none_or(|f| !dead(f))
+            })
+        };
+        let has = |s: Status| nodes.iter().any(|n| n.status == s);
         if has(Status::Running) {
-            Status::Running
-        } else if has(Status::Failed) {
-            Status::Failed
-        } else if self.done() == self.total() {
+            return Status::Running;
+        }
+        if has(Status::Ready) {
+            return Status::Ready;
+        }
+        if nodes
+            .iter()
+            .any(|n| n.status == Status::Waiting && can_run(n))
+        {
+            return Status::Waiting;
+        }
+        // 끝 task = 하류가 없는 task. 경로가 선택되지 않은 skip 은 하류로 세지 않는다.
+        let has_downstream = |id: &str| {
+            nodes.iter().any(|n| {
+                !not_selected(n)
+                    && n.deps
+                        .iter()
+                        .any(|(from, r)| from == id && *r != Rel::Fallback)
+            })
+        };
+        if nodes
+            .iter()
+            .any(|n| n.status == Status::Failed && !recovered(n))
+        {
+            let end_ok = nodes.iter().any(|n| {
+                !has_downstream(&n.id)
+                    && (n.status == Status::Succeeded
+                        || (n.status == Status::Failed && recovered(n)))
+            });
+            return if end_ok {
+                Status::PartiallyFailed
+            } else {
+                Status::Failed
+            };
+        }
+        if has(Status::Succeeded) {
             Status::Succeeded
-        } else if has(Status::Ready) {
-            Status::Ready
         } else {
-            Status::Waiting
+            Status::Skipped
         }
     }
 
@@ -68,6 +121,10 @@ pub fn entries() -> Vec<Entry> {
         Entry {
             graph: super::cycle_dag(),
             derived: true,
+        },
+        Entry {
+            graph: super::partial_dag(),
+            derived: false,
         },
     ]
 }
@@ -180,6 +237,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::without_color("dag-row-summary-gap", "trailing gap"),
             TokenChip::new("tag-bg", "derived tag", theme.tag_bg().to_egui()),
             TokenChip::without_color("dag-row-height", "36 row"),
+            TokenChip::new(
+                "dag-status-partially-failed",
+                "◒ rollup",
+                theme.dag_status_partially_failed().to_egui(),
+            ),
         ],
     );
     spec::note(
@@ -191,9 +253,51 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "The host uses six summary states. This gallery calculates a simplified summary: \
-         running, failed, all finished, ready, then waiting. With no running or failed tasks, \
-         an all-finished group maps to Succeeded even if some tasks were cancelled or skipped. \
-         The host reports Skipped for those groups.",
+        "Rollup: seven values, in filter order: waiting · ready · running · succeeded · \
+         partially_failed · failed · skipped. partially_failed (◒, peach \
+         dag-status-partially-failed) = no more progress, an unrecovered failure, and at least \
+         one branch succeeded to its end. Precedence is progress first: running → ready → \
+         waiting-that-can-run → partially_failed | failed → succeeded | skipped. A failure is \
+         recovered when its fallback succeeded; an end task has no downstream task, and a \
+         not-selected skip does not count as downstream. done/total counts failed tasks as done. \
+         The gallery folds each sample graph with the same rule; docs-publish is partially_failed.",
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn rollup_of(graph: Graph) -> Status {
+        Entry {
+            graph,
+            derived: false,
+        }
+        .rollup()
+    }
+
+    /// 한 갈래가 끝까지 성공하고 다른 갈래가 실패하면 부분 실패다.
+    #[test]
+    fn a_failure_next_to_a_finished_branch_is_partially_failed() {
+        assert_eq!(
+            rollup_of(super::super::partial_dag()),
+            Status::PartiallyFailed
+        );
+    }
+
+    /// 끝까지 성공한 갈래가 없으면 실패다.
+    #[test]
+    fn a_failure_without_a_finished_branch_is_failed() {
+        let mut graph = super::super::partial_dag();
+        graph
+            .nodes
+            .retain(|n| !matches!(n.id.as_str(), "docs" | "upload"));
+        assert_eq!(rollup_of(graph), Status::Failed);
+    }
+
+    /// 진행 중인 task 가 있으면 결과보다 진행이 먼저다.
+    #[test]
+    fn progress_comes_before_the_outcome() {
+        assert_eq!(rollup_of(super::super::index_dag()), Status::Running);
+    }
 }

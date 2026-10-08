@@ -30,6 +30,8 @@ pub enum Status {
     Cancelled,
     Skipped,
     Unknown,
+    /// DAG 요약 전용 — task 하나의 상태로는 나오지 않는다(`DAG_STATUS.partially_failed`).
+    PartiallyFailed,
 }
 
 /// 디자인 `DAG_STATUS_ORDER` 와 같은 순서.
@@ -44,13 +46,14 @@ pub const STATUS_ORDER: [Status; 8] = [
     Status::Unknown,
 ];
 
-/// 호스트의 DAG 요약 상태 여섯 가지. 노드 전체 상태는 STATUS_ORDER를 사용한다.
-/// 갤러리의 목록 요약 계산은 단순화되어 이 여섯 상태를 모두 만들지는 않는다.
-pub const ROLLUP_ORDER: [Status; 6] = [
+/// DAG 요약 상태 일곱 가지 — 시안 `DAG_ROLLUP_ORDER` 와 같은 필터 순서.
+/// 노드 전체 상태는 STATUS_ORDER를 사용한다.
+pub const ROLLUP_ORDER: [Status; 7] = [
     Status::Waiting,
     Status::Ready,
     Status::Running,
     Status::Succeeded,
+    Status::PartiallyFailed,
     Status::Failed,
     Status::Skipped,
 ];
@@ -67,6 +70,7 @@ impl Status {
             Status::Cancelled => "cancelled",
             Status::Skipped => "skipped",
             Status::Unknown => "unknown",
+            Status::PartiallyFailed => "partially_failed",
         }
     }
 
@@ -80,6 +84,7 @@ impl Status {
             Status::Cancelled => "Cancelled",
             Status::Skipped => "Skipped",
             Status::Unknown => "Unknown",
+            Status::PartiallyFailed => "Partially failed",
         }
     }
 
@@ -94,6 +99,7 @@ impl Status {
             Status::Cancelled => "\u{2212}", // −
             Status::Skipped => "\u{2298}",   // ⊘
             Status::Unknown => "?",
+            Status::PartiallyFailed => "\u{25D2}", // ◒ 아래 반 원
         }
     }
 
@@ -108,6 +114,7 @@ impl Status {
             Status::Cancelled => theme.dag_status_cancelled(),
             Status::Skipped => theme.dag_status_skipped(),
             Status::Unknown => theme.dag_status_unknown(),
+            Status::PartiallyFailed => theme.dag_status_partially_failed(),
         }
     }
 
@@ -122,6 +129,7 @@ impl Status {
             Status::Cancelled => theme.dag_status_cancelled_bg(),
             Status::Skipped => theme.dag_status_skipped_bg(),
             Status::Unknown => theme.dag_status_unknown_bg(),
+            Status::PartiallyFailed => theme.dag_status_partially_failed_bg(),
         }
     }
 
@@ -136,6 +144,7 @@ impl Status {
             Status::Cancelled => theme.dag_status_cancelled_label(),
             Status::Skipped => theme.dag_status_skipped_label(),
             Status::Unknown => theme.dag_status_unknown_label(),
+            Status::PartiallyFailed => theme.dag_status_partially_failed_label(),
         }
     }
 
@@ -599,6 +608,61 @@ pub fn index_dag() -> Graph {
             crashed: false,
             ready: 0,
             active: 1,
+        },
+    }
+}
+
+/// 디자인 `DAG_PARTIAL` — 문서 갈래는 끝까지 성공하고 사이트 배포만 실패했다.
+/// 시안 `dagRollup` 으로 접으면 `partially_failed` 다.
+pub fn partial_dag() -> Graph {
+    use Kind::*;
+    use Rel::*;
+    use Status::*;
+    Graph {
+        id: "docs-publish".into(),
+        name: "docs-publish".into(),
+        workspace: "tasty-docs".into(),
+        updated: "8m ago".into(),
+        cycle: None,
+        nodes: vec![
+            Node::new(
+                "fetch",
+                "fetch:sources",
+                Run,
+                Succeeded,
+                "git pull --ff-only",
+            )
+            .ran("2s", "10:12:01", 0),
+            Node::new("docs", "build:docs", Run, Succeeded, "mdbook build")
+                .ran("18s", "10:12:03", 0)
+                .dep("fetch", DependsOn),
+            Node::new(
+                "upload",
+                "upload:docs",
+                Custom,
+                Succeeded,
+                "ipc: storage.put(book/)",
+            )
+            .ran("4s", "10:12:21", 0)
+            .dep("docs", DependsOn),
+            Node::new("site", "build:site", Run, Succeeded, "zola build")
+                .ran("31s", "10:12:03", 0)
+                .dep("fetch", DependsOn),
+            Node::new(
+                "deploy",
+                "deploy:site",
+                Run,
+                Failed,
+                "rsync -a public/ web:/srv",
+            )
+            .ran("1m 2s", "10:12:34", 1)
+            .dep("site", DependsOn),
+        ],
+        runner: Runner {
+            running: true,
+            crashed: false,
+            ready: 0,
+            active: 0,
         },
     }
 }

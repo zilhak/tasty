@@ -366,6 +366,7 @@ pub fn draw_states(ui: &mut egui::Ui, theme: &Theme) {
                         Status::Cancelled => "dag-status-cancelled",
                         Status::Skipped => "dag-status-skipped",
                         Status::Unknown => "dag-status-unknown",
+                        Status::PartiallyFailed => "dag-status-partially-failed",
                     },
                     s.key(),
                     s.accent(theme).to_egui(),
