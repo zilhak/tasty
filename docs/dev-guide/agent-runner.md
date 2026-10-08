@@ -1104,7 +1104,7 @@ custom 기록은 회차마다 memory 키 하나(`tasty.agent.task_report.<task i
 | agent | 지시문 끝에 사용법을 읽는 명령(`tasty agent report usage`) 한 줄과 그 회차의 주소를 붙인다. 에이전트는 `tasty agent report append --address '<주소>' '<text>'` 로 쓴다 |
 | custom(IPC 메서드) · reduce 기본 전략 · wait_barrier | custom 기록이 없다. 자동 항목만 있다 |
 
-조회는 `agent.dag_report`(`{id, workspace_id?, task?, attempt?, include_raw?}`, CLI `tasty agent dag-report <dag> [--workspace-id N] [--task <id> [--attempt <n>]] [--include-raw]`)다. 응답은 `{dag, workspace_id, name, tasks: [{task_id, name, auto, attempts: [{attempt, state, custom}]}]}` 이다. `attempt` 는 `task` 가 있어야 하며, 고른 회차가 마지막 회차가 아니면 `auto` 는 `null` 이다. append 는 `agent.report_append`(`{address, text}`, 응답 `{result: "stored", seq, omit_by_limit?}` 또는 `{result: "omitted", seq}`)이며 Local 전용이다.
+조회는 `agent.dag_report`(`{id, workspace_id?, task?, attempt?, include_raw?}`, CLI `tasty agent dag-report <dag> [--workspace-id N] [--task <id> [--attempt <n>]] [--include-raw]`)다. 응답은 `{dag, workspace_id, name, tasks: [{task_id, name, auto, attempts: [{attempt, state, custom}]}]}` 이다. `attempt` 는 `task` 가 있어야 하며, 고른 회차가 마지막 회차가 아니면 `auto` 는 `null` 이다. append 는 `agent.report_append`(`{address, text}`, 응답 `{result: "stored", seq, omit_by_limit?}` 또는 `{result: "omitted", seq}`)다. agent task 의 세션은 세션 토큰으로 부르므로 `agent` 권한으로 열려 있고, 쓸 블록은 주소의 토큰이 정한다. CLI `tasty agent report append` 는 응답을 표준 오류에 한 줄로 쓰고 표준 출력은 비워 둔다. 후처리와 reduce 셸에서는 표준 출력이 결과 자리이기 때문이다.
 
 ### 저장 형식
 

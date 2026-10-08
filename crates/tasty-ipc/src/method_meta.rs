@@ -528,8 +528,9 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("agent.dag_list", plugin(Read, &[AgentManage])),
         ("agent.dag_get", plugin(Read, &[AgentManage])),
         ("agent.dag_report", plugin(Read, &[AgentManage])),
-        // 실행 중인 회차의 자식이 받은 주소(토큰 포함)로 자기 블록에만 쓴다. 플러그인에는 열지 않는다.
-        ("agent.report_append", local_only(Mutate)),
+        // 실행 중인 회차가 받은 주소(토큰 포함)로 그 블록에만 쓴다. agent task 의 세션은 세션 토큰으로
+        // 부르므로 Local 전용이면 쓸 수 없다. 주소의 토큰이 대상 회차를 묶는다.
+        ("agent.report_append", plugin(Mutate, &[AgentManage])),
         // Custom 작업의 상태는 러너가 관리한다. 플러그인의 별도 상태 변경과 경합하지 않도록 Local 전용이다.
         ("agent.task_set_result", local_only(Idempotent)),
         // agent task 회차에 결과를 제안한다. 종결은 러너가 한다. 세션 토큰의 agent 는 자기 세션의

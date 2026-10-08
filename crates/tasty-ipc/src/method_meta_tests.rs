@@ -282,6 +282,7 @@ fn agent_task_methods_require_agent_manage() {
         "agent.dag_list",
         "agent.dag_get",
         "agent.dag_report",
+        "agent.report_append",
         "agent.task_run",
         "agent.task_delete",
         "agent.task_purge",

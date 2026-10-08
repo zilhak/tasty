@@ -21,6 +21,11 @@ fn format_agent_output(command: &AgentCommands, result: &serde_json::Value) -> R
         AgentCommands::TaskList { .. } => format_task_list(result),
         AgentCommands::TaskGet { .. } => format_task_get(result),
         AgentCommands::TaskRun { .. } => format_task_run(result),
+        // 표준 출력은 비워 둔다. 이 명령을 부르는 후처리·reduce 셸에서는 표준 출력이 작업의 결과다.
+        AgentCommands::Report { .. } => {
+            crate::out::errln!("{}", result);
+            Ok(())
+        }
         AgentCommands::TaskGraph { .. } | AgentCommands::DagGet { .. }
             if graph_dot::write_dot_response(result)? =>
         {
