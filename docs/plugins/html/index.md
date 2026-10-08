@@ -135,7 +135,8 @@ OS별 구현은 다음과 같다.
     - 측정 결과 허용 문서의 timer가 다시 돌았다(tick 14→19, JS True).
   - `stop_loading`이나 기존 정책이 무시하는 `http(s)` navigation에는 `STARTED`가 오지 않았다. 따라서 JS와 문서가 그대로다(리뷰 측정).
 - **Windows(미측정, API 문서 근거)**: `NavigationStarting`은 main frame navigation에서만 발생한다. 서브프레임은 `FrameNavigationStarting`, 새 창은 `NewWindowRequested`로 따로 온다. 이 핸들러 안에서 `IsScriptEnabled`를 정한다. API 문서의 예제도 이 핸들러에서 해당 navigation에 적용되도록 설정을 바꾼다. `NavigationStarting` 이후에 바꾸면 다음 top-level navigation부터 적용된다.
-- **macOS(미측정, API 문서 근거)**: `webView:decidePolicyForNavigationAction:preferences:decisionHandler:`에서 navigation별 `WKWebpagePreferences.allowsContentJavaScript`를 정한다. `targetFrame.isMainFrame`이 참일 때만 로드를 시작하고 판단한다. 서브프레임 navigation에는 그 시점 main frame 문서에 대한 게이트의 판단(`ScriptGate::effective_js`)을 넣는다. Linux에서 서브프레임이 webview 전체 JS 설정을 따르는 것과 같은 결과다. 새 창 요청은 `targetFrame`이 nil이며 preferences를 바꾸지 않는다.
+- **macOS(문서 단위 적용과 서브프레임 측정)**: `webView:decidePolicyForNavigationAction:preferences:decisionHandler:`에서 navigation별 `WKWebpagePreferences.allowsContentJavaScript`를 정한다. `targetFrame.isMainFrame`이 참일 때만 로드를 시작하고 판단한다. 서브프레임 navigation에는 그 시점 main frame 문서에 대한 게이트의 판단(`ScriptGate::effective_js`)을 넣는다. Linux에서 서브프레임이 webview 전체 JS 설정을 따르는 것과 같은 결과다. 새 창 요청은 `targetFrame`이 nil이며 preferences를 바꾸지 않는다.
+  - macOS 27.0.1 실 기기에서 debug 빌드로 실제 실행해 측정했다. 스크립트와 스크립트가 있는 iframe을 가진 `file://` 문서는 main frame과 서브프레임 모두 JS가 꺼진 채 그려졌고, 사용자가 본 뒤 배너가 `blocked`로 떴다. 허용하면 재로드 뒤 두 frame 모두 JS가 돌았다. 다른 문서로 이동하면 그 문서의 JS가 꺼졌고, 허용했던 문서로 돌아와도 허용이 풀려 다시 꺼졌다.
   - 허용 판단이 붙은 webview에서는 전역 `javaScriptEnabled`(deprecated)를 켜 둔다. 전역 값이 꺼져 있으면 navigation별 `allowsContentJavaScript`를 켜도 스크립트가 실행되지 않기 때문이다. 문서의 JS는 navigation별 값으로만 정한다.
   - 그래서 전역 "Sandbox scripts" 변경은 화면 문서에 바로 적용되지 않고 다음 navigation부터 적용된다(미측정).
 - Windows와 macOS의 bfcache 복원에 navigation별 설정이 적용되는지는 측정하지 않았다.

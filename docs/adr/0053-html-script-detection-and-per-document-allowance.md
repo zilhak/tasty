@@ -1,6 +1,6 @@
 # ADR-0053: HTML 문서의 스크립트는 원본 파일에서 감지하고 사용자만 문서 단위로 허용한다
 
-- **Status**: Accepted — 감지·문서 단위 JS 게이트·배너 발화 판정·조회 명령·inset 배너·탭 표지가 구현됐다. Windows와 macOS에서 navigation별 적용 시점과 로드 종료 순서, macOS 서브프레임의 JS 적용은 측정하지 않았다. 두 OS의 로드 세대 구분·process 종료 처리와 macOS 서브프레임 preferences는 실 기기 측정 없이 구현했다
+- **Status**: Accepted — 감지·문서 단위 JS 게이트·배너 발화 판정·조회 명령·inset 배너·탭 표지가 구현됐다. macOS에서 문서 단위 JS 적용과 서브프레임의 JS 적용은 실 기기에서 측정했다. Windows의 navigation별 적용 시점과 두 OS의 로드 종료 순서는 측정하지 않았다. 두 OS의 로드 세대 구분·process 종료 처리는 실 기기 측정 없이 구현했다
 - **Date**: 2026-09-29
 - **Tags**: plugins, webview, html, javascript, sandbox, banner, ipc, security
 - **Group**: plugins
@@ -100,7 +100,7 @@ DOM을 조사하지 않는 이유는 OS별로 다음과 같다.
   - 이 위험은 수용한다. 파일을 쓸 수 있는 에이전트는 이미 셸로 임의 코드를 실행할 수 있다. 따라서 이 창이 새 권한을 주지 않는다. 스크립트 차단이 막는 대상은 신뢰하지 않는 HTML이며, 로컬 에이전트가 아니다.
 - 해제 시점을 navigation 콜백에 두므로 세 백엔드의 콜백 코드를 유지해야 한다.
   - Linux는 `ResponsePolicyDecision::is_main_frame_main_resource()`가 필요해 바인딩 feature를 `v2_40`으로 둔다(`Cargo.toml`). 최소 런타임이 WebKitGTK 2.40이 된다.
-  - Windows·macOS는 navigation별 적용 시점, 앞 로드의 늦은 종료·commit 신호 순서, bfcache 복원, macOS 서브프레임 preferences를 측정하지 않았다. 앞 로드의 종료가 새 로드 시작 뒤에 오면 새 문서가 지문 없이 기록될 수 있어 두 OS는 로드 세대로 막는다. 남은 한계는 [HTML Viewer 문서](../plugins/html/index.md#os별-적용)에 있다.
+  - Windows·macOS는 앞 로드의 늦은 종료·commit 신호 순서와 bfcache 복원을 측정하지 않았다. Windows는 navigation별 적용 시점도 측정하지 않았다. macOS의 문서 단위 적용과 서브프레임 preferences는 측정했다. 앞 로드의 종료가 새 로드 시작 뒤에 오면 새 문서가 지문 없이 기록될 수 있어 두 OS는 로드 세대로 막는다. 남은 한계는 [HTML Viewer 문서](../plugins/html/index.md#os별-적용)에 있다.
 - 에이전트는 release에서 스크립트 문서를 자동으로 실행할 수 없다. 자동화에는 debug 빌드나 전역 설정이 필요하다.
 - 에이전트가 연 문서는 사용자가 그 문서를 보기 전까지 배너 없이 차단 상태로 남는다.
 
