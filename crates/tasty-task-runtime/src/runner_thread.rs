@@ -16,7 +16,9 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use tasty_agent::runner::{DispatchHandle, RunnerLoop, completion_retryable};
+use tasty_agent::runner::{
+    DispatchHandle, RunnerLoop, completion_retryable, shrink_too_large_completion,
+};
 use tasty_agent::task::Completion;
 use tasty_agent::{TaskId, TaskState, TaskStore};
 use tasty_memory::{HOST_OWNER, ListOpts, MemoryValue, Scope};
@@ -664,16 +666,26 @@ fn record_reload_completion(
     completion: Completion,
     now: u64,
 ) -> bool {
-    match ctx.complete_task(workspace_id, task_id, completion, now) {
+    match ctx.complete_task(workspace_id, task_id, completion.clone(), now) {
         Ok(_) => true,
-        Err(e) if completion_retryable(&e) => {
-            tracing::warn!("reload completion for {task_id} not recorded; kept for retry: {e}");
-            false
+        Err(e) if let Some(shrunk) = shrink_too_large_completion(&e, &completion) => {
+            tracing::warn!(
+                "reload completion for {task_id} too large to record, settling it as a failure: {e}"
+            );
+            record_reload_completion(ctx, workspace_id, task_id, shrunk, now)
         }
-        Err(e) => {
-            tracing::warn!("reload completion for {task_id} rejected: {e}");
-            true
-        }
+        Err(e) => reload_completion_unrecorded(task_id, &e),
+    }
+}
+
+/// 기록하지 못한 재시작 복구 보고. 다시 시도할 오류면 handle 을 남기도록 `false` 다.
+fn reload_completion_unrecorded(task_id: &TaskId, e: &tasty_agent::AgentError) -> bool {
+    if completion_retryable(e) {
+        tracing::warn!("reload completion for {task_id} not recorded; kept for retry: {e}");
+        false
+    } else {
+        tracing::warn!("reload completion for {task_id} rejected: {e}");
+        true
     }
 }
 
@@ -697,6 +709,7 @@ fn finalize_precise_tasks(
         let completion = match outcome {
             PollOutcome::Done(r) => Completion::succeeded(attempt.clone(), r.clone()),
             PollOutcome::Failed(err) => Completion::failed(attempt.clone(), err.clone()),
+            PollOutcome::Exited(r) => Completion::exited(attempt.clone(), r.clone()),
             PollOutcome::Lost(reason) => Completion::lost(attempt.clone(), reason.clone()),
             PollOutcome::Postprocessed(r) => Completion::postprocessed(attempt.clone(), r.clone()),
             // 저장된 결과가 종결이 아니면 이전처럼 handle 만 지운다.
@@ -1469,6 +1482,45 @@ mod tests {
         assert!(
             !matches!(&task.state, TaskState::Failed { error } if error.contains("unknown")),
             "should not be 'unknown' message",
+        );
+    }
+
+    /// 실패한 Run 의 저장된 결과에 종료 코드·출력이 있으면 재시작 뒤 확정한 결과에도 남는다.
+    #[test]
+    fn reload_shell_process_with_a_failed_result_keeps_its_exit_code_and_output() {
+        let (_td, ctx) = fresh_ctx();
+        let task_id = make_running_run_task(&ctx, 1);
+        let dead_pid: u32 = 0xFFFF_FFFE;
+        put_handle(
+            &ctx,
+            1,
+            &task_id,
+            &DispatchHandle::ShellProcess { pid: dead_pid },
+        );
+        put_run_result(
+            &ctx,
+            1,
+            &task_id,
+            serde_json::json!({
+                "kind": "failed",
+                "error": "Run exited with code 5",
+                "exit_code": 5,
+                "output": {"pid": 1, "stdout": {"text": "tail"}},
+            }),
+        );
+
+        assert!(reload_persistent_handles(&ctx, 1).is_empty());
+        let task = ctx.with_memory(|mem| {
+            let seq = ctx.agent_seq.clone();
+            let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+            store.get(1, &task_id).unwrap().unwrap()
+        });
+        assert!(matches!(&task.state, TaskState::Failed { error } if error.contains("code 5")));
+        let result = task.result.as_ref().expect("result");
+        assert_eq!(result.exit_code, Some(5));
+        assert_eq!(
+            result.output.as_ref().unwrap()["stdout"]["text"],
+            serde_json::json!("tail")
         );
     }
 

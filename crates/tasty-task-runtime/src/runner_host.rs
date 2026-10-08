@@ -508,6 +508,43 @@ mod tests {
         }
     }
 
+    #[test]
+    fn run_outcome_exited_serde_round_trip() {
+        let outcome = PollOutcome::Exited(TaskResult {
+            exit_code: Some(5),
+            output: Some(json!({"pid": 1, "stdout": {"text": "tail"}})),
+            error: Some("Run exited with code 5".into()),
+        });
+        let v = run_outcome_to_value(&outcome);
+        assert_eq!(v["kind"], json!("failed"));
+        match run_outcome_from_value(&v).expect("round trip") {
+            PollOutcome::Exited(r) => {
+                assert_eq!(r.exit_code, Some(5));
+                assert_eq!(
+                    r.output,
+                    Some(json!({"pid": 1, "stdout": {"text": "tail"}}))
+                );
+                assert_eq!(r.error.as_deref(), Some("Run exited with code 5"));
+            }
+            other => panic!("expected Exited, got {other:?}"),
+        }
+    }
+
+    /// 종료 코드·출력을 싣기 전에 저장한 실패 결과는 사유만 있는 실패로 읽는다.
+    #[test]
+    fn a_failed_run_result_stored_without_exit_code_reads_as_a_plain_failure() {
+        let v = json!({"kind": "failed", "error": "Run exited with code 1"});
+        assert!(matches!(
+            run_outcome_from_value(&v),
+            Some(PollOutcome::Failed(e)) if e == "Run exited with code 1"
+        ));
+        let v = json!({"kind": "failed", "error": "x", "exit_code": null, "output": null});
+        assert!(matches!(
+            run_outcome_from_value(&v),
+            Some(PollOutcome::Failed(_))
+        ));
+    }
+
     #[cfg(unix)]
     #[test]
     fn shell_dispatch_watcher_persists_exit_code_on_success() {
@@ -715,17 +752,23 @@ mod tests {
     fn shell_dispatch_nonzero_exit_fails_with_exit_code_in_error() {
         let (_td, ctx) = fresh_ctx();
         let mut exec = HostExecutor::new(ctx);
-        let task = mk_run_task("t-sh-fail", vec!["sh", "-c", "exit 3"]);
+        let task = mk_run_task("t-sh-fail", vec!["sh", "-c", "echo out; exit 3"]);
         let handle = match exec.dispatch(&task) {
             DispatchOutcome::Started(h) => h,
             other => panic!("expected Started, got {other:?}"),
         };
         match poll_until_terminal(&mut exec, &handle, 40) {
-            PollOutcome::Failed(err) => assert!(
-                err.starts_with("Run exited with code 3\n"),
-                "expected error to mention exit code 3, got {err}"
-            ),
-            other => panic!("expected Failed, got {other:?}"),
+            PollOutcome::Exited(r) => {
+                let err = r.error.expect("error");
+                assert!(
+                    err.starts_with("Run exited with code 3\n"),
+                    "expected error to mention exit code 3, got {err}"
+                );
+                assert_eq!(r.exit_code, Some(3));
+                let output = r.output.expect("output");
+                assert_eq!(output["stdout"]["text"], json!("out\n"));
+            }
+            other => panic!("expected Exited, got {other:?}"),
         }
     }
 

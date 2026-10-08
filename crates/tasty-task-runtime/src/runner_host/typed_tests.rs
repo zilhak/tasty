@@ -72,9 +72,41 @@ fn v2_run_accepts_declared_exit_codes_and_reports_the_code_as_output() {
     };
     assert_eq!(result.exit_code, Some(7));
     let strict_outcome = outcome_of(&mut exec, &seven_strict);
+    let PollOutcome::Exited(failed) = strict_outcome else {
+        panic!("exit 7 outside the declared list fails: {strict_outcome:?}");
+    };
+    // 실패한 회차도 종료 코드와 출력 꼬리를 결과와 report 의 auto 에 남긴다.
+    let report = ctx.with_memory(|mem| {
+        let seq = ctx.agent_seq.clone();
+        let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+        store
+            .set_state(1, &seven_strict.id, TaskState::Running, 1)
+            .unwrap();
+        let task = store
+            .complete(
+                1,
+                &seven_strict.id,
+                tasty_agent::task::Completion::exited(None, failed),
+                2,
+            )
+            .unwrap()
+            .task;
+        assert!(
+            matches!(task.state, TaskState::Failed { .. }),
+            "{:?}",
+            task.state
+        );
+        let raw = &task.typed_result.as_ref().unwrap().raw;
+        assert_eq!(raw.exit_code, Some(7));
+        tasty_agent::task::report::project_task(&task, &[], &[], None, true)
+    });
+    assert_eq!(report["auto"]["exit_code"], json!(7), "{report}");
+    assert_eq!(report["auto"]["raw"]["stdout"]["text"], json!("out\n"));
     assert!(
-        matches!(strict_outcome, PollOutcome::Failed(_)),
-        "exit 7 outside the declared list fails: {strict_outcome:?}"
+        report["auto"]["failure"]["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("Run exited with code 7\n")
     );
 
     let finished = ctx.with_memory(|mem| {
@@ -96,6 +128,85 @@ fn v2_run_accepts_declared_exit_codes_and_reports_the_code_as_output() {
     assert_eq!(raw["stdout"]["text"], json!("out\n"));
 }
 
+/// 두 줄기가 모두 수집 상한을 채운 실패 Run 도 레코드와 재시작용 셀이 memory 값 상한 안에
+/// 들어 Failed 로 끝난다. 이스케이프로 크게 불어나는 출력(빈 줄·ANSI·바이너리·NUL)을 포함한다.
+#[cfg(unix)]
+#[test]
+fn a_failed_run_with_full_escape_heavy_tails_still_settles() {
+    use super::run_result::{CAPTURE_TAIL_CAP, FAILURE_MESSAGE_TAIL_CAP, persist_run_result};
+    use super::store_keys::run_result_key;
+    let cases = [
+        ("plain", "yes 'hello world log line'"),
+        ("blank_lines", "yes ''"),
+        ("ansi", "yes \"$(printf '\\033[31mE\\033[0m')\""),
+        ("binary", "cat /dev/urandom"),
+        ("nul", "cat /dev/zero"),
+    ];
+    let (_td, ctx) = fresh_ctx();
+    let mut exec = HostExecutor::new(ctx.clone());
+    for (name, generator) in cases {
+        let gen_cmd = format!("{generator} | head -c 200000");
+        let script = format!("{gen_cmd}; {gen_cmd} >&2; exit 3");
+        let task = ctx.with_memory(|mem| {
+            let seq = ctx.agent_seq.clone();
+            let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+            let cmd = TaskCommand::Run {
+                command: vec!["sh".into(), "-c".into(), script.clone()],
+                workspace_id: 1,
+                cwd: None,
+            };
+            store
+                .create_typed(opts(name, cmd), contract(json!({"contract_version": 2})))
+                .unwrap()
+        });
+        let outcome = match exec.dispatch(&task) {
+            DispatchOutcome::Started(h) => wait_outcome(&mut exec, &h),
+            other => panic!("{name}: expected Started, got {other:?}"),
+        };
+        let PollOutcome::Exited(result) = &outcome else {
+            panic!("{name}: expected Exited, got {outcome:?}");
+        };
+        let output = result.output.as_ref().unwrap();
+        assert!(
+            output["stdout"]["truncated"].as_bool().unwrap()
+                && output["stderr"]["truncated"].as_bool().unwrap(),
+            "{name}: both streams fill the {CAPTURE_TAIL_CAP} byte capture"
+        );
+        let error = result.error.as_deref().unwrap();
+        assert!(
+            error.len() <= 2 * FAILURE_MESSAGE_TAIL_CAP + 256,
+            "{name}: message {} bytes",
+            error.len()
+        );
+        // 재시작용 셀이 저장된다.
+        persist_run_result(&ctx.memory, 1, &task.id, &outcome);
+        let stored = ctx.with_memory(|mem| {
+            mem.get(
+                &tasty_memory::Scope::Workspace(1),
+                &run_result_key(&task.id),
+            )
+            .unwrap()
+        });
+        assert!(stored.is_some(), "{name}: run_result cell stored");
+        let settled = ctx.with_memory(|mem| {
+            let seq = ctx.agent_seq.clone();
+            let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+            store.set_state(1, &task.id, TaskState::Running, 1).unwrap();
+            store.complete(
+                1,
+                &task.id,
+                tasty_agent::task::Completion::exited(None, result.clone()),
+                2,
+            )
+        });
+        let task = settled
+            .unwrap_or_else(|e| panic!("{name}: completion stored: {e}"))
+            .task;
+        assert!(matches!(task.state, TaskState::Failed { .. }), "{name}");
+        assert_eq!(task.typed_result.unwrap().raw.exit_code, Some(3), "{name}");
+    }
+}
+
 #[cfg(unix)]
 #[test]
 fn v1_run_keeps_treating_nonzero_exit_as_failure() {
@@ -110,7 +221,7 @@ fn v1_run_keeps_treating_nonzero_exit_as_failure() {
         DispatchOutcome::Started(h) => wait_outcome(&mut exec, &h),
         other => panic!("expected Started, got {other:?}"),
     };
-    assert!(matches!(outcome, PollOutcome::Failed(_)), "{outcome:?}");
+    assert!(matches!(outcome, PollOutcome::Exited(_)), "{outcome:?}");
 }
 
 fn finished_custom(store: &mut TaskStore, name: &str, c: Option<TaskContract>, out: Value) -> Task {

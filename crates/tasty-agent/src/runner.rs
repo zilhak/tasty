@@ -118,6 +118,8 @@ pub enum PollOutcome {
     Active,
     Done(TaskResult),
     Failed(String),
+    /// 실행이 실패로 끝났고 종료 코드·출력이 있다. 결과의 `error` 가 실패 사유다.
+    Exited(TaskResult),
     /// 실행은 끝났을 수 있지만 결과를 회수할 수 없다. task 는 Unknown 이 된다.
     Lost(String),
     /// 후처리 실행 하나가 끝났다.
@@ -161,9 +163,10 @@ pub trait TaskExecutor {
 }
 
 /// 완료 보고 기록의 결과.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug)]
 enum Reported {
-    Recorded,
+    /// 기록했다. 너무 커서 짧은 실패로 바꿔 기록했으면 그 보고다.
+    Recorded(Box<Completion>),
     Rejected,
     /// 다시 시도할 오류라 보고를 보관했다.
     Kept,
@@ -189,6 +192,27 @@ pub fn completion_retryable(e: &AgentError) -> bool {
     )
 }
 
+/// 레코드가 memory 값 상한을 넘어 기록하지 못한 보고를 같은 회차의 짧은 실패로 바꾼다. 같은
+/// 보고는 다시 내도 같은 크기라 기록되지 않고 task 가 Running 에 머문다. 출력을 싣지 않은 짧은
+/// 보고와 후처리 보고(회차 진행과 맞아야 한다)는 바꾸지 않는다.
+pub fn shrink_too_large_completion(e: &AgentError, completion: &Completion) -> Option<Completion> {
+    let too_large = matches!(
+        e,
+        AgentError::Memory(tasty_memory::MemoryError::ValueTooLarge { .. })
+    );
+    let carries_bulk = completion.result.output.is_some()
+        || completion
+            .result
+            .error
+            .as_ref()
+            .is_some_and(|m| m.len() > SHRUNK_ERROR_LIMIT);
+    (too_large && carries_bulk && completion.postprocess.is_none())
+        .then(|| completion.too_large_to_store(&e.to_string()))
+}
+
+/// 짧은 실패로 바꾼 보고의 사유 길이 상한. 이보다 긴 사유는 줄인다.
+const SHRUNK_ERROR_LIMIT: usize = 4 * 1024;
+
 impl<E: TaskExecutor> RunnerLoop<E> {
     pub fn new(executor: E) -> Self {
         Self {
@@ -213,20 +237,28 @@ impl<E: TaskExecutor> RunnerLoop<E> {
         match complete(workspace_id, task_id, completion.clone(), now_ms) {
             Ok(()) => {
                 self.pending.remove(task_id);
-                Reported::Recorded
+                Reported::Recorded(Box::new(completion))
             }
-            Err(e) if completion_retryable(&e) => {
+            Err(e) if let Some(shrunk) = shrink_too_large_completion(&e, &completion) => {
                 tracing::warn!(
-                    "runner: {task_id} completion not recorded, retrying next tick: {e}"
+                    "runner: {task_id} completion too large to record, settling it as a failure: {e}"
                 );
-                self.pending.insert(task_id.clone(), completion);
-                Reported::Kept
+                self.report(workspace_id, task_id, shrunk, now_ms, complete)
             }
-            Err(e) => {
-                tracing::warn!("runner: {task_id} completion rejected: {e}");
-                self.pending.remove(task_id);
-                Reported::Rejected
-            }
+            Err(e) => self.unrecorded(task_id, completion, &e),
+        }
+    }
+
+    /// 기록하지 못한 보고. 다시 시도할 오류면 보관하고, 아니면 버린다.
+    fn unrecorded(&mut self, task_id: &TaskId, completion: Completion, e: &AgentError) -> Reported {
+        if completion_retryable(e) {
+            tracing::warn!("runner: {task_id} completion not recorded, retrying next tick: {e}");
+            self.pending.insert(task_id.clone(), completion);
+            Reported::Kept
+        } else {
+            tracing::warn!("runner: {task_id} completion rejected: {e}");
+            self.pending.remove(task_id);
+            Reported::Rejected
         }
     }
 
@@ -288,7 +320,10 @@ impl<E: TaskExecutor> RunnerLoop<E> {
                 continue;
             }
             if let Some(c) = self.pending.get(&task.id).cloned()
-                && self.report(workspace_id, &task.id, c, now_ms, &mut complete) == Reported::Kept
+                && matches!(
+                    self.report(workspace_id, &task.id, c, now_ms, &mut complete),
+                    Reported::Kept
+                )
             {
                 continue;
             }
@@ -337,6 +372,7 @@ impl<E: TaskExecutor> RunnerLoop<E> {
                         PollOutcome::Active => continue,
                         PollOutcome::Done(result) => Completion::succeeded(attempt, result),
                         PollOutcome::Failed(err) => Completion::failed(attempt, err),
+                        PollOutcome::Exited(result) => Completion::exited(attempt, result),
                         PollOutcome::Lost(reason) => Completion::lost(attempt, reason),
                         PollOutcome::Postprocessed(report) => {
                             Completion::postprocessed(attempt, report)
@@ -352,7 +388,7 @@ impl<E: TaskExecutor> RunnerLoop<E> {
                 &mut complete,
             ) {
                 Reported::Kept => {}
-                Reported::Recorded => match Self::continuation(task, &completion, now_ms) {
+                Reported::Recorded(recorded) => match Self::continuation(task, &recorded, now_ms) {
                     // 같은 회차가 이어진다. permit 은 마지막 종결까지 유지한다.
                     Some(DispatchHandle::PostprocessPending { run, not_before_ms })
                         if now_ms >= not_before_ms =>

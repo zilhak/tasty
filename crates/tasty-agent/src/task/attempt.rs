@@ -118,6 +118,36 @@ impl Completion {
         }
     }
 
+    /// 종료 코드·출력이 있는 실패 보고. 결과의 `error` 를 실패 사유로 쓴다.
+    pub fn exited(attempt_id: Option<String>, result: TaskResult) -> Self {
+        let error = result.error.clone().unwrap_or_default();
+        Self {
+            attempt_id,
+            result,
+            outcome: CompletionOutcome::Failed { error },
+            postprocess: None,
+        }
+    }
+
+    /// 기록할 수 없을 만큼 큰 보고를 대신하는 같은 회차의 실패 보고. 출력을 버리고 사유의 첫
+    /// 줄과 기록하지 못한 이유만 남긴다. 종료 코드는 유지한다.
+    pub fn too_large_to_store(&self, why: &str) -> Self {
+        let error = match self.result.error.as_deref().and_then(|e| e.lines().next()) {
+            Some(first) => format!("{first} (the full result could not be stored: {why})"),
+            None => format!("the result could not be stored: {why}"),
+        };
+        Self {
+            attempt_id: self.attempt_id.clone(),
+            result: TaskResult {
+                exit_code: self.result.exit_code,
+                output: None,
+                error: Some(error.clone()),
+            },
+            outcome: CompletionOutcome::Failed { error },
+            postprocess: None,
+        }
+    }
+
     /// 결과를 회수할 수 없다는 보고. 결과의 `error` 에도 같은 사유를 싣는다.
     pub fn lost(attempt_id: Option<String>, reason: String) -> Self {
         Self {

@@ -720,6 +720,7 @@ v2 task 의 fallback 이 이미 실행됐으면(Ready·Running·Succeeded) 그 t
 - 이미 끝난 회차에 같은 내용(결과·종결 종류)의 보고가 다시 오면 같은 레코드를 `duplicate: true` 로 돌려주고 하류 반영만 다시 시도한다. 다른 내용이면 거절한다(`different_report`). 회차를 끝낸 보고의 지문(결과와 종결 종류의 FNV-1a 64 해시)은 `attempt.completion.digest` 에 남는다. 보고 없이 끝난 task(취소·건너뜀)에 온 보고는 `already_terminal` 로 거절한다.
 - 거절은 IPC 에서 `-32018` 이고 `error.data` 에 `reason`·`attempt_id`(보고한 회차)·`current_attempt_id` 를 싣는다.
 - 러너는 기록하지 못한 보고를 보관하고 다음 tick 에 같은 보고를 다시 낸다. 그동안 그 task 를 다시 poll 하지 않고 handle 과 permit(세마포어·lease)을 유지한다. 거절된 보고는 다시 내지 않는다.
+- 레코드가 memory 값 상한을 넘어 기록하지 못한 보고(`ValueTooLarge`)는 다시 내도 같은 크기라 보관하지 않는다. 출력을 싣거나 사유가 4 KiB 를 넘는 보고면 출력을 뺀 같은 회차의 실패(`<원래 사유의 첫 줄> (the full result could not be stored: <이유>)`, 종료 코드는 유지)로 바꿔 한 번 기록한다. 재시작 복구의 보고도 같다. 후처리 실행 보고는 회차 진행과 맞아야 해 바꾸지 않는다.
 - 저장소가 계속 실패하면 permit 을 쥐는 시간에 상한이 없다. 재시도 횟수나 시간으로 포기하지 않는다. 포기하면 결과가 기록되지 않은 채 Running 인 task 의 permit 을 풀어 같은 자원을 다른 task 에 넘기게 되기 때문이다. 묶이는 permit 은 보고가 보류된 task 마다 하나다. 풀리는 시점은 셋이다.
   1. 저장이 회복돼 같은 보고가 기록되거나 거절될 때.
   2. 러너를 멈춘 뒤 다음 러너 시작·부팅의 정리가 Running task 를 마무리할 때. 보류됐던 보고는 메모리에만 있어 사라진다. Run 은 저장된 실행 결과로 확정하거나(없으면 `unknown`) 그때 점유를 반환한다. 그 밖의 task 는 `purge_stale_semaphore_holders`·`purge_stale_lease_holders` 가 점유를 회수하고 Failed 로 끝낸다.
@@ -1090,9 +1091,9 @@ report 는 사람이 읽는 실행 기록이다. 근거는 [ADR-0075](../adr/007
 | custom | `ipc_method` |
 | reduce | `strategy`(전략 이름), `input_count` |
 | wait_barrier | `barrier` |
-| `include_raw` 일 때 | `raw: {stdout, stderr}` — 저장된 실행 결과의 출력. 기본으로는 싣지 않는다. 실패한 Run 은 출력 꼬리를 오류 메시지에만 두므로 `raw` 가 비어 있다 |
+| `include_raw` 일 때 | `raw: {stdout, stderr}` — 저장된 실행 결과의 출력. 기본으로는 싣지 않는다. 실패한 Run 도 성공과 같은 출력 꼬리를 싣는다 |
 
-실패한 Run 은 결과에 종료 코드와 실행 출력을 저장하지 않는다. 그래서 그 회차의 자동 항목은 `exit_code` 가 `null` 이고 `raw` 의 `stdout`·`stderr` 도 `null` 이며, 종료 코드와 출력 꼬리는 `failure.message`(`Run exited with code <n>` 과 뒤따르는 stdout·stderr 꼬리) 문자열 안에만 있다. retry 때 굳힌 자동 항목도 같다.
+실패한 Run 도 결과에 종료 코드(`raw.exit_code`)와 실행 출력(`raw.execution` 의 stdout·stderr 꼬리, 성공과 같은 64 KiB 상한)을 저장한다. 그래서 그 회차의 자동 항목에도 `exit_code` 와 `raw` 가 있고, retry 때 굳힌 자동 항목도 같다. `failure.message` 는 `Run exited with code <n>` 과 뒤따르는 stdout·stderr 꼬리인데, 꼬리는 줄기마다 마지막 2 KiB(`FAILURE_MESSAGE_TAIL_CAP`)만 싣고 머리에 버린 바이트 수를 적는다. 메시지는 레코드의 상태·`typed_result.error`·v1 `result.error` 세 곳에 복사되므로, 64 KiB 꼬리를 그대로 두면 이스케이프가 많은 출력(빈 줄·ANSI·NUL)에서 레코드가 memory 값 상한(1 MiB)을 넘는다. 전체 꼬리는 raw 에 한 벌만 있다. 종료 코드 없이(신호로) 끝났으면 `exit_code` 는 `null` 이다. 종료 코드·출력을 저장하기 전에 기록한 레코드와 재시작용 실행 결과 셀(`run_result`)은 둘 다 없이 읽는다.
 
 `retry` 는 다음 회차를 열면서 레코드의 결과·입력 snapshot 을 지운다. 그래서 retry 는 지우기 전에 닫히는 회차의 자동 항목(`raw` 포함)을 `tasty.agent.task_report_auto.<task id>.<n>` 에 한 번 저장하고, 그 회차 블록에 끝난 상태(`settled`)를 남긴다. 원본이 사라진 뒤의 유일한 사본이라 같은 값을 두 곳에 두지 않는다. 자동 항목은 task 레코드의 일부만 담으므로 레코드처럼 memory 값 상한 안에 들어간다. 굳힌 키를 만들 수 있도록 task 제출은 가장 긴 report 키(`tasty.agent.task_report_auto.<task id>.4294967295`)가 memory 키 길이 256 바이트 안에 드는 id 만 받는다. 이 검사 전에 저장된 더 긴 id 의 task 는 retry 때 경고만 남기고 굳히지 않는다.
 

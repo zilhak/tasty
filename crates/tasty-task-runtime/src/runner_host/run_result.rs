@@ -82,7 +82,8 @@ pub(super) fn drain_capped_observed<R: std::io::Read>(
     }
 }
 
-/// 성공은 구조화된 출력으로, 실패는 종료 코드와 출력 tail을 포함한 오류 문자열로 반환한다.
+/// 성공은 구조화된 출력으로 반환한다. 실패도 같은 출력과 종료 코드를 싣고, 종료 코드와 출력
+/// tail 을 담은 오류 문자열을 실패 사유로 둔다.
 pub(crate) fn shell_outcome_from_status(
     pid: u32,
     code: Option<i32>,
@@ -90,34 +91,51 @@ pub(crate) fn shell_outcome_from_status(
     stdout: DrainedStream,
     stderr: DrainedStream,
 ) -> PollOutcome {
+    let output = json!({
+        "pid": pid,
+        "stdout": stdout.to_json(),
+        "stderr": stderr.to_json(),
+    });
     if success {
         PollOutcome::Done(TaskResult {
             exit_code: code,
-            output: Some(json!({
-                "pid": pid,
-                "stdout": stdout.to_json(),
-                "stderr": stderr.to_json(),
-            })),
+            output: Some(output),
             error: None,
         })
     } else {
-        let stdout_note = if stdout.truncated {
-            format!(" (truncated, {} bytes dropped)", stdout.dropped_bytes)
-        } else {
-            String::new()
-        };
-        let stderr_note = if stderr.truncated {
-            format!(" (truncated, {} bytes dropped)", stderr.dropped_bytes)
-        } else {
-            String::new()
-        };
-        PollOutcome::Failed(format!(
-            "{}\n--- stdout{stdout_note} ---\n{}\n--- stderr{stderr_note} ---\n{}",
-            exit_summary(code),
-            stdout.text(),
-            stderr.text(),
-        ))
+        let (stdout_tail, stdout_note) = failure_tail(&stdout);
+        let (stderr_tail, stderr_note) = failure_tail(&stderr);
+        PollOutcome::Exited(TaskResult {
+            exit_code: code,
+            error: Some(format!(
+                "{}\n--- stdout{stdout_note} ---\n{stdout_tail}\n--- stderr{stderr_note} ---\n{stderr_tail}",
+                exit_summary(code),
+            )),
+            output: Some(output),
+        })
     }
+}
+
+/// 실패 메시지에 넣는 줄기별 출력 꼬리의 바이트 상한. 전체 꼬리(최대 [`CAPTURE_TAIL_CAP`])는
+/// 결과의 출력에 있다. 메시지는 task 레코드의 상태·실패·v1 결과 세 곳에 복사되므로 짧게 둔다.
+/// 길게 두면 출력 사본이 넷이 되어 이스케이프가 많은 출력(빈 줄·ANSI·NUL)에서 레코드가 memory
+/// 값 상한을 넘고 완료를 기록하지 못한다.
+pub(super) const FAILURE_MESSAGE_TAIL_CAP: usize = POLL_FAILURE_SUMMARY_CAP;
+
+/// 메시지에 넣을 꼬리와 줄기 머리의 잘림 표시. 버린 바이트는 수집 때 버린 것과 메시지에서 뺀 것의 합이다.
+fn failure_tail(stream: &DrainedStream) -> (String, String) {
+    let text = stream.text();
+    let mut start = text.len().saturating_sub(FAILURE_MESSAGE_TAIL_CAP);
+    while !text.is_char_boundary(start) {
+        start += 1;
+    }
+    let dropped = stream.dropped_bytes + start as u64;
+    let note = if dropped > 0 {
+        format!(" (truncated, {dropped} bytes dropped)")
+    } else {
+        String::new()
+    };
+    (text[start..].to_string(), note)
 }
 
 /// 실패한 실행의 첫 줄. 종료 코드가 없으면(Unix 에서 신호로 끝남) 그렇게 적는다.
@@ -224,6 +242,12 @@ pub(super) fn run_outcome_to_value(outcome: &PollOutcome) -> serde_json::Value {
             "kind": "failed",
             "error": e,
         }),
+        PollOutcome::Exited(r) => json!({
+            "kind": "failed",
+            "error": r.error,
+            "exit_code": r.exit_code,
+            "output": r.output,
+        }),
         PollOutcome::Lost(reason) => json!({
             "kind": "lost",
             "reason": reason,
@@ -252,7 +276,24 @@ pub(super) fn run_outcome_from_value(v: &serde_json::Value) -> Option<PollOutcom
                 error,
             }))
         }
-        "failed" => Some(PollOutcome::Failed(v.get("error")?.as_str()?.to_string())),
+        "failed" => {
+            let error = v.get("error")?.as_str()?.to_string();
+            let exit_code = v
+                .get("exit_code")
+                .and_then(|x| x.as_i64())
+                .map(|x| x as i32);
+            let output = v.get("output").filter(|o| !o.is_null()).cloned();
+            // 종료 코드·출력을 싣기 전에 저장한 실행 결과에는 둘 다 없다.
+            if exit_code.is_none() && output.is_none() {
+                Some(PollOutcome::Failed(error))
+            } else {
+                Some(PollOutcome::Exited(TaskResult {
+                    exit_code,
+                    output,
+                    error: Some(error),
+                }))
+            }
+        }
         "lost" => Some(PollOutcome::Lost(v.get("reason")?.as_str()?.to_string())),
         _ => None,
     }
@@ -270,7 +311,7 @@ mod tests {
             DrainedStream::default(),
             DrainedStream::default(),
         ) {
-            PollOutcome::Failed(e) => e,
+            PollOutcome::Exited(r) => r.error.expect("error"),
             other => panic!("expected a failure, got {other:?}"),
         }
     }

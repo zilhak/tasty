@@ -31,7 +31,7 @@ Task DAG는 작업의 의존 관계와 상태를 관리한다. 생성 시 의존
 
 - 상태 8종: `waiting`, `ready`, `running`, `succeeded`, `failed`, `cancelled`, `skipped`, `unknown`
 - command 4종: `run`, `custom`(선택적 `poll`), `reduce`, `wait_barrier`
-- `run`은 Surface 없는 자식 프로세스다. stdout·stderr 각각 마지막 64KiB를 보관한다. 성공하면 `TaskResult.output`의 `{"pid","stdout":{"text","truncated","dropped_bytes"},"stderr":{...}}`로, 실패하면 오류 메시지로 반환한다. TTY는 지원하지 않으며 필요하면 `pty.*`를 사용한다.
+- `run`은 Surface 없는 자식 프로세스다. stdout·stderr 각각 마지막 64KiB를 보관한다. `TaskResult.output`의 `{"pid","stdout":{"text","truncated","dropped_bytes"},"stderr":{...}}`와 종료 코드로 반환한다. 실패하면 종료 코드와 줄기마다 마지막 2KiB 꼬리를 담은 오류 메시지도 함께 반환한다. TTY는 지원하지 않으며 필요하면 `pty.*`를 사용한다.
 - `custom`은 폴링이나 외부 훅으로 완료를 판단한다. 예를 들어 `host/command-completed`는 OSC 133 셸 통합의 완료 훅과 종료 코드를 사용한다.
 
 실패 정책은 종류에 따라 설정할 작업이 다르다.
