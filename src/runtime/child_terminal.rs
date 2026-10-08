@@ -431,11 +431,11 @@ pub fn now_epoch_ms() -> u64 {
 /// 이전 실행의 surface 는 어느 창에도 돌아오지 않으므로 관계를 모두 버린다. 복원하면 슬롯을 다 알게 된
 /// 뒤 [`ChildTerminalRegistry::forget_slots_except`] 가 정리한다.
 #[cfg(feature = "gui")]
-pub(crate) fn clear_on_boot(restore_layout: bool) {
+pub(crate) fn clear_on_boot(settings: &crate::settings::Settings) {
     let Some(path) = tasty_utils::path::tasty_home().map(|d| d.join("child-terminals.json")) else {
         return;
     };
-    if restore_layout || !path.exists() {
+    if settings.general.restore_layout || !path.exists() {
         return;
     }
     ChildTerminalRegistry::default().write_json_to(&path);
@@ -815,6 +815,28 @@ mod tests {
         registry
     }
 
+    /// 설정의 `restore_layout` 으로 시작 시 정리를 부른다.
+    #[cfg(feature = "gui")]
+    fn boot(restore_layout: bool) {
+        let mut settings = crate::settings::Settings::default();
+        settings.general.restore_layout = restore_layout;
+        clear_on_boot(&settings);
+    }
+
+    /// 시작 시 정리는 레이아웃을 복원하면 관계를 그대로 두고, 복원하지 않으면 모두 버린다.
+    #[cfg(feature = "gui")]
+    #[test]
+    fn boot_clear_follows_the_restore_layout_setting() {
+        let _home = tasty_test_support::IsolatedHome::new();
+        let mut first = window(1);
+        first.register_child(513, entry(1027, 0));
+        first.save();
+        boot(true);
+        assert_eq!(children_on_disk(), [(513, 1027)]);
+        boot(false);
+        assert_eq!(children_on_disk(), []);
+    }
+
     /// 다른 창의 항목을 저장 병합으로 받아도 부모 생략 폴백은 이 창의 부모만 센다. 결과가 마지막 저장
     /// 시점에 따라 달라지지 않는다.
     #[cfg(feature = "gui")]
@@ -855,7 +877,7 @@ mod tests {
         second.register_child(1026, entry(1029, 0));
         second.save();
         for (parent, child) in [(1027, 1028), (1541, 1542), (2055, 2056)] {
-            clear_on_boot(false);
+            boot(false);
             let mut registry = window(1);
             registry.reconcile_with_live_surfaces(&live(&[parent, child]));
             registry.register_child(parent, entry(child, 0));
@@ -884,7 +906,7 @@ mod tests {
         third.register_child(1540, entry(1542, 0));
         third.save();
 
-        clear_on_boot(true);
+        boot(true);
         assert_eq!(children_on_disk(), [(7, 8), (1026, 1028), (1540, 1542)]);
         window(1).forget_slots_except(&[1, 2].into_iter().collect());
         assert_eq!(children_on_disk(), [(7, 8), (1026, 1028)]);

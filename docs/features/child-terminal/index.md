@@ -282,8 +282,9 @@ surface 뿐이다. 저장 병합으로 받아 온 다른 윈도우의 항목은 
 - Given 윈도우 두 개 When 각 윈도우에서 `terminal.adopt` 로 자식을 등록한다 Then 파일에 두 관계가 모두 남는다(`child_terminal.rs` 의 `children_registered_in_two_windows_both_survive_a_restart`).
 - Given 재시작 뒤 윈도우 하나만 열렸다 When 그 윈도우에서 `terminal.children` 이 정리를 돌린다 Then 아직 열지 않은 윈도우의 관계는 지우지 않는다(`reconcile_keeps_children_of_windows_it_does_not_own`).
 - Given 두 윈도우에 각각 부모가 하나씩 있다 When 한 윈도우가 저장해 다른 윈도우의 항목을 받은 뒤 `--surface` 없이 `terminal.children` 을 부른다 Then 그 윈도우의 부모 하나로 폴백한다(`single_parent_counts_only_this_windows_parents_after_a_merge`).
-- Given `restore_layout = false` When 재시작을 세 번 하며 매번 자식을 하나 등록한다 Then 파일에는 마지막 실행의 관계만 남고 `--surface` 생략 폴백이 동작한다(`relations_do_not_pile_up_across_restarts_without_layout_restore`).
-- Given `restore_layout = true` 이고 슬롯 1·2만 다시 열 수 있다 When 시작 복원이 끝난다 Then 슬롯 3 의 관계를 지우고 슬롯 1·2 와 슬롯 표시 없는 항목은 남긴다(`boot_prune_keeps_relations_of_slots_that_can_reopen`, journal 경로는 `resumed_bootstrap_forgets_child_relations_of_slots_that_cannot_reopen`).
+- Given 파일에 자식 관계가 있다 When 설정을 받아 시작 시 정리를 부른다 Then `restore_layout = true` 면 관계가 남고 `false` 면 모두 버린다(`boot_clear_follows_the_restore_layout_setting`).
+- Given `restore_layout = false` When 재시작을 세 번 하며 매번 자식을 하나 등록한다 Then 파일에는 마지막 실행의 관계만 남고 `--surface` 생략 폴백이 동작한다(`relations_do_not_pile_up_across_restarts_without_layout_restore`, 시작 시 정리는 설정을 받아 부른다).
+- Given `restore_layout = true` 이고 슬롯 1·2만 다시 열 수 있다 When 시작 복원이 끝난다 Then 슬롯 3 의 관계를 지우고 슬롯 1·2 와 슬롯 표시 없는 항목은 남긴다(`boot_prune_keeps_relations_of_slots_that_can_reopen`). journal 경로에서는 스트림이 있어도 은퇴한 슬롯의 관계를 지운다(`resumed_bootstrap_forgets_child_relations_of_slots_that_cannot_reopen`).
 - Given `restore_layout = false` When 윈도우를 닫는다 Then 그 윈도우의 관계·빈 부모 목록·다음 번호를 지우고 다른 윈도우의 것은 둔다(`a_released_window_removes_its_parent_keys`).
 - Given 이미 존재하는 임의의 surface(spawn 으로 만들지 않은 일반 터미널 탭 포함) When `terminal.adopt{surface=P, target}` Then `occupancy_of(target)==Soft`·`holder.parent==P`·`terminal.children` 목록에 나타남.
 - Given 이미 등록된 child 또는 hard 점유 중인 대상 When `terminal.adopt` Then 에러 반환 + registry 불변.

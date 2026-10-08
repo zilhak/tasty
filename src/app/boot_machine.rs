@@ -338,7 +338,7 @@ impl App {
         // 점유 중인 슬롯을 확인해야 하므로 메인 스레드에서 선택해 워커로 전달한다.
         let layout_slot = self.claim_free_layout_slot();
         // 첫 engine 이 자식 관계를 읽기 전에 어느 창에도 돌아오지 않을 항목을 지운다.
-        crate::runtime::child_terminal::clear_on_boot(progress.settings.general.restore_layout);
+        crate::runtime::child_terminal::clear_on_boot(&progress.settings);
         #[cfg(debug_assertions)]
         let input_simulation_enabled = self.state.input_simulation_enabled;
         let (tx, rx) = std::sync::mpsc::channel();

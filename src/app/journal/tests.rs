@@ -126,7 +126,7 @@ fn failed_metadata_scope_read_rejects_bootstrap_instead_of_reserving_from_zero()
 }
 
 /// 시작 복원이 끝나면 열린 슬롯과 다시 열 수 있는 슬롯 밖의 자식 관계를 지우고, 슬롯 표시가 없는
-/// 이전 형식의 관계는 복원한 창의 것으로 남긴다.
+/// 이전 형식의 관계는 복원한 창의 것으로 남긴다. 스트림이 있어도 은퇴한 슬롯은 다시 열지 않는다.
 #[cfg(feature = "gui")]
 #[test]
 fn resumed_bootstrap_forgets_child_relations_of_slots_that_cannot_reopen() {
@@ -145,6 +145,34 @@ fn resumed_bootstrap_forgets_child_relations_of_slots_that_cannot_reopen() {
         crate::settings::Settings::default(),
     );
     let mut session = session.unwrap();
+    let id = session.id;
+    // 슬롯 3 을 한 번 열었다가 은퇴시켜, journal 에 스트림은 있지만 은퇴한 슬롯을 만든다.
+    session.persistence.slot = Some(3);
+    let mut journal = JournalApplication::new(Arc::new(|| {})).unwrap();
+    journal
+        .begin_engine(
+            &session,
+            EngineSelection::Slot {
+                slot: 3,
+                resume: false,
+            },
+        )
+        .unwrap();
+    let mut stall = StallBudget::new(&journal);
+    while !(session.journal_binding.is_some() && journal.is_ready(id)) {
+        journal.poll_bootstrap(&mut [&mut session], None).unwrap();
+        stall.nap("slot 3 bootstrap");
+    }
+    journal.retire_engine(id, session.journal_binding.clone().unwrap(), true);
+    while journal.has_pending_retirements() {
+        journal.poll_bootstrap(&mut [&mut session], None).unwrap();
+        stall.nap("slot 3 retirement");
+    }
+    assert!(journal.layout_slot_retired(3));
+    drop(journal);
+    session.core_state = crate::core::CoreState::new_base();
+    session.journal_binding = None;
+    session.persistence.slot = Some(1);
     let path = tasty_utils::path::tasty_home()
         .unwrap()
         .join("child-terminals.json");
@@ -152,10 +180,11 @@ fn resumed_bootstrap_forgets_child_relations_of_slots_that_cannot_reopen() {
         &path,
         r#"{"children":{"7":[{"child_surface_id":8,"index":0}],
             "513":[{"child_surface_id":514,"index":0}],
-            "1026":[{"child_surface_id":1028,"index":0}]},
-            "parent_of":{"8":7,"514":513,"1028":1026},
+            "1026":[{"child_surface_id":1028,"index":0}],
+            "1540":[{"child_surface_id":1542,"index":0}]},
+            "parent_of":{"8":7,"514":513,"1028":1026,"1542":1540},
             "next_index":{},"idle":{},"needs_input":{},
-            "slot_of":{"513":1,"514":1,"1026":2,"1028":2}}"#,
+            "slot_of":{"513":1,"514":1,"1026":2,"1028":2,"1540":3,"1542":3}}"#,
     )
     .unwrap();
     let mut journal = JournalApplication::new(Arc::new(|| {})).unwrap();
@@ -169,11 +198,15 @@ fn resumed_bootstrap_forgets_child_relations_of_slots_that_cannot_reopen() {
         )
         .unwrap();
     let mut stall = StallBudget::new(&journal);
-    while !(session.journal_binding.is_some() && journal.is_ready(session.id)) {
+    while !(session.journal_binding.is_some() && journal.is_ready(id)) {
         journal.poll_bootstrap(&mut [&mut session], None).unwrap();
         stall.nap("bootstrap");
     }
+    assert_eq!(session.persistence.slot, Some(1));
     let on_disk = crate::runtime::child_terminal::ChildTerminalRegistry::load();
     let children = |parent| on_disk.list_children(parent).len();
-    assert_eq!([children(7), children(513), children(1026)], [1, 1, 0]);
+    assert_eq!(
+        [children(7), children(513), children(1026), children(1540)],
+        [1, 1, 0, 0]
+    );
 }
