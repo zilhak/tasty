@@ -41,7 +41,7 @@ macOS 에서만 `alt` 토큰이 Cmd(⌘)에 매핑된다(물리 위치가 Win/Li
 | `ctrl+shift+=` | Shift 까지 함께 요구 |
 | `ctrl+` / `ctrl` | 무효 (키 부분 없음 / 모디파이어 단독) |
 
-키 토큰은 문자 하나, 기호 별칭 `plus`·`minus`·`equals`, 이름 키 `tab`·`space`·`enter`·`backspace`·`delete`·`insert`·`home`·`end`·`pageup`·`pagedown`·`up`·`down`·`left`·`right`·`escape`·`f1`~`f24` 다. 매칭(`tasty-key-match` 의 `NAMED_KEY_TOKENS`)·설정 녹화·webview 포커스 중 호스트로 넘기는 네이티브 키 변환이 같은 이름 집합을 쓴다. 그 밖의 토큰(`f25`, 오타 `shft+h` 등)은 어떤 입력과도 맞지 않는다.
+키 토큰은 문자 하나, 기호 별칭 `plus`·`minus`·`equals`, 이름 키 `tab`·`space`·`enter`·`backspace`·`delete`·`insert`·`home`·`end`·`pageup`·`pagedown`·`up`·`down`·`left`·`right`·`escape`·`f1`~`f24` 다. 매칭(`tasty-key-match` 의 `NAMED_KEY_TOKENS`)·설정 녹화·webview 포커스 중 호스트로 넘기는 네이티브 키 변환·macOS 메뉴 key equivalent 가 같은 이름 집합을 쓴다. 그 밖의 토큰(`f25`, 오타 `shft+h` 등)은 어떤 입력과도 맞지 않는다.
 
 단축키를 찾을 키는 `tasty_key_match::shortcut_lookup_key` 가 정하고 본 창·plugin·webview 경로가 같이 쓴다. 물리 키가 F13~F24 인데 논리 키가 이름 키가 아니면 그 F 키로 본다. macOS winit 은 F21~F24 의 논리 키를 AppKit 사설 영역 문자(`U+F718` 등)로 올리고 물리 키만 F21~F24 로 주기 때문이다. ctrl·alt·super 가 눌렸으면 IME 가 바꾼 문자 대신 물리 키의 US 배열 문자를 쓴다.
 
@@ -115,6 +115,21 @@ macOS 사용자를 위한 표시 커스터마이징: `GeneralSettings::{alt,opti
 ## OS 메뉴 key equivalent
 
 tasty 가 직접 소유하는 OS 메뉴의 key equivalent 도 **`KeybindingSettings` 의 대응 binding 에서 가져온다 — 가져올 수 없으면 비운다.** 지금 key equivalent 를 배선한 메뉴는 macOS NSMenu 하나이고, Windows AcceleratorTable · Linux Wayland 메뉴도 등록하게 되면 같은 규칙을 따른다. selector 가 OS 표준(`cut:` / `performClose:` 등)이라는 사실이 단축키 하드코딩을 정당화하지 않는다(selector 와 key equivalent 는 독립 결정). binding 이 빈 vec 이면 key equivalent 도 비워 단축키 없는 메뉴 항목으로 둔다.
+
+macOS NSMenu 는 binding 의 첫 항목을 `tasty_platform::menu_key_equivalent` 로 바꾼다. 수식키는 위 표의 macOS 매핑(`alt` → Command)을 따른다. 문자 키는 소문자 그대로 두고 Shift 는 수식키로 나타낸다. 이름 키는 AppKit 문자로 바꾼다:
+
+| 키 토큰 | key equivalent |
+|---|---|
+| `f1`~`f24` | `NSF1FunctionKey`(U+F704)~`NSF24FunctionKey`(U+F71B) |
+| `up`·`down`·`left`·`right` | U+F700~U+F703 |
+| `insert`·`home`·`end`·`pageup`·`pagedown` | U+F727·U+F729·U+F72B·U+F72C·U+F72D |
+| `backspace`·`delete` | `NSBackspaceCharacter` U+0008(⌫)·`NSDeleteCharacter` U+007F(⌦). NSMenuItem 문서가 메뉴의 두 지우기 키에 이 문자를 쓰라고 정한다 |
+| `tab`·`enter`·`escape`·`space` | U+0009·U+000D·U+001B·공백 |
+| `plus`·`minus`·`equals` | `+`·`-`·`=` |
+
+파싱할 수 없거나 위 이름 집합 밖인 키(`f25`, 오타 등)는 메뉴로 나타낼 수 없어 수식키까지 비운다. 변환표는 OS 호출이 없는 순수 함수라 모든 OS 에서 시험하고, NSMenu 호출부만 macOS 로 컴파일한다. macOS 시험은 표의 값을 `objc2_app_kit` 상수와 대조한다.
+
+메뉴에 묶은 이름 키는 NSMenu 가 먼저 받는다. 수식키 없는 `escape`·`tab`·`enter` 를 메뉴 항목에 묶으면 그 키는 터미널이나 입력칸에 가지 않고 메뉴 항목을 실행한다. 같은 키를 winit 단축키로 묶었을 때도 단축키가 먼저 가로채므로 결과는 같다.
 
 **예외**: OS 자체가 박아 tasty 가 무력화/덮어쓰기/가로채기 모두 불가능한 단축키(macOS Spotlight `Cmd+Space`, OS 전역 윈도우 전환 등)는 정책 범위 밖 — tasty 가 등록할 수도 끌 수도 없다.
 
@@ -195,7 +210,7 @@ macOS·Wayland 에서는 항상 `false` 로 들어와 동작이 바뀌지 않으
 ## 코드 위치
 
 - `KeybindingSettings`(바인딩 필드·`format_display`), 캡처/매칭 레이어, 프리셋 기본 바인딩.
-- OS 메뉴 배선: macOS NSMenu(`crates/tasty-platform/src/native_menu/macos.rs`).
+- OS 메뉴 배선: macOS NSMenu(`crates/tasty-platform/src/macos_delegate.rs`), key equivalent 변환표(`crates/tasty-platform/src/menu_key_equivalent.rs`).
 - 합성 키 차단: `src/adapters/ui/input/synthetic.rs`(`is_synthetic_key_event`),
   `src/app/event_handler.rs`(`App::window_event` 진입부 게이트),
   `src/adapters/ui/input/double_tap.rs`(`DoubleTapDetector::reset`).
