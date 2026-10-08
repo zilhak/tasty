@@ -17,9 +17,7 @@ tasty split --level surface --target-surface <SID> --type dag_graph
 
 - 변환 팝업(`Alt+'`)에도 다른 kind 와 같이 나온다 — 파일 입력이 없어 즉시 변환된다
   ([surface 변환](../../../features/convert-surface/index.md)).
-- 관찰 대상은 params 로 지정한다: `dag_id`(별칭 `dag`) · `workspace_id`. 둘 다 생략하면
-  이 surface 가 **속한** workspace 에서 진행 중인 DAG 를 자동으로 고른다(없으면 가장 최근
-  갱신). 활성 workspace 가 아니라 소속 workspace 다(불가침 원칙 3).
+- 관찰 대상과 방향을 정하는 params 는 [생성·갱신·종료](../index.md#생성갱신종료)에 있다.
 
 ## UI 요소 인벤토리
 
@@ -74,10 +72,15 @@ tasty split --level surface --target-surface <SID> --type dag_graph
 | 헤더 새로고침 | 폴링 주기를 기다리지 않고 즉시 다시 읽는다 |
 | 상세 닫기(`×`) | 선택 해제 — 패널/시트가 접힌다 |
 
-이 화면은 **자체 키 단축키를 만들지 않는다**. tasty 의 단축키는 전부
-`KeybindingSettings` 를 거쳐야 하므로([key-mapping](../../../design/policies/key-mapping.md)),
-캔버스가 자체 조합을 박으면 이미 배정된 전역 액션과 조용히 겹친다. 방향·fit·줌은 모두
-캔버스 우하단 줌 클러스터가 담당한다(`Esc` 는 "열린 것을 닫는다" 는 OS 공통 관례라 예외).
+방향·fit·줌에는 키 단축키가 없고 캔버스 우하단 줌 클러스터가 담당한다. tasty 의 단축키는
+전부 `KeybindingSettings` 를 거쳐야 하므로([key-mapping](../../../design/policies/key-mapping.md)),
+캔버스가 자체 조합을 박으면 이미 배정된 전역 액션과 조용히 겹친다.
+
+`Esc` 는 이 규칙에 맞지 않는다. 캔버스가 egui 의 `Key::Escape` 를 직접 읽어
+(`src/adapters/ui/surface/dag_graph/canvas.rs`) 포인터가 캔버스 위(줌 클러스터 밖)에 있으면
+선택을 해제하고, 키를 소비하지 않는다. `KeybindingSettings` 에 대응 필드가 없다. 정책의
+예외는 Tasty 가 바꾸거나 가로챌 수 없는 OS 관리 단축키뿐이고 이 키는 Tasty 가 직접 처리하므로
+예외에 해당하지 않는다. 바인딩으로 노출할지 다른 방식으로 정리할지는 정해지지 않았다.
 
 줌 클러스터가 헤더가 아니라 캔버스 위에 있는 것은 **조작 대상 옆에 붙어야 손이 왕복하지
 않기** 때문이다. 헤더 띠는 정체성(DAG 이름, 진행 상황, 러너 상태)만 싣는다.
