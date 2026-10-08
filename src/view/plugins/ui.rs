@@ -511,6 +511,8 @@ pub(super) fn tag(ui: &mut egui::Ui, th: &theme::Theme, text: &str) {
 mod add;
 mod attention;
 mod list;
+#[cfg(test)]
+mod text_probe;
 
 use add::draw_add_tab;
 use attention::draw_attention_tab;

@@ -376,6 +376,7 @@ fn compute_trust_state(dir: &std::path::Path) -> AddTrustState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::view::plugins::ui::text_probe::visible_text_rects;
 
     fn preview(trust_state: AddTrustState, already_installed: bool) -> AddPreview {
         AddPreview {
@@ -425,39 +426,6 @@ mod tests {
             None
         );
         assert_eq!(add_blocked_reason_key(&preview(with_pubkey, false)), None);
-    }
-
-    /// 창 안에 그려진 글자 사각형들. 클립 밖으로 나간 글자는 사용자에게 보이지 않으므로 뺀다.
-    fn visible_text_rects(
-        output: &egui::FullOutput,
-        screen: egui::Rect,
-    ) -> Vec<(String, egui::Rect)> {
-        fn walk(
-            shape: &egui::Shape,
-            clip: egui::Rect,
-            screen: egui::Rect,
-            out: &mut Vec<(String, egui::Rect)>,
-        ) {
-            match shape {
-                egui::Shape::Vec(shapes) => {
-                    for s in shapes {
-                        walk(s, clip, screen, out);
-                    }
-                }
-                egui::Shape::Text(text) => {
-                    let rect = text.galley.rect.translate(text.pos.to_vec2());
-                    if clip.contains_rect(rect) && screen.contains_rect(rect) {
-                        out.push((text.galley.text().to_string(), rect));
-                    }
-                }
-                _ => {}
-            }
-        }
-        let mut out = Vec::new();
-        for clipped in &output.shapes {
-            walk(&clipped.shape, clipped.clip_rect, screen, &mut out);
-        }
-        out
     }
 
     /// 막힌 프리뷰에서도 액션 바(막힌 이유·Cancel·Add plugin)가 창 안에 보이고,

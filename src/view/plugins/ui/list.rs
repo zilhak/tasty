@@ -3,7 +3,10 @@ use crate::theme;
 
 use super::{PluginsAction, PluginsSnapshot, PluginsUiState};
 use tasty_ui_widgets::tokens::{PLUGIN_LIST_ROW_HEIGHT, STRUCT_GAP_2};
-use tasty_ui_widgets::{PluginAvatarSize, margin_sym, paint_plugin_avatar, plugin_avatar, vspace};
+use tasty_ui_widgets::{
+    PluginAvatarSize, PluginInstallPathsView, margin_sym, paint_plugin_avatar, plugin_avatar,
+    plugin_install_paths, vspace,
+};
 
 pub(super) fn draw_list_tab(
     ctx: &egui::Context,
@@ -277,26 +280,22 @@ pub(super) fn draw_list_tab(
                 vspace(ui, th.spacing_md);
                 ui.separator();
                 vspace(ui, th.spacing_md);
-                ui.label(format!("{}:", t("plugins.install_path")));
-                ui.horizontal(|ui| {
-                    ui.label(
-                        egui::RichText::new(&entry.install_dir)
-                            .small()
-                            .color(egui::Color32::from(th.text_muted())),
-                    );
-                    if ui.small_button(t("plugins.open_folder")).clicked() {
-                        actions.push(PluginsAction::OpenInstallDir {
-                            path: entry.install_dir.clone(),
-                        });
-                    }
-                });
-
-                vspace(ui, th.spacing_xs);
-                ui.label(
-                    egui::RichText::new(format!("{}: {}", t("plugins.log_path"), entry.log_path))
-                        .small()
-                        .color(egui::Color32::from(th.text_muted())),
+                let log_line = format!("{}: {}", t("plugins.log_path"), entry.log_path);
+                let open_folder = plugin_install_paths(
+                    ui,
+                    &th,
+                    &PluginInstallPathsView {
+                        label: &t("plugins.install_path"),
+                        open_folder: &t("plugins.open_folder"),
+                        install_dir: &entry.install_dir,
+                        log_line: &log_line,
+                    },
                 );
+                if open_folder {
+                    actions.push(PluginsAction::OpenInstallDir {
+                        path: entry.install_dir.clone(),
+                    });
+                }
 
                 vspace(ui, th.spacing_lg);
                 if ui_state.confirm_uninstall_id.as_ref() == Some(&entry.id) {
@@ -326,3 +325,6 @@ pub(super) fn draw_list_tab(
             });
     });
 }
+
+#[cfg(test)]
+mod tests;
