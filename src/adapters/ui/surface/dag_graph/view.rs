@@ -773,6 +773,8 @@ mod tests {
                     output_tail: None,
                     incoming: Vec::new(),
                     skip: None,
+                    phase: None,
+                    unknown_reason: None,
                 })
                 .collect(),
             edges: (1..nodes.len())

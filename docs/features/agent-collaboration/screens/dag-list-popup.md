@@ -39,12 +39,15 @@ release에는 에이전트가 이 popup을 강제로 여는 IPC가 없다. 사�
 ### 목록 행
 
 `ListCtrl` 행 하나 = gitTree 아이콘 + DAG 이름 + `workspace · 마지막 갱신` 설명 +
-trailing 클러스터. trailing 은 세 조각이다:
+trailing 클러스터. trailing 은 왼쪽부터 네 조각이다:
 
 - **출처 태그** — `source == "derived"` 일 때만. 사용자가 `metadata.dag` 로 선언한 그룹이
   아니라 의존 연결성에서 도출됐다는 표시다(도출 규칙은 [부모 기획](../index.md)).
+- **입력 대기 수** — agent 세션이 사람의 입력을 기다리는 task(`state_counts.awaiting_input`)가
+  있을 때만 rollup 앞에 고정폭 caption 으로 `! {n} needs input`(`dag_list.awaiting`)을
+  `dag-phase-awaiting-label` 색으로 붙인다. rollup 은 그대로 실행 중이다.
 - **rollup 상태** — 노드와 같은 글리프·상태 이름을 쓴다. DAG의 대표 상태는 아래의
-  6종이다. 작은 글자의 대비를 4.5:1로 유지하도록 라벨 색은 상태 accent 대신
+  7종이다. 작은 글자의 대비를 4.5:1로 유지하도록 라벨 색은 상태 accent 대신
   `-label` 색상에서 읽는다.
 - **`완료/전체`** — 고정폭 숫자로 정확한 수를 보여준다. 진행 막대는 쓰지 않는다.
   완료 수에는 성공뿐 아니라 실패·취소·건너뜀처럼 더 이상 진행되지 않는 task도 포함한다.
@@ -60,7 +63,7 @@ trailing 클러스터. trailing 은 세 조각이다:
 
 - **아무것도 안 켜면 전체 통과.** 기본값이 이것이라 "모든 상태" 를 따로 고르는 항목이 없다.
   트리거는 켜진 개수에 따라 세 갈래로 읽힌다(0 개 / N 개 / 전부). 위젯이 제공하는 일괄
-  토글 행("전부 선택 / 전부 해제")도 이 화면에서는 **끈다** — 켜야 할 어휘가 6 종뿐이라
+  토글 행("전부 선택 / 전부 해제")도 이 화면에서는 **끈다** — 켜야 할 어휘가 7 종뿐이라
   아껴 주는 클릭이 거의 없고, 전체를 보는 방법이 이미 "아무것도 안 켜기" 로 있다.
 - **하나 이상 켜면 OR 매칭** — 켜진 것 중 하나와만 같아도 보인다.
 - popup 을 닫으면 다른 상태와 함께 기본값으로 되돌아간다.
@@ -68,17 +71,15 @@ trailing 클러스터. trailing 은 세 조각이다:
   로 행을 옮기고, `Space`/`Enter` 로 토글하고(메뉴는 안 닫힌다), `Esc` 로 닫는다. 위젯 쪽
   규약이라 상세는 `crates/tasty-ui-widgets/src/multi_select.rs`.
 
-필터에는 rollup의 6종(대기·준비·실행중·성공·실패·건너뜀)만 표시한다. 개별 task의
-취소·알 수 없음은 DAG의 대표 상태로 나오지 않는다. 취소가 섞이면 건너뜀으로,
+필터에는 rollup의 7종을 대기·준비·실행중·성공·부분 실패·실패·건너뜀 순서로 표시한다.
+개별 task의 취소·알 수 없음은 DAG의 대표 상태로 나오지 않는다. 취소가 섞이면 건너뜀으로,
 알 수 없음이 남으면 대기로 집계한다. 필터 값과 실제 rollup 값이 일치하는지는 시험으로 확인한다.
 
-rollup 의 일곱째 값인 부분 오류(`partially_failed`, 실패가 섞였지만 끝까지 성공한 갈래도 있는
-채 끝난 DAG)는 글리프·색이 아직 정해지지 않았다. 그전까지 DAG 목록은 이 값을 실패 표시로
-바꿔 보이지 않고 알 수 없음의 글리프(`?`)와 색을 쓰되, 라벨은
-`dag.status.partially_failed`(en `PARTIALLY FAILED`, ko `부분 오류`, ja `一部失敗`)로 따로 둔다.
-task 상태 `unknown` 과 라벨로 구별된다. 필터에는 없다. DAG 화면의 DAG 선택 목록은 항목마다
-상태 글리프만 붙이고 라벨·상태 색을 쓰지 않으므로, 부분 오류도 알 수 없음과 같은 `?` 로 보인다.
-시험이 이 값을 표시 미정 목록(`ROLLUP_WITHOUT_DISPLAY`)으로 따로 확인한다.
+부분 실패(`partially_failed`)는 더 진행할 수 없고 복구되지 않은 실패가 있지만 끝까지 성공한
+갈래도 있는 DAG 다. DAG 요약 전용 상태라 task 하나의 상태로는 나오지 않는다. 글리프 `◒`,
+색 `dag-status-partially-failed*`(accent-attention), 라벨 `dag.status.partially_failed`
+(en `PARTIALLY FAILED`, ko `일부 실패`, ja `一部失敗`)를 쓴다. DAG 화면의 DAG 선택 목록도 같은
+글리프를 붙인다.
 
 ### 목록의 범위 — 전 workspace
 
@@ -176,4 +177,4 @@ popup 상태에서 받는다. popup 폭 560은 상세 도킹 기준 640보다 �
 ## 갤러리 specimen
 
 `cargo run -p tasty-gallery` → **Layouts** 페이지의 `Task DAG · list rows & workspace popup`
-섹션. 목록 행 4 종(`dag-rows`), 560 × 460 popup 목록 뷰(`dag-window`), 목록·디테일 두 뷰를 나란히 놓은 Detail view(`dag-window-detail`)를 전시한다.
+섹션. 목록 행 5 종(`dag-rows`, 부분 실패 `docs-publish` 와 입력 대기 표시 포함), 560 × 460 popup 목록 뷰(`dag-window`), 목록·디테일 두 뷰를 나란히 놓은 Detail view(`dag-window-detail`)를 전시한다.

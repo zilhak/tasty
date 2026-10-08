@@ -1,5 +1,6 @@
 //! Task 레코드를 DAG 화면에서 사용할 데이터로 바꾼다.
 
+use tasty_agent::task::postprocess::PostprocessPhase;
 use tasty_agent::{DagSummary, Task, TaskCommand, TaskState};
 
 use crate::i18n::{t, t_fmt, t_fmt2};
@@ -210,23 +211,18 @@ impl EdgeSelection {
 }
 
 /// 건너뛴 task 의 이유. 카드 모양은 skipped 그대로이고 라벨·툴팁만 다르다.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// 툴팁은 시안대로 이유의 종류만 적는다. 어느 선행이 실패했는지는 의존성 행이 보인다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NodeSkip {
     BranchNotSelected,
-    UpstreamUnavailable { source: String, state: String },
+    UpstreamUnavailable,
 }
 
 impl NodeSkip {
     fn from_reason(reason: &tasty_agent::SkipReason) -> Self {
         match reason {
             tasty_agent::SkipReason::BranchNotSelected => NodeSkip::BranchNotSelected,
-            tasty_agent::SkipReason::UpstreamUnavailable {
-                source,
-                source_state,
-            } => NodeSkip::UpstreamUnavailable {
-                source: source.clone(),
-                state: source_state.clone(),
-            },
+            tasty_agent::SkipReason::UpstreamUnavailable { .. } => NodeSkip::UpstreamUnavailable,
         }
     }
 }
@@ -281,30 +277,130 @@ pub struct DagNodeData {
     pub incoming: Vec<(usize, DagRelation)>,
     /// 건너뛴 이유. 이유가 기록된 v2 task 만 있다.
     pub skip: Option<NodeSkip>,
+    /// 실행 중인 v2 task 중 화면이 따로 보이는 세부 단계. `executing` 과 v1 task 는 없다.
+    pub phase: Option<NodePhase>,
+    /// `unknown` 이 된 이유. 기록된 task 만 있다.
+    pub unknown_reason: Option<String>,
 }
 
-impl DagNodeData {
-    /// 카드·상세의 상태 라벨. 경로가 선택되지 않은 skipped 는 그 사실을 적는다.
-    pub fn status_label(&self) -> &'static str {
-        match (self.status, &self.skip) {
-            (DagStatus::Skipped, Some(NodeSkip::BranchNotSelected)) => t("dag.status.not_selected"),
-            (status, _) => status.label(),
+/// 실행 중 세부 단계. 입력 대기만 자기 색을 쓰고 후처리 두 단계는 실행 중 색에 라벨만 바꾼다.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NodePhase {
+    /// agent 세션이 사람의 입력을 기다린다. `since` 는 기다리기 시작한 시각(epoch ms).
+    AwaitingInput {
+        provider: String,
+        surface_id: u32,
+        since: u64,
+    },
+    /// 후처리 `run` 번째 실행.
+    Postprocessing { run: u32 },
+    /// 후처리 `run` 번째 실행을 기다린다(재시도).
+    RetryWait { run: u32 },
+}
+
+impl NodePhase {
+    fn from_task(t: &Task) -> Option<Self> {
+        let attempt = t.attempt.as_ref()?;
+        match t.phase()? {
+            "awaiting_input" => {
+                let link = attempt.agent.as_ref()?;
+                Some(NodePhase::AwaitingInput {
+                    provider: link.provider.clone(),
+                    surface_id: link.surface_id,
+                    since: link.awaiting_input_since?,
+                })
+            }
+            name @ ("postprocessing" | "retry_wait") => {
+                let run = match attempt.postprocess.as_ref()?.phase {
+                    PostprocessPhase::Pending { run, .. }
+                    | PostprocessPhase::Started { run, .. }
+                    | PostprocessPhase::Finished { run } => run,
+                };
+                Some(if name == "retry_wait" {
+                    NodePhase::RetryWait { run }
+                } else {
+                    NodePhase::Postprocessing { run }
+                })
+            }
+            _ => None,
         }
     }
 
-    /// 건너뛴 이유 툴팁. 이유가 없으면 `None`.
-    pub fn skip_tooltip(&self) -> Option<String> {
-        if self.status != DagStatus::Skipped {
-            return None;
+    /// 입력 대기라면 그 세션.
+    pub fn awaiting(&self) -> Option<(&str, u32, u64)> {
+        match self {
+            NodePhase::AwaitingInput {
+                provider,
+                surface_id,
+                since,
+            } => Some((provider, *surface_id, *since)),
+            _ => None,
         }
-        match self.skip.as_ref()? {
-            NodeSkip::BranchNotSelected => Some(t("dag.skip.branch_not_selected").to_string()),
-            NodeSkip::UpstreamUnavailable { source, state } => Some(t_fmt2(
-                "dag.skip.upstream_unavailable",
-                source,
-                &DagStatus::from_name(state).label().to_lowercase(),
-            )),
+    }
+}
+
+impl DagNodeData {
+    /// 카드·상세의 상태 라벨. 실행 중 세부 단계가 있으면 그 단계를, 경로가 선택되지 않은
+    /// skipped 는 그 사실을 적는다.
+    pub fn status_label(&self) -> String {
+        match (&self.phase, self.status, &self.skip) {
+            (Some(NodePhase::AwaitingInput { .. }), _, _) => {
+                t("dag.phase.awaiting_input").to_string()
+            }
+            (Some(NodePhase::Postprocessing { run }), _, _) => format!(
+                "{}{}",
+                t("dag.phase.postprocessing"),
+                t_fmt("dag.phase.run", &run.to_string())
+            ),
+            (Some(NodePhase::RetryWait { run }), _, _) => format!(
+                "{}{}",
+                t("dag.phase.retry_wait"),
+                t_fmt("dag.phase.run", &run.to_string())
+            ),
+            (None, DagStatus::Skipped, Some(NodeSkip::BranchNotSelected)) => {
+                t("dag.status.not_selected").to_string()
+            }
+            (None, status, _) => status.label().to_string(),
         }
+    }
+
+    /// 카드의 상태 기호. 입력 대기는 `!` 다.
+    pub fn glyph(&self) -> &'static str {
+        match self.phase {
+            Some(NodePhase::AwaitingInput { .. }) => "!",
+            _ => self.status.glyph(),
+        }
+    }
+
+    /// 입력 대기라면 그 세션 `(provider, surface_id, since)`.
+    pub fn awaiting(&self) -> Option<(&str, u32, u64)> {
+        self.phase.as_ref().and_then(NodePhase::awaiting)
+    }
+
+    /// 호버 문구 — `이름 — 라벨` 다음에 건너뜀·알 수 없음·입력 대기의 이유 줄.
+    pub fn hover_text(&self, now_ms: u64) -> String {
+        let mut lines = vec![format!("{} \u{2014} {}", self.name, self.status_label())];
+        if let Some((provider, _, since)) = self.awaiting() {
+            lines.push(t_fmt2(
+                "dag.why.awaiting",
+                provider,
+                &format_duration_ms(now_ms.saturating_sub(since)),
+            ));
+        } else if self.status == DagStatus::Skipped
+            && let Some(skip) = &self.skip
+        {
+            let why = match skip {
+                NodeSkip::BranchNotSelected => t("dag.why.not_selected"),
+                NodeSkip::UpstreamUnavailable => t("dag.why.upstream_failed"),
+            };
+            lines.push(t_fmt("dag.why.lead", why));
+        } else if self.status == DagStatus::Unknown
+            && let Some(reason) = &self.unknown_reason
+        {
+            lines.push(t_fmt("dag.why.lead", reason));
+            lines.push(t("dag.why.retry_or_cancel").to_string());
+        }
+        lines.join("\n")
     }
 }
 
@@ -438,6 +534,11 @@ pub fn build_graph(summary: &DagSummary, tasks: &[Task]) -> DagGraphData {
                 .map(output_tail),
             incoming,
             skip: t.skip.as_ref().map(NodeSkip::from_reason),
+            phase: NodePhase::from_task(t),
+            unknown_reason: match &t.state {
+                TaskState::Unknown { reason } => reason.clone(),
+                _ => None,
+            },
         })
         .collect();
 
@@ -553,6 +654,10 @@ pub fn format_duration_ms(ms: u64) -> String {
 /// 노드 meta 행에 보일 duration. `running` 은 경과, terminal 은 소요,
 /// `waiting`/`ready` 는 표시하지 않는다.
 pub fn node_duration(node: &DagNodeData, now_ms: u64) -> Option<String> {
+    // 입력 대기의 경과 시간은 기다린 시간이다.
+    if let Some((_, _, since)) = node.awaiting() {
+        return Some(format_duration_ms(now_ms.saturating_sub(since)));
+    }
     let started = node.started_at?;
     match node.status {
         DagStatus::Waiting | DagStatus::Ready => None,
@@ -749,16 +854,121 @@ mod tests {
             ]
         );
         assert_eq!(g.nodes[2].status_label(), "NOT SELECTED");
+        let name = |i: usize| g.nodes[i].name.clone();
         assert_eq!(
-            g.nodes[2].skip_tooltip().as_deref(),
-            Some("Not taken — another branch was selected.")
+            g.nodes[2].hover_text(0),
+            format!(
+                "{} — NOT SELECTED\nWhy: Not selected by the upstream result",
+                name(2)
+            )
         );
         assert_eq!(g.nodes[3].status_label(), "SKIPPED");
         assert_eq!(
-            g.nodes[3].skip_tooltip().as_deref(),
-            Some("Skipped — ship failed.")
+            g.nodes[3].hover_text(0),
+            format!(
+                "{} — SKIPPED\nWhy: An upstream task did not succeed",
+                name(3)
+            )
         );
-        assert_eq!(g.nodes[1].skip_tooltip(), None);
+        assert!(!g.nodes[1].hover_text(0).contains('\n'), "이유 줄이 없다");
+    }
+
+    /// 실행 중인 v2 task 의 회차를 json 으로 붙인다.
+    fn running_typed(id: &str, attempt: serde_json::Value) -> Task {
+        let mut t = task(id, TaskState::Running);
+        t.started_at = Some(1_000);
+        t.contract = Some(serde_json::from_value(json!({ "contract_version": 2 })).unwrap());
+        t.attempt = Some(serde_json::from_value(attempt).expect("attempt"));
+        t
+    }
+
+    fn postprocess(phase: serde_json::Value) -> serde_json::Value {
+        json!({
+            "id": "a#1", "number": 1, "started_at": 1_000,
+            "postprocess": {
+                "execution": { "exit_code": 0 },
+                "main_digest": "0000000000000000",
+                "phase": phase,
+            },
+        })
+    }
+
+    /// 입력 대기는 `!`·자기 라벨·대기 시간을, 후처리 두 단계는 실행 번호를 붙인 라벨을 보인다.
+    #[test]
+    fn running_phases_change_the_card_label_glyph_and_duration() {
+        let mut awaiting = running_typed(
+            "review",
+            json!({
+                "id": "a#1", "number": 1, "started_at": 1_000,
+                "agent": { "provider": "claude", "surface_id": 7, "awaiting_input_since": 5_000 },
+            }),
+        );
+        awaiting.command = TaskCommand::Agent {
+            provider: "claude".into(),
+            workspace_id: 1,
+            session: tasty_agent::task::agent::AgentSession::Existing { surface_id: 7 },
+            instruction: "review".into(),
+            timeout_ms: None,
+        };
+        let post = running_typed(
+            "post",
+            postprocess(json!({ "state": "started", "run": 1, "started_at": 2_000 })),
+        );
+        let retry = running_typed(
+            "retry",
+            postprocess(json!({ "state": "pending", "run": 2, "not_before_ms": 9_000 })),
+        );
+        let plain = running_typed(
+            "plain",
+            json!({ "id": "a#1", "number": 1, "started_at": 1_000 }),
+        );
+        let g = build_graph(&summary(), &[awaiting, post, retry, plain]);
+        let n = |id: &str| g.nodes.iter().find(|n| n.id == id).unwrap();
+
+        assert_eq!(n("review").awaiting(), Some(("claude", 7, 5_000)));
+        assert_eq!(n("review").glyph(), "!");
+        assert_eq!(n("review").status_label(), "NEEDS INPUT");
+        assert_eq!(
+            node_duration(n("review"), 65_000).as_deref(),
+            Some(format_duration_ms(60_000).as_str()),
+            "경과 시간은 기다린 시간이다"
+        );
+        assert_eq!(
+            n("review").hover_text(65_000),
+            format!(
+                "review — NEEDS INPUT\nWaiting for a person in the claude session · {}",
+                format_duration_ms(60_000)
+            )
+        );
+        assert_eq!(n("post").status_label(), "POSTPROCESS · RUN 1");
+        assert_eq!(n("retry").status_label(), "RETRY WAIT · RUN 2");
+        assert_eq!(n("retry").glyph(), DagStatus::Running.glyph());
+        assert_eq!(n("plain").phase, None, "executing 은 일반 실행 중이다");
+        assert_eq!(n("plain").status_label(), "RUNNING");
+    }
+
+    /// 알 수 없음의 이유는 호버에 이유 줄과 재시도·취소 안내로 실린다.
+    #[test]
+    fn unknown_reason_reaches_the_hover_text() {
+        let lost = task(
+            "deploy",
+            TaskState::Unknown {
+                reason: Some("run result lost".into()),
+            },
+        );
+        let g = build_graph(
+            &summary(),
+            &[lost, task("bare", TaskState::Unknown { reason: None })],
+        );
+        assert_eq!(
+            g.nodes[0].unknown_reason.as_deref(),
+            Some("run result lost")
+        );
+        assert_eq!(
+            g.nodes[0].hover_text(0),
+            "deploy — UNKNOWN\nWhy: run result lost\nRetry or cancel it to let the graph continue."
+        );
+        assert_eq!(g.nodes[1].hover_text(0), "bare — UNKNOWN");
     }
 
     /// agent 작업은 provider 와 관계없이 전용 글리프로 그리고, 모르는 종류만 run 글리프로 둔다.

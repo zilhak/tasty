@@ -88,6 +88,19 @@ pub fn status_colors(theme: &Theme, status: DagStatus) -> (HexColor, HexColor, H
     }
 }
 
+/// 노드 한 장의 (바 색, 배경, 라벨 색). 입력 대기는 상태 대신 needs-input 색 전체를 쓴다.
+pub fn node_colors(theme: &Theme, node: &DagNodeData) -> (HexColor, HexColor, HexColor) {
+    if node.awaiting().is_some() {
+        (
+            theme.dag_phase_awaiting(),
+            theme.dag_phase_awaiting_bg(),
+            theme.dag_phase_awaiting_label(),
+        )
+    } else {
+        status_colors(theme, node.status)
+    }
+}
+
 /// dim 을 적용해 egui 색으로. `dimmed` 가 아니면 원색 그대로다.
 fn tone(color: HexColor, dimmed: bool) -> egui::Color32 {
     let c = color.to_egui();
@@ -136,7 +149,7 @@ pub fn paint_node(
     node: &DagNodeData,
     vis: &NodeVisual,
 ) {
-    let (accent, status_bg, label_fg) = status_colors(theme, node.status);
+    let (accent, status_bg, label_fg) = node_colors(theme, node);
     let dim = vis.dimmed;
     let (lod, zoom, now_ms) = (vis.lod, vis.zoom, vis.now_ms);
     let radius = (theme.dag_node_radius().value() * zoom).round();
@@ -144,7 +157,7 @@ pub fn paint_node(
 
     let border = if vis.in_cycle {
         theme.dag_cycle_border()
-    } else if lod == Lod::Block {
+    } else if lod == Lod::Block || node.awaiting().is_some() {
         accent
     } else {
         status_border(theme, node.status)
@@ -252,7 +265,7 @@ pub fn paint_node(
     }
 
     let meta_y = top + name_h + row_gap + meta_h / 2.0;
-    let glyph = node.status.glyph();
+    let glyph = node.glyph();
     let gw = text_width(painter, glyph, &meta_font) + gap;
     painter.text(
         egui::pos2(inner.min.x, meta_y),
@@ -283,7 +296,7 @@ pub fn paint_node(
         painter.text(
             egui::pos2(inner.min.x + gw, meta_y),
             egui::Align2::LEFT_CENTER,
-            ellipsize(painter, node.status_label(), &meta_font, label_w),
+            ellipsize(painter, &node.status_label(), &meta_font, label_w),
             meta_font,
             tone(label_fg, dim),
         );

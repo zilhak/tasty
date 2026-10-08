@@ -78,6 +78,33 @@ impl RequestContext {
         }
     }
 
+    /// 사용자가 고른 surface 가 보이도록 workspace·pane·탭·surface 선택을 차례로 옮긴다.
+    /// 사용자 조작(DAG 상세의 세션 열기)에서만 호출한다. surface 가 없으면 아무것도 바꾸지 않는다.
+    #[cfg(feature = "gui")]
+    pub(crate) fn reveal_surface(
+        &mut self,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
+        surface_id: u32,
+    ) -> bool {
+        let Some((index, pane_id)) = engine.find_workspace_index_for_surface(surface_id) else {
+            return false;
+        };
+        let Some(workspace) = engine.workspace_at(index) else {
+            return false;
+        };
+        let Some(pane) = workspace.pane_layout().find_pane(pane_id) else {
+            return false;
+        };
+        let Some(tab) = pane.tabs.iter().find(|t| t.contains_surface(surface_id)) else {
+            return false;
+        };
+        self.switch_workspace(engine, index);
+        self.navigation.select_pane(workspace, pane_id);
+        self.navigation.select_tab(pane, tab.id);
+        self.navigation.select_surface(tab, surface_id);
+        true
+    }
+
     /// 섹션 인덱스(0=normal)로 카테고리를 전환한다. 사용자 키 입력 경로다.
     /// 접힌 카테고리는 펼쳐 저장하고, 마지막으로 본 워크스페이스를 선택한다.
     /// 기록된 대상이 없거나 다른 카테고리로 이동했다면 첫 항목을 선택한다.

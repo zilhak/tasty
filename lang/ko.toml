@@ -1935,9 +1935,20 @@ reduce = "리듀스"
 wait_barrier = "배리어 대기"
 agent = "에이전트"
 
-[dag.skip]
-branch_not_selected = "실행하지 않았습니다. 다른 경로가 선택되었습니다."
-upstream_unavailable = "건너뜀 — {} {}."
+[dag.phase]
+# 실행 중 세부 단계. run 은 라벨 뒤에 붙는 후처리 실행 번호다.
+awaiting_input = "입력 대기"
+postprocessing = "후처리"
+retry_wait = "재시도 대기"
+run = " · {}회차"
+
+[dag.why]
+# 노드 호버의 이유 줄. lead 의 자리표시자는 이유 문구, awaiting 은 provider 와 대기 시간이다.
+lead = "이유: {}"
+not_selected = "앞 작업의 결과가 이 경로를 고르지 않았습니다"
+upstream_failed = "앞 작업이 성공하지 못했습니다"
+retry_or_cancel = "다시 실행하거나 취소해야 그래프가 이어집니다."
+awaiting = "{} 세션이 사람의 입력을 기다리는 중 · {}"
 
 [dag.on_failure]
 abort = "중단"
@@ -1963,6 +1974,10 @@ error = "에러"
 output = "출력"
 jump_hint = "{} 선택"
 none = "—"
+why_unknown = "알 수 없는 이유"
+# 자리표시자는 provider 와 대기 시간이다.
+awaiting_notice = "{} 세션이 사람의 입력을 기다리고 있습니다 · {}. 답하면 그래프가 이어집니다."
+open_session = "세션 열기"
 
 [dag_list]
 tools_menu_item = "작업 DAG"
@@ -1982,6 +1997,8 @@ empty_none = "DAG 없음"
 empty_none_hint = "의존 관계로 묶인 작업이 여기에 표시됩니다."
 empty_filtered = "일치하는 DAG 없음"
 empty_filtered_hint = "다른 조건으로 찾아보세요."
+# 자리표시자는 입력을 기다리는 task 수다.
+awaiting = "{}개 입력 대기"
 
 [fullscreen.blank]
 title = "전체화면"

@@ -1200,7 +1200,10 @@ Mocha·Latte는 고정 테마(`mocha_fallback`·`latte_theme`)로 위아래에 �
 (상태 어휘 · 노드 카드 · 러너 배지 · 크롬 · 빈 상태) + `dag_surfaces.jsx` (캔버스 · 노드
 상세 · 풀탭 서피스 · 워크스페이스 popup) ↔ 본체 `src/adapters/ui/surface/dag_graph/` +
 `src/adapters/ui/popup/dag_list.rs` ↔ 갤러리 `catalog/components/dag/` (Layouts 페이지
-`dag-graph` · `dag-shell` · `dag-list` 세 섹션).
+`dag-graph` · `dag-phase` · `dag-shell` · `dag-list` 네 섹션).
+디자인 회신(2026-10-07)의 부분 실패 rollup(`◒`·`dag-status-partially-failed*`·필터 7번째),
+실행 중 세부 단계와 이유 줄(`nodeLook`·`nodeTitle`·상세의 입력 대기 알림과 `Why unknown`·목록 행의
+`! n needs input`), 탭 머리글 숫자(고정폭 caption·`dag-header-count-fg`)를 갤러리 spec 과 본체에 반영했다.
 
 | 디자인 jsx 컴포넌트 | tasty 함수 | 갤러리 항목 |
 |---|---|---|
@@ -1209,6 +1212,9 @@ Mocha·Latte는 고정 테마(`mocha_fallback`·`latte_theme`)로 위아래에 �
 | `elbow()` | `canvas::orthogonalize` + `round_corners` | `dag/edges.rs::elbow` / `orthogonalize` / `round_corners` |
 | `DagNode` | `node::paint_node` | `dag/node.rs::paint_card` (`dag-node`/`dag-kinds`/`dag-lod` spec) |
 | `DAG_STATUS` / `DAG_KIND` / `DAG_REL` | `model::{DagStatus, DagRelation}` | `dag.rs::{Status, Kind, Rel}` |
+| `DAG_PHASE` / `nodeLook` (실행 중 세부 단계) | `model::NodePhase` + `DagNodeData::{status_label, glyph}` + `node::node_colors` | `dag/phase.rs` 의 `Phase` + `Node::{status_label, glyph, accent, bg, label_fg, border}` (`dag-running-phase` spec) |
+| `nodeTitle` (호버 이유 줄) | `DagNodeData::hover_text` (`canvas::draw_canvas` 의 노드 툴팁) | `Node::hover_text` (`dag-why` spec 에 펼쳐 전시) |
+| `DagDetail` 의 입력 대기 알림 · `Why unknown` | `detail::awaiting_notice` · `detail::unknown_reason`. 세션 열기는 `DetailAction::OpenSession` → `draw_dag_graph` 반환값 → `RequestContext::reveal_surface` | `dag/detail.rs::draw_body` (`dag-why` spec 의 두 상세) |
 | 전이 선택·미선택 노드(`routes` 섹션) | `model::{DagRelation, EdgeSelection}` + `node::paint_node` 의 skip 라벨·툴팁 | `dag/routes.rs::draw` (`dag-routes` spec) |
 | `RunnerBadge` | `chrome::runner_badge` + `resume_hint` (헤더 우측) | `dag/runner.rs::paint_badge` + `row` (`dag-runner` spec) |
 | 재개 힌트 캡션 | `chrome::resume_hint` — lead 비례폭 + 명령 mono 2 조각 | `dag/runner.rs::row` (동일 2 조각) |
@@ -1238,6 +1244,17 @@ Mocha·Latte는 고정 테마(`mocha_fallback`·`latte_theme`)로 위아래에 �
   `crates/tasty-doc-guards/tests/design_token_adherence.rs::no_raw_pictographic_glyph` 가 그 블록을 host UI 소스에서
   금지한다. 갤러리도 같은 치환 세트를 쓴다 — 렌더되지 않는 글자를 전시하면 정합 판정 자체가
   무의미하기 때문이다.
+- **건너뜀 이유 툴팁**: 시안 안에서 `routes` Spec 메타는 옛 문구("Not taken — another branch was
+  selected." · "Skipped — {source} {state}.")를 적고, `nodeTitle` 코드와 2026-10-07 회신은 why 줄
+  ("Why: Not selected by the upstream result" · "Why: An upstream task did not succeed")을 쓴다. 본체와
+  갤러리는 `nodeTitle` 을 따른다.
+- **대기 시간 표기**: 시안의 `{since}` 예시는 `2m` 이다. 본체는 기다린 시간을 노드 소요 시간과 같은
+  형식(`format_duration_ms`, 예 `2m 4s`)으로 적는다.
+- **상세 패널 캡션 대소문자**: 시안은 상세 캡션 전부를 CSS 대문자로 그린다(`WHY UNKNOWN`). 본체 상세는
+  다른 캡션(`Command`·`Dependencies`)과 같이 번역 문구 그대로(`Why unknown`) 그리고, 갤러리 상세는
+  시안대로 대문자로 그린다.
+- **탭 머리글 숫자 문구**: 시안은 `{done}/{total} done`, 본체는 기존 번역 문구 `{} / {} done`
+  (`dag.header.progress`)을 유지하고 글꼴·색만 시안에 맞췄다.
 - **러너 재개 힌트 문구**: 시안은 `tasty dag runner start` 를 적지만 그런 CLI 는 없다. 본체와
   갤러리 모두 실제 명령(`tasty agent task-run --workspace-id <N> --action start`)을 쓴다.
 - **기본 방향**: 시안 기본은 top-down, 본체 기본은 left-right(`DagDirection::LeftRight` —

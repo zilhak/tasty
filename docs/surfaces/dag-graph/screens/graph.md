@@ -23,18 +23,28 @@ tasty split --level surface --target-surface <SID> --type dag_graph
 
 | 영역 | 요소 |
 |------|------|
-| 헤더 | DAG 선택(목록이 2 개 이상일 때만 드롭다운) · `완료/전체` 진척(건너뛴 task 가 있으면 뒤에 ` · {n} skipped ({k} not selected)`, 목록 행과 같은 규칙) · 러너 배지 · 재개 힌트 · 새로고침 |
+| 헤더 | DAG 선택(목록이 2 개 이상일 때만 드롭다운) · `완료/전체` 진척(고정폭 caption 글꼴, `dag-header-count-fg` 색. 건너뛴 task 가 있으면 뒤에 ` · {n} skipped ({k} not selected)`, 목록 행과 같은 규칙) · 러너 배지 · 재개 힌트 · 새로고침 |
 | 사이클 배너 | 의존성 사이클일 때만. 사이클을 이루는 task id 나열 |
 | 캔버스 | 점 격자 배경 · 노드 카드 · 직교 엣지 · LOD 칩(좌하단) · 미니맵 + 줌 클러스터(`− % + \| fit dir`, 우하단) |
-| 상세 | 선택 노드의 이름 · 닫기 · 상태 + 종류 태그 · 실패정책/시작/소요/종료코드 · 명령/의존성/에러/출력(에러·출력은 복사 버튼) |
+| 상세 | 선택 노드의 이름 · 닫기 · 상태 + 종류 태그 · (입력 대기면) 알림 + 세션 열기 버튼 · (알 수 없음이면) 이유 · 실패정책/시작/소요/종료코드 · 명령/의존성/에러/출력(에러·출력은 복사 버튼) |
 
 - **노드 상태**는 색·글리프·텍스트로 함께 표시한다. 축소하면 글리프와 텍스트가
   숨겨지므로 테두리와 배경에도 상태색을 쓴다. `waiting`·`cancelled`·`skipped`는
   중립 테두리를 유지해 실행 중인 노드와 구분한다.
 - **건너뛴 이유**: 경로가 선택되지 않아 실행하지 않은 task(`skip.reason: branch_not_selected`)는
-  skipped 카드 그대로 라벨만 `NOT SELECTED` 로 읽고, 호버 툴팁이 "다른 경로가 선택되었다"고
-  설명한다. 선행 결과를 쓸 수 없어 건너뛴 task(`upstream_unavailable`)는 `SKIPPED` 라벨에
-  원본 task 와 그 상태를 툴팁으로 보인다. 정상적인 미선택이라 새 상태색을 쓰지 않는다.
+  skipped 카드 그대로 라벨만 `NOT SELECTED` 로 읽는다. 정상적인 미선택이라 새 상태색을 쓰지
+  않는다. 선행 결과를 쓸 수 없어 건너뛴 task(`upstream_unavailable`)는 `SKIPPED` 라벨이다.
+  어느 선행이 실패했는지는 상세의 의존성 행에서 읽는다.
+- **호버 툴팁**은 `이름 — 라벨` 한 줄 뒤에 이유 줄을 붙인다. 미선택은 "Why: Not selected by the
+  upstream result", 선행 실패는 "Why: An upstream task did not succeed", 알 수 없음은 기록된
+  이유(`Why: {reason}`)와 "Retry or cancel it to let the graph continue.", 입력 대기는 "Waiting for
+  a person in the {provider} session · {대기 시간}" 이다. 이유가 없는 노드는 첫 줄만 보인다.
+- **실행 중 세부 단계**(v2 task 의 `phase`)는 카드에 이렇게 보인다. `executing` 은 일반 실행 중
+  카드다. `awaiting_input`(agent 세션이 사람의 입력을 기다림)은 바·테두리·배경·글리프·라벨을 모두
+  needs-input 노랑(`dag-phase-awaiting*`)으로 바꾸고, 글리프 `!` 와 라벨 `NEEDS INPUT` 을 쓰며,
+  소요 시간 자리에 기다린 시간을 보인다. compact 티어에서도 카드 색으로 읽힌다.
+  `postprocessing`·`retry_wait` 는 실행 중 색 그대로 라벨만 `POSTPROCESS · RUN n`·`RETRY WAIT · RUN n`
+  으로 바꾼다. n 은 후처리 실행 번호다. v1 task 는 세부 단계가 없다.
 - **카드 좌상단 아이콘**은 상태와 별개로 task 종류(`run` 터미널 / `custom` 플러그 / `reduce` 레이어 /
   `wait_barrier` 자물쇠 / `agent` 말풍선)를 나타낸다. Claude·Codex agent task 는 같은 `agent`
   아이콘을 쓰고, provider 는 상세 패널에서 읽는다. 상세의 종류 태그는 `Agent` 다.
@@ -55,7 +65,10 @@ tasty split --level surface --target-surface <SID> --type dag_graph
   배지 옆에 재개 명령 `tasty agent task-run --workspace-id <N> --action start`를 표시한다.
   안내는 비례폭 글꼴, 복사할 명령은 고정폭 글꼴을 쓴다. 폭이 640px 미만이면 이 설명을
   숨긴다. 이 화면은 관찰 전용이므로 러너를 실행하는 버튼은 없다.
-- **노드 상세**에서는 상태 옆에 종류 태그를 표시한다. 같은 상세 내용을 넓은 화면에서는
+- **노드 상세**에서는 상태 옆에 종류 태그를 표시한다. 입력 대기 노드는 그 아래 노란 알림에
+  "The {provider} session is waiting for a person · {대기 시간}. The graph continues after you answer
+  it." 과 **세션 열기**(Open session) 버튼을 둔다. 알 수 없음 노드는 `Why unknown` 아래 기록된 이유와
+  다시 실행하거나 취소해야 그래프가 이어진다는 안내를 둔다. 같은 상세 내용을 넓은 화면에서는
   우측 패널에, 좁은 화면에서는 하단 시트에 배치한다. 경계선은 배치를 담당하는 쪽에서
   그린다(우측 패널의 왼쪽, 하단 시트의 위쪽).
 
@@ -67,6 +80,7 @@ tasty split --level surface --target-surface <SID> --type dag_graph
 | 휠 | 세로 pan · `Shift`+휠 가로 pan · `Ctrl`(macOS `Cmd`)+휠 줌(포인터 아래 지점 고정) |
 | 노드 클릭 | 선택 → 상세 표시. 빈 곳 클릭 또는 `Esc` 로 해제 |
 | 상세의 의존성 행 클릭 | 그 노드로 선택 점프 |
+| 상세의 세션 열기 | 입력을 기다리는 agent 세션의 surface 가 보이도록 그 workspace·pane·탭·surface 를 선택한다. 사용자 조작으로만 일어나며 IPC·CLI 경로는 없다. DAG 목록 popup 에서 누르면 popup 을 닫는다 |
 | 줌 클러스터 `fit` | 그래프 전체가 들어오게 맞춤(100% 를 넘겨 확대하지는 않는다) |
 | 줌 클러스터 방향 버튼 | 좌→우 ↔ 위→아래 전환. 선택은 유지된다. 글리프는 **지금** 방향을 보여준다 |
 | 헤더 새로고침 | 폴링 주기를 기다리지 않고 즉시 다시 읽는다 |

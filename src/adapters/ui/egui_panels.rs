@@ -211,18 +211,25 @@ pub fn draw_egui_panels(
             let view = dag_views.get_or_init(dag.id);
             let mut dag_id = dag.dag_id.clone();
             let mut direction = dag.direction;
+            let mut open_session = None;
             draw_panel_frame_no_margin(ctx, &format!("dag_panel_{}", id_suffix), info, |ui| {
                 let target = crate::adapters::ui::surface::dag_graph::DagTarget {
                     dag_id: &mut dag_id,
                     direction: &mut direction,
                 };
-                crate::adapters::ui::surface::dag_graph::draw_dag_graph(
+                open_session = crate::adapters::ui::surface::dag_graph::draw_dag_graph(
                     ui,
                     target,
                     view,
                     crate::adapters::ui::surface::dag_graph::DagChrome::Own,
                 );
             });
+            // 사용자가 상세에서 누른 세션 열기다. 사용자 조작이라 포커스를 옮긴다.
+            if let Some(session) = open_session
+                && !state.reveal_surface(engine, session)
+            {
+                tracing::warn!(session, "DAG open session: surface not found");
+            }
             if (dag_id.as_ref(), direction) != (dag.dag_id.as_ref(), dag.direction)
                 && let Some(target) =
                     crate::runtime::surface_binding::SurfaceBinding::capture(engine, sid)

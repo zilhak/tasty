@@ -289,3 +289,26 @@ fn next_prev_workspace_in_active_category_noop_when_alone() {
     state.prev_workspace_in_active_category(&engine.read());
     assert_eq!(state.active_workspace_index(&engine), 0);
 }
+
+/// 사용자가 다른 workspace 의 surface 를 열면 그 workspace·pane·탭·surface 가 선택된다.
+#[cfg(feature = "gui")]
+#[test]
+fn reveal_surface_selects_the_surface_in_another_workspace() {
+    let (mut state, mut engine_session) = navigation_fixture(&[0, 0]);
+    let engine = engine_session.borrow_mut();
+    assert_eq!(state.active_workspace_index(&engine), 1);
+
+    assert!(state.reveal_surface(&engine.read(), 1));
+    assert_eq!(state.active_workspace_index(&engine), 0);
+    let workspace = engine.workspace_at(0).expect("workspace");
+    let pane = workspace.pane_layout().find_pane(1).expect("pane");
+    assert_eq!(state.navigation.pane_id(workspace), Some(1));
+    assert_eq!(state.navigation.surface_id(&pane.tabs[0]), Some(1));
+
+    assert!(!state.reveal_surface(&engine.read(), 999), "없는 surface");
+    assert_eq!(
+        state.active_workspace_index(&engine),
+        0,
+        "선택을 바꾸지 않는다"
+    );
+}

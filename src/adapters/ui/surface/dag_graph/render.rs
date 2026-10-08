@@ -16,12 +16,13 @@ pub enum DagChrome {
 }
 
 /// 공용 그래프 렌더링. 화면 폭에 따라 상세를 오른쪽 또는 아래에 배치한다.
+/// 사용자가 상세에서 세션 열기를 누르면 그 세션의 surface id 를 돌려준다. 포커스는 호출부가 옮긴다.
 pub fn draw_dag_graph(
     ui: &mut egui::Ui,
     target: DagTarget<'_>,
     view: &mut DagGraphView,
     chrome_mode: DagChrome,
-) {
+) -> Option<u32> {
     let th = crate::theme::theme();
     let theme = &th;
     ui.set_min_size(ui.available_size());
@@ -30,7 +31,7 @@ pub fn draw_dag_graph(
     let Some(data) = view.data.clone() else {
         ui.painter()
             .rect_filled(ui.max_rect(), 0.0, theme.dag_canvas_bg().to_egui());
-        return;
+        return None;
     };
 
     let surface_width = ui.available_width();
@@ -52,7 +53,7 @@ pub fn draw_dag_graph(
             egui::Vec2::ZERO,
             theme,
         );
-        return;
+        return None;
     }
     let graph = data
         .current
@@ -124,9 +125,11 @@ pub fn draw_dag_graph(
         canvas_action = canvas(ui, theme, view, &data, &layout, direction, now, own_chrome);
     }
 
+    let mut open_session = None;
     match detail_action {
         Some(DetailAction::Select(id)) => view.selected = Some(id),
         Some(DetailAction::Close) => view.selected = None,
+        Some(DetailAction::OpenSession(surface)) => open_session = Some(surface),
         None => {}
     }
     apply_chrome(
@@ -137,6 +140,7 @@ pub fn draw_dag_graph(
         viewport,
         theme,
     );
+    open_session
 }
 
 #[allow(clippy::too_many_arguments)]

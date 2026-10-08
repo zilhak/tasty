@@ -24,7 +24,7 @@ use crate::adapters::ui::surface::dag_graph::{
     node::status_colors,
     view::{DagGraphView, POLL_INTERVAL},
 };
-use crate::i18n::{t, t_fmt2};
+use crate::i18n::{t, t_fmt, t_fmt2};
 use crate::state::MainViewState;
 
 pub const DAG_LIST_POPUP_ID: &str = "dag_list";
@@ -58,6 +58,8 @@ pub struct DagRow {
     /// 건너뛴 task 수와 그중 경로가 선택되지 않은 수. 완료/전체 뒤에 붙인다.
     skipped: usize,
     not_selected: usize,
+    /// agent 세션이 사람의 입력을 기다리는 task 수. rollup 은 running 그대로이므로 따로 알린다.
+    awaiting: usize,
     updated_at: u64,
 }
 
@@ -174,6 +176,7 @@ impl DagListState {
                                 total: s.task_count,
                                 skipped: c.skipped,
                                 not_selected: c.not_selected,
+                                awaiting: c.awaiting_input,
                                 updated_at: s.updated_at,
                             }
                         })
@@ -283,6 +286,7 @@ pub fn draw_dag_list_popup(
     let backbar_action: std::cell::RefCell<Option<ChromeAction>> = std::cell::RefCell::new(None);
     // DrillDown은 두 Fn 클로저 중 하나만 실행하므로 공유 상태를 RefCell로 빌린다.
     let cell = std::cell::RefCell::new(dag);
+    let open_session = std::cell::Cell::new(None);
     let actions = |ui: &mut egui::Ui, theme: &Theme| {
         let dag = cell.borrow();
         let Some(data) = dag.graph.data.clone() else {
@@ -303,13 +307,26 @@ pub fn draw_dag_list_popup(
             |ui, theme| close |= draw_list(ui, theme, &mut cell.borrow_mut(), &visible, total),
             |ui, theme| {
                 let pending = backbar_action.borrow_mut().take();
-                draw_detail_graph(ui, theme, &mut cell.borrow_mut(), pending);
+                open_session.set(draw_detail_graph(
+                    ui,
+                    theme,
+                    &mut cell.borrow_mut(),
+                    pending,
+                ));
             },
             Some(&actions),
         );
 
     if out.back_clicked {
         back_to_list(cell.into_inner());
+    }
+
+    // 사용자가 상세에서 누른 세션 열기다. 세션이 보이도록 포커스를 옮기고 popup 을 닫는다.
+    if let Some(session) = open_session.get() {
+        if state.reveal_surface(engine, session) {
+            return PopupAction::Close;
+        }
+        tracing::warn!(session, "DAG open session: surface not found");
     }
 
     if close {
@@ -526,6 +543,17 @@ fn draw_row_trailing(ui: &mut egui::Ui, theme: &Theme, row: &DagRow) {
                 .size(theme.font_size_caption.value())
                 .color(label_fg.to_egui()),
         );
+        if row.awaiting > 0 {
+            ui.label(
+                egui::RichText::new(format!(
+                    "! {}",
+                    t_fmt("dag_list.awaiting", &row.awaiting.to_string())
+                ))
+                .monospace()
+                .size(theme.font_size_caption.value())
+                .color(theme.dag_phase_awaiting_label().to_egui()),
+            );
+        }
         if row.derived {
             tag(ui, theme, t("dag_list.derived"), TagVariant::Default, false);
         }
@@ -561,18 +589,18 @@ fn draw_detail_graph(
     theme: &Theme,
     dag: &mut DagListState,
     pending: Option<ChromeAction>,
-) {
+) -> Option<u32> {
     if dag.open_dag.is_none() {
         ui.painter()
             .rect_filled(ui.max_rect(), 0.0, theme.dag_canvas_bg().to_egui());
-        return;
+        return None;
     }
     let target = DagTarget {
         dag_id: &mut dag.open_dag,
         direction: &mut dag.direction,
     };
     // 크롬은 back bar 가 든다 — 헤더도 캔버스 줌 클러스터도 여기서는 안 그린다.
-    draw_dag_graph(ui, target, &mut dag.graph, DagChrome::BackBar(pending));
+    draw_dag_graph(ui, target, &mut dag.graph, DagChrome::BackBar(pending))
 }
 
 /// 닫힘 정리 — 어떤 경로로 닫히든 다음 open 은 **목록 뷰**에서 시작한다.
@@ -600,6 +628,7 @@ mod tests {
             total: 0,
             skipped: 0,
             not_selected: 0,
+            awaiting: 0,
             updated_at,
         }
     }

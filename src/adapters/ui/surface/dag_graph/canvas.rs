@@ -122,12 +122,9 @@ pub fn draw_canvas(
         }
     }
 
-    // 건너뛴 이유는 카드에 다 쓰지 못하므로 호버 툴팁으로 보인다.
-    if let Some(tip) = hovered
-        .and_then(|i| graph.nodes.get(i))
-        .and_then(|n| n.skip_tooltip())
-    {
-        response.clone().on_hover_text(tip);
+    // 이름·상태와 건너뜀·알 수 없음·입력 대기의 이유는 카드에 다 쓰지 못하므로 호버 툴팁으로 보인다.
+    if let Some(node) = hovered.and_then(|i| graph.nodes.get(i)) {
+        response.clone().on_hover_text(node.hover_text(now_ms));
     }
 
     // 양수 request_repaint_after는 GPU 콜백이 무시하므로 타이머 허브에서 보이는 뷰만 예약한다.

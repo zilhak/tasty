@@ -1941,9 +1941,20 @@ reduce = "Reduce"
 wait_barrier = "Wait barrier"
 agent = "Agent"
 
-[dag.skip]
-branch_not_selected = "Not taken — another branch was selected."
-upstream_unavailable = "Skipped — {} {}."
+[dag.phase]
+# 실행 중 세부 단계. run 은 라벨 뒤에 붙는 후처리 실행 번호다.
+awaiting_input = "NEEDS INPUT"
+postprocessing = "POSTPROCESS"
+retry_wait = "RETRY WAIT"
+run = " · RUN {}"
+
+[dag.why]
+# 노드 호버의 이유 줄. lead 의 자리표시자는 이유 문구, awaiting 은 provider 와 대기 시간이다.
+lead = "Why: {}"
+not_selected = "Not selected by the upstream result"
+upstream_failed = "An upstream task did not succeed"
+retry_or_cancel = "Retry or cancel it to let the graph continue."
+awaiting = "Waiting for a person in the {} session · {}"
 
 [dag.on_failure]
 abort = "Abort"
@@ -1969,6 +1980,10 @@ error = "Error"
 output = "Output"
 jump_hint = "Select {}"
 none = "—"
+why_unknown = "Why unknown"
+# 자리표시자는 provider 와 대기 시간이다.
+awaiting_notice = "The {} session is waiting for a person · {}. The graph continues after you answer it."
+open_session = "Open session"
 
 [dag_list]
 tools_menu_item = "Task DAGs"
@@ -1988,6 +2003,8 @@ empty_none = "No DAGs yet"
 empty_none_hint = "Tasks grouped by dependency appear here."
 empty_filtered = "No matching DAGs"
 empty_filtered_hint = "Try a different filter."
+# 자리표시자는 입력을 기다리는 task 수다.
+awaiting = "{} needs input"
 
 [fullscreen.blank]
 title = "Fullscreen"
