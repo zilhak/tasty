@@ -7,6 +7,7 @@ pub mod chrome;
 pub mod detail;
 pub mod edges;
 pub mod node;
+pub mod phase;
 pub mod routes;
 pub mod rows;
 pub mod runner;
@@ -327,32 +328,13 @@ pub struct Node {
     pub deps: Vec<(String, Rel)>,
     /// `Skipped` 일 때만 의미가 있다.
     pub skip: Option<Skip>,
+    /// `Running` 일 때만 의미가 있다. 없으면 `executing`.
+    pub phase: Option<phase::Phase>,
+    /// `Unknown` 이 된 이유. 호스트의 자유 문구 그대로다.
+    pub reason: Option<String>,
 }
 
 impl Node {
-    /// 카드의 철자 라벨. 경로가 선택되지 않은 skipped 는 상태 이름 대신 그 사실을 적는다.
-    pub fn status_label(&self) -> &'static str {
-        match (&self.status, &self.skip) {
-            (Status::Skipped, Some(Skip::BranchNotSelected)) => "Not selected",
-            (status, _) => status.label(),
-        }
-    }
-
-    /// 건너뛴 이유 툴팁. 이유가 없으면 `None`.
-    pub fn skip_tooltip(&self) -> Option<String> {
-        if self.status != Status::Skipped {
-            return None;
-        }
-        match self.skip.as_ref()? {
-            Skip::BranchNotSelected => {
-                Some("Not taken \u{2014} another branch was selected.".into())
-            }
-            Skip::UpstreamUnavailable { source, state } => {
-                Some(format!("Skipped \u{2014} {source} {state}."))
-            }
-        }
-    }
-
     fn new(id: &str, name: &str, kind: Kind, status: Status, cmd: &str) -> Self {
         Self {
             id: id.to_owned(),
@@ -366,6 +348,8 @@ impl Node {
             err: None,
             deps: Vec::new(),
             skip: None,
+            phase: None,
+            reason: None,
         }
     }
 

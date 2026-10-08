@@ -12,6 +12,8 @@ pub struct Entry {
     pub graph: Graph,
     /// 사용자가 `metadata.dag` 로 선언한 그룹이 아니라 의존 연결성에서 도출된 것.
     pub derived: bool,
+    /// 사람의 입력을 기다리는 task 수(시안 `DAG_LIST.awaiting`). rollup 은 running 그대로다.
+    pub awaiting: usize,
 }
 
 impl Entry {
@@ -100,22 +102,27 @@ pub fn entries() -> Vec<Entry> {
         Entry {
             graph: super::build_dag(),
             derived: false,
+            awaiting: 0,
         },
         Entry {
             graph: super::index_dag(),
             derived: false,
+            awaiting: 1,
         },
         Entry {
             graph: super::dense_dag(),
             derived: true,
+            awaiting: 0,
         },
         Entry {
             graph: super::cycle_dag(),
             derived: true,
+            awaiting: 0,
         },
         Entry {
             graph: super::partial_dag(),
             derived: false,
+            awaiting: 0,
         },
     ]
 }
@@ -145,6 +152,14 @@ pub fn trailing(ui: &mut egui::Ui, theme: &Theme, entry: &Entry) {
                 // 작은 라벨에 맞는 상태별 텍스트 색을 쓴다.
                 .color(status.label_fg(theme).to_egui()),
         );
+        if entry.awaiting > 0 {
+            ui.label(
+                egui::RichText::new(format!("! {} needs input", entry.awaiting))
+                    .monospace()
+                    .size(theme.font_size_caption.value())
+                    .color(theme.dag_phase_awaiting_label().to_egui()),
+            );
+        }
         if entry.derived {
             tag(ui, theme, "derived", TagVariant::Default, false);
         }
@@ -210,7 +225,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("leading", "gitTree icon + name"),
             ("label", "13 — DAG name"),
             ("description", "11 — workspace · last update"),
-            ("trailing", "origin tag · rollup · done/total"),
+            (
+                "trailing",
+                "origin tag · ! n needs input · rollup · done/total",
+            ),
             (
                 "skip count",
                 "after done/total: · {n} skipped ({k} not selected) — only when n > 0, parenthesis only when k > 0 · same mono caption · dag-row-count-fg · not clickable · also on the DAG tab header",
@@ -228,6 +246,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::without_color("dag-row-summary-gap", "trailing gap"),
             TokenChip::new("tag-bg", "derived tag", theme.tag_bg().to_egui()),
             TokenChip::without_color("dag-row-height", "36 row"),
+            TokenChip::new(
+                "dag-phase-awaiting-label",
+                "! n needs input",
+                theme.dag_phase_awaiting_label().to_egui(),
+            ),
             TokenChip::new(
                 "dag-status-partially-failed",
                 "◒ rollup",
@@ -263,6 +286,7 @@ mod tests {
         Entry {
             graph,
             derived: false,
+            awaiting: 0,
         }
         .rollup()
     }

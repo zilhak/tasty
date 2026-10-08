@@ -145,11 +145,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("unavailable", "dead-path dim, as from a failed task"),
             (
                 "not-selected node",
-                "skipped look \u{b7} label NOT SELECTED \u{b7} tooltip \u{201c}Not taken \u{2014} another branch was selected.\u{201d}",
+                "skipped look \u{b7} label NOT SELECTED \u{b7} tooltip why-line \u{201c}Why: Not selected by the upstream result\u{201d}",
             ),
             (
                 "upstream-unavailable node",
-                "skipped look \u{b7} label SKIPPED \u{b7} tooltip \u{201c}Skipped \u{2014} {source} {state}.\u{201d}",
+                "skipped look \u{b7} label SKIPPED \u{b7} tooltip why-line \u{201c}Why: An upstream task did not succeed\u{201d}",
             ),
             ("rollup", "succeeded + not selected only \u{2192} succeeded"),
             (

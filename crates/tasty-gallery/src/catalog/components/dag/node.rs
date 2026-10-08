@@ -69,7 +69,7 @@ pub fn paint_card(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, node: &Nod
     let (zoom, dim) = (vis.zoom, vis.dimmed);
     let radius = (theme.dag_node_radius().value() * zoom).round();
     let bw = theme.border_width.value();
-    let accent = node.status.accent(theme);
+    let accent = node.accent(theme);
 
     if vis.lod == Lod::Block {
         // block 티어는 텍스트가 없으니 상태색을 카드 전체로 채운다:
@@ -92,11 +92,11 @@ pub fn paint_card(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, node: &Nod
     }
 
     ui.painter()
-        .rect_filled(rect, radius, tone(node.status.bg(theme), dim));
+        .rect_filled(rect, radius, tone(node.bg(theme), dim));
     ui.painter().rect_stroke(
         rect,
         radius,
-        egui::Stroke::new(bw, tone(node.status.border(theme), dim)),
+        egui::Stroke::new(bw, tone(node.border(theme), dim)),
         egui::StrokeKind::Inside,
     );
 
@@ -182,8 +182,8 @@ pub fn paint_card(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, node: &Nod
     }
 
     let meta_y = top + name_h + row_gap + meta_h / 2.0;
-    let label_fg = node.status.label_fg(theme);
-    let glyph = node.status.glyph();
+    let label_fg = node.label_fg(theme);
+    let glyph = node.glyph();
     let gw = text_width(ui, glyph, &meta_font) + gap;
     ui.painter().text(
         egui::pos2(inner.min.x, meta_y),
@@ -288,9 +288,7 @@ pub(super) fn node_box(ui: &mut egui::Ui, theme: &Theme, node: &Node, vis: NodeV
         egui::vec2(w + pad * 2.0, h + pad * 2.0 + gap + cap_h),
         egui::Sense::hover(),
     );
-    if let Some(tip) = node.skip_tooltip() {
-        response.on_hover_text(tip);
-    }
+    response.on_hover_text(node.hover_text());
     let rect = egui::Rect::from_min_size(outer.min + egui::vec2(pad, pad), egui::vec2(w, h));
     paint_card(ui, theme, rect, node, vis);
     ui.painter().text(
@@ -315,6 +313,8 @@ pub(super) fn sample(status: Status, name: &str, dur: Option<&str>) -> Node {
         err: None,
         deps: Vec::new(),
         skip: None,
+        phase: None,
+        reason: None,
     };
     n.kind = Kind::Run;
     n

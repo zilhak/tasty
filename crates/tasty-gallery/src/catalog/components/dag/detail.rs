@@ -4,7 +4,7 @@
 use tasty_design_tokens::generated::semantic::CONTROL_HEIGHT_TREE;
 use tasty_icons as icons;
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::{ControlSize, IconButton, TagVariant, tag};
+use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, IconButton, TagVariant, tag};
 
 use super::{Graph, Rel, Status};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
@@ -172,13 +172,64 @@ pub fn draw_body(ui: &mut egui::Ui, theme: &Theme, graph: &Graph, id: &str) -> O
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing.x = theme.spacing_xs.value();
         ui.label(
-            egui::RichText::new(format!("{} {}", node.status.glyph(), node.status.label()))
+            egui::RichText::new(format!("{} {}", node.glyph(), node.status_label()))
                 .size(caption(theme))
                 .monospace()
-                .color(node.status.label_fg(theme).to_egui()),
+                .color(node.label_fg(theme).to_egui()),
         );
         tag(ui, theme, node.kind.label(), TagVariant::Default, false);
     });
+
+    // 입력 대기 — 누가 무엇을 기다리는지와 그 세션을 여는 버튼. 사용자 조작 전용이다.
+    if let Some(notice) = node.awaiting_notice() {
+        egui::Frame::NONE
+            .fill(theme.dag_phase_awaiting_bg().to_egui())
+            .stroke(egui::Stroke::new(
+                theme.border_width.value(),
+                theme.dag_phase_awaiting().to_egui(),
+            ))
+            .corner_radius(theme.corner_radius_sm.value())
+            .inner_margin(theme.spacing_sm.value())
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(notice)
+                            .size(caption(theme))
+                            .color(theme.text_primary().to_egui()),
+                    )
+                    .wrap(),
+                );
+                Button::new("Open session")
+                    .variant(ButtonVariant::Secondary)
+                    .size(ControlSize::Sm)
+                    .show(ui, theme);
+            });
+    }
+
+    if let Some((reason, retry)) = super::phase::unknown_lines(node) {
+        ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
+            block_label(ui, theme, "Why unknown");
+            ui.add(
+                egui::Label::new(
+                    egui::RichText::new(reason)
+                        .size(caption(theme))
+                        .color(theme.text_secondary().to_egui()),
+                )
+                .wrap(),
+            );
+            ui.add(
+                egui::Label::new(
+                    egui::RichText::new(retry)
+                        .size(caption(theme))
+                        .color(theme.text_muted().to_egui()),
+                )
+                .wrap(),
+            );
+        });
+    }
 
     egui::Grid::new(("dag_detail_dl", id))
         .num_columns(2)

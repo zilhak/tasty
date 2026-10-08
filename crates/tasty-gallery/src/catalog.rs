@@ -2120,6 +2120,28 @@ pub fn pages() -> Vec<Page> {
                     ],
                 ),
                 section(
+                    "dag-phase",
+                    "Task DAG · running phase & unknown reason",
+                    vec![
+                        spec(
+                            "dag-running-phase",
+                            "Running phase — only awaiting_input gets its own look",
+                            Some(
+                                "입력 대기만 needs-input 노랑 전체 · 후처리·재시도 대기는 running 톤에 라벨과 실행 번호",
+                            ),
+                            components::dag::phase::draw_phases,
+                        ),
+                        spec(
+                            "dag-why",
+                            "Hover — the why-line for skipped, unknown and awaiting",
+                            Some(
+                                "name — label 다음 이유 한 줄 · 상세 패널의 입력 대기 알림과 Why unknown",
+                            ),
+                            components::dag::phase::draw_why,
+                        ),
+                    ],
+                ),
+                section(
                     "dag-shell",
                     "Task DAG · chrome, detail & surface",
                     vec![
