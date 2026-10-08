@@ -255,6 +255,18 @@ fn physical_key_to_name(physical: &winit::keyboard::PhysicalKey) -> Option<&'sta
         KeyCode::F10 => "f10",
         KeyCode::F11 => "f11",
         KeyCode::F12 => "f12",
+        KeyCode::F13 => "f13",
+        KeyCode::F14 => "f14",
+        KeyCode::F15 => "f15",
+        KeyCode::F16 => "f16",
+        KeyCode::F17 => "f17",
+        KeyCode::F18 => "f18",
+        KeyCode::F19 => "f19",
+        KeyCode::F20 => "f20",
+        KeyCode::F21 => "f21",
+        KeyCode::F22 => "f22",
+        KeyCode::F23 => "f23",
+        KeyCode::F24 => "f24",
         KeyCode::Minus => "minus",
         KeyCode::Equal => "=",
         KeyCode::Comma => ",",
@@ -299,6 +311,18 @@ fn named_key_to_name(key: &winit::keyboard::Key) -> Option<&'static str> {
             NamedKey::F10 => "f10",
             NamedKey::F11 => "f11",
             NamedKey::F12 => "f12",
+            NamedKey::F13 => "f13",
+            NamedKey::F14 => "f14",
+            NamedKey::F15 => "f15",
+            NamedKey::F16 => "f16",
+            NamedKey::F17 => "f17",
+            NamedKey::F18 => "f18",
+            NamedKey::F19 => "f19",
+            NamedKey::F20 => "f20",
+            NamedKey::F21 => "f21",
+            NamedKey::F22 => "f22",
+            NamedKey::F23 => "f23",
+            NamedKey::F24 => "f24",
             _ => return None,
         })
     } else {
@@ -308,8 +332,32 @@ fn named_key_to_name(key: &winit::keyboard::Key) -> Option<&'static str> {
 
 #[cfg(test)]
 mod tests {
-    use super::{KeyCapture, bare_key_decision};
-    use winit::keyboard::ModifiersState;
+    use super::{KeyCapture, bare_key_decision, named_key_to_name, physical_key_to_name};
+    use winit::keyboard::{Key, KeyCode, ModifiersState, NamedKey, PhysicalKey};
+
+    /// 녹화가 F1~F24 를 매칭 규칙이 받는 이름으로 저장한다(물리 키·논리 키 두 경로 모두).
+    #[test]
+    fn function_keys_up_to_f24_record_as_recognized_names() {
+        let codes = [
+            (KeyCode::F1, NamedKey::F1),
+            (KeyCode::F12, NamedKey::F12),
+            (KeyCode::F13, NamedKey::F13),
+            (KeyCode::F18, NamedKey::F18),
+            (KeyCode::F24, NamedKey::F24),
+        ];
+        for (code, named) in codes {
+            let physical = physical_key_to_name(&PhysicalKey::Code(code));
+            let logical = named_key_to_name(&Key::Named(named));
+            assert_eq!(physical, logical, "{code:?}");
+            let name = physical.unwrap_or_else(|| panic!("{code:?} 이름 없음"));
+            assert!(tasty_key_match::binding_key_recognized(name), "{name}");
+        }
+        assert_eq!(
+            physical_key_to_name(&PhysicalKey::Code(KeyCode::F13)),
+            Some("f13")
+        );
+        assert_eq!(physical_key_to_name(&PhysicalKey::Code(KeyCode::F25)), None);
+    }
 
     #[test]
     fn capture_bare_key_rejects_when_modifier_held() {
