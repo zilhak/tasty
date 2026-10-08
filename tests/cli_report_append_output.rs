@@ -1,17 +1,21 @@
 //! `tasty agent report append` 는 성공하면 아무것도 출력하지 않고, 오류만 표준 오류로 낸다.
 //! 이 명령을 부르는 후처리·reduce 셸에서는 표준 출력이 작업의 결과이기 때문이다.
-//! 실제 바이너리를 가짜 호스트에 붙여 두 스트림과 종료 코드를 본다.
+//! 실제 바이너리를 가짜 호스트에 붙여 두 스트림과 종료 코드를 본다. 인스턴스는 띄우지 않으며
+//! CLI 는 임시 TASTY_HOME 의 포트 파일로 가짜 호스트를 찾는다.
+
+#[path = "spawn_diag/mod.rs"]
+mod spawn_diag;
 
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
 use std::process::{Command, Output, Stdio};
 
-/// 요청 한 줄을 받아 `answer` 로 답하는 가짜 호스트. 포트 파일 경로를 돌려준다.
-fn fake_host(home: &std::path::Path, answer: serde_json::Value) -> std::path::PathBuf {
+/// 요청 한 줄을 받아 `answer` 로 답하는 가짜 호스트. CLI 가 기본으로 읽는
+/// `TASTY_HOME/tasty.port` 에 포트를 쓴다.
+fn fake_host(home: &std::path::Path, answer: serde_json::Value) {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
     let port = listener.local_addr().expect("addr").port();
-    let port_file = home.join("fake.port");
-    std::fs::write(&port_file, port.to_string()).expect("port file");
+    std::fs::write(home.join("tasty.port"), port.to_string()).expect("port file");
     std::thread::spawn(move || {
         let Ok((stream, _)) = listener.accept() else {
             return;
@@ -30,20 +34,17 @@ fn fake_host(home: &std::path::Path, answer: serde_json::Value) -> std::path::Pa
             line.clear();
         }
     });
-    port_file
 }
 
 fn append(answer: serde_json::Value) -> Output {
     let home = tempfile::tempdir().expect("tempdir");
-    let port_file = fake_host(home.path(), answer);
-    Command::new(env!("CARGO_BIN_EXE_tasty"))
+    fake_host(home.path(), answer);
+    Command::new(spawn_diag::instance_bin())
         .env("TASTY_HOME", home.path())
         .env_remove("TASTY_SURFACE_ID")
         .env_remove("TASTY_SESSION_TOKEN")
         .env_remove("TASTY_AGENT_ID")
         .env_remove("TASTY_TASK_REPORT")
-        .arg("--port-file")
-        .arg(&port_file)
         .args([
             "agent",
             "report",
