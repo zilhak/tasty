@@ -335,28 +335,49 @@ mod tests {
     use super::{KeyCapture, bare_key_decision, named_key_to_name, physical_key_to_name};
     use winit::keyboard::{Key, KeyCode, ModifiersState, NamedKey, PhysicalKey};
 
-    /// 녹화가 F1~F24 를 매칭 규칙이 받는 이름으로 저장한다(물리 키·논리 키 두 경로 모두).
+    /// 녹화가 F1~F24 전부를 물리 키·논리 키 두 경로 모두 `f<n>` 으로 저장하고, 그 이름을 매칭 규칙이 받는다.
+    /// macOS 의 F21~F24 는 논리 키가 이름 키로 오지 않아 물리 표에만 의존하므로 표의 줄마다 확인한다.
     #[test]
     fn function_keys_up_to_f24_record_as_recognized_names() {
-        let codes = [
+        let keys = [
             (KeyCode::F1, NamedKey::F1),
+            (KeyCode::F2, NamedKey::F2),
+            (KeyCode::F3, NamedKey::F3),
+            (KeyCode::F4, NamedKey::F4),
+            (KeyCode::F5, NamedKey::F5),
+            (KeyCode::F6, NamedKey::F6),
+            (KeyCode::F7, NamedKey::F7),
+            (KeyCode::F8, NamedKey::F8),
+            (KeyCode::F9, NamedKey::F9),
+            (KeyCode::F10, NamedKey::F10),
+            (KeyCode::F11, NamedKey::F11),
             (KeyCode::F12, NamedKey::F12),
             (KeyCode::F13, NamedKey::F13),
+            (KeyCode::F14, NamedKey::F14),
+            (KeyCode::F15, NamedKey::F15),
+            (KeyCode::F16, NamedKey::F16),
+            (KeyCode::F17, NamedKey::F17),
             (KeyCode::F18, NamedKey::F18),
+            (KeyCode::F19, NamedKey::F19),
+            (KeyCode::F20, NamedKey::F20),
+            (KeyCode::F21, NamedKey::F21),
+            (KeyCode::F22, NamedKey::F22),
+            (KeyCode::F23, NamedKey::F23),
             (KeyCode::F24, NamedKey::F24),
         ];
-        for (code, named) in codes {
+        for (n, (code, named)) in (1..).zip(keys) {
+            let expected = format!("f{n}");
             let physical = physical_key_to_name(&PhysicalKey::Code(code));
             let logical = named_key_to_name(&Key::Named(named));
-            assert_eq!(physical, logical, "{code:?}");
-            let name = physical.unwrap_or_else(|| panic!("{code:?} 이름 없음"));
-            assert!(tasty_key_match::binding_key_recognized(name), "{name}");
+            assert_eq!(physical, Some(expected.as_str()), "{code:?}");
+            assert_eq!(logical, Some(expected.as_str()), "{named:?}");
+            assert!(
+                tasty_key_match::binding_key_recognized(&expected),
+                "{expected}"
+            );
         }
-        assert_eq!(
-            physical_key_to_name(&PhysicalKey::Code(KeyCode::F13)),
-            Some("f13")
-        );
         assert_eq!(physical_key_to_name(&PhysicalKey::Code(KeyCode::F25)), None);
+        assert_eq!(named_key_to_name(&Key::Named(NamedKey::F25)), None);
     }
 
     #[test]
