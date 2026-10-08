@@ -216,6 +216,7 @@ fn shutdown_reports_a_running_worker_until_its_actual_join() {
             window: winit::window::WindowId::from(1),
             engine: engine.id,
             target,
+            affected: Affected::default(),
             worker,
         }),
         stopping: false,
@@ -266,4 +267,48 @@ fn failed_rename_preserves_original_selection() {
             .selected
             .contains(&selected)
     );
+}
+
+#[test]
+fn each_operation_names_the_folders_it_can_change_and_the_paths_it_can_remove() {
+    let a = PathBuf::from("/w/src/a.txt");
+    let b = PathBuf::from("/w/other/b");
+    let copy = Operation::Paste {
+        paths: vec![a.clone(), b.clone()],
+        destination: "/w/dest".into(),
+        cut: false,
+    };
+    assert_eq!(
+        copy.affected(),
+        Affected {
+            changed: vec!["/w/dest".into()],
+            removed: Vec::new(),
+        }
+    );
+    assert_eq!(
+        paste(vec![a.clone(), b.clone()], "/w/dest".into()).affected(),
+        Affected {
+            changed: vec!["/w/dest".into(), "/w/src".into(), "/w/other".into()],
+            removed: vec![a.clone(), b.clone()],
+        }
+    );
+    assert_eq!(
+        Operation::Trash(vec![b.clone()]).affected(),
+        Affected {
+            changed: vec!["/w/other".into()],
+            removed: vec![b.clone()],
+        }
+    );
+    assert_eq!(
+        Operation::Rename {
+            path: a.clone(),
+            name: "c.txt".into(),
+        }
+        .affected(),
+        Affected {
+            changed: vec!["/w/src".into()],
+            removed: vec![a],
+        }
+    );
+    assert_eq!(Operation::Open(b).affected(), Affected::default());
 }

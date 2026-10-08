@@ -47,6 +47,39 @@ impl Operation {
             Self::Open(path) => path.as_os_str().len(),
         }
     }
+    /// 작업이 바꿀 수 있는 경로. 결과와 관계없이 이 경로를 보는 목록을 다시 읽는다.
+    /// 앞은 항목이 생기거나 사라질 수 있는 폴더, 뒤는 원래 자리에서 사라질 수 있는 경로다.
+    fn affected(&self) -> Affected {
+        let parents = |paths: &[PathBuf]| -> Vec<PathBuf> {
+            paths
+                .iter()
+                .filter_map(|p| p.parent().map(PathBuf::from))
+                .collect()
+        };
+        match self {
+            Self::Paste {
+                paths,
+                destination,
+                cut,
+            } => {
+                let mut changed = vec![destination.clone()];
+                if *cut {
+                    changed.extend(parents(paths));
+                }
+                let removed = if *cut { paths.clone() } else { Vec::new() };
+                Affected { changed, removed }
+            }
+            Self::Trash(paths) => Affected {
+                changed: parents(paths),
+                removed: paths.clone(),
+            },
+            Self::Rename { path, .. } => Affected {
+                changed: parents(std::slice::from_ref(path)),
+                removed: vec![path.clone()],
+            },
+            Self::Open(_) => Affected::default(),
+        }
+    }
     fn run(self) -> Result<(), String> {
         match self {
             Self::Paste {
@@ -68,6 +101,12 @@ impl Operation {
             }
         }
     }
+}
+
+#[derive(Debug, Default, PartialEq)]
+struct Affected {
+    changed: Vec<PathBuf>,
+    removed: Vec<PathBuf>,
 }
 
 struct Target {
@@ -148,6 +187,7 @@ struct Job {
     window: winit::window::WindowId,
     engine: crate::runtime::engine_session::EngineId,
     target: Target,
+    affected: Affected,
     worker: JoinHandle<Result<(), String>>,
 }
 /// One running file operation serializes collision checks/moves. Pending requests remain bounded
@@ -248,9 +288,13 @@ impl super::App {
             window,
             engine,
             target,
+            affected,
             worker,
         } = self.explorer_files.job.take().expect("finished job exists");
         let result = join(worker);
+        // 같은 폴더를 보는 다른 explorer 도 다시 읽는다. 실패·부분 성공도 실제 상태를 다시 읽어야 하고,
+        // 요청한 surface 가 그 사이 닫혔어도 다른 윈도우의 목록은 낡은 채로 남으면 안 된다.
+        self.reload_local_explorers(&affected);
         let success = result.is_ok();
         let failure = result.as_ref().err().cloned();
         if success && let Some(clipboard) = &target.clipboard {
@@ -287,6 +331,22 @@ impl super::App {
         target.apply(&mut view.state, success);
         view.mark_dirty();
     }
+    /// 모든 윈도우의 로컬 explorer 중 `affected` 를 보는 것을 다시 읽게 한다. mirror explorer 는 원격 파일을 보므로 제외한다.
+    fn reload_local_explorers(&mut self, affected: &Affected) {
+        if affected.changed.is_empty() && affected.removed.is_empty() {
+            return;
+        }
+        for view in self.view.views.values_mut() {
+            if let Some(view) = view.as_main_mut()
+                && view
+                    .state
+                    .explorer_views
+                    .invalidate_local(&affected.changed, &affected.removed)
+            {
+                view.mark_dirty();
+            }
+        }
+    }
     fn start_explorer_file(&mut self) {
         for (&window, view) in &mut self.view.views {
             let Some(view) = view.as_main_mut() else {
@@ -312,6 +372,7 @@ impl super::App {
                 {
                     continue;
                 }
+                let affected = operation.affected();
                 let wake = self.view.proxy.clone();
                 match std::thread::Builder::new()
                     .name("explorer-files".into())
@@ -327,6 +388,7 @@ impl super::App {
                             window,
                             engine,
                             target,
+                            affected,
                             worker,
                         })
                     }

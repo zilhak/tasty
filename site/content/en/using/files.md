@@ -1,4 +1,4 @@
-<!-- source-hash: fed25c7fe40a -->
+<!-- source-hash: e07d2dd9e789 -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -51,6 +51,8 @@ The file manager built into Tasty. Change a terminal with `Alt+'` > **Explorer**
 Dragging a split line to shrink an Explorer stops at the height that still leaves the toolbar, the status line and about two rows of the list (180px). Splitting an Explorer, or splitting to make a new one, moves the split line so the Explorer keeps 180px. A cell of another kind takes whatever height is left. Only when there is no room for two Explorers to keep 180px is nothing split: the split menu and shortcut briefly show "Not enough room to split this pane", and `tasty split` reports the reason as an error. When the cell is so low that the left sidebar is shorter than 240px, Favorites hide and only the Files tree shows. Resizing the window can take the cell below that height. When the content area is lower than 120px, the empty folder, permission denied and read error messages turn into a single line of icon, title and buttons, and hovering the title shows the details.
 
 If a folder can't be read (the path is gone, it is not a folder, or a remote read failed), the list area shows **Can't read this folder** with the reason the operating system gave. **Retry** reads the same folder again and **Go up** goes one folder up. A missing permission shows **Permission denied** instead.
+
+When you paste, rename or move items to the trash in an Explorer, every other Explorer showing a changed folder (even in another window) re-reads its list and left tree. If the folder you were viewing was deleted, the read error message appears in place and the Explorer does not move to another folder on its own. Changes made by other programs are not picked up automatically, so press **Refresh** (`F5`). Refresh also re-reads the folders you expanded in the tree.
 
 Click the address bar to type a path directly; recently visited folders appear as autocompletion. Go with `Enter` or **Go**. The left tree stays fixed at the root, but the right list can go anywhere.
 

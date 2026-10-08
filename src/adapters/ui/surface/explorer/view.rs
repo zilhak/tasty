@@ -254,7 +254,8 @@ impl ExplorerView {
             .as_ref()
             .map(|(d, _, _)| d != &tab.root)
             .unwrap_or(true);
-        let need = self.reload_requested || self.loaded.as_ref() != Some(&key);
+        let explicit = self.reload_requested;
+        let need = explicit || self.loaded.as_ref() != Some(&key);
         if !need {
             return;
         }
@@ -268,7 +269,8 @@ impl ExplorerView {
         self.local_query = Some(crate::app::local_reads::directory(tab.root.clone()));
         self.entries.clear();
         self.state = LoadState::Loading;
-        if dir_changed || self.tree_children.is_empty() {
+        // 새로고침은 같은 폴더여도 펼친 트리를 다시 읽는다. 트리만 바뀐 경우를 놓치지 않기 위해서다.
+        if dir_changed || explicit || self.tree_children.is_empty() {
             self.tree_children.clear();
             self.tree_queries.clear();
         }
@@ -326,6 +328,11 @@ impl ExplorerView {
         if dir_changed {
             self.clear_selection();
             self.tree_children.clear();
+        } else if refresh {
+            // 펼친 트리도 다시 받는다. 응답을 기다리는 경로는 그대로 두어 중복 요청을 만들지 않는다.
+            self.tree_children.clear();
+            self.remote_state
+                .retain(|_, state| matches!(state, RemoteLoadState::Loading { .. }));
         }
 
         self.state = match self.remote_state.get(dir) {
@@ -580,6 +587,38 @@ impl ExplorerViewStore {
 
     pub fn drop_view(&mut self, sid: SurfaceId) {
         self.views.remove(&sid);
+    }
+
+    /// 로컬 파일 작업이 바꾼 폴더를 보고 있는 View 를 다시 읽게 한다. 다시 읽은 View 가 있으면 true.
+    /// `changed` 는 항목이 생기거나 사라진 폴더, `removed` 는 원래 자리에서 사라진 경로다.
+    /// 사라진 경로 안을 보던 View 는 다시 읽어 읽기 오류 화면을 보인다. 다른 경로로 옮기지 않는다.
+    pub(crate) fn invalidate_local(&mut self, changed: &[PathBuf], removed: &[PathBuf]) -> bool {
+        let hit = |dir: &Path| {
+            changed.iter().any(|c| c == dir) || removed.iter().any(|r| dir.starts_with(r))
+        };
+        let mut any = false;
+        for view in self.views.values_mut() {
+            if view.mirror_ws_id.is_some() {
+                continue;
+            }
+            if view.loaded.as_ref().is_some_and(|(dir, _, _)| hit(dir)) {
+                view.request_reload();
+                any = true;
+                continue;
+            }
+            let stale: Vec<PathBuf> = view
+                .tree_children
+                .keys()
+                .filter(|dir| hit(dir))
+                .cloned()
+                .collect();
+            for dir in &stale {
+                view.tree_children.remove(dir);
+                view.tree_queries.remove(dir);
+            }
+            any |= !stale.is_empty();
+        }
+        any
     }
 
     /// 현재 뷰 개수. system.gpu_stats에서 닫힌 surface의 상태 정리를 확인할 때 쓴다.
@@ -870,5 +909,108 @@ mod tests {
         assert!(view.is_broken_link(Path::new("/d/gone")));
         assert!(!view.is_broken_link(Path::new("/d/ok")));
         assert!(!view.is_broken_link(Path::new("/d/other")));
+    }
+
+    #[test]
+    fn an_explicit_reload_of_the_same_folder_rereads_the_tree() {
+        let panel = ExplorerPanel::new(1, PathBuf::from("/tmp/alpha"));
+        let mut view = ExplorerView::new();
+        view.sync(&panel, None);
+        view.tree_children
+            .insert(PathBuf::from("/tmp/alpha"), Vec::new());
+
+        view.sync(&panel, None);
+        assert!(
+            !view.tree_children.is_empty(),
+            "an unchanged sync keeps the tree"
+        );
+
+        view.request_reload();
+        view.sync(&panel, None);
+        assert!(view.tree_children.is_empty());
+    }
+
+    #[test]
+    fn a_remote_refresh_rereads_the_tree_but_keeps_requests_in_flight() {
+        let panel = ExplorerPanel::new(1, PathBuf::from("/remote/project"));
+        let mut view = ExplorerView::new();
+        view.sync(&panel, Some(7));
+        let id = match view.remote_state.get(panel.current_root()) {
+            Some(RemoteLoadState::Loading { request_id, .. }) => *request_id,
+            _ => panic!("expected a loading request"),
+        };
+        assert!(view.apply_remote_list_dir_result(id, &panel, Ok(Vec::new())));
+        view.remote_state.insert(
+            "/remote/project/sub".into(),
+            RemoteLoadState::Loaded(Vec::new()),
+        );
+        view.tree_children
+            .insert("/remote/project/sub".into(), Vec::new());
+        view.remote_state.insert(
+            "/remote/project/pending".into(),
+            RemoteLoadState::Loading {
+                request_id: 99,
+                sent_at: Instant::now(),
+            },
+        );
+        drop(view.drain_outbox());
+
+        view.request_reload();
+        view.sync(&panel, Some(7));
+        assert!(view.tree_children.is_empty());
+        assert!(
+            !view
+                .remote_state
+                .contains_key(Path::new("/remote/project/sub"))
+        );
+        assert!(
+            view.remote_state
+                .contains_key(Path::new("/remote/project/pending"))
+        );
+        assert_eq!(
+            view.drain_outbox().len(),
+            1,
+            "only the current folder is re-requested"
+        );
+    }
+
+    #[test]
+    fn a_local_file_action_reloads_every_local_view_of_the_changed_folders() {
+        let mut store = ExplorerViewStore::default();
+        let mut sync = |sid, root: &str, mirror| {
+            let panel = ExplorerPanel::new(sid, PathBuf::from(root));
+            store.get_or_init(&panel, mirror);
+        };
+        sync(1, "/w/dest", None);
+        sync(2, "/w/gone/inner", None);
+        sync(3, "/w/elsewhere", None);
+        sync(4, "/w/dest", Some(7));
+        let tree_view = store.get_mut(3).unwrap();
+        tree_view.tree_children.insert("/w/dest".into(), Vec::new());
+        tree_view
+            .tree_children
+            .insert("/w/untouched".into(), Vec::new());
+        let before = store.get(4).unwrap().reload_requested;
+
+        assert!(store.invalidate_local(&["/w/dest".into()], &["/w/gone".into()]));
+        assert!(store.get(1).unwrap().reload_requested, "same folder");
+        assert!(
+            store.get(2).unwrap().reload_requested,
+            "inside a removed folder"
+        );
+        let tree_view = store.get(3).unwrap();
+        assert!(!tree_view.reload_requested);
+        assert!(!tree_view.tree_children.contains_key(Path::new("/w/dest")));
+        assert!(
+            tree_view
+                .tree_children
+                .contains_key(Path::new("/w/untouched"))
+        );
+        assert_eq!(
+            store.get(4).unwrap().reload_requested,
+            before,
+            "a mirror view shows remote files"
+        );
+        assert!(!store.invalidate_local(&["/w/none".into()], &[]));
     }
 }
