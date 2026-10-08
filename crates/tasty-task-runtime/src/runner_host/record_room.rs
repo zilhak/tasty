@@ -7,9 +7,12 @@ use tasty_agent::task::record_limit;
 use super::HostExecutor;
 
 impl HostExecutor {
-    /// 레코드가 결과 전 상한 안인가. 넘으면 사유를 돌려준다.
+    /// 레코드가 memory 값 상한에 맞춘 결과 전 상한 안인가. 넘으면 사유를 돌려준다.
     pub(super) fn record_fits(&self, task: &Task, what: &str) -> Result<(), String> {
-        record_limit::check(task, what)
+        let limit = self
+            .ctx
+            .with_memory(|mem| record_limit::limit_for(mem.config().entry_max_bytes));
+        record_limit::check(task, what, limit)
     }
 
     /// 출력·lease 를 치환한 task 가 상한 안이면 치환 여부(`changed`)를 그대로 돌려준다.

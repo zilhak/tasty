@@ -65,6 +65,8 @@ fn maintain_memory_at_boot(arc: &std::sync::Arc<std::sync::Mutex<tasty_memory::M
         crate::core::MEMORY_WHAT,
         &crate::core::MEMORY_POISONED,
     );
+    // memory 값 상한이 task 결과 몫을 남기지 못하면 부팅 때 한 번 알린다.
+    tasty_agent::task::record_limit::warn_if_no_result_room(store.config().entry_max_bytes);
     let now_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)

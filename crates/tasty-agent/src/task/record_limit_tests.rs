@@ -178,3 +178,49 @@ fn a_shrunk_failure_always_fits_beside_a_definition_at_the_limit() {
     let record = size(&t);
     assert!(record <= tasty_memory::MAX_VALUE_BYTES, "{record}");
 }
+
+/// 상한은 memory 값 상한에서 결과 몫을 뺀 값과 768 KiB 중 작은 쪽이다. 몫을 남기지 못하면
+/// 최솟값이다.
+#[test]
+fn the_limit_follows_the_memory_entry_limit() {
+    const KIB: u64 = 1024;
+    for (entry, limit, no_room) in [
+        (1024 * KIB, 768 * 1024, false),
+        (4096 * KIB, 768 * 1024, false),
+        (900 * KIB, 644 * 1024, false),
+        (320 * KIB, 64 * 1024, false),
+        (319 * KIB, 64 * 1024, true),
+        (256 * KIB, 64 * 1024, true),
+        (0, 64 * 1024, true),
+    ] {
+        assert_eq!(limit_for(entry), limit, "entry {entry}");
+        assert_eq!(leaves_no_result_room(entry), no_room, "entry {entry}");
+    }
+}
+
+/// 저장소의 memory 값 상한이 작으면 생성도 그 상한에 맞춘 값으로 거절한다.
+#[test]
+fn a_smaller_memory_entry_limit_lowers_the_creation_limit() {
+    let mut mem = MemoryStore::open_in_memory_with_config(tasty_memory::MemoryConfig {
+        entry_max_bytes: 512 * 1024,
+        ..Default::default()
+    })
+    .unwrap();
+    let seq = AtomicU64::new(0);
+    let mut store = TaskStore::new(&mut mem, "_host", &seq);
+    let limit = 256 * 1024;
+    assert_eq!(store.record_limit(), limit);
+    let pad = pad_for(&mut store, None, limit);
+    let e = store
+        .create(custom(json!("p".repeat(pad + 1))))
+        .expect_err("over the lowered limit");
+    assert!(
+        e.to_string().contains(&format!(
+            "over the {limit} byte limit for a task before its result"
+        )),
+        "{e}"
+    );
+    store
+        .create(custom(json!("p".repeat(pad))))
+        .expect("at the limit");
+}

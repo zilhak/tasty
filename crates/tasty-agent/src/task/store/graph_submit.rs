@@ -266,7 +266,7 @@ impl TaskStore<'_> {
                     format!("{at}/on_failure/task"),
                 ));
             }
-            if let Err(message) = record_limit::check(t, "the definition") {
+            if let Err(message) = record_limit::check(t, "the definition", self.record_limit()) {
                 return Err(graph_error(message, at));
             }
             contract::check_task(t, &at, lookup)

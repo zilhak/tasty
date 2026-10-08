@@ -68,6 +68,11 @@ impl<'a> TaskStore<'a> {
         }
     }
 
+    /// memory 값 상한에 맞춘 결과 전 레코드 상한([`record_limit::limit_for`]).
+    pub fn record_limit(&self) -> usize {
+        record_limit::limit_for(self.mem.config().entry_max_bytes)
+    }
+
     /// task 영속. 신규/갱신 모두 동일 (overwrite). v2 task 는 별도 namespace 에
     /// envelope 로 감싸 저장한다.
     pub fn put(&mut self, task: &Task) -> Result<()> {
@@ -292,7 +297,8 @@ impl<'a> TaskStore<'a> {
         }
 
         // 저장할 그대로(초기 상태 포함) 잰다.
-        record_limit::check(&new_task, "the definition").map_err(AgentError::InvalidArgument)?;
+        record_limit::check(&new_task, "the definition", self.record_limit())
+            .map_err(AgentError::InvalidArgument)?;
         self.put(&new_task)?;
 
         // 먼저 생성된 fallback이 아직 Ready라면 Waiting으로 되돌린다.
@@ -429,7 +435,7 @@ impl TaskStore<'_> {
         task.input_snapshot = Some(snapshot);
         // 해석한 입력이 레코드를 상한 너머로 키우면 실행하지 않고 입력 단계 실패로 남긴다.
         // 그대로 두면 결과를 줄여도 레코드를 저장할 수 없다.
-        if let Err(message) = record_limit::check(&task, "the resolved input")
+        if let Err(message) = record_limit::check(&task, "the resolved input", self.record_limit())
             && let Some(snap) = task.input_snapshot.as_mut()
         {
             snap.value = super::types::TypedValue::Null;

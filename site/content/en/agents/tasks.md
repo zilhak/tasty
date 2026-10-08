@@ -1,4 +1,4 @@
-<!-- source-hash: 42ad1f7efad0 -->
+<!-- source-hash: 1a7adf61fe45 -->
 <a id="task-dag"></a>
 
 # Task workflows (DAG)
@@ -39,7 +39,7 @@ Creating one returns a task ID. Use that ID to define dependencies and to query 
 
 You can also pull the command JSON out into a file and pass it as `--command @build.json`.
 
-A single task definition (command, metadata, result types and so on) can be up to 768 KiB as JSON. A larger one is refused with an error and no task is created. Keep large data in a file and pass its path. If the outputs of earlier tasks filled in just before a run would push a task past this size, that task fails without running.
+A single task definition (command, metadata, result types and so on) can be up to 768 KiB as JSON (less if the memory entry size limit is set below 1 MiB). A larger one is refused with an error and no task is created. Keep large data in a file and pass its path. If the outputs of earlier tasks filled in just before a run would push a task past this size, that task fails without running.
 
 A `run` command, the postprocess command below and a reducer that merges results with a shell command get the environment Tasty was started from. If you started Tasty inside Claude Code, the variables that point at that session are not passed on (the same as in the terminal). If you started Tasty from another Tasty's terminal, `TASTY_SESSION_TOKEN`, `TASTY_SURFACE_ID`, `TASTY_PARENT_HOME` and `TASTY_AGENT_ID`, which point at that Tasty, are not passed on either, so a `tasty` call inside the command reaches this Tasty.
 
