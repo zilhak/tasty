@@ -63,12 +63,18 @@ impl App {
                 continue; // 취소 — 폐기(이미 take 됨).
             }
             // 설정은 engine 마다 같은 사본을 둔다. 승인한 윈도우의 사본만 바꾸면 다른 윈도우가 자기 사본을
-            // 저장할 때 이 해시를 지우므로 모든 사본에 넣은 뒤 저장한다.
-            let copies = self
-                .engines
-                .all_sessions_mut()
-                .map(|session| &mut session.runtime.settings);
-            if let Err(e) = record_script_hash(copies, &pending.script_id, &pending.new_hash) {
+            // 저장할 때 이 해시를 지우므로 모든 사본에 넣은 뒤 승인한 윈도우의 사본을 저장한다.
+            let approver = self.engines.of_window(id);
+            let (mut mine, mut others) = (None, Vec::new());
+            for session in self.engines.all_sessions_mut() {
+                if Some(session.id) == approver {
+                    mine = Some(&mut session.runtime.settings);
+                } else {
+                    others.push(&mut session.runtime.settings);
+                }
+            }
+            if let Err(e) = record_script_hash(mine, others, &pending.script_id, &pending.new_hash)
+            {
                 tracing::warn!(target: "tasty_lua", "script hash persist failed: {e}");
             }
             if let Some((main, _)) = engines_mut!(self).window_pair(id) {
@@ -82,19 +88,22 @@ impl App {
     }
 }
 
-/// 승인한 해시를 모든 설정 사본에 넣고 그중 하나를 저장한다. 사본이 없으면 저장하지 않는다.
+/// 승인한 해시를 모든 설정 사본에 넣고 승인한 윈도우의 사본(`approver`)을 저장한다.
+/// 승인한 윈도우의 engine 을 찾지 못하면 저장하지 않는다.
 fn record_script_hash<'a>(
-    copies: impl IntoIterator<Item = &'a mut crate::settings::Settings>,
+    approver: Option<&mut crate::settings::Settings>,
+    others: impl IntoIterator<Item = &'a mut crate::settings::Settings>,
     script_id: &str,
     hash: &str,
 ) -> anyhow::Result<()> {
-    let mut saved = None;
-    for settings in copies {
+    for settings in others {
         settings.scripts.update_hash(script_id, hash.to_string());
-        saved = Some(settings);
     }
-    match saved {
-        Some(settings) => settings.save(),
+    match approver {
+        Some(settings) => {
+            settings.scripts.update_hash(script_id, hash.to_string());
+            settings.save()
+        }
         None => Ok(()),
     }
 }
@@ -120,8 +129,8 @@ mod tests {
         let _home = crate::test_support::IsolatedHome::new();
         let (mut first, [one, two]) = with_scripts();
         let (mut second, _) = with_scripts();
-        super::record_script_hash([&mut first, &mut second], &one, "hash-one").expect("save");
-        super::record_script_hash([&mut second, &mut first], &two, "hash-two").expect("save");
+        super::record_script_hash(Some(&mut first), [&mut second], &one, "hash-one").expect("save");
+        super::record_script_hash(Some(&mut second), [&mut first], &two, "hash-two").expect("save");
 
         let restarted = Settings::load();
         let hash = |id: &str| restarted.scripts.get(id).map(|entry| entry.sha256.clone());
@@ -130,6 +139,25 @@ mod tests {
         assert_eq!(
             first.scripts.get(&two).map(|e| e.sha256.as_str()),
             Some("hash-two")
+        );
+    }
+
+    /// 사본이 갈라졌으면 승인한 윈도우의 사본을 저장한다.
+    #[test]
+    fn the_approving_windows_copy_is_saved() {
+        let _home = crate::test_support::IsolatedHome::new();
+        let (mut approver, [one, _]) = with_scripts();
+        let (mut other, _) = with_scripts();
+        let only_here = approver
+            .scripts
+            .add("three".into(), "/three.lua".into(), String::new());
+        super::record_script_hash(Some(&mut approver), [&mut other], &one, "hash-one")
+            .expect("save");
+        let restarted = Settings::load();
+        assert!(restarted.scripts.get(&only_here).is_some());
+        assert_eq!(
+            restarted.scripts.get(&one).map(|e| e.sha256.as_str()),
+            Some("hash-one")
         );
     }
 }
