@@ -241,6 +241,30 @@ output: {"confidence":0.95,"verdict":"pass"} (from postprocess.stdout.json)
 
 타입을 정하지 않은 작업도 같은 워크스페이스에서 함께 쓸 수 있습니다. `task-create --depends-on report` 로 만든 작업은 `report` 가 끝나면 실행됩니다. 다만 `${task.review.output}` 같은 자리표시자로 타입을 정한 작업의 결과를 읽으려 하면 만들 때 거부됩니다. 결과를 넘기려면 받는 작업도 그래프에 넣고 `bindings` 로 받습니다.
 
+## 실행 기록 남기고 보기
+
+타입을 정한 작업 묶음은 사람이 나중에 읽을 실행 기록(report)을 남깁니다. 작업마다 Tasty 가 자동으로 채우는 부분과, 작업이 실행 중에 직접 적는 메모가 있습니다.
+
+- 자동 부분: 끝난 상태, 시작·끝 시각, 실제로 받은 입력과 낸 결과, 실패했으면 단계와 이유, 건너뛰었으면 이유. 셸 명령은 종료 코드, 에이전트 작업은 어느 세션이었는지, 결과 모으기는 방법과 입력 수가 더 나옵니다.
+- 메모: 셸 명령 작업, 그 결과를 다듬는 후처리 명령, 직접 짠 결과 모으기 셸은 환경 변수 `TASTY_TASK_REPORT` 를 받습니다. 그 안에서 `tasty agent report append '테스트 3개 건너뜀'` 처럼 적습니다. 셸 명령은 표준 오류에 `::tasty-report::<메모>` 로 시작하는 줄을 써도 됩니다(그 줄은 표준 오류에도 그대로 남습니다). 에이전트 작업은 지시문 끝에 메모 쓰는 방법을 읽는 명령(`tasty agent report usage`)과 주소가 붙습니다.
+
+```sh
+#!/bin/sh
+# 셸 명령 작업 안에서
+tasty agent report append "검사한 파일 $(ls src | wc -l)개"
+echo "::tasty-report::캐시를 다시 만들었음" >&2
+```
+
+메모는 작업이 실행 중일 때만 받습니다. 끝난 뒤에 쓰면 거절됩니다. 메모 한 건이 상한(기본 1 KiB)을 넘으면 잘리고 잘렸다는 표시가 붙습니다. 실행 한 번의 메모 합이 상한(기본 16 KiB)을 넘으면 그 뒤 메모는 저장하지 않고 개수만 셉니다. 어느 경우든 명령은 실패하지 않습니다. 두 상한은 **설정** › **기타** › **작업 파이프라인** <!-- en: Task pipeline --> 에서 바꿉니다. 다시 실행(`task-retry`)하면 메모는 실행마다 따로 모입니다. 메모는 기록일 뿐이라 뒤 작업의 입력(`bindings`)으로 받을 수 없습니다.
+
+```sh
+tasty agent dag-report d:review-loop                       # 묶음 전체
+tasty agent dag-report d:review-loop --task build --attempt 2   # 작업 하나의 두 번째 실행
+tasty agent dag-report d:review-loop --include-raw         # 표준 출력·오류도 함께
+```
+
+DAG id 는 `tasty agent dag-list` 에서 봅니다. 이전 실행은 끝난 상태와 메모만 나오고, 자동 부분은 마지막 실행에 대해서만 나옵니다.
+
 ## 진행 보기
 
 작업이 어떻게 흘러가는지 보는 화면이 둘입니다. 둘 다 같은 데이터를 봅니다.

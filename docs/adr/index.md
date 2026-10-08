@@ -122,6 +122,7 @@ Terminal·Pty 분리와 터미널 호환성, 입력·포커스, 점유와 원격
 | 0069 | [v2 task 완료는 실행 회차마다 레코드 한 번의 쓰기로 확정한다](0069-typed-task-completion-is-one-write-per-attempt.md) | Accepted | 2026-10-07 | agents, tasks, types, idempotency, storage |
 | 0070 | [v2 task 의 후처리 CLI 는 같은 실행 회차 안에서 실행하고 결과가 불명이면 다시 실행하지 않는다](0070-typed-task-postprocess-runs-inside-the-attempt.md) | Accepted | 2026-10-07 | agents, tasks, types, postprocess, idempotency |
 | 0072 | [v2 task 의 후속 경로는 생산자의 확정된 출력으로 고르고 고르지 않은 경로는 실패로 보지 않는다](0072-typed-task-transitions-select-paths-from-the-producer-output.md) | Accepted | 2026-10-07 | agents, tasks, types, dag, routing |
+| 0075 | [v2 task report 의 자동 항목은 조회 때 만들고 custom 기록은 회차별 키에 쓰다가 종결 전이로 닫는다](0075-typed-task-report-projects-auto-and-seals-custom-per-attempt.md) | Accepted | 2026-10-08 | agents, tasks, types, dag, report, storage |
 <!-- adr-rows:end agents -->
 
 ## 개발·검증·문서·배포

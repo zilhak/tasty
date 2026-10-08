@@ -83,15 +83,17 @@ regular(`put/get/delete/list/exists/count/scopes/stats/query/export/import`) · 
 | `task_run` | workspace 러너의 시작·중지·상태 조회. 호스트 재시작 후 자동으로 켜지지 않으므로 플러그인이 자기 workspace의 러너를 다시 시작할 수 있다. |
 | `barrier_*`, `semaphore_*`, `lease_*`, `rate_limit_*` | 작업 간 대기와 자원 사용 조정 |
 | `dag_{list,get}` | 작업을 DAG별로 묶어 조회 |
+| `dag_report` | DAG 하나의 report(`id`·`workspace_id?`·`task?`·`attempt?`·`include_raw?`). task 마다 레코드에서 만든 자동 항목 `auto` 와 회차별 custom 기록 `attempts[].custom` 을 싣는다. 표준 출력·오류는 `include_raw` 일 때만 싣는다. `attempt` 는 `task` 가 있어야 한다([agent-runner](../dev-guide/agent-runner.md#dag-report)) |
 | `task_graph_{validate,submit}` | v2 task 그래프를 한 번에 검증·제출. 검증 실패(task 1000 개 초과 포함)는 `-32602` 이고 `error.data.location` 에 그래프 안의 위치가 실리며 아무것도 저장하지 않는다. `submit` 은 모두 저장한 뒤 활성화한다. memory 대체 모드에서는 `durability: "best_effort"` 를 밝힌 그래프만 받는다. 활성화 뒤 readiness 반영 실패는 `-32603` 이고 `error.data` 에 `graph_id`·`possibly_active: true` 가 실린다([agent-runner](../dev-guide/agent-runner.md#그래프-제출)). task 의 `transitions` 로 성공한 출력에 따라 후속 task 를 고르며, 고른 경로는 task 의 `route` 에, 고르지 않아 끝난 이유는 `skip` 에 실린다([agent-runner](../dev-guide/agent-runner.md#전이-조건과-경로-선택)) |
 | `task_submit_result` | v2 `agent` task 의 지금 회차에 구조화 결과를 제출한다(`workspace_id`·`id`·`attempt_id`·`token`·`output`. `token` 은 지시에 실린 회차 토큰). 도착할 때 출력 타입으로 검사하고 턴이 끝날 때 결과로 확정하며, 응답 `final: false` 는 task 가 아직 끝나지 않았다는 뜻이다. 거절은 `-32018` 과 `error.data.reason`(`not_running`·`stale_attempt`·`conflict`·`turn_ended`·`not_the_session`·`wrong_token`). 세션 토큰으로 부른 agent 는 자기 세션의 task 에만 낼 수 있다([agent-runner](../dev-guide/agent-runner.md#agent-task)) |
 | `task_turn_report` | provider 플러그인이 훅에서 턴 시작·끝(`final_answer` 또는 `error`)을 알린다. `agent.turn_report` 권한(이 메서드만 연다)을 가진 플러그인 중 그 provider namespace 를 소유한 플러그인만 부를 수 있고(그 밖은 `-32001`), surface 에 묶인 agent task 회차가 없으면 아무것도 하지 않는다 |
 
-다음 두 메서드는 **로컬 호출만 허용**하며 플러그인은 호출할 수 없다. 둘 다 [METHOD_TABLE](../../crates/tasty-ipc/src/method_meta.rs)에 `local_only()`로 등록되어 있다. 라우터가 처리하는 메서드는 모두 이 표에 등록한다. 미등록 메서드의 `UnknownMethod` 거부와 의도한 접근 제한을 구분하기 위해 `tests/ipc_router_table_parity.rs`로 누락을 검사한다.
+다음 세 메서드는 **로컬 호출만 허용**하며 플러그인은 호출할 수 없다. 모두 [METHOD_TABLE](../../crates/tasty-ipc/src/method_meta.rs)에 `local_only()`로 등록되어 있다. 라우터가 처리하는 메서드는 모두 이 표에 등록한다. 미등록 메서드의 `UnknownMethod` 거부와 의도한 접근 제한을 구분하기 위해 `tests/ipc_router_table_parity.rs`로 누락을 검사한다.
 
 | 메서드 | 로컬로 제한하는 이유 |
 |---|---|
 | `task_await` | 완료까지 호출을 대기시킨다. `approval.await`와 마찬가지로 플러그인 SDK의 단일 워커를 막지 않도록 제한한다. 기본 timeout은 10분이고 `timeout_ms:0`은 무한 대기다. |
+| `report_append` | 실행 중인 v2 작업 회차의 report 에 텍스트 기록 하나를 더한다(`address`·`text`). `address` 는 러너가 자식에게 준 `TASTY_TASK_REPORT` 값이나 agent 지시에 실린 주소이며 토큰을 담는다. 상한에 걸려 잘리거나 저장하지 않아도 성공이고 응답 `result` 가 `stored`·`omitted` 로 알린다. 토큰이 맞지 않거나 회차가 끝났으면 `-32018` 과 `error.data.reason`(`token_mismatch`·`closed`). 주소가 쓰기 권한이므로 플러그인에 열지 않는다 |
 | `task_set_result` | 외부에서 작업 완료를 알린다. 결과와 종결 상태를 함께 기록하며, 타입을 정한 작업은 `attempt_id` 로 보고할 실행 회차를 지정한다. 플러그인의 Custom task는 러너가 상태를 관리하므로 플러그인이 직접 완료 상태를 바꾸지 않고 완료 판정 전략을 선언한다. |
 
 `task_delete`와 `task_purge`는 `depends_on`, `Fallback.task`, `Reduce.inputs` 참조를 검사한다. 참조가 남으면 기본적으로 거절하고 참조자 목록을 반환한다. `--cascade`는 연쇄 삭제, `--force`는 참조 검사만 우회한다. **`running` 상태의 제약은 `--force`로 우회할 수 없다.** 이전 회차의 프로세스 종료를 확인하는 중인 task(러너가 꺼진 동안 취소한 뒤 아직 확인하지 못한 task 등)도 지우지 않는다. `task_delete` 는 대상이나 cascade 로 함께 지울 task 중 하나라도 그렇다면 `-32602` 와 이유(`exit confirmation`)를 돌려주고, `task_purge` 는 그런 task 를 건너뛰고 응답의 `skipped`(id 목록)·`skipped_count` 로 알린다. 확인이 끝나 semaphore·lease 가 반환되면 지울 수 있다.

@@ -94,7 +94,7 @@ state 전이는 `tasty-agent` 의 `is_valid_transition` 표를 따른다. `Ready
 - 지우는 것 1 — 바깥 Claude Code 세션의 표지·비밀. 터미널 셸에서도 지우는 목록(`tasty_utils::process` 의 `STRIPPED_ENV_*`)이다: `CLAUDECODE`·`CLAUDE_CODE_SESSION_ID`·`CLAUDE_CODE_ENTRYPOINT`·`CLAUDE_CODE_MESSAGING_TOKEN` 등의 고정 목록, `CLAUDE_PLUGIN_OPTION_*`·`CMUX_*`, `claude-code_`·`claude-code/` 로 시작하는 `AI_AGENT`.
 - 지우는 것 2 — 바깥 Tasty 인스턴스의 신원: `TASTY_SESSION_TOKEN`·`TASTY_SURFACE_ID`·`TASTY_PARENT_HOME`·`TASTY_AGENT_ID`. 이 Tasty 를 다른 Tasty 의 터미널에서 띄웠으면 이 값들은 그 인스턴스의 surface·세션 토큰·완료 알림 경로를 가리킨다. 터미널 셸은 `TASTY_SURFACE_ID`·`TASTY_PARENT_HOME` 을 자기 값으로 덮어쓰지만 runner 의 자식에는 덮어쓸 surface 가 없어 지운다. 그래서 자식이 부른 `tasty` 는 다른 인스턴스의 신원으로 요청하지 않는다. 목록은 터미널 셸·훅과 같은 `tasty_utils::process::OUTER_IDENTITY_ENV` 이고, 판정은 훅 실행과 같은 `is_child_stripped_env` 다.
 - 그대로 넘기는 것: 그 밖의 `TASTY_*`(예: `TASTY_HOME`, 부팅 때 정한 `TASTY_LOCALE`)와 `CLAUDE_CODE_OAUTH_TOKEN`·`ANTHROPIC_API_KEY` 같은 사용자 설정·인증. `TASTY_HOME` 이 남으므로 자식이 부른 `tasty` 는 이 인스턴스에 닿는다.
-- Tasty 가 task 별 변수를 더하지는 않는다. task 에는 자기 surface 가 없다. 터미널 셸과 달리 `TASTY_PARENT_HOME` 도 이 인스턴스의 값으로 넣지 않는다: 작업의 자식은 터미널 surface 가 아니고, 자식이 띄운 에이전트의 완료 알림은 그 알림을 기다리는 호출자의 것이다.
+- Tasty 가 더하는 task 별 변수는 v2 task 의 report 주소 `TASTY_TASK_REPORT` 하나다(아래 §DAG report). v1 task 와 `agent.task_reduce` 의 custom 셸에는 넣지 않는다. task 에는 자기 surface 가 없다. 터미널 셸과 달리 `TASTY_PARENT_HOME` 도 이 인스턴스의 값으로 넣지 않는다: 작업의 자식은 터미널 surface 가 아니고, 자식이 띄운 에이전트의 완료 알림은 그 알림을 기다리는 호출자의 것이다.
 
 ### `Run` 결과를 reduce 하기 — `--extract-path`
 
@@ -1068,6 +1068,43 @@ DAG 요약(`agent.dag_list`·`agent.dag_get`)의 `state_counts.not_selected` 는
 | `custom` | 선언 타입(기본 json) | stdin 은 `all` 과 같은 레코드 배열(같은 직렬화 규칙). stdout 은 JSON 값 하나여야 하며 문자열로 대신하지 않는다 |
 
 v1 reduce 는 기존 동작(`reduce_with_custom`) 그대로다.
+
+### DAG report
+
+report 는 사람이 읽는 실행 기록이다. 근거는 [ADR-0075](../adr/0075-typed-task-report-projects-auto-and-seals-custom-per-attempt.md). task 마다 자동 항목(`auto`)과 회차별 custom 기록을 둔다. 뒤 task 가 읽는 데이터가 아니다. binding 은 출력 문서의 위치만 가리키므로 report 를 입력으로 받을 수 없다. 코드: 모델 `crates/tasty-agent/src/task/report.rs`, 저장 `crates/tasty-agent/src/task/store/report.rs`, 주소 발급·stderr 표지 `crates/tasty-task-runtime/src/runner_host/report.rs`, 조회 `crates/tasty-task-runtime/src/report.rs`.
+
+자동 항목은 저장하지 않고 조회할 때 task 레코드에서 만든다.
+
+| 필드 | 내용 |
+|---|---|
+| 공통 | `kind`, `state`(종결 상태), `started_at`·`finished_at`, `input`(실제 입력 snapshot, wire 형식), `output`(실제 출력, wire 형식), `failure: {stage, location, message}`, `skip`(skip 사유) |
+| run | `exit_code` |
+| agent | `provider`, `surface_id` |
+| custom | `ipc_method` |
+| reduce | `strategy`(전략 이름), `input_count` |
+| wait_barrier | `barrier` |
+| `include_raw` 일 때 | `raw: {stdout, stderr}` — 저장된 실행 결과의 출력. 기본으로는 싣지 않는다. 실패한 Run 은 출력 꼬리를 오류 메시지에만 두므로 `raw` 가 비어 있다 |
+
+`retry` 는 이전 회차의 결과와 입력을 지우므로 자동 항목은 task 의 마지막 회차에 대해서만 나온다. 이전 회차는 끝난 상태(retry 직전에 그 블록에 남긴 `state`)와 custom 기록만 보인다.
+
+custom 기록은 회차마다 memory 키 하나(`tasty.agent.task_report.<task id>.<n>`)에 둔다. task 레코드와 키를 나눠 report 크기가 상태 전이 쓰기를 막지 않게 한다.
+
+- 블록: `{entries: [{seq, at, source, text, omit_by_limit?}], omitted_appends}`. `source` 는 `run`·`postprocess`·`agent`·`reduce_custom`·`stderr_marker` 중 하나이며 호출자가 밝힌 값이다(인증하지 않는다). 텍스트만 받는다. JSON 을 넣어도 문자열로 저장한다.
+- 회차 토큰: 러너가 v2 task 를 dispatch 할 때 그 회차의 report 토큰(16바이트 난수, 16진수)을 만들어 task 레코드에 둔다. 주소는 `<workspace id>/<회차>/<source>/<토큰>/<task id>` 다.
+- 받는 조건: 주소의 토큰·회차가 task 의 마지막 dispatch 회차와 같고 task 가 Ready 또는 Running 이어야 한다. 다른 task·이전 회차의 토큰은 `-32018` `reason: token_mismatch`, 끝난 회차는 `reason: closed`(`state` 에 지금 상태)다. Unknown 도 닫힌 회차다. 종결 전이는 저장소 잠금 안에서 task 레코드를 쓰므로, 그 쓰기 뒤의 append 는 모두 거절된다. 그래서 블록은 회차가 끝난 순간의 내용으로 확정된다.
+- 상한: append 하나가 append 상한(기본 1 KiB)을 넘으면 UTF-8 경계에서 자르고 항목 끝에 `omit_by_limit`(잘린 바이트 수)를 붙인다. 블록의 저장 텍스트 합이 블록 상한(기본 16 KiB)을 넘게 되면 저장하지 않고 `omitted_appends` 만 늘린다. 어느 경우든 호출은 성공한다. 상한은 설정의 `[task_pipeline]` 이고 `report_append_bytes < report_block_bytes` 여야 한다(범위 64~65536, 128~131072). 설정 적용 때 어긋난 쌍은 거절하고, 설정 파일에 어긋난 쌍이 있으면 기본값으로 읽는다. 블록 상한의 위쪽은 JSON 이스케이프로 텍스트가 몇 배 커져도 memory 값 하나의 상한(1 MiB) 안에 들도록 정했다.
+- 실패·취소·Unknown 회차의 블록도 그 상태로 남는다. Skipped 회차는 실행하지 않아 블록이 없다. retry 는 새 회차 블록(#2, #3 …)을 따로 만든다. task 를 지우거나 GC 하면 블록도 지운다.
+
+경로별 append:
+
+| 경로 | 방법 |
+|---|---|
+| run · 후처리 CLI · reduce custom 셸 | 자식 환경의 `TASTY_TASK_REPORT` 로 `tasty agent report append '<text>'`(source 는 각각 `run`·`postprocess`·`reduce_custom`) |
+| run 의 stderr | `::tasty-report::<text>` 로 시작하는 줄 하나가 항목 하나다(source `stderr_marker`). 러너가 stderr 를 읽으면서 저장하고, 결과 기록 전에 stderr 읽기가 끝나므로 표지는 블록이 닫히기 전에 들어간다. 표지 줄은 저장된 stderr 에도 그대로 남는다. 줄 끝의 `\r` 은 뺀다. 한 줄은 64 KiB 까지만 읽는다. stdout 은 보지 않는다 |
+| agent | 지시문 끝에 사용법을 읽는 명령(`tasty agent report usage`) 한 줄과 그 회차의 주소를 붙인다. 에이전트는 `tasty agent report append --address '<주소>' '<text>'` 로 쓴다 |
+| custom(IPC 메서드) · reduce 기본 전략 · wait_barrier | custom 기록이 없다. 자동 항목만 있다 |
+
+조회는 `agent.dag_report`(`{id, workspace_id?, task?, attempt?, include_raw?}`, CLI `tasty agent dag-report <dag> [--workspace-id N] [--task <id> [--attempt <n>]] [--include-raw]`)다. 응답은 `{dag, workspace_id, name, tasks: [{task_id, name, auto, attempts: [{attempt, state, custom}]}]}` 이다. `attempt` 는 `task` 가 있어야 하며, 고른 회차가 마지막 회차가 아니면 `auto` 는 `null` 이다. append 는 `agent.report_append`(`{address, text}`, 응답 `{result: "stored", seq, omit_by_limit?}` 또는 `{result: "omitted", seq}`)이며 Local 전용이다.
 
 ### 저장 형식
 

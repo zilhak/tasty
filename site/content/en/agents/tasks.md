@@ -1,4 +1,4 @@
-<!-- source-hash: 63d127a1029f -->
+<!-- source-hash: e92547ba0bec -->
 <a id="task-dag"></a>
 
 # Task workflows (DAG)
@@ -241,6 +241,30 @@ output: {"confidence":0.95,"verdict":"pass"} (from postprocess.stdout.json)
 - `confidence` here is a value the task declared in its result type, so branch conditions can use it. The `confidence` returned by a terminal state query is how sure Tasty is about the session's state, which is a different thing.
 
 Tasks without a declared type can live in the same Workspace. A task made with `task-create --depends-on report` runs once `report` finishes. Reading a typed task's result through a placeholder such as `${task.review.output}` is rejected when you create the task, though. To pass a result along, put the receiving task in the graph too and take the value with `bindings`.
+
+## Keeping and reading a run report
+
+A typed group of tasks keeps a run report for people to read later. Each task has a part Tasty fills in automatically and notes the task writes itself while it runs.
+
+- Automatic part: the final state, start and end times, the input actually received and the result produced, the failing stage and reason if it failed, and the reason if it was skipped. Shell command tasks add the exit code, agent tasks the session, and result-gathering tasks the method and number of inputs.
+- Notes: a shell command task, the postprocess command that shapes its result, and a hand-written result-gathering shell get the environment variable `TASTY_TASK_REPORT`. Inside them, write `tasty agent report append 'skipped 3 tests'`. A shell command can also print a standard error line that starts with `::tasty-report::<note>` (the line stays in the standard error as well). An agent task gets, at the end of its instruction, the command that explains how to write notes (`tasty agent report usage`) and its address.
+
+```sh
+#!/bin/sh
+# inside a shell command task
+tasty agent report append "checked $(ls src | wc -l) files"
+echo "::tasty-report::rebuilt the cache" >&2
+```
+
+Notes are accepted only while the task runs; after it ends they are refused. A note over the limit (1 KiB by default) is cut and marked as cut. Once one run's notes pass their total limit (16 KiB by default), further notes are only counted, not stored. Either way the command does not fail. Change both limits in **Settings** › **Misc** › **Task pipeline**. When you run a task again (`task-retry`), each run keeps its own notes. Notes are only a record, so a later task cannot take them as input (`bindings`).
+
+```sh
+tasty agent dag-report d:review-loop                       # the whole group
+tasty agent dag-report d:review-loop --task build --attempt 2   # the second run of one task
+tasty agent dag-report d:review-loop --include-raw         # with standard output and error
+```
+
+Find the DAG id with `tasty agent dag-list`. Earlier runs show only their final state and notes; the automatic part covers the latest run.
 
 ## Watching progress
 
