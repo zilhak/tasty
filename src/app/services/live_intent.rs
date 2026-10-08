@@ -10,6 +10,10 @@ impl AppServices {
     ) -> anyhow::Result<Vec<CoreEvent>> {
         match intent {
             DomainIntent::UpdateSettings(new_settings) => {
+                new_settings
+                    .task_pipeline
+                    .validate()
+                    .map_err(|e| anyhow::anyhow!("settings not applied: {e}"))?;
                 Ok(vec![CoreEvent::SettingsUpdated(new_settings)])
             }
             DomainIntent::PushNotification {

@@ -134,10 +134,11 @@ pub(crate) enum TerminalSubTab {
     Performance,
 }
 
-/// Misc 탭의 하위 섹션. Scripts는 모든 플랫폼, Tastyrc는 Windows에서만 표시한다.
+/// Misc 탭의 하위 섹션. Scripts·TaskPipeline은 모든 플랫폼, Tastyrc는 Windows에서만 표시한다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum MiscSubTab {
     Scripts,
+    TaskPipeline,
     // 이유: 이 variant 를 push 하는 것이 Windows 전용 분기뿐이다(위 enum 주석).
     #[cfg_attr(not(windows), allow(dead_code))]
     Tastyrc,
@@ -394,6 +395,7 @@ impl SettingsUiState {
             SettingsTab::Misc => {
                 self.misc_sub_tab = match key {
                     "scripts" => MiscSubTab::Scripts,
+                    "task_pipeline" | "task-pipeline" => MiscSubTab::TaskPipeline,
                     "tastyrc" => MiscSubTab::Tastyrc,
                     _ => return false,
                 };
@@ -1200,8 +1202,6 @@ fn build_l2_sections(ui_state: &mut SettingsUiState) -> Vec<L2Section> {
         SettingsTab::Misc => {
             // Scripts 는 전 플랫폼·최상단. Tastyrc(빌트인 bashrc 편집)는 Windows 전용.
             let cur = ui_state.misc_sub_tab;
-            // 이유: Windows 에서만 push(Tastyrc) 하므로 비-Windows 에선 mut 불필요.
-            #[cfg_attr(not(windows), allow(unused_mut))]
             let mut sections = vec![L2Section {
                 label: t("settings.misc.scripts").to_string(),
                 is_plugin: false,
@@ -1209,6 +1209,13 @@ fn build_l2_sections(ui_state: &mut SettingsUiState) -> Vec<L2Section> {
                 selected: cur == MiscSubTab::Scripts,
                 select: L2Select::Misc(MiscSubTab::Scripts),
             }];
+            sections.push(L2Section {
+                label: t("settings.misc.subtab.task_pipeline").to_string(),
+                is_plugin: false,
+                separated: false,
+                selected: cur == MiscSubTab::TaskPipeline,
+                select: L2Select::Misc(MiscSubTab::TaskPipeline),
+            });
             #[cfg(windows)]
             sections.push(L2Section {
                 label: t("settings.misc.subtab.tastyrc").to_string(),
@@ -1848,6 +1855,7 @@ fn draw_misc_content(ui: &mut egui::Ui, draft: &mut Settings, ui_state: &mut Set
                 ui_state.l2_filter.clear();
             }
         }
+        MiscSubTab::TaskPipeline => draw_task_pipeline_tab(ui, draft),
         #[cfg(windows)]
         MiscSubTab::Tastyrc => draw_tastyrc_subtab(ui, &mut ui_state.bashrc_user_draft),
         #[cfg(not(windows))]

@@ -569,6 +569,7 @@ fn bootstrap_engine(
             std::thread::sleep(std::time::Duration::from_millis(1));
         }
     }
+    crate::app::task_report::apply(&app.services, boot_settings);
     // 이전 실행의 agent 상태를 정리하되 작업을 자동 재시작하지는 않는다.
     app.services.tasks.purge_stale_agent_state_on_boot(
         &engine.task_scope,

@@ -517,18 +517,29 @@ impl App {
         });
     }
 
+    /// 검사를 통과한 설정만 journal 에 들인다. 거절하면 이전 설정을 유지한다.
+    fn admit_settings(&mut self, new_settings: &Settings) -> Option<u64> {
+        if let Err(e) = new_settings.task_pipeline.validate() {
+            tracing::error!("settings not applied: {e}");
+            return None;
+        }
+        match self.journal.note_settings_intent() {
+            Ok(generation) => Some(generation),
+            Err(error) => {
+                tracing::error!("settings admission failed: {error}");
+                None
+            }
+        }
+    }
+
     /// 창과 parked 상태의 설정을 모두 갱신해야 복원된 창이 옛 설정을 쓰지 않는다.
     pub(crate) fn cascade_settings_updated(
         &mut self,
         new_settings: Settings,
         origin: &IntentOrigin,
     ) {
-        let generation = match self.journal.note_settings_intent() {
-            Ok(generation) => generation,
-            Err(error) => {
-                tracing::error!("settings admission failed: {error}");
-                return;
-            }
+        let Some(generation) = self.admit_settings(&new_settings) else {
+            return;
         };
         let turning_off = self
             .engines()
@@ -562,6 +573,7 @@ impl App {
     }
 
     pub(crate) fn apply_settings_after_structure(&mut self, new_settings: Settings) {
+        crate::app::task_report::apply(&self.services, &new_settings);
         let prev_settings = self
             .engines()
             .windowed_and_parked()

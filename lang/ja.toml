@@ -940,7 +940,15 @@ title = "ツール"
 empty = "このプラットフォームには設定がありません。"
 scripts = "スクリプト"
 
+[settings.task_pipeline]
+section = "report 上限"
+report_append = "記録 1 件の上限"
+report_append_desc = "これより長い記録は UTF-8 の境界で切り詰められ、切り詰めの印が付きます。試行の上限より小さくする必要があります。"
+report_block = "試行 report 上限"
+report_block_desc = "タスクの試行 1 回分に保存する記録テキストの合計です。超えた記録は保存せず、件数だけを数えます。"
+
 [settings.misc.subtab]
+task_pipeline = "タスクパイプライン"
 tastyrc = "tastyrc"
 accessibility = "アクセシビリティ"
 performance = "パフォーマンス"

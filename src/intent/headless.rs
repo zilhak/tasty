@@ -162,7 +162,7 @@ fn apply_one(
     match core.apply_live(engine, domain) {
         Ok(events) => {
             for event in events {
-                handle_core_event(engine, event);
+                handle_core_event(core, engine, event);
             }
         }
         Err(e) => tracing::warn!("headless domain intent failed: {e}"),
@@ -215,9 +215,9 @@ fn reject_non_domain(reason: &str) {
 }
 
 /// CoreEvent에서 engine 상태 변경만 처리한다. 창 갱신과 토스트는 제외한다.
-fn handle_core_event(engine: &mut EngineMut<'_>, event: CoreEvent) {
+fn handle_core_event(core: &AppServices, engine: &mut EngineMut<'_>, event: CoreEvent) {
     match event {
-        CoreEvent::SettingsUpdated(new_settings) => apply_settings(engine, new_settings),
+        CoreEvent::SettingsUpdated(new_settings) => apply_settings(core, engine, new_settings),
         CoreEvent::NotificationPushRequested {
             ws_id,
             surface_id,
@@ -248,7 +248,12 @@ fn handle_core_event(engine: &mut EngineMut<'_>, event: CoreEvent) {
     }
 }
 
-fn apply_settings(engine: &mut EngineMut<'_>, new_settings: tasty_settings::Settings) {
+fn apply_settings(
+    core: &AppServices,
+    engine: &mut EngineMut<'_>,
+    new_settings: tasty_settings::Settings,
+) {
+    crate::app::task_report::apply(core, &new_settings);
     engine.runtime.settings = new_settings.clone();
     if let Err(e) = new_settings.save() {
         tracing::warn!("failed to save settings: {e}");

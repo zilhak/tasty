@@ -15,6 +15,7 @@ mod overlay;
 mod performance;
 mod plugin;
 mod remote_transfer;
+mod task_pipeline;
 mod terminal;
 mod terminal_input;
 
@@ -33,5 +34,6 @@ pub use overlay::draw_overlay_tab;
 pub use performance::draw_performance_tab;
 pub use plugin::draw_plugin_tab;
 pub use remote_transfer::draw_remote_transfer_tab;
+pub use task_pipeline::draw_task_pipeline_tab;
 pub use terminal::{draw_terminal_mouse_capture_tab, draw_terminal_tab, draw_terminal_tui_tab};
 pub use terminal_input::draw_terminal_input_tab;

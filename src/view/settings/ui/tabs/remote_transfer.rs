@@ -83,7 +83,7 @@ pub fn draw_remote_transfer_tab(ui: &mut egui::Ui, settings: &mut Settings) {
 }
 
 /// 고정 폭 라벨과 입력 위젯을 배치하고 Theme의 행 높이·간격을 적용한다.
-fn settings_row(
+pub(super) fn settings_row(
     ui: &mut egui::Ui,
     th: &tasty_type_appearance::theme::Theme,
     label: &str,
@@ -110,7 +110,7 @@ fn settings_row(
 }
 
 /// 행 아래 muted 설명줄(caption · text-muted, 가용폭 wrap).
-fn row_desc(ui: &mut egui::Ui, th: &tasty_type_appearance::theme::Theme, text: &str) {
+pub(super) fn row_desc(ui: &mut egui::Ui, th: &tasty_type_appearance::theme::Theme, text: &str) {
     vspace(ui, th.spacing_xs);
     ui.label(
         egui::RichText::new(text)
@@ -121,7 +121,7 @@ fn row_desc(ui: &mut egui::Ui, th: &tasty_type_appearance::theme::Theme, text: &
 
 /// 행 사이 1px separator(디자인 `borderTop: 1px solid separator`). base bg 위이므로
 /// `th.separator`(misc ScriptRow 하단 보더와 동일 관례)로 hline.
-fn row_separator(ui: &mut egui::Ui, th: &tasty_type_appearance::theme::Theme) {
+pub(super) fn row_separator(ui: &mut egui::Ui, th: &tasty_type_appearance::theme::Theme) {
     vspace(ui, th.spacing_sm);
     let w = ui.available_width();
     let (rect, _) =

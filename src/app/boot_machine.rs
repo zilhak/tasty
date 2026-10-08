@@ -536,6 +536,7 @@ impl App {
             .expect("pending engine must be present to register a main window");
         // force-detach 통지를 IPC와 같은 스트림으로 보낸다.
         core_state.remote.set_notifier(self.stream_hub.clone());
+        crate::app::task_report::apply(&self.services, &core_state.runtime.settings);
         // 첫 창을 노출하기 전에 이전 실행의 에이전트 작업 상태를 정리하며 자동 실행은 하지 않는다.
         self.services.tasks.purge_stale_agent_state_on_boot(
             core_state.task_scope,

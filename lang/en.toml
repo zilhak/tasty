@@ -944,7 +944,15 @@ title = "Tools"
 empty = "No settings on this platform."
 scripts = "Scripts"
 
+[settings.task_pipeline]
+section = "Report limits"
+report_append = "Note size limit"
+report_append_desc = "One note longer than this is cut at a UTF-8 boundary and marked as truncated. Must be smaller than the attempt limit."
+report_block = "Attempt report limit"
+report_block_desc = "Total note text kept for one task attempt. Notes past it are not stored, only counted."
+
 [settings.misc.subtab]
+task_pipeline = "Task pipeline"
 tastyrc = "tastyrc"
 accessibility = "Accessibility"
 performance = "Performance"

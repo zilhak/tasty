@@ -84,6 +84,7 @@ pub mod settings_hook_seq;
 pub mod settings_macos_permissions;
 pub mod settings_number;
 pub mod settings_remote_transfer;
+pub mod settings_task_pipeline;
 pub mod sidebar;
 pub mod sidebar_context_menu;
 pub mod status_bar;

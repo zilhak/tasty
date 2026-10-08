@@ -114,6 +114,9 @@ pub(super) fn handle_debug_settings_apply(
             return JsonRpcResponse::invalid_params(id, format!("invalid settings patch: {e}"));
         }
     };
+    if let Err(e) = new_settings.task_pipeline.validate() {
+        return JsonRpcResponse::invalid_params(id, e);
+    }
     reapply_theme_on_change(
         &engine.runtime.settings.appearance.theme,
         &mut new_settings,
@@ -229,6 +232,29 @@ mod tests {
             "{:?}",
             settings.appearance.theme_overrides
         );
+    }
+
+    /// report 의 append 상한은 블록 상한보다 작아야 한다. 어긋난 쌍은 적용 전에 거절한다.
+    #[test]
+    fn settings_apply_refuses_a_task_pipeline_pair_that_fails_the_check() {
+        let (mut state, mut engine_session) = crate::state::tests::test_state();
+        let mut engine = engine_session.borrow_mut();
+        let apply = |state: &mut _, engine: &mut _, append: u64, block: u64| {
+            super::handle_debug_settings_apply(
+                state,
+                engine,
+                serde_json::json!(1),
+                &serde_json::json!({ "settings": { "task_pipeline": {
+                    "report_append_bytes": append, "report_block_bytes": block } } }),
+            )
+        };
+        let resp = apply(&mut state, &mut engine, 4096, 4096);
+        assert_eq!(resp.error.expect("refused").code, -32602);
+        assert!(state.take_pending_intents().is_empty());
+
+        let resp = apply(&mut state, &mut engine, 2048, 4096);
+        assert!(resp.result.is_some(), "{:?}", resp.error);
+        assert_eq!(state.take_pending_intents().len(), 1);
     }
 
     #[test]

@@ -11,9 +11,9 @@ use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::catalog::widgets::dialog as kit;
 
 /// 디자인 settings 콘텐츠 컬럼 근사 프레임 폭(settings_handler 와 동일).
-const WIDTH: LogicalPx = LogicalPx(560.0);
+pub(super) const WIDTH: LogicalPx = LogicalPx(560.0);
 /// jsx `gridTemplateColumns: "150px 1fr"` 라벨 컬럼 폭.
-const LABEL_COL_W: LogicalPx = LogicalPx(150.0);
+pub(super) const LABEL_COL_W: LogicalPx = LogicalPx(150.0);
 /// 본체와 같은 field_width_xs를 사용한다.
 fn size_input_width(theme: &Theme) -> f32 {
     theme.field_width_xs.value()

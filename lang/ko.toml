@@ -940,7 +940,15 @@ title = "도구"
 empty = "이 플랫폼에는 설정 항목이 없습니다."
 scripts = "스크립트"
 
+[settings.task_pipeline]
+section = "report 상한"
+report_append = "기록 한 건 상한"
+report_append_desc = "이보다 긴 기록은 UTF-8 경계에서 잘리고 잘렸다는 표시가 붙습니다. 회차 상한보다 작아야 합니다."
+report_block = "회차 report 상한"
+report_block_desc = "작업 회차 하나에 저장하는 기록 텍스트의 합입니다. 넘는 기록은 저장하지 않고 개수만 셉니다."
+
 [settings.misc.subtab]
+task_pipeline = "작업 파이프라인"
 tastyrc = "tastyrc"
 accessibility = "접근성"
 performance = "성능"

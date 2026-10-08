@@ -962,6 +962,19 @@ General L1 에 5번째 L2 서브탭 "Remote transfer" 추가 — 원격 mirror �
 
 <a id="file-picker-overlays--gallery-first-반영-완료-본체-배선됨"></a>
 
+## Settings › Misc › Task pipeline
+
+Misc L1 의 두 번째 L2 서브탭 "Task pipeline" — 작업 그래프 report 의 두 크기 상한
+(`TaskPipelineSettings{report_append_bytes, report_block_bytes}`) 편집. 디자인 카탈로그에는 아직
+프레임이 없다. 새 시각 값 없이 Remote transfer 의 숫자 행(`settings_row` + `number_field`)을 그대로
+쓰고 단위만 `B` 다. 카탈로그 등록은 디자인 요청으로 보완한다.
+
+| 디자인 jsx 컴포넌트 | 본체 함수 | 갤러리 항목 |
+|---|---|---|
+| (미수록) 콘텐츠 컬럼 | `src/view/settings/ui/tabs/task_pipeline.rs::draw_task_pipeline_tab` | `components/settings_task_pipeline.rs::draw` (`settings` 섹션 `settings-task-pipeline` spec) |
+| (미수록) 숫자 행 두 개 + 정적 `B` | `settings_row` + `number::number_field`(`NumberSpec{suffix: Some("B")}`), 두 칸의 범위가 서로의 현재 값으로 좁혀진다 | `bytes_row` |
+| (미수록) 행별 muted 설명 · 행 사이 separator | `row_desc` · `row_separator`(Remote transfer 와 공유) | `row_desc` · `separator_line` |
+
 ## 파일 피커 (Overlays)
 
 디자인 `gallery/overlays-shared.jsx` `FilePickerFrame`/`FpRow`/`FpCrumbs`/`FpCrumbMenu`/`FpHostBadge`

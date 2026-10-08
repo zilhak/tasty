@@ -1683,6 +1683,14 @@ pub fn pages() -> Vec<Page> {
                             ),
                             components::settings_remote_transfer::draw,
                         ),
+                        spec(
+                            "settings-task-pipeline",
+                            "Misc › Task pipeline",
+                            Some(
+                                "Note size limit · Attempt report limit (numeric + B) · settings-row grid",
+                            ),
+                            components::settings_task_pipeline::draw,
+                        ),
                     ],
                 ),
                 section(

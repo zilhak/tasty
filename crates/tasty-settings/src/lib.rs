@@ -4,6 +4,7 @@ pub mod keybindings;
 mod port;
 mod port_impl;
 mod scripts;
+mod task_pipeline;
 pub mod terminal_input;
 mod types;
 
@@ -31,6 +32,10 @@ pub use port_impl::FileSettingsStorage;
 pub use scripts::{
     AUTO_TRIGGER_EVENTS, AutoTrigger, ScriptEntry, ScriptRegistry, hash_bytes, hash_file,
     is_auto_trigger_event,
+};
+pub use task_pipeline::{
+    DEFAULT_REPORT_APPEND_BYTES, DEFAULT_REPORT_BLOCK_BYTES, REPORT_APPEND_BYTES_RANGE,
+    REPORT_BLOCK_BYTES_RANGE, TaskPipelineSettings,
 };
 pub use types::{
     AccessibilitySettings, MemorySettings, ModifierHintSettings, NotificationSettings,
@@ -73,6 +78,8 @@ pub struct Settings {
     pub remote_transfer: RemoteTransferSettings,
     /// 웹훅 리스너의 외부 수신 허용. `#[serde(default)]`로 누락 시 loopback만 받는다.
     pub webhook: WebhookSettings,
+    /// 작업 파이프라인의 report 상한. 누락 시 기본값이다.
+    pub task_pipeline: TaskPipelineSettings,
     /// Plugin-contributed settings page 의 generic 값 저장소.
     /// `plugin_settings[plugin_id][storage_key]` = `PluginSettingValue`.
     /// FontOverride(`appearance.plugin_font_overrides`)와 별개 네임스페이스.
@@ -420,6 +427,8 @@ impl Settings {
             "shift_display_style",
             &mut report.changed,
         );
+
+        self.task_pipeline.normalize(&mut report.changed);
 
         report
     }

@@ -1,4 +1,4 @@
-<!-- source-hash: d1ab1345be6e -->
+<!-- source-hash: 97f060cec7bb -->
 # Settings
 
 Adjust your shell, fonts, and workspace preferences to suit the way you work. Use the settings window or edit `~/.tasty/config.toml` directly. For key combinations and colours, see [Keybindings](keybindings.md) and [Themes](themes.md).
@@ -86,7 +86,8 @@ These tables are stored not in `config.toml` but in `~/.tasty/file-handlers.toml
 ### Misc
 
 - **Scripts** — Register Lua scripts to run from a keybinding or an event ([Lua scripts](scripts.md)). Enter the file path (for example `~/.tasty/scripts/my-script.lua`) and a display name; attach the keybinding under **Keybindings** > **Run Scripts**. If the file changes after registration, a **changed** marker appears and you are asked to confirm on the next run.
-- On Windows a **Tastyrc** section is added. On other OSes this tab holds only Scripts.
+- **Task pipeline** — Size limits for the notes kept in a task graph's report. A note longer than the **Note size limit** is cut, and notes past the **Attempt report limit** are not stored, only counted. The first value must always be smaller than the second ([Task report](../agents/tasks.md)).
+- On Windows a **Tastyrc** section is added.
 
 ### Plugins
 
@@ -281,6 +282,10 @@ max_mb = 500
 
 [webhook]
 allow_external = false           # true = also accept webhook calls from other computers (from the next start)
+
+[task_pipeline]
+report_append_bytes = 1024       # note size limit, 64-65536
+report_block_bytes = 16384       # attempt report limit, 128-131072, larger than the note size limit
 
 [keybindings]
 new_tab = ["alt+t"]              # the rest is in keybindings.md

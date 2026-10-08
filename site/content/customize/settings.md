@@ -85,7 +85,8 @@
 ### 기타
 
 - **스크립트** <!-- en: Scripts --> — 단축키나 이벤트로 실행할 Lua 스크립트를 등록합니다 ([Lua 스크립트](scripts.md)). 파일 경로(예: `~/.tasty/scripts/my-script.lua`)와 표시 이름을 넣고, 단축키는 **단축키** > **스크립트 실행** 에서 붙입니다. 등록 뒤 파일이 바뀌면 **변경됨** <!-- en: changed --> 표시가 붙고 다음 실행 때 확인을 묻습니다.
-- Windows 에서는 **Tastyrc** 섹션이 추가됩니다. 다른 OS 에서는 이 탭에 스크립트만 있습니다.
+- **작업 파이프라인** <!-- en: Task pipeline --> — 작업 그래프의 report 에 남기는 기록의 크기 상한입니다. **기록 한 건 상한** <!-- en: Note size limit --> 을 넘는 기록은 잘리고, **회차 report 상한** <!-- en: Attempt report limit --> 을 넘는 기록은 저장하지 않고 개수만 셉니다. 앞의 값은 항상 뒤의 값보다 작아야 합니다 ([작업 report](../agents/tasks.md)).
+- Windows 에서는 **Tastyrc** 섹션이 추가됩니다.
 
 ### 플러그인
 
@@ -271,6 +272,10 @@ max_mb = 500
 
 [webhook]
 allow_external = false           # true 면 다른 컴퓨터의 웹훅 호출도 받음(다음 시작부터)
+
+[task_pipeline]
+report_append_bytes = 1024       # 기록 한 건 상한, 64~65536
+report_block_bytes = 16384       # 회차 report 상한, 128~131072, 기록 한 건 상한보다 커야 함
 
 [keybindings]
 new_tab = ["alt+t"]              # 나머지는 keybindings.md
