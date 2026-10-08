@@ -13,7 +13,20 @@ pub fn select(
     width: f32,
     enabled: bool,
 ) -> bool {
-    match select_impl(
+    select_rect(ui, theme, id_salt, selected, options, width, enabled).0
+}
+
+/// [`select`] 와 같고 트리거가 차지한 rect 도 돌려준다. 행 안 컨트롤의 높이·위치를 맞추는 view 가 쓴다.
+pub(crate) fn select_rect(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    id_salt: &str,
+    selected: &mut usize,
+    options: &[&str],
+    width: f32,
+    enabled: bool,
+) -> (bool, egui::Rect) {
+    let (picked, rect) = select_impl(
         ui,
         theme,
         id_salt,
@@ -22,12 +35,13 @@ pub fn select(
         None,
         width,
         enabled,
-    ) {
+    );
+    match picked {
         Some(i) => {
             *selected = i;
-            true
+            (true, rect)
         }
-        None => false,
+        None => (false, rect),
     }
 }
 
@@ -55,7 +69,9 @@ pub fn select_or_placeholder(
         Some(placeholder),
         width,
         enabled,
-    ) {
+    )
+    .0
+    {
         Some(i) => {
             *selected = Some(i);
             true
@@ -64,7 +80,7 @@ pub fn select_or_placeholder(
     }
 }
 
-/// 두 공개 드롭다운이 공유하는 구현. 새로 선택한 인덱스가 있을 때 반환한다.
+/// 두 공개 드롭다운이 공유하는 구현. 새로 선택한 인덱스(있으면)와 트리거 rect 를 반환한다.
 // reason: 공개 함수 둘의 인자를 그대로 받는 내부 원문이다.
 #[allow(clippy::too_many_arguments)]
 fn select_impl(
@@ -76,7 +92,7 @@ fn select_impl(
     placeholder: Option<&str>,
     width: f32,
     enabled: bool,
-) -> Option<usize> {
+) -> (Option<usize>, egui::Rect) {
     let pad_x = theme.select_padding_x().value();
     let body = theme.select_font_size().value();
     let chevron_room = theme.select_chevron_room().value();
@@ -152,7 +168,7 @@ fn select_impl(
             },
         )
     });
-    picked
+    (picked, rect)
 }
 
 /// 단일·다중 선택 필드가 같은 높이와 입력 영역 계산을 사용한다.

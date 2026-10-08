@@ -456,7 +456,7 @@ pub fn kbd(ui: &mut egui::Ui, theme: &Theme, keys: &str) {
 
 /// 키 조합 문자열을 키 이름으로 나눈다. 구분자와 같은 `+` 키는 분할 결과에 빈 조각 두 개로
 /// 나타나므로(`"+"` → `["", ""]`, `"Ctrl++"` → `["Ctrl", "", ""]`) 연속한 빈 조각을 `+` 키 하나로 합친다.
-fn split_keys(keys: &str) -> Vec<&str> {
+pub(crate) fn split_keys(keys: &str) -> Vec<&str> {
     let mut out = Vec::new();
     let mut segs = keys.split('+').peekable();
     while let Some(seg) = segs.next() {

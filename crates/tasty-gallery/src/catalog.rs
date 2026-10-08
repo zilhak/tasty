@@ -1693,6 +1693,15 @@ pub fn pages() -> Vec<Page> {
                         ),
                     ],
                 ),
+                single(
+                    "kbplugins",
+                    "Keybindings · Plugins",
+                    "Plugin picker + per-command mode",
+                    Some(
+                        "settings Row grid 150 + 16 · one line per command: mode 160 · slot 200 · ghost Reset · every control 28 · Reset disabled without an override · draft dot · parse error caption · record-button alternative · empty",
+                    ),
+                    components::kb_plugins::draw,
+                ),
                 section(
                     "kbimportexport",
                     "Keybindings · Import / Export",

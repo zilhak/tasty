@@ -32,6 +32,7 @@ pub mod html_chrome;
 pub mod image_viewer;
 pub mod info_modal;
 pub mod kb_import_export;
+pub mod kb_plugins;
 pub mod markdown_open;
 pub mod markdown_viewer;
 pub mod md_large_file;

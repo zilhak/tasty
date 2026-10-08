@@ -30,6 +30,7 @@ mod html_script_banner;
 mod icon_button;
 mod info_modal;
 mod input;
+mod kb_plugins;
 mod keyboard_cursor;
 mod language_select;
 mod listctrl;
@@ -115,6 +116,11 @@ pub use info_modal::{
     parse_emphasis as info_modal_parse, shell_height as info_modal_shell_height,
 };
 pub use input::Input;
+pub use kb_plugins::{
+    KB_PLUGIN_MODE_CUSTOM, KB_PLUGIN_MODE_INHERIT, KB_PLUGIN_MODE_NONE, KbPluginLabels,
+    KbPluginRowOutput, KbPluginRowRects, KbPluginRowView, KbPluginSlot, KbPluginsOutput,
+    KbPluginsView, kb_plugins_subtab,
+};
 pub use language_select::{LanguageOption, LanguageSelectLabels, language_select};
 pub use listctrl::{ListCtrl, ListCtrlItem, ListCtrlOutput, ListCtrlTrailing};
 pub use mac_permissions::{

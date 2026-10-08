@@ -753,6 +753,30 @@ i18n 12키(`settings.misc.scripts` · `settings.scripts.{description,add,file,di
 i18n: `settings.keybindings.preset_*` 신규 10키 + `select_preset_label`/`preset_col_before` 문구 갱신,
 `preset_col_after` 제거 (3열 헤더 = 프리셋 이름).
 
+## Settings › Keybindings › Plugins (kbplugins)
+
+디자인 `ui_kits/terminal/overlays/kb_plugins_subtab.jsx` + `gallery/overlays-windows.jsx` Spec
+"Keybindings › Plugins" ↔ 갤러리 `catalog/components/kb_plugins.rs`(Overlays › `kbplugins`, 시안 견본 넷:
+기본 · 초안과 해석 실패 · 녹화 버튼 대안 · 빈 상태). 화면은 공용 view
+`tasty_ui_widgets::kb_plugins_subtab`(`crates/tasty-ui-widgets/src/kb_plugins.rs`)이 그린다. 갤러리는 시안
+`KBP_PLUGINS`·`KBP_RESOLVED` 고정 데이터와 시안 초안 규칙(mode 전환 시 시작값, Reset 이 override 를 지움)으로
+props 를 채운다.
+
+| 디자인 jsx | 공용 view | 비고 |
+|---|---|---|
+| `KbPluginsSubtab` | `kb_plugins_subtab` | picker 행 · `kb-plugin-list-gap` · 명령 행. 플러그인이 없으면 muted caption 한 줄만 두고 picker 는 없다 |
+| picker 행 | `row_grid` + `select_rect` | 제목 열 `kb-plugin-title-width` · `kb-plugin-title-gap` · Select `kb-plugin-picker-width`. 행 최소 높이 `kb-plugin-row-min-height` 안에서 세로 가운데 |
+| `KbpCommandRow` | `command_row` | 위아래 `kb-plugin-row-padding-y`, 명령 사이에만 1px `kb-plugin-separator`. 제목은 text-secondary 본문 크기로 열 안에서 줄바꿈하고 말줄임하지 않는다 |
+| 컨트롤 줄 | `control_line` | mode Select `kb-plugin-mode-width` · `kb-plugin-control-gap` · slot `kb-plugin-slot-width` · Reset(ghost md). 셋 모두 `kb-plugin-control-height`, 줄 최소 높이 `kb-plugin-row-min-height` |
+| slot | `KbPluginSlot::{Inherit, Custom, Unassigned}` | 상속 소스 Select / mono Input(placeholder `ctrl+f5`, 해석 실패면 invalid) / "(Unassigned)" `kb-plugin-none-fg` |
+| `recordAlt` | `KbPluginSlot::Record` | 녹화 버튼 대안. 사용자 결정 전이라 갤러리 견본만 쓴다 |
+| caption | `caption` | 줄 아래 `kb-plugin-caption-gap`, caption 크기. Inherit 은 `kb-plugin-caption-fg` "Inherited (…)" 또는 "None", 해석 실패는 `kb-plugin-error-fg` 에 키를 mono 로 |
+| 초안 점 | `title_cell` | 제목 뒤 `space-sm`, `kb-plugin-draft-dot-size` 원 `kb-plugin-draft-dot`. hover tooltip |
+| Reset `disabled={!overridden}` | `Button::enabled(overridden)` | override 가 없으면 disabled. tooltip 은 켜져 있을 때만(시안 disabled 버튼은 `title` 이 뜨지 않는다) |
+
+키 해석 실패 판정은 시안 `kbpParse` 를 옮기지 않고 키 매칭 규칙(`tasty_key_match::binding_key_recognized`)을 쓴다.
+시안은 `cmd`·`super` modifier 와 `f13`~`f24` 를 받지만 매칭 규칙은 이를 맞출 수 없어 해석 실패로 보인다.
+
 ## Settings › Keybindings › Import / Export (kbimportexport)
 
 디자인 `ui_kits/terminal/overlays/kb_import_export.jsx` + `settings_window.jsx`(`KB_L2_SEPARATED` ·
