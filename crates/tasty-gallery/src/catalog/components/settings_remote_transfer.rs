@@ -4,7 +4,9 @@ use std::cell::RefCell;
 use tasty_type_geometry::length::LogicalPx;
 
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, Input};
+use tasty_ui_widgets::{
+    Button, ButtonVariant, ControlSize, Input, SettingsRow, settings_label_column,
+};
 
 use crate::catalog::icons;
 use crate::catalog::spec::{self, StageVariant, TokenChip};
@@ -12,8 +14,6 @@ use crate::catalog::widgets::dialog as kit;
 
 /// 디자인 settings 콘텐츠 컬럼 근사 프레임 폭(settings_handler 와 동일).
 pub(super) const WIDTH: LogicalPx = LogicalPx(560.0);
-/// jsx `gridTemplateColumns: "150px 1fr"` 라벨 컬럼 폭.
-pub(super) const LABEL_COL_W: LogicalPx = LogicalPx(150.0);
 /// 본체와 같은 field_width_xs를 사용한다.
 fn size_input_width(theme: &Theme) -> f32 {
     theme.field_width_xs.value()
@@ -39,10 +39,20 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
                 mono_head(ui, theme, "Received files");
 
+                let rows = [
+                    SettingsRow::new("Save folder")
+                        .caption("Where files received from a remote workspace are saved."),
+                    SettingsRow::new("Maximum size").caption(
+                        "Total the folder may hold. A transfer that would push it past this \
+                         limit is rejected before it starts.",
+                    ),
+                ];
+                let col = settings_label_column(ui, theme, &rows);
+                let [folder, size] = rows;
                 STATE.with(|s| {
                     let st = &mut *s.borrow_mut();
 
-                    xfer_row(ui, theme, "Save folder", |ui| {
+                    folder.show(ui, theme, col, |ui| {
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
                             // specimen — 클릭 응답 불필요, 그리기만(폴더 피커는 host 소유).
@@ -59,14 +69,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                                 .show(ui, theme, &mut st.dir);
                         });
                     });
-                    row_desc(
-                        ui,
-                        theme,
-                        "Where files received from a remote workspace are saved.",
-                    );
                     separator_line(ui, theme);
 
-                    xfer_row(ui, theme, "Maximum size", |ui| {
+                    size.show(ui, theme, col, |ui| {
                         ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                             ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
                             Input::new().mono(true).width(size_input_width(theme)).show(
@@ -82,12 +87,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                             );
                         });
                     });
-                    row_desc(
-                        ui,
-                        theme,
-                        "Total the folder may hold. A transfer that would push it past this \
-                             limit is rejected before it starts.",
-                    );
                 });
             });
         });
@@ -99,7 +98,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         &[
             ("L2 position", "5th — after Overlay"),
             ("rows", "Save folder · Maximum size"),
-            ("row grid", "150px label · control · gap 12"),
+            (
+                "row grid",
+                "settings row grid · label column 150 … 240 · gap 16 · caption under its row",
+            ),
             ("row height", "settings-row-min-height"),
             ("folder row", "mono Input + Browse… (secondary · folder)"),
             (
@@ -135,37 +137,6 @@ fn mono_head(ui: &mut egui::Ui, theme: &Theme, text: &str) {
         egui::RichText::new(text.to_uppercase())
             .monospace()
             .size(theme.font_size_micro.value())
-            .color(theme.text_muted().to_egui()),
-    );
-}
-
-/// settings-row 한 행: 150px 좌측 라벨(수직 중앙) + `spacing_md`(12) gap + 컨트롤.
-/// 행 높이는 `settings_row_min_height`(32) 하한 (host `settings_row` 와 동형).
-fn xfer_row(ui: &mut egui::Ui, theme: &Theme, label: &str, control: impl FnOnce(&mut egui::Ui)) {
-    ui.horizontal(|ui| {
-        ui.set_min_height(theme.settings_row_min_height().value());
-        ui.spacing_mut().item_spacing.x = 0.0;
-        let (lr, _) = ui.allocate_exact_size(
-            egui::vec2(LABEL_COL_W.value(), theme.settings_row_min_height().value()),
-            egui::Sense::hover(),
-        );
-        ui.painter().text(
-            egui::pos2(lr.left(), lr.center().y),
-            egui::Align2::LEFT_CENTER,
-            label,
-            egui::FontId::proportional(theme.font_size_body.value()),
-            theme.text_primary().to_egui(),
-        );
-        ui.add_space(theme.spacing_md.value());
-        control(ui);
-    });
-}
-
-/// 행 아래 muted 설명줄 (caption · text-muted).
-fn row_desc(ui: &mut egui::Ui, theme: &Theme, text: &str) {
-    ui.label(
-        egui::RichText::new(text)
-            .size(theme.font_size_caption.value())
             .color(theme.text_muted().to_egui()),
     );
 }

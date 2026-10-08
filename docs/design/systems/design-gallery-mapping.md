@@ -281,7 +281,7 @@ Spec 하나가 갤러리 예제 둘이거나, 둘이 하나이거나, 경계가 
 | `gallery/overlays-windows.jsx` "“+ New workspace” row — the escape from a dead-end remote" | `remote-workspace-attach-new-row` | 아래 remote_attach 절 `RaNewWsRow` 행 |
 | `gallery/overlays-windows.jsx` "Gestures & folder targets — the six open branches" | `filepicker-gesture-table` | [파일 피커](#파일-피커-overlays) |
 | `gallery/overlays-windows.jsx` "Settings · General › Remote transfer — 5th L2 subtab" | `settings-remote-transfer` | [Remote transfer](#settings--general--remote-transfer) |
-| `gallery/overlays-windows.jsx` "General › General — Accept webhook calls from other computers (2026-10-07)" | `settings-general-webhook-external` | [웹훅 외부 수신 행](#settings--general--general--웹훅-외부-수신-행) |
+| `gallery/overlays-windows.jsx` "General › General — row grid, row captions, webhook row" | `settings-general-row-grid` | [행 격자와 웹훅 외부 수신 행](#settings--general--general--행-격자와-웹훅-외부-수신-행) |
 | `gallery/overlays-windows.jsx` "FileHandler › File Extension Mapping — order + Add" | `settings-file-extension-mapping` | [Handler 하위 탭](#settings--handler-하위-탭) |
 | `gallery/overlays-windows.jsx` "Status table, one action per row, one request button" | `settings-macos-permissions` | [Permissions (macOS)](#settings--general--permissions-macos) |
 | `gallery/overlays-windows.jsx` "Copy fingerprint · Add plugin that can't be added" | `plugins-window` · `plugin-add-hint-slot` | [plugins window](#overlays--plugins-window) |
@@ -916,7 +916,7 @@ TCC 상태 하나만 그린다. 손쉬운 사용 행은 본체에서 debug 빌�
 두고 반경과 좌우 여백은 없다. `PermRow`의 라벨 줄과 부연 줄 사이는 semantic
 `label-detail-gap`(Theme `label_detail_gap`)이다.
 
-## Settings › General › General — 웹훅 외부 수신 행
+## Settings › General › General — 행 격자와 웹훅 외부 수신 행
 
 General L1 의 첫 L2 "General" 마지막 행. 디자인: `ui_kits/terminal/overlays/settings_window.jsx`(General/General 의
 `Row` + 경고 callout) · `gallery/overlays-windows.jsx` "General › General — Accept webhook calls from other computers" spec.
@@ -924,7 +924,7 @@ General L1 의 첫 L2 "General" 마지막 행. 디자인: `ui_kits/terminal/over
 
 | 디자인 jsx 컴포넌트 | 본체 함수 | 갤러리 항목 |
 |---|---|---|
-| `Row`("Accept webhook calls from other computers:" + `Switch`) | `src/view/settings/ui/tabs/general.rs::draw_general_tab` — `general_grid` 의 마지막 행. 라벨은 `Label::wrap` 으로 라벨 열 안에서 줄바꿈 | `components/settings_general_webhook.rs::draw` (`settings` 섹션 `settings-general-webhook-external` spec) — Restore layout · Close behavior · Language · 웹훅 네 행 |
+| `Row`("Accept webhook calls from other computers:" + `Switch`) | `src/view/settings/ui/tabs/general.rs::draw_general_tab` — `general_grid` 의 마지막 행. 라벨은 `Label::wrap` 으로 라벨 열 안에서 줄바꿈 | `components/settings_general_grid.rs::draw` (`settings` 섹션 `settings-general-row-grid` spec) — Restore layout · Close behavior · Wheel scroll distance(caption) · Language(caption) · 웹훅(callout) 다섯 행, `tasty_ui_widgets::SettingsRow` |
 | 경고 callout(`alertTriangle` 16 · accent-warning 40% 테두리 · 12% tint · caption) | 같은 함수 — 격자와 callout 을 `item_spacing.y = space-sm` 묶음에 두고 `measure_md` 폭 안에서 `tasty_ui_widgets::warning_callout` | 동(`warning_callout`, `measure_md`) |
 
 **전사 노트**:

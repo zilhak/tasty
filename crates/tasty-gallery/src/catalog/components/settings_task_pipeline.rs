@@ -5,13 +5,13 @@
 use std::cell::RefCell;
 
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::Input;
+use tasty_ui_widgets::{Input, SettingsRow, settings_label_column};
 
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::catalog::widgets::dialog as kit;
 
-// 프레임 폭과 라벨 컬럼 폭은 같은 settings-row 를 쓰는 Remote transfer 예제의 값이다.
-use super::settings_remote_transfer::{LABEL_COL_W, WIDTH};
+// 프레임 폭은 같은 settings-row 를 쓰는 Remote transfer 예제의 값이다.
+use super::settings_remote_transfer::WIDTH;
 
 thread_local! {
     static STATE: RefCell<[String; 2]> =
@@ -24,23 +24,23 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             kit::region_sym(ui, theme.spacing_lg, theme.spacing_md, |ui| {
                 ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
                 mono_head(ui, theme, "Report limits");
-                STATE.with(|s| {
-                    let [append, block] = &mut *s.borrow_mut();
-                    bytes_row(ui, theme, "Note size limit", append);
-                    row_desc(
-                        ui,
-                        theme,
+                let rows = [
+                    SettingsRow::new("Note size limit").caption(
                         "One note longer than this is cut at a UTF-8 boundary and marked as \
                          truncated. Must be smaller than the attempt limit.",
-                    );
-                    separator_line(ui, theme);
-                    bytes_row(ui, theme, "Attempt report limit", block);
-                    row_desc(
-                        ui,
-                        theme,
+                    ),
+                    SettingsRow::new("Attempt report limit").caption(
                         "Total note text kept for one task attempt. Notes past it are not \
                          stored, only counted.",
-                    );
+                    ),
+                ];
+                let col = settings_label_column(ui, theme, &rows);
+                let [note, attempt] = rows;
+                STATE.with(|s| {
+                    let [append, block] = &mut *s.borrow_mut();
+                    note.show(ui, theme, col, |ui| bytes_control(ui, theme, append));
+                    separator_line(ui, theme);
+                    attempt.show(ui, theme, col, |ui| bytes_control(ui, theme, block));
                 });
             });
         });
@@ -92,42 +92,16 @@ fn mono_head(ui: &mut egui::Ui, theme: &Theme, text: &str) {
     );
 }
 
-/// settings-row 한 행: 라벨 + `spacing_md` gap + 숫자 Input + 단위.
-fn bytes_row(ui: &mut egui::Ui, theme: &Theme, label: &str, buf: &mut String) {
-    ui.horizontal(|ui| {
-        ui.set_min_height(theme.settings_row_min_height().value());
-        ui.spacing_mut().item_spacing.x = 0.0;
-        let (lr, _) = ui.allocate_exact_size(
-            egui::vec2(LABEL_COL_W.value(), theme.settings_row_min_height().value()),
-            egui::Sense::hover(),
-        );
-        ui.painter().text(
-            egui::pos2(lr.left(), lr.center().y),
-            egui::Align2::LEFT_CENTER,
-            label,
-            egui::FontId::proportional(theme.font_size_body.value()),
-            theme.text_primary().to_egui(),
-        );
-        ui.add_space(theme.spacing_md.value());
-        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-            ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-            Input::new()
-                .mono(true)
-                .width(theme.field_width_xs.value())
-                .show(ui, theme, buf);
-            ui.label(
-                egui::RichText::new("B")
-                    .monospace()
-                    .size(theme.font_size_caption.value())
-                    .color(theme.text_muted().to_egui()),
-            );
-        });
-    });
-}
-
-fn row_desc(ui: &mut egui::Ui, theme: &Theme, text: &str) {
+/// 숫자 Input + 단위.
+fn bytes_control(ui: &mut egui::Ui, theme: &Theme, buf: &mut String) {
+    ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+    Input::new()
+        .mono(true)
+        .width(theme.field_width_xs.value())
+        .show(ui, theme, buf);
     ui.label(
-        egui::RichText::new(text)
+        egui::RichText::new("B")
+            .monospace()
             .size(theme.font_size_caption.value())
             .color(theme.text_muted().to_egui()),
     );
