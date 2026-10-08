@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 use tasty_agent::{LeaseStore, OnFailure, SemaphoreStore, Task, TaskId};
 use tasty_memory::HOST_OWNER;
 
-use super::{HostExecutor, now_ms};
+use super::HostExecutor;
 
 /// 작업 생성·제출 때 받는 점유 TTL 의 하한(1초). 갱신은 TTL 의 절반이 지난 뒤 처음 오는 tick 에
 /// 한다. 그 tick 은 늦어도 절반 + tick 간격에 오므로, TTL 이 tick 간격의 두 배 이상이어야 만료
@@ -97,7 +97,7 @@ impl HostExecutor {
 
     /// 갱신 주기가 된 점유의 만료 시각을 늦춘다. 이미 다른 holder 가 쥔 자원은 되찾지 않는다.
     pub(super) fn renew_holdings(&mut self) {
-        let now = now_ms();
+        let now = self.holding_clock.now_ms();
         let due: Vec<(TaskId, Holding)> = self
             .ttl_renewals
             .iter()

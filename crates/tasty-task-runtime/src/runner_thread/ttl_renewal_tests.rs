@@ -1,7 +1,10 @@
 //! 러너가 지켜보는 task 의 lease·semaphore TTL 은 task 가 살아 있는 동안 갱신된다. 갱신하지 않으면
 //! TTL 이 지난 뒤 다른 holder 가 같은 자원을 가져간다.
+//!
+//! 러너의 점유 시각은 시험이 진행시키는 시계([`HoldingClock::manual`])가 정하고, 다른 holder 의 획득도
+//! 같은 시각으로 시도한다. 부하로 tick 이 늦게 와도 갱신 주기와 만료 판정이 실제 시각에 끌려가지 않는다.
 
-use std::sync::atomic::{AtomicBool, AtomicU64};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -12,7 +15,7 @@ use tasty_agent::{
 };
 use tasty_memory::{HOST_OWNER, MemoryStore, MemoryValue, PutOpts, Scope};
 
-use crate::runner_host::{HostExecutor, RunnerContext, handle_key};
+use crate::runner_host::{HoldingClock, HostExecutor, RunnerContext, handle_key};
 
 const TTL_MS: u64 = 300;
 /// 빈 Run cwd 는 lease 자원으로 채워지므로(`${lease.resource}`) 있는 디렉터리를 자원으로 쓴다.
@@ -69,10 +72,16 @@ fn now() -> u64 {
         .as_millis() as u64
 }
 
-fn other_gets_db(ctx: &RunnerContext) -> bool {
+/// 러너와 시험이 함께 보는 시계를 단 executor. 실제 시각에서 출발해 시험이 움직일 때만 간다.
+fn executor(ctx: &RunnerContext) -> (HostExecutor, Arc<AtomicU64>) {
+    let (clock, at) = HoldingClock::manual(now());
+    (HostExecutor::new(ctx.clone()).with_holding_clock(clock), at)
+}
+
+fn other_gets_db(ctx: &RunnerContext, at: u64) -> bool {
     ctx.with_memory(|mem| {
         LeaseStore::new(mem, HOST_OWNER)
-            .acquire(1, DB, "other", None, LeaseMode::Block, now())
+            .acquire(1, DB, "other", None, LeaseMode::Block, at)
             .unwrap()
             .acquired
     })
@@ -87,27 +96,49 @@ fn db_holder(ctx: &RunnerContext) -> Option<String> {
     })
 }
 
-/// 러너가 tick 마다 부르는 maintain 만으로 TTL 의 몇 배가 지나도 lease 가 유지된다.
-fn keep_ticking(exec: &mut HostExecutor, for_: Duration) {
-    let end = Instant::now() + for_;
-    while Instant::now() < end {
+/// 시계를 tick 하나(TTL 의 1/6)씩 `for_ms` 만큼 진행하며 러너가 tick 마다 부르는 maintain 을 부른다.
+/// `before_tick` 은 시각이 움직인 뒤 그 tick 의 maintain 전에 그 시각으로 불린다. 다른 holder 가
+/// 끼어들 수 있는 가장 늦은 순간이다.
+fn keep_ticking(
+    exec: &mut HostExecutor,
+    at: &AtomicU64,
+    for_ms: u64,
+    mut before_tick: impl FnMut(u64),
+) {
+    let step = TTL_MS / 6;
+    for _ in 0..for_ms / step {
+        before_tick(at.fetch_add(step, Ordering::SeqCst) + step);
         exec.maintain();
-        std::thread::sleep(Duration::from_millis(50));
     }
+}
+
+/// 이 시각에 lease 가 만료됐는지. 갱신이 늦으면 다음 tick 전에 만료된다.
+fn db_expired(ctx: &RunnerContext, at: u64) -> bool {
+    ctx.with_memory(|mem| {
+        LeaseStore::new(mem, HOST_OWNER)
+            .get(1, DB)
+            .unwrap()
+            .is_none_or(|l| l.is_expired(at))
+    })
 }
 
 #[test]
 fn a_running_task_keeps_its_ttl_lease_while_the_runner_watches_it() {
     let (_td, ctx) = ctx();
     let task = sleeper(&ctx);
-    let mut exec = HostExecutor::new(ctx.clone());
+    let (mut exec, at) = executor(&ctx);
     let outcome = exec.dispatch(&task);
     let DispatchOutcome::Started(_) = outcome else {
         panic!("dispatch: {outcome:?}");
     };
-    keep_ticking(&mut exec, Duration::from_millis(TTL_MS * 4));
+    keep_ticking(&mut exec, &at, TTL_MS * 4, |now| {
+        assert!(
+            !db_expired(&ctx, now),
+            "{now}: tick 사이에 lease 가 만료됐다"
+        )
+    });
     assert!(
-        !other_gets_db(&ctx),
+        !other_gets_db(&ctx, at.load(Ordering::SeqCst)),
         "살아 있는 task 의 lease 를 TTL 뒤 다른 holder 가 가져갔다"
     );
     assert_eq!(db_holder(&ctx), Some(task.id.clone()));
@@ -118,7 +149,10 @@ fn a_running_task_keeps_its_ttl_lease_while_the_runner_watches_it() {
             .unwrap()
             .acquired_at
     });
-    assert!(acquired_at < now() - TTL_MS, "갱신이 획득 시각을 바꿨다");
+    assert!(
+        acquired_at < at.load(Ordering::SeqCst) - TTL_MS,
+        "갱신이 획득 시각을 바꿨다"
+    );
 
     // 끝나면(취소) 프로세스를 끝내고 반환한다. 그 뒤에는 갱신하지 않는다.
     exec.release_permit(&task.id);
@@ -165,14 +199,20 @@ fn a_restored_run_keeps_its_ttl_lease_after_a_restart() {
         )
         .unwrap();
     });
-    let mut exec = HostExecutor::new(ctx.clone());
+    let (mut exec, at) = executor(&ctx);
     let restored = super::purge_and_reload_on_restart(&ctx, 1);
     assert_eq!(restored.len(), 1);
     let task = super::load_task(&ctx, 1, &id).unwrap();
     exec.adopt_restored_run(1, &task);
-    keep_ticking(&mut exec, Duration::from_millis(TTL_MS * 3));
+    exec.maintain();
+    keep_ticking(&mut exec, &at, TTL_MS * 3, |now| {
+        assert!(
+            !db_expired(&ctx, now),
+            "{now}: tick 사이에 lease 가 만료됐다"
+        )
+    });
     assert!(
-        !other_gets_db(&ctx),
+        !other_gets_db(&ctx, at.load(Ordering::SeqCst)),
         "복원한 Run 의 lease 를 다른 holder 가 가져갔다"
     );
     assert_eq!(db_holder(&ctx), Some(id));
@@ -190,12 +230,25 @@ fn gpu_task(ctx: &RunnerContext) -> tasty_agent::Task {
     )
 }
 
-fn other_gets_gpu(ctx: &RunnerContext) -> bool {
+fn other_gets_gpu(ctx: &RunnerContext, at: u64) -> bool {
     ctx.with_memory(|mem| {
         SemaphoreStore::new(mem, HOST_OWNER)
-            .acquire(1, "gpu", "other", None, now())
+            .acquire(1, "gpu", "other", None, at)
             .unwrap()
             .acquired
+    })
+}
+
+/// 이 시각에 permit 이 만료됐는지.
+fn gpu_expired(ctx: &RunnerContext, at: u64) -> bool {
+    ctx.with_memory(|mem| {
+        SemaphoreStore::new(mem, HOST_OWNER)
+            .get(1, "gpu")
+            .unwrap()
+            .unwrap()
+            .holders
+            .first()
+            .is_none_or(|h| h.is_expired(at))
     })
 }
 
@@ -216,21 +269,26 @@ fn gpu_holder(ctx: &RunnerContext) -> Vec<(String, Option<u64>)> {
 fn a_running_task_keeps_its_ttl_permit_while_the_runner_watches_it() {
     let (_td, ctx) = ctx();
     let task = gpu_task(&ctx);
-    let mut exec = HostExecutor::new(ctx.clone());
+    let (mut exec, at) = executor(&ctx);
     let outcome = exec.dispatch(&task);
     let DispatchOutcome::Started(_) = outcome else {
         panic!("dispatch: {outcome:?}");
     };
-    keep_ticking(&mut exec, Duration::from_millis(TTL_MS * 4));
+    keep_ticking(&mut exec, &at, TTL_MS * 4, |now| {
+        assert!(
+            !gpu_expired(&ctx, now),
+            "{now}: tick 사이에 permit 이 만료됐다"
+        )
+    });
     assert!(
-        !other_gets_gpu(&ctx),
+        !other_gets_gpu(&ctx, at.load(Ordering::SeqCst)),
         "살아 있는 task 의 permit 을 TTL 뒤 다른 holder 가 가져갔다"
     );
     let holders = gpu_holder(&ctx);
     assert_eq!(holders.len(), 1);
     assert_eq!(holders[0].0, task.id);
     assert!(
-        holders[0].1.unwrap() < now() - TTL_MS,
+        holders[0].1.unwrap() < at.load(Ordering::SeqCst) - TTL_MS,
         "갱신이 획득 시각을 바꿨다"
     );
 
@@ -268,13 +326,19 @@ fn a_restored_run_keeps_its_ttl_permit_after_a_restart() {
         )
         .unwrap();
     });
-    let mut exec = HostExecutor::new(ctx.clone());
+    let (mut exec, at) = executor(&ctx);
     assert_eq!(super::purge_and_reload_on_restart(&ctx, 1).len(), 1);
     let task = super::load_task(&ctx, 1, &id).unwrap();
     exec.adopt_restored_run(1, &task);
-    keep_ticking(&mut exec, Duration::from_millis(TTL_MS * 3));
+    exec.maintain();
+    keep_ticking(&mut exec, &at, TTL_MS * 3, |now| {
+        assert!(
+            !gpu_expired(&ctx, now),
+            "{now}: tick 사이에 permit 이 만료됐다"
+        )
+    });
     assert!(
-        !other_gets_gpu(&ctx),
+        !other_gets_gpu(&ctx, at.load(Ordering::SeqCst)),
         "복원한 Run 의 permit 을 다른 holder 가 가져갔다"
     );
     assert_eq!(gpu_holder(&ctx)[0].0, id);
@@ -373,15 +437,15 @@ fn a_lease_lost_before_renewal_is_reported_on_the_task() {
     let (_td, ctx) = ctx();
     let (svc, scope) = service(&ctx);
     let task = sleeper(&ctx);
-    let mut exec = HostExecutor::new(ctx.clone());
+    let (mut exec, at) = executor(&ctx);
     let outcome = exec.dispatch(&task);
     let DispatchOutcome::Started(_) = outcome else {
         panic!("dispatch: {outcome:?}");
     };
     assert!(svc.task_holding_warnings(&scope, 1, &task.id).is_empty());
     // 러너가 tick 을 건너뛴 사이 TTL 이 지나 다른 holder 가 얻는다.
-    std::thread::sleep(Duration::from_millis(TTL_MS + 50));
-    assert!(other_gets_db(&ctx));
+    at.fetch_add(TTL_MS + 50, Ordering::SeqCst);
+    assert!(other_gets_db(&ctx, at.load(Ordering::SeqCst)));
     exec.maintain();
     let warnings = svc.task_holding_warnings(&scope, 1, &task.id);
     assert_eq!(warnings.len(), 1, "{warnings:?}");
@@ -389,7 +453,7 @@ fn a_lease_lost_before_renewal_is_reported_on_the_task() {
     assert_eq!(warnings[0]["name"], DB);
     assert_eq!(db_holder(&ctx).as_deref(), Some("other"));
     // 잃은 점유는 다시 갱신하지 않아 기록이 늘지 않는다.
-    keep_ticking(&mut exec, Duration::from_millis(TTL_MS));
+    keep_ticking(&mut exec, &at, TTL_MS, |_| {});
     assert_eq!(svc.task_holding_warnings(&scope, 1, &task.id).len(), 1);
     exec.release_permit(&task.id);
 }

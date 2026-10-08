@@ -273,6 +273,12 @@ CI 는 `.github/workflows/crossplatform-check.yml` 의 `check-headless` 잡이 �
     완료 하나를 `recv_timeout(10초)`로 받던 때는 부하 평균이 코어 수의 두세 배인 병렬 실행에서
     실행마다 다른 시험이 `Timeout`으로 실패했다. worker가 완료 채널을 닫으면 정체 한도를 기다리지
     않고 바로 실패한다.
+- 제품이 시각으로 판정하면 시험이 시각을 정한다: tasty-task-runtime 의 TTL 갱신 시험은 러너가
+  tick 마다 갱신하는 lease·permit 이 TTL(300ms) 뒤에도 남는지 본다. 실제 시각으로 tick 을 돌리면
+  부하로 tick 이 늦을 때 갱신 전에 만료돼 실패했다. 지금은 `HostExecutor` 가 점유를 얻고 갱신할 때
+  `HoldingClock` 을 읽고, 시험은 `HoldingClock::manual` 시각을 tick 마다 TTL 의 1/6 씩 올린다.
+  다른 holder 의 획득과 만료 판정도 그 시각으로 하며, 매 tick 의 `maintain` 직전에 점유가 아직
+  만료되지 않았는지 단언해 갱신 누락과 늦은 갱신 주기를 함께 잡는다.
 - **타임아웃 상향은 처방이 아니다** — 발생 빈도만 낮추고(확률 저감) 부하가 그 상한을 넘는
   날 다시 깨진다. 근거는 [유닛 테스트 격리](unit-test-isolation.md).
 

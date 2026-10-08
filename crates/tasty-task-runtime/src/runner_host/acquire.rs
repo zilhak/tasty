@@ -3,7 +3,7 @@
 use tasty_agent::{AgentError, ElasticSpec, LeaseMode, LeaseStore, SemaphoreStore, Task, TaskId};
 use tasty_memory::HOST_OWNER;
 
-use super::{HostExecutor, now_ms, ttl_renewal};
+use super::{HostExecutor, ttl_renewal};
 
 impl HostExecutor {
     /// semaphore metadata가 없으면 None, 얻었으면 Some(true), 부족하면 Some(false)다. 잘못된 name·저장소 오류는 Err다.
@@ -24,7 +24,7 @@ impl HostExecutor {
         let name = name.to_string();
         let holder = holder.to_string();
         let ws = task.workspace_id;
-        let now = now_ms();
+        let now = self.holding_clock.now_ms();
         let result: Result<bool, String> = self.ctx.with_memory(|mem| {
             let mut store = SemaphoreStore::new(mem, HOST_OWNER);
             store
@@ -118,7 +118,7 @@ impl HostExecutor {
         };
         let holder = holder.to_string();
         let ws = task.workspace_id;
-        let now = now_ms();
+        let now = self.holding_clock.now_ms();
         let result: Result<(bool, Option<String>), String> = self.ctx.with_memory(|mem| {
             let mut store = LeaseStore::new(mem, HOST_OWNER);
             match store.acquire_any(

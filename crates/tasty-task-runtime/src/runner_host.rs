@@ -30,6 +30,7 @@ pub(crate) use run_result::{
 use run_result::{drain_capped, drain_capped_observed, summarize_poll_response};
 
 pub(crate) use attempt_record::{HANDLE_ATTEMPT_FIELD, dispatch_attempt, handle_value};
+pub(crate) use clock::HoldingClock;
 use clock::now_ms;
 use command_inputs::{substitute_lease_resource, substitute_task_outputs};
 pub(crate) use holding_warning::current_holding_warnings;
@@ -182,6 +183,8 @@ pub(crate) struct HostExecutor {
     stopping_runs: Vec<TaskId>,
     /// TTL 을 둔 lease·permit 의 갱신 상태. `held_leases`·`held_permits` 와 함께 놓는다.
     ttl_renewals: HashMap<(TaskId, ttl_renewal::Holding), ttl_renewal::TtlRenewal>,
+    /// TTL 점유의 획득·갱신 시각.
+    holding_clock: HoldingClock,
 }
 
 impl HostExecutor {
@@ -198,7 +201,15 @@ impl HostExecutor {
             run_procs: HashMap::new(),
             stopping_runs: Vec::new(),
             ttl_renewals: HashMap::new(),
+            holding_clock: HoldingClock::system(),
         }
+    }
+
+    /// TTL 점유의 획득·갱신 시각을 `clock` 으로 정한다.
+    #[cfg(test)]
+    pub(crate) fn with_holding_clock(mut self, clock: HoldingClock) -> Self {
+        self.holding_clock = clock;
+        self
     }
 
     /// Started를 반환하기 전에 실행 handle을 저장한다. workspace는 handle에 없을 수 있어 별도로 받는다.
