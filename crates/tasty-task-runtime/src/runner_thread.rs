@@ -1980,3 +1980,7 @@ mod cancel_stop_tests;
 #[cfg(all(test, unix))]
 #[path = "runner_thread/ttl_renewal_tests.rs"]
 mod ttl_renewal_tests;
+
+#[cfg(test)]
+#[path = "runner_thread/reload_shrink_tests.rs"]
+mod reload_shrink_tests;
