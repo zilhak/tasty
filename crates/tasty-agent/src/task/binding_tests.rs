@@ -133,3 +133,22 @@ fn an_unreadable_file_is_not_a_file_argument() {
     let rel = check_readable_file("secret", Some(dir.path())).unwrap_err();
     assert!(rel.starts_with("cannot be read"), "{rel}");
 }
+
+/// 심볼릭 링크는 따라가서 대상으로 판정한다. 파일 링크는 받고, 디렉터리 링크와 끊긴 링크는 받지 않는다.
+#[cfg(unix)]
+#[test]
+fn a_symlink_is_judged_by_its_target() {
+    let dir = tempfile::tempdir().unwrap();
+    let f = dir.path().join("data");
+    std::fs::write(&f, "x").unwrap();
+    let link = |name: &str, to: &std::path::Path| {
+        let l = dir.path().join(name);
+        std::os::unix::fs::symlink(to, &l).unwrap();
+        l.to_str().unwrap().to_string()
+    };
+    assert!(check_readable_file(&link("file-link", &f), None).is_ok());
+    let d = check_readable_file(&link("dir-link", dir.path()), None).unwrap_err();
+    assert!(d.contains("not a regular file"), "{d}");
+    let b = check_readable_file(&link("broken", &dir.path().join("gone")), None).unwrap_err();
+    assert!(b.starts_with("cannot be read"), "{b}");
+}

@@ -17,7 +17,7 @@ use super::types::{
 use super::{Task, TaskCommand, TaskId, TaskState};
 
 mod mapping;
-#[cfg(test)]
+#[cfg(all(test, unix))]
 use mapping::check_readable_file;
 pub use mapping::{ArgSource, FileArg, InputMapping, ResolvedExecution};
 use mapping::{check_mapping, resolve_execution};

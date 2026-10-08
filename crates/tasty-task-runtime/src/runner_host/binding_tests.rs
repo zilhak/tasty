@@ -250,6 +250,7 @@ fn a_wait_barrier_waits_on_the_barrier_named_by_its_input() {
     );
 }
 
+#[cfg(unix)]
 fn run_with_file_arg(path: &str, cwd: Option<&std::path::Path>, marker: &std::path::Path) -> Value {
     let mut command = json!({"kind": "run", "workspace_id": 1,
         "command": ["sh", "-c", "touch \"$1\"; cat \"$2\"", "sh", marker]});
