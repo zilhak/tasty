@@ -36,7 +36,7 @@ fn copy(host: Host, v: CenterStateVariant) -> (&'static str, Option<&'static str
     match (host, v) {
         (Host::Picker, CenterStateVariant::Loading) => ("Loading folder", None),
         (Host::Picker, CenterStateVariant::Empty) => (
-            "This folder is empty",
+            crate::i18n::t("explorer.state.empty"),
             Some("Files you add here appear in this list."),
         ),
         (Host::Picker, CenterStateVariant::Error) => (

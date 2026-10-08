@@ -288,7 +288,7 @@ fn crumbs(ui: &mut egui::Ui, theme: &Theme, kind: PathKind) -> Option<HiddenCrum
 /// `…` 의 툴팁 — 디자인 `FpCrumbs` title. 하나면 단수형이다.
 fn hidden_tooltip(count: usize) -> String {
     if count == 1 {
-        "Show 1 hidden folder".to_owned()
+        crate::i18n::t("filepicker.hidden_folders_one").to_owned()
     } else {
         format!("Show {count} hidden folders")
     }

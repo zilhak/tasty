@@ -11,7 +11,9 @@ use super::paint::{caption, intro_secondary};
 use super::{IE_FILE, SPECIMEN_W};
 
 /// 분류하지 못한 오류에 쓸 고정 문구. OS 메시지는 별도 줄에 표시한다.
-const UNKNOWN_CLAUSE: &str = "the write didn't finish.";
+fn unknown_clause() -> &'static str {
+    crate::i18n::t("settings.keybindings.ie_export_failure_unknown")
+}
 /// OS 가 낸 문장 — 문장 안이 아니라 아래 제 줄에 싣는다. 한 줄, 말줄임, 전문은 tooltip.
 const OS_MESSAGE: &str = "os error 28: No space left on device";
 /// 알림이 하나뿐인 경고 블록의 그 한 줄 — 개수 자리도, 줄 자신도 단수형이다.
@@ -85,19 +87,25 @@ fn unknown_export_failure(ui: &mut egui::Ui, theme: &Theme) {
         theme,
         theme.accent_danger().to_egui(),
         icons::ALERT_CIRCLE,
-        "The export wasn't written",
+        crate::i18n::t("settings.keybindings.ie_export_failure_title"),
         None,
         |ui| {
             intro_secondary(
                 ui,
                 theme,
-                &format!("~/tasty/{IE_FILE} — {UNKNOWN_CLAUSE} Nothing was written."),
+                &format!(
+                    "~/tasty/{IE_FILE} — {} Nothing was written.",
+                    unknown_clause()
+                ),
             );
             os_reason_line(ui, theme, OS_MESSAGE);
         },
         &[
             ("Try again", ButtonVariant::Secondary),
-            ("Choose another location…", ButtonVariant::Ghost),
+            (
+                crate::i18n::t("settings.keybindings.ie_export_choose_another"),
+                ButtonVariant::Ghost,
+            ),
         ],
     );
 }

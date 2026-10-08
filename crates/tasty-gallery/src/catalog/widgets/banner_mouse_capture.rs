@@ -23,8 +23,12 @@ const ELASTIC_LABEL_GAP: LogicalPx = LogicalPx(6.0);
 /// 기각된 기록용 메뉴의 흐림 — `opacity: 0.75`.
 const REJECTED_OPACITY: f32 = 0.75;
 /// 메뉴 행의 고정 문구 — 시안 `BannerMoreMenuG` 의 행 문구.
-const SUPPRESS_PREFIX: &str = "Turn off this notice for ";
-const DISABLE_PREFIX: &str = "Disable mouse capture for ";
+fn suppress_prefix() -> &'static str {
+    crate::i18n::t("popup.mouse_capture_banner_menu.suppress_prefix")
+}
+fn disable_prefix() -> &'static str {
+    crate::i18n::t("popup.mouse_capture_banner_menu.disable_prefix")
+}
 /// ja 줄바꿈 예제의 고정 문구 — 시안 `BannerMoreMenuG` 의 `texts`.
 const JA_TEXTS: [&str; 2] = [
     "vim の通知をオフにする ",
@@ -261,7 +265,7 @@ fn more_menu(ui: &mut egui::Ui, theme: &Theme, app: &str, hovered: Option<usize>
     more_menu_texts(
         ui,
         theme,
-        [SUPPRESS_PREFIX, DISABLE_PREFIX],
+        [suppress_prefix(), disable_prefix()],
         app,
         hovered,
         danger,

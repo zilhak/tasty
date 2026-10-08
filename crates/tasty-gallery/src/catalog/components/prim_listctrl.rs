@@ -35,7 +35,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     };
                     let items = [
                         ListCtrlItem::new("Default")
-                            .description("Tasty stock bindings")
+                            .description(crate::i18n::t("settings.keybindings.preset_desc_tasty"))
                             .trailing(&active_tag),
                         ListCtrlItem::new("Mac").description("⌘-based, TextEdit-style"),
                         ListCtrlItem::new("Vim").description("modal, hjkl motions"),

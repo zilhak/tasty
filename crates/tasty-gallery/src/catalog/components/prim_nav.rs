@@ -172,7 +172,12 @@ fn selected_option_panel(ui: &mut egui::Ui, th: &Theme, name: &str) {
                         );
                         ui.spacing_mut().item_spacing.y = 0.0;
                         menu_option(ui, th, "Ask", false);
-                        menu_option(ui, th, "Minimize to background", true);
+                        menu_option(
+                            ui,
+                            th,
+                            crate::i18n::t("settings.general.close_behavior_minimize"),
+                            true,
+                        );
                         menu_option(ui, th, "Quit", false);
                         menu_item(
                             ui,

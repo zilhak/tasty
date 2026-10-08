@@ -41,13 +41,13 @@ fn window(ui: &mut egui::Ui, theme: &Theme) {
         );
         ui.add_space(theme.spacing_md.value());
         ui.label(
-            egui::RichText::new("Would you like to quit or minimize to background?")
+            egui::RichText::new(crate::i18n::t("quit_modal.message"))
                 .size(theme.font_size_body.value())
                 .color(theme.text_primary().to_egui()),
         );
         ui.add_space(theme.spacing_sm.value());
         ui.label(
-            egui::RichText::new("You can change the default behavior in Settings > General.")
+            egui::RichText::new(crate::i18n::t("quit_modal.settings_hint"))
                 .size(theme.font_size_caption.value())
                 .color(theme.text_muted().to_egui()),
         );

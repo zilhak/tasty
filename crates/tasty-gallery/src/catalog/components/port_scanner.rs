@@ -166,7 +166,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     icons::SHIELD_CHECK
                         .image(s, theme.text_on_accent().to_egui())
                         .paint_at(ui, r);
-                    kit::body(ui, theme, "Show all (system-wide)");
+                    kit::body(
+                        ui,
+                        theme,
+                        crate::i18n::t("port_scanner.filter_show_all_system"),
+                    );
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         funnel_button(ui, theme, "State · 1/3", true);
                     });
@@ -525,15 +529,19 @@ fn draw_favorites_section(ui: &mut egui::Ui, theme: &Theme, favorites: &[Favorit
                             // 즐겨찾기 별 아이콘 톤. 대응 토큰 없음 — 본체와 같은 값을 여기 다시 적는다.
                             const FAV_STAR_ICON_OPACITY: f32 = 0.37;
                             icons::STAR
-                                .image(sz, theme.text_muted().to_egui().gamma_multiply(FAV_STAR_ICON_OPACITY))
+                                .image(
+                                    sz,
+                                    theme
+                                        .text_muted()
+                                        .to_egui()
+                                        .gamma_multiply(FAV_STAR_ICON_OPACITY),
+                                )
                                 .paint_at(ui, r);
                             ui.label(
-                                egui::RichText::new(
-                                    "No favorites yet — click a star in the list below to pin a port.",
-                                )
-                                .italics()
-                                .size(theme.font_size_caption.value())
-                                .color(theme.text_muted().to_egui()),
+                                egui::RichText::new(crate::i18n::t("port_scanner.favorites_empty"))
+                                    .italics()
+                                    .size(theme.font_size_caption.value())
+                                    .color(theme.text_muted().to_egui()),
                             );
                         },
                     );

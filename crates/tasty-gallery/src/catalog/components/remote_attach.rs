@@ -484,7 +484,7 @@ fn header(ui: &mut egui::Ui, theme: &Theme) {
         theme.icon_glyph_size_md,
         theme.text_muted().to_egui(),
     );
-    kit::title(&mut child, theme, "Add remote workspace");
+    kit::title(&mut child, theme, crate::i18n::t("remote_attach.heading"));
     child.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
         IconButton::new()
             .variant(IconButtonVariant::Ghost)

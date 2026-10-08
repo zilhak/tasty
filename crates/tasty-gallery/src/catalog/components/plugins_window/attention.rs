@@ -29,7 +29,7 @@ impl Kind {
 
     fn label(self) -> &'static str {
         match self {
-            Self::UnknownKey => "Signature not trusted",
+            Self::UnknownKey => crate::i18n::t("plugins.attn_unknown_key_label"),
             Self::SignatureInvalid => "Signature invalid",
             Self::PermissionsChanged => "Permissions changed",
             Self::HealthError => "Runtime error",
@@ -47,7 +47,7 @@ impl Kind {
             Self::PermissionsChanged => {
                 "Manifest permissions changed since you trusted it — re-approval required."
             }
-            Self::HealthError => "Enabled, but failing at runtime. See the log for details.",
+            Self::HealthError => crate::i18n::t("plugins.attn_health_blurb"),
         }
     }
 
@@ -244,7 +244,7 @@ fn reason_detail(ui: &mut egui::Ui, theme: &Theme, kind: Kind) {
                 plugin_signature_invalid_detail(
                     ui,
                     theme,
-                    "The signature does not match this plugin's files.",
+                    crate::i18n::t("plugins.attn_sig_invalid_note"),
                     Some("tasty-plugin.toml.sig sidecar missing"),
                 );
             } else {
@@ -381,16 +381,14 @@ pub(super) fn empty_detail_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Re
     child.vertical_centered(|ui| {
         ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
         ui.label(
-            egui::RichText::new("No plugins need attention")
+            egui::RichText::new(crate::i18n::t("plugins.attn_empty_title"))
                 .size(theme.font_size_body.value())
                 .color(theme.text_secondary().to_egui()),
         );
         ui.label(
-            egui::RichText::new(
-                "Rejected or failing plugins show up here with the reason and what to do next.",
-            )
-            .size(ATTN_PRIMITIVE_12.value())
-            .color(theme.text_muted().to_egui()),
+            egui::RichText::new(crate::i18n::t("plugins.attn_empty_body"))
+                .size(ATTN_PRIMITIVE_12.value())
+                .color(theme.text_muted().to_egui()),
         );
     });
 }

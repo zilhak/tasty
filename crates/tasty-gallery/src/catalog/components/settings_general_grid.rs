@@ -16,12 +16,15 @@ use crate::catalog::widgets::dialog as kit;
 const WIDTH: LogicalPx = LogicalPx(640.0);
 
 /// 본체 settings.general.* 의 영어 문구.
-const WHEEL_CAPTION: &str = "How far one wheel notch scrolls. The same distance applies \
-     everywhere in the window - plugin surfaces, popups, and the settings and sidebar lists.";
-const LANGUAGE_CAPTION: &str = "Language change will take effect after restart.";
-const NOTICE: &str = "When on, the webhook listener takes every network interface, so anyone \
-     who can reach its port can call your registered webhooks. When off, only programs on this \
-     computer can. Applies from the next start.";
+fn wheel_caption() -> &'static str {
+    crate::i18n::t("settings.general.wheel_line_scroll_desc")
+}
+fn language_caption() -> &'static str {
+    crate::i18n::t("settings.general.language_restart_notice")
+}
+fn notice() -> &'static str {
+    crate::i18n::t("settings.general.webhook_allow_external_notice")
+}
 
 thread_local! {
     static STATE: RefCell<State> = RefCell::new(State {
@@ -54,10 +57,13 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 let rows = [
                     SettingsRow::new("Restore layout:"),
                     SettingsRow::new("Close behavior:"),
-                    SettingsRow::new("Wheel scroll distance:").caption(WHEEL_CAPTION),
-                    SettingsRow::new("Language:").caption(LANGUAGE_CAPTION),
-                    SettingsRow::new("Accept webhook calls from other computers:")
-                        .warning(NOTICE, &alert),
+                    SettingsRow::new(crate::i18n::t("settings.general.wheel_line_scroll_label"))
+                        .caption(wheel_caption()),
+                    SettingsRow::new("Language:").caption(language_caption()),
+                    SettingsRow::new(crate::i18n::t(
+                        "settings.general.webhook_allow_external_label",
+                    ))
+                    .warning(notice(), &alert),
                 ];
                 let col = settings_label_column(ui, theme, &rows);
                 let [restore, close, wheel, language, webhook] = rows;
@@ -72,7 +78,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                             theme,
                             "gallery_general_close",
                             &mut st.close,
-                            &["Ask", "Minimize to background", "Quit"],
+                            &[
+                                "Ask",
+                                crate::i18n::t("settings.general.close_behavior_minimize"),
+                                "Quit",
+                            ],
                             theme.field_width_lg.value(),
                             true,
                         );

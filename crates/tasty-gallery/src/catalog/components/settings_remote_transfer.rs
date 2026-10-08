@@ -41,11 +41,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
 
                 let rows = [
                     SettingsRow::new("Save folder")
-                        .caption("Where files received from a remote workspace are saved."),
-                    SettingsRow::new("Maximum size").caption(
-                        "Total the folder may hold. A transfer that would push it past this \
-                         limit is rejected before it starts.",
-                    ),
+                        .caption(crate::i18n::t("settings.remote_transfer.dir_desc")),
+                    SettingsRow::new("Maximum size")
+                        .caption(crate::i18n::t("settings.remote_transfer.max_capacity_desc")),
                 ];
                 let col = settings_label_column(ui, theme, &rows);
                 let [folder, size] = rows;

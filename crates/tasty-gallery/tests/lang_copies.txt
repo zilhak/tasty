@@ -10,24 +10,17 @@ src/catalog.rs	Tab	port_scanner.column_tab,preset.tab.tab,settings.keybindings.s
 src/catalog.rs	Type	explorer.column.type,remote_tool.field_type
 src/catalog/chrome_loading.rs	Choose a shell	boot.shell_setup.title
 src/catalog/chrome_loading.rs	Closing surfaces…	shutdown.phase_closing_surfaces
-src/catalog/chrome_loading.rs	Git Bash was not found. Install Git for Windows, or enter the path to bash.exe.	boot.shell_setup.git_bash_missing
-src/catalog/chrome_loading.rs	Initializing graphics…	boot.phase_gpu_init
 src/catalog/chrome_loading.rs	Loading plugins…	boot.phase_waiting_plugins
-src/catalog/chrome_loading.rs	New terminals start this shell. You can change it later in Settings.	boot.shell_setup.subtitle
-src/catalog/chrome_loading.rs	No file at this path	boot.shell_setup.check_missing
-src/catalog/chrome_loading.rs	Not a bash or zsh executable	boot.shell_setup.check_not_shell
 src/catalog/chrome_loading.rs	Quit	button.quit,db_error.quit,quit_modal.quit_button,settings.general.close_behavior_quit,tray.quit
 src/catalog/chrome_loading.rs	Restoring layout…	boot.phase_restoring_layout
 src/catalog/chrome_loading.rs	Saving layout…	shutdown.phase_saving_layout
 src/catalog/chrome_loading.rs	Shell found	boot.shell_setup.check_valid
-src/catalog/chrome_loading.rs	Stopping background worker…	shutdown.phase_stopping_background_worker
 src/catalog/chrome_loading.rs	Stopping plugins…	shutdown.phase_stopping_plugins
 src/catalog/chrome_loading.rs	Use this shell	settings.terminal.shell_confirm
 src/catalog/components/apply_preset.rs	Cancel	button.cancel,image_viewer.cancel,preset.popup.cancel_button,quit_modal.cancel_button,remote_attach.cancel,remote_tool.cancel,transfer.progress.cancel
 src/catalog/components/apply_preset.rs	Pane	preset.tab.pane,settings.keybindings.subtab.pane,tutorial.step_pane_title
 src/catalog/components/apply_preset.rs	Tab	port_scanner.column_tab,preset.tab.tab,settings.keybindings.subtab.tab,tutorial.step_tab_title
 src/catalog/components/apply_preset.rs	Workspace	port_scanner.column_workspace,preset.tab.workspace,settings.keybindings.subtab.workspace,tutorial.step_workspace_title
-src/catalog/components/category_dialogs.rs	'normal' is a reserved category name.	workspace_category.error.reserved
 src/catalog/components/category_dialogs.rs	Add workspace	workspace_category.add_workspace
 src/catalog/components/category_dialogs.rs	Cancel	button.cancel,image_viewer.cancel,preset.popup.cancel_button,quit_modal.cancel_button,remote_attach.cancel,remote_tool.cancel,transfer.progress.cancel
 src/catalog/components/category_dialogs.rs	Collapse	sidebar.collapse_button,workspace_category.collapse
@@ -43,7 +36,6 @@ src/catalog/components/clipboard_viewer.rs	Text	settings.appearance.colors.group
 src/catalog/components/command_palette.rs	Ctrl	settings.terminal.link_modifier_ctrl
 src/catalog/components/command_palette.rs	New Terminal	pane_context_menu.new_terminal
 src/catalog/components/command_palette.rs	Settings	button.settings,settings.window.title
-src/catalog/components/command_palette.rs	Type to search commands…	command_palette.placeholder
 src/catalog/components/convert.rs	Explorer	convert_popup.explorer,settings.appearance.subtab.explorer,settings.keybindings.subtab.explorer,surface.kind.explorer
 src/catalog/components/convert.rs	Image	convert_popup.image
 src/catalog/components/convert.rs	Surface Type	convert_popup.title
@@ -64,8 +56,6 @@ src/catalog/components/dag.rs	run	command_palette.hint_run
 src/catalog/components/dag.rs	transition	dag.rel.transition
 src/catalog/components/dag.rs	unknown	remote_tool.filter_unknown
 src/catalog/components/dag.rs	{}s	dag.duration.seconds
-src/catalog/components/dag/chrome.rs	names only — zoom in for status	dag.lod.compact
-src/catalog/components/dag/chrome.rs	status blocks — zoom in for names	dag.lod.block
 src/catalog/components/dag/detail.rs	Command	dag.detail.command
 src/catalog/components/dag/detail.rs	Duration	dag.detail.duration
 src/catalog/components/dag/detail.rs	Error	dag.detail.error
@@ -79,14 +69,8 @@ src/catalog/components/dag/edges.rs	fallback	dag.rel.fallback
 src/catalog/components/dag/node.rs	run	command_palette.hint_run
 src/catalog/components/dag/phase.rs	Needs input	dag.tooltip.awaiting_input
 src/catalog/components/dag/phase.rs	Not selected	dag.tooltip.not_selected
-src/catalog/components/dag/phase.rs	Retry or cancel it to let the graph continue.	dag.why.retry_or_cancel
 src/catalog/components/dag/rows.rs	derived	dag_list.derived
 src/catalog/components/dag/rows.rs	{} · {}	dag_list.row_meta
-src/catalog/components/dag/runner.rs	Runner crashed · {} ready	dag.runner.crashed
-src/catalog/components/dag/runner.rs	Runner stopped · no work	dag.runner.idle
-src/catalog/components/dag/runner.rs	Runner stopped · {} ready	dag.runner.stalled
-src/catalog/components/dag/runner.rs	Runner · {} running · {} ready	dag.runner.running
-src/catalog/components/dag/runner.rs	tasty agent task-run --workspace-id <N> --action start	dag.runner.resume_hint_command
 src/catalog/components/dag/window.rs	All statuses	dag_list.status_all
 src/catalog/components/dag/window.rs	Any status	dag_list.status_any
 src/catalog/components/dag/window.rs	Close	dag_list.close,port_scanner.close,remote_attach.close,remote_tool.close,titlebar.close
@@ -110,15 +94,12 @@ src/catalog/components/explorer_favorite_popup.rs	Cancel	button.cancel,image_vie
 src/catalog/components/explorer_rename_popup.rs	Cancel	button.cancel,image_viewer.cancel,preset.popup.cancel_button,quit_modal.cancel_button,remote_attach.cancel,remote_tool.cancel,transfer.progress.cancel
 src/catalog/components/explorer_rename_popup.rs	Rename	context_menu.rename_title,explorer.context_menu.rename,explorer.popup.rename.rename,explorer.popup.rename.title,preset.toolbar.rename
 src/catalog/components/explorer_sidebar.rs	Add to favorites	explorer.popup.add_favorite.title
-src/catalog/components/explorer_sidebar.rs	Can't read this folder	explorer.state.read_error
 src/catalog/components/explorer_sidebar.rs	Favorites	explorer.sidebar.favorites,port_scanner.favorites_heading
 src/catalog/components/explorer_sidebar.rs	Files	explorer.sidebar.tree
 src/catalog/components/explorer_sidebar.rs	Go up	explorer.state.read_error_go_up
 src/catalog/components/explorer_sidebar.rs	No favorites yet	explorer.sidebar.favorites_empty
 src/catalog/components/explorer_sidebar.rs	Permission denied	explorer.state.no_permission,filepicker.error_perm.title
 src/catalog/components/explorer_sidebar.rs	Retry	explorer.state.read_error_retry,filepicker.error_perm.retry,remote_attach.retry,transfer.error.retry
-src/catalog/components/explorer_sidebar.rs	This folder is empty	explorer.state.empty
-src/catalog/components/explorer_sidebar.rs	You don't have access to read this folder.	explorer.state.no_permission_sub
 src/catalog/components/explorer_states.rs	Can't read this folder	explorer.state.read_error
 src/catalog/components/explorer_states.rs	Go up	explorer.state.read_error_go_up
 src/catalog/components/explorer_states.rs	Loading…	explorer.state.loading,filepicker.loading,webview.loading
@@ -155,13 +136,9 @@ src/catalog/components/file_handler_picker.rs	unknown	remote_tool.filter_unknown
 src/catalog/components/file_handler_picker.rs	yesterday	file_handler.picker.when_yesterday
 src/catalog/components/file_handler_picker/frame.rs	All handlers	file_handler.picker.fallback_heading
 src/catalog/components/file_handler_picker/frame.rs	Cancel	button.cancel,image_viewer.cancel,preset.popup.cancel_button,quit_modal.cancel_button,remote_attach.cancel,remote_tool.cancel,transfer.progress.cancel
-src/catalog/components/file_handler_picker/frame.rs	No handler matches this format.	file_handler.picker.fallback_caption
-src/catalog/components/file_handler_picker/frame.rs	No handlers registered.	file_handler.picker.empty,settings.file_handler.handlers.empty
 src/catalog/components/file_handler_picker/frame.rs	Open	button.open,file_handler.picker.open_button,filepicker.open_button
 src/catalog/components/file_handler_picker/frame.rs	Open file with…	file_handler.picker.header_title
 src/catalog/components/file_handler_picker/frame.rs	Recent	file_handler.picker.recent_heading
-src/catalog/components/file_handler_picker/frame.rs	Register a handler in Settings	file_handler.picker.open_settings_button
-src/catalog/components/file_handler_picker/frame.rs	Register one in Settings › Handlers to open this file.	file_handler.picker.empty_hint
 src/catalog/components/file_handler_picker/frame.rs	Suggested	file_handler.picker.suggested_heading
 src/catalog/components/file_handler_picker/frame.rs	built-in	file_handler.picker.origin_host,plugins.builtin_badge
 src/catalog/components/file_handler_picker/frame.rs	default	file_handler.picker.default_tag
@@ -174,7 +151,6 @@ src/catalog/components/file_picker.rs	Open	button.open,file_handler.picker.open_
 src/catalog/components/file_picker.rs	Permission denied	explorer.state.no_permission,filepicker.error_perm.title
 src/catalog/components/file_picker.rs	Reconnect	filepicker.error_conn.reconnect
 src/catalog/components/file_picker.rs	Retry	explorer.state.read_error_retry,filepicker.error_perm.retry,remote_attach.retry,transfer.error.retry
-src/catalog/components/file_picker.rs	This folder is empty	explorer.state.empty
 src/catalog/components/file_picker.rs	disabled	settings.file_handler.common.disabled
 src/catalog/components/file_picker.rs	—	dag.detail.none,port_scanner.external_dash
 src/catalog/components/file_picker/footer.rs	Cancel	button.cancel,image_viewer.cancel,preset.popup.cancel_button,quit_modal.cancel_button,remote_attach.cancel,remote_tool.cancel,transfer.progress.cancel
@@ -185,7 +161,6 @@ src/catalog/components/file_picker/footer.rs	Overwrite	filepicker.save.overwrite
 src/catalog/components/file_picker/footer.rs	Save	button.save,filepicker.save.save_button,image_viewer.save,remote_tool.save
 src/catalog/components/file_picker/footer.rs	Type a file name	filepicker.save.name_placeholder
 src/catalog/components/file_picker/footer.rs	{} selected	explorer.status.selected
-src/catalog/components/file_picker/path_bar.rs	Show 1 hidden folder	filepicker.hidden_folders_one
 src/catalog/components/fullscreen_stage.rs	Notifications	fullscreen.notifications.title,notification_panel.window_title,settings.notifications.heading,settings.tab.notifications
 src/catalog/components/git_viewer.rs	Refresh	explorer.nav.refresh,image_viewer.refresh,port_scanner.refresh
 src/catalog/components/html_chrome.rs	Failed to load	webview.error
@@ -197,12 +172,9 @@ src/catalog/components/image_viewer.rs	OK	button.ok
 src/catalog/components/image_viewer.rs	Save	button.save,filepicker.save.save_button,image_viewer.save,remote_tool.save
 src/catalog/components/image_viewer.rs	Save As	image_viewer.save_path_title
 src/catalog/components/image_viewer.rs	—	dag.detail.none,port_scanner.external_dash
-src/catalog/components/info_modal.rs	Database initialization error	db_error.title
 src/catalog/components/info_modal.rs	Notifications	fullscreen.notifications.title,notification_panel.window_title,settings.notifications.heading,settings.tab.notifications
 src/catalog/components/info_modal.rs	OK	button.ok
-src/catalog/components/info_modal.rs	Open permission settings	macos_permissions.notice.open_settings
 src/catalog/components/info_modal.rs	Quit	button.quit,db_error.quit,quit_modal.quit_button,settings.general.close_behavior_quit,tray.quit
-src/catalog/components/info_modal.rs	Some permissions are not granted	macos_permissions.notice.title
 src/catalog/components/info_modal.rs	Theme not found	theme_error.title
 src/catalog/components/kb_import_export.rs	Alt	settings.general.alt_display_style_alt,settings.terminal.link_modifier_alt
 src/catalog/components/kb_import_export.rs	Apply	port_scanner.state_filter_apply,preset.popup.apply_button,remote_tool.filter_apply,settings.file_handler.hook_handlers.seq_apply,settings.keybindings.apply_button
@@ -226,38 +198,24 @@ src/catalog/components/kb_import_export/entry.rs	Export…	settings.keybindings.
 src/catalog/components/kb_import_export/entry.rs	Import	settings.keybindings.ie_import_title
 src/catalog/components/kb_import_export/entry.rs	Import / Export	settings.keybindings.subtab.import_export
 src/catalog/components/kb_import_export/entry.rs	Import…	settings.keybindings.ie_import_button
-src/catalog/components/kb_import_export/entry.rs	Move your whole keybinding configuration between machines. Importing never applies straight away — you see what changes first.	settings.keybindings.ie_entry_intro
 src/catalog/components/kb_import_export/entry.rs	Plugins	button.plugins,plugins.title,settings.keybindings.subtab.plugins,settings.tab.plugin
 src/catalog/components/kb_import_export/entry.rs	Preset	settings.keybindings.subtab.preset
-src/catalog/components/kb_import_export/entry.rs	Reads a keybinding file and shows the changes against your current bindings before anything is written.	settings.keybindings.ie_import_desc
 src/catalog/components/kb_import_export/entry.rs	Scripts	settings.misc.scripts
-src/catalog/components/kb_import_export/entry.rs	Writes every binding — general, quick switch, script bindings and plugin overrides — to one file.	settings.keybindings.ie_export_desc
-src/catalog/components/kb_import_export/migrate.rs	 — those shortcuts are already bound. The shortcut-conflict popup opens on Apply.	settings.keybindings.ie_migrate_conflicts_tail
 src/catalog/components/kb_import_export/migrate.rs	Leave unbound	settings.keybindings.ie_leave_unbound
 src/catalog/components/kb_import_export/migrate.rs	Not set	settings.keybindings.ie_not_set
 src/catalog/components/kb_import_export/migrate.rs	Option	settings.general.option_display_style_option
-src/catalog/components/kb_import_export/migrate.rs	Option bindings need a replacement	settings.keybindings.ie_migrate_title_pending
-src/catalog/components/kb_import_export/migrate.rs	Option bindings resolved	settings.keybindings.ie_migrate_title_done
 src/catalog/components/kb_import_export/migrate.rs	Unbound	settings.keybindings.ie_unbound,settings.scripts.unbound
-src/catalog/components/kb_import_export/migrate.rs	Unbound — counts as resolved	settings.keybindings.ie_unbound_tag
 src/catalog/components/kb_import_export/notices.rs	Choose another file	settings.keybindings.ie_choose_another
-src/catalog/components/kb_import_export/notices.rs	This file can't be read as keybindings	settings.keybindings.ie_failure_title
-src/catalog/components/kb_import_export/open_values.rs	Choose another location…	settings.keybindings.ie_export_choose_another
 src/catalog/components/kb_import_export/open_values.rs	Export	settings.keybindings.ie_export_title
 src/catalog/components/kb_import_export/open_values.rs	Export…	settings.keybindings.ie_export_button
 src/catalog/components/kb_import_export/open_values.rs	Not set	settings.keybindings.ie_not_set
 src/catalog/components/kb_import_export/open_values.rs	Option	settings.general.option_display_style_option
 src/catalog/components/kb_import_export/open_values.rs	Read with warnings	settings.keybindings.ie_notices_title
-src/catalog/components/kb_import_export/open_values.rs	The export wasn't written	settings.keybindings.ie_export_failure_title
 src/catalog/components/kb_import_export/open_values.rs	Try again	remote_attach.try_again,settings.keybindings.ie_export_retry
-src/catalog/components/kb_import_export/open_values.rs	Writes every binding — general, quick switch, script bindings and plugin overrides — to one file.	settings.keybindings.ie_export_desc
 src/catalog/components/kb_import_export/open_values.rs	{} notices	settings.keybindings.ie_notices_count_many
 src/catalog/components/kb_import_export/remaining_values.rs	1 notice	settings.keybindings.ie_notices_count_one
-src/catalog/components/kb_import_export/remaining_values.rs	Choose another location…	settings.keybindings.ie_export_choose_another
 src/catalog/components/kb_import_export/remaining_values.rs	Read with warnings	settings.keybindings.ie_notices_title
-src/catalog/components/kb_import_export/remaining_values.rs	The export wasn't written	settings.keybindings.ie_export_failure_title
 src/catalog/components/kb_import_export/remaining_values.rs	Try again	remote_attach.try_again,settings.keybindings.ie_export_retry
-src/catalog/components/kb_import_export/remaining_values.rs	the write didn't finish.	settings.keybindings.ie_export_failure_unknown
 src/catalog/components/markdown_open.rs	Cancel	button.cancel,image_viewer.cancel,preset.popup.cancel_button,quit_modal.cancel_button,remote_attach.cancel,remote_tool.cancel,transfer.progress.cancel
 src/catalog/components/markdown_viewer.rs	Failed to load	webview.error
 src/catalog/components/markdown_viewer.rs	Image	convert_popup.image
@@ -288,7 +246,6 @@ src/catalog/components/notification_panel.rs	Notifications	fullscreen.notificati
 src/catalog/components/notification_panel.rs	Unknown	dag.tooltip.unknown,notification_panel.unknown_workspace,settings.macos_permissions.status_unknown
 src/catalog/components/occupancy_borders.rs	Cancel	button.cancel,image_viewer.cancel,preset.popup.cancel_button,quit_modal.cancel_button,remote_attach.cancel,remote_tool.cancel,transfer.progress.cancel
 src/catalog/components/occupancy_borders.rs	Force detach	attach.force_detach
-src/catalog/components/occupancy_borders.rs	Force detach this workspace?	attach.force_detach_confirm_title
 src/catalog/components/plugin_settings.rs	Dark	settings.appearance.theme.dark
 src/catalog/components/plugin_settings.rs	Light	settings.appearance.theme.light
 src/catalog/components/plugins_window.rs	Add plugin	plugins.add_button,plugins.tab_add
@@ -298,7 +255,6 @@ src/catalog/components/plugins_window.rs	Installed	plugins.tab_list
 src/catalog/components/plugins_window.rs	Plugins	button.plugins,plugins.title,settings.keybindings.subtab.plugins,settings.tab.plugin
 src/catalog/components/plugins_window/add.rs	Add plugin	plugins.add_button,plugins.tab_add
 src/catalog/components/plugins_window/add.rs	Already installed	plugins.add_blocked_installed
-src/catalog/components/plugins_window/add.rs	Can't read tasty-plugin.toml	plugins.add_read_error
 src/catalog/components/plugins_window/add.rs	Cancel	button.cancel,image_viewer.cancel,preset.popup.cancel_button,quit_modal.cancel_button,remote_attach.cancel,remote_tool.cancel,transfer.progress.cancel
 src/catalog/components/plugins_window/add.rs	Find folder…	plugins.add_browse
 src/catalog/components/plugins_window/add.rs	Grants 1 permission	plugins.add_grants_one
@@ -308,53 +264,34 @@ src/catalog/components/plugins_window/add.rs	None	plugins.add_none,settings.keyb
 src/catalog/components/plugins_window/add.rs	Permissions	plugins.permissions,settings.tab.macos_permissions
 src/catalog/components/plugins_window/add.rs	Permissions changed	plugins.attn_perm_changed_label,plugins.trust_permissions_changed_title
 src/catalog/components/plugins_window/add.rs	Plugin folder	plugins.add_path_label
-src/catalog/components/plugins_window/add.rs	Point Tasty at a local folder containing a `tasty-plugin.toml`. Verifying reads its manifest and checks the signature; adding copies it into `~/.tasty/plugins`.	plugins.add_help
-src/catalog/components/plugins_window/add.rs	Public key file missing	plugins.trust_missing_pubkey_title
-src/catalog/components/plugins_window/add.rs	Signature check failed	plugins.add_blocked_sig_error,plugins.trust_sig_error_title
-src/catalog/components/plugins_window/add.rs	Signed by a trusted publisher — its key is in your trust store.	plugins.trust_trusted_body
-src/catalog/components/plugins_window/add.rs	Signed, but the publisher's public key file is missing	plugins.add_blocked_missing_pubkey
 src/catalog/components/plugins_window/add.rs	Source	plugins.add_source_path,settings.file_handler.detectors.col_origin
 src/catalog/components/plugins_window/add.rs	Surface kinds	plugins.surface_kinds
-src/catalog/components/plugins_window/add.rs	The manifest is signed by a key that isn't in your trust store, and tasty-plugin.toml.pub is missing or unreadable, so the key can't be added. Ask the publisher for this public key file.	plugins.trust_missing_pubkey_body
-src/catalog/components/plugins_window/add.rs	The signature could not be verified. The plugin can't be added until the publisher ships a valid signature.	plugins.trust_sig_error_body
-src/catalog/components/plugins_window/add.rs	This plugin isn't signed by a key in your trust store. It runs with the permissions above on every launch — review them, and only add plugins from sources you trust. Adding it also trusts this key.	plugins.trust_unknown_body
-src/catalog/components/plugins_window/add.rs	This publisher is trusted, but this version asks for permissions the trusted version did not have. Review the list above; adding it trusts the new set.	plugins.trust_permissions_changed_body
 src/catalog/components/plugins_window/add.rs	Trust & add	plugins.add_trust_and_add
-src/catalog/components/plugins_window/add.rs	Unverified publisher	plugins.trust_unknown_title
 src/catalog/components/plugins_window/add.rs	Verify	plugins.add_confirm_path
-src/catalog/components/plugins_window/add.rs	tasty-plugin.toml is not valid	plugins.add_invalid
 src/catalog/components/plugins_window/add.rs	~/dev/my-plugin	plugins.add_path_placeholder
 src/catalog/components/plugins_window/attention.rs	Configure	plugins.configure
-src/catalog/components/plugins_window/attention.rs	Enabled, but failing at runtime. See the log for details.	plugins.attn_health_blurb
 src/catalog/components/plugins_window/attention.rs	Log	plugins.attn_error,plugins.log_path
 src/catalog/components/plugins_window/attention.rs	Needs review	plugins.attn_needs_review
-src/catalog/components/plugins_window/attention.rs	No plugins need attention	plugins.attn_empty_title
 src/catalog/components/plugins_window/attention.rs	Not registered	plugins.attn_not_registered
 src/catalog/components/plugins_window/attention.rs	Permission changes	plugins.attn_permission_changes
 src/catalog/components/plugins_window/attention.rs	Permissions changed	plugins.attn_perm_changed_label,plugins.trust_permissions_changed_title
 src/catalog/components/plugins_window/attention.rs	Re-approve	plugins.attn_reapprove
-src/catalog/components/plugins_window/attention.rs	Rejected or failing plugins show up here with the reason and what to do next.	plugins.attn_empty_body
 src/catalog/components/plugins_window/attention.rs	Runtime error	plugins.attn_health_label
 src/catalog/components/plugins_window/attention.rs	Signature	plugins.attn_signature
 src/catalog/components/plugins_window/attention.rs	Signature invalid	plugins.attn_sig_invalid_label
-src/catalog/components/plugins_window/attention.rs	Signature not trusted	plugins.attn_unknown_key_label
-src/catalog/components/plugins_window/attention.rs	The signature does not match this plugin's files.	plugins.attn_sig_invalid_note
 src/catalog/components/plugins_window/attention.rs	built-in	file_handler.picker.origin_host,plugins.builtin_badge
 src/catalog/components/plugins_window/attention.rs	fingerprint	plugins.attn_fingerprint
 src/catalog/components/plugins_window/attention.rs	newly requested	plugins.attn_newly_requested
 src/catalog/components/plugins_window/attention.rs	no longer used	plugins.attn_no_longer_used
 src/catalog/components/plugins_window/installed.rs	(none)	plugins.none,remote_tool.passkey_none
-src/catalog/components/plugins_window/installed.rs	All files of this plugin will be deleted.	plugins.uninstall_warning
 src/catalog/components/plugins_window/installed.rs	Cancel	button.cancel,image_viewer.cancel,preset.popup.cancel_button,quit_modal.cancel_button,remote_attach.cancel,remote_tool.cancel,transfer.progress.cancel
 src/catalog/components/plugins_window/installed.rs	Commands	plugins.commands
 src/catalog/components/plugins_window/installed.rs	Configure	plugins.configure
 src/catalog/components/plugins_window/installed.rs	Confirm uninstall	plugins.uninstall_confirm
 src/catalog/components/plugins_window/installed.rs	Enabled	plugins.enabled
-src/catalog/components/plugins_window/installed.rs	Failed to connect. Check the plugin's configuration in Settings.	plugins.health_error
 src/catalog/components/plugins_window/installed.rs	Install path	plugins.install_path
 src/catalog/components/plugins_window/installed.rs	Open folder	plugins.open_folder
 src/catalog/components/plugins_window/installed.rs	Permissions	plugins.permissions,settings.tab.macos_permissions
-src/catalog/components/plugins_window/installed.rs	Select a plugin from the left.	plugins.none_selected
 src/catalog/components/plugins_window/installed.rs	Surface kinds	plugins.surface_kinds
 src/catalog/components/plugins_window/installed.rs	Uninstall	plugins.uninstall
 src/catalog/components/plugins_window/installed.rs	built-in	file_handler.picker.origin_host,plugins.builtin_badge
@@ -368,13 +305,11 @@ src/catalog/components/port_scanner.rs	Filter by state	port_scanner.state_filter
 src/catalog/components/port_scanner.rs	Filter…	port_scanner.search_placeholder
 src/catalog/components/port_scanner.rs	Listening ports	port_scanner.heading
 src/catalog/components/port_scanner.rs	NONE	port_scanner.state_none_label
-src/catalog/components/port_scanner.rs	No favorites yet — click a star in the list below to pin a port.	port_scanner.favorites_empty
 src/catalog/components/port_scanner.rs	Port	port_scanner.column_port,remote_tool.field_port
 src/catalog/components/port_scanner.rs	Process	port_scanner.column_process
 src/catalog/components/port_scanner.rs	Proto	port_scanner.column_proto
 src/catalog/components/port_scanner.rs	Reset (LISTEN only)	port_scanner.state_filter_reset
 src/catalog/components/port_scanner.rs	Select all	port_scanner.state_filter_select_all,remote_tool.filter_select_all
-src/catalog/components/port_scanner.rs	Show all (system-wide)	port_scanner.filter_show_all_system
 src/catalog/components/port_scanner.rs	State	port_scanner.column_state,port_scanner.state_filter
 src/catalog/components/port_scanner.rs	Tab	port_scanner.column_tab,preset.tab.tab,settings.keybindings.subtab.tab,tutorial.step_tab_title
 src/catalog/components/port_scanner.rs	Workspace	port_scanner.column_workspace,preset.tab.workspace,settings.keybindings.subtab.workspace,tutorial.step_workspace_title
@@ -421,7 +356,6 @@ src/catalog/components/prim_button.rs	default	file_handler.picker.default_tag
 src/catalog/components/prim_button.rs	disabled	settings.file_handler.common.disabled
 src/catalog/components/prim_button.rs	enabled	settings.file_handler.common.enabled
 src/catalog/components/prim_center_state.rs	Retry	explorer.state.read_error_retry,filepicker.error_perm.retry,remote_attach.retry,transfer.error.retry
-src/catalog/components/prim_center_state.rs	This folder is empty	explorer.state.empty
 src/catalog/components/prim_chips.rs	99+	badge.overflow
 src/catalog/components/prim_chips.rs	default	file_handler.picker.default_tag
 src/catalog/components/prim_chips.rs	disabled	settings.file_handler.common.disabled
@@ -464,7 +398,6 @@ src/catalog/components/prim_listctrl.rs	Active	settings.keybindings.preset_activ
 src/catalog/components/prim_listctrl.rs	Custom	dag.kind.custom,settings.keybindings.plugins.mode_custom,settings.keybindings.quick_switch_individual_label
 src/catalog/components/prim_listctrl.rs	Default	settings.appearance.colors.default
 src/catalog/components/prim_listctrl.rs	Imported	settings.keybindings.ie_col_imported
-src/catalog/components/prim_listctrl.rs	Tasty stock bindings	settings.keybindings.preset_desc_tasty
 src/catalog/components/prim_listctrl.rs	disabled	settings.file_handler.common.disabled
 src/catalog/components/prim_listctrl.rs	edited	settings.file_handler.hook_handlers.edited
 src/catalog/components/prim_multiselect.rs	Cancelled	dag.tooltip.cancelled
@@ -480,7 +413,6 @@ src/catalog/components/prim_multiselect.rs	Started	dag.detail.started
 src/catalog/components/prim_multiselect.rs	Waiting	dag.tooltip.waiting
 src/catalog/components/prim_multiselect.rs	{} selected	explorer.status.selected
 src/catalog/components/prim_nav.rs	Ask	settings.general.close_behavior_ask
-src/catalog/components/prim_nav.rs	Minimize to background	settings.general.close_behavior_minimize
 src/catalog/components/prim_nav.rs	Move to Trash	explorer.context_menu.delete
 src/catalog/components/prim_nav.rs	New tab	explorer.tab.new
 src/catalog/components/prim_nav.rs	Quit	button.quit,db_error.quit,quit_modal.quit_button,settings.general.close_behavior_quit,tray.quit
@@ -498,15 +430,12 @@ src/catalog/components/prim_table.rs	State	port_scanner.column_state,port_scanne
 src/catalog/components/quit_modal.rs	Close Tasty	quit_modal.title
 src/catalog/components/quit_modal.rs	Minimize	menu.macos.minimize,quit_modal.minimize_button,titlebar.minimize
 src/catalog/components/quit_modal.rs	Quit	button.quit,db_error.quit,quit_modal.quit_button,settings.general.close_behavior_quit,tray.quit
-src/catalog/components/quit_modal.rs	Would you like to quit or minimize to background?	quit_modal.message
-src/catalog/components/quit_modal.rs	You can change the default behavior in Settings > General.	quit_modal.settings_hint
 src/catalog/components/remote.rs	(none)	plugins.none,remote_tool.passkey_none
 src/catalog/components/remote.rs	(select a profile)	remote_tool.ssh_ref_none
 src/catalog/components/remote.rs	Add attach	remote_tool.attach_add
 src/catalog/components/remote.rs	Add profile	remote_tool.local_ssh_add,remote_tool.profile_add
 src/catalog/components/remote.rs	Apply	port_scanner.state_filter_apply,preset.popup.apply_button,remote_tool.filter_apply,settings.file_handler.hook_handlers.seq_apply,settings.keybindings.apply_button
 src/catalog/components/remote.rs	Attach	remote_tool.tab_attach
-src/catalog/components/remote.rs	Can't read ~/.ssh/config. Check the file and its permissions.	remote_tool.local_ssh_unreadable
 src/catalog/components/remote.rs	Cancel	button.cancel,image_viewer.cancel,preset.popup.cancel_button,quit_modal.cancel_button,remote_attach.cancel,remote_tool.cancel,transfer.progress.cancel
 src/catalog/components/remote.rs	Connection	remote_tool.field_connection
 src/catalog/components/remote.rs	Deselect all	port_scanner.state_filter_deselect_all,remote_tool.filter_deselect_all
@@ -515,19 +444,15 @@ src/catalog/components/remote.rs	Filter	remote_tool.filter
 src/catalog/components/remote.rs	Filter by protocol	remote_tool.filter_title
 src/catalog/components/remote.rs	From ssh config	remote_tool.local_ssh_heading
 src/catalog/components/remote.rs	Host	remote_tool.field_host
-src/catalog/components/remote.rs	Inactive — the referenced ssh profile or inline shell isn't reachable.	remote_tool.attach_inactive_hint
 src/catalog/components/remote.rs	Label	remote_tool.field_label
 src/catalog/components/remote.rs	Name	explorer.column.name,filepicker.column.name,remote_tool.field_name
 src/catalog/components/remote.rs	New attach	remote_tool.attach_form_add
-src/catalog/components/remote.rs	No hosts in ~/.ssh/config.	remote_tool.local_ssh_empty
-src/catalog/components/remote.rs	No ~/.ssh/config found.	remote_tool.local_ssh_missing
 src/catalog/components/remote.rs	Passkey	remote_tool.field_passkey
 src/catalog/components/remote.rs	Passkeys	remote_tool.tab_passkeys
 src/catalog/components/remote.rs	Port	port_scanner.column_port,remote_tool.field_port
 src/catalog/components/remote.rs	Port file	remote_tool.field_port_file
 src/catalog/components/remote.rs	Port mode	remote_tool.field_port_mode
 src/catalog/components/remote.rs	REMOTE TASTY	remote_tool.remote_tasty_section
-src/catalog/components/remote.rs	Referenced passkey not found.	remote_tool.passkey_missing_hint
 src/catalog/components/remote.rs	Remote connections	remote_tool.heading
 src/catalog/components/remote.rs	Remote profiles	remote_tool.tab_profiles
 src/catalog/components/remote.rs	Reset	remote_tool.filter_reset,settings.appearance.colors.reset,settings.file_handler.extension_mapping.reset,settings.keybindings.plugins.reset_button
@@ -537,29 +462,24 @@ src/catalog/components/remote.rs	Select all	port_scanner.state_filter_select_all
 src/catalog/components/remote.rs	Shell	attach.tab_title_fallback,remote_tool.field_shell,surface.restore.tab_title_fallback
 src/catalog/components/remote.rs	User	remote_tool.field_user
 src/catalog/components/remote.rs	detecting…	remote_tool.detecting
-src/catalog/components/remote.rs	detection failed (disabled)	remote_tool.detect_failed
 src/catalog/components/remote.rs	in profiles	remote_tool.local_ssh_in_profiles
 src/catalog/components/remote.rs	inactive	remote_attach.inactive,remote_tool.attach_inactive
 src/catalog/components/remote.rs	inline	remote_tool.attach_tag_inline
-src/catalog/components/remote.rs	optional — overrides port mode	remote_tool.attach_port_file_ph
 src/catalog/components/remote.rs	passkey missing	remote_tool.passkey_missing
 src/catalog/components/remote.rs	profile	remote_tool.attach_tag_profile
 src/catalog/components/remote.rs	unknown	remote_tool.filter_unknown
 src/catalog/components/remote.rs	—	dag.detail.none,port_scanner.external_dash
 src/catalog/components/remote/forms.rs	(none)	plugins.none,remote_tool.passkey_none
-src/catalog/components/remote/forms.rs	Auto-detects the remote shell once when saved (runs an SSH probe).	remote_tool.shell_auto_hint
 src/catalog/components/remote/forms.rs	Cancel	button.cancel,image_viewer.cancel,preset.popup.cancel_button,quit_modal.cancel_button,remote_attach.cancel,remote_tool.cancel,transfer.progress.cancel
 src/catalog/components/remote/forms.rs	FIELDS	remote_tool.fields_section
 src/catalog/components/remote/forms.rs	Host	remote_tool.field_host
 src/catalog/components/remote/forms.rs	Host is required.	remote_tool.err_host_empty
 src/catalog/components/remote/forms.rs	Kind	preset.edit.kind,remote_tool.field_kind
 src/catalog/components/remote/forms.rs	Label	remote_tool.field_label
-src/catalog/components/remote/forms.rs	Local-only. Profiles reference this passkey by name; the secret is never shared.	remote_tool.passkey_value_note
 src/catalog/components/remote/forms.rs	Name	explorer.column.name,filepicker.column.name,remote_tool.field_name
 src/catalog/components/remote/forms.rs	New passkey	remote_tool.passkey_form_add
 src/catalog/components/remote/forms.rs	New profile	remote_tool.profile_form_add
 src/catalog/components/remote/forms.rs	Passkey	remote_tool.field_passkey
-src/catalog/components/remote/forms.rs	Paste secret / key contents	remote_tool.value_inline_hint
 src/catalog/components/remote/forms.rs	Port	port_scanner.column_port,remote_tool.field_port
 src/catalog/components/remote/forms.rs	Save	button.save,filepicker.save.save_button,image_viewer.save,remote_tool.save
 src/catalog/components/remote/forms.rs	Shell	attach.tab_title_fallback,remote_tool.field_shell,surface.restore.tab_title_fallback
@@ -572,7 +492,6 @@ src/catalog/components/remote/passkeys.rs	Add passkey	remote_tool.passkey_add
 src/catalog/components/remote/passkeys.rs	Unknown kind.	remote_tool.kind_unknown_hint
 src/catalog/components/remote/passkeys.rs	inline	remote_tool.attach_tag_inline
 src/catalog/components/remote/passkeys.rs	{} · {}	dag_list.row_meta
-src/catalog/components/remote_attach.rs	Add remote workspace	context_menu.add_remote_workspace,remote_attach.heading
 src/catalog/components/remote_attach.rs	Cancel	button.cancel,image_viewer.cancel,preset.popup.cancel_button,quit_modal.cancel_button,remote_attach.cancel,remote_tool.cancel,transfer.progress.cancel
 src/catalog/components/remote_attach.rs	Connect	remote_attach.connect
 src/catalog/components/remote_attach.rs	Create & connect	remote_attach.connect_create
@@ -584,26 +503,18 @@ src/catalog/components/remote_attach/new_row.rs	on remote	remote_attach.new_work
 src/catalog/components/remote_attach/panes.rs	Can't connect	remote_attach.cant_connect
 src/catalog/components/remote_attach/panes.rs	Connecting…	remote_attach.connecting
 src/catalog/components/remote_attach/panes.rs	New workspace	remote_attach.new_workspace
-src/catalog/components/remote_attach/panes.rs	No tasty instance appears to be running on the remote host.	ssh.port_discovery.instance_not_running
-src/catalog/components/remote_attach/panes.rs	Pick a profile on the left to connect and list the remote instance's workspaces.	remote_attach.select_profile_hint
 src/catalog/components/remote_attach/panes.rs	Retry	explorer.state.read_error_retry,filepicker.error_perm.retry,remote_attach.retry,transfer.error.retry
-src/catalog/components/remote_attach/panes.rs	Select an attach profile	remote_attach.select_profile
 src/catalog/components/remote_attach/rows.rs	busy	remote_attach.busy
 src/catalog/components/remote_attach/rows.rs	in use	remote_attach.in_use
 src/catalog/components/remote_attach/rows.rs	inactive	remote_attach.inactive,remote_tool.attach_inactive
 src/catalog/components/rename_popup.rs	Cancel	button.cancel,image_viewer.cancel,preset.popup.cancel_button,quit_modal.cancel_button,remote_attach.cancel,remote_tool.cancel,transfer.progress.cancel
 src/catalog/components/rename_popup.rs	Rename	context_menu.rename_title,explorer.context_menu.rename,explorer.popup.rename.rename,explorer.popup.rename.title,preset.toolbar.rename
 src/catalog/components/script_confirm.rs	Cancel	button.cancel,image_viewer.cancel,preset.popup.cancel_button,quit_modal.cancel_button,remote_attach.cancel,remote_tool.cancel,transfer.progress.cancel
-src/catalog/components/script_confirm.rs	Review it, then run the new version. Its recorded hash will be updated.	script.confirm.body
 src/catalog/components/script_confirm.rs	Run anyway	script.confirm.run
-src/catalog/components/script_confirm.rs	Script changed since registration	script.confirm.title
 src/catalog/components/script_confirm.rs	changed	script.confirm.changed_tag,settings.scripts.changed_badge
 src/catalog/components/script_manager.rs	Add script	settings.scripts.add
 src/catalog/components/script_manager.rs	Add trigger…	settings.scripts.trigger_add
 src/catalog/components/script_manager.rs	Auto-run:	settings.scripts.autorun_label
-src/catalog/components/script_manager.rs	Click Add script to register a Lua script and bind it to a shortcut.	settings.scripts.empty_body
-src/catalog/components/script_manager.rs	File changed since registration — you'll be asked to confirm on next run.	settings.scripts.changed_help
-src/catalog/components/script_manager.rs	No scripts registered	settings.scripts.empty_title
 src/catalog/components/script_manager.rs	Scripts	settings.misc.scripts
 src/catalog/components/script_manager.rs	Unbound	settings.keybindings.ie_unbound,settings.scripts.unbound
 src/catalog/components/script_manager.rs	changed	script.confirm.changed_tag,settings.scripts.changed_badge
@@ -628,30 +539,21 @@ src/catalog/components/settings.rs	Settings	button.settings,settings.window.titl
 src/catalog/components/settings.rs	Terminal	convert_popup.terminal,settings.appearance.subtab.terminal,settings.tab.terminal,settings.terminal.heading,surface.kind.terminal
 src/catalog/components/settings.rs	Theme	settings.appearance.subtab.theme
 src/catalog/components/settings_appearance_colors.rs	Default	settings.appearance.colors.default
-src/catalog/components/settings_appearance_colors.rs	Override individual colors of the current preset. Uncheck "Default" on a row to edit it; switching presets clears every override.	settings.appearance.colors.intro
 src/catalog/components/settings_appearance_colors.rs	Reset all	settings.appearance.colors.reset_all
 src/catalog/components/settings_appearance_colors.rs	disabled	settings.file_handler.common.disabled
-src/catalog/components/settings_font_override.rs	Auto: Adjusts font rendering to match monitor DPI.\nSame physical text size across different monitors.\n\nFixed: Uses the same pixel size regardless of DPI.\nMore cells on high-DPI monitors, smaller text.	settings.appearance.font_scale_mode_tooltip
 src/catalog/components/settings_font_override.rs	Custom font file	settings.appearance.font.override_custom_font_label
 src/catalog/components/settings_font_override.rs	Focused	settings.appearance.colors.focused_heading,settings.appearance.preview_focused
 src/catalog/components/settings_font_override.rs	Font DPI scaling	settings.appearance.font.override_scale_mode_label
 src/catalog/components/settings_font_override.rs	Font family	settings.appearance.font.override_family_label
 src/catalog/components/settings_font_override.rs	Font size	settings.appearance.font.override_size_label
 src/catalog/components/settings_font_override.rs	Line height	settings.appearance.font.override_line_height_label
-src/catalog/components/settings_font_override.rs	Line height multiplier. 1.0 = tight (best for ASCII art), 1.2 = comfortable reading.	settings.appearance.line_height_tooltip
 src/catalog/components/settings_font_override.rs	Preview	settings.appearance.preview_heading
 src/catalog/components/settings_font_override.rs	Unfocused	settings.appearance.colors.unfocused_heading,settings.appearance.preview_unfocused
 src/catalog/components/settings_font_override.rs	Use default	settings.appearance.font.use_default_label,settings.appearance.terminal.use_default
-src/catalog/components/settings_general_grid.rs	Accept webhook calls from other computers:	settings.general.webhook_allow_external_label
 src/catalog/components/settings_general_grid.rs	Ask	settings.general.close_behavior_ask
 src/catalog/components/settings_general_grid.rs	Close behavior:	settings.general.close_behavior_label
-src/catalog/components/settings_general_grid.rs	How far one wheel notch scrolls. The same distance applies everywhere in the window - plugin surfaces, popups, and the settings and sidebar lists.	settings.general.wheel_line_scroll_desc
-src/catalog/components/settings_general_grid.rs	Language change will take effect after restart.	settings.general.language_restart_notice
 src/catalog/components/settings_general_grid.rs	Language:	settings.general.language_label
-src/catalog/components/settings_general_grid.rs	Minimize to background	settings.general.close_behavior_minimize
 src/catalog/components/settings_general_grid.rs	Quit	button.quit,db_error.quit,quit_modal.quit_button,settings.general.close_behavior_quit,tray.quit
-src/catalog/components/settings_general_grid.rs	Wheel scroll distance:	settings.general.wheel_line_scroll_label
-src/catalog/components/settings_general_grid.rs	When on, the webhook listener takes every network interface, so anyone who can reach its port can call your registered webhooks. When off, only programs on this computer can. Applies from the next start.	settings.general.webhook_allow_external_notice
 src/catalog/components/settings_general_grid.rs	pt	settings.number.unit_pt
 src/catalog/components/settings_handler.rs	Action:	settings.file_handler.hook_handlers.action_label
 src/catalog/components/settings_handler.rs	Add	button.add,explorer.popup.add_favorite.add,settings.terminal.input_add,settings.terminal.mouse_capture_banner_blacklist_add_button,settings.terminal.mouse_capture_blacklist_add_button
@@ -662,57 +564,39 @@ src/catalog/components/settings_handler.rs	Edit	image_viewer.edit,preset.toolbar
 src/catalog/components/settings_handler.rs	Edit with CLI	settings.file_handler.hook_handlers.seq_edit_with_cli
 src/catalog/components/settings_handler.rs	Event id:	settings.file_handler.hook_handlers.field_event_id
 src/catalog/components/settings_handler.rs	New hook handler	settings.file_handler.hook_handlers.new_head
-src/catalog/components/settings_handler.rs	Registered hook handlers	settings.file_handler.hook_handlers.section_head
 src/catalog/components/settings_handler.rs	Remove	settings.file_handler.detectors.remove_user,settings.file_handler.extension_mapping.clear,settings.file_handler.handlers.remove_user,settings.scripts.remove
 src/catalog/components/settings_handler.rs	Reset	remote_tool.filter_reset,settings.appearance.colors.reset,settings.file_handler.extension_mapping.reset,settings.keybindings.plugins.reset_button
 src/catalog/components/settings_handler.rs	Shell cmd:	settings.file_handler.hook_handlers.shell_cmd_label
 src/catalog/components/settings_handler.rs	Shell command:	settings.file_handler.hook_handlers.field_shell_command
 src/catalog/components/settings_handler.rs	Undo	image_viewer.undo,settings.file_handler.extension_mapping.undo,settings.file_handler.hook_handlers.undo
 src/catalog/components/settings_handler.rs	disabled	settings.file_handler.common.disabled
-src/catalog/components/settings_handler.rs	extension, e.g. .log	settings.file_handler.extension_mapping.add_placeholder
 src/catalog/components/settings_handler.rs	fallback	dag.rel.fallback
 src/catalog/components/settings_handler.rs	not installed	settings.file_handler.extension_mapping.unregistered
 src/catalog/components/settings_handler.rs	off	settings.file_handler.extension_mapping.off
 src/catalog/components/settings_handler.rs	prio {}	settings.file_handler.hook_handlers.prio
 src/catalog/components/settings_handler.rs	removed on save	settings.file_handler.extension_mapping.removed_on_save
 src/catalog/components/settings_handler.rs	reset on save	settings.file_handler.extension_mapping.reset_on_save
-src/catalog/components/settings_handler.rs	tasty notify "$TASTY_HOOK_*"	settings.file_handler.hook_handlers.placeholder_shell_command
 src/catalog/components/settings_handler.rs	you	file_handler.picker.origin_user
-src/catalog/components/settings_hook_override.rs	Changed in your settings. Updates to the default no longer apply.	settings.file_handler.hook_handlers.edited_tip
 src/catalog/components/settings_hook_override.rs	Edit	image_viewer.edit,preset.toolbar.edit,remote_tool.edit,settings.file_handler.hook_handlers.seq_edit
-src/catalog/components/settings_hook_override.rs	Go back to the default from {}.	settings.file_handler.hook_handlers.revert_tip
 src/catalog/components/settings_hook_override.rs	Revert	settings.file_handler.hook_handlers.revert
-src/catalog/components/settings_hook_override.rs	Reverts on save. Undo to change it.	settings.file_handler.hook_handlers.pending_locked_tip
 src/catalog/components/settings_hook_override.rs	Undo	image_viewer.undo,settings.file_handler.extension_mapping.undo,settings.file_handler.hook_handlers.undo
 src/catalog/components/settings_hook_override.rs	edited	settings.file_handler.hook_handlers.edited
 src/catalog/components/settings_hook_override.rs	reverts on save	settings.file_handler.hook_handlers.reverts_on_save
 src/catalog/components/settings_hook_seq.rs	Apply	port_scanner.state_filter_apply,preset.popup.apply_button,remote_tool.filter_apply,settings.file_handler.hook_handlers.seq_apply,settings.keybindings.apply_button
 src/catalog/components/settings_hook_seq.rs	Cancel	button.cancel,image_viewer.cancel,preset.popup.cancel_button,quit_modal.cancel_button,remote_attach.cancel,remote_tool.cancel,transfer.progress.cancel
-src/catalog/components/settings_hook_seq.rs	No calls. The handler does nothing.	settings.file_handler.hook_handlers.seq_empty
-src/catalog/components/settings_hook_seq.rs	One call per line: method, then optional JSON params. Lines starting with # are skipped and are not kept.	settings.file_handler.hook_handlers.seq_help
 src/catalog/components/settings_hook_seq.rs	you	file_handler.picker.origin_user
 src/catalog/components/settings_keybinding_rows.rs	Close active:	settings.keybindings.close_active_label
 src/catalog/components/settings_keybinding_rows.rs	Closes in order: tab → pane → workspace.	settings.keybindings.close_active_desc
 src/catalog/components/settings_keybinding_rows.rs	New workspace:	settings.keybindings.new_workspace_label
 src/catalog/components/settings_keybinding_rows.rs	None	plugins.add_none,settings.keybindings.hint_none,settings.keybindings.plugins.mode_none
 src/catalog/components/settings_keybinding_rows.rs	Quit:	settings.keybindings.quit_label
-src/catalog/components/settings_macos_permissions.rs	Accessibility (key injection)	settings.macos_permissions.accessibility_label
-src/catalog/components/settings_macos_permissions.rs	Asks for folder access, then screen recording, one prompt at a time. Items you already allowed or denied are not asked again, and a denied item can only be restored in System Settings. Full Disk Access cannot be requested by an app: use Open System Settings in its row and add Tasty yourself.	settings.macos_permissions.request_note
-src/catalog/components/settings_macos_permissions.rs	Cannot check automatically	settings.macos_permissions.status_not_observable
-src/catalog/components/settings_macos_permissions.rs	Checking a folder would itself open a permission prompt, so Tasty does not check.	settings.macos_permissions.file_access_hint
-src/catalog/components/settings_macos_permissions.rs	Downloads · Documents · Desktop · volumes	settings.macos_permissions.file_access_detail
 src/catalog/components/settings_macos_permissions.rs	Folder access	settings.macos_permissions.file_access_label
 src/catalog/components/settings_macos_permissions.rs	Full Disk Access	settings.macos_permissions.full_disk_access_label
 src/catalog/components/settings_macos_permissions.rs	Granted	settings.macos_permissions.status_granted
 src/catalog/components/settings_macos_permissions.rs	Not granted	settings.macos_permissions.status_missing
-src/catalog/components/settings_macos_permissions.rs	Open System Settings	settings.macos_permissions.open_full_disk_access
-src/catalog/components/settings_macos_permissions.rs	Request all permissions	settings.macos_permissions.request_all
-src/catalog/components/settings_macos_permissions.rs	Requesting permissions. Answer each prompt as it appears; the next one shows after you answer.	settings.macos_permissions.requesting
 src/catalog/components/settings_macos_permissions.rs	Screen recording	settings.macos_permissions.screen_recording_label
-src/catalog/components/settings_macos_permissions.rs	These states are a snapshot from startup, from opening this page, and from this window regaining focus. Nothing in Tasty is blocked by them; they only decide whether the startup notice appears.	settings.macos_permissions.detection_note
 src/catalog/components/settings_macos_permissions.rs	Unknown	dag.tooltip.unknown,notification_panel.unknown_workspace,settings.macos_permissions.status_unknown
 src/catalog/components/settings_macos_permissions.rs	debug	settings.macos_permissions.debug_tag
-src/catalog/components/settings_macos_permissions.rs	macOS has no API to report Full Disk Access, so this state is inferred and can be wrong.	settings.macos_permissions.full_disk_access_hint
 src/catalog/components/settings_number.rs	Toast duration	settings.overlay.toast_duration
 src/catalog/components/settings_number.rs	default	file_handler.picker.default_tag
 src/catalog/components/settings_number.rs	disabled	settings.file_handler.common.disabled
@@ -721,14 +605,9 @@ src/catalog/components/settings_remote_transfer.rs	Browse…	preset.field.browse
 src/catalog/components/settings_remote_transfer.rs	Maximum size	settings.remote_transfer.max_capacity
 src/catalog/components/settings_remote_transfer.rs	Received files	settings.remote_transfer.section
 src/catalog/components/settings_remote_transfer.rs	Save folder	settings.remote_transfer.dir
-src/catalog/components/settings_remote_transfer.rs	Total the folder may hold. A transfer that would push it past this limit is rejected before it starts.	settings.remote_transfer.max_capacity_desc
-src/catalog/components/settings_remote_transfer.rs	Where files received from a remote workspace are saved.	settings.remote_transfer.dir_desc
 src/catalog/components/settings_remote_transfer.rs	~/.tasty/transfers/	settings.remote_transfer.dir_placeholder
-src/catalog/components/settings_task_pipeline.rs	Attempt report limit	settings.task_pipeline.report_block
 src/catalog/components/settings_task_pipeline.rs	Note size limit	settings.task_pipeline.report_append
-src/catalog/components/settings_task_pipeline.rs	One note longer than this is cut at a UTF-8 boundary and marked as truncated. Must be smaller than the attempt limit.	settings.task_pipeline.report_append_desc
 src/catalog/components/settings_task_pipeline.rs	Report limits	settings.task_pipeline.section
-src/catalog/components/settings_task_pipeline.rs	Total note text kept for one task attempt. Notes past it are not stored, only counted.	settings.task_pipeline.report_block_desc
 src/catalog/components/sidebar.rs	Plugins	button.plugins,plugins.title,settings.keybindings.subtab.plugins,settings.tab.plugin
 src/catalog/components/sidebar.rs	Settings	button.settings,settings.window.title
 src/catalog/components/sidebar.rs	Tools	sidebar.tools_button,tools_menu.title
@@ -739,7 +618,6 @@ src/catalog/components/sidebar_context_menu.rs	Delete category	workspace_categor
 src/catalog/components/sidebar_context_menu.rs	Move to category	workspace_category.move_to_category
 src/catalog/components/sidebar_context_menu.rs	New category	workspace_category.new_category
 src/catalog/components/sidebar_context_menu.rs	Rename category	workspace_category.rename_category
-src/catalog/components/status_bar.rs	Open the command palette	tutorial.step_palette_title
 src/catalog/components/switch_overlay.rs	WORKSPACES	sidebar.workspaces_heading
 src/catalog/components/tab_bar.rs	disabled	settings.file_handler.common.disabled
 src/catalog/components/tab_bar/kit_strip.rs	disabled	settings.file_handler.common.disabled
@@ -753,7 +631,6 @@ src/catalog/components/tools_menu.rs	Remote connections…	remote_tool.tools_men
 src/catalog/components/tools_menu.rs	Task DAGs	dag_list.title,dag_list.tools_menu_item
 src/catalog/components/tools_menu.rs	Tutorial…	tutorial.tools_menu_item
 src/catalog/components/tools_menu.rs	built-in	file_handler.picker.origin_host,plugins.builtin_badge
-src/catalog/components/transfer.rs	 could not be received.	transfer.error.body_suffix
 src/catalog/components/transfer.rs	Cancel	button.cancel,image_viewer.cancel,preset.popup.cancel_button,quit_modal.cancel_button,remote_attach.cancel,remote_tool.cancel,transfer.progress.cancel
 src/catalog/components/transfer.rs	Dismiss	remote.refusal.dismiss,transfer.error.dismiss
 src/catalog/components/transfer.rs	Receiving file	transfer.progress.title
@@ -765,7 +642,6 @@ src/catalog/foundations_disabled_ink.rs	Copy address	port_scanner.copy_address
 src/catalog/foundations_disabled_ink.rs	disabled	settings.file_handler.common.disabled
 src/catalog/foundations_rolegaps.rs	Favorites	explorer.sidebar.favorites,port_scanner.favorites_heading
 src/catalog/foundations_rolegaps.rs	Listening ports	port_scanner.heading
-src/catalog/foundations_rolegaps.rs	Show all (system-wide)	port_scanner.filter_show_all_system
 src/catalog/foundations_settled.rs	Cancel	button.cancel,image_viewer.cancel,preset.popup.cancel_button,quit_modal.cancel_button,remote_attach.cancel,remote_tool.cancel,transfer.progress.cancel
 src/catalog/foundations_settled.rs	Delete	preset.toolbar.delete,remote_tool.delete
 src/catalog/foundations_settled.rs	New tab	explorer.tab.new
@@ -792,17 +668,9 @@ src/catalog/theme.rs	Open	button.open,file_handler.picker.open_button,filepicker
 src/catalog/theme.rs	plugin	file_handler.picker.origin_plugin
 src/catalog/widgets/attach_refusal.rs	Remove mapping	remote.refusal.remove
 src/catalog/widgets/banner.rs	Add	button.add,explorer.popup.add_favorite.add,settings.terminal.input_add,settings.terminal.mouse_capture_banner_blacklist_add_button,settings.terminal.mouse_capture_blacklist_add_button
-src/catalog/widgets/banner.rs	Disable mouse capture for 	popup.mouse_capture_banner_menu.disable_prefix
-src/catalog/widgets/banner.rs	Mouse input captured	banner.mouse_capture.title
-src/catalog/widgets/banner.rs	No programs excluded — clicks are sent to capturing apps.	settings.terminal.mouse_capture_blacklist_empty
 src/catalog/widgets/banner.rs	Shift	settings.general.shift_display_style_shift
-src/catalog/widgets/banner.rs	Turn off this notice for 	popup.mouse_capture_banner_menu.suppress_prefix
 src/catalog/widgets/banner.rs	default	file_handler.picker.default_tag
-src/catalog/widgets/banner.rs	process name or pattern, e.g. htop or ht*	settings.terminal.mouse_capture_blacklist_add_placeholder
-src/catalog/widgets/banner_mouse_capture.rs	Disable mouse capture for 	popup.mouse_capture_banner_menu.disable_prefix
-src/catalog/widgets/banner_mouse_capture.rs	Turn off this notice for 	popup.mouse_capture_banner_menu.suppress_prefix
 src/catalog/widgets/hint_text.rs	Reduced motion	settings.accessibility.reduced_motion
-src/catalog/widgets/html_script_banner.rs	Scripts in this document are blocked	banner.html_script.title
 src/catalog/widgets/html_script_banner.rs	URL	preset.field.url
 src/catalog/widgets/html_script_banner.rs	plugin	file_handler.picker.origin_plugin
 src/catalog/widgets/layout_1depth.rs	Filter…	port_scanner.search_placeholder
@@ -820,5 +688,4 @@ src/catalog/widgets/toast.rs	Path copied	toast.copied_path
 src/catalog/widgets/toast.rs	Shift	settings.general.shift_display_style_shift
 src/catalog/widgets/tutorial.rs	Back	explorer.nav.back,settings.keybindings.preset_back,tutorial.btn_back
 src/catalog/widgets/tutorial.rs	Next	tutorial.btn_next
-src/catalog/widgets/warning_callout.rs	Turning this on lets programs running in the terminal read your system clipboard via OSC 52. Leave it off unless you trust everything that runs here.	settings.terminal.allow_clipboard_read_notice
 src/host_shell.rs	Theme	settings.appearance.subtab.theme

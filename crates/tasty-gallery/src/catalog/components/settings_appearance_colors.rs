@@ -174,7 +174,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
 }
 
 /// 본체 Colors 헤더의 설명 문장(`settings.appearance.colors.intro` 영어 원문).
-const COLORS_INTRO: &str = "Override individual colors of the current preset. Uncheck \"Default\" on a row to edit it; switching presets clears every override.";
+fn colors_intro() -> &'static str {
+    crate::i18n::t("settings.appearance.colors.intro")
+}
 
 /// Colors 헤더 한 줄 — 설명 + 오른쪽 Reset all. 본체 `draw_appearance_colors` 헤더와 같은 배치다.
 fn colors_header(ui: &mut egui::Ui, th: &Theme, changed: usize) {
@@ -193,7 +195,7 @@ fn colors_header(ui: &mut egui::Ui, th: &Theme, changed: usize) {
             ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                 ui.add(
                     egui::Label::new(
-                        egui::RichText::new(COLORS_INTRO)
+                        egui::RichText::new(colors_intro())
                             .small()
                             .color(egui::Color32::from(th.text_muted())),
                     )

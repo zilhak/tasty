@@ -231,9 +231,9 @@ pub(super) fn card(
                 glyph_at(ui, glyph, theme.icon_glyph_size_md, tone);
                 ui.label(
                     egui::RichText::new(if done {
-                        "Option bindings resolved"
+                        crate::i18n::t("settings.keybindings.ie_migrate_title_done")
                     } else {
-                        "Option bindings need a replacement"
+                        crate::i18n::t("settings.keybindings.ie_migrate_title_pending")
                     })
                     .size(theme.font_size_body.value())
                     .color(tone),
@@ -287,7 +287,7 @@ fn conflict_summary(ui: &mut egui::Ui, theme: &Theme, conflicts: usize) {
         ),
     );
     job.append(
-        " — those shortcuts are already bound. The shortcut-conflict popup opens on Apply.",
+        crate::i18n::t("settings.keybindings.ie_migrate_conflicts_tail"),
         0.0,
         egui::TextFormat::simple(
             egui::FontId::proportional(size),
@@ -392,7 +392,7 @@ fn migrate_row(
                     tag(
                         ui,
                         theme,
-                        "Unbound — counts as resolved",
+                        crate::i18n::t("settings.keybindings.ie_unbound_tag"),
                         TagVariant::Default,
                         false,
                     );

@@ -585,15 +585,15 @@ fn fh_empty(ui: &mut egui::Ui, theme: &Theme) {
                     theme.icon_glyph_size_md,
                     theme.text_disabled().to_egui(),
                 );
-                kit::body(ui, theme, "No handlers registered.");
+                kit::body(ui, theme, crate::i18n::t("file_handler.picker.empty"));
                 kit::caption(
                     ui,
                     theme,
-                    "Register one in Settings › Handlers to open this file.",
+                    crate::i18n::t("file_handler.picker.empty_hint"),
                     false,
                 );
                 ui.add_space(theme.spacing_xs.value());
-                Button::new("Register a handler in Settings")
+                Button::new(crate::i18n::t("file_handler.picker.open_settings_button"))
                     .variant(ButtonVariant::Secondary)
                     .size(ControlSize::Sm)
                     .show(ui, theme);
@@ -730,7 +730,7 @@ fn fh_list(ui: &mut egui::Ui, theme: &Theme, state: FrameState) {
                     theme,
                     "All handlers",
                     ALL.len(),
-                    Some("No handler matches this format."),
+                    Some(crate::i18n::t("file_handler.picker.fallback_caption")),
                     true,
                 );
                 for (i, r) in ALL.iter().enumerate() {

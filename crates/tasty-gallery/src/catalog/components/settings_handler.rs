@@ -257,7 +257,9 @@ fn ext_map_panel(ui: &mut egui::Ui, theme: &Theme, draft: &mut String, seed: Ext
                         .show(ui, theme);
                     Input::new()
                         .mono(true)
-                        .placeholder("extension, e.g. .log")
+                        .placeholder(crate::i18n::t(
+                            "settings.file_handler.extension_mapping.add_placeholder",
+                        ))
                         .width(ui.available_width())
                         .show(ui, theme, draft);
                 });
@@ -845,7 +847,7 @@ fn draw_hook_content(ui: &mut egui::Ui, theme: &Theme, st: &mut HookState) {
                     ui,
                     theme,
                     "Shell command:",
-                    "tasty notify \"$TASTY_HOOK_*\"",
+                    crate::i18n::t("settings.file_handler.hook_handlers.placeholder_shell_command"),
                     &mut st.draft_cmd,
                 );
                 // 가운데 정렬이 남은 높이를 모두 차지하지 않도록 위쪽에 맞춘다.
@@ -884,7 +886,11 @@ fn draw_hook_content(ui: &mut egui::Ui, theme: &Theme, st: &mut HookState) {
             });
     }
 
-    mono_head(ui, theme, "Registered hook handlers");
+    mono_head(
+        ui,
+        theme,
+        crate::i18n::t("settings.file_handler.hook_handlers.section_head"),
+    );
     let mut remove: Option<usize> = None;
     for i in 0..st.hooks.len() {
         draw_hook_row(ui, theme, st, i, &mut remove);

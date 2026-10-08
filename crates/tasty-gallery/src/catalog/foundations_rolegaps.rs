@@ -301,7 +301,7 @@ fn mini_popup(ui: &mut egui::Ui, theme: &Theme, edge: egui::Color32) {
                 .show(ui, |ui| {
                     text(
                         ui,
-                        "Show all (system-wide)",
+                        crate::i18n::t("port_scanner.filter_show_all_system"),
                         theme.font_size_term_sm,
                         ec(theme.text_primary()),
                         false,

@@ -164,16 +164,14 @@ fn entry(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         theme.measure_md,
-        "Move your whole keybinding configuration between machines. Importing never applies \
-         straight away — you see what changes first.",
+        crate::i18n::t("settings.keybindings.ie_entry_intro"),
     );
     action_row(
         ui,
         theme,
         icons::DOWNLOAD,
         "Export",
-        "Writes every binding — general, quick switch, script bindings and plugin overrides — \
-         to one file.",
+        crate::i18n::t("settings.keybindings.ie_export_desc"),
         "Export…",
         ButtonVariant::Secondary,
         true,
@@ -184,8 +182,7 @@ fn entry(ui: &mut egui::Ui, theme: &Theme) {
         theme,
         icons::FILE,
         "Import",
-        "Reads a keybinding file and shows the changes against your current bindings before \
-         anything is written.",
+        crate::i18n::t("settings.keybindings.ie_import_desc"),
         "Import…",
         ButtonVariant::Primary,
         true,

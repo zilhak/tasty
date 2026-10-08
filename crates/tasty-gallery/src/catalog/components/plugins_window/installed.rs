@@ -204,11 +204,9 @@ fn health_box(ui: &mut egui::Ui, theme: &Theme) {
         .inner_margin(margin_sym(theme.spacing_md, theme.spacing_sm))
         .show(ui, |ui| {
             ui.label(
-                egui::RichText::new(
-                    "Failed to connect. Check the plugin's configuration in Settings.",
-                )
-                .size(theme.font_size_body.value())
-                .color(danger),
+                egui::RichText::new(crate::i18n::t("plugins.health_error"))
+                    .size(theme.font_size_body.value())
+                    .color(danger),
             );
         });
 }
@@ -287,7 +285,7 @@ fn uninstall(ui: &mut egui::Ui, theme: &Theme, row: &Row, confirming: bool) {
     let warning = if row.builtin {
         "This is a built-in plugin. Once removed, it will not be auto-reinstalled on next launch."
     } else {
-        "All files of this plugin will be deleted."
+        crate::i18n::t("plugins.uninstall_warning")
     };
     ui.label(
         egui::RichText::new(warning)
@@ -314,7 +312,7 @@ pub(super) fn detail_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, de
 
     let Some(i) = detail.selected_row() else {
         child.add_space(theme.spacing_xl.value());
-        caption(&mut child, theme, "Select a plugin from the left.");
+        caption(&mut child, theme, crate::i18n::t("plugins.none_selected"));
         return;
     };
     let row = &ROWS[i];

@@ -386,7 +386,7 @@ fn compact_rows(ui: &mut egui::Ui, theme: &Theme) {
         CompactStateRow {
             glyph: CompactStateGlyph::Icon(ALERT_TRIANGLE),
             glyph_color: error,
-            title: "Can't read this folder",
+            title: crate::i18n::t("explorer.state.read_error"),
             title_color: error,
             tooltip: Some("No such file or directory (os error 2)"),
             actions: &[
@@ -399,13 +399,13 @@ fn compact_rows(ui: &mut egui::Ui, theme: &Theme) {
             glyph_color: warning,
             title: "Permission denied",
             title_color: warning,
-            tooltip: Some("You don't have access to read this folder."),
+            tooltip: Some(crate::i18n::t("explorer.state.no_permission_sub")),
             actions: &[],
         },
         CompactStateRow {
             glyph: CompactStateGlyph::Icon(FOLDER_OPEN),
             glyph_color: muted,
-            title: "This folder is empty",
+            title: crate::i18n::t("explorer.state.empty"),
             title_color: theme.text_secondary().to_egui(),
             tooltip: None,
             actions: &[],

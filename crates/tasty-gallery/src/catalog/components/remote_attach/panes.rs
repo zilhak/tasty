@@ -65,11 +65,12 @@ pub(super) fn right_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, sta
         // 시안 `RemoteAttachFrame` 의 `center()` 를 그대로 옮긴다. 공용 CenterState 와 값이 다르다.
         RaState::EmptyPlanA => plan_a_center(ui, theme, rect),
         RaState::Initial => {
-            CenterState::empty(icons::REMOTE, "Select an attach profile")
-                .sub_line(Some(
-                    "Pick a profile on the left to connect and list the remote instance's workspaces.",
-                ))
-                .show_in(ui, theme, rect);
+            CenterState::empty(
+                icons::REMOTE,
+                crate::i18n::t("remote_attach.select_profile"),
+            )
+            .sub_line(Some(crate::i18n::t("remote_attach.select_profile_hint")))
+            .show_in(ui, theme, rect);
         }
         RaState::Connecting => {
             CenterState::loading("Connecting…")
@@ -82,9 +83,9 @@ pub(super) fn right_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, sta
         // 본체와 같은 원격 인스턴스 미실행 오류 예제. 내부 stderr·포트 경로는 표시하지 않는다.
         RaState::Error => {
             CenterState::error("Can't connect")
-                .sub_line(Some(
-                    "No tasty instance appears to be running on the remote host.",
-                ))
+                .sub_line(Some(crate::i18n::t(
+                    "ssh.port_discovery.instance_not_running",
+                )))
                 .action("Retry", Some(icons::REFRESH))
                 .show_in(ui, theme, rect);
         }

@@ -25,14 +25,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
                 mono_head(ui, theme, "Report limits");
                 let rows = [
-                    SettingsRow::new("Note size limit").caption(
-                        "One note longer than this is cut at a UTF-8 boundary and marked as \
-                         truncated. Must be smaller than the attempt limit.",
-                    ),
-                    SettingsRow::new("Attempt report limit").caption(
-                        "Total note text kept for one task attempt. Notes past it are not \
-                         stored, only counted.",
-                    ),
+                    SettingsRow::new("Note size limit")
+                        .caption(crate::i18n::t("settings.task_pipeline.report_append_desc")),
+                    SettingsRow::new(crate::i18n::t("settings.task_pipeline.report_block"))
+                        .caption(crate::i18n::t("settings.task_pipeline.report_block_desc")),
                 ];
                 let col = settings_label_column(ui, theme, &rows);
                 let [note, attempt] = rows;

@@ -18,7 +18,7 @@ fn base() -> StatusBarData {
         grid: Some((120, 32)),
         theme_is_light: false,
         palette_keys: "Ctrl+K".into(),
-        palette_tooltip: "Open the command palette".into(),
+        palette_tooltip: crate::i18n::t("tutorial.step_palette_title").into(),
         theme_tooltip: "Toggle light / dark theme".into(),
     }
 }

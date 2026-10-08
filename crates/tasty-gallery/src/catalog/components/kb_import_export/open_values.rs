@@ -175,7 +175,7 @@ fn export_failure_row(ui: &mut egui::Ui, theme: &Theme, st: &mut State) {
             theme,
             theme.accent_danger().to_egui(),
             icons::ALERT_CIRCLE,
-            "The export wasn't written",
+            crate::i18n::t("settings.keybindings.ie_export_failure_title"),
             None,
             |ui| {
                 intro_secondary(
@@ -186,7 +186,10 @@ fn export_failure_row(ui: &mut egui::Ui, theme: &Theme, st: &mut State) {
             },
             &[
                 ("Try again", ButtonVariant::Secondary),
-                ("Choose another location…", ButtonVariant::Ghost),
+                (
+                    crate::i18n::t("settings.keybindings.ie_export_choose_another"),
+                    ButtonVariant::Ghost,
+                ),
             ],
         );
         dismissed = clicked.is_some();
@@ -196,8 +199,7 @@ fn export_failure_row(ui: &mut egui::Ui, theme: &Theme, st: &mut State) {
         theme,
         icons::DOWNLOAD,
         "Export",
-        "Writes every binding — general, quick switch, script bindings and plugin overrides — \
-         to one file.",
+        crate::i18n::t("settings.keybindings.ie_export_desc"),
         "Export…",
         ButtonVariant::Secondary,
         !failed,

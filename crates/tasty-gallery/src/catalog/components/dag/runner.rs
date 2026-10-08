@@ -8,7 +8,9 @@ use super::Runner;
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
 /// 본체 CLI의 러너 시작 명령.
-const RESUME_CMD: &str = "tasty agent task-run --workspace-id <N> --action start";
+fn resume_cmd() -> &'static str {
+    crate::i18n::t("dag.runner.resume_hint_command")
+}
 
 /// 헤더 한 줄에 들어가는 힌트 문구 — 알약 옆에 이어 붙인다.
 pub const RESUME_HINT: &str = "resume with tasty agent task-run --workspace-id <N> --action start";
@@ -33,15 +35,14 @@ fn tone_of(r: &Runner) -> Tone {
 
 fn text_of(r: &Runner) -> String {
     match tone_of(r) {
-        Tone::Crashed => format!("Runner crashed \u{b7} {} ready", r.ready),
-        Tone::Stalled => format!("Runner stopped \u{b7} {} ready", r.ready),
-        Tone::Normal if r.running => {
-            format!(
-                "Runner \u{b7} {} running \u{b7} {} ready",
-                r.active, r.ready
-            )
-        }
-        Tone::Normal => "Runner stopped \u{b7} no work".to_owned(),
+        Tone::Crashed => crate::i18n::t_fmt("dag.runner.crashed", &r.ready.to_string()),
+        Tone::Stalled => crate::i18n::t_fmt("dag.runner.stalled", &r.ready.to_string()),
+        Tone::Normal if r.running => crate::i18n::t_fmt2(
+            "dag.runner.running",
+            &r.active.to_string(),
+            &r.ready.to_string(),
+        ),
+        Tone::Normal => crate::i18n::t("dag.runner.idle").to_owned(),
     }
 }
 
@@ -136,7 +137,7 @@ pub fn row(ui: &mut egui::Ui, theme: &Theme, r: &Runner, hint: bool) {
                     .color(theme.text_muted().to_egui()),
             );
             ui.label(
-                egui::RichText::new(RESUME_CMD)
+                egui::RichText::new(resume_cmd())
                     .size(theme.font_size_caption.value())
                     .monospace()
                     .color(theme.text_muted().to_egui()),

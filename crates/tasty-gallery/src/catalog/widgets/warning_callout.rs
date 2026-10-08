@@ -8,8 +8,9 @@ use crate::catalog::icons;
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
 /// 본체 allow_clipboard_read_notice의 영어 문구.
-const NOTICE: &str = "Turning this on lets programs running in the terminal read your \
-     system clipboard via OSC 52. Leave it off unless you trust everything that runs here.";
+fn notice() -> &'static str {
+    crate::i18n::t("settings.terminal.allow_clipboard_read_notice")
+}
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Solo, |ui| {
@@ -29,7 +30,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 });
             });
 
-            warning_callout(ui, theme, NOTICE, &|ui, rect, c| {
+            warning_callout(ui, theme, notice(), &|ui, rect, c| {
                 icons::ALERT_TRIANGLE
                     .image(rect.height(), c)
                     .paint_at(ui, rect);

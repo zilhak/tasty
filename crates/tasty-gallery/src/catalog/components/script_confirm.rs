@@ -18,7 +18,7 @@ fn card(ui: &mut egui::Ui, theme: &Theme, name: &str) {
 
             // 본체 제목은 kit::title과 다른 font_size_body를 사용한다.
             ui.label(
-                egui::RichText::new("Script changed since registration")
+                egui::RichText::new(crate::i18n::t("script.confirm.title"))
                     .size(theme.font_size_body.value())
                     .strong()
                     .color(theme.text_primary().to_egui()),
@@ -38,11 +38,9 @@ fn card(ui: &mut egui::Ui, theme: &Theme, name: &str) {
                 ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
                 tag(ui, theme, "changed", TagVariant::Warning, false);
                 ui.label(
-                    egui::RichText::new(
-                        "Review it, then run the new version. Its recorded hash will be updated.",
-                    )
-                    .size(theme.font_size_caption.value())
-                    .color(theme.text_secondary().to_egui()),
+                    egui::RichText::new(crate::i18n::t("script.confirm.body"))
+                        .size(theme.font_size_caption.value())
+                        .color(theme.text_secondary().to_egui()),
                 );
             });
 

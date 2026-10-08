@@ -121,7 +121,7 @@ pub(super) fn parse_failure(ui: &mut egui::Ui, theme: &Theme, with_line: bool) {
         theme,
         theme.accent_danger().to_egui(),
         icons::ALERT_CIRCLE,
-        "This file can't be read as keybindings",
+        crate::i18n::t("settings.keybindings.ie_failure_title"),
         None,
         |ui| {
             intro_secondary(

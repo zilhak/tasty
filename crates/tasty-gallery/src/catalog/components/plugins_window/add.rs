@@ -16,7 +16,9 @@ const LONG_FINGERPRINT: &str = "1a:2b:3c:4d:5e:6f:70:81:92:a3:b4:c5:d6:e7:f8:09:
                                  10:21:32:43:54:65:76:87:98:a9:ba:cb:dc:ed:fe:0f";
 
 /// 경로 선택 블록 아래 문단. 본체 `plugins.add_help`의 영어 문구다.
-const HELP: &str = "Point Tasty at a local folder containing a `tasty-plugin.toml`. Verifying reads its manifest and checks the signature; adding copies it into `~/.tasty/plugins`.";
+fn help() -> &'static str {
+    crate::i18n::t("plugins.add_help")
+}
 
 fn sample_strings(items: &[&str]) -> Vec<String> {
     items.iter().map(|s| (*s).to_owned()).collect()
@@ -44,7 +46,7 @@ pub(super) fn form_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, veri
             find: "Find folder…",
             verify: "Verify",
             verify_enabled: verified,
-            help: HELP,
+            help: help(),
         },
         &mut path,
     );
@@ -136,13 +138,13 @@ pub(super) fn hint_slot(ui: &mut egui::Ui, theme: &Theme, width: f32) {
         plugin_add_read_error(
             ui,
             theme,
-            "Can't read tasty-plugin.toml",
+            crate::i18n::t("plugins.add_read_error"),
             "TOML parse error at line 4, column 9: expected `=`",
         );
         plugin_add_read_error(
             ui,
             theme,
-            "tasty-plugin.toml is not valid",
+            crate::i18n::t("plugins.add_invalid"),
             "binary \"bin/imgview\" not found in the plugin folder",
         );
     });
@@ -161,25 +163,22 @@ pub(super) fn open_values(ui: &mut egui::Ui, theme: &Theme, width: f32) {
 /// 디자인 `TRUST_KIND`의 제목과 본문.
 fn trust_copy(kind: PluginTrustKind) -> (&'static str, &'static str) {
     match kind {
-        PluginTrustKind::Trusted => (
-            "",
-            "Signed by a trusted publisher — its key is in your trust store.",
-        ),
+        PluginTrustKind::Trusted => ("", crate::i18n::t("plugins.trust_trusted_body")),
         PluginTrustKind::UnknownKey => (
-            "Unverified publisher",
-            "This plugin isn't signed by a key in your trust store. It runs with the permissions above on every launch — review them, and only add plugins from sources you trust. Adding it also trusts this key.",
+            crate::i18n::t("plugins.trust_unknown_title"),
+            crate::i18n::t("plugins.trust_unknown_body"),
         ),
         PluginTrustKind::PermissionsChanged => (
             "Permissions changed",
-            "This publisher is trusted, but this version asks for permissions the trusted version did not have. Review the list above; adding it trusts the new set.",
+            crate::i18n::t("plugins.trust_permissions_changed_body"),
         ),
         PluginTrustKind::MissingPubkey => (
-            "Public key file missing",
-            "The manifest is signed by a key that isn't in your trust store, and tasty-plugin.toml.pub is missing or unreadable, so the key can't be added. Ask the publisher for this public key file.",
+            crate::i18n::t("plugins.trust_missing_pubkey_title"),
+            crate::i18n::t("plugins.trust_missing_pubkey_body"),
         ),
         PluginTrustKind::SignatureError => (
-            "Signature check failed",
-            "The signature could not be verified. The plugin can't be added until the publisher ships a valid signature.",
+            crate::i18n::t("plugins.trust_sig_error_title"),
+            crate::i18n::t("plugins.trust_sig_error_body"),
         ),
     }
 }
@@ -235,13 +234,17 @@ pub(super) fn add_bars(ui: &mut egui::Ui, theme: &Theme, width: f32) {
             (None, false, 3),
             (Some("Already installed"), true, 3),
             (
-                Some("Signed, but the publisher's public key file is missing"),
+                Some(crate::i18n::t("plugins.add_blocked_missing_pubkey")),
                 true,
                 3,
             ),
             (None, true, 1),
             (None, true, 0),
-            (Some("Signature check failed"), true, 3),
+            (
+                Some(crate::i18n::t("plugins.add_blocked_sig_error")),
+                true,
+                3,
+            ),
         ] {
             egui::Frame::new()
                 .fill(theme.bg_panel().to_egui())

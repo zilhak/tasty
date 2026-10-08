@@ -342,7 +342,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 ui,
                 theme,
                 "normal",
-                Some("'normal' is a reserved category name."),
+                Some(crate::i18n::t("workspace_category.error.reserved")),
             )
         });
         spec::cluster(ui, theme, "Delete confirm", |ui| delete_confirm(ui, theme));

@@ -95,7 +95,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ),
             (
                 "mark tooltip",
-                "Changed in your settings. Updates to the default no longer apply.",
+                crate::i18n::t("settings.file_handler.hook_handlers.edited_tip"),
             ),
             (
                 "action",
@@ -178,7 +178,9 @@ fn draw_row(ui: &mut egui::Ui, th: &Theme, r: &mut Row) {
                     let mut shown_on = if r.pending { true } else { r.on };
                     let resp = switch(ui, th, &mut shown_on, None, !r.pending);
                     if r.pending {
-                        resp.on_hover_text("Reverts on save. Undo to change it.");
+                        resp.on_hover_text(crate::i18n::t(
+                            "settings.file_handler.hook_handlers.pending_locked_tip",
+                        ));
                     } else if resp.changed() {
                         r.on = shown_on;
                     }
@@ -200,7 +202,7 @@ fn draw_row(ui: &mut egui::Ui, th: &Theme, r: &mut Row) {
                             tag_disabled(ui, th, "reverts on save", false);
                         } else if r.edited {
                             tag(ui, th, "edited", TagVariant::Default, false).on_hover_text(
-                                "Changed in your settings. Updates to the default no longer apply.",
+                                crate::i18n::t("settings.file_handler.hook_handlers.edited_tip"),
                             );
                         }
                     });
@@ -227,7 +229,10 @@ fn draw_row(ui: &mut egui::Ui, th: &Theme, r: &mut Row) {
                         let resp = if r.pending {
                             resp
                         } else {
-                            resp.on_hover_text(format!("Go back to the default from {}.", r.origin))
+                            resp.on_hover_text(crate::i18n::t_fmt(
+                                "settings.file_handler.hook_handlers.revert_tip",
+                                r.origin,
+                            ))
                         };
                         if resp.clicked() {
                             r.pending = !r.pending;

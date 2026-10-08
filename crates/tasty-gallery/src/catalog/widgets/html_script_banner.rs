@@ -1051,6 +1051,6 @@ mod tests {
             assert_ne!(text, key, "{key} is missing from lang/en.toml");
             assert!(!text.is_empty(), "{key}");
         }
-        assert_eq!(t(TITLE), "Scripts in this document are blocked");
+        assert_eq!(t(TITLE), crate::i18n::t("banner.html_script.title"));
     }
 }

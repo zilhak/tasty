@@ -217,8 +217,8 @@ pub fn paint_cycle_banner(ui: &mut egui::Ui, theme: &Theme, canvas: egui::Rect, 
 fn paint_lod_chip(ui: &mut egui::Ui, theme: &Theme, canvas: egui::Rect, lod: Lod) {
     let text = match lod {
         Lod::Full => return,
-        Lod::Compact => "names only — zoom in for status",
-        Lod::Block => "status blocks — zoom in for names",
+        Lod::Compact => crate::i18n::t("dag.lod.compact"),
+        Lod::Block => crate::i18n::t("dag.lod.block"),
     };
     let inset = theme.dag_chrome_inset().value();
     let pad = theme.spacing_sm.value();

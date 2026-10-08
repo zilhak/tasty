@@ -249,7 +249,7 @@ pub(super) fn mouse_capture_banner_body(
         ui.vertical(|ui| {
             ui.set_width(body_w);
             ui.spacing_mut().item_spacing.y = theme.banner_text_gap().value();
-            title_line(ui, theme, "Mouse input captured");
+            title_line(ui, theme, crate::i18n::t("banner.mouse_capture.title"));
             if let Some(text) = body {
                 body_line(ui, theme, text);
                 return;
@@ -500,9 +500,9 @@ fn blacklist_editor(ui: &mut egui::Ui, theme: &Theme, empty: bool) {
 
             if empty {
                 ui.label(
-                    egui::RichText::new(
-                        "No programs excluded — clicks are sent to capturing apps.",
-                    )
+                    egui::RichText::new(crate::i18n::t(
+                        "settings.terminal.mouse_capture_blacklist_empty",
+                    ))
                     .size(theme.font_size_caption.value())
                     .color(theme.text_muted().to_egui()),
                 );
@@ -525,7 +525,9 @@ fn blacklist_editor(ui: &mut egui::Ui, theme: &Theme, empty: bool) {
                         .show(ui, theme);
                     let mut buf = String::new();
                     Input::new()
-                        .placeholder("process name or pattern, e.g. htop or ht*")
+                        .placeholder(crate::i18n::t(
+                            "settings.terminal.mouse_capture_blacklist_add_placeholder",
+                        ))
                         .mono(true)
                         .show(ui, theme, &mut buf);
                 });
@@ -863,7 +865,7 @@ fn mouse_capture_menu(ui: &mut egui::Ui, theme: &Theme, app: &str, width: f32) {
                 ui,
                 theme,
                 icons::BELL,
-                "Turn off this notice for ",
+                crate::i18n::t("popup.mouse_capture_banner_menu.suppress_prefix"),
                 app,
                 "",
                 true,
@@ -872,7 +874,7 @@ fn mouse_capture_menu(ui: &mut egui::Ui, theme: &Theme, app: &str, width: f32) {
                 ui,
                 theme,
                 icons::MOUSE,
-                "Disable mouse capture for ",
+                crate::i18n::t("popup.mouse_capture_banner_menu.disable_prefix"),
                 app,
                 "",
                 false,

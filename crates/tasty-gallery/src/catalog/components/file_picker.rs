@@ -940,7 +940,7 @@ fn body(ui: &mut egui::Ui, theme: &Theme, v: Variant, body_h: LogicalPx) {
             theme,
             v.w,
             body_h,
-            CenterState::empty(icons::FOLDER_OPEN, "This folder is empty"),
+            CenterState::empty(icons::FOLDER_OPEN, crate::i18n::t("explorer.state.empty")),
         ),
         FpState::ErrorPerm => center(
             ui,

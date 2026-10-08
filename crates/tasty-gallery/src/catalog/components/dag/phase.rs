@@ -20,7 +20,9 @@ pub enum Phase {
     RetryWait { run: u32 },
 }
 
-const RETRY_OR_CANCEL: &str = "Retry or cancel it to let the graph continue.";
+fn retry_or_cancel() -> &'static str {
+    crate::i18n::t("dag.why.retry_or_cancel")
+}
 const LOST_REASON: &str = "run result lost: pid 4242 ended after a host restart and its exit status could not be collected";
 
 impl Node {
@@ -100,7 +102,7 @@ impl Node {
             }
             (Status::Unknown, _, Some(reason)) => {
                 lines.push(format!("Why: {reason}"));
-                lines.push(RETRY_OR_CANCEL.into());
+                lines.push(retry_or_cancel().into());
             }
             _ => {}
         }
@@ -125,7 +127,7 @@ impl Node {
 /// 상세 패널의 알 수 없음 문구 — 이유와 그래프를 잇는 방법.
 pub fn unknown_lines(node: &Node) -> Option<(&str, &'static str)> {
     match (&node.status, &node.reason) {
-        (Status::Unknown, Some(reason)) => Some((reason, RETRY_OR_CANCEL)),
+        (Status::Unknown, Some(reason)) => Some((reason, retry_or_cancel())),
         _ => None,
     }
 }
@@ -324,7 +326,10 @@ mod tests {
     fn hover_text_matches_the_design_why_lines() {
         assert_eq!(
             unknown_node().hover_text(),
-            format!("deploy:site \u{2014} Unknown\nWhy: {LOST_REASON}\n{RETRY_OR_CANCEL}")
+            format!(
+                "deploy:site \u{2014} Unknown\nWhy: {LOST_REASON}\n{}",
+                retry_or_cancel()
+            )
         );
         assert_eq!(
             awaiting_node().hover_text(),

@@ -33,16 +33,18 @@ const QUIT: &[InfoModalButton<'static>] = &[InfoModalButton {
     label: "Quit",
     variant: ButtonVariant::Primary,
 }];
-const PERMISSIONS_BUTTONS: &[InfoModalButton<'static>] = &[
-    InfoModalButton {
-        label: "Open permission settings",
-        variant: ButtonVariant::Secondary,
-    },
-    InfoModalButton {
-        label: "OK",
-        variant: ButtonVariant::Primary,
-    },
-];
+fn permissions_buttons() -> [InfoModalButton<'static>; 2] {
+    [
+        InfoModalButton {
+            label: crate::i18n::t("macos_permissions.notice.open_settings"),
+            variant: ButtonVariant::Secondary,
+        },
+        InfoModalButton {
+            label: "OK",
+            variant: ButtonVariant::Primary,
+        },
+    ]
+}
 
 /// 모달 한 장. 높이는 직전 프레임에 잰 본문 높이로 정하며, 첫 프레임은 상한으로 그린다.
 #[allow(clippy::too_many_arguments)] // reason: 한 장의 입력(제목·본문·강조·버튼·스크롤)을 그대로 받는다.
@@ -134,7 +136,7 @@ fn shell_cluster(ui: &mut egui::Ui, theme: &Theme, key: &str, label: &str, db: b
                 ui,
                 theme,
                 key,
-                "Database initialization error",
+                crate::i18n::t("db_error.title"),
                 DB_LOCKED,
                 false,
                 QUIT,
@@ -402,10 +404,10 @@ pub fn draw_permissions(ui: &mut egui::Ui, theme: &Theme) {
                             ui,
                             th,
                             key,
-                            "Some permissions are not granted",
+                            crate::i18n::t("macos_permissions.notice.title"),
                             &permissions_notice(fda),
                             true,
-                            PERMISSIONS_BUTTONS,
+                            &permissions_buttons(),
                             Some(scroll),
                         );
                     });
@@ -497,10 +499,10 @@ pub fn draw_permission_branches(ui: &mut egui::Ui, theme: &Theme) {
                             ui,
                             th,
                             key,
-                            "Some permissions are not granted",
+                            crate::i18n::t("macos_permissions.notice.title"),
                             &permissions_notice(fda),
                             true,
-                            PERMISSIONS_BUTTONS,
+                            &permissions_buttons(),
                             Some(1.0),
                         );
                     });

@@ -184,7 +184,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                         path: "~/.ssh/config",
                         in_profiles_tag: "in profiles",
                         add_label: "Add profile",
-                        empty_message: "No hosts in ~/.ssh/config.",
+                        empty_message: crate::i18n::t("remote_tool.local_ssh_empty"),
                         hosts: LOCAL_HOSTS,
                     },
                 );
@@ -193,13 +193,23 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         // 호스트 없음·파일 없음·못 읽음은 한 줄 muted 문구만 바뀐다. 못 읽음은 원인을 나누지 않는다.
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing.y = theme.spacing_md.value();
-            ssh_state_card(ui, theme, "no hosts", "No hosts in ~/.ssh/config.");
-            ssh_state_card(ui, theme, "no file", "No ~/.ssh/config found.");
+            ssh_state_card(
+                ui,
+                theme,
+                "no hosts",
+                crate::i18n::t("remote_tool.local_ssh_empty"),
+            );
+            ssh_state_card(
+                ui,
+                theme,
+                "no file",
+                crate::i18n::t("remote_tool.local_ssh_missing"),
+            );
             ssh_state_card(
                 ui,
                 theme,
                 "unreadable config (any open error · directory · not UTF-8)",
-                "Can't read ~/.ssh/config. Check the file and its permissions.",
+                crate::i18n::t("remote_tool.local_ssh_unreadable"),
             );
         });
     });
@@ -420,7 +430,7 @@ fn attach_row(ui: &mut egui::Ui, theme: &Theme, a: &Attach) {
     if a.inactive {
         chips.push(RemoteRowChip::Warn {
             text: "inactive",
-            tooltip: "Inactive — the referenced ssh profile or inline shell isn't reachable.",
+            tooltip: crate::i18n::t("remote_tool.attach_inactive_hint"),
         });
     }
     remote_list_row(
@@ -499,7 +509,10 @@ pub fn draw_attach_form(ui: &mut egui::Ui, theme: &Theme) {
             ("inline", "host · user · port · shell · passkey"),
             ("remote tasty", "Executable (def. tasty)"),
             ("port", "auto / subcommand / file-unix / file-windows"),
-            ("port file", "optional — overrides port mode"),
+            (
+                "port file",
+                crate::i18n::t("remote_tool.attach_port_file_ph"),
+            ),
         ],
         &[
             TokenChip::new(
@@ -774,7 +787,7 @@ fn profile_row(ui: &mut egui::Ui, theme: &Theme, p: &Profile) {
                         ui,
                         theme,
                         "passkey missing",
-                        "Referenced passkey not found.",
+                        crate::i18n::t("remote_tool.passkey_missing_hint"),
                     );
                 }
                 if ssh {
@@ -788,7 +801,7 @@ fn profile_row(ui: &mut egui::Ui, theme: &Theme, p: &Profile) {
                 }
                 if p.failed {
                     ui.label(
-                        egui::RichText::new("detection failed (disabled)")
+                        egui::RichText::new(crate::i18n::t("remote_tool.detect_failed"))
                             .size(theme.font_size_caption.value())
                             .color(theme.accent_danger().to_egui()),
                     );

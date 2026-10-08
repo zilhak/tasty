@@ -26,11 +26,12 @@ const ROWS: [(&str, bool); 5] = [
 ];
 
 /// 본체 settings.appearance.*_tooltip 의 영어 문구.
-const LINE_HEIGHT_HINT: &str =
-    "Line height multiplier. 1.0 = tight (best for ASCII art), 1.2 = comfortable reading.";
-const SCALE_MODE_HINT: &str = "Auto: Adjusts font rendering to match monitor DPI.\nSame physical \
-     text size across different monitors.\n\nFixed: Uses the same pixel size regardless of DPI.\n\
-     More cells on high-DPI monitors, smaller text.";
+fn line_height_hint() -> &'static str {
+    crate::i18n::t("settings.appearance.line_height_tooltip")
+}
+fn scale_mode_hint() -> &'static str {
+    crate::i18n::t("settings.appearance.font_scale_mode_tooltip")
+}
 
 thread_local! {
     // 짝 둘 × 테마 둘 × 행 다섯의 (입력 버퍼, Use default) 상태.
@@ -159,8 +160,8 @@ fn font_override(ui: &mut egui::Ui, th: &Theme, long: bool, state: &mut [(String
             .iter()
             .enumerate()
             .map(|(i, (label, _))| match i {
-                3 => SettingsRow::new(label).hint(LINE_HEIGHT_HINT),
-                4 => SettingsRow::new(label).hint(SCALE_MODE_HINT),
+                3 => SettingsRow::new(label).hint(line_height_hint()),
+                4 => SettingsRow::new(label).hint(scale_mode_hint()),
                 _ => SettingsRow::new(label),
             })
             .collect();

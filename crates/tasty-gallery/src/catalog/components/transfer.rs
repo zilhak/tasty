@@ -384,7 +384,7 @@ fn error_card(ui: &mut egui::Ui, theme: &Theme, name: &str, reason: &str, retry:
                         .color(theme.text_primary().to_egui()),
                 );
                 ui.label(
-                    egui::RichText::new(" could not be received.")
+                    egui::RichText::new(crate::i18n::t("transfer.error.body_suffix"))
                         .size(theme.font_size_body.value())
                         .color(theme.text_secondary().to_egui()),
                 );

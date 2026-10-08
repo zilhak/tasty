@@ -17,19 +17,21 @@ use crate::catalog::spec::{self, StageVariant, TokenChip};
 /// 값이 없다. settings_remote_transfer와 같은 값을 쓴다.
 const WIDTH: LogicalPx = LogicalPx(560.0);
 
-const FDA_HINT: &str =
-    "macOS has no API to report Full Disk Access, so this state is inferred and can be wrong.";
-const FOLDER_HINT: &str =
-    "Checking a folder would itself open a permission prompt, so Tasty does not check.";
-const DETECTION_NOTE: &str = "These states are a snapshot from startup, from opening this page, \
-     and from this window regaining focus. Nothing in Tasty is blocked by them; they only decide \
-     whether the startup notice appears.";
-const REQUEST_NOTE: &str = "Asks for folder access, then screen recording, one prompt at a time. \
-     Items you already allowed or denied are not asked again, and a denied item can only be \
-     restored in System Settings. Full Disk Access cannot be requested by an app: use Open \
-     System Settings in its row and add Tasty yourself.";
-const REQUESTING_NOTE: &str = "Requesting permissions. Answer each prompt as it appears; the next \
-     one shows after you answer.";
+fn fda_hint() -> &'static str {
+    crate::i18n::t("settings.macos_permissions.full_disk_access_hint")
+}
+fn folder_hint() -> &'static str {
+    crate::i18n::t("settings.macos_permissions.file_access_hint")
+}
+fn detection_note() -> &'static str {
+    crate::i18n::t("settings.macos_permissions.detection_note")
+}
+fn request_note() -> &'static str {
+    crate::i18n::t("settings.macos_permissions.request_note")
+}
+fn requesting_note() -> &'static str {
+    crate::i18n::t("settings.macos_permissions.requesting")
+}
 
 /// 시안의 시나리오. (Full Disk Access, 화면 기록, 손쉬운 사용)
 #[derive(Clone, Copy)]
@@ -73,7 +75,9 @@ fn word(state: PermState) -> &'static str {
         PermState::Granted => "Granted",
         PermState::Missing => "Not granted",
         PermState::Unknown => "Unknown",
-        PermState::NotObservable => "Cannot check automatically",
+        PermState::NotObservable => {
+            crate::i18n::t("settings.macos_permissions.status_not_observable")
+        }
     }
 }
 
@@ -227,14 +231,16 @@ fn pane(ui: &mut egui::Ui, theme: &Theme, key: &str, scenario: Scenario, debug: 
     let mut rows = vec![
         PermRow {
             label: "Full Disk Access",
-            hint: Some(FDA_HINT),
+            hint: Some(fda_hint()),
             // 처방 줄은 본체와 같은 함수·번역 키로 골라 사본을 두지 않는다.
             detail: fda_settings_detail_key(fda == PermState::Missing, scenario.branch())
                 .map(crate::i18n::t),
             tag: None,
             state: fda,
             state_label: word(fda),
-            action: Some("Open System Settings"),
+            action: Some(crate::i18n::t(
+                "settings.macos_permissions.open_full_disk_access",
+            )),
         },
         PermRow {
             label: "Screen recording",
@@ -247,8 +253,10 @@ fn pane(ui: &mut egui::Ui, theme: &Theme, key: &str, scenario: Scenario, debug: 
         },
         PermRow {
             label: "Folder access",
-            hint: Some(FOLDER_HINT),
-            detail: Some("Downloads · Documents · Desktop · volumes"),
+            hint: Some(folder_hint()),
+            detail: Some(crate::i18n::t(
+                "settings.macos_permissions.file_access_detail",
+            )),
             tag: None,
             state: PermState::NotObservable,
             state_label: word(PermState::NotObservable),
@@ -257,7 +265,7 @@ fn pane(ui: &mut egui::Ui, theme: &Theme, key: &str, scenario: Scenario, debug: 
     ];
     if debug {
         rows.push(PermRow {
-            label: "Accessibility (key injection)",
+            label: crate::i18n::t("settings.macos_permissions.accessibility_label"),
             hint: None,
             detail: None,
             tag: Some("debug"),
@@ -284,10 +292,10 @@ fn pane(ui: &mut egui::Ui, theme: &Theme, key: &str, scenario: Scenario, debug: 
                 &MacPermissionsView {
                     id_salt: egui::Id::new("gallery_mac_permissions").with(key),
                     rows: &rows,
-                    detection_note: DETECTION_NOTE,
-                    request_label: "Request all permissions",
-                    request_note: REQUEST_NOTE,
-                    requesting_note: REQUESTING_NOTE,
+                    detection_note: detection_note(),
+                    request_label: crate::i18n::t("settings.macos_permissions.request_all"),
+                    request_note: request_note(),
+                    requesting_note: requesting_note(),
                     requesting: matches!(scenario, Scenario::Requesting),
                 },
             );

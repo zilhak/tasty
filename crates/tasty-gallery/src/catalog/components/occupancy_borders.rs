@@ -164,7 +164,11 @@ fn force_detach_confirm(ui: &mut egui::Ui, theme: &Theme) {
                     theme.icon_glyph_size_md,
                     theme.accent_danger().to_egui(),
                 );
-                kit::title(ui, theme, "Force detach this workspace?");
+                kit::title(
+                    ui,
+                    theme,
+                    crate::i18n::t("attach.force_detach_confirm_title"),
+                );
             });
             kit::body(
                 ui,

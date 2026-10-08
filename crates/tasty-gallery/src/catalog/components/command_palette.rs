@@ -16,7 +16,14 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             kit::raised_fill(theme),
             |ui| {
                 kit::region_sym(ui, theme.spacing_md, theme.spacing_md, |ui| {
-                    kit::field(ui, theme, None, "Type to search commands…", true, false);
+                    kit::field(
+                        ui,
+                        theme,
+                        None,
+                        crate::i18n::t("command_palette.placeholder"),
+                        true,
+                        false,
+                    );
                 });
                 kit::hsep(ui, theme);
 

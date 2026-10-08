@@ -78,7 +78,7 @@ fn draw_default_preview(ui: &mut egui::Ui, theme: &Theme, phase_text: &str) {
 }
 
 pub fn draw_default(ui: &mut egui::Ui, theme: &Theme) {
-    draw_default_preview(ui, theme, "Initializing graphics…");
+    draw_default_preview(ui, theme, crate::i18n::t("boot.phase_gpu_init"));
     meta(
         ui,
         theme,
@@ -128,9 +128,9 @@ pub fn draw_phases(ui: &mut egui::Ui, theme: &Theme) {
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing.x = theme.spacing_lg.value();
         for text in [
-            "Initializing graphics…",
-            "Loading plugins…",
-            "Restoring layout…",
+            crate::i18n::t("boot.phase_gpu_init"),
+            crate::i18n::t("boot.phase_waiting_plugins"),
+            crate::i18n::t("boot.phase_restoring_layout"),
         ] {
             draw_frame(
                 ui,
@@ -229,13 +229,15 @@ pub fn draw_latte(ui: &mut egui::Ui, _theme: &Theme) {
 
 /// 종료 단계 비교 칸을 줄여 보이는 배율. 시안 `BootFrame w={640} h={480} z={0.5}`.
 const SHUTDOWN_PHASE_ZOOM: f32 = 0.5;
-/// 종료 단계 문구. 본체 `ShutdownPhase::text_key`의 영어 문구와 같은 순서다.
-const SHUTDOWN_PHASES: [&str; 4] = [
-    "Saving layout…",
-    "Stopping background worker…",
-    "Closing surfaces…",
-    "Stopping plugins…",
-];
+/// 종료 단계 문구. 본체 `ShutdownPhase::text_key`의 키를 같은 순서로 읽는다.
+fn shutdown_phases() -> [&'static str; 4] {
+    [
+        crate::i18n::t("shutdown.phase_saving_layout"),
+        crate::i18n::t("shutdown.phase_stopping_background_worker"),
+        crate::i18n::t("shutdown.phase_closing_surfaces"),
+        crate::i18n::t("shutdown.phase_stopping_plugins"),
+    ]
+}
 
 /// `canvas` 크기 창을 `zoom` 배율로 줄여 그린다. 크기 토큰도 같은 배율의 Theme 에서 읽는다.
 fn draw_scaled_frame(
@@ -257,7 +259,7 @@ fn draw_scaled_frame(
 
 /// 시안 "Shutdown screen": 부팅과 같은 화면에 종료 단계 문구만 다르다.
 pub fn draw_shutdown(ui: &mut egui::Ui, theme: &Theme) {
-    draw_default_preview(ui, theme, SHUTDOWN_PHASES[0]);
+    draw_default_preview(ui, theme, shutdown_phases()[0]);
     ui.add_space(theme.spacing_lg.value());
     egui::Grid::new("shutdown_phase_grid")
         .num_columns(2)
@@ -266,7 +268,7 @@ pub fn draw_shutdown(ui: &mut egui::Ui, theme: &Theme) {
             theme.spacing_lg.value(),
         ))
         .show(ui, |ui| {
-            for (i, text) in SHUTDOWN_PHASES.iter().enumerate() {
+            for (i, text) in shutdown_phases().iter().enumerate() {
                 draw_scaled_frame(ui, theme, CANVAS_MIN, SHUTDOWN_PHASE_ZOOM, text);
                 if i % 2 == 1 {
                     ui.end_row();
@@ -282,7 +284,10 @@ pub fn draw_shutdown(ui: &mut egui::Ui, theme: &Theme) {
                 "identical to boot (lockup → space-xl → spinner → space-lg → phase slot)",
             ),
             ("1 · SavingLayout", "Saving layout…"),
-            ("2 · ReclaimingBootWorker", "Stopping background worker…"),
+            (
+                "2 · ReclaimingBootWorker",
+                crate::i18n::t("shutdown.phase_stopping_background_worker"),
+            ),
             ("3 · ClosingSurfaces", "Closing surfaces…"),
             ("4 · StoppingPlugins", "Stopping plugins…"),
             ("nothing to wait for", "no frame — the window closes"),
@@ -346,17 +351,15 @@ fn draw_shell_setup_frame(
     let win = os == SetupOs::Win;
     let view = ShellSetupView {
         title: "Choose a shell",
-        subtitle: "New terminals start this shell. You can change it later in Settings.",
-        git_bash_notice: win.then_some(
-            "Git Bash was not found. Install Git for Windows, or enter the path to bash.exe.",
-        ),
+        subtitle: crate::i18n::t("boot.shell_setup.subtitle"),
+        git_bash_notice: win.then_some(crate::i18n::t("boot.shell_setup.git_bash_missing")),
         placeholder: if win {
             "C:/Program Files/Git/bin/bash.exe"
         } else {
             "/bin/zsh"
         },
-        missing: "No file at this path",
-        not_shell: "Not a bash or zsh executable",
+        missing: crate::i18n::t("boot.shell_setup.check_missing"),
+        not_shell: crate::i18n::t("boot.shell_setup.check_not_shell"),
         valid: "Shell found",
         quit: "Quit",
         confirm: "Use this shell",

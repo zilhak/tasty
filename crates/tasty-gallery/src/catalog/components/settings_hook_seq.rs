@@ -63,8 +63,8 @@ fn editor_card(
     };
     let view = SequenceEditorView {
         placeholder: "system.info",
-        help: "One call per line: method, then optional JSON params. Lines starting with # are skipped and are not kept.",
-        empty_note: "No calls. The handler does nothing.",
+        help: crate::i18n::t("settings.file_handler.hook_handlers.seq_help"),
+        empty_note: crate::i18n::t("settings.file_handler.hook_handlers.seq_empty"),
         cancel: "Cancel",
         apply: "Apply",
         alert_icon: &alert,

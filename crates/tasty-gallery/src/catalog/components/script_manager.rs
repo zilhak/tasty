@@ -213,76 +213,76 @@ fn script_row(ui: &mut egui::Ui, theme: &Theme, s: &Seed) {
             theme.spacing_sm.value() as i8,
         ))
         .show(ui, |ui| {
-    ui.horizontal_top(|ui| {
-        ui.spacing_mut().item_spacing.x = theme.spacing_md.value();
-        ui.vertical(|ui| {
-            ui.add_space(ROW_LINE_GAP.value());
-            kit::icon(
-                ui,
-                icons::SCRIPT,
-                theme.icon_glyph_size_md,
-                theme.text_muted().to_egui(),
-            );
-        });
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
-            ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-            IconButton::new()
-                .variant(IconButtonVariant::Ghost)
-                .size(tasty_ui_widgets::ControlSize::Sm)
-                .show(ui, theme, &|ui, rect, c| {
-                    icons::TRASH.image(rect.width(), c).paint_at(ui, rect)
+            ui.horizontal_top(|ui| {
+                ui.spacing_mut().item_spacing.x = theme.spacing_md.value();
+                ui.vertical(|ui| {
+                    ui.add_space(ROW_LINE_GAP.value());
+                    kit::icon(
+                        ui,
+                        icons::SCRIPT,
+                        theme.icon_glyph_size_md,
+                        theme.text_muted().to_egui(),
+                    );
                 });
-            IconButton::new()
-                .variant(IconButtonVariant::Ghost)
-                .size(tasty_ui_widgets::ControlSize::Sm)
-                .show(ui, theme, &|ui, rect, c| {
-                    icons::EDIT.image(rect.width(), c).paint_at(ui, rect)
-                });
-            IconButton::new()
-                .variant(IconButtonVariant::Ghost)
-                .size(tasty_ui_widgets::ControlSize::Sm)
-                .show(ui, theme, &|ui, rect, c| {
-                    icons::KEYBOARD.image(rect.width(), c).paint_at(ui, rect)
-                });
-            if s.shortcut.is_empty() {
-                ui.label(
-                    egui::RichText::new("Unbound")
-                        .size(theme.font_size_term_sm.value())
-                        .italics()
-                        .color(theme.text_disabled().to_egui()),
-                );
-            } else {
-                // RTL 배치에서도 보조 키 순서가 유지되도록 조각을 역순으로 전달한다.
-                kbd(ui, theme, &rtl_combo(s.shortcut));
-            }
-            ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
-                ui.spacing_mut().item_spacing.y = ROW_LINE_GAP.value();
-                ui.horizontal(|ui| {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
                     ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-                    ui.label(
-                        egui::RichText::new(s.name)
-                            .size(theme.font_size_body.value())
-                            .strong()
-                            .color(theme.text_primary().to_egui()),
-                    );
-                    if s.changed {
-                        changed_badge(ui, theme);
+                    IconButton::new()
+                        .variant(IconButtonVariant::Ghost)
+                        .size(tasty_ui_widgets::ControlSize::Sm)
+                        .show(ui, theme, &|ui, rect, c| {
+                            icons::TRASH.image(rect.width(), c).paint_at(ui, rect)
+                        });
+                    IconButton::new()
+                        .variant(IconButtonVariant::Ghost)
+                        .size(tasty_ui_widgets::ControlSize::Sm)
+                        .show(ui, theme, &|ui, rect, c| {
+                            icons::EDIT.image(rect.width(), c).paint_at(ui, rect)
+                        });
+                    IconButton::new()
+                        .variant(IconButtonVariant::Ghost)
+                        .size(tasty_ui_widgets::ControlSize::Sm)
+                        .show(ui, theme, &|ui, rect, c| {
+                            icons::KEYBOARD.image(rect.width(), c).paint_at(ui, rect)
+                        });
+                    if s.shortcut.is_empty() {
+                        ui.label(
+                            egui::RichText::new("Unbound")
+                                .size(theme.font_size_term_sm.value())
+                                .italics()
+                                .color(theme.text_disabled().to_egui()),
+                        );
+                    } else {
+                        // RTL 배치에서도 보조 키 순서가 유지되도록 조각을 역순으로 전달한다.
+                        kbd(ui, theme, &rtl_combo(s.shortcut));
                     }
+                    ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
+                        ui.spacing_mut().item_spacing.y = ROW_LINE_GAP.value();
+                        ui.horizontal(|ui| {
+                            ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+                            ui.label(
+                                egui::RichText::new(s.name)
+                                    .size(theme.font_size_body.value())
+                                    .strong()
+                                    .color(theme.text_primary().to_egui()),
+                            );
+                            if s.changed {
+                                changed_badge(ui, theme);
+                            }
+                        });
+                        script_path(ui, theme, s.dir, s.file);
+                        if s.changed {
+                            ui.label(
+                                egui::RichText::new(crate::i18n::t(
+                                    "settings.scripts.changed_help",
+                                ))
+                                .size(theme.font_size_caption.value())
+                                .color(theme.accent_warning().to_egui()),
+                            );
+                        }
+                        trigger_row(ui, theme, s.triggers);
+                    });
                 });
-                script_path(ui, theme, s.dir, s.file);
-                if s.changed {
-                    ui.label(
-                        egui::RichText::new(
-                            "File changed since registration — you'll be asked to confirm on next run.",
-                        )
-                        .size(theme.font_size_caption.value())
-                        .color(theme.accent_warning().to_egui()),
-                    );
-                }
-                trigger_row(ui, theme, s.triggers);
             });
-        });
-    });
         });
     let w = ui.available_width();
     let (rect, _) = ui.allocate_exact_size(
@@ -416,11 +416,12 @@ fn trigger_chip(ui: &mut egui::Ui, theme: &Theme, label: &str) {
 
 /// 목록이 들어갈 자리에 공용 CenterState 를 자연 높이로 그린다(본체 Settings 와 같은 호출).
 fn empty_state(ui: &mut egui::Ui, theme: &Theme) {
-    CenterState::empty(icons::SCRIPT, "No scripts registered")
-        .sub_line(Some(
-            "Click Add script to register a Lua script and bind it to a shortcut.",
-        ))
-        .show(ui, theme, None);
+    CenterState::empty(
+        icons::SCRIPT,
+        crate::i18n::t("settings.scripts.empty_title"),
+    )
+    .sub_line(Some(crate::i18n::t("settings.scripts.empty_body")))
+    .show(ui, theme, None);
 }
 
 fn meta_note(ui: &mut egui::Ui, theme: &Theme) {

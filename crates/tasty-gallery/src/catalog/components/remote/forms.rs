@@ -100,7 +100,7 @@ fn secret_area(ui: &mut egui::Ui, theme: &Theme) {
     p.text(
         rect.min + egui::vec2(theme.spacing_sm.value(), theme.spacing_sm.value()),
         egui::Align2::LEFT_TOP,
-        "Paste secret / key contents",
+        crate::i18n::t("remote_tool.value_inline_hint"),
         egui::FontId::monospace(theme.font_size_term_sm.value()),
         theme.text_placeholder().to_egui(),
     );
@@ -232,7 +232,7 @@ fn form_card(ui: &mut egui::Ui, theme: &Theme, variant: Variant, width: LogicalP
                         hint(
                             ui,
                             theme,
-                            "Auto-detects the remote shell once when saved (runs an SSH probe).",
+                            crate::i18n::t("remote_tool.shell_auto_hint"),
                             theme.text_muted().to_egui(),
                         );
                         form_row(ui, theme, "Passkey", |ui| {
@@ -294,7 +294,7 @@ fn form_card(ui: &mut egui::Ui, theme: &Theme, variant: Variant, width: LogicalP
                     hint(
                         ui,
                         theme,
-                        "Local-only. Profiles reference this passkey by name; the secret is never shared.",
+                        crate::i18n::t("remote_tool.passkey_value_note"),
                         theme.text_muted().to_egui(),
                     );
                 }
