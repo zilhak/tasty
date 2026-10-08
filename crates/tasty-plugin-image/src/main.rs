@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::mpsc;
 
-use doc::ImageDoc;
+use doc::{ImageDoc, SaveTarget};
 use serde_json::{Value, json};
 use tasty_plugin_protocol::ThemeWire;
 use tasty_plugin_sdk::file_watch::{self, StatGatedDigest, WatchCmd};
@@ -164,18 +164,29 @@ impl ImagePlugin {
         let doc = self.docs.get_mut(&sid).ok_or_else(|| {
             IpcMethodError::invalid_params(&format!("Surface {sid} is not an image"))
         })?;
-        let final_path = match explicit.or_else(|| doc.save_path()) {
+        let explicit_given = explicit.is_some();
+        let final_path = match explicit {
             Some(p) => p,
-            None => {
-                return Err(IpcMethodError::invalid_params(
-                    "No save path: provide 'path' or open a file first",
-                ));
-            }
+            None => match doc.save_target() {
+                SaveTarget::Write(p) => p,
+                SaveTarget::NoPath => {
+                    return Err(IpcMethodError::invalid_params(
+                        "No save path: provide 'path' or open a file first",
+                    ));
+                }
+                SaveTarget::Exists(p) => {
+                    return Err(IpcMethodError::invalid_params(&format!(
+                        "Save target already exists: {p}. Provide 'path' to save elsewhere"
+                    )));
+                }
+            },
         };
         match doc.save_png(&final_path) {
             Ok(()) => {
                 if doc.is_blank() {
                     doc.adopt_saved_path(final_path.clone());
+                } else if !explicit_given {
+                    doc.adopt_if_saved_elsewhere(&final_path);
                 }
                 // 직접 저장한 내용을 외부 변경으로 다시 읽지 않도록 감시 기준을 갱신한다.
                 let watched = doc.file_path.clone();
@@ -704,6 +715,43 @@ mod tests {
             "원래 파일이 새 캔버스로 덮어써지지 않아야 한다"
         );
         let _ = std::fs::remove_file(&path); // best-effort 정리 — 실패 무시.
+    }
+
+    /// 경로 없는 `image.save` 도 비-PNG 문서를 옆 `.png` 로 쓰고 문서를 옮기며, 그 파일이 이미
+    /// 있으면 -32602 로 거절하고 아무 파일도 바꾸지 않는다.
+    #[test]
+    fn saving_a_jpg_without_a_path_follows_the_png_beside_it_rule() {
+        let png = probe_path("ipc-save-jpg");
+        let jpg = png.with_extension("jpg");
+        image::RgbImage::from_pixel(4, 4, image::Rgb([255, 0, 0]))
+            .save(&jpg)
+            .expect("probe jpg 저장 실패");
+        let jpg_bytes = std::fs::read(&jpg).expect("jpg 읽기");
+        let (jpg_s, png_s) = (
+            jpg.to_string_lossy().into_owned(),
+            png.to_string_lossy().into_owned(),
+        );
+
+        let mut p = plugin_with_file(&jpg_s);
+        let out = p
+            .image_save(&json!({ "surface": 1 }))
+            .expect("옆 .png 가 없으면 저장해야 한다");
+        assert_eq!(out["path"], png_s.as_str());
+        let doc = p.docs.get_mut(&1).expect("문서가 있어야 한다");
+        assert_eq!(doc.file_path.as_deref(), Some(png_s.as_str()));
+        assert_eq!(doc.take_path_for_host().as_deref(), Some(png_s.as_str()));
+
+        let png_bytes = std::fs::read(&png).expect("png 읽기");
+        let mut p = plugin_with_file(&jpg_s);
+        let err = p.image_save(&json!({ "surface": 1 })).unwrap_err();
+        assert_eq!(err.code, -32602, "이미 있는 .png 는 덮어쓰지 않는다");
+        let doc = p.docs.get_mut(&1).expect("문서가 있어야 한다");
+        assert_eq!(doc.file_path.as_deref(), Some(jpg_s.as_str()));
+        assert_eq!(doc.take_path_for_host(), None);
+        assert_eq!(std::fs::read(&png).expect("png 읽기"), png_bytes);
+        assert_eq!(std::fs::read(&jpg).expect("jpg 읽기"), jpg_bytes);
+        let _ = std::fs::remove_file(&jpg); // best-effort 정리 — 실패 무시.
+        let _ = std::fs::remove_file(&png); // best-effort 정리 — 실패 무시.
     }
 
     #[test]

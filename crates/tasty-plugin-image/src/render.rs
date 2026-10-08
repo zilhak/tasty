@@ -156,17 +156,7 @@ fn draw_edit_controls(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, doc: &m
         .show(ui, theme)
         .clicked()
     {
-        if let Some(path) = doc.save_path() {
-            if let Err(e) = doc.save_png(&path) {
-                tracing::warn!("failed to save image: {e}");
-            } else {
-                doc.exit_edit_mode();
-                doc.reload_from_disk();
-            }
-        } else {
-            // New (blank) image — need a path first.
-            doc.save_path_popup = true;
-        }
+        doc.save_from_toolbar();
     }
 
     if Button::new(tr.t("image_viewer.cancel"))

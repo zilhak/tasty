@@ -151,6 +151,17 @@ pub enum EditState {
     },
 }
 
+/// 경로를 주지 않은 저장(도구 모음 Save, 경로 없는 `image.save`)이 쓸 곳.
+#[derive(Debug, PartialEq, Eq)]
+pub enum SaveTarget {
+    /// 이 경로에 PNG 로 쓴다.
+    Write(String),
+    /// 경로가 없다(새 캔버스).
+    NoPath,
+    /// 비-PNG 문서의 같은 이름 `.png` 가 이미 있다. 덮어쓰지 않는다.
+    Exists(String),
+}
+
 /// Per-surface image document state owned by the plugin.
 pub struct ImageDoc {
     /// `None` = blank canvas not yet saved to disk.
@@ -343,6 +354,43 @@ impl ImageDoc {
                 .to_string_lossy()
                 .to_string()
         })
+    }
+
+    /// 경로 없는 저장의 대상. PNG 문서는 자기 파일에 쓴다. 비-PNG 문서는 같은 폴더의 같은 이름
+    /// `.png` 에 쓰되, 그 파일이 이미 있으면 덮어쓰지 않는다. 원본 파일은 건드리지 않는다.
+    pub fn save_target(&self) -> SaveTarget {
+        let Some(target) = self.save_path() else {
+            return SaveTarget::NoPath;
+        };
+        let own_file = self.file_path.as_deref() == Some(target.as_str());
+        if !own_file && Path::new(&target).exists() {
+            SaveTarget::Exists(target)
+        } else {
+            SaveTarget::Write(target)
+        }
+    }
+
+    /// 경로 없는 저장이 문서와 다른 파일(비-PNG 의 `.png`)에 썼으면 문서를 그 파일로 옮긴다.
+    /// 옮긴 경로는 호스트에 알려 탭 제목·복원 경로·감시 대상이 따라오게 한다.
+    pub fn adopt_if_saved_elsewhere(&mut self, path: &str) {
+        if self.file_path.as_deref() != Some(path) {
+            self.adopt_saved_path(path.to_string());
+        }
+    }
+
+    /// 도구 모음 Save. 대상에 쓰고 편집을 끝내거나, 쓸 곳이 없으면 경로 입력 팝업을 연다.
+    pub fn save_from_toolbar(&mut self) {
+        match self.save_target() {
+            SaveTarget::Write(path) => match self.save_png(&path) {
+                Err(e) => tracing::warn!("failed to save image: {e}"),
+                Ok(()) => {
+                    self.adopt_if_saved_elsewhere(&path);
+                    self.exit_edit_mode();
+                    self.reload_from_disk();
+                }
+            },
+            SaveTarget::NoPath | SaveTarget::Exists(_) => self.save_path_popup = true,
+        }
     }
 
     pub fn is_blank(&self) -> bool {
@@ -970,6 +1018,91 @@ mod tests {
             doc.dir_images.is_empty(),
             "새 캔버스에서 원래 폴더의 이전·다음 이미지로 넘어가지 않아야 한다"
         );
+        let _ = std::fs::remove_file(&path); // best-effort 정리 — 실패 무시.
+    }
+
+    /// 같은 이름 `.png` 가 없는 JPG 문서의 쓸 경로를 만든다. 반환: (jpg, 옆 png).
+    fn probe_jpg(what: &str) -> (PathBuf, PathBuf) {
+        let png = probe_png_path(what);
+        let jpg = png.with_extension("jpg");
+        image::RgbImage::from_pixel(4, 4, image::Rgb([255, 0, 0]))
+            .save(&jpg)
+            .expect("probe jpg 저장 실패");
+        (jpg, png)
+    }
+
+    /// 비-PNG 문서의 Save 는 옆의 같은 이름 `.png` 에 쓰고 문서를 그 파일로 옮긴다.
+    /// 원본 JPG 는 그대로이고, 화면은 편집이 반영된 `.png` 를 보여 준다.
+    #[test]
+    fn toolbar_save_of_a_jpg_writes_a_png_beside_it_and_moves_the_document() {
+        let (jpg, png) = probe_jpg("save-jpg");
+        let jpg_bytes = std::fs::read(&jpg).expect("jpg 읽기");
+        let mut doc = ImageDoc::new(Some(jpg.to_string_lossy().into_owned()));
+        doc.ensure_loaded();
+        doc.enter_edit_mode();
+        doc.brush_color = Color32::BLUE;
+        doc.start_stroke();
+        doc.draw_line(Pos2::new(1.0, 1.0), Pos2::new(1.0, 1.0));
+        doc.finish_stroke();
+
+        doc.save_from_toolbar();
+        let png_s = png.to_string_lossy().into_owned();
+        assert!(png.exists(), "옆에 .png 를 써야 한다");
+        assert_eq!(doc.file_path.as_deref(), Some(png_s.as_str()));
+        assert_eq!(doc.take_path_for_host().as_deref(), Some(png_s.as_str()));
+        assert!(!doc.is_editing());
+        assert!(!doc.save_path_popup);
+        let shown = doc
+            .original_image
+            .as_ref()
+            .expect("저장한 파일을 다시 읽어야 한다");
+        assert_eq!(
+            shown.pixels[4 + 1],
+            Color32::BLUE,
+            "다시 읽은 화면에 편집이 남아 있어야 한다"
+        );
+        assert_eq!(
+            std::fs::read(&jpg).expect("jpg 읽기"),
+            jpg_bytes,
+            "원본 JPG 는 바뀌지 않아야 한다"
+        );
+        let _ = std::fs::remove_file(&jpg); // best-effort 정리 — 실패 무시.
+        let _ = std::fs::remove_file(&png); // best-effort 정리 — 실패 무시.
+    }
+
+    /// 같은 이름 `.png` 가 이미 있으면 덮어쓰지 않고 경로 입력 팝업을 연다. 편집은 그대로다.
+    #[test]
+    fn toolbar_save_of_a_jpg_does_not_overwrite_an_existing_png() {
+        let (jpg, png) = probe_jpg("save-jpg-exists");
+        write_probe_png(&png, [0, 255, 0]);
+        let png_bytes = std::fs::read(&png).expect("png 읽기");
+        let jpg_s = jpg.to_string_lossy().into_owned();
+        let mut doc = ImageDoc::new(Some(jpg_s.clone()));
+        doc.ensure_loaded();
+        doc.enter_edit_mode();
+        assert_eq!(
+            doc.save_target(),
+            SaveTarget::Exists(png.to_string_lossy().into_owned())
+        );
+
+        doc.save_from_toolbar();
+        assert!(doc.save_path_popup, "경로 입력 팝업을 열어야 한다");
+        assert!(doc.is_editing(), "편집 세션은 그대로 남아야 한다");
+        assert_eq!(doc.file_path.as_deref(), Some(jpg_s.as_str()));
+        assert_eq!(doc.take_path_for_host(), None);
+        assert_eq!(std::fs::read(&png).expect("png 읽기"), png_bytes);
+        let _ = std::fs::remove_file(&jpg); // best-effort 정리 — 실패 무시.
+        let _ = std::fs::remove_file(&png); // best-effort 정리 — 실패 무시.
+    }
+
+    /// PNG 문서는 자기 파일에 쓴다. 파일이 이미 있는 것이 정상이다.
+    #[test]
+    fn a_png_document_saves_over_its_own_file() {
+        let path = probe_png_path("save-own");
+        write_probe_png(&path, [255, 0, 0]);
+        let file = path.to_string_lossy().into_owned();
+        let doc = ImageDoc::new(Some(file.clone()));
+        assert_eq!(doc.save_target(), SaveTarget::Write(file));
         let _ = std::fs::remove_file(&path); // best-effort 정리 — 실패 무시.
     }
 
