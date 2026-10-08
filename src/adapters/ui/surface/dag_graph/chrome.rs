@@ -130,8 +130,9 @@ fn identity_group(
                 ),
                 super::model::skip_count_suffix(skipped, not_selected)
             ))
-            .size(theme.dag_row_count_font_size().value())
-            .color(theme.dag_row_count_fg().to_egui()),
+            .monospace()
+            .size(theme.font_size_caption.value())
+            .color(theme.dag_header_count_fg().to_egui()),
         );
     }
 }
