@@ -802,6 +802,7 @@ mod tests {
                 recovered: usize::from(bits & 512 != 0),
                 blocked: usize::from(bits & 1024 != 0),
                 succeeded_ends: usize::from(bits & 2048 != 0),
+                awaiting_input: 0,
             };
             out.insert(c.rollup());
         }

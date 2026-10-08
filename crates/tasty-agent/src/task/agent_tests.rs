@@ -322,6 +322,15 @@ fn the_session_link_belongs_to_the_running_attempt_only() {
     let got = store.get(1, &t.id).unwrap().unwrap();
     assert_eq!(got.attempt.as_ref().unwrap().agent, Some(link));
     assert_eq!(agent::phase(&got), Some("awaiting_input"));
+    let dags = group_tasks_into_dags(&store.list(1).unwrap());
+    assert_eq!(
+        dags[0].state_counts.awaiting_input, 1,
+        "DAG 요약이 입력 대기를 센다"
+    );
+    assert_eq!(
+        dags[0].rollup_state, "running",
+        "입력 대기도 rollup 은 실행 중이다"
+    );
     store
         .set_state(1, &t.id, TaskState::Cancelled, 3)
         .expect("cancel");

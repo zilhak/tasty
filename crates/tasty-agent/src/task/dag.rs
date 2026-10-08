@@ -45,12 +45,18 @@ pub struct DagStateCounts {
     /// 센다. fallback task 자신은 main 을 대신하므로 끝으로 세지 않는다. 실패가 섞인 DAG 가
     /// 부분 오류인지(끝까지 성공한 갈래가 있는지) 가르는 데 쓴다.
     pub succeeded_ends: usize,
+    /// `running` 중 agent 세션이 사람의 입력을 기다리는 task(`phase` 가 `awaiting_input`).
+    /// 화면이 DAG 목록 행에 따로 알린다. rollup 은 그대로 `running` 이다.
+    pub awaiting_input: usize,
 }
 
 impl DagStateCounts {
     fn add(&mut self, task: &Task) {
         if super::route::is_not_selected(task) {
             self.not_selected += 1;
+        }
+        if task.phase() == Some("awaiting_input") {
+            self.awaiting_input += 1;
         }
         match &task.state {
             TaskState::Waiting => self.waiting += 1,
