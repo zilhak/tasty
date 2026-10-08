@@ -26,6 +26,15 @@ idle/needs_input 상태를 보관한다. 마지막 상태 보고 시각 `last_st
 호스트는 접근할 때마다 실제 surface 목록과 대조해 사라진 자식을 제거한다. 재시작 후 첫
 접근에서도 이전 세션의 잔재를 정리한다.
 
+윈도우마다 engine 이 이 파일을 따로 읽는다. surface 는 한 engine 에만 있으므로 engine 은
+자기가 등록·변경·해제했거나 살아 있는 것을 본 surface 의 항목만 소유한다.
+
+- **저장**: 파일을 다시 읽어 소유한 surface 의 항목은 메모리 값으로, 나머지는 파일 값으로 합친 뒤
+  쓴다. 메모리도 합친 결과로 바꾼다. 그래서 한 윈도우의 저장이 다른 윈도우가 등록한 관계를 지우지 않는다.
+- **정리**: 이 engine 이 소유했는데 지금 이 engine 에 없는 surface 만 지운다. 다른 윈도우의 surface 나
+  재시작 뒤 아직 열지 않은 윈도우의 surface 는 이 engine 에 없어도 지우지 않는다. 그런 항목은 그 윈도우가
+  열려 정리하거나 surface 가 닫힐 때 지운다. 다시 열리지 않는 윈도우의 항목은 파일에 남는다.
+
 ### 상태 보고와 화면 알림
 
 `terminal.set_state --state needs_input`는 자식 상태만 갱신한다. 화면 표시를 담당하는
@@ -260,6 +269,8 @@ kill/release/respawn 세 경로가 같은 메시지를 쓴다. 실패는 `exit=1
 - Given 원격 attach로 hard 점유된 workspace의 child C When `terminal.kill` Then "hard-occupied" 에러 반환 + child 관계·holder 점유·surface 모두 그대로.
 - Given mirror workspace의 surface를 adopt한 child C When `terminal.kill` Then GUI는 `forwarded:true`(`killed_surface_id` 없음), headless는 mirror 사유 오류를 반환하고 child 관계·soft 점유·surface 모두 그대로.
 - Given 죽은 자식이 남은 registry When `terminal.children` Then reconcile 로 목록에서 제거.
+- Given 윈도우 두 개 When 각 윈도우에서 `terminal.adopt` 로 자식을 등록한다 Then 파일에 두 관계가 모두 남는다(`child_terminal.rs` 의 `children_registered_in_two_windows_both_survive_a_restart`).
+- Given 재시작 뒤 윈도우 하나만 열렸다 When 그 윈도우에서 `terminal.children` 이 정리를 돌린다 Then 아직 열지 않은 윈도우의 관계는 지우지 않는다(`reconcile_keeps_children_of_windows_it_does_not_own`).
 - Given 이미 존재하는 임의의 surface(spawn 으로 만들지 않은 일반 터미널 탭 포함) When `terminal.adopt{surface=P, target}` Then `occupancy_of(target)==Soft`·`holder.parent==P`·`terminal.children` 목록에 나타남.
 - Given 이미 등록된 child 또는 hard 점유 중인 대상 When `terminal.adopt` Then 에러 반환 + registry 불변.
 - Given 점유된 child C When `terminal.release` Then `occupancy_of(C)==None` + `terminal.children` 목록에서 사라짐 + surface(탭)는 여전히 열려있음(닫히지 않음).

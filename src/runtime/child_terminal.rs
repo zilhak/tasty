@@ -1,6 +1,11 @@
 //! 자식 터미널 surface의 부모·번호·보고된 상태를 보관하고 child-terminals.json에 저장한다.
 //! SessionToken의 권한 위임이나 task runner의 자식 프로세스 관리는 이 레지스트리의 역할이 아니다.
 //! 호출자가 실제 surface 목록과 대조해 없어진 항목을 정리한다.
+//!
+//! 윈도우(engine)마다 이 레지스트리를 따로 읽는다. surface 는 한 engine 에만 있으므로 각 engine 은
+//! 자기가 등록·변경했거나 살아 있는 것을 본 surface 의 항목만 소유한다. 저장할 때 파일을 다시 읽어
+//! 소유한 항목은 메모리 값으로, 나머지는 파일 값 그대로 합친다. 정리도 소유한 항목만 지운다.
+//! 그래서 한 윈도우의 저장·정리가 다른 윈도우나 아직 열지 않은 윈도우의 관계를 지우지 않는다.
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -42,31 +47,72 @@ pub struct ChildTerminalRegistry {
     /// load로 정하며 default는 저장 경로가 없다.
     #[serde(skip)]
     path: Option<PathBuf>,
+    /// 이 engine 이 소유한 surface. 저장 병합과 정리의 범위를 정한다.
+    #[serde(skip)]
+    owned: HashSet<u32>,
 }
 
 impl ChildTerminalRegistry {
     /// TASTY_HOME 아래에서 읽는다. 파일 읽기·파싱 실패는 빈 상태로 처리한다.
     pub fn load() -> Self {
         let path = tasty_utils::path::tasty_home().map(|d| d.join("child-terminals.json"));
-        let mut s = match &path {
-            Some(p) if p.exists() => match std::fs::read_to_string(p) {
-                Ok(text) => {
-                    serde_json::from_str::<ChildTerminalRegistry>(&text).unwrap_or_default()
-                }
-                Err(_) => Self::default(),
-            },
-            _ => Self::default(),
-        };
+        let mut s = path.as_deref().map(read_file).unwrap_or_default();
         s.path = path;
         s
     }
 
-    pub fn save(&self) {
-        let Some(path) = self.path.as_ref() else {
+    /// 파일을 다시 읽어 다른 engine 의 항목을 받아 합친 뒤 쓴다. 메모리도 합친 결과로 바꾼다.
+    pub fn save(&mut self) {
+        let Some(path) = self.path.clone() else {
             return;
         };
-        ensure_parent_dir(path);
-        self.write_json_to(path);
+        self.merge_from(read_file(&path));
+        ensure_parent_dir(&path);
+        self.write_json_to(&path);
+    }
+
+    /// 소유한 surface 의 항목은 그대로 두고, 나머지는 `disk` 의 값으로 바꾼다.
+    fn merge_from(&mut self, mut disk: Self) {
+        let owned = &self.owned;
+        let others = |key: &u32| !owned.contains(key);
+        disk.parent_of.retain(|child, _| others(child));
+        for (child, parent) in std::mem::take(&mut self.parent_of) {
+            if owned.contains(&child) {
+                disk.parent_of.insert(child, parent);
+            }
+        }
+        for list in disk.children.values_mut() {
+            list.retain(|c| others(&c.child_surface_id));
+        }
+        let my_parents: HashSet<u32> = self.children.keys().copied().collect();
+        for (parent, list) in std::mem::take(&mut self.children) {
+            let mine = list
+                .into_iter()
+                .filter(|c| owned.contains(&c.child_surface_id));
+            disk.children.entry(parent).or_default().extend(mine);
+        }
+        // 이 engine 이 지운 부모 목록은 파일에서도 지운다. 다른 engine 의 빈 목록은 그대로 둔다.
+        disk.children.retain(|parent, list| {
+            !list.is_empty() || my_parents.contains(parent) || others(parent)
+        });
+        for list in disk.children.values_mut() {
+            list.sort_by_key(|c| c.index);
+        }
+        merge_owned(&mut disk.next_index, &mut self.next_index, owned);
+        merge_owned(&mut disk.idle, &mut self.idle, owned);
+        merge_owned(&mut disk.needs_input, &mut self.needs_input, owned);
+        merge_owned(
+            &mut disk.last_state_report_at,
+            &mut self.last_state_report_at,
+            owned,
+        );
+        disk.path = self.path.take();
+        disk.owned = std::mem::take(&mut self.owned);
+        *self = disk;
+    }
+
+    fn own(&mut self, surface: u32) {
+        self.owned.insert(surface);
     }
 
     fn write_json_to(&self, path: &std::path::Path) {
@@ -81,6 +127,7 @@ impl ChildTerminalRegistry {
     }
 
     pub(crate) fn reserve_index(&mut self, parent: u32) -> Result<u32, String> {
+        self.own(parent);
         let entry = self.next_index.entry(parent).or_insert(0);
         let index = *entry;
         *entry = entry.checked_add(1).ok_or("child index space exhausted")?;
@@ -89,6 +136,7 @@ impl ChildTerminalRegistry {
     }
 
     pub fn next_index_for(&mut self, parent: u32) -> u32 {
+        self.own(parent);
         let entry = self.next_index.entry(parent).or_insert(0);
         let idx = *entry;
         *entry += 1;
@@ -96,6 +144,8 @@ impl ChildTerminalRegistry {
     }
 
     pub fn register_child(&mut self, parent: u32, child: ChildEntry) {
+        self.own(parent);
+        self.own(child.child_surface_id);
         self.parent_of.insert(child.child_surface_id, parent);
         self.last_state_report_at
             .insert(child.child_surface_id, now_epoch_ms());
@@ -124,6 +174,7 @@ impl ChildTerminalRegistry {
         let Some(entry) = list.iter_mut().find(|c| c.index == index) else {
             return false;
         };
+        self.owned.insert(entry.child_surface_id);
         f(entry);
         true
     }
@@ -136,6 +187,7 @@ impl ChildTerminalRegistry {
         let list = self.children.get_mut(&parent)?;
         let pos = list.iter().position(|c| c.index == index)?;
         let removed = list.remove(pos);
+        self.owned.insert(removed.child_surface_id);
         self.parent_of.remove(&removed.child_surface_id);
         self.idle.remove(&removed.child_surface_id);
         self.needs_input.remove(&removed.child_surface_id);
@@ -155,6 +207,7 @@ impl ChildTerminalRegistry {
             return false;
         };
         list.remove(pos);
+        self.owned.insert(surface_id);
         self.parent_of.remove(&surface_id);
         self.idle.remove(&surface_id);
         self.needs_input.remove(&surface_id);
@@ -164,12 +217,14 @@ impl ChildTerminalRegistry {
 
     /// idle 값과 무관하게 needs_input도 해제한다. 대기 플래그가 남아 이후 idle·active를 가리지 않게 한다.
     pub fn set_idle(&mut self, child_surface: u32, idle: bool) {
+        self.own(child_surface);
         self.idle.insert(child_surface, idle);
         self.needs_input.insert(child_surface, false);
         self.stamp_state_report(child_surface);
     }
 
     pub fn set_needs_input(&mut self, child_surface: u32, val: bool) {
+        self.own(child_surface);
         self.needs_input.insert(child_surface, val);
         self.stamp_state_report(child_surface);
     }
@@ -221,18 +276,23 @@ impl ChildTerminalRegistry {
         }
     }
 
-    /// live에 없는 자식과 상태를 지우고, 빈 부모 목록과 다음 번호도 지운다.
+    /// `live` 는 이 engine 의 살아 있는 surface 다. 이 engine 이 소유했는데 `live` 에 없는 자식과 상태를
+    /// 지우고, 그래서 비거나 원래 빈 소유 부모의 목록과 다음 번호도 지운다. 다른 engine 이나 아직 열지
+    /// 않은 윈도우의 surface 는 `live` 에 없어도 지우지 않는다.
     /// 부모 자체의 생존 여부만으로 살아 있는 자식을 지우지는 않는다.
     pub fn reconcile_with_live_surfaces(&mut self, live: &HashSet<u32>) -> ReconcileSummary {
+        self.owned.extend(live.iter().copied());
+        let owned = &self.owned;
+        let dead = |sid: &u32| owned.contains(sid) && !live.contains(sid);
         let mut summary = ReconcileSummary::default();
 
         let mut dead_parents: Vec<u32> = Vec::new();
         for (parent, list) in self.children.iter_mut() {
             let before = list.len();
-            list.retain(|c| live.contains(&c.child_surface_id));
+            list.retain(|c| !dead(&c.child_surface_id));
             let removed = before - list.len();
             summary.removed_children += removed as u32;
-            if list.is_empty() {
+            if list.is_empty() && owned.contains(parent) {
                 dead_parents.push(*parent);
             }
         }
@@ -245,11 +305,10 @@ impl ChildTerminalRegistry {
             }
         }
 
-        self.parent_of.retain(|sid, _| live.contains(sid));
-        self.idle.retain(|sid, _| live.contains(sid));
-        self.needs_input.retain(|sid, _| live.contains(sid));
-        self.last_state_report_at
-            .retain(|sid, _| live.contains(sid));
+        self.parent_of.retain(|sid, _| !dead(sid));
+        self.idle.retain(|sid, _| !dead(sid));
+        self.needs_input.retain(|sid, _| !dead(sid));
+        self.last_state_report_at.retain(|sid, _| !dead(sid));
 
         summary
     }
@@ -261,6 +320,33 @@ pub fn now_epoch_ms() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0)
+}
+
+/// 파일 읽기·파싱 실패는 빈 상태로 처리한다.
+fn read_file(path: &std::path::Path) -> ChildTerminalRegistry {
+    if !path.exists() {
+        return ChildTerminalRegistry::default();
+    }
+    match std::fs::read_to_string(path) {
+        Ok(text) => serde_json::from_str(&text).unwrap_or_else(|e| {
+            tracing::warn!("child-terminal registry parse failed: {e}");
+            ChildTerminalRegistry::default()
+        }),
+        Err(e) => {
+            tracing::warn!("child-terminal registry read failed: {e}");
+            ChildTerminalRegistry::default()
+        }
+    }
+}
+
+/// `owned` 키는 `mine` 의 값(없으면 삭제)으로, 나머지는 `disk` 의 값으로 둔다.
+fn merge_owned<V>(disk: &mut HashMap<u32, V>, mine: &mut HashMap<u32, V>, owned: &HashSet<u32>) {
+    disk.retain(|key, _| !owned.contains(key));
+    for (key, value) in mine.drain() {
+        if owned.contains(&key) {
+            disk.insert(key, value);
+        }
+    }
 }
 
 fn ensure_parent_dir(path: &std::path::Path) {
@@ -536,5 +622,69 @@ mod tests {
         assert_eq!(s.list_children(20).len(), 1);
         assert_eq!(s.list_children(10).len(), 0);
         assert_eq!(s.list_children(30).len(), 0);
+    }
+
+    fn live(ids: &[u32]) -> HashSet<u32> {
+        ids.iter().copied().collect()
+    }
+
+    fn children_on_disk() -> Vec<(u32, u32)> {
+        let disk = ChildTerminalRegistry::load();
+        let mut pairs: Vec<(u32, u32)> = disk.parent_of.iter().map(|(c, p)| (*p, *c)).collect();
+        pairs.sort();
+        pairs
+    }
+
+    /// 윈도우 두 개가 각자 읽은 레지스트리로 자식을 등록해도 저장이 서로를 지우지 않는다.
+    #[test]
+    fn children_registered_in_two_windows_both_survive_a_restart() {
+        let _home = tasty_test_support::IsolatedHome::new();
+        let mut first = ChildTerminalRegistry::load();
+        let mut second = ChildTerminalRegistry::load();
+        let index = first.next_index_for(513);
+        first.register_child(513, entry(1027, index));
+        first.save();
+        let index = second.next_index_for(1026);
+        second.register_child(1026, entry(1028, index));
+        second.save();
+        assert_eq!(children_on_disk(), [(513, 1027), (1026, 1028)]);
+        assert_eq!(
+            second.list_children(513).len(),
+            1,
+            "save also refreshes the copy"
+        );
+
+        // 지운 것도 자기 항목만 파일에 반영한다.
+        assert!(first.unregister_child_by_surface(1027));
+        first.save();
+        assert_eq!(children_on_disk(), [(1026, 1028)]);
+
+        // 재시작 뒤 아직 정리를 거치지 않은 윈도우가 surface 를 닫아도 그 해제가 파일에 남는다.
+        let mut restarted = ChildTerminalRegistry::load();
+        assert!(restarted.unregister_child_by_surface(1028));
+        restarted.save();
+        assert_eq!(children_on_disk(), []);
+    }
+
+    /// 재시작 뒤 먼저 연 윈도우의 정리는 아직 열지 않은 윈도우의 관계를 지우지 않는다.
+    #[test]
+    fn reconcile_keeps_children_of_windows_it_does_not_own() {
+        let _home = tasty_test_support::IsolatedHome::new();
+        let mut before = ChildTerminalRegistry::load();
+        before.register_child(513, entry(1027, 0));
+        before.register_child(1026, entry(1028, 0));
+        before.save();
+
+        let mut first = ChildTerminalRegistry::load();
+        let summary = first.reconcile_with_live_surfaces(&live(&[513, 1027]));
+        assert!(!summary.changed());
+        first.save();
+        assert_eq!(children_on_disk(), [(513, 1027), (1026, 1028)]);
+
+        // 소유한 surface 가 사라지면 그것만 지운다.
+        let summary = first.reconcile_with_live_surfaces(&live(&[513]));
+        assert_eq!(summary.removed_children, 1);
+        first.save();
+        assert_eq!(children_on_disk(), [(1026, 1028)]);
     }
 }
