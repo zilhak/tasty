@@ -18,7 +18,7 @@
 
 - **Installed (list)**: 설치된 플러그인 목록. 각 항목:
   - **메타 줄**: 상세 이름 줄 아래에 작성자와 id 를 ` · ` 로 이은 mono caption·text-muted 한 줄. 작성자가 여럿이면 쉼표로 잇고, 작성자가 없으면 id 만 보인다. 홈페이지는 본문 `Homepage: <주소>` 줄에 따로 있다.
-  - **액션 바**: 상세 아래, 본문 스크롤 밖에 늘 보이는 바(위 1px 구분선). 왼쪽에 enable/disable Switch 와 현재 상태 라벨(`Enabled`/`Disabled`, 라벨을 눌러도 전환), 오른쪽에 `Configure`(ghost, 톱니 아이콘, 설정 창 Plugins 탭으로 이동)와 `Uninstall`(secondary, 위험 색 글자).
+  - **액션 바**: 상세 아래, 본문 스크롤 밖에 늘 보이는 바. 상세 열 폭 전체를 쓰고 열 아래 끝에 붙으며, 위 1px 구분선이 열 양끝에 닿는다. 왼쪽에 enable/disable Switch 와 현재 상태 라벨(`Enabled`/`Disabled`, 스위치와 한 컨트롤이라 라벨을 눌러도 전환되고 키보드 초점은 한 칸), 오른쪽에 `Configure`(ghost, 톱니 아이콘, 설정 창 Plugins 탭으로 이동)와 `Uninstall`(secondary, 위험 색 글자). 키보드 Tab 순서는 본문 다음 스위치 → Configure → Uninstall 로 화면 순서와 같다.
   - **health error** 인디케이터 (enable 상태인데 오류인 플러그인).
   - **권한 read-only 표시** (창에서 권한을 토글하지 않는다).
   - **절 배치**: 상세의 절 사이에는 구분선이 없고 `space-lg` 만큼 띄운다. `SURFACE KINDS`·`PERMISSIONS`·`COMMANDS`·`INSTALL PATH` 머리글은 대문자 mono micro·text-muted 이며 본문과 `space-sm` 떨어진다.

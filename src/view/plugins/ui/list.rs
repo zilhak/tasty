@@ -143,62 +143,84 @@ pub(super) fn draw_list_tab(
                 });
         });
 
-    egui::CentralPanel::default().show(ctx, |ui| {
-        let selected_entry = ui_state
-            .selected_id
-            .as_ref()
-            .and_then(|id| snapshot.plugins.iter().find(|p| &p.id == id))
-            .cloned();
-        let Some(entry) = selected_entry else {
-            vspace(ui, th.spacing_xl);
-            ui.label(t("plugins.none_selected"));
-            return;
-        };
+    let selected_entry = ui_state
+        .selected_id
+        .as_ref()
+        .and_then(|id| snapshot.plugins.iter().find(|p| &p.id == id))
+        .cloned();
+    let confirming = selected_entry
+        .as_ref()
+        .is_some_and(|e| ui_state.confirm_uninstall_id.as_ref() == Some(&e.id));
 
-        vspace(ui, th.spacing_sm);
-        // 액션 바가 창 안에 남도록 본문 스크롤 높이에서 바 높이를 뺀다.
-        let scroll_height =
-            (ui.available_height() - plugin_detail_bar_height(&th) - ui.spacing().item_spacing.y)
-                .max(0.0);
-        let confirming = ui_state.confirm_uninstall_id.as_ref() == Some(&entry.id);
-        egui::ScrollArea::vertical()
-            .auto_shrink([false, false])
-            .max_height(scroll_height)
-            .drag_to_scroll(false)
-            .show(ui, |ui| {
-                draw_detail_body(ui, &th, &entry, actions);
-                if confirming {
-                    vspace(ui, th.spacing_lg);
-                    draw_uninstall_confirm(ui, &th, &entry, ui_state, actions);
-                }
-            });
+    // 액션 바는 상세 열의 여백 밖, 열 폭 전체에 붙인다. 본문만 기본 패널 여백 안에 둔다.
+    // 키보드 초점 순서가 화면 순서(본문 → 바)를 따르도록 같은 패널 안에서 본문을 먼저 만든다.
+    let panel_frame = egui::Frame::central_panel(&ctx.style());
+    let margin = panel_frame.inner_margin;
+    egui::CentralPanel::default()
+        .frame(panel_frame.inner_margin(egui::Margin::ZERO))
+        .show(ctx, |ui| {
+            let full = ui.max_rect();
+            let bar_h = if selected_entry.is_some() {
+                plugin_detail_bar_height(&th)
+            } else {
+                0.0
+            };
+            let split = full.max.y - bar_h;
+            let body_rect = egui::Rect::from_min_max(
+                full.min + egui::vec2(margin.leftf(), margin.topf()),
+                egui::pos2(full.max.x - margin.rightf(), split),
+            );
+            let mut body = ui.new_child(
+                egui::UiBuilder::new()
+                    .max_rect(body_rect)
+                    .layout(egui::Layout::top_down(egui::Align::Min)),
+            );
+            let Some(entry) = &selected_entry else {
+                vspace(&mut body, th.spacing_xl);
+                body.label(t("plugins.none_selected"));
+                return;
+            };
+            vspace(&mut body, th.spacing_sm);
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .drag_to_scroll(false)
+                .show(&mut body, |ui| {
+                    draw_detail_body(ui, &th, entry, actions);
+                    if confirming {
+                        vspace(ui, th.spacing_lg);
+                        draw_uninstall_confirm(ui, &th, entry, ui_state, actions);
+                    }
+                });
 
-        let bar = plugin_detail_bar(
-            ui,
-            &th,
-            &PluginDetailBarView {
-                enabled: entry.enabled,
-                enabled_label: t("plugins.enabled"),
-                disabled_label: t("plugins.disabled"),
-                configure: t("plugins.configure"),
-                uninstall: t("plugins.uninstall"),
-            },
-        );
-        if bar.toggled {
-            actions.push(PluginsAction::SetEnabled {
-                id: entry.id.clone(),
-                enabled: !entry.enabled,
-            });
-        }
-        if bar.configure {
-            actions.push(PluginsAction::OpenSettings);
-        }
-        if bar.uninstall && !confirming {
-            ui_state.confirm_uninstall_id = Some(entry.id.clone());
-            ui.ctx()
-                .data_mut(|d| d.insert_temp(confirm_scroll_id(), true));
-        }
-    });
+            let mut bar_ui = ui.new_child(egui::UiBuilder::new().max_rect(
+                egui::Rect::from_min_max(egui::pos2(full.min.x, split), full.max),
+            ));
+            let bar = plugin_detail_bar(
+                &mut bar_ui,
+                &th,
+                &PluginDetailBarView {
+                    enabled: entry.enabled,
+                    enabled_label: t("plugins.enabled"),
+                    disabled_label: t("plugins.disabled"),
+                    configure: t("plugins.configure"),
+                    uninstall: t("plugins.uninstall"),
+                },
+            );
+            if bar.toggled {
+                actions.push(PluginsAction::SetEnabled {
+                    id: entry.id.clone(),
+                    enabled: !entry.enabled,
+                });
+            }
+            if bar.configure {
+                actions.push(PluginsAction::OpenSettings);
+            }
+            if bar.uninstall && !confirming {
+                ui_state.confirm_uninstall_id = Some(entry.id.clone());
+                ui.ctx()
+                    .data_mut(|d| d.insert_temp(confirm_scroll_id(), true));
+            }
+        });
 }
 
 /// 제거 확인 블록이 처음 그려질 때 스크롤해 보이게 하는 일회성 표시.
