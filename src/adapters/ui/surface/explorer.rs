@@ -1024,11 +1024,7 @@ fn handle_entry_interaction(
     }
     if resp.clicked() {
         let mods = ui.input(|i| i.modifiers);
-        if mods.command || mods.ctrl {
-            view.toggle_select(&entry.path);
-        } else {
-            view.select_only(&entry.path);
-        }
+        view.click_select(&entry.path, mods.command || mods.ctrl, mods.shift);
     }
 }
 
@@ -1525,11 +1521,7 @@ fn detail_view(
             }
         } else {
             let mods = ui.input(|inp| inp.modifiers);
-            if mods.command || mods.ctrl {
-                view.toggle_select(&e.path);
-            } else {
-                view.select_only(&e.path);
-            }
+            view.click_select(&e.path, mods.command || mods.ctrl, mods.shift);
         }
     }
 }

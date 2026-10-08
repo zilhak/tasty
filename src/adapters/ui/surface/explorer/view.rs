@@ -59,7 +59,7 @@ pub struct ExplorerView {
     /// 선택된 엔트리 경로 집합.
     pub selected: HashSet<PathBuf>,
     selection_identity: std::sync::Arc<()>,
-    /// 마지막으로 클릭(앵커)된 엔트리 — shift 범위 선택 기준.
+    /// 범위 선택의 기준 엔트리. 단일 클릭·토글 클릭이 옮기고 Shift 클릭은 그대로 둔다.
     pub anchor: Option<PathBuf>,
     /// 사이드바 디렉토리 트리에서 펼쳐진 디렉토리.
     pub expanded: HashSet<PathBuf>,
@@ -463,6 +463,37 @@ impl ExplorerView {
         }
         self.anchor = Some(path.to_path_buf());
     }
+
+    /// 클릭 한 번의 선택 갱신. `toggle` 은 Ctrl/Cmd, `range` 는 Shift 다.
+    /// Shift 는 앵커부터 대상까지 목록 순서의 범위를 고르고 앵커는 옮기지 않는다.
+    /// Ctrl/Cmd 를 함께 누르면 기존 선택에 그 범위를 더한다. 앵커가 없거나 현재 목록에
+    /// 없으면 Shift 를 뺀 클릭과 같다.
+    pub fn click_select(&mut self, path: &Path, toggle: bool, range: bool) {
+        if range && let Some(span) = self.anchor_span(path) {
+            self.selection_identity = std::sync::Arc::new(());
+            if !toggle {
+                self.selected.clear();
+            }
+            self.selected.extend(span);
+        } else if toggle {
+            self.toggle_select(path);
+        } else {
+            self.select_only(path);
+        }
+    }
+
+    fn anchor_span(&self, path: &Path) -> Option<Vec<PathBuf>> {
+        let anchor = self.anchor.as_deref()?;
+        let a = self.entries.iter().position(|e| e.path == anchor)?;
+        let b = self.entries.iter().position(|e| e.path == path)?;
+        let (lo, hi) = if a <= b { (a, b) } else { (b, a) };
+        Some(
+            self.entries[lo..=hi]
+                .iter()
+                .map(|e| e.path.clone())
+                .collect(),
+        )
+    }
 }
 
 impl Default for ExplorerView {
@@ -553,6 +584,80 @@ impl ExplorerViewStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn view_with(names: &[&str]) -> ExplorerView {
+        let mut v = ExplorerView::new();
+        v.entries = names
+            .iter()
+            .map(|n| DirEntryInfo {
+                path: PathBuf::from(format!("/d/{n}")),
+                name: (*n).into(),
+                is_dir: false,
+                size: 0,
+                modified: None,
+                ext: String::new(),
+            })
+            .collect();
+        v
+    }
+
+    fn selected_names(v: &ExplorerView) -> Vec<String> {
+        let mut out: Vec<String> = v
+            .selected
+            .iter()
+            .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+        out.sort();
+        out
+    }
+
+    fn p(n: &str) -> PathBuf {
+        PathBuf::from(format!("/d/{n}"))
+    }
+
+    #[test]
+    fn shift_click_selects_the_span_from_the_anchor() {
+        let mut v = view_with(&["a", "b", "c", "d", "e"]);
+        v.click_select(&p("b"), false, false);
+        v.click_select(&p("d"), false, true);
+        assert_eq!(selected_names(&v), ["b", "c", "d"]);
+        assert_eq!(v.anchor, Some(p("b")));
+        // 앵커가 남아 있어 다른 쪽으로 다시 Shift 클릭하면 범위를 바꾼다.
+        v.click_select(&p("a"), false, true);
+        assert_eq!(selected_names(&v), ["a", "b"]);
+    }
+
+    #[test]
+    fn ctrl_shift_click_adds_the_span_to_the_selection() {
+        let mut v = view_with(&["a", "b", "c", "d", "e"]);
+        v.click_select(&p("a"), false, false);
+        v.click_select(&p("c"), true, false);
+        v.click_select(&p("e"), true, true);
+        assert_eq!(selected_names(&v), ["a", "c", "d", "e"]);
+        assert_eq!(v.anchor, Some(p("c")));
+    }
+
+    #[test]
+    fn shift_click_without_a_usable_anchor_is_a_plain_click() {
+        let mut v = view_with(&["a", "b", "c"]);
+        v.click_select(&p("b"), false, true);
+        assert_eq!(selected_names(&v), ["b"]);
+        assert_eq!(v.anchor, Some(p("b")));
+        // 앵커가 목록에서 사라진 경우(다시 읽은 목록에 없음).
+        v.anchor = Some(p("gone"));
+        v.click_select(&p("c"), true, true);
+        assert_eq!(selected_names(&v), ["b", "c"]);
+        assert_eq!(v.anchor, Some(p("c")));
+    }
+
+    #[test]
+    fn plain_and_toggle_clicks_move_the_anchor() {
+        let mut v = view_with(&["a", "b", "c", "d"]);
+        v.click_select(&p("a"), false, false);
+        v.click_select(&p("c"), true, false);
+        v.click_select(&p("d"), false, true);
+        assert_eq!(selected_names(&v), ["c", "d"]);
+    }
 
     #[test]
     fn human_size_units() {
