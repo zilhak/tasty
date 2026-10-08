@@ -18,6 +18,7 @@ fn clipboard() -> crate::state::ExplorerClipboard {
         identity: Arc::new(AtomicBool::new(false)),
         paths: vec!["original".into()],
         cut: true,
+        source: crate::state::ExplorerPathSource::Local,
     }
 }
 

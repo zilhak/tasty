@@ -1423,12 +1423,12 @@ impl MainView {
         let multi = paths.len() > 1;
         let is_empty_target = paths.is_empty();
         let is_folder = paths.len() == 1 && single_is_dir;
+        // 원격에서 복사한 경로는 로컬에 붙여넣을 수 없으므로 붙여넣기를 보이지 않는다.
         let has_clip = self
             .state
             .explorer_clipboard
             .as_ref()
-            .map(|c| !c.paths.is_empty())
-            .unwrap_or(false);
+            .is_some_and(|c| !c.paths.is_empty() && c.is_local());
         // mirror 경로를 로컬 파일 작업에 사용하지 않도록 쓰기 메뉴를 숨긴다(ADR-0022).
         // 다른 호출 경로도 있으므로 각 핸들러의 검사도 유지한다.
         let is_mirror = engine.is_mirror_surface(surface_id);
@@ -1639,10 +1639,14 @@ impl MainView {
             self.toast_remote_write_unsupported();
             return;
         }
+        let Some(source) = crate::state::ExplorerPathSource::of_surface(engine, surface_id) else {
+            return;
+        };
         self.state.explorer_clipboard = Some(crate::state::ExplorerClipboard {
             identity: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             paths: paths.to_vec(),
             cut,
+            source,
         });
     }
 
@@ -1669,6 +1673,15 @@ impl MainView {
             cwd.to_path_buf()
         };
         if let Some(clip) = self.state.explorer_clipboard.clone() {
+            // 원격 경로를 같은 문자열의 로컬 파일로 복사하지 않는다.
+            if !clip.is_local() {
+                self.state.toasts.push(
+                    crate::i18n::t("explorer.state.remote_paste_unsupported").to_string(),
+                    crate::adapters::ui::ToastKind::Info,
+                    crate::adapters::ui::ToastScope::Window,
+                );
+                return;
+            }
             self.state.request_explorer_file(
                 engine,
                 surface_id,

@@ -908,6 +908,7 @@ error_conn_timeout = "リモートホストが時間内に応答しませんで�
 remote_listing_truncated = "リモートフォルダーの項目が多すぎるため、一覧の一部だけを表示しています。"
 remote_open_unsupported = "この形式のリモートファイルはまだ開けません。"
 remote_write_unsupported = "ミラーされたリモートエクスプローラーではこの操作をまだサポートしていません。"
+remote_paste_unsupported = "ミラーされたリモートエクスプローラーでコピーしたファイルはまだ貼り付けできません。"
 read_error_retry = "再試行"
 read_error_go_up = "上の階層へ"
 

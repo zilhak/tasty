@@ -120,6 +120,7 @@ View 는 모델을 직접 바꾸지 않고 파일시스템도 직접 읽지 않�
   우클릭 메뉴뿐 아니라 키보드 단축키(기본 `copy`/`cut`/`paste` 바인딩, explorer 포커스 시)로도 동일하게 동작한다 — `handle_explorer_shortcut`(`src/adapters/ui/input/shortcuts/copy_paste.rs`)가 선택 항목을 모아 컨텍스트 메뉴와 같은 `explorer_menu_set_clipboard`/`explorer_menu_paste` 를 호출하므로 fs 동작이 두 경로에서 갈라지지 않는다.
   단축키 붙여넣기 대상은 현재 폴더(current)다(선택된 폴더 안으로의 paste-into 는 컨텍스트 메뉴 전용).
   **복사(cut=false)** 는 fs 접근이 없어 mirror explorer 에서도 그대로 동작하지만, **잘라내기(cut=true)/붙여넣기**는 mirror 에서 메뉴·단축키 모두 차단된다(아래 "mirror(attach) explorer 의 파일 변경 차단" 참고).
+  클립보드는 경로와 함께 그 경로의 출처(`ExplorerPathSource`: 로컬 또는 mirror workspace)를 기록한다(`src/state/explorer_path.rs`). mirror explorer 에서 복사한 경로는 원격 호스트의 경로이므로, 로컬 explorer 의 붙여넣기는 메뉴에 나오지 않고 단축키로 실행해도 `explorer.state.remote_paste_unsupported` toast 로 거부한다. 같은 문자열의 로컬 파일을 대신 복사하지 않는다.
 - **휴지통으로 이동** (`delete`) — `trash` 크레이트로 OS 휴지통에 보낸다(가역적이라 확인 모달 없음). mirror 에서 차단.
 - **이름 변경** (`rename`, 단일만) — 공용 rename 팝업(`PopupDef`)을 재사용한다. 이름은 드라이브 접두어·경로 구분자 없는 단일 파일명이어야 하며 기존 항목을 덮어쓰지 않는다. mirror 에서 차단(가드가 먼저 막아 팝업 자체가 열리지 않는다).
 - **OS 기본 앱으로 열기** (`open_in_system`, 단일 폴더만) — `platform::reveal::open_path`(Windows `explorer` / macOS `open` / Linux `xdg-open`). mirror 에서 차단.

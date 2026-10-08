@@ -1,4 +1,4 @@
-<!-- source-hash: 7aa121b93a96 -->
+<!-- source-hash: 224dcef66015 -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -87,7 +87,7 @@ Renaming refuses to overwrite an existing entry and reports the failure. Copying
 - **Set as Root** — moves the root of the left tree.
 - **Add to Favorites** — gives it a name and puts it in the list at the bottom left. Favorites are shared by all Explorers and saved in `~/.tasty/explorer-favorites.toml`.
 
-The last chosen view mode is remembered and applied to new Explorers too. The Explorer font is set separately in the **Explorer** item under **Settings** > **Appearance**. In an Explorer in a remote Workspace, items that change files do not appear. Double-clicking a markdown file opens a tab for it on the remote computer; if the type's default handler can't be used remotely, only the handlers that can are offered, and a type with no such handler only shows a notice.
+The last chosen view mode is remembered and applied to new Explorers too. The Explorer font is set separately in the **Explorer** item under **Settings** > **Appearance**. In an Explorer in a remote Workspace, items that change files do not appear. Items copied in a remote Explorer can't be pasted into a local Explorer: Paste does not appear in the menu, and the paste shortcut only shows a notice. Tasty never copies a local file with the same path instead. Double-clicking a markdown file opens a tab for it on the remote computer; if the type's default handler can't be used remotely, only the handlers that can are offered, and a type with no such handler only shows a notice.
 
 ## Markdown
 

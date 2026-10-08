@@ -8,6 +8,8 @@ mod dialogs;
 #[cfg(feature = "gui")]
 mod events;
 #[cfg(feature = "gui")]
+mod explorer_path;
+#[cfg(feature = "gui")]
 mod focus;
 #[cfg(all(test, feature = "gui"))]
 mod fullscreen_stage_tests;
@@ -113,6 +115,19 @@ pub struct ExplorerClipboard {
     pub(crate) identity: std::sync::Arc<std::sync::atomic::AtomicBool>,
     pub paths: Vec<std::path::PathBuf>,
     pub cut: bool,
+    /// 경로가 가리키는 파일시스템. 원격 경로 문자열을 로컬 경로로 해석하지 않도록 복사할 때 기록한다.
+    pub source: ExplorerPathSource,
+}
+
+/// Explorer 경로의 출처. 같은 문자열이라도 출처가 다르면 다른 파일이다.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg(feature = "gui")]
+pub enum ExplorerPathSource {
+    Local,
+    /// mirror workspace에 보이는 원격 호스트의 경로. 값은 로컬 workspace ID다.
+    Remote {
+        workspace: u32,
+    },
 }
 
 impl RequestContext {
