@@ -1,4 +1,4 @@
-<!-- source-hash: e78894e5eeec -->
+<!-- source-hash: 513a3073ad5d -->
 <a id="task-dag"></a>
 
 # Task workflows (DAG)
@@ -136,9 +136,9 @@ To run a task's result through another command (a judge or summary tool, say) an
 - A step change sends no event. If you need a signal at some point, add a `run` task after that task, such as `["tasty", "notify", "build finished"]` or a `curl` call to a webhook.
 - Until the postprocess finishes, the task shows as running and the next tasks wait. `task-get` shows `phase: postprocessing (run 1)` on the line after `state: running` (`phase: retry_wait (run 2)` while it waits to retry).
 - If the postprocess fails, the `state` line in `task-get` gives the reason. The lines under it give the last run's cause and exit code, such as `postprocess: run 2 failed (nonzero_exit), exit_code 3`, and the causes of the runs that were retried (`postprocess retried after: ...`).
-- If Tasty quits or restarts while a postprocess runs, that postprocess is not run again and the task fails. To try again, rerun the task with `task-retry`.
-- If the postprocess command is still running after Tasty restarts, the task stays running and keeps its semaphore or lease until the command ends. When it ends, its result cannot be collected, so the task fails and gives the resource back then. A task that was waiting to run its postprocess (including a wait before a retry) keeps its resources and runs the postprocess as scheduled.
-- If Tasty is killed (with `kill`, for example), other processes the postprocess command started can be left running. On Linux the postprocess command itself gets a termination signal, on Windows they end with Tasty, and on macOS they are all left running.
+- If you quit Tasty while a postprocess runs, Tasty ends the postprocess command and the processes it started. After the restart the postprocess is not run again and the task fails. Stopping the runner (`task-run --action stop`) ends a postprocess the same way, and the task shows as running until you start the runner again. To try again, rerun the task with `task-retry`.
+- If Tasty is killed (with `kill`, for example), it depends on the OS. On Linux only the postprocess command itself gets a termination signal. That usually ends the command, so after the restart the task fails because its result cannot be collected, and other processes the command started can be left running. With `["sh", "-c", "sleep 300; echo x"]`, for example, `sh` ends and `sleep` is left running. On Windows they end with Tasty, and on macOS they are all left running.
+- If the postprocess command is still running after Tasty restarts (Tasty was killed on macOS, or the command ignored the termination signal on Linux), the task stays running and keeps its semaphore or lease until the command ends. When it ends, its result cannot be collected, so the task fails and gives the resource back then. Tasty does not wait when only processes the command started are left. A task that was waiting to run its postprocess (including a wait before a retry) keeps its resources and runs the postprocess as scheduled.
 
 While Tasty runs on [temporary memory](cli.md#memory-shared-between-agents) because it could not open its memory file, a graph would not survive a restart, so sending it as is gets refused. For a graph that may be lost on restart, add `"durability": "best_effort"`.
 

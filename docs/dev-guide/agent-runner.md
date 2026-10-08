@@ -260,7 +260,7 @@ IPC/CLI: `completion_strategy.list`(전 범위 조회, 비활성 포함) / `tast
 - 수명 종료의 stop 요청은 원 hub와 실행 control을 고정한 receipt를 반환한다. `Waiting`은 미회수, `Joined`는 정상 join, `WorkerFailed`는 실패한 worker의 실제 join이다. 옛 receipt가 같은 숫자 workspace ID의 새 owner를 지우지 않는다.
 - `status(ctx, ws)` — `running`/`crashed`/`ready_count`/`running_count`/`store_error`/`list_failures`. 두 카운트는 `Option` 이다 — store 를 못 읽으면 `None`(응답에선 `null`)이고 `store_error` 가 이유를 싣는다. `list_failures` 는 러너 스레드의 연속 조회 실패 횟수(러너가 없으면 0).
 
-TaskScope의 Drop은 task 취소가 아니다. runner stop도 task 상태나 OS 자식을 취소하지 않는다. workspace가 확정 구조에서 사라졌을 때만 해당 runner를 중지하며 같은 Engine 안의 순서 변경은 유지한다. Engine 해제는 scope의 모든 runner와 물리 자원 receipt를 기다린다. 앱 종료 대기 상한을 넘기면 남은 worker를 미회수로 기록하며 join 완료로 간주하지 않는다.
+TaskScope의 Drop은 task 취소가 아니다. runner stop도 task 상태를 바꾸지 않고 Run의 OS 자식을 끝내지 않는다. 예외로 진행 중인 후처리 실행은 그룹을 끝내고 `cancelled` 보고를 저장한다(아래 §후처리 CLI, [ADR-0070](../adr/0070-typed-task-postprocess-runs-inside-the-attempt.md)). workspace가 확정 구조에서 사라졌을 때만 해당 runner를 중지하며 같은 Engine 안의 순서 변경은 유지한다. Engine 해제는 scope의 모든 runner와 물리 자원 receipt를 기다린다. 앱 종료 대기 상한을 넘기면 남은 worker를 미회수로 기록하며 join 완료로 간주하지 않는다.
 
 scope 전체 stop 뒤에는 같은 scope의 늦은 runner 시작을 거절한다. 이미 등록된 hook wait와 awaiter는 지우지 않으며, 늦은 hook 완료도 등록 당시의 `TaskWakerHub`와 `agent_seq`로 전달한다. 현재 선택된 다른 Engine의 허브로 재해소하지 않는다.
 
@@ -840,9 +840,9 @@ stdout 해석과 성공 판정:
 - 시간 초과·취소는 그 실행이 만든 프로세스 그룹(Unix, 자식을 새 그룹 리더로 띄운다)이나 job(Windows)만 종료한다. 직접 자식이 끝난 뒤에도 자손이 파이프를 쥐고 있으면 EOF 를 기다리다 시간 초과로 그룹을 종료한다. Linux 는 끝난 리더를 회수하지 않고 관찰해 그룹을 종료할 때까지 그룹 id 가 재사용되지 않는다. 다른 Unix 는 리더를 회수한 뒤에는 그룹을 종료하지 않는다. 스스로 새 세션·그룹으로 옮긴 프로세스나 Windows 에서 job 에 넣기 전에 만든 프로세스는 종료 대상에 들지 않는다.
 - 취소된 task 의 permit 은 실행이 끝난 것을 확인한 다음 tick 에 놓는다.
 - 각 실행 보고는 `tasty.agent.postprocess_result.<task id>` 에 회차 id 와 함께 저장한다. 재시작하면 `phase` 로 복원한다. `pending` 은 점유를 쥔 채 예약대로 실행하고, `started` 는 같은 회차·번호의 저장된 보고가 있으면 그것으로 확정한다. 없으면 저장한 handle 의 PID·시작 시각(`started_at`)이 가리키는 같은 프로세스가 아직 살아 있는지 본다. 살아 있으면 그 handle 로 기다리며 task 는 Running, semaphore·lease 는 그대로 쥔다(재시작한 호스트는 출력 파이프를 읽을 수 없으니 기다리는 것은 끝뿐이다). 끝나면 `outcome_unknown`(`… ended after a host restart and its result could not be collected …`)으로 끝내고 점유를 반환한다. 살아 있지 않거나 시작 시각이 없는 handle 이면 reload 가 바로 `outcome_unknown` 으로 확정하고 점유를 반환한다(Run 의 결과 불명과 같다). 점유를 쥐었다고 `host restart` 실패가 되지 않는다. 결과 불명인 실행은 재시도 예산이 남아도 다시 실행하지 않는다. 다시 실행하려면 `retry` 로 새 회차를 연다(본 작업부터 실행한다).
-- 러너가 멈추면(workspace 정리·앱 종료) 진행 중인 후처리를 `cancelled` 로 중단하고 보고를 저장한다. 재시작 뒤 그 task 는 이 보고로 실패하며 재시도 예산이 남아도 다시 실행하지 않는다. 보고를 저장하기 전에 호스트가 끝났으면 `outcome_unknown` 이다.
+- 러너가 멈추면(명시 stop·workspace 정리·앱 종료) 진행 중인 후처리를 `cancelled` 로 중단하고 보고를 저장한다. task 상태는 바꾸지 않으므로 다음 러너 시작이나 재시작까지 Running(`postprocessing`)으로 보인다. 그때 이 보고로 실패하며 재시도 예산이 남아도 다시 실행하지 않는다. 보고를 저장하기 전에 호스트가 끝났으면 `outcome_unknown` 이다.
 - 정상 종료 때는 그룹 종료와 보고 저장을 기다린다. executor 는 작업 스레드를 최대 3초, runner registry 는 runner 스레드를 최대 4초 기다린 뒤 경고하고 돌아간다. 보통은 수십 ms 안에 끝난다.
-- 비정상 종료(SIGTERM 등, Tasty 에는 SIGTERM 처리기가 없다): Linux 는 후처리를 호스트 수명에 묶어(`tasty_reaper::spawn_bound_to_host`, PDEATHSIG) 그룹 리더가 SIGTERM 을 받는다. 그룹의 다른 프로세스는 신호를 받지 않아, 리더가 전달하지 않으면 남는다. Windows 는 실행별 KILL_ON_JOB_CLOSE job 이 호스트 종료와 함께 닫혀 job 안의 프로세스가 끝난다. macOS 는 묶지 않아 그룹 전체가 남는다. 재시작 뒤 리더가 살아 있으면 위처럼 끝날 때까지 점유를 쥐고 기다리며, 그동안 `cancel` 하면 그 그룹을 끝낸다. 리더가 끝난 뒤 남은 그룹 구성원은 정리하지 않는다. task 는 `outcome_unknown` 으로 끝난다.
+- 비정상 종료(SIGTERM 등, Tasty 에는 SIGTERM 처리기가 없다): Linux 는 후처리를 호스트 수명에 묶어(`tasty_reaper::spawn_bound_to_host`, PDEATHSIG) 그룹 리더가 SIGTERM 을 받는다. 그룹의 다른 프로세스는 신호를 받지 않아, 리더가 전달하지 않으면 남는다. Windows 는 실행별 KILL_ON_JOB_CLOSE job 이 호스트 종료와 함께 닫혀 job 안의 프로세스가 끝난다. macOS 는 묶지 않아 그룹 전체가 남는다. 재시작 뒤 리더가 살아 있으면 위처럼 끝날 때까지 점유를 쥐고 기다리며, 그동안 `cancel` 하면 그 그룹을 끝낸다. 리더가 끝난 뒤 남은 그룹 구성원은 정리하지 않는다. 재시작 판정은 리더만 보므로 구성원이 살아 있어도 task 는 `outcome_unknown` 으로 끝난다. 예를 들어 `["sh", "-c", "sleep 300; echo x"]` 는 Linux 에서 `sh` 가 SIGTERM 으로 끝나고 `sleep` 이 남는다.
 
 ### 입력 binding
 
