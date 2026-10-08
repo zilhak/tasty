@@ -59,6 +59,22 @@ impl ThreadProbe {
 }
 
 impl ThreadProbe {
+    /// PTY 자식처럼 이 프로세스 밖에서 진행을 맡는 프로세스를 볼 probe. 상태는 Linux에서만
+    /// 읽는다. 지금 읽을 수 없는(이미 끝난) 프로세스는 일하지 않는 것으로 본다. 시작 시각을 함께
+    /// 기록하므로 회수 뒤 같은 PID를 물려받은 다른 프로세스를 일하는 중으로 읽지 않는다.
+    #[cfg(unix)]
+    pub(crate) fn process(pid: u32) -> Self {
+        let probe = Self::default();
+        if cfg!(target_os = "linux") {
+            let path = PathBuf::from(format!("/proc/{pid}/stat"));
+            if let Some(start) = start_of(&path) {
+                // 방금 만든 probe라 이미 묶였을 수 없다.
+                probe.stat.get_or_init(|| Bound { path, start });
+            }
+        }
+        probe
+    }
+
     /// 시험이 이 worker를 정체로 판정했다. 이후 Drop은 worker를 join하지 않는다.
     pub(crate) fn abandon(&self) {
         self.abandoned.store(true, Ordering::Release);
@@ -93,17 +109,17 @@ fn fields_of(stat: &str) -> Option<Fields> {
     })
 }
 
-/// `path`의 스레드 시작 시각. 읽거나 해석하지 못하면 경고를 남기고 None.
-#[cfg(target_os = "linux")]
+/// `path`의 스레드·프로세스 시작 시각. 읽거나 해석하지 못하면 경고를 남기고 None.
+#[cfg(unix)]
 fn start_of(path: &std::path::Path) -> Option<String> {
     match std::fs::read_to_string(path).map(|stat| fields_of(&stat)) {
         Ok(Some(fields)) => Some(fields.start),
         Ok(None) => {
-            tracing::warn!("cannot parse the journal worker thread stat");
+            tracing::warn!("cannot parse the probed stat {}", path.display());
             None
         }
         Err(error) => {
-            tracing::warn!("cannot read the journal worker thread stat: {error}");
+            tracing::warn!("cannot read the probed stat {}: {error}", path.display());
             None
         }
     }
@@ -177,5 +193,34 @@ mod tests {
         drop(park_tx);
         handle.join().unwrap();
         assert!(!probe.is_working(), "an exited thread is not working");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_busy_child_process_reads_as_working_and_a_sleeping_or_reaped_one_does_not() {
+        let mut busy = std::process::Command::new("sh")
+            .args(["-c", "while :; do :; done"])
+            .spawn()
+            .unwrap();
+        let mut sleeping = std::process::Command::new("sleep")
+            .arg("60")
+            .spawn()
+            .unwrap();
+        let busy_probe = ThreadProbe::process(busy.id());
+        let sleeping_probe = ThreadProbe::process(sleeping.id());
+        // 바쁜 자식은 CPU를 기다리는 동안에도 R이다. 잠든 자식은 곧 S가 된다.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        while !busy_probe.is_working() || sleeping_probe.is_working() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "busy child never read as working or sleeping child never read as idle"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        busy.kill().unwrap();
+        busy.wait().unwrap();
+        sleeping.kill().unwrap();
+        sleeping.wait().unwrap();
+        assert!(!busy_probe.is_working(), "a reaped process is not working");
     }
 }

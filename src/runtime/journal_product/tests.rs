@@ -4,10 +4,17 @@ mod retirement;
 
 use super::stall_budget::StallBudget;
 use super::*;
-// 시각 기한은 PTY 를 쓰는 unix 전용 시험에만 있다.
-#[cfg(unix)]
-use std::time::Duration;
 use tasty_core::{StructuralCommand, StructureModels, evolve_streams};
+
+/// PTY 자식처럼 `pid` 프로세스가 진행을 맡는 조건을 기다린다. 기한은
+/// [`StallBudget::for_process`]가 정한다.
+#[cfg(unix)]
+fn wait_for(what: &str, pid: Option<u32>, mut done: impl FnMut() -> bool) {
+    let mut stall = StallBudget::for_process(pid);
+    while !done() {
+        stall.nap(what);
+    }
+}
 
 /// worker의 다음 완료를 기다린다. 기한은 [`StallBudget`]이 정한다. worker가 일하거나 디스크 I/O를
 /// 기다리는 시간은 세지 않으므로 부하로 늦어진 완료는 기다리고, 잠든 채 답하지 않는 worker는 정체로
@@ -637,30 +644,21 @@ fn a_durable_claim_precedes_real_pty_preparation_and_the_candidate_stays_private
     assert_eq!(prepared.leaf.surface.surface_id(), Some(reserved_surface));
     let (terminal, pty) = prepared.connection.as_ref().unwrap();
     assert_eq!(terminal.resource_generation(), pty.generation());
-    assert!(pty.process_id().is_some());
-    let deadline = std::time::Instant::now() + Duration::from_secs(5);
-    while !terminal
-        .with_content(|reader| reader.screen_text(false))
-        .contains("PREPARED-JOURNAL")
-    {
-        assert!(std::time::Instant::now() < deadline);
-        std::thread::sleep(Duration::from_millis(5));
-    }
+    let child = pty.process_id();
+    assert!(child.is_some());
+    wait_for("prepared output", child, || {
+        terminal
+            .with_content(|reader| reader.screen_text(false))
+            .contains("PREPARED-JOURNAL")
+    });
     let lease = prepared.lease.clone();
     let (_, candidate) = prepared.connection.unwrap();
     let retired = candidate.retire();
-    let deadline = std::time::Instant::now() + Duration::from_secs(5);
-    while retired.observation().phase != tasty_terminal::PtyPhase::Reaped {
-        assert_ne!(
-            retired.observation().phase,
-            tasty_terminal::PtyPhase::WaitFailed
-        );
-        assert!(
-            std::time::Instant::now() < deadline,
-            "candidate was not reaped"
-        );
-        std::thread::sleep(Duration::from_millis(5));
-    }
+    wait_for("candidate reap", child, || {
+        let phase = retired.observation().phase;
+        assert_ne!(phase, tasty_terminal::PtyPhase::WaitFailed);
+        phase == tasty_terminal::PtyPhase::Reaped
+    });
     submit(
         &worker,
         3,
@@ -716,18 +714,16 @@ fn committed_installation_preserves_initial_observations_and_defers_command_comp
         .unwrap()
         .0
         .resource_generation();
-    let deadline = std::time::Instant::now() + Duration::from_secs(5);
-    while !prepared
-        .connection
-        .as_ref()
-        .unwrap()
-        .0
-        .with_content(|view| view.screen_text(false))
-        .contains("PREPARED-JOURNAL")
-    {
-        assert!(std::time::Instant::now() < deadline);
-        std::thread::sleep(Duration::from_millis(5));
-    }
+    let child = prepared.connection.as_ref().unwrap().1.process_id();
+    wait_for("prepared output", child, || {
+        prepared
+            .connection
+            .as_ref()
+            .unwrap()
+            .0
+            .with_content(|view| view.screen_text(false))
+            .contains("PREPARED-JOURNAL")
+    });
     let lease = prepared.lease.clone();
     submit(
         &worker,
@@ -764,11 +760,8 @@ fn committed_installation_preserves_initial_observations_and_defers_command_comp
         panic!("stored")
     };
     assert_eq!(record.status, tasty_event_store::CommandStatus::InProgress);
-    let deadline = std::time::Instant::now() + Duration::from_secs(5);
-    while !installed.cleanup_complete().unwrap() {
-        assert!(std::time::Instant::now() < deadline);
-        std::thread::sleep(Duration::from_millis(5));
-    }
+    // 새 SID 에 설치했으므로 회수할 이전 PTY 가 없다. 진행을 맡은 프로세스가 없어 기다린 시간을 모두 센다.
+    wait_for("cleanup", None, || installed.cleanup_complete().unwrap());
     submit(
         &worker,
         5,
@@ -979,14 +972,9 @@ fn complete_conversion_and_reap(
         panic!("stored")
     };
     assert_eq!(record.status, tasty_event_store::CommandStatus::InProgress);
-    let deadline = std::time::Instant::now() + Duration::from_secs(5);
-    while !installed.cleanup_complete().unwrap() {
-        assert!(
-            std::time::Instant::now() < deadline,
-            "exact original child not reaped"
-        );
-        std::thread::sleep(Duration::from_millis(5));
-    }
+    wait_for("exact original child reap", Some(original_pid), || {
+        installed.cleanup_complete().unwrap()
+    });
     #[cfg(target_os = "linux")]
     assert!(!std::path::Path::new(&format!("/proc/{original_pid}")).exists());
     submit(

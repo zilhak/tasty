@@ -12,6 +12,9 @@
 //! 끝없이 도는 worker는 잠들지 않으므로 [`StallBudget::CEILING`]의 벽시계 상한으로 잡는다.
 //! 정체로 판정하면 패닉 전에 worker를 버린다고 표시한다. 그래야 풀리는 중의 Drop이 멈춘
 //! worker를 join하지 않고 시험이 실패로 끝난다.
+//!
+//! PTY 출력·자식 회수처럼 다른 프로세스가 진행을 맡는 대기는 [`StallBudget::for_process`]로 그
+//! 프로세스를 같은 방식으로 본다.
 
 use std::time::{Duration, Instant};
 
@@ -22,6 +25,8 @@ pub(crate) struct StallBudget {
     idle: Duration,
     started: Instant,
     worker: ThreadProbe,
+    /// 실패 메시지에서 지켜본 대상을 가리키는 말.
+    subject: &'static str,
 }
 
 impl StallBudget {
@@ -35,6 +40,19 @@ impl StallBudget {
             idle: Duration::ZERO,
             started: Instant::now(),
             worker: worker.thread_probe.clone(),
+            subject: "the journal worker",
+        }
+    }
+
+    /// `pid` 프로세스가 진행을 맡는 대기. 그 프로세스가 실행 중이거나 디스크 I/O를 기다리는 시간은
+    /// 세지 않는다. `pid`가 없으면 진행을 맡은 프로세스가 없으므로 기다린 시간을 모두 센다.
+    #[cfg(unix)]
+    pub(crate) fn for_process(pid: Option<u32>) -> Self {
+        Self {
+            idle: Duration::ZERO,
+            started: Instant::now(),
+            worker: pid.map(ThreadProbe::process).unwrap_or_default(),
+            subject: "the watched process",
         }
     }
 
@@ -53,17 +71,19 @@ impl StallBudget {
         if self.idle >= Self::IDLE_LIMIT {
             self.worker.abandon();
             panic!(
-                "{} stalled: the journal worker slept {:?} without progress",
+                "{} stalled: {} slept {:?} without progress",
                 what(),
+                self.subject,
                 self.idle
             );
         }
         if self.started.elapsed() >= Self::CEILING {
             self.worker.abandon();
             panic!(
-                "{} stalled: still waiting after {:?} although the journal worker was busy",
+                "{} stalled: still waiting after {:?} although {} was busy",
                 what(),
-                self.started.elapsed()
+                self.started.elapsed(),
+                self.subject
             );
         }
         let napped = Instant::now();

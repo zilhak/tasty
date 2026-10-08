@@ -273,6 +273,11 @@ CI 는 `.github/workflows/crossplatform-check.yml` 의 `check-headless` 잡이 �
     완료 하나를 `recv_timeout(10초)`로 받던 때는 부하 평균이 코어 수의 두세 배인 병렬 실행에서
     실행마다 다른 시험이 `Timeout`으로 실패했다. worker가 완료 채널을 닫으면 정체 한도를 기다리지
     않고 바로 실패한다.
+  - PTY 출력·자식 회수처럼 진행을 PTY 자식이 맡는 대기는 `StallBudget::for_process(pid)`가
+    그 자식 프로세스를 같은 방식으로 본다(`ThreadProbe::process`, `/proc/<pid>/stat`). 자식이
+    실행 중이거나 디스크 대기인 시간은 세지 않고, 잠들었거나 이미 사라진 시간만 센다. 그래서
+    출력이 오지 않거나 회수 기록이 남지 않으면 10초 안에 실패한다. 진행을 맡은 프로세스가
+    없는 대기(회수할 이전 PTY가 없는 cleanup)는 기다린 시간을 모두 센다.
 - 제품이 시각으로 판정하면 시험이 시각을 정한다: tasty-task-runtime 의 TTL 갱신 시험은 러너가
   tick 마다 갱신하는 lease·permit 이 TTL(300ms) 뒤에도 남는지 본다. 실제 시각으로 tick 을 돌리면
   부하로 tick 이 늦을 때 갱신 전에 만료돼 실패했다. 지금은 `HostExecutor` 가 점유를 얻고 갱신할 때
