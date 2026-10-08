@@ -61,7 +61,7 @@ fn write_file(root: &Path, rel: &str, body: &str) {
 /// 스텁은 이 합성 입력에 필요한 문자열·줄 주석 제거만 수행하며 완전한 Rust 파서는 아니다.
 fn install_stub_masker(root: &Path) -> std::path::PathBuf {
     let bin = root.join("stub-mask-source");
-    fs::write(
+    tasty_test_support::write_executable(
         &bin,
         "#!/bin/sh\n\
          if [ \"$1\" = \"--check-fresh\" ]; then exit 0; fi\n\
@@ -81,9 +81,6 @@ fn install_stub_masker(root: &Path) -> std::path::PathBuf {
          exit 0\n",
     )
     .expect("스텁 판정기");
-    let mut perm = fs::metadata(&bin).expect("스텁 권한 읽기").permissions();
-    std::os::unix::fs::PermissionsExt::set_mode(&mut perm, 0o755);
-    fs::set_permissions(&bin, perm).expect("스텁 실행권한");
     bin
 }
 

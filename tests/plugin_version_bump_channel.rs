@@ -502,12 +502,7 @@ fn plant_judge(d: &Path, fresh: bool) {
     } else {
         "#!/bin/sh\n[ \"$1\" = \"--check-fresh\" ] && exit 1\nexit 0\n"
     };
-    fs::write(&bin, body).expect("껍데기 판정기");
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&bin, fs::Permissions::from_mode(0o755)).expect("실행 권한");
-    }
+    tasty_test_support::write_executable(&bin, body).expect("껍데기 판정기");
 }
 
 #[test]
@@ -785,7 +780,7 @@ fn an_unreadable_member_roster_is_undecidable_and_says_why() {
 
     let stub = tempfile::tempdir().expect("스텁 디렉토리");
     let cargo = stub.path().join("cargo");
-    fs::write(
+    tasty_test_support::write_executable(
         &cargo,
         // tree는 성공시켜 metadata 실패 전에 다른 오류가 나지 않게 한다.
         format!(
@@ -794,9 +789,6 @@ fn an_unreadable_member_roster_is_undecidable_and_says_why() {
         ),
     )
     .expect("스텁 작성");
-    let mut perm = fs::metadata(&cargo).expect("스텁 metadata").permissions();
-    std::os::unix::fs::PermissionsExt::set_mode(&mut perm, 0o755);
-    fs::set_permissions(&cargo, perm).expect("실행권한");
 
     let out = Command::new("bash")
         .arg(script())
@@ -841,14 +833,11 @@ fn an_unreadable_dependency_closure_is_undecidable_and_says_why() {
 
     let stub = tempfile::tempdir().expect("스텁 디렉토리");
     let cargo = stub.path().join("cargo");
-    fs::write(
+    tasty_test_support::write_executable(
         &cargo,
         format!("#!/bin/sh\nif [ \"$1\" = tree ]; then echo {MARK} >&2; exit 101; fi\nexit 0\n"),
     )
     .expect("스텁 작성");
-    let mut perm = fs::metadata(&cargo).expect("스텁 metadata").permissions();
-    std::os::unix::fs::PermissionsExt::set_mode(&mut perm, 0o755);
-    fs::set_permissions(&cargo, perm).expect("실행권한");
 
     let out = Command::new("bash")
         .arg(script())

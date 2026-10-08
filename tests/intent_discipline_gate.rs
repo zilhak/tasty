@@ -83,19 +83,10 @@ fn write_src(root: &Path, rel: &str, body: &str) {
 
 /// 중첩 Cargo 빌드가 바깥 시험의 잠금을 기다리지 않도록 복사만 하는 스텁을 쓴다.
 /// 이 입력에서는 마스킹할 주석·문자열 내부의 호출이 없다. 그런 입력을 추가하면 스텁도 조정해야 한다.
-///
-/// 스텁은 자식 셸이 쓴다. 이 프로세스가 쓰기로 연 동안 병렬 시험의 fork 가 그 fd 를 물려받으면,
-/// 그 자식이 exec 하기 전까지 스텁 실행이 ETXTBSY(셸 종료코드 126)로 실패한다.
 fn install_stub_masker(root: &Path) -> std::path::PathBuf {
     let bin = root.join("stub-mask-source");
-    let mut writer = Command::new("sh")
-        .args(["-c", "cat > \"$1\" && chmod 755 \"$1\"", "sh"])
-        .arg(&bin)
-        .stdin(std::process::Stdio::piped())
-        .spawn()
-        .expect("스텁을 쓸 셸");
-    std::io::Write::write_all(
-        &mut writer.stdin.take().expect("스텁 입력"),
+    tasty_test_support::write_executable(
+        &bin,
         "#!/bin/sh\n\
          # --check-fresh <root> 는 신선하다고 답한다(스텁에는 낡을 소스가 없다).\n\
          if [ \"$1\" = \"--check-fresh\" ]; then exit 0; fi\n\
@@ -106,14 +97,9 @@ fn install_stub_masker(root: &Path) -> std::path::PathBuf {
          [ -d \"$src/$d\" ] || continue\n\
          cp -r \"$src/$d\" \"$out/$d\" || exit 1\n\
          done\n\
-         exit 0\n"
-            .as_bytes(),
+         exit 0\n",
     )
     .expect("스텁 판정기");
-    assert!(
-        writer.wait().expect("스텁 쓰기").success(),
-        "스텁 쓰기 실패"
-    );
     bin
 }
 

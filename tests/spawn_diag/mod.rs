@@ -1341,15 +1341,13 @@ pub fn apply_fake_browser(command: &mut std::process::Command, home: &std::path:
 
 #[cfg(unix)]
 fn write_fake_browser(home: &std::path::Path) -> std::io::Result<std::path::PathBuf> {
-    use std::os::unix::fs::PermissionsExt;
     std::fs::create_dir_all(home)?;
     let script = home.join(FAKE_BROWSER_FILE);
     // 기록 경로를 스크립트 위치에서 구해 본문에 절대 경로를 삽입하지 않는다.
     let body = format!(
         "#!/bin/sh\nprintf 'BROWSER\\t%s\\n' \"$*\" >> \"$(dirname \"$0\")/{OS_OPEN_LOG_FILE}\"\n"
     );
-    std::fs::write(&script, body)?;
-    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755))?;
+    tasty_test_support::write_executable(&script, body)?;
     Ok(script)
 }
 

@@ -7,7 +7,6 @@
 mod gate_env;
 
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process::Command;
 
@@ -15,10 +14,7 @@ const SLACK: i64 = 1000;
 const BUDGET: i64 = 5000;
 
 fn write_exec(path: &Path, body: &str) {
-    fs::write(path, body).expect("스크립트 작성");
-    let mut perm = fs::metadata(path).expect("metadata").permissions();
-    perm.set_mode(0o755);
-    fs::set_permissions(path, perm).expect("실행권한");
+    tasty_test_support::write_executable(path, body).expect("스크립트 작성");
 }
 
 /// 총합 검사는 파일 크기 게이트의 임계·수집 범위·판정 플래그를 읽는다.

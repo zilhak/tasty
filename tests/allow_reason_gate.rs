@@ -63,7 +63,7 @@ fn write_file(root: &Path, rel: &str, body: &str) {
 /// 시험 안에서 Cargo를 다시 빌드하면 바깥 빌드와 잠금을 기다릴 수 있어 마스킹 스텁을 쓴다. 원문을 그대로 복사하지 않고 입력에 필요한 문자열·주석을 가린다.
 fn install_stub_masker(root: &Path) -> std::path::PathBuf {
     let bin = root.join("stub-mask-source");
-    fs::write(
+    tasty_test_support::write_executable(
         &bin,
         "#!/bin/sh\n\
          if [ \"$1\" = \"--check-fresh\" ]; then exit 0; fi\n\
@@ -82,9 +82,6 @@ fn install_stub_masker(root: &Path) -> std::path::PathBuf {
          exit 0\n",
     )
     .expect("스텁 판정기");
-    let mut perm = fs::metadata(&bin).expect("스텁 권한 읽기").permissions();
-    std::os::unix::fs::PermissionsExt::set_mode(&mut perm, 0o755);
-    fs::set_permissions(&bin, perm).expect("스텁 실행권한");
     bin
 }
 
@@ -93,7 +90,7 @@ fn install_stub_rg(root: &Path) -> std::path::PathBuf {
     let dir = root.join("stubbin");
     fs::create_dir_all(&dir).expect("스텁 디렉토리");
     let bin = dir.join("rg");
-    fs::write(
+    tasty_test_support::write_executable(
         &bin,
         "#!/bin/sh\n\
          # `rg --files -g '*.rs' <dirs...>` 만 흉내낸다 — 게이트가 그 형태로만 부른다.\n\
@@ -101,9 +98,6 @@ fn install_stub_rg(root: &Path) -> std::path::PathBuf {
          for d in \"$@\"; do find \"$d\" -name '*.rs' -type f 2>/dev/null; done\n",
     )
     .expect("스텁 rg");
-    let mut perm = fs::metadata(&bin).expect("스텁 권한 읽기").permissions();
-    std::os::unix::fs::PermissionsExt::set_mode(&mut perm, 0o755);
-    fs::set_permissions(&bin, perm).expect("스텁 실행권한");
     dir
 }
 

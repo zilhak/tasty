@@ -72,10 +72,7 @@ fn consumers() -> Vec<(String, String)> {
 fn stub_cargo() -> tempfile::TempDir {
     let d = tempfile::tempdir().expect("임시 디렉토리");
     let p = d.path().join("cargo");
-    fs::write(&p, "#!/bin/sh\nexit 0\n").expect("스텁 cargo");
-    let mut perm = fs::metadata(&p).expect("스텁 권한").permissions();
-    std::os::unix::fs::PermissionsExt::set_mode(&mut perm, 0o755);
-    fs::set_permissions(&p, perm).expect("스텁 실행권한");
+    tasty_test_support::write_executable(&p, "#!/bin/sh\nexit 0\n").expect("스텁 cargo");
     d
 }
 

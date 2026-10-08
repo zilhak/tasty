@@ -7,7 +7,6 @@
 mod gate_env;
 
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process::Command;
 
@@ -17,10 +16,7 @@ const EAT_FLAGS: &str = "while [ \"${1#--}\" != \"$1\" ]; do shift; done\n";
 fn stub_dir(body: &str) -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("임시 디렉토리");
     let path = dir.path().join("tokei");
-    fs::write(&path, format!("#!/bin/sh\n{body}\n")).expect("스텁 작성");
-    let mut perm = fs::metadata(&path).expect("스텁 metadata").permissions();
-    perm.set_mode(0o755);
-    fs::set_permissions(&path, perm).expect("실행권한");
+    tasty_test_support::write_executable(&path, format!("#!/bin/sh\n{body}\n")).expect("스텁 작성");
     dir
 }
 
@@ -47,10 +43,8 @@ fn run_gate_full(tokei_body: &str, strip_body: &str) -> (i32, String) {
 fn run_gate_raw(tokei_body: &str, strip_script: &str) -> (i32, String) {
     let dir = stub_dir(tokei_body);
     let strip = dir.path().join("strip-cfg-test");
-    fs::write(&strip, format!("#!/bin/sh\n{strip_script}\n")).expect("판정기 스텁 작성");
-    let mut perm = fs::metadata(&strip).expect("스텁 metadata").permissions();
-    perm.set_mode(0o755);
-    fs::set_permissions(&strip, perm).expect("실행권한");
+    tasty_test_support::write_executable(&strip, format!("#!/bin/sh\n{strip_script}\n"))
+        .expect("판정기 스텁 작성");
 
     let root = env!("CARGO_MANIFEST_DIR");
     let old = std::env::var("PATH").unwrap_or_default();
@@ -291,7 +285,7 @@ fn write_rs(root: &Path, rel: &str, n: usize) {
 fn stub_tokei_reading_disk() -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("스텁 디렉토리");
     let bin = dir.path().join("tokei");
-    fs::write(
+    tasty_test_support::write_executable(
         &bin,
         "#!/bin/sh\n\
          # `tokei --output json <dirs...>` 흉내: 인자 아래 .rs 의 줄 수를 code 로 낸다.\n\
@@ -308,7 +302,6 @@ fn stub_tokei_reading_disk() -> tempfile::TempDir {
          printf ']}}'\n",
     )
     .expect("스텁 tokei");
-    make_executable(&bin);
     dir
 }
 
@@ -316,7 +309,7 @@ fn stub_tokei_reading_disk() -> tempfile::TempDir {
 fn stub_strip_copying() -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("스텁 디렉토리");
     let bin = dir.path().join("strip-cfg-test");
-    fs::write(
+    tasty_test_support::write_executable(
         &bin,
         "#!/bin/sh\n\
          if [ \"$1\" = \"--check-fresh\" ]; then exit 0; fi\n\
@@ -330,14 +323,7 @@ fn stub_strip_copying() -> tempfile::TempDir {
          find \"$out\" -name '*.rs' -type f | wc -l | tr -d ' '\n",
     )
     .expect("스텁 판정기");
-    make_executable(&bin);
     dir
-}
-
-fn make_executable(p: &Path) {
-    let mut perm = fs::metadata(p).expect("권한 읽기").permissions();
-    perm.set_mode(0o755);
-    fs::set_permissions(p, perm).expect("실행권한");
 }
 
 fn widen_scan_dirs(root: &Path) {
@@ -470,10 +456,7 @@ fn a_missing_tokei_is_not_a_pass() {
 fn a_missing_python_is_not_a_pass() {
     let path = gate_env::only(&["bash", "dirname"]);
     let tokei = path.path().join("tokei");
-    fs::write(&tokei, "#!/bin/sh\nexit 0\n").expect("tokei 스텁");
-    let mut perm = fs::metadata(&tokei).expect("스텁 metadata").permissions();
-    perm.set_mode(0o755);
-    fs::set_permissions(&tokei, perm).expect("실행권한");
+    tasty_test_support::write_executable(&tokei, "#!/bin/sh\nexit 0\n").expect("tokei 스텁");
 
     let out = Command::new("bash")
         .arg(format!(
@@ -519,10 +502,7 @@ fn an_uncountable_copy_count_is_not_a_pass() {
         ("find", "#!/bin/sh\nexit 1\n".to_string()),
     ] {
         let p = dir.path().join(name);
-        fs::write(&p, body).expect("스텁 작성");
-        let mut perm = fs::metadata(&p).expect("스텁 metadata").permissions();
-        perm.set_mode(0o755);
-        fs::set_permissions(&p, perm).expect("실행권한");
+        tasty_test_support::write_executable(&p, body).expect("스텁 작성");
     }
     let path = format!(
         "{}:{}",
@@ -555,7 +535,7 @@ fn an_uncountable_copy_count_is_not_a_pass() {
 fn stub_strip_honoring_blank_flag() -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("스텁 디렉토리");
     let bin = dir.path().join("strip-cfg-test");
-    fs::write(
+    tasty_test_support::write_executable(
         &bin,
         "#!/bin/sh\n\
          if [ \"$1\" = \"--check-fresh\" ]; then exit 0; fi\n\
@@ -578,7 +558,6 @@ fn stub_strip_honoring_blank_flag() -> tempfile::TempDir {
          find \"$out\" -name '*.rs' -type f | wc -l | tr -d ' '\n",
     )
     .expect("스텁 판정기");
-    make_executable(&bin);
     dir
 }
 
