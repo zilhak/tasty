@@ -41,6 +41,10 @@ tasty-type-geometry = { path = "../tasty-type-geometry" }
 
 [dev-dependencies]
 serde_json = "1"
+# lang_copies 시험이 본체 lang/en.toml 을 키로 펼친다.
+toml = "0.8"
+# lang_copies 시험의 소스 순회. 하한을 인자로 받는 공용 순회다. dev 전용이라 산출물에 들어가지 않는다.
+tasty-doc-guards = { path = "../tasty-doc-guards" }
 
 [lints]
 workspace = true
