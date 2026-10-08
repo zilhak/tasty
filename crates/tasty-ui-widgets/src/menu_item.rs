@@ -632,6 +632,65 @@ mod fit_width_tests {
         assert_eq!(focused_option_fills(&th, false), (0, false));
     }
 
+    /// 트리거가 좁은 egui ComboBox 를 열어 둔 채 프레임을 돌리고, 목록에 그려진 `label` 행의 글자를 돌려준다.
+    /// 열린 목록의 첫 프레임은 egui 가 트리거 폭을 최대 폭으로 주는 크기 측정 패스다.
+    fn open_combo_row_text(th: &Theme, label: &str) -> String {
+        let ctx = egui::Context::default();
+        let mut text = String::new();
+        for frame_no in 0..4 {
+            let frame = ctx.run(RawInput::default(), |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    if frame_no == 0 {
+                        // egui ComboBox 가 목록 열림 상태를 저장하는 id(버튼 id 의 "popup").
+                        let id = ui.make_persistent_id(egui::Id::new("narrow")).with("popup");
+                        ui.memory_mut(|m| m.open_popup(id));
+                    }
+                    // 본체 ComboBox 처럼 메뉴 틀(둘레 여백이 목록 폭 계산에 들어간다) 안에서 연다.
+                    tasty_egui_theme::with_popover_frame(ui, th, |ui| {
+                        egui::ComboBox::from_id_salt("narrow")
+                            .selected_text("Ask")
+                            .width(NARROW)
+                            .show_ui(ui, |ui| {
+                                ui.spacing_mut().item_spacing.y = 0.0;
+                                super::menu_option(ui, th, "Ask", true);
+                                super::menu_option(ui, th, label, false);
+                            })
+                    });
+                });
+            });
+            text = frame
+                .shapes
+                .iter()
+                .filter_map(|c| match &c.shape {
+                    egui::Shape::Text(t) if t.galley.text() == label => Some(
+                        t.galley
+                            .rows
+                            .iter()
+                            .flat_map(|r| r.glyphs.iter().map(|g| g.chr))
+                            .collect::<String>(),
+                    ),
+                    _ => None,
+                })
+                .next_back()
+                .unwrap_or_default();
+        }
+        text
+    }
+
+    /// 열린 목록은 트리거보다 긴 라벨에 맞춰 넓어진다. 행이 가용 폭만 쓰면 egui 크기 측정 패스가
+    /// 목록 폭을 트리거 폭에 묶어 라벨이 말줄임표로 잘린다.
+    #[test]
+    fn an_open_list_widens_past_a_narrow_trigger_to_show_each_label() {
+        let th = theme();
+        let label = "Minimize to background";
+        let full = with_ui(|ctx, _| label_width(ctx, &th, label));
+        assert!(
+            full > NARROW,
+            "the label must be wider than the trigger: {full}"
+        );
+        assert_eq!(open_combo_row_text(&th, label), label);
+    }
+
     /// 상태 견본이 포인터 없이 실제 호버와 같은 배경·글자로 그려지는지 검사한다.
     #[test]
     fn a_forced_hover_row_paints_the_hover_fill_and_hover_ink() {

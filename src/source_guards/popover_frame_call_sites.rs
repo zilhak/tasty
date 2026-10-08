@@ -154,7 +154,7 @@ fn every_open_combo_box_list_draws_shared_option_rows() {
         seen += n;
         offenders.extend(lines.into_iter().map(|l| format!("{rel}:{l}")));
     }
-    // 현재 ComboBox 는 14곳이다. 순회가 비거나 진입 문자열이 낡아 0건으로 통과하는 것을 막는 하한이다.
+    // 현재 ComboBox 는 15곳이다(시험 하네스 1곳 포함). 순회가 비거나 진입 문자열이 낡아 0건으로 통과하는 것을 막는 하한이다.
     assert!(
         seen >= 12,
         "ComboBox 를 {seen}곳만 찾았다(하한 12). 순회 범위와 진입 문자열을 확인한다."
