@@ -94,6 +94,30 @@ pub struct Completion {
     pub postprocess: Option<PostprocessReport>,
 }
 
+/// [`Completion::too_large_to_store`] 가 남기는 사유의 바이트 상한. 이보다 긴 사유를 실은 보고는
+/// 기록하지 못했을 때 줄일 대상이고, 줄인 보고는 이 안이라 줄이기가 한 번에 끝난다.
+pub const SHRUNK_ERROR_LIMIT: usize = 4 * 1024;
+
+/// 잘린 사유 끝에 붙이는 표시.
+const TRUNCATED_MARK: &str = "...(truncated)";
+
+/// `text` 가 `cap` 바이트를 넘으면 표시를 포함해 `cap` 안으로 자른다. 자르는 자리는 UTF-8 문자
+/// 경계다.
+fn head_within(text: &str, cap: usize) -> String {
+    if text.len() <= cap {
+        return text.to_owned();
+    }
+    let mut cut = cap.saturating_sub(TRUNCATED_MARK.len());
+    while !text.is_char_boundary(cut) {
+        cut -= 1;
+    }
+    let mut head = text[..cut].to_owned();
+    if head.len() + TRUNCATED_MARK.len() <= cap {
+        head.push_str(TRUNCATED_MARK);
+    }
+    head
+}
+
 impl Completion {
     pub fn succeeded(attempt_id: Option<String>, result: TaskResult) -> Self {
         Self {
@@ -130,12 +154,19 @@ impl Completion {
     }
 
     /// 기록할 수 없을 만큼 큰 보고를 대신하는 같은 회차의 실패 보고. 출력을 버리고 사유의 첫
-    /// 줄과 기록하지 못한 이유만 남긴다. 종료 코드는 유지한다.
+    /// 줄과 기록하지 못한 이유만 남긴다. 종료 코드는 유지한다. 사유는 [`SHRUNK_ERROR_LIMIT`]
+    /// 안으로 자르므로 이 보고를 다시 줄일 일은 없다.
     pub fn too_large_to_store(&self, why: &str) -> Self {
         let error = match self.result.error.as_deref().and_then(|e| e.lines().next()) {
-            Some(first) => format!("{first} (the full result could not be stored: {why})"),
+            Some(first) => {
+                let tail = format!(" (the full result could not be stored: {why})");
+                let first = head_within(first, SHRUNK_ERROR_LIMIT.saturating_sub(tail.len()));
+                format!("{first}{tail}")
+            }
             None => format!("the result could not be stored: {why}"),
         };
+        // 이유 자체가 길어도 상한을 지킨다.
+        let error = head_within(&error, SHRUNK_ERROR_LIMIT);
         Self {
             attempt_id: self.attempt_id.clone(),
             result: TaskResult {
@@ -248,5 +279,60 @@ mod tests {
         let mut with_id = ok(0);
         with_id.attempt_id = Some("t#1".into());
         assert_eq!(with_id.digest(), ok(0).digest());
+    }
+
+    /// 줄인 보고의 사유는 첫 줄이나 이유가 아무리 길어도 상한 안이다. 자르는 자리는 문자
+    /// 경계이고 잘렸다는 표시를 남긴다.
+    #[test]
+    fn a_shrunk_reason_stays_within_the_limit() {
+        let why = "memory: value too large: 1126687 bytes (max 1048576)";
+        let tail = format!(" (the full result could not be stored: {why})");
+        for first in ["e".repeat(1100 * 1024), "가".repeat(400 * 1024)] {
+            for pad in 0..3 {
+                let reason = format!("{}{first}\nsecond line", "a".repeat(pad));
+                let shrunk = Completion::failed(None, reason.clone()).too_large_to_store(why);
+                let error = shrunk.result.error.as_deref().expect("error");
+                assert!(error.len() <= SHRUNK_ERROR_LIMIT, "{}", error.len());
+                assert!(
+                    error.ends_with(&format!("{TRUNCATED_MARK}{tail}")),
+                    "{error}"
+                );
+                let head = &error[..error.len() - tail.len() - TRUNCATED_MARK.len()];
+                assert!(reason.starts_with(head));
+                assert!(head.len() + 3 > SHRUNK_ERROR_LIMIT - tail.len() - TRUNCATED_MARK.len());
+                assert_eq!(
+                    shrunk.outcome,
+                    CompletionOutcome::Failed {
+                        error: error.to_owned()
+                    }
+                );
+            }
+        }
+
+        // 짧은 첫 줄은 그대로 둔다.
+        let shrunk =
+            Completion::failed(None, "Run exited with code 3\nx".into()).too_large_to_store(why);
+        assert_eq!(
+            shrunk.result.error.as_deref(),
+            Some(format!("Run exited with code 3{tail}").as_str())
+        );
+
+        // 이유가 상한보다 길어도 사유 전체가 상한 안이다.
+        let long_why = "w".repeat(2 * SHRUNK_ERROR_LIMIT);
+        for c in [
+            Completion::failed(None, "boom".into()),
+            Completion::succeeded(
+                None,
+                TaskResult {
+                    exit_code: None,
+                    output: Some(serde_json::json!("x")),
+                    error: None,
+                },
+            ),
+        ] {
+            let error = c.too_large_to_store(&long_why).result.error.expect("error");
+            assert!(error.len() <= SHRUNK_ERROR_LIMIT, "{}", error.len());
+            assert!(error.ends_with(TRUNCATED_MARK), "{error}");
+        }
     }
 }

@@ -17,6 +17,7 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
+use crate::task::attempt::SHRUNK_ERROR_LIMIT;
 use crate::task::postprocess::{self, PostprocessCause, PostprocessPhase, PostprocessReport};
 use crate::task::{Completion, CompletionOutcome, Task, TaskId, TaskResult, TaskState};
 use crate::{AgentError, Result};
@@ -194,7 +195,9 @@ pub fn completion_retryable(e: &AgentError) -> bool {
 
 /// 레코드가 memory 값 상한을 넘어 기록하지 못한 보고를 같은 회차의 짧은 실패로 바꾼다. 같은
 /// 보고는 다시 내도 같은 크기라 기록되지 않고 task 가 Running 에 머문다. 출력을 싣지 않은 짧은
-/// 보고와 후처리 보고(회차 진행과 맞아야 한다)는 바꾸지 않는다.
+/// 보고와 후처리 보고(회차 진행과 맞아야 한다)는 바꾸지 않는다. 바꾼 보고는 출력이 없고 사유가
+/// [`SHRUNK_ERROR_LIMIT`] 안이라 다시 바꾸지 않으므로, 기록을 다시 시도하는 호출자의 재귀는 한
+/// 번에 끝난다.
 pub fn shrink_too_large_completion(e: &AgentError, completion: &Completion) -> Option<Completion> {
     let too_large = matches!(
         e,
@@ -209,9 +212,6 @@ pub fn shrink_too_large_completion(e: &AgentError, completion: &Completion) -> O
     (too_large && carries_bulk && completion.postprocess.is_none())
         .then(|| completion.too_large_to_store(&e.to_string()))
 }
-
-/// 짧은 실패로 바꾼 보고의 사유 길이 상한. 이보다 긴 사유는 줄인다.
-const SHRUNK_ERROR_LIMIT: usize = 4 * 1024;
 
 impl<E: TaskExecutor> RunnerLoop<E> {
     pub fn new(executor: E) -> Self {

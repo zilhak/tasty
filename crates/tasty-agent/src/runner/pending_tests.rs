@@ -209,3 +209,63 @@ fn a_completion_too_large_to_store_is_settled_as_a_short_failure() {
     let other = AgentError::InvalidArgument("store unavailable".into());
     assert!(shrink_too_large_completion(&other, &sent[0]).is_none());
 }
+
+struct LongReasonFail;
+
+impl TaskExecutor for LongReasonFail {
+    fn dispatch(&mut self, _t: &Task) -> DispatchOutcome {
+        DispatchOutcome::Started(DispatchHandle::ShellProcess { pid: 1 })
+    }
+    fn poll(&mut self, _h: &DispatchHandle) -> PollOutcome {
+        PollOutcome::Failed("e".repeat(1100 * 1024))
+    }
+}
+
+/// 출력 없이 사유만 긴 실패 보고도 한 번 줄여 기록한다. 줄인 보고가 다시 거절돼도 더 줄이지
+/// 않으므로 기록 시도는 두 번에 끝난다.
+#[test]
+fn a_failure_with_a_long_reason_is_shrunk_once_and_settled() {
+    let too_large = || {
+        AgentError::Memory(tasty_memory::MemoryError::ValueTooLarge {
+            actual: 1_126_687,
+            max: 1_048_576,
+        })
+    };
+    for store_accepts_the_shrunk_report in [true, false] {
+        let mut runner = RunnerLoop::new(LongReasonFail);
+        runner
+            .running
+            .insert("t-1".into(), DispatchHandle::ShellProcess { pid: 1 });
+        let snap = vec![running_task()];
+        let sent: RefCell<Vec<Completion>> = RefCell::new(Vec::new());
+        runner.tick(
+            1,
+            10,
+            &snap,
+            |_, _, _, _| Ok(()),
+            |_, _, c, _| {
+                let mut sent = sent.borrow_mut();
+                assert!(sent.len() < 2, "shrunk more than once");
+                let first = sent.is_empty();
+                sent.push(c);
+                if first || !store_accepts_the_shrunk_report {
+                    Err(too_large())
+                } else {
+                    Ok(())
+                }
+            },
+        );
+        let sent = sent.into_inner();
+        assert_eq!(sent.len(), 2);
+        let error = sent[1].result.error.as_deref().expect("error");
+        assert!(error.len() <= crate::task::attempt::SHRUNK_ERROR_LIMIT);
+        assert!(error.starts_with("eee"), "{error}");
+        if store_accepts_the_shrunk_report {
+            assert!(!runner.running.contains_key("t-1"));
+            assert!(runner.pending.is_empty());
+        } else {
+            // 저장 오류라 다음 tick 에 같은 짧은 보고를 다시 낸다.
+            assert_eq!(runner.pending.get("t-1"), Some(&sent[1]));
+        }
+    }
+}

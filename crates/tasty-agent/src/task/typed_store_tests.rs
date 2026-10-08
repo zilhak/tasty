@@ -772,3 +772,35 @@ fn a_v1_custom_response_too_large_to_store_settles_as_a_short_failure() {
         );
     }
 }
+
+/// 줄바꿈 없는 긴 사유의 실패 보고는 레코드 상한을 넘는다. 줄인 보고는 사유가 상한 안이라 한
+/// 번에 저장되고, 다시 줄일 대상이 아니다.
+#[test]
+fn a_failure_with_a_long_single_line_reason_is_stored_after_one_shrink() {
+    use super::attempt::{Completion, SHRUNK_ERROR_LIMIT};
+    let (_td, mut mem, seq) = fresh_store();
+    let mut store = TaskStore::new(&mut mem, "_host", &seq);
+    let t = store.create(opts("c", custom())).unwrap();
+    store.set_state(1, &t.id, TaskState::Running, 1).unwrap();
+    let report = Completion::failed(None, "e".repeat(1100 * 1024));
+    let e = store
+        .complete(1, &t.id, report.clone(), 2)
+        .expect_err("too large to store");
+    let shrunk = crate::runner::shrink_too_large_completion(&e, &report).expect("shrunk");
+    let t = store
+        .complete(1, &t.id, shrunk.clone(), 3)
+        .expect("stored")
+        .task;
+    let TaskState::Failed { error } = &t.state else {
+        panic!("{:?}", t.state);
+    };
+    assert!(error.len() <= SHRUNK_ERROR_LIMIT, "{}", error.len());
+    assert!(error.starts_with("eee"), "{error}");
+    assert!(
+        error.contains(
+            "...(truncated) (the full result could not be stored: memory: value too large"
+        ),
+        "{error}"
+    );
+    assert!(crate::runner::shrink_too_large_completion(&e, &shrunk).is_none());
+}
