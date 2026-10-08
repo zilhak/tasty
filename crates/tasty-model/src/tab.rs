@@ -216,8 +216,8 @@ impl Tab {
             }
             v
         } else {
-            // Single-leaf tab. EmptySurface(deferred) renders itself with pty_ready: false.
-            // For a live TerminalSurface, append pty_ready: true.
+            // Single-leaf tab. For a live TerminalSurface, append pty_ready: true unless the
+            // caller's surface_json already set it.
             let mut v = surface_json(self.first_surface_id().expect("single leaf has an ID"));
             if v.get("type").and_then(|t| t.as_str()) == Some("Terminal")
                 && !v
