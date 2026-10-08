@@ -728,3 +728,47 @@ fn a_custom_response_over_the_raw_cap_is_truncated_in_raw_but_not_in_the_output(
     assert!(typed.raw.execution.is_none());
     assert!(typed.raw.execution_truncated.as_ref().unwrap().truncated);
 }
+
+/// 계약 없는(v1) custom 은 응답이 곧 출력이라 레코드에 한 벌만 두고 자르지 않는다(하류가 그대로
+/// 읽는다). 레코드가 memory 값 상한을 넘으면 저장이 거절되고, 러너는 같은 보고를 출력 없는
+/// 짧은 실패로 바꿔 기록한다. 이스케이프로 커지는 응답도 같은 경로다.
+#[test]
+fn a_v1_custom_response_too_large_to_store_settles_as_a_short_failure() {
+    use super::attempt::Completion;
+    let (_td, mut mem, seq) = fresh_store();
+    let mut store = TaskStore::new(&mut mem, "_host", &seq);
+    for response in [
+        json!("x".repeat(1100 * 1024)),
+        // 문자마다 직렬화가 6 바이트(\u0001)라 문자 수는 상한의 약 1/5 이다.
+        json!("\u{1}".repeat(200 * 1024)),
+    ] {
+        let t = store.create(opts("c", custom())).unwrap();
+        store.set_state(1, &t.id, TaskState::Running, 1).unwrap();
+        let report = Completion::succeeded(None, output(response));
+        let e = store
+            .complete(1, &t.id, report.clone(), 2)
+            .expect_err("too large to store");
+        assert!(
+            matches!(
+                e,
+                crate::AgentError::Memory(tasty_memory::MemoryError::ValueTooLarge { .. })
+            ),
+            "{e}"
+        );
+        // 저장이 거절된 보고는 상태도 결과도 바꾸지 않는다.
+        let kept = store.get(1, &t.id).unwrap().unwrap();
+        assert_eq!(kept.state, TaskState::Running);
+        assert!(kept.result.is_none());
+
+        let shrunk = crate::runner::shrink_too_large_completion(&e, &report).expect("shrunk");
+        let t = store.complete(1, &t.id, shrunk, 3).expect("stored").task;
+        assert!(matches!(t.state, TaskState::Failed { .. }), "{:?}", t.state);
+        let result = t.result.as_ref().unwrap();
+        assert!(result.output.is_none());
+        let error = result.error.as_deref().unwrap();
+        assert!(
+            error.starts_with("the result could not be stored: memory: value too large"),
+            "{error}"
+        );
+    }
+}
