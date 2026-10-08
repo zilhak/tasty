@@ -18,6 +18,8 @@ concurrency:
 jobs:
   semver-guards:
     runs-on: [self-hosted, Linux, X64]
+    # 실측 최대 2.5분 × 3. 기준: docs/dev-guide/ci-gates.md#잡-시간-상한
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -38,6 +40,8 @@ jobs:
     # push에서는 전체 테스트를 실행하지 않는다.
     if: github.event_name == 'workflow_dispatch'
     runs-on: [self-hosted, Linux, X64]
+    # crossplatform-check check-headless 대리 실측 최대 15.7분 × 5. 기준: docs/dev-guide/ci-gates.md#잡-시간-상한
+    timeout-minutes: 80
     steps:
       - uses: actions/checkout@v4
 

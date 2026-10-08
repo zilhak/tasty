@@ -20,6 +20,8 @@ concurrency:
 jobs:
   check-macos:
     runs-on: [self-hosted, macOS]
+    # 실측 최대 12.4분 × 3. 기준: docs/dev-guide/ci-gates.md#잡-시간-상한
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
 
@@ -55,6 +57,8 @@ jobs:
 
   check-windows:
     runs-on: [self-hosted, Windows]
+    # 실측 최대 13.7분 × 3. 기준: docs/dev-guide/ci-gates.md#잡-시간-상한
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
@@ -132,6 +136,8 @@ jobs:
   # GUI 기능을 끈 빌드와 테스트를 검사한다. 같은 러너에서 GUI 단위 테스트도 실행한다.
   check-headless:
     runs-on: [self-hosted, Linux, X64]
+    # 실측 최대 15.7분 × 3. 기준: docs/dev-guide/ci-gates.md#잡-시간-상한
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
 
@@ -207,6 +213,8 @@ jobs:
   # cargo check이므로 테스트 실행, 코드 생성·LTO, 배포 패키지 검사는 포함하지 않는다.
   check-release:
     runs-on: [self-hosted, Linux, X64]
+    # 실측 최대 1.7분 × 3. 기준: docs/dev-guide/ci-gates.md#잡-시간-상한
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 

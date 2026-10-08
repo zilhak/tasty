@@ -24,6 +24,8 @@ concurrency:
 jobs:
   cargo-deny:
     runs-on: [self-hosted, Linux, X64]
+    # 실측 최대 0.4분 × 3. 기준: docs/dev-guide/ci-gates.md#잡-시간-상한
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 

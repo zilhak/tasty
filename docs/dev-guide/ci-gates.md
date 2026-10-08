@@ -231,6 +231,59 @@ checkout의 정리로 `target/`이 삭제되는 구성에는 로컬 증분 빌�
 해당 작업 디렉터리의 산출물은 정리되지만 Cargo 캐시나 다른 경로까지 비워진다는 뜻은 아니다.
 디스크 여유는 그 실행의 최고 사용량과 비교하고, 로그의 `df`·`du` 값에 측정 시점을 남긴다.
 
+### 잡 시간 상한
+
+모든 잡은 `timeout-minutes`를 둔다. 없으면 멈춘 시험이 GitHub Actions 기본값 360분 동안
+러너를 붙잡는다. 상한은 러너를 기다린 시간을 세지 않고 잡이 실행된 시간만 센다.
+
+상한은 성공·실패로 끝난 실행 가운데 가장 긴 시간에 배수를 곱해 5분 단위로 올리고, 10분보다
+작으면 10분으로 둔다. 배수는 3이다. 표본이 5회 미만이거나 같은 명령을 같은 러너에서 실행하는
+다른 잡의 실측을 대신 쓰는 잡은 5다. 측정한 실행은 checkout이 `target/`을 지운 뒤 처음부터
+빌드했으므로 실측값에 콜드 빌드가 이미 들어 있다. 배수는 공유 러너의 부하 차이를 흡수한다.
+
+- 실측: `gh run list --workflow=<파일>`로 실행을 고르고 `gh run view <run-id> --json jobs`의
+  `startedAt`·`completedAt`으로 잡 시간을 잰다. 단계가 하나도 없는 취소 잡은 러너를 기다리다
+  취소된 것이라 제외한다. 취소된 잡은 끝까지 실행되지 않았으므로 최대에 넣지 않는다.
+- 측정 범위: crossplatform-check·supply-chain-check·test는 2026-09-17~2026-10-08의 전체
+  실행, release는 2026-09-26의 1회, 나머지는 2026-10-07~2026-10-08의 최근 30회다.
+- build-check는 같은 기간 실행 기록이 없어 같은 빌드 스크립트를 같은 러너에서 실행하는
+  release 잡의 실측을 쓴다. test-linux-x64도 실행 기록이 없어 같은 러너에서 workspace
+  시험을 실행하는 check-headless의 실측을 쓴다.
+
+| 워크플로 | 잡 | 성공 | 실패 | 실측 최대(분) | 배수 | timeout-minutes |
+|---|---|---|---|---|---|---|
+| build-check.yml | build-macos | 0 | 0 | 7.9 (release 대리) | 5 | 40 |
+| build-check.yml | build-windows | 0 | 0 | 11.4 (release 대리) | 5 | 60 |
+| build-check.yml | build-linux-x64 | 0 | 0 | 9.3 (release 대리) | 5 | 50 |
+| build-check.yml | build-linux-arm64 | 0 | 0 | 7.2 (release 대리) | 5 | 40 |
+| complexity-check.yml | check-file-size | 24 | 0 | 0.3 | 3 | 10 |
+| crossplatform-check.yml | check-macos | 6 | 86 | 12.4 | 3 | 40 |
+| crossplatform-check.yml | check-windows | 5 | 81 | 13.7 | 3 | 45 |
+| crossplatform-check.yml | check-headless | 26 | 38 | 15.7 | 3 | 50 |
+| crossplatform-check.yml | check-release | 93 | 3 | 1.7 | 3 | 10 |
+| doc-guards.yml | doc-guards | 29 | 0 | 1.8 | 3 | 10 |
+| format-check.yml | fmt | 30 | 0 | 0.4 | 3 | 10 |
+| pages.yml | build | 30 | 0 | 0.6 | 3 | 10 |
+| pages.yml | deploy | 30 | 0 | 0.6 | 3 | 10 |
+| plugin-version-check.yml | version-bump | 25 | 0 | 0.4 | 3 | 10 |
+| release.yml | create-release | 1 | 0 | 0.2 | 5 | 10 |
+| release.yml | build-macos | 1 | 0 | 7.9 | 5 | 40 |
+| release.yml | build-windows | 1 | 0 | 11.4 | 5 | 60 |
+| release.yml | build-linux-x64 | 1 | 0 | 9.3 | 5 | 50 |
+| release.yml | build-linux-arm64 | 1 | 0 | 7.2 | 5 | 40 |
+| release.yml | publish-release | 1 | 0 | 0.2 | 5 | 10 |
+| script-gates.yml | script-gates | 22 | 0 | 1.0 | 3 | 10 |
+| supply-chain-check.yml | cargo-deny | 2 | 73 | 0.4 | 3 | 10 |
+| test.yml | semver-guards | 99 | 29 | 2.5 | 3 | 10 |
+| test.yml | test-linux-x64 | 0 | 0 | 15.7 (check-headless 대리) | 5 | 80 |
+
+잡을 추가하거나 단계를 늘려 실행 시간이 크게 바뀌면 같은 방법으로 다시 재고 표와 워크플로를
+함께 고친다. 상한에 걸린 실행이 멈춤이 아니라 정상 실행이었다면 그 잡을 다시 잰다.
+대리 실측을 쓰는 잡은 처음 실행된 뒤 자기 실측으로 바꾼다.
+`crates/tasty-doc-guards/tests/ci_job_timeouts_match_the_guide.rs`가 모든 잡에 정수
+`timeout-minutes`가 있는지와 이 표의 값이 워크플로와 같은지를 양방향으로 대조한다.
+실측값과 배수의 계산은 검사하지 않는다.
+
 <a id="미측정-구간의-길이--이-문서가-가진-적-없던-축"></a>
 
 ### 성공 확인 사이의 간격

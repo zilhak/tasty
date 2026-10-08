@@ -26,6 +26,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # 실측 최대 0.6분 × 3. 기준: docs/dev-guide/ci-gates.md#잡-시간-상한
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: site
@@ -61,6 +63,8 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    # 실측 최대 0.6분 × 3. 기준: docs/dev-guide/ci-gates.md#잡-시간-상한
+    timeout-minutes: 10
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

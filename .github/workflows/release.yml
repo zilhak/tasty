@@ -12,6 +12,8 @@ jobs:
   create-release:
     if: github.event_name == 'push'
     runs-on: [self-hosted, Linux]
+    # 실측 최대 0.2분 × 5. 기준: docs/dev-guide/ci-gates.md#잡-시간-상한
+    timeout-minutes: 10
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
@@ -44,6 +46,8 @@ jobs:
     needs: create-release
     if: ${{ always() && (needs.create-release.result == 'success' || github.event_name == 'workflow_dispatch') }}
     runs-on: [self-hosted, macOS]
+    # 실측 최대 7.9분 × 5. 기준: docs/dev-guide/ci-gates.md#잡-시간-상한
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
 
@@ -68,6 +72,8 @@ jobs:
     needs: create-release
     if: ${{ always() && (needs.create-release.result == 'success' || github.event_name == 'workflow_dispatch') }}
     runs-on: [self-hosted, Windows]
+    # 실측 최대 11.4분 × 5. 기준: docs/dev-guide/ci-gates.md#잡-시간-상한
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
@@ -96,6 +102,8 @@ jobs:
     needs: create-release
     if: ${{ always() && (needs.create-release.result == 'success' || github.event_name == 'workflow_dispatch') }}
     runs-on: [self-hosted, Linux, X64]
+    # 실측 최대 9.3분 × 5. 기준: docs/dev-guide/ci-gates.md#잡-시간-상한
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
 
@@ -128,6 +136,8 @@ jobs:
     needs: create-release
     if: ${{ always() && (needs.create-release.result == 'success' || github.event_name == 'workflow_dispatch') }}
     runs-on: [self-hosted, Linux, ARM64]
+    # 실측 최대 7.2분 × 5. 기준: docs/dev-guide/ci-gates.md#잡-시간-상한
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
 
@@ -160,6 +170,8 @@ jobs:
     needs: [create-release, build-macos, build-windows, build-linux-x64, build-linux-arm64]
     if: github.event_name == 'push'
     runs-on: [self-hosted, Linux]
+    # 실측 최대 0.2분 × 5. 기준: docs/dev-guide/ci-gates.md#잡-시간-상한
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 

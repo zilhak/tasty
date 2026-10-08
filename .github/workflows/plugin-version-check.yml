@@ -37,6 +37,8 @@ concurrency:
 jobs:
   version-bump:
     runs-on: [self-hosted, Linux, X64]
+    # 실측 최대 0.4분 × 3. 기준: docs/dev-guide/ci-gates.md#잡-시간-상한
+    timeout-minutes: 10
     steps:
       # 비교할 두 커밋을 모두 읽을 수 있도록 전체 이력을 가져온다.
       - uses: actions/checkout@v4
