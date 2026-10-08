@@ -89,7 +89,8 @@ fn a_definition_stored_over_the_limit_fails_without_running() {
     let t = run_to_end(&ctx, &id);
     let error = failure_message(&t);
     assert!(
-        error.contains("the definition makes the task record")
+        error.starts_with("task record too large: task ")
+            && error.contains("the definition makes the task record")
             && error.contains(&format!(
                 "over the {MAX_RECORD_BEFORE_RESULT_BYTES} byte limit"
             )),
@@ -134,7 +135,7 @@ fn a_substituted_command_over_the_limit_fails_without_running() {
     let t = run_to_end(&ctx, &c);
     let error = failure_message(&t);
     assert!(
-        error.starts_with("task output substitution: ")
+        error.starts_with("task output substitution: task record too large: task ")
             && error.contains("the command with substituted values makes the task record"),
         "{error}"
     );

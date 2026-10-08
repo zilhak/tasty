@@ -266,11 +266,8 @@ impl TaskStore<'_> {
                     format!("{at}/on_failure/task"),
                 ));
             }
-            if let Some(size) = record_limit::record_over_limit(t) {
-                return Err(graph_error(
-                    record_limit::record_too_large_message(&t.id, "the definition", size),
-                    at,
-                ));
+            if let Err(message) = record_limit::check(t, "the definition") {
+                return Err(graph_error(message, at));
             }
             contract::check_task(t, &at, lookup)
                 .map_err(|f| AgentError::TypeContract(Box::new(f)))?;

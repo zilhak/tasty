@@ -292,11 +292,7 @@ impl<'a> TaskStore<'a> {
         }
 
         // 저장할 그대로(초기 상태 포함) 잰다.
-        if let Some(size) = record_limit::record_over_limit(&new_task) {
-            return Err(AgentError::InvalidArgument(
-                record_limit::record_too_large_message(&new_task.id, "the definition", size),
-            ));
-        }
+        record_limit::check(&new_task, "the definition").map_err(AgentError::InvalidArgument)?;
         self.put(&new_task)?;
 
         // 먼저 생성된 fallback이 아직 Ready라면 Waiting으로 되돌린다.
@@ -433,17 +429,14 @@ impl TaskStore<'_> {
         task.input_snapshot = Some(snapshot);
         // 해석한 입력이 레코드를 상한 너머로 키우면 실행하지 않고 입력 단계 실패로 남긴다.
         // 그대로 두면 결과를 줄여도 레코드를 저장할 수 없다.
-        if let Some(size) = record_limit::record_over_limit(&task)
+        if let Err(message) = record_limit::check(&task, "the resolved input")
             && let Some(snap) = task.input_snapshot.as_mut()
         {
             snap.value = super::types::TypedValue::Null;
             snap.execution = Default::default();
             snap.failure = Some(TaskFailure {
                 location: Some("/bindings".into()),
-                ..TaskFailure::new(
-                    FailureStage::Input,
-                    record_limit::record_too_large_message(id, "the resolved input", size),
-                )
+                ..TaskFailure::new(FailureStage::Input, message)
             });
         }
         self.put(&task)?;

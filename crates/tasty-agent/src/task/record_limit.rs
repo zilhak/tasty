@@ -12,19 +12,19 @@ use super::Task;
 /// 결과(사유 4 KiB 의 사본 셋, 접수 응답 머리, 회차 기록)의 몫 256 KiB 를 남긴 크기다.
 pub const MAX_RECORD_BEFORE_RESULT_BYTES: usize = 768 * 1024;
 
-/// 레코드의 직렬화 크기가 [`MAX_RECORD_BEFORE_RESULT_BYTES`] 를 넘으면 그 크기를 돌려준다.
-pub fn record_over_limit(task: &Task) -> Option<usize> {
+/// 레코드의 직렬화 크기가 [`MAX_RECORD_BEFORE_RESULT_BYTES`] 를 넘으면 사유를 돌려준다. `what` 은 레코드를 키운 것을 말한다.
+pub fn check(task: &Task, what: &str) -> Result<(), String> {
+    let limit = MAX_RECORD_BEFORE_RESULT_BYTES;
     let size = serde_json::to_vec(task).map_or(usize::MAX, |b| b.len());
-    (size > MAX_RECORD_BEFORE_RESULT_BYTES).then_some(size)
-}
-
-/// 상한을 넘은 레코드의 사유. `what` 은 레코드를 키운 것을 말한다.
-pub fn record_too_large_message(task_id: &str, what: &str, size: usize) -> String {
-    format!(
-        "task {task_id}: {what} makes the task record {size} bytes, over the \
-         {MAX_RECORD_BEFORE_RESULT_BYTES} byte limit for a task before its result; keep large \
-         data out of the task (store it elsewhere and pass a reference)"
-    )
+    if size <= limit {
+        return Ok(());
+    }
+    Err(format!(
+        "task record too large: task {}: {what} makes the task record {size} bytes, over the \
+         {limit} byte limit for a task before its result; keep large data out of the task (store \
+         it elsewhere and pass a reference)",
+        task.id
+    ))
 }
 
 #[cfg(test)]

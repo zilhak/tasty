@@ -51,7 +51,8 @@ fn a_task_definition_over_the_record_limit_is_invalid_params() {
     let err = resp.error.expect("큰 정의를 받았다");
     assert_eq!(err.code, -32602, "{}", err.message);
     assert!(
-        err.message.starts_with("invalid argument: task ")
+        err.message
+            .starts_with("invalid argument: task record too large: task ")
             && err.message.contains(&format!(
                 "over the {MAX_RECORD_BEFORE_RESULT_BYTES} byte limit for a task before its result"
             )),
@@ -80,7 +81,7 @@ fn a_graph_task_over_the_record_limit_is_invalid_params_with_its_location() {
         assert_eq!(data["stage"], "input", "{method}: {data}");
         assert!(
             err.message
-                .contains("task b: the definition makes the task record"),
+                .contains("task record too large: task b: the definition makes the task record"),
             "{method}: {}",
             err.message
         );

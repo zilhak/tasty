@@ -12,6 +12,7 @@ pub(crate) mod holding_warning;
 mod holdings;
 mod poll;
 mod postprocess;
+mod record_room;
 mod report;
 mod run_group;
 mod run_result;
@@ -52,7 +53,6 @@ use std::time::Duration;
 
 use serde_json::json;
 use tasty_agent::runner::{DispatchHandle, DispatchOutcome, PollOutcome, TaskExecutor};
-use tasty_agent::task::record_limit;
 use tasty_agent::{Task, TaskCommand, TaskId, TaskResult};
 use tasty_memory::{HOST_OWNER, MemoryStorage, MemoryValue, PutOpts, Scope};
 
@@ -297,14 +297,9 @@ impl TaskExecutor for HostExecutor {
             );
             return DispatchOutcome::Deferred;
         }
-        // 상한이 생기기 전에 저장된 큰 정의는 실행하지 않는다. 결과를 줄여도 저장할 수 없어
-        // 완료가 기록되지 않는다.
-        if let Some(size) = record_limit::record_over_limit(task) {
-            return DispatchOutcome::PermanentFail(record_limit::record_too_large_message(
-                &task.id,
-                "the definition",
-                size,
-            ));
+        // 상한이 생기기 전에 저장된 큰 정의는 실행하지 않는다(완료를 기록할 몫이 없다).
+        if let Err(e) = self.record_fits(task, "the definition") {
+            return DispatchOutcome::PermanentFail(e);
         }
         match self.try_acquire_lease(task) {
             Ok(None) => {}
@@ -338,20 +333,18 @@ impl TaskExecutor for HostExecutor {
             Ok(outputs) if outputs.is_empty() => Ok(false),
             Ok(outputs) => substitute_task_outputs(&mut substituted.command, &outputs),
             Err(e) => Err(e),
-        };
+        }
+        .and_then(|changed| self.substituted_fits(&substituted, changed));
         let dispatch_result = match outputs_substituted {
             Ok(changed) => {
                 // 바뀐 command만 저장해 조회와 실제 실행 인자를 맞춘다.
-                let persisted = if let Some((ws, _, _)) = &leased {
-                    self.persist_substituted_command(*ws, &substituted)
+                if let Some((ws, _, _)) = &leased {
+                    self.persist_substituted_command(*ws, &substituted);
                 } else if changed {
-                    self.persist_substituted_command(task.workspace_id, &substituted)
-                } else {
-                    Ok(())
-                };
+                    self.persist_substituted_command(task.workspace_id, &substituted);
+                }
                 // v2 입력은 치환을 마친 뒤 해석해 값이 다시 해석되지 않게 한다.
-                persisted
-                    .and_then(|()| self.resolve_typed_inputs(&mut substituted))
+                self.resolve_typed_inputs(&mut substituted)
                     .and_then(|()| self.dispatch_command(&substituted))
             }
             Err(e) => Err(format!("task output substitution: {e}")),

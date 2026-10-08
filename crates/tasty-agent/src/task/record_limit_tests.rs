@@ -100,7 +100,7 @@ fn a_graph_task_over_the_limit_is_refused_with_its_location() {
     assert_eq!(f.location.as_deref(), Some("/tasks/1"));
     assert!(
         f.message
-            .starts_with("task b: the definition makes the task record"),
+            .starts_with("task record too large: task b: the definition makes the task record"),
         "{}",
         f.message
     );
@@ -135,8 +135,9 @@ fn a_resolved_input_over_the_limit_is_kept_as_an_input_failure() {
     assert_eq!(f.stage, FailureStage::Input);
     assert_eq!(f.location.as_deref(), Some("/bindings"));
     assert!(
-        f.message
-            .contains("the resolved input makes the task record"),
+        f.message.starts_with("task record too large: task ")
+            && f.message
+                .contains("the resolved input makes the task record"),
         "{}",
         f.message
     );
