@@ -94,6 +94,26 @@ pub fn normalize_file_arg(raw: &str) -> Result<String> {
     Ok(strip_verbatim(&canon))
 }
 
+/// `scheme://` 로 시작하는 값인지. RFC 3986 scheme(영문자로 시작, 영숫자·`+`·`-`·`.`) 뒤에 `://`가 와야
+/// 한다. Windows 드라이브 경로(`C:\a`)는 `://`가 없어 URL로 보지 않는다.
+fn has_url_scheme(raw: &str) -> bool {
+    let Some((scheme, _)) = raw.split_once("://") else {
+        return false;
+    };
+    let mut chars = scheme.chars();
+    chars.next().is_some_and(|c| c.is_ascii_alphabetic())
+        && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
+}
+
+/// URL 또는 파일 경로를 받는 인자(`path_kind = "url_or_file"`). `scheme://` 로 시작하면 그대로 두고,
+/// 그 밖의 값은 [`normalize_file_arg`] 처럼 호출자 cwd 기준 절대 경로로 바꾸고 파일인지 검사한다.
+pub fn normalize_url_or_file_arg(raw: &str) -> Result<String> {
+    if has_url_scheme(raw) {
+        return Ok(raw.to_string());
+    }
+    normalize_file_arg(raw)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -209,6 +229,43 @@ mod tests {
     #[test]
     fn file_arg_empty_errors() {
         assert!(normalize_file_arg("").is_err());
+    }
+
+    #[test]
+    fn url_or_file_arg_keeps_urls_unchanged() {
+        for url in [
+            "https://example.com/a?b=1",
+            "http://127.0.0.1:5173/",
+            "file:///tmp/does-not-need-to-exist.html",
+        ] {
+            assert_eq!(normalize_url_or_file_arg(url).expect("ok"), url);
+        }
+    }
+
+    #[test]
+    fn url_or_file_arg_resolves_a_relative_file_against_process_cwd() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir(tmp.path().join("dist")).unwrap();
+        std::fs::write(tmp.path().join("dist").join("index.html"), "<p>").unwrap();
+        let _cwd = CwdGuard::enter(tmp.path());
+        let out = normalize_url_or_file_arg("./dist/index.html").expect("ok");
+        assert!(Path::new(&out).is_absolute(), "got {out}");
+        assert!(Path::new(&out).is_file(), "got {out}");
+        assert!(out.ends_with("index.html"), "got {out}");
+    }
+
+    #[test]
+    fn url_or_file_arg_rejects_a_missing_file() {
+        assert!(normalize_url_or_file_arg("./tasty-test-missing/index.html").is_err());
+    }
+
+    #[test]
+    fn a_drive_path_is_not_a_url_scheme() {
+        assert!(!has_url_scheme("C:\\Users\\a\\index.html"));
+        assert!(!has_url_scheme("C:/Users/a/index.html"));
+        assert!(!has_url_scheme("./dist/index.html"));
+        assert!(!has_url_scheme("1http://x"));
+        assert!(has_url_scheme("https://x"));
     }
 
     #[test]

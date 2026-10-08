@@ -33,7 +33,7 @@ desc = "HTML 뷰어 명령어"
 description = "기존 HTML 화면의 URL 변경"
 
 [html.cli.arg.open_args.url]
-help = "URL(http://, https://, file://). 로컬 파일은 file:// URL로 지정하세요."
+help = "URL(http://, https://, file://) 또는 로컬 파일 경로. 상대 경로는 현재 디렉터리 기준으로 해석합니다."
 
 [html.cli.arg.open_args.surface]
 help = "대상 HTML surface ID(생략 시 호출자의 TASTY_SURFACE_ID)"

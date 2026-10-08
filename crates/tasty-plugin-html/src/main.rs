@@ -2,6 +2,7 @@
 
 //! 호스트의 네이티브 WebView에 HTML·URL을 표시한다.
 //! 생성·복원 때 URL을 전달하고 스냅샷에 남긴다. html.open은 기존 화면의 URL을 갱신한다.
+//! 두 경로 모두 로컬 파일 경로를 file URI로 바꿔 전달한다.
 
 use serde_json::{Value, json};
 use tasty_plugin_sdk::{
@@ -132,14 +133,38 @@ fn percent_encode_uri(s: &str) -> String {
     out
 }
 
-/// `html.open(url, surface)` — host 의 webview.set_url 로 URL 전달.
+/// 절대 로컬 경로인지(POSIX `/…`, UNC `\\…`, Windows 드라이브 `C:\…`·`C:/…`).
+fn is_absolute_local(raw: &str) -> bool {
+    let bytes = raw.as_bytes();
+    raw.starts_with('/')
+        || raw.starts_with("\\\\")
+        || (bytes.len() >= 3
+            && bytes[0].is_ascii_alphabetic()
+            && bytes[1] == b':'
+            && matches!(bytes[2], b'/' | b'\\'))
+}
+
+/// html.open의 url 값을 webview.set_url에 넘길 URL로 바꾼다. 상대 경로는 기준 디렉터리를 알 수 없어
+/// 거절한다. CLI는 `path_kind = "url_or_file"`로 호출 위치 기준 절대 경로를 보낸다.
+fn open_target(raw: &str) -> Result<String, IpcMethodError> {
+    let is_url =
+        raw.starts_with("http://") || raw.starts_with("https://") || raw.starts_with("file://");
+    if !is_url && !is_absolute_local(raw) {
+        return Err(IpcMethodError::invalid_params(&format!(
+            "relative path '{raw}' has no base directory — pass an absolute path or a URL, or use `tasty html open`, which resolves it against the current directory"
+        )));
+    }
+    Ok(local_path_to_file_uri(raw))
+}
+
+/// `html.open(url, surface)` — 로컬 경로를 file URI로 바꿔 host 의 webview.set_url 로 전달.
 fn html_open(ctx: &IpcMethodCtx) -> Result<Value, IpcMethodError> {
-    let url = ctx
+    let raw = ctx
         .params
         .get("url")
         .and_then(|v| v.as_str())
-        .ok_or_else(|| IpcMethodError::invalid_params("missing 'url'"))?
-        .to_string();
+        .ok_or_else(|| IpcMethodError::invalid_params("missing 'url'"))?;
+    let url = open_target(raw)?;
     let surface_id = ctx
         .params
         .get("surface")
@@ -229,6 +254,29 @@ mod tests {
             local_path_to_file_uri("/home/user/my file #1 100%.html"),
             "file:///home/user/my%20file%20%231%20100%25.html"
         );
+    }
+
+    #[test]
+    fn open_target_turns_an_absolute_path_into_a_file_uri() {
+        assert_eq!(
+            open_target("/home/user/dist/index.html").unwrap(),
+            "file:///home/user/dist/index.html"
+        );
+        assert_eq!(
+            open_target("C:\\site\\index.html").unwrap(),
+            "file:///C:/site/index.html"
+        );
+        assert_eq!(
+            open_target("https://example.com/a").unwrap(),
+            "https://example.com/a"
+        );
+    }
+
+    #[test]
+    fn open_target_rejects_a_relative_path() {
+        // IPC 로 직접 온 상대 경로는 기준 디렉터리가 없다. 드라이브 경로로 잘못 바꾸지 않는다.
+        assert!(open_target("./dist/index.html").is_err());
+        assert!(open_target("dist/index.html").is_err());
     }
 
     #[test]

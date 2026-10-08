@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.html"
 name = "HTML Viewer"
-version = "0.1.82"
+version = "0.1.83"
 description = "HTML viewer surface. Uses tasty's native WebView overlay toolkit."
 api_version = "1"
 permissions = [
@@ -69,7 +69,7 @@ subcommands = [
 
 [contributes.cli.arg_groups.open_args]
 positional = [
-    { name = "url", type = "string", required = true, help = "URL (http://, https:// or file://). Use a file:// URL for a local file.", help_i18n_key = "html.cli.arg.open_args.url.help" },
+    { name = "url", type = "string", required = true, path_kind = "url_or_file", help = "URL (http://, https:// or file://) or a local file path. A relative path is resolved against the current directory.", help_i18n_key = "html.cli.arg.open_args.url.help" },
 ]
 flags = [
     { name = "surface", type = "u32", flag = "--surface", required = false, help = "Target HTML surface ID (defaults to the caller's TASTY_SURFACE_ID)", help_i18n_key = "html.cli.arg.open_args.surface.help" },

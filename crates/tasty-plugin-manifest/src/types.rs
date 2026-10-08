@@ -1048,6 +1048,7 @@ pub struct CliArg {
     #[serde(default)]
     pub stdin_field: Option<String>,
     /// directory/file 경로 인자를 호출자 cwd 기준 절대 경로로 바꾸고 존재·종류를 검사한다.
+    /// `url_or_file` 은 `scheme://` 로 시작하는 값을 그대로 두고 나머지를 file 처럼 다룬다.
     /// 파일 내용은 검사하지 않으며 플러그인에서 별도로 확인해야 한다.
     #[serde(default)]
     pub path_kind: Option<String>,

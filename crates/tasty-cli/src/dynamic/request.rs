@@ -59,6 +59,7 @@ pub fn matches_to_request(
                 // `path_kind = "directory"`/`"file"` 이 선언된 string 인자는 CLI
                 // process cwd 기준 absolute path 로 정규화 + 존재(+종류) 검증.
                 // 실패 시 즉시 에러 — 호스트/plugin 은 절대경로만 받는다는 contract.
+                // `"url_or_file"` 은 `scheme://` 값을 그대로 두고 나머지를 `"file"` 처럼 다룬다.
                 let v = if matches!(arg.ty, CliArgType::String)
                     && let Some(raw) = v.as_str()
                 {
@@ -77,6 +78,18 @@ pub fn matches_to_request(
                         ),
                         Some("file") => Value::String(
                             crate::cwd_resolve::normalize_file_arg(raw).map_err(|e| {
+                                anyhow!(
+                                    "{}",
+                                    tasty_i18n::t_fmt2(
+                                        "cli.plugin_cli.arg_invalid",
+                                        &arg.name,
+                                        &e.to_string()
+                                    )
+                                )
+                            })?,
+                        ),
+                        Some("url_or_file") => Value::String(
+                            crate::cwd_resolve::normalize_url_or_file_arg(raw).map_err(|e| {
                                 anyhow!(
                                     "{}",
                                     tasty_i18n::t_fmt2(

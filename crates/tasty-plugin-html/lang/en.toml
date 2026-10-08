@@ -33,7 +33,7 @@ desc = "HTML viewer commands"
 description = "Set the URL of an existing HTML surface"
 
 [html.cli.arg.open_args.url]
-help = "URL (http://, https:// or file://). Use a file:// URL for a local file."
+help = "URL (http://, https:// or file://) or a local file path. A relative path is resolved against the current directory."
 
 [html.cli.arg.open_args.surface]
 help = "Target HTML surface ID (defaults to the caller's TASTY_SURFACE_ID)"

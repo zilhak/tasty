@@ -33,7 +33,7 @@ desc = "HTML ビューアコマンド"
 description = "既存の HTML surface の URL を変更する"
 
 [html.cli.arg.open_args.url]
-help = "URL（http://、https://、file://）。ローカルファイルは file:// URL で指定してください。"
+help = "URL（http://、https://、file://）またはローカルファイルのパス。相対パスは現在のディレクトリを基準に解決します。"
 
 [html.cli.arg.open_args.surface]
 help = "対象 HTML surface ID（省略時は呼び出し元の TASTY_SURFACE_ID）"
