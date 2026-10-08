@@ -16,6 +16,9 @@ src/app/dispatch_domain/terminal.rs
 crates/tasty-task-runtime/src/runner_host.rs
 crates/tasty-task-runtime/src/runner_host/run_result.rs
 crates/tasty-task-runtime/src/runner_host/command_inputs.rs
+crates/tasty-task-runtime/src/runner_host/acquire.rs
+crates/tasty-task-runtime/src/runner_host/dispatch.rs
+crates/tasty-task-runtime/src/runner_host/poll.rs
 src/view/main/redraw.rs
 src/view/settings/ui.rs
 src/view/settings/ui/tabs/appearance.rs

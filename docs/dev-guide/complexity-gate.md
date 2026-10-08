@@ -54,6 +54,9 @@
 | 부모 | 분리한 모듈 | 책임 |
 |---|---|---|
 | `crates/tasty-task-runtime/src/runner_host.rs` | `runner_host/run_result.rs` | 출력 캡처·실행 결과 저장과 조회 |
+| `crates/tasty-task-runtime/src/runner_host.rs` | `runner_host/acquire.rs` | 실행 전 lease·semaphore 획득과 종결 뒤 점유·handle 반환 |
+| `crates/tasty-task-runtime/src/runner_host.rs` | `runner_host/dispatch.rs` | 실행 인자 준비와 command 종류별 dispatch |
+| `crates/tasty-task-runtime/src/runner_host.rs` | `runner_host/poll.rs` | dispatch 한 handle 의 완료 확인 |
 | `crates/tasty-ssh/src/lib.rs` | `tunnel.rs` | SSH 터널 수명과 재시도 간격 |
 | `crates/tasty-plugin-sdk/src/egui_surface.rs` | `egui_surface/input.rs` | wire 입력을 egui 이벤트로 변환 |
 | `crates/tasty-cli/src/local/attach.rs` | `attach/stdin.rs` | 표준 입력 라우팅과 EOF 전달 |
