@@ -395,6 +395,25 @@ Settings › Keybindings › **Import / Export** 는 위 [이식 번들](#이식
 
 결정의 근거·대안·재검토 조건은 [ADR-0019](../../adr/0019-keybinding-settings-and-hints.md).
 
+### Plugins 서브탭
+
+플러그인 명령의 단축키 override 를 편집한다. 화면은 공용 view `tasty_ui_widgets::kb_plugins_subtab` 이 그리고,
+본체 wrapper `draw_plugins_subtab`(`src/view/settings/ui/keybindings_tab/plugins.rs`)은 초안과 저장된 override 를
+표시값으로 풀어 넘긴 뒤 바뀐 것만 `plugin_shortcuts_draft` 에 쓴다. 디스크 반영은 위 **Cancel** 규칙과 같다.
+
+- **플러그인 선택** — 이름순 Select. 단축키를 등록한 플러그인이 없으면 "No plugins have registered shortcuts." 한 줄만 보인다.
+- **명령 한 줄** — 제목(제목 열 안에서 줄바꿈) · 방식 Select(Inherit / Custom / None) · slot · **Reset**.
+  - Inherit: slot 은 상속할 호스트 동작 Select(`INHERITABLE_HOST_ACTIONS`). 줄 아래에 그 동작의 현재 키("Inherited (…)", 키가 없으면 "None").
+  - Custom: slot 은 mono 입력칸. 쉼표로 여러 키, 앞뒤 공백 무시. 타이핑하면 바로 초안에 쓴다.
+    `tasty_key_match::binding_key_recognized` 가 거절하는 첫 키가 있으면 입력칸이 invalid 가 되고 줄 아래에 "Unrecognized key: <키>" 가 붙는다.
+    이 표시는 경고이며 값은 그대로 초안에 쓰고 저장한다.
+  - None: slot 은 "(Unassigned)".
+  - 방식을 바꾸면 Custom 은 이전 Custom 값이나 매니페스트 키, Inherit 는 매니페스트 source 나 화이트리스트 첫 항목으로 시작한다.
+- **초안 점** — 초안이 저장값과 다르면 제목 뒤에 점이 선다(같은 값으로 되돌리면 초안 항목이 지워져 점도 사라진다).
+- **Reset** — 초안이나 저장값에 override 가 있을 때만 누를 수 있다. 저장된 override 가 있으면 초안에 지움(None)을 넣고, 없으면 초안만 지운다.
+
+치수와 토큰은 [디자인·갤러리 대응표](../../design/systems/design-gallery-mapping.md#settings--keybindings--plugins-kbplugins) 를 따른다.
+
 ### 설정 탭 구성 (서브탭·항목 순서)
 
 Settings 의 Keybindings 탭은 액션을 서브탭으로 묶고, 그 순서는 **유비쿼터스 언어 계층**을 따른다. 서브탭 enum: `KeybindingsSubTab`(`src/view/settings/ui/keybindings_tab.rs`).

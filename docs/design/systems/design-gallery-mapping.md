@@ -758,7 +758,9 @@ i18n: `settings.keybindings.preset_*` 신규 10키 + `select_preset_label`/`pres
 디자인 `ui_kits/terminal/overlays/kb_plugins_subtab.jsx` + `gallery/overlays-windows.jsx` Spec
 "Keybindings › Plugins" ↔ 갤러리 `catalog/components/kb_plugins.rs`(Overlays › `kbplugins`, 시안 견본 넷:
 기본 · 초안과 해석 실패 · 녹화 버튼 대안 · 빈 상태). 화면은 공용 view
-`tasty_ui_widgets::kb_plugins_subtab`(`crates/tasty-ui-widgets/src/kb_plugins.rs`)이 그린다. 갤러리는 시안
+`tasty_ui_widgets::kb_plugins_subtab`(`crates/tasty-ui-widgets/src/kb_plugins.rs`)이 그리고 본체 wrapper
+`src/view/settings/ui/keybindings_tab/plugins.rs` 의 `draw_plugins_subtab` 과 갤러리가 함께 부른다. 본체 wrapper 는 초안과
+저장된 override 를 표시값으로 풀고 결과를 `plugin_shortcuts_draft` 에 쓴다. 갤러리는 시안
 `KBP_PLUGINS`·`KBP_RESOLVED` 고정 데이터와 시안 초안 규칙(mode 전환 시 시작값, Reset 이 override 를 지움)으로
 props 를 채운다.
 

@@ -706,7 +706,6 @@ import_export = "インポート / エクスポート"
 
 [settings.keybindings.plugins]
 no_plugins_with_commands = "ショートカットを登録したプラグインがありません。"
-none_selected = "左から設定するプラグインを選択してください。"
 plugin_label = "プラグイン:"
 mode_inherit = "ホスト継承"
 mode_custom = "独自設定"
@@ -715,7 +714,6 @@ mode_none = "なし"
 inherited = "継承 ({})"
 draft_hint = "変更あり — まだ保存されていません"
 unrecognized_key = "認識できないキー:"
-inherit_source_prefix = "継承元"
 reset_button = "リセット"
 reset_hint = "個別の設定を消去し、マニフェストの既定値を使用します。"
 

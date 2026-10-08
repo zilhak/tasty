@@ -1,4 +1,4 @@
-<!-- source-hash: 1d4c24d3ebd6 -->
+<!-- source-hash: ed898d30585e -->
 # Keybindings
 
 Use Tasty with shortcuts that feel familiar. Choose a preset or assign your preferred keys to actions you use often. Open **Settings** > **Keybindings** to get started.
@@ -180,6 +180,16 @@ Recording rules:
 - Keys such as `F1`~`F12` · `Tab` · `Enter` register without a modifier.
 - `Esc` is reserved for "empty the slot" and cannot be recorded as a keybinding. To restore **Exit fullscreen stage** or **Cancel in a code field**, whose default is `Esc`, reapply a preset.
 - When a plugin keybinding (the **Plugins** sub-tab) overlaps a core keybinding, **the plugin's runs first**.
+
+## Changing a plugin keybinding
+
+In the **Plugins** sub-tab, pick a plugin from the **Plugin:** drop-down at the top. Each of its commands gets one line.
+
+- **Inherit** in the mode drop-down follows the key of one Tasty action (for example `clipboard.paste`). The key it follows right now is shown under the line.
+- **Custom** lets you type the key (for example `ctrl+f5`; separate several with commas). If a key can never match any input (for example `ctrl+shft+h`), **Unrecognized key:** appears under the field. It is still saved, but that key will not run the command.
+- **None** leaves the command without a keybinding.
+- A command with an unsaved change shows a dot after its name. **Reset** clears your setting and goes back to the plugin's default; it cannot be pressed when there is no setting of yours.
+- Changes apply only when you close the window with **Save**; Cancel or closing the window discards them.
 
 ## Changing the numbered-switching rule
 

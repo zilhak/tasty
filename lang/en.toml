@@ -706,7 +706,6 @@ import_export = "Import / Export"
 
 [settings.keybindings.plugins]
 no_plugins_with_commands = "No plugins have registered shortcuts."
-none_selected = "Select a plugin to configure its shortcuts."
 plugin_label = "Plugin:"
 mode_inherit = "Inherit"
 mode_custom = "Custom"
@@ -715,7 +714,6 @@ mode_none = "None"
 inherited = "Inherited ({})"
 draft_hint = "Changed — not saved yet"
 unrecognized_key = "Unrecognized key:"
-inherit_source_prefix = "Follows"
 reset_button = "Reset"
 reset_hint = "Clear the override and use the manifest default."
 

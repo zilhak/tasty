@@ -83,11 +83,6 @@ const LENGTH_SETTER_BASELINE: &[(&str, &str, &str)] = &[
         "240.0",
     ),
     (
-        "src/view/settings/ui/keybindings_tab/plugins.rs",
-        "desired_width(",
-        "180.0",
-    ),
-    (
         "src/view/settings/ui/tabs/appearance.rs",
         "desired_width(",
         "190.0",
