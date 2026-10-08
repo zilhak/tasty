@@ -348,9 +348,14 @@ fn gpu_holders(ctx: &RunnerContext) -> Vec<String> {
     })
 }
 
-/// 이전 호스트가 띄운 후처리처럼 새 프로세스 그룹에서 오래 도는 프로세스. 회수는 별도 스레드가 한다.
+/// 이전 호스트가 띄운 후처리처럼 새 프로세스 그룹에서 오래 도는 프로세스. 회수는 별도 스레드가
+/// 하고, 그 스레드를 돌려준다. 끝낸 뒤 join 하면 회수까지 끝난 것이 확정된다.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
-fn spawn_postprocess_like() -> (u32, u64) {
+fn spawn_postprocess_like() -> (
+    u32,
+    u64,
+    std::thread::JoinHandle<std::io::Result<std::process::ExitStatus>>,
+) {
     use std::os::unix::process::CommandExt;
     let mut child = std::process::Command::new("sleep")
         .arg("60")
@@ -359,8 +364,8 @@ fn spawn_postprocess_like() -> (u32, u64) {
         .unwrap();
     let pid = child.id();
     let started_at = tasty_agent::platform::process_start::start_time(pid).unwrap();
-    std::thread::spawn(move || child.wait());
-    (pid, started_at)
+    let reaper = std::thread::spawn(move || child.wait());
+    (pid, started_at, reaper)
 }
 
 /// 러너 시작처럼 정리·복원한 뒤 복원한 회차를 넘겨받은 runner.
@@ -413,7 +418,7 @@ fn tick_until(
 #[test]
 fn a_live_postprocess_keeps_its_permit_across_a_restart_until_it_ends() {
     let (_td, ctx) = fresh_ctx();
-    let (pid, started_at) = spawn_postprocess_like();
+    let (pid, started_at, reaper) = spawn_postprocess_like();
     holding_judge_in_postprocess(&ctx, pid, started_at);
 
     let mut runner = restarted_runner(&ctx);
@@ -429,6 +434,8 @@ fn a_live_postprocess_keeps_its_permit_across_a_restart_until_it_ends() {
 
     // SAFETY: 이 시험이 띄운 프로세스 그룹이다.
     assert_eq!(unsafe { libc::kill(-(pid as i32), libc::SIGKILL) }, 0);
+    // 회수 전 종료 상태(좀비)는 러너가 살아 있다고 본다. 회수가 끝난 뒤부터 tick 을 센다.
+    reaper.join().unwrap().unwrap();
     tick_until(&ctx, &mut runner, "unknown after the end", || {
         judge(&ctx).state.is_terminal()
     });
@@ -448,14 +455,12 @@ fn a_live_postprocess_keeps_its_permit_across_a_restart_until_it_ends() {
 #[test]
 fn a_postprocess_that_ended_during_the_restart_ends_unknown_at_the_cleanup() {
     let (_td, ctx) = fresh_ctx();
-    let (pid, started_at) = spawn_postprocess_like();
+    let (pid, started_at, reaper) = spawn_postprocess_like();
     // SAFETY: 이 시험이 띄운 프로세스 그룹이다.
     assert_eq!(unsafe { libc::kill(-(pid as i32), libc::SIGKILL) }, 0);
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-    while !gone(pid as i32) {
-        assert!(std::time::Instant::now() < deadline);
-        std::thread::sleep(std::time::Duration::from_millis(10));
-    }
+    // 부팅 정리는 회수 전 종료 상태(좀비)도 살아 있다고 본다(`run_group::is_running`). 좀비가 된 것만
+    // 보고 정리를 부르면 회수가 늦을 때 task 가 Running 에 남으므로 회수 스레드를 join 한다.
+    reaper.join().unwrap().unwrap();
     holding_judge_in_postprocess(&ctx, pid, started_at);
 
     purge_stale_agent_state_on_boot(&ctx, &[1]);
@@ -528,7 +533,8 @@ fn a_dead_leader_ends_unknown_even_while_its_group_member_lives() {
 #[test]
 fn cancelling_a_restored_postprocess_kills_it_before_its_permit_returns() {
     let (_td, ctx) = fresh_ctx();
-    let (pid, started_at) = spawn_postprocess_like();
+    // 종료 확인은 러너가 tick 마다 한다. 회수 스레드는 기다리지 않는다.
+    let (pid, started_at, _reaper) = spawn_postprocess_like();
     holding_judge_in_postprocess(&ctx, pid, started_at);
     let mut runner = restarted_runner(&ctx);
     tick(&ctx, &mut runner);
