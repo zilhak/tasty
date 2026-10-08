@@ -84,6 +84,24 @@ fn the_stdin_document_reaches_the_command_and_is_closed() {
     assert_eq!(stdout_of(&r), doc);
 }
 
+/// 입력을 읽지 않고 끝나는 명령도 정상이다. 파이프 버퍼보다 큰 입력이라 쓰기는 반드시 파이프
+/// 끊김으로 끝나지만 실패가 아니며 결과는 종료 상태와 stdout 으로 정한다.
+#[test]
+fn a_command_that_never_reads_a_large_stdin_is_judged_by_its_exit() {
+    let big = json!({"draft": "x".repeat(4 * 1024 * 1024)})
+        .to_string()
+        .into_bytes();
+    let r = run_with(
+        "printf true",
+        big.clone(),
+        10_000,
+        &AtomicU8::new(STOP_NONE),
+    );
+    assert_eq!(stdout_of(&r), json!(true));
+    let r = run_with("exit 3", big, 10_000, &AtomicU8::new(STOP_NONE));
+    assert_eq!(cause_of(&r), PostprocessCause::NonzeroExit);
+}
+
 #[test]
 fn failures_are_reported_with_distinct_causes() {
     let r = run("echo why >&2; exit 3");
