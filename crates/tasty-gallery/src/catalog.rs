@@ -712,9 +712,9 @@ pub fn pages() -> Vec<Page> {
                         ),
                         spec(
                             "explorer-sidebar-short-cell",
-                            "Short cell — Favorites drops below 240, the cell stops at 160",
+                            "Short cell — Favorites drops below 240, the cell stops at 180",
                             Some(
-                                "Files only below a 240 body · split drag floor 160 · compact state row below 120",
+                                "Files only below a 240 body · split drag floor 180 (explorer-min-height) · compact state row below 120",
                             ),
                             components::explorer_sidebar::draw_short_cell,
                         ),

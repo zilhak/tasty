@@ -95,17 +95,18 @@ const PIN_STRIP_BODY_H: [LogicalPx; 4] = [
     PIN_STRIP_LOWER_H,
     FAVORITES_BODY_H,
 ];
-/// 시안 Short cell Spec 의 body 높이(`[300, 240, 200, 90]`). 90 은 칸이 하한 160 에 닿았을 때다.
+/// 시안 Short cell Spec 의 body 높이(`[300, 240, 200, 84]`). 84 는 칸이 하한(`explorer_min_height`)에
+/// 닿았을 때다.
 const SHORT_STRIP_BODY_H: [LogicalPx; 4] = [
     FAVORITES_BODY_H,
     LogicalPx(240.0),
     LogicalPx(200.0),
-    LogicalPx(90.0),
+    LogicalPx(84.0),
 ];
-/// 시안 Short cell 라벨이 칸 하한을 적는 body 높이(`h === 90`).
+/// 시안 Short cell 라벨이 칸 하한을 적는 body 높이(`h === 84`).
 const SHORT_FLOOR_BODY_H: LogicalPx = SHORT_STRIP_BODY_H[3];
-/// 시안 compact 무대의 내용 높이(`bodyHeight || 62`, 칸 하한 160 일 때)와 줄 최대 폭(`maxWidth: 440`).
-const COMPACT_BODY_H: LogicalPx = LogicalPx(62.0);
+/// 시안 compact 무대의 내용 높이(칸이 하한에 닿았을 때 84)와 줄 최대 폭(`maxWidth: 440`).
+const COMPACT_BODY_H: LogicalPx = LogicalPx(84.0);
 const COMPACT_ROW_MAX_W: LogicalPx = LogicalPx(440.0);
 
 /// 시안 "Sidebar layout — Favorites PINNED to the bottom (2-region split)".
@@ -242,9 +243,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
-/// 시안 "Short cell — Favorites drops below 240, the cell stops at 160".
+/// 시안 "Short cell — Favorites drops below 240, the cell stops at 180".
 pub fn draw_short_cell(ui: &mut egui::Ui, theme: &Theme) {
-    // 시안 Short cell: 240 미만에서 Favorites 가 빠지고 90 은 칸 하한 160 에 닿은 본문이다.
+    // 시안 Short cell: 240 미만에서 Favorites 가 빠지고 84 는 칸 하한에 닿은 본문이다.
+    let floor = theme.explorer_min_height().value();
     body_strip(
         ui,
         theme,
@@ -256,9 +258,17 @@ pub fn draw_short_cell(ui: &mut egui::Ui, theme: &Theme) {
     cluster(
         ui,
         theme,
-        "content body 62 (cell at 160) → compact row",
+        &format!(
+            "content body {} (cell at {floor}) → compact row",
+            COMPACT_BODY_H.value()
+        ),
         |ui| compact_rows(ui, theme),
     );
+    let cell_floor = format!(
+        "{floor} · explorer-min-height · split drag stops here · tabs 28 + toolbar 44 + header 28 + 2×28 + status 24"
+    );
+    let split =
+        format!("explorer keeps {floor}, sibling takes the rest; refused if the sibling can't");
 
     meta(
         ui,
@@ -270,14 +280,8 @@ pub fn draw_short_cell(ui: &mut egui::Ui, theme: &Theme) {
             ),
             ("Files only", "caption + tree, own scroll, full body"),
             ("return", "body ≥ 240 → pin ladder as before (120 floor)"),
-            (
-                "cell floor",
-                "160 · explorer-min-height · split drag stops here",
-            ),
-            (
-                "split",
-                "explorer keeps 160, sibling takes the rest; refused if the sibling can't",
-            ),
+            ("cell floor", &cell_floor),
+            ("split", &split),
             ("window resize", "floor not held"),
             (
                 "compact state",
@@ -291,7 +295,7 @@ pub fn draw_short_cell(ui: &mut egui::Ui, theme: &Theme) {
         ],
         &[
             TokenChip::without_color("explorer-favorites-hide-below", "→ size-240"),
-            TokenChip::without_color("explorer-min-height", "→ size-160"),
+            TokenChip::without_color("explorer-min-height", "→ size-180 (was 160)"),
             TokenChip::without_color("explorer-state-compact-below", "→ size-120"),
             TokenChip::without_color("explorer-favorites-pin-min-height", "120 floor (unchanged)"),
         ],
@@ -299,11 +303,17 @@ pub fn draw_short_cell(ui: &mut egui::Ui, theme: &Theme) {
     note(
         ui,
         theme,
-        "Short cell: below a 240px body (the 120 Favorites floor + 120 for Files) the \
-         Favorites region is not drawn and Files takes the whole body; it comes back at 240. \
-         The explorer cell itself stops at 160 (toolbar + status line + two rows) while a \
-         split is dragged, so the Files caption and at least one row stay visible. The \
-         sidebar is never hidden as a whole.",
+        &format!(
+            "Short cell: below a 240px body (the 120 Favorites floor + 120 for Files) the \
+             Favorites region is not drawn and Files takes the whole body; it comes back at 240. \
+             The explorer cell itself stops at {floor} while a split is dragged: internal tabs \
+             28 · toolbar 44 · Detail header 28 · two rows 56 · status line 24. The explorer's \
+             internal layout does not change at the floor, so the status line keeps its place \
+             and Detail shows two rows. A split that would leave an explorer cell under the \
+             floor places the divider so the explorer keeps {floor}; it is refused only when \
+             another explorer cell would fall under the floor. A window resize does not hold \
+             the floor. The sidebar is never hidden as a whole."
+        ),
     );
     note(
         ui,

@@ -78,6 +78,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         surface(ui, theme);
     });
 
+    let min_height = format!(
+        "{} explorer-min-height — the split drag stops here",
+        theme.explorer_min_height().value()
+    );
     spec::meta(
         ui,
         theme,
@@ -95,10 +99,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "detail header",
                 "shared Table header — UI font · table-header-font-size 11 · weight medium · caps",
             ),
-            (
-                "min height",
-                "160 explorer-min-height — the split drag stops here",
-            ),
+            ("min height", &min_height),
             ("selected row", "surface-active"),
         ],
         &[
