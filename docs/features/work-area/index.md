@@ -3,7 +3,7 @@
 - **Status**: Implemented
 - **주체**: 로컬 사용자(GUI 직접) · AI Agent(IPC/CLI 로 ID 지정 조작) · 원격 접속 사용자(surface/workspace 점유)
 - **ADR**: 없음
-- **코드**: `crates/tasty-model/` (`workspace.rs`/`pane.rs`/`tab.rs`/`surface_layout.rs`/`pane_tree.rs`/surface 타입들), `src/core/state.rs` (`CoreState`), `src/state/` (`workspace.rs`/`pane.rs`/`tab.rs` 동작)
+- **코드**: `crates/tasty-model/` (`workspace.rs`/`pane.rs`/`tab.rs`/`surface_layout.rs`/`pane_tree.rs`), `crates/tasty-core/src/state.rs` (`CoreState`), `src/runtime/engine_session.rs` (`EngineSession`), `src/state/navigation.rs` (View 선택 `NavigationState`), `src/state/` (`workspace.rs`/`pane.rs`/`tab.rs` 요청 구성)
 - **화면**: [아래 절](#화면)
 
 ## 목적
@@ -14,7 +14,7 @@
 
 ### 도메인 트리
 
-`CoreState` 가 `workspaces: Vec<Workspace>` 를 들고, 각 객체는 아래로 중첩된다. 두 군데에 **이진 트리(분할 트리)** 가 있다 — 상위(Pane)와 하위(Surface).
+`CoreState` 가 로컬 워크스페이스와 attach mirror 워크스페이스를 확정 구조로 들고, 각 객체는 아래로 중첩된다. 두 군데에 **이진 트리(분할 트리)** 가 있다 — 상위(Pane)와 하위(Surface).
 
 ```
 CoreState
@@ -23,15 +23,26 @@ CoreState
         └── Pane         (탭 바 하나를 가진 화면 영역)
             └── Tab       (Vec — active_tab 하나가 활성)
                 └── SurfaceLayout   ← 하위 레이아웃: Surface 들의 이진 분할 트리 (탭 종속)
-                    └── Surface      (leaf — 타입을 가짐)
+                    └── SurfaceDescriptor  (leaf — surface ID 와 kind)
 ```
+
+이 트리는 구조만 가진다. 실행 자원과 관측값, 사용자의 선택은 다른 소유자에 있다.
+
+| 상태 | 소유자 |
+|---|---|
+| 구조 트리(워크스페이스·pane·탭·분할·leaf) | `CoreState` — journal 이 확정한 projection |
+| surface 실행 객체(`Surface` trait 구현), PTY, kind registry | `EngineSession` 의 runtime(`EngineRuntime`) |
+| 탭 제목 관측값(OSC 제목·cwd 이름), 점유, 알림, busy | `EngineSession.live`(`LiveDomainState`, `src/core/live.rs`) |
+| 선택된 워크스페이스·pane·탭·surface, 분할 노드별 선택 힌트 | View 의 `NavigationState`(`src/state/navigation.rs`) — 창마다 따로 둔다 |
+
+선택이 View 에 있는 이유와 ID 지정 원칙은 [ADR-0059](../../adr/0059-id-targets-and-view-owned-selection.md)에 있다.
 
 ### Workspace
 
 MainView 의 최상위 컨테이너. 한 MainView 가 **여러 개**를 갖고 사이드바에서 전환한다.
 
-- 필드: `id` · `name` · `subtitle` · `description` · `pane_layout`(상위 레이아웃 `PaneNode`) · `focused_pane`(이 워크스페이스에서 포커스된 Pane) · `attach_mapping`(원격 attach 매핑, 있으면 활성화 시 자동 attach) · `mirror`(원격을 attach 한 client mirror 인지 — 사이드바 REMOTE 표시/레일 corner chip 으로 구분).
-- `focused_pane` 는 워크스페이스마다 따로 기억된다 — 전환해도 각자의 포커스가 보존된다.
+- 필드: `id` · `name` · `subtitle` · `description` · 상위 레이아웃 `PaneNode` · `attach_mapping`(원격 attach 매핑, 있으면 활성화 시 자동 attach) · `mirror`(원격을 attach 한 client mirror 인지 — 사이드바 REMOTE 표시/레일 corner chip 으로 구분) · `category`(사이드바 카테고리).
+- 포커스된 Pane 은 워크스페이스 필드가 아니라 View 의 `NavigationState` 가 워크스페이스마다 기억한다 — 전환해도 각자의 포커스가 보존된다.
 - 변형: 일반 워크스페이스 / **mirror 워크스페이스**(원격 attach 의 client측). mirror 는 런타임 전용(영속 안 함, 재시작 시 재attach), attach 의 점유 모델은 [actors](../../concepts/actors.md#점유-occupation-모델).
 
 ### Pane — 상위 레이아웃 (탭 무관)
@@ -45,31 +56,24 @@ Pane 은 **독립적인 탭 바를 가진 화면 영역**이다. Workspace 안�
 
 ### Tab — 하위 레이아웃 (탭 종속)
 
-Pane 안의 탭 하나. 내부에 Surface 들의 `SurfaceLayout` 이진 트리(`Leaf(Box<dyn Surface>)` | `Split { direction, ratio, first, second, focus_second }`)를 가진다. **탭을 전환하면 이 분할 전체가 함께 전환**된다 — iTerm2 의 "분할이 tab 에 종속" 에 대응.
+Pane 안의 탭 하나. 내부에 Surface 들의 `SurfaceLayout` 이진 트리(`Leaf(SurfaceDescriptor)` | `Split { direction, ratio, first, second, node_id }`)를 가진다. `node_id` 는 실행 중에만 안정적인 분할 노드 식별자이며, 어느 쪽을 선택했는지는 View 가 이 ID 로 기억한다. **탭을 전환하면 이 분할 전체가 함께 전환**된다 — iTerm2 의 "분할이 tab 에 종속" 에 대응.
 
-- 필드: `id` · `name`(자동 생성, 예 "Shell") · `explicit_name`(명시 지정 — 최우선) · `osc_title`(OSC 0/2 터미널 타이틀) · `layout`(`SurfaceLayout`) · `focused_surface` · `cached_display_name`.
-- **표시명 우선순위**: `explicit_name` > `osc_title` > cwd 파생 캐시명 > `name`. cwd 변경 시 shell prompt 가 새 OSC title 을 보내면 cwd가 반영. `explicit_name` 은 cwd/OSC 로 덮이지 않음(에이전트 `tab.create --name`).
-- **셸 exe 경로 형태의 OSC 제목은 소스에서 무시된다.** ConPTY 는 spawn 시 콘솔 기본 제목으로 셸 실행파일 경로(예 `C:\Program Files/Git/bin/bash.exe`)를 OSC 0/2로 보내는데, 이 값이 `osc_title` 에 고정되면 복구 후 탭 제목이 exe 경로로 보인다. `map_osc`(`crates/tasty-terminal/src/vte_handler/osc.rs`)가 "경로 형태(`/`·`\`·`:` 포함) + basename 이 known shell(`is_known_shell_name`)" 인 제목을 `current_title` 세팅·`TitleChanged` 발생 없이 버린다 — bare `bash` 같은 비경로 제목은 통과(오탐 방지). 보강으로 Windows 빌트인 bashrc(`__tasty_title`)가 매 프롬프트에 cwd 기반 이름(`~`/`/`/basename)을 OSC 0으로 보내 `osc_title` 도 cwd 를 따른다.
-- **`osc_title` 은 탭의 `focused_surface` 가 보낸 title 만 반영한다.** 한 탭 안의 병렬 surface(split) 중 비-focused surface 가 OSC 0/2를 보내도 탭 제목은 흔들리지 않는다(last-writer-wins flicker 방지).
-  판정 기준은 **탭별 `focused_surface`** 이며 앱-전역 포커스가 아니다 — 배경 탭도 자기 focused surface 의 title 을 계속 반영한다.
-  cwd 파생 캐시명(`refresh_tab_display_name`)이 이미 focused surface 만 쓰던 정책을 OSC 경로(`refresh_tab_osc_title`)도 동일하게 따른다.
-  탭 내 포커스가 다른 surface 로 이동하거나(포커스 전환 폴링), surface close/move 로 `focused_surface` 가 재배정되거나, `explicit_name` 이 해제되면 새 focused surface 의 최신 title 로 갱신한다.
-  새 focused surface 가 title 미보유(non-terminal 등)면 `osc_title` 을 clear 해 cwd 파생명 → `name` fallback 이 동작한다.
-  (`SurfaceTitleChanged` host event 는 비-focused surface가 제목을 보낼 때도 surface 단위로 발생 — plugin 호환 유지.)
-- 하위 동작: surface 닫기(`close_surface`, 포커스 이전) · 포커스 이동(`move_focus_forward`/`backward`/`directional_focus`) · 분할(`split_focused_surface`/`split_surface_by_id[_generic]`).
+- 필드: `id` · `name`(자동 생성, 예 "Shell") · `explicit_name`(명시 지정 — 최우선) · `layout_opt`(`SurfaceLayout`. 구조 변경 중에만 비어 있다).
+- **표시명 우선순위**: `explicit_name` > OSC 제목 > cwd 이름 > `name`(`Tab::display_name`). OSC 제목과 cwd 이름은 탭이 아니라 surface 마다 `LiveDomainState.surface_titles` 에 관측값으로 저장된다(`refresh_tab_osc_title` · `refresh_tab_display_name`). cwd 변경 시 shell prompt 가 새 OSC title 을 보내면 cwd가 반영. `explicit_name` 은 cwd/OSC 로 덮이지 않음(에이전트 `tab.create --name`).
+- **셸 exe 경로 형태의 OSC 제목은 소스에서 무시된다.** ConPTY 는 spawn 시 콘솔 기본 제목으로 셸 실행파일 경로(예 `C:\Program Files/Git/bin/bash.exe`)를 OSC 0/2로 보내는데, 이 값이 surface 의 OSC 제목 관측값에 고정되면 복구 후 탭 제목이 exe 경로로 보인다. `map_osc`(`crates/tasty-terminal/src/vte_handler/osc.rs`)가 "경로 형태(`/`·`\`·`:` 포함) + basename 이 known shell(`is_known_shell_name`)" 인 제목을 `current_title` 세팅·`TitleChanged` 발생 없이 버린다 — bare `bash` 같은 비경로 제목은 통과(오탐 방지). 보강으로 Windows 빌트인 bashrc(`__tasty_title`)가 매 프롬프트에 cwd 기반 이름(`~`/`/`/basename)을 OSC 0으로 보내 `osc_title` 도 cwd 를 따른다.
+- **탭 제목은 그 View 가 탭에서 선택한 surface 의 관측값만 쓴다**(`tab_display_name(tab, navigation.surface_id(tab))`). 한 탭 안의 병렬 surface(split) 중 선택되지 않은 surface 가 OSC 0/2를 보내도 탭 제목은 흔들리지 않는다(last-writer-wins flicker 방지).
+  판정 기준은 **탭별 선택 surface** 이며 앱-전역 포커스가 아니다 — 배경 탭도 자기 선택 surface 의 title 을 계속 반영한다.
+  관측값이 surface 마다 남아 있으므로 선택이 다른 surface 로 바뀌면 그 surface 의 최신 값이 곧바로 쓰인다. 선택 surface 가 제목이 없으면(non-terminal 등) cwd 이름 → `name` 순으로 내려간다.
+  (`SurfaceTitleChanged` host event 는 선택되지 않은 surface가 제목을 보낼 때도 surface 단위로 발생 — plugin 호환 유지.)
+- 하위 동작: surface 닫기(`close_surface`) · 방향 포커스 이동(`directional_focus`) · 분할(`split_surface_by_id`).
 
 ### Surface
 
-Tab 의 SurfaceLayout 트리 leaf, 최하위 컨테이너. 고유 `surface_id` 를 갖고, **타입(kind)** 을 가진다(아래). `Surface` trait 의 핵심: `kind()`(불변 식별자) · `type_name()`(표시 라벨) · `surface_id()` · `source_cwd()`(새 surface 생성 시 상속할 시작 cwd — Surface cwd invariant, [`design/policies/cwd` Surface cwd invariant](../../design/policies/cwd.md#surface-cwd-invariant)) · `display_name()`. 닫기/포커스/리스트 동작은 타입과 무관하게 동일하다.
+Tab 의 SurfaceLayout 트리 leaf, 최하위 컨테이너. 트리에는 고유 `surface_id` 와 **타입(kind)** 만 담은 `SurfaceDescriptor` 가 있고, 실행 객체는 runtime 이 같은 ID 로 가진다. 실행 객체가 구현하는 `Surface` trait 의 핵심: `kind()`(불변 식별자) · `type_name()`(표시 라벨) · `surface_id()` · `source_cwd()`(새 surface 생성 시 상속할 시작 cwd — Surface cwd invariant, [`design/policies/cwd` Surface cwd invariant](../../design/policies/cwd.md#surface-cwd-invariant)) · `display_name()`. 닫기/포커스/리스트 동작은 타입과 무관하게 동일하다.
 
-#### Deferred 터미널
+#### 아직 콘텐츠가 없는 자리
 
-레이아웃 복원 시 비활성 탭의 PTY 는 **지연 생성**된다(런타임에 새로 만드는 탭/분할은 항상 즉시 spawn — 지연 대상은 복원되는 비활성 탭뿐이다).
-이 경우 트리 leaf 는 `deferred_spawn` 을 가진 `EmptySurface` placeholder 로 들어가고(빈 layout 이 아님), **화면에 표시되기 직전 단일 지점**(`MainViewState::reify_displayed_surfaces`, 매 프레임 렌더 직전 호출)에서 `EngineMut::reify_deferred_surface` 가 placeholder 종류에 맞는 경로로 실제화한다. 터미널 placeholder 는 `ensure_surface_initialized` 가 PTY 를 띄워 `TerminalSurface` marker 로 교체하고, plugin kind 대기 placeholder 는 `reify_plugin_surface` 가 등록된 kind 의 `restore` 로 교체한다.
-placeholder 는 생성 정보만 보관한다. PTY 와 waker 는 호스트가 spawn 시점에 만들고, 결과(성공 시 marker 교체, 실패 시 연속 실패 횟수)만 모델에 반영한다. 연속 5회 실패하면 재시도를 멈추고 placeholder 를 남긴다.
-"표시되는 deferred 는 반드시 reify 된다" 가 불변식이며, 이 단일 지점이 모든 노출 경로(키보드 탭 전환, 탭 close, pane focus 전환, 워크스페이스 전환, window 복원)를 한 번에 커버한다 — 전환 입력 핸들러마다 초기화 처리를 따로 추가하지 않는다.
-외부(IPC `surface.list`, 트리 JSON)에는 `type:"Terminal"`, `pty_ready:false` 로 보고된다 — 아직 안 뜬 터미널 자리.
-(IPC `surface.send` 등 표시와 무관한 경로는 여전히 `ensure_surface_initialized` 로 개별 reify.)
+빈 칸, attach mirror 의 plugin 대기 자리, 앱 재시작 뒤 아직 활성화하지 않은 복원 자리는 모두 `empty` kind 로 트리에 들어간다. 세 자리의 차이, 활성화 시점(부팅 단계·화면에 보일 때·`tasty wake`), 실패 상한, IPC 보고 형태는 [empty surface](../../surfaces/empty/index.md)에 있다.
 
 ### 두 레벨 레이아웃 (tasty 핵심 설계)
 
@@ -82,13 +86,13 @@ placeholder 는 생성 정보만 보관한다. PTY 와 waker 는 호스트가 sp
 
 ### Surface 종류
 
-`kind()` 가 식별자, `type_name()` 이 표시 라벨. 세 출처가 있다 — host 내장, plugin 이 egui-mesh 로 자가 렌더하는 것(EguiMeshSurface), webview overlay 로 그려지는 것(RemoteSurface).
+`kind()` 가 식별자, `type_name()` 이 표시 라벨. 세 출처가 있다 — host 내장, plugin 이 egui-mesh 로 자가 렌더하는 것(EguiMeshSurface), webview overlay 로 그려지는 것(RemoteSurface). kind 마다의 명세는 [Surface 종류](../../surfaces/index.md)에 있고, 이 절은 등록과 렌더 분기의 공통 규칙만 다룬다.
 
 | kind | type_name | 출처 | 렌더 | 비고 |
 |------|-----------|------|------|------|
-| `terminal` | Terminal | **host 내장** | GPU 셰이더 | 쉘 PTY. deferred 가능(아래 `empty`) |
-| `empty` | Empty | **host 내장** | egui | 빈 자리(타입 선택 UI). **deferred 터미널 placeholder 도 이 타입** |
-| `markdown` | Remote | `com.tasty.markdown` plugin (`rendering=webview`) | 네이티브 WebView overlay — plugin 이 sanitize HTML 문서 생성(`RemoteSurface`) | [ADR-0029](../../adr/0029-webview-host-integration.md), 대용량/파일열기 확인 팝업 2개만 egui-mesh |
+| `terminal` | Terminal | **host 내장** | GPU 셰이더 | 쉘 PTY. 재시작 뒤 지연 활성화 가능(`empty` 의 복원 자리) |
+| `empty` | Empty | **host 내장** | egui | 빈 자리(변환 버튼). plugin 대기 자리·복원 자리도 이 kind |
+| `markdown` | Remote | `com.tasty.markdown` plugin (`rendering=webview`) | 네이티브 WebView overlay — plugin 이 sanitize HTML 문서 생성(`RemoteSurface`) | [ADR-0029](../../adr/0029-webview-host-integration.md). 대용량/파일열기 확인 popup 2개는 surface 가 아니라 egui-mesh popup 기여 |
 | `image` | EguiMesh | `com.tasty.image` plugin (`rendering=egui-mesh`) | plugin 자가 렌더 mesh (비트맵=egui 텍스처) | egui-mesh whitelist |
 | `explorer` | Explorer | **host 내장** | egui | host builtin surface |
 | `dag_graph` | DAG | **host 내장** | egui | agent task DAG 뷰 ([agent-collaboration](../agent-collaboration/index.md)) |
@@ -96,14 +100,14 @@ placeholder 는 생성 정보만 보관한다. PTY 와 waker 는 호스트가 sp
 | `mesh_demo` | EguiMesh | `com.tasty.mesh-demo` plugin (`rendering=egui-mesh`) | plugin 자가 렌더 mesh | 개발/검증용. 매니페스트가 `bundle = false` 라 배포 패키징에는 안 들어간다 |
 
 - **host 내장**은 `register_builtin_kinds`(`terminal`/`empty`/`explorer`/`dag_graph`) 가 부팅 시 등록.
-- **egui-mesh plugin**(`image`, 그리고 markdown 의 대용량/파일열기 확인 팝업 2개만)은 plugin 매니페스트가 `rendering="egui-mesh"` 로 선언하고 host 화이트리스트 + api_version 게이트에 매칭되면 `EguiMeshSurface` stand-in 으로 등록된다 — 콘텐츠는 plugin 프로세스가 tessellate 한 mesh 를 host 가 합성 (ADR-0028).
+- **egui-mesh plugin surface**(`image`, 개발용 `mesh_demo`)는 매니페스트의 `[[surface_kinds]]` 가 `rendering="egui-mesh"` 로 선언하고 host 화이트리스트 + api_version 게이트에 매칭되면 `EguiMeshSurface` stand-in 으로 등록된다 — 콘텐츠는 plugin 프로세스가 tessellate 한 mesh 를 host 가 합성 (ADR-0028). markdown 의 확인 popup 2개는 같은 egui-mesh 채널을 쓰지만 `[[contributes.popup]]` 기여이며 surface kind 로 등록되지 않는다([popup 구현](../../dev-guide/popup-implementation.md)).
 - **webview plugin**(`html`/`markdown`)은 `RemoteSurface` stand-in 위에 host 가 native WebView overlay 를 자동 관리한다. `html` 은 `webview.set_url` IPC 로 URL/navigation 만 제어하고, `markdown` 은 plugin 이 직접 sanitize 된 HTML 문서 전체를 생성해 로드시킨다([ADR-0029](../../adr/0029-webview-host-integration.md)).
   - **overlay 생성에 실패하면 그 surface 는 비어 있고, 앱은 계속 돈다.** 실패는 두 종류로 갈린다 — 다음 시도에 달라질 수 있는 것(서버 자원 고갈 등)은 상한까지 다시 시도하고, 이 프로세스에서 달라지지 않는 것(창 종류·라이브러리 부재 등)은 한 번에 포기한다. 어느 쪽이든 시도 횟수에 상한이 있어 실패가 무한히 반복되지 않는다. 로그에는 첫 실패와 포기하는 순간만 남고, 포기 줄이 실제로 몇 번 시도했는지를 적는다. 그 surface 를 닫았다 다시 열면 시도 예산도 새로 생긴다. 근거·재검토 조건은 [ADR-0029](../../adr/0029-webview-host-integration.md).
   - webview kind 는 **탭 내부 분할(SurfaceGroup)의 어느 leaf 에서도** 동작한다. host 는 탭의 `SurfaceLayout` 트리 전체를 순회해 URL 을 가진 leaf 마다 overlay 를 만들고(포커스 leaf 로 한정하지 않는다), overlay 의 bounds 는 pane 전체가 아니라 `SurfaceLayout::compute_rects` 가 준 **그 leaf 의 rect** 다 — 같은 탭의 옆 surface 를 덮지 않는다. Linux 에서는 overlay 가 leaf rect 를 꽉 채운다. native 창은 마우스를 직접 받으므로, pane·surface 분할선의 hit 띠(`DIVIDER_HIT_THRESHOLD` 양쪽)와 창 가장자리 리사이즈 밴드(`RESIZE_EDGE_MARGIN`, 최대화·전체화면이면 없음)에 겹치는 부분만 X input shape 에서 뺀다(`state::webview_edges`). 빼는 픽셀은 host 의 분할선·리사이즈 판정이 보는 픽셀과 같다. 그 띠의 포인터 입력은 host 가 받고, 띠 밖의 클릭·스크롤은 페이지로 간다. macOS·Windows 는 아직 input shape 에 해당하는 처리가 없어, leaf 의 변이 **pane 콘텐츠 영역 외곽에 닿을 때만** divider 드래그용 4px inset 을 두고 분할된 leaf 사이 내부 경계에는 divider gap 만 둔다. 그 OS 의 webview chrome 은 배경·테두리를 leaf 전체에 그리고 안내 글자는 WebView 가 덮는 영역 안으로 자르는 코드 경로를 쓴다(그 OS 실 기기에서는 미측정). `webview.set_url` / `webview.navigation_attempt` 의 surface 조회도 같은 기준이라 비포커스 leaf 도 도달한다.
 - 새 kind 는 `SurfaceKindRegistry` 에 동적 등록 — plugin 이 hello 후 추가 가능.
 - **등록된 kind 는 `surface.kinds` / `tasty list surface-kinds` 로 묻는다.** 이 조회가 읽는 것은 매니페스트가 아니라 `SurfaceKindRegistry` — 런타임의 사실이다. 여기 나오는 kind 가 정확히 `--type <kind>` 로 만들 수 있는 kind 이고(끄거나 지운 plugin 의 kind 는 곧바로 빠진다 — [ADR-0026](../../adr/0026-plugin-registration-and-lifecycle.md)), host 내장 4 종도 함께 나온다(그쪽은 plugin 이 아니라 어느 `plugin.*` 조회에도 안 나온다). 칸은 kind · 표시명 i18n 키 · icon · **실제** 렌더 경로(`rendering`: `host-egui`/`egui-mesh`/`webview`/`remote`) · 출처(`source`: `host`/`plugin` + `plugin_id`) · 필수 params 다.
 - **`plugin.show` 는 선언과 사실을 갈라 낸다.** `declared_rendering` 이 매니페스트가 요청한 값이고, `registered` 가 그 선언이 **이 plugin 의 것으로** 등록됐는지, `effective_rendering` 이 등록됐을 때 host 가 실제로 쓰는 경로다. kind 이름이 registry 에 있는데 소유자가 다르면(host 내장 kind 를 remote 로 재선언 · 다른 plugin 이 먼저 등록) `registered` 는 false 이고 소유자가 `registered_by`로 나온다. 이 갈림은 오류 상태에서만 나는 것이 아니다 — 헤드리스는 `webview`/`remote` 선언을 설계대로 등록하지 않으므로 **정상 상태**에서 갈린다. `plugin.list` 는 여전히 kind **이름만** 배열로 준다.
-- plugin 이 제공하는 kind 각각의 동작은 [번들 플러그인](../../plugins/index.md)(markdown/image/html). 분류 축·렌더 분기 개념은 [concepts/plugins](../../concepts/plugins.md).
+- kind 각각의 동작은 [Surface 종류](../../surfaces/index.md)(terminal/empty/explorer/dag_graph/markdown/image/html). 분류 축·렌더 분기 개념은 [concepts/plugins](../../concepts/plugins.md).
 
 ## 인터페이스
 
@@ -202,7 +206,7 @@ source 별 `source_cwd()` 는 [cwd 정책](../../design/policies/cwd.md). 이 �
 - Given 탭 안 Surface 하나 When `tasty split --level surface --target-surface <S>` Then 그 탭에서만 Surface 가 둘이 되고, 다른 탭으로 전환하면 분할이 사라졌다 돌아온다.
 - Given Pane 모델에 마지막 탭 하나 When close_tab/close_tab_by_id 호출 Then 닫히지 않는다. surface 닫기에 따른 상위 pane 정리는 별도 닫기 경로다.
 - Given 사용자가 보고 있지 않은 탭 · Pane · 워크스페이스 When 그것이 닫힌다(에이전트 `tasty close`/`surface.close` 포함) Then 사용자가 보고 있던 대상은 그대로다 — 시야는 보던 대상 **자체**가 사라졌을 때만 움직인다 ([focus 정책](../../design/policies/focus.md) "삭제로 인한 인덱스 이동").
-- Given deferred 탭 When `tasty list surfaces` Then `Terminal` / `pty_ready:false` 로 보고되고, 활성화하면 `pty_ready:true` 로 바뀐다.
+- Given 비활성 탭에 터미널이 있는 상태로 저장한 레이아웃 When 앱을 다시 시작한다 Then 그 터미널은 `tasty list tree` 에서 `type:"Pending"`, `kind:"terminal"` 로 보고되고, 탭을 화면에 보이거나 `tasty wake --surface <ID>` 를 보내면 PTY 가 생긴다([empty surface](../../surfaces/empty/index.md)).
 - Given `--type markdown` 으로 만든 surface When `tasty list tree` Then `kind:"markdown"` 으로 보고된다.
 
 > 전부 headless(IPC/CLI)로 검증 가능 — 트리 조작·분할·닫기·종류는 `tasty list/new/split/close` 시나리오로 확인.
@@ -243,15 +247,14 @@ MainView 가 열리면 항상 표시(중앙 고정 영역). 사이드바에서 W
 - **Pane 영역(상위 레이아웃)** — 워크스페이스를 물리적으로 나눈 칸. 각 Pane 은 자기 **탭 스트립**을 머리에 둔다. Pane 사이 경계는 분할 보더(`PANE_BORDER_WIDTH`).
 - **탭 스트립** (각 Pane 상단) — 그 Pane 의 탭 목록 + active 탭 강조. 시각/드래그/추가 버튼은 → [`features/workspace-tabs/`](../workspace-tabs/index.md). 표시명 규칙은 부모 기획.
 - **Surface 타일(하위 레이아웃)** — active 탭의 SurfaceLayout 을 타일로 렌더. 분할 시 surface 사이 경계는 `SURFACE_BORDER_WIDTH`. 포커스된 surface 강조.
-- **Surface 콘텐츠** — 타입별로 다르게 렌더(terminal=GPU, image=egui-mesh, markdown/html=WebView, empty=타입 선택 UI). 종류 표는 부모 기획 [Surface 종류](#surface-종류).
-- **Empty surface** — 빈 자리. 타입 선택 버튼을 보여 다른 종류로 전환. deferred 터미널이면 PTY 준비 전 표시.
+- **Surface 콘텐츠** — 타입별로 다르게 렌더(terminal=GPU, image=egui-mesh, markdown/html=WebView, empty=변환 버튼). 종류 표는 부모 기획 [Surface 종류](#surface-종류), 타입별 화면은 [Surface 종류](../../surfaces/index.md)의 각 문서.
 
 ### 상태별 시각
 
 - **단일 / 분할** — Pane·Surface 모두 1개면 보더 없음, 분할되면 방향(좌우/상하)·비율(`ratio`)대로 타일 + 보더.
-- **포커스** — 포커스된 Pane / focused_surface 가 강조된다.
+- **포커스** — View 가 선택한 Pane / surface 가 강조된다.
 - **탭 전환** — 하위 레이아웃 전체가 함께 전환(상위 Pane 분할은 불변).
-- **deferred / readonly** — deferred 터미널은 PTY 준비 전, attach 점유된 surface 는 readonly mirror 로 표시(내용 보임 + 조작 차단).
+- **복원 자리 / readonly** — 복원 자리는 활성화 전([empty surface](../../surfaces/empty/index.md#상태별-시각)), attach 점유된 surface 는 readonly mirror 로 표시(내용 보임 + 조작 차단).
 
 ### 시각 소스
 
