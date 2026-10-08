@@ -1081,9 +1081,9 @@ pub fn pages() -> Vec<Page> {
                         ),
                         spec(
                             "ports-process-column",
-                            "Process column — a minimum, not a fixed width",
+                            "Process column — a minimum, not a fixed width (on Table)",
                             Some(
-                                "200 is a floor · takes the spare width as the popup grows · no column hides, narrow tables ellipsise",
+                                "Drawn on the shared Table with the popup's own columns · Process has a 200 floor and takes spare width with Address · fixed columns never shrink · below the column budget the body scrolls sideways · no column hides · Process text ellipsises, the PID Tag stays",
                             ),
                             components::port_scanner::draw_process_column,
                         ),

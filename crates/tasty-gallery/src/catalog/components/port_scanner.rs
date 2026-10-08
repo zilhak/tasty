@@ -3,8 +3,9 @@
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{
-    Button, ButtonVariant, IconButton, IconButtonVariant, StatusKind, Table, TableAlign,
-    TableColumn, TableColumnWidth, TagVariant, status_dot, tag,
+    Button, ButtonVariant, IconButton, IconButtonVariant, PortsColumn, StatusKind, TableAlign,
+    TableColumn, TableColumnWidth, TagVariant, fixed_total_width, ports_process_cell,
+    ports_star_column_width, ports_table, status_dot, tag,
 };
 
 use crate::catalog::icons;
@@ -173,49 +174,19 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
 
             draw_favorites_section(ui, theme, FAVORITE_ROWS);
 
-            // 컬럼 최소폭을 유지하고 넘치면 가로로 스크롤한다. Workspace는 숨긴 예제다.
-            // 별 컬럼은 항상 표시하며 폭이 지정된 토큰이 없는 열은 본체의 최소폭을 사용한다.
+            // 본체 popup 과 같은 열 정의(공용 PortsColumn)와 표 꾸밈을 쓴다. 열 하한의 합이 넘치면
+            // 가로로 스크롤한다. Workspace·Tab 은 열 선택에서 숨긴 예제다.
             kit::region_sym(ui, theme.spacing_sm, LogicalPx(0.0), |ui| {
-                let cols = vec![
-                    col(
-                        "",
-                        TableColumnWidth::Exact(theme.port_star_col_width()),
-                        TableAlign::Left,
-                    ),
-                    col(
-                        "Port",
-                        TableColumnWidth::Exact(LogicalPx(84.0)),
-                        TableAlign::Right,
-                    ),
-                    col(
-                        "Proto",
-                        TableColumnWidth::Exact(LogicalPx(76.0)),
-                        TableAlign::Left,
-                    ),
-                    col(
-                        "Address",
-                        TableColumnWidth::Exact(LogicalPx(140.0)),
-                        TableAlign::Left,
-                    ),
-                    col(
-                        "Process",
-                        TableColumnWidth::Exact(theme.port_process_col_min_width()),
-                        TableAlign::Left,
-                    ),
-                    col(
-                        "State",
-                        TableColumnWidth::Exact(LogicalPx(140.0)),
-                        TableAlign::Left,
-                    ),
-                ];
-                Table::new(cols)
+                ports_table(columns(theme, FRAME_COLUMNS), theme)
                     .id_salt("ports_table")
-                    .horizontal_scroll(true)
-                    .header_fill(theme.bg_sidebar().to_egui())
-                    .header_pad_x(theme.table_cell_padding_x())
                     .max_scroll_height(theme.measure_md * 0.7)
-                    .selectable(true)
-                    .show(ui, theme, ROWS, |r| r.selected, cell);
+                    .show(
+                        ui,
+                        theme,
+                        ROWS,
+                        |r| r.selected,
+                        |ui, theme, row, c| cell(ui, theme, row, column_at(FRAME_COLUMNS, c)),
+                    );
             });
             kit::hsep(ui, theme);
 
@@ -451,13 +422,58 @@ fn check_row(ui: &mut egui::Ui, theme: &Theme, label: &str, checked: bool) {
     });
 }
 
-fn col(title: &str, width: TableColumnWidth, align: TableAlign) -> TableColumn<'_, ()> {
-    TableColumn {
-        title,
-        width,
-        align,
-        sort_id: None,
+/// 기본 프레임 예제가 보여 주는 열(별 열 제외). Workspace·Tab 은 숨긴 상태다.
+const FRAME_COLUMNS: &[PortsColumn] = &[
+    PortsColumn::Port,
+    PortsColumn::Proto,
+    PortsColumn::Address,
+    PortsColumn::Process,
+    PortsColumn::State,
+];
+
+/// Process 열 예제가 보여 주는 열(별 열 제외). 시안 popup 컬럼 세트와 같고 Tab 은 숨긴 상태다.
+const SPECIMEN_COLUMNS: &[PortsColumn] = &[
+    PortsColumn::Port,
+    PortsColumn::Proto,
+    PortsColumn::Address,
+    PortsColumn::Process,
+    PortsColumn::Workspace,
+    PortsColumn::State,
+];
+
+fn column_title(col: PortsColumn) -> &'static str {
+    match col {
+        PortsColumn::Port => "Port",
+        PortsColumn::Proto => "Proto",
+        PortsColumn::Address => "Address",
+        PortsColumn::Process => "Process",
+        PortsColumn::Workspace => "Workspace",
+        PortsColumn::Tab => "Tab",
+        PortsColumn::State => "State",
     }
+}
+
+/// 별 열과 `visible` 열의 공용 Table 열 정의.
+fn columns(theme: &Theme, visible: &[PortsColumn]) -> Vec<TableColumn<'static, ()>> {
+    let star = TableColumn {
+        title: "",
+        width: ports_star_column_width(theme),
+        align: TableAlign::Left,
+        sort_id: None,
+    };
+    std::iter::once(star)
+        .chain(visible.iter().map(|c| TableColumn {
+            title: column_title(*c),
+            width: c.width(theme),
+            align: c.align(),
+            sort_id: None,
+        }))
+        .collect()
+}
+
+/// 표의 열 번호를 열 종류로 바꾼다. 0번은 별 열이라 `None` 이다.
+fn column_at(visible: &[PortsColumn], index: usize) -> Option<PortsColumn> {
+    index.checked_sub(1).map(|i| visible[i])
 }
 
 /// 즐겨찾기 캡션과 높이가 제한된 목록. 비어 있어도 캡션과 안내는 표시한다.
@@ -590,7 +606,7 @@ fn star(ui: &mut egui::Ui, theme: &Theme, on: bool) {
     }
 }
 
-fn cell(ui: &mut egui::Ui, theme: &Theme, row: &PortRow, c: usize) {
+fn cell(ui: &mut egui::Ui, theme: &Theme, row: &PortRow, col: Option<PortsColumn>) {
     // kit `Table` 의 td 는 font-size-body 이고 mono 열만 font-mono 다.
     let text = |ui: &mut egui::Ui, text: &str, mono: bool| {
         let rich = egui::RichText::new(text)
@@ -598,29 +614,36 @@ fn cell(ui: &mut egui::Ui, theme: &Theme, row: &PortRow, c: usize) {
             .color(theme.text_primary().to_egui());
         ui.label(if mono { rich.monospace() } else { rich });
     };
-    // Workspace 컬럼은 이 예제에서 숨긴다.
-    let _ = row.ws; // Workspace 는 chooser 로 숨겨 렌더 안 함 — 필드 미사용(값 drop, Result 아님).
+    let Some(col) = col else {
+        // 별 열은 kit 의 tight 열이라 여백 없이 가운데 둔다.
+        star(ui, theme, row.favorited);
+        return;
+    };
     // 값 셀은 본체·kit `Table` td 처럼 정렬 쪽에 table-cell-padding-x 를 둔다. 오른쪽 정렬 열은
-    // 오른쪽에서 왼쪽으로 쌓으므로 같은 여백이 값 오른쪽에 붙는다. 별 열은 kit 의 tight 열이다.
-    if (1..=5).contains(&c) {
-        ui.add_space(theme.table_cell_padding_x().value());
-    }
+    // 오른쪽에서 왼쪽으로 쌓으므로 같은 여백이 값 오른쪽에 붙는다.
+    ui.add_space(theme.table_cell_padding_x().value());
     // kit 열 정의: Port·Proto·Address 는 mono, Process 는 strong(UI 글꼴)이라 모두
-    // text-primary 다. State 는 StatusDot 이다.
-    match c {
-        0 => star(ui, theme, row.favorited),
-        1 => text(ui, row.port, true),
-        2 => text(ui, row.proto, true),
-        3 => text(ui, row.addr, true),
-        4 => {
-            // Process name + pid Tag. kit 은 한 inline-flex(가운데 정렬, gap 8)로 묶는다.
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-                text(ui, row.proc, false);
-                tag(ui, theme, row.pid, TagVariant::Default, false);
-            });
+    // text-primary 다. Workspace 는 표의 행 글자색을 따르고 State 는 StatusDot 이다.
+    match col {
+        PortsColumn::Port => text(ui, row.port, true),
+        PortsColumn::Proto => text(ui, row.proto, true),
+        PortsColumn::Address => text(ui, row.addr, true),
+        PortsColumn::Process => {
+            ports_process_cell(ui, theme, row.proc, Some(row.pid));
         }
-        _ => {
+        PortsColumn::Workspace | PortsColumn::Tab => {
+            let value = if col == PortsColumn::Workspace {
+                row.ws
+            } else {
+                ""
+            };
+            if value.is_empty() {
+                ui.colored_label(theme.text_muted().to_egui(), "—");
+            } else {
+                ui.label(egui::RichText::new(value).size(theme.font_size_body.value()));
+            }
+        }
+        PortsColumn::State => {
             let listen = row.state == "LISTEN";
             let kind = if listen {
                 StatusKind::Running
@@ -632,45 +655,73 @@ fn cell(ui: &mut egui::Ui, theme: &Theme, row: &PortRow, c: usize) {
     }
 }
 
-/// 시안 "Process column" 예제의 표 폭(기본 660 · 좁은 460)과 열 폭.
-const PROC_TABLE_WIDE: LogicalPx = LogicalPx(660.0);
-const PROC_TABLE_NARROW: LogicalPx = LogicalPx(460.0);
-/// Port · PID 64, Proto 72. 머리줄 24, 행 26.
-const PROC_COL_NUM: LogicalPx = LogicalPx(64.0);
-const PROC_COL_PROTO: LogicalPx = LogicalPx(72.0);
-const PROC_HEADER_H: LogicalPx = LogicalPx(24.0);
-const PROC_ROW_H: LogicalPx = LogicalPx(26.0);
-/// 셀 안쪽 여백: Port 오른쪽 8, 나머지 10.
-const PROC_PAD_PORT: LogicalPx = LogicalPx(8.0);
-const PROC_PAD: LogicalPx = LogicalPx(10.0);
-/// 별 글리프 12, 표 사이 간격 14, 캡션 아래 간격 6.
-const PROC_STAR: LogicalPx = LogicalPx(12.0);
-const PROC_STAGE_GAP: LogicalPx = LogicalPx(14.0);
-const PROC_CAPTION_GAP: LogicalPx = LogicalPx(6.0);
+/// 시안 "Process column" 예제의 표 폭: 열 하한 합보다 넓은 860, popup 폭 660.
+const PROC_TABLE_WIDE: LogicalPx = LogicalPx(860.0);
+const PROC_TABLE_POPUP: LogicalPx = LogicalPx(660.0);
 
-const PROC_ROWS: &[[&str; 4]] = &[
-    [
-        "3000",
-        "tcp",
-        "node /usr/local/bin/vite --host --strictPort",
-        "41822",
-    ],
-    ["5432", "tcp", "postgres: checkpointer", "913"],
+/// 시안 예제의 세 행. 5432 는 Tasty 밖의 프로세스라 Workspace 가 비어 있다.
+const PROC_ROWS: &[PortRow] = &[
+    PortRow {
+        port: "3000",
+        proto: "tcp",
+        addr: "127.0.0.1",
+        proc: "node /usr/local/bin/vite --host --strictPort",
+        pid: "41822",
+        ws: "Project A",
+        state: "LISTEN",
+        selected: false,
+        favorited: false,
+    },
+    PortRow {
+        port: "5432",
+        proto: "tcp",
+        addr: "127.0.0.1",
+        proc: "postgres: checkpointer",
+        pid: "913",
+        ws: "",
+        state: "LISTEN",
+        selected: false,
+        favorited: false,
+    },
+    PortRow {
+        port: "8080",
+        proto: "tcp",
+        addr: "0.0.0.0",
+        proc: "tasty-agent",
+        pid: "50321",
+        ws: "Project B",
+        state: "LISTEN",
+        selected: false,
+        favorited: true,
+    },
 ];
 
-/// Overlays › Listening ports — Process 열은 고정 폭이 아니라 최소 폭이다.
+/// Overlays › Listening ports — Process 열은 고정 폭이 아니라 최소 폭이다. 본체 popup 의 열 정의와
+/// 공용 Table 로 그리므로 헤더·행 높이·글꼴·여백이 popup 과 같다.
 pub fn draw_process_column(ui: &mut egui::Ui, theme: &Theme) {
-    spec::stage(ui, theme, StageVariant::Solo, |ui| {
-        ui.spacing_mut().item_spacing.y = PROC_STAGE_GAP.value();
+    let cols = columns(theme, SPECIMEN_COLUMNS);
+    let widths: Vec<TableColumnWidth> = cols.iter().map(|c| c.width).collect();
+    let budget = fixed_total_width(&widths, LogicalPx(ui.spacing().item_spacing.x));
+    // 두 예제 사이와 캡션 아래 간격은 갤러리 Column stage·cluster 의 간격을 따른다.
+    spec::stage(ui, theme, StageVariant::Column, |ui| {
         for (label, w) in [
-            ("default — Process takes the spare width", PROC_TABLE_WIDE),
             (
-                "narrow (460) — Process gets the remaining 230 and ellipsises; the 200 floor engages only below 430",
-                PROC_TABLE_NARROW,
+                format!(
+                    "860 — wider than the column budget ({:.0}): Address and Process share the spare width",
+                    budget.value()
+                ),
+                PROC_TABLE_WIDE,
+            ),
+            (
+                format!(
+                    "660 — popup width, under the budget ({:.0}): the body scrolls sideways; nothing shrinks or hides",
+                    budget.value()
+                ),
+                PROC_TABLE_POPUP,
             ),
         ] {
             ui.vertical(|ui| {
-                ui.spacing_mut().item_spacing.y = PROC_CAPTION_GAP.value();
+                ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
                 ui.label(
                     egui::RichText::new(label)
                         .size(theme.font_size_caption.value())
@@ -684,135 +735,58 @@ pub fn draw_process_column(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         &[
-            ("role", "minimum width (flex-grow, never shrink)"),
+            ("component", "Table — the popup's column defs, shared"),
+            (
+                "Process",
+                "Flex — min width port-process-col-min-width · ellipsis · PID Tag stays",
+            ),
             ("value", "200 — unchanged"),
-            ("token", "port-process-col-min-width"),
+            (
+                "overflow",
+                "body scrolls horizontally below the column budget (also at 660); no column hides",
+            ),
+            (
+                "fixed columns",
+                "width = floor (star · Port · Proto · Workspace · State)",
+            ),
+            (
+                "metrics",
+                "Table's own — table-cell-height header and rows · table-cell-padding-x · caps header",
+            ),
             ("zoom", "scales with the UI scale, like every width token"),
-            ("hiding", "none — no column disappears"),
         ],
         &[
             TokenChip::without_color("port-process-col-min-width", "Process floor"),
             TokenChip::without_color("port-star-col-width", "leading star column"),
+            TokenChip::without_color("table-cell-height", "header + rows"),
         ],
     );
     spec::note(
         ui,
         theme,
-        "The gallery specimen keeps a fixed stage width, so it pins the same 200 — same token, \
-         same number, one role.",
+        "Drawn with the popup's own column definitions on the shared Table, so there are no \
+         specimen-only numbers. New Table column width Flex (the design's minWidth) — additive.",
     );
 }
 
-/// 별 · Port · Proto · Process(flex, 최소 폭) · PID 다섯 열. Process 는 남는 폭을 모두 받되
-/// 최소 폭 아래로 줄지 않고, 넘치는 글자는 말줄임한다.
+/// `width` 폭 테두리 상자 안의 포트 표. 열 하한 합보다 좁으면 표 본문이 가로로 스크롤한다.
 fn process_table(ui: &mut egui::Ui, theme: &Theme, width: LogicalPx) {
     let bw = theme.border_width.value();
-    let star_w = theme.port_star_col_width().value();
-    let num_w = PROC_COL_NUM.value();
-    let proto_w = PROC_COL_PROTO.value();
-    let inner_w = width.value() - bw * 2.0;
-    let proc_w =
-        (inner_w - star_w - num_w * 2.0 - proto_w).max(theme.port_process_col_min_width().value());
-    let h = PROC_HEADER_H.value() + PROC_ROW_H.value() * PROC_ROWS.len() as f32 + bw * 2.0;
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(width.value(), h), egui::Sense::hover());
-    let p = ui.painter_at(rect);
-    let radius = theme.corner_radius.value();
-    p.rect_filled(rect, radius, theme.bg_panel().to_egui());
-    let sep = egui::Stroke::new(bw, theme.separator.to_egui_premultiplied());
-    let inner = rect.shrink(bw);
-    let xs = [
-        inner.left(),
-        inner.left() + star_w,
-        inner.left() + star_w + num_w,
-        inner.left() + star_w + num_w + proto_w,
-        inner.left() + star_w + num_w + proto_w + proc_w,
-    ];
-
-    let head =
-        egui::Rect::from_min_size(inner.min, egui::vec2(inner.width(), PROC_HEADER_H.value()));
-    let r = radius as u8;
-    p.rect_filled(
-        head,
-        egui::CornerRadius {
-            nw: r,
-            ne: r,
-            sw: 0,
-            se: 0,
-        },
-        theme.bg_sidebar().to_egui(),
-    );
-    p.hline(head.x_range(), head.bottom() - bw * 0.5, sep);
-    let head_font = egui::FontId::proportional(theme.font_size_caption.value());
-    let ink = theme.text_secondary().to_egui();
-    let texts = ["Port", "Proto", "Process", "PID"];
-    proc_cells(&p, head, &xs, inner.right(), texts, head_font, ink);
-
-    let mono = egui::FontId::monospace(theme.font_size_caption.value());
-    for (i, row) in PROC_ROWS.iter().enumerate() {
-        let top = head.bottom() + PROC_ROW_H.value() * i as f32;
-        let rr = egui::Rect::from_min_size(
-            egui::pos2(inner.left(), top),
-            egui::vec2(inner.width(), PROC_ROW_H.value()),
-        );
-        p.hline(rr.x_range(), rr.bottom() - bw * 0.5, sep);
-        let s = PROC_STAR.value();
-        let star_rect = egui::Rect::from_center_size(
-            egui::pos2(xs[0] + star_w * 0.5, rr.center().y),
-            egui::vec2(s, s),
-        );
-        icons::STAR
-            .image(s, theme.port_star_off().to_egui())
-            .paint_at(ui, star_rect);
-        proc_cells(&p, rr, &xs, inner.right(), *row, mono.clone(), ink);
-    }
-    p.rect_stroke(
-        rect,
-        radius,
-        egui::Stroke::new(bw, theme.border_strong().to_egui()),
-        egui::StrokeKind::Inside,
-    );
-}
-
-/// 한 줄의 Port(오른쪽 정렬) · Proto · Process(말줄임) · PID(오른쪽 정렬) 글자를 그린다.
-fn proc_cells(
-    p: &egui::Painter,
-    row: egui::Rect,
-    xs: &[f32; 5],
-    right: f32,
-    texts: [&str; 4],
-    font: egui::FontId,
-    color: egui::Color32,
-) {
-    let y = row.center().y;
-    let pad = PROC_PAD.value();
-    p.text(
-        egui::pos2(xs[2] - PROC_PAD_PORT.value(), y),
-        egui::Align2::RIGHT_CENTER,
-        texts[0],
-        font.clone(),
-        color,
-    );
-    p.text(
-        egui::pos2(xs[2] + pad, y),
-        egui::Align2::LEFT_CENTER,
-        texts[1],
-        font.clone(),
-        color,
-    );
-    let mut job =
-        egui::text::LayoutJob::simple_singleline(texts[2].to_owned(), font.clone(), color);
-    job.wrap = egui::text::TextWrapping::truncate_at_width(xs[4] - xs[3] - pad);
-    let galley = p.layout_job(job);
-    p.galley(
-        egui::pos2(xs[3] + pad, y - galley.size().y * 0.5),
-        galley,
-        color,
-    );
-    p.text(
-        egui::pos2(right - pad, y),
-        egui::Align2::RIGHT_CENTER,
-        texts[3],
-        font,
-        color,
-    );
+    egui::Frame::new()
+        .fill(theme.bg_panel().to_egui())
+        .stroke(egui::Stroke::new(bw, theme.border_strong().to_egui()))
+        .corner_radius(theme.corner_radius.value())
+        .show(ui, |ui| {
+            let inner = width.value() - bw * 2.0;
+            ui.set_width(inner);
+            ports_table(columns(theme, SPECIMEN_COLUMNS), theme)
+                .id_salt(("ports_process_specimen", width.value() as u32))
+                .show(
+                    ui,
+                    theme,
+                    PROC_ROWS,
+                    |r| r.selected,
+                    |ui, theme, row, c| cell(ui, theme, row, column_at(SPECIMEN_COLUMNS, c)),
+                );
+        });
 }

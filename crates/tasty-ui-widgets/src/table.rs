@@ -18,6 +18,10 @@ pub enum TableColumnWidth {
     },
     /// 남은 폭 균등 분배. `at_least` 최소폭(없으면 0.0), `clip` true 면 말줄임.
     Remainder { at_least: LogicalPx, clip: bool },
+    /// 남는 폭을 받되 `min_width` 아래로 줄지 않는다(디자인 Table 열의 `minWidth`). 남는 폭은 Flex
+    /// 열끼리 똑같이 나눈다. 가로 스크롤 표에서 열 폭의 합이 표 폭보다 크면 열을 줄이지 않고 표를
+    /// 스크롤한다. 긴 내용의 말줄임은 셀을 그리는 쪽이 맡는다.
+    Flex { min_width: LogicalPx },
 }
 
 /// 셀 가로 정렬.
@@ -153,7 +157,8 @@ impl<'a, K> Table<'a, K> {
     }
 
     /// 헤더와 본문을 함께 가로로 스크롤한다. 세로 스크롤에서는 헤더를 고정한다.
-    /// Remainder가 스크롤 안에서 폭을 늘릴 수 있으므로 이 모드는 Exact 컬럼만 사용해야 한다.
+    /// Remainder가 스크롤 안에서 폭을 늘릴 수 있으므로 이 모드는 Exact·Flex 컬럼만 사용해야 한다.
+    /// Flex 열의 폭은 그리기 전에 표 폭으로 정해 고정 폭으로 넘긴다.
     pub fn horizontal_scroll(mut self, on: bool) -> Self {
         self.horizontal_scroll = on;
         self
@@ -193,10 +198,8 @@ impl<'a, K> Table<'a, K> {
         let max_scroll_height = self.max_scroll_height;
         let header_fill = self.header_fill;
         let horizontal_scroll = self.horizontal_scroll;
-        // 헤더 배경이 가로 스크롤의 전체 콘텐츠 폭을 덮도록 미리 계산한다.
-        let total_w = fixed_total_width(columns, LogicalPx(ui.spacing().item_spacing.x));
 
-        let mut draw_core = |ui: &mut egui::Ui, band_w: LogicalPx| {
+        let mut draw_core = |ui: &mut egui::Ui, widths: &[TableColumnWidth], band_w: LogicalPx| {
             // egui_extras 는 hover 행을 앞 프레임의 응답으로 정하고 그 값을 밖에 내주지 않는다.
             // 같은 방식으로 앞 프레임의 hover 행을 따로 기억해 그 행의 글자색을 정한다.
             let ctx = ui.ctx().clone();
@@ -224,8 +227,8 @@ impl<'a, K> Table<'a, K> {
             if let Some(ms) = max_scroll_height {
                 builder = builder.max_scroll_height(ms.value());
             }
-            for col in columns {
-                builder = builder.column(to_column(col.width));
+            for w in widths {
+                builder = builder.column(to_column(*w));
             }
 
             let mut table = builder.header(header_h.value(), |mut header| {
@@ -316,7 +319,26 @@ impl<'a, K> Table<'a, K> {
                     ui.available_rect_before_wrap().x_range(),
                     clip.y_range(),
                 )));
+                let spacing_x = LogicalPx(ui.spacing().item_spacing.x);
+                let declared: Vec<TableColumnWidth> = columns.iter().map(|c| c.width).collect();
                 if horizontal_scroll {
+                    let widths = if declared
+                        .iter()
+                        .any(|w| matches!(w, TableColumnWidth::Flex { .. }))
+                    {
+                        // 본문의 세로 스크롤바는 고정 폭 열 위에 겹쳐 그려진다. Flex 열이 남는 폭을
+                        // 받을 때 그 폭을 빼 두어 끝 열이 바 아래로 들어가지 않게 한다. 바 표시 여부를
+                        // 표가 알 수 없어 폭을 예약하는 예외다(ADR-0037).
+                        let bar =
+                            ui.spacing().scroll.bar_width + ui.spacing().scroll.bar_inner_margin;
+                        let available = LogicalPx(ui.available_rect_before_wrap().width() - bar)
+                            .max(LogicalPx(0.0));
+                        resolve_scroll_widths(&declared, spacing_x, available)
+                    } else {
+                        declared
+                    };
+                    // 헤더 배경이 가로 스크롤의 전체 콘텐츠 폭을 덮도록 미리 계산한다.
+                    let total_w = fixed_total_width(&widths, spacing_x);
                     // 헤더와 행을 같은 가로 스크롤 안에 놓는다.
                     egui::ScrollArea::horizontal()
                         .auto_shrink([false, true])
@@ -325,11 +347,11 @@ impl<'a, K> Table<'a, K> {
                         .show(ui, |ui| {
                             ui.set_min_width(total_w.value());
                             let band = total_w.max(LogicalPx(ui.available_width()));
-                            draw_core(ui, band);
+                            draw_core(ui, &widths, band);
                         });
                 } else {
                     let band = LogicalPx(ui.max_rect().width());
-                    draw_core(ui, band);
+                    draw_core(ui, &declared, band);
                 }
             });
         };
@@ -417,19 +439,52 @@ fn header_cell<K: Copy + PartialEq>(
     }
 }
 
-/// 컬럼 고정폭의 합(+컬럼 사이 item_spacing.x). 가로 스크롤 모드에서 sticky 헤더
+/// 열 하나가 줄어들 수 있는 하한. 고정 폭 열은 그 폭이 곧 하한이다.
+fn floor_width(width: TableColumnWidth) -> LogicalPx {
+    match width {
+        TableColumnWidth::Exact(w) => w,
+        TableColumnWidth::Initial { initial, .. } => initial,
+        TableColumnWidth::Remainder { at_least, .. } => at_least,
+        TableColumnWidth::Flex { min_width } => min_width,
+    }
+}
+
+/// 컬럼 하한의 합(+컬럼 사이 item_spacing.x). 가로 스크롤 모드에서 sticky 헤더
 /// 띠 폭과 ScrollArea 컨텐츠 최소폭을 잡는 데 쓴다. `Remainder` 는 floor(`at_least`)
-/// 기준으로 더한다(스크롤 모드에선 호출자가 `Exact` 만 쓰도록 권장).
-fn fixed_total_width<K>(columns: &[TableColumn<'_, K>], spacing_x: LogicalPx) -> LogicalPx {
-    let sum = columns
+/// 기준으로 더한다(스크롤 모드에선 호출자가 `Exact`·`Flex` 만 쓰도록 권장).
+pub fn fixed_total_width(widths: &[TableColumnWidth], spacing_x: LogicalPx) -> LogicalPx {
+    let sum = widths
         .iter()
-        .map(|c| match c.width {
-            TableColumnWidth::Exact(w) => w,
-            TableColumnWidth::Initial { initial, .. } => initial,
-            TableColumnWidth::Remainder { at_least, .. } => at_least,
-        })
+        .map(|w| floor_width(*w))
         .fold(LogicalPx(0.0), |acc, w| acc + w);
-    sum + spacing_x * columns.len().saturating_sub(1) as f32
+    sum + spacing_x * widths.len().saturating_sub(1) as f32
+}
+
+/// 가로 스크롤 표에서 `Flex` 열의 폭을 정해 `Exact` 로 바꾼다. 다른 열은 그대로 둔다.
+/// 하한의 합(열 사이 간격 포함)이 `available` 보다 작으면 남는 폭을 Flex 열에 똑같이
+/// 나누고, 크거나 같으면 Flex 열도 하한을 유지한다(표가 가로로 스크롤한다).
+fn resolve_scroll_widths(
+    widths: &[TableColumnWidth],
+    spacing_x: LogicalPx,
+    available: LogicalPx,
+) -> Vec<TableColumnWidth> {
+    let flex_count = widths
+        .iter()
+        .filter(|w| matches!(w, TableColumnWidth::Flex { .. }))
+        .count();
+    let slack = available - fixed_total_width(widths, spacing_x);
+    let share = if flex_count > 0 && slack > LogicalPx(0.0) {
+        slack / flex_count as f32
+    } else {
+        LogicalPx(0.0)
+    };
+    widths
+        .iter()
+        .map(|w| match *w {
+            TableColumnWidth::Flex { min_width } => TableColumnWidth::Exact(min_width + share),
+            other => other,
+        })
+        .collect()
 }
 
 fn to_column(width: TableColumnWidth) -> Column {
@@ -441,5 +496,69 @@ fn to_column(width: TableColumnWidth) -> Column {
         TableColumnWidth::Remainder { at_least, clip } => {
             Column::remainder().at_least(at_least.value()).clip(clip)
         }
+        TableColumnWidth::Flex { min_width } => {
+            Column::remainder().at_least(min_width.value()).clip(true)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn px(v: f32) -> LogicalPx {
+        LogicalPx(v)
+    }
+
+    fn exact_values(widths: &[TableColumnWidth]) -> Vec<f32> {
+        widths
+            .iter()
+            .map(|w| match w {
+                TableColumnWidth::Exact(v) => v.value(),
+                _ => panic!("scroll widths must resolve to Exact"),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn flex_keeps_its_floor_when_the_table_is_narrower_than_the_floors() {
+        let declared = [
+            TableColumnWidth::Exact(px(80.0)),
+            TableColumnWidth::Flex {
+                min_width: px(200.0),
+            },
+            TableColumnWidth::Exact(px(60.0)),
+        ];
+        let widths = resolve_scroll_widths(&declared, px(8.0), px(100.0));
+        assert_eq!(exact_values(&widths), vec![80.0, 200.0, 60.0]);
+        assert_eq!(fixed_total_width(&widths, px(8.0)), px(356.0));
+    }
+
+    #[test]
+    fn spare_width_is_shared_equally_by_flex_columns_only() {
+        let declared = [
+            TableColumnWidth::Exact(px(80.0)),
+            TableColumnWidth::Flex {
+                min_width: px(140.0),
+            },
+            TableColumnWidth::Flex {
+                min_width: px(200.0),
+            },
+            TableColumnWidth::Exact(px(60.0)),
+        ];
+        // floors 480 + gaps 24 = 504, so 100 is spare.
+        let widths = resolve_scroll_widths(&declared, px(8.0), px(604.0));
+        assert_eq!(exact_values(&widths), vec![80.0, 190.0, 250.0, 60.0]);
+        assert_eq!(fixed_total_width(&widths, px(8.0)), px(604.0));
+    }
+
+    #[test]
+    fn tables_without_flex_columns_keep_their_widths() {
+        let declared = [
+            TableColumnWidth::Exact(px(80.0)),
+            TableColumnWidth::Exact(px(60.0)),
+        ];
+        let widths = resolve_scroll_widths(&declared, px(8.0), px(500.0));
+        assert_eq!(exact_values(&widths), vec![80.0, 60.0]);
     }
 }
