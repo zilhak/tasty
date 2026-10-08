@@ -1,4 +1,4 @@
-<!-- source-hash: f0a6979cc67b -->
+<!-- source-hash: 56aa31fdb968 -->
 # Working with the terminal
 
 Copy the output you need, search terminal history, and open file paths as you work. You can also select text without a mouse and receive notifications when work finishes.
@@ -132,7 +132,7 @@ The same items are under **Settings** > **Terminal** > **Mouse Capture** — the
 
 ## Running · attention marks
 
-- The **green dot** on a Tab and the dot on a sidebar card — a program other than the shell is producing output. It disappears when the program stops and waits for input.
+- The **green dot** on a Tab and the dot on a sidebar card — a program other than the shell is producing output. It disappears when the program stops and waits for input. Output that only changes the terminal title does not count as output.
 - A **yellow border** on a Surface — the program is waiting for a response (an agent asked a question). A **blue border** — a command finished or a notification arrived. Click that Surface and it disappears. Tab names and sidebar badges use the same colors.
 
 ## Notifications

@@ -2186,7 +2186,7 @@ fn terminal_query_response_does_not_suppress_busy() {
 
     let st = terminal.lock_state();
     assert!(
-        st.last_output_at > st.last_input_at + INPUT_ECHO_WINDOW,
+        st.last_activity_at > st.last_input_at + INPUT_ECHO_WINDOW,
         "터미널 자체 응답이 입력 에코 억제 창을 갱신하면 안 된다",
     );
 }
@@ -2199,7 +2199,7 @@ fn user_input_still_suppresses_echo() {
     terminal.process_bytes(b"x");
 
     let st = terminal.lock_state();
-    assert!(st.last_output_at <= st.last_input_at + INPUT_ECHO_WINDOW);
+    assert!(st.last_activity_at <= st.last_input_at + INPUT_ECHO_WINDOW);
 }
 
 #[test]
@@ -2228,10 +2228,14 @@ fn fake_fg(name: &str, pid: u32) -> foreground_process::ForegroundProcessInfo {
 }
 
 /// 출력·입력 시각을 직접 설정한다. 판정 시각까지 실제 스케줄 지연이 생길 수는 있다.
+/// 출력 시각은 busy 판정용 활동 시각과 `last_output_at` 을 함께 돌려 놓는다. 하나만 돌리면
+/// 제목만 오는 출력이 `last_output_at` 을 갱신하는지 가리지 못한다.
 fn set_times(t: &Terminal, output_ago: std::time::Duration, input_ago: std::time::Duration) {
     let now = std::time::Instant::now();
     let mut st = t.lock_state();
-    st.last_output_at = now.checked_sub(output_ago).expect("instant underflow");
+    let output_at = now.checked_sub(output_ago).expect("instant underflow");
+    st.last_output_at = output_at;
+    st.last_activity_at = output_at;
     st.last_input_at = now.checked_sub(input_ago).expect("instant underflow");
 }
 
@@ -2407,4 +2411,166 @@ fn snapshot_and_tap_accounts_for_output_ingested_concurrently() {
         mismatches, 0,
         "snapshot과 tap 사이에 들어온 출력이 빠지거나 겹쳤다"
     );
+}
+
+// 제목 변경(OSC 0/1/2, Sun 형식, XTWINOPS push/pop)만 있는 출력은 busy 판정의 활동이 아니다.
+// 입력을 기다리며 제목만 깜빡이는 프로그램(Codex)이 일하는 것처럼 보이지 않게 한다.
+
+#[test]
+fn title_only_output_does_not_keep_busy() {
+    let mut t = Terminal::new_detached(80, 24);
+    let fg = fake_fg("codex", 2);
+    set_times(
+        &t,
+        BUSY_OUTPUT_WINDOW + ms(500),
+        BUSY_OUTPUT_WINDOW + ms(1000),
+    );
+    t.process_bytes(b"\x1b]0;[ ! ] Action Required | tasty\x07");
+    assert!(!t.busy_with_foreground(FAKE_SHELL_PID, Some(&fg)));
+    t.process_bytes(b"\x1b]2;title\x07\x1b]1;icon\x07\x1b[22;0t\x1b[23;0t");
+    assert!(!t.busy_with_foreground(FAKE_SHELL_PID, Some(&fg)));
+}
+
+#[test]
+fn title_with_content_output_is_busy() {
+    let mut t = Terminal::new_detached(80, 24);
+    let fg = fake_fg("codex", 2);
+    set_times(
+        &t,
+        BUSY_OUTPUT_WINDOW + ms(500),
+        BUSY_OUTPUT_WINDOW + ms(1000),
+    );
+    t.process_bytes(b"\x1b]0;working\x07x");
+    assert!(t.busy_with_foreground(FAKE_SHELL_PID, Some(&fg)));
+}
+
+#[test]
+fn split_title_osc_does_not_count_as_activity() {
+    let mut t = Terminal::new_detached(80, 24);
+    let fg = fake_fg("codex", 2);
+    set_times(
+        &t,
+        BUSY_OUTPUT_WINDOW + ms(500),
+        BUSY_OUTPUT_WINDOW + ms(1000),
+    );
+    t.process_bytes(b"\x1b]0;[ . ] Action Req");
+    t.process_bytes(b"uired | tasty\x07");
+    assert!(!t.busy_with_foreground(FAKE_SHELL_PID, Some(&fg)));
+}
+
+#[test]
+fn every_title_form_is_excluded() {
+    // OSC 0/1/2(BEL·ST 종결), Sun 형식(OSC l / L), push/pop 의 ;0 ;1 ;2
+    let forms: [&[u8]; 10] = [
+        b"\x1b]0;a\x07",
+        b"\x1b]0;a\x1b\\",
+        b"\x1b]1;a\x07",
+        b"\x1b]2;a\x07",
+        b"\x1b]la\x1b\\",
+        b"\x1b]La\x1b\\",
+        b"\x1b[22;0t",
+        b"\x1b[22;1t",
+        b"\x1b[22;2t",
+        b"\x1b[23;0t\x1b[23;1t\x1b[23;2t",
+    ];
+    let fg = fake_fg("codex", 2);
+    for f in forms {
+        let mut t = Terminal::new_detached(80, 24);
+        set_times(
+            &t,
+            BUSY_OUTPUT_WINDOW + ms(500),
+            BUSY_OUTPUT_WINDOW + ms(1000),
+        );
+        t.process_bytes(f);
+        assert!(!t.busy_with_foreground(FAKE_SHELL_PID, Some(&fg)), "{f:?}");
+    }
+}
+
+#[test]
+fn title_with_non_title_control_is_busy() {
+    // 제목과 동기화 출력·커서 이동·질의가 함께 오면 활동이다. Mode 분기의 continue 보다 앞에서
+    // 판정해야 통과한다.
+    let forms: [&[u8]; 3] = [
+        b"\x1b[?2026h\x1b]0;a\x07\x1b[?2026l",
+        b"\x1b]0;a\x07\x1b[5;1H",
+        b"\x1b]0;a\x07\x1b[6n",
+    ];
+    let fg = fake_fg("codex", 2);
+    for f in forms {
+        let mut t = Terminal::new_detached(80, 24);
+        set_times(
+            &t,
+            BUSY_OUTPUT_WINDOW + ms(500),
+            BUSY_OUTPUT_WINDOW + ms(1000),
+        );
+        t.process_bytes(f);
+        assert!(t.busy_with_foreground(FAKE_SHELL_PID, Some(&fg)), "{f:?}");
+    }
+}
+
+#[test]
+fn st_terminated_non_title_strings_and_other_escapes_alone_are_busy() {
+    // ST 는 항상 중립이지만 그것이 끝내는 제목이 아닌 문자열은 따로 활동이 된다. ST 가 아닌 ESC 코드도
+    // 활동이다. 모든 OSC 나 모든 ESC 를 중립으로 넓히면 실패한다.
+    let forms: [&[u8]; 7] = [
+        b"\x1b]8;;https://example.com\x1b\\",
+        b"\x1b]52;c;aGk=\x1b\\",
+        b"\x1b]133;A\x1b\\",
+        b"\x1bP$qm\x1b\\",
+        b"\x1b7",
+        b"\x1bM",
+        b"\x1b=",
+    ];
+    let fg = fake_fg("codex", 2);
+    for f in forms {
+        let mut t = Terminal::new_detached(80, 24);
+        set_times(
+            &t,
+            BUSY_OUTPUT_WINDOW + ms(500),
+            BUSY_OUTPUT_WINDOW + ms(1000),
+        );
+        t.process_bytes(f);
+        assert!(t.busy_with_foreground(FAKE_SHELL_PID, Some(&fg)), "{f:?}");
+    }
+}
+
+#[test]
+fn split_title_first_piece_alone_is_not_activity() {
+    let mut t = Terminal::new_detached(80, 24);
+    let fg = fake_fg("codex", 2);
+    set_times(
+        &t,
+        BUSY_OUTPUT_WINDOW + ms(500),
+        BUSY_OUTPUT_WINDOW + ms(1000),
+    );
+    t.process_bytes(b"\x1b]0;[ . ] Action Req");
+    assert!(!t.busy_with_foreground(FAKE_SHELL_PID, Some(&fg)));
+}
+
+#[test]
+fn busy_expires_when_only_titles_follow() {
+    // 이미 busy 인 프로그램이 제목만 계속 바꾸면 창이 지난 뒤 해제된다.
+    let mut t = Terminal::new_detached(80, 24);
+    let fg = fake_fg("codex", 2);
+    enter_busy(&mut t, &fg);
+    set_times(
+        &t,
+        BUSY_OUTPUT_WINDOW + ms(500),
+        BUSY_OUTPUT_WINDOW + ms(1000),
+    );
+    t.process_bytes(b"\x1b]0;[ ! ] Action Required\x07");
+    assert!(!t.busy_with_foreground(FAKE_SHELL_PID, Some(&fg)));
+}
+
+#[test]
+fn title_only_output_still_refreshes_last_output_at() {
+    // set_times 가 last_output_at 도 과거로 돌려 놓아야 이 시험이 결함을 검출한다.
+    let mut t = Terminal::new_detached(80, 24);
+    set_times(
+        &t,
+        BUSY_OUTPUT_WINDOW + ms(500),
+        BUSY_OUTPUT_WINDOW + ms(1000),
+    );
+    t.process_bytes(b"\x1b]0;title\x07");
+    assert!(t.last_output_at().elapsed() < BUSY_OUTPUT_WINDOW);
 }

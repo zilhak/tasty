@@ -1,4 +1,4 @@
-<!-- source-hash: bcdbd293a556 -->
+<!-- source-hash: cf143188de16 -->
 # Panes · Tabs · splits
 
 Keep an agent, your code, and the logs side by side. Divide the window with panes and surfaces, switch tasks with tabs, and save layouts you use often as presets. [A first look](../getting-started/first-look.md) explains how the parts fit together.
@@ -58,7 +58,7 @@ tasty close tab --tab 7
 A Tab's name is decided in this order of priority — a name you set yourself > the window title set by the program > the shell's current directory.
 
 - Right-click a Tab > **Rename Tab**, or `F2`. Once set, it does not change when you move directories.
-- **Green dot** — a program other than the shell is producing output. It disappears while waiting at a prompt or when the program is idle.
+- **Green dot** — a program other than the shell is producing output. It disappears while waiting at a prompt or when the program is idle. Output that only changes the terminal title does not count, so the dot also disappears for a program that blinks its title while it waits for input (for example, Codex waiting on a question).
 - **Yellow name** — the program is waiting for input. **Blue name** — a job finished. Click that Surface and it returns to its normal color.
 
 Tab width and font size have no entry in the settings window; change them with `tab_width` · `tab_font_size` under `[appearance]` in `~/.tasty/config.toml`.

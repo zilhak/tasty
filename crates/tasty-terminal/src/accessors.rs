@@ -113,7 +113,7 @@ impl Terminal {
                 &crate::STATE_POISON_REPORTED,
             ),
         };
-        if st.last_output_at.elapsed() >= BUSY_OUTPUT_WINDOW {
+        if st.last_activity_at.elapsed() >= BUSY_OUTPUT_WINDOW {
             self.clear_busy_latch();
             return false;
         }
@@ -121,8 +121,8 @@ impl Terminal {
         if self.busy_latch.load(Ordering::Relaxed) != latch {
             // Echo must come *after* the input it echoes: output that predates the
             // last keystroke is never suppressed.
-            let is_echo = st.last_input_at <= st.last_output_at
-                && st.last_output_at <= st.last_input_at + INPUT_ECHO_WINDOW;
+            let is_echo = st.last_input_at <= st.last_activity_at
+                && st.last_activity_at <= st.last_input_at + INPUT_ECHO_WINDOW;
             if is_echo {
                 self.clear_busy_latch();
                 return false;

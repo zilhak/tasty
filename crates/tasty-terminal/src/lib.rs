@@ -193,6 +193,8 @@ pub(crate) struct TerminalState {
     restorable_scrollback_count: usize,
     /// Timestamp of the most recent non-empty PTY output processed.
     last_output_at: std::time::Instant,
+    /// busy 판정이 쓰는 마지막 활동 출력 시각. 제목만 바꾸는 action 뿐인 출력은 갱신하지 않는다.
+    last_activity_at: std::time::Instant,
     /// Timestamp of the most recent user input sent to the PTY.
     last_input_at: std::time::Instant,
     /// Timestamp of the most recent output action that repositioned the cursor
@@ -418,6 +420,7 @@ impl TerminalState {
             saved_line_tails: Vec::new(),
             restorable_scrollback_count: 0,
             last_output_at: std::time::Instant::now(),
+            last_activity_at: std::time::Instant::now(),
             // Start in the past so the first PTY output is never mistaken for echo.
             last_input_at: std::time::Instant::now() - INPUT_ECHO_WINDOW,
             last_screen_control_at: None,
@@ -455,6 +458,10 @@ impl TerminalState {
         let mut changed = false;
         let actions = self.parser.parse_as_vec(data);
         for action in actions {
+            // Mode 분기의 continue 보다 앞에서 판정해야 동기화 출력 같은 Mode action 도 활동이 된다.
+            if !is_busy_neutral_action(&action) {
+                self.last_activity_at = std::time::Instant::now();
+            }
             if is_screen_repaint_action(&action) {
                 self.last_screen_control_at = Some(std::time::Instant::now());
             }
@@ -553,6 +560,37 @@ impl TerminalState {
                 }
                 Err(mpsc::TrySendError::Disconnected(_)) => false,
             });
+    }
+}
+
+/// busy 판정의 활동으로 세지 않는 action. 터미널 제목만 바꾸는 action 과, 어떤 문자열을 ESC \ 로 끝내든
+/// 따로 나오는 문자열 종결자(ST)다. 입력을 기다리며 제목만 깜빡이는 프로그램이 busy 로 남지 않게 한다
+/// (docs/design/policies/busy-indicator.md). ST 는 혼자서는 화면을 바꾸지 않고, 다른 문자열 시퀀스를
+/// 끝낼 때는 그 시퀀스의 action 이 따로 활동으로 세어진다. termwiz 가 action 으로 내지 않는 APC·PM·SOS 는
+/// ST 만 남아 활동이 아니다.
+fn is_busy_neutral_action(action: &Action) -> bool {
+    use termwiz::escape::OperatingSystemCommand as Osc;
+    use termwiz::escape::csi::Window;
+    match action {
+        Action::OperatingSystemCommand(osc) => matches!(
+            **osc,
+            Osc::SetIconNameAndWindowTitle(_)
+                | Osc::SetWindowTitle(_)
+                | Osc::SetWindowTitleSun(_)
+                | Osc::SetIconName(_)
+                | Osc::SetIconNameSun(_)
+        ),
+        Action::Esc(Esc::Code(EscCode::StringTerminator)) => true,
+        Action::CSI(CSI::Window(window)) => matches!(
+            **window,
+            Window::PushIconAndWindowTitle
+                | Window::PushIconTitle
+                | Window::PushWindowTitle
+                | Window::PopIconAndWindowTitle
+                | Window::PopIconTitle
+                | Window::PopWindowTitle
+        ),
+        _ => false,
     }
 }
 
