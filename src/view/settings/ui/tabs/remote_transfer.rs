@@ -97,6 +97,8 @@ pub(super) fn settings_row(
             egui::vec2(LABEL_COL_WIDTH.value(), min_h),
             egui::Layout::left_to_right(egui::Align::Center),
             |ui| {
+                // 할당 크기는 최대치라 라벨이 짧으면 열이 줄어든다. 행마다 컨트롤 x 가 같도록 폭을 채운다.
+                ui.set_min_width(LABEL_COL_WIDTH.value());
                 ui.label(
                     egui::RichText::new(label)
                         .size(th.font_size_body.value())
