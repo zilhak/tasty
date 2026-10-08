@@ -2058,6 +2058,18 @@ mod tests {
         assert_eq!(map_event(&RawInputEventWire::Copy), Some(Event::Copy));
     }
 
+    /// Paste 입력이 내용 없는 egui::Event::Paste로 변환되고 와이어 왕복이 유지되는지 확인한다.
+    #[test]
+    fn paste_wire_event_maps_to_an_empty_egui_paste() {
+        assert_eq!(
+            map_event(&RawInputEventWire::Paste),
+            Some(Event::Paste(String::new()))
+        );
+        let wire = serde_json::to_value(RawInputEventWire::Paste).expect("직렬화");
+        let back: RawInputEventWire = serde_json::from_value(wire).expect("역직렬화");
+        assert_eq!(back, RawInputEventWire::Paste);
+    }
+
     /// 엔드투엔드 회귀: 텍스트가 선택된 상태에서 `Copy` wire 이벤트를 보내면, egui 의
     /// 내장 `TextEdit` 선택-복사 로직이 `platform_output.commands` 에 `CopyText` 를
     /// 채우고 `render()` 가 그 값을 `take_copied_text()` 로 노출해야 한다. 선택이

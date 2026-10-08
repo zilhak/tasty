@@ -152,5 +152,6 @@ pub(super) fn map_event(e: &RawInputEventWire) -> Option<Event> {
             ImeWire::Disabled => ImeEvent::Disabled,
         }),
         RawInputEventWire::Copy => Event::Copy,
+        RawInputEventWire::Paste => Event::Paste(String::new()),
     })
 }

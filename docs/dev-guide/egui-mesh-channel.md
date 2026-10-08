@@ -395,9 +395,9 @@ non-modal 공지) `BannerPaintFrame` 에는 그 칸이 없다.
 (`tasty-ipc` `mesh_stream`)로 나르고 거기에는 `ime_cursor` 칸이 없다. 원격 mesh surface 를
 편집할 때 후보창은 여전히 마지막 위치나 창 원점 근처에 뜬다.
 
-Copy 는 위 표대로 `egui_copy` capability 를 가진 kind 한정으로 wire 에 있지만, Cut/Paste 는
-아직 wire 에 없어 egui-mesh 필드에서 Ctrl+V/X 는 동작하지 않는다(popup 미러 경로와 동일
-한계).
+Copy 는 위 표대로 `egui_copy` capability 를 가진 kind 한정으로 wire 에 있다. `Paste` 는 wire 와
+SDK 변환(내용 없는 `egui::Event::Paste`)만 있고 host 는 아직 보내지 않는다. Cut 은 wire 에 없다.
+그래서 egui-mesh 필드에서 Ctrl+V/X 는 동작하지 않는다(popup 미러 경로와 동일 한계).
 
 ## crash 격리
 

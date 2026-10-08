@@ -202,6 +202,10 @@ pub enum RawInputEventWire {
     /// 호스트 단축키 설정에서 해석한 복사 요청. SDK는 egui::Event::Copy로
     /// 변환하고 egui가 선택 내용에 따라 CopyText 출력을 만든다.
     Copy,
+    /// 호스트 단축키 설정에서 해석한 붙여넣기 요청. `egui_paste` kind 에만 보낸다.
+    /// 클립보드 내용은 싣지 않는다 — plugin 이 필요한 형식(이미지 등)을 직접 읽는다.
+    /// SDK 는 빈 문자열의 `egui::Event::Paste` 로 변환한다.
+    Paste,
 }
 
 /// egui `ImeEvent` 미러 — IME 조합 세션의 4단계. `RawInputEventWire::Ime` 에 실린다.
