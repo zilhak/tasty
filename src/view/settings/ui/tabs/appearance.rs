@@ -273,28 +273,15 @@ fn draw_appearance_general(
     let opacity = SettingsRow::new(t("settings.appearance.background_opacity_label"));
     let font_rows = font_setting_rows();
     let col = settings_label_column(ui, &th, font_rows.iter().chain([&ligatures, &opacity]));
-    ui.columns(2, |columns| {
-        font_settings_grid(
-            &mut columns[0],
-            font_rows,
-            col,
-            &mut settings.appearance.default_font,
-            font_families,
-            font_filter,
-            "default",
-        );
-        let preview_eff = effective_from_settings(&settings.appearance.default_font);
-        let preview_colors = crate::theme::theme().surface("terminal").clone();
-        draw_font_preview(
-            &mut columns[1],
-            PreviewLayout::Stacked,
-            &preview_eff,
-            &preview_colors,
-            &settings.appearance,
-            "default",
-            preview_font_loaded,
-        );
-    });
+    default_font_columns(
+        ui,
+        font_rows,
+        col,
+        settings,
+        font_families,
+        font_filter,
+        preview_font_loaded,
+    );
 
     vspace(ui, th.spacing_lg);
     ui.separator();
@@ -1619,7 +1606,7 @@ fn font_family_picker(
     font_filter: &mut HashMap<String, String>,
     salt: &str,
     enabled: bool,
-) {
+) -> egui::Response {
     let th = crate::theme::theme();
     let display_name = if value.is_empty() {
         "monospace (default)".to_string()
@@ -1632,10 +1619,15 @@ fn font_family_picker(
     // 공용 Select 에는 검색 필터가 없어 egui ComboBox 를 유지한다. 그래서 disabled 모양은
     // 아직 egui fade 를 따른다.
     ui.add_enabled_ui(enabled, |ui| {
+        // 기본 글꼴 격자는 미리보기와 반폭씩 나눈 열에 있다. 콤보가 그 열을 넘으면 오른쪽 끝(▼)이
+        // 미리보기 위에 겹쳐 클릭이 미리보기 제목으로 간다. 남은 폭 안에 묶고, 선택된 이름이
+        // 그보다 길면 콤보를 늘리지 않고 이름을 자른다(egui 기본은 글자 폭만큼 늘어난다).
+        let combo_w = th.field_width_lg.value().min(ui.available_width());
         tasty_egui_theme::with_popover_frame(ui, &th, |ui| {
             egui::ComboBox::from_id_salt(combo_id)
                 .selected_text(&display_name)
-                .width(th.field_width_lg.value())
+                .width(combo_w)
+                .truncate()
                 .height(300.0)
                 .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
                 .show_ui(ui, |ui| {
@@ -1689,8 +1681,47 @@ fn font_family_picker(
                         );
                     }
                 })
-        });
-    });
+                .response
+        })
+    })
+    .inner
+}
+
+/// 기본 글꼴 격자와 미리보기를 반폭 두 열로 나눠 그린다. 글꼴 콤보·커스텀 글꼴 입력칸의 응답과
+/// 미리보기 열의 왼쪽 경계를 돌려준다(두 열이 겹치지 않는지 재는 시험이 읽는다).
+fn default_font_columns(
+    ui: &mut egui::Ui,
+    rows: [SettingsRow<'_>; 5],
+    col: LogicalPx,
+    settings: &mut Settings,
+    font_families: &mut Option<Vec<String>>,
+    font_filter: &mut HashMap<String, String>,
+    preview_font_loaded: &mut HashMap<String, String>,
+) -> (egui::Response, egui::Response, f32) {
+    ui.columns(2, |columns| {
+        let (family, custom) = font_settings_grid(
+            &mut columns[0],
+            rows,
+            col,
+            &mut settings.appearance.default_font,
+            font_families,
+            font_filter,
+            "default",
+        );
+        let preview_left = columns[1].max_rect().left();
+        let preview_eff = effective_from_settings(&settings.appearance.default_font);
+        let preview_colors = crate::theme::theme().surface("terminal").clone();
+        draw_font_preview(
+            &mut columns[1],
+            PreviewLayout::Stacked,
+            &preview_eff,
+            &preview_colors,
+            &settings.appearance,
+            "default",
+            preview_font_loaded,
+        );
+        (family, custom, preview_left)
+    })
 }
 
 /// Edit a `FontSettings` (no fallback semantics — every field is always set).
@@ -1715,22 +1746,25 @@ fn font_settings_grid(
     font_families: &mut Option<Vec<String>>,
     font_filter: &mut HashMap<String, String>,
     salt: &str,
-) {
+) -> (egui::Response, egui::Response) {
     let th = crate::theme::theme();
     let [family, custom, size, line_height, scale_mode] = rows;
     ui.spacing_mut().item_spacing.y = th.spacing_sm.value();
+    let mut family_combo = None;
     family.show(ui, &th, col, |ui| {
-        font_family_picker(
+        family_combo = Some(font_family_picker(
             ui,
             &mut font.font_family,
             font_families,
             font_filter,
             salt,
             true,
-        );
+        ));
     });
+    let mut custom_field = None;
     custom.show(ui, &th, col, |ui| {
-        ui.text_edit_singleline(&mut font.custom_font_path);
+        // egui TextEdit 은 남은 폭을 넘지 않으므로 콤보와 달리 폭을 따로 묶지 않는다.
+        custom_field = Some(ui.text_edit_singleline(&mut font.custom_font_path));
     });
     size.show(ui, &th, col, |ui| {
         let mut size_value = font.font_size as f64;
@@ -1759,6 +1793,10 @@ fn font_settings_grid(
     scale_mode.show(ui, &th, col, |ui| {
         font_scale_mode_combo(ui, &mut font.font_scale_mode, salt, true, None);
     });
+    (
+        family_combo.expect("SettingsRow::show runs its control"),
+        custom_field.expect("SettingsRow::show runs its control"),
+    )
 }
 
 /// Edit a `FontOverride` against a `FontSettings` default. Each row has a
@@ -2556,5 +2594,113 @@ mod default_hex_field_tests {
         );
         assert!(typed.has_focus(), "typing moved focus away");
         assert_eq!(hex, "#89b4fa", "Default hex field accepted an edit");
+    }
+}
+
+#[cfg(test)]
+mod default_font_columns_tests {
+    use std::collections::HashMap;
+
+    use super::{default_font_columns, font_setting_rows};
+    use crate::settings::Settings;
+    use tasty_type_geometry::length::LogicalPx;
+
+    /// 설정 창 콘텐츠 컬럼 상한(620)과 같은 폭에 기본 글꼴 두 열을 한 프레임 그린다.
+    fn frame(
+        ctx: &egui::Context,
+        col: LogicalPx,
+        settings: &mut Settings,
+        events: Vec<egui::Event>,
+    ) -> (egui::Response, egui::Response, f32) {
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(620.0, 500.0));
+        let raw = egui::RawInput {
+            screen_rect: Some(screen),
+            events,
+            ..Default::default()
+        };
+        let mut families = None;
+        let mut filter = HashMap::new();
+        let mut loaded = HashMap::new();
+        let mut seen = None;
+        drop(ctx.run(raw, |ctx| {
+            egui::CentralPanel::default()
+                .frame(egui::Frame::NONE)
+                .show(ctx, |ui| {
+                    seen = Some(default_font_columns(
+                        ui,
+                        font_setting_rows(),
+                        col,
+                        settings,
+                        &mut families,
+                        &mut filter,
+                        &mut loaded,
+                    ));
+                });
+        }));
+        seen.expect("frame ran")
+    }
+
+    fn click(ctx: &egui::Context, col: LogicalPx, settings: &mut Settings, pos: egui::Pos2) {
+        let press = |pressed| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        frame(
+            ctx,
+            col,
+            settings,
+            vec![egui::Event::PointerMoved(pos), press(true)],
+        );
+        frame(ctx, col, settings, vec![press(false)]);
+        frame(ctx, col, settings, Vec::new());
+    }
+
+    /// 라벨 열이 하한(150)이든 상한(240)이든 글꼴 콤보와 커스텀 글꼴 입력칸은 왼쪽 열 안에
+    /// 머물러 미리보기 열과 겹치지 않는다.
+    #[test]
+    fn the_font_controls_stay_left_of_the_preview() {
+        let th = crate::theme::theme();
+        for col in [th.settings_label_width(), th.settings_label_max_width()] {
+            let ctx = egui::Context::default();
+            let mut settings = Settings::default();
+            frame(&ctx, col, &mut settings, Vec::new());
+            let (family, custom, preview_left) = frame(&ctx, col, &mut settings, Vec::new());
+            assert!(
+                family.rect.right() <= preview_left,
+                "label column {}: font combo ends at {} past the preview column at {}",
+                col.value(),
+                family.rect.right(),
+                preview_left
+            );
+            assert!(
+                custom.rect.right() <= preview_left,
+                "label column {}: custom font field ends at {} past the preview column at {}",
+                col.value(),
+                custom.rect.right(),
+                preview_left
+            );
+        }
+    }
+
+    /// 콤보 오른쪽 끝(▼ 자리)을 누르면 목록이 열린다. 미리보기 제목이 그 자리를 덮으면
+    /// 클릭이 제목으로 가서 열리지 않는다.
+    #[test]
+    fn clicking_the_combo_arrow_opens_the_font_list() {
+        let th = crate::theme::theme();
+        for col in [th.settings_label_width(), th.settings_label_max_width()] {
+            let ctx = egui::Context::default();
+            let mut settings = Settings::default();
+            frame(&ctx, col, &mut settings, Vec::new());
+            let (family, _, _) = frame(&ctx, col, &mut settings, Vec::new());
+            let arrow = family.rect.right_center() - egui::vec2(8.0, 0.0);
+            click(&ctx, col, &mut settings, arrow);
+            assert!(
+                ctx.memory(|m| m.any_popup_open()),
+                "label column {}: clicking the combo arrow at {arrow:?} did not open the list",
+                col.value()
+            );
+        }
     }
 }
