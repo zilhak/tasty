@@ -1767,28 +1767,22 @@ fn font_settings_grid(
         custom_field = Some(ui.text_edit_singleline(&mut font.custom_font_path));
     });
     size.show(ui, &th, col, |ui| {
-        let mut size_value = font.font_size as f64;
-        if super::number::number_field(
+        super::number::number_field_f32(
             ui,
             &th,
             ("appearance_font_size", salt),
             &font_size_spec(),
-            &mut size_value,
-        ) {
-            font.font_size = size_value as f32;
-        }
+            &mut font.font_size,
+        );
     });
     line_height.show(ui, &th, col, |ui| {
-        let mut lh_value = font.line_height as f64;
-        if super::number::number_field(
+        super::number::number_field_f32(
             ui,
             &th,
             ("appearance_line_height", salt),
             &line_height_spec(),
-            &mut lh_value,
-        ) {
-            font.line_height = lh_value as f32;
-        }
+            &mut font.line_height,
+        );
     });
     scale_mode.show(ui, &th, col, |ui| {
         font_scale_mode_combo(ui, &mut font.font_scale_mode, salt, true, None);
@@ -1905,17 +1899,15 @@ fn font_override_grid(
                     size.show_label(ui, &th, col, row_h);
                 }
                 OverrideCell::Control => {
-                    let mut size_value = ov.font_size.unwrap_or(default.font_size) as f64;
-                    super::number::number_field(
+                    let mut size_value = ov.font_size.unwrap_or(default.font_size);
+                    super::number::number_field_f32(
                         ui,
                         &th,
                         ("appearance_override_font_size", salt),
                         &font_size_spec().enabled(ov.font_size.is_some()),
                         &mut size_value,
                     );
-                    if let Some(stored) = ov.font_size.as_mut() {
-                        *stored = size_value as f32;
-                    }
+                    ov.font_size = ov.font_size.map(|_| size_value);
                 }
                 OverrideCell::UseDefault => {
                     override_checkbox(ui, &mut ov.font_size, || default.font_size)
@@ -1935,17 +1927,15 @@ fn font_override_grid(
                     line_height.show_label(ui, &th, col, row_h);
                 }
                 OverrideCell::Control => {
-                    let mut lh_value = ov.line_height.unwrap_or(default.line_height) as f64;
-                    super::number::number_field(
+                    let mut lh_value = ov.line_height.unwrap_or(default.line_height);
+                    super::number::number_field_f32(
                         ui,
                         &th,
                         ("appearance_override_line_height", salt),
                         &line_height_spec().enabled(ov.line_height.is_some()),
                         &mut lh_value,
                     );
-                    if let Some(stored) = ov.line_height.as_mut() {
-                        *stored = lh_value as f32;
-                    }
+                    ov.line_height = ov.line_height.map(|_| lh_value);
                 }
                 OverrideCell::UseDefault => {
                     override_checkbox(ui, &mut ov.line_height, || default.line_height)

@@ -128,6 +128,22 @@ fn range_line(spec: &NumberSpec<'_>, settled: f64) -> String {
     }
 }
 
+/// `f32` 설정값을 [`number_field`] 로 편집한다. 확정된 프레임에만 `value` 가 바뀐다.
+pub(super) fn number_field_f32(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    id_salt: impl std::hash::Hash,
+    spec: &NumberSpec<'_>,
+    value: &mut f32,
+) -> bool {
+    let mut wide = f64::from(*value);
+    let committed = number_field(ui, theme, id_salt, spec, &mut wide);
+    if committed {
+        *value = wide as f32;
+    }
+    committed
+}
+
 /// 숫자 칸 한 개를 그린다. `value` 는 확정된 값이고, 확정이 일어난 프레임에만 바뀐다.
 ///
 /// 반환값은 **이 프레임에 확정이 일어났는가**다 — 호출처가 저장·재계산을 거는 자리다.
