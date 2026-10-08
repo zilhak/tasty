@@ -113,3 +113,23 @@ fn conversions_are_exact_and_refuse_lossy_values() {
         json!({"k": 1})
     );
 }
+
+/// 권한이 없어 열 수 없는 파일은 run 입력 파일로 받지 않는다.
+#[cfg(unix)]
+#[test]
+fn an_unreadable_file_is_not_a_file_argument() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let f = dir.path().join("secret");
+    std::fs::write(&f, "x").unwrap();
+    assert!(check_readable_file(f.to_str().unwrap(), None).is_ok());
+    std::fs::set_permissions(&f, std::fs::Permissions::from_mode(0o000)).unwrap();
+    // root 는 권한과 관계없이 열 수 있어 이 경우를 만들 수 없다.
+    if std::fs::File::open(&f).is_ok() {
+        return;
+    }
+    let why = check_readable_file(f.to_str().unwrap(), None).unwrap_err();
+    assert!(why.starts_with("cannot be read"), "{why}");
+    let rel = check_readable_file("secret", Some(dir.path())).unwrap_err();
+    assert!(rel.starts_with("cannot be read"), "{rel}");
+}

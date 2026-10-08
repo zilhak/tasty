@@ -92,6 +92,27 @@ tasty agent task-graph-submit --workspace-id 2 --graph @graph.json
 
 각 작업의 `id` 는 직접 정합니다. `bindings` 는 입력을 어디서 받을지 정합니다. 고정 값(`literal`), 앞 작업 결과의 한 값(`from_task` 와 `pointer`), 본 작업과 폴백 중 실행된 쪽(`one_of`)을 쓸 수 있고, 타입이 맞지 않으면 보낼 때 거부됩니다. 받은 값은 `input_mapping` 에 적은 자리에만 들어갑니다. `args` 는 명령 뒤에 인자로 하나씩 붙이고, `stdin: true` 는 입력 전체를 JSON 으로 표준 입력에 씁니다. `wait_barrier` 작업은 `"barrier": "/<필드>"` 로 기다릴 배리어 이름을 입력에서 받을 수 있고, 이때는 명령에 `name` 을 적지 않습니다. 값 안의 `$(...)` 나 공백은 다시 해석되지 않습니다. 실제로 넘긴 값은 작업의 `input_snapshot` 에서 볼 수 있습니다. 이 그래프의 작업에는 위 자리표시자를 쓰지 않습니다.
 
+`run` 작업에 이미 있는 파일을 넘기려면 `args` 에 `{"file": "/<필드>"}` 를 씁니다. 그 필드의 문자열이 파일 경로이고, 명령 뒤에 경로가 인자로 붙습니다. 작업이 실행되기 직전에 그 파일을 읽을 수 있는지 확인하며, 없거나 읽을 수 없으면 명령을 실행하지 않고 입력 단계에서 실패합니다. 상대 경로는 명령의 `cwd` 가 있을 때만 그 기준으로 받습니다. Tasty 는 파일을 만들거나 지우지 않으므로, 파일을 준비하고 치우는 일은 앞뒤 작업이나 스크립트가 맡습니다. 아래 스크립트는 diff 를 파일로 만들어 검사 명령에 넘기고, 검사가 실패해도 마지막에 지웁니다.
+
+```sh
+#!/bin/sh
+# lint-diff.sh <workspace id>
+set -eu
+diff_file=$(mktemp)
+git diff > "$diff_file"
+tasty agent task-graph-submit --workspace-id "$1" --graph "$(cat <<JSON
+{"contract_version": 2, "tasks": [
+  {"id": "lint", "command": {"kind": "run", "command": ["my-lint", "--diff"]},
+   "input_schema": {"type": "object", "fields": {"diff": {"type": "string"}}},
+   "bindings": {"diff": {"literal": "$diff_file"}},
+   "input_mapping": {"args": [{"file": "/diff"}]},
+   "on_failure": {"kind": "continue_downstream"}},
+  {"id": "cleanup", "command": {"kind": "run", "command": ["rm", "-f", "$diff_file"]},
+   "depends_on": ["lint"]}]}
+JSON
+)"
+```
+
 작업 결과를 다른 명령(판정·요약 도구 등)으로 한 번 더 처리해 결과로 삼으려면 `postprocess` 를 붙입니다. 본 작업이 성공하면 그 명령을 실행하고, 표준 출력을 작업의 결과로 받습니다.
 
 ```json

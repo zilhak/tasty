@@ -17,7 +17,9 @@ use super::types::{
 use super::{Task, TaskCommand, TaskId, TaskState};
 
 mod mapping;
-pub use mapping::{InputMapping, ResolvedExecution};
+#[cfg(test)]
+use mapping::check_readable_file;
+pub use mapping::{ArgSource, FileArg, InputMapping, ResolvedExecution};
 use mapping::{check_mapping, resolve_execution};
 
 /// 입력 필드 하나를 채우는 방법.

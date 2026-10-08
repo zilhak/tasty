@@ -14,10 +14,9 @@ use super::{escape, input_failure, pointer_tokens, schema_at, typed_failure, val
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct InputMapping {
-    /// run 전용. 입력의 JSON Pointer 목록. 각 값을 argv 끝에 요소 하나씩 붙인다.
-    /// string·enum·int64·boolean 만 받는다.
+    /// run 전용. argv 끝에 순서대로 붙일 입력 위치. 각 값이 요소 하나다.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub args: Vec<String>,
+    pub args: Vec<ArgSource>,
     /// run 전용. 입력 전체를 JSON 한 문서(wire 형식)로 stdin 에 쓰고 닫는다.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub stdin: bool,
@@ -31,6 +30,32 @@ pub struct InputMapping {
     /// `name` 과 함께 쓸 수 없다.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub barrier: Option<String>,
+}
+
+/// run argv 요소 하나의 출처.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum ArgSource {
+    /// 입력의 JSON Pointer. string·enum·int64·boolean 값을 그대로 넣는다.
+    Value(String),
+    /// `{"file": <포인터>}`. 그 자리의 string 은 이미 있는 읽을 수 있는 파일의 경로이고, 실행
+    /// 직전에 확인한 뒤 경로를 그대로 넣는다. Tasty 는 파일을 만들거나 지우지 않는다.
+    File(FileArg),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FileArg {
+    pub file: String,
+}
+
+impl ArgSource {
+    pub fn pointer(&self) -> &str {
+        match self {
+            ArgSource::Value(p) => p,
+            ArgSource::File(f) => &f.file,
+        }
+    }
 }
 
 impl InputMapping {
@@ -157,12 +182,25 @@ pub(super) fn check_mapping(
         }
         Ok(s)
     };
-    for (i, pointer) in mapping.args.iter().enumerate() {
+    for (i, source) in mapping.args.iter().enumerate() {
+        let pointer = source.pointer();
         let l = format!("{loc}/args/{i}");
         let s = present_at(pointer, l.clone())?;
         let r = defs
             .resolve(&s)
             .map_err(|e| typed_failure(Some(task_id), e, l.clone(), None))?;
+        if matches!(source, ArgSource::File(_)) {
+            if !matches!(r.kind, TypeKind::String { .. }) || r.nullable {
+                return Err(fail(
+                    format!(
+                        "file path at '{pointer}' is {}; a file path is a string",
+                        s.describe()
+                    ),
+                    format!("{l}/file"),
+                ));
+            }
+            continue;
+        }
         let scalar = matches!(
             r.kind,
             TypeKind::String { .. } | TypeKind::Enum { .. } | TypeKind::Int64 | TypeKind::Boolean
@@ -252,6 +290,26 @@ fn check_barrier_source(
     }
 }
 
+/// `path` 가 지금 읽을 수 있는 일반 파일인가. 상대 경로는 run 의 `cwd` 기준이며, `cwd` 가 없으면
+/// 받지 않는다(Tasty 의 작업 디렉터리는 DAG 를 짜는 쪽이 알 수 없다). 내용은 읽지 않는다.
+pub(super) fn check_readable_file(path: &str, cwd: Option<&std::path::Path>) -> Result<(), String> {
+    let p = std::path::Path::new(path);
+    let full = if p.is_absolute() {
+        p.to_path_buf()
+    } else if let Some(cwd) = cwd {
+        cwd.join(p)
+    } else {
+        return Err("is a relative path but the run has no cwd".into());
+    };
+    let meta = std::fs::metadata(&full).map_err(|e| format!("cannot be read: {e}"))?;
+    if !meta.is_file() {
+        return Err("is not a regular file".into());
+    }
+    std::fs::File::open(&full)
+        .map(|_| ())
+        .map_err(|e| format!("cannot be read: {e}"))
+}
+
 pub(super) fn resolve_execution(
     task: &Task,
     contract: &TaskContract,
@@ -267,8 +325,30 @@ pub(super) fn resolve_execution(
         stdin: mapping.stdin,
         ..Default::default()
     };
-    for (i, pointer) in mapping.args.iter().enumerate() {
+    let cwd = match &task.command {
+        TaskCommand::Run { cwd, .. } => cwd.as_deref(),
+        _ => None,
+    };
+    for (i, source) in mapping.args.iter().enumerate() {
+        let pointer = source.pointer();
         let loc = format!("/input_mapping/args/{i}");
+        if matches!(source, ArgSource::File(_)) {
+            let loc = format!("{loc}/file");
+            let Some(Value::String(path)) = value_at(&internal, pointer) else {
+                return Err(fail(
+                    format!("file path at '{pointer}' is not a string"),
+                    loc,
+                ));
+            };
+            check_readable_file(path, cwd).map_err(|why| {
+                fail(
+                    format!("file '{path}' (from '{pointer}') {why}"),
+                    loc.clone(),
+                )
+            })?;
+            out.args.push(path.clone());
+            continue;
+        }
         let arg = match value_at(&internal, pointer) {
             Some(Value::String(s)) => s.clone(),
             Some(Value::Bool(b)) => b.to_string(),

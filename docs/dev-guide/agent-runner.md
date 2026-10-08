@@ -848,13 +848,50 @@ stdout 해석과 성공 판정:
 
 | 키 | 대상 | 규칙 |
 |---|---|---|
-| `args` | `run` | 입력 포인터 목록. 각 값을 argv 끝에 요소 하나로 붙인다. string·enum·int64·boolean 만 받는다(int64 는 10진, boolean 은 `true`/`false`) |
+| `args` | `run` | 입력 포인터 목록. 각 값을 argv 끝에 요소 하나로 붙인다. string·enum·int64·boolean 만 받는다(int64 는 10진, boolean 은 `true`/`false`). 원소가 `{"file": "<포인터>"}` 면 그 string 은 이미 있는 파일의 경로다(아래 입력 파일) |
 | `stdin` | `run` | `true` 면 입력 전체를 wire 형식 JSON 한 문서로 stdin 에 쓴다(int64 는 10진 문자열) |
 | `params` | `custom` | params 포인터 → 입력 포인터. params 의 그 자리에 값을 넣는다. 부모 object 는 원래 params 에 있어야 한다. 값은 내부 표현이라 int64 가 JSON 정수다. snapshot 의 `execution.params` 도 같은 JSON 정수라, 2^53 을 넘는 값은 JavaScript 같은 f64 소비자가 읽으면 바뀐다(정확한 값은 `input_snapshot.value` 의 10진 문자열) |
 | `input_block` | `agent` | `true` 면 입력 전체를 wire 형식 JSON 블록(`Task input (JSON):` 머리말)으로 지시문 끝에 붙인다. snapshot 의 `execution.instruction` 이 실제로 보낸 지시문이다 |
 | `barrier` | `wait_barrier` | 기다릴 barrier 이름을 담은 입력 포인터. 그 자리는 string 이어야 한다. snapshot 의 `execution.barrier` 가 받은 이름이다 |
 
 매핑하는 입력 위치는 항상 값이 있어야 한다. `reduce` 는 입력을 받지 않으므로 입력 스키마가 unit 이어야 한다. `wait_barrier` 도 `barrier` 매핑이 없으면 unit 이어야 한다. unit 이 아닌 입력을 받는 `agent` 는 `input_block` 이 필요하다.
+
+#### run 입력 파일
+
+run 은 이미 있는 파일의 경로를 argv 요소로 받을 수 있다. `input_mapping.args` 의 원소를 `{"file": "<입력 포인터>"}` 로 쓴다. 경로는 binding 이 주는 string(`literal` 이나 앞 task 의 출력)이다.
+
+- Tasty 는 파일을 만들거나 지우거나 수명을 관리하지 않는다. 파일을 만드는 일과 정리하는 일은 DAG 를 짜는 쪽이 앞뒤 task 로 넣는다.
+- 실행 직전(입력 해석 때) 그 경로가 지금 열리는 일반 파일인지만 본다. 내용은 읽지 않고, argv 에는 받은 경로를 그대로 넣는다. 파일을 여는 것은 프로그램이다.
+- 상대 경로는 run 의 `cwd` 기준이다. `cwd` 가 없으면 상대 경로는 받지 않는다. Tasty 의 작업 디렉터리는 DAG 를 짜는 쪽이 알 수 없기 때문이다.
+- 없거나, 디렉터리 같은 일반 파일이 아니거나, 열 수 없으면(권한 등) 실행하지 않고 실패 단계 `input`, `error.location` `/input_mapping/args/<i>/file` 로 끝난다. 메시지에 경로와 이유가 있다.
+- 확인한 뒤 프로그램이 열기 전에 파일이 사라지면 프로그램의 실패(실행 단계)다.
+- 제출할 때 그 입력 위치가 string 이 아니거나 optional 이면 `/tasks/<i>/input_mapping/args/<j>/file` 로 거절한다. 모르는 키는 거절한다.
+
+stdin 으로 파일 내용을 흘리는 방식 대신 경로를 argv 에 넣는다. 프로그램이 경로를 받으면 여러 파일을 받거나 파일 안을 오갈 수 있고(seek), 크기에 상한이 없으며, Tasty 가 내용을 복사하지 않는다. 내용이 stdin 으로 필요하면 프로그램 쪽에서 `sh -c 'my-tool < "$1"' sh` 처럼 바꾼다.
+
+미리 만든 스크립트에서 쓰는 예. 파일은 스크립트가 만들고, 뒤 task 가 지운다.
+
+```sh
+#!/bin/sh
+# lint-diff.sh <workspace id> — 지금의 diff 를 파일로 두고 검사한 뒤 지운다.
+set -eu
+diff_file=$(mktemp)
+git diff > "$diff_file"
+tasty agent task-graph-submit --workspace-id "$1" --graph "$(cat <<JSON
+{"contract_version": 2, "tasks": [
+  {"id": "lint", "command": {"kind": "run", "command": ["my-lint", "--diff"]},
+   "input_schema": {"type": "object", "fields": {"diff": {"type": "string"}}},
+   "bindings": {"diff": {"literal": "$diff_file"}},
+   "input_mapping": {"args": [{"file": "/diff"}]},
+   "on_failure": {"kind": "continue_downstream"}},
+  {"id": "cleanup", "command": {"kind": "run", "command": ["rm", "-f", "$diff_file"]},
+   "depends_on": ["lint"]}]}
+JSON
+)"
+```
+
+- `mktemp` 은 절대 경로를 돌려주므로 `cwd` 가 없어도 된다. 경로에 `"`·`\` 가 들어갈 수 있으면 JSON 문자열로 이스케이프해 넣는다.
+- `lint` 가 실패해도 `cleanup` 이 돌도록 `continue_downstream` 을 쓴다.
 
 wait_barrier 의 barrier 이름은 command 의 `name`(정적) 이나 `input_mapping.barrier`(입력) 중 정확히 하나로 정한다. 같은 그래프에서 두 방식을 섞어 써도 된다.
 

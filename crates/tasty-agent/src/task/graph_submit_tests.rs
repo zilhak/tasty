@@ -818,3 +818,45 @@ fn a_barrier_name_from_input_is_resolved_and_checked_before_running() {
     bad.input_snapshot = Some(snap);
     assert_eq!(bad.barrier_name(), None);
 }
+
+/// argv 의 `{"file": <포인터>}` 는 string 입력만 받고, 모르는 키는 거절한다. 값 원소는 그대로
+/// 문자열로 직렬화된다.
+#[test]
+fn a_file_argument_takes_a_string_input_and_keeps_plain_arguments_as_strings() {
+    let (_td, mut mem, seq) = fresh();
+    let mut store = TaskStore::new(&mut mem, "_host", &seq);
+    let run = json!({"kind": "run", "workspace_id": 1, "command": ["cat"]});
+    let graph = |schema: Value, args: Value| {
+        json!({"contract_version": 2, "tasks": [
+            {"id": "r", "command": run, "input_schema": {"type": "object", "fields": {"p": schema}},
+             "bindings": {"p": {"literal": "/etc/hostname"}}, "input_mapping": {"args": args}}]})
+    };
+    let bad = graph(
+        json!({"type": "enum", "values": ["/etc/hostname"]}),
+        json!(["/p", {"file": "/p"}]),
+    );
+    let f = failure(store.submit_graph(1, spec(bad), 0).unwrap_err());
+    assert_eq!(
+        f.location.as_deref(),
+        Some("/tasks/0/input_mapping/args/1/file")
+    );
+    assert!(
+        f.message.contains("a file path is a string"),
+        "{}",
+        f.message
+    );
+
+    let unknown = graph(
+        json!({"type": "string"}),
+        json!([{"file": "/p", "mode": "r"}]),
+    );
+    assert!(serde_json::from_value::<TaskGraphSpec>(unknown).is_err());
+
+    let ok = graph(json!({"type": "string"}), json!(["/p", {"file": "/p"}]));
+    store.submit_graph(1, spec(ok), 0).unwrap();
+    let mapping = get(&store, "r").contract.unwrap().input_mapping.unwrap();
+    assert_eq!(
+        serde_json::to_value(&mapping).unwrap(),
+        json!({"args": ["/p", {"file": "/p"}]})
+    );
+}

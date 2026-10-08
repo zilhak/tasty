@@ -249,3 +249,88 @@ fn a_wait_barrier_waits_on_the_barrier_named_by_its_input() {
         Some("gate.b")
     );
 }
+
+fn run_with_file_arg(path: &str, cwd: Option<&std::path::Path>, marker: &std::path::Path) -> Value {
+    let mut command = json!({"kind": "run", "workspace_id": 1,
+        "command": ["sh", "-c", "touch \"$1\"; cat \"$2\"", "sh", marker]});
+    if let Some(cwd) = cwd {
+        command["cwd"] = json!(cwd);
+    }
+    json!({"id": "r", "command": command,
+        "input_schema": {"type": "object", "fields": {"path": {"type": "string"}}},
+        "bindings": {"path": {"literal": path}},
+        "input_mapping": {"args": [{"file": "/path"}]}})
+}
+
+/// 이미 있는 파일의 경로를 argv 로 넘긴다. 실행 직전에 읽을 수 있는지만 보고 내용은 프로그램이
+/// 읽는다. 없거나 읽을 수 없는 경로는 실행하지 않고 input 단계로 실패한다.
+#[cfg(unix)]
+#[test]
+fn a_file_argument_passes_an_existing_readable_path_and_refuses_the_rest() {
+    let dir = tempfile::tempdir().unwrap();
+    let data = dir.path().join("in.txt");
+    std::fs::write(&data, "file body").unwrap();
+    let marker = dir.path().join("ran");
+    let cases: Vec<(&str, Value, Option<&str>)> = vec![
+        (
+            "abs",
+            run_with_file_arg(data.to_str().unwrap(), None, &marker),
+            None,
+        ),
+        (
+            "rel",
+            run_with_file_arg("in.txt", Some(dir.path()), &marker),
+            None,
+        ),
+        (
+            "missing",
+            run_with_file_arg(dir.path().join("nope").to_str().unwrap(), None, &marker),
+            Some("cannot be read"),
+        ),
+        (
+            "dir",
+            run_with_file_arg(dir.path().to_str().unwrap(), None, &marker),
+            Some("not a regular file"),
+        ),
+        (
+            "rel-no-cwd",
+            run_with_file_arg("in.txt", None, &marker),
+            Some("relative path but the run has no cwd"),
+        ),
+    ];
+    for (label, task, refusal) in cases {
+        let (_td, ctx) = fresh_ctx();
+        let mut runner = RunnerLoop::new(HostExecutor::new(ctx.clone()));
+        if marker.exists() {
+            std::fs::remove_file(&marker).unwrap();
+        }
+        let graph = json!({"contract_version": 2, "tasks": [task]});
+        store_op(&ctx, |s| s.submit_graph(1, spec(graph), 0).unwrap());
+        tick_until_terminal(&ctx, &mut runner, "r");
+        let r = get(&ctx, "r");
+        let typed = r.typed_result.clone().unwrap();
+        match refusal {
+            None => {
+                assert_eq!(r.state, TaskState::Succeeded, "{label}: {:?}", r.result);
+                let out = &typed.raw.execution.unwrap()["stdout"]["text"];
+                assert_eq!(out, &json!("file body"), "{label}");
+                let args = &r.input_snapshot.unwrap().execution.args;
+                assert_eq!(args.len(), 1, "{label}");
+            }
+            Some(why) => {
+                assert!(matches!(r.state, TaskState::Failed { .. }), "{label}");
+                let err = typed.error.unwrap();
+                assert_eq!(err.stage, FailureStage::Input, "{label}");
+                assert_eq!(
+                    err.location.as_deref(),
+                    Some("/input_mapping/args/0/file"),
+                    "{label}"
+                );
+                assert!(err.message.contains(why), "{label}: {}", err.message);
+                assert!(!marker.exists(), "{label}: the run must not start");
+            }
+        }
+    }
+    // Tasty 는 파일을 만들거나 지우지 않는다.
+    assert_eq!(std::fs::read_to_string(&data).unwrap(), "file body");
+}
