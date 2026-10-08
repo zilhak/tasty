@@ -29,6 +29,7 @@ CLI follow는 연결마다 처음에 즉시 조회하고 세대 변경이나 미
 
 agent 사건은 이미 모든 경로가 거치는 task 종결과 barrier 닫힘 지점에서 발행한다.
 비종결 전이나 조회 때 평가하는 lease 만료를 완전한 사건 흐름으로 약속하지 않는다.
+v2 task 의 단계(phase) 변화도 사건으로 내보내지 않는다([ADR-0067](0067-typed-task-contracts-live-in-a-separate-record-namespace.md)).
 실패 상세·명령 출력은 event payload에 넣지 않고 해당 조회 API로 읽는다.
 Experimental 등급은 호환 경고이며 추가 구독 승인 조건은 아니다.
 

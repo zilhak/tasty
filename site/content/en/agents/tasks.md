@@ -1,4 +1,4 @@
-<!-- source-hash: 96a06f642a1f -->
+<!-- source-hash: c7a928b980be -->
 <a id="task-dag"></a>
 
 # Task workflows (DAG)
@@ -133,6 +133,7 @@ To run a task's result through another command (a judge or summary tool, say) an
 - `timeout_ms` is required. When it runs out or the task is cancelled, the command and the processes it started are stopped.
 - With `retry`, a failure reruns only the postprocess that many times; the main work does not run again. Once the retries are used up, the task fails and the tasks after it follow their failure policies as for any failure. There is no way to rerun only the postprocess. To try again, rerun the task from the main work with `task-retry`.
 - While a task with declared types runs, its step appears at the end of its `task-list` line and on the `phase:` line of `task-get`. During the main work it is `executing`.
+- A step change sends no event. If you need a signal at some point, add a `run` task after that task, such as `["tasty", "notify", "build finished"]` or a `curl` call to a webhook.
 - Until the postprocess finishes, the task shows as running and the next tasks wait. `task-get` shows `phase: postprocessing (run 1)` on the line after `state: running` (`phase: retry_wait (run 2)` while it waits to retry).
 - If the postprocess fails, the `state` line in `task-get` gives the reason. The lines under it give the last run's cause and exit code, such as `postprocess: run 2 failed (nonzero_exit), exit_code 3`, and the causes of the runs that were retried (`postprocess retried after: ...`).
 - If Tasty quits or restarts while a postprocess runs, that postprocess is not run again and the task fails. To try again, rerun the task with `task-retry`.

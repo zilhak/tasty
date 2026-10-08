@@ -723,6 +723,17 @@ v2 task 의 fallback 이 이미 실행됐으면(Ready·Running·Succeeded) 그 t
 
 Running 인 v2 task 는 `agent.task_get` 과 `agent.task_list` 의 각 task 에 세부 단계 `phase` 를 싣는다(`Task::phase`). `postprocessing`·`retry_wait` 는 후처리(아래 §후처리 CLI), `awaiting_input` 은 입력을 기다리는 agent task(아래 §agent task), 그 밖은 `executing` 이다. Running 이 아니거나 v1 task 면 없다. 예외로 handle 이 남은 Ready task(v1 포함)는 `waiting_previous_attempt` 다(`tasty_task_runtime::task::task_phase`). 이전 회차의 프로세스가 끝난 것을 확인할 때까지 러너가 시작하지 않고 있다는 뜻이다(위 §dispatch 게이트 아래 취소·정리 설명). `task_get` 은 그 task 의 handle 키 하나만, `task_list` 는 handle 목록을 한 번 읽어 판정한다. 목록 읽기는 key 의 `LIKE` 접두사 검색이라 워크스페이스의 레코드 수에 비례한다. 완료는 한 번의 쓰기라 출력 검증·저장 중인 단계(`validating`)는 바깥에서 관측되지 않아 두지 않는다(ADR-0069). CLI `task-list` 는 줄 끝에 `(phase)` 를, `task-get` 은 `phase:` 줄을 보인다.
 
+단계가 바뀔 때 사건은 발행하지 않는다. task 사건은 종결(`agent.task_finished`)과 barrier 닫힘뿐이다([ADR-0067](../adr/0067-typed-task-contracts-live-in-a-separate-record-namespace.md)). 진행 신호가 필요하면 DAG 에 신호를 보내는 task 를 끼운다. 신호 task 는 앞 task 가 끝난 뒤 실행되므로 그 경계의 신호가 된다. 실행 중 단계는 `task_get` 으로 조회한다.
+
+```json
+{"id": "built", "command": {"kind": "run", "command": ["tasty", "notify", "build finished", "--title", "release DAG"]},
+ "depends_on": ["build"]}
+```
+
+- run 자식은 바깥 Tasty 의 신원 변수를 받지 않으므로 `tasty` 는 이 Tasty 에 닿는다([runner 자식의 환경](#runner-자식의-환경)).
+- 외부로 알리려면 같은 자리에서 webhook 을 부른다(예: `["curl", "-fsS", "-X", "POST", "https://…"]`).
+- 앞 task 가 실패해도 신호를 보내려면 앞 task 에 `on_failure: continue_downstream` 을 둔다.
+
 v1 이 v2 결과를 읽는 경로는 `-32602`(`error.data.task_id` 에 참조 대상)로 거절한다. 대상은 v1 출력 placeholder(`${task.<id>.output…}`)로 v2 task 를 참조하는 생성, `inputs` 에 v2 task 가 든 v1 `Reduce` 생성, v2 task 를 입력으로 준 단발 `agent.task_reduce` 다. 이미 저장된 v1 task 가 v2 를 가리키면 실행 직전 치환·reduce 수집이 실패로 끝낸다. 허용 범위는 입력 binding 이 정한다.
 
 inline fallback 은 v2 에서 거절한다.

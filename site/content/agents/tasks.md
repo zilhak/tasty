@@ -132,6 +132,7 @@ JSON
 - `timeout_ms` 는 반드시 적습니다. 시간이 지나거나 작업을 취소하면 그 명령과 그 명령이 띄운 프로세스를 끝냅니다.
 - `retry` 를 적으면 실패했을 때 본 작업은 다시 하지 않고 후처리만 그 횟수만큼 다시 실행합니다. 횟수를 다 쓰면 작업은 실패로 끝나고, 그 뒤 작업은 일반 실패와 같이 실패 정책을 따릅니다. 후처리만 따로 다시 실행하는 방법은 없습니다. 다시 하려면 `task-retry` 로 본 작업부터 다시 실행합니다.
 - 타입을 정한 작업이 실행 중이면 `task-list` 줄 끝과 `task-get` 의 `phase:` 줄에 단계가 나옵니다. 본 작업 중이면 `executing` 입니다.
+- 단계가 바뀌어도 이벤트는 나가지 않습니다. 어느 지점에서 알림이 필요하면 그 작업 뒤에 `["tasty", "notify", "build finished"]` 나 webhook 을 부르는 `curl` 같은 `run` 작업을 끼워 넣습니다.
 - 후처리가 끝날 때까지 작업은 실행 중으로 보이고 다음 작업은 기다립니다. `task-get` 은 `state: running` 다음 줄에 `phase: postprocessing (run 1)`(재시도를 기다리는 중이면 `phase: retry_wait (run 2)`)을 보여 줍니다.
 - 후처리가 실패하면 `task-get` 의 `state` 줄에 이유가 나오고, 그 아래에 `postprocess: run 2 failed (nonzero_exit), exit_code 3` 처럼 마지막 실행의 원인과 종료 코드, 재시도로 넘어간 실행의 원인(`postprocess retried after: ...`)이 나옵니다.
 - 후처리가 도는 중에 Tasty 를 끄거나 다시 시작하면 그 후처리는 다시 실행되지 않고 실패로 끝납니다. 다시 하려면 `task-retry` 로 작업을 다시 실행합니다.
