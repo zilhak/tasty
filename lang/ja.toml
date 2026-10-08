@@ -857,6 +857,12 @@ refresh = "更新"
 placeholder = "ディレクトリへ移動…"
 go = "移動"
 empty = "一致するパスがありません"
+not_found = "フォルダーが見つかりません: {}"
+not_a_directory = "フォルダーではありません: {}"
+broken_link = "リンクの参照先がありません: {}"
+unreadable = "開けません: {} ({})"
+no_home = "~ を展開するホームフォルダーが見つかりません。"
+remote_home = "~ はリモートコンピューターのホームフォルダーです。リモートのパスをすべて入力してください。"
 
 [explorer.sidebar]
 tree = "ファイル"

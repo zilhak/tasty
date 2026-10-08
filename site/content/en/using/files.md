@@ -1,4 +1,4 @@
-<!-- source-hash: 224dcef66015 -->
+<!-- source-hash: 0601c202c8c2 -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -53,6 +53,12 @@ Dragging a split line to shrink an Explorer stops at the height that still leave
 If a folder can't be read (the path is gone, it is not a folder, or a remote read failed), the list area shows **Can't read this folder** with the reason the operating system gave. **Retry** reads the same folder again and **Go up** goes one folder up. A missing permission shows **Permission denied** instead.
 
 Click the address bar to type a path directly; recently visited folders appear as autocompletion. Go with `Enter` or **Go**. The left tree stays fixed at the root, but the right list can go anywhere.
+
+- A relative path starts from the folder you are looking at. `..` goes one level up.
+- `~` and `~/folder` are under your home folder.
+- On Windows, a drive alone such as `C:` goes to the top of that drive, and network paths such as `\\server\share` work too.
+- If the path is not a folder, does not exist, or is a link whose target is gone, the Explorer stays where it is and a notice tells you why.
+- In an Explorer in a remote Workspace, the path is looked up on the remote computer. A folder that exists only there opens, and if the remote computer can't read it, the reason shows in the list area. `~` would mean the remote home, so it is not accepted; type the full remote path.
 
 ### Shortcuts (when the Explorer has focus)
 

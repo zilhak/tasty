@@ -1,6 +1,7 @@
 //! 파일 탐색기 렌더링. 모델의 탐색 상태와 ExplorerView의 목록·선택으로 화면을 그린다.
 //! 렌더 중에는 engine을 다시 가변 대여할 수 없어 사용자 동작을 모아 호출부에서 처리한다.
 
+pub mod address;
 mod state_screen;
 pub mod type_ahead;
 pub mod view;
@@ -54,6 +55,8 @@ pub enum ExplorerAction {
     CloseTab(usize),
     /// 내부 탭 선택.
     SelectTab(usize),
+    /// 주소창 입력을 이동하지 않았다. 호스트가 이유를 알린다.
+    AddressRejected(address::AddressRejection),
     /// 우클릭 컨텍스트 메뉴 요청 — 호스트가 OS 네이티브 메뉴를 띄운다.
     /// 좌표는 logical px (egui interact pos 기준).
     ContextMenu {
@@ -122,7 +125,17 @@ pub fn draw_explorer(
 
     ui.vertical(|ui| {
         tab_strip(ui, theme, panel, &mut action);
-        toolbar(ui, theme, panel, view, id_suffix, recent_dirs, &mut action);
+        let remote = mirror_ws_id.is_some();
+        toolbar(
+            ui,
+            theme,
+            panel,
+            view,
+            id_suffix,
+            recent_dirs,
+            remote,
+            &mut action,
+        );
         let (sep_rect, _) = ui.allocate_exact_size(
             egui::vec2(ui.available_width(), theme.border_width.value()),
             egui::Sense::hover(),
@@ -332,6 +345,7 @@ fn toolbar(
     view: &mut ExplorerView,
     id_suffix: &str,
     recent_dirs: &[String],
+    remote: bool,
     action: &mut Option<ExplorerAction>,
 ) {
     let h = theme.item_height_interactive.value() + theme.spacing_sm.value() * 2.0;
@@ -403,6 +417,7 @@ fn toolbar(
                     id_suffix,
                     tab_index,
                     recent_dirs,
+                    remote,
                     action,
                 )
             },
@@ -510,6 +525,7 @@ fn address_bar(
     id_suffix: &str,
     tab_index: usize,
     recent_dirs: &[String],
+    remote: bool,
     action: &mut Option<ExplorerAction>,
 ) {
     let current_str = current.display().to_string();
@@ -543,20 +559,13 @@ fn address_bar(
         );
     if let PathFieldOutcome::Navigate(input) = outcome
         && action.is_none()
-        && let Some(dir) = navigate_target(&input)
+        && let Some(target) = address::resolve(&input, current, remote)
     {
-        *action = Some(ExplorerAction::Navigate(dir));
+        *action = Some(match target {
+            Ok(dir) => ExplorerAction::Navigate(dir),
+            Err(why) => ExplorerAction::AddressRejected(why),
+        });
     }
-}
-
-/// 입력이 실제 로컬 디렉터리일 때만 이동 대상으로 반환한다.
-fn navigate_target(input: &str) -> Option<PathBuf> {
-    let trimmed = input.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-    let path = PathBuf::from(trimmed);
-    (path.exists() && path.is_dir()).then_some(path)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1570,7 +1579,6 @@ fn type_label(e: &DirEntryInfo) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::navigate_target;
     use std::path::PathBuf;
 
     /// 낮은 칸에 탐색기를 한 번 그리고 상태줄 글자의 사각형과 그 글자를 자르는 사각형을 돌려준다.
@@ -1662,31 +1670,5 @@ mod tests {
                 );
             }
         }
-    }
-
-    /// 존재하는 디렉토리 → Some(그 경로).
-    #[test]
-    fn navigate_target_accepts_existing_dir() {
-        let dir = env!("CARGO_MANIFEST_DIR");
-        assert_eq!(navigate_target(dir), Some(PathBuf::from(dir)));
-        assert_eq!(
-            navigate_target(&format!("  {dir}  ")),
-            Some(PathBuf::from(dir))
-        );
-    }
-
-    /// 파일 경로는 디렉토리가 아니므로 no-op(None) — explorer 는 디렉토리만 이동.
-    #[test]
-    fn navigate_target_rejects_file() {
-        let file = concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml");
-        assert_eq!(navigate_target(file), None);
-    }
-
-    /// 존재하지 않는 경로/오타/빈 문자열 → None.
-    #[test]
-    fn navigate_target_rejects_missing_and_empty() {
-        assert_eq!(navigate_target("/nonexistent/xyz/should/not/exist"), None);
-        assert_eq!(navigate_target(""), None);
-        assert_eq!(navigate_target("   "), None);
     }
 }

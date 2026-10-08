@@ -857,6 +857,12 @@ refresh = "새로고침"
 placeholder = "디렉토리로 이동…"
 go = "이동"
 empty = "일치하는 경로 없음"
+not_found = "폴더를 찾을 수 없습니다: {}"
+not_a_directory = "폴더가 아닙니다: {}"
+broken_link = "링크가 가리키는 대상이 없습니다: {}"
+unreadable = "열 수 없습니다: {} ({})"
+no_home = "~ 를 펼칠 홈 폴더를 찾지 못했습니다."
+remote_home = "~ 는 원격 컴퓨터의 홈 폴더입니다. 원격 경로를 전부 입력하세요."
 
 [explorer.sidebar]
 tree = "파일"

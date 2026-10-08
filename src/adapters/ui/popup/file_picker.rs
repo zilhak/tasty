@@ -13,8 +13,7 @@ mod layout_tests;
 mod path_bar;
 
 mod paths;
-use paths::join_dir;
-pub(crate) use paths::{crumb_label, matches_filters, path_ancestors};
+pub(crate) use paths::{crumb_label, join_dir, matches_filters, path_ancestors};
 
 use crate::runtime::engine_read::EngineRead;
 use std::path::{Path, PathBuf};

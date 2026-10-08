@@ -20,7 +20,8 @@ pub(super) fn is_windows_style_remote_path(p: &str) -> bool {
     p.contains('\\')
 }
 
-pub(super) fn join_dir(is_remote: bool, dir: &str, name: &str) -> String {
+/// 원격 경로는 `dir`의 구분자를 따른다. 로컬 OS의 `Path::join`은 원격 Windows 경로에 `/`를 섞는다.
+pub(crate) fn join_dir(is_remote: bool, dir: &str, name: &str) -> String {
     if is_remote {
         if is_windows_style_remote_path(dir) {
             if dir.ends_with('\\') {

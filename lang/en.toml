@@ -861,6 +861,12 @@ refresh = "Refresh"
 placeholder = "Go to directory…"
 go = "Go"
 empty = "No matching path"
+not_found = "Folder not found: {}"
+not_a_directory = "Not a folder: {}"
+broken_link = "The link points to something that no longer exists: {}"
+unreadable = "Can't open {}: {}"
+no_home = "Can't find your home folder to expand ~."
+remote_home = "~ is the remote computer's home folder. Enter the full remote path."
 
 [explorer.sidebar]
 tree = "Files"

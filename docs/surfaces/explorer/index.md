@@ -84,7 +84,7 @@ View 는 모델을 직접 바꾸지 않고 파일시스템도 직접 읽지 않�
 
 - 뷰 모드 3 종(grid / list / detail)을 toolbar 우측의 **아이콘 view-mode 토글**(`seg_toggle`, design `SegToggle`)로 전환한다 — grid/list/detail 아이콘 세그먼트, active = segtoggle-on-bg(accent-primary) 채움 + segtoggle-on-fg(text-on-accent) 글리프, inactive = text-muted. detail 뷰는 정렬 컬럼 헤더를 클릭하면 해당 컬럼으로 정렬(같은 컬럼 재클릭 시 방향 토글).
 - toolbar 의 **주소표시줄**(`address_bar`, design `ExpToolbar`/`PathField`)은 공용 **편집형 `PathField`** 다 — folderOpen leading 아이콘 + mono 경로(비편집=text-secondary / 편집=text-primary) + 우측 Go(arrow-right) 버튼(input-bg/input-border(-focus) 토큰).
-  클릭하면 편집 모드로 들어가 임의 디렉토리 경로를 타이핑하고 `↵` 또는 Go 로 **current 이동**한다(존재하는 디렉토리만 — `navigate_target` 가 `exists() && is_dir()` 를 통과해야 `ExplorerAction::Navigate` emit, 파일/오타는 no-op).
+  클릭하면 편집 모드로 들어가 임의 디렉토리 경로를 타이핑하고 `↵` 또는 Go 로 **current 이동**한다. 입력을 폴더로 바꾸는 규칙과 거부는 아래 "주소 입력" 절에 있다.
   `Esc` 또는 확정 없는 포커스 이탈은 현재 current 로 원복.
   상위 폴더는 Back/Forward/Up 버튼, 사이드바 트리, 경로 입력으로 이동한다.
   편집 진입 시 **최근 방문 디렉토리** 자동완성 후보 드롭다운이 뜨고(타이핑에 맞춰 substring 필터), 이 후보는 `RecentFiles` 의 `"directory"` kind(markdown 의 파일 recent 와 대칭·영속)에서 온다 — 사용자가 `ExplorerAction::Navigate` 로 이동 확정한 cwd 를 host 가 kind 로 적재(`egui_panels`), draw 경계로 slice 주입.
@@ -93,10 +93,30 @@ View 는 모델을 직접 바꾸지 않고 파일시스템도 직접 읽지 않�
 - list 행과 사이드바 디렉토리 행은 공용 `tree_row`(`tree_row_height` 22)를, detail 데이터 행은 공용 `Table`(selectable)을 재사용한다. 탐색기 전용 행 높이는 없다. detail 헤더와 본문 행은 Table 기본 높이 `table_cell_height`(28)이고 헤더 채움은 `table_header_bg`다. detail 컬럼은 Name(1fr)/Size(80)/Date(132)/Type(92)이며, 이름은 선택 행만 text-primary 이고 나머지 행은 `table_row_fg`(text-secondary)다. Size·Date 는 **monospace·caption(11)·text-muted**, Size 는 우측 정렬 + 8px 우측 패딩으로 Date 와 시각적 간격을 둔다(design `DetailRow`). Size 열 제목도 같은 8px(`spacing_sm`) 오른쪽 여백을 둔다(design `DetailHeader`, 공용 Table `header_pad_right`). 열 제목은 공용 Table 머리글 그대로 대문자에 `table_header_tracking` 자간이다.
 - detail 행은 **행 전체가 클릭 타겟**이다 — 파일 이름·Size·Date·Type 글자 위에서도 좌클릭 선택 / Ctrl·Cmd+클릭 토글 / Shift+클릭 범위 선택 / 더블클릭 열기(Navigate·OpenFile) / 우클릭 컨텍스트 메뉴가 동일하게 동작한다. 그 대가로 셀 텍스트를 드래그로 선택·복사할 수는 없다(대체: 우클릭 "경로 복사"). 이 정합은 공용 `Table` 이 selectable 모드에서 셀 라벨 선택성을 끄는 계약으로 보장한다 — [ADR-0037](../../adr/0037-ui-input-motion-and-elevation.md). 헤더 컬럼 제목 클릭(정렬 토글)은 영향을 받지 않는다.
 
+### 주소 입력
+
+`Enter`·Go 의 입력은 `src/adapters/ui/surface/explorer/address.rs` 가 이동할 폴더로 바꾼다. 앞뒤 공백은 지운다. 빈 입력은 아무것도 하지 않는다. 이동하지 않으면 무반응으로 끝내지 않고 이유를 오류 toast 로 알린다.
+
+로컬 explorer:
+
+- 절대 경로는 그대로, 상대 경로는 프로세스 cwd 가 아니라 **현재 보고 있는 폴더(current)** 기준으로 잇는다.
+- `~` 와 `~/…`(Windows 는 `~\…` 도)는 로컬 홈 아래로 펼친다. `~name` 은 펼치지 않고 그 이름의 상대 경로로 본다. 홈을 찾지 못하면 거부한다.
+- Windows 에서 드라이브만 있는 입력(`C:`, `C:dir`)은 프로세스의 드라이브별 현재 폴더가 아니라 그 드라이브의 루트 기준이다. UNC(`\\server\share\…`)는 절대 경로다.
+- `.` 과 `..` 은 글자 그대로 정리해 절대 경로로 확정한다. 링크를 풀지 않으므로 폴더 링크 안에서 `..` 은 링크의 부모다. 루트 위의 `..` 는 루트에 머문다.
+- 확정한 경로가 폴더(폴더를 가리키는 링크 포함)일 때만 이동한다. 파일이면 "폴더가 아님", 없으면 "찾을 수 없음", 대상이 없는 링크면 "링크 대상 없음", 권한 거부 등 확인하지 못하면 OS 가 알려 준 이유로 거부한다. 파일 경로를 열거나 그 부모로 가는 동작은 하지 않는다.
+- 공백·Unicode 이름은 그대로 경로의 일부다.
+
+mirror(원격) explorer:
+
+- 로컬 파일시스템을 보지 않는다. 입력은 원격 호스트의 경로로 다룬다.
+- 절대 경로(`/…`, `\…`, `X:\…`, `X:/…`)는 그대로, 나머지는 현재 원격 폴더 뒤에 잇는다. 잇는 구분자는 원격 현재 경로를 따른다(경로에 `\` 가 있으면 Windows 형식으로 보고 `\`, 아니면 `/`). 파일 선택기의 원격 경로 결합(`join_dir`)과 같은 함수다. `.`·`..` 는 정리하지 않고 그대로 원격에 보낸다. `~` 로 시작하면 원격 홈을 로컬 홈으로 펼치지 않도록 거부한다.
+- 존재 여부는 이동 뒤 원격 목록 조회가 알려 준다. 원격 조회 실패는 목록 자리의 읽기 오류 화면(`Error`/`NoPermission`)으로 보인다.
+
 ### deferred action 적용
 
-렌더 중 발생한 사용자 상호작용은 `ExplorerAction`(OpenFile / Navigate / GoBack / GoForward / GoUp / Refresh / SetViewMode / SetSort / NewTab / CloseTab / SelectTab / ContextMenu) 으로 모았다가 `apply_explorer_action(state, engine, sid, act)` 에서 적용한다. 파일 열기/새로고침은 뷰 스토어만, 내비게이션·뷰모드·탭 조작은 **origin surface id 로 직접 지정**한 `ExplorerPanel` 을 가변 차용해 처리한다(포커스 독립). 경로가 바뀌면 `ExplorerView` 가 다음 draw 에서 자동 감지해 재로드한다.
+렌더 중 발생한 사용자 상호작용은 `ExplorerAction`(OpenFile / Navigate / GoBack / GoForward / GoUp / Refresh / SetViewMode / SetSort / NewTab / CloseTab / SelectTab / ContextMenu / AddressRejected) 으로 모았다가 `apply_explorer_action(state, engine, sid, act)` 에서 적용한다. 파일 열기/새로고침은 뷰 스토어만, 내비게이션·뷰모드·탭 조작은 **origin surface id 로 직접 지정**한 `ExplorerPanel` 을 가변 차용해 처리한다(포커스 독립). 경로가 바뀌면 `ExplorerView` 가 다음 draw 에서 자동 감지해 재로드한다.
 
+- `AddressRejected` 는 주소 입력을 이동하지 않은 이유를 그 surface 범위의 오류 toast 로 알린다. 패널은 바꾸지 않는다.
 - 파일 열기는 `DomainIntent::DispatchFile { origin_surface_id: Some(sid) }` 로 [file-handler](../../features/file-handler/index.md) 에 위임한다 — explorer 자신은 파일 식별/디스패치 정책을 모른다.
 
 ### 컨텍스트 메뉴 · 파일 조작

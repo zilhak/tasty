@@ -434,6 +434,13 @@ pub(crate) fn apply_explorer_action(
                 v.request_reload();
             }
         }
+        A::AddressRejected(why) => {
+            state.toasts.push(
+                why.message(),
+                crate::adapters::ui::ToastKind::Error,
+                crate::adapters::ui::ToastScope::Surface(sid),
+            );
+        }
         A::SetViewMode(m) => {
             apply_explorer_panel_action(state, engine, sid, &act);
             let mode = m.as_str().to_string();
