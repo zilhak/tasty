@@ -588,3 +588,36 @@ fn a_freshly_built_request_carries_no_drop_count() {
     assert_eq!(req.id, 3);
     assert_eq!(req.method, "surface.create");
 }
+
+/// 모르는 입력 이벤트가 섞인 set_context 도 읽을 수 있고, 같은 프레임의 나머지 이벤트는 남는다.
+#[test]
+fn set_context_with_an_unknown_input_event_keeps_the_other_events() {
+    let raw = serde_json::json!({
+        "surface_id": 7,
+        "width_px": 100,
+        "height_px": 50,
+        "pixels_per_point": 1.0,
+        "raw_input": {
+            "events": [
+                { "t": "key", "key": "A", "pressed": true },
+                { "t": "some_future_event", "payload": 1 },
+                { "t": "text", "text": "hi" }
+            ]
+        }
+    });
+    let parsed: SurfaceSetContextParams =
+        serde_json::from_value(raw).expect("모르는 이벤트가 있어도 읽어야 한다");
+    assert_eq!(
+        parsed.raw_input.events,
+        vec![
+            RawInputEventWire::Key {
+                key: "A".into(),
+                pressed: true,
+                repeat: false,
+                modifiers: ModifiersWire::default(),
+            },
+            RawInputEventWire::Unknown,
+            RawInputEventWire::Text { text: "hi".into() },
+        ]
+    );
+}

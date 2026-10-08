@@ -206,6 +206,12 @@ pub enum RawInputEventWire {
     /// 클립보드 내용은 싣지 않는다 — plugin 이 필요한 형식(이미지 등)을 직접 읽는다.
     /// SDK 는 빈 문자열의 `egui::Event::Paste` 로 변환한다.
     Paste,
+    /// 미래 variant 의 forward-compat fallback — 이 변형을 아는 SDK 로 빌드한 plugin 은
+    /// 모르는 입력 이벤트를 받아도 `surface.set_context` 전체를 실패하지 않고 그 이벤트만
+    /// 버린다([`PluginEvent::Unknown`] 과 같은 정책: 새 variant 는 fallback 가능한 형태로만).
+    /// SDK 는 egui 이벤트로 바꾸지 않고 무시한다.
+    #[serde(other)]
+    Unknown,
 }
 
 /// egui `ImeEvent` 미러 — IME 조합 세션의 4단계. `RawInputEventWire::Ime` 에 실린다.

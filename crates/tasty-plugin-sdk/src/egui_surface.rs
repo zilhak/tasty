@@ -2058,6 +2058,12 @@ mod tests {
         assert_eq!(map_event(&RawInputEventWire::Copy), Some(Event::Copy));
     }
 
+    /// 모르는 입력 이벤트는 egui 이벤트로 바꾸지 않고 버린다.
+    #[test]
+    fn unknown_wire_event_is_dropped() {
+        assert_eq!(map_event(&RawInputEventWire::Unknown), None);
+    }
+
     /// Paste 입력이 내용 없는 egui::Event::Paste로 변환되고 와이어 왕복이 유지되는지 확인한다.
     #[test]
     fn paste_wire_event_maps_to_an_empty_egui_paste() {

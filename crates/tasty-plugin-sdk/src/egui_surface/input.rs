@@ -153,5 +153,6 @@ pub(super) fn map_event(e: &RawInputEventWire) -> Option<Event> {
         }),
         RawInputEventWire::Copy => Event::Copy,
         RawInputEventWire::Paste => Event::Paste(String::new()),
+        RawInputEventWire::Unknown => return None,
     })
 }

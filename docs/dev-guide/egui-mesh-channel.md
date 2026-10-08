@@ -401,6 +401,12 @@ Copy·Paste 는 위 표대로 각각 `egui_copy`·`egui_paste` capability 를 �
 에 텍스트가 들어가지 않는다 — plugin 이 이벤트를 보고 필요한 형식을 클립보드에서 직접 읽는다.
 Cut 은 wire 에 없다. attach mesh mirror 와 popup 미러 경로에는 Copy·Paste 전달이 없다.
 
+`RawInputEventWire` 는 `#[serde(other)] Unknown` fallback 을 가진다. 이 fallback 이 있는 SDK 로
+빌드한 plugin 은 모르는 입력 이벤트를 `Unknown` 으로 읽고 버리며, 같은 `set_context` 의 나머지
+이벤트는 그대로 처리한다. 그래서 다음 입력 변형부터는 추가가 minor 다
+([api-conventions](api-conventions.md#break-분류)). `Paste` 는 이 fallback 보다 먼저 들어가서,
+fallback 이 없는 옛 SDK 는 `Paste` 가 실린 프레임을 읽지 못한다(CHANGELOG `(BREAK)`).
+
 ## crash 격리
 
 plugin 프로세스가 죽으면(reader 스레드 종료 → event_rx Disconnected) host 는 그

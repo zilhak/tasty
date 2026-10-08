@@ -60,6 +60,7 @@
 
 ### Changed
 
+- **(BREAK) `egui_paste` 를 선언한 egui-mesh plugin 은 새 SDK 로 다시 빌드해야 한다.** 호스트가 붙여넣기 단축키를 그 surface 의 `surface.set_context` 입력에 `paste` 이벤트로 싣는다. 이 이벤트를 모르는 옛 SDK 는 그 프레임의 `surface.set_context` 전체를 읽지 못해, 붙여넣기를 누를 때마다 한 프레임과 그 프레임의 다른 입력을 잃는다. 새 SDK 는 이후 추가되는 입력 이벤트를 모르더라도 그 이벤트만 버리고 나머지를 읽는다. 번들 plugin 은 모두 새 SDK 로 빌드했다.
 - **`tasty list tabs`(IPC `tab.list`)도 attach mirror 의 plugin 대기 자리 탭을 `type:"Pending"` 으로 보고한다.** 복원을 기다리는 탭과 같은 값이다. 이전에는 `Empty` 로 나왔다. 탭 제목은 바뀌지 않는다.
 - **`tasty list surfaces`(IPC `surface.list`)가 attach mirror 의 plugin 대기 자리를 `Empty` 가 아니라 `Pending` 으로 보고한다.** 로컬에 markdown kind 가 없어 원격 markdown 문서를 아직 보여 주지 못하는 자리는 이제 `type:"Pending"`, `kind:"markdown"`, `pty_ready:false`, `restore_error:null`, `pending_reason:"plugin_not_loaded"` 로 나온다. 복원을 기다리는 surface 와 같은 모양이고, `type`·`kind`·`pending_reason` 은 `tasty list tree` 와 같다(`list tree` 의 `ready` 는 싣지 않는다). 이전에는 `type:"Empty"` 로만 나와 진짜 빈 자리와 구분할 수 없었다.
 - **`tasty list surfaces`(IPC `surface.list`)가 복원을 기다리는 surface 를 탭 분할 여부와 관계없이 같은 필드로 보고한다.** 앱을 다시 시작한 뒤 아직 활성화하지 않은 surface 는 `type:"Pending"`, 복원할 `kind`, `pty_ready:false`, `restore_error` 로 나온다(`tasty list tree` 와 같은 필드). 이전에는 surface 가 하나뿐인 탭이면 kind 와 관계없이 `type:"Terminal"` 로, 분할된 탭이면 `kind` 와 `pty_ready` 없이 `type:"Pending"` 으로 보고했다. 복원 대기 터미널을 `type:"Terminal"` 로 찾던 스크립트는 `kind:"terminal"` 과 `pty_ready:false` 로 찾는다.
