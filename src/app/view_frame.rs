@@ -111,7 +111,7 @@ impl App {
                 .views
                 .values_mut()
                 .filter_map(|view| view.as_main_mut()),
-            |view| crate::view::ui::View::mark_dirty(view),
+            crate::view::ui::View::mark_dirty,
         );
     }
 }
@@ -142,7 +142,7 @@ mod tests {
         let favorites = crate::core::explorer_favorites::SharedExplorerFavorites::default();
         let mut announced = favorites.revision();
         let mut redrawn = [0, 0];
-        let mut check = |announced: &mut u64, redrawn: &mut [i32; 2]| {
+        let check = |announced: &mut u64, redrawn: &mut [i32; 2]| {
             super::redraw_other_windows(&favorites, announced, redrawn.iter_mut(), |n| *n += 1)
         };
         check(&mut announced, &mut redrawn);
