@@ -181,12 +181,17 @@ impl HostExecutor {
                     .insert(task.id.clone(), RunProc { pid, started_at });
                 if let (Some(payload), Some(mut pipe)) = (stdin_payload, child.stdin.take()) {
                     // 자식이 stdin 을 읽지 않아도 실행이 막히지 않도록 별도 스레드에서 쓰고 닫는다.
+                    // 읽지 않고 끝난 자식이면 쓰기가 파이프 끊김으로 끝난다. 정상 사용이라 경고하지 않는다.
                     thread::Builder::new()
                         .name(format!("agent-shell-stdin-pid{pid}"))
                         .spawn(move || {
                             use std::io::Write;
-                            if let Err(e) = pipe.write_all(&payload) {
-                                tracing::warn!("Run stdin write for pid {pid}: {e}");
+                            match pipe.write_all(&payload) {
+                                Ok(()) => {}
+                                Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => {
+                                    tracing::debug!("Run stdin for pid {pid} was not read: {e}");
+                                }
+                                Err(e) => tracing::warn!("Run stdin write for pid {pid}: {e}"),
                             }
                         })
                         .map_err(|e| format!("Run stdin writer spawn '{program}': {e}"))?;

@@ -877,7 +877,7 @@ stdout 해석과 성공 판정:
 | 키 | 대상 | 규칙 |
 |---|---|---|
 | `args` | `run` | 입력 포인터 목록. 각 값을 argv 끝에 요소 하나로 붙인다. string·enum·int64·boolean 만 받는다(int64 는 10진, boolean 은 `true`/`false`). 원소가 `{"file": "<포인터>"}` 면 그 string 은 이미 있는 파일의 경로다(아래 입력 파일) |
-| `stdin` | `run` | `true` 면 입력 전체를 wire 형식 JSON 한 문서로 stdin 에 쓴다(int64 는 10진 문자열) |
+| `stdin` | `run` | `true` 면 입력 전체를 wire 형식 JSON 한 문서로 stdin 에 쓴다(int64 는 10진 문자열). 별도 스레드에서 쓰고 닫으며, 명령이 읽지 않고 끝나도 결과는 종료 코드로 정한다 |
 | `params` | `custom` | params 포인터 → 입력 포인터. params 의 그 자리에 값을 넣는다. 부모 object 는 원래 params 에 있어야 한다. 값은 내부 표현이라 int64 가 JSON 정수다. snapshot 의 `execution.params` 도 같은 JSON 정수라, 2^53 을 넘는 값은 JavaScript 같은 f64 소비자가 읽으면 바뀐다(정확한 값은 `input_snapshot.value` 의 10진 문자열) |
 | `input_block` | `agent` | `true` 면 입력 전체를 wire 형식 JSON 블록(`Task input (JSON):` 머리말)으로 지시문 끝에 붙인다. snapshot 의 `execution.instruction` 이 실제로 보낸 지시문이다 |
 | `barrier` | `wait_barrier` | 기다릴 barrier 이름을 담은 입력 포인터. 그 자리는 string 이어야 한다. snapshot 의 `execution.barrier` 가 받은 이름이다 |
