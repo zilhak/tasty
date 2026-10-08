@@ -86,16 +86,7 @@ impl Entry {
 
     /// 성공·실패·취소·건너뜀을 포함한 종료 작업 수.
     pub fn done(&self) -> usize {
-        self.graph
-            .nodes
-            .iter()
-            .filter(|n| {
-                matches!(
-                    n.status,
-                    Status::Succeeded | Status::Failed | Status::Cancelled | Status::Skipped
-                )
-            })
-            .count()
+        super::done_count(&self.graph.nodes)
     }
 
     pub fn total(&self) -> usize {

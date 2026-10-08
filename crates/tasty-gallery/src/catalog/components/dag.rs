@@ -299,6 +299,19 @@ pub fn skip_count_suffix(nodes: &[Node]) -> String {
     text
 }
 
+/// 성공·실패·취소·건너뜀을 포함한 종료 작업 수. 목록 행과 surface 머리글이 함께 쓴다.
+pub fn done_count(nodes: &[Node]) -> usize {
+    nodes
+        .iter()
+        .filter(|n| {
+            matches!(
+                n.status,
+                Status::Succeeded | Status::Failed | Status::Cancelled | Status::Skipped
+            )
+        })
+        .count()
+}
+
 /// 카드 한 장이 표현하는 task.
 #[derive(Debug, Clone)]
 pub struct Node {
