@@ -19,8 +19,8 @@ pub use tasty_utils::process::OUTER_IDENTITY_ENV;
 ///   (`tasty_utils::process::is_stripped_inherited_env`).
 /// - 바깥 Tasty 인스턴스의 신원 변수([`OUTER_IDENTITY_ENV`]).
 ///
-/// 나머지(`TASTY_HOME`·`TASTY_LOCALE` 등 다른 `TASTY_*` 포함)는 그대로 넘기고, Tasty 가 task 별
-/// 변수를 더하지는 않는다.
+/// 나머지(`TASTY_HOME`·`TASTY_LOCALE` 등 다른 `TASTY_*` 포함)는 그대로 넘긴다. 이 함수는 변수를
+/// 더하지 않는다. v2 task 의 report 주소 `TASTY_TASK_REPORT` 는 호출하는 쪽이 더한다.
 pub fn child_env(
     inherited: impl IntoIterator<Item = (OsString, OsString)>,
 ) -> Vec<(OsString, OsString)> {
