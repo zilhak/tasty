@@ -1,6 +1,5 @@
 //! Execute the production builders through real shells with hostile codex wrappers.
 use super::*;
-use std::os::unix::fs::PermissionsExt;
 use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -36,12 +35,11 @@ fn external_codex_preserves_argv_environment_and_prompt() {
     ));
     std::fs::create_dir(&root).unwrap();
     let fake = root.join("codex");
-    std::fs::write(
+    tasty_test_support::write_executable(
         &fake,
         "#!/bin/sh\nprintf '%s\\0' \"$TASTY_SURFACE_ID\" \"$CODEX_TEST_SENTINEL\" \"$@\"\n",
     )
     .unwrap();
-    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o700)).unwrap();
     let path = format!("{}:/usr/bin:/bin", root.display());
     let bypass = "--dangerously-bypass-approvals-and-sandbox";
     let prompt = "한글 [!NOTE] 'quoted' \"double\" $HOME $(false) `false` \\path\nsecond line";

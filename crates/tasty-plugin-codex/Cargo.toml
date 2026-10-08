@@ -1,6 +1,6 @@
 [package]
 name = "tasty-plugin-codex"
-version = "0.1.146"
+version = "0.1.147"
 edition = "2024"
 license = "MIT"
 description = "External Tasty plugin: codex CLI integration"
@@ -19,6 +19,9 @@ toml = "0.8"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 anyhow = "1"
+
+[dev-dependencies]
+tasty-test-support = { path = "../tasty-test-support" }
 
 [lints]
 workspace = true

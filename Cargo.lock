@@ -6160,12 +6160,13 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-codex"
-version = "0.1.146"
+version = "0.1.147"
 dependencies = [
  "anyhow",
  "serde_json",
  "tasty-plugin-agent-common",
  "tasty-plugin-sdk",
+ "tasty-test-support",
  "tasty-utils",
  "toml 0.8.2",
  "tracing",
