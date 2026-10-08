@@ -128,7 +128,7 @@ pub use mac_permissions::{
 };
 pub use menu_item::{
     MenuItemVariant, fit_menu_width, menu_item, menu_item_kbd, menu_item_with_hover,
-    menu_label_galley, menu_separator,
+    menu_label_galley, menu_option, menu_option_value, menu_separator,
 };
 pub use move_source::{
     move_source_glyph_size, paint_move_source_chip, paint_move_source_glyph, paint_move_source_ring,

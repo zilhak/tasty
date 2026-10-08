@@ -1,4 +1,4 @@
-//! 단일 선택 드롭다운. 트리거는 Theme로 그리고 열린 항목 목록은 egui 팝업을 사용한다.
+//! 단일 선택 드롭다운. 트리거는 Theme로 그리고 열린 항목 목록은 egui 팝업 안의 공용 옵션 행이다.
 
 use tasty_type_appearance::color::HexColor;
 use tasty_type_appearance::theme::Theme;
@@ -154,12 +154,15 @@ fn select_impl(
             egui::PopupCloseBehavior::CloseOnClick,
             |ui| {
                 ui.set_min_width(width);
+                // 옵션은 공용 MenuItem 옵션 행이다. 현재 값만 selected(글자 + 체크, 채움 없음)이고
+                // 행은 다른 메뉴처럼 붙인다.
+                ui.spacing_mut().item_spacing.y = 0.0;
                 if let (None, Some(p)) = (selected, placeholder) {
-                    // sentinel — 누르면 메뉴만 닫힌다(값이 아니므로 응답을 읽지 않는다).
-                    let _sentinel = ui.selectable_label(true, p);
+                    // sentinel — 값이 아니므로 selected 로 그리지 않는다. 누르면 메뉴만 닫힌다.
+                    let _sentinel = crate::menu_option(ui, theme, p, false);
                 }
                 for (i, opt) in options.iter().enumerate() {
-                    if ui.selectable_label(selected == Some(i), *opt).clicked()
+                    if crate::menu_option(ui, theme, opt, selected == Some(i)).clicked()
                         && selected != Some(i)
                     {
                         picked = Some(i);

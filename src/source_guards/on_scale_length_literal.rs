@@ -885,7 +885,8 @@ fn the_blind_spots_are_still_the_size_they_say() {
         // 도구 메뉴 높이 시험이 행 높이 ROW(28)·구분선 여백 GAP(4)을 인자로 넘겨 두 개를 더한다.
         // 포트 스캐너 열 폭 시험이 Address 폭을 토큰으로 비교해 test 전용 140 하나가 빠졌다.
         // 튜토리얼 말풍선 합성 순서 시험의 화면·마커 띠·말풍선 높이 치수 네 자리가 test 전용으로 늘었다.
-        (222, 532),
+        // 열린 Select 목록 시험(select_placeholder.rs)의 화면 크기·원점·트리거 폭 리터럴 넷이 test 전용으로 들어왔다.
+        (222, 536),
         "제외한 0과 test 전용 코드의 수가 달라졌다. 실제 사용과 수집 범위의 변경을 확인하고 기록을 갱신한다."
     );
     let roster: usize = UNIT_SPACE_SITES.iter().map(|(.., n, _)| n).sum();

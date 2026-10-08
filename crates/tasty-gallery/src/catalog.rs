@@ -523,6 +523,17 @@ pub fn pages() -> Vec<Page> {
                             components::prim_nav::draw_menu_item,
                         ),
                         spec(
+                            "menu-item-selected",
+                            "MenuItem — selected option",
+                            Some(
+                                "The current value inside an open Select-style list (settings \
+                                 dropdowns, egui ComboBox): text-primary ink and a trailing accent \
+                                 check, no fill. Fills keep their two jobs — pointer hover and \
+                                 keyboard-active — so a selected row under the pointer shows both.",
+                            ),
+                            components::prim_nav::draw_menu_item_selected,
+                        ),
+                        spec(
                             "drilldown",
                             "One area, swapped — list → detail → back",
                             Some(

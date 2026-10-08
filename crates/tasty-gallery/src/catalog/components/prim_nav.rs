@@ -3,7 +3,7 @@
 use std::cell::RefCell;
 
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::{MenuItemVariant, menu_item, menu_separator, tree_row};
+use tasty_ui_widgets::{MenuItemVariant, menu_item, menu_option, menu_separator, tree_row};
 
 use super::glyph;
 use crate::catalog::spec::{StageVariant, TokenChip, meta, note, stage};
@@ -94,6 +94,99 @@ pub fn draw_menu_item(ui: &mut egui::Ui, theme: &Theme) {
             ),
         ],
     );
+}
+
+/// MenuItem — selected option. 열린 선택 목록의 현재 값은 selected 글자 + 오른쪽 체크이고 채움이 없다.
+/// 채움은 호버(menu-item-bg-hover)와 키보드 active(surface-active)에만 쓴다(Mocha·Latte).
+pub fn draw_menu_item_selected(ui: &mut egui::Ui, theme: &Theme) {
+    let with_zoom =
+        |base: Theme| Theme::with_colors_and_zoom(base.to_colors(), base.is_light, theme.ui_zoom);
+    let mocha = with_zoom(tasty_themes::mocha_fallback());
+    let latte = with_zoom(crate::host_shell::latte_theme());
+    stage(ui, theme, StageVariant::Column, |ui| {
+        ui.horizontal_top(|ui| {
+            ui.spacing_mut().item_spacing.x = theme.spacing_lg.value();
+            selected_option_panel(ui, &mocha, "Mocha");
+            selected_option_panel(ui, &latte, "Latte");
+        });
+    });
+
+    meta(
+        ui,
+        theme,
+        &[
+            ("selected ink", "menu-item-selected-fg"),
+            (
+                "check",
+                "check icon · menu-item-check-size 14 · menu-item-check-fg · trailing, after any shortcut",
+            ),
+            ("fill", "none — hover / keyboard fills only"),
+        ],
+        &[
+            TokenChip::new(
+                "menu-item-selected-fg",
+                "selected label → text-primary",
+                egui::Color32::from(theme.menu_item_selected_fg()),
+            ),
+            TokenChip::new(
+                "menu-item-check-fg",
+                "check glyph",
+                egui::Color32::from(theme.menu_item_check_fg()),
+            ),
+            TokenChip::new(
+                "text-secondary-raised",
+                "resting label role (Latte → n1100)",
+                egui::Color32::from(theme.text_secondary_raised()),
+            ),
+        ],
+    );
+}
+
+/// 테마 하나의 패널 — 캡션과 네 행(쉼 · 선택 · 쉼 · 키보드 active) 메뉴.
+fn selected_option_panel(ui: &mut egui::Ui, th: &Theme, name: &str) {
+    egui::Frame::new()
+        .fill(egui::Color32::from(th.bg_panel()))
+        .corner_radius(th.corner_radius.value())
+        .inner_margin(egui::Margin::same(th.spacing_md.value() as i8))
+        .show(ui, |ui| {
+            ui.vertical(|ui| {
+                ui.spacing_mut().item_spacing.y = th.spacing_sm.value();
+                ui.label(
+                    egui::RichText::new(format!(
+                        "{name} — rest · selected · rest · keyboard-active"
+                    ))
+                    .size(th.font_size_caption.value())
+                    .color(egui::Color32::from(th.text_muted())),
+                );
+                let bw = th.border_width.value();
+                egui::Frame::new()
+                    .fill(egui::Color32::from(th.menu_bg()))
+                    .stroke(egui::Stroke::new(bw, egui::Color32::from(th.menu_border())))
+                    .corner_radius(th.menu_radius().value())
+                    .shadow(th.shadow_popover().to_egui())
+                    .inner_margin(egui::Margin::same(th.spacing_xs.value() as i8))
+                    .show(ui, |ui| {
+                        // 시안 폭 field-width-lg 는 테두리까지 포함한 바깥 폭이다.
+                        ui.set_width(
+                            th.field_width_lg.value() - (th.spacing_xs.value() + bw) * 2.0,
+                        );
+                        ui.spacing_mut().item_spacing.y = 0.0;
+                        menu_option(ui, th, "Ask", false);
+                        menu_option(ui, th, "Minimize to background", true);
+                        menu_option(ui, th, "Quit", false);
+                        menu_item(
+                            ui,
+                            th,
+                            None,
+                            "Quit and save layout",
+                            None,
+                            MenuItemVariant::Normal,
+                            true,
+                            true,
+                        );
+                    });
+            });
+        });
 }
 
 /// TreeRow — depth · chevron · icon(selected accent) · meta.

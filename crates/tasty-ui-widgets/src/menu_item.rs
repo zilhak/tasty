@@ -44,6 +44,7 @@ pub fn menu_item(
         active,
         enabled,
         false,
+        None,
     )
 }
 
@@ -72,6 +73,7 @@ pub fn menu_item_with_hover(
         active,
         enabled,
         hovered,
+        None,
     )
 }
 
@@ -98,10 +100,51 @@ pub fn menu_item_kbd(
         active,
         enabled,
         false,
+        None,
     )
 }
 
-#[allow(clippy::too_many_arguments)] // reason: 세 공개 함수가 공유하는 구현이며 세 함수에 필요한 인자를 받는다.
+/// 선택 목록(Select · egui ComboBox 열린 목록)의 옵션 행. `selected` 면 현재 값이다 —
+/// 글자는 `menu-item-selected-fg`, 오른쪽 끝에 `menu-item-check-fg` 체크를 그리고 채움은 없다.
+/// 채움은 호버(`menu-item-bg-hover`)에만 쓴다.
+pub fn menu_option(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    label: &str,
+    selected: bool,
+) -> egui::Response {
+    menu_item_inner(
+        ui,
+        theme,
+        None,
+        label,
+        None,
+        MenuItemVariant::Normal,
+        false,
+        true,
+        false,
+        Some(selected),
+    )
+}
+
+/// [`menu_option`] 을 `egui::Ui::selectable_value` 처럼 쓴다. 누르면 `current` 를 `value` 로 바꾸고
+/// 응답을 changed 로 표시한다.
+pub fn menu_option_value<V: PartialEq>(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    current: &mut V,
+    value: V,
+    label: &str,
+) -> egui::Response {
+    let mut resp = menu_option(ui, theme, label, *current == value);
+    if resp.clicked() && *current != value {
+        *current = value;
+        resp.mark_changed();
+    }
+    resp
+}
+
+#[allow(clippy::too_many_arguments)] // reason: 공개 함수들이 공유하는 구현이며 그 함수들에 필요한 인자를 받는다.
 fn menu_item_inner(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -112,7 +155,10 @@ fn menu_item_inner(
     active: bool,
     enabled: bool,
     force_hover: bool,
+    // 선택 목록의 옵션 행이면 Some(현재 값인가). 옵션 행은 키보드 포커스 행을 active 로 그린다.
+    option: Option<bool>,
 ) -> egui::Response {
+    let selected = option == Some(true);
     let height = theme.menu_item_height().value();
     let pad_x = theme.menu_item_padding_x().value();
     // gap/label body/icon 글리프 = 대응 menu-item component 토큰 없음 → semantic.
@@ -127,6 +173,9 @@ fn menu_item_inner(
         egui::Sense::hover()
     };
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, height), sense);
+    // 옵션 행은 Tab 으로 포커스를 받고 Space/Enter 로 고른다. egui 선택 행처럼 포커스 행을 보이게
+    // 키보드 active(surface-active) 채움으로 그린다. 선택 행이라도 채움은 포커스일 때만이다.
+    let active = active || (option.is_some() && resp.has_focus());
     let hovered = enabled && (force_hover || resp.hovered());
     // disabled 항목의 아이콘·라벨·단축키 문구는 opacity 없이 disabled ink를 쓴다.
     let dim = |c: egui::Color32| {
@@ -150,6 +199,7 @@ fn menu_item_inner(
 
     let fg = match variant {
         MenuItemVariant::Normal if active || hovered => theme.menu_item_fg_hover().to_egui(),
+        MenuItemVariant::Normal if selected => theme.menu_item_selected_fg().to_egui(),
         MenuItemVariant::Normal => theme.menu_item_fg().to_egui(),
         MenuItemVariant::Danger => theme.accent_danger().to_egui(),
     };
@@ -169,6 +219,18 @@ fn menu_item_inner(
     }
 
     let mut right = rect.right() - pad_x;
+    // 체크는 단축키 뒤, 행 오른쪽 끝에 둔다.
+    if selected {
+        let size = theme.menu_item_check_size().value();
+        let crect = egui::Rect::from_center_size(
+            egui::pos2(right - size * 0.5, rect.center().y),
+            egui::vec2(size, size),
+        );
+        tasty_icons::CHECK
+            .image(size, dim(theme.menu_item_check_fg().to_egui()))
+            .paint_at(ui, crect);
+        right -= size + gap;
+    }
     match shortcut {
         Some(Shortcut::Text(sc)) => {
             let g = ui.painter().layout_no_wrap(
@@ -422,6 +484,106 @@ mod fit_width_tests {
             out = (fills, ink);
         }
         out
+    }
+
+    /// 옵션 행 하나를 그리고 (채움 사각형 수, 라벨 글자색, 체크 도형 수)를 돌려준다.
+    fn draw_option(th: &Theme, selected: bool) -> (usize, egui::Color32, usize) {
+        let ctx = egui::Context::default();
+        let mut out = (0, egui::Color32::TRANSPARENT, 0);
+        for _ in 0..2 {
+            let frame = ctx.run(RawInput::default(), |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    super::menu_option(ui, th, "Minimize to background", selected);
+                });
+            });
+            let fills = [
+                th.menu_item_bg_hover().to_egui_premultiplied(),
+                th.surface_active().to_egui(),
+            ];
+            let rects = frame
+                .shapes
+                .iter()
+                .filter(|c| matches!(&c.shape, egui::Shape::Rect(r) if fills.contains(&r.fill)))
+                .count();
+            let ink = frame
+                .shapes
+                .iter()
+                .find_map(|c| match &c.shape {
+                    egui::Shape::Text(t) if t.galley.text() == "Minimize to background" => {
+                        Some(t.fallback_color)
+                    }
+                    _ => None,
+                })
+                .expect("label drawn");
+            // 시험 Context 에는 이미지 로더가 없어 체크 글리프는 메시 대신 대체 표시로 그려진다.
+            // 라벨이 아닌 글자·메시 도형의 수로 체크를 센다.
+            let meshes = frame
+                .shapes
+                .iter()
+                .filter(|c| match &c.shape {
+                    egui::Shape::Mesh(_) => true,
+                    egui::Shape::Text(t) => t.galley.text() != "Minimize to background",
+                    _ => false,
+                })
+                .count();
+            out = (rects, ink, meshes);
+        }
+        out
+    }
+
+    /// 선택 옵션은 채움 없이 selected 글자와 오른쪽 체크로만 구분한다.
+    #[test]
+    fn a_selected_option_has_selected_ink_and_a_check_and_no_fill() {
+        let th = theme();
+        let (fills, ink, checks) = draw_option(&th, true);
+        assert_eq!(fills, 0, "no fill on a selected row");
+        assert_eq!(ink, th.menu_item_selected_fg().to_egui());
+        assert_eq!(checks, 1, "one check glyph");
+        let (fills, ink, checks) = draw_option(&th, false);
+        assert_eq!(fills, 0);
+        assert_eq!(ink, th.menu_item_fg().to_egui());
+        assert_eq!(checks, 0);
+    }
+
+    /// 옵션 두 행을 그리고, `focus` 면 둘째(선택) 행에 키보드 포커스를 준 뒤
+    /// (surface-active 채움 사각형 수, 둘째 행 rect 와 겹치는 채움인가)를 돌려준다.
+    fn focused_option_fills(th: &Theme, focus: bool) -> (usize, bool) {
+        let ctx = egui::Context::default();
+        let mut out = (0, false);
+        for frame_no in 0..3 {
+            let mut second = egui::Rect::NOTHING;
+            let frame = ctx.run(RawInput::default(), |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    ui.spacing_mut().item_spacing.y = 0.0;
+                    super::menu_option(ui, th, "Ask", false);
+                    let resp = super::menu_option(ui, th, "Minimize to background", true);
+                    if focus && frame_no == 0 {
+                        resp.request_focus();
+                    }
+                    second = resp.rect;
+                });
+            });
+            let active = th.surface_active().to_egui();
+            let fills: Vec<egui::Rect> = frame
+                .shapes
+                .iter()
+                .filter_map(|c| match &c.shape {
+                    egui::Shape::Rect(r) if r.fill == active => Some(r.rect),
+                    _ => None,
+                })
+                .collect();
+            out = (fills.len(), fills.contains(&second));
+        }
+        out
+    }
+
+    /// 열린 목록의 키보드 포커스 행은 active(surface-active) 채움으로 보인다. 선택 행이라도
+    /// 포커스가 없으면 채움이 없다.
+    #[test]
+    fn a_focused_option_row_shows_the_keyboard_active_fill() {
+        let th = theme();
+        assert_eq!(focused_option_fills(&th, true), (1, true));
+        assert_eq!(focused_option_fills(&th, false), (0, false));
     }
 
     /// 상태 견본이 포인터 없이 실제 호버와 같은 배경·글자로 그려지는지 검사한다.
