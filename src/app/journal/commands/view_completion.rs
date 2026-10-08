@@ -430,6 +430,12 @@ impl crate::app::App {
                     result.response.idempotent_replay,
                 );
             }
+            show_refused_split(
+                &mut context.state.toasts,
+                &error,
+                &result.origin,
+                result.response.idempotent_replay,
+            );
             crate::intent::report_apply_error(
                 context.state,
                 &result.origin,
@@ -508,6 +514,29 @@ fn show_failed_preset(
     }
 }
 
+/// 메뉴·단축키로 한 split 이 탐색기 칸 하한 때문에 거절되면 그 창에 info 토스트를 띄운다. 레이아웃은
+/// 바뀌지 않았다. 에이전트 split 은 IPC 오류만 받는다.
+fn show_refused_split(
+    toasts: &mut crate::adapters::ui::toast::ToastManager,
+    error: &tasty_ipc::protocol::JsonRpcError,
+    origin: &crate::intent::IntentOrigin,
+    replay: bool,
+) {
+    let refused = error
+        .data
+        .as_ref()
+        .and_then(|data| data.get("reason"))
+        .and_then(|reason| reason.as_str())
+        == Some(super::split_floor::REFUSAL_REASON);
+    if refused && origin.is_user() && !replay {
+        toasts.push(
+            crate::i18n::t("toast.split_refused"),
+            crate::model::toast_kind::ToastKind::Info,
+            crate::model::toast_kind::ToastScope::Window,
+        );
+    }
+}
+
 #[cfg(test)]
 mod preset_failure_tests {
     use super::*;
@@ -562,6 +591,36 @@ mod preset_failure_tests {
         show_failed_preset(&mut toasts, &original, &continuation, &user(), true);
         continuation.preset_apply = false;
         show_failed_preset(&mut toasts, &original, &continuation, &user(), false);
+        assert_eq!(toasts.len(), 0);
+    }
+    fn refusal() -> tasty_ipc::protocol::JsonRpcError {
+        super::super::split_floor::refusal_for_tests()
+            .error
+            .expect("refusal error")
+    }
+    #[test]
+    fn a_refused_user_split_shows_an_info_toast() {
+        crate::i18n::init("en");
+        let mut toasts = crate::adapters::ui::toast::ToastManager::new();
+        show_refused_split(&mut toasts, &refusal(), &user(), false);
+        assert_eq!(
+            toasts.messages(),
+            vec![crate::i18n::t("toast.split_refused")]
+        );
+    }
+    #[test]
+    fn agent_replayed_and_other_failures_show_no_split_toast() {
+        let mut toasts = crate::adapters::ui::toast::ToastManager::new();
+        let agent = IntentOrigin::Agent {
+            source: AgentSource::Ipc,
+        };
+        show_refused_split(&mut toasts, &refusal(), &agent, false);
+        show_refused_split(&mut toasts, &refusal(), &user(), true);
+        let other = tasty_ipc::protocol::JsonRpcError {
+            data: None,
+            ..refusal()
+        };
+        show_refused_split(&mut toasts, &other, &user(), false);
         assert_eq!(toasts.len(), 0);
     }
 }

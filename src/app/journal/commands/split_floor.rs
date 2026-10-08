@@ -175,14 +175,17 @@ fn boundary(bad: f32, good: f32, ok: &dyn Fn(f32) -> bool) -> f32 {
     good
 }
 
+/// 하한 거절 응답. 토스트 판정 시험(gui 전용)이 같은 응답을 쓴다.
+#[cfg(all(test, feature = "gui"))]
+pub(super) fn refusal_for_tests() -> JsonRpcResponse {
+    refusal(crate::theme::theme().explorer_min_height().value())
+}
+
 fn refusal(floor: f32) -> JsonRpcResponse {
     JsonRpcResponse::error_with_data(
         serde_json::Value::Null,
         -32602,
-        format!(
-            "split refused: no divider position keeps every explorer cell at least {floor}px tall \
-             while the other cell keeps its own minimum; make the area taller or split another cell"
-        ),
+        "split refused: not enough room",
         serde_json::json!({ "reason": REFUSAL_REASON, "explorer_min_height": floor }),
     )
 }

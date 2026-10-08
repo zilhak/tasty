@@ -1005,6 +1005,8 @@ screen_recording_permission_required = "画面収録の権限が必要です。�
 pane_cut = "ペインを切り取りました。移動先のタブで「ペインをここへ移動」を選んでください。"
 surface_cut = "サーフェスを切り取りました。移動先で「サーフェスをここへ移動」を選んでください。"
 tab_cut = "タブを切り取りました。移動先で「タブをここへ移動」を選んでください。"
+# 메뉴·단축키로 한 split 이 탐색기 칸 하한 때문에 거절됐을 때만 표시한다. 에이전트 split 에는 띄우지 않는다.
+split_refused = "このペインを分割する余白がありません"
 vi_copy_blocked_alt_screen = "フルスクリーンアプリ実行中はコピーモードを使用できません"
 vi_copy_entered = "コピーモード(vi): hjkl/wbe移動、v選択、yコピー、/?検索、q終了"
 vi_copy_invalid_register = "不明なレジスタです (対応: \"+ \"* \"\")"

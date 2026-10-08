@@ -176,7 +176,7 @@ fn a_split_that_cannot_keep_both_explorers_is_refused() {
     let (code, message, why) = reason(&refused);
     assert_eq!(code, -32602);
     assert_eq!(why, REFUSAL_REASON);
-    assert!(message.contains(&format!("{}px", floor())), "{message}");
+    assert_eq!(message, "split refused: not enough room");
     assert_eq!(ratio(&destination), 0.5);
 }
 

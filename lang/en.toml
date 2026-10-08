@@ -1009,6 +1009,8 @@ screen_recording_permission_required = "Screen recording permission is required.
 pane_cut = "Pane cut. Right-click a tab in the destination pane and choose 'Move Pane Here'."
 surface_cut = "Surface cut. Right-click the destination and choose 'Move Surface Here'."
 tab_cut = "Tab cut. Right-click the destination tab and choose 'Move Tab Here'."
+# 메뉴·단축키로 한 split 이 탐색기 칸 하한 때문에 거절됐을 때만 표시한다. 에이전트 split 에는 띄우지 않는다.
+split_refused = "Not enough room to split this pane"
 vi_copy_blocked_alt_screen = "Copy mode unavailable while a full-screen app is active"
 vi_copy_entered = "Copy mode (vi): hjkl/wbe, v select, y yank, /? search, q exit"
 vi_copy_invalid_register = "Unknown register (supported: \"+ \"* \"\")"
