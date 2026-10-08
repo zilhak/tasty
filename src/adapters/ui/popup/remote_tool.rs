@@ -985,8 +985,13 @@ fn form_from_profile(p: &RemoteProfile, _passkeys: &Passkeys) -> ProfileForm {
     f
 }
 
-fn draw_profile_form(ui: &mut egui::Ui, th: &Theme, st: &mut UiState, passkeys: &Passkeys) {
-    // 폼은 스크롤 본문과 고정 푸터를 나누고 자체 여백을 적용한다.
+/// 저장·취소 푸터와 여백을 둔 스크롤 본문으로 된 편집 폼. 눌린 버튼을 (저장, 취소)로 돌려준다.
+fn edit_form(
+    ui: &mut egui::Ui,
+    th: &Theme,
+    footer_id: &'static str,
+    body: impl FnOnce(&mut egui::Ui),
+) -> (bool, bool) {
     let full_x = ui.clip_rect().x_range();
     let sep = egui::Stroke::new(th.border_width.value(), th.border_strong());
     let pad_lg = th.spacing_lg.value() as i8;
@@ -994,7 +999,7 @@ fn draw_profile_form(ui: &mut egui::Ui, th: &Theme, st: &mut UiState, passkeys: 
 
     let mut do_save = false;
     let mut do_cancel = false;
-    let footer = egui::TopBottomPanel::bottom("remote_tool.profile_footer")
+    let footer = egui::TopBottomPanel::bottom(footer_id)
         .resizable(false)
         .show_separator_line(false)
         .frame(egui::Frame::NONE.inner_margin(egui::Margin {
@@ -1032,225 +1037,211 @@ fn draw_profile_form(ui: &mut egui::Ui, th: &Theme, st: &mut UiState, passkeys: 
                             bottom: pad_md,
                         })
                         .show(ui, |ui| {
-                            let editing = st.pform.editing_original.is_some();
-                            selectable_label(
-                                ui,
-                                if editing {
-                                    t("remote_tool.profile_form_edit")
-                                } else {
-                                    t("remote_tool.profile_form_add")
-                                },
-                                th.text_primary(),
-                                th.font_size_body.value(),
-                                false,
-                            );
-                            ui.add_space(th.spacing_md.value());
-
-                            let f = &mut st.pform;
-                            let is_ssh = f.kind.trim() == "ssh";
-                            let unknown = !f.kind.trim().is_empty()
-                                && !is_builtin_kind(f.kind.trim())
-                                && !KNOWN_TYPES.contains(&f.kind.trim());
-
-                            ui.spacing_mut().item_spacing.y = th.spacing_sm.value();
-
-                            // datalist 대신 텍스트 입력과 제안 콤보를 붙여 사용한다.
-                            form_row(ui, th, t("remote_tool.field_type"), |ui| {
-                                ui.horizontal(|ui| {
-                                    ui.spacing_mut().item_spacing.x = th.spacing_xs.value();
-                                    let combo_w = th.item_height_interactive.value();
-                                    let edit_w = (ui.available_width()
-                                        - combo_w
-                                        - ui.spacing().item_spacing.x)
-                                        .max(0.0);
-                                    ui.add(
-                                        egui::TextEdit::singleline(&mut f.kind)
-                                            .desired_width(edit_w)
-                                            .font(egui::TextStyle::Monospace),
-                                    );
-                                    tasty_egui_theme::with_popover_frame(ui, th, |ui| {
-                                        egui::ComboBox::from_id_salt("remote_tool.type_suggest")
-                                            .selected_text("▾")
-                                            .width(combo_w)
-                                            .show_ui(ui, |ui| {
-                                                ui.spacing_mut().item_spacing.y = 0.0;
-                                                for kt in KNOWN_TYPES {
-                                                    tasty_ui_widgets::menu_option_value(
-                                                        ui,
-                                                        th,
-                                                        &mut f.kind,
-                                                        (*kt).to_string(),
-                                                        kt,
-                                                    );
-                                                }
-                                            })
-                                    });
-                                });
-                            });
-                            if unknown {
-                                indented_hint(
-                                    ui,
-                                    th,
-                                    t("remote_tool.type_unknown_hint"),
-                                    th.accent_warning(),
-                                    false,
-                                );
-                            }
-
-                            if is_ssh {
-                                text_row(
-                                    ui,
-                                    th,
-                                    t("remote_tool.field_name"),
-                                    &mut f.name,
-                                    "prod-web",
-                                    false,
-                                );
-                                text_row(
-                                    ui,
-                                    th,
-                                    t("remote_tool.field_host"),
-                                    &mut f.host,
-                                    "10.0.4.12",
-                                    true,
-                                );
-                                text_row(
-                                    ui,
-                                    th,
-                                    t("remote_tool.field_user"),
-                                    &mut f.user,
-                                    "deploy",
-                                    false,
-                                );
-                                text_row(
-                                    ui,
-                                    th,
-                                    t("remote_tool.field_port"),
-                                    &mut f.port,
-                                    "22",
-                                    true,
-                                );
-                                text_row(
-                                    ui,
-                                    th,
-                                    t("remote_tool.field_label"),
-                                    &mut f.label,
-                                    "us-east",
-                                    false,
-                                );
-                                form_row(ui, th, t("remote_tool.field_shell"), |ui| {
-                                    tasty_egui_theme::with_popover_frame(ui, th, |ui| {
-                                        egui::ComboBox::from_id_salt("remote_tool.shell")
-                                            .selected_text(f.shell.clone())
-                                            .width(ui.available_width())
-                                            .show_ui(ui, |ui| {
-                                                ui.spacing_mut().item_spacing.y = 0.0;
-                                                for sh in SHELLS {
-                                                    tasty_ui_widgets::menu_option_value(
-                                                        ui,
-                                                        th,
-                                                        &mut f.shell,
-                                                        (*sh).to_string(),
-                                                        sh,
-                                                    );
-                                                }
-                                            })
-                                    });
-                                });
-                                passkey_dropdown_row(ui, th, &mut f.passkey_ref, passkeys);
-                                if f.shell == "auto" {
-                                    indented_hint(
-                                        ui,
-                                        th,
-                                        t("remote_tool.shell_auto_hint"),
-                                        th.text_muted(),
-                                        false,
-                                    );
-                                }
-                            } else {
-                                text_row(
-                                    ui,
-                                    th,
-                                    t("remote_tool.field_name"),
-                                    &mut f.name,
-                                    "media-nas",
-                                    false,
-                                );
-                                text_row(
-                                    ui,
-                                    th,
-                                    t("remote_tool.field_label"),
-                                    &mut f.label,
-                                    "lab",
-                                    false,
-                                );
-                                passkey_dropdown_row(ui, th, &mut f.passkey_ref, passkeys);
-                                ui.add_space(th.spacing_xs.value());
-                                ui.horizontal(|ui| {
-                                    selectable_label(
-                                        ui,
-                                        t("remote_tool.fields_section"),
-                                        th.text_muted(),
-                                        th.font_size_caption.value(),
-                                        true,
-                                    );
-                                    ui.with_layout(
-                                        egui::Layout::right_to_left(egui::Align::Center),
-                                        |ui| {
-                                            if ghost_button(ui, th, t("remote_tool.field_add"))
-                                                .clicked()
-                                            {
-                                                f.fields.push((String::new(), String::new()));
-                                            }
-                                        },
-                                    );
-                                });
-                                if f.fields.is_empty() {
-                                    indented_hint(
-                                        ui,
-                                        th,
-                                        t("remote_tool.fields_empty"),
-                                        th.text_muted(),
-                                        true,
-                                    );
-                                }
-                                let mut remove_idx = None;
-                                for (i, (k, v)) in f.fields.iter_mut().enumerate() {
-                                    ui.horizontal(|ui| {
-                                        ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
-                                        ui.add(
-                                            egui::TextEdit::singleline(k)
-                                                .desired_width(LABEL_COL_WIDTH.value())
-                                                .hint_text("key")
-                                                .font(egui::TextStyle::Monospace),
-                                        );
-                                        let btn_w = th.item_height_interactive.value();
-                                        let val_w = (ui.available_width()
-                                            - btn_w
-                                            - ui.spacing().item_spacing.x)
-                                            .max(0.0);
-                                        ui.add(
-                                            egui::TextEdit::singleline(v)
-                                                .desired_width(val_w)
-                                                .hint_text("value")
-                                                .font(egui::TextStyle::Monospace),
-                                        );
-                                        if ghost_button(ui, th, "×").clicked() {
-                                            remove_idx = Some(i);
-                                        }
-                                    });
-                                }
-                                if let Some(i) = remove_idx {
-                                    f.fields.remove(i);
-                                }
-                            }
-
-                            if let Some(err) = &st.perr {
-                                indented_hint(ui, th, err, th.accent_danger(), false);
-                            }
+                            body(ui);
                         });
                 });
         });
+    (do_save, do_cancel)
+}
+
+fn draw_profile_form(ui: &mut egui::Ui, th: &Theme, st: &mut UiState, passkeys: &Passkeys) {
+    // 폼은 스크롤 본문과 고정 푸터를 나누고 자체 여백을 적용한다.
+    let (do_save, do_cancel) = edit_form(ui, th, "remote_tool.profile_footer", |ui| {
+        let editing = st.pform.editing_original.is_some();
+        selectable_label(
+            ui,
+            if editing {
+                t("remote_tool.profile_form_edit")
+            } else {
+                t("remote_tool.profile_form_add")
+            },
+            th.text_primary(),
+            th.font_size_body.value(),
+            false,
+        );
+        ui.add_space(th.spacing_md.value());
+
+        let f = &mut st.pform;
+        let is_ssh = f.kind.trim() == "ssh";
+        let unknown = !f.kind.trim().is_empty()
+            && !is_builtin_kind(f.kind.trim())
+            && !KNOWN_TYPES.contains(&f.kind.trim());
+
+        ui.spacing_mut().item_spacing.y = th.spacing_sm.value();
+
+        // datalist 대신 텍스트 입력과 제안 콤보를 붙여 사용한다.
+        form_row(ui, th, t("remote_tool.field_type"), |ui| {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = th.spacing_xs.value();
+                let combo_w = th.item_height_interactive.value();
+                let edit_w =
+                    (ui.available_width() - combo_w - ui.spacing().item_spacing.x).max(0.0);
+                ui.add(
+                    egui::TextEdit::singleline(&mut f.kind)
+                        .desired_width(edit_w)
+                        .font(egui::TextStyle::Monospace),
+                );
+                tasty_egui_theme::with_popover_frame(ui, th, |ui| {
+                    egui::ComboBox::from_id_salt("remote_tool.type_suggest")
+                        .selected_text("▾")
+                        .width(combo_w)
+                        .show_ui(ui, |ui| {
+                            ui.spacing_mut().item_spacing.y = 0.0;
+                            for kt in KNOWN_TYPES {
+                                tasty_ui_widgets::menu_option_value(
+                                    ui,
+                                    th,
+                                    &mut f.kind,
+                                    (*kt).to_string(),
+                                    kt,
+                                );
+                            }
+                        })
+                });
+            });
+        });
+        if unknown {
+            indented_hint(
+                ui,
+                th,
+                t("remote_tool.type_unknown_hint"),
+                th.accent_warning(),
+                false,
+            );
+        }
+
+        if is_ssh {
+            text_row(
+                ui,
+                th,
+                t("remote_tool.field_name"),
+                &mut f.name,
+                "prod-web",
+                false,
+            );
+            text_row(
+                ui,
+                th,
+                t("remote_tool.field_host"),
+                &mut f.host,
+                "10.0.4.12",
+                true,
+            );
+            text_row(
+                ui,
+                th,
+                t("remote_tool.field_user"),
+                &mut f.user,
+                "deploy",
+                false,
+            );
+            text_row(ui, th, t("remote_tool.field_port"), &mut f.port, "22", true);
+            text_row(
+                ui,
+                th,
+                t("remote_tool.field_label"),
+                &mut f.label,
+                "us-east",
+                false,
+            );
+            form_row(ui, th, t("remote_tool.field_shell"), |ui| {
+                tasty_egui_theme::with_popover_frame(ui, th, |ui| {
+                    egui::ComboBox::from_id_salt("remote_tool.shell")
+                        .selected_text(f.shell.clone())
+                        .width(ui.available_width())
+                        .show_ui(ui, |ui| {
+                            ui.spacing_mut().item_spacing.y = 0.0;
+                            for sh in SHELLS {
+                                tasty_ui_widgets::menu_option_value(
+                                    ui,
+                                    th,
+                                    &mut f.shell,
+                                    (*sh).to_string(),
+                                    sh,
+                                );
+                            }
+                        })
+                });
+            });
+            passkey_dropdown_row(ui, th, &mut f.passkey_ref, passkeys);
+            if f.shell == "auto" {
+                indented_hint(
+                    ui,
+                    th,
+                    t("remote_tool.shell_auto_hint"),
+                    th.text_muted(),
+                    false,
+                );
+            }
+        } else {
+            text_row(
+                ui,
+                th,
+                t("remote_tool.field_name"),
+                &mut f.name,
+                "media-nas",
+                false,
+            );
+            text_row(
+                ui,
+                th,
+                t("remote_tool.field_label"),
+                &mut f.label,
+                "lab",
+                false,
+            );
+            passkey_dropdown_row(ui, th, &mut f.passkey_ref, passkeys);
+            ui.add_space(th.spacing_xs.value());
+            ui.horizontal(|ui| {
+                selectable_label(
+                    ui,
+                    t("remote_tool.fields_section"),
+                    th.text_muted(),
+                    th.font_size_caption.value(),
+                    true,
+                );
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ghost_button(ui, th, t("remote_tool.field_add")).clicked() {
+                        f.fields.push((String::new(), String::new()));
+                    }
+                });
+            });
+            if f.fields.is_empty() {
+                indented_hint(ui, th, t("remote_tool.fields_empty"), th.text_muted(), true);
+            }
+            let mut remove_idx = None;
+            for (i, (k, v)) in f.fields.iter_mut().enumerate() {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
+                    ui.add(
+                        egui::TextEdit::singleline(k)
+                            .desired_width(LABEL_COL_WIDTH.value())
+                            .hint_text("key")
+                            .font(egui::TextStyle::Monospace),
+                    );
+                    let btn_w = th.item_height_interactive.value();
+                    let val_w =
+                        (ui.available_width() - btn_w - ui.spacing().item_spacing.x).max(0.0);
+                    ui.add(
+                        egui::TextEdit::singleline(v)
+                            .desired_width(val_w)
+                            .hint_text("value")
+                            .font(egui::TextStyle::Monospace),
+                    );
+                    if ghost_button(ui, th, "×").clicked() {
+                        remove_idx = Some(i);
+                    }
+                });
+            }
+            if let Some(i) = remove_idx {
+                f.fields.remove(i);
+            }
+        }
+
+        if let Some(err) = &st.perr {
+            indented_hint(ui, th, err, th.accent_danger(), false);
+        }
+    });
 
     if do_cancel {
         st.perr = None;
@@ -1541,239 +1532,182 @@ fn draw_attach_form(
     profiles: &mut RemoteProfiles,
     passkeys: &Passkeys,
 ) {
-    let full_x = ui.clip_rect().x_range();
-    let sep = egui::Stroke::new(th.border_width.value(), th.border_strong());
-    let pad_lg = th.spacing_lg.value() as i8;
-    let pad_md = th.spacing_md.value() as i8;
+    let (do_save, do_cancel) = edit_form(ui, th, "remote_tool.attach_footer", |ui| {
+        let editing = st.aform.editing_original.is_some();
+        selectable_label(
+            ui,
+            if editing {
+                t("remote_tool.attach_form_edit")
+            } else {
+                t("remote_tool.attach_form_add")
+            },
+            th.text_primary(),
+            th.font_size_body.value(),
+            false,
+        );
+        ui.add_space(th.spacing_md.value());
 
-    let mut do_save = false;
-    let mut do_cancel = false;
-    let footer = egui::TopBottomPanel::bottom("remote_tool.attach_footer")
-        .resizable(false)
-        .show_separator_line(false)
-        .frame(egui::Frame::NONE.inner_margin(egui::Margin {
-            left: pad_lg,
-            right: pad_lg,
-            top: pad_md,
-            bottom: pad_md,
-        }))
-        .show_inside(ui, |ui| {
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if primary_button(ui, th, t("remote_tool.save")).clicked() {
-                    do_save = true;
-                }
-                ui.add_space(th.spacing_sm.value());
-                if ghost_button(ui, th, t("remote_tool.cancel")).clicked() {
-                    do_cancel = true;
-                }
+        let f = &mut st.aform;
+        ui.spacing_mut().item_spacing.y = th.spacing_sm.value();
+
+        text_row(
+            ui,
+            th,
+            t("remote_tool.field_name"),
+            &mut f.name,
+            "gb10",
+            false,
+        );
+        text_row(
+            ui,
+            th,
+            t("remote_tool.field_label"),
+            &mut f.label,
+            "us-east",
+            false,
+        );
+        form_row(ui, th, t("remote_tool.field_connection"), |ui| {
+            let selected = if f.mode_ref { 0 } else { 1 };
+            if let Some(i) = tasty_ui_widgets::segmented(
+                ui,
+                th,
+                &[
+                    t("remote_tool.attach_mode_ref"),
+                    t("remote_tool.attach_mode_inline"),
+                ],
+                selected,
+            ) {
+                f.mode_ref = i == 0;
+            }
+        });
+        ui.add_space(th.spacing_xs.value());
+
+        if f.mode_ref {
+            form_row(ui, th, t("remote_tool.field_ssh_ref"), |ui| {
+                let sel = if f.ssh_ref.is_empty() {
+                    t("remote_tool.ssh_ref_none").to_string()
+                } else {
+                    f.ssh_ref.clone()
+                };
+                tasty_egui_theme::with_popover_frame(ui, th, |ui| {
+                    egui::ComboBox::from_id_salt("remote_tool.attach_ssh_ref")
+                        .selected_text(sel)
+                        .width(ui.available_width())
+                        .show_ui(ui, |ui| {
+                            ui.spacing_mut().item_spacing.y = 0.0;
+                            for sp in profiles.profiles.iter().filter(|sp| sp.kind == "ssh") {
+                                let display = match &sp.label {
+                                    Some(l) if !l.is_empty() => {
+                                        format!("{} ({})", sp.name, l)
+                                    }
+                                    _ => sp.name.clone(),
+                                };
+                                tasty_ui_widgets::menu_option_value(
+                                    ui,
+                                    th,
+                                    &mut f.ssh_ref,
+                                    sp.name.clone(),
+                                    &display,
+                                );
+                            }
+                        })
+                });
+            });
+        } else {
+            text_row(
+                ui,
+                th,
+                t("remote_tool.field_host"),
+                &mut f.host,
+                "10.0.4.12",
+                true,
+            );
+            text_row(
+                ui,
+                th,
+                t("remote_tool.field_user"),
+                &mut f.user,
+                "deploy",
+                false,
+            );
+            text_row(ui, th, t("remote_tool.field_port"), &mut f.port, "22", true);
+            form_row(ui, th, t("remote_tool.field_shell"), |ui| {
+                tasty_egui_theme::with_popover_frame(ui, th, |ui| {
+                    egui::ComboBox::from_id_salt("remote_tool.attach_shell")
+                        .selected_text(f.shell.clone())
+                        .width(ui.available_width())
+                        .show_ui(ui, |ui| {
+                            ui.spacing_mut().item_spacing.y = 0.0;
+                            for sh in SHELLS {
+                                tasty_ui_widgets::menu_option_value(
+                                    ui,
+                                    th,
+                                    &mut f.shell,
+                                    (*sh).to_string(),
+                                    sh,
+                                );
+                            }
+                        })
+                });
+            });
+            passkey_dropdown_row(ui, th, &mut f.passkey_ref, passkeys);
+        }
+
+        ui.add_space(th.spacing_xs.value());
+        selectable_label(
+            ui,
+            t("remote_tool.remote_tasty_section"),
+            th.text_muted(),
+            th.font_size_caption.value(),
+            true,
+        );
+        text_row(
+            ui,
+            th,
+            t("remote_tool.field_executable"),
+            &mut f.remote_tasty,
+            "tasty",
+            true,
+        );
+        form_row(ui, th, t("remote_tool.field_port_mode"), |ui| {
+            tasty_egui_theme::with_popover_frame(ui, th, |ui| {
+                egui::ComboBox::from_id_salt("remote_tool.attach_port_mode")
+                    .selected_text(f.port_mode.clone())
+                    .width(ui.available_width())
+                    .show_ui(ui, |ui| {
+                        ui.spacing_mut().item_spacing.y = 0.0;
+                        for m in PORT_MODES {
+                            tasty_ui_widgets::menu_option_value(
+                                ui,
+                                th,
+                                &mut f.port_mode,
+                                (*m).to_string(),
+                                m,
+                            );
+                        }
+                    })
             });
         });
-    ui.painter()
-        .hline(full_x, footer.response.rect.top() + 0.5, sep);
+        text_row(
+            ui,
+            th,
+            t("remote_tool.field_port_file"),
+            &mut f.port_file,
+            t("remote_tool.attach_port_file_ph"),
+            true,
+        );
+        indented_hint(
+            ui,
+            th,
+            t("remote_tool.attach_exec_hint"),
+            th.text_muted(),
+            false,
+        );
 
-    egui::CentralPanel::default()
-        .frame(egui::Frame::NONE)
-        .show_inside(ui, |ui| {
-            egui::ScrollArea::vertical()
-                .auto_shrink([false, false])
-                .drag_to_scroll(false)
-                .show(ui, |ui| {
-                    egui::Frame::NONE
-                        .inner_margin(egui::Margin {
-                            left: pad_lg,
-                            right: pad_lg,
-                            top: pad_md,
-                            bottom: pad_md,
-                        })
-                        .show(ui, |ui| {
-                            let editing = st.aform.editing_original.is_some();
-                            selectable_label(
-                                ui,
-                                if editing {
-                                    t("remote_tool.attach_form_edit")
-                                } else {
-                                    t("remote_tool.attach_form_add")
-                                },
-                                th.text_primary(),
-                                th.font_size_body.value(),
-                                false,
-                            );
-                            ui.add_space(th.spacing_md.value());
-
-                            let f = &mut st.aform;
-                            ui.spacing_mut().item_spacing.y = th.spacing_sm.value();
-
-                            text_row(
-                                ui,
-                                th,
-                                t("remote_tool.field_name"),
-                                &mut f.name,
-                                "gb10",
-                                false,
-                            );
-                            text_row(
-                                ui,
-                                th,
-                                t("remote_tool.field_label"),
-                                &mut f.label,
-                                "us-east",
-                                false,
-                            );
-                            form_row(ui, th, t("remote_tool.field_connection"), |ui| {
-                                let selected = if f.mode_ref { 0 } else { 1 };
-                                if let Some(i) = tasty_ui_widgets::segmented(
-                                    ui,
-                                    th,
-                                    &[
-                                        t("remote_tool.attach_mode_ref"),
-                                        t("remote_tool.attach_mode_inline"),
-                                    ],
-                                    selected,
-                                ) {
-                                    f.mode_ref = i == 0;
-                                }
-                            });
-                            ui.add_space(th.spacing_xs.value());
-
-                            if f.mode_ref {
-                                form_row(ui, th, t("remote_tool.field_ssh_ref"), |ui| {
-                                    let sel = if f.ssh_ref.is_empty() {
-                                        t("remote_tool.ssh_ref_none").to_string()
-                                    } else {
-                                        f.ssh_ref.clone()
-                                    };
-                                    tasty_egui_theme::with_popover_frame(ui, th, |ui| {
-                                        egui::ComboBox::from_id_salt("remote_tool.attach_ssh_ref")
-                                            .selected_text(sel)
-                                            .width(ui.available_width())
-                                            .show_ui(ui, |ui| {
-                                                ui.spacing_mut().item_spacing.y = 0.0;
-                                                for sp in profiles
-                                                    .profiles
-                                                    .iter()
-                                                    .filter(|sp| sp.kind == "ssh")
-                                                {
-                                                    let display = match &sp.label {
-                                                        Some(l) if !l.is_empty() => {
-                                                            format!("{} ({})", sp.name, l)
-                                                        }
-                                                        _ => sp.name.clone(),
-                                                    };
-                                                    tasty_ui_widgets::menu_option_value(
-                                                        ui,
-                                                        th,
-                                                        &mut f.ssh_ref,
-                                                        sp.name.clone(),
-                                                        &display,
-                                                    );
-                                                }
-                                            })
-                                    });
-                                });
-                            } else {
-                                text_row(
-                                    ui,
-                                    th,
-                                    t("remote_tool.field_host"),
-                                    &mut f.host,
-                                    "10.0.4.12",
-                                    true,
-                                );
-                                text_row(
-                                    ui,
-                                    th,
-                                    t("remote_tool.field_user"),
-                                    &mut f.user,
-                                    "deploy",
-                                    false,
-                                );
-                                text_row(
-                                    ui,
-                                    th,
-                                    t("remote_tool.field_port"),
-                                    &mut f.port,
-                                    "22",
-                                    true,
-                                );
-                                form_row(ui, th, t("remote_tool.field_shell"), |ui| {
-                                    tasty_egui_theme::with_popover_frame(ui, th, |ui| {
-                                        egui::ComboBox::from_id_salt("remote_tool.attach_shell")
-                                            .selected_text(f.shell.clone())
-                                            .width(ui.available_width())
-                                            .show_ui(ui, |ui| {
-                                                ui.spacing_mut().item_spacing.y = 0.0;
-                                                for sh in SHELLS {
-                                                    tasty_ui_widgets::menu_option_value(
-                                                        ui,
-                                                        th,
-                                                        &mut f.shell,
-                                                        (*sh).to_string(),
-                                                        sh,
-                                                    );
-                                                }
-                                            })
-                                    });
-                                });
-                                passkey_dropdown_row(ui, th, &mut f.passkey_ref, passkeys);
-                            }
-
-                            ui.add_space(th.spacing_xs.value());
-                            selectable_label(
-                                ui,
-                                t("remote_tool.remote_tasty_section"),
-                                th.text_muted(),
-                                th.font_size_caption.value(),
-                                true,
-                            );
-                            text_row(
-                                ui,
-                                th,
-                                t("remote_tool.field_executable"),
-                                &mut f.remote_tasty,
-                                "tasty",
-                                true,
-                            );
-                            form_row(ui, th, t("remote_tool.field_port_mode"), |ui| {
-                                tasty_egui_theme::with_popover_frame(ui, th, |ui| {
-                                    egui::ComboBox::from_id_salt("remote_tool.attach_port_mode")
-                                        .selected_text(f.port_mode.clone())
-                                        .width(ui.available_width())
-                                        .show_ui(ui, |ui| {
-                                            ui.spacing_mut().item_spacing.y = 0.0;
-                                            for m in PORT_MODES {
-                                                tasty_ui_widgets::menu_option_value(
-                                                    ui,
-                                                    th,
-                                                    &mut f.port_mode,
-                                                    (*m).to_string(),
-                                                    m,
-                                                );
-                                            }
-                                        })
-                                });
-                            });
-                            text_row(
-                                ui,
-                                th,
-                                t("remote_tool.field_port_file"),
-                                &mut f.port_file,
-                                t("remote_tool.attach_port_file_ph"),
-                                true,
-                            );
-                            indented_hint(
-                                ui,
-                                th,
-                                t("remote_tool.attach_exec_hint"),
-                                th.text_muted(),
-                                false,
-                            );
-
-                            if let Some(err) = &st.aerr {
-                                indented_hint(ui, th, err, th.accent_danger(), false);
-                            }
-                        });
-                });
-        });
+        if let Some(err) = &st.aerr {
+            indented_hint(ui, th, err, th.accent_danger(), false);
+        }
+    });
 
     if do_cancel {
         st.aerr = None;
@@ -1973,107 +1907,61 @@ fn draw_passkey_row(
 
 /// 로컬 GUI 전용 값 노출. path kind 는 경로, inline kind 는 관리 파일 내용을 읽는다.
 fn draw_passkey_form(ui: &mut egui::Ui, th: &Theme, st: &mut UiState) {
-    let full_x = ui.clip_rect().x_range();
-    let sep = egui::Stroke::new(th.border_width.value(), th.border_strong());
-    let pad_lg = th.spacing_lg.value() as i8;
-    let pad_md = th.spacing_md.value() as i8;
+    let (do_save, do_cancel) = edit_form(ui, th, "remote_tool.passkey_footer", |ui| {
+        let editing = st.kform.editing_original.is_some();
+        selectable_label(
+            ui,
+            if editing {
+                t("remote_tool.passkey_form_edit")
+            } else {
+                t("remote_tool.passkey_form_add")
+            },
+            th.text_primary(),
+            th.font_size_body.value(),
+            false,
+        );
+        ui.add_space(th.spacing_md.value());
 
-    let mut do_save = false;
-    let mut do_cancel = false;
-    let footer = egui::TopBottomPanel::bottom("remote_tool.passkey_footer")
-        .resizable(false)
-        .show_separator_line(false)
-        .frame(egui::Frame::NONE.inner_margin(egui::Margin {
-            left: pad_lg,
-            right: pad_lg,
-            top: pad_md,
-            bottom: pad_md,
-        }))
-        .show_inside(ui, |ui| {
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if primary_button(ui, th, t("remote_tool.save")).clicked() {
-                    do_save = true;
-                }
-                ui.add_space(th.spacing_sm.value());
-                if ghost_button(ui, th, t("remote_tool.cancel")).clicked() {
-                    do_cancel = true;
-                }
-            });
+        let f = &mut st.kform;
+        ui.spacing_mut().item_spacing.y = th.spacing_sm.value();
+        text_row(ui, th, t("remote_tool.field_name"), &mut f.name, "", false);
+        form_row(ui, th, t("remote_tool.field_kind"), |ui| {
+            for opt in KNOWN_PASSKEY_KINDS {
+                ui.selectable_value(&mut f.kind, (*opt).to_string(), *opt);
+            }
         });
-    ui.painter()
-        .hline(full_x, footer.response.rect.top() + 0.5, sep);
-
-    egui::CentralPanel::default()
-        .frame(egui::Frame::NONE)
-        .show_inside(ui, |ui| {
-            egui::ScrollArea::vertical()
-                .auto_shrink([false, false])
-                .drag_to_scroll(false)
-                .show(ui, |ui| {
-                    egui::Frame::NONE
-                        .inner_margin(egui::Margin {
-                            left: pad_lg,
-                            right: pad_lg,
-                            top: pad_md,
-                            bottom: pad_md,
-                        })
-                        .show(ui, |ui| {
-                            let editing = st.kform.editing_original.is_some();
-                            selectable_label(
-                                ui,
-                                if editing {
-                                    t("remote_tool.passkey_form_edit")
-                                } else {
-                                    t("remote_tool.passkey_form_add")
-                                },
-                                th.text_primary(),
-                                th.font_size_body.value(),
-                                false,
-                            );
-                            ui.add_space(th.spacing_md.value());
-
-                            let f = &mut st.kform;
-                            ui.spacing_mut().item_spacing.y = th.spacing_sm.value();
-                            text_row(ui, th, t("remote_tool.field_name"), &mut f.name, "", false);
-                            form_row(ui, th, t("remote_tool.field_kind"), |ui| {
-                                for opt in KNOWN_PASSKEY_KINDS {
-                                    ui.selectable_value(&mut f.kind, (*opt).to_string(), *opt);
-                                }
-                            });
-                            form_row(ui, th, t("remote_tool.field_value"), |ui| {
-                                if f.kind == "inline" {
-                                    ui.add(
-                                        egui::TextEdit::multiline(&mut f.value)
-                                            .desired_rows(3)
-                                            .hint_text(t("remote_tool.value_inline_hint")),
-                                    );
-                                } else {
-                                    ui.add(
-                                        egui::TextEdit::singleline(&mut f.value)
-                                            .desired_width(f32::INFINITY)
-                                            .hint_text("~/.ssh/id_ed25519"),
-                                    );
-                                }
-                            });
-                            selectable_label(
-                                ui,
-                                t("remote_tool.passkey_value_note"),
-                                th.text_muted(),
-                                th.font_size_caption.value(),
-                                false,
-                            );
-                            if let Some(err) = &st.kerr {
-                                selectable_label(
-                                    ui,
-                                    err,
-                                    th.accent_danger(),
-                                    th.font_size_caption.value(),
-                                    false,
-                                );
-                            }
-                        });
-                });
+        form_row(ui, th, t("remote_tool.field_value"), |ui| {
+            if f.kind == "inline" {
+                ui.add(
+                    egui::TextEdit::multiline(&mut f.value)
+                        .desired_rows(3)
+                        .hint_text(t("remote_tool.value_inline_hint")),
+                );
+            } else {
+                ui.add(
+                    egui::TextEdit::singleline(&mut f.value)
+                        .desired_width(f32::INFINITY)
+                        .hint_text("~/.ssh/id_ed25519"),
+                );
+            }
         });
+        selectable_label(
+            ui,
+            t("remote_tool.passkey_value_note"),
+            th.text_muted(),
+            th.font_size_caption.value(),
+            false,
+        );
+        if let Some(err) = &st.kerr {
+            selectable_label(
+                ui,
+                err,
+                th.accent_danger(),
+                th.font_size_caption.value(),
+                false,
+            );
+        }
+    });
 
     if do_cancel {
         st.kerr = None;
