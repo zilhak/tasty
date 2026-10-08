@@ -149,6 +149,15 @@ mirror(원격) explorer:
 - **새 탭으로 열기** (`open_in_new_tab`, 단일 폴더) — 그 폴더를 cwd 로 하는 새 explorer 를 **Pane 탭**(explorer 내부 탭이 아님)으로 연다. 우클릭 대상 surface 의 **소유 pane** 에 추가해(`MainViewState::add_kind_tab_by_owner`) focused pane 이 아니어도 올바른 pane 에 열린다. 기존 explorer 는 불변. mirror 에서 메뉴 자체가 숨겨지고 핸들러도 막는다(아래 참고).
 - **이 폴더로 루트 설정** (`set_as_root`, 단일 폴더) — **현재 explorer** 의 cwd 를 그 폴더로 이동한다(`RequestContext::set_explorer_cwd` 가 `EngineAction::ExplorerCwd` 를 보내고 App 이 `ExplorerTab::set_cwd` 를 적용: 좌측 트리 루트·current 이동 + 히스토리 초기화 + 뷰 리로드). 파일시스템을 바꾸지 않으므로 mirror 에서도 그대로 동작.
 
+### 심볼릭 링크
+
+목록은 `read_dir_entries`(`src/core/fs_list.rs`)가 읽는다. 링크 항목은 대상의 metadata 로 종류·크기·수정 시각을 정하고 `DirEntryInfo::link` 에 상태를 남긴다(`NotALink` / `Valid` / `Broken`).
+
+- **폴더를 가리키는 링크**는 폴더로 보이고 트리에도 나온다. 들어가면 경로는 링크 자신의 경로다. 주소창·히스토리·뒤로/위로는 대상의 실제 경로가 아니라 링크 경로를 쓴다. 따라서 링크 폴더에서 위로 가면 링크가 있던 폴더로 돌아간다.
+- **대상이 없는 링크**는 폴더로 보지 않으며 크기·수정 시각은 링크 자신의 값이다. 열면 파일을 찾지 못한 것처럼 보이지 않도록 `explorer.state.broken_link` 오류 toast 로 대상이 없다는 원인을 알린다. 주소창 입력도 같은 이유로 거부한다. 목록에서 링크·끊긴 링크를 구분해 그리는 표시는 아직 없다(디자인 대기).
+- **링크 자체에 대한 조작**: 복사·붙여넣기는 링크를 링크로 복사한다. 이름 변경과 cut 의 교차 파일시스템 정리(`remove_path`)는 링크만 옮기거나 지운다. 휴지통(`trash` 크레이트)은 모든 OS 에서 부모 경로만 canonicalize 하고, Linux(freedesktop) 구현은 링크 항목 자체를 휴지통으로 옮긴다. macOS·Windows 의 링크 휴지통 동작은 실 기기에서 확인하지 않았다. 어느 조작도 대상 폴더나 그 내용을 바꾸지 않는다.
+- 원격 목록 응답은 링크 상태를 싣지 않는다. 원격 서버도 같은 함수로 목록을 만들므로 원격의 폴더 링크도 폴더로 보이지만, 끊긴 링크 구분은 원격 항목에 없다.
+
 ### mirror(attach) explorer 의 파일 변경 차단
 
 ADR-0022에 따라 mirror explorer 는 파일 변경(rename/delete/새 폴더 만들기 등)을 아직 지원하지 않으며, 이 제한은 컨텍스트 메뉴·키보드 단축키 레벨까지 강제된다. 파일 더블클릭 열기(`OpenFile`)는 로컬과 같은 `DispatchFile` 로 가고, origin 이 mirror surface 라 원격 열기 규칙을 따른다(아래 "mirror explorer 의 파일 열기"). mirror 워크스페이스(`ws.mirror`)에 속한 explorer surface 에서는:

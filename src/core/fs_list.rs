@@ -19,9 +19,26 @@ pub(crate) struct DirEntryInfo {
     pub(crate) modified: Option<SystemTime>,
     /// 소문자 확장자. 디렉터리이거나 확장자가 없으면 비어 있다.
     pub(crate) ext: String,
+    /// 항목이 심볼릭 링크인가. 원격 응답은 이 값을 싣지 않으므로 원격 항목은 `NotALink`다.
+    /// 읽는 쪽이 GUI의 탐색기뿐이라 `path`처럼 GUI에서만 둔다.
+    #[cfg(feature = "gui")]
+    pub(crate) link: EntryLink,
+}
+
+/// 목록 항목의 링크 상태. 링크는 `path`(링크 자신의 경로)로 탐색하고 조작한다.
+#[cfg(feature = "gui")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum EntryLink {
+    #[default]
+    NotALink,
+    /// 대상이 있다. 종류·크기·수정 시각은 대상의 값이다.
+    Valid,
+    /// 대상이 없다. 폴더로 보지 않으며 크기·수정 시각은 링크 자신의 값이다.
+    Broken,
 }
 
 /// 숨김 파일도 포함한다. 개별 항목 읽기 오류는 건너뛰고 metadata 오류는 기본값으로 처리한다.
+/// `DirEntry::metadata`는 링크를 따라가지 않으므로 링크는 대상의 metadata로 종류를 정한다.
 pub(crate) fn read_dir_entries(dir: &Path) -> std::io::Result<Vec<DirEntryInfo>> {
     let mut out = Vec::new();
     for entry in std::fs::read_dir(dir)? {
@@ -31,7 +48,19 @@ pub(crate) fn read_dir_entries(dir: &Path) -> std::io::Result<Vec<DirEntryInfo>>
         };
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().to_string();
-        let meta = entry.metadata().ok();
+        let is_link = entry.file_type().is_ok_and(|t| t.is_symlink());
+        // 링크면 대상의 metadata를 먼저 읽고, 대상이 없으면 링크 자신의 값을 쓴다.
+        let target = is_link.then(|| std::fs::metadata(&path).ok());
+        #[cfg(feature = "gui")]
+        let link = match &target {
+            None => EntryLink::NotALink,
+            Some(Some(_)) => EntryLink::Valid,
+            Some(None) => EntryLink::Broken,
+        };
+        let meta = match target {
+            Some(Some(target)) => Some(target),
+            _ => entry.metadata().ok(),
+        };
         let is_dir = meta.as_ref().map(|m| m.is_dir()).unwrap_or(false);
         let size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
         let modified = meta.as_ref().and_then(|m| m.modified().ok());
@@ -51,6 +80,8 @@ pub(crate) fn read_dir_entries(dir: &Path) -> std::io::Result<Vec<DirEntryInfo>>
             size,
             modified,
             ext,
+            #[cfg(feature = "gui")]
+            link,
         });
     }
     Ok(out)
@@ -150,6 +181,8 @@ mod tests {
                 size: 1,
                 modified: None,
                 ext: String::new(),
+                #[cfg(feature = "gui")]
+                link: Default::default(),
             },
             DirEntryInfo {
                 #[cfg(feature = "gui")]
@@ -159,6 +192,8 @@ mod tests {
                 size: 0,
                 modified: None,
                 ext: String::new(),
+                #[cfg(feature = "gui")]
+                link: Default::default(),
             },
         ];
         sort_entries(&mut v, SortColumn::Name, SortDir::Asc);
@@ -181,5 +216,32 @@ mod tests {
         assert_eq!(entries[1].size, 5);
         assert_eq!(entries[1].ext, "txt");
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn links_take_their_kind_from_the_target_and_a_broken_link_is_not_a_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = dir.path();
+        std::fs::create_dir(d.join("real")).unwrap();
+        std::fs::write(d.join("file.md"), b"hello").unwrap();
+        std::os::unix::fs::symlink(d.join("real"), d.join("dir_link")).unwrap();
+        std::os::unix::fs::symlink(d.join("file.md"), d.join("file_link.md")).unwrap();
+        std::os::unix::fs::symlink(d.join("gone"), d.join("broken")).unwrap();
+        let entries = read_dir_entries(d).unwrap();
+        let find = |name: &str| entries.iter().find(|e| e.name == name).unwrap();
+        assert!(find("dir_link").is_dir);
+        #[cfg(feature = "gui")]
+        assert_eq!(find("dir_link").link, EntryLink::Valid);
+        assert!(!find("file_link.md").is_dir);
+        assert_eq!(find("file_link.md").size, 5);
+        #[cfg(feature = "gui")]
+        assert_eq!(find("file_link.md").link, EntryLink::Valid);
+        assert!(!find("broken").is_dir);
+        #[cfg(feature = "gui")]
+        assert_eq!(find("broken").link, EntryLink::Broken);
+        assert!(find("real").is_dir);
+        #[cfg(feature = "gui")]
+        assert_eq!(find("real").link, EntryLink::NotALink);
     }
 }

@@ -462,6 +462,7 @@ fn apply_one_mirror_event(
                         size: entry.size,
                         modified: entry.modified,
                         ext: entry.ext,
+                        link: Default::default(),
                     })
                     .collect()
             });

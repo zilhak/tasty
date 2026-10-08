@@ -30,7 +30,7 @@ impl AddressRejection {
         match self {
             Self::NotFound(p) => t_fmt("explorer.address.not_found", &shown(p)),
             Self::NotADirectory(p) => t_fmt("explorer.address.not_a_directory", &shown(p)),
-            Self::BrokenLink(p) => t_fmt("explorer.address.broken_link", &shown(p)),
+            Self::BrokenLink(p) => t_fmt("explorer.state.broken_link", &shown(p)),
             Self::Unreadable { path, reason } => {
                 t_fmt2("explorer.address.unreadable", &shown(path), reason)
             }

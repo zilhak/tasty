@@ -179,6 +179,13 @@ impl ExplorerView {
         self.addr_active = None;
     }
 
+    /// 현재 목록에서 대상이 없는 링크인가. 열기 대신 원인을 알리는 데 쓴다.
+    pub(crate) fn is_broken_link(&self, path: &Path) -> bool {
+        self.entries
+            .iter()
+            .any(|e| e.path == path && e.link == crate::core::fs_list::EntryLink::Broken)
+    }
+
     pub(crate) fn selection_identity(&self) -> std::sync::Weak<()> {
         std::sync::Arc::downgrade(&self.selection_identity)
     }
@@ -596,6 +603,7 @@ mod tests {
                 size: 0,
                 modified: None,
                 ext: String::new(),
+                link: Default::default(),
             })
             .collect();
         v
@@ -676,6 +684,7 @@ mod tests {
                 size: 1,
                 modified: None,
                 ext: String::new(),
+                link: Default::default(),
             },
             DirEntryInfo {
                 path: "/a".into(),
@@ -684,6 +693,7 @@ mod tests {
                 size: 0,
                 modified: None,
                 ext: String::new(),
+                link: Default::default(),
             },
         ];
         sort_entries(&mut v, SortColumn::Name, SortDir::Asc);
@@ -806,6 +816,7 @@ mod tests {
             size: 0,
             modified: None,
             ext: String::new(),
+            link: Default::default(),
         }];
         let applied = view.apply_remote_list_dir_result(request_id, &panel, Ok(entries.clone()));
         assert!(applied);
@@ -838,5 +849,26 @@ mod tests {
         );
         assert!(applied);
         assert_eq!(view.state, LoadState::NoPermission);
+    }
+
+    #[test]
+    fn only_a_listed_broken_link_is_reported_as_broken() {
+        let mut view = ExplorerView::new();
+        let entry = |name: &str, link| DirEntryInfo {
+            path: PathBuf::from("/d").join(name),
+            name: name.into(),
+            is_dir: false,
+            size: 0,
+            modified: None,
+            ext: String::new(),
+            link,
+        };
+        view.entries = vec![
+            entry("gone", crate::core::fs_list::EntryLink::Broken),
+            entry("ok", crate::core::fs_list::EntryLink::Valid),
+        ];
+        assert!(view.is_broken_link(Path::new("/d/gone")));
+        assert!(!view.is_broken_link(Path::new("/d/ok")));
+        assert!(!view.is_broken_link(Path::new("/d/other")));
     }
 }

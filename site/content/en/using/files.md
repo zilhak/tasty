@@ -1,4 +1,4 @@
-<!-- source-hash: 0601c202c8c2 -->
+<!-- source-hash: c2336d6dbb30 -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -83,6 +83,8 @@ If you have bound a shortcut to a single letter with no modifier, that letter ac
 ### Right-click menu
 
 Renaming refuses to overwrite an existing entry and reports the failure. Copying preserves symbolic links as links. You cannot paste a folder into itself or one of its descendants through another path. Failed file operations display an error notification.
+
+A link to a folder opens like a folder, and the address bar keeps the link's path. Renaming a link or moving it to the trash affects only the link, not the folder it points to. Opening a link whose target is gone shows a notice that the target is missing.
 
 - **Copy Path** — with several selected, they are joined with line breaks.
 - **Copy** · **Cut** · **Paste** · **Paste (into)** — if the name already exists, `(copy)` is appended.

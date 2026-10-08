@@ -1144,6 +1144,7 @@ fn dotdot_entry(parent: PathBuf) -> DirEntryInfo {
         size: 0,
         modified: None,
         ext: String::new(),
+        link: Default::default(),
     }
 }
 
@@ -1602,6 +1603,7 @@ mod tests {
                 size: 0,
                 modified: None,
                 ext: "txt".into(),
+                link: Default::default(),
             })
             .collect();
         let font = crate::settings::EffectiveFont {

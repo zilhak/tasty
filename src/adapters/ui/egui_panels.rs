@@ -416,6 +416,19 @@ pub(crate) fn apply_explorer_action(
 ) {
     use crate::explorer_ui::ExplorerAction as A;
     match &act {
+        A::OpenFile(path)
+            if state
+                .explorer_views
+                .get(sid)
+                .is_some_and(|v| v.is_broken_link(path)) =>
+        {
+            // 사라진 파일처럼 보이지 않도록 링크 대상이 없다는 원인을 알린다.
+            state.toasts.push(
+                crate::i18n::t_fmt("explorer.state.broken_link", &path.display().to_string()),
+                crate::adapters::ui::ToastKind::Error,
+                crate::adapters::ui::ToastScope::Surface(sid),
+            );
+        }
         A::OpenFile(path) => {
             // mirror 탐색기의 경로는 원격 파일이다. 식별과 핸들러 선택은 file::dispatch::remote가 맡는다.
             state.dispatch_intent(

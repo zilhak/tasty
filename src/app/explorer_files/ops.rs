@@ -358,4 +358,21 @@ mod tests {
         assert_eq!(std::fs::read_dir(&dest).unwrap().count(), 1);
         assert!(src.exists());
     }
+
+    #[cfg(unix)]
+    #[test]
+    fn renaming_or_removing_a_folder_link_leaves_the_target_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let real = dir.path().join("real");
+        std::fs::create_dir(&real).unwrap();
+        std::fs::write(real.join("keep.txt"), b"k").unwrap();
+        let link = dir.path().join("link");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        rename_entry(&link, "renamed").unwrap();
+        let renamed = dir.path().join("renamed");
+        assert!(renamed.symlink_metadata().unwrap().file_type().is_symlink());
+        remove_path(&renamed).unwrap();
+        assert!(renamed.symlink_metadata().is_err());
+        assert_eq!(std::fs::read(real.join("keep.txt")).unwrap(), b"k");
+    }
 }
