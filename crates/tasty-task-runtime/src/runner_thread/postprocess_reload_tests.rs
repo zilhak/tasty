@@ -467,6 +467,62 @@ fn a_postprocess_that_ended_during_the_restart_ends_unknown_at_the_cleanup() {
     assert!(gpu_holders(&ctx).is_empty());
 }
 
+/// Linux 에서 호스트가 비정상 종료하면 리더만 PDEATHSIG 로 끝나고 리더가 띄운 프로세스는 남는다.
+/// 재시작 판정은 리더만 보므로 task 는 결과 불명으로 끝나고 permit 을 반환한다. 남은 그룹 구성원은
+/// 정리하지 않는다(ADR-0070 의 비정상 종료 한계).
+#[cfg(target_os = "linux")]
+#[test]
+fn a_dead_leader_ends_unknown_even_while_its_group_member_lives() {
+    use std::os::unix::process::CommandExt;
+    let (td, ctx) = fresh_ctx();
+    let pidfile = td.path().join("member.pid");
+    let pid_s = pidfile.display().to_string();
+    let mut leader = std::process::Command::new("sh")
+        .arg("-c")
+        .arg(format!(
+            "sleep 60 & echo $! > '{pid_s}'.tmp; mv '{pid_s}'.tmp '{pid_s}'; wait"
+        ))
+        .process_group(0)
+        .spawn()
+        .unwrap();
+    let pid = leader.id();
+    let started_at = tasty_agent::platform::process_start::start_time(pid).unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    let member: i32 = loop {
+        if let Some(p) = std::fs::read_to_string(&pidfile)
+            .ok()
+            .and_then(|s| s.trim().parse().ok())
+        {
+            break p;
+        }
+        assert!(std::time::Instant::now() < deadline, "member never started");
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    };
+    // 비정상 종료 때 PDEATHSIG 가 리더에게만 보내는 신호를 흉내 낸다.
+    // SAFETY: 이 시험이 띄운 리더에게만 보낸다.
+    assert_eq!(unsafe { libc::kill(pid as i32, libc::SIGTERM) }, 0);
+    leader.wait().unwrap();
+    holding_judge_in_postprocess(&ctx, pid, started_at);
+
+    purge_stale_agent_state_on_boot(&ctx, &[1]);
+    let state = judge(&ctx).state;
+    assert!(
+        matches!(&state, TaskState::Failed { error } if error.contains("outcome_unknown")),
+        "{state:?}"
+    );
+    assert!(gpu_holders(&ctx).is_empty());
+    // 신호는 비동기로 처리되므로 정리가 보낸 신호가 있었다면 드러날 시간을 둔다.
+    let watch_until = std::time::Instant::now() + std::time::Duration::from_millis(500);
+    let mut member_left = !gone(member);
+    while member_left && std::time::Instant::now() < watch_until {
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        member_left = !gone(member);
+    }
+    // SAFETY: 이 시험의 리더가 띄운 프로세스다.
+    unsafe { libc::kill(member, libc::SIGKILL) };
+    assert!(member_left, "재시작 판정이 남은 그룹 구성원을 끝냈다");
+}
+
 /// 재시작 뒤 넘겨받은 살아 있는 후처리를 취소하면 그 그룹을 끝내고, 끝난 것을 확인한 뒤 반환한다.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
