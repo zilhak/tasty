@@ -154,6 +154,21 @@ impl ScriptRegistry {
         }
     }
 
+    /// 설정 창이 편집한 목록(`self`)에, 창을 연 뒤 다른 경로로 승인한 해시를 넣는다. `opened` 는 창을 열
+    /// 때의 목록, `current` 는 저장 시점의 목록이다. 창을 열 때도 있던 항목 가운데 창에서 해시를 바꾸지
+    /// 않았고 저장 시점에도 창의 경로와 같은 경로로 남은 항목만 `current` 의 해시를 받는다. 창에서 추가·삭제한
+    /// 항목은 창의 결과를 따른다.
+    pub fn keep_hashes_approved_since(&mut self, opened: &Self, current: &Self) {
+        for entry in &mut self.scripts {
+            let (Some(before), Some(now)) = (opened.get(&entry.id), current.get(&entry.id)) else {
+                continue;
+            };
+            if before.sha256 == entry.sha256 && now.path == entry.path {
+                entry.sha256.clone_from(&now.sha256);
+            }
+        }
+    }
+
     /// 승인 시 해시 갱신(TOFU). 존재했으면 true.
     pub fn update_hash(&mut self, id: &str, sha256: String) -> bool {
         match self.scripts.iter_mut().find(|s| s.id == id) {
@@ -330,5 +345,75 @@ mod tests {
         assert!(is_auto_trigger_event("tasty.startup.post"));
         assert!(!is_auto_trigger_event("surface.focused")); // plugin 버스 전용 — lua fire 없음
         assert!(!is_auto_trigger_event(""));
+    }
+
+    fn hash_of<'a>(reg: &'a ScriptRegistry, id: &str) -> Option<&'a str> {
+        reg.get(id).map(|e| e.sha256.as_str())
+    }
+
+    /// 창이 열린 동안 다른 경로로 승인한 해시는 저장해도 남고, 창에서 한 추가·삭제·이름 변경은 반영된다.
+    #[test]
+    fn hashes_approved_while_the_settings_window_was_open_survive_its_save() {
+        let mut opened = ScriptRegistry::default();
+        let kept = opened.add("kept".into(), "/kept.lua".into(), "old".into());
+        let renamed = opened.add("renamed".into(), "/renamed.lua".into(), "old".into());
+        let removed = opened.add("removed".into(), "/removed.lua".into(), "old".into());
+        let untouched = opened.add("untouched".into(), "/untouched.lua".into(), "old".into());
+
+        let mut current = opened.clone();
+        for id in [&kept, &renamed, &removed] {
+            current.update_hash(id, "approved".into());
+        }
+
+        let mut edited = opened.clone();
+        edited.rename(&renamed, "new name".into());
+        edited.remove(&removed);
+        let added = edited.add("added".into(), "/added.lua".into(), "fresh".into());
+
+        edited.keep_hashes_approved_since(&opened, &current);
+        assert_eq!(hash_of(&edited, &kept), Some("approved"));
+        assert_eq!(hash_of(&edited, &renamed), Some("approved"));
+        assert_eq!(edited.get(&renamed).unwrap().name, "new name");
+        assert_eq!(hash_of(&edited, &removed), None, "removed in the window");
+        assert_eq!(hash_of(&edited, &untouched), Some("old"));
+        assert_eq!(
+            hash_of(&edited, &added),
+            Some("fresh"),
+            "added in the window"
+        );
+    }
+
+    /// 저장 시점에 없거나 경로가 다른 항목, 창에서 경로·해시를 바꾼 항목은 창의 값을 그대로 쓴다.
+    #[test]
+    fn a_hash_is_only_taken_for_the_same_entry_at_the_same_path() {
+        let mut opened = ScriptRegistry::default();
+        let gone = opened.add("gone".into(), "/gone.lua".into(), "old".into());
+        let moved = opened.add("moved".into(), "/moved.lua".into(), "old".into());
+        let repathed = opened.add("repathed".into(), "/a.lua".into(), "old".into());
+        let rehashed = opened.add("rehashed".into(), "/b.lua".into(), "old".into());
+        let mut current = ScriptRegistry::default();
+        current.scripts.push(ScriptEntry {
+            path: "/elsewhere.lua".into(),
+            sha256: "approved".into(),
+            ..opened.get(&moved).unwrap().clone()
+        });
+        for id in [&repathed, &rehashed] {
+            current.scripts.push(opened.get(id).unwrap().clone());
+            current.update_hash(id, "approved".into());
+        }
+        let mut edited = opened.clone();
+        for entry in &mut edited.scripts {
+            if entry.id == repathed {
+                entry.path = "/c.lua".into();
+            }
+            if entry.id == rehashed {
+                entry.sha256 = "edited".into();
+            }
+        }
+        edited.keep_hashes_approved_since(&opened, &current);
+        assert_eq!(hash_of(&edited, &gone), Some("old"));
+        assert_eq!(hash_of(&edited, &moved), Some("old"));
+        assert_eq!(hash_of(&edited, &repathed), Some("old"));
+        assert_eq!(hash_of(&edited, &rehashed), Some("edited"));
     }
 }

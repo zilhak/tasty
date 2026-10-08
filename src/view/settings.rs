@@ -31,6 +31,8 @@ pub struct SettingsView {
     /// Cancel · 창 닫기 · 설정 토글 키로 닫으면 그 draft 는 버려진다.
     committed: bool,
     original_restore_content: bool,
+    /// 창을 열 때의 설정. 저장할 때 창이 바꾸지 않은 값을 그사이 다른 경로가 바꿨는지 가린다.
+    opened_settings: Settings,
     pub(crate) toasts: ToastManager,
 }
 
@@ -59,6 +61,7 @@ impl SettingsView {
         Self {
             base: ViewBase::new(gpu, winit),
             original_restore_content: settings.general.restore_surface_content,
+            opened_settings: settings.clone(),
             settings,
             settings_ui_state: SettingsUiState::new(),
             file_format,
@@ -70,6 +73,11 @@ impl SettingsView {
             committed: false,
             toasts: ToastManager::for_settings_window(),
         }
+    }
+
+    /// 창을 열 때의 설정.
+    pub(crate) fn opened_settings(&self) -> &Settings {
+        &self.opened_settings
     }
 
     /// Plugins 서브탭에서 표시할 plugin command snapshot을 주입한다.

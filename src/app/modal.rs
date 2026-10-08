@@ -34,7 +34,14 @@ impl App {
             return;
         };
         if let Some(settings_modal) = modal.as_any_mut().downcast_mut::<view::SettingsView>() {
-            let new_settings = settings_modal.settings.clone();
+            let mut new_settings = settings_modal.settings.clone();
+            // 창이 열린 동안 다른 창에서 승인한 스크립트 해시를 저장이 되돌리지 않게 한다.
+            if let Some(current) = self.engines().windowed_and_parked().next() {
+                new_settings.scripts.keep_hashes_approved_since(
+                    &settings_modal.opened_settings().scripts,
+                    &current.runtime.settings.scripts,
+                );
+            }
             let plugin_draft = settings_modal.take_plugin_shortcut_draft();
             // Only footer Save returns execution edits; Cancel leaves application services unchanged.
             let execution_edits = settings_modal.take_execution_edits();
