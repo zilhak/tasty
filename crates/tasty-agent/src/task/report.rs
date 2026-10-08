@@ -178,8 +178,25 @@ impl ReportBlock {
         limits: ReportLimits,
         now_ms: u64,
     ) -> AppendOutcome {
+        self.append_cut(source, text, 0, limits, now_ms)
+    }
+
+    /// [`Self::append`] 에 읽는 쪽이 이미 버린 바이트 수(`cut_before`)를 더한다. 그 수는 append
+    /// 상한으로 자른 수와 합쳐 `omit_by_limit` 이 된다(stderr 표지 줄이 줄 상한을 넘은 경우).
+    pub fn append_cut(
+        &mut self,
+        source: ReportSource,
+        text: &str,
+        cut_before: u64,
+        limits: ReportLimits,
+        now_ms: u64,
+    ) -> AppendOutcome {
         let seq = self.entries.len() as u64 + self.omitted_appends + 1;
-        let (text, omit_by_limit) = truncate_text(text, limits.append_bytes as usize);
+        let (text, cut) = truncate_text(text, limits.append_bytes as usize);
+        let omit_by_limit = match (cut, cut_before) {
+            (None, 0) => None,
+            (cut, before) => Some(cut.unwrap_or(0) + before),
+        };
         if self.stored_bytes + text.len() as u64 > limits.block_bytes {
             self.omitted_appends += 1;
             return AppendOutcome::Omitted { seq };

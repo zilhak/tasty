@@ -1,13 +1,17 @@
 use super::MarkerScanner;
 
-fn scan(chunks: &[&[u8]]) -> Vec<String> {
+fn scan_cut(chunks: &[&[u8]]) -> Vec<(String, u64)> {
     let mut s = MarkerScanner::default();
     let mut out = Vec::new();
     for c in chunks {
-        s.feed(c, |t| out.push(t.to_string()));
+        s.feed(c, |t, cut| out.push((t.to_string(), cut)));
     }
-    s.finish(|t| out.push(t.to_string()));
+    s.finish(|t, cut| out.push((t.to_string(), cut)));
     out
+}
+
+fn scan(chunks: &[&[u8]]) -> Vec<String> {
+    scan_cut(chunks).into_iter().map(|(t, _)| t).collect()
 }
 
 #[test]
@@ -35,6 +39,42 @@ fn an_overlong_marker_line_keeps_its_head_and_the_next_line_still_counts() {
         super::MARKER_LINE_CAP - "::tasty-report::".len()
     );
     assert_eq!(got[1], "next");
+}
+
+/// 줄 상한을 넘어 버린 바이트는 수로 넘어가고(줄 끝 `\r` 제외), append 상한이 자른 수와
+/// 합쳐 `omit_by_limit` 이 된다. 버린 것이 없는 줄은 0 이다.
+#[test]
+fn bytes_dropped_past_the_line_cap_are_counted_into_omit_by_limit() {
+    let prefix = "::tasty-report::";
+    let body = "a".repeat(70_000);
+    let line = format!("{prefix}{body}\r\n{prefix}short\r\n");
+    let got = scan_cut(&[line.as_bytes()]);
+    let kept = super::MARKER_LINE_CAP - prefix.len();
+    assert_eq!(got[0].0.len(), kept);
+    assert_eq!(got[0].1, (body.len() - kept) as u64);
+    assert_eq!(got[1], ("short".to_string(), 0));
+
+    let mut block = tasty_agent::task::report::ReportBlock::new(1);
+    let limits = tasty_agent::task::report::ReportLimits::default();
+    let outcome = block.append_cut(
+        tasty_agent::task::report::ReportSource::StderrMarker,
+        &got[0].0,
+        got[0].1,
+        limits,
+        1,
+    );
+    // 저장한 1024 B 외의 본문 전부가 잘린 수다.
+    assert_eq!(
+        block.entries[0].omit_by_limit,
+        Some(body.len() as u64 - 1024)
+    );
+    assert!(matches!(
+        outcome,
+        tasty_agent::task::report::AppendOutcome::Stored {
+            omit_by_limit: Some(_),
+            ..
+        }
+    ));
 }
 
 #[cfg(unix)]

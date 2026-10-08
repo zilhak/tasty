@@ -94,6 +94,7 @@ pub(crate) fn append(
     limits: ReportLimits,
     addr: &ReportAddress,
     text: &str,
+    cut_before: u64,
     writer_may: impl FnOnce() -> bool,
 ) -> Result<AppendOutcome, AgentError> {
     let mut guard = tasty_utils::poison::recover_mutex(
@@ -104,25 +105,30 @@ pub(crate) fn append(
     TaskStore::new(&mut *guard, HOST_OWNER, seq).append_report_by(
         addr,
         text,
+        cut_before,
         limits,
         now_ms(),
         writer_may,
     )
 }
 
-/// 표지 줄 하나로 받는 최대 바이트. 더 긴 줄은 앞부분만 쓴다(append 상한이 다시 자른다).
+/// 표지 줄 하나로 받는 최대 바이트. 더 긴 줄은 앞부분만 쓰고, 버린 바이트 수는 append 상한이
+/// 자른 수와 합쳐 `omit_by_limit` 에 남긴다.
 const MARKER_LINE_CAP: usize = 64 * 1024;
 
 /// stderr 바이트에서 [`STDERR_MARKER`] 로 시작하는 줄을 골라낸다. 바이트는 그대로 두고 읽기만 한다.
+/// 표지 줄마다 텍스트와 줄 상한을 넘어 버린 바이트 수(줄 끝 `\r` 제외)를 넘긴다.
 #[derive(Default)]
 pub(crate) struct MarkerScanner {
     line: Vec<u8>,
-    /// 지금 줄이 상한을 넘어 나머지를 버리는 중이다.
-    overflow: bool,
+    /// 지금 줄이 상한을 넘어 버린 바이트 수.
+    dropped: u64,
+    /// 마지막으로 버린 바이트가 `\r` 이다. 줄 끝이면 텍스트가 아니므로 버린 수에서 뺀다.
+    dropped_cr: bool,
 }
 
 impl MarkerScanner {
-    pub(crate) fn feed(&mut self, chunk: &[u8], mut on_marker: impl FnMut(&str)) {
+    pub(crate) fn feed(&mut self, chunk: &[u8], mut on_marker: impl FnMut(&str, u64)) {
         for &b in chunk {
             if b == b'\n' {
                 self.emit(&mut on_marker);
@@ -131,24 +137,31 @@ impl MarkerScanner {
             if self.line.len() < MARKER_LINE_CAP {
                 self.line.push(b);
             } else {
-                self.overflow = true;
+                self.dropped += 1;
+                self.dropped_cr = b == b'\r';
             }
         }
     }
 
     /// 마지막 줄바꿈 뒤에 남은 줄도 표지면 낸다.
-    pub(crate) fn finish(&mut self, mut on_marker: impl FnMut(&str)) {
+    pub(crate) fn finish(&mut self, mut on_marker: impl FnMut(&str, u64)) {
         if !self.line.is_empty() {
             self.emit(&mut on_marker);
         }
     }
 
-    fn emit(&mut self, on_marker: &mut impl FnMut(&str)) {
+    fn emit(&mut self, on_marker: &mut impl FnMut(&str, u64)) {
         let line = std::mem::take(&mut self.line);
-        self.overflow = false;
-        let line = line.strip_suffix(b"\r").unwrap_or(&line);
+        let raw_dropped = std::mem::take(&mut self.dropped);
+        let cr_dropped = std::mem::take(&mut self.dropped_cr);
+        // 줄을 넘겨 버렸다면 줄 끝 `\r` 은 버린 쪽에 있다. 아니면 담아 둔 줄에서 뗀다.
+        let (line, dropped) = if raw_dropped == 0 {
+            (line.strip_suffix(b"\r").unwrap_or(&line), 0)
+        } else {
+            (&line[..], raw_dropped - u64::from(cr_dropped))
+        };
         if let Some(rest) = line.strip_prefix(STDERR_MARKER.as_bytes()) {
-            on_marker(&String::from_utf8_lossy(rest));
+            on_marker(&String::from_utf8_lossy(rest), dropped);
         }
     }
 }
@@ -171,7 +184,9 @@ impl MarkerSink {
             addr,
             scanner,
         } = self;
-        scanner.feed(chunk, |text| store_marker(memory, seq, limits, addr, text));
+        scanner.feed(chunk, |text, cut| {
+            store_marker(memory, seq, limits, addr, text, cut)
+        });
     }
 
     pub(crate) fn finish(&mut self) {
@@ -182,7 +197,7 @@ impl MarkerSink {
             addr,
             scanner,
         } = self;
-        scanner.finish(|text| store_marker(memory, seq, limits, addr, text));
+        scanner.finish(|text, cut| store_marker(memory, seq, limits, addr, text, cut));
     }
 }
 
@@ -192,8 +207,9 @@ fn store_marker(
     limits: &Arc<SharedReportLimits>,
     addr: &ReportAddress,
     text: &str,
+    cut_before: u64,
 ) {
-    if let Err(e) = append(memory, seq, limits.get(), addr, text, || true) {
+    if let Err(e) = append(memory, seq, limits.get(), addr, text, cut_before, || true) {
         tracing::warn!(
             "agent task {}: stderr report line not stored: {e}",
             addr.task_id

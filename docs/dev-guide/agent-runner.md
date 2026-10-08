@@ -1100,7 +1100,7 @@ custom 기록은 회차마다 memory 키 하나(`tasty.agent.task_report.<task i
 | 경로 | 방법 |
 |---|---|
 | run · 후처리 CLI · reduce custom 셸 | 자식 환경의 `TASTY_TASK_REPORT` 로 `tasty agent report append '<text>'`(source 는 각각 `run`·`postprocess`·`reduce_custom`) |
-| run 의 stderr | `::tasty-report::<text>` 로 시작하는 줄 하나가 항목 하나다(source `stderr_marker`). 러너가 stderr 를 읽으면서 저장하고, 결과 기록 전에 stderr 읽기가 끝나므로 표지는 블록이 닫히기 전에 들어간다. 표지 줄은 저장된 stderr 에도 그대로 남는다. 줄 끝의 `\r` 은 뺀다. 한 줄은 64 KiB 까지만 읽는다. stdout 은 보지 않는다 |
+| run 의 stderr | `::tasty-report::<text>` 로 시작하는 줄 하나가 항목 하나다(source `stderr_marker`). 러너가 stderr 를 읽으면서 저장하고, 결과 기록 전에 stderr 읽기가 끝나므로 표지는 블록이 닫히기 전에 들어간다. 표지 줄은 저장된 stderr 에도 그대로 남는다. 줄 끝의 `\r` 은 뺀다. 한 줄은 64 KiB 까지만 읽고, 넘어서 버린 바이트 수(줄 끝 `\r` 제외)는 append 상한이 자른 수와 합쳐 `omit_by_limit` 에 남긴다. stdout 은 보지 않는다 |
 | agent | 지시문 끝에 사용법을 읽는 명령(`tasty agent report usage`) 한 줄과 그 회차의 주소를 붙인다. 에이전트는 `tasty agent report append --address '<주소>' '<text>'` 로 쓴다 |
 | custom(IPC 메서드) · reduce 기본 전략 · wait_barrier | custom 기록이 없다. 자동 항목만 있다 |
 

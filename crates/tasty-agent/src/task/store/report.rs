@@ -41,16 +41,18 @@ impl TaskStore<'_> {
         limits: ReportLimits,
         now_ms: u64,
     ) -> Result<AppendOutcome> {
-        self.append_report_by(addr, text, limits, now_ms, || true)
+        self.append_report_by(addr, text, 0, limits, now_ms, || true)
     }
 
     /// [`Self::append_report`] 에 호출자 검사를 더한다. `writer_may` 는 토큰·닫힘 검사를 통과한
     /// 뒤에 부르며, `false` 면 `not_the_session` 으로 거절한다. 끝난 회차에 대한 늦은 쓰기는
-    /// 호출자와 상관없이 `closed` 로 거절된다.
+    /// 호출자와 상관없이 `closed` 로 거절된다. `cut_before` 는 읽는 쪽이 이미 버린 바이트 수다
+    /// ([`ReportBlock::append_cut`]).
     pub fn append_report_by(
         &mut self,
         addr: &ReportAddress,
         text: &str,
+        cut_before: u64,
         limits: ReportLimits,
         now_ms: u64,
         writer_may: impl FnOnce() -> bool,
@@ -84,7 +86,7 @@ impl TaskStore<'_> {
         if !writer_may() {
             return Err(reject(ReportRejection::NotTheSession, None));
         }
-        let outcome = block.append(addr.source, text, limits, now_ms);
+        let outcome = block.append_cut(addr.source, text, cut_before, limits, now_ms);
         self.put_report_block(addr.workspace_id, &addr.task_id, &block)?;
         Ok(outcome)
     }
