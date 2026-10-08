@@ -278,16 +278,17 @@ cargo() {
         .stderr(Stdio::piped())
         .spawn()
         .expect("Git hooks require Bash");
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(refs.as_bytes())
-        .unwrap();
+    // 훅이 입력을 읽기 전에 실패로 끝나면 쓰기가 파이프 끊김으로 끝난다. 그때는 아래 검사가
+    // 훅의 stdout·stderr 로 실패 이유를 보여 준다.
+    let written = child.stdin.take().unwrap().write_all(refs.as_bytes());
+    if let Err(e) = written {
+        assert_eq!(e.kind(), std::io::ErrorKind::BrokenPipe, "{e}");
+    }
     let output = child.wait_with_output().unwrap();
     assert!(
         root.join("logs").is_dir(),
-        "hook did not create logs: stdout={} stderr={}",
+        "hook did not create logs: status={} stdout={} stderr={}",
+        output.status,
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
