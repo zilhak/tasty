@@ -21,9 +21,9 @@ use crate::theme::Theme;
 use tasty_portscan::PortState;
 use tasty_ui_widgets::tokens::{STRUCT_GAP_1, STRUCT_GAP_2, STRUCT_GAP_4, TAG_PILL_CORNER_RADIUS};
 use tasty_ui_widgets::{
-    Button, ButtonVariant, IconButton, IconButtonVariant, Input, StatusKind, Table, TableAlign,
-    TableColumn, TableColumnWidth, TableSortDir, TagVariant, checkbox, hspace, margin_sym,
-    status_dot, tag, vspace,
+    Button, ButtonVariant, IconButton, IconButtonVariant, Input, PortsColumn, StatusKind,
+    TableAlign, TableColumn, TableColumnWidth, TableSortDir, checkbox, hspace, margin_sym,
+    ports_process_cell, ports_star_column_width, ports_table, status_dot, vspace,
 };
 
 /// popup 좌우 안쪽 여백. 디자인 전사값 14 로 4px 그리드 밖이다(가장 가까운
@@ -164,6 +164,19 @@ impl ColumnId {
             ColumnId::Workspace => 4,
             ColumnId::Tab => 5,
             ColumnId::State => 6,
+        }
+    }
+
+    /// The shared ports table column with the same meaning.
+    fn shared(self) -> PortsColumn {
+        match self {
+            ColumnId::Port => PortsColumn::Port,
+            ColumnId::Proto => PortsColumn::Proto,
+            ColumnId::Address => PortsColumn::Address,
+            ColumnId::Process => PortsColumn::Process,
+            ColumnId::Workspace => PortsColumn::Workspace,
+            ColumnId::Tab => PortsColumn::Tab,
+            ColumnId::State => PortsColumn::State,
         }
     }
 
@@ -1805,42 +1818,26 @@ fn draw_table(
     let gap = LogicalPx(ui.spacing().item_spacing.y);
     let max_scroll = (LogicalPx(ui.available_height()) - cell_h - gap).max(cell_h);
 
-    // 열별 최소 폭의 합이 가용 폭을 넘으면 본문만 가로 스크롤한다.
-    // 남는 폭은 Address·Process에 나누며 Port만 오른쪽 정렬한다.
+    // 열 폭은 공용 포트 표 정의를 따른다. 고정 열은 하한 폭을 유지하고 Address·Process는 남는 폭을
+    // 나눠 받는다. 하한의 합이 가용 폭을 넘으면 열을 줄이지 않고 본문만 가로 스크롤한다.
     let visible: Vec<ColumnId> = ColumnId::ALL
         .into_iter()
         .filter(|c| props.filter.columns.is_visible(*c))
         .collect();
-
-    // 세로 스크롤바와 항상 표시하는 별 열의 폭을 먼저 뺀다.
-    // 스크롤바 폭은 열 계산에 필요한 예외이며 ADR-0037에 근거를 기록한다.
-    let scrollbar_reserve =
-        LogicalPx(ui.spacing().scroll.bar_width + ui.spacing().scroll.bar_inner_margin);
-    let fav_reserve = th.port_star_col_width() + LogicalPx(ui.spacing().item_spacing.x);
-    let available =
-        (LogicalPx(ui.available_width()) - scrollbar_reserve - fav_reserve).max(LogicalPx(0.0));
-    let widths = compute_column_widths(
-        &visible,
-        LogicalPx(ui.spacing().item_spacing.x),
-        available,
-        th,
-    );
+    let widths = column_widths(&visible, th);
 
     let mut columns: Vec<TableColumn<SortKey>> = Vec::with_capacity(visible.len() + 1);
     columns.push(TableColumn {
         title: "",
-        width: TableColumnWidth::Exact(th.port_star_col_width()),
+        width: ports_star_column_width(th),
         align: TableAlign::Left,
         sort_id: None,
     });
-    columns.extend(visible.iter().zip(&widths).map(|(id, w)| {
-        let (_, _, align, sort_id) = column_layout(*id, th);
-        TableColumn {
-            title: column_label(*id, props),
-            width: TableColumnWidth::Exact(*w),
-            align,
-            sort_id,
-        }
+    columns.extend(visible.iter().zip(widths).map(|(id, width)| TableColumn {
+        title: column_label(*id, props),
+        width,
+        align: id.shared().align(),
+        sort_id: sort_key(*id),
     }));
 
     let sort_dir = match props.filter.sort_dir {
@@ -1852,13 +1849,9 @@ fn draw_table(
     // 별 클릭과 행 클릭이 겹치므로 별을 누른 프레임에는 즐겨찾기만 바꾼다.
     let mut fav_click: Option<(String, u16)> = None;
 
-    let output = Table::new(columns)
+    let output = ports_table(columns, th)
         .id_salt("port_scanner.table")
         .active_sort(props.filter.sort_key, sort_dir)
-        .selectable(true)
-        .horizontal_scroll(true)
-        .header_fill(th.bg_sidebar().into())
-        .header_pad_x(th.table_cell_padding_x())
         .max_scroll_height(max_scroll)
         .show(
             ui,
@@ -1944,92 +1937,38 @@ fn draw_table(
     None
 }
 
-/// 열의 최소 폭·여유 폭 분배·정렬 정보. Process만 해당 semantic 토큰이 있다.
-/// 나머지는 이 표 전용 값이며 같은 숫자의 다른 역할 토큰으로 대체하지 않는다.
-fn column_layout(col: ColumnId, th: &Theme) -> (LogicalPx, bool, TableAlign, Option<SortKey>) {
+/// 정렬할 수 있는 열의 정렬 키. Proto·State는 정렬하지 않는다.
+fn sort_key(col: ColumnId) -> Option<SortKey> {
     match col {
-        ColumnId::Port => (
-            LogicalPx(84.0),
-            false,
-            TableAlign::Right,
-            Some(SortKey::Port),
-        ),
-        ColumnId::Proto => (LogicalPx(76.0), false, TableAlign::Left, None),
-        ColumnId::Address => (
-            LogicalPx(140.0),
-            true,
-            TableAlign::Left,
-            Some(SortKey::Address),
-        ),
-        ColumnId::Process => (
-            th.port_process_col_min_width(),
-            true,
-            TableAlign::Left,
-            Some(SortKey::Process),
-        ),
-        ColumnId::Workspace => (
-            LogicalPx(120.0),
-            false,
-            TableAlign::Left,
-            Some(SortKey::Workspace),
-        ),
-        ColumnId::Tab => (LogicalPx(80.0), false, TableAlign::Left, Some(SortKey::Tab)),
-        ColumnId::State => (LogicalPx(140.0), false, TableAlign::Left, None),
+        ColumnId::Port => Some(SortKey::Port),
+        ColumnId::Address => Some(SortKey::Address),
+        ColumnId::Process => Some(SortKey::Process),
+        ColumnId::Workspace => Some(SortKey::Workspace),
+        ColumnId::Tab => Some(SortKey::Tab),
+        ColumnId::Proto | ColumnId::State => None,
     }
 }
 
-/// 최소 폭이 가용 폭을 넘으면 유지하고, 남는 폭은 Address·Process에 균등 분배한다.
-/// 두 열이 모두 숨겨져 있으면 마지막 열에 남은 폭을 준다.
-fn compute_column_widths(
-    visible: &[ColumnId],
-    item_spacing_x: LogicalPx,
-    available: LogicalPx,
-    th: &Theme,
-) -> Vec<LogicalPx> {
-    let mins: Vec<LogicalPx> = visible.iter().map(|c| column_layout(*c, th).0).collect();
-    if visible.is_empty() {
-        return mins;
-    }
-    // 컬럼 사이 간격도 가용폭을 잡아먹으므로 콘텐츠 가용폭에서 제외하고 분배한다.
-    let gaps = item_spacing_x * (visible.len() - 1) as f32;
-    let sum_min = mins.iter().fold(LogicalPx(0.0), |acc, m| acc + *m);
-    let mut widths = mins;
-    let slack = available - gaps - sum_min;
-    if slack > LogicalPx(0.0) {
-        let flex: Vec<usize> = visible
-            .iter()
-            .enumerate()
-            .filter(|(_, c)| column_layout(**c, th).1)
-            .map(|(i, _)| i)
-            .collect();
-        if !flex.is_empty() {
-            let per = slack / flex.len() as f32;
-            for i in flex {
-                widths[i] += per;
-            }
-        } else if let Some(last) = widths.last_mut() {
-            *last += slack;
-        }
+/// 보이는 열의 Table 폭. Address·Process가 모두 숨겨져 있으면 마지막 열이 남는 폭을 받는다.
+fn column_widths(visible: &[ColumnId], th: &Theme) -> Vec<TableColumnWidth> {
+    let mut widths: Vec<TableColumnWidth> = visible.iter().map(|c| c.shared().width(th)).collect();
+    if !visible.iter().any(|c| c.shared().flex())
+        && let (Some(last), Some(col)) = (widths.last_mut(), visible.last())
+    {
+        *last = TableColumnWidth::Flex {
+            min_width: col.shared().floor(th),
+        };
     }
     widths
 }
 
-/// Process 셀: process_name + PID 배지. kit 처럼 배지는 숫자만이고 이름과 `spacing_sm` 간격을 둔다.
+/// Process 셀: process_name + PID 배지. 좁으면 이름만 말줄임하고 배지는 유지한다.
 fn draw_process_cell(ui: &mut egui::Ui, th: &Theme, row: &PortRowView, pid_tooltip: &str) {
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
-        let name = row.process_name.as_deref().unwrap_or("—");
-        ui.label(
-            egui::RichText::new(name)
-                .color(th.text_primary())
-                .size(th.font_size_body.value()),
-        );
-        if let Some(pid) = row.pid {
-            let pid = pid.to_string();
-            tag(ui, th, &pid, TagVariant::Default, false)
-                .on_hover_text(pid_tooltip.replace("{pid}", &pid));
-        }
-    });
+    let name = row.process_name.as_deref().unwrap_or("—");
+    let pid = row.pid.map(|p| p.to_string());
+    if let (Some(resp), Some(pid)) = (ports_process_cell(ui, th, name, pid.as_deref()), &pid) {
+        resp.on_hover_text(pid_tooltip.replace("{pid}", pid));
+    }
 }
 
 /// Workspace 셀: Tasty → workspace_name, External → dash.
@@ -2554,67 +2493,43 @@ mod tests {
     }
 
     #[test]
-    fn compute_widths_overflow_keeps_mins_for_scroll() {
-        // All seven columns, but a narrow body → min-width sum exceeds available,
-        // so every column stays at its min (the table then scrolls horizontally).
-        let visible: Vec<ColumnId> = ColumnId::ALL.to_vec();
+    fn column_widths_make_address_and_process_flex_with_their_floors() {
         let th = test_theme();
-        let widths = compute_column_widths(&visible, LogicalPx(0.0), LogicalPx(100.0), &th);
-        for (id, w) in visible.iter().zip(&widths) {
-            assert_eq!(
-                *w,
-                column_layout(*id, &th).0,
-                "{id:?} should keep its min width"
-            );
-        }
-        let sum = widths.iter().fold(LogicalPx(0.0), |acc, w| acc + *w);
-        assert!(
-            sum > LogicalPx(100.0),
-            "min-width sum must overflow the available width"
-        );
-    }
-
-    #[test]
-    fn compute_widths_distributes_slack_to_flex_columns() {
         let visible: Vec<ColumnId> = ColumnId::ALL.to_vec();
-        let th = test_theme();
-        let sum_min = visible
-            .iter()
-            .fold(LogicalPx(0.0), |acc, c| acc + column_layout(*c, &th).0);
-        let available = sum_min + LogicalPx(200.0);
-        let widths = compute_column_widths(&visible, LogicalPx(0.0), available, &th);
+        let widths = column_widths(&visible, &th);
         for (id, w) in visible.iter().zip(&widths) {
-            let (min, flex, ..) = column_layout(*id, &th);
-            if flex {
-                assert!(*w > min, "flex {id:?} should grow past its min");
-            } else {
-                assert_eq!(*w, min, "non-flex {id:?} should stay at its min");
+            match (id, *w) {
+                (ColumnId::Process, TableColumnWidth::Flex { min_width }) => {
+                    assert_eq!(min_width, th.port_process_col_min_width());
+                }
+                (ColumnId::Address, TableColumnWidth::Flex { min_width }) => {
+                    assert_eq!(min_width, LogicalPx(140.0));
+                }
+                (ColumnId::Address | ColumnId::Process, _) => {
+                    panic!("{id:?} should take spare width above its floor")
+                }
+                (_, TableColumnWidth::Exact(v)) => {
+                    assert_eq!(v, id.shared().floor(&th), "{id:?} keeps its floor")
+                }
+                _ => panic!("fixed column {id:?} should have an exact width"),
             }
         }
-        let addr_i = visible
-            .iter()
-            .position(|c| *c == ColumnId::Address)
-            .unwrap();
-        assert!((widths[addr_i] - LogicalPx(140.0 + 100.0)).abs() < LogicalPx(0.5));
     }
 
     #[test]
-    fn compute_widths_no_flex_visible_fills_last_column() {
-        // Only fixed (non-flex) columns visible: slack goes to the last column so
-        // the table still fills the available width (no trailing gap).
-        let visible = vec![ColumnId::Port, ColumnId::Proto, ColumnId::State];
+    fn column_widths_without_flex_columns_let_the_last_column_fill() {
+        // Address·Process가 숨겨져도 표가 가용 폭을 채우도록 마지막 열이 남는 폭을 받는다.
         let th = test_theme();
-        let sum_min = visible
-            .iter()
-            .fold(LogicalPx(0.0), |acc, c| acc + column_layout(*c, &th).0);
-        let available = sum_min + LogicalPx(60.0);
-        let widths = compute_column_widths(&visible, LogicalPx(0.0), available, &th);
-        assert_eq!(widths[0], column_layout(ColumnId::Port, &th).0);
-        assert_eq!(widths[1], column_layout(ColumnId::Proto, &th).0);
-        assert!(
-            (widths[2] - (column_layout(ColumnId::State, &th).0 + LogicalPx(60.0))).abs()
-                < LogicalPx(0.5)
-        );
+        let visible = vec![ColumnId::Port, ColumnId::Proto, ColumnId::State];
+        let widths = column_widths(&visible, &th);
+        assert!(matches!(widths[0], TableColumnWidth::Exact(_)));
+        assert!(matches!(widths[1], TableColumnWidth::Exact(_)));
+        match widths[2] {
+            TableColumnWidth::Flex { min_width } => {
+                assert_eq!(min_width, ColumnId::State.shared().floor(&th))
+            }
+            _ => panic!("the last column should take the spare width"),
+        }
     }
 
     #[test]

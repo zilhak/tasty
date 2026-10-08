@@ -74,9 +74,9 @@ sizer가 있는 팝업은 등록 시 default_size에 UI 배율을 곱하지 않�
 
 ## port_scanner — 열 최소폭과 가로 스크롤
 
-본문 테이블이 팝업보다 넓어져도 footer가 밀려나서는 안 된다. 현재는 `column_layout`의 열별 최소폭을 기준으로 `compute_column_widths`가 남은 폭을 가변 열에 나눈다. 최소폭 합이 본문보다 크면 `Table::horizontal_scroll(true)`로 본문만 가로 스크롤한다.
+본문 테이블이 팝업보다 넓어져도 footer가 밀려나서는 안 된다. 열별 최소폭과 가변 여부는 공용 `PortsColumn`(`crates/tasty-ui-widgets/src/ports_table.rs`)이 정한다. 가변 열(Address·Process)은 공용 Table 의 `TableColumnWidth::Flex`로 넘기고, Table 이 남은 폭을 가변 열에 똑같이 나눈다. 최소폭 합이 본문보다 크면 `Table::horizontal_scroll(true)`로 본문만 가로 스크롤한다. 시안 Table 의 열 옵션 `minWidth`(고정 열은 `width`가 곧 하한)를 옮긴 것이다.
 
-footer는 팝업 전체폭 사각형에 고정하고 sticky 헤더는 스크롤 콘텐츠와 수평으로 함께 이동한다. 과거의 최소폭 제거·무조건 말줄임 방식은 현재 규칙이 아니다. 구현과 열별 값은 `src/adapters/ui/popup/port_scanner.rs`를 따른다.
+footer는 팝업 전체폭 사각형에 고정하고 sticky 헤더는 스크롤 콘텐츠와 수평으로 함께 이동한다. 과거의 최소폭 제거·무조건 말줄임 방식은 현재 규칙이 아니다. 열별 값은 `ports_table.rs`, 배치는 `src/adapters/ui/popup/port_scanner.rs`를 따른다.
 
 <a id="port_scanner--테이블-헤더-th-배경mantle은-painter-로-직접-칠한다"></a>
 
@@ -98,7 +98,7 @@ egui_extras Table의 헤더 배경은 별도로 그린다. TableBuilder 전에 `
 
 같은 폰트 크기라도 D2Coding과 디자인 미리보기 글꼴의 글자 폭은 다르다. 예를 들어 디자인의 88px 열에 맞는 `127.0.0.1`이 실제 폰트와 좌우 패딩 24px를 적용하면 잘릴 수 있다.
 
-현재 열 너비는 `column_layout`과 가로 스크롤 규칙을 따른다. 과거 측정에서 사용한 Tab 열 62→56 보정은 현재 코드에 적용할 처방이 아니다. 긴 문자열은 실제 글꼴로 배치한 결과를 확인한다.
+현재 열 너비는 `PortsColumn`의 최소폭과 가로 스크롤 규칙을 따른다. 과거 측정에서 사용한 Tab 열 62→56 보정은 현재 코드에 적용할 처방이 아니다. 긴 문자열은 실제 글꼴로 배치한 결과를 확인한다.
 
 <a id="egui-ui-의-mono-한-칸은-6px-다--공칭-advance-가-아니라-깔리는-advance"></a>
 
@@ -166,7 +166,7 @@ rest/hover/active/focus/disabled **정지 상태가 canonical** — 파리티는
 ## port_scanner — State 컬럼 140px 에 가장 긴 라벨(ESTABLISHED)이 들어간다
 
 State 셀은 `status_dot`(점 `status_dot_size` 8 + gap 6 + caption 11px proportional 라벨)이고, 폭은
-`column_layout` 의 **최소폭** 140 이다(`compute_column_widths` 가 남는 폭을 flex 열에 나누고, 최소폭
+`PortsColumn` 의 **최소폭** 140 이다(공용 Table 이 남는 폭을 flex 열에 나누고, 최소폭
 합이 넘치면 가로 스크롤 — 위 전환 항목). 가장 긴 상태값 `ESTABLISHED` 는 egui 기본 proportional
 폰트(Ubuntu-Light) advance 로 11px 에서 66.6px, 셀 전체 약 81px 이다. 1.2 배율(caption 13, 점 10)에서도
 약 95px 라 140 안에 들어간다. 재는 법: `epaint_default_fonts` 의 `Ubuntu-Light.ttf` 로 문자열 advance

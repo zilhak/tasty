@@ -50,7 +50,8 @@ Port / Proto / Address / Process / Workspace / Tab / State.
 
 ### 컬럼 폭 / 가로 스크롤
 
-- 각 컬럼은 **최소폭**을 가진다 (Port 84 / Proto 76 / Address 140 / Process 200 / Workspace 120 / Tab 80 / State 140). 보이는 컬럼 최소폭 합이 본문 가용폭을 넘으면 **테이블 본문이 가로 스크롤**된다(말줄임 대신). 가용폭이 남으면 flex 컬럼(Address / Process)이 여유폭을 나눠 받아 빈 공간 없이 채운다.
+- 각 컬럼은 **최소폭**을 가진다 (Port 84 / Proto 76 / Address 140 / Process 200 / Workspace 120 / Tab 80 / State 140). Process 최소폭은 `port-process-col-min-width` 토큰이다. 고정 컬럼은 최소폭을 그대로 쓰고 줄지 않는다. 보이는 컬럼 최소폭 합이 본문 가용폭을 넘으면 컬럼을 줄이거나 숨기지 않고 **테이블 본문이 가로 스크롤**된다. 가용폭이 남으면 flex 컬럼(Address / Process)이 여유폭을 똑같이 나눠 받아 빈 공간 없이 채우고, 둘 다 숨겨져 있으면 마지막 컬럼이 받는다. 기본 popup 폭(660)에서는 최소폭 합이 더 커서 본문이 가로 스크롤된다.
+- 컬럼 정의(최소폭·flex 여부·정렬)와 표 꾸밈은 갤러리 예제와 같은 공용 정의를 쓴다.
 - 가로 스크롤은 **본문 영역에만** 갇힌다. sticky 헤더는 본문과 수평 동기 이동(세로로는 고정), footer / 구역 divider 는 popup 폭에 고정 유지된다.
 - 행·헤더 치수는 공용 Table 기본값을 쓴다. 헤더와 본문 행 높이는 `table-cell-height`(28), 헤더 셀 좌우 패딩은 `table-cell-padding-x`(12)다. 본문 스크롤 영역은 최소 한 행 높이를 남긴다. 포트 스캐너 전용 치수는 없다.
 
@@ -151,7 +152,7 @@ Port / Proto / Address / Process / Workspace / Tab / State.
   - 각 컬럼 최소폭 보유 — 보이는 컬럼 최소폭 합 > 본문 폭이면 본문이 **가로 스크롤**(말줄임 대신). sticky 헤더는 본문과 수평 동기 이동.
   - 정렬 가능 헤더(Port/Address/Process/Workspace/Tab) 클릭 시 `▲`/`▼` 인디케이터. Proto/State 헤더는 비정렬.
   - State 셀: 상태 dot(색 + pulse) + 상태 텍스트.
-  - 셀 글꼴: Port·Proto·Address 는 mono 열이라 고정폭 글꼴이고, Process 이름과 나머지 열은 UI 글꼴이다. 크기는 모두 font-size-body 다. Process 셀의 PID Tag 는 숫자만 보이고(이름과 spacing-sm 간격), 포인터를 올리면 `PID {pid}` 툴팁(`port_scanner.pid_tooltip`)으로 뜻을 알린다.
+  - 셀 글꼴: Port·Proto·Address 는 mono 열이라 고정폭 글꼴이고, Process 이름과 나머지 열은 UI 글꼴이다. 크기는 모두 font-size-body 다. Process 셀의 PID Tag 는 숫자만 보이고(이름과 spacing-sm 간격), 포인터를 올리면 `PID {pid}` 툴팁(`port_scanner.pid_tooltip`)으로 뜻을 알린다. 컬럼이 좁으면 프로세스 이름만 말줄임하고 PID Tag 는 그대로 보인다. 말줄임한 이름은 포인터를 올리면 전체가 보인다.
   - 셀 글자색: Port·Proto·Address(mono 열)와 Process 이름은 text-primary 다. Workspace·Tab 이름은 색을 두지 않아 공용 표의 행 글자색(쉬는 행 table-row-fg, hover·선택 행 text-primary)을 따른다. 빈 값 대시는 text-muted, State 라벨은 StatusDot 의 글자색이다.
   - 행 클릭: 선택 토글(선택 행 강조). 브라우저 오픈 없음. 별 클릭은 행 선택에 영향을 주지 않는다.
 - **footer**: `{shown} of {total} ports` 카운터 + `Copy address`(선택 없으면 disabled) + `Close`.
