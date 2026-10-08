@@ -1119,23 +1119,7 @@ fn draw_profile_form(ui: &mut egui::Ui, th: &Theme, st: &mut UiState, passkeys: 
                 "prod-web",
                 false,
             );
-            text_row(
-                ui,
-                th,
-                t("remote_tool.field_host"),
-                &mut f.host,
-                "10.0.4.12",
-                true,
-            );
-            text_row(
-                ui,
-                th,
-                t("remote_tool.field_user"),
-                &mut f.user,
-                "deploy",
-                false,
-            );
-            text_row(ui, th, t("remote_tool.field_port"), &mut f.port, "22", true);
+            connection_rows(ui, th, &mut f.host, &mut f.user, &mut f.port);
             text_row(
                 ui,
                 th,
@@ -1144,25 +1128,7 @@ fn draw_profile_form(ui: &mut egui::Ui, th: &Theme, st: &mut UiState, passkeys: 
                 "us-east",
                 false,
             );
-            form_row(ui, th, t("remote_tool.field_shell"), |ui| {
-                tasty_egui_theme::with_popover_frame(ui, th, |ui| {
-                    egui::ComboBox::from_id_salt("remote_tool.shell")
-                        .selected_text(f.shell.clone())
-                        .width(ui.available_width())
-                        .show_ui(ui, |ui| {
-                            ui.spacing_mut().item_spacing.y = 0.0;
-                            for sh in SHELLS {
-                                tasty_ui_widgets::menu_option_value(
-                                    ui,
-                                    th,
-                                    &mut f.shell,
-                                    (*sh).to_string(),
-                                    sh,
-                                );
-                            }
-                        })
-                });
-            });
+            shell_row(ui, th, "remote_tool.shell", &mut f.shell);
             passkey_dropdown_row(ui, th, &mut f.passkey_ref, passkeys);
             if f.shell == "auto" {
                 indented_hint(
@@ -1593,42 +1559,8 @@ fn draw_attach_form(
                 });
             });
         } else {
-            text_row(
-                ui,
-                th,
-                t("remote_tool.field_host"),
-                &mut f.host,
-                "10.0.4.12",
-                true,
-            );
-            text_row(
-                ui,
-                th,
-                t("remote_tool.field_user"),
-                &mut f.user,
-                "deploy",
-                false,
-            );
-            text_row(ui, th, t("remote_tool.field_port"), &mut f.port, "22", true);
-            form_row(ui, th, t("remote_tool.field_shell"), |ui| {
-                tasty_egui_theme::with_popover_frame(ui, th, |ui| {
-                    egui::ComboBox::from_id_salt("remote_tool.attach_shell")
-                        .selected_text(f.shell.clone())
-                        .width(ui.available_width())
-                        .show_ui(ui, |ui| {
-                            ui.spacing_mut().item_spacing.y = 0.0;
-                            for sh in SHELLS {
-                                tasty_ui_widgets::menu_option_value(
-                                    ui,
-                                    th,
-                                    &mut f.shell,
-                                    (*sh).to_string(),
-                                    sh,
-                                );
-                            }
-                        })
-                });
-            });
+            connection_rows(ui, th, &mut f.host, &mut f.user, &mut f.port);
+            shell_row(ui, th, "remote_tool.attach_shell", &mut f.shell);
             passkey_dropdown_row(ui, th, &mut f.passkey_ref, passkeys);
         }
 
@@ -1984,6 +1916,36 @@ fn draw_confirm_delete(
         }
     });
     out
+}
+
+/// 호스트·사용자·포트 입력 행.
+fn connection_rows(
+    ui: &mut egui::Ui,
+    th: &Theme,
+    host: &mut String,
+    user: &mut String,
+    port: &mut String,
+) {
+    text_row(ui, th, t("remote_tool.field_host"), host, "10.0.4.12", true);
+    text_row(ui, th, t("remote_tool.field_user"), user, "deploy", false);
+    text_row(ui, th, t("remote_tool.field_port"), port, "22", true);
+}
+
+/// 원격 셸을 고르는 행.
+fn shell_row(ui: &mut egui::Ui, th: &Theme, salt: &'static str, shell: &mut String) {
+    form_row(ui, th, t("remote_tool.field_shell"), |ui| {
+        tasty_egui_theme::with_popover_frame(ui, th, |ui| {
+            egui::ComboBox::from_id_salt(salt)
+                .selected_text(shell.clone())
+                .width(ui.available_width())
+                .show_ui(ui, |ui| {
+                    ui.spacing_mut().item_spacing.y = 0.0;
+                    for sh in SHELLS {
+                        tasty_ui_widgets::menu_option_value(ui, th, shell, (*sh).to_string(), sh);
+                    }
+                })
+        });
+    });
 }
 
 /// 입력의 무한 폭이 라벨을 밀어내지 않도록 라벨 고정 폭과 남은 입력 폭을 직접 나눈다.
