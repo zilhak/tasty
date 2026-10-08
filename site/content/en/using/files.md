@@ -1,4 +1,4 @@
-<!-- source-hash: e2437cd5b348 -->
+<!-- source-hash: 7ece75591802 -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -52,7 +52,7 @@ Dragging a split line to shrink an Explorer stops at the height that still leave
 
 If a folder can't be read (the path is gone, it is not a folder, or a remote read failed), the list area shows **Can't read this folder** with the reason the operating system gave. **Retry** reads the same folder again and **Go up** goes one folder up. If the folders above were removed too, it goes to the nearest folder above that still exists. A missing permission shows **Permission denied** instead.
 
-When you paste, rename or move items to the trash in an Explorer, every other Explorer showing a changed folder (even in another window) re-reads its list and left tree. If the folder you were viewing was deleted, the read error message appears in place and the Explorer does not move to another folder on its own. Changes made by other programs are not picked up automatically, so press **Refresh** (`F5`). Refresh also re-reads the folders you expanded in the tree.
+When you paste, rename or move items to the trash in an Explorer, every other Explorer showing a changed folder (even in another window) re-reads its list and left tree. If the folder you were viewing was deleted, the read error message appears in place and the Explorer does not move to another folder on its own. Changes made by other programs are not picked up automatically, so press **Refresh** (`F5`). Refresh also re-reads the folders you expanded in the tree. When a re-read list no longer has an item you selected, that item leaves the selection too.
 
 Click the address bar to type a path directly; recently visited folders appear as autocompletion. Go with `Enter` or **Go**. The left tree stays fixed at the root, but the right list can go anywhere.
 

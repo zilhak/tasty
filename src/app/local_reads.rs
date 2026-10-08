@@ -200,6 +200,19 @@ impl LocalReads {
         }
         Ok(())
     }
+    /// 시험에서 View 의 읽기 요청을 실제 worker 로 돌린다. `poll` 이 true 를 돌려주면 멈춘다.
+    #[cfg(test)]
+    pub(crate) fn drive(&mut self, mut poll: impl FnMut(&mut ReadRequests) -> bool) {
+        loop {
+            let mut requests = self.requests();
+            let done = poll(&mut requests);
+            self.run_requests(requests);
+            if done {
+                return;
+            }
+            std::thread::yield_now();
+        }
+    }
     pub(crate) fn reap(&mut self) {
         let mut i = 0;
         while i < self.jobs.len() {

@@ -107,6 +107,7 @@ impl ExplorerView {
                         }
                         self.entries = entries;
                         self.state = LoadState::Ok;
+                        self.retain_listed_selection();
                     }
                     Err(error) => {
                         self.entries.clear();
@@ -215,6 +216,23 @@ impl ExplorerView {
                 super::ExplorerAction::Navigate(ancestor.clone())
             }
             _ => super::ExplorerAction::GoUp,
+        }
+    }
+
+    /// 다시 읽은 목록에 없는 경로를 선택에서 뺀다. 다른 곳에서 지운 항목을 상태줄이 세지 않게 한다.
+    /// 남은 선택은 같은 선택이므로 선택 식별자는 바꾸지 않는다.
+    fn retain_listed_selection(&mut self) {
+        if self.selected.is_empty() {
+            return;
+        }
+        let listed: HashSet<&Path> = self.entries.iter().map(|e| e.path.as_path()).collect();
+        self.selected.retain(|p| listed.contains(p.as_path()));
+        if self
+            .anchor
+            .as_ref()
+            .is_some_and(|a| !listed.contains(a.as_path()))
+        {
+            self.anchor = None;
         }
     }
 
@@ -413,6 +431,7 @@ impl ExplorerView {
                     sort_entries(&mut sorted, tab.sort_column, tab.sort_dir);
                     self.entries = sorted;
                     self.state = LoadState::Ok;
+                    self.retain_listed_selection();
                 }
                 self.remote_state
                     .insert(dir, RemoteLoadState::Loaded(entries));
@@ -1056,5 +1075,61 @@ mod tests {
         let panel = ExplorerPanel::new(1, root.to_path_buf());
         view.sync(&panel, None);
         assert!(matches!(view.go_up_action(root), A::GoUp));
+    }
+
+    #[test]
+    fn a_reread_listing_drops_selected_paths_that_are_gone() {
+        let dir = tempfile::tempdir().unwrap();
+        for name in ["keep", "gone"] {
+            std::fs::write(dir.path().join(name), b"x").unwrap();
+        }
+        let panel = ExplorerPanel::new(1, dir.path().into());
+        let mut view = ExplorerView::new();
+        let mut owner = crate::app::local_reads::LocalReads::default();
+        let mut load = |view: &mut ExplorerView| {
+            view.sync(&panel, None);
+            owner.drive(|requests| view.poll_local_reads(requests));
+        };
+        load(&mut view);
+        view.select_only(&dir.path().join("keep"));
+        view.toggle_select(&dir.path().join("gone"));
+        let identity = view.selection_identity();
+
+        std::fs::remove_file(dir.path().join("gone")).unwrap();
+        view.request_reload();
+        load(&mut view);
+
+        assert_eq!(
+            view.selected,
+            HashSet::from([dir.path().join("keep")]),
+            "the status line counts only listed items"
+        );
+        assert_eq!(view.anchor, None, "the anchor was the removed item");
+        assert!(
+            view.matches_selection(&identity),
+            "the rest is the same selection"
+        );
+        while owner.poll_shutdown() != 0 {
+            std::thread::yield_now();
+        }
+    }
+
+    #[test]
+    fn a_remote_reply_drops_selected_paths_that_are_gone() {
+        let panel = ExplorerPanel::new(1, PathBuf::from("/d"));
+        let entries = |names: &[&str]| view_with(names).entries;
+        let mut view = ExplorerView::new();
+        let reply = |view: &mut ExplorerView, names: &[&str]| {
+            view.sync(&panel, Some(7));
+            let id = view.drain_outbox()[0].request_id;
+            assert!(view.apply_remote_list_dir_result(id, &panel, Ok(entries(names))));
+        };
+        reply(&mut view, &["a", "b"]);
+        view.select_only(Path::new("/d/a"));
+        view.toggle_select(Path::new("/d/b"));
+
+        view.request_reload();
+        reply(&mut view, &["a"]);
+        assert_eq!(view.selected, HashSet::from([PathBuf::from("/d/a")]));
     }
 }
