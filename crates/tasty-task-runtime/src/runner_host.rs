@@ -878,9 +878,12 @@ impl HostExecutor {
                 })
             }
             TaskCommand::Agent { .. } => self.dispatch_agent(task),
-            TaskCommand::WaitBarrier { name } => Ok(DispatchHandle::BarrierPoll {
+            TaskCommand::WaitBarrier { .. } => Ok(DispatchHandle::BarrierPoll {
                 workspace_id: task.workspace_id,
-                name: name.clone(),
+                name: task
+                    .barrier_name()
+                    .ok_or("WaitBarrier: no barrier name")?
+                    .to_string(),
             }),
         }
     }

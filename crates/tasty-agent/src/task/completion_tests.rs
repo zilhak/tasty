@@ -85,7 +85,9 @@ fn each_run_gets_a_new_attempt_and_v1_tasks_get_none() {
         .create(TaskCreateOpts {
             workspace_id: 1,
             name: "v1".into(),
-            command: TaskCommand::WaitBarrier { name: "b".into() },
+            command: TaskCommand::WaitBarrier {
+                name: Some("b".into()),
+            },
             depends_on: vec![],
             on_failure: OnFailure::default(),
             metadata: Value::Null,
@@ -403,7 +405,9 @@ fn a_lost_v1_result_leaves_the_task_unknown_and_its_dependents_waiting() {
     let opts = |name: &str, depends_on: Vec<TaskId>| TaskCreateOpts {
         workspace_id: 1,
         name: name.into(),
-        command: TaskCommand::WaitBarrier { name: "b".into() },
+        command: TaskCommand::WaitBarrier {
+            name: Some("b".into()),
+        },
         depends_on,
         on_failure: OnFailure::default(),
         metadata: Value::Null,

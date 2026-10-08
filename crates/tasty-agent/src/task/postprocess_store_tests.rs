@@ -598,7 +598,9 @@ fn every_running_typed_task_reports_a_phase() {
         .create(TaskCreateOpts {
             workspace_id: 1,
             name: "v1".into(),
-            command: TaskCommand::WaitBarrier { name: "b".into() },
+            command: TaskCommand::WaitBarrier {
+                name: Some("b".into()),
+            },
             depends_on: vec![],
             on_failure: OnFailure::default(),
             metadata: Value::Null,

@@ -82,7 +82,9 @@ fn kind_defaults_are_int64_json_unit_and_strategy_specific() {
     assert_eq!(default_output_schema(&run()), TypeSchema::int64());
     assert_eq!(default_output_schema(&custom()), TypeSchema::json());
     assert_eq!(
-        default_output_schema(&TaskCommand::WaitBarrier { name: "b".into() }),
+        default_output_schema(&TaskCommand::WaitBarrier {
+            name: Some("b".into())
+        }),
         TypeSchema::unit()
     );
     assert_eq!(
@@ -103,7 +105,9 @@ fn run_and_barrier_outputs_cannot_be_redeclared() {
     assert!(
         checked(
             &as_string,
-            &TaskCommand::WaitBarrier { name: "b".into() },
+            &TaskCommand::WaitBarrier {
+                name: Some("b".into())
+            },
             &[]
         )
         .is_err()
@@ -215,7 +219,9 @@ fn run_output_is_the_exit_code_with_streams_kept_as_raw() {
 fn unit_output_is_a_confirmed_null_not_a_missing_output() {
     let t = task(
         "b",
-        TaskCommand::WaitBarrier { name: "x".into() },
+        TaskCommand::WaitBarrier {
+            name: Some("x".into()),
+        },
         Some(v2()),
     );
     let r = finalize_result(&t, &v2(), &reported(None, None, None));

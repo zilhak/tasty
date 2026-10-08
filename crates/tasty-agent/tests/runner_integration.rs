@@ -699,10 +699,10 @@ struct BarrierAwareExec {
 impl TaskExecutor for BarrierAwareExec {
     fn dispatch(&mut self, task: &Task) -> DispatchOutcome {
         match &task.command {
-            TaskCommand::WaitBarrier { name } => {
+            TaskCommand::WaitBarrier { .. } => {
                 DispatchOutcome::Started(DispatchHandle::BarrierPoll {
                     workspace_id: task.workspace_id,
-                    name: name.clone(),
+                    name: task.barrier_name().expect("barrier name").to_string(),
                 })
             }
             _ => DispatchOutcome::PermanentFail("unsupported in test".into()),
@@ -804,7 +804,9 @@ fn wait_barrier_task_succeeds_after_signals() {
             .create(TaskCreateOpts {
                 workspace_id: 1,
                 name: "wb".into(),
-                command: TaskCommand::WaitBarrier { name: "b".into() },
+                command: TaskCommand::WaitBarrier {
+                    name: Some("b".into()),
+                },
                 depends_on: vec![],
                 on_failure: OnFailure::Abort,
                 metadata: serde_json::Value::Null,

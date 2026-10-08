@@ -27,11 +27,19 @@ pub struct InputMapping {
     /// agent 전용. 입력 전체를 지시 뒤의 구조화된 입력 블록(JSON, wire 형식)으로 넣는다.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub input_block: bool,
+    /// wait_barrier 전용. 기다릴 barrier 이름을 담은 입력의 JSON Pointer(string). command 의
+    /// `name` 과 함께 쓸 수 없다.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub barrier: Option<String>,
 }
 
 impl InputMapping {
     pub fn is_empty(&self) -> bool {
-        self.args.is_empty() && !self.stdin && self.params.is_empty() && !self.input_block
+        self.args.is_empty()
+            && !self.stdin
+            && self.params.is_empty()
+            && !self.input_block
+            && self.barrier.is_none()
     }
 }
 
@@ -50,11 +58,18 @@ pub struct ResolvedExecution {
     /// agent 에 실제로 보낸 지시(입력 블록 포함).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub instruction: Option<String>,
+    /// wait_barrier 가 입력에서 받은 barrier 이름.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub barrier: Option<String>,
 }
 
 impl ResolvedExecution {
     pub fn is_empty(&self) -> bool {
-        self.args.is_empty() && !self.stdin && self.params.is_none() && self.instruction.is_none()
+        self.args.is_empty()
+            && !self.stdin
+            && self.params.is_none()
+            && self.instruction.is_none()
+            && self.barrier.is_none()
     }
 }
 
@@ -73,6 +88,14 @@ pub(super) fn check_mapping(
     let is_run = matches!(command, TaskCommand::Run { .. });
     let is_custom = matches!(command, TaskCommand::Custom { .. });
     let is_agent = matches!(command, TaskCommand::Agent { .. });
+    if let TaskCommand::WaitBarrier { name } = command {
+        check_barrier_source(name.as_deref(), mapping.barrier.is_some(), at, &fail)?;
+    } else if mapping.barrier.is_some() {
+        return Err(fail(
+            format!("input_mapping barrier applies to wait_barrier, not {kind}"),
+            format!("{loc}/barrier"),
+        ));
+    }
     if mapping.input_block && !is_agent {
         return Err(fail(
             format!("input_mapping input_block applies to agent, not {kind}"),
@@ -107,7 +130,7 @@ pub(super) fn check_mapping(
             format!("{loc}/input_block"),
         ));
     }
-    if !input_is_unit && !is_run && !is_custom && !is_agent {
+    if !input_is_unit && !is_run && !is_custom && !is_agent && mapping.barrier.is_none() {
         return Err(fail(
             format!("{kind} has no input mapping; its input_schema must be unit"),
             format!("{at}/input_schema"),
@@ -154,6 +177,22 @@ pub(super) fn check_mapping(
             ));
         }
     }
+    if let Some(pointer) = &mapping.barrier {
+        let l = format!("{loc}/barrier");
+        let s = present_at(pointer, l.clone())?;
+        let r = defs
+            .resolve(&s)
+            .map_err(|e| typed_failure(Some(task_id), e, l.clone(), None))?;
+        if !matches!(r.kind, TypeKind::String { .. }) || r.nullable {
+            return Err(fail(
+                format!(
+                    "barrier name at '{pointer}' is {}; a barrier name is a string",
+                    s.describe()
+                ),
+                l,
+            ));
+        }
+    }
     if let TaskCommand::Custom { params, .. } = command {
         for (param_ptr, input_ptr) in &mapping.params {
             let l = format!("{loc}/params/{}", escape(param_ptr));
@@ -188,6 +227,29 @@ pub(super) fn check_mapping(
         }
     }
     Ok(())
+}
+
+/// wait_barrier 의 이름 출처가 정확히 하나인지, 정적 이름이 barrier 이름 규칙에 맞는지 본다.
+fn check_barrier_source(
+    name: Option<&str>,
+    from_input: bool,
+    at: &str,
+    fail: &dyn Fn(String, String) -> TaskFailure,
+) -> Result<(), TaskFailure> {
+    match (name, from_input) {
+        (Some(_), true) => Err(fail(
+            "wait_barrier takes its barrier name from command name or input_mapping barrier, not both"
+                .into(),
+            format!("{at}/input_mapping/barrier"),
+        )),
+        (None, false) => Err(fail(
+            "wait_barrier needs a barrier name: set command name or input_mapping barrier".into(),
+            format!("{at}/command"),
+        )),
+        (Some(n), false) => crate::barrier::check_barrier_name(n)
+            .map_err(|e| fail(e.to_string(), format!("{at}/command/name"))),
+        (None, true) => Ok(()),
+    }
 }
 
 pub(super) fn resolve_execution(
@@ -251,6 +313,20 @@ pub(super) fn resolve_execution(
             m.insert(last.clone(), v);
         }
         out.params = Some(params);
+    }
+    if let Some(pointer) = &mapping.barrier {
+        let loc = "/input_mapping/barrier".to_string();
+        let name = match value_at(&internal, pointer) {
+            Some(Value::String(s)) => s.clone(),
+            other => {
+                return Err(fail(
+                    format!("barrier name at '{pointer}' is not a string: {other:?}"),
+                    loc,
+                ));
+            }
+        };
+        crate::barrier::check_barrier_name(&name).map_err(|e| fail(e.to_string(), loc))?;
+        out.barrier = Some(name);
     }
     if mapping.input_block
         && let TaskCommand::Agent { instruction, .. } = &task.command

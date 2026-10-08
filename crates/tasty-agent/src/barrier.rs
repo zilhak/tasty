@@ -22,6 +22,11 @@ fn barrier_key(name: &str) -> Result<String> {
     crate::component_key(BARRIER_KEY_PREFIX, "barrier name", name)
 }
 
+/// barrier 이름으로 쓸 수 있는가. 오류는 barrier 조회와 같은 문구다.
+pub(crate) fn check_barrier_name(name: &str) -> Result<()> {
+    barrier_key(name).map(|_| ())
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BarrierState {

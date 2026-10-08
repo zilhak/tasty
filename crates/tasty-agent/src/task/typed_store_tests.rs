@@ -324,7 +324,12 @@ fn nullable_optional_unit_and_missing_results_stay_distinct() {
 
     let barrier = store
         .create_typed(
-            opts("unit", TaskCommand::WaitBarrier { name: "b".into() }),
+            opts(
+                "unit",
+                TaskCommand::WaitBarrier {
+                    name: Some("b".into()),
+                },
+            ),
             contract(json!({"contract_version": 2})),
         )
         .unwrap();

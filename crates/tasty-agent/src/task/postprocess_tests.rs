@@ -298,7 +298,9 @@ fn a_postprocessed_run_may_declare_a_non_exit_code_output() {
     );
     assert!(checked(&custom).is_ok());
     let barrier = task(
-        TaskCommand::WaitBarrier { name: "b".into() },
+        TaskCommand::WaitBarrier {
+            name: Some("b".into()),
+        },
         json!({"contract_version": 2, "postprocess": {"command": ["judge"], "timeout_ms": 1000}}),
     );
     assert!(checked(&barrier).is_err());

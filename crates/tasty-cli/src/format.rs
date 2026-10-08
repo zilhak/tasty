@@ -161,7 +161,10 @@ fn format_command_summary(command: &serde_json::Value) -> String {
             format!("reduce: strategy={strategy} inputs=[{inputs}]")
         }
         "wait_barrier" => {
-            let name = command.get("name").and_then(|v| v.as_str()).unwrap_or("?");
+            let name = command
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("<input>");
             format!("wait_barrier: {name}")
         }
         "agent" => {

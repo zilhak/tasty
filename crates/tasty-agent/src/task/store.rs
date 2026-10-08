@@ -185,6 +185,12 @@ impl<'a> TaskStore<'a> {
                 super::agent::AGENT_NEEDS_CONTRACT.into(),
             ));
         }
+        // 입력에서 이름을 받는 wait_barrier 는 v2 계약의 input_mapping 이 있어야 한다.
+        if contract.is_none() && matches!(command, TaskCommand::WaitBarrier { name: None }) {
+            return Err(AgentError::InvalidArgument(
+                "wait_barrier needs a barrier name (name)".into(),
+            ));
+        }
         let mut existing = self.list(workspace_id)?;
         let id = self.unused_id(now_ms, &existing);
 

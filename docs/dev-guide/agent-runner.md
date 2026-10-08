@@ -51,7 +51,7 @@ state 전이는 `tasty-agent` 의 `is_valid_transition` 표를 따른다. `Ready
 | `Custom { ipc_method, params, poll: Some(PollSpecRef::Named{strategy}) }`, poll-kind | 완료 판정 전략 레지스트리에서 `strategy` 를 이름 해석(`resolve_strategy`) → 얻은 `PollSpec` 으로 위 Inline 행과 동일 처리. 미등록/비활성이면 해석 실패 → dispatch 자체가 `PermanentFail`(Running 진입 전에 드러남) | 위와 동일 |
 | `Custom { ipc_method, params, poll: Some(PollSpecRef::Named{strategy}) }`, push-kind | `dispatch_push_strategy` — 원 dispatch `params.surface_id` 대상 surface 에 `notify_via` 훅 핸들러를 `hook.set(..., once: true)` 로 1 회성 등록해 `hook_id` 획득 → `RunnerContext.hook_task_waits` 에 `(workspace_id, task_id, deadline)` 등록 → `AwaitExternal`. `surface_id` param 이 없으면 `PermanentFail` | 항상 Active(계약) — 종결은 `PendingHostEvent::HookFired` 소비부(`TaskService::resolve_hook_task_wait`, exit code 로 성공/실패 분기)와 timeout 안전망(`runner_thread::expire_overdue_hook_waits`)이 담당 |
 | `Reduce { inputs, strategy }` | input 결과 collect → `reduce_with_custom` → `ReduceImmediate`. `inputs` 는 Task DAG 의 암묵적 의존성(`TaskGraph`, `crates/tasty-agent/src/task/graph.rs`)이라 dispatch 시점엔 이미 전부 종결(terminal) 상태다 — `Ready` 로 올라오기 전에 readiness 평가가 그 종결을 강제한다 | 즉시 Done |
-| `WaitBarrier { name }` | `BarrierPoll` | `Open`→Active / `Closed`→Done / `TimedOut`→Failed |
+| `WaitBarrier { name }` | `BarrierPoll`. 이름은 `name`, 없으면 입력 snapshot 의 `execution.barrier`(아래 §입력 binding) | `Open`→Active / `Closed`→Done / `TimedOut`→Failed |
 | `Agent { provider, session, instruction }` | 새 세션: `<provider>.spawn` 후 턴 표에 묶음 → `AgentTurn`. 기존 세션: 지시를 handle 의 `pending_instruction` 에 담은 `AgentTurn` | 지시를 아직 안 보냈으면 세션이 idle 이고 묶을 수 있을 때 `<provider>.tell`. 그 뒤 턴 표의 종료 보고·`<provider>.state` 로 판정(아래 §agent task) |
 
 > 자식 에이전트 완료 판정(`claude.spawn`/`codex.spawn` · `claude.tell`/`codex.tell`)과 셸 명령 완료(`host/command-completed`)가 이 범용 `Custom { poll }` 메커니즘의 실사용자다 — 코어는 특정 에이전트를 모른 채 임의 IPC dispatch→폴링/훅-보고를 표현한다. CLI auto_wait(`AutoWaitDecl`/`PollingDecl`)와 동형 스펙으로 폴링 semantics 를 통일한다.
@@ -842,7 +842,7 @@ stdout 해석과 성공 판정:
 
 #### 실행할 때
 
-러너는 dispatch 직전에(lease 와 v1 placeholder 치환 뒤) binding 을 해석해 입력 값을 만들고 입력 스키마로 검사한다. 결과는 task 의 `input_snapshot` 에 저장한다: `resolved_at`, `value`(선언 타입대로 직렬화), `sources`(읽은 원본마다 필드·task·포인터와 값을 낸 원본 회차 `producer_attempt`), `execution`(실제로 넘긴 argv 요소·stdin 여부·custom params), 실패 시 `failure`. 원본을 나중에 다시 실행해도 snapshot 은 바뀌지 않는다. `retry` 는 snapshot 을 지운다. 해석이나 검사에 실패하면 실행하지 않고 실패 단계 `input` 으로 끝난다(`error.location` 은 `/bindings/<필드>`).
+러너는 dispatch 직전에(lease 와 v1 placeholder 치환 뒤) binding 을 해석해 입력 값을 만들고 입력 스키마로 검사한다. 결과는 task 의 `input_snapshot` 에 저장한다: `resolved_at`, `value`(선언 타입대로 직렬화), `sources`(읽은 원본마다 필드·task·포인터와 값을 낸 원본 회차 `producer_attempt`), `execution`(실제로 넘긴 argv 요소·stdin 여부·custom params·agent 지시문·wait_barrier 의 barrier 이름), 실패 시 `failure`. 원본을 나중에 다시 실행해도 snapshot 은 바뀌지 않는다. `retry` 는 snapshot 을 지운다. 해석이나 검사에 실패하면 실행하지 않고 실패 단계 `input` 으로 끝난다(`error.location` 은 `/bindings/<필드>`).
 
 입력은 `input_mapping` 이 정한 자리에만 값으로 들어간다. 원본 command 는 바꾸지 않으며 값 안의 `${...}`·`$(...)`·공백을 다시 해석하지 않는다.
 
@@ -851,10 +851,22 @@ stdout 해석과 성공 판정:
 | `args` | `run` | 입력 포인터 목록. 각 값을 argv 끝에 요소 하나로 붙인다. string·enum·int64·boolean 만 받는다(int64 는 10진, boolean 은 `true`/`false`) |
 | `stdin` | `run` | `true` 면 입력 전체를 wire 형식 JSON 한 문서로 stdin 에 쓴다(int64 는 10진 문자열) |
 | `params` | `custom` | params 포인터 → 입력 포인터. params 의 그 자리에 값을 넣는다. 부모 object 는 원래 params 에 있어야 한다. 값은 내부 표현이라 int64 가 JSON 정수다. snapshot 의 `execution.params` 도 같은 JSON 정수라, 2^53 을 넘는 값은 JavaScript 같은 f64 소비자가 읽으면 바뀐다(정확한 값은 `input_snapshot.value` 의 10진 문자열) |
-
 | `input_block` | `agent` | `true` 면 입력 전체를 wire 형식 JSON 블록(`Task input (JSON):` 머리말)으로 지시문 끝에 붙인다. snapshot 의 `execution.instruction` 이 실제로 보낸 지시문이다 |
+| `barrier` | `wait_barrier` | 기다릴 barrier 이름을 담은 입력 포인터. 그 자리는 string 이어야 한다. snapshot 의 `execution.barrier` 가 받은 이름이다 |
 
-매핑하는 입력 위치는 항상 값이 있어야 한다. `reduce`·`wait_barrier` 는 입력을 받지 않으므로 입력 스키마가 unit 이어야 한다. unit 이 아닌 입력을 받는 `agent` 는 `input_block` 이 필요하다.
+매핑하는 입력 위치는 항상 값이 있어야 한다. `reduce` 는 입력을 받지 않으므로 입력 스키마가 unit 이어야 한다. `wait_barrier` 도 `barrier` 매핑이 없으면 unit 이어야 한다. unit 이 아닌 입력을 받는 `agent` 는 `input_block` 이 필요하다.
+
+wait_barrier 의 barrier 이름은 command 의 `name`(정적) 이나 `input_mapping.barrier`(입력) 중 정확히 하나로 정한다. 같은 그래프에서 두 방식을 섞어 써도 된다.
+
+- 제출할 때 거절하는 경우(`-32602`, `error.data.location`):
+  - 둘 다 있다: `/tasks/<i>/input_mapping/barrier`
+  - 둘 다 없다: `/tasks/<i>/command`
+  - `barrier` 가 가리키는 입력이 string 이 아니거나 optional 이다: `/tasks/<i>/input_mapping/barrier`
+  - 정적 이름이 barrier 이름 규칙(memory 키 문자와 길이)에 맞지 않는다: `/tasks/<i>/command/name`
+  - `barrier` 를 wait_barrier 가 아닌 task 에 썼다: `/tasks/<i>/input_mapping/barrier`
+- 입력에서 받은 이름이 규칙에 맞지 않으면 실행하지 않고 실패 단계 `input`, `error.location` `/input_mapping/barrier` 로 끝난다.
+- v1 `task_create` 의 wait_barrier 는 입력이 없으므로 `name` 이 필요하다(없으면 `-32602`).
+- 이름의 barrier 가 없거나 시간이 지나면 지금처럼 실행 단계에서 실패한다. barrier 를 만드는 일은 그래프를 짜는 쪽이 정한다.
 
 ### 그래프 제출
 

@@ -202,3 +202,50 @@ fn an_unresolvable_input_fails_at_the_input_stage_without_running() {
     assert!(err.message.contains("/count"), "{}", err.message);
     assert!(c.input_snapshot.unwrap().failure.is_some());
 }
+
+/// 입력에서 받은 이름의 barrier 를 기다린다. 그 barrier 가 닫혀야 끝난다.
+#[test]
+fn a_wait_barrier_waits_on_the_barrier_named_by_its_input() {
+    use tasty_agent::BarrierStore;
+    let (_td, ctx) = fresh_ctx();
+    let mut runner = RunnerLoop::new(HostExecutor::new(ctx.clone()));
+    let graph = json!({"contract_version": 2, "tasks": [
+        {"id": "p", "command": {"kind": "custom", "ipc_method": "system.ping"},
+         "output_schema": {"type": "object", "fields": {"gate": {"type": "string"}}}},
+        {"id": "w", "command": {"kind": "wait_barrier"},
+         "input_schema": {"type": "object", "fields": {"gate": {"type": "string"}}},
+         "bindings": {"gate": {"from_task": "p", "pointer": "/gate"}},
+         "input_mapping": {"barrier": "/gate"}}
+    ]});
+    store_op(&ctx, |s| s.submit_graph(1, spec(graph), 0).unwrap());
+    ctx.with_memory(|mem| {
+        let mut b = BarrierStore::new(mem, HOST_OWNER);
+        b.create(1, "gate.a", 1, None, 0).unwrap();
+        b.create(1, "gate.b", 1, None, 0).unwrap();
+    });
+    finish(&ctx, "p", json!({"gate": "gate.b"}));
+    for n in 0..5 {
+        tick(&ctx, &mut runner, 10 + n);
+    }
+    let w = get(&ctx, "w");
+    assert_eq!(w.state, TaskState::Running);
+    assert_eq!(w.barrier_name(), Some("gate.b"));
+    // 다른 barrier 가 닫혀도 끝나지 않는다.
+    ctx.with_memory(|mem| BarrierStore::new(mem, HOST_OWNER).signal(1, "gate.a", 20))
+        .unwrap();
+    for n in 0..5 {
+        tick(&ctx, &mut runner, 30 + n);
+    }
+    assert_eq!(get(&ctx, "w").state, TaskState::Running);
+    ctx.with_memory(|mem| BarrierStore::new(mem, HOST_OWNER).signal(1, "gate.b", 40))
+        .unwrap();
+    tick_until_terminal(&ctx, &mut runner, "w");
+    let w = get(&ctx, "w");
+    assert_eq!(w.state, TaskState::Succeeded, "{:?}", w.result);
+    let raw = w.typed_result.unwrap().raw;
+    assert_eq!(raw.execution.unwrap()["barrier"], json!("gate.b"));
+    assert_eq!(
+        w.input_snapshot.unwrap().execution.barrier.as_deref(),
+        Some("gate.b")
+    );
+}

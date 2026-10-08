@@ -690,3 +690,131 @@ fn a_restarted_sequence_does_not_reuse_a_live_graph_id() {
         Some(first.as_str())
     );
 }
+
+/// wait_barrier 는 이름을 command `name` 이나 `input_mapping.barrier` 중 하나에서만 받는다.
+/// 둘 다·둘 다 없음·string 이 아닌 입력·규칙에 맞지 않는 정적 이름은 제출 때 위치와 함께 거절한다.
+#[test]
+fn a_wait_barrier_takes_its_name_from_exactly_one_place() {
+    let (_td, mut mem, seq) = fresh();
+    let mut store = TaskStore::new(&mut mem, "_host", &seq);
+    let named_in = json!({"type": "object", "fields": {"gate": {"type": "string"}}});
+    let refused = |store: &mut TaskStore, task: Value| {
+        let graph = json!({"contract_version": 2, "tasks": [task]});
+        failure(store.submit_graph(1, spec(graph), 0).unwrap_err())
+    };
+    let f = refused(
+        &mut store,
+        json!({"id": "w", "command": {"kind": "wait_barrier", "name": "b"},
+               "input_schema": named_in, "bindings": {"gate": {"literal": "g"}},
+               "input_mapping": {"barrier": "/gate"}}),
+    );
+    assert_eq!(
+        f.location.as_deref(),
+        Some("/tasks/0/input_mapping/barrier")
+    );
+    assert!(f.message.contains("not both"), "{}", f.message);
+
+    let f = refused(
+        &mut store,
+        json!({"id": "w", "command": {"kind": "wait_barrier"}}),
+    );
+    assert_eq!(f.location.as_deref(), Some("/tasks/0/command"));
+    assert!(f.message.contains("needs a barrier name"), "{}", f.message);
+
+    let f = refused(
+        &mut store,
+        json!({"id": "w", "command": {"kind": "wait_barrier"},
+               "input_schema": {"type": "object", "fields": {"gate": {"type": "int64"}}},
+               "bindings": {"gate": {"literal": 3}}, "input_mapping": {"barrier": "/gate"}}),
+    );
+    assert_eq!(
+        f.location.as_deref(),
+        Some("/tasks/0/input_mapping/barrier")
+    );
+    assert!(
+        f.message.contains("a barrier name is a string"),
+        "{}",
+        f.message
+    );
+
+    let f = refused(
+        &mut store,
+        json!({"id": "w", "command": {"kind": "wait_barrier", "name": "v6S"}}),
+    );
+    assert_eq!(f.location.as_deref(), Some("/tasks/0/command/name"));
+    assert!(f.message.contains("invalid char at 2"), "{}", f.message);
+
+    let f = refused(
+        &mut store,
+        json!({"id": "r", "command": {"kind": "run", "workspace_id": 1, "command": ["true"]},
+               "input_schema": named_in, "bindings": {"gate": {"literal": "g"}},
+               "input_mapping": {"barrier": "/gate"}}),
+    );
+    assert_eq!(
+        f.location.as_deref(),
+        Some("/tasks/0/input_mapping/barrier")
+    );
+    assert!(
+        f.message.contains("applies to wait_barrier"),
+        "{}",
+        f.message
+    );
+
+    // v1 task 는 입력이 없으므로 이름이 반드시 있어야 한다.
+    let v1 = store.create(TaskCreateOpts {
+        workspace_id: 1,
+        name: "w".into(),
+        command: TaskCommand::WaitBarrier { name: None },
+        depends_on: vec![],
+        on_failure: OnFailure::Abort,
+        metadata: Value::Null,
+        now_ms: 0,
+    });
+    assert!(matches!(v1, Err(AgentError::InvalidArgument(_))), "{v1:?}");
+    assert!(store.list(1).unwrap().is_empty());
+}
+
+/// 입력에서 받은 barrier 이름은 snapshot 의 `execution.barrier` 에 고정된다. 이름 규칙에 맞지 않으면
+/// 실행하지 않고 input 단계에서 `/input_mapping/barrier` 위치로 실패한다.
+#[test]
+fn a_barrier_name_from_input_is_resolved_and_checked_before_running() {
+    let (_td, mut mem, seq) = fresh();
+    let mut store = TaskStore::new(&mut mem, "_host", &seq);
+    let graph = json!({"contract_version": 2, "tasks": [
+        {"id": "p", "command": custom(json!({})),
+         "output_schema": {"type": "object", "fields": {"gate": {"type": "string"}}}},
+        {"id": "w", "command": {"kind": "wait_barrier"},
+         "input_schema": {"type": "object", "fields": {"gate": {"type": "string"}}},
+         "bindings": {"gate": {"from_task": "p", "pointer": "/gate"}},
+         "input_mapping": {"barrier": "/gate"}}
+    ]});
+    store.submit_graph(1, spec(graph), 0).unwrap();
+    let w = get(&store, "w");
+    assert_eq!(w.barrier_name(), None);
+    finish(&mut store, "p", json!({"gate": "release.v2"}));
+    let w = get(&store, "w");
+    let lookup = |id: &String| store.get(1, id).ok().flatten();
+    let snap = resolve_inputs(&w, w.contract.as_ref().unwrap(), None, 5, &lookup);
+    assert!(snap.failure.is_none(), "{:?}", snap.failure);
+    assert_eq!(snap.execution.barrier.as_deref(), Some("release.v2"));
+    let mut resolved = w.clone();
+    resolved.input_snapshot = Some(snap);
+    assert_eq!(resolved.barrier_name(), Some("release.v2"));
+
+    let mut bad = w.clone();
+    let p = get(&store, "p");
+    let mut p_bad = p.clone();
+    p_bad.typed_result.as_mut().unwrap().output = TypedValue::Object(
+        [("gate".to_string(), TypedValue::String("Bad Name".into()))]
+            .into_iter()
+            .collect(),
+    );
+    let lookup = |id: &String| (id == "p").then(|| p_bad.clone());
+    let snap = resolve_inputs(&bad, bad.contract.as_ref().unwrap(), None, 5, &lookup);
+    let f = snap.failure.clone().expect("input failure");
+    assert_eq!(f.stage, FailureStage::Input);
+    assert_eq!(f.location.as_deref(), Some("/input_mapping/barrier"));
+    assert!(f.message.contains("barrier name"), "{}", f.message);
+    bad.input_snapshot = Some(snap);
+    assert_eq!(bad.barrier_name(), None);
+}

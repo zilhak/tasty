@@ -425,7 +425,7 @@ pub fn build_graph(summary: &DagSummary, tasks: &[Task]) -> DagGraphData {
             status: DagStatus::from_state(&t.state),
             command_kind: task_command_kind(&t.command),
             on_failure_kind: on_failure_kind(&t.on_failure),
-            command_text: command_text(&t.command),
+            command_text: command_text(t),
             started_at: t.started_at,
             finished_at: t.finished_at,
             exit_code: t.result.as_ref().and_then(|r| r.exit_code),
@@ -453,14 +453,17 @@ pub fn build_graph(summary: &DagSummary, tasks: &[Task]) -> DagGraphData {
 }
 
 /// 상세 패널이 보여줄 명령 문자열. dot 렌더의 라벨과 달리 사람이 읽는 형태다.
-fn command_text(command: &TaskCommand) -> String {
-    match command {
+fn command_text(task: &Task) -> String {
+    match &task.command {
         TaskCommand::Run { command, .. } => command.join(" "),
         TaskCommand::Custom { ipc_method, .. } => format!("ipc: {ipc_method}"),
         TaskCommand::Reduce { inputs, .. } => {
             format!("reduce: {}", inputs.join(", "))
         }
-        TaskCommand::WaitBarrier { name } => format!("barrier: {name}"),
+        // 입력에서 이름을 받는 barrier 는 해석 전이면 이름이 없다.
+        TaskCommand::WaitBarrier { .. } => {
+            format!("barrier: {}", task.barrier_name().unwrap_or("-"))
+        }
         TaskCommand::Agent { provider, .. } => format!("agent: {provider}"),
     }
 }

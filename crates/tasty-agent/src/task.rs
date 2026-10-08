@@ -167,7 +167,12 @@ pub enum TaskCommand {
     },
     /// 명시적 barrier 대기. barrier 가 Closed 되면 Succeeded, TimedOut 이면 Failed.
     /// timeout 은 barrier 자체의 `timeout_ms` 가 단일 출처.
-    WaitBarrier { name: String },
+    WaitBarrier {
+        /// 기다릴 barrier. 비우면 v2 계약의 `input_mapping.barrier` 가 입력에서 정한다.
+        /// 둘 중 정확히 하나가 있어야 한다.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        name: Option<String>,
+    },
     /// agent 세션 한 턴. v2 계약으로만 만든다. 턴이 끝나고 결과를 수집·검증해야 성공한다
     /// (idle·needs_input 만으로는 끝나지 않는다).
     Agent {
@@ -320,6 +325,19 @@ pub struct Task {
 }
 
 impl Task {
+    /// wait_barrier 가 기다릴 barrier. 정적 `name` 이 없으면 입력 snapshot 에서 받은 이름이다.
+    /// 입력을 아직 해석하지 않았거나 wait_barrier 가 아니면 없다.
+    pub fn barrier_name(&self) -> Option<&str> {
+        let TaskCommand::WaitBarrier { name } = &self.command else {
+            return None;
+        };
+        name.as_deref().or_else(|| {
+            self.input_snapshot
+                .as_ref()
+                .and_then(|s| s.execution.barrier.as_deref())
+        })
+    }
+
     /// v2 계약이 있는 task 인가.
     pub fn is_typed(&self) -> bool {
         self.contract.is_some()

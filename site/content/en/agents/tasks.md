@@ -1,4 +1,4 @@
-<!-- source-hash: 4c71ab4b6589 -->
+<!-- source-hash: 1e2989e60de0 -->
 <a id="task-dag"></a>
 
 # Task workflows (DAG)
@@ -91,7 +91,7 @@ tasty agent task-graph-submit --workspace-id 2 --graph @graph.json
     "input_mapping": {"args": ["/code"]}}]}
 ```
 
-You choose each task's `id`. `bindings` say where inputs come from: a fixed value (`literal`), one value from an earlier task's result (`from_task` with `pointer`), or whichever of a task and its fallback ran (`one_of`). Types that do not fit are rejected when you send the graph. Values go only where `input_mapping` says. `args` appends them to the command one argument each, and `stdin: true` writes the whole input as JSON to standard input. `$(...)` or spaces inside a value are never interpreted again. The values actually passed are in the task's `input_snapshot`. Tasks in such a graph do not use the placeholders above.
+You choose each task's `id`. `bindings` say where inputs come from: a fixed value (`literal`), one value from an earlier task's result (`from_task` with `pointer`), or whichever of a task and its fallback ran (`one_of`). Types that do not fit are rejected when you send the graph. Values go only where `input_mapping` says. `args` appends them to the command one argument each, and `stdin: true` writes the whole input as JSON to standard input. A `wait_barrier` task can take the name of the barrier to wait on from its input with `"barrier": "/<field>"`; leave `name` out of the command then. `$(...)` or spaces inside a value are never interpreted again. The values actually passed are in the task's `input_snapshot`. Tasks in such a graph do not use the placeholders above.
 
 To run a task's result through another command (a judge or summary tool, say) and use that as the result, add `postprocess`. When the main work succeeds, the command runs and its standard output becomes the task's result.
 
