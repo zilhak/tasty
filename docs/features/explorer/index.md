@@ -61,13 +61,15 @@ OS 파일 관리자에 의존하지 않고 tasty surface 안에서 디렉토리�
 
 ### 컨텍스트 메뉴 · 파일 조작
 
+진입점별 대상 결정, 작업별 결과·피드백, 지원하지 않는 작업은 [파일 작업 계약](file-operations.md)에 있다.
+
 우클릭 컨텍스트 메뉴는 **2-단계 네이티브 메뉴 패턴**([context-menu](../../dev-guide/context-menu.md))을 따른다: 렌더 중 우클릭을 감지하면 `ExplorerAction::ContextMenu { target, cwd, x, y }` 를 모으고, `apply_explorer_action` 이 이를 `PendingNativeMenu::Explorer`/`ExplorerFavorite` 슬롯에 선점한다.
 비-terminal 컨텍스트 메뉴는 winit 이 만들지 않고 egui 프레임이 단일 생산자다 — explorer 메뉴는 같은 egui 프레임 안에서 `apply_explorer_action`(렌더 루프 종료 직후)이 generic surface fallback(`emit_surface_menu_fallback`)보다 **먼저** 슬롯을 선점하므로, fallback은 `is_none()` 확인 후 건너뛰어 explorer 전용 메뉴를 유지한다.
 이후 `MainView::process_pending_native_menu` 가 `open_native_menu` 로 OS 네이티브 메뉴를 띄우고, 선택 id 를 조작으로 번역하는 처리는 continuation 으로 예약된다(Linux 는 메뉴가 닫힌 뒤 프레임에 실행 — [context-menu](../../dev-guide/context-menu.md) · [ADR-0036](../../adr/0036-overlay-scope-and-lifetime.md)).
 
-대상(target)은 우클릭 위치/선택 상태로 결정한다(design §3.3 target rule): 선택 안의 항목 → 선택 전체, 선택 밖 → 그 항목으로 선택 리셋, 빈 영역 → cwd. variant 4종(빈 영역 / 파일 / 폴더 / 다중). 좌측 사이드바 트리 폴더 우클릭도 **단일 폴더 target 을 직접 구성**해(선택집합 미조작) 동일 메뉴를 띄운다.
+대상(target)은 우클릭 위치/선택 상태로 결정한다(design §3.3 target rule): 선택 안의 항목 → 선택 전체, 선택 밖 → 그 항목으로 선택 리셋, 빈 영역 → 현재 폴더(current). variant 4종(빈 영역 / 파일 / 폴더 / 다중). 좌측 사이드바 트리 폴더 우클릭도 **단일 폴더 target 을 직접 구성**해(선택집합 미조작) 동일 메뉴를 띄운다.
 
-**surface의 나머지 영역**: 위 위치별 핸들러가 처리하지 못한 우클릭(툴바/주소창/내부 탭바/상태줄/빈 사이드바 등 chrome 영역)은 `draw_explorer` 끝의 **표면 전체 rect catch-all** 이 `Empty`(cwd) target 으로 처리한다. 하위 위젯이 이미 `action`을 만들었으면 건너뛰므로 파일/폴더/다중 선택 메뉴를 유지한다. 이로써 generic surface fallback("터미널 ID 복사")이 explorer 표면 어디에서도 뜨지 않는다(불가침 원칙 §1·§2). 예외: 권한 거부 루트(`LoadState::NoPermission`)는 붙여넣기가 무의미하므로 catch-all 을 건너뛴다(content 빈영역 규칙과 동일).
+**surface의 나머지 영역**: 위 위치별 핸들러가 처리하지 못한 우클릭(툴바/주소창/내부 탭바/상태줄/빈 사이드바 등 chrome 영역)은 `draw_explorer` 끝의 **표면 전체 rect catch-all** 이 `Empty`(현재 폴더) target 으로 처리한다. 하위 위젯이 이미 `action`을 만들었으면 건너뛰므로 파일/폴더/다중 선택 메뉴를 유지한다. 이로써 generic surface fallback("터미널 ID 복사")이 explorer 표면 어디에서도 뜨지 않는다(불가침 원칙 §1·§2). 예외: 권한 거부 루트(`LoadState::NoPermission`)는 붙여넣기가 무의미하므로 catch-all 을 건너뛴다(content 빈영역 규칙과 동일).
 
 - **경로 복사** (`copy_path`, 다중은 개행 결합) → OS 텍스트 클립보드 + `toast.copied_path` 토스트(단축키/Command Palette/우클릭 메뉴 모두 동일).
 - **복사 / 잘라내기 / 붙여넣기** — explorer 내부 파일 클립보드(`MainViewState::explorer_clipboard`, 창마다 단일 슬롯·세션 종료 시 폐기)에 경로+cut 플래그를 담고, 붙여넣기에서 소비한다.
@@ -76,7 +78,7 @@ OS 파일 관리자에 의존하지 않고 tasty surface 안에서 디렉토리�
   종료는 신규 실행을 막고 최대 5초 실제 worker join을 관측한다. 기한이 지나도 작업 취소나 완료로 기록하지 않으며 남은 worker를 경고한다. 로컬 디렉터리 목록·metadata 조회는 기존 동기 표시 경로로 남아 있어 모든 파일 I/O가 worker로 옮겨진 것은 아니다.
   잘라내기는 이동 성공 시 클립보드를 비운다.
   우클릭 메뉴뿐 아니라 키보드 단축키(기본 `copy`/`cut`/`paste` 바인딩, explorer 포커스 시)로도 동일하게 동작한다 — `handle_explorer_shortcut`(`src/adapters/ui/input/shortcuts/copy_paste.rs`)가 선택 항목을 모아 컨텍스트 메뉴와 같은 `explorer_menu_set_clipboard`/`explorer_menu_paste` 를 호출하므로 fs 동작이 두 경로에서 갈라지지 않는다.
-  붙여넣기 대상은 현재 디렉토리(cwd) 고정(선택된 폴더 안으로의 paste-into 는 컨텍스트 메뉴 전용).
+  단축키 붙여넣기 대상은 현재 폴더(current)다(선택된 폴더 안으로의 paste-into 는 컨텍스트 메뉴 전용).
   **복사(cut=false)** 는 fs 접근이 없어 mirror explorer 에서도 그대로 동작하지만, **잘라내기(cut=true)/붙여넣기**는 mirror 에서 메뉴·단축키 모두 차단된다(아래 "mirror(attach) explorer 의 파일 변경 차단" 참고).
 - **휴지통으로 이동** (`delete`) — `trash` 크레이트로 OS 휴지통에 보낸다(가역적이라 확인 모달 없음). mirror 에서 차단.
 - **이름 변경** (`rename`, 단일만) — 공용 rename 팝업(`PopupDef`)을 재사용한다. 이름은 드라이브 접두어·경로 구분자 없는 단일 파일명이어야 하며 기존 항목을 덮어쓰지 않는다. mirror 에서 차단(가드가 먼저 막아 팝업 자체가 열리지 않는다).
