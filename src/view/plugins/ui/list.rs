@@ -5,7 +5,7 @@ use super::{PluginsAction, PluginsSnapshot, PluginsUiState};
 use tasty_ui_widgets::tokens::{PLUGIN_LIST_ROW_HEIGHT, STRUCT_GAP_2};
 use tasty_ui_widgets::{
     PluginAvatarSize, PluginInstallPathsView, margin_sym, paint_plugin_avatar, plugin_avatar,
-    plugin_install_paths, vspace,
+    plugin_detail_section, plugin_detail_section_gap, plugin_install_paths, vspace,
 };
 
 pub(super) fn draw_list_tab(
@@ -217,10 +217,8 @@ pub(super) fn draw_list_tab(
                     ui.label(format!("{}: {}", t("plugins.homepage"), entry.homepage));
                 }
 
-                vspace(ui, th.spacing_md);
-                ui.separator();
-
-                vspace(ui, th.spacing_md);
+                // 디자인 상세는 절 사이에 구분선 없이 space-lg 만 띄운다.
+                plugin_detail_section_gap(ui, &th);
                 ui.horizontal(|ui| {
                     ui.label(format!("{}:", t("plugins.status")));
                     let mut enabled = entry.enabled;
@@ -236,50 +234,47 @@ pub(super) fn draw_list_tab(
                 });
 
                 vspace(ui, th.spacing_sm);
-                ui.label(format!("{}:", t("plugins.surface_kinds")));
-                if entry.surface_kinds.is_empty() {
-                    ui.label(t("plugins.none"));
-                } else {
-                    ui.label(entry.surface_kinds.join(", "));
-                }
+                plugin_detail_section(ui, &th, t("plugins.surface_kinds"), |ui| {
+                    if entry.surface_kinds.is_empty() {
+                        ui.label(t("plugins.none"));
+                    } else {
+                        ui.label(entry.surface_kinds.join(", "));
+                    }
+                });
 
-                vspace(ui, th.spacing_md);
-                ui.separator();
-                vspace(ui, th.spacing_md);
-                ui.label(format!("{}:", t("plugins.permissions")));
-                if entry.manifest_permissions.is_empty() {
-                    ui.label(t("plugins.none"));
-                } else {
-                    ui.horizontal_wrapped(|ui| {
-                        for token in &entry.manifest_permissions {
-                            super::tag(ui, &th, token);
+                plugin_detail_section_gap(ui, &th);
+                plugin_detail_section(ui, &th, t("plugins.permissions"), |ui| {
+                    if entry.manifest_permissions.is_empty() {
+                        ui.label(t("plugins.none"));
+                    } else {
+                        ui.horizontal_wrapped(|ui| {
+                            for token in &entry.manifest_permissions {
+                                super::tag(ui, &th, token);
+                            }
+                        });
+                    }
+                });
+
+                if !entry.commands.is_empty() {
+                    plugin_detail_section_gap(ui, &th);
+                    plugin_detail_section(ui, &th, t("plugins.commands"), |ui| {
+                        for cmd in &entry.commands {
+                            ui.horizontal(|ui| {
+                                ui.label(t(&cmd.title_key));
+                                if let Some(kb) = &cmd.keybinding {
+                                    ui.with_layout(
+                                        egui::Layout::right_to_left(egui::Align::Center),
+                                        |ui| {
+                                            super::tag(ui, &th, kb);
+                                        },
+                                    );
+                                }
+                            });
                         }
                     });
                 }
 
-                if !entry.commands.is_empty() {
-                    vspace(ui, th.spacing_md);
-                    ui.separator();
-                    vspace(ui, th.spacing_md);
-                    ui.label(format!("{}:", t("plugins.commands")));
-                    for cmd in &entry.commands {
-                        ui.horizontal(|ui| {
-                            ui.label(t(&cmd.title_key));
-                            if let Some(kb) = &cmd.keybinding {
-                                ui.with_layout(
-                                    egui::Layout::right_to_left(egui::Align::Center),
-                                    |ui| {
-                                        super::tag(ui, &th, kb);
-                                    },
-                                );
-                            }
-                        });
-                    }
-                }
-
-                vspace(ui, th.spacing_md);
-                ui.separator();
-                vspace(ui, th.spacing_md);
+                plugin_detail_section_gap(ui, &th);
                 let log_line = format!("{}: {}", t("plugins.log_path"), entry.log_path);
                 let open_folder = plugin_install_paths(
                     ui,

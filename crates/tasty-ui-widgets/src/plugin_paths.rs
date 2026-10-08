@@ -10,6 +10,28 @@ use crate::button::{Button, ButtonVariant};
 use crate::control::ControlSize;
 use crate::plugin_add::mono_header;
 
+/// 상세의 한 절. 디자인 `Mono` 머리글(대문자) 아래에 본문을 `space-sm` 간격으로 둔다.
+pub fn plugin_detail_section<R>(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    header: &str,
+    body: impl FnOnce(&mut egui::Ui) -> R,
+) -> R {
+    ui.vertical(|ui| {
+        ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
+        mono_header(ui, theme, header);
+        body(ui)
+    })
+    .inner
+}
+
+/// 상세의 절과 절 사이. 디자인은 구분선 없이 `space-lg` 만 띄운다. 호출한 Ui 의 세로
+/// item_spacing 이 이미 들어가므로 나머지만 더한다.
+pub fn plugin_detail_section_gap(ui: &mut egui::Ui, theme: &Theme) {
+    let rest = theme.spacing_lg.value() - ui.spacing().item_spacing.y;
+    ui.add_space(rest.max(0.0));
+}
+
 /// 호출부가 번역해 넘기는 문구와 경로.
 pub struct PluginInstallPathsView<'a> {
     /// 머리글. 대문자로 그린다.
@@ -63,4 +85,51 @@ fn path_line(ui: &mut egui::Ui, theme: &Theme, text: &str) {
     );
     job.wrap.break_anywhere = true;
     ui.add(egui::Label::new(job).wrap().selectable(true));
+}
+
+#[cfg(test)]
+mod section_tests {
+    use super::*;
+
+    /// 세로 item_spacing 을 `item_gap` 으로 둔 Ui 에 (앞 줄, 절 머리글, 절 본문) 을 그려 사각형을 돌려준다.
+    fn draw(item_gap: f32) -> (egui::Rect, egui::Rect, egui::Rect) {
+        let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
+        let ctx = egui::Context::default();
+        let mut out = None;
+        for _ in 0..2 {
+            drop(ctx.run(egui::RawInput::default(), |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    ui.spacing_mut().item_spacing.y = item_gap;
+                    let before = ui.label("before").rect;
+                    plugin_detail_section_gap(ui, &theme);
+                    let (header, body) = plugin_detail_section(ui, &theme, "Permissions", |ui| {
+                        let header = ui.min_rect();
+                        (header, ui.label("body").rect)
+                    });
+                    out = Some((before, header, body));
+                });
+            }));
+        }
+        out.expect("drawn")
+    }
+
+    #[test]
+    fn sections_sit_space_lg_apart_whatever_the_item_spacing() {
+        let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
+        for item_gap in [theme.spacing_xs.value(), theme.spacing_sm.value()] {
+            let (before, header, _) = draw(item_gap);
+            assert_eq!(
+                header.top() - before.bottom(),
+                theme.spacing_lg.value(),
+                "item spacing {item_gap}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_section_body_sits_space_sm_under_its_header() {
+        let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
+        let (_, header, body) = draw(theme.spacing_xs.value());
+        assert_eq!(body.top() - header.bottom(), theme.spacing_sm.value());
+    }
 }

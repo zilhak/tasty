@@ -6,8 +6,8 @@ use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::tokens::{PLUGIN_LIST_ROW_HEIGHT, STRUCT_GAP_2};
 use tasty_ui_widgets::{
     Button, ButtonVariant, PluginAvatarSize, PluginFingerprintLineView, TagVariant, margin_all,
-    paint_plugin_avatar, plugin_avatar, plugin_fingerprint_line, plugin_signature_invalid_detail,
-    tag,
+    paint_plugin_avatar, plugin_avatar, plugin_fingerprint_line, plugin_mono_header,
+    plugin_signature_invalid_detail, tag,
 };
 
 /// 본체 ATTN_PRIMITIVE_12와 같은 12px 글꼴. 대응 semantic 토큰이 없다.
@@ -203,13 +203,8 @@ fn banner(ui: &mut egui::Ui, theme: &Theme, kind: Kind) {
 
 /// 사유별 추가 정보 — 본체 `draw_reason_detail` 의 세 분기.
 fn reason_detail(ui: &mut egui::Ui, theme: &Theme, kind: Kind) {
-    let mono_header = |ui: &mut egui::Ui, text: &str| {
-        ui.label(
-            egui::RichText::new(text)
-                .size(theme.font_size_micro.value())
-                .color(theme.text_muted().to_egui()),
-        );
-    };
+    // 본체와 같은 디자인 `Mono` 머리글.
+    let mono_header = |ui: &mut egui::Ui, text: &str| plugin_mono_header(ui, theme, text);
     match kind {
         Kind::PermissionsChanged => {
             mono_header(ui, "Permission changes");

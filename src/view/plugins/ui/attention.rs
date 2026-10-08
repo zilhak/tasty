@@ -15,8 +15,8 @@ use super::{AttentionEntry, AttentionKind, PluginsAction, PluginsSnapshot, Plugi
 use tasty_ui_widgets::tokens::{PLUGIN_LIST_ROW_HEIGHT, STRUCT_GAP_2};
 use tasty_ui_widgets::{
     PluginAvatarSize, PluginFingerprintLineView, hspace, margin_all, margin_sym,
-    paint_plugin_avatar, plugin_avatar, plugin_fingerprint_line, plugin_signature_invalid_detail,
-    vspace,
+    paint_plugin_avatar, plugin_avatar, plugin_fingerprint_line, plugin_mono_header,
+    plugin_signature_invalid_detail, vspace,
 };
 
 /// 사유별 (라벨 키, 설명 키). 색은 `AttentionKind::is_danger` 로 분기.
@@ -252,13 +252,8 @@ fn draw_detail(
 
 /// 사유별 추가 정보 — 권한 diff / 서명 지문 / health 상세.
 fn draw_reason_detail(ui: &mut egui::Ui, th: &theme::Theme, entry: &AttentionEntry) {
-    let mono_header = |ui: &mut egui::Ui, key: &str| {
-        ui.label(
-            egui::RichText::new(t(key))
-                .size(th.font_size_micro.value())
-                .color(egui::Color32::from(th.text_muted())),
-        );
-    };
+    // 디자인 `Mono` 머리글(대문자 mono micro · text-muted · letter-spacing-caps).
+    let mono_header = |ui: &mut egui::Ui, key: &str| plugin_mono_header(ui, th, t(key));
     match entry.kind {
         AttentionKind::PermissionsChanged => {
             mono_header(ui, "plugins.attn_permission_changes");

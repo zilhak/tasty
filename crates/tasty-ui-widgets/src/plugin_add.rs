@@ -333,7 +333,7 @@ fn id_line(id: &str, authors: &[String]) -> String {
 }
 
 /// mono 대문자 머리글. 디자인 `Mono`(micro, text-muted, caps, `letter-spacing-caps`).
-pub(crate) fn mono_header(ui: &mut egui::Ui, theme: &Theme, text: &str) {
+pub fn mono_header(ui: &mut egui::Ui, theme: &Theme, text: &str) {
     let size = theme.font_size_micro;
     let mut job = egui::text::LayoutJob::default();
     job.append(

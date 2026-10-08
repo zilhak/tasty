@@ -146,12 +146,14 @@ pub use path_field::{PathField, PathFieldOutcome};
 pub use plugin_add::{
     PLUGIN_ADD_INSET, PluginAddBarClicks, PluginAddBarView, PluginAddPickerOutput,
     PluginAddPickerView, PluginFingerprintLineView, PluginManifestCardOutput,
-    PluginManifestCardView, PluginTrustKind, plugin_add_bar, plugin_add_empty_hint,
-    plugin_add_path_picker, plugin_add_read_error, plugin_fingerprint_line, plugin_manifest_card,
-    plugin_signature_invalid_detail, plugin_trust_box, short_fingerprint,
+    PluginManifestCardView, PluginTrustKind, mono_header as plugin_mono_header, plugin_add_bar,
+    plugin_add_empty_hint, plugin_add_path_picker, plugin_add_read_error, plugin_fingerprint_line,
+    plugin_manifest_card, plugin_signature_invalid_detail, plugin_trust_box, short_fingerprint,
 };
 pub use plugin_avatar::{PluginAvatarSize, paint_plugin_avatar, plugin_avatar};
-pub use plugin_paths::{PluginInstallPathsView, plugin_install_paths};
+pub use plugin_paths::{
+    PluginInstallPathsView, plugin_detail_section, plugin_detail_section_gap, plugin_install_paths,
+};
 pub use popup_title::{
     elide_popup_title, paint_popup_title_glyph, popup_title_font, popup_title_text_rect,
     show_popup_title_tooltip,

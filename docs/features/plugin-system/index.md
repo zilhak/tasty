@@ -20,9 +20,10 @@
   - **enable/disable** 토글.
   - **health error** 인디케이터 (enable 상태인데 오류인 플러그인).
   - **권한 read-only 표시** (창에서 권한을 토글하지 않는다).
+  - **절 배치**: 상세의 절 사이에는 구분선이 없고 `space-lg` 만큼 띄운다. `SURFACE KINDS`·`PERMISSIONS`·`COMMANDS`·`INSTALL PATH` 머리글은 대문자 mono micro·text-muted 이며 본문과 `space-sm` 떨어진다.
   - **설치 경로 절**(상세의 마지막 절, Commands 뒤): 머리글 줄에 대문자 mono `INSTALL PATH` 와 오른쪽 끝 `Open folder`(secondary sm, 폴더 아이콘, OS 파일 관리자로 연다). 그 아래 설치 경로 한 줄과 `Log: <경로>` 한 줄은 mono caption·text-muted 이고, 공백이 없어도 아무 문자에서 줄바꿈하며 선택할 수 있다. 말줄임·툴팁은 없다. 버튼이 경로 줄에 없으므로 창 최소 폭 720 과 기본 폭 880 에서 긴 경로가 버튼을 밀어내지 않는다.
   - **uninstall**.
-- **Attention (확인 필요)**: 등록 거부(서명/신뢰) 또는 실행 실패(health error) plugin 을 사유·조치와 함께 보여준다. 탭 라벨에 개수를 danger 배지로 표시. Signature invalid 항목은 `Signature` 머리글 아래에 고정 설명 `The signature does not match this plugin's files.`과 서명 검증이 실패한 원인(사이드카 파일 없음 · 읽기 오류 · 서명 길이 오류 등) 한 줄을 mono 글자로 보인다.
+- **Attention (확인 필요)**: 등록 거부(서명/신뢰) 또는 실행 실패(health error) plugin 을 사유·조치와 함께 보여준다. 탭 라벨에 개수를 danger 배지로 표시. 사유별 절 머리글(Permission changes · Signature · Log)은 상세 절처럼 대문자 mono micro·text-muted 다. Signature invalid 항목은 `Signature` 머리글 아래에 고정 설명 `The signature does not match this plugin's files.`과 서명 검증이 실패한 원인(사이드카 파일 없음 · 읽기 오류 · 서명 길이 오류 등) 한 줄을 mono 글자로 보인다.
 - **fingerprint 줄**: Attention 서명 절과 Add 신뢰 상자가 같은 줄을 쓴다. colon-hex 값이 16바이트를 넘으면 앞 8바이트와 뒤 8바이트를 ` … `로 이어 한 줄로 보이고, 툴팁과 복사 버튼은 전체 값을 쓴다.
 - **Install (add)**: 디렉터리(`tasty-plugin.toml`)에서 설치. 제목 없이 한 화면에서 진행한다.
   - **경로 선택**: `Plugin folder` 머리글 아래 mono 경로 입력, `Find folder…`(폴더 선택 대화상자), `Verify` 버튼과 설명 문단을 둔다. 경로가 비면 `Verify`는 비활성이다. 경로를 고치면 확인한 매니페스트를 버린다. 확인하기 전에는 그 아래에 `Choose a folder and press Verify to read its manifest.` 안내 상자를 두고, 매니페스트를 읽지 못하면(파일 없음·TOML 파싱 실패) 그 자리에 "Can't read tasty-plugin.toml" 오류 상자를, 읽었지만 선언 검사(바이너리 경로·감지기 등)에 실패하면 같은 상자에 "tasty-plugin.toml is not valid" 제목을 둔다. 두 상자 모두 아래 줄에 원문 메시지를 번역하지 않고 보인다.

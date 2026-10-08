@@ -7,7 +7,8 @@ use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::tokens::{PLUGIN_LIST_ROW_HEIGHT, STRUCT_GAP_2};
 use tasty_ui_widgets::{
     Button, ButtonVariant, PluginAvatarSize, PluginInstallPathsView, TagVariant, checkbox,
-    margin_sym, paint_plugin_avatar, plugin_avatar, plugin_install_paths, tag,
+    margin_sym, paint_plugin_avatar, plugin_avatar, plugin_detail_section,
+    plugin_detail_section_gap, plugin_install_paths, tag,
 };
 
 /// 상세 컬럼이 그릴 것 — 본체는 선택 상태와 uninstall 확인 상태로 갈린다.
@@ -225,42 +226,44 @@ fn status_row(ui: &mut egui::Ui, theme: &Theme, row: &Row) {
     });
 }
 
-/// 목록 값 한 묶음 — 비면 본체처럼 `(none)` 을 그린다.
+/// 목록 값 한 묶음 — 디자인 `Mono` 머리글 절. 비면 본체처럼 `(none)` 을 그린다.
 fn list_or_none(ui: &mut egui::Ui, theme: &Theme, label: &str, values: &[&str], as_tags: bool) {
-    caption(ui, theme, label);
-    if values.is_empty() {
-        caption(ui, theme, "(none)");
-    } else if as_tags {
-        ui.horizontal_wrapped(|ui| {
-            for v in values {
-                tag(ui, theme, v, TagVariant::Default, false);
-            }
-        });
-    } else {
-        caption(ui, theme, &values.join(", "));
-    }
+    plugin_detail_section(ui, theme, label, |ui| {
+        if values.is_empty() {
+            caption(ui, theme, "(none)");
+        } else if as_tags {
+            ui.horizontal_wrapped(|ui| {
+                for v in values {
+                    tag(ui, theme, v, TagVariant::Default, false);
+                }
+            });
+        } else {
+            caption(ui, theme, &values.join(", "));
+        }
+    });
 }
 
-/// `Commands:` — 제목 좌, 단축키 tag 우. 명령이 없으면 절 자체가 안 나온다.
+/// `Commands` — 제목 좌, 단축키 tag 우. 명령이 없으면 절 자체가 안 나온다.
 fn commands(ui: &mut egui::Ui, theme: &Theme, row: &Row) {
     if row.commands.is_empty() {
         return;
     }
-    ui.separator();
-    caption(ui, theme, "Commands:");
-    for (title, kb) in row.commands {
-        ui.horizontal(|ui| {
-            caption(ui, theme, title);
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                tag(ui, theme, kb, TagVariant::Default, false);
+    plugin_detail_section_gap(ui, theme);
+    plugin_detail_section(ui, theme, "Commands", |ui| {
+        for (title, kb) in row.commands {
+            ui.horizontal(|ui| {
+                caption(ui, theme, title);
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    tag(ui, theme, kb, TagVariant::Default, false);
+                });
             });
-        });
-    }
+        }
+    });
 }
 
 /// 설치 경로 + 로그 경로. 본체와 같은 공용 위젯 — `Open folder` 는 머리글 줄 오른쪽, 경로는 줄바꿈.
 fn paths(ui: &mut egui::Ui, theme: &Theme, row: &Row) {
-    ui.separator();
+    plugin_detail_section_gap(ui, theme);
     plugin_install_paths(
         ui,
         theme,
@@ -355,18 +358,12 @@ pub(super) fn detail_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, de
         caption(&mut child, theme, &format!("Homepage: {}", row.homepage));
     }
 
-    child.separator();
+    plugin_detail_section_gap(&mut child, theme);
     status_row(&mut child, theme, row);
-    list_or_none(
-        &mut child,
-        theme,
-        "Surface kinds:",
-        row.surface_kinds,
-        false,
-    );
+    list_or_none(&mut child, theme, "Surface kinds", row.surface_kinds, false);
 
-    child.separator();
-    list_or_none(&mut child, theme, "Permissions:", row.permissions, true);
+    plugin_detail_section_gap(&mut child, theme);
+    list_or_none(&mut child, theme, "Permissions", row.permissions, true);
 
     commands(&mut child, theme, row);
     paths(&mut child, theme, row);
