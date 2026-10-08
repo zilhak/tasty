@@ -4,6 +4,8 @@ mod retirement;
 
 use super::stall_budget::StallBudget;
 use super::*;
+// 시각 기한은 PTY 를 쓰는 unix 전용 시험에만 있다.
+#[cfg(unix)]
 use std::time::Duration;
 use tasty_core::{StructuralCommand, StructureModels, evolve_streams};
 
