@@ -73,7 +73,7 @@ pub create: Arc<dyn Fn(SurfaceId, Option<&Path>, &serde_json::Value)
     -> anyhow::Result<Box<dyn Surface>> + Send + Sync>,
 ```
 
-두 번째 인자 `Option<&Path>`가 cwd다. 기본 제공 종류와 plugin 종류 모두 이 인자를 받는다. `CoreState::create_surface_via_registry`의 호출자(워크스페이스 첫 surface·새 탭·ConvertSurface·SplitPane·SplitSurface)가 cwd를 전달한다.
+두 번째 인자 `Option<&Path>`가 cwd다. 기본 제공 종류와 plugin 종류 모두 이 인자를 받는다. 워크스페이스 첫 surface·새 탭·ConvertSurface·SplitPane·SplitSurface의 생성 요청이 cwd를 담고, 생성을 실행하는 `effect_runner::prepare`가 그 cwd를 kind의 `create`에 전달한다.
 
 #### 3. `ConvertSurfaceTarget::Kind` 에 cwd 동봉
 
