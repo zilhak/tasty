@@ -34,14 +34,24 @@ impl App {
             return;
         };
         if let Some(settings_modal) = modal.as_any_mut().downcast_mut::<view::SettingsView>() {
-            let mut new_settings = settings_modal.settings.clone();
-            // 창이 열린 동안 다른 창에서 승인한 스크립트 해시를 저장이 되돌리지 않게 한다.
-            if let Some(current) = self.engines().windowed_and_parked().next() {
-                new_settings.scripts.keep_hashes_approved_since(
-                    &settings_modal.opened_settings().scripts,
-                    &current.runtime.settings.scripts,
-                );
-            }
+            // 창이 열린 동안 다른 경로가 바꾼 설정을 저장이 되돌리지 않도록 필드 단위로 병합한다.
+            let new_settings = match self.engines().windowed_and_parked().next() {
+                Some(current) => {
+                    let merged = crate::settings::merge::merge_settings_edit(
+                        settings_modal.opened_settings(),
+                        &settings_modal.settings,
+                        &current.runtime.settings,
+                    );
+                    if !merged.conflicts.is_empty() {
+                        tracing::warn!(
+                            fields = ?merged.conflicts,
+                            "settings save: fields also changed elsewhere while the window was open; keeping the window's values"
+                        );
+                    }
+                    merged.settings
+                }
+                None => settings_modal.settings.clone(),
+            };
             let plugin_draft = settings_modal.take_plugin_shortcut_draft();
             // Only footer Save returns execution edits; Cancel leaves application services unchanged.
             let execution_edits = settings_modal.take_execution_edits();
