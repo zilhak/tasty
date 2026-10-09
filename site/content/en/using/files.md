@@ -1,4 +1,4 @@
-<!-- source-hash: dd7c83e41f18 -->
+<!-- source-hash: d510348dc2f5 -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -127,7 +127,7 @@ A link to a folder opens like a folder, and the address bar keeps the link's pat
 - **Copy Path** — with several selected, they are joined with line breaks.
 - **Copy** · **Cut** · **Paste** · **Paste (into)** — if the name already exists, you are asked what to do ([Progress and results](#progress-and-results)).
 - **Move to Trash** — sends to the OS trash without confirmation. To undo, use the trash. If that drive has no trash, nothing is deleted and you are told so.
-- **Rename**.
+- **Rename**. The new name follows the same rules as a new folder or file (empty, characters that can't be used, leading or trailing spaces, reserved names); if it breaks one, the reason appears under the field and it isn't saved.
 - **Open in System** — opens the folder in the OS file manager.
 - **Open in New Tab** — opens one more Explorer Tab in the Pane with that folder as the root.
 - **Set as Root** — moves the root of the left tree.

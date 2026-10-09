@@ -79,10 +79,13 @@ pub fn draw_rename_popup(
         return PopupAction::Close;
     }
 
-    // 직전 프레임의 입력으로 카테고리 이름을 검사한다. 다른 대상에는 이 제한이 없다.
-    let (category_error, save_enabled) = {
+    // 직전 프레임의 입력으로 카테고리 이름과 탐색기 항목 이름을 검사한다. 다른 대상에는 이 제한이 없다.
+    let (validation_error, save_enabled) = {
         let buffer = &state.dialogs.rename.as_ref().unwrap().1;
-        category_validation(target, buffer, engine)
+        match target {
+            RenameTarget::ExplorerEntry { .. } => explorer_validation(buffer),
+            _ => category_validation(target, buffer, engine),
+        }
     };
 
     let margin = 8.0;
@@ -106,7 +109,7 @@ pub fn draw_rename_popup(
             save_label,
             cancel_label,
             body_font_size: th.font_size_body.value(),
-            error: category_error.as_deref(),
+            error: validation_error.as_deref(),
             save_enabled,
         };
         draw_rename_popup_view(inner, &mut props)
@@ -204,6 +207,14 @@ pub fn draw_rename_popup_view(
     RenamePopupAction::None
 }
 
+/// 탐색기 항목 이름은 새 항목 입력과 같은 규칙으로 검사하고 이유를 보인다.
+fn explorer_validation(buffer: &str) -> (Option<String>, bool) {
+    match crate::adapters::ui::surface::explorer::rename_name_error(buffer) {
+        Some(error) => (Some(error), false),
+        None => (None, true),
+    }
+}
+
 /// 빈 카테고리 이름은 확인만 막고 오류 문구는 숨긴다. rename에서 자기 이름은 중복으로 보지 않는다.
 fn category_validation(
     target: &RenameTarget,
@@ -282,7 +293,10 @@ fn apply_rename(
             binding,
         } => {
             // 팝업이 떠 있는 동안 surface 가 바뀌었으면 새 surface 에 요청하지 않는다.
-            if binding.current_in(engine) {
+            // 확인 버튼은 직전 프레임 입력으로 막으므로, 같은 프레임의 Enter 도 여기서 다시 검사한다.
+            if binding.current_in(engine)
+                && crate::adapters::ui::surface::explorer::rename_name_error(&buffer).is_none()
+            {
                 apply_rename_explorer_entry(state, engine, surface_id, path, buffer)
             }
         }
@@ -570,6 +584,36 @@ mod tests {
             &e.read(),
         );
         assert!(!ok && err.is_some());
+    }
+
+    #[test]
+    fn an_explorer_rename_uses_the_new_item_name_rules() {
+        crate::i18n::init("en");
+        assert_eq!(explorer_validation("b.txt"), (None, true));
+        assert_eq!(
+            explorer_validation("b.txt "),
+            (
+                Some("Names can't start or end with a space.".to_string()),
+                false
+            )
+        );
+        assert!(!explorer_validation("   ").1);
+
+        let (mut state, session) = crate::state::tests::test_state();
+        let sid = session.read().workspace_at(0).unwrap().all_surface_ids()[0];
+        let binding =
+            crate::runtime::surface_binding::SurfaceBinding::capture(&session.read(), sid).unwrap();
+        let target = RenameTarget::ExplorerEntry {
+            surface_id: sid,
+            path: crate::test_support::abs_path("proj/a.txt"),
+            binding,
+        };
+        apply_rename(&mut state, &session.read(), target, " b.txt".into());
+        assert_eq!(
+            state.explorer_file_requests.len(),
+            0,
+            "a name the dialog refuses is never sent, even on the frame it was typed"
+        );
     }
 
     #[test]
