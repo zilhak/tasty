@@ -917,6 +917,10 @@ favorites_empty_hint = "フォルダーを右クリックし、{} を選択し�
 folder = "フォルダー"
 file = "ファイル"
 
+[explorer.kind]
+image = "{type} 画像"
+ext_file = "{ext} ファイル"
+
 [explorer.view]
 grid = "グリッド"
 list = "リスト"

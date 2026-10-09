@@ -242,7 +242,7 @@ pub fn draw_properties(ui: &mut egui::Ui, theme: &Theme) {
                 icons::IMAGE,
                 "diagram.png",
                 &[
-                    field("explorer.properties.kind", "PNG"),
+                    field("explorer.properties.kind", "PNG image"),
                     field("explorer.properties.size", "488 KB (499,712 bytes)"),
                     mono("explorer.properties.modified", "2026-06-26 18:05", false),
                     mono("explorer.properties.created", "2026-06-26 17:58", false),
@@ -393,13 +393,13 @@ const PREVIEW_TEXT: &str = "# Notes\n\n- split floor 180\n- favorites pin 240\n-
 /// 시안 `YPreview`: 288 폭 · 40 머리(이름 body · "종류 · 크기" caption muted) · bg-sidebar 바탕 본문.
 fn preview_panel(ui: &mut egui::Ui, theme: &Theme, kind: PreviewKind, height: f32) {
     let (name, facts) = match kind {
-        PreviewKind::Text | PreviewKind::Loading => ("notes.md", "Markdown · 12 KB"),
-        PreviewKind::Image => ("diagram.png", "PNG · 1280 × 720 · 488 KB"),
-        PreviewKind::None => ("archive.zip", "Archive · 64 MB"),
-        PreviewKind::Large => ("server.log", "Log · 38 MB"),
-        PreviewKind::Pixels => ("scan-poster.tif", "TIFF · 61.0 MB"),
+        PreviewKind::Text | PreviewKind::Loading => ("notes.md", "MD file · 12.0 KB"),
+        PreviewKind::Image => ("diagram.png", "PNG image · 1280 × 720 · 488.0 KB"),
+        PreviewKind::None => ("archive.zip", "ZIP file · 64.0 MB"),
+        PreviewKind::Large => ("server.log", "LOG file · 38.0 MB"),
+        PreviewKind::Pixels => ("scan-poster.tif", "TIFF image · 61.0 MB"),
         PreviewKind::Several => ("3 items", "2 files, 1 folder"),
-        PreviewKind::Error => ("private.key", "File · 3 KB"),
+        PreviewKind::Error => ("private.key", "KEY file · 3.0 KB"),
     };
     let w = theme.explorer_preview_width().value();
     let (rect, _) = ui.allocate_exact_size(egui::vec2(w, height), egui::Sense::hover());

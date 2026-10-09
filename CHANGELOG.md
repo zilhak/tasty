@@ -75,6 +75,7 @@
 
 - **Plugins 창 Attention 상세의 메타 줄에 홈페이지 링크가 붙는다**(`http`·`https` 주소일 때). 서명이 유효하지 않은 플러그인은 설명과 홈페이지를 숨기고 설명 자리에 `Description hidden — the signature is invalid.` 를 보인다.
 - **Plugins 창의 제거 확인은 다른 플러그인을 고르면 취소된다.** 이전에는 원래 플러그인으로 돌아오면 확인이 다시 보였다. 확인이 열리면 키보드 포커스가 Cancel 로 가고 Esc 로 취소된다.
+- **탐색기 Properties 와 미리보기 머리의 종류가 낱말로 보인다.** "PNG" 대신 "PNG image", 그 밖의 파일은 "ZIP file", 확장자가 없으면 "File" 이다. 상세 보기의 종류 열은 그대로 확장자다.
 - **탐색기 미리보기 패널이 여러 개 선택과 픽셀 상한을 따로 알린다.** 여러 개를 고르면 "3 items selected" 와 하나를 고르라는 안내, 머리에 파일·폴더 수가 보인다. 픽셀 상한을 넘은 그림은 실제 크기(예: 20000 × 14000 px)를 함께 보이고, 디코딩 메모리 상한은 256 MiB 로 쓴다.
 - **탐색기 새 항목 이름이 공백으로 시작하거나 끝나면 모든 OS 에서 거절한다.** 입력 칸 아래에 "Names can't start or end with a space." 가 보인다. 공백을 떼어 만들지 않는다. Windows 에서 끝이 점인 이름은 전처럼 예약 이름 오류다.
 - **탐색기 미리보기 토글이 Find 옆 view 묶음으로 옮겨져 좁은 칸에서 More 메뉴로 함께 접힌다.** More 메뉴의 두 줄은 체크 표시 대신 누르면 할 일을 쓴다: Find ↔ Close find, Show preview ↔ Hide preview.

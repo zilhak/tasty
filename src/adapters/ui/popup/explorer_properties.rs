@@ -532,12 +532,10 @@ fn single_content(
             icons::FILE
         }
         ItemKind::File => {
-            let kind = if ext.is_empty() {
-                t("explorer.type.file").to_owned()
-            } else {
-                ext.to_uppercase()
-            };
-            fields.push(field("explorer.properties.kind", kind));
+            fields.push(field(
+                "explorer.properties.kind",
+                crate::adapters::ui::surface::explorer::file_kind_word(&ext),
+            ));
             fields.push(field(
                 "explorer.properties.size",
                 t_fmt2(
@@ -582,7 +580,7 @@ fn remote_content(
         let fields = vec![
             field(
                 "explorer.properties.kind",
-                crate::adapters::ui::surface::explorer::type_label(e),
+                crate::adapters::ui::surface::explorer::kind_word(e),
             ),
             field("explorer.properties.size", human_size(e.is_dir, e.size)),
             mono("explorer.properties.modified", time_text(e.modified), false),

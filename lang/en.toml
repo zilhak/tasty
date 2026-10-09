@@ -921,6 +921,10 @@ favorites_empty_hint = "Right-click a folder → {}."
 folder = "Folder"
 file = "File"
 
+[explorer.kind]
+image = "{type} image"
+ext_file = "{ext} file"
+
 [explorer.view]
 grid = "Grid"
 list = "List"

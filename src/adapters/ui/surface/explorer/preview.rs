@@ -279,7 +279,7 @@ struct Several {
 
 /// 한 항목의 머리 두 줄: 이름과 "종류 · [가로 × 세로 ·] 크기".
 fn item_header(pane: &PreviewPane, e: &DirEntryInfo) -> (String, String) {
-    let mut facts = super::type_label(e);
+    let mut facts = super::kind_word(e);
     if let Body::Image { size, .. } = &pane.body {
         facts = format!("{facts} · {} × {}", size[0], size[1]);
     }
