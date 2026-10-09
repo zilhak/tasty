@@ -5,11 +5,6 @@ use crate::plugin::registry_state::ShortcutOverride;
 use crate::settings::Settings;
 use crate::settings_ui::PluginShortcutSnapshot;
 
-/// 모든 단축키 하위 화면에서 공유하는 라벨 열 폭.
-/// 세 언어의 라벨과 도움말 아이콘이 들어가는지 label_width의 검사로 확인한다.
-/// Theme 역할에 연결하지 않은 화면 전용 고정 치수다(ADR-0035).
-pub(super) const LABEL_COL_WIDTH: LogicalPx = LogicalPx(288.0);
-
 /// 녹화 완료 시 발견된 단축키 충돌의 확인 대기 상태.
 #[derive(Debug, Clone)]
 pub struct PendingBinding {
@@ -207,6 +202,41 @@ fn draws_entries(sub_tab: KeybindingsSubTab) -> bool {
     )
 }
 
+/// 엔트리 아래에 quick-switch 섹션을 그리는 서브탭과 그 순서.
+fn quick_switch_kinds(sub_tab: KeybindingsSubTab) -> &'static [QuickSwitchKind] {
+    match sub_tab {
+        KeybindingsSubTab::Workspace => &[QuickSwitchKind::Workspace, QuickSwitchKind::Category],
+        KeybindingsSubTab::Tab => &[QuickSwitchKind::Tab],
+        _ => &[],
+    }
+}
+
+/// 서브탭의 라벨 열. 엔트리와 quick-switch 행 라벨 가운데 가장 긴 것을 설정 행과 같은
+/// `settings-label-width` … `settings-label-max-width` 로 clamp 한다. 더 긴 라벨은 열 안에서 줄을 바꾼다.
+fn subtab_label_column(
+    ui: &egui::Ui,
+    th: &tasty_type_appearance::theme::Theme,
+    entries: &[(&str, &str, Option<&str>)],
+    kinds: &[QuickSwitchKind],
+) -> LogicalPx {
+    let switch_labels: Vec<String> = kinds
+        .iter()
+        .flat_map(|&kind| quick_switch::row_labels(kind))
+        .collect();
+    let rows: Vec<SettingsRow<'_>> = entries
+        .iter()
+        .map(|(_, label_key, desc_key)| {
+            let row = SettingsRow::new(t(label_key));
+            match desc_key {
+                Some(desc) => row.hint(t(desc)),
+                None => row,
+            }
+        })
+        .chain(switch_labels.iter().map(|label| SettingsRow::new(label)))
+        .collect();
+    settings_label_column(ui, th, &rows)
+}
+
 /// 정렬 전의 항목 한 줄 — 배치 순서와 (필드 id, 라벨 키, 설명 키).
 type PlacedEntry<'a> = (usize, (&'a str, &'a str, Option<&'a str>));
 
@@ -291,137 +321,38 @@ pub fn draw_keybindings_tab(
         KeyCapture::None
     };
 
+    if draws_entries(current) {
+        let entries = entries_for(current);
+        let kinds = quick_switch_kinds(current);
+        let label_col = subtab_label_column(ui, &th, &entries, kinds);
+        draw_keybinding_entries(
+            ui,
+            &mut settings.keybindings,
+            &settings.general,
+            recording_field,
+            pending_binding,
+            &captured,
+            &entries,
+            label_col,
+        );
+        for &kind in kinds {
+            vspace(ui, th.spacing_sm);
+            ui.separator();
+            vspace(ui, th.spacing_xs);
+            draw_quick_switch_section(
+                ui,
+                &mut settings.keybindings,
+                &settings.general,
+                recording_field,
+                pending_binding,
+                &captured,
+                kind,
+                label_col,
+            );
+        }
+    }
+
     match current {
-        KeybindingsSubTab::General => {
-            draw_keybinding_entries(
-                ui,
-                &mut settings.keybindings,
-                &settings.general,
-                recording_field,
-                pending_binding,
-                &captured,
-                &entries_for(current),
-            );
-        }
-        KeybindingsSubTab::Workspace => {
-            draw_keybinding_entries(
-                ui,
-                &mut settings.keybindings,
-                &settings.general,
-                recording_field,
-                pending_binding,
-                &captured,
-                &entries_for(current),
-            );
-
-            vspace(ui, th.spacing_sm);
-            ui.separator();
-            vspace(ui, th.spacing_xs);
-
-            draw_quick_switch_section(
-                ui,
-                &mut settings.keybindings,
-                &settings.general,
-                recording_field,
-                pending_binding,
-                &captured,
-                QuickSwitchKind::Workspace,
-            );
-
-            vspace(ui, th.spacing_sm);
-            ui.separator();
-            vspace(ui, th.spacing_xs);
-
-            draw_quick_switch_section(
-                ui,
-                &mut settings.keybindings,
-                &settings.general,
-                recording_field,
-                pending_binding,
-                &captured,
-                QuickSwitchKind::Category,
-            );
-        }
-        KeybindingsSubTab::Pane => {
-            draw_keybinding_entries(
-                ui,
-                &mut settings.keybindings,
-                &settings.general,
-                recording_field,
-                pending_binding,
-                &captured,
-                &entries_for(current),
-            );
-        }
-        KeybindingsSubTab::Tab => {
-            draw_keybinding_entries(
-                ui,
-                &mut settings.keybindings,
-                &settings.general,
-                recording_field,
-                pending_binding,
-                &captured,
-                &entries_for(current),
-            );
-
-            vspace(ui, th.spacing_sm);
-            ui.separator();
-            vspace(ui, th.spacing_xs);
-
-            draw_quick_switch_section(
-                ui,
-                &mut settings.keybindings,
-                &settings.general,
-                recording_field,
-                pending_binding,
-                &captured,
-                QuickSwitchKind::Tab,
-            );
-        }
-        KeybindingsSubTab::Surface => {
-            draw_keybinding_entries(
-                ui,
-                &mut settings.keybindings,
-                &settings.general,
-                recording_field,
-                pending_binding,
-                &captured,
-                &entries_for(current),
-            );
-        }
-        KeybindingsSubTab::Clipboard => {
-            draw_keybinding_entries(
-                ui,
-                &mut settings.keybindings,
-                &settings.general,
-                recording_field,
-                pending_binding,
-                &captured,
-                &entries_for(current),
-            );
-        }
-        KeybindingsSubTab::Zoom => {
-            draw_keybinding_entries(
-                ui,
-                &mut settings.keybindings,
-                &settings.general,
-                recording_field,
-                pending_binding,
-                &captured,
-                &entries_for(current),
-            );
-        }
-        KeybindingsSubTab::Explorer => {
-            draw_keybinding_entries(
-                ui,
-                &mut settings.keybindings,
-                &settings.general,
-                recording_field,
-                pending_binding,
-                &captured,
-                &entries_for(current),
-            );
-        }
         KeybindingsSubTab::Scripts => {
             draw_script_bindings(ui, settings, recording_field, &captured);
         }
@@ -455,6 +386,8 @@ pub fn draw_keybindings_tab(
                 &captured,
             );
         }
+        // 바인딩 엔트리 서브탭은 위에서 그렸다.
+        _ => {}
     }
 
     if !matches!(
@@ -492,7 +425,7 @@ use plugins::draw_plugins_subtab;
 use preset::draw_preset_subtab;
 use quick_switch::{QuickSwitchKind, draw_quick_switch_section};
 pub use quick_switch::{clear_bare_target, set_bare_target};
-use tasty_ui_widgets::vspace;
+use tasty_ui_widgets::{SettingsRow, settings_label_column, vspace};
 
 #[cfg(test)]
 mod placement_tests {

@@ -9,7 +9,9 @@ use crate::settings::{KeybindingSettings, Settings};
 use tasty_type_geometry::length::LogicalPx;
 
 use super::{FieldKind, KeyCapture, RecordingSlot};
-use tasty_ui_widgets::{settings_label_cell, settings_label_gap, vspace};
+use tasty_ui_widgets::{
+    SettingsRow, settings_label_cell, settings_label_column, settings_label_gap, vspace,
+};
 
 /// `RecordingSlot.field_id` 가 이 접두사면 스크립트 바인딩 슬롯.
 const SCRIPT_SLOT_PREFIX: &str = "script:";
@@ -79,6 +81,12 @@ pub(super) fn draw_script_bindings(
             (e.id.clone(), name)
         })
         .collect();
+    // 라벨 열은 스크립트 이름 중 가장 긴 것에 맞추고 설정 행과 같은 범위로 clamp 한다.
+    let name_rows: Vec<SettingsRow<'_>> = scripts
+        .iter()
+        .map(|(_, name)| SettingsRow::new(name))
+        .collect();
+    let label_col = settings_label_column(ui, &th, &name_rows);
 
     for (id, name) in &scripts {
         let slot_id = format!("{SCRIPT_SLOT_PREFIX}{id}");
@@ -91,7 +99,7 @@ pub(super) fn draw_script_bindings(
 
         ui.horizontal_top(|ui| {
             // 서브탭 공유 폭의 라벨 열. 긴 사용자 스크립트 이름은 열 안에서 줄을 바꾼다.
-            settings_label_cell(ui, &th, super::LABEL_COL_WIDTH, BUTTON_HEIGHT, name, None);
+            settings_label_cell(ui, &th, label_col, BUTTON_HEIGHT, name, None);
             settings_label_gap(ui, &th);
 
             let display = if is_recording {

@@ -50,6 +50,17 @@ fn all_targets(kind: QuickSwitchKind) -> Vec<BareTarget> {
     targets
 }
 
+/// 이 축이 그리는 행의 라벨(수식키 행, 슬롯·다음·이전 행). 서브탭 라벨 열을 잴 때 쓴다.
+pub(super) fn row_labels(kind: QuickSwitchKind) -> Vec<String> {
+    let mut labels = vec![t(kind.modifier_label_key()).to_string()];
+    labels.extend(
+        all_targets(kind)
+            .into_iter()
+            .map(|tg| format!("{}:", bare_display_label(tg))),
+    );
+    labels
+}
+
 /// `target` 이 속한 quick-switch 축.
 fn axis_of(target: BareTarget) -> QuickSwitchKind {
     match target {
@@ -211,6 +222,7 @@ pub(super) fn draw_quick_switch_section(
     pending_binding: &mut Option<PendingBinding>,
     captured: &KeyCapture,
     kind: QuickSwitchKind,
+    label_col: LogicalPx,
 ) {
     // 녹화된 bare 키 소비 — 이 섹션 소속 BareKey 슬롯만.
     consume_capture(keybindings, recording_field, pending_binding, captured);
@@ -228,7 +240,7 @@ pub(super) fn draw_quick_switch_section(
         settings_label_cell(
             ui,
             &th,
-            super::LABEL_COL_WIDTH,
+            label_col,
             BUTTON_HEIGHT,
             t(kind.modifier_label_key()),
             None,
@@ -287,6 +299,7 @@ pub(super) fn draw_quick_switch_section(
             can_record,
             slot_target(kind, i),
             is_individual,
+            label_col,
         );
     }
     // 다음/이전 (세 축 모두 존재 — 카테고리도 대칭).
@@ -299,6 +312,7 @@ pub(super) fn draw_quick_switch_section(
             can_record,
             tg,
             is_individual,
+            label_col,
         );
     }
 
@@ -368,6 +382,7 @@ fn slot_row(
     can_record: bool,
     target: BareTarget,
     is_individual: bool,
+    label_col: LogicalPx,
 ) {
     let th = crate::theme::theme();
     let field_kind = if is_individual {
@@ -383,7 +398,7 @@ fn slot_row(
     ui.horizontal_top(|ui| {
         // 서브탭 공유 폭의 라벨 열(entries.rs 와 같은 칸).
         let label = format!("{}:", bare_display_label(target));
-        settings_label_cell(ui, &th, super::LABEL_COL_WIDTH, BUTTON_HEIGHT, &label, None);
+        settings_label_cell(ui, &th, label_col, BUTTON_HEIGHT, &label, None);
         settings_label_gap(ui, &th);
 
         let combo = bare_combo(keybindings, target);

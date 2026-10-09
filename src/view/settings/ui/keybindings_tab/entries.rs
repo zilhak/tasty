@@ -13,6 +13,7 @@ pub(super) fn draw_keybinding_entries(
     pending_binding: &mut Option<PendingBinding>,
     captured: &KeyCapture,
     entries: &[(&str, &str, Option<&str>)],
+    label_col: LogicalPx,
 ) {
     let th = crate::theme::theme();
     // 충돌 팝업이 떠 있는 동안은 녹화 버튼을 눌러도 녹화 상태로 진입하지 않도록 가드.
@@ -74,7 +75,7 @@ pub(super) fn draw_keybinding_entries(
             settings_label_cell(
                 ui,
                 &th,
-                super::LABEL_COL_WIDTH,
+                label_col,
                 BUTTON_HEIGHT,
                 t(label_key),
                 desc_key.map(t),

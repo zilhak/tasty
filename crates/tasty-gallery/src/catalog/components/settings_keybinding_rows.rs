@@ -1,17 +1,18 @@
 //! Keybindings 서브탭(General ~ Scripts)의 바인딩 행 예제. 실제 녹화는 하지 않는다.
 //!
-//! 라벨 열은 서브탭이 공유하는 고정 폭이고, 라벨이 짧아도 열을 그대로 차지해 바인딩 버튼이 같은 x 에서
-//! 시작한다. 열보다 긴 이름(사용자 스크립트)은 열 안에서 줄을 바꾼다.
+//! 라벨 열은 다른 설정 행과 같이 서브탭의 가장 긴 라벨을 150 … 240 으로 clamp 한 폭이다. 라벨이 짧아도
+//! 열을 그대로 차지해 바인딩 버튼이 같은 x 에서 시작한다. 열보다 긴 라벨과 사용자 스크립트 이름은 열
+//! 안에서 줄을 바꾸고, 도움말 아이콘은 마지막 단어 뒤에 붙는다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::{settings_label_cell, settings_label_gap};
+use tasty_ui_widgets::{
+    SettingsRow, settings_label_cell, settings_label_column, settings_label_gap,
+};
 
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::catalog::widgets::dialog as kit;
 
-/// 본체 단축키 탭이 공유하는 라벨 열 폭(`keybindings_tab::LABEL_COL_WIDTH`).
-const LABEL_COL: LogicalPx = LogicalPx(288.0);
 /// 본체 바인딩 버튼의 폭·높이(`entries.rs`).
 const SLOT_W: LogicalPx = LogicalPx(140.0);
 const SLOT_H: LogicalPx = LogicalPx(24.0);
@@ -30,6 +31,11 @@ const ROWS: &[(&str, Option<&str>, &[&str])] = &[
     ("Quit:", None, &["Ctrl+Q", "Ctrl+Shift+Q"]),
     ("アクティブ項目を閉じる:", None, &[]),
     (
+        "Explorer: reveal the current path in the folder tree:",
+        Some("Expands the tree down to the folder of the focused surface."),
+        &["Ctrl+Alt+E"],
+    ),
+    (
         "deploy-staging-and-rotate-every-log-on-all-the-hosts-tonight.lua",
         None,
         &["Ctrl+Alt+1"],
@@ -41,8 +47,19 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         kit::frame_card_flat(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
             kit::region_sym(ui, theme.spacing_lg, theme.spacing_md, |ui| {
                 ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
+                let measured: Vec<SettingsRow<'_>> = ROWS
+                    .iter()
+                    .map(|(label, hint, _)| {
+                        let row = SettingsRow::new(label);
+                        match hint {
+                            Some(h) => row.hint(h),
+                            None => row,
+                        }
+                    })
+                    .collect();
+                let col = settings_label_column(ui, theme, &measured);
                 for (i, (label, hint, bindings)) in ROWS.iter().enumerate() {
-                    ui.push_id(i, |ui| row(ui, theme, label, *hint, bindings));
+                    ui.push_id(i, |ui| row(ui, theme, col, label, *hint, bindings));
                 }
             });
         });
@@ -54,17 +71,25 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         &[
             (
                 "label column",
-                "288 shared by General … Scripts · holds its width",
+                "longest label of the subtab, clamp 150 … 240 · holds its width",
             ),
             ("gap", "16 label → first slot"),
-            ("hint", "HelpHint inside the label column, after the label"),
-            ("long name", "wraps inside the column (script names)"),
+            (
+                "hint",
+                "HelpHint inside the label column, after the last word",
+            ),
+            (
+                "long label",
+                "wraps inside the column (long labels, script names)",
+            ),
             (
                 "slot",
                 "140 × 24 mono · + (32) adds a slot · None when empty",
             ),
         ],
         &[
+            TokenChip::without_color("settings-label-width", "label column floor 150"),
+            TokenChip::without_color("settings-label-max-width", "label column cap 240"),
             TokenChip::without_color("settings-label-gap", "label → slot"),
             TokenChip::new("text-secondary", "label", theme.text_secondary().to_egui()),
             TokenChip::new("surface-raised", "slot", theme.surface_raised().to_egui()),
@@ -78,9 +103,16 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
-fn row(ui: &mut egui::Ui, theme: &Theme, label: &str, hint: Option<&str>, bindings: &[&str]) {
+fn row(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    col: LogicalPx,
+    label: &str,
+    hint: Option<&str>,
+    bindings: &[&str],
+) {
     ui.horizontal_top(|ui| {
-        settings_label_cell(ui, theme, LABEL_COL, SLOT_H, label, hint);
+        settings_label_cell(ui, theme, col, SLOT_H, label, hint);
         settings_label_gap(ui, theme);
         ui.horizontal_wrapped(|ui| {
             let gap = theme.spacing_xs.value();
