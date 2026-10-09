@@ -13,8 +13,6 @@ use crate::settings::{KeybindingSettings, SwitchStep};
 use super::{BareTarget, FieldKind, KeyCapture, PendingBinding, RecordingSlot, RowLayout};
 use tasty_ui_widgets::{settings_label_cell, settings_label_gap, vspace};
 
-/// 버튼/간격 치수. 4px 그리드 준수 (entries.rs 와 동일 값).
-
 /// 설정의 SwitchAxis를 화면의 녹화 대상과 연결한다.
 pub(super) use tasty_settings::SwitchAxis as QuickSwitchKind;
 
