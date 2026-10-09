@@ -29,7 +29,7 @@ src/catalog/components/category_dialogs.rs	Delete category?	workspace_category.d
 src/catalog/components/category_dialogs.rs	New category	workspace_category.new_category
 src/catalog/components/category_dialogs.rs	Rename category	workspace_category.rename_category
 src/catalog/components/clipboard_viewer.rs	Clipboard	settings.keybindings.subtab.clipboard
-src/catalog/components/clipboard_viewer.rs	Close	dag_list.close,explorer.properties.close,port_scanner.close,remote_attach.close,remote_tool.close,titlebar.close
+src/catalog/components/clipboard_viewer.rs	Close	dag_list.close,explorer.find.close,explorer.properties.close,port_scanner.close,remote_attach.close,remote_tool.close,titlebar.close
 src/catalog/components/clipboard_viewer.rs	Files	explorer.sidebar.tree
 src/catalog/components/clipboard_viewer.rs	Image	convert_popup.image
 src/catalog/components/clipboard_viewer.rs	Text	settings.appearance.colors.group.text
@@ -74,7 +74,7 @@ src/catalog/components/dag/rows.rs	derived	dag_list.derived
 src/catalog/components/dag/rows.rs	{} · {}	dag_list.row_meta
 src/catalog/components/dag/window.rs	All statuses	dag_list.status_all
 src/catalog/components/dag/window.rs	Any status	dag_list.status_any
-src/catalog/components/dag/window.rs	Close	dag_list.close,explorer.properties.close,port_scanner.close,remote_attach.close,remote_tool.close,titlebar.close
+src/catalog/components/dag/window.rs	Close	dag_list.close,explorer.find.close,explorer.properties.close,port_scanner.close,remote_attach.close,remote_tool.close,titlebar.close
 src/catalog/components/dag/window.rs	Filter DAGs…	dag_list.search_placeholder
 src/catalog/components/dag/window.rs	Task DAGs	dag_list.title,dag_list.tools_menu_item
 src/catalog/components/dag/window.rs	This workspace only	dag_list.this_workspace_only
@@ -92,6 +92,8 @@ src/catalog/components/explorer_context_menu.rs	Rename	context_menu.rename_title
 src/catalog/components/explorer_favorite_popup.rs	Add	button.add,explorer.popup.add_favorite.add,settings.terminal.input_add,settings.terminal.mouse_capture_banner_blacklist_add_button,settings.terminal.mouse_capture_blacklist_add_button
 src/catalog/components/explorer_favorite_popup.rs	Add to favorites	explorer.popup.add_favorite.title
 src/catalog/components/explorer_favorite_popup.rs	Cancel	button.cancel,image_viewer.cancel,preset.popup.cancel_button,quit_modal.cancel_button,remote_attach.cancel,remote_tool.cancel,transfer.progress.cancel
+src/catalog/components/explorer_ops.rs	Detail	explorer.view.detail
+src/catalog/components/explorer_ops.rs	—	dag.detail.none,port_scanner.external_dash
 src/catalog/components/explorer_rename_popup.rs	Cancel	button.cancel,image_viewer.cancel,preset.popup.cancel_button,quit_modal.cancel_button,remote_attach.cancel,remote_tool.cancel,transfer.progress.cancel
 src/catalog/components/explorer_rename_popup.rs	Rename	context_menu.rename_title,explorer.context_menu.rename,explorer.popup.rename.rename,explorer.popup.rename.title,preset.toolbar.rename
 src/catalog/components/explorer_sidebar.rs	Add to favorites	explorer.popup.add_favorite.title
@@ -187,6 +189,7 @@ src/catalog/components/kb_import_export.rs	Changed only	settings.keybindings.ie_
 src/catalog/components/kb_import_export.rs	Command palette	command_palette.heading
 src/catalog/components/kb_import_export.rs	Copy	dag.detail.copy,explorer.context_menu.copy_files,explorer.properties.copy,terminal_context_menu.copy,terminal_context_menu.link_copy
 src/catalog/components/kb_import_export.rs	Ctrl	settings.terminal.link_modifier_ctrl
+src/catalog/components/kb_import_export.rs	Find	explorer.command.find
 src/catalog/components/kb_import_export.rs	General bindings	settings.keybindings.ie_group_general
 src/catalog/components/kb_import_export.rs	Import keybindings	settings.keybindings.ie_detail_title
 src/catalog/components/kb_import_export.rs	None	plugins.add_none,settings.keybindings.hint_none,settings.keybindings.plugins.mode_none
@@ -293,7 +296,7 @@ src/catalog/components/plugins_window/installed.rs	Permissions	explorer.properti
 src/catalog/components/plugins_window/installed.rs	Surface kinds	plugins.surface_kinds
 src/catalog/components/port_scanner.rs	Address	port_scanner.column_address
 src/catalog/components/port_scanner.rs	Apply	port_scanner.state_filter_apply,preset.popup.apply_button,remote_tool.filter_apply,settings.file_handler.hook_handlers.seq_apply,settings.keybindings.apply_button
-src/catalog/components/port_scanner.rs	Close	dag_list.close,explorer.properties.close,port_scanner.close,remote_attach.close,remote_tool.close,titlebar.close
+src/catalog/components/port_scanner.rs	Close	dag_list.close,explorer.find.close,explorer.properties.close,port_scanner.close,remote_attach.close,remote_tool.close,titlebar.close
 src/catalog/components/port_scanner.rs	Copy address	port_scanner.copy_address
 src/catalog/components/port_scanner.rs	Deselect all	port_scanner.state_filter_deselect_all,remote_tool.filter_deselect_all
 src/catalog/components/port_scanner.rs	Favorites	explorer.sidebar.favorites,port_scanner.favorites_heading
@@ -365,6 +368,7 @@ src/catalog/components/prim_drilldown.rs	Cancel	button.cancel,image_viewer.cance
 src/catalog/components/prim_drilldown.rs	Copy	dag.detail.copy,explorer.context_menu.copy_files,explorer.properties.copy,terminal_context_menu.copy,terminal_context_menu.link_copy
 src/catalog/components/prim_drilldown.rs	Current	settings.keybindings.preset_col_before
 src/catalog/components/prim_drilldown.rs	Default	settings.appearance.colors.default
+src/catalog/components/prim_drilldown.rs	Find	explorer.command.find
 src/catalog/components/prim_drilldown.rs	New tab	explorer.tab.new
 src/catalog/components/prim_drilldown.rs	Paste	explorer.context_menu.paste
 src/catalog/components/prim_drilldown.rs	Save	button.save,filepicker.save.save_button,image_viewer.save,remote_tool.save
@@ -491,7 +495,7 @@ src/catalog/components/remote/passkeys.rs	{} · {}	dag_list.row_meta
 src/catalog/components/remote_attach.rs	Cancel	button.cancel,image_viewer.cancel,preset.popup.cancel_button,quit_modal.cancel_button,remote_attach.cancel,remote_tool.cancel,transfer.progress.cancel
 src/catalog/components/remote_attach.rs	Connect	remote_attach.connect
 src/catalog/components/remote_attach.rs	Create & connect	remote_attach.connect_create
-src/catalog/components/remote_attach.rs	Stop	remote_attach.stop
+src/catalog/components/remote_attach.rs	Stop	explorer.find.stop,remote_attach.stop
 src/catalog/components/remote_attach/new_row.rs	Creating workspace…	remote_attach.creating_workspace
 src/catalog/components/remote_attach/new_row.rs	New workspace	remote_attach.new_workspace
 src/catalog/components/remote_attach/new_row.rs	Try again	remote_attach.try_again,settings.keybindings.ie_export_retry
@@ -628,7 +632,7 @@ src/catalog/components/transfer.rs	Receiving file	transfer.progress.title
 src/catalog/components/transfer.rs	Retry	explorer.state.read_error_retry,filepicker.error_perm.retry,remote.size_sync.retry,remote_attach.retry,transfer.error.retry
 src/catalog/components/transfer.rs	Transfer failed	transfer.error.title
 src/catalog/components/transfer.rs	close	command_palette.hint_close
-src/catalog/foundations_disabled_ink.rs	Close	dag_list.close,explorer.properties.close,port_scanner.close,remote_attach.close,remote_tool.close,titlebar.close
+src/catalog/foundations_disabled_ink.rs	Close	dag_list.close,explorer.find.close,explorer.properties.close,port_scanner.close,remote_attach.close,remote_tool.close,titlebar.close
 src/catalog/foundations_disabled_ink.rs	Copy address	port_scanner.copy_address
 src/catalog/foundations_disabled_ink.rs	disabled	settings.file_handler.common.disabled
 src/catalog/foundations_rolegaps.rs	Favorites	explorer.sidebar.favorites,port_scanner.favorites_heading

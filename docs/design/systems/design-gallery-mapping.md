@@ -290,6 +290,12 @@ Spec 하나가 갤러리 예제 둘이거나, 둘이 하나이거나, 경계가 
 | `gallery/plugins.jsx` "Sidebar layout — Favorites PINNED to the bottom (2-region split)" | `explorer-sidebar` | 디자인 두 Spec ↔ 갤러리 하나 |
 | `gallery/plugins.jsx` "Short cell — Favorites drops below 240, the cell stops at 180" | `explorer-sidebar-short-cell` | 하한 180(`explorer-min-height`)·표본 body 84·compact 무대 "content body 84 (cell at 180)" 까지 반영. 라벨·Meta·Note 의 하한 숫자는 Theme 토큰에서 읽는다. Meta 의 split·refusal·scope 줄과 Note 는 시안 문구를 따르고 형제 칸 최소 56 은 `split-sibling-min-height` 토큰에서 읽는다. 본체 판정은 [분할 비율과 탐색기 칸 하한](../../features/work-area/index.md#분할-비율과-탐색기-칸-하한)에 있다 |
 | `gallery/plugins.jsx` "Right-click context menu — target resolves to 4 shapes" | `explorer-context` (Overlays) |  |
+| `gallery/explorer-ops-parts.jsx` "Toolbar — create group and view group (wide · narrow · remote · read-only)" | `explorer-commands` | 명령 묶음은 공용 `explorer_commands`. 시안의 Preview panel 토글과 More 메뉴의 체크 표시는 그리지 않는다(Spec Note) |
+| `gallery/explorer-ops-parts.jsx` "Context menu — create rows (empty area · folder) and Properties" | `explorer-context` (Overlays) | 빈 영역 첫 묶음과 폴더 파일 조작 묶음의 New folder · New file |
+| `gallery/explorer-ops-parts.jsx` "Name input — inline, at the top of the list (Detail · List · Grid)" | `explorer-name-input` | 편집 줄은 공용 `explorer_name_row`. 상세 열은 공용 `explorer_detail_columns` |
+| `gallery/explorer-ops-parts.jsx` "Name errors — empty · invalid character · already exists" | `explorer-name-errors` | 오류 상자는 공용 `explorer_name_error` |
+| `gallery/explorer-ops-parts.jsx` "Find bar — filter the current folder" | `explorer-find-bar` | Find 바는 공용 `explorer_find_bar`, 이름 강조는 `explorer_match_job` |
+| `gallery/explorer-ops-parts.jsx` "Subfolders — recursive search · searching · no results · errors · stopped" | `explorer-subfolder-search` | Folder 열은 공용 `explorer_detail_columns` 의 검색 구성. Size·Date 열 폭은 상세 보기와 같다 |
 | `gallery/plugins.jsx` "HTML — webview chrome (4 states)" | `html-chrome` | [surface viewers](#surface-viewers-plugins) |
 | `gallery/plugins.jsx` "HTML — settings (Appearance › HTML viewer)" | `plugin-settings` (Components) | [플러그인 설정 페이지](#플러그인-설정-페이지) |
 | `gallery/plugins.jsx` "Image — viewer & edit (paint) modes" | `image-viewer` · `image-paint` | [surface viewers](#surface-viewers-plugins)(디자인 한 Spec ↔ 갤러리 둘) |

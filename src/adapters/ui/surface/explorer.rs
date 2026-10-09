@@ -14,10 +14,7 @@ use tasty_type_geometry::length::LogicalPx;
 
 use tasty_model::{ExplorerPanel, ExplorerViewMode, SortColumn, SortDir};
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::{
-    PathField, PathFieldOutcome, Table, TableAlign, TableColumn, TableColumnWidth, TableSortDir,
-    tree_row,
-};
+use tasty_ui_widgets::{PathField, PathFieldOutcome, Table, TableSortDir, tree_row};
 
 use crate::adapters::ui::icons::{self, Icon};
 use crate::core::explorer_favorites as favorites;
@@ -1360,44 +1357,16 @@ fn detail_view(
     action: &mut Option<ExplorerAction>,
 ) {
     let tab = panel.active_tab();
-    let columns = vec![
-        TableColumn {
-            title: t("explorer.column.name"),
-            width: TableColumnWidth::Remainder {
-                at_least: LogicalPx(140.0),
-                clip: true,
-            },
-            align: TableAlign::Left,
-            sort_id: Some(SortColumn::Name),
+    let columns = tasty_ui_widgets::explorer_detail_columns(
+        theme,
+        tasty_ui_widgets::ExplorerDetailHeads {
+            name: (t("explorer.column.name"), SortColumn::Name),
+            size: (t("explorer.column.size"), SortColumn::Size),
+            modified: (t("explorer.column.modified"), SortColumn::Modified),
+            kind: (t("explorer.column.type"), SortColumn::Type),
+            folder: None,
         },
-        TableColumn {
-            title: t("explorer.column.size"),
-            width: TableColumnWidth::Initial {
-                initial: LogicalPx(80.0),
-                at_least: LogicalPx(64.0),
-            },
-            align: TableAlign::Right,
-            sort_id: Some(SortColumn::Size),
-        },
-        TableColumn {
-            title: t("explorer.column.modified"),
-            width: TableColumnWidth::Initial {
-                initial: LogicalPx(132.0),
-                at_least: LogicalPx(108.0),
-            },
-            align: TableAlign::Left,
-            sort_id: Some(SortColumn::Modified),
-        },
-        TableColumn {
-            title: t("explorer.column.type"),
-            width: TableColumnWidth::Initial {
-                initial: LogicalPx(92.0),
-                at_least: LogicalPx(72.0),
-            },
-            align: TableAlign::Left,
-            sort_id: Some(SortColumn::Type),
-        },
-    ];
+    );
     let dir = match tab.sort_dir {
         SortDir::Asc => TableSortDir::Asc,
         SortDir::Desc => TableSortDir::Desc,

@@ -956,6 +956,39 @@ broken_link = "링크가 가리키는 대상이 없습니다: {}"
 read_error_retry = "다시 시도"
 read_error_go_up = "상위 폴더로"
 
+[explorer.command]
+new_folder = "새 폴더"
+new_file = "새 파일"
+find = "찾기"
+more = "더 보기"
+cannot_write = "이 폴더에 쓸 수 없습니다"
+
+[explorer.new]
+folder_default = "새 폴더"
+file_default = "제목 없음.txt"
+
+[explorer.name]
+empty = "이름을 입력하세요."
+invalid_char = "이름에 “{}” 문자를 쓸 수 없습니다."
+reserved = "시스템이 예약한 이름입니다."
+exists = "이 폴더에 “{}” 이(가) 이미 있습니다."
+
+[explorer.find]
+filter_placeholder = "이 폴더 거르기"
+search_placeholder = "{} 및 하위 폴더에서 찾기"
+subfolders = "하위 폴더"
+close = "닫기"
+count = "{} / {}"
+found = "{}개 찾음"
+searching = "찾는 중… {}개 찾음"
+stop = "중지"
+stopped = "중지됨 · {}개 찾음"
+skipped = "폴더 {}개 건너뜀"
+none = "{} 에서 찾지 못했습니다"
+none_sub = "하위 폴더를 포함했습니다."
+failed = "찾기 실패"
+status = "{} / {}개 항목"
+
 [script.confirm]
 title = "등록 이후 스크립트가 변경됨"
 changed_tag = "변경됨"

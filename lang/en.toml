@@ -960,6 +960,39 @@ broken_link = "The link points to something that no longer exists: {}"
 read_error_retry = "Retry"
 read_error_go_up = "Go up"
 
+[explorer.command]
+new_folder = "New folder"
+new_file = "New file"
+find = "Find"
+more = "More"
+cannot_write = "Can't write to this folder"
+
+[explorer.new]
+folder_default = "New folder"
+file_default = "untitled.txt"
+
+[explorer.name]
+empty = "Enter a name."
+invalid_char = "A name can't contain “{}”."
+reserved = "This name is reserved by the system."
+exists = "“{}” already exists in this folder."
+
+[explorer.find]
+filter_placeholder = "Filter this folder"
+search_placeholder = "Search in {} and subfolders"
+subfolders = "Subfolders"
+close = "Close"
+count = "{} of {}"
+found = "{} found"
+searching = "Searching… {} found"
+stop = "Stop"
+stopped = "Stopped · {} found"
+skipped = "{} folders skipped"
+none = "No matches in {}"
+none_sub = "Subfolders included."
+failed = "Search failed"
+status = "{} of {} items"
+
 [script.confirm]
 title = "Script changed since registration"
 changed_tag = "changed"

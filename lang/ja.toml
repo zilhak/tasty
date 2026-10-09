@@ -956,6 +956,39 @@ broken_link = "リンクの参照先がありません: {}"
 read_error_retry = "再試行"
 read_error_go_up = "上の階層へ"
 
+[explorer.command]
+new_folder = "新しいフォルダー"
+new_file = "新しいファイル"
+find = "検索"
+more = "その他"
+cannot_write = "このフォルダーには書き込めません"
+
+[explorer.new]
+folder_default = "新しいフォルダー"
+file_default = "無題.txt"
+
+[explorer.name]
+empty = "名前を入力してください。"
+invalid_char = "名前に「{}」は使えません。"
+reserved = "システムで予約された名前です。"
+exists = "このフォルダーには「{}」がすでにあります。"
+
+[explorer.find]
+filter_placeholder = "このフォルダーを絞り込む"
+search_placeholder = "{} とサブフォルダーを検索"
+subfolders = "サブフォルダー"
+close = "閉じる"
+count = "{} / {}"
+found = "{} 件"
+searching = "検索中… {} 件"
+stop = "中止"
+stopped = "中止 · {} 件"
+skipped = "{} 個のフォルダーをスキップ"
+none = "{} に一致する項目はありません"
+none_sub = "サブフォルダーを含めました。"
+failed = "検索に失敗しました"
+status = "{} / {} 項目"
+
 [script.confirm]
 title = "登録後にスクリプトが変更されました"
 changed_tag = "変更あり"

@@ -231,12 +231,12 @@ fn toolbar(ui: &mut egui::Ui, theme: &Theme) {
     child.allocate_ui_with_layout(
         egui::vec2(addr_w, child.available_height()),
         egui::Layout::left_to_right(egui::Align::Center),
-        |ui| path_field(ui, theme),
+        |ui| path_field(ui, theme, "gallery_exp_surface_addr", "~/Downloads"),
     );
     seg_toggle(&mut child, theme, 2, None);
 }
 
-fn nav_button(ui: &mut egui::Ui, theme: &Theme, g: MockGlyph, enabled: bool) {
+pub(super) fn nav_button(ui: &mut egui::Ui, theme: &Theme, g: MockGlyph, enabled: bool) {
     IconButton::new()
         .variant(IconButtonVariant::Ghost)
         .size(ControlSize::Sm)
@@ -247,7 +247,7 @@ fn nav_button(ui: &mut egui::Ui, theme: &Theme, g: MockGlyph, enabled: bool) {
 }
 
 /// 편집하지 않는 경로 필드. 매 프레임 같은 값으로 그리므로 입력은 남지 않는다.
-fn path_field(ui: &mut egui::Ui, theme: &Theme) {
+pub(super) fn path_field(ui: &mut egui::Ui, theme: &Theme, id: &str, path: &str) {
     let folder_icon = |ui: &mut egui::Ui, rect: egui::Rect, c: egui::Color32| {
         glyph::FOLDER_OPEN
             .image(rect.height(), c)
@@ -258,24 +258,16 @@ fn path_field(ui: &mut egui::Ui, theme: &Theme) {
             .image(rect.height(), c)
             .paint_at(ui, rect);
     };
-    let mut buf = "~/Downloads".to_string();
+    let mut buf = path.to_string();
     let mut editing = false;
     let mut active = None;
-    PathField::new("gallery_exp_surface_addr")
+    PathField::new(id)
         .placeholder("Go to directory…")
         .empty_label("No matching path")
         .leading_icon(&folder_icon)
         .row_icon(&folder_icon)
         .go_icon(&go_icon)
-        .show(
-            ui,
-            theme,
-            &mut buf,
-            &mut editing,
-            &mut active,
-            &[],
-            "~/Downloads",
-        );
+        .show(ui, theme, &mut buf, &mut editing, &mut active, &[], path);
 }
 
 /// 196px 사이드바와 상세 보기. 둘 사이는 사이드바 오른쪽 1px 구분선이다.

@@ -4,7 +4,9 @@ use std::cell::RefCell;
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::{Table, TableAlign, TableColumn, TableColumnWidth, TableSortDir, tree_row};
+use tasty_ui_widgets::{
+    ExplorerDetailHeads, Table, TableSortDir, explorer_detail_columns, tree_row,
+};
 
 use crate::catalog::icons::{FILE, FOLDER, IMAGE, MockGlyph};
 use crate::catalog::spec::{StageVariant, TokenChip, body_column, cluster, meta, note, stage};
@@ -450,46 +452,16 @@ pub(super) fn detail_table(
     max_height: LogicalPx,
     id_salt: &str,
 ) -> Option<usize> {
-    let columns = vec![
-        TableColumn {
-            title: "Name",
-            width: TableColumnWidth::Remainder {
-                at_least: LogicalPx(140.0),
-                clip: true,
-            },
-            align: TableAlign::Left,
-            sort_id: Some(0_usize),
+    let columns = explorer_detail_columns(
+        theme,
+        ExplorerDetailHeads {
+            name: ("Name", 0_usize),
+            size: ("Size", 1),
+            modified: ("Date modified", 2),
+            kind: ("Type", 3),
+            folder: None,
         },
-        // design DetailRow gridTemplateColumns: 1fr 80px 132px 92px.
-        TableColumn {
-            title: "Size",
-            width: TableColumnWidth::Initial {
-                initial: LogicalPx(80.0),
-                at_least: LogicalPx(64.0),
-            },
-            align: TableAlign::Right,
-            sort_id: Some(1_usize),
-        },
-        TableColumn {
-            title: "Date modified",
-            width: TableColumnWidth::Initial {
-                initial: LogicalPx(132.0),
-                at_least: LogicalPx(108.0),
-            },
-            align: TableAlign::Left,
-            sort_id: Some(2_usize),
-        },
-        TableColumn {
-            title: "Type",
-            width: TableColumnWidth::Initial {
-                initial: LogicalPx(92.0),
-                at_least: LogicalPx(72.0),
-            },
-            align: TableAlign::Left,
-            sort_id: Some(3_usize),
-        },
-    ];
-
+    );
     let is_sel = |row: &DetailRow| rows.iter().position(|r| r.name == row.name) == Some(selected);
     let out = Table::new(columns)
         .active_sort(0_usize, TableSortDir::Asc)

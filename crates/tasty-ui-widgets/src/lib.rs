@@ -24,6 +24,10 @@ mod control;
 pub mod crumb_alloc;
 mod dashed_edge;
 mod drilldown;
+mod explorer_columns;
+mod explorer_commands;
+mod explorer_find_bar;
+mod explorer_name_edit;
 pub mod file_handler;
 mod filter_readout;
 mod help_hint;
@@ -111,6 +115,20 @@ pub use compact_state::{CompactStateGlyph, CompactStateRow, compact_state_row};
 pub use control::ControlSize;
 pub use dashed_edge::paint_dashed_outline;
 pub use drilldown::{DrillDown, DrillDownActions, DrillDownOutput, DrillDownView};
+pub use explorer_columns::{
+    ExplorerDetailHeads, explorer_detail_columns, explorer_detail_tail_width,
+};
+pub use explorer_commands::{
+    ExplorerCommand, ExplorerCommandClick, ExplorerCommandLabels, ExplorerCommandsView,
+    ExplorerToggle, explorer_commands, explorer_commands_compact, explorer_commands_width,
+};
+pub use explorer_find_bar::{
+    ExplorerFindBar, ExplorerFindEvents, ExplorerFindLabels, ExplorerFindStatus, explorer_find_bar,
+    explorer_find_bar_height, explorer_match_job, match_range,
+};
+pub use explorer_name_edit::{
+    ExplorerNameEdit, ExplorerNameEvent, ExplorerNameLayout, explorer_name_error, explorer_name_row,
+};
 pub use filter_readout::{filter_readout, filter_readout_label, filter_readout_width};
 pub use help_hint::HelpHint;
 pub use horizontal_tab_bar::{

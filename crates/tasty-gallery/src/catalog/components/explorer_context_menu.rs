@@ -5,11 +5,12 @@ use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{MenuItemVariant, menu_item, menu_separator};
 
-use crate::catalog::icons::{COPY, EDIT, MockGlyph, STAR, TRASH};
+use crate::catalog::icons::{COPY, EDIT, FILE_PLUS, FOLDER_PLUS, MockGlyph, STAR, TRASH};
 use crate::catalog::spec::{StageVariant, TokenChip, meta, note, stage};
+use crate::i18n::t;
 
 /// 메뉴 한 줄.
-enum Mi {
+pub(super) enum Mi {
     /// (leading glyph, label, danger 여부)
     Item(Option<MockGlyph>, &'static str, bool),
     Sep,
@@ -17,6 +18,9 @@ enum Mi {
 
 fn empty_menu() -> Vec<Mi> {
     vec![
+        Mi::Item(Some(FOLDER_PLUS), t("explorer.command.new_folder"), false),
+        Mi::Item(Some(FILE_PLUS), t("explorer.command.new_file"), false),
+        Mi::Sep,
         Mi::Item(Some(COPY), "Copy path", false),
         Mi::Item(Some(STAR), "Add to favorites", false),
         Mi::Sep,
@@ -43,6 +47,8 @@ fn folder_menu() -> Vec<Mi> {
         Mi::Item(None, "Cut", false),
         Mi::Item(None, "Paste (into)", false),
         Mi::Sep,
+        Mi::Item(Some(FOLDER_PLUS), t("explorer.command.new_folder"), false),
+        Mi::Item(Some(FILE_PLUS), t("explorer.command.new_file"), false),
         Mi::Item(Some(TRASH), "Delete", true),
         Mi::Item(Some(EDIT), "Rename", false),
         Mi::Item(None, "Open in system", false),
@@ -102,6 +108,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("separator", "menu_separator (1px)"),
             ("danger", "Delete = accent-danger label"),
             ("targets", "empty · file · folder · multi"),
+            (
+                "create",
+                "empty area: New folder · New file first · folder: in the file-ops group · file / multi: none · remote: hidden",
+            ),
         ],
         &[
             TokenChip::new("menu-bg", "menu fill", egui::Color32::from(theme.menu_bg())),
@@ -125,12 +135,13 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         theme,
         "Target rule (body): a right-clicked item inside the selection acts on the whole \
          selection; outside it, the selection resets to that item; on the background, the \
-         cwd. Add-to-favorites shows only on a single folder or the background; Open in \
+         cwd. New folder and New file create in the cwd from the background and inside the folder \
+         from a folder row; the target is fixed when the command starts. Add-to-favorites shows only on a single folder or the background; Open in \
          system only on a folder.",
     );
 }
 
-fn render_menu(ui: &mut egui::Ui, theme: &Theme, width: f32, items: &[Mi]) {
+pub(super) fn render_menu(ui: &mut egui::Ui, theme: &Theme, width: f32, items: &[Mi]) {
     egui::Frame::new()
         .fill(egui::Color32::from(theme.surface_raised()))
         .stroke(egui::Stroke::new(

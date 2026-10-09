@@ -703,6 +703,8 @@ pub fn pages() -> Vec<Page> {
                     ),
                     components::explorer_toolbar::draw,
                 ),
+                components::explorer_ops::create_section(),
+                components::explorer_ops::search_section(),
                 section(
                     "explorer-sidebar",
                     "Explorer sidebar",
