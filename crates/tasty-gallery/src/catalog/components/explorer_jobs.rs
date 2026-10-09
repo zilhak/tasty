@@ -562,3 +562,34 @@ pub fn draw_drag(ui: &mut egui::Ui, theme: &Theme) {
         ],
     );
 }
+
+/// explorer 절에 더하는 파일 작업 예제들. 동결된 catalog.rs 를 늘리지 않도록 여기에 둔다.
+pub fn specs() -> [crate::catalog::Spec; 4] {
+    use crate::catalog::Spec;
+    [
+        Spec {
+            id: "explorer-ops-progress",
+            title: "File operation progress — status line · queue · waiting",
+            when: Some("on the status line of the explorer that started the job"),
+            draw: draw_progress,
+        },
+        Spec {
+            id: "explorer-ops-conflict",
+            title: "Name conflict — file (apply to all) · folder (no Replace)",
+            when: Some("Keep both is the default · Replace only for files"),
+            draw: draw_conflict,
+        },
+        Spec {
+            id: "explorer-ops-results",
+            title: "Results — done · cancelled · partial · failed · trash · undo",
+            when: Some("cards inside the cell · failures stay until dismissed"),
+            draw: draw_results,
+        },
+        Spec {
+            id: "explorer-ops-drag",
+            title: "Drag chip — move · copy · refused · drop target mark",
+            when: Some("the chip says what the drop will do before release"),
+            draw: draw_drag,
+        },
+    ]
+}

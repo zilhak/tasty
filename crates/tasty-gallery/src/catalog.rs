@@ -2357,31 +2357,7 @@ pub fn pages() -> Vec<Page> {
                             ),
                             components::explorer_states::draw,
                         ),
-                        spec(
-                            "explorer-ops-progress",
-                            "File operation progress — status line · queue · waiting",
-                            Some("on the status line of the explorer that started the job"),
-                            components::explorer_jobs::draw_progress,
-                        ),
-                        spec(
-                            "explorer-ops-conflict",
-                            "Name conflict — file (apply to all) · folder (no Replace)",
-                            Some("Keep both is the default · Replace only for files"),
-                            components::explorer_jobs::draw_conflict,
-                        ),
-                        spec(
-                            "explorer-ops-results",
-                            "Results — done · cancelled · partial · failed · trash · undo",
-                            Some("cards inside the cell · failures stay until dismissed"),
-                            components::explorer_jobs::draw_results,
-                        ),
-                        spec(
-                            "explorer-ops-drag",
-                            "Drag chip — move · copy · refused · drop target mark",
-                            Some("the chip says what the drop will do before release"),
-                            components::explorer_jobs::draw_drag,
-                        ),
-                    ],
+                    ].into_iter().chain(components::explorer_jobs::specs()).collect(),
                 ),
                 section(
                     "markdown-viewer",
