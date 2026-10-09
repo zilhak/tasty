@@ -7,6 +7,11 @@
 use crate::model::PhysicalRect;
 use crate::state::MainViewState;
 
+/// 여러 파일을 끌어올 때 라벨 뒤에 붙는 개수 문구. 번역문은 이름 붙은 `{n}` 자리로 개수를 받는다.
+fn multi_files_label(count: usize) -> String {
+    crate::i18n::t("file_drop.multi_files").replace("{n}", &count.to_string())
+}
+
 /// drop hover overlay 를 egui 프레임 마지막에 그린다 (popup 위, plugin popup 아래).
 pub fn draw_drop_overlay(
     ctx: &egui::Context,
@@ -55,7 +60,7 @@ pub fn draw_drop_overlay(
         format!(
             "{}  ({})",
             crate::i18n::t("file_drop.hover_label"),
-            crate::i18n::t_fmt("file_drop.multi_files", &hover.paths.len().to_string()),
+            multi_files_label(hover.paths.len()),
         )
     } else {
         crate::i18n::t("file_drop.hover_label").to_string()
@@ -69,4 +74,17 @@ pub fn draw_drop_overlay(
         font,
         theme.text_primary().to_egui(),
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_file_count_replaces_the_named_placeholder() {
+        crate::i18n::init("en");
+        let label = multi_files_label(3);
+        assert_eq!(label, "3 files");
+        assert!(!label.contains('{'), "{label}");
+    }
 }
