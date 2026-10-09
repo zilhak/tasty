@@ -16,6 +16,11 @@ const LANGS: &[&str] = &tasty_i18n::BUILTIN_CODES;
 const SAME_AS_ENGLISH_ALLOWLIST: &[(&str, &[&str], &str)] = &[
     ("settings.number.unit_pt", &["ko", "ja"], "단위 기호"),
     ("settings.number.unit_s", &["ko", "ja"], "단위 기호"),
+    (
+        "image.state.too_large_size",
+        &["ko", "ja"],
+        "숫자 자리와 단위 기호 (× px)",
+    ),
     ("app.name", &["ko", "ja"], "제품명"),
     ("settings.appearance.subtab.tasty", &["ko", "ja"], "제품명"),
     (
