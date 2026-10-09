@@ -15,7 +15,12 @@ fn rects(layout: ExplorerNameLayout) -> (egui::Rect, egui::Rect) {
             egui::CentralPanel::default()
                 .frame(egui::Frame::NONE)
                 .show(ctx, |ui| {
-                    ui.set_width(400.0);
+                    // 넓은 입력이 왼쪽으로 나올 자리를 두고 그린다.
+                    let at = ui.max_rect().min + egui::Vec2::X * 120.0;
+                    let ui = &mut ui.new_child(
+                        egui::UiBuilder::new()
+                            .max_rect(egui::Rect::from_min_size(at, egui::vec2(400.0, 300.0))),
+                    );
                     let (row, field, _) = explorer_name_row(
                         ui,
                         &theme,
@@ -98,4 +103,15 @@ fn the_first_frame_takes_the_initial_selection() {
         ),
         (0, 8)
     );
+}
+
+#[test]
+fn a_grid_field_at_the_list_edge_moves_inside_the_visible_area() {
+    let r = |a: f32, b: f32| egui::Rangef::new(a, b);
+    assert_eq!(inside_shift(r(10.0, 50.0), r(0.0, 100.0)), 0.0);
+    assert_eq!(inside_shift(r(-20.0, 140.0), r(0.0, 300.0)), 20.0);
+    assert_eq!(inside_shift(r(200.0, 360.0), r(0.0, 300.0)), -60.0);
+    // 영역이 입력보다 좁으면 왼쪽 끝을 맞춘다.
+    assert_eq!(inside_shift(r(-20.0, 140.0), r(0.0, 100.0)), 20.0);
+    assert_eq!(inside_shift(r(30.0, 190.0), r(0.0, 100.0)), -30.0);
 }

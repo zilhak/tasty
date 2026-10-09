@@ -110,7 +110,7 @@ pub fn explorer_name_row(
                 egui::vec2(glyph_size, glyph_size),
             );
             glyph.image(glyph_size, muted).paint_at(ui, glyph_rect);
-            // 입력은 칸보다 넓어 양옆 칸 위로 나온다.
+            // 입력은 칸보다 넓어 양옆 칸 위로 나온다. 목록 가장자리의 칸이면 보이는 영역 안으로 민다.
             let width = theme.field_width_md.value();
             let field = egui::Rect::from_min_size(
                 egui::pos2(
@@ -119,9 +119,22 @@ pub fn explorer_name_row(
                 ),
                 egui::vec2(width, theme.input_height().value()),
             );
+            let field = field
+                .translate(egui::Vec2::X * inside_shift(field.x_range(), ui.clip_rect().x_range()));
             let event = field_ui(ui, theme, field, edit, invalid);
             (rect, field, event)
         }
+    }
+}
+
+/// `span` 을 `bounds` 안으로 옮기는 가로 거리. 들어가지 않으면 왼쪽 끝을 맞춘다.
+fn inside_shift(span: egui::Rangef, bounds: egui::Rangef) -> f32 {
+    if span.min < bounds.min {
+        bounds.min - span.min
+    } else if span.max > bounds.max {
+        (bounds.max - span.max).max(bounds.min - span.min)
+    } else {
+        0.0
     }
 }
 
