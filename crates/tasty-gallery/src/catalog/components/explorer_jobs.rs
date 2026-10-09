@@ -439,7 +439,8 @@ pub fn draw_results(ui: &mut egui::Ui, theme: &Theme) {
 }
 
 /// 다른 디스크로 옮기다 원본이 남은 카드와, Undo 가 바뀐 사본을 남긴 카드. 동작 버튼은 본체
-/// `card_actions` 와 같다 — 원본이 남은 항목은 다시 시도 대상이 아니라 Copy paths 만 붙는다.
+/// `card_actions` 와 같다 — 원본이 남은 카드의 Retry 는 남은 원본 지우기만 다시 하고, 바뀐 사본을
+/// 남긴 카드에는 Copy paths 만 붙는다.
 pub fn draw_source_left(ui: &mut egui::Ui, theme: &Theme) {
     let close = glyph_painter(icons::CLOSE);
     let w = theme.toast_max_width().value();
@@ -448,6 +449,17 @@ pub fn draw_source_left(ui: &mut egui::Ui, theme: &Theme) {
         label: copy_paths,
         variant: ButtonVariant::Ghost,
     }];
+    let retry2 = t_fmt("explorer.result.retry", "2");
+    let retry_delete = [
+        ResultAction {
+            label: &retry2,
+            variant: ButtonVariant::Secondary,
+        },
+        ResultAction {
+            label: copy_paths,
+            variant: ButtonVariant::Ghost,
+        },
+    ];
     let denied = t_fmt(
         "explorer.result.source_not_removed",
         "Permission denied (os error 13)",
@@ -474,9 +486,9 @@ pub fn draw_source_left(ui: &mut egui::Ui, theme: &Theme) {
     }];
     spec::stage(ui, theme, StageVariant::Column, |ui| {
         ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
-        for (title, lines) in [
-            (left_title.as_str(), &left_lines[..]),
-            (undo_title.as_str(), &kept_lines[..]),
+        for (title, lines, actions) in [
+            (left_title.as_str(), &left_lines[..], &retry_delete[..]),
+            (undo_title.as_str(), &kept_lines[..], &copy_only[..]),
         ] {
             result_card(
                 ui,
@@ -487,7 +499,7 @@ pub fn draw_source_left(ui: &mut egui::Ui, theme: &Theme) {
                     title,
                     lines,
                     more: None,
-                    actions: &copy_only,
+                    actions,
                     dismiss_tip: t("explorer.result.dismiss"),
                 },
                 &close,
@@ -498,7 +510,10 @@ pub fn draw_source_left(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         &[
-            ("source left", "warning · stays · no Undo · Copy paths"),
+            (
+                "source left",
+                "warning · stays · no Undo · Retry n (deletes only what is left) · Copy paths",
+            ),
             ("title", "explorer.result.source_left_move"),
             ("line", "explorer.result.source_not_removed · reason in ( )"),
             (
