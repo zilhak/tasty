@@ -8,10 +8,10 @@
 
 use crate::adapters::ui::input::shortcuts::modifier_hint::all_modifier_combos;
 use crate::i18n::{t, t_fmt};
-use crate::settings::{GeneralSettings, KeybindingSettings, SwitchStep};
+use crate::settings::{KeybindingSettings, SwitchStep};
 use tasty_type_geometry::length::LogicalPx;
 
-use super::{BareTarget, FieldKind, KeyCapture, PendingBinding, RecordingSlot};
+use super::{BareTarget, FieldKind, KeyCapture, PendingBinding, RecordingSlot, RowLayout};
 use tasty_ui_widgets::{settings_label_cell, settings_label_gap, vspace};
 
 /// 버튼/간격 치수. 4px 그리드 준수 (entries.rs 와 동일 값).
@@ -217,13 +217,13 @@ fn find_slot_conflict(
 pub(super) fn draw_quick_switch_section(
     ui: &mut egui::Ui,
     keybindings: &mut KeybindingSettings,
-    general: &GeneralSettings,
+    layout: RowLayout<'_>,
     recording_field: &mut Option<RecordingSlot>,
     pending_binding: &mut Option<PendingBinding>,
     captured: &KeyCapture,
     kind: QuickSwitchKind,
-    label_col: LogicalPx,
 ) {
+    let RowLayout { general, label_col } = layout;
     // 녹화된 bare 키 소비 — 이 섹션 소속 BareKey 슬롯만.
     consume_capture(keybindings, recording_field, pending_binding, captured);
 
@@ -294,12 +294,11 @@ pub(super) fn draw_quick_switch_section(
         slot_row(
             ui,
             keybindings,
-            general,
+            layout,
             recording_field,
             can_record,
             slot_target(kind, i),
             is_individual,
-            label_col,
         );
     }
     // 다음/이전 (세 축 모두 존재 — 카테고리도 대칭).
@@ -307,12 +306,11 @@ pub(super) fn draw_quick_switch_section(
         slot_row(
             ui,
             keybindings,
-            general,
+            layout,
             recording_field,
             can_record,
             tg,
             is_individual,
-            label_col,
         );
     }
 
@@ -377,13 +375,13 @@ fn apply_modifier_transition(
 fn slot_row(
     ui: &mut egui::Ui,
     keybindings: &KeybindingSettings,
-    general: &GeneralSettings,
+    layout: RowLayout<'_>,
     recording_field: &mut Option<RecordingSlot>,
     can_record: bool,
     target: BareTarget,
     is_individual: bool,
-    label_col: LogicalPx,
 ) {
+    let RowLayout { general, label_col } = layout;
     let th = crate::theme::theme();
     let field_kind = if is_individual {
         FieldKind::IndividualSlot(target)

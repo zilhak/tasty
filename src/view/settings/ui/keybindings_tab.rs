@@ -2,7 +2,7 @@ use tasty_type_geometry::length::LogicalPx;
 
 use crate::i18n::t;
 use crate::plugin::registry_state::ShortcutOverride;
-use crate::settings::Settings;
+use crate::settings::{GeneralSettings, Settings};
 use crate::settings_ui::PluginShortcutSnapshot;
 
 /// 녹화 완료 시 발견된 단축키 충돌의 확인 대기 상태.
@@ -211,6 +211,13 @@ fn quick_switch_kinds(sub_tab: KeybindingsSubTab) -> &'static [QuickSwitchKind] 
     }
 }
 
+/// 바인딩 행들이 함께 쓰는 표시 조건 — 단축키 표기 방식과 서브탭의 라벨 열 폭.
+#[derive(Clone, Copy)]
+struct RowLayout<'a> {
+    general: &'a GeneralSettings,
+    label_col: LogicalPx,
+}
+
 /// 서브탭의 라벨 열. 엔트리와 quick-switch 행 라벨 가운데 가장 긴 것을 설정 행과 같은
 /// `settings-label-width` … `settings-label-max-width` 로 clamp 한다. 더 긴 라벨은 열 안에서 줄을 바꾼다.
 fn subtab_label_column(
@@ -324,16 +331,18 @@ pub fn draw_keybindings_tab(
     if draws_entries(current) {
         let entries = entries_for(current);
         let kinds = quick_switch_kinds(current);
-        let label_col = subtab_label_column(ui, &th, &entries, kinds);
+        let layout = RowLayout {
+            general: &settings.general,
+            label_col: subtab_label_column(ui, &th, &entries, kinds),
+        };
         draw_keybinding_entries(
             ui,
             &mut settings.keybindings,
-            &settings.general,
+            layout,
             recording_field,
             pending_binding,
             &captured,
             &entries,
-            label_col,
         );
         for &kind in kinds {
             vspace(ui, th.spacing_sm);
@@ -342,12 +351,11 @@ pub fn draw_keybindings_tab(
             draw_quick_switch_section(
                 ui,
                 &mut settings.keybindings,
-                &settings.general,
+                layout,
                 recording_field,
                 pending_binding,
                 &captured,
                 kind,
-                label_col,
             );
         }
     }

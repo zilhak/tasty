@@ -1,20 +1,20 @@
 use crate::i18n::t;
-use crate::settings::{GeneralSettings, KeybindingSettings};
+use crate::settings::KeybindingSettings;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{settings_label_cell, settings_label_gap};
 
-use super::{FieldKind, KeyCapture, PendingBinding, RecordingSlot};
+use super::{FieldKind, KeyCapture, PendingBinding, RecordingSlot, RowLayout};
 
 pub(super) fn draw_keybinding_entries(
     ui: &mut egui::Ui,
     keybindings: &mut KeybindingSettings,
-    general: &GeneralSettings,
+    layout: RowLayout<'_>,
     recording_field: &mut Option<RecordingSlot>,
     pending_binding: &mut Option<PendingBinding>,
     captured: &KeyCapture,
     entries: &[(&str, &str, Option<&str>)],
-    label_col: LogicalPx,
 ) {
+    let RowLayout { general, label_col } = layout;
     let th = crate::theme::theme();
     // 충돌 팝업이 떠 있는 동안은 녹화 버튼을 눌러도 녹화 상태로 진입하지 않도록 가드.
     let can_record = pending_binding.is_none();
