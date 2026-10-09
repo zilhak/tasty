@@ -7,7 +7,7 @@
 use crate::app::App;
 use crate::runtime::engine_access::EngineMut;
 use crate::state::RequestContext;
-use tasty_ipc::stream_hub::{PumpOutcome, StreamClientId};
+use tasty_ipc::stream_hub::{PumpOutcome, StreamClientId, StreamHub};
 
 pub(crate) fn handle_stream_ready(
     app: &mut App,
@@ -35,7 +35,7 @@ fn apply(
     apply_attach_requests(app, state, engine, outcome);
     apply_input_frames(app, engine, outcome);
     apply_structural_ops(app, state, engine, outcome);
-    apply_mirror_state(app, engine, outcome);
+    apply_mirror_state(&app.stream_hub, engine, outcome);
     apply_mesh_requests(app, engine, outcome);
     apply_capture_uploads(app, engine, outcome);
     apply_file_requests(app, engine, outcome);
@@ -163,7 +163,7 @@ fn apply_structural_ops(
     }
 }
 
-fn apply_mirror_state(app: &App, engine: &mut EngineMut<'_>, outcome: &mut PumpOutcome) {
+fn apply_mirror_state(hub: &StreamHub, engine: &mut EngineMut<'_>, outcome: &mut PumpOutcome) {
     for (client_id, remote_surface_id) in std::mem::take(&mut outcome.attention_clear_requests) {
         // attention 해제는 다음 상태 diff에서 mirror로 전달한다.
         engine.apply_attached_attention_clear(client_id, remote_surface_id);
@@ -172,15 +172,14 @@ fn apply_mirror_state(app: &App, engine: &mut EngineMut<'_>, outcome: &mut PumpO
         // 적용·같은 크기는 PTY resize tap이 응답한다. 헤드리스 engine은 하나라 받지 않으면 거절이다.
         let outcome =
             engine.apply_attached_workspace_resize(client_id, remote_surface_id, cols, rows);
-        if outcome != crate::remote::server::AttachResizeOutcome::Answered {
-            crate::remote::server::reply_resize_rejected(
-                &app.stream_hub,
-                client_id,
-                remote_surface_id,
-                cols,
-                rows,
-            );
-        }
+        crate::remote::server::finish_resize_request(
+            hub,
+            client_id,
+            remote_surface_id,
+            cols,
+            rows,
+            Some(outcome),
+        );
     }
 }
 
@@ -388,5 +387,55 @@ fn apply_disconnects(engine: &mut EngineMut<'_>, outcome: &mut PumpOutcome) {
         engine.remote.bulk_transfers.clear_client(client_id);
         engine.remote.capture_uploads.clear_client(client_id);
         engine.remote.mesh_mirror.remove_for_client(client_id);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tasty_ipc::stream::StreamControl;
+
+    /// 헤드리스 루프가 받지 않은 크기 요청에 거절을 회신하고, 받은 요청은 tap 몫으로 남기는지.
+    #[test]
+    fn the_headless_loop_rejects_only_requests_its_engine_did_not_take() {
+        let (_, mut session) = crate::state::tests::test_state();
+        let mut engine = session.borrow_mut();
+        let hub = StreamHub::new();
+        let client = hub.alloc_id();
+        let rx = hub.register(client);
+        let ws = engine.workspace_at(0).expect("workspace index is valid");
+        let (ws_id, members) = (ws.id, ws.all_surface_ids());
+        engine
+            .live
+            .occupancy
+            .acquire_workspace(ws_id, &members, &members, client)
+            .expect("workspace is free in the fixture");
+        let sid = *members
+            .iter()
+            .find(|id| engine.runtime.terminals.contains(**id))
+            .expect("fixture workspace has a terminal");
+        let terminal = engine.runtime.terminals.get(sid).expect("terminal");
+        let (cols, rows) = (terminal.cols(), terminal.rows());
+
+        let mut outcome = PumpOutcome::default();
+        outcome.resize_requests.push((client, sid, cols, rows));
+        outcome.resize_requests.push((client, u32::MAX, 80, 24));
+        apply_mirror_state(&hub, &mut engine, &mut outcome);
+
+        let reply: StreamControl =
+            serde_json::from_slice(&rx.try_recv().expect("rejection reply").payload)
+                .expect("control payload");
+        assert_eq!(
+            reply,
+            StreamControl::ResizeRejected {
+                surface_id: u32::MAX,
+                cols: 80,
+                rows: 24
+            }
+        );
+        assert!(
+            rx.try_recv().is_err(),
+            "받은 요청에는 루프가 회신하지 않는다(tap이 Resize로 응답한다)"
+        );
     }
 }

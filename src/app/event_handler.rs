@@ -7,7 +7,6 @@ use winit::window::WindowId;
 use crate::adapters::ui::input::synthetic::is_synthetic_key_event;
 use crate::app::timers::{Tick, min_deadline};
 use crate::app::window_access::engines_mut;
-use crate::remote::server::AttachResizeOutcome;
 use crate::stall_watchdog::{self, Site};
 use crate::view::ui::View;
 use crate::view::{RepaintSource, ViewAction, ViewCtx};
@@ -1474,15 +1473,14 @@ impl App {
         }
         // 적용·같은 크기는 tap의 Resize가, 어느 engine도 받지 않은 요청은 거절 회신이 응답한다.
         for (client_id, sid, cols, rows) in outcome.resize_requests.drain(..) {
-            let mut answered = false;
-            self.apply_on_first_engine(|engine| {
-                let o = engine.apply_attached_workspace_resize(client_id, sid, cols, rows);
-                answered = o == AttachResizeOutcome::Answered;
-                o != AttachResizeOutcome::NotHere
-            });
-            if !answered {
-                crate::remote::server::reply_resize_rejected(hub, client_id, sid, cols, rows);
-            }
+            crate::remote::server::answer_resize_on_engines(
+                hub,
+                client_id,
+                sid,
+                cols,
+                rows,
+                |apply| self.apply_on_first_engine(apply),
+            );
         }
         // attention 해제는 저장 대상이 아니므로 레이아웃 저장은 예약하지 않는다.
         for (client_id, remote_surface_id) in outcome.attention_clear_requests.drain(..) {

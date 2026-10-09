@@ -47,7 +47,43 @@ impl EngineMut<'_> {
 }
 
 /// 적용하지 않은 크기 요청을 요청자에게 알린다. 값은 거절한 요청의 것이다.
-pub(crate) fn reply_resize_rejected(
+/// 크기 요청 하나를 마무리한다. `outcome`은 요청을 받은 engine의 결과이고, 어느 engine도 받지
+/// 않았으면 `None`이나 `NotHere`다. `Answered`면 tap이 이미 응답하므로 아무것도 보내지 않고,
+/// 그 밖에는 거절을 회신한다. GUI 루프와 헤드리스 루프가 같은 규칙을 쓰도록 여기서 정한다.
+pub(crate) fn finish_resize_request(
+    hub: &StreamHub,
+    client_id: AttachClientId,
+    surface_id: u32,
+    cols: usize,
+    rows: usize,
+    outcome: Option<AttachResizeOutcome>,
+) {
+    if outcome != Some(AttachResizeOutcome::Answered) {
+        reply_resize_rejected(hub, client_id, surface_id, cols, rows);
+    }
+}
+
+/// 여러 engine을 가진 GUI 루프의 크기 요청 하나. `for_engines`는 창·parked engine을 차례로 넘기다가
+/// 클로저가 true를 돌려준 engine에서 멈춘다. 요청을 받은 engine의 결과로 [`finish_resize_request`]를 부른다.
+#[cfg(feature = "gui")]
+pub(crate) fn answer_resize_on_engines(
+    hub: &StreamHub,
+    client_id: AttachClientId,
+    surface_id: u32,
+    cols: usize,
+    rows: usize,
+    for_engines: impl FnOnce(&mut dyn FnMut(&mut EngineMut<'_>) -> bool),
+) {
+    let mut outcome = None;
+    for_engines(&mut |engine| {
+        let o = engine.apply_attached_workspace_resize(client_id, surface_id, cols, rows);
+        outcome = Some(o);
+        o != AttachResizeOutcome::NotHere
+    });
+    finish_resize_request(hub, client_id, surface_id, cols, rows, outcome);
+}
+
+fn reply_resize_rejected(
     hub: &StreamHub,
     client_id: AttachClientId,
     surface_id: u32,
@@ -132,6 +168,85 @@ mod tests {
     }
 
     /// 연결마다 응답 보장을 확인할 수 있도록 workspace descriptor가 capability를 싣는다.
+    /// 마무리 뒤 client가 받은 거절 회신. 응답이 tap 몫이면 비어 있다.
+    fn rejection_after(outcome: Option<AttachResizeOutcome>) -> Option<StreamControl> {
+        let hub = StreamHub::new();
+        let client = hub.alloc_id();
+        let rx = hub.register(client);
+        finish_resize_request(&hub, client, 4, 90, 30, outcome);
+        let frame = rx.try_recv().ok()?;
+        Some(serde_json::from_slice(&frame.payload).expect("control payload"))
+    }
+
+    #[test]
+    fn only_an_answered_request_goes_without_a_rejection() {
+        let rejected = Some(StreamControl::ResizeRejected {
+            surface_id: 4,
+            cols: 90,
+            rows: 30,
+        });
+        assert_eq!(rejection_after(Some(AttachResizeOutcome::Answered)), None);
+        assert_eq!(
+            rejection_after(Some(AttachResizeOutcome::Rejected)),
+            rejected
+        );
+        assert_eq!(
+            rejection_after(Some(AttachResizeOutcome::NotHere)),
+            rejected,
+            "어느 engine도 받지 않은 요청도 거절한다"
+        );
+        assert_eq!(rejection_after(None), rejected, "engine이 없어도 거절한다");
+    }
+
+    /// engine 둘을 차례로 묻는 GUI 루프. 앞 engine에 없으면 뒤 engine이 받고, 아무도 받지 않거나
+    /// 받은 engine이 거절하면 거절을 회신한다.
+    #[cfg(feature = "gui")]
+    #[test]
+    fn the_gui_loop_asks_engines_in_order_and_rejects_what_none_took() {
+        let (_, mut empty) = crate::state::tests::test_state();
+        let (_, mut holding) = crate::state::tests::test_state();
+        let mut empty = empty.borrow_mut();
+        let mut holding = holding.borrow_mut();
+        let sid = occupy_first_workspace(&mut holding);
+        let terminal = holding.runtime.terminals.get(sid).expect("terminal");
+        let (cols, rows) = (terminal.cols(), terminal.rows());
+        let hub = StreamHub::new();
+        let rx = hub.register(HOLDER);
+        let other = hub.register(HOLDER + 1);
+
+        let mut both = |apply: &mut dyn FnMut(&mut EngineMut<'_>) -> bool| {
+            let _taken = apply(&mut empty) || apply(&mut holding);
+        };
+        answer_resize_on_engines(&hub, HOLDER, sid, cols, rows, &mut both);
+        assert!(rx.try_recv().is_err(), "뒤 engine이 받았으므로 회신이 없다");
+
+        let replies = |rx: &tasty_ipc::stream_hub::SinkReceiver| -> Vec<StreamControl> {
+            std::iter::from_fn(|| rx.try_recv().ok())
+                .map(|f| serde_json::from_slice(&f.payload).expect("control payload"))
+                .collect()
+        };
+        answer_resize_on_engines(&hub, HOLDER + 1, sid, cols, rows, &mut both);
+        assert_eq!(
+            replies(&other),
+            vec![StreamControl::ResizeRejected {
+                surface_id: sid,
+                cols,
+                rows
+            }],
+            "받은 engine이 점유자가 아니라고 거절하면 그 client에게 거절이 간다"
+        );
+        answer_resize_on_engines(&hub, HOLDER, u32::MAX, 80, 24, &mut both);
+        assert_eq!(
+            replies(&rx),
+            vec![StreamControl::ResizeRejected {
+                surface_id: u32::MAX,
+                cols: 80,
+                rows: 24
+            }],
+            "어느 engine에도 없는 surface는 거절한다"
+        );
+    }
+
     #[test]
     fn workspace_descriptor_announces_the_resize_ack_capability() {
         let (_, mut session) = crate::state::tests::test_state();

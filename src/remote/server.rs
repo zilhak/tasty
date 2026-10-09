@@ -15,7 +15,10 @@ use crate::model::{AttachSurfaceClass, SurfaceId, WorkspaceId};
 use tasty_ipc::stream::{StreamControl, StreamFrame, StreamTag};
 use tasty_ipc::stream_hub::{PushResult, StreamHub};
 
-pub(crate) use attach_resize::{AttachResizeOutcome, reply_resize_rejected};
+#[cfg(feature = "gui")]
+pub(crate) use attach_resize::answer_resize_on_engines;
+#[cfg(not(feature = "gui"))]
+pub(crate) use attach_resize::finish_resize_request;
 #[cfg(feature = "gui")]
 pub(crate) use content_queries::notify_markdown_changed;
 pub(crate) use content_queries::{
