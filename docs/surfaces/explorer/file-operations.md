@@ -1,6 +1,6 @@
 # Explorer 파일 작업 — 대상과 결과의 계약
 
-- **Status**: Partial — 이름 변경·복사·잘라내기·붙여넣기·휴지통 이동은 동작한다. 새 폴더·새 파일·드래그 놓기·충돌 선택·진행 취소·실행 취소·검색·속성·미리보기는 없다.
+- **Status**: Partial — 이름 변경·복사·잘라내기·붙여넣기·휴지통 이동은 동작한다. 속성 조회와 미리보기 패널·Grid 썸네일은 파일을 바꾸지 않는 읽기로 동작한다. 새 폴더·새 파일·드래그 놓기·충돌 선택·진행 취소·실행 취소·검색은 없다.
 - **주체**: 로컬 사용자 ([주체](../../concepts/actors.md)). 에이전트(IPC/CLI)는 이 문서의 파일 작업을 호출하지 않는다.
 - **ADR**: [ADR-0022](../../adr/0022-remote-mirror-content-and-queries.md) (mirror explorer 는 파일을 바꾸지 않는다)
 - **코드**: 메뉴 구성 `build_explorer_context_menu`·메뉴 핸들러 `explorer_menu_*` (`src/view/main/redraw.rs`), 단축키·Command Palette 진입 `handle_explorer_shortcut`·`run_explorer_action` (`src/adapters/ui/input/shortcuts/copy_paste.rs`), 실행 worker `src/app/explorer_files.rs`·`src/app/explorer_files/ops.rs`
@@ -31,6 +31,7 @@
 | 우클릭 — 목록 빈 영역과 툴바·주소창·내부 탭바·상태줄 | 현재 폴더 |
 | 우클릭 — 사이드바 Files 트리의 폴더 | 그 폴더 하나. 선택은 바꾸지 않는다 |
 | 우클릭 — Favorites 행 | 그 즐겨찾기 경로 |
+| `explorer_properties` 단축키·Command Palette | 선택 항목(목록 순서). 선택이 없으면 현재 폴더 |
 | 단축키·Command Palette 의 복사·잘라내기·경로 복사 | 선택 항목. 선택이 없으면 아무것도 하지 않는다 |
 | 단축키·Command Palette 의 붙여넣기 | 현재 폴더 |
 | 메뉴 "Paste into" (단일 폴더) | 그 폴더 |
@@ -62,8 +63,9 @@
 | 휴지통 이동 | 메뉴 | 선택 항목 또는 우클릭 항목 | OS 휴지통으로 보낸다. 확인 모달은 없다. 영구 삭제 경로는 없다 | 실패하면 오류 토스트를 띄우고 목록을 다시 읽는다 |
 | 실행 취소 | 없음 | — | 지원하지 않는다. 휴지통 복원은 OS 에서 한다 | — |
 | 검색·필터 | 없음 | — | 지원하지 않는다. 타입어헤드는 선택만 옮긴다 | — |
-| 속성 | 없음 | — | 지원하지 않는다. detail 뷰의 크기·날짜·종류 열이 대신한다 | — |
-| 미리보기·썸네일 | 없음 | — | 지원하지 않는다. 이미지 파일은 glyph 색만 바꾼다 | — |
+| 속성 | 메뉴 맨 끝 "Properties"(모든 변형, mirror 포함), `explorer_properties` 단축키, Command Palette | 메뉴의 대상, 또는 위 단축키 규칙 | 디스크를 바꾸지 않는다. 열 때의 대상을 고정해 보이고, 폴더 크기는 read worker 가 배경에서 센다. 닫으면 세기를 멈춘다 | 탐색기 칸에 묶인 Properties popup ([Explorer](index.md#properties-popup)) |
+| 미리보기 | 툴바 토글, `explorer_toggle_preview` 단축키, Command Palette | 선택이 하나일 때 그 항목 | 디스크를 바꾸지 않는다. 로컬 파일만 read worker 로 읽는다 | 목록 오른쪽 미리보기 패널 ([Explorer](index.md#미리보기-패널)) |
+| Grid 썸네일 | 없음 (Grid 보기에 자동) | 화면에 보인 로컬 그림 파일 | 디스크를 바꾸지 않는다 | 셀의 40 슬롯 ([Explorer](index.md#grid-썸네일)) |
 
 이름 변경과 휴지통 이동에는 키보드 단축키가 없다. 디자인 원본의 컨텍스트 메뉴 견본은 이 두 항목에 `F2`·`Del` 을 표시하지만 `KeybindingSettings` 에 대응 필드가 없어 메뉴에도 단축키를 표시하지 않는다.
 

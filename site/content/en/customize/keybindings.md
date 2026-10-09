@@ -1,4 +1,4 @@
-<!-- source-hash: d87022436e64 -->
+<!-- source-hash: 7845d55d6b99 -->
 # Keybindings
 
 Use Tasty with shortcuts that feel familiar. Choose a preset or assign your preferred keys to actions you use often. Open **Settings** > **Keybindings** to get started.
@@ -105,6 +105,7 @@ The following have no default combination, either to prevent accidents or becaus
 - **Quit** · **Immediate quit** · **Minimize to background** (the Mac preset includes `Cmd+Q` · `Cmd+M`, the Linux preset `Ctrl+Q`)
 - Free combinations for **Next tab** · **Previous tab** (left empty because `Ctrl+Tab` clashes with the OS — the numbered switching `Ctrl+L` · `Ctrl+H` works)
 - **Open Markdown** · **Open Explorer** · **Convert to Markdown** · **Convert to Explorer**
+- The Explorer's **Preview panel** toggle · **Properties**
 - **Apply workspace · tab · pane preset**, **Collapse/expand all categories**
 - **Minimize window** · **Maximize/Zoom window** · **Close window**
 - The entries in the sidebar **Tools** menu — **Open port scanner** · **Open remote tools** · **Open preset window** · **Open tutorial** · **Open file picker**

@@ -1,4 +1,4 @@
-<!-- source-hash: d4d97c9080fa -->
+<!-- source-hash: 45b1f0bced36 -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -44,8 +44,8 @@ The file manager built into Tasty. Change a terminal with `Alt+'` > **Explorer**
 ### Screen
 
 - **Left** — the **Files** tree (fixed at the root) and **Favorites** under it.
-- **Top** — **Back** · **Forward** · **Up** · **Refresh**, the address bar, and the view switch (**Grid** · **List** · **Detail**).
-- **Right** — the items in the current folder. `..` at the top goes to the parent folder. In Detail view, click the **Name** · **Size** · **Date modified** · **Type** column headers to sort.
+- **Top** — **Back** · **Forward** · **Up** · **Refresh**, the address bar, and the **Preview panel** toggle and the view switch (**Grid** · **List** · **Detail**).
+- **Right** — the items in the current folder. In Grid view, local image files (1 MB or smaller) show a small thumbnail instead of an icon. `..` at the top goes to the parent folder. In Detail view, click the **Name** · **Size** · **Date modified** · **Type** column headers to sort.
 - You can keep several **New tab**s inside a Surface and view folders separately. These are separate from the Pane's Tabs.
 
 Dragging a split line to shrink an Explorer stops at the height that still leaves the toolbar, the status line and about two rows of the list (180px). Splitting an Explorer, or splitting to make a new one, moves the split line so the Explorer keeps 180px. A cell of another kind takes whatever height is left. Only when there is no room for two Explorers to keep 180px is nothing split: the split menu and shortcut briefly show "Not enough room to split this pane", and `tasty split` reports the reason as an error. When the cell is so low that the left sidebar is shorter than 240px, Favorites hide and only the Files tree shows. Resizing the window can take the cell below that height. When the content area is lower than 120px, the empty folder, permission denied and read error messages turn into a single line of icon, title and buttons, and hovering the title shows the details.
@@ -62,6 +62,14 @@ Click the address bar to type a path directly; recently visited folders appear a
 - If the path is not a folder, does not exist, or is a link whose target is gone, the Explorer stays where it is and a notice tells you why.
 - In an Explorer in a remote Workspace, the path is looked up on the remote computer. A folder that exists only there opens, and if the remote computer can't read it, the reason shows in the list area. `~` would mean the remote home, so it is not accepted; type the full remote path.
 
+### Preview panel
+
+Press the **Preview panel** button in the toolbar to open a panel to the right of the list that shows the one selected file. Text files show their first 64 KB in a monospace font; images are fitted to the panel without being enlarged past their own size. Other file types and folders show **No preview for this file type**, and files over 1 MB show **Too large to preview**. Drag the panel's left edge to set its width between 200 and 460 px. When the Explorer cell is too narrow to keep the list beside it, the panel hides while the button stays on. Explorers in remote workspaces have no preview.
+
+### Properties
+
+Choose **Properties** at the bottom of the right-click menu to open a popup inside the Explorer cell. A file shows its kind, size (with bytes), modified and created dates, location and permissions; a link shows its target. Copy the location or link target with the copy button beside it. For a folder, a spinner turns while the items and size are counted in the background, and closing the popup stops the count. Several selected items show the count, kinds, total size and common location, and right-clicking an empty area shows the current folder. In a remote Explorer only the kind, size, modified date and location from the list are shown.
+
 ### Shortcuts (when the Explorer has focus)
 
 | Action | Shortcut |
@@ -71,6 +79,7 @@ Click the address bar to type a path directly; recently visited folders appear a
 | Select all | `Ctrl+A` · `Alt+A` |
 | Copy path | `Alt+Shift+C` |
 | Copy / cut / paste | `Ctrl+C` / `Ctrl+X` / `Ctrl+V` (the same bindings as the terminal) |
+| Toggle the preview panel · Properties | No default — set them in **Settings** > **Keybindings** > **Explorer** |
 
 Click to select, `Ctrl+click` to add, `Shift+click` to select a range. `Shift+click` selects from the last item you clicked to the one you click, and `Ctrl+Shift+click` adds that range to the current selection. On macOS use `Cmd` instead of `Ctrl`.
 
@@ -96,6 +105,7 @@ A link to a folder opens like a folder, and the address bar keeps the link's pat
 - **Open in New Tab** — opens one more Explorer Tab in the Pane with that folder as the root.
 - **Set as Root** — moves the root of the left tree.
 - **Add to Favorites** — gives it a name and puts it in the list at the bottom left. Favorites are shared by all Explorers and saved in `~/.tasty/explorer-favorites.toml`. Favorites added or removed in another window show up right away.
+- **Properties** — opens the [Properties](#properties) popup above. It also appears in remote Explorers.
 
 The last chosen view mode is remembered and applied to new Explorers too. The Explorer font is set separately in the **Explorer** item under **Settings** > **Appearance**. In an Explorer in a remote Workspace, items that change files do not appear. Items copied in a remote Explorer can't be pasted into a local Explorer: Paste does not appear in the menu, and the paste shortcut only shows a notice. Tasty never copies a local file with the same path instead. Double-clicking a markdown file opens a tab for it on the remote computer; if the type's default handler can't be used remotely, only the handlers that can are offered, and a type with no such handler only shows a notice.
 

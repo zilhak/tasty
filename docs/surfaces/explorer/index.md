@@ -153,6 +153,32 @@ mirror(원격) explorer:
 - 절대 경로(`/…`, `\…`, `X:\…`, `X:/…`)는 그대로, 나머지는 현재 원격 폴더 뒤에 잇는다. 잇는 구분자는 원격 현재 경로를 따른다(경로에 `\` 가 있으면 Windows 형식으로 보고 `\`, 아니면 `/`). 파일 선택기의 원격 경로 결합(`join_dir`)과 같은 함수다. `.`·`..` 는 정리하지 않고 그대로 원격에 보낸다. `~` 로 시작하면 원격 홈을 로컬 홈으로 펼치지 않도록 거부한다.
 - 존재 여부는 이동 뒤 원격 목록 조회가 알려 준다. 원격 조회 실패는 목록 자리의 읽기 오류 화면(`Error`/`NoPermission`)으로 보인다.
 
+### 미리보기 패널
+
+툴바의 미리보기 토글(`COLUMNS` 글리프, 보기 전환 앞)이 목록 오른쪽 패널을 켜고 끈다(시안 `YPreview`, `explorer/preview.rs`). 상태는 `ExplorerView::preview` 에 있어 그 explorer surface 가 사는 동안만 기억하고 저장·복원하지 않는다.
+
+- **폭**: `explorer_preview_width`(288)에서 시작하고 패널 왼쪽 경계선(잡는 폭은 pane 분할선과 같은 `DIVIDER_HIT_THRESHOLD`)을 끌어 `explorer_preview_min_width`(200)…`explorer_preview_max_width`(460) 사이로 바꾼다. 목록에도 같은 200 을 남긴다. 칸이 패널 하한 + 경계선 + 목록 하한보다 좁으면 패널만 숨기고 토글은 켜진 채 둔다.
+- **대상**: 선택이 정확히 하나일 때 그 항목. 선택이 없거나 여럿이면 "Select a file" 상태다. 대상이 바뀌면 이전 미리보기를 바로 지우고 Loading 상태를 보인다. 같은 항목이라도 수정 시각이 바뀌면 다시 읽는다.
+- **머리**: 높이 40, 이름 · 종류 · 크기(그림은 픽셀 크기도) 두 줄.
+- **본문**: 읽기는 App read worker(`local_reads::preview`)가 한다. 텍스트(NUL 이 없는 UTF-8)는 앞 64 KB(`PREVIEW_TEXT_BYTES`)를 mono 로 스크롤해 보인다. 그림(`decodable_image_ext`)은 패널에 맞추되 원래 크기보다 키우지 않는다. 폴더와 그 밖의 형식은 "No preview for this file type", 1 MB(`PREVIEW_MAX_BYTES`, 앱 상한) 초과는 "Too large to preview", 읽기 실패는 "Can't read this file" 과 오류 문구다.
+- **원격**: mirror explorer 는 파일 내용을 받을 경로가 없어 대상과 관계없이 지원하지 않는 형식 상태를 보인다.
+
+### Grid 썸네일
+
+Grid 셀은 모두 `explorer_grid_thumb_size`(40) 슬롯을 잡아 썸네일 유무와 관계없이 행 높이가 같다(셀 높이 +24, 시안 "Grid thumbnails", `explorer/thumbs.rs`). 로컬 explorer 의 그림 파일 중 1 MB 이하인 것만, 화면에 보인 셀부터 read worker 가 긴 변 80px 로 줄여 만든다. 썸네일은 40×40 에 맞추고(키우지 않는다) 1px separator 테두리와 radius-sm 을 둔다. 만드는 동안·상한 초과·디코딩 실패는 16 글리프(accent-info)를 그대로 둔다. 캐시(`ExplorerView::thumbs`)는 경로와 수정 시각으로 맞추고 512 개를 넘으면 지금 폴더에 없는 항목부터 버린다. list·detail 보기와 mirror explorer 는 썸네일을 만들지 않는다.
+
+### Properties popup
+
+`explorer_properties` popup(`src/adapters/ui/popup/explorer_properties.rs`, 시안 `YProps`)은 그 explorer surface 에 묶인(`PopupScope::Surface`) headless popup 이다. 폭은 `explorer_props_width`(360), 라벨 열은 `explorer_props_label_width`(96, caption text-muted)이고 값은 body 또는 mono caption 이다. 연 대상을 고정해 보이며, 원 explorer 가 사라지면 닫힌다.
+
+- **진입**: 컨텍스트 메뉴 맨 끝 구분선 뒤 "Properties"(id 70, 모든 변형·mirror 에서도 보인다), `explorer_properties` 단축키·Command Palette. 대상 규칙은 [파일 작업 계약](file-operations.md#대상-결정-규칙)이다.
+- **파일**: Kind · Size(사람이 읽는 크기와 바이트 수) · Modified · Created · Location(Copy) · Permissions(Unix 는 `rwxr-xr-x` 와 read-only, 그 밖은 read-only 만).
+- **링크**: Kind "Symbolic link" · Link target(Copy) · Location. 링크를 따라가지 않는다.
+- **폴더**: Size 자리에 하위 항목 수와 크기를 read worker 가 배경에서 세며 Spinner 를 보인다. 링크는 따라가지 않고 읽지 못한 하위 폴더는 건너뛴다. popup 을 닫으면 세기를 멈춘다.
+- **여러 항목**: 머리 "N items", Kinds(파일·폴더 수) · Total size · 공통 Location.
+- **원격(mirror)**: 원격 목록에 있는 Kind · Size · Modified · Location 만 보이고 그 아래 muted 안내를 붙인다. 원격 파일시스템을 다시 읽지 않는다.
+- **오류**: 정보를 읽지 못하면 머리에 `alertTriangle` 글리프와 첫 대상 이름, "Can't read" 라벨 한 줄에 오류 문구를 mono 로 보인다.
+
 ### 컨텍스트 메뉴 · 파일 조작
 
 진입점별 대상 결정, 작업별 결과·피드백, 지원하지 않는 작업은 [파일 작업 계약](file-operations.md)에 있다.
@@ -215,11 +241,13 @@ mirror(원격) explorer:
 |------|------|------|
 | 새로고침 | `explorer_refresh` | `F5` |
 | 상위 폴더로 | `explorer_go_up` | `Alt+Up` |
+| 미리보기 패널 켜기·끄기 | `explorer_toggle_preview` | (기본 미할당) |
+| Properties 열기 | `explorer_properties` | (기본 미할당) |
 | 전체 선택 | `select_all` | `Ctrl+A` / `Alt+A` |
 | 경로 복사 | `copy_path` | `Alt+Shift+C` |
 | explorer 로 변환 | `convert_to_explorer` | (기본 미할당) |
 
-직접 키 매칭은 `explorer_refresh`·`explorer_go_up`·`convert_to_explorer`(포커스 surface 무관) 가 `keybinding.rs`, `select_all`·`copy_path` 가 `copy_paste.rs` 다. action-id/Command Palette `dispatch.rs` 는 다섯 모두를, 더블탭 `double_tap.rs` 는 `convert_to_explorer` 만 받는다. 설정 UI 서브탭은 `explorer_refresh`·`explorer_go_up` = **Explorer**, `select_all`·`copy_path` = **Clipboard**, `convert_to_explorer` = **Surface**.
+직접 키 매칭은 `explorer_refresh`·`explorer_go_up`·`explorer_toggle_preview`·`explorer_properties`·`convert_to_explorer`(포커스 surface 무관) 가 `keybinding.rs`, `select_all`·`copy_path` 가 `copy_paste.rs` 다. action-id/Command Palette `dispatch.rs` 는 일곱 모두를, 더블탭 `double_tap.rs` 는 `convert_to_explorer` 만 받는다. 설정 UI 서브탭은 `explorer_refresh`·`explorer_go_up`·`explorer_toggle_preview`·`explorer_properties` = **Explorer**, `select_all`·`copy_path` = **Clipboard**, `convert_to_explorer` = **Surface**.
 
 **새 탭으로 탐색기 열기(`open_explorer`, 기본 미할당)는 포커스와 무관하다** — 위 표와 달리 explorer 포커스를 요구하지 않는다. `Intent::NewTab { kind: "explorer" }` 를 발생시키므로 CLI 의 `new tab --type explorer` 와 같은 도메인 인텐트(`CreateTab`)를 쓰되 선택은 다르다 — 단축키는 새 탭을 선택하고, 에이전트(CLI/IPC)는 선택하지 않는다([ADR-0059](../../adr/0059-id-targets-and-view-owned-selection.md)). 이 액션은 경로를 안 실으므로 홈에서 열린다(명시 경로는 CLI 의 `--path` 가 받는다). 설정 UI 는 **Tab** 서브탭이다 — `open_markdown` 옆, 둘 다 새 탭 열기라서. 이 액션은 `keybinding.rs`·`double_tap.rs`·`dispatch.rs` 세 진입점 전부에서 처리한다.
 

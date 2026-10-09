@@ -104,6 +104,7 @@ macOS 에서 설정 화면의 표기를 `⌘` `⌥` `⇧` 심볼로 바꾸려면
 - **종료** <!-- en: Quit --> · **즉시 종료** <!-- en: Immediate quit --> · **백그라운드로 최소화** <!-- en: Minimize to background --> (Mac 프리셋은 `Cmd+Q` · `Cmd+M`, Linux 프리셋은 `Ctrl+Q` 가 들어 있습니다)
 - **다음 탭** · **이전 탭** 의 자유 조합 (`Ctrl+Tab` 이 OS 와 겹쳐 비워 둠 — 번호 전환의 `Ctrl+L` · `Ctrl+H` 는 동작합니다)
 - **마크다운 열기** · **탐색기 열기** · **마크다운으로 전환** · **탐색기로 전환**
+- 탐색기의 **미리보기 패널** <!-- en: Preview panel --> 켜기·끄기 · **속성** <!-- en: Properties -->
 - **워크스페이스 · 탭 · 페인 프리셋 적용**, **카테고리 전체 접기/펴기**
 - **윈도우 최소화** · **윈도우 최대화/확대** · **윈도우 닫기**
 - 사이드바 **도구** 메뉴의 항목들 — **포트 스캐너 열기** <!-- en: Open port scanner --> · **원격 도구 열기** <!-- en: Open remote tools --> · **프리셋 윈도우 열기** <!-- en: Open preset window --> · **튜토리얼 열기** <!-- en: Open tutorial --> · **파일 피커 열기** <!-- en: Open file picker -->
