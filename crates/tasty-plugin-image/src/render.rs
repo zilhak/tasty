@@ -820,7 +820,7 @@ fn canvas_state(
         // 파일은 정상이고 상한으로 거절했으므로 디코드 실패 톤을 쓰지 않는다.
         Some(LoadFailure::TooLarge(_)) => (
             baked_icons::IMAGE,
-            danger,
+            theme.image_too_large_fg().to_egui(),
             tr.t("image.state.too_large"),
             theme.text_primary().to_egui(),
             Some(too_large_sub.as_str()),

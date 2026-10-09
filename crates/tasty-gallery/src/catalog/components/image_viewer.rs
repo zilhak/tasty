@@ -177,9 +177,8 @@ fn canvas_state(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, s: &CanvasSt
             let c = theme.image_error_fg().to_egui();
             (c, c)
         }
-        // 글리프 색은 image-too-large-fg 토큰이 들어오기 전까지 본체와 같은 임시값이다.
         StateTone::TooLarge => (
-            theme.image_error_fg().to_egui(),
+            theme.image_too_large_fg().to_egui(),
             theme.text_primary().to_egui(),
         ),
     };
@@ -278,6 +277,11 @@ fn draw_states(ui: &mut egui::Ui, theme: &Theme) {
                 "image-error-fg",
                 "missing · decode",
                 theme.image_error_fg().to_egui(),
+            ),
+            TokenChip::new(
+                "image-too-large-fg",
+                "too large (→ accent-warning)",
+                theme.image_too_large_fg().to_egui(),
             ),
             TokenChip::new(
                 "accent-warning",
