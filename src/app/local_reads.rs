@@ -67,7 +67,7 @@ enum Request {
     Directory(PathBuf, mpsc::SyncSender<io::Result<Vec<DirEntryInfo>>>),
     Git(PathBuf, mpsc::SyncSender<io::Result<Option<HeadState>>>),
     Script(PathBuf, mpsc::SyncSender<io::Result<ScriptSource>>),
-    Preview(PathBuf, mpsc::SyncSender<io::Result<PreviewData>>),
+    Preview(PathBuf, u32, mpsc::SyncSender<io::Result<PreviewData>>),
     Thumbnail(PathBuf, mpsc::SyncSender<io::Result<egui::ColorImage>>),
     Properties(
         PropertiesRead,
@@ -87,7 +87,9 @@ impl Request {
                 .send(crate::core::fs_list::read_dir_entries(&path).map_err(|e| missing(&path, e)))
                 .is_ok(),
             Self::Git(path, sender) => sender.send(Ok(git_branch(&path))).is_ok(),
-            Self::Preview(path, sender) => sender.send(file_info::read_preview(&path)).is_ok(),
+            Self::Preview(path, fit_width, sender) => sender
+                .send(file_info::read_preview(&path, fit_width))
+                .is_ok(),
             Self::Thumbnail(path, sender) => sender.send(file_info::read_thumbnail(&path)).is_ok(),
             Self::Properties(read, sender) => {
                 file_info::read_properties(&read.paths, &read.count, &read.cancel, |facts| {
@@ -156,8 +158,9 @@ pub(crate) fn git(path: PathBuf) -> Query<Option<HeadState>> {
 pub(crate) fn script(path: PathBuf) -> Query<ScriptSource> {
     Query::new(|sender| Request::Script(path, sender))
 }
-pub(crate) fn preview(path: PathBuf) -> Query<PreviewData> {
-    Query::new(|sender| Request::Preview(path, sender))
+/// `fit_width` 는 그림을 줄여 맞출 최대 표시 폭(물리 px)이다.
+pub(crate) fn preview(path: PathBuf, fit_width: u32) -> Query<PreviewData> {
+    Query::new(|sender| Request::Preview(path, fit_width, sender))
 }
 pub(crate) fn thumbnail(path: PathBuf) -> Query<egui::ColorImage> {
     Query::new(|sender| Request::Thumbnail(path, sender))

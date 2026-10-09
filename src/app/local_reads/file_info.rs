@@ -54,7 +54,9 @@ pub(crate) fn decodable_image_ext(ext: &str) -> bool {
     )
 }
 
-pub(super) fn read_preview(path: &Path) -> io::Result<PreviewData> {
+/// `fit_width` 는 미리보기 패널이 그림을 보일 수 있는 최대 폭(물리 px)이다. 그림을 그 폭과 텍스처 상한에
+/// 맞춰 worker 에서 Triangle 필터로 줄인다. egui-wgpu 텍스처에는 밉맵이 없어, GPU 가 크게 줄이면 앨리어싱이 생긴다.
+pub(super) fn read_preview(path: &Path, fit_width: u32) -> io::Result<PreviewData> {
     let meta = std::fs::metadata(path)?;
     if !meta.is_file() {
         return Ok(PreviewData::Unsupported);
@@ -64,7 +66,11 @@ pub(super) fn read_preview(path: &Path) -> io::Result<PreviewData> {
         if meta.len() > PREVIEW_MAX_BYTES {
             return Ok(PreviewData::TooLarge(TooLarge::Bytes));
         }
-        return match decode(path, PREVIEW_TEXTURE_SIDE) {
+        let fit = [
+            fit_width.clamp(1, PREVIEW_TEXTURE_SIDE),
+            PREVIEW_TEXTURE_SIDE,
+        ];
+        return match decode(path, fit, Shrink::Triangle) {
             Ok((image, size)) => Ok(PreviewData::Image { image, size }),
             Err(Decode::OverLimits) => Ok(PreviewData::TooLarge(TooLarge::Pixels)),
             Err(Decode::Io(error)) => Err(error),
@@ -105,7 +111,7 @@ pub(super) fn read_thumbnail(path: &Path) -> io::Result<egui::ColorImage> {
     if meta.len() > PREVIEW_MAX_BYTES {
         return Err(io::Error::other("over the preview size limit"));
     }
-    match decode(path, THUMB_DECODE_PX) {
+    match decode(path, [THUMB_DECODE_PX; 2], Shrink::Area) {
         Ok((image, _)) => Ok(image),
         Err(Decode::OverLimits) => Err(io::Error::other("over the image pixel limits")),
         Err(Decode::Io(error)) => Err(error),
@@ -124,8 +130,22 @@ impl From<io::Error> for Decode {
     }
 }
 
-/// 상한 안의 그림만 펼치고, 긴 변이 `fit` 을 넘으면 비율을 지켜 줄인다. 원본 픽셀 크기를 함께 돌려준다.
-fn decode(path: &Path, fit: u32) -> Result<(egui::ColorImage, [usize; 2]), Decode> {
+/// 그림을 줄이는 방법.
+#[derive(Clone, Copy)]
+enum Shrink {
+    /// 면적 평균(`thumbnail`). 가장 싸다. 많이 만드는 썸네일에 쓴다.
+    Area,
+    /// Triangle 필터. 면적 평균보다 약 3배 느리지만 줄인 결과가 Lanczos 에 더 가깝다.
+    Triangle,
+}
+
+/// 상한 안의 그림만 펼치고, `fit`(폭, 높이) 상자를 넘으면 비율을 지켜 줄인다. 키우지 않는다.
+/// 원본 픽셀 크기를 함께 돌려준다.
+fn decode(
+    path: &Path,
+    fit: [u32; 2],
+    shrink: Shrink,
+) -> Result<(egui::ColorImage, [usize; 2]), Decode> {
     let mut reader = image::ImageReader::open(path)?.with_guessed_format()?;
     let mut limits = image::Limits::default();
     limits.max_image_width = Some(MAX_IMAGE_SIDE);
@@ -137,8 +157,11 @@ fn decode(path: &Path, fit: u32) -> Result<(egui::ColorImage, [usize; 2]), Decod
         other => Decode::Io(io::Error::other(other)),
     })?;
     let size = [img.width() as usize, img.height() as usize];
-    let img = if img.width() > fit || img.height() > fit {
-        img.thumbnail(fit, fit)
+    let img = if img.width() > fit[0] || img.height() > fit[1] {
+        match shrink {
+            Shrink::Area => img.thumbnail(fit[0], fit[1]),
+            Shrink::Triangle => img.resize(fit[0], fit[1], image::imageops::FilterType::Triangle),
+        }
     } else {
         img
     };
@@ -317,20 +340,25 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let small = dir.path().join("notes.md");
         std::fs::write(&small, "# Notes\n").expect("write");
-        assert!(matches!(read_preview(&small), Ok(PreviewData::Text(t)) if t == "# Notes\n"));
+        assert!(
+            matches!(read_preview(&small, PREVIEW_TEXTURE_SIDE), Ok(PreviewData::Text(t)) if t == "# Notes\n")
+        );
 
         let big = dir.path().join("server.log");
         std::fs::write(&big, vec![b'a'; PREVIEW_MAX_BYTES as usize + 1]).expect("write");
         assert!(matches!(
-            read_preview(&big),
+            read_preview(&big, PREVIEW_TEXTURE_SIDE),
             Ok(PreviewData::TooLarge(TooLarge::Bytes))
         ));
 
         let bin = dir.path().join("blob.bin");
         std::fs::write(&bin, [0u8, 1, 2]).expect("write");
-        assert!(matches!(read_preview(&bin), Ok(PreviewData::Unsupported)));
         assert!(matches!(
-            read_preview(dir.path()),
+            read_preview(&bin, PREVIEW_TEXTURE_SIDE),
+            Ok(PreviewData::Unsupported)
+        ));
+        assert!(matches!(
+            read_preview(dir.path(), PREVIEW_TEXTURE_SIDE),
             Ok(PreviewData::Unsupported)
         ));
     }
@@ -345,7 +373,8 @@ mod tests {
         for (w, h) in [(9000, 16), (2560, 1440), (16, 9000)] {
             let path = dir.path().join(format!("{w}x{h}.png"));
             write_png(&path, w, h);
-            let Ok(PreviewData::Image { image, size }) = read_preview(&path) else {
+            let Ok(PreviewData::Image { image, size }) = read_preview(&path, PREVIEW_TEXTURE_SIDE)
+            else {
                 panic!("{w}x{h} should preview as an image");
             };
             assert_eq!(size, [w as usize, h as usize]);
@@ -363,12 +392,31 @@ mod tests {
     }
 
     #[test]
+    fn a_preview_image_is_fitted_to_the_panel_width_and_never_enlarged() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let wide = dir.path().join("wide.png");
+        write_png(&wide, 2560, 1440);
+        let Ok(PreviewData::Image { image, size }) = read_preview(&wide, 436) else {
+            panic!("should preview as an image");
+        };
+        assert_eq!(size, [2560, 1440]);
+        assert_eq!(image.size, [436, 245]);
+
+        let small = dir.path().join("small.png");
+        write_png(&small, 120, 80);
+        let Ok(PreviewData::Image { image, .. }) = read_preview(&small, 436) else {
+            panic!("should preview as an image");
+        };
+        assert_eq!(image.size, [120, 80]);
+    }
+
+    #[test]
     fn an_image_over_the_pixel_limits_is_refused_before_decoding() {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("wide.png");
         write_png(&path, MAX_IMAGE_SIDE + 1, 1);
         assert!(matches!(
-            read_preview(&path),
+            read_preview(&path, PREVIEW_TEXTURE_SIDE),
             Ok(PreviewData::TooLarge(TooLarge::Pixels))
         ));
         assert!(read_thumbnail(&path).is_err());
@@ -387,7 +435,10 @@ mod tests {
         let (tx, rx) = std::sync::mpsc::channel();
         let probe = path.clone();
         std::thread::spawn(move || {
-            let preview = matches!(read_preview(&probe), Ok(PreviewData::Unsupported));
+            let preview = matches!(
+                read_preview(&probe, PREVIEW_TEXTURE_SIDE),
+                Ok(PreviewData::Unsupported)
+            );
             let thumbnail = read_thumbnail(&probe).is_err();
             tx.send((preview, thumbnail)).expect("send");
         });
@@ -399,8 +450,11 @@ mod tests {
         std::fs::rename(&path, &txt).expect("rename");
         let (tx, rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
-            tx.send(matches!(read_preview(&txt), Ok(PreviewData::Unsupported)))
-                .expect("send");
+            tx.send(matches!(
+                read_preview(&txt, PREVIEW_TEXTURE_SIDE),
+                Ok(PreviewData::Unsupported)
+            ))
+            .expect("send");
         });
         assert!(
             rx.recv_timeout(std::time::Duration::from_secs(5))

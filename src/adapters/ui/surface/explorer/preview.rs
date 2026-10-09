@@ -46,8 +46,9 @@ pub struct PreviewPane {
     pub open: bool,
     /// 사용자가 끌어 정한 폭을 UI 배율로 나눈 값. `None` 이면 토큰 기본값을 쓴다.
     width: Option<f32>,
-    /// 지금 보이는 항목과 그 수정 시각. 같은 파일이 바뀌면 다시 읽는다.
-    shown: Option<(PathBuf, Option<SystemTime>)>,
+    /// 지금 보이는 항목, 그 수정 시각, 그림을 맞춘 최대 표시 폭(물리 px). 파일이 바뀌거나 배율이 바뀌어
+    /// 최대 표시 폭이 달라지면 다시 읽는다.
+    shown: Option<(PathBuf, Option<SystemTime>, u32)>,
     query: Option<Query<PreviewData>>,
     body: Body,
 }
@@ -94,8 +95,8 @@ impl PreviewPane {
     }
 
     /// 보일 항목이 바뀌었으면 이전 내용을 지우고 새로 읽는다.
-    fn retarget(&mut self, target: Option<&DirEntryInfo>, remote: bool) {
-        let key = target.map(|e| (e.path.clone(), e.modified));
+    fn retarget(&mut self, target: Option<&DirEntryInfo>, remote: bool, fit_width: u32) {
+        let key = target.map(|e| (e.path.clone(), e.modified, fit_width));
         if key == self.shown {
             return;
         }
@@ -105,7 +106,7 @@ impl PreviewPane {
             None => Body::NoTarget,
             Some(e) if e.is_dir || remote => Body::Unsupported,
             Some(e) => {
-                self.query = Some(local_reads::preview(e.path.clone()));
+                self.query = Some(local_reads::preview(e.path.clone(), fit_width));
                 Body::Loading
             }
         };
@@ -204,7 +205,13 @@ pub(super) fn split(
         .flatten()
         .cloned();
     let remote = view.is_remote();
-    view.preview.retarget(target.as_ref(), remote);
+    // 그림은 패널이 가장 넓을 때의 그림 영역 폭(아래 draw_panel 의 body.shrink(spacing_md))에 맞춰 worker 에서
+    // 줄인다. 패널을 줄이면 GPU 가 그만큼만 더 줄인다.
+    let fit_width = (theme.explorer_preview_max_width() - theme.spacing_md * 2.0)
+        .to_physical(ui.ctx().pixels_per_point())
+        .value()
+        .ceil() as u32;
+    view.preview.retarget(target.as_ref(), remote, fit_width);
     let mut panel_ui = ui.new_child(
         egui::UiBuilder::new()
             .max_rect(panel)
