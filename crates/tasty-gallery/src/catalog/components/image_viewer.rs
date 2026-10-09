@@ -48,6 +48,8 @@ const FLOAT_H: LogicalPx = LogicalPx(64.0);
 // 아래 값은 시안 `plugins.jsx` 의 이미지 상태 Stage 와 `ExpState` 칸 치수다. 대응 토큰이 없다.
 /// 시안 상태 칸 줄 최대 폭(`maxWidth: 760`).
 const STATE_ROW_W: LogicalPx = LogicalPx(760.0);
+/// 시안 상태 격자 열 수(`gridTemplateColumns: repeat(3, …)`).
+const STATE_GRID_COLUMNS: usize = 3;
 /// 시안 상태 칸 높이(`ExpState` 의 `height: 180`).
 const STATE_CELL_H: LogicalPx = LogicalPx(180.0);
 /// 시안 compact 줄 무대 폭(`maxWidth: 440`).
@@ -69,7 +71,7 @@ fn states_spec() -> crate::catalog::Spec {
         id: "image-states",
         title: "Image — empty canvas vs load failed · Save As name clash",
         when: Some(
-            "image-empty · image-load-failed-missing · -permission · -decode · -too-large · compact under 120 · Save As clash",
+            "image-empty · image-load-failed-missing · -permission · -decode · -too-large · 3 per row · compact under 120 · Save As clash",
         ),
         draw: draw_states,
     }
@@ -97,6 +99,8 @@ enum StateTone {
     Muted,
     Warning,
     Error,
+    /// 상한으로 거절한 그림. 파일은 정상이라 디코드 실패 톤과 다르고 제목은 text-primary 다.
+    TooLarge,
 }
 
 const CANVAS_STATES: &[CanvasState] = &[
@@ -132,14 +136,13 @@ const CANVAS_STATES: &[CanvasState] = &[
         reason: Some("Format error decoding Png: invalid signature"),
         retry: true,
     },
-    // 디자인 회신 전까지 본체와 같이 디코드 실패 줄의 글리프·톤을 따른다.
     CanvasState {
-        icon: icons::ALERT_TRIANGLE,
-        tone: StateTone::Error,
-        title: Title::Plugin("Image is too large"),
-        sub: Some("Over 16384 px on a side, or needs more than 512 MB to decode."),
-        reason: None,
-        retry: true,
+        icon: icons::IMAGE,
+        tone: StateTone::TooLarge,
+        title: Title::Plugin("Image is too large to open"),
+        sub: Some("Over 16384 px on a side, or needs more than 512 MiB to decode."),
+        reason: Some("20000 × 300 px"),
+        retry: false,
     },
 ];
 
@@ -174,6 +177,11 @@ fn canvas_state(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, s: &CanvasSt
             let c = theme.image_error_fg().to_egui();
             (c, c)
         }
+        // 글리프 색은 image-too-large-fg 토큰이 들어오기 전까지 본체와 같은 임시값이다.
+        StateTone::TooLarge => (
+            theme.image_error_fg().to_egui(),
+            theme.text_primary().to_egui(),
+        ),
     };
     let icon = s.icon;
     let paint = move |ui: &mut egui::Ui, r: egui::Rect, c: egui::Color32| {
@@ -204,15 +212,18 @@ fn draw_states(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Solo, |ui| {
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing.y = theme.spacing_md.value();
-            ui.horizontal(|ui| {
-                let gap = theme.spacing_md.value();
-                ui.spacing_mut().item_spacing.x = gap;
-                let n = CANVAS_STATES.len() as f32;
-                let w = (STATE_ROW_W.value() - gap * (n - 1.0)) / n;
-                for s in CANVAS_STATES {
-                    canvas_state_cell(ui, theme, s, egui::vec2(w, STATE_CELL_H.value()));
-                }
-            });
+            // 시안의 3열 격자(`repeat(3, minmax(0, 1fr))`, gap 12). 한 줄에 다섯 칸을 넣지 않는다.
+            let gap = theme.spacing_md.value();
+            let cols = STATE_GRID_COLUMNS as f32;
+            let w = (STATE_ROW_W.value() - gap * (cols - 1.0)) / cols;
+            for row in CANVAS_STATES.chunks(STATE_GRID_COLUMNS) {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = gap;
+                    for s in row {
+                        canvas_state_cell(ui, theme, s, egui::vec2(w, STATE_CELL_H.value()));
+                    }
+                });
+            }
             spec::cluster(ui, theme, "canvas under 120 → compact row", |ui| {
                 canvas_state_cell(
                     ui,
@@ -238,9 +249,15 @@ fn draw_states(ui: &mut egui::Ui, theme: &Theme) {
                 "image glyph muted · No image loaded text-secondary · no button",
             ),
             (
-                "missing / decode / too large",
+                "missing / decode",
                 "alertTriangle · image-error-fg (→ accent-danger) title",
             ),
+            (
+                "too large",
+                "image glyph · title text-primary · sub with the limits · reason = real size “{w} × {h} px” · no Retry (same file, same result)",
+            ),
+            ("units", "binary — MiB (also the explorer preview: 256 MiB)"),
+            ("gallery grid", "3 per row — never five in one row"),
             ("permission", "lock · accent-warning (same as explorer)"),
             (
                 "reason",
@@ -259,7 +276,7 @@ fn draw_states(ui: &mut egui::Ui, theme: &Theme) {
         &[
             TokenChip::new(
                 "image-error-fg",
-                "missing · decode · too large",
+                "missing · decode",
                 theme.image_error_fg().to_egui(),
             ),
             TokenChip::new(
