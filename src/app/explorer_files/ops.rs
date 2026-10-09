@@ -56,6 +56,30 @@ pub fn rename_entry(src: &Path, name: &str) -> io::Result<()> {
     rename_noreplace(src, &dst)
 }
 
+/// A new entry is one filename in `dir`. Creation fails instead of replacing an existing entry.
+pub fn create_entry(dir: &Path, name: &str, folder: bool) -> io::Result<()> {
+    let mut components = Path::new(name).components();
+    if !matches!(components.next(), Some(std::path::Component::Normal(_)))
+        || components.next().is_some()
+        || name.contains(['/', '\\'])
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "expected one file name",
+        ));
+    }
+    let path = dir.join(name);
+    if folder {
+        std::fs::create_dir(&path)
+    } else {
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .map(drop)
+    }
+}
+
 /// Copies into a fresh private tree. Never follows a source symlink or merges destination trees.
 pub fn copy_recursive(src: &Path, dst: &Path) -> io::Result<()> {
     let meta = src.symlink_metadata()?;

@@ -27,6 +27,12 @@ pub(crate) enum Operation {
         name: String,
     },
     Open(PathBuf),
+    /// 새 폴더나 빈 파일. 같은 이름이 있으면 덮어쓰지 않고 실패한다.
+    Create {
+        dir: PathBuf,
+        name: String,
+        folder: bool,
+    },
 }
 impl Operation {
     fn bytes(&self) -> usize {
@@ -45,6 +51,7 @@ impl Operation {
             Self::Trash(items) => paths(items),
             Self::Rename { path, name } => path.as_os_str().len() + name.len(),
             Self::Open(path) => path.as_os_str().len(),
+            Self::Create { dir, name, .. } => dir.as_os_str().len() + name.len(),
         }
     }
     /// 작업이 바꿀 수 있는 경로. 결과와 관계없이 이 경로를 보는 목록을 다시 읽는다.
@@ -78,6 +85,10 @@ impl Operation {
                 removed: vec![path.clone()],
             },
             Self::Open(_) => Affected::default(),
+            Self::Create { dir, .. } => Affected {
+                changed: vec![dir.clone()],
+                removed: Vec::new(),
+            },
         }
     }
     fn run(self) -> Result<(), String> {
@@ -99,6 +110,9 @@ impl Operation {
             Self::Open(path) => {
                 crate::platform::reveal::open_path(&path).map_err(|e| e.to_string())
             }
+            Self::Create { dir, name, folder } => {
+                ops::create_entry(&dir, &name, folder).map_err(|e| e.to_string())
+            }
         }
     }
 }
@@ -118,6 +132,8 @@ struct Target {
     clipboard: Option<Arc<AtomicBool>>,
     reload: bool,
     clear_selection: bool,
+    /// 만든 항목. 성공했고 요청한 explorer 가 아직 그 폴더를 보고 있으면 이 항목을 고른다.
+    created: Option<PathBuf>,
 }
 struct Request {
     target: Target,
@@ -176,6 +192,10 @@ impl crate::state::MainViewState {
                 .map(|v| v.selection_identity()),
             clear_selection: matches!(operation, Operation::Trash(_) | Operation::Rename { .. }),
             reload: !matches!(operation, Operation::Open(_)),
+            created: match &operation {
+                Operation::Create { dir, name, .. } => Some(dir.join(name)),
+                _ => None,
+            },
         };
         self.explorer_file_requests
             .0
@@ -299,6 +319,9 @@ impl Target {
                     .is_some_and(|old| view.matches_selection(old))
             {
                 view.clear_selection();
+            }
+            if success && let Some(path) = &self.created {
+                view.reveal_created(path);
             }
             view.request_reload();
         }

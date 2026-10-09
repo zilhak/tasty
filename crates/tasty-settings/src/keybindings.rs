@@ -121,6 +121,10 @@ pub struct KeybindingSettings {
     pub explorer_toggle_preview: Vec<String>,
     /// Open Properties for the focused Explorer's selection, or its folder when nothing is selected.
     pub explorer_properties: Vec<String>,
+    /// Start naming a new folder at the top of the focused Explorer listing.
+    pub explorer_new_folder: Vec<String>,
+    /// Start naming a new empty file at the top of the focused Explorer listing.
+    pub explorer_new_file: Vec<String>,
     /// Paste clipboard content into focused terminal / paste files in Explorer.
     pub paste: Vec<String>,
     /// Increase font size.

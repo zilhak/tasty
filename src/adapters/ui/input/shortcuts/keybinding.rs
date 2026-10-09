@@ -594,6 +594,9 @@ impl MainView {
         key: &Key,
         mods: ModifiersState,
     ) -> bool {
+        if super::focused_explorer_typing(state, engine) {
+            return false;
+        }
         if matches_any_binding(&kb.explorer_refresh, key, mods)
             && state.focused_surface_type(engine).is_kind("explorer")
         {
@@ -630,6 +633,19 @@ impl MainView {
                 );
             }
             return true;
+        }
+        for (binding, folder) in [
+            (&kb.explorer_new_folder, true),
+            (&kb.explorer_new_file, false),
+        ] {
+            if matches_any_binding(binding, key, mods)
+                && state.focused_surface_type(engine).is_kind("explorer")
+            {
+                if let Some(sid) = focused_explorer_surface_id(state, engine) {
+                    state.start_explorer_create(engine, sid, None, folder);
+                }
+                return true;
+            }
         }
         false
     }

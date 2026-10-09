@@ -44,6 +44,7 @@ pub(crate) fn menu_kind(menu: &PendingNativeMenu) -> (&'static str, Option<u32>)
         M::Surface { surface_id, .. } => ("Surface", Some(*surface_id)),
         M::Explorer { surface_id, .. } => ("Explorer", Some(*surface_id)),
         M::ExplorerFavorite { surface_id, .. } => ("ExplorerFavorite", Some(*surface_id)),
+        M::ExplorerMore { surface_id, .. } => ("ExplorerMore", Some(*surface_id)),
         M::NewWorkspaceButton { .. } => ("NewWorkspaceButton", None),
         M::WorkspaceCategoryHeader { .. } => ("WorkspaceCategoryHeader", None),
         M::SidebarBackground { .. } => ("SidebarBackground", None),
@@ -61,6 +62,7 @@ pub(crate) const MENU_KINDS: &[&str] = &[
     "Surface",
     "Explorer",
     "ExplorerFavorite",
+    "ExplorerMore",
     "NewWorkspaceButton",
     "WorkspaceCategoryHeader",
     "SidebarBackground",
@@ -269,6 +271,11 @@ mod tests {
             PendingNativeMenu::ExplorerFavorite {
                 surface_id: 1,
                 path: PathBuf::new(),
+                x,
+                y,
+            },
+            PendingNativeMenu::ExplorerMore {
+                surface_id: 1,
                 x,
                 y,
             },

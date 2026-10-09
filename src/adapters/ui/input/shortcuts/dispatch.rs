@@ -372,6 +372,18 @@ impl MainView {
                     super::explorer_view_shortcut(state, engine, action_id);
                 }
             }
+            "explorer_new_folder" | "explorer_new_file" => {
+                if state.focused_surface_type(engine).is_kind("explorer")
+                    && let Some(sid) = focused_explorer_surface_id(state, engine)
+                {
+                    state.start_explorer_create(
+                        engine,
+                        sid,
+                        None,
+                        action_id == "explorer_new_folder",
+                    );
+                }
+            }
             "toggle_dag_list" => Self::toggle_dag_list_popup(state, engine),
             "open_port_scanner" => Self::open_tool_popup(
                 state,

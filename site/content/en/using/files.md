@@ -1,4 +1,4 @@
-<!-- source-hash: ec7d2fad07a3 -->
+<!-- source-hash: 58b9e34f9f50 -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -44,7 +44,7 @@ The file manager built into Tasty. Change a terminal with `Alt+'` > **Explorer**
 ### Screen
 
 - **Left** — the **Files** tree (fixed at the root) and **Favorites** under it.
-- **Top** — **Back** · **Forward** · **Up** · **Refresh**, the address bar, and the **Preview panel** toggle and the view switch (**Grid** · **List** · **Detail**).
+- **Top** — **Back** · **Forward** · **Up** · **Refresh**, the address bar, the **New folder** · **New file** buttons, the **Preview panel** toggle, and the view switch (**Grid** · **List** · **Detail**). When the Explorer cell is narrower than 440px, the command buttons fold into one **More** (`…`) button that shows the same commands as a menu.
 - **Right** — the items in the current folder. In Grid view, local image files (1 MB or smaller) show a small thumbnail instead of an icon. `..` at the top goes to the parent folder. In Detail view, click the **Name** · **Size** · **Date modified** · **Type** column headers to sort.
 - You can keep several **New tab**s inside a Surface and view folders separately. These are separate from the Pane's Tabs.
 
@@ -61,6 +61,18 @@ Click the address bar to type a path directly; recently visited folders appear a
 - On Windows, a drive alone such as `C:` goes to the top of that drive, and network paths such as `\\server\share` work too.
 - If the path is not a folder, does not exist, or is a link whose target is gone, the Explorer stays where it is and a notice tells you why.
 - In an Explorer in a remote Workspace, the path is looked up on the remote computer. A folder that exists only there opens, and if the remote computer can't read it, the reason shows in the list area. `~` would mean the remote home, so it is not accepted; type the full remote path.
+
+### New folder · New file
+
+Start from **New folder** · **New file** on the toolbar, the right-click menu on empty space, or the right-click menu on a folder (which creates inside that folder). A name row opens at the top of the list with "New folder" fully selected, or "untitled.txt" selected up to the extension. If the name is taken, it starts with a numbered name such as "New folder 2".
+
+- `Enter` creates it and `Esc` cancels. Nothing is written to disk when you cancel.
+- Clicking outside the row creates it when the name is valid and cancels when it is empty or invalid.
+- An empty name, a character that can't be used (`/`, and on Windows also `\ : * ? " < > |`), or a name Windows reserves (`CON`, `NUL`, …) shows the reason under the field right away. A name that already exists is reported when you press `Enter`; the row stays open with your text. Nothing is overwritten.
+- The new item moves to its sorted place and is selected. If you moved to another folder in the meantime, the selection does not change.
+- In a folder you can't write to, both buttons are dimmed and hovering shows **Can't write to this folder**. Explorers in remote workspaces don't have these buttons or menu items.
+
+You can assign keys to **New folder** · **New file** in Settings > Keybindings > **Explorer**. They have no default keys.
 
 ### Preview panel
 
@@ -97,6 +109,7 @@ Renaming refuses to overwrite an existing entry and reports the failure. Copying
 
 A link to a folder opens like a folder, and the address bar keeps the link's path. Renaming a link or moving it to the trash affects only the link, not the folder it points to. Opening a link whose target is gone shows a notice that the target is missing.
 
+- **New folder** · **New file** — first in the empty-space menu, and in the file group of a folder's menu. See "New folder · New file" above.
 - **Copy Path** — with several selected, they are joined with line breaks.
 - **Copy** · **Cut** · **Paste** · **Paste (into)** — if the name already exists, `(copy)` is appended.
 - **Move to Trash** — sends to the OS trash without confirmation. To undo, use the trash.

@@ -77,6 +77,16 @@ fn explorer_view_shortcut(
     );
 }
 
+/// 포커스된 탐색기의 주소창이나 이름 입력이 키를 받고 있다. 그동안 목록 단축키는 글자 편집에 양보한다.
+fn focused_explorer_typing(
+    state: &crate::state::MainViewState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
+) -> bool {
+    focused_explorer_surface_id(state, engine)
+        .and_then(|sid| state.explorer_views.get(sid))
+        .is_some_and(|v| v.text_input_active())
+}
+
 /// 키보드 붙여넣기는 포커스된 탐색기의 현재 폴더를 대상으로 한다.
 fn focused_explorer_cwd(
     state: &crate::state::MainViewState,

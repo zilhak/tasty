@@ -73,6 +73,7 @@ enum Request {
         PropertiesRead,
         mpsc::SyncSender<io::Result<PropertiesFacts>>,
     ),
+    Writable(PathBuf, mpsc::SyncSender<io::Result<bool>>),
     #[cfg(test)]
     Blocked(mpsc::Receiver<()>, mpsc::SyncSender<io::Result<()>>),
 }
@@ -96,6 +97,7 @@ impl Request {
                     sender.send(facts).is_ok()
                 })
             }
+            Self::Writable(path, sender) => sender.send(Ok(can_write(&path))).is_ok(),
             Self::Script(path, sender) => {
                 use std::io::Read;
                 let result = std::fs::File::open(&path).and_then(|file| {
@@ -151,6 +153,26 @@ fn missing(path: &std::path::Path, error: io::Error) -> io::Error {
 }
 pub(crate) fn directory(path: PathBuf) -> Query<Vec<DirEntryInfo>> {
     Query::new(|sender| Request::Directory(path, sender))
+}
+pub(crate) fn writable(path: PathBuf) -> Query<bool> {
+    Query::new(|sender| Request::Writable(path, sender))
+}
+
+/// 현재 사용자가 폴더 안에 항목을 만들 수 있는가. Unix 는 실제 권한을 OS 에 묻는다.
+#[cfg(unix)]
+fn can_write(path: &std::path::Path) -> bool {
+    use std::os::unix::ffi::OsStrExt;
+    let Ok(c) = std::ffi::CString::new(path.as_os_str().as_bytes()) else {
+        return false;
+    };
+    // SAFETY: c is a valid nul-terminated path for the duration of the call.
+    unsafe { libc::access(c.as_ptr(), libc::W_OK) == 0 }
+}
+/// Windows 폴더의 읽기 전용 속성은 쓰기 권한을 뜻하지 않고 ACL 판정은 비싸다.
+/// 쓸 수 있다고 보고 거부는 만들 때의 오류로 알린다.
+#[cfg(not(unix))]
+fn can_write(_path: &std::path::Path) -> bool {
+    true
 }
 pub(crate) fn git(path: PathBuf) -> Query<Option<HeadState>> {
     Query::new(|sender| Request::Git(path, sender))

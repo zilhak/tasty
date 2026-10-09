@@ -79,6 +79,12 @@ pub enum PendingNativeMenu {
         x: f32,
         y: f32,
     },
+    /// 좁은 explorer 칸에서 접은 툴바 명령 메뉴. 위치는 논리 픽셀이다.
+    ExplorerMore {
+        surface_id: u32,
+        x: f32,
+        y: f32,
+    },
     NewWorkspaceButton {
         x: f32,
         y: f32,

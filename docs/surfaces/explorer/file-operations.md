@@ -1,6 +1,6 @@
 # Explorer 파일 작업 — 대상과 결과의 계약
 
-- **Status**: Partial — 이름 변경·복사·잘라내기·붙여넣기·휴지통 이동은 동작한다. 속성 조회와 미리보기 패널·Grid 썸네일은 파일을 바꾸지 않는 읽기로 동작한다. 새 폴더·새 파일·드래그 놓기·충돌 선택·진행 취소·실행 취소·검색은 없다.
+- **Status**: Partial — 새 폴더·새 파일·이름 변경·복사·잘라내기·붙여넣기·휴지통 이동은 동작한다. 속성 조회와 미리보기 패널·Grid 썸네일은 파일을 바꾸지 않는 읽기로 동작한다. 드래그 놓기·충돌 선택·진행 취소·실행 취소·검색은 없다.
 - **주체**: 로컬 사용자 ([주체](../../concepts/actors.md)). 에이전트(IPC/CLI)는 이 문서의 파일 작업을 호출하지 않는다.
 - **ADR**: [ADR-0022](../../adr/0022-remote-mirror-content-and-queries.md) (mirror explorer 는 파일을 바꾸지 않는다)
 - **코드**: 메뉴 구성 `build_explorer_context_menu`·메뉴 핸들러 `explorer_menu_*` (`src/view/main/redraw.rs`), 단축키·Command Palette 진입 `handle_explorer_shortcut`·`run_explorer_action` (`src/adapters/ui/input/shortcuts/copy_paste.rs`), 실행 worker `src/app/explorer_files.rs`·`src/app/explorer_files/ops.rs`
@@ -53,8 +53,8 @@
 
 | 작업 | 진입점 | 대상 | 결과 | 사용자 피드백 |
 |---|---|---|---|---|
-| 새 폴더 | 없음 | — | 지원하지 않는다 | — |
-| 새 파일 | 없음 | — | 지원하지 않는다 | — |
+| 새 폴더 | 툴바(좁은 칸은 More 메뉴), 메뉴(빈 영역·단일 폴더), `explorer_new_folder` 단축키 | 지금 보는 폴더, 폴더 메뉴는 그 폴더. 시작할 때 고정한다 | 목록 맨 위 인라인 입력으로 이름을 받아 `create_dir` 로 만든다. 같은 이름이 있으면 덮어쓰지 않고 실패한다 | 입력 아래 이름 오류 상자. 쓰기 실패는 오류 토스트와 다시 읽기. 성공하면 그 폴더를 아직 보고 있을 때 새 항목을 선택한다 |
+| 새 파일 | 툴바(좁은 칸은 More 메뉴), 메뉴(빈 영역·단일 폴더), `explorer_new_file` 단축키 | 새 폴더와 같다 | 같은 입력으로 빈 파일을 `create_new` 로 만든다 | 새 폴더와 같다 |
 | 이름 변경 | 메뉴 (단일 항목) | 그 항목 | 같은 폴더 안에서 이름만 바꾼다. 경로 구분자·드라이브 접두어가 든 이름과 이미 있는 이름은 거부한다 | rename 팝업. 실패하면 오류 토스트를 띄우고 선택을 유지한 채 목록을 다시 읽는다 |
 | 복사 | 메뉴, `copy` 단축키, Command Palette | 선택 항목 | 창 단위 explorer 파일 클립보드에 경로를 담는다. 디스크는 바꾸지 않는다 | 없음 |
 | 잘라내기 | 메뉴, `cut` 단축키, Command Palette | 선택 항목 | 클립보드에 잘라내기 표시와 함께 담는다 | 붙여넣기 전까지 잘라낸 항목을 grid·list·detail 에서 흐리게 그린다 (`cut_pending_opacity`) |
@@ -130,3 +130,4 @@
 - Given mirror explorer 에서 항목을 복사했다, When 로컬 explorer 에서 우클릭하거나 `paste` 를 누른다, Then 메뉴에 붙여넣기가 없고 단축키는 원격 붙여넣기 미지원 토스트만 띄우며 로컬 파일시스템은 바뀌지 않는다.
 - Given 컨텍스트 메뉴가 열려 있다, When 그 사이 surface 가 닫히거나 다른 surface 로 바뀐 뒤 항목을 고른다, Then 아무 작업도 실행하지 않는다. 경로 복사·복사·이 폴더로 루트 설정은 mirror projection 이 다시 만들어지기만 했으면 그대로 실행한다.
 - Given rename 팝업이 떠 있다, When 그 사이 surface 가 다른 surface 로 바뀐다, Then 팝업이 닫히고 확정해도 이름 변경 요청이 나가지 않는다.
+- Given 새 이름 입력을 확정했다, When worker 가 만들기 전에 같은 이름이 생겼다, Then 기존 항목은 그대로이고 오류 토스트가 뜬다(`explorer_files/tests.rs` 의 `create_makes_a_folder_or_an_empty_file_and_never_replaces_an_entry`).

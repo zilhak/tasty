@@ -82,7 +82,7 @@ explorer 는 일반 surface 생성 메커니즘으로 다룬다 (전용 IPC 추�
 
 ADR-0022에 따라 mirror explorer 는 파일 변경(rename/delete/새 폴더 만들기 등)을 아직 지원하지 않으며, 이 제한은 컨텍스트 메뉴·키보드 단축키 레벨까지 강제된다. 파일 더블클릭 열기(`OpenFile`)는 로컬과 같은 `DispatchFile` 로 가고, origin 이 mirror surface 라 원격 열기 규칙을 따른다(아래 "mirror explorer 의 파일 열기"). mirror 워크스페이스(`ws.mirror`)에 속한 explorer surface 에서는:
 
-- **컨텍스트 메뉴에서부터 숨김**: 붙여넣기/잘라내기/이름 변경/휴지통으로 이동/시스템에서 열기/새 탭으로 열기 항목이 `build_explorer_context_menu`(즐겨찾기 행은 `handle_explorer_favorite_native_menu`)에서 아예 노출되지 않는다. copy_path/복사/즐겨찾기 추가/이 폴더로 루트 설정은 그대로 노출된다.
+- **컨텍스트 메뉴에서부터 숨김**: 새 폴더/새 파일/붙여넣기/잘라내기/이름 변경/휴지통으로 이동/시스템에서 열기/새 탭으로 열기 항목이 `build_explorer_context_menu`(즐겨찾기 행은 `handle_explorer_favorite_native_menu`)에서 아예 노출되지 않는다. copy_path/복사/즐겨찾기 추가/이 폴더로 루트 설정은 그대로 노출된다.
 - **액션별 개별 가드**: 메뉴가 아닌 다른 경로(키보드 단축키 등)로 같은 핸들러가 호출되는 경우를 방어하기 위해, 각 핸들러(`explorer_menu_paste`/`_trash`/`_rename`/`_open_in_system`/`_add_favorite`/`_open_in_new_tab`, `explorer_menu_set_clipboard`의 `cut=true`)가 진입부에서 `CoreState::is_mirror_surface(surface_id)` 로 재확인하고, mirror 면 로컬 fs 를 건드리지 않고 `explorer.state.remote_write_unsupported` toast 로 안내한 뒤 반환한다.
 - **rename 팝업의 대상 게이트**(`rename_target_exists`, `src/adapters/ui/dialog.rs`)는 메뉴 시점 세대가 그대로이고 경로가 남아 있을 때만 팝업을 유지한다. mirror 경로는 위 가드가 먼저 막아 팝업이 열리지 않는다.
 - **즐겨찾기**: `~/.tasty/explorer-favorites.toml` 는 surface/host 무관 전역 저장소다. mirror explorer 의 경로(원격 호스트 경로)가 이 전역 목록에 섞이면 로컬/다른 호스트 explorer 의 사이드바를 오염시키므로, 즐겨찾기 추가는 mirror 에서 팝업을 열기 전에 차단된다.
@@ -179,6 +179,21 @@ Grid 셀은 모두 `explorer_grid_thumb_size`(40) 슬롯을 잡아 썸네일 유
 - **원격(mirror)**: 원격 목록에 있는 Kind · Size · Modified · Location 만 보이고 그 아래 muted 안내를 붙인다. 원격 파일시스템을 다시 읽지 않는다.
 - **오류**: 정보를 읽지 못하면 머리에 `alertTriangle` 글리프와 첫 대상 이름, "Can't read" 라벨 한 줄에 오류 문구를 mono 로 보인다.
 
+### 새 폴더 · 새 파일
+
+툴바의 명령 묶음(`commands.rs`, 공용 `tasty_ui_widgets::explorer_commands`)이 주소창과 보기 전환 사이에 New folder·New file 을 icon-only sm 버튼으로 둔다. 칸 폭이 `explorer-toolbar-compact-below`(440)보다 좁으면 묶음을 More(`…`) 하나로 접고, 누르면 `ExplorerAction::MoreMenu` → `PendingNativeMenu::ExplorerMore` 로 같은 명령의 네이티브 메뉴를 연다(`src/view/main/explorer_create.rs`). mirror explorer 는 create 묶음을 숨긴다. 로컬 explorer 는 폴더를 읽을 때 읽기 worker 에 쓰기 가능 여부를 함께 묻고(`local_reads::writable`, Unix 는 `access(W_OK)`, 그 밖의 OS 는 확인하지 않고 쓸 수 있다고 본다), 쓸 수 없으면 두 버튼을 비활성으로 두고 툴팁을 `explorer.command.cannot_write` 로 바꾼다. 화면 스레드는 파일시스템을 읽지 않는다.
+
+진입점은 툴바 버튼, More 메뉴, 컨텍스트 메뉴(빈 영역 메뉴의 첫 묶음, 단일 폴더 메뉴의 잘라내기·붙여넣기 뒤 묶음 — id 80·81), 단축키 `explorer_new_folder`·`explorer_new_file` 이다. 모두 이름 입력만 연다(`MainViewState::start_explorer_create` → `ExplorerView::start_create`). 대상 폴더는 시작할 때 고정한다. 폴더 메뉴는 그 폴더, 나머지는 지금 보는 폴더다. mirror 는 `remote_write_unsupported` 토스트, 쓸 수 없다고 확인한 현재 폴더는 `cannot_write` 토스트로 거절한다.
+
+이름 입력(`create.rs`, 공용 `explorer_name_row`)은 목록 맨 위(`..` 다음)에 열린다. Detail 은 표에 빈 이름의 자리 행을 하나 넣고 그 위에 겹쳐 그리며, 자리 행은 선택·클릭·메뉴 대상이 아니다. List 는 행 높이 28 의 줄, Grid 는 칸 글리프 아래 160 폭 입력이며 입력이 목록의 보이는 영역 밖으로 나가면 안으로 민다. 처음 프레임에 입력에 포커스를 주고 기본 이름을 고르며 그 줄로 스크롤한다.
+
+- 기본 이름: 폴더 `explorer.new.folder_default` 전체 선택, 파일 `explorer.new.file_default` 확장자 앞까지 선택. 대상 폴더의 이미 아는 이름(지금 목록, 다른 폴더면 사이드바 트리가 읽은 자식)과 겹치면 `"{stem} 2{.ext}"` 부터 비는 번호를 붙인다.
+- 입력하는 동안 검사: 빈 이름, 금지 글자(모든 OS 에서 `/`·NUL, Windows 는 `<>:"/\|?*` 와 제어 문자), 예약 이름(모든 OS 의 `.`·`..`, Windows 의 CON·PRN·AUX·NUL·COM1~9·LPT1~9, 확장자가 붙어도 같다). Enter 에서 아는 이름과 겹치는지 본다. 오류는 입력 아래 상자(`explorer_name_error`)로 보이고 입력은 열린 채 글자를 유지한다. 글자를 바꾸면 "이미 있음" 오류는 사라진다.
+- Enter 는 확정, Esc 는 취소(디스크 변화 없음), 포커스를 잃으면 유효할 때 확정·아니면 취소한다.
+- 확정은 `ExplorerAction::Create { dir, name, folder }` 를 내고 `apply_explorer_action` 이 `explorer_files::Operation::Create` 를 요청한다. worker 는 이름이 한 파일 이름인지 다시 확인하고 `create_dir` 또는 `create_new` 로 만들어, 같은 이름이 생겨 있으면 덮어쓰지 않고 실패한다. 실패는 다른 파일 작업과 같은 오류 토스트와 다시 읽기다.
+- 성공하면 요청한 explorer 가 아직 그 폴더를 보고 있을 때만 새 항목을 선택하고, 다시 읽은 목록에 나타난 프레임에 그 자리로 스크롤한다. 같은 폴더를 보는 다른 explorer 는 다시 읽기만 한다.
+- 입력이 열려 있는 동안 타입어헤드를 끈다.
+
 ### 컨텍스트 메뉴 · 파일 조작
 
 진입점별 대상 결정, 작업별 결과·피드백, 지원하지 않는 작업은 [파일 작업 계약](file-operations.md)에 있다.
@@ -192,6 +207,7 @@ Grid 셀은 모두 `explorer_grid_thumb_size`(40) 슬롯을 잡아 썸네일 유
 
 **surface의 나머지 영역**: 위 위치별 핸들러가 처리하지 못한 우클릭(툴바/주소창/내부 탭바/상태줄/빈 사이드바 등 chrome 영역)은 `draw_explorer` 끝의 **표면 전체 rect catch-all** 이 `Empty`(현재 폴더) target 으로 처리한다. 하위 위젯이 이미 `action`을 만들었으면 건너뛰므로 파일/폴더/다중 선택 메뉴를 유지한다. 이로써 generic surface fallback("터미널 ID 복사")이 explorer 표면 어디에서도 뜨지 않는다(불가침 원칙 §1·§2). 예외: 권한 거부 루트(`LoadState::NoPermission`)는 붙여넣기가 무의미하므로 catch-all 을 건너뛴다(content 빈영역 규칙과 동일).
 
+- **새 폴더 / 새 파일** (빈 영역·단일 폴더, mirror 에서 숨김) — 위 "새 폴더 · 새 파일".
 - **경로 복사** (`copy_path`, 다중은 개행 결합) → OS 텍스트 클립보드 + `toast.copied_path` 토스트(단축키/Command Palette/우클릭 메뉴 모두 동일).
 - **복사 / 잘라내기 / 붙여넣기** — explorer 내부 파일 클립보드(`MainViewState::explorer_clipboard`, 창마다 단일 슬롯·세션 종료 시 폐기)에 경로+cut 플래그를 담고, 붙여넣기에서 소비한다.
   파일 복사·이동·휴지통·이름 변경·시스템 열기는 View가 고정 경로와 원 surface/View identity를 요청으로 넘기고 App의 `explorer_files` worker가 실행한다. 파일 이동 헬퍼는 `src/app/explorer_files/ops.rs`에 있으며 충돌 시 `(copy)` 접미사를 붙이며 목적지 공개는 OS의 덮어쓰기 금지 rename으로 수행한다. 복사는 목적지의 전용 임시 디렉터리에서 준비하고 실패 시 제거한다. 심볼릭 링크는 따라가지 않고 링크로 복사하며 별칭을 해소한 실제 하위 디렉터리로의 복사는 거부한다. cut은 교차 파일시스템 오류일 때만 copy+remove로 전환한다.
@@ -245,9 +261,12 @@ Grid 셀은 모두 `explorer_grid_thumb_size`(40) 슬롯을 잡아 썸네일 유
 | Properties 열기 | `explorer_properties` | (기본 미할당) |
 | 전체 선택 | `select_all` | `Ctrl+A` / `Alt+A` |
 | 경로 복사 | `copy_path` | `Alt+Shift+C` |
+| 새 폴더 | `explorer_new_folder` | (기본 미할당) |
+| 새 파일 | `explorer_new_file` | (기본 미할당) |
 | explorer 로 변환 | `convert_to_explorer` | (기본 미할당) |
 
-직접 키 매칭은 `explorer_refresh`·`explorer_go_up`·`explorer_toggle_preview`·`explorer_properties`·`convert_to_explorer`(포커스 surface 무관) 가 `keybinding.rs`, `select_all`·`copy_path` 가 `copy_paste.rs` 다. action-id/Command Palette `dispatch.rs` 는 일곱 모두를, 더블탭 `double_tap.rs` 는 `convert_to_explorer` 만 받는다. 설정 UI 서브탭은 `explorer_refresh`·`explorer_go_up`·`explorer_toggle_preview`·`explorer_properties` = **Explorer**, `select_all`·`copy_path` = **Clipboard**, `convert_to_explorer` = **Surface**.
+직접 키 매칭은 `explorer_refresh`·`explorer_go_up`·`explorer_new_folder`·`explorer_new_file`·`explorer_toggle_preview`·`explorer_properties`·`convert_to_explorer`(포커스 surface 무관) 가 `keybinding.rs`, `select_all`·`copy_path` 가 `copy_paste.rs` 다. action-id/Command Palette `dispatch.rs` 는 아홉 모두를, 더블탭 `double_tap.rs` 는 `convert_to_explorer` 만 받는다. 설정 UI 서브탭은 `explorer_refresh`·`explorer_go_up`·`explorer_new_folder`·`explorer_new_file`·`explorer_toggle_preview`·`explorer_properties` = **Explorer**, `select_all`·`copy_path` = **Clipboard**, `convert_to_explorer` = **Surface**.
+주소창이나 새 항목 이름 입력이 키를 받는 동안(`ExplorerView::text_input_active`)에는 explorer 목록 단축키(`keybinding.rs` 의 explorer 묶음, `copy_paste.rs` 의 전체 선택·경로 복사·복사·잘라내기·붙여넣기)가 키를 소비하지 않고 글자 편집에 양보한다.
 
 **새 탭으로 탐색기 열기(`open_explorer`, 기본 미할당)는 포커스와 무관하다** — 위 표와 달리 explorer 포커스를 요구하지 않는다. `Intent::NewTab { kind: "explorer" }` 를 발생시키므로 CLI 의 `new tab --type explorer` 와 같은 도메인 인텐트(`CreateTab`)를 쓰되 선택은 다르다 — 단축키는 새 탭을 선택하고, 에이전트(CLI/IPC)는 선택하지 않는다([ADR-0059](../../adr/0059-id-targets-and-view-owned-selection.md)). 이 액션은 경로를 안 실으므로 홈에서 열린다(명시 경로는 CLI 의 `--path` 가 받는다). 설정 UI 는 **Tab** 서브탭이다 — `open_markdown` 옆, 둘 다 새 탭 열기라서. 이 액션은 `keybinding.rs`·`double_tap.rs`·`dispatch.rs` 세 진입점 전부에서 처리한다.
 
@@ -282,6 +301,9 @@ Appearance → **Explorer** 서브탭에서 surface 폰트를 오버라이드한
 - Given mirror explorer When 폴더를 탐색하고 파일을 더블클릭한다 Then 목록은 원격 조회로 오고, 파일은 원격에 탭으로 열리거나 열 수 없다는 토스트가 나온다. 로컬 파일시스템은 읽지 않는다.
 - Given mirror explorer When 잘라내기·붙여넣기·휴지통·이름 변경·새 탭 열기를 단축키나 메뉴로 시도한다 Then 메뉴에 없거나 `remote_write_unsupported` 토스트가 나오고 아무것도 바뀌지 않는다.
 - Given 붙여넣기가 진행 중이다 When 그 surface 를 닫는다 Then 이미 시작한 작업은 끝까지 실행되고 닫힌 surface 에 토스트나 목록 갱신을 내지 않는다. 아직 시작하지 않은 요청은 실행되지 않는다.
+- Given 로컬 explorer 의 폴더에 "New folder" 가 있다 When 툴바의 New folder 를 누른다 Then 목록 맨 위에 "New folder 2" 가 전체 선택된 입력이 열리고, Enter 를 누르면 그 폴더가 생겨 정렬 자리에서 선택된다(`explorer_files/tests.rs` 의 `a_created_entry_is_selected_only_while_its_folder_is_still_shown`, `create/tests.rs`).
+- Given 이름 입력이 열려 있다 When 이미 있는 이름으로 Enter 를 누른다 Then 입력은 열린 채 "already exists" 오류가 보이고 디스크는 바뀌지 않는다. Esc 를 누르면 아무것도 만들지 않고 닫힌다.
+- Given 쓸 수 없는 폴더 When 툴바를 본다 Then New folder·New file 이 비활성이다. Given mirror explorer When 툴바·메뉴를 본다 Then 두 명령이 없다.
 - Given 내부 탭 둘을 열고 정렬을 바꾼 explorer When 재시작한다 Then 탭·cwd·current·뷰 모드·정렬이 복원되고 히스토리와 선택은 비어 있다.
 
 ## 관련

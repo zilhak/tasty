@@ -83,6 +83,9 @@ impl MainView {
         {
             return false;
         }
+        if super::focused_explorer_typing(&self.state, engine) {
+            return false;
+        }
         let kb = &engine.settings.keybindings;
         let action = if matches_any_binding(&kb.select_all, key, mods) {
             ExplorerAction::SelectAll

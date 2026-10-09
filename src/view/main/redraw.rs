@@ -583,6 +583,9 @@ impl MainView {
                 x,
                 y,
             } => self.handle_explorer_favorite_native_menu(engine, surface_id, path, x, y),
+            PendingNativeMenu::ExplorerMore { surface_id, x, y } => {
+                self.handle_explorer_more_native_menu(engine, surface_id, x, y)
+            }
             PendingNativeMenu::NewWorkspaceButton { x, y } => {
                 self.handle_new_workspace_button_native_menu(engine, x, y)
             }
@@ -1497,7 +1500,8 @@ impl MainView {
                     &paths,
                     &cwd,
                 ),
-                _ => {}
+                Some(id) => this.explorer_menu_create(engine, surface_id, id, &paths, &cwd),
+                None => {}
             }
         });
     }
@@ -1519,7 +1523,11 @@ impl MainView {
         } else {
             crate::i18n::t("explorer.context_menu.copy_path")
         };
-        let mut items = vec![MenuItem::new(1, copy_path_label)];
+        let mut items = Vec::new();
+        if is_empty_target && !is_mirror {
+            Self::push_explorer_create_items(&mut items, true);
+        }
+        items.push(MenuItem::new(1, copy_path_label));
         // 즐겨찾기 추가는 단일 폴더 또는 빈 영역(cwd, 디렉토리)에서만 (design §3.3).
         if is_empty_target || is_folder {
             items.push(MenuItem::new(
@@ -1570,6 +1578,9 @@ impl MainView {
                     12,
                     crate::i18n::t("explorer.context_menu.paste_into"),
                 ));
+            }
+            if is_folder && !is_mirror {
+                Self::push_explorer_create_items(&mut items, false);
             }
             // 이름 변경 (단일 파일/폴더만, mirror 가 아닐 때).
             if !multi && !is_mirror {
@@ -2270,7 +2281,8 @@ mod tests {
     // build_explorer_context_menu(multi, is_empty_target, is_folder, has_clip, is_mirror) 의
     // 위치별 메뉴 구성을 id·separator 위치로 고정한다. id: 1=copy_path, 10=copy_files,
     // 11=cut, 12=paste/paste_into, 20=open_in_system, 30=delete, 40=rename,
-    // 50=add_to_favorites, 60=open_in_new_tab, 61=set_as_root, 70=properties. None=separator.
+    // 50=add_to_favorites, 60=open_in_new_tab, 61=set_as_root, 70=properties, 80=new_folder,
+    // 81=new_file. None=separator.
     // 모든 모양이 구분선과 Properties 로 끝나는지 여기서 확인하고, 아래 기대값은 그 앞부분만 적는다.
     fn explorer_menu_shape(
         multi: bool,
@@ -2301,10 +2313,10 @@ mod tests {
 
     #[test]
     fn explorer_menu_empty_no_clip() {
-        // 빈 영역, 클립보드 없음: 경로복사 · 즐겨찾기추가.
+        // 빈 영역, 클립보드 없음: 새 폴더 · 새 파일 · ─ · 경로복사 · 즐겨찾기추가.
         assert_eq!(
             explorer_menu_shape(false, true, false, false),
-            vec![Some(1), Some(50)]
+            vec![Some(80), Some(81), None, Some(1), Some(50)]
         );
     }
 
@@ -2313,7 +2325,7 @@ mod tests {
         // 빈 영역, 클립보드 있음: + ─ · 붙여넣기.
         assert_eq!(
             explorer_menu_shape(false, true, false, true),
-            vec![Some(1), Some(50), None, Some(12)]
+            vec![Some(80), Some(81), None, Some(1), Some(50), None, Some(12)]
         );
     }
 
@@ -2334,7 +2346,7 @@ mod tests {
     #[test]
     fn explorer_menu_single_folder_no_clip() {
         // 단일 폴더, 클립보드 없음: 경로복사 · 즐겨찾기 · 새탭 · 루트설정 · 복사 ·
-        // 잘라내기 · 이름변경 · ─ · 휴지통 · 시스템열기.
+        // 잘라내기 · ─ · 새 폴더 · 새 파일 · 이름변경 · ─ · 휴지통 · 시스템열기.
         assert_eq!(
             explorer_menu_shape(false, false, true, false),
             vec![
@@ -2344,6 +2356,9 @@ mod tests {
                 Some(61),
                 Some(10),
                 Some(11),
+                None,
+                Some(80),
+                Some(81),
                 Some(40),
                 None,
                 Some(30),
@@ -2365,6 +2380,9 @@ mod tests {
                 Some(10),
                 Some(11),
                 Some(12),
+                None,
+                Some(80),
+                Some(81),
                 Some(40),
                 None,
                 Some(30),
@@ -2392,8 +2410,8 @@ mod tests {
 
     #[test]
     fn explorer_menu_mirror_empty_with_clip_hides_paste() {
-        // 빈 영역 + 클립보드 있음 + mirror: 붙여넣기(12)가 통째로 사라진다(비-mirror
-        // 라면 explorer_menu_empty_with_clip 처럼 [1, 50, None, 12] 가 나왔을 것).
+        // 빈 영역 + 클립보드 있음 + mirror: 생성 행(80·81)과 붙여넣기(12)가 통째로 사라진다
+        // (비-mirror 라면 explorer_menu_empty_with_clip 처럼 [80, 81, None, 1, 50, None, 12] 가 나왔을 것).
         assert_eq!(
             explorer_menu_shape_mirror(false, true, false, true, true),
             vec![Some(1), Some(50)]

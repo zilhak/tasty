@@ -36,6 +36,11 @@ pub(super) fn apply_to_explorer_panel(
                 ex.active = *i;
             }
         }
-        A::OpenFile(_) | A::Refresh | A::ContextMenu { .. } | A::AddressRejected(_) => {}
+        A::OpenFile(_)
+        | A::Refresh
+        | A::ContextMenu { .. }
+        | A::AddressRejected(_)
+        | A::Create { .. }
+        | A::MoreMenu { .. } => {}
     }
 }

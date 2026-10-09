@@ -92,6 +92,13 @@ pub struct ExplorerView {
     pub preview: super::preview::PreviewPane,
     /// Grid 썸네일 캐시.
     pub thumbs: super::thumbs::Thumbs,
+    /// 목록 맨 위에서 이름을 받고 있는 새 항목.
+    pub(crate) create: Option<super::create::CreateEdit>,
+    /// 방금 만든 항목. 다시 읽은 목록에 나타나면 그 자리로 스크롤한다.
+    reveal: Option<PathBuf>,
+    /// 지금 보는 로컬 폴더에 쓸 수 있는가. 확인한 폴더와 함께 둔다.
+    writable: Option<(PathBuf, bool)>,
+    writable_query: Option<(PathBuf, crate::app::local_reads::Query<bool>)>,
 }
 
 impl ExplorerView {
@@ -130,6 +137,15 @@ impl ExplorerView {
                 }
                 changed = true;
             }
+        }
+        if let Some((dir, query)) = &mut self.writable_query
+            && let Some(result) = query.poll(owner)
+        {
+            // 확인하지 못했으면 쓸 수 있다고 보고 실제 쓰기의 오류로 알린다.
+            self.writable = Some((dir.clone(), result.unwrap_or(true)));
+            self.writable_query = None;
+            // 목록이 아직 오지 않았으면 그 결과가 다시 그리게 한다.
+            changed |= self.local_query.is_none();
         }
         let ready: Vec<_> = self
             .tree_queries
@@ -179,6 +195,10 @@ impl ExplorerView {
             scroll_to: None,
             preview: Default::default(),
             thumbs: Default::default(),
+            create: None,
+            reveal: None,
+            writable: None,
+            writable_query: None,
         }
     }
 
@@ -247,6 +267,42 @@ impl ExplorerView {
         {
             self.anchor = None;
         }
+    }
+
+    /// 주소창이나 이름 입력이 키보드를 쓰고 있다. 그동안 타입어헤드와 목록 단축키를 멈춘다.
+    pub(crate) fn text_input_active(&self) -> bool {
+        self.addr_editing || self.create.is_some()
+    }
+
+    /// 지금 보이는 목록의 폴더.
+    pub(crate) fn shown_dir(&self) -> Option<&Path> {
+        self.loaded.as_ref().map(|(dir, _, _)| dir.as_path())
+    }
+
+    /// 로컬 explorer 가 지금 폴더에 쓸 수 있는가. 아직 확인하지 못했으면 true 다.
+    pub(crate) fn can_write_here(&self) -> bool {
+        match (&self.writable, self.shown_dir()) {
+            (Some((dir, writable)), Some(shown)) if dir == shown => *writable,
+            _ => true,
+        }
+    }
+
+    /// 만든 항목을 고른다. 사용자가 그 폴더를 떠났으면 아무것도 바꾸지 않는다.
+    pub(crate) fn reveal_created(&mut self, path: &Path) {
+        if self.shown_dir() != path.parent() {
+            return;
+        }
+        self.select_only(path);
+        self.reveal = Some(path.to_path_buf());
+    }
+
+    /// 만든 항목이 목록에 나타났으면 이번 프레임의 스크롤 대상으로 꺼낸다.
+    pub(crate) fn take_reveal(&mut self) -> Option<PathBuf> {
+        let listed = self
+            .reveal
+            .as_ref()
+            .is_some_and(|p| self.entries.iter().any(|e| &e.path == p));
+        if listed { self.reveal.take() } else { None }
     }
 
     /// 다음 렌더에서 현재 디렉토리를 다시 읽도록 표시.
@@ -319,6 +375,10 @@ impl ExplorerView {
         }
         self.existing_ancestor = None;
         self.local_query = Some(crate::app::local_reads::directory(tab.root.clone()));
+        self.writable_query = Some((
+            tab.root.clone(),
+            crate::app::local_reads::writable(tab.root.clone()),
+        ));
         self.entries.clear();
         self.state = LoadState::Loading;
         // 새로고침은 같은 폴더여도 펼친 트리를 다시 읽는다. 트리만 바뀐 경우를 놓치지 않기 위해서다.

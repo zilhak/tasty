@@ -2,6 +2,8 @@
 //! 렌더 중에는 engine을 다시 가변 대여할 수 없어 사용자 동작을 모아 호출부에서 처리한다.
 
 pub mod address;
+mod commands;
+mod create;
 mod preview;
 mod state_screen;
 mod thumbs;
@@ -62,6 +64,17 @@ pub enum ExplorerAction {
         target: ExplorerMenuTarget,
         /// 현재 디렉토리 (빈 영역 대상의 "경로 복사"·붙여넣기 기준).
         cwd: PathBuf,
+        x: f32,
+        y: f32,
+    },
+    /// 이름을 확정한 새 항목을 만든다. 대상 폴더는 명령을 시작할 때 정했다.
+    Create {
+        dir: PathBuf,
+        name: String,
+        folder: bool,
+    },
+    /// 좁은 칸에서 접은 명령 묶음의 메뉴. 좌표는 logical px.
+    MoreMenu {
         x: f32,
         y: f32,
     },
@@ -403,8 +416,10 @@ fn toolbar(
         // 주소창 영역 뒤에 가로 item_spacing이 한 번 더 붙으므로 그만큼도 빼야 토글의 오른쪽 여백이
         // 툴바 padding과 같아진다.
         let tools_w = preview::toggle_button_width(theme) + gap;
+        let cmd_w = commands::reserve(ui, theme, view, remote, rect.width());
         let addr_w =
-            (ui.available_width() - tools_w - seg_w - gap - ui.spacing().item_spacing.x).max(0.0);
+            (ui.available_width() - tools_w - seg_w - gap - ui.spacing().item_spacing.x - cmd_w)
+                .max(0.0);
         let tab_index = panel.active;
         ui.allocate_ui_with_layout(
             egui::vec2(addr_w, ui.available_height()),
@@ -424,6 +439,7 @@ fn toolbar(
             },
         );
         ui.add_space(gap);
+        commands::show(ui, theme, view, &tab.root, remote, rect.width(), action);
         preview::toggle_button(ui, theme, view);
         ui.add_space(gap);
         seg_toggle(ui, theme, tab.view_mode, action);
@@ -1085,12 +1101,12 @@ fn entry_icon(theme: &Theme, e: &DirEntryInfo) -> (Icon, egui::Color32) {
 /// 처리되지 않는다. 큐를 직접 건드리면 오히려 다른 위젯의 입력을 삼킬 수 있다.
 fn apply_type_ahead(ui: &egui::Ui, view: &mut ExplorerView, input: &ExplorerInput<'_>) {
     // 스크롤 대상은 한 프레임만 유지한다. 남겨두면 매 프레임 다시 스크롤해서, 사용자가
-    // 휠로 다른 곳을 보는 동안에도 화면이 끌려간다.
-    view.scroll_to = None;
+    // 휠로 다른 곳을 보는 동안에도 화면이 끌려간다. 방금 만든 항목은 목록에 나타난 프레임에 한 번 스크롤한다.
+    view.scroll_to = view.take_reveal();
 
     if !input.focused
         || input.overlay_open
-        || view.addr_editing
+        || view.text_input_active()
         || !matches!(view.state, LoadState::Ok)
         || view.entries.is_empty()
     {
@@ -1174,6 +1190,7 @@ fn grid_view(
                 *action = Some(ExplorerAction::Navigate(p.clone()));
             }
         }
+        create::name_row(ui, theme, view, create::Slot::Grid, action);
         for e in &entries {
             let selected = view.selected.contains(&e.path);
             let cut = cut_pending.contains(&e.path);
@@ -1313,6 +1330,7 @@ fn list_view(
             *action = Some(ExplorerAction::Navigate(p));
         }
     }
+    create::name_row(ui, theme, view, create::Slot::List, action);
     for e in &entries {
         let (icon, glyph_color) = entry_icon(theme, e);
         let selected = view.selected.contains(&e.path);
@@ -1376,7 +1394,9 @@ fn detail_view(
     if let Some(p) = &parent {
         rows.push(dotdot_entry(p.clone()));
     }
+    rows.extend(view.create.as_ref().map(|_| create::placeholder_row(root)));
     rows.extend(view.entries.iter().cloned());
+    let editor_cell = std::cell::Cell::new(None);
     let selected: HashSet<PathBuf> = view.selected.clone();
     let cut: HashSet<PathBuf> = cut_pending.clone();
     // `Table`은 행의 `Response`를 돌려주지 않고 가상 스크롤도 하지 않으므로, 대상 행을
@@ -1406,6 +1426,7 @@ fn detail_view(
                     }
                 };
                 match col {
+                    0 if row.name.is_empty() => editor_cell.set(Some(ui.max_rect())),
                     0 => {
                         // `..`는 화면에만 있는 행이라 타입어헤드 대상이 아니다. 경로만
                         // 비교하면 상위 폴더와 겹칠 수 있어 이름도 함께 확인한다.
@@ -1479,8 +1500,9 @@ fn detail_view(
     {
         *action = Some(ExplorerAction::SetSort(key));
     }
+    create::detail_row(ui, theme, view, editor_cell.get(), action);
     if let Some(i) = out.secondary_clicked_row
-        && let Some(e) = rows.get(i)
+        && let Some(e) = rows.get(i).filter(|e| !e.name.is_empty())
         && e.name != ".."
     // `..` 는 컨텍스트 메뉴 대상 아님
     {
@@ -1490,7 +1512,7 @@ fn detail_view(
         emit_entry_context(view, e, pos, root, action);
     }
     if let Some(i) = out.clicked_row
-        && let Some(e) = rows.get(i)
+        && let Some(e) = rows.get(i).filter(|e| !e.name.is_empty())
     {
         let dbl = ui.input(|inp| {
             inp.pointer

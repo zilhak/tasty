@@ -466,6 +466,26 @@ pub(crate) fn apply_explorer_action(
                 );
             }
         }
+        A::Create { dir, name, folder } => state.request_explorer_file(
+            engine,
+            sid,
+            crate::app::explorer_files::Operation::Create {
+                dir: dir.clone(),
+                name: name.clone(),
+                folder: *folder,
+            },
+            crate::intent::IntentOrigin::User {
+                source: crate::intent::UserSource::Menu("explorer_create"),
+            },
+        ),
+        A::MoreMenu { x, y } => {
+            state.dialogs.pending_native_menu =
+                Some(crate::state::PendingNativeMenu::ExplorerMore {
+                    surface_id: sid,
+                    x: *x,
+                    y: *y,
+                });
+        }
         A::ContextMenu { target, cwd, x, y } => {
             use crate::explorer_ui::ExplorerMenuTarget as T;
             let menu = match target {

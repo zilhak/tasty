@@ -356,3 +356,84 @@ fn a_finished_job_reloads_other_explorers_viewing_the_folders_it_changed() {
     assert!(finished.reload_views(&mut other));
     assert!(!finished.reload_views(&mut unrelated));
 }
+
+#[test]
+fn create_makes_a_folder_or_an_empty_file_and_never_replaces_an_entry() {
+    let dir = tempfile::tempdir().unwrap();
+    let create = |name: &str, folder: bool| Operation::Create {
+        dir: dir.path().into(),
+        name: name.into(),
+        folder,
+    };
+    assert_eq!(
+        create("New folder", true).affected(),
+        Affected {
+            changed: vec![dir.path().into()],
+            removed: Vec::new(),
+        }
+    );
+    create("New folder", true).run().unwrap();
+    assert!(dir.path().join("New folder").is_dir());
+    create("untitled.txt", false).run().unwrap();
+    assert_eq!(std::fs::read(dir.path().join("untitled.txt")).unwrap(), b"");
+    std::fs::write(dir.path().join("kept"), b"bytes").unwrap();
+    assert!(create("kept", false).run().is_err());
+    assert!(create("kept", true).run().is_err());
+    assert_eq!(std::fs::read(dir.path().join("kept")).unwrap(), b"bytes");
+    assert!(create("New folder", true).run().is_err());
+    for name in ["", ".", "..", "a/b"] {
+        assert!(create(name, true).run().is_err(), "{name:?}");
+    }
+    assert!(!dir.path().join("a").exists());
+}
+
+#[test]
+fn a_created_entry_is_selected_only_while_its_folder_is_still_shown() {
+    let (mut state, engine) = crate::state::tests::test_state();
+    let sid = engine.read().workspace_at(0).unwrap().all_surface_ids()[0];
+    let dir = tempfile::tempdir().unwrap();
+    let panel = crate::model::ExplorerPanel::new(sid, dir.path().into());
+    state.explorer_views.get_or_init(&panel, None);
+    let request = |state: &mut crate::state::MainViewState, dir: &std::path::Path| {
+        state.request_explorer_file(
+            &engine.read(),
+            sid,
+            Operation::Create {
+                dir: dir.into(),
+                name: "made".into(),
+                folder: true,
+            },
+            user(),
+        );
+        state.explorer_file_requests.0.pop_front().unwrap().target
+    };
+    request(&mut state, dir.path()).apply(&mut state, true);
+    let made = dir.path().join("made");
+    assert!(
+        state
+            .explorer_views
+            .get(sid)
+            .unwrap()
+            .selected
+            .contains(&made)
+    );
+    let elsewhere = dir.path().join("other");
+    request(&mut state, &elsewhere).apply(&mut state, true);
+    assert!(
+        !state
+            .explorer_views
+            .get(sid)
+            .unwrap()
+            .selected
+            .contains(&elsewhere.join("made"))
+    );
+    request(&mut state, dir.path()).apply(&mut state, false);
+    assert!(
+        state
+            .explorer_views
+            .get(sid)
+            .unwrap()
+            .selected
+            .contains(&made)
+    );
+}
