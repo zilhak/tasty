@@ -18,7 +18,7 @@
 
 - **Installed (list)**: 설치된 플러그인 목록. 각 항목:
   - **이름 줄과 설명**: 상세 이름은 UI 최대 글자 크기·주 글자색·보통 굵기(굵은 UI 글꼴을 쓰지 않는다)이고, 같은 줄에 버전 Tag(앱 공용 Tag 위젯, mono 작은 글자)와 기본 제공 플러그인이면 기본 Tag `built-in` 이 이어진다. agent 강조색은 built-in 표시에 쓰지 않는다. 설명은 body 크기·보조 글자색·줄 높이 `line-height-ui`(1.4)이며, 상세 열이 넓어도 `measure-lg`(460) 폭에서 줄바꿈한다.
-  - **메타 줄**: 상세 이름 줄 아래 `작성자 · id · 홈페이지` 를 ` · ` 로 이은 mono caption·text-muted 한 줄. 작성자가 여럿이면 쉼표로 잇고, 작성자가 없으면 id 가 맨 앞이다. 홈페이지가 있으면 마지막 항목이다. scheme 이 `http`·`https`(대소문자 무시)인 주소만 scheme 을 뺀 accent-primary 밑줄 링크로 보이고 누르면 기본 브라우저로 연다. 다른 scheme(`file:`·`javascript:` 등)이나 scheme 없는 값은 다른 항목과 같은 평문으로 보이며 눌러도 열리지 않는다. 본문에 따로 `Homepage:` 줄은 없다. 아바타·이름 줄·메타 줄로 된 정체 블록은 Attention 상세와 같은 위젯(`plugin_detail_identity`)이다.
+  - **메타 줄**: 상세 이름 줄 아래 `작성자 · id · 홈페이지` 를 ` · ` 로 이은 mono caption·text-muted 한 줄. 작성자가 여럿이면 쉼표로 잇고, 작성자가 없으면 id 가 맨 앞이다. 폭이 모자라면 항목 단위로 다음 줄로 넘어가며, 구분점은 뒤 항목과 함께 넘어가 줄 끝에 점만 남지 않는다. 한 항목이 줄 폭보다 길면 끝을 말줄임한다. 홈페이지가 있으면 마지막 항목이다. scheme 이 `http`·`https`(대소문자 무시)인 주소만 scheme 을 뺀 accent-primary 밑줄 링크로 보이고 누르면 기본 브라우저로 연다. 다른 scheme(`file:`·`javascript:` 등)이나 scheme 없는 값은 다른 항목과 같은 평문으로 보이며 눌러도 열리지 않는다. 본문에 따로 `Homepage:` 줄은 없다. 아바타·이름 줄·메타 줄로 된 정체 블록은 Attention 상세와 같은 위젯(`plugin_detail_identity`)이다.
   - **액션 바**: 상세 아래, 본문 스크롤 밖에 늘 보이는 바. 상세 열 폭 전체를 쓰고 열 아래 끝에 붙으며, 위 1px 구분선이 열 양끝에 닿는다. 왼쪽에 enable/disable Switch 와 현재 상태 라벨(`Enabled`/`Disabled`, 스위치와 한 컨트롤이라 라벨을 눌러도 전환되고 키보드 초점은 한 칸), 오른쪽에 `Configure`(ghost, 톱니 아이콘, 설정 창 Plugins 탭으로 이동)와 `Uninstall`(secondary, 위험 색 글자). 키보드 Tab 순서는 본문 다음 스위치 → Configure → Uninstall 로 화면 순서와 같다.
   - **health error** 인디케이터 (enable 상태인데 오류인 플러그인).
   - **권한 read-only 표시** (창에서 권한을 토글하지 않는다). 상세 `Permissions` 절은 권한마다 버전 표시와 같은 공용 Tag(mono 작은 글자)로 보인다.

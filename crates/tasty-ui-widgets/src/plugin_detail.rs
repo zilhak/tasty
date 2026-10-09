@@ -80,42 +80,97 @@ pub struct PluginMetaView<'a> {
     pub homepage: &'a str,
 }
 
-/// 이름 줄 아래 메타 줄 `작성자 · id · homepage`. mono caption · text-muted 를 ` · ` 로 잇고,
+/// 이름 줄 아래 메타 줄 `작성자 · id · homepage`. mono caption · text-muted 이고 항목 사이는
+/// `spacing_sm` 이다. 구분점은 뒤 항목과 한 덩어리로 줄을 바꾸므로 줄 끝에 점만 남지 않는다.
 /// homepage 는 마지막 항목이다. 웹 주소면 accent-primary 밑줄 링크, 아니면 다른 항목과 같은
-/// 평문이다. 링크를 눌렀으면 true.
+/// 평문이다. 한 항목이 줄 폭보다 길면 끝을 말줄임한다. 링크를 눌렀으면 true.
 pub fn plugin_detail_meta(ui: &mut egui::Ui, theme: &Theme, view: &PluginMetaView<'_>) -> bool {
-    let font = egui::FontId::monospace(theme.font_size_caption.value());
-    let color = theme.text_muted().to_egui();
+    let link = is_web_homepage(view.homepage);
+    let homepage = if link {
+        homepage_display(view.homepage)
+    } else {
+        view.homepage
+    };
     let mut clicked = false;
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+        let items = [(view.authors, false), (view.id, false), (homepage, link)];
         let mut first = true;
-        let mut sep = |ui: &mut egui::Ui| {
-            if !first {
-                ui.label(egui::RichText::new("·").font(font.clone()).color(color));
-            }
+        for (text, is_link) in items.into_iter().filter(|(t, _)| !t.is_empty()) {
+            clicked |= meta_unit(ui, theme, !first, text, is_link);
             first = false;
-        };
-        for part in [view.authors, view.id]
-            .into_iter()
-            .filter(|p| !p.is_empty())
-        {
-            sep(ui);
-            ui.label(egui::RichText::new(part).font(font.clone()).color(color));
-        }
-        if is_web_homepage(view.homepage) {
-            sep(ui);
-            clicked = meta_link(ui, theme, homepage_display(view.homepage)).clicked();
-        } else if !view.homepage.is_empty() {
-            sep(ui);
-            ui.label(
-                egui::RichText::new(view.homepage)
-                    .font(font.clone())
-                    .color(color),
-            );
         }
     });
     clicked
+}
+
+/// 메타 줄의 한 덩어리 — 앞 구분점(있으면)과 항목을 한 자리에 함께 놓는다. 링크면 항목 자리만
+/// 누를 수 있고 키보드 포커스면 focus ring 을 두른다. 링크를 눌렀으면 true.
+fn meta_unit(ui: &mut egui::Ui, theme: &Theme, sep: bool, text: &str, is_link: bool) -> bool {
+    let font = egui::FontId::monospace(theme.font_size_caption.value());
+    let muted = theme.text_muted().to_egui();
+    let gap = theme.spacing_sm.value();
+    let dot = sep.then(|| {
+        ui.ctx()
+            .fonts(|f| f.layout_no_wrap("·".to_owned(), font.clone(), muted))
+    });
+    let lead = dot.as_ref().map_or(0.0, |g| g.size().x + gap);
+    let color = if is_link {
+        theme.accent_primary().to_egui()
+    } else {
+        muted
+    };
+    let mut job = egui::text::LayoutJob::default();
+    job.append(
+        text,
+        0.0,
+        egui::TextFormat {
+            font_id: font.clone(),
+            color,
+            underline: if is_link {
+                egui::Stroke::new(theme.border_width.value(), color)
+            } else {
+                egui::Stroke::NONE
+            },
+            ..Default::default()
+        },
+    );
+    // 덩어리가 줄 맨 앞에 와도 넘치지 않도록 줄 전체 폭에서 구분점 몫을 뺀 폭까지만 쓴다.
+    job.wrap.max_width = (ui.max_rect().width() - lead).max(0.0);
+    job.wrap.max_rows = 1;
+    job.wrap.break_anywhere = true;
+    let galley = ui.ctx().fonts(|f| f.layout_job(job));
+    let height = dot
+        .as_ref()
+        .map_or(galley.size().y, |g| g.size().y.max(galley.size().y));
+    // 링크 id 는 자리마다 다른 auto id 에서 딴다. 글이나 부모 id 로 만들면 같은 homepage 를 가진
+    // 메타 줄 둘이 한 프레임에 그려질 때 id 가 겹친다.
+    let link_id = ui.next_auto_id().with("plugin_meta_link");
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(lead + galley.size().x, height),
+        egui::Sense::hover(),
+    );
+    if let Some(dot) = dot {
+        ui.painter().galley(rect.min, dot, muted);
+    }
+    let item_rect =
+        egui::Rect::from_min_size(egui::pos2(rect.min.x + lead, rect.min.y), galley.size());
+    ui.painter().galley(item_rect.min, galley, color);
+    if !is_link {
+        return false;
+    }
+    let resp = ui
+        .interact(item_rect, link_id, egui::Sense::click())
+        .on_hover_cursor(egui::CursorIcon::PointingHand);
+    if resp.has_focus() {
+        ui.painter().rect_stroke(
+            item_rect,
+            theme.corner_radius_sm.value(),
+            egui::Stroke::new(theme.focus_ring_width.value(), theme.border_focus()),
+            egui::StrokeKind::Outside,
+        );
+    }
+    resp.clicked()
 }
 
 /// 브라우저로 열 수 있는 homepage 인가. scheme 이 `http`·`https`(대소문자 무시)인 주소만 링크로
@@ -138,38 +193,6 @@ pub fn homepage_display(url: &str) -> &str {
                 .map(|_| &url[prefix.len()..])
         })
         .unwrap_or(url)
-}
-
-/// 메타 줄의 링크. mono caption · accent-primary · 밑줄이며 줄이 넘치면 끝을 말줄임한다.
-/// 키보드 포커스면 focus ring 을 두른다.
-fn meta_link(ui: &mut egui::Ui, theme: &Theme, text: &str) -> egui::Response {
-    let color = theme.accent_primary().to_egui();
-    let mut job = egui::text::LayoutJob::default();
-    job.append(
-        text,
-        0.0,
-        egui::TextFormat {
-            font_id: egui::FontId::monospace(theme.font_size_caption.value()),
-            color,
-            underline: egui::Stroke::new(theme.border_width.value(), color),
-            ..Default::default()
-        },
-    );
-    job.wrap.max_width = ui.available_width();
-    job.wrap.max_rows = 1;
-    job.wrap.break_anywhere = true;
-    let galley = ui.ctx().fonts(|f| f.layout_job(job));
-    let (rect, resp) = ui.allocate_exact_size(galley.size(), egui::Sense::click());
-    ui.painter().galley(rect.min, galley, color);
-    if resp.has_focus() {
-        ui.painter().rect_stroke(
-            rect,
-            theme.corner_radius_sm.value(),
-            egui::Stroke::new(theme.focus_ring_width.value(), theme.border_focus()),
-            egui::StrokeKind::Outside,
-        );
-    }
-    resp.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
 /// 매니페스트 단축키를 키캡 규칙으로 다듬는다. `+` 로 나눠 앞뒤 공백을 빼고, 한 글자 키는 대문자,

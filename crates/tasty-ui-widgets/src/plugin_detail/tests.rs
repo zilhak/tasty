@@ -354,3 +354,101 @@ fn the_meta_line_links_only_web_homepages() {
         (false, false)
     );
 }
+
+/// 폭 `width` 에 메타 줄을 그리고 글자 조각마다 (글자, 사각형, 줄 수) 를 그린 순서대로 돌려준다.
+fn meta_texts(width: f32, view: &PluginMetaView<'_>) -> Vec<(String, egui::Rect, usize)> {
+    let theme = theme();
+    let ctx = egui::Context::default();
+    let mut out = Vec::new();
+    for _ in 0..2 {
+        let full = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                ui.allocate_ui(egui::vec2(width, f32::INFINITY), |ui| {
+                    ui.set_max_width(width);
+                    plugin_detail_meta(ui, &theme, view);
+                });
+            });
+        });
+        out.clear();
+        for c in &full.shapes {
+            if let egui::Shape::Text(t) = &c.shape {
+                out.push((
+                    t.galley.text().to_string(),
+                    t.galley.rect.translate(t.pos.to_vec2()),
+                    t.galley.rows.len(),
+                ));
+            }
+        }
+    }
+    out
+}
+
+/// 줄이 넘쳐도 구분점은 뒤 항목과 같은 줄에 있고, 항목은 한 줄로 그린다.
+#[test]
+fn a_meta_separator_wraps_with_the_item_after_it() {
+    let view = PluginMetaView {
+        authors: "tasty-labs",
+        id: "com.example.plugin-meta-wrap",
+        homepage: "https://example.com/plugin",
+    };
+    let texts = meta_texts(220.0, &view);
+    let dots: Vec<usize> = (0..texts.len()).filter(|&i| texts[i].0 == "·").collect();
+    assert_eq!(dots.len(), 2, "{texts:?}");
+    for &i in &dots {
+        let (_, dot, _) = &texts[i];
+        let (item, rect, _) = texts.get(i + 1).expect("item after the dot");
+        assert!(
+            (dot.top() - rect.top()).abs() < 0.5 && rect.left() > dot.right(),
+            "구분점이 뒤 항목 {item:?} 과 다른 줄에 있다: {texts:?}"
+        );
+    }
+    for (text, _, rows) in &texts {
+        assert_eq!(*rows, 1, "{text:?} 가 여러 줄로 갈렸다: {texts:?}");
+    }
+    let lines: std::collections::BTreeSet<i32> = texts
+        .iter()
+        .map(|(_, r, _)| r.top().round() as i32)
+        .collect();
+    assert!(
+        lines.len() >= 2,
+        "줄이 넘치지 않아 검사가 의미 없다: {texts:?}"
+    );
+}
+
+/// 같은 homepage 를 가진 메타 줄 둘을 한 프레임에 그려도 링크 id 가 겹치지 않는다. 겹치면 egui 가
+/// debug 빌드에서 경고 글을 그린다.
+#[test]
+fn two_meta_lines_with_one_homepage_do_not_share_a_link_id() {
+    let theme = theme();
+    let view = PluginMetaView {
+        authors: "tasty",
+        id: "com.tasty.git-viewer",
+        homepage: "https://github.com/zilhak/tasty",
+    };
+    let ctx = egui::Context::default();
+    let mut texts = Vec::new();
+    for _ in 0..2 {
+        let full = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                plugin_detail_meta(ui, &theme, &view);
+                plugin_detail_meta(ui, &theme, &view);
+            });
+        });
+        texts = text_rects(&full.shapes)
+            .into_iter()
+            .map(|(t, _)| t)
+            .collect::<Vec<_>>();
+    }
+    assert_eq!(
+        texts
+            .iter()
+            .filter(|t| *t == "github.com/zilhak/tasty")
+            .count(),
+        2,
+        "{texts:?}"
+    );
+    assert!(
+        !texts.iter().any(|t| t.contains("widget ID")),
+        "link ids clash: {texts:?}"
+    );
+}
