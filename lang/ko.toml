@@ -967,6 +967,11 @@ find = "찾기"
 more = "더 보기"
 cannot_write = "이 폴더에 쓸 수 없습니다"
 
+[explorer.more]
+find_close = "찾기 닫기"
+preview_show = "미리보기 표시"
+preview_hide = "미리보기 숨기기"
+
 [explorer.new]
 folder_default = "새 폴더"
 file_default = "제목 없음.txt"

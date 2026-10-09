@@ -22,14 +22,22 @@ fn labels() -> ExplorerCommandLabels<'static> {
     }
 }
 
-/// view 묶음. 목록 순서대로 그린다.
-fn toggles(view: &ExplorerView) -> [ExplorerToggle<'static>; 1] {
-    [ExplorerToggle {
-        command: ExplorerCommand::Find,
-        icon: crate::adapters::ui::icons::SEARCH,
-        label: t("explorer.command.find"),
-        active: view.find.is_some(),
-    }]
+/// view 묶음. 목록 순서대로 그린다. 좁은 칸에서는 create 묶음과 함께 More 로 접힌다.
+fn toggles(view: &ExplorerView) -> [ExplorerToggle<'static>; 2] {
+    [
+        ExplorerToggle {
+            command: ExplorerCommand::Find,
+            icon: crate::adapters::ui::icons::SEARCH,
+            label: t("explorer.command.find"),
+            active: view.find.is_some(),
+        },
+        ExplorerToggle {
+            command: ExplorerCommand::TogglePreview,
+            icon: crate::adapters::ui::icons::COLUMNS,
+            label: t("explorer.preview.toggle"),
+            active: view.preview.open,
+        },
+    ]
 }
 
 fn commands_view<'a>(
@@ -87,6 +95,7 @@ pub(super) fn show(
             view.start_create(root.to_path_buf(), false)
         }
         Some(ExplorerCommandClick::Run(ExplorerCommand::Find)) => view.toggle_find(),
+        Some(ExplorerCommandClick::Run(ExplorerCommand::TogglePreview)) => view.preview.toggle(),
         Some(ExplorerCommandClick::More(rect)) if action.is_none() => {
             *action = Some(ExplorerAction::MoreMenu {
                 x: rect.left(),
@@ -96,4 +105,33 @@ pub(super) fn show(
         Some(ExplorerCommandClick::More(_)) | None => {}
     }
     ui.add_space(theme.spacing_sm.value());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tasty_ui_widgets::ControlSize;
+
+    #[test]
+    fn preview_sits_in_the_view_group_and_folds_into_more_with_it() {
+        let theme = crate::theme::theme();
+        let mut view = ExplorerView::new();
+        view.preview.toggle();
+        let toggles = toggles(&view);
+        let commands: Vec<_> = toggles.iter().map(|t| (t.command, t.active)).collect();
+        assert_eq!(
+            commands,
+            [
+                (ExplorerCommand::Find, false),
+                (ExplorerCommand::TogglePreview, true)
+            ]
+        );
+        let narrow = theme.explorer_toolbar_compact_below().value() - 1.0;
+        let folded = commands_view(&theme, &view, false, narrow, &toggles);
+        assert_eq!(
+            explorer_commands_width(&theme, &folded),
+            ControlSize::Sm.height(&theme),
+            "under the compact width every command, Preview included, is one More button"
+        );
+    }
 }

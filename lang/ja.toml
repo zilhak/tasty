@@ -967,6 +967,11 @@ find = "検索"
 more = "その他"
 cannot_write = "このフォルダーには書き込めません"
 
+[explorer.more]
+find_close = "検索を閉じる"
+preview_show = "プレビューを表示"
+preview_hide = "プレビューを隠す"
+
 [explorer.new]
 folder_default = "新しいフォルダー"
 file_default = "無題.txt"

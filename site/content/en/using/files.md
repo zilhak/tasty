@@ -1,4 +1,4 @@
-<!-- source-hash: b25048a37e90 -->
+<!-- source-hash: 0afaab6fbe2c -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -44,7 +44,7 @@ The file manager built into Tasty. Change a terminal with `Alt+'` > **Explorer**
 ### Screen
 
 - **Left** — the **Files** tree (fixed at the root) and **Favorites** under it.
-- **Top** — **Back** · **Forward** · **Up** · **Refresh**, the address bar, the **New folder** · **New file** buttons, the **Find** and **Preview panel** toggles, and the view switch (**Grid** · **List** · **Detail**). When the Explorer cell is narrower than 440px, the command buttons fold into one **More** (`…`) button that shows the same commands as a menu.
+- **Top** — **Back** · **Forward** · **Up** · **Refresh**, the address bar, the **New folder** · **New file** buttons, the **Find** and **Preview panel** toggles, and the view switch (**Grid** · **List** · **Detail**). When the Explorer cell is narrower than 440px, the command buttons fold into one **More** (`…`) button that shows the same commands as a menu. In that menu the find and preview rows say what they do: **Find** ↔ **Close find**, **Show preview** ↔ **Hide preview**.
 - **Right** — the items in the current folder. In Grid view, local image files (1 MB or smaller) show a small thumbnail instead of an icon. `..` at the top goes to the parent folder. In Detail view, click the **Name** · **Size** · **Date modified** · **Type** column headers to sort.
 - You can keep several **New tab**s inside a Surface and view folders separately. These are separate from the Pane's Tabs.
 

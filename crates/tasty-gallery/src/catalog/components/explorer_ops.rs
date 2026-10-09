@@ -178,12 +178,20 @@ fn toolbar(
     }
     child.add_space(pad - gap);
     child.spacing_mut().item_spacing.x = pad;
-    let toggles = [ExplorerToggle {
-        command: ExplorerCommand::Find,
-        icon: icons::SEARCH,
-        label: t("explorer.command.find"),
-        active: find,
-    }];
+    let toggles = [
+        ExplorerToggle {
+            command: ExplorerCommand::Find,
+            icon: icons::SEARCH,
+            label: t("explorer.command.find"),
+            active: find,
+        },
+        ExplorerToggle {
+            command: ExplorerCommand::TogglePreview,
+            icon: icons::COLUMNS,
+            label: t("explorer.preview.toggle"),
+            active: false,
+        },
+    ];
     let view = ExplorerCommandsView {
         create,
         toggles: &toggles,
@@ -253,7 +261,7 @@ pub fn draw_commands(ui: &mut egui::Ui, theme: &Theme) {
             });
             ui.vertical(|ui| {
                 ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
-                lbl(ui, theme, "More menu");
+                lbl(ui, theme, "More menu — find open, preview closed");
                 let items = [
                     Mi::Item(
                         Some(icons::FOLDER_PLUS),
@@ -266,7 +274,8 @@ pub fn draw_commands(ui: &mut egui::Ui, theme: &Theme) {
                         false,
                     ),
                     Mi::Sep,
-                    Mi::Item(Some(icons::SEARCH), t("explorer.command.find"), false),
+                    Mi::Item(Some(icons::SEARCH), t("explorer.more.find_close"), false),
+                    Mi::Item(Some(icons::COLUMNS), t("explorer.more.preview_show"), false),
                 ];
                 render_menu(ui, theme, theme.tools_menu_min_width().value(), &items);
             });
@@ -284,11 +293,18 @@ pub fn draw_commands(ui: &mut egui::Ui, theme: &Theme) {
                 "create",
                 "folderPlus · filePlus · IconButton sm, icon-only, tooltip = command",
             ),
-            ("view", "search — toggle (active state)"),
+            (
+                "view",
+                "search · columns (preview) — toggles (active state)",
+            ),
             ("separator", "1px × 16 · separator · 4 each side"),
             (
                 "narrow",
-                "cell < explorer-toolbar-compact-below 440 → one More (more glyph) · menu = same rows",
+                "cell < explorer-toolbar-compact-below 440 → one More (more glyph) · menu = same rows, Preview included",
+            ),
+            (
+                "More rows",
+                "no check marks · say the action: Find ↔ Close find · Show preview ↔ Hide preview",
             ),
             ("remote", "create hidden · view kept"),
             (

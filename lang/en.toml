@@ -971,6 +971,11 @@ find = "Find"
 more = "More"
 cannot_write = "Can't write to this folder"
 
+[explorer.more]
+find_close = "Close find"
+preview_show = "Show preview"
+preview_hide = "Hide preview"
+
 [explorer.new]
 folder_default = "New folder"
 file_default = "untitled.txt"

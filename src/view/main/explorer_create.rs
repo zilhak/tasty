@@ -1,5 +1,6 @@
 //! explorer 의 새 폴더·새 파일 명령. 컨텍스트 메뉴 행, 좁은 칸의 More 메뉴, 단축키가 같은 시작점을 쓴다.
-//! More 메뉴는 툴바 view 묶음의 Find 도 함께 보인다.
+//! More 메뉴는 툴바 view 묶음의 Find · Preview 도 함께 보인다. 네이티브 메뉴에는 체크 표시가 없어
+//! 이 두 행은 지금 상태가 아니라 누르면 할 동작을 쓴다(Find ↔ Close find, Show ↔ Hide preview).
 //! 명령은 이름 입력을 열기만 한다. 실제 생성은 이름을 확정한 뒤 `ExplorerAction::Create` 로 한다.
 
 use super::MainView;
@@ -9,6 +10,7 @@ use crate::runtime::engine_read::EngineRead;
 const NEW_FOLDER: u32 = 80;
 const NEW_FILE: u32 = 81;
 const FIND: u32 = 82;
+const PREVIEW: u32 = 83;
 
 impl MainView {
     /// 생성 행 두 개. 빈 영역 메뉴는 맨 앞 묶음이라 뒤에, 폴더 메뉴는 파일 조작 묶음이라 앞에 구분선을 둔다.
@@ -78,7 +80,14 @@ impl MainView {
         if !items.is_empty() {
             items.push(MenuItem::separator());
         }
-        items.push(MenuItem::new(FIND, crate::i18n::t("explorer.command.find")));
+        let view = self.state.explorer_views.get(surface_id);
+        let (find_open, preview_open) =
+            view.map_or((false, false), |v| (v.find.is_some(), v.preview.open));
+        items.push(MenuItem::new(FIND, crate::i18n::t(find_row_key(find_open))));
+        items.push(MenuItem::new(
+            PREVIEW,
+            crate::i18n::t(preview_row_key(preview_open)),
+        ));
         self.open_native_menu(
             engine,
             x,
@@ -94,9 +103,32 @@ impl MainView {
                         view.toggle_find();
                     }
                 }
+                Some(PREVIEW) => {
+                    if let Some(view) = this.state.explorer_views.get_mut(surface_id) {
+                        view.preview.toggle();
+                    }
+                }
                 _ => {}
             },
         );
+    }
+}
+
+/// More 메뉴 Find 행의 문구 키. 바가 열려 있으면 닫는 동작을 쓴다.
+fn find_row_key(open: bool) -> &'static str {
+    if open {
+        "explorer.more.find_close"
+    } else {
+        "explorer.command.find"
+    }
+}
+
+/// More 메뉴 Preview 행의 문구 키.
+fn preview_row_key(open: bool) -> &'static str {
+    if open {
+        "explorer.more.preview_hide"
+    } else {
+        "explorer.more.preview_show"
     }
 }
 
@@ -143,5 +175,19 @@ impl crate::state::MainViewState {
             return;
         }
         view.start_create(dir, folder);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn more_rows_name_the_action_they_take() {
+        crate::i18n::init("en");
+        assert_eq!(crate::i18n::t(find_row_key(false)), "Find");
+        assert_eq!(crate::i18n::t(find_row_key(true)), "Close find");
+        assert_eq!(crate::i18n::t(preview_row_key(false)), "Show preview");
+        assert_eq!(crate::i18n::t(preview_row_key(true)), "Hide preview");
     }
 }

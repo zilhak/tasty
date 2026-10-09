@@ -10,7 +10,6 @@ use std::time::SystemTime;
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::{ControlSize, IconButton, IconButtonVariant};
 
 use super::state_screen;
 use super::view::{DirEntryInfo, ExplorerView, human_size};
@@ -152,26 +151,6 @@ impl PreviewPane {
             }
         };
     }
-}
-
-/// 미리보기 토글 버튼. 시안 툴바 view 묶음의 columns 글리프, 켜지면 active.
-pub(super) fn toggle_button(ui: &mut egui::Ui, theme: &Theme, view: &mut ExplorerView) {
-    let resp = IconButton::new()
-        .variant(IconButtonVariant::Ghost)
-        .size(ControlSize::Sm)
-        .active(view.preview.open)
-        .show(ui, theme, &|ui, rect, c| {
-            icons::COLUMNS.image(rect.height(), c).paint_at(ui, rect)
-        })
-        .on_hover_text(t("explorer.preview.toggle"));
-    if resp.clicked() {
-        view.preview.toggle();
-    }
-}
-
-/// 토글 버튼이 차지하는 폭. 툴바가 주소창 폭을 계산할 때 뺀다.
-pub(super) fn toggle_button_width(theme: &Theme) -> f32 {
-    ControlSize::Sm.height(theme)
 }
 
 /// 패널이 켜져 있고 자리가 있으면 받은 ui 의 오른쪽에 패널과 경계선을 그리고, 목록을 그릴 왼쪽 ui 를 돌려준다.

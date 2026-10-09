@@ -1,5 +1,5 @@
 //! Explorer 툴바의 명령 묶음. 경로 필드와 보기 전환 사이에 create 묶음(New folder · New file)과
-//! 1px 구분선, view 묶음(Find 등 켜고 끄는 명령)을 icon-only sm 버튼으로 둔다.
+//! 1px 구분선, view 묶음(Find · Preview 처럼 켜고 끄는 명령)을 icon-only sm 버튼으로 둔다.
 //! 칸이 `explorer-toolbar-compact-below` 보다 좁으면 두 묶음을 More 버튼 하나로 접는다.
 //! 본체와 갤러리가 같은 함수를 불러 같은 모양을 그린다.
 
@@ -15,6 +15,8 @@ pub enum ExplorerCommand {
     NewFolder,
     NewFile,
     Find,
+    /// 미리보기 패널 토글.
+    TogglePreview,
 }
 
 /// view 묶음의 토글 하나. 목록 순서대로 그린다.

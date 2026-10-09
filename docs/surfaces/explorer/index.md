@@ -158,7 +158,7 @@ mirror(원격) explorer:
 
 ### 미리보기 패널
 
-툴바의 미리보기 토글(`COLUMNS` 글리프, 보기 전환 앞)이 목록 오른쪽 패널을 켜고 끈다(시안 `YPreview`, `explorer/preview.rs`). View(`ExplorerView::preview`)가 토글·폭을 바로 바꿔 그리고, 토글하거나 경계선 끌기를 마쳤을 때 한 번 `EngineAction::ExplorerPreview` 로 model(`ExplorerPanel::preview`)에 남긴다. 그래서 레이아웃 snapshot 에 실려 재시작 뒤에도 남는다(위 "저장·복원"). View 는 view 와 model 이 마지막으로 같았던 값을 기억하고, 그릴 때마다 model 값이 그 값과 다르면 model 값을 받아 온다. 처음 그릴 때는 복원한 값을 받는다. 같은 surface id 로 다른 kind 로 바꿨다가 explorer 로 돌아오면 view 는 id 로 남지만 새 `ExplorerPanel` 은 기본값이라, 그 값을 받아 화면과 저장되는 값이 같다. 끌기 중처럼 view 만 바뀐 동안에는 model 이 그대로라 덮어쓰지 않는다. 단축키 `explorer_toggle_preview` 도 같은 경로다.
+툴바 view 묶음의 미리보기 토글(`COLUMNS` 글리프, Find 다음. 좁은 칸은 More 메뉴의 Show preview·Hide preview)이 목록 오른쪽 패널을 켜고 끈다(시안 `YPreview`, `explorer/preview.rs`). View(`ExplorerView::preview`)가 토글·폭을 바로 바꿔 그리고, 토글하거나 경계선 끌기를 마쳤을 때 한 번 `EngineAction::ExplorerPreview` 로 model(`ExplorerPanel::preview`)에 남긴다. 그래서 레이아웃 snapshot 에 실려 재시작 뒤에도 남는다(위 "저장·복원"). View 는 view 와 model 이 마지막으로 같았던 값을 기억하고, 그릴 때마다 model 값이 그 값과 다르면 model 값을 받아 온다. 처음 그릴 때는 복원한 값을 받는다. 같은 surface id 로 다른 kind 로 바꿨다가 explorer 로 돌아오면 view 는 id 로 남지만 새 `ExplorerPanel` 은 기본값이라, 그 값을 받아 화면과 저장되는 값이 같다. 끌기 중처럼 view 만 바뀐 동안에는 model 이 그대로라 덮어쓰지 않는다. 단축키 `explorer_toggle_preview` 도 같은 경로다.
 
 - **폭**: `explorer_preview_width`(288)에서 시작하고 패널 왼쪽 경계선(잡는 폭은 pane 분할선과 같은 `DIVIDER_HIT_THRESHOLD`)을 끌어 `explorer_preview_min_width`(200)…`explorer_preview_max_width`(460) 사이로 바꾼다. 목록에도 같은 200 을 남긴다. 칸이 패널 하한 + 경계선 + 목록 하한보다 좁으면 패널만 숨기고 토글은 켜진 채 둔다.
 - **대상**: 선택이 정확히 하나일 때 그 항목. 선택이 없거나 여럿이면 "Select a file" 상태다. 대상이 바뀌면 이전 미리보기를 바로 지우고 Loading 상태를 보인다. 같은 항목이라도 수정 시각이 바뀌면 다시 읽는다.
@@ -184,7 +184,7 @@ Grid 셀은 모두 `explorer_grid_thumb_size`(40) 슬롯을 잡아 썸네일 유
 
 ### 새 폴더 · 새 파일
 
-툴바의 명령 묶음(`commands.rs`, 공용 `tasty_ui_widgets::explorer_commands`)이 주소창과 보기 전환 사이에 New folder·New file 을 icon-only sm 버튼으로 둔다. 칸 폭이 `explorer-toolbar-compact-below`(440)보다 좁으면 묶음을 More(`…`) 하나로 접고, 누르면 `ExplorerAction::MoreMenu` → `PendingNativeMenu::ExplorerMore` 로 같은 명령의 네이티브 메뉴를 연다(`src/view/main/explorer_create.rs`). mirror explorer 는 create 묶음을 숨긴다. 로컬 explorer 는 폴더를 읽을 때 읽기 worker 에 쓰기 가능 여부를 함께 묻고(`local_reads::writable`, Unix 는 `access(W_OK)`, 그 밖의 OS 는 확인하지 않고 쓸 수 있다고 본다), 쓸 수 없으면 두 버튼을 비활성으로 두고 툴팁을 `explorer.command.cannot_write` 로 바꾼다. 화면 스레드는 파일시스템을 읽지 않는다.
+툴바의 명령 묶음(`commands.rs`, 공용 `tasty_ui_widgets::explorer_commands`)이 주소창과 보기 전환 사이에 create 묶음(New folder·New file)과 1px 구분선, view 묶음(Find·Preview 토글)을 icon-only sm 버튼으로 둔다. 칸 폭이 `explorer-toolbar-compact-below`(440)보다 좁으면 두 묶음을 More(`…`) 하나로 접고, 누르면 `ExplorerAction::MoreMenu` → `PendingNativeMenu::ExplorerMore` 로 같은 명령의 네이티브 메뉴를 연다(`src/view/main/explorer_create.rs`, New folder 80 · New file 81 · Find 82 · Preview 83). 네이티브 메뉴에는 체크 표시가 없으므로 view 묶음의 두 행은 누르면 할 동작을 쓴다. Find 바가 열려 있으면 `explorer.more.find_close`("Close find"), 아니면 "Find"이고, 미리보기는 `explorer.more.preview_show`·`preview_hide` 다. mirror explorer 는 create 묶음을 숨긴다. 로컬 explorer 는 폴더를 읽을 때 읽기 worker 에 쓰기 가능 여부를 함께 묻고(`local_reads::writable`, Unix 는 `access(W_OK)`, 그 밖의 OS 는 확인하지 않고 쓸 수 있다고 본다), 쓸 수 없으면 두 버튼을 비활성으로 두고 툴팁을 `explorer.command.cannot_write` 로 바꾼다. 화면 스레드는 파일시스템을 읽지 않는다.
 
 진입점은 툴바 버튼, More 메뉴, 컨텍스트 메뉴(빈 영역 메뉴의 첫 묶음, 단일 폴더 메뉴의 잘라내기·붙여넣기 뒤 묶음 — id 80·81), 단축키 `explorer_new_folder`·`explorer_new_file` 이다. 모두 이름 입력만 연다(`MainViewState::start_explorer_create` → `ExplorerView::start_create`). 대상 폴더는 시작할 때 고정한다. 폴더 메뉴는 그 폴더, 나머지는 지금 보는 폴더다. mirror 는 `remote_write_unsupported` 토스트, 쓸 수 없다고 확인한 현재 폴더는 `cannot_write` 토스트로 거절한다.
 
@@ -199,7 +199,7 @@ Grid 셀은 모두 `explorer_grid_thumb_size`(40) 슬롯을 잡아 썸네일 유
 
 ### 찾기 · 하위 폴더 검색
 
-툴바 view 묶음의 Find 토글(좁은 칸은 More 메뉴의 Find, id 72)과 explorer 포커스의 `find` 단축키가 툴바 아래에 Find 바(`find.rs`, 공용 `explorer_find_bar`, 높이 `explorer-search-bar-height` 36, 칸 전체 폭)를 연다. 토글은 열려 있으면 닫고, `find` 단축키는 이미 열린 바에 포커스만 준다. 바 상태(`FindState`: 연 폴더·검색어·Subfolders·하위 폴더 검색)는 `ExplorerView::find` 에 두고 저장하지 않는다.
+툴바 view 묶음의 Find 토글(좁은 칸은 More 메뉴의 Find·Close find, id 82)과 explorer 포커스의 `find` 단축키가 툴바 아래에 Find 바(`find.rs`, 공용 `explorer_find_bar`, 높이 `explorer-search-bar-height` 36, 칸 전체 폭)를 연다. 토글은 열려 있으면 닫고, `find` 단축키는 이미 열린 바에 포커스만 준다. 바 상태(`FindState`: 연 폴더·검색어·Subfolders·하위 폴더 검색)는 `ExplorerView::find` 에 두고 저장하지 않는다.
 
 - **거르기**: 입력하는 즉시 지금 보는 폴더의 항목을 이름의 부분 문자열(대소문자 무시, `match_range`)로 거른다. 맞는 부분은 Detail·List·Grid 모두 `explorer-match-fg` 로 칠한다(List 는 공용 `tree_row_matching`). 바 오른쪽에 `explorer.find.count`("{shown} of {total}"), 상태줄에 `explorer.find.status` 를 보인다. 거르는 동안에도 `..` 행은 목록 맨 위에 남는다. 이동용 행이라 이름을 맞춰 보지 않고 개수에도 넣지 않는다. 맞는 항목이 없으면 바는 "0 of N" 을 그대로 두고, 목록 자리에 search 글리프와 `explorer.find.none_filter`("No names match “{query}”", 보조 줄 없음) 상태 화면을 보인다. mirror explorer 도 거르기를 쓴다.
 - **보이는 항목만 다룬다**: 검색어나 Subfolders 가 바뀌면 보이지 않게 된 항목을 선택에서 뺀다. 전체 선택·Shift 범위 선택·타입어헤드는 보이는 항목만 대상으로 한다. 숨은 항목에 명령이 닿지 않게 하기 위해서다.
@@ -324,6 +324,7 @@ Appearance → **Explorer** 서브탭에서 surface 폰트를 오버라이드한
 - Given 로컬 explorer 에 Report.pdf·report-draft.txt·notes.md 가 있다 When Find 를 열고 "re" 를 입력한다 Then 두 항목만 남고 맞는 부분이 강조되며 바에 "2 of 3" 이 보인다. 첫 `Esc` 는 글자를 지우고 둘째 `Esc` 는 바를 닫는다(`find/tests.rs`).
 - Given 거르기 전 notes.md 를 골랐다 When 그 항목이 걸러진다 Then 선택에서 빠져 이후 명령이 닿지 않는다(`find/tests.rs` 의 `the_filter_hides_rows_that_do_not_match_and_counts_what_is_shown`).
 - Given 하위 폴더에 맞는 파일과 읽을 수 없는 폴더가 있다 When Subfolders 를 켠다 Then 결과가 들어오는 대로 채워지고 Detail 에 Folder 열이 생기며, 끝나면 "{n} found · 1 folder skipped" 가 보인다. 링크로 된 폴더는 들어가지 않는다(`local_reads/search/tests.rs`).
+- Given 칸 폭이 440 보다 좁다 When 툴바를 그린다 Then New folder·New file·Find·Preview 가 모두 More 하나로 접히고, 메뉴의 view 행은 지금 상태에 따라 Find·Close find, Show preview·Hide preview 를 쓴다(`commands.rs` 의 `preview_sits_in_the_view_group_and_folds_into_more_with_it`, `explorer_create.rs` 의 `more_rows_name_the_action_they_take`).
 - Given 하위 폴더 검색이 5,000 개보다 많이 맞는다 When 검색이 끝난다 Then 5,000 개만 남고 바에 "5,000+ found · stopped", 상태줄에 범위를 좁히라는 안내가 보인다(`local_reads/search/tests.rs` 의 `a_search_stops_at_the_hit_cap_and_keeps_what_it_found`, `find/tests.rs` 의 `one_skipped_folder_and_the_hit_cap_have_their_own_words`).
 - Given 거르기 검색어에 맞는 이름이 없다 When 목록을 그린다 Then 바는 "0 of N", 목록 자리는 "No names match “{query}”" 이다(`find/tests.rs`).
 - Given Find 바가 열려 있다 When 하위 폴더로 이동한다 Then 바가 닫힌다(`find/tests.rs` 의 `leaving_the_folder_closes_the_bar`).
