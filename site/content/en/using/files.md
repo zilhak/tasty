@@ -1,4 +1,4 @@
-<!-- source-hash: d0c2f76202a2 -->
+<!-- source-hash: 8caf2b820470 -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -133,7 +133,8 @@ tasty markdown reload --surface 5
 View PNG, JPEG, and other images, or add drawings to them. **New Image** starts with an empty canvas. Even when you create it while an image is open, it is separate from that file, so **Save** asks where to save it. Once you save it to a new path, the tab is renamed to that file, and that file is what opens after a restart. When the file changes outside Tasty, it is re-read automatically within 1 second — except **while you are editing**, where it is deferred until you leave edit mode (so the picture underneath your strokes does not change).
 
 - Toolbar — **Previous image** / **Next image** (within the same folder; the tab is renamed to the file you move to. They do nothing while you are editing — save or cancel first; `tasty image next` and `prev` return an error then), **Refresh**, **Edit**, **New image**, zoom **Fit** / `+` / `-`.
-- Press **Edit** to choose **Brush** · **Color** and draw on top. Undo and redo with `Ctrl+Z` / `Ctrl+Shift+Z`. **Save** writes a PNG. When you save edits to a file that is not a PNG, such as a JPEG, the original stays as it is: a PNG with the same name is created in the same folder and the tab moves to it. If that PNG already exists, Tasty does not overwrite it and asks where to save instead.
+- Press **Edit** to choose **Brush** · **Color** and draw on top. Undo and redo with `Ctrl+Z` / `Ctrl+Shift+Z`. **Save** writes a PNG. When you save edits to a file that is not a PNG, such as a JPEG, the original stays as it is: a PNG with the same name is created in the same folder and the tab moves to it. If that PNG already exists, Tasty does not overwrite it and asks where to save instead. The prompt then says the file already exists, and the field holds a free name such as `name-1.png` with the name part selected.
+- When a file cannot be read, the canvas says why — **Image not found** (with the path), **Permission denied**, or **Can't open this image** (damaged or unsupported, with the decoder message). **Retry** reads it again. The file is also re-read automatically when it comes back.
 - Pressing the paste shortcut (`Ctrl+V` by default) on an image pastes the clipboard image as a floating selection. Nothing happens when the clipboard holds no image. `tasty image paste --surface <ID>` does the same.
 - `tasty image list` shows every open image **across all windows**.
 - `tasty image reload --surface <ID>` re-reads the file right now instead of waiting.

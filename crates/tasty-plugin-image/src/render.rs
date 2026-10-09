@@ -9,9 +9,12 @@ mod baked_icons {
 use egui::emath::GuiRounding as _;
 use tasty_plugin_sdk::Translator;
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, IconButton, Input};
+use tasty_ui_widgets::{
+    Button, ButtonVariant, ControlSize, IconButton, Input, StateGlyph, StateScreenView,
+    state_screen,
+};
 
-use crate::doc::{DragState, EditState, ImageDoc, ResizeHandle};
+use crate::doc::{DragState, EditState, ImageDoc, LoadFailure, ResizeHandle};
 
 /// Render one frame of the image surface into `ctx`.
 pub(crate) fn draw(ctx: &egui::Context, theme: &Theme, tr: &Translator, doc: &mut ImageDoc) {
@@ -254,30 +257,11 @@ fn draw_zoom_controls(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, doc: &m
     }
 }
 
-fn draw_canvas(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, doc: &mut ImageDoc) {
-    let available = ui.available_rect_before_wrap();
-    let (rect, response) = ui.allocate_exact_size(
-        egui::vec2(available.width(), available.height()),
-        egui::Sense::click_and_drag(),
-    );
-
-    ui.painter()
-        .rect_filled(rect, 0.0, theme.bg_sidebar().to_egui());
-
-    let Some(img) = doc.original_image.as_ref() else {
-        ui.painter().text(
-            rect.center(),
-            egui::Align2::CENTER_CENTER,
-            tr.t("image_viewer.no_image"),
-            egui::FontId::proportional(theme.font_size_body.value()),
-            theme.text_muted().to_egui(),
-        );
-        return;
-    };
-    let [img_w, img_h] = img.size;
-
-    if doc.texture.is_none() {
-        let img = doc.original_image.clone().expect("checked above");
+/// 원본 이미지와 편집 레이어 텍스처를 필요할 때만 올린다.
+fn ensure_textures(ui: &egui::Ui, doc: &mut ImageDoc) {
+    if doc.texture.is_none()
+        && let Some(img) = doc.original_image.clone()
+    {
         doc.texture = Some(ui.ctx().load_texture(
             "image_original",
             img,
@@ -295,6 +279,26 @@ fn draw_canvas(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, doc: &mut Imag
         ));
         doc.draw_texture_dirty = false;
     }
+}
+
+fn draw_canvas(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, doc: &mut ImageDoc) {
+    let available = ui.available_rect_before_wrap();
+    let (rect, response) = ui.allocate_exact_size(
+        egui::vec2(available.width(), available.height()),
+        egui::Sense::click_and_drag(),
+    );
+
+    ui.painter()
+        .rect_filled(rect, 0.0, theme.bg_sidebar().to_egui());
+
+    let Some(img) = doc.original_image.as_ref() else {
+        if canvas_state(ui, theme, tr, rect, doc) {
+            doc.reload_from_disk();
+        }
+        return;
+    };
+    let [img_w, img_h] = img.size;
+    ensure_textures(ui, doc);
 
     // Compute display size with zoom; fit-to-window when zoom <= 1.0.
     let zoom = doc.zoom;
@@ -673,6 +677,15 @@ fn draw_save_path_popup(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, doc: 
         tr.t("button.save"),
         tr.t("button.cancel"),
         |ui| {
+            // 같은 이름의 .png 가 있어 열렸으면 입력칸 위에 caption accent-warning 으로 알린다.
+            if let Some(taken) = doc.save_path_clash.as_deref() {
+                ui.label(
+                    egui::RichText::new(tr.t_fmt("image.save_as.exists", taken))
+                        .size(theme.font_size_caption.value())
+                        .color(theme.accent_warning().to_egui()),
+                );
+                ui.add_space(theme.spacing_xs.value());
+            }
             // 찾아보기 IconButton을 오른쪽 끝에 먼저 놓고 남은 폭을 경로 입력칸이 채운다.
             let row = egui::vec2(ui.available_width(), ControlSize::Sm.height(theme));
             ui.allocate_ui_with_layout(
@@ -702,12 +715,27 @@ fn draw_save_path_popup(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, doc: 
                     if !resp.has_focus() && doc.save_path_buffer.is_empty() {
                         resp.request_focus();
                     }
+                    // 제안한 다음 빈 이름은 stem 만 선택해 바로 고쳐 쓸 수 있게 한다.
+                    if doc.save_path_select_stem {
+                        resp.request_focus();
+                        if let Some(mut state) = egui::TextEdit::load_state(ui.ctx(), resp.id) {
+                            let (start, end) = crate::doc::stem_char_range(&doc.save_path_buffer);
+                            state
+                                .cursor
+                                .set_char_range(Some(egui::text::CCursorRange::two(
+                                    egui::text::CCursor::new(start),
+                                    egui::text::CCursor::new(end),
+                                )));
+                            state.store(ui.ctx(), resp.id);
+                            doc.save_path_select_stem = false;
+                        }
+                    }
                 },
             );
         },
     );
     if cancel {
-        doc.save_path_popup = false;
+        doc.close_save_as();
     }
     if save && !doc.save_path_buffer.is_empty() {
         let mut path = doc.save_path_buffer.clone();
@@ -718,11 +746,86 @@ fn draw_save_path_popup(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, doc: 
             tracing::warn!("failed to save image: {e}");
         } else {
             doc.adopt_saved_path(path);
-            doc.save_path_popup = false;
+            doc.close_save_as();
             doc.exit_edit_mode();
             doc.reload_from_disk();
         }
     }
+}
+
+/// 이미지가 없을 때의 캔버스 상태 화면. 파일 없음 · 권한 없음 · 디코드 실패는 Retry 를 두고
+/// 원인을 읽지 못한 빈 캔버스는 한 줄만 보인다. Retry 를 눌렀으면 true 다.
+fn canvas_state(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    tr: &Translator,
+    rect: egui::Rect,
+    doc: &ImageDoc,
+) -> bool {
+    let danger = theme.image_error_fg().to_egui();
+    let warning = theme.accent_warning().to_egui();
+    let muted = theme.text_muted().to_egui();
+    let secondary = theme.text_secondary().to_egui();
+    let (icon, glyph_color, title, title_color, sub, reason): (
+        &'static [&'static [[f32; 2]]],
+        _,
+        _,
+        _,
+        _,
+        Option<&str>,
+    ) = match &doc.load_failure {
+        None => (
+            baked_icons::IMAGE,
+            muted,
+            tr.t("image_viewer.no_image"),
+            secondary,
+            None,
+            None,
+        ),
+        Some(LoadFailure::Missing) => (
+            baked_icons::ALERT_TRIANGLE,
+            danger,
+            tr.t("image.state.missing"),
+            danger,
+            Some(tr.t("image.state.missing_sub")),
+            doc.file_path.as_deref(),
+        ),
+        Some(LoadFailure::Permission) => (
+            baked_icons::LOCK,
+            warning,
+            tr.t("image.state.permission"),
+            warning,
+            Some(tr.t("image.state.permission_sub")),
+            None,
+        ),
+        Some(LoadFailure::Decode(msg)) => (
+            baked_icons::ALERT_TRIANGLE,
+            danger,
+            tr.t("image.state.decode"),
+            danger,
+            Some(tr.t("image.state.decode_sub")),
+            Some(msg.as_str()),
+        ),
+    };
+    let retry = [(tr.t("image.state.retry"), ButtonVariant::Secondary)];
+    let actions: &[(&str, ButtonVariant)] = if doc.load_failure.is_some() {
+        &retry
+    } else {
+        &[]
+    };
+    let paint = |ui: &mut egui::Ui, r: egui::Rect, c: egui::Color32| {
+        tasty_plugin_sdk::baked_icon::draw(ui.painter(), icon, r.center(), r.height(), c);
+    };
+    let view = StateScreenView {
+        glyph: StateGlyph::Paint(&paint),
+        glyph_color,
+        title,
+        title_color,
+        sub,
+        reason,
+        actions,
+    };
+    state_screen(ui, theme, rect, &view).is_some()
 }
 
 /// A caption-sized muted label (filename / zoom % / field labels).

@@ -171,6 +171,8 @@ src/catalog/components/html_chrome.rs	No page loaded	webview.no_page
 src/catalog/components/image_viewer.rs	Cancel	button.cancel,image_viewer.cancel,preset.popup.cancel_button,quit_modal.cancel_button,remote_attach.cancel,remote_tool.cancel,transfer.progress.cancel
 src/catalog/components/image_viewer.rs	New Image	image_viewer.new_image_title,pane_context_menu.new_image
 src/catalog/components/image_viewer.rs	OK	button.ok
+src/catalog/components/image_viewer.rs	Permission denied	explorer.state.no_permission,filepicker.error_perm.title
+src/catalog/components/image_viewer.rs	Retry	explorer.state.read_error_retry,filepicker.error_perm.retry,remote_attach.retry,transfer.error.retry
 src/catalog/components/image_viewer.rs	Save	button.save,filepicker.save.save_button,image_viewer.save,remote_tool.save
 src/catalog/components/image_viewer.rs	Save As	image_viewer.save_path_title
 src/catalog/components/image_viewer.rs	—	dag.detail.none,port_scanner.external_dash

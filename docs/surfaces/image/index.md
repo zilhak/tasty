@@ -75,13 +75,23 @@
 - **빈 캔버스** — 파일 없이 시작한 그림판. 파일을 연 서피스에서 새 이미지를 만들어도 원래 파일과 별개 문서다. 열려 있던 경로와 폴더 목록을 버리므로 Save는 다른 이름으로 저장 팝업을 열고, 경로 없는 `image.save`는 거절된다.
 - **새 경로로 저장한 뒤** — 다른 이름으로 저장 팝업이나 새 캔버스에 경로를 준 `image.save`로 저장하면 플러그인이 별도 스레드에서 호스트 `image.open`(같은 surface, 새 경로)을 호출한다. 호스트가 탭 제목·복원 경로·`image.list` 경로를 새 파일로 바꾸고 surface를 다시 만들어, 새 문서가 그 파일을 읽고 감시한다. 확대·이동 상태는 처음으로 돌아간다. 파일을 연 문서를 다른 경로로 내보내는 `image.save`는 문서 경로를 바꾸지 않으므로 호스트에 알리지 않는다.
 - **붙여넣기** — 이미지 surface 에 포커스가 있을 때 붙여넣기 단축키(`KeybindingSettings` 의 paste)나 팔레트 붙여넣기는 호스트가 `Paste` 이벤트로 보내고(`egui_paste`), 플러그인이 클립보드 이미지를 직접 읽어 `image.paste` 와 같이 떠 있는 선택으로 붙인다. 보기 모드에서도 편집 모드로 들어간다. 클립보드에 이미지가 없으면(텍스트 등) 아무것도 바꾸지 않는다.
-- **저장 대상** — 경로 없는 저장(도구 모음 Save, `path` 없는 `image.save`)은 항상 PNG 로 쓴다. 확장자가 대소문자와 관계없이 `png` 인 문서(`IMG.PNG` 포함)는 자기 파일에 쓴다. JPG 등 비-PNG 문서는 같은 폴더의 같은 이름 `.png`(소문자)에 새 파일로만 쓰고(`create_new` — 판단과 쓰기 사이에 생긴 파일도 덮어쓰지 않는다) 문서를 그 파일로 옮긴다(아래 "새 경로로 저장한 뒤"와 같이 호스트에 알린다). 원본 파일은 바꾸지 않는다. 같은 이름 `.png` 가 이미 있으면 덮어쓰지 않는다 — 도구 모음 Save 는 다른 이름으로 저장 팝업을 열고 편집을 유지하며, `image.save` 는 `-32602`(`Save target already exists: <path>. Provide 'path' to save elsewhere`)로 거절한다. 판단은 `ImageDoc::save_target` 하나가 맡는다.
+- **저장 대상** — 경로 없는 저장(도구 모음 Save, `path` 없는 `image.save`)은 항상 PNG 로 쓴다. 확장자가 대소문자와 관계없이 `png` 인 문서(`IMG.PNG` 포함)는 자기 파일에 쓴다. JPG 등 비-PNG 문서는 같은 폴더의 같은 이름 `.png`(소문자)에 새 파일로만 쓰고(`create_new` — 판단과 쓰기 사이에 생긴 파일도 덮어쓰지 않는다) 문서를 그 파일로 옮긴다(아래 "새 경로로 저장한 뒤"와 같이 호스트에 알린다). 원본 파일은 바꾸지 않는다. 같은 이름 `.png` 가 이미 있으면 덮어쓰지 않는다 — 도구 모음 Save 는 다른 이름으로 저장 팝업을 열고 편집을 유지하며(입력칸 위에 caption accent-warning `image.save_as.exists`, 입력칸에는 같은 폴더의 다음 빈 이름 `<stem>-<n>.png`(n 은 1 부터)을 넣고 파일 이름의 stem 을 선택한다), `image.save` 는 `-32602`(`Save target already exists: <path>. Provide 'path' to save elsewhere`)로 거절한다. 판단은 `ImageDoc::save_target` 하나가 맡는다.
 - **이전·다음 이미지로 넘어간 뒤** — 도구 모음 버튼과 `image.next`·`image.prev`도 같은 방식으로 호스트에 새 경로를 알린다. 탭 제목·복원 경로·`image.list` 경로가 넘어간 파일을 따른다. 편집 중에는 이동하지 않는다. 도구 모음 버튼은 눌러도 반응하지 않고, `image.next`·`image.prev`는 `-32602`(`Image is being edited: save or cancel the edit before moving to another image`)로 거절하며 문서 경로·폴더 안 위치·감시 대상을 바꾸지 않는다.
 - 탭 표시명은 파일명(빈 캔버스면 기본 "Image").
 
 ### 상태별 시각
 
-- 로드됨 / 빈 캔버스 / 로드 실패.
+- 로드됨 / 빈 캔버스 / 이미지 없음 / 로드 실패.
+- 이미지가 없으면 캔버스(bg-sidebar) 자리에 공용 상태 화면(`tasty_ui_widgets::state_screen`, 탐색기 상태 화면과 같은 배치)을 그린다. 캔버스 높이가 `explorer_state_compact_below()`(120) 미만이면 compact 한 줄이다. 글리프는 빌드 때 구운 폴리라인이다.
+
+  | 상태 | 글리프 · 색 | 제목 · 보조 줄 | 이유 줄(mono) | 버튼 |
+  |---|---|---|---|---|
+  | 이미지 없음(원인 없음) | image · text-muted | `image_viewer.no_image` (text-secondary) | 없음 | 없음 |
+  | 파일 없음(`NotFound`) | alertTriangle · image-error-fg | `image.state.missing` · `missing_sub` | 문서 경로 | Retry |
+  | 권한 없음(`PermissionDenied`) | lock · accent-warning | `image.state.permission` · `permission_sub` | 없음 | Retry |
+  | 디코드 실패(그 밖의 오류) | alertTriangle · image-error-fg | `image.state.decode` · `decode_sub` | 디코더 문구(번역 안 함) | Retry |
+
+- Retry(secondary sm)는 도구 모음 새로고침과 같이 파일을 다시 읽는다. 원인은 `ImageDoc::load_failure` 에 남고 읽기에 성공하면 지운다. 파일 감시의 자동 재읽기와 이전·다음 이동은 그대로 동작한다.
 
 ### 디자인 토큰 매핑
 
@@ -90,7 +100,7 @@
 ### 갤러리 specimen
 
 `crates/tasty-gallery/src/catalog/components/image_viewer.rs` — Layouts › `Content viewers` ›
-`Image surface / canvas`. viewer(그림 fit) / no-image(fallback glyph) 두 상태를 토큰으로 전사.
+`Image surface / canvas`. viewer(그림 fit) / no-image 두 상태와, `image-states` spec 의 빈 캔버스 · 원인별 로드 실패 세 칸 · compact 줄 · Save As 이름 충돌 카드를 전사한다. 상태 칸은 본체와 같은 공용 상태 화면이 그린다.
 3자 매핑: [design-gallery-mapping.md](../../design/systems/design-gallery-mapping.md#surface-viewers-plugins).
 
 ### 시각 소스

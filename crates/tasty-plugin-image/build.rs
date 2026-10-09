@@ -6,7 +6,7 @@ use std::path::Path;
 use usvg::tiny_skia_path::PathSegment;
 use usvg::{Options, TreeParsing};
 
-/// 도구 모음에서 사용하는 아이콘과 생성할 상수 이름.
+/// 도구 모음과 캔버스 상태 화면에서 사용하는 아이콘과 생성할 상수 이름.
 const ICONS: &[(&str, tasty_icons::Icon)] = &[
     ("REFRESH", tasty_icons::REFRESH),
     ("CHEVRON_LEFT", tasty_icons::CHEVRON_LEFT),
@@ -17,6 +17,9 @@ const ICONS: &[(&str, tasty_icons::Icon)] = &[
     ("FOLDER_OPEN", tasty_icons::FOLDER_OPEN),
     ("UNDO", tasty_icons::UNDO),
     ("REDO", tasty_icons::REDO),
+    ("IMAGE", tasty_icons::IMAGE),
+    ("LOCK", tasty_icons::LOCK),
+    ("ALERT_TRIANGLE", tasty_icons::ALERT_TRIANGLE),
 ];
 
 /// viewBox 좌표에서 베지어 곡선 평탄화에 허용하는 오차. 작을수록 점이 많아진다.

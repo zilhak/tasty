@@ -187,6 +187,8 @@ pub struct ImageDoc {
     pub current_index: usize,
 
     pub original_image: Option<ColorImage>,
+    /// 마지막으로 파일을 읽지 못한 이유. 읽기에 성공하면 비운다.
+    pub load_failure: Option<LoadFailure>,
     pub texture: Option<TextureHandle>,
     pub zoom: f32,
     pub pan_offset: Vec2,
@@ -205,6 +207,10 @@ pub struct ImageDoc {
 
     pub save_path_popup: bool,
     pub save_path_buffer: String,
+    /// 같은 이름의 `.png` 가 있어 Save As 를 열었으면 그 파일 이름. 입력칸 위 안내에 쓴다.
+    pub save_path_clash: Option<String>,
+    /// 다음 프레임에 입력칸에 포커스를 주고 파일 이름의 stem 을 선택한다.
+    pub save_path_select_stem: bool,
     /// 새 경로로 저장한 뒤 호스트에 아직 알리지 않은 경로.
     /// 호스트가 탭 제목·복원 경로·감시 대상을 이 경로로 바꾸도록 `image.open`으로 보낸다.
     path_for_host: Option<String>,
@@ -235,6 +241,7 @@ impl ImageDoc {
             dir_images,
             current_index,
             original_image: None,
+            load_failure: None,
             texture: None,
             zoom: 1.0,
             pan_offset: Vec2::ZERO,
@@ -250,6 +257,8 @@ impl ImageDoc {
             new_image_height: DEFAULT_BLANK_CANVAS_HEIGHT.to_string(),
             save_path_popup: false,
             save_path_buffer: String::new(),
+            save_path_clash: None,
+            save_path_select_stem: false,
             path_for_host: None,
             pending_external_reload: false,
             loaded: false,
@@ -278,7 +287,7 @@ impl ImageDoc {
         }
         self.loaded = true;
         if let Some(p) = self.file_path.clone() {
-            self.original_image = load_image_from_path(&p);
+            self.load_from(&p);
         } else {
             // Blank canvas — start in edit mode so the user/agent can draw immediately.
             self.original_image = Some(ColorImage::new(
@@ -292,8 +301,22 @@ impl ImageDoc {
     /// Reload from `file_path` regardless of mtime, keeping any edit session cleared.
     pub fn reload_from_disk(&mut self) {
         if let Some(path) = self.file_path.clone() {
-            self.original_image = load_image_from_path(&path);
+            self.load_from(&path);
             self.texture = None;
+        }
+    }
+
+    /// 파일을 읽어 원본을 바꾼다. 읽지 못했으면 원본을 비우고 이유를 남긴다.
+    fn load_from(&mut self, path: &str) {
+        match load_image_from_path(path) {
+            Ok(img) => {
+                self.original_image = Some(img);
+                self.load_failure = None;
+            }
+            Err(failure) => {
+                self.original_image = None;
+                self.load_failure = Some(failure);
+            }
         }
     }
 
@@ -342,7 +365,7 @@ impl ImageDoc {
         }
         if let Some(path) = self.file_path.clone() {
             self.path_for_host = Some(path.clone());
-            self.original_image = load_image_from_path(&path);
+            self.load_from(&path);
             self.texture = None;
             self.zoom = 1.0;
             self.pan_offset = Vec2::ZERO;
@@ -410,7 +433,7 @@ impl ImageDoc {
     pub fn save_from_toolbar(&mut self) {
         match self.save_target() {
             SaveTarget::Write(path) => match self.write_save_target(&path) {
-                Err(SaveFailure::Exists(_)) => self.save_path_popup = true,
+                Err(SaveFailure::Exists(taken)) => self.open_save_as_for_clash(&taken),
                 Err(SaveFailure::Failed(e)) => tracing::warn!("failed to save image: {e}"),
                 Ok(()) => {
                     self.adopt_if_saved_elsewhere(&path);
@@ -418,8 +441,36 @@ impl ImageDoc {
                     self.reload_from_disk();
                 }
             },
-            SaveTarget::NoPath | SaveTarget::Exists(_) => self.save_path_popup = true,
+            SaveTarget::NoPath => self.open_save_as(),
+            SaveTarget::Exists(taken) => self.open_save_as_for_clash(&taken),
         }
+    }
+
+    /// 경로를 묻는 Save As 를 연다.
+    pub fn open_save_as(&mut self) {
+        self.save_path_popup = true;
+        self.save_path_clash = None;
+        self.save_path_select_stem = false;
+    }
+
+    /// 같은 이름의 `.png` 가 있어 Save As 를 연다. 입력칸에는 다음 빈 이름(`이름-1.png`)을 넣고
+    /// stem 을 선택해 둔다.
+    pub fn open_save_as_for_clash(&mut self, taken: &str) {
+        self.save_path_popup = true;
+        self.save_path_clash = Some(
+            Path::new(taken)
+                .file_name()
+                .map_or_else(|| taken.to_string(), |n| n.to_string_lossy().into_owned()),
+        );
+        self.save_path_buffer = next_free_png_path(taken);
+        self.save_path_select_stem = true;
+    }
+
+    /// Save As 를 닫는다.
+    pub fn close_save_as(&mut self) {
+        self.save_path_popup = false;
+        self.save_path_clash = None;
+        self.save_path_select_stem = false;
     }
 
     pub fn is_blank(&self) -> bool {
@@ -463,6 +514,7 @@ impl ImageDoc {
         self.current_index = 0;
         self.pending_external_reload = false;
         self.original_image = Some(ColorImage::new([width, height], Color32::WHITE));
+        self.load_failure = None;
         self.texture = None;
         self.zoom = 1.0;
         self.pan_offset = Vec2::ZERO;
@@ -757,14 +809,65 @@ impl ImageDoc {
     }
 }
 
+/// `taken` 과 같은 폴더에서 `<stem>-<n>.png` 중 아직 없는 첫 이름. n 은 1 부터다.
+pub(crate) fn next_free_png_path(taken: &str) -> String {
+    let path = Path::new(taken);
+    let stem = path
+        .file_stem()
+        .map_or_else(String::new, |s| s.to_string_lossy().into_owned());
+    let dir = path.parent().unwrap_or_else(|| Path::new(""));
+    (1u32..)
+        .map(|n| dir.join(format!("{stem}-{n}.png")))
+        .find(|p| !p.exists())
+        .map_or_else(|| taken.to_string(), |p| p.to_string_lossy().into_owned())
+}
+
+/// 경로 문자열에서 파일 이름 stem 의 글자 범위(시작, 끝). 확장자와 폴더 부분은 빠진다.
+pub(crate) fn stem_char_range(path: &str) -> (usize, usize) {
+    let name_start = path
+        .rfind(['/', '\\'])
+        .map_or(0, |i| path[..=i].chars().count());
+    let total = path.chars().count();
+    let name: String = path.chars().skip(name_start).collect();
+    let stem_len = match name.rfind('.') {
+        Some(dot) if dot > 0 => name[..dot].chars().count(),
+        _ => name.chars().count(),
+    };
+    (name_start, (name_start + stem_len).min(total))
+}
+
+/// 파일을 읽지 못한 이유. 캔버스 상태 화면의 제목·글리프·이유 줄을 정한다.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum LoadFailure {
+    /// 경로에 파일이 없다(옮겨졌거나 지워짐).
+    Missing,
+    /// 파일을 읽을 권한이 없다.
+    Permission,
+    /// 손상됐거나 지원하지 않는 포맷이다. 디코더 문구를 번역하지 않고 담는다.
+    Decode(String),
+}
+
+impl LoadFailure {
+    fn from_image_error(e: &image::ImageError) -> Self {
+        match e {
+            image::ImageError::IoError(io) => match io.kind() {
+                std::io::ErrorKind::NotFound => Self::Missing,
+                std::io::ErrorKind::PermissionDenied => Self::Permission,
+                _ => Self::Decode(e.to_string()),
+            },
+            _ => Self::Decode(e.to_string()),
+        }
+    }
+}
+
 /// Load an image from a file path.
-pub(crate) fn load_image_from_path(path: &str) -> Option<ColorImage> {
+pub(crate) fn load_image_from_path(path: &str) -> Result<ColorImage, LoadFailure> {
     let img = match image::open(path) {
         Ok(img) => img,
-        // 읽지 못한 이유를 남겨 손상된 파일과 지원하지 않는 포맷을 구분할 수 있게 한다.
+        // 읽지 못한 이유를 로그에도 남긴다. 화면은 원인별 상태 화면을 보인다.
         Err(e) => {
             tracing::warn!("image: failed to decode {path}: {e}");
-            return None;
+            return Err(LoadFailure::from_image_error(&e));
         }
     };
 
@@ -777,7 +880,7 @@ pub(crate) fn load_image_from_path(path: &str) -> Option<ColorImage> {
         .map(|p| Color32::from_rgba_unmultiplied(p[0], p[1], p[2], p[3]))
         .collect();
 
-    Some(ColorImage {
+    Ok(ColorImage {
         size: [w as usize, h as usize],
         pixels,
     })
@@ -1166,12 +1269,93 @@ mod tests {
 
         doc.save_from_toolbar();
         assert!(doc.save_path_popup, "경로 입력 팝업을 열어야 한다");
+        let png_name = png.file_name().unwrap().to_string_lossy().into_owned();
+        assert_eq!(doc.save_path_clash.as_deref(), Some(png_name.as_str()));
+        let stem = png.file_stem().unwrap().to_string_lossy().into_owned();
+        assert_eq!(
+            doc.save_path_buffer,
+            png.with_file_name(format!("{stem}-1.png"))
+                .to_string_lossy()
+                .into_owned(),
+            "입력칸에 다음 빈 이름을 넣어야 한다"
+        );
+        assert!(doc.save_path_select_stem);
+        doc.close_save_as();
+        assert_eq!(doc.save_path_clash, None);
         assert!(doc.is_editing(), "편집 세션은 그대로 남아야 한다");
         assert_eq!(doc.file_path.as_deref(), Some(jpg_s.as_str()));
         assert_eq!(doc.take_path_for_host(), None);
         assert_eq!(std::fs::read(&png).expect("png 읽기"), png_bytes);
         let _ = std::fs::remove_file(&jpg); // best-effort 정리 — 실패 무시.
         let _ = std::fs::remove_file(&png); // best-effort 정리 — 실패 무시.
+    }
+
+    /// 다음 빈 이름은 `-1` 부터 이미 있는 이름을 건너뛴다.
+    #[test]
+    fn the_next_free_png_name_skips_taken_numbers() {
+        let dir = probe_dir("next-free");
+        let taken = dir.join("diagram.png");
+        write_probe_png(&taken, [0, 0, 0]);
+        write_probe_png(&dir.join("diagram-1.png"), [0, 0, 0]);
+        assert_eq!(
+            next_free_png_path(&taken.to_string_lossy()),
+            dir.join("diagram-2.png").to_string_lossy()
+        );
+        let _ = std::fs::remove_dir_all(&dir); // best-effort 정리 — 실패 무시.
+    }
+
+    /// stem 범위는 폴더와 확장자를 뺀 파일 이름 부분이고 글자 단위다.
+    #[test]
+    fn the_stem_range_covers_only_the_file_name_stem() {
+        assert_eq!(stem_char_range("/x/y/diagram-1.png"), (5, 14));
+        assert_eq!(stem_char_range("그림-1.png"), (0, 4));
+        assert_eq!(stem_char_range("C:\\pics\\a.png"), (8, 9));
+        assert_eq!(stem_char_range("noext"), (0, 5));
+    }
+
+    /// 읽지 못한 원인을 없음 · 디코드로 나누고, 다시 읽어 성공하면 원인을 지운다.
+    #[test]
+    fn a_load_failure_records_its_cause_and_clears_on_success() {
+        let dir = probe_dir("load-failure");
+        let path = dir.join("pic.png");
+        let file = path.to_string_lossy().into_owned();
+        let mut doc = ImageDoc::new(Some(file.clone()));
+        doc.ensure_loaded();
+        assert!(doc.original_image.is_none());
+        assert_eq!(doc.load_failure, Some(LoadFailure::Missing));
+
+        std::fs::write(&path, b"not a png").expect("쓰기");
+        doc.reload_from_disk();
+        match &doc.load_failure {
+            Some(LoadFailure::Decode(msg)) => assert!(!msg.is_empty()),
+            other => panic!("디코드 실패여야 한다: {other:?}"),
+        }
+
+        write_probe_png(&path, [0, 255, 0]);
+        doc.reload_from_disk();
+        assert!(doc.original_image.is_some());
+        assert_eq!(doc.load_failure, None);
+        let _ = std::fs::remove_dir_all(&dir); // best-effort 정리 — 실패 무시.
+    }
+
+    /// 읽기 권한이 없는 파일은 권한 실패로 나눈다.
+    #[cfg(unix)]
+    #[test]
+    fn an_unreadable_file_is_a_permission_failure() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let dir = probe_dir("load-permission");
+        let path = dir.join("locked.png");
+        write_probe_png(&path, [0, 0, 255]);
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o000)).expect("chmod");
+        // root 는 권한과 관계없이 읽으므로 이 판정을 할 수 없다.
+        if std::fs::File::open(&path).is_ok() {
+            let _ = std::fs::remove_dir_all(&dir); // best-effort 정리 — 실패 무시.
+            return;
+        }
+        let mut doc = ImageDoc::new(Some(path.to_string_lossy().into_owned()));
+        doc.ensure_loaded();
+        assert_eq!(doc.load_failure, Some(LoadFailure::Permission));
+        let _ = std::fs::remove_dir_all(&dir); // best-effort 정리 — 실패 무시.
     }
 
     /// 이 시험만 쓰는 빈 폴더. 대소문자만 다른 파일명이 다른 시험과 겹치지 않게 한다.

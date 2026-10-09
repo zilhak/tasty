@@ -3,7 +3,9 @@
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, IconButton};
+use tasty_ui_widgets::{
+    Button, ButtonVariant, ControlSize, IconButton, StateGlyph, StateScreenView, state_screen,
+};
 
 use crate::catalog::icons;
 use crate::catalog::spec::{self, StageVariant, TokenChip};
@@ -43,13 +45,256 @@ const PICTURE_H: LogicalPx = LogicalPx(132.0);
 const FLOAT_W: LogicalPx = LogicalPx(96.0);
 const FLOAT_H: LogicalPx = LogicalPx(64.0);
 
-/// Plugins 페이지의 image 섹션: 보기 화면과 편집 모드 두 spec.
+// 아래 값은 시안 `plugins.jsx` 의 이미지 상태 Stage 와 `ExpState` 칸 치수다. 대응 토큰이 없다.
+/// 시안 상태 칸 줄 최대 폭(`maxWidth: 760`).
+const STATE_ROW_W: LogicalPx = LogicalPx(760.0);
+/// 시안 상태 칸 높이(`ExpState` 의 `height: 180`).
+const STATE_CELL_H: LogicalPx = LogicalPx(180.0);
+/// 시안 compact 줄 무대 폭(`maxWidth: 440`).
+const COMPACT_ROW_W: LogicalPx = LogicalPx(440.0);
+/// 시안 compact 칸 높이(`ExpState` compact 의 `bodyHeight` 기본 62).
+const COMPACT_CELL_H: LogicalPx = LogicalPx(62.0);
+
+/// Plugins 페이지의 image 섹션: 보기 화면, 편집 모드, 캔버스 상태 세 spec.
 pub fn section() -> crate::catalog::Section {
     crate::catalog::Section {
         id: "image-viewer",
         title: "Image surface / canvas",
-        specs: vec![spec(), paint_spec()],
+        specs: vec![spec(), paint_spec(), states_spec()],
     }
+}
+
+fn states_spec() -> crate::catalog::Spec {
+    crate::catalog::Spec {
+        id: "image-states",
+        title: "Image — empty canvas vs load failed · Save As name clash",
+        when: Some(
+            "image-empty · image-load-failed-missing · -permission · -decode · compact under 120 · Save As clash",
+        ),
+        draw: draw_states,
+    }
+}
+
+/// 캔버스 상태 칸 하나의 내용. 본체 `canvas_state` 와 같은 글리프·색조·문구다.
+struct CanvasState {
+    icon: icons::Icon,
+    tone: StateTone,
+    title: Title,
+    sub: Option<&'static str>,
+    reason: Option<&'static str>,
+    retry: bool,
+}
+
+/// 칸 제목. 본체 lang 에 있는 문구는 키로 읽고, 플러그인 lang 에만 있는 문구는 영어로 옮겨 둔다.
+#[derive(Clone, Copy)]
+enum Title {
+    Key(&'static str),
+    Plugin(&'static str),
+}
+
+#[derive(Clone, Copy)]
+enum StateTone {
+    Muted,
+    Warning,
+    Error,
+}
+
+const CANVAS_STATES: &[CanvasState] = &[
+    CanvasState {
+        icon: icons::IMAGE,
+        tone: StateTone::Muted,
+        title: Title::Key("image_viewer.no_image"),
+        sub: None,
+        reason: None,
+        retry: false,
+    },
+    CanvasState {
+        icon: icons::ALERT_TRIANGLE,
+        tone: StateTone::Error,
+        title: Title::Plugin("Image not found"),
+        sub: Some("It may have been moved or deleted."),
+        reason: Some("~/Pictures/diagram.png"),
+        retry: true,
+    },
+    CanvasState {
+        icon: icons::LOCK,
+        tone: StateTone::Warning,
+        title: Title::Plugin("Permission denied"),
+        sub: Some("You don't have access to read this file."),
+        reason: None,
+        retry: true,
+    },
+    CanvasState {
+        icon: icons::ALERT_TRIANGLE,
+        tone: StateTone::Error,
+        title: Title::Plugin("Can't open this image"),
+        sub: Some("The file is damaged or in an unsupported format."),
+        reason: Some("Format error decoding Png: invalid signature"),
+        retry: true,
+    },
+];
+
+/// 캔버스 톤(bg-sidebar) 칸에 공용 상태 화면을 그린다.
+fn canvas_state_cell(ui: &mut egui::Ui, theme: &Theme, s: &CanvasState, size: egui::Vec2) {
+    let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+    let radius = theme.corner_radius.value();
+    ui.painter()
+        .rect_filled(rect, radius, theme.bg_sidebar().to_egui());
+    ui.painter().rect_stroke(
+        rect,
+        radius,
+        egui::Stroke::new(
+            theme.border_width.value(),
+            theme.separator.to_egui_premultiplied(),
+        ),
+        egui::StrokeKind::Inside,
+    );
+    canvas_state(ui, theme, rect, s);
+}
+
+/// `rect` 에 캔버스 상태 하나를 공용 상태 화면으로 그린다(배경은 호출자 몫).
+fn canvas_state(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, s: &CanvasState) {
+    let muted = theme.text_muted().to_egui();
+    let (glyph_color, title_color) = match s.tone {
+        StateTone::Muted => (muted, theme.text_secondary().to_egui()),
+        StateTone::Warning => {
+            let c = theme.accent_warning().to_egui();
+            (c, c)
+        }
+        StateTone::Error => {
+            let c = theme.image_error_fg().to_egui();
+            (c, c)
+        }
+    };
+    let icon = s.icon;
+    let paint = move |ui: &mut egui::Ui, r: egui::Rect, c: egui::Color32| {
+        icon.image(r.height(), c).paint_at(ui, r);
+    };
+    let retry = [("Retry", ButtonVariant::Secondary)];
+    state_screen(
+        ui,
+        theme,
+        rect,
+        &StateScreenView {
+            glyph: StateGlyph::Paint(&paint),
+            glyph_color,
+            title: match s.title {
+                Title::Key(key) => crate::i18n::t(key),
+                Title::Plugin(text) => text,
+            },
+            title_color,
+            sub: s.sub,
+            reason: s.reason,
+            actions: if s.retry { &retry } else { &[] },
+        },
+    );
+}
+
+/// 빈 캔버스 · 원인별 로드 실패 네 칸, 낮은 캔버스의 compact 줄, Save As 이름 충돌 카드.
+fn draw_states(ui: &mut egui::Ui, theme: &Theme) {
+    spec::stage(ui, theme, StageVariant::Solo, |ui| {
+        ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing.y = theme.spacing_md.value();
+            ui.horizontal(|ui| {
+                let gap = theme.spacing_md.value();
+                ui.spacing_mut().item_spacing.x = gap;
+                let n = CANVAS_STATES.len() as f32;
+                let w = (STATE_ROW_W.value() - gap * (n - 1.0)) / n;
+                for s in CANVAS_STATES {
+                    canvas_state_cell(ui, theme, s, egui::vec2(w, STATE_CELL_H.value()));
+                }
+            });
+            spec::cluster(ui, theme, "canvas under 120 → compact row", |ui| {
+                canvas_state_cell(
+                    ui,
+                    theme,
+                    &CANVAS_STATES[3],
+                    egui::vec2(COMPACT_ROW_W.value(), COMPACT_CELL_H.value()),
+                );
+            });
+            save_as_clash_popup(ui, theme);
+        });
+    });
+
+    spec::meta(
+        ui,
+        theme,
+        &[
+            (
+                "layout",
+                "shared state_screen (explorer state screen) on bg-sidebar · compact under explorer-state-compact-below 120",
+            ),
+            (
+                "empty",
+                "image glyph muted · No image loaded text-secondary · no button",
+            ),
+            (
+                "missing / decode",
+                "alertTriangle · image-error-fg (→ accent-danger) title",
+            ),
+            ("permission", "lock · accent-warning (same as explorer)"),
+            (
+                "reason",
+                "mono caption · muted · path (missing) or decoder message (decode)",
+            ),
+            ("button", "Retry · secondary sm · = refresh"),
+            (
+                "recovery",
+                "watcher reload ≤ 1 s → viewer; prev / next still step the folder",
+            ),
+            (
+                "Save As clash",
+                "caption 11 · accent-warning · above the field · field = next free name (name-1.png), stem selected",
+            ),
+        ],
+        &[
+            TokenChip::new(
+                "image-error-fg",
+                "missing · decode",
+                theme.image_error_fg().to_egui(),
+            ),
+            TokenChip::new(
+                "accent-warning",
+                "permission · name clash",
+                theme.accent_warning().to_egui(),
+            ),
+            TokenChip::new("bg-sidebar", "canvas", theme.bg_sidebar().to_egui()),
+        ],
+    );
+
+    spec::note(
+        ui,
+        theme,
+        "The gallery draws the clash field as static text, so the selected stem is not shown here. \
+         In the app the stem of the suggested name is selected when the popup opens.",
+    );
+}
+
+/// Save As 가 같은 이름의 .png 때문에 열린 모습: 입력칸 위 caption · 다음 빈 이름.
+fn save_as_clash_popup(ui: &mut egui::Ui, theme: &Theme) {
+    popup(ui, theme, "Save As", "Save", |ui| {
+        ui.label(
+            egui::RichText::new("diagram.png already exists. Save the PNG under another name.")
+                .size(theme.font_size_caption.value())
+                .color(theme.accent_warning().to_egui()),
+        );
+        ui.add_space(theme.spacing_xs.value());
+        ui.horizontal(|ui| {
+            let gap = theme.image_path_row_gap().value();
+            ui.spacing_mut().item_spacing.x = gap;
+            let browse_w = ControlSize::Sm.height(theme);
+            let field_w = LogicalPx(ui.available_width() - browse_w - gap);
+            kit::field(
+                ui,
+                theme,
+                Some(field_w),
+                "~/Pictures/diagram-1.png",
+                false,
+                true,
+            );
+            icon_button(ui, theme, icons::FOLDER_OPEN, true);
+        });
+    });
 }
 
 fn spec() -> crate::catalog::Spec {
@@ -92,7 +337,10 @@ fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("zoom", "right · Fit / + / % / -"),
             ("canvas", "bg-sidebar (mantle) fill"),
             ("loaded", "fit-to-window · centered"),
-            ("empty", "fallback glyph + No image"),
+            (
+                "empty",
+                "state screen · muted image glyph + No image loaded (text-secondary)",
+            ),
         ],
         &[
             TokenChip::new("bg-sidebar", "canvas", theme.bg_sidebar().to_egui()),
@@ -210,20 +458,7 @@ fn surface(ui: &mut egui::Ui, theme: &Theme, loaded: bool) {
                 theme.text_muted().to_egui(),
             );
         } else {
-            let g = canvas.center() - egui::vec2(0.0, theme.spacing_lg.value());
-            glyph(
-                ui,
-                g,
-                theme.icon_glyph_size_md.value(),
-                theme.text_disabled().to_egui(),
-            );
-            p.text(
-                egui::pos2(canvas.center().x, g.y + theme.icon_glyph_size_md.value()),
-                egui::Align2::CENTER_TOP,
-                "No image",
-                egui::FontId::proportional(theme.font_size_body.value()),
-                theme.text_muted().to_egui(),
-            );
+            canvas_state(ui, theme, canvas, &CANVAS_STATES[0]);
         }
     });
 }
@@ -382,10 +617,10 @@ fn draw_paint(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "Defaults (brief §6): metadata status-bar, filmstrip, corrupt-image state, async \
-         loading indicator, rotate/flip/crop tools, and transparency checkerboard are out \
-         of scope this pass — viewer + brush/paste paint only. Load-fail / no-image share \
-         one centered \"No image loaded\" (muted).",
+        "Defaults (brief §6): metadata status-bar, filmstrip, async loading indicator, \
+         rotate/flip/crop tools, and transparency checkerboard are out of scope this pass — \
+         viewer + brush/paste paint only. The canvas states (empty · load failed) are the \
+         next spec.",
     );
 }
 

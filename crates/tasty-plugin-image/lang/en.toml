@@ -30,6 +30,18 @@ fit = "Fit"
 zoom_in = "Zoom in"
 zoom_out = "Zoom out"
 
+[image.state]
+missing = "Image not found"
+missing_sub = "It may have been moved or deleted."
+permission = "Permission denied"
+permission_sub = "You don't have access to read this file."
+decode = "Can't open this image"
+decode_sub = "The file is damaged or in an unsupported format."
+retry = "Retry"
+
+[image.save_as]
+exists = "{} already exists. Save the PNG under another name."
+
 [button]
 ok = "OK"
 cancel = "Cancel"

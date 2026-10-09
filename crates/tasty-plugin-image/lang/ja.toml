@@ -30,6 +30,18 @@ fit = "フィット"
 zoom_in = "拡大"
 zoom_out = "縮小"
 
+[image.state]
+missing = "画像が見つかりません"
+missing_sub = "移動または削除された可能性があります。"
+permission = "アクセス権がありません"
+permission_sub = "このファイルを読み取る権限がありません。"
+decode = "この画像を開けません"
+decode_sub = "ファイルが破損しているか、対応していない形式です。"
+retry = "再試行"
+
+[image.save_as]
+exists = "{} は既に存在します。PNG を別の名前で保存してください。"
+
 [button]
 ok = "OK"
 cancel = "キャンセル"
