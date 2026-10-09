@@ -78,8 +78,10 @@ mod tests {
     /// 라벨 오른쪽에 현재 값이, 그 아래에 caption 이 보인다.
     #[test]
     fn the_row_shows_the_current_modifier_beside_its_label_and_the_caption_below() {
-        let mut kb = KeybindingSettings::default();
-        kb.explorer_drag_flip_modifier = "shift".into();
+        let mut kb = KeybindingSettings {
+            explorer_drag_flip_modifier: "shift".into(),
+            ..Default::default()
+        };
         let shown = texts(&mut kb);
         let find = |text: &str| {
             shown
@@ -108,8 +110,10 @@ mod tests {
     /// 설정 파일의 조합 값도 그대로 보이고 바뀌지 않는다.
     #[test]
     fn a_combo_from_the_config_file_is_shown_and_kept() {
-        let mut kb = KeybindingSettings::default();
-        kb.explorer_drag_flip_modifier = "alt+shift".into();
+        let mut kb = KeybindingSettings {
+            explorer_drag_flip_modifier: "alt+shift".into(),
+            ..Default::default()
+        };
         let shown = texts(&mut kb);
         let display = KeybindingSettings::format_display("alt+shift", &GeneralSettings::default());
         assert!(shown.iter().any(|(s, _)| *s == display), "{shown:?}");
