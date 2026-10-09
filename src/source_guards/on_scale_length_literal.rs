@@ -937,7 +937,8 @@ fn the_blind_spots_are_still_the_size_they_say() {
         // 타일 배치 시험의 목표 사각형 pos2(10, 20)·vec2(400, 300) 중 셋이 test 전용으로 들어왔다.
         // 탐색기 파일 작업의 상태줄·결과 카드·충돌 카드 위젯과 칸 표시가 item_spacing·shrink2 의 0 열하나를,
         // 드래그 대상 결정 시험(drag_tests.rs)의 본문·행 사각형과 포인터 좌표가 test 전용 열 자리를 더한다.
-        (230, 584),
+        // 탐색기 미리보기 저장 시험이 저장 폭 LogicalPx 320 세 자리와 240 한 자리를 test 전용으로 더한다.
+        (230, 588),
         "제외한 0과 test 전용 코드의 수가 달라졌다. 실제 사용과 수집 범위의 변경을 확인하고 기록을 갱신한다."
     );
     let roster: usize = UNIT_SPACE_SITES.iter().map(|(.., n, _)| n).sum();
