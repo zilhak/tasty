@@ -332,6 +332,8 @@ pub(super) fn detail_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
     let body_rect = egui::Rect::from_min_max(inner.min, egui::pos2(inner.max.x, split));
     let bar_rect = egui::Rect::from_min_max(egui::pos2(rect.min.x, split), rect.max);
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(body_rect));
+    // 본체는 본문을 스크롤 안에 두므로 바 뒤로 넘친 글이 보이지 않는다. 예제도 본문을 바 위에서 자른다.
+    child.set_clip_rect(body_rect.intersect(ui.clip_rect()));
     child.spacing_mut().item_spacing.y = theme.spacing_sm.value();
 
     plugin_detail_identity(

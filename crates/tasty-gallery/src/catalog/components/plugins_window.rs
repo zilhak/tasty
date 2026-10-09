@@ -38,7 +38,8 @@ fn list_w(theme: &Theme) -> f32 {
 /// 예제 창의 크기. 상세 정보를 한눈에 비교하도록 Installed 화면은 더 높게 잡는다.
 fn stage_size(theme: &Theme, tab: Tab) -> egui::Vec2 {
     let h = match tab {
-        Tab::Installed { .. } => theme.measure_xl,
+        // Attention 액션 바는 Installed 처럼 열 바닥에 붙으므로 사유 detail 이 바 위에 다 들 높이가 필요하다.
+        Tab::Installed { .. } | Tab::Attention { empty: false } => theme.measure_xl,
         // 경로 선택 블록 아래 매니페스트 카드와 신뢰 상자, fingerprint 줄까지 담아야 액션 바가
         // 무대 안에 든다.
         Tab::Add { preview: true } => ADD_VERIFIED_STAGE_H.scaled(theme.ui_zoom),
