@@ -97,9 +97,9 @@ fn header(
             ),
         );
     let name_font = egui::FontId::proportional(theme.font_size_body.value());
-    // 목록 행 카운터와 같은 `{done}/{total} done` + 건너뜀 접미사.
+    // 앱 문자열 `{done} / {total} done`(빗금 양옆 공백) + 목록 행과 같은 건너뜀 접미사.
     let count = format!(
-        "{}/{} done{}",
+        "{} / {} done{}",
         super::done_count(&graph.nodes),
         graph.nodes.len(),
         super::skip_count_suffix(&graph.nodes)
@@ -362,7 +362,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("header", "8/12 padding · wraps < 640"),
             (
                 "header count",
-                "{done}/{total} done + the list row skip suffix · mono caption",
+                "{done} / {total} done (spaces kept) + the list row skip suffix · mono caption",
             ),
             ("canvas", "all remaining space"),
             ("detail", "288 side → 220 sheet"),

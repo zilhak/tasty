@@ -22,10 +22,11 @@ fn caption(theme: &Theme) -> f32 {
     theme.font_size_caption.value()
 }
 
+/// 상세 캡션은 번역 문구의 대소문자를 그대로 쓰고 caption 크기로 그린다.
 fn block_label(ui: &mut egui::Ui, theme: &Theme, text: &str) {
     ui.label(
-        egui::RichText::new(text.to_uppercase())
-            .size(theme.font_size_micro.value())
+        egui::RichText::new(text)
+            .size(caption(theme))
             .color(theme.text_muted().to_egui()),
     );
 }

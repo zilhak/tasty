@@ -139,7 +139,7 @@ fn awaiting_node() -> Node {
     n.cmd = "agent: claude · review the diff".into();
     n.phase = Some(Phase::AwaitingInput {
         provider: "claude".into(),
-        since: "2m".into(),
+        since: "2m 4s".into(),
     });
     n
 }
@@ -333,7 +333,7 @@ mod tests {
         );
         assert_eq!(
             awaiting_node().hover_text(),
-            "agent:review \u{2014} Needs input\nWaiting for a person in the claude session \u{b7} 2m"
+            "agent:review \u{2014} Needs input\nWaiting for a person in the claude session \u{b7} 2m 4s"
         );
         let retry = running(Some(Phase::RetryWait { run: 2 }), "x", "1s");
         assert_eq!(retry.status_label(), "Retry wait \u{b7} run 2");
