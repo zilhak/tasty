@@ -46,7 +46,6 @@ impl EngineMut<'_> {
     }
 }
 
-/// 적용하지 않은 크기 요청을 요청자에게 알린다. 값은 거절한 요청의 것이다.
 /// 크기 요청 하나를 마무리한다. `outcome`은 요청을 받은 engine의 결과이고, 어느 engine도 받지
 /// 않았으면 `None`이나 `NotHere`다. `Answered`면 tap이 이미 응답하므로 아무것도 보내지 않고,
 /// 그 밖에는 거절을 회신한다. GUI 루프와 헤드리스 루프가 같은 규칙을 쓰도록 여기서 정한다.
@@ -83,6 +82,7 @@ pub(crate) fn answer_resize_on_engines(
     finish_resize_request(hub, client_id, surface_id, cols, rows, outcome);
 }
 
+/// 적용하지 않은 크기 요청을 요청자에게 알린다. 값은 거절한 요청의 것이다.
 fn reply_resize_rejected(
     hub: &StreamHub,
     client_id: AttachClientId,
@@ -167,7 +167,6 @@ mod tests {
         );
     }
 
-    /// 연결마다 응답 보장을 확인할 수 있도록 workspace descriptor가 capability를 싣는다.
     /// 마무리 뒤 client가 받은 거절 회신. 응답이 tap 몫이면 비어 있다.
     fn rejection_after(outcome: Option<AttachResizeOutcome>) -> Option<StreamControl> {
         let hub = StreamHub::new();
@@ -247,6 +246,7 @@ mod tests {
         );
     }
 
+    /// 연결마다 응답 보장을 확인할 수 있도록 workspace descriptor가 capability를 싣는다.
     #[test]
     fn workspace_descriptor_announces_the_resize_ack_capability() {
         let (_, mut session) = crate::state::tests::test_state();
