@@ -2,9 +2,6 @@
 //! quick-switch 행 라벨까지 함께 재는지 확인한다.
 //! apply_theme_to_egui를 호출해야 egui 기본값이 아닌 제품의 Body 크기로 측정한다.
 
-// 테스트에서는 반환값보다 UI 측정 결과를 확인한다. let_underscore_documented도 테스트 본문은 제외한다.
-#![allow(clippy::let_underscore_must_use)]
-
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::SettingsRow;
 
@@ -29,13 +26,14 @@ fn with_ui(f: impl FnOnce(&egui::Ui)) {
     tasty_egui_theme::install_cjk_fallback(&ctx);
     tasty_egui_theme::apply_theme_to_egui(&crate::theme::theme(), &ctx);
     let mut f = Some(f);
-    let _ = ctx.run(Default::default(), |ctx| {
+    // 출력은 쓰지 않는다. 측정은 `f` 안에서 끝난다.
+    drop(ctx.run(Default::default(), |ctx| {
         egui::CentralPanel::default().show(ctx, |ui| {
             if let Some(f) = f.take() {
                 f(ui);
             }
         });
-    });
+    }));
 }
 
 #[test]
