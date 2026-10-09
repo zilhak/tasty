@@ -390,7 +390,7 @@
   --tasty-html-script-marker-hover-bg: var(--tasty-overlay-hover);    /* lock only; scriptFile has no hover fill */
   --tasty-banner-glyph-offset:        var(--tasty-size-1);            /* 1 — leading glyph nudge onto the title's cap line */
   --tasty-banner-text-gap:            var(--tasty-label-detail-gap);  /* 2 — title ↔ body (every banner) */
-  --tasty-banner-narrow-below:        var(--tasty-size-440);          /* SURFACE width below which the action wraps under the body */
+  --tasty-banner-narrow-below:        var(--tasty-size-440);          /* SCOPE content width (before banner margins) below which the action wraps under the body — surface / tab / pane = that content, workspace = union of panes under the tab bar; × stays top-right (2026-10-09 b10) */
 
   /* Banner "more" (⋯) menu — a SECOND affordance in the banner's top-right
      column, left of the × , and the anchored menu it opens. The menu reuses the
@@ -1213,5 +1213,23 @@
   --tasty-explorer-search-bar-height: var(--tasty-size-36); /* filter / search bar under the toolbar */
   --tasty-explorer-search-folder-col-width: var(--tasty-size-160); /* Detail “Folder” column in recursive results */
   --tasty-explorer-match-fg: var(--tasty-autocomplete-match-fg); /* matched part of a name while filtering */
+  /* 2026-10-09 batch 10 */
+  --tasty-image-too-large-fg: var(--tasty-accent-warning); /* image canvas "too large" glyph — refused by limit, file is fine (warning tone) */
+  --tasty-explorer-name-error-max-width: var(--tasty-size-240); /* name error message box max width (new item / rename) */
+  --tasty-explorer-list-min-width: var(--tasty-size-200); /* listing min width beside the preview panel; panel hides under preview-min + this (400) */
+  --tasty-explorer-props-padding-x: var(--tasty-size-14); /* Properties popup inner side padding (popup family inset, as conflict / rename) */
+  --tasty-explorer-props-row-min-height: var(--tasty-size-24); /* Properties field row min height */
+  --tasty-explorer-props-row-line: var(--tasty-size-20); /* Properties field label / value line height */
+  --tasty-explorer-props-row-pad-top: var(--tasty-size-2); /* Properties field row top nudge */
+  --tasty-explorer-preview-header-height: var(--tasty-size-40); /* preview panel header (name + kind · size) */
+  --tasty-file-drop-overlay-bg: color-mix(in srgb, var(--tasty-accent-primary) calc(var(--tasty-tint-fill-alpha) * 100%), transparent); /* window file-drop overlay fill (0.12, same as explorer-drop-target-bg) */
+  --tasty-file-drop-overlay-border: color-mix(in srgb, var(--tasty-accent-primary) calc(var(--tasty-tint-border-alpha) * 100%), transparent); /* window file-drop overlay 1px edge (0.36 tint-border; was local alpha 153) */
+  --tasty-file-drop-overlay-fg: var(--tasty-accent-primary); /* window file-drop overlay glyph + label (full ink for 4.5:1; was 60% alpha) */
+  --tasty-kb-record-width: var(--tasty-kb-ie-slot-min-width); /* Keybindings shortcut record button width (140, same as Import/Export slot) */
+  --tasty-kb-record-height: var(--tasty-kb-ie-slot-height); /* Keybindings shortcut record button height (24) */
+  --tasty-kb-record-add-width: var(--tasty-size-32); /* Keybindings add-shortcut (+) button width */
+  --tasty-kb-row-gap: var(--tasty-space-sm); /* gap between shortcut rows (8 — denser than settings-row-gap 12; no divider) */
+  --tasty-font-combo-list-max-height: var(--tasty-size-300); /* Appearance font search combo open list max height */
+  --tasty-font-combo-search-inset: var(--tasty-space-xs); /* search field inset inside the font list (field width = list width − 2 × this) */
 }
 

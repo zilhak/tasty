@@ -4530,6 +4530,91 @@
       "$type": "color",
       "$value": "{component.autocomplete-match-fg}",
       "$description": "matched part of a name while filtering"
+    },
+    "image-too-large-fg": {
+      "$type": "color",
+      "$value": "{semantic.accent-warning}",
+      "$description": "image canvas \"too large\" glyph — refused by limit, file is fine (warning tone)"
+    },
+    "explorer-name-error-max-width": {
+      "$type": "dimension",
+      "$value": "{primitive.size-240}",
+      "$description": "name error message box max width (new item / rename)"
+    },
+    "explorer-list-min-width": {
+      "$type": "dimension",
+      "$value": "{primitive.size-200}",
+      "$description": "listing min width beside the preview panel; panel hides under preview-min + this (400)"
+    },
+    "explorer-props-padding-x": {
+      "$type": "dimension",
+      "$value": "{primitive.size-14}",
+      "$description": "Properties popup inner side padding (popup family inset, as conflict / rename)"
+    },
+    "explorer-props-row-min-height": {
+      "$type": "dimension",
+      "$value": "{primitive.size-24}",
+      "$description": "Properties field row min height"
+    },
+    "explorer-props-row-line": {
+      "$type": "dimension",
+      "$value": "{primitive.size-20}",
+      "$description": "Properties field label / value line height"
+    },
+    "explorer-props-row-pad-top": {
+      "$type": "dimension",
+      "$value": "{primitive.size-2}",
+      "$description": "Properties field row top nudge"
+    },
+    "explorer-preview-header-height": {
+      "$type": "dimension",
+      "$value": "{primitive.size-40}",
+      "$description": "preview panel header (name + kind · size)"
+    },
+    "file-drop-overlay-bg": {
+      "$type": "color",
+      "$value": "color-mix(in srgb, var(--tasty-accent-primary) calc(var(--tasty-tint-fill-alpha) * 100%), transparent)",
+      "$description": "window file-drop overlay fill (0.12, same as explorer-drop-target-bg)"
+    },
+    "file-drop-overlay-border": {
+      "$type": "color",
+      "$value": "color-mix(in srgb, var(--tasty-accent-primary) calc(var(--tasty-tint-border-alpha) * 100%), transparent)",
+      "$description": "window file-drop overlay 1px edge (0.36 tint-border; was local alpha 153)"
+    },
+    "file-drop-overlay-fg": {
+      "$type": "color",
+      "$value": "{semantic.accent-primary}",
+      "$description": "window file-drop overlay glyph + label (full ink for 4.5:1; was 60% alpha)"
+    },
+    "kb-record-width": {
+      "$type": "dimension",
+      "$value": "{component.kb-ie-slot-min-width}",
+      "$description": "Keybindings shortcut record button width (140, same as Import/Export slot)"
+    },
+    "kb-record-height": {
+      "$type": "dimension",
+      "$value": "{component.kb-ie-slot-height}",
+      "$description": "Keybindings shortcut record button height (24)"
+    },
+    "kb-record-add-width": {
+      "$type": "dimension",
+      "$value": "{primitive.size-32}",
+      "$description": "Keybindings add-shortcut (+) button width"
+    },
+    "kb-row-gap": {
+      "$type": "dimension",
+      "$value": "{semantic.space-sm}",
+      "$description": "gap between shortcut rows (8 — denser than settings-row-gap 12; no divider)"
+    },
+    "font-combo-list-max-height": {
+      "$type": "dimension",
+      "$value": "{primitive.size-300}",
+      "$description": "Appearance font search combo open list max height"
+    },
+    "font-combo-search-inset": {
+      "$type": "dimension",
+      "$value": "{semantic.space-xs}",
+      "$description": "search field inset inside the font list (field width = list width − 2 × this)"
     }
   }
 }

@@ -1396,6 +1396,12 @@ impl crate::theme::Theme {
         LogicalPx((40.0 * self.ui_zoom).round())
     }
 
+    /// `component.explorer-list-min-width` → `{primitive.size-200}` = 200px
+    #[inline]
+    pub fn explorer_list_min_width(&self) -> LogicalPx {
+        LogicalPx((200.0 * self.ui_zoom).round())
+    }
+
     /// `component.explorer-match-fg` → `{component.autocomplete-match-fg}`
     #[inline]
     pub fn explorer_match_fg(&self) -> HexColor {
@@ -1412,6 +1418,18 @@ impl crate::theme::Theme {
     #[inline]
     pub fn explorer_name_error_fg(&self) -> HexColor {
         self.accent_danger()
+    }
+
+    /// `component.explorer-name-error-max-width` → `{primitive.size-240}` = 240px
+    #[inline]
+    pub fn explorer_name_error_max_width(&self) -> LogicalPx {
+        LogicalPx((240.0 * self.ui_zoom).round())
+    }
+
+    /// `component.explorer-preview-header-height` → `{primitive.size-40}` = 40px
+    #[inline]
+    pub fn explorer_preview_header_height(&self) -> LogicalPx {
+        LogicalPx((40.0 * self.ui_zoom).round())
     }
 
     /// `component.explorer-preview-max-width` → `{primitive.size-460}` = 460px
@@ -1454,6 +1472,30 @@ impl crate::theme::Theme {
     #[inline]
     pub fn explorer_props_label_width(&self) -> LogicalPx {
         LogicalPx((96.0 * self.ui_zoom).round())
+    }
+
+    /// `component.explorer-props-padding-x` → `{primitive.size-14}` = 14px
+    #[inline]
+    pub fn explorer_props_padding_x(&self) -> LogicalPx {
+        LogicalPx((14.0 * self.ui_zoom).round())
+    }
+
+    /// `component.explorer-props-row-line` → `{primitive.size-20}` = 20px
+    #[inline]
+    pub fn explorer_props_row_line(&self) -> LogicalPx {
+        LogicalPx((20.0 * self.ui_zoom).round())
+    }
+
+    /// `component.explorer-props-row-min-height` → `{primitive.size-24}` = 24px
+    #[inline]
+    pub fn explorer_props_row_min_height(&self) -> LogicalPx {
+        LogicalPx((24.0 * self.ui_zoom).round())
+    }
+
+    /// `component.explorer-props-row-pad-top` → `{primitive.size-2}` = 2px
+    #[inline]
+    pub fn explorer_props_row_pad_top(&self) -> LogicalPx {
+        LogicalPx((2.0 * self.ui_zoom).round())
     }
 
     /// `component.explorer-props-width` → `{primitive.size-360}` = 360px
@@ -1502,6 +1544,24 @@ impl crate::theme::Theme {
     #[inline]
     pub fn fh_when_width(&self) -> LogicalPx {
         LogicalPx((56.0 * self.ui_zoom).round())
+    }
+
+    /// `component.file-drop-overlay-fg` → `{semantic.accent-primary}`
+    #[inline]
+    pub fn file_drop_overlay_fg(&self) -> HexColor {
+        self.accent_primary()
+    }
+
+    /// `component.font-combo-list-max-height` → `{primitive.size-300}` = 300px
+    #[inline]
+    pub fn font_combo_list_max_height(&self) -> LogicalPx {
+        LogicalPx((300.0 * self.ui_zoom).round())
+    }
+
+    /// `component.font-combo-search-inset` → `{semantic.space-xs}` = 4px
+    #[inline]
+    pub fn font_combo_search_inset(&self) -> LogicalPx {
+        self.spacing_xs
     }
 
     /// `component.font-preview-min-width` → `{semantic.field-width-lg}` = 200px
@@ -1798,6 +1858,12 @@ impl crate::theme::Theme {
         LogicalPx((64.0 * self.ui_zoom).round())
     }
 
+    /// `component.image-too-large-fg` → `{semantic.accent-warning}`
+    #[inline]
+    pub fn image_too_large_fg(&self) -> HexColor {
+        self.accent_warning()
+    }
+
     /// `component.image-zoom-font-size` → `{semantic.font-size-caption}` = 11px
     #[inline]
     pub fn image_zoom_font_size(&self) -> LogicalPx {
@@ -2072,6 +2138,30 @@ impl crate::theme::Theme {
     #[inline]
     pub fn kb_plugin_title_width(&self) -> LogicalPx {
         self.settings_label_width()
+    }
+
+    /// `component.kb-record-add-width` → `{primitive.size-32}` = 32px
+    #[inline]
+    pub fn kb_record_add_width(&self) -> LogicalPx {
+        LogicalPx((32.0 * self.ui_zoom).round())
+    }
+
+    /// `component.kb-record-height` → `{component.kb-ie-slot-height}` = 24px
+    #[inline]
+    pub fn kb_record_height(&self) -> LogicalPx {
+        self.kb_ie_slot_height()
+    }
+
+    /// `component.kb-record-width` → `{component.kb-ie-slot-min-width}` = 140px
+    #[inline]
+    pub fn kb_record_width(&self) -> LogicalPx {
+        self.kb_ie_slot_min_width()
+    }
+
+    /// `component.kb-row-gap` → `{semantic.space-sm}` = 8px
+    #[inline]
+    pub fn kb_row_gap(&self) -> LogicalPx {
+        self.spacing_sm
     }
 
     /// `component.kbd-bg` → `{semantic.surface-raised}`

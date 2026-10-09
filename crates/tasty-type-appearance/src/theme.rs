@@ -213,6 +213,14 @@ pub const PLUGIN_AVATAR_BORDER_ALPHA: u8 = 97;
 /// `transparent` 의 합성. 색은 그대로 두고 알파만 낮춘다(12%×255≈31).
 pub const EXPLORER_DROP_TARGET_BG_ALPHA: u8 = 31;
 
+/// design `--tasty-file-drop-overlay-bg` = accent-primary × tint-fill-alpha(12%) 와
+/// `transparent` 의 합성. explorer drop target 채움과 같은 식이다(12%×255≈31).
+pub const FILE_DROP_OVERLAY_BG_ALPHA: u8 = 31;
+
+/// design `--tasty-file-drop-overlay-border` = accent-primary × tint-border-alpha(36%) 와
+/// `transparent` 의 합성. 색은 그대로 두고 알파만 낮춘다(36%×255≈92).
+pub const FILE_DROP_OVERLAY_BORDER_ALPHA: u8 = 92;
+
 /// 강조색으로 옅게 채우는 공통 비율. 알파 바이트가 아닌 계산용 f32 계수다.
 pub const TINT_FILL_ALPHA: f32 = 0.12;
 
@@ -1423,6 +1431,21 @@ impl Theme {
     pub fn explorer_drop_target_bg(&self) -> HexColor {
         self.accent_primary()
             .with_alpha(EXPLORER_DROP_TARGET_BG_ALPHA)
+    }
+
+    /// 창 파일 드롭 오버레이의 채움. design `--tasty-file-drop-overlay-bg`
+    /// ([`FILE_DROP_OVERLAY_BG_ALPHA`]).
+    #[inline]
+    pub fn file_drop_overlay_bg(&self) -> HexColor {
+        self.accent_primary().with_alpha(FILE_DROP_OVERLAY_BG_ALPHA)
+    }
+
+    /// 창 파일 드롭 오버레이의 1px 테두리. design `--tasty-file-drop-overlay-border`
+    /// ([`FILE_DROP_OVERLAY_BORDER_ALPHA`]).
+    #[inline]
+    pub fn file_drop_overlay_border(&self) -> HexColor {
+        self.accent_primary()
+            .with_alpha(FILE_DROP_OVERLAY_BORDER_ALPHA)
     }
 
     // color-mix 식을 쓰는 DAG 토큰은 생성하지 않으므로 여기서 계산한다.
@@ -2777,6 +2800,24 @@ mod tests {
         assert_eq!(
             th.explorer_drop_target_bg(),
             th.accent_primary().with_alpha(expected)
+        );
+    }
+
+    /// 파일 드롭 오버레이 채움·테두리 알파는 tint-fill·tint-border 계수를 바이트로 반올림한 값이다.
+    #[test]
+    fn file_drop_overlay_alphas_follow_the_tint_fractions() {
+        let fill = (TINT_FILL_ALPHA * 255.0).round() as u8;
+        let border = (TINT_BORDER_ALPHA * 255.0).round() as u8;
+        assert_eq!(FILE_DROP_OVERLAY_BG_ALPHA, fill);
+        assert_eq!(FILE_DROP_OVERLAY_BORDER_ALPHA, border);
+        let th = Theme::with_colors(distinct_colors(), false);
+        assert_eq!(
+            th.file_drop_overlay_bg(),
+            th.accent_primary().with_alpha(fill)
+        );
+        assert_eq!(
+            th.file_drop_overlay_border(),
+            th.accent_primary().with_alpha(border)
         );
     }
 

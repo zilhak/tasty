@@ -397,8 +397,17 @@ pub mod explorer {
     /// `component.explorer-grid-thumb-size` → `{primitive.size-40}` = 40px
     pub const GRID_THUMB_SIZE: LogicalPx = crate::generated::primitive::SIZE_40;
 
+    /// `component.explorer-list-min-width` → `{primitive.size-200}` = 200px
+    pub const LIST_MIN_WIDTH: LogicalPx = crate::generated::primitive::SIZE_200;
+
     /// `component.explorer-min-height` → `{primitive.size-180}` = 180px
     pub const MIN_HEIGHT: LogicalPx = crate::generated::primitive::SIZE_180;
+
+    /// `component.explorer-name-error-max-width` → `{primitive.size-240}` = 240px
+    pub const NAME_ERROR_MAX_WIDTH: LogicalPx = crate::generated::primitive::SIZE_240;
+
+    /// `component.explorer-preview-header-height` → `{primitive.size-40}` = 40px
+    pub const PREVIEW_HEADER_HEIGHT: LogicalPx = crate::generated::primitive::SIZE_40;
 
     /// `component.explorer-preview-max-width` → `{primitive.size-460}` = 460px
     pub const PREVIEW_MAX_WIDTH: LogicalPx = crate::generated::primitive::SIZE_460;
@@ -414,6 +423,18 @@ pub mod explorer {
 
     /// `component.explorer-props-label-width` → `{primitive.size-96}` = 96px
     pub const PROPS_LABEL_WIDTH: LogicalPx = crate::generated::primitive::SIZE_96;
+
+    /// `component.explorer-props-padding-x` → `{primitive.size-14}` = 14px
+    pub const PROPS_PADDING_X: LogicalPx = crate::generated::primitive::SIZE_14;
+
+    /// `component.explorer-props-row-line` → `{primitive.size-20}` = 20px
+    pub const PROPS_ROW_LINE: LogicalPx = crate::generated::primitive::SIZE_20;
+
+    /// `component.explorer-props-row-min-height` → `{primitive.size-24}` = 24px
+    pub const PROPS_ROW_MIN_HEIGHT: LogicalPx = crate::generated::primitive::SIZE_24;
+
+    /// `component.explorer-props-row-pad-top` → `{primitive.size-2}` = 2px
+    pub const PROPS_ROW_PAD_TOP: LogicalPx = crate::generated::primitive::SIZE_2;
 
     /// `component.explorer-props-width` → `{primitive.size-360}` = 360px
     pub const PROPS_WIDTH: LogicalPx = crate::generated::primitive::SIZE_360;
@@ -443,6 +464,12 @@ pub mod fh {
 
 pub mod font {
     use tasty_type_geometry::length::LogicalPx;
+
+    /// `component.font-combo-list-max-height` → `{primitive.size-300}` = 300px
+    pub const COMBO_LIST_MAX_HEIGHT: LogicalPx = crate::generated::primitive::SIZE_300;
+
+    /// `component.font-combo-search-inset` → `{semantic.space-xs}` = 4px
+    pub const COMBO_SEARCH_INSET: LogicalPx = crate::generated::semantic::SPACE_XS;
 
     /// `component.font-preview-line-height` → `{semantic.line-height-ui}` = 1.4
     pub const PREVIEW_LINE_HEIGHT: f32 = crate::generated::semantic::LINE_HEIGHT_UI;
@@ -686,6 +713,18 @@ pub mod kb {
 
     /// `component.kb-plugin-title-width` → `{component.settings-label-width}` = 150px
     pub const PLUGIN_TITLE_WIDTH: LogicalPx = super::settings::LABEL_WIDTH;
+
+    /// `component.kb-record-add-width` → `{primitive.size-32}` = 32px
+    pub const RECORD_ADD_WIDTH: LogicalPx = crate::generated::primitive::SIZE_32;
+
+    /// `component.kb-record-height` → `{component.kb-ie-slot-height}` = 24px
+    pub const RECORD_HEIGHT: LogicalPx = super::kb::IE_SLOT_HEIGHT;
+
+    /// `component.kb-record-width` → `{component.kb-ie-slot-min-width}` = 140px
+    pub const RECORD_WIDTH: LogicalPx = super::kb::IE_SLOT_MIN_WIDTH;
+
+    /// `component.kb-row-gap` → `{semantic.space-sm}` = 8px
+    pub const ROW_GAP: LogicalPx = crate::generated::semantic::SPACE_SM;
 }
 
 pub mod kbd {

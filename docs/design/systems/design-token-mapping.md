@@ -121,6 +121,15 @@ surface 경계 30% 존을 hover 할 때 뜨는 밴드+분할선 색. accent-prim
 |---|---|---|---|
 | `--tasty-explorer-drop-target-bg` | `color-mix(accent-primary × tint-fill-alpha, transparent)` | `Theme::explorer_drop_target_bg()` = `accent_primary().with_alpha(31)` | 12%×255≈31. `EXPLORER_DROP_TARGET_BG_ALPHA`. 시험이 `TINT_FILL_ALPHA`의 반올림과 같은지 확인한다 |
 
+## 창 파일 드롭 오버레이
+
+`--tasty-file-drop-overlay-bg`·`--tasty-file-drop-overlay-border`도 accent-primary와 `transparent`를 섞는 식이라 생성기가 건너뛴다. 같은 방식으로 알파만 낮추는 수기 접근자를 둔다. 글자·글리프 색 `--tasty-file-drop-overlay-fg`(accent-primary)는 생성 접근자다.
+
+| 디자인 토큰 | 디자인 체인 | tasty Theme | 비고 |
+|---|---|---|---|
+| `--tasty-file-drop-overlay-bg` | `color-mix(accent-primary × tint-fill-alpha, transparent)` | `Theme::file_drop_overlay_bg()` = `accent_primary().with_alpha(31)` | 12%×255≈31. `FILE_DROP_OVERLAY_BG_ALPHA` |
+| `--tasty-file-drop-overlay-border` | `color-mix(accent-primary × tint-border-alpha, transparent)` | `Theme::file_drop_overlay_border()` = `accent_primary().with_alpha(92)` | 36%×255≈92. `FILE_DROP_OVERLAY_BORDER_ALPHA`. 시험이 두 알파가 `TINT_FILL_ALPHA`·`TINT_BORDER_ALPHA`의 반올림과 같은지 확인한다 |
+
 ## preset leaf value summary (preset-editor 미선택 leaf 값 요약)
 
 디자인 `tokens/components.css:335-339`·`tokens/tasty.tokens.json:2007-2023` 의
