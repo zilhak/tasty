@@ -15,7 +15,7 @@
 
 mirror 크기는 client pane에서 요청하고 서버가 실제 PTY를 resize한 뒤 보낸 Resize로 확정한다. client는 미리 grid를 바꾸지 않는다. 서버의 일반 창 resize는 hard 점유 surface를 건너뛴다. resize 규칙은 Core::resize_all_terminals 한 곳에서 처리한다.
 
-서버는 모든 크기 요청에 응답한다. 크기가 바뀌거나 이미 같으면 출력과 같은 순서의 Resize로, 적용하지 않으면 ResizeRejected로 답한다. 이 보장은 `ipc.stream.resize-ack` capability로 알리고 client는 연결의 attach descriptor로 확인한다. client는 응답을 5초 기다리고, 응답이 없거나 거절되면 같은 요청을 한 번 다시 보낸다. 그래도 실패하면 사용자에게 알리고 다시 시도와 닫기를 제공한다. 재시도는 그 surface의 크기 요청 재전송이며 재attach를 쓰지 않는다(2026-10-08 사용자 결정). 응답은 grid 크기 확정을 뜻하며 OS PTY 적용 성공을 뜻하지 않는다.
+서버는 모든 크기 요청에 응답한다. 크기가 바뀌거나 이미 같으면 출력과 같은 순서의 Resize로, 적용하지 않으면 ResizeRejected로 답한다. 이 보장은 `ipc.stream.resize-ack` capability로 알리고 client는 연결의 attach descriptor로 확인한다. client는 응답을 5초 기다리고, 응답이 없거나 거절되면 같은 요청을 한 번 다시 보낸다. 그래도 실패하면 사용자에게 알리고 다시 시도와 닫기를 제공한다. 재시도는 그 surface의 크기 요청 재전송이며 재attach를 쓰지 않는다(2026-10-08 사용자 결정). 응답은 grid 크기 확정을 뜻하며 OS PTY 적용 성공을 뜻하지 않는다. 첫 요청이 거절돼도 바로 다시 보내지 않고 마감에 다시 보낸다. 실패로 판정한 크기가 뒤늦게 확정되면 실패를 해제한다. 마감 타이머는 surface별로 두지 않고 가장 이른 마감 하나를 기존 파생 마감 방식으로 건다(2026-10-09 conductor 확정). 세부 규칙은 [attach-behavior](../dev-guide/attach-behavior.md#크기-요청의-응답과-재시도)에 있다.
 
 파일 피커는 로컬·원격을 같은 UI로 제공하되 원격 디렉토리는 attach의 request_id 기반 요청·응답으로 읽는다. 원격 조회 권한은 해당 client의 workspace 점유로 판단한다. local host UI의 디렉토리 조회에 plugin 권한을 요구하지 않는다.
 
