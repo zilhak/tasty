@@ -37,6 +37,8 @@ permission = "Permission denied"
 permission_sub = "You don't have access to read this file."
 decode = "Can't open this image"
 decode_sub = "The file is damaged or in an unsupported format."
+too_large = "Image is too large"
+too_large_sub = "Over {} px on a side, or needs more than {} to decode."
 retry = "Retry"
 
 [image.save_as]

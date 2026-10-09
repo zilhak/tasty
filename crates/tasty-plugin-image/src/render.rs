@@ -14,7 +14,9 @@ use tasty_ui_widgets::{
     state_screen,
 };
 
-use crate::doc::{DragState, EditState, ImageDoc, LoadFailure, ResizeHandle};
+use crate::doc::{
+    DragState, EditState, ImageDoc, LoadFailure, MAX_DECODE_ALLOC, MAX_IMAGE_SIDE, ResizeHandle,
+};
 use crate::tiled::TiledTexture;
 
 /// Render one frame of the image surface into `ctx`.
@@ -752,7 +754,7 @@ fn draw_save_path_popup(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, doc: 
     }
 }
 
-/// 이미지가 없을 때의 캔버스 상태 화면. 파일 없음 · 권한 없음 · 디코드 실패는 Retry 를 두고
+/// 이미지가 없을 때의 캔버스 상태 화면. 파일 없음 · 권한 없음 · 디코드 실패 · 상한 초과는 Retry 를 두고
 /// 원인을 읽지 못한 빈 캔버스는 한 줄만 보인다. Retry 를 눌렀으면 true 다.
 fn canvas_state(
     ui: &mut egui::Ui,
@@ -765,6 +767,9 @@ fn canvas_state(
     let warning = theme.accent_warning().to_egui();
     let muted = theme.text_muted().to_egui();
     let secondary = theme.text_secondary().to_egui();
+    let too_large_sub = tr
+        .t_fmt("image.state.too_large_sub", &MAX_IMAGE_SIDE.to_string())
+        .replacen("{}", &format!("{} MB", MAX_DECODE_ALLOC >> 20), 1);
     let (icon, glyph_color, title, title_color, sub, reason): (
         &'static [&'static [[f32; 2]]],
         _,
@@ -804,6 +809,14 @@ fn canvas_state(
             danger,
             Some(tr.t("image.state.decode_sub")),
             Some(msg.as_str()),
+        ),
+        Some(LoadFailure::TooLarge) => (
+            baked_icons::ALERT_TRIANGLE,
+            danger,
+            tr.t("image.state.too_large"),
+            danger,
+            Some(too_large_sub.as_str()),
+            None,
         ),
     };
     let retry = [(tr.t("image.state.retry"), ButtonVariant::Secondary)];

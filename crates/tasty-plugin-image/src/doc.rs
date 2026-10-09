@@ -847,6 +847,9 @@ pub enum LoadFailure {
     Permission,
     /// 손상됐거나 지원하지 않는 포맷이다. 디코더 문구를 번역하지 않고 담는다.
     Decode(String),
+    /// 한 변이 [`MAX_IMAGE_SIDE`] 를 넘거나 디코딩에 [`MAX_DECODE_ALLOC`] 보다 많은 메모리가
+    /// 필요해 디코드 전에 거절했다.
+    TooLarge,
 }
 
 impl LoadFailure {
@@ -857,14 +860,32 @@ impl LoadFailure {
                 std::io::ErrorKind::PermissionDenied => Self::Permission,
                 _ => Self::Decode(e.to_string()),
             },
+            image::ImageError::Limits(_) => Self::TooLarge,
             _ => Self::Decode(e.to_string()),
         }
     }
 }
 
+/// 뷰어가 여는 그림의 한 변 상한(px). Explorer 미리보기의 상한과 같다.
+pub(crate) const MAX_IMAGE_SIDE: u32 = 16384;
+
+/// 디코더가 한 그림에 쓸 수 있는 메모리 상한. image 크레이트의 기본값을 명시한 것이다.
+/// 뷰어는 원본을 줄이지 않고 올리므로 디코드 뒤에 RGBA 사본·텍스처 타일이 더해진다.
+pub(crate) const MAX_DECODE_ALLOC: u64 = 512 * 1024 * 1024;
+
 /// Load an image from a file path.
 pub(crate) fn load_image_from_path(path: &str) -> Result<ColorImage, LoadFailure> {
-    let img = match image::open(path) {
+    let decoded = image::ImageReader::open(path)
+        .map_err(image::ImageError::IoError)
+        .and_then(|mut reader| {
+            let mut limits = image::Limits::default();
+            limits.max_image_width = Some(MAX_IMAGE_SIDE);
+            limits.max_image_height = Some(MAX_IMAGE_SIDE);
+            limits.max_alloc = Some(MAX_DECODE_ALLOC);
+            reader.limits(limits);
+            reader.decode()
+        });
+    let img = match decoded {
         Ok(img) => img,
         // 읽지 못한 이유를 로그에도 남긴다. 화면은 원인별 상태 화면을 보인다.
         Err(e) => {
@@ -1337,6 +1358,88 @@ mod tests {
         doc.reload_from_disk();
         assert!(doc.original_image.is_some());
         assert_eq!(doc.load_failure, None);
+        let _ = std::fs::remove_dir_all(&dir); // best-effort 정리 — 실패 무시.
+    }
+
+    /// 픽셀이 없는 PNG. 상한 판정은 IHDR 의 크기로 픽셀을 펼치기 전에 끝난다.
+    fn write_png_header(path: &std::path::Path, w: u32, h: u32) {
+        fn chunk(out: &mut Vec<u8>, kind: &[u8; 4], data: &[u8]) {
+            out.extend_from_slice(&(data.len() as u32).to_be_bytes());
+            let start = out.len();
+            out.extend_from_slice(kind);
+            out.extend_from_slice(data);
+            let crc = crc32(&out[start..]);
+            out.extend_from_slice(&crc.to_be_bytes());
+        }
+        fn crc32(bytes: &[u8]) -> u32 {
+            let mut crc = 0xffff_ffffu32;
+            for b in bytes {
+                crc ^= u32::from(*b);
+                for _ in 0..8 {
+                    crc = if crc & 1 == 1 {
+                        (crc >> 1) ^ 0xedb8_8320
+                    } else {
+                        crc >> 1
+                    };
+                }
+            }
+            !crc
+        }
+        let mut ihdr = Vec::new();
+        ihdr.extend_from_slice(&w.to_be_bytes());
+        ihdr.extend_from_slice(&h.to_be_bytes());
+        // 8비트 RGBA, 압축·필터·인터레이스 기본값.
+        ihdr.extend_from_slice(&[8, 6, 0, 0, 0]);
+        let mut out = b"\x89PNG\r\n\x1a\n".to_vec();
+        chunk(&mut out, b"IHDR", &ihdr);
+        // 디코더는 첫 IDAT 까지 읽어야 머리를 끝낸다. 내용은 빈 zlib 스트림이다.
+        chunk(
+            &mut out,
+            b"IDAT",
+            &[0x78, 0x9c, 0x03, 0x00, 0x00, 0x00, 0x00, 0x01],
+        );
+        chunk(&mut out, b"IEND", &[]);
+        std::fs::write(path, out).expect("쓰기");
+    }
+
+    /// 한 변이 상한을 넘거나 디코딩 메모리가 상한을 넘으면 펼치기 전에 '너무 큼'으로 거절하고,
+    /// 상한과 같은 변은 연다.
+    #[test]
+    fn an_image_over_the_limits_is_refused_as_too_large() {
+        let dir = probe_dir("load-too-large");
+        let wide = dir.join("wide.png");
+        write_png_header(&wide, MAX_IMAGE_SIDE + 1, 1);
+        assert_eq!(
+            load_image_from_path(&wide.to_string_lossy()).err(),
+            Some(LoadFailure::TooLarge)
+        );
+        let tall = dir.join("tall.png");
+        write_png_header(&tall, 1, MAX_IMAGE_SIDE + 1);
+        assert_eq!(
+            load_image_from_path(&tall.to_string_lossy()).err(),
+            Some(LoadFailure::TooLarge)
+        );
+        // 한 변은 상한 안이지만 RGBA 로 펼치면 MAX_DECODE_ALLOC 을 넘는다.
+        let side = 12_000u32;
+        assert!(u64::from(side) * u64::from(side) * 4 > MAX_DECODE_ALLOC);
+        let heavy = dir.join("heavy.png");
+        write_png_header(&heavy, side, side);
+        assert_eq!(
+            load_image_from_path(&heavy.to_string_lossy()).err(),
+            Some(LoadFailure::TooLarge)
+        );
+
+        let edge = dir.join("edge.png");
+        image::RgbaImage::from_pixel(MAX_IMAGE_SIDE, 1, image::Rgba([1, 2, 3, 255]))
+            .save(&edge)
+            .expect("PNG 저장");
+        let loaded = load_image_from_path(&edge.to_string_lossy()).expect("상한과 같은 변은 연다");
+        assert_eq!(loaded.size, [MAX_IMAGE_SIDE as usize, 1]);
+
+        let mut doc = ImageDoc::new(Some(wide.to_string_lossy().into_owned()));
+        doc.ensure_loaded();
+        assert!(doc.original_image.is_none());
+        assert_eq!(doc.load_failure, Some(LoadFailure::TooLarge));
         let _ = std::fs::remove_dir_all(&dir); // best-effort 정리 — 실패 무시.
     }
 
