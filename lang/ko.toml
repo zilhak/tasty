@@ -1794,7 +1794,7 @@ dismiss = "닫기"
 # body 의 {} 는 surface 이름(또는 many 로 만든 요약), many 의 앞 {} 는 surface 수, 뒤 {} 는 이름이다.
 title = "원격과 터미널 크기를 맞추지 못했습니다"
 body = "{} · 원격이 아직 이전 크기를 쓰고 있을 수 있습니다."
-many = "surface {}개 — {}"
+many = "서피스 {}개 — {}"
 retry = "다시 시도"
 retry_all = "모두 다시 시도"
 dismiss = "닫기"
