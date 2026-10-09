@@ -81,7 +81,6 @@ fn a_chosen_select_paints_the_value_tone() {
 }
 
 /// 목록을 연 채로 그린 프레임의 도형.
-/// 목록을 연 채로 그린 프레임의 도형. `selected` 가 None 이면 목록 맨 앞에 sentinel 행이 있다.
 fn open_frame(theme: &Theme, selected: Option<usize>) -> Vec<egui::epaint::ClippedShape> {
     let ctx = egui::Context::default();
     // 팝업 페이드를 꺼 실제 토큰 색과 비교한다.
@@ -186,22 +185,26 @@ fn marks_right_of(shapes: &[egui::epaint::ClippedShape], text: &str) -> usize {
         .count()
 }
 
-/// 아직 값을 고르지 않은 목록의 sentinel 행은 값이 아니다. 체크와 selected 글자 없이 쉬는 행으로 그린다.
-/// 같은 검출기가 값을 고른 목록의 현재 값 행에서는 체크를 찾는지 함께 본다.
+/// 아직 값을 고르지 않은 목록에는 placeholder 행이 없다. placeholder 는 트리거에만 있고 목록은 실제
+/// 옵션만 쉬는 행으로 담는다(체크 없음). 같은 검출기가 값을 고른 목록의 현재 값 행에서는 체크를
+/// 찾는지 함께 본다.
 #[test]
-fn the_placeholder_sentinel_row_has_no_check_and_no_selected_ink() {
+fn an_unchosen_open_list_holds_only_real_options_none_checked() {
     let th = theme();
     let shapes = open_frame(&th, None);
-    // 트리거의 placeholder 글자와 목록 맨 앞 sentinel 행.
     assert_eq!(
         label_color(&shapes, "Pick one"),
-        vec![th.text_placeholder().to_egui(), th.menu_item_fg().to_egui()]
+        vec![th.text_placeholder().to_egui()],
+        "the placeholder is drawn as a list row, not only on the trigger"
     );
-    assert_eq!(
-        marks_right_of(&shapes, "Pick one"),
-        0,
-        "the sentinel has no check"
-    );
+    for option in ["Ask", "Quit"] {
+        assert_eq!(
+            label_color(&shapes, option),
+            vec![th.menu_item_fg().to_egui()],
+            "{option} is not a resting row"
+        );
+        assert_eq!(marks_right_of(&shapes, option), 0, "{option} is checked");
+    }
 
     let chosen = open_frame(&th, Some(1));
     assert_eq!(

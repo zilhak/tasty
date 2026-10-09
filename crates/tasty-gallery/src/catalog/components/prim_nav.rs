@@ -3,7 +3,9 @@
 use std::cell::RefCell;
 
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::{MenuItemVariant, menu_item, menu_option, menu_separator, tree_row};
+use tasty_ui_widgets::{
+    MenuItemVariant, menu_item, menu_option, menu_separator, select_or_placeholder, tree_row,
+};
 
 use super::glyph;
 use crate::catalog::spec::{StageVariant, TokenChip, meta, note, stage};
@@ -108,6 +110,7 @@ pub fn draw_menu_item_selected(ui: &mut egui::Ui, theme: &Theme) {
             ui.spacing_mut().item_spacing.x = theme.spacing_lg.value();
             selected_option_panel(ui, &mocha, "Mocha");
             selected_option_panel(ui, &latte, "Latte");
+            no_value_panel(ui, &mocha);
         });
     });
 
@@ -121,6 +124,10 @@ pub fn draw_menu_item_selected(ui: &mut egui::Ui, theme: &Theme) {
                 "check icon · menu-item-check-size 14 · menu-item-check-fg · trailing, after any shortcut",
             ),
             ("fill", "none — hover / keyboard fills only"),
+            (
+                "no value",
+                "the placeholder is NOT a row — the list holds real options only, none checked, keyboard-active starts on row 1; the trigger alone shows the placeholder (text-placeholder). A clearable Select gets a real option for it (e.g. “None”), drawn like any other row.",
+            ),
         ],
         &[
             TokenChip::new(
@@ -192,6 +199,77 @@ fn selected_option_panel(ui: &mut egui::Ui, th: &Theme, name: &str) {
                     });
             });
         });
+}
+
+/// 아직 값이 없는 Select — 트리거만 placeholder 색이고, 열린 목록은 실제 옵션만 담는다(체크 없음,
+/// 키보드 active 는 첫 행).
+fn no_value_panel(ui: &mut egui::Ui, th: &Theme) {
+    egui::Frame::new()
+        .fill(egui::Color32::from(th.bg_panel()))
+        .corner_radius(th.corner_radius.value())
+        .inner_margin(egui::Margin::same(th.spacing_md.value() as i8))
+        .show(ui, |ui| {
+            ui.vertical(|ui| {
+                ui.spacing_mut().item_spacing.y = th.spacing_sm.value();
+                ui.label(
+                    egui::RichText::new(
+                        "No value yet — trigger in placeholder ink, list = real options only",
+                    )
+                    .size(th.font_size_caption.value())
+                    .color(egui::Color32::from(th.text_muted())),
+                );
+                let options = no_value_options();
+                let mut none = None;
+                select_or_placeholder(
+                    ui,
+                    th,
+                    "gallery_no_value_select",
+                    &mut none,
+                    &options,
+                    "Choose an action",
+                    th.field_width_lg.value(),
+                    true,
+                );
+                let bw = th.border_width.value();
+                egui::Frame::new()
+                    .fill(egui::Color32::from(th.menu_bg()))
+                    .stroke(egui::Stroke::new(bw, egui::Color32::from(th.menu_border())))
+                    .corner_radius(th.menu_radius().value())
+                    .shadow(th.shadow_popover().to_egui())
+                    .inner_margin(egui::Margin::same(th.spacing_xs.value() as i8))
+                    .show(ui, |ui| {
+                        ui.set_width(
+                            th.field_width_lg.value() - (th.spacing_xs.value() + bw) * 2.0,
+                        );
+                        ui.spacing_mut().item_spacing.y = 0.0;
+                        for (i, label) in options.iter().enumerate() {
+                            if i == 0 {
+                                menu_item(
+                                    ui,
+                                    th,
+                                    None,
+                                    label,
+                                    None,
+                                    MenuItemVariant::Normal,
+                                    true,
+                                    true,
+                                );
+                            } else {
+                                menu_option(ui, th, label, false);
+                            }
+                        }
+                    });
+            });
+        });
+}
+
+/// "no value" 패널의 옵션. 시안과 같은 세 행이며 가운데 행은 본체 문구를 읽는다.
+fn no_value_options() -> [&'static str; 3] {
+    [
+        "Ask",
+        crate::i18n::t("settings.general.close_behavior_minimize"),
+        "Quit",
+    ]
 }
 
 /// TreeRow — depth · chevron · icon(selected accent) · meta.

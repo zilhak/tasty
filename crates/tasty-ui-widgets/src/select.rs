@@ -45,8 +45,9 @@ pub(crate) fn select_rect(
     }
 }
 
-/// 미선택 상태에서는 placeholder 색과 문구를 사용한다.
-/// 메뉴의 안내 행을 눌러도 값을 선택한 것으로 보지 않으며 실제 선택이 바뀌면 true를 반환한다.
+/// 미선택 상태에서는 트리거만 placeholder 색과 문구를 사용한다. placeholder 는 목록의 행이 아니다 —
+/// 열린 목록은 실제 옵션만 담고 아무것도 체크하지 않는다. 값을 지울 수 있어야 하면 호출하는 쪽이
+/// "None" 같은 실제 옵션을 둔다. 실제 선택이 바뀌면 true를 반환한다.
 // reason: `select` 와 같은 인자 모양에 placeholder 하나를 더한 것이다 — 묶으면 두 드롭다운의
 // 호출 모양이 갈린다.
 #[allow(clippy::too_many_arguments)]
@@ -157,10 +158,6 @@ fn select_impl(
                 // 옵션은 공용 MenuItem 옵션 행이다. 현재 값만 selected(글자 + 체크, 채움 없음)이고
                 // 행은 다른 메뉴처럼 붙인다.
                 ui.spacing_mut().item_spacing.y = 0.0;
-                if let (None, Some(p)) = (selected, placeholder) {
-                    // sentinel — 값이 아니므로 selected 로 그리지 않는다. 누르면 메뉴만 닫힌다.
-                    let _sentinel = crate::menu_option(ui, theme, p, false);
-                }
                 for (i, opt) in options.iter().enumerate() {
                     if crate::menu_option(ui, theme, opt, selected == Some(i)).clicked()
                         && selected != Some(i)
