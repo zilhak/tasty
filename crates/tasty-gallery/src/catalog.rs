@@ -731,6 +731,32 @@ pub fn pages() -> Vec<Page> {
                         ),
                     ],
                 ),
+                section(
+                    "explorer-file-info",
+                    "Explorer properties and preview",
+                    vec![
+                        spec(
+                            "explorer-properties",
+                            "Properties — popup for one item · folder · several · remote",
+                            Some(
+                                "360 popup scoped to the cell · keeps its item · 96 caption labels",
+                            ),
+                            components::explorer_file_info::draw_properties,
+                        ),
+                        spec(
+                            "explorer-preview",
+                            "Preview panel — text · image · other · loading · too large · unreadable",
+                            Some("toggle · right side 288 (splitter 200 … 460) · 40 header"),
+                            components::explorer_file_info::draw_preview,
+                        ),
+                        spec(
+                            "explorer-thumbnails",
+                            "Grid thumbnails — 40 slot for every cell",
+                            Some("Grid only · local only · glyph in accent-info while loading"),
+                            components::explorer_file_info::draw_thumbnails,
+                        ),
+                    ],
+                ),
                 single(
                     "layout-shell",
                     "Layout shell widgets",

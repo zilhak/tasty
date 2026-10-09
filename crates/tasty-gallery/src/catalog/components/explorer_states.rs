@@ -22,14 +22,14 @@ const POPUP_GAP: LogicalPx = LogicalPx(18.0);
 
 /// 상태 칸의 글리프 — 아이콘 또는 Spinner.
 #[derive(Clone, Copy)]
-enum StateGlyph {
+pub(super) enum StateGlyph {
     Icon(MockGlyph),
     Spinner,
 }
 
 /// 글리프와 제목의 색조. 중립은 글리프 text-muted · 제목 text-secondary 다.
 #[derive(Clone, Copy)]
-enum Tone {
+pub(super) enum Tone {
     Neutral,
     /// 권한 거부 — accent-warning(peach).
     Warning,
@@ -37,15 +37,15 @@ enum Tone {
     Error,
 }
 
-struct StateCell {
-    glyph: StateGlyph,
-    tone: Tone,
-    title: &'static str,
-    sub: Option<&'static str>,
+pub(super) struct StateCell {
+    pub(super) glyph: StateGlyph,
+    pub(super) tone: Tone,
+    pub(super) title: &'static str,
+    pub(super) sub: Option<&'static str>,
     /// 번역하지 않은 OS 이유 문구(mono caption).
-    reason: Option<&'static str>,
+    pub(super) reason: Option<&'static str>,
     /// 버튼 줄(라벨, variant). 시안 Retry(secondary sm) · Go up(ghost sm).
-    actions: &'static [(&'static str, ButtonVariant)],
+    pub(super) actions: &'static [(&'static str, ButtonVariant)],
 }
 
 const STATES: &[StateCell] = &[
@@ -172,6 +172,13 @@ fn state_cell(ui: &mut egui::Ui, theme: &Theme, s: &StateCell, w: f32) {
         egui::StrokeKind::Inside,
     );
 
+    state_block(ui, theme, rect, s);
+}
+
+/// 받은 사각형 가운데에 상태 블록(글리프 · 제목 · 보조 줄 · 이유 줄 · 버튼 줄)을 그린다.
+/// 미리보기 패널 예제도 같은 블록을 쓴다.
+pub(super) fn state_block(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, s: &StateCell) {
+    let w = rect.width();
     let muted = theme.text_muted().to_egui();
     let (glyph_fg, title_fg) = match s.tone {
         Tone::Neutral => (muted, theme.text_secondary().to_egui()),

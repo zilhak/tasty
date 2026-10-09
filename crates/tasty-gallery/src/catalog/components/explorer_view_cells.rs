@@ -18,6 +18,8 @@ pub(super) enum Kind {
     Folder,
     File,
     Image,
+    /// 그리드 썸네일을 다 만든 이미지. 목록·상세에서는 `Image` 와 같이 그린다.
+    Thumb,
 }
 
 impl Kind {
@@ -25,14 +27,14 @@ impl Kind {
         match self {
             Kind::Folder => FOLDER,
             Kind::File => FILE,
-            Kind::Image => IMAGE,
+            Kind::Image | Kind::Thumb => IMAGE,
         }
     }
 
     /// 이미지만 accent-info, 나머지는 `muted`(호출부가 정한 기본 글리프 색)를 쓴다.
     fn tint(self, theme: &Theme, muted: egui::Color32) -> egui::Color32 {
         match self {
-            Kind::Image => egui::Color32::from(theme.accent_info()),
+            Kind::Image | Kind::Thumb => egui::Color32::from(theme.accent_info()),
             Kind::Folder | Kind::File => muted,
         }
     }
@@ -236,7 +238,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         &[
-            ("grid cell", "glyph 16 + 3-line label (…) · fixed height"),
+            (
+                "grid cell",
+                "40 slot (glyph 16 centred or thumbnail) + 3-line label (…) · fixed height",
+            ),
             ("list row", "22 · tree-row-height (file tree row)"),
             (
                 "detail row / header",
@@ -287,19 +292,43 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     note(
         ui,
         theme,
-        "The grid draws glyphs and labels; image textures are not loaded in this example. List and detail views use the shared tree_row and Table widgets. Cut-pending cells dim the icon and label to 50% while preserving the selection or hover background. No explorer-specific row height: the list reuses the tree row (22), and the detail header and body rows reuse the shared Table height (28).",
+        "Every grid cell reserves the 40 thumbnail slot; this example draws glyphs only (thumbnails are under Explorer properties and preview). List and detail views use the shared tree_row and Table widgets. Cut-pending cells dim the icon and label to 50% while preserving the selection or hover background. No explorer-specific row height: the list reuses the tree row (22), and the detail header and body rows reuse the shared Table height (28).",
     );
 }
 
 /// 그리드 셀을 그린다. 클릭하면 true를 반환하며 cut 상태는 전경만 흐리게 한다.
 fn grid_cell(ui: &mut egui::Ui, theme: &Theme, e: &Entry, selected: bool, cut: bool) -> bool {
+    grid_cell_parts(
+        ui,
+        theme,
+        e.kind,
+        e.name,
+        selected,
+        e.mark == Mark::Hover,
+        cut,
+    )
+    .clicked()
+}
+
+/// 그리드 셀 하나. 모든 셀이 `explorer_grid_thumb_size`(40) 슬롯을 잡아 썸네일 유무와 관계없이
+/// 행 높이가 같다. 썸네일이 없는 항목은 16 글리프를 슬롯 가운데에 둔다.
+pub(super) fn grid_cell_parts(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    kind: Kind,
+    name: &str,
+    selected: bool,
+    hover: bool,
+    cut: bool,
+) -> egui::Response {
     let glyph = theme.icon_glyph_size_md.value(); // design glyph 16
+    let slot = theme.explorer_grid_thumb_size().value();
     // 라벨: caption(11), line_h ≈ round(11 × 1.3)=14. 고정 3줄 예약 → 그리드 행 정렬 균일.
     let label_font = theme.font_size_caption.value();
     let label_line_h = (label_font * 1.3).round();
     let label_h = label_line_h * 3.0;
     let cell_h = theme.spacing_sm.value()
-        + glyph
+        + slot
         + theme.spacing_xs.value()
         + label_h
         + theme.spacing_sm.value();
@@ -313,7 +342,7 @@ fn grid_cell(ui: &mut egui::Ui, theme: &Theme, e: &Entry, selected: bool, cut: b
             theme.corner_radius.value(),
             egui::Color32::from(theme.surface_active()),
         );
-    } else if resp.hovered() || e.mark == Mark::Hover {
+    } else if resp.hovered() || hover {
         p.rect_filled(
             rect,
             theme.corner_radius.value(),
@@ -328,20 +357,26 @@ fn grid_cell(ui: &mut egui::Ui, theme: &Theme, e: &Entry, selected: bool, cut: b
             c
         }
     };
-    let glyph_rect = egui::Rect::from_center_size(
+    let slot_rect = egui::Rect::from_center_size(
         egui::pos2(
             rect.center().x,
-            rect.top() + theme.spacing_sm.value() + glyph / 2.0,
+            rect.top() + theme.spacing_sm.value() + slot / 2.0,
         ),
-        egui::vec2(glyph, glyph),
+        egui::vec2(slot, slot),
     );
-    e.kind
-        .glyph()
-        .image(
-            glyph,
-            fg_dim(e.kind.tint(theme, egui::Color32::from(theme.text_muted()))),
-        )
-        .paint_at(ui, glyph_rect);
+    if matches!(kind, Kind::Thumb) {
+        thumb_stand_in(ui, theme, slot_rect);
+    } else {
+        kind.glyph()
+            .image(
+                glyph,
+                fg_dim(kind.tint(theme, egui::Color32::from(theme.text_muted()))),
+            )
+            .paint_at(
+                ui,
+                egui::Rect::from_center_size(slot_rect.center(), egui::vec2(glyph, glyph)),
+            );
+    }
 
     let label_color = fg_dim(if selected {
         egui::Color32::from(theme.text_primary())
@@ -359,7 +394,7 @@ fn grid_cell(ui: &mut egui::Ui, theme: &Theme, e: &Entry, selected: bool, cut: b
         ..Default::default()
     };
     job.append(
-        e.name,
+        name,
         0.0,
         egui::TextFormat {
             font_id: egui::FontId::proportional(label_font),
@@ -372,13 +407,37 @@ fn grid_cell(ui: &mut egui::Ui, theme: &Theme, e: &Entry, selected: bool, cut: b
     p.galley(
         egui::pos2(
             rect.center().x,
-            glyph_rect.bottom() + theme.spacing_xs.value(),
+            slot_rect.bottom() + theme.spacing_xs.value(),
         ),
         galley,
         label_color,
     );
 
-    resp.clicked()
+    resp
+}
+
+/// 디코딩한 그림 대신 놓는 자리 표시. 시안처럼 1px separator 테두리 · radius-sm · surface-hover 바탕에
+/// 아래쪽 "img" 글자를 둔다. 본체는 이 자리에 40 × 40 에 맞춘 그림을 그린다.
+pub(super) fn thumb_stand_in(ui: &egui::Ui, theme: &Theme, slot: egui::Rect) {
+    let p = ui.painter();
+    let radius = theme.corner_radius_sm.value();
+    p.rect_filled(slot, radius, theme.surface_hover().to_egui());
+    p.rect_stroke(
+        slot,
+        radius,
+        egui::Stroke::new(
+            theme.border_width.value(),
+            theme.separator.to_egui_premultiplied(),
+        ),
+        egui::StrokeKind::Inside,
+    );
+    p.text(
+        egui::pos2(slot.center().x, slot.bottom() - theme.border_width.value()),
+        egui::Align2::CENTER_BOTTOM,
+        "img",
+        egui::FontId::monospace(theme.font_size_micro.value()),
+        theme.text_muted().to_egui(),
+    );
 }
 
 /// 상세 보기 표. 공용 `Table` 로 그리며 클릭한 행 번호를 돌려준다.
