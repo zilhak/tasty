@@ -108,8 +108,16 @@ fn select_impl(
         }
     };
 
-    // 직접 키를 처리하지 않으므로 MultiSelect와 같은 포커스 테두리는 제공하지 않는다.
-    let border = if enabled && resp.hovered() {
+    let popup_id = ui.make_persistent_id(("tasty_select", id_salt));
+    if enabled && resp.clicked() {
+        ui.memory_mut(|m| m.toggle_popup(popup_id));
+    }
+    // 목록이 열려 있으면 MultiSelect 처럼 포커스 테두리를 쓴다. 직접 키를 처리하지 않으므로
+    // 키보드 포커스만으로는 포커스 테두리를 그리지 않는다.
+    let open = ui.memory(|m| m.is_popup_open(popup_id));
+    let border = if enabled && open {
+        theme.select_border_focus()
+    } else if enabled && resp.hovered() {
         theme.border_strong()
     } else {
         theme.select_border()
@@ -140,11 +148,6 @@ fn select_impl(
     let cx = rect.right() - chevron_room * 0.5;
     let ch = dim(theme.select_chevron_fg().to_egui());
     paint_chevron(ui.painter(), egui::pos2(cx, rect.center().y), ch, false);
-
-    let popup_id = ui.make_persistent_id(("tasty_select", id_salt));
-    if enabled && resp.clicked() {
-        ui.memory_mut(|m| m.toggle_popup(popup_id));
-    }
 
     let mut picked = None;
     tasty_egui_theme::with_popover_frame(ui, theme, |ui| {
