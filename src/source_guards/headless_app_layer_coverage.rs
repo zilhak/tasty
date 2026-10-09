@@ -354,6 +354,11 @@ const DEBUG_NOT_IN_HEADLESS: &[(&str, &str)] = &[
          그 proxy 가 없다",
     ),
     (
+        "debug.settings.close",
+        "설정 모달을 닫는다. 활성 모달을 `self.view.active_modal()` 로 찾고 \
+         `close_active_modal()` 이 `self.view.views` 에서 지운다 — view 가 없다",
+    ),
+    (
         "debug.popup.open",
         "popup 생성은 매니저만 사용하지만 닫기 처리는 GUI dispatch에 있다. 생성만 허용하면 헤드리스에서 닫을 수 없는 인스턴스가 남는다.",
     ),

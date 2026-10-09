@@ -104,19 +104,18 @@ impl SettingsView {
         self.settings_ui_state.select_macos_permissions_tab();
     }
 
-    /// debug 전용 — 첫 진입 탭을 키 문자열로 지정 (`debug.settings.open` 의 `tab` 인자).
-    /// 알 수 없는 키면 `false` 를 반환하고 탭을 바꾸지 않는다.
+    /// debug 전용 — `debug.settings.open` 의 `tab`·`subtab` 을 적용한다. 새로 연 창과
+    /// 이미 열린 창이 같은 함수를 쓴다. 바뀐 탭은 다음 프레임에 그린다.
     #[cfg(debug_assertions)]
-    pub fn focus_tab(&mut self, key: &str) -> bool {
-        self.settings_ui_state.select_tab_by_key(key)
-    }
-
-    /// debug 전용 — 현재 활성 L1 탭의 L2 섹션(하위탭)을 키 문자열로 지정
-    /// (`debug.settings.open` 의 `subtab` 인자). [`focus_tab`] 로 L1 을 먼저
-    /// 정한 뒤 호출한다. 알 수 없는 키면 `false` 를 반환하고 섹션을 바꾸지 않는다.
-    #[cfg(debug_assertions)]
-    pub fn focus_subtab(&mut self, key: &str) -> bool {
-        self.settings_ui_state.select_section_by_key(key)
+    pub(crate) fn apply_debug_tabs(
+        &mut self,
+        tab: Option<&str>,
+        subtab: Option<&str>,
+    ) -> crate::settings_ui::DebugTabsApplied {
+        let applied = self.settings_ui_state.apply_debug_tabs(tab, subtab);
+        self.base.state.dirty = true;
+        self.base.winit.request_redraw();
+        applied
     }
 
     /// 단축키 가져오기/내보내기가 쓰는 plugin override 원본 · 설치 plugin 을 주입한다.

@@ -331,6 +331,7 @@ pub(super) fn settings_debug_command_to_method_params(
             "debug.settings.open",
             serde_json::json!({ "tab": tab, "subtab": subtab }),
         ),
+        SettingsDebugCommands::Close => ("debug.settings.close", serde_json::json!({})),
         // 서버가 JSON 값을 받으므로 CLI에서 먼저 파싱한다. 실패는 stderr에 알리고 exit 1로 끝낸다.
         SettingsDebugCommands::Apply { json, file } => {
             let raw = match (file, json) {

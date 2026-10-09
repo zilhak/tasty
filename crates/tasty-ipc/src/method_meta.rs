@@ -823,6 +823,8 @@ pub const DEBUG_METHODS: &[(&str, MethodMeta)] = &[
     ("debug.modifier_hint.state", local_only(MethodEffect::Read)),
     // 설정 모달 강제 open — 사용자 조작 재현. release 미노출. 시각 검증 자동화용.
     ("debug.settings.open", local_only(MethodEffect::Idempotent)),
+    // 설정 모달만 닫는다(저장하지 않음) — 사용자 창 닫기 재현. release 미노출.
+    ("debug.settings.close", local_only(MethodEffect::Idempotent)),
     // 런타임 설정 patch 적용 — 사용자 "설정 저장" 재현. release 미노출.
     ("debug.settings.apply", local_only(MethodEffect::Idempotent)),
     // 활성 모달에 창 닫기 요청을 전달한다. release의 window.close는 메인 창만 대상으로 한다.

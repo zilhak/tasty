@@ -1,3 +1,5 @@
+#[cfg(debug_assertions)]
+mod debug_tabs;
 pub(crate) mod file_chooser;
 mod file_handler_tab;
 mod keybindings_tab;
@@ -13,6 +15,8 @@ use keybindings_tab::{
 };
 use tabs::*;
 
+#[cfg(debug_assertions)]
+pub(crate) use debug_tabs::DebugTabsApplied;
 pub(crate) use keybindings_tab::PluginBundleContext;
 pub use keybindings_tab::{KeyCapture, capture_bare_key, capture_winit_key_combo};
 

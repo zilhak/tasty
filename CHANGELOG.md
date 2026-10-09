@@ -18,6 +18,7 @@
 
 ### Added
 
+- **debug 설정 창을 열린 채로 탭을 바꾸고 닫을 수 있다.** debug 빌드에서 `tasty debug settings open --tab … --subtab …`(IPC `debug.settings.open`)은 설정 창이 이미 열려 있으면 새로 열지 않고 그 창의 탭·하위 탭을 바꾸며, 응답에 `scheduled:false`·`tab_applied`·`subtab_applied` 를 싣는다. 다른 모달이 열려 있으면 `-32000` 으로 거절한다. `tasty debug settings close`(IPC `debug.settings.close`)는 설정 창만 저장하지 않고 닫는다. 연속 캡처마다 인스턴스를 다시 띄우지 않아도 된다.
 - **debug 빌드의 `tasty debug inject egui-text` 가 설정 창 같은 별도 창의 입력칸에도 글자를 넣는다.** `--window-id <id>`(IPC `debug.inject_egui_text` 의 `window_id`)로 메인 창이나 설정·Preset·Plugins 창을 지목한다. 생략하면 이전처럼 포커스된 메인 창에 넣는다. 없는 창 ID 는 오류로 거절한다. `tasty debug inject egui-key` 도 같은 `--window-id` 를 받아 그 창에 Enter·Backspace 같은 키를 보낸다. `tasty debug inject egui-mouse --window-id <id>` 는 그 창 전체에 대한 정규화 좌표(`--fx`·`--fy`)로 클릭·이동·휠을 넣으며 `--surface` 와 함께 쓸 수 없다. 설정 창 입력칸 포커스부터 입력까지 debug IPC 만으로 재현할 수 있다.
 - **단축키에 F13~F24 를 쓸 수 있다.** 설정에서 녹화하거나 `f13` 처럼 입력한 바인딩이 그 키 입력에 실행되고(webview 에 포커스가 있을 때 포함), Plugins 서브탭 입력에 "인식할 수 없는 키" 가 뜨지 않는다. 다른 이름 키처럼 수식키 없이도 등록된다.
 - **`tasty agent task-get`·`task-list` 에 `--json` 이 생겼다.** 사람이 읽는 줄 대신 IPC 응답(`agent.task_get`·`agent.task_list`)을 그대로 JSON 으로 낸다. `typed_result.raw`·`input_snapshot` 처럼 텍스트에 없는 값을 IPC 를 직접 부르지 않고 확인한다.

@@ -498,7 +498,8 @@ pub enum ModalDebugCommands {
 #[cfg(debug_assertions)]
 #[derive(Subcommand)]
 pub enum SettingsDebugCommands {
-    /// Force-open the settings modal, optionally on a specific tab/subtab.
+    /// Force-open the settings modal, optionally on a specific tab/subtab. If it is
+    /// already open, switch its tab/subtab.
     Open {
         /// Initial L1 tab: general | terminal | appearance | keybindings |
         /// file_handler | misc | plugins (default: general).
@@ -513,6 +514,8 @@ pub enum SettingsDebugCommands {
         #[arg(long)]
         subtab: Option<String>,
     },
+    /// Close the settings modal without saving (like Cancel). Other modals stay open.
+    Close,
     /// Apply a (partial) settings patch at runtime: the JSON object is
     /// deep-merged onto the live settings, then dispatched as UpdateSettings
     /// (same path as saving the settings modal — persists to config.toml).

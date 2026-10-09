@@ -127,7 +127,15 @@ tasty screenshot --path /abs/settings.png --window "$S"
 ```
 
 `debug settings open` 은 창 생성을 예약만 하고 돌아오므로 위 블록은 `settings` 가 나올 때까지
-짧게 다시 조회한다. 응답 `windows[]` 의 필드와 `kind` 값은 [debug-ipc.md](../dev-guide/debug-ipc.md)의
+짧게 다시 조회한다. 설정 창이 이미 열려 있으면 `debug settings open --tab … --subtab …` 은 예약 없이
+그 창의 탭을 바로 바꾸고(응답 `scheduled:false`), 같은 `window_id` 로 다음 화면을 캡처할 수 있다.
+다 찍은 뒤 `debug settings close` 로 저장하지 않고 닫으면 인스턴스를 다시 띄우지 않고 다음 캡처를
+이어 간다.
+
+실측(Xvfb, 2026-10-09): 한 인스턴스에서 `open --tab appearance --subtab colors` → `open --tab terminal --subtab tui`
+→ `open --subtab performance` 순서로 같은 창(`window_id` 불변)이 Appearance › Colors, Terminal › TUI,
+Terminal › Performance 로 바뀐 것을 캡처로 확인했다. `close` 뒤 `debug windows` 에 `settings` 가 없었고,
+다시 연 창은 기본 탭(General › General)으로 열렸다. 응답 `windows[]` 의 필드와 `kind` 값은 [debug-ipc.md](../dev-guide/debug-ipc.md)의
 `debug.window.list` 행이 정본이다. 창은 `kind` 로 고른다. `title` 은 winit 이 제목을 돌려주는
 플랫폼에서만 채워지고 X11·Wayland 에서는 `null` 이다.
 

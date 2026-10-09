@@ -9,31 +9,12 @@ use crate::ipc::server::{IpcCommand, send_response};
 
 impl App {
     pub(crate) fn ipc_step_debug(&mut self, cmd: &IpcCommand) -> IpcStep {
-        // 설정 창 열기는 App 이벤트로 처리하며 예약 접수만 즉시 응답한다.
+        // 설정 창은 별도 winit 창이라 열기·탭 전환·닫기를 App에서 처리한다.
         #[cfg(feature = "gui")]
-        if cmd.request.method == "debug.settings.open" {
-            let id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
-            let tab = cmd
-                .request
-                .params
-                .get("tab")
-                .and_then(|v| v.as_str())
-                .map(str::to_string);
-            let subtab = cmd
-                .request
-                .params
-                .get("subtab")
-                .and_then(|v| v.as_str())
-                .map(str::to_string);
-            self.state.pending_settings_tab = tab.clone();
-            self.state.pending_settings_subtab = subtab.clone();
-            crate::shortcuts::send_app_event(&self.view.proxy, crate::AppEvent::OpenSettings);
-            let response = host_ipc::protocol::JsonRpcResponse::success(
-                id,
-                serde_json::json!({ "scheduled": true, "tab": tab, "subtab": subtab }),
-            );
-            send_response(&cmd.response_tx, response);
-            return IpcStep::Handled;
+        match cmd.request.method.as_str() {
+            "debug.settings.open" => return self.ipc_handle_debug_settings_open(cmd),
+            "debug.settings.close" => return self.ipc_handle_debug_settings_close(cmd),
+            _ => {}
         }
         // 창을 지정한 egui 입력 주입은 설정 같은 보조 창까지 가리킬 수 있어 App에서 처리한다.
         #[cfg(feature = "gui")]

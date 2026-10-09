@@ -346,6 +346,7 @@ event bus 두 건은 매니저를 **메타데이터 층까지만** 세운다 —
 | `debug.window.list` | 메인 창과 보조 창을 `self.view.views` 에서 나열한다. 창이 없다 |
 | `debug.native_menu.answer` | 창이 여는 native 메뉴의 응답이다. 메뉴를 여는 창이 없다 |
 | `debug.settings.open` | `AppEvent::OpenSettings` 를 winit proxy 로 보낸다. 헤드리스엔 proxy 가 없다 |
+| `debug.settings.close` | 활성 설정 모달을 `self.view.views` 에서 지운다. 창이 없다 |
 | `debug.gpu.stall` | 렌더 스레드를 일부러 막아 stall 워치독을 시험한다. 막을 스레드가 없다 |
 | `debug.banner.*` (4) · `debug.host_popup.*` (3) · `debug.modifier_hint.*` (2) | host 위젯의 표시 상태다. 그릴 창이 없으면 상태 자체가 없다 |
 | `debug.tool.list` · `debug.tool.invoke` | 도구 메뉴는 창의 위젯이다 |

@@ -147,17 +147,14 @@ impl App {
             modal.focus_macos_permissions_tab();
         }
         #[cfg(debug_assertions)]
-        if let Some(tab_key) = self.state.pending_settings_tab.take()
-            && !modal.focus_tab(&tab_key)
         {
-            tracing::warn!("debug.settings.open: unknown settings tab '{tab_key}'");
-        }
-        // 상위 탭을 고른 뒤 하위 탭을 적용한다. 알 수 없는 키면 기본 선택을 유지한다.
-        #[cfg(debug_assertions)]
-        if let Some(subtab_key) = self.state.pending_settings_subtab.take()
-            && !modal.focus_subtab(&subtab_key)
-        {
-            tracing::warn!("debug.settings.open: unknown settings subtab '{subtab_key}'");
+            let tab = self.state.pending_settings_tab.take();
+            let subtab = self.state.pending_settings_subtab.take();
+            crate::app::ipc::warn_unknown_debug_tabs(
+                tab.as_deref(),
+                subtab.as_deref(),
+                modal.apply_debug_tabs(tab.as_deref(), subtab.as_deref()),
+            );
         }
     }
 }
