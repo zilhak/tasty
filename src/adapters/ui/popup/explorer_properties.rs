@@ -625,7 +625,8 @@ fn common_parent(paths: &[PathBuf]) -> String {
     parent.display().to_string()
 }
 
-fn kinds_text(files: usize, folders: usize) -> String {
+/// "2 files, 1 folder" 처럼 파일·폴더 수. 미리보기 패널의 여러 개 선택 머리도 쓴다.
+pub(crate) fn kinds_text(files: usize, folders: usize) -> String {
     let count = |n: usize, one: &str, many: &str| {
         if n == 1 {
             t(one).to_owned()

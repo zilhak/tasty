@@ -33,18 +33,18 @@ pub(super) enum Tone {
     Error,
 }
 
-pub(super) struct StateCell {
+pub(super) struct StateCell<'a> {
     pub(super) glyph: StateGlyph,
     pub(super) tone: Tone,
-    pub(super) title: &'static str,
-    pub(super) sub: Option<&'static str>,
+    pub(super) title: &'a str,
+    pub(super) sub: Option<&'a str>,
     /// 번역하지 않은 OS 이유 문구(mono caption).
-    pub(super) reason: Option<&'static str>,
+    pub(super) reason: Option<&'a str>,
     /// 버튼 줄(라벨, variant). 시안 Retry(secondary sm) · Go up(ghost sm).
     pub(super) actions: &'static [(&'static str, ButtonVariant)],
 }
 
-const STATES: &[StateCell] = &[
+const STATES: &[StateCell<'static>] = &[
     StateCell {
         glyph: StateGlyph::Icon(icons::FOLDER_OPEN),
         tone: Tone::Neutral,
@@ -153,7 +153,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
 }
 
 /// 내용 영역 상태 칸 하나 — 전시 칸 배경 위에 공용 상태 화면을 그린다.
-fn state_cell(ui: &mut egui::Ui, theme: &Theme, s: &StateCell, w: f32) {
+fn state_cell(ui: &mut egui::Ui, theme: &Theme, s: &StateCell<'_>, w: f32) {
     let (rect, _) = ui.allocate_exact_size(egui::vec2(w, STATE_H.value()), egui::Sense::hover());
     let radius = theme.corner_radius.value();
     ui.painter()
@@ -173,7 +173,7 @@ fn state_cell(ui: &mut egui::Ui, theme: &Theme, s: &StateCell, w: f32) {
 
 /// 받은 사각형 가운데에 상태 블록(글리프 · 제목 · 보조 줄 · 이유 줄 · 버튼 줄)을 그린다.
 /// 미리보기 패널 예제도 같은 블록을 쓴다.
-pub(super) fn state_block(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, s: &StateCell) {
+pub(super) fn state_block(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, s: &StateCell<'_>) {
     let muted = theme.text_muted().to_egui();
     let (glyph_color, title_color) = match s.tone {
         Tone::Neutral => (muted, theme.text_secondary().to_egui()),

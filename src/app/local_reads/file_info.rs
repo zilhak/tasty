@@ -28,7 +28,8 @@ pub(crate) enum TooLarge {
     /// 파일 크기가 `PREVIEW_MAX_BYTES` 를 넘는다.
     Bytes,
     /// 그림의 한 변이나 디코딩 메모리가 `MAX_IMAGE_SIDE`·`MAX_DECODE_ALLOC` 을 넘는다.
-    Pixels,
+    /// 머리글에서 읽은 원본 픽셀 크기를 함께 둔다. 머리글도 읽지 못했으면 `None` 이다.
+    Pixels(Option<[u32; 2]>),
 }
 
 /// 미리보기 패널 본문.
@@ -72,7 +73,9 @@ pub(super) fn read_preview(path: &Path, fit_width: u32) -> io::Result<PreviewDat
         ];
         return match decode(path, fit, Shrink::Triangle) {
             Ok((image, size)) => Ok(PreviewData::Image { image, size }),
-            Err(Decode::OverLimits) => Ok(PreviewData::TooLarge(TooLarge::Pixels)),
+            Err(Decode::OverLimits) => Ok(PreviewData::TooLarge(TooLarge::Pixels(
+                header_dimensions(path),
+            ))),
             Err(Decode::Io(error)) => Err(error),
         };
     }
@@ -116,6 +119,15 @@ pub(super) fn read_thumbnail(path: &Path) -> io::Result<egui::ColorImage> {
         Err(Decode::OverLimits) => Err(io::Error::other("over the image pixel limits")),
         Err(Decode::Io(error)) => Err(error),
     }
+}
+
+/// 디코딩하지 않고 머리글만 읽어 픽셀 크기를 얻는다. 상한을 넘은 그림의 실제 크기를 보이는 데 쓴다.
+fn header_dimensions(path: &Path) -> Option<[u32; 2]> {
+    let reader = image::ImageReader::open(path)
+        .ok()?
+        .with_guessed_format()
+        .ok()?;
+    reader.into_dimensions().ok().map(|(w, h)| [w, h])
 }
 
 enum Decode {
@@ -417,7 +429,7 @@ mod tests {
         write_png(&path, MAX_IMAGE_SIDE + 1, 1);
         assert!(matches!(
             read_preview(&path, PREVIEW_TEXTURE_SIDE),
-            Ok(PreviewData::TooLarge(TooLarge::Pixels))
+            Ok(PreviewData::TooLarge(TooLarge::Pixels(Some([w, 1])))) if w == MAX_IMAGE_SIDE + 1
         ));
         assert!(read_thumbnail(&path).is_err());
     }

@@ -1,7 +1,7 @@
 //! 목록 오른쪽 미리보기 패널. 시안 `YPreview`(갤러리 "Preview panel")를 따른다.
 //! 폭은 `explorer_preview_width`(288)에서 시작해 경계선을 끌어 `explorer_preview_min_width`…`max_width`
 //! 사이로 바꾸며 이 탐색기 동안 기억한다. 칸이 좁아 목록 최소 폭을 남기지 못하면 패널만 숨고 토글은 켜진 채다.
-//! 선택이 하나일 때 그 항목을 보인다. 새 선택은 이전 미리보기를 바로 지우고 읽기가 끝날 때까지 Loading 을 보인다.
+//! 선택이 하나일 때 그 항목을 보인다. 선택이 없으면 "Select a file", 여러 개면 개수와 하나를 고르라는 안내다. 새 선택은 이전 미리보기를 바로 지우고 읽기가 끝날 때까지 Loading 을 보인다.
 //! 읽기는 read worker 가 맡는다(`local_reads::preview`). 원격 탐색기는 파일 내용을 받을 경로가 없어
 //! 지원하지 않는 형식 상태를 보인다.
 
@@ -228,6 +228,16 @@ pub(super) fn split(
         })
         .flatten()
         .cloned();
+    let several = (view.selected.len() > 1).then(|| {
+        let folders = view
+            .shown()
+            .filter(|e| e.is_dir && view.selected.contains(&e.path))
+            .count();
+        Several {
+            count: view.selected.len(),
+            folders,
+        }
+    });
     let remote = view.is_remote();
     // 그림은 패널이 가장 넓을 때의 그림 영역 폭(아래 draw_panel 의 body.shrink(spacing_md))에 맞춰 worker 에서
     // 줄인다. 패널을 줄이면 GPU 가 그만큼만 더 줄인다.
@@ -242,7 +252,13 @@ pub(super) fn split(
             .layout(egui::Layout::top_down(egui::Align::Min)),
     );
     panel_ui.set_clip_rect(panel.intersect(ui.clip_rect()));
-    draw_panel(&mut panel_ui, theme, &mut view.preview, target.as_ref());
+    draw_panel(
+        &mut panel_ui,
+        theme,
+        &mut view.preview,
+        target.as_ref(),
+        several,
+    );
 
     let list = egui::Rect::from_min_max(full.min, egui::pos2(panel.left() - line, full.bottom()));
     let mut list_ui = ui.new_child(
@@ -254,10 +270,15 @@ pub(super) fn split(
     list_ui
 }
 
-/// 머리 두 줄: 이름(body, 말줄임)과 "종류 · [가로 × 세로 ·] 크기"(caption muted).
-fn header(ui: &egui::Ui, theme: &Theme, rect: egui::Rect, pane: &PreviewPane, e: &DirEntryInfo) {
-    let pad = theme.spacing_sm.value();
-    let inner_w = (rect.width() - pad * 2.0).max(0.0);
+/// 여러 개를 골랐을 때의 수. 선택은 보이는 항목에만 남으므로 폴더는 보이는 항목에서 센다.
+#[derive(Clone, Copy)]
+struct Several {
+    count: usize,
+    folders: usize,
+}
+
+/// 한 항목의 머리 두 줄: 이름과 "종류 · [가로 × 세로 ·] 크기".
+fn item_header(pane: &PreviewPane, e: &DirEntryInfo) -> (String, String) {
     let mut facts = super::type_label(e);
     if let Body::Image { size, .. } = &pane.body {
         facts = format!("{facts} · {} × {}", size[0], size[1]);
@@ -265,6 +286,22 @@ fn header(ui: &egui::Ui, theme: &Theme, rect: egui::Rect, pane: &PreviewPane, e:
     if !e.is_dir {
         facts = format!("{facts} · {}", human_size(false, e.size));
     }
+    (e.name.clone(), facts)
+}
+
+/// 여러 개를 골랐을 때의 머리 두 줄: "N items" 와 "2 files, 1 folder".
+fn several_header(several: Several) -> (String, String) {
+    let files = several.count.saturating_sub(several.folders);
+    (
+        t_fmt("explorer.properties.items", &several.count.to_string()),
+        crate::adapters::ui::popup::explorer_properties::kinds_text(files, several.folders),
+    )
+}
+
+/// 머리 두 줄: 이름(body, 말줄임)과 사실 줄(caption muted).
+fn header(ui: &egui::Ui, theme: &Theme, rect: egui::Rect, (name, facts): (String, String)) {
+    let pad = theme.spacing_sm.value();
+    let inner_w = (rect.width() - pad * 2.0).max(0.0);
     let line = |text: String, size: f32, color: egui::Color32| {
         let mut job =
             egui::text::LayoutJob::simple_singleline(text, egui::FontId::proportional(size), color);
@@ -273,7 +310,7 @@ fn header(ui: &egui::Ui, theme: &Theme, rect: egui::Rect, pane: &PreviewPane, e:
     };
     let primary = theme.text_primary().to_egui();
     let muted = theme.text_muted().to_egui();
-    let name = line(e.name.clone(), theme.font_size_body.value(), primary);
+    let name = line(name, theme.font_size_body.value(), primary);
     let facts = line(facts, theme.font_size_caption.value(), muted);
     let top = rect.center().y - (name.rect.height() + facts.rect.height()) / 2.0;
     let name_h = name.rect.height();
@@ -287,6 +324,7 @@ fn draw_panel(
     theme: &Theme,
     pane: &mut PreviewPane,
     target: Option<&DirEntryInfo>,
+    several: Option<Several>,
 ) {
     let rect = ui.max_rect();
     let p = ui.painter().clone();
@@ -298,7 +336,9 @@ fn draw_panel(
         theme.separator.to_egui_premultiplied(),
     );
     if let Some(e) = target {
-        header(ui, theme, head, pane, e);
+        header(ui, theme, head, item_header(pane, e));
+    } else if let Some(several) = several {
+        header(ui, theme, head, several_header(several));
     }
     p.hline(head.x_range(), head.bottom(), sep);
     let body = egui::Rect::from_min_max(egui::pos2(rect.left(), head.bottom()), rect.max);
@@ -346,13 +386,26 @@ fn draw_panel(
                     .paint_at(ui, shown);
             }
         }
-        Body::NoTarget => {
-            state_screen::show_preview_state(
+        Body::NoTarget => match several {
+            Some(several) => {
+                let title = several_title(several.count);
+                state_screen::show_preview_state(
+                    &mut body_ui,
+                    theme,
+                    state_screen::PreviewState::Sub(
+                        icons::LAYERS,
+                        &title,
+                        t("explorer.preview.multi_sub"),
+                        None,
+                    ),
+                );
+            }
+            None => state_screen::show_preview_state(
                 &mut body_ui,
                 theme,
                 state_screen::PreviewState::Plain(icons::FILE, t("explorer.select_file")),
-            );
-        }
+            ),
+        },
         Body::Loading => state_screen::show_preview_state(
             &mut body_ui,
             theme,
@@ -364,18 +417,22 @@ fn draw_panel(
             state_screen::PreviewState::Plain(icons::FILE, t("explorer.preview.unsupported")),
         ),
         Body::TooLarge(by) => {
-            let sub = match by {
-                TooLarge::Bytes => t_fmt("explorer.preview.too_large_sub", &max_too_large),
-                TooLarge::Pixels => t_fmt2(
-                    "explorer.preview.too_large_pixels_sub",
-                    &MAX_IMAGE_SIDE.to_string(),
-                    &format!("{} MB", MAX_DECODE_ALLOC >> 20),
+            let (sub, reason) = match by {
+                TooLarge::Bytes => (
+                    t_fmt("explorer.preview.too_large_sub", &max_too_large),
+                    None,
                 ),
+                TooLarge::Pixels(size) => (pixels_sub(), size.map(pixel_size_text)),
             };
             state_screen::show_preview_state(
                 &mut body_ui,
                 theme,
-                state_screen::PreviewState::Sub(icons::FILE, t("explorer.preview.too_large"), &sub),
+                state_screen::PreviewState::Sub(
+                    icons::FILE,
+                    t("explorer.preview.too_large"),
+                    &sub,
+                    reason.as_deref(),
+                ),
             )
         }
         Body::Error(reason) => state_screen::show_preview_state(
@@ -386,9 +443,45 @@ fn draw_panel(
     }
 }
 
+/// 여러 개 선택 제목. 번역문은 이름 붙은 `{n}` 자리로 개수를 받는다.
+fn several_title(count: usize) -> String {
+    t("explorer.preview.multi").replace("{n}", &count.to_string())
+}
+
+/// 픽셀 상한 보조 줄. 디코딩 메모리는 이진 단위 MiB 로 쓴다.
+fn pixels_sub() -> String {
+    t_fmt2(
+        "explorer.preview.too_large_pixels_sub",
+        &MAX_IMAGE_SIDE.to_string(),
+        &format!("{} MiB", MAX_DECODE_ALLOC >> 20),
+    )
+}
+
+/// 상한을 넘은 그림의 실제 크기 줄.
+fn pixel_size_text([w, h]: [u32; 2]) -> String {
+    format!("{w} × {h} px")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn several_selected_and_the_pixel_limit_have_their_own_lines() {
+        crate::i18n::init("en");
+        assert_eq!(several_title(3), "3 items selected");
+        let (name, facts) = several_header(Several {
+            count: 3,
+            folders: 1,
+        });
+        assert_eq!(name, t_fmt("explorer.properties.items", "3"));
+        assert_eq!(facts, "2 files, 1 folder");
+        assert_eq!(
+            pixels_sub(),
+            "Over 16384 px on a side, or needs more than 256 MiB to decode."
+        );
+        assert_eq!(pixel_size_text([20000, 14000]), "20000 × 14000 px");
+    }
 
     #[test]
     fn the_model_state_is_adopted_when_it_changes_and_user_changes_are_reported_once() {

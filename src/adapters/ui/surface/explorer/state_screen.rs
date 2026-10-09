@@ -232,7 +232,8 @@ fn tone_colors(theme: &Theme, tone: Tone) -> (egui::Color32, egui::Color32) {
 /// 미리보기 패널 본문의 상태. 시안 `YPreview` 가 목록 상태 화면(`ExpState`)을 그대로 쓴다.
 pub(super) enum PreviewState<'a> {
     Plain(Icon, &'a str),
-    Sub(Icon, &'a str, &'a str),
+    /// 글리프 · 제목 · 보조 줄 · 선택 이유 줄(mono, 번역하지 않은 값).
+    Sub(Icon, &'a str, &'a str, Option<&'a str>),
     Loading(&'a str),
     /// 제목과 번역하지 않은 OS 이유 문구.
     Error(&'a str, &'a str),
@@ -249,12 +250,12 @@ pub(super) fn show_preview_state(ui: &mut egui::Ui, theme: &Theme, state: Previe
             reason: None,
             actions: None,
         },
-        PreviewState::Sub(glyph, title, sub) => StateScreen {
+        PreviewState::Sub(glyph, title, sub, reason) => StateScreen {
             glyph: StateGlyph::Icon(glyph),
             tone: Tone::Neutral,
             title,
             sub: Some(sub),
-            reason: None,
+            reason,
             actions: None,
         },
         PreviewState::Loading(title) => StateScreen {

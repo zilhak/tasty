@@ -11,7 +11,7 @@ use super::explorer_view_cells::{Kind, grid_cell_parts};
 use crate::catalog::icons::{self, MockGlyph};
 use crate::catalog::spec::{StageVariant, TokenChip, cluster, meta, note, stage};
 use crate::catalog::widgets::dialog as kit;
-use crate::i18n::{t, t_fmt};
+use crate::i18n::{t, t_fmt, t_fmt2};
 
 /// 상태 패널 예제의 높이(시안 `height: 230`). 전시 칸 치수다.
 const PANEL_STAGE_H: LogicalPx = LogicalPx(230.0);
@@ -383,6 +383,8 @@ enum PreviewKind {
     None,
     Loading,
     Large,
+    Pixels,
+    Several,
     Error,
 }
 
@@ -395,6 +397,8 @@ fn preview_panel(ui: &mut egui::Ui, theme: &Theme, kind: PreviewKind, height: f3
         PreviewKind::Image => ("diagram.png", "PNG · 1280 × 720 · 488 KB"),
         PreviewKind::None => ("archive.zip", "Archive · 64 MB"),
         PreviewKind::Large => ("server.log", "Log · 38 MB"),
+        PreviewKind::Pixels => ("scan-poster.tif", "TIFF · 61.0 MB"),
+        PreviewKind::Several => ("3 items", "2 files, 1 folder"),
         PreviewKind::Error => ("private.key", "File · 3 KB"),
     };
     let w = theme.explorer_preview_width().value();
@@ -474,6 +478,8 @@ fn preview_panel(ui: &mut egui::Ui, theme: &Theme, kind: PreviewKind, height: f3
             );
         }
         _ => {
+            let pixels_sub = t_fmt2("explorer.preview.too_large_pixels_sub", "16384", "256 MiB");
+            let several = t("explorer.preview.multi").replace("{n}", "3");
             let cell = match kind {
                 PreviewKind::Loading => StateCell {
                     glyph: StateGlyph::Spinner,
@@ -488,6 +494,22 @@ fn preview_panel(ui: &mut egui::Ui, theme: &Theme, kind: PreviewKind, height: f3
                     tone: Tone::Neutral,
                     title: t("explorer.preview.too_large"),
                     sub: Some("Over 1 MB."),
+                    reason: None,
+                    actions: &[],
+                },
+                PreviewKind::Pixels => StateCell {
+                    glyph: StateGlyph::Icon(icons::FILE),
+                    tone: Tone::Neutral,
+                    title: t("explorer.preview.too_large"),
+                    sub: Some(&pixels_sub),
+                    reason: Some("20000 × 14000 px"),
+                    actions: &[],
+                },
+                PreviewKind::Several => StateCell {
+                    glyph: StateGlyph::Icon(icons::LAYERS),
+                    tone: Tone::Neutral,
+                    title: &several,
+                    sub: Some(t("explorer.preview.multi_sub")),
                     reason: None,
                     actions: &[],
                 },
@@ -523,6 +545,8 @@ pub fn draw_preview(ui: &mut egui::Ui, theme: &Theme) {
             ("not supported", PreviewKind::None),
             ("loading", PreviewKind::Loading),
             ("too large", PreviewKind::Large),
+            ("over the pixel limit", PreviewKind::Pixels),
+            ("several selected", PreviewKind::Several),
             ("unreadable", PreviewKind::Error),
         ] {
             cluster(ui, theme, label, |ui| preview_panel(ui, theme, kind, h));
@@ -556,6 +580,14 @@ pub fn draw_preview(ui: &mut egui::Ui, theme: &Theme) {
                 "Spinner · “Loading preview…” — the old preview is cleared first",
             ),
             ("too large", "> 1 MB (app limit) · “Too large to preview”"),
+            (
+                "pixel limit",
+                "same screen · “Over {px} px on a side, or needs more than {mem} to decode.” · reason = real size · MiB",
+            ),
+            (
+                "several",
+                "layers glyph · “{n} items selected” · “Select one file to preview it.” · none = “Select a file”",
+            ),
             ("unreadable", "error tone · OS reason (mono)"),
             (
                 "narrow cell",
