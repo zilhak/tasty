@@ -104,6 +104,16 @@ pub enum CreateFollowup {
     Prompt { kind: String },
 }
 
+/// 크기 동기화 실패 배너의 동작. 대상은 mirror 워크스페이스 ID다.
+#[cfg(feature = "gui")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AttachSizeSyncAction {
+    /// 실패한 요청을 다시 보낸다. 자동 재시도 없이 판정한다.
+    Retry { workspace_id: u32 },
+    /// 실패 목록을 비운다. 이후 새 실패는 다시 배너에 오른다.
+    Dismiss { workspace_id: u32 },
+}
+
 #[derive(Debug, Clone)]
 #[allow(clippy::large_enum_variant)] // reason: 명령마다 Box를 할당하는 비용을 피한다
 pub enum Intent {
@@ -115,6 +125,9 @@ pub enum Intent {
     },
     #[cfg(feature = "gui")]
     RemoteBrowser(crate::app::remote_browser::BrowserRequest),
+    /// mirror 크기 동기화 실패 배너의 버튼. App이 그 mirror 세션에 적용한다.
+    #[cfg(feature = "gui")]
+    AttachSizeSync(AttachSizeSyncAction),
     #[cfg(feature = "gui")]
     PatchSettings(crate::app::engine_action::SettingsPatch),
     #[cfg(feature = "gui")]

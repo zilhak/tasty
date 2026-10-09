@@ -10,6 +10,7 @@ pub(crate) mod tab_bar;
 pub(crate) mod titlebar;
 
 pub(crate) mod attach_notice;
+pub(crate) mod attach_size_sync;
 pub mod banner;
 pub(crate) mod category_actions;
 pub(crate) mod dialog;

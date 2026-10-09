@@ -137,6 +137,7 @@ impl App {
         if matches!(
             intent.body,
             Intent::RemoteBrowser(_)
+                | Intent::AttachSizeSync(_)
                 | Intent::PatchSettings(_)
                 | Intent::ForwardMirror { .. }
                 | Intent::Domain(_)
@@ -273,6 +274,7 @@ impl App {
             }
             Intent::CapturePreset { .. }
             | Intent::RemoteBrowser(_)
+            | Intent::AttachSizeSync(_)
             | Intent::PatchSettings(_)
             | Intent::ForwardMirror { .. }
             | Intent::Domain(_)

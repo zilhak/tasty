@@ -181,14 +181,39 @@ impl ResizeSync {
             .collect()
     }
 
-    /// 배너 닫기. 이후 새로 실패하면 다시 목록에 오른다.
+    /// 배너 닫기. 진행 중인 다시 시도는 계속 기다리되 배너에는 보이지 않는다.
+    /// 이후 새로 실패하면 다시 목록에 오른다.
     pub fn dismiss_failed(&mut self) {
         self.failed.clear();
+        for p in self.pending.values_mut() {
+            if p.attempt == Attempt::Manual {
+                // 자동 재시도와 판정이 같고 배너의 다시 시도 표시에서만 빠진다.
+                p.attempt = Attempt::AutoRetry;
+            }
+        }
     }
 
     /// 배너에 보일 실패 surface. 원격 ID 순이다.
     pub fn failed(&self) -> impl Iterator<Item = u32> + '_ {
         self.failed.keys().copied()
+    }
+
+    /// 배너에 이름이 보일 surface. 실패 목록과 다시 시도 중인 surface이며 원격 ID 순이다.
+    pub fn banner_surfaces(&self) -> Vec<u32> {
+        let mut ids: Vec<u32> = self
+            .failed
+            .keys()
+            .copied()
+            .chain(
+                self.pending
+                    .iter()
+                    .filter(|(_, p)| p.attempt == Attempt::Manual)
+                    .map(|(&id, _)| id),
+            )
+            .collect();
+        ids.sort_unstable();
+        ids.dedup();
+        ids
     }
 
     /// 배너의 다시 시도 응답을 기다리는 중인지.

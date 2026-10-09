@@ -210,3 +210,40 @@ fn a_late_confirmation_of_the_failed_size_clears_the_failure() {
         "밀린 요청이 늦게 확정되면 실패가 아니다"
     );
 }
+
+#[test]
+fn the_banner_keeps_retrying_surfaces_and_dismiss_hides_a_retry_in_flight() {
+    let (mut sync, t0) = acked();
+    for id in [S, S + 1] {
+        sync.note_sent(id, 80, 24, t0);
+    }
+    for resend in sync.take_due(t0 + RESIZE_ACK_TIMEOUT) {
+        sync.note_resent(resend, t0 + RESIZE_ACK_TIMEOUT);
+    }
+    let t1 = t0 + RESIZE_ACK_TIMEOUT * 2;
+    assert!(sync.take_due(t1).is_empty());
+    assert_eq!(sync.banner_surfaces(), vec![S, S + 1]);
+
+    sync.retry_failed(t1);
+    assert_eq!(
+        sync.banner_surfaces(),
+        vec![S, S + 1],
+        "다시 시도하는 동안에도 배너는 그 이름을 보인다"
+    );
+    sync.on_resize(S, 80, 24);
+    assert_eq!(sync.banner_surfaces(), vec![S + 1]);
+
+    sync.dismiss_failed();
+    assert!(sync.banner_surfaces().is_empty());
+    assert!(!sync.retrying(), "닫으면 다시 시도 표시도 사라진다");
+    assert!(
+        sync.next_deadline().is_some(),
+        "닫아도 진행 중인 요청은 계속 기다린다"
+    );
+    assert!(sync.take_due(t1 + RESIZE_ACK_TIMEOUT).is_empty());
+    assert_eq!(
+        sync.banner_surfaces(),
+        vec![S + 1],
+        "그 요청이 실패하면 배너가 다시 보인다"
+    );
+}

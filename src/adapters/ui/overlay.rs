@@ -50,6 +50,22 @@ pub(crate) fn draw_overlays(
     state
         .attach_notices
         .sync_banner(&mut state.banners, active_workspace);
+    let tab_name = |surface: u32| {
+        let layout = engine
+            .core
+            .workspace_at(draw_ctx.active_workspace)?
+            .pane_layout();
+        let tab = layout
+            .all_pane_ids()
+            .into_iter()
+            .filter_map(|id| layout.find_pane(id))
+            .flat_map(|pane| pane.tabs.iter())
+            .find(|tab| tab.contains_surface(surface))?;
+        Some(engine.tab_display_name(tab, Some(surface)))
+    };
+    state
+        .attach_size_syncs
+        .sync_banner(&mut state.banners, active_workspace, tab_name);
     let banner_result = state.banners.draw(
         ctx,
         draw_ctx,
@@ -76,6 +92,18 @@ pub(crate) fn draw_overlays(
                 .from_user_menu("attach_refusal_banner"),
             );
         }
+    }
+
+    if let Some((workspace_id, clicks)) = banner_result.attach_size_sync {
+        use crate::intent::AttachSizeSyncAction;
+        let action = if clicks.retry {
+            AttachSizeSyncAction::Retry { workspace_id }
+        } else {
+            AttachSizeSyncAction::Dismiss { workspace_id }
+        };
+        state.dispatch_intent(
+            crate::intent::Intent::AttachSizeSync(action).from_user_menu("attach_size_sync_banner"),
+        );
     }
 
     // 단축키 도움말은 키보드 포커스를 받지 않으며, 홀드 조합에 따라 표시 지연이 다르다.

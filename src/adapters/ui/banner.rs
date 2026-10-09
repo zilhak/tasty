@@ -8,8 +8,9 @@ use std::time::Instant;
 
 use tasty_remote::refusal::MappingNoticeKind;
 use tasty_ui_widgets::{
-    AttachRefusalBannerClicks, AttachRefusalBannerView, ControlSize, IconButton, IconButtonVariant,
-    attach_refusal_banner_content, banner_is_narrow, banner_shell,
+    AttachRefusalBannerClicks, AttachRefusalBannerView, AttachSizeSyncBannerClicks,
+    AttachSizeSyncBannerView, ControlSize, IconButton, IconButtonVariant,
+    attach_refusal_banner_content, attach_size_sync_banner_content, banner_is_narrow, banner_shell,
 };
 
 use crate::adapters::ui::icons;
@@ -57,6 +58,14 @@ pub enum BannerContentSource {
         anchor: u32,
         kind: MappingNoticeKind,
         target: String,
+    },
+    /// mirror 터미널 크기 동기화 실패. 다시 시도·닫기 버튼을 내용 안에 직접 둔다.
+    AttachSizeSync {
+        /// mirror 워크스페이스 ID.
+        anchor: u32,
+        /// 실패한 surface의 탭 제목.
+        names: Vec<String>,
+        retrying: bool,
     },
 }
 
@@ -133,6 +142,23 @@ impl BannerState {
         }
     }
 
+    /// mirror 터미널 크기 동기화 실패의 Workspace 배너. 사용자가 닫거나 실패가 풀릴 때까지 유지한다.
+    pub fn attach_size_sync(
+        scope: BannerScope,
+        anchor: u32,
+        names: Vec<String>,
+        retrying: bool,
+    ) -> Self {
+        Self {
+            content: BannerContentSource::AttachSizeSync {
+                anchor,
+                names,
+                retrying,
+            },
+            ..Self::persistent(defs::BANNER_ATTACH_SIZE_SYNC, scope)
+        }
+    }
+
     /// 플러그인 mesh 배너. TTL이 없으면 만료되지 않으며 height는 논리 좌표의 카드 높이다.
     pub fn plugin_mesh(
         scope: BannerScope,
@@ -158,9 +184,9 @@ impl BannerState {
 
     pub fn key(&self) -> BannerKey {
         match &self.content {
-            BannerContentSource::Host | BannerContentSource::AttachRefusal { .. } => {
-                BannerKey::Host(self.id)
-            }
+            BannerContentSource::Host
+            | BannerContentSource::AttachRefusal { .. }
+            | BannerContentSource::AttachSizeSync { .. } => BannerKey::Host(self.id),
             BannerContentSource::PluginMesh { instance_id, .. } => BannerKey::Plugin(*instance_id),
         }
     }
@@ -325,7 +351,9 @@ impl BannerManager {
                 .chain(lane.queue.iter())
                 .filter_map(|b| match &b.content {
                     BannerContentSource::PluginMesh { instance_id, .. } => Some(*instance_id),
-                    BannerContentSource::Host | BannerContentSource::AttachRefusal { .. } => None,
+                    BannerContentSource::Host
+                    | BannerContentSource::AttachRefusal { .. }
+                    | BannerContentSource::AttachSizeSync { .. } => None,
                 })
         })
     }
@@ -358,18 +386,28 @@ impl BannerManager {
 
     /// 연결하지 않은 매핑 배너를 `desired` 하나로 맞춘다. 같으면 그대로 두고, 다르면 모두 닫고 새로 넣는다.
     pub fn sync_attach_refusal(&mut self, desired: Option<BannerState>) {
+        self.sync_single(defs::BANNER_ATTACH_REFUSAL, desired);
+    }
+
+    /// 크기 동기화 실패 배너를 `desired` 하나로 맞춘다. 규칙은 매핑 배너와 같다.
+    pub fn sync_attach_size_sync(&mut self, desired: Option<BannerState>) {
+        self.sync_single(defs::BANNER_ATTACH_SIZE_SYNC, desired);
+    }
+
+    /// 종류 `id`의 배너를 `desired` 하나로 맞춘다. 같으면 그대로 두고, 다르면 모두 닫고 새로 넣는다.
+    fn sync_single(&mut self, id: BannerId, desired: Option<BannerState>) {
         let current: Vec<&BannerState> = self
             .scopes
             .values()
             .flat_map(|lane| lane.shown.iter().chain(lane.queue.iter()))
-            .filter(|b| b.id == defs::BANNER_ATTACH_REFUSAL)
+            .filter(|b| b.id == id)
             .collect();
         if current.len() == usize::from(desired.is_some())
             && current.first().copied() == desired.as_ref()
         {
             return;
         }
-        while self.close_by_id(defs::BANNER_ATTACH_REFUSAL) {}
+        while self.close_by_id(id) {}
         if let Some(banner) = desired {
             self.push(banner);
         }
@@ -469,6 +507,8 @@ pub struct BannerDrawResult {
     pub layer: egui::LayerId,
     /// 연결하지 않은 매핑 배너의 anchor와 이번 프레임의 클릭.
     pub attach_refusal: Option<(u32, AttachRefusalBannerClicks)>,
+    /// 크기 동기화 실패 배너의 mirror 워크스페이스와 이번 프레임의 클릭.
+    pub attach_size_sync: Option<(u32, AttachSizeSyncBannerClicks)>,
 }
 
 impl BannerManager {
@@ -504,6 +544,8 @@ impl BannerManager {
             mesh: Option<(String, u64, f32)>,
             /// 연결하지 않은 매핑 배너면 (anchor, 이유, 대상).
             refusal: Option<(u32, MappingNoticeKind, String)>,
+            /// 크기 동기화 실패 배너면 (mirror 워크스페이스, 이름, 다시 시도 중).
+            size_sync: Option<(u32, Vec<String>, bool)>,
             zone: egui::Rect,
             /// 스코프 폭이 `banner_narrow_below`보다 좁아 버튼을 글 아래 줄로 내리는지.
             narrow: bool,
@@ -522,7 +564,9 @@ impl BannerManager {
                     instance_id,
                     height,
                 } => Some((plugin_id.clone(), *instance_id, *height)),
-                BannerContentSource::Host | BannerContentSource::AttachRefusal { .. } => None,
+                BannerContentSource::Host
+                | BannerContentSource::AttachRefusal { .. }
+                | BannerContentSource::AttachSizeSync { .. } => None,
             };
             let refusal = match &banner.content {
                 BannerContentSource::AttachRefusal {
@@ -532,12 +576,21 @@ impl BannerManager {
                 } => Some((*anchor, *kind, target.clone())),
                 _ => None,
             };
+            let size_sync = match &banner.content {
+                BannerContentSource::AttachSizeSync {
+                    anchor,
+                    names,
+                    retrying,
+                } => Some((*anchor, names.clone(), *retrying)),
+                _ => None,
+            };
             slots.push(Slot {
                 scope: banner.scope.clone(),
                 key: banner.key(),
                 id: banner.id,
                 mesh,
                 refusal,
+                size_sync,
                 zone,
                 narrow: banner_is_narrow(scope_width, theme),
                 remaining_seconds: banner.remaining_seconds(),
@@ -554,6 +607,7 @@ impl BannerManager {
         let mut close_requests: Vec<BannerScope> = Vec::new();
         let mut more_clicked: Option<(BannerScope, egui::Rect)> = None;
         let mut attach_refusal: Option<(u32, AttachRefusalBannerClicks)> = None;
+        let mut attach_size_sync: Option<(u32, AttachSizeSyncBannerClicks)> = None;
         let mut mesh_drawn: Vec<PluginBannerMeshSlot> = Vec::new();
         // 이번 좌표로 교체해 사라진 배너를 제외한다. hover에는 직전 프레임 값을 쓴다.
         let mut next_card_rects: HashMap<(BannerScope, BannerKey), egui::Rect> = HashMap::new();
@@ -620,6 +674,31 @@ impl BannerManager {
                             }
                             if clicks.remove || clicks.dismiss {
                                 attach_refusal = Some((*anchor, clicks));
+                            }
+                            return;
+                        } else if let Some((anchor, names, retrying)) = &slot.size_sync {
+                            let names: Vec<&str> = names.iter().map(String::as_str).collect();
+                            let clicks = attach_size_sync_banner_content(
+                                ui,
+                                theme,
+                                &AttachSizeSyncBannerView {
+                                    title: crate::i18n::t("remote.size_sync.title"),
+                                    names_line: crate::i18n::t("remote.size_sync.names"),
+                                    hint: crate::i18n::t("remote.size_sync.hint"),
+                                    many: crate::i18n::t("remote.size_sync.many"),
+                                    names: &names,
+                                    retry: crate::i18n::t("remote.size_sync.retry"),
+                                    retry_all: crate::i18n::t("remote.size_sync.retry_all"),
+                                    dismiss: crate::i18n::t("remote.size_sync.dismiss"),
+                                    retrying: *retrying,
+                                    narrow: slot.narrow,
+                                },
+                            );
+                            if clicks.dismiss {
+                                close_requests.push(slot.scope.clone());
+                            }
+                            if clicks.retry || clicks.dismiss {
+                                attach_size_sync = Some((*anchor, clicks));
                             }
                             return;
                         } else if let Some(def) = defs::find(slot.id) {
@@ -744,6 +823,7 @@ impl BannerManager {
             more_clicked,
             layer: egui::LayerId::new(egui::Order::Foreground, egui::Id::new("banner_layer")),
             attach_refusal,
+            attach_size_sync,
         }
     }
 
@@ -882,6 +962,10 @@ pub mod defs {
     /// 자동 attach 매핑을 연결하지 않았을 때 그 워크스페이스에 표시한다. 내용은
     /// `BannerContentSource::AttachRefusal`이 그리므로 정적 정의 목록에는 없다.
     pub const BANNER_ATTACH_REFUSAL: BannerId = "attach-refusal";
+
+    /// mirror 터미널 크기 동기화가 자동 재시도 뒤에도 실패했을 때 그 워크스페이스에 표시한다.
+    /// 내용은 `BannerContentSource::AttachSizeSync`가 그리므로 정적 정의 목록에는 없다.
+    pub const BANNER_ATTACH_SIZE_SYNC: BannerId = "attach-size-sync";
 
     /// 출력이 있는데도 PromptBoundary를 받지 못하면 안내한다. 자동으로 설치하거나 수정하지 않는다.
     pub const BANNER_SHELL_INTEGRATION_MISSING: BannerId = "shell-integration-missing";

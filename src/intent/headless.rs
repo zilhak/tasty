@@ -198,6 +198,7 @@ fn route_non_domain(
         Intent::CommitDivider(_)
         | Intent::MouseCaptureHint { .. }
         | Intent::RemoteBrowser(_)
+        | Intent::AttachSizeSync(_)
         | Intent::PatchSettings(_)
         | Intent::Engine(_)
         | Intent::ForwardMirror { .. }

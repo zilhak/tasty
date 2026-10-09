@@ -42,6 +42,10 @@ impl App {
                 .remote_browser_request(source.engine(), request.clone())
                 .map_err(anyhow::Error::msg);
         }
+        if let Intent::AttachSizeSync(action) = &dispatched.body {
+            self.apply_attach_size_sync_action(*action, std::time::Instant::now());
+            return Ok(());
+        }
         if let Intent::CapturePreset {
             kind,
             source: target,

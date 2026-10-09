@@ -267,7 +267,8 @@ pub(super) fn handle_debug_banner_list(
                         })
                     }),
                 crate::adapters::ui::banner::BannerContentSource::Host
-                | crate::adapters::ui::banner::BannerContentSource::AttachRefusal { .. } => None,
+                | crate::adapters::ui::banner::BannerContentSource::AttachRefusal { .. }
+                | crate::adapters::ui::banner::BannerContentSource::AttachSizeSync { .. } => None,
             };
             json!({
                 "id": b.id,
