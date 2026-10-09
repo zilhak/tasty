@@ -86,7 +86,11 @@ pub(super) fn draw_extension_mapping(
     }
 
     if visible.is_empty() {
-        ui.label(t("settings.file_handler.extension_mapping.no_conflicts"));
+        ui.label(
+            egui::RichText::new(t("settings.file_handler.extension_mapping.no_conflicts"))
+                .size(th.font_size_caption.value())
+                .color(th.text_muted()),
+        );
     } else {
         for ext in &visible {
             draw_extension_row(ui, ext, draft_map, pending, file_format);

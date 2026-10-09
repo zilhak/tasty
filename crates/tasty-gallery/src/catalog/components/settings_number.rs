@@ -58,7 +58,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("width", "field_width_xs (90)"),
             (
                 "suffix",
-                "필드 밖 정적 텍스트, muted · 12(font_size_term_sm)",
+                "필드 밖 정적 텍스트, muted · caption 11(font_size_caption)",
             ),
             ("clamp", "확정(blur / ↵) 때만 — 치는 중엔 안 건드린다"),
             ("out of range", "danger 테두리 + 범위 한 줄"),
@@ -183,7 +183,7 @@ fn toast_row(ui: &mut egui::Ui, theme: &Theme, caption: &str, buf: &mut String) 
                 .show(ui, theme, buf);
             ui.label(
                 egui::RichText::new("s")
-                    .size(theme.font_size_term_sm.value())
+                    .size(theme.font_size_caption.value())
                     .color(theme.text_muted().to_egui()),
             );
         });
@@ -222,7 +222,7 @@ fn row(ui: &mut egui::Ui, theme: &Theme, caption: &str, buf: &mut String, enable
                     };
                     ui.label(
                         egui::RichText::new("%")
-                            .size(theme.font_size_term_sm.value())
+                            .size(theme.font_size_caption.value())
                             .color(muted),
                     );
                     Input::new()

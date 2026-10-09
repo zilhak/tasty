@@ -60,7 +60,9 @@ pub(super) fn draw_script_bindings(
     if settings.scripts.is_empty() {
         vspace(ui, th.spacing_sm);
         ui.label(
-            egui::RichText::new(t("settings.keybindings.scripts_empty")).color(th.text_disabled()),
+            egui::RichText::new(t("settings.keybindings.scripts_empty"))
+                .size(th.font_size_caption.value())
+                .color(th.text_muted()),
         );
         return;
     }

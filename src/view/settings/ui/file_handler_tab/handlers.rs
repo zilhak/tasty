@@ -31,7 +31,11 @@ pub(super) fn draw_handlers(
     let th = crate::theme::theme();
     let ids = file_handler.list_handlers();
     if ids.is_empty() {
-        ui.label(t("settings.file_handler.handlers.empty"));
+        ui.label(
+            egui::RichText::new(t("settings.file_handler.handlers.empty"))
+                .size(th.font_size_caption.value())
+                .color(th.text_muted()),
+        );
     } else {
         let mut rows: Vec<crate::file::handler::FileHandler> = ids
             .iter()

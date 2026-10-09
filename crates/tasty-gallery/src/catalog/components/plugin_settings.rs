@@ -99,7 +99,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                         }
                         ui.label(
                             egui::RichText::new("%")
-                                .size(theme.font_size_term_sm.value())
+                                .size(theme.font_size_caption.value())
                                 .color(theme.text_muted().to_egui()),
                         );
                     });

@@ -196,9 +196,9 @@ pub(super) fn number_field(
                 } else {
                     theme.text_disabled()
                 };
-                // 단위는 term_sm, 경고는 caption 글꼴 크기를 사용한다.
+                // 단위와 범위 경고 줄 모두 caption 글꼴 크기다.
                 let mut text = egui::RichText::new(sfx)
-                    .size(theme.font_size_term_sm.value())
+                    .size(theme.font_size_caption.value())
                     .color(ink);
                 if spec.suffix_mono {
                     text = text.monospace();

@@ -715,11 +715,11 @@ markdown 본 spec 은 Column · Solo · Wrap 세 무대이고, 제목 단계 견
 
 | 디자인 컴포넌트 | 본체 draw | 갤러리 specimen | 핵심 토큰 |
 |---|---|---|---|
-| `ScriptManager` (헤더+add card+list/empty) | `view/settings/ui/tabs/misc.rs::draw_scripts_subtab` | `catalog/components/script_manager.rs::draw`(list와 empty를 한 Spec에 나란히, `frame(empty)`) | 제목 `font-size-max`/semibold · 설명 `text-muted`/`measure-md` |
+| `ScriptManager` (헤더+add card+list/empty) | `view/settings/ui/tabs/misc.rs::draw_scripts_subtab` | `catalog/components/script_manager.rs::draw`(list와 empty를 한 Spec에 나란히, `frame(empty)`) | 제목 `font-size-max`/semibold · 설명 caption `text-muted`/`measure-md` |
 | `ScriptRow` (glyph/name/path/kbd/actions) | `draw_script_row` | specimen 내 `Row` | 행 하단 `separator` 보더 · name 13/600 `text-primary` |
 | `ScriptChangedBadge` | inline | inline | `accent-warning` color-mix(40% border/12% bg) · mono `font-size-micro`(10) + warn glyph 12 |
 | `TriggerRow` (Auto-run) | `draw_trigger_row` / `trigger_chip` | `trigger_row` / `trigger_chip` | "Auto-run:" caption `text-muted` · 칩 높이 16 · 안쪽 여백 0 `space-xs` · `border-default` · mono `font-size-micro` `text-secondary` + close 12 `text-muted` · Add trigger… 는 본체와 갤러리 모두 공용 `script_trigger_add_control`(`crates/tasty-ui-widgets/src/script_trigger.rs`): 점선 `border-default`(`border_dash` 4 / `border_dash_gap` 4, 곧은 변만, 모서리 실선) + chevronDown 12, `text-muted`. 메뉴가 열려 있으면 `overlay-active` 채움, 모든 이벤트가 걸려 있으면 숨기지 않고 disabled(`state-disabled-fg`, 툴팁 `settings.scripts.trigger_all_bound`). 남은 이벤트 메뉴는 `script_trigger_menu` — 폭 하한 `trigger_menu_min_width()` 200, `trigger_menu_max_height()` 220 넘으면 스크롤, 행은 `menu_item_height()` · 좌우 `space-sm` · mono micro `text-secondary`(hover `overlay-hover` · `text-primary`). 본체는 `popup_below_widget` + `with_popover_frame` 안에, 갤러리는 펼친 모습을 `script_trigger_menu_frame`(menu-bg · menu-border · menu-radius · shadow-popover · `popup_content_margin()`) 안에 그린다 |
-| `ScriptPath` (중간생략) | `draw_script_path` | inline `Path` | dir=`text-muted` ellipsis-first / file=`text-secondary` full · mono 12 |
+| `ScriptPath` (중간생략) | `draw_script_path` | inline `Path` | dir=`text-muted` ellipsis-first / file=`text-secondary` full · mono caption 11 |
 | Add card | inline | (list variant만) | `surface-raised` bg + `border-default` + `radius` · 라벨폭 100 · row `settings-row-min-height` |
 | Empty state | `draw_empty` → 공용 `CenterState` | `frame(empty)` (같은 위젯) | `SCRIPT` 글리프 `center-state-glyph-size`(24) + 제목 body 13 `center-state-title-fg` + 보조 caption `center-state-sub-fg` · `center-state-max-width`(300) 줄바꿈, 자연 높이 |
 
@@ -748,7 +748,7 @@ i18n 12키(`settings.misc.scripts` · `settings.scripts.{description,add,file,di
 | list wrapper (`padding: space-md space-lg`, gap space-sm) | list 클로저 `Frame::inner_margin(symmetric(lg, md))` | 인트로 `<p>`(12/muted/measure-md) = `intro_note` |
 | `<ListCtrl items selectedId={activeId}>` | `ListCtrl::show(..., active_idx)` | Active(사용 중) = draft 와 전 일반 바인딩 일치 프리셋. trailing `Tag`(success·dot) "Active" |
 | back bar `actions` = Apply(primary sm, disabled=Applied) | `DrillDownActions` 클로저 + `Button` | 클릭 신호는 `Cell` 로 회수 (`&dyn Fn` 불변 계약) |
-| `PresetDiffTable` (grid `minmax(0,1.6fr) 1fr 1fr`) | `draw_preset_diff_table` (수동 갤리 페인트) | 헤더 mono micro(10) uppercase muted + separator 헤어라인. 셀 padding space-sm/space-md. Action=body(13) text-secondary, 바인딩 2열=mono term-sm(12), 변경=`accent-primary`(색상만, bold 없음) |
+| `PresetDiffTable` (grid `minmax(0,1.6fr) 1fr 1fr`) | `draw_preset_diff_table` (수동 갤리 페인트) | 헤더 mono micro(10) uppercase muted + separator 헤어라인. 셀 padding space-sm/space-md. Action=body(13) text-secondary, 현재 바인딩 열=mono caption(11) muted, 바뀔 바인딩 열=mono term-sm(12), 변경=`accent-primary`(색상만, bold 없음) |
 | `fullBleed` (Keybindings›Preset 만 표준 래퍼 우회) | `ui.rs` content 디스패치 `full_bleed` 분기 | DrillDown 이 자체 패딩+내부 스크롤 소유 |
 
 헤더에는 별도 close ✕를 두지 않는다. 하단 Cancel과 OS 타이틀바로 닫으며, 갤러리 `components/settings.rs`의 L1 밴드도 같다.
@@ -834,7 +834,7 @@ L1 "File Handler" 를 **Handler** 로 일반화(내부 key `FileHandler` 유지)
 | `ExtensionMapping` (File Extension Mapping) | `view/settings/ui/file_handler_tab/extension_mapping.rs` | `catalog/components/settings_handler.rs::draw_extension_mapping` (Mocha·Latte 짝 여섯 — 빈 입력·`.toml` · custom+missing · 긴 번역 문구 · Save 전 대기 · 대기+긴 번역 문구, 시안처럼 세 Stage, 패널 바깥 폭 `--tasty-size-360`) | 위 mono `Input` + Add(`Button` secondary sm — 입력이 비었거나 그 확장자를 지원하는 detector가 없으면 disabled, Enter도 추가) · 확장자 머리줄(본체 `group_header`, 갤러리 `ext_group_header`): 위·아래 `space-xs`, 안쪽 최소 높이 `button-height-sm`, `.ext` mono `font-size-caption` `text-secondary`(미설치면 `text-disabled` + `tag_disabled` "not installed" + 아래 `separator`) · 오른쪽 끝 ghost `Button` sm — 사용자 순서가 있으면 Reset(툴팁), 미설치면 Remove · Save 전 대기(시안 `pendingRemove`·`pendingReset`): 누른 버튼 자리에 Undo, `tag_disabled` "reset on save"/"removed on save", Remove 대기는 `.ext` 취소선(색 `text-disabled` 유지) — 본체는 `extension_priority_pending` 에 누르기 전 초안 값을 맡겨 Undo 가 그 확장자만 되돌린다 · detector 행: 순번 mono caption `text-muted`(폭 `space-lg`) + 이름 `font-size-body` `text-secondary` + ▲▼ `IconButton` sm `chevronUp`/`chevronDown` · row `settings-row-min-height` + 하단 `separator` · ▲는 맨 위 행, ▼는 마지막 후보에서 disabled(숨기지 않음) · 비후보(꺼짐·미설치) 행은 이름 `text-disabled` + `tag_disabled` "off" + ▲▼ 모두 disabled |
 | `body()` File Detectors 분기 | `view/settings/ui/file_handler_tab/detectors.rs` | `::draw_detectors` | name 13 `text-secondary` + desc 12 `text-muted` · Switch 우측 |
 | `body()` File Handlers 분기 | `view/settings/ui/file_handler_tab/handlers.rs` | `::draw_file_handlers` | name 13 + `Tag`(kind) + Switch(marginLeft auto) |
-| `HookHandlers` (intro+add card+list) | `view/settings/ui/file_handler_tab/hook_handlers.rs::draw_hook_handlers` | `::draw_hook_handlers` | intro 12 `text-muted`/`measure-md` · add card `surface-raised`+`border-default`+`radius`, 라벨폭 100 |
+| `HookHandlers` (intro+add card+list) | `view/settings/ui/file_handler_tab/hook_handlers.rs::draw_hook_handlers` | `::draw_hook_handlers` | intro caption 11 `text-muted`/`measure-md` · add card `surface-raised`+`border-default`+`radius`, 라벨폭 100 |
 | `HookRow` (2줄 행) | `hook_handlers.rs::draw_hook_row` | specimen 내 `draw_hook_row` | id mono 13/600 `text-primary` · origin `Tag`(`host` · `you` · plugin id = `agent` variant) · `prio N` mono `font-size-micro` · 우측 끝은 user 행이면 휴지통 IconButton, 아니면 **자물쇠 글리프**(`glyph-dim` + tooltip) · disabled 시 row `state-dim-opacity` · 하단 `separator` · Shell cmd 라벨폭 74/`font-size-caption` + mono `Input`(IpcSequence 는 mono `font-size-term-sm` `text-secondary` 한 줄 요약 — 갤러리 `HookOverrideG` 행도 같다) |
 
 **전사 노트**:
@@ -942,7 +942,7 @@ General L1 의 4번째 L2 "Overlay" 의 한 행. 디자인: `gallery/overlays-sh
 
 | 디자인 jsx 컴포넌트 | 본체 함수 | 갤러리 항목 |
 |---|---|---|
-| `ToastDragValue`(설정 숫자 모양) | `src/view/settings/ui/tabs/overlay.rs::draw_overlay_tab` → `number::number_field`(`NumberSpec::int(1.0, 10.0).step(0.5).decimals(1)`, 단위 `s`) — mono `Input` `field_width_xs`(90) · 오른쪽 정렬 · 단위 term-sm text-muted · 확정(blur/↵) 때 범위 제한과 0.5 눈금 · 범위 밖이면 danger 테두리와 범위 한 줄 | `components/settings_number.rs::draw_toast_duration`(`settings-overlay-toast-duration` spec) — 평소 `2.0` · 범위 밖 `14` 두 상태와 Meta. 편집 중 상태는 공용 `Input` 의 포커스 테두리라 갤러리에서는 칸을 눌렀을 때 보인다. `SettingsGeneralOverlayFrame` 창 틀 전체는 옮기지 않았다 |
+| `ToastDragValue`(설정 숫자 모양) | `src/view/settings/ui/tabs/overlay.rs::draw_overlay_tab` → `number::number_field`(`NumberSpec::int(1.0, 10.0).step(0.5).decimals(1)`, 단위 `s`) — mono `Input` `field_width_xs`(90) · 오른쪽 정렬 · 단위 caption text-muted · 확정(blur/↵) 때 범위 제한과 0.5 눈금 · 범위 밖이면 danger 테두리와 범위 한 줄 | `components/settings_number.rs::draw_toast_duration`(`settings-overlay-toast-duration` spec) — 평소 `2.0` · 범위 밖 `14` 두 상태와 Meta. 편집 중 상태는 공용 `Input` 의 포커스 테두리라 갤러리에서는 칸을 눌렀을 때 보인다. `SettingsGeneralOverlayFrame` 창 틀 전체는 옮기지 않았다 |
 
 ## Settings › General › Remote transfer
 

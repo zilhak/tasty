@@ -49,6 +49,7 @@
   는 **열기 요청 래치**라 모달이 떠 있는 동안은 false 다 — 그 경로는 이 화면을 닫지 않는다.
 - **콘텐츠 컬럼 상한**: 스크롤하는 콘텐츠 컬럼은 `Theme::settings_content_max_width`(620)로 막힌다(`tasty_ui_widgets::settings_content_column`). 상한은 **그 컬럼 한 자리**에만 건다 — full-bleed 가 아닌 L2 서브탭이 전부 물려받으므로 블록이 저마다 폭을 들 필요가 없고, 블록마다 걸면 블록끼리 값이 갈린다. 창이 그보다 좁으면 남은 폭에 맞춘다(상한이지 최소폭이 아니다). 본문 산문이 쓰는 `measure_md`(400)는 용도가 다르다 — 읽는 줄 길이라 이 상한보다 좁고, 그대로 둔다.
 - **행 격자**: 서브탭의 설정 행은 라벨 열 · 컨트롤 격자다(`tasty_ui_widgets::SettingsRow`). 라벨 열은 그 서브탭에서 가장 긴 라벨 폭을 `settings_label_width`(150) … `settings_label_max_width`(240)로 clamp 한 값이며, 더 긴 라벨은 열 안에서 줄을 바꾼다. 라벨과 컨트롤 사이는 `settings_label_gap`(16), 행과 행 사이는 `settings_row_gap`(12)이다. 한 행에 딸린 설명과 경고 callout 은 그 행 아래 `settings_row_caption_gap`(4) 자리에 `measure_md` 폭으로 붙는다. Keybindings 의 General ~ Scripts 서브탭도 같은 라벨 칸과 같은 clamp 를 쓴다. 열 폭은 그 서브탭의 단축키 라벨과 quick-switch 행 라벨(Workspace·Tab), Scripts 는 스크립트 이름으로 잰다. 열보다 긴 라벨은 줄을 바꾸고 도움말 아이콘은 마지막 단어 뒤에 붙는다.
+- **설명·빈 줄 크기**: 행 caption, 서브탭 안내문, 숫자 칸의 단위, 패널 안의 빈 줄(목록이 비었음 · 필터 결과 없음 · 이 OS 에 없는 서브탭)은 caption 11(`font_size_caption`) · `text_muted` 다. 화면 전체를 차지하는 `CenterState`(Scripts 의 빈 목록 등)는 제목을 본문 13 으로 둔다.
 - **Keybindings › Preset · Import / Export**: 이 두 서브탭만 표준 패딩/스크롤 래퍼 없이 **full-bleed** drill-down(목록⇄상세 content-swap)으로 그려진다. 그래서 위 컬럼 상한도 안 받는다 — 컬럼 자체를 자기 레이아웃으로 대체한다. 상세: [`features/keybindings/`](../../keybindings/index.md#프리셋) · [가져오기 / 내보내기](../../keybindings/index.md#가져오기--내보내기).
 - **Keybindings › Import / Export 의 충돌 확인**: 가져오기 Apply 가 새 충돌을 만들면 설정 창 자체 popup(`keybinding_import_conflict`)이 뜬다 — Cancel · Overwrite, 키보드 Enter/Y = Overwrite, Esc/N = Cancel, 타이틀바 ✕ = Cancel.
 
@@ -59,8 +60,8 @@
 
 - **mono `Input`** — 폭 `field_width_xs`(90), **자릿수 우측 정렬**(열을 내려가며 자리가
   맞아야 두 값을 눈으로 견준다). 새 컴포넌트가 아니라 기존 `Input` 그대로다.
-- **단위는 필드 밖 정적 텍스트** — muted · 12(`font_size_term_sm`), 타이핑 대상이 아니다.
-  범위 경고 줄의 11(`font_size_caption`)과 **다른 자리**다. 단위가 없는 칸은 그 자리가
+- **단위는 필드 밖 정적 텍스트** — muted · caption 11(`font_size_caption`), 타이핑 대상이 아니다.
+  아래 범위 경고 줄도 같은 caption 크기다. 단위가 없는 칸은 그 자리가
   비어 있다. 원격 전송의 `MiB` 만 mono 다.
 - **clamp 는 확정 때만** — blur 와 `↵` 뿐이고, **치는 동안에는 값을 안 건드린다**. 25~200
   칸에 `150` 을 칠 때 첫 글자에서 값이 끌려가면 그 다음 글자를 못 친다.

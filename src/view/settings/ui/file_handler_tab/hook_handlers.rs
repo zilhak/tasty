@@ -180,7 +180,7 @@ pub(super) fn draw_hook_handlers(
                 ui.add(
                     egui::Label::new(
                         egui::RichText::new(t("settings.file_handler.hook_handlers.description"))
-                            .size(th.font_size_term_sm.value())
+                            .size(th.font_size_caption.value())
                             .color(th.text_muted()),
                     )
                     .wrap(),
@@ -210,7 +210,7 @@ pub(super) fn draw_hook_handlers(
     if rows.is_empty() && hh.add.is_empty() {
         ui.label(
             egui::RichText::new(t("settings.file_handler.hook_handlers.empty"))
-                .size(th.font_size_term_sm.value())
+                .size(th.font_size_caption.value())
                 .color(th.text_muted()),
         );
         return;

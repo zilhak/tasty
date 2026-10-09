@@ -190,7 +190,7 @@ fn header(ui: &mut egui::Ui, theme: &Theme) {
                          Binding a trigger is done in Keybindings; each script is verified \
                          against the SHA recorded when it was added.",
                     )
-                    .size(theme.font_size_term_sm.value())
+                    .size(theme.font_size_caption.value())
                     .color(theme.text_muted().to_egui()),
                 );
             },
@@ -299,19 +299,19 @@ fn script_row(ui: &mut egui::Ui, theme: &Theme, s: &Seed) {
     );
 }
 
-/// 경로 — dir(text-muted) + file(text-secondary), mono `font-size-term-sm`(12).
+/// 경로 — dir(text-muted) + file(text-secondary), mono `font-size-caption`(11).
 fn script_path(ui: &mut egui::Ui, theme: &Theme, dir: &str, file: &str) {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 0.0;
         ui.label(
             egui::RichText::new(dir)
-                .size(theme.font_size_term_sm.value())
+                .size(theme.font_size_caption.value())
                 .monospace()
                 .color(theme.text_muted().to_egui()),
         );
         ui.label(
             egui::RichText::new(file)
-                .size(theme.font_size_term_sm.value())
+                .size(theme.font_size_caption.value())
                 .monospace()
                 .color(theme.text_secondary().to_egui()),
         );

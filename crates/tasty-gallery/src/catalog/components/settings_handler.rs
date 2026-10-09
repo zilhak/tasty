@@ -518,7 +518,7 @@ pub fn draw_detectors(ui: &mut egui::Ui, theme: &Theme) {
                                     );
                                     ui.label(
                                         egui::RichText::new(*desc)
-                                            .size(theme.font_size_term_sm.value())
+                                            .size(theme.font_size_caption.value())
                                             .color(theme.text_muted().to_egui()),
                                     );
                                 });
@@ -815,7 +815,7 @@ fn draw_hook_content(ui: &mut egui::Ui, theme: &Theme, st: &mut HookState) {
                              own user mappings. The webhook listener (bind / port / secret) is \
                              configured separately.",
                         )
-                        .size(theme.font_size_term_sm.value())
+                        .size(theme.font_size_caption.value())
                         .color(theme.text_muted().to_egui()),
                     )
                     .wrap(),

@@ -176,7 +176,7 @@ pub fn draw_scripts_subtab(
                 ui.set_max_width(th.measure_md.value());
                 ui.label(
                     egui::RichText::new(t("settings.scripts.description"))
-                        .size(th.font_size_term_sm.value())
+                        .size(th.font_size_caption.value())
                         .color(th.text_muted()),
                 );
             });
@@ -561,14 +561,14 @@ fn trigger_chip(
 }
 
 /// 경로 중간생략 — 디렉토리 tail 이 먼저 ellipsis 로 잘리고 파일명은 항상 완전 표시.
-/// dir=`text-muted` / file=`text-secondary`, mono `font-size-term-sm`(12).
+/// dir=`text-muted` / file=`text-secondary`, mono `font-size-caption`(11).
 fn draw_script_path(ui: &mut egui::Ui, th: &tasty_type_appearance::theme::Theme, path: &str) {
     let sep = path.rfind(['/', '\\']);
     let (dir, file) = match sep {
         Some(i) => (&path[..=i], &path[i + 1..]),
         None => ("", path),
     };
-    let size = th.font_size_term_sm.value();
+    let size = th.font_size_caption.value();
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 0.0;
         // 파일명 폭을 먼저 확보하고, 디렉토리는 남는 폭에서 ellipsis 로 잘린다.

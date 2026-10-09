@@ -1567,6 +1567,7 @@ fn draw_l2_sidebar(
                     if !any && !filter_lc.is_empty() {
                         ui.label(
                             egui::RichText::new(t("settings.filter.no_matches"))
+                                .size(th.font_size_caption.value())
                                 .color(th.text_muted().to_egui()),
                         );
                     }
@@ -1753,6 +1754,7 @@ fn draw_active_content(
                     vspace(ui, th.spacing_xl);
                     ui.label(
                         egui::RichText::new(t("settings.misc.empty"))
+                            .size(th.font_size_caption.value())
                             .color(th.text_muted().to_egui()),
                     );
                 });
@@ -1868,7 +1870,9 @@ fn draw_misc_content(ui: &mut egui::Ui, draft: &mut Settings, ui_state: &mut Set
             ui.vertical_centered(|ui| {
                 vspace(ui, th.spacing_xl);
                 ui.label(
-                    egui::RichText::new(t("settings.misc.empty")).color(th.text_muted().to_egui()),
+                    egui::RichText::new(t("settings.misc.empty"))
+                        .size(th.font_size_caption.value())
+                        .color(th.text_muted().to_egui()),
                 );
             });
         }

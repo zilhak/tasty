@@ -293,13 +293,15 @@ fn diff_table(ui: &mut egui::Ui, th: &Theme, preset: &Preset) {
             for (action, cur, next) in preset.rows {
                 let changed = cur != next;
                 let mono = egui::FontId::monospace(th.font_size_term_sm.value());
+                // 현재 조합 열은 muted caption, 바뀔 조합 열은 12 다.
+                let cur_font = egui::FontId::monospace(th.font_size_caption.value());
                 let cells: [egui::WidgetText; 3] = [
                     egui::RichText::new(action)
                         .size(th.font_size_body.value())
                         .color(th.text_secondary().to_egui())
                         .into(),
                     egui::RichText::new(cur)
-                        .font(mono.clone())
+                        .font(cur_font)
                         .color(th.text_muted().to_egui())
                         .into(),
                     egui::RichText::new(next)

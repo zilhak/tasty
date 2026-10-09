@@ -30,7 +30,11 @@ pub(super) fn draw_detectors(
     let th = crate::theme::theme();
     let ids = file_format.list_detectors();
     if ids.is_empty() {
-        ui.label(t("settings.file_handler.detectors.empty"));
+        ui.label(
+            egui::RichText::new(t("settings.file_handler.detectors.empty"))
+                .size(th.font_size_caption.value())
+                .color(th.text_muted()),
+        );
     } else {
         egui::Grid::new("file_handler_detectors_grid")
             .num_columns(5)

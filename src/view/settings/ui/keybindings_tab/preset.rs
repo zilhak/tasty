@@ -148,13 +148,13 @@ pub(super) fn draw_preset_subtab(
     }
 }
 
-/// 안내문 — jsx `<p>` 전사: fontSize 12(muted), line-height ui, max-width measure-md.
+/// 안내문 — jsx `<p>` 전사: caption(muted), line-height ui, max-width measure-md.
 fn intro_note(ui: &mut egui::Ui, th: &Theme, text: &str) {
     ui.scope(|ui| {
         ui.set_max_width(th.measure_md.value());
         ui.label(
             egui::RichText::new(text)
-                .size(th.font_size_term_sm.value())
+                .size(th.font_size_caption.value())
                 .color(th.text_muted()),
         );
     });
@@ -241,6 +241,8 @@ fn draw_preset_diff_table(
         // ── 데이터 행 (padding: space-sm space-md, 하단 헤어라인) ──
         let action_font = egui::FontId::proportional(th.font_size_body.value());
         let mono_font = egui::FontId::monospace(th.font_size_term_sm.value());
+        // 현재 조합 열은 muted caption, 바뀔 조합 열은 12 다.
+        let cur_font = egui::FontId::monospace(th.font_size_caption.value());
         let content_h = ui.fonts(|f| f.row_height(&action_font).max(f.row_height(&mono_font)));
         let row_h = content_h + pad_y * 2.0;
 
@@ -259,7 +261,7 @@ fn draw_preset_diff_table(
                 (action, action_font.clone(), th.text_secondary().to_egui()),
                 (
                     fmt_bindings(cur_raw, general),
-                    mono_font.clone(),
+                    cur_font.clone(),
                     th.text_muted().to_egui(),
                 ),
                 (fmt_bindings(next_raw, general), mono_font.clone(), next_fg),
