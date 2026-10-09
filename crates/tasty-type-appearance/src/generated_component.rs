@@ -28,6 +28,18 @@ impl crate::theme::Theme {
         self.accent_warning()
     }
 
+    /// `component.attach-sync-glyph` → `{semantic.accent-warning}`
+    #[inline]
+    pub fn attach_sync_glyph(&self) -> HexColor {
+        self.accent_warning()
+    }
+
+    /// `component.attach-sync-name-max-width` → `{primitive.size-160}` = 160px
+    #[inline]
+    pub fn attach_sync_name_max_width(&self) -> LogicalPx {
+        LogicalPx((160.0 * self.ui_zoom).round())
+    }
+
     /// `component.autocomplete-empty-fg` → `{semantic.text-muted}`
     #[inline]
     pub fn autocomplete_empty_fg(&self) -> HexColor {
@@ -1312,6 +1324,42 @@ impl crate::theme::Theme {
         self.font_size_body
     }
 
+    /// `component.explorer-conflict-width` → `{primitive.size-400}` = 400px
+    #[inline]
+    pub fn explorer_conflict_width(&self) -> LogicalPx {
+        LogicalPx((400.0 * self.ui_zoom).round())
+    }
+
+    /// `component.explorer-drag-chip-max-width` → `{primitive.size-240}` = 240px
+    #[inline]
+    pub fn explorer_drag_chip_max_width(&self) -> LogicalPx {
+        LogicalPx((240.0 * self.ui_zoom).round())
+    }
+
+    /// `component.explorer-drag-copy-fg` → `{semantic.accent-success}`
+    #[inline]
+    pub fn explorer_drag_copy_fg(&self) -> HexColor {
+        self.accent_success()
+    }
+
+    /// `component.explorer-drag-move-fg` → `{semantic.accent-primary}`
+    #[inline]
+    pub fn explorer_drag_move_fg(&self) -> HexColor {
+        self.accent_primary()
+    }
+
+    /// `component.explorer-drag-refused-fg` → `{semantic.accent-danger}`
+    #[inline]
+    pub fn explorer_drag_refused_fg(&self) -> HexColor {
+        self.accent_danger()
+    }
+
+    /// `component.explorer-drop-target-border` → `{semantic.accent-primary}`
+    #[inline]
+    pub fn explorer_drop_target_border(&self) -> HexColor {
+        self.accent_primary()
+    }
+
     /// `component.explorer-error-fg` → `{semantic.accent-danger}`
     #[inline]
     pub fn explorer_error_fg(&self) -> HexColor {
@@ -1342,10 +1390,88 @@ impl crate::theme::Theme {
         LogicalPx((600.0 * self.ui_zoom).round())
     }
 
+    /// `component.explorer-grid-thumb-size` → `{primitive.size-40}` = 40px
+    #[inline]
+    pub fn explorer_grid_thumb_size(&self) -> LogicalPx {
+        LogicalPx((40.0 * self.ui_zoom).round())
+    }
+
+    /// `component.explorer-match-fg` → `{component.autocomplete-match-fg}`
+    #[inline]
+    pub fn explorer_match_fg(&self) -> HexColor {
+        self.autocomplete_match_fg()
+    }
+
     /// `component.explorer-min-height` → `{primitive.size-180}` = 180px
     #[inline]
     pub fn explorer_min_height(&self) -> LogicalPx {
         LogicalPx((180.0 * self.ui_zoom).round())
+    }
+
+    /// `component.explorer-name-error-fg` → `{semantic.accent-danger}`
+    #[inline]
+    pub fn explorer_name_error_fg(&self) -> HexColor {
+        self.accent_danger()
+    }
+
+    /// `component.explorer-preview-max-width` → `{primitive.size-460}` = 460px
+    #[inline]
+    pub fn explorer_preview_max_width(&self) -> LogicalPx {
+        LogicalPx((460.0 * self.ui_zoom).round())
+    }
+
+    /// `component.explorer-preview-min-width` → `{primitive.size-200}` = 200px
+    #[inline]
+    pub fn explorer_preview_min_width(&self) -> LogicalPx {
+        LogicalPx((200.0 * self.ui_zoom).round())
+    }
+
+    /// `component.explorer-preview-width` → `{primitive.size-288}` = 288px
+    #[inline]
+    pub fn explorer_preview_width(&self) -> LogicalPx {
+        LogicalPx((288.0 * self.ui_zoom).round())
+    }
+
+    /// `component.explorer-progress-fill` → `{semantic.accent-primary}`
+    #[inline]
+    pub fn explorer_progress_fill(&self) -> HexColor {
+        self.accent_primary()
+    }
+
+    /// `component.explorer-progress-height` → `{primitive.size-2}` = 2px
+    #[inline]
+    pub fn explorer_progress_height(&self) -> LogicalPx {
+        LogicalPx((2.0 * self.ui_zoom).round())
+    }
+
+    /// `component.explorer-progress-track` → `{semantic.surface-raised}`
+    #[inline]
+    pub fn explorer_progress_track(&self) -> HexColor {
+        self.surface_raised()
+    }
+
+    /// `component.explorer-props-label-width` → `{primitive.size-96}` = 96px
+    #[inline]
+    pub fn explorer_props_label_width(&self) -> LogicalPx {
+        LogicalPx((96.0 * self.ui_zoom).round())
+    }
+
+    /// `component.explorer-props-width` → `{primitive.size-360}` = 360px
+    #[inline]
+    pub fn explorer_props_width(&self) -> LogicalPx {
+        LogicalPx((360.0 * self.ui_zoom).round())
+    }
+
+    /// `component.explorer-search-bar-height` → `{primitive.size-36}` = 36px
+    #[inline]
+    pub fn explorer_search_bar_height(&self) -> LogicalPx {
+        LogicalPx((36.0 * self.ui_zoom).round())
+    }
+
+    /// `component.explorer-search-folder-col-width` → `{primitive.size-160}` = 160px
+    #[inline]
+    pub fn explorer_search_folder_col_width(&self) -> LogicalPx {
+        LogicalPx((160.0 * self.ui_zoom).round())
     }
 
     /// `component.explorer-sidebar-width` → `{primitive.size-196}` = 196px
@@ -1364,6 +1490,12 @@ impl crate::theme::Theme {
     #[inline]
     pub fn explorer_state_compact_below(&self) -> LogicalPx {
         LogicalPx((120.0 * self.ui_zoom).round())
+    }
+
+    /// `component.explorer-toolbar-compact-below` → `{primitive.size-440}` = 440px
+    #[inline]
+    pub fn explorer_toolbar_compact_below(&self) -> LogicalPx {
+        LogicalPx((440.0 * self.ui_zoom).round())
     }
 
     /// `component.fh-when-width` → `{primitive.size-56}` = 56px
@@ -1604,6 +1736,12 @@ impl crate::theme::Theme {
     #[inline]
     pub fn icon_button_size_sm(&self) -> LogicalPx {
         LogicalPx((24.0 * self.ui_zoom).round())
+    }
+
+    /// `component.image-error-fg` → `{semantic.accent-danger}`
+    #[inline]
+    pub fn image_error_fg(&self) -> HexColor {
+        self.accent_danger()
     }
 
     /// `component.image-handle-size` → `{primitive.size-6}` = 6px
@@ -3004,6 +3142,12 @@ impl crate::theme::Theme {
         self.spacing_xs
     }
 
+    /// `component.settings-row-gap` → `{semantic.space-md}` = 12px
+    #[inline]
+    pub fn settings_row_gap(&self) -> LogicalPx {
+        self.spacing_md
+    }
+
     /// `component.settings-row-min-height` → `{primitive.size-32}` = 32px
     #[inline]
     pub fn settings_row_min_height(&self) -> LogicalPx {
@@ -3140,6 +3284,12 @@ impl crate::theme::Theme {
     #[inline]
     pub fn spinner_track(&self) -> HexColor {
         self.surface_active()
+    }
+
+    /// `component.split-sibling-min-height` → `{primitive.size-56}` = 56px
+    #[inline]
+    pub fn split_sibling_min_height(&self) -> LogicalPx {
+        LogicalPx((56.0 * self.ui_zoom).round())
     }
 
     /// `component.status-dot-agent` → `{semantic.accent-agent}`

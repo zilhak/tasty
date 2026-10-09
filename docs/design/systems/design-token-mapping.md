@@ -113,6 +113,14 @@ surface 경계 30% 존을 hover 할 때 뜨는 밴드+분할선 색. accent-prim
 
 미리보기의 분할 영역 비율은 `SPLIT_ZONE_EDGE=0.3`(30%)이며 무차원 f32다. 길이인 `SPLIT_ZONE_MIN` 46px, 닫기 × 14px, 탭 추가 22px 등은 `demo_layout.rs`·`preset_editor.rs`의 LogicalPx 상수를 사용한다. egui에 넘기는 최종 좌표가 f32라는 이유로 내부 길이 타입 규칙에서 제외하지 않는다.
 
+## explorer drop target 채움
+
+`--tasty-explorer-drop-target-bg`는 accent-primary와 `transparent`를 tint-fill 비율로 섞는 식이라 생성기가 건너뛴다. preset split-zone과 같은 방식으로 accent의 rgb를 보존하고 알파만 낮추는 수기 접근자를 둔다.
+
+| 디자인 토큰 | 디자인 체인 | tasty Theme | 비고 |
+|---|---|---|---|
+| `--tasty-explorer-drop-target-bg` | `color-mix(accent-primary × tint-fill-alpha, transparent)` | `Theme::explorer_drop_target_bg()` = `accent_primary().with_alpha(31)` | 12%×255≈31. `EXPLORER_DROP_TARGET_BG_ALPHA`. 시험이 `TINT_FILL_ALPHA`의 반올림과 같은지 확인한다 |
+
 ## preset leaf value summary (preset-editor 미선택 leaf 값 요약)
 
 디자인 `tokens/components.css:335-339`·`tokens/tasty.tokens.json:2007-2023` 의

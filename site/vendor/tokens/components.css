@@ -1186,5 +1186,32 @@
   --tasty-kb-plugin-error-fg:       var(--tasty-accent-danger);        /* key parse error caption */
   --tasty-kb-plugin-draft-dot:      var(--tasty-accent-primary);       /* unsaved draft change on this command */
   --tasty-kb-plugin-draft-dot-size: var(--tasty-status-dot-size-compact); /* 6 */
+  /* 2026-10-09 (batch 9) — attach size sync · split sibling · image load failed · settings row gap · explorer file operations */
+  --tasty-attach-sync-glyph: var(--tasty-accent-warning); /* attach size-sync failure banner glyph (same tone as the refusal banner) */
+  --tasty-attach-sync-name-max-width: var(--tasty-size-160); /* one surface name in the banner body ellipsises here; fixed copy never cut */
+  --tasty-split-sibling-min-height: var(--tasty-size-56); /* a new split never leaves a non-explorer sibling under this (tab strip 28 + one 28 row); else refused */
+  --tasty-image-error-fg: var(--tasty-accent-danger); /* image canvas load-failed glyph + title (missing / decode) */
+  --tasty-settings-row-gap: var(--tasty-space-md); /* 12 between settings rows (was 8 in app, 14 literal in kit) */
+  --tasty-explorer-toolbar-compact-below: var(--tasty-size-440); /* cell width under which the toolbar file-command group folds into one More menu */
+  --tasty-explorer-name-error-fg: var(--tasty-accent-danger); /* new-item / inline-rename name error (border + message) */
+  --tasty-explorer-drop-target-border: var(--tasty-accent-primary); /* 1px inset ring on the folder row / cell / tree node / list body under a drag */
+  --tasty-explorer-drop-target-bg: color-mix(in srgb, var(--tasty-accent-primary) calc(var(--tasty-tint-fill-alpha) * 100%), transparent); /* drop target fill */
+  --tasty-explorer-drag-move-fg: var(--tasty-accent-primary); /* drag chip badge — move */
+  --tasty-explorer-drag-copy-fg: var(--tasty-accent-success); /* drag chip badge — copy */
+  --tasty-explorer-drag-refused-fg: var(--tasty-accent-danger); /* drag chip badge — refused */
+  --tasty-explorer-drag-chip-max-width: var(--tasty-size-240); /* drag chip next to the pointer */
+  --tasty-explorer-progress-height: var(--tasty-size-2); /* progress bar on the status line top edge */
+  --tasty-explorer-progress-track: var(--tasty-surface-raised); /* progress track */
+  --tasty-explorer-progress-fill: var(--tasty-accent-primary); /* progress fill (no animation; follows bytes) */
+  --tasty-explorer-conflict-width: var(--tasty-size-400); /* name-conflict popup (surface-scoped) */
+  --tasty-explorer-preview-width: var(--tasty-size-288); /* preview panel default width */
+  --tasty-explorer-preview-min-width: var(--tasty-size-200); /* preview splitter lower bound */
+  --tasty-explorer-preview-max-width: var(--tasty-size-460); /* preview splitter upper bound */
+  --tasty-explorer-grid-thumb-size: var(--tasty-size-40); /* Grid cell icon slot (all cells) — image thumbnails fit here */
+  --tasty-explorer-props-width: var(--tasty-size-360); /* Properties popup */
+  --tasty-explorer-props-label-width: var(--tasty-size-96); /* Properties field label column */
+  --tasty-explorer-search-bar-height: var(--tasty-size-36); /* filter / search bar under the toolbar */
+  --tasty-explorer-search-folder-col-width: var(--tasty-size-160); /* Detail “Folder” column in recursive results */
+  --tasty-explorer-match-fg: var(--tasty-autocomplete-match-fg); /* matched part of a name while filtering */
 }
 

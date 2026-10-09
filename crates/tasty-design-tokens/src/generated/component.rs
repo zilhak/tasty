@@ -13,6 +13,9 @@ pub mod attach {
 
     /// `component.attach-refusal-chip-size` → `{component.move-source-chip-size}` = 12px
     pub const REFUSAL_CHIP_SIZE: LogicalPx = super::move_source::CHIP_SIZE;
+
+    /// `component.attach-sync-name-max-width` → `{primitive.size-160}` = 160px
+    pub const SYNC_NAME_MAX_WIDTH: LogicalPx = crate::generated::primitive::SIZE_160;
 }
 
 pub mod autocomplete {
@@ -370,6 +373,12 @@ pub mod drilldown {
 pub mod explorer {
     use tasty_type_geometry::length::LogicalPx;
 
+    /// `component.explorer-conflict-width` → `{primitive.size-400}` = 400px
+    pub const CONFLICT_WIDTH: LogicalPx = crate::generated::primitive::SIZE_400;
+
+    /// `component.explorer-drag-chip-max-width` → `{primitive.size-240}` = 240px
+    pub const DRAG_CHIP_MAX_WIDTH: LogicalPx = crate::generated::primitive::SIZE_240;
+
     /// `component.explorer-favorites-hide-below` → `{primitive.size-240}` = 240px
     pub const FAVORITES_HIDE_BELOW: LogicalPx = crate::generated::primitive::SIZE_240;
 
@@ -385,14 +394,44 @@ pub mod explorer {
     /// `component.explorer-favorites-pin-threshold` → `{primitive.size-600}` = 600px
     pub const FAVORITES_PIN_THRESHOLD: LogicalPx = crate::generated::primitive::SIZE_600;
 
+    /// `component.explorer-grid-thumb-size` → `{primitive.size-40}` = 40px
+    pub const GRID_THUMB_SIZE: LogicalPx = crate::generated::primitive::SIZE_40;
+
     /// `component.explorer-min-height` → `{primitive.size-180}` = 180px
     pub const MIN_HEIGHT: LogicalPx = crate::generated::primitive::SIZE_180;
+
+    /// `component.explorer-preview-max-width` → `{primitive.size-460}` = 460px
+    pub const PREVIEW_MAX_WIDTH: LogicalPx = crate::generated::primitive::SIZE_460;
+
+    /// `component.explorer-preview-min-width` → `{primitive.size-200}` = 200px
+    pub const PREVIEW_MIN_WIDTH: LogicalPx = crate::generated::primitive::SIZE_200;
+
+    /// `component.explorer-preview-width` → `{primitive.size-288}` = 288px
+    pub const PREVIEW_WIDTH: LogicalPx = crate::generated::primitive::SIZE_288;
+
+    /// `component.explorer-progress-height` → `{primitive.size-2}` = 2px
+    pub const PROGRESS_HEIGHT: LogicalPx = crate::generated::primitive::SIZE_2;
+
+    /// `component.explorer-props-label-width` → `{primitive.size-96}` = 96px
+    pub const PROPS_LABEL_WIDTH: LogicalPx = crate::generated::primitive::SIZE_96;
+
+    /// `component.explorer-props-width` → `{primitive.size-360}` = 360px
+    pub const PROPS_WIDTH: LogicalPx = crate::generated::primitive::SIZE_360;
+
+    /// `component.explorer-search-bar-height` → `{primitive.size-36}` = 36px
+    pub const SEARCH_BAR_HEIGHT: LogicalPx = crate::generated::primitive::SIZE_36;
+
+    /// `component.explorer-search-folder-col-width` → `{primitive.size-160}` = 160px
+    pub const SEARCH_FOLDER_COL_WIDTH: LogicalPx = crate::generated::primitive::SIZE_160;
 
     /// `component.explorer-sidebar-width` → `{primitive.size-196}` = 196px
     pub const SIDEBAR_WIDTH: LogicalPx = crate::generated::primitive::SIZE_196;
 
     /// `component.explorer-state-compact-below` → `{primitive.size-120}` = 120px
     pub const STATE_COMPACT_BELOW: LogicalPx = crate::generated::primitive::SIZE_120;
+
+    /// `component.explorer-toolbar-compact-below` → `{primitive.size-440}` = 440px
+    pub const TOOLBAR_COMPACT_BELOW: LogicalPx = crate::generated::primitive::SIZE_440;
 }
 
 pub mod fh {
@@ -1067,6 +1106,9 @@ pub mod settings {
     /// `component.settings-row-caption-gap` → `{semantic.space-xs}` = 4px
     pub const ROW_CAPTION_GAP: LogicalPx = crate::generated::semantic::SPACE_XS;
 
+    /// `component.settings-row-gap` → `{semantic.space-md}` = 12px
+    pub const ROW_GAP: LogicalPx = crate::generated::semantic::SPACE_MD;
+
     /// `component.settings-row-min-height` → `{primitive.size-32}` = 32px
     pub const ROW_MIN_HEIGHT: LogicalPx = crate::generated::primitive::SIZE_32;
 
@@ -1132,6 +1174,13 @@ pub mod spinner {
 
     /// `component.spinner-size` → `{primitive.size-16}` = 16px
     pub const SIZE: LogicalPx = crate::generated::primitive::SIZE_16;
+}
+
+pub mod split {
+    use tasty_type_geometry::length::LogicalPx;
+
+    /// `component.split-sibling-min-height` → `{primitive.size-56}` = 56px
+    pub const SIBLING_MIN_HEIGHT: LogicalPx = crate::generated::primitive::SIZE_56;
 }
 
 pub mod status_dot {

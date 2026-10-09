@@ -4400,6 +4400,136 @@
     "kb-plugin-draft-dot-size": {
       "$type": "dimension",
       "$value": "{component.status-dot-size-compact}"
+    },
+    "attach-sync-glyph": {
+      "$type": "color",
+      "$value": "{semantic.accent-warning}",
+      "$description": "attach size-sync failure banner glyph (same tone as the refusal banner)"
+    },
+    "attach-sync-name-max-width": {
+      "$type": "dimension",
+      "$value": "{primitive.size-160}",
+      "$description": "one surface name in the banner body ellipsises here; fixed copy never cut"
+    },
+    "split-sibling-min-height": {
+      "$type": "dimension",
+      "$value": "{primitive.size-56}",
+      "$description": "a new split never leaves a non-explorer sibling under this (tab strip 28 + one 28 row); else refused"
+    },
+    "image-error-fg": {
+      "$type": "color",
+      "$value": "{semantic.accent-danger}",
+      "$description": "image canvas load-failed glyph + title (missing / decode)"
+    },
+    "settings-row-gap": {
+      "$type": "dimension",
+      "$value": "{semantic.space-md}",
+      "$description": "12 between settings rows (was 8 in app, 14 literal in kit)"
+    },
+    "explorer-toolbar-compact-below": {
+      "$type": "dimension",
+      "$value": "{primitive.size-440}",
+      "$description": "cell width under which the toolbar file-command group folds into one More menu"
+    },
+    "explorer-name-error-fg": {
+      "$type": "color",
+      "$value": "{semantic.accent-danger}",
+      "$description": "new-item / inline-rename name error (border + message)"
+    },
+    "explorer-drop-target-border": {
+      "$type": "color",
+      "$value": "{semantic.accent-primary}",
+      "$description": "1px inset ring on the folder row / cell / tree node / list body under a drag"
+    },
+    "explorer-drop-target-bg": {
+      "$type": "color",
+      "$value": "color-mix(in srgb, var(--tasty-accent-primary) calc(var(--tasty-tint-fill-alpha) * 100%), transparent)",
+      "$description": "drop target fill"
+    },
+    "explorer-drag-move-fg": {
+      "$type": "color",
+      "$value": "{semantic.accent-primary}",
+      "$description": "drag chip badge — move"
+    },
+    "explorer-drag-copy-fg": {
+      "$type": "color",
+      "$value": "{semantic.accent-success}",
+      "$description": "drag chip badge — copy"
+    },
+    "explorer-drag-refused-fg": {
+      "$type": "color",
+      "$value": "{semantic.accent-danger}",
+      "$description": "drag chip badge — refused"
+    },
+    "explorer-drag-chip-max-width": {
+      "$type": "dimension",
+      "$value": "{primitive.size-240}",
+      "$description": "drag chip next to the pointer"
+    },
+    "explorer-progress-height": {
+      "$type": "dimension",
+      "$value": "{primitive.size-2}",
+      "$description": "progress bar on the status line top edge"
+    },
+    "explorer-progress-track": {
+      "$type": "color",
+      "$value": "{semantic.surface-raised}",
+      "$description": "progress track"
+    },
+    "explorer-progress-fill": {
+      "$type": "color",
+      "$value": "{semantic.accent-primary}",
+      "$description": "progress fill (no animation; follows bytes)"
+    },
+    "explorer-conflict-width": {
+      "$type": "dimension",
+      "$value": "{primitive.size-400}",
+      "$description": "name-conflict popup (surface-scoped)"
+    },
+    "explorer-preview-width": {
+      "$type": "dimension",
+      "$value": "{primitive.size-288}",
+      "$description": "preview panel default width"
+    },
+    "explorer-preview-min-width": {
+      "$type": "dimension",
+      "$value": "{primitive.size-200}",
+      "$description": "preview splitter lower bound"
+    },
+    "explorer-preview-max-width": {
+      "$type": "dimension",
+      "$value": "{primitive.size-460}",
+      "$description": "preview splitter upper bound"
+    },
+    "explorer-grid-thumb-size": {
+      "$type": "dimension",
+      "$value": "{primitive.size-40}",
+      "$description": "Grid cell icon slot (all cells) — image thumbnails fit here"
+    },
+    "explorer-props-width": {
+      "$type": "dimension",
+      "$value": "{primitive.size-360}",
+      "$description": "Properties popup"
+    },
+    "explorer-props-label-width": {
+      "$type": "dimension",
+      "$value": "{primitive.size-96}",
+      "$description": "Properties field label column"
+    },
+    "explorer-search-bar-height": {
+      "$type": "dimension",
+      "$value": "{primitive.size-36}",
+      "$description": "filter / search bar under the toolbar"
+    },
+    "explorer-search-folder-col-width": {
+      "$type": "dimension",
+      "$value": "{primitive.size-160}",
+      "$description": "Detail “Folder” column in recursive results"
+    },
+    "explorer-match-fg": {
+      "$type": "color",
+      "$value": "{component.autocomplete-match-fg}",
+      "$description": "matched part of a name while filtering"
     }
   }
 }

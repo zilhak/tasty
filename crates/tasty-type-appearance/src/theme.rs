@@ -209,6 +209,10 @@ pub const DAG_MIX_45_ALPHA: u8 = 115;
 /// ([`DAG_MIX_45_ALPHA`] 와 같은 형태).
 pub const PLUGIN_AVATAR_BORDER_ALPHA: u8 = 97;
 
+/// design `--tasty-explorer-drop-target-bg` = accent-primary × tint-fill-alpha(12%) 와
+/// `transparent` 의 합성. 색은 그대로 두고 알파만 낮춘다(12%×255≈31).
+pub const EXPLORER_DROP_TARGET_BG_ALPHA: u8 = 31;
+
 /// 강조색으로 옅게 채우는 공통 비율. 알파 바이트가 아닌 계산용 f32 계수다.
 pub const TINT_FILL_ALPHA: f32 = 0.12;
 
@@ -1411,6 +1415,14 @@ impl Theme {
     pub fn preset_split_zone_border(&self) -> HexColor {
         self.accent_primary()
             .with_alpha(PRESET_SPLIT_ZONE_BORDER_ALPHA)
+    }
+
+    /// 드래그 중 놓을 수 있는 폴더 행·셀·트리 노드·목록 본문의 채움. design
+    /// `--tasty-explorer-drop-target-bg` ([`EXPLORER_DROP_TARGET_BG_ALPHA`]).
+    #[inline]
+    pub fn explorer_drop_target_bg(&self) -> HexColor {
+        self.accent_primary()
+            .with_alpha(EXPLORER_DROP_TARGET_BG_ALPHA)
     }
 
     // color-mix 식을 쓰는 DAG 토큰은 생성하지 않으므로 여기서 계산한다.
@@ -2754,6 +2766,18 @@ mod tests {
                 "{name} 의 alpha 가 디자인 알파({fraction})의 반올림({expected})과 다르다"
             );
         }
+    }
+
+    /// drop target 채움 알파는 tint-fill-alpha 계수를 바이트로 반올림한 값이다.
+    #[test]
+    fn explorer_drop_target_bg_alpha_follows_the_tint_fill_fraction() {
+        let expected = (TINT_FILL_ALPHA * 255.0).round() as u8;
+        assert_eq!(EXPLORER_DROP_TARGET_BG_ALPHA, expected);
+        let th = Theme::with_colors(distinct_colors(), false);
+        assert_eq!(
+            th.explorer_drop_target_bg(),
+            th.accent_primary().with_alpha(expected)
+        );
     }
 
     /// egui 변환이 음수 spread를 지원하지 않으므로 현재 토큰에서 사용하지 않는지 확인한다.
