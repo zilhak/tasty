@@ -131,7 +131,7 @@ fn hard_failures(report: &Report) -> usize {
     report
         .failed
         .iter()
-        .filter(|f| !matches!(f.reason, Reason::SourceNotRemoved(_)))
+        .filter(|f| !f.reason.leaves_original())
         .count()
 }
 
@@ -411,6 +411,7 @@ fn reason_text(reason: &Reason) -> String {
         Reason::Replaced => t("explorer.result.replaced").to_owned(),
         Reason::ChangedSince => t("explorer.result.changed_kept").to_owned(),
         Reason::CopyMissing => t("explorer.result.copy_missing").to_owned(),
+        Reason::KeptNotInCopy(n) => t_fmt("explorer.result.kept_not_in_copy", &n.to_string()),
     }
 }
 

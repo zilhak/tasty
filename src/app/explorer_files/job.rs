@@ -275,6 +275,16 @@ pub(crate) enum Reason {
     ChangedSince,
     /// 남은 원본을 다시 지우려는데 사본이 없거나 다른 종류로 바뀌었다. 원본을 남긴다.
     CopyMissing,
+    /// 폴더 원본을 다시 지우며 사본에 없는 항목(이동 뒤 넣거나 바꾼 것)을 이 수만큼 남겼다.
+    /// 사본은 온전하고, 남은 원본은 다시 시도할 수 있다.
+    KeptNotInCopy(usize),
+}
+
+impl Reason {
+    /// 사본은 온전하고 원본이 남은 이동 항목인가. 이런 항목은 다시 옮기지 않고 원본 삭제만 다시 한다.
+    pub(crate) fn leaves_original(&self) -> bool {
+        matches!(self, Self::SourceNotRemoved(_) | Self::KeptNotInCopy(_))
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -347,7 +357,7 @@ impl Report {
     pub(crate) fn retryable(&self) -> Vec<PathBuf> {
         self.failed
             .iter()
-            .filter(|f| !matches!(f.reason, Reason::SourceNotRemoved(_)))
+            .filter(|f| !f.reason.leaves_original())
             .map(|f| f.path.clone())
             .chain(self.skipped.iter().cloned())
             .collect()

@@ -212,3 +212,26 @@ fn a_retried_delete_names_an_original_kept_because_the_copy_is_gone() {
     assert!(text.leftovers.is_empty());
     assert_eq!(text.retry, [PathBuf::from("/a")]);
 }
+
+/// 폴더 원본에서 사본에 없는 항목을 남겼으면 원본이 남은 경고로 보이고, 원본 삭제만 다시 할 수 있다.
+#[test]
+fn a_folder_original_with_items_kept_stays_a_source_left_card() {
+    let mut r = report(OpKind::Move, 1, 1);
+    r.undo.clear();
+    r.failed = vec![failure("/a", Reason::KeptNotInCopy(2))];
+    r.leftovers = vec![leftover("/a")];
+    assert!(!result_is_timed(&r));
+    let text = card_text(&card(r));
+    assert_eq!(text.kind, ToastKind::Warning);
+    assert_eq!(
+        text.title,
+        t_args("explorer.result.source_left_move", &["1", "1", "1"])
+    );
+    assert_eq!(
+        text.lines[0].1,
+        t_fmt("explorer.result.kept_not_in_copy", "2")
+    );
+    assert!(text.retry.is_empty(), "the folder is not moved again");
+    assert_eq!(labels(&text)[0], t_fmt("explorer.result.retry", "1"));
+    assert!(!text.undo);
+}

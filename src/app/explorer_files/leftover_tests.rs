@@ -219,3 +219,196 @@ fn retry_removes_an_unchanged_original_file() {
     assert!(source.symlink_metadata().is_err());
     assert!(copy.exists());
 }
+
+/// 같은 내용의 폴더 둘(원본·사본)을 만든다. 원본 일부가 이미 지워진 이동 뒤의 모습이다.
+struct Twin {
+    _dir: tempfile::TempDir,
+    source: PathBuf,
+    copy: PathBuf,
+}
+
+impl Twin {
+    fn new() -> Self {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let source = dir.path().join("src").join("payload");
+        let copy = dir.path().join("dst").join("payload");
+        for root in [&source, &copy] {
+            std::fs::create_dir_all(root.join("sub")).expect("mkdir");
+            std::fs::write(root.join("a.txt"), "a").expect("write");
+            std::fs::write(root.join("sub").join("b.txt"), "b").expect("write");
+        }
+        Self {
+            _dir: dir,
+            source,
+            copy,
+        }
+    }
+    fn retry(&self) -> Report {
+        let left = Leftover::before_remove(&self.source, &self.copy);
+        run_remove_leftovers(&shared(), None, &[left])
+    }
+    fn assert_copy_untouched(&self) {
+        assert_eq!(names(&self.copy), ["a.txt", "sub"]);
+        assert_eq!(names(&self.copy.join("sub")), ["b.txt"]);
+    }
+}
+
+/// 사본과 같은 항목만 남은 폴더 원본은 통째로 지운다.
+#[test]
+fn retry_removes_a_folder_original_that_matches_the_copy() {
+    let twin = Twin::new();
+    let report = twin.retry();
+    assert_eq!((report.done, report.failed.len()), (1, 0));
+    assert!(twin.source.symlink_metadata().is_err());
+    twin.assert_copy_untouched();
+}
+
+/// 이동 뒤 원본 폴더에 넣은 파일은 사본에 없으므로 남기고, 남긴 수를 알리며 다시 시도할 수 있다.
+#[test]
+fn retry_keeps_a_file_added_to_a_folder_original_after_the_move() {
+    let twin = Twin::new();
+    std::fs::write(twin.source.join("new.txt"), "added later").expect("write");
+    let report = twin.retry();
+    assert_eq!(
+        report.failed,
+        [Failure {
+            path: twin.source.clone(),
+            reason: Reason::KeptNotInCopy(1),
+        }]
+    );
+    assert_eq!(
+        report.done, 1,
+        "the copy is whole, so the move counts as done"
+    );
+    assert_eq!(report.leftovers.len(), 1, "the rest can be retried");
+    assert!(
+        report.retryable().is_empty(),
+        "the folder is not moved again"
+    );
+    assert_eq!(names(&twin.source), ["new.txt"]);
+    twin.assert_copy_untouched();
+
+    // 사용자가 남은 파일을 치우면 다시 시도에서 폴더까지 지운다.
+    std::fs::remove_file(twin.source.join("new.txt")).expect("remove");
+    let again = run_remove_leftovers(&shared(), None, &report.leftovers);
+    assert_eq!((again.done, again.failed.len()), (1, 0));
+    assert!(twin.source.symlink_metadata().is_err());
+}
+
+/// 크기가 달라진 파일은 이동 뒤 고친 것으로 보고 남긴다.
+#[test]
+fn retry_keeps_a_file_changed_inside_a_folder_original() {
+    let twin = Twin::new();
+    std::fs::write(twin.source.join("a.txt"), "edited after the move").expect("edit");
+    let report = twin.retry();
+    assert!(matches!(
+        report.failed.as_slice(),
+        [Failure {
+            reason: Reason::KeptNotInCopy(1),
+            ..
+        }]
+    ));
+    assert_eq!(names(&twin.source), ["a.txt"]);
+    assert_eq!(
+        std::fs::read_to_string(twin.source.join("a.txt")).expect("read"),
+        "edited after the move"
+    );
+    twin.assert_copy_untouched();
+}
+
+/// 하위 폴더 안에 넣은 파일도 남기고, 그 파일을 담은 하위 폴더도 남는다.
+#[test]
+fn retry_keeps_a_file_added_inside_a_subfolder_of_the_original() {
+    let twin = Twin::new();
+    std::fs::write(twin.source.join("sub").join("new.txt"), "added").expect("write");
+    let report = twin.retry();
+    assert!(matches!(
+        report.failed.as_slice(),
+        [Failure {
+            reason: Reason::KeptNotInCopy(1),
+            ..
+        }]
+    ));
+    assert_eq!(names(&twin.source), ["sub"]);
+    assert_eq!(names(&twin.source.join("sub")), ["new.txt"]);
+    twin.assert_copy_untouched();
+}
+
+/// 사본에 없는 하위 폴더는 통째로 남기고 하나로 센다.
+#[test]
+fn retry_keeps_a_subfolder_added_to_the_original_as_one_item() {
+    let twin = Twin::new();
+    std::fs::create_dir_all(twin.source.join("later").join("deep")).expect("mkdir");
+    std::fs::write(twin.source.join("later").join("deep").join("x"), "x").expect("write");
+    let report = twin.retry();
+    assert!(matches!(
+        report.failed.as_slice(),
+        [Failure {
+            reason: Reason::KeptNotInCopy(1),
+            ..
+        }]
+    ));
+    assert_eq!(names(&twin.source), ["later"]);
+    assert_eq!(names(&twin.source.join("later").join("deep")), ["x"]);
+}
+
+/// 링크는 따라가지 않고 링크 자체로 비교한다. 대상이 같은 링크만 지우고, 링크가 가리키는 것은
+/// 건드리지 않는다. 대상이 바뀐 링크와, 사본에서는 파일인 자리의 링크는 남긴다.
+#[cfg(unix)]
+#[test]
+fn retry_compares_links_as_links() {
+    use std::os::unix::fs::symlink;
+    let twin = Twin::new();
+    let outside = twin.source.parent().unwrap().join("outside.txt");
+    std::fs::write(&outside, "not part of the move").expect("write");
+    for root in [&twin.source, &twin.copy] {
+        symlink(&outside, root.join("same")).expect("link");
+        symlink("sub", root.join("to-sub")).expect("link");
+    }
+    symlink("a.txt", twin.source.join("retarget")).expect("link");
+    symlink("sub", twin.copy.join("retarget")).expect("link");
+    symlink("a.txt", twin.source.join("was-file")).expect("link");
+    std::fs::write(twin.copy.join("was-file"), "a").expect("write");
+    let report = twin.retry();
+    assert!(matches!(
+        report.failed.as_slice(),
+        [Failure {
+            reason: Reason::KeptNotInCopy(2),
+            ..
+        }]
+    ));
+    assert_eq!(names(&twin.source), ["retarget", "was-file"]);
+    assert_eq!(
+        std::fs::read_to_string(&outside).expect("read"),
+        "not part of the move"
+    );
+    assert!(twin.copy.join("same").symlink_metadata().is_ok());
+}
+
+/// 원본이 링크 하나면 사본 링크와 대상이 같을 때만 지운다.
+#[cfg(unix)]
+#[test]
+fn retry_keeps_a_link_original_whose_target_changed() {
+    use std::os::unix::fs::symlink;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let (source, copy) = (dir.path().join("l"), dir.path().join("c"));
+    symlink("a", &source).expect("link");
+    symlink("a", &copy).expect("link");
+    let left = Leftover::before_remove(&source, &copy);
+    std::fs::remove_file(&source).expect("unlink");
+    symlink("b", &source).expect("relink");
+    let report = run_remove_leftovers(&shared(), None, std::slice::from_ref(&left));
+    assert!(matches!(
+        report.failed.as_slice(),
+        [Failure {
+            reason: Reason::ChangedSince,
+            ..
+        }]
+    ));
+    std::fs::remove_file(&source).expect("unlink");
+    symlink("a", &source).expect("relink");
+    let report = run_remove_leftovers(&shared(), None, &[left]);
+    assert_eq!((report.done, report.failed.len()), (1, 0));
+    assert!(source.symlink_metadata().is_err());
+    assert!(copy.symlink_metadata().is_ok());
+}
