@@ -162,7 +162,7 @@ When it finishes, a result card appears at the bottom right of the Explorer. Car
 - **Copy paths** — copies the card's paths to the clipboard.
 - **Undo** — shown while the card is up, after a copy or move that fully finished. Moved items go back (unless something else now sits there), and copies go to the trash. A copy you edited after the job is kept. Files you replaced can't be restored.
 
-If a move across disks can't delete all of the original (for example a subfolder you can't write to), a warning card says the original was left in place, whole or in part, and stays until you close it. The copy is then the complete data, so there is no Undo. Clean up what is left of the original yourself.
+If a move across disks can't delete all of the original (for example a subfolder you can't write to), a warning card says the original is still there, in whole or in part, and stays until you close it. The copy is then the complete data, so there is no Undo. Clean up what is left of the original yourself.
 
 ## Markdown
 

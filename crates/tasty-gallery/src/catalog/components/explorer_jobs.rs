@@ -438,6 +438,82 @@ pub fn draw_results(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
+/// 다른 디스크로 옮기다 원본이 남은 카드와, Undo 가 바뀐 사본을 남긴 카드. 동작 버튼은 본체
+/// `card_actions` 와 같다 — 원본이 남은 항목은 다시 시도 대상이 아니라 Copy paths 만 붙는다.
+pub fn draw_source_left(ui: &mut egui::Ui, theme: &Theme) {
+    let close = glyph_painter(icons::CLOSE);
+    let w = theme.toast_max_width().value();
+    let copy_paths = t("explorer.result.copy_paths");
+    let copy_only = [ResultAction {
+        label: copy_paths,
+        variant: ButtonVariant::Ghost,
+    }];
+    let denied = t_fmt(
+        "explorer.result.source_not_removed",
+        "Permission denied (os error 13)",
+    );
+    let in_use = t_fmt(
+        "explorer.result.source_not_removed",
+        "Device or resource busy (os error 16)",
+    );
+    let left_title = t_args("explorer.result.source_left_move", &["40", "40", "2"]);
+    let undo_title = t_fmt("explorer.result.undo_partial_copy", "1");
+    let left_lines = [
+        ResultLine {
+            path: "~/Volumes/usb/photos/2026-09",
+            reason: &denied,
+        },
+        ResultLine {
+            path: "~/Volumes/usb/archive.zip",
+            reason: &in_use,
+        },
+    ];
+    let kept_lines = [ResultLine {
+        path: "~/Documents/notes.md",
+        reason: t("explorer.result.changed_kept"),
+    }];
+    spec::stage(ui, theme, StageVariant::Column, |ui| {
+        ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
+        for (title, lines) in [
+            (left_title.as_str(), &left_lines[..]),
+            (undo_title.as_str(), &kept_lines[..]),
+        ] {
+            result_card(
+                ui,
+                theme,
+                w,
+                &ResultCardProps {
+                    kind: ToastKind::Warning,
+                    title,
+                    lines,
+                    more: None,
+                    actions: &copy_only,
+                    dismiss_tip: t("explorer.result.dismiss"),
+                },
+                &close,
+            );
+        }
+    });
+    spec::meta(
+        ui,
+        theme,
+        &[
+            ("source left", "warning · stays · no Undo · Copy paths"),
+            ("title", "explorer.result.source_left_move"),
+            ("line", "explorer.result.source_not_removed · reason in ( )"),
+            (
+                "undo kept",
+                "explorer.result.changed_kept on the undo result line",
+            ),
+        ],
+        &[TokenChip::new(
+            "toast-accent-warning",
+            "both",
+            theme.toast_accent_warning().to_egui(),
+        )],
+    );
+}
+
 pub fn draw_drag(ui: &mut egui::Ui, theme: &Theme) {
     let items = t_fmt("explorer.drag.items", "3");
     let move_to = t_fmt("explorer.drag.move_to", "Archive");
@@ -564,7 +640,7 @@ pub fn draw_drag(ui: &mut egui::Ui, theme: &Theme) {
 }
 
 /// explorer 절에 더하는 파일 작업 예제들. 동결된 catalog.rs 를 늘리지 않도록 여기에 둔다.
-pub fn specs() -> [crate::catalog::Spec; 4] {
+pub fn specs() -> [crate::catalog::Spec; 5] {
     use crate::catalog::Spec;
     [
         Spec {
@@ -584,6 +660,12 @@ pub fn specs() -> [crate::catalog::Spec; 4] {
             title: "Results — done · cancelled · partial · failed · trash · undo",
             when: Some("cards inside the cell · failures stay until dismissed"),
             draw: draw_results,
+        },
+        Spec {
+            id: "explorer-ops-results-source-left",
+            title: "Results — originals left after a cross-disk move · Undo kept a changed copy",
+            when: Some("warning · stays until dismissed · no Undo"),
+            draw: draw_source_left,
         },
         Spec {
             id: "explorer-ops-drag",
