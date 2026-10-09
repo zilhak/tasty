@@ -87,7 +87,16 @@ const PAIRS: &[(&str, &str)] = &[
 ];
 
 /// 앱에만 있는 아이콘. 사이트 사본에도 추가되면 PAIRS로 옮긴다.
-const APP_ONLY: &[&str] = &["arrow_down", "arrow_right", "minus", "redo", "undo"];
+const APP_ONLY: &[&str] = &[
+    "arrow_down",
+    "arrow_right",
+    "file_plus",
+    "folder_plus",
+    "info",
+    "minus",
+    "redo",
+    "undo",
+];
 
 /// 채운 글리프 — 사이트 `FILL_GLYPHS` 와 앱 `fill_icon!` 이 같은 집합을 가리켜야 한다.
 /// 사이트 이름으로 적는다.

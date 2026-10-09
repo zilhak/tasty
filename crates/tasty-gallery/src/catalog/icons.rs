@@ -68,6 +68,13 @@ const SURFACES: &[Entry] = &[
     (FOLDER, "folder", "folder / workspace"),
     (FOLDER_OPEN, "folderOpen", "folder / workspace (open state)"),
     (FILE, "file", "file leaf"),
+    (
+        FOLDER_PLUS,
+        "folderPlus",
+        "new folder (explorer toolbar / menu)",
+    ),
+    (FILE_PLUS, "filePlus", "new file (explorer toolbar / menu)"),
+    (INFO, "info", "properties / information"),
     (REMOTE, "remote", "remote connection"),
     (PORT, "port", "listening port / target"),
     (LAYERS, "layers", "layout presets / stacked layers"),

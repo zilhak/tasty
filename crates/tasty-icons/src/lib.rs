@@ -199,6 +199,18 @@ stroke_icon!(
     "file",
     r#"<path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z"/>"#
 );
+// explorer 도구 막대·메뉴의 새 폴더(design `folderPlus`).
+stroke_icon!(
+    FOLDER_PLUS,
+    "folder_plus",
+    r#"<path d="M4 20h16a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1h-7l-2-2H4a1 1 0 0 0-1 1v13a1 1 0 0 0 1 1z"/><path d="M12 10v6M9 13h6"/>"#
+);
+// explorer 도구 막대·메뉴의 새 파일(design `filePlus`).
+stroke_icon!(
+    FILE_PLUS,
+    "file_plus",
+    r#"<path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z"/><path d="M12 11v6M9 14h6"/>"#
+);
 stroke_icon!(
     IMAGE,
     "image",
@@ -338,6 +350,12 @@ stroke_icon!(
     HELP_CIRCLE,
     "help_circle",
     r#"<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>"#
+);
+// 속성·정보(design `info`).
+stroke_icon!(
+    INFO,
+    "info",
+    r#"<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>"#
 );
 // 마우스 캡처 배너 leading 글리프.
 stroke_icon!(
