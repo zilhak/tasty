@@ -612,8 +612,9 @@ impl Plugin for MarkdownPlugin {
             render::NavIntent::Refresh if is_remote => {
                 self.request_remote_content(ctx.surface_id, RemoteRequester::Plugin)
             }
-            // 버튼은 mirror 문서에만 그려진다 — 로컬 문서에 온 것은 이 plugin 이 낸 것이 아니다.
-            render::NavIntent::Refresh => {}
+            // 로컬 문서에서는 대용량 대기 상태의 "Open file…" 버튼만 이 요청을 낸다. 명시적
+            // reload 와 같은 경로로 대용량 확인을 다시 띄운다. 그 밖의 로컬 문서에 온 것은 무시한다.
+            render::NavIntent::Refresh => self.open_deferred_local(ctx.surface_id),
             // mirror 문서의 파일 링크와 주소창 경로는 원격 호스트의 것이라 이 머신에서 열 수
             // 없다. 외부 URL 만 연다.
             render::NavIntent::Link(dest) if is_remote => {
@@ -709,6 +710,18 @@ impl MarkdownPlugin {
         // 다시 읽은 것으로 오인한다.
         let deferred = self.docs.get(&surface_id).is_some_and(|d| d.pending_large);
         Ok(json!({ "ok": true, "surface_id": surface_id, "deferred": deferred }))
+    }
+
+    /// 대용량 대기 상태의 "Open file…" 버튼. 명시적 reload 와 같은 경로로 확인을 다시 띄운다.
+    /// 대기 상태가 아닌 로컬 문서는 버튼이 없으므로 무시한다.
+    fn open_deferred_local(&mut self, surface_id: u32) {
+        if self
+            .docs
+            .get(&surface_id)
+            .is_some_and(MdDoc::shows_large_deferred)
+        {
+            self.reload_local(surface_id, ReloadOrigin::Explicit);
+        }
     }
 
     /// 로컬 문서를 대용량 확인을 거쳐 다시 읽고 화면을 갱신한다.

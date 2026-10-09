@@ -857,6 +857,44 @@ fn a_deferred_large_document_is_not_shown_as_empty() {
     assert!(!html.contains(deferred));
 }
 
+/// 대기 상태 블록은 "Open file…" 버튼을 싣고, 그 버튼은 새로고침 nav 를 보낸다.
+#[test]
+fn the_deferred_state_carries_an_open_file_button() {
+    let tr = Translator::default();
+    let html = deferred_state_document("", None, true);
+    assert!(html.contains(r#"<button class="tasty-state-action" type="button">"#));
+    assert!(html.contains(tr.t("markdown.state.large_deferred_open")));
+    assert!(html.contains(".tasty-state-action{"));
+    assert!(
+        html.contains("querySelector('.tasty-state-action')"),
+        "버튼이 nav 요청을 보내야 한다"
+    );
+    let html = deferred_state_document("", None, false);
+    assert!(!html.contains(r#"class="tasty-state-action""#));
+}
+
+/// 버튼은 취소한 대기 문서를 명시적 reload 경로로 보낸다. 대기 상태가 아닌 문서는 다시 읽지 않는다.
+#[test]
+fn the_open_file_button_reloads_only_a_deferred_document() {
+    let path = temp_md("open-deferred", b"# small now");
+    let file = path.to_string_lossy().into_owned();
+    let mut p = MarkdownPlugin::new(Translator::default());
+    p.docs.insert(14, MdDoc::new_deferred(Some(file.clone())));
+    // 확인 팝업이 열려 있는 동안에는 겹쳐 묻지 않는다.
+    p.open_deferred_local(14);
+    assert!(p.docs[&14].content.is_empty());
+    p.on_large_confirm_closed(14);
+    p.open_deferred_local(14);
+    assert!(!p.docs[&14].pending_large);
+    assert!(p.docs[&14].content.contains("small now"));
+
+    p.docs.insert(15, MdDoc::new(Some(file)));
+    std::fs::write(&path, b"# changed").unwrap();
+    p.open_deferred_local(15);
+    assert!(p.docs[&15].content.contains("small now"));
+    let _ = std::fs::remove_file(&path); // best-effort 정리 — 실패 무시(테스트 결과 무관).
+}
+
 /// 처음 열 때와 취소한 뒤에는 대기 상태를, 커진 파일을 묻는 동안에는 이전 내용을 보인다.
 #[test]
 fn the_deferred_state_is_shown_only_without_previous_content() {

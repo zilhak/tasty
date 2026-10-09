@@ -32,7 +32,7 @@
   | 4 | 대용량 확인 대기 또는 취소이고 보일 이전 내용이 없음(`shows_large_deferred`). 읽어 둔 파일이 커져 확인을 기다리는 동안에는 이전 내용을 그대로 보인다 | `markdown.state.large_deferred` | `.tasty-state` |
   | 5 | 원문이 공백뿐 | `markdown.state.empty` | `.tasty-state` |
 
-  대용량 대기 상태는 빈 파일 상태와 같은 배치·색에 문구만 다르다. 이 상태에서 다시 열기 버튼은 그리지 않는다.
+  대용량 대기 상태는 빈 파일 상태와 같은 배치·색에 문구가 다르고, 문구 아래 space-sm 에 secondary sm 버튼 `<button class="tasty-state-action">`(`markdown.state.large_deferred_open`, "Open file…")을 둔다. 버튼의 높이·여백·글자 크기·색·hover/active 는 Theme 의 Button 토큰(sm 높이 `item_height_tab`, 좌우 space-sm, caption, button-secondary-bg·border, button-fg, overlay)을 CSS 로 주입한 값이다. 버튼은 파일을 바로 읽지 않는다. 새로고침과 같은 `#tasty-nav:refresh:<nonce>` 를 보내고, 플러그인은 그 문서가 대기 상태일 때만 명시적 reload 경로로 대용량 확인을 다시 띄운다. 확인 팝업이 아직 열려 있으면 겹쳐 띄우지 않는다. attach mirror 문서는 대용량 확인을 거치지 않으므로 이 상태가 없다.
 
 ## Mermaid 다이어그램
 

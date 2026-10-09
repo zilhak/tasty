@@ -47,7 +47,8 @@ pub enum NavIntent {
     Link(String),
     /// The address bar's Go action (click or Enter) fired — `path` is the input's raw value.
     Addr(String),
-    /// attach mirror 문서의 새로고침 버튼이 눌렸다 — 원격 원문을 다시 요청한다.
+    /// attach mirror 문서의 새로고침 버튼이나 대용량 대기 상태의 "Open file…" 버튼이 눌렸다.
+    /// mirror 는 원격 원문을 다시 요청하고, 로컬 대기 문서는 대용량 확인을 다시 띄운다.
     Refresh,
 }
 
@@ -140,10 +141,12 @@ pub(crate) fn render_document(input: DocumentInput) -> String {
             Vec::new(),
         )
     } else if large_deferred {
+        // 버튼은 파일을 바로 읽지 않고 reload 경로로 대용량 확인을 다시 띄운다.
         (
             format!(
-                r#"<div class="tasty-state">{}</div>"#,
-                html_escape(tr.t("markdown.state.large_deferred"))
+                r#"<div class="tasty-state"><div>{}</div><button class="tasty-state-action" type="button">{}</button></div>"#,
+                html_escape(tr.t("markdown.state.large_deferred")),
+                html_escape(tr.t("markdown.state.large_deferred_open"))
             ),
             Vec::new(),
         )
@@ -1526,6 +1529,9 @@ li input[type=checkbox]{{margin-right:0.4em;}}
 .tasty-state{{padding:var(--md-space-md);color:{muted};}}
 .tasty-state-title{{font-size:var(--md-font-body);font-weight:600;color:{danger};}}
 .tasty-state-detail{{color:{muted};white-space:pre-wrap;}}
+.tasty-state-action{{display:block;margin-top:var(--md-space-sm);height:{btn_sm_h}px;padding:0 {btn_sm_pad_x}px;border:var(--md-border-w) solid {btn_secondary_border};border-radius:{btn_radius}px;background:{btn_secondary_bg};color:{btn_fg};font-family:inherit;font-size:{btn_sm_font}px;cursor:pointer;}}
+.tasty-state-action:hover{{border-color:{btn_secondary_border_hover};background-image:linear-gradient({btn_overlay_hover},{btn_overlay_hover});}}
+.tasty-state-action:active{{background-image:linear-gradient({btn_overlay_active},{btn_overlay_active});}}
 "#,
         fg = theme.text_secondary().to_hex(),
         strong = theme.text_primary().to_hex(),
@@ -1577,6 +1583,16 @@ li input[type=checkbox]{{margin-right:0.4em;}}
             .with_alpha(FIND_HIT_BG_ALPHA)
             .to_hex(),
         find_current_bg = theme.accent_primary().to_hex(),
+        btn_sm_h = theme.item_height_tab.value(),
+        btn_sm_pad_x = theme.spacing_sm.value(),
+        btn_sm_font = theme.font_size_caption.value(),
+        btn_radius = theme.button_radius().value(),
+        btn_secondary_bg = theme.button_secondary_bg().to_hex(),
+        btn_secondary_border = theme.button_secondary_border().to_hex(),
+        btn_secondary_border_hover = theme.button_secondary_border_hover().to_hex(),
+        btn_fg = theme.button_fg().to_hex(),
+        btn_overlay_hover = theme.button_overlay_hover().unpremultiplied().to_hex(),
+        btn_overlay_active = theme.button_overlay_active().unpremultiplied().to_hex(),
         find_current_fg = theme.text_on_accent().to_hex(),
         accent = theme.accent_primary().to_hex(),
         on_accent = theme.text_on_accent().to_hex(),
@@ -1695,6 +1711,8 @@ location.hash='tasty-nav:addr:'+encodeURIComponent(v);
 if(g)g.addEventListener('click',go);
 var r=document.getElementById('tasty-refresh');
 if(r)r.addEventListener('click',function(){{location.hash='tasty-nav:refresh:'+Date.now();}});
+var o=document.querySelector('.tasty-state-action');
+if(o)o.addEventListener('click',function(){{location.hash='tasty-nav:refresh:'+Date.now();}});
 if(i)i.addEventListener('keydown',function(e){{if(e.key==='Enter')go();}});
 var toc=document.getElementById('tasty-toc');
 var tocToggle=document.getElementById('tasty-toc-toggle');

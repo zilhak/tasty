@@ -20,6 +20,7 @@ markdown = "Markdown"
 failed = "読み込みに失敗しました"
 empty = "このファイルは空です"
 large_deferred = "1MBを超えるファイルのため、まだ読み込んでいません"
+large_deferred_open = "ファイルを開く…"
 
 [markdown.image]
 failed = "画像を読み込めませんでした"

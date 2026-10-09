@@ -8,7 +8,7 @@ mod document;
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::Spinner;
+use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, Spinner};
 
 pub use callout_kinds::spec as callout_kinds_spec;
 pub use css_path::{content_colour_spec, heading_hierarchy_spec};
@@ -78,6 +78,22 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 ));
             });
         });
+        // 대용량 확인을 취소한 뒤의 대기 상태. 버튼은 파일을 바로 읽지 않고 확인을 다시 띄운다.
+        spec::cluster(ui, theme, "over 1 MB — deferred", |ui| {
+            tile(ui, theme, |ui| {
+                ui.label(rich(
+                    theme,
+                    "This file is larger than 1 MB and has not been loaded",
+                    theme.font_size_body.value(),
+                    theme.text_muted().to_egui(),
+                ));
+                ui.add_space(theme.spacing_sm.value());
+                Button::new("Open file…")
+                    .variant(ButtonVariant::Secondary)
+                    .size(ControlSize::Sm)
+                    .show(ui, theme);
+            });
+        });
         spec::cluster(ui, theme, "loading", |ui| {
             tile(ui, theme, |ui| {
                 Spinner::new()
@@ -143,6 +159,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("link", "accent-primary · nav-fragment intercepted"),
             ("table", "real <table> — header band + zebra + padding"),
             ("states", "failed=accent-danger · empty=muted"),
+            (
+                "deferred",
+                "line muted · Button secondary sm “Open file…” below at space-sm · raises the 1 MB confirm again",
+            ),
             (
                 "callouts",
                 "blockquote + collapsible details — md-quote-bar-width bar · type fill at tint-fill-alpha · 16px icon · radius · marker → icon → label 4 each (md-callout-icon-gap) · chevron marker md-callout-marker-size, right closed / down open",

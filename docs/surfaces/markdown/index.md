@@ -118,6 +118,7 @@
 - Given `tasty list surfaces` Then 해당 surface 가 `kind:"markdown"` 으로 보고된다.
 - Given 대용량 확인을 취소한 markdown surface When 그 파일이 바뀐다 Then 감시가 파일을 읽지 않는다. When `tasty markdown reload --surface <ID>`를 부른다 Then 확인 팝업이 다시 뜨고 응답의 `deferred`가 `true`다.
 - Given 대용량 확인 팝업 When 취소·Esc·바깥 클릭으로 닫는다 Then 본문 자리에 "이 파일은 비어 있습니다"가 아니라 `markdown.state.large_deferred`(1MB를 넘는 파일이라 아직 읽지 않았다는 문구)가 보인다.
+- Given 대용량 확인을 취소해 대기 상태인 markdown surface When 본문의 "Open file…" 버튼을 누른다 Then 파일을 바로 읽지 않고 같은 대용량 확인 팝업이 다시 뜬다. When 다시 취소한다 Then 같은 대기 상태와 버튼이 남는다.
 - Given 1 MiB 이하로 읽어 둔 markdown 문서 When 파일이 1 MiB를 넘게 커진다 Then 내용을 다시 읽지 않고 대용량 확인 팝업을 띄우며, 팝업이 떠 있는 동안 이전 내용이 보인다. When 취소한다 Then 이전 내용이 사라지고 대기 상태가 된다. When [열기]를 고른다 Then 새 내용이 보인다.
 - Given markdown surface가 아닌 ID When `tasty markdown reload --surface <ID>` Then invalid params 오류로 끝나고 성공으로 답하지 않는다.
 
