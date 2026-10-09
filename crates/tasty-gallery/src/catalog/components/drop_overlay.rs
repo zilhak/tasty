@@ -5,10 +5,6 @@ use tasty_type_appearance::theme::Theme;
 
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
-/// 본체 `draw_drop_overlay` 가 쓰는 alpha 두 값 (0..255).
-const FILL_ALPHA: u8 = 31;
-const BORDER_ALPHA: u8 = 153;
-
 /// 무대 한 칸 크기 — 터미널 rect 를 대신하는 데모 면적.
 fn stage_size(theme: &Theme) -> egui::Vec2 {
     egui::vec2(theme.measure_md.value(), theme.measure_sm.value() * 0.5)
@@ -24,7 +20,7 @@ fn overlay(ui: &mut egui::Ui, theme: &Theme, label: &str) {
     p.rect_filled(
         rect,
         theme.corner_radius.value(),
-        theme.accent_primary().with_alpha(FILL_ALPHA).to_egui(),
+        theme.file_drop_overlay_bg().to_egui(),
     );
 
     p.rect_stroke(
@@ -32,7 +28,7 @@ fn overlay(ui: &mut egui::Ui, theme: &Theme, label: &str) {
         theme.corner_radius.value(),
         egui::Stroke::new(
             theme.border_width.value(),
-            theme.accent_primary().with_alpha(BORDER_ALPHA).to_egui(),
+            theme.file_drop_overlay_border().to_egui(),
         ),
         egui::StrokeKind::Inside,
     );
@@ -42,7 +38,7 @@ fn overlay(ui: &mut egui::Ui, theme: &Theme, label: &str) {
         egui::Align2::CENTER_CENTER,
         label,
         egui::FontId::proportional(theme.font_size_heading.value()),
-        theme.text_primary().to_egui(),
+        theme.file_drop_overlay_fg().to_egui(),
     );
 }
 
@@ -60,18 +56,36 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         &[
-            ("fill", "accent-primary @ 12% · corner-radius"),
-            ("border", "1px accent-primary @ 60% · inset spacing-sm"),
-            ("label", "font-size-heading · text-primary · centered"),
+            (
+                "fill",
+                "file-drop-overlay-bg · accent-primary × tint-fill-alpha 0.12 · corner-radius",
+            ),
+            (
+                "border",
+                "1px file-drop-overlay-border · × tint-border-alpha 0.36 · inset spacing-sm",
+            ),
+            (
+                "label",
+                "font-size-heading · file-drop-overlay-fg (full ink) · centered",
+            ),
             ("layer", "Order::Tooltip — popup 위, plugin popup 아래"),
         ],
         &[
             TokenChip::new(
-                "accent-primary",
-                "fill + border",
-                theme.accent_primary().to_egui(),
+                "file-drop-overlay-bg",
+                "fill",
+                theme.file_drop_overlay_bg().to_egui(),
             ),
-            TokenChip::new("text-primary", "label", theme.text_primary().to_egui()),
+            TokenChip::new(
+                "file-drop-overlay-border",
+                "border",
+                theme.file_drop_overlay_border().to_egui(),
+            ),
+            TokenChip::new(
+                "file-drop-overlay-fg",
+                "label",
+                theme.file_drop_overlay_fg().to_egui(),
+            ),
             TokenChip::new("bg-app", "terminal beneath", theme.bg_app().to_egui()),
         ],
     );

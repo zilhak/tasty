@@ -1965,7 +1965,7 @@ pub fn pages() -> Vec<Page> {
                     "drop-overlay",
                     "Drag & drop overlay",
                     "Drop to open — hover feedback on the terminal",
-                    Some("accent-primary 12% fill + 60% 1px 보더 + 중앙 라벨"),
+                    Some("file-drop-overlay 토큰 — fill 0.12 + 1px 보더 0.36 + 강조색 라벨"),
                     components::drop_overlay::draw,
                 ),
             ],

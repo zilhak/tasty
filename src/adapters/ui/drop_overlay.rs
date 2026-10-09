@@ -38,20 +38,12 @@ pub fn draw_drop_overlay(
     let layer = egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("drop_overlay"));
     let painter = ctx.layer_painter(layer);
 
-    const OVERLAY_FILL_ALPHA: u8 = 31;
-    let fill = theme
-        .accent_primary()
-        .with_alpha(OVERLAY_FILL_ALPHA)
-        .to_egui();
+    let fill = theme.file_drop_overlay_bg().to_egui();
     painter.rect_filled(rect, theme.corner_radius.value(), fill);
 
-    const OVERLAY_BORDER_ALPHA: u8 = 153;
     let stroke = egui::Stroke::new(
         theme.border_width.value(),
-        theme
-            .accent_primary()
-            .with_alpha(OVERLAY_BORDER_ALPHA)
-            .to_egui(),
+        theme.file_drop_overlay_border().to_egui(),
     );
     painter.rect_stroke(
         rect.shrink(theme.spacing_sm.value()),
@@ -76,7 +68,7 @@ pub fn draw_drop_overlay(
         egui::Align2::CENTER_CENTER,
         label,
         font,
-        theme.text_primary().to_egui(),
+        theme.file_drop_overlay_fg().to_egui(),
     );
 }
 
