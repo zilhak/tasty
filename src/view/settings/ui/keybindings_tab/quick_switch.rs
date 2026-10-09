@@ -9,14 +9,11 @@
 use crate::adapters::ui::input::shortcuts::modifier_hint::all_modifier_combos;
 use crate::i18n::{t, t_fmt};
 use crate::settings::{KeybindingSettings, SwitchStep};
-use tasty_type_geometry::length::LogicalPx;
 
 use super::{BareTarget, FieldKind, KeyCapture, PendingBinding, RecordingSlot, RowLayout};
 use tasty_ui_widgets::{settings_label_cell, settings_label_gap, vspace};
 
 /// 버튼/간격 치수. 4px 그리드 준수 (entries.rs 와 동일 값).
-const BUTTON_HEIGHT: LogicalPx = LogicalPx(24.0);
-const BUTTON_WIDTH: LogicalPx = LogicalPx(140.0);
 
 /// 설정의 SwitchAxis를 화면의 녹화 대상과 연결한다.
 pub(super) use tasty_settings::SwitchAxis as QuickSwitchKind;
@@ -241,7 +238,7 @@ pub(super) fn draw_quick_switch_section(
             ui,
             &th,
             label_col,
-            BUTTON_HEIGHT,
+            th.kb_record_height(),
             t(kind.modifier_label_key()),
             None,
         );
@@ -285,7 +282,7 @@ pub(super) fn draw_quick_switch_section(
         apply_modifier_transition(keybindings, kind, &old_modifier, &new_modifier);
     }
 
-    vspace(ui, th.spacing_xs);
+    super::entries::kb_row_gap(ui, &th);
 
     let is_individual = kind.is_individual(keybindings);
 
@@ -396,7 +393,7 @@ fn slot_row(
     ui.horizontal_top(|ui| {
         // 서브탭 공유 폭의 라벨 열(entries.rs 와 같은 칸).
         let label = format!("{}:", bare_display_label(target));
-        settings_label_cell(ui, &th, label_col, BUTTON_HEIGHT, &label, None);
+        settings_label_cell(ui, &th, label_col, th.kb_record_height(), &label, None);
         settings_label_gap(ui, &th);
 
         let combo = bare_combo(keybindings, target);
@@ -430,8 +427,8 @@ fn slot_row(
             &display,
             fg,
             bg,
-            BUTTON_WIDTH,
-            BUTTON_HEIGHT,
+            th.kb_record_width(),
+            th.kb_record_height(),
         );
         if ui.add(btn).clicked() {
             *recording_field = Some(RecordingSlot {
@@ -441,8 +438,7 @@ fn slot_row(
             });
         }
     });
-    // 행 간격도 Theme의 배율을 적용한다.
-    ui.add_space(th.spacing_xs.value());
+    super::entries::kb_row_gap(ui, &th);
 }
 
 /// 녹화한 키를 슬롯에 반영하거나 충돌 확인을 요청한다.

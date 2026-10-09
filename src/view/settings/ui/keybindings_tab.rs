@@ -419,6 +419,8 @@ pub fn draw_keybindings_tab(
 mod capture;
 mod entries;
 mod entries_scripts;
+#[cfg(test)]
+mod entries_tests;
 mod import_export;
 #[cfg(test)]
 mod label_width;

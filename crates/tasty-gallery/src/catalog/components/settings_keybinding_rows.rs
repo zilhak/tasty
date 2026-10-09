@@ -13,10 +13,6 @@ use tasty_ui_widgets::{
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::catalog::widgets::dialog as kit;
 
-/// 본체 바인딩 버튼의 폭·높이(`entries.rs`).
-const SLOT_W: LogicalPx = LogicalPx(140.0);
-const SLOT_H: LogicalPx = LogicalPx(24.0);
-const ADD_W: LogicalPx = LogicalPx(32.0);
 /// 예제 프레임 폭 — 설정 콘텐츠 컬럼 상한(620)을 넘지 않는다.
 const WIDTH: LogicalPx = LogicalPx(600.0);
 
@@ -46,7 +42,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         kit::frame_card_flat(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
             kit::region_sym(ui, theme.spacing_lg, theme.spacing_md, |ui| {
-                ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
+                // 행 사이는 kb-row-gap, 구분선 없음. 행 안 버튼 사이는 space-xs 다.
+                ui.spacing_mut().item_spacing.y = theme.kb_row_gap().value();
                 let measured: Vec<SettingsRow<'_>> = ROWS
                     .iter()
                     .map(|(label, hint, _)| {
@@ -84,13 +81,21 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ),
             (
                 "slot",
-                "140 × 24 mono · + (32) adds a slot · None when empty",
+                "kb-record-width 140 × kb-record-height 24 mono · + (kb-record-add-width 32) adds a slot · None when empty",
+            ),
+            (
+                "rows",
+                "kb-row-gap 8 between rows · no divider · 4 between slots",
             ),
         ],
         &[
             TokenChip::without_color("settings-label-width", "label column floor 150"),
             TokenChip::without_color("settings-label-max-width", "label column cap 240"),
             TokenChip::without_color("settings-label-gap", "label → slot"),
+            TokenChip::without_color("kb-record-width", "→ kb-ie-slot-min-width 140"),
+            TokenChip::without_color("kb-record-height", "→ kb-ie-slot-height 24"),
+            TokenChip::without_color("kb-record-add-width", "→ size-32"),
+            TokenChip::without_color("kb-row-gap", "→ space-sm 8"),
             TokenChip::new("text-secondary", "label", theme.text_secondary().to_egui()),
             TokenChip::new("surface-raised", "slot", theme.surface_raised().to_egui()),
         ],
@@ -112,18 +117,36 @@ fn row(
     bindings: &[&str],
 ) {
     ui.horizontal_top(|ui| {
-        settings_label_cell(ui, theme, col, SLOT_H, label, hint);
+        settings_label_cell(ui, theme, col, theme.kb_record_height(), label, hint);
         settings_label_gap(ui, theme);
         ui.horizontal_wrapped(|ui| {
             let gap = theme.spacing_xs.value();
             ui.spacing_mut().item_spacing = egui::vec2(gap, gap);
             for combo in bindings {
-                slot(ui, theme, combo, theme.text_primary().to_egui(), SLOT_W);
+                slot(
+                    ui,
+                    theme,
+                    combo,
+                    theme.text_primary().to_egui(),
+                    theme.kb_record_width(),
+                );
             }
             if bindings.is_empty() {
-                slot(ui, theme, "None", theme.text_muted().to_egui(), SLOT_W);
+                slot(
+                    ui,
+                    theme,
+                    "None",
+                    theme.text_muted().to_egui(),
+                    theme.kb_record_width(),
+                );
             } else {
-                slot(ui, theme, "+", theme.text_muted().to_egui(), ADD_W);
+                slot(
+                    ui,
+                    theme,
+                    "+",
+                    theme.text_muted().to_egui(),
+                    theme.kb_record_add_width(),
+                );
             }
         });
     });
@@ -133,6 +156,6 @@ fn slot(ui: &mut egui::Ui, theme: &Theme, text: &str, color: egui::Color32, widt
     ui.add(
         egui::Button::new(egui::RichText::new(text).monospace().color(color))
             .fill(theme.surface_raised().to_egui())
-            .min_size(egui::vec2(width.value(), SLOT_H.value())),
+            .min_size(egui::vec2(width.value(), theme.kb_record_height().value())),
     );
 }

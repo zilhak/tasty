@@ -6,7 +6,6 @@
 
 use crate::i18n::t;
 use crate::settings::{KeybindingSettings, Settings};
-use tasty_type_geometry::length::LogicalPx;
 
 use super::{FieldKind, KeyCapture, RecordingSlot};
 use tasty_ui_widgets::{
@@ -16,9 +15,6 @@ use tasty_ui_widgets::{
 /// `RecordingSlot.field_id` 가 이 접두사면 스크립트 바인딩 슬롯.
 const SCRIPT_SLOT_PREFIX: &str = "script:";
 
-const BUTTON_HEIGHT: LogicalPx = LogicalPx(24.0);
-const BUTTON_WIDTH: LogicalPx = LogicalPx(140.0);
-
 pub(super) fn draw_script_bindings(
     ui: &mut egui::Ui,
     settings: &mut Settings,
@@ -26,8 +22,6 @@ pub(super) fn draw_script_bindings(
     captured: &KeyCapture,
 ) {
     let th = crate::theme::theme();
-    // 다른 행 치수와 같이 Theme 간격에 배율을 적용한다.
-    let row_gap = th.spacing_xs;
 
     // 녹화된 combo 처리 — script: 슬롯만.
     if let Some(slot) = recording_field.clone()
@@ -101,7 +95,7 @@ pub(super) fn draw_script_bindings(
 
         ui.horizontal_top(|ui| {
             // 서브탭 공유 폭의 라벨 열. 긴 사용자 스크립트 이름은 열 안에서 줄을 바꾼다.
-            settings_label_cell(ui, &th, label_col, BUTTON_HEIGHT, name, None);
+            settings_label_cell(ui, &th, label_col, th.kb_record_height(), name, None);
             settings_label_gap(ui, &th);
 
             let display = if is_recording {
@@ -125,7 +119,10 @@ pub(super) fn draw_script_bindings(
             };
             let btn = egui::Button::new(egui::RichText::new(&display).color(fg).monospace())
                 .fill(bg)
-                .min_size(egui::vec2(BUTTON_WIDTH.value(), BUTTON_HEIGHT.value()));
+                .min_size(egui::vec2(
+                    th.kb_record_width().value(),
+                    th.kb_record_height().value(),
+                ));
             if ui.add(btn).clicked() {
                 *recording_field = Some(RecordingSlot {
                     field_id: slot_id.clone(),
@@ -134,6 +131,6 @@ pub(super) fn draw_script_bindings(
                 });
             }
         });
-        ui.add_space(row_gap.value());
+        super::entries::kb_row_gap(ui, &th);
     }
 }

@@ -62,12 +62,11 @@ pub(super) fn draw_keybinding_entries(
         }
     }
 
-    // 버튼/간격 치수. 4px 그리드 준수.
-    const BUTTON_HEIGHT: LogicalPx = LogicalPx(24.0);
-    const BUTTON_WIDTH: LogicalPx = LogicalPx(140.0);
-    const ADD_BUTTON_WIDTH: LogicalPx = LogicalPx(32.0);
-    // 행 간격과 도움말 아이콘 간격도 Theme를 사용해 배율을 함께 반영한다.
-    let row_gap = th.spacing_xs;
+    let button_height = th.kb_record_height();
+    let button_width = th.kb_record_width();
+    let add_button_width = th.kb_record_add_width();
+    // 한 행 안의 버튼 사이(줄바꿈된 버튼 줄 사이 포함) 간격. 행 사이는 kb-row-gap 이다.
+    let in_row_gap = th.spacing_xs;
 
     for (field_id, label_key, desc_key) in entries.iter() {
         ui.horizontal_top(|ui| {
@@ -76,7 +75,7 @@ pub(super) fn draw_keybinding_entries(
                 ui,
                 &th,
                 label_col,
-                BUTTON_HEIGHT,
+                button_height,
                 t(label_key),
                 desc_key.map(t),
             );
@@ -84,7 +83,7 @@ pub(super) fn draw_keybinding_entries(
 
             // 버튼 영역: 남은 폭을 모두 사용. 폭을 초과하면 자동 줄바꿈.
             ui.horizontal_wrapped(|ui| {
-                ui.spacing_mut().item_spacing = egui::vec2(row_gap.value(), row_gap.value());
+                ui.spacing_mut().item_spacing = egui::vec2(in_row_gap.value(), in_row_gap.value());
 
                 let bindings_len = keybindings
                     .get_bindings(field_id)
@@ -126,8 +125,8 @@ pub(super) fn draw_keybinding_entries(
                         &display_text,
                         text_color,
                         bg_color,
-                        BUTTON_WIDTH,
-                        BUTTON_HEIGHT,
+                        button_width,
+                        button_height,
                     );
 
                     if ui.add(button).clicked() {
@@ -162,9 +161,9 @@ pub(super) fn draw_keybinding_entries(
                     th.text_muted()
                 };
                 let add_width = if bindings_len == 0 {
-                    BUTTON_WIDTH
+                    button_width
                 } else {
-                    ADD_BUTTON_WIDTH
+                    add_button_width
                 };
                 let add_btn = record_button(
                     &th,
@@ -173,7 +172,7 @@ pub(super) fn draw_keybinding_entries(
                     add_fg,
                     add_bg,
                     add_width,
-                    BUTTON_HEIGHT,
+                    button_height,
                 );
                 if ui
                     .add(add_btn)
@@ -188,8 +187,15 @@ pub(super) fn draw_keybinding_entries(
                 }
             });
         });
-        ui.add_space(row_gap.value());
+        kb_row_gap(ui, &th);
     }
+}
+
+/// 단축키 행 사이를 `kb-row-gap` 으로 맞춘다. 부모의 `item_spacing.y` 가 행 뒤에 이미 들어가므로
+/// 그만큼 빼고 띄운다.
+pub(super) fn kb_row_gap(ui: &mut egui::Ui, th: &tasty_type_appearance::theme::Theme) {
+    let auto = ui.spacing().item_spacing.y;
+    ui.add_space((th.kb_row_gap().value() - auto).max(0.0));
 }
 
 /// 녹화 버튼. 다른 녹화가 대기 중이면(`enabled=false`) egui의 비활성 흐림 대신
