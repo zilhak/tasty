@@ -85,9 +85,7 @@ pub(super) fn run(spec: SearchSpec, sender: mpsc::Sender<SearchEvent>, wake: &dy
     let mut queue = VecDeque::from([spec.root.clone()]);
     let mut batch = Vec::new();
     let mut last_flush = Instant::now();
-    let mut found = 0;
-    // 상한에 닿은 뒤 더 맞는 항목이 있거나 읽지 않은 폴더가 남았다.
-    let mut capped = false;
+    let mut hits = Hits::default();
     let flush = |batch: &mut Vec<DirEntryInfo>| {
         batch.is_empty()
             || sender
@@ -98,8 +96,8 @@ pub(super) fn run(spec: SearchSpec, sender: mpsc::Sender<SearchEvent>, wake: &dy
         if stopped() {
             break;
         }
-        if found >= SEARCH_MAX_HITS {
-            capped = true;
+        if hits.full() {
+            hits.capped = true;
             break;
         }
         let entries = match read_dir_entries(&dir) {
@@ -122,12 +120,7 @@ pub(super) fn run(spec: SearchSpec, sender: mpsc::Sender<SearchEvent>, wake: &dy
                 queue.push_back(entry.path.clone());
             }
             if matches(&entry.name, &spec.query) {
-                if found < SEARCH_MAX_HITS {
-                    found += 1;
-                    batch.push(entry);
-                } else {
-                    capped = true;
-                }
+                hits.take(entry, &mut batch);
             }
         }
         if last_flush.elapsed() >= FLUSH_EVERY {
@@ -142,11 +135,35 @@ pub(super) fn run(spec: SearchSpec, sender: mpsc::Sender<SearchEvent>, wake: &dy
         || sender
             .send(SearchEvent::Done {
                 stopped: stopped(),
-                capped,
+                capped: hits.capped,
             })
             .is_err()
     {
         tracing::debug!("explorer search receipt dropped before the search finished");
+    }
+}
+
+/// 모은 결과 수와 상한 도달 여부.
+#[derive(Default)]
+struct Hits {
+    found: usize,
+    /// 상한에 닿은 뒤 더 맞는 항목이 있거나 읽지 않은 폴더가 남았다.
+    capped: bool,
+}
+
+impl Hits {
+    fn full(&self) -> bool {
+        self.found >= SEARCH_MAX_HITS
+    }
+
+    /// 상한 안이면 묶음에 넣고, 넘으면 버리고 상한에 닿았다고 남긴다.
+    fn take(&mut self, entry: DirEntryInfo, batch: &mut Vec<DirEntryInfo>) {
+        if self.full() {
+            self.capped = true;
+        } else {
+            self.found += 1;
+            batch.push(entry);
+        }
     }
 }
 
