@@ -142,6 +142,11 @@ plugin 이 자기 훅 핸들러를 웹훅에 붙이려면 `webhook.register` 를
   이 검사는 모든 매니페스트 load에 적용한다. `image`·`markdown`은 기존 번들이 공유하는 예외다.
 - 공유 prefix 안의 호스트 메서드는 해당 번들의 inbound handler가 `host.call`로 되돌려 준다.
   다른 곳에서 같은 이름을 호출한다는 사실만으로 이 위임이 구현됐다고 판단하지 않는다.
+- GUI 호스트가 직접 변환하는 이름(`host_converts`, 지금은 `image.open`)은 외부 호출이든 다른 플러그인 호출이든 번들을 거치지 않는다.
+  번들의 trampoline은 이 변환이 없는 헤드리스용으로 남는다.
+- 처리 스레드(`paint`·`handle_ipc_method`)에서 자기 surface를 다시 만드는 호스트 호출을 기다리지 않는다.
+  호스트는 옛 surface의 회수 확인을 그 처리 스레드에서 받아야 하므로 서로 기다리다 `host.call` 시한(60초)까지 멈춘다.
+  위 "Surface kind" 절의 경로 알림처럼 별도 스레드에서 부르거나, 그런 메서드를 trampoline하지 않고 호스트가 직접 받게 한다.
 - CLI top-level 이름과 alias 충돌은 실제 clap 명령 집합으로 등록 때 검사한다.
   충돌한 CLI 이름만 건너뛰고 warning을 남긴다. 플러그인 전체를 거절하지 않는다.
 - CLI의 `ipc_method`는 자기 prefix에 속해야 한다. `commands`는 팔레트·단축키 기여 목록이며 전체 IPC 허용 목록은 아니다.
