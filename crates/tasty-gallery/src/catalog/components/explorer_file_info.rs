@@ -262,7 +262,7 @@ pub fn draw_properties(ui: &mut egui::Ui, theme: &Theme) {
             props_card(
                 ui,
                 theme,
-                icons::FILE,
+                icons::LINK,
                 "current",
                 &[
                     field("explorer.properties.kind", t("explorer.properties.symlink")),
@@ -358,8 +358,8 @@ pub fn draw_properties(ui: &mut egui::Ui, theme: &Theme) {
     note(
         ui,
         theme,
-        "The symlink card uses the file glyph: the design's link glyph is not in the shared icon set yet. \
-         The title is regular weight because egui UI registers no semibold face.",
+        "The symlink card uses the link glyph. The title is regular weight at 14 because egui UI \
+         registers no semibold face; every popup title follows this rule until one ships.",
     );
 }
 

@@ -177,7 +177,7 @@ Grid 셀은 모두 `explorer_grid_thumb_size`(40) 슬롯을 잡아 썸네일 유
 - **진입**: 컨텍스트 메뉴 맨 끝 구분선 뒤 "Properties"(id 70, 모든 변형·mirror 에서도 보인다), `explorer_properties` 단축키·Command Palette. 대상 규칙은 [파일 작업 계약](file-operations.md#대상-결정-규칙)이다.
 - **종류 문구**(`kind_word`·`file_kind_word`): 폴더 "Folder", 링크 "Symbolic link", 그림 확장자(`is_image_ext`)는 `explorer.kind.image`("PNG image"), 그 밖은 `explorer.kind.ext_file`("ZIP file"), 확장자가 없으면 "File". 미리보기 머리의 종류도 같은 문구다. Detail 의 Type 열은 좁은 열이라 대문자 확장자를 그대로 쓴다.
 - **파일**: Kind · Size(사람이 읽는 크기와 바이트 수) · Modified · Created · Location(Copy) · Permissions(Unix 는 `rwxr-xr-x` 와 read-only, 그 밖은 read-only 만).
-- **링크**: Kind "Symbolic link" · Link target(Copy) · Location. 링크를 따라가지 않는다.
+- **링크**: 제목 글리프 link · Kind "Symbolic link" · Link target(Copy) · Location. 링크를 따라가지 않는다.
 - **폴더**: Size 자리에 하위 항목 수와 크기를 read worker 가 배경에서 세며 Spinner 를 보인다. 링크는 따라가지 않고 읽지 못한 하위 폴더는 건너뛴다. popup 을 닫으면 세기를 멈춘다.
 - **여러 항목**: 머리 "N items", Kinds(파일·폴더 수) · Total size · 공통 Location.
 - **원격(mirror)**: 원격 목록에 있는 Kind · Size · Modified · Location 만 보이고 그 아래 muted 안내를 붙인다. 원격 파일시스템을 다시 읽지 않는다.

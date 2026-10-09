@@ -514,7 +514,7 @@ fn single_content(
                 true,
             ));
             fields.push(mono("explorer.properties.location", location, true));
-            icons::FILE
+            icons::LINK
         }
         ItemKind::File => {
             fields.push(field(
