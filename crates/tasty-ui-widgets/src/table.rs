@@ -74,6 +74,8 @@ pub struct Table<'a, K> {
     selectable: bool,
     striped: bool,
     horizontal_scroll: bool,
+    virtual_rows: Option<usize>,
+    scroll_to_row: Option<usize>,
 }
 
 impl<'a, K> Table<'a, K> {
@@ -92,6 +94,8 @@ impl<'a, K> Table<'a, K> {
             selectable: false,
             striped: false,
             horizontal_scroll: false,
+            virtual_rows: None,
+            scroll_to_row: None,
         }
     }
 
@@ -164,6 +168,21 @@ impl<'a, K> Table<'a, K> {
         self
     }
 
+    /// 앞의 `pinned` 행은 늘 그리고, 나머지는 보이는 행만 그린다. 행이 많은 표의 프레임 비용을
+    /// 보이는 행 수에 묶는다. 안 그린 행의 자리는 같은 높이로 비워 두어 스크롤 길이는 같다.
+    /// 셀 내용 폭으로 넓어지는 열(clip 없는 Remainder)은 그린 행으로만 폭을 잰다.
+    pub fn virtual_rows(mut self, pinned: usize) -> Self {
+        self.virtual_rows = Some(pinned);
+        self
+    }
+
+    /// 이 프레임에 `row`(`rows` 기준) 를 가운데로 스크롤한다. 보이는 행만 그리는 표에서
+    /// 화면 밖 행으로 갈 때 쓴다.
+    pub fn scroll_to_row(mut self, row: Option<usize>) -> Self {
+        self.scroll_to_row = row;
+        self
+    }
+
     /// 표를 그린다.
     ///
     /// - `rows`: 본문 행 데이터.
@@ -198,6 +217,8 @@ impl<'a, K> Table<'a, K> {
         let max_scroll_height = self.max_scroll_height;
         let header_fill = self.header_fill;
         let horizontal_scroll = self.horizontal_scroll;
+        let virtual_rows = self.virtual_rows;
+        let scroll_to_row = self.scroll_to_row;
 
         let mut draw_core = |ui: &mut egui::Ui, widths: &[TableColumnWidth], band_w: LogicalPx| {
             // egui_extras 는 hover 행을 앞 프레임의 응답으로 정하고 그 값을 밖에 내주지 않는다.
@@ -227,6 +248,16 @@ impl<'a, K> Table<'a, K> {
             if let Some(ms) = max_scroll_height {
                 builder = builder.max_scroll_height(ms.value());
             }
+            // 보이는 행만 그리는 표는 뒤쪽 행 범위 기준 번호로 넘긴다. 늘 그리는 앞 행은 그 행을
+            // 그리는 쪽이 스크롤한다.
+            let scroll_index = match (scroll_to_row, virtual_rows) {
+                (Some(row), Some(pinned)) => row.checked_sub(pinned),
+                (row, None) => row,
+                (None, Some(_)) => None,
+            };
+            if let Some(index) = scroll_index {
+                builder = builder.scroll_to_row(index, Some(egui::Align::Center));
+            }
             for w in widths {
                 builder = builder.column(to_column(*w));
             }
@@ -250,51 +281,64 @@ impl<'a, K> Table<'a, K> {
             row_visuals.selection.bg_fill = theme.table_row_bg_selected().into();
             row_visuals.widgets.hovered.bg_fill =
                 theme.table_row_bg_hover().to_egui_premultiplied();
-            table.body(|mut body| {
-                for (i, row) in rows.iter().enumerate() {
-                    body.row(row_h.value(), |mut tr| {
-                        let selected = is_selected(row);
-                        tr.set_selected(selected);
-                        // hover 띠는 행 선택 표의 선택하지 않은 행에만 그려진다. 글자색도 같은 행에만 바꾼다.
-                        let hovered = selectable && !selected && prev_hovered == Some(i);
-                        for (c, col) in columns.iter().enumerate() {
-                            tr.col(|ui| {
-                                ui.visuals_mut().selection.bg_fill = text_selection_fill;
-                                ui.visuals_mut().widgets.hovered.bg_fill = widget_hover_fill;
-                                // 시안의 행 글자색은 table-row-fg 이고 선택 행과 hover 행에서 text-primary 가
-                                // 된다. egui_extras 가 선택 행에 거는 선택 테두리색(accent)도 여기서 덮는다.
-                                // 색을 명시한 라벨에는 영향이 없다.
-                                let ink = if selected || hovered {
-                                    theme.text_primary()
-                                } else {
-                                    theme.table_row_fg()
-                                };
-                                ui.visuals_mut().override_text_color = Some(ink.to_egui());
-                                // 본문 라벨이 행 클릭을 가로채지 않게 한다. 헤더의 정렬 클릭에는 적용하지 않는다.
-                                if selectable {
-                                    ui.style_mut().interaction.selectable_labels = false;
-                                }
-                                match col.align {
-                                    TableAlign::Left => cell(ui, theme, row, c),
-                                    TableAlign::Right => {
-                                        ui.with_layout(
-                                            egui::Layout::right_to_left(egui::Align::Center),
-                                            |ui| cell(ui, theme, row, c),
-                                        );
-                                    }
-                                }
-                            });
+            let mut draw_row = |tr: &mut egui_extras::TableRow<'_, '_>, i: usize, row: &Row| {
+                let selected = is_selected(row);
+                tr.set_selected(selected);
+                // hover 띠는 행 선택 표의 선택하지 않은 행에만 그려진다. 글자색도 같은 행에만 바꾼다.
+                let hovered = selectable && !selected && prev_hovered == Some(i);
+                for (c, col) in columns.iter().enumerate() {
+                    tr.col(|ui| {
+                        ui.visuals_mut().selection.bg_fill = text_selection_fill;
+                        ui.visuals_mut().widgets.hovered.bg_fill = widget_hover_fill;
+                        // 시안의 행 글자색은 table-row-fg 이고 선택 행과 hover 행에서 text-primary 가
+                        // 된다. egui_extras 가 선택 행에 거는 선택 테두리색(accent)도 여기서 덮는다.
+                        // 색을 명시한 라벨에는 영향이 없다.
+                        let ink = if selected || hovered {
+                            theme.text_primary()
+                        } else {
+                            theme.table_row_fg()
+                        };
+                        ui.visuals_mut().override_text_color = Some(ink.to_egui());
+                        // 본문 라벨이 행 클릭을 가로채지 않게 한다. 헤더의 정렬 클릭에는 적용하지 않는다.
+                        if selectable {
+                            ui.style_mut().interaction.selectable_labels = false;
                         }
-                        let row_resp = tr.response();
-                        if row_resp.hovered() {
-                            now_hovered = Some(i);
+                        match col.align {
+                            TableAlign::Left => cell(ui, theme, row, c),
+                            TableAlign::Right => {
+                                ui.with_layout(
+                                    egui::Layout::right_to_left(egui::Align::Center),
+                                    |ui| cell(ui, theme, row, c),
+                                );
+                            }
                         }
-                        if row_resp.clicked() {
-                            clicked_row = Some(i);
-                        }
-                        if row_resp.secondary_clicked() {
-                            secondary_clicked_row = Some(i);
-                        }
+                    });
+                }
+                let row_resp = tr.response();
+                if row_resp.hovered() {
+                    now_hovered = Some(i);
+                }
+                if row_resp.clicked() {
+                    clicked_row = Some(i);
+                }
+                if row_resp.secondary_clicked() {
+                    secondary_clicked_row = Some(i);
+                }
+            };
+            table.body(|mut body| match virtual_rows {
+                None => {
+                    for (i, row) in rows.iter().enumerate() {
+                        body.row(row_h.value(), |mut tr| draw_row(&mut tr, i, row));
+                    }
+                }
+                Some(pinned) => {
+                    let pinned = pinned.min(rows.len());
+                    for (i, row) in rows[..pinned].iter().enumerate() {
+                        body.row(row_h.value(), |mut tr| draw_row(&mut tr, i, row));
+                    }
+                    body.rows(row_h.value(), rows.len() - pinned, |mut tr| {
+                        let i = pinned + tr.index();
+                        draw_row(&mut tr, i, &rows[i]);
                     });
                 }
             });
