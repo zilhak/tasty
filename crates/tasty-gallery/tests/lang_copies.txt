@@ -269,17 +269,14 @@ src/catalog/components/plugins_window/add.rs	Surface kinds	plugins.surface_kinds
 src/catalog/components/plugins_window/add.rs	Trust & add	plugins.add_trust_and_add
 src/catalog/components/plugins_window/add.rs	Verify	plugins.add_confirm_path
 src/catalog/components/plugins_window/add.rs	~/dev/my-plugin	plugins.add_path_placeholder
-src/catalog/components/plugins_window/attention.rs	Configure	plugins.configure
 src/catalog/components/plugins_window/attention.rs	Log	plugins.attn_error,plugins.log_path
 src/catalog/components/plugins_window/attention.rs	Needs review	plugins.attn_needs_review
 src/catalog/components/plugins_window/attention.rs	Not registered	plugins.attn_not_registered
 src/catalog/components/plugins_window/attention.rs	Permission changes	plugins.attn_permission_changes
 src/catalog/components/plugins_window/attention.rs	Permissions changed	plugins.attn_perm_changed_label,plugins.trust_permissions_changed_title
-src/catalog/components/plugins_window/attention.rs	Re-approve	plugins.attn_reapprove
 src/catalog/components/plugins_window/attention.rs	Runtime error	plugins.attn_health_label
 src/catalog/components/plugins_window/attention.rs	Signature	plugins.attn_signature
 src/catalog/components/plugins_window/attention.rs	Signature invalid	plugins.attn_sig_invalid_label
-src/catalog/components/plugins_window/attention.rs	built-in	file_handler.picker.origin_host,plugins.builtin_badge
 src/catalog/components/plugins_window/attention.rs	fingerprint	plugins.attn_fingerprint
 src/catalog/components/plugins_window/attention.rs	newly requested	plugins.attn_newly_requested
 src/catalog/components/plugins_window/attention.rs	no longer used	plugins.attn_no_longer_used

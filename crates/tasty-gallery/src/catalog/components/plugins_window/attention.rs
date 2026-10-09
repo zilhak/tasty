@@ -5,9 +5,10 @@ use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::tokens::{PLUGIN_LIST_ROW_HEIGHT, STRUCT_GAP_2};
 use tasty_ui_widgets::{
-    Button, ButtonVariant, PluginAvatarSize, PluginFingerprintLineView, TagVariant, margin_all,
-    paint_plugin_avatar, plugin_avatar, plugin_fingerprint_line, plugin_mono_header,
-    plugin_signature_invalid_detail, tag,
+    PluginAttentionBarAction, PluginAttentionBarView, PluginAvatarSize, PluginFingerprintLineView,
+    PluginIdentityView, PluginMetaView, margin_all, paint_plugin_avatar, plugin_attention_bar,
+    plugin_detail_bar_height, plugin_detail_identity, plugin_fingerprint_line, plugin_mono_header,
+    plugin_signature_invalid_detail,
 };
 
 /// 본체 ATTN_PRIMITIVE_12와 같은 12px 글꼴. 대응 semantic 토큰이 없다.
@@ -51,12 +52,16 @@ impl Kind {
         }
     }
 
-    /// 액션 바 우측 버튼 — 본체 `draw_action_bar` 의 사유별 분기.
+    /// 액션 바 우측 버튼 — 본체 `attention_bar_action` 의 사유별 분기.
     /// 서명 사유는 복사를 fingerprint 줄이 맡아 버튼이 없다.
-    fn action(self) -> Option<&'static str> {
+    fn action(self) -> Option<PluginAttentionBarAction<'static>> {
         match self {
-            Self::PermissionsChanged => Some("Re-approve"),
-            Self::HealthError => Some("Configure"),
+            Self::PermissionsChanged => Some(PluginAttentionBarAction::Reapprove(crate::i18n::t(
+                "plugins.attn_reapprove",
+            ))),
+            Self::HealthError => Some(PluginAttentionBarAction::Configure(crate::i18n::t(
+                "plugins.configure",
+            ))),
             Self::UnknownKey | Self::SignatureInvalid => None,
         }
     }
@@ -74,6 +79,7 @@ pub(super) struct Entry {
     pub name: &'static str,
     pub version: &'static str,
     pub id: &'static str,
+    pub authors: &'static str,
     pub builtin: bool,
     pub kind: Kind,
 }
@@ -83,6 +89,7 @@ pub(super) const ENTRIES: &[Entry] = &[
         name: "Port scanner",
         version: "0.2.0",
         id: "com.example.port-scanner",
+        authors: "example",
         builtin: false,
         kind: Kind::UnknownKey,
     },
@@ -90,6 +97,7 @@ pub(super) const ENTRIES: &[Entry] = &[
         name: "Log tailer",
         version: "0.1.4",
         id: "com.example.log-tailer",
+        authors: "example",
         builtin: false,
         kind: Kind::SignatureInvalid,
     },
@@ -97,6 +105,7 @@ pub(super) const ENTRIES: &[Entry] = &[
         name: "Git viewer",
         version: "0.3.1",
         id: "com.tasty.git-viewer",
+        authors: "tasty",
         builtin: true,
         kind: Kind::PermissionsChanged,
     },
@@ -104,6 +113,7 @@ pub(super) const ENTRIES: &[Entry] = &[
         name: "Markdown",
         version: "0.9.0",
         id: "com.tasty.markdown",
+        authors: "tasty",
         builtin: true,
         kind: Kind::HealthError,
     },
@@ -299,76 +309,52 @@ pub(super) fn fingerprint_line(ui: &mut egui::Ui, theme: &Theme, value: &str) {
     );
 }
 
-/// 상태 점 + 상태 텍스트 + 우측 조치 버튼 — 본체 `draw_action_bar`.
+/// 상태 점 + 상태 텍스트 + 우측 조치 버튼 — Installed 와 같은 바 틀의 공용 위젯.
 fn action_bar(ui: &mut egui::Ui, theme: &Theme, kind: Kind) {
-    let color = sev_color(theme, kind);
-    ui.horizontal(|ui| {
-        let (rect, _) = ui.allocate_exact_size(
-            egui::Vec2::splat(theme.status_dot_size.value()),
-            egui::Sense::hover(),
-        );
-        ui.painter()
-            .circle_filled(rect.center(), theme.status_dot_size.value() * 0.5, color);
-        ui.label(
-            egui::RichText::new(kind.status())
-                .size(ATTN_PRIMITIVE_12.value())
-                .color(color),
-        );
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if let Some(label) = kind.action() {
-                Button::new(label)
-                    .variant(ButtonVariant::Secondary)
-                    .show(ui, theme);
-            }
-        });
-    });
+    plugin_attention_bar(
+        ui,
+        theme,
+        &PluginAttentionBarView {
+            status: kind.status(),
+            color: sev_color(theme, kind),
+            action: kind.action(),
+        },
+    );
 }
 
-/// 우측 상세 — identity → 배너 → 사유 detail → 구분선 → 액션 바.
+/// 우측 상세 — identity → 배너 → 사유 detail, 열 바닥에 열 폭 전체의 액션 바.
 pub(super) fn detail_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
     ui.painter_at(rect)
         .rect_filled(rect, 0.0, theme.bg_panel().to_egui());
     let entry = &ENTRIES[SELECTED];
     let inner = rect.shrink(theme.spacing_md.value());
-    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner));
+    let split = rect.max.y - plugin_detail_bar_height(theme);
+    let body_rect = egui::Rect::from_min_max(inner.min, egui::pos2(inner.max.x, split));
+    let bar_rect = egui::Rect::from_min_max(egui::pos2(rect.min.x, split), rect.max);
+    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(body_rect));
     child.spacing_mut().item_spacing.y = theme.spacing_sm.value();
 
-    child.horizontal_top(|ui| {
-        plugin_avatar(ui, theme, entry.name, PluginAvatarSize::Detail);
-        ui.vertical(|ui| {
-            ui.horizontal(|ui| {
-                ui.label(
-                    egui::RichText::new(entry.name)
-                        .size(theme.font_size_max.value())
-                        .strong()
-                        .color(theme.text_primary().to_egui()),
-                );
-                tag(
-                    ui,
-                    theme,
-                    &format!("v{}", entry.version),
-                    TagVariant::Default,
-                    false,
-                );
-                if entry.builtin {
-                    ui.label(
-                        egui::RichText::new("built-in")
-                            .size(theme.font_size_caption.value())
-                            .color(theme.accent_agent().to_egui()),
-                    );
-                }
-            });
-            ui.label(
-                egui::RichText::new(entry.id)
-                    .size(theme.font_size_caption.value())
-                    .color(theme.text_muted().to_egui()),
-            );
-        });
-    });
+    plugin_detail_identity(
+        &mut child,
+        theme,
+        &PluginIdentityView {
+            name: entry.name,
+            version: entry.version,
+            builtin_tag: entry
+                .builtin
+                .then(|| crate::i18n::t("plugins.builtin_badge")),
+            meta: PluginMetaView {
+                authors: entry.authors,
+                id: entry.id,
+                homepage: "",
+            },
+        },
+    );
     banner(&mut child, theme, entry.kind);
     reason_detail(&mut child, theme, entry.kind);
-    child.separator();
-    action_bar(&mut child, theme, entry.kind);
+
+    let mut bar = ui.new_child(egui::UiBuilder::new().max_rect(bar_rect));
+    action_bar(&mut bar, theme, entry.kind);
 }
 
 /// 상세 영역의 빈 상태. 목록 배경과 너비는 유지한다.

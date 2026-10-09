@@ -2,8 +2,11 @@
 //! 본체와 갤러리가 같은 함수를 불러 같은 모양을 그린다. Installed 와 Attention 이 정체 블록과
 //! 액션 바 틀을 함께 쓰고, 바 안의 내용만 다르다.
 
+mod attention_bar;
 mod confirm;
 mod identity;
+
+pub use attention_bar::{PluginAttentionBarAction, PluginAttentionBarView, plugin_attention_bar};
 
 pub use confirm::{
     PluginUninstallConfirmClicks, PluginUninstallConfirmView, plugin_uninstall_confirm_bar,

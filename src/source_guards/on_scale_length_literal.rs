@@ -149,7 +149,8 @@ const AREAS: &[(&str, usize, &str)] = &[
         // 단축키 가져오기 표 선택 열·원래 조합 열은 kb-ie-* 토큰으로 옮겨 빠졌다.
         // 단축키 Plugins 서브탭이 공용 view로 옮겨 가며 키 입력칸 폭 180이 빠졌다.
         // 설정 행이 공용 SettingsRow 로 모이며 원격 전송 라벨 열 150과 단축키 탭 라벨 gap 12 셋이 빠졌다.
-        29,
+        // 플러그인 Attention 이 공용 Tag 위젯을 쓰며 손으로 그리던 Tag 의 여백 7 이 빠졌다.
+        28,
         "설정 화면의 폼 레이아웃",
     ),
     (
@@ -233,7 +234,8 @@ const AREAS: &[(&str, usize, &str)] = &[
         // 스케일에 size-20·40이 들어오면서 기존 값 20·40 한 자리가 새로 집계됐다.
         // 포트 스캐너 열 하한 120·140(Workspace·State) 둘은 popup과 갤러리가 함께 쓰는 ports_table의 표 전용 값이다.
         // Address 하한 140은 port-addr-col-min-width 토큰을 읽어 집계에서 빠졌다.
-        24,
+        // 플러그인 Attention 바의 상태 문구 12(디자인 fontSize 12, semantic 없음)가 공용 바로 들어왔다.
+        25,
         "공용 위젯",
     ),
     (

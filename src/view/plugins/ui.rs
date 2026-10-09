@@ -482,32 +482,6 @@ fn segment_tab(
     resp.clicked()
 }
 
-/// 디자인 `Tag` 컴포넌트 — surface-raised 배경 + 1px border 의 작은 pill.
-/// 버전 표기 등 inline 메타데이터에 사용. 라벨 색은 `text_secondary`.
-pub(super) fn tag(ui: &mut egui::Ui, th: &theme::Theme, text: &str) {
-    let color = egui::Color32::from(th.text_secondary());
-    let galley = ui.painter().layout_no_wrap(
-        text.to_string(),
-        // Tag의 micro 크기 대신 caption 크기를 사용한다.
-        egui::FontId::proportional(th.font_size_caption.value()),
-        color,
-    );
-    let pad = egui::vec2(7.0, 3.0);
-    let size = galley.size() + pad * 2.0;
-    let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
-    ui.painter().rect(
-        rect,
-        th.corner_radius.value(),
-        egui::Color32::from(th.surface_raised()),
-        egui::Stroke::new(
-            th.border_width.value(),
-            egui::Color32::from(th.border_default()),
-        ),
-        egui::StrokeKind::Inside,
-    );
-    ui.painter().galley(rect.min + pad, galley, color);
-}
-
 mod add;
 mod attention;
 mod list;

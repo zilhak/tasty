@@ -223,3 +223,28 @@ fn the_homepage_link_drops_only_the_web_scheme() {
     assert_eq!(homepage_display("http://example.com"), "example.com");
     assert_eq!(homepage_display("example.com/x"), "example.com/x");
 }
+
+/// Attention 바는 Installed 바와 같은 틀이라 높이도 같다. 버튼이 있든 없든 같다.
+#[test]
+fn the_attention_bar_shares_the_installed_bar_height() {
+    let theme = theme();
+    let color = theme.accent_warning().to_egui();
+    for action in [
+        None,
+        Some(PluginAttentionBarAction::Reapprove("Re-approve")),
+        Some(PluginAttentionBarAction::Configure("Configure")),
+    ] {
+        let rect = drawn_rect(540.0, |ui, theme| {
+            plugin_attention_bar(
+                ui,
+                theme,
+                &PluginAttentionBarView {
+                    status: "Needs review",
+                    color,
+                    action,
+                },
+            );
+        });
+        assert_eq!(rect.height(), plugin_detail_bar_height(&theme));
+    }
+}

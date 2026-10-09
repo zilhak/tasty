@@ -14,9 +14,10 @@ const ATTN_STATUS_DOT_SIZE: LogicalPx = LogicalPx(7.0);
 use super::{AttentionEntry, AttentionKind, PluginsAction, PluginsSnapshot, PluginsUiState};
 use tasty_ui_widgets::tokens::{PLUGIN_LIST_ROW_HEIGHT, STRUCT_GAP_2};
 use tasty_ui_widgets::{
-    PluginAvatarSize, PluginFingerprintLineView, hspace, margin_all, margin_sym,
-    paint_plugin_avatar, plugin_avatar, plugin_fingerprint_line, plugin_mono_header,
-    plugin_signature_invalid_detail, vspace,
+    PluginAttentionBarAction, PluginAttentionBarView, PluginAvatarSize, PluginFingerprintLineView,
+    PluginIdentityView, PluginMetaView, margin_all, margin_sym, paint_plugin_avatar,
+    plugin_attention_bar, plugin_detail_bar_height, plugin_detail_identity,
+    plugin_fingerprint_line, plugin_mono_header, plugin_signature_invalid_detail, vspace,
 };
 
 /// 사유별 (라벨 키, 설명 키). 색은 `AttentionKind::is_danger` 로 분기.
@@ -137,23 +138,48 @@ pub(super) fn draw_attention_tab(
                 });
         });
 
-    egui::CentralPanel::default().show(ctx, |ui| {
-        if items.is_empty() {
-            draw_empty_state(ui, &th);
-            return;
-        }
-        let selected = ui_state
-            .attention_selected_id
-            .as_ref()
-            .and_then(|id| items.iter().find(|e| &e.id == id))
-            .cloned();
-        let Some(entry) = selected else {
-            vspace(ui, th.spacing_xl);
-            ui.label(t("plugins.none_selected"));
-            return;
-        };
-        draw_detail(ui, &th, &entry, actions);
-    });
+    let selected = ui_state
+        .attention_selected_id
+        .as_ref()
+        .and_then(|id| items.iter().find(|e| &e.id == id))
+        .cloned();
+    let Some(entry) = selected else {
+        egui::CentralPanel::default().show(ctx, |ui| {
+            if items.is_empty() {
+                draw_empty_state(ui, &th);
+            } else {
+                vspace(ui, th.spacing_xl);
+                ui.label(t("plugins.none_selected"));
+            }
+        });
+        return;
+    };
+
+    // Installed 와 같이 액션 바는 상세 열의 여백 밖, 열 폭 전체로 열 아래 끝에 붙는다.
+    // 키보드 초점 순서가 화면 순서(본문 → 바)를 따르도록 같은 패널 안에서 본문을 먼저 만든다.
+    let panel_frame = egui::Frame::central_panel(&ctx.style());
+    let margin = panel_frame.inner_margin;
+    egui::CentralPanel::default()
+        .frame(panel_frame.inner_margin(egui::Margin::ZERO))
+        .show(ctx, |ui| {
+            let full = ui.max_rect();
+            let split = full.max.y - plugin_detail_bar_height(&th);
+            let body_rect = egui::Rect::from_min_max(
+                full.min + egui::vec2(margin.leftf(), margin.topf()),
+                egui::pos2(full.max.x - margin.rightf(), split),
+            );
+            let mut body = ui.new_child(
+                egui::UiBuilder::new()
+                    .max_rect(body_rect)
+                    .layout(egui::Layout::top_down(egui::Align::Min)),
+            );
+            draw_detail(&mut body, &th, &entry);
+
+            let mut bar_ui = ui.new_child(egui::UiBuilder::new().max_rect(
+                egui::Rect::from_min_max(egui::pos2(full.min.x, split), full.max),
+            ));
+            draw_action_bar(&mut bar_ui, &th, &entry, actions);
+        });
 }
 
 /// 확인 필요 plugin 0 건 — success 톤 빈 상태.
@@ -174,45 +200,31 @@ fn draw_empty_state(ui: &mut egui::Ui, th: &theme::Theme) {
     });
 }
 
-fn draw_detail(
-    ui: &mut egui::Ui,
-    th: &theme::Theme,
-    entry: &AttentionEntry,
-    actions: &mut Vec<PluginsAction>,
-) {
+fn draw_detail(ui: &mut egui::Ui, th: &theme::Theme, entry: &AttentionEntry) {
     let color = sev_color(th, entry.kind);
     let (label_key, blurb_key) = reason_text(entry.kind);
 
     vspace(ui, th.spacing_sm);
     egui::ScrollArea::vertical()
+        .auto_shrink([false, false])
         .drag_to_scroll(false)
         .show(ui, |ui| {
-            // identity
-            // 디자인은 아바타(46) 좌, 이름줄 + 메타줄을 오른쪽 열에 쌓는다.
-            ui.horizontal_top(|ui| {
-                plugin_avatar(ui, th, &entry.name, PluginAvatarSize::Detail);
-                ui.vertical(|ui| {
-                    ui.horizontal(|ui| {
-                        ui.heading(&entry.name);
-                        super::tag(ui, th, &format!("v{}", entry.version));
-                        if entry.builtin {
-                            super::tag(ui, th, t("plugins.builtin_badge"));
-                        }
-                    });
-                    ui.label(
-                        egui::RichText::new(&entry.id)
-                            .small()
-                            .color(egui::Color32::from(th.text_muted())),
-                    );
-                    if !entry.authors.is_empty() {
-                        ui.label(
-                            egui::RichText::new(entry.authors.join(", "))
-                                .small()
-                                .color(egui::Color32::from(th.text_muted())),
-                        );
-                    }
-                });
-            });
+            // identity — Installed 와 같은 위젯(아바타 · 이름 줄 · `작성자 · id` 메타 줄).
+            let authors = entry.authors.join(", ");
+            plugin_detail_identity(
+                ui,
+                th,
+                &PluginIdentityView {
+                    name: &entry.name,
+                    version: &entry.version,
+                    builtin_tag: entry.builtin.then(|| t("plugins.builtin_badge")),
+                    meta: PluginMetaView {
+                        authors: &authors,
+                        id: &entry.id,
+                        homepage: "",
+                    },
+                },
+            );
             vspace(ui, th.spacing_md);
 
             // 사유 배너 (severity 색 프레임) — tinted 채움/테두리 짝
@@ -242,11 +254,6 @@ fn draw_detail(
 
             vspace(ui, th.spacing_md);
             draw_reason_detail(ui, th, entry);
-
-            vspace(ui, th.spacing_md);
-            ui.separator();
-            vspace(ui, th.spacing_sm);
-            draw_action_bar(ui, entry, color, actions);
         });
 }
 
@@ -355,54 +362,46 @@ pub(super) fn fingerprint_line(ui: &mut egui::Ui, th: &theme::Theme, fingerprint
     );
 }
 
-/// 상태 텍스트 + 사유별 조치 버튼.
+/// 상태 점과 문구, 사유별 조치 버튼 — Installed 와 같은 바 틀의 공용 위젯.
 fn draw_action_bar(
     ui: &mut egui::Ui,
+    th: &theme::Theme,
     entry: &AttentionEntry,
-    color: egui::Color32,
     actions: &mut Vec<PluginsAction>,
 ) {
-    let th = crate::theme::theme();
-    ui.horizontal(|ui| {
-        let status_key = if entry.kind.is_danger() {
-            "plugins.attn_not_registered"
-        } else {
-            "plugins.attn_needs_review"
-        };
-        ui.painter().circle_filled(
-            ui.cursor().min
-                + egui::vec2(
-                    ATTN_STATUS_DOT_SIZE.value() * 0.5,
-                    ui.text_style_height(&egui::TextStyle::Body) / 2.0,
-                ),
-            ATTN_STATUS_DOT_SIZE.value() * 0.5,
-            color,
-        );
-        hspace(ui, th.spacing_md);
-        ui.label(
-            egui::RichText::new(t(status_key))
-                .size(ATTN_PRIMITIVE_12.value())
-                .color(color),
-        );
-
-        ui.with_layout(
-            egui::Layout::right_to_left(egui::Align::Center),
-            |ui| match entry.kind {
-                AttentionKind::PermissionsChanged => {
-                    if ui.button(t("plugins.attn_reapprove")).clicked() {
-                        actions.push(PluginsAction::Reapprove {
-                            id: entry.id.clone(),
-                        });
-                    }
-                }
-                AttentionKind::HealthError => {
-                    if ui.button(t("plugins.configure")).clicked() {
-                        actions.push(PluginsAction::OpenSettings);
-                    }
-                }
-                // 복사는 fingerprint 줄의 IconButton이 맡으므로 액션 바에 버튼을 두지 않는다.
-                AttentionKind::UnknownKey | AttentionKind::SignatureInvalid => {}
+    let status_key = if entry.kind.is_danger() {
+        "plugins.attn_not_registered"
+    } else {
+        "plugins.attn_needs_review"
+    };
+    let action = match entry.kind {
+        AttentionKind::PermissionsChanged => Some(PluginAttentionBarAction::Reapprove(t(
+            "plugins.attn_reapprove",
+        ))),
+        AttentionKind::HealthError => {
+            Some(PluginAttentionBarAction::Configure(t("plugins.configure")))
+        }
+        // 복사는 fingerprint 줄의 IconButton이 맡으므로 액션 바에 버튼을 두지 않는다.
+        AttentionKind::UnknownKey | AttentionKind::SignatureInvalid => None,
+    };
+    let clicked = plugin_attention_bar(
+        ui,
+        th,
+        &PluginAttentionBarView {
+            status: t(status_key),
+            color: sev_color(th, entry.kind),
+            action,
+        },
+    );
+    if clicked {
+        actions.push(match entry.kind {
+            AttentionKind::PermissionsChanged => PluginsAction::Reapprove {
+                id: entry.id.clone(),
             },
-        );
-    });
+            _ => PluginsAction::OpenSettings,
+        });
+    }
 }
+
+#[cfg(test)]
+mod tests;
