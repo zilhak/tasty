@@ -72,20 +72,17 @@ impl App {
                         plugins_ui::AttentionKind::PermissionsChanged
                     }
                 };
-                let shown = |text: &String| {
-                    if kind.shows_manifest_text() {
-                        text.clone()
-                    } else {
-                        String::new()
-                    }
+                let description = if kind.shows_manifest_text() {
+                    r.description.clone()
+                } else {
+                    String::new()
                 };
                 plugins_ui::AttentionEntry {
                     id: r.id.clone(),
                     name: r.name.clone(),
                     version: r.version.clone(),
                     authors: r.authors.clone(),
-                    description: shown(&r.description),
-                    homepage: shown(&r.homepage),
+                    description,
                     builtin: r.builtin,
                     kind,
                     fingerprint: r.fingerprint.clone(),
@@ -108,7 +105,6 @@ impl App {
                 version: pkg.manifest.version.clone(),
                 authors: pkg.manifest.authors.clone(),
                 description: pkg.manifest.description.clone(),
-                homepage: pkg.manifest.homepage.clone(),
                 builtin: plugin::is_builtin_plugin(id),
                 kind: plugins_ui::AttentionKind::HealthError,
                 fingerprint: None,

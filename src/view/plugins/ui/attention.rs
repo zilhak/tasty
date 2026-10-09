@@ -210,9 +210,15 @@ fn draw_detail(ui: &mut egui::Ui, th: &theme::Theme, entry: &AttentionEntry) {
         .auto_shrink([false, false])
         .drag_to_scroll(false)
         .show(ui, |ui| {
-            // identity — Installed 와 같은 위젯(아바타 · 이름 줄 · `작성자 · id · homepage` 메타 줄).
+            // 디자인은 정체 블록 · 설명 · 배너 · 사유 detail 을 `space-lg` 간격으로 쌓는다. 블록 안의
+            // 줄 간격은 원래 값을 쓰도록 블록마다 되돌린다.
+            let inner_gap = ui.spacing().item_spacing.y;
+            ui.spacing_mut().item_spacing.y = th.spacing_lg.value();
+
+            // identity — Installed 와 같은 위젯. 디자인의 Attention 메타 줄은 `작성자 · id` 뿐이라
+            // homepage 는 싣지 않는다.
             let authors = entry.authors.join(", ");
-            let open_homepage = plugin_detail_identity(
+            plugin_detail_identity(
                 ui,
                 th,
                 &PluginIdentityView {
@@ -222,17 +228,12 @@ fn draw_detail(ui: &mut egui::Ui, th: &theme::Theme, entry: &AttentionEntry) {
                     meta: PluginMetaView {
                         authors: &authors,
                         id: &entry.id,
-                        homepage: &entry.homepage,
+                        homepage: "",
                     },
                 },
             );
-            if open_homepage && !crate::terminal_link::open_uri(&entry.homepage) {
-                tracing::warn!(homepage = %entry.homepage, "plugin homepage did not open");
-            }
-            vspace(ui, th.spacing_md);
             if !entry.description.is_empty() {
                 plugin_detail_description(ui, th, &entry.description);
-                vspace(ui, th.spacing_md);
             }
 
             // 사유 배너 (severity 색 프레임) — tinted 채움/테두리 짝
@@ -246,6 +247,7 @@ fn draw_detail(ui: &mut egui::Ui, th: &theme::Theme, entry: &AttentionEntry) {
                 .corner_radius(th.corner_radius.value())
                 .inner_margin(margin_all(th.spacing_md))
                 .show(ui, |ui| {
+                    ui.spacing_mut().item_spacing.y = inner_gap;
                     ui.label(
                         egui::RichText::new(t(label_key))
                             .strong()
@@ -260,8 +262,10 @@ fn draw_detail(ui: &mut egui::Ui, th: &theme::Theme, entry: &AttentionEntry) {
                     );
                 });
 
-            vspace(ui, th.spacing_md);
-            draw_reason_detail(ui, th, entry);
+            ui.vertical(|ui| {
+                ui.spacing_mut().item_spacing.y = inner_gap;
+                draw_reason_detail(ui, th, entry);
+            });
         });
 }
 

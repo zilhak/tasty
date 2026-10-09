@@ -1,4 +1,4 @@
-<!-- source-hash: 2e0397720753 -->
+<!-- source-hash: 535cb0505f14 -->
 # Plugins
 
 Use plugins for tools such as Markdown and image viewers or AI agent integrations. Explore the bundled plugins, add new ones, and manage which tools run and what permissions they have.
@@ -56,7 +56,7 @@ The **Installed** tab. Pick one from the list on the left and the details appear
 
 ### Attention
 
-The **Attention** tab. Plugins whose registration was rejected or that failed to run are collected here with the reason. As for installed plugins, the top of the details shows the name, authors, id and homepage link, with the description below. For a plugin whose signature is invalid, the manifest can't be trusted, so its homepage and description are not shown.
+The **Attention** tab. Plugins whose registration was rejected or that failed to run are collected here with the reason. As for installed plugins, the top of the details shows the name, authors and id, with the description below. For a plugin whose signature is invalid, the manifest can't be trusted, so its description is not shown.
 
 | Shown | Meaning | What to do |
 |------|----|------|

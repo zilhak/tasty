@@ -80,9 +80,8 @@ pub(super) struct Entry {
     pub version: &'static str,
     pub id: &'static str,
     pub authors: &'static str,
-    /// 매니페스트 설명·homepage. 본체처럼 서명이 깨진 사유는 비운다.
+    /// 매니페스트 설명. 본체처럼 서명이 깨진 사유는 비운다.
     pub description: &'static str,
-    pub homepage: &'static str,
     pub builtin: bool,
     pub kind: Kind,
 }
@@ -94,7 +93,6 @@ pub(super) const ENTRIES: &[Entry] = &[
         id: "com.example.port-scanner",
         authors: "example",
         description: "Lists listening ports per workspace.",
-        homepage: "https://example.com/port-scanner",
         builtin: false,
         kind: Kind::UnknownKey,
     },
@@ -104,7 +102,6 @@ pub(super) const ENTRIES: &[Entry] = &[
         id: "com.example.log-tailer",
         authors: "example",
         description: "",
-        homepage: "",
         builtin: false,
         kind: Kind::SignatureInvalid,
     },
@@ -114,7 +111,6 @@ pub(super) const ENTRIES: &[Entry] = &[
         id: "com.tasty.git-viewer",
         authors: "tasty",
         description: "Read-only status, log and diff of the current repository.",
-        homepage: "https://github.com/zilhak/tasty",
         builtin: true,
         kind: Kind::PermissionsChanged,
     },
@@ -124,7 +120,6 @@ pub(super) const ENTRIES: &[Entry] = &[
         id: "com.tasty.markdown",
         authors: "tasty",
         description: "Renders Markdown files as a surface.",
-        homepage: "https://github.com/zilhak/tasty",
         builtin: true,
         kind: Kind::HealthError,
     },
@@ -208,6 +203,7 @@ fn banner(ui: &mut egui::Ui, theme: &Theme, kind: Kind) {
         .corner_radius(theme.corner_radius.value())
         .inner_margin(margin_all(theme.spacing_md))
         .show(ui, |ui| {
+            ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
             ui.label(
                 egui::RichText::new(kind.label())
                     .strong()
@@ -345,7 +341,8 @@ pub(super) fn detail_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(body_rect));
     // 본체는 본문을 스크롤 안에 두므로 바 뒤로 넘친 글이 보이지 않는다. 예제도 본문을 바 위에서 자른다.
     child.set_clip_rect(body_rect.intersect(ui.clip_rect()));
-    child.spacing_mut().item_spacing.y = theme.spacing_sm.value();
+    // 디자인은 정체 블록 · 설명 · 배너 · 사유 detail 을 `space-lg` 간격으로 쌓는다. 블록 안은 `space-sm`.
+    child.spacing_mut().item_spacing.y = theme.spacing_lg.value();
 
     plugin_detail_identity(
         &mut child,
@@ -359,7 +356,8 @@ pub(super) fn detail_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
             meta: PluginMetaView {
                 authors: entry.authors,
                 id: entry.id,
-                homepage: entry.homepage,
+                // 디자인의 Attention 메타 줄은 `작성자 · id` 뿐이다.
+                homepage: "",
             },
         },
     );
@@ -367,7 +365,10 @@ pub(super) fn detail_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
         plugin_detail_description(&mut child, theme, entry.description);
     }
     banner(&mut child, theme, entry.kind);
-    reason_detail(&mut child, theme, entry.kind);
+    child.vertical(|ui| {
+        ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
+        reason_detail(ui, theme, entry.kind);
+    });
 
     let mut bar = ui.new_child(egui::UiBuilder::new().max_rect(bar_rect));
     action_bar(&mut bar, theme, entry.kind);
