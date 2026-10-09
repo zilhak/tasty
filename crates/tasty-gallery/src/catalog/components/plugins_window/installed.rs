@@ -6,11 +6,11 @@ use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::tokens::{PLUGIN_LIST_ROW_HEIGHT, STRUCT_GAP_2};
 use tasty_ui_widgets::{
-    Button, ButtonVariant, PluginAvatarSize, PluginDetailBarView, PluginInstallPathsView,
-    TagVariant, margin_sym, paint_plugin_avatar, plugin_avatar, plugin_command_row,
-    plugin_detail_bar, plugin_detail_bar_height, plugin_detail_description, plugin_detail_meta,
-    plugin_detail_name_row, plugin_detail_section, plugin_detail_section_gap, plugin_install_paths,
-    tag,
+    PluginAvatarSize, PluginDetailBarView, PluginIdentityView, PluginInstallPathsView,
+    PluginMetaView, PluginUninstallConfirmView, TagVariant, margin_sym, paint_plugin_avatar,
+    plugin_command_row, plugin_detail_bar, plugin_detail_bar_height, plugin_detail_description,
+    plugin_detail_identity, plugin_detail_section, plugin_detail_section_gap, plugin_install_paths,
+    plugin_uninstall_confirm_bar, plugin_uninstall_confirm_bar_height, tag,
 };
 
 /// 상세 컬럼이 그릴 것 — 본체는 선택 상태와 uninstall 확인 상태로 갈린다.
@@ -20,7 +20,7 @@ pub(super) enum Detail {
     None,
     /// 선택된 행의 전체 메타.
     Selected(usize),
-    /// `Uninstall` 을 누른 뒤 — 경고 문구 + 확인/취소 두 버튼.
+    /// `Uninstall` 을 누른 뒤 — 액션 바 자리가 질문 · 안내 · Cancel · Uninstall 로 바뀐다.
     ConfirmUninstall(usize),
 }
 
@@ -67,7 +67,8 @@ pub(super) const ROWS: &[Row] = &[
         homepage: "https://github.com/zilhak/tasty",
         surface_kinds: &["clipboard-viewer"],
         permissions: &["clipboard", "surface:read"],
-        commands: &[("Open clipboard viewer", "Ctrl+Shift+V")],
+        // 매니페스트 원문 그대로. 키캡은 `Ctrl` `Shift` `V` 로 다듬어 그린다.
+        commands: &[("Open clipboard viewer", "ctrl + shift + v")],
         install_dir: "~/.tasty/plugins/com.tasty.clipboard-viewer",
         log_path: "~/.tasty/logs/com.tasty.clipboard-viewer.log",
     },
@@ -220,19 +221,17 @@ fn action_bar(ui: &mut egui::Ui, theme: &Theme, row: &Row) {
     );
 }
 
-/// 목록 값 한 묶음 — 디자인 `Mono` 머리글 절. 비면 본체처럼 `(none)` 을 그린다.
-fn list_or_none(ui: &mut egui::Ui, theme: &Theme, label: &str, values: &[&str], as_tags: bool) {
+/// Tag 를 줄바꿈해 늘어놓는 절 — 디자인 `Mono` 머리글 + Tag 묶음. 비면 본체처럼 `(none)` 을 그린다.
+fn tag_section(ui: &mut egui::Ui, theme: &Theme, label: &str, values: &[&str]) {
     plugin_detail_section(ui, theme, label, |ui| {
         if values.is_empty() {
             caption(ui, theme, "(none)");
-        } else if as_tags {
+        } else {
             ui.horizontal_wrapped(|ui| {
                 for v in values {
                     tag(ui, theme, v, TagVariant::Default, false);
                 }
             });
-        } else {
-            caption(ui, theme, &values.join(", "));
         }
     });
 }
@@ -265,26 +264,19 @@ fn paths(ui: &mut egui::Ui, theme: &Theme, row: &Row) {
     );
 }
 
-/// 액션 바의 Uninstall 을 누른 뒤 본문 끝에 보이는 경고 문구와 확인·취소 버튼.
-fn uninstall_confirm(ui: &mut egui::Ui, theme: &Theme, row: &Row) {
-    let warning = if row.builtin {
-        "This is a built-in plugin. Once removed, it will not be auto-reinstalled on next launch."
+/// 제거 확인 바의 문구 — 본체와 같은 번역 키.
+fn confirm_view<'a>(row: &Row, title: &'a str) -> PluginUninstallConfirmView<'a> {
+    let note = if row.builtin {
+        crate::i18n::t("plugins.uninstall_builtin_note")
     } else {
-        crate::i18n::t("plugins.uninstall_warning")
+        crate::i18n::t("plugins.uninstall_note")
     };
-    ui.label(
-        egui::RichText::new(warning)
-            .size(theme.font_size_body.value())
-            .color(theme.accent_attention().to_egui()),
-    );
-    ui.horizontal(|ui| {
-        Button::new("Confirm uninstall")
-            .variant(ButtonVariant::Secondary)
-            .show(ui, theme);
-        Button::new("Cancel")
-            .variant(ButtonVariant::Secondary)
-            .show(ui, theme);
-    });
+    PluginUninstallConfirmView {
+        title,
+        note,
+        cancel: crate::i18n::t("button.cancel"),
+        uninstall: crate::i18n::t("plugins.uninstall"),
+    }
 }
 
 /// 우측 상세 — 본체 `CentralPanel` 블록 전량. 액션 바는 열 바닥에 열 폭 전체로 붙는다.
@@ -301,48 +293,59 @@ pub(super) fn detail_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, de
     let row = &ROWS[i];
 
     // 바는 상세 열의 여백 밖, 열 폭 전체를 쓰며 아래 끝에 붙는다. 본문만 여백 안에 둔다.
-    let bar_h = plugin_detail_bar_height(theme);
+    // 제거 확인은 바의 내용을 그 자리에서 바꾸며, 글이 컨트롤보다 크면 바만 그만큼 커진다.
+    let title = crate::i18n::t_fmt("plugins.uninstall_confirm_title", row.name);
+    let confirm = matches!(detail, Detail::ConfirmUninstall(_)).then(|| confirm_view(row, &title));
+    let bar_h = match &confirm {
+        Some(view) => plugin_uninstall_confirm_bar_height(ui, theme, view, rect.width()),
+        None => plugin_detail_bar_height(theme),
+    };
     let split = rect.max.y - bar_h;
     let body_rect = egui::Rect::from_min_max(inner.min, egui::pos2(inner.max.x, split));
     let bar_rect = egui::Rect::from_min_max(egui::pos2(rect.min.x, split), rect.max);
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(body_rect));
     child.spacing_mut().item_spacing.y = theme.spacing_sm.value();
 
-    child.horizontal_top(|ui| {
-        plugin_avatar(ui, theme, row.name, PluginAvatarSize::Detail);
-        ui.vertical(|ui| {
-            ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
-            let badge = row.builtin.then(|| crate::i18n::t("plugins.builtin_badge"));
-            plugin_detail_name_row(ui, theme, row.name, row.version, badge);
-            plugin_detail_meta(ui, theme, &[row.authors, row.id]);
-        });
-    });
+    plugin_detail_identity(
+        &mut child,
+        theme,
+        &PluginIdentityView {
+            name: row.name,
+            version: row.version,
+            builtin_tag: row.builtin.then(|| crate::i18n::t("plugins.builtin_badge")),
+            meta: PluginMetaView {
+                authors: row.authors,
+                id: row.id,
+                homepage: row.homepage,
+            },
+        },
+    );
     plugin_detail_description(&mut child, theme, row.description);
 
     if row.health_error && row.enabled {
         health_box(&mut child, theme);
     }
 
-    if !row.homepage.is_empty() {
-        caption(&mut child, theme, &format!("Homepage: {}", row.homepage));
-    }
-
+    // 디자인 순서: Permissions → Command → Surface kinds(있을 때만) → Install path.
     plugin_detail_section_gap(&mut child, theme);
-    list_or_none(&mut child, theme, "Surface kinds", row.surface_kinds, false);
-
-    plugin_detail_section_gap(&mut child, theme);
-    list_or_none(&mut child, theme, "Permissions", row.permissions, true);
+    tag_section(&mut child, theme, "Permissions", row.permissions);
 
     commands(&mut child, theme, row);
-    paths(&mut child, theme, row);
 
-    if matches!(detail, Detail::ConfirmUninstall(_)) {
-        child.add_space(theme.spacing_sm.value());
-        uninstall_confirm(&mut child, theme, row);
+    if !row.surface_kinds.is_empty() {
+        plugin_detail_section_gap(&mut child, theme);
+        tag_section(&mut child, theme, "Surface kinds", row.surface_kinds);
     }
 
+    paths(&mut child, theme, row);
+
     let mut bar = ui.new_child(egui::UiBuilder::new().max_rect(bar_rect));
-    action_bar(&mut bar, theme, row);
+    match &confirm {
+        Some(view) => {
+            plugin_uninstall_confirm_bar(&mut bar, theme, view);
+        }
+        None => action_bar(&mut bar, theme, row),
+    }
 }
 
 /// 시안 Spec "Installed detail — install path" 의 두 상세 열 폭. 720(최소)·880(기본) 창의 상세 열에
@@ -387,7 +390,10 @@ pub fn draw_install_paths(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         &[
-            ("order", "… Permissions · Command · Install path"),
+            (
+                "order",
+                "… Permissions · Command · Surface kinds · Install path",
+            ),
             (
                 "caption row",
                 "INSTALL PATH (mono 10 caps) · flex · Open folder",

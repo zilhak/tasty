@@ -106,48 +106,61 @@ fn the_action_bar_stays_inside_the_window_below_a_long_detail() {
     }
 }
 
-/// 확인 단계에 들어간 첫 프레임에 본문 끝의 확인 블록으로 스크롤해, 긴 상세에서도 확인 버튼이 보인다.
+/// Uninstall 을 누르면 액션 바 자리가 그 자리에서 확인 바로 바뀐다. 긴 상세에서도 질문·안내·두 버튼이
+/// 창 안에 보이고, 평소 바의 스위치 라벨은 사라진다. 다른 plugin 의 확인 상태면 평소 바를 그린다.
 #[test]
-fn entering_the_uninstall_confirmation_scrolls_the_confirm_buttons_into_view() {
+fn uninstall_confirmation_replaces_the_action_bar_in_place() {
     crate::i18n::init("en");
     let mut long = entry();
     long.description = "A plugin with a long detail. ".repeat(40);
     long.manifest_permissions = (0..30).map(|i| format!("perm:{i}")).collect();
     let id = long.id.clone();
+    let name = long.name.clone();
     let snapshot = PluginsSnapshot {
         plugins: vec![long],
         ..Default::default()
     };
     let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(720.0, 480.0));
-    let ctx = egui::Context::default();
-    let mut ui_state = PluginsUiState::default();
-    let mut actions = Vec::new();
-    // 스크롤 애니메이션이 끝나도록 프레임마다 시간을 넉넉히 진행한다.
-    let mut time = 0.0;
-    let mut frame = |ui_state: &mut PluginsUiState| {
-        time += 1.0;
-        let raw = egui::RawInput {
-            screen_rect: Some(screen),
-            time: Some(time),
+    let draw = |confirm: Option<String>| {
+        let ctx = egui::Context::default();
+        let mut ui_state = PluginsUiState {
+            confirm_uninstall_id: confirm,
             ..Default::default()
         };
-        ctx.run(raw, |ctx| {
-            draw_list_tab(ctx, &snapshot, ui_state, &mut actions);
-        })
+        let mut actions = Vec::new();
+        let mut output = None;
+        for _ in 0..2 {
+            let raw = egui::RawInput {
+                screen_rect: Some(screen),
+                ..Default::default()
+            };
+            output = Some(ctx.run(raw, |ctx| {
+                draw_list_tab(ctx, &snapshot, &mut ui_state, &mut actions);
+            }));
+        }
+        visible_text_rects(&output.expect("drawn"), screen)
     };
-    frame(&mut ui_state);
-    // 액션 바의 Uninstall 이 하는 일과 같다.
-    ui_state.confirm_uninstall_id = Some(id);
-    ctx.data_mut(|d| d.insert_temp(confirm_scroll_id(), true));
-    let mut output = frame(&mut ui_state);
-    for _ in 0..3 {
-        output = frame(&mut ui_state);
+    let has = |texts: &[(String, egui::Rect)], label: &str| texts.iter().any(|(t, _)| t == label);
+
+    let confirming = draw(Some(id));
+    let title = crate::i18n::t_fmt("plugins.uninstall_confirm_title", &name);
+    for label in [
+        title.as_str(),
+        t("plugins.uninstall_note"),
+        t("button.cancel"),
+        t("plugins.uninstall"),
+    ] {
+        assert!(
+            has(&confirming, label),
+            "{label:?} is not wholly visible in the confirm bar"
+        );
     }
-    let texts = visible_text_rects(&output, screen);
     assert!(
-        texts
-            .iter()
-            .any(|(text, _)| text == t("plugins.uninstall_confirm")),
-        "the confirm button is not visible after entering the confirmation"
+        !has(&confirming, t("plugins.enabled")),
+        "the normal bar is still drawn while confirming"
     );
+
+    let other = draw(Some("another.plugin".into()));
+    assert!(has(&other, t("plugins.enabled")));
+    assert!(!has(&other, &title));
 }

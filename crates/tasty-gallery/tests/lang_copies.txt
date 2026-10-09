@@ -284,9 +284,7 @@ src/catalog/components/plugins_window/attention.rs	fingerprint	plugins.attn_fing
 src/catalog/components/plugins_window/attention.rs	newly requested	plugins.attn_newly_requested
 src/catalog/components/plugins_window/attention.rs	no longer used	plugins.attn_no_longer_used
 src/catalog/components/plugins_window/installed.rs	(none)	plugins.none,remote_tool.passkey_none
-src/catalog/components/plugins_window/installed.rs	Cancel	button.cancel,image_viewer.cancel,preset.popup.cancel_button,quit_modal.cancel_button,remote_attach.cancel,remote_tool.cancel,transfer.progress.cancel
 src/catalog/components/plugins_window/installed.rs	Commands	plugins.commands
-src/catalog/components/plugins_window/installed.rs	Confirm uninstall	plugins.uninstall_confirm
 src/catalog/components/plugins_window/installed.rs	Install path	plugins.install_path
 src/catalog/components/plugins_window/installed.rs	Open folder	plugins.open_folder
 src/catalog/components/plugins_window/installed.rs	Permissions	plugins.permissions,settings.tab.macos_permissions

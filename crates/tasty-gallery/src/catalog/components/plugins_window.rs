@@ -19,10 +19,6 @@ const SEGMENT_TAB_LABEL_PRIMITIVE_12: LogicalPx = LogicalPx(12.0);
 /// 확인한 매니페스트를 보이는 Add 예제 창의 높이. 예제 무대 전용 값이다.
 const ADD_VERIFIED_STAGE_H: LogicalPx = LogicalPx(760.0);
 
-/// 제거 확인 단계의 Installed 예제 창 높이. 본문 끝의 경고와 확인·취소 버튼이 액션 바 위에 들도록
-/// `measure_xl` 보다 높인다. 예제 무대 전용 값이다.
-const INSTALLED_CONFIRM_STAGE_H: LogicalPx = LogicalPx(640.0);
-
 /// 세그먼트 탭 셋 — 본체 `PluginsUiState.tab`. 세 탭은 서로 다른 본문을 그린다.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Tab {
@@ -42,9 +38,6 @@ fn list_w(theme: &Theme) -> f32 {
 /// 예제 창의 크기. 상세 정보를 한눈에 비교하도록 Installed 화면은 더 높게 잡는다.
 fn stage_size(theme: &Theme, tab: Tab) -> egui::Vec2 {
     let h = match tab {
-        Tab::Installed {
-            detail: installed::Detail::ConfirmUninstall(_),
-        } => INSTALLED_CONFIRM_STAGE_H.scaled(theme.ui_zoom),
         Tab::Installed { .. } => theme.measure_xl,
         // 경로 선택 블록 아래 매니페스트 카드와 신뢰 상자, fingerprint 줄까지 담아야 액션 바가
         // 무대 안에 든다.
@@ -565,10 +558,17 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "list",
                 "폭 `plugins_side_panel_width` · 아바타 32 · 이름 13 + 부제 10 muted",
             ),
-            ("builtin", "이름 뒤 `•` · 상세는 accent-agent 배지"),
+            (
+                "builtin",
+                "이름 뒤 `•` · 상세는 버전 Tag 뒤 기본 Tag built-in",
+            ),
             (
                 "installed detail",
-                "identity → 설명 → (health 박스) → authors/homepage → Status/Configure → surface kinds → permissions → commands → 경로 → uninstall",
+                "identity(이름 font-size-max 보통 굵기 · 메타 작성자 · id · homepage 링크) → 설명(line-height-ui) → (health 박스) → Permissions Tag → Command(키캡 규칙) → Surface kinds Tag(있을 때만) → 경로",
+            ),
+            (
+                "uninstall confirm",
+                "액션 바 자리 교체 · alertTriangle 16 accent-attention · 질문 body + 안내 caption muted · Cancel(ghost) · Uninstall(danger)",
             ),
             ("health error", "enabled + error 인 행만 우측 danger dot"),
             (

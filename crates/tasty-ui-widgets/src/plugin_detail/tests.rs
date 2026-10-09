@@ -5,7 +5,7 @@ fn theme() -> Theme {
 }
 
 /// 폭 `width` 인 Ui 에 `draw` 를 그리고 차지한 사각형을 돌려준다.
-fn drawn_rect(width: f32, draw: impl Fn(&mut egui::Ui, &Theme)) -> egui::Rect {
+fn drawn_rect(width: f32, mut draw: impl FnMut(&mut egui::Ui, &Theme)) -> egui::Rect {
     let theme = theme();
     let ctx = egui::Context::default();
     let mut out = None;
@@ -161,4 +161,65 @@ fn the_description_wraps_within_measure_lg_in_a_wide_column() {
         rect.height() > theme.font_size_body.value() * 2.0,
         "it wraps"
     );
+}
+
+/// 제거 확인 바는 높이 함수가 말한 만큼 차지한다. 짧은 문구는 평소 바와 같은 높이이고, 줄바꿈하는
+/// 긴 문구에서는 글 열만큼 커진다.
+#[test]
+fn the_confirm_bar_is_as_tall_as_its_height_function() {
+    let theme = theme();
+    let short = PluginUninstallConfirmView {
+        title: "Uninstall git?",
+        note: "Its files are removed.",
+        cancel: "Cancel",
+        uninstall: "Uninstall",
+    };
+    let long_note = "Its files are removed. Settings stay until you delete them. ".repeat(4);
+    let long = PluginUninstallConfirmView {
+        note: &long_note,
+        ..short
+    };
+    for (view, grows) in [(&short, false), (&long, true)] {
+        for width in [380.0, 540.0] {
+            let mut expected = 0.0;
+            let rect = drawn_rect(width, |ui, theme| {
+                expected = plugin_uninstall_confirm_bar_height(ui, theme, view, width);
+                plugin_uninstall_confirm_bar(ui, theme, view);
+            });
+            assert_eq!(rect.height(), expected, "width {width}");
+            if grows {
+                assert!(expected > plugin_detail_bar_height(&theme), "width {width}");
+            } else {
+                assert_eq!(expected, plugin_detail_bar_height(&theme), "width {width}");
+            }
+            assert!(
+                rect.width() <= width,
+                "the bar overflows {width}: {}",
+                rect.width()
+            );
+        }
+    }
+}
+
+#[test]
+fn keycaps_are_split_trimmed_and_title_cased() {
+    for (chord, caps) in [
+        ("ctrl + shift + h", "Ctrl+Shift+H"),
+        ("Ctrl+Alt+G", "Ctrl+Alt+G"),
+        ("ALT+pageup", "Alt+Pageup"),
+        ("ctrl++", "Ctrl++"),
+        ("  ", ""),
+    ] {
+        assert_eq!(plugin_keycaps(chord), caps, "{chord:?}");
+    }
+}
+
+#[test]
+fn the_homepage_link_drops_only_the_web_scheme() {
+    assert_eq!(
+        homepage_display("https://github.com/zilhak/tasty"),
+        "github.com/zilhak/tasty"
+    );
+    assert_eq!(homepage_display("http://example.com"), "example.com");
+    assert_eq!(homepage_display("example.com/x"), "example.com/x");
 }
