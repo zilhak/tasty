@@ -945,7 +945,8 @@ fn the_blind_spots_are_still_the_size_they_say() {
         // 탐색기 미리보기 저장 시험이 저장 폭 LogicalPx 320 세 자리와 240 한 자리를 test 전용으로 더한다.
         // 이름 변경 팝업 sizer 가 기본 크기에 오류 줄 높이만 더하는 vec2 의 가로 0 하나를,
         // 그 시험의 오류 줄 높이 vec2(0, 18)과 측정 칸 폭 200 이 test 전용 셋을 더한다.
-        (231, 592),
+        // 열린 Select 테두리 시험의 화면 크기 vec2(600, 400)와 클릭 좌표 pos2(60, 20)의 20 이 test 전용 셋을 더한다.
+        (231, 595),
         "제외한 0과 test 전용 코드의 수가 달라졌다. 실제 사용과 수집 범위의 변경을 확인하고 기록을 갱신한다."
     );
     let roster: usize = UNIT_SPACE_SITES.iter().map(|(.., n, _)| n).sum();
