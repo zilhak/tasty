@@ -979,6 +979,7 @@ file_default = "無題.txt"
 [explorer.name]
 empty = "名前を入力してください。"
 invalid_char = "名前に「{}」は使えません。"
+edge_space = "名前の先頭や末尾に空白は使えません。"
 reserved = "システムで予約された名前です。"
 exists = "このフォルダーには「{}」がすでにあります。"
 

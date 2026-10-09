@@ -90,14 +90,22 @@ fn placeholder_named(dir: &str, name: &str) -> super::super::DirEntryInfo {
 }
 
 #[test]
-fn blank_names_are_empty_and_windows_refuses_trailing_spaces_or_dots() {
+fn blank_names_are_empty_edge_spaces_are_refused_and_windows_refuses_a_trailing_dot() {
     assert_eq!(check_name("   ", false), Err(NameError::Empty));
     assert_eq!(check_name(" \t", true), Err(NameError::Empty));
-    // Windows 는 끝의 공백·점을 떼고 만든다. Unix 는 그 이름 그대로 만든다.
-    assert_eq!(check_name("a ", true), Err(NameError::Reserved));
+    // 앞뒤 공백은 OS 와 관계없이 떼지 않고 거절한다.
+    for windows in [false, true] {
+        assert_eq!(check_name("report ", windows), Err(NameError::EdgeSpace));
+        assert_eq!(check_name(" report", windows), Err(NameError::EdgeSpace));
+        assert_eq!(check_name("my report", windows), Ok(()));
+    }
+    // Windows 는 끝의 점을 떼고 만든다. Unix 는 그 이름 그대로 만든다.
     assert_eq!(check_name("a.", true), Err(NameError::Reserved));
-    assert_eq!(check_name(" a", true), Ok(()));
-    assert_eq!(check_name("a ", false), Ok(()));
     assert_eq!(check_name("a.", false), Ok(()));
+    crate::i18n::init("en");
+    assert_eq!(
+        NameError::EdgeSpace.message("report "),
+        "Names can't start or end with a space."
+    );
     assert_eq!(check_name(".hidden", true), Ok(()));
 }

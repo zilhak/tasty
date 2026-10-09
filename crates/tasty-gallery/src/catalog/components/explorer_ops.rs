@@ -635,6 +635,7 @@ pub fn draw_name_errors(ui: &mut egui::Ui, theme: &Theme) {
                 for (value, error) in [
                     ("", t("explorer.name.empty").to_string()),
                     ("drafts/2026", t_fmt("explorer.name.invalid_char", "/")),
+                    ("report ", t("explorer.name.edge_space").to_string()),
                     ("Documents", t_fmt("explorer.name.exists", "Documents")),
                 ] {
                     let mut edit = ExplorerNameEdit {
@@ -676,6 +677,10 @@ pub fn draw_name_errors(ui: &mut egui::Ui, theme: &Theme) {
                 "“A name can't contain “{char}”.” · Windows reserved: “This name is reserved by the system.”",
             ),
             (
+                "edge space",
+                "leading / trailing space refused, never trimmed · “Names can't start or end with a space.” · spaces only = empty · Windows trailing . = reserved",
+            ),
+            (
                 "exists",
                 "“{name}” already exists in this folder. — checked on Enter",
             ),
@@ -695,7 +700,8 @@ pub fn draw_name_errors(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         "i18n: explorer.new.folder_default · explorer.new.file_default · explorer.name.empty · \
-         explorer.name.invalid_char · explorer.name.reserved · explorer.name.exists. The default \
+         explorer.name.invalid_char · explorer.name.edge_space · explorer.name.reserved · \
+         explorer.name.exists. The default \
          names are translated; the extension of the file default is not.",
     );
 }

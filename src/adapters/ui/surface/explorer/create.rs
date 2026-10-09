@@ -30,6 +30,8 @@ pub(crate) struct CreateEdit {
 pub(crate) enum NameError {
     Empty,
     InvalidChar(char),
+    /// 앞이나 뒤에 공백이 있다. 조용히 떼지 않고 거절한다.
+    EdgeSpace,
     Reserved,
     Exists,
 }
@@ -38,7 +40,8 @@ pub(crate) enum NameError {
 const WINDOWS_INVALID: &[char] = &['<', '>', ':', '"', '/', '\\', '|', '?', '*'];
 
 /// 입력하는 동안 보는 검사. 이미 있는지는 Enter 에서 따로 본다.
-/// 공백만인 이름은 빈 이름이다. Unix 의 앞뒤 공백은 그대로 둔다.
+/// 공백만인 이름은 빈 이름이다. 앞뒤 공백은 모든 OS 에서 거절한다. 사용자가 일부러 넣었을 수도 있어
+/// 떼어 내면 입력한 이름과 달라지고, 남겨 두면 눈에 보이지 않는 차이가 생기기 때문이다.
 pub(crate) fn check_name(name: &str, windows: bool) -> Result<(), NameError> {
     if name.trim().is_empty() {
         return Err(NameError::Empty);
@@ -49,8 +52,11 @@ pub(crate) fn check_name(name: &str, windows: bool) -> Result<(), NameError> {
     if let Some(c) = name.chars().find(|c| invalid(*c)) {
         return Err(NameError::InvalidChar(c));
     }
-    // Windows 는 끝의 공백·점을 떼고 만들어 다른 이름이 되므로 예약 이름처럼 막는다.
-    let trailing = windows && (name.ends_with(' ') || name.ends_with('.'));
+    if name.starts_with(char::is_whitespace) || name.ends_with(char::is_whitespace) {
+        return Err(NameError::EdgeSpace);
+    }
+    // Windows 는 끝의 점을 떼고 만들어 다른 이름이 되므로 예약 이름처럼 막는다.
+    let trailing = windows && name.ends_with('.');
     if name == "." || name == ".." || trailing || (windows && reserved_on_windows(name)) {
         return Err(NameError::Reserved);
     }
@@ -78,6 +84,7 @@ impl NameError {
         match self {
             Self::Empty => t("explorer.name.empty").to_string(),
             Self::InvalidChar(c) => t_fmt("explorer.name.invalid_char", &c.to_string()),
+            Self::EdgeSpace => t("explorer.name.edge_space").to_string(),
             Self::Reserved => t("explorer.name.reserved").to_string(),
             Self::Exists => t_fmt("explorer.name.exists", name),
         }

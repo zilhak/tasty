@@ -983,6 +983,7 @@ file_default = "untitled.txt"
 [explorer.name]
 empty = "Enter a name."
 invalid_char = "A name can't contain “{}”."
+edge_space = "Names can't start or end with a space."
 reserved = "This name is reserved by the system."
 exists = "“{}” already exists in this folder."
 
