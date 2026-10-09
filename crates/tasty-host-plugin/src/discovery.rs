@@ -61,7 +61,7 @@ fn classify_discovery_entry(
             TrustOutcome::Trusted => packages.push(PluginPackage { dir, manifest }),
             TrustOutcome::Rejected(rej) => {
                 tracing::warn!("plugin '{}' not auto-loaded ({:?})", rej.id, rej.reason);
-                rejected.push(rej);
+                rejected.push(*rej);
             }
         },
         Err(e) => tracing::warn!("plugin '{}' rejected: {}", dir.display(), e),
@@ -95,6 +95,9 @@ pub struct RejectedPlugin {
     pub name: String,
     pub version: String,
     pub authors: Vec<String>,
+    /// 매니페스트의 설명과 homepage. 서명 검증 전 값이라 표시할지는 UI 가 사유로 정한다.
+    pub description: String,
+    pub homepage: String,
     /// builtin(번들) plugin 이면 true — UI 가 "built-in" 태그를 붙인다.
     pub builtin: bool,
     pub reason: RejectionReason,
@@ -124,7 +127,8 @@ pub enum RejectionReason {
 #[cfg_attr(debug_assertions, allow(dead_code))]
 enum TrustOutcome {
     Trusted,
-    Rejected(RejectedPlugin),
+    // 거부 기록은 매니페스트 글을 실어 크므로 상자에 담아 Trusted 와 크기를 맞춘다.
+    Rejected(Box<RejectedPlugin>),
 }
 
 /// 매니페스트 sig + trust DB 로 *이 디렉토리 plugin 이 자동 로드해도 되는지* 판정.
@@ -144,18 +148,20 @@ fn trust_outcome(dir: &std::path::Path, manifest: &Manifest) -> TrustOutcome {
     {
         use crate::bundle_sig::{TrustDecision, UntrustedReason, verify_bundle_signature};
         let mk = |reason, fingerprint, added: Vec<String>, removed: Vec<String>, cause| {
-            TrustOutcome::Rejected(RejectedPlugin {
+            TrustOutcome::Rejected(Box::new(RejectedPlugin {
                 id: manifest.id.clone(),
                 name: manifest.name.clone(),
                 version: manifest.version.clone(),
                 authors: manifest.authors.clone(),
+                description: manifest.description.clone(),
+                homepage: manifest.homepage.clone(),
                 builtin: crate::builtin::is_builtin_plugin(&manifest.id),
                 reason,
                 fingerprint,
                 permissions_added: added,
                 permissions_removed: removed,
                 cause,
-            })
+            }))
         };
         match verify_bundle_signature(dir) {
             Ok(TrustDecision::Trusted) => TrustOutcome::Trusted,

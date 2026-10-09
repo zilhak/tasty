@@ -7,6 +7,8 @@ fn entry(kind: AttentionKind) -> AttentionEntry {
         name: "Log tailer".into(),
         version: "0.1.4".into(),
         authors: vec!["example".into()],
+        description: "Tails log files.".into(),
+        homepage: "https://example.com/log-tailer".into(),
         builtin: false,
         kind,
         fingerprint: None,
@@ -56,5 +58,28 @@ fn the_attention_bar_stays_inside_the_window_below_a_long_detail() {
             has(label),
             "{label:?} is not wholly visible inside the window"
         );
+    }
+}
+
+/// 매니페스트를 보여도 되는 사유면 정체 블록 메타 줄 끝에 homepage 링크가, 그 아래 설명이 보인다.
+#[test]
+fn the_attention_detail_shows_the_manifest_homepage_and_description() {
+    crate::i18n::init("en");
+    let texts = draw(entry(AttentionKind::UnknownKey));
+    let has = |label: &str| texts.iter().any(|(t, _)| t == label);
+    assert!(has("example.com/log-tailer"), "homepage link is missing");
+    assert!(has("Tails log files."), "description is missing");
+}
+
+/// 서명이 깨진 번들의 매니페스트 글은 보이지 않는다. 나머지 사유는 보인다.
+#[test]
+fn only_a_broken_signature_hides_the_manifest_text() {
+    assert!(!AttentionKind::SignatureInvalid.shows_manifest_text());
+    for kind in [
+        AttentionKind::UnknownKey,
+        AttentionKind::PermissionsChanged,
+        AttentionKind::HealthError,
+    ] {
+        assert!(kind.shows_manifest_text(), "{kind:?}");
     }
 }

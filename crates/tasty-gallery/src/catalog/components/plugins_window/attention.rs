@@ -7,8 +7,8 @@ use tasty_ui_widgets::tokens::{PLUGIN_LIST_ROW_HEIGHT, STRUCT_GAP_2};
 use tasty_ui_widgets::{
     PluginAttentionBarAction, PluginAttentionBarView, PluginAvatarSize, PluginFingerprintLineView,
     PluginIdentityView, PluginMetaView, margin_all, paint_plugin_avatar, plugin_attention_bar,
-    plugin_detail_bar_height, plugin_detail_identity, plugin_fingerprint_line, plugin_mono_header,
-    plugin_signature_invalid_detail,
+    plugin_detail_bar_height, plugin_detail_description, plugin_detail_identity,
+    plugin_fingerprint_line, plugin_mono_header, plugin_signature_invalid_detail,
 };
 
 /// 본체 ATTN_PRIMITIVE_12와 같은 12px 글꼴. 대응 semantic 토큰이 없다.
@@ -80,6 +80,9 @@ pub(super) struct Entry {
     pub version: &'static str,
     pub id: &'static str,
     pub authors: &'static str,
+    /// 매니페스트 설명·homepage. 본체처럼 서명이 깨진 사유는 비운다.
+    pub description: &'static str,
+    pub homepage: &'static str,
     pub builtin: bool,
     pub kind: Kind,
 }
@@ -90,6 +93,8 @@ pub(super) const ENTRIES: &[Entry] = &[
         version: "0.2.0",
         id: "com.example.port-scanner",
         authors: "example",
+        description: "Lists listening ports per workspace.",
+        homepage: "https://example.com/port-scanner",
         builtin: false,
         kind: Kind::UnknownKey,
     },
@@ -98,6 +103,8 @@ pub(super) const ENTRIES: &[Entry] = &[
         version: "0.1.4",
         id: "com.example.log-tailer",
         authors: "example",
+        description: "",
+        homepage: "",
         builtin: false,
         kind: Kind::SignatureInvalid,
     },
@@ -106,6 +113,8 @@ pub(super) const ENTRIES: &[Entry] = &[
         version: "0.3.1",
         id: "com.tasty.git-viewer",
         authors: "tasty",
+        description: "Read-only status, log and diff of the current repository.",
+        homepage: "https://github.com/zilhak/tasty",
         builtin: true,
         kind: Kind::PermissionsChanged,
     },
@@ -114,6 +123,8 @@ pub(super) const ENTRIES: &[Entry] = &[
         version: "0.9.0",
         id: "com.tasty.markdown",
         authors: "tasty",
+        description: "Renders Markdown files as a surface.",
+        homepage: "https://github.com/zilhak/tasty",
         builtin: true,
         kind: Kind::HealthError,
     },
@@ -348,10 +359,13 @@ pub(super) fn detail_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
             meta: PluginMetaView {
                 authors: entry.authors,
                 id: entry.id,
-                homepage: "",
+                homepage: entry.homepage,
             },
         },
     );
+    if !entry.description.is_empty() {
+        plugin_detail_description(&mut child, theme, entry.description);
+    }
     banner(&mut child, theme, entry.kind);
     reason_detail(&mut child, theme, entry.kind);
 

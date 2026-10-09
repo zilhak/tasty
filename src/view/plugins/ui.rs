@@ -72,6 +72,13 @@ impl AttentionKind {
     pub fn is_danger(self) -> bool {
         matches!(self, Self::UnknownKey | Self::SignatureInvalid)
     }
+
+    /// 매니페스트의 설명·homepage 를 보여도 되는 사유인가. 서명이 깨진 번들은 매니페스트가
+    /// 서명한 내용 그대로라는 보장이 없어 그 글과 링크를 보이지 않는다. 신뢰하지 않은 키의
+    /// 서명은 내용이 그 키로 서명된 그대로이며, 추가 탭의 매니페스트 카드도 같은 경우에 보인다.
+    pub fn shows_manifest_text(self) -> bool {
+        !matches!(self, Self::SignatureInvalid)
+    }
 }
 
 /// "확인 필요" 목록의 한 항목.
@@ -81,6 +88,9 @@ pub struct AttentionEntry {
     pub name: String,
     pub version: String,
     pub authors: Vec<String>,
+    /// 매니페스트 설명·homepage. [`AttentionKind::shows_manifest_text`] 가 false 인 사유면 비운다.
+    pub description: String,
+    pub homepage: String,
     pub builtin: bool,
     pub kind: AttentionKind,
     /// 서명 키 지문 (UnknownKey/PermissionsChanged). 표시용.

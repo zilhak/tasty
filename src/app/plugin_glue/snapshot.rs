@@ -62,13 +62,8 @@ impl App {
         let mut attention: Vec<plugins_ui::AttentionEntry> = mgr
             .rejected
             .iter()
-            .map(|r| plugins_ui::AttentionEntry {
-                id: r.id.clone(),
-                name: r.name.clone(),
-                version: r.version.clone(),
-                authors: r.authors.clone(),
-                builtin: r.builtin,
-                kind: match r.reason {
+            .map(|r| {
+                let kind = match r.reason {
                     RejectionReason::UnknownKey => plugins_ui::AttentionKind::UnknownKey,
                     RejectionReason::SignatureInvalid => {
                         plugins_ui::AttentionKind::SignatureInvalid
@@ -76,12 +71,29 @@ impl App {
                     RejectionReason::PermissionsChanged => {
                         plugins_ui::AttentionKind::PermissionsChanged
                     }
-                },
-                fingerprint: r.fingerprint.clone(),
-                permissions_added: r.permissions_added.clone(),
-                permissions_removed: r.permissions_removed.clone(),
-                health_detail: None,
-                cause: r.cause.clone(),
+                };
+                let shown = |text: &String| {
+                    if kind.shows_manifest_text() {
+                        text.clone()
+                    } else {
+                        String::new()
+                    }
+                };
+                plugins_ui::AttentionEntry {
+                    id: r.id.clone(),
+                    name: r.name.clone(),
+                    version: r.version.clone(),
+                    authors: r.authors.clone(),
+                    description: shown(&r.description),
+                    homepage: shown(&r.homepage),
+                    builtin: r.builtin,
+                    kind,
+                    fingerprint: r.fingerprint.clone(),
+                    permissions_added: r.permissions_added.clone(),
+                    permissions_removed: r.permissions_removed.clone(),
+                    health_detail: None,
+                    cause: r.cause.clone(),
+                }
             })
             .collect();
         attention.extend(mgr.packages().iter().filter_map(|pkg| {
@@ -95,6 +107,8 @@ impl App {
                 name: pkg.manifest.name.clone(),
                 version: pkg.manifest.version.clone(),
                 authors: pkg.manifest.authors.clone(),
+                description: pkg.manifest.description.clone(),
+                homepage: pkg.manifest.homepage.clone(),
                 builtin: plugin::is_builtin_plugin(id),
                 kind: plugins_ui::AttentionKind::HealthError,
                 fingerprint: None,

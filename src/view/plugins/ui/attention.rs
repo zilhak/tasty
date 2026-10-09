@@ -16,8 +16,9 @@ use tasty_ui_widgets::tokens::{PLUGIN_LIST_ROW_HEIGHT, STRUCT_GAP_2};
 use tasty_ui_widgets::{
     PluginAttentionBarAction, PluginAttentionBarView, PluginAvatarSize, PluginFingerprintLineView,
     PluginIdentityView, PluginMetaView, margin_all, margin_sym, paint_plugin_avatar,
-    plugin_attention_bar, plugin_detail_bar_height, plugin_detail_identity,
-    plugin_fingerprint_line, plugin_mono_header, plugin_signature_invalid_detail, vspace,
+    plugin_attention_bar, plugin_detail_bar_height, plugin_detail_description,
+    plugin_detail_identity, plugin_fingerprint_line, plugin_mono_header,
+    plugin_signature_invalid_detail, vspace,
 };
 
 /// 사유별 (라벨 키, 설명 키). 색은 `AttentionKind::is_danger` 로 분기.
@@ -209,9 +210,9 @@ fn draw_detail(ui: &mut egui::Ui, th: &theme::Theme, entry: &AttentionEntry) {
         .auto_shrink([false, false])
         .drag_to_scroll(false)
         .show(ui, |ui| {
-            // identity — Installed 와 같은 위젯(아바타 · 이름 줄 · `작성자 · id` 메타 줄).
+            // identity — Installed 와 같은 위젯(아바타 · 이름 줄 · `작성자 · id · homepage` 메타 줄).
             let authors = entry.authors.join(", ");
-            plugin_detail_identity(
+            let open_homepage = plugin_detail_identity(
                 ui,
                 th,
                 &PluginIdentityView {
@@ -221,11 +222,18 @@ fn draw_detail(ui: &mut egui::Ui, th: &theme::Theme, entry: &AttentionEntry) {
                     meta: PluginMetaView {
                         authors: &authors,
                         id: &entry.id,
-                        homepage: "",
+                        homepage: &entry.homepage,
                     },
                 },
             );
+            if open_homepage && !crate::terminal_link::open_uri(&entry.homepage) {
+                tracing::warn!(homepage = %entry.homepage, "plugin homepage did not open");
+            }
             vspace(ui, th.spacing_md);
+            if !entry.description.is_empty() {
+                plugin_detail_description(ui, th, &entry.description);
+                vspace(ui, th.spacing_md);
+            }
 
             // 사유 배너 (severity 색 프레임) — tinted 채움/테두리 짝
             // (`tint-fill-alpha` / `tint-border-alpha`).
