@@ -1693,7 +1693,7 @@ pub fn pages() -> Vec<Page> {
                             "settings-keybinding-rows",
                             "Keybindings — binding rows on the shared label column",
                             Some(
-                                "label column 288 held in full · gap 16 · hint inside the column · long script name wraps",
+                                "label column = longest label clamped 150 … 240 · gap 16 · hint after the last word · long labels wrap",
                             ),
                             components::settings_keybinding_rows::draw,
                         ),
