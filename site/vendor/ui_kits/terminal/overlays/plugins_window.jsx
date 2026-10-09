@@ -67,7 +67,7 @@ const SEV_COLOR = { danger: "var(--tasty-accent-danger)", warning: "var(--tasty-
 // Rejected / unregistered plugins — these never made it into the installed list.
 const ATTENTION_LIST = [
   { id: "fleet-sync", name: "fleet-sync", author: "tasty-labs", version: "1.2.0", cat: "DevOps",
-    reason: "unknown-key", builtin: true,
+    reason: "unknown-key", builtin: true, homepage: "https://github.com/zilhak/tasty-fleet-sync",
     desc: "Bundled cluster fleet sync. Its publisher key was rotated and the signature no longer matches a trusted key.",
     detail: { fingerprint: "a13c 4e7f 2b08 9d51  ·  ed25519",
       note: "The built-in publisher key rotated this release; the bundled signature was made with a key not yet in your trust store. Update Tasty or import the new key to restore it." } },
@@ -76,7 +76,7 @@ const ATTENTION_LIST = [
     desc: "Reads and injects secrets into surfaces. You trusted v0.7 — v0.8.4 requests a different permission set.",
     detail: { added: ["fs:write", "net"], removed: ["clipboard"] } },
   { id: "remote-shell", name: "remote-shell", author: "community", version: "1.0.0", cat: "DevOps",
-    reason: "signature-invalid",
+    reason: "signature-invalid", homepage: "https://example.invalid/remote-shell",
     desc: "Opens remote SSH surfaces. The bundle's signature file is missing or corrupt.",
     detail: { note: "tasty-plugin.sig is absent or does not match the manifest hash. Re-download the plugin from its source." } },
 ];
@@ -371,12 +371,18 @@ function AttentionPanel({ items, onFlash, onConfigure }) {
               </div>
               <div style={{ marginTop: 4, fontFamily: "var(--tasty-font-mono)", fontSize: 11, color: "var(--tasty-text-muted)",
                 display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                {sel.author && <><span>{sel.author}</span><span>·</span></>}<span>{sel.id}</span>
+{/* 2026-10-09 b10 — each separator travels WITH the item after it (one nowrap span), so a wrapped item never leaves a dangling · */}
+                {[sel.author, sel.id, sel.reason !== "signature-invalid" && sel.homepage && /^https?:\/\//.test(sel.homepage) && <a href={sel.homepage} target="_blank" rel="noreferrer" style={{ color: "var(--tasty-accent-primary)", textDecoration: "underline", textUnderlineOffset: 2 }}>{sel.homepage.replace(/^https?:\/\//, "")}</a>].filter(Boolean).map((part, i) => (
+                  <span key={i} style={{ display: "inline-flex", gap: 8, whiteSpace: "nowrap" }}>{i > 0 && <span>·</span>}{part}</span>
+                ))}
               </div>
             </div>
           </div>
 
-          {sel.desc && <p style={{ margin: 0, fontSize: 13, lineHeight: "var(--tasty-line-height-ui)",
+          {/* 2026-10-09 b10 — an invalid signature means the manifest text is unverified: no description, no homepage (untrusted-key items still show both) */}
+          {sel.reason === "signature-invalid"
+            ? <p style={{ margin: 0, fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>Description hidden — the signature is invalid.</p>
+            : sel.desc && <p style={{ margin: 0, fontSize: 13, lineHeight: "var(--tasty-line-height-ui)",
             color: "var(--tasty-text-secondary)", maxWidth: "var(--tasty-measure-lg)" }}>{sel.desc}</p>}
 
           {/* reason banner */}
@@ -469,6 +475,14 @@ function PluginsWindow({ onClose, onFlash, onConfigure }) {
     Object.fromEntries(PLUGIN_LIST.map((p) => [p.id, p.installed && p.status !== "idle"])));
   const [selId, setSelId] = React.useState("git-helper");
   const [confirmId, setConfirmId] = React.useState(null); // uninstall confirm is bound to one plugin id
+  // 2026-10-09 b10 — changing the selection cancels the confirm; Esc cancels it; focus lands on Cancel when it opens.
+  const pick = (id) => { setSelId(id); setConfirmId(null); };
+  React.useEffect(() => {
+    if (!confirmId) return;
+    const onKey = (e) => { if (e.key === "Escape") { e.stopPropagation(); setConfirmId(null); } };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [confirmId]);
 
   const matches = (p) => {
     const n = q.trim().toLowerCase();
@@ -549,8 +563,10 @@ function PluginsWindow({ onClose, onFlash, onConfigure }) {
               {/* 2026-10-09 — meta: author(s) · plugin id · homepage link (each optional; id always present) */}
               <div style={{ marginTop: 4, fontFamily: "var(--tasty-font-mono)", fontSize: 11, color: "var(--tasty-text-muted)",
                 display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                {sel.author && <><span>{sel.author}</span><span>·</span></>}<span>{sel.id}</span>
-                {sel.homepage && <><span>·</span><a href={sel.homepage} target="_blank" rel="noreferrer" style={{ color: "var(--tasty-accent-primary)", textDecoration: "underline", textUnderlineOffset: 2 }}>{sel.homepage.replace(/^https?:\/\//, "")}</a></>}
+{/* 2026-10-09 b10 — each separator travels WITH the item after it (one nowrap span), so a wrapped item never leaves a dangling · */}
+                {[sel.author, sel.id, sel.homepage && <a href={sel.homepage} target="_blank" rel="noreferrer" style={{ color: "var(--tasty-accent-primary)", textDecoration: "underline", textUnderlineOffset: 2 }}>{sel.homepage.replace(/^https?:\/\//, "")}</a>].filter(Boolean).map((part, i) => (
+                  <span key={i} style={{ display: "inline-flex", gap: 8, whiteSpace: "nowrap" }}>{i > 0 && <span>·</span>}{part}</span>
+                ))}
               </div>
             </div>
 
@@ -618,7 +634,7 @@ function PluginsWindow({ onClose, onFlash, onConfigure }) {
           borderTop: "var(--tasty-border-width) solid var(--tasty-separator)", flex: "none" }}>
           {isInstalled && confirmId === sel.id && (
             <>
-              {/* 2026-10-09 — uninstall confirm REPLACES the bar contents in place (same bar, same height). */}
+              {/* 2026-10-09 — uninstall confirm REPLACES the bar contents in place. b10: the bar grows with its text (max(text, control 28) + space-md × 2); the note may wrap. */}
               <span style={{ display: "inline-flex", flex: "none", color: "var(--tasty-accent-attention)" }}><Icon name="alertTriangle" size={16} /></span>
               <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
                 <span style={{ fontSize: "var(--tasty-font-size-body)", color: "var(--tasty-text-primary)" }}>Uninstall {sel.name}?</span>
@@ -626,7 +642,7 @@ function PluginsWindow({ onClose, onFlash, onConfigure }) {
                   {sel.builtin ? "Built-in — it won't be installed again on the next launch." : "Its files are removed. Settings stay until you delete them."}
                 </span>
               </div>
-              <Button variant="ghost" onClick={() => setConfirmId(null)}>Cancel</Button>
+              <Button variant="ghost" autoFocus onClick={() => setConfirmId(null)}>Cancel</Button>
               <Button variant="danger" onClick={() => { setConfirmId(null); uninstall(sel); }}>Uninstall</Button>
             </>
           )}
@@ -694,7 +710,7 @@ function PluginsWindow({ onClose, onFlash, onConfigure }) {
               const on = p.id === selId;
               const isOn = installed[p.id] && enabled[p.id];
               return (
-                <div key={p.id} onClick={() => setSelId(p.id)} style={{ display: "flex", alignItems: "center",
+                <div key={p.id} onClick={() => pick(p.id)} style={{ display: "flex", alignItems: "center",
                   gap: "var(--tasty-space-sm)", padding: "var(--tasty-space-sm) var(--tasty-space-sm)", borderRadius: "var(--tasty-radius)", cursor: "pointer",
                   background: on ? "var(--tasty-surface-active)" : "transparent",
                   boxShadow: on ? "inset var(--tasty-listctrl-selected-bar-width) 0 0 var(--tasty-listctrl-selected-bar)" : "none" }}>

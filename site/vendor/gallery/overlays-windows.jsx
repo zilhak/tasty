@@ -1209,7 +1209,7 @@ function Page() {
                         <span style={{ width: "var(--tasty-field-width-xs)" }}><Input block defaultValue={val} aria-invalid={err ? true : undefined} style={{ fontFamily: "var(--tasty-font-mono)", textAlign: "right", ...(err ? { borderColor: "var(--tasty-accent-danger)" } : null) }} /></span>
                         <span style={{ marginLeft: "calc(var(--tasty-space-sm) - var(--tasty-settings-label-gap))", fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>B</span>
                       </div>
-                      {err && <div style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-accent-danger)" }}>{err}</div>}
+                      {err && <div style={{ marginLeft: "calc(var(--tasty-settings-label-width) + var(--tasty-settings-label-gap))", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-accent-danger)" }}>{err}</div>}
                       <p style={{ margin: 0, fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)", maxWidth: "var(--tasty-measure-md)", lineHeight: "var(--tasty-line-height-ui)" }}>{desc}</p>
                     </div>
                   </React.Fragment>
@@ -1218,7 +1218,7 @@ function Page() {
             ))}
           </Stage>
           <Meta
-            specs={[["L2 position", "Misc · after Scripts · before Tastyrc (Windows)"], ["heading", "REPORT LIMITS · mono micro uppercase · muted"], ["row grid", "label [150 … 240] · gap 16 (settings-label-gap — the request's 12 is superseded)"], ["field", "mono Input · field-width-xs 90 · right-aligned · unit B (static, muted, 8 after the field)"], ["caption", "under its row · gap 4 · caption 11 · muted · measure-md"], ["between rows", "1px separator · settings-row-gap 12"], ["ranges", "note 64 … min(65536, attempt − 1) · attempt max(128, note + 1) … 131072"], ["range line", "only when out of range (danger) · clamp on commit"], ["numbers", "raw bytes, no grouping, no KiB"]]}
+            specs={[["L2 position", "Misc · after Scripts · before Tastyrc (Windows)"], ["heading", "REPORT LIMITS · mono micro uppercase · muted"], ["row grid", "label [150 … 240] · gap 16 (settings-label-gap — the request's 12 is superseded)"], ["field", "mono Input · field-width-xs 90 · right-aligned · unit B (static, muted, 8 after the field)"], ["caption", "under its row · gap 4 · caption 11 · muted · measure-md"], ["between rows", "1px separator · settings-row-gap 12"], ["ranges", "note 64 … min(65536, attempt − 1) · attempt max(128, note + 1) … 131072"], ["range line", "only when out of range (danger) · clamp on commit · directly UNDER THE INPUT, in the control column (label width + label gap) — b10, every numeric field"], ["numbers", "raw bytes, no grouping, no KiB"]]}
             tokens={[{ tok: "--tasty-settings-row-gap", use: "→ space-md 12 (2026-10-09)" }, { tok: "--tasty-settings-row-caption-gap", use: "row → caption 4" }, { tok: "--tasty-field-width-xs", use: "90" }, { tok: "--tasty-accent-danger", use: "out of range", color: "var(--tasty-accent-danger)" }]} />
           <Note>i18n (given): en “Note size limit” / “Attempt report limit” · ko “기록 한 건 상한” / “회차 report 상한” · ja “記録 1 件の上限” / “試行 report 上限” · heading “Report limits”. Gallery spec id: <code>settings-task-pipeline</code>.</Note>
         </Spec>
@@ -1236,15 +1236,51 @@ function Page() {
                   </span>
                   <span style={{ flex: "none", width: 28, fontSize: 12, color: "var(--tasty-text-muted)" }}>%</span>
                 </div>
-                {bad && <div style={{ fontSize: 11, color: "var(--tasty-accent-danger)", paddingLeft: 2 }}>Between 25 and 200. Commits as 200.</div>}
+                {bad && <div style={{ fontSize: 11, color: "var(--tasty-accent-danger)", alignSelf: "flex-end", width: "calc(var(--tasty-field-width-xs) + 38px)" }}>Between 25 and 200. Commits as 200.</div>}
               </div>
             ))}
           </Stage>
           <Meta
-            specs={[["control", "existing Input — no new component"], ["font", <span className="tok">--tasty-font-mono</span>], ["align", "right — digits line up down a settings column"], ["width", <>90 (<span className="tok">--tasty-field-width-xs</span>) — <b>88 is dropped</b></>], ["suffix", "static text outside the field, muted"], ["clamp", "on commit (blur / ↵), never mid-typing"], ["out of range", "danger border + one inline line with the range"], ["scope", "every numeric field in Settings and in plugin settings"]]}
+            specs={[["control", "existing Input — no new component"], ["font", <span className="tok">--tasty-font-mono</span>], ["align", "right — digits line up down a settings column"], ["width", <>90 (<span className="tok">--tasty-field-width-xs</span>) — <b>88 is dropped</b></>], ["suffix", "static text outside the field, muted"], ["clamp", "on commit (blur / ↵), never mid-typing"], ["out of range", "danger border + one inline line with the range, under the input (control column), above the description caption (b10)"], ["scope", "every numeric field in Settings and in plugin settings"]]}
             tokens={[{ tok: "--tasty-field-width-xs", use: "numeric field width", }, { tok: "--tasty-accent-danger", use: "out-of-range edge + line", color: "var(--tasty-accent-danger)" }, { tok: "--tasty-text-muted", use: "unit suffix", color: "var(--tasty-text-muted)" }]} />
           <Note><b>Maximum size keeps 90.</b> The 88 in the earlier mock was a drawing accident, not a role — the field-width set stays 90 / 110 / 160 / 180 / 200 with no new member. Two-pixel gain, one more name to maintain: not worth it.</Note>
           <Dont><b>Don't</b> put a drag-to-change number inside a scrollable settings pane. The gesture collides with the scroll and the range stays invisible until you overshoot it.</Dont>
+        </Spec>
+
+        <Spec title="Settings · control metrics — shortcut rows · drag flip modifier · font combo · open Select (2026-10-09 b10)"
+          when={<>Values that were literals in the app become tokens. <b>Shortcut rows</b> (Keybindings General … Scripts): the record button is the Import / Export slot size — <span className="tok">--tasty-kb-record-width</span> 140 × <span className="tok">--tasty-kb-record-height</span> 24, mono, surface-raised — and the add button is <span className="tok">--tasty-kb-record-add-width</span> 32 × 24; buttons in a row sit 4 apart; rows sit <span className="tok">--tasty-kb-row-gap</span> <b>8</b> apart with no divider (a long, scanned list — denser than the 12 of settings rows). The <b>Explorer drag flip modifier</b> is a row in <b>Keybindings › General</b>, beside the category switch modifier, in the same shape: label + modifier Select (field-width-md) + caption. The <b>font search combo</b> list caps at <span className="tok">--tasty-font-combo-list-max-height</span> 300 and its search field is the list width minus <span className="tok">--tasty-font-combo-search-inset</span> on each side. An <b>open Select</b> trigger takes the existing <span className="tok">--tasty-select-border-focus</span> (→ border-focus), as in the components “no value” panel. Appearance › General keeps the app's order: font rows, the preview right after them (space-lg before, caption heading “Preview”), then a separator and Ligatures / Opacity.</>}>
+          <Stage variant="solo" style={{ padding: 20, background: "var(--tasty-bg-app)", gap: 16, flexWrap: "wrap", alignItems: "flex-start" }}>
+            {[["Mocha", null], ["Latte", "latte"]].map(([label, th]) => (
+              <div key={label} data-theme={th || undefined} style={{ width: 480, display: "flex", flexDirection: "column", gap: "var(--tasty-space-md)", padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-panel)", border: "var(--tasty-border-width) solid var(--tasty-border-default)", borderRadius: "var(--tasty-radius)" }}>
+                <div style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>{label} · Keybindings › General</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-kb-row-gap)" }}>
+                  {[["New tab", ["Ctrl+T"]], ["Close tab", ["Ctrl+W", "Ctrl+F4"]], ["Split right", []]].map(([act, keys]) => (
+                    <div key={act} style={{ display: "grid", gridTemplateColumns: "var(--tasty-settings-label-width) 1fr", columnGap: "var(--tasty-settings-label-gap)", alignItems: "center" }}>
+                      <span style={{ fontSize: "var(--tasty-font-size-body)", color: "var(--tasty-text-secondary)" }}>{act}</span>
+                      <span style={{ display: "flex", gap: "var(--tasty-space-xs)", flexWrap: "wrap" }}>
+                        {keys.map((k) => <span key={k} style={{ width: "var(--tasty-kb-record-width)", height: "var(--tasty-kb-record-height)", display: "inline-flex", alignItems: "center", justifyContent: "center", boxSizing: "border-box", background: "var(--tasty-surface-raised)", border: "var(--tasty-border-width) solid var(--tasty-border-default)", borderRadius: "var(--tasty-radius)", fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-primary)" }}>{k}</span>)}
+                        <span style={{ width: "var(--tasty-kb-record-add-width)", height: "var(--tasty-kb-record-height)", display: "inline-flex", alignItems: "center", justifyContent: "center", boxSizing: "border-box", border: "var(--tasty-border-width) solid var(--tasty-border-default)", borderRadius: "var(--tasty-radius)", color: "var(--tasty-text-muted)" }}><WIcon name="plus" size="var(--tasty-icon-size-sm)" /></span>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ height: "var(--tasty-border-width)", background: "var(--tasty-separator)" }} />
+                {[["Category switch modifier:", "Ctrl+Shift", "Hold to show category keycaps over the sidebar."], ["Explorer drag flip modifier:", th ? "Option" : "Ctrl", "Hold while dragging in the Explorer to copy instead of move, or move instead of copy."]].map(([lab, val, cap]) => (
+                  <div key={lab} style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-settings-row-caption-gap)" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "var(--tasty-settings-label-width) auto", columnGap: "var(--tasty-settings-label-gap)", alignItems: "center", justifyContent: "start", minHeight: "var(--tasty-settings-row-min-height)" }}>
+                      <span style={{ fontSize: "var(--tasty-font-size-body)", color: "var(--tasty-text-secondary)" }}>{lab}</span>
+                      <span style={{ width: "var(--tasty-field-width-md)", height: "var(--tasty-control-height)", display: "flex", alignItems: "center", justifyContent: "space-between", boxSizing: "border-box", padding: "0 var(--tasty-space-sm)", background: "var(--tasty-select-bg)", border: "var(--tasty-border-width) solid " + (lab.startsWith("Explorer") && !th ? "var(--tasty-select-border-focus)" : "var(--tasty-select-border)"), borderRadius: "var(--tasty-radius)", fontSize: "var(--tasty-font-size-body)", color: "var(--tasty-text-primary)" }}>{val}<WIcon name="chevronDown" size="var(--tasty-icon-size-sm)" /></span>
+                    </div>
+                    <p style={{ margin: 0, fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)", maxWidth: "var(--tasty-measure-md)" }}>{cap}</p>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </Stage>
+          <Meta
+            specs={[["record button", "kb-record-width 140 × kb-record-height 24 · mono caption · surface-raised · 1px border-default"], ["add (+)", "kb-record-add-width 32 × 24"], ["in-row gap", "space-xs 4"], ["row gap", "kb-row-gap 8 · no divider (kit KeyRow divider + paddingBottom 6 retired)"], ["drag flip row", "Keybindings › General · after Category switch modifier · Select field-width-md · options macOS Option / Command / Control / Shift (default Option), others Ctrl / Alt / Shift (default Ctrl)"], ["font combo", "trigger field-width-lg 200 (or less) · list max font-combo-list-max-height 300 · search field = list − 2 × font-combo-search-inset 4"], ["open Select", "trigger border select-border-open → border-focus (Mocha sample shows it open)"], ["Appearance › General", "font rows → space-lg → caption “Preview” → preview (content width) → separator → Ligatures · Opacity (app order confirmed)"]]}
+            tokens={[{ tok: "--tasty-kb-record-width", use: "→ kb-ie-slot-min-width 140" }, { tok: "--tasty-kb-record-height", use: "→ kb-ie-slot-height 24" }, { tok: "--tasty-kb-record-add-width", use: "→ size-32" }, { tok: "--tasty-kb-row-gap", use: "→ space-sm 8" }, { tok: "--tasty-font-combo-list-max-height", use: "→ size-300" }, { tok: "--tasty-font-combo-search-inset", use: "→ space-xs 4" }, { tok: "--tasty-select-border-focus", use: "existing → border-focus · now also the OPEN state", color: "var(--tasty-select-border-focus)" }]} />
+          <Note>i18n: <code>settings.keybindings.explorer_drag_flip_modifier_label</code> “Explorer drag flip modifier:” / “탐색기 드래그 전환 키:” / “エクスプローラーのドラッグ切替キー:” · caption <code>…_hint</code> “Hold while dragging in the Explorer to copy instead of move, or move instead of copy.” / “탐색기에서 끌 때 누르고 있으면 이동 대신 복사, 복사 대신 이동합니다.” / “エクスプローラーでドラッグ中に押すと、移動とコピーが入れ替わります。” The same label goes in the import table and the option-migration card. Gallery id: <code>settings-control-metrics</code>.</Note>
         </Spec>
 
         <Spec title="Hook Handlers — origin decides whether a row can be removed"

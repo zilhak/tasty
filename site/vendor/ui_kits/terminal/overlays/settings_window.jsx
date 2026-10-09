@@ -20,7 +20,7 @@ function ThemeSwatch({ id, label, colors, active, onClick }) {
 function KeyRow({ action, keys }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 16, minHeight: "var(--tasty-settings-row-min-height)",
-      borderBottom: "var(--tasty-border-width) solid var(--tasty-separator)", paddingBottom: 6 }}>
+      /* b10: no divider — rows sit kb-row-gap (8) apart in the parent */ }}>
       <span style={{ flex: 1, fontSize: 13, color: "var(--tasty-text-secondary)" }}>{action}</span>
       <Kbd keys={keys} />
     </div>

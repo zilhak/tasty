@@ -88,7 +88,7 @@ function XRing({ children, radius = "var(--tasty-radius-sm)", style }) {
 // ── Create ────────────────────────────────────────────────
 function XNameError({ text, left = 34 }) {
   return (
-    <div role="alert" style={{ position: "absolute", top: "100%", left, zIndex: 2, marginTop: 2, maxWidth: "var(--tasty-size-240)", padding: "var(--tasty-space-xs) var(--tasty-space-sm)", background: "var(--tasty-menu-bg)", border: "var(--tasty-border-width) solid var(--tasty-explorer-name-error-fg)", borderRadius: "var(--tasty-radius)", boxShadow: "var(--tasty-shadow-popover)", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-primary)", lineHeight: "var(--tasty-line-height-ui)" }}>{text}</div>
+    <div role="alert" style={{ position: "absolute", top: "100%", left, zIndex: 2, marginTop: 2, maxWidth: "var(--tasty-explorer-name-error-max-width)", padding: "var(--tasty-space-xs) var(--tasty-space-sm)", background: "var(--tasty-menu-bg)", border: "var(--tasty-border-width) solid var(--tasty-explorer-name-error-fg)", borderRadius: "var(--tasty-radius)", boxShadow: "var(--tasty-shadow-popover)", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-primary)", lineHeight: "var(--tasty-line-height-ui)" }}>{text}</div>
   );
 }
 function XDetailEdit({ glyph = XK.ic.folder, value = "New folder", error }) {
@@ -231,7 +231,7 @@ function CreateSection() {
           )} />
         </Stage>
         <Meta
-          specs={[["input", "Input invalid (danger border)"], ["message", "under the field · menu-bg · 1px explorer-name-error-fg · caption 11 · text-primary · max 240 · overlaps rows below"], ["empty", "“Enter a name.”"], ["invalid", "“A name can't contain “{char}”.” · also reserved names on Windows: “This name is reserved by the system.”"], ["exists", "“{name}” already exists in this folder. — checked on ↵"], ["after an error", "input stays open, text kept"]]}
+          specs={[["input", "Input invalid (danger border)"], ["message", "under the field · menu-bg · 1px explorer-name-error-fg · caption 11 · text-primary · max explorer-name-error-max-width 240 · overlaps rows below"], ["empty", "“Enter a name.”"], ["invalid", "“A name can't contain “{char}”.” · also reserved names on Windows: “This name is reserved by the system.”"], ["exists", "“{name}” already exists in this folder. — checked on ↵"], ["after an error", "input stays open, text kept"]]}
           tokens={[{ tok: "--tasty-explorer-name-error-fg", use: "→ accent-danger", color: "var(--tasty-explorer-name-error-fg)" }, { tok: "--tasty-menu-bg", use: "message box", color: "var(--tasty-menu-bg)" }, { tok: "--tasty-shadow-popover", use: "message lift" }]} />
         <Note>i18n: <code>explorer.new.folder_default</code> “New folder” · <code>explorer.new.file_default</code> “untitled.txt” · <code>explorer.name.empty</code> · <code>explorer.name.invalid_char</code> · <code>explorer.name.reserved</code> · <code>explorer.name.exists</code>. The default names are translated; the extension of the file default is not.</Note>
       </Spec>
@@ -344,10 +344,20 @@ function DragSection() {
               <XDragChip glyph={<XIcon name="layers" />} label="2 items" op="refused" reason="remote folders are read-only" style={{ position: "absolute", left: 120, top: 150 }} />
             </div>
           </XCol>
+          <XCol label="elsewhere — window file-drop overlay (tokens b10)" w={420}>
+            <XThemes gap="var(--tasty-space-sm)" render={() => (
+              <div style={{ position: "relative", width: 420, maxWidth: "100%", height: 160, background: "var(--tasty-surface-terminal-focused-bg)", border: "var(--tasty-border-width) solid var(--tasty-border-default)", borderRadius: "var(--tasty-radius)", fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)", padding: "var(--tasty-space-sm)", boxSizing: "border-box" }}>
+                ~/work/tasty ❯
+                <div style={{ position: "absolute", inset: "var(--tasty-space-sm)", display: "flex", alignItems: "center", justifyContent: "center", gap: "var(--tasty-space-sm)", background: "var(--tasty-file-drop-overlay-bg)", border: "var(--tasty-border-width) solid var(--tasty-file-drop-overlay-border)", borderRadius: "var(--tasty-radius)", color: "var(--tasty-file-drop-overlay-fg)", fontFamily: "var(--tasty-font-ui)", fontSize: "var(--tasty-font-size-body)" }}>
+                  <XIcon name="download" size="var(--tasty-icon-size-md)" />Drop to open
+                </div>
+              </div>
+            )} />
+          </XCol>
         </Stage>
         <Meta
           specs={[["over an explorer", "copy into · window drop overlay suppressed for that cell"], ["elsewhere", "window overlay + open with handler (unchanged)"], ["op", "always Copy to (no move from the OS)"], ["remote", "refused · “remote folders are read-only”"], ["drag out", "not in this pass"]]}
-          tokens={[{ tok: "--tasty-explorer-drop-target-border", use: "body ring", color: "var(--tasty-explorer-drop-target-border)" }, { tok: "--tasty-explorer-drag-copy-fg", use: "Copy to", color: "var(--tasty-explorer-drag-copy-fg)" }]} />
+          tokens={[{ tok: "--tasty-explorer-drop-target-border", use: "body ring", color: "var(--tasty-explorer-drop-target-border)" }, { tok: "--tasty-explorer-drag-copy-fg", use: "Copy to", color: "var(--tasty-explorer-drag-copy-fg)" }, { tok: "--tasty-file-drop-overlay-bg", use: "window overlay fill · 0.12 (was alpha 31)", color: "var(--tasty-file-drop-overlay-bg)" }, { tok: "--tasty-file-drop-overlay-border", use: "window overlay edge · 0.36 (was alpha 153)", color: "var(--tasty-file-drop-overlay-border)" }, { tok: "--tasty-file-drop-overlay-fg", use: "glyph + label · full ink", color: "var(--tasty-file-drop-overlay-fg)" }]} />
         <Note>i18n: <code>explorer.drag.items</code> “{"{n}"} items” · <code>explorer.drag.move_to</code> “Move to {"{folder}"}” · <code>explorer.drag.copy_to</code> “Copy to {"{folder}"}” · <code>explorer.drag.refused</code> “Can't drop — {"{reason}"}” · reasons: <code>into_itself</code> “a folder can't go inside itself” · <code>same_folder</code> “already in this folder” · <code>remote</code> “remote folders are read-only” · <code>no_write</code> “no write access”.</Note>
       </Spec>
     </Section>
@@ -456,4 +466,4 @@ function SearchSection() {
   );
 }
 
-window.ExplorerOpsParts = { XLbl, XCol, XThemes, XToolbar, XStatus, XCell, XDetail, XROWS, XListRow, CreateSection, DragSection, SearchSection };
+window.ExplorerOpsParts = { XLbl, XCol, XThemes, XToolbar, XStatus, XCell, XDetail, XROWS, XListRow, XHi, XFindBar, XNameError, XListEdit, CreateSection, DragSection, SearchSection };

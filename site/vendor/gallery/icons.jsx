@@ -70,6 +70,7 @@ const GROUPS = [
       { name: "folderPlus", role: "new folder (explorer toolbar / menu)" },
       { name: "filePlus", role: "new file (explorer toolbar / menu)" },
       { name: "info", role: "properties / information" },
+      { name: "link", role: "symbolic link (explorer Properties / rows) — 2026-10-09 batch 10" },
       { name: "image", role: "image surface / preview" },
       { name: "list", role: "log surface / list lines" },
       { name: "layoutGrid", role: "gallery / grid view mode" },
