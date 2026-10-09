@@ -59,8 +59,10 @@ impl App {
                 continue;
             }
             // 자기 namespace 요청은 호스트 구현으로 위임할 수 있어 다른 플러그인 요청만 forward한다.
+            // 호스트 변환 메서드는 소유 플러그인을 거치지 않고 아래 journal 접수로 간다.
             if let Some(mgr) = self.plugin_manager.as_mut()
                 && mgr.namespace_belongs_to_other(&call.method, &call.plugin_id)
+                && !crate::app::journal::commands::host_converts(&call.method)
             {
                 mgr.forward_namespace_call_from_plugin(
                     &call.method,
@@ -369,6 +371,24 @@ mod tests {
         assert!(
             gate < first_branch,
             "원문에서 게이트({gate})가 첫 메서드 분기({first_branch})보다 뒤에 있다."
+        );
+    }
+
+    /// 다른 플러그인의 호스트 변환 요청이 소유 플러그인으로 전달되지 않는지 원문으로 확인한다.
+    /// GUI App 을 시험에서 만들 수 없어 전달 조건의 형태만 검사한다.
+    #[test]
+    fn a_host_conversion_skips_the_cross_plugin_forward() {
+        let src = source();
+        let (condition, _) = src
+            .split_once("mgr.forward_namespace_call_from_plugin(")
+            .expect("플러그인 간 전달을 못 찾았다");
+        let condition = condition
+            .rsplit_once("if let Some(mgr)")
+            .map(|(_, tail)| tail)
+            .expect("전달 조건을 못 찾았다");
+        assert!(
+            condition.contains("!crate::app::journal::commands::host_converts(&call.method)"),
+            "호스트 변환이 소유 플러그인으로 전달된다: {condition}"
         );
     }
 

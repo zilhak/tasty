@@ -203,6 +203,7 @@ const DELEGATED_ROUTERS: &[(&str, &str)] = &[
         "handle_input_rule_update",
     ),
     ("src/app/ipc/debug_methods.rs", "ipc_debug_fullscreen"),
+    ("src/app/journal/commands.rs", "host_converts"),
     ("src/app/ipc/debug_methods.rs", "project_active_modal"),
     ("src/core/request_target.rs", "method_scoped_resource_id"),
 ];

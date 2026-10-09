@@ -146,8 +146,9 @@ const DISPATCH_ROOT: &str = "src/adapters/ipc/handler.rs";
 /// 2026-09-05 dispatch의 메서드 리터럴 213개를 측정한 뒤 빈 수집을 찾도록 둔 하한이다.
 const MIN_DISPATCH_METHOD_LITERALS: usize = 150;
 
-/// 번들 namespace와 겹치는 호스트 처리 이름이다. 외부 호출은 먼저 플러그인으로 전달되므로
-/// 플러그인이 host.call로 다시 넘겨야 호스트 구현에 도달한다. 비활성화는 namespace 소유를 해제하지 않는다.
+/// 번들 namespace와 겹치는 호스트 처리 이름이다. 외부 호출은 대부분 먼저 플러그인으로 전달되므로
+/// 플러그인이 host.call로 다시 넘겨야 호스트 구현에 도달한다. GUI 호스트가 직접 변환하는 이름은
+/// 플러그인을 거치지 않는다. 비활성화는 namespace 소유를 해제하지 않는다.
 /// 이 검사는 겹치는 이름의 명부를 대조하며 실제 중계 동작은 검증하지 않는다.
 const SHARED_WITH_A_BUNDLED_PLUGIN: &[(&str, &str)] = &[
     (
@@ -156,7 +157,7 @@ const SHARED_WITH_A_BUNDLED_PLUGIN: &[(&str, &str)] = &[
     ),
     (
         "image.open",
-        "플러그인이 요청을 받아 host.call로 호스트에 전달한다",
+        "GUI 호스트는 직접 변환하고, 헤드리스에서는 플러그인이 받아 host.call로 호스트에 전달한다",
     ),
     (
         "markdown.navigate",

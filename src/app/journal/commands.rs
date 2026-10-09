@@ -289,6 +289,14 @@ impl Commands {
     }
 }
 
+/// A host-converted method inside a plugin namespace. The GUI host admits it directly and never
+/// sends it to the namespace owner: the conversion waits for that owner's worker to acknowledge
+/// the old surface's destruction, and a worker relaying the request back through `host.call`
+/// cannot answer until its call times out.
+pub(crate) fn host_converts(method: &str) -> bool {
+    cfg!(feature = "gui") && method == "image.open"
+}
+
 pub(crate) fn handles(method: &str) -> bool {
     tasty_ipc::method_meta::has_structure_journal_contract(method)
 }
@@ -762,10 +770,8 @@ impl JournalApplication {
         call: &tasty_host_plugin::manager::PendingPluginCall,
         manager: Option<&crate::plugin::PluginManager>,
     ) -> bool {
-        // This runs only after namespace routing. The owning image plugin trampolines
-        // into the host; the outer namespace request retains its existing key contract.
-        let host_conversion = cfg!(feature = "gui") && request.method == "image.open";
-        if !handles_request(request) && !host_conversion {
+        // This runs only after namespace routing; a host conversion is never sent to its owner.
+        if !handles_request(request) && !host_converts(&request.method) {
             return false;
         }
         if !manager.is_some_and(|manager| manager.plugin_call_is_current(call)) {
@@ -791,7 +797,7 @@ impl JournalApplication {
         command: &crate::ipc::server::IpcCommand,
         caller: &crate::ipc::caller::CallerContext,
     ) -> bool {
-        if command.request.method != "image.open" {
+        if !host_converts(&command.request.method) {
             return false;
         }
         self.admit_request(

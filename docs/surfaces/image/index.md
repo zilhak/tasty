@@ -23,7 +23,7 @@
   매니페스트 `[[contributes.commands]]`로 선언하고 Settings › Keybindings › Plugins에서
   관리한다. 사용하지 않는 호스트 바인딩을 두면 webview가 처리해야 할 Ctrl+Z까지 가로챌 수 있다.
 
-- **cli / IPC** — `image.save`/`export_png`/`paste`/`next`/`prev`/`reload` 는 plugin 이 직접 처리(픽셀·편집·네비 상태 소유), `image.open`(surface 변환)·`image.list`(host surface 열거)는 host 로 trampoline.
+- **cli / IPC** — `image.save`/`export_png`/`paste`/`next`/`prev`/`reload` 는 plugin 이 직접 처리(픽셀·편집·네비 상태 소유), `image.list`(host surface 열거)는 plugin 이 받아 host 로 trampoline 한다. `image.open`(surface 변환)은 GUI host 가 plugin 에 넘기지 않고 직접 변환한다. 변환은 옛 surface 의 회수 확인을 이 plugin 의 처리 스레드에서 받아야 하므로, 처리 스레드가 `host.call` 로 되돌려 보내며 기다리면 서로 기다리다 호출 시한(60초)까지 멈춘다. 헤드리스 host 에는 변환 처리가 없어 plugin 을 거쳐 `-32017` 로 거절된다.
 - **idle auto-reload(입력 없이도 갱신)** — egui-mesh surface 는 입력·geom·theme·focus·invalidated 중 하나가 있어야 host 가 `set_context` 를 forward 하므로, 아무도 안 건드리는 동안은 `paint` 가 오지 않는다 — 그래서 별도 감시 스레드가 유일한 자동 갱신 경로다. 감시 구현은 SDK의 `file_watch` 공용 모듈이며([plugin 개발 가이드](../../dev-guide/plugin-development.md)), 변경을 감지하면 `self_invoke` 로 이 plugin 자신의 `image.reload` 를 부른다 — 실제 read 가 그 한 경로로만 수렴해 stale read 레이스가 없다. reload 는 `repaint_last` 로 새 frame 을 보내고, host 는 새 frame 을 받은 surface 의 창을 다시 그린다([egui-mesh 채널](../../dev-guide/egui-mesh-channel.md)).
 - **변경 확인은 `StatGatedDigest`를 사용한다.** 이미지는 파일이 클수록 읽기 비용이 커지므로,
   markdown의 `ContentDigest`처럼 매번 파일 전체를 읽지 않는다. 평소에는 `stat`으로

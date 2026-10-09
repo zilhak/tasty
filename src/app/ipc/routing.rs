@@ -18,7 +18,9 @@ fn forward_owned_namespace(
     let Some(mgr) = plugin_manager else {
         return false;
     };
-    if !mgr.owns_namespace(&cmd.request.method) {
+    if !mgr.owns_namespace(&cmd.request.method)
+        || crate::app::journal::commands::host_converts(&cmd.request.method)
+    {
         return false;
     }
     host_ipc::handler::idempotency::forward_keeping_the_key(caller, cmd, |c| {
@@ -218,7 +220,22 @@ mod namespace_forward_tests {
     /// 키가 있는 계약 안 메서드는 보존소의 relay 안에서 같은 전달을 부른다.
     #[test]
     fn a_keyed_table_method_is_forwarded_once_with_the_commands_request_seq() {
-        forwards_once_with_its_seq("image", "image.open", Some("gui-namespace-forward-once"));
+        forwards_once_with_its_seq("image", "image.next", Some("gui-namespace-forward-once"));
+    }
+
+    /// 호스트 변환을 소유 플러그인에 보내면 그 플러그인 worker 가 host.call 로 되돌려 보내는
+    /// 동안 호스트는 같은 worker 의 옛 surface 회수 확인을 기다려 호출 시한까지 멈춘다.
+    #[test]
+    fn a_host_converted_method_is_not_forwarded_to_its_namespace_owner() {
+        let mut mgr = manager();
+        let stub = mgr.attach_namespace_stub_for_test(OWNER, "image");
+        let (cmd, _rx) = command("image.open", Some("gui-host-conversion"));
+        assert!(!forward_owned_namespace(
+            Some(&mut mgr),
+            &CallerContext::local(),
+            &cmd
+        ));
+        assert!(stub.drain_invokes().is_empty());
     }
 
     #[test]

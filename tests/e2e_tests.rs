@@ -1732,22 +1732,22 @@ fn a_request_naming_an_unowned_target_is_rejected() {
         "에러가 무엇을 못 찾았는지 말해야 고칠 수 있다: {resp}"
     );
 
-    // image 플러그인이 host로 전달하는 호출도 확인한다. 헤드리스에는 해당 host 핸들러가 없어 이 경우는 GUI에서만 검사한다.
+    // image namespace에 있지만 GUI 호스트가 직접 변환하는 호출도 확인한다. 헤드리스에는 해당 host 핸들러가 없어 이 경우는 GUI에서만 검사한다.
     #[cfg(feature = "gui")]
     {
-        let via_plugin = tasty.call_raw(
+        let converted = tasty.call_raw(
             "image.open",
             json!({ "surface_id": 999_999, "path": "/tmp/does-not-exist.png" }),
         );
-        let via_msg = via_plugin
+        let via_msg = converted
             .get("error")
             .and_then(|e| e.get("message"))
             .and_then(|m| m.as_str())
             .unwrap_or_default();
         assert!(
             via_msg.contains("surface 999999"),
-            "plugin 을 경유한 호출도 지목한 대상이 없으면 같은 이유로 거절돼야 한다: \
-             {via_plugin}"
+            "호스트가 변환하는 plugin namespace 호출도 지목한 대상이 없으면 같은 이유로 거절돼야 한다: \
+             {converted}"
         );
     }
 
