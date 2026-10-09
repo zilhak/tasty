@@ -165,7 +165,7 @@ mirror(원격) explorer:
 
 ### Grid 썸네일
 
-Grid 셀은 모두 `explorer_grid_thumb_size`(40) 슬롯을 잡아 썸네일 유무와 관계없이 행 높이가 같다(셀 높이 +24, 시안 "Grid thumbnails", `explorer/thumbs.rs`). 로컬 explorer 의 그림 파일 중 1 MB 이하인 정규 파일만, 화면에 보인 셀부터 read worker 가 긴 변 80px 로 줄여 만든다. 미리보기와 같은 픽셀 상한을 넘으면 디코딩하지 않는다. 썸네일은 40×40 에 맞추고(키우지 않는다) 1px separator 테두리와 radius-sm 을 둔다. 만드는 동안·상한 초과·디코딩 실패는 16 글리프(accent-info)를 그대로 둔다. 캐시(`ExplorerView::thumbs`)는 경로와 수정 시각으로 맞추고 512 개를 넘으면 지금 폴더에 없는 항목부터 버린다.
+Grid 셀은 모두 `explorer_grid_thumb_size`(40) 슬롯을 잡아 썸네일 유무와 관계없이 행 높이가 같다(셀 높이 +24, 시안 "Grid thumbnails", `explorer/thumbs.rs`). 로컬 explorer 의 그림 파일 중 1 MB 이하인 정규 파일만, 화면에 보인 셀부터 read worker 가 긴 변 80px 로 줄여 만든다. 미리보기와 같은 픽셀 상한을 넘으면 디코딩하지 않는다. 썸네일은 40×40 에 맞추고(키우지 않는다) 1px separator 테두리와 radius-sm 을 둔다. 만드는 동안·상한 초과·디코딩 실패는 16 글리프(accent-info)를 그대로 둔다. 캐시(`ExplorerView::thumbs`)는 경로와 수정 시각으로 맞추고 512 개까지 둔다. 차면 그 프레임에 보이지 않은 항목 중 가장 오래전에 보인 것부터 버리므로 그림이 512 개를 넘는 폴더도 스크롤한 자리의 썸네일을 만든다. 한 프레임에 보이는 셀이 512 개를 넘으면 넘는 셀은 글리프로 둔다. list·detail 보기와 mirror explorer 는 썸네일을 만들지 않는다.
 
 ### Properties popup
 

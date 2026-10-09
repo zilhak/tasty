@@ -1,6 +1,7 @@
 //! Grid 보기의 썸네일. 시안 "Grid thumbnails"를 따른다.
 //! 모든 Grid 셀은 `explorer_grid_thumb_size`(40) 슬롯을 잡아 썸네일 유무와 관계없이 행 높이가 같다.
 //! 로컬 그림 파일만 화면에 보인 셀부터 read worker 에서 만들고, 경로와 수정 시각으로 캐시한다.
+//! 캐시가 차면 이번 프레임에 보이지 않은 항목 중 가장 오래 쓰지 않은 것부터 버린다.
 //! 만드는 동안이나 앱 크기 상한을 넘으면 16 글리프(accent-info)를 그대로 둔다. 원격 탐색기는 글리프만 쓴다.
 
 use std::collections::HashMap;
@@ -13,7 +14,7 @@ use super::view::DirEntryInfo;
 use crate::adapters::ui::icons::Icon;
 use crate::app::local_reads::{self, PREVIEW_MAX_BYTES, Query, ReadRequests};
 
-/// 캐시에 두는 썸네일 수. 넘으면 지금 폴더에 없는 항목부터 버린다.
+/// 캐시에 두는 썸네일 수. 넘으면 화면에 보이지 않는 항목을 오래 쓰지 않은 순서로 버린다.
 const MAX_SLOTS: usize = 512;
 
 enum State {
@@ -26,16 +27,21 @@ enum State {
 struct Slot {
     modified: Option<SystemTime>,
     state: State,
+    /// 마지막으로 화면에 보인 프레임 번호.
+    used: u64,
 }
 
 /// 탐색기 하나의 썸네일 캐시.
 #[derive(Default)]
 pub struct Thumbs {
     slots: HashMap<PathBuf, Slot>,
+    /// 프레임 번호. 매 프레임 `poll` 이 올린다.
+    frame: u64,
 }
 
 impl Thumbs {
     pub(super) fn poll(&mut self, owner: &mut ReadRequests) -> bool {
+        self.frame += 1;
         let mut changed = false;
         for slot in self.slots.values_mut() {
             if let State::Pending(query) = &mut slot.state
@@ -77,8 +83,8 @@ impl Thumbs {
         }
     }
 
-    /// 화면에 보인 셀의 썸네일을 요청한다. 대상이 아니거나 이미 있으면 아무것도 하지 않는다.
-    pub(super) fn want(&mut self, e: &DirEntryInfo, remote: bool, listed: &[DirEntryInfo]) {
+    /// 화면에 보인 셀의 썸네일을 요청한다. 대상이 아니거나 이미 있으면 쓴 시각만 갱신한다.
+    pub(super) fn want(&mut self, e: &DirEntryInfo, remote: bool) {
         if remote
             || e.is_dir
             || e.size > PREVIEW_MAX_BYTES
@@ -86,27 +92,40 @@ impl Thumbs {
         {
             return;
         }
-        if self
-            .slots
-            .get(&e.path)
-            .is_some_and(|slot| slot.modified == e.modified)
+        let frame = self.frame;
+        if let Some(slot) = self.slots.get_mut(&e.path)
+            && slot.modified == e.modified
         {
+            slot.used = frame;
             return;
         }
-        if self.slots.len() >= MAX_SLOTS {
-            self.slots
-                .retain(|path, _| listed.iter().any(|entry| &entry.path == path));
-            if self.slots.len() >= MAX_SLOTS {
-                return;
-            }
+        if !self.slots.contains_key(&e.path) && self.slots.len() >= MAX_SLOTS && !self.evict_one() {
+            return;
         }
         self.slots.insert(
             e.path.clone(),
             Slot {
                 modified: e.modified,
                 state: State::Pending(local_reads::thumbnail(e.path.clone())),
+                used: frame,
             },
         );
+    }
+
+    /// 이번 프레임에 보이지 않은 항목 중 가장 오래 쓰지 않은 것을 버린다. 모두 보이면 버리지 않는다.
+    fn evict_one(&mut self) -> bool {
+        let frame = self.frame;
+        let Some(oldest) = self
+            .slots
+            .iter()
+            .filter(|(_, slot)| slot.used < frame)
+            .min_by_key(|(_, slot)| slot.used)
+            .map(|(path, _)| path.clone())
+        else {
+            return false;
+        };
+        self.slots.remove(&oldest);
+        true
     }
 }
 
@@ -157,4 +176,50 @@ pub(super) fn native_size(ui: &egui::Ui, px: [usize; 2]) -> egui::Vec2 {
         PhysicalPx(px[0] as f32).to_logical(ppp).value(),
         PhysicalPx(px[1] as f32).to_logical(ppp).value(),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn image_entry(i: usize) -> DirEntryInfo {
+        DirEntryInfo {
+            path: PathBuf::from(format!("/nonexistent/img{i:04}.png")),
+            name: format!("img{i:04}.png"),
+            is_dir: false,
+            size: 0,
+            modified: None,
+            ext: "png".into(),
+            link: Default::default(),
+        }
+    }
+
+    #[test]
+    fn a_full_cache_drops_the_least_recently_shown_off_screen_entry() {
+        let mut thumbs = Thumbs::default();
+        for i in 0..MAX_SLOTS {
+            thumbs.frame += 1;
+            thumbs.want(&image_entry(i), false);
+        }
+        assert_eq!(thumbs.slots.len(), MAX_SLOTS);
+        // 다음 프레임에 처음 항목을 다시 보이고 새 항목을 요청하면, 그다음으로 오래된 항목이 빠진다.
+        thumbs.frame += 1;
+        thumbs.want(&image_entry(0), false);
+        thumbs.want(&image_entry(MAX_SLOTS), false);
+        assert_eq!(thumbs.slots.len(), MAX_SLOTS);
+        assert!(thumbs.slots.contains_key(&image_entry(0).path));
+        assert!(thumbs.slots.contains_key(&image_entry(MAX_SLOTS).path));
+        assert!(!thumbs.slots.contains_key(&image_entry(1).path));
+    }
+
+    #[test]
+    fn entries_shown_this_frame_are_not_evicted() {
+        let mut thumbs = Thumbs::default();
+        thumbs.frame += 1;
+        for i in 0..=MAX_SLOTS {
+            thumbs.want(&image_entry(i), false);
+        }
+        assert_eq!(thumbs.slots.len(), MAX_SLOTS);
+        assert!(!thumbs.slots.contains_key(&image_entry(MAX_SLOTS).path));
+    }
 }

@@ -1183,7 +1183,7 @@ fn grid_view(
             let thumb = view.thumbs.texture(ui.ctx(), e);
             let resp = grid_cell(ui, theme, e, selected, cut, font, thumb.as_ref());
             if ui.is_rect_visible(resp.rect) {
-                view.thumbs.want(e, view.is_remote(), &entries);
+                view.thumbs.want(e, view.is_remote());
             }
             if view.scroll_to.as_deref() == Some(e.path.as_path()) {
                 resp.scroll_to_me(Some(egui::Align::Center));
