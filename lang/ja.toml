@@ -438,6 +438,7 @@ preview_unfocused = "非フォーカス"
 preview_font_info = "フォント: {}"
 loading_fonts = "フォント読み込み中..."
 search_hint = "検索..."
+font_family_default = "monospace (既定)"
 font_override = "個別のフォント設定"
 
 [settings.appearance.colors]

@@ -438,6 +438,7 @@ preview_unfocused = "비포커스"
 preview_font_info = "폰트: {}"
 loading_fonts = "폰트 로딩 중..."
 search_hint = "검색..."
+font_family_default = "monospace (기본)"
 font_override = "개별 폰트 설정"
 
 [settings.appearance.colors]

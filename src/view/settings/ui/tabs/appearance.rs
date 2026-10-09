@@ -1608,7 +1608,7 @@ fn font_family_picker(
 ) -> egui::Response {
     let th = crate::theme::theme();
     let display_name = if value.is_empty() {
-        "monospace (default)".to_string()
+        t("settings.appearance.font_family_default").to_string()
     } else {
         value.clone()
     };
@@ -1646,7 +1646,7 @@ fn font_family_picker(
                         && tasty_ui_widgets::menu_option(
                             ui,
                             &th,
-                            "monospace (default)",
+                            t("settings.appearance.font_family_default"),
                             value.is_empty(),
                         )
                         .clicked()

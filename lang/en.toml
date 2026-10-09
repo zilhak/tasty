@@ -438,6 +438,7 @@ preview_unfocused = "Unfocused"
 preview_font_info = "Font: {}"
 loading_fonts = "Loading fonts..."
 search_hint = "Search..."
+font_family_default = "monospace (default)"
 font_override = "Font override"
 
 [settings.appearance.colors]
