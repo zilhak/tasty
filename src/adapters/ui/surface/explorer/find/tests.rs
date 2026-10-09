@@ -283,6 +283,7 @@ fn searched(outcome: Outcome, skipped: usize) -> FindState {
         deep: true,
         focus: false,
         field_focused: false,
+        filtered: None,
         search: Some(Search {
             receipt: None,
             hits: Vec::new(),
@@ -311,4 +312,112 @@ fn one_skipped_folder_and_the_hit_cap_have_their_own_words() {
         view.status_text(),
         "Showing the first 5,000. Type more to narrow the search."
     );
+}
+
+fn file(i: usize) -> DirEntryInfo {
+    DirEntryInfo {
+        path: PathBuf::from(format!("/w/file{i:05}.txt")),
+        name: format!("file{i:05}.txt"),
+        is_dir: false,
+        size: 0,
+        modified: None,
+        ext: "txt".into(),
+        link: Default::default(),
+    }
+}
+
+/// 거르는 중인 view. 목록은 `n` 개의 이름 붙은 파일이다.
+fn filtering(n: usize, query: &str) -> (tempfile::TempDir, ExplorerView) {
+    let dir = tempfile::tempdir().unwrap();
+    let (_panel, mut view, _owner) = loaded(dir.path());
+    view.set_entries((0..n).map(file).collect());
+    view.open_find();
+    set_query(&mut view, query, false);
+    (dir, view)
+}
+
+fn cached_hits(view: &ExplorerView) -> Option<*const usize> {
+    let filtered = view.find.as_ref()?.filtered.as_ref()?;
+    Some(filtered.hits.as_ptr())
+}
+
+/// 거른 결과를 쓰지 않고 이름을 하나씩 대 본 결과.
+fn matched_by_hand(view: &ExplorerView, query: &str) -> Vec<String> {
+    (view.entries.iter())
+        .filter(|e| match_range(&e.name, query).is_some())
+        .map(|e| e.name.clone())
+        .collect()
+}
+
+#[test]
+fn the_filter_is_not_run_again_while_the_query_and_the_list_stay() {
+    let (_dir, mut view) = filtering(20_000, "file1");
+    view.refresh_filter();
+    let first = cached_hits(&view).expect("the filter result is kept");
+    for _ in 0..5 {
+        view.refresh_filter();
+        assert_eq!(cached_hits(&view), Some(first), "filtered again");
+    }
+    assert_eq!(view.shown_count(), 10_000);
+    let range: Vec<String> = view
+        .shown_range(9_998..10_005)
+        .into_iter()
+        .map(|e| e.name)
+        .collect();
+    assert_eq!(range, ["file19998.txt", "file19999.txt"]);
+    assert_eq!(
+        view.shown().nth(3).map(|e| e.name.as_str()),
+        Some("file10003.txt")
+    );
+}
+
+#[test]
+fn a_new_query_or_a_new_list_filters_again() {
+    let (_dir, mut view) = filtering(300, "file001");
+    view.refresh_filter();
+    let shown = |v: &ExplorerView| {
+        v.shown_entries()
+            .into_iter()
+            .map(|e| e.name)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(shown(&view), matched_by_hand(&view, "file001"));
+
+    set_query(&mut view, "file0029", false);
+    assert_eq!(
+        shown(&view),
+        [
+            "file00290.txt",
+            "file00291.txt",
+            "file00292.txt",
+            "file00293.txt",
+            "file00294.txt",
+            "file00295.txt",
+            "file00296.txt",
+            "file00297.txt",
+            "file00298.txt",
+            "file00299.txt"
+        ]
+    );
+    view.refresh_filter();
+    assert_eq!(shown(&view), matched_by_hand(&view, "file0029"));
+
+    // 같은 길이의 새 목록. 이름이 달라 예전 번호로 고르면 틀린다.
+    let renamed: Vec<DirEntryInfo> = (0..300)
+        .map(|i| DirEntryInfo {
+            name: format!("other{i:05}.txt"),
+            ..file(i)
+        })
+        .collect();
+    let before = cached_hits(&view);
+    view.set_entries(renamed);
+    assert!(view.shown_entries().is_empty(), "a stale result was used");
+    view.refresh_filter();
+    assert_ne!(cached_hits(&view), before);
+    assert_eq!(view.shown_count(), 0);
+
+    // Subfolders 를 켜면 거른 결과를 버린다.
+    set_query(&mut view, "other", true);
+    view.refresh_filter();
+    assert!(cached_hits(&view).is_none());
 }

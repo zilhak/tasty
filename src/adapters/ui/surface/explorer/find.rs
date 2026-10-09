@@ -29,7 +29,18 @@ pub(crate) struct FindState {
     /// 입력 칸이 키를 받고 있다. 그동안 타입어헤드와 목록 단축키를 멈춘다.
     pub(crate) field_focused: bool,
     search: Option<Search>,
+    filtered: Option<Filtered>,
 }
+
+/// 이름으로 거른 결과의 목록 번호. 만든 때의 검색어와 목록(세대·주소·길이)을 함께 두어,
+/// 둘 다 그대로일 때만 쓴다. 그래서 프레임마다 목록 전체를 다시 거르지 않는다.
+struct Filtered {
+    query: String,
+    list: ListKey,
+    hits: Vec<usize>,
+}
+
+type ListKey = (u64, usize, usize);
 
 struct Search {
     receipt: Option<SearchQuery>,
@@ -77,6 +88,7 @@ impl ExplorerView {
                     focus: true,
                     field_focused: false,
                     search: None,
+                    filtered: None,
                 })
             }
         }
@@ -108,7 +120,10 @@ impl ExplorerView {
     }
 
     /// 목록에 보일 항목. 거르는 중이면 맞는 항목만, 하위 폴더 검색이면 그 결과다.
-    pub(crate) fn shown(&self) -> impl Iterator<Item = &DirEntryInfo> {
+    pub(crate) fn shown(&self) -> Box<dyn Iterator<Item = &DirEntryInfo> + '_> {
+        if let Some(hits) = self.filtered() {
+            return Box::new(hits.iter().map(|&i| &self.entries[i]));
+        }
         let (list, query): (&[DirEntryInfo], &str) = match &self.find {
             Some(FindState {
                 search: Some(search),
@@ -118,33 +133,93 @@ impl ExplorerView {
             Some(find) if !find.deep => (&self.entries, &find.query),
             _ => (&self.entries, ""),
         };
-        list.iter()
-            .filter(move |e| query.is_empty() || match_range(&e.name, query).is_some())
+        Box::new(
+            list.iter()
+                .filter(move |e| query.is_empty() || match_range(&e.name, query).is_some()),
+        )
+    }
+
+    /// 거르는 중이고 지금 검색어·목록으로 만든 거르기 결과가 있으면 그 목록 번호.
+    fn filtered(&self) -> Option<&[usize]> {
+        let find = self.find.as_ref()?;
+        let filtered = find.filtered.as_ref()?;
+        (self.shown_slice().is_none()
+            && filtered.query == find.query
+            && filtered.list == self.list_key())
+        .then_some(filtered.hits.as_slice())
+    }
+
+    fn list_key(&self) -> ListKey {
+        let addr = self.entries.as_ptr() as usize;
+        (self.entries_gen, addr, self.entries.len())
+    }
+
+    /// 거르는 중이면 지금 검색어와 목록으로 거른 결과를 맞춰 둔다. 둘 다 그대로면 다시 거르지
+    /// 않는다. 맞춰 두지 못한 프레임에는 `shown` 이 그 자리에서 거른다.
+    pub(super) fn refresh_filter(&mut self) {
+        let key = self.list_key();
+        let filtering = self.shown_slice().is_none();
+        let Some(find) = self.find.as_mut() else {
+            return;
+        };
+        if !filtering {
+            find.filtered = None;
+            return;
+        }
+        if find
+            .filtered
+            .as_ref()
+            .is_some_and(|f| f.query == find.query && f.list == key)
+        {
+            return;
+        }
+        let hits = (self.entries.iter().enumerate())
+            .filter(|(_, e)| match_range(&e.name, &find.query).is_some())
+            .map(|(i, _)| i)
+            .collect();
+        find.filtered = Some(Filtered {
+            query: find.query.clone(),
+            list: key,
+            hits,
+        });
     }
 
     /// 보일 항목 수. 거르지 않으면 이름을 보지 않고 센다.
     pub(crate) fn shown_count(&self) -> usize {
         match self.shown_slice() {
             Some(list) => list.len(),
-            None => self.shown().count(),
+            None => self
+                .filtered()
+                .map_or_else(|| self.shown().count(), <[usize]>::len),
         }
     }
 
     /// 보일 항목 가운데 `range` 자리의 사본. 목록은 보이는 행만 복제해 그린다.
-    /// 이름으로 거르지 않으면 목록을 훑지 않는다.
+    /// 이름으로 거르지 않거나 거른 결과가 맞춰져 있으면 목록을 훑지 않는다.
     pub(crate) fn shown_range(&self, range: std::ops::Range<usize>) -> Vec<DirEntryInfo> {
         match self.shown_slice() {
             Some(list) => {
                 let end = range.end.min(list.len());
                 list[range.start.min(end)..end].to_vec()
             }
-            None => self
-                .shown()
-                .skip(range.start)
-                .take(range.len())
-                .cloned()
-                .collect(),
+            None => self.filtered_range(range.clone()).unwrap_or_else(|| {
+                (self.shown().skip(range.start).take(range.len()))
+                    .cloned()
+                    .collect()
+            }),
         }
+    }
+
+    /// `shown_range` 의 거르는 중 경로. 거른 결과가 있으면 그 번호로 바로 고른다.
+    fn filtered_range(&self, range: std::ops::Range<usize>) -> Option<Vec<DirEntryInfo>> {
+        let hits = self.filtered()?;
+        let end = range.end.min(hits.len());
+        Some(
+            hits[range.start.min(end)..end]
+                .iter()
+                .map(|&i| self.entries[i].clone())
+                .collect(),
+        )
     }
 
     /// 이름으로 거르지 않고 그대로 보이는 목록. 거르는 중이면 `None`.
@@ -362,6 +437,7 @@ impl ExplorerView {
 
 /// 툴바 아래 Find 바를 그린다. 원격 explorer 는 Subfolders 를 숨긴다.
 pub(super) fn bar(ui: &mut egui::Ui, theme: &Theme, view: &mut ExplorerView, remote: bool) {
+    view.refresh_filter();
     let shown = view.shown_count();
     let total = view.entries.len();
     let Some(find) = view.find.as_mut() else {
@@ -407,6 +483,7 @@ pub(super) fn bar(ui: &mut egui::Ui, theme: &Theme, view: &mut ExplorerView, rem
         },
     );
     view.apply_find_events(events, deep);
+    view.refresh_filter();
 }
 
 impl ExplorerView {

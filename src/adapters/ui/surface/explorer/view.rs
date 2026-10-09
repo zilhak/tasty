@@ -52,8 +52,10 @@ pub(crate) struct ExplorerListRequest {
 }
 
 pub struct ExplorerView {
-    /// 정렬된 현재 디렉토리 엔트리.
+    /// 정렬된 현재 디렉토리 엔트리. 새 목록으로 바꿀 때는 `set_entries` 를 쓴다.
     pub entries: Vec<DirEntryInfo>,
+    /// `entries` 를 바꿀 때마다 오르는 세대. Find 거르기 결과가 이 목록으로 만든 것인지 가린다.
+    pub(super) entries_gen: u64,
     /// `entries` 가 어떤 디렉토리/정렬 기준으로 로드됐는지 (변화 감지용).
     pub(super) loaded: Option<(PathBuf, SortColumn, SortDir)>,
     local_query: Option<crate::app::local_reads::Query<Vec<DirEntryInfo>>>,
@@ -127,12 +129,12 @@ impl ExplorerView {
                         if let Some((_, col, dir)) = &self.loaded {
                             sort_entries(&mut entries, *col, *dir);
                         }
-                        self.entries = entries;
+                        self.set_entries(entries);
                         self.state = LoadState::Ok;
                         self.retain_listed_selection();
                     }
                     Err(error) => {
-                        self.entries.clear();
+                        self.set_entries(Vec::new());
                         self.existing_ancestor = error
                             .get_ref()
                             .and_then(|e| {
@@ -183,9 +185,16 @@ impl ExplorerView {
         changed |= self.thumbs.poll(owner);
         changed
     }
+    /// 목록을 바꾸고 세대를 올린다.
+    pub(super) fn set_entries(&mut self, entries: Vec<DirEntryInfo>) {
+        self.entries = entries;
+        self.entries_gen += 1;
+    }
+
     pub fn new() -> Self {
         Self {
             entries: Vec::new(),
+            entries_gen: 0,
             loaded: None,
             local_query: None,
             tree_queries: HashMap::new(),
@@ -400,7 +409,7 @@ impl ExplorerView {
             tab.root.clone(),
             crate::app::local_reads::writable(tab.root.clone()),
         ));
-        self.entries.clear();
+        self.set_entries(Vec::new());
         self.state = LoadState::Loading;
         // 새로고침은 같은 폴더여도 펼친 트리를 다시 읽는다. 트리만 바뀐 경우를 놓치지 않기 위해서다.
         if dir_changed || explicit || self.tree_children.is_empty() {
@@ -473,11 +482,13 @@ impl ExplorerView {
             Some(RemoteLoadState::Loaded(raw)) => {
                 let mut entries = raw.clone();
                 sort_entries(&mut entries, sort_column, sort_dir);
-                self.entries = entries;
+                self.set_entries(entries);
                 LoadState::Ok
             }
             Some(RemoteLoadState::Error(msg)) => {
+                // `msg` 가 `remote_state` 를 빌리고 있어 `set_entries` 대신 두 필드를 직접 바꾼다.
                 self.entries.clear();
+                self.entries_gen += 1;
                 if msg == "permission denied" {
                     LoadState::NoPermission
                 } else {
@@ -523,7 +534,7 @@ impl ExplorerView {
                     let tab = panel.active_tab();
                     let mut sorted = entries.clone();
                     sort_entries(&mut sorted, tab.sort_column, tab.sort_dir);
-                    self.entries = sorted;
+                    self.set_entries(sorted);
                     self.state = LoadState::Ok;
                     self.retain_listed_selection();
                 }
@@ -532,7 +543,7 @@ impl ExplorerView {
             }
             Err(reason) => {
                 if is_current {
-                    self.entries.clear();
+                    self.set_entries(Vec::new());
                     self.state = if reason == "permission denied" {
                         LoadState::NoPermission
                     } else {
