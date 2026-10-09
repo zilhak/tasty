@@ -1630,6 +1630,14 @@ pub fn pages() -> Vec<Page> {
                             components::settings_font_override::draw,
                         ),
                         spec(
+                            "settings-appearance-general",
+                            "Appearance › General — font rows, preview below",
+                            Some(
+                                "single column · settings row grid · preview below the rows at full content width · combo field-width-lg",
+                            ),
+                            components::settings_font_override::draw_general,
+                        ),
+                        spec(
                             "settings-file-extension-mapping",
                             "Handler › File Extension Mapping",
                             Some(

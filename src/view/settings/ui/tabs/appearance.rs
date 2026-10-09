@@ -273,7 +273,7 @@ fn draw_appearance_general(
     let opacity = SettingsRow::new(t("settings.appearance.background_opacity_label"));
     let font_rows = font_setting_rows();
     let col = settings_label_column(ui, &th, font_rows.iter().chain([&ligatures, &opacity]));
-    default_font_columns(
+    default_font_section(
         ui,
         font_rows,
         col,
@@ -987,7 +987,6 @@ fn draw_surface_font_section(
     let colors = crate::theme::theme().surface(target.surface_id()).clone();
     draw_font_preview(
         ui,
-        PreviewLayout::SideBySide,
         &eff,
         &colors,
         &settings.appearance,
@@ -1687,9 +1686,10 @@ fn font_family_picker(
     .inner
 }
 
-/// 기본 글꼴 격자와 미리보기를 반폭 두 열로 나눠 그린다. 글꼴 콤보·커스텀 글꼴 입력칸의 응답과
-/// 미리보기 열의 왼쪽 경계를 돌려준다(두 열이 겹치지 않는지 재는 시험이 읽는다).
-fn default_font_columns(
+/// 기본 글꼴 격자를 그리고 미리보기를 그 아래 콘텐츠 전폭에 둔다(글꼴 override 와 같은 배치).
+/// 글꼴 콤보·커스텀 글꼴 입력칸의 응답과 미리보기의 위쪽 경계를 돌려준다(컨트롤이 미리보기와
+/// 겹치지 않는지 재는 시험이 읽는다).
+fn default_font_section(
     ui: &mut egui::Ui,
     rows: [SettingsRow<'_>; 5],
     col: LogicalPx,
@@ -1698,30 +1698,29 @@ fn default_font_columns(
     font_filter: &mut HashMap<String, String>,
     preview_font_loaded: &mut HashMap<String, String>,
 ) -> (egui::Response, egui::Response, f32) {
-    ui.columns(2, |columns| {
-        let (family, custom) = font_settings_grid(
-            &mut columns[0],
-            rows,
-            col,
-            &mut settings.appearance.default_font,
-            font_families,
-            font_filter,
-            "default",
-        );
-        let preview_left = columns[1].max_rect().left();
-        let preview_eff = effective_from_settings(&settings.appearance.default_font);
-        let preview_colors = crate::theme::theme().surface("terminal").clone();
-        draw_font_preview(
-            &mut columns[1],
-            PreviewLayout::Stacked,
-            &preview_eff,
-            &preview_colors,
-            &settings.appearance,
-            "default",
-            preview_font_loaded,
-        );
-        (family, custom, preview_left)
-    })
+    let th = crate::theme::theme();
+    let (family, custom) = font_settings_grid(
+        ui,
+        rows,
+        col,
+        &mut settings.appearance.default_font,
+        font_families,
+        font_filter,
+        "default",
+    );
+    vspace(ui, th.spacing_lg);
+    let preview_top = ui.cursor().top();
+    let preview_eff = effective_from_settings(&settings.appearance.default_font);
+    let preview_colors = th.surface("terminal").clone();
+    draw_font_preview(
+        ui,
+        &preview_eff,
+        &preview_colors,
+        &settings.appearance,
+        "default",
+        preview_font_loaded,
+    );
+    (family, custom, preview_top)
 }
 
 /// Edit a `FontSettings` (no fallback semantics — every field is always set).
@@ -2018,20 +2017,11 @@ fn font_scale_mode_combo(
     }
 }
 
-/// 미리보기 두 칸(Focused · Unfocused)의 배치. 글꼴 override 는 격자 아래에 나란히 두고,
-/// 기본 글꼴 화면은 옆 열 안에 위아래로 쌓는다.
-#[derive(Clone, Copy)]
-enum PreviewLayout {
-    SideBySide,
-    Stacked,
-}
-
 /// Draw a 2-row colored preview block for an `EffectiveFont`. `slot` is a
 /// short id ("default"/"terminal"/"markdown"/"explorer") used as both the egui
 /// font family slot name and the cache key in `preview_font_loaded`.
 fn draw_font_preview(
     ui: &mut egui::Ui,
-    layout: PreviewLayout,
     eff: &EffectiveFont,
     colors: &SurfaceTheme,
     appearance: &crate::settings::AppearanceSettings,
@@ -2039,20 +2029,12 @@ fn draw_font_preview(
     preview_font_loaded: &mut HashMap<String, String>,
 ) {
     let th = crate::theme::theme();
-    match layout {
-        PreviewLayout::SideBySide => {
-            ui.label(
-                egui::RichText::new(t("settings.appearance.preview_heading"))
-                    .size(th.font_size_caption.value())
-                    .color(th.text_muted()),
-            );
-            vspace(ui, th.spacing_sm);
-        }
-        PreviewLayout::Stacked => {
-            ui.heading(t("settings.appearance.preview_heading"));
-            vspace(ui, th.spacing_xs);
-        }
-    }
+    ui.label(
+        egui::RichText::new(t("settings.appearance.preview_heading"))
+            .size(th.font_size_caption.value())
+            .color(th.text_muted()),
+    );
+    vspace(ui, th.spacing_sm);
 
     let slot_name = format!("preview_{}", slot);
     let display_family = if eff.font_family.is_empty() {
@@ -2157,54 +2139,40 @@ fn draw_font_preview(
             );
         }
     };
-    match layout {
-        // Focused · Unfocused 를 나란히 두고 남은 폭을 반씩 나눈다. 한 칸이
-        // `font-preview-min-width` 보다 좁아지면 Unfocused 가 아래로 내려간다.
-        PreviewLayout::SideBySide => {
-            let gap = th.spacing_md.value();
-            let half = (ui.available_width() - gap) / 2.0;
-            if half < th.font_preview_min_width().value() {
-                let w = ui.available_width();
-                for (i, b) in blocks.into_iter().enumerate() {
-                    if i > 0 {
-                        vspace(ui, th.spacing_md);
-                    }
-                    ui.vertical(|ui| block(ui, b, w));
-                }
-            } else {
-                ui.horizontal_top(|ui| {
-                    ui.spacing_mut().item_spacing.x = gap;
-                    for b in blocks {
-                        ui.vertical(|ui| {
-                            ui.set_width(half);
-                            block(ui, b, half);
-                        });
-                    }
+    // Focused · Unfocused 를 나란히 두고 남은 폭을 반씩 나눈다. 한 칸이
+    // `font-preview-min-width` 보다 좁아지면 Unfocused 가 아래로 내려간다.
+    let gap = th.spacing_md.value();
+    let half = (ui.available_width() - gap) / 2.0;
+    if half < th.font_preview_min_width().value() {
+        let w = ui.available_width();
+        for (i, b) in blocks.into_iter().enumerate() {
+            if i > 0 {
+                vspace(ui, th.spacing_md);
+            }
+            ui.vertical(|ui| block(ui, b, w));
+        }
+    } else {
+        ui.horizontal_top(|ui| {
+            ui.spacing_mut().item_spacing.x = gap;
+            for b in blocks {
+                ui.vertical(|ui| {
+                    ui.set_width(half);
+                    block(ui, b, half);
                 });
             }
-        }
-        PreviewLayout::Stacked => {
-            for (i, b) in blocks.into_iter().enumerate() {
-                if i > 0 {
-                    vspace(ui, th.spacing_sm);
-                }
-                let w = ui.available_width();
-                block(ui, b, w);
-            }
-        }
+        });
     }
 
     vspace(ui, th.spacing_sm);
-    let mut info = egui::RichText::new(crate::i18n::t_fmt(
-        "settings.appearance.preview_font_info",
-        &format!("{} / {:.1}px", display_family, font_size),
-    ))
-    .size(th.font_size_caption.value())
-    .color(th.text_muted());
-    if matches!(layout, PreviewLayout::SideBySide) {
-        info = info.monospace();
-    }
-    ui.label(info);
+    ui.label(
+        egui::RichText::new(crate::i18n::t_fmt(
+            "settings.appearance.preview_font_info",
+            &format!("{} / {:.1}px", display_family, font_size),
+        ))
+        .size(th.font_size_caption.value())
+        .color(th.text_muted())
+        .monospace(),
+    );
 }
 
 #[cfg(test)]
@@ -2588,14 +2556,14 @@ mod default_hex_field_tests {
 }
 
 #[cfg(test)]
-mod default_font_columns_tests {
+mod default_font_section_tests {
     use std::collections::HashMap;
 
-    use super::{default_font_columns, font_setting_rows};
+    use super::{default_font_section, font_setting_rows};
     use crate::settings::Settings;
     use tasty_type_geometry::length::LogicalPx;
 
-    /// 설정 창 콘텐츠 컬럼 상한(620)과 같은 폭에 기본 글꼴 두 열을 한 프레임 그린다.
+    /// 설정 창 콘텐츠 컬럼 상한(620)과 같은 폭에 기본 글꼴 격자와 미리보기를 한 프레임 그린다.
     fn frame(
         ctx: &egui::Context,
         col: LogicalPx,
@@ -2616,7 +2584,7 @@ mod default_font_columns_tests {
             egui::CentralPanel::default()
                 .frame(egui::Frame::NONE)
                 .show(ctx, |ui| {
-                    seen = Some(default_font_columns(
+                    seen = Some(default_font_section(
                         ui,
                         font_setting_rows(),
                         col,
@@ -2647,29 +2615,35 @@ mod default_font_columns_tests {
         frame(ctx, col, settings, Vec::new());
     }
 
-    /// 라벨 열이 하한(150)이든 상한(240)이든 글꼴 콤보와 커스텀 글꼴 입력칸은 왼쪽 열 안에
-    /// 머물러 미리보기 열과 겹치지 않는다.
+    /// 라벨 열이 하한(150)이든 상한(240)이든 미리보기는 설정 행 아래에 있다. 글꼴 콤보와 커스텀
+    /// 글꼴 입력칸은 미리보기 위에서 끝나고, 콤보는 `field-width-lg` 폭을 유지한다.
     #[test]
-    fn the_font_controls_stay_left_of_the_preview() {
+    fn the_preview_sits_below_the_font_rows() {
         let th = crate::theme::theme();
         for col in [th.settings_label_width(), th.settings_label_max_width()] {
             let ctx = egui::Context::default();
             let mut settings = Settings::default();
             frame(&ctx, col, &mut settings, Vec::new());
-            let (family, custom, preview_left) = frame(&ctx, col, &mut settings, Vec::new());
+            let (family, custom, preview_top) = frame(&ctx, col, &mut settings, Vec::new());
             assert!(
-                family.rect.right() <= preview_left,
-                "label column {}: font combo ends at {} past the preview column at {}",
+                family.rect.bottom() <= preview_top,
+                "label column {}: font combo ends at {} below the preview top {}",
                 col.value(),
-                family.rect.right(),
-                preview_left
+                family.rect.bottom(),
+                preview_top
             );
             assert!(
-                custom.rect.right() <= preview_left,
-                "label column {}: custom font field ends at {} past the preview column at {}",
+                custom.rect.bottom() <= preview_top,
+                "label column {}: custom font field ends at {} below the preview top {}",
                 col.value(),
-                custom.rect.right(),
-                preview_left
+                custom.rect.bottom(),
+                preview_top
+            );
+            assert!(
+                (family.rect.width() - th.field_width_lg.value()).abs() < 0.5,
+                "label column {}: font combo is {} wide, not field-width-lg",
+                col.value(),
+                family.rect.width()
             );
         }
     }

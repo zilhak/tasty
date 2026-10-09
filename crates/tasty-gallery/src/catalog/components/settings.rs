@@ -591,7 +591,7 @@ fn theme_swatch(
 }
 
 /// 정적 range 트랙 — 둥근 레일 + accent 채움 + thumb (디자인 input[type=range]).
-fn range_track(ui: &mut egui::Ui, theme: &Theme, width: f32, frac: f32) {
+pub(super) fn range_track(ui: &mut egui::Ui, theme: &Theme, width: f32, frac: f32) {
     let h = theme.item_height_interactive.value();
     let (rect, _) = ui.allocate_exact_size(egui::vec2(width, h), egui::Sense::hover());
     let rail_h = theme.spacing_xs.value();

@@ -247,16 +247,17 @@ State 셀은 `status_dot`(점 `status_dot_size` 8 + `space-xs` 4 + caption 11px 
   (가로 줄의 `item_spacing.x` 를 빼고 16)이다.
 - **근거**: `crates/tasty-ui-widgets/src/settings_row.rs`, 시험 `crates/tasty-ui-widgets/tests/settings_row_grid.rs`.
 
-## 반폭 열 안의 콤보 — egui ComboBox 는 선택된 글자 폭만큼 늘어난다
+## 좁은 칸의 콤보 — egui ComboBox 는 선택된 글자 폭만큼 늘어난다
 
-- **증상**: Appearance › General 은 글꼴 격자와 미리보기를 `ui.columns(2)` 로 반씩 나눈다. 라벨 열(150 이상)
-  과 간격 16 을 빼면 남은 칸이 콤보 폭 `field_width_lg` 보다 좁아진다. egui `ComboBox::width` 는 최소 폭일
-  뿐이고 기본 줄바꿈 방식에서는 선택된 이름 폭만큼 늘어나, 오른쪽 끝(▼)이 미리보기 열 위에 겹친다. 겹친
-  자리를 누르면 나중에 그려진 미리보기 제목이 클릭을 가져가 목록이 열리지 않는다.
+- **증상**: egui `ComboBox::width` 는 최소 폭일 뿐이고 기본 줄바꿈 방식에서는 선택된 이름 폭만큼 늘어난다.
+  Appearance › General 의 글꼴 콤보 칸이 `field_width_lg` 보다 좁아지면(좁은 설정 창) 오른쪽 끝(▼)이 행
+  밖으로 나가고, 그 자리를 다른 위젯이 덮으면 클릭이 그쪽으로 가 목록이 열리지 않는다.
 - **처방**: 콤보 폭을 `field_width_lg` 와 남은 폭 중 작은 값으로 정하고 `.truncate()` 로 긴 이름을 자른다.
-  egui `TextEdit` 은 원래 남은 폭을 넘지 않아 같은 줄의 입력칸은 손대지 않는다.
+  egui `TextEdit` 은 원래 남은 폭을 넘지 않아 같은 줄의 입력칸은 손대지 않는다. 미리보기는 옆 열이 아니라
+  글꼴 행 아래에 있다.
 - **근거**: `src/view/settings/ui/tabs/appearance.rs` 의 `font_family_picker`, 시험 모듈
-  `default_font_columns_tests`(콤보·입력칸이 미리보기 열 왼쪽에 머무는지, ▼ 자리를 누르면 목록이 열리는지).
+  `default_font_section_tests`(콤보·입력칸이 미리보기 위에서 끝나고 콤보가 `field_width_lg` 인지, ▼ 자리를
+  누르면 목록이 열리는지).
 
 ## footer 우측정렬 — flex `justify-end` 흉내
 

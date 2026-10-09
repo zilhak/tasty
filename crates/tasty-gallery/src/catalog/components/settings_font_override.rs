@@ -185,35 +185,41 @@ fn font_override(ui: &mut egui::Ui, th: &Theme, long: bool, state: &mut [(String
                 });
             });
         }
-        ui.add_space(th.spacing_lg.value());
-        ui.spacing_mut().item_spacing.y = th.spacing_sm.value();
-        ui.label(
-            egui::RichText::new("Preview")
-                .size(th.font_size_caption.value())
-                .color(th.text_muted().to_egui()),
-        );
-        // 한 칸이 `font-preview-min-width` 보다 좁아지면 Unfocused 가 Focused 아래로 내려간다.
-        let gap = th.spacing_md.value();
-        let half = (ui.available_width() - gap) / 2.0;
-        if half >= th.font_preview_min_width().value() {
-            ui.horizontal_top(|ui| {
-                ui.spacing_mut().item_spacing.x = gap;
-                preview_block(ui, th, true, half);
-                preview_block(ui, th, false, half);
-            });
-        } else {
-            let w = ui.available_width();
-            preview_block(ui, th, true, w);
-            ui.add_space(gap - th.spacing_sm.value());
-            preview_block(ui, th, false, w);
-        }
-        ui.label(
-            egui::RichText::new("Font: D2Coding / 14.0px")
-                .monospace()
-                .size(th.font_size_caption.value())
-                .color(th.text_muted().to_egui()),
-        );
+        preview_below(ui, th);
     });
+}
+
+/// 격자 아래 미리보기 — caption "Preview", Focused · Unfocused 두 칸, 요약 줄. 글꼴 override 와
+/// Appearance › General 기본 글꼴이 같은 배치다.
+fn preview_below(ui: &mut egui::Ui, th: &Theme) {
+    ui.add_space(th.spacing_lg.value());
+    ui.spacing_mut().item_spacing.y = th.spacing_sm.value();
+    ui.label(
+        egui::RichText::new("Preview")
+            .size(th.font_size_caption.value())
+            .color(th.text_muted().to_egui()),
+    );
+    // 한 칸이 `font-preview-min-width` 보다 좁아지면 Unfocused 가 Focused 아래로 내려간다.
+    let gap = th.spacing_md.value();
+    let half = (ui.available_width() - gap) / 2.0;
+    if half >= th.font_preview_min_width().value() {
+        ui.horizontal_top(|ui| {
+            ui.spacing_mut().item_spacing.x = gap;
+            preview_block(ui, th, true, half);
+            preview_block(ui, th, false, half);
+        });
+    } else {
+        let w = ui.available_width();
+        preview_block(ui, th, true, w);
+        ui.add_space(gap - th.spacing_sm.value());
+        preview_block(ui, th, false, w);
+    }
+    ui.label(
+        egui::RichText::new("Font: D2Coding / 14.0px")
+            .monospace()
+            .size(th.font_size_caption.value())
+            .color(th.text_muted().to_egui()),
+    );
 }
 
 fn theme_pair(
@@ -339,6 +345,148 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ),
             TokenChip::without_color("font-preview-padding-x", "→ space-md"),
             TokenChip::without_color("font-preview-padding-y", "→ space-sm"),
+        ],
+    );
+}
+
+thread_local! {
+    // Appearance › General 예제의 (글꼴 행 다섯 입력 버퍼, DPI 선택, 합자).
+    static GENERAL: RefCell<([String; 4], usize, bool)> = RefCell::new((
+        [
+            String::from("D2Coding"),
+            String::new(),
+            String::from("14"),
+            String::from("1.2"),
+        ],
+        0,
+        true,
+    ));
+}
+
+/// Appearance › General — 기본 글꼴 행 격자, 그 아래 콘텐츠 전폭 미리보기, 구분선 뒤 합자·배경 투명도.
+/// 미리보기는 옆 열이 아니라 글꼴 override 와 같은 아래 배치이고 라벨 열은 다른 설정 행과 같다.
+pub fn draw_general(ui: &mut egui::Ui, theme: &Theme) {
+    use crate::catalog::widgets::dialog as kit;
+    use tasty_ui_widgets::switch;
+
+    stage(ui, theme, StageVariant::Wrap, |ui| {
+        kit::frame_card_flat(
+            ui,
+            theme,
+            theme.settings_content_max_width(),
+            kit::panel_fill(theme),
+            |ui| {
+                kit::region_sym(ui, theme.spacing_lg, theme.spacing_md, |ui| {
+                    let t = crate::i18n::t;
+                    let font_rows = [
+                        SettingsRow::new(t("settings.appearance.font_family_label")),
+                        SettingsRow::new(t("settings.appearance.custom_font_label")),
+                        SettingsRow::new(t("settings.appearance.font_size_label")),
+                        SettingsRow::new(t("settings.appearance.line_height_label"))
+                            .hint(line_height_hint()),
+                        SettingsRow::new(t("settings.appearance.font_scale_mode_label"))
+                            .hint(scale_mode_hint()),
+                    ];
+                    let ligatures = SettingsRow::new(t("settings.appearance.ligatures_label"));
+                    let opacity =
+                        SettingsRow::new(t("settings.appearance.background_opacity_label"));
+                    let col = settings_label_column(
+                        ui,
+                        theme,
+                        font_rows.iter().chain([&ligatures, &opacity]),
+                    );
+                    GENERAL.with(|s| {
+                        let (bufs, dpi, lig) = &mut *s.borrow_mut();
+                        ui.scope(|ui| {
+                            ui.spacing_mut().item_spacing.y = theme.settings_row_gap().value();
+                            for (i, row) in font_rows.into_iter().enumerate() {
+                                ui.push_id(("general_font", i), |ui| {
+                                    row.show(ui, theme, col, |ui| match i {
+                                        0 => {
+                                            Input::new()
+                                                .width(theme.field_width_lg.value())
+                                                .icon(&|ui, rect, c| {
+                                                    SEARCH
+                                                        .image(rect.height(), c)
+                                                        .paint_at(ui, rect)
+                                                })
+                                                .show(ui, theme, &mut bufs[0]);
+                                        }
+                                        1 => {
+                                            // 본체처럼 남은 폭을 채운다.
+                                            Input::new().show(ui, theme, &mut bufs[1]);
+                                        }
+                                        2 | 3 => {
+                                            Input::new()
+                                                .mono(true)
+                                                .width(theme.field_width_xs.value())
+                                                .show(ui, theme, &mut bufs[i]);
+                                        }
+                                        _ => {
+                                            select(
+                                                ui,
+                                                theme,
+                                                "gallery_general_dpi",
+                                                dpi,
+                                                &[
+                                                    t("settings.appearance.font_scale_mode_auto"),
+                                                    t("settings.appearance.font_scale_mode_fixed"),
+                                                ],
+                                                theme.field_width_md.value(),
+                                                true,
+                                            );
+                                        }
+                                    });
+                                });
+                            }
+                        });
+                        preview_below(ui, theme);
+                        ui.add_space(theme.spacing_lg.value());
+                        ui.separator();
+                        ui.spacing_mut().item_spacing.y = theme.settings_row_gap().value();
+                        ligatures.show(ui, theme, col, |ui| {
+                            switch(ui, theme, lig, None, true);
+                        });
+                        opacity.show(ui, theme, col, |ui| {
+                            super::settings::range_track(
+                                ui,
+                                theme,
+                                theme.field_width_lg.value(),
+                                1.0,
+                            );
+                        });
+                    });
+                });
+            },
+        );
+    });
+
+    meta(
+        ui,
+        theme,
+        &[
+            (
+                "layout",
+                "single column · font rows, then the preview below them at full content width, then ligatures · background opacity",
+            ),
+            (
+                "label column",
+                "same settings row grid (150 … 240) — no exception",
+            ),
+            ("font family", "searchable combo · field-width-lg 200"),
+            ("between rows", "settings-row-gap 12"),
+            (
+                "preview",
+                "same as Font override — space-lg above · Focused / Unfocused halves, stack below font-preview-min-width",
+            ),
+        ],
+        &[
+            TokenChip::without_color("settings-row-gap", "between rows 12"),
+            TokenChip::without_color("field-width-lg", "font family combo"),
+            TokenChip::without_color(
+                "font-preview-min-width",
+                "→ field-width-lg 200 · stack below",
+            ),
         ],
     );
 }
