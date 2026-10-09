@@ -518,7 +518,7 @@ mod list;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
-mod text_probe;
+pub(crate) mod text_probe;
 
 use add::draw_add_tab;
 use attention::draw_attention_tab;

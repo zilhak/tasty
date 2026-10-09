@@ -256,6 +256,26 @@ pub(crate) fn default_explorer_drag_flip_modifier() -> String {
     }
 }
 
+/// 설정 화면의 드래그 반전 modifier 선택지(저장 토큰). 이 OS 의 단일 modifier 를 기본값 먼저,
+/// 나머지는 조합 정렬 순서로 둔다(macOS Option · Command · Control · Shift, 그 밖의 OS
+/// Ctrl · Alt · Shift). 설정 파일에 목록 밖의 조합(`alt+shift` 등)이 있으면 끝에 더해 그 값이
+/// 보이고 유지되게 한다.
+pub fn explorer_drag_flip_modifier_options(current: &str) -> Vec<String> {
+    let default = default_explorer_drag_flip_modifier();
+    let mut out = vec![default.clone()];
+    out.extend(
+        parse::all_modifier_combos()
+            .into_iter()
+            .filter(|c| c.size() == 1)
+            .map(|c| c.name())
+            .filter(|name| *name != default),
+    );
+    if !current.is_empty() && !out.iter().any(|name| name == current) {
+        out.push(current.to_string());
+    }
+    out
+}
+
 /// 누락된 화면 캡처 바인딩의 기본값. 네 프리셋이 같은 조합을 사용한다.
 fn default_screenshot_to_clipboard() -> Vec<String> {
     vec!["ctrl+alt+s".to_string()]

@@ -6,7 +6,8 @@ use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::SettingsRow;
 
 use super::{
-    KeybindingsSubTab, entries_for, quick_switch, quick_switch_kinds, subtab_label_column,
+    KeybindingsSubTab, drag_flip, draws_drag_flip, entries_for, quick_switch, quick_switch_kinds,
+    subtab_label_column,
 };
 
 const ENTRY_SUBTABS: &[KeybindingsSubTab] = &[
@@ -41,7 +42,13 @@ fn every_entry_subtab_column_is_clamped_like_settings_rows() {
     let th = crate::theme::theme();
     with_ui(|ui| {
         for &sub in ENTRY_SUBTABS {
-            let col = subtab_label_column(ui, &th, &entries_for(sub), quick_switch_kinds(sub));
+            let col = subtab_label_column(
+                ui,
+                &th,
+                &entries_for(sub),
+                quick_switch_kinds(sub),
+                draws_drag_flip(sub),
+            );
             assert!(
                 col >= th.settings_label_width() && col <= th.settings_label_max_width(),
                 "{sub:?} column {col:?} is outside the settings label clamp"
@@ -59,7 +66,7 @@ fn quick_switch_labels_widen_the_column_they_share() {
     with_ui(|ui| {
         for &sub in ENTRY_SUBTABS {
             let kinds = quick_switch_kinds(sub);
-            let col = subtab_label_column(ui, &th, &[], kinds);
+            let col = subtab_label_column(ui, &th, &[], kinds, false);
             for &kind in kinds {
                 for label in quick_switch::row_labels(kind) {
                     let natural = SettingsRow::new(&label).natural_label_width(ui, &th);
@@ -72,5 +79,27 @@ fn quick_switch_labels_widen_the_column_they_share() {
                 }
             }
         }
+    });
+}
+
+/// 드래그 반전 행 라벨도 General 열 폭을 정한다. 엔트리 없이 재서 그 라벨만의 몫을 본다.
+#[test]
+fn the_drag_flip_label_widens_the_general_column() {
+    let th = crate::theme::theme();
+    with_ui(|ui| {
+        let col = subtab_label_column(
+            ui,
+            &th,
+            &[],
+            &[],
+            draws_drag_flip(KeybindingsSubTab::General),
+        );
+        let want = drag_flip::row()
+            .natural_label_width(ui, &th)
+            .clamp(th.settings_label_width(), th.settings_label_max_width());
+        assert!(
+            col >= want - LogicalPx(0.01),
+            "column {col:?} < drag flip label {want:?}"
+        );
     });
 }

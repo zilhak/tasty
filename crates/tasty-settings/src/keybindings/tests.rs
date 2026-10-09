@@ -1062,3 +1062,24 @@ fn defaulted_code_area_cancel_survives_an_explicit_global_escape() {
     kb.remove_conflicts_from_defaults(&existing);
     assert!(kb.code_area_cancel.is_empty());
 }
+
+#[test]
+fn drag_flip_options_put_the_default_first_and_list_single_modifiers() {
+    let options = explorer_drag_flip_modifier_options(&default_explorer_drag_flip_modifier());
+    let expected: &[&str] = if cfg!(target_os = "macos") {
+        &["option", "ctrl", "alt", "shift"]
+    } else {
+        &["ctrl", "alt", "shift"]
+    };
+    assert_eq!(options, expected);
+}
+
+#[test]
+fn drag_flip_options_keep_a_combo_from_the_config_file() {
+    let options = explorer_drag_flip_modifier_options("alt+shift");
+    assert_eq!(options.last().map(String::as_str), Some("alt+shift"));
+    assert_eq!(
+        explorer_drag_flip_modifier_options("shift"),
+        explorer_drag_flip_modifier_options("")
+    );
+}

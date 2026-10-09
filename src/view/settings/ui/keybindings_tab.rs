@@ -215,6 +215,11 @@ fn quick_switch_kinds(sub_tab: KeybindingsSubTab) -> &'static [QuickSwitchKind] 
     }
 }
 
+/// 엔트리 아래 탐색기 드래그 반전 modifier 행을 그리는 서브탭인가.
+fn draws_drag_flip(sub_tab: KeybindingsSubTab) -> bool {
+    sub_tab == KeybindingsSubTab::General
+}
+
 /// 바인딩 행들이 함께 쓰는 표시 조건 — 단축키 표기 방식과 서브탭의 라벨 열 폭.
 #[derive(Clone, Copy)]
 struct RowLayout<'a> {
@@ -229,6 +234,7 @@ fn subtab_label_column(
     th: &tasty_type_appearance::theme::Theme,
     entries: &[(&str, &str, Option<&str>)],
     kinds: &[QuickSwitchKind],
+    drag_flip_row: bool,
 ) -> LogicalPx {
     let switch_labels: Vec<String> = kinds
         .iter()
@@ -244,6 +250,7 @@ fn subtab_label_column(
             }
         })
         .chain(switch_labels.iter().map(|label| SettingsRow::new(label)))
+        .chain(drag_flip_row.then(drag_flip::row))
         .collect();
     settings_label_column(ui, th, &rows)
 }
@@ -337,7 +344,7 @@ pub fn draw_keybindings_tab(
         let kinds = quick_switch_kinds(current);
         let layout = RowLayout {
             general: &settings.general,
-            label_col: subtab_label_column(ui, &th, &entries, kinds),
+            label_col: subtab_label_column(ui, &th, &entries, kinds, draws_drag_flip(current)),
         };
         draw_keybinding_entries(
             ui,
@@ -348,6 +355,18 @@ pub fn draw_keybindings_tab(
             &captured,
             &entries,
         );
+        if draws_drag_flip(current) {
+            vspace(ui, th.spacing_sm);
+            ui.separator();
+            vspace(ui, th.spacing_xs);
+            drag_flip::draw(
+                ui,
+                &th,
+                &mut settings.keybindings,
+                &settings.general,
+                layout.label_col,
+            );
+        }
         for &kind in kinds {
             vspace(ui, th.spacing_sm);
             ui.separator();
@@ -417,6 +436,7 @@ pub fn draw_keybindings_tab(
 
 /// Preset 서브탭: 좌측 프리셋 목록, 우측 미리보기 테이블 + 적용 버튼.
 mod capture;
+mod drag_flip;
 mod entries;
 mod entries_scripts;
 #[cfg(test)]

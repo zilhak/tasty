@@ -4,14 +4,17 @@
 //! 열을 그대로 차지해 바인딩 버튼이 같은 x 에서 시작한다. 열보다 긴 라벨과 사용자 스크립트 이름은 열
 //! 안에서 줄을 바꾸고, 도움말 아이콘은 마지막 단어 뒤에 붙는다.
 
+use tasty_settings::keybindings::explorer_drag_flip_modifier_options;
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{
-    SettingsRow, settings_label_cell, settings_label_column, settings_label_gap,
+    SettingsRow, select, settings_label_cell, settings_label_column, settings_label_gap, vspace,
 };
 
+use crate::catalog::modifier_label;
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::catalog::widgets::dialog as kit;
+use crate::i18n::t;
 
 /// 예제 프레임 폭 — 설정 콘텐츠 컬럼 상한(620)을 넘지 않는다.
 const WIDTH: LogicalPx = LogicalPx(600.0);
@@ -44,6 +47,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             kit::region_sym(ui, theme.spacing_lg, theme.spacing_md, |ui| {
                 // 행 사이는 kb-row-gap, 구분선 없음. 행 안 버튼 사이는 space-xs 다.
                 ui.spacing_mut().item_spacing.y = theme.kb_row_gap().value();
+                let flip = drag_flip_row();
                 let measured: Vec<SettingsRow<'_>> = ROWS
                     .iter()
                     .map(|(label, hint, _)| {
@@ -53,11 +57,16 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                             None => row,
                         }
                     })
+                    .chain([flip])
                     .collect();
                 let col = settings_label_column(ui, theme, &measured);
                 for (i, (label, hint, bindings)) in ROWS.iter().enumerate() {
                     ui.push_id(i, |ui| row(ui, theme, col, label, *hint, bindings));
                 }
+                vspace(ui, theme.spacing_sm);
+                ui.separator();
+                vspace(ui, theme.spacing_xs);
+                drag_flip(ui, theme, col, flip);
             });
         });
     });
@@ -87,6 +96,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "rows",
                 "kb-row-gap 8 between rows · no divider · 4 between slots",
             ),
+            (
+                "drag flip row",
+                "General · after the entries · modifier Select field-width-md · caption · default first",
+            ),
         ],
         &[
             TokenChip::without_color("settings-label-width", "label column floor 150"),
@@ -111,6 +124,30 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         theme,
         "Mirrors the app's keybinding rows. A short label no longer pulls its slots left: the label cell always takes the full column.",
     );
+}
+
+/// General 서브탭 끝의 탐색기 드래그 반전 modifier 행.
+fn drag_flip_row() -> SettingsRow<'static> {
+    SettingsRow::new(t("settings.keybindings.explorer_drag_flip_modifier_label"))
+        .caption(t("settings.keybindings.explorer_drag_flip_modifier_hint"))
+}
+
+fn drag_flip(ui: &mut egui::Ui, theme: &Theme, col: LogicalPx, row: SettingsRow<'_>) {
+    let names = explorer_drag_flip_modifier_options("");
+    let labels: Vec<String> = names.iter().map(|n| modifier_label(n)).collect();
+    let labels: Vec<&str> = labels.iter().map(String::as_str).collect();
+    let mut selected = 0;
+    row.show(ui, theme, col, |ui| {
+        select(
+            ui,
+            theme,
+            "gallery_kb_drag_flip",
+            &mut selected,
+            &labels,
+            theme.field_width_md.value(),
+            true,
+        );
+    });
 }
 
 fn row(
