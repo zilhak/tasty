@@ -149,6 +149,31 @@ fn admission_is_bounded_and_rejects_mirror_and_non_user_requests() {
 }
 
 #[test]
+fn a_refused_user_request_tells_the_cell_why() {
+    let (mut state, engine) = crate::state::tests::test_state();
+    let sid = engine.read().workspace_at(0).unwrap().all_surface_ids()[0];
+    for _ in 0..MAX_PENDING_PER_VIEW {
+        state.request_explorer_file(&engine.read(), sid, Operation::Open("path".into()), user());
+    }
+    assert!(state.toasts.messages().is_empty());
+    state.request_explorer_file(&engine.read(), sid, Operation::Open("path".into()), user());
+    assert_eq!(
+        state.toasts.messages(),
+        vec![crate::i18n::t("explorer.state.queue_full")]
+    );
+
+    let (mut state, engine) = crate::state::tests::test_state();
+    let sid = engine.read().workspace_at(0).unwrap().all_surface_ids()[0];
+    let many = vec![PathBuf::from("x".repeat(4096)); MAX_REQUEST_BYTES / 4096 + 1];
+    state.request_explorer_file(&engine.read(), sid, Operation::Trash(many), user());
+    assert!(state.explorer_file_requests.0.is_empty());
+    assert_eq!(
+        state.toasts.messages(),
+        vec![crate::i18n::t("explorer.state.request_too_large")]
+    );
+}
+
+#[test]
 fn worker_copy_move_rename_preserves_partial_success() {
     let dir = tempfile::tempdir().unwrap();
     let source = dir.path().join("source");

@@ -301,11 +301,22 @@ impl crate::state::MainViewState {
         let Some(binding) = SurfaceBinding::capture(engine, surface) else {
             return;
         };
-        if self.explorer_file_requests.0.len() >= MAX_PENDING_PER_VIEW
-            || operation.bytes() > MAX_REQUEST_BYTES
-        {
+        // 사용자 조작으로 들어온 요청이므로 받지 않을 때도 그 칸에 이유를 보인다.
+        let refused = if self.explorer_file_requests.0.len() >= MAX_PENDING_PER_VIEW {
+            Some(crate::i18n::t("explorer.state.queue_full").to_string())
+        } else if operation.bytes() > MAX_REQUEST_BYTES {
+            Some(crate::i18n::t("explorer.state.request_too_large").to_string())
+        } else {
+            None
+        };
+        if let Some(message) = refused {
             tracing::warn!(
                 "Explorer file request capacity exhausted; no filesystem operation started"
+            );
+            self.toasts.push(
+                message,
+                crate::adapters::ui::ToastKind::Info,
+                crate::adapters::ui::ToastScope::Surface(surface),
             );
             return;
         }
