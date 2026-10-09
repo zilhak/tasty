@@ -367,6 +367,11 @@ impl MainView {
                     );
                 }
             }
+            "explorer_toggle_preview" | "explorer_properties" => {
+                if state.focused_surface_type(engine).is_kind("explorer") {
+                    super::explorer_view_shortcut(state, engine, action_id);
+                }
+            }
             "toggle_dag_list" => Self::toggle_dag_list_popup(state, engine),
             "open_port_scanner" => Self::open_tool_popup(
                 state,

@@ -53,6 +53,30 @@ fn focused_explorer_surface_id(
     focused_explorer_panel(state, engine).map(|p| p.id)
 }
 
+/// 미리보기 토글·Properties 단축키. 포커스된 탐색기만 바꾼다.
+fn explorer_view_shortcut(
+    state: &mut crate::state::MainViewState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
+    action: &str,
+) {
+    let Some(panel) = focused_explorer_panel(state, engine) else {
+        return;
+    };
+    let (sid, cwd) = (panel.id, panel.current_root().to_path_buf());
+    if action == "explorer_toggle_preview" {
+        if let Some(view) = state.explorer_views.get_mut(sid) {
+            view.preview.toggle();
+        }
+        return;
+    }
+    crate::adapters::ui::popup::explorer_properties::open_for_shortcut(
+        state,
+        engine.is_mirror_surface(sid),
+        sid,
+        &cwd,
+    );
+}
+
 /// 키보드 붙여넣기는 포커스된 탐색기의 현재 폴더를 대상으로 한다.
 fn focused_explorer_cwd(
     state: &crate::state::MainViewState,

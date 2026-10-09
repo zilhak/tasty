@@ -607,6 +607,17 @@ impl MainView {
             }
             return true;
         }
+        for (binding, action) in [
+            (&kb.explorer_toggle_preview, "explorer_toggle_preview"),
+            (&kb.explorer_properties, "explorer_properties"),
+        ] {
+            if matches_any_binding(binding, key, mods)
+                && state.focused_surface_type(engine).is_kind("explorer")
+            {
+                super::explorer_view_shortcut(state, engine, action);
+                return true;
+            }
+        }
         if matches_any_binding(&kb.explorer_go_up, key, mods)
             && state.focused_surface_type(engine).is_kind("explorer")
         {

@@ -110,6 +110,31 @@ pub(crate) fn open_from_menu(
     open(state, surface_id, paths, listed, false);
 }
 
+/// `explorer_properties` 단축키. 선택이 있으면 목록 순서대로 그 항목들을, 없으면 현재 폴더를 연다.
+pub(crate) fn open_for_shortcut(
+    state: &mut MainViewState,
+    remote: bool,
+    surface_id: u32,
+    cwd: &Path,
+) {
+    let mut paths: Vec<PathBuf> = state
+        .explorer_views
+        .get(surface_id)
+        .map(|v| {
+            v.entries
+                .iter()
+                .filter(|e| v.selected.contains(&e.path))
+                .map(|e| e.path.clone())
+                .collect()
+        })
+        .unwrap_or_default();
+    if paths.is_empty() {
+        paths.push(cwd.to_path_buf());
+    }
+    let listed = remote.then(|| remote_entries(state, surface_id, &paths));
+    open(state, surface_id, paths, listed, true);
+}
+
 /// 원격 목록에서 경로들의 항목을 찾는다. 목록에 없는 경로(현재 폴더 자신)는 이름만 있는 폴더로 둔다.
 fn remote_entries(state: &MainViewState, surface_id: u32, paths: &[PathBuf]) -> Vec<DirEntryInfo> {
     let listed = state

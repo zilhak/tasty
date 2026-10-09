@@ -117,6 +117,10 @@ pub struct KeybindingSettings {
     pub explorer_refresh: Vec<String>,
     /// Navigate the focused Explorer to the parent directory.
     pub explorer_go_up: Vec<String>,
+    /// Show or hide the preview panel of the focused Explorer.
+    pub explorer_toggle_preview: Vec<String>,
+    /// Open Properties for the focused Explorer's selection, or its folder when nothing is selected.
+    pub explorer_properties: Vec<String>,
     /// Paste clipboard content into focused terminal / paste files in Explorer.
     pub paste: Vec<String>,
     /// Increase font size.
