@@ -140,11 +140,16 @@ pub fn draw_egui_panels(
     // OS 에서 끌어 오는 파일. 좌표는 물리 픽셀이라 egui 논리 포인트로 바꾼다.
     let ppp = ctx.pixels_per_point();
     let os_hover = state.drop_hover.as_ref().and_then(|h| {
-        h.cursor
-            .map(|(x, y)| crate::explorer_ui::view::drag::OsHover {
+        h.cursor.map(|(x, y)| {
+            use tasty_type_geometry::length::PhysicalPx;
+            crate::explorer_ui::view::drag::OsHover {
                 paths: h.paths.clone(),
-                pos: egui::pos2(x / ppp, y / ppp),
-            })
+                pos: egui::pos2(
+                    PhysicalPx(x).to_logical(ppp).value(),
+                    PhysicalPx(y).to_logical(ppp).value(),
+                ),
+            }
+        })
     });
     // 충돌 질문은 포커스를 잡지 않는 popup 이라 따로 본다. scrim 아래 칸에 놓으면 안 된다.
     let drag_blocked = overlay_open
