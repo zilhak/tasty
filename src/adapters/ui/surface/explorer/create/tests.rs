@@ -3,15 +3,6 @@ use super::*;
 #[test]
 fn names_are_checked_for_empty_invalid_characters_and_reserved_names() {
     assert_eq!(check_name("", false), Err(NameError::Empty));
-    assert_eq!(check_name("   ", false), Err(NameError::Empty));
-    assert_eq!(check_name(" \t", true), Err(NameError::Empty));
-    // Windows 는 끝의 공백·점을 떼고 만든다. Unix 는 그 이름 그대로 만든다.
-    assert_eq!(check_name("a ", true), Err(NameError::Reserved));
-    assert_eq!(check_name("a.", true), Err(NameError::Reserved));
-    assert_eq!(check_name(" a", true), Ok(()));
-    assert_eq!(check_name("a ", false), Ok(()));
-    assert_eq!(check_name("a.", false), Ok(()));
-    assert_eq!(check_name(".hidden", true), Ok(()));
     assert_eq!(
         check_name("drafts/2026", false),
         Err(NameError::InvalidChar('/'))
@@ -96,4 +87,17 @@ fn placeholder_named(dir: &str, name: &str) -> super::super::DirEntryInfo {
     row.path = Path::new(dir).join(name);
     row.name = name.to_string();
     row
+}
+
+#[test]
+fn blank_names_are_empty_and_windows_refuses_trailing_spaces_or_dots() {
+    assert_eq!(check_name("   ", false), Err(NameError::Empty));
+    assert_eq!(check_name(" \t", true), Err(NameError::Empty));
+    // Windows 는 끝의 공백·점을 떼고 만든다. Unix 는 그 이름 그대로 만든다.
+    assert_eq!(check_name("a ", true), Err(NameError::Reserved));
+    assert_eq!(check_name("a.", true), Err(NameError::Reserved));
+    assert_eq!(check_name(" a", true), Ok(()));
+    assert_eq!(check_name("a ", false), Ok(()));
+    assert_eq!(check_name("a.", false), Ok(()));
+    assert_eq!(check_name(".hidden", true), Ok(()));
 }
