@@ -8,6 +8,7 @@ use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, IconButton, TagVarian
 
 use super::{Graph, Rel, Status};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
+use crate::i18n::t;
 
 /// 상세가 붙는 자리.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -284,14 +285,22 @@ pub fn draw_body(ui: &mut egui::Ui, theme: &Theme, graph: &Graph, id: &str) -> O
     ui.vertical(|ui| {
         ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
         if node.deps.is_empty() {
-            block_label(ui, theme, "Depends on");
+            block_label(ui, theme, t("dag.detail.dependencies"));
             ui.label(
                 egui::RichText::new("root task — no dependencies")
                     .size(caption(theme))
                     .color(theme.text_placeholder().to_egui()),
             );
         } else {
-            block_label(ui, theme, &format!("Depends on \u{b7} {}", node.deps.len()));
+            block_label(
+                ui,
+                theme,
+                &format!(
+                    "{label} \u{b7} {count}",
+                    label = t("dag.detail.dependencies"),
+                    count = node.deps.len()
+                ),
+            );
             for (from, rel) in &node.deps {
                 if let Some(up) = graph.node(from)
                     && dependency_row(ui, theme, up.status, &up.name, *rel).clicked()

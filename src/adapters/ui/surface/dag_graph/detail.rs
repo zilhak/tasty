@@ -292,7 +292,7 @@ fn row(ui: &mut egui::Ui, theme: &Theme, label: &str, value: &str) {
     ui.horizontal(|ui| {
         ui.label(
             egui::RichText::new(label)
-                .size(theme.font_size_micro.value())
+                .size(theme.font_size_caption.value())
                 .color(theme.text_muted().to_egui()),
         );
         ui.label(
@@ -345,7 +345,7 @@ fn labeled_block(
                         egui::Label::new(
                             egui::RichText::new(body)
                                 .monospace()
-                                .size(theme.font_size_micro.value())
+                                .size(theme.font_size_caption.value())
                                 .color(theme.text_primary().to_egui()),
                         )
                         .selectable(true)

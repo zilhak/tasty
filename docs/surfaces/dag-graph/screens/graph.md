@@ -69,8 +69,9 @@ tasty split --level surface --target-surface <SID> --type dag_graph
 - **노드 상세**에서는 상태 옆에 종류 태그를 표시한다. 입력 대기 노드는 그 아래 노란 알림에
   "The {provider} session is waiting for a person · {대기 시간}. The graph continues after you answer
   it." 과 **세션 열기**(Open session) 버튼을 둔다. 알 수 없음 노드는 `Why unknown` 아래 기록된 이유와
-  다시 실행하거나 취소해야 그래프가 이어진다는 안내를 둔다. 구역 캡션(명령 · 의존성 · Why unknown ·
-  에러 · 출력)은 번역 문구의 대소문자를 그대로 쓰고 caption 크기(11)로 그린다. 같은 상세 내용을 넓은 화면에서는
+  다시 실행하거나 취소해야 그래프가 이어진다는 안내를 둔다. 구역 캡션(명령 · 의존(Depends on) · Why unknown ·
+  에러 · 출력)은 번역 문구의 대소문자를 그대로 쓰고 caption 크기(11)로 그린다. 실패정책·시작·소요·종료코드
+  행 라벨과 명령·에러·출력 본문도 caption 크기다. 의존성 줄의 관계 라벨만 micro 크기다. 같은 상세 내용을 넓은 화면에서는
   우측 패널에, 좁은 화면에서는 하단 시트에 배치한다. 경계선은 배치를 담당하는 쪽에서
   그린다(우측 패널의 왼쪽, 하단 시트의 위쪽).
 
