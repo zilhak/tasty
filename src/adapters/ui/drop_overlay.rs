@@ -1,8 +1,8 @@
 //! 외부 drag&drop hover 중 표시되는 시각 피드백.
 //!
-//! `MainViewState.drop_hover` 가 활성인 동안 terminal_rect 위에 반투명 highlight +
-//! "Drop to open" 라벨 + 1px 보더를 그린다. `HoveredFileCancelled` /
-//! `DroppedFile` 직후 사라진다.
+//! `MainViewState.drop_hover` 가 활성인 동안 terminal_rect 안쪽에 반투명 채움 + 1px 보더와
+//! download 글리프 + "Drop to open" 라벨을 그린다(`tasty_ui_widgets::file_drop_overlay`).
+//! `HoveredFileCancelled` / `DroppedFile` 직후 사라진다.
 
 use crate::model::PhysicalRect;
 use crate::state::MainViewState;
@@ -36,20 +36,10 @@ pub fn draw_drop_overlay(
     let rect = crate::adapters::ui::to_egui_rect(terminal_rect, scale_factor);
 
     let layer = egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("drop_overlay"));
-    let painter = ctx.layer_painter(layer);
-
-    let fill = theme.file_drop_overlay_bg().to_egui();
-    painter.rect_filled(rect, theme.corner_radius.value(), fill);
-
-    let stroke = egui::Stroke::new(
-        theme.border_width.value(),
-        theme.file_drop_overlay_border().to_egui(),
-    );
-    painter.rect_stroke(
-        rect.shrink(theme.spacing_sm.value()),
-        theme.corner_radius.value(),
-        stroke,
-        egui::StrokeKind::Inside,
+    let ui = egui::Ui::new(
+        ctx.clone(),
+        egui::Id::new("drop_overlay"),
+        egui::UiBuilder::new().layer_id(layer).max_rect(rect),
     );
 
     let label = if hover.paths.len() > 1 {
@@ -61,15 +51,7 @@ pub fn draw_drop_overlay(
     } else {
         crate::i18n::t("file_drop.hover_label").to_string()
     };
-
-    let font = egui::FontId::proportional(theme.font_size_heading.value());
-    painter.text(
-        rect.center(),
-        egui::Align2::CENTER_CENTER,
-        label,
-        font,
-        theme.file_drop_overlay_fg().to_egui(),
-    );
+    tasty_ui_widgets::file_drop_overlay(&ui, &theme, rect, &label);
 }
 
 #[cfg(test)]

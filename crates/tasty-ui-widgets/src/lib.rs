@@ -29,6 +29,7 @@ mod explorer_commands;
 mod explorer_find_bar;
 mod explorer_name_edit;
 mod explorer_ops;
+mod file_drop_overlay;
 pub mod file_handler;
 mod filter_readout;
 mod help_hint;
@@ -136,6 +137,7 @@ pub use explorer_ops::{
     drag_chip, op_queue_frame, op_queue_popover, op_queue_rows, op_queue_width, op_status_line,
     paint_drop_target, result_card,
 };
+pub use file_drop_overlay::file_drop_overlay;
 pub use filter_readout::{filter_readout, filter_readout_label, filter_readout_width};
 pub use help_hint::HelpHint;
 pub use horizontal_tab_bar::{

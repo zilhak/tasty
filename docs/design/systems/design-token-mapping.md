@@ -123,7 +123,7 @@ surface 경계 30% 존을 hover 할 때 뜨는 밴드+분할선 색. accent-prim
 
 ## 창 파일 드롭 오버레이
 
-`--tasty-file-drop-overlay-bg`·`--tasty-file-drop-overlay-border`도 accent-primary와 `transparent`를 섞는 식이라 생성기가 건너뛴다. 같은 방식으로 알파만 낮추는 수기 접근자를 둔다. 글자·글리프 색 `--tasty-file-drop-overlay-fg`(accent-primary)는 생성 접근자다.
+`--tasty-file-drop-overlay-bg`·`--tasty-file-drop-overlay-border`도 accent-primary와 `transparent`를 섞는 식이라 생성기가 건너뛴다. 같은 방식으로 알파만 낮추는 수기 접근자를 둔다. 글자·글리프 색 `--tasty-file-drop-overlay-fg`(accent-primary)는 생성 접근자다. 세 토큰은 본체와 갤러리가 함께 부르는 `tasty_ui_widgets::file_drop_overlay` 가 쓴다 — 터미널 영역 안쪽 `spacing-sm` 상자에 채움과 1px 테두리, 가운데에 download 글리프(`icon-size-md`) + `spacing-sm` + 라벨(`font-size-body`).
 
 | 디자인 토큰 | 디자인 체인 | tasty Theme | 비고 |
 |---|---|---|---|

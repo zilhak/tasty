@@ -1,7 +1,8 @@
-//! 터미널 위 파일 드롭 안내의 정적 예제. 본체의 채움·테두리·라벨 순서를 따른다.
+//! 터미널 위 파일 드롭 안내의 정적 예제. 본체와 같은 `tasty_ui_widgets::file_drop_overlay` 로 그린다.
 //! 갤러리는 주어진 Ui 안에 그리며 실제 오버레이 순서는 재현하지 않는다.
 
 use tasty_type_appearance::theme::Theme;
+use tasty_ui_widgets::file_drop_overlay;
 
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
@@ -13,33 +14,9 @@ fn stage_size(theme: &Theme) -> egui::Vec2 {
 /// 터미널 rect 위 overlay 1장. `label` 은 단일/다중 파일 문구.
 fn overlay(ui: &mut egui::Ui, theme: &Theme, label: &str) {
     let (rect, _) = ui.allocate_exact_size(stage_size(theme), egui::Sense::hover());
-    let p = ui.painter_at(rect);
-
-    p.rect_filled(rect, theme.corner_radius.value(), theme.bg_app().to_egui());
-
-    p.rect_filled(
-        rect,
-        theme.corner_radius.value(),
-        theme.file_drop_overlay_bg().to_egui(),
-    );
-
-    p.rect_stroke(
-        rect.shrink(theme.spacing_sm.value()),
-        theme.corner_radius.value(),
-        egui::Stroke::new(
-            theme.border_width.value(),
-            theme.file_drop_overlay_border().to_egui(),
-        ),
-        egui::StrokeKind::Inside,
-    );
-
-    p.text(
-        rect.center(),
-        egui::Align2::CENTER_CENTER,
-        label,
-        egui::FontId::proportional(theme.font_size_heading.value()),
-        theme.file_drop_overlay_fg().to_egui(),
-    );
+    ui.painter()
+        .rect_filled(rect, theme.corner_radius.value(), theme.bg_app().to_egui());
+    file_drop_overlay(ui, theme, rect, label);
 }
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
@@ -57,16 +34,12 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         theme,
         &[
             (
-                "fill",
-                "file-drop-overlay-bg · accent-primary × tint-fill-alpha 0.12 · corner-radius",
+                "box",
+                "inset spacing-sm · file-drop-overlay-bg (× tint-fill-alpha 0.12) · 1px file-drop-overlay-border (× tint-border-alpha 0.36) · corner-radius",
             ),
             (
-                "border",
-                "1px file-drop-overlay-border · × tint-border-alpha 0.36 · inset spacing-sm",
-            ),
-            (
-                "label",
-                "font-size-heading · file-drop-overlay-fg (full ink) · centered",
+                "content",
+                "download glyph icon-size-md + spacing-sm + label font-size-body · file-drop-overlay-fg (full ink) · centered",
             ),
             ("layer", "Order::Tooltip — popup 위, plugin popup 아래"),
         ],
