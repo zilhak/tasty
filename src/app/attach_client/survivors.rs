@@ -36,7 +36,7 @@ fn mirror_descriptor_kind(s: &Value, markdown_available: bool) -> &str {
 /// 프레임보다 먼저 적용되므로, 여기서 맞추면 snapshot이 맞는 grid에 그려진다.
 /// 구조 delta의 descriptor는 출력과 같은 순서의 값이 아니어서 이 함수를 부르지 않는다.
 /// 크기가 없는 descriptor는 건너뛴다.
-pub(super) fn apply_reconnect_terminal_sizes(
+fn apply_reconnect_terminal_sizes(
     remote_to_local: &HashMap<u32, u32>,
     surfaces: &[Value],
     terminals: &mut crate::runtime::terminal_store::TerminalStore,
@@ -69,6 +69,39 @@ pub(super) fn apply_reconnect_terminal_sizes(
 
 /// 기존 원격 surface의 로컬 ID·자원을 재사용하고 추가·삭제·kind 변경을 반영한다.
 /// markdown은 기존 핸들을 공유해 구조 변경 때마다 문서를 다시 만들지 않는다.
+/// 재연결 설치의 핵심부. 살아남은 mirror를 새 descriptor에 병합하고, terminal mirror를 서버 크기로
+/// 맞추고, 옛 연결의 크기 요청 상태를 비운다. 순서가 중요하다. 크기를 맞춘 뒤 상태를 비워야 다음
+/// 리사이즈 스윕이 새 mirror grid와 목표를 비교해 요청을 다시 보내고, 그 응답을 새 연결에서 기다린다.
+pub(super) fn install_reconnected_survivors(
+    remote_to_local: &mut HashMap<u32, u32>,
+    resize_sync: &mut tasty_remote::resize_sync::ResizeSync,
+    resize_acks: bool,
+    surfaces: &[Value],
+    ids: &crate::runtime::id_reservations::ReservedIds,
+    frame_tx: &SharedFrameSender,
+    engine: &mut EngineMut<'_>,
+) -> anyhow::Result<SurvivorMapping> {
+    let mut mapping = merge_survivor_mapping(remote_to_local, surfaces, ids, frame_tx, engine)?;
+    *remote_to_local = std::mem::take(&mut mapping.remote_to_local);
+    apply_reconnect_terminal_sizes(remote_to_local, surfaces, &mut engine.runtime.terminals);
+    resize_sync.reset_for_connection(resize_acks);
+    Ok(mapping)
+}
+
+/// 구조 변경 뒤 terminal mirror로 남은 surface의 크기 요청 상태만 유지한다.
+/// 닫히거나 다른 kind로 바뀐 surface의 대기와 실패 표시는 버린다.
+pub(super) fn keep_terminal_resize_state(
+    resize_sync: &mut tasty_remote::resize_sync::ResizeSync,
+    remote_to_local: &HashMap<u32, u32>,
+    mapping: &SurvivorMapping,
+) {
+    resize_sync.retain_surfaces(|remote| {
+        remote_to_local
+            .get(&remote)
+            .is_some_and(|local| mapping.terminals.contains(local))
+    });
+}
+
 pub(super) fn merge_survivor_mapping(
     old_map: &HashMap<u32, u32>,
     surfaces: &[Value],

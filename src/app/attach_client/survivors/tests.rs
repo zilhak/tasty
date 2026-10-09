@@ -519,3 +519,55 @@ fn reconnect_sizes_a_surviving_terminal_mirror_to_the_server_grid() {
     apply_reconnect_terminal_sizes(&m2.remote_to_local, &v2, &mut engine.runtime.terminals);
     assert_eq!(terminal_dims(&mut engine, local), (120, 40));
 }
+
+/// 재연결 설치 핵심부는 병합 뒤 살아남은 terminal mirror 를 서버 크기로 맞추고, 옛 연결의 크기 요청
+/// 대기와 중복 전송 기록을 비운다. 크기 맞춤이나 상태 초기화 중 하나라도 빠지면 이 시험이 실패한다.
+#[test]
+fn reconnect_install_sizes_survivors_and_clears_the_resize_wait() {
+    let (_, mut engine_session) = crate::state::tests::test_state();
+    let mut engine = engine_session.borrow_mut();
+    supply_ids(&engine);
+    let ids = test_ids();
+    let (tx, _rx) = tasty_remote::connection::channel();
+    let frame_tx: SharedFrameSender = tx;
+
+    let v1 = vec![serde_json::json!({
+        "remote_id": 10, "role": "terminal", "cols": 100, "rows": 30,
+    })];
+    let m1 = merge_survivor_mapping(&HashMap::new(), &v1, &ids, &frame_tx, &mut engine)
+        .expect("fixture construction");
+    let local = m1.remote_to_local[&10];
+    let mut remote_to_local = m1.remote_to_local.clone();
+    let mut sync = tasty_remote::resize_sync::ResizeSync::for_connection(true);
+    sync.note_sent(10, 120, 40, std::time::Instant::now());
+    assert!(
+        sync.next_deadline().is_some(),
+        "이 시험의 전제: 옛 연결의 대기"
+    );
+
+    let v2 = vec![serde_json::json!({
+        "remote_id": 10, "role": "terminal", "cols": 120, "rows": 40,
+    })];
+    install_reconnected_survivors(
+        &mut remote_to_local,
+        &mut sync,
+        false,
+        &v2,
+        &ids,
+        &frame_tx,
+        &mut engine,
+    )
+    .expect("reconnect install");
+    assert_eq!(remote_to_local[&10], local, "같은 로컬 ID 를 재사용한다");
+    assert_eq!(terminal_dims(&mut engine, local), (120, 40));
+    assert_eq!(
+        sync.next_deadline(),
+        None,
+        "옛 연결의 응답은 기다리지 않는다"
+    );
+    assert!(
+        sync.should_send(10, 120, 40),
+        "새 연결에서 같은 크기도 다시 보낸다"
+    );
+    assert!(!sync.acks_expected(), "새 연결의 서버 기능을 따른다");
+}

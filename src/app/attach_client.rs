@@ -10,6 +10,7 @@ mod navigation;
 mod output;
 pub(crate) mod pending;
 mod projection;
+mod resize_sync;
 mod resources;
 mod survivors;
 mod wire;

@@ -443,6 +443,8 @@ impl ApplicationHandler<AppEvent> for App {
                 Tick::DagListPopup => self.mark_dag_list_popup_windows_dirty(),
                 // 이 타이머는 루프만 깨우며 아래 poll_auto_attach가 재연결 여부를 판단한다.
                 Tick::Reconnect(_) => {}
+                // 아래 poll_attach_resize_sync가 마감을 처리한다.
+                Tick::AttachResizeAck => {}
                 // 아래의 메뉴 폴링이 실행되도록 깨운다.
                 Tick::NativeMenu => {}
                 // Linux의 별도 WebView 이벤트 큐를 확인하도록 깨운다.
@@ -468,6 +470,7 @@ impl ApplicationHandler<AppEvent> for App {
         self.detach_orphaned_mirror_sessions();
 
         self.dispatch_pending_resize_forwards();
+        self.poll_attach_resize_sync(std::time::Instant::now());
 
         self.dispatch_pending_list_dir_forwards();
         self.dispatch_pending_git_query_forwards();

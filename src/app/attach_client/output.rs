@@ -10,7 +10,7 @@ use super::resources::{
     destroy_mirror_markdown_surfaces, install_mirror_fallbacks, push_markdown_changed,
     push_markdown_content_result,
 };
-use super::survivors::merge_survivor_mapping;
+use super::survivors::{keep_terminal_resize_state, merge_survivor_mapping};
 use crate::app::App;
 use crate::app::attach_client::{GIT_VIEWER_PLUGIN_ID, GIT_VIEWER_QUERY_RESULT_EVENT};
 use crate::app::window_access::engines_mut;
@@ -363,7 +363,10 @@ fn apply_one_mirror_event(
     ev: MirrorEvent,
 ) {
     match ev {
-        MirrorEvent::Desynced { frames } => begin_resync(sess, host, frames),
+        MirrorEvent::Desynced { frames } => {
+            sess.state.resize_sync.forget_pending();
+            begin_resync(sess, host, frames);
+        }
         MirrorEvent::Data(remote_id, bytes) => {
             if let Some(&local) = sess.state.remote_to_local.get(&remote_id)
                 && let Some(t) = host.engine.runtime.terminals.get_mut(local)
@@ -371,7 +374,11 @@ fn apply_one_mirror_event(
                 t.feed_bytes(&bytes);
             }
         }
+        MirrorEvent::ResizeRejected(remote_id, cols, rows) => {
+            sess.state.resize_sync.on_rejected(remote_id, cols, rows);
+        }
         MirrorEvent::Resize(remote_id, cols, rows) => {
+            sess.state.resize_sync.on_resize(remote_id, cols, rows);
             if let Some(&local) = sess.state.remote_to_local.get(&remote_id)
                 && let Some(t) = host.engine.runtime.terminals.get_mut(local)
             {
@@ -747,6 +754,8 @@ fn apply_mirror_structural_delta(
     let newly_created_remote_ids = std::mem::take(&mut mapping.newly_created_remote_ids);
 
     sess.state.remote_to_local = std::mem::take(&mut mapping.remote_to_local);
+    let state = &mut sess.state;
+    keep_terminal_resize_state(&mut state.resize_sync, &state.remote_to_local, &mapping);
     let new_markdown = mapping.markdown_ids();
     let removed_markdown: Vec<u32> = sess
         .state

@@ -100,7 +100,7 @@ pub(super) fn test_session(
             pending_op_focus: HashMap::new(),
             agent_requests: Default::default(),
             next_delta_focus: None,
-            last_forwarded_resize: HashMap::new(),
+            resize_sync: Default::default(),
             remote_label: "127.0.0.1:0".to_string(),
             pending_list_dir_consumers: HashMap::new(),
             markdown_locals: HashSet::new(),

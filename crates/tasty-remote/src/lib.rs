@@ -28,6 +28,9 @@ pub mod transport;
 
 pub mod pending_connection;
 
+/// mirror 크기 요청의 응답 대기·재시도·실패 목록.
+pub mod resize_sync;
+
 pub mod refusal;
 
 pub mod self_instance;

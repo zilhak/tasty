@@ -11,7 +11,7 @@ use super::resources::{
     bind_mirror_input, destroy_mirror_markdown_surfaces, install_mirror_fallbacks,
     markdown_content_failure, push_markdown_changed, push_markdown_content_result,
 };
-use super::survivors::{apply_reconnect_terminal_sizes, merge_survivor_mapping};
+use super::survivors::{install_reconnected_survivors, merge_survivor_mapping};
 use crate::app::App;
 use crate::app::window_access::{EngineScanMut, engines_mut};
 use crate::ipc::stream::StreamTag;
@@ -23,6 +23,7 @@ use std::sync::atomic::Ordering;
 use tasty_remote::client_session::{
     AttachClientSession, ClientSessionState, MirrorStructureIds, SessionState,
 };
+use tasty_remote::resize_sync::ResizeSync;
 use tasty_remote::transport::PreparedConnection;
 
 impl App {
@@ -105,6 +106,7 @@ impl App {
             name,
             surfaces,
             tree,
+            resize_acks,
             transport,
         } = prepared;
         let frame_tx = transport.frame_tx.clone();
@@ -169,7 +171,7 @@ impl App {
                 pending_op_focus: HashMap::new(),
                 agent_requests: Default::default(),
                 next_delta_focus: None,
-                last_forwarded_resize: HashMap::new(),
+                resize_sync: ResizeSync::for_connection(resize_acks),
                 remote_label: format!("127.0.0.1:{port}"),
                 pending_list_dir_consumers: HashMap::new(),
                 markdown_locals,
@@ -221,6 +223,7 @@ impl App {
             name,
             surfaces,
             tree,
+            resize_acks,
             transport,
             ..
         } = prepared;
@@ -262,19 +265,15 @@ impl App {
                 &sess.state.remote_to_local,
                 sess.state.local_workspace,
             );
-            let mut mapping = merge_survivor_mapping(
-                &sess.state.remote_to_local,
+            let mut mapping = install_reconnected_survivors(
+                &mut sess.state.remote_to_local,
+                &mut sess.state.resize_sync,
+                resize_acks,
                 &surfaces,
                 &ids,
                 &shared_frame_tx,
                 &mut engine,
             )?;
-            sess.state.remote_to_local = std::mem::take(&mut mapping.remote_to_local);
-            apply_reconnect_terminal_sizes(
-                &sess.state.remote_to_local,
-                &surfaces,
-                &mut engine.runtime.terminals,
-            );
             // 연결 사이에 빠진 출력을 연속된 스트림으로 읽지 않도록 표지를 바꾼다.
             for (&remote, &local) in &sess.state.remote_to_local {
                 if let Some(terminal) = engine.runtime.terminals.get_mut(local) {
@@ -351,7 +350,6 @@ impl App {
         sess.state.pending_op_focus.clear();
         sess.state.agent_requests.clear();
         sess.state.next_delta_focus = None;
-        sess.state.last_forwarded_resize.clear();
         // 옛 연결의 목록 요청은 다시 응답하지 않는다. 소비자는 자체 timeout으로 실패 처리한다.
         sess.state.pending_list_dir_consumers.clear();
         sess.state.resync_pending = None;

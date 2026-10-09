@@ -63,3 +63,17 @@ fn parse_markdown_changed_reads_the_remote_id_and_ignores_other_events() {
     assert!(parse_markdown_changed(&serde_json::to_vec(&result).unwrap()).is_none());
     assert!(parse_markdown_content_result(&serde_json::to_vec(&changed).unwrap()).is_none());
 }
+
+#[test]
+fn a_resize_rejection_becomes_its_own_event() {
+    let payload = serde_json::to_vec(&StreamControl::ResizeRejected {
+        surface_id: 4,
+        cols: 90,
+        rows: 30,
+    })
+    .unwrap();
+    assert!(matches!(
+        mirror_event_from_control(&payload),
+        Some(MirrorEvent::ResizeRejected(4, 90, 30))
+    ));
+}

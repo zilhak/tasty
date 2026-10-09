@@ -18,6 +18,8 @@ pub struct RemoteDirEntry {
 pub enum MirrorEvent {
     Data(u32, Vec<u8>),
     Resize(u32, usize, usize),
+    /// 서버가 적용하지 않은 크기 요청. 값은 그 요청의 것이다.
+    ResizeRejected(u32, usize, usize),
     /// 로컬 PTY가 없는 mirror의 busy 상태는 서버에서 받는다.
     Activity(u32, bool),
     /// None이면 원격 attention 해제다. 로컬 완료 감지와 별도로 반영한다.
@@ -306,9 +308,8 @@ pub struct ClientSessionState {
     pub agent_requests: AgentRequests,
     /// 성공 회신 뒤 다음 StructuralDelta가 한 번 소비할 포커스 의도.
     pub next_delta_focus: Option<PendingOpFocus>,
-    /// 원격 surface별 마지막 전송 크기. 응답 전 반복 전송을 줄이며 재연결 때 비운다.
-    /// 큐 전송 성공은 원격 적용 확인이 아니다.
-    pub last_forwarded_resize: HashMap<u32, (usize, usize)>,
+    /// 원격 surface별 크기 요청의 중복 전송 방지·응답 대기·실패 목록. 재연결 때 비운다.
+    pub resize_sync: crate::resize_sync::ResizeSync,
     /// 현재 배지는 loopback 엔드포인트다. 실제 SSH host 정보는 이 세션에 전달되지 않는다.
     pub remote_label: String,
     /// 응답에 소비자 정보가 없어 요청별로 기록한다. None은 File Picker, Some은 explorer surface ID다.

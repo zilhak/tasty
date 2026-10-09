@@ -37,6 +37,9 @@ pub(crate) enum Tick {
     /// anchor 재연결 backoff 시각에 깨운다. workspace로 돌아온 순간의 재시도 판정은 별도다.
     #[cfg(feature = "gui")]
     Reconnect(u32),
+    /// mirror 크기 요청 중 가장 이른 응답 마감에 깨운다. 마감 처리는 poll_attach_resize_sync가 한다.
+    #[cfg(feature = "gui")]
+    AttachResizeAck,
     /// 접근 시 정리를 보완해 요청이 없어도 TTL이 지난 headless PTY를 회수한다.
     PtySweep,
     /// 다음 청크가 오지 않아도 만료한 업로드를 정리한다.
@@ -63,6 +66,10 @@ pub(crate) const LAYOUT_FLUSH_SLACK: Duration = Duration::from_millis(500);
 /// backoff 최소 간격. 지난 재시도 시각 보정에 쓰며 실제 backoff 상태는 auto_attach가 관리한다.
 #[cfg(feature = "gui")]
 pub(crate) const RECONNECT_MIN_BACKOFF: Duration = Duration::from_millis(500);
+
+/// 지난 응답 마감을 다시 등록할 때 미루는 간격. 처리 뒤에도 남은 지난 마감이 루프를 계속 깨우지 않게 한다.
+#[cfg(feature = "gui")]
+pub(crate) const ATTACH_RESIZE_ACK_RECHECK: Duration = Duration::from_millis(500);
 
 /// 네이티브 메뉴가 열려 있을 때만 예약하는 폴링 간격.
 #[cfg(feature = "gui")]
@@ -233,6 +240,26 @@ pub(crate) fn sync_reconnect_timers(
             RECONNECT_MIN_BACKOFF,
             Precision::Strict,
         );
+    }
+}
+
+/// 응답을 기다리는 크기 요청이 없으면 취소한다. 마감은 요청마다 다르므로 가장 이른 것만 건다.
+#[cfg(feature = "gui")]
+pub(crate) fn sync_attach_resize_timer(
+    hub: &mut TimerHub<Tick>,
+    next_deadline: Option<Instant>,
+    now: Instant,
+) {
+    match next_deadline {
+        Some(at) => arm_derived(
+            hub,
+            Tick::AttachResizeAck,
+            at,
+            now,
+            ATTACH_RESIZE_ACK_RECHECK,
+            Precision::Strict,
+        ),
+        None => hub.cancel(Tick::AttachResizeAck),
     }
 }
 

@@ -34,7 +34,7 @@ impl App {
         else {
             return;
         };
-        if sess.state.last_forwarded_resize.get(&remote_sid) == Some(&(cols, rows)) {
+        if !sess.state.resize_sync.should_send(remote_sid, cols, rows) {
             return;
         }
         let payload = serde_json::to_vec(&StreamControl::ClientResize {
@@ -47,9 +47,10 @@ impl App {
             tracing::warn!("resize forward: 전송 큐가 닫혀 요청을 보내지 못했다: {e}");
             return;
         }
+        let now = std::time::Instant::now();
         sess.state
-            .last_forwarded_resize
-            .insert(remote_sid, (cols, rows));
+            .resize_sync
+            .note_sent(remote_sid, cols, rows, now);
     }
 
     /// 목록 요청을 원격으로 보낸다. 세션이 없으면 폐기하며 소비자는 자체 timeout으로 실패 처리한다.

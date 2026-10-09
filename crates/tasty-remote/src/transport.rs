@@ -11,7 +11,7 @@ pub fn attach_handshake(
     workspace: u32,
     log_prefix: &str,
     cancel: &super::outbound::AttemptToken,
-) -> anyhow::Result<(StreamConnection, u32, TcpStream, String, Vec<Value>, Value)> {
+) -> anyhow::Result<AttachHandshake> {
     if !cancel.is_active() {
         anyhow::bail!("connection attempt retired");
     }
@@ -34,7 +34,34 @@ pub fn attach_handshake(
         tracing::warn!("{log_prefix}: 손실 통지 요청을 보내지 못했다: {e}");
     }
     let write_half = conn.try_clone_writer()?;
-    Ok((conn, client_id, write_half, name, surfaces, tree))
+    Ok(AttachHandshake {
+        resize_acks: descriptor_has_capability(&ctrl, stream::RESIZE_ACK_CAPABILITY),
+        conn,
+        client_id,
+        write_half,
+        name,
+        surfaces,
+        tree,
+    })
+}
+
+/// workspace attach handshake 결과. descriptor의 이름·surface·tree와 연결별 서버 기능을 담는다.
+pub struct AttachHandshake {
+    pub conn: StreamConnection,
+    pub client_id: u32,
+    pub write_half: TcpStream,
+    pub name: String,
+    pub surfaces: Vec<Value>,
+    pub tree: Value,
+    /// 서버가 모든 크기 요청에 응답한다. 구 서버 descriptor에는 이 기능이 없다.
+    pub resize_acks: bool,
+}
+
+/// descriptor의 기능 목록에 `name`이 있는지. 목록이 없는 구 서버는 false다.
+pub fn descriptor_has_capability(ctrl: &Value, name: &str) -> bool {
+    ctrl.get(stream::DESCRIPTOR_CAPABILITIES)
+        .and_then(|v| v.as_array())
+        .is_some_and(|list| list.iter().any(|v| v.as_str() == Some(name)))
 }
 
 pub fn arm_attach_timeouts(sock: &TcpStream, log_prefix: &str) {
@@ -318,6 +345,8 @@ pub struct PreparedConnection {
     pub name: String,
     pub surfaces: Vec<Value>,
     pub tree: Value,
+    /// 서버가 모든 크기 요청에 응답한다. 이 연결에서 응답을 기다릴지 정한다.
+    pub resize_acks: bool,
     pub transport: super::client_session::ClientTransport,
 }
 impl PreparedConnection {
@@ -329,8 +358,15 @@ impl PreparedConnection {
         wake: Arc<dyn Fn() + Send + Sync>,
         decode: fn(&[u8]) -> Option<MirrorEvent>,
     ) -> anyhow::Result<Self> {
-        let (conn, client_id, write_half, name, surfaces, tree) =
-            attach_handshake(port, workspace, "remote pending connection", &cancel)?;
+        let AttachHandshake {
+            conn,
+            client_id,
+            write_half,
+            name,
+            surfaces,
+            tree,
+            resize_acks,
+        } = attach_handshake(port, workspace, "remote pending connection", &cancel)?;
         let control = write_half.try_clone()?;
         let (frame_tx, frame_rx) = super::connection::channel();
         let disconnected = Arc::new(AtomicBool::new(false));
@@ -356,6 +392,7 @@ impl PreparedConnection {
             name,
             surfaces,
             tree,
+            resize_acks,
             transport: super::client_session::ClientTransport {
                 workers,
                 output,

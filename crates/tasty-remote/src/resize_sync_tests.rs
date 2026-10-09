@@ -1,0 +1,195 @@
+use super::*;
+
+const S: u32 = 10;
+
+fn acked() -> (ResizeSync, Instant) {
+    let mut sync = ResizeSync::default();
+    sync.reset_for_connection(true);
+    (sync, Instant::now())
+}
+
+fn failed(sync: &ResizeSync) -> Vec<u32> {
+    sync.failed().collect()
+}
+
+#[test]
+fn a_matching_reply_ends_the_wait_without_a_banner() {
+    let (mut sync, t0) = acked();
+    sync.note_sent(S, 80, 24, t0);
+    assert_eq!(sync.next_deadline(), Some(t0 + RESIZE_ACK_TIMEOUT));
+    sync.on_resize(S, 80, 24);
+    assert_eq!(sync.next_deadline(), None);
+    assert!(sync.take_due(t0 + RESIZE_ACK_TIMEOUT * 3).is_empty());
+    assert!(failed(&sync).is_empty());
+}
+
+#[test]
+fn no_reply_resends_once_then_fails() {
+    let (mut sync, t0) = acked();
+    sync.note_sent(S, 80, 24, t0);
+    assert!(sync.take_due(t0 + RESIZE_ACK_TIMEOUT / 2).is_empty());
+
+    let t1 = t0 + RESIZE_ACK_TIMEOUT;
+    let resend = sync.take_due(t1);
+    assert_eq!(
+        resend,
+        vec![Resend {
+            surface_id: S,
+            cols: 80,
+            rows: 24
+        }]
+    );
+    assert!(
+        sync.should_send(S, 80, 24),
+        "같은 요청을 다시 보낼 수 있어야 한다"
+    );
+    sync.note_resent(resend[0], t1);
+    assert!(failed(&sync).is_empty());
+
+    let t2 = t1 + RESIZE_ACK_TIMEOUT;
+    assert!(sync.take_due(t2).is_empty(), "자동 재시도는 한 번뿐이다");
+    assert_eq!(failed(&sync), vec![S]);
+    assert_eq!(sync.next_deadline(), None, "실패한 뒤에는 기다리지 않는다");
+}
+
+#[test]
+fn a_rejection_waits_for_the_deadline_and_a_second_rejection_fails_at_once() {
+    let (mut sync, t0) = acked();
+    sync.note_sent(S, 80, 24, t0);
+    sync.on_rejected(S, 80, 24);
+    assert!(
+        sync.take_due(t0 + Duration::from_secs(1)).is_empty(),
+        "잠시 기다린 뒤 다시 보낸다"
+    );
+    let t1 = t0 + RESIZE_ACK_TIMEOUT;
+    let resend = sync.take_due(t1);
+    assert_eq!(resend.len(), 1);
+    sync.note_resent(resend[0], t1);
+    sync.on_rejected(S, 80, 24);
+    assert_eq!(failed(&sync), vec![S]);
+    assert_eq!(sync.next_deadline(), None);
+}
+
+#[test]
+fn a_late_reply_to_an_earlier_request_keeps_the_latest_wait() {
+    let (mut sync, t0) = acked();
+    sync.note_sent(S, 80, 24, t0);
+    sync.note_sent(S, 100, 30, t0 + Duration::from_secs(1));
+    sync.on_resize(S, 80, 24);
+    sync.on_rejected(S, 80, 24);
+    assert_eq!(
+        sync.next_deadline(),
+        Some(t0 + Duration::from_secs(1) + RESIZE_ACK_TIMEOUT),
+        "이전 요청의 응답은 최신 대기를 풀지 않는다"
+    );
+    sync.on_resize(S, 100, 30);
+    assert_eq!(sync.next_deadline(), None);
+}
+
+#[test]
+fn the_banner_retry_resends_and_fails_again_without_an_automatic_retry() {
+    let (mut sync, t0) = acked();
+    sync.note_sent(S, 80, 24, t0);
+    let t1 = t0 + RESIZE_ACK_TIMEOUT;
+    let resend = sync.take_due(t1);
+    sync.note_resent(resend[0], t1);
+    let t2 = t1 + RESIZE_ACK_TIMEOUT;
+    assert!(sync.take_due(t2).is_empty());
+    assert_eq!(failed(&sync), vec![S]);
+
+    let retry = sync.retry_failed(t2);
+    assert_eq!(
+        retry,
+        vec![Resend {
+            surface_id: S,
+            cols: 80,
+            rows: 24
+        }]
+    );
+    assert!(
+        failed(&sync).is_empty(),
+        "다시 시도하는 동안 배너 목록에서 뺀다"
+    );
+    assert!(sync.retrying());
+
+    let t3 = t2 + RESIZE_ACK_TIMEOUT;
+    assert!(
+        sync.take_due(t3).is_empty(),
+        "다시 시도는 자동 재시도 없이 판정한다"
+    );
+    assert_eq!(failed(&sync), vec![S]);
+    assert!(!sync.retrying());
+
+    let retry = sync.retry_failed(t3);
+    sync.on_resize(S, retry[0].cols, retry[0].rows);
+    assert!(failed(&sync).is_empty());
+    assert!(!sync.retrying());
+}
+
+#[test]
+fn dismiss_closes_the_banner_until_a_new_failure() {
+    let (mut sync, t0) = acked();
+    sync.note_sent(S, 80, 24, t0);
+    let resend = sync.take_due(t0 + RESIZE_ACK_TIMEOUT);
+    sync.note_resent(resend[0], t0 + RESIZE_ACK_TIMEOUT);
+    sync.on_rejected(S, 80, 24);
+    assert_eq!(failed(&sync), vec![S]);
+    sync.dismiss_failed();
+    assert!(failed(&sync).is_empty());
+
+    sync.note_sent(S, 90, 24, t0);
+    let resend = sync.take_due(t0 + RESIZE_ACK_TIMEOUT);
+    sync.note_resent(resend[0], t0 + RESIZE_ACK_TIMEOUT);
+    sync.on_rejected(S, 90, 24);
+    assert_eq!(failed(&sync), vec![S]);
+}
+
+#[test]
+fn an_older_server_is_never_waited_on() {
+    let mut sync = ResizeSync::default();
+    sync.reset_for_connection(false);
+    let t0 = Instant::now();
+    sync.note_sent(S, 80, 24, t0);
+    assert!(!sync.should_send(S, 80, 24), "중복 전송 방지는 그대로다");
+    assert_eq!(sync.next_deadline(), None);
+    assert!(sync.take_due(t0 + RESIZE_ACK_TIMEOUT * 10).is_empty());
+    assert!(failed(&sync).is_empty());
+}
+
+#[test]
+fn a_new_connection_loss_and_surface_removal_clear_the_state() {
+    let (mut sync, t0) = acked();
+    sync.note_sent(S, 80, 24, t0);
+    sync.note_sent(S + 1, 80, 24, t0);
+    sync.forget_pending();
+    assert_eq!(sync.next_deadline(), None);
+    assert!(
+        sync.should_send(S, 80, 24),
+        "손실 뒤에는 같은 크기도 다시 보낸다"
+    );
+
+    sync.note_sent(S, 80, 24, t0);
+    sync.note_sent(S + 1, 80, 24, t0);
+    sync.retain_surfaces(|id| id == S);
+    assert_eq!(sync.take_due(t0 + RESIZE_ACK_TIMEOUT).len(), 1);
+
+    sync.reset_for_connection(true);
+    assert_eq!(sync.next_deadline(), None);
+    assert!(failed(&sync).is_empty());
+    assert!(sync.should_send(S, 80, 24));
+}
+
+#[test]
+fn the_descriptor_capability_list_decides_whether_to_wait() {
+    use crate::transport::descriptor_has_capability;
+    let name = tasty_ipc::stream::RESIZE_ACK_CAPABILITY;
+    let key = tasty_ipc::stream::DESCRIPTOR_CAPABILITIES;
+    let current = serde_json::json!({ "event": "attached_workspace", (key): [name] });
+    let older = serde_json::json!({ "event": "attached_workspace" });
+    assert!(descriptor_has_capability(&current, name));
+    assert!(!descriptor_has_capability(&older, name));
+    assert!(!descriptor_has_capability(
+        &serde_json::json!({ (key): ["ipc.other"] }),
+        name
+    ));
+}

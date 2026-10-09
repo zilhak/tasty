@@ -15,6 +15,11 @@ pub(super) fn mirror_event_from_control(payload: &[u8]) -> Option<MirrorEvent> {
             cols,
             rows,
         }) => Some(MirrorEvent::Resize(surface_id, cols, rows)),
+        Ok(StreamControl::ResizeRejected {
+            surface_id,
+            cols,
+            rows,
+        }) => Some(MirrorEvent::ResizeRejected(surface_id, cols, rows)),
         Ok(StreamControl::Activity { surface_id, busy }) => {
             Some(MirrorEvent::Activity(surface_id, busy))
         }
