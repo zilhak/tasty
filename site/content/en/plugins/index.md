@@ -1,4 +1,4 @@
-<!-- source-hash: f61d8489df0d -->
+<!-- source-hash: 1c5a64aa8b95 -->
 # Plugins
 
 Use plugins for tools such as Markdown and image viewers or AI agent integrations. Explore the bundled plugins, add new ones, and manage which tools run and what permissions they have.
@@ -60,7 +60,7 @@ The **Attention** tab. Plugins whose registration was rejected or that failed to
 
 | Shown | Meaning | What to do |
 |------|----|------|
-| **Signature not trusted** | Signed with a key not in the trust list | Confirm the source, copy the fingerprint with the **Copy fingerprint** button next to it and compare, and if you trust it, **Re-approve** |
+| **Signature not trusted** | Signed with a key not in the trust list | This tab has no approve button. Confirm the source, then copy the fingerprint with the **Copy fingerprint** button next to it and compare. If you trust it, remove the plugin with `tasty plugin remove <id>`, add its original folder again in the **Add plugin** tab, and press **Trust & add** |
 | **Signature invalid** | No signature, or verification failed. The detail shows the cause (such as a missing signature file) on one line | Get a correct package from the distributor |
 | **Permissions changed** | An update changed the required permissions | Read the **newly requested** list and **Re-approve** |
 | **Runtime error** | Enabled but failed while running | Check the **Log** |
