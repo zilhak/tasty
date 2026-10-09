@@ -754,7 +754,7 @@ fn draw_save_path_popup(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, doc: 
     }
 }
 
-/// 이미지가 없을 때의 캔버스 상태 화면. 파일 없음 · 권한 없음 · 디코드 실패 · 상한 초과는 Retry 를 두고
+/// 이미지가 없을 때의 캔버스 상태 화면. 파일 없음 · 권한 없음 · 디코드 실패는 Retry 를 두고 상한 초과는 두지 않으며
 /// 원인을 읽지 못한 빈 캔버스는 한 줄만 보인다. Retry 를 눌렀으면 true 다.
 fn canvas_state(
     ui: &mut egui::Ui,
@@ -769,7 +769,14 @@ fn canvas_state(
     let secondary = theme.text_secondary().to_egui();
     let too_large_sub = tr
         .t_fmt("image.state.too_large_sub", &MAX_IMAGE_SIDE.to_string())
-        .replacen("{}", &format!("{} MB", MAX_DECODE_ALLOC >> 20), 1);
+        .replacen("{}", &format!("{} MiB", MAX_DECODE_ALLOC >> 20), 1);
+    let too_large_size = match &doc.load_failure {
+        Some(LoadFailure::TooLarge(Some([w, h]))) => Some(
+            tr.t_fmt("image.state.too_large_size", &w.to_string())
+                .replacen("{}", &h.to_string(), 1),
+        ),
+        _ => None,
+    };
     let (icon, glyph_color, title, title_color, sub, reason): (
         &'static [&'static [[f32; 2]]],
         _,
@@ -810,21 +817,23 @@ fn canvas_state(
             Some(tr.t("image.state.decode_sub")),
             Some(msg.as_str()),
         ),
-        Some(LoadFailure::TooLarge) => (
-            baked_icons::ALERT_TRIANGLE,
+        // 파일은 정상이고 상한으로 거절했으므로 디코드 실패 톤을 쓰지 않는다.
+        Some(LoadFailure::TooLarge(_)) => (
+            baked_icons::IMAGE,
             danger,
             tr.t("image.state.too_large"),
-            danger,
+            theme.text_primary().to_egui(),
             Some(too_large_sub.as_str()),
-            None,
+            too_large_size.as_deref(),
         ),
     };
     let retry = [(tr.t("image.state.retry"), ButtonVariant::Secondary)];
-    let actions: &[(&str, ButtonVariant)] = if doc.load_failure.is_some() {
-        &retry
-    } else {
-        &[]
-    };
+    // 너무 큼은 같은 파일을 다시 읽어도 결과가 같아 Retry 를 두지 않는다. 파일이 바뀌면 감시가 다시 읽는다.
+    let retryable = doc
+        .load_failure
+        .as_ref()
+        .is_some_and(|f| !matches!(f, LoadFailure::TooLarge(_)));
+    let actions: &[(&str, ButtonVariant)] = if retryable { &retry } else { &[] };
     let paint = |ui: &mut egui::Ui, r: egui::Rect, c: egui::Color32| {
         tasty_plugin_sdk::baked_icon::draw(ui.painter(), icon, r.center(), r.height(), c);
     };

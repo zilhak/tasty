@@ -37,8 +37,9 @@ permission = "アクセス権がありません"
 permission_sub = "このファイルを読み取る権限がありません。"
 decode = "この画像を開けません"
 decode_sub = "ファイルが破損しているか、対応していない形式です。"
-too_large = "画像が大きすぎます"
+too_large = "画像が大きすぎて開けません"
 too_large_sub = "一辺が {} px を超えるか、デコードに {} を超えるメモリが必要です。"
+too_large_size = "{} × {} px"
 retry = "再試行"
 
 [image.save_as]

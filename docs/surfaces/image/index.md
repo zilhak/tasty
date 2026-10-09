@@ -92,7 +92,7 @@
   | 파일 없음(`NotFound`) | alertTriangle · image-error-fg | `image.state.missing` · `missing_sub` | 문서 경로 | Retry |
   | 권한 없음(`PermissionDenied`) | lock · accent-warning | `image.state.permission` · `permission_sub` | 없음 | Retry |
   | 디코드 실패(그 밖의 오류) | alertTriangle · image-error-fg | `image.state.decode` · `decode_sub` | 디코더 문구(번역 안 함) | Retry |
-  | 너무 큼(`ImageError::Limits`) | alertTriangle · image-error-fg(디자인 확정 전 디코드 실패 줄을 따름) | `image.state.too_large` · `too_large_sub`(상한 두 값을 넣음) | 없음 | Retry |
+  | 너무 큼(`ImageError::Limits`) | image · image-error-fg(`image-too-large-fg` 토큰이 들어오기 전 임시값), 제목 text-primary | `image.state.too_large` · `too_large_sub`(상한 두 값, MiB) | `too_large_size` 헤더에서 읽은 실제 크기 "W × H px"(헤더를 못 읽으면 없음) | 없음 — 같은 파일은 다시 읽어도 결과가 같다. 파일이 바뀌면 감시가 다시 읽는다 |
 
 - 디코드 상한: 뷰어는 디코드 전에 `image::Limits` 를 건다. 한 변 `MAX_IMAGE_SIDE` 16384px, 디코더 메모리 `MAX_DECODE_ALLOC` 512 MiB(image 크레이트 기본값을 명시)다. 넘으면 픽셀을 펼치기 전에 "너무 큼" 상태로 거절한다. 한 변 상한은 Explorer 미리보기와 같다. 메모리 상한은 미리보기(256 MiB)보다 크다 — 미리보기는 패널 폭으로 줄여 보내지만 뷰어는 원본을 그대로 타일로 올리기 때문이다. 상한 안의 그림도 디코드 버퍼 뒤에 RGBA 사본·`ColorImage`·타일 업로드가 더해지므로 메모리 최고점은 디코드 메모리의 몇 배다.
 

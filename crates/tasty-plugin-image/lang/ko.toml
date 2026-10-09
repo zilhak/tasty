@@ -37,8 +37,9 @@ permission = "권한이 없습니다"
 permission_sub = "이 파일을 읽을 권한이 없습니다."
 decode = "이미지를 열 수 없습니다"
 decode_sub = "파일이 손상되었거나 지원하지 않는 형식입니다."
-too_large = "이미지가 너무 큽니다"
+too_large = "이미지가 너무 커서 열 수 없습니다"
 too_large_sub = "한 변이 {} px를 넘거나 디코딩에 {}보다 많은 메모리가 필요합니다."
+too_large_size = "{} × {} px"
 retry = "다시 시도"
 
 [image.save_as]

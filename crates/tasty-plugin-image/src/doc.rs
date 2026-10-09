@@ -848,8 +848,8 @@ pub enum LoadFailure {
     /// 손상됐거나 지원하지 않는 포맷이다. 디코더 문구를 번역하지 않고 담는다.
     Decode(String),
     /// 한 변이 [`MAX_IMAGE_SIDE`] 를 넘거나 디코딩에 [`MAX_DECODE_ALLOC`] 보다 많은 메모리가
-    /// 필요해 디코드 전에 거절했다.
-    TooLarge,
+    /// 필요해 디코드 전에 거절했다. 헤더에서 읽은 그림 크기(px)를 담고, 헤더를 읽지 못했으면 None 이다.
+    TooLarge(Option<[u32; 2]>),
 }
 
 impl LoadFailure {
@@ -860,7 +860,7 @@ impl LoadFailure {
                 std::io::ErrorKind::PermissionDenied => Self::Permission,
                 _ => Self::Decode(e.to_string()),
             },
-            image::ImageError::Limits(_) => Self::TooLarge,
+            image::ImageError::Limits(_) => Self::TooLarge(None),
             _ => Self::Decode(e.to_string()),
         }
     }
@@ -890,7 +890,10 @@ pub(crate) fn load_image_from_path(path: &str) -> Result<ColorImage, LoadFailure
         // 읽지 못한 이유를 로그에도 남긴다. 화면은 원인별 상태 화면을 보인다.
         Err(e) => {
             tracing::warn!("image: failed to decode {path}: {e}");
-            return Err(LoadFailure::from_image_error(&e));
+            return Err(match LoadFailure::from_image_error(&e) {
+                LoadFailure::TooLarge(_) => LoadFailure::TooLarge(header_size(path)),
+                other => other,
+            });
         }
     };
 
@@ -907,6 +910,12 @@ pub(crate) fn load_image_from_path(path: &str) -> Result<ColorImage, LoadFailure
         size: [w as usize, h as usize],
         pixels,
     })
+}
+
+/// 픽셀을 펼치지 않고 헤더에서 그림 크기를 읽는다. 상한에 걸린 그림의 실제 크기를 보이는 데 쓴다.
+fn header_size(path: &str) -> Option<[u32; 2]> {
+    let reader = image::ImageReader::open(path).ok()?;
+    reader.into_dimensions().ok().map(|(w, h)| [w, h])
 }
 
 /// 확장자에 해당하는 디코더가 이 빌드에 포함됐는지 확인한다.
@@ -1411,13 +1420,13 @@ mod tests {
         write_png_header(&wide, MAX_IMAGE_SIDE + 1, 1);
         assert_eq!(
             load_image_from_path(&wide.to_string_lossy()).err(),
-            Some(LoadFailure::TooLarge)
+            Some(LoadFailure::TooLarge(Some([MAX_IMAGE_SIDE + 1, 1])))
         );
         let tall = dir.join("tall.png");
         write_png_header(&tall, 1, MAX_IMAGE_SIDE + 1);
         assert_eq!(
             load_image_from_path(&tall.to_string_lossy()).err(),
-            Some(LoadFailure::TooLarge)
+            Some(LoadFailure::TooLarge(Some([1, MAX_IMAGE_SIDE + 1])))
         );
         // 한 변은 상한 안이지만 RGBA 로 펼치면 MAX_DECODE_ALLOC 을 넘는다.
         let side = 12_000u32;
@@ -1426,7 +1435,7 @@ mod tests {
         write_png_header(&heavy, side, side);
         assert_eq!(
             load_image_from_path(&heavy.to_string_lossy()).err(),
-            Some(LoadFailure::TooLarge)
+            Some(LoadFailure::TooLarge(Some([side, side])))
         );
 
         let edge = dir.join("edge.png");
@@ -1439,7 +1448,10 @@ mod tests {
         let mut doc = ImageDoc::new(Some(wide.to_string_lossy().into_owned()));
         doc.ensure_loaded();
         assert!(doc.original_image.is_none());
-        assert_eq!(doc.load_failure, Some(LoadFailure::TooLarge));
+        assert_eq!(
+            doc.load_failure,
+            Some(LoadFailure::TooLarge(Some([MAX_IMAGE_SIDE + 1, 1])))
+        );
         let _ = std::fs::remove_dir_all(&dir); // best-effort 정리 — 실패 무시.
     }
 
