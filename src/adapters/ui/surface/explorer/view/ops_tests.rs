@@ -208,5 +208,7 @@ fn a_retried_delete_names_an_original_kept_because_the_copy_is_gone() {
     r.failed = vec![failure("/a", Reason::CopyMissing)];
     let text = card_text(&card(r));
     assert_eq!(text.lines[0].1, t("explorer.result.copy_missing"));
+    // 남긴 원본은 다시 지우지 않는다. Retry 는 이동 자체를 다시 요청한다.
     assert!(text.leftovers.is_empty());
+    assert_eq!(text.retry, [PathBuf::from("/a")]);
 }
