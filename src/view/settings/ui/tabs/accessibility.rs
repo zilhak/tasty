@@ -15,7 +15,7 @@ pub fn draw_accessibility_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     ];
     let col = settings_label_column(ui, &th, &rows);
     let [reduced_motion, modifier_hint] = rows;
-    ui.spacing_mut().item_spacing.y = th.spacing_md.value();
+    ui.spacing_mut().item_spacing.y = th.settings_row_gap().value();
 
     reduced_motion.show(ui, &th, col, |ui| {
         tasty_ui_widgets::switch(

@@ -287,7 +287,7 @@ fn draw_appearance_general(
     ui.separator();
     vspace(ui, th.spacing_sm);
 
-    ui.spacing_mut().item_spacing.y = th.spacing_sm.value();
+    ui.spacing_mut().item_spacing.y = th.settings_row_gap().value();
     ligatures.show(ui, &th, col, |ui| {
         tasty_ui_widgets::switch(ui, &th, &mut settings.appearance.ligatures, None, true);
     });
@@ -1749,7 +1749,7 @@ fn font_settings_grid(
 ) -> (egui::Response, egui::Response) {
     let th = crate::theme::theme();
     let [family, custom, size, line_height, scale_mode] = rows;
-    ui.spacing_mut().item_spacing.y = th.spacing_sm.value();
+    ui.spacing_mut().item_spacing.y = th.settings_row_gap().value();
     let mut family_combo = None;
     family.show(ui, &th, col, |ui| {
         family_combo = Some(font_family_picker(

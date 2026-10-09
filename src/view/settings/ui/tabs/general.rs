@@ -46,7 +46,7 @@ pub fn draw_general_tab(ui: &mut egui::Ui, settings: &mut Settings, languages: &
         webhook,
     ] = rows;
 
-    ui.spacing_mut().item_spacing.y = th.spacing_sm.value();
+    ui.spacing_mut().item_spacing.y = th.settings_row_gap().value();
     restore_layout.show(ui, &th, col, |ui| {
         tasty_ui_widgets::switch(ui, &th, &mut settings.general.restore_layout, None, true);
     });

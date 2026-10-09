@@ -20,7 +20,7 @@ pub fn draw_performance_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     ];
     let col = settings_label_column(ui, &th, &rows);
     let [polling, disk_swap] = rows;
-    ui.spacing_mut().item_spacing.y = th.spacing_sm.value();
+    ui.spacing_mut().item_spacing.y = th.settings_row_gap().value();
 
     polling.show(ui, &th, col, |ui| {
         tasty_ui_widgets::switch(

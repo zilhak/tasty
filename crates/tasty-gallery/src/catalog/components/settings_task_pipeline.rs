@@ -22,7 +22,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         kit::frame_card_flat(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
             kit::region_sym(ui, theme.spacing_lg, theme.spacing_md, |ui| {
-                ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
+                ui.spacing_mut().item_spacing.y = theme.settings_row_gap().value();
                 mono_head(ui, theme, "Report limits");
                 let rows = [
                     SettingsRow::new("Note size limit")

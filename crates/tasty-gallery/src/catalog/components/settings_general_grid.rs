@@ -48,7 +48,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         kit::frame_card_flat(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
             kit::region_sym(ui, theme.spacing_lg, theme.spacing_lg, |ui| {
-                ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
+                ui.spacing_mut().item_spacing.y = theme.settings_row_gap().value();
                 let alert = |ui: &mut egui::Ui, rect: egui::Rect, c: egui::Color32| {
                     icons::ALERT_TRIANGLE
                         .image(rect.height(), c)
@@ -127,6 +127,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "longest label of the subtab, clamp 150 … 240, wraps past 240 (en: webhook label → 240, 2 lines)",
             ),
             ("gap", "16 label → control"),
+            ("between rows", "settings-row-gap 12"),
             (
                 "row caption",
                 "directly under its row · gap 4 · left edge · measure-md · caption muted",
@@ -145,6 +146,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::without_color("settings-label-width", "label column floor 150"),
             TokenChip::without_color("settings-label-max-width", "label column cap 240"),
             TokenChip::without_color("settings-label-gap", "16"),
+            TokenChip::without_color("settings-row-gap", "between rows 12"),
             TokenChip::without_color("settings-row-caption-gap", "row → caption 4"),
             TokenChip::new(
                 "accent-warning",

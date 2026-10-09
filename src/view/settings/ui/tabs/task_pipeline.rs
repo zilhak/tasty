@@ -14,6 +14,8 @@ use crate::settings::Settings;
 pub fn draw_task_pipeline_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     let th = crate::theme::theme();
     vspace(ui, th.spacing_sm);
+    // 헤딩·행·구분선 사이가 모두 settings-row-gap 이다(디자인의 세로 flex gap).
+    ui.spacing_mut().item_spacing.y = th.settings_row_gap().value();
 
     ui.label(
         egui::RichText::new(t("settings.task_pipeline.section").to_uppercase())
@@ -21,7 +23,6 @@ pub fn draw_task_pipeline_tab(ui: &mut egui::Ui, settings: &mut Settings) {
             .monospace()
             .color(th.text_muted()),
     );
-    vspace(ui, th.spacing_sm);
 
     let rows = [
         SettingsRow::new(t("settings.task_pipeline.report_append"))

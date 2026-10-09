@@ -11,6 +11,8 @@ use crate::settings::Settings;
 pub fn draw_remote_transfer_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     let th = crate::theme::theme();
     vspace(ui, th.spacing_sm);
+    // 헤딩·행·구분선 사이가 모두 settings-row-gap 이다(디자인의 세로 flex gap).
+    ui.spacing_mut().item_spacing.y = th.settings_row_gap().value();
 
     // 섹션 헤딩 "Received files" — mono micro uppercase text-muted (misc new_card 관례).
     ui.label(
@@ -19,7 +21,6 @@ pub fn draw_remote_transfer_tab(ui: &mut egui::Ui, settings: &mut Settings) {
             .monospace()
             .color(th.text_muted()),
     );
-    vspace(ui, th.spacing_sm);
 
     let rows = [
         SettingsRow::new(t("settings.remote_transfer.dir"))
@@ -87,9 +88,9 @@ pub fn draw_remote_transfer_tab(ui: &mut egui::Ui, settings: &mut Settings) {
 }
 
 /// 행 사이 1px separator(디자인 `borderTop: 1px solid separator`). base bg 위이므로
-/// `th.separator`(misc ScriptRow 하단 보더와 동일 관례)로 hline.
+/// `th.separator`(misc ScriptRow 하단 보더와 동일 관례)로 hline. 위아래 간격은 호출하는 쪽의
+/// `item_spacing.y`(settings-row-gap)가 정한다.
 pub(super) fn row_separator(ui: &mut egui::Ui, th: &tasty_type_appearance::theme::Theme) {
-    vspace(ui, th.spacing_sm);
     let w = ui.available_width();
     let (rect, _) =
         ui.allocate_exact_size(egui::vec2(w, th.border_width.value()), egui::Sense::hover());
@@ -101,5 +102,4 @@ pub(super) fn row_separator(ui: &mut egui::Ui, th: &tasty_type_appearance::theme
             th.separator.to_egui_premultiplied(),
         ),
     );
-    vspace(ui, th.spacing_sm);
 }

@@ -36,7 +36,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         // 설정 창 내부 콘텐츠이므로 그림자를 추가하지 않는다.
         kit::frame_card_flat(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
             kit::region_sym(ui, theme.spacing_lg, theme.spacing_md, |ui| {
-                ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
+                ui.spacing_mut().item_spacing.y = theme.settings_row_gap().value();
                 mono_head(ui, theme, "Received files");
 
                 let rows = [

@@ -28,7 +28,7 @@ pub fn draw_general_display_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     ];
     let col = settings_label_column(ui, &th, &rows);
     let [alt, option, shift] = rows;
-    ui.spacing_mut().item_spacing.y = th.spacing_sm.value();
+    ui.spacing_mut().item_spacing.y = th.settings_row_gap().value();
     alt.show(ui, &th, col, |ui| {
         display_style_combo(
             ui,

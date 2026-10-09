@@ -931,8 +931,8 @@ General L1 의 첫 L2 "General". 디자인: `ui_kits/terminal/overlays/settings_
 **전사 노트**:
 - 라벨 열: 서브탭의 가장 긴 라벨 폭을 `settings-label-width`(150) … `settings-label-max-width`(240)로 clamp 한다. 더 긴 라벨은 열 안에서 줄을 바꾼다(en·ja 웹훅 라벨). 열은 언어마다 그 화면을 그릴 때 잰다. 라벨은 본문 크기 `text-secondary` 다.
 - 행 아래 caption 과 callout 은 행과 `settings-row-caption-gap`(4) 만큼 떨어지고 폭은 `measure-md` 까지다. callout 은 스위치 상태와 관계없이 항상 그린다. caption 글자는 `font-size-caption` · `text-muted` 다(언어 재시작 안내도 같은 caption 이다).
-- 행 사이는 `space-sm` 이다.
-- 토큰: `settings-label-width` · `settings-label-max-width` · `settings-label-gap` · `settings-row-caption-gap` · `settings-row-min-height` · `measure-md` · `accent-warning`.
+- 행 사이는 `settings-row-gap`(12)이다. 섹션 헤딩·행·행 사이 구분선이 한 세로 흐름에 있는 서브탭(Remote transfer · Task pipeline)은 그 셋 사이도 모두 이 간격이다.
+- 토큰: `settings-label-width` · `settings-label-max-width` · `settings-label-gap` · `settings-row-gap` · `settings-row-caption-gap` · `settings-row-min-height` · `measure-md` · `accent-warning`.
 
 ## Settings › General › Overlay — toast duration
 

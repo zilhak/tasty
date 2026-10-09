@@ -13,7 +13,7 @@ pub fn draw_notifications_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     ];
     let col = settings_label_column(ui, &th, &rows);
     let [enabled, sound, coalesce_row] = rows;
-    ui.spacing_mut().item_spacing.y = th.spacing_sm.value();
+    ui.spacing_mut().item_spacing.y = th.settings_row_gap().value();
 
     enabled.show(ui, &th, col, |ui| {
         tasty_ui_widgets::switch(ui, &th, &mut settings.notification.enabled, None, true);
