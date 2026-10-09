@@ -139,7 +139,7 @@ mirror explorer 에서 파일을 더블클릭하면 원격 호스트에 그 파�
   - 새 항목 이름 입력은 스크롤해 화면 밖으로 나가도 그린다. 그래야 포커스와 글자가 유지된다. list·grid 는 `..` 와 이름 입력 줄(grid 는 그 둘이 놓인 첫 줄)을 늘 그리고, detail 은 그 행이 화면 밖이면 그린 행의 위치와 행 번호로 입력 자리를 계산해 표 밖에서 그린다.
   - 타입어헤드·새 항목 고르기처럼 화면 밖 항목으로 가야 할 때는 그 항목의 자리를 행 높이로 계산해 가운데로 스크롤한다.
   - list·grid 의 항목 위젯 id 는 화면 위치가 아니라 항목 경로에 묶는다. 스크롤해도 누름·hover 상태가 같은 항목에 남는다. detail 은 공용 `Table` 의 `virtual_rows`·`scroll_to_row` 를 쓴다.
-  - Find 로 이름을 거르면 맞는 항목의 목록 번호를 한 번 만들어 두고(`find.rs` 의 `refresh_filter`, Find 바를 그릴 때) 검색어와 목록이 그대로인 동안 다시 쓴다. 목록은 `set_entries` 로 바꿀 때마다 세대가 오르고, 거른 결과는 그 세대·목록 주소·길이와 검색어가 모두 같을 때만 쓴다. 맞지 않는 프레임에는 그 자리에서 다시 거른다. 그래서 거르는 동안 목록 전체의 이름을 보는 것은 검색어나 목록이 바뀐 프레임뿐이다. 거르지 않을 때와 하위 폴더 검색 결과는 목록을 훑지 않는다.
+  - Find 로 이름을 거르면 맞는 항목의 목록 번호를 한 번 만들어 두고(`find.rs` 의 `refresh_filter`, Find 바를 그릴 때) 검색어와 목록이 그대로인 동안 다시 쓴다. 목록은 `set_entries` 로 바꿀 때마다 세대가 오르고, 거른 결과는 그 세대·목록 주소·길이와 검색어가 모두 같을 때만 쓴다. 맞지 않는 프레임에는 그 자리에서 다시 거른다. 그래서 거르는 동안 목록 전체의 이름을 보는 것은 검색어나 목록이 바뀐 프레임뿐이다. 검색어가 바뀌면 보이지 않게 된 항목을 선택에서 빼는데, 이때는 선택된 항목만 본다. 선택은 읽은 목록과 하위 폴더 검색 결과 안에만 있으므로 지금 폴더 항목은 부모 폴더와 이름을 검색어에 대 보고, 하위 폴더 검색 결과는 결과 목록에서 찾는다. 거르지 않을 때와 하위 폴더 검색 결과는 목록을 훑지 않는다.
 - detail 행은 **행 전체가 클릭 타겟**이다 — 파일 이름·Size·Date·Type 글자 위에서도 좌클릭 선택 / Ctrl·Cmd+클릭 토글 / Shift+클릭 범위 선택 / 더블클릭 열기(Navigate·OpenFile) / 우클릭 컨텍스트 메뉴가 동일하게 동작한다. 그 대가로 셀 텍스트를 드래그로 선택·복사할 수는 없다(대체: 우클릭 "경로 복사"). 이 정합은 공용 `Table` 이 selectable 모드에서 셀 라벨 선택성을 끄는 계약으로 보장한다 — [ADR-0037](../../adr/0037-ui-input-motion-and-elevation.md). 헤더 컬럼 제목 클릭(정렬 토글)은 영향을 받지 않는다.
 
 ### 주소 입력
@@ -336,6 +336,7 @@ Appearance → **Explorer** 서브탭에서 surface 폰트를 오버라이드한
 - Given 하위 폴더 검색이 5,000 개보다 많이 맞는다 When 검색이 끝난다 Then 5,000 개만 남고 바에 "5,000+ found · stopped", 상태줄에 범위를 좁히라는 안내가 보인다(`local_reads/search/tests.rs` 의 `a_search_stops_at_the_hit_cap_and_keeps_what_it_found`, `find/tests.rs` 의 `one_skipped_folder_and_the_hit_cap_have_their_own_words`).
 - Given 거르기 검색어에 맞는 이름이 없다 When 목록을 그린다 Then 바는 "0 of N", 목록 자리는 "No names match “{query}”" 이다(`find/tests.rs`).
 - Given 거르는 중이다 When 검색어와 목록이 그대로인 채 프레임이 이어진다 Then 다시 거르지 않고, 검색어나 목록이 바뀌면 다시 거른다(`find/tests.rs` 의 `the_filter_is_not_run_again_while_the_query_and_the_list_stay`, `a_new_query_or_a_new_list_filters_again`).
+- Given 지금 폴더 항목 둘과 하위 폴더 검색에서 고른 항목 하나가 선택돼 있다 When 검색어를 바꾼다 Then 새 검색어에 맞는 지금 폴더 항목만 선택에 남고, 하위 폴더 검색 중에는 그 결과에 든 항목만 남는다(`find/tests.rs` 의 `a_new_query_keeps_only_the_selected_items_it_still_shows`, `subfolder_results_keep_only_the_selected_hits`).
 - Given Find 바가 열려 있다 When 하위 폴더로 이동한다 Then 바가 닫힌다(`find/tests.rs` 의 `leaving_the_folder_closes_the_bar`).
 - Given 항목 20,000개 폴더 When detail·list·grid 로 본다 Then 화면에 걸친 항목만 그리고(200개 미만), 15,000번째 항목을 고르거나 타입어헤드로 18,765번째로 가면 그 항목이 화면 가운데로 오고 클릭하면 그 항목이 선택된다. 이름 입력을 연 채 목록 끝으로 스크롤해도 입력은 열린 채 포커스를 유지한다(`explorer/virtual_tests.rs`).
 - Given 내부 탭 둘을 열고 정렬을 바꾼 explorer When 재시작한다 Then 탭·cwd·current·뷰 모드·정렬이 복원되고 히스토리와 선택은 비어 있다.

@@ -421,3 +421,69 @@ fn a_new_query_or_a_new_list_filters_again() {
     view.refresh_filter();
     assert!(cached_hits(&view).is_none());
 }
+
+fn named(root: &Path, rel: &str) -> DirEntryInfo {
+    let path = root.join(rel);
+    DirEntryInfo {
+        name: path.file_name().unwrap().to_string_lossy().into_owned(),
+        path,
+        ..file(0)
+    }
+}
+
+#[test]
+fn a_new_query_keeps_only_the_selected_items_it_still_shows() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let (_panel, mut view, _owner) = loaded(root);
+    let mut entries: Vec<DirEntryInfo> = ["alpha1.txt", "alpha2.txt", "beta.txt"]
+        .iter()
+        .map(|n| named(root, n))
+        .collect();
+    entries.extend((0..20_000).map(|i| named(root, &format!("fill{i:05}"))));
+    view.set_entries(entries);
+    view.open_find();
+    // 하위 폴더 검색에서 고른 뒤 남은 항목. 이름은 맞지만 지금 폴더 항목이 아니다.
+    let deep_pick = root.join("sub/alpha9.txt");
+    view.selected = [
+        root.join("alpha1.txt"),
+        root.join("beta.txt"),
+        deep_pick.clone(),
+    ]
+    .into();
+    view.anchor = Some(root.join("beta.txt"));
+
+    set_query(&mut view, "alpha", false);
+    assert_eq!(view.selected, [root.join("alpha1.txt")].into());
+    assert_eq!(view.anchor, None, "the anchor left with its row");
+
+    view.anchor = Some(root.join("alpha1.txt"));
+    set_query(&mut view, "ALPHA1", false);
+    assert_eq!(view.selected, [root.join("alpha1.txt")].into());
+    assert_eq!(view.anchor, Some(root.join("alpha1.txt")));
+
+    set_query(&mut view, "", false);
+    assert_eq!(view.selected, [root.join("alpha1.txt")].into());
+}
+
+#[test]
+fn subfolder_results_keep_only_the_selected_hits() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let (_panel, mut view, _owner) = loaded(root);
+    view.set_entries(vec![named(root, "alpha1.txt")]);
+    view.open_find();
+    let hit = named(root, "sub/alpha9.txt");
+    let find = view.find.as_mut().unwrap();
+    find.query = "alpha".into();
+    find.deep = true;
+    find.search = Some(Search {
+        receipt: None,
+        hits: vec![hit.clone()],
+        skipped: Vec::new(),
+        outcome: Outcome::Done,
+    });
+    view.selected = [hit.path.clone(), root.join("alpha1.txt")].into();
+    view.retain_shown_selection();
+    assert_eq!(view.selected, [hit.path].into());
+}

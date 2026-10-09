@@ -517,11 +517,40 @@ impl ExplorerView {
     }
 
     /// 보이지 않게 된 항목을 선택에서 뺀다. 숨은 항목에 명령이 닿지 않게 하기 위해서다.
+    /// 선택된 항목만 본다. 선택은 읽은 목록과 하위 폴더 검색 결과 안에만 있으므로
+    /// (`retain_listed_selection`), 지금 폴더 항목은 부모 폴더와 이름을 검색어에 대 보고
+    /// 하위 폴더 검색 결과는 그 결과 목록(상한 `SEARCH_MAX_HITS`)에서 찾는다.
     fn retain_shown_selection(&mut self) {
-        let shown: std::collections::HashSet<PathBuf> =
-            self.shown().map(|e| e.path.clone()).collect();
-        self.selected.retain(|p| shown.contains(p));
-        if self.anchor.as_ref().is_some_and(|a| !shown.contains(a)) {
+        let Some(find) = &self.find else {
+            return;
+        };
+        let hits: Option<std::collections::HashSet<&Path>> = match &find.search {
+            Some(search) if !find.query.is_empty() => {
+                Some(search.hits.iter().map(|e| e.path.as_path()).collect())
+            }
+            _ => None,
+        };
+        let query = if find.deep { "" } else { find.query.as_str() };
+        let shown = |p: &Path| match &hits {
+            Some(hits) => hits.contains(p),
+            None => {
+                p.parent() == Some(find.root.as_path())
+                    && (query.is_empty()
+                        || p.file_name()
+                            .is_some_and(|n| match_range(&n.to_string_lossy(), query).is_some()))
+            }
+        };
+        let hidden: Vec<PathBuf> = self
+            .selected
+            .iter()
+            .filter(|p| !shown(p))
+            .cloned()
+            .collect();
+        let anchor_hidden = self.anchor.as_deref().is_some_and(|a| !shown(a));
+        for p in &hidden {
+            self.selected.remove(p);
+        }
+        if anchor_hidden {
             self.anchor = None;
         }
     }
