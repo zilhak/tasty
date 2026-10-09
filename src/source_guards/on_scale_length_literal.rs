@@ -906,7 +906,8 @@ fn the_blind_spots_are_still_the_size_they_say() {
         // 플러그인 homepage 클릭 시험의 화면 크기 600×400 이 test 코드에 두 개를 더한다.
         // attach 크기 동기 실패 배너 위젯의 글리프 세로 오프셋 vec2(0, nudge)가 0 하나를, 좁은 폭 시험의
         // 화면 높이 400 이 test 전용 하나를 더한다(거절 배너 위젯과 같은 배치 식이다).
-        (221, 558),
+        // 같은 배너의 재시도·클릭 주입 시험이 화면 크기 vec2(460, 400) 두 자리를 test 전용으로 더한다.
+        (221, 560),
         "제외한 0과 test 전용 코드의 수가 달라졌다. 실제 사용과 수집 범위의 변경을 확인하고 기록을 갱신한다."
     );
     let roster: usize = UNIT_SPACE_SITES.iter().map(|(.., n, _)| n).sum();
