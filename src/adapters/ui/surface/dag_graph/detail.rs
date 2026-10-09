@@ -279,10 +279,11 @@ fn unknown_reason(ui: &mut egui::Ui, theme: &Theme, node: &DagNodeData) {
     vspace(ui, theme.spacing_sm);
 }
 
+/// 상세 캡션. 번역 문구의 대소문자를 그대로 쓰고 caption 크기로 그린다.
 fn section(ui: &mut egui::Ui, theme: &Theme, title: &str) {
     ui.label(
         egui::RichText::new(title)
-            .size(theme.font_size_micro.value())
+            .size(theme.font_size_caption.value())
             .color(theme.text_muted().to_egui()),
     );
 }
