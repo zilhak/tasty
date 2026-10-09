@@ -14,6 +14,16 @@ pub const STREAM_OPEN_METHOD: &str = "stream.open";
 /// 추가 기능은 capability와 ClientLossNotify 같은 별도 선언으로 협상한다.
 pub const STREAM_PROTO: u32 = 1;
 
+/// 서버가 모든 ClientResize에 Resize 또는 ResizeRejected로 응답한다는 capability 이름.
+/// system.info에 알리고 workspace attach descriptor의 [`DESCRIPTOR_CAPABILITIES`]에도 싣는다.
+/// client는 연결마다 descriptor를 보고 응답을 기다릴지 정한다.
+pub const RESIZE_ACK_CAPABILITY: &str = "ipc.stream.resize-ack";
+/// [`RESIZE_ACK_CAPABILITY`]의 버전.
+pub const RESIZE_ACK_VERSION: u32 = 1;
+/// workspace attach descriptor에서 이 연결의 서버 기능 이름 목록을 담는 키.
+/// 구 서버는 이 키를 보내지 않으므로 없으면 빈 목록으로 읽는다.
+pub const DESCRIPTOR_CAPABILITIES: &str = "stream_capabilities";
+
 /// Frame header length: 1-byte tag + 4-byte big-endian payload length.
 pub const FRAME_HEADER_LEN: usize = 5;
 
@@ -182,11 +192,23 @@ pub enum StreamControl {
     },
     /// 클라이언트→서버: 로컬 mirror pane에 맞는 PTY 크기를 요청한다.
     /// 서버가 holder를 확인하고 resize한 뒤 Resize로 확정 크기를 보낸다.
-    /// 크기가 같아 변경하지 않았으면 별도 응답은 없다.
+    /// [`RESIZE_ACK_CAPABILITY`]를 알리는 서버는 모든 요청에 응답한다. 크기가 이미 같으면 출력과 같은
+    /// 순서로 현재 크기의 Resize를, 대상·점유가 맞지 않으면 ResizeRejected를 보낸다.
+    /// 그 capability가 없는 구 서버는 크기가 같을 때나 거절할 때 응답하지 않는다.
     ClientResize {
         /// Remote surface id (the client maps its local mirror id to this before
         /// sending). The server resolves the enclosing workspace and verifies the
         /// requesting client is its attach holder before applying.
+        surface_id: u32,
+        cols: usize,
+        rows: usize,
+    },
+    /// 서버→클라이언트: ClientResize를 적용하지 않았다. 대상이 terminal이 아니거나 없거나,
+    /// 요청한 연결이 그 workspace의 holder가 아닐 때다. 크기를 바꾸지 않으므로 출력 순서와 무관하게
+    /// 바로 보낸다. 값은 거절한 요청의 것이며 client는 이것으로 기다리던 요청을 찾는다.
+    /// 구 client는 이 variant를 모르므로 역직렬화에 실패해 무시한다.
+    ResizeRejected {
+        /// Remote surface id named by the rejected request.
         surface_id: u32,
         cols: usize,
         rows: usize,
@@ -890,6 +912,41 @@ mod tests {
         assert!(s.contains(r#""event":"client_resize""#));
         let back: StreamControl = serde_json::from_str(&s).unwrap();
         assert_eq!(back, msg);
+    }
+
+    #[test]
+    fn stream_control_resize_rejected_roundtrip() {
+        let msg = StreamControl::ResizeRejected {
+            surface_id: 12,
+            cols: 203,
+            rows: 57,
+        };
+        let s = serde_json::to_string(&msg).unwrap();
+        assert!(s.contains(r#""event":"resize_rejected""#));
+        let back: StreamControl = serde_json::from_str(&s).unwrap();
+        assert_eq!(back, msg);
+    }
+
+    /// 거절 회신을 모르는 구 client의 enum에서는 역직렬화가 실패해 그 client가 무시한다.
+    #[test]
+    fn resize_rejected_fails_to_decode_in_a_client_without_the_variant() {
+        #[derive(Debug, serde::Deserialize)]
+        #[serde(tag = "event", rename_all = "snake_case")]
+        #[allow(dead_code)] // 이유: 구 client의 enum 모양만 흉내 낸다. 필드는 읽지 않는다.
+        enum OlderControl {
+            Resize {
+                surface_id: u32,
+                cols: usize,
+                rows: usize,
+            },
+        }
+        let s = serde_json::to_string(&StreamControl::ResizeRejected {
+            surface_id: 1,
+            cols: 80,
+            rows: 24,
+        })
+        .unwrap();
+        assert!(serde_json::from_str::<OlderControl>(&s).is_err());
     }
 
     #[test]
