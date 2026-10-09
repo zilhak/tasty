@@ -108,13 +108,13 @@ pub(super) fn show_for(
     true
 }
 
-/// Find 결과가 없거나 하위 폴더 검색이 실패했으면 목록 대신 상태 화면을 그리고 true 를 돌려준다.
-/// 실패 화면의 Retry 는 새로고침이고, 새로고침은 하위 폴더 검색을 처음부터 다시 한다.
 /// 거르기에 맞는 이름이 없을 때의 제목. 번역문은 이름 붙은 `{query}` 자리로 입력한 글자를 받는다.
 pub(super) fn no_filter_matches_title(query: &str) -> String {
     t("explorer.find.none_filter").replace("{query}", query)
 }
 
+/// Find 결과가 없거나 하위 폴더 검색이 실패했으면 목록 대신 상태 화면을 그리고 true 를 돌려준다.
+/// 실패 화면의 Retry 는 새로고침이고, 새로고침은 하위 폴더 검색을 처음부터 다시 한다.
 pub(super) fn show_find(
     ui: &mut egui::Ui,
     theme: &Theme,
