@@ -225,9 +225,22 @@ pub fn plugin_manifest_card(
                     .truncate(),
                 );
             });
+            // 웹 주소만 링크로 연다. 다른 scheme 은 같은 자리에 누를 수 없는 평문으로 보인다.
             if !view.homepage.is_empty() {
                 mono_field(ui, theme, view.homepage_label, |ui| {
-                    output.open_homepage = homepage_link(ui, theme, view.homepage).clicked();
+                    if crate::plugin_detail::is_web_homepage(view.homepage) {
+                        output.open_homepage = homepage_link(ui, theme, view.homepage).clicked();
+                    } else {
+                        ui.add(
+                            egui::Label::new(
+                                egui::RichText::new(view.homepage)
+                                    .monospace()
+                                    .size(theme.font_size_caption.value())
+                                    .color(theme.text_secondary().to_egui()),
+                            )
+                            .truncate(),
+                        );
+                    }
                 });
             }
         });
@@ -825,6 +838,45 @@ mod tests {
         assert_eq!(short_fingerprint(&sixteen), sixteen);
         let spaced = "9f2c 4ad1 b770 e3a6  ·  ed25519";
         assert_eq!(short_fingerprint(spaced), spaced);
+    }
+
+    /// 매니페스트 카드의 Homepage 도 웹 주소만 누를 수 있는 링크다.
+    #[test]
+    fn the_manifest_card_links_only_web_homepages() {
+        let card = |homepage: &'static str| {
+            move |ui: &mut egui::Ui, theme: &Theme| {
+                plugin_manifest_card(
+                    ui,
+                    theme,
+                    &PluginManifestCardView {
+                        name: "Git helper",
+                        version: "1.0.0",
+                        id: "com.a.b",
+                        authors: &[],
+                        description: "",
+                        permissions_label: "Permissions",
+                        permissions: &[],
+                        surface_kinds_label: "Surface kinds",
+                        surface_kinds: &[],
+                        source_label: "Source",
+                        source: "/tmp/p",
+                        homepage_label: "Homepage",
+                        homepage,
+                        none: "None",
+                    },
+                )
+                .open_homepage
+            }
+        };
+        let click = crate::plugin_detail::tests::click_text;
+        assert_eq!(
+            click("https://example.com", card("https://example.com")),
+            (true, true)
+        );
+        assert_eq!(
+            click("file:///etc/passwd", card("file:///etc/passwd")),
+            (false, false)
+        );
     }
 
     #[test]

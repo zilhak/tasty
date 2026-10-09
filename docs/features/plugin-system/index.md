@@ -18,7 +18,7 @@
 
 - **Installed (list)**: 설치된 플러그인 목록. 각 항목:
   - **이름 줄과 설명**: 상세 이름은 UI 최대 글자 크기·주 글자색·보통 굵기(굵은 UI 글꼴을 쓰지 않는다)이고, 같은 줄에 버전 Tag(앱 공용 Tag 위젯, mono 작은 글자)와 기본 제공 플러그인이면 기본 Tag `built-in` 이 이어진다. agent 강조색은 built-in 표시에 쓰지 않는다. 설명은 body 크기·보조 글자색·줄 높이 `line-height-ui`(1.4)이며, 상세 열이 넓어도 `measure-lg`(460) 폭에서 줄바꿈한다.
-  - **메타 줄**: 상세 이름 줄 아래 `작성자 · id · 홈페이지` 를 ` · ` 로 이은 mono caption·text-muted 한 줄. 작성자가 여럿이면 쉼표로 잇고, 작성자가 없으면 id 가 맨 앞이다. 홈페이지가 있으면 마지막 항목으로 `http://`·`https://` 를 뺀 주소를 accent-primary 밑줄 링크로 보이고, 누르면 기본 브라우저로 연다. 본문에 따로 `Homepage:` 줄은 없다. 아바타·이름 줄·메타 줄로 된 정체 블록은 Attention 상세와 같은 위젯(`plugin_detail_identity`)이다.
+  - **메타 줄**: 상세 이름 줄 아래 `작성자 · id · 홈페이지` 를 ` · ` 로 이은 mono caption·text-muted 한 줄. 작성자가 여럿이면 쉼표로 잇고, 작성자가 없으면 id 가 맨 앞이다. 홈페이지가 있으면 마지막 항목이다. scheme 이 `http`·`https`(대소문자 무시)인 주소만 scheme 을 뺀 accent-primary 밑줄 링크로 보이고 누르면 기본 브라우저로 연다. 다른 scheme(`file:`·`javascript:` 등)이나 scheme 없는 값은 다른 항목과 같은 평문으로 보이며 눌러도 열리지 않는다. 본문에 따로 `Homepage:` 줄은 없다. 아바타·이름 줄·메타 줄로 된 정체 블록은 Attention 상세와 같은 위젯(`plugin_detail_identity`)이다.
   - **액션 바**: 상세 아래, 본문 스크롤 밖에 늘 보이는 바. 상세 열 폭 전체를 쓰고 열 아래 끝에 붙으며, 위 1px 구분선이 열 양끝에 닿는다. 왼쪽에 enable/disable Switch 와 현재 상태 라벨(`Enabled`/`Disabled`, 스위치와 한 컨트롤이라 라벨을 눌러도 전환되고 키보드 초점은 한 칸), 오른쪽에 `Configure`(ghost, 톱니 아이콘, 설정 창 Plugins 탭으로 이동)와 `Uninstall`(secondary, 위험 색 글자). 키보드 Tab 순서는 본문 다음 스위치 → Configure → Uninstall 로 화면 순서와 같다.
   - **health error** 인디케이터 (enable 상태인데 오류인 플러그인).
   - **권한 read-only 표시** (창에서 권한을 토글하지 않는다). 상세 `Permissions` 절은 권한마다 버전 표시와 같은 공용 Tag(mono 작은 글자)로 보인다.
@@ -30,7 +30,7 @@
 - **fingerprint 줄**: Attention 서명 절과 Add 신뢰 상자가 같은 줄을 쓴다. colon-hex 값이 16바이트를 넘으면 앞 8바이트와 뒤 8바이트를 ` … `로 이어 한 줄로 보이고, 툴팁과 복사 버튼은 전체 값을 쓴다.
 - **Install (add)**: 디렉터리(`tasty-plugin.toml`)에서 설치. 제목 없이 한 화면에서 진행한다.
   - **경로 선택**: `Plugin folder` 머리글 아래 mono 경로 입력, `Find folder…`(폴더 선택 대화상자), `Verify` 버튼과 설명 문단을 둔다. 경로가 비면 `Verify`는 비활성이다. 경로를 고치면 확인한 매니페스트를 버린다. 확인하기 전에는 그 아래에 `Choose a folder and press Verify to read its manifest.` 안내 상자를 두고, 매니페스트를 읽지 못하면(파일 없음·TOML 파싱 실패) 그 자리에 "Can't read tasty-plugin.toml" 오류 상자를, 읽었지만 선언 검사(바이너리 경로·감지기 등)에 실패하면 같은 상자에 "tasty-plugin.toml is not valid" 제목을 둔다. 두 상자 모두 아래 줄에 원문 메시지를 번역하지 않고 보인다.
-  - **미리보기**: 경로 선택 바로 아래에 매니페스트 카드(이름·버전, `id · 첫 작성자 +N`(작성자 전체는 툴팁), 설명, 권한·surface 종류 Tag, 원본 경로, 홈페이지 링크)와 그 아래 신뢰 판정 상자. 홈페이지 링크는 text-secondary 글자에 밑줄을 늘 긋고, 마우스를 올리면 text-primary, 키보드 포커스면 focus ring 을 두른다. 누르면 기본 브라우저로 연다. 권한이나 surface 종류가 없으면 caption 크기 `None`을 적는다.
+  - **미리보기**: 경로 선택 바로 아래에 매니페스트 카드(이름·버전, `id · 첫 작성자 +N`(작성자 전체는 툴팁), 설명, 권한·surface 종류 Tag, 원본 경로, 홈페이지 링크)와 그 아래 신뢰 판정 상자. 홈페이지 링크는 text-secondary 글자에 밑줄을 늘 긋고, 마우스를 올리면 text-primary, 키보드 포커스면 focus ring 을 두른다. 누르면 기본 브라우저로 연다. 링크는 `http`·`https` 주소만이고, 다른 값은 같은 자리에 밑줄 없는 text-secondary 평문으로 보이며 열리지 않는다. 권한이나 surface 종류가 없으면 caption 크기 `None`을 적는다.
   - **신뢰 판정 상자 다섯 가지**: 신뢰한 게시자(success, 그대로 추가) · 확인되지 않은 게시자와 권한 변경(warning, 추가하면 키나 새 권한 묶음을 신뢰) · 공개 키 파일 없음과 서명 확인 실패(danger, 추가 불가). 서명 확인 실패를 뺀 미신뢰 상자에는 fingerprint 줄이 붙는다. 서명 확인 실패의 원인은 상자에 쓰지 않고 로그에 남긴다.
   - **액션 바**: 매니페스트를 확인하기 전에는 Cancel 만 둔다. 확인한 뒤에는 왼쪽에 부여할 권한 수(`No permissions` · `Grants 1 permission` · `Grants N permissions`, caption), 오른쪽에 Cancel과 `Add plugin`. Cancel 은 경로와 미리보기를 비운다. 추가하면 키나 새 권한 묶음을 신뢰하게 되는 경우(`UntrustedWithPubkey`)는 같은 Primary 버튼이 `Trust & add`이고 `TrustAndInstall`로 설치한다. 추가할 수 없으면(이미 설치됨 · 공개 키 파일 없음 · 서명 확인 실패) 버튼을 disabled로 두고 왼쪽 문구를 그 이유로 바꾼다. 이미 설치된 플러그인도 신뢰 상자는 판정대로 그린다.
 

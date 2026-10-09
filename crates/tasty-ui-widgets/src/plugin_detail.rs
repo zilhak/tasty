@@ -75,12 +75,14 @@ pub struct PluginMetaView<'a> {
     /// 작성자들을 이미 이어 붙인 문자열. 없으면 id 가 맨 앞이다.
     pub authors: &'a str,
     pub id: &'a str,
-    /// 매니페스트의 homepage 그대로. 화면에는 `http://`·`https://` 를 뺀 값을 링크로 보인다.
+    /// 매니페스트의 homepage 그대로. `http://`·`https://` 주소만 scheme 을 뺀 링크로 보이고,
+    /// 다른 값은 누를 수 없는 평문으로 보인다.
     pub homepage: &'a str,
 }
 
 /// 이름 줄 아래 메타 줄 `작성자 · id · homepage`. mono caption · text-muted 를 ` · ` 로 잇고,
-/// homepage 는 마지막 항목으로 accent-primary 밑줄 링크다. 링크를 눌렀으면 true.
+/// homepage 는 마지막 항목이다. 웹 주소면 accent-primary 밑줄 링크, 아니면 다른 항목과 같은
+/// 평문이다. 링크를 눌렀으면 true.
 pub fn plugin_detail_meta(ui: &mut egui::Ui, theme: &Theme, view: &PluginMetaView<'_>) -> bool {
     let font = egui::FontId::monospace(theme.font_size_caption.value());
     let color = theme.text_muted().to_egui();
@@ -101,12 +103,28 @@ pub fn plugin_detail_meta(ui: &mut egui::Ui, theme: &Theme, view: &PluginMetaVie
             sep(ui);
             ui.label(egui::RichText::new(part).font(font.clone()).color(color));
         }
-        if !view.homepage.is_empty() {
+        if is_web_homepage(view.homepage) {
             sep(ui);
             clicked = meta_link(ui, theme, homepage_display(view.homepage)).clicked();
+        } else if !view.homepage.is_empty() {
+            sep(ui);
+            ui.label(
+                egui::RichText::new(view.homepage)
+                    .font(font.clone())
+                    .color(color),
+            );
         }
     });
     clicked
+}
+
+/// 브라우저로 열 수 있는 homepage 인가. scheme 이 `http`·`https`(대소문자 무시)인 주소만 링크로
+/// 그린다. 매니페스트는 신뢰 전 입력이라 `file:`·`javascript:` 같은 다른 scheme 은 열지 않는다.
+pub fn is_web_homepage(url: &str) -> bool {
+    url.split_once("://").is_some_and(|(scheme, rest)| {
+        !rest.is_empty()
+            && (scheme.eq_ignore_ascii_case("http") || scheme.eq_ignore_ascii_case("https"))
+    })
 }
 
 /// 링크로 보일 homepage. 앞의 `http://`·`https://` 를 뺀다.
@@ -351,4 +369,4 @@ fn bar_actions(ui: &mut egui::Ui, theme: &Theme, view: &PluginDetailBarView<'_>)
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

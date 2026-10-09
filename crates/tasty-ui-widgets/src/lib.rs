@@ -157,7 +157,7 @@ pub use plugin_avatar::{PluginAvatarSize, paint_plugin_avatar, plugin_avatar};
 pub use plugin_detail::{
     PluginAttentionBarAction, PluginAttentionBarView, PluginDetailBarClicks, PluginDetailBarView,
     PluginIdentityView, PluginMetaView, PluginUninstallConfirmClicks, PluginUninstallConfirmView,
-    homepage_display, plugin_attention_bar, plugin_command_row, plugin_detail_bar,
+    homepage_display, is_web_homepage, plugin_attention_bar, plugin_command_row, plugin_detail_bar,
     plugin_detail_bar_frame, plugin_detail_bar_height, plugin_detail_description,
     plugin_detail_identity, plugin_detail_meta, plugin_detail_name_row, plugin_keycaps,
     plugin_uninstall_confirm_bar, plugin_uninstall_confirm_bar_height,

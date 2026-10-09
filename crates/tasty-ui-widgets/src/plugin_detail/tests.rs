@@ -248,3 +248,105 @@ fn the_attention_bar_shares_the_installed_bar_height() {
         assert_eq!(rect.height(), plugin_detail_bar_height(&theme));
     }
 }
+
+#[test]
+fn only_http_and_https_homepages_are_links() {
+    for url in [
+        "https://github.com/zilhak/tasty",
+        "http://example.com",
+        "HTTPS://Example.com",
+    ] {
+        assert!(is_web_homepage(url), "{url:?}");
+    }
+    for url in [
+        "",
+        "file:///etc/passwd",
+        "javascript:alert(1)",
+        "ftp://example.com",
+        "example.com",
+        "https://",
+        "mailto:a@b.c",
+    ] {
+        assert!(!is_web_homepage(url), "{url:?}");
+    }
+}
+
+/// `draw` 를 그리고, `text` 로 그려진 글자 위를 누르고 뗀다. 그 사이 `draw` 가 true 를 돌려준 적이
+/// 있으면 true. 글자가 밑줄을 가졌는지도 함께 돌려준다.
+pub(crate) fn click_text(
+    text: &str,
+    mut draw: impl FnMut(&mut egui::Ui, &Theme) -> bool,
+) -> (bool, bool) {
+    let theme = theme();
+    let ctx = egui::Context::default();
+    let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(600.0, 400.0));
+    let mut clicked = false;
+    let mut target = None;
+    let mut underlined = false;
+    let mut frame = |events: Vec<egui::Event>, clicked: &mut bool| {
+        ctx.run(
+            egui::RawInput {
+                screen_rect: Some(screen),
+                events,
+                ..Default::default()
+            },
+            |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| *clicked |= draw(ui, &theme));
+            },
+        )
+    };
+    for _ in 0..2 {
+        let out = frame(Vec::new(), &mut clicked);
+        for c in &out.shapes {
+            if let egui::Shape::Text(t) = &c.shape
+                && t.galley.text() == text
+            {
+                target = Some(t.galley.rect.translate(t.pos.to_vec2()).center());
+                underlined = t
+                    .galley
+                    .job
+                    .sections
+                    .iter()
+                    .any(|s| s.format.underline.width > 0.0);
+            }
+        }
+    }
+    let pos = target.unwrap_or_else(|| panic!("{text:?} was not drawn"));
+    let button = |pressed| egui::Event::PointerButton {
+        pos,
+        button: egui::PointerButton::Primary,
+        pressed,
+        modifiers: egui::Modifiers::NONE,
+    };
+    drop(frame(vec![egui::Event::PointerMoved(pos)], &mut clicked));
+    drop(frame(vec![button(true)], &mut clicked));
+    drop(frame(vec![button(false)], &mut clicked));
+    drop(frame(Vec::new(), &mut clicked));
+    (clicked, underlined)
+}
+
+/// 메타 줄은 웹 주소만 누를 수 있는 밑줄 링크로 그리고, 다른 scheme 은 눌러도 열리지 않는 평문이다.
+#[test]
+fn the_meta_line_links_only_web_homepages() {
+    let meta = |homepage: &'static str| {
+        move |ui: &mut egui::Ui, theme: &Theme| {
+            plugin_detail_meta(
+                ui,
+                theme,
+                &PluginMetaView {
+                    authors: "ann",
+                    id: "com.a.b",
+                    homepage,
+                },
+            )
+        }
+    };
+    assert_eq!(
+        click_text("example.com/x", meta("https://example.com/x")),
+        (true, true)
+    );
+    assert_eq!(
+        click_text("javascript:alert(1)", meta("javascript:alert(1)")),
+        (false, false)
+    );
+}
