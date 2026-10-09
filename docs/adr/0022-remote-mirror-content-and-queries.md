@@ -83,7 +83,7 @@ mirror Terminal의 cached_cwd에 원격 경로를 넣으면 출처를 잃고 비
 
 ## Reconsideration Triggers
 
-크기 요청 재전송으로 해결되지 않는 실패가 확인되면 workspace 연결 안의 surface 단위 재구독을 검토한다. 실행 결과로 확인하며 자동 검사는 없다. 서버가 요청과 다른 크기를 확정하게 되면(최소 크기 제한 등) 크기 짝짓기를 요청 식별자로 바꾼다. `src/remote/server/attach_resize.rs`와 `Terminal::resize`에서 확인한다.
+크기 요청 재전송으로 해결되지 않는 실패가 확인되면 workspace 연결 안의 surface 단위 재구독을 검토한다. 실행 결과로 확인하며 자동 검사는 없다. 서버가 요청과 다른 크기를 확정하게 되면(최소 크기 제한 등) 크기 짝짓기를 요청 식별자로 바꾼다. `src/remote/server/attach_resize.rs`와 `Terminal::resize`에서 확인한다. 같은 크기로 돌아가는 요청의 순서 역전(A→B→A에서 앞선 A의 응답이 마지막 A 대기를 끝내고 서버가 B에서 멈춤)으로 실패 표시를 놓친 사례가 확인되면 요청에 세대 번호를 붙여 짝짓는다. 지금은 [attach 동작](../dev-guide/attach-behavior.md#크기-요청의-응답과-재시도)의 한계로 적어 두었고 자동 검사는 없다.
 
 고지연 환경에서 resize 반응이 문제가 되거나 여러 holder를 허용하면 화면 크기 협상을 다시 정한다. 초기 크기 협상과 원격 파일 내용 가져오기 요구, 점유별 읽기·쓰기 권한 분리가 생겨도 해당 프로토콜을 검토한다.
 
