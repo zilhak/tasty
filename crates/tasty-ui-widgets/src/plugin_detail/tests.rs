@@ -453,3 +453,28 @@ fn two_meta_lines_with_one_homepage_do_not_share_a_link_id() {
         "link ids clash: {texts:?}"
     );
 }
+
+/// 바와 위 구분선은 버튼이 없어도 열 폭 전체를 쓴다. 서명 사유처럼 버튼이 없는 바가 내용 폭으로
+/// 줄면 구분선이 열 중간에서 끊긴다.
+#[test]
+fn the_attention_bar_spans_the_column_without_a_button() {
+    let theme = theme();
+    let color = theme.accent_danger().to_egui();
+    for action in [
+        None,
+        Some(PluginAttentionBarAction::Reapprove("Re-approve")),
+    ] {
+        let rect = drawn_rect(540.0, |ui, theme| {
+            plugin_attention_bar(
+                ui,
+                theme,
+                &PluginAttentionBarView {
+                    status: "Not registered",
+                    color,
+                    action,
+                },
+            );
+        });
+        assert_eq!(rect.width(), 540.0, "action {}", action.is_some());
+    }
+}

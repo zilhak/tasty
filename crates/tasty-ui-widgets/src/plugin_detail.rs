@@ -378,6 +378,8 @@ pub fn plugin_detail_bar_frame(
                 egui::Layout::left_to_right(egui::Align::Center),
                 |ui| {
                     ui.set_min_height(row_h);
+                    // 오른쪽 버튼이 없는 바도 열 폭을 채워 위 구분선이 열 양끝에 닿게 한다.
+                    ui.set_min_width(ui.available_width());
                     ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
                     contents(ui);
                 },
