@@ -46,7 +46,7 @@ debug 메서드는 모두 `local_only()` — plugin caller 는 호출 불가, CL
 | `debug.inject_key` | `surface_id, bytes(hex)` 또는 `text` | 키 이벤트 주입 † |
 | `debug.inject_window_mouse` | `surface_id?`, `fx?`/`fy?`(기본 0.5, 창 정규화 좌표), `event_type?`, `button?`, `scroll_dx?`/`scroll_dy?`, `unit?`(기본 `line`) | winit 레벨 마우스 이벤트 주입 — 포커스된 창에 작용한다. 스크롤 단위는 아래 [휠 주입의 단위](#휠-주입의-단위-unit) |
 | `debug.inject_egui_mouse` | 위와 같음, `unit?` 기본 `point`, `modifiers?`(`shift`·`ctrl`·`alt`·`command` 배열) | egui 레벨 마우스 이벤트 주입 — winit 환산 경로를 건너뛰고 egui 입력에 직접 넣는다. `modifiers` 를 주면 egui 가 누른 것으로 보는 수식 키를 그 값으로 바꾸고 다음 `modifiers` 주입까지 유지한다(빈 배열은 모두 뗀다, 생략하면 그대로 둔다). CLI 는 `--modifiers shift,ctrl` · `--modifiers none`. `window_id?` 를 주면 그 창(메인 또는 설정·Preset·Plugins)의 egui 입력에 넣고, 좌표는 **그 창 전체에 대한 정규화 좌표**(`fx`/`fy`)만 받는다. 보조 창에는 surface 가 없으므로 `surface_id` 와 함께 주면 `-32602` 로 거절한다(CLI 는 `--window-id` 와 `--surface` 를 함께 받지 않고, `TASTY_SURFACE_ID` 로 채우지도 않는다). 응답에 `window_id` 를 싣고, 없는 창은 `-32602` |
-| `debug.inject_egui_key` | `key?`(기본 `Escape`), `pressed?`(기본 `true`), `window_id?` | egui 레벨 키 이벤트 주입. 매핑할 수 없는 키 이름이면 `injected:false`. `window_id` 는 `debug.inject_egui_text` 와 같은 규칙이다(그 창의 egui 입력, 응답에 `window_id`, 없는 창 `-32602`, 생략하면 포커스된 메인 창) |
+| `debug.inject_egui_key` | `key?`(기본 `Escape`), `pressed?`(기본 `true`, CLI `--pressed false` 로 뗌), `window_id?` | egui 레벨 키 이벤트 주입. 매핑할 수 없는 키 이름이면 `injected:false`. `window_id` 는 `debug.inject_egui_text` 와 같은 규칙이다(그 창의 egui 입력, 응답에 `window_id`, 없는 창 `-32602`, 생략하면 포커스된 메인 창) |
 | `debug.inject_egui_text` | `text`(필수, 문자열), `window_id?` | egui 레벨 **문자** 이벤트 주입 — 포커스된 `TextEdit`(command palette 쿼리 등)에 글자를 넣는다. `window_id` 를 주면 그 창(메인 또는 설정·Preset·Plugins 같은 보조 창)의 egui 입력에 넣고 응답에 `window_id` 를 싣는다. 없는 창이면 `-32602`. 생략하면 포커스된 메인 창이다. 아래 [문자 주입은 키 주입과 다른 채널이다](#문자-주입은-키-주입과-다른-채널이다) |
 | `debug.selection` | `{}` | focused window 의 로컬 텍스트 선택 상태 read-only 덤프(`present`·`surface_id`·`mode`·`dragging`·`empty`·`anchor/cursor/start/end{col,row}`). 마우스 라우팅 회귀 net 의 관찰면 — 순수 관찰(사용자 상태 불변) |
 | `debug.pending_menu` | `{}` | 대기 중 컨텍스트 메뉴 read-only 덤프(`present`·`kind`·`surface_id?`). live pending 우선, 없으면 주입 포획본(`debug_captured_menu`). 우클릭 라우팅 회귀 관찰용 |
@@ -237,6 +237,10 @@ tasty screenshot --window $S --path /tmp/settings-filtered.png
 |--------|------|-------------------|
 | `debug.inject_window_mouse` (winit 레벨) | `line` | `line` → `LineDelta`, `point` → `PixelDelta`. **`page` 는 거절된다** — winit 에 대응 델타가 없어, 줄로 접어 넣으면 주입은 성공했는데 다른 단위가 흐른다 |
 | `debug.inject_egui_mouse` (egui 레벨) | `point` | 셋 다. egui 는 `Page` 를 다루므로 그 갈래까지 재현할 수 있다 |
+
+CLI(`tasty debug inject egui-mouse|window-mouse --unit`)는 위 표에서 그 메서드가 받는 이름만
+통과시키고 나머지(`pixel` 등)는 요청을 보내기 전에 거절한다. CLI 의 기본값은 두 명령 모두 `line`
+이다(IPC 를 직접 부를 때의 egui 레벨 기본값 `point` 와 다르다).
 
 `scroll_dx`/`scroll_dy` 의 뜻이 단위를 따라간다: `line` 은 줄 수(휠 한 칸이 1.0), egui
 레벨의 `point` 는 논리 포인트, **winit 레벨의 `point` 는 물리 픽셀**이다(`PixelDelta` 가

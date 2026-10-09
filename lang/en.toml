@@ -3787,7 +3787,7 @@ help = "One of `move`, `press`, `release`, `scroll`"
 help = "0 = left, 1 = middle, 2 = right"
 
 [cli.help._root.debug.inject.window-mouse.arg.unit]
-help = "Scroll unit: `line` or `pixel`"
+help = "Scroll unit: `line` (wheel notches) or `point` (physical pixels at this level). `page` has no winit delta and is refused"
 
 [cli.help._root.debug.inject.window-mouse.arg.scroll_dx]
 help = "Horizontal scroll delta (with `--event-type scroll`)"
@@ -3814,7 +3814,7 @@ help = "One of `move`, `press`, `release`, `scroll`"
 help = "0 = left, 1 = middle, 2 = right"
 
 [cli.help._root.debug.inject.egui-mouse.arg.unit]
-help = "Scroll unit: `line` or `pixel`"
+help = "Scroll unit: `line` (wheel notches), `point` (logical points), or `page`"
 
 [cli.help._root.debug.inject.egui-mouse.arg.scroll_dx]
 help = "Horizontal scroll delta (with `--event-type scroll`)"
@@ -3835,7 +3835,7 @@ about = "Inject a key event into the egui layer"
 help = "egui key name (e.g. `Enter`, `Escape`, `ArrowDown`)"
 
 [cli.help._root.debug.inject.egui-key.arg.pressed]
-help = "Press (default) or release with `--pressed false`"
+help = "Press (default) or release with `--pressed false`. A bare `--pressed` means true"
 
 [cli.help._root.debug.inject.egui-key.arg.window_id]
 help = "Target window, main or auxiliary (Settings, Preset, Plugins). Omit to send to the focused main window"

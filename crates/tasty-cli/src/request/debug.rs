@@ -685,6 +685,62 @@ mod tests {
         );
     }
 
+    /// `--pressed` 는 값을 받는다. 생략하면 누름, 값 없이 주어도 누름, `false` 면 뗌이다.
+    #[test]
+    fn egui_key_pressed_takes_true_or_false() {
+        for (args, pressed) in [
+            (&[][..], true),
+            (&["--pressed"][..], true),
+            (&["--pressed", "true"][..], true),
+            (&["--pressed", "false"][..], false),
+            (&["--pressed=false"][..], false),
+        ] {
+            assert_eq!(egui_key(args).1["pressed"], pressed, "{args:?}");
+        }
+        let bad = [
+            "tasty",
+            "debug",
+            "inject",
+            "egui-key",
+            "--key",
+            "Enter",
+            "--pressed",
+            "no",
+        ];
+        assert!(crate::Cli::try_parse_from(bad).is_err());
+    }
+
+    /// 휠 단위는 서버가 받는 이름만 통과한다. egui 레벨은 `page` 까지, winit 레벨은 `line`·`point`
+    /// 뿐이다. 서버가 모르는 `pixel` 은 CLI 에서 거절한다.
+    #[test]
+    fn scroll_units_match_what_the_server_accepts() {
+        let parse = |sub: &str, unit: &str| {
+            crate::Cli::try_parse_from([
+                "tasty",
+                "debug",
+                "inject",
+                sub,
+                "--surface",
+                "1",
+                "--event-type",
+                "scroll",
+                "--unit",
+                unit,
+            ])
+            .map(|cli| crate::request::command_to_request(&cli.command.expect("명령")).params)
+        };
+        for unit in ["line", "point", "page"] {
+            assert_eq!(parse("egui-mouse", unit).expect(unit)["unit"], unit);
+        }
+        for unit in ["line", "point"] {
+            assert_eq!(parse("window-mouse", unit).expect(unit)["unit"], unit);
+        }
+        assert!(parse("window-mouse", "page").is_err());
+        for sub in ["egui-mouse", "window-mouse"] {
+            assert!(parse(sub, "pixel").is_err(), "{sub}");
+        }
+    }
+
     /// 창을 지정하지 않은 호출은 예전과 같은 요청이고, 지정하면 `window_id`가 실린다.
     #[test]
     fn egui_text_carries_the_window_id_only_when_given() {

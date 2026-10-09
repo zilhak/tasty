@@ -3781,7 +3781,7 @@ help = "`move`, `press`, `release`, `scroll` 중 하나"
 help = "0 = 왼쪽, 1 = 가운데, 2 = 오른쪽"
 
 [cli.help._root.debug.inject.window-mouse.arg.unit]
-help = "스크롤 단위: `line` 또는 `pixel`"
+help = "스크롤 단위: `line`(휠 칸) 또는 `point`(이 레벨에서는 물리 픽셀). `page` 는 winit 델타가 없어 거절된다"
 
 [cli.help._root.debug.inject.window-mouse.arg.scroll_dx]
 help = "가로 스크롤 변화량(`--event-type scroll`과 함께 사용)"
@@ -3808,7 +3808,7 @@ help = "`move`, `press`, `release`, `scroll` 중 하나"
 help = "0 = 왼쪽, 1 = 가운데, 2 = 오른쪽"
 
 [cli.help._root.debug.inject.egui-mouse.arg.unit]
-help = "스크롤 단위: `line` 또는 `pixel`"
+help = "스크롤 단위: `line`(휠 칸), `point`(논리 포인트), `page`"
 
 [cli.help._root.debug.inject.egui-mouse.arg.scroll_dx]
 help = "가로 스크롤 변화량(`--event-type scroll`과 함께 사용)"
@@ -3829,7 +3829,7 @@ about = "egui 계층에 키 이벤트 주입"
 help = "egui 키 이름(예: `Enter`, `Escape`, `ArrowDown`)"
 
 [cli.help._root.debug.inject.egui-key.arg.pressed]
-help = "누르기(기본값) 또는 `--pressed false`로 떼기"
+help = "누르기(기본값) 또는 `--pressed false`로 떼기. 값 없이 `--pressed` 만 주면 true"
 
 [cli.help._root.debug.inject.egui-key.arg.window_id]
 help = "대상 윈도우. 메인 또는 보조 윈도우(Settings, Preset, Plugins). 생략하면 포커스된 메인 윈도우로 보냅니다"

@@ -3781,7 +3781,7 @@ help = "`move`、`press`、`release`、`scroll` のいずれか"
 help = "0＝左、1＝中央、2＝右"
 
 [cli.help._root.debug.inject.window-mouse.arg.unit]
-help = "スクロール単位：`line` または `pixel`"
+help = "スクロール単位：`line`（ホイールの刻み）または `point`（このレベルでは物理ピクセル）。`page` は winit のデルタがないため拒否される"
 
 [cli.help._root.debug.inject.window-mouse.arg.scroll_dx]
 help = "横スクロール量（`--event-type scroll` と併用）"
@@ -3808,7 +3808,7 @@ help = "`move`、`press`、`release`、`scroll` のいずれか"
 help = "0＝左、1＝中央、2＝右"
 
 [cli.help._root.debug.inject.egui-mouse.arg.unit]
-help = "スクロール単位：`line` または `pixel`"
+help = "スクロール単位：`line`（ホイールの刻み）、`point`（論理ポイント）、`page`"
 
 [cli.help._root.debug.inject.egui-mouse.arg.scroll_dx]
 help = "横スクロール量（`--event-type scroll` と併用）"
@@ -3829,7 +3829,7 @@ about = "egui層にキーイベントを注入"
 help = "eguiキー名（例：`Enter`、`Escape`、`ArrowDown`）"
 
 [cli.help._root.debug.inject.egui-key.arg.pressed]
-help = "押下（既定値）、または `--pressed false` で解放"
+help = "押下（既定値）、または `--pressed false` で解放。値なしの `--pressed` は true"
 
 [cli.help._root.debug.inject.egui-key.arg.window_id]
 help = "対象ウィンドウ。メインまたは補助ウィンドウ（Settings、Preset、Plugins）。省略するとフォーカス中のメインウィンドウに送ります"

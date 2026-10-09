@@ -637,8 +637,9 @@ pub enum InjectDebugCommands {
         /// 0 = left, 1 = middle, 2 = right.
         #[arg(long, default_value_t = 0)]
         button: u64,
-        /// Scroll unit: `line` or `pixel`.
-        #[arg(long, default_value = "line")]
+        /// Scroll unit: `line` (wheel notches) or `point` (physical pixels at this level).
+        /// `page` has no winit delta and is refused.
+        #[arg(long, default_value = "line", value_parser = ["line", "point"])]
         unit: String,
         /// Horizontal scroll delta (with `--event-type scroll`).
         #[arg(long, default_value_t = 0.0)]
@@ -665,8 +666,8 @@ pub enum InjectDebugCommands {
         /// 0 = left, 1 = middle, 2 = right.
         #[arg(long, default_value_t = 0)]
         button: u64,
-        /// Scroll unit: `line` or `pixel`.
-        #[arg(long, default_value = "line")]
+        /// Scroll unit: `line` (wheel notches), `point` (logical points), or `page`.
+        #[arg(long, default_value = "line", value_parser = ["line", "point", "page"])]
         unit: String,
         /// Horizontal scroll delta (with `--event-type scroll`).
         #[arg(long, default_value_t = 0.0)]
@@ -687,8 +688,14 @@ pub enum InjectDebugCommands {
         /// egui key name (e.g. `Enter`, `Escape`, `ArrowDown`).
         #[arg(long)]
         key: String,
-        /// Press (default) or release with `--pressed false`.
-        #[arg(long, default_value_t = true)]
+        /// Press (default) or release with `--pressed false`. A bare `--pressed` means true.
+        #[arg(
+            long,
+            default_value_t = true,
+            num_args = 0..=1,
+            default_missing_value = "true",
+            action = clap::ArgAction::Set
+        )]
         pressed: bool,
         /// Target window, main or auxiliary (Settings, Preset, Plugins). Omit to send to the focused main window
         #[arg(long)]
