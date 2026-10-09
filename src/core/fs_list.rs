@@ -89,24 +89,32 @@ pub(crate) fn read_dir_entries(dir: &Path) -> std::io::Result<Vec<DirEntryInfo>>
 
 /// 정렬 방향과 무관하게 디렉터리를 먼저 두고 선택한 컬럼으로 정렬한다.
 pub(crate) fn sort_entries(entries: &mut [DirEntryInfo], col: SortColumn, dir: SortDir) {
-    entries.sort_by(|a, b| {
-        if a.is_dir != b.is_dir {
-            return b.is_dir.cmp(&a.is_dir);
-        }
-        let ord = match col {
-            SortColumn::Name => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
-            SortColumn::Size => a.size.cmp(&b.size),
-            SortColumn::Modified => a.modified.cmp(&b.modified),
-            SortColumn::Type => a
-                .ext
-                .cmp(&b.ext)
-                .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase())),
-        };
-        match dir {
-            SortDir::Asc => ord,
-            SortDir::Desc => ord.reverse(),
-        }
-    });
+    entries.sort_by(|a, b| compare_entries(a, b, col, dir));
+}
+
+/// `sort_entries` 의 순서. 이미 정렬한 목록에 항목을 끼워 넣을 자리를 찾을 때도 쓴다.
+pub(crate) fn compare_entries(
+    a: &DirEntryInfo,
+    b: &DirEntryInfo,
+    col: SortColumn,
+    dir: SortDir,
+) -> std::cmp::Ordering {
+    if a.is_dir != b.is_dir {
+        return b.is_dir.cmp(&a.is_dir);
+    }
+    let ord = match col {
+        SortColumn::Name => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+        SortColumn::Size => a.size.cmp(&b.size),
+        SortColumn::Modified => a.modified.cmp(&b.modified),
+        SortColumn::Type => a
+            .ext
+            .cmp(&b.ext)
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase())),
+    };
+    match dir {
+        SortDir::Asc => ord,
+        SortDir::Desc => ord.reverse(),
+    }
 }
 
 /// Unix epoch 일수로 UTC 날짜를 표시한다. 값이 없거나 epoch 이전이면 대시를 쓴다.

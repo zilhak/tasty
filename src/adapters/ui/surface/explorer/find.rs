@@ -13,8 +13,11 @@ use tasty_ui_widgets::{
 use super::DirEntryInfo;
 use super::view::ExplorerView;
 use crate::app::local_reads::{SearchEvent, SearchQuery};
-use crate::core::fs_list::sort_entries;
+use std::cmp::Ordering;
+
+use crate::core::fs_list::{compare_entries, sort_entries};
 use crate::i18n::{t, t_fmt, t_fmt2};
+use tasty_model::{SortColumn, SortDir};
 
 /// 열려 있는 Find 바. 연 폴더를 함께 둔다.
 pub(crate) struct FindState {
@@ -93,21 +96,45 @@ impl ExplorerView {
         }
     }
 
-    /// 목록에 보일 항목. 거르는 중이면 맞는 항목만, 하위 폴더 검색이면 그 결과다.
+    /// 목록에 보일 항목의 사본. 목록을 그리는 쪽과 선택 명령만 쓴다.
+    /// 매 프레임 부르는 상태줄·바·상태 화면은 `shown` 과 `shown_count` 로 복사 없이 본다.
     pub(crate) fn shown_entries(&self) -> Vec<DirEntryInfo> {
-        match &self.find {
-            Some(find) if find.query.is_empty() => self.entries.clone(),
+        self.shown().cloned().collect()
+    }
+
+    /// 목록에 보일 항목. 거르는 중이면 맞는 항목만, 하위 폴더 검색이면 그 결과다.
+    pub(crate) fn shown(&self) -> impl Iterator<Item = &DirEntryInfo> {
+        let (list, query): (&[DirEntryInfo], &str) = match &self.find {
             Some(FindState {
                 search: Some(search),
+                query,
                 ..
-            }) => search.hits.clone(),
-            Some(find) if !find.deep => self
-                .entries
-                .iter()
-                .filter(|e| match_range(&e.name, &find.query).is_some())
-                .cloned()
-                .collect(),
-            _ => self.entries.clone(),
+            }) if !query.is_empty() => (&search.hits, ""),
+            Some(find) if !find.deep => (&self.entries, &find.query),
+            _ => (&self.entries, ""),
+        };
+        list.iter()
+            .filter(move |e| query.is_empty() || match_range(&e.name, query).is_some())
+    }
+
+    /// 보일 항목 수. 거르지 않으면 이름을 보지 않고 센다.
+    pub(crate) fn shown_count(&self) -> usize {
+        match &self.find {
+            Some(find) if !find.query.is_empty() && find.search.is_none() && !find.deep => {
+                self.shown().count()
+            }
+            _ => self.shown_list_len(),
+        }
+    }
+
+    fn shown_list_len(&self) -> usize {
+        match &self.find {
+            Some(FindState {
+                search: Some(search),
+                query,
+                ..
+            }) if !query.is_empty() => search.hits.len(),
+            _ => self.entries.len(),
         }
     }
 
@@ -134,7 +161,6 @@ impl ExplorerView {
 
     /// 상태줄 글자.
     pub(super) fn status_text(&self) -> String {
-        let shown = self.shown_entries();
         let sel = self.selected.len();
         if let Some(root) = self.search_root()
             && sel == 1
@@ -147,11 +173,11 @@ impl ExplorerView {
         }
         match &self.find {
             Some(find) if find.search.is_some() => {
-                t_fmt("explorer.find.found", &shown.len().to_string())
+                t_fmt("explorer.find.found", &self.shown_count().to_string())
             }
             Some(find) if !find.query.is_empty() => t_fmt2(
                 "explorer.find.status",
-                &shown.len().to_string(),
+                &self.shown_count().to_string(),
                 &self.entries.len().to_string(),
             ),
             _ => t_fmt("explorer.status.items", &self.entries.len().to_string()),
@@ -176,7 +202,7 @@ impl ExplorerView {
                 }
                 _ => None,
             },
-            None if !self.entries.is_empty() && self.shown_entries().is_empty() => {
+            None if !self.entries.is_empty() && self.shown().next().is_none() => {
                 Some(FindScreen::NoMatches {
                     folder,
                     deep: false,
@@ -201,7 +227,10 @@ impl ExplorerView {
         }
         for event in events {
             match event {
-                SearchEvent::Hits(mut hits) => search.hits.append(&mut hits),
+                SearchEvent::Hits(batch) => match sort {
+                    Some((col, dir)) => insert_sorted(&mut search.hits, batch, col, dir),
+                    None => search.hits.extend(batch),
+                },
                 SearchEvent::Skipped(dir) => search.skipped.push(dir),
                 SearchEvent::Failed(msg) => search.outcome = Outcome::Failed(msg),
                 SearchEvent::Done { stopped } => {
@@ -215,9 +244,6 @@ impl ExplorerView {
         }
         if search.outcome != Outcome::Running {
             search.receipt = None;
-        }
-        if let Some((col, dir)) = sort {
-            sort_entries(&mut search.hits, col, dir);
         }
         true
     }
@@ -236,6 +262,30 @@ impl FindState {
             outcome: Outcome::Running,
         });
     }
+}
+
+/// 정렬한 결과에 새 묶음을 끼워 넣는다. 묶음만 정렬하고 자리는 이분 탐색으로 찾아,
+/// 결과가 많아도 받을 때마다 전체를 다시 정렬하지 않는다. 같은 순서의 항목은 먼저 온 것이 앞이다.
+fn insert_sorted(
+    hits: &mut Vec<DirEntryInfo>,
+    mut batch: Vec<DirEntryInfo>,
+    col: SortColumn,
+    dir: SortDir,
+) {
+    sort_entries(&mut batch, col, dir);
+    let at: Vec<usize> = batch
+        .iter()
+        .map(|b| hits.partition_point(|h| compare_entries(h, b, col, dir) != Ordering::Greater))
+        .collect();
+    let old = std::mem::replace(hits, Vec::with_capacity(hits.len() + batch.len()));
+    let mut old = old.into_iter();
+    let mut moved = 0;
+    for (pos, entry) in at.into_iter().zip(batch) {
+        hits.extend(old.by_ref().take(pos - moved));
+        moved = pos;
+        hits.push(entry);
+    }
+    hits.extend(old);
 }
 
 /// 시작 폴더 기준 상대 경로. 화면에 보이는 로컬 경로라 OS 구분자를 그대로 쓴다.
@@ -277,7 +327,7 @@ impl ExplorerView {
 
 /// 툴바 아래 Find 바를 그린다. 원격 explorer 는 Subfolders 를 숨긴다.
 pub(super) fn bar(ui: &mut egui::Ui, theme: &Theme, view: &mut ExplorerView, remote: bool) {
-    let shown = view.shown_entries().len();
+    let shown = view.shown_count();
     let total = view.entries.len();
     let Some(find) = view.find.as_mut() else {
         return;
@@ -357,7 +407,7 @@ impl ExplorerView {
     /// 보이지 않게 된 항목을 선택에서 뺀다. 숨은 항목에 명령이 닿지 않게 하기 위해서다.
     fn retain_shown_selection(&mut self) {
         let shown: std::collections::HashSet<PathBuf> =
-            self.shown_entries().into_iter().map(|e| e.path).collect();
+            self.shown().map(|e| e.path.clone()).collect();
         self.selected.retain(|p| shown.contains(p));
         if self.anchor.as_ref().is_some_and(|a| !shown.contains(a)) {
             self.anchor = None;

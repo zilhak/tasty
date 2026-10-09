@@ -227,3 +227,44 @@ fn a_search_that_cannot_read_its_start_folder_fails_and_nothing_found_is_a_state
     assert!(!root.exists());
     finish(&mut owner);
 }
+
+#[test]
+fn batches_inserted_in_order_match_a_full_sort() {
+    let entry = |name: &str, is_dir: bool, size: u64| DirEntryInfo {
+        path: PathBuf::from("/s").join(name),
+        name: name.into(),
+        is_dir,
+        size,
+        modified: None,
+        ext: String::new(),
+        link: crate::core::fs_list::EntryLink::NotALink,
+    };
+    let batches = vec![
+        vec![
+            entry("m", false, 5),
+            entry("B", false, 1),
+            entry("dir-z", true, 0),
+        ],
+        vec![entry("a", false, 9), entry("b", false, 3)],
+        vec![],
+        vec![
+            entry("dir-a", true, 0),
+            entry("z", false, 1),
+            entry("A", false, 7),
+        ],
+    ];
+    for (col, dir) in [
+        (SortColumn::Name, SortDir::Asc),
+        (SortColumn::Name, SortDir::Desc),
+        (SortColumn::Size, SortDir::Asc),
+    ] {
+        let mut hits = Vec::new();
+        for batch in batches.clone() {
+            insert_sorted(&mut hits, batch, col, dir);
+        }
+        let mut all: Vec<DirEntryInfo> = batches.iter().flatten().cloned().collect();
+        sort_entries(&mut all, col, dir);
+        let order = |v: &[DirEntryInfo]| v.iter().map(|e| e.name.clone()).collect::<Vec<_>>();
+        assert_eq!(order(&hits), order(&all), "{col:?} {dir:?}");
+    }
+}
