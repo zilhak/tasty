@@ -105,12 +105,12 @@ src/catalog/components/explorer_sidebar.rs	Files	explorer.sidebar.tree
 src/catalog/components/explorer_sidebar.rs	Go up	explorer.state.read_error_go_up
 src/catalog/components/explorer_sidebar.rs	No favorites yet	explorer.sidebar.favorites_empty
 src/catalog/components/explorer_sidebar.rs	Permission denied	explorer.state.no_permission,filepicker.error_perm.title
-src/catalog/components/explorer_sidebar.rs	Retry	explorer.state.read_error_retry,filepicker.error_perm.retry,remote.size_sync.retry,remote_attach.retry,transfer.error.retry
+src/catalog/components/explorer_sidebar.rs	Retry	explorer.properties.retry,explorer.state.read_error_retry,filepicker.error_perm.retry,remote.size_sync.retry,remote_attach.retry,transfer.error.retry
 src/catalog/components/explorer_states.rs	Can't read this folder	explorer.state.read_error
 src/catalog/components/explorer_states.rs	Go up	explorer.state.read_error_go_up
 src/catalog/components/explorer_states.rs	Loading…	explorer.state.loading,filepicker.loading,webview.loading
 src/catalog/components/explorer_states.rs	Permission denied	explorer.state.no_permission,filepicker.error_perm.title
-src/catalog/components/explorer_states.rs	Retry	explorer.state.read_error_retry,filepicker.error_perm.retry,remote.size_sync.retry,remote_attach.retry,transfer.error.retry
+src/catalog/components/explorer_states.rs	Retry	explorer.properties.retry,explorer.state.read_error_retry,filepicker.error_perm.retry,remote.size_sync.retry,remote_attach.retry,transfer.error.retry
 src/catalog/components/explorer_states.rs	This folder is empty	explorer.state.empty
 src/catalog/components/explorer_states.rs	You don't have access to read this folder.	explorer.state.no_permission_sub
 src/catalog/components/explorer_states/popups.rs	Add	button.add,explorer.popup.add_favorite.add,settings.terminal.input_add,settings.terminal.mouse_capture_banner_blacklist_add_button,settings.terminal.mouse_capture_blacklist_add_button
@@ -156,7 +156,7 @@ src/catalog/components/file_handler_picker/frame.rs	you	file_handler.picker.orig
 src/catalog/components/file_picker.rs	Open	button.open,file_handler.picker.open_button,filepicker.open_button
 src/catalog/components/file_picker.rs	Permission denied	explorer.state.no_permission,filepicker.error_perm.title
 src/catalog/components/file_picker.rs	Reconnect	filepicker.error_conn.reconnect
-src/catalog/components/file_picker.rs	Retry	explorer.state.read_error_retry,filepicker.error_perm.retry,remote.size_sync.retry,remote_attach.retry,transfer.error.retry
+src/catalog/components/file_picker.rs	Retry	explorer.properties.retry,explorer.state.read_error_retry,filepicker.error_perm.retry,remote.size_sync.retry,remote_attach.retry,transfer.error.retry
 src/catalog/components/file_picker.rs	disabled	settings.file_handler.common.disabled
 src/catalog/components/file_picker.rs	—	dag.detail.none,port_scanner.external_dash
 src/catalog/components/file_picker/footer.rs	, 	explorer.properties.list_separator
@@ -177,7 +177,7 @@ src/catalog/components/image_viewer.rs	Cancel	button.cancel,explorer.op.cancel,i
 src/catalog/components/image_viewer.rs	New Image	image_viewer.new_image_title,pane_context_menu.new_image
 src/catalog/components/image_viewer.rs	OK	button.ok
 src/catalog/components/image_viewer.rs	Permission denied	explorer.state.no_permission,filepicker.error_perm.title
-src/catalog/components/image_viewer.rs	Retry	explorer.state.read_error_retry,filepicker.error_perm.retry,remote.size_sync.retry,remote_attach.retry,transfer.error.retry
+src/catalog/components/image_viewer.rs	Retry	explorer.properties.retry,explorer.state.read_error_retry,filepicker.error_perm.retry,remote.size_sync.retry,remote_attach.retry,transfer.error.retry
 src/catalog/components/image_viewer.rs	Save	button.save,filepicker.save.save_button,image_viewer.save,remote_tool.save
 src/catalog/components/image_viewer.rs	Save As	image_viewer.save_path_title
 src/catalog/components/image_viewer.rs	—	dag.detail.none,port_scanner.external_dash
@@ -357,7 +357,7 @@ src/catalog/components/prim_button.rs	Small	settings.appearance.ui_scale_small
 src/catalog/components/prim_button.rs	default	file_handler.picker.default_tag
 src/catalog/components/prim_button.rs	disabled	settings.file_handler.common.disabled
 src/catalog/components/prim_button.rs	enabled	settings.file_handler.common.enabled
-src/catalog/components/prim_center_state.rs	Retry	explorer.state.read_error_retry,filepicker.error_perm.retry,remote.size_sync.retry,remote_attach.retry,transfer.error.retry
+src/catalog/components/prim_center_state.rs	Retry	explorer.properties.retry,explorer.state.read_error_retry,filepicker.error_perm.retry,remote.size_sync.retry,remote_attach.retry,transfer.error.retry
 src/catalog/components/prim_chips.rs	99+	badge.overflow
 src/catalog/components/prim_chips.rs	default	file_handler.picker.default_tag
 src/catalog/components/prim_chips.rs	disabled	settings.file_handler.common.disabled
@@ -506,7 +506,7 @@ src/catalog/components/remote_attach/new_row.rs	on remote	remote_attach.new_work
 src/catalog/components/remote_attach/panes.rs	Can't connect	remote_attach.cant_connect
 src/catalog/components/remote_attach/panes.rs	Connecting…	remote_attach.connecting
 src/catalog/components/remote_attach/panes.rs	New workspace	remote_attach.new_workspace
-src/catalog/components/remote_attach/panes.rs	Retry	explorer.state.read_error_retry,filepicker.error_perm.retry,remote.size_sync.retry,remote_attach.retry,transfer.error.retry
+src/catalog/components/remote_attach/panes.rs	Retry	explorer.properties.retry,explorer.state.read_error_retry,filepicker.error_perm.retry,remote.size_sync.retry,remote_attach.retry,transfer.error.retry
 src/catalog/components/remote_attach/rows.rs	busy	remote_attach.busy
 src/catalog/components/remote_attach/rows.rs	in use	remote_attach.in_use
 src/catalog/components/remote_attach/rows.rs	inactive	remote_attach.inactive,remote_tool.attach_inactive
@@ -633,7 +633,7 @@ src/catalog/components/tools_menu.rs	built-in	file_handler.picker.origin_host,pl
 src/catalog/components/transfer.rs	Cancel	button.cancel,explorer.op.cancel,image_viewer.cancel,preset.popup.cancel_button,quit_modal.cancel_button,remote_attach.cancel,remote_tool.cancel,transfer.progress.cancel
 src/catalog/components/transfer.rs	Dismiss	explorer.result.dismiss,remote.refusal.dismiss,remote.size_sync.dismiss,transfer.error.dismiss
 src/catalog/components/transfer.rs	Receiving file	transfer.progress.title
-src/catalog/components/transfer.rs	Retry	explorer.state.read_error_retry,filepicker.error_perm.retry,remote.size_sync.retry,remote_attach.retry,transfer.error.retry
+src/catalog/components/transfer.rs	Retry	explorer.properties.retry,explorer.state.read_error_retry,filepicker.error_perm.retry,remote.size_sync.retry,remote_attach.retry,transfer.error.retry
 src/catalog/components/transfer.rs	Transfer failed	transfer.error.title
 src/catalog/components/transfer.rs	close	command_palette.hint_close
 src/catalog/components/transfer.rs	{} / {}	explorer.op.bytes
@@ -669,7 +669,7 @@ src/catalog/theme.rs	Open	button.open,file_handler.picker.open_button,filepicker
 src/catalog/theme.rs	plugin	file_handler.picker.origin_plugin
 src/catalog/widgets/attach_refusal.rs	Remove mapping	remote.refusal.remove
 src/catalog/widgets/attach_refusal.rs	{}	remote.size_sync.names
-src/catalog/widgets/attach_size_sync.rs	Retry	explorer.state.read_error_retry,filepicker.error_perm.retry,remote.size_sync.retry,remote_attach.retry,transfer.error.retry
+src/catalog/widgets/attach_size_sync.rs	Retry	explorer.properties.retry,explorer.state.read_error_retry,filepicker.error_perm.retry,remote.size_sync.retry,remote_attach.retry,transfer.error.retry
 src/catalog/widgets/banner.rs	Add	button.add,explorer.popup.add_favorite.add,settings.terminal.input_add,settings.terminal.mouse_capture_banner_blacklist_add_button,settings.terminal.mouse_capture_blacklist_add_button
 src/catalog/widgets/banner.rs	Shift	settings.general.shift_display_style_shift
 src/catalog/widgets/banner.rs	default	file_handler.picker.default_tag

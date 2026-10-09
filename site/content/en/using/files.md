@@ -1,4 +1,4 @@
-<!-- source-hash: d076da3e8b2c -->
+<!-- source-hash: dd7c83e41f18 -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -93,7 +93,7 @@ Press the **Preview panel** button in the toolbar to open a panel to the right o
 
 ### Properties
 
-Choose **Properties** at the bottom of the right-click menu to open a popup inside the Explorer cell. A file shows its kind, size (with bytes), modified and created dates, location and permissions; a link shows its target. Copy the location or link target with the copy button beside it. For a folder, a spinner turns while the items and size are counted in the background, and closing the popup stops the count. Several selected items show the count, kinds, total size and common location, and right-clicking an empty area shows the current folder. In a remote Explorer only the kind, size, modified date and location from the list are shown.
+Choose **Properties** at the bottom of the right-click menu to open a popup inside the Explorer cell. A file shows its kind, size (with bytes), modified and created dates, location and permissions; a link shows its target. Copy the location or link target with the copy button beside it. For a folder, a spinner turns while the items and size are counted in the background, and closing the popup stops the count. Several selected items show the count, kinds, total size and common location, and right-clicking an empty area shows the current folder. In a remote Explorer only the kind, size, modified date and location from the list are shown. If the details can't be read, the popup shows the reason and a **Retry** button.
 
 ### Shortcuts (when the Explorer has focus)
 

@@ -140,7 +140,7 @@ fn icon_button(ui: &mut egui::Ui, theme: &Theme, g: MockGlyph) -> egui::Response
         })
 }
 
-/// 시안 `YProps`: 360 카드 · 머리(글리프 + 이름 14 semibold 말줄임 + 닫기) · 필드 · 선택 안내 문구.
+/// 시안 `YProps`: 360 카드 · 머리(글리프 + 이름 14 regular 말줄임 + 닫기) · 필드 · 선택 안내 문구.
 fn props_card(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -148,6 +148,19 @@ fn props_card(
     name: &str,
     fields: &[Field],
     note_text: Option<&str>,
+) {
+    props_card_with(ui, theme, glyph, name, fields, note_text, None);
+}
+
+/// `failure` 가 있으면 필드 대신 읽기 실패 본문(alertTriangle · 문구 · OS 이유 · Retry)을 그린다.
+fn props_card_with(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    glyph: MockGlyph,
+    name: &str,
+    fields: &[Field],
+    note_text: Option<&str>,
+    failure: Option<&str>,
 ) {
     let pad_x = theme.explorer_props_padding_x().value();
     let width = theme.explorer_props_width();
@@ -201,6 +214,9 @@ fn props_card(
                 bottom: theme.spacing_md.value() as i8,
             },
             |ui| {
+                if let Some(reason) = failure {
+                    unreadable_body(ui, theme, reason);
+                }
                 for f in fields {
                     field_row(ui, theme, f);
                 }
@@ -215,6 +231,34 @@ fn props_card(
             },
         );
     });
+}
+
+/// 본체 `unreadable_body` 와 같은 배치.
+fn unreadable_body(ui: &mut egui::Ui, theme: &Theme, reason: &str) {
+    let error = theme.explorer_error_fg().to_egui();
+    let gap = theme.spacing_xs.value();
+    ui.add_space(gap);
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+        kit::icon(ui, icons::ALERT_TRIANGLE, theme.icon_glyph_size_md, error);
+        ui.label(
+            egui::RichText::new(t("explorer.properties.unreadable"))
+                .size(theme.font_size_body.value())
+                .color(error),
+        );
+    });
+    ui.add_space(gap);
+    ui.label(
+        egui::RichText::new(reason)
+            .monospace()
+            .size(theme.font_size_caption.value())
+            .color(theme.text_muted().to_egui()),
+    );
+    ui.add_space(gap * 2.0);
+    tasty_ui_widgets::Button::new(t("explorer.properties.retry"))
+        .variant(ButtonVariant::Secondary)
+        .size(ControlSize::Sm)
+        .show(ui, theme);
 }
 
 pub fn draw_properties(ui: &mut egui::Ui, theme: &Theme) {
@@ -290,6 +334,17 @@ pub fn draw_properties(ui: &mut egui::Ui, theme: &Theme) {
                 None,
             )
         });
+        cluster(ui, theme, "can't read", |ui| {
+            props_card_with(
+                ui,
+                theme,
+                icons::FILE,
+                "private.key",
+                &[],
+                None,
+                Some("Permission denied (os error 13)"),
+            )
+        });
         cluster(ui, theme, "remote item", |ui| {
             props_card(
                 ui,
@@ -319,7 +374,7 @@ pub fn draw_properties(ui: &mut egui::Ui, theme: &Theme) {
                 "popup",
                 "explorer-props-width 360 · scoped to the cell · shadow-modal · Esc / ×",
             ),
-            ("title", "glyph + name · 14 · ellipsis"),
+            ("title", "glyph + name · 14 regular · ellipsis"),
             (
                 "fields",
                 "label explorer-props-label-width 96 · caption muted · value body 13 (mono caption for paths / dates / mode) · wrap anywhere",
@@ -339,6 +394,10 @@ pub fn draw_properties(ui: &mut egui::Ui, theme: &Theme) {
             ),
             ("remote", "Kind · Size · Modified · Location · muted note"),
             ("selection change", "popup keeps its item"),
+            (
+                "can't read",
+                "title = item glyph + name · alertTriangle 16 + “Can't read properties” (explorer-error-fg) · reason mono · Retry (secondary sm)",
+            ),
         ],
         &[
             TokenChip::without_color("explorer-props-width", "→ size-360"),

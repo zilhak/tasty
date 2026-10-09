@@ -9,7 +9,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::SystemTime;
 
-use tasty_ui_widgets::{ControlSize, IconButton, IconButtonVariant, Spinner};
+use tasty_ui_widgets::{
+    Button, ButtonVariant, ControlSize, IconButton, IconButtonVariant, Spinner,
+};
 
 use crate::adapters::ui::icons::{self, Icon};
 use crate::adapters::ui::popup::PopupAction;
@@ -227,7 +229,15 @@ pub fn draw(ui: &mut egui::Ui, state: &mut MainViewState, _engine: &EngineRead<'
     if state.explorer_views.get(props.surface_id).is_none() {
         return PopupAction::Close;
     }
-    let (glyph, name, fields, note) = content(props);
+    let (mut glyph, name, fields, note) = content(props);
+    let failure = match &props.facts {
+        Some(Err(reason)) => {
+            glyph = item_glyph(state, props.surface_id, &props.paths[0]);
+            Some(reason.clone())
+        }
+        _ => None,
+    };
+    let mut retry = false;
     let pad_x = th.explorer_props_padding_x().value();
     let mut close = false;
     ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
@@ -253,6 +263,9 @@ pub fn draw(ui: &mut egui::Ui, state: &mut MainViewState, _engine: &EngineRead<'
             })
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
+                if let Some(reason) = &failure {
+                    retry = unreadable_body(ui, &th, reason);
+                }
                 for f in &fields {
                     field_row(ui, &th, f);
                 }
@@ -269,6 +282,9 @@ pub fn draw(ui: &mut egui::Ui, state: &mut MainViewState, _engine: &EngineRead<'
     let measured = ui.cursor().top() - top;
     if let Some(props) = state.dialogs.explorer_properties.as_mut() {
         props.content_h = Some(measured);
+        if retry {
+            props.retry();
+        }
     }
     if close {
         PopupAction::Close
@@ -277,7 +293,77 @@ pub fn draw(ui: &mut egui::Ui, state: &mut MainViewState, _engine: &EngineRead<'
     }
 }
 
-/// 머리: 글리프 · 이름(14, 말줄임) · 닫기. 닫기를 누르면 true.
+impl ExplorerProperties {
+    /// 읽기에 실패한 로컬 항목을 다시 읽는다. 원격 항목은 목록 값을 쓰므로 실패하지 않는다.
+    fn retry(&mut self) {
+        if self.remote.is_some() {
+            return;
+        }
+        self.facts = None;
+        self.query = Some(local_reads::properties(
+            self.paths.clone(),
+            self.count.clone(),
+            self.cancel.clone(),
+        ));
+    }
+}
+
+/// 읽지 못한 항목의 제목 글리프. 탐색기 목록에 있으면 그 종류를, 없으면 지금 폴더인지로 정한다.
+fn item_glyph(state: &MainViewState, surface_id: u32, path: &Path) -> Icon {
+    let view = state.explorer_views.get(surface_id);
+    let is_dir = view.and_then(|v| v.entries.iter().find(|e| e.path == path).map(|e| e.is_dir));
+    let is_dir = is_dir.unwrap_or_else(|| view.and_then(|v| v.shown_dir()) == Some(path));
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_lowercase)
+        .unwrap_or_default();
+    if is_dir {
+        icons::FOLDER
+    } else if crate::adapters::ui::surface::explorer::is_image_ext(&ext) {
+        icons::IMAGE
+    } else {
+        icons::FILE
+    }
+}
+
+/// 읽기 실패 본문: alertTriangle 과 "Can't read properties"(explorer-error-fg), OS 이유(mono muted), Retry.
+/// Retry 를 누르면 true.
+fn unreadable_body(ui: &mut egui::Ui, th: &Theme, reason: &str) -> bool {
+    let error = th.explorer_error_fg().to_egui();
+    let gap = th.spacing_xs.value();
+    ui.add_space(gap);
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
+        let g = th.icon_glyph_size_md.value();
+        let (r, _) = ui.allocate_exact_size(egui::vec2(g, g), egui::Sense::hover());
+        icons::ALERT_TRIANGLE.image(g, error).paint_at(ui, r);
+        ui.label(
+            egui::RichText::new(t("explorer.properties.unreadable"))
+                .size(th.font_size_body.value())
+                .color(error),
+        );
+    });
+    ui.add_space(gap);
+    ui.add(
+        egui::Label::new(
+            egui::RichText::new(reason)
+                .monospace()
+                .size(th.font_size_caption.value())
+                .color(th.text_muted().to_egui()),
+        )
+        .wrap(),
+    );
+    ui.add_space(gap * 2.0);
+    Button::new(t("explorer.properties.retry"))
+        .variant(ButtonVariant::Secondary)
+        .size(ControlSize::Sm)
+        .show(ui, th)
+        .clicked()
+}
+
+/// 머리: 글리프 · 이름(14, regular, 말줄임) · 닫기. 닫기를 누르면 true.
+/// 제목은 regular 다. 테마에 semibold UI 글꼴이 없어 크기로 제목을 구분한다.
 fn header(ui: &mut egui::Ui, th: &Theme, glyph: Icon, name: &str) -> bool {
     let mut close = false;
     ui.horizontal(|ui| {
@@ -416,10 +502,10 @@ fn content(props: &ExplorerProperties) -> (Icon, String, Vec<Field>, Option<&'st
             }];
             return (icons::FILE, title, fields, None);
         }
-        Some(Err(reason)) => {
+        // 글리프와 본문은 `draw` 가 탐색기 목록을 보고 채운다.
+        Some(Err(_)) => {
             let title = file_name(&props.paths[0]);
-            let fields = vec![mono("explorer.properties.error", reason.clone(), false)];
-            return (icons::ALERT_TRIANGLE, title, fields, None);
+            return (icons::FILE, title, Vec::new(), None);
         }
         Some(Ok(facts)) => facts,
     };
@@ -661,6 +747,57 @@ fn time_text(t: Option<SystemTime>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn retry_reads_a_failed_local_item_again_and_leaves_remote_items_alone() {
+        let failed = |remote: Option<Vec<DirEntryInfo>>| ExplorerProperties {
+            surface_id: 1,
+            paths: vec![PathBuf::from("/srv/private.key")],
+            remote,
+            query: None,
+            facts: Some(Err("Permission denied (os error 13)".into())),
+            count: Arc::new(FolderCount::default()),
+            cancel: Arc::new(AtomicBool::new(false)),
+            content_h: None,
+        };
+        let mut local = failed(None);
+        local.retry();
+        assert!(
+            local.facts.is_none(),
+            "the old error is cleared while it reads again"
+        );
+        assert!(local.query.is_some());
+
+        let mut remote = failed(Some(Vec::new()));
+        remote.retry();
+        assert!(remote.facts.is_some());
+        assert!(remote.query.is_none());
+    }
+
+    #[test]
+    fn the_unreadable_body_shows_the_reason_and_a_retry_button() {
+        crate::i18n::init("en");
+        let th = crate::theme::theme();
+        let ctx = egui::Context::default();
+        let mut texts = Vec::new();
+        let output = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                assert!(!unreadable_body(ui, &th, "Permission denied (os error 13)"));
+            });
+        });
+        for shape in output.shapes {
+            if let egui::Shape::Text(text) = shape.shape {
+                texts.push(text.galley.text().to_owned());
+            }
+        }
+        for want in [
+            "Can't read properties",
+            "Permission denied (os error 13)",
+            "Retry",
+        ] {
+            assert!(texts.iter().any(|t| t == want), "{want} in {texts:?}");
+        }
+    }
 
     #[test]
     fn several_items_share_their_nearest_parent() {

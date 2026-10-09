@@ -180,6 +180,8 @@ Grid 셀은 모두 `explorer_grid_thumb_size`(40) 슬롯을 잡아 썸네일 유
 - **링크**: 제목 글리프 link · Kind "Symbolic link" · Link target(Copy) · Location. 링크를 따라가지 않는다.
 - **폴더**: Size 자리에 하위 항목 수와 크기를 read worker 가 배경에서 세며 Spinner 를 보인다. 링크는 따라가지 않고 읽지 못한 하위 폴더는 건너뛴다. popup 을 닫으면 세기를 멈춘다.
 - **여러 항목**: 머리 "N items", Kinds(파일·폴더 수) · Total size · 공통 Location.
+- **읽기 실패**: 팝업 틀을 그대로 두고, 제목은 그 항목의 글리프(탐색기 목록에서 본 종류)와 이름이다. 본문은 alertTriangle 과 `explorer.properties.unreadable`("Can't read properties", explorer-error-fg), mono muted OS 이유, Retry(secondary sm, 같은 항목을 다시 읽는다)다.
+- **제목 굵기**: 제목은 14 regular 다. 테마에 semibold UI 글꼴이 없어 크기로 제목을 구분한다.
 - **원격(mirror)**: 원격 목록에 있는 Kind · Size · Modified · Location 만 보이고 그 아래 muted 안내를 붙인다. 원격 파일시스템을 다시 읽지 않는다.
 - **오류**: 정보를 읽지 못하면 머리에 `alertTriangle` 글리프와 첫 대상 이름, "Can't read" 라벨 한 줄에 오류 문구를 mono 로 보인다.
 
