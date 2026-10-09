@@ -75,6 +75,7 @@ const SURFACES: &[Entry] = &[
     ),
     (FILE_PLUS, "filePlus", "new file (explorer toolbar / menu)"),
     (INFO, "info", "properties / information"),
+    (LINK, "link", "symbolic link (explorer Properties / rows)"),
     (REMOTE, "remote", "remote connection"),
     (PORT, "port", "listening port / target"),
     (LAYERS, "layers", "layout presets / stacked layers"),

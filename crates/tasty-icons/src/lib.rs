@@ -357,6 +357,12 @@ stroke_icon!(
     "info",
     r#"<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>"#
 );
+// 심볼릭 링크(design `link`). explorer 속성·목록 행.
+stroke_icon!(
+    LINK,
+    "link",
+    r#"<path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5"/>"#
+);
 // 마우스 캡처 배너 leading 글리프.
 stroke_icon!(
     MOUSE,
