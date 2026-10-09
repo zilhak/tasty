@@ -61,7 +61,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "필드 밖 정적 텍스트, muted · caption 11(font_size_caption)",
             ),
             ("clamp", "확정(blur / ↵) 때만 — 치는 중엔 안 건드린다"),
-            ("out of range", "danger 테두리 + 범위 한 줄"),
+            (
+                "out of range",
+                "danger 테두리 + 범위 한 줄 · 입력칸 아래, 입력칸 왼쪽 끝에서 시작",
+            ),
         ],
         &[
             TokenChip::new(
@@ -165,6 +168,7 @@ fn toast_row(ui: &mut egui::Ui, theme: &Theme, caption: &str, buf: &mut String) 
             )
         })
         .and_then(|(s, v)| (s != v).then_some(s));
+    let mut input_left = None;
     ui.vertical(|ui| {
         ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
         ui.label(
@@ -175,12 +179,13 @@ fn toast_row(ui: &mut egui::Ui, theme: &Theme, caption: &str, buf: &mut String) 
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
             ui.label(egui::RichText::new("Toast duration").color(theme.text_secondary().to_egui()));
-            Input::new()
+            let field = Input::new()
                 .mono(true)
                 .align(egui::Align::RIGHT)
                 .width(theme.field_width_xs.value())
                 .invalid(settled.is_some())
                 .show(ui, theme, buf);
+            input_left = Some(field.rect.left());
             ui.label(
                 egui::RichText::new("s")
                     .size(theme.font_size_caption.value())
@@ -188,12 +193,13 @@ fn toast_row(ui: &mut egui::Ui, theme: &Theme, caption: &str, buf: &mut String) 
             );
         });
         if let Some(settled) = settled {
-            ui.label(
-                egui::RichText::new(format!(
+            range_line(
+                ui,
+                theme,
+                input_left,
+                format!(
                     "Between {TOAST_SECS_MIN:.1} and {TOAST_SECS_MAX:.1}. Commits as {settled:.1}."
-                ))
-                .size(theme.font_size_caption.value())
-                .color(theme.accent_danger().to_egui()),
+                ),
             );
         }
     });
@@ -209,6 +215,7 @@ fn row(ui: &mut egui::Ui, theme: &Theme, caption: &str, buf: &mut String, enable
                 .size(theme.font_size_caption.value())
                 .color(theme.text_muted().to_egui()),
         );
+        let mut input_left = None;
         ui.allocate_ui(
             egui::vec2(ROW_WIDTH.value(), theme.input_height().value()),
             |ui| {
@@ -225,13 +232,14 @@ fn row(ui: &mut egui::Ui, theme: &Theme, caption: &str, buf: &mut String, enable
                             .size(theme.font_size_caption.value())
                             .color(muted),
                     );
-                    Input::new()
+                    let field = Input::new()
                         .mono(true)
                         .align(egui::Align::RIGHT)
                         .width(theme.field_width_xs.value())
                         .enabled(enabled)
                         .invalid(settled.is_some())
                         .show(ui, theme, buf);
+                    input_left = Some(field.rect.left());
                     let ink = if enabled {
                         theme.text_secondary()
                     } else {
@@ -244,14 +252,28 @@ fn row(ui: &mut egui::Ui, theme: &Theme, caption: &str, buf: &mut String, enable
             },
         );
         if let Some(settled) = settled {
-            ui.label(
-                egui::RichText::new(format!(
-                    "Between {ZOOM_MIN:.0} and {ZOOM_MAX:.0}. Commits as {settled:.0}."
-                ))
-                .size(theme.font_size_caption.value())
-                .color(theme.accent_danger().to_egui()),
+            range_line(
+                ui,
+                theme,
+                input_left,
+                format!("Between {ZOOM_MIN:.0} and {ZOOM_MAX:.0}. Commits as {settled:.0}."),
             );
         }
+    });
+}
+
+/// 범위 밖 한 줄. 본체처럼 입력칸 아래, 입력칸 왼쪽 끝에서 시작한다(컨트롤 칸 안).
+fn range_line(ui: &mut egui::Ui, theme: &Theme, input_left: Option<f32>, text: String) {
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 0.0;
+        if let Some(left) = input_left {
+            ui.add_space((left - ui.cursor().left()).max(0.0));
+        }
+        ui.label(
+            egui::RichText::new(text)
+                .size(theme.font_size_caption.value())
+                .color(theme.accent_danger().to_egui()),
+        );
     });
 }
 

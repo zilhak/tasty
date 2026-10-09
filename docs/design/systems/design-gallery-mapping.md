@@ -1018,7 +1018,7 @@ Misc L1 의 두 번째 L2 서브탭 "Task pipeline" — 작업 그래프 report 
 **전사 노트**:
 - 헤딩·행·구분선 사이는 모두 `settings-row-gap`(12)이고 라벨 열은 다른 설정 행과 같은 150 … 240 clamp, 라벨 → 컨트롤 `settings-label-gap` 16 이다.
 - 값은 그룹 구분 없는 원시 바이트이며 KiB 로 바꾸지 않는다.
-- 범위 줄의 자리: 시안은 행 아래(행 왼쪽 끝, 설명 caption 위)에 둔다. 본체와 갤러리는 모든 숫자 칸이 공유하는 `number_field` 구조대로 입력칸 아래(컨트롤 칸 안)에 둔다.
+- 범위 줄의 자리: 모든 숫자 칸이 공유하는 `number_field` 구조대로 입력칸 아래(컨트롤 칸 안, 라벨 열 + 라벨 간격만큼 들어간 자리), 설명 caption 위다. 시안 Task pipeline·Numbers in settings 예제도 같은 자리다. 갤러리 Numbers in settings·토스트 표시 시간 예제(`settings_number.rs` `range_line`)는 입력칸 왼쪽 끝에서 시작한다.
 
 ## 파일 피커 (Overlays)
 
