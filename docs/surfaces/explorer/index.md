@@ -20,7 +20,7 @@ OS 파일 관리자에 의존하지 않고 tasty surface 안에서 디렉토리�
 | 상태 | 소유자 | 바꾸는 경로 |
 |---|---|---|
 | 구조 트리의 leaf(`SurfaceDescriptor`, kind `explorer`) | engine 의 구조 트리 | 공통 생성·닫기·이동·변환([작업 영역](../../features/work-area/index.md)) |
-| 내비게이션 모델 `ExplorerPanel`(내부 탭·cwd·current·히스토리·뷰 모드·정렬) | engine 의 surface 실행 객체(`EngineRuntime::surfaces`) | View 가 `EngineAction::Explorer`·`EngineAction::ExplorerCwd` 로 요청하고, App 이 요청에 담긴 `SurfaceBinding` 이 아직 그 surface 를 가리킬 때만 적용한 뒤 레이아웃을 dirty 로 표시한다(`src/app/engine_action.rs`) |
+| 내비게이션 모델 `ExplorerPanel`(내부 탭·cwd·current·히스토리·뷰 모드·정렬·미리보기 토글과 폭) | engine 의 surface 실행 객체(`EngineRuntime::surfaces`) | View 가 `EngineAction::Explorer`·`EngineAction::ExplorerCwd`·`EngineAction::ExplorerPreview` 로 요청하고, App 이 요청에 담긴 `SurfaceBinding` 이 아직 그 surface 를 가리킬 때만 적용한 뒤 레이아웃을 dirty 로 표시한다(`src/app/engine_action.rs`) |
 | 즐겨찾기 목록 | 프로세스 원본 `RuntimeRegistries::explorer_favorites`(`SharedList<ExplorerFavorites>`). engine 의 `EngineRuntime::explorer_favorites` 는 그리기용 사본(`Replica`) | `EngineAction::AddExplorerFavorite`·`RemoveExplorerFavorite` 가 원본을 바꾸고 바로 파일에 쓴다(아래 "즐겨찾기") |
 | 목록 캐시·로딩 상태·선택·트리 펼침·주소창 편집·타입어헤드 | 창의 View 상태 `MainViewState::explorer_views`(surface id 별 `ExplorerView`) | View 가 직접 바꾼다. 저장하지 않는다 |
 | 파일 클립보드 | 창의 View 상태 `MainViewState::explorer_clipboard` | 복사·잘라내기가 채우고 붙여넣기가 소비한다. 저장하지 않는다 |
@@ -32,7 +32,7 @@ View 는 모델을 직접 바꾸지 않고 파일시스템도 직접 읽지 않�
 
 ### 모델 (`ExplorerPanel`)
 
-- `ExplorerPanel` 은 식별(`id`)과 내비게이션 상태만 보유한다 — 내부 탭 목록(`tabs`)·활성 탭 인덱스(`active`). 각 `ExplorerTab` 은 **cwd(고정 루트)** 와 **current(현재 폴더, 필드명 `root`)** 를 분리해 보유하고, 히스토리(back/forward 스택), 뷰 모드(`view_mode`), 정렬 컬럼/방향(`sort_column`/`sort_dir`)을 가진다.
+- `ExplorerPanel` 은 식별(`id`)과 내비게이션 상태, 미리보기 패널 상태를 보유한다 — 내부 탭 목록(`tabs`)·활성 탭 인덱스(`active`)·미리보기(`preview`: `ExplorerPreview { open, width }`, 내부 탭과 관계없이 surface 에 하나, 폭은 UI 배율 1 기준이며 `None` 이면 토큰 기본 폭). 각 `ExplorerTab` 은 **cwd(고정 루트)** 와 **current(현재 폴더, 필드명 `root`)** 를 분리해 보유하고, 히스토리(back/forward 스택), 뷰 모드(`view_mode`), 정렬 컬럼/방향(`sort_column`/`sort_dir`)을 가진다.
 - **cwd ↔ current 분리** (VS Code 식 "고정 프로젝트 + 자유 탐색"): `cwd()` 는 explorer 를 연 프로젝트 루트로 **좌측 사이드바 트리 루트**·**스폰 cwd**(`source_cwd()`)·**surface/탭 표시명**의 기준이며 내비게이션에 불변. `current()`(=`current_root()`) 는 **우측 목록**·**상단 주소창(편집형 PathField)** 이 따라가는 탐색 폴더로, back/forward/go_up 이 이것만 움직인다. current 는 cwd 하위로 제한되지 않고 파일시스템 어디로든 자유 이동한다.
 - 내비게이션: `navigate_to(dir)` / `go_back` / `go_forward` / `go_up` — 모두 **current 에만** 작용. `can_go_up` 은 current 의 파일시스템 부모 존재만 본다(cwd 경계로 clamp 안 함). `set_cwd(folder)` 는 cwd·current 를 folder 로 재설정하고 히스토리를 비운다(explorer-03 "이 폴더로 루트 설정"). 히스토리는 탭별로 독립.
 - **`..` 상위 이동**: current 에 부모가 있으면(파일시스템 루트 아님) 우측 목록 최상단에 `..` 특수 행을 그려 상위 폴더로 이동한다. `..` 는 **렌더 전용**이라 `view.entries`/선택/상태줄/컨텍스트 메뉴 대상이 아니며 더블클릭 시 `Navigate(parent)` 만 emit 한다.
@@ -58,9 +58,11 @@ View 는 모델을 직접 바꾸지 않고 파일시스템도 직접 읽지 않�
 
 ## 저장·복원
 
-- **저장하는 값**: 내부 탭마다 cwd·current(`root`)·뷰 모드·정렬 열·정렬 방향, 그리고 활성 내부 탭 번호(`register_explorer` 의 `snapshot`). 레이아웃 journal 에 들어간다.
+- **저장하는 값**: 내부 탭마다 cwd·current(`root`)·뷰 모드·정렬 열·정렬 방향, 활성 내부 탭 번호, 미리보기 패널(`register_explorer` 의 `snapshot`). 레이아웃 journal 에 들어간다.
+- **미리보기 키**: `"preview": {"open": true, "width": 428.0}`. 닫혀 있으면 `open` 을, 기본 폭이면 `width` 를 싣지 않고, 둘 다 기본값이면 `preview` 키 자체를 싣지 않는다. preset capture 는 이 snapshot 을 TOML 로 저장하는데 TOML 에는 null 이 없기 때문이다. 형식이 맞지 않는 값(문자열 `open`, 0 이하·유한하지 않은 `width`)은 기본값으로 읽는다. 폭은 그릴 때 토큰 범위(200…460)와 칸 폭으로 다시 제한한다.
 - **저장하지 않는 값**: back/forward 히스토리, 목록 캐시, 선택, 트리 펼침, 주소창 편집, 타입어헤드, Find 바, 파일 클립보드. 복원하면 히스토리는 비어 있고 목록은 다시 읽는다.
-- **복원**: `restore` 가 저장한 탭으로 `ExplorerPanel` 을 만든다. 탭이 없으면 홈 하나로, 활성 번호가 범위를 넘으면 마지막 탭으로 맞춘다. 경로가 없거나 상대 경로면 홈으로 교정한다. 복원은 create 를 거치지 않으므로 설정의 뷰 모드가 아니라 저장한 탭별 값을 쓴다. 저장한 폴더가 사라졌으면 복원은 성공하고 목록 자리에 읽기 오류 화면이 나온다.
+- **복원**: `restore` 가 저장한 탭으로 `ExplorerPanel` 을 만든다. 탭이 없으면 홈 하나로, 활성 번호가 범위를 넘으면 마지막 탭으로 맞춘다. 경로가 없거나 상대 경로면 홈으로 교정한다. 복원은 create 를 거치지 않으므로 설정의 뷰 모드가 아니라 저장한 탭별 값을 쓴다. 저장한 폴더가 사라졌으면 복원은 성공하고 목록 자리에 읽기 오류 화면이 나온다. 미리보기 토글·폭도 같이 복원한다.
+- **preset**: preset 적용은 `restore` 가 아니라 `create` 로 explorer 를 만든다. `create` 는 params 의 `preview` 를 snapshot 과 같은 형식으로 읽으므로, capture 한 preset 을 적용하면 미리보기 토글·폭이 따라온다.
 - **즐겨찾기**는 레이아웃이 아니라 별도 파일에 저장한다(아래 "즐겨찾기").
 - mirror workspace 는 로컬에 저장하지 않는다([원격 attach](../../features/remote-attach/index.md)).
 
@@ -155,7 +157,7 @@ mirror(원격) explorer:
 
 ### 미리보기 패널
 
-툴바의 미리보기 토글(`COLUMNS` 글리프, 보기 전환 앞)이 목록 오른쪽 패널을 켜고 끈다(시안 `YPreview`, `explorer/preview.rs`). 상태는 `ExplorerView::preview` 에 있어 그 explorer surface 가 사는 동안만 기억하고 저장·복원하지 않는다.
+툴바의 미리보기 토글(`COLUMNS` 글리프, 보기 전환 앞)이 목록 오른쪽 패널을 켜고 끈다(시안 `YPreview`, `explorer/preview.rs`). View(`ExplorerView::preview`)가 토글·폭을 바로 바꿔 그리고, 토글하거나 경계선 끌기를 마쳤을 때 한 번 `EngineAction::ExplorerPreview` 로 model(`ExplorerPanel::preview`)에 남긴다. 그래서 레이아웃 snapshot 에 실려 재시작 뒤에도 남는다(위 "저장·복원"). View 는 처음 그릴 때 한 번만 model 값을 받아 온다. 단축키 `explorer_toggle_preview` 도 같은 경로다.
 
 - **폭**: `explorer_preview_width`(288)에서 시작하고 패널 왼쪽 경계선(잡는 폭은 pane 분할선과 같은 `DIVIDER_HIT_THRESHOLD`)을 끌어 `explorer_preview_min_width`(200)…`explorer_preview_max_width`(460) 사이로 바꾼다. 목록에도 같은 200 을 남긴다. 칸이 패널 하한 + 경계선 + 목록 하한보다 좁으면 패널만 숨기고 토글은 켜진 채 둔다.
 - **대상**: 선택이 정확히 하나일 때 그 항목. 선택이 없거나 여럿이면 "Select a file" 상태다. 대상이 바뀌면 이전 미리보기를 바로 지우고 Loading 상태를 보인다. 같은 항목이라도 수정 시각이 바뀌면 다시 읽는다.

@@ -5,8 +5,8 @@ use std::sync::Arc;
 use serde_json::{Value, json};
 
 use crate::model::{
-    DagDirection, DagGraphSurface, EmptySurface, ExplorerPanel, ExplorerTab, ExplorerViewMode,
-    SortColumn, SortDir, Surface, resolve_root,
+    DagDirection, DagGraphSurface, EmptySurface, ExplorerPanel, ExplorerPreview, ExplorerTab,
+    ExplorerViewMode, SortColumn, SortDir, Surface, resolve_root,
 };
 
 use super::{
@@ -103,8 +103,11 @@ fn register_explorer(registry: &SurfaceKindRegistry) {
                 .and_then(|v| v.as_str())
                 .map(ExplorerViewMode::from_str)
                 .unwrap_or(ExplorerViewMode::Detail);
+            let mut panel = ExplorerPanel::new_with_mode(sid, root, view_mode);
+            // preset 이 snapshot 의 preview 를 params 로 실어 오면 그대로 쓴다.
+            panel.preview = explorer_preview_from_json(params.get("preview"));
             Ok(crate::runtime::surface_registry::PreparedKind::local(
-                Box::new(ExplorerPanel::new_with_mode(sid, root, view_mode)) as Box<dyn Surface>,
+                Box::new(panel) as Box<dyn Surface>,
             ))
         }),
         restore: Arc::new(|sid, data| {
@@ -114,8 +117,10 @@ fn register_explorer(registry: &SurfaceKindRegistry) {
                 .and_then(|v| v.as_array())
                 .map(|arr| arr.iter().map(explorer_tab_from_json).collect())
                 .unwrap_or_default();
+            let mut panel = ExplorerPanel::from_tabs(sid, tabs, active);
+            panel.preview = explorer_preview_from_json(data.get("preview"));
             Ok(crate::runtime::surface_registry::PreparedKind::local(
-                Box::new(ExplorerPanel::from_tabs(sid, tabs, active)) as Box<dyn Surface>,
+                Box::new(panel) as Box<dyn Surface>,
             ))
         }),
         snapshot: Arc::new(|s: &dyn Surface| {
@@ -133,7 +138,11 @@ fn register_explorer(registry: &SurfaceKindRegistry) {
                     })
                 })
                 .collect();
-            Some(json!({ "tabs": tabs, "active": ex.active }))
+            let mut snap = json!({ "tabs": tabs, "active": ex.active });
+            if let Some(preview) = explorer_preview_to_json(&ex.preview) {
+                snap["preview"] = preview;
+            }
+            Some(snap)
         }),
         // params.path가 없으면 cwd를 쓰므로 편집기는 전용 cwd 필드에 저장한다.
         preset_fields: vec![PresetFieldSpec {
@@ -165,6 +174,38 @@ fn register_explorer(registry: &SurfaceKindRegistry) {
         convert_requires_input: false,
         convert_input_popup: None,
     });
+}
+
+/// 기본값(닫힘·기본 폭)이면 키를 싣지 않는다. 값이 없는 칸도 null 대신 키를 뺀다.
+/// preset 은 이 snapshot 을 TOML 로 저장하는데 TOML 에는 null 이 없다.
+fn explorer_preview_to_json(preview: &ExplorerPreview) -> Option<Value> {
+    if *preview == ExplorerPreview::default() {
+        return None;
+    }
+    let mut out = serde_json::Map::new();
+    if preview.open {
+        out.insert("open".into(), Value::Bool(true));
+    }
+    if let Some(width) = preview.width {
+        out.insert("width".into(), json!(width.value()));
+    }
+    Some(Value::Object(out))
+}
+
+/// 없거나 형식이 맞지 않는 칸은 기본값으로 둔다. 폭의 범위는 그릴 때 토큰 범위로 다시 제한한다.
+fn explorer_preview_from_json(v: Option<&Value>) -> ExplorerPreview {
+    let Some(v) = v else {
+        return ExplorerPreview::default();
+    };
+    ExplorerPreview {
+        open: v.get("open").and_then(Value::as_bool).unwrap_or(false),
+        width: v
+            .get("width")
+            .and_then(Value::as_f64)
+            .map(|w| w as f32)
+            .filter(|w| w.is_finite() && *w > 0.0)
+            .map(tasty_type_geometry::length::LogicalPx),
+    }
 }
 
 fn explorer_tab_from_json(v: &Value) -> ExplorerTab {
@@ -393,6 +434,64 @@ mod tests {
             .unwrap();
         assert_eq!(ex.current_root(), root.as_path());
         assert_eq!(ex.cwd(), root.as_path());
+    }
+
+    #[test]
+    fn explorer_preview_rides_the_snapshot_and_a_preset() {
+        let reg = registry_with_builtins();
+        let def = reg.get("explorer").expect("explorer kind");
+        let root = abs_path("tmp/exp");
+        let mut s = (def.create)(5, None, &json!({ "path": root.to_string_lossy() }))
+            .and_then(|prepared| prepared.publish())
+            .unwrap();
+        // 기본값이면 키를 싣지 않는다.
+        let snap = (def.snapshot)(s.as_ref()).unwrap();
+        assert!(snap.get("preview").is_none(), "{snap}");
+
+        let set = |s: &mut Box<dyn Surface>, preview: ExplorerPreview| {
+            s.as_any_mut()
+                .downcast_mut::<ExplorerPanel>()
+                .unwrap()
+                .preview = preview;
+        };
+        let get = |s: &dyn Surface| s.as_any().downcast_ref::<ExplorerPanel>().unwrap().preview;
+        for preview in [
+            ExplorerPreview {
+                open: true,
+                width: Some(tasty_type_geometry::length::LogicalPx(320.0)),
+            },
+            ExplorerPreview {
+                open: true,
+                width: None,
+            },
+            ExplorerPreview {
+                open: false,
+                width: Some(tasty_type_geometry::length::LogicalPx(240.0)),
+            },
+        ] {
+            set(&mut s, preview);
+            let snap = (def.snapshot)(s.as_ref()).unwrap();
+            let restored = (def.restore)(5, &snap)
+                .and_then(|prepared| prepared.publish())
+                .unwrap();
+            assert_eq!(get(restored.as_ref()), preview, "{snap}");
+            // preset 은 snapshot 을 TOML 로 저장하고 params 로 create 에 넘긴다. null 이 있으면 TOML 이 거절한다.
+            let toml_text = toml::to_string(&snap).expect("snapshot is TOML-safe");
+            let params: Value = toml::from_str::<toml::Value>(&toml_text)
+                .map(|v| serde_json::to_value(v).unwrap())
+                .unwrap();
+            let created = (def.create)(6, None, &params)
+                .and_then(|prepared| prepared.publish())
+                .unwrap();
+            assert_eq!(get(created.as_ref()), preview, "{params}");
+        }
+
+        // 형식이 맞지 않는 값은 기본값으로 둔다.
+        let bad = json!({"tabs": [], "active": 0, "preview": {"open": "yes", "width": -3}});
+        let restored = (def.restore)(7, &bad)
+            .and_then(|prepared| prepared.publish())
+            .unwrap();
+        assert_eq!(get(restored.as_ref()), ExplorerPreview::default());
     }
 
     #[test]

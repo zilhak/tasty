@@ -110,6 +110,7 @@ pub fn draw_egui_panels(
     let mut pending_empty_action: Option<crate::empty_ui::EmptyAction> = None;
     // engine을 빌린 렌더 루프가 끝난 뒤 탐색기 액션을 적용한다.
     let mut pending_explorer_action: Option<(u32, crate::explorer_ui::ExplorerAction)> = None;
+    let mut pending_explorer_previews: Vec<(u32, crate::model::ExplorerPreview)> = Vec::new();
 
     let explorer_font = engine
         .settings
@@ -230,6 +231,9 @@ pub fn draw_egui_panels(
                 && pending_explorer_action.is_none()
             {
                 pending_explorer_action = Some((ex_panel.id, a));
+            }
+            if let Some(preview) = view.preview.take_change() {
+                pending_explorer_previews.push((ex_panel.id, preview));
             }
         } else if let Some(dag) = surface.dag() {
             let view = dag_views.get_or_init(dag.id);
@@ -366,6 +370,18 @@ pub fn draw_egui_panels(
 
     if let Some((sid, act)) = pending_explorer_action {
         apply_explorer_action(state, engine, sid, act);
+    }
+    // 미리보기 토글·폭은 view 가 바로 바꾸고, 레이아웃 스냅샷에 실리도록 model 에도 남긴다.
+    for (sid, preview) in pending_explorer_previews {
+        if let Some(target) = crate::runtime::surface_binding::SurfaceBinding::capture(engine, sid)
+        {
+            state.dispatch_intent(
+                crate::intent::Intent::Engine(
+                    crate::app::engine_action::EngineAction::ExplorerPreview { target, preview },
+                )
+                .from_user_context_menu(),
+            );
+        }
     }
 
     if let Some(crate::empty_ui::EmptyAction::OpenConvertPopup(sid)) = pending_empty_action {

@@ -355,6 +355,7 @@ impl ExplorerView {
     /// (ADR-0022) 원격 mirror surface — 동기 IO 대신 `list_dir_request` 를 큐잉하고
     /// 경로별 pending 상태로 진행 상황을 추적한다. 디렉토리가 바뀌면 선택을 초기화한다.
     pub fn sync(&mut self, panel: &ExplorerPanel, mirror_ws_id: Option<u32>) {
+        self.preview.adopt(&panel.preview);
         let tab = panel.active_tab();
         // 편집 중에는 입력을 유지하고, 아니면 주소를 현재 cwd로 맞춘다. 목록 갱신과는 별개다.
         if !self.addr_editing {

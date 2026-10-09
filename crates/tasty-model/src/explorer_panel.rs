@@ -3,6 +3,8 @@
 
 use std::path::{Path, PathBuf};
 
+use tasty_type_geometry::length::LogicalPx;
+
 use super::SurfaceId;
 use super::surface_trait::Surface;
 
@@ -231,13 +233,24 @@ impl ExplorerTab {
     }
 }
 
-/// 본체 내장 파일 관리자 surface. 내부 탭 목록 + 활성 탭 인덱스만 보유.
+/// 미리보기 패널의 표시 여부와 폭. 내부 탭과 관계없이 explorer surface 하나에 하나다.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ExplorerPreview {
+    /// 토글. 칸이 좁아 패널이 숨어도 켜진 채다.
+    pub open: bool,
+    /// 사용자가 끌어 정한 폭을 UI 배율 1 기준으로 나타낸 값. `None` 이면 토큰 기본 폭을 쓴다.
+    pub width: Option<LogicalPx>,
+}
+
+/// 본체 내장 파일 관리자 surface. 내부 탭 목록 + 활성 탭 인덱스 + 미리보기 패널 상태를 보유.
 pub struct ExplorerPanel {
     pub id: u32,
     /// surface-local 내부 탭 (최소 1개 보장).
     pub tabs: Vec<ExplorerTab>,
     /// 활성 내부 탭 인덱스.
     pub active: usize,
+    /// 미리보기 패널. 레이아웃 스냅샷에 실려 재시작 뒤에도 남는다.
+    pub preview: ExplorerPreview,
 }
 
 impl ExplorerPanel {
@@ -247,6 +260,7 @@ impl ExplorerPanel {
             id,
             tabs: vec![ExplorerTab::new(root)],
             active: 0,
+            preview: ExplorerPreview::default(),
         }
     }
 
@@ -256,6 +270,7 @@ impl ExplorerPanel {
             id,
             tabs: vec![ExplorerTab::new_with_mode(root, view_mode)],
             active: 0,
+            preview: ExplorerPreview::default(),
         }
     }
 
@@ -267,7 +282,12 @@ impl ExplorerPanel {
             tabs
         };
         let active = active.min(tabs.len() - 1);
-        Self { id, tabs, active }
+        Self {
+            id,
+            tabs,
+            active,
+            preview: ExplorerPreview::default(),
+        }
     }
 
     pub fn active_tab(&self) -> &ExplorerTab {

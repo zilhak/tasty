@@ -20,6 +20,7 @@ use crate::app::local_reads::{
     TooLarge,
 };
 use crate::i18n::{t, t_fmt, t_fmt2};
+use crate::model::ExplorerPreview;
 
 /// 시안 `YPreview` 머리 높이 `--tasty-size-40`. 대응 컴포넌트 토큰이 없다.
 const HEAD_H: LogicalPx = LogicalPx(40.0);
@@ -51,6 +52,10 @@ pub struct PreviewPane {
     shown: Option<(PathBuf, Option<SystemTime>, u32)>,
     query: Option<Query<PreviewData>>,
     body: Body,
+    /// model 의 토글·폭을 한 번 받아 왔는가. 처음 그릴 때 레이아웃 스냅샷에서 복원한 값을 받는다.
+    adopted: bool,
+    /// 사용자가 토글·폭을 바꿔 model 에 아직 남기지 않았다.
+    changed: bool,
 }
 
 impl Default for PreviewPane {
@@ -61,6 +66,8 @@ impl Default for PreviewPane {
             shown: None,
             query: None,
             body: Body::NoTarget,
+            adopted: false,
+            changed: false,
         }
     }
 }
@@ -68,11 +75,33 @@ impl Default for PreviewPane {
 impl PreviewPane {
     pub fn toggle(&mut self) {
         self.open = !self.open;
+        self.changed = true;
         if !self.open {
             self.shown = None;
             self.query = None;
             self.body = Body::NoTarget;
         }
+    }
+
+    /// model 의 토글·폭을 처음 한 번만 받는다. 그 뒤로는 이 view 가 바꾸고 model 에 알린다.
+    pub(super) fn adopt(&mut self, model: &ExplorerPreview) {
+        if self.adopted {
+            return;
+        }
+        self.adopted = true;
+        self.open = model.open;
+        self.width = model.width.map(LogicalPx::value);
+    }
+
+    /// 사용자가 바꾼 토글·폭이 있으면 model 에 남길 값을 꺼낸다.
+    pub fn take_change(&mut self) -> Option<ExplorerPreview> {
+        if !std::mem::take(&mut self.changed) {
+            return None;
+        }
+        Some(ExplorerPreview {
+            open: self.open,
+            width: self.width.map(LogicalPx),
+        })
     }
 
     pub(super) fn poll(&mut self, owner: &mut ReadRequests) -> bool {
@@ -189,6 +218,10 @@ pub(super) fn split(
     if resp.dragged() {
         let next = (width - resp.drag_delta().x).clamp(min, max);
         view.preview.width = Some(next / zoom);
+    }
+    // 끌기를 마쳤을 때 한 번만 model 에 남긴다.
+    if resp.drag_stopped() {
+        view.preview.changed = true;
     }
     ui.painter().vline(
         edge_x,
@@ -359,5 +392,37 @@ fn draw_panel(
             theme,
             state_screen::PreviewState::Error(t("explorer.preview.unreadable"), reason),
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_model_state_is_adopted_once_and_user_changes_are_reported_once() {
+        let mut pane = PreviewPane::default();
+        let saved = ExplorerPreview {
+            open: true,
+            width: Some(LogicalPx(320.0)),
+        };
+        pane.adopt(&saved);
+        assert!(pane.open);
+        assert_eq!(pane.width, Some(320.0));
+        assert_eq!(pane.take_change(), None, "restoring is not a user change");
+
+        // 그 뒤 model 이 바뀌어도 view 의 값을 덮어쓰지 않는다.
+        pane.adopt(&ExplorerPreview::default());
+        assert!(pane.open);
+
+        pane.toggle();
+        assert_eq!(
+            pane.take_change(),
+            Some(ExplorerPreview {
+                open: false,
+                width: Some(LogicalPx(320.0)),
+            })
+        );
+        assert_eq!(pane.take_change(), None);
     }
 }
