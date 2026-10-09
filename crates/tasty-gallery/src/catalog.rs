@@ -1726,6 +1726,14 @@ pub fn pages() -> Vec<Page> {
                             components::settings_keybinding_rows::draw,
                         ),
                         spec(
+                            "settings-control-metrics",
+                            "Settings · control metrics — shortcut rows · drag flip modifier",
+                            Some(
+                                "record button kb-record 140 × 24 · add 32 · rows kb-row-gap 8 · drag flip Select md after the General entries · font combo · open Select (Mocha + Latte)",
+                            ),
+                            components::settings_control_metrics::draw,
+                        ),
+                        spec(
                             "settings-macos-permissions",
                             "General › Permissions (macOS)",
                             Some(

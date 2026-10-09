@@ -184,7 +184,7 @@ fn bytes_control(ui: &mut egui::Ui, theme: &Theme, buf: &mut String, (min, max):
     });
 }
 
-fn separator_line(ui: &mut egui::Ui, theme: &Theme) {
+pub(super) fn separator_line(ui: &mut egui::Ui, theme: &Theme) {
     let w = ui.available_width();
     let (rect, _) = ui.allocate_exact_size(
         egui::vec2(w, theme.border_width.value()),

@@ -127,12 +127,12 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
 }
 
 /// General 서브탭 끝의 탐색기 드래그 반전 modifier 행.
-fn drag_flip_row() -> SettingsRow<'static> {
+pub(super) fn drag_flip_row() -> SettingsRow<'static> {
     SettingsRow::new(t("settings.keybindings.explorer_drag_flip_modifier_label"))
         .caption(t("settings.keybindings.explorer_drag_flip_modifier_hint"))
 }
 
-fn drag_flip(ui: &mut egui::Ui, theme: &Theme, col: LogicalPx, row: SettingsRow<'_>) {
+pub(super) fn drag_flip(ui: &mut egui::Ui, theme: &Theme, col: LogicalPx, row: SettingsRow<'_>) {
     let names = explorer_drag_flip_modifier_options("");
     let labels: Vec<String> = names.iter().map(|n| modifier_label(n)).collect();
     let labels: Vec<&str> = labels.iter().map(String::as_str).collect();
@@ -150,7 +150,7 @@ fn drag_flip(ui: &mut egui::Ui, theme: &Theme, col: LogicalPx, row: SettingsRow<
     });
 }
 
-fn row(
+pub(super) fn row(
     ui: &mut egui::Ui,
     theme: &Theme,
     col: LogicalPx,
