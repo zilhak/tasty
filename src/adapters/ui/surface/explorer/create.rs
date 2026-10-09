@@ -38,8 +38,9 @@ pub(crate) enum NameError {
 const WINDOWS_INVALID: &[char] = &['<', '>', ':', '"', '/', '\\', '|', '?', '*'];
 
 /// 입력하는 동안 보는 검사. 이미 있는지는 Enter 에서 따로 본다.
+/// 공백만인 이름은 빈 이름이다. Unix 의 앞뒤 공백은 그대로 둔다.
 pub(crate) fn check_name(name: &str, windows: bool) -> Result<(), NameError> {
-    if name.is_empty() {
+    if name.trim().is_empty() {
         return Err(NameError::Empty);
     }
     let invalid = |c: char| {
@@ -48,7 +49,9 @@ pub(crate) fn check_name(name: &str, windows: bool) -> Result<(), NameError> {
     if let Some(c) = name.chars().find(|c| invalid(*c)) {
         return Err(NameError::InvalidChar(c));
     }
-    if name == "." || name == ".." || (windows && reserved_on_windows(name)) {
+    // Windows 는 끝의 공백·점을 떼고 만들어 다른 이름이 되므로 예약 이름처럼 막는다.
+    let trailing = windows && (name.ends_with(' ') || name.ends_with('.'));
+    if name == "." || name == ".." || trailing || (windows && reserved_on_windows(name)) {
         return Err(NameError::Reserved);
     }
     Ok(())
