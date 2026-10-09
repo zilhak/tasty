@@ -82,11 +82,6 @@ const LENGTH_SETTER_BASELINE: &[(&str, &str, &str)] = &[
         "desired_width(",
         "240.0",
     ),
-    (
-        "src/view/settings/ui/tabs/appearance.rs",
-        "desired_width(",
-        "190.0",
-    ),
 ];
 
 /// 2026-09-07 실측 186파일에 하한 150을 뒀다. 여유 36보다 작은 누락은 잡지 못한다.
