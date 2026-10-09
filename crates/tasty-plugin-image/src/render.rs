@@ -15,6 +15,7 @@ use tasty_ui_widgets::{
 };
 
 use crate::doc::{DragState, EditState, ImageDoc, LoadFailure, ResizeHandle};
+use crate::tiled::TiledTexture;
 
 /// Render one frame of the image surface into `ctx`.
 pub(crate) fn draw(ctx: &egui::Context, theme: &Theme, tr: &Translator, doc: &mut ImageDoc) {
@@ -260,19 +261,21 @@ fn draw_zoom_controls(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, doc: &m
 /// 원본 이미지와 편집 레이어 텍스처를 필요할 때만 올린다.
 fn ensure_textures(ui: &egui::Ui, doc: &mut ImageDoc) {
     if doc.texture.is_none()
-        && let Some(img) = doc.original_image.clone()
+        && let Some(img) = doc.original_image.as_ref()
     {
-        doc.texture = Some(ui.ctx().load_texture(
+        doc.texture = Some(TiledTexture::load(
+            ui.ctx(),
             "image_original",
             img,
             egui::TextureOptions::LINEAR,
         ));
     }
     if doc.is_editing()
-        && let Some(layer) = doc.draw_layer.clone()
+        && let Some(layer) = doc.draw_layer.as_ref()
         && (doc.draw_texture.is_none() || doc.draw_texture_dirty)
     {
-        doc.draw_texture = Some(ui.ctx().load_texture(
+        doc.draw_texture = Some(TiledTexture::load(
+            ui.ctx(),
             "image_draw",
             layer,
             egui::TextureOptions::LINEAR,
@@ -313,17 +316,14 @@ fn draw_canvas(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, doc: &mut Imag
 
     let center = rect.center() + doc.pan_offset;
     let img_rect = egui::Rect::from_center_size(center, egui::vec2(final_w, final_h));
-    let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
 
     if let Some(ref tex) = doc.texture {
-        ui.painter()
-            .image(tex.id(), img_rect, uv, egui::Color32::WHITE);
+        tex.paint(ui.painter(), img_rect, egui::Color32::WHITE);
     }
     if doc.is_editing()
         && let Some(ref tex) = doc.draw_texture
     {
-        ui.painter()
-            .image(tex.id(), img_rect, uv, egui::Color32::WHITE);
+        tex.paint(ui.painter(), img_rect, egui::Color32::WHITE);
     }
 
     // Zoom with mouse wheel (only over the canvas).
@@ -393,9 +393,10 @@ fn draw_floating_selection(
     } = doc.edit_state
     {
         if selection.texture.is_none() {
-            selection.texture = Some(ui.ctx().load_texture(
+            selection.texture = Some(TiledTexture::load(
+                ui.ctx(),
                 "image_float",
-                selection.image.clone(),
+                &selection.image,
                 egui::TextureOptions::LINEAR,
             ));
         }
@@ -407,9 +408,7 @@ fn draw_floating_selection(
             egui::Rect::from_min_size(egui::pos2(sel_x, sel_y), egui::vec2(sel_w, sel_h));
 
         if let Some(ref tex) = selection.texture {
-            let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
-            ui.painter()
-                .image(tex.id(), sel_rect, uv, egui::Color32::WHITE);
+            tex.paint(ui.painter(), sel_rect, egui::Color32::WHITE);
         }
 
         let stroke =

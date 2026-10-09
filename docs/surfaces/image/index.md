@@ -18,6 +18,7 @@
 
 - **surface_kind `image` (egui-mesh)** — plugin(`ImageDoc`)이 픽셀·편집 상태·zoom/pan 을 소유하고, 원본 이미지 + 편집 오버레이 + floating selection 을 텍스처로 올려 viewer/paint chrome(control bar·paint bar·8 handles·zoom)과 함께 그린다. host `EguiMeshSurface` stand-in 은 파일·display_name·영속화만. 파일 로드 또는 빈 캔버스(그림판 모드 진입).
 - **파일 핸들러** — `detector "image"`(확장자 규칙) + `handler` `open_surface{surface_kind:"image"}`. 이미지 파일 열기 시 이 surface.
+- **큰 그림은 타일로 나눠 올린다** — egui 는 한 변이 `max_texture_side`(plugin `Context` 의 입력값, host 가 따로 주지 않아 egui 기본 2048)를 넘는 텍스처를 받으면 debug 빌드에서 패닉한다(`debug_assert`). 원본·그리기 층·floating selection 은 `tiled::TiledTexture` 가 한 변이 그 값 이하인 타일로 나눠 올리고, 각 타일을 그림 사각형의 해당 부분에 그린다. 확대가 핵심이라 줄여 올리지 않는다 — 원본 픽셀을 그대로 쓴다. 이웃 타일과 맞닿는 변에는 1px 테두리를 더 담고 uv 에서 뺀다. 그래서 선형 보간이 경계에서도 실제 이웃 픽셀을 섞어 확대해도 이음매가 생기지 않는다. 그리기 층은 획마다 전체 타일을 다시 올린다(그림 크기만큼의 업로드는 타일 전과 같다).
 - **여는 포맷은 컴파일된 디코더에서 파생된다** — `is_image_file`(디렉토리 순회 · `image.next`/`prev`의 대상 판정)이 `image` 크레이트의 `ImageFormat::reading_enabled()` 로 판정하므로, 목록을 손으로 적는 자리가 없다. 늘리려면 `crates/tasty-plugin-image/Cargo.toml` 의 `image` feature 를 고친다. SVG 는 그 크레이트가 래스터 전용이라 대상이 아니다 — 별도 렌더러가 있어야 열린다. 디코드가 실패하면 빈 캔버스가 되므로 그 자리에서 `warn` 을 남긴다.
 - **undo/redo**는 그림판의 버튼으로만 실행하며 단축키는 없다. 단축키를 추가한다면
   매니페스트 `[[contributes.commands]]`로 선언하고 Settings › Keybindings › Plugins에서
@@ -52,6 +53,7 @@
 - Given image 플러그인 활성 When 이미지 파일 열기 Then image surface 로 표시된다.
 - Given `tasty image open --file <f>` Then 활성 surface 가 image kind 로 전환되어 파일을 로드한다.
 - Given 빈 캔버스 Then 그림판으로 그릴 수 있다.
+- Given 한 변이 `max_texture_side` 를 넘는 그림(4000×3000, 9000×16 같은 극단 비율 포함) When 연다 Then plugin 이 패닉하지 않고 원본 해상도 그대로 표시·확대된다.
 - Given 이미지 surface 가 열려 있고 아무 입력도 없을 때 When 그 파일이 밖에서 바뀐다 Then 1 초 안에 다시 읽어 표시한다.
 - Given 이미지 surface 가 열려 있을 때 When 그 파일의 내용은 그대로인데 mtime 만 바뀐다(`touch`) Then 내용 해시를 확인하되 다시 디코딩하거나 재로드하지 않는다.
 - Given 편집 세션이 활성일 때 When 그 파일이 밖에서 바뀐다 Then 편집 중에는 반영하지 않고, 편집을 끝낼 때 반영한다.

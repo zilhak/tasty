@@ -9,6 +9,7 @@
 mod doc;
 #[cfg(any(unix, windows))]
 mod render;
+mod tiled;
 
 use std::collections::HashMap;
 use std::sync::Arc;

@@ -3,7 +3,9 @@
 
 use std::path::{Path, PathBuf};
 
-use egui::{Color32, ColorImage, Pos2, Rect, TextureHandle, Vec2};
+use egui::{Color32, ColorImage, Pos2, Rect, Vec2};
+
+use crate::tiled::TiledTexture;
 
 /// Default blank-canvas dimensions when an image surface is created without a file.
 pub const DEFAULT_BLANK_CANVAS_WIDTH: usize = 800;
@@ -132,7 +134,7 @@ pub enum DragState {
 /// A pasted image floating over the canvas, waiting to be committed.
 pub struct FloatingSelection {
     pub image: ColorImage,
-    pub texture: Option<TextureHandle>,
+    pub texture: Option<TiledTexture>,
     pub position: Vec2,
     pub size: [usize; 2],
     pub drag_state: DragState,
@@ -189,13 +191,13 @@ pub struct ImageDoc {
     pub original_image: Option<ColorImage>,
     /// 마지막으로 파일을 읽지 못한 이유. 읽기에 성공하면 비운다.
     pub load_failure: Option<LoadFailure>,
-    pub texture: Option<TextureHandle>,
+    pub texture: Option<TiledTexture>,
     pub zoom: f32,
     pub pan_offset: Vec2,
 
     pub edit_state: EditState,
     pub draw_layer: Option<ColorImage>,
-    pub draw_texture: Option<TextureHandle>,
+    pub draw_texture: Option<TiledTexture>,
     pub brush_size: f32,
     pub brush_color: Color32,
     pub last_draw_pos: Option<Pos2>,
