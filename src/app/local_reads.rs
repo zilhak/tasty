@@ -13,8 +13,8 @@ use std::{
 
 mod file_info;
 pub(crate) use file_info::{
-    FolderCount, ItemFacts, ItemKind, PREVIEW_MAX_BYTES, PreviewData, PropertiesFacts,
-    decodable_image_ext,
+    FolderCount, ItemFacts, ItemKind, MAX_DECODE_ALLOC, MAX_IMAGE_SIDE, PREVIEW_MAX_BYTES,
+    PreviewData, PropertiesFacts, TooLarge, decodable_image_ext,
 };
 
 const MAX_RUNNING: usize = 4;

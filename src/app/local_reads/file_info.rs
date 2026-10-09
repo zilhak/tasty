@@ -1,5 +1,6 @@
 //! 탐색기의 미리보기·썸네일·Properties 가 쓰는 파일 읽기. 모두 read worker 에서 실행해 UI 스레드는
 //! 파일시스템을 읽지 않는다. 미리보기와 썸네일은 앱 크기 상한을 넘는 파일을 읽지 않는다.
+//! 정규 파일만 연다. FIFO·장치 파일은 열기가 끝나지 않거나 끝없이 읽혀 worker 를 붙잡는다.
 
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
@@ -13,17 +14,36 @@ pub(crate) const PREVIEW_MAX_BYTES: u64 = 1024 * 1024;
 pub(crate) const PREVIEW_TEXT_BYTES: usize = 64 * 1024;
 /// 썸네일 디코딩 결과의 긴 변(px). 40 슬롯을 2배 밀도 화면에서도 흐리지 않게 채운다.
 const THUMB_DECODE_PX: u32 = 80;
+/// 미리보기 텍스처의 긴 변 상한(px). egui 는 `max_texture_side` 를 넘는 텍스처에서 패닉하고,
+/// wgpu 가 보장하는 최소값이 2048 이라 이 값으로 줄여 보낸다.
+pub(crate) const PREVIEW_TEXTURE_SIDE: u32 = 2048;
+/// 디코딩 전에 거절하는 그림 한 변의 픽셀 수. 바이트 상한 안에 든 거대한 그림을 펼치지 않는다.
+pub(crate) const MAX_IMAGE_SIDE: u32 = 16384;
+/// 디코딩이 한 번에 잡을 수 있는 메모리.
+pub(crate) const MAX_DECODE_ALLOC: u64 = 256 * 1024 * 1024;
+
+/// 미리보기·썸네일을 보이지 않는 이유가 된 상한.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum TooLarge {
+    /// 파일 크기가 `PREVIEW_MAX_BYTES` 를 넘는다.
+    Bytes,
+    /// 그림의 한 변이나 디코딩 메모리가 `MAX_IMAGE_SIDE`·`MAX_DECODE_ALLOC` 을 넘는다.
+    Pixels,
+}
 
 /// 미리보기 패널 본문.
 pub(crate) enum PreviewData {
     /// 앞 64 KB 의 UTF-8 텍스트.
     Text(String),
-    /// 디코딩한 그림.
-    Image(egui::ColorImage),
-    /// 텍스트·그림이 아니거나 폴더다.
+    /// 디코딩한 그림. 텍스처 상한에 맞춰 줄였을 수 있고, `size` 는 원본 픽셀 크기다.
+    Image {
+        image: egui::ColorImage,
+        size: [usize; 2],
+    },
+    /// 텍스트·그림이 아니거나 폴더·특수 파일이다.
     Unsupported,
     /// 상한을 넘었다.
-    TooLarge,
+    TooLarge(TooLarge),
 }
 
 /// 확장자로 그림 디코더가 읽을 수 있는 형식인지 정한다. 빌드에 켠 `image` 크레이트 기능과 같다.
@@ -36,15 +56,19 @@ pub(crate) fn decodable_image_ext(ext: &str) -> bool {
 
 pub(super) fn read_preview(path: &Path) -> io::Result<PreviewData> {
     let meta = std::fs::metadata(path)?;
-    if meta.is_dir() {
+    if !meta.is_file() {
         return Ok(PreviewData::Unsupported);
     }
     let ext = extension(path);
     if decodable_image_ext(&ext) {
         if meta.len() > PREVIEW_MAX_BYTES {
-            return Ok(PreviewData::TooLarge);
+            return Ok(PreviewData::TooLarge(TooLarge::Bytes));
         }
-        return decode(path, None).map(PreviewData::Image);
+        return match decode(path, PREVIEW_TEXTURE_SIDE) {
+            Ok((image, size)) => Ok(PreviewData::Image { image, size }),
+            Err(Decode::OverLimits) => Ok(PreviewData::TooLarge(TooLarge::Pixels)),
+            Err(Decode::Io(error)) => Err(error),
+        };
     }
     let mut head = Vec::with_capacity(PREVIEW_TEXT_BYTES.min(meta.len() as usize));
     std::fs::File::open(path)?
@@ -54,7 +78,7 @@ pub(super) fn read_preview(path: &Path) -> io::Result<PreviewData> {
         return Ok(PreviewData::Unsupported);
     };
     if meta.len() > PREVIEW_MAX_BYTES {
-        return Ok(PreviewData::TooLarge);
+        return Ok(PreviewData::TooLarge(TooLarge::Bytes));
     }
     Ok(PreviewData::Text(text))
 }
@@ -75,26 +99,54 @@ fn utf8_text(bytes: &[u8]) -> Option<String> {
 
 pub(super) fn read_thumbnail(path: &Path) -> io::Result<egui::ColorImage> {
     let meta = std::fs::metadata(path)?;
+    if !meta.is_file() {
+        return Err(io::Error::other("not a regular file"));
+    }
     if meta.len() > PREVIEW_MAX_BYTES {
         return Err(io::Error::other("over the preview size limit"));
     }
-    decode(path, Some(THUMB_DECODE_PX))
+    match decode(path, THUMB_DECODE_PX) {
+        Ok((image, _)) => Ok(image),
+        Err(Decode::OverLimits) => Err(io::Error::other("over the image pixel limits")),
+        Err(Decode::Io(error)) => Err(error),
+    }
 }
 
-fn decode(path: &Path, fit: Option<u32>) -> io::Result<egui::ColorImage> {
-    let img = image::ImageReader::open(path)?
-        .with_guessed_format()?
-        .decode()
-        .map_err(io::Error::other)?;
-    let img = match fit {
-        Some(px) if img.width() > px || img.height() > px => img.thumbnail(px, px),
-        _ => img,
+enum Decode {
+    /// `MAX_IMAGE_SIDE`·`MAX_DECODE_ALLOC` 을 넘어 펼치지 않았다.
+    OverLimits,
+    Io(io::Error),
+}
+
+impl From<io::Error> for Decode {
+    fn from(error: io::Error) -> Self {
+        Self::Io(error)
+    }
+}
+
+/// 상한 안의 그림만 펼치고, 긴 변이 `fit` 을 넘으면 비율을 지켜 줄인다. 원본 픽셀 크기를 함께 돌려준다.
+fn decode(path: &Path, fit: u32) -> Result<(egui::ColorImage, [usize; 2]), Decode> {
+    let mut reader = image::ImageReader::open(path)?.with_guessed_format()?;
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(MAX_IMAGE_SIDE);
+    limits.max_image_height = Some(MAX_IMAGE_SIDE);
+    limits.max_alloc = Some(MAX_DECODE_ALLOC);
+    reader.limits(limits);
+    let img = reader.decode().map_err(|error| match error {
+        image::ImageError::Limits(_) => Decode::OverLimits,
+        other => Decode::Io(io::Error::other(other)),
+    })?;
+    let size = [img.width() as usize, img.height() as usize];
+    let img = if img.width() > fit || img.height() > fit {
+        img.thumbnail(fit, fit)
+    } else {
+        img
     };
     let rgba = img.to_rgba8();
-    let size = [rgba.width() as usize, rgba.height() as usize];
-    Ok(egui::ColorImage::from_rgba_unmultiplied(
+    let shown = [rgba.width() as usize, rgba.height() as usize];
+    Ok((
+        egui::ColorImage::from_rgba_unmultiplied(shown, rgba.as_raw()),
         size,
-        rgba.as_raw(),
     ))
 }
 
@@ -269,7 +321,10 @@ mod tests {
 
         let big = dir.path().join("server.log");
         std::fs::write(&big, vec![b'a'; PREVIEW_MAX_BYTES as usize + 1]).expect("write");
-        assert!(matches!(read_preview(&big), Ok(PreviewData::TooLarge)));
+        assert!(matches!(
+            read_preview(&big),
+            Ok(PreviewData::TooLarge(TooLarge::Bytes))
+        ));
 
         let bin = dir.path().join("blob.bin");
         std::fs::write(&bin, [0u8, 1, 2]).expect("write");
@@ -278,6 +333,79 @@ mod tests {
             read_preview(dir.path()),
             Ok(PreviewData::Unsupported)
         ));
+    }
+
+    fn write_png(path: &Path, w: u32, h: u32) {
+        image::RgbImage::new(w, h).save(path).expect("write png");
+    }
+
+    #[test]
+    fn a_wide_image_is_shrunk_under_the_texture_side_and_keeps_its_size() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        for (w, h) in [(9000, 16), (2560, 1440), (16, 9000)] {
+            let path = dir.path().join(format!("{w}x{h}.png"));
+            write_png(&path, w, h);
+            let Ok(PreviewData::Image { image, size }) = read_preview(&path) else {
+                panic!("{w}x{h} should preview as an image");
+            };
+            assert_eq!(size, [w as usize, h as usize]);
+            let side = PREVIEW_TEXTURE_SIDE as usize;
+            assert!(
+                image.size[0] <= side && image.size[1] <= side,
+                "{:?}",
+                image.size
+            );
+            assert!(image.size[0] >= 1 && image.size[1] >= 1);
+            let thumb = read_thumbnail(&path).expect("thumbnail");
+            let px = THUMB_DECODE_PX as usize;
+            assert!(thumb.size[0] <= px && thumb.size[1] <= px);
+        }
+    }
+
+    #[test]
+    fn an_image_over_the_pixel_limits_is_refused_before_decoding() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("wide.png");
+        write_png(&path, MAX_IMAGE_SIDE + 1, 1);
+        assert!(matches!(
+            read_preview(&path),
+            Ok(PreviewData::TooLarge(TooLarge::Pixels))
+        ));
+        assert!(read_thumbnail(&path).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_fifo_is_not_opened() {
+        use std::os::unix::ffi::OsStrExt;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("pipe.png");
+        let c_path = std::ffi::CString::new(path.as_os_str().as_bytes()).expect("c path");
+        // SAFETY: c_path 는 NUL 로 끝나는 유효한 경로 문자열이다.
+        assert_eq!(unsafe { libc::mkfifo(c_path.as_ptr(), 0o600) }, 0);
+        // 열기를 시도하면 쓰는 쪽이 없어 끝나지 않으므로 다른 스레드에서 기한을 둔다.
+        let (tx, rx) = std::sync::mpsc::channel();
+        let probe = path.clone();
+        std::thread::spawn(move || {
+            let preview = matches!(read_preview(&probe), Ok(PreviewData::Unsupported));
+            let thumbnail = read_thumbnail(&probe).is_err();
+            tx.send((preview, thumbnail)).expect("send");
+        });
+        let got = rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("a FIFO read must not block");
+        assert_eq!(got, (true, true));
+        let txt = dir.path().join("pipe.txt");
+        std::fs::rename(&path, &txt).expect("rename");
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            tx.send(matches!(read_preview(&txt), Ok(PreviewData::Unsupported)))
+                .expect("send");
+        });
+        assert!(
+            rx.recv_timeout(std::time::Duration::from_secs(5))
+                .expect("a FIFO read must not block")
+        );
     }
 
     #[test]

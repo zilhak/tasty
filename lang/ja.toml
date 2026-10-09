@@ -852,6 +852,7 @@ loading = "プレビューを読み込み中…"
 unsupported = "このファイル形式はプレビューできません"
 too_large = "大きすぎてプレビューできません"
 too_large_sub = "{} を超えています。"
+too_large_pixels_sub = "一辺が {} px を超えるか、デコードに {} を超えるメモリが必要です。"
 unreadable = "このファイルを読み取れません"
 
 [explorer.properties]

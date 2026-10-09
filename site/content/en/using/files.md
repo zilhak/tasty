@@ -1,4 +1,4 @@
-<!-- source-hash: 45b1f0bced36 -->
+<!-- source-hash: 89f29569126c -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -64,7 +64,7 @@ Click the address bar to type a path directly; recently visited folders appear a
 
 ### Preview panel
 
-Press the **Preview panel** button in the toolbar to open a panel to the right of the list that shows the one selected file. Text files show their first 64 KB in a monospace font; images are fitted to the panel without being enlarged past their own size. Other file types and folders show **No preview for this file type**, and files over 1 MB show **Too large to preview**. Drag the panel's left edge to set its width between 200 and 460 px. When the Explorer cell is too narrow to keep the list beside it, the panel hides while the button stays on. Explorers in remote workspaces have no preview.
+Press the **Preview panel** button in the toolbar to open a panel to the right of the list that shows the one selected file. Text files show their first 64 KB in a monospace font; images are fitted to the panel without being enlarged past their own size. Other file types and folders show **No preview for this file type**, and files over 1 MB, as well as images too big to decode (such as more than 16384 pixels on a side), show **Too large to preview**. Drag the panel's left edge to set its width between 200 and 460 px. When the Explorer cell is too narrow to keep the list beside it, the panel hides while the button stays on. Explorers in remote workspaces have no preview.
 
 ### Properties
 

@@ -15,8 +15,11 @@ use tasty_ui_widgets::{ControlSize, IconButton, IconButtonVariant};
 use super::state_screen;
 use super::view::{DirEntryInfo, ExplorerView, human_size};
 use crate::adapters::ui::icons;
-use crate::app::local_reads::{self, PREVIEW_MAX_BYTES, PreviewData, Query, ReadRequests};
-use crate::i18n::{t, t_fmt};
+use crate::app::local_reads::{
+    self, MAX_DECODE_ALLOC, MAX_IMAGE_SIDE, PREVIEW_MAX_BYTES, PreviewData, Query, ReadRequests,
+    TooLarge,
+};
+use crate::i18n::{t, t_fmt, t_fmt2};
 
 /// 시안 `YPreview` 머리 높이 `--tasty-size-40`. 대응 컴포넌트 토큰이 없다.
 const HEAD_H: LogicalPx = LogicalPx(40.0);
@@ -33,7 +36,7 @@ enum Body {
         size: [usize; 2],
     },
     Unsupported,
-    TooLarge,
+    TooLarge(TooLarge),
     Error(String),
 }
 
@@ -78,13 +81,13 @@ impl PreviewPane {
         self.query = None;
         self.body = match result {
             Ok(PreviewData::Text(text)) => Body::Text(text),
-            Ok(PreviewData::Image(image)) => Body::Image {
-                size: image.size,
+            Ok(PreviewData::Image { image, size }) => Body::Image {
+                size,
                 image: Some(image),
                 texture: None,
             },
             Ok(PreviewData::Unsupported) => Body::Unsupported,
-            Ok(PreviewData::TooLarge) => Body::TooLarge,
+            Ok(PreviewData::TooLarge(by)) => Body::TooLarge(by),
             Err(error) => Body::Error(error.to_string()),
         };
         true
@@ -329,15 +332,21 @@ fn draw_panel(
             theme,
             state_screen::PreviewState::Plain(icons::FILE, t("explorer.preview.unsupported")),
         ),
-        Body::TooLarge => state_screen::show_preview_state(
-            &mut body_ui,
-            theme,
-            state_screen::PreviewState::Sub(
-                icons::FILE,
-                t("explorer.preview.too_large"),
-                &t_fmt("explorer.preview.too_large_sub", &max_too_large),
-            ),
-        ),
+        Body::TooLarge(by) => {
+            let sub = match by {
+                TooLarge::Bytes => t_fmt("explorer.preview.too_large_sub", &max_too_large),
+                TooLarge::Pixels => t_fmt2(
+                    "explorer.preview.too_large_pixels_sub",
+                    &MAX_IMAGE_SIDE.to_string(),
+                    &format!("{} MB", MAX_DECODE_ALLOC >> 20),
+                ),
+            };
+            state_screen::show_preview_state(
+                &mut body_ui,
+                theme,
+                state_screen::PreviewState::Sub(icons::FILE, t("explorer.preview.too_large"), &sub),
+            )
+        }
         Body::Error(reason) => state_screen::show_preview_state(
             &mut body_ui,
             theme,

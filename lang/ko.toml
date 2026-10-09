@@ -852,6 +852,7 @@ loading = "미리보기를 불러오는 중…"
 unsupported = "이 파일 형식은 미리 볼 수 없습니다"
 too_large = "너무 커서 미리 볼 수 없습니다"
 too_large_sub = "{}를 넘습니다."
+too_large_pixels_sub = "한 변이 {} px를 넘거나 디코딩에 {}보다 많은 메모리가 필요합니다."
 unreadable = "이 파일을 읽을 수 없습니다"
 
 [explorer.properties]

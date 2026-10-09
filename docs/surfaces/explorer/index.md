@@ -160,12 +160,12 @@ mirror(원격) explorer:
 - **폭**: `explorer_preview_width`(288)에서 시작하고 패널 왼쪽 경계선(잡는 폭은 pane 분할선과 같은 `DIVIDER_HIT_THRESHOLD`)을 끌어 `explorer_preview_min_width`(200)…`explorer_preview_max_width`(460) 사이로 바꾼다. 목록에도 같은 200 을 남긴다. 칸이 패널 하한 + 경계선 + 목록 하한보다 좁으면 패널만 숨기고 토글은 켜진 채 둔다.
 - **대상**: 선택이 정확히 하나일 때 그 항목. 선택이 없거나 여럿이면 "Select a file" 상태다. 대상이 바뀌면 이전 미리보기를 바로 지우고 Loading 상태를 보인다. 같은 항목이라도 수정 시각이 바뀌면 다시 읽는다.
 - **머리**: 높이 40, 이름 · 종류 · 크기(그림은 픽셀 크기도) 두 줄.
-- **본문**: 읽기는 App read worker(`local_reads::preview`)가 한다. 텍스트(NUL 이 없는 UTF-8)는 앞 64 KB(`PREVIEW_TEXT_BYTES`)를 mono 로 스크롤해 보인다. 그림(`decodable_image_ext`)은 패널에 맞추되 원래 크기보다 키우지 않는다. 폴더와 그 밖의 형식은 "No preview for this file type", 1 MB(`PREVIEW_MAX_BYTES`, 앱 상한) 초과는 "Too large to preview", 읽기 실패는 "Can't read this file" 과 오류 문구다.
+- **본문**: 읽기는 App read worker(`local_reads::preview`)가 한다. 텍스트(NUL 이 없는 UTF-8)는 앞 64 KB(`PREVIEW_TEXT_BYTES`)를 mono 로 스크롤해 보인다. 그림(`decodable_image_ext`)은 패널에 맞추되 원래 크기보다 키우지 않는다. worker 가 긴 변을 `PREVIEW_TEXTURE_SIDE`(2048, egui `max_texture_side` 의 보장 하한)로 줄여 보내고, 머리의 픽셀 크기는 원본 값이다. 정규 파일만 연다. 폴더·FIFO·장치 파일 같은 특수 파일과 그 밖의 형식은 "No preview for this file type" 이다. 1 MB(`PREVIEW_MAX_BYTES`, 앱 상한) 초과는 "Too large to preview" 와 "Over 1 MB." 이다. 그림은 디코딩 전에 `image::Limits` 로 한 변 16384px(`MAX_IMAGE_SIDE`)·디코딩 메모리 256 MiB(`MAX_DECODE_ALLOC`)를 넘는지 보고, 넘으면 같은 "Too large to preview" 에 픽셀 상한 문구를 붙인다. 읽기 실패는 "Can't read this file" 과 오류 문구다.
 - **원격**: mirror explorer 는 파일 내용을 받을 경로가 없어 대상과 관계없이 지원하지 않는 형식 상태를 보인다.
 
 ### Grid 썸네일
 
-Grid 셀은 모두 `explorer_grid_thumb_size`(40) 슬롯을 잡아 썸네일 유무와 관계없이 행 높이가 같다(셀 높이 +24, 시안 "Grid thumbnails", `explorer/thumbs.rs`). 로컬 explorer 의 그림 파일 중 1 MB 이하인 것만, 화면에 보인 셀부터 read worker 가 긴 변 80px 로 줄여 만든다. 썸네일은 40×40 에 맞추고(키우지 않는다) 1px separator 테두리와 radius-sm 을 둔다. 만드는 동안·상한 초과·디코딩 실패는 16 글리프(accent-info)를 그대로 둔다. 캐시(`ExplorerView::thumbs`)는 경로와 수정 시각으로 맞추고 512 개를 넘으면 지금 폴더에 없는 항목부터 버린다. list·detail 보기와 mirror explorer 는 썸네일을 만들지 않는다.
+Grid 셀은 모두 `explorer_grid_thumb_size`(40) 슬롯을 잡아 썸네일 유무와 관계없이 행 높이가 같다(셀 높이 +24, 시안 "Grid thumbnails", `explorer/thumbs.rs`). 로컬 explorer 의 그림 파일 중 1 MB 이하인 정규 파일만, 화면에 보인 셀부터 read worker 가 긴 변 80px 로 줄여 만든다. 미리보기와 같은 픽셀 상한을 넘으면 디코딩하지 않는다. 썸네일은 40×40 에 맞추고(키우지 않는다) 1px separator 테두리와 radius-sm 을 둔다. 만드는 동안·상한 초과·디코딩 실패는 16 글리프(accent-info)를 그대로 둔다. 캐시(`ExplorerView::thumbs`)는 경로와 수정 시각으로 맞추고 512 개를 넘으면 지금 폴더에 없는 항목부터 버린다.
 
 ### Properties popup
 

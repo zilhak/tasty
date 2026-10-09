@@ -856,6 +856,7 @@ loading = "Loading preview…"
 unsupported = "No preview for this file type"
 too_large = "Too large to preview"
 too_large_sub = "Over {}."
+too_large_pixels_sub = "Over {} px on a side, or needs more than {} to decode."
 unreadable = "Can't read this file"
 
 [explorer.properties]
