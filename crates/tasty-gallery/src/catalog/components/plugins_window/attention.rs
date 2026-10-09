@@ -132,8 +132,10 @@ pub(super) const ENTRIES: &[Entry] = &[
     },
 ];
 
-/// 상세에 펼쳐 보이는 항목 — 본체는 선택 행 하나를 그린다.
-const SELECTED: usize = 2;
+/// 상세에 펼쳐 보이는 기본 항목 — 본체는 선택 행 하나를 그린다.
+pub(super) const SELECTED: usize = 2;
+/// 서명이 깨진 항목. 상세가 설명과 homepage 대신 숨김 안내를 보인다.
+pub(super) const SIGNATURE_INVALID: usize = 1;
 
 fn sev_color(theme: &Theme, kind: Kind) -> egui::Color32 {
     if kind.is_danger() {
@@ -145,7 +147,7 @@ fn sev_color(theme: &Theme, kind: Kind) -> egui::Color32 {
 
 /// 좌측 목록 — 본체 `SidePanel::left("plugins_attention_list")`. 행 높이·패딩은
 /// Installed 목록과 같은 토큰 조립이고, 두 번째 줄이 사유 라벨(severity 색)이다.
-pub(super) fn list_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
+pub(super) fn list_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, selected: usize) {
     let p = ui.painter_at(rect);
     p.rect_filled(rect, 0.0, theme.bg_sidebar().to_egui());
 
@@ -157,7 +159,7 @@ pub(super) fn list_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
     for (i, entry) in ENTRIES.iter().enumerate() {
         let r =
             egui::Rect::from_min_size(egui::pos2(rect.min.x, y), egui::vec2(rect.width(), row_h));
-        if i == SELECTED {
+        if i == selected {
             p.rect(
                 r,
                 theme.corner_radius.value(),
@@ -337,10 +339,10 @@ fn action_bar(ui: &mut egui::Ui, theme: &Theme, kind: Kind) {
 }
 
 /// 우측 상세 — identity → 배너 → 사유 detail, 열 바닥에 열 폭 전체의 액션 바.
-pub(super) fn detail_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
+pub(super) fn detail_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, selected: usize) {
     ui.painter_at(rect)
         .rect_filled(rect, 0.0, theme.bg_panel().to_egui());
-    let entry = &ENTRIES[SELECTED];
+    let entry = &ENTRIES[selected];
     let inner = rect.shrink(theme.spacing_md.value());
     let split = rect.max.y - plugin_detail_bar_height(theme);
     let body_rect = egui::Rect::from_min_max(inner.min, egui::pos2(inner.max.x, split));
@@ -441,17 +443,24 @@ fn cards_row(ui: &mut egui::Ui, theme: &Theme, card_w: f32) {
             |ui: &mut egui::Ui| {
                 ui.set_max_width(card_w);
                 ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
-                // 서명이 깨진 사유는 상세에서 설명 대신 숨김 안내를 둔다.
-                if kind == Kind::SignatureInvalid {
-                    plugin_detail_desc_hidden(
-                        ui,
-                        theme,
-                        crate::i18n::t("plugins.attn_desc_hidden"),
-                    );
-                }
                 banner(ui, theme, kind);
                 reason_detail(ui, theme, kind);
             },
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 상태 이름이 말하는 사유와 펼치는 항목의 사유가 같고, 서명이 깨진 항목은 본체처럼 매니페스트
+    /// 글을 싣지 않는다.
+    #[test]
+    fn the_signature_invalid_state_opens_a_signature_invalid_entry() {
+        let entry = &ENTRIES[SIGNATURE_INVALID];
+        assert!(entry.kind == Kind::SignatureInvalid);
+        assert!(entry.description.is_empty() && entry.homepage.is_empty());
+        assert!(ENTRIES[SELECTED].kind != Kind::SignatureInvalid);
     }
 }

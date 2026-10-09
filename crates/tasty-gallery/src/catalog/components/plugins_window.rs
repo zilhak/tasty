@@ -25,7 +25,8 @@ enum Tab {
     /// Installed 는 상세가 세 갈래다 — 무선택 / 선택 / uninstall 확인.
     Installed { detail: installed::Detail },
     /// Attention 은 대상이 0 이면 본문이 통째로 안내로 바뀌고 세그먼트 배지도 사라진다.
-    Attention { empty: bool },
+    /// `selected` 는 상세에 펼칠 `attention::ENTRIES` 의 위치다.
+    Attention { empty: bool, selected: usize },
     /// `Add plugin` 은 상태가 둘이라 어느 쪽을 그릴지 함께 든다.
     Add { preview: bool },
 }
@@ -39,7 +40,7 @@ fn list_w(theme: &Theme) -> f32 {
 fn stage_size(theme: &Theme, tab: Tab) -> egui::Vec2 {
     let h = match tab {
         // Attention 액션 바는 Installed 처럼 열 바닥에 붙으므로 사유 detail 이 바 위에 다 들 높이가 필요하다.
-        Tab::Installed { .. } | Tab::Attention { empty: false } => theme.measure_xl,
+        Tab::Installed { .. } | Tab::Attention { empty: false, .. } => theme.measure_xl,
         // 경로 선택 블록 아래 매니페스트 카드와 신뢰 상자, fingerprint 줄까지 담아야 액션 바가
         // 무대 안에 든다.
         Tab::Add { preview: true } => ADD_VERIFIED_STAGE_H.scaled(theme.ui_zoom),
@@ -241,7 +242,7 @@ fn header(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, tab: Tab) {
             label: "Attention",
             // 0개일 때 배지가 사라지는 규칙도 이 함수에서 확인한다.
             count: Some(match tab {
-                Tab::Attention { empty: true } => 0,
+                Tab::Attention { empty: true, .. } => 0,
                 _ => attention::ENTRIES.len(),
             }),
             danger: true,
@@ -354,14 +355,14 @@ fn window(ui: &mut egui::Ui, theme: &Theme, tab: Tab) {
             installed::detail_pane(ui, theme, d, detail);
             divider(ui, l.max.x);
         }
-        Tab::Attention { empty } => {
+        Tab::Attention { empty, selected } => {
             let (l, d) = panes(body);
             if empty {
                 attention::empty_list_pane(ui, theme, l);
                 attention::empty_detail_pane(ui, theme, d);
             } else {
-                attention::list_pane(ui, theme, l);
-                attention::detail_pane(ui, theme, d);
+                attention::list_pane(ui, theme, l, selected);
+                attention::detail_pane(ui, theme, d, selected);
             }
             divider(ui, l.max.x);
         }
@@ -500,8 +501,27 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 detail: installed::Detail::ConfirmUninstall(0),
             },
         ),
-        ("Attention", Tab::Attention { empty: false }),
-        ("Attention — empty", Tab::Attention { empty: true }),
+        (
+            "Attention",
+            Tab::Attention {
+                empty: false,
+                selected: attention::SELECTED,
+            },
+        ),
+        (
+            "Attention — signature invalid (description and homepage hidden)",
+            Tab::Attention {
+                empty: false,
+                selected: attention::SIGNATURE_INVALID,
+            },
+        ),
+        (
+            "Attention — empty",
+            Tab::Attention {
+                empty: true,
+                selected: attention::SELECTED,
+            },
+        ),
         ("Add plugin — before Verify", Tab::Add { preview: false }),
         (
             "Add plugin — verified manifest under the input (untrusted)",
