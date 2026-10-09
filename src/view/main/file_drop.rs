@@ -25,6 +25,7 @@ impl MainView {
     }
 
     pub(crate) fn handle_hovered_file_cancelled(&mut self) {
+        crate::explorer_ui::view::drag::take_os_drop(&mut self.state.explorer_views);
         if self.state.drop_hover.take().is_some() {
             self.base.state.dirty = true;
         }
@@ -37,6 +38,41 @@ impl MainView {
         self.base.state.dirty = true;
     }
 
+    /// explorer 칸 위에 놓은 OS 파일을 그 폴더로 복사한다. 거절된 칸이면 이유를 알린다.
+    fn drop_into_explorer(
+        &mut self,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
+        surface: u32,
+        dest: PathBuf,
+        decided: crate::explorer_ui::view::drag::Verdict,
+        paths: Vec<PathBuf>,
+    ) {
+        use crate::explorer_ui::view::drag::Verdict;
+        match decided {
+            Verdict::Go(_) => self.state.request_explorer_file_direct(
+                engine,
+                surface,
+                crate::app::explorer_files::Operation::Paste {
+                    paths,
+                    destination: dest,
+                    cut: false,
+                },
+                crate::intent::IntentOrigin::User {
+                    source: crate::intent::UserSource::Menu("explorer_os_drop"),
+                },
+            ),
+            Verdict::No(reason) => {
+                let text = format!(
+                    "{}{}",
+                    crate::i18n::t("explorer.drag.refused"),
+                    crate::i18n::t_fmt("explorer.drag.refused_reason", crate::i18n::t(reason)),
+                );
+                self.state.toasts.push_info(text, ToastScope::Window);
+            }
+        }
+        self.base.state.dirty = true;
+    }
+
     /// 쌓인 파일을 DispatchFile로 보낸다. 터미널 영역 밖이면 안내하고 무시한다.
     pub(crate) fn process_pending_file_drops(
         &mut self,
@@ -44,6 +80,12 @@ impl MainView {
     ) {
         let drops = std::mem::take(&mut self.state.pending_file_drops);
         if drops.is_empty() {
+            return;
+        }
+        if let Some((sid, dest, decided)) =
+            crate::explorer_ui::view::drag::take_os_drop(&mut self.state.explorer_views)
+        {
+            self.drop_into_explorer(engine, sid, dest, decided, drops);
             return;
         }
         let Some(pos) = self.cursor_position else {
@@ -70,6 +112,22 @@ impl MainView {
             let _surface_focus =
                 self.state
                     .focus_surface_at_position(engine, x, y, terminal_rect, scale_factor);
+            // 드래그 중 위치를 주지 않는 플랫폼에서는 칸이 hover 대상을 정하지 못한다.
+            // 놓은 좌표 아래가 explorer 면 보고 있는 폴더로 복사한다.
+            let hit = self
+                .state
+                .surface_at_position(engine, x, y, terminal_rect, scale_factor);
+            if let Some(sid) = hit
+                && let Some(target) = crate::explorer_ui::view::drag::shown_drop(
+                    &self.state.explorer_views,
+                    sid,
+                    &drops,
+                )
+            {
+                let (dest, decided) = target;
+                self.drop_into_explorer(engine, sid, dest, decided, drops);
+                return;
+            }
         }
         for path in drops {
             self.state.dispatch_intent(

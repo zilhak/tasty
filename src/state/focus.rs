@@ -75,22 +75,12 @@ impl RequestContext {
         terminal_rect: crate::model::PhysicalRect,
         scale_factor: f32,
     ) -> bool {
+        let Some(id) = self.surface_at_position(engine, x, y, terminal_rect, scale_factor) else {
+            return false;
+        };
         let ws = self.active_workspace(engine);
         let Some(pane_id) = self.navigation.pane_id(ws) else {
             return false;
-        };
-        #[cfg(feature = "gui")]
-        let pane_rects = self.pane_rects(engine, ws, terminal_rect, scale_factor);
-        #[cfg(not(feature = "gui"))]
-        let pane_rects = ws.pane_layout().compute_rects(terminal_rect, scale_factor);
-        let Some((_, rect)) = pane_rects.into_iter().find(|(id, _)| *id == pane_id) else {
-            return false;
-        };
-        let content = crate::model::PhysicalRect {
-            x: rect.x,
-            y: rect.y + self.tab_bar_height,
-            width: rect.width,
-            height: (rect.height - self.tab_bar_height).max(PhysicalPx(1.0)),
         };
         let Some(pane) = ws.pane_layout().find_pane(pane_id) else {
             return false;
@@ -98,6 +88,33 @@ impl RequestContext {
         let Some(tab) = pane.tabs.get(self.navigation.tab_index(pane)) else {
             return false;
         };
+        self.navigation.select_surface(tab, id)
+    }
+
+    /// 포커스된 pane 의 보이는 탭에서 좌표 아래 surface. 포커스는 바꾸지 않는다.
+    pub fn surface_at_position(
+        &self,
+        engine: &CoreState,
+        x: f32,
+        y: f32,
+        terminal_rect: crate::model::PhysicalRect,
+        scale_factor: f32,
+    ) -> Option<u32> {
+        let ws = self.active_workspace(engine);
+        let pane_id = self.navigation.pane_id(ws)?;
+        #[cfg(feature = "gui")]
+        let pane_rects = self.pane_rects(engine, ws, terminal_rect, scale_factor);
+        #[cfg(not(feature = "gui"))]
+        let pane_rects = ws.pane_layout().compute_rects(terminal_rect, scale_factor);
+        let (_, rect) = pane_rects.into_iter().find(|(id, _)| *id == pane_id)?;
+        let content = crate::model::PhysicalRect {
+            x: rect.x,
+            y: rect.y + self.tab_bar_height,
+            width: rect.width,
+            height: (rect.height - self.tab_bar_height).max(PhysicalPx(1.0)),
+        };
+        let pane = ws.pane_layout().find_pane(pane_id)?;
+        let tab = pane.tabs.get(self.navigation.tab_index(pane))?;
         #[cfg(feature = "gui")]
         let surface = self
             .tab_surface_regions(engine, tab, content, scale_factor)
@@ -106,7 +123,7 @@ impl RequestContext {
             .map(|region| region.id);
         #[cfg(not(feature = "gui"))]
         let surface = tab.layout().find_surface_at(x, y, content);
-        surface.is_some_and(|id| self.navigation.select_surface(tab, id))
+        surface
     }
 
     /// Native input may focus a surface only in a currently displayed tab.

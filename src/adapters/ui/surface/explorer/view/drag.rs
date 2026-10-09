@@ -68,6 +68,17 @@ pub(crate) struct DragState {
     started: bool,
     hover: Option<(PathBuf, Instant)>,
     probe: Option<Probe>,
+    /// OS 에서 끌어 오는 파일. 호스트가 매 프레임 창의 hover 상태에서 채운다.
+    pub(crate) os: Option<OsHover>,
+    /// OS 파일을 놓으면 갈 곳. 놓기 처리(`take_os_drop`)가 소비한다.
+    os_target: Option<(PathBuf, Verdict)>,
+}
+
+/// OS 에서 창 위로 끌어 온 파일과 포인터 위치(논리 포인트).
+#[derive(Clone, Debug)]
+pub(crate) struct OsHover {
+    pub(crate) paths: Vec<PathBuf>,
+    pub(crate) pos: egui::Pos2,
 }
 
 struct Probe {
@@ -367,10 +378,11 @@ fn chip(
     ctx: &egui::Context,
     theme: &Theme,
     pos: egui::Pos2,
-    payload: &Payload,
+    paths: &[PathBuf],
+    single_dir: bool,
     shown: Option<(&Path, Verdict)>,
 ) {
-    let label = match payload.paths.as_slice() {
+    let label = match paths {
         [one] => one
             .file_name()
             .map_or_else(|| one.to_string_lossy(), |n| n.to_string_lossy())
@@ -400,9 +412,9 @@ fn chip(
         ),
         None => (t("explorer.drag.refused").to_owned(), None, DragOp::Refused),
     };
-    let item = if payload.paths.len() > 1 {
+    let item = if paths.len() > 1 {
         icons::LAYERS
-    } else if payload.single_dir {
+    } else if single_dir {
         icons::FOLDER
     } else {
         icons::FILE
@@ -455,7 +467,11 @@ pub(crate) fn frame(
     }
     let Some(payload) = egui::DragAndDrop::payload::<Payload>(&ctx) else {
         view.ops.drag.hover = None;
-        start(&ctx, me, view, &spots, body);
+        if let Some(os) = view.ops.drag.os.clone() {
+            os_frame(ui, theme, view, &spots, body, &os);
+        } else {
+            start(&ctx, me, view, &spots, body);
+        }
         return;
     };
     let Some(pos) = ctx.input(|i| i.pointer.latest_pos()) else {
@@ -469,7 +485,7 @@ pub(crate) fn frame(
             .data(|d| d.get_temp::<Claim>(claim_id()))
             .unwrap_or_default();
         if payload.source == me && last.0 + 1 < pass {
-            chip(&ctx, theme, pos, &payload, None);
+            chip(&ctx, theme, pos, &payload.paths, payload.single_dir, None);
         }
         return;
     };
@@ -497,7 +513,14 @@ pub(crate) fn frame(
         let painter = ctx.layer_painter(ui.layer_id()).with_clip_rect(ring);
         paint_drop_target(&painter, theme, ring, radius);
     }
-    chip(&ctx, theme, pos, &payload, Some((&dest, decided)));
+    chip(
+        &ctx,
+        theme,
+        pos,
+        &payload.paths,
+        payload.single_dir,
+        Some((&dest, decided)),
+    );
     if let Verdict::Go(kind) = decided
         && ctx.input(|i| i.pointer.primary_released())
         && action.is_none()
@@ -509,6 +532,89 @@ pub(crate) fn frame(
         }));
         egui::DragAndDrop::clear_payload(&ctx);
     }
+}
+
+/// OS 파일 hover. OS 에서 온 파일은 항상 복사해 넣는다(이동하지 않는다).
+fn os_frame(
+    ui: &egui::Ui,
+    theme: &Theme,
+    view: &mut ExplorerView,
+    spots: &[Spot],
+    body: egui::Rect,
+    os: &OsHover,
+) {
+    let shown = view.loaded_dir().map(Path::to_path_buf);
+    let Some((dest, ring, kind)) = target(spots, os.pos, body, shown.as_deref()) else {
+        view.ops.drag.os_target = None;
+        return;
+    };
+    let remote = view.is_remote();
+    let first = os.paths.first().cloned().unwrap_or_default();
+    let writable = probe(&mut view.ops.drag, &dest, &first).writable;
+    let decided = verdict(&os.paths, &dest, false, writable, false, remote);
+    let ctx = ui.ctx();
+    if let Verdict::Go(_) = decided {
+        let radius = if kind == Kind::Body {
+            0.0
+        } else {
+            theme.corner_radius.value()
+        };
+        let painter = ctx.layer_painter(ui.layer_id()).with_clip_rect(ring);
+        paint_drop_target(&painter, theme, ring, radius);
+    }
+    let single_dir = matches!(os.paths.as_slice(), [one] if one.is_dir());
+    chip(
+        ctx,
+        theme,
+        os.pos,
+        &os.paths,
+        single_dir,
+        Some((&dest, decided)),
+    );
+    view.ops.drag.os_target = Some((dest, decided));
+}
+
+/// OS 파일 hover 가 explorer 칸 위에 있는지. 창 전체의 drop overlay 는 이때 그리지 않는다.
+pub(crate) fn os_hover_claimed(views: &super::ExplorerViewStore) -> bool {
+    views.cached_surfaces().any(|sid| {
+        views
+            .get(sid)
+            .is_some_and(|v| v.ops.drag.os_target.is_some())
+    })
+}
+
+/// 놓은 OS 파일이 갈 explorer 칸과 폴더. 모든 칸의 기록을 비운다.
+pub(crate) fn take_os_drop(
+    views: &mut super::ExplorerViewStore,
+) -> Option<(tasty_model::SurfaceId, PathBuf, Verdict)> {
+    let mut found = None;
+    for sid in views.cached_surfaces().collect::<Vec<_>>() {
+        if let Some(view) = views.get_mut(sid)
+            && let Some((dest, decided)) = view.ops.drag.os_target.take()
+        {
+            found = Some((sid, dest, decided));
+        }
+    }
+    found
+}
+
+/// 놓은 좌표 아래가 explorer 칸이면 그 칸이 보고 있는 폴더와 판정.
+pub(crate) fn shown_drop(
+    views: &super::ExplorerViewStore,
+    sid: tasty_model::SurfaceId,
+    paths: &[PathBuf],
+) -> Option<(PathBuf, Verdict)> {
+    let view = views.get(sid)?;
+    let dest = view.loaded_dir()?.to_path_buf();
+    let decided = verdict(
+        paths,
+        &dest,
+        false,
+        writable(&dest),
+        false,
+        view.is_remote(),
+    );
+    Some((dest, decided))
 }
 
 #[cfg(test)]

@@ -26,6 +26,10 @@ pub fn draw_drop_overlay(
     if hover.paths.is_empty() {
         return;
     }
+    // explorer 칸 위에서는 칸이 자기 링과 칩으로 복사해 넣을 곳을 보인다.
+    if crate::explorer_ui::view::drag::os_hover_claimed(&state.explorer_views) {
+        return;
+    }
 
     let theme = crate::theme::theme();
 

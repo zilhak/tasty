@@ -108,7 +108,6 @@ pub(crate) struct PendingPopupOpen {
 pub struct DropHoverState {
     pub(crate) paths: Vec<std::path::PathBuf>,
     /// 드래그 중 이동 이벤트가 없을 수 있어 기록한 시작 좌표(물리 픽셀).
-    #[allow(dead_code)]
     pub(crate) cursor: Option<(f32, f32)>,
 }
 

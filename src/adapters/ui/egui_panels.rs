@@ -137,6 +137,15 @@ pub fn draw_egui_panels(
     // 전체화면 무대도 함께 확인한다. 무대가 떠 있는 동안 그 뒤의 패널로 입력이 새면
     // 안 되기 때문이다.
     let overlay_open = state.keyboard_overlay_open() || state.fullscreen_stage_active();
+    // OS 에서 끌어 오는 파일. 좌표는 물리 픽셀이라 egui 논리 포인트로 바꾼다.
+    let ppp = ctx.pixels_per_point();
+    let os_hover = state.drop_hover.as_ref().and_then(|h| {
+        h.cursor
+            .map(|(x, y)| crate::explorer_ui::view::drag::OsHover {
+                paths: h.paths.clone(),
+                pos: egui::pos2(x / ppp, y / ppp),
+            })
+    });
     // 충돌 질문은 포커스를 잡지 않는 popup 이라 따로 본다. scrim 아래 칸에 놓으면 안 된다.
     let drag_blocked = overlay_open
         || state
@@ -185,6 +194,7 @@ pub fn draw_egui_panels(
                 &engine.settings.keybindings.explorer_drag_flip_modifier,
             );
             view.ops.drag.blocked = drag_blocked;
+            view.ops.drag.os = os_hover.clone();
             let act = draw_panel_frame(
                 ctx,
                 &format!("explorer_panel_{}", id_suffix),
