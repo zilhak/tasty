@@ -444,7 +444,7 @@ fn preview_panel(ui: &mut egui::Ui, theme: &Theme, kind: PreviewKind, height: f3
         PreviewKind::Image => ("diagram.png", "PNG image · 1280 × 720 · 488.0 KB"),
         PreviewKind::None => ("archive.zip", "ZIP file · 64.0 MB"),
         PreviewKind::Large => ("server.log", "LOG file · 38.0 MB"),
-        PreviewKind::Pixels => ("scan-poster.tif", "TIFF image · 61.0 MB"),
+        PreviewKind::Pixels => ("scan-poster.tif", "TIF image · 20000 × 14000 · 61.0 MB"),
         PreviewKind::Several => ("3 items", "2 files, 1 folder"),
         PreviewKind::Error => ("private.key", "KEY file · 3.0 KB"),
     };

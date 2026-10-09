@@ -276,8 +276,14 @@ struct Several {
 /// 한 항목의 머리 두 줄: 이름과 "종류 · [가로 × 세로 ·] 크기".
 fn item_header(pane: &PreviewPane, e: &DirEntryInfo) -> (String, String) {
     let mut facts = super::kind_word(e);
-    if let Body::Image { size, .. } = &pane.body {
-        facts = format!("{facts} · {} × {}", size[0], size[1]);
+    // 상한을 넘어 펼치지 않은 그림도 머리글에서 읽은 크기를 같은 자리에 보인다.
+    let pixels = match &pane.body {
+        Body::Image { size, .. } => Some([size[0] as u64, size[1] as u64]),
+        Body::TooLarge(TooLarge::Pixels(Some([w, h]))) => Some([u64::from(*w), u64::from(*h)]),
+        _ => None,
+    };
+    if let Some([w, h]) = pixels {
+        facts = format!("{facts} · {w} × {h}");
     }
     if !e.is_dir {
         facts = format!("{facts} · {}", human_size(false, e.size));
@@ -461,6 +467,28 @@ fn pixel_size_text([w, h]: [u32; 2]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_header_gives_the_real_size_of_a_picture_over_the_pixel_limit() {
+        crate::i18n::init("en");
+        let entry = DirEntryInfo {
+            path: PathBuf::from("/srv/scan-poster.tif"),
+            name: "scan-poster.tif".into(),
+            is_dir: false,
+            size: 2048,
+            modified: None,
+            ext: "tif".into(),
+            link: Default::default(),
+        };
+        let mut pane = PreviewPane::default();
+        pane.body = Body::TooLarge(TooLarge::Pixels(Some([20000, 14000])));
+        assert_eq!(
+            item_header(&pane, &entry).1,
+            "TIF image · 20000 × 14000 · 2.0 KB"
+        );
+        pane.body = Body::TooLarge(TooLarge::Pixels(None));
+        assert_eq!(item_header(&pane, &entry).1, "TIF image · 2.0 KB");
+    }
 
     #[test]
     fn several_selected_and_the_pixel_limit_have_their_own_lines() {
