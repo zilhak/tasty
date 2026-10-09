@@ -1627,18 +1627,11 @@ fn font_family_picker(
                 .selected_text(&display_name)
                 .width(combo_w)
                 .truncate()
-                .height(300.0)
+                .height(th.font_combo_list_max_height().value())
                 .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
                 .show_ui(ui, |ui| {
                     ui.spacing_mut().item_spacing.y = 0.0;
-                    ui.add(
-                        egui::TextEdit::singleline(filter)
-                            .hint_text(tasty_egui_theme::hint_text(
-                                &crate::theme::theme(),
-                                t("settings.appearance.search_hint"),
-                            ))
-                            .desired_width(190.0),
-                    );
+                    font_search_field(ui, &th, filter);
                     ui.separator();
 
                     let filter_lower = filter.to_lowercase();
@@ -1682,6 +1675,34 @@ fn font_family_picker(
                 })
                 .response
         })
+    })
+    .inner
+}
+
+/// 글꼴 목록 맨 위 검색 입력칸. 목록 폭에서 양쪽 `font-combo-search-inset` 만큼 들어간 폭이다.
+/// 입력칸의 테두리 상자가 차지할 자리와 입력칸 응답(글자 영역)을 돌려준다. egui 의 `desired_width` 는
+/// 안쪽 글자 폭이라 테두리 상자 폭을 정하려고 자리를 먼저 잡고 입력칸이 그 폭을 채우게 한다.
+fn font_search_field(
+    ui: &mut egui::Ui,
+    th: &tasty_type_appearance::theme::Theme,
+    filter: &mut String,
+) -> (egui::Rect, egui::Response) {
+    let inset = th.font_combo_search_inset().value();
+    let width = (ui.available_width() - 2.0 * inset).max(0.0);
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 0.0;
+        ui.add_space(inset);
+        let slot = ui.allocate_ui(egui::vec2(width, 0.0), |ui| {
+            ui.add(
+                egui::TextEdit::singleline(filter)
+                    .hint_text(tasty_egui_theme::hint_text(
+                        th,
+                        t("settings.appearance.search_hint"),
+                    ))
+                    .desired_width(f32::INFINITY),
+            )
+        });
+        (slot.response.rect, slot.inner)
     })
     .inner
 }
@@ -2646,6 +2667,54 @@ mod default_font_section_tests {
                 family.rect.width()
             );
         }
+    }
+
+    /// 글꼴 목록의 검색칸은 목록 폭에서 양쪽 `font-combo-search-inset` 만큼 들어간다.
+    #[test]
+    fn the_font_search_field_is_inset_on_both_sides() {
+        let th = crate::theme::theme();
+        let ctx = egui::Context::default();
+        tasty_egui_theme::apply_theme_to_egui(&th, &ctx);
+        let mut seen = None;
+        let raw = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(th.field_width_lg.value(), 100.0),
+            )),
+            ..Default::default()
+        };
+        drop(ctx.run(raw, |ctx| {
+            egui::CentralPanel::default()
+                .frame(egui::Frame::NONE)
+                .show(ctx, |ui| {
+                    let list = ui.max_rect();
+                    let mut filter = String::new();
+                    let (slot, field) = super::font_search_field(ui, &th, &mut filter);
+                    seen = Some((list, slot, field.rect));
+                });
+        }));
+        let (list, slot, text) = seen.expect("frame ran");
+        let inset = th.font_combo_search_inset().value();
+        assert_eq!(
+            slot.left() - list.left(),
+            inset,
+            "왼쪽 여백: {slot:?} in {list:?}"
+        );
+        assert_eq!(
+            list.right() - slot.right(),
+            inset,
+            "오른쪽 여백: {slot:?} in {list:?}"
+        );
+        // 입력칸이 자리를 채운다 — 글자 영역은 자리 안에서 좌우 같은 여백만 남긴다.
+        assert!(
+            slot.contains_rect(text),
+            "글자 영역 {text:?} 이 자리 {slot:?} 밖이다"
+        );
+        assert_eq!(
+            text.left() - slot.left(),
+            slot.right() - text.right(),
+            "입력칸이 자리 폭을 채우지 않는다: {text:?} in {slot:?}"
+        );
     }
 
     /// 콤보 오른쪽 끝(▼ 자리)을 누르면 목록이 열린다. 미리보기 제목이 그 자리를 덮으면
