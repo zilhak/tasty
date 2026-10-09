@@ -41,36 +41,87 @@ pub fn banner_is_narrow(scope_width: f32, theme: &Theme) -> bool {
     scope_width < theme.banner_narrow_below().value()
 }
 
-/// [글리프 | 글 열 | 액션 묶음] 행에서 글 열이 쓸 폭. 좁으면 액션이 다음 줄이라 폭을 나누지 않는다.
-pub(crate) fn action_row_text_width(
-    row_w: f32,
-    glyph: f32,
-    gap: f32,
-    actions_w: f32,
-    narrow: bool,
-) -> f32 {
-    let reserved = if narrow { 0.0 } else { gap + actions_w };
-    (row_w - glyph - gap - reserved).max(0.0)
+/// [글리프 | 글 열 | 버튼 · 닫기] 행의 치수. 닫기(×)는 버튼이 아니라 닫기 표지라 좁아도 오른쪽 위에 남는다.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ActionRow {
+    pub(crate) row_w: f32,
+    pub(crate) glyph: f32,
+    /// 글리프 ↔ 글 열 ↔ 닫기 사이, 좁을 때 글 ↔ 버튼 줄 사이 간격(`banner-gap`).
+    pub(crate) gap: f32,
+    pub(crate) button: egui::Vec2,
+    /// 닫기 버튼 한 변.
+    pub(crate) close: f32,
+    /// 넓을 때 버튼 ↔ 닫기 간격(space-xs).
+    pub(crate) pair_gap: f32,
+    pub(crate) narrow: bool,
 }
 
-/// 같은 행의 높이와 액션 묶음 위치(행 왼쪽 위 기준). `first_h`는 글리프·글 열 줄의 높이다.
-/// 좁으면 flex-wrap처럼 줄 사이에 같은 gap을 두고 묶음을 본문 왼쪽 가장자리에서 시작한다.
-pub(crate) fn action_row_place(
-    row_w: f32,
-    first_h: f32,
-    glyph: f32,
-    gap: f32,
-    actions: egui::Vec2,
-    narrow: bool,
-) -> (f32, egui::Vec2) {
-    if narrow {
-        (
-            first_h + gap + actions.y,
-            egui::vec2(glyph + gap, first_h + gap),
+/// 행 안의 위치(행 왼쪽 위 기준)와 행 높이.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct ActionRowPlace {
+    pub(crate) row_h: f32,
+    pub(crate) button: egui::Pos2,
+    pub(crate) close: egui::Pos2,
+}
+
+impl ActionRow {
+    /// 넓을 때 버튼과 닫기를 함께 세로 가운데에 맞춘 묶음의 크기.
+    fn pair(&self) -> egui::Vec2 {
+        egui::vec2(
+            self.button.x + self.pair_gap + self.close,
+            self.button.y.max(self.close),
         )
-    } else {
-        (first_h.max(actions.y), egui::vec2(row_w - actions.x, 0.0))
     }
+
+    /// 글 열이 쓸 폭. 좁으면 버튼이 다음 줄이라 닫기 칸만 비운다.
+    pub(crate) fn text_width(&self) -> f32 {
+        let right = if self.narrow {
+            self.close
+        } else {
+            self.pair().x
+        };
+        (self.row_w - self.glyph - 2.0 * self.gap - right).max(0.0)
+    }
+
+    /// `glyph_h`는 글리프 칸 높이(오프셋 포함), `text_h`는 글 열 높이다.
+    /// 좁으면 버튼을 글 열 아래 `gap` 뒤, 본문 왼쪽 가장자리에 둔다. 닫기는 늘 오른쪽 위다.
+    pub(crate) fn place(&self, glyph_h: f32, text_h: f32) -> ActionRowPlace {
+        let close_x = self.row_w - self.close;
+        if self.narrow {
+            let button_top = text_h + self.gap;
+            ActionRowPlace {
+                row_h: glyph_h.max(button_top + self.button.y).max(self.close),
+                button: egui::pos2(self.glyph + self.gap, button_top),
+                close: egui::pos2(close_x, 0.0),
+            }
+        } else {
+            let pair = self.pair();
+            ActionRowPlace {
+                row_h: glyph_h.max(text_h).max(pair.y),
+                button: egui::pos2(self.row_w - pair.x, (pair.y - self.button.y) * 0.5),
+                close: egui::pos2(close_x, (pair.y - self.close) * 0.5),
+            }
+        }
+    }
+}
+
+/// 행 안 `min`에서 시작하는 `size` 크기의 자식 Ui. 그 안의 위젯을 세로 가운데에 맞춘다.
+pub(crate) fn action_slot(ui: &mut egui::Ui, min: egui::Pos2, size: egui::Vec2) -> egui::Ui {
+    ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(egui::Rect::from_min_size(min, size))
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+    )
+}
+
+/// 배너 닫기(×) — Ghost sm IconButton.
+pub(crate) fn banner_close_button(ui: &mut egui::Ui, theme: &Theme) -> egui::Response {
+    crate::icon_button::IconButton::new()
+        .variant(crate::icon_button::IconButtonVariant::Ghost)
+        .size(crate::control::ControlSize::Sm)
+        .show(ui, theme, &|ui, r, c| {
+            tasty_icons::CLOSE.image(r.height(), c).paint_at(ui, r)
+        })
 }
 
 /// inset 배치에서 배너를 둘 영역. 스코프 콘텐츠 rect의 위·좌·우를 `banner_margin`만큼 줄인다.
@@ -106,23 +157,38 @@ mod tests {
         assert!(!banner_is_narrow(below, &t));
     }
 
+    fn row(narrow: bool) -> ActionRow {
+        ActionRow {
+            row_w: 300.0,
+            glyph: 16.0,
+            gap: 8.0,
+            button: egui::vec2(96.0, 24.0),
+            close: 24.0,
+            pair_gap: 4.0,
+            narrow,
+        }
+    }
+
     #[test]
-    fn a_narrow_action_row_moves_the_group_under_the_text_column() {
-        let actions = egui::vec2(120.0, 24.0);
-        let (h, at) = action_row_place(300.0, 40.0, 16.0, 8.0, actions, true);
-        assert_eq!(at, egui::vec2(24.0, 48.0));
-        assert_eq!(h, 72.0);
-        assert_eq!(
-            action_row_text_width(300.0, 16.0, 8.0, actions.x, true),
-            276.0
-        );
-        let (h, at) = action_row_place(300.0, 16.0, 16.0, 8.0, actions, false);
-        assert_eq!(at, egui::vec2(180.0, 0.0));
-        assert_eq!(h, 24.0);
-        assert_eq!(
-            action_row_text_width(300.0, 16.0, 8.0, actions.x, false),
-            148.0
-        );
+    fn a_narrow_action_row_moves_only_the_button_under_the_text_column() {
+        let narrow = row(true);
+        // 글리프 16 + gap 8 + 글 열 + gap 8 + 닫기 24
+        assert_eq!(narrow.text_width(), 244.0);
+        let at = narrow.place(17.0, 40.0);
+        assert_eq!(at.button, egui::pos2(24.0, 48.0));
+        assert_eq!(at.close, egui::pos2(276.0, 0.0));
+        assert_eq!(at.row_h, 72.0);
+    }
+
+    #[test]
+    fn a_wide_action_row_keeps_the_button_and_close_together_on_the_right() {
+        let wide = row(false);
+        // 묶음 96 + 4 + 24 = 124
+        assert_eq!(wide.text_width(), 300.0 - 16.0 - 16.0 - 124.0);
+        let at = wide.place(17.0, 16.0);
+        assert_eq!(at.button, egui::pos2(176.0, 0.0));
+        assert_eq!(at.close, egui::pos2(276.0, 0.0));
+        assert_eq!(at.row_h, 24.0);
     }
 
     #[test]

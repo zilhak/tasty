@@ -67,10 +67,11 @@ Popup은 독립 기능, Banner는 안내와 조치, Toast는 짧은 정보 표�
 
 ### 좁은 스코프
 
-배너가 놓인 스코프의 폭이 `banner_narrow_below()`(440)보다 좁으면 액션을 본문 아래 줄로 내린다. 디자인 원문은 "Under --tasty-banner-narrow-below the action group wraps under the text like every banner"다.
+배너가 놓인 스코프의 폭이 `banner_narrow_below()`(440)보다 좁으면 액션 버튼을 본문 아래 줄로 내린다. 닫기(×)는 액션이 아니라 닫기 표지라 내려가지 않고 카드 오른쪽 위에 남는다.
 
 - 판정은 `tasty_ui_widgets::banner_is_narrow(scope_width)`가 한다. 기준 폭은 배너 margin을 빼기 전 스코프 폭이다. Surface 배너는 surface 폭, Workspace·Pane·Tab 배너는 탭 바 아래 콘텐츠 영역의 폭이다. 스코프 크기가 바뀔 때마다 다시 판정하고, 내용 길이로 임계값을 바꾸지 않으며, 배치 전환에 애니메이션을 두지 않는다.
-- 줄 사이는 같은 `banner_gap()`이고, 내린 액션은 본문 왼쪽 가장자리(글리프 + `banner_gap()`)에서 시작한다. 좁은 배치에서는 글 열이 행 폭 전체를 쓴다.
+- 줄 사이는 같은 `banner_gap()`이고, 내린 버튼은 본문 왼쪽 가장자리(글리프 + `banner_gap()`)에서 시작한다. 좁은 배치에서 글 열은 오른쪽 위 닫기 칸(`banner_gap()` + 닫기 버튼 폭)을 뺀 폭을 쓴다.
+- 다시 시도 중(비활성 + 앞 Spinner, 라벨 유지)과 Retry all 도 내린 줄에서 같은 모양이다.
 - 액션 묶음에 닫기(×)가 들어 있는 배너(자동 attach 거절, 크기 동기 실패)는 버튼과 ×를 한 묶음으로 함께 내린다. 셸 모서리 닫기 슬롯을 쓰는 배너(HTML 스크립트 차단)는 액션 버튼만 내리고 ×는 모서리에 남는다.
 - 본체 BannerManager는 슬롯마다 스코프 폭으로 판정해 거절 배너에 넘긴다. HTML 스크립트 차단 배너는 surface 폭으로 판정한다(아래 inset 배치).
 
@@ -189,7 +190,7 @@ mouse-capture 배너(`defs::BANNER_MOUSE_CAPTURE`)에 한해, X 왼쪽에 "더�
 |---|---|---|---|
 | `mouse-capture` | Surface | 마우스를 캡처한 TUI에서 사용자가 드래그 선택을 시도했을 때 | 정적 `content_fn` + 더보기(⋯)·닫기 |
 | `shell-integration-missing` | Surface | 사용자가 본 surface가 출력은 있는데 PromptBoundary를 받지 못할 때 | 정적 `content_fn` + 닫기 |
-| `attach-refusal` | Workspace | 사용자가 활성화한 워크스페이스의 자동 attach 매핑을 연결하지 않았을 때 | `BannerContentSource::AttachRefusal`(대상·이유)을 `tasty_ui_widgets::attach_refusal_banner_content`로 그린다. 매핑 지우기·닫기 버튼이 내용 안에 있어 모서리 닫기 슬롯을 쓰지 않는다. 스코프가 좁으면 두 버튼을 본문 아래 줄로 함께 내린다([좁은 스코프](#좁은-스코프)). ×는 그 창의 이번 활성화에만 숨긴다. 상세는 [원격 attach](../../features/remote-attach/index.md) |
+| `attach-refusal` | Workspace | 사용자가 활성화한 워크스페이스의 자동 attach 매핑을 연결하지 않았을 때 | `BannerContentSource::AttachRefusal`(대상·이유)을 `tasty_ui_widgets::attach_refusal_banner_content`로 그린다. 매핑 지우기·닫기 버튼이 내용 안에 있어 모서리 닫기 슬롯을 쓰지 않는다. 스코프가 좁으면 매핑 지우기 버튼만 본문 아래 줄로 내리고 ×는 오른쪽 위에 남는다([좁은 스코프](#좁은-스코프)). ×는 그 창의 이번 활성화에만 숨긴다. 상세는 [원격 attach](../../features/remote-attach/index.md) |
 
 ## IPC / debug
 

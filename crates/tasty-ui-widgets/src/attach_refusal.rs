@@ -1,14 +1,13 @@
 //! 자동 attach 매핑을 연결하지 않았을 때의 Workspace 배너 내용과 사이드바 행 표지.
 //! 배너는 행 [글리프 | 제목·본문 | 매핑 지우기 · 닫기]이며 모든 칸을 위쪽에 맞춘다.
-//! 좁은 스코프에서는 버튼 묶음이 본문 왼쪽 가장자리에 맞춰 다음 줄로 내려간다.
+//! 좁은 스코프에서는 매핑 지우기 버튼만 본문 왼쪽 가장자리에 맞춰 다음 줄로 내려가고 닫기는 오른쪽 위에 남는다.
 //! 문자열은 호출자가 주입한다. 큐·표시 범위는 본체 BannerManager가 정한다.
 
 use tasty_type_appearance::theme::Theme;
 
-use crate::banner::{action_row_place, action_row_text_width, banner_shell};
+use crate::banner::{ActionRow, action_slot, banner_close_button, banner_shell};
 use crate::button::{Button, ButtonVariant};
 use crate::control::ControlSize;
-use crate::icon_button::{IconButton, IconButtonVariant};
 use crate::tooltip::{Tooltip, tooltip_hover_delay_elapsed};
 
 /// 제목과 본문은 각각 두 줄까지 보이고 나머지는 말줄임한다.
@@ -25,7 +24,7 @@ pub struct AttachRefusalBannerView<'a> {
     pub remove: &'a str,
     /// 닫기 버튼의 툴팁.
     pub dismiss: &'a str,
-    /// 스코프가 좁으면([`crate::banner_is_narrow`]) 버튼 묶음을 글 아래 줄로 내린다.
+    /// 스코프가 좁으면([`crate::banner_is_narrow`]) 매핑 지우기 버튼을 글 아래 줄로 내린다.
     pub narrow: bool,
 }
 
@@ -87,19 +86,17 @@ fn body_galley(
     ui.fonts(|f| f.layout_job(job))
 }
 
-/// 매핑 지우기 버튼과 닫기 버튼 묶음의 크기. 버튼은 `Button`과 같은 식으로 잰다.
-fn actions_size(ui: &egui::Ui, theme: &Theme, remove: &str) -> egui::Vec2 {
+/// 매핑 지우기 버튼의 크기. `Button`과 같은 식으로 잰다.
+fn button_size(ui: &egui::Ui, theme: &Theme, remove: &str) -> egui::Vec2 {
     let font = egui::FontId::proportional(ControlSize::Sm.font_size(theme));
     let text_w = ui.fonts(|f| {
         f.layout_no_wrap(remove.to_owned(), font, egui::Color32::PLACEHOLDER)
             .rect
             .width()
     });
-    let button_w = text_w + 2.0 * ControlSize::Sm.pad_x(theme);
-    let close = theme.icon_button_size_sm().value();
     egui::vec2(
-        button_w + theme.spacing_xs.value() + close,
-        ControlSize::Sm.height(theme).max(close),
+        text_w + 2.0 * ControlSize::Sm.pad_x(theme),
+        ControlSize::Sm.height(theme),
     )
 }
 
@@ -114,16 +111,23 @@ pub fn attach_refusal_banner_content(
     let gap = theme.banner_gap().value();
     let nudge = theme.banner_glyph_offset().value();
     let text_gap = theme.banner_text_gap().value();
-    let actions = actions_size(ui, theme, view.remove);
-    let text_w = action_row_text_width(row_w, glyph, gap, actions.x, view.narrow);
+    let layout = ActionRow {
+        row_w,
+        glyph,
+        gap,
+        button: button_size(ui, theme, view.remove),
+        close: theme.icon_button_size_sm().value(),
+        pair_gap: theme.spacing_xs.value(),
+        narrow: view.narrow,
+    };
+    let text_w = layout.text_width();
 
     let title = title_galley(ui, theme, view, text_w);
     let body = body_galley(ui, theme, view.body, text_w);
     let text_h = title.size().y + text_gap + body.size().y;
-    let first_h = (glyph + nudge).max(text_h);
-    let (row_h, actions_pos) = action_row_place(row_w, first_h, glyph, gap, actions, view.narrow);
+    let place = layout.place(glyph + nudge, text_h);
 
-    let (row, _) = ui.allocate_exact_size(egui::vec2(row_w, row_h), egui::Sense::hover());
+    let (row, _) = ui.allocate_exact_size(egui::vec2(row_w, place.row_h), egui::Sense::hover());
     let glyph_rect =
         egui::Rect::from_min_size(row.min + egui::vec2(0.0, nudge), egui::vec2(glyph, glyph));
     tasty_icons::ALERT_TRIANGLE
@@ -144,24 +148,22 @@ pub fn attach_refusal_banner_content(
         egui::Color32::PLACEHOLDER,
     );
 
-    let actions_rect = egui::Rect::from_min_size(row.min + actions_pos, actions);
-    let mut child = ui.new_child(
-        egui::UiBuilder::new()
-            .max_rect(actions_rect)
-            .layout(egui::Layout::left_to_right(egui::Align::Center)),
-    );
-    child.spacing_mut().item_spacing.x = theme.spacing_xs.value();
     let remove = Button::new(view.remove)
         .variant(ButtonVariant::Secondary)
         .size(ControlSize::Sm)
-        .show(&mut child, theme)
+        .show(
+            &mut action_slot(ui, row.min + place.button.to_vec2(), layout.button),
+            theme,
+        )
         .clicked();
-    let close = IconButton::new()
-        .variant(IconButtonVariant::Ghost)
-        .size(ControlSize::Sm)
-        .show(&mut child, theme, &|ui, r, c| {
-            tasty_icons::CLOSE.image(r.height(), c).paint_at(ui, r)
-        });
+    let close = banner_close_button(
+        &mut action_slot(
+            ui,
+            row.min + place.close.to_vec2(),
+            egui::Vec2::splat(layout.close),
+        ),
+        theme,
+    );
     if tooltip_hover_delay_elapsed(ui.ctx(), theme, close.id, close.hovered()) {
         Tooltip::new(view.dismiss)
             .id_source(close.id)

@@ -20,9 +20,6 @@ const CONTENT_W: LogicalPx = LogicalPx(460.0);
 const TERMINAL_H: LogicalPx = LogicalPx(64.0);
 /// 다른 이유 배너의 최대 폭. 디자인은 `--tasty-size-560`을 쓴다.
 const OTHER_REASON_MAX_W: LogicalPx = LogicalPx(560.0);
-/// 좁은 스코프 예제의 폭. 디자인의 좁은 surface 예제(html 스크립트 배너)와 같은 `--tasty-size-360`이며
-/// `banner-narrow-below`(440)보다 좁다.
-const NARROW_SCOPE_W: LogicalPx = LogicalPx(360.0);
 /// 사이드바 흉내 행 높이. 디자인 `RefusalRowG`의 `--tasty-size-28`이다.
 const ROW_H: LogicalPx = LogicalPx(28.0);
 /// 사이드바 흉내 행 사이 간격. 디자인은 `--tasty-size-1`을 쓴다.
@@ -78,6 +75,11 @@ fn banner(ui: &mut egui::Ui, theme: &Theme, reason: Reason, scope_width: Logical
             narrow: banner_is_narrow(scope_width.value(), theme),
         },
     );
+}
+
+/// 좁은 배치 Spec 의 거절 표본. `scope_width` 스코프에 놓인 자기 자신 매핑 배너다.
+pub(super) fn refused_sample(ui: &mut egui::Ui, theme: &Theme, scope_width: LogicalPx) {
+    banner(ui, theme, Reason::SelfInstance, scope_width);
 }
 
 /// 거절 표지와 레일 칩의 툴팁. 디자인 예제의 대상과 이유다.
@@ -365,17 +367,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                         banner(ui, theme, reason, OTHER_REASON_MAX_W);
                     });
                 }
-                ui.label(
-                    egui::RichText::new(
-                        "narrow scope (360 < banner-narrow-below 440) — buttons wrap under the body",
-                    )
-                    .size(theme.font_size_caption.value())
-                    .color(theme.text_muted().to_egui()),
-                );
-                ui.scope(|ui| {
-                    ui.set_max_width(NARROW_SCOPE_W.value());
-                    banner(ui, theme, Reason::SelfInstance, NARROW_SCOPE_W);
-                });
             });
     });
     spec::meta(
