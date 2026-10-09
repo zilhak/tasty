@@ -1,9 +1,11 @@
 //! 기타 › 작업 파이프라인 설정의 예제. 실제 설정 저장은 하지 않는다.
 //!
 //! 새 시각 값은 없다. 원격 전송 탭과 같은 settings-row 숫자 행 두 개이며, 단위만 MiB 대신 B 다.
+//! 시안처럼 기본 짝(Mocha)과 범위 밖 짝(Latte)을 나란히 둔다. 범위 줄은 값이 범위 밖일 때만 보인다.
 
 use std::cell::RefCell;
 
+use tasty_settings::{REPORT_APPEND_BYTES_RANGE, REPORT_BLOCK_BYTES_RANGE};
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{Input, SettingsRow, settings_label_column};
 
@@ -14,31 +16,31 @@ use crate::catalog::widgets::dialog as kit;
 use super::settings_remote_transfer::WIDTH;
 
 thread_local! {
-    static STATE: RefCell<[String; 2]> =
-        RefCell::new([String::from("1024"), String::from("16384")]);
+    // 짝 둘(Mocha 기본 · Latte 범위 밖) × 행 둘의 입력 버퍼.
+    static STATE: RefCell<[[String; 2]; 2]> = RefCell::new([
+        [String::from("1024"), String::from("16384")],
+        [String::from("70000"), String::from("16384")],
+    ]);
 }
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
+    let with_zoom =
+        |base: Theme| Theme::with_colors_and_zoom(base.to_colors(), base.is_light, theme.ui_zoom);
+    let themes = [
+        ("Mocha", with_zoom(tasty_themes::mocha_fallback())),
+        (
+            "Latte · out of range",
+            with_zoom(crate::host_shell::latte_theme()),
+        ),
+    ];
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
-        kit::frame_card_flat(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
-            kit::region_sym(ui, theme.spacing_lg, theme.spacing_md, |ui| {
-                ui.spacing_mut().item_spacing.y = theme.settings_row_gap().value();
-                mono_head(ui, theme, "Report limits");
-                let rows = [
-                    SettingsRow::new("Note size limit")
-                        .caption(crate::i18n::t("settings.task_pipeline.report_append_desc")),
-                    SettingsRow::new(crate::i18n::t("settings.task_pipeline.report_block"))
-                        .caption(crate::i18n::t("settings.task_pipeline.report_block_desc")),
-                ];
-                let col = settings_label_column(ui, theme, &rows);
-                let [note, attempt] = rows;
-                STATE.with(|s| {
-                    let [append, block] = &mut *s.borrow_mut();
-                    note.show(ui, theme, col, |ui| bytes_control(ui, theme, append));
-                    separator_line(ui, theme);
-                    attempt.show(ui, theme, col, |ui| bytes_control(ui, theme, block));
+        STATE.with(|s| {
+            let state = &mut *s.borrow_mut();
+            for (pair, ((label, th), bufs)) in themes.iter().zip(state.iter_mut()).enumerate() {
+                spec::wrap_item(ui, |ui| {
+                    ui.push_id(pair, |ui| frame(ui, th, label, bufs));
                 });
-            });
+            }
         });
     });
 
@@ -46,27 +48,39 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         &[
-            ("L2 position", "Misc — after Scripts"),
-            ("rows", "Note size limit · Attempt report limit"),
-            ("row", "same as settings-remote-transfer size row"),
-            ("unit", "static mono “B”"),
+            (
+                "L2 position",
+                "Misc · after Scripts · before Tastyrc (Windows)",
+            ),
+            ("heading", "REPORT LIMITS · mono micro uppercase · muted"),
+            ("row grid", "label 150 … 240 · gap 16 (settings-label-gap)"),
+            (
+                "field",
+                "mono Input · field-width-xs 90 · right-aligned · unit B (static, muted, caption)",
+            ),
+            (
+                "caption",
+                "under its row · gap 4 · caption 11 · muted · measure-md",
+            ),
+            ("between rows", "1px separator · settings-row-gap 12"),
             (
                 "ranges",
-                "note 64–65536 · attempt 128–131072 · note < attempt",
+                "note 64 … min(65536, attempt − 1) · attempt max(128, note + 1) … 131072",
             ),
+            (
+                "range line",
+                "only when out of range (danger) · clamp on commit",
+            ),
+            ("numbers", "raw bytes, no grouping, no KiB"),
         ],
         &[
-            TokenChip::without_color("settings-row-min-height", "row height"),
-            TokenChip::without_color("field-width-xs", "numeric input"),
+            TokenChip::without_color("settings-row-gap", "→ space-md 12"),
+            TokenChip::without_color("settings-row-caption-gap", "row → caption 4"),
+            TokenChip::without_color("field-width-xs", "90"),
             TokenChip::new(
-                "separator",
-                "row divider",
-                theme.separator.to_egui_premultiplied(),
-            ),
-            TokenChip::new(
-                "text-muted",
-                "descriptions + unit",
-                theme.text_muted().to_egui(),
+                "accent-danger",
+                "out of range",
+                theme.accent_danger().to_egui(),
             ),
         ],
     );
@@ -79,6 +93,46 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
+/// 한 테마의 설정 본문 — 헤딩, 두 행, 행 사이 구분선. 두 값의 범위는 서로의 현재 값으로 좁힌다.
+fn frame(ui: &mut egui::Ui, th: &Theme, label: &str, bufs: &mut [String; 2]) {
+    kit::frame_card_flat(ui, th, WIDTH, kit::panel_fill(th), |ui| {
+        kit::region_sym(ui, th.spacing_lg, th.spacing_md, |ui| {
+            ui.spacing_mut().item_spacing.y = th.settings_row_gap().value();
+            ui.label(
+                egui::RichText::new(label)
+                    .size(th.font_size_caption.value())
+                    .color(th.text_muted().to_egui()),
+            );
+            mono_head(ui, th, crate::i18n::t("settings.task_pipeline.section"));
+            let rows = [
+                SettingsRow::new(crate::i18n::t("settings.task_pipeline.report_append"))
+                    .caption(crate::i18n::t("settings.task_pipeline.report_append_desc")),
+                SettingsRow::new(crate::i18n::t("settings.task_pipeline.report_block"))
+                    .caption(crate::i18n::t("settings.task_pipeline.report_block_desc")),
+            ];
+            let col = settings_label_column(ui, th, &rows);
+            let [note, attempt] = rows;
+            let [append, block] = bufs;
+            let current = |buf: &str, fallback: u64| buf.trim().parse::<u64>().unwrap_or(fallback);
+            let append_now = current(append, 1024);
+            let block_now = current(block, 16384);
+            let note_range = (
+                REPORT_APPEND_BYTES_RANGE.0,
+                REPORT_APPEND_BYTES_RANGE.1.min(block_now.saturating_sub(1)),
+            );
+            let attempt_range = (
+                REPORT_BLOCK_BYTES_RANGE.0.max(append_now.saturating_add(1)),
+                REPORT_BLOCK_BYTES_RANGE.1,
+            );
+            note.show(ui, th, col, |ui| bytes_control(ui, th, append, note_range));
+            separator_line(ui, th);
+            attempt.show(ui, th, col, |ui| {
+                bytes_control(ui, th, block, attempt_range)
+            });
+        });
+    });
+}
+
 fn mono_head(ui: &mut egui::Ui, theme: &Theme, text: &str) {
     ui.label(
         egui::RichText::new(text.to_uppercase())
@@ -88,19 +142,43 @@ fn mono_head(ui: &mut egui::Ui, theme: &Theme, text: &str) {
     );
 }
 
-/// 숫자 Input + 단위.
-fn bytes_control(ui: &mut egui::Ui, theme: &Theme, buf: &mut String) {
-    ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-    Input::new()
-        .mono(true)
-        .width(theme.field_width_xs.value())
-        .show(ui, theme, buf);
-    ui.label(
-        egui::RichText::new("B")
-            .monospace()
-            .size(theme.font_size_caption.value())
-            .color(theme.text_muted().to_egui()),
-    );
+/// 숫자 Input + 단위 B, 범위 밖이면 그 아래 danger 한 줄(본체 `number_field` 와 같은 자리).
+fn bytes_control(ui: &mut egui::Ui, theme: &Theme, buf: &mut String, (min, max): (u64, u64)) {
+    let settled = buf
+        .trim()
+        .parse::<u64>()
+        .ok()
+        .map(|v| (v, v.clamp(min, max)))
+        .and_then(|(v, c)| (v != c).then_some(c));
+    ui.vertical(|ui| {
+        ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+            Input::new()
+                .mono(true)
+                .align(egui::Align::RIGHT)
+                .width(theme.field_width_xs.value())
+                .invalid(settled.is_some())
+                .show(ui, theme, buf);
+            ui.label(
+                egui::RichText::new("B")
+                    .monospace()
+                    .size(theme.font_size_caption.value())
+                    .color(theme.text_muted().to_egui()),
+            );
+        });
+        if let Some(settled) = settled {
+            let line = crate::i18n::t("settings.number.range_between")
+                .replacen("{}", &min.to_string(), 1)
+                .replacen("{}", &max.to_string(), 1)
+                .replacen("{}", &settled.to_string(), 1);
+            ui.label(
+                egui::RichText::new(line)
+                    .size(theme.font_size_caption.value())
+                    .color(theme.accent_danger().to_egui()),
+            );
+        }
+    });
 }
 
 fn separator_line(ui: &mut egui::Ui, theme: &Theme) {

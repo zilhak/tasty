@@ -1725,7 +1725,7 @@ pub fn pages() -> Vec<Page> {
                             "settings-task-pipeline",
                             "Misc › Task pipeline",
                             Some(
-                                "Note size limit · Attempt report limit (numeric + B) · settings-row grid",
+                                "Note size limit · Attempt report limit (numeric + B) · settings-row grid · range line only when out of range",
                             ),
                             components::settings_task_pipeline::draw,
                         ),

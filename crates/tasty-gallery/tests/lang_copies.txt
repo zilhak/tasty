@@ -594,8 +594,6 @@ src/catalog/components/settings_remote_transfer.rs	Maximum size	settings.remote_
 src/catalog/components/settings_remote_transfer.rs	Received files	settings.remote_transfer.section
 src/catalog/components/settings_remote_transfer.rs	Save folder	settings.remote_transfer.dir
 src/catalog/components/settings_remote_transfer.rs	~/.tasty/transfers/	settings.remote_transfer.dir_placeholder
-src/catalog/components/settings_task_pipeline.rs	Note size limit	settings.task_pipeline.report_append
-src/catalog/components/settings_task_pipeline.rs	Report limits	settings.task_pipeline.section
 src/catalog/components/sidebar.rs	Plugins	button.plugins,plugins.title,settings.keybindings.subtab.plugins,settings.tab.plugin
 src/catalog/components/sidebar.rs	Settings	button.settings,settings.window.title
 src/catalog/components/sidebar.rs	Tools	sidebar.tools_button,tools_menu.title

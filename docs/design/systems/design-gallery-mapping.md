@@ -992,15 +992,22 @@ General L1 에 5번째 L2 서브탭 "Remote transfer" 추가 — 원격 mirror �
 ## Settings › Misc › Task pipeline
 
 Misc L1 의 두 번째 L2 서브탭 "Task pipeline" — 작업 그래프 report 의 두 크기 상한
-(`TaskPipelineSettings{report_append_bytes, report_block_bytes}`) 편집. 디자인 카탈로그에는 아직
-프레임이 없다. 새 시각 값 없이 Remote transfer 의 숫자 행(`SettingsRow` + `number_field`)을 그대로
-쓰고 단위만 `B` 다. 카탈로그 등록은 디자인 요청으로 보완한다.
+(`TaskPipelineSettings{report_append_bytes, report_block_bytes}`) 편집. 디자인 카탈로그 프레임은
+`gallery/overlays-windows.jsx` 의 "Settings · Misc › Task pipeline — Report limits" Spec 이다
+(갤러리 spec id `settings-task-pipeline`, Remote transfer 뒤). 새 시각 값 없이 Remote transfer 의 숫자 행
+(`SettingsRow` + `number_field`)을 그대로 쓰고 단위만 `B` 다.
 
 | 디자인 jsx 컴포넌트 | 본체 함수 | 갤러리 항목 |
 |---|---|---|
-| (미수록) 콘텐츠 컬럼 | `src/view/settings/ui/tabs/task_pipeline.rs::draw_task_pipeline_tab` | `components/settings_task_pipeline.rs::draw` (`settings` 섹션 `settings-task-pipeline` spec) |
-| (미수록) 숫자 행 두 개 + 정적 `B` | `SettingsRow` + `number::number_field`(`NumberSpec{suffix: Some("B")}`), 두 칸의 범위가 서로의 현재 값으로 좁혀진다 | `SettingsRow` + `bytes_control` |
-| (미수록) 행별 muted 설명 · 행 사이 separator | `SettingsRow::caption` · `row_separator`(Remote transfer 와 공유) | `SettingsRow::caption` · `separator_line` |
+| Spec 의 콘텐츠 컬럼(헤딩 REPORT LIMITS mono micro uppercase muted) | `src/view/settings/ui/tabs/task_pipeline.rs::draw_task_pipeline_tab` | `components/settings_task_pipeline.rs::draw` (`settings` 섹션 `settings-task-pipeline` spec) — Mocha 기본 짝 · Latte 범위 밖 짝 |
+| 숫자 행 두 개(mono Input `field-width-xs` 오른쪽 정렬 + 정적 `B`) | `SettingsRow` + `number::number_field`(`NumberSpec{suffix: Some("B")}`), 두 칸의 범위가 서로의 현재 값으로 좁혀진다(`tasty_settings::REPORT_*_BYTES_RANGE`) | `SettingsRow` + `bytes_control`(같은 범위 상수) |
+| 범위 줄(범위 밖일 때만, `accent-danger`, caption) | `number_field` 의 범위 줄 | `bytes_control` 의 범위 줄 |
+| 행별 muted 설명 · 행 사이 separator | `SettingsRow::caption` · `row_separator`(Remote transfer 와 공유) | `SettingsRow::caption` · `separator_line` |
+
+**전사 노트**:
+- 헤딩·행·구분선 사이는 모두 `settings-row-gap`(12)이고 라벨 열은 다른 설정 행과 같은 150 … 240 clamp, 라벨 → 컨트롤 `settings-label-gap` 16 이다.
+- 값은 그룹 구분 없는 원시 바이트이며 KiB 로 바꾸지 않는다.
+- 범위 줄의 자리: 시안은 행 아래(행 왼쪽 끝, 설명 caption 위)에 둔다. 본체와 갤러리는 모든 숫자 칸이 공유하는 `number_field` 구조대로 입력칸 아래(컨트롤 칸 안)에 둔다.
 
 ## 파일 피커 (Overlays)
 
