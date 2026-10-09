@@ -2,6 +2,7 @@
 # plugin 및 연결된 저장소 내 path 의존성의 내용을 비교해 버전 증가가 필요한지 판정한다.
 # Rust는 test 전용 부분을 제외하고 rustfmt로 정규화한다. 주석 변경도 내용 차이로 볼 수 있다.
 # --staged [--base rev]는 index와 base(기본 HEAD), --range before after는 두 커밋을 비교한다.
+# --violations-out <파일>은 버전을 올려야 하는 플러그인 디렉터리를 한 줄에 하나씩 그 파일에 쓴다.
 # 실제 바이너리를 빌드해 비교하는 검사는 아니다. 종료 코드: 통과 0, 위반 1, 판정 불가 2.
 
 set -uo pipefail
@@ -10,6 +11,7 @@ die() { printf '%s\n' "$*" >&2; exit 2; }
 
 git rev-parse --git-dir >/dev/null 2>&1 || die "판정 불가: git 저장소가 아니다 (배포 tarball 등)."
 ROOT="$(git rev-parse --show-toplevel)" || die "판정 불가: 저장소 루트를 못 찾았다."
+CALLER_DIR="$(pwd)"
 cd "$ROOT" || die "판정 불가: 저장소 루트로 이동 실패."
 
 command -v rustfmt >/dev/null 2>&1 \
@@ -27,7 +29,7 @@ fi
 RUST_EDITION=$(sed -n 's/^edition[[:space:]]*=[[:space:]]*"\([0-9]*\)".*/\1/p' Cargo.toml | sed -n '1p')
 [ -n "$RUST_EDITION" ] || die "판정 불가: 루트 Cargo.toml 에서 edition 을 못 읽었다."
 
-MODE=""; BASE="HEAD"; BEFORE=""; AFTER=""
+MODE=""; BASE="HEAD"; BEFORE=""; AFTER=""; VIOLATIONS_OUT=""
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --staged) MODE=staged; shift ;;
@@ -35,10 +37,18 @@ while [ "$#" -gt 0 ]; do
         --range)  MODE=range; BEFORE="${2:-}"; AFTER="${3:-}"
                   [ -n "$BEFORE" ] && [ -n "$AFTER" ] || die "판정 불가: --range 는 두 rev 를 요구한다."
                   shift 3 ;;
+        --violations-out) VIOLATIONS_OUT="${2:-}"
+                  [ -n "$VIOLATIONS_OUT" ] || die "판정 불가: --violations-out 에 파일 경로가 없다."
+                  shift 2 ;;
         *) die "판정 불가: 알 수 없는 인자 '$1'" ;;
     esac
 done
 [ -n "$MODE" ] || die "판정 불가: --staged 또는 --range 중 하나를 줘야 한다."
+# 저장소 루트로 이동하기 전에 받은 상대 경로도 같은 파일을 가리키도록 호출 위치 기준으로 고정한다.
+if [ -n "$VIOLATIONS_OUT" ]; then
+    case "$VIOLATIONS_OUT" in /*) ;; *) VIOLATIONS_OUT="$CALLER_DIR/$VIOLATIONS_OUT" ;; esac
+    : > "$VIOLATIONS_OUT" || die "판정 불가: --violations-out 파일을 쓸 수 없다: $VIOLATIONS_OUT"
+fi
 
 if [ "$MODE" = staged ]; then
     if ! git rev-parse --verify --quiet "$BASE^{commit}" >/dev/null; then
@@ -381,6 +391,7 @@ $(printf '%s\n' "$CHANGED" | sed -n "s|^\($d/.*\)$|\1|p")"
         printf '    내용이 바뀐 파일:%s\n' "$changed_list" >&2
         printf '    고쳐라: %s 와 %s 의 version 을 같은 값으로 patch +1.\n' \
             "$base/Cargo.toml" "$man" >&2
+        [ -z "$VIOLATIONS_OUT" ] || printf '%s\n' "$base" >> "$VIOLATIONS_OUT"
         if [ "$MODE" = staged ]; then
             printf '    이 검사는 index와 %s를 비교한다. 배포할 때는\n' \
                 "$BEFORE_REV" >&2

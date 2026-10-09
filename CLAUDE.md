@@ -87,6 +87,7 @@ Conventional Commits 형식을 따른다 (예: `feat(themes): add latte theme`).
 - 주석만 바뀐 경우에도 보수적으로 버전 증가를 요구할 수 있다. 사유를 확인하고 처리한다.
 - Cargo.toml, 매니페스트, Cargo.lock을 함께 갱신해 같은 커밋에 넣는다.
 - 여러 플러그인이 영향을 받으면 각각 적용한다. minor/major는 사용자가 정한다.
+- `tasty.pluginBump=deferred`(worktree 범위)인 lane 작업 트리에서는 lane이 버전 줄을 건드리지 않는다. 병합 단계가 `scripts/plugin-bump-fixup.sh`로 커밋마다 붙인다. 절차는 [Git 훅](docs/dev-guide/git-hooks.md#lane-작업-트리의-p1-보류)에 있다.
 - 서명 파일은 빌드 산출물이며 커밋하지 않는다.
 - 나누어 push할 때는 이미 원격에 발행된 버전과 현재 내용을 다시 비교한다.
   pre-commit 통과가 최종 배포 버전 검사를 대신하지 않는다.

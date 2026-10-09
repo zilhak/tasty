@@ -407,6 +407,18 @@ check_plugin_version_bump() {
     staged_any=$(git diff --cached --name-only --diff-filter=ACMRD || true)
     if [ -z "$staged_any" ]; then return; fi
 
+    # lane 작업 트리는 버전 증가를 병합 단계에 맡길 수 있다. 판정 파일이 없는 트리는 검사를 그대로 한다.
+    # 모드 조건: docs/dev-guide/git-hooks.md#lane-작업-트리의-p1-보류
+    if [ -f scripts/lib/plugin-bump-mode.sh ]; then
+        # shellcheck source=../scripts/lib/plugin-bump-mode.sh
+        . scripts/lib/plugin-bump-mode.sh
+        if [ "$(plugin_bump_mode)" = deferred ]; then
+            yellow "▸ [P.1] 이 작업 트리는 tasty.pluginBump=deferred 다. 플러그인 버전 검사를 건너뛴다."
+            yellow "    버전 증가는 병합 단계에서 scripts/plugin-bump-fixup.sh 가 커밋마다 붙인다."
+            return
+        fi
+    fi
+
     base=$(git merge-base main HEAD 2>/dev/null || true)
     [ -n "$base" ] || base=HEAD
 

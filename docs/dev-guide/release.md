@@ -7,7 +7,7 @@
 CLAUDE.md 정책의 운영 형태:
 
 - **본체** (`Cargo.toml` 루트): 사용자가 *빌드를 요청* 했고, 마지막 빌드 이후 새 커밋이 있으며, 사용자가 막지 않았으면 **patch +1**. AI 자체 검증 빌드(`cargo build`/`test`)는 올리지 않는다.
-- **Plugin** (`crates/tasty-plugin-*/Cargo.toml`): 그 plugin 의 빌드 산출물이 달라지면(판정 기준은 staged 파일이 아니라 의존 폐포의 내용 — 루트 CLAUDE.md 의 plugin 버전 정책) **patch +1 을 같은 커밋에** 포함. 여러 plugin 변경 시 각각 독립 적용. 본체 규칙과 독립.
+- **Plugin** (`crates/tasty-plugin-*/Cargo.toml`): 그 plugin 의 빌드 산출물이 달라지면(판정 기준은 staged 파일이 아니라 의존 폐포의 내용 — 루트 CLAUDE.md 의 plugin 버전 정책) **patch +1 을 같은 커밋에** 포함. 여러 plugin 변경 시 각각 독립 적용. 본체 규칙과 독립. `tasty.pluginBump=deferred`인 lane 작업 트리에서는 lane이 버전 줄을 건드리지 않고, 병합 단계가 `scripts/plugin-bump-fixup.sh`로 커밋마다 붙인다. 착지한 커밋이 증가를 함께 담는다는 점은 같다([git-hooks](git-hooks.md#lane-작업-트리의-p1-보류)).
 - **Plugin 매니페스트 lockstep** (`crates/tasty-plugin-*/tasty-plugin.toml`): 위 patch +1 과 함께 매니페스트 `version` 을 **동일 값**으로 맞춰 같은 커밋에 포함(`.sig` 는 `.gitignore` 된 빌드 산출물이라 커밋하지 않는다). Cargo.toml 만 올리면 `plugin.list`·업그레이드 판정이 노출·비교하는 매니페스트 version 이 어긋난다(version drift). `crates/tasty-doc-guards/tests/plugin_manifest_version_parity.rs` 가 정합을 강제한다(채널은 [ci-gates](ci-gates.md)). 자동 잡은 push 된 커밋만 보므로 커밋 전에는 직접 돌린다.
 - **minor / major**: 사용자가 직접 지정. AI 가 임의로 올리지 않는다.
 
@@ -219,6 +219,7 @@ Cargo가 보고하는 저장소 안 path 의존성은 workspace 밖에 있어도
 보조 도구를 수정했다면 파일 SLOC·예외 총합·플러그인 버전 검사를 소비자로 함께 확인한다.
 
 종료 코드는 위반 1, 판정 불가 2, 그 밖에는 0이다. 0일 때 마지막 줄로 두 경우를 구별한다.
+`--violations-out <파일>`을 주면 버전을 올려야 하는 플러그인 디렉터리를 그 파일에 한 줄에 하나씩 쓴다. 병합 단계의 `scripts/plugin-bump-fixup.sh`가 이 목록을 읽는다. 매니페스트 version을 읽지 못한 위반은 목록에 넣지 않는다.
 판정 대상이 1건 이상이면 `통과 — 판정 대상 N 건`이고, 버전을 확인할 플러그인 내용 변경이 없으면 `판정 대상 없음 — 판정 대상 0 건`이다.
 대상이 없는 커밋은 정상이라 0으로 끝나지만 아무것도 검사하지 않았으므로 통과로 표기하지 않는다. 훅과 CI는 종료 코드만 읽는다.
 

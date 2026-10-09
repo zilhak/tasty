@@ -19,7 +19,7 @@ CI에서도 실행하는 검사와 로컬 훅에서만 실행하는 검사는 [c
 | C.9 | `egui::Window` 직접 사용 | 추가된 코드에서는 PopupManager/PopupDef를 사용한다. 예외는 [popup-implementation](popup-implementation.md)에 있다. |
 | C.11 | `println!`와 `eprintln!` 사용 | 추가된 로그는 `tracing`으로 출력한다. CLI 등 표준 출력이 필요한 파일은 제외한다. |
 | C.12 | `dbg!` 사용 | 추가된 코드에서 디버그 매크로를 제거한다. |
-| P.1 | 플러그인 버전 변경 | `scripts/check-plugin-version-bump.sh`로 staged 내용과 `main`의 공통 조상 커밋을 비교한다. 공통 조상을 찾지 못하면 HEAD를 사용한다. |
+| P.1 | 플러그인 버전 변경 | `scripts/check-plugin-version-bump.sh`로 staged 내용과 `main`의 공통 조상 커밋을 비교한다. 공통 조상을 찾지 못하면 HEAD를 사용한다. 연결된 작업 트리에 `tasty.pluginBump=deferred`가 worktree 범위로 있으면 검사하지 않고 안내만 출력한다([lane 작업 트리의 P.1 보류](#lane-작업-트리의-p1-보류)). |
 | T.1 | 로컬 전용 문서 참조 | `cargo test -q -p tasty-doc-guards --test no_todo_file_citation`으로 저장소 전체를 검사한다. 커밋 대상이 아닌 파일도 포함된다. |
 | W.1 | CHANGELOG 누락 안내 | 사용자 기능 관련 선언이 바뀌었지만 CHANGELOG가 변경되지 않았으면 안내한다. 커밋은 막지 않는다. |
 | W.2 | 새 파일에 필요한 검사 안내 | 새 파일의 종류에 따라 테스트 명령을 안내한다. 커밋은 막지 않는다. |
@@ -27,6 +27,43 @@ CI에서도 실행하는 검사와 로컬 훅에서만 실행하는 검사는 [c
 C.6, C.9, C.11, C.12는 staged diff에 추가된 코드만 확인한다. 전체 문서·소스 검사는 `cargo test -p tasty-doc-guards`로 실행한다. 번역 키 정합 검사는 별도이며 [i18n](i18n.md)에 실행 방법이 있다.
 
 플러그인 버전 검사는 파일 경로로 대상을 미리 제한하지 않는다. 공용 라이브러리나 vendor 의존성 변경도 플러그인에 영향을 줄 수 있기 때문이다. 검사 스크립트가 실제 의존 관계를 확인한다.
+
+### lane 작업 트리의 P.1 보류
+
+착지한 `main`의 커밋마다 플러그인 내용 변경과 그 patch 증가를 같은 커밋에 담는 정책은 그대로다. 여러 lane이 병렬로 작업해 병합 담당이 차례로 합치는 경우에는 증가를 병합 단계가 붙일 수 있다. 여러 lane이 같은 플러그인의 버전 줄을 각자 올리면 rebase 때마다 `Cargo.toml`·`tasty-plugin.toml`·`Cargo.lock`의 같은 줄에서 충돌하기 때문이다.
+
+lane 작업 트리에서 다음과 같이 설정한다. `extensions.worktreeConfig`는 저장소 공용 설정이고, 두 번째 값은 그 작업 트리의 `config.worktree`에만 들어간다.
+
+```sh
+git config extensions.worktreeConfig true
+git config --worktree tasty.pluginBump deferred
+```
+
+P.1은 다음 세 조건이 모두 맞을 때만 검사를 건너뛴다. 하나라도 어긋나면 지금처럼 검사하고, 받아들이지 않은 이유를 출력한다. 판정은 `scripts/lib/plugin-bump-mode.sh`에 있다.
+
+- 값이 `deferred`다.
+- 값이 worktree 범위에 있다. 공유 설정(`.git/config`)이나 사용자 설정에 둔 값은 모든 작업 트리의 검사를 끄게 되므로 따르지 않는다.
+- 연결된 작업 트리다. 주 작업 트리(메인 저장소)는 `config.worktree`에 값이 있어도 검사한다.
+
+이 모드는 환경 변수나 `--no-verify`와 달리 작업 트리에 남는 설정이다. 다른 pre-commit 검사는 그대로 실행하고, pre-push의 B.9도 바뀌지 않는다. lane 브랜치를 그대로 push하면 B.9가 버전 증가가 빠진 커밋을 막는다. 훅 파일은 `core.hooksPath`가 가리키는 작업 트리에서 읽으므로, 그 작업 트리가 이 판정을 담은 훅으로 갱신된 뒤부터 모드가 동작한다. 판정 파일이 없는 트리를 커밋할 때는 지금처럼 검사한다.
+
+병합 담당은 `deferred`가 없는 작업 트리에서 lane 브랜치를 기준 위로 rebase하면서 커밋마다 버전을 붙인다.
+
+```sh
+git rebase --exec 'bash scripts/plugin-bump-fixup.sh' <기준>
+```
+
+`scripts/plugin-bump-fixup.sh`는 HEAD 커밋을 부모와 비교한다. 판정은 `check-plugin-version-bump.sh --range HEAD^ HEAD --violations-out <파일>`을 그대로 쓴다.
+
+- 올려야 할 플러그인마다 `Cargo.toml`과 `tasty-plugin.toml`의 첫 `version` 줄을 같은 값으로 patch +1 한다. 두 값이 다르거나 `MAJOR.MINOR.PATCH` 숫자 형식이 아니면 멈춘다.
+- `cargo metadata --offline`으로 `Cargo.lock`을 갱신한다. 올린 패키지의 version 줄 말고 다른 줄이 바뀌면 멈춘다.
+- `git commit --amend --no-edit`로 HEAD 커밋에 합친다. amend도 pre-commit을 거친다. 합친 뒤 같은 범위를 다시 검사한다.
+- 이미 올라가 있거나 플러그인 내용 변경이 없으면 아무것도 하지 않는다.
+- 커밋하지 않은 추적 파일 변경이 있거나, merge 커밋이거나, 검사기가 판정 불가(2)를 내면 커밋을 바꾸지 않고 멈춘다.
+
+종료 코드는 완료나 할 일 없음 0, 실패 1, 판정 불가 2다. 0이 아니면 rebase가 그 커밋에서 멈춘다. 원인을 해결한 뒤 같은 명령을 다시 실행하고 `git rebase --continue`로 이어 간다.
+
+lane의 커밋 하나하나가 각자 patch +1을 받는다. 같은 플러그인을 바꾼 커밋이 여럿이면 그 수만큼 올라간다. lane이 이미 올린 커밋은 그대로 둔다. 그러나 lane이 버전 줄을 직접 바꾸면 rebase 충돌이 다시 생기므로, `deferred` 작업 트리에서는 버전 줄을 건드리지 않는다.
 
 ## pre-push
 

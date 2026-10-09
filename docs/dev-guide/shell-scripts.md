@@ -83,6 +83,7 @@ producer 가 SIGPIPE 로 죽어 141 을 남기고, `set -o pipefail` 이 그것�
 |---|---|---|
 | `scripts/` 16 개 중 14 | `set -euo pipefail` | 대입·단독이면 종료, `if`/`\|\|` 면 조건이 뒤집힌다 |
 | `scripts/check-plugin-version-bump.sh` | `set -uo pipefail` (`-e` 없음) | rc 는 올라오지만 안 죽는다 — 읽는 자리에서만 드러난다 |
+| `scripts/plugin-bump-fixup.sh` (위 16 개 측정 뒤 추가) | `set -uo pipefail` (`-e` 없음) | 위와 같다 |
 | `scripts/dev-setup.sh` | `set -e` 만 | 미실현 |
 | `.githooks/pre-commit` · `pre-merge-commit` | `set -e` 만 | 지금은 미실현 — 한 줄 추가로 되살아난다 |
 | `.githooks/pre-push` | `set -e -o pipefail` | rc 가 올라온다 — `if`/`\|\|` 면 조건이 뒤집힌다 |

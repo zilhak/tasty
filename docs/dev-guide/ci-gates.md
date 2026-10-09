@@ -951,7 +951,7 @@ allow 검사에는 cfg_attr 안의 allow와 한글 `이유:` 표지도 포함한
 |---|---|---|
 | pre-commit | `cargo fmt --check` | ✅ `format-check.yml` |
 | pre-commit | mod/use 선언 순서 · `egui::Window` 직접 사용 · `println!`/`dbg!` | ❌ 훅에만 있다 |
-| pre-commit | plugin 산출물이 바뀌었는데 매니페스트 `version` 이 그대로 (P.1) | ✅ `plugin-version-check.yml` — **같은 스크립트를 부른다**. 훅은 index 를 `main` 과의 merge-base 와 비교하고(amend·rebase 에 안 흔들리게), CI 는 밀어넣은 범위의 두 끝점을 비교한다 |
+| pre-commit | plugin 산출물이 바뀌었는데 매니페스트 `version` 이 그대로 (P.1) | ✅ `plugin-version-check.yml` — **같은 스크립트를 부른다**. 훅은 index 를 `main` 과의 merge-base 와 비교하고(amend·rebase 에 안 흔들리게), CI 는 밀어넣은 범위의 두 끝점을 비교한다. `tasty.pluginBump=deferred` lane 작업 트리의 훅은 검사하지 않으며, 병합 단계의 `plugin-bump-fixup.sh` 와 B.9·CI 가 착지 범위를 본다([git-hooks](git-hooks.md#lane-작업-트리의-p1-보류)) |
 | pre-commit | 주석 없는 `let _ =` (C.6) | 부분 — 전수판 `crates/tasty-doc-guards/tests/let_underscore_documented.rs` 가 훅의 상위집합이고, 그 전수판을 `doc-guards.yml`(경로 필터 없음) · `check-windows` · `check-headless` 가 자동 실행한다. 자동 잡의 clippy는 `let_underscore_must_use`(warn)로 `let _ = <Result>`를 알린다. 주석의 사유는 검사하지 않아 사유가 있는 코드에도 경고하며, `-D warnings`가 없어 이 경고만으로 빌드를 막지는 않는다([error-handling](error-handling.md)) |
 | pre-commit | 로컬 티켓 인용(T.1) | ✅ doc-guards.yml과 pre-push B.7도 no_todo_file_citation을 실행한다. 이 검사는 staged diff가 아닌 전체 작업 트리를 읽는다. |
 | pre-push | 플러그인 버전 `--range <원격 tip> <로컬 tip>`(B.9) | ✅ plugin-version-check.yml과 같은 스크립트다. Git이 전달한 두 tip을 사용하며 비교 범위를 알 수 없으면 실패한다. staged 변경을 보는 P.1과 구분한다. |
