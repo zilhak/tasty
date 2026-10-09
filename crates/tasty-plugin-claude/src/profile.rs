@@ -63,22 +63,17 @@ impl ProfileError {
             Self::UnknownProfile(id) => tr.t_fmt("claude.profile.unknown_profile", id),
             Self::NotAttachable(id) => tr.t_fmt("claude.profile.not_attachable", id),
             // t_fmt는 첫 자리만 채우므로 두 자리 모두 직접 치환한다.
-            Self::GateNameConflict(name) => tr
-                .t("claude.profile.gate_name_conflict")
-                .replacen("{}", name, 1)
-                .replacen("{}", name, 1),
-            Self::SourceNotReadable { path, message } => tr
-                .t("claude.profile.source_not_readable")
-                .replacen("{}", path, 1)
-                .replacen("{}", message, 1),
+            Self::GateNameConflict(name) => {
+                tr.t_args("claude.profile.gate_name_conflict", &[name, name])
+            }
+            Self::SourceNotReadable { path, message } => {
+                tr.t_args("claude.profile.source_not_readable", &[path, message])
+            }
             Self::SourceNotJsonObject { path } => {
                 tr.t_fmt("claude.profile.source_not_json_object", path)
             }
             Self::Merge(e) => e.translate(tr),
-            Self::Io { path, message } => tr
-                .t("claude.profile.io_error")
-                .replacen("{}", path, 1)
-                .replacen("{}", message, 1),
+            Self::Io { path, message } => tr.t_args("claude.profile.io_error", &[path, message]),
         }
     }
 }
@@ -227,9 +222,10 @@ pub(crate) fn list(data_dir: Option<&Path>, tr: &Translator) -> Vec<ProfileSumma
             description: Some(if matcher.is_empty() {
                 tr.t_fmt("claude.profile.builtin_always_installed", claude_event)
             } else {
-                tr.t("claude.profile.builtin_always_installed_with_matcher")
-                    .replacen("{}", claude_event, 1)
-                    .replacen("{}", matcher, 1)
+                tr.t_args(
+                    "claude.profile.builtin_always_installed_with_matcher",
+                    &[claude_event, matcher],
+                )
             }),
         })
         .collect();

@@ -57,25 +57,20 @@ impl GateError {
             Self::NoDataDir => tr.t("claude.gate.no_data_dir").to_string(),
             Self::InvalidShortName(s) => tr.t_fmt("claude.gate.invalid_short_name", s),
             Self::UnknownGate(id) => tr.t_fmt("claude.gate.unknown_gate", id),
-            Self::BodyNotReadable { path, message } => tr
-                .t("claude.gate.body_not_readable")
-                .replacen("{}", path, 1)
-                .replacen("{}", message, 1),
+            Self::BodyNotReadable { path, message } => {
+                tr.t_args("claude.gate.body_not_readable", &[path, message])
+            }
             Self::BodyMissingSentinel { sentinel } => {
                 tr.t_fmt("claude.gate.body_missing_sentinel", sentinel)
             }
             Self::EmptySentinel => tr.t("claude.gate.empty_sentinel").to_string(),
             Self::RoundsBelowOne => tr.t("claude.gate.rounds_below_one").to_string(),
-            // 메시지가 이름을 두 번 쓴다(충돌한 이름 + 해제 명령 예시) — `t_fmt` 는
-            // 첫 `{}` 하나만 채우므로 두 자리 이상은 `replacen` 을 겹쳐 쓴다.
-            Self::ProfileNameConflict(name) => tr
-                .t("claude.gate.profile_name_conflict")
-                .replacen("{}", name, 1)
-                .replacen("{}", name, 1),
-            Self::Io { path, message } => tr
-                .t("claude.gate.io_error")
-                .replacen("{}", path, 1)
-                .replacen("{}", message, 1),
+            // 메시지가 이름을 두 번 쓴다(충돌한 이름 + 해제 명령 예시) — `{}` 는 한 번씩만 채우므로
+            // 같은 값을 두 번 넘긴다.
+            Self::ProfileNameConflict(name) => {
+                tr.t_args("claude.gate.profile_name_conflict", &[name, name])
+            }
+            Self::Io { path, message } => tr.t_args("claude.gate.io_error", &[path, message]),
         }
     }
 }

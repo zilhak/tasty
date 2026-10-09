@@ -518,11 +518,10 @@ fn notify_limit<H: HostCall>(host: &H, texts: &Texts, surface_id: u32, attempts:
     tracing::info!(
         "claude auto-resume s{surface_id}: stopped after {attempts} consecutive API errors ({error})"
     );
-    let body = texts
-        .limit_body
-        .replacen("{}", &surface_id.to_string(), 1)
-        .replacen("{}", &attempts.to_string(), 1)
-        .replacen("{}", error, 1);
+    let body = tasty_plugin_sdk::i18n::fill_args(
+        &texts.limit_body,
+        &[&surface_id.to_string(), &attempts.to_string(), error],
+    );
     if let Err(e) = host.call(
         "notification.create",
         json!({ "title": texts.limit_title, "body": body, "surface_id": surface_id }),

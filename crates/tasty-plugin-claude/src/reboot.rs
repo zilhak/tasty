@@ -84,11 +84,10 @@ pub(crate) fn reboot_surface(
     // 요청 시점 캡처 (session-end 가 meta 를 지우기 전).
     let session_id = fetch_session_id(host, surface_id, tr)?;
     if !is_safe_session_id(&session_id) {
-        return Err(IpcMethodError::new(
-            tr.t("claude.reboot.malformed_session_id")
-                .replacen("{}", &surface_id.to_string(), 1)
-                .replacen("{}", &format!("{session_id:?}"), 1),
-        ));
+        return Err(IpcMethodError::new(tr.t_args(
+            "claude.reboot.malformed_session_id",
+            &[&surface_id.to_string(), &format!("{session_id:?}")],
+        )));
     }
 
     // 승계할 프로필도 검증에 실패하면 종료 절차를 시작하지 않는다.
@@ -327,18 +326,16 @@ fn resolve_names_to_path(
 /// 종료 절차를 시작하기 전에 파일을 읽고 JSON으로 해석할 수 있는지 확인한다.
 pub(crate) fn validate_profile_file(path: &str, tr: &Translator) -> Result<(), IpcMethodError> {
     let contents = std::fs::read_to_string(path).map_err(|e| {
-        IpcMethodError::new(
-            tr.t("claude.reboot.profile_file_not_readable")
-                .replacen("{}", path, 1)
-                .replacen("{}", &e.to_string(), 1),
-        )
+        IpcMethodError::new(tr.t_args(
+            "claude.reboot.profile_file_not_readable",
+            &[path, &e.to_string()],
+        ))
     })?;
     serde_json::from_str::<Value>(&contents).map_err(|e| {
-        IpcMethodError::new(
-            tr.t("claude.reboot.profile_file_not_json")
-                .replacen("{}", path, 1)
-                .replacen("{}", &e.to_string(), 1),
-        )
+        IpcMethodError::new(tr.t_args(
+            "claude.reboot.profile_file_not_json",
+            &[path, &e.to_string()],
+        ))
     })?;
     Ok(())
 }

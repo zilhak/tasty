@@ -29,9 +29,10 @@ pub(crate) fn notify_done_message(
     command_name: &str,
     target_surface: u32,
 ) -> String {
-    tr.t("claude.notify.done_message")
-        .replacen("{}", &target_surface.to_string(), 1)
-        .replacen("{}", command_name, 1)
+    tr.t_args(
+        "claude.notify.done_message",
+        &[&target_surface.to_string(), command_name],
+    )
 }
 
 /// 마지막 턴의 API 오류가 있으면 완료 문구 뒤에 덧붙인다.
@@ -41,10 +42,7 @@ pub(crate) fn with_stop_failure_hint(
     error: Option<&str>,
 ) -> String {
     if let Some(error) = error.filter(|e| !e.is_empty()) {
-        message.push_str(
-            &tr.t("claude.notify.stop_failure_hint")
-                .replacen("{}", error, 1),
-        );
+        message.push_str(&tr.t_args("claude.notify.stop_failure_hint", &[error]));
     }
     message
 }
@@ -282,12 +280,10 @@ pub(crate) fn stop_failure_notice<H: HostCall>(
     } else {
         types.join(", ")
     };
-    Some(
-        tr.t("claude.notify.stop_failure_background_message")
-            .replacen("{}", &target_surface.to_string(), 1)
-            .replacen("{}", &error, 1)
-            .replacen("{}", &detail, 1),
-    )
+    Some(tr.t_args(
+        "claude.notify.stop_failure_background_message",
+        &[&target_surface.to_string(), &error, &detail],
+    ))
 }
 
 /// 백그라운드 대기 기록을 읽는다. 없거나 해석할 수 없으면 `None` 이다.
@@ -329,10 +325,10 @@ pub(crate) fn background_wait_message(
         .and_then(Value::as_u64)
         .unwrap_or(now_ms);
     let minutes = now_ms.saturating_sub(since_ms) / 60_000;
-    tr.t("claude.notify.stalled_background_wait_message")
-        .replacen("{}", &target_surface.to_string(), 1)
-        .replacen("{}", &detail, 1)
-        .replacen("{}", &minutes.to_string(), 1)
+    tr.t_args(
+        "claude.notify.stalled_background_wait_message",
+        &[&target_surface.to_string(), &detail, &minutes.to_string()],
+    )
 }
 
 /// 출력 파일 감시가 기록한 조용한 작업의 문구. 같은 대기(시작 시각이 같음)의 기록이 없으면 `None` 이다.
@@ -374,12 +370,14 @@ pub(crate) fn quiet_task_message<H: HostCall>(
         return None;
     }
     let minutes = quiet.get("quiet_ms")?.as_u64()? / 60_000;
-    Some(
-        tr.t("claude.notify.stalled_background_task_quiet_message")
-            .replacen("{}", &target_surface.to_string(), 1)
-            .replacen("{}", &labels.join(", "), 1)
-            .replacen("{}", &minutes.to_string(), 1),
-    )
+    Some(tr.t_args(
+        "claude.notify.stalled_background_task_quiet_message",
+        &[
+            &target_surface.to_string(),
+            &labels.join(", "),
+            &minutes.to_string(),
+        ],
+    ))
 }
 
 /// 조용한 작업 이름 하나에 적는 최대 글자 수.
@@ -418,11 +416,11 @@ pub(crate) fn notify_error_message<H: HostCall>(
     } else {
         "claude.notify.stalled_no_error_message"
     };
-    let mut message = tr.t(key).replacen("{}", &target_surface.to_string(), 1);
+    let mut message = tr.t_args(key, &[&target_surface.to_string()]);
     if let Some(line) = error_line {
         // 알림에 넣을 오류 줄의 길이를 제한한다.
         let hint: String = line.chars().take(160).collect();
-        message.push_str(&tr.t("claude.notify.stalled_hint").replacen("{}", &hint, 1));
+        message.push_str(&tr.t_args("claude.notify.stalled_hint", &[&hint]));
     }
     message
 }

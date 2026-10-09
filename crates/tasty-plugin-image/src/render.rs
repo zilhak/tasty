@@ -767,14 +767,18 @@ fn canvas_state(
     let warning = theme.accent_warning().to_egui();
     let muted = theme.text_muted().to_egui();
     let secondary = theme.text_secondary().to_egui();
-    let too_large_sub = tr
-        .t_fmt("image.state.too_large_sub", &MAX_IMAGE_SIDE.to_string())
-        .replacen("{}", &format!("{} MiB", MAX_DECODE_ALLOC >> 20), 1);
+    let too_large_sub = tr.t_args(
+        "image.state.too_large_sub",
+        &[
+            &MAX_IMAGE_SIDE.to_string(),
+            &format!("{} MiB", MAX_DECODE_ALLOC >> 20),
+        ],
+    );
     let too_large_size = match &doc.load_failure {
-        Some(LoadFailure::TooLarge(Some([w, h]))) => Some(
-            tr.t_fmt("image.state.too_large_size", &w.to_string())
-                .replacen("{}", &h.to_string(), 1),
-        ),
+        Some(LoadFailure::TooLarge(Some([w, h]))) => Some(tr.t_args(
+            "image.state.too_large_size",
+            &[&w.to_string(), &h.to_string()],
+        )),
         _ => None,
     };
     let (icon, glyph_color, title, title_color, sub, reason): (

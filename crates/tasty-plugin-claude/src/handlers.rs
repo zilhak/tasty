@@ -236,12 +236,14 @@ pub(crate) fn resolve_child_surface_id<H: HostCall>(
         } else {
             available.join(", ")
         };
-        IpcMethodError::invalid_params(
-            &tr.t("claude.child.unknown_index")
-                .replacen("{}", &child_index.to_string(), 1)
-                .replacen("{}", &parent_surface_id.to_string(), 1)
-                .replacen("{}", &available, 1),
-        )
+        IpcMethodError::invalid_params(&tr.t_args(
+            "claude.child.unknown_index",
+            &[
+                &child_index.to_string(),
+                &parent_surface_id.to_string(),
+                &available,
+            ],
+        ))
     })
 }
 
@@ -761,10 +763,10 @@ fn build_spawn_warning(
     if (total as f64) <= threshold {
         return None;
     }
-    let mut msg = tr
-        .t("claude.spawn.warning_threshold")
-        .replacen("{}", &total.to_string(), 1)
-        .replacen("{}", &threshold.to_string(), 1);
+    let mut msg = tr.t_args(
+        "claude.spawn.warning_threshold",
+        &[&total.to_string(), &threshold.to_string()],
+    );
     if !idle_indices.is_empty() {
         msg.push_str(&tr.t_fmt(
             "claude.spawn.warning_idle_children",

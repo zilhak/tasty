@@ -19,6 +19,9 @@ use std::path::Path;
 
 use crate::env::PluginEnv;
 
+/// 미리 읽어 둔 템플릿을 채울 때 쓴다. 호스트·[`Translator::t_args`] 와 같은 구현이다.
+pub use tasty_i18n::fill_args;
+
 #[derive(Debug, Default)]
 pub struct Translator {
     strings: HashMap<String, String>,
@@ -72,10 +75,16 @@ impl Translator {
         self.strings.get(key).map(|s| s.as_str()).unwrap_or(key)
     }
 
-    /// 키 lookup + `{}` 첫 occurrence 치환.
+    /// 키 lookup + 인자 하나. 호스트와 같은 [`tasty_i18n::fill_args`] 규칙이다 — `{}` 는 첫 자리만,
+    /// 번호 문자열이면 `{0}` 마다 채운다.
     pub fn t_fmt(&self, key: &str, arg: &str) -> String {
-        let template = self.t(key);
-        template.replacen("{}", arg, 1)
+        tasty_i18n::fill_args(self.t(key), &[arg])
+    }
+
+    /// 키 lookup + 인자 여럿. `{}` 는 순서대로, `{0}` `{1}` … 은 번호로 채운다
+    /// ([`tasty_i18n::fill_args`], 호스트 `t_args` 와 같은 구현).
+    pub fn t_args(&self, key: &str, args: &[&str]) -> String {
+        tasty_i18n::fill_args(self.t(key), args)
     }
 
     /// 키 lookup + `{0}` 토큰 치환 (multi-arg 패턴이 필요할 때).
@@ -103,6 +112,31 @@ mod tests {
         assert_eq!(tr.t("ns.hello"), "안녕"); // ko가 overlay
         assert_eq!(tr.t("ns.bye"), "Bye"); // ko 미정의 → en fallback
         assert_eq!(tr.t("missing"), "missing"); // 키 미스
+    }
+
+    /// 플러그인 카탈로그도 호스트와 같은 번호 자리표시 규칙으로 채운다.
+    #[test]
+    fn args_fill_numbered_placeholders_like_the_host() {
+        let dir = tempdir().unwrap();
+        fs::write(
+            dir.path().join("en.toml"),
+            "[e]\nmoved = \"Moved {} of {}\"\nall = \"{0} and {0}\"\n",
+        )
+        .unwrap();
+        fs::write(
+            dir.path().join("ko.toml"),
+            "[e]\nmoved = \"{1}개 중 {0}개 이동\"\n",
+        )
+        .unwrap();
+        let en = Translator::load(dir.path(), "en");
+        let ko = Translator::load(dir.path(), "ko");
+        assert_eq!(en.t_args("e.moved", &["3", "5"]), "Moved 3 of 5");
+        assert_eq!(ko.t_args("e.moved", &["3", "5"]), "5개 중 3개 이동");
+        assert_eq!(en.t_fmt("e.all", "x"), "x and x");
+        assert_eq!(
+            ko.t_args("e.moved", &["3", "5"]),
+            tasty_i18n::fill_args("{1}개 중 {0}개 이동", &["3", "5"])
+        );
     }
 
     #[test]

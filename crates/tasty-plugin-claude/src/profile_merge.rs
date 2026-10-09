@@ -30,11 +30,10 @@ impl MergeError {
                 path,
                 existing,
                 incoming,
-            } => tr
-                .t("claude.profile_merge.scalar_conflict")
-                .replacen("{}", path, 1)
-                .replacen("{}", &existing.to_string(), 1)
-                .replacen("{}", &incoming.to_string(), 1),
+            } => tr.t_args(
+                "claude.profile_merge.scalar_conflict",
+                &[path, &existing.to_string(), &incoming.to_string()],
+            ),
         }
     }
 }
