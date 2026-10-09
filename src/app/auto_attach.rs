@@ -923,6 +923,33 @@ mod tests {
         );
     }
 
+    /// 프로필 파일 해석이 실제로 돌려주는 오류가 거절 안내의 `ProfileMissing` 으로 분류되는지 본다.
+    /// 오류를 감싸는 단계가 생기면 안내가 `Unresolved` 로 바뀌어 배너의 이유가 달라진다.
+    #[test]
+    fn a_missing_profile_mapping_resolves_to_the_profile_missing_notice() {
+        let name = format!(
+            "no-such-profile-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.as_nanos())
+        );
+        let mut remote = tasty_remote::outbound::Remote::new();
+        let attempt = remote.begin_attempt(None, None).expect("attempt");
+        let Err(error) = resolve_endpoint_bound(
+            &WorkspaceAttachTarget::Profile { name: name.clone() },
+            &attempt,
+        ) else {
+            panic!("a profile that does not exist cannot resolve");
+        };
+        assert_eq!(
+            notice::resolve_failure_kind(&error),
+            tasty_remote::refusal::MappingNoticeKind::ProfileMissing,
+            "{error}"
+        );
+        assert!(error.to_string().contains(&name), "{error}");
+    }
+
     #[test]
     fn automatic_attach_does_not_ask_a_direct_endpoint() {
         let mut remote = tasty_remote::outbound::Remote::new();
