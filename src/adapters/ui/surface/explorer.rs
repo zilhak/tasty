@@ -1187,7 +1187,7 @@ fn grid_view(
             egui::vec2(theme.spacing_md.value(), theme.spacing_md.value());
         if let Some(p) = &parent {
             let dd = dotdot_entry(p.clone());
-            let resp = grid_cell(ui, theme, &dd, false, false, font, None, "");
+            let resp = grid_cell(ui, theme, &dd, (false, false), font, None, "");
             if resp.double_clicked() && action.is_none() {
                 *action = Some(ExplorerAction::Navigate(p.clone()));
             }
@@ -1197,7 +1197,7 @@ fn grid_view(
             let selected = view.selected.contains(&e.path);
             let cut = cut_pending.contains(&e.path);
             let thumb = view.thumbs.texture(ui.ctx(), e);
-            let resp = grid_cell(ui, theme, e, selected, cut, font, thumb.as_ref(), &query);
+            let resp = grid_cell(ui, theme, e, (selected, cut), font, thumb.as_ref(), &query);
             let resp = view.hit_tooltip(e, resp);
             if ui.is_rect_visible(resp.rect) {
                 view.thumbs.want(e, view.is_remote());
@@ -1217,8 +1217,7 @@ fn grid_cell(
     ui: &mut egui::Ui,
     theme: &Theme,
     e: &DirEntryInfo,
-    selected: bool,
-    cut: bool,
+    (selected, cut): (bool, bool),
     font: &EffectiveFont,
     thumb: Option<&egui::TextureHandle>,
     query: &str,
