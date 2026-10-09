@@ -221,6 +221,10 @@ fn the_homepage_link_drops_only_the_web_scheme() {
         "github.com/zilhak/tasty"
     );
     assert_eq!(homepage_display("http://example.com"), "example.com");
+    assert_eq!(homepage_display("HTTPS://Example.com/A"), "Example.com/A");
+    assert_eq!(homepage_display("Http://example.com"), "example.com");
+    // 접두가 멀티바이트 문자 경계에 걸려도 그대로 돌려준다.
+    assert_eq!(homepage_display("https:/é"), "https:/é");
     assert_eq!(homepage_display("example.com/x"), "example.com/x");
 }
 

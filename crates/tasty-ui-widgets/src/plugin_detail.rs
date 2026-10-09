@@ -127,10 +127,16 @@ pub fn is_web_homepage(url: &str) -> bool {
     })
 }
 
-/// 링크로 보일 homepage. 앞의 `http://`·`https://` 를 뺀다.
+/// 링크로 보일 homepage. 앞의 `http://`·`https://` 를 대소문자 구분 없이 뺀다.
+/// [`is_web_homepage`] 가 대소문자를 무시하므로 같은 규칙으로 떼어야 `HTTPS://` 가 남지 않는다.
 pub fn homepage_display(url: &str) -> &str {
-    url.strip_prefix("https://")
-        .or_else(|| url.strip_prefix("http://"))
+    ["https://", "http://"]
+        .iter()
+        .find_map(|prefix| {
+            url.get(..prefix.len())
+                .filter(|head| head.eq_ignore_ascii_case(prefix))
+                .map(|_| &url[prefix.len()..])
+        })
         .unwrap_or(url)
 }
 
