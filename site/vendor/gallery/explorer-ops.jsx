@@ -4,7 +4,7 @@ const { Section: YSection, Spec: YSpec, Stage: YStage, Meta: YMeta, Note: YNote 
 const YDS = window.TastyDesignSystem_41fd3f;
 const { IconButton: YIconButton, Button: YButton, Spinner: YSpinner, Checkbox: YCheckbox, Icon: YIcon, Toast: YToast, Tag: YTag, MenuItem: YMenuItem } = YDS;
 const YK = window.ExplorerKit;
-const { XLbl, XCol, XThemes, XToolbar, XCell, XDetail, XROWS, CreateSection, DragSection, SearchSection } = window.ExplorerOpsParts;
+const { XLbl, XCol, XThemes, XToolbar, XCell, XDetail, XROWS, XListRow, XHi, XFindBar, XListEdit, CreateSection, DragSection, SearchSection } = window.ExplorerOpsParts;
 
 const NAV = [
   { id: "create", label: "Create · commands" },
@@ -12,6 +12,7 @@ const NAV = [
   { id: "progress", label: "Progress · conflicts · results" },
   { id: "properties", label: "Properties · preview" },
   { id: "search", label: "Filter · search" },
+  { id: "followups", label: "Follow-ups (b10)" },
 ];
 
 // ── Progress ──────────────────────────────────────────────
@@ -179,25 +180,25 @@ function ProgressSection() {
 // ── Properties · preview · thumbnails ─────────────────────
 function YField({ k, v, mono, copy, spin }) {
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "var(--tasty-explorer-props-label-width) 1fr", gap: "var(--tasty-space-sm)", alignItems: "start", minHeight: "var(--tasty-size-24)", paddingTop: 2 }}>
-      <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)", lineHeight: "var(--tasty-size-20)" }}>{k}</span>
+    <div style={{ display: "grid", gridTemplateColumns: "var(--tasty-explorer-props-label-width) 1fr", gap: "var(--tasty-space-sm)", alignItems: "start", minHeight: "var(--tasty-explorer-props-row-min-height)", paddingTop: "var(--tasty-explorer-props-row-pad-top)" }}>
+      <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)", lineHeight: "var(--tasty-explorer-props-row-line)" }}>{k}</span>
       <span style={{ display: "flex", alignItems: "flex-start", gap: "var(--tasty-space-xs)", minWidth: 0 }}>
         {spin && <YSpinner size="var(--tasty-icon-size-sm)" />}
-        <span style={{ flex: 1, minWidth: 0, fontFamily: mono ? "var(--tasty-font-mono)" : "inherit", fontSize: mono ? "var(--tasty-font-size-caption)" : "var(--tasty-font-size-body)", lineHeight: "var(--tasty-size-20)", color: "var(--tasty-text-secondary)", overflowWrap: "anywhere" }}>{v}</span>
+        <span style={{ flex: 1, minWidth: 0, fontFamily: mono ? "var(--tasty-font-mono)" : "inherit", fontSize: mono ? "var(--tasty-font-size-caption)" : "var(--tasty-font-size-body)", lineHeight: "var(--tasty-explorer-props-row-line)", color: "var(--tasty-text-secondary)", overflowWrap: "anywhere" }}>{v}</span>
         {copy && <YIconButton size="sm" aria-label="Copy" title="Copy"><YIcon name="copy" /></YIconButton>}
       </span>
     </div>
   );
 }
-function YProps({ glyph = YK.ic.file, name, children, note }) {
+function YProps({ glyph = YK.ic.file, glyphColor, name, children, note }) {
   return (
     <div style={{ width: "var(--tasty-explorer-props-width)", maxWidth: "100%", background: "var(--tasty-bg-panel)", border: "var(--tasty-border-width) solid var(--tasty-border-strong)", borderRadius: "var(--tasty-radius)", boxShadow: "var(--tasty-shadow-modal)", overflow: "hidden" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", padding: "var(--tasty-space-md) var(--tasty-size-14) var(--tasty-space-sm)" }}>
-        <span style={{ display: "inline-flex", flex: "none", color: "var(--tasty-text-muted)" }}>{glyph}</span>
-        <span style={{ flex: 1, minWidth: 0, fontSize: "var(--tasty-font-size-max)", fontWeight: "var(--tasty-font-weight-semibold)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", padding: "var(--tasty-space-md) var(--tasty-explorer-props-padding-x) var(--tasty-space-sm)" }}>
+        <span style={{ display: "inline-flex", flex: "none", color: glyphColor || "var(--tasty-text-muted)" }}>{glyph}</span>
+        <span style={{ flex: 1, minWidth: 0, fontSize: "var(--tasty-font-size-max)", fontWeight: "var(--tasty-font-weight-normal)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>
         <YIconButton size="sm" aria-label="Close" title="Close">{YK.ic.x}</YIconButton>
       </div>
-      <div style={{ padding: "0 var(--tasty-size-14) var(--tasty-space-md)", display: "flex", flexDirection: "column" }}>
+      <div style={{ padding: "0 var(--tasty-explorer-props-padding-x) var(--tasty-space-md)", display: "flex", flexDirection: "column" }}>
         {children}
         {note && <div style={{ marginTop: "var(--tasty-space-sm)", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>{note}</div>}
       </div>
@@ -205,7 +206,7 @@ function YProps({ glyph = YK.ic.file, name, children, note }) {
   );
 }
 function YPreview({ kind }) {
-  const head = { text: ["notes.md", "Markdown · 12 KB"], image: ["diagram.png", "PNG · 1280 × 720 · 488 KB"], none: ["archive.zip", "Archive · 64 MB"], loading: ["notes.md", "Markdown · 12 KB"], large: ["server.log", "Log · 38 MB"], error: ["private.key", "File · 3 KB"] }[kind];
+  const head = { multi: ["3 items", "2 files, 1 folder"], pixels: ["scan-poster.tif", "TIFF image · 20000 × 14000 · 61 MB"], text: ["notes.md", "Markdown · 12 KB"], image: ["diagram.png", "PNG image · 1280 × 720 · 488 KB"], none: ["archive.zip", "Archive · 64 MB"], loading: ["notes.md", "Markdown · 12 KB"], large: ["server.log", "Log · 38 MB"], error: ["private.key", "File · 3 KB"] }[kind];
   let body;
   if (kind === "text") body = (
     <div style={{ flex: 1, padding: "var(--tasty-space-sm)", fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-caption)", lineHeight: "var(--tasty-line-height-ui)", color: "var(--tasty-text-secondary)", whiteSpace: "pre", overflow: "hidden", background: "var(--tasty-bg-sidebar)" }}>{"# Notes\n\n- split floor 180\n- favorites pin 240\n- drag: move same disk\n\n## Open\n- thumbnails in Grid\n- preview panel back"}</div>
@@ -220,13 +221,15 @@ function YPreview({ kind }) {
       none: [YK.ic.file, null, "No preview for this file type"],
       loading: [<YSpinner />, null, "Loading preview…"],
       large: [YK.ic.file, null, "Too large to preview", "Over 1 MB."],
+      pixels: [YK.ic.file, null, "Too large to preview", "Over 16384 px on a side, or needs more than 256 MiB to decode.", "20000 × 14000 px"],
+      multi: [<YIcon name="layers" />, null, "3 items selected", "Select one file to preview it."],
       error: [<YIcon name="alertTriangle" size="var(--tasty-icon-size-md)" />, "var(--tasty-explorer-error-fg)", "Can't read this file", null, "Permission denied (os error 13)"],
     }[kind];
     body = <div style={{ flex: 1, display: "flex", padding: "var(--tasty-space-sm)", background: "var(--tasty-bg-sidebar)" }}><YK.ExpState glyph={st[0]} glyphColor={st[1]} title={st[2]} sub={st[3]} reason={st[4]} bg="var(--tasty-bg-sidebar)" /></div>;
   }
   return (
     <div style={{ width: "var(--tasty-explorer-preview-width)", flex: "none", display: "flex", flexDirection: "column", borderLeft: "var(--tasty-border-width) solid var(--tasty-separator)", background: "var(--tasty-bg-panel)" }}>
-      <div style={{ display: "flex", flexDirection: "column", justifyContent: "center", height: "var(--tasty-size-40)", flex: "none", padding: "0 var(--tasty-space-sm)", borderBottom: "var(--tasty-border-width) solid var(--tasty-separator)" }}>
+      <div style={{ display: "flex", flexDirection: "column", justifyContent: "center", height: "var(--tasty-explorer-preview-header-height)", flex: "none", padding: "0 var(--tasty-space-sm)", borderBottom: "var(--tasty-border-width) solid var(--tasty-separator)" }}>
         <span style={{ fontSize: "var(--tasty-font-size-body)", color: "var(--tasty-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{head[0]}</span>
         <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>{head[1]}</span>
       </div>
@@ -271,7 +274,7 @@ function PropertiesSection() {
             </YProps>
           </XCol>
           <XCol label="symlink" w={360}>
-            <YProps glyph={YK.ic.link} name="current">
+            <YProps glyph={<YIcon name="link" />} name="current">
               <YField k="Kind" v="Symbolic link" />
               <YField k="Link target" v="~/work/tasty/target/release/tasty" mono copy />
               <YField k="Location" v="~/bin" mono copy />
@@ -316,8 +319,8 @@ function PropertiesSection() {
           </div>
         </YStage>
         <YMeta
-          specs={[["toggle", "toolbar view group · columns glyph · keybinding action explorer.toggle_preview"], ["panel", "right · explorer-preview-width 288 · splitter 200 … 460 · 1px separator · remembered per explorer"], ["header", "40 · name (body, ellipsis) · kind · size (caption muted)"], ["text", "first 64 KB · mono caption · line-height-ui · on bg-sidebar · no wrap"], ["image", "fit, never upscaled · on bg-sidebar"], ["other / folder", "“No preview for this file type”"], ["loading", "Spinner · “Loading preview…” — the old preview is cleared first"], ["too large", "> 1 MB (app limit) · “Too large to preview”"], ["unreadable", "error tone · OS reason (mono)"], ["narrow cell", "panel hides itself below 200 + list min; toggle stays on"]]}
-          tokens={[{ tok: "--tasty-explorer-preview-width", use: "→ size-288" }, { tok: "--tasty-explorer-preview-min-width", use: "→ size-200" }, { tok: "--tasty-explorer-preview-max-width", use: "→ size-460" }, { tok: "--tasty-bg-sidebar", use: "preview bed", color: "var(--tasty-bg-sidebar)" }]} />
+          specs={[["toggle", "toolbar view group · columns glyph · keybinding action explorer.toggle_preview"], ["panel", "right · explorer-preview-width 288 · splitter 200 … 460 · 1px separator · remembered per explorer"], ["header", "40 · name (body, ellipsis) · kind · size (caption muted)"], ["text", "first 64 KB · mono caption · line-height-ui · on bg-sidebar · no wrap"], ["image", "fit, never upscaled · on bg-sidebar"], ["other / folder", "“No preview for this file type”"], ["loading", "Spinner · “Loading preview…” — the old preview is cleared first"], ["too large", "> 1 MB (app limit) · “Too large to preview”"], ["unreadable", "error tone · OS reason (mono)"], ["narrow cell", "panel hides itself below preview-min 200 + explorer-list-min-width 200 = 400; toggle stays on"]]}
+          tokens={[{ tok: "--tasty-explorer-preview-width", use: "→ size-288" }, { tok: "--tasty-explorer-preview-min-width", use: "→ size-200" }, { tok: "--tasty-explorer-preview-max-width", use: "→ size-460" }, { tok: "--tasty-explorer-list-min-width", use: "→ size-200 (b10)" }, { tok: "--tasty-explorer-preview-header-height", use: "→ size-40 (b10)" }, { tok: "--tasty-bg-sidebar", use: "preview bed", color: "var(--tasty-bg-sidebar)" }]} />
       </YSpec>
 
       <YSpec title="Grid thumbnails — 40 slot for every cell"
@@ -342,6 +345,122 @@ function PropertiesSection() {
   );
 }
 
+// ── Follow-ups (2026-10-09 batch 10) ──────────────────────
+function YGridHit({ name, q, glyph = YK.ic.file }) {
+  return (
+    <div style={{ width: 80, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, padding: "8px 4px", borderRadius: "var(--tasty-radius)" }}>
+      <span style={{ height: "var(--tasty-explorer-grid-thumb-size)", display: "flex", alignItems: "center", color: "var(--tasty-text-muted)" }}>{glyph}</span>
+      <span style={{ fontSize: 11, textAlign: "center", lineHeight: "14px", color: "var(--tasty-text-secondary)", wordBreak: "break-word" }}><XHi text={name} q={q} /></span>
+    </div>
+  );
+}
+function FollowupsSection() {
+  const menuBox = { width: "var(--tasty-size-200)", background: "var(--tasty-menu-bg)", border: "var(--tasty-border-width) solid var(--tasty-menu-border)", borderRadius: "var(--tasty-menu-radius)", padding: "var(--tasty-space-xs)", boxShadow: "var(--tasty-shadow-popover)" };
+  return (
+    <YSection id="followups" title="Follow-ups — find · names · results · properties (2026-10-09 batch 10)">
+      <YSpec title="Find — every view highlights · `..` while filtering · no matches · skipped · cap · More rows"
+        when={<>The matched part takes <span className="tok">--tasty-explorer-match-fg</span> in <b>all three views</b> (Detail, List, Grid), filter and search alike. While <b>filtering</b> the <code>..</code> row stays at the top: it is navigation, never matched, never counted in “{"{shown}"} of {"{total}"}”; recursive results drop it (they replace the listing). A filter with <b>no matches</b> keeps the bar (“0 of 6”) and shows the state screen with a filter line — <b>“No names match “{"{query}"}””</b>, no sub-line. One unreadable folder reads <b>“1 folder skipped”</b>. A recursive search <b>stops at 5,000</b> results: the bar reads “5,000+ found · stopped”, the results stay, and a muted line asks for a longer query. Native menus have no check mark, so the <b>More</b> rows say the action: <b>Find / Close find</b>, <b>Show preview / Hide preview</b> — and Preview folds into More with the rest of the view group under 440.</>}>
+        <YStage variant="solo center" style={{ padding: 20, background: "var(--tasty-bg-app)", gap: 16, flexWrap: "wrap", alignItems: "flex-start" }}>
+          <XCol label="List — filter “re” · .. kept" w={360}>
+            <XCell w={360} h={190} toolbar={<XToolbar search view="list" />} bar={<XFindBar value="re" right="2 of 6" />} status="2 of 6 items">
+              <div style={{ flex: 1, padding: 4, display: "flex", flexDirection: "column" }}>
+                <XListRow glyph={YK.ic.folder} name=".." />
+                <XListRow glyph={YK.ic.file} name={<XHi text="report.pdf" q="re" />} state="selected" />
+                <XListRow glyph={YK.ic.folder} name={<XHi text="mockup-exports" q="re" />} />
+              </div>
+            </XCell>
+          </XCol>
+          <XCol label="Grid — same highlight" w={360}>
+            <XCell w={360} h={190} toolbar={<XToolbar search view="grid" />} bar={<XFindBar value="re" right="2 of 6" />}>
+              <div style={{ flex: 1, display: "flex", gap: 4, padding: 8 }}>
+                <YGridHit name=".." q="" glyph={YK.ic.folder} /><YGridHit name="report.pdf" q="re" /><YGridHit name="mockup-exports" q="re" glyph={YK.ic.folder} />
+              </div>
+            </XCell>
+          </XCol>
+          <XCol label="filter — no matches" w={360}>
+            <XCell w={360} h={190} toolbar={<XToolbar search />} bar={<XFindBar value="rezzz" right="0 of 6" />}>
+              <YK.ExpState glyph={<YIcon name="search" />} title="No names match “rezzz”" />
+            </XCell>
+          </XCol>
+          <XCol label="search — cap reached · 1 skipped" w={520}>
+            <XCell w={520} h={120} toolbar={<XToolbar search />} bar={<XFindBar value=".rs" deep right={<>5,000+ found · stopped · <span style={{ color: "var(--tasty-accent-warning)" }}>1 folder skipped</span></>} />} status={<span style={{ color: "var(--tasty-text-muted)" }}>Showing the first 5,000. Type more to narrow the search.</span>}>
+              <div style={{ flex: 1 }} />
+            </XCell>
+          </XCol>
+          <XCol label="More menu (narrow) — action words, no checks">
+            <div style={menuBox}>
+              <YMenuItem icon={<YIcon name="folderPlus" />} label="New folder" />
+              <YMenuItem icon={<YIcon name="filePlus" />} label="New file" />
+              <YMenuItem icon={<YIcon name="search" />} label="Close find" />
+              <YMenuItem icon={<YIcon name="columns" />} label="Show preview" />
+            </div>
+          </XCol>
+        </YStage>
+        <YMeta
+          specs={[["highlight", "Detail · List · Grid — filter and search"], [".. row", "kept while filtering (not counted) · dropped from recursive results"], ["filter 0", "bar “0 of {total}” · search glyph · “No names match “{query}”” · no sub-line"], ["skipped", "explorer.find.skipped_one “1 folder skipped” · skipped “{n} folders skipped”"], ["cap", "5,000 results · “{n}+ found · stopped” · status line hint · results kept"], ["More rows", "Find ↔ Close find · Show preview ↔ Hide preview · no check marks on any OS"], ["narrow", "< 440: New folder · New file · Find · Preview all fold into More"]]}
+          tokens={[{ tok: "--tasty-explorer-match-fg", use: "all views", color: "var(--tasty-explorer-match-fg)" }, { tok: "--tasty-explorer-toolbar-compact-below", use: "→ 440" }, { tok: "--tasty-accent-warning", use: "skipped", color: "var(--tasty-accent-warning)" }]} />
+        <YNote>i18n (new): <code>explorer.find.none_filter</code> “No names match “{"{query}"}”” · <code>explorer.find.skipped_one</code> “1 folder skipped” · <code>explorer.find.capped</code> “{"{n}"}+ found · stopped” · <code>explorer.find.capped_hint</code> “Showing the first {"{n}"}. Type more to narrow the search.” · <code>explorer.more.find_close</code> “Close find” · <code>explorer.more.preview_show</code> “Show preview” · <code>explorer.more.preview_hide</code> “Hide preview”.</YNote>
+      </YSpec>
+
+      <YSpec title="Names — leading / trailing spaces are refused"
+        when={<>A new or renamed name that starts or ends with a space is <b>refused at the field</b>, never trimmed silently (the user may have meant it, and a silent change breaks what they typed). Spaces only = the existing empty error. On Windows a trailing <b>period</b> keeps the reserved-name message, since the OS would change the name the same way. The message box is capped by the new <span className="tok">--tasty-explorer-name-error-max-width</span>.</>}>
+        <YStage variant="solo center" style={{ padding: 20, background: "var(--tasty-bg-app)" }}>
+          <XThemes render={() => (
+            <div style={{ width: 300, height: 120, padding: 4, background: "var(--tasty-bg-panel)", borderRadius: "var(--tasty-radius)" }}>
+              <XListEdit value="report " error="Names can't start or end with a space." />
+            </div>
+          )} />
+        </YStage>
+        <YMeta
+          specs={[["leading / trailing space", "refused · explorer.name.edge_space"], ["only spaces", "explorer.name.empty"], ["Windows trailing .", "explorer.name.reserved (same copy)"], ["box", "explorer-name-error-max-width 240"]]}
+          tokens={[{ tok: "--tasty-explorer-name-error-max-width", use: "→ size-240 (new)" }, { tok: "--tasty-explorer-name-error-fg", use: "border + edge", color: "var(--tasty-explorer-name-error-fg)" }]} />
+      </YSpec>
+
+      <YSpec title="Results — originals left after a cross-disk move · Undo kept a changed copy"
+        when={<>A cross-disk move is copy, then delete. When the delete stops partway the copy is complete but the original may be <b>whole or partly</b> left. That result counts as a failure: <b>warning</b> tone, stays until dismissed, <b>no Undo</b> (the copy may be the only whole one). Undo of a copy never trashes a copy that changed after the job; it keeps it and lists it with its own reason.</>}>
+        <YStage variant="solo center" style={{ padding: 20, background: "var(--tasty-bg-app)" }}>
+          <XThemes gap="var(--tasty-space-md)" render={() => (
+            <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-sm)", width: "var(--tasty-toast-max-width)" }}>
+              <YResult variant="warning" title="Moved 40 of 40 · 2 originals not fully removed"
+                lines={[["~/Volumes/usb/photos/2026-09", "Copied; the original is still there, in whole or in part (Permission denied)"], ["~/Volumes/usb/archive.zip", "Copied; the original is still there, in whole or in part (in use)"]]}
+                actions={<><YButton variant="secondary" size="sm">Retry 2</YButton><YButton variant="ghost" size="sm">Copy paths</YButton></>} />
+              <YResult variant="warning" title="Undid copy · 1 item kept" lines={[["~/Documents/notes.md", "Changed after the copy, so it was kept"]]} />
+            </div>
+          )} />
+        </YStage>
+        <YMeta
+          specs={[["source left", "warning · stays · no Undo · Retry n deletes the originals again · Copy paths"], ["title", "explorer.result.source_left_move"], ["line", "explorer.result.source_not_removed · reason in ( )"], ["undo kept", "explorer.result.changed_kept on the undo result line"]]}
+          tokens={[{ tok: "--tasty-toast-accent-warning", use: "both", color: "var(--tasty-toast-accent-warning)" }]} />
+        <YNote>en / ko / ja — <code>source_left_move</code> “Moved {"{done}"} of {"{total}"} · {"{n}"} originals not fully removed” / “{"{total}"}개 중 {"{done}"}개 이동 · 원본 {"{n}"}개가 다 지워지지 않음” / “{"{total}"} 件中 {"{done}"} 件を移動 · 元の {"{n}"} 件を削除しきれませんでした” · <code>source_not_removed</code> “Copied; the original is still there, in whole or in part ({"{reason}"})” / “복사됨. 원본이 전부 또는 일부 남아 있음 ({"{reason}"})” / “コピー済み。元の項目の全部または一部が残っています ({"{reason}"})” · <code>changed_kept</code> “Changed after the copy, so it was kept” / “복사 뒤 바뀌어서 남겨 둠” / “コピー後に変更されたため残しました”.</YNote>
+      </YSpec>
+
+      <YSpec title="Properties · preview — can't read · several selected · pixel limit · link glyph"
+        when={<>Properties that <b>can't be read</b> keep the popup frame: the item's own glyph and name in the title, then an error line (alertTriangle 16 in explorer-error-fg + “Can't read properties”), the OS reason in mono, and a Retry. The title is <b>regular weight</b> — the same rule as the plugin name: the theme carries no semibold UI face, so popups use regular at 14 and the size carries the title. The preview with <b>nothing</b> selected keeps “Select a file”; with <b>several</b> it says how many and asks for one. A picture over the <b>pixel limit</b> uses the same “Too large to preview” screen as the byte limit, with its own sub-line and the real size on the reason line. Symlinks take the new <b>link</b> glyph. Kind reads as a word: <b>“PNG image”</b>, “Folder”, “Symbolic link”, unknown type “{"{EXT}"} file”, no extension “File”.</>}>
+        <YStage variant="solo center" style={{ padding: 20, background: "var(--tasty-bg-app)", gap: 16, flexWrap: "wrap", alignItems: "flex-start" }}>
+          <XCol label="Properties — can't read" w={360}>
+            <YProps glyph={YK.ic.file} name="private.key">
+              <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)", paddingTop: "var(--tasty-space-xs)" }}>
+                <span style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", fontSize: "var(--tasty-font-size-body)", color: "var(--tasty-explorer-error-fg)" }}><YIcon name="alertTriangle" size="var(--tasty-icon-size-md)" />Can't read properties</span>
+                <span style={{ fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>Permission denied (os error 13)</span>
+                <span style={{ display: "flex", paddingTop: "var(--tasty-space-xs)" }}><YButton variant="secondary" size="sm">Retry</YButton></span>
+              </div>
+            </YProps>
+          </XCol>
+          {["multi", "pixels"].map((k) => (
+            <XCol key={k} label={k === "multi" ? "preview — several selected" : "preview — over the pixel limit"}>
+              <div style={{ height: 230, display: "flex", border: "var(--tasty-border-width) solid var(--tasty-border-default)", borderRadius: "var(--tasty-radius)", overflow: "hidden" }}><YPreview kind={k} /></div>
+            </XCol>
+          ))}
+        </YStage>
+        <YMeta
+          specs={[["can't read", "title = item glyph + name · alertTriangle + “Can't read properties” (explorer-error-fg) · reason mono · Retry (secondary sm)"], ["title weight", "regular (font-weight-normal) at 14 — rule for every popup title until a semibold UI face ships"], ["none selected", "“Select a file” (unchanged)"], ["several", "layers glyph · “{n} items selected” · “Select one file to preview it.”"], ["pixel limit", "same screen as > 1 MB · sub “Over {px} px on a side, or needs more than {mem} to decode.” · reason = real size"], ["units", "binary sizes say MiB (256 MiB here, 512 MiB in the image viewer)"], ["Kind", "“{TYPE} image” · Folder · Symbolic link · “{EXT} file” · File"], ["list min", "explorer-list-min-width 200"], ["tokens", "props-padding-x 14 · props-row-min-height 24 · props-row-line 20 · props-row-pad-top 2 · preview-header-height 40"]]}
+          tokens={[{ tok: "--tasty-explorer-props-padding-x", use: "→ size-14" }, { tok: "--tasty-explorer-props-row-min-height", use: "→ size-24" }, { tok: "--tasty-explorer-props-row-line", use: "→ size-20" }, { tok: "--tasty-explorer-props-row-pad-top", use: "→ size-2" }, { tok: "--tasty-explorer-preview-header-height", use: "→ size-40" }, { tok: "--tasty-explorer-error-fg", use: "can't read", color: "var(--tasty-explorer-error-fg)" }]} />
+        <YNote>i18n (new): <code>explorer.props.unreadable</code> “Can't read properties” · <code>explorer.preview.multi</code> “{"{n}"} items selected” · <code>explorer.preview.multi_sub</code> “Select one file to preview it.” · <code>explorer.preview.too_large_pixels_sub</code> “Over {"{px}"} px on a side, or needs more than {"{mem}"} to decode.” · <code>explorer.kind.image</code> “{"{type}"} image” · <code>explorer.kind.ext_file</code> “{"{ext}"} file”.</YNote>
+      </YSpec>
+    </YSection>
+  );
+}
+
 function Page() {
   return (
     <>
@@ -350,6 +469,7 @@ function Page() {
       <ProgressSection />
       <PropertiesSection />
       <SearchSection />
+      <FollowupsSection />
     </>
   );
 }
