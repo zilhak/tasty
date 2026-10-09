@@ -124,22 +124,39 @@ impl ExplorerView {
 
     /// 보일 항목 수. 거르지 않으면 이름을 보지 않고 센다.
     pub(crate) fn shown_count(&self) -> usize {
-        match &self.find {
-            Some(find) if !find.query.is_empty() && find.search.is_none() && !find.deep => {
-                self.shown().count()
-            }
-            _ => self.shown_list_len(),
+        match self.shown_slice() {
+            Some(list) => list.len(),
+            None => self.shown().count(),
         }
     }
 
-    fn shown_list_len(&self) -> usize {
+    /// 보일 항목 가운데 `range` 자리의 사본. 목록은 보이는 행만 복제해 그린다.
+    /// 이름으로 거르지 않으면 목록을 훑지 않는다.
+    pub(crate) fn shown_range(&self, range: std::ops::Range<usize>) -> Vec<DirEntryInfo> {
+        match self.shown_slice() {
+            Some(list) => {
+                let end = range.end.min(list.len());
+                list[range.start.min(end)..end].to_vec()
+            }
+            None => self
+                .shown()
+                .skip(range.start)
+                .take(range.len())
+                .cloned()
+                .collect(),
+        }
+    }
+
+    /// 이름으로 거르지 않고 그대로 보이는 목록. 거르는 중이면 `None`.
+    pub(crate) fn shown_slice(&self) -> Option<&[DirEntryInfo]> {
         match &self.find {
             Some(FindState {
                 search: Some(search),
                 query,
                 ..
-            }) if !query.is_empty() => search.hits.len(),
-            _ => self.entries.len(),
+            }) if !query.is_empty() => Some(&search.hits),
+            Some(find) if !find.deep && !find.query.is_empty() => None,
+            _ => Some(&self.entries),
         }
     }
 

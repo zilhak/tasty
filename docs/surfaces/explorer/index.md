@@ -135,6 +135,11 @@ mirror explorer 에서 파일을 더블클릭하면 원격 호스트에 그 파�
   주소표시줄 flex:1 / 토글 flex:none.
 - **마지막 view mode 기억**: 사용자가 뷰 모드를 바꾸면 그 값이 `Settings.general.explorer_view_mode`(`~/.tasty/config.toml`)에 영속되고, **새로 생성되는** explorer surface 는 이 값으로 열린다(주입 지점: 생성 요청을 만들 때 `EngineRef::apply_kind_default_params` 가 explorer 의 `default_params` `view_mode = "@settings.explorer_view_mode"` 정책 토큰을 `view_mode` param 미지정 시 해석해 params 에 넣고, 그 params 가 explorer `create` 에 전달된다 — kind별 default_params 는 [plugin-development.md](../../dev-guide/plugin-development.md) 참조). 같은 surface 안의 새 내부 탭(`add_tab`)은 활성 탭의 view mode 를 승계한다. snapshot 복원 경로는 create 를 거치지 않아 per-tab 저장값을 그대로 유지한다.
 - list 행과 사이드바 디렉토리 행은 공용 `tree_row`(`tree_row_height` 22)를, detail 데이터 행은 공용 `Table`(selectable)을 재사용한다. 탐색기 전용 행 높이는 없다. detail 헤더와 본문 행은 Table 기본 높이 `table_cell_height`(28)이고 헤더 채움은 `table_header_bg`다. detail 컬럼은 Name(1fr)/Size(80)/Date(132)/Type(92)이며, 이름은 선택 행만 text-primary 이고 나머지 행은 `table_row_fg`(text-secondary)다. Size·Date 는 **monospace·caption(11)·text-muted**, Size 는 우측 정렬 + 8px 우측 패딩으로 Date 와 시각적 간격을 둔다(design `DetailRow`). Size 열 제목도 같은 8px(`spacing_sm`) 오른쪽 여백을 둔다(design `DetailHeader`, 공용 Table `header_pad_right`). 열 제목은 공용 Table 머리글 그대로 대문자에 `table_header_tracking` 자간이다.
+- 세 뷰 모두 **화면에 걸친 항목만 그린다**. 행 높이가 모드 안에서 모두 같으므로(list `tree_row_height`, grid 칸 높이 + `spacing_md`, detail `table_cell_height`) 화면 밖 행은 같은 높이의 빈자리로 두고 스크롤 길이는 항목 수 그대로다. 프레임 비용은 항목 수가 아니라 보이는 행 수를 따른다. 그리는 행만 목록에서 복제하고, detail 은 복제 없이 참조로 표에 넘긴다.
+  - `..` 행과 새 항목 이름 입력 줄(grid 는 그 둘이 놓인 첫 줄)은 늘 그린다. 스크롤해 화면 밖으로 나가도 이름 입력의 포커스와 글자가 유지된다.
+  - 타입어헤드·새 항목 고르기처럼 화면 밖 항목으로 가야 할 때는 그 항목의 자리를 행 높이로 계산해 가운데로 스크롤한다.
+  - list·grid 의 항목 위젯 id 는 화면 위치가 아니라 항목 경로에 묶는다. 스크롤해도 누름·hover 상태가 같은 항목에 남는다. detail 은 공용 `Table` 의 `virtual_rows`·`scroll_to_row` 를 쓴다.
+  - Find 로 이름을 거르는 동안은 맞는 항목을 세느라 프레임마다 목록 전체의 이름을 본다. 거르지 않을 때와 하위 폴더 검색 결과는 목록을 훑지 않는다.
 - detail 행은 **행 전체가 클릭 타겟**이다 — 파일 이름·Size·Date·Type 글자 위에서도 좌클릭 선택 / Ctrl·Cmd+클릭 토글 / Shift+클릭 범위 선택 / 더블클릭 열기(Navigate·OpenFile) / 우클릭 컨텍스트 메뉴가 동일하게 동작한다. 그 대가로 셀 텍스트를 드래그로 선택·복사할 수는 없다(대체: 우클릭 "경로 복사"). 이 정합은 공용 `Table` 이 selectable 모드에서 셀 라벨 선택성을 끄는 계약으로 보장한다 — [ADR-0037](../../adr/0037-ui-input-motion-and-elevation.md). 헤더 컬럼 제목 클릭(정렬 토글)은 영향을 받지 않는다.
 
 ### 주소 입력
@@ -331,6 +336,7 @@ Appearance → **Explorer** 서브탭에서 surface 폰트를 오버라이드한
 - Given 하위 폴더 검색이 5,000 개보다 많이 맞는다 When 검색이 끝난다 Then 5,000 개만 남고 바에 "5,000+ found · stopped", 상태줄에 범위를 좁히라는 안내가 보인다(`local_reads/search/tests.rs` 의 `a_search_stops_at_the_hit_cap_and_keeps_what_it_found`, `find/tests.rs` 의 `one_skipped_folder_and_the_hit_cap_have_their_own_words`).
 - Given 거르기 검색어에 맞는 이름이 없다 When 목록을 그린다 Then 바는 "0 of N", 목록 자리는 "No names match “{query}”" 이다(`find/tests.rs`).
 - Given Find 바가 열려 있다 When 하위 폴더로 이동한다 Then 바가 닫힌다(`find/tests.rs` 의 `leaving_the_folder_closes_the_bar`).
+- Given 항목 20,000개 폴더 When detail·list·grid 로 본다 Then 화면에 걸친 항목만 그리고(200개 미만), 15,000번째 항목을 고르거나 타입어헤드로 18,765번째로 가면 그 항목이 화면 가운데로 오고 클릭하면 그 항목이 선택된다. 이름 입력을 연 채 목록 끝으로 스크롤해도 입력은 열린 채 포커스를 유지한다(`explorer/virtual_tests.rs`).
 - Given 내부 탭 둘을 열고 정렬을 바꾼 explorer When 재시작한다 Then 탭·cwd·current·뷰 모드·정렬이 복원되고 히스토리와 선택은 비어 있다.
 
 ## 관련

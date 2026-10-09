@@ -950,7 +950,9 @@ fn the_blind_spots_are_still_the_size_they_say() {
         // 열린 Select 테두리 시험의 화면 크기 vec2(600, 400)와 클릭 좌표 pos2(60, 20)의 20 이 test 전용 셋을 더한다.
         // 단축키 엔트리 행 시험의 화면 높이 600 이 test 전용 하나를 더한다(폭 1000 은 스케일 밖).
         // 글꼴 목록 검색칸이 테두리 상자 자리를 vec2(width, 0) 으로 잡으며 0 하나를 더한다.
-        (232, 596),
+        // 탐색기 Grid 가 줄 사이 세로 간격을 vec2(gap, 0) 으로 비우고 직접 띄우며 0 하나를,
+        // 보이는 행만 그리기 시험(virtual_tests.rs)의 칸 크기 Pos2::new(1100, 600)가 test 전용 둘을 더한다.
+        (233, 598),
         "제외한 0과 test 전용 코드의 수가 달라졌다. 실제 사용과 수집 범위의 변경을 확인하고 기록을 갱신한다."
     );
     let roster: usize = UNIT_SPACE_SITES.iter().map(|(.., n, _)| n).sum();
