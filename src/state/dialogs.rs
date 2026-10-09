@@ -108,6 +108,8 @@ pub enum PendingNativeMenu {
 /// 대화상자·팝업의 임시 상태. 새 항목은 RequestContext 최상위 대신 여기에 둔다.
 pub struct DialogState {
     pub(crate) rename: Option<(RenameTarget, String)>,
+    /// 이름 변경 팝업이 직전 프레임에 그린 오류 줄 높이. sizer 가 팝업을 이만큼 높인다.
+    pub(crate) rename_error_height: f32,
     /// 마우스 캡처 배너 메뉴의 대상 surface ID.
     pub(crate) mouse_capture_banner_menu_target: Option<u32>,
     /// 마우스 캡처 배너 메뉴를 열 때 잰 (셸 안쪽 폭, 셸 높이). 폭은 프로그램 이름에 따라,
@@ -207,6 +209,7 @@ impl DialogState {
     pub fn new() -> Self {
         Self {
             rename: None,
+            rename_error_height: 0.0,
             mouse_capture_banner_menu_target: None,
             mouse_capture_banner_menu_size: None,
             tools_menu_width: None,

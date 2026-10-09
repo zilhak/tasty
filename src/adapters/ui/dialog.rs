@@ -12,6 +12,14 @@ use tasty_ui_widgets::tokens::{STRUCT_GAP_2, STRUCT_GAP_4};
 use tasty_ui_widgets::vspace;
 use tasty_ui_widgets::{Button, ButtonVariant};
 
+/// 오류 줄이 있으면 직전 프레임에 잰 그 높이만큼 기본 크기보다 높인다.
+pub fn rename_popup_sizer(
+    state: &MainViewState,
+    _engine: &crate::runtime::engine_read::EngineRead<'_>,
+) -> egui::Vec2 {
+    rename_popup_default_size() + egui::vec2(0.0, state.dialogs.rename_error_height)
+}
+
 pub fn rename_popup_default_size() -> egui::Vec2 {
     egui::vec2(
         280.0,
@@ -43,6 +51,9 @@ pub struct RenamePopupProps<'a> {
     pub error: Option<&'a str>,
     /// false이면 Save와 Enter 확정을 모두 막는다.
     pub save_enabled: bool,
+    /// view 가 채우는 값. 이번 프레임에 그린 오류 줄(앞 간격 포함)의 높이이고 오류가 없으면 0 이다.
+    /// 호출자가 팝업 높이를 이만큼 늘려 버튼 줄이 잘리지 않게 한다.
+    pub error_height: f32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -59,6 +70,7 @@ pub fn on_close_rename_popup(
     _engine: &crate::runtime::engine_read::EngineRead<'_>,
 ) {
     state.dialogs.rename = None;
+    state.dialogs.rename_error_height = 0.0;
 }
 
 pub fn draw_rename_popup(
@@ -111,9 +123,14 @@ pub fn draw_rename_popup(
             body_font_size: th.font_size_body.value(),
             error: validation_error.as_deref(),
             save_enabled,
+            error_height: 0.0,
         };
-        draw_rename_popup_view(inner, &mut props)
+        let action = draw_rename_popup_view(inner, &mut props);
+        let error_height = props.error_height;
+        (action, error_height)
     };
+    let (action, error_height) = action;
+    state.dialogs.rename_error_height = error_height;
 
     match action {
         RenamePopupAction::None => PopupAction::None,
@@ -172,9 +189,12 @@ pub fn draw_rename_popup_view(
         confirm = true;
     }
 
+    props.error_height = 0.0;
     if let Some(err) = props.error {
+        let top = ui.cursor().top();
         vspace(ui, props.theme.spacing_xs);
         ui.colored_label(props.theme.accent_danger(), err);
+        props.error_height = ui.cursor().top() - top;
     }
 
     vspace(ui, props.theme.spacing_sm);
@@ -450,6 +470,7 @@ mod tests {
                     body_font_size: 12.0,
                     error: None,
                     save_enabled: true,
+                    error_height: 0.0,
                 };
                 out = draw_rename_popup_view(ui, &mut props);
             });
@@ -465,6 +486,50 @@ mod tests {
             repeat: false,
             modifiers: egui::Modifiers::NONE,
         }
+    }
+
+    /// 내용 높이와 view 가 알린 오류 줄 높이를 잰다.
+    fn measured(error: Option<&str>) -> (f32, f32) {
+        let ctx = egui::Context::default();
+        let theme = test_theme();
+        let mut buffer = "note.md ".to_string();
+        let mut out = (0.0, 0.0);
+        drop(ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                ui.set_width(200.0);
+                let top = ui.cursor().top();
+                let mut props = RenamePopupProps {
+                    theme: &theme,
+                    buffer: &mut buffer,
+                    save_label: "Save",
+                    cancel_label: "Cancel",
+                    body_font_size: 12.0,
+                    error,
+                    save_enabled: error.is_none(),
+                    error_height: 0.0,
+                };
+                let _ = draw_rename_popup_view(ui, &mut props); // 높이만 잰다 — action 무시.
+                out = (ui.cursor().top() - top, props.error_height);
+            });
+        }));
+        out
+    }
+
+    #[test]
+    fn an_error_line_grows_the_popup_by_its_height_so_the_buttons_stay_inside() {
+        let (plain, none) = measured(None);
+        assert_eq!(none, 0.0);
+        let (with_error, error_h) = measured(Some("Names can't start or end with a space."));
+        assert!(error_h > 0.0);
+        assert_eq!(
+            with_error,
+            plain + error_h,
+            "the error line is the only thing that pushes the button row down"
+        );
+        // 기본 크기는 오류가 없는 내용이 들어가는 높이다. sizer 는 오류 줄만큼 더한다.
+        let content = LogicalPx(64.0).value();
+        assert!(plain <= content, "{plain} > {content}");
+        assert!(with_error <= content + error_h);
     }
 
     #[test]
@@ -499,6 +564,7 @@ mod tests {
                     body_font_size: 12.0,
                     error: None,
                     save_enabled: true,
+                    error_height: 0.0,
                 };
                 let _ = draw_rename_popup_view(ui, &mut props); // focus priming frame — action 무시.
             });
@@ -516,6 +582,7 @@ mod tests {
                     body_font_size: 12.0,
                     error: None,
                     save_enabled: true,
+                    error_height: 0.0,
                 };
                 last = draw_rename_popup_view(ui, &mut props);
             });
@@ -584,6 +651,18 @@ mod tests {
             &e.read(),
         );
         assert!(!ok && err.is_some());
+    }
+
+    #[test]
+    fn the_rename_sizer_adds_the_last_error_line_height() {
+        let (mut state, session) = crate::state::tests::test_state();
+        let base = rename_popup_sizer(&state, &session.read());
+        assert_eq!(base, rename_popup_default_size());
+        state.dialogs.rename_error_height = 18.0;
+        assert_eq!(
+            rename_popup_sizer(&state, &session.read()),
+            base + egui::vec2(0.0, 18.0)
+        );
     }
 
     #[test]

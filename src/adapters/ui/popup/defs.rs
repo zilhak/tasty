@@ -97,7 +97,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 fullscreen_stage: None,
                 title_fn: Some(crate::adapters::ui::dialog::rename_popup_title),
                 default_size: crate::adapters::ui::dialog::rename_popup_default_size(),
-                sizer: None,
+                sizer: Some(crate::adapters::ui::dialog::rename_popup_sizer),
                 default_scope: PopupScope::Window,
                 close_on_outside_click: false,
                 headless: false,
