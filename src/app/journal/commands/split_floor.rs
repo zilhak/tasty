@@ -5,9 +5,10 @@
 //! [`SplitGeometry`] 를 넘긴다([`ShownWorkspace`]). 같은 workspace 를 여러 창이 보여 주면 가장 큰
 //! 창으로 판정한다. 어느 창도 그 workspace 를 보여 주지 않으면(헤드리스 포함) 하한을 적용하지 않는다.
 //!
-//! 비율은 하한을 지키는 범위에서 0.5 에 가장 가까운 값으로 고친다. 하한은 탐색기 칸에만 있고 다른 종류의
-//! 칸은 최소가 0 이다. 그래서 탐색기 칸을 하한에 맞추면 탐색기인 형제 칸이 하한 아래가 될 때만 split 을
-//! 거절한다. 판정 대상은 split 으로 높이가 바뀌는 칸뿐이다. 다른 칸과 창 크기 변경은 보지 않는다.
+//! 비율은 하한을 지키는 범위에서 0.5 에 가장 가까운 값으로 고친다. 하한은 탐색기 칸에만 있다. 탐색기가
+//! 걸린 새 분할은 탐색기가 아닌 쪽 칸도 `split-sibling-min-height`(pane 탭 줄 + 한 줄) 아래로 만들지
+//! 않는다. 두 조건을 함께 지킬 비율이 없으면 split 을 거절한다. 드래그와 창 크기 변경에서는 탐색기가 아닌
+//! 칸의 최소가 0 이다. 판정 대상은 split 으로 높이가 바뀌는 칸뿐이다.
 
 use crate::model::{
     PANE_BORDER_WIDTH, PhysicalPx, PhysicalRect, SURFACE_BORDER_WIDTH, SplitDirection, WorkspaceId,
@@ -53,13 +54,15 @@ fn largest_view(views: &[ShownWorkspace], workspace: WorkspaceId) -> Option<&Spl
         .max_by(|a, b| a.logical_area().total_cmp(&b.logical_area()))
 }
 
-/// split 비율에 따라 높이가 바뀌는 탐색기 칸. 첫째 칸 쪽(`first`)은 비율이 클수록, 새로 생기는
-/// 둘째 칸 쪽(`second`)은 비율이 작을수록 높아진다. `first_before` 는 split 전 첫째 쪽 칸의 높이로,
-/// `first` 와 같은 순서다.
+/// split 비율에 따라 높이가 바뀌는 칸. 첫째 칸 쪽(`first`)은 비율이 클수록, 새로 생기는
+/// 둘째 칸 쪽(`second`)은 비율이 작을수록 높아진다. `first_before` 는 split 전 첫째 쪽 탐색기 칸의
+/// 높이로, `first` 와 같은 순서다. `*_sibling` 은 탐색기가 없는 쪽 칸의 높이다.
 struct Affected<'a> {
     first: Box<dyn Fn(f32) -> Vec<PhysicalPx> + 'a>,
     first_before: Vec<PhysicalPx>,
     second: Box<dyn Fn(f32) -> Vec<PhysicalPx> + 'a>,
+    first_sibling: Box<dyn Fn(f32) -> Option<PhysicalPx> + 'a>,
+    second_sibling: Box<dyn Fn(f32) -> Option<PhysicalPx> + 'a>,
 }
 
 /// 새 분할의 비율을 하한에 맞게 고친다. 맞출 수 없으면 거절 응답을 돌려준다.
@@ -96,14 +99,25 @@ pub(super) fn hold(
         }
         _ => return Ok(()),
     };
+    // 탐색기가 걸리지 않은 분할은 하한도 형제 칸 최소도 보지 않는다.
+    if affected.first_before.is_empty() && !new_is_explorer {
+        return Ok(());
+    }
+    let sibling = crate::theme::theme()
+        .split_sibling_min_height()
+        .to_physical(geometry.scale);
     // 창이 작아 이미 하한보다 낮은 칸은 지금 높이 아래로만 줄지 않으면 된다(드래그 하한과 같은 규칙).
     let first_ok = |r: f32| {
         (affected.first)(r)
             .into_iter()
             .zip(&affected.first_before)
             .all(|(h, before)| h >= floor.min(*before))
+            && (affected.first_sibling)(r).is_none_or(|h| h >= sibling)
     };
-    let second_ok = |r: f32| (affected.second)(r).into_iter().all(|h| h >= floor);
+    let second_ok = |r: f32| {
+        (affected.second)(r).into_iter().all(|h| h >= floor)
+            && (affected.second_sibling)(r).is_none_or(|h| h >= sibling)
+    };
     let current = split.ratio.to_f32();
     if first_ok(current) && second_ok(current) {
         return Ok(());
@@ -218,8 +232,11 @@ fn pane_split<'a>(
             })
             .collect()
     };
+    let first_before = pane_heights(rect);
+    // 형제 칸 최소는 pane 탭 줄을 포함한 pane 높이로 잰다.
+    let target_is_sibling = first_before.is_empty();
     Some(Affected {
-        first_before: pane_heights(rect),
+        first_before,
         first: Box::new(move |r| pane_heights(rect.split_with_gap(direction, r, gap).0)),
         second: Box::new(move |r| {
             let (_, second) = rect.split_with_gap(direction, r, gap);
@@ -227,6 +244,12 @@ fn pane_split<'a>(
                 .then(|| content(second, tab_bar).height)
                 .into_iter()
                 .collect()
+        }),
+        first_sibling: Box::new(move |r| {
+            target_is_sibling.then(|| rect.split_with_gap(direction, r, gap).0.height)
+        }),
+        second_sibling: Box::new(move |r| {
+            (!new_is_explorer).then(|| rect.split_with_gap(direction, r, gap).1.height)
         }),
     })
 }
@@ -278,6 +301,20 @@ fn surface_split<'a>(
                 .then_some(second.height)
                 .into_iter()
                 .collect()
+        }),
+        first_sibling: Box::new(move |r| {
+            (!target_is_explorer).then(|| {
+                rect.split_with_gap(direction, r, SURFACE_BORDER_WIDTH)
+                    .0
+                    .height
+            })
+        }),
+        second_sibling: Box::new(move |r| {
+            (!new_is_explorer).then(|| {
+                rect.split_with_gap(direction, r, SURFACE_BORDER_WIDTH)
+                    .1
+                    .height
+            })
         }),
     })
 }

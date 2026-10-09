@@ -277,12 +277,16 @@ fn a_split_without_explorers_is_left_alone() {
     assert_eq!(ratio(&destination), 0.5);
 }
 
-/// 탐색기가 아닌 형제 칸은 최소가 0 이다. 탐색기 칸이 하한을 지키면 형제 칸이 분할선 드래그 범위(10%)보다
-/// 작아져도 split 을 받는다.
+fn sibling_min() -> f32 {
+    crate::theme::theme().split_sibling_min_height().value()
+}
+
+/// 탐색기가 걸린 새 분할은 탐색기가 아닌 형제 칸을 `split-sibling-min-height` 아래로 만들지 않는다.
+/// 탐색기 하한과 형제 칸 최소를 함께 지키는 비율에서 멈춘다.
 #[test]
-fn a_non_explorer_sibling_has_no_minimum() {
+fn a_new_split_keeps_a_non_explorer_sibling_at_its_minimum() {
     let explorer = session("explorer", None);
-    let height = floor() + 20.0;
+    let height = floor() + sibling_min() + 20.0;
     let mut destination = surface_split(1000, SplitDirection::Horizontal);
     hold(
         &mut destination,
@@ -294,9 +298,63 @@ fn a_non_explorer_sibling_has_no_minimum() {
     let r = ratio(&destination);
     let (kept, sibling) = halves(height, r);
     assert!(kept >= floor(), "explorer {kept}");
+    assert!(sibling >= sibling_min(), "ratio {r}, sibling {sibling}");
+}
+
+/// 탐색기 하한을 지키면 형제 칸이 최소보다 낮아지는 높이에서는 split 을 거절한다.
+#[test]
+fn a_split_that_would_leave_a_sliver_sibling_is_refused() {
+    let explorer = session("explorer", None);
+    let height = floor() + sibling_min() - 10.0;
+    let mut destination = surface_split(1000, SplitDirection::Horizontal);
+    let refused = hold(
+        &mut destination,
+        "terminal",
+        &explorer.core_state,
+        &shown(height),
+    )
+    .unwrap_err();
+    assert_eq!(reason(&refused).2, REFUSAL_REASON);
+    assert_eq!(ratio(&destination), 0.5);
+}
+
+/// pane 분할의 새 pane 도 형제 칸 최소를 pane 탭 줄을 포함한 높이로 지킨다.
+#[test]
+fn a_pane_split_keeps_the_new_pane_at_the_sibling_minimum() {
+    let first = session("explorer", None);
+    let content = floor() + sibling_min() + 40.0;
+    let mut destination = CreationDestination::Pane {
+        target: 10,
+        pane: 0,
+        tab: 0,
+        split: split(SplitDirection::Horizontal),
+    };
+    hold(
+        &mut destination,
+        "terminal",
+        &first.core_state,
+        &shown(content),
+    )
+    .unwrap();
+    let r = ratio(&destination);
+    let (top, bottom) = PhysicalRect {
+        x: PhysicalPx(0.0),
+        y: PhysicalPx(0.0),
+        width: PhysicalPx(800.0),
+        height: PhysicalPx(content + TAB_BAR),
+    }
+    .split_with_gap(
+        SplitDirection::Horizontal,
+        r,
+        PANE_BORDER_WIDTH.to_physical(1.0),
+    );
     assert!(
-        r > 0.9 && sibling < height * 0.1,
-        "ratio {r}, sibling {sibling}"
+        top.height.value() - TAB_BAR >= floor(),
+        "ratio {r}, top {top:?}"
+    );
+    assert!(
+        bottom.height.value() >= sibling_min(),
+        "ratio {r}, bottom {bottom:?}"
     );
 }
 
