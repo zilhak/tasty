@@ -995,3 +995,166 @@ fn store_waiting_effect_input(
         }
     }
 }
+
+/// 명시 cwd 는 kind 와 관계없이 create 에 간다. explorer 는 그 폴더를 루트로 열고 탭 이름도 그 폴더다.
+#[test]
+fn an_explicit_cwd_opens_an_explorer_there_from_every_creation_method() {
+    let (mut session, mut journal) = boot();
+    let base = tempfile::tempdir().unwrap();
+    let folder = |name: &str| {
+        let dir = base.path().join(name);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    };
+    let explorer = |session: &EngineSession, sid: u32| {
+        let surface = session.runtime.surfaces.get(&sid).expect("surface exists");
+        let ex = surface
+            .as_any()
+            .downcast_ref::<crate::model::ExplorerPanel>()
+            .expect("explorer surface");
+        (ex.cwd().to_path_buf(), ex.tabs.len())
+    };
+    let tab_name = |session: &EngineSession, sid: u32| {
+        let pane = session.core_state.find_pane_for_surface(sid).unwrap();
+        let tab = session.core_state.find_tab_for_surface(sid).unwrap();
+        session
+            .core_state
+            .find_pane_by_id(pane)
+            .unwrap()
+            .tabs
+            .iter()
+            .find(|t| t.id == tab)
+            .unwrap()
+            .name
+            .clone()
+    };
+
+    // workspace.create 는 실제 해소 함수로 cwd 를 정한 뒤 만든다.
+    let ws_dir = folder("ws");
+    let params = serde_json::json!({"type":"explorer","cwd":ws_dir.to_string_lossy()});
+    let (mut state, scope_engine) = crate::state::tests::test_state();
+    let cwd = crate::ipc::handler::workspace::resolve_create_cwd(
+        &params,
+        "explorer",
+        &crate::ipc::request_scope::RequestScope::capture(
+            &mut state,
+            &scope_engine.core_state,
+            #[cfg(feature = "gui")]
+            None,
+        ),
+        &scope_engine.as_ref(),
+        &serde_json::Value::Null,
+    )
+    .unwrap();
+    assert_eq!(cwd.as_deref(), Some(ws_dir.as_path()));
+    let rx = send(&mut journal, request("workspace.create", params, None, 901));
+    let ws = loop {
+        journal.poll_bootstrap(&mut [&mut session], None).unwrap();
+        for (ticket, _) in journal.requests_needing_resolution() {
+            journal.resolve_workspace_creation(ticket, &session, cwd.clone());
+        }
+        if let Ok(response) = rx.try_recv() {
+            break response;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    };
+    assert!(ws.error.is_none(), "{ws:?}");
+    let ws = ws.result.unwrap();
+    let ws_sid = ws["surface_id"].as_u64().unwrap() as u32;
+    assert_eq!(explorer(&session, ws_sid), (ws_dir.clone(), 1));
+    assert_eq!(tab_name(&session, ws_sid), "ws");
+    let pane = session.core_state.find_pane_for_surface(ws_sid).unwrap();
+
+    // tab.create·split 은 창의 완료 단계와 같은 resolve_public_creation 으로 해소한다.
+    let services = crate::ipc::handler::cli_entry_tests::test_core();
+    let public = |journal: &mut JournalApplication,
+                  session: &mut EngineSession,
+                  rx: &std::sync::mpsc::Receiver<JsonRpcResponse>| {
+        let mut stall = StallBudget::new(journal);
+        loop {
+            journal.poll_bootstrap(&mut [&mut *session], None).unwrap();
+            for (ticket, _) in journal.requests_needing_resolution() {
+                journal.resolve_public_creation(ticket, session, &services);
+            }
+            if let Ok(response) = rx.try_recv() {
+                return response;
+            }
+            stall.nap("public creation reply");
+        }
+    };
+    let create = |journal: &mut JournalApplication,
+                  session: &mut EngineSession,
+                  method: &str,
+                  params: serde_json::Value,
+                  id: u64| {
+        let rx = send(journal, request(method, params, None, id));
+        let response = public(journal, session, &rx);
+        assert!(response.error.is_none(), "{method}: {response:?}");
+        let body = response.result.unwrap();
+        body["surface_id"]
+            .as_u64()
+            .or_else(|| body["new_surface_id"].as_u64())
+            .unwrap() as u32
+    };
+
+    // tab.create 는 명시 cwd 가 있으면 @home 기본 path 를 채우지 않는다.
+    let tab_dir = folder("tab");
+    let sid = create(
+        &mut journal,
+        &mut session,
+        "tab.create",
+        serde_json::json!({"pane_id":pane,"type":"explorer","cwd":tab_dir.to_string_lossy()}),
+        902,
+    );
+    assert_eq!(explorer(&session, sid), (tab_dir.clone(), 1));
+    assert_eq!(tab_name(&session, sid), "tab");
+
+    // 명시 path 는 cwd 보다 먼저다.
+    let path_dir = folder("given");
+    let sid = create(
+        &mut journal,
+        &mut session,
+        "tab.create",
+        serde_json::json!({"pane_id":pane,"type":"explorer","cwd":tab_dir.to_string_lossy(),"path":path_dir.to_string_lossy()}),
+        903,
+    );
+    assert_eq!(explorer(&session, sid).0, path_dir);
+
+    // 둘 다 없으면 예전처럼 홈이다.
+    let sid = create(
+        &mut journal,
+        &mut session,
+        "tab.create",
+        serde_json::json!({"pane_id":pane,"type":"explorer"}),
+        904,
+    );
+    assert_eq!(explorer(&session, sid).0, crate::model::default_root());
+
+    for (level, name, id) in [
+        ("surface", "split-surface", 905),
+        ("pane", "split-pane", 906),
+    ] {
+        let dir = folder(name);
+        let sid = create(
+            &mut journal,
+            &mut session,
+            "split",
+            serde_json::json!({"target_surface":ws_sid,"level":level,"type":"explorer","cwd":dir.to_string_lossy()}),
+            id,
+        );
+        assert_eq!(explorer(&session, sid).0, dir, "split level {level}");
+    }
+
+    // 없는 cwd 는 kind 와 관계없이 거절한다.
+    let rx = send(
+        &mut journal,
+        request(
+            "tab.create",
+            serde_json::json!({"pane_id":pane,"type":"explorer","cwd":base.path().join("missing").to_string_lossy()}),
+            None,
+            907,
+        ),
+    );
+    let refused = public(&mut journal, &mut session, &rx);
+    assert!(refused.error.is_some(), "{refused:?}");
+}

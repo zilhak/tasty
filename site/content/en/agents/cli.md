@@ -1,4 +1,4 @@
-<!-- source-hash: c74278a08522 -->
+<!-- source-hash: e83d1bf1f06d -->
 # Driving terminals with the tasty CLI
 
 Use the `tasty` CLI to create terminals, send commands, and read results. Control a running Tasty from a script, or let an AI agent set up the terminals it needs.
@@ -144,7 +144,7 @@ tasty close window --id 1                               # close a window
 tasty close self                                        # close this very Surface
 ```
 
-`--target-surface this` means yourself (`TASTY_SURFACE_ID`). You can also create non-terminal surfaces, for example `--type markdown --file README.md` ([Opening files](../using/files.md)).
+`--target-surface this` means yourself (`TASTY_SURFACE_ID`). You can also create non-terminal surfaces, for example `--type markdown --file README.md` ([Opening files](../using/files.md)). The `--cwd` of `new workspace` · `new tab` · `split` works for an Explorer (`--type explorer`) too: without `--path` it opens that folder as the root. With both, `--path` wins. An Explorer does not inherit another surface's working directory when `--cwd` is omitted; it opens your home folder.
 
 A tab opened with `tasty new tab` does not change the tab the person was looking at, whatever its kind. The new tab is added at the end of the pane and stays in the background until the person picks it. The reply's `active_tab` is the tab currently selected in that pane, not the new one, so use the reply's `surface_id` to work with the new tab. A tab the person opens by shortcut or menu is selected right away.
 

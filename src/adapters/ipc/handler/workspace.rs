@@ -140,8 +140,8 @@ fn inherit_cwd_for_create(
     }
 }
 
-/// terminal 생성의 cwd를 정한다. 명시값이 우선하고 다른 kind에서는 사용하지 않는다.
-/// 원격 mirror의 경로는 로컬 workspace에 상속하지 않는다.
+/// 첫 surface 생성의 cwd를 정한다. 명시값은 kind와 관계없이 create에 넘긴다(explorer는 시작 폴더로 쓴다).
+/// 명시값이 없을 때 상속하는 것은 terminal뿐이다. 원격 mirror의 경로는 로컬 workspace에 상속하지 않는다.
 /// 잘못된 surface_id는 포커스 대상으로 대체하지 않고 거절한다.
 pub(crate) fn resolve_create_cwd(
     params: &serde_json::Value,
@@ -163,10 +163,10 @@ pub(crate) fn resolve_create_cwd(
         ));
     }
     let named_surface = params::opt_int::<u32>(params, "surface_id", id)?;
-    Ok(if kind == "terminal" {
-        explicit_cwd.or_else(|| inherit_cwd_for_create(window, engine, named_surface))
-    } else {
-        None
+    Ok(match explicit_cwd {
+        Some(cwd) => Some(cwd),
+        None if kind == "terminal" => inherit_cwd_for_create(window, engine, named_surface),
+        None => None,
     })
 }
 

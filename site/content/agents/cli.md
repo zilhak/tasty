@@ -143,7 +143,7 @@ tasty close window --id 1                               # 윈도우 닫기
 tasty close self                                        # 지금 이 서피스 닫기
 ```
 
-`--target-surface this` 는 자기 자신(`TASTY_SURFACE_ID`)입니다. `--type markdown --file README.md` 처럼 터미널이 아닌 표면도 만들 수 있습니다 ([파일 열기](../using/files.md)).
+`--target-surface this` 는 자기 자신(`TASTY_SURFACE_ID`)입니다. `--type markdown --file README.md` 처럼 터미널이 아닌 표면도 만들 수 있습니다 ([파일 열기](../using/files.md)). `new workspace` · `new tab` · `split` 의 `--cwd` 는 탐색기(`--type explorer`)에서도 통해, `--path` 가 없으면 그 폴더를 루트로 엽니다. 둘 다 적으면 `--path` 가 이깁니다. 탐색기는 `--cwd` 를 생략해도 다른 서피스의 작업 디렉토리를 이어받지 않고 홈을 엽니다.
 
 `tasty new tab` 으로 연 탭은 종류와 상관없이 사용자가 보던 탭을 바꾸지 않습니다. 새 탭은 페인의 맨 뒤에 붙고, 사용자가 고를 때까지 뒤에 있습니다. 응답의 `active_tab` 은 새 탭이 아니라 그 페인에서 지금 선택된 탭이므로, 새 탭을 다룰 때는 응답의 `surface_id` 를 씁니다. 단축키나 메뉴로 사용자가 직접 연 탭은 바로 선택됩니다.
 

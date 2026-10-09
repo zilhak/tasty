@@ -2324,7 +2324,7 @@ help = "対象ペイン ID（必須）"
 help = "サーフェス種別: terminal（既定）、markdown、explorer、html、image、dag_graph"
 
 [cli.help._root.new.tab.arg.cwd]
-help = "作業ディレクトリ（terminal 種別のとき）"
+help = "作業ディレクトリ: terminal の開始場所、--path がないときは explorer のルート"
 
 [cli.help._root.new.tab.arg.file]
 help = "ファイルパス（markdown 種別のとき）"
@@ -2581,7 +2581,7 @@ help = "サーフェス種別: terminal（既定）、markdown、explorer、html
 help = "新しいサーフェスに設定するメタデータ JSON（例: '{\"nickname\":\"build\"}'）"
 
 [cli.help._root.split.arg.cwd]
-help = "作業ディレクトリ（terminal 種別のとき）"
+help = "作業ディレクトリ: terminal の開始場所、--path がないときは explorer のルート"
 
 [cli.help._root.split.arg.file]
 help = "ファイルパス（markdown/image 種別のとき）"

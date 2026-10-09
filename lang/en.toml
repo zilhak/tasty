@@ -2330,7 +2330,7 @@ help = "Target pane ID (required)"
 help = "Surface type: terminal (default), markdown, explorer, html, image, dag_graph"
 
 [cli.help._root.new.tab.arg.cwd]
-help = "Working directory (for terminal type)"
+help = "Working directory: where a terminal starts, and the root of an explorer when --path is omitted"
 
 [cli.help._root.new.tab.arg.file]
 help = "File path (for markdown type)"
@@ -2587,7 +2587,7 @@ help = "Surface type: terminal (default), markdown, explorer, html, image, dag_g
 help = "Metadata JSON to set on the new surface (e.g. '{\"nickname\":\"build\"}')"
 
 [cli.help._root.split.arg.cwd]
-help = "Working directory (for terminal type)"
+help = "Working directory: where a terminal starts, and the root of an explorer when --path is omitted"
 
 [cli.help._root.split.arg.file]
 help = "File path (for markdown/image type)"

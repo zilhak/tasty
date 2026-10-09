@@ -218,14 +218,21 @@ impl Spec {
                     return Err(bad(format!("Pane {pane} not found")));
                 }
                 if let Some(definition) = engine.runtime.surface_registry.get(&kind) {
-                    let home =
-                        directories::BaseDirs::new().map(|dirs| dirs.home_dir().to_path_buf());
-                    engine.apply_kind_default_params(&definition, &mut input, home.as_deref());
+                    // 명시 cwd 가 있으면 @home 기본값이 그 cwd 를 가리지 않게 홈을 주지 않는다.
+                    let home = explicit_cwd.is_none().then(|| {
+                        directories::BaseDirs::new().map(|dirs| dirs.home_dir().to_path_buf())
+                    });
+                    engine.apply_kind_default_params(
+                        &definition,
+                        &mut input,
+                        home.flatten().as_deref(),
+                    );
                 }
+                // 명시 cwd 는 kind 와 관계없이 넘긴다. 상속은 terminal 만 한다.
                 let cwd = if kind == "terminal" {
                     explicit_cwd.or_else(|| inherit(selected(pane)))
                 } else {
-                    None
+                    explicit_cwd
                 };
                 (
                     Destination::Tab {
@@ -280,7 +287,7 @@ impl Spec {
                             if kind == "terminal" {
                                 explicit_cwd.or_else(|| inherit(selected(target)))
                             } else {
-                                None
+                                explicit_cwd
                             },
                         )
                     }
@@ -296,7 +303,7 @@ impl Spec {
                             if kind == "terminal" {
                                 explicit_cwd.or_else(|| inherit(Some(target)))
                             } else {
-                                None
+                                explicit_cwd
                             },
                         )
                     }

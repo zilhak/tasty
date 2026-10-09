@@ -75,6 +75,8 @@ pub create: Arc<dyn Fn(SurfaceId, Option<&Path>, &serde_json::Value)
 
 두 번째 인자 `Option<&Path>`가 cwd다. 기본 제공 종류와 plugin 종류 모두 이 인자를 받는다. 워크스페이스 첫 surface·새 탭·ConvertSurface·SplitPane·SplitSurface의 생성 요청이 cwd를 담고, 생성을 실행하는 `effect_runner::prepare`가 그 cwd를 kind의 `create`에 전달한다.
 
+IPC 생성(`workspace.create` 의 `resolve_create_cwd`, `tab.create`·`split` 의 `create_spec`)은 명시 `cwd` 를 kind 와 관계없이 담는다. 명시값이 없을 때 지목한 surface·포커스 surface 에서 이어받는 것은 terminal 뿐이다. 다른 kind 는 cwd 없이 만들어 자기 기본값(explorer 는 홈)을 쓴다. `tab.create` 는 명시 `cwd` 가 있으면 kind 기본 params 의 `@home` 을 풀지 않는다. 그래야 explorer 의 `path = "@home"` 기본값이 명시 cwd 를 가리지 않는다. 없는 폴더를 명시하면 kind 와 관계없이 `cwd does not exist` 로 거절한다.
+
 #### 3. `ConvertSurfaceTarget::Kind` 에 cwd 동봉
 
 ```rust
@@ -107,7 +109,7 @@ mirror 워크스페이스의 convert 는 로컬에서 실행되지 않고 `Struc
 | 소비 지점 | cwd 가 가는 곳 | 판정 |
 |---|---|---|
 | `intent/workspace.rs` (새 워크스페이스 intent — GUI 경로) | 새 **로컬** 워크스페이스의 첫 PTY | 상속 원본은 그 창의 포커스 surface. 그것이 mirror 면 `None`(= 홈) |
-| `adapters/ipc/handler/workspace.rs` (`workspace.create`) | 새 **로컬** 워크스페이스의 첫 PTY | 상속 원본은 지목한 `surface_id`, 없으면 그 창의 포커스 surface([ADR-0043](../../adr/0043-cli-errors-and-diagnostic-logs.md)). 그것이 mirror 면 `None`(= 홈). 명시 `cwd` 는 그대로 존중 |
+| `adapters/ipc/handler/workspace.rs` (`workspace.create`) | 새 **로컬** 워크스페이스의 첫 surface | 상속(terminal 만) 원본은 지목한 `surface_id`, 없으면 그 창의 포커스 surface([ADR-0043](../../adr/0043-cli-errors-and-diagnostic-logs.md)). 그것이 mirror 면 `None`(= 홈). 명시 `cwd` 는 kind 와 관계없이 그대로 존중 |
 | `state/tab.rs` (`add_tab` · `add_kind_tab`) | mirror 면 cwd 를 읽기 **전에** forward 로 return | 로컬 워크스페이스에서만 값이 쓰인다 |
 | `state/tab.rs` (`add_kind_tab_by_owner`) | owner surface 의 pane 에 `DomainIntent::CreateTab` 을 보낸다. 상속 원본은 owner surface 다. 그 창의 포커스는 결과에 영향을 주지 않는다 | owner surface 가 mirror 면 `None`. owner pane 이 mirror 면 App journal 이 `NewTab` 으로 forward 해 cwd 가 버려진다. 유일한 호출처인 explorer "새 탭으로 열기"는 `path` param 이 root 를 정하고 mirror 에서는 핸들러가 먼저 막는다 |
 | `intent/pane.rs` · `intent/surface.rs` (split) · `intent/tab.rs` · `adapters/ipc/handler/{pane,tab}.rs` | App journal의 mirror 대상 해소가 forward — 그 op(`SplitPane`/`NewTab`/`SplitSurface`)는 cwd 필드가 없다 | mirror 에서는 `None` 이 계산돼 버려진다. 서버가 자기 트리에서 결정 |

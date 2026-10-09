@@ -142,7 +142,7 @@ pub enum Commands {
         /// Metadata JSON to set on the new surface (e.g. '{"nickname":"build"}')
         #[arg(long)]
         meta: Option<String>,
-        /// Working directory (for terminal type)
+        /// Working directory: where a terminal starts, and the root of an explorer when --path is omitted
         #[arg(long)]
         cwd: Option<String>,
         /// File path (for markdown/image type)

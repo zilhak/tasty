@@ -53,7 +53,7 @@ pub enum NewCommands {
         /// Surface type: terminal (default), markdown, explorer, html, image, dag_graph
         #[arg(long, default_value = "terminal")]
         r#type: String,
-        /// Working directory (for terminal type)
+        /// Working directory: where a terminal starts, and the root of an explorer when --path is omitted
         #[arg(long)]
         cwd: Option<String>,
         /// File path (for markdown type)

@@ -2324,7 +2324,7 @@ help = "대상 페인 ID (필수)"
 help = "서피스 종류: terminal (기본), markdown, explorer, html, image, dag_graph"
 
 [cli.help._root.new.tab.arg.cwd]
-help = "작업 디렉토리 (terminal 종류일 때)"
+help = "작업 디렉토리: terminal 이 시작하는 곳, --path 가 없을 때 explorer 의 루트"
 
 [cli.help._root.new.tab.arg.file]
 help = "파일 경로 (markdown 종류일 때)"
@@ -2581,7 +2581,7 @@ help = "서피스 종류: terminal (기본), markdown, explorer, html, image, da
 help = "새 서피스에 설정할 메타데이터 JSON (예: '{\"nickname\":\"build\"}')"
 
 [cli.help._root.split.arg.cwd]
-help = "작업 디렉토리 (terminal 종류일 때)"
+help = "작업 디렉토리: terminal 이 시작하는 곳, --path 가 없을 때 explorer 의 루트"
 
 [cli.help._root.split.arg.file]
 help = "파일 경로 (markdown/image 종류일 때)"
