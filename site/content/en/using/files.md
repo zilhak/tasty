@@ -1,4 +1,4 @@
-<!-- source-hash: 040a46c44eba -->
+<!-- source-hash: 1cbc6c459280 -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -158,7 +158,9 @@ When it finishes, a result card appears at the bottom right of the Explorer. Car
 
 - **Retry** — runs only the failed or skipped items again.
 - **Copy paths** — copies the card's paths to the clipboard.
-- **Undo** — shown while the card is up, after a copy or move that fully finished. Moved items go back (unless something else now sits there), and copies go to the trash. Files you replaced can't be restored.
+- **Undo** — shown while the card is up, after a copy or move that fully finished. Moved items go back (unless something else now sits there), and copies go to the trash. A copy you edited after the job is kept. Files you replaced can't be restored.
+
+If a move across disks can't delete all of the original (for example a subfolder you can't write to), a warning card says the original was left in place, whole or in part, and stays until you close it. The copy is then the complete data, so there is no Undo. Clean up what is left of the original yourself.
 
 ## Markdown
 

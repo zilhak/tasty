@@ -517,7 +517,7 @@ fn queued_requests_are_listed_per_surface_and_removable() {
 #[test]
 fn undo_remembers_whether_it_puts_back_a_move() {
     let moved = Operation::Undo(vec![
-        UndoStep::Created("/a".into()),
+        UndoStep::Created("/a".into(), None),
         UndoStep::Moved {
             from: "/b".into(),
             to: "/c/b".into(),
@@ -525,7 +525,7 @@ fn undo_remembers_whether_it_puts_back_a_move() {
     ]);
     assert_eq!(moved.undo_of(), Some(OpKind::Move));
     assert_eq!(moved.kind(), Some(OpKind::Undo));
-    let copied = Operation::Undo(vec![UndoStep::Created("/a".into())]);
+    let copied = Operation::Undo(vec![UndoStep::Created("/a".into(), None)]);
     assert_eq!(copied.undo_of(), Some(OpKind::Copy));
     assert_eq!(Operation::Open("x".into()).kind(), None);
 }

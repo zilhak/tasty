@@ -23,6 +23,8 @@ const EXPECTED_MTIME_SITES: &[(&str, usize)] = &[
     ("crates/tasty-plugin-agent-common/src/prompt_file.rs", 1),
     ("crates/tasty-plugin-claude/src/error_scan.rs", 1),
     ("crates/tasty-plugin-sdk/src/file_watch.rs", 1),
+    // 되돌리기 시험이 사본을 고친 것처럼 쓰기 핸들로 수정 시각을 옮긴다.
+    ("src/app/explorer_files/job_tests.rs", 1),
 ];
 
 fn scan_site_population() -> BTreeMap<String, usize> {

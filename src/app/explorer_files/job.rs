@@ -260,7 +260,8 @@ pub(crate) enum Reason {
     Os(String),
     /// 폴더를 자기 안으로 옮기거나 복사하려 했다.
     IntoItself,
-    /// 다른 디스크로 옮기며 복사는 됐지만 원본을 지우지 못했다. 사본은 남는다.
+    /// 다른 디스크로 옮기며 복사는 됐지만 원본을 다 지우지 못했다. 원본은 전부 또는 일부 남고,
+    /// 사본은 하나뿐인 온전한 사본일 수 있어 되돌리기에서도 건드리지 않는다.
     SourceNotRemoved(String),
     /// 되돌리려는 자리에 지금 다른 항목이 있다.
     NewerThere,
@@ -268,6 +269,8 @@ pub(crate) enum Reason {
     Gone,
     /// Replace 로 덮어쓴 파일은 되돌릴 수 없다.
     Replaced,
+    /// 작업 뒤 사본의 수정 시각이 바뀌었다. 사용자가 고친 사본으로 보고 남긴다.
+    ChangedSince,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -280,8 +283,9 @@ pub(crate) struct Failure {
 /// 끝난 항목을 되돌리는 방법.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum UndoStep {
-    /// 새로 만든 사본. 되돌리면 휴지통으로 보낸다.
-    Created(PathBuf),
+    /// 새로 만든 사본과 공개 직후의 수정 시각. 되돌리면 휴지통으로 보내되,
+    /// 수정 시각이 달라졌으면 남긴다. 폴더는 자기 수정 시각만 보므로 안쪽 파일을 고친 것은 모른다.
+    Created(PathBuf, Option<SystemTime>),
     /// 옮긴 항목. 되돌리면 원래 자리로 옮긴다(그 자리가 비어 있을 때만).
     Moved { from: PathBuf, to: PathBuf },
     /// Replace 로 기존 파일을 바꿨다. 되돌릴 수 없다.
@@ -303,6 +307,18 @@ pub(crate) struct Report {
     pub cancelled: bool,
     /// 휴지통이 받지 않아 아무것도 지우지 못했다.
     pub trash_unavailable: bool,
+}
+
+impl UndoStep {
+    /// 방금 공개한 사본의 되돌리기 단계.
+    fn created(path: PathBuf) -> Self {
+        let modified = modified_at(&path);
+        Self::Created(path, modified)
+    }
+}
+
+fn modified_at(path: &Path) -> Option<SystemTime> {
+    path.symlink_metadata().and_then(|m| m.modified()).ok()
 }
 
 impl Report {
@@ -425,40 +441,53 @@ pub(crate) fn run_transfer(
             conflicts_left: &mut conflicts_left,
             base,
         };
-        match item.run(source) {
-            Ok(Outcome::Done(step)) => {
-                report.done += 1;
-                report.undo.push(step);
-            }
-            Ok(Outcome::Unchanged) => report.done += 1,
-            Ok(Outcome::Skipped) => report.skipped.push(source.clone()),
-            Ok(Outcome::Cancelled) => {
-                report.cancelled = true;
-                break;
-            }
-            Err(ItemError::SourceNotRemoved { copy, error }) => {
-                report.done += 1;
-                report.undo.push(UndoStep::Created(copy));
-                report.failed.push(Failure {
-                    path: source.clone(),
-                    reason: Reason::SourceNotRemoved(error),
-                });
-            }
-            Err(ItemError::Failed(reason)) => {
-                if shared.cancelled() {
-                    report.cancelled = true;
-                    break;
-                }
-                report.failed.push(Failure {
-                    path: source.clone(),
-                    reason,
-                });
-            }
+        if record(&mut report, shared, source, item.run(source)).is_break() {
+            break;
         }
         base = base.saturating_add(size);
         shared.finish_item(base);
     }
     report
+}
+
+/// 항목 하나의 결과를 보고에 더한다. 작업을 멈춰야 하면 Break.
+fn record(
+    report: &mut Report,
+    shared: &Shared,
+    source: &Path,
+    result: Result<Outcome, ItemError>,
+) -> std::ops::ControlFlow<()> {
+    match result {
+        Ok(Outcome::Done(step)) => {
+            report.done += 1;
+            report.undo.push(step);
+        }
+        Ok(Outcome::Unchanged) => report.done += 1,
+        Ok(Outcome::Skipped) => report.skipped.push(source.to_path_buf()),
+        Ok(Outcome::Cancelled) => {
+            report.cancelled = true;
+            return std::ops::ControlFlow::Break(());
+        }
+        // 원본이 일부만 지워졌을 수 있어 사본이 하나뿐인 온전한 자료다. 되돌리기 단계로 남기지 않는다.
+        Err(ItemError::SourceNotRemoved { error }) => {
+            report.done += 1;
+            report.failed.push(Failure {
+                path: source.to_path_buf(),
+                reason: Reason::SourceNotRemoved(error),
+            });
+        }
+        Err(ItemError::Failed(reason)) => {
+            if shared.cancelled() {
+                report.cancelled = true;
+                return std::ops::ControlFlow::Break(());
+            }
+            report.failed.push(Failure {
+                path: source.to_path_buf(),
+                reason,
+            });
+        }
+    }
+    std::ops::ControlFlow::Continue(())
 }
 
 /// 원본의 이름이 목적지에 이미 있어 물어야 하는가.
@@ -481,7 +510,7 @@ fn same_parent(source: &Path, dest: &Path) -> bool {
 
 enum ItemError {
     Failed(Reason),
-    SourceNotRemoved { copy: PathBuf, error: String },
+    SourceNotRemoved { error: String },
 }
 
 impl From<io::Error> for ItemError {
@@ -671,13 +700,12 @@ impl Item<'_> {
                 to: target.clone(),
             }
         } else {
-            UndoStep::Created(target.clone())
+            UndoStep::created(target)
         };
         if self.cut
             && let Err(e) = remove_path(source)
         {
             return Err(ItemError::SourceNotRemoved {
-                copy: target,
                 error: e.to_string(),
             });
         }
@@ -813,10 +841,12 @@ pub(crate) fn run_undo(shared: &Shared, steps: &[UndoStep]) -> Report {
             break;
         }
         let (path, result) = match step {
-            UndoStep::Created(path) => {
+            UndoStep::Created(path, made) => {
                 shared.set_current(path);
                 let result = if path.symlink_metadata().is_err() {
                     Err(Reason::Gone)
+                } else if modified_at(path) != *made {
+                    Err(Reason::ChangedSince)
                 } else {
                     trash::delete(path).map_err(|e| Reason::Os(e.to_string()))
                 };

@@ -87,8 +87,9 @@ pub enum OpsAction {
 }
 
 /// 결과 카드의 수명 정책: 모두 끝났거나 취소한 카드만 표준 시간 뒤 사라진다.
+/// 원본을 다 지우지 못한 이동도 실패로 보고 닫을 때까지 남긴다.
 pub(crate) fn result_is_timed(report: &Report) -> bool {
-    hard_failures(report) == 0 && report.skipped.is_empty() && !report.trash_unavailable
+    report.failed.is_empty() && report.skipped.is_empty() && !report.trash_unavailable
 }
 
 impl OpsState {
@@ -403,6 +404,7 @@ fn reason_text(reason: &Reason) -> String {
         Reason::NewerThere => t("explorer.result.newer_there").to_owned(),
         Reason::Gone => t("explorer.result.gone").to_owned(),
         Reason::Replaced => t("explorer.result.replaced").to_owned(),
+        Reason::ChangedSince => t("explorer.result.changed_kept").to_owned(),
     }
 }
 
@@ -487,19 +489,21 @@ fn card_title(report: &Report) -> (ToastKind, String) {
         let skipped = report.skipped.len().to_string();
         return (ToastKind::Warning, t_args(key, &[&done, &total, &skipped]));
     }
+    if !report.failed.is_empty() {
+        // 남은 실패는 원본을 다 지우지 못한 이동뿐이다. 사본은 모두 있다.
+        let left = report.failed.len().to_string();
+        return (
+            ToastKind::Warning,
+            t_args("explorer.result.source_left_move", &[&done, &total, &left]),
+        );
+    }
     let dest = name_of(report.dest.as_deref());
     let title = match k {
         OpKind::Copy => t_fmt2("explorer.result.copied", &done, &dest),
         OpKind::Trash => t_fmt("explorer.result.trashed", &done),
         OpKind::Move | OpKind::Undo => t_fmt2("explorer.result.moved", &done, &dest),
     };
-    // 원본을 지우지 못한 이동은 사본이 남았으므로 경고로 알린다.
-    let kind = if report.failed.is_empty() {
-        ToastKind::Success
-    } else {
-        ToastKind::Warning
-    };
-    (kind, title)
+    (ToastKind::Success, title)
 }
 
 fn undo_title(report: &Report, undo_of: OpKind) -> (ToastKind, String) {
@@ -543,7 +547,7 @@ fn card_text(card: &ResultCard) -> CardText {
     let undo = card.undo_of.is_none()
         && !report.cancelled
         && matches!(report.kind, OpKind::Copy | OpKind::Move)
-        && hard_failures(report) == 0
+        && report.failed.is_empty()
         && report.skipped.is_empty()
         && !report.undo.is_empty();
     CardText {

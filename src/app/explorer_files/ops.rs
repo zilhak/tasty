@@ -164,7 +164,7 @@ mod tests {
             return Err(io::Error::other(format!("{:?}", failure.reason)));
         }
         Ok(match report.undo.first() {
-            Some(UndoStep::Created(p) | UndoStep::Replaced(p)) => p.clone(),
+            Some(UndoStep::Created(p, _) | UndoStep::Replaced(p)) => p.clone(),
             Some(UndoStep::Moved { to, .. }) => to.clone(),
             None => src.to_path_buf(),
         })

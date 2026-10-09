@@ -127,7 +127,7 @@ impl Operation {
             Self::Undo(steps) => steps
                 .iter()
                 .map(|s| match s {
-                    UndoStep::Created(p) | UndoStep::Replaced(p) => p.as_os_str().len(),
+                    UndoStep::Created(p, _) | UndoStep::Replaced(p) => p.as_os_str().len(),
                     UndoStep::Moved { from, to } => from.as_os_str().len() + to.as_os_str().len(),
                 } + std::mem::size_of::<UndoStep>())
                 .sum(),
@@ -173,7 +173,7 @@ impl Operation {
                 let mut removed = Vec::new();
                 for step in steps {
                     match step {
-                        UndoStep::Created(p) | UndoStep::Replaced(p) => {
+                        UndoStep::Created(p, _) | UndoStep::Replaced(p) => {
                             changed.extend(parents(std::slice::from_ref(p)));
                             removed.push(p.clone());
                         }

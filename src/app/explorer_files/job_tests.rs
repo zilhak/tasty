@@ -67,7 +67,7 @@ fn keep_both_is_the_default_and_never_overwrites() {
     assert_eq!(read(&dst.join("a (copy).txt")), "incoming");
     assert_eq!(names(&dst), ["a (copy).txt", "a.txt"]);
     let dst = dst.canonicalize().expect("canonical");
-    assert_eq!(report.undo, [UndoStep::Created(dst.join("a (copy).txt"))]);
+    assert_eq!(report.undo, [UndoStep::created(dst.join("a (copy).txt"))]);
 }
 
 #[test]
@@ -99,7 +99,7 @@ fn replace_overwrites_files_but_never_folders() {
         report.undo,
         [
             UndoStep::Replaced(dst.join("a.txt")),
-            UndoStep::Created(dst.join("assets (copy)")),
+            UndoStep::created(dst.join("assets (copy)")),
         ]
     );
 }
@@ -326,7 +326,7 @@ fn undo_reports_what_it_cannot_restore() {
     let dir = tempfile::tempdir().expect("tempdir");
     let steps = [
         UndoStep::Replaced(dir.path().join("r.txt")),
-        UndoStep::Created(dir.path().join("gone.txt")),
+        UndoStep::Created(dir.path().join("gone.txt"), None),
     ];
     let undone = run_undo(&Shared::fixed(Choice::KeepBoth), &steps);
     // 뒤에서부터 되돌린다.
@@ -393,4 +393,158 @@ fn copy_reports_bytes_and_keeps_links_as_links() {
     assert_eq!(snap.items_done, 1);
     assert_eq!(snap.items_total, 1);
     assert_eq!(snap.bytes_done, snap.bytes_total);
+}
+
+/// 질문 없이 한 항목을 다루는 Item. 경합·원본 삭제 실패처럼 run 으로 만들기 어려운 경로를 직접 부른다.
+fn with_item<R>(shared: &Shared, dest: &Path, cut: bool, f: impl FnOnce(&mut Item<'_>) -> R) -> R {
+    let mut sticky = None;
+    let mut left = 0;
+    let mut item = Item {
+        shared,
+        dest,
+        shown_dest: dest,
+        cut,
+        sticky: &mut sticky,
+        conflicts_left: &mut left,
+        base: 0,
+    };
+    f(&mut item)
+}
+
+/// 이름을 확인한 뒤 공개하기 전에 같은 이름이 생기면, 공개는 그것을 덮어쓰지 않고 Keep both 이름으로 간다.
+#[test]
+fn publishing_never_overwrites_a_name_that_appears_late() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let src = dir.path().join("src");
+    let dst = dir.path().join("dst");
+    std::fs::create_dir_all(&src).expect("mkdir");
+    std::fs::create_dir_all(&dst).expect("mkdir");
+    std::fs::write(src.join("a.txt"), "incoming").expect("write");
+    std::fs::write(src.join("b.txt"), "moving").expect("write");
+    // 다른 프로그램이 확인 뒤에 만든 항목.
+    std::fs::write(dst.join("a.txt"), "late").expect("write");
+    std::fs::write(dst.join("b.txt"), "late").expect("write");
+    let shared = Shared::fixed(Choice::KeepBoth);
+
+    let a = src.join("a.txt");
+    let meta = a.symlink_metadata().expect("meta");
+    let copied = with_item(&shared, &dst, false, |item| {
+        item.copy(&a, &meta, dst.join("a.txt"), Publish::NoReplace)
+    });
+    assert!(matches!(
+        copied,
+        Ok(Outcome::Done(UndoStep::Created(ref p, _))) if *p == dst.join("a (copy).txt")
+    ));
+
+    let mut target = dst.join("b.txt");
+    let moved = with_item(&shared, &dst, true, |item| {
+        item.rename(&src.join("b.txt"), &mut target, Publish::NoReplace)
+    });
+    assert!(matches!(
+        moved,
+        Ok(Some(Outcome::Done(UndoStep::Moved { .. })))
+    ));
+    assert_eq!(target, dst.join("b (copy).txt"));
+
+    assert_eq!(read(&dst.join("a.txt")), "late");
+    assert_eq!(read(&dst.join("b.txt")), "late");
+    assert_eq!(read(&dst.join("a (copy).txt")), "incoming");
+    assert_eq!(read(&dst.join("b (copy).txt")), "moving");
+}
+
+/// 다른 디스크 이동에서 원본을 일부만 지웠으면 사본은 하나뿐인 온전한 자료다.
+/// 보고는 실패로 남고 되돌리기 단계가 없어 Undo 가 사본을 휴지통으로 보내지 않는다.
+#[cfg(unix)]
+#[test]
+fn a_partly_removed_source_keeps_the_copy_out_of_undo() {
+    use std::os::unix::fs::PermissionsExt;
+    // root 는 권한을 무시해 원본이 다 지워진다. 이 경우 재현할 수 없다.
+    // SAFETY: geteuid 는 인자 없이 현재 프로세스의 유효 사용자 ID 만 읽는다.
+    if unsafe { libc::geteuid() } == 0 {
+        return;
+    }
+    let dir = tempfile::tempdir().expect("tempdir");
+    let payload = dir.path().join("src").join("payload");
+    let dst = dir.path().join("dst");
+    std::fs::create_dir_all(payload.join("ro")).expect("mkdir");
+    std::fs::create_dir_all(&dst).expect("mkdir");
+    for name in ["a1.txt", "a2.txt", "a3.txt"] {
+        std::fs::write(payload.join(name), name).expect("write");
+    }
+    std::fs::write(payload.join("ro").join("b.txt"), "b").expect("write");
+    let lock = |mode| {
+        std::fs::set_permissions(payload.join("ro"), std::fs::Permissions::from_mode(mode))
+            .expect("chmod")
+    };
+    lock(0o555);
+
+    let shared = Shared::fixed(Choice::KeepBoth);
+    let meta = payload.symlink_metadata().expect("meta");
+    let result = with_item(&shared, &dst, true, |item| {
+        item.copy(&payload, &meta, dst.join("payload"), Publish::NoReplace)
+    });
+    let mut report = Report::new(OpKind::Move, Some(dst.clone()), 1);
+    let flow = record(&mut report, &shared, &payload, result);
+    lock(0o755);
+
+    assert!(flow.is_continue());
+    assert_eq!(report.done, 1);
+    assert!(
+        report.undo.is_empty(),
+        "the only full copy must not be undone"
+    );
+    assert!(matches!(
+        report.failed.as_slice(),
+        [Failure {
+            reason: Reason::SourceNotRemoved(_),
+            ..
+        }]
+    ));
+    assert!(report.retryable().is_empty());
+    // 사본은 온전하다. 원본은 지우지 못한 ro 를 포함해 남는다(그 밖에 얼마나 지워졌는지는 읽는 순서에 달렸다).
+    assert_eq!(
+        names(&dst.join("payload")),
+        ["a1.txt", "a2.txt", "a3.txt", "ro"]
+    );
+    assert_eq!(names(&dst.join("payload").join("ro")), ["b.txt"]);
+    assert_eq!(names(&payload.join("ro")), ["b.txt"]);
+    assert!(run_undo(&shared, &report.undo).failed.is_empty());
+    assert_eq!(names(&dst.join("payload")).len(), 4);
+}
+
+/// 작업 뒤 수정 시각이 바뀐 사본은 사용자가 고친 것으로 보고 되돌리기에서 남긴다.
+#[test]
+fn undo_keeps_a_copy_changed_after_the_job() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let src = dir.path().join("src");
+    let dst = dir.path().join("dst");
+    std::fs::create_dir_all(&src).expect("mkdir");
+    std::fs::create_dir_all(&dst).expect("mkdir");
+    std::fs::write(src.join("a.txt"), "copied").expect("write");
+    let report = run_transfer(
+        &Shared::fixed(Choice::KeepBoth),
+        &[src.join("a.txt")],
+        &dst,
+        false,
+    );
+    let copy = dst.canonicalize().expect("canonical").join("a.txt");
+    assert!(matches!(report.undo.as_slice(), [UndoStep::Created(p, Some(_))] if *p == copy));
+
+    std::fs::write(&copy, "edited").expect("edit the copy");
+    let later = SystemTime::now() + Duration::from_secs(60);
+    std::fs::File::options()
+        .write(true)
+        .open(&copy)
+        .and_then(|f| f.set_modified(later))
+        .expect("touch the copy");
+
+    let undone = run_undo(&Shared::fixed(Choice::KeepBoth), &report.undo);
+    assert_eq!(
+        undone.failed,
+        [Failure {
+            path: copy.clone(),
+            reason: Reason::ChangedSince,
+        }]
+    );
+    assert_eq!(read(&copy), "edited");
 }

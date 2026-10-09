@@ -11,7 +11,7 @@ fn report(kind: OpKind, total: usize, done: usize) -> Report {
         total,
         done,
         undo: (0..done)
-            .map(|i| UndoStep::Created(PathBuf::from(format!("/tmp/Documents/{i}"))))
+            .map(|i| UndoStep::Created(PathBuf::from(format!("/tmp/Documents/{i}")), None))
             .collect(),
         failed: Vec::new(),
         skipped: Vec::new(),
@@ -137,4 +137,42 @@ fn timed_cards_expire_and_others_stay() {
     assert!(ops.expire(now + Duration::from_millis(1)));
     assert_eq!(ops.result_count(), 1);
     assert_eq!(ops.next_expiry(), None);
+}
+
+#[test]
+fn a_move_that_left_originals_stays_without_undo() {
+    let mut r = report(OpKind::Move, 2, 2);
+    r.undo.truncate(1);
+    r.failed = vec![failure(
+        "/a",
+        Reason::SourceNotRemoved("Permission denied".into()),
+    )];
+    assert!(
+        !result_is_timed(&r),
+        "a left original must not vanish on a timer"
+    );
+    let text = card_text(&card(r));
+    assert_eq!(text.kind, ToastKind::Warning);
+    assert_eq!(
+        text.title,
+        t_args("explorer.result.source_left_move", &["2", "2", "1"])
+    );
+    assert!(!text.undo);
+    assert!(text.retry.is_empty());
+    assert_eq!(
+        text.lines[0].1,
+        t_fmt("explorer.result.source_not_removed", "Permission denied")
+    );
+}
+
+#[test]
+fn an_undo_result_names_a_copy_kept_because_it_changed() {
+    let mut r = report(OpKind::Undo, 1, 0);
+    r.undo.clear();
+    r.failed = vec![failure("/a", Reason::ChangedSince)];
+    let mut c = card(r);
+    c.undo_of = Some(OpKind::Copy);
+    let text = card_text(&c);
+    assert_eq!(text.title, t_fmt("explorer.result.undo_partial_copy", "1"));
+    assert_eq!(text.lines[0].1, t("explorer.result.changed_kept"));
 }
