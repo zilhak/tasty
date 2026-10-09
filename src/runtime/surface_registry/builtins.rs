@@ -90,14 +90,20 @@ fn register_explorer(registry: &SurfaceKindRegistry) {
         display_name_i18n_key: "surface.kind.explorer",
         icon: Some("folder".to_string()),
         create: Arc::new(|sid, cwd, params| {
+            let explicit = params
+                .get("path")
+                .and_then(|v| v.as_str())
+                .map(std::path::PathBuf::from)
+                .or_else(|| cwd.map(std::path::PathBuf::from));
+            // capture 한 preset 은 snapshot 을 params 로 싣는다. 명시 path·cwd 가 없으면 레이아웃 복원과
+            // 같은 방식으로 내부 탭을 되살린다. 명시 값이 있으면 그 폴더 하나로 연다.
+            if explicit.is_none() && explorer_snapshot_has_tabs(params) {
+                return Ok(crate::runtime::surface_registry::PreparedKind::local(
+                    Box::new(explorer_panel_from_snapshot(sid, params)) as Box<dyn Surface>,
+                ));
+            }
             // 명시 path가 있으면 cwd보다 우선한다. 상대 path는 resolve_root가 기본 경로로 바꾸며 cwd로 재시도하지 않는다.
-            let root = resolve_root(
-                params
-                    .get("path")
-                    .and_then(|v| v.as_str())
-                    .map(std::path::PathBuf::from)
-                    .or_else(|| cwd.map(std::path::PathBuf::from)),
-            );
+            let root = resolve_root(explicit);
             let view_mode = params
                 .get("view_mode")
                 .and_then(|v| v.as_str())
@@ -111,16 +117,8 @@ fn register_explorer(registry: &SurfaceKindRegistry) {
             ))
         }),
         restore: Arc::new(|sid, data| {
-            let active = data.get("active").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
-            let tabs: Vec<ExplorerTab> = data
-                .get("tabs")
-                .and_then(|v| v.as_array())
-                .map(|arr| arr.iter().map(explorer_tab_from_json).collect())
-                .unwrap_or_default();
-            let mut panel = ExplorerPanel::from_tabs(sid, tabs, active);
-            panel.preview = explorer_preview_from_json(data.get("preview"));
             Ok(crate::runtime::surface_registry::PreparedKind::local(
-                Box::new(panel) as Box<dyn Surface>,
+                Box::new(explorer_panel_from_snapshot(sid, data)) as Box<dyn Surface>,
             ))
         }),
         snapshot: Arc::new(|s: &dyn Surface| {
@@ -174,6 +172,26 @@ fn register_explorer(registry: &SurfaceKindRegistry) {
         convert_requires_input: false,
         convert_input_popup: None,
     });
+}
+
+fn explorer_snapshot_has_tabs(data: &Value) -> bool {
+    data.get("tabs")
+        .and_then(Value::as_array)
+        .is_some_and(|tabs| !tabs.is_empty())
+}
+
+/// 레이아웃 복원과 capture 한 preset 적용이 함께 쓴다. 탭이 없으면 홈 하나로, 활성 번호가 범위를
+/// 넘으면 마지막 탭으로 맞춘다. 탭마다 저장한 뷰 모드를 쓰므로 params 의 `view_mode` 는 보지 않는다.
+fn explorer_panel_from_snapshot(sid: u32, data: &Value) -> ExplorerPanel {
+    let active = data.get("active").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+    let tabs: Vec<ExplorerTab> = data
+        .get("tabs")
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.iter().map(explorer_tab_from_json).collect())
+        .unwrap_or_default();
+    let mut panel = ExplorerPanel::from_tabs(sid, tabs, active);
+    panel.preview = explorer_preview_from_json(data.get("preview"));
+    panel
 }
 
 /// 기본값(닫힘·기본 폭)이면 키를 싣지 않는다. 값이 없는 칸도 null 대신 키를 뺀다.
@@ -492,6 +510,70 @@ mod tests {
             .and_then(|prepared| prepared.publish())
             .unwrap();
         assert_eq!(get(restored.as_ref()), ExplorerPreview::default());
+    }
+
+    #[test]
+    fn a_captured_explorer_preset_reopens_its_inner_tabs() {
+        let reg = registry_with_builtins();
+        let def = reg.get("explorer").expect("explorer kind");
+        let project = abs_path("w/project");
+        let docs = abs_path("w/project/docs");
+        let other = abs_path("w/other");
+        let mut s = (def.create)(5, None, &json!({ "path": project.to_string_lossy() }))
+            .and_then(|prepared| prepared.publish())
+            .unwrap();
+        {
+            let ex = s.as_any_mut().downcast_mut::<ExplorerPanel>().unwrap();
+            ex.active_tab_mut().navigate_to(docs.clone());
+            ex.active_tab_mut().view_mode = ExplorerViewMode::Grid;
+            ex.add_tab();
+            ex.active_tab_mut().set_cwd(other.clone());
+            ex.active = 0;
+        }
+        let snap = (def.snapshot)(s.as_ref()).unwrap();
+        // preset 은 snapshot 을 TOML 로 저장했다가 params 로 읽고, 빠진 기본 params 를 채워 create 를 부른다.
+        let toml_text = toml::to_string(&snap).unwrap();
+        let mut params =
+            serde_json::to_value(toml::from_str::<toml::Value>(&toml_text).unwrap()).unwrap();
+        params["view_mode"] = json!("detail");
+
+        let created = (def.create)(6, None, &params)
+            .and_then(|prepared| prepared.publish())
+            .unwrap();
+        let ex = created.as_any().downcast_ref::<ExplorerPanel>().unwrap();
+        assert_eq!(ex.tabs.len(), 2);
+        assert_eq!(ex.active, 0);
+        assert_eq!(ex.tabs[0].cwd, project);
+        assert_eq!(ex.tabs[0].root, docs);
+        assert_eq!(
+            ex.tabs[0].view_mode,
+            ExplorerViewMode::Grid,
+            "the tab's own mode, not the injected default"
+        );
+        assert_eq!(ex.tabs[1].cwd, other);
+        assert_eq!(ex.tabs[1].root, other);
+        assert_eq!(created.source_cwd().as_deref(), Some(project.as_path()));
+
+        // preset 편집기가 cwd 를 정했거나 path 를 명시하면 그 폴더 하나로 연다.
+        for (cwd, path) in [(Some(other.as_path()), None), (None, Some(&other))] {
+            let mut explicit = params.clone();
+            if let Some(path) = path {
+                explicit["path"] = json!(path.to_string_lossy());
+            }
+            let created = (def.create)(7, cwd, &explicit)
+                .and_then(|prepared| prepared.publish())
+                .unwrap();
+            let ex = created.as_any().downcast_ref::<ExplorerPanel>().unwrap();
+            assert_eq!(ex.tabs.len(), 1);
+            assert_eq!(ex.cwd(), other.as_path());
+            assert_eq!(ex.tabs[0].view_mode, ExplorerViewMode::Detail);
+        }
+
+        // 빈 tabs 는 capture 결과가 아니므로 예전처럼 path·cwd·홈 순서로 연다.
+        let created = (def.create)(8, Some(other.as_path()), &json!({ "tabs": [] }))
+            .and_then(|prepared| prepared.publish())
+            .unwrap();
+        assert_eq!(created.source_cwd().as_deref(), Some(other.as_path()));
     }
 
     #[test]

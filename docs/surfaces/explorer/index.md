@@ -62,7 +62,7 @@ View 는 모델을 직접 바꾸지 않고 파일시스템도 직접 읽지 않�
 - **미리보기 키**: `"preview": {"open": true, "width": 428.0}`. 닫혀 있으면 `open` 을, 기본 폭이면 `width` 를 싣지 않고, 둘 다 기본값이면 `preview` 키 자체를 싣지 않는다. preset capture 는 이 snapshot 을 TOML 로 저장하는데 TOML 에는 null 이 없기 때문이다. 형식이 맞지 않는 값(문자열 `open`, 0 이하·유한하지 않은 `width`)은 기본값으로 읽는다. 폭은 그릴 때 토큰 범위(200…460)와 칸 폭으로 다시 제한한다.
 - **저장하지 않는 값**: back/forward 히스토리, 목록 캐시, 선택, 트리 펼침, 주소창 편집, 타입어헤드, Find 바, 파일 클립보드. 복원하면 히스토리는 비어 있고 목록은 다시 읽는다.
 - **복원**: `restore` 가 저장한 탭으로 `ExplorerPanel` 을 만든다. 탭이 없으면 홈 하나로, 활성 번호가 범위를 넘으면 마지막 탭으로 맞춘다. 경로가 없거나 상대 경로면 홈으로 교정한다. 복원은 create 를 거치지 않으므로 설정의 뷰 모드가 아니라 저장한 탭별 값을 쓴다. 저장한 폴더가 사라졌으면 복원은 성공하고 목록 자리에 읽기 오류 화면이 나온다. 미리보기 토글·폭도 같이 복원한다.
-- **preset**: preset 적용은 `restore` 가 아니라 `create` 로 explorer 를 만든다. `create` 는 params 의 `preview` 를 snapshot 과 같은 형식으로 읽으므로, capture 한 preset 을 적용하면 미리보기 토글·폭이 따라온다.
+- **preset**: preset 적용은 `restore` 가 아니라 `create` 로 explorer 를 만든다. capture 한 preset 의 params 는 위 snapshot 그대로다(`tabs`·`active`·`preview`). `create` 는 명시 `path` param 도 cwd 도 없고 `tabs` 가 비어 있지 않으면 `restore` 와 같은 함수(`explorer_panel_from_snapshot`)로 내부 탭·활성 탭·미리보기를 되살린다. 탭 보정 규칙(빈 목록, 범위를 넘은 활성 번호, 없거나 상대 경로인 cwd·current)도 레이아웃 복원과 같고, 사라진 절대 경로는 그대로 두어 읽기 오류 화면이 나온다(홈으로 바꾸지 않고 알림도 띄우지 않는다). preset 계획이 채우는 기본 `view_mode` param 은 보지 않고 탭마다 저장한 뷰 모드를 쓴다. preset 편집기의 작업 디렉터리(cwd 필드)나 명시 `path` 가 있으면 저장한 탭을 쓰지 않고 그 폴더 하나로 연다. 미리보기는 이때도 params 에서 읽는다.
 - **즐겨찾기**는 레이아웃이 아니라 별도 파일에 저장한다(아래 "즐겨찾기").
 - mirror workspace 는 로컬에 저장하지 않는다([원격 attach](../../features/remote-attach/index.md)).
 
@@ -71,7 +71,7 @@ View 는 모델을 직접 바꾸지 않고 파일시스템도 직접 읽지 않�
 explorer 는 일반 surface 생성 메커니즘으로 다룬다 (전용 IPC 추가 없이 generic 경로):
 
 - 생성: `tasty new tab --type explorer [--path <dir>]` / `tasty new workspace --type explorer [--path <dir>]`. `--path` 미지정 시 새 탭은 explorer `default_params` 의 `path = "@home"` 로 home 이 주입된다(fresh-context). (IPC: `DomainIntent::CreateTab { kind: "explorer", surface_params }`.)
-- **root 결정 규칙**: `path` param → carry cwd → `$HOME`/`%USERPROFILE%` → (홈 조회 실패 시) 절대경로로 확정한 프로세스 cwd. 앞 두 단계의 값이 **상대경로면 채택하지 않고** 홈으로 내려간다 — explorer root 는 어떤 생성 경로(`split`/`new tab`/`new workspace`/convert)에서도 **항상 절대경로**다. 상대 root 는 프로세스 cwd 를 root 로 승격시키고 그 문자열이 주소창·경로 복사·attach `list_dir` wire 로 새어나가기 때문이다. `"."` 로 저장된 구 `layout.json` 스냅샷도 복원 시 홈으로 교정된다. 근거·강제 수단: [surface cwd 불변식 §5](../../design/policies/cwd.md#5-explorer-root-fallback-host-builtin).
+- **root 결정 규칙**: `path` param → carry cwd → (둘 다 없고 params 에 capture 한 `tabs` 가 있으면 저장한 내부 탭, 위 "preset") → `$HOME`/`%USERPROFILE%` → (홈 조회 실패 시) 절대경로로 확정한 프로세스 cwd. 앞 두 단계의 값이 **상대경로면 채택하지 않고** 홈으로 내려간다 — explorer root 는 어떤 생성 경로(`split`/`new tab`/`new workspace`/convert)에서도 **항상 절대경로**다. 상대 root 는 프로세스 cwd 를 root 로 승격시키고 그 문자열이 주소창·경로 복사·attach `list_dir` wire 로 새어나가기 때문이다. `"."` 로 저장된 구 `layout.json` 스냅샷도 복원 시 홈으로 교정된다. 근거·강제 수단: [surface cwd 불변식 §5](../../design/policies/cwd.md#5-explorer-root-fallback-host-builtin).
 - 조회/닫기: `tasty list surfaces` 에 `foreground_process`/`pane_id`/`workspace_id` 와 함께 나타나고, `tasty close ...` 로 닫는다 — 전 워크스페이스 순회·ID 직접 지정(포커스 독립).
 - 변환: 다른 surface 를 explorer 로 in-place 변환 — `Intent::ConvertSurface { surface_id, target: ConvertTarget::Kind { kind: "explorer", .. } }`. cwd 미지정 시 source surface 에서 carry. [convert-surface](../../features/convert-surface/index.md) 의 generic convert popup 도 registry kind 열거로 explorer 를 노출한다.
 
