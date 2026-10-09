@@ -19,6 +19,11 @@ fn entry(kind: AttentionKind) -> AttentionEntry {
 }
 
 fn draw(entry: AttentionEntry) -> Vec<(String, egui::Rect)> {
+    let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(720.0, 480.0));
+    visible_text_rects(&draw_output(entry), screen)
+}
+
+fn draw_output(entry: AttentionEntry) -> egui::FullOutput {
     let snapshot = PluginsSnapshot {
         attention: vec![entry],
         ..Default::default()
@@ -37,7 +42,7 @@ fn draw(entry: AttentionEntry) -> Vec<(String, egui::Rect)> {
             draw_attention_tab(ctx, &snapshot, &mut ui_state, &mut actions);
         }));
     }
-    visible_text_rects(&output.expect("drawn"), screen)
+    output.expect("drawn")
 }
 
 /// Attention 의 액션 바도 Installed 처럼 본문 스크롤 밖 열 바닥에 붙어, 상세가 길어도 상태 문구와
@@ -113,5 +118,30 @@ fn only_a_broken_signature_hides_the_manifest_text() {
         AttentionKind::HealthError,
     ] {
         assert!(kind.shows_manifest_text(), "{kind:?}");
+    }
+}
+
+/// 목록 행 끝의 severity 점과 액션 바의 점은 같은 status-dot-size 지름이다.
+#[test]
+fn every_severity_dot_is_status_dot_sized() {
+    crate::i18n::init("en");
+    let th = theme::theme();
+    let color = egui::Color32::from(th.accent_warning());
+    let out = draw_output(entry(AttentionKind::PermissionsChanged));
+    fn walk(shape: &egui::Shape, color: egui::Color32, out: &mut Vec<f32>) {
+        match shape {
+            egui::Shape::Vec(v) => v.iter().for_each(|s| walk(s, color, out)),
+            egui::Shape::Circle(c) if c.fill == color => out.push(c.radius),
+            _ => {}
+        }
+    }
+    let mut radii = Vec::new();
+    for c in &out.shapes {
+        walk(&c.shape, color, &mut radii);
+    }
+    assert_eq!(radii.len(), 2, "list row dot and action bar dot: {radii:?}");
+    let want = th.status_dot_size.value() * 0.5;
+    for r in radii {
+        assert!((r - want).abs() < 0.01, "dot radius {r} != {want}");
     }
 }

@@ -8,9 +8,6 @@ use tasty_type_geometry::length::LogicalPx;
 /// 토큰으로 바꾸면 표시 크기가 달라질 수 있어 디자인 검토가 필요하다(ADR-0035).
 const ATTN_PRIMITIVE_12: LogicalPx = LogicalPx(12.0);
 
-/// severity 점의 기존 지름. status-dot 토큰으로 바꾸면 크기·배율 동작이 달라진다.
-const ATTN_STATUS_DOT_SIZE: LogicalPx = LogicalPx(7.0);
-
 use super::{AttentionEntry, AttentionKind, PluginsAction, PluginsSnapshot, PluginsUiState};
 use tasty_ui_widgets::tokens::{PLUGIN_LIST_ROW_HEIGHT, STRUCT_GAP_2};
 use tasty_ui_widgets::{
@@ -124,11 +121,11 @@ pub(super) fn draw_attention_tab(
                             egui::FontId::proportional(th.font_size_micro.value()),
                             color,
                         );
-                        // 우측 severity dot.
+                        // 우측 severity dot — 액션 바의 점과 같은 status-dot-size.
                         let dot_center = egui::pos2(rect.max.x - 12.0, rect.center().y);
                         ui.painter().circle_filled(
                             dot_center,
-                            ATTN_STATUS_DOT_SIZE.value() * 0.5,
+                            th.status_dot_size.value() * 0.5,
                             color,
                         );
                         if resp.clicked() {
