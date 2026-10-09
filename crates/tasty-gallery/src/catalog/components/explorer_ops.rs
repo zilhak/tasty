@@ -560,7 +560,7 @@ fn detail_columns_table<R>(
         .show(ui, theme, rows, |_| false, cell);
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)] // 이유: 상세 표 한 행의 칸 값이 각각 따로 온다 — 묶을 구조체가 이 예제에만 쓰인다
 fn cell_text(
     ui: &mut egui::Ui,
     th: &Theme,
