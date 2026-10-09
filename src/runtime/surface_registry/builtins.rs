@@ -178,14 +178,15 @@ fn register_explorer(registry: &SurfaceKindRegistry) {
 }
 
 /// path param 이 없을 때 create 가 열 폴더의 이름. cwd 가 있으면 그 폴더, 없고 capture 한 탭이 있으면
-/// 활성 탭의 cwd 다. 둘 다 없으면(홈을 열 때) `None` 이라 종류 표시명을 쓴다.
+/// 활성 탭의 cwd, 둘 다 없으면 create 가 여는 기본 폴더(홈)다. CLI 는 빠진 값을 null 로 보내므로
+/// path·cwd 가 null 인 경우도 여기로 온다. 폴더 이름이 없으면(파일시스템 루트) 종류 표시명을 쓴다.
 fn explorer_tab_name(cwd: Option<&std::path::Path>, params: &Value) -> Option<String> {
     let folder = match cwd {
         Some(cwd) => resolve_root(Some(cwd.to_path_buf())),
         None if explorer_snapshot_has_tabs(params) => {
             explorer_panel_from_snapshot(0, params).cwd().to_path_buf()
         }
-        None => return None,
+        None => resolve_root(None),
     };
     folder
         .file_name()
@@ -631,11 +632,13 @@ mod tests {
         let mut with_path = params.clone();
         with_path["path"] = json!(abs_path("w/given").to_string_lossy());
         assert_eq!(name(None, &with_path), "given");
-        // 둘 다 없으면 홈을 열므로 종류 이름이다.
-        assert_eq!(
-            name(None, &json!({})),
-            crate::i18n::t("surface.kind.explorer").to_string()
-        );
+        // 둘 다 없으면 create 가 여는 홈의 이름이다. CLI 처럼 빠진 값을 null 로 보내도 같다.
+        let home = crate::model::default_root()
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| crate::i18n::t("surface.kind.explorer").to_string());
+        assert_eq!(name(None, &json!({})), home);
+        assert_eq!(name(None, &json!({"path": null, "cwd": null})), home);
     }
 
     #[test]

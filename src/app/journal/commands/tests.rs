@@ -1120,7 +1120,9 @@ fn an_explicit_cwd_opens_an_explorer_there_from_every_creation_method() {
     );
     assert_eq!(explorer(&session, sid).0, path_dir);
 
-    // 둘 다 없으면 예전처럼 홈이다.
+    // 둘 다 없으면 예전처럼 홈이고, 탭 이름은 그 홈의 이름이다. CLI 는 빠진 값을 null 로 보낸다.
+    let home = crate::model::default_root();
+    let home_name = home.file_name().unwrap().to_string_lossy().into_owned();
     let sid = create(
         &mut journal,
         &mut session,
@@ -1128,7 +1130,17 @@ fn an_explicit_cwd_opens_an_explorer_there_from_every_creation_method() {
         serde_json::json!({"pane_id":pane,"type":"explorer"}),
         904,
     );
-    assert_eq!(explorer(&session, sid).0, crate::model::default_root());
+    assert_eq!(explorer(&session, sid).0, home);
+    assert_eq!(tab_name(&session, sid), home_name);
+    let sid = create(
+        &mut journal,
+        &mut session,
+        "tab.create",
+        serde_json::json!({"pane_id":pane,"type":"explorer","path":null,"cwd":null}),
+        908,
+    );
+    assert_eq!(explorer(&session, sid).0, home);
+    assert_eq!(tab_name(&session, sid), home_name);
 
     for (level, name, id) in [
         ("surface", "split-surface", 905),
