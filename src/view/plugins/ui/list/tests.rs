@@ -164,3 +164,131 @@ fn uninstall_confirmation_replaces_the_action_bar_in_place() {
     assert!(has(&other, t("plugins.enabled")));
     assert!(!has(&other, &title));
 }
+
+/// 두 plugin 이 있는 목록을 `events` 를 넣어 한 프레임 그린다.
+fn run_frame(
+    ctx: &egui::Context,
+    snapshot: &PluginsSnapshot,
+    ui_state: &mut PluginsUiState,
+    actions: &mut Vec<PluginsAction>,
+    events: Vec<egui::Event>,
+) -> Vec<(String, egui::Rect)> {
+    let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(720.0, 480.0));
+    let raw = egui::RawInput {
+        screen_rect: Some(screen),
+        events,
+        ..Default::default()
+    };
+    let output = ctx.run(raw, |ctx| draw_list_tab(ctx, snapshot, ui_state, actions));
+    visible_text_rects(&output, screen)
+}
+
+fn two_plugins() -> PluginsSnapshot {
+    let mut b = entry();
+    b.id = "com.example.second".into();
+    b.name = "Second".into();
+    PluginsSnapshot {
+        plugins: vec![entry(), b],
+        ..Default::default()
+    }
+}
+
+fn key(key: egui::Key) -> egui::Event {
+    egui::Event::Key {
+        key,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: egui::Modifiers::NONE,
+    }
+}
+
+/// 다른 plugin 을 고르면 제거 확인이 취소되어, 원래 plugin 으로 돌아와도 평소 바가 보인다.
+#[test]
+fn changing_the_selection_cancels_the_uninstall_confirm() {
+    crate::i18n::init("en");
+    let snapshot = two_plugins();
+    let first = snapshot.plugins[0].id.clone();
+    let ctx = egui::Context::default();
+    let mut actions = Vec::new();
+    let mut ui_state = PluginsUiState {
+        selected_id: Some(first.clone()),
+        confirm_uninstall_id: Some(first.clone()),
+        ..Default::default()
+    };
+    run_frame(&ctx, &snapshot, &mut ui_state, &mut actions, Vec::new());
+    assert_eq!(
+        ui_state.confirm_uninstall_id.as_deref(),
+        Some(first.as_str())
+    );
+
+    ui_state.selected_id = Some(snapshot.plugins[1].id.clone());
+    run_frame(&ctx, &snapshot, &mut ui_state, &mut actions, Vec::new());
+    ui_state.selected_id = Some(first);
+    let texts = run_frame(&ctx, &snapshot, &mut ui_state, &mut actions, Vec::new());
+    assert_eq!(ui_state.confirm_uninstall_id, None);
+    assert!(texts.iter().any(|(t, _)| t == t_enabled()), "{texts:?}");
+}
+
+fn t_enabled() -> &'static str {
+    t("plugins.enabled")
+}
+
+/// Esc 는 제거 확인을 닫고 평소 바로 돌아간다. 제거 동작은 나가지 않는다.
+#[test]
+fn escape_cancels_the_uninstall_confirm() {
+    crate::i18n::init("en");
+    let snapshot = two_plugins();
+    let first = snapshot.plugins[0].id.clone();
+    let ctx = egui::Context::default();
+    let mut actions = Vec::new();
+    let mut ui_state = PluginsUiState {
+        selected_id: Some(first.clone()),
+        confirm_uninstall_id: Some(first),
+        ..Default::default()
+    };
+    run_frame(&ctx, &snapshot, &mut ui_state, &mut actions, Vec::new());
+    run_frame(
+        &ctx,
+        &snapshot,
+        &mut ui_state,
+        &mut actions,
+        vec![key(egui::Key::Escape)],
+    );
+    let texts = run_frame(&ctx, &snapshot, &mut ui_state, &mut actions, Vec::new());
+    assert_eq!(ui_state.confirm_uninstall_id, None);
+    assert!(texts.iter().any(|(t, _)| t == t_enabled()), "{texts:?}");
+    assert!(actions.is_empty(), "{actions:?}");
+}
+
+/// 확인이 열리면 Cancel 에 포커스가 간다. 이어서 Enter 를 누르면 제거 대신 확인이 닫힌다.
+#[test]
+fn the_uninstall_confirm_focuses_cancel_when_it_opens() {
+    crate::i18n::init("en");
+    let snapshot = two_plugins();
+    let first = snapshot.plugins[0].id.clone();
+    let ctx = egui::Context::default();
+    let mut actions = Vec::new();
+    let mut ui_state = PluginsUiState {
+        selected_id: Some(first.clone()),
+        confirm_uninstall_id: Some(first),
+        confirm_focus_pending: true,
+        ..Default::default()
+    };
+    run_frame(&ctx, &snapshot, &mut ui_state, &mut actions, Vec::new());
+    assert!(!ui_state.confirm_focus_pending);
+    assert!(ctx.memory(|m| m.focused()).is_some(), "nothing has focus");
+    run_frame(
+        &ctx,
+        &snapshot,
+        &mut ui_state,
+        &mut actions,
+        vec![key(egui::Key::Enter)],
+    );
+    run_frame(&ctx, &snapshot, &mut ui_state, &mut actions, Vec::new());
+    assert_eq!(ui_state.confirm_uninstall_id, None);
+    assert!(
+        actions.is_empty(),
+        "Enter uninstalled instead of cancelling: {actions:?}"
+    );
+}

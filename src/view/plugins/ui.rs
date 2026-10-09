@@ -207,7 +207,10 @@ pub struct PluginsUiState {
     pub selected_id: Option<String>,
     /// `Attention` 탭의 선택 항목 — `selected_id`(Installed) 와 독립.
     pub attention_selected_id: Option<String>,
+    /// 제거 확인 중인 plugin id. 선택이 바뀌거나 Esc·Cancel 이면 지운다.
     pub confirm_uninstall_id: Option<String>,
+    /// 제거 확인이 막 열렸다. 다음 프레임에 Cancel 로 포커스를 옮기고 지운다.
+    pub confirm_focus_pending: bool,
     /// `Installed` 탭 목록 검색/필터 입력 버퍼 (name/authors/description 부분일치).
     pub filter: String,
     /// `Add` 탭의 경로 입력 버퍼.

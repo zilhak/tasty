@@ -173,6 +173,7 @@ fn the_confirm_bar_is_as_tall_as_its_height_function() {
         note: "Its files are removed.",
         cancel: "Cancel",
         uninstall: "Uninstall",
+        focus_cancel: false,
     };
     let long_note = "Its files are removed. Settings stay until you delete them. ".repeat(4);
     let long = PluginUninstallConfirmView {

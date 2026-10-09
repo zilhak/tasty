@@ -276,6 +276,8 @@ fn confirm_view<'a>(row: &Row, title: &'a str) -> PluginUninstallConfirmView<'a>
         note,
         cancel: crate::i18n::t("button.cancel"),
         uninstall: crate::i18n::t("plugins.uninstall"),
+        // 정적 예제라 포커스를 옮기지 않는다. 다른 카드의 포커스를 빼앗지 않도록 한다.
+        focus_cancel: false,
     }
 }
 

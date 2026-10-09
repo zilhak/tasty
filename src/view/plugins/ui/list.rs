@@ -144,6 +144,19 @@ pub(super) fn draw_list_tab(
                 });
         });
 
+    // 제거 확인은 같은 plugin id 에 묶인다. 선택이 바뀌면 확인을 취소해, 다시 돌아와도 평소 바가 보인다.
+    if ui_state.confirm_uninstall_id.is_some()
+        && ui_state.confirm_uninstall_id != ui_state.selected_id
+    {
+        cancel_confirm(ui_state);
+    }
+    // Esc 는 확인만 닫는다. 확인이 없을 때는 소비하지 않는다.
+    if ui_state.confirm_uninstall_id.is_some()
+        && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
+    {
+        cancel_confirm(ui_state);
+    }
+
     let selected_entry = ui_state
         .selected_id
         .as_ref()
@@ -152,8 +165,8 @@ pub(super) fn draw_list_tab(
     let confirming = selected_entry
         .as_ref()
         .is_some_and(|e| ui_state.confirm_uninstall_id.as_ref() == Some(&e.id));
+    let focus_cancel = confirming && std::mem::take(&mut ui_state.confirm_focus_pending);
 
-    // 제거 확인은 같은 plugin id 에 묶인다. 다른 plugin 을 고르면 평소 바로 돌아간다.
     let confirm_title = selected_entry
         .as_ref()
         .map(|e| crate::i18n::t_fmt("plugins.uninstall_confirm_title", &e.name))
@@ -161,7 +174,7 @@ pub(super) fn draw_list_tab(
     let confirm_view = selected_entry
         .as_ref()
         .filter(|_| confirming)
-        .map(|e| uninstall_confirm_view(e, &confirm_title));
+        .map(|e| uninstall_confirm_view(e, &confirm_title, focus_cancel));
 
     // 액션 바는 상세 열의 여백 밖, 열 폭 전체에 붙인다. 본문만 기본 패널 여백 안에 둔다.
     // 키보드 초점 순서가 화면 순서(본문 → 바)를 따르도록 같은 패널 안에서 본문을 먼저 만든다.
@@ -211,9 +224,9 @@ pub(super) fn draw_list_tab(
                     actions.push(PluginsAction::Uninstall {
                         id: entry.id.clone(),
                     });
-                    ui_state.confirm_uninstall_id = None;
+                    cancel_confirm(ui_state);
                 } else if clicks.cancel {
-                    ui_state.confirm_uninstall_id = None;
+                    cancel_confirm(ui_state);
                 }
                 return;
             }
@@ -239,14 +252,22 @@ pub(super) fn draw_list_tab(
             }
             if bar.uninstall {
                 ui_state.confirm_uninstall_id = Some(entry.id.clone());
+                ui_state.confirm_focus_pending = true;
             }
         });
+}
+
+/// 제거 확인을 닫는다. 아직 옮기지 않은 포커스 요청도 버린다.
+fn cancel_confirm(ui_state: &mut PluginsUiState) {
+    ui_state.confirm_uninstall_id = None;
+    ui_state.confirm_focus_pending = false;
 }
 
 /// 제거 확인 바의 문구. 안내는 built-in 여부로 갈린다.
 fn uninstall_confirm_view<'a>(
     entry: &super::PluginEntry,
     title: &'a str,
+    focus_cancel: bool,
 ) -> PluginUninstallConfirmView<'a> {
     let note = if entry.builtin {
         t("plugins.uninstall_builtin_note")
@@ -258,6 +279,7 @@ fn uninstall_confirm_view<'a>(
         note,
         cancel: t("button.cancel"),
         uninstall: t("plugins.uninstall"),
+        focus_cancel,
     }
 }
 

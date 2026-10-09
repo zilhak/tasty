@@ -1,4 +1,4 @@
-<!-- source-hash: 535cb0505f14 -->
+<!-- source-hash: cdf780cf8acb -->
 # Plugins
 
 Use plugins for tools such as Markdown and image viewers or AI agent integrations. Explore the bundled plugins, add new ones, and manage which tools run and what permissions they have.
@@ -52,7 +52,7 @@ The **Installed** tab. Pick one from the list on the left and the details appear
 - The bar under the details stays visible while you scroll the details.
   - The switch on the left — The label next to it shows **Enabled** / **Disabled**. Clicking the label also toggles it. Turning it off cleans up the process; turning it on starts it again.
   - **Configure** — Goes to the plugin's page in the settings window.
-  - **Uninstall** — The bar turns into a confirmation in place, with **Cancel** and **Uninstall** buttons. Pressing **Uninstall** deletes the install folder; the plugin's settings stay until you delete them. For a **built-in** plugin, the note says it won't be installed again on the next launch. Selecting another plugin brings back the normal bar.
+  - **Uninstall** — The bar turns into a confirmation in place, with **Cancel** and **Uninstall** buttons. Pressing **Uninstall** deletes the install folder; the plugin's settings stay until you delete them. For a **built-in** plugin, the note says it won't be installed again on the next launch. When the confirmation appears, keyboard focus is on **Cancel**, so Enter cancels right away; Esc also cancels. Selecting another plugin cancels the confirmation and brings back the normal bar.
 
 ### Attention
 

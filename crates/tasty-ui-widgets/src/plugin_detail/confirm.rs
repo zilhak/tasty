@@ -17,6 +17,8 @@ pub struct PluginUninstallConfirmView<'a> {
     pub note: &'a str,
     pub cancel: &'a str,
     pub uninstall: &'a str,
+    /// 확인이 막 열린 프레임이면 true. Cancel 에 키보드 포커스를 준다.
+    pub focus_cancel: bool,
 }
 
 /// 확인 바에서 눌린 버튼.
@@ -27,7 +29,8 @@ pub struct PluginUninstallConfirmClicks {
 }
 
 /// alertTriangle(accent-attention) · [질문(body · text-primary) / 안내(caption · text-muted)] ·
-/// Cancel(ghost) · Uninstall(danger). 글 열은 버튼을 뺀 폭에서 줄바꿈한다.
+/// Cancel(ghost) · Uninstall(danger). 글 열은 버튼을 뺀 폭에서 줄바꿈한다. `focus_cancel` 이면
+/// Cancel 에 포커스를 준다. Esc 로 닫는 일은 확인 상태를 가진 호출자가 맡는다.
 pub fn plugin_uninstall_confirm_bar(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -53,7 +56,7 @@ pub fn plugin_uninstall_confirm_bar(
             );
             y += h;
         }
-        (clicks.cancel, clicks.uninstall) = buttons(ui, theme, view);
+        (clicks.cancel, clicks.uninstall) = buttons(ui, theme, view, view.focus_cancel);
     });
     clicks
 }
@@ -125,16 +128,21 @@ impl TextColumn {
     }
 }
 
-/// Cancel, Uninstall 순서로 만든다. 눌린 여부를 돌려준다.
+/// Cancel, Uninstall 순서로 만든다. 눌린 여부를 돌려준다. 폭을 재는 보이지 않는 pass 는
+/// `focus` 를 false 로 불러 그 임시 위젯에 포커스를 주지 않는다.
 fn buttons(
     ui: &mut egui::Ui,
     theme: &Theme,
     view: &PluginUninstallConfirmView<'_>,
+    focus: bool,
 ) -> (bool, bool) {
     let cancel = Button::new(view.cancel)
         .variant(ButtonVariant::Ghost)
-        .show(ui, theme)
-        .clicked();
+        .show(ui, theme);
+    if focus {
+        cancel.request_focus();
+    }
+    let cancel = cancel.clicked();
     let uninstall = Button::new(view.uninstall)
         .variant(ButtonVariant::Danger)
         .show(ui, theme)
@@ -155,6 +163,6 @@ fn buttons_width(ui: &mut egui::Ui, theme: &Theme, view: &PluginUninstallConfirm
             .invisible(),
     );
     probe.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-    buttons(&mut probe, theme, view);
+    buttons(&mut probe, theme, view, false);
     probe.min_rect().width()
 }
