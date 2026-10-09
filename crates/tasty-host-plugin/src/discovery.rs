@@ -97,6 +97,8 @@ pub struct RejectedPlugin {
     pub authors: Vec<String>,
     /// 매니페스트의 설명. 서명 검증 전 값이라 표시할지는 UI 가 사유로 정한다.
     pub description: String,
+    /// 매니페스트의 homepage. 설명과 같이 서명 검증 전 값이다.
+    pub homepage: String,
     /// builtin(번들) plugin 이면 true — UI 가 "built-in" 태그를 붙인다.
     pub builtin: bool,
     pub reason: RejectionReason,
@@ -153,6 +155,7 @@ fn trust_outcome(dir: &std::path::Path, manifest: &Manifest) -> TrustOutcome {
                 version: manifest.version.clone(),
                 authors: manifest.authors.clone(),
                 description: manifest.description.clone(),
+                homepage: manifest.homepage.clone(),
                 builtin: crate::builtin::is_builtin_plugin(&manifest.id),
                 reason,
                 fingerprint,

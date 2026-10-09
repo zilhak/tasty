@@ -109,6 +109,7 @@ attn_unknown_key_blurb = "Registration was rejected because the signing key is n
 attn_sig_invalid_label = "Signature invalid"
 attn_sig_invalid_blurb = "Registration was rejected because the signature is missing or could not be verified."
 attn_sig_invalid_note = "The signature does not match this plugin's files."
+attn_desc_hidden = "Description hidden — the signature is invalid."
 attn_perm_changed_label = "Permissions changed"
 attn_perm_changed_blurb = "The requested permissions have changed. Approval is required again."
 attn_health_label = "Runtime error"

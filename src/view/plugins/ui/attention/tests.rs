@@ -8,6 +8,7 @@ fn entry(kind: AttentionKind) -> AttentionEntry {
         version: "0.1.4".into(),
         authors: vec!["example".into()],
         description: "Tails log files.".into(),
+        homepage: "https://example.com/log-tailer".into(),
         builtin: false,
         kind,
         fingerprint: None,
@@ -46,7 +47,7 @@ fn draw_output(entry: AttentionEntry) -> egui::FullOutput {
 }
 
 /// Attention 의 액션 바도 Installed 처럼 본문 스크롤 밖 열 바닥에 붙어, 상세가 길어도 상태 문구와
-/// 사유별 버튼이 창 안에 보인다. 정체 블록의 메타 줄은 `작성자 · id` 다.
+/// 사유별 버튼이 창 안에 보인다. 정체 블록의 메타 줄은 `작성자 · id · homepage` 다.
 #[test]
 fn the_attention_bar_stays_inside_the_window_below_a_long_detail() {
     crate::i18n::init("en");
@@ -57,6 +58,7 @@ fn the_attention_bar_stays_inside_the_window_below_a_long_detail() {
         t("plugins.attn_reapprove"),
         "example",
         "com.example.log-tailer",
+        "example.com/log-tailer",
     ] {
         assert!(
             has(label),
@@ -66,8 +68,7 @@ fn the_attention_bar_stays_inside_the_window_below_a_long_detail() {
 }
 
 /// 상세는 정체 블록 · 설명 · 사유 배너 · 사유 detail 을 `space-lg` 간격으로 쌓는다. 배너 안 글은
-/// 테두리와 `space-md` 여백 안쪽에 있으므로 글 사이 거리에서 그 몫을 뺀다. 메타 줄은 `작성자 · id`
-/// 뿐이다.
+/// 테두리와 `space-md` 여백 안쪽에 있으므로 글 사이 거리에서 그 몫을 뺀다.
 #[test]
 fn the_attention_detail_stacks_its_blocks_a_large_space_apart() {
     crate::i18n::init("en");
@@ -102,10 +103,6 @@ fn the_attention_detail_stacks_its_blocks_a_large_space_apart() {
     ] {
         assert!((gap - want).abs() < 0.5, "{what}: {gap} != {want}");
     }
-    assert!(
-        !texts.iter().any(|(t, _)| t.contains("https://")),
-        "the attention meta line has no homepage"
-    );
 }
 
 /// 서명이 깨진 번들의 매니페스트 글은 보이지 않는다. 나머지 사유는 보인다.
@@ -144,4 +141,31 @@ fn every_severity_dot_is_status_dot_sized() {
     for r in radii {
         assert!((r - want).abs() < 0.01, "dot radius {r} != {want}");
     }
+}
+
+/// 서명이 깨진 사유는 설명과 homepage 를 숨기고 설명 자리에 숨김 안내를 둔다. 신뢰하지 않은 키는
+/// 둘 다 보인다. 웹 주소가 아닌 homepage 는 Attention 메타 줄에 싣지 않는다.
+#[test]
+fn a_broken_signature_hides_the_description_and_homepage() {
+    crate::i18n::init("en");
+    let has = |texts: &[(String, egui::Rect)], label: &str| texts.iter().any(|(t, _)| t == label);
+    let hidden = t("plugins.attn_desc_hidden");
+
+    let broken = draw(entry(AttentionKind::SignatureInvalid));
+    assert!(has(&broken, hidden), "{broken:?}");
+    assert!(!has(&broken, "Tails log files."), "{broken:?}");
+    assert!(!has(&broken, "example.com/log-tailer"), "{broken:?}");
+
+    let unknown = draw(entry(AttentionKind::UnknownKey));
+    assert!(!has(&unknown, hidden), "{unknown:?}");
+    assert!(has(&unknown, "Tails log files."), "{unknown:?}");
+    assert!(has(&unknown, "example.com/log-tailer"), "{unknown:?}");
+
+    let mut plain = entry(AttentionKind::UnknownKey);
+    plain.homepage = "file:///tmp/log-tailer".into();
+    let plain = draw(plain);
+    assert!(
+        !plain.iter().any(|(t, _)| t.contains("/tmp/log-tailer")),
+        "{plain:?}"
+    );
 }

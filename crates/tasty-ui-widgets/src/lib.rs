@@ -189,9 +189,9 @@ pub use plugin_detail::{
     PluginAttentionBarAction, PluginAttentionBarView, PluginDetailBarClicks, PluginDetailBarView,
     PluginIdentityView, PluginMetaView, PluginUninstallConfirmClicks, PluginUninstallConfirmView,
     homepage_display, is_web_homepage, plugin_attention_bar, plugin_command_row, plugin_detail_bar,
-    plugin_detail_bar_frame, plugin_detail_bar_height, plugin_detail_description,
-    plugin_detail_identity, plugin_detail_meta, plugin_detail_name_row, plugin_keycaps,
-    plugin_uninstall_confirm_bar, plugin_uninstall_confirm_bar_height,
+    plugin_detail_bar_frame, plugin_detail_bar_height, plugin_detail_desc_hidden,
+    plugin_detail_description, plugin_detail_identity, plugin_detail_meta, plugin_detail_name_row,
+    plugin_keycaps, plugin_uninstall_confirm_bar, plugin_uninstall_confirm_bar_height,
 };
 pub use plugin_paths::{
     PluginInstallPathsView, plugin_detail_section, plugin_detail_section_gap, plugin_install_paths,

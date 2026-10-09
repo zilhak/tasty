@@ -6,9 +6,10 @@ use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::tokens::{PLUGIN_LIST_ROW_HEIGHT, STRUCT_GAP_2};
 use tasty_ui_widgets::{
     PluginAttentionBarAction, PluginAttentionBarView, PluginAvatarSize, PluginFingerprintLineView,
-    PluginIdentityView, PluginMetaView, margin_all, paint_plugin_avatar, plugin_attention_bar,
-    plugin_detail_bar_height, plugin_detail_description, plugin_detail_identity,
-    plugin_fingerprint_line, plugin_mono_header, plugin_signature_invalid_detail,
+    PluginIdentityView, PluginMetaView, is_web_homepage, margin_all, paint_plugin_avatar,
+    plugin_attention_bar, plugin_detail_bar_height, plugin_detail_desc_hidden,
+    plugin_detail_description, plugin_detail_identity, plugin_fingerprint_line, plugin_mono_header,
+    plugin_signature_invalid_detail,
 };
 
 /// 본체 ATTN_PRIMITIVE_12와 같은 12px 글꼴. 대응 semantic 토큰이 없다.
@@ -82,6 +83,8 @@ pub(super) struct Entry {
     pub authors: &'static str,
     /// 매니페스트 설명. 본체처럼 서명이 깨진 사유는 비운다.
     pub description: &'static str,
+    /// 매니페스트 homepage. 본체처럼 서명이 깨진 사유는 비운다.
+    pub homepage: &'static str,
     pub builtin: bool,
     pub kind: Kind,
 }
@@ -93,6 +96,7 @@ pub(super) const ENTRIES: &[Entry] = &[
         id: "com.example.port-scanner",
         authors: "example",
         description: "Lists listening ports per workspace.",
+        homepage: "https://example.com/port-scanner",
         builtin: false,
         kind: Kind::UnknownKey,
     },
@@ -102,6 +106,7 @@ pub(super) const ENTRIES: &[Entry] = &[
         id: "com.example.log-tailer",
         authors: "example",
         description: "",
+        homepage: "",
         builtin: false,
         kind: Kind::SignatureInvalid,
     },
@@ -111,6 +116,7 @@ pub(super) const ENTRIES: &[Entry] = &[
         id: "com.tasty.git-viewer",
         authors: "tasty",
         description: "Read-only status, log and diff of the current repository.",
+        homepage: "https://github.com/zilhak/tasty",
         builtin: true,
         kind: Kind::PermissionsChanged,
     },
@@ -120,6 +126,7 @@ pub(super) const ENTRIES: &[Entry] = &[
         id: "com.tasty.markdown",
         authors: "tasty",
         description: "Renders Markdown files as a surface.",
+        homepage: "https://github.com/zilhak/tasty",
         builtin: true,
         kind: Kind::HealthError,
     },
@@ -356,12 +363,22 @@ pub(super) fn detail_pane(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
             meta: PluginMetaView {
                 authors: entry.authors,
                 id: entry.id,
-                // 디자인의 Attention 메타 줄은 `작성자 · id` 뿐이다.
-                homepage: "",
+                // 본체처럼 웹 주소일 때만 링크로 싣는다. 서명이 깨진 사유는 비어 있다.
+                homepage: if is_web_homepage(entry.homepage) {
+                    entry.homepage
+                } else {
+                    ""
+                },
             },
         },
     );
-    if !entry.description.is_empty() {
+    if entry.kind == Kind::SignatureInvalid {
+        plugin_detail_desc_hidden(
+            &mut child,
+            theme,
+            crate::i18n::t("plugins.attn_desc_hidden"),
+        );
+    } else if !entry.description.is_empty() {
         plugin_detail_description(&mut child, theme, entry.description);
     }
     banner(&mut child, theme, entry.kind);
@@ -424,6 +441,14 @@ fn cards_row(ui: &mut egui::Ui, theme: &Theme, card_w: f32) {
             |ui: &mut egui::Ui| {
                 ui.set_max_width(card_w);
                 ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
+                // 서명이 깨진 사유는 상세에서 설명 대신 숨김 안내를 둔다.
+                if kind == Kind::SignatureInvalid {
+                    plugin_detail_desc_hidden(
+                        ui,
+                        theme,
+                        crate::i18n::t("plugins.attn_desc_hidden"),
+                    );
+                }
                 banner(ui, theme, kind);
                 reason_detail(ui, theme, kind);
             },

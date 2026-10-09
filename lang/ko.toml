@@ -109,6 +109,7 @@ attn_unknown_key_blurb = "신뢰 목록에 없는 키로 서명되어 등록하�
 attn_sig_invalid_label = "서명이 유효하지 않음"
 attn_sig_invalid_blurb = "서명이 없거나 검증에 실패해 등록하지 못했습니다."
 attn_sig_invalid_note = "서명이 이 플러그인의 파일과 일치하지 않습니다."
+attn_desc_hidden = "서명이 유효하지 않아 설명을 숨겼습니다."
 attn_perm_changed_label = "권한이 변경됨"
 attn_perm_changed_blurb = "요청한 권한이 변경되어 다시 승인이 필요합니다."
 attn_health_label = "실행 오류"

@@ -90,6 +90,8 @@ pub struct AttentionEntry {
     pub authors: Vec<String>,
     /// 매니페스트 설명. [`AttentionKind::shows_manifest_text`] 가 false 인 사유면 비운다.
     pub description: String,
+    /// 매니페스트 homepage. 설명처럼 [`AttentionKind::shows_manifest_text`] 가 false 면 비운다.
+    pub homepage: String,
     pub builtin: bool,
     pub kind: AttentionKind,
     /// 서명 키 지문 (UnknownKey/PermissionsChanged). 표시용.

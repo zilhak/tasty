@@ -109,6 +109,7 @@ attn_unknown_key_blurb = "信頼する鍵の一覧にない鍵で署名されて
 attn_sig_invalid_label = "署名が無効です"
 attn_sig_invalid_blurb = "署名がないか検証に失敗したため、登録できませんでした。"
 attn_sig_invalid_note = "署名がこのプラグインのファイルと一致しません。"
+attn_desc_hidden = "署名が無効なため説明を非表示にしています。"
 attn_perm_changed_label = "権限が変更されました"
 attn_perm_changed_blurb = "要求する権限が変わりました。再承認が必要です。"
 attn_health_label = "実行エラー"

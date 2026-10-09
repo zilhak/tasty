@@ -70,6 +70,23 @@ pub fn plugin_detail_description(ui: &mut egui::Ui, theme: &Theme, text: &str) {
     });
 }
 
+/// 매니페스트 설명을 보일 수 없을 때 설명 자리에 두는 한 줄. caption · text-muted 이고 설명처럼
+/// `measure-lg` 폭에서 줄바꿈한다.
+pub fn plugin_detail_desc_hidden(ui: &mut egui::Ui, theme: &Theme, text: &str) {
+    let width = theme.measure_lg.value().min(ui.available_width());
+    ui.scope(|ui| {
+        ui.set_max_width(width);
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new(text)
+                    .size(theme.font_size_caption.value())
+                    .color(theme.text_muted().to_egui()),
+            )
+            .wrap(),
+        );
+    });
+}
+
 /// 메타 줄 입력. 빈 문자열은 그 항목을 건너뛴다.
 pub struct PluginMetaView<'a> {
     /// 작성자들을 이미 이어 붙인 문자열. 없으면 id 가 맨 앞이다.

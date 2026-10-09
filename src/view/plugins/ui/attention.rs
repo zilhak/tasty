@@ -12,9 +12,9 @@ use super::{AttentionEntry, AttentionKind, PluginsAction, PluginsSnapshot, Plugi
 use tasty_ui_widgets::tokens::{PLUGIN_LIST_ROW_HEIGHT, STRUCT_GAP_2};
 use tasty_ui_widgets::{
     PluginAttentionBarAction, PluginAttentionBarView, PluginAvatarSize, PluginFingerprintLineView,
-    PluginIdentityView, PluginMetaView, margin_all, margin_sym, paint_plugin_avatar,
-    plugin_attention_bar, plugin_detail_bar_height, plugin_detail_description,
-    plugin_detail_identity, plugin_fingerprint_line, plugin_mono_header,
+    PluginIdentityView, PluginMetaView, is_web_homepage, margin_all, margin_sym,
+    paint_plugin_avatar, plugin_attention_bar, plugin_detail_bar_height, plugin_detail_desc_hidden,
+    plugin_detail_description, plugin_detail_identity, plugin_fingerprint_line, plugin_mono_header,
     plugin_signature_invalid_detail, vspace,
 };
 
@@ -212,10 +212,15 @@ fn draw_detail(ui: &mut egui::Ui, th: &theme::Theme, entry: &AttentionEntry) {
             let inner_gap = ui.spacing().item_spacing.y;
             ui.spacing_mut().item_spacing.y = th.spacing_lg.value();
 
-            // identity — Installed 와 같은 위젯. 디자인의 Attention 메타 줄은 `작성자 · id` 뿐이라
-            // homepage 는 싣지 않는다.
+            // identity — Installed 와 같은 위젯. Attention 메타 줄의 homepage 는 웹 주소일 때만
+            // 링크로 싣고, 다른 값이나 서명이 깨진 사유의 값은 싣지 않는다.
             let authors = entry.authors.join(", ");
-            plugin_detail_identity(
+            let homepage = if entry.kind.shows_manifest_text() && is_web_homepage(&entry.homepage) {
+                entry.homepage.as_str()
+            } else {
+                ""
+            };
+            let open_homepage = plugin_detail_identity(
                 ui,
                 th,
                 &PluginIdentityView {
@@ -225,11 +230,16 @@ fn draw_detail(ui: &mut egui::Ui, th: &theme::Theme, entry: &AttentionEntry) {
                     meta: PluginMetaView {
                         authors: &authors,
                         id: &entry.id,
-                        homepage: "",
+                        homepage,
                     },
                 },
             );
-            if !entry.description.is_empty() {
+            if open_homepage && !crate::terminal_link::open_uri(homepage) {
+                tracing::warn!(homepage, "plugin homepage did not open");
+            }
+            if !entry.kind.shows_manifest_text() {
+                plugin_detail_desc_hidden(ui, th, t("plugins.attn_desc_hidden"));
+            } else if !entry.description.is_empty() {
                 plugin_detail_description(ui, th, &entry.description);
             }
 
