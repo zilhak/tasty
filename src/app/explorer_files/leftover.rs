@@ -1,16 +1,16 @@
 //! 다른 디스크로 옮긴 뒤 남은 원본을 다시 지운다. 사본이 공개한 자리에 같은 종류로 남아 있을 때만
 //! 지우고, 사본이 없거나 바뀌었거나 원본 파일이 그 뒤 바뀌었으면 원본을 남기고 사유를 적는다.
-//! 폴더 원본은 안쪽을 걸어 사본에 같은 상대 경로·종류·크기(링크는 대상)로 있는 항목만 지운다.
+//! 폴더 원본은 안쪽을 걸어 사본에 같은 상대 경로·종류·내용(링크는 대상)으로 있는 항목만 지운다.
 //! 이동 뒤 넣거나 바꾼 항목은 사본에 없으므로 남는다. 지우기는 처음 이동과 같은 영구 삭제다.
 //! 되돌리기 단계는 만들지 않는다.
 
-use std::io;
+use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 use std::time::SystemTime;
 
 use super::super::ops::remove_path;
-use super::{Failure, OpKind, Reason, Report, Shared};
+use super::{COPY_CHUNK, Failure, OpKind, Reason, Report, Shared};
 
 /// 경로가 가리키는 항목의 종류. 링크는 따라가지 않는다.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -86,25 +86,38 @@ impl Leftover {
         if self.source_file.is_some() && FileStamp::read(&self.source) != self.source_file {
             return Err(Reason::ChangedSince);
         }
-        if self.copy_kind == Some(EntryKind::Link) && !same_entry(&self.source, &self.copy) {
-            return Err(Reason::ChangedSince);
-        }
         Ok(true)
     }
 
-    /// 확인을 통과한 원본을 지운다. 폴더는 사본과 같은 항목만 지우고 남긴 수를 알린다.
-    fn remove(&self) -> Result<(), Reason> {
+    /// 확인을 통과한 원본을 지운다. 파일·링크 원본은 사본과 같을 때만, 폴더 원본은 사본과 같은
+    /// 항목만 지우고 남긴 수를 알린다. 취소되면 Ok(None) 이고 그때까지 지운 것만 지워져 있다.
+    fn remove(&self, shared: &Shared) -> Result<Option<()>, Reason> {
         if self.copy_kind != Some(EntryKind::Dir) {
-            return remove_path(&self.source).map_err(|e| Reason::SourceNotRemoved(e.to_string()));
+            return match same_entry(shared, &self.source, &self.copy) {
+                Ok(true) => remove_path(&self.source)
+                    .map(Some)
+                    .map_err(|e| Reason::SourceNotRemoved(e.to_string())),
+                Ok(false) => Err(Reason::ChangedSince),
+                Err(Stop::Cancelled) => Ok(None),
+                Err(Stop::Io(e)) => Err(Reason::SourceNotRemoved(e.to_string())),
+            };
         }
         let mut pruned = Pruned::default();
-        prune_dir(&self.source, &self.copy, &mut pruned);
-        match (pruned.error, pruned.kept) {
-            (Some(e), _) => Err(Reason::SourceNotRemoved(e.to_string())),
-            (None, 0) => Ok(()),
-            (None, kept) => Err(Reason::KeptNotInCopy(kept)),
+        prune_dir(shared, &self.source, &self.copy, &mut pruned);
+        match (pruned.cancelled, pruned.error, pruned.kept) {
+            (true, _, _) => Ok(None),
+            (false, Some(e), _) => Err(Reason::SourceNotRemoved(e.to_string())),
+            (false, None, 0) => Ok(Some(())),
+            (false, None, kept) => Err(Reason::KeptNotInCopy(kept)),
         }
     }
+}
+
+/// 비교를 멈춘 이유.
+enum Stop {
+    Cancelled,
+    /// 읽기 오류. 같은지 모르므로 원본을 남긴다.
+    Io(io::Error),
 }
 
 /// 폴더 원본을 걸며 모은 결과.
@@ -112,34 +125,76 @@ impl Leftover {
 struct Pruned {
     /// 사본에 같은 항목이 없어 남긴 항목 수. 남긴 폴더는 그 안을 세지 않고 하나로 센다.
     kept: usize,
-    /// 지우려다 실패한 첫 오류. 나머지 항목은 계속 본다.
+    /// 읽거나 지우려다 실패한 첫 오류. 나머지 항목은 계속 본다.
     error: Option<io::Error>,
+    /// 작업이 취소되어 걷기를 멈췄다.
+    cancelled: bool,
 }
 
 /// 원본 항목과 사본 항목이 같은가. 링크는 따라가지 않고 링크 자체(대상 경로)를 비교하고,
-/// 파일은 크기를 비교한다. 폴더는 종류만 본다(안쪽은 [`prune_dir`] 가 항목별로 본다).
-fn same_entry(source: &Path, copy: &Path) -> bool {
+/// 파일은 크기가 같으면 내용을 바이트로 비교한다. 폴더는 종류만 본다(안쪽은 [`prune_dir`] 가
+/// 항목별로 본다).
+fn same_entry(shared: &Shared, source: &Path, copy: &Path) -> Result<bool, Stop> {
     let (Ok(s), Ok(c)) = (source.symlink_metadata(), copy.symlink_metadata()) else {
-        return false;
+        return Ok(false);
     };
     let (st, ct) = (s.file_type(), c.file_type());
     if st.is_symlink() || ct.is_symlink() {
-        return st.is_symlink()
+        return Ok(st.is_symlink()
             && ct.is_symlink()
             && matches!(
                 (std::fs::read_link(source), std::fs::read_link(copy)),
                 (Ok(a), Ok(b)) if a == b
-            );
+            ));
     }
     if st.is_dir() || ct.is_dir() {
-        return st.is_dir() && ct.is_dir();
+        return Ok(st.is_dir() && ct.is_dir());
     }
-    st.is_file() && ct.is_file() && s.len() == c.len()
+    if !(st.is_file() && ct.is_file() && s.len() == c.len()) {
+        return Ok(false);
+    }
+    shared.set_current(source);
+    same_content(shared, source, copy)
+}
+
+/// 두 파일의 내용을 버퍼 단위로 읽어 비교한다. 첫 차이에서 멈추고, 버퍼마다 취소를 본다.
+fn same_content(shared: &Shared, a: &Path, b: &Path) -> Result<bool, Stop> {
+    let mut a = std::fs::File::open(a).map_err(Stop::Io)?;
+    let mut b = std::fs::File::open(b).map_err(Stop::Io)?;
+    let (mut x, mut y) = (vec![0u8; COPY_CHUNK], vec![0u8; COPY_CHUNK]);
+    loop {
+        if shared.cancelled() {
+            return Err(Stop::Cancelled);
+        }
+        let n = fill(&mut a, &mut x).map_err(Stop::Io)?;
+        let m = fill(&mut b, &mut y).map_err(Stop::Io)?;
+        if n != m || x[..n] != y[..m] {
+            return Ok(false);
+        }
+        if n == 0 {
+            return Ok(true);
+        }
+        shared.add_bytes(n as u64);
+    }
+}
+
+/// 끝에 닿거나 버퍼가 찰 때까지 읽는다. 짧은 읽기가 비교를 어긋나게 하지 않도록 한다.
+fn fill(file: &mut std::fs::File, buf: &mut [u8]) -> io::Result<usize> {
+    let mut filled = 0;
+    while filled < buf.len() {
+        match file.read(&mut buf[filled..]) {
+            Ok(0) => break,
+            Ok(n) => filled += n,
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(filled)
 }
 
 /// 폴더 원본 `source` 에서 사본 `copy` 에 같은 상대 경로로 같은 항목이 있는 것만 지운다.
-/// 다 지워 비면 폴더도 지운다. 읽지 못한 폴더는 남긴 것으로 센다.
-fn prune_dir(source: &Path, copy: &Path, pruned: &mut Pruned) {
+/// 다 지워 비면 폴더도 지운다. 읽지 못한 폴더·파일은 남기고 그 오류를 사유로 둔다.
+fn prune_dir(shared: &Shared, source: &Path, copy: &Path, pruned: &mut Pruned) {
     let entries = match std::fs::read_dir(source) {
         Ok(entries) => entries,
         Err(e) => {
@@ -159,14 +214,29 @@ fn prune_dir(source: &Path, copy: &Path, pruned: &mut Pruned) {
         };
         let path = entry.path();
         let twin = copy.join(entry.file_name());
-        if !same_entry(&path, &twin) {
-            left = true;
-            pruned.kept += 1;
-            continue;
+        match same_entry(shared, &path, &twin) {
+            Ok(true) => {}
+            Ok(false) => {
+                left = true;
+                pruned.kept += 1;
+                continue;
+            }
+            Err(Stop::Io(e)) => {
+                left = true;
+                pruned.error.get_or_insert(e);
+                continue;
+            }
+            Err(Stop::Cancelled) => {
+                pruned.cancelled = true;
+                return;
+            }
         }
         let is_dir = path.symlink_metadata().is_ok_and(|m| m.is_dir());
         if is_dir {
-            prune_dir(&path, &twin, pruned);
+            prune_dir(shared, &path, &twin, pruned);
+            if pruned.cancelled {
+                return;
+            }
             left |= path.symlink_metadata().is_ok();
         } else if let Err(e) = std::fs::remove_file(&path) {
             left = true;
@@ -193,11 +263,19 @@ pub(crate) fn run_remove_leftovers(
             break;
         }
         shared.set_current(&leftover.source);
-        let result = leftover
-            .check()
-            .and_then(|present| if present { leftover.remove() } else { Ok(()) });
+        let result = leftover.check().and_then(|present| {
+            if present {
+                leftover.remove(shared)
+            } else {
+                Ok(Some(()))
+            }
+        });
         match result {
-            Ok(()) => report.done += 1,
+            Ok(None) => {
+                report.cancelled = true;
+                break;
+            }
+            Ok(Some(())) => report.done += 1,
             Err(reason) => {
                 if reason.leaves_original() {
                     // 사본은 그대로라 처음 이동과 같이 끝난 항목으로 센다.

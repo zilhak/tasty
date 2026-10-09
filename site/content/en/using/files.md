@@ -1,4 +1,4 @@
-<!-- source-hash: 4badedb00792 -->
+<!-- source-hash: ffde9342401d -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -162,7 +162,7 @@ When it finishes, a result card appears at the bottom right of the Explorer. Car
 - **Copy paths** — copies the card's paths to the clipboard.
 - **Undo** — shown while the card is up, after a copy or move that fully finished. Moved items go back (unless something else now sits there), and copies go to the trash. A copy you edited after the job is kept. Files you replaced can't be restored.
 
-If a move across disks can't delete all of the original (for example a subfolder you can't write to), a warning card says the original is still there, in whole or in part, and stays until you close it. The copy is then the complete data, so there is no Undo. Once whatever blocked the delete is fixed, **Retry** deletes only what is left of the originals. If the copy has gone or been replaced since, or you edited the original file, the original is kept and the card says why. For a folder, only items that are the same in the copy are deleted; anything you added to or changed in the original folder after the move is kept, and the card says how many.
+If a move across disks can't delete all of the original (for example a subfolder you can't write to), a warning card says the original is still there, in whole or in part, and stays until you close it. The copy is then the complete data, so there is no Undo. Once whatever blocked the delete is fixed, **Retry** deletes only what is left of the originals. If the copy has gone or been replaced since, or you edited the original file, the original is kept and the card says why. For a folder, only items whose content is the same in the copy are deleted (large files show progress while they are compared, and you can cancel); anything you added to or changed in the original folder after the move is kept, and the card says how many.
 
 ## Markdown
 

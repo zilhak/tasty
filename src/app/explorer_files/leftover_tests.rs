@@ -1,8 +1,8 @@
 //! 남은 원본 다시 지우기 시험. 원본 삭제 실패는 쓰기 권한을 뺀 하위 폴더로 만든다.
 
-use super::super::Choice;
 #[cfg(unix)]
 use super::super::tests::with_item;
+use super::super::{COPY_CHUNK, Choice};
 #[cfg(unix)]
 use super::super::{Publish, record};
 use super::*;
@@ -411,4 +411,127 @@ fn retry_keeps_a_link_original_whose_target_changed() {
     assert_eq!((report.done, report.failed.len()), (1, 0));
     assert!(source.symlink_metadata().is_err());
     assert!(copy.symlink_metadata().is_ok());
+}
+
+/// 크기가 같아도 내용이 다르면 이동 뒤 고친 것으로 보고 남긴다.
+#[test]
+fn retry_keeps_a_same_size_file_whose_content_changed() {
+    let twin = Twin::new();
+    std::fs::write(twin.source.join("a.txt"), "z").expect("edit, same size");
+    let report = twin.retry();
+    assert!(matches!(
+        report.failed.as_slice(),
+        [Failure {
+            reason: Reason::KeptNotInCopy(1),
+            ..
+        }]
+    ));
+    assert_eq!(
+        std::fs::read_to_string(twin.source.join("a.txt")).expect("read"),
+        "z"
+    );
+    twin.assert_copy_untouched();
+}
+
+/// 비교 버퍼 하나보다 큰 파일은 첫 버퍼 뒤의 차이도 찾고, 끝까지 같으면 지운다.
+#[test]
+fn retry_compares_a_large_file_past_the_first_buffer() {
+    let twin = Twin::new();
+    let mut body = vec![7u8; COPY_CHUNK * 2 + 100];
+    std::fs::write(twin.copy.join("big.bin"), &body).expect("write");
+    body[COPY_CHUNK + 10] = 8;
+    std::fs::write(twin.source.join("big.bin"), &body).expect("write");
+    let report = twin.retry();
+    assert!(matches!(
+        report.failed.as_slice(),
+        [Failure {
+            reason: Reason::KeptNotInCopy(1),
+            ..
+        }]
+    ));
+    assert_eq!(names(&twin.source), ["big.bin"]);
+
+    body[COPY_CHUNK + 10] = 7;
+    std::fs::write(twin.source.join("big.bin"), &body).expect("write");
+    let again = run_remove_leftovers(&shared(), None, &report.leftovers);
+    assert_eq!((again.done, again.failed.len()), (1, 0));
+    assert!(twin.source.symlink_metadata().is_err());
+}
+
+/// 파일 원본 하나도 수정 시각·크기가 그대로인데 내용이 다르면 남긴다.
+#[test]
+fn retry_keeps_an_original_file_whose_content_differs_from_the_copy() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let source = dir.path().join("a.txt");
+    let copy = dir.path().join("copy.txt");
+    std::fs::write(&source, "old").expect("write");
+    std::fs::write(&copy, "old").expect("write");
+    let left = Leftover::before_remove(&source, &copy);
+    let when = source
+        .symlink_metadata()
+        .and_then(|m| m.modified())
+        .expect("mtime");
+    std::fs::write(&source, "new").expect("same size edit");
+    std::fs::File::options()
+        .write(true)
+        .open(&source)
+        .and_then(|f| f.set_modified(when))
+        .expect("put the time back");
+    let report = run_remove_leftovers(&shared(), None, &[left]);
+    assert_eq!(
+        report.failed,
+        [Failure {
+            path: source.clone(),
+            reason: Reason::ChangedSince,
+        }]
+    );
+    assert_eq!(std::fs::read_to_string(&source).expect("read"), "new");
+}
+
+/// 비교하려고 읽지 못한 파일은 같은지 모르므로 남기고 그 오류를 사유로 둔다. 다시 시도할 수 있다.
+#[cfg(unix)]
+#[test]
+fn retry_keeps_a_file_it_cannot_read_for_the_comparison() {
+    use std::os::unix::fs::PermissionsExt;
+    // SAFETY: geteuid 는 인자 없이 현재 프로세스의 유효 사용자 ID 만 읽는다.
+    if unsafe { libc::geteuid() } == 0 {
+        return;
+    }
+    let twin = Twin::new();
+    let locked = twin.source.join("a.txt");
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).expect("chmod");
+    let report = twin.retry();
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o644)).expect("chmod");
+    assert!(matches!(
+        report.failed.as_slice(),
+        [Failure {
+            reason: Reason::SourceNotRemoved(_),
+            ..
+        }]
+    ));
+    assert_eq!(report.leftovers.len(), 1);
+    assert_eq!(names(&twin.source), ["a.txt"]);
+    twin.assert_copy_untouched();
+}
+
+/// 비교 중 취소하면 거기서 멈추고 아직 보지 않은 원본은 지우지 않는다.
+#[test]
+fn a_cancelled_retry_stops_comparing_and_keeps_the_rest() {
+    let twin = Twin::new();
+    let cancelled = shared();
+    cancelled.cancel();
+    assert!(matches!(
+        same_content(
+            &cancelled,
+            &twin.source.join("a.txt"),
+            &twin.copy.join("a.txt")
+        ),
+        Err(Stop::Cancelled)
+    ));
+    let left = Leftover::before_remove(&twin.source, &twin.copy);
+    assert!(matches!(left.remove(&cancelled), Ok(None)));
+    assert_eq!(names(&twin.source), ["a.txt", "sub"]);
+    let report = run_remove_leftovers(&cancelled, None, &[left]);
+    assert!(report.cancelled);
+    assert_eq!(report.done, 0);
 }
