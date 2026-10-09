@@ -3,6 +3,10 @@
 //! 폴더 원본은 안쪽을 걸어 사본에 같은 상대 경로·종류·내용(링크는 대상)으로 있는 항목만 지운다.
 //! 이동 뒤 넣거나 바꾼 항목은 사본에 없으므로 남는다. 지우기는 처음 이동과 같은 영구 삭제다.
 //! 되돌리기 단계는 만들지 않는다.
+//!
+//! 사본 경로가 상위 링크·마운트·하드링크로 원본과 같은 파일을 가리키면 비교가 자기 자신과 같다고
+//! 나온다. 그래서 비교 전에 파일 식별자를 대조해 같으면 지우지 않는다. 비교에 시간이 걸리므로
+//! 지우기 직전에 원본의 모습을 다시 읽어 그사이 바뀌었으면 남긴다.
 
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
@@ -51,6 +55,92 @@ impl FileStamp {
     }
 }
 
+/// 파일 식별자. 같은 값이면 경로가 달라도 같은 파일이다.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct FileId {
+    volume: u64,
+    index: u64,
+}
+
+impl FileId {
+    /// 맨 끝 링크는 따라가지 않고 링크 자체의 식별자를 읽는다.
+    #[cfg(unix)]
+    fn read(_path: &Path, meta: &std::fs::Metadata) -> io::Result<Self> {
+        use std::os::unix::fs::MetadataExt;
+        Ok(Self {
+            volume: meta.dev(),
+            index: meta.ino(),
+        })
+    }
+
+    /// std 의 `MetadataExt::file_index` 는 stable 이 아니라 Win32 를 직접 부른다.
+    #[cfg(windows)]
+    #[allow(unsafe_code)] // 이유: std 에 stable 식별자 API 가 없어 이 함수만 Win32 FFI 를 쓴다.
+    fn read(path: &Path, _meta: &std::fs::Metadata) -> io::Result<Self> {
+        use std::os::windows::fs::OpenOptionsExt;
+        use std::os::windows::io::AsRawHandle;
+        use windows::Win32::Foundation::HANDLE;
+        use windows::Win32::Storage::FileSystem::{
+            BY_HANDLE_FILE_INFORMATION, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT,
+            GetFileInformationByHandle,
+        };
+        // 폴더도 열고 맨 끝 링크는 따라가지 않는다. 식별자만 읽으므로 접근 권한은 요구하지 않는다.
+        let file = std::fs::OpenOptions::new()
+            .access_mode(0)
+            .custom_flags(FILE_FLAG_BACKUP_SEMANTICS.0 | FILE_FLAG_OPEN_REPARSE_POINT.0)
+            .open(path)?;
+        let mut info = BY_HANDLE_FILE_INFORMATION::default();
+        // SAFETY: `file` 이 살아 있는 동안 그 핸들을 넘기고, 출력 버퍼는 위에서 초기화한 구조체 하나다.
+        unsafe { GetFileInformationByHandle(HANDLE(file.as_raw_handle()), &mut info) }
+            .map_err(io::Error::other)?;
+        Ok(Self {
+            volume: u64::from(info.dwVolumeSerialNumber),
+            index: (u64::from(info.nFileIndexHigh) << 32) | u64::from(info.nFileIndexLow),
+        })
+    }
+
+    /// 식별자를 알 수 없으면 같은 파일이 아니라고 보장할 수 없어 지우지 않는다.
+    #[cfg(not(any(unix, windows)))]
+    fn read(_path: &Path, _meta: &std::fs::Metadata) -> io::Result<Self> {
+        Err(io::ErrorKind::Unsupported.into())
+    }
+}
+
+/// 지우기 직전에 다시 볼 원본 항목의 모습. 비교하는 동안 바뀌었으면 지우지 않는다.
+#[derive(Debug, PartialEq, Eq)]
+struct EntryStamp {
+    id: FileId,
+    modified: Option<SystemTime>,
+    len: u64,
+}
+
+impl EntryStamp {
+    fn read(path: &Path) -> io::Result<Self> {
+        let meta = path.symlink_metadata()?;
+        Ok(Self {
+            id: FileId::read(path, &meta)?,
+            modified: meta.modified().ok(),
+            len: meta.len(),
+        })
+    }
+
+    fn unchanged(&self, path: &Path) -> bool {
+        Self::read(path).is_ok_and(|now| now == *self)
+    }
+}
+
+/// 원본 항목의 모습을 읽는다. 사본 항목이 원본과 같은 파일이면 None 이다.
+/// 사본 항목이 없으면 같은 파일이 아니다.
+fn stamp_apart(source: &Path, copy: &Path) -> io::Result<Option<EntryStamp>> {
+    let stamp = EntryStamp::read(source)?;
+    let same = match copy.symlink_metadata() {
+        Ok(meta) => FileId::read(copy, &meta)? == stamp.id,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => false,
+        Err(e) => return Err(e),
+    };
+    Ok((!same).then_some(stamp))
+}
+
 /// 사본은 공개했지만 원본을 다 지우지 못한 이동 항목.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Leftover {
@@ -92,11 +182,19 @@ impl Leftover {
     /// 확인을 통과한 원본을 지운다. 파일·링크 원본은 사본과 같을 때만, 폴더 원본은 사본과 같은
     /// 항목만 지우고 남긴 수를 알린다. 취소되면 Ok(None) 이고 그때까지 지운 것만 지워져 있다.
     fn remove(&self, shared: &Shared) -> Result<Option<()>, Reason> {
+        let not_removed = |e: io::Error| Reason::SourceNotRemoved(e.to_string());
+        let Some(before) = stamp_apart(&self.source, &self.copy).map_err(not_removed)? else {
+            return Err(Reason::SameAsCopy);
+        };
         if self.copy_kind != Some(EntryKind::Dir) {
             return match same_entry(shared, &self.source, &self.copy) {
-                Ok(true) => remove_path(&self.source)
-                    .map(Some)
-                    .map_err(|e| Reason::SourceNotRemoved(e.to_string())),
+                Ok(true) => {
+                    after_compare(&self.source);
+                    if !before.unchanged(&self.source) {
+                        return Err(Reason::ChangedSince);
+                    }
+                    remove_path(&self.source).map(Some).map_err(not_removed)
+                }
                 Ok(false) => Err(Reason::ChangedSince),
                 Err(Stop::Cancelled) => Ok(None),
                 Err(Stop::Io(e)) => Err(Reason::SourceNotRemoved(e.to_string())),
@@ -104,11 +202,12 @@ impl Leftover {
         }
         let mut pruned = Pruned::default();
         prune_dir(shared, &self.source, &self.copy, &mut pruned);
-        match (pruned.cancelled, pruned.error, pruned.kept) {
-            (true, _, _) => Ok(None),
-            (false, Some(e), _) => Err(Reason::SourceNotRemoved(e.to_string())),
-            (false, None, 0) => Ok(Some(())),
-            (false, None, kept) => Err(Reason::KeptNotInCopy(kept)),
+        match (pruned.cancelled, pruned.error, pruned.same, pruned.kept) {
+            (true, ..) => Ok(None),
+            (false, Some(e), ..) => Err(not_removed(e)),
+            (false, None, true, _) => Err(Reason::SameAsCopy),
+            (false, None, false, 0) => Ok(Some(())),
+            (false, None, false, kept) => Err(Reason::KeptNotInCopy(kept)),
         }
     }
 }
@@ -129,7 +228,16 @@ struct Pruned {
     error: Option<io::Error>,
     /// 작업이 취소되어 걷기를 멈췄다.
     cancelled: bool,
+    /// 사본 쪽 항목이 원본과 같은 파일이라 남긴 항목이 있다.
+    same: bool,
 }
+
+/// 비교를 마치고 지우기 전. 시험은 여기서 원본을 바꿔 비교 도중의 변경을 흉내 낸다.
+#[cfg(not(test))]
+fn after_compare(_source: &Path) {}
+
+#[cfg(test)]
+use tests::after_compare;
 
 /// 원본 항목과 사본 항목이 같은가. 링크는 따라가지 않고 링크 자체(대상 경로)를 비교하고,
 /// 파일은 크기가 같으면 내용을 바이트로 비교한다. 폴더는 종류만 본다(안쪽은 [`prune_dir`] 가
@@ -214,6 +322,19 @@ fn prune_dir(shared: &Shared, source: &Path, copy: &Path, pruned: &mut Pruned) {
         };
         let path = entry.path();
         let twin = copy.join(entry.file_name());
+        let before = match stamp_apart(&path, &twin) {
+            Ok(Some(before)) => before,
+            Ok(None) => {
+                left = true;
+                pruned.same = true;
+                continue;
+            }
+            Err(e) => {
+                left = true;
+                pruned.error.get_or_insert(e);
+                continue;
+            }
+        };
         match same_entry(shared, &path, &twin) {
             Ok(true) => {}
             Ok(false) => {
@@ -238,6 +359,13 @@ fn prune_dir(shared: &Shared, source: &Path, copy: &Path, pruned: &mut Pruned) {
                 return;
             }
             left |= path.symlink_metadata().is_ok();
+            continue;
+        }
+        after_compare(&path);
+        if !before.unchanged(&path) {
+            // 비교하는 동안 바뀌어 사본과 같다고 할 수 없다.
+            left = true;
+            pruned.kept += 1;
         } else if let Err(e) = std::fs::remove_file(&path) {
             left = true;
             pruned.error.get_or_insert(e);

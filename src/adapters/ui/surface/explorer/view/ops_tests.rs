@@ -257,3 +257,16 @@ fn a_cancelled_delete_retry_returns_to_the_source_left_card() {
     assert_eq!(labels(&text)[0], t_fmt("explorer.result.retry", "2"));
     assert!(!text.undo);
 }
+
+/// 사본이 원본과 같은 파일이라 남긴 원본도 원본이 남은 경고 카드에 사유와 Retry 로 보인다.
+#[test]
+fn a_source_kept_as_the_same_file_shows_why_and_retry() {
+    let mut r = report(OpKind::Move, 1, 1);
+    r.undo.clear();
+    r.failed = vec![failure("/a", Reason::SameAsCopy)];
+    r.leftovers = vec![leftover("/a")];
+    let text = card_text(&card(r));
+    assert_eq!(text.kind, ToastKind::Warning);
+    assert_eq!(text.lines[0].1, t("explorer.result.same_as_copy"));
+    assert_eq!(labels(&text)[0], t_fmt("explorer.result.retry", "1"));
+}

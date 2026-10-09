@@ -280,6 +280,8 @@ pub(crate) enum Reason {
     KeptNotInCopy(usize),
     /// 남은 원본 다시 지우기를 취소해 이 원본이 전부 또는 일부 남았다. 다시 시도할 수 있다.
     RemoveCancelled,
+    /// 사본 경로가 링크·마운트·하드링크로 원본과 같은 파일을 가리켜 원본을 지우지 않았다.
+    SameAsCopy,
 }
 
 impl Reason {
@@ -287,7 +289,10 @@ impl Reason {
     pub(crate) fn leaves_original(&self) -> bool {
         matches!(
             self,
-            Self::SourceNotRemoved(_) | Self::KeptNotInCopy(_) | Self::RemoveCancelled
+            Self::SourceNotRemoved(_)
+                | Self::KeptNotInCopy(_)
+                | Self::RemoveCancelled
+                | Self::SameAsCopy
         )
     }
 }

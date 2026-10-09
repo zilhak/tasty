@@ -583,3 +583,186 @@ fn a_cancelled_retry_lists_only_the_originals_still_there() {
         );
     }
 }
+
+/// 비교 직후 원본을 바꾸는 시험 동작.
+type Hook = Box<dyn Fn(&Path)>;
+
+thread_local! {
+    static AFTER_COMPARE: std::cell::RefCell<Option<Hook>> = const { std::cell::RefCell::new(None) };
+}
+
+/// 비교를 마친 원본 항목마다 시험이 건 동작을 부른다.
+pub(super) fn after_compare(source: &Path) {
+    AFTER_COMPARE.with_borrow(|hook| {
+        if let Some(hook) = hook {
+            hook(source);
+        }
+    });
+}
+
+/// 비교 직후 원본을 바꾸는 동작을 걸고 다시 지우기를 실행한다.
+fn retry_changing(left: &Leftover, hook: impl Fn(&Path) + 'static) -> Report {
+    AFTER_COMPARE.set(Some(Box::new(hook)));
+    let report = run_remove_leftovers(&shared(), None, std::slice::from_ref(left));
+    AFTER_COMPARE.set(None);
+    report
+}
+
+fn retry_one(left: &Leftover) -> Report {
+    run_remove_leftovers(&shared(), None, std::slice::from_ref(left))
+}
+
+/// 원본을 남기고 그 사유를 알렸다. 원본이 남은 사유면 다시 지우기를, 아니면 이동을 다시 시도한다.
+fn kept_as(report: &Report, path: &Path, reason: Reason) {
+    let delete_again = usize::from(reason.leaves_original());
+    assert_eq!(
+        report.failed,
+        [Failure {
+            path: path.to_path_buf(),
+            reason,
+        }]
+    );
+    assert_eq!(report.leftovers.len(), delete_again);
+    assert_eq!(report.retryable().len(), 1 - delete_again);
+}
+
+/// 사본 경로가 원본과 같은 경로면 자기 자신과 같다고 나오지만 지우지 않는다.
+#[test]
+fn retry_never_deletes_a_file_whose_copy_path_is_the_same_path() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let file = dir.path().join("f.txt");
+    std::fs::write(&file, "only").expect("write");
+    let report = retry_one(&Leftover::before_remove(&file, &file));
+    kept_as(&report, &file, Reason::SameAsCopy);
+    assert_eq!(std::fs::read_to_string(&file).expect("read"), "only");
+}
+
+#[test]
+fn retry_never_deletes_a_folder_whose_copy_path_is_the_same_path() {
+    let twin = Twin::new();
+    let report = retry_one(&Leftover::before_remove(&twin.source, &twin.source));
+    kept_as(&report, &twin.source, Reason::SameAsCopy);
+    assert_eq!(names(&twin.source), ["a.txt", "sub"]);
+    assert_eq!(names(&twin.source.join("sub")), ["b.txt"]);
+}
+
+/// 사본 쪽 상위 폴더가 원본 폴더로 가는 링크다. 마운트로 같은 곳을 보는 경우와 결과가 같다.
+#[cfg(unix)]
+fn linked_parent(dir: &Path) -> (PathBuf, PathBuf) {
+    let src = dir.join("src");
+    let dst = dir.join("dst");
+    std::fs::create_dir_all(&src).expect("mkdir");
+    std::os::unix::fs::symlink(&src, &dst).expect("symlink");
+    (src, dst)
+}
+
+#[cfg(unix)]
+#[test]
+fn retry_never_deletes_a_file_reached_again_through_a_linked_copy_folder() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let (src, dst) = linked_parent(dir.path());
+    std::fs::write(src.join("f.txt"), "only").expect("write");
+    let report = retry_one(&Leftover::before_remove(
+        &src.join("f.txt"),
+        &dst.join("f.txt"),
+    ));
+    kept_as(&report, &src.join("f.txt"), Reason::SameAsCopy);
+    assert_eq!(names(&src), ["f.txt"]);
+}
+
+#[cfg(unix)]
+#[test]
+fn retry_never_deletes_a_folder_reached_again_through_a_linked_copy_folder() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let (src, dst) = linked_parent(dir.path());
+    let payload = src.join("payload");
+    std::fs::create_dir_all(payload.join("sub")).expect("mkdir");
+    std::fs::write(payload.join("a.txt"), "a").expect("write");
+    std::fs::write(payload.join("sub").join("b.txt"), "b").expect("write");
+    let report = retry_one(&Leftover::before_remove(&payload, &dst.join("payload")));
+    kept_as(&report, &payload, Reason::SameAsCopy);
+    assert_eq!(names(&payload), ["a.txt", "sub"]);
+    assert_eq!(names(&payload.join("sub")), ["b.txt"]);
+}
+
+/// 빈 폴더는 안쪽 항목이 없어 폴더 자체의 식별자만이 지키는 경우다.
+#[cfg(unix)]
+#[test]
+fn retry_never_deletes_an_empty_folder_reached_again_through_a_linked_copy_folder() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let (src, dst) = linked_parent(dir.path());
+    std::fs::create_dir(src.join("empty")).expect("mkdir");
+    let report = retry_one(&Leftover::before_remove(
+        &src.join("empty"),
+        &dst.join("empty"),
+    ));
+    kept_as(&report, &src.join("empty"), Reason::SameAsCopy);
+    assert!(src.join("empty").is_dir());
+}
+
+/// 하드링크는 이름만 지워도 자료가 남지만, 같은 파일이므로 지우지 않고 알린다.
+#[test]
+fn retry_keeps_a_file_whose_copy_is_a_hard_link_to_it() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let (file, link) = (dir.path().join("f.txt"), dir.path().join("h.txt"));
+    std::fs::write(&file, "only").expect("write");
+    std::fs::hard_link(&file, &link).expect("hard link");
+    let report = retry_one(&Leftover::before_remove(&file, &link));
+    kept_as(&report, &file, Reason::SameAsCopy);
+    assert!(file.exists() && link.exists());
+}
+
+/// 폴더 안쪽 항목도 하나씩 대조한다. 맨 위만 보면 사본 안쪽 하위 마운트를 놓친다.
+#[test]
+fn retry_keeps_a_folder_item_whose_copy_is_the_same_file() {
+    let twin = Twin::new();
+    std::fs::remove_file(twin.copy.join("a.txt")).expect("remove");
+    std::fs::hard_link(twin.source.join("a.txt"), twin.copy.join("a.txt")).expect("hard link");
+    let report = twin.retry();
+    kept_as(&report, &twin.source, Reason::SameAsCopy);
+    assert_eq!(names(&twin.source), ["a.txt"], "the rest matched and went");
+    twin.assert_copy_untouched();
+}
+
+/// 비교가 끝난 뒤 지우기 전에 바뀐 원본 파일은 지우지 않는다.
+#[test]
+fn retry_keeps_a_file_changed_while_it_was_compared() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let (file, copy) = (dir.path().join("f.txt"), dir.path().join("copy.txt"));
+    std::fs::write(&file, "same").expect("write");
+    std::fs::write(&copy, "same").expect("write");
+    let left = Leftover::before_remove(&file, &copy);
+    let report = retry_changing(&left, |p| std::fs::write(p, "edited").expect("edit"));
+    kept_as(&report, &file, Reason::ChangedSince);
+    assert_eq!(std::fs::read_to_string(&file).expect("read"), "edited");
+}
+
+/// 같은 내용의 새 파일로 바꿔 놓아도 다른 파일이므로 지우지 않는다.
+#[test]
+fn retry_keeps_a_file_replaced_while_it_was_compared() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let (file, copy) = (dir.path().join("f.txt"), dir.path().join("copy.txt"));
+    std::fs::write(&file, "same").expect("write");
+    std::fs::write(&copy, "same").expect("write");
+    let left = Leftover::before_remove(&file, &copy);
+    let spare = dir.path().join("spare.txt");
+    let report = retry_changing(&left, move |p| {
+        std::fs::write(&spare, "same").expect("write");
+        std::fs::rename(&spare, p).expect("replace");
+    });
+    kept_as(&report, &file, Reason::ChangedSince);
+    assert!(file.exists());
+}
+
+#[test]
+fn retry_keeps_a_folder_item_changed_while_it_was_compared() {
+    let twin = Twin::new();
+    let report = retry_changing(&Leftover::before_remove(&twin.source, &twin.copy), |p| {
+        if p.ends_with("a.txt") {
+            std::fs::write(p, "edited").expect("edit");
+        }
+    });
+    kept_as(&report, &twin.source, Reason::KeptNotInCopy(1));
+    assert_eq!(names(&twin.source), ["a.txt"]);
+    twin.assert_copy_untouched();
+}
