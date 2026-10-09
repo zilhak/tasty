@@ -60,6 +60,8 @@ modifier 는 세 축 각자의 독립 필드 `tab_switch_modifier`/`workspace_sw
 
 세 축 모두 슬롯 + 다음/이전을 대칭으로 갖는다. 카테고리 modifier 기본값 `ctrl+shift` 는 macOS 스크린샷 예약(`⌘⇧3/4/5`, tasty 가 가로챌 수 없음)과 겹치지 않게 고른 값이고, 카테고리 next/prev 기본 raw 키 `j`/`k` 는 4 프리셋 전수 대조로 다른 액션과 무충돌임을 확인한 값이다(워크스페이스 축과 문자는 같지만 modifier 가 달라 합성 콤보는 겹치지 않는다 — `ctrl+shift+j` vs `alt+j`). slot/next/prev 필드는 모두 필드별 `#[serde(default = "…")]` 를 가져 신규 필드가 없는 구버전 config 를 읽어도 빈 값이 아니라 위 기본값으로 복원된다(`category_switch_modifier` 도 동일 — `"ctrl+shift"` default). 자유 콤보용 `next_tab`/`prev_tab` 필드와는 별개다(Command Palette·더블탭 경로 전용, quick-switch 가 건드리지 않음).
 
+`explorer_drag_flip_modifier`(`String`, 기본 macOS `"option"`·다른 OS `"ctrl"`)도 콤보 필드가 아닌 modifier 조합이다. explorer 드래그 중 이 조합을 누르고 있으면 놓기 동작(같은 디스크 이동, 다른 디스크 복사)을 뒤집는다. 눌린 modifier 가 이 조합을 모두 포함하면 누른 것으로 본다. 필드가 없는 config 는 기본값으로 읽는다(`#[serde(default)]`). 설정 UI 행은 아직 없다. 동작은 [Explorer 파일 작업](../../surfaces/explorer/file-operations.md#드래그-앤-드롭)에 있다.
+
 #### quick-switch 섹션 UI (Tab/Workspace 서브탭)
 
 Tab 서브탭(탭 축)과 Workspace 서브탭(워크스페이스 축 + 카테고리 축)의 일반 콤보 목록 아래에 **quick-switch 섹션**이 있다(`keybindings_tab/quick_switch.rs`). 구성:

@@ -46,8 +46,8 @@ View 는 모델을 직접 바꾸지 않고 파일시스템도 직접 읽지 않�
 - **보이지 않는 동안**: 읽기 요청은 View 를 그릴 때만 만든다. 이미 보낸 요청의 결과는 그 View 가 남아 있는 한 다른 탭에 가려져 있어도 받아 둔다.
 - **파일 작업 뒤 갱신**: 로컬 파일 작업이 끝나면 성공·실패와 관계없이 모든 윈도우의 로컬 explorer 중 작업이 바꿀 수 있는 폴더를 보는 View 를 다시 읽고, 그 폴더의 트리 캐시를 지운다. 범위는 [파일 조작](file-operations.md#작업-뒤-목록-갱신) 에 있다. mirror explorer 는 원격 파일을 보므로 제외한다.
 - **현재 폴더가 사라짐**: 다시 읽은 결과가 경로 없음이면 읽기 오류 화면(다시 시도 · 상위 폴더로)을 보인다. 다른 경로로 자동으로 옮기지 않는다. 상위 폴더도 함께 사라졌으면 "상위 폴더로" 는 남아 있는 가장 가까운 상위 폴더로 간다. 외부 프로그램의 변경은 감시하지 않으므로 새로고침해야 보인다.
-- **늦은 결과**: 목록 결과는 receipt 를 가진 View 에만 들어간다. 그 사이 사용자가 바꾼 선택은 지우지 않는다. 파일 작업 완료의 선택 정리와 오류 토스트는 원 View 와 binding 이 유효할 때만 낸다. 실패한 rename·trash 는 선택을 유지하고 목록을 다시 읽는다. 부분 성공한 붙여넣기는 실패 경로를 보이고 cut 클립보드를 유지한다. 사용자가 그 사이 새로 담은 클립보드는 건드리지 않는다.
-- **종료**: surface 를 닫으면 engine 이 모델을 지우고, 창은 `release_surface_views` 로 그 surface 의 `ExplorerView` 를 지운다. 대기 중인 로컬 읽기의 receipt 도 함께 버려지고, 늦게 온 원격 응답은 기다리는 View 가 없어 버려진다. 아직 시작하지 않은 파일 작업 요청은 binding 이 더는 그 surface 를 가리키지 않아 시작하지 않는다. 이미 시작한 작업은 끝까지 실행되고 결과 토스트·목록 갱신만 생략된다(`src/app/explorer_files.rs`).
+- **늦은 결과**: 목록 결과는 receipt 를 가진 View 에만 들어간다. 그 사이 사용자가 바꾼 선택은 지우지 않는다. 파일 작업 완료의 선택 정리와 결과 카드·오류 토스트는 원 View 와 binding 이 유효할 때만 낸다. 실패한 rename·trash 는 선택을 유지하고 목록을 다시 읽는다. 부분 성공한 붙여넣기는 결과 카드에 실패 경로를 보이고 cut 클립보드를 유지한다. 사용자가 그 사이 새로 담은 클립보드는 건드리지 않는다.
+- **종료**: surface 를 닫으면 engine 이 모델을 지우고, 창은 `release_surface_views` 로 그 surface 의 `ExplorerView` 를 지운다. 대기 중인 로컬 읽기의 receipt 도 함께 버려지고, 늦게 온 원격 응답은 기다리는 View 가 없어 버려진다. 아직 시작하지 않은 파일 작업 요청은 binding 이 더는 그 surface 를 가리키지 않아 시작하지 않는다. 이미 시작한 작업은 끝까지 실행되고 결과 카드·목록 갱신만 생략된다. 단, 이름 충돌 답을 기다리던 작업은 물을 칸이 없어졌으므로 취소한다(`src/app/explorer_files.rs`·`src/app/explorer_files/ui_sync.rs`). 진행·충돌·결과 표시는 [파일 작업](file-operations.md#작업-실행--진행충돌결과)에 있다.
 
 ### 사용자 조작의 적용
 
@@ -282,6 +282,8 @@ Grid 셀은 모두 `explorer_grid_thumb_size`(40) 슬롯을 잡아 썸네일 유
 
 **새 탭으로 탐색기 열기(`open_explorer`, 기본 미할당)는 포커스와 무관하다** — 위 표와 달리 explorer 포커스를 요구하지 않는다. `Intent::NewTab { kind: "explorer" }` 를 발생시키므로 CLI 의 `new tab --type explorer` 와 같은 도메인 인텐트(`CreateTab`)를 쓰되 선택은 다르다 — 단축키는 새 탭을 선택하고, 에이전트(CLI/IPC)는 선택하지 않는다([ADR-0059](../../adr/0059-id-targets-and-view-owned-selection.md)). 이 액션은 경로를 안 실으므로 홈에서 열린다(명시 경로는 CLI 의 `--path` 가 받는다). 설정 UI 는 **Tab** 서브탭이다 — `open_markdown` 옆, 둘 다 새 탭 열기라서. 이 액션은 `keybinding.rs`·`double_tap.rs`·`dispatch.rs` 세 진입점 전부에서 처리한다.
 
+**드래그 반전 modifier(`explorer_drag_flip_modifier`)** 는 키 조합이 아니라 드래그 중 누르고 있는 modifier 다. 값은 `tab_switch_modifier` 와 같은 modifier 조합 문자열이고, 기본은 macOS `option`, 다른 OS `ctrl` 이다. 누르고 있으면 드래그 놓기의 기본 동작(같은 디스크 이동, 다른 디스크 복사)을 뒤집는다([드래그 앤 드롭](file-operations.md#드래그-앤-드롭)). 설정 UI 에는 아직 행이 없어 config.toml 의 `[keybindings]` 에서 바꾼다.
+
 ### 타입어헤드로 항목 선택
 
 목록에 포커스가 있을 때 영숫자를 입력하면 그 글자로 시작하는 항목이 선택되고 그 항목이 보이도록 스크롤한다. grid·list·detail 세 뷰 모두 같다. 같은 글자를 이어서 누르면 후보를 순환하고 마지막 다음에는 처음으로 돌아간다. 다른 글자를 이어서 입력하면 그 글자를 합친 접두사로 찾는다. 마지막 입력 후 1초가 지나면 버퍼를 비우고 다음 글자를 새 검색으로 읽는다. 일치하는 항목이 없으면 선택과 버퍼가 그대로 남아, 오타 한 글자가 그 뒤의 입력을 막지 않는다. 비교할 때 대소문자는 구분하지 않으며, `..`는 화면에만 있는 행이라 대상이 아니다.
@@ -312,7 +314,7 @@ Appearance → **Explorer** 서브탭에서 surface 폰트를 오버라이드한
 - Given 폴더를 우클릭한다 When "새 탭으로 열기"를 고른다 Then 우클릭한 surface 의 pane 에 그 폴더를 cwd 로 하는 explorer Pane 탭이 생기고 원래 explorer 는 바뀌지 않는다.
 - Given mirror explorer When 폴더를 탐색하고 파일을 더블클릭한다 Then 목록은 원격 조회로 오고, 파일은 원격에 탭으로 열리거나 열 수 없다는 토스트가 나온다. 로컬 파일시스템은 읽지 않는다.
 - Given mirror explorer When 잘라내기·붙여넣기·휴지통·이름 변경·새 탭 열기를 단축키나 메뉴로 시도한다 Then 메뉴에 없거나 `remote_write_unsupported` 토스트가 나오고 아무것도 바뀌지 않는다.
-- Given 붙여넣기가 진행 중이다 When 그 surface 를 닫는다 Then 이미 시작한 작업은 끝까지 실행되고 닫힌 surface 에 토스트나 목록 갱신을 내지 않는다. 아직 시작하지 않은 요청은 실행되지 않는다.
+- Given 붙여넣기가 진행 중이다 When 그 surface 를 닫는다 Then 이미 시작한 작업은 끝까지 실행되고 닫힌 surface 에 결과 카드나 목록 갱신을 내지 않는다. 아직 시작하지 않은 요청은 실행되지 않는다. 이름 충돌 답을 기다리던 작업은 취소되고 기존 항목은 그대로다.
 - Given 로컬 explorer 의 폴더에 "New folder" 가 있다 When 툴바의 New folder 를 누른다 Then 목록 맨 위에 "New folder 2" 가 전체 선택된 입력이 열리고, Enter 를 누르면 그 폴더가 생겨 정렬 자리에서 선택된다(`explorer_files/tests.rs` 의 `a_created_entry_is_selected_only_while_its_folder_is_still_shown`, `create/tests.rs`).
 - Given 이름 입력이 열려 있다 When 이미 있는 이름으로 Enter 를 누른다 Then 입력은 열린 채 "already exists" 오류가 보이고 디스크는 바뀌지 않는다. Esc 를 누르면 아무것도 만들지 않고 닫힌다.
 - Given 쓸 수 없는 폴더 When 툴바를 본다 Then New folder·New file 이 비활성이다. Given mirror explorer When 툴바·메뉴를 본다 Then 두 명령이 없다.

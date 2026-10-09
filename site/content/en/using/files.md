@@ -1,4 +1,4 @@
-<!-- source-hash: 99e8c5f708a1 -->
+<!-- source-hash: 040a46c44eba -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -8,7 +8,7 @@ Read a README or check an image beside your terminal. Tasty can open an Explorer
 | Where | How |
 |--------|--------|
 | Sidebar **Tools** > **Open File…** | Tasty's own file chooser. It opens in the folder of the terminal or Explorer you are looking at, and in a remote Workspace it shows remote files |
-| Drag a file onto the window | Drop when **Drop to open** appears |
+| Drag a file onto the window | Drop when **Drop to open** appears. Dropped on an Explorer cell, the file is copied into that folder instead of opened ([Drag and drop](#drag-and-drop)) |
 | Explorer Surface | Double-click a file |
 | Terminal | `Ctrl+click`, or select a path and right-click > **Open File** ([Working with the terminal](terminal.md#opening-links-and-paths)) |
 | Right-click an empty area of the tab strip | **New Markdown...** · **New Explorer** · **New HTML...** · **New Image** |
@@ -123,8 +123,8 @@ A link to a folder opens like a folder, and the address bar keeps the link's pat
 
 - **New folder** · **New file** — first in the empty-space menu, and in the file group of a folder's menu. See "New folder · New file" above.
 - **Copy Path** — with several selected, they are joined with line breaks.
-- **Copy** · **Cut** · **Paste** · **Paste (into)** — if the name already exists, `(copy)` is appended.
-- **Move to Trash** — sends to the OS trash without confirmation. To undo, use the trash.
+- **Copy** · **Cut** · **Paste** · **Paste (into)** — if the name already exists, you are asked what to do ([Progress and results](#progress-and-results)).
+- **Move to Trash** — sends to the OS trash without confirmation. To undo, use the trash. If that drive has no trash, nothing is deleted and you are told so.
 - **Rename**.
 - **Open in System** — opens the folder in the OS file manager.
 - **Open in New Tab** — opens one more Explorer Tab in the Pane with that folder as the root.
@@ -133,6 +133,32 @@ A link to a folder opens like a folder, and the address bar keeps the link's pat
 - **Properties** — opens the [Properties](#properties) popup above. It also appears in remote Explorers.
 
 The last chosen view mode is remembered and applied to new Explorers too. The Explorer font is set separately in the **Explorer** item under **Settings** > **Appearance**. In an Explorer in a remote Workspace, items that change files do not appear. Items copied in a remote Explorer can't be pasted into a local Explorer: Paste does not appear in the menu, and the paste shortcut only shows a notice. Tasty never copies a local file with the same path instead. Double-clicking a markdown file opens a tab for it on the remote computer; if the type's default handler can't be used remotely, only the handlers that can are offered, and a type with no such handler only shows a notice.
+
+### Drag and drop
+
+Drag items onto a folder row or cell, a folder in the left tree, or a favorite to put them in that folder. Dropped on a file or on empty space, they go to the folder the Explorer is showing. You can drag into another Explorer next to it too.
+
+- On the same disk the drop **moves**; across disks it **copies**. Hold `Ctrl` (macOS `Option`) while dropping to do the opposite. Change that key with `explorer_drag_flip_modifier` under `[keybindings]` in `config.toml`.
+- While dragging, the label by the pointer says **Move to** or **Copy to** and the folder. Where you can't drop, it says **Can't drop** and why (into itself, already in this folder, remote folder, no write access).
+- Hover over a closed tree folder for a moment to expand it. Press `Esc` to cancel the drag.
+- Files dragged in from your OS file manager and dropped on an Explorer cell are **copied** into its folder (never moved). A remote Explorer refuses them. On Linux (X11) the whole-window hint stays while you drag, but dropping on an Explorer cell still copies.
+
+### Progress and results
+
+Paste, drag and drop, and Move to Trash run one at a time, in order. The status line of the Explorer that started the job shows a progress bar, the current file and the size; **×** stops it. Stopping keeps finished items and skips the rest. Jobs waiting their turn show a **+1 queued** tag; click it to see the queue and remove waiting jobs.
+
+When a name already exists, a question opens in that Explorer if it has focus. If you were looking elsewhere, click **Show** in its status line.
+
+- **Keep both** (`Enter`) — the default. The new item gets `(copy)`; the existing one is left alone.
+- **Skip** · **Replace** (files only) · **Cancel the rest** (`Esc`).
+- Folders with the same name are never merged; for folders you can only Skip or Keep both.
+- With more conflicts left, turn on **Do this for the other conflicts** to answer them all at once.
+
+When it finishes, a result card appears at the bottom right of the Explorer. Cards for finished jobs fade after a moment; cards with failed or skipped items stay until you close them and list those paths.
+
+- **Retry** — runs only the failed or skipped items again.
+- **Copy paths** — copies the card's paths to the clipboard.
+- **Undo** — shown while the card is up, after a copy or move that fully finished. Moved items go back (unless something else now sits there), and copies go to the trash. Files you replaced can't be restored.
 
 ## Markdown
 

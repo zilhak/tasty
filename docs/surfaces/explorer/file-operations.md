@@ -1,10 +1,10 @@
 # Explorer 파일 작업 — 대상과 결과의 계약
 
-- **Status**: Partial — 새 폴더·새 파일·이름 변경·복사·잘라내기·붙여넣기·휴지통 이동은 동작한다. 속성 조회와 미리보기 패널·Grid 썸네일은 파일을 바꾸지 않는 읽기로 동작한다. 드래그 놓기·충돌 선택·진행 취소·실행 취소·검색은 없다.
+- **Status**: Partial — 새 폴더·새 파일·이름 변경·복사·잘라내기·붙여넣기·휴지통 이동·드래그 놓기·충돌 선택·진행 취소·실행 취소는 동작한다. 속성 조회와 미리보기 패널·Grid 썸네일은 파일을 바꾸지 않는 읽기로 동작한다. 검색은 없다.
 - **주체**: 로컬 사용자 ([주체](../../concepts/actors.md)). 에이전트(IPC/CLI)는 이 문서의 파일 작업을 호출하지 않는다.
 - **ADR**: [ADR-0022](../../adr/0022-remote-mirror-content-and-queries.md) (mirror explorer 는 파일을 바꾸지 않는다)
-- **코드**: 메뉴 구성 `build_explorer_context_menu`·메뉴 핸들러 `explorer_menu_*` (`src/view/main/redraw.rs`), 단축키·Command Palette 진입 `handle_explorer_shortcut`·`run_explorer_action` (`src/adapters/ui/input/shortcuts/copy_paste.rs`), 실행 worker `src/app/explorer_files.rs`·`src/app/explorer_files/ops.rs`
-- **화면**: [Explorer](index.md) 의 컨텍스트 메뉴·rename 팝업·토스트
+- **코드**: 메뉴 구성 `build_explorer_context_menu`·메뉴 핸들러 `explorer_menu_*` (`src/view/main/redraw.rs`), 단축키·Command Palette 진입 `handle_explorer_shortcut`·`run_explorer_action` (`src/adapters/ui/input/shortcuts/copy_paste.rs`), 실행 worker `src/app/explorer_files.rs`·`src/app/explorer_files/ops.rs`·작업 엔진 `src/app/explorer_files/job.rs`·화면 동기화 `src/app/explorer_files/ui_sync.rs`, 칸 표시 `src/adapters/ui/surface/explorer/view/ops.rs`·드래그 `src/adapters/ui/surface/explorer/view/drag.rs`·충돌 popup `src/adapters/ui/popup/explorer_conflict.rs`, OS 파일 드롭 `src/view/main/file_drop.rs`
+- **화면**: [Explorer](index.md) 의 컨텍스트 메뉴·rename 팝업·토스트, 상태줄 진행 표시·대기열 팝오버·충돌 popup·결과 카드·드래그 칩 (갤러리 `explorer-ops-*` 예제)
 
 ## 목적
 
@@ -35,6 +35,9 @@
 | 단축키·Command Palette 의 복사·잘라내기·경로 복사 | 선택 항목. 선택이 없으면 아무것도 하지 않는다 |
 | 단축키·Command Palette 의 붙여넣기 | 현재 폴더 |
 | 메뉴 "Paste into" (단일 폴더) | 그 폴더 |
+| 드래그 — 끄는 항목 | 선택 안의 항목을 끌면 선택 전체, 선택 밖의 항목을 끌면 그 항목 하나(선택도 그 항목으로 바꾼다) |
+| 드래그 — 놓는 곳 | 폴더 행·셀, 사이드바 트리 노드, 즐겨찾기 행이면 그 폴더. 파일 행이나 빈 곳이면 그 칸이 보고 있는 폴더 |
+| OS 파일 드롭 | 놓은 explorer 칸이 보고 있는 폴더(위치를 아는 동안은 위 드래그와 같은 대상) |
 
 단축키와 Command Palette 는 같은 함수(`run_explorer_action`)를 거치고, 복사·잘라내기·붙여넣기는 메뉴와 같은 핸들러(`explorer_menu_set_clipboard`·`explorer_menu_paste`)를 부른다. 같은 대상이면 진입점이 달라도 결과가 같다. 대상 surface 는 포커스된 explorer surface 이고, 메뉴는 우클릭한 surface 의 id 를 지닌다.
 
@@ -46,7 +49,7 @@
 - **대상은 요청할 때 고정한다.** 메뉴·단축키·팝업이 대상 경로와 surface 를 정한 순간의 값을 쓴다. 그 사이 포커스·explorer 내부 탭·선택이 바뀌어도 대상은 바뀌지 않는다. 사용자가 그 사이 다른 폴더로 가도 대상은 바뀌지 않는다.
 - **실행 직전에 surface 세대를 다시 확인한다.** 메뉴는 열 때 그 surface 의 세대(`SurfaceBinding`)를 고정하고, 고른 항목은 `explorer_menu_admits`(`src/state/explorer_menu.rs`)가 허용할 때만 실행한다. 파일을 바꾸는 항목은 세대 전체(surface activation·자원·mirror projection)가 그대로여야 한다. 파일을 바꾸지 않는 항목(경로 복사·복사·이 폴더로 루트 설정)은 같은 explorer surface 이기만 하면 되고, mirror projection 이 다시 만들어진 것은 따지지 않는다. 이름 변경은 메뉴의 세대를 rename 팝업에 그대로 실어, 팝업이 떠 있는 사이 surface 가 바뀌면 팝업을 닫고 확정해도 실행하지 않는다.
 - **worker 도 다시 확인한다.** View 는 대상 경로와 원 surface·View identity 를 고정해 App 의 `explorer_files` worker 에 넘긴다. worker 는 시작 직전에 원 대상과 mirror 제한을 다시 확인하고, 완료 뒤 원 View 와 surface 가 남아 있을 때만 목록 갱신을 요청한다. 사용자가 그 사이 바꾼 선택이나 새로 담은 클립보드는 건드리지 않는다. 대기 요청 상한과 종료 처리는 [Explorer](index.md#컨텍스트-메뉴--파일-조작) 에 있다.
-- **원격 쓰기는 진입점마다 같은 방식으로 거부한다.** mirror explorer 에서는 메뉴 항목을 숨기고, 단축키와 메뉴 핸들러는 `explorer.state.remote_write_unsupported` 로 거부하며, worker 는 대상이 mirror 면 시작하지 않는다. 원격에서 복사한 경로는 로컬 explorer 의 메뉴에 붙여넣기로 나오지 않고, 단축키 붙여넣기는 `explorer.state.remote_paste_unsupported` 로 거부한다. 같은 경로의 로컬 파일을 대신 복사하지 않는다. 외부 파일 드롭은 파일 작업이 아니라 로컬 파일 열기(`DispatchFile`)로 처리하므로 원격 파일시스템에 쓰지 않는다.
+- **원격 쓰기는 진입점마다 같은 방식으로 거부한다.** mirror explorer 에서는 메뉴 항목을 숨기고, 단축키와 메뉴 핸들러는 `explorer.state.remote_write_unsupported` 로 거부하며, worker 는 대상이 mirror 면 시작하지 않는다. 원격에서 복사한 경로는 로컬 explorer 의 메뉴에 붙여넣기로 나오지 않고, 단축키 붙여넣기는 `explorer.state.remote_paste_unsupported` 로 거부한다. 같은 경로의 로컬 파일을 대신 복사하지 않는다. OS 에서 끌어 온 파일을 mirror explorer 칸에 놓으면 거절하고 이유를 토스트로 보인다. explorer 가 아닌 칸에 놓은 파일은 로컬 파일 열기(`DispatchFile`)로 처리한다.
 - **주소 입력과 링크**는 [Explorer](index.md) 의 [주소 입력](index.md#주소-입력)·[심볼릭 링크](index.md#심볼릭-링크) 절을 따른다. 로컬 경로는 절대 경로로 확정해 다루고, 원격 경로는 로컬 파일시스템으로 확인하지 않는다.
 
 ### 작업별 계약
@@ -58,10 +61,11 @@
 | 이름 변경 | 메뉴 (단일 항목) | 그 항목 | 같은 폴더 안에서 이름만 바꾼다. 경로 구분자·드라이브 접두어가 든 이름과 이미 있는 이름은 거부한다 | rename 팝업. 실패하면 오류 토스트를 띄우고 선택을 유지한 채 목록을 다시 읽는다 |
 | 복사 | 메뉴, `copy` 단축키, Command Palette | 선택 항목 | 창 단위 explorer 파일 클립보드에 경로를 담는다. 디스크는 바꾸지 않는다 | 없음 |
 | 잘라내기 | 메뉴, `cut` 단축키, Command Palette | 선택 항목 | 클립보드에 잘라내기 표시와 함께 담는다 | 붙여넣기 전까지 잘라낸 항목을 grid·list·detail 에서 흐리게 그린다 (`cut_pending_opacity`) |
-| 붙여넣기 | 메뉴 (빈 영역·"Paste into"), `paste` 단축키, Command Palette | 현재 폴더 또는 메뉴의 폴더 | 복사는 목적지 임시 디렉터리에서 준비한 뒤 덮어쓰기 금지 rename 으로 공개한다. 이동은 rename 하고, 다른 파일시스템이면 복사 뒤 원본을 지운다 | 부분 성공이면 실패 경로를 오류 토스트로 보인다 |
-| 드래그 놓기 | 외부 파일을 창에 놓기 | — | 탐색기로 복사·이동하지 않는다. 놓은 파일은 [파일 핸들러](../../features/file-handler/index.md)로 연다 | — |
-| 휴지통 이동 | 메뉴 | 선택 항목 또는 우클릭 항목 | OS 휴지통으로 보낸다. 확인 모달은 없다. 영구 삭제 경로는 없다 | 실패하면 오류 토스트를 띄우고 목록을 다시 읽는다 |
-| 실행 취소 | 없음 | — | 지원하지 않는다. 휴지통 복원은 OS 에서 한다 | — |
+| 붙여넣기 | 메뉴 (빈 영역·"Paste into"), `paste` 단축키, Command Palette | 현재 폴더 또는 메뉴의 폴더 | 아래 [작업 실행](#작업-실행--진행충돌결과) 의 작업으로 돈다. 복사는 목적지 임시 디렉터리에서 준비한 뒤 덮어쓰기 금지 rename 으로 공개한다. 이동은 rename 하고, 다른 파일시스템이면 복사 뒤 원본을 지운다 | 상태줄 진행 표시, 이름 충돌 popup, 결과 카드 |
+| 드래그 놓기 (explorer 항목) | 항목을 끌어 폴더·트리 노드·즐겨찾기·목록 본문에 놓기. 다른 explorer 칸에도 놓을 수 있다 | 위 대상 규칙 | 같은 디스크면 이동, 다른 디스크면 복사. 드래그 반전 modifier 를 누르고 있으면 뒤집는다. 붙여넣기와 같은 작업으로 돈다. 클립보드는 쓰지도 비우지도 않는다 | 포인터 옆 칩(아래 [드래그](#드래그-앤-드롭)), 대상의 링, 그 뒤는 붙여넣기와 같다 |
+| 드래그 놓기 (OS 파일) | OS 에서 끌어 온 파일을 explorer 칸에 놓기 | 놓은 칸의 폴더 | 항상 복사한다. mirror explorer 는 거절한다. explorer 가 아닌 칸에 놓으면 [파일 핸들러](../../features/file-handler/index.md)로 연다 | 붙여넣기와 같다 |
+| 휴지통 이동 | 메뉴 | 선택 항목 또는 우클릭 항목 | OS 휴지통으로 보낸다. 확인 모달은 없다. 영구 삭제 경로는 없다. 그 드라이브에 휴지통이 없으면 아무것도 지우지 않는다 | 결과 카드. 휴지통이 없으면 "Trash isn't available on this drive. Nothing was deleted." 카드 |
+| 실행 취소 | 끝난 복사·이동 결과 카드의 Undo | 그 작업이 만든 항목 | 이동은 원래 자리로 되돌린다(원래 자리가 비어 있을 때만). 복사로 만든 항목은 휴지통으로 보낸다. Replace 로 덮어쓴 파일은 되돌리지 않는다. 휴지통 이동의 복원은 OS 에서 한다 | 결과 카드. 되돌리지 못한 항목과 이유를 나열한다 |
 | 검색·필터 | 없음 | — | 지원하지 않는다. 타입어헤드는 선택만 옮긴다 | — |
 | 속성 | 메뉴 맨 끝 "Properties"(모든 변형, mirror 포함), `explorer_properties` 단축키, Command Palette | 메뉴의 대상, 또는 위 단축키 규칙 | 디스크를 바꾸지 않는다. 열 때의 대상을 고정해 보이고, 폴더 크기는 read worker 가 배경에서 센다. 닫으면 세기를 멈춘다 | 탐색기 칸에 묶인 Properties popup ([Explorer](index.md#properties-popup)) |
 | 미리보기 | 툴바 토글, `explorer_toggle_preview` 단축키, Command Palette | 선택이 하나일 때 그 항목 | 디스크를 바꾸지 않는다. 로컬 파일만 read worker 로 읽는다 | 목록 오른쪽 미리보기 패널 ([Explorer](index.md#미리보기-패널)) |
@@ -76,10 +80,31 @@
 | 정상 | 아래 "작업 뒤 목록 갱신" 범위의 목록을 다시 읽는다. 잘라내기를 붙여넣어 모두 성공했으면 그 클립보드를 비운다 |
 | 빈 폴더 | 빈 영역 우클릭은 현재 폴더를 대상으로 한다. 클립보드가 있으면 붙여넣기를 보인다 |
 | 오류 | 오류 토스트. 실패한 이름 변경·휴지통 이동은 선택을 유지한다. 권한 거부 폴더에서는 빈 영역 메뉴를 띄우지 않는다 |
-| 부분 성공 | 실패 경로를 토스트로 보인다. 잘라내기 클립보드는 남긴다. 성공한 항목을 되돌리지 않는다 |
-| 이름 충돌 | 붙여넣기는 묻지 않고 `(copy)` 접미사를 붙인 새 이름으로 둔다. 기존 항목을 덮어쓰지 않는다 |
-| 취소 | 진행 중인 작업을 취소하는 수단이 없다. 앱 종료는 새 작업을 막고 worker 를 최대 5초 기다리며, 기한이 지나도 작업을 취소로 기록하지 않는다 |
+| 부분 성공 | 결과 카드가 실패·건너뛴 경로를 보이고 닫을 때까지 남는다. 잘라내기 클립보드는 남긴다. 성공한 항목을 되돌리지 않는다 |
+| 이름 충돌 | 항목마다 충돌 popup 으로 묻는다. 기본은 Keep both(`(copy)` 접미사 새 이름)이고 기존 항목을 덮어쓰지 않는다. 같은 이름의 폴더는 합치지 않는다 |
+| 취소 | 상태줄의 취소(×)는 지금 항목을 멈추고 남은 항목을 하지 않는다. 끝난 항목은 그대로 두고, 멈춘 항목의 준비 중 사본은 지운다. 대기열의 작업은 팝오버에서 뺄 수 있다. 앱 종료는 새 작업을 막고 worker 를 최대 5초 기다리며, 기한이 지나도 작업을 취소로 기록하지 않는다 |
 | 원격 제한 | mirror explorer 는 쓰기 항목을 메뉴에서 숨기고, 단축키로 부르면 `explorer.state.remote_write_unsupported` 토스트를 띄운다. 복사(클립보드에 담기만 함)·경로 복사·이 폴더로 루트 설정은 그대로 된다. mirror explorer 에서 복사한 클립보드는 원격 출처로 기록되어, 로컬 explorer 에서는 붙여넣기 메뉴가 나오지 않고 단축키는 `explorer.state.remote_paste_unsupported` 토스트만 띄운다 |
+
+### 작업 실행 — 진행·충돌·결과
+
+복사·이동·휴지통·실행 취소는 요청마다 작업 하나로 돈다. 작업은 앱 전체에서 한 번에 하나만 실행하고, 나머지는 요청 순서대로 기다린다. 진행·충돌·결과는 작업을 요청한 explorer 칸에만 보인다. 드래그로 놓은 작업은 놓은 칸의 것이다.
+
+- **진행**: 요청한 칸의 상태줄이 진행 표시로 바뀐다. 위쪽 가장자리의 2px 막대, "Copying i of n · 파일 이름", 바이트(합계를 아는 경우), 기다리는 작업이 있으면 "+n queued" Tag, 취소(×). Tag 를 누르면 상태줄 위에 대기열 팝오버가 열리고 실행 중인 작업과 기다리는 작업을 보인다. 기다리는 작업은 ×로 뺀다.
+- **이름 충돌**: 목적지에 같은 이름이 있으면 작업이 그 항목에서 멈추고 묻는다. 그 칸에 포커스가 있으면 칸 범위 popup(본문 위 scrim, 너비 `explorer-conflict-width`)이 뜨고, 아니면 상태줄이 "Waiting for your answer" 와 Show 를 보인다. 선택지는 Keep both(기본, Enter)·Skip·Replace(파일끼리만)·Cancel the rest(Esc, popup 을 닫아도 같다). 남은 충돌이 있으면 "Do this for the other n conflicts" 로 남은 충돌에 같은 답을 쓴다. 폴더 충돌은 Skip·Keep both 만 고를 수 있고, 남은 충돌에 Replace 를 고른 경우에도 폴더에서는 다시 묻는다. 질문하는 동안 그 칸이 사라지면 작업을 취소한다.
+- **결과**: 끝나면 칸 오른쪽 아래, 상태줄 위에 결과 카드가 쌓인다. 모두 끝났거나 취소한 카드는 표준 토스트 시간(`overlay.toast_duration_ms`) 뒤 사라지고, 부분 성공·실패 카드는 닫을 때까지 남는다. 실패·건너뛴 경로는 3개까지 보이고 나머지는 "and n more" 로 줄인다. 다른 디스크로 옮기며 원본을 지우지 못한 항목은 따로 적는다(사본은 남는다).
+- **카드 동작**: Retry n 은 실패하거나 건너뛴 항목만 같은 작업으로 다시 요청한다(원본을 지우지 못한 항목은 뺀다). Copy paths 는 카드의 경로를 클립보드 텍스트로 담는다. Undo 는 모두 끝난 복사·이동 카드가 보이는 동안만 있다. 되돌리기의 결과도 카드로 보이며 되돌리지 못한 항목(지금 그 자리에 다른 항목이 있음·항목이 없어짐·Replace 로 덮어씀)을 나열한다.
+- **안전**: 기본 답은 덮어쓰지 않는 Keep both 다. Replace 는 사용자가 고른 파일에만 쓰고 폴더는 덮어쓰지 않는다. 질문 없이 공개하는 순간에 같은 이름이 생겨도 덮어쓰기 금지 rename 이 실패하면 새 이름으로 둔다.
+
+### 드래그 앤 드롭
+
+- **시작**: 목록·격자·자세히 보기의 항목을 누른 채 끈다. mirror explorer 에서는 시작하지 않는다. popup·modal 이나 충돌 popup 이 떠 있는 동안은 시작하지도 놓지도 않는다.
+- **칩**: 포인터 오른쪽 아래(`space-md`)에 칩이 따라온다. 1줄은 항목 이름 또는 "n items", 2줄은 "Move to 폴더"·"Copy to 폴더" 또는 "Can't drop — 이유" 를 동작 색으로 쓴다.
+- **동작**: 같은 디스크면 이동, 다른 디스크면 복사. `KeybindingSettings::explorer_drag_flip_modifier`(기본 macOS `option`, 다른 OS `ctrl`)를 누르고 있으면 뒤집는다. OS 파일은 항상 복사한다.
+- **대상 표시**: 놓을 수 있는 대상에 1px 안쪽 링과 틴트(`explorer-drop-target-*`)를 그린다. 파일 행이나 빈 곳이면 목록 본문 전체가 대상이다. 닫힌 트리 폴더 위에 800ms 머물면 펼친다.
+- **거절**: 폴더를 자기 자신이나 그 하위로(`a folder can't go inside itself`), 이미 있는 폴더로 이동(`already in this folder`, 복사는 허용), mirror explorer 로(`remote folders are read-only`), 쓰기 권한이 없는 폴더로(`no write access`). 거절된 대상에는 링을 그리지 않는다. explorer 가 아닌 곳에서는 시작한 칸이 "Can't drop" 칩만 보인다.
+- **취소**: Esc 를 누르면 드래그를 취소하고, 버튼을 놓을 때까지 다시 시작하지 않는다.
+- **OS 파일**: explorer 칸 위에서는 창 전체의 drop overlay 를 그리지 않고, 칸이 링과 "Copy to" 칩을 보인다. 이 표시는 드래그 중 포인터 위치를 아는 동안만 나온다. winit 0.30 의 X11 은 XDND 중 위치를 알려 주지 않아 표시 없이 창 overlay 가 남고, 놓은 뒤의 포인터 위치로 대상 칸을 정한다. 다른 곳에 놓은 파일은 지금처럼 연다.
+- **꺼내기**: explorer 에서 다른 앱이나 터미널로 끌어 내는 기능은 없다.
 
 ### 작업 뒤 목록 갱신
 
@@ -122,7 +147,14 @@
 - Given 세 항목을 선택했다, When 그중 하나를 우클릭해 Copy 를 고르거나 `copy` 를 누르거나 Command Palette 에서 Copy 를 고른다, Then 세 경우 모두 클립보드에 같은 세 경로가 담긴다.
 - Given 선택 밖의 항목을 우클릭했다, When 메뉴를 연다, Then 선택이 그 항목 하나로 바뀌고 메뉴 대상도 그 항목이다.
 - Given 사이드바 Files 트리의 폴더를 우클릭했다, When 메뉴를 연다, Then 목록의 선택은 바뀌지 않는다.
-- Given 붙여넣을 위치에 같은 이름이 있다, When 붙여넣는다, Then 기존 항목은 그대로이고 새 항목은 `(copy)` 접미사 이름이다.
+- Given 붙여넣을 위치에 같은 이름의 파일이 있다, When 붙여넣고 충돌 popup 에서 Enter 를 누른다, Then 기존 항목은 그대로이고 새 항목은 `(copy)` 접미사 이름이다.
+- Given 같은 이름의 파일 하나와 폴더 하나가 충돌한다, When 남은 충돌에도 적용을 켜고 Replace 를 고른다, Then 파일은 바뀌고 폴더는 다시 묻는다(Skip·Keep both 만).
+- Given 충돌 popup 이 떠 있다, When popup 을 닫거나 Esc 를 누른다, Then 남은 항목을 하지 않고 기존 항목은 그대로다.
+- Given 복사가 진행 중이다, When 상태줄의 ×를 누른다, Then 목적지에 준비 중 사본이 남지 않고 결과 카드가 취소와 끝난 수를 보인다.
+- Given 잘라내기·붙여넣기가 모두 끝났다, When 결과 카드의 Undo 를 누른다, Then 항목이 원래 자리로 돌아간다. 원래 자리에 그새 다른 항목이 생겼으면 옮기지 않고 그 이유를 카드에 보인다.
+- Given 같은 디스크의 항목을 폴더 행으로 끈다, When 놓는다, Then 이동하고, 드래그 반전 modifier 를 누른 채 놓으면 복사한다.
+- Given 항목을 끌고 있다, When Esc 를 누른 뒤 놓는다, Then 아무것도 바뀌지 않는다.
+- Given OS 에서 파일을 끌어 왔다, When 로컬 explorer 칸에 놓는다, Then 그 칸이 보고 있는 폴더로 복사하고 파일 핸들러를 열지 않는다.
 - Given mirror explorer 다, When `cut` 또는 `paste` 를 누른다, Then 로컬 파일시스템은 바뀌지 않고 원격 쓰기 미지원 토스트가 뜬다.
 - Given 두 윈도우에서 같은 폴더를 연 로컬 explorer 가 있다, When 한쪽에서 항목을 휴지통으로 보낸다, Then 두 explorer 모두 그 폴더를 다시 읽어 항목이 사라진다.
 - Given 한 explorer 가 폴더 A 안을 보고 있다, When 다른 explorer 에서 A 를 휴지통으로 보낸다, Then 앞의 explorer 는 읽기 오류 화면을 보이고 경로는 A 안 그대로다.

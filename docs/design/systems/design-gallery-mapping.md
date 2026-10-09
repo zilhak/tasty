@@ -296,6 +296,10 @@ Spec 하나가 갤러리 예제 둘이거나, 둘이 하나이거나, 경계가 
 | `gallery/explorer-ops-parts.jsx` "Name errors — empty · invalid character · already exists" | `explorer-name-errors` | 오류 상자는 공용 `explorer_name_error` |
 | `gallery/explorer-ops-parts.jsx` "Find bar — filter the current folder" | `explorer-find-bar` | Find 바는 공용 `explorer_find_bar`, 이름 강조는 `explorer_match_job` |
 | `gallery/explorer-ops-parts.jsx` "Subfolders — recursive search · searching · no results · errors · stopped" | `explorer-subfolder-search` | Folder 열은 공용 `explorer_detail_columns` 의 검색 구성. Size·Date 열 폭은 상세 보기와 같다 |
+| `gallery/explorer-ops.jsx` "Running — on the explorer's own status line · queue" | `explorer-ops-progress` | 상태줄은 공용 `op_status_line`, 대기열은 `op_queue_popover` |
+| `gallery/explorer-ops.jsx` "Name conflict — surface-scoped prompt · apply to all · waiting" | `explorer-ops-conflict` | 카드는 공용 `conflict_card`(바깥 틀 없음). 본체는 칸 범위 popup 이 틀과 scrim 을 그린다 |
+| `gallery/explorer-ops.jsx` "Results — done · cancelled · partial + retry · failed · trash unavailable · undo" | `explorer-ops-results` | 카드는 공용 `result_card` |
+| `gallery/explorer-ops-parts.jsx` "Drag chip — one item · many items · move / copy / refused" · "Drop targets — folder row · grid cell · tree node · favorite · current folder" · "Files from the OS — copy into the explorer, not open" | `explorer-ops-drag` | 디자인 세 Spec ↔ 갤러리 하나. 칩은 공용 `drag_chip`, 대상 표시는 `paint_drop_target` |
 | `gallery/plugins.jsx` "HTML — webview chrome (4 states)" | `html-chrome` | [surface viewers](#surface-viewers-plugins) |
 | `gallery/plugins.jsx` "HTML — settings (Appearance › HTML viewer)" | `plugin-settings` (Components) | [플러그인 설정 페이지](#플러그인-설정-페이지) |
 | `gallery/plugins.jsx` "Image — viewer & edit (paint) modes" | `image-viewer` · `image-paint` | [surface viewers](#surface-viewers-plugins)(디자인 한 Spec ↔ 갤러리 둘) |
