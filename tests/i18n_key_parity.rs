@@ -301,8 +301,11 @@ fn every_catalog_carries_more_than_a_handful_of_keys() {
 }
 
 /// {}는 개수로, {name}은 이름 집합으로 센다. 이름은 식별자 형식만 허용하고 {0} 등은 본문으로 취급한다.
-fn placeholders(value: &str) -> (usize, BTreeSet<String>) {
+/// 문자열의 자리표시 세 가지: 순서대로 채우는 `{}` 개수, 번호 자리표시 `{N}` 의 번호 집합,
+/// 이름 자리표시 `{name}` 집합.
+fn placeholder_forms(value: &str) -> (usize, BTreeSet<usize>, BTreeSet<String>) {
     let mut positional = 0;
+    let mut numbered = BTreeSet::new();
     let mut named = BTreeSet::new();
     let mut rest = value;
     while let Some(open) = rest.find('{') {
@@ -313,12 +316,28 @@ fn placeholders(value: &str) -> (usize, BTreeSet<String>) {
         let inner = &after[..close];
         if inner.is_empty() {
             positional += 1;
+        } else if inner.bytes().all(|b| b.is_ascii_digit()) {
+            if let Ok(n) = inner.parse() {
+                numbered.insert(n);
+            }
         } else if is_identifier(inner) {
             named.insert(inner.to_string());
         }
         rest = &after[close + 1..];
     }
-    (positional, named)
+    (positional, numbered, named)
+}
+
+/// 번역문이 받는 인자 칸과 이름 집합. `{}` 가 n 개면 칸은 0..n, 번호 자리표시면 그 번호들이다.
+/// 그래서 en 의 `{} / {}` 와 ko 의 `{1} / {0}` 은 같은 두 칸을 받는다.
+fn placeholders(value: &str) -> (BTreeSet<usize>, BTreeSet<String>) {
+    let (positional, numbered, named) = placeholder_forms(value);
+    let slots = if numbered.is_empty() {
+        (0..positional).collect()
+    } else {
+        numbered
+    };
+    (slots, named)
 }
 
 fn is_identifier(s: &str) -> bool {
@@ -411,7 +430,7 @@ fn placeholders_match_english() {
                 let actual = placeholders(value);
                 if expected != actual {
                     problems.push(format!(
-                        "  {}/{lang}.toml `{key}`: en has {} `{{}}` + {:?}, {lang} has {} `{{}}` + {:?}\n      en: {en_value:?}\n      {lang}: {value:?}",
+                        "  {}/{lang}.toml `{key}`: en has slots {:?} + {:?}, {lang} has slots {:?} + {:?}\n      en: {en_value:?}\n      {lang}: {value:?}",
                         cat.rel, expected.0, expected.1, actual.0, actual.1
                     ));
                 }
@@ -420,9 +439,42 @@ fn placeholders_match_english() {
     }
     assert!(
         problems.is_empty(),
-        "placeholder mismatch — `{{}}` count and `{{name}}` set must equal en for every key:\n{}",
+        "placeholder mismatch — argument slots (`{{}}` in order, or `{{0}}` `{{1}}` by number) and `{{name}}` set must equal en for every key:\n{}",
         problems.join("\n")
     );
+}
+
+/// 한 번역문에 `{}` 와 `{0}` 을 섞지 않는다. 섞으면 런타임은 번호로 채우고 `{}` 를 그대로 남긴다
+/// (tasty_i18n::fill_args).
+#[test]
+fn no_value_mixes_positional_and_numbered_placeholders() {
+    let mut problems = Vec::new();
+    for cat in catalogs() {
+        for lang in LANGS {
+            for (key, value) in &cat.by_lang[lang] {
+                let (positional, numbered, _) = placeholder_forms(value);
+                if positional > 0 && !numbered.is_empty() {
+                    problems.push(format!("  {}/{lang}.toml `{key}` = {value:?}", cat.rel));
+                }
+            }
+        }
+    }
+    assert!(
+        problems.is_empty(),
+        "a value mixes `{{}}` and `{{0}}` placeholders — use one form per string \
+         (docs/dev-guide/i18n.md):\n{}",
+        problems.join("\n")
+    );
+}
+
+/// 위 두 검사가 쓰는 판독의 합성 확인.
+#[test]
+fn placeholder_slots_read_both_forms() {
+    assert_eq!(placeholders("{} / {}").0, placeholders("{1} / {0}").0);
+    assert_ne!(placeholders("{} / {}").0, placeholders("{0} / {0}").0);
+    assert_eq!(placeholder_forms("{} {0}").0, 1);
+    assert_eq!(placeholder_forms("{} {0}").1.len(), 1);
+    assert_eq!(placeholders("{n} {}").1.len(), 1);
 }
 
 #[test]

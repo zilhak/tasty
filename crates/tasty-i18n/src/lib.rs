@@ -768,30 +768,27 @@ impl Translations {
         key
     }
 
-    /// Get a translated string with a format argument replacing `{}`.
+    /// Get a translated string with a format argument replacing every `{}`
+    /// (or every `{0}` in a numbered string, see [`fill_args`]).
     pub fn get_fmt(&self, key: &str, arg: &str) -> String {
         let template = self.get(key);
-        template.replace("{}", arg)
+        if has_numbered_placeholder(template) {
+            fill_args(template, &[arg])
+        } else {
+            template.replace("{}", arg)
+        }
     }
 
-    /// Replace `{}` with `arg1`, `arg2` in order (one occurrence each).
-    /// Unlike `get_fmt`, this uses `replacen(_, 1)` so only the first two `{}` placeholders are replaced.
+    /// Fill two arguments as [`fill_args`] does.
     pub fn get_fmt2(&self, key: &str, arg1: &str, arg2: &str) -> String {
-        let template = self.get(key);
-        let first = template.replacen("{}", arg1, 1);
-        first.replacen("{}", arg2, 1)
+        fill_args(self.get(key), &[arg1, arg2])
     }
 
-    /// Replace each `{}` placeholder with the corresponding entry in `args`,
-    /// in order (one occurrence per arg). Generalizes [`get_fmt`]/[`get_fmt2`]
+    /// Fill `args` as [`fill_args`] does. Generalizes [`get_fmt`]/[`get_fmt2`]
     /// for strings with three or more interpolated values — common in CLI
     /// output (e.g. `remote check` alive lines carrying host/port/version).
     pub fn get_args(&self, key: &str, args: &[&str]) -> String {
-        let mut out = self.get(key).to_string();
-        for arg in args {
-            out = out.replacen("{}", arg, 1);
-        }
-        out
+        fill_args(self.get(key), args)
     }
 
     /// Register a plugin namespace. `lang_dir` is expected to contain
@@ -1038,6 +1035,58 @@ fn store(key: &str) -> &'static Translations {
     BUILTIN_EN.get_or_init(|| Translations::load_from("en", None).0)
 }
 
+/// Does `template` hold a numbered placeholder such as `{0}`?
+pub fn has_numbered_placeholder(template: &str) -> bool {
+    numbered_placeholders(template).next().is_some()
+}
+
+/// The `(byte range, index)` of each numbered placeholder `{N}` in `template`.
+fn numbered_placeholders(
+    template: &str,
+) -> impl Iterator<Item = (std::ops::Range<usize>, usize)> + '_ {
+    template.match_indices('{').filter_map(move |(open, _)| {
+        let rest = &template[open + 1..];
+        let close = rest.find('}')?;
+        let digits = &rest[..close];
+        if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        let index = digits.parse().ok()?;
+        Some((open..open + close + 2, index))
+    })
+}
+
+/// Put `args` into the placeholders of a translated string.
+///
+/// A string uses one of two forms. With numbered placeholders `{0}`, `{1}`, …
+/// each one takes `args[N]`, so a language can reorder the values; a number
+/// with no matching argument stays as written, and an argument no number names
+/// is not shown. Otherwise each `{}` takes the next argument in order and
+/// placeholders beyond the arguments stay as written. A string that holds both
+/// forms is filled as numbered and keeps its `{}`; the catalog tests refuse
+/// such strings.
+pub fn fill_args(template: &str, args: &[&str]) -> String {
+    if !has_numbered_placeholder(template) {
+        let mut out = template.to_string();
+        for arg in args {
+            out = out.replacen("{}", arg, 1);
+        }
+        return out;
+    }
+    let mut out = String::with_capacity(template.len());
+    let mut copied = 0;
+    for (range, index) in numbered_placeholders(template) {
+        let Some(arg) = args.get(index) else {
+            continue;
+        };
+        out.push_str(&template[copied..range.start]);
+        out.push_str(arg);
+        copied = range.end;
+    }
+    out.push_str(&template[copied..]);
+    out
+}
+
 /// Get a translated string by key. Before [`init`] this is the embedded
 /// English text; a key missing from the table comes back unchanged.
 pub fn t(key: &str) -> &str {
@@ -1060,12 +1109,12 @@ pub fn t_fmt(key: &str, arg: &str) -> String {
     store(key).get_fmt(key, arg)
 }
 
-/// Get a translated string with two format arguments replacing the first two `{}` placeholders in order.
+/// Get a translated string with two format arguments, filled as [`fill_args`] does.
 pub fn t_fmt2(key: &str, arg1: &str, arg2: &str) -> String {
     store(key).get_fmt2(key, arg1, arg2)
 }
 
-/// Get a translated string with N format arguments replacing `{}` placeholders in order.
+/// Get a translated string with N format arguments, filled as [`fill_args`] does.
 pub fn t_args(key: &str, args: &[&str]) -> String {
     store(key).get_args(key, args)
 }
@@ -1613,6 +1662,64 @@ mod tests {
         assert_eq!(tr.get("plugin.x.title"), "Refresh");
         tr.unregister_namespace("com.example.x");
         assert_eq!(tr.get("plugin.x.title"), "plugin.x.title");
+    }
+
+    #[test]
+    fn numbered_placeholders_take_their_argument_by_number() {
+        // 언어가 값의 순서를 바꿀 수 있다.
+        assert_eq!(
+            fill_args("{1}개 중 {0}개 이동 · 원본 {2}개", &["37", "40", "3"]),
+            "40개 중 37개 이동 · 원본 3개"
+        );
+        // 같은 번호를 여러 번 쓸 수 있다.
+        assert_eq!(fill_args("{0} and {0}", &["a"]), "a and a");
+        // 두 자리 번호.
+        let args: Vec<String> = (0..11).map(|i| i.to_string()).collect();
+        let args: Vec<&str> = args.iter().map(String::as_str).collect();
+        assert_eq!(fill_args("{10}/{0}", &args), "10/0");
+    }
+
+    #[test]
+    fn a_number_without_an_argument_stays_and_an_unnamed_argument_is_dropped() {
+        assert_eq!(fill_args("{0} · {3}", &["a", "b"]), "a · {3}");
+        assert_eq!(fill_args("{1}", &["a", "b"]), "b");
+        assert_eq!(fill_args("{0}", &[]), "{0}");
+    }
+
+    #[test]
+    fn positional_strings_fill_in_order_as_before() {
+        assert_eq!(fill_args("{} / {} · {}", &["1", "2", "3"]), "1 / 2 · 3");
+        assert_eq!(fill_args("{} / {}", &["1"]), "1 / {}");
+        assert_eq!(fill_args("{} only", &["1", "2"]), "1 only");
+        // 숫자가 아닌 중괄호는 자리표시가 아니다.
+        assert_eq!(fill_args("{x} {}", &["1"]), "{x} 1");
+        assert!(!has_numbered_placeholder("{} {x} {-1} {}"));
+    }
+
+    /// 두 방식을 섞은 문자열은 번호 방식으로 채우고 `{}` 는 그대로 둔다. 카탈로그 검사가 이런 문자열을
+    /// 막는다(tests/i18n_key_parity.rs).
+    #[test]
+    fn a_mixed_string_is_filled_as_numbered_and_keeps_its_bare_braces() {
+        assert!(has_numbered_placeholder("{} {0}"));
+        assert_eq!(fill_args("{} {0}", &["a"]), "{} a");
+    }
+
+    #[test]
+    fn the_single_argument_form_fills_every_slot_in_both_forms() {
+        let mut base: HashMap<String, &'static str> = HashMap::new();
+        base.insert("a".to_string(), "{} and {}");
+        base.insert("b".to_string(), "{0} and {0}");
+        base.insert("c".to_string(), "{1} before {0}");
+        let tr = Translations {
+            base,
+            namespaces: RwLock::new(HashMap::new()),
+            language: "en".to_string(),
+            user_lang_dir: None,
+        };
+        assert_eq!(tr.get_fmt("a", "x"), "x and x");
+        assert_eq!(tr.get_fmt("b", "x"), "x and x");
+        assert_eq!(tr.get_fmt2("c", "x", "y"), "y before x");
+        assert_eq!(tr.get_args("c", &["x", "y"]), "y before x");
     }
 
     #[test]
