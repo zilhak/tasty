@@ -1954,9 +1954,11 @@ dismiss = "Dismiss"
 
 [remote.size_sync]
 # 원격 attach mirror 의 터미널 크기 동기화가 자동 재시도 뒤에도 실패했을 때의 Workspace 배너.
-# body 의 {} 는 surface 이름(또는 many 로 만든 요약), many 의 앞 {} 는 surface 수, 뒤 {} 는 이름이다.
+# 본문은 두 줄이다. names 는 첫 줄이고 {} 에 surface 이름(또는 many 로 만든 요약)이 들어간다.
+# hint 는 둘째 줄의 고정 문구다. many 의 앞 {} 는 surface 수, 뒤 {} 는 이름이다.
 title = "Couldn't sync the terminal size with the remote"
-body = "{} · The remote may still be using the old size."
+names = "{}"
+hint = "The remote may still be using the old size."
 many = "{} surfaces — {}"
 retry = "Retry"
 retry_all = "Retry all"

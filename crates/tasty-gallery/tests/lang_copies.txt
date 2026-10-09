@@ -606,6 +606,7 @@ src/catalog/components/settings_remote_transfer.rs	Maximum size	settings.remote_
 src/catalog/components/settings_remote_transfer.rs	Received files	settings.remote_transfer.section
 src/catalog/components/settings_remote_transfer.rs	Save folder	settings.remote_transfer.dir
 src/catalog/components/settings_remote_transfer.rs	~/.tasty/transfers/	settings.remote_transfer.dir_placeholder
+src/catalog/components/settings_task_pipeline.rs	{}	remote.size_sync.names
 src/catalog/components/sidebar.rs	Plugins	button.plugins,plugins.title,settings.keybindings.subtab.plugins,settings.tab.plugin
 src/catalog/components/sidebar.rs	Settings	button.settings,settings.window.title
 src/catalog/components/sidebar.rs	Tools	sidebar.tools_button,tools_menu.title
@@ -656,6 +657,7 @@ src/catalog/icons_keys.rs	Option key display:	settings.general.option_display_st
 src/catalog/icons_keys.rs	Shift key display:	settings.general.shift_display_style_label
 src/catalog/icons_keys.rs	Symbol	settings.general.alt_display_style_symbol,settings.general.option_display_style_symbol,settings.general.shift_display_style_symbol
 src/catalog/layouts_settled.rs	Error	dag.detail.error
+src/catalog/layouts_settled.rs	{}	remote.size_sync.names
 src/catalog/overlays_resize.rs	default	file_handler.picker.default_tag
 src/catalog/overlays_settled.rs	Listening ports	port_scanner.heading
 src/catalog/overlays_settled.rs	None	plugins.add_none,settings.keybindings.hint_none,settings.keybindings.plugins.mode_none
@@ -666,6 +668,7 @@ src/catalog/theme.rs	Delete	preset.toolbar.delete,remote_tool.delete
 src/catalog/theme.rs	Open	button.open,file_handler.picker.open_button,filepicker.open_button
 src/catalog/theme.rs	plugin	file_handler.picker.origin_plugin
 src/catalog/widgets/attach_refusal.rs	Remove mapping	remote.refusal.remove
+src/catalog/widgets/attach_refusal.rs	{}	remote.size_sync.names
 src/catalog/widgets/attach_size_sync.rs	Retry	explorer.state.read_error_retry,filepicker.error_perm.retry,remote.size_sync.retry,remote_attach.retry,transfer.error.retry
 src/catalog/widgets/banner.rs	Add	button.add,explorer.popup.add_favorite.add,settings.terminal.input_add,settings.terminal.mouse_capture_banner_blacklist_add_button,settings.terminal.mouse_capture_blacklist_add_button
 src/catalog/widgets/banner.rs	Shift	settings.general.shift_display_style_shift

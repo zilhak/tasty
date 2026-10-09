@@ -28,7 +28,8 @@ fn banner(
         theme,
         &AttachSizeSyncBannerView {
             title: t("remote.size_sync.title"),
-            body: t("remote.size_sync.body"),
+            names_line: t("remote.size_sync.names"),
+            hint: t("remote.size_sync.hint"),
             many: t("remote.size_sync.many"),
             names,
             retry: t("remote.size_sync.retry"),
@@ -200,11 +201,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("title", "banner-title 13 · semibold · never truncated"),
             (
                 "body",
-                "banner-body 11 · muted · one line · {names} · The remote may still be using the old size.",
+                "banner-body 11 · muted · two lines: ① names — one line ② “The remote may still be using the old size.” — wraps, never cut",
             ),
             (
                 "name",
-                "text-secondary · each name ellipsis at attach-sync-name-max-width 160; first two names, then +n; the fixed copy is never cut",
+                "text-secondary · each name ≤ attach-sync-name-max-width 160, shrinks to fit the line down to 40 (size-40), then ellipsis; first two names, then +n; separators and +n never shrink",
             ),
             (
                 "retrying",
@@ -243,8 +244,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "Strings (en): remote.size_sync.title · remote.size_sync.body · remote.size_sync.many · \
-         remote.size_sync.retry · remote.size_sync.retry_all.",
+        "Strings (en): remote.size_sync.title · remote.size_sync.names (line 1) · \
+         remote.size_sync.hint (line 2) · remote.size_sync.many · remote.size_sync.retry · \
+         remote.size_sync.retry_all.",
     );
     draw_narrow(ui, theme);
 }

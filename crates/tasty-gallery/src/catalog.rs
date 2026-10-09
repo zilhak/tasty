@@ -1099,7 +1099,7 @@ pub fn pages() -> Vec<Page> {
                     "Attach size sync failed",
                     "Workspace banner · default · retrying · several surfaces",
                     Some(
-                        "alertTriangle · title · one muted body line · Retry (Retry all for several surfaces) and ×",
+                        "alertTriangle · title · two muted body lines (names · fixed copy) · Retry (Retry all for several surfaces) and ×",
                     ),
                     widgets::attach_size_sync::draw,
                 ),

@@ -1,10 +1,12 @@
 //! 원격 attach mirror 의 터미널 크기 동기화가 자동 재시도 뒤에도 실패했을 때의 Workspace 배너 내용.
 //! 거절 배너와 같은 계열로 행 [글리프 | 제목·본문 | 다시 시도 · 닫기]이며 모든 칸을 위쪽에 맞춘다.
+//! 본문은 두 줄이다. 이름 줄은 한 줄로 두고 이름만 줄이며, 고정 문구 줄은 감싸고 자르지 않는다.
 //! 좁은 스코프에서는 다시 시도 버튼만 본문 왼쪽 가장자리에 맞춰 다음 줄로 내려가고 닫기는 오른쪽 위에 남는다.
 //! 여러 surface 가 함께 실패하면 한 장에 "N surfaces — a, b +n" 으로 묶고 버튼은 Retry all 이 된다.
 //! 문자열은 호출자가 주입한다. 큐·표시 범위는 본체 BannerManager가 정한다.
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 
 use crate::banner::{ActionRow, action_slot, banner_close_button, banner_shell};
 use crate::button::{Button, ButtonVariant};
@@ -14,14 +16,19 @@ use crate::tooltip::{Tooltip, tooltip_hover_delay_elapsed};
 
 /// 본문 줄에 이름으로 보이는 surface 수. 나머지는 `+n` 으로 줄인다.
 const SHOWN_NAMES: usize = 2;
+/// 이름 칸이 줄어드는 하한. 시안이 primitive `--tasty-size-40` 으로 적었고 대응 컴포넌트 토큰이 없어
+/// Theme 역할에 연결하지 않은 화면 전용 고정 치수로 둔다(ADR-0035). 토큰과 같이 UI 배율을 곱한다.
+const NAME_MIN_W: LogicalPx = LogicalPx(40.0);
 /// 제목은 자르지 않으므로 이 줄 수까지 감싼다.
 const MAX_TITLE_ROWS: usize = 3;
 
 /// 배너 입력값.
 pub struct AttachSizeSyncBannerView<'a> {
     pub title: &'a str,
-    /// `{}` 하나에 이름 묶음이 들어가는 본문 번역문.
-    pub body: &'a str,
+    /// 본문 첫 줄 번역문. `{}` 하나에 이름 묶음이 들어간다.
+    pub names_line: &'a str,
+    /// 본문 둘째 줄의 고정 문구.
+    pub hint: &'a str,
     /// surface 가 둘 이상일 때의 이름 묶음 번역문. 앞 `{}` 는 수, 뒤 `{}` 는 이름이다.
     pub many: &'a str,
     /// 실패한 surface 의 이름(탭 제목). 비어 있으면 배너를 띄우지 않는 것이 호출자의 몫이다.
@@ -81,48 +88,165 @@ fn elide_to_width(ui: &egui::Ui, text: &str, font: &egui::FontId, max_width: f32
     "\u{2026}".to_owned()
 }
 
-/// 본문 한 줄의 조각과 색. 이름은 text-secondary, 나머지는 text-muted 다.
-fn body_sections(
-    ui: &egui::Ui,
-    theme: &Theme,
-    view: &AttachSizeSyncBannerView<'_>,
-) -> Vec<(String, egui::Color32)> {
-    let muted = theme.text_muted().to_egui();
-    let name_color = theme.text_secondary().to_egui();
-    let font = egui::FontId::proportional(theme.banner_body_font_size().value());
-    let name_max = theme.attach_sync_name_max_width().value();
+/// 이름 줄의 조각. 이름은 줄어드는 칸이고 나머지(수 · 구분자 · `+n`)는 줄지 않는다.
+enum Piece<'a> {
+    Fixed(String),
+    Name(&'a str),
+}
 
-    let mut names = Vec::new();
-    for (i, name) in view.names.iter().take(SHOWN_NAMES).enumerate() {
-        if i > 0 {
-            names.push((", ".to_owned(), muted));
-        }
-        names.push((elide_to_width(ui, name, &font, name_max), name_color));
-    }
-    let rest = view.names.len().saturating_sub(SHOWN_NAMES);
-    if rest > 0 {
-        names.push((format!(" +{rest}"), muted));
-    }
-
+/// 이름 줄의 조각 순서. 이름은 앞 두 개만 보이고 나머지는 ` +n` 으로 줄인다.
+fn name_pieces<'a>(view: &AttachSizeSyncBannerView<'a>) -> Vec<Piece<'a>> {
     let mut subject = Vec::new();
-    if view.many() {
+    let (many_before, many_after) = if view.many() {
         let mut parts = view.many.splitn(3, "{}");
         let before = parts.next().unwrap_or_default();
         let mid = parts.next().unwrap_or_default();
         let after = parts.next().unwrap_or_default();
-        subject.push((format!("{before}{}{mid}", view.names.len()), muted));
-        subject.extend(names);
-        subject.push((after.to_owned(), muted));
+        (format!("{before}{}{mid}", view.names.len()), after)
     } else {
-        subject = names;
+        (String::new(), "")
+    };
+    subject.push(Piece::Fixed(many_before));
+    for (i, name) in view.names.iter().take(SHOWN_NAMES).enumerate() {
+        if i > 0 {
+            subject.push(Piece::Fixed(", ".to_owned()));
+        }
+        subject.push(Piece::Name(name));
     }
+    let rest = view.names.len().saturating_sub(SHOWN_NAMES);
+    if rest > 0 {
+        subject.push(Piece::Fixed(format!(" +{rest}")));
+    }
+    subject.push(Piece::Fixed(many_after.to_owned()));
 
-    let (before, after) = view.body.split_once("{}").unwrap_or((view.body, ""));
-    let mut out = vec![(before.to_owned(), muted)];
+    let (before, after) = view
+        .names_line
+        .split_once("{}")
+        .unwrap_or((view.names_line, ""));
+    let mut out = vec![Piece::Fixed(before.to_owned())];
     out.extend(subject);
-    out.push((after.to_owned(), muted));
-    out.retain(|(text, _)| !text.is_empty());
+    out.push(Piece::Fixed(after.to_owned()));
+    out.retain(|p| !matches!(p, Piece::Fixed(t) if t.is_empty()));
     out
+}
+
+/// 이름 칸의 폭. 각 칸은 본래 폭을 `[floor, max]` 로 맞춘 값에서 출발하고, `avail` 을 넘으면
+/// 본래 폭에 비례해 줄되 `floor` 아래로는 줄지 않는다(CSS `flex: 0 1 auto` 와 min/max-width).
+fn shrink_names(natural: &[f32], floor: f32, max: f32, avail: f32) -> Vec<f32> {
+    let mut size: Vec<f32> = natural.iter().map(|w| w.clamp(floor, max)).collect();
+    let mut open: Vec<usize> = (0..natural.len()).collect();
+    loop {
+        let over = size.iter().sum::<f32>() - avail;
+        let weight: f32 = open.iter().map(|&i| natural[i]).sum();
+        if over <= 0.0 || weight <= 0.0 {
+            return size;
+        }
+        let shrunk: Vec<f32> = (0..size.len())
+            .map(|i| size[i] - over * natural[i] / weight)
+            .collect();
+        let (at_floor, rest): (Vec<usize>, Vec<usize>) =
+            open.iter().partition(|&&i| shrunk[i] <= floor);
+        if at_floor.is_empty() {
+            for &i in &rest {
+                size[i] = shrunk[i];
+            }
+            return size;
+        }
+        for &i in &at_floor {
+            size[i] = floor;
+        }
+        open = rest;
+    }
+}
+
+/// 본문 첫 줄. 한 줄로 두고 줄지 않는 조각과 이름 칸을 이어 놓는다. 이름은 칸 폭에서 말줄임하고,
+/// 이름이 칸보다 짧으면 다음 조각을 칸 끝으로 민다. 줄이 `width` 를 넘으면 호출자가 잘라 그린다.
+fn names_galley(
+    ui: &egui::Ui,
+    theme: &Theme,
+    view: &AttachSizeSyncBannerView<'_>,
+    width: f32,
+) -> std::sync::Arc<egui::Galley> {
+    let size = theme.banner_body_font_size().value();
+    let font = egui::FontId::proportional(size);
+    let measure = |s: &str| {
+        ui.fonts(|f| {
+            f.layout_no_wrap(s.to_owned(), font.clone(), egui::Color32::PLACEHOLDER)
+                .size()
+                .x
+        })
+    };
+    let pieces = name_pieces(view);
+    let fixed: f32 = pieces
+        .iter()
+        .map(|p| match p {
+            Piece::Fixed(t) => measure(t),
+            Piece::Name(_) => 0.0,
+        })
+        .sum();
+    let natural: Vec<f32> = pieces
+        .iter()
+        .filter_map(|p| match p {
+            Piece::Name(n) => Some(measure(n)),
+            Piece::Fixed(_) => None,
+        })
+        .collect();
+    let boxes = shrink_names(
+        &natural,
+        (NAME_MIN_W.value() * theme.ui_zoom).round(),
+        theme.attach_sync_name_max_width().value(),
+        width - fixed,
+    );
+
+    let format = |color: egui::Color32| egui::TextFormat {
+        font_id: font.clone(),
+        color,
+        line_height: Some(size * theme.line_height_ui),
+        valign: egui::Align::BOTTOM,
+        ..Default::default()
+    };
+    let muted = theme.text_muted().to_egui();
+    let name_color = theme.text_secondary().to_egui();
+    let mut job = egui::text::LayoutJob::default();
+    let mut boxes = boxes.into_iter();
+    let mut pad = 0.0;
+    for piece in pieces {
+        match piece {
+            Piece::Fixed(text) => {
+                job.append(&text, pad, format(muted));
+                pad = 0.0;
+            }
+            Piece::Name(name) => {
+                let w = boxes.next().unwrap_or_default();
+                let shown = elide_to_width(ui, name, &font, w);
+                job.append(&shown, pad, format(name_color));
+                pad = (w - measure(&shown)).max(0.0);
+            }
+        }
+    }
+    job.wrap.max_width = f32::INFINITY;
+    ui.fonts(|f| f.layout_job(job))
+}
+
+/// 본문 둘째 줄. 고정 문구는 감싸고 자르지 않는다.
+fn hint_galley(
+    ui: &egui::Ui,
+    theme: &Theme,
+    text: &str,
+    wrap_width: f32,
+) -> std::sync::Arc<egui::Galley> {
+    let size = theme.banner_body_font_size().value();
+    let mut job = egui::text::LayoutJob::single_section(
+        text.to_owned(),
+        egui::TextFormat {
+            font_id: egui::FontId::proportional(size),
+            color: theme.text_muted().to_egui(),
+            line_height: Some(size * theme.line_height_ui),
+            ..Default::default()
+        },
+    );
+    job.wrap.max_width = wrap_width;
+    ui.fonts(|f| f.layout_job(job))
 }
 
 fn title_galley(
@@ -143,34 +267,6 @@ fn title_galley(
     );
     job.wrap.max_width = wrap_width;
     job.wrap.max_rows = MAX_TITLE_ROWS;
-    ui.fonts(|f| f.layout_job(job))
-}
-
-/// 본문은 한 줄이다. 넘치면 끝을 말줄임한다.
-fn body_galley(
-    ui: &egui::Ui,
-    theme: &Theme,
-    view: &AttachSizeSyncBannerView<'_>,
-    wrap_width: f32,
-) -> std::sync::Arc<egui::Galley> {
-    let size = theme.banner_body_font_size().value();
-    let mut job = egui::text::LayoutJob::default();
-    for (text, color) in body_sections(ui, theme, view) {
-        job.append(
-            &text,
-            0.0,
-            egui::TextFormat {
-                font_id: egui::FontId::proportional(size),
-                color,
-                line_height: Some(size * theme.line_height_ui),
-                ..Default::default()
-            },
-        );
-    }
-    job.wrap.max_width = wrap_width;
-    job.wrap.max_rows = 1;
-    job.wrap.break_anywhere = true;
-    job.wrap.overflow_character = Some('\u{2026}');
     ui.fonts(|f| f.layout_job(job))
 }
 
@@ -220,8 +316,9 @@ pub fn attach_size_sync_banner_content(
     let text_w = layout.text_width();
 
     let title = title_galley(ui, theme, view.title, text_w);
-    let body = body_galley(ui, theme, view, text_w);
-    let text_h = title.size().y + text_gap + body.size().y;
+    let names = names_galley(ui, theme, view, text_w);
+    let hint = hint_galley(ui, theme, view.hint, text_w);
+    let text_h = title.size().y + text_gap + names.size().y + text_gap + hint.size().y;
     let place = layout.place(glyph + nudge, text_h);
 
     let (row, _) = ui.allocate_exact_size(egui::vec2(row_w, place.row_h), egui::Sense::hover());
@@ -232,16 +329,25 @@ pub fn attach_size_sync_banner_content(
         .paint_at(ui, glyph_rect);
 
     let text_x = row.left() + glyph + gap;
-    let title_h = title.size().y;
+    let names_top = row.top() + title.size().y + text_gap;
+    let hint_top = names_top + names.size().y + text_gap;
     let painter = ui.painter();
     painter.galley(
         egui::pos2(text_x, row.top()),
         title,
         egui::Color32::PLACEHOLDER,
     );
+    // 이름 줄은 줄바꿈하지 않으므로 글 열 폭을 넘는 끝은 잘라 그린다.
+    let names_clip = egui::Rect::from_min_size(
+        egui::pos2(text_x, names_top),
+        egui::vec2(text_w, names.size().y),
+    );
+    painter
+        .with_clip_rect(painter.clip_rect().intersect(names_clip))
+        .galley(names_clip.min, names, egui::Color32::PLACEHOLDER);
     painter.galley(
-        egui::pos2(text_x, row.top() + title_h + text_gap),
-        body,
+        egui::pos2(text_x, hint_top),
+        hint,
         egui::Color32::PLACEHOLDER,
     );
 
@@ -304,10 +410,13 @@ pub fn attach_size_sync_banner(
 mod tests {
     use super::*;
 
+    const HINT: &str = "The remote may still be using the old size.";
+
     fn view<'a>(names: &'a [&'a str], retrying: bool) -> AttachSizeSyncBannerView<'a> {
         AttachSizeSyncBannerView {
             title: "Couldn't sync the terminal size with the remote",
-            body: "{} · The remote may still be using the old size.",
+            names_line: "{}",
+            hint: HINT,
             many: "{} surfaces — {}",
             names,
             retry: "Retry",
@@ -356,69 +465,118 @@ mod tests {
             .collect()
     }
 
-    /// `body_sections` 를 한 프레임 안에서 부른다.
-    fn sections(v: &AttachSizeSyncBannerView<'_>) -> Vec<(String, egui::Color32)> {
-        let theme = theme();
-        let ctx = egui::Context::default();
-        let mut out = Vec::new();
-        drop(ctx.run(egui::RawInput::default(), |ctx| {
-            egui::CentralPanel::default().show(ctx, |ui| {
-                out = body_sections(ui, &theme, v);
-            });
-        }));
-        out
+    /// 글자 도형 하나의 rect 와 galley.
+    fn text_shape(
+        shapes: &[egui::Shape],
+        pred: impl Fn(&str) -> bool,
+    ) -> (egui::Rect, std::sync::Arc<egui::Galley>) {
+        shapes
+            .iter()
+            .find_map(|s| match s {
+                egui::Shape::Text(t) if pred(t.galley.text()) => {
+                    Some((s.visual_bounding_rect(), t.galley.clone()))
+                }
+                _ => None,
+            })
+            .expect("text shape")
+    }
+
+    /// galley 에서 `color` 로 칠한 조각의 글자.
+    fn colored(galley: &egui::Galley, color: egui::Color32) -> Vec<&str> {
+        galley
+            .job
+            .sections
+            .iter()
+            .filter(|sec| sec.format.color == color)
+            .map(|sec| &galley.job.text[sec.byte_range.clone()])
+            .collect()
     }
 
     #[test]
-    fn one_surface_reads_its_name_then_the_fixed_copy_and_offers_retry() {
+    fn one_surface_reads_its_name_on_the_first_line_and_the_fixed_copy_on_the_second() {
         let (_, shapes) = render(460.0, &view(&["build"], false));
-        let texts = texts(&shapes);
-        assert!(
-            texts
-                .iter()
-                .any(|t| t == "build · The remote may still be using the old size."),
-            "{texts:?}"
-        );
-        assert!(texts.iter().any(|t| t == "Retry"), "{texts:?}");
+        let (names, _) = text_shape(&shapes, |t| t == "build");
+        let (hint, _) = text_shape(&shapes, |t| t == HINT);
+        assert!(hint.top() >= names.bottom(), "{hint:?} not under {names:?}");
+        assert!((hint.left() - names.left()).abs() <= 0.5);
+        assert!(texts(&shapes).iter().any(|t| t == "Retry"));
     }
 
     #[test]
     fn several_surfaces_share_one_card_with_two_names_and_a_count() {
-        let names = ["release", "build", "tests"];
-        let parts = sections(&view(&names, false));
-        let line: String = parts.iter().map(|(t, _)| t.as_str()).collect();
-        assert_eq!(
-            line,
-            "3 surfaces — release, build +1 · The remote may still be using the old size."
-        );
         let theme = theme();
-        let named: Vec<_> = parts
-            .iter()
-            .filter(|(_, c)| *c == theme.text_secondary().to_egui())
-            .map(|(t, _)| t.as_str())
-            .collect();
-        assert_eq!(named, ["release", "build"]);
+        let names = ["release", "build", "tests"];
         let (_, shapes) = render(460.0, &view(&names, false));
+        let (_, line) = text_shape(&shapes, |t| t.starts_with("3 surfaces"));
+        assert_eq!(line.text(), "3 surfaces — release, build +1");
+        assert_eq!(
+            colored(&line, theme.text_secondary().to_egui()),
+            ["release", "build"]
+        );
+        assert_eq!(
+            colored(&line, theme.text_muted().to_egui()),
+            ["3 surfaces — ", ", ", " +1"]
+        );
+        // "build" 는 하한 40 보다 짧아 칸을 다 채우지 못하고, 뒤 " +1" 이 칸 끝에서 시작한다.
+        let plus = line
+            .job
+            .sections
+            .iter()
+            .find(|sec| &line.job.text[sec.byte_range.clone()] == " +1")
+            .expect("+1");
+        assert!(plus.leading_space > 0.0, "{}", plus.leading_space);
         assert!(texts(&shapes).iter().any(|t| t == "Retry all"));
     }
 
     #[test]
-    fn a_long_name_is_cut_at_the_name_width_and_the_fixed_copy_is_the_last_section() {
+    fn a_long_name_is_cut_at_the_name_width_and_the_count_and_separators_stay() {
+        let theme = theme();
         let long = "release-pipeline-watch-logs-eu-west-with-a-very-long-tab-title";
-        let parts = sections(&view(&[long, "build"], false));
-        let name = &parts
-            .iter()
-            .find(|(t, _)| t.starts_with("release"))
-            .expect("first name")
-            .0;
-        assert!(name.ends_with('\u{2026}'), "{name}");
-        assert!(name.len() < long.len());
-        assert!(
-            parts
-                .last()
-                .is_some_and(|(t, _)| t == " · The remote may still be using the old size."),
-            "{parts:?}"
+        let (_, shapes) = render(460.0, &view(&[long, "build", "tests"], false));
+        let (_, line) = text_shape(&shapes, |t| t.starts_with("3 surfaces"));
+        let shown = colored(&line, theme.text_secondary().to_egui());
+        assert!(shown[0].ends_with('\u{2026}'), "{shown:?}");
+        assert!(shown[0].len() < long.len());
+        assert_eq!(shown[1], "build");
+        assert!(line.text().ends_with(" +1"), "{}", line.text());
+    }
+
+    #[test]
+    fn names_shrink_by_their_width_down_to_the_floor_then_the_line_overflows() {
+        // 다 들어가면 본래 폭을 [40, 160] 으로 맞춘 값이다. 짧은 이름도 40 칸을 차지한다.
+        assert_eq!(
+            shrink_names(&[24.0, 300.0], 40.0, 160.0, 400.0),
+            [40.0, 160.0]
         );
+        // 넘친 60을 본래 폭 비율(100:200)로 나눠 줄인다.
+        let s = shrink_names(&[100.0, 200.0], 40.0, 160.0, 200.0);
+        assert!(
+            (s[0] - 80.0).abs() < 1e-3 && (s[1] - 120.0).abs() < 1e-3,
+            "{s:?}"
+        );
+        // 비율대로면 45 칸이 33 으로 줄어 하한 40 에 멈추고, 나머지 칸이 남은 부족분을 받는다.
+        let s = shrink_names(&[45.0, 160.0], 40.0, 160.0, 150.0);
+        assert!(
+            (s[0] - 40.0).abs() < 1e-3 && (s[1] - 110.0).abs() < 1e-3,
+            "{s:?}"
+        );
+        // 모두 하한이면 더 줄지 않고 줄이 넘친다(그리는 쪽이 잘라 낸다).
+        assert_eq!(
+            shrink_names(&[100.0, 200.0], 40.0, 160.0, 50.0),
+            [40.0, 40.0]
+        );
+    }
+
+    #[test]
+    fn the_fixed_copy_wraps_and_is_never_cut() {
+        let v = AttachSizeSyncBannerView {
+            narrow: true,
+            ..view(&["build"], false)
+        };
+        let (_, shapes) = render(200.0, &v);
+        let (_, hint) = text_shape(&shapes, |t| t == HINT);
+        assert!(hint.rows.len() > 1, "the hint did not wrap");
+        assert!(!hint.text().contains('\u{2026}'));
     }
 
     /// 프레임마다 주어진 입력을 넣고 그 프레임의 클릭과 마지막 프레임의 도형을 돌려준다.
@@ -558,7 +716,7 @@ mod tests {
             shapes
                 .iter()
                 .find_map(|s| match s {
-                    egui::Shape::Text(t) if t.galley.text().starts_with("build") => {
+                    egui::Shape::Text(t) if t.galley.text() == HINT => {
                         Some(s.visual_bounding_rect())
                     }
                     _ => None,
