@@ -88,21 +88,12 @@ const DISPLAY_SPECIMENS: &[(&str, &str, usize, &str)] = &[(
 )];
 
 /// 픽셀이 아닌 정규화 좌표를 파일·호출 이름별로 등록하고 수를 맞춘다.
-const UNIT_SPACE_SITES: &[(&str, &str, usize, &str)] = &[
-    (
-        "crates/tasty-plugin-image/src/render.rs",
-        "pos2",
-        4,
-        "텍스처 UV — 0..1 정규화 좌표라 픽셀이 아니다. 전체 텍스처를 가리키는 \
-         `pos2(1.0, 1.0)` 의 1 은 1px 가 아니라 100% 다",
-    ),
-    (
-        "crates/tasty-ui-widgets/src/popup_title.rs",
-        "pos2",
-        2,
-        "popup 타이틀바 글리프 텍스처 UV — 전체 텍스처를 가리키는 `pos2(1.0, 1.0)` 은 100% 다",
-    ),
-];
+const UNIT_SPACE_SITES: &[(&str, &str, usize, &str)] = &[(
+    "crates/tasty-ui-widgets/src/popup_title.rs",
+    "pos2",
+    2,
+    "popup 타이틀바 글리프 텍스처 UV — 전체 텍스처를 가리키는 `pos2(1.0, 1.0)` 은 100% 다",
+)];
 
 fn is_in_unit_space(hit: &Hit) -> bool {
     UNIT_SPACE_SITES
@@ -940,7 +931,9 @@ fn the_blind_spots_are_still_the_size_they_say() {
         // 이미지 viewer 예제의 no-image 칸이 공용 상태 화면으로 바뀌며 글리프 위치 vec2 의 0 하나가 빠졌다.
         // 탐색기 이름 입력 편집 줄 시험이 Grid 칸 크기 둘과 그리는 줄 폭 하나, 리터럴 셋을 더한다.
         // 그 시험이 줄을 왼쪽 여백 뒤 영역에 그리며 줄 폭 하나 대신 영역 폭·높이 둘을 쓴다.
-        (223, 571),
+        // 이미지 플러그인이 큰 그림을 타일로 그리며 전체 텍스처 uv pos2(0, 0) 둘이 빠지고(0 넷),
+        // 타일 배치 시험의 목표 사각형 pos2(10, 20)·vec2(400, 300) 중 셋이 test 전용으로 들어왔다.
+        (219, 574),
         "제외한 0과 test 전용 코드의 수가 달라졌다. 실제 사용과 수집 범위의 변경을 확인하고 기록을 갱신한다."
     );
     let roster: usize = UNIT_SPACE_SITES.iter().map(|(.., n, _)| n).sum();
