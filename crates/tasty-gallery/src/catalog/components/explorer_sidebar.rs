@@ -267,9 +267,17 @@ pub fn draw_short_cell(ui: &mut egui::Ui, theme: &Theme) {
     let cell_floor = format!(
         "{floor} · explorer-min-height · split drag stops here · tabs 28 + toolbar 44 + header 28 + 2×28 + status 24"
     );
-    let split =
-        format!("explorer keeps {floor}, sibling takes the rest; refused if the sibling can't");
+    let sibling = theme.split_sibling_min_height().value();
+    let split = format!(
+        "explorer keeps {floor}, sibling takes the rest (≥ {sibling} · split-sibling-min-height); \
+         refused if {sibling} can't be kept, if two explorer cells can't both keep {floor}, or if \
+         an explorer under {floor} would shrink further"
+    );
 
+    let scope = format!(
+        "floor = explorer cells only · other kinds have no floor (0) during drags and resizes; \
+         {sibling} guards only a new split"
+    );
     meta(
         ui,
         theme,
@@ -282,21 +290,23 @@ pub fn draw_short_cell(ui: &mut egui::Ui, theme: &Theme) {
             ("return", "body ≥ 240 → pin ladder as before (120 floor)"),
             ("cell floor", &cell_floor),
             ("split", &split),
+            (
+                "refusal",
+                "user → info Toast “Not enough room to split this pane” · agent → split refused: not enough room",
+            ),
             ("window resize", "floor not held"),
             (
                 "compact state",
                 "content body < 120 · explorer-state-compact-below · glyph · title · buttons on one row, reason in tooltip",
             ),
-            (
-                "scope",
-                "explorer only — other surfaces keep their own minimums",
-            ),
+            ("scope", &scope),
             ("sidebar", "never hidden as a whole"),
         ],
         &[
             TokenChip::without_color("explorer-favorites-hide-below", "→ size-240"),
             TokenChip::without_color("explorer-min-height", "→ size-180 (was 160)"),
             TokenChip::without_color("explorer-state-compact-below", "→ size-120"),
+            TokenChip::without_color("split-sibling-min-height", "→ size-56 (2026-10-09)"),
             TokenChip::without_color("explorer-favorites-pin-min-height", "120 floor (unchanged)"),
         ],
     );
@@ -309,10 +319,17 @@ pub fn draw_short_cell(ui: &mut egui::Ui, theme: &Theme) {
              The explorer cell itself stops at {floor} while a split is dragged: internal tabs \
              28 · toolbar 44 · Detail header 28 · two rows 56 · status line 24. The explorer's \
              internal layout does not change at the floor, so the status line keeps its place \
-             and Detail shows two rows. A split that would leave an explorer cell under the \
-             floor places the divider so the explorer keeps {floor}; it is refused only when \
-             another explorer cell would fall under the floor. A window resize does not hold \
-             the floor. The sidebar is never hidden as a whole."
+             and Detail shows two rows. A split (tasty split or the split menu) that would leave \
+             an explorer cell under the floor places the divider so the explorer keeps {floor} \
+             and the sibling takes the rest. Only explorer cells have a floor; a sibling of \
+             another kind has none of its own, but a new split never leaves it under {sibling} \
+             (pane tab strip 28 + one 28 row). The split is refused when {sibling} can't be \
+             kept, when two explorer cells can't both keep {floor}, or when an explorer cell \
+             already under {floor} would be split further: a user split shows the info Toast \
+             “Not enough room to split this pane”, an agent split gets split refused: not \
+             enough room. The check uses the largest view showing the workspace; with no window \
+             showing it, the floor is skipped. A window resize does not hold the floor. The \
+             sidebar is never hidden as a whole."
         ),
     );
     note(

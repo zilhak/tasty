@@ -288,7 +288,7 @@ Spec 하나가 갤러리 예제 둘이거나, 둘이 하나이거나, 경계가 
 | `gallery/overlays-windows.jsx` "Diff variant — file row → unified diff" | `git-viewer`(diff cluster) · `git-diff-toolbar` | [git-viewer](#git-viewer-plugins) |
 | `gallery/plugins.jsx` "Sidebar Favorites — populated vs. empty state" | `explorer-sidebar` |  |
 | `gallery/plugins.jsx` "Sidebar layout — Favorites PINNED to the bottom (2-region split)" | `explorer-sidebar` | 디자인 두 Spec ↔ 갤러리 하나 |
-| `gallery/plugins.jsx` "Short cell — Favorites drops below 240, the cell stops at 180" | `explorer-sidebar-short-cell` | 하한 180(`explorer-min-height`)·표본 body 84·compact 무대 "content body 84 (cell at 180)" 까지 반영. 라벨·Meta·Note 의 하한 숫자는 Theme 토큰에서 읽는다. 시안 Meta 의 split·scope 줄("refused if the sibling can't", "other surfaces keep their own minimums")은 시안 문구 그대로이고, 본체는 다른 종류 칸의 최소를 0 으로 둔다([분할 비율과 탐색기 칸 하한](../../features/work-area/index.md#분할-비율과-탐색기-칸-하한)) |
+| `gallery/plugins.jsx` "Short cell — Favorites drops below 240, the cell stops at 180" | `explorer-sidebar-short-cell` | 하한 180(`explorer-min-height`)·표본 body 84·compact 무대 "content body 84 (cell at 180)" 까지 반영. 라벨·Meta·Note 의 하한 숫자는 Theme 토큰에서 읽는다. Meta 의 split·refusal·scope 줄과 Note 는 시안 문구를 따르고 형제 칸 최소 56 은 `split-sibling-min-height` 토큰에서 읽는다. 본체 판정은 [분할 비율과 탐색기 칸 하한](../../features/work-area/index.md#분할-비율과-탐색기-칸-하한)에 있다 |
 | `gallery/plugins.jsx` "Right-click context menu — target resolves to 4 shapes" | `explorer-context` (Overlays) |  |
 | `gallery/plugins.jsx` "HTML — webview chrome (4 states)" | `html-chrome` | [surface viewers](#surface-viewers-plugins) |
 | `gallery/plugins.jsx` "HTML — settings (Appearance › HTML viewer)" | `plugin-settings` (Components) | [플러그인 설정 페이지](#플러그인-설정-페이지) |
