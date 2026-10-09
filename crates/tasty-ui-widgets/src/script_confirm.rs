@@ -4,6 +4,7 @@
 
 use tasty_type_appearance::theme::Theme;
 
+use crate::ControlSize;
 use crate::button::{Button, ButtonVariant};
 use crate::chip::{TagVariant, tag};
 
@@ -25,7 +26,7 @@ pub struct ScriptConfirmOutput {
     pub cancel: bool,
 }
 
-/// 제목 → 이름 → [changed 태그 + 안내문] → 우측 정렬 버튼 행을 위에서 아래로 그린다.
+/// 제목 → 이름 → changed 태그 → 안내문 문단 → 우측 정렬 버튼 행을 위에서 아래로 그린다.
 pub fn script_confirm(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -52,27 +53,39 @@ pub fn script_confirm(
         .truncate(),
     );
 
-    // 안내문은 주어진 폭 안에서 줄바꿈한다. 한 줄로 두면 긴 번역이 폭을 넘어 버튼 행까지 밀려 잘린다.
-    ui.horizontal_wrapped(|ui| {
-        ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+    // 태그는 단독 줄이고 안내문은 그 아래 전폭 문단이다. 안내문은 주어진 폭 안에서 줄바꿈한다.
+    ui.vertical(|ui| {
+        ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
         tag(ui, theme, view.changed_tag, TagVariant::Warning, false);
-        ui.label(
-            egui::RichText::new(view.body)
-                .size(theme.font_size_caption.value())
-                .color(theme.text_secondary().to_egui()),
+        let size = theme.font_size_caption.value();
+        let mut job = egui::text::LayoutJob::default();
+        job.wrap.max_width = ui.available_width();
+        job.append(
+            view.body,
+            0.0,
+            egui::TextFormat {
+                font_id: egui::FontId::proportional(size),
+                color: theme.text_secondary().to_egui(),
+                line_height: Some(size * theme.line_height_ui),
+                ..Default::default()
+            },
         );
+        ui.add(egui::Label::new(job).wrap());
     });
 
+    // 본문 → 버튼은 행 간격(space-sm)에 space-xs 를 더해 space-md 다.
     ui.add_space(theme.spacing_xs.value());
 
     ui.horizontal(|ui| {
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             out.run = Button::new(view.run)
                 .variant(ButtonVariant::Primary)
+                .size(ControlSize::Sm)
                 .show(ui, theme)
                 .clicked();
             out.cancel = Button::new(view.cancel)
                 .variant(ButtonVariant::Ghost)
+                .size(ControlSize::Sm)
                 .show(ui, theme)
                 .clicked();
         });

@@ -12,10 +12,12 @@ use crate::catalog::widgets::dialog as kit;
 
 /// `popup/defs.rs` 의 `script_changed_confirm` 기본 폭.
 const POPUP_WIDTH: LogicalPx = LogicalPx(360.0);
+/// 시안 좌우 여백(`size-14`). Theme 역할에 연결하지 않은 화면 전용 고정 치수다(ADR-0035).
+const PAD_X: LogicalPx = LogicalPx(14.0);
 
 fn card(ui: &mut egui::Ui, theme: &Theme, name: &str) {
     kit::frame_card(ui, theme, POPUP_WIDTH, kit::panel_fill(theme), |ui| {
-        kit::region_sym(ui, theme.spacing_md, theme.spacing_md, |ui| {
+        kit::region_sym(ui, PAD_X, theme.spacing_md, |ui| {
             script_confirm(
                 ui,
                 theme,
@@ -44,6 +46,14 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "~/.tasty/scripts/very/deeply/nested/path/that/overflows/the-card.lua",
             )
         });
+        let latte = Theme::with_colors_and_zoom(
+            crate::host_shell::latte_theme().to_colors(),
+            true,
+            theme.ui_zoom,
+        );
+        spec::cluster(ui, theme, "Latte", |ui| {
+            card(ui, &latte, "~/.tasty/scripts/reload-panes.lua")
+        });
     });
 
     spec::meta(
@@ -52,14 +62,18 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         &[
             (
                 "frame",
-                "360px · bg-panel · popup 기본 크기 360×152, 본문이 줄바꿈되면 높이만 늘어난다",
+                "360px · bg-panel · 여백 위아래 space-md · 좌우 14 · 높이는 내용에 맞춘다(최소값 없음)",
             ),
             ("name", "font-size-caption mono text-muted · truncate"),
             (
                 "warning",
-                "tag(Warning) + caption text-secondary · 카드 폭 안에서 줄바꿈",
+                "tag(Warning) 단독 줄 · 아래 caption text-secondary 전폭 문단(line-height-ui) · 태그 → 문단 space-xs",
             ),
-            ("footer", "Run anyway(Primary) / Cancel(Ghost) · 우측정렬"),
+            ("gap", "행 space-sm · 본문 → 버튼 space-md"),
+            (
+                "footer",
+                "Run anyway(Primary sm) / Cancel(Ghost sm) · 우측정렬",
+            ),
         ],
         &[
             TokenChip::new("bg-panel", "frame", theme.bg_panel().to_egui()),

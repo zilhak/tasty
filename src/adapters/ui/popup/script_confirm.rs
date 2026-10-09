@@ -81,9 +81,8 @@ pub fn script_confirm_default_size() -> egui::Vec2 {
     egui::vec2(DEFAULT_SIZE.0.value(), DEFAULT_SIZE.1.value())
 }
 
-/// PopupDef.sizer — 폭은 기본 폭에 UI 배율을 곱한 값이다. 높이는 기본 높이이고, 직전 프레임에
-/// 잰 콘텐츠가 그보다 크면(본문이 줄바꿈된 경우) 콘텐츠 높이에 타이틀바와 콘텐츠 여백을 더한
-/// 값으로 늘린다. 기본 높이보다 줄이지는 않는다.
+/// PopupDef.sizer — 폭은 기본 폭에 UI 배율을 곱한 값이다. 높이는 직전 프레임에 잰 콘텐츠 높이에
+/// 타이틀바와 콘텐츠 여백을 더한 값이다(최소값 없음). 아직 재지 않은 첫 프레임만 기본 높이를 쓴다.
 pub fn script_confirm_sizer(
     state: &MainViewState,
     _engine: &crate::runtime::engine_read::EngineRead<'_>,
@@ -95,13 +94,9 @@ pub fn script_confirm_sizer(
         .pending_script_confirm
         .as_ref()
         .and_then(|p| p.content_height);
-    let base = crate::adapters::ui::zoomed_px(&th, DEFAULT_SIZE.1);
     let height = match measured {
-        Some(content) => {
-            let fitted = popup::title_bar_height() + popup::content_margin().scaled(2.0) + content;
-            LogicalPx(fitted.value().max(base.value()))
-        }
-        None => base,
+        Some(content) => popup::title_bar_height() + popup::content_margin().scaled(2.0) + content,
+        None => crate::adapters::ui::zoomed_px(&th, DEFAULT_SIZE.1),
     };
     egui::vec2(width.value(), height.value())
 }
@@ -253,15 +248,14 @@ mod sizer_wiring_tests {
         }
     }
 
-    /// 잰 콘텐츠가 기본 높이보다 크면 실제 popup 높이가 그만큼 늘고, 작으면 기본 높이를 지킨다.
+    /// 실제 popup 높이는 잰 콘텐츠에 타이틀바와 여백을 더한 값이다. 기본 높이보다 작아도 줄어든다.
     #[test]
     fn a_frame_sizes_the_popup_from_the_measured_content() {
         let th = theme::theme();
         let chrome = popup::title_bar_height() + popup::content_margin().scaled(2.0);
-        let base = crate::adapters::ui::zoomed_px(&th, DEFAULT_SIZE.1).value();
         for (content, expected) in [
             (LogicalPx(400.0), (chrome + LogicalPx(400.0)).value()),
-            (LogicalPx(10.0), base),
+            (LogicalPx(10.0), (chrome + LogicalPx(10.0)).value()),
         ] {
             let (mut state, mut engine_session) = test_state();
             let engine = engine_session.borrow_mut();
