@@ -7,6 +7,7 @@
 //! 기준은 docs/architecture/ui-widgets-crate.md와 docs/dev-guide/gallery-first.md를 따른다.
 
 mod attach_refusal;
+mod attach_size_sync;
 mod attention;
 mod autocomplete;
 mod banner;
@@ -73,6 +74,10 @@ pub use attach_refusal::{
     AttachRefusalBannerClicks, AttachRefusalBannerView, attach_refusal_avatar_tooltip,
     attach_refusal_banner, attach_refusal_banner_content, attach_refusal_mark,
     attach_refusal_mark_size, paint_attach_refusal_chip,
+};
+pub use attach_size_sync::{
+    AttachSizeSyncBannerClicks, AttachSizeSyncBannerView, attach_size_sync_banner,
+    attach_size_sync_banner_content,
 };
 pub use attention::{
     Attention, RailDot, attention_count_label, attention_edge_stroke, occupancy_edge_shows,

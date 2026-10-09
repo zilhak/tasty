@@ -1795,6 +1795,16 @@ hint = "Change or remove the mapping for this workspace."
 remove = "Remove mapping"
 dismiss = "Dismiss"
 
+[remote.size_sync]
+# 원격 attach mirror 의 터미널 크기 동기화가 자동 재시도 뒤에도 실패했을 때의 Workspace 배너.
+# body 의 {} 는 surface 이름(또는 many 로 만든 요약), many 의 앞 {} 는 surface 수, 뒤 {} 는 이름이다.
+title = "Couldn't sync the terminal size with the remote"
+body = "{} · The remote may still be using the old size."
+many = "{} surfaces — {}"
+retry = "Retry"
+retry_all = "Retry all"
+dismiss = "Dismiss"
+
 [remote_attach]
 heading = "Add remote workspace"
 close = "Close"

@@ -1789,6 +1789,16 @@ hint = "このワークスペースのマッピングを変更するか削除し
 remove = "マッピングを削除"
 dismiss = "閉じる"
 
+[remote.size_sync]
+# 원격 attach mirror 의 터미널 크기 동기화가 자동 재시도 뒤에도 실패했을 때의 Workspace 배너.
+# body 의 {} 는 surface 이름(또는 many 로 만든 요약), many 의 앞 {} 는 surface 수, 뒤 {} 는 이름이다.
+title = "リモートと端末サイズを同期できませんでした"
+body = "{} · リモートはまだ以前のサイズを使っている可能性があります。"
+many = "{} 個の surface — {}"
+retry = "再試行"
+retry_all = "すべて再試行"
+dismiss = "閉じる"
+
 [remote_attach]
 heading = "リモートワークスペースを追加"
 close = "閉じる"

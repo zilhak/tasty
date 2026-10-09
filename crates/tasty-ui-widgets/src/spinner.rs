@@ -59,16 +59,25 @@ impl Spinner {
         let size = self
             .size
             .unwrap_or_else(|| theme.icon_glyph_size_md.value());
-        let color = self.color.unwrap_or_else(|| theme.text_muted().to_egui());
         let (rect, resp) = ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::hover());
+        self.paint_in(ui, theme, rect);
+        resp
+    }
+
+    /// 자리를 잡지 않고 `rect` 가운데에 그린다. 버튼의 leading 아이콘처럼 자리를 다른 위젯이
+    /// 정하는 곳에서 쓴다. 변 길이는 `size` 이며, 지정하지 않으면 `rect` 의 짧은 변이다.
+    pub fn paint_in(self, ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
+        let size = self.size.unwrap_or_else(|| rect.width().min(rect.height()));
+        let rect = egui::Rect::from_center_size(rect.center(), egui::vec2(size, size));
+        let color = self.color.unwrap_or_else(|| theme.text_muted().to_egui());
 
         if !ui.is_rect_visible(rect) {
-            return resp;
+            return;
         }
 
         if self.reduced_motion.unwrap_or(theme.reduced_motion) {
             draw_dots(ui, rect, color);
-            return resp;
+            return;
         }
 
         let painter = ui.painter();
@@ -95,7 +104,6 @@ impl Spinner {
         );
 
         ui.ctx().request_repaint();
-        resp
     }
 }
 

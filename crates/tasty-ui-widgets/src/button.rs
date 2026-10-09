@@ -4,6 +4,7 @@
 //! disabled는 opacity를 곱하지 않는다. 모든 variant가 같은 중립 상자와 disabled ink로 그려진다.
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 
 use crate::control::ControlSize;
 use crate::icon_button::IconPainter;
@@ -66,6 +67,8 @@ pub struct Button<'a> {
     block: bool,
     /// 라벨 앞 leading 아이콘(디자인 `leadingIcon`). icon-size-md, fg 색으로 그려짐.
     leading_icon: Option<IconPainter<'a>>,
+    /// leading 아이콘 칸의 변 길이. `None` 이면 icon-size-md.
+    leading_icon_size: Option<LogicalPx>,
     /// 라벨 뒤 trailing 아이콘(디자인 `trailingIcon`). icon-size-md, fg 색으로 그려짐.
     trailing_icon: Option<IconPainter<'a>>,
     /// 활성 상태의 글자·아이콘을 accent-danger 로 그린다(디자인 secondary 버튼의 `color: accent-danger`).
@@ -81,6 +84,7 @@ impl<'a> Button<'a> {
             enabled: true,
             block: false,
             leading_icon: None,
+            leading_icon_size: None,
             trailing_icon: None,
             danger_ink: false,
         }
@@ -112,6 +116,13 @@ impl<'a> Button<'a> {
         self
     }
 
+    /// leading 아이콘 칸의 변 길이. 시안이 leading 자리에 icon-size-md 가 아닌 요소
+    /// (예: Spinner 14)를 둘 때 그 크기로 칸을 잡는다.
+    pub fn leading_icon_size(mut self, size: LogicalPx) -> Self {
+        self.leading_icon_size = Some(size);
+        self
+    }
+
     /// 라벨 뒤 trailing 아이콘(디자인 `trailingIcon`).
     pub fn trailing_icon(mut self, icon: IconPainter<'a>) -> Self {
         self.trailing_icon = Some(icon);
@@ -140,6 +151,9 @@ impl<'a> Button<'a> {
         let radius = theme.button_radius().value();
         let bw = theme.border_width.value();
         let icon_glyph = theme.icon_glyph_size_md.value();
+        let leading_glyph = self
+            .leading_icon_size
+            .map_or(icon_glyph, |size| size.value());
         let gap = theme.button_gap().value();
         let has_leading = self.leading_icon.is_some();
         let has_trailing = self.trailing_icon.is_some();
@@ -150,8 +164,11 @@ impl<'a> Button<'a> {
             ui.painter()
                 .layout_no_wrap(self.label.to_owned(), font_id, egui::Color32::PLACEHOLDER);
 
-        let icons_w = (if has_leading { icon_glyph + gap } else { 0.0 })
-            + (if has_trailing { icon_glyph + gap } else { 0.0 });
+        let icons_w = (if has_leading {
+            leading_glyph + gap
+        } else {
+            0.0
+        }) + (if has_trailing { icon_glyph + gap } else { 0.0 });
         let content_w = galley.rect.size().x + icons_w + 2.0 * pad_x;
         let desired_w = if self.block {
             ui.available_width().max(content_w)
@@ -251,7 +268,11 @@ impl<'a> Button<'a> {
 
         let label_w = galley.rect.size().x;
         let group_w = label_w
-            + (if has_leading { icon_glyph + gap } else { 0.0 })
+            + (if has_leading {
+                leading_glyph + gap
+            } else {
+                0.0
+            })
             + (if has_trailing { icon_glyph + gap } else { 0.0 });
         let mut x = rect.center().x - group_w * 0.5;
         let cy = rect.center().y;
@@ -259,11 +280,11 @@ impl<'a> Button<'a> {
 
         if let Some(paint) = self.leading_icon {
             let irect = egui::Rect::from_center_size(
-                egui::pos2(x + icon_glyph * 0.5, cy),
-                egui::vec2(icon_glyph, icon_glyph),
+                egui::pos2(x + leading_glyph * 0.5, cy),
+                egui::vec2(leading_glyph, leading_glyph),
             );
             paint(ui, irect, fg_col);
-            x += icon_glyph + gap;
+            x += leading_glyph + gap;
         }
         let text_pos = egui::pos2(x, cy - galley.rect.size().y * 0.5);
         ui.painter().galley(text_pos, galley, fg_col);

@@ -1789,6 +1789,16 @@ hint = "이 워크스페이스의 매핑을 바꾸거나 지우세요."
 remove = "매핑 지우기"
 dismiss = "닫기"
 
+[remote.size_sync]
+# 원격 attach mirror 의 터미널 크기 동기화가 자동 재시도 뒤에도 실패했을 때의 Workspace 배너.
+# body 의 {} 는 surface 이름(또는 many 로 만든 요약), many 의 앞 {} 는 surface 수, 뒤 {} 는 이름이다.
+title = "원격과 터미널 크기를 맞추지 못했습니다"
+body = "{} · 원격이 아직 이전 크기를 쓰고 있을 수 있습니다."
+many = "surface {}개 — {}"
+retry = "다시 시도"
+retry_all = "모두 다시 시도"
+dismiss = "닫기"
+
 [remote_attach]
 heading = "원격 워크스페이스 추가"
 close = "닫기"

@@ -1067,6 +1067,15 @@ pub fn pages() -> Vec<Page> {
                     widgets::attach_refusal::draw,
                 ),
                 single(
+                    "attachsizesync",
+                    "Attach size sync failed",
+                    "Workspace banner · default · retrying · several surfaces",
+                    Some(
+                        "alertTriangle · title · one muted body line · Retry (Retry all for several surfaces) and ×",
+                    ),
+                    widgets::attach_size_sync::draw,
+                ),
+                single(
                     "palette",
                     "Command palette",
                     "Top-anchored, fuzzy, keyboard-first",
