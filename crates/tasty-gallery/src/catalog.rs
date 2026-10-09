@@ -35,41 +35,28 @@ pub(crate) fn modifier_label(combo: &str) -> String {
     KeybindingSettings::format_display(combo, &GeneralSettings::default())
 }
 
-fn tab_switch_caption() -> &'static str {
-    static CAPTION: OnceLock<String> = OnceLock::new();
-    CAPTION
-        .get_or_init(|| {
-            format!(
-                "{} held · number keycap replaces each tab icon, in place",
-                modifier_label(&KeybindingSettings::default().tab_switch_modifier)
-            )
-        })
-        .as_str()
-}
-
-fn workspace_switch_caption() -> &'static str {
-    static CAPTION: OnceLock<String> = OnceLock::new();
-    CAPTION
-        .get_or_init(|| {
-            format!(
-                "{} held · keycap replaces status dot / letter avatar",
-                modifier_label(&KeybindingSettings::default().workspace_switch_modifier)
-            )
-        })
-        .as_str()
-}
-
-fn category_switch_caption() -> &'static str {
-    static CAPTION: OnceLock<String> = OnceLock::new();
-    CAPTION
-        .get_or_init(|| {
-            format!(
-                "{} held · keycap right-aligned on headers / centered on rail --- \
+/// 탭·워크스페이스·카테고리 전환 modifier 를 기본 키바인딩으로 표시한 캡션(이 순서).
+fn switch_captions() -> &'static [String; 3] {
+    static CAPTIONS: OnceLock<[String; 3]> = OnceLock::new();
+    CAPTIONS.get_or_init(|| {
+        let k = KeybindingSettings::default();
+        let held = |m: &str, rest: &str| format!("{} held · {rest}", modifier_label(m));
+        [
+            held(
+                &k.tab_switch_modifier,
+                "number keycap replaces each tab icon, in place",
+            ),
+            held(
+                &k.workspace_switch_modifier,
+                "keycap replaces status dot / letter avatar",
+            ),
+            held(
+                &k.category_switch_modifier,
+                "keycap right-aligned on headers / centered on rail --- \
                  (mutually exclusive with the workspace axis)",
-                modifier_label(&KeybindingSettings::default().category_switch_modifier)
-            )
-        })
-        .as_str()
+            ),
+        ]
+    })
 }
 
 /// 카탈로그 1차 분류 = 문서 페이지 하나. 상단 crumb + 좌측 nav Catalog 그룹에 사용.
@@ -1371,19 +1358,19 @@ pub fn pages() -> Vec<Page> {
                         spec(
                             "switch-tab",
                             "Tab switch — modifier held",
-                            Some(tab_switch_caption()),
+                            Some(switch_captions()[0].as_str()),
                             components::switch_overlay::draw_tab,
                         ),
                         spec(
                             "switch-ws",
                             "Workspace switch — modifier held",
-                            Some(workspace_switch_caption()),
+                            Some(switch_captions()[1].as_str()),
                             components::switch_overlay::draw_workspace,
                         ),
                         spec(
                             "switch-cat",
                             "Category switch — modifier held",
-                            Some(category_switch_caption()),
+                            Some(switch_captions()[2].as_str()),
                             components::switch_overlay::draw_category,
                         ),
                     ],
