@@ -235,3 +235,25 @@ fn a_folder_original_with_items_kept_stays_a_source_left_card() {
     assert_eq!(labels(&text)[0], t_fmt("explorer.result.retry", "1"));
     assert!(!text.undo);
 }
+
+/// 원본 삭제 다시 하기를 취소하면 남은 원본 카드로 돌아가 Retry 가 다시 있다.
+#[test]
+fn a_cancelled_delete_retry_returns_to_the_source_left_card() {
+    let mut r = report(OpKind::Move, 3, 3);
+    r.undo.clear();
+    r.failed = vec![
+        failure("/a", Reason::RemoveCancelled),
+        failure("/b", Reason::RemoveCancelled),
+    ];
+    r.leftovers = vec![leftover("/a"), leftover("/b")];
+    assert!(!result_is_timed(&r));
+    let text = card_text(&card(r));
+    assert_eq!(text.kind, ToastKind::Warning);
+    assert_eq!(
+        text.title,
+        t_args("explorer.result.source_left_move", &["3", "3", "2"])
+    );
+    assert_eq!(text.lines[0].1, t("explorer.result.remove_cancelled"));
+    assert_eq!(labels(&text)[0], t_fmt("explorer.result.retry", "2"));
+    assert!(!text.undo);
+}

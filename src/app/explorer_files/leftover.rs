@@ -250,6 +250,8 @@ fn prune_dir(shared: &Shared, source: &Path, copy: &Path, pruned: &mut Pruned) {
 
 /// 남은 원본들을 다시 지운다. 결과는 처음 이동과 같은 이동 보고로 낸다.
 /// 또 지우지 못한 원본은 다시 [`Report::leftovers`] 에 남아 한 번 더 시도할 수 있다.
+/// 취소해도 취소 보고로 끝내지 않는다. 그때까지 다 지운 원본은 빼고, 남은 원본은 원본이 남은
+/// 항목으로 돌려 카드가 남은 개수와 Retry 를 다시 보이게 한다.
 pub(crate) fn run_remove_leftovers(
     shared: &Shared,
     dest: Option<PathBuf>,
@@ -257,22 +259,22 @@ pub(crate) fn run_remove_leftovers(
 ) -> Report {
     let mut report = Report::new(OpKind::Move, dest, leftovers.len());
     shared.items_total.store(leftovers.len(), Ordering::Release);
-    for leftover in leftovers {
-        if shared.cancelled() {
-            report.cancelled = true;
-            break;
-        }
+    for (index, leftover) in leftovers.iter().enumerate() {
         shared.set_current(&leftover.source);
-        let result = leftover.check().and_then(|present| {
-            if present {
-                leftover.remove(shared)
-            } else {
-                Ok(Some(()))
-            }
-        });
+        let result = if shared.cancelled() {
+            Ok(None)
+        } else {
+            leftover.check().and_then(|present| {
+                if present {
+                    leftover.remove(shared)
+                } else {
+                    Ok(Some(()))
+                }
+            })
+        };
         match result {
             Ok(None) => {
-                report.cancelled = true;
+                keep_the_rest(&mut report, &leftovers[index..]);
                 break;
             }
             Ok(Some(())) => report.done += 1,
@@ -291,6 +293,22 @@ pub(crate) fn run_remove_leftovers(
         shared.finish_item(0);
     }
     report
+}
+
+/// 취소로 손대지 못했거나 도중에 멈춘 원본들. 이미 없는 원본은 다 지운 것으로 센다.
+fn keep_the_rest(report: &mut Report, rest: &[Leftover]) {
+    for leftover in rest {
+        // 사본은 그대로라 처음 이동과 같이 끝난 항목으로 센다.
+        report.done += 1;
+        if leftover.source.symlink_metadata().is_err() {
+            continue;
+        }
+        report.leftovers.push(leftover.clone());
+        report.failed.push(Failure {
+            path: leftover.source.clone(),
+            reason: Reason::RemoveCancelled,
+        });
+    }
 }
 
 #[cfg(test)]

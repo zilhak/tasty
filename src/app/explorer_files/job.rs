@@ -278,12 +278,17 @@ pub(crate) enum Reason {
     /// 폴더 원본을 다시 지우며 사본에 없는 항목(이동 뒤 넣거나 바꾼 것)을 이 수만큼 남겼다.
     /// 사본은 온전하고, 남은 원본은 다시 시도할 수 있다.
     KeptNotInCopy(usize),
+    /// 남은 원본 다시 지우기를 취소해 이 원본이 전부 또는 일부 남았다. 다시 시도할 수 있다.
+    RemoveCancelled,
 }
 
 impl Reason {
     /// 사본은 온전하고 원본이 남은 이동 항목인가. 이런 항목은 다시 옮기지 않고 원본 삭제만 다시 한다.
     pub(crate) fn leaves_original(&self) -> bool {
-        matches!(self, Self::SourceNotRemoved(_) | Self::KeptNotInCopy(_))
+        matches!(
+            self,
+            Self::SourceNotRemoved(_) | Self::KeptNotInCopy(_) | Self::RemoveCancelled
+        )
     }
 }
 

@@ -531,7 +531,55 @@ fn a_cancelled_retry_stops_comparing_and_keeps_the_rest() {
     let left = Leftover::before_remove(&twin.source, &twin.copy);
     assert!(matches!(left.remove(&cancelled), Ok(None)));
     assert_eq!(names(&twin.source), ["a.txt", "sub"]);
-    let report = run_remove_leftovers(&cancelled, None, &[left]);
-    assert!(report.cancelled);
-    assert_eq!(report.done, 0);
+    // 취소해도 남은 원본 카드로 돌아간다. 원본은 다시 시도할 수 있다.
+    let report = run_remove_leftovers(&cancelled, None, std::slice::from_ref(&left));
+    assert!(!report.cancelled);
+    assert_eq!(
+        report.failed,
+        [Failure {
+            path: twin.source.clone(),
+            reason: Reason::RemoveCancelled,
+        }]
+    );
+    assert_eq!(report.leftovers, [left]);
+    assert_eq!(report.done, 1, "the copy is whole");
+}
+
+/// 취소한 뒤의 카드는 남은 원본만 센다. 이미 없는 원본은 다 지운 것으로 빼고, 손대지 못한 원본은
+/// 모두 다시 시도할 항목으로 남긴다.
+#[test]
+fn a_cancelled_retry_lists_only_the_originals_still_there() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut lefts = Vec::new();
+    for name in ["gone", "a", "b"] {
+        let source = dir.path().join(name);
+        let copy = dir.path().join(format!("{name}.copy"));
+        std::fs::write(&source, name).expect("write");
+        std::fs::write(&copy, name).expect("write");
+        lefts.push(Leftover::before_remove(&source, &copy));
+    }
+    std::fs::remove_file(&lefts[0].source).expect("remove");
+    let cancelled = shared();
+    cancelled.cancel();
+    let report = run_remove_leftovers(&cancelled, None, &lefts);
+    assert!(!report.cancelled);
+    assert_eq!((report.done, report.total), (3, 3));
+    assert_eq!(report.leftovers, lefts[1..]);
+    assert_eq!(
+        report.failed.iter().map(|f| &f.path).collect::<Vec<_>>(),
+        [&lefts[1].source, &lefts[2].source]
+    );
+    assert!(
+        report
+            .failed
+            .iter()
+            .all(|f| f.reason == Reason::RemoveCancelled)
+    );
+    assert!(report.retryable().is_empty(), "nothing is moved again");
+    for left in &lefts[1..] {
+        assert!(
+            left.source.exists(),
+            "a cancelled retry deletes nothing more"
+        );
+    }
 }

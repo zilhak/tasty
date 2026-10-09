@@ -412,6 +412,7 @@ fn reason_text(reason: &Reason) -> String {
         Reason::ChangedSince => t("explorer.result.changed_kept").to_owned(),
         Reason::CopyMissing => t("explorer.result.copy_missing").to_owned(),
         Reason::KeptNotInCopy(n) => t_fmt("explorer.result.kept_not_in_copy", &n.to_string()),
+        Reason::RemoveCancelled => t("explorer.result.remove_cancelled").to_owned(),
     }
 }
 
