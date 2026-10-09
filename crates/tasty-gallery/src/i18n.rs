@@ -28,3 +28,9 @@ pub fn t_fmt2(key: &'static str, arg1: &str, arg2: &str) -> String {
     ensure_init();
     tasty_i18n::t_fmt2(key, arg1, arg2)
 }
+
+/// `key`의 영어 문자열에서 `{}` 를 `args` 로 차례로 바꾼다.
+pub fn t_args(key: &'static str, args: &[&str]) -> String {
+    ensure_init();
+    tasty_i18n::t_args(key, args)
+}

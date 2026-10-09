@@ -1,0 +1,564 @@
+//! 탐색기 파일 작업 — 진행 상태줄·대기열·이름 충돌·결과 카드·드래그 칩·놓을 대상 표시.
+//! 디자인 `gallery/explorer-ops.jsx`(Progress) · `explorer-ops-parts.jsx`(Drag) 의 예제를 옮겼다.
+//! 그리기는 본체와 같은 `tasty_ui_widgets::explorer_ops` 함수가 맡는다.
+
+use tasty_type_appearance::theme::Theme;
+use tasty_type_appearance::toast_kind::ToastKind;
+use tasty_type_geometry::length::LogicalPx;
+use tasty_ui_widgets::{
+    ButtonVariant, ConflictProps, DragChipProps, DragOp, OpStatusProps, QueueRowProps,
+    ResultAction, ResultCardProps, ResultLine, conflict_card, drag_chip, op_queue_popover,
+    op_status_line, paint_drop_target, result_card,
+};
+
+use crate::catalog::icons::{self, MockGlyph};
+use crate::catalog::spec::{self, StageVariant, TokenChip};
+use crate::i18n::{t, t_args, t_fmt, t_fmt2};
+
+/// 시안 탐색기 칸 폭(`XCell w={520}`). 전시 치수다.
+const CELL_W: LogicalPx = LogicalPx(520.0);
+/// 시안 칸 본문 높이 — 상태줄 위 목록 자리. 전시 치수다.
+const BODY_H: LogicalPx = LogicalPx(96.0);
+/// 시안 대기열 예제의 본문 높이. 팝오버가 상태줄 위에 뜰 자리다. 전시 치수다.
+const QUEUE_BODY_H: LogicalPx = LogicalPx(120.0);
+/// 시안 드래그 예제의 목록 행 폭. 전시 치수다.
+const ROW_W: LogicalPx = LogicalPx(300.0);
+
+fn glyph_painter(glyph: MockGlyph) -> impl Fn(&mut egui::Ui, egui::Rect, egui::Color32) {
+    move |ui, rect, c| glyph.image(rect.height(), c).paint_at(ui, rect)
+}
+
+/// 상태줄까지 그린 탐색기 칸 한 개. 본문은 비워 두고 상태줄 영역을 돌려준다.
+fn cell(ui: &mut egui::Ui, theme: &Theme, body_h: LogicalPx) -> (egui::Rect, egui::Rect) {
+    let status_h = theme.item_height_interactive.value();
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(CELL_W.value(), body_h.value() + status_h),
+        egui::Sense::hover(),
+    );
+    let radius = theme.corner_radius.value();
+    ui.painter().rect(
+        rect,
+        radius,
+        theme.bg_panel().to_egui(),
+        egui::Stroke::new(theme.border_width.value(), theme.border_default().to_egui()),
+        egui::StrokeKind::Inside,
+    );
+    let status =
+        egui::Rect::from_min_max(egui::pos2(rect.left(), rect.bottom() - status_h), rect.max);
+    ui.painter()
+        .rect_filled(status, 0.0, theme.bg_sidebar().to_egui());
+    ui.painter().hline(
+        status.x_range(),
+        status.top(),
+        egui::Stroke::new(theme.border_width.value(), theme.border_default().to_egui()),
+    );
+    (rect, status)
+}
+
+pub fn draw_progress(ui: &mut egui::Ui, theme: &Theme) {
+    let copying = t_args(
+        "explorer.op.copying",
+        &["12", "40", "report-final-v3-signed.pdf"],
+    );
+    let bytes = t_fmt2("explorer.op.bytes", "1.2 GB", "3.4 GB");
+    let queued = t_fmt("explorer.op.queued", "1");
+    let waiting = t_fmt("explorer.op.waiting", "1");
+    let queue_copy = t_fmt2("explorer.op.queue_copy", "40", "Documents");
+    let queue_move = t_fmt2("explorer.op.queue_move", "3", "Archive");
+    let queue_sub = format!(
+        "{} · {bytes}",
+        t_fmt2("explorer.op.queue_progress", "12", "40")
+    );
+    let close = glyph_painter(icons::CLOSE);
+    let layers = glyph_painter(icons::LAYERS);
+    spec::stage(ui, theme, StageVariant::Column, |ui| {
+        ui.spacing_mut().item_spacing.y = theme.spacing_lg.value();
+        let (_, status) = cell(ui, theme, BODY_H);
+        op_status_line(
+            ui,
+            theme,
+            status,
+            &OpStatusProps {
+                fraction: Some(0.34),
+                waiting: false,
+                text: &copying,
+                bytes: Some(&bytes),
+                queued: Some(&queued),
+                show_label: t("explorer.op.show"),
+                cancel_tip: t("explorer.op.cancel"),
+            },
+            &close,
+        );
+        let (rect, status) = cell(ui, theme, QUEUE_BODY_H);
+        op_status_line(
+            ui,
+            theme,
+            status,
+            &OpStatusProps {
+                fraction: Some(0.34),
+                waiting: false,
+                text: &copying,
+                bytes: Some(&bytes),
+                queued: Some(&queued),
+                show_label: t("explorer.op.show"),
+                cancel_tip: t("explorer.op.cancel"),
+            },
+            &close,
+        );
+        // 디자인: 칸 오른쪽에서 space-sm, 상태줄 위로 space-xs 떨어져 뜬다.
+        op_queue_popover(
+            ui,
+            theme,
+            egui::Id::new("explorer_ops_queue_specimen"),
+            egui::pos2(
+                rect.right() - theme.spacing_sm.value(),
+                status.top() - theme.spacing_xs.value(),
+            ),
+            &[
+                QueueRowProps {
+                    title: &queue_copy,
+                    sub: &queue_sub,
+                    running: true,
+                    remove_tip: t("explorer.op.cancel"),
+                },
+                QueueRowProps {
+                    title: &queue_move,
+                    sub: t("explorer.op.queue_waiting"),
+                    running: false,
+                    remove_tip: t("explorer.op.remove_from_queue"),
+                },
+            ],
+            &close,
+            &layers,
+        );
+        let (_, status) = cell(ui, theme, BODY_H);
+        op_status_line(
+            ui,
+            theme,
+            status,
+            &OpStatusProps {
+                fraction: Some(0.5),
+                waiting: true,
+                text: &waiting,
+                bytes: None,
+                queued: None,
+                show_label: t("explorer.op.show"),
+                cancel_tip: t("explorer.op.cancel"),
+            },
+            &close,
+        );
+    });
+    spec::meta(
+        ui,
+        theme,
+        &[
+            ("where", "status line of the explorer that started the job"),
+            (
+                "bar",
+                "explorer-progress-height 2 · top edge · width = bytes done",
+            ),
+            (
+                "label",
+                "Copying|Moving|Moving to Trash i of n · file · caption · ellipsis",
+            ),
+            ("bytes", "mono · unknown size → track only"),
+            ("queued", "Tag +n queued · opens the queue popover"),
+            (
+                "queue",
+                "menu surface · 288 · running (Spinner ×) · queued (layers ×)",
+            ),
+            ("waiting", "accent-warning line + bar · Show"),
+        ],
+        &[
+            TokenChip::without_color("explorer-progress-height", "→ size-2"),
+            TokenChip::new(
+                "explorer-progress-track",
+                "→ surface-raised",
+                theme.explorer_progress_track().to_egui(),
+            ),
+            TokenChip::new(
+                "explorer-progress-fill",
+                "→ accent-primary",
+                theme.explorer_progress_fill().to_egui(),
+            ),
+            TokenChip::new(
+                "accent-warning",
+                "waiting",
+                theme.accent_warning().to_egui(),
+            ),
+        ],
+    );
+}
+
+fn conflict_shell(ui: &mut egui::Ui, theme: &Theme, folder: bool) {
+    egui::Frame::new()
+        .fill(theme.bg_panel().to_egui())
+        .stroke(egui::Stroke::new(
+            theme.border_width.value(),
+            theme.border_strong().to_egui(),
+        ))
+        .corner_radius(theme.corner_radius.value())
+        .shadow(theme.shadow_modal().to_egui())
+        .show(ui, |ui| {
+            ui.set_width(theme.explorer_conflict_width().value());
+            let title = if folder {
+                t_fmt("explorer.conflict.title_folder", "assets")
+            } else {
+                t_fmt("explorer.conflict.title", "report.pdf")
+            };
+            let in_folder = t_fmt("explorer.conflict.in", "~/Documents");
+            let apply_all = t_fmt("explorer.conflict.apply_all", "3");
+            let (existing, incoming) = if folder {
+                (
+                    t_fmt("explorer.conflict.folder_items", "214"),
+                    t_fmt("explorer.conflict.folder_items", "37"),
+                )
+            } else {
+                (
+                    "2.4 MB · 2026-06-24 09:12".to_owned(),
+                    "2.6 MB · 2026-10-09 10:02".to_owned(),
+                )
+            };
+            let props = ConflictProps {
+                title: &title,
+                in_folder: &in_folder,
+                existing_label: t("explorer.conflict.existing"),
+                existing: &existing,
+                incoming_label: t("explorer.conflict.incoming"),
+                incoming: &incoming,
+                no_merge: folder.then(|| t("explorer.conflict.no_merge")),
+                apply_all: (!folder).then_some(apply_all.as_str()),
+                cancel_rest: t("explorer.conflict.cancel_rest"),
+                skip: t("explorer.conflict.skip"),
+                replace: (!folder).then(|| t("explorer.conflict.replace")),
+                keep_both: t("explorer.conflict.keep_both"),
+            };
+            let mut checked = false;
+            // 갤러리 예제는 답을 받지 않는다.
+            if conflict_card(ui, theme, &props, &mut checked).is_some() {
+                ui.ctx().request_repaint();
+            }
+        });
+}
+
+pub fn draw_conflict(ui: &mut egui::Ui, theme: &Theme) {
+    spec::stage(ui, theme, StageVariant::Wrap, |ui| {
+        ui.spacing_mut().item_spacing.x = theme.spacing_lg.value();
+        conflict_shell(ui, theme, false);
+        conflict_shell(ui, theme, true);
+    });
+    spec::meta(
+        ui,
+        theme,
+        &[
+            (
+                "scope",
+                "popup clamped to the explorer cell · scrim over the cell",
+            ),
+            ("width", "explorer-conflict-width 400"),
+            (
+                "title",
+                "14 · “{name}” already exists · caption “in {folder}”",
+            ),
+            ("compare", "Existing / Incoming · mono caption"),
+            (
+                "buttons",
+                "Cancel the rest (ghost, Esc) · Skip · Replace (files only) · Keep both (primary, Enter)",
+            ),
+            ("apply to all", "Checkbox, only when more conflicts remain"),
+            (
+                "focus",
+                "opens only when the explorer has focus · otherwise the status line waits",
+            ),
+        ],
+        &[
+            TokenChip::without_color("explorer-conflict-width", "→ size-400"),
+            TokenChip::new("scrim-bg", "cell dim", theme.scrim().to_egui()),
+        ],
+    );
+}
+
+pub fn draw_results(ui: &mut egui::Ui, theme: &Theme) {
+    let close = glyph_painter(icons::CLOSE);
+    let w = theme.toast_max_width().value();
+    let card = |ui: &mut egui::Ui,
+                kind: ToastKind,
+                title: &str,
+                lines: &[ResultLine<'_>],
+                more: Option<&str>,
+                actions: &[ResultAction<'_>]| {
+        result_card(
+            ui,
+            theme,
+            w,
+            &ResultCardProps {
+                kind,
+                title,
+                lines,
+                more,
+                actions,
+                dismiss_tip: t("explorer.result.dismiss"),
+            },
+            &close,
+        );
+    };
+    let retry3 = t_fmt("explorer.result.retry", "3");
+    let retry12 = t_fmt("explorer.result.retry", "12");
+    let copy_paths = t("explorer.result.copy_paths");
+    let not_removed = t_fmt(
+        "explorer.result.source_not_removed",
+        "Device or resource busy (os error 16)",
+    );
+    let failure_actions = |retry: &str| {
+        [
+            (retry.to_owned(), ButtonVariant::Secondary),
+            (copy_paths.to_owned(), ButtonVariant::Ghost),
+        ]
+    };
+    spec::stage(ui, theme, StageVariant::Column, |ui| {
+        ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
+        card(
+            ui,
+            ToastKind::Success,
+            &t_fmt2("explorer.result.copied", "40", "Documents"),
+            &[],
+            None,
+            &[ResultAction {
+                label: t("explorer.result.undo"),
+                variant: ButtonVariant::Ghost,
+            }],
+        );
+        card(
+            ui,
+            ToastKind::Info,
+            &t_fmt2("explorer.result.cancelled_copy", "12", "40"),
+            &[],
+            None,
+            &[],
+        );
+        let acts = failure_actions(&retry3);
+        card(
+            ui,
+            ToastKind::Warning,
+            &t_args("explorer.result.partial_move", &["37", "40", "3"]),
+            &[
+                ResultLine {
+                    path: "~/Downloads/build/artifacts/app-release-unsigned.apk",
+                    reason: "Permission denied (os error 13)",
+                },
+                ResultLine {
+                    path: "~/Downloads/archive.zip",
+                    reason: &not_removed,
+                },
+                ResultLine {
+                    path: "~/Downloads/raw/IMG_2031.heic",
+                    reason: "No space left on device (os error 28)",
+                },
+            ],
+            None,
+            &acts.each_ref().map(|(label, variant)| ResultAction {
+                label,
+                variant: *variant,
+            }),
+        );
+        let acts = failure_actions(&retry12);
+        card(
+            ui,
+            ToastKind::Error,
+            &t_fmt("explorer.result.failed_copy", "12"),
+            &[ResultLine {
+                path: "~/Downloads/raw/IMG_2030.heic",
+                reason: "No space left on device (os error 28)",
+            }],
+            Some(&t_fmt("explorer.result.more", "11")),
+            &acts.each_ref().map(|(label, variant)| ResultAction {
+                label,
+                variant: *variant,
+            }),
+        );
+        card(
+            ui,
+            ToastKind::Error,
+            t("explorer.trash.unavailable"),
+            &[],
+            None,
+            &[],
+        );
+        card(
+            ui,
+            ToastKind::Warning,
+            &t_fmt("explorer.result.undo_partial_move", "2"),
+            &[ResultLine {
+                path: "~/Documents/report.pdf",
+                reason: t("explorer.result.newer_there"),
+            }],
+            Some(&t_fmt("explorer.result.more", "1")),
+            &[],
+        );
+    });
+    spec::meta(
+        ui,
+        theme,
+        &[
+            (
+                "placement",
+                "inside the cell · bottom-right · above the status line · stack upward",
+            ),
+            ("done", "success · Undo (ghost) · standard time"),
+            ("cancelled", "info · standard time"),
+            (
+                "partial / failed",
+                "warning / danger · stays · ≤ 3 paths + and n more · Retry n · Copy paths",
+            ),
+            (
+                "path",
+                "mono caption · ellipsis at the front · reason under it (muted)",
+            ),
+            ("trash unavailable", "danger · no fallback"),
+            ("dismiss", "× on every result"),
+        ],
+        &[
+            TokenChip::new(
+                "toast-accent-success",
+                "done",
+                theme.toast_accent_success().to_egui(),
+            ),
+            TokenChip::new(
+                "toast-accent-warning",
+                "partial",
+                theme.toast_accent_warning().to_egui(),
+            ),
+            TokenChip::new(
+                "toast-accent-danger",
+                "failed",
+                theme.toast_accent_danger().to_egui(),
+            ),
+            TokenChip::without_color("toast-max-width", "320"),
+        ],
+    );
+}
+
+pub fn draw_drag(ui: &mut egui::Ui, theme: &Theme) {
+    let items = t_fmt("explorer.drag.items", "3");
+    let move_to = t_fmt("explorer.drag.move_to", "Archive");
+    let copy_to = t_fmt("explorer.drag.copy_to", "Backup");
+    let refused_reason = t_fmt(
+        "explorer.drag.refused_reason",
+        t("explorer.drag.into_itself"),
+    );
+    let file = glyph_painter(icons::FILE);
+    let layers = glyph_painter(icons::LAYERS);
+    let moved = glyph_painter(icons::MOVE);
+    let plus = glyph_painter(icons::PLUS);
+    let close = glyph_painter(icons::CLOSE);
+    spec::stage(ui, theme, StageVariant::Wrap, |ui| {
+        ui.spacing_mut().item_spacing.x = theme.spacing_lg.value();
+        drag_chip(
+            ui,
+            theme,
+            &DragChipProps {
+                label: "report.pdf",
+                line: &move_to,
+                reason: None,
+                op: DragOp::Move,
+            },
+            &file,
+            &moved,
+        );
+        drag_chip(
+            ui,
+            theme,
+            &DragChipProps {
+                label: &items,
+                line: &copy_to,
+                reason: None,
+                op: DragOp::Copy,
+            },
+            &layers,
+            &plus,
+        );
+        drag_chip(
+            ui,
+            theme,
+            &DragChipProps {
+                label: "src",
+                line: t("explorer.drag.refused"),
+                reason: Some(&refused_reason),
+                op: DragOp::Refused,
+            },
+            &file,
+            &close,
+        );
+        let (row, _) = ui.allocate_exact_size(
+            egui::vec2(ROW_W.value(), theme.item_height_interactive.value()),
+            egui::Sense::hover(),
+        );
+        paint_drop_target(ui.painter(), theme, row, theme.corner_radius.value());
+        let g = theme.icon_glyph_size_sm.value();
+        let glyph = egui::Rect::from_center_size(
+            egui::pos2(
+                row.left() + theme.spacing_sm.value() + g / 2.0,
+                row.center().y,
+            ),
+            egui::vec2(g, g),
+        );
+        icons::FOLDER
+            .image(g, theme.text_muted().to_egui())
+            .paint_at(ui, glyph);
+        ui.painter().text(
+            egui::pos2(glyph.right() + theme.spacing_sm.value(), row.center().y),
+            egui::Align2::LEFT_CENTER,
+            "Archive",
+            egui::FontId::proportional(theme.font_size_body.value()),
+            theme.text_primary().to_egui(),
+        );
+    });
+    spec::meta(
+        ui,
+        theme,
+        &[
+            (
+                "chip",
+                "surface-raised · 1px border-strong · shadow-popover · max 240 · pointer +12 / +12",
+            ),
+            ("line 2", "caption · op glyph · op colour · target folder"),
+            (
+                "default op",
+                "same disk → move · other disk → copy · modifier flips",
+            ),
+            (
+                "refused",
+                "onto itself / own subfolder · already there · remote · no write access",
+            ),
+            ("target", "inset 1px ring + tint fill · no layout change"),
+            ("closed tree folder", "expands after 800 ms hover"),
+            (
+                "OS files",
+                "copied into the folder · window drop overlay not drawn over explorer cells",
+            ),
+        ],
+        &[
+            TokenChip::new(
+                "explorer-drag-move-fg",
+                "→ accent-primary",
+                theme.explorer_drag_move_fg().to_egui(),
+            ),
+            TokenChip::new(
+                "explorer-drag-copy-fg",
+                "→ accent-success",
+                theme.explorer_drag_copy_fg().to_egui(),
+            ),
+            TokenChip::new(
+                "explorer-drag-refused-fg",
+                "→ accent-danger",
+                theme.explorer_drag_refused_fg().to_egui(),
+            ),
+            TokenChip::new(
+                "explorer-drop-target-bg",
+                "accent-primary × tint-fill-alpha",
+                theme.explorer_drop_target_bg().to_egui(),
+            ),
+            TokenChip::without_color("explorer-drag-chip-max-width", "→ size-240"),
+        ],
+    );
+}

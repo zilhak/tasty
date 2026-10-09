@@ -16,6 +16,7 @@ pub mod empty_surface;
 pub mod explorer_context_menu;
 pub mod explorer_favorite_popup;
 pub mod explorer_file_info;
+pub mod explorer_jobs;
 pub mod explorer_ops;
 pub mod explorer_rename_popup;
 pub mod explorer_sidebar;
