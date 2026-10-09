@@ -13,7 +13,8 @@ const { ic, Icon, Scrim } = window.TastyKit;
 // folder's tasty-plugin.toml + signature, and copies it into ~/.tasty/plugins.
 const PLUGIN_LIST = [
   { id: "git-helper", name: "git-helper", author: "tasty-labs", version: "1.4.2", cat: "Source control",
-    installed: true, status: "running", agent: false, installs: "126k", rating: "4.9",
+    installed: true, status: "running", agent: false, installs: "126k", rating: "4.9", builtin: true,
+    homepage: "https://github.com/zilhak/tasty-git-helper", kinds: ["git-blame", "git-branches"],
     desc: "Inline git status, blame, and one-key staging inside any terminal surface. Adds a gutter ribbon and a compact branch switcher to the tab strip.",
     perms: ["fs:read", "clipboard", "ipc:git-helper.*"], cmd: "git-helper: open panel", key: "Ctrl+Alt+G" },
   { id: "ai-review", name: "ai-review", author: "tasty-labs", version: "0.9.0", cat: "AI",
@@ -87,6 +88,12 @@ const ATTENTION_LIST = [
 // FIXED bed, so the mark reads the same on default / hover / selected rows, and
 // the colour never varies by plugin: a manifest has no category field, so the
 // mark carries identity (the initial), not classification.
+// 2026-10-09 — keycap rule: split the manifest chord on "+", trim, Title-case each part
+// (single letters upper-case). macOS draws the modifiers as ⌘ ⌥ ⇧ ⌃ (Kbd does this per platform).
+function kbdKeys(chord) {
+  return String(chord).split("+").map((k) => k.trim()).filter(Boolean)
+    .map((k) => k.length === 1 ? k.toUpperCase() : k.charAt(0).toUpperCase() + k.slice(1).toLowerCase());
+}
 function PluginAvatar({ plugin, size = "sm" }) {
   const lg = size === "lg";
   return (
@@ -358,18 +365,18 @@ function AttentionPanel({ items, onFlash, onConfigure }) {
             <PluginAvatar plugin={sel} size="lg" />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                <span style={{ fontSize: "var(--tasty-font-size-max)", fontWeight: "var(--tasty-font-weight-semibold)", color: "var(--tasty-text-primary)" }}>{sel.name}</span>
+                <span style={{ fontSize: "var(--tasty-font-size-max)", fontWeight: "var(--tasty-font-weight-normal)", color: "var(--tasty-text-primary)" }}>{sel.name}</span>
                 <Tag>{"v" + sel.version}</Tag>
                 {sel.builtin && <Tag>built-in</Tag>}
               </div>
               <div style={{ marginTop: 4, fontFamily: "var(--tasty-font-mono)", fontSize: 11, color: "var(--tasty-text-muted)",
                 display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                <span>{sel.author}</span><span>·</span><span>{sel.cat}</span>
+                {sel.author && <><span>{sel.author}</span><span>·</span></>}<span>{sel.id}</span>
               </div>
             </div>
           </div>
 
-          {sel.desc && <p style={{ margin: 0, fontSize: 13, lineHeight: 1.6,
+          {sel.desc && <p style={{ margin: 0, fontSize: 13, lineHeight: "var(--tasty-line-height-ui)",
             color: "var(--tasty-text-secondary)", maxWidth: "var(--tasty-measure-lg)" }}>{sel.desc}</p>}
 
           {/* reason banner */}
@@ -461,6 +468,7 @@ function PluginsWindow({ onClose, onFlash, onConfigure }) {
   const [enabled, setEnabled] = React.useState(() =>
     Object.fromEntries(PLUGIN_LIST.map((p) => [p.id, p.installed && p.status !== "idle"])));
   const [selId, setSelId] = React.useState("git-helper");
+  const [confirmId, setConfirmId] = React.useState(null); // uninstall confirm is bound to one plugin id
 
   const matches = (p) => {
     const n = q.trim().toLowerCase();
@@ -533,19 +541,22 @@ function PluginsWindow({ onClose, onFlash, onConfigure }) {
             <PluginAvatar plugin={sel} size="lg" />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                <span style={{ fontSize: "var(--tasty-font-size-max)", fontWeight: "var(--tasty-font-weight-semibold)", color: "var(--tasty-text-primary)" }}>{sel.name}</span>
+                <span style={{ fontSize: "var(--tasty-font-size-max)", fontWeight: "var(--tasty-font-weight-normal)", color: "var(--tasty-text-primary)" }}>{sel.name}</span>
                 <Tag>{"v" + sel.version}</Tag>
+                {sel.builtin && <Tag>built-in</Tag>}
                 {sel.agent && <Tag variant="agent">agent</Tag>}
               </div>
+              {/* 2026-10-09 — meta: author(s) · plugin id · homepage link (each optional; id always present) */}
               <div style={{ marginTop: 4, fontFamily: "var(--tasty-font-mono)", fontSize: 11, color: "var(--tasty-text-muted)",
                 display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                <span>{sel.author}</span><span>·</span><span>{sel.cat}</span>
+                {sel.author && <><span>{sel.author}</span><span>·</span></>}<span>{sel.id}</span>
+                {sel.homepage && <><span>·</span><a href={sel.homepage} target="_blank" rel="noreferrer" style={{ color: "var(--tasty-accent-primary)", textDecoration: "underline", textUnderlineOffset: 2 }}>{sel.homepage.replace(/^https?:\/\//, "")}</a></>}
               </div>
             </div>
 
           </div>
 
-          <p style={{ margin: 0, fontSize: 13, lineHeight: 1.6, color: "var(--tasty-text-secondary)", maxWidth: "var(--tasty-measure-lg)" }}>{sel.desc}</p>
+          <p style={{ margin: 0, fontSize: 13, lineHeight: "var(--tasty-line-height-ui)", color: "var(--tasty-text-secondary)", maxWidth: "var(--tasty-measure-lg)" }}>{sel.desc}</p>
 
           {sel.status === "error" && isInstalled && isOn && (
             <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "var(--tasty-space-sm) var(--tasty-space-md)",
@@ -568,9 +579,18 @@ function PluginsWindow({ onClose, onFlash, onConfigure }) {
             <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-sm)" }}>
               <Mono>Command</Mono>
               <div style={{ display: "flex", alignItems: "center", gap: 16, minHeight: "var(--tasty-settings-row-min-height)",
-                borderBottom: "var(--tasty-border-width) solid var(--tasty-separator)", paddingBottom: 7 }}>
+                borderBottom: "var(--tasty-border-width) solid var(--tasty-separator)" }}>
                 <span style={{ flex: 1, fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-term-sm)", color: "var(--tasty-text-secondary)" }}>{sel.cmd}</span>
-                {sel.key && <Kbd keys={sel.key} />}
+                {sel.key && <Kbd keys={kbdKeys(sel.key)} />}
+              </div>
+            </div>
+          )}
+
+          {sel.kinds && sel.kinds.length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-sm)" }}>
+              <Mono>Surface kinds</Mono>
+              <div style={{ display: "flex", gap: "var(--tasty-space-sm)", flexWrap: "wrap" }}>
+                {sel.kinds.map((k) => <Tag key={k}>{k}</Tag>)}
               </div>
             </div>
           )}
@@ -596,7 +616,21 @@ function PluginsWindow({ onClose, onFlash, onConfigure }) {
         {/* action bar */}
         <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", padding: "var(--tasty-space-md) var(--tasty-size-14)",
           borderTop: "var(--tasty-border-width) solid var(--tasty-separator)", flex: "none" }}>
-          {isInstalled && (
+          {isInstalled && confirmId === sel.id && (
+            <>
+              {/* 2026-10-09 — uninstall confirm REPLACES the bar contents in place (same bar, same height). */}
+              <span style={{ display: "inline-flex", flex: "none", color: "var(--tasty-accent-attention)" }}><Icon name="alertTriangle" size={16} /></span>
+              <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
+                <span style={{ fontSize: "var(--tasty-font-size-body)", color: "var(--tasty-text-primary)" }}>Uninstall {sel.name}?</span>
+                <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>
+                  {sel.builtin ? "Built-in — it won't be installed again on the next launch." : "Its files are removed. Settings stay until you delete them."}
+                </span>
+              </div>
+              <Button variant="ghost" onClick={() => setConfirmId(null)}>Cancel</Button>
+              <Button variant="danger" onClick={() => { setConfirmId(null); uninstall(sel); }}>Uninstall</Button>
+            </>
+          )}
+          {isInstalled && confirmId !== sel.id && (
             <>
               <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
                 <Switch checked={isOn} onChange={() => toggleEnabled(sel)} />
@@ -605,7 +639,7 @@ function PluginsWindow({ onClose, onFlash, onConfigure }) {
               <div style={{ flex: 1 }} />
               <Button variant="ghost" leadingIcon={ic.settings}
                 onClick={() => onConfigure && onConfigure()}>Configure</Button>
-              <Button variant="secondary" onClick={() => uninstall(sel)}
+              <Button variant="secondary" onClick={() => setConfirmId(sel.id)}
                 style={{ color: "var(--tasty-accent-danger)" }}>Uninstall</Button>
             </>
           )}

@@ -9,7 +9,8 @@ export type IconName =
   | "eye" | "eyeOff" | "lock"
   | "alertTriangle" | "alertCircle" | "helpCircle" | "shieldCheck" | "bell"
   | "tools" | "settings" | "plug" | "rocket" | "command" | "theme" | "keyboard" | "mouse" | "sun" | "hash"
-  | "cmdKey" | "optionKey" | "shiftKey";
+  | "cmdKey" | "optionKey" | "shiftKey"
+  | "folderPlus" | "filePlus" | "info";
 
 export interface IconProps extends React.SVGAttributes<SVGSVGElement> {
   /** Which canonical glyph to render (see IconName). */

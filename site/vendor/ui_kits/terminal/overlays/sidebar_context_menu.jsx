@@ -9,7 +9,9 @@
 //   workspace_category.collapse       — "접기"
 //   workspace_category.expand         — "펼치기"
 // Existing keys reused: new_category / rename_category / delete_category / move_to_category.
-const { MenuItem, Icon } = window.TastyDesignSystem_41fd3f;
+const { MenuItem } = window.TastyDesignSystem_41fd3f;
+// Resolved at render (see chrome.jsx DSIcon): the module-level `cx` map must not capture an undefined Icon.
+const Icon = (p) => React.createElement(window.TastyDesignSystem_41fd3f.Icon, p);
 
 // glyphs by name from the canonical set (icons/*.svg via <Icon name>)
 const cx = {

@@ -111,6 +111,9 @@ export const ICON_PATHS = {
   cmdKey: '<path d="M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3"/>',
   optionKey: '<path d="M3 18h5.5L16 6H21"/><path d="M3 6h5"/>',
   shiftKey: '<path d="M12 3 4 11h4v10h8V11h4z"/>',
+  folderPlus: '<path d="M4 20h16a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1h-7l-2-2H4a1 1 0 0 0-1 1v13a1 1 0 0 0 1 1z"/><path d="M12 10v6M9 13h6"/>',
+  filePlus: '<path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z"/><path d="M12 11v6M9 14h6"/>',
+  info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>',
 };
 
 /** Sorted list of available glyph names. */

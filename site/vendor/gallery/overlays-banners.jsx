@@ -33,6 +33,36 @@ function AttachRefusalBannerG({ kind = "self" }) {
     </BannerShellG>
   );
 }
+// 2026-10-09 — attach mirror terminal-size sync failed (after the one automatic retry). Same family as the refusal banner:
+// warning glyph · title · muted body · banner-button action · × dismiss. Several failed surfaces → ONE card, "N surfaces".
+function AttachSizeSyncBannerG({ names = ["build"], retrying = false }) {
+  const { Spinner: BSpinner } = window.TastyDesignSystem_41fd3f;
+  const many = names.length > 1;
+  const shown = names.slice(0, 2);
+  const rest = names.length - shown.length;
+  const nameCss = { display: "inline-block", maxWidth: "var(--tasty-attach-sync-name-max-width)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", verticalAlign: "bottom", color: "var(--tasty-text-secondary)" };
+  return (
+    <BannerShellG>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: "var(--tasty-banner-gap)", padding: "var(--tasty-banner-padding-y) var(--tasty-banner-padding-x)" }}>
+        <span style={{ display: "inline-flex", flex: "none", marginTop: "var(--tasty-banner-glyph-offset)", color: "var(--tasty-attach-sync-glyph)" }}><BIcon name="alertTriangle" size="var(--tasty-icon-size-md)" /></span>
+        <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: "var(--tasty-banner-text-gap)" }}>
+          <span style={{ fontSize: "var(--tasty-banner-title-font-size)", fontWeight: "var(--tasty-font-weight-semibold)" }}>Couldn't sync the terminal size with the remote</span>
+          <span style={{ fontSize: "var(--tasty-banner-body-font-size)", color: "var(--tasty-text-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            {many ? <>{names.length} surfaces — </> : null}
+            {shown.map((n, i) => <React.Fragment key={n}>{i > 0 ? ", " : ""}<span style={nameCss}>{n}</span></React.Fragment>)}
+            {rest > 0 ? <> +{rest}</> : null}
+            {" · The remote may still be using the old size."}
+          </span>
+        </div>
+        <span style={{ flex: "none", display: "flex", gap: "var(--tasty-space-xs)", alignItems: "center" }}>
+          <BButton variant="secondary" size="sm" disabled={retrying} leadingIcon={retrying ? <BSpinner size="var(--tasty-icon-size-sm)" /> : undefined}
+            style={retrying ? undefined : { background: "var(--tasty-banner-button-bg)", borderColor: "var(--tasty-banner-button-border)" }}>{many ? "Retry all" : "Retry"}</BButton>
+          <IconButton size="sm" aria-label="Dismiss">{ic.x}</IconButton>
+        </span>
+      </div>
+    </BannerShellG>
+  );
+}
 function RefusalRowG({ name, active, refused, move, ni, done }) {
   return (
     <div title={refused ? "Remote not attached — 127.0.0.1:7420 points at this Tasty." : undefined} style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", height: "var(--tasty-size-28)", padding: "0 var(--tasty-space-sm)", borderRadius: "var(--tasty-radius-sm)",
@@ -72,6 +102,7 @@ const NAV = [
   { id: "blacklist", label: "Capture blacklist" },
   { id: "htmlscript", label: "HTML script notice" },
   { id: "attachrefusal", label: "Auto-attach refused" },
+  { id: "attachsizesync", label: "Attach size sync failed" },
 ];
 
 function Page() {
@@ -378,6 +409,27 @@ function Page() {
           <Meta
             specs={[["rail chip", "top-left · 12 · alertTriangle 8 · accent-warning on bg-sidebar"], ["rail corners", "TR attention dot · BR mirror · BL move · TL refusal — no priority"], ["row order", "name · move · refusal · badges"], ["row gap", "space-sm (row item spacing)"], ["tooltip", "same as the row · not clickable"]]}
             tokens={[{ tok: "--tasty-attach-refusal-glyph", use: "→ accent-warning", color: "var(--tasty-attach-refusal-glyph)" }, { tok: "--tasty-attach-refusal-chip-size", use: "→ move-source-chip-size 12" }, { tok: "--tasty-attach-refusal-chip-glyph-size", use: "→ move-source-chip-glyph-size 8" }]} />
+        </Spec>
+      </Section>
+      <Section id="attachsizesync" title="Attach mirror — terminal size sync failed (2026-10-09)">
+        <Spec title="Workspace banner · default · retrying · several surfaces"
+          when={<>An attached mirror asks the remote to resize each terminal to the local pane. When the remote does not answer within 5 s (or refuses) Tasty retries <b>once</b> on its own; if that also fails this banner appears in the <b>mirror workspace</b> that owns the surface. Same family as the refusal banner: <b>alertTriangle</b> in accent-warning, a semibold title, one muted body line, one banner-button action and the <b>×</b> dismiss. <b>Retry</b> re-sends only the failed surfaces' size requests (the connection and other surfaces are untouched). While waiting the button is <b>disabled with a leading Spinner</b> and keeps its label, so the width does not jump between languages; success removes the banner, failure returns it to the default state. <b>Several surfaces</b> failing together share <b>one card</b>: “N surfaces — a, b +n”, and the action reads <b>Retry all</b>. The banner also clears by itself when a later resize succeeds. A reconnecting mirror shows the reconnect notice instead (it wins the slot). Queue rules are the normal Workspace-scope ones: one card per scope.</>}>
+          <Stage variant="solo" style={{ padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-app)", gap: "var(--tasty-space-lg)", flexWrap: "wrap", alignItems: "flex-start" }}>
+            {[["Mocha", null], ["Latte", "latte"]].map(([label, th]) => (
+              <div key={label} {...(th ? { "data-theme": th } : {})} style={{ width: "var(--tasty-size-460)", display: "flex", flexDirection: "column", gap: "var(--tasty-space-sm)", padding: "var(--tasty-space-md)", background: "var(--tasty-bg-app)", border: "var(--tasty-border-width) solid var(--tasty-border-default)", borderRadius: "var(--tasty-radius)" }}>
+                <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>{label} — default</span>
+                <AttachSizeSyncBannerG names={["build"]} />
+                <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>retrying (≤ 5 s)</span>
+                <AttachSizeSyncBannerG names={["build"]} retrying />
+                <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>3 surfaces · long tab title truncated</span>
+                <AttachSizeSyncBannerG names={["release-pipeline-watch-logs-eu-west", "build", "tests"]} />
+              </div>
+            ))}
+          </Stage>
+          <Meta
+            specs={[["boxes", "glyph 16 · text column (flex 1) · action group (Retry + ×, gap 4)"], ["glyph", "alertTriangle 16 · attach-sync-glyph → accent-warning (same as refusal)"], ["title", "banner-title 13 · semibold · never truncated"], ["body", "banner-body 11 · muted · one line · {names} · The remote may still be using the old size."], ["name", "text-secondary · each name ellipsis at attach-sync-name-max-width 160; first two names, then +n; the fixed copy is never cut"], ["retrying", "Retry disabled + leading Spinner 14, label unchanged"], ["many", "one card · “N surfaces — a, b +n” · Retry all"], ["×", "IconButton sm · hides this card; a new failure shows it again"], ["clears", "Retry success · later resize success · surface closed"], ["priority", "reconnect notice wins the slot"]]}
+            tokens={[{ tok: "--tasty-attach-sync-glyph", use: "→ accent-warning", color: "var(--tasty-attach-sync-glyph)" }, { tok: "--tasty-attach-sync-name-max-width", use: "→ size-160" }, { tok: "--tasty-banner-button-bg", use: "Retry", color: "var(--tasty-banner-button-bg)" }, { tok: "--tasty-spinner-indicator", use: "retrying", color: "var(--tasty-spinner-indicator)" }]} />
+          <Note>Strings (en): <code>remote.size_sync.title</code> “Couldn't sync the terminal size with the remote” · <code>remote.size_sync.body</code> “{"{names}"} · The remote may still be using the old size.” · <code>remote.size_sync.many</code> “{"{n}"} surfaces — {"{names}"}” · <code>remote.size_sync.retry</code> “Retry” · <code>remote.size_sync.retry_all</code> “Retry all”. Under <span className="tok">--tasty-banner-narrow-below</span> the action group wraps under the text like every banner.</Note>
         </Spec>
       </Section>
     </>

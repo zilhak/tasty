@@ -49,6 +49,8 @@ const PAIRS: &[(&str, &str)] = &[
     ("folder", "folder"),
     ("folderOpen", "folder_open"),
     ("file", "file"),
+    ("folderPlus", "folder_plus"),
+    ("filePlus", "file_plus"),
     ("image", "image"),
     ("list", "log"),
     ("layoutGrid", "layout_grid"),
@@ -69,6 +71,7 @@ const PAIRS: &[(&str, &str)] = &[
     ("alertTriangle", "alert_triangle"),
     ("alertCircle", "alert_circle"),
     ("helpCircle", "help_circle"),
+    ("info", "info"),
     ("shieldCheck", "shield_check"),
     ("bell", "bell"),
     ("tools", "tools"),
@@ -87,16 +90,7 @@ const PAIRS: &[(&str, &str)] = &[
 ];
 
 /// 앱에만 있는 아이콘. 사이트 사본에도 추가되면 PAIRS로 옮긴다.
-const APP_ONLY: &[&str] = &[
-    "arrow_down",
-    "arrow_right",
-    "file_plus",
-    "folder_plus",
-    "info",
-    "minus",
-    "redo",
-    "undo",
-];
+const APP_ONLY: &[&str] = &["arrow_down", "arrow_right", "minus", "redo", "undo"];
 
 /// 채운 글리프 — 사이트 `FILL_GLYPHS` 와 앱 `fill_icon!` 이 같은 집합을 가리켜야 한다.
 /// 사이트 이름으로 적는다.

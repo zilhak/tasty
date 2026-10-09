@@ -98,7 +98,7 @@ function KbPluginsSubtab({ plugins = KBP_PLUGINS, saved = { "clipboard-viewer/cl
   const [pid, setPid] = React.useState(initial || (plugins[0] && plugins[0].id));
   const [drafts, setDrafts] = React.useState(() => ({ ...saved, ...(seedDrafts || {}) }));
   if (!plugins.length)
-    return <p style={{ margin: 0, fontSize: 12, color: "var(--tasty-text-muted)" }}>No plugins have registered shortcuts.</p>;
+    return <p style={{ margin: 0, fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>No plugins have registered shortcuts.</p>;
   const sorted = plugins.slice().sort((a, b) => a.name.localeCompare(b.name));
   const plugin = sorted.find((p) => p.id === pid) || sorted[0];
   const set = (k, val) => setDrafts((d) => { const n = { ...d }; if (val == null) delete n[k]; else n[k] = val; return n; });

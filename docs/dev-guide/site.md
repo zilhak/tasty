@@ -130,7 +130,7 @@ npm run stamp content/en/index.md
 | `/ko/guide/**` | 한국어 가이드 (`site/content/**.md`, canonical) |
 | `/design/` · `/ko/design/` | 디자인 가이드라인 (브랜드 · 색 · 타이포 · 간격). 크롬만 이중언어고 싣는 문서는 같다 |
 | `/design/tokens/` · `/ko/design/tokens/` | 3티어 토큰 문서 |
-| `/design/gallery/**` | 레퍼런스 갤러리 12 페이지. 갤러리 자체 크롬을 쓰므로 언어별로 나누지 않는다 |
+| `/design/gallery/**` | 레퍼런스 갤러리 13 페이지. 갤러리 자체 크롬을 쓰므로 언어별로 나누지 않는다 |
 | `/design/cards/*.html` | 가이드라인 원본 문서. 페이지가 iframe 으로 싣는다 (생성물) |
 | `/search-index.json` (en) · `/search-index.ko.json` | 검색 인덱스 |
 
@@ -341,7 +341,7 @@ Plugins · Ports · Remote · 커맨드 팔레트를 연다. 페이지이기 때
   iframe 으로 싣는다. 선언한 뷰포트는 상한이 아니라 **하한**이다 — 프레임은 컬럼을 채우되
   그 폭 아래로는 안 내려가고, 좁으면 가로로 스크롤한다(두 줄로 접힌 색 램프는 램프가 아니다).
   `data-theme` 을 스스로 박은 카드(Latte 계열)는 그대로 두고, 나머지는 사이트 테마를 따른다.
-- **갤러리** (`/design/gallery/**`) — `vendor/gallery/*.jsx` 12 페이지. 살아 있는 표본이라
+- **갤러리** (`/design/gallery/**`) — `vendor/gallery/*.jsx` 13 페이지. 살아 있는 표본이라
   호버 · 포커스 · 열고 닫기가 실제로 동작하고, 각 표본이 레이아웃 스펙과 소비하는 토큰을
   함께 적는다. 갤러리는 자기 크롬(좌측 레일 · 상단 토글)을 가진 **애플리케이션**이라 사이트
   문서 레이아웃에 얹지 않는다 — 내비게이션과 스크롤바가 둘씩 생기고, `gallery.css` 가

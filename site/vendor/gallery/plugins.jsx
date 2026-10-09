@@ -437,11 +437,11 @@ function CtxMenu({ title, children }) {
 
 // 2026-10-07 batch 4 — compact: content body under --tasty-explorer-state-compact-below (120) → one row:
 // glyph (unscaled 16) · title (ellipsis; reason / sub move to its tooltip) · actions. Retry / Go up stay.
-function ExpState({ glyph, glyphColor, title, sub, reason, actions, compact, bodyHeight }) {
-  const titleFg = glyphColor === "var(--tasty-accent-warning)" || glyphColor === "var(--tasty-explorer-error-fg)" ? glyphColor : "var(--tasty-text-secondary)";
+function ExpState({ glyph, glyphColor, title, sub, reason, actions, compact, bodyHeight, bg }) {
+  const titleFg = glyphColor === "var(--tasty-accent-warning)" || glyphColor === "var(--tasty-explorer-error-fg)" || glyphColor === "var(--tasty-image-error-fg)" ? glyphColor : "var(--tasty-text-secondary)";
   if (compact) return (
     <div style={{ flex: 1, minWidth: 0, height: bodyHeight || 62, display: "flex", alignItems: "center", justifyContent: "center", boxSizing: "border-box",
-      background: "var(--tasty-bg-panel)", border: "1px solid var(--tasty-separator)", borderRadius: "var(--tasty-radius)", padding: "0 var(--tasty-space-sm)" }}>
+      background: bg || "var(--tasty-bg-panel)", border: "1px solid var(--tasty-separator)", borderRadius: "var(--tasty-radius)", padding: "0 var(--tasty-space-sm)" }}>
       <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", minWidth: 0, maxWidth: "100%" }}>
         <span style={{ display: "inline-flex", flex: "none", color: glyphColor || "var(--tasty-text-muted)" }}>{glyph}</span>
         <span title={reason || sub} style={{ minWidth: 0, fontSize: 13, color: titleFg, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{title}</span>
@@ -451,7 +451,7 @@ function ExpState({ glyph, glyphColor, title, sub, reason, actions, compact, bod
   );
   return (
     <div style={{ flex: 1, minWidth: 0, height: 180, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8,
-      background: "var(--tasty-bg-panel)", border: "1px solid var(--tasty-separator)", borderRadius: "var(--tasty-radius)", textAlign: "center", padding: 16 }}>
+      background: bg || "var(--tasty-bg-panel)", border: "1px solid var(--tasty-separator)", borderRadius: "var(--tasty-radius)", textAlign: "center", padding: 16 }}>
       <span style={{ display: "inline-flex", color: glyphColor || "var(--tasty-text-muted)", transform: "scale(1.6)" }}>{glyph}</span>
       <div style={{ fontSize: 13, color: titleFg }}>{title}</div>
       {sub && <div style={{ fontSize: 11, color: "var(--tasty-text-muted)", maxWidth: 200 }}>{sub}</div>}
@@ -946,7 +946,7 @@ function Page() {
         </Spec>
 
         <Spec title="Short cell — Favorites drops below 240, the cell stops at 180 (2026-10-07 · floor 2026-10-08)"
-          when={<>When the explorer is split low, the sidebar body can be shorter than the Favorites floor. Below <b>240</b> (<span className="tok">--tasty-explorer-favorites-hide-below</span> = the 120 Favorites floor + 120 for Files) the <b>Favorites region is not drawn</b> and Files takes the whole body; it comes back as soon as the body reaches 240 again. The explorer cell itself has a floor: the split drag stops at <b>180</b> (<span className="tok">--tasty-explorer-min-height</span>). <b>2026-10-08</b>: the old 160 counted toolbar + status line + two rows but left out the internal tab bar and the Detail header, so the app showed only <code>..</code> at the floor. 180 is the full stack, top to bottom: internal tabs 28 · toolbar 44 · Detail header 28 · <b>two rows</b> 56 · status line 24. The explorer's internal layout does not change at the floor (no smaller header or status line); the floor follows the stack. The status line always has its place and Detail shows two rows. Nothing is cut mid-row. <b>Outside a drag (2026-10-07 batch 4)</b>: a <b>split</b> (<code>tasty split</code> or the split menu) that would leave an explorer cell under the floor places the new divider so the explorer keeps 180 and the sibling takes the rest; when the sibling would then fall under its own minimum, the split is refused (no change). A <b>window resize</b> does not hold the floor — the cell may shrink below 160. <b>Short body</b>: when the content body is under <b>120</b> (<span className="tok">--tasty-explorer-state-compact-below</span>) every status screen switches to a <b>one-line compact row</b> — 16px glyph, title (ellipsis), and the state's buttons; the OS reason and the sub line move to the title tooltip. Retry and Go up stay on the row. Nothing is clipped.</>}>
+          when={<>When the explorer is split low, the sidebar body can be shorter than the Favorites floor. Below <b>240</b> (<span className="tok">--tasty-explorer-favorites-hide-below</span> = the 120 Favorites floor + 120 for Files) the <b>Favorites region is not drawn</b> and Files takes the whole body; it comes back as soon as the body reaches 240 again. The explorer cell itself has a floor: the split drag stops at <b>180</b> (<span className="tok">--tasty-explorer-min-height</span>). <b>2026-10-08</b>: the old 160 counted toolbar + status line + two rows but left out the internal tab bar and the Detail header, so the app showed only <code>..</code> at the floor. 180 is the full stack, top to bottom: internal tabs 28 · toolbar 44 · Detail header 28 · <b>two rows</b> 56 · status line 24. The explorer's internal layout does not change at the floor (no smaller header or status line); the floor follows the stack. The status line always has its place and Detail shows two rows. Nothing is cut mid-row. <b>Outside a drag (2026-10-09 wording)</b>: a <b>split</b> (<code>tasty split</code> or the split menu) that would leave an explorer cell under the floor places the new divider so the explorer keeps 180 and the sibling takes the rest. Only explorer cells have a floor; a sibling of another kind has none of its own, but a new split never leaves it under <b>56</b> (<span className="tok">--tasty-split-sibling-min-height</span> = pane tab strip 28 + one 28 row), so no sliver cell is made. The split is <b>refused</b> (no change) when that 56 can't be kept, when two explorer cells can't both keep 180, or when an explorer cell already under 180 would be split further. User split → info Toast “Not enough room to split this pane”; agent split → error <code>split refused: not enough room</code>. The check uses the largest view showing the workspace; with no window showing it, the floor is skipped. A <b>window resize</b> does not hold the floor — the cell may shrink below 180. <b>Short body</b>: when the content body is under <b>120</b> (<span className="tok">--tasty-explorer-state-compact-below</span>) every status screen switches to a <b>one-line compact row</b> — 16px glyph, title (ellipsis), and the state's buttons; the OS reason and the sub line move to the title tooltip. Retry and Go up stay on the row. Nothing is clipped.</>}>
           <Stage variant="solo center" style={{ padding: 20, background: "var(--tasty-bg-app)", gap: 18, flexWrap: "wrap", alignItems: "flex-start" }}>
             {[300, 240, 200, 84].map((h) => (
               <div key={h} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -967,8 +967,8 @@ function Page() {
             </div>
           </Stage>
           <Meta
-            specs={[["hide Favorites", <>body &lt; 240 · <span className="tok">--tasty-explorer-favorites-hide-below</span></>], ["Files only", "caption + tree, own scroll, full body"], ["return", "body ≥ 240 → pin ladder as before (120 floor)"], ["cell floor", <>180 · <span className="tok">--tasty-explorer-min-height</span> · split drag stops here · tabs 28 + toolbar 44 + header 28 + 2×28 + status 24</>], ["split", "explorer keeps 180, sibling takes the rest; refused if the sibling can't"], ["window resize", "floor not held"], ["compact state", <>content body &lt; 120 · <span className="tok">--tasty-explorer-state-compact-below</span> · glyph · title · buttons on one row, reason in tooltip</>], ["scope", "explorer only — other surfaces keep their own minimums"], ["sidebar", "never hidden as a whole"]]}
-            tokens={[{ tok: "--tasty-explorer-favorites-hide-below", use: "→ size-240" }, { tok: "--tasty-explorer-min-height", use: "→ size-180 (was 160)" }, { tok: "--tasty-explorer-state-compact-below", use: "→ size-120" }, { tok: "--tasty-explorer-favorites-pin-min-height", use: "120 floor (unchanged)" }]} />
+            specs={[["hide Favorites", <>body &lt; 240 · <span className="tok">--tasty-explorer-favorites-hide-below</span></>], ["Files only", "caption + tree, own scroll, full body"], ["return", "body ≥ 240 → pin ladder as before (120 floor)"], ["cell floor", <>180 · <span className="tok">--tasty-explorer-min-height</span> · split drag stops here · tabs 28 + toolbar 44 + header 28 + 2×28 + status 24</>], ["split", "explorer keeps 180, sibling takes the rest (≥ 56 · split-sibling-min-height); refused if 56 can't be kept, if two explorer cells can't both keep 180, or if an explorer under 180 would shrink further"], ["refusal", "user → info Toast “Not enough room to split this pane” · agent → split refused: not enough room"], ["window resize", "floor not held"], ["compact state", <>content body &lt; 120 · <span className="tok">--tasty-explorer-state-compact-below</span> · glyph · title · buttons on one row, reason in tooltip</>], ["scope", "floor = explorer cells only · other kinds have no floor (0) during drags and resizes; 56 guards only a new split"], ["sidebar", "never hidden as a whole"]]}
+            tokens={[{ tok: "--tasty-explorer-favorites-hide-below", use: "→ size-240" }, { tok: "--tasty-explorer-min-height", use: "→ size-180 (was 160)" }, { tok: "--tasty-explorer-state-compact-below", use: "→ size-120" }, { tok: "--tasty-split-sibling-min-height", use: "→ size-56 (2026-10-09)" }, { tok: "--tasty-explorer-favorites-pin-min-height", use: "120 floor (unchanged)" }]} />
           <Note>The Favorites height rule already reads tokens (<span className="tok">--tasty-explorer-favorites-pin-height</span> 240, <span className="tok">-pin-threshold</span> 600, <span className="tok">-pin-ratio</span> 0.4, <span className="tok">-pin-min-height</span> 120). The three dimensions scale with the UI zoom like the other explorer tokens; the ratio is unitless and does not.</Note>
         </Spec>
 
@@ -1137,6 +1137,23 @@ function Page() {
             tokens={[{ tok: "--tasty-input-bg", use: "field fill", color: "var(--tasty-input-bg)" }, { tok: "--tasty-input-border-focus", use: "edit border", color: "var(--tasty-input-border-focus)" }, { tok: "--tasty-border-focus", use: "focus ring", color: "var(--tasty-border-focus)" }, { tok: "--tasty-accent-warning", use: "size chip", color: "var(--tasty-accent-warning)" }, { tok: "--tasty-shadow-modal", use: "popup lift" }, { tok: "--tasty-accent-primary", use: "Open (primary)", color: "var(--tasty-accent-primary)" }]} />
           <Note>The address bar is the <b>shared editable path field</b> (see Explorer section) with a <span className="ic">file</span> leading icon — same field, same edit/navigate/revert contract as the Explorer toolbar, and the same edit-time <b><a href="components.html#forms">AutoComplete</a></b> dropdown (candidates = recent files). Copy: title “Open large file?” · body “Over 1 MB — rendering may be slow.” · size chip formatted (e.g. “3.2 MB”). Surface-scoped (<code>PopupScope::Surface</code>) so it dims only this tile; Cancel replaces nothing. New i18n keys when wiring: <code>markdown.large_file.title / body</code>.</Note>
         </Spec>
+        <Spec title="Large file — read deferred after Cancel (2026-10-09)"
+          when={<>Cancelling the 1 MB confirm leaves the body on the neutral state block (<code>.tasty-state</code>, same place and colours as the empty-file state). The block now carries a way back: a <b>secondary sm Button “Open file…”</b> under the line, <span className="tok">--tasty-space-sm</span> below it. It <b>raises the same confirm again</b> (it does not read the file directly), so the 1 MB rule has one entry point. The ellipsis says a question follows. Hover / active are the Button's own derived states. Local and mirror documents both get it; the CLI <code>tasty markdown reload</code> stays as it is.</>}>
+          <Stage variant="solo center" style={{ padding: 20, background: "var(--tasty-bg-app)", gap: 16, flexWrap: "wrap" }}>
+            {[["Mocha", null], ["Latte", "latte"]].map(([label, th]) => (
+              <div key={label} {...(th ? { "data-theme": th } : {})} style={{ width: 320, height: 200, display: "flex", flexDirection: "column", background: "var(--tasty-md-doc-bg)", border: "1px solid var(--tasty-border-default)", borderRadius: "var(--tasty-radius)", overflow: "hidden" }}>
+                <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "var(--tasty-space-sm)", padding: "var(--tasty-space-lg)", textAlign: "center" }}>
+                  <span style={{ fontSize: "var(--tasty-font-size-body)", color: "var(--tasty-text-muted)" }}>This file is over 1 MB, so it hasn't been read yet.</span>
+                  <Button variant="secondary" size="sm">Open file…</Button>
+                </div>
+              </div>
+            ))}
+          </Stage>
+          <Meta
+            specs={[["block", ".tasty-state — unchanged (centered, text-muted, body 13)"], ["action", "Button secondary sm · “Open file…” · under the line"], ["gap", <><span className="tok">--tasty-space-sm</span> line → button</>], ["click", "raises large-file-confirm again (Open / Cancel)"], ["Cancel again", "same block, button stays"]]}
+            tokens={[{ tok: "--tasty-button-secondary-bg", use: "button fill", color: "var(--tasty-button-secondary-bg)" }, { tok: "--tasty-text-muted", use: "state line", color: "var(--tasty-text-muted)" }, { tok: "--tasty-space-sm", use: "line → button" }]} />
+          <Note>WebView: render the button as a <code>&lt;button class="tasty-state-action"&gt;</code> styled from the injected Button variables; it posts the same IPC as the reload path. i18n: <code>markdown.state.large_deferred</code> (line) · <code>markdown.state.large_deferred_open</code> “Open file…”.</Note>
+        </Spec>
       </Section>
 
       <Section id="html" title="HTML viewer">
@@ -1218,14 +1235,45 @@ function Page() {
           <Meta
             specs={[["paint bar", "Save · Cancel · ↶ ↷ · brush · color · zoom"], ["undo/redo", "enabled / disabled (text-disabled)"], ["floating sel", <>accent border + 8 handles · 6 · <span className="tok">--tasty-image-handle-size</span> (on-scale), centred on the edge</>], ["popup card", <>300 · pad 12 / 14 / 10 · title 14 semibold, 10 below · buttons gap 8 · <span className="tok">--tasty-image-popup-*</span></>], ["size field", <>64 · <span className="tok">--tasty-image-size-input-width</span></>], ["path row gap", <>6 · <span className="tok">--tasty-image-path-row-gap</span></>], ["zoom %", <>mono 11 · min 40 · <span className="tok">--tasty-image-zoom-font-size</span></>], ["commit", "click outside = composite · Esc = cancel"], ["New Image", "Width × Height (1–8192)"], ["Save As", "path input + browse · PNG"]]}
             tokens={[{ tok: "--tasty-accent-primary", use: "floating selection + handles", color: "var(--tasty-accent-primary)" }, { tok: "--tasty-accent-danger", use: "default brush color", color: "var(--tasty-accent-danger)" }, { tok: "--tasty-surface-active", use: "brush slider track", color: "var(--tasty-surface-active)" }, { tok: "--tasty-shadow-modal", use: "popups" }]} />
-          <Note>Defaults (brief §6): metadata status-bar, filmstrip, corrupt-image state, async loading indicator, rotate/flip/crop tools, and transparency checkerboard are <b>out of scope</b> this pass — viewer + brush/paste paint only. Load-fail / no-image share one centered <b>"No image loaded"</b> (muted).</Note>
+          <Note>Defaults (brief §6): metadata status-bar, filmstrip, async loading indicator, rotate/flip/crop tools, and transparency checkerboard are <b>out of scope</b> this pass — viewer + brush/paste paint only. The two canvas states (empty · load failed) are the next spec.</Note>
+        </Spec>
+        <Spec title="Image — empty canvas vs load failed · Save As name clash (2026-10-09)"
+          when={<>The canvas reuses the <b>explorer state screen</b> (glyph · title · sub / OS reason · buttons, and its one-line <b>compact</b> form when the canvas is under 120) on the canvas tone <span className="tok">--tasty-bg-sidebar</span>. <b>Empty</b> (surface opened without a file) keeps the single muted line “No image loaded” and no buttons. <b>Load failed</b> is split by cause, each with its own title: <b>missing</b> (path gone or moved), <b>permission</b> (lock glyph, warning tone — the explorer's permission state), <b>decode</b> (damaged or unsupported; the decoder message goes on the mono reason line instead of only the log). Every failure has one button, <b>Retry</b> (secondary sm = the toolbar refresh). The file watcher still reloads by itself within 1 s, and ◀ ▶ in the bar keep working when the folder has other images. Save As opened because a <code>.png</code> of the same name exists gets a <b>caption above the field</b> in accent-warning and the field pre-filled with the next free name, stem selected.</>}>
+          <Stage variant="solo center" style={{ padding: 20, background: "var(--tasty-bg-app)", flexDirection: "column", gap: 12 }}>
+            <div style={{ display: "flex", gap: 12, width: "100%", maxWidth: 760, flexWrap: "wrap" }}>
+              <ExpState bg="var(--tasty-bg-sidebar)" glyph={ic.image} title="No image loaded" />
+              <ExpState bg="var(--tasty-bg-sidebar)" glyph={<PIcon name="alertTriangle" size="var(--tasty-icon-size-md)" />} glyphColor="var(--tasty-image-error-fg)" title="Image not found" sub="It may have been moved or deleted." reason="~/Pictures/diagram.png" actions={<Button variant="secondary" size="sm">Retry</Button>} />
+              <ExpState bg="var(--tasty-bg-sidebar)" glyph={ic.lock} glyphColor="var(--tasty-accent-warning)" title="Permission denied" sub="You don't have access to read this file." actions={<Button variant="secondary" size="sm">Retry</Button>} />
+              <ExpState bg="var(--tasty-bg-sidebar)" glyph={<PIcon name="alertTriangle" size="var(--tasty-icon-size-md)" />} glyphColor="var(--tasty-image-error-fg)" title="Can't open this image" sub="The file is damaged or in an unsupported format." reason="Format error decoding Png: invalid signature" actions={<Button variant="secondary" size="sm">Retry</Button>} />
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%", maxWidth: 440 }}>
+              <div style={{ fontFamily: "var(--tasty-font-mono)", fontSize: 10, color: "var(--tasty-text-muted)" }}>canvas under 120 → compact row</div>
+              <ExpState compact bg="var(--tasty-bg-sidebar)" glyph={<PIcon name="alertTriangle" size="var(--tasty-icon-size-md)" />} glyphColor="var(--tasty-image-error-fg)" title="Can't open this image" reason="Format error decoding Png: invalid signature" actions={<Button variant="secondary" size="sm">Retry</Button>} />
+            </div>
+            <div style={{ width: "var(--tasty-image-popup-width)", background: "var(--tasty-bg-panel)", border: "var(--tasty-border-width) solid var(--tasty-border-strong)", borderRadius: "var(--tasty-radius)", boxShadow: "var(--tasty-shadow-modal)", overflow: "hidden" }}>
+              <div style={{ padding: "var(--tasty-image-popup-pad-top) var(--tasty-image-popup-pad-x) var(--tasty-image-popup-gap)" }}>
+                <div style={{ fontSize: "var(--tasty-image-popup-title-font-size)", fontWeight: "var(--tasty-image-popup-title-weight)", marginBottom: "var(--tasty-image-popup-gap)" }}>Save As</div>
+                <div style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-accent-warning)", marginBottom: "var(--tasty-space-xs)" }}>diagram.png already exists. Save the PNG under another name.</div>
+                <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-image-path-row-gap)" }}>
+                  <div style={{ flex: 1 }}><Input block defaultValue="~/Pictures/diagram-1.png" /></div>
+                  <IconButton size="sm" aria-label="Browse">{ic.folderOpen}</IconButton>
+                </div>
+              </div>
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "var(--tasty-image-popup-btn-gap)", padding: "0 var(--tasty-image-popup-pad-x) var(--tasty-image-popup-pad-top)" }}><Button variant="ghost" size="sm">Cancel</Button><Button variant="primary" size="sm">Save</Button></div>
+            </div>
+          </Stage>
+          <Meta
+            specs={[["states", "image-empty · image-load-failed-missing · -permission · -decode"], ["layout", "explorer state screen on bg-sidebar · compact under explorer-state-compact-below 120"], ["empty", "image glyph · “No image loaded” · muted · no button"], ["missing / decode", <>alertTriangle · <span className="tok">--tasty-image-error-fg</span> (→ accent-danger) title</>], ["permission", "lock · accent-warning (same as explorer)"], ["reason", "mono caption · muted · path (missing) or decoder message (decode)"], ["button", "Retry · secondary sm · = refresh"], ["recovery", "watcher reload ≤ 1 s → viewer; ◀ ▶ still step the folder"], ["Save As clash", "caption 11 · accent-warning · above the field · field = next free name (name-1.png), stem selected"]]}
+            tokens={[{ tok: "--tasty-image-error-fg", use: "→ accent-danger", color: "var(--tasty-image-error-fg)" }, { tok: "--tasty-accent-warning", use: "permission · name clash", color: "var(--tasty-accent-warning)" }, { tok: "--tasty-bg-sidebar", use: "canvas", color: "var(--tasty-bg-sidebar)" }, { tok: "--tasty-explorer-state-compact-below", use: "compact switch" }]} />
+          <Note>Strings (en / ko / ja): <code>image.state.missing</code> “Image not found” / “이미지를 찾을 수 없습니다” / “画像が見つかりません” · sub “It may have been moved or deleted.” · <code>image.state.permission</code> “Permission denied” / “권한이 없습니다” / “アクセス権がありません” · <code>image.state.decode</code> “Can't open this image” / “이미지를 열 수 없습니다” / “この画像を開けません” · sub “The file is damaged or in an unsupported format.” · <code>image.save_as.exists</code> “{"{name}"} already exists. Save the PNG under another name.”</Note>
         </Spec>
       </Section>
     </>
   );
 }
 
-window.Gallery.mount(
+window.ExplorerKit = { ic, PathField, ExpTab, ExpInternalTabs, SegToggle, ExpToolbar, SideHead, TreeNode, FavRow, ExpSidebar, DetailRow, DetailHeader, GridCell, CtxMenu, ExpState, InlineCode };
+if (!window.__EXPLORER_KIT_ONLY) window.Gallery.mount(
   "plugins",
   NAV,
   {

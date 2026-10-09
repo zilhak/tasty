@@ -141,7 +141,7 @@ function Page() {
           when={<>Typed (v2) tasks report a step while running. <code>executing</code> is the plain running card. <b><code>awaiting_input</code></b> stops the graph on a person, so it swaps the whole state look to the needs-input yellow — bar, border, wash, glyph <code>!</code> and label — and stays readable at the <b>compact</b> tier (glyph + name). <code>postprocessing</code> and <code>retry_wait</code> keep the running tone and only swap the label, with the run number.</>}>
           <Stage variant="grid" style={{ display: "flex", flexWrap: "wrap", gap: 16, padding: 20, alignItems: "flex-start" }}>
             <NodeBox node={mk({ phase: "executing", name: "test:unit" })} caption="executing (default)" />
-            <NodeBox node={mk({ kind: "agent", phase: "awaiting_input", provider: "claude", since: "2m", name: "agent:review", dur: "2m" })} caption="awaiting_input" />
+            <NodeBox node={mk({ kind: "agent", phase: "awaiting_input", provider: "claude", since: "2m 4s", name: "agent:review", dur: "2m" })} caption="awaiting_input" />
             <NodeBox node={mk({ kind: "agent", phase: "awaiting_input", provider: "claude", name: "agent:review" })} lod="compact" caption="awaiting_input · compact" />
             <NodeBox node={mk({ phase: "postprocessing", run: 1, name: "build:docs", dur: "41s" })} caption="postprocessing" />
             <NodeBox node={mk({ phase: "retry_wait", run: 2, name: "build:docs", dur: "1m 3s" })} caption="retry_wait" />
@@ -157,7 +157,7 @@ function Page() {
           <Stage variant="grid" style={{ display: "flex", flexWrap: "wrap", gap: 16, padding: 20, alignItems: "flex-start" }}>
             {[mk({ status: "unknown", name: "deploy:site", dur: null, reason: "run result lost: pid 4242 ended after a host restart and its exit status could not be collected" }),
               mk({ status: "skipped", name: "sign:artifacts", dur: null, skip: "branch_not_selected" }),
-              mk({ kind: "agent", phase: "awaiting_input", provider: "claude", since: "2m", name: "agent:review" })].map((n) => (
+              mk({ kind: "agent", phase: "awaiting_input", provider: "claude", since: "2m 4s", name: "agent:review" })].map((n) => (
               <div key={n.name} style={{ display: "flex", flexDirection: "column", gap: 8, width: 300 }}>
                 <NodeBox node={n} dimmed={n.status === "skipped"} caption={n.status === "running" ? "awaiting_input" : n.status} />
                 <pre style={{ margin: 0, padding: "6px 8px", whiteSpace: "pre-wrap", fontFamily: "var(--tasty-font-ui)", fontSize: "var(--tasty-font-size-caption)",
@@ -168,7 +168,7 @@ function Page() {
           </Stage>
           <Stage style={{ padding: 0, display: "block" }}>
             <div style={{ display: "flex", height: 360, background: "var(--tasty-bg-panel)" }}>
-              <DagDetail dag={{ nodes: [mk({ id: "a", kind: "agent", phase: "awaiting_input", provider: "claude", since: "2m", name: "agent:review" })] }} id="a" onClose={() => {}} onSelect={() => {}} />
+              <DagDetail dag={{ nodes: [mk({ id: "a", kind: "agent", phase: "awaiting_input", provider: "claude", since: "2m 4s", name: "agent:review" })] }} id="a" onClose={() => {}} onSelect={() => {}} />
               <DagDetail dag={{ nodes: [mk({ id: "u", status: "unknown", name: "deploy:site", dur: null, reason: "run result lost: pid 4242 ended after a host restart and its exit status could not be collected" })] }} id="u" onClose={() => {}} onSelect={() => {}} />
             </div>
           </Stage>
@@ -210,9 +210,9 @@ function Page() {
             <NodeBox node={mk({ status: "skipped", name: "notify:ops", kind: "custom", dur: null })} dimmed caption="skipped — upstream unavailable" />
           </Stage>
           <Meta
-            specs={[["pending", "1px · full opacity"], ["selected", "2px · dag-edge-selected-width"], ["not_selected", "1px · dim 0.4"], ["unavailable", "dead-path dim, as from a failed task"], ["not-selected node", "skipped look (dimmed card, ⊘ glyph — canonical for both skip reasons; − is cancelled) · label NOT SELECTED · tooltip “Not taken — another branch was selected.”"], ["upstream-unavailable node", "skipped look · label SKIPPED · tooltip “Skipped — {source} {state}.”"], ["rollup", "succeeded + not selected only → succeeded"], ["skip count", "DAG list row + DAG tab header, after done/total: “{done}/{total} · {n} skipped ({k} not selected)” — shown only when n > 0, parenthesis only when k > 0 · same mono caption, dag-row-count-fg · not clickable"], ["filter", "no new list filter"], ["legend", "none — the relation reads from the dependency rows in Node detail; the canvas carries no legend"]]}
+            specs={[["pending", "1px · full opacity"], ["selected", "2px · dag-edge-selected-width"], ["not_selected", "1px · dim 0.4"], ["unavailable", "dead-path dim, as from a failed task"], ["not-selected node", "skipped look (dimmed card, ⊘ glyph — canonical for both skip reasons; − is cancelled) · label NOT SELECTED · tooltip = kit nodeTitle(): “{name} — not selected” + “Why: Not selected by the upstream result” (2026-10-09)"], ["upstream-unavailable node", "skipped look · label SKIPPED · tooltip = nodeTitle(): “{name} — skipped” + “Why: An upstream task did not succeed”"], ["rollup", "succeeded + not selected only → succeeded"], ["skip count", "DAG list row + DAG tab header, after done/total: “{done} / {total} · {n} skipped ({k} not selected)” — shown only when n > 0, parenthesis only when k > 0 · same mono caption, dag-row-count-fg · not clickable"], ["filter", "no new list filter"], ["legend", "none — the relation reads from the dependency rows in Node detail; the canvas carries no legend"]]}
             tokens={[{ tok: "--tasty-dag-edge-transition", use: "route", color: "var(--tasty-dag-edge-transition)" }, { tok: "--tasty-dag-edge-selected-width", use: "→ focus-ring-width 2" }, { tok: "--tasty-dag-edge-dim-opacity", use: "not selected / unavailable" }, { tok: "--tasty-dag-status-skipped", use: "both skip reasons", color: "var(--tasty-dag-status-skipped)" }]} />
-          <Note>A branch that was not taken is a normal outcome, so it gets <b>no new colour</b>: it shares the skipped card and differs only in its spelled label and tooltip. i18n: <code>dag.status.not_selected</code> “not selected” · <code>dag.skip.branch_not_selected</code> · <code>dag.skip.upstream_unavailable</code> · <code>dag.rel.binding</code> “binds input” · <code>dag.rel.transition</code> “transition”.</Note>
+          <Note>A branch that was not taken is a normal outcome, so it gets <b>no new colour</b>: it shares the skipped card and differs only in its spelled label and tooltip. i18n: <code>dag.status.not_selected</code> “not selected” · <code>dag.why.branch_not_selected</code> · <code>dag.why.upstream_unavailable</code> (2026-10-09 — replaces the retired <code>dag.skip.*</code> keys) · <code>dag.rel.binding</code> “binds input” · <code>dag.rel.transition</code> “transition”.</Note>
         </Spec>
       </Section>
 
@@ -307,7 +307,7 @@ function Page() {
 
       <Section id="surfaces" title="Surface · popup">
         <Spec title="Full-tab surface — wide and narrow"
-          when={<>A whole terminal tab. Header: DAG name + <code>{"{done}/{total} done"}</code> (mono caption, <code>--tasty-dag-header-count-fg</code> = the list row counter, skip suffix after it, 2026-10-07), the DAG <code>Select</code>, the runner badge, refresh. Under <b>640px</b> the header wraps to two rows (identity above, controls below), the runner hint drops, the minimap goes, and the detail panel becomes a bottom sheet.</>}>
+          when={<>A whole terminal tab. Header: DAG name + <code>{"{done} / {total} done"}</code> (spaces around the slash in every language, 2026-10-09) (mono caption, <code>--tasty-dag-header-count-fg</code> = the list row counter, skip suffix after it, 2026-10-07), the DAG <code>Select</code>, the runner badge, refresh. Under <b>640px</b> the header wraps to two rows (identity above, controls below), the runner hint drops, the minimap goes, and the detail panel becomes a bottom sheet.</>}>
           <Stage style={{ padding: 16, display: "flex", gap: 16, alignItems: "stretch" }}>
             <div style={{ flex: 1, minWidth: 0, height: 520, border: "var(--tasty-border-width) solid var(--tasty-border-strong)",
               borderRadius: "var(--tasty-radius)", overflow: "hidden" }}>

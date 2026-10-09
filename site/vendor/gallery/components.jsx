@@ -459,9 +459,18 @@ function Components() {
                 </div>
               </div>
             ))}
+            <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-sm)", padding: "var(--tasty-space-md)", background: "var(--tasty-bg-panel)", borderRadius: "var(--tasty-radius)" }}>
+              <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>No value yet (2026-10-09) — trigger in placeholder ink, list = real options only</span>
+              <div style={{ width: "var(--tasty-field-width-lg)", height: "var(--tasty-control-height)", boxSizing: "border-box", display: "flex", alignItems: "center", padding: "0 var(--tasty-space-md)", border: "var(--tasty-border-width) solid var(--tasty-border-focus)", borderRadius: "var(--tasty-radius)", background: "var(--tasty-surface-raised)", fontSize: "var(--tasty-font-size-body)", color: "var(--tasty-text-placeholder)" }}>Choose an action</div>
+              <div role="menu" style={{ width: "var(--tasty-field-width-lg)", background: "var(--tasty-menu-bg)", border: "var(--tasty-border-width) solid var(--tasty-menu-border)", borderRadius: "var(--tasty-menu-radius)", padding: "var(--tasty-space-xs)", boxShadow: "var(--tasty-shadow-popover)" }}>
+                <MenuItem label="Ask" active />
+                <MenuItem label="Minimize to background" />
+                <MenuItem label="Quit" />
+              </div>
+            </div>
           </Stage>
           <Meta
-            specs={[["selected ink", <span className="tok">--tasty-menu-item-selected-fg</span>], ["check", <><span className="ic">check</span> icon · <span className="tok">--tasty-menu-item-check-size</span> 14 · <span className="tok">--tasty-menu-item-check-fg</span> accent-primary · trailing, after any shortcut</>], ["fill", "none — hover / keyboard fills only"], ["a11y", <>role menuitemradio · aria-checked</>]]}
+            specs={[["selected ink", <span className="tok">--tasty-menu-item-selected-fg</span>], ["check", <><span className="ic">check</span> icon · <span className="tok">--tasty-menu-item-check-size</span> 14 · <span className="tok">--tasty-menu-item-check-fg</span> accent-primary · trailing, after any shortcut</>], ["fill", "none — hover / keyboard fills only"], ["a11y", <>role menuitemradio · aria-checked</>], ["no value (2026-10-09)", "the placeholder is NOT a row — the list holds real options only, none checked, keyboard-active starts on row 1; the trigger alone shows the placeholder (text-placeholder). A Select that must be clearable gets a real option for it (e.g. “None”), drawn like any other row."]]}
             tokens={[{ tok: "--tasty-menu-item-selected-fg", use: "selected label → text-primary", color: "var(--tasty-menu-item-selected-fg)" }, { tok: "--tasty-menu-item-check-fg", use: "check glyph", color: "var(--tasty-menu-item-check-fg)" }, { tok: "--tasty-text-secondary-raised", use: "resting label role (Latte → n1100)", color: "var(--tasty-text-secondary-raised)" }]} />
         </Spec>
       </Section>

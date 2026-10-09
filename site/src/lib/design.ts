@@ -82,7 +82,10 @@ export const GALLERY_GROUPS: { group: string; pages: GalleryPage[] }[] = [
   },
   {
     group: "Plugins",
-    pages: [{ key: "plugins", slug: "plugins/", label: "Plugin surfaces", desc: "surfaces" }],
+    pages: [
+      { key: "plugins", slug: "plugins/", label: "Plugin surfaces", desc: "surfaces" },
+      { key: "explorer-ops", slug: "explorer-ops/", label: "Explorer file ops", desc: "create · drag · progress · props · search" },
+    ],
   },
 ];
 
@@ -111,5 +114,6 @@ export const GALLERY_INTROS: Record<string, string> = {
   "layouts": "Explore how Tasty arranges navigation and content. Compare list-and-detail layouts with tabs and sections. Turn on Specs to inspect the grid and dimensions.",
   "dag": "Follow an agent task graph in a tab or workspace popup. Both views use the same canvas to show progress. These views are for inspection; create and edit tasks through the CLI.",
   "loading": "Preview the screen shown while Tasty starts. It combines the logo, a spinner, and the current startup phase until the app is ready.",
-  "plugins": "Explore the Explorer and the Markdown, HTML, and image viewers. These tools sit alongside terminals in the work area, so you can read files and check results without leaving your workspace."
+  "plugins": "Explore the Explorer and the Markdown, HTML, and image viewers. These tools sit alongside terminals in the work area, so you can read files and check results without leaving your workspace.",
+  "explorer-ops": "See how the Explorer creates, moves, and inspects files. The examples cover new items, drag and drop, progress and name conflicts, the Properties popup, the preview panel, and search."
 };

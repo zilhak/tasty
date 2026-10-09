@@ -188,9 +188,17 @@ for (const file of kitFiles) {
     },
   );
 
+  // `React.createElement(window.TastyDesignSystem_41fd3f.Icon, p)` inside a local
+  // `const Icon = (p) => …` wrapper: the file declares the same name, so the
+  // import takes an alias instead of shadowing or redeclaring it.
   src = src.replace(PROP, (all, which, name) => {
     const target = lookup(which, name);
     if (!target || target === dest) return all;
+    if (new RegExp(String.raw`(?:^|[^\w$.])(?:const|let|var|function|class)\s+${name}\b`).test(src)) {
+      const alias = `${which}_${name}`;
+      add(target, `${name} as ${alias}`);
+      return alias;
+    }
     add(target, name);
     return name;
   });
@@ -251,6 +259,8 @@ const GALLERY_MODULE = {
   Gallery: "./shell.jsx",
   OverlaysShared: "./overlays-shared.jsx",
   PresetEditor: "./preset_editor.jsx",
+  ExplorerKit: "./plugins.jsx",
+  ExplorerOpsParts: "./explorer-ops-parts.jsx",
   TastyDesignSystem_41fd3f: "../ds/index.js",
   TastyDag: "../kit/dag.js",
 };
@@ -293,8 +303,10 @@ const splitArgs = (body) => {
   return out.map((p) => p.trim()).filter(Boolean);
 };
 
+// The body has no braces, so a match cannot run past a `const { … } = local;`
+// line into the next pull.
 const G_PULL = new RegExp(
-  String.raw`^[ \t]*const\s*\{([\s\S]*?)\}\s*=\s*window\.(${GLOBALS})\s*;[ \t]*$`,
+  String.raw`^[ \t]*const\s*\{([^{}]*?)\}\s*=\s*window\.(${GLOBALS})\s*;[ \t]*$`,
   "gm",
 );
 
@@ -352,6 +364,15 @@ for (const name of readdirSync(join(vendor, "gallery")).sort()) {
     addKit(sym, sym) ? sym : all);
   src = src.replace(/(<\/?)window\.TastyKit\.([A-Za-z_$][\w$]*)/g, (all, lt, sym) =>
     addKit(sym, sym) ? `${lt}${sym}` : all);
+
+  // `const XK = window.ExplorerKit;` — the whole global under a local name.
+  src = src.replace(
+    new RegExp(String.raw`^[ \t]*const\s+([A-Za-z_$][\w$]*)\s*=\s*window\.(${GLOBALS})\s*;[ \t]*$`, "gm"),
+    (_all, local, global) => {
+      add(global, `* as ${local}`);
+      return "";
+    },
+  );
 
   // `const CIcon = window.TastyDesignSystem_41fd3f.Icon;` — one symbol under a local name.
   src = src.replace(
@@ -417,6 +438,11 @@ for (const name of readdirSync(join(vendor, "gallery")).sort()) {
     src = src.slice(0, m.index) + derived.join("\n") + src.slice(src.indexOf(";", close) + 1);
   }
 
+  // `if (!window.__EXPLORER_KIT_ONLY) window.Gallery.mount(` — a page that another
+  // page loads for its exports skips the mount under a flag. A module never mounts,
+  // so drop the guard and keep the page descriptor.
+  src = src.replace(/^([ \t]*)if\s*\(\s*!window\.__[A-Z_]+\s*\)\s*((?:window\.)?Gallery\.mount\()/m, "$1$2");
+
   // Export the page descriptor instead of mounting it here. Match at line start
   // to avoid treating the shell header comment as a call.
   const at = name === "shell.jsx" ? -1 : src.search(/^(?:window\.)?Gallery\.mount\(/m);
@@ -448,8 +474,12 @@ for (const name of readdirSync(join(vendor, "gallery")).sort()) {
   const head = [`import React from "react";`];
   if (/\bReactDOM\./.test(src)) head.push(`import * as ReactDOM from "react-dom/client";`);
   if (needsBase) head.push(BASE_DECL);
-  for (const [mod, specs] of [...imports].sort())
-    head.push(`import { ${[...specs].join(", ")} } from "${mod}";`);
+  for (const [mod, specs] of [...imports].sort()) {
+    const list = [...specs];
+    for (const ns of list.filter((x) => x.startsWith("* as "))) head.push(`import ${ns} from "${mod}";`);
+    const named = list.filter((x) => !x.startsWith("* as "));
+    if (named.length) head.push(`import { ${named.join(", ")} } from "${mod}";`);
+  }
   // Export top-level components used by the site shell, even if the vendor
   // global does not publish them. Rollup can remove unused exports.
   const published = new Set(exported.map((e) => e.split(" as ").pop()));
@@ -463,7 +493,7 @@ for (const name of readdirSync(join(vendor, "gallery")).sort()) {
 }
 
 // One entry component per catalogue page: Astro needs a component reference at
-// build time, and a single module importing all twelve would put the whole
+// build time, and a single module importing all of them would put the whole
 // gallery on every one of its routes.
 mkdirSync(join(outGallery, "pages"), { recursive: true });
 for (const key of galleryPages) {

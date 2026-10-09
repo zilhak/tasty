@@ -188,8 +188,7 @@ function LogBlock({ label, text, max, onCopy }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)", minWidth: 0 }}>
       <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)" }}>
-        <span style={{ flex: 1, fontSize: "var(--tasty-font-size-micro)", textTransform: "uppercase",
-          letterSpacing: "var(--tasty-letter-spacing-caps)", color: "var(--tasty-text-muted)" }}>{label}</span>
+        <span style={{ flex: 1, fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>{label}</span>
         <IconButton size="sm" aria-label={`Copy ${label}`} title={`Copy ${label}`} onClick={onCopy}>
           <Icon name="copy" />
         </IconButton>
@@ -242,8 +241,7 @@ function DagDetail({ dag, id, onClose, onSelect, sheet = false }) {
       )}
       {node.status === "unknown" && node.reason && (
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)", minWidth: 0 }}>
-          <span style={{ fontSize: "var(--tasty-font-size-micro)", textTransform: "uppercase",
-            letterSpacing: "var(--tasty-letter-spacing-caps)", color: "var(--tasty-text-muted)" }}>Why unknown</span>
+          <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>Why unknown</span>
           <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-secondary)", wordBreak: "break-word" }}>{node.reason}</span>
           <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>Retry or cancel it to let the graph continue.</span>
         </div>
@@ -256,16 +254,14 @@ function DagDetail({ dag, id, onClose, onSelect, sheet = false }) {
         <DetailRow k="Task id" v={node.id} mono />
       </dl>
       <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)", minWidth: 0 }}>
-        <span style={{ fontSize: "var(--tasty-font-size-micro)", textTransform: "uppercase",
-          letterSpacing: "var(--tasty-letter-spacing-caps)", color: "var(--tasty-text-muted)" }}>Command</span>
+        <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>Command</span>
         <code style={{ display: "block", boxSizing: "border-box", padding: "var(--tasty-space-sm)", borderRadius: "var(--tasty-radius-sm)",
           border: "var(--tasty-border-width) solid var(--tasty-border-default)", background: "var(--tasty-dag-detail-log-bg)",
           fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-secondary)",
           wordBreak: "break-all" }}>{node.cmd}</code>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)" }}>
-        <span style={{ fontSize: "var(--tasty-font-size-micro)", textTransform: "uppercase",
-          letterSpacing: "var(--tasty-letter-spacing-caps)", color: "var(--tasty-text-muted)" }}>
+        <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>
           Depends on{deps.length ? ` \u00b7 ${deps.length}` : ""}
         </span>
         {deps.length === 0 ? (
@@ -299,7 +295,7 @@ function dagHeaderCount(dag) {
   const done = dag.nodes.filter((n) => DONE_STATUS.has(n.status)).length;
   const skipped = dag.nodes.filter((n) => n.status === "skipped").length;
   const notSelected = dag.nodes.filter((n) => n.status === "skipped" && n.skip === "branch_not_selected").length;
-  return `${done}/${dag.nodes.length} done${dagSkipText({ skipped, notSelected })}`;
+  return `${done} / ${dag.nodes.length} done${dagSkipText({ skipped, notSelected })}`;
 }
 
 // ── Full-tab surface ────────────────────────────────────────────────

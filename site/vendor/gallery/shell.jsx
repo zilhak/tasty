@@ -38,6 +38,7 @@ const PAGE_GROUPS = [
   ] },
   { group: "Plugins", pages: [
     { key: "plugins",     label: "Plugin surfaces", href: "plugins.html", desc: "surfaces" },
+    { key: "explorer-ops", label: "Explorer file ops", href: "explorer-ops.html", desc: "create · drag · progress · props · search" },
   ] },
 ];
 const PAGES = PAGE_GROUPS.flatMap((g) => g.pages);

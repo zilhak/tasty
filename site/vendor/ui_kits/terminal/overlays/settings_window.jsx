@@ -76,7 +76,7 @@ function ColorOverridePicker() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
       <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 4 }}>
-        <p style={{ flex: 1, fontSize: 12, color: "var(--tasty-text-muted)", margin: 0, lineHeight: "var(--tasty-line-height-ui)" }}>
+        <p style={{ flex: 1, fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)", margin: 0, lineHeight: "var(--tasty-line-height-ui)" }}>
           Override individual colors of the current preset. Unchecking <b style={{ color: "var(--tasty-text-secondary)" }}>Default</b> on a row lets you edit it; switching presets clears every override.
         </p>
         <span style={{ flex: "none" }}><Button variant="ghost" size="sm" disabled={count === 0} onClick={() => setOverrides({})}>{count ? "Reset all (" + count + ")" : "Reset all"}</Button></span>
@@ -252,7 +252,7 @@ function ScriptPath({ path }) {
   const dir = i >= 0 ? path.slice(0, i + 1) : "";
   const file = i >= 0 ? path.slice(i + 1) : path;
   return (
-    <span style={{ display: "flex", minWidth: 0, fontFamily: "var(--tasty-font-mono)", fontSize: 12, color: "var(--tasty-text-muted)" }}>
+    <span style={{ display: "flex", minWidth: 0, fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>
       <span style={{ flex: "0 1 auto", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{dir}</span>
       <span style={{ flex: "none", color: "var(--tasty-text-secondary)" }}>{file}</span>
     </span>
@@ -342,7 +342,7 @@ function ScriptManager() {
       <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: "var(--tasty-font-size-max)", fontWeight: "var(--tasty-font-weight-semibold)", color: "var(--tasty-text-primary)" }}>Scripts</div>
-          <p style={{ fontSize: 12, color: "var(--tasty-text-muted)", margin: "2px 0 0", maxWidth: "var(--tasty-measure-md)", lineHeight: "var(--tasty-line-height-ui)" }}>
+          <p style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)", margin: "2px 0 0", maxWidth: "var(--tasty-measure-md)", lineHeight: "var(--tasty-line-height-ui)" }}>
             Register and manage Lua scripts you can run with a shortcut. Binding a trigger is done in <b style={{ color: "var(--tasty-text-secondary)" }}>Keybindings</b>; each script is verified against the SHA recorded when it was added.
           </p>
         </div>
@@ -376,7 +376,7 @@ function ScriptManager() {
           textAlign: "center", padding: "var(--tasty-space-xl) 0", color: "var(--tasty-text-muted)" }}>
           <Icon name={SD.script} size={26} />
           <div style={{ fontSize: 14, color: "var(--tasty-text-secondary)" }}>No scripts registered</div>
-          <p style={{ fontSize: 12, color: "var(--tasty-text-muted)", margin: 0, maxWidth: "var(--tasty-measure-sm)", lineHeight: "var(--tasty-line-height-ui)" }}>
+          <p style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)", margin: 0, maxWidth: "var(--tasty-measure-sm)", lineHeight: "var(--tasty-line-height-ui)" }}>
             Click <b style={{ color: "var(--tasty-text-secondary)" }}>Add script</b> to register a Lua script and bind it to a shortcut.
           </p>
         </div>
@@ -413,7 +413,7 @@ function CaptureBlacklist() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-sm)" }}>
       {items.length === 0 ? (
-        <div style={{ fontSize: 12, color: "var(--tasty-text-muted)", lineHeight: "var(--tasty-line-height-ui)", padding: "var(--tasty-space-xs) 0" }}>
+        <div style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)", lineHeight: "var(--tasty-line-height-ui)", padding: "var(--tasty-space-xs) 0" }}>
           No programs excluded — clicks are sent to capturing apps.
         </div>
       ) : (
@@ -506,7 +506,7 @@ function HookHandlers() {
   return (
     <>
       <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
-        <p style={{ flex: 1, fontSize: 12, color: "var(--tasty-text-muted)", margin: 0, maxWidth: "var(--tasty-measure-md)", lineHeight: "var(--tasty-line-height-ui)" }}>
+        <p style={{ flex: 1, fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)", margin: 0, maxWidth: "var(--tasty-measure-md)", lineHeight: "var(--tasty-line-height-ui)" }}>
           Handlers fired when the inbound-hook server receives a matching event. Includes core
           <b style={{ color: "var(--tasty-text-secondary)" }}> host</b> defaults,
           <b style={{ color: "var(--tasty-text-secondary)" }}> plugin</b> contributions, and your own
@@ -608,7 +608,7 @@ function PresetDiffTable({ preset, presetName }) {
         return (
           <React.Fragment key={r.action}>
             <div style={{ ...cell, color: "var(--tasty-text-secondary)" }}>{r.action}</div>
-            <div style={{ ...cell, fontFamily: "var(--tasty-font-mono)", fontSize: 12, color: "var(--tasty-text-muted)" }}>{r.cur}</div>
+            <div style={{ ...cell, fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>{r.cur}</div>
             <div style={{ ...cell, fontFamily: "var(--tasty-font-mono)", fontSize: 12,
               color: changed ? "var(--tasty-accent-primary)" : "var(--tasty-text-muted)" }}>{r.next}</div>
           </React.Fragment>
@@ -648,7 +648,7 @@ function PresetSubtab() {
       }
       detail={sel && (
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-md)", padding: "var(--tasty-space-lg)" }}>
-          <p style={{ margin: 0, fontSize: 12, color: "var(--tasty-text-muted)", lineHeight: "var(--tasty-line-height-ui)", maxWidth: "var(--tasty-measure-md)" }}>
+          <p style={{ margin: 0, fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)", lineHeight: "var(--tasty-line-height-ui)", maxWidth: "var(--tasty-measure-md)" }}>
             {isActiveSel
               ? <>This preset is <b style={{ color: "var(--tasty-text-secondary)" }}>currently active</b> — every binding already matches, so there is nothing to apply.</>
               : <><b style={{ color: "var(--tasty-text-secondary)" }}>{changed}</b> of {sel.rows.length} bindings change. <b>Apply</b> writes them into the draft; nothing is saved until you press <b style={{ color: "var(--tasty-text-secondary)" }}>Save</b>.</>}
@@ -658,7 +658,7 @@ function PresetSubtab() {
       )}
     >
       <div style={{ padding: "var(--tasty-space-md) var(--tasty-space-lg)", display: "flex", flexDirection: "column", gap: "var(--tasty-space-sm)" }}>
-        <p style={{ margin: 0, fontSize: 12, color: "var(--tasty-text-muted)", lineHeight: "var(--tasty-line-height-ui)", maxWidth: "var(--tasty-measure-md)" }}>
+        <p style={{ margin: 0, fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)", lineHeight: "var(--tasty-line-height-ui)", maxWidth: "var(--tasty-measure-md)" }}>
           Pick a keybinding preset to preview its bindings against your current ones, then apply it. The <b style={{ color: "var(--tasty-text-secondary)" }}>Active</b> preset is the one in effect now.
         </p>
         <ListCtrl items={items} selectedId={activeId} onSelect={openPreset} />
@@ -813,7 +813,7 @@ function SettingsWindow({ theme, onTheme, uiScale, onUiScale, onClose }) {
     );
   };
   const RowCaption = ({ children }) => (
-    <p style={{ fontSize: 12, color: "var(--tasty-text-muted)", margin: 0, maxWidth: "var(--tasty-measure-md)", lineHeight: "var(--tasty-line-height-ui)" }}>{children}</p>
+    <p style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)", margin: 0, maxWidth: "var(--tasty-measure-md)", lineHeight: "var(--tasty-line-height-ui)" }}>{children}</p>
   );
   const WarnCallout = ({ children }) => (
     <div style={{ display: "flex", gap: "var(--tasty-space-sm)", padding: "var(--tasty-space-sm) var(--tasty-space-md)", borderRadius: "var(--tasty-radius)", maxWidth: "var(--tasty-measure-md)",
@@ -822,7 +822,7 @@ function SettingsWindow({ theme, onTheme, uiScale, onUiScale, onClose }) {
       <span style={{ display: "inline-flex", flex: "none", marginTop: 1, color: "var(--tasty-accent-warning)" }}>
         <Icon name="alertTriangle" size={16} />
       </span>
-      <p style={{ margin: 0, fontSize: 12, color: "var(--tasty-text-secondary)", lineHeight: "var(--tasty-line-height-ui)" }}>{children}</p>
+      <p style={{ margin: 0, fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-secondary)", lineHeight: "var(--tasty-line-height-ui)" }}>{children}</p>
     </div>
   );
   const Mono = ({ children }) => (
@@ -830,7 +830,7 @@ function SettingsWindow({ theme, onTheme, uiScale, onUiScale, onClose }) {
       letterSpacing: "var(--tasty-letter-spacing-caps)", color: "var(--tasty-text-muted)" }}>{children}</div>
   );
   const Note = ({ children }) => (
-    <p style={{ fontSize: 12, color: "var(--tasty-text-muted)", margin: 0, maxWidth: "var(--tasty-measure-md)", lineHeight: "var(--tasty-line-height-ui)" }}>{children}</p>
+    <p style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)", margin: 0, maxWidth: "var(--tasty-measure-md)", lineHeight: "var(--tasty-line-height-ui)" }}>{children}</p>
   );
 
   function body() {
@@ -883,7 +883,7 @@ function SettingsWindow({ theme, onTheme, uiScale, onUiScale, onClose }) {
         return (
           <>
             <Row label="Font family:"><Select options={["D2Coding", "JetBrains Mono", "Cascadia Code"]} style={{ width: "var(--tasty-field-width-lg)" }} /></Row>
-            <Row label="Font size:"><Input mono defaultValue="14" style={{ width: "var(--tasty-field-width-xs)" }} /><span style={{ fontSize: 12, color: "var(--tasty-text-muted)" }}>px</span></Row>
+            <Row label="Font size:"><Input mono defaultValue="14" style={{ width: "var(--tasty-field-width-xs)" }} /><span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>px</span></Row>
             <Row label="Line height:"><Input mono defaultValue="1.2" style={{ width: "var(--tasty-field-width-xs)" }} /></Row>
             <Row label="Ligatures:"><Switch defaultChecked /></Row>
             <Row label="Background opacity:"><input type="range" min="60" max="100" defaultValue="100" style={{ accentColor: "var(--tasty-accent-primary)", width: "var(--tasty-field-width-range)" }} /></Row>
@@ -904,7 +904,7 @@ function SettingsWindow({ theme, onTheme, uiScale, onUiScale, onClose }) {
         return (
           <>
             <Mono>HTML viewer</Mono>
-            <Row label="Default zoom:"><Input mono defaultValue="100" style={{ width: "var(--tasty-field-width-xs)" }} /><span style={{ fontSize: 12, color: "var(--tasty-text-muted)" }}>%</span></Row>
+            <Row label="Default zoom:"><Input mono defaultValue="100" style={{ width: "var(--tasty-field-width-xs)" }} /><span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>%</span></Row>
             <Row label="Color scheme:"><Select options={["Follow theme", "Light", "Dark"]} defaultValue="Follow theme" style={{ width: "var(--tasty-field-width-md)" }} /></Row>
             <Row label="Allow remote content:"><Switch /></Row>
             <Row label="Sandbox scripts:"><Switch defaultChecked /></Row>
@@ -1026,7 +1026,7 @@ function SettingsWindow({ theme, onTheme, uiScale, onUiScale, onClose }) {
                 borderBottom: "var(--tasty-border-width) solid var(--tasty-separator)", paddingBottom: 8 }}>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 13, color: "var(--tasty-text-secondary)" }}>{name}</div>
-                  <div style={{ fontSize: 12, color: "var(--tasty-text-muted)", marginTop: 2, lineHeight: 1.4 }}>{desc}</div>
+                  <div style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)", marginTop: 2, lineHeight: 1.4 }}>{desc}</div>
                 </div>
                 <Switch defaultChecked={on} />
               </div>
@@ -1135,7 +1135,7 @@ function SettingsWindow({ theme, onTheme, uiScale, onUiScale, onClose }) {
         <Row label="Close behavior:"><Select options={["Ask", "Minimize to background", "Quit"]} style={{ width: "var(--tasty-field-width-lg)" }} /></Row>
         {/* 2026-10-08 (batch 8) — the app's two description lines sit under THEIR rows (Row caption), not under the webhook callout. */}
         <Row label="Wheel scroll distance:" caption={<RowCaption>Lines scrolled per wheel notch in the terminal. Trackpads scroll by distance and ignore this.</RowCaption>}>
-          <Input mono defaultValue="3" style={{ width: "var(--tasty-field-width-xs)" }} /><span style={{ fontSize: 12, color: "var(--tasty-text-muted)" }}>lines</span>
+          <Input mono defaultValue="3" style={{ width: "var(--tasty-field-width-xs)" }} /><span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>lines</span>
         </Row>
         <Row label="Language:" caption={<RowCaption>Changing the language takes effect after Tasty restarts.</RowCaption>}><Select options={["English", "한국어", "日本語"]} style={{ width: "var(--tasty-field-width-md)" }} /></Row>
         {/* 2026-10-07 — [webhook] allow_external. On the row grid; the warning callout is the row's own and is ALWAYS shown. Save/Cancel flow. */}
@@ -1188,7 +1188,7 @@ function SettingsWindow({ theme, onTheme, uiScale, onUiScale, onClose }) {
                 </div>
                 </React.Fragment>
               ))}
-              {shown.length === 0 && <div style={{ padding: "var(--tasty-space-md)", fontSize: 12, color: "var(--tasty-text-muted)" }}>{filter ? "No matches" : "No sections"}</div>}
+              {shown.length === 0 && <div style={{ padding: "var(--tasty-space-md)", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>{filter ? "No matches" : "No sections"}</div>}
             </div>
           </div>
 
@@ -1203,7 +1203,7 @@ function SettingsWindow({ theme, onTheme, uiScale, onUiScale, onClose }) {
                 {/* The 620 cap lives HERE — on the settings content column — so every
                     non-full-bleed subtab inherits it and no block carries its own width.
                     Full-bleed subtabs replace this column with their own layout. */}
-                <div style={{ maxWidth: "var(--tasty-settings-content-max-width)", display: "flex", flexDirection: "column", gap: 14 }}>
+                <div style={{ maxWidth: "var(--tasty-settings-content-max-width)", display: "flex", flexDirection: "column", gap: "var(--tasty-settings-row-gap)" }}>
                   {body()}
                 </div>
               </div>

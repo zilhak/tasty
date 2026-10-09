@@ -4,6 +4,31 @@
 // page's specimens + nav. See the other overlays-*.jsx for the rest.
 const { Section, Spec, Stage, Meta, Note, Do, Dont, GIcon } = window.Gallery;
 const { Kbd } = window.TastyDesignSystem_41fd3f;
+const { Tag: DTag, Button: DButton } = window.TastyDesignSystem_41fd3f;
+// 2026-10-09 — "Script changed since registration" confirm (host popup script_changed_confirm).
+const SCRIPT_CONFIRM_COPY = {
+  en: ["Script changed since registration", "changed", "This script's contents changed after it was registered. Running it runs the new contents.", "Run anyway", "Cancel"],
+  ko: ["등록 후 스크립트가 바뀌었습니다", "변경됨", "등록 뒤 스크립트 내용이 바뀌었습니다. 실행하면 바뀐 내용이 실행됩니다.", "그래도 실행", "취소"],
+  ja: ["登録後にスクリプトが変更されました", "変更あり", "登録後にこのスクリプトの内容が変更されました。実行すると変更後の内容が実行されます。", "このまま実行", "キャンセル"],
+};
+function ScriptConfirmG({ lang = "en" }) {
+  const [title, tag, body, run, cancel] = SCRIPT_CONFIRM_COPY[lang];
+  return (
+    <div style={{ width: "var(--tasty-size-360)", background: "var(--tasty-bg-panel)", border: "var(--tasty-border-width) solid var(--tasty-border-strong)", borderRadius: "var(--tasty-radius)", boxShadow: "var(--tasty-shadow-modal)", overflow: "hidden" }}>
+      <div style={{ padding: "var(--tasty-space-md) var(--tasty-size-14)", display: "flex", flexDirection: "column", gap: "var(--tasty-space-sm)" }}>
+        <div style={{ fontSize: "var(--tasty-font-size-body)", fontWeight: "var(--tasty-font-weight-semibold)", color: "var(--tasty-text-primary)" }}>{title}</div>
+        <div style={{ fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>~/.config/tasty/scripts/deploy-preview-with-long-name.sh</div>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: "var(--tasty-space-xs)" }}>
+          <DTag variant="warning">{tag}</DTag>
+          <p style={{ margin: 0, fontSize: "var(--tasty-font-size-caption)", lineHeight: "var(--tasty-line-height-ui)", color: "var(--tasty-text-secondary)" }}>{body}</p>
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: "var(--tasty-space-sm)", marginTop: "var(--tasty-space-xs)" }}>
+          <DButton variant="ghost" size="sm">{cancel}</DButton><DButton variant="primary" size="sm">{run}</DButton>
+        </div>
+      </div>
+    </div>
+  );
+}
 const { Backdrop, ApprovalFrame, FileHandlerFrame, FhFooter, PresetFrame, MarkdownOpenFrame, RenameFrame, CategoryEditFrame, CategoryDeleteFrame, TransferProgressFrame, TransferErrorFrame, ShellMock } = window.OverlaysShared;
 
 const NAV = [
@@ -17,6 +42,7 @@ const NAV = [
   { id: "category", label: "Workspace category" },
   { id: "transfer", label: "Remote transfer" },
   { id: "permnotice", label: "Info modal shell" },
+  { id: "scriptconfirm", label: "Script changed confirm" },
 ];
 
 function Page() {
@@ -464,6 +490,22 @@ function Page() {
           <Meta
             specs={[["branches", "never · stale · revoked — FDA paragraph only"], ["stale steps", "ordered list 1–2 · body 13 · text-primary · indent space-xl · gap space-xs"], ["signing aside", "every notice · last · caption 12 · text-muted · command chip unchanged"], ["new strings", "stale step 1 · stale step 2 · stale retry line (split from the old stale paragraph)"]]}
             tokens={[{ tok: "--tasty-text-muted", use: "signing aside", color: "var(--tasty-text-muted)" }, { tok: "--tasty-font-size-caption", use: "signing aside" }, { tok: "--tasty-space-xl", use: "step list indent" }]} />
+        </Spec>
+      </Section>
+      <Section id="scriptconfirm" title="Script changed confirm (2026-10-09)">
+        <Spec title="Wrapped body · height fits the content"
+          when={<>The confirm stays <b>360</b> wide in every language. The <b>changed</b> Tag sits on <b>its own line</b> and the explanation is a <b>full-width paragraph</b> under it, so the text never starts beside the tag and wraps back under it (no <code>horizontal_wrapped</code>). Height <b>fits the content</b> — no 152 floor, so ko leaves no empty band under the buttons and ja grows by one line. Body → buttons is <span className="tok">--tasty-space-md</span> (8 row gap + 4 extra). Buttons stay inside the 360 (right-aligned, Run anyway primary, Cancel ghost).</>}>
+          <Stage variant="solo" style={{ padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-app)", gap: "var(--tasty-space-lg)", flexWrap: "wrap", alignItems: "flex-start" }}>
+            {[["en", null], ["ko", null], ["ja", null], ["ja · Latte", "latte"]].map(([lang, th]) => (
+              <div key={lang} {...(th ? { "data-theme": th } : {})} style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-xs)", padding: "var(--tasty-space-md)", background: "var(--tasty-bg-app)", borderRadius: "var(--tasty-radius)" }}>
+                <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>{lang}</span>
+                <ScriptConfirmG lang={lang.slice(0, 2)} />
+              </div>
+            ))}
+          </Stage>
+          <Meta
+            specs={[["width", "360 × UI scale · all languages"], ["rows", "title (body 13 semibold) · path (mono caption, ellipsis) · Tag warning “changed” · paragraph (caption 11, text-secondary, line-height-ui, full width) · buttons"], ["row gap", "space-sm 8 · Tag → paragraph space-xs 4"], ["body → buttons", "space-md 12"], ["height", "fits content (title bar + padding + rows) · no minimum"], ["padding", "12 top/bottom · 14 sides"], ["buttons", "right-aligned · Cancel ghost sm · Run anyway primary sm · inside 360"]]}
+            tokens={[{ tok: "--tasty-accent-warning", use: "changed Tag", color: "var(--tasty-accent-warning)" }, { tok: "--tasty-text-secondary", use: "paragraph", color: "var(--tasty-text-secondary)" }, { tok: "--tasty-space-md", use: "body → buttons" }, { tok: "--tasty-shadow-modal", use: "popup" }]} />
         </Spec>
       </Section>
     </>

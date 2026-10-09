@@ -1192,6 +1192,36 @@ function Page() {
             tokens={[{ tok: "--tasty-settings-row-min-height", use: "row height" }, { tok: "--tasty-surface-active", use: "active L2 row", color: "var(--tasty-surface-active)" }, { tok: "--tasty-separator", use: "row separator", color: "var(--tasty-separator)" }, { tok: "--tasty-text-muted", use: "descriptions + unit", color: "var(--tasty-text-muted)" }]} />
           <Note>The unit is a static mono <b>MiB</b> suffix outside the field — not typed, not a Tag — mirroring how Toast duration carries its “s” unit. Exceeding <b>Maximum size</b> rejects new transfers before they start; the rejection surfaces as the <b>Transfer failed</b> popup (Overlays › Dialogs › Remote transfer).</Note>
         </Spec>
+        <Spec title="Settings · Misc › Task pipeline — Report limits (2026-10-09)"
+          when={<>A new Misc L2 subtab <b>Task pipeline</b> (after Scripts, before Tastyrc on Windows). The content column is one <b>mono micro uppercase</b> heading, <b>REPORT LIMITS</b>, then two settings rows in the row grid (label column = longest label clamped 150 … 240, gap 16), each a <b>mono numeric Input</b> (90) with the static unit <b>B</b>, its description caption directly under it (gap 4, measure-md), and a 1px separator between the rows. The two values are tied (note limit &lt; attempt limit): each field's range narrows to the other's current value, so a crossed pair can't be committed. The relation stays in the description copy; the range line appears <b>only when a value is out of range</b>, like every numeric field. Values are raw bytes with no grouping (they are typed, and match the config file); the unit stays <b>B</b>.</>}>
+          <Stage variant="solo" style={{ padding: 20, background: "var(--tasty-bg-app)", gap: 16, flexWrap: "wrap", alignItems: "flex-start" }}>
+            {[["Mocha", null, false], ["Latte · out of range", "latte", true]].map(([label, th, bad]) => (
+              <div key={label} data-theme={th || undefined} style={{ width: 460, display: "flex", flexDirection: "column", gap: "var(--tasty-settings-row-gap)", padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-panel)", border: "1px solid var(--tasty-border-default)", borderRadius: "var(--tasty-radius)" }}>
+                <div style={{ fontSize: 11, color: "var(--tasty-text-muted)" }}>{label}</div>
+                <div style={{ fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-micro)", textTransform: "uppercase", letterSpacing: "var(--tasty-letter-spacing-caps)", color: "var(--tasty-text-muted)" }}>Report limits</div>
+                {[["Note size limit", bad ? "70000" : "1024", "One note longer than this is cut at a UTF-8 boundary and marked as truncated. Must be smaller than the attempt limit.", bad ? "Between 64 and 16383. Commits as 16383." : null],
+                  ["Attempt report limit", "16384", "Total note text kept for one task attempt. Notes past it are not stored, only counted.", null]].map(([lab, val, desc, err], i) => (
+                  <React.Fragment key={lab}>
+                    {i > 0 && <div style={{ height: 1, background: "var(--tasty-separator)" }} />}
+                    <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-settings-row-caption-gap)" }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "var(--tasty-settings-label-width) auto auto", columnGap: "var(--tasty-settings-label-gap)", alignItems: "center", justifyContent: "start", minHeight: "var(--tasty-settings-row-min-height)" }}>
+                        <span style={{ fontSize: "var(--tasty-font-size-body)", color: "var(--tasty-text-secondary)" }}>{lab}</span>
+                        <span style={{ width: "var(--tasty-field-width-xs)" }}><Input block defaultValue={val} aria-invalid={err ? true : undefined} style={{ fontFamily: "var(--tasty-font-mono)", textAlign: "right", ...(err ? { borderColor: "var(--tasty-accent-danger)" } : null) }} /></span>
+                        <span style={{ marginLeft: "calc(var(--tasty-space-sm) - var(--tasty-settings-label-gap))", fontFamily: "var(--tasty-font-mono)", fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>B</span>
+                      </div>
+                      {err && <div style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-accent-danger)" }}>{err}</div>}
+                      <p style={{ margin: 0, fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)", maxWidth: "var(--tasty-measure-md)", lineHeight: "var(--tasty-line-height-ui)" }}>{desc}</p>
+                    </div>
+                  </React.Fragment>
+                ))}
+              </div>
+            ))}
+          </Stage>
+          <Meta
+            specs={[["L2 position", "Misc · after Scripts · before Tastyrc (Windows)"], ["heading", "REPORT LIMITS · mono micro uppercase · muted"], ["row grid", "label [150 … 240] · gap 16 (settings-label-gap — the request's 12 is superseded)"], ["field", "mono Input · field-width-xs 90 · right-aligned · unit B (static, muted, 8 after the field)"], ["caption", "under its row · gap 4 · caption 11 · muted · measure-md"], ["between rows", "1px separator · settings-row-gap 12"], ["ranges", "note 64 … min(65536, attempt − 1) · attempt max(128, note + 1) … 131072"], ["range line", "only when out of range (danger) · clamp on commit"], ["numbers", "raw bytes, no grouping, no KiB"]]}
+            tokens={[{ tok: "--tasty-settings-row-gap", use: "→ space-md 12 (2026-10-09)" }, { tok: "--tasty-settings-row-caption-gap", use: "row → caption 4" }, { tok: "--tasty-field-width-xs", use: "90" }, { tok: "--tasty-accent-danger", use: "out of range", color: "var(--tasty-accent-danger)" }]} />
+          <Note>i18n (given): en “Note size limit” / “Attempt report limit” · ko “기록 한 건 상한” / “회차 report 상한” · ja “記録 1 件の上限” / “試行 report 上限” · heading “Report limits”. Gallery spec id: <code>settings-task-pipeline</code>.</Note>
+        </Spec>
         <Spec title="Numbers in settings — one shape: mono Input + a static suffix"
           when={<>Three different numeric controls had appeared: a mono text Input with a static unit (remote transfer <b>Maximum size</b> · MiB), a <b>drag</b> number (plugin <b>Default zoom</b> · %), and a proposed stepper. The settled shape is the <b>first</b>, everywhere: a <b>mono text Input</b>, keyboard entry only, a <b>static muted suffix</b> outside the field, and <b>clamp on commit</b> (blur / <span className="ic">↵</span>) — not while typing, so you can type <code>150</code> in a 25–200 field without the second keystroke fighting you. Out of range shows the danger border + one inline line naming the range. A drag surface inside a scrolling settings pane steals the scroll and hides its own range; a stepper needs two more hit targets for a field people set once.</>}>
           <Stage variant="solo" style={{ padding: 20, background: "var(--tasty-bg-app)", flexDirection: "column", gap: 16, alignItems: "flex-start" }}>
