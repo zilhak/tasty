@@ -885,10 +885,6 @@ const ORPHAN_KEYS: &[(&str, &str)] = &[
         "소비자 검사에서 사용처를 찾지 못했다. 삭제 전 실제 UI 사용 여부를 확인한다.",
     ),
     (
-        "explorer.hide_preview",
-        "소비자 검사에서 사용처를 찾지 못했다. 삭제 전 실제 UI 사용 여부를 확인한다.",
-    ),
-    (
         "explorer.popup.add_favorite.path",
         "소비자 검사에서 사용처를 찾지 못했다. 삭제 전 실제 UI 사용 여부를 확인한다.",
     ),
@@ -907,18 +903,6 @@ const ORPHAN_KEYS: &[(&str, &str)] = &[
     (
         "explorer.tab.new",
         "호출부 0 — `explorer.tab.close` 와 같은 자리, 같은 사유",
-    ),
-    (
-        "explorer.select_file",
-        "소비자 검사에서 사용처를 찾지 못했다. 삭제 전 실제 UI 사용 여부를 확인한다.",
-    ),
-    (
-        "explorer.show_preview",
-        "소비자 검사에서 사용처를 찾지 못했다. 삭제 전 실제 UI 사용 여부를 확인한다.",
-    ),
-    (
-        "explorer.unsupported_format",
-        "소비자 검사에서 사용처를 찾지 못했다. 삭제 전 실제 UI 사용 여부를 확인한다.",
     ),
     (
         "git_viewer.error",
