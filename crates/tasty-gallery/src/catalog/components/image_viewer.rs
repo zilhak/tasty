@@ -69,7 +69,7 @@ fn states_spec() -> crate::catalog::Spec {
         id: "image-states",
         title: "Image — empty canvas vs load failed · Save As name clash",
         when: Some(
-            "image-empty · image-load-failed-missing · -permission · -decode · compact under 120 · Save As clash",
+            "image-empty · image-load-failed-missing · -permission · -decode · -too-large · compact under 120 · Save As clash",
         ),
         draw: draw_states,
     }
@@ -130,6 +130,15 @@ const CANVAS_STATES: &[CanvasState] = &[
         title: Title::Plugin("Can't open this image"),
         sub: Some("The file is damaged or in an unsupported format."),
         reason: Some("Format error decoding Png: invalid signature"),
+        retry: true,
+    },
+    // 디자인 회신 전까지 본체와 같이 디코드 실패 줄의 글리프·톤을 따른다.
+    CanvasState {
+        icon: icons::ALERT_TRIANGLE,
+        tone: StateTone::Error,
+        title: Title::Plugin("Image is too large"),
+        sub: Some("Over 16384 px on a side, or needs more than 512 MB to decode."),
+        reason: None,
         retry: true,
     },
 ];
@@ -229,7 +238,7 @@ fn draw_states(ui: &mut egui::Ui, theme: &Theme) {
                 "image glyph muted · No image loaded text-secondary · no button",
             ),
             (
-                "missing / decode",
+                "missing / decode / too large",
                 "alertTriangle · image-error-fg (→ accent-danger) title",
             ),
             ("permission", "lock · accent-warning (same as explorer)"),
@@ -250,7 +259,7 @@ fn draw_states(ui: &mut egui::Ui, theme: &Theme) {
         &[
             TokenChip::new(
                 "image-error-fg",
-                "missing · decode",
+                "missing · decode · too large",
                 theme.image_error_fg().to_egui(),
             ),
             TokenChip::new(

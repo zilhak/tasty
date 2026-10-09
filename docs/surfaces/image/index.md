@@ -105,7 +105,7 @@
 ### 갤러리 specimen
 
 `crates/tasty-gallery/src/catalog/components/image_viewer.rs` — Layouts › `Content viewers` ›
-`Image surface / canvas`. viewer(그림 fit) / no-image 두 상태와, `image-states` spec 의 빈 캔버스 · 원인별 로드 실패 세 칸 · compact 줄 · Save As 이름 충돌 카드를 전사한다. 상태 칸은 본체와 같은 공용 상태 화면이 그린다.
+`Image surface / canvas`. viewer(그림 fit) / no-image 두 상태와, `image-states` spec 의 빈 캔버스 · 원인별 로드 실패 네 칸(없음 · 권한 · 디코드 · 너무 큼) · compact 줄 · Save As 이름 충돌 카드를 전사한다. 상태 칸은 본체와 같은 공용 상태 화면이 그린다. 너무 큼 칸은 시안이 오기 전이라 같은 줄에 한 칸을 더해 본체와 같은 글리프·톤으로 그린다.
 3자 매핑: [design-gallery-mapping.md](../../design/systems/design-gallery-mapping.md#surface-viewers-plugins).
 
 ### 시각 소스
