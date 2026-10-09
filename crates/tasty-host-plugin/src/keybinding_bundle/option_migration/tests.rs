@@ -3,6 +3,14 @@
 use super::*;
 use tasty_settings::ScriptBinding;
 
+/// 기본 프리셋. 드래그 반전 modifier 의 기본값은 OS 마다 달라(macOS `option`) 어느 OS 에서
+/// 돌아도 같은 자리만 세도록 option 이 아닌 값으로 고정한다.
+fn preset() -> KeybindingSettings {
+    let mut kb = KeybindingSettings::preset_tasty();
+    kb.explorer_drag_flip_modifier = "ctrl".into();
+    kb
+}
+
 fn plugin_key(plugin: &str, command: &str, combo: &str) -> PluginShortcutOverrides {
     let mut commands = BTreeMap::new();
     commands.insert(
@@ -18,7 +26,7 @@ fn plugin_key(plugin: &str, command: &str, combo: &str) -> PluginShortcutOverrid
 
 /// 다섯 자리에 각각 `option` 을 심은 구성.
 fn five_sites() -> (KeybindingSettings, PluginShortcutOverrides) {
-    let mut kb = KeybindingSettings::preset_tasty();
+    let mut kb = preset();
     kb.add_binding("new_tab", "alt+option+t".into()); // (1) 일반 필드
     kb.category_switch_modifier = "option+shift".into(); // (2) 축 modifier
     kb.tab_switch_modifier = KeybindingSettings::INDIVIDUAL_SWITCH_MODIFIER.into();
@@ -53,7 +61,7 @@ fn finds_option_in_all_five_places() {
 
 #[test]
 fn a_rule_based_axis_holds_raw_keys_which_are_not_combos() {
-    let mut kb = KeybindingSettings::preset_tasty();
+    let mut kb = preset();
     kb.tab_switch_modifier = "ctrl".into(); // 규칙 기반
     kb.set_tab_slot_key(0, "o"); // raw 키 "o" — 콤보가 아니다
     kb.set_tab_next_key("o");
@@ -65,7 +73,7 @@ fn a_rule_based_axis_holds_raw_keys_which_are_not_combos() {
 /// 개별 지정의 다음·이전 키도 검사한다.
 #[test]
 fn an_individual_axis_step_is_scanned_too() {
-    let mut kb = KeybindingSettings::preset_tasty();
+    let mut kb = preset();
     kb.workspace_switch_modifier = KeybindingSettings::INDIVIDUAL_SWITCH_MODIFIER.into();
     kb.set_workspace_next_key("option+j");
     let found = scan_option_bindings(&kb, &PluginShortcutOverrides::new(), TargetOs::NonMac);
@@ -78,7 +86,7 @@ fn an_individual_axis_step_is_scanned_too() {
 /// 공통 수식키 모드의 슬롯은 단일 키이며 완전한 조합으로 검사하지 않는다.
 #[test]
 fn a_rule_based_slot_is_never_read_as_a_combo() {
-    let mut kb = KeybindingSettings::preset_tasty();
+    let mut kb = preset();
     kb.tab_switch_modifier = "ctrl".into(); // 규칙 기반
     kb.set_tab_slot_key(0, "option+1");
     kb.set_tab_next_key("option+l");
@@ -106,14 +114,7 @@ fn non_key_overrides_are_not_scanned() {
     commands.insert("b".to_string(), ShortcutOverride::None);
     let mut overrides = PluginShortcutOverrides::new();
     overrides.insert("com.example.x".to_string(), commands);
-    assert!(
-        scan_option_bindings(
-            &KeybindingSettings::preset_tasty(),
-            &overrides,
-            TargetOs::NonMac
-        )
-        .is_empty()
-    );
+    assert!(scan_option_bindings(&preset(), &overrides, TargetOs::NonMac).is_empty());
 }
 
 /// 대체 값은 자리마다 종류가 다르다 — 축 modifier 는 modifier 조합, 나머지는 콤보.
@@ -331,7 +332,7 @@ fn a_replacement_that_collides_with_an_existing_binding_is_rejected() {
 /// 같은 plugin 안의 중복만 충돌로 검사하며 호스트와의 중복은 검사하지 않는다.
 #[test]
 fn the_plugin_namespace_is_separate_from_the_host_one() {
-    let mut kb = KeybindingSettings::preset_tasty();
+    let mut kb = preset();
     kb.script_bindings.push(ScriptBinding {
         script_id: "s1".into(),
         combo: "option+f5".into(),
@@ -389,7 +390,7 @@ fn the_plugin_namespace_is_separate_from_the_host_one() {
 /// 공통 수식키를 바꾸면 해당 슬롯 전체와 다음·이전 키의 충돌을 검사한다.
 #[test]
 fn changing_an_axis_modifier_is_checked_against_every_composed_combo() {
-    let mut kb = KeybindingSettings::preset_tasty();
+    let mut kb = preset();
     kb.category_switch_modifier = "option+shift".into();
     // 카테고리 축이 `ctrl+alt` 로 옮겨가면 3번 슬롯의 합성 콤보 `ctrl+alt+3` 이
     // 이 일반 액션과 겹친다.
@@ -419,7 +420,7 @@ fn changing_an_axis_modifier_is_checked_against_every_composed_combo() {
 /// 사용자가 무관한 이유로 막힌다.
 #[test]
 fn a_conflict_that_was_already_there_does_not_block() {
-    let mut kb = KeybindingSettings::preset_tasty();
+    let mut kb = preset();
     kb.script_bindings.push(ScriptBinding {
         script_id: "s1".into(),
         combo: "option+f5".into(),
@@ -456,7 +457,7 @@ fn the_host_target_matches_the_build() {
 /// 버린 자리는 해소로 세고, 그 바인딩만 사라진다. 같은 필드의 다른 바인딩은 남는다.
 #[test]
 fn unbinding_removes_only_that_binding() {
-    let mut kb = KeybindingSettings::preset_tasty();
+    let mut kb = preset();
     kb.add_binding("new_tab", "option+t".into());
     kb.add_binding("new_tab", "ctrl+alt+shift+t".into());
     let overrides = plugin_key("com.example.x", "x.go", "option+g");
@@ -479,7 +480,7 @@ fn unbinding_removes_only_that_binding() {
 /// 같은 필드에서 앞 원소를 버리고 뒤 원소를 대체해도 좌표가 엇갈리지 않는다.
 #[test]
 fn unbinding_an_earlier_index_does_not_shift_a_later_replacement() {
-    let mut kb = KeybindingSettings::preset_tasty();
+    let mut kb = preset();
     kb.new_tab = vec!["option+t".into(), "option+y".into()];
     let overrides = PluginShortcutOverrides::new();
     let plan: ResolutionPlan = [
@@ -507,7 +508,7 @@ fn unbinding_an_earlier_index_does_not_shift_a_later_replacement() {
 
 #[test]
 fn an_axis_modifier_cannot_be_unbound() {
-    let mut kb = KeybindingSettings::preset_tasty();
+    let mut kb = preset();
     kb.category_switch_modifier = "option".into();
     let plan: ResolutionPlan = [(
         BindingSite::AxisModifier {
@@ -531,7 +532,7 @@ fn an_axis_modifier_cannot_be_unbound() {
 /// 충돌을 수락하면 계획 밖의 상대가 비워지고 대체 값이 들어간다.
 #[test]
 fn unbind_other_clears_the_binding_outside_the_plan() {
-    let mut kb = KeybindingSettings::preset_tasty();
+    let mut kb = preset();
     let taken = kb.copy[0].clone();
     kb.new_tab = vec!["option+t".into()];
     let overrides = PluginShortcutOverrides::new();
@@ -561,7 +562,7 @@ fn unbind_other_clears_the_binding_outside_the_plan() {
 /// 대체 값끼리 겹치면 어느 쪽을 비울지 정할 수 없어 수락해도 거절한다.
 #[test]
 fn unbind_other_still_rejects_two_replacements_that_collide() {
-    let mut kb = KeybindingSettings::preset_tasty();
+    let mut kb = preset();
     kb.new_tab = vec!["option+t".into()];
     kb.new_workspace = vec!["option+w".into()];
     let plan: ResolutionPlan = [
@@ -603,7 +604,7 @@ fn introduced_conflicts_ignores_unassigned_sites() {
 /// 미리보기는 정해진 해소만 반영하고, 아직 안 정한 자리는 원래 값 그대로 둔다.
 #[test]
 fn preview_applies_only_the_resolutions_chosen_so_far() {
-    let mut kb = KeybindingSettings::preset_tasty();
+    let mut kb = preset();
     kb.new_tab = vec!["option+t".into(), "option+y".into()];
     kb.new_workspace = vec!["option+w".into()];
     let plan: ResolutionPlan = [
@@ -632,7 +633,7 @@ fn preview_applies_only_the_resolutions_chosen_so_far() {
 /// 입력칸 키도 option 이면 비-macOS 이식 대상이다. 대체 값의 충돌은 입력칸 키끼리만 본다.
 #[test]
 fn code_field_keys_are_scanned_and_checked_in_their_own_scope() {
-    let mut kb = KeybindingSettings::preset_tasty();
+    let mut kb = preset();
     kb.code_area_apply = vec!["option+enter".into()];
     kb.code_area_cancel = vec!["option+q".into()];
     let overrides = PluginShortcutOverrides::new();
@@ -660,4 +661,64 @@ fn code_field_keys_are_scanned_and_checked_in_their_own_scope() {
     plan.insert(found[0].site.clone(), "ctrl+s".into());
     plan.insert(found[1].site.clone(), "ctrl+s".into());
     assert!(apply_migration(&kb, &overrides, &plan).is_err());
+}
+
+/// macOS 에서 저장한 드래그 반전 `option` 은 다른 OS 에서 맞지 않으므로 이행 대상이다.
+/// 대체 값은 modifier 조합이고, 비울 수 없다.
+#[test]
+fn the_drag_flip_modifier_is_migrated_like_an_axis_modifier() {
+    let mut kb = preset();
+    kb.explorer_drag_flip_modifier = "option".into();
+    let none = PluginShortcutOverrides::new();
+
+    let found = scan_option_bindings(&kb, &none, TargetOs::NonMac);
+    assert_eq!(
+        found,
+        [OptionBinding {
+            site: BindingSite::DragFlipModifier,
+            current: "option".into(),
+        }]
+    );
+    assert_eq!(
+        found[0].site.replacement_kind(),
+        ReplacementKind::ModifierCombo
+    );
+    assert!(scan_option_bindings(&kb, &none, TargetOs::Mac).is_empty());
+
+    let plan: MigrationPlan = [(BindingSite::DragFlipModifier, "ctrl+shift".to_string())]
+        .into_iter()
+        .collect();
+    let (after, _) = apply_migration(&kb, &none, &plan).expect("a modifier combo applies");
+    assert_eq!(after.explorer_drag_flip_modifier, "ctrl+shift");
+    assert!(scan_option_bindings(&after, &none, TargetOs::NonMac).is_empty());
+
+    for bad in ["ctrl+t", "option+shift"] {
+        let plan: MigrationPlan = [(BindingSite::DragFlipModifier, bad.to_string())]
+            .into_iter()
+            .collect();
+        assert!(apply_migration(&kb, &none, &plan).is_err(), "{bad}");
+    }
+    let unbind: ResolutionPlan = [(BindingSite::DragFlipModifier, Resolution::Unbind)]
+        .into_iter()
+        .collect();
+    assert!(matches!(
+        resolve_migration(&kb, &none, &unbind, ConflictPolicy::Reject),
+        Err(MigrationError::CannotUnbind { .. })
+    ));
+}
+
+/// 이 빌드의 기본 프리셋을 macOS 밖으로 옮겨도 남는 option 은 드래그 반전 기본값뿐이다.
+#[test]
+fn the_platform_default_flip_is_the_only_option_in_a_preset() {
+    let kb = KeybindingSettings::preset_tasty();
+    let found = scan_option_bindings(&kb, &PluginShortcutOverrides::new(), TargetOs::NonMac);
+    let expected: Vec<BindingSite> = if kb.explorer_drag_flip_modifier == "option" {
+        vec![BindingSite::DragFlipModifier]
+    } else {
+        Vec::new()
+    };
+    assert_eq!(
+        found.into_iter().map(|f| f.site).collect::<Vec<_>>(),
+        expected
+    );
 }

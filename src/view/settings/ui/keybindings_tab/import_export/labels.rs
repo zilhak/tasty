@@ -60,6 +60,9 @@ impl Labels<'_> {
                 trim_label(KeybindingSettings::label_key_for(field_id).map_or(*field_id, t))
             }
             BindingSite::AxisModifier { axis } => trim_label(t(axis.modifier_label_key())),
+            BindingSite::DragFlipModifier => {
+                trim_label(t("settings.keybindings.explorer_drag_flip_modifier_label"))
+            }
             BindingSite::AxisSlot { axis, index } => {
                 let key = match axis {
                     crate::settings::SwitchAxis::Tab => {

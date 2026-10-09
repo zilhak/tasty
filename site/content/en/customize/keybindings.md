@@ -1,4 +1,4 @@
-<!-- source-hash: 7845d55d6b99 -->
+<!-- source-hash: 2adfd53282cf -->
 # Keybindings
 
 Use Tasty with shortcuts that feel familiar. Choose a preset or assign your preferred keys to actions you use often. Open **Settings** > **Keybindings** to get started.
@@ -163,7 +163,7 @@ Good to know:
 Keybindings that contain the Mac `Option` key never work on Windows or Linux. If there are any, an **Option bindings need a replacement** card appears above the comparison, and **Apply** stays disabled until every one is settled.
 
 - A regular keybinding — click the slot on the right and press the combination to use instead. To not use it on this computer, press **Leave unbound**.
-- A number-switch modifier — choose a replacement modifier combination from the dropdown (it starts empty, showing **Select a modifier**). A modifier can't be left unbound.
+- A number-switch modifier or the Explorer drag flip modifier — choose a replacement modifier combination from the dropdown (it starts empty, showing **Select a modifier**). A modifier can't be left unbound. The drag flip modifier defaults to `Option` on a Mac, so a file exported on a Mac shows this row.
 - If the combination you choose collides with another action in the file, it is shown under that row (with two or more collisions, a **N conflicts** line comes first at the top of the card), and the **Shortcut already in use** popup appears when you **Apply**. Choosing **Overwrite** clears the other action.
 
 ## Changing one keybinding

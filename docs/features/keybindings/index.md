@@ -60,7 +60,7 @@ modifier 는 세 축 각자의 독립 필드 `tab_switch_modifier`/`workspace_sw
 
 세 축 모두 슬롯 + 다음/이전을 대칭으로 갖는다. 카테고리 modifier 기본값 `ctrl+shift` 는 macOS 스크린샷 예약(`⌘⇧3/4/5`, tasty 가 가로챌 수 없음)과 겹치지 않게 고른 값이고, 카테고리 next/prev 기본 raw 키 `j`/`k` 는 4 프리셋 전수 대조로 다른 액션과 무충돌임을 확인한 값이다(워크스페이스 축과 문자는 같지만 modifier 가 달라 합성 콤보는 겹치지 않는다 — `ctrl+shift+j` vs `alt+j`). slot/next/prev 필드는 모두 필드별 `#[serde(default = "…")]` 를 가져 신규 필드가 없는 구버전 config 를 읽어도 빈 값이 아니라 위 기본값으로 복원된다(`category_switch_modifier` 도 동일 — `"ctrl+shift"` default). 자유 콤보용 `next_tab`/`prev_tab` 필드와는 별개다(Command Palette·더블탭 경로 전용, quick-switch 가 건드리지 않음).
 
-`explorer_drag_flip_modifier`(`String`, 기본 macOS `"option"`·다른 OS `"ctrl"`)도 콤보 필드가 아닌 modifier 조합이다. explorer 드래그 중 이 조합을 누르고 있으면 놓기 동작(같은 디스크 이동, 다른 디스크 복사)을 뒤집는다. 눌린 modifier 가 이 조합을 모두 포함하면 누른 것으로 본다. 필드가 없는 config 는 기본값으로 읽는다(`#[serde(default)]`). 설정 UI 행은 아직 없다. 동작은 [Explorer 파일 작업](../../surfaces/explorer/file-operations.md#드래그-앤-드롭)에 있다.
+`explorer_drag_flip_modifier`(`String`, 기본 macOS `"option"`·다른 OS `"ctrl"`)도 콤보 필드가 아닌 modifier 조합이다. explorer 드래그 중 이 조합을 누르고 있으면 놓기 동작(같은 디스크 이동, 다른 디스크 복사)을 뒤집는다. 눌린 modifier 가 이 조합을 모두 포함하면 누른 것으로 본다. 필드가 없는 config 는 기본값으로 읽는다(`#[serde(default)]`). 설정 UI 행은 아직 없다. 단축키 가져오기 표에서는 General 그룹의 한 행이고, 비-macOS 로 가져온 `option` 은 option 마이그레이션 대상이다(축 modifier 처럼 7 조합 중 선택, 비울 수 없음). 동작은 [Explorer 파일 작업](../../surfaces/explorer/file-operations.md#드래그-앤-드롭)에 있다.
 
 #### quick-switch 섹션 UI (Tab/Workspace 서브탭)
 
@@ -390,12 +390,12 @@ Settings › Keybindings › **Import / Export** 는 위 [이식 번들](#이식
     화면 문구가 정해지지 않은 경고(`UnknownTopLevelKey` · `KeybindingFieldShapeMismatch` · `KeybindingsUnreadable` · `UnreadablePluginOverride` · `PluginOverridesUnreadable` · `DroppedUnknownScriptBinding`)는 로그(`tracing::warn!`)로만 남는다.
     "빈 그룹" 줄은 디자인 문구가 있지만 그것을 내는 경고가 코덱에 없다.
 - **diff 표** — 선두 **선택 열** + Action / Current / Imported. 행은 네 그룹이고 그룹마다 **헤더 행**(그룹 전체 선택 · 접기 chevron · 그룹명 · `N changed · M total`)이 붙는다.
-  - **General** — 일반 콤보 필드 하나가 한 행(콤보 목록 전체).
+  - **General** — 일반 콤보 필드 하나가 한 행(콤보 목록 전체). 드래그 반전 modifier 도 이 그룹의 한 행이다.
   - **Quick switch** — 축(tab · workspace · category) 하나가 한 행. modifier · 슬롯 전부 · 다음/이전을 함께 옮긴다 — 슬롯은 raw 키라 modifier 와 떨어지면 뜻이 바뀐다.
   - **Scripts** — 현재와 번들의 **합집합**. 번들에 없는 현재 바인딩은 적용하면 사라지는 행으로 보인다.
   - **Plugin overrides** — **번들에 있는 명령만**. 이 환경에만 있는 override 는 표에 오르지 않고 바뀌지도 않는다.
   - 기본은 변경된 행만 보인다(back bar 의 **Show all {n}** / **Changed only** 토글). 선택은 해제한 행을 기억하는 방식이라 처음에는 모든 행이 선택돼 있다 — 변경 없는 행은 적용해도 값이 같다.
-- **option 마이그레이션 카드** — 비-macOS 에서 번들에 `option` 바인딩이 있으면 표 위에 카드가 뜬다. 자리마다 대체 값을 정한다: 콤보 자리는 녹화 슬롯, 축 modifier 자리는 7 조합 중 선택(안 고른 상태는 값이 아니라 placeholder **Select a modifier** — UI 폰트 · `text_placeholder` 색, 고르면 목록에서 빠진다 — `select_or_placeholder`). 콤보 자리는 **Leave unbound**(비워 두기)도 해소로 센다 — 축 modifier 는 비울 수 없다. 대체 값이 새 충돌을 만들면 행 아래에 충돌 상대가 표시된다(행마다 언제나). 충돌 행이 **2 개 이상**이면 카드 설명 아래에 개수 줄(`{n} conflicts` danger 강조 + 적용 시 충돌 확인이 뜬다는 문장)을 먼저 표시한다 — 목록을 되풀이하지 않는다. **미해결이 하나라도 있으면 Apply 가 비활성**이고, back bar 에 `{n} unresolved` 가 뜬다 — 선택 여부와 무관하게 번들 전체에 대해 요구한다.
+- **option 마이그레이션 카드** — 비-macOS 에서 번들에 `option` 바인딩이 있으면 표 위에 카드가 뜬다. 자리마다 대체 값을 정한다: 콤보 자리는 녹화 슬롯, 축 modifier 자리는 7 조합 중 선택(안 고른 상태는 값이 아니라 placeholder **Select a modifier** — UI 폰트 · `text_placeholder` 색, 고르면 목록에서 빠진다 — `select_or_placeholder`). 콤보 자리는 **Leave unbound**(비워 두기)도 해소로 센다 — 축 modifier 와 드래그 반전 modifier 는 비울 수 없다. 드래그 반전 modifier 도 축 modifier 처럼 7 조합 중 고른다. 대체 값이 새 충돌을 만들면 행 아래에 충돌 상대가 표시된다(행마다 언제나). 충돌 행이 **2 개 이상**이면 카드 설명 아래에 개수 줄(`{n} conflicts` danger 강조 + 적용 시 충돌 확인이 뜬다는 문장)을 먼저 표시한다 — 목록을 되풀이하지 않는다. **미해결이 하나라도 있으면 Apply 가 비활성**이고, back bar 에 `{n} unresolved` 가 뜬다 — 선택 여부와 무관하게 번들 전체에 대해 요구한다.
 - **Apply** — 고른 행만 settings draft 와 `plugin_shortcuts_draft` 에 쓴다(`apply_rows`). 마이그레이션 해소는 `resolve_migration` 이 한다. 해소된 번들 안에서 새 충돌이 생기면 설정 창의 충돌 확인 popup 이 뜨고, **덮어쓰기**를 고르면 충돌 상대 중 계획 밖의 자리를 비우고 적용한다(`ConflictPolicy::UnbindOther`). 적용되면 toast 로 알린다. 디스크 커밋은 footer **Save** 가 한다(Preset 과 같은 2 단계).
 - **Cancel** — 설정 draft 와 함께 `plugin_shortcuts_draft` 도 버린다. plugin draft 는 **Save 로 닫혔을 때만** 적용된다 — 창 닫기·`toggle_settings` 로 닫혀도 버린다. Plugins 서브탭 편집도 같은 규칙이다.
 

@@ -48,6 +48,8 @@ impl Group {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum RowKey {
     General(&'static str),
+    /// explorer 드래그 반전 modifier. 콤보 필드가 아니라 modifier 조합 하나다.
+    DragFlip,
     Axis(SwitchAxis),
     Script(String),
     Plugin {
@@ -59,7 +61,7 @@ pub(crate) enum RowKey {
 impl RowKey {
     pub(crate) fn group(&self) -> Group {
         match self {
-            RowKey::General(_) => Group::General,
+            RowKey::General(_) | RowKey::DragFlip => Group::General,
             RowKey::Axis(_) => Group::QuickSwitch,
             RowKey::Script(_) => Group::Scripts,
             RowKey::Plugin { .. } => Group::Plugins,
@@ -70,6 +72,7 @@ impl RowKey {
     pub(crate) fn of_site(site: &BindingSite) -> RowKey {
         match site {
             BindingSite::GeneralBinding { field_id, .. } => RowKey::General(field_id),
+            BindingSite::DragFlipModifier => RowKey::DragFlip,
             BindingSite::AxisModifier { axis }
             | BindingSite::AxisSlot { axis, .. }
             | BindingSite::AxisStep { axis, .. } => RowKey::Axis(*axis),
@@ -163,6 +166,7 @@ pub(crate) fn row_keys(
     let mut keys: Vec<RowKey> = KeybindingSettings::binding_fields()
         .map(|(id, _)| RowKey::General(id))
         .collect();
+    keys.push(RowKey::DragFlip);
     keys.extend(SwitchAxis::ALL.into_iter().map(RowKey::Axis));
     let mut seen = BTreeSet::new();
     for b in current
@@ -195,6 +199,9 @@ pub(crate) fn row_changed(
 ) -> bool {
     match key {
         RowKey::General(field) => current.get_bindings(field) != imported.get_bindings(field),
+        RowKey::DragFlip => {
+            current.explorer_drag_flip_modifier != imported.explorer_drag_flip_modifier
+        }
         RowKey::Axis(axis) => !axis_equal(*axis, current, imported),
         RowKey::Script(id) => current.script_binding_combo(id) != imported.script_binding_combo(id),
         RowKey::Plugin {
@@ -238,6 +245,11 @@ pub(crate) fn apply_rows<'a>(
                 for combo in imported.get_bindings(field).unwrap_or(&[]) {
                     draft.add_binding(field, combo.clone());
                 }
+            }
+            RowKey::DragFlip => {
+                draft
+                    .explorer_drag_flip_modifier
+                    .clone_from(&imported.explorer_drag_flip_modifier);
             }
             RowKey::Axis(axis) => {
                 axis.set_modifier(draft, axis.modifier(imported));
@@ -298,6 +310,45 @@ mod tests {
         let merged = merged_overrides(&base, &draft);
         assert!(!merged.contains_key("p"));
         assert!(override_of(&merged, "q", "b").is_some());
+    }
+
+    /// 드래그 반전 modifier 는 일반 그룹의 한 행이다. 이행 자리도 그 행으로 가고, 고르면 값이 들어간다.
+    #[test]
+    fn the_drag_flip_modifier_is_its_own_general_row() {
+        let mut draft = KeybindingSettings::preset_tasty();
+        draft.explorer_drag_flip_modifier = "ctrl".into();
+        let mut imported = draft.clone();
+        imported.explorer_drag_flip_modifier = "alt+shift".into();
+        let none = PluginShortcutOverrides::new();
+
+        assert!(row_keys(&draft, &imported, &none).contains(&RowKey::DragFlip));
+        assert_eq!(RowKey::DragFlip.group(), Group::General);
+        assert_eq!(
+            RowKey::of_site(&BindingSite::DragFlipModifier),
+            RowKey::DragFlip
+        );
+        assert!(row_changed(
+            &RowKey::DragFlip,
+            &draft,
+            &none,
+            &imported,
+            &none
+        ));
+        apply_rows(
+            &[RowKey::DragFlip],
+            &mut draft,
+            &mut PluginShortcutDraft::new(),
+            &imported,
+            &none,
+        );
+        assert_eq!(draft.explorer_drag_flip_modifier, "alt+shift");
+        assert!(!row_changed(
+            &RowKey::DragFlip,
+            &draft,
+            &none,
+            &imported,
+            &none
+        ));
     }
 
     /// 고른 행만 들어가고, 안 고른 행과 번들에 없는 plugin override 는 그대로다.

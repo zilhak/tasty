@@ -87,21 +87,22 @@ macOS 사용자를 위한 표시 커스터마이징: `GeneralSettings::{alt,opti
 
 `option`은 macOS의 물리적 Option 키를 뜻하며 다른 OS에서는 매칭되지 않는다. `tasty-key-match`의 winit·egui 경로 모두 비-macOS에서 `option_matches = !parsed.option`을 사용한다. macOS 구성을 Windows·Linux로 가져오면 해당 바인딩은 화면에 표시돼도 실행되지 않는다. `alt` 등 다른 토큰은 OS별 매핑을 그대로 사용할 수 있다.
 
-네 기본 프리셋에는 `option` 바인딩이 없다. 사용자가 macOS에서 녹화하거나 빠른 전환 수정자로 지정한 바인딩을 이관 대상으로 검사한다. 판정과 대체는 `tasty_host_plugin::keybinding_bundle::option_migration`이 담당한다.
+네 기본 프리셋에는 `option` 바인딩이 없다. 예외는 explorer 드래그 반전 수정자(`explorer_drag_flip_modifier`)로, macOS 기본값이 `option` 이다. 사용자가 macOS에서 녹화하거나 수정자로 지정한 바인딩과 이 기본값을 이관 대상으로 검사한다. 판정과 대체는 `tasty_host_plugin::keybinding_bundle::option_migration`이 담당한다.
 
-`parse_binding`·`Combo::parse_modifiers`로 파싱한다. 단순 문자열 검색은 키 이름, 대소문자, 토큰 순서를 오해할 수 있다. 검사 대상은 다음 다섯 곳이다.
+`parse_binding`·`Combo::parse_modifiers`로 파싱한다. 단순 문자열 검색은 키 이름, 대소문자, 토큰 순서를 오해할 수 있다. 검사 대상은 다음 여섯 곳이다.
 
 1. 일반 조합 필드의 각 항목
 2. 빠른 전환의 수정자 세 종류
 3. 개별 지정 모드인 빠른 전환의 슬롯·다음·이전. 규칙 기반 모드의 슬롯은 키 하나이므로 조합으로 보지 않는다.
 4. `script_bindings[].combo`
 5. plugin override의 `Key { value }`. `Inherit`·`None`에는 조합이 없다.
+6. explorer 드래그 반전 수정자(`explorer_drag_flip_modifier`). 빠른 전환 수정자처럼 수정자 조합을 담는다.
 
 대체 입력은 `ReplacementKind`에 따라 받는다. 일반 조합은 녹화하고, 수정자만 바꾸는 항목은 `all_modifier_combos()`의 비-macOS 조합 7개 중 고른다. 녹화는 수정자 단독 입력을 받지 않기 때문이다. `"individual"`은 수정자 조합이 아니어서 거절하며 이관 과정에서 빠른 전환 모드를 바꾸지 않는다. 대체값에 `option`이 다시 들어가도 거절한다.
 
 충돌은 적용 전후 전체 조합을 비교해 새로 생긴 것만 보고한다. 빠른 전환 수정자를 바꾸면 슬롯과 다음·이전 조합도 함께 달라지므로 해당 필드 하나만 비교하지 않는다. 호스트 액션·빠른 전환·스크립트는 한 충돌 범위로 묶고 plugin은 각각 별도로 검사한다. 호스트와 plugin, 서로 다른 plugin의 중복은 아래 우선순위 규칙을 따른다.
 
-`Resolution::Unbind`로 사용하지 않을 바인딩을 비울 수도 있다. 일반 조합은 해당 항목만 제거하고, plugin은 남은 키가 없으면 `None`, 빠른 전환의 슬롯·다음·이전은 빈값으로 둔다. 수정자 항목 자체는 조합이 하나 필요하므로 비울 수 없다(`CannotUnbind`).
+`Resolution::Unbind`로 사용하지 않을 바인딩을 비울 수도 있다. 일반 조합은 해당 항목만 제거하고, plugin은 남은 키가 없으면 `None`, 빠른 전환의 슬롯·다음·이전은 빈값으로 둔다. 수정자 항목(빠른 전환·드래그 반전) 자체는 조합이 하나 필요하므로 비울 수 없다(`CannotUnbind`).
 
 새 충돌 처리 방법은 호출자가 `ConflictPolicy`로 선택한다.
 

@@ -120,6 +120,12 @@ pub(super) fn build_view_model(
                 labels.bindings(current.get_bindings(field).unwrap_or(&[])),
                 labels.bindings(imported.get_bindings(field).unwrap_or(&[])),
             ),
+            RowKey::DragFlip => (
+                trim_label(t("settings.keybindings.explorer_drag_flip_modifier_label")),
+                None,
+                labels.combo(&current.explorer_drag_flip_modifier),
+                labels.combo(&imported.explorer_drag_flip_modifier),
+            ),
             RowKey::Axis(axis) => {
                 let action_key = match axis {
                     crate::settings::SwitchAxis::Tab => "settings.keybindings.ie_axis_tab",

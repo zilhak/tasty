@@ -41,6 +41,9 @@ pub enum BindingSite {
     },
     /// quick-switch 축 modifier.
     AxisModifier { axis: SwitchAxis },
+    /// explorer 드래그의 이동·복사 반전 modifier. 기본값이 OS 마다 달라 macOS 에서 저장한 `option` 이
+    /// 다른 OS 로 넘어오면 반전이 조용히 꺼진다.
+    DragFlipModifier,
     /// quick-switch 슬롯. **개별 지정 축에서만** 콤보를 담는다.
     AxisSlot { axis: SwitchAxis, index: usize },
     /// quick-switch 다음/이전. **개별 지정 축에서만** 콤보를 담는다.
@@ -70,7 +73,7 @@ impl BindingSite {
     /// 이 자리에 넣을 값의 종류.
     pub fn replacement_kind(&self) -> ReplacementKind {
         match self {
-            Self::AxisModifier { .. } => ReplacementKind::ModifierCombo,
+            Self::AxisModifier { .. } | Self::DragFlipModifier => ReplacementKind::ModifierCombo,
             _ => ReplacementKind::Combo,
         }
     }
@@ -89,6 +92,7 @@ impl fmt::Display for BindingSite {
         match self {
             Self::GeneralBinding { field_id, index } => write!(f, "{field_id}[{index}]"),
             Self::AxisModifier { axis } => write!(f, "{}.modifier", axis_name(*axis)),
+            Self::DragFlipModifier => f.write_str("explorer_drag_flip_modifier"),
             Self::AxisSlot { axis, index } => write!(f, "{}.slot[{index}]", axis_name(*axis)),
             Self::AxisStep { axis, step } => {
                 let s = match step {
@@ -158,7 +162,7 @@ pub enum MigrationError {
     /// 적용 결과가 새 충돌을 만든다(기존 바인딩과, 또는 대체 값끼리).
     #[error("대체 값이 충돌을 만든다: {}", join_conflicts(.0))]
     Conflicts(Vec<BindingConflict>),
-    /// 비울 수 없는 자리를 비우라고 했다 — 축 modifier 는 조합 하나를 반드시 가진다.
+    /// 비울 수 없는 자리를 비우라고 했다 — 축 modifier 와 드래그 반전 modifier 는 조합 하나를 반드시 가진다.
     #[error("이 항목은 비울 수 없다: {site}")]
     CannotUnbind { site: BindingSite },
     /// 적용 후에도 `option` 이 남았다 — 스캔과 적용이 갈렸다는 뜻이므로 값으로 받는다.
@@ -255,6 +259,13 @@ pub fn scan_option_bindings(
                 });
             }
         }
+    }
+
+    if Combo::parse_modifiers(&kb.explorer_drag_flip_modifier).is_some_and(|c| c.option) {
+        found.push(OptionBinding {
+            site: BindingSite::DragFlipModifier,
+            current: kb.explorer_drag_flip_modifier.clone(),
+        });
     }
 
     for binding in &kb.script_bindings {
@@ -465,10 +476,10 @@ fn introduced_between(
         .collect()
 }
 
-/// 비울 수 있는 자리인지 — 축 modifier 는 조합 하나를 반드시 가진다.
+/// 비울 수 있는 자리인지 — 축 modifier 와 드래그 반전 modifier 는 조합 하나를 반드시 가진다.
 fn validate_unbind(site: &BindingSite) -> Result<(), MigrationError> {
     match site {
-        BindingSite::AxisModifier { .. } => {
+        BindingSite::AxisModifier { .. } | BindingSite::DragFlipModifier => {
             Err(MigrationError::CannotUnbind { site: site.clone() })
         }
         _ => Ok(()),
@@ -489,7 +500,7 @@ fn unbind_sites(
             }
             // `validate_unbind` 가 막는다. 충돌 상대로도 오지 않는다 — 명부의 축 항목은
             // 슬롯·다음/이전이다.
-            BindingSite::AxisModifier { .. } => {}
+            BindingSite::AxisModifier { .. } | BindingSite::DragFlipModifier => {}
             BindingSite::AxisSlot { axis, index } => {
                 axis.set_slot(kb, *index, "");
             }
@@ -570,6 +581,7 @@ fn write_site(
             kb.replace_binding_at(field_id, *index, value.to_string());
         }
         BindingSite::AxisModifier { axis } => axis.set_modifier(kb, value),
+        BindingSite::DragFlipModifier => kb.explorer_drag_flip_modifier = value.to_string(),
         BindingSite::AxisSlot { axis, index } => {
             axis.set_slot(kb, *index, value);
         }
