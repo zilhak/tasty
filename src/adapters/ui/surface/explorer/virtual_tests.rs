@@ -278,3 +278,71 @@ fn grid_lines_far_down_start_where_the_full_grid_would_put_them() {
         );
     }
 }
+
+/// 보이는 영역 위쪽 끝(`view_top`)에 이름 글자가 걸친 항목이 그려졌는지 본다. 화면 밖에 완전히
+/// 잘린 글자는 egui 가 출력에서 빼므로 행이 아니라 이름 글자가 걸치는지로 본다.
+fn assert_top_edge_drawn(
+    mode: ExplorerViewMode,
+    drawn: &[(String, Rect)],
+    view_top: f32,
+    pitch: f32,
+) {
+    let index = |n: &str| {
+        n["item".len()..n.len() - ".txt".len()]
+            .parse::<usize>()
+            .unwrap()
+    };
+    let (anchor_name, label) = drawn
+        .iter()
+        .filter(|(_, r)| CELL.contains(r.center()))
+        .max_by(|a, b| a.1.center().y.total_cmp(&b.1.center().y))
+        .expect("an item on screen");
+    let anchor = index(anchor_name);
+    let half = label.height() / 2.0;
+    let rows_above = ((label.center().y - view_top) / pitch).ceil() as usize;
+    for k in anchor.saturating_sub(rows_above)..anchor {
+        let center = label.center().y - (anchor - k) as f32 * pitch;
+        if center + half > view_top + 1.0 {
+            assert!(
+                drawn.iter().any(|(n, _)| *n == name(k)),
+                "{mode:?}: the name of item {k} crosses the top edge but was not drawn"
+            );
+        }
+    }
+}
+
+fn wheel(at: Pos2, points: f32) -> Vec<Event> {
+    vec![
+        Event::PointerMoved(at),
+        Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: egui::vec2(0.0, -points),
+            modifiers: Modifiers::default(),
+        },
+    ]
+}
+
+#[test]
+fn the_item_at_the_top_edge_is_drawn_after_scrolling() {
+    for mode in [ExplorerViewMode::Detail, ExplorerViewMode::List] {
+        let mut h = Harness::new(mode);
+        h.frame(Vec::new());
+        let still = h.frame(Vec::new());
+        let c0 = on_screen(&still, 0).expect("item 0").center().y;
+        let c1 = on_screen(&still, 1).expect("item 1").center().y;
+        let pitch = c1 - c0;
+        // 맨 위 `..` 행부터 목록이 보인다. 스크롤해도 보이는 영역의 위쪽 끝은 그대로다.
+        let view_top = c0 - pitch * 1.5;
+
+        h.view.reveal_created(&path(15_000));
+        let mut drawn = h.settle();
+        assert_top_edge_drawn(mode, &drawn, view_top, pitch);
+        // 행 경계와 맞지 않는 여러 스크롤 위치에서도 본다.
+        let at = on_screen(&drawn, 15_000).expect("item 15000").center();
+        for _ in 0..8 {
+            h.frame(wheel(at, 9.0));
+            drawn = h.settle();
+            assert_top_edge_drawn(mode, &drawn, view_top, pitch);
+        }
+    }
+}

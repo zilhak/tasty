@@ -1467,17 +1467,17 @@ fn detail_view(
     // 하위 폴더 검색 결과는 목록을 대신하므로 `..` 를 두지 않는다.
     let parent = parent_nav_target(root).filter(|_| search_root.is_none());
     let query = view.find_query().to_owned();
-    // `..` 와 편집 줄 자리는 화면에만 있는 행이라 늘 그린다. 항목 행은 사본 없이 참조로 넘기고
-    // 표가 화면에 걸친 행만 그린다.
+    // 항목 행은 사본 없이 참조로 넘기고 표가 화면에 걸친 행만 그린다. 행 번호를 함께 실어
+    // 화면 밖으로 나간 편집 줄 자리를 그린 행에서 계산한다.
     let dotdot = parent.map(dotdot_entry);
     let placeholder = view.create.as_ref().map(|_| create::placeholder_row(root));
     let lead: Vec<&DirEntryInfo> = dotdot.iter().chain(placeholder.iter()).collect();
-    let pinned = lead.len();
-    let scroll_row = scroll_target(view).map(|i| pinned + i);
-    let mut rows: Vec<&DirEntryInfo> = Vec::with_capacity(pinned + view.shown_count());
-    rows.extend(lead);
-    rows.extend(view.shown());
+    let editor_row = placeholder.as_ref().map(|_| lead.len() - 1);
+    let scroll_row = scroll_target(view).map(|i| lead.len() + i);
+    let mut rows: Vec<(usize, &DirEntryInfo)> = Vec::with_capacity(lead.len() + view.shown_count());
+    rows.extend(lead.into_iter().chain(view.shown()).enumerate());
     let editor_cell = std::cell::Cell::new(None);
+    let drawn_name_cell = std::cell::Cell::new(None);
     let selected = &view.selected;
     let cut = cut_pending;
     let out = Table::new(columns)
@@ -1486,7 +1486,7 @@ fn detail_view(
         // Size 제목 끝을 본문 Size 값처럼 날짜 열에서 띄운다(design DetailHeader paddingRight).
         .header_pad_right(theme.spacing_sm)
         .selectable(true)
-        .virtual_rows(pinned)
+        .virtual_rows(true)
         .scroll_to_row(scroll_row)
         .id_salt(format!("explorer_detail_{id_suffix}"))
         .show(
@@ -1494,9 +1494,11 @@ fn detail_view(
             theme,
             &rows,
             // `..`(name == "..", read_dir 은 이 이름을 반환하지 않음) 는 선택 대상 아님.
-            |row: &&DirEntryInfo| row.name != ".." && selected.contains(&row.path),
-            |ui, th, row, col| {
-                let row: &DirEntryInfo = row;
+            |(_, row): &(usize, &DirEntryInfo)| row.name != ".." && selected.contains(&row.path),
+            |ui, th, &(index, row), col| {
+                if col == 0 && drawn_name_cell.get().is_none() {
+                    drawn_name_cell.set(Some((index, ui.max_rect())));
+                }
                 // cut-pending 행은 전경(아이콘+텍스트)을 cut_pending_opacity(50%) 로 디밍.
                 // Table 이 그리는 선택/hover 배경은 그대로 유지.
                 let dim = |c: egui::Color32| {
@@ -1599,13 +1601,20 @@ fn detail_view(
     // 눌린 행만 복제해 두고 목록 참조를 놓는다. 아래 처리는 view 를 바꾼다.
     let row_at = |i: Option<usize>| {
         i.and_then(|i| rows.get(i))
-            .filter(|e| !e.name.is_empty())
-            .map(|e| (*e).clone())
+            .filter(|(_, e)| !e.name.is_empty())
+            .map(|(_, e)| (*e).clone())
     };
     let secondary = row_at(out.secondary_clicked_row);
     let clicked = row_at(out.clicked_row);
     drop(rows);
-    create::detail_row(ui, theme, view, editor_cell.get(), action);
+    // 편집 줄 자리가 화면 밖이라 그리지 않았으면 그린 행에서 자리를 계산한다. 입력은 화면 밖에서도
+    // 그려야 포커스를 잃지 않는다. 행 높이는 표 기본값이다.
+    let editor_cell = editor_cell.get().or_else(|| {
+        let (index, cell) = drawn_name_cell.get()?;
+        let shift = (editor_row? as f32 - index as f32) * theme.table_cell_height().value();
+        Some(cell.translate(egui::vec2(0.0, shift)))
+    });
+    create::detail_row(ui, theme, view, editor_cell, action);
     if let Some(e) = &secondary
         && e.name != ".."
     // `..` 는 컨텍스트 메뉴 대상 아님

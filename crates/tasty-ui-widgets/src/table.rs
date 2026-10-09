@@ -74,7 +74,7 @@ pub struct Table<'a, K> {
     selectable: bool,
     striped: bool,
     horizontal_scroll: bool,
-    virtual_rows: Option<usize>,
+    virtual_rows: bool,
     scroll_to_row: Option<usize>,
 }
 
@@ -94,7 +94,7 @@ impl<'a, K> Table<'a, K> {
             selectable: false,
             striped: false,
             horizontal_scroll: false,
-            virtual_rows: None,
+            virtual_rows: false,
             scroll_to_row: None,
         }
     }
@@ -168,11 +168,12 @@ impl<'a, K> Table<'a, K> {
         self
     }
 
-    /// 앞의 `pinned` 행은 늘 그리고, 나머지는 보이는 행만 그린다. 행이 많은 표의 프레임 비용을
-    /// 보이는 행 수에 묶는다. 안 그린 행의 자리는 같은 높이로 비워 두어 스크롤 길이는 같다.
+    /// 화면에 걸친 행만 그린다. 행이 많은 표의 프레임 비용을 보이는 행 수에 묶는다.
+    /// 안 그린 행의 자리는 같은 높이로 비워 두어 스크롤 길이는 같다. 화면 밖 행의 셀 함수는
+    /// 불리지 않으므로, 화면 밖에서도 유지해야 할 위젯은 호출자가 표 밖에서 그린다.
     /// 셀 내용 폭으로 넓어지는 열(clip 없는 Remainder)은 그린 행으로만 폭을 잰다.
-    pub fn virtual_rows(mut self, pinned: usize) -> Self {
-        self.virtual_rows = Some(pinned);
+    pub fn virtual_rows(mut self, on: bool) -> Self {
+        self.virtual_rows = on;
         self
     }
 
@@ -248,14 +249,7 @@ impl<'a, K> Table<'a, K> {
             if let Some(ms) = max_scroll_height {
                 builder = builder.max_scroll_height(ms.value());
             }
-            // 보이는 행만 그리는 표는 뒤쪽 행 범위 기준 번호로 넘긴다. 늘 그리는 앞 행은 그 행을
-            // 그리는 쪽이 스크롤한다.
-            let scroll_index = match (scroll_to_row, virtual_rows) {
-                (Some(row), Some(pinned)) => row.checked_sub(pinned),
-                (row, None) => row,
-                (None, Some(_)) => None,
-            };
-            if let Some(index) = scroll_index {
+            if let Some(index) = scroll_to_row {
                 builder = builder.scroll_to_row(index, Some(egui::Align::Center));
             }
             for w in widths {
@@ -325,21 +319,18 @@ impl<'a, K> Table<'a, K> {
                     secondary_clicked_row = Some(i);
                 }
             };
-            table.body(|mut body| match virtual_rows {
-                None => {
+            table.body(|mut body| {
+                // egui_extras `rows` 는 본문 맨 위를 기준으로 보이는 범위를 정한다. 앞에 다른 행을
+                // 두면 그 수만큼 범위가 밀리므로 모든 행을 한 번에 넘긴다.
+                if virtual_rows {
+                    body.rows(row_h.value(), rows.len(), |mut tr| {
+                        let i = tr.index();
+                        draw_row(&mut tr, i, &rows[i]);
+                    });
+                } else {
                     for (i, row) in rows.iter().enumerate() {
                         body.row(row_h.value(), |mut tr| draw_row(&mut tr, i, row));
                     }
-                }
-                Some(pinned) => {
-                    let pinned = pinned.min(rows.len());
-                    for (i, row) in rows[..pinned].iter().enumerate() {
-                        body.row(row_h.value(), |mut tr| draw_row(&mut tr, i, row));
-                    }
-                    body.rows(row_h.value(), rows.len() - pinned, |mut tr| {
-                        let i = pinned + tr.index();
-                        draw_row(&mut tr, i, &rows[i]);
-                    });
                 }
             });
             ctx.data_mut(|d| match now_hovered {

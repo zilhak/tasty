@@ -952,7 +952,9 @@ fn the_blind_spots_are_still_the_size_they_say() {
         // 글꼴 목록 검색칸이 테두리 상자 자리를 vec2(width, 0) 으로 잡으며 0 하나를 더한다.
         // 탐색기 Grid 가 줄 사이 세로 간격을 vec2(gap, 0) 으로 비우고 직접 띄우며 0 하나를,
         // 보이는 행만 그리기 시험(virtual_tests.rs)의 칸 크기 Pos2::new(1100, 600)가 test 전용 둘을 더한다.
-        (233, 598),
+        // 상세 보기가 화면 밖 편집 줄 자리를 vec2(0, shift) 로 옮기며 0 하나를, 같은 시험 파일의
+        // 위쪽 끝 휠 시험이 test 전용 둘을 더한다.
+        (234, 600),
         "제외한 0과 test 전용 코드의 수가 달라졌다. 실제 사용과 수집 범위의 변경을 확인하고 기록을 갱신한다."
     );
     let roster: usize = UNIT_SPACE_SITES.iter().map(|(.., n, _)| n).sum();
