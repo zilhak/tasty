@@ -193,3 +193,20 @@ fn the_descriptor_capability_list_decides_whether_to_wait() {
         name
     ));
 }
+
+#[test]
+fn a_late_confirmation_of_the_failed_size_clears_the_failure() {
+    let (mut sync, t0) = acked();
+    sync.note_sent(S, 80, 24, t0);
+    let resend = sync.take_due(t0 + RESIZE_ACK_TIMEOUT);
+    sync.note_resent(resend[0], t0 + RESIZE_ACK_TIMEOUT);
+    assert!(sync.take_due(t0 + RESIZE_ACK_TIMEOUT * 2).is_empty());
+    assert_eq!(failed(&sync), vec![S]);
+    sync.on_resize(S, 90, 24);
+    assert_eq!(failed(&sync), vec![S], "다른 크기는 그 실패를 풀지 않는다");
+    sync.on_resize(S, 80, 24);
+    assert!(
+        failed(&sync).is_empty(),
+        "밀린 요청이 늦게 확정되면 실패가 아니다"
+    );
+}

@@ -105,12 +105,14 @@ impl ResizeSync {
     }
 
     /// 서버의 Resize. 기다리던 크기와 같을 때만 대기를 끝낸다. 다른 크기는 늦게 온 이전 응답이다.
+    /// 기다리는 요청 없이 실패한 크기가 늦게 확정되면 실패 목록에서도 뺀다. 서버가 멈췄다가 밀린
+    /// 요청을 처리한 경우다.
     pub fn on_resize(&mut self, surface_id: u32, cols: usize, rows: usize) {
-        if self
-            .pending
-            .get(&surface_id)
-            .is_some_and(|p| p.target == (cols, rows))
-        {
+        let answered = match self.pending.get(&surface_id) {
+            Some(p) => p.target == (cols, rows),
+            None => self.failed.get(&surface_id) == Some(&(cols, rows)),
+        };
+        if answered {
             self.pending.remove(&surface_id);
             self.failed.remove(&surface_id);
         }
