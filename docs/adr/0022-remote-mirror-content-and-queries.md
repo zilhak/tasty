@@ -15,6 +15,8 @@
 
 mirror 크기는 client pane에서 요청하고 서버가 실제 PTY를 resize한 뒤 보낸 Resize로 확정한다. client는 미리 grid를 바꾸지 않는다. 서버의 일반 창 resize는 hard 점유 surface를 건너뛴다. resize 규칙은 Core::resize_all_terminals 한 곳에서 처리한다.
 
+서버는 모든 크기 요청에 응답한다. 크기가 바뀌거나 이미 같으면 출력과 같은 순서의 Resize로, 적용하지 않으면 ResizeRejected로 답한다. 이 보장은 `ipc.stream.resize-ack` capability로 알리고 client는 연결의 attach descriptor로 확인한다. client는 응답을 5초 기다리고, 응답이 없거나 거절되면 같은 요청을 한 번 다시 보낸다. 그래도 실패하면 사용자에게 알리고 다시 시도와 닫기를 제공한다. 재시도는 그 surface의 크기 요청 재전송이며 재attach를 쓰지 않는다(2026-10-08 사용자 결정). 응답은 grid 크기 확정을 뜻하며 OS PTY 적용 성공을 뜻하지 않는다.
+
 파일 피커는 로컬·원격을 같은 UI로 제공하되 원격 디렉토리는 attach의 request_id 기반 요청·응답으로 읽는다. 원격 조회 권한은 해당 client의 workspace 점유로 판단한다. local host UI의 디렉토리 조회에 plugin 권한을 요구하지 않는다.
 
 파일 바이트는 같은 SSH 터널의 별도 bulk 연결에서 raw binary Data 프레임으로 보낸다. 시작·완료·경로 회신은 작은 JSON Control 메시지를 사용한다. 대화형 attach 소켓과 분리해 큰 파일이 키 입력을 지연시키지 않게 한다. 저장 경로는 서버가 정하고 업로드 시점과 경로 삽입은 소비자가 결정한다.
@@ -49,6 +51,8 @@ client에 markdown kind가 아직 없으면 DeferredPlugin placeholder로 기다
 
 크기 변경은 왕복 지연이 있고 처음 attach할 때 화면이 바뀔 수 있다. 중복 크기 요청은 client와 server에서 억제한다. 파일 피커의 원격 디렉터리 조회는 8초 응답 제한과 mirror workspace 소멸 감지로 연결 오류를 표시한다.
 
+크기 요청 응답이 없으면 첫 요청부터 약 10초 뒤에야 실패를 알린다. 서버가 같은 크기 요청에도 tap에 Resize를 넣으므로 같은 surface를 구독한 다른 attach 소비자도 같은 크기의 Resize를 한 번 더 받는다. 응답 보장이 없는 구 서버에 연결하면 실패를 알리지 않는다. OS PTY 크기 적용 실패는 로그로만 남는다.
+
 native bulk는 SSH 프로필이 없는 수동·loopback attach에서도 동작하지만 청크 순서·완료·무결성·회수 처리를 직접 유지해야 한다. bulk 연결은 점유한 attach 세션과 연결되어야 한다.
 
 list_dir는 점유한 client에 임의 경로 조회를 허용하며 explorer root를 보안 경계로 강제하지 않는다. 같은 client가 파일 피커로 조회할 수 있으므로 explorer만 좁혀도 접근 제한 효과가 없다. 파일시스템 내용은 필요할 때 조회하고 workspace 구조 delta에 넣지 않는다.
@@ -67,6 +71,8 @@ cwd는 terminal만의 값이 아니므로 kind 전환과 모든 mirror 정리에
 
 sftp/scp는 외부 subsystem과 별도 SSH 정보가 필요하고 수동 attach를 그대로 지원하지 못한다. SMB/NFS는 추가 서버·인증·포트가 필요하다. 이런 프로토콜의 별도 기능을 금지하는 결정은 아니다. Control+base64로 일반 파일을 보내면 전송량과 대화형 소켓 대기가 늘어난다.
 
+크기 요청 실패의 재시도 수단으로 재attach를 쓰지 않았다. surface 단위 재attach 수단은 없다. 이미 workspace 점유에 속한 surface에 surface attach를 하면 AlreadyAttached로 거절된다. workspace 재attach는 연결 전체를 다시 붙이므로 점유가 비는 구간, scrollback 중복, mesh full texture 재수신을 부르고 실패하면 anchor 없는 세션이 정리된다. workspace 연결 안에서 한 surface만 다시 구독하는 control을 새로 만들면 다른 surface에 영향 없는 재attach가 가능하지만, workspace attach snapshot에는 크기가 없어 크기 전달과 옛 tap 잔여 이벤트의 순서를 새로 설계해야 한다. 응답 없는 요청을 계속 다시 보내면 멈춘 서버에 요청이 쌓이므로 자동 재시도는 한 번으로 제한했다. 응답에 요청 식별자를 넣으면 tap 이벤트까지 식별자를 운반해야 한다. 서버가 요청 크기를 그대로 적용하므로 크기로 짝짓는다. client가 system.info를 조회하면 연결마다 별도 RPC가 필요하므로 descriptor에 기능 목록을 싣는다.
+
 Git 핸들 자체를 직렬화할 수 없으므로 조회 결과 데이터만 공유한다. popup.set_context에는 임의 결과 payload가 없어 비동기 조회 응답을 대신할 수 없다. 최초 snapshot만 원격으로 읽으면 refresh·worktree 전환·diff가 동작하지 않는다. 파일 내용 가져오기는 목록 조회와 달리 임시파일 수명·크기·MIME 정책이 필요하다.
 
 서버 HTML은 크기가 크고 client 테마와 recent 상태를 반영하지 않는다. markdown을 mesh로 되돌리면 현재 WebView 렌더 구조를 다시 바꿔야 한다. 임시 로컬 파일로 받으면 원격 경로·감시·recent를 잘못 해석하고 파일 수명 정책도 필요하다. 자동 원문 갱신은 사용자의 읽던 위치를 바꿀 수 있다.
@@ -76,6 +82,8 @@ Git 핸들 자체를 직렬화할 수 없으므로 조회 결과 데이터만 �
 mirror Terminal의 cached_cwd에 원격 경로를 넣으면 출처를 잃고 비terminal에는 저장할 수 없다. PathBuf와 bool을 나누면 bool을 무시한 사용이 가능하다. 소비자별 질문이나 OSC 7만 사용하면 같은 비동기 조회를 반복하거나 OSC 7 없는 셸을 놓친다.
 
 ## Reconsideration Triggers
+
+크기 요청 재전송으로 해결되지 않는 실패가 확인되면 workspace 연결 안의 surface 단위 재구독을 검토한다. 실행 결과로 확인하며 자동 검사는 없다. 서버가 요청과 다른 크기를 확정하게 되면(최소 크기 제한 등) 크기 짝짓기를 요청 식별자로 바꾼다. `src/remote/server/attach_resize.rs`와 `Terminal::resize`에서 확인한다.
 
 고지연 환경에서 resize 반응이 문제가 되거나 여러 holder를 허용하면 화면 크기 협상을 다시 정한다. 초기 크기 협상과 원격 파일 내용 가져오기 요구, 점유별 읽기·쓰기 권한 분리가 생겨도 해당 프로토콜을 검토한다.
 
