@@ -431,6 +431,165 @@ fn lanes_that_leave_versions_alone_rebase_without_conflict() {
     cargo_offline(d, &["metadata", "--locked", "--format-version", "1"]);
 }
 
+// ── rebase --exec 중 실패: 트리는 깨끗하게 남고, 원인을 고쳐 재실행한 뒤 --continue 로 이어 간다 ─────
+
+fn exec_fixup() -> String {
+    format!("bash {}", repo_file("scripts/plugin-bump-fixup.sh"))
+}
+
+fn rebase_status(d: &Path) -> Run {
+    let out = Command::new("git")
+        .args(["rebase", "--exec", &exec_fixup(), "main"])
+        .current_dir(d)
+        .output()
+        .expect("rebase 실행");
+    Run {
+        code: out.status.code().unwrap_or(-1),
+        output: format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        ),
+    }
+}
+
+fn tracked_changes(d: &Path) -> String {
+    git_out(d, &["status", "--porcelain", "--untracked-files=no"])
+}
+
+fn rebase_in_progress(d: &Path) -> bool {
+    let dir = git_out(d, &["rev-parse", "--path-format=absolute", "--git-dir"]);
+    Path::new(&dir).join("rebase-merge").is_dir()
+}
+
+#[test]
+fn amend_hook_failure_leaves_a_clean_tree_and_recovers_with_rerun_and_continue() {
+    let tmp = seed();
+    let d = tmp.path();
+    git(d, &["checkout", "--quiet", "-b", "lane", "main"]);
+    edit_line(
+        d,
+        &main_rs_of("alpha"),
+        "fn a() {}",
+        "fn a() { let _a = 1; }",
+    );
+    commit_all(d, "lane: alpha");
+
+    // amend 때 도는 pre-commit 이 실패하는 상황을 만든다.
+    let hooks = tempfile::tempdir().expect("임시 디렉토리");
+    let hook = hooks.path().join("pre-commit");
+    fs::write(
+        &hook,
+        "#!/bin/sh\necho 'fixture hook refuses' >&2\nexit 1\n",
+    )
+    .expect("훅 쓰기");
+    Command::new("chmod")
+        .args(["+x", hook.to_str().expect("UTF-8 경로")])
+        .status()
+        .expect("chmod");
+    git(
+        d,
+        &[
+            "config",
+            "core.hooksPath",
+            hooks.path().to_str().expect("UTF-8 경로"),
+        ],
+    );
+
+    let r = rebase_status(d);
+    assert_ne!(r.code, 0, "{r:?}");
+    assert!(r.output.contains("git commit --amend 가 실패했다"), "{r:?}");
+    assert!(r.output.contains("HEAD 내용으로 되돌렸다"), "{r:?}");
+    assert!(
+        rebase_in_progress(d),
+        "rebase 가 그 커밋에서 멈춰 있어야 한다"
+    );
+    assert_eq!(tracked_changes(d), "", "고친 파일이 남으면 안 된다");
+    assert_versions(d, "alpha", "0.1.0");
+
+    // 원인을 고치고 같은 명령을 다시 실행한 뒤 이어 간다.
+    git(d, &["config", "core.hooksPath", "/dev/null"]);
+    let r = fixup(d);
+    assert_eq!(r.code, 0, "{r:?}");
+    git(d, &["rebase", "--continue"]);
+    assert!(!rebase_in_progress(d));
+    assert_versions(d, "alpha", "0.1.1");
+    assert_eq!(check_head(d).code, 0);
+}
+
+#[test]
+fn a_later_plugin_that_cannot_be_bumped_stops_before_touching_any_file() {
+    let tmp = seed();
+    let d = tmp.path();
+    // beta 의 두 version 이 어긋난 상태를 main 에 둔다.
+    edit_line(
+        d,
+        &manifest_of("beta"),
+        "version = \"0.1.0\"",
+        "version = \"0.1.3\"",
+    );
+    commit_all(d, "main: beta manifest drift");
+    git(d, &["checkout", "--quiet", "-b", "lane", "main"]);
+    for p in PLUGINS {
+        edit_line(d, &main_rs_of(p), "fn b() {}", "fn b() { let _b = 2; }");
+    }
+    commit_all(d, "lane: both");
+
+    let r = rebase_status(d);
+    assert_ne!(r.code, 0, "{r:?}");
+    assert!(r.output.contains("어느 쪽을 올릴지 정할 수 없다"), "{r:?}");
+    assert!(rebase_in_progress(d));
+    // 목록 앞쪽의 alpha 도 손대지 않은 채로 멈춘다.
+    assert_eq!(tracked_changes(d), "", "고친 파일이 남으면 안 된다");
+    assert_versions(d, "alpha", "0.1.0");
+
+    // 원인(어긋난 version)을 그 커밋에서 고치고 다시 실행한 뒤 이어 간다.
+    edit_line(
+        d,
+        &cargo_toml_of("beta"),
+        "version = \"0.1.0\"",
+        "version = \"0.1.3\"",
+    );
+    cargo_offline(d, &["metadata", "--format-version", "1"]);
+    git(d, &["commit", "--quiet", "-a", "--amend", "--no-edit"]);
+    let r = fixup(d);
+    assert_eq!(r.code, 0, "{r:?}");
+    git(d, &["rebase", "--continue"]);
+    assert!(!rebase_in_progress(d));
+    assert_versions(d, "alpha", "0.1.1");
+    assert_versions(d, "beta", "0.1.4");
+    assert_eq!(check_head(d).code, 0);
+}
+
+#[test]
+fn abort_returns_to_the_original_commit_after_a_failed_fixup() {
+    let tmp = seed();
+    let d = tmp.path();
+    edit_line(
+        d,
+        &manifest_of("beta"),
+        "version = \"0.1.0\"",
+        "version = \"0.1.3\"",
+    );
+    commit_all(d, "main: beta manifest drift");
+    git(d, &["checkout", "--quiet", "-b", "lane", "main"]);
+    edit_line(
+        d,
+        &main_rs_of("beta"),
+        "fn b() {}",
+        "fn b() { let _b = 2; }",
+    );
+    commit_all(d, "lane: beta");
+    let before = git_out(d, &["rev-parse", "HEAD"]);
+
+    let r = rebase_status(d);
+    assert_ne!(r.code, 0, "{r:?}");
+    git(d, &["rebase", "--abort"]);
+    assert!(!rebase_in_progress(d));
+    assert_eq!(git_out(d, &["rev-parse", "HEAD"]), before);
+    assert_eq!(tracked_changes(d), "");
+}
+
 // ── 시작 조건이 맞지 않으면 아무것도 바꾸지 않고 판정 불가(2)로 멈춘다 ──────────────
 
 fn assert_refused(r: &Run, words: &str) {

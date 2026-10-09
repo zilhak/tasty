@@ -56,14 +56,17 @@ version_in() {
 set_version_in() {  # <file> <new>
     local n
     n=$(first_version_line "$1")
-    sed -i "${n}s/\(${VERSION_LINE_RE}\)[^\"]*\"/\1$2\"/" "$1" || fail "$1 의 version 을 바꾸지 못했다."
+    sed -i "${n}s/\(${VERSION_LINE_RE}\)[^\"]*\"/\1$2\"/" "$1"
 }
 package_name() {
     awk '/^\[/ { in_pkg = ($0 == "[package]") } in_pkg && /^name[[:space:]]*=/ {
         sub(/^name[[:space:]]*=[[:space:]]*"/, ""); sub(/".*/, ""); print; exit }' "$1"
 }
 
-BUMPED=()
+# 고치기 전에 목록 전체를 검사한다. 뒤쪽 플러그인에서 멈춰도 앞쪽 수정이 트리에 남지 않게 한다.
+PLAN_BASE=()
+PLAN_OLD=()
+PLAN_NEW=()
 NAMES=()
 while IFS= read -r base; do
     [ -n "$base" ] || continue
@@ -78,23 +81,43 @@ while IFS= read -r base; do
     if ! [[ "$vc" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
         fail "$base: version '$vc' 가 MAJOR.MINOR.PATCH 숫자 형식이 아니다."
     fi
-    new="${vc%.*}.$(( ${vc##*.} + 1 ))"
-    set_version_in "$cargo_toml" "$new"
-    set_version_in "$manifest" "$new"
-    if [ "$(version_in "$cargo_toml")" != "$new" ] || [ "$(version_in "$manifest")" != "$new" ]; then
-        fail "$base: version 을 $new 로 쓰지 못했다."
-    fi
     name=$(package_name "$cargo_toml")
     [ -n "$name" ] || fail "$cargo_toml 에서 [package] name 을 못 읽었다."
-    printf '%s %s %s → %s\n' "$TAG" "$name" "$vc" "$new"
-    BUMPED+=("$cargo_toml" "$manifest")
+    PLAN_BASE+=("$base")
+    PLAN_OLD+=("$vc")
+    PLAN_NEW+=("${vc%.*}.$(( ${vc##*.} + 1 ))")
     NAMES+=("$name")
 done < "$WORK/violations"
 
+# 여기부터 고친 파일은 TOUCHED 에 모은다. 실패하면 그 파일만 HEAD 내용으로 되돌려 트리를 시작할 때처럼 깨끗하게 둔다.
+TOUCHED=()
+undo_touched() {
+    [ "${#TOUCHED[@]}" -gt 0 ] || return 0
+    if git restore --source=HEAD --staged --worktree -- "${TOUCHED[@]}"; then
+        printf '%s 고친 파일 %d 개를 HEAD 내용으로 되돌렸다.\n' "$TAG" "${#TOUCHED[@]}" >&2
+    else
+        printf '%s 고친 파일을 되돌리지 못했다. git status 로 확인해라: %s\n' "$TAG" "${TOUCHED[*]}" >&2
+    fi
+}
+fail_undo() { printf '%s %s\n' "$TAG" "$*" >&2; undo_touched; exit 1; }
+
+for i in "${!PLAN_BASE[@]}"; do
+    base="${PLAN_BASE[$i]}"
+    new="${PLAN_NEW[$i]}"
+    TOUCHED+=("$base/Cargo.toml" "$base/tasty-plugin.toml")
+    set_version_in "$base/Cargo.toml" "$new" || fail_undo "$base/Cargo.toml 의 version 을 바꾸지 못했다."
+    set_version_in "$base/tasty-plugin.toml" "$new" || fail_undo "$base/tasty-plugin.toml 의 version 을 바꾸지 못했다."
+    if [ "$(version_in "$base/Cargo.toml")" != "$new" ] || [ "$(version_in "$base/tasty-plugin.toml")" != "$new" ]; then
+        fail_undo "$base: version 을 $new 로 쓰지 못했다."
+    fi
+    printf '%s %s %s → %s\n' "$TAG" "${NAMES[$i]}" "${PLAN_OLD[$i]}" "$new"
+done
+
 if [ -f Cargo.lock ]; then
+    TOUCHED+=(Cargo.lock)
     # Cargo 는 path 패키지의 version 변화를 lock 에 반영한다. 오프라인이라 레지스트리 의존은 바꾸지 않는다.
     cargo metadata --offline --format-version 1 >/dev/null 2>"$WORK/metadata.err" \
-        || fail "Cargo.lock 을 갱신하지 못했다. cargo 의 stderr:
+        || fail_undo "Cargo.lock 을 갱신하지 못했다. cargo 의 stderr:
 $(cat "$WORK/metadata.err")"
     # 올린 패키지의 version 줄 말고는 lock 이 바뀌지 않았는지 확인한다.
     changed=$(git diff --numstat -- Cargo.lock | awk '{ print $1 + $2 }')
@@ -103,15 +126,16 @@ $(cat "$WORK/metadata.err")"
         grep -qxF "name = \"$name\"" Cargo.lock && in_lock=$((in_lock + 1))
     done
     [ "${changed:-0}" -eq $((in_lock * 2)) ] \
-        || fail "Cargo.lock 이 올린 패키지 $in_lock 개의 version 줄보다 많이 바뀌었다 (바뀐 줄 ${changed:-0}). git diff Cargo.lock 을 확인해라."
-    BUMPED+=(Cargo.lock)
+        || fail_undo "Cargo.lock 이 올린 패키지 $in_lock 개의 version 줄보다 많이 바뀌었다 (바뀐 줄 ${changed:-0})."
 fi
 
-git add -- "${BUMPED[@]}" || fail "git add 가 실패했다."
-git commit --amend --no-edit --quiet || fail "git commit --amend 가 실패했다. 위 훅 메시지를 확인해라."
+git add -- "${TOUCHED[@]}" || fail_undo "git add 가 실패했다."
+git commit --amend --no-edit --quiet || fail_undo "git commit --amend 가 실패했다. 위 훅 메시지를 확인해라."
+# amend 가 끝났으므로 이후 실패에서는 되돌릴 미커밋 수정이 없다.
+TOUCHED=()
 
 bash "$CHECK" --range HEAD^ HEAD >/dev/null 2>"$WORK/recheck.err"
 rc=$?
-[ "$rc" -eq 0 ] || fail "버전을 올린 뒤 다시 검사했는데 종료 코드 $rc 다:
+[ "$rc" -eq 0 ] || fail "버전을 올린 뒤 다시 검사했는데 종료 코드 $rc 다. 증가는 이미 HEAD 에 합쳐졌다:
 $(cat "$WORK/recheck.err")"
-printf '%s HEAD 커밋에 버전 증가 %d 건을 합쳤다.\n' "$TAG" "${#NAMES[@]}"
+printf '%s HEAD 커밋에 버전 증가 %d 건을 합쳤다.\n' "$TAG" "${#PLAN_BASE[@]}"
