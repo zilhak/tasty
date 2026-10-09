@@ -1,10 +1,11 @@
 //! 자동 attach 매핑을 연결하지 않았을 때의 Workspace 배너 내용과 사이드바 행 표지.
 //! 배너는 행 [글리프 | 제목·본문 | 매핑 지우기 · 닫기]이며 모든 칸을 위쪽에 맞춘다.
+//! 좁은 스코프에서는 버튼 묶음이 본문 왼쪽 가장자리에 맞춰 다음 줄로 내려간다.
 //! 문자열은 호출자가 주입한다. 큐·표시 범위는 본체 BannerManager가 정한다.
 
 use tasty_type_appearance::theme::Theme;
 
-use crate::banner::banner_shell;
+use crate::banner::{action_row_place, action_row_text_width, banner_shell};
 use crate::button::{Button, ButtonVariant};
 use crate::control::ControlSize;
 use crate::icon_button::{IconButton, IconButtonVariant};
@@ -24,6 +25,8 @@ pub struct AttachRefusalBannerView<'a> {
     pub remove: &'a str,
     /// 닫기 버튼의 툴팁.
     pub dismiss: &'a str,
+    /// 스코프가 좁으면([`crate::banner_is_narrow`]) 버튼 묶음을 글 아래 줄로 내린다.
+    pub narrow: bool,
 }
 
 /// 이번 프레임의 클릭.
@@ -112,12 +115,13 @@ pub fn attach_refusal_banner_content(
     let nudge = theme.banner_glyph_offset().value();
     let text_gap = theme.banner_text_gap().value();
     let actions = actions_size(ui, theme, view.remove);
-    let text_w = (row_w - glyph - gap - gap - actions.x).max(0.0);
+    let text_w = action_row_text_width(row_w, glyph, gap, actions.x, view.narrow);
 
     let title = title_galley(ui, theme, view, text_w);
     let body = body_galley(ui, theme, view.body, text_w);
     let text_h = title.size().y + text_gap + body.size().y;
-    let row_h = (glyph + nudge).max(text_h).max(actions.y);
+    let first_h = (glyph + nudge).max(text_h);
+    let (row_h, actions_pos) = action_row_place(row_w, first_h, glyph, gap, actions, view.narrow);
 
     let (row, _) = ui.allocate_exact_size(egui::vec2(row_w, row_h), egui::Sense::hover());
     let glyph_rect =
@@ -140,8 +144,7 @@ pub fn attach_refusal_banner_content(
         egui::Color32::PLACEHOLDER,
     );
 
-    let actions_rect =
-        egui::Rect::from_min_size(egui::pos2(row.right() - actions.x, row.top()), actions);
+    let actions_rect = egui::Rect::from_min_size(row.min + actions_pos, actions);
     let mut child = ui.new_child(
         egui::UiBuilder::new()
             .max_rect(actions_rect)
@@ -246,7 +249,7 @@ pub fn attach_refusal_avatar_tooltip(
 mod tests {
     use super::*;
 
-    fn view() -> AttachRefusalBannerView<'static> {
+    fn view(narrow: bool) -> AttachRefusalBannerView<'static> {
         AttachRefusalBannerView {
             title_before: "Remote not attached — ",
             target: "127.0.0.1:7420",
@@ -255,11 +258,12 @@ mod tests {
                    Change or remove the mapping for this workspace.",
             remove: "Remove mapping",
             dismiss: "Dismiss",
+            narrow,
         }
     }
 
     /// 배너를 폭 `width`로 한 번 그려 셸 rect와 모든 도형을 돌려준다.
-    fn render(width: f32) -> (Theme, egui::Rect, Vec<egui::Shape>) {
+    fn render(width: f32, narrow: bool) -> (Theme, egui::Rect, Vec<egui::Shape>) {
         let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
         let ctx = egui::Context::default();
         let mut rect = egui::Rect::NOTHING;
@@ -275,7 +279,7 @@ mod tests {
                 .frame(egui::Frame::NONE)
                 .show(ctx, |ui| {
                     let before = ui.cursor().min;
-                    attach_refusal_banner(ui, &theme, &view());
+                    attach_refusal_banner(ui, &theme, &view(narrow));
                     rect = egui::Rect::from_min_max(before, ui.min_rect().max);
                 });
         });
@@ -288,7 +292,7 @@ mod tests {
 
     #[test]
     fn the_target_is_set_in_the_mono_family() {
-        let (_, _, shapes) = render(460.0);
+        let (_, _, shapes) = render(460.0, false);
         let mono = shapes.iter().any(|s| match s {
             egui::Shape::Text(t) => t.galley.job.sections.iter().any(|sec| {
                 sec.format.font_id.family == egui::FontFamily::Monospace
@@ -299,9 +303,61 @@ mod tests {
         assert!(mono, "the mapping target is not mono");
     }
 
+    /// 글자 도형 하나의 rect.
+    fn text_rect(shapes: &[egui::Shape], pred: impl Fn(&str) -> bool) -> egui::Rect {
+        shapes
+            .iter()
+            .find_map(|s| match s {
+                egui::Shape::Text(t) if pred(t.galley.text()) => Some(s.visual_bounding_rect()),
+                _ => None,
+            })
+            .expect("text shape")
+    }
+
+    /// 글자를 감싸는 가장 작은 채움 사각형 — 그 글자를 라벨로 가진 버튼의 rect.
+    fn button_rect(shapes: &[egui::Shape], label: egui::Rect) -> egui::Rect {
+        shapes
+            .iter()
+            .filter_map(|s| match s {
+                egui::Shape::Rect(r) if r.blur_width == 0.0 && r.rect.contains_rect(label) => {
+                    Some(r.rect)
+                }
+                _ => None,
+            })
+            .min_by(|a, b| a.area().total_cmp(&b.area()))
+            .expect("button rect")
+    }
+
+    #[test]
+    fn a_narrow_banner_puts_the_buttons_under_the_body_at_its_left_edge() {
+        let (_, _, shapes) = render(360.0, true);
+        let body = text_rect(&shapes, |t| t.starts_with("This mapping"));
+        let button = button_rect(&shapes, text_rect(&shapes, |t| t == "Remove mapping"));
+        assert!(
+            button.top() >= body.bottom(),
+            "{button:?} not under {body:?}"
+        );
+        assert!(
+            (button.left() - body.left()).abs() <= 0.5,
+            "{button:?} not at the body edge {body:?}"
+        );
+    }
+
+    #[test]
+    fn a_wide_banner_keeps_the_buttons_beside_the_text() {
+        let (_, _, shapes) = render(460.0, false);
+        let body = text_rect(&shapes, |t| t.starts_with("This mapping"));
+        let button = button_rect(&shapes, text_rect(&shapes, |t| t == "Remove mapping"));
+        assert!(
+            button.left() >= body.right(),
+            "{button:?} overlaps {body:?}"
+        );
+        assert!(button.top() < body.bottom());
+    }
+
     #[test]
     fn a_narrow_banner_stays_inside_its_width() {
-        let (_, rect, shapes) = render(280.0);
+        let (_, rect, shapes) = render(280.0, true);
         // 셸 그림자는 카드 밖으로 번지므로 글자와 버튼 바탕만 본다.
         for s in &shapes {
             let card_ink = match s {

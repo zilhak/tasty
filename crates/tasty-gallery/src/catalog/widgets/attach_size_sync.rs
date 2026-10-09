@@ -3,7 +3,7 @@
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::{AttachSizeSyncBannerView, attach_size_sync_banner};
+use tasty_ui_widgets::{AttachSizeSyncBannerView, attach_size_sync_banner, banner_is_narrow};
 
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::i18n::t;
@@ -11,8 +11,18 @@ use crate::i18n::t;
 /// 테마 묶음 하나의 폭. 디자인은 `--tasty-size-460`을 쓴다. 이 폭은 시안 Stage 의 전시 치수라
 /// 값만 같은 `measure-lg` 토큰을 쓰지 않는다.
 const PANEL_W: LogicalPx = LogicalPx(460.0);
+/// 좁은 스코프 예제의 폭. 디자인의 좁은 surface 예제(html 스크립트 배너)와 같은 `--tasty-size-360`이며
+/// `banner-narrow-below`(440)보다 좁다.
+const NARROW_SCOPE_W: LogicalPx = LogicalPx(360.0);
 
-fn banner(ui: &mut egui::Ui, theme: &Theme, names: &[&str], retrying: bool) {
+/// `scope_width`는 배너가 놓인 스코프의 폭이며 본체처럼 이 폭으로 좁은 배치를 판정한다.
+fn banner(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    names: &[&str],
+    retrying: bool,
+    scope_width: LogicalPx,
+) {
     attach_size_sync_banner(
         ui,
         theme,
@@ -25,6 +35,7 @@ fn banner(ui: &mut egui::Ui, theme: &Theme, names: &[&str], retrying: bool) {
             retry_all: t("remote.size_sync.retry_all"),
             dismiss: t("remote.size_sync.dismiss"),
             retrying,
+            narrow: banner_is_narrow(scope_width.value(), theme),
         },
     );
 }
@@ -52,16 +63,26 @@ fn panel(ui: &mut egui::Ui, theme: &Theme, label: &str) {
             ui.vertical(|ui| {
                 ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
                 caption(ui, theme, &format!("{label} \u{2014} default"));
-                banner(ui, theme, &["build"], false);
+                banner(ui, theme, &["build"], false, PANEL_W);
                 caption(ui, theme, "retrying (\u{2264} 5 s)");
-                banner(ui, theme, &["build"], true);
+                banner(ui, theme, &["build"], true, PANEL_W);
                 caption(ui, theme, "3 surfaces \u{b7} long tab title truncated");
                 banner(
                     ui,
                     theme,
                     &["release-pipeline-watch-logs-eu-west", "build", "tests"],
                     false,
+                    PANEL_W,
                 );
+                caption(
+                    ui,
+                    theme,
+                    "narrow scope (360 < banner-narrow-below 440) \u{b7} actions wrap under the body",
+                );
+                ui.scope(|ui| {
+                    ui.set_max_width(NARROW_SCOPE_W.value());
+                    banner(ui, theme, &["build"], false, NARROW_SCOPE_W);
+                });
             });
         });
 }

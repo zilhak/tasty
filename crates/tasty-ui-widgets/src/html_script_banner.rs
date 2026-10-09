@@ -18,7 +18,7 @@ const MAX_TEXT_ROWS: usize = 2;
 /// surface 폭이 `banner_narrow_below`보다 좁으면 액션을 본문 아래 줄로 내린다.
 /// surface 크기가 바뀔 때마다 다시 판정하며 내용 길이로 임계값을 바꾸지 않는다.
 pub fn html_script_banner_is_narrow(surface_width: f32, theme: &Theme) -> bool {
-    surface_width < theme.banner_narrow_below().value()
+    crate::banner::banner_is_narrow(surface_width, theme)
 }
 
 /// 배너가 표시하는 단계. 닫힘·허용 뒤에는 배너 대신 탭 마커가 남는다.

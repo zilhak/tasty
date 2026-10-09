@@ -1,11 +1,12 @@
 //! 원격 attach mirror 의 터미널 크기 동기화가 자동 재시도 뒤에도 실패했을 때의 Workspace 배너 내용.
 //! 거절 배너와 같은 계열로 행 [글리프 | 제목·본문 | 다시 시도 · 닫기]이며 모든 칸을 위쪽에 맞춘다.
+//! 좁은 스코프에서는 버튼 묶음이 본문 왼쪽 가장자리에 맞춰 다음 줄로 내려간다.
 //! 여러 surface 가 함께 실패하면 한 장에 "N surfaces — a, b +n" 으로 묶고 버튼은 Retry all 이 된다.
 //! 문자열은 호출자가 주입한다. 큐·표시 범위는 본체 BannerManager가 정한다.
 
 use tasty_type_appearance::theme::Theme;
 
-use crate::banner::banner_shell;
+use crate::banner::{action_row_place, action_row_text_width, banner_shell};
 use crate::button::{Button, ButtonVariant};
 use crate::control::ControlSize;
 use crate::icon_button::{IconButton, IconButtonVariant};
@@ -32,6 +33,8 @@ pub struct AttachSizeSyncBannerView<'a> {
     pub dismiss: &'a str,
     /// 다시 시도의 응답을 기다리는 중이면 버튼을 비활성으로 두고 앞에 Spinner 를 그린다.
     pub retrying: bool,
+    /// 스코프가 좁으면([`crate::banner_is_narrow`]) 버튼 묶음을 글 아래 줄로 내린다.
+    pub narrow: bool,
 }
 
 /// 이번 프레임의 클릭.
@@ -209,12 +212,13 @@ pub fn attach_size_sync_banner_content(
     let nudge = theme.banner_glyph_offset().value();
     let text_gap = theme.banner_text_gap().value();
     let actions = actions_size(ui, theme, view);
-    let text_w = (row_w - glyph - gap - gap - actions.x).max(0.0);
+    let text_w = action_row_text_width(row_w, glyph, gap, actions.x, view.narrow);
 
     let title = title_galley(ui, theme, view.title, text_w);
     let body = body_galley(ui, theme, view, text_w);
     let text_h = title.size().y + text_gap + body.size().y;
-    let row_h = (glyph + nudge).max(text_h).max(actions.y);
+    let first_h = (glyph + nudge).max(text_h);
+    let (row_h, actions_pos) = action_row_place(row_w, first_h, glyph, gap, actions, view.narrow);
 
     let (row, _) = ui.allocate_exact_size(egui::vec2(row_w, row_h), egui::Sense::hover());
     let glyph_rect =
@@ -237,8 +241,7 @@ pub fn attach_size_sync_banner_content(
         egui::Color32::PLACEHOLDER,
     );
 
-    let actions_rect =
-        egui::Rect::from_min_size(egui::pos2(row.right() - actions.x, row.top()), actions);
+    let actions_rect = egui::Rect::from_min_size(row.min + actions_pos, actions);
     let mut child = ui.new_child(
         egui::UiBuilder::new()
             .max_rect(actions_rect)
@@ -306,6 +309,7 @@ mod tests {
             retry_all: "Retry all",
             dismiss: "Dismiss",
             retrying,
+            narrow: false,
         }
     }
 
@@ -540,9 +544,49 @@ mod tests {
     }
 
     #[test]
+    fn a_narrow_banner_puts_the_buttons_under_the_body_at_its_left_edge() {
+        let v = AttachSizeSyncBannerView {
+            narrow: true,
+            ..view(&["build"], false)
+        };
+        let body_of = |shapes: &[egui::Shape]| {
+            shapes
+                .iter()
+                .find_map(|s| match s {
+                    egui::Shape::Text(t) if t.galley.text().starts_with("build") => {
+                        Some(s.visual_bounding_rect())
+                    }
+                    _ => None,
+                })
+                .expect("body")
+        };
+        let (_, shapes) = render(360.0, &v);
+        let body = body_of(&shapes);
+        let button = retry_button_rect(&shapes);
+        assert!(
+            button.top() >= body.bottom(),
+            "{button:?} not under {body:?}"
+        );
+        assert!(
+            (button.left() - body.left()).abs() <= 0.5,
+            "{button:?} not at the body edge {body:?}"
+        );
+        let (_, wide) = render(460.0, &view(&["build"], false));
+        let (beside, wide_body) = (retry_button_rect(&wide), body_of(&wide));
+        assert!(
+            beside.left() >= wide_body.right() && beside.top() < wide_body.bottom(),
+            "the wide banner wrapped too"
+        );
+    }
+
+    #[test]
     fn a_narrow_banner_stays_inside_its_width() {
         let names = ["release-pipeline-watch-logs-eu-west", "build", "tests"];
-        let (rect, shapes) = render(280.0, &view(&names, true));
+        let v = AttachSizeSyncBannerView {
+            narrow: true,
+            ..view(&names, true)
+        };
+        let (rect, shapes) = render(280.0, &v);
         for s in &shapes {
             let card_ink = match s {
                 egui::Shape::Text(_) => true,

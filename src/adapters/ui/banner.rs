@@ -9,7 +9,7 @@ use std::time::Instant;
 use tasty_remote::refusal::MappingNoticeKind;
 use tasty_ui_widgets::{
     AttachRefusalBannerClicks, AttachRefusalBannerView, ControlSize, IconButton, IconButtonVariant,
-    attach_refusal_banner_content, banner_shell,
+    attach_refusal_banner_content, banner_is_narrow, banner_shell,
 };
 
 use crate::adapters::ui::icons;
@@ -505,11 +505,14 @@ impl BannerManager {
             /// 연결하지 않은 매핑 배너면 (anchor, 이유, 대상).
             refusal: Option<(u32, MappingNoticeKind, String)>,
             zone: egui::Rect,
+            /// 스코프 폭이 `banner_narrow_below`보다 좁아 버튼을 글 아래 줄로 내리는지.
+            narrow: bool,
             remaining_seconds: Option<u32>,
         }
         let mut slots: Vec<Slot> = Vec::new();
         for banner in self.shown_banners() {
-            let Some(zone) = Self::banner_zone(&banner.scope, draw_ctx, view_placeholder, theme)
+            let Some((zone, scope_width)) =
+                Self::banner_zone(&banner.scope, draw_ctx, view_placeholder, theme)
             else {
                 continue; // 백그라운드(스코프 비가시) — draw 안 함, TTL 정지(아래).
             };
@@ -536,6 +539,7 @@ impl BannerManager {
                 mesh,
                 refusal,
                 zone,
+                narrow: banner_is_narrow(scope_width, theme),
                 remaining_seconds: banner.remaining_seconds(),
             });
         }
@@ -608,6 +612,7 @@ impl BannerManager {
                                     body: &body,
                                     remove: crate::i18n::t("remote.refusal.remove"),
                                     dismiss: crate::i18n::t("remote.refusal.dismiss"),
+                                    narrow: slot.narrow,
                                 },
                             );
                             if clicks.dismiss {
@@ -743,12 +748,13 @@ impl BannerManager {
     }
 
     /// 보이는 범위의 위·좌·우에 Theme.spacing_sm 여백을 적용한다. 아래 여백은 없다.
+    /// 좁은 배치 판정에 쓰도록 여백을 빼기 전 범위의 폭을 함께 돌려준다.
     fn banner_zone(
         scope: &BannerScope,
         draw_ctx: &LayoutContext,
         view_placeholder: Option<egui::Rect>,
         theme: &Theme,
-    ) -> Option<egui::Rect> {
+    ) -> Option<(egui::Rect, f32)> {
         let margin = theme.spacing_sm.value();
         let base = match scope {
             BannerScope::View => view_placeholder?,
@@ -809,7 +815,7 @@ impl BannerManager {
         if zone.width() <= 0.0 {
             return None;
         }
-        Some(zone)
+        Some((zone, base.width()))
     }
 }
 

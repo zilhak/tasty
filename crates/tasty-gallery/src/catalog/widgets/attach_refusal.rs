@@ -5,8 +5,8 @@ use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{
     AttachRefusalBannerView, RailDot, attach_refusal_avatar_tooltip, attach_refusal_banner,
-    attach_refusal_mark, move_source_glyph_size, paint_attach_refusal_chip, paint_move_source_chip,
-    paint_move_source_glyph, paint_rail_dot, workspace_attention_badges,
+    attach_refusal_mark, banner_is_narrow, move_source_glyph_size, paint_attach_refusal_chip,
+    paint_move_source_chip, paint_move_source_glyph, paint_rail_dot, workspace_attention_badges,
 };
 
 use crate::catalog::spec::{self, StageVariant, TokenChip};
@@ -20,6 +20,9 @@ const CONTENT_W: LogicalPx = LogicalPx(460.0);
 const TERMINAL_H: LogicalPx = LogicalPx(64.0);
 /// 다른 이유 배너의 최대 폭. 디자인은 `--tasty-size-560`을 쓴다.
 const OTHER_REASON_MAX_W: LogicalPx = LogicalPx(560.0);
+/// 좁은 스코프 예제의 폭. 디자인의 좁은 surface 예제(html 스크립트 배너)와 같은 `--tasty-size-360`이며
+/// `banner-narrow-below`(440)보다 좁다.
+const NARROW_SCOPE_W: LogicalPx = LogicalPx(360.0);
 /// 사이드바 흉내 행 높이. 디자인 `RefusalRowG`의 `--tasty-size-28`이다.
 const ROW_H: LogicalPx = LogicalPx(28.0);
 /// 사이드바 흉내 행 사이 간격. 디자인은 `--tasty-size-1`을 쓴다.
@@ -58,7 +61,8 @@ fn title_parts() -> (&'static str, &'static str) {
         .unwrap_or((t("remote.refusal.title"), ""))
 }
 
-fn banner(ui: &mut egui::Ui, theme: &Theme, reason: Reason) {
+/// `scope_width`는 배너가 놓인 스코프의 폭이며 본체처럼 이 폭으로 좁은 배치를 판정한다.
+fn banner(ui: &mut egui::Ui, theme: &Theme, reason: Reason, scope_width: LogicalPx) {
     let (before, after) = title_parts();
     let body = format!("{} {}", t(reason.reason_key()), t("remote.refusal.hint"));
     attach_refusal_banner(
@@ -71,6 +75,7 @@ fn banner(ui: &mut egui::Ui, theme: &Theme, reason: Reason) {
             body: &body,
             remove: t("remote.refusal.remove"),
             dismiss: t("remote.refusal.dismiss"),
+            narrow: banner_is_narrow(scope_width.value(), theme),
         },
     );
 }
@@ -304,7 +309,7 @@ fn panel(ui: &mut egui::Ui, theme: &Theme) {
                 ui.vertical(|ui| {
                     ui.set_width(CONTENT_W.value());
                     ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
-                    banner(ui, theme, Reason::SelfInstance);
+                    banner(ui, theme, Reason::SelfInstance, CONTENT_W);
                     egui::Frame::new()
                         .fill(egui::Color32::from(theme.surface("terminal").focused_bg))
                         .corner_radius(theme.corner_radius.value())
@@ -357,9 +362,20 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 for reason in [Reason::ProfileMissing, Reason::Unresolved] {
                     ui.scope(|ui| {
                         ui.set_max_width(OTHER_REASON_MAX_W.value());
-                        banner(ui, theme, reason);
+                        banner(ui, theme, reason, OTHER_REASON_MAX_W);
                     });
                 }
+                ui.label(
+                    egui::RichText::new(
+                        "narrow scope (360 < banner-narrow-below 440) — buttons wrap under the body",
+                    )
+                    .size(theme.font_size_caption.value())
+                    .color(theme.text_muted().to_egui()),
+                );
+                ui.scope(|ui| {
+                    ui.set_max_width(NARROW_SCOPE_W.value());
+                    banner(ui, theme, Reason::SelfInstance, NARROW_SCOPE_W);
+                });
             });
     });
     spec::meta(
