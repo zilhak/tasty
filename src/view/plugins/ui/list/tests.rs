@@ -234,33 +234,6 @@ fn t_enabled() -> &'static str {
     t("plugins.enabled")
 }
 
-/// Esc 는 제거 확인을 닫고 평소 바로 돌아간다. 제거 동작은 나가지 않는다.
-#[test]
-fn escape_cancels_the_uninstall_confirm() {
-    crate::i18n::init("en");
-    let snapshot = two_plugins();
-    let first = snapshot.plugins[0].id.clone();
-    let ctx = egui::Context::default();
-    let mut actions = Vec::new();
-    let mut ui_state = PluginsUiState {
-        selected_id: Some(first.clone()),
-        confirm_uninstall_id: Some(first),
-        ..Default::default()
-    };
-    run_frame(&ctx, &snapshot, &mut ui_state, &mut actions, Vec::new());
-    run_frame(
-        &ctx,
-        &snapshot,
-        &mut ui_state,
-        &mut actions,
-        vec![key(egui::Key::Escape)],
-    );
-    let texts = run_frame(&ctx, &snapshot, &mut ui_state, &mut actions, Vec::new());
-    assert_eq!(ui_state.confirm_uninstall_id, None);
-    assert!(texts.iter().any(|(t, _)| t == t_enabled()), "{texts:?}");
-    assert!(actions.is_empty(), "{actions:?}");
-}
-
 /// 확인이 열리면 Cancel 에 포커스가 간다. 이어서 Enter 를 누르면 제거 대신 확인이 닫힌다.
 #[test]
 fn the_uninstall_confirm_focuses_cancel_when_it_opens() {

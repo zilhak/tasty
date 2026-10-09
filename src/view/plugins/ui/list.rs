@@ -148,13 +148,7 @@ pub(super) fn draw_list_tab(
     if ui_state.confirm_uninstall_id.is_some()
         && ui_state.confirm_uninstall_id != ui_state.selected_id
     {
-        cancel_confirm(ui_state);
-    }
-    // Esc 는 확인만 닫는다. 확인이 없을 때는 소비하지 않는다.
-    if ui_state.confirm_uninstall_id.is_some()
-        && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
-    {
-        cancel_confirm(ui_state);
+        ui_state.cancel_uninstall_confirm();
     }
 
     let selected_entry = ui_state
@@ -224,9 +218,9 @@ pub(super) fn draw_list_tab(
                     actions.push(PluginsAction::Uninstall {
                         id: entry.id.clone(),
                     });
-                    cancel_confirm(ui_state);
+                    ui_state.cancel_uninstall_confirm();
                 } else if clicks.cancel {
-                    cancel_confirm(ui_state);
+                    ui_state.cancel_uninstall_confirm();
                 }
                 return;
             }
@@ -255,12 +249,6 @@ pub(super) fn draw_list_tab(
                 ui_state.confirm_focus_pending = true;
             }
         });
-}
-
-/// 제거 확인을 닫는다. 아직 옮기지 않은 포커스 요청도 버린다.
-fn cancel_confirm(ui_state: &mut PluginsUiState) {
-    ui_state.confirm_uninstall_id = None;
-    ui_state.confirm_focus_pending = false;
 }
 
 /// 제거 확인 바의 문구. 안내는 built-in 여부로 갈린다.

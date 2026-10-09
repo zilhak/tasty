@@ -223,6 +223,14 @@ pub struct PluginsUiState {
     pub add_error: Option<AddError>,
 }
 
+impl PluginsUiState {
+    /// 제거 확인을 닫는다. 아직 옮기지 않은 포커스 요청도 버린다.
+    pub fn cancel_uninstall_confirm(&mut self) {
+        self.confirm_uninstall_id = None;
+        self.confirm_focus_pending = false;
+    }
+}
+
 /// `Add` 탭 오류 상자의 종류. 제목만 다르고 둘째 줄은 원문 메시지를 번역하지 않고 보인다.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum AddError {
@@ -257,6 +265,14 @@ pub fn draw_plugins_panel(
     actions: &mut Vec<PluginsAction>,
 ) {
     let th = theme::theme();
+
+    // 제거 확인이 열린 동안에는 탭과 관계없이 창 어디서든 Esc 가 확인을 닫는다. 다른 탭에 가려진
+    // 확인도 닫혀, Installed 로 돌아와도 다시 보이지 않는다. 확인이 없으면 Esc 를 소비하지 않는다.
+    if ui_state.confirm_uninstall_id.is_some()
+        && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
+    {
+        ui_state.cancel_uninstall_confirm();
+    }
 
     egui::TopBottomPanel::top("plugins_header")
         .exact_height(th.plugins_header_height().value())
@@ -499,6 +515,8 @@ fn segment_tab(
 mod add;
 mod attention;
 mod list;
+#[cfg(test)]
+mod tests;
 #[cfg(test)]
 mod text_probe;
 
