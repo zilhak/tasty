@@ -5,7 +5,10 @@
 
 use std::cell::RefCell;
 
-use tasty_settings::{REPORT_APPEND_BYTES_RANGE, REPORT_BLOCK_BYTES_RANGE};
+use tasty_settings::{
+    DEFAULT_REPORT_APPEND_BYTES, DEFAULT_REPORT_BLOCK_BYTES, REPORT_APPEND_BYTES_RANGE,
+    REPORT_BLOCK_BYTES_RANGE,
+};
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{Input, SettingsRow, settings_label_column};
 
@@ -113,9 +116,9 @@ fn frame(ui: &mut egui::Ui, th: &Theme, label: &str, bufs: &mut [String; 2]) {
             let col = settings_label_column(ui, th, &rows);
             let [note, attempt] = rows;
             let [append, block] = bufs;
-            let current = |buf: &str, fallback: u64| buf.trim().parse::<u64>().unwrap_or(fallback);
-            let append_now = current(append, 1024);
-            let block_now = current(block, 16384);
+            // 범위는 본체처럼 확정된 값으로 좁힌다. 범위 밖 짝의 70000 은 아직 확정되지 않은 입력이다.
+            let append_now = DEFAULT_REPORT_APPEND_BYTES;
+            let block_now = DEFAULT_REPORT_BLOCK_BYTES;
             let note_range = (
                 REPORT_APPEND_BYTES_RANGE.0,
                 REPORT_APPEND_BYTES_RANGE.1.min(block_now.saturating_sub(1)),
