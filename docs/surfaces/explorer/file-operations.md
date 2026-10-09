@@ -1,9 +1,9 @@
 # Explorer 파일 작업 — 대상과 결과의 계약
 
-- **Status**: Partial — 새 폴더·새 파일·이름 변경·복사·잘라내기·붙여넣기·휴지통 이동·드래그 놓기·충돌 선택·진행 취소·실행 취소는 동작한다. 속성 조회와 미리보기 패널·Grid 썸네일은 파일을 바꾸지 않는 읽기로 동작한다. 검색은 없다.
+- **Status**: Partial — 새 폴더·새 파일·이름 변경·복사·잘라내기·붙여넣기·휴지통 이동·드래그 놓기·충돌 선택·진행 취소·실행 취소는 동작한다. 속성 조회·미리보기 패널·Grid 썸네일·찾기(거르기와 하위 폴더 검색)는 파일을 바꾸지 않는 읽기로 동작한다. OS 파일 클립보드와 explorer 밖으로 끌어 내기는 없다.
 - **주체**: 로컬 사용자 ([주체](../../concepts/actors.md)). 에이전트(IPC/CLI)는 이 문서의 파일 작업을 호출하지 않는다.
 - **ADR**: [ADR-0022](../../adr/0022-remote-mirror-content-and-queries.md) (mirror explorer 는 파일을 바꾸지 않는다)
-- **코드**: 메뉴 구성 `build_explorer_context_menu`·메뉴 핸들러 `explorer_menu_*` (`src/view/main/redraw.rs`), 단축키·Command Palette 진입 `handle_explorer_shortcut`·`run_explorer_action` (`src/adapters/ui/input/shortcuts/copy_paste.rs`), 실행 worker `src/app/explorer_files.rs`·`src/app/explorer_files/ops.rs`·작업 엔진 `src/app/explorer_files/job.rs`·화면 동기화 `src/app/explorer_files/ui_sync.rs`, 칸 표시 `src/adapters/ui/surface/explorer/view/ops.rs`·드래그 `src/adapters/ui/surface/explorer/view/drag.rs`·충돌 popup `src/adapters/ui/popup/explorer_conflict.rs`, OS 파일 드롭 `src/view/main/file_drop.rs`
+- **코드**: 메뉴 구성 `build_explorer_context_menu`·메뉴 핸들러 `explorer_menu_*` (`src/view/main/redraw.rs`), 단축키·Command Palette 진입 `handle_explorer_shortcut`·`run_explorer_action` (`src/adapters/ui/input/shortcuts/copy_paste.rs`), 실행 worker `src/app/explorer_files.rs`·`src/app/explorer_files/ops.rs`·작업 엔진 `src/app/explorer_files/job.rs`·화면 동기화 `src/app/explorer_files/ui_sync.rs`, 새 항목 입력 `src/adapters/ui/surface/explorer/create.rs`·툴바 More 메뉴 `src/view/main/explorer_create.rs`, 찾기 `src/adapters/ui/surface/explorer/find.rs`, 칸 표시 `src/adapters/ui/surface/explorer/view/ops.rs`·드래그 `src/adapters/ui/surface/explorer/view/drag.rs`·충돌 popup `src/adapters/ui/popup/explorer_conflict.rs`, OS 파일 드롭 `src/view/main/file_drop.rs`
 - **화면**: [Explorer](index.md) 의 컨텍스트 메뉴·rename 팝업·토스트, 상태줄 진행 표시·대기열 팝오버·충돌 popup·결과 카드·드래그 칩 (갤러리 `explorer-ops-*` 예제)
 
 ## 목적
@@ -18,7 +18,7 @@
 |---|---|---|
 | 고정 루트 (cwd) | `ExplorerTab::cwd()` | 사이드바 Files 트리의 뿌리, 스폰 cwd, 탭 이름. 탐색으로 바뀌지 않고 "이 폴더로 루트 설정"만 바꾼다 |
 | 현재 폴더 (current) | `ExplorerTab::current()` (필드 `root`) | 오른쪽 목록과 주소창. 뒤로·앞으로·상위·주소창 이동이 바꾼다 |
-| 선택 항목 | `ExplorerView::selected` | 현재 폴더 목록 안에서 클릭·Ctrl/Cmd+클릭·Shift+클릭(범위)·Ctrl/Cmd+Shift+클릭(범위 추가)·전체 선택으로 고른 항목. 폴더가 바뀌면 비운다 |
+| 선택 항목 | `ExplorerView::selected` | 현재 폴더 목록 안에서 클릭·Ctrl/Cmd+클릭·Shift+클릭(범위)·Ctrl/Cmd+Shift+클릭(범위 추가)·전체 선택으로 고른 항목. 폴더가 바뀌면 비운다. Find 바가 거르는 동안에는 보이는 항목만 고를 수 있고, 하위 폴더 검색 결과를 고르면 그 결과의 실제 경로가 선택이 된다 |
 
 파일 작업은 고정 루트를 대상으로 쓰지 않는다. 대상은 선택 항목이거나 현재 폴더다.
 
@@ -43,7 +43,7 @@
 
 ### 경로 출처와 작업 대상 (공통 계약)
 
-탐색기의 파일 작업(지금의 복사·잘라내기·붙여넣기·휴지통·이름 변경·시스템 열기와, 앞으로 더할 만들기·OS 파일 클립보드·드래그·속성 조회)은 아래 규칙을 함께 따른다.
+탐색기의 파일 작업(새 폴더·새 파일·복사·잘라내기·붙여넣기·드래그 놓기·OS 파일 드롭·휴지통·이름 변경·실행 취소·시스템 열기)과 파일을 읽기만 하는 속성 조회는 아래 규칙을 함께 따른다.
 
 - **경로는 출처와 함께 다룬다.** explorer 경로는 로컬 경로이거나 mirror workspace 에 보이는 원격 호스트의 경로다(`ExplorerPathSource`). 같은 문자열이라도 출처가 다르면 다른 파일이다. 경로를 보관해 나중에 쓰는 자료(클립보드 등)는 출처를 함께 기록하고, 출처가 원격이거나 알 수 없는 경로를 로컬 파일 작업의 입력으로 해석하지 않는다.
 - **대상은 요청할 때 고정한다.** 메뉴·단축키·팝업이 대상 경로와 surface 를 정한 순간의 값을 쓴다. 그 사이 포커스·explorer 내부 탭·선택이 바뀌어도 대상은 바뀌지 않는다. 사용자가 그 사이 다른 폴더로 가도 대상은 바뀌지 않는다.
@@ -58,7 +58,7 @@
 |---|---|---|---|---|
 | 새 폴더 | 툴바(좁은 칸은 More 메뉴), 메뉴(빈 영역·단일 폴더), `explorer_new_folder` 단축키 | 지금 보는 폴더, 폴더 메뉴는 그 폴더. 시작할 때 고정한다 | 목록 맨 위 인라인 입력으로 이름을 받아 `create_dir` 로 만든다. 같은 이름이 있으면 덮어쓰지 않고 실패한다 | 입력 아래 이름 오류 상자. 쓰기 실패는 오류 토스트와 다시 읽기. 성공하면 그 폴더를 아직 보고 있을 때 새 항목을 선택한다 |
 | 새 파일 | 툴바(좁은 칸은 More 메뉴), 메뉴(빈 영역·단일 폴더), `explorer_new_file` 단축키 | 새 폴더와 같다 | 같은 입력으로 빈 파일을 `create_new` 로 만든다 | 새 폴더와 같다 |
-| 이름 변경 | 메뉴 (단일 항목) | 그 항목 | 같은 폴더 안에서 이름만 바꾼다. 경로 구분자·드라이브 접두어가 든 이름과 이미 있는 이름은 거부한다 | rename 팝업. 실패하면 오류 토스트를 띄우고 선택을 유지한 채 목록을 다시 읽는다 |
+| 이름 변경 | 메뉴 (단일 항목) | 그 항목 | 같은 폴더 안에서 이름만 바꾼다. 새 항목 이름과 같은 검사([새 폴더 · 새 파일](index.md#새-폴더--새-파일))로 빈 이름·금지 글자·앞뒤 공백·예약 이름을 거부하고, 이미 있는 이름도 거부한다 | rename 팝업. 실패하면 오류 토스트를 띄우고 선택을 유지한 채 목록을 다시 읽는다 |
 | 복사 | 메뉴, `copy` 단축키, Command Palette | 선택 항목 | 창 단위 explorer 파일 클립보드에 경로를 담는다. 디스크는 바꾸지 않는다 | 없음 |
 | 잘라내기 | 메뉴, `cut` 단축키, Command Palette | 선택 항목 | 클립보드에 잘라내기 표시와 함께 담는다 | 붙여넣기 전까지 잘라낸 항목을 grid·list·detail 에서 흐리게 그린다 (`cut_pending_opacity`) |
 | 붙여넣기 | 메뉴 (빈 영역·"Paste into"), `paste` 단축키, Command Palette | 현재 폴더 또는 메뉴의 폴더 | 아래 [작업 실행](#작업-실행--진행충돌결과) 의 작업으로 돈다. 복사는 목적지 임시 디렉터리에서 준비한 뒤 덮어쓰기 금지 rename 으로 공개한다. 이동은 rename 하고, 다른 파일시스템이면 복사 뒤 원본을 지운다 | 상태줄 진행 표시, 이름 충돌 popup, 결과 카드 |
@@ -66,7 +66,7 @@
 | 드래그 놓기 (OS 파일) | OS 에서 끌어 온 파일을 explorer 칸에 놓기 | 놓은 칸의 폴더 | 항상 복사한다. mirror explorer 는 거절한다. explorer 가 아닌 칸에 놓으면 [파일 핸들러](../../features/file-handler/index.md)로 연다 | 붙여넣기와 같다 |
 | 휴지통 이동 | 메뉴 | 선택 항목 또는 우클릭 항목 | OS 휴지통으로 보낸다. 확인 모달은 없다. 영구 삭제 경로는 없다. 그 드라이브에 휴지통이 없으면 아무것도 지우지 않는다 | 결과 카드. 휴지통이 없으면 "Trash isn't available on this drive. Nothing was deleted." 카드 |
 | 실행 취소 | 끝난 복사·이동 결과 카드의 Undo | 그 작업이 만든 항목 | 이동은 원래 자리로 되돌린다(원래 자리가 비어 있을 때만). 복사로 만든 항목은 휴지통으로 보낸다. 다만 작업 뒤 수정 시각이 바뀐 사본은 사용자가 고친 것으로 보고 남긴다(폴더는 폴더 자신의 수정 시각만 본다. 수정 시각 해상도가 거친 파일시스템(FAT/exFAT 2초, HFS+ 1초)에서는 공개 직후 같은 시각 칸 안의 수정을 구분하지 못한다. 그 사본은 휴지통으로 가며 되살릴 수 있다). Replace 로 덮어쓴 파일은 되돌리지 않는다. 휴지통 이동의 복원은 OS 에서 한다 | 결과 카드. 되돌리지 못한 항목과 이유를 나열한다 |
-| 검색·필터 | 없음 | — | 지원하지 않는다. 타입어헤드는 선택만 옮긴다 | — |
+| 찾기 | 툴바 Find 토글(좁은 칸은 More 메뉴), `find` 단축키 | 지금 보는 폴더, Subfolders 를 켜면 그 아래 전체(로컬만) | 디스크를 바꾸지 않는다. 목록을 이름으로 거르거나 하위 폴더 검색 결과로 바꾼다. 결과에 대한 파일 작업은 결과의 실제 경로를 대상으로 한다 | Find 바의 개수·검색 상태, 상태줄 ([Explorer](index.md#찾기--하위-폴더-검색)) |
 | 속성 | 메뉴 맨 끝 "Properties"(모든 변형, mirror 포함), `explorer_properties` 단축키, Command Palette | 메뉴의 대상, 또는 위 단축키 규칙 | 디스크를 바꾸지 않는다. 열 때의 대상을 고정해 보이고, 폴더 크기는 read worker 가 배경에서 센다. 닫으면 세기를 멈춘다 | 탐색기 칸에 묶인 Properties popup ([Explorer](index.md#properties-popup)) |
 | 미리보기 | 툴바 토글, `explorer_toggle_preview` 단축키, Command Palette | 선택이 하나일 때 그 항목 | 디스크를 바꾸지 않는다. 로컬 파일만 read worker 로 읽는다 | 목록 오른쪽 미리보기 패널 ([Explorer](index.md#미리보기-패널)) |
 | Grid 썸네일 | 없음 (Grid 보기에 자동) | 화면에 보인 로컬 그림 파일 | 디스크를 바꾸지 않는다 | 셀의 40 슬롯 ([Explorer](index.md#grid-썸네일)) |
@@ -116,6 +116,9 @@
 | 잘라내기 후 붙여넣기 | 붙여넣은 폴더, 각 원본의 부모 폴더 | 각 원본 |
 | 휴지통 이동 | 각 항목의 부모 폴더 | 각 항목 |
 | 이름 변경 | 항목의 부모 폴더 | 원래 이름의 경로 |
+| 새 폴더·새 파일 | 만든 폴더 | 없음 |
+| 드래그 놓기·OS 파일 드롭 | 복사·이동에 따라 위 붙여넣기 두 행과 같다 | 같다 |
+| 실행 취소 | 되돌린 항목이 있던 폴더와 옮겨 놓을 폴더 | 복사로 만든 항목, 이동해 놓은 자리 |
 | 외부 프로그램으로 열기 | 없음 | 없음 |
 
 - 현재 폴더가 다시 읽는 폴더이거나 사라질 수 있는 경로(또는 그 안)이면 목록을 다시 읽는다. 사라진 폴더 안을 보던 explorer 는 읽기 오류 화면을 보이며 다른 경로로 옮기지 않는다. 그 화면의 "상위 폴더로" 는 남아 있는 가장 가까운 상위 폴더로 간다.
@@ -133,7 +136,7 @@
 ## 인터페이스
 
 - **AI Agent (IPC/CLI)**: 없음. 위 경계 절을 따른다.
-- **사용자 트리거**: 컨텍스트 메뉴, `copy`·`cut`·`paste` 바인딩, Command Palette 의 Copy·Cut·Paste. 단축키 표는 [Explorer](index.md#사용자-트리거-단축키--keybindingsettings) 에 있다.
+- **사용자 트리거**: 컨텍스트 메뉴, 툴바·More 메뉴, 드래그 앤 드롭, 결과 카드의 Retry·Undo, `copy`·`cut`·`paste`·`explorer_new_folder`·`explorer_new_file`·`explorer_properties`·`explorer_toggle_preview`·`find` 바인딩, Command Palette. 단축키 표는 [Explorer](index.md#사용자-트리거-단축키--keybindingsettings) 에 있다.
 - **원격 / 점유**: mirror explorer 는 위 원격 제한을 따른다.
 
 ## 비-목표 (Out of scope)
