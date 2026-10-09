@@ -52,8 +52,10 @@ pub struct PreviewPane {
     shown: Option<(PathBuf, Option<SystemTime>, u32)>,
     query: Option<Query<PreviewData>>,
     body: Body,
-    /// model 의 토글·폭을 한 번 받아 왔는가. 처음 그릴 때 레이아웃 스냅샷에서 복원한 값을 받는다.
-    adopted: bool,
+    /// view 와 model 이 마지막으로 같았던 값. 받아 오거나 model 에 남기면 갱신한다.
+    /// model 이 이 값과 달라지면 다른 경로가 바꾼 것이므로 다시 받는다. 같은 surface id 로 kind 를
+    /// 바꿨다 돌아와 새 `ExplorerPanel` 이 기본값으로 생긴 경우도 여기서 잡는다(view 는 id 로 남는다).
+    known: Option<ExplorerPreview>,
     /// 사용자가 토글·폭을 바꿔 model 에 아직 남기지 않았다.
     changed: bool,
 }
@@ -66,7 +68,7 @@ impl Default for PreviewPane {
             shown: None,
             query: None,
             body: Body::NoTarget,
-            adopted: false,
+            known: None,
             changed: false,
         }
     }
@@ -83,12 +85,19 @@ impl PreviewPane {
         }
     }
 
-    /// model 의 토글·폭을 처음 한 번만 받는다. 그 뒤로는 이 view 가 바꾸고 model 에 알린다.
+    /// model 값이 마지막으로 맞춘 값과 다를 때만 받는다. 처음 그릴 때는 레이아웃에서 복원한 값을 받는다.
+    /// 끌기 중처럼 view 만 바뀐 동안에는 model 이 그대로라 덮어쓰지 않는다.
     pub(super) fn adopt(&mut self, model: &ExplorerPreview) {
-        if self.adopted {
+        if self.known == Some(*model) {
             return;
         }
-        self.adopted = true;
+        self.known = Some(*model);
+        self.changed = false;
+        if self.open && !model.open {
+            self.shown = None;
+            self.query = None;
+            self.body = Body::NoTarget;
+        }
         self.open = model.open;
         self.width = model.width.map(LogicalPx::value);
     }
@@ -98,10 +107,13 @@ impl PreviewPane {
         if !std::mem::take(&mut self.changed) {
             return None;
         }
-        Some(ExplorerPreview {
+        let preview = ExplorerPreview {
             open: self.open,
             width: self.width.map(LogicalPx),
-        })
+        };
+        // model 이 곧 이 값이 된다. 다음 프레임에 자기 변경을 다시 받지 않게 한다.
+        self.known = Some(preview);
+        Some(preview)
     }
 
     pub(super) fn poll(&mut self, owner: &mut ReadRequests) -> bool {
@@ -400,7 +412,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_model_state_is_adopted_once_and_user_changes_are_reported_once() {
+    fn the_model_state_is_adopted_when_it_changes_and_user_changes_are_reported_once() {
         let mut pane = PreviewPane::default();
         let saved = ExplorerPreview {
             open: true,
@@ -411,18 +423,26 @@ mod tests {
         assert_eq!(pane.width, Some(320.0));
         assert_eq!(pane.take_change(), None, "restoring is not a user change");
 
-        // 그 뒤 model 이 바뀌어도 view 의 값을 덮어쓰지 않는다.
-        pane.adopt(&ExplorerPreview::default());
-        assert!(pane.open);
+        // model 이 그대로면 view 에서 바꾼 값을 덮어쓰지 않는다(끌기 중 등).
+        pane.width = Some(400.0);
+        pane.adopt(&saved);
+        assert_eq!(pane.width, Some(400.0));
 
         pane.toggle();
-        assert_eq!(
-            pane.take_change(),
-            Some(ExplorerPreview {
-                open: false,
-                width: Some(LogicalPx(320.0)),
-            })
-        );
+        let reported = ExplorerPreview {
+            open: false,
+            width: Some(LogicalPx(400.0)),
+        };
+        assert_eq!(pane.take_change(), Some(reported));
+        assert_eq!(pane.take_change(), None);
+        // model 이 알린 값으로 바뀐 뒤에는 다시 받을 것이 없다.
+        pane.adopt(&reported);
+        assert!(!pane.open);
+
+        // 다른 경로가 model 을 바꾸면 따라간다.
+        pane.adopt(&saved);
+        assert!(pane.open);
+        assert_eq!(pane.width, Some(320.0));
         assert_eq!(pane.take_change(), None);
     }
 }

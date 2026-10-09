@@ -157,7 +157,7 @@ mirror(원격) explorer:
 
 ### 미리보기 패널
 
-툴바의 미리보기 토글(`COLUMNS` 글리프, 보기 전환 앞)이 목록 오른쪽 패널을 켜고 끈다(시안 `YPreview`, `explorer/preview.rs`). View(`ExplorerView::preview`)가 토글·폭을 바로 바꿔 그리고, 토글하거나 경계선 끌기를 마쳤을 때 한 번 `EngineAction::ExplorerPreview` 로 model(`ExplorerPanel::preview`)에 남긴다. 그래서 레이아웃 snapshot 에 실려 재시작 뒤에도 남는다(위 "저장·복원"). View 는 처음 그릴 때 한 번만 model 값을 받아 온다. 단축키 `explorer_toggle_preview` 도 같은 경로다.
+툴바의 미리보기 토글(`COLUMNS` 글리프, 보기 전환 앞)이 목록 오른쪽 패널을 켜고 끈다(시안 `YPreview`, `explorer/preview.rs`). View(`ExplorerView::preview`)가 토글·폭을 바로 바꿔 그리고, 토글하거나 경계선 끌기를 마쳤을 때 한 번 `EngineAction::ExplorerPreview` 로 model(`ExplorerPanel::preview`)에 남긴다. 그래서 레이아웃 snapshot 에 실려 재시작 뒤에도 남는다(위 "저장·복원"). View 는 view 와 model 이 마지막으로 같았던 값을 기억하고, 그릴 때마다 model 값이 그 값과 다르면 model 값을 받아 온다. 처음 그릴 때는 복원한 값을 받는다. 같은 surface id 로 다른 kind 로 바꿨다가 explorer 로 돌아오면 view 는 id 로 남지만 새 `ExplorerPanel` 은 기본값이라, 그 값을 받아 화면과 저장되는 값이 같다. 끌기 중처럼 view 만 바뀐 동안에는 model 이 그대로라 덮어쓰지 않는다. 단축키 `explorer_toggle_preview` 도 같은 경로다.
 
 - **폭**: `explorer_preview_width`(288)에서 시작하고 패널 왼쪽 경계선(잡는 폭은 pane 분할선과 같은 `DIVIDER_HIT_THRESHOLD`)을 끌어 `explorer_preview_min_width`(200)…`explorer_preview_max_width`(460) 사이로 바꾼다. 목록에도 같은 200 을 남긴다. 칸이 패널 하한 + 경계선 + 목록 하한보다 좁으면 패널만 숨기고 토글은 켜진 채 둔다.
 - **대상**: 선택이 정확히 하나일 때 그 항목. 선택이 없거나 여럿이면 "Select a file" 상태다. 대상이 바뀌면 이전 미리보기를 바로 지우고 Loading 상태를 보인다. 같은 항목이라도 수정 시각이 바뀌면 다시 읽는다.

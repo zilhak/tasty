@@ -1110,6 +1110,34 @@ mod tests {
     }
 
     #[test]
+    fn converting_away_and_back_under_the_same_id_shows_the_new_panels_preview() {
+        use crate::model::ExplorerPreview;
+        use tasty_type_geometry::length::LogicalPx;
+        let mut store = ExplorerViewStore::default();
+        let mut saved = ExplorerPanel::new(5, PathBuf::from("/w"));
+        saved.preview = ExplorerPreview {
+            open: true,
+            width: Some(LogicalPx(428.0)),
+        };
+        assert!(store.get_or_init(&saved, None).preview.open);
+
+        // terminal 로 바꾸는 동안 같은 id 의 view 는 남는다. explorer 로 돌아오면 새 panel 은 기본값이다.
+        let fresh = ExplorerPanel::new(5, PathBuf::from("/w"));
+        let view = store.get_or_init(&fresh, None);
+        assert!(!view.preview.open, "the view follows the new panel");
+        assert_eq!(view.preview.take_change(), None);
+        // 그 뒤 사용자가 켜면 새 panel 의 폭(기본)으로 남긴다.
+        view.preview.toggle();
+        assert_eq!(
+            view.preview.take_change(),
+            Some(ExplorerPreview {
+                open: true,
+                width: None,
+            })
+        );
+    }
+
+    #[test]
     fn a_local_file_action_reloads_every_local_view_of_the_changed_folders() {
         let mut store = ExplorerViewStore::default();
         let mut sync = |sid, root: &str, mirror| {
