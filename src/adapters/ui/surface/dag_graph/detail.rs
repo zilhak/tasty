@@ -96,6 +96,7 @@ pub fn draw_detail(
                     if let Some(code) = node.exit_code {
                         row(ui, theme, t("dag.detail.exit_code"), &code.to_string());
                     }
+                    task_id_row(ui, theme, &node.id);
 
                     vspace(ui, theme.spacing_sm);
                     labeled_block(
@@ -109,7 +110,15 @@ pub fn draw_detail(
 
                     if !node.incoming.is_empty() {
                         vspace(ui, theme.spacing_sm);
-                        section(ui, theme, t("dag.detail.dependencies"));
+                        section(
+                            ui,
+                            theme,
+                            &format!(
+                                "{label} \u{b7} {count}",
+                                label = t("dag.detail.dependencies"),
+                                count = node.incoming.len()
+                            ),
+                        );
                         for (idx, rel) in &node.incoming {
                             let Some(dep) = graph.nodes.get(*idx) else {
                                 continue;
@@ -196,16 +205,6 @@ fn header(ui: &mut egui::Ui, theme: &Theme, node: &DagNodeData) -> bool {
             false,
         );
     });
-    // CLI에서 사용할 task ID는 선택·복사할 수 있게 한다.
-    ui.add(
-        egui::Label::new(
-            egui::RichText::new(&node.id)
-                .monospace()
-                .size(theme.font_size_micro.value())
-                .color(theme.text_muted().to_egui()),
-        )
-        .selectable(true),
-    );
     close
 }
 
@@ -299,6 +298,26 @@ fn row(ui: &mut egui::Ui, theme: &Theme, label: &str, value: &str) {
             egui::RichText::new(value)
                 .size(theme.font_size_caption.value())
                 .color(theme.text_primary().to_egui()),
+        );
+    });
+}
+
+/// CLI에서 사용할 task ID는 mono 값으로 두고 선택·복사할 수 있게 한다.
+fn task_id_row(ui: &mut egui::Ui, theme: &Theme, id: &str) {
+    ui.horizontal(|ui| {
+        ui.label(
+            egui::RichText::new(t("dag.detail.task_id"))
+                .size(theme.font_size_caption.value())
+                .color(theme.text_muted().to_egui()),
+        );
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new(id)
+                    .monospace()
+                    .size(theme.font_size_caption.value())
+                    .color(theme.text_primary().to_egui()),
+            )
+            .selectable(true),
         );
     });
 }

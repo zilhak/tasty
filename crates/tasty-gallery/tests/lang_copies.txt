@@ -62,7 +62,7 @@ src/catalog/components/dag/detail.rs	Error	dag.detail.error
 src/catalog/components/dag/detail.rs	Exit code	dag.detail.exit_code
 src/catalog/components/dag/detail.rs	Open session	dag.detail.open_session
 src/catalog/components/dag/detail.rs	Started	dag.detail.started
-src/catalog/components/dag/detail.rs	Task id	cli.help._root.agent.task-get.arg.id.help
+src/catalog/components/dag/detail.rs	Task id	cli.help._root.agent.task-get.arg.id.help,dag.detail.task_id
 src/catalog/components/dag/detail.rs	Why unknown	dag.detail.why_unknown
 src/catalog/components/dag/detail.rs	—	dag.detail.none,port_scanner.external_dash
 src/catalog/components/dag/edges.rs	fallback	dag.rel.fallback
