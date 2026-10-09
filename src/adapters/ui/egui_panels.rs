@@ -137,6 +137,11 @@ pub fn draw_egui_panels(
     // 전체화면 무대도 함께 확인한다. 무대가 떠 있는 동안 그 뒤의 패널로 입력이 새면
     // 안 되기 때문이다.
     let overlay_open = state.keyboard_overlay_open() || state.fullscreen_stage_active();
+    // 충돌 질문은 포커스를 잡지 않는 popup 이라 따로 본다. scrim 아래 칸에 놓으면 안 된다.
+    let drag_blocked = overlay_open
+        || state
+            .popups
+            .is_open(crate::adapters::ui::popup::explorer_conflict::EXPLORER_CONFLICT_POPUP_ID);
     // 키 바인딩 전체를 파싱하는 작업이라, explorer 패널이 하나도 없는 프레임에서는
     // 만들지 않는다(`explorer_cwd`는 `ExplorerPanel`일 때만 채워진다).
     let explorer_shortcut_chars = if infos.iter().any(|i| i.explorer_cwd.is_some()) {
@@ -176,6 +181,10 @@ pub fn draw_egui_panels(
             });
         } else if let Some(ex_panel) = surface.explorer() {
             let view = explorer_views.get_or_init(ex_panel, mirror_ws_id);
+            view.ops.drag.flip = tasty_settings::keybindings::parse::Combo::parse_modifiers(
+                &engine.settings.keybindings.explorer_drag_flip_modifier,
+            );
+            view.ops.drag.blocked = drag_blocked;
             let act = draw_panel_frame(
                 ctx,
                 &format!("explorer_panel_{}", id_suffix),

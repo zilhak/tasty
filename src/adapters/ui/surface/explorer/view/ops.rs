@@ -59,6 +59,8 @@ pub(crate) struct OpsState {
     pub(crate) conflict_height: f32,
     /// 충돌 카드에서 답하고 닫았다. 닫힘 정리가 다음 질문을 취소하지 않게 한다.
     pub(crate) conflict_answered: bool,
+    /// 이 칸의 드래그 앤 드롭 상태.
+    pub(crate) drag: super::drag::DragState,
 }
 
 /// 렌더 뒤 호스트가 처리할 파일 작업 조작.
@@ -76,6 +78,12 @@ pub enum OpsAction {
     Undo(Vec<UndoStep>),
     /// 기다리는 충돌 질문을 이 칸에 띄운다.
     ShowConflict,
+    /// 끌어 놓은 항목을 대상 폴더로 옮기거나 복사한다.
+    Drop {
+        kind: OpKind,
+        paths: Vec<PathBuf>,
+        dest: PathBuf,
+    },
 }
 
 /// 결과 카드의 수명 정책: 모두 끝났거나 취소한 카드만 표준 시간 뒤 사라진다.
@@ -142,7 +150,7 @@ pub(crate) fn home_tilde(path: &Path) -> String {
     }
 }
 
-fn glyph(icon: icons::Icon) -> impl Fn(&mut egui::Ui, egui::Rect, egui::Color32) {
+pub(super) fn glyph(icon: icons::Icon) -> impl Fn(&mut egui::Ui, egui::Rect, egui::Color32) {
     move |ui, rect, color| icon.image(rect.height(), color).paint_at(ui, rect)
 }
 
@@ -179,6 +187,7 @@ pub(crate) fn footer(
     if view.ops.queue_open {
         queue(ui, theme, &mut view.ops, cell, status_top, action);
     }
+    super::drag::frame(ui, theme, view, body, action);
 }
 
 fn progress_line(

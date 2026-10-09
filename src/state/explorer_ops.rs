@@ -6,7 +6,7 @@ use crate::explorer_ui::view::ops::OpsAction;
 use crate::intent::{IntentOrigin, UserSource};
 use crate::runtime::engine_read::EngineRead;
 
-/// 다시 시도할 작업. 목적지를 모르는 복사·이동이나 되돌리기는 다시 시도하지 않는다.
+/// 다시 시도하거나 끌어 놓은 작업. 목적지를 모르는 복사·이동이나 되돌리기는 다시 시도하지 않는다.
 fn retry_operation(
     kind: OpKind,
     paths: Vec<std::path::PathBuf>,
@@ -48,6 +48,14 @@ impl super::MainViewState {
             }
             OpsAction::Undo(steps) => {
                 self.request_explorer_file_direct(engine, sid, Operation::Undo(steps), origin);
+            }
+            OpsAction::Drop { kind, paths, dest } => {
+                let origin = IntentOrigin::User {
+                    source: UserSource::Menu("explorer_drop"),
+                };
+                if let Some(operation) = retry_operation(kind, paths, Some(dest)) {
+                    self.request_explorer_file_direct(engine, sid, operation, origin);
+                }
             }
             OpsAction::ShowConflict => {
                 crate::app::explorer_files::open_conflict(self, sid, "explorer_conflict_show");

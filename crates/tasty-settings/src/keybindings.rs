@@ -54,6 +54,10 @@ pub struct KeybindingSettings {
     /// 카테고리 전환 modifier. 필드가 없으면 default_category_switch_modifier를 사용한다.
     #[serde(default = "default_category_switch_modifier")]
     pub category_switch_modifier: String,
+    /// explorer 드래그 중 누르고 있으면 기본 동작(같은 디스크 이동, 다른 디스크 복사)을 뒤집는
+    /// modifier 조합. 필드가 없으면 default_explorer_drag_flip_modifier를 사용한다.
+    #[serde(default = "default_explorer_drag_flip_modifier")]
+    pub explorer_drag_flip_modifier: String,
     /// 전체화면 무대가 활성일 때만 검사하는 종료 키. 무대가 없으면 다른 Escape 동작을 가로채지 않는다.
     /// 필드가 없으면 default_fullscreen_stage_exit를 사용한다.
     #[serde(default = "default_fullscreen_stage_exit")]
@@ -240,6 +244,16 @@ fn default_category_prev_key() -> String {
 /// 누락된 카테고리 modifier의 기본값. 저장 토큰 ctrl+shift를 사용한다.
 fn default_category_switch_modifier() -> String {
     "ctrl+shift".to_string()
+}
+
+/// 누락된 드래그 반전 modifier의 기본값. 각 OS 파일 관리자의 복사 키를 따른다
+/// (macOS Option, 그 밖의 OS Ctrl).
+pub(crate) fn default_explorer_drag_flip_modifier() -> String {
+    if cfg!(target_os = "macos") {
+        "option".to_string()
+    } else {
+        "ctrl".to_string()
+    }
 }
 
 /// 누락된 화면 캡처 바인딩의 기본값. 네 프리셋이 같은 조합을 사용한다.

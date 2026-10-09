@@ -1,5 +1,6 @@
 //! surface별 탐색기 표시 상태. 모델의 탐색 이력과 별도로 목록 캐시·선택·트리 펼침을 보관한다.
 
+pub(crate) mod drag;
 pub(crate) mod ops;
 
 use std::collections::{HashMap, HashSet};
@@ -591,6 +592,11 @@ impl ExplorerView {
             .get(dir)
             .map(Vec::as_slice)
             .unwrap_or(&[])
+    }
+
+    /// 목록을 읽어 보여 주고 있는 폴더.
+    pub(crate) fn loaded_dir(&self) -> Option<&Path> {
+        self.loaded.as_ref().map(|(dir, _, _)| dir.as_path())
     }
 
     /// 단일 선택으로 설정.

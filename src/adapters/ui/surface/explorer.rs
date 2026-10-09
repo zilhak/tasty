@@ -759,6 +759,7 @@ fn favorite_row(
         None,
         selected,
     );
+    self::view::drag::note_favorite(ui, &fav.path, resp.rect);
     if resp.clicked() && action.is_none() {
         *action = Some(ExplorerAction::Navigate(fav.path.clone()));
     }
@@ -823,6 +824,7 @@ fn tree_node(
         None,
         selected,
     );
+    self::view::drag::note_tree(ui, dir, resp.rect, open);
     // chevron 영역은 펼치기, 나머지 영역은 해당 경로로 이동한다.
     if resp.clicked() {
         let toggle_zone = resp.rect.left() + depth as f32 * theme.spacing_md.value() + 24.0;
@@ -1043,6 +1045,7 @@ fn handle_entry_interaction(
     resp: &egui::Response,
     action: &mut Option<ExplorerAction>,
 ) {
+    self::view::drag::note(ui, entry, resp.rect);
     if resp.double_clicked() {
         if entry.is_dir {
             if action.is_none() {
@@ -1440,6 +1443,7 @@ fn detail_view(
                 match col {
                     0 if row.name.is_empty() => editor_cell.set(Some(ui.max_rect())),
                     0 => {
+                        self::view::drag::note_row(ui, row);
                         // `..`는 화면에만 있는 행이라 타입어헤드 대상이 아니다. 경로만
                         // 비교하면 상위 폴더와 겹칠 수 있어 이름도 함께 확인한다.
                         if row.name != ".." && scroll_to.as_deref() == Some(row.path.as_path()) {
