@@ -669,7 +669,7 @@ pub fn draw_name_errors(ui: &mut egui::Ui, theme: &Theme) {
             ("input", "Input invalid (danger border)"),
             (
                 "message",
-                "under the field · menu-bg · 1px explorer-name-error-fg · caption · text-primary · max 240 · overlaps rows below",
+                "under the field · menu-bg · 1px explorer-name-error-fg · caption · text-primary · max explorer-name-error-max-width 240 · overlaps rows below",
             ),
             ("empty", "“Enter a name.”"),
             (
@@ -693,6 +693,7 @@ pub fn draw_name_errors(ui: &mut egui::Ui, theme: &Theme) {
                 theme.explorer_name_error_fg().to_egui(),
             ),
             TokenChip::new("menu-bg", "message box", theme.menu_bg().to_egui()),
+            TokenChip::without_color("explorer-name-error-max-width", "→ size-240"),
             TokenChip::without_color("shadow-popover", "message lift"),
         ],
     );

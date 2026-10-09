@@ -191,8 +191,7 @@ fn field_ui(
 pub fn explorer_name_error(ui: &egui::Ui, theme: &Theme, field: egui::Rect, text: &str) {
     let pad_x = theme.spacing_sm.value();
     let pad_y = theme.spacing_xs.value();
-    // 디자인 최대 폭은 primitive size-240 이다. 같은 역할의 토큰이 없어 툴팁 최대 폭을 쓴다.
-    let max_w = theme.tooltip_max_width.value();
+    let max_w = theme.explorer_name_error_max_width().value();
     let font = egui::FontId::proportional(theme.font_size_caption.value());
     let mut job = egui::text::LayoutJob::simple(
         text.to_owned(),

@@ -16,22 +16,6 @@ use crate::i18n::{t, t_fmt, t_fmt2};
 /// 상태 패널 예제의 높이(시안 `height: 230`). 전시 칸 치수다.
 const PANEL_STAGE_H: LogicalPx = LogicalPx(230.0);
 
-/// 시안 `YProps` 좌우 여백 `--tasty-size-14`. 대응 컴포넌트 토큰이 없다.
-const PROPS_PAD_X: LogicalPx = LogicalPx(14.0);
-/// 시안 `YField` 줄 높이 `--tasty-size-20`. 대응 컴포넌트 토큰이 없다.
-const FIELD_LINE_H: LogicalPx = LogicalPx(20.0);
-/// 시안 `YField` 최소 높이 `--tasty-size-24`. 대응 컴포넌트 토큰이 없다.
-const FIELD_MIN_H: LogicalPx = LogicalPx(24.0);
-/// 시안 `YField` 위 여백 `paddingTop: 2`. 대응 컴포넌트 토큰이 없다.
-const FIELD_TOP: LogicalPx = LogicalPx(2.0);
-/// 시안 `YPreview` 머리 높이 `--tasty-size-40`. 대응 컴포넌트 토큰이 없다.
-const PREVIEW_HEAD_H: LogicalPx = LogicalPx(40.0);
-
-/// 위 상수는 Theme 값과 달리 배율을 타지 않았으므로 같은 식에 쓰기 전에 UI 배율을 곱한다.
-fn zoomed(theme: &Theme, px: LogicalPx) -> f32 {
-    (px.value() * theme.ui_zoom).round()
-}
-
 /// Properties 필드 한 줄의 값.
 struct Field {
     /// 라벨의 번역 키. 본체와 같은 문구를 쓴다.
@@ -66,9 +50,9 @@ fn mono(label: &'static str, value: &str, copy: bool) -> Field {
 fn field_row(ui: &mut egui::Ui, theme: &Theme, f: &Field) {
     let label_w = theme.explorer_props_label_width().value();
     let gap = theme.spacing_sm.value();
-    let line_h = zoomed(theme, FIELD_LINE_H);
-    let min_h = zoomed(theme, FIELD_MIN_H);
-    let top = zoomed(theme, FIELD_TOP);
+    let line_h = theme.explorer_props_row_line().value();
+    let min_h = theme.explorer_props_row_min_height().value();
+    let top = theme.explorer_props_row_pad_top().value();
     let width = ui.available_width();
     ui.allocate_ui_with_layout(
         egui::vec2(width, min_h),
@@ -165,7 +149,7 @@ fn props_card(
     fields: &[Field],
     note_text: Option<&str>,
 ) {
-    let pad_x = zoomed(theme, PROPS_PAD_X);
+    let pad_x = theme.explorer_props_padding_x().value();
     let width = theme.explorer_props_width();
     kit::frame_card(ui, theme, width, kit::panel_fill(theme), |ui| {
         kit::region(
@@ -359,6 +343,10 @@ pub fn draw_properties(ui: &mut egui::Ui, theme: &Theme) {
         &[
             TokenChip::without_color("explorer-props-width", "→ size-360"),
             TokenChip::without_color("explorer-props-label-width", "→ size-96"),
+            TokenChip::without_color("explorer-props-padding-x", "→ size-14"),
+            TokenChip::without_color("explorer-props-row-min-height", "→ size-24"),
+            TokenChip::without_color("explorer-props-row-line", "→ size-20"),
+            TokenChip::without_color("explorer-props-row-pad-top", "→ size-2"),
             TokenChip::without_color("shadow-modal", "popup"),
             TokenChip::new(
                 "spinner-indicator",
@@ -409,7 +397,7 @@ fn preview_panel(ui: &mut egui::Ui, theme: &Theme, kind: PreviewKind, height: f3
         theme.separator.to_egui_premultiplied(),
     );
     p.rect_filled(rect, 0.0, theme.bg_panel().to_egui());
-    let head_h = zoomed(theme, PREVIEW_HEAD_H);
+    let head_h = theme.explorer_preview_header_height().value();
     let head = egui::Rect::from_min_size(rect.min, egui::vec2(w, head_h));
     let pad = theme.spacing_sm.value();
     let inner_w = (w - pad * 2.0).max(0.0);
@@ -598,6 +586,8 @@ pub fn draw_preview(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::without_color("explorer-preview-width", "→ size-288"),
             TokenChip::without_color("explorer-preview-min-width", "→ size-200"),
             TokenChip::without_color("explorer-preview-max-width", "→ size-460"),
+            TokenChip::without_color("explorer-preview-header-height", "→ size-40"),
+            TokenChip::without_color("explorer-list-min-width", "→ size-200"),
             TokenChip::new("bg-sidebar", "preview bed", theme.bg_sidebar().to_egui()),
         ],
     );

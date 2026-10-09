@@ -9,7 +9,6 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::SystemTime;
 
-use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{ControlSize, IconButton, IconButtonVariant, Spinner};
 
 use crate::adapters::ui::icons::{self, Icon};
@@ -22,20 +21,6 @@ use crate::state::MainViewState;
 use crate::theme::{self, Theme};
 
 pub const EXPLORER_PROPERTIES_POPUP_ID: &str = "explorer_properties";
-
-/// 시안 `YProps` 좌우 여백 `--tasty-size-14`. 대응 컴포넌트 토큰이 없다.
-const PAD_X: LogicalPx = LogicalPx(14.0);
-/// 시안 `YField` 줄 높이 `--tasty-size-20`. 대응 컴포넌트 토큰이 없다.
-const FIELD_LINE_H: LogicalPx = LogicalPx(20.0);
-/// 시안 `YField` 최소 높이 `--tasty-size-24`. 대응 컴포넌트 토큰이 없다.
-const FIELD_MIN_H: LogicalPx = LogicalPx(24.0);
-/// 시안 `YField` 위 여백 `paddingTop: 2`. 대응 컴포넌트 토큰이 없다.
-const FIELD_TOP: LogicalPx = LogicalPx(2.0);
-
-/// 위 상수는 Theme 값과 달리 배율을 타지 않았으므로 같은 식에 쓰기 전에 UI 배율을 곱한다.
-fn zoomed(th: &Theme, px: LogicalPx) -> f32 {
-    (px.value() * th.ui_zoom).round()
-}
 
 /// 팝업이 연 항목과 읽은 정보.
 pub struct ExplorerProperties {
@@ -183,7 +168,7 @@ pub fn default_size() -> egui::Vec2 {
     let th = theme::theme();
     egui::vec2(
         th.explorer_props_width().value(),
-        zoomed(&th, FIELD_MIN_H) * 8.0,
+        th.explorer_props_row_min_height().value() * 8.0,
     )
 }
 
@@ -243,7 +228,7 @@ pub fn draw(ui: &mut egui::Ui, state: &mut MainViewState, _engine: &EngineRead<'
         return PopupAction::Close;
     }
     let (glyph, name, fields, note) = content(props);
-    let pad_x = zoomed(&th, PAD_X);
+    let pad_x = th.explorer_props_padding_x().value();
     let mut close = false;
     ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
     let top = ui.cursor().top();
@@ -335,9 +320,9 @@ fn icon_button(ui: &mut egui::Ui, th: &Theme, g: Icon) -> egui::Response {
 /// 라벨(96, caption muted) · 값(body 또는 mono caption, 어디서나 줄바꿈) · 선택 Copy.
 fn field_row(ui: &mut egui::Ui, th: &Theme, f: &Field) {
     let label_w = th.explorer_props_label_width().value();
-    let line_h = zoomed(th, FIELD_LINE_H);
-    let min_h = zoomed(th, FIELD_MIN_H);
-    let top = zoomed(th, FIELD_TOP);
+    let line_h = th.explorer_props_row_line().value();
+    let min_h = th.explorer_props_row_min_height().value();
+    let top = th.explorer_props_row_pad_top().value();
     let width = ui.available_width();
     ui.allocate_ui_with_layout(
         egui::vec2(width, min_h),

@@ -21,9 +21,6 @@ use crate::app::local_reads::{
 use crate::i18n::{t, t_fmt, t_fmt2};
 use crate::model::ExplorerPreview;
 
-/// 시안 `YPreview` 머리 높이 `--tasty-size-40`. 대응 컴포넌트 토큰이 없다.
-const HEAD_H: LogicalPx = LogicalPx(40.0);
-
 /// 패널 본문 상태.
 enum Body {
     /// 선택이 없거나 둘 이상이다.
@@ -176,8 +173,7 @@ pub(super) fn split(
     let min = theme.explorer_preview_min_width().value();
     let max = theme.explorer_preview_max_width().value();
     let line = theme.border_width.value();
-    // 목록에 남길 최소 폭은 시안에 없어 패널 최소 폭과 같게 둔다(디자인 질문으로 올렸다).
-    let list_min = min;
+    let list_min = theme.explorer_list_min_width().value();
     if full.width() < min + line + list_min {
         return whole(ui);
     }
@@ -329,7 +325,7 @@ fn draw_panel(
     let rect = ui.max_rect();
     let p = ui.painter().clone();
     p.rect_filled(rect, 0.0, theme.bg_panel().to_egui());
-    let head_h = HEAD_H.value() * theme.ui_zoom;
+    let head_h = theme.explorer_preview_header_height().value();
     let head = egui::Rect::from_min_size(rect.min, egui::vec2(rect.width(), head_h));
     let sep = egui::Stroke::new(
         theme.border_width.value(),
