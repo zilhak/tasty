@@ -48,7 +48,8 @@ mod tests {
                 let stop = stop.clone();
                 std::thread::spawn(move || {
                     while !stop.load(Ordering::Relaxed) {
-                        if let Err(e) = Command::new("/bin/true").status() {
+                        // macOS 에는 /bin/true 가 없고 /usr/bin/true 만 있어 PATH 로 찾는다.
+                        if let Err(e) = Command::new("true").status() {
                             panic!("spawner: {e}");
                         }
                     }

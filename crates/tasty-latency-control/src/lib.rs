@@ -98,8 +98,9 @@ fn spawn_probe() -> Duration {
         c.args(["/c", "exit"]);
         c
     };
+    // macOS 에는 /bin/true 가 없고 /usr/bin/true 만 있어 PATH 로 찾는다.
     #[cfg(not(windows))]
-    let mut cmd = std::process::Command::new("/bin/true");
+    let mut cmd = std::process::Command::new("true");
     let Ok(mut child) = cmd
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
@@ -911,6 +912,16 @@ mod tests {
             &sample,
         );
         assert!(msg.contains("이 대조군의 증가는 확인되지 않았다"), "{msg}");
+    }
+
+    /// 자식 실행 대조군이 실제로 자식을 띄운다. 실행에 실패하면 0을 돌려 기준선이 0이 되고
+    /// 판정이 조용히 사라지므로, 실행 파일 경로가 이 OS 에 없을 때 여기서 실패한다.
+    #[test]
+    fn the_spawn_probe_runs_a_child() {
+        assert!(
+            spawn_probe() > Duration::ZERO,
+            "the spawn probe could not run its child"
+        );
     }
 
     /// 패닉 여부와 진단 반환 여부의 네 조합을 확인한다.
