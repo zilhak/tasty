@@ -5,7 +5,7 @@ mod popups;
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, Spinner};
+use tasty_ui_widgets::{ButtonVariant, StateGlyph as WidgetGlyph, StateScreenView, state_screen};
 
 use crate::catalog::icons::{self, MockGlyph};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
@@ -13,10 +13,6 @@ use crate::catalog::spec::{self, StageVariant, TokenChip};
 /// 시안 상태 줄의 최대 폭(`maxWidth: 700`)과 상태 칸 높이(`height: 180`). 전시 치수다.
 const ROW_W: LogicalPx = LogicalPx(700.0);
 const STATE_H: LogicalPx = LogicalPx(180.0);
-/// 시안 글리프 확대 비율(`transform: scale(1.6)`). 대응 토큰이 없다.
-const GLYPH_SCALE: f32 = 1.6;
-/// 시안 보조 줄·이유 줄 최대 폭(`maxWidth: 200`). 대응 토큰이 없다.
-const SUB_MAX_W: LogicalPx = LogicalPx(200.0);
 /// 시안 팝업 두 장 사이 간격(`gap: 18`). 대응 토큰이 없다.
 const POPUP_GAP: LogicalPx = LogicalPx(18.0);
 
@@ -156,7 +152,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
-/// 내용 영역 상태 칸 하나 — 가운데 정렬한 글리프 · 제목 · 보조 줄 · 이유 줄 · 버튼 줄.
+/// 내용 영역 상태 칸 하나 — 전시 칸 배경 위에 공용 상태 화면을 그린다.
 fn state_cell(ui: &mut egui::Ui, theme: &Theme, s: &StateCell, w: f32) {
     let (rect, _) = ui.allocate_exact_size(egui::vec2(w, STATE_H.value()), egui::Sense::hover());
     let radius = theme.corner_radius.value();
@@ -178,9 +174,8 @@ fn state_cell(ui: &mut egui::Ui, theme: &Theme, s: &StateCell, w: f32) {
 /// 받은 사각형 가운데에 상태 블록(글리프 · 제목 · 보조 줄 · 이유 줄 · 버튼 줄)을 그린다.
 /// 미리보기 패널 예제도 같은 블록을 쓴다.
 pub(super) fn state_block(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, s: &StateCell) {
-    let w = rect.width();
     let muted = theme.text_muted().to_egui();
-    let (glyph_fg, title_fg) = match s.tone {
+    let (glyph_color, title_color) = match s.tone {
         Tone::Neutral => (muted, theme.text_secondary().to_egui()),
         Tone::Warning => {
             let c = theme.accent_warning().to_egui();
@@ -191,115 +186,29 @@ pub(super) fn state_block(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, s:
             (c, c)
         }
     };
-    // transform: scale 은 배치에 영향이 없다. 배치는 원래 글리프 크기로 하고 확대해서 그린다.
-    let glyph_box = theme.icon_glyph_size_md.value();
-    let glyph = glyph_box * GLYPH_SCALE;
-    let gap = theme.spacing_sm.value();
-    let inner_w = (w - theme.spacing_lg.value() * 2.0).max(0.0);
-    let narrow = SUB_MAX_W.value().min(inner_w);
-    let caption = theme.font_size_caption.value();
-    let center = |text: &str, font: egui::FontId, color: egui::Color32, max_w: f32| {
-        let mut job = egui::text::LayoutJob::simple(text.to_owned(), font, color, max_w);
-        job.halign = egui::Align::Center;
-        ui.painter().layout_job(job)
-    };
-    let title = center(
-        s.title,
-        egui::FontId::proportional(theme.font_size_body.value()),
-        title_fg,
-        inner_w,
-    );
-    let sub = s
-        .sub
-        .map(|t| center(t, egui::FontId::proportional(caption), muted, narrow));
-    let reason = s
-        .reason
-        .map(|t| center(t, egui::FontId::monospace(caption), muted, narrow));
-    let action_h = ACTION_SIZE.height(theme);
-    let mut block_h = glyph_box + gap + title.rect.height();
-    for g in [&sub, &reason].into_iter().flatten() {
-        block_h += gap + g.rect.height();
-    }
-    if !s.actions.is_empty() {
-        block_h += gap + theme.spacing_xs.value() + action_h;
-    }
-    let mut y = rect.center().y - block_h * 0.5;
-    let glyph_rect = egui::Rect::from_center_size(
-        egui::pos2(rect.center().x, y + glyph_box * 0.5),
-        egui::vec2(glyph, glyph),
-    );
-    match s.glyph {
+    // 배치는 본체 탐색기와 같은 공용 상태 화면이 맡는다.
+    let paint;
+    let glyph = match s.glyph {
         StateGlyph::Icon(g) => {
-            g.image(glyph, glyph_fg).paint_at(ui, glyph_rect);
+            paint = move |ui: &mut egui::Ui, r: egui::Rect, c: egui::Color32| {
+                g.image(r.height(), c).paint_at(ui, r);
+            };
+            WidgetGlyph::Paint(&paint)
         }
-        StateGlyph::Spinner => {
-            let mut slot = ui.new_child(egui::UiBuilder::new().max_rect(glyph_rect));
-            Spinner::new().size(glyph).show(&mut slot, theme);
-        }
-    }
-    // 가운데 정렬 job 은 원점이 줄의 가운데이므로 칸 가운데에 둔다.
-    y += glyph_box + gap;
-    let title_h = title.rect.height();
-    ui.painter()
-        .galley(egui::pos2(rect.center().x, y), title, title_fg);
-    y += title_h;
-    for g in [sub, reason].into_iter().flatten() {
-        y += gap;
-        let h = g.rect.height();
-        ui.painter()
-            .galley(egui::pos2(rect.center().x, y), g, muted);
-        y += h;
-    }
-    if !s.actions.is_empty() {
-        action_row(
-            ui,
-            theme,
-            rect,
-            y + gap + theme.spacing_xs.value(),
-            s.actions,
-        );
-    }
-}
-
-/// 시안 버튼 크기(`size="sm"`).
-const ACTION_SIZE: ControlSize = ControlSize::Sm;
-
-/// 시안 버튼 줄(`display: flex; gap: space-sm`)을 칸 가운데에 놓는다.
-fn action_row(
-    ui: &mut egui::Ui,
-    theme: &Theme,
-    rect: egui::Rect,
-    top: f32,
-    actions: &[(&str, ButtonVariant)],
-) {
-    let font = egui::FontId::proportional(ACTION_SIZE.font_size(theme));
-    let pad = ACTION_SIZE.pad_x(theme) * 2.0;
-    let gap = theme.spacing_sm.value();
-    let row_w = actions
-        .iter()
-        .map(|(l, _)| {
-            ui.painter()
-                .layout_no_wrap((*l).to_owned(), font.clone(), egui::Color32::PLACEHOLDER)
-                .rect
-                .width()
-                + pad
-        })
-        .sum::<f32>()
-        + gap * (actions.len() as f32 - 1.0);
-    let row = egui::Rect::from_min_size(
-        egui::pos2(rect.center().x - row_w * 0.5, top),
-        egui::vec2(row_w, ACTION_SIZE.height(theme)),
+        StateGlyph::Spinner => WidgetGlyph::Spinner,
+    };
+    state_screen(
+        ui,
+        theme,
+        rect,
+        &StateScreenView {
+            glyph,
+            glyph_color,
+            title: s.title,
+            title_color,
+            sub: s.sub,
+            reason: s.reason,
+            actions: s.actions,
+        },
     );
-    let mut child = ui.new_child(
-        egui::UiBuilder::new()
-            .max_rect(row)
-            .layout(egui::Layout::left_to_right(egui::Align::Center)),
-    );
-    child.spacing_mut().item_spacing.x = gap;
-    for (label, variant) in actions {
-        Button::new(label)
-            .variant(*variant)
-            .size(ACTION_SIZE)
-            .show(&mut child, theme);
-    }
 }

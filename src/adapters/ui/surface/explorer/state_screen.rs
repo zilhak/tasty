@@ -1,35 +1,21 @@
 //! 탐색기 내용 영역의 상태 화면 — 빈 폴더 · 권한 거부 · 불러오는 중 · 읽기 오류.
-//! 시안 `ExpState`(갤러리 Spec "Empty / permission / loading / read error")를 따른다: 가운데 정렬한
-//! 글리프 · 제목(body) · 선택 보조 줄(caption, text-muted) · 선택 이유 줄(mono caption, text-muted) ·
-//! 선택 버튼 줄을 space-sm 간격으로 쌓고, 버튼 줄은 space-xs 를 더 띄운다.
+//! 배치는 공용 [`tasty_ui_widgets::state_screen`](시안 `ExpState`)이 맡고 여기서는 내용과 색조를 고른다.
 //! 권한 거부는 글리프와 제목을 accent-warning, 읽기 오류는 explorer-error-fg 로 칠하고, 불러오는 중은
 //! 글리프 자리에 Spinner 를 둔다. 읽기 오류는 OS 이유 문구를 번역하지 않고 보이며 Retry(같은 경로를
 //! 다시 읽음)와 Go up(상위 폴더, 루트에서는 숨김)을 둔다. 바로 위 폴더도 사라졌으면 Go up 은 남아 있는
 //! 가장 가까운 상위 폴더로 간다.
 //! 시안의 패널 배경·테두리는 갤러리 전시 칸이고 본체에서는 내용 영역 자체가 그 자리다.
-//! 내용 영역 높이가 `explorer_state_compact_below()` 미만이면 공용 compact 한 줄(글리프 · 제목 ·
-//! 버튼)로 바꾸고 보조 줄과 이유 문구는 제목 툴팁으로 옮긴다. 블록이 잘리지 않게 하기 위해서다.
+//! 낮은 내용 영역에서는 공용 위젯이 compact 한 줄로 바꾼다.
 
 use std::path::Path;
 
 use tasty_type_appearance::theme::Theme;
-use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::{
-    Button, ButtonVariant, CompactStateGlyph, CompactStateRow, ControlSize, Spinner,
-    compact_state_row,
-};
+use tasty_ui_widgets::{ButtonVariant, StateGlyph as WidgetGlyph, StateScreenView, state_screen};
 
 use super::ExplorerAction;
 use super::view::{ExplorerView, LoadState};
 use crate::adapters::ui::icons::{self, Icon};
 use crate::i18n::t;
-
-/// 시안 글리프 확대 비율(`transform: scale(1.6)`). 대응 토큰이 없다.
-const GLYPH_SCALE: f32 = 1.6;
-/// 시안 보조 줄·이유 줄 최대 폭(`maxWidth: 200`). Theme 역할에 연결하지 않은 화면 전용 고정 치수다(ADR-0035).
-const SUB_MAX_W: LogicalPx = LogicalPx(200.0);
-/// 시안 버튼 크기(`size="sm"`).
-const ACTION_SIZE: ControlSize = ControlSize::Sm;
 
 /// 상태 화면의 글리프 — 아이콘 또는 Spinner.
 #[derive(Clone, Copy)]
@@ -121,79 +107,49 @@ pub(super) fn show_for(
     true
 }
 
-/// 받은 영역 전체를 차지하고 그 가운데에 상태 블록을 그린다. 누른 버튼의 액션을 돌려준다.
+/// 받은 영역 전체를 차지하고 상태 화면을 그린다. 누른 버튼의 액션을 돌려준다.
+/// Retry 는 Secondary, Go up 은 Ghost 이며 Go up 은 상위 폴더가 있을 때만 둔다.
 fn show(ui: &mut egui::Ui, theme: &Theme, s: &StateScreen<'_>) -> Option<ExplorerAction> {
     let (rect, _) = ui.allocate_exact_size(
         egui::vec2(ui.available_width(), ui.available_height()),
         egui::Sense::hover(),
     );
-    if rect.height() < theme.explorer_state_compact_below().value() {
-        return show_compact(ui, theme, rect, s);
-    }
-    let muted = theme.text_muted().to_egui();
-    let (glyph_fg, title_fg) = tone_colors(theme, s.tone);
-    // transform: scale 은 배치에 영향이 없다. 배치는 원래 글리프 크기로 하고 그림만 확대한다.
-    let glyph_box = theme.icon_glyph_size_md.value();
-    let glyph = glyph_box * GLYPH_SCALE;
-    let gap = theme.spacing_sm.value();
-    let inner_w = (rect.width() - theme.spacing_lg.value() * 2.0).max(0.0);
-    let center = |text: &str, font: egui::FontId, color: egui::Color32, max_w: f32| {
-        let mut job = egui::text::LayoutJob::simple(text.to_owned(), font, color, max_w);
-        job.halign = egui::Align::Center;
-        ui.painter().layout_job(job)
+    let (glyph_color, title_color) = tone_colors(theme, s.tone);
+    let with_go_up = [
+        (
+            t("explorer.state.read_error_retry"),
+            ButtonVariant::Secondary,
+        ),
+        (t("explorer.state.read_error_go_up"), ButtonVariant::Ghost),
+    ];
+    let actions: &[(&str, ButtonVariant)] = match s.actions {
+        Some(ReadErrorActions { go_up: true }) => &with_go_up,
+        Some(ReadErrorActions { go_up: false }) => &with_go_up[..1],
+        None => &[],
     };
-    let caption = theme.font_size_caption.value();
-    let narrow = SUB_MAX_W.value().min(inner_w);
-    let title = center(
-        s.title,
-        egui::FontId::proportional(theme.font_size_body.value()),
-        title_fg,
-        inner_w,
-    );
-    let sub = s
-        .sub
-        .map(|t| center(t, egui::FontId::proportional(caption), muted, narrow));
-    let reason = s
-        .reason
-        .map(|t| center(t, egui::FontId::monospace(caption), muted, narrow));
-    let action_h = ACTION_SIZE.height(theme);
-    let mut block_h = glyph_box + gap + title.rect.height();
-    for g in [&sub, &reason].into_iter().flatten() {
-        block_h += gap + g.rect.height();
-    }
-    if s.actions.is_some() {
-        block_h += gap + theme.spacing_xs.value() + action_h;
-    }
-    let top = rect.center().y - block_h * 0.5;
-    let glyph_rect = egui::Rect::from_center_size(
-        egui::pos2(rect.center().x, top + glyph_box * 0.5),
-        egui::vec2(glyph, glyph),
-    );
-    match s.glyph {
+    let paint;
+    let glyph = match s.glyph {
         StateGlyph::Icon(icon) => {
-            icon.image(glyph, glyph_fg).paint_at(ui, glyph_rect);
+            paint = move |ui: &mut egui::Ui, rect: egui::Rect, c: egui::Color32| {
+                icon.image(rect.height(), c).paint_at(ui, rect);
+            };
+            WidgetGlyph::Paint(&paint)
         }
-        StateGlyph::Spinner => {
-            let mut slot = ui.new_child(egui::UiBuilder::new().max_rect(glyph_rect));
-            Spinner::new().size(glyph).show(&mut slot, theme);
-        }
+        StateGlyph::Spinner => WidgetGlyph::Spinner,
+    };
+    let view = StateScreenView {
+        glyph,
+        glyph_color,
+        title: s.title,
+        title_color,
+        sub: s.sub,
+        reason: s.reason,
+        actions,
+    };
+    match state_screen(ui, theme, rect, &view)? {
+        0 => Some(ExplorerAction::Refresh),
+        _ => Some(ExplorerAction::GoUp),
     }
-    // 가운데 정렬 job 의 원점은 줄 가운데다.
-    let mut y = top + glyph_box + gap;
-    let title_h = title.rect.height();
-    ui.painter()
-        .galley(egui::pos2(rect.center().x, y), title, title_fg);
-    y += title_h;
-    for g in [sub, reason].into_iter().flatten() {
-        y += gap;
-        let h = g.rect.height();
-        ui.painter()
-            .galley(egui::pos2(rect.center().x, y), g, muted);
-        y += h;
-    }
-    let actions = s.actions?;
-    y += gap + theme.spacing_xs.value();
-    action_row(ui, theme, rect, y, actions)
 }
 
 /// (글리프 색, 제목 색). 중립은 글리프 text-muted · 제목 text-secondary 다.
@@ -212,102 +168,6 @@ fn tone_colors(theme: &Theme, tone: Tone) -> (egui::Color32, egui::Color32) {
             (c, c)
         }
     }
-}
-
-/// 낮은 내용 영역의 한 줄 상태. 보조 줄·이유 문구는 제목 툴팁이고 Retry · Go up 은 줄에 남는다.
-fn show_compact(
-    ui: &mut egui::Ui,
-    theme: &Theme,
-    rect: egui::Rect,
-    s: &StateScreen<'_>,
-) -> Option<ExplorerAction> {
-    let (glyph_color, title_color) = tone_colors(theme, s.tone);
-    let retry = t("explorer.state.read_error_retry");
-    let go_up = t("explorer.state.read_error_go_up");
-    let with_go_up = [
-        (retry, ButtonVariant::Secondary),
-        (go_up, ButtonVariant::Ghost),
-    ];
-    let actions: &[(&str, ButtonVariant)] = match s.actions {
-        Some(ReadErrorActions { go_up: true }) => &with_go_up,
-        Some(ReadErrorActions { go_up: false }) => &with_go_up[..1],
-        None => &[],
-    };
-    let row = CompactStateRow {
-        glyph: match s.glyph {
-            StateGlyph::Icon(icon) => CompactStateGlyph::Icon(icon),
-            StateGlyph::Spinner => CompactStateGlyph::Spinner,
-        },
-        glyph_color,
-        title: s.title,
-        title_color,
-        tooltip: s.reason.or(s.sub),
-        actions,
-    };
-    match compact_state_row(ui, theme, rect, &row)? {
-        0 => Some(ExplorerAction::Refresh),
-        _ => Some(ExplorerAction::GoUp),
-    }
-}
-
-/// 시안 버튼 줄(`display: flex; gap: space-sm`)을 가운데에 놓는다. Retry 는 Secondary, Go up 은 Ghost.
-fn action_row(
-    ui: &mut egui::Ui,
-    theme: &Theme,
-    rect: egui::Rect,
-    top: f32,
-    actions: ReadErrorActions,
-) -> Option<ExplorerAction> {
-    let retry = t("explorer.state.read_error_retry");
-    let go_up = t("explorer.state.read_error_go_up");
-    let labels: &[&str] = if actions.go_up {
-        &[retry, go_up]
-    } else {
-        &[retry]
-    };
-    let font = egui::FontId::proportional(ACTION_SIZE.font_size(theme));
-    let pad = ACTION_SIZE.pad_x(theme) * 2.0;
-    let gap = theme.spacing_sm.value();
-    let row_w = labels
-        .iter()
-        .map(|l| {
-            ui.painter()
-                .layout_no_wrap((*l).to_owned(), font.clone(), egui::Color32::PLACEHOLDER)
-                .rect
-                .width()
-                + pad
-        })
-        .sum::<f32>()
-        + gap * (labels.len() as f32 - 1.0);
-    let row = egui::Rect::from_min_size(
-        egui::pos2(rect.center().x - row_w * 0.5, top),
-        egui::vec2(row_w, ACTION_SIZE.height(theme)),
-    );
-    let mut child = ui.new_child(
-        egui::UiBuilder::new()
-            .max_rect(row)
-            .layout(egui::Layout::left_to_right(egui::Align::Center)),
-    );
-    child.spacing_mut().item_spacing.x = gap;
-    let mut clicked = None;
-    if Button::new(retry)
-        .variant(ButtonVariant::Secondary)
-        .size(ACTION_SIZE)
-        .show(&mut child, theme)
-        .clicked()
-    {
-        clicked = Some(ExplorerAction::Refresh);
-    }
-    if actions.go_up
-        && Button::new(go_up)
-            .variant(ButtonVariant::Ghost)
-            .size(ACTION_SIZE)
-            .show(&mut child, theme)
-            .clicked()
-    {
-        clicked = Some(ExplorerAction::GoUp);
-    }
-    clicked
 }
 
 /// 미리보기 패널 본문의 상태. 시안 `YPreview` 가 목록 상태 화면(`ExpState`)을 그대로 쓴다.

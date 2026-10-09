@@ -1,7 +1,7 @@
-//! 낮은 내용 영역에서 상태 화면을 대신하는 한 줄(compact state row).
+//! 낮은 내용 영역에서 상태 화면([`crate::state_screen`])을 대신하는 한 줄(compact state row).
 //! 글리프 · 제목 · 버튼을 한 줄에 놓고 줄 전체를 받은 영역의 가운데에 둔다.
 //! 제목은 남는 폭을 넘으면 끝에서 줄이고, 보조 줄과 OS 이유 문구는 제목의 툴팁으로 옮긴다.
-//! 글리프는 확대하지 않은 `icon_glyph_size_md` 크기다. 탐색기 상태 화면이 내용 높이가
+//! 글리프는 확대하지 않은 `icon_glyph_size_md` 크기다. 상태 화면은 영역 높이가
 //! `explorer_state_compact_below()` 미만일 때 이 줄로 바꾼다.
 
 use tasty_type_appearance::theme::Theme;
@@ -11,16 +11,17 @@ use crate::{Button, ButtonVariant, ControlSize, Spinner};
 /// 시안 버튼 크기(`size="sm"`).
 const ACTION_SIZE: ControlSize = ControlSize::Sm;
 
-/// 줄 앞의 글리프 — 아이콘 또는 Spinner.
+/// 줄 앞의 글리프 — 아이콘, 호출자가 그리는 글리프 또는 Spinner.
 #[derive(Clone, Copy)]
-pub enum CompactStateGlyph {
+pub enum CompactStateGlyph<'a> {
     Icon(tasty_icons::Icon),
+    Paint(crate::state_screen::GlyphPainter<'a>),
     Spinner,
 }
 
 /// compact 줄 하나의 내용.
 pub struct CompactStateRow<'a> {
-    pub glyph: CompactStateGlyph,
+    pub glyph: CompactStateGlyph<'a>,
     pub glyph_color: egui::Color32,
     pub title: &'a str,
     pub title_color: egui::Color32,
@@ -93,6 +94,7 @@ pub fn compact_state_row(
         CompactStateGlyph::Icon(icon) => {
             icon.image(glyph, row.glyph_color).paint_at(ui, glyph_rect);
         }
+        CompactStateGlyph::Paint(paint) => paint(ui, glyph_rect, row.glyph_color),
         CompactStateGlyph::Spinner => {
             let mut slot = ui.new_child(egui::UiBuilder::new().max_rect(glyph_rect));
             Spinner::new().size(glyph).show(&mut slot, theme);
