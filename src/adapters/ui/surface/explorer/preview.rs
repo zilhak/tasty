@@ -480,8 +480,10 @@ mod tests {
             ext: "tif".into(),
             link: Default::default(),
         };
-        let mut pane = PreviewPane::default();
-        pane.body = Body::TooLarge(TooLarge::Pixels(Some([20000, 14000])));
+        let mut pane = PreviewPane {
+            body: Body::TooLarge(TooLarge::Pixels(Some([20000, 14000]))),
+            ..Default::default()
+        };
         assert_eq!(
             item_header(&pane, &entry).1,
             "TIF image · 20000 × 14000 · 2.0 KB"
