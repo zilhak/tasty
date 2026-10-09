@@ -35,7 +35,7 @@ fn apply(
     apply_attach_requests(app, state, engine, outcome);
     apply_input_frames(app, engine, outcome);
     apply_structural_ops(app, state, engine, outcome);
-    apply_mirror_state(engine, outcome);
+    apply_mirror_state(app, engine, outcome);
     apply_mesh_requests(app, engine, outcome);
     apply_capture_uploads(app, engine, outcome);
     apply_file_requests(app, engine, outcome);
@@ -163,14 +163,24 @@ fn apply_structural_ops(
     }
 }
 
-fn apply_mirror_state(engine: &mut EngineMut<'_>, outcome: &mut PumpOutcome) {
+fn apply_mirror_state(app: &App, engine: &mut EngineMut<'_>, outcome: &mut PumpOutcome) {
     for (client_id, remote_surface_id) in std::mem::take(&mut outcome.attention_clear_requests) {
         // attention 해제는 다음 상태 diff에서 mirror로 전달한다.
         engine.apply_attached_attention_clear(client_id, remote_surface_id);
     }
     for (client_id, remote_surface_id, cols, rows) in std::mem::take(&mut outcome.resize_requests) {
-        // PTY resize tap이 변경을 전송하므로 별도 echo를 추가하지 않는다.
-        engine.apply_attached_workspace_resize(client_id, remote_surface_id, cols, rows);
+        // 적용·같은 크기는 PTY resize tap이 응답한다. 헤드리스 engine은 하나라 받지 않으면 거절이다.
+        let outcome =
+            engine.apply_attached_workspace_resize(client_id, remote_surface_id, cols, rows);
+        if outcome != crate::remote::server::AttachResizeOutcome::Answered {
+            crate::remote::server::reply_resize_rejected(
+                &app.stream_hub,
+                client_id,
+                remote_surface_id,
+                cols,
+                rows,
+            );
+        }
     }
 }
 

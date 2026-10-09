@@ -1,5 +1,6 @@
 //! attach 점유를 터미널 출력·입력, mesh·문서 조회, 구조 변경과 파일 전송에 연결한다.
 //! GUI와 헤드리스 메인 루프가 StreamHub의 수신 결과를 이 모듈에 전달한다.
+mod attach_resize;
 mod content_queries;
 
 use super::transfer_spool::{Spool, TransferOwner};
@@ -14,6 +15,7 @@ use crate::model::{AttachSurfaceClass, SurfaceId, WorkspaceId};
 use tasty_ipc::stream::{StreamControl, StreamFrame, StreamTag};
 use tasty_ipc::stream_hub::{PushResult, StreamHub};
 
+pub(crate) use attach_resize::{AttachResizeOutcome, reply_resize_rejected};
 #[cfg(feature = "gui")]
 pub(crate) use content_queries::notify_markdown_changed;
 pub(crate) use content_queries::{
@@ -438,6 +440,7 @@ impl EngineRef<'_> {
             "name": self.core.workspace_at(idx).expect("workspace index is valid").name,
             "tree": tree,
             "surfaces": surfaces,
+            (tasty_ipc::stream::DESCRIPTOR_CAPABILITIES): [tasty_ipc::stream::RESIZE_ACK_CAPABILITY],
         })
     }
 
@@ -979,29 +982,6 @@ impl crate::runtime::engine_access::EngineMut<'_> {
         }
         if let Some(terminal) = self.runtime.terminals.get_mut(remote_surface_id) {
             terminal.send_bytes(bytes);
-            true
-        } else {
-            false
-        }
-    }
-
-    /// 점유를 확인한 뒤 실제 PTY 크기 변경을 시도한다. 대상·점유가 없으면 false다.
-    /// true가 크기 변화를 뜻하지는 않는다. 변화가 있으면 기존 resize tap이 통지한다.
-    pub fn apply_attached_workspace_resize(
-        &mut self,
-        client_id: AttachClientId,
-        remote_surface_id: u32,
-        cols: usize,
-        rows: usize,
-    ) -> bool {
-        let Some(ws) = self.live.occupancy.workspace_of_surface(remote_surface_id) else {
-            return false;
-        };
-        if self.live.occupancy.workspace_holder(ws) != Some(client_id) {
-            return false;
-        }
-        if self.runtime.terminals.contains(remote_surface_id) {
-            self.runtime.terminals.resize(remote_surface_id, cols, rows);
             true
         } else {
             false

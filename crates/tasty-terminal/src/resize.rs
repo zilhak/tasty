@@ -262,4 +262,17 @@ impl Terminal {
         self.cached_dims = (cols, rows);
         changed
     }
+
+    /// attach client의 크기 요청에 쓴다. 크기가 바뀌면 [`Terminal::resize`]와 같다.
+    /// 이미 그 크기면 현재 grid 크기를 attach tap에 넣어 요청자가 출력과 같은 순서로 응답을 받게 한다.
+    /// 반환값은 grid가 바뀌었는지이며, 바뀐 경우에만 호출자가 PTY 크기 알림을 예약한다.
+    pub fn resize_or_confirm_attach(&mut self, cols: usize, rows: usize) -> bool {
+        if self.resize(cols, rows) {
+            return true;
+        }
+        let mut state = self.lock_state();
+        let (cols, rows) = (state.cols, state.rows);
+        state.fan_out_attach_resize(cols, rows);
+        false
+    }
 }

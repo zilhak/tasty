@@ -151,6 +151,8 @@ impl TerminalStore {
             .cached_cwd()
             .or_else(|| tasty_terminal::cwd::get_cwd_of_pid(self.pty(id)?.process_id()?))
     }
+    /// 로컬 레이아웃이 정한 크기를 적용한다. 헤드리스에는 로컬 레이아웃이 없다.
+    #[cfg(feature = "gui")]
     pub(crate) fn resize(&mut self, id: u32, cols: usize, rows: usize) -> bool {
         let Some((terminal, pty)) = self.terminals.get_mut(&id) else {
             return false;
@@ -159,6 +161,19 @@ impl TerminalStore {
             return false;
         }
         if let Some(pty) = pty {
+            pty.schedule_resize(terminal.resource_generation(), cols, rows);
+        }
+        true
+    }
+
+    /// attach 요청용 resize. 같은 크기여도 attach tap에 현재 크기를 남긴다. terminal이 없으면 false다.
+    pub(crate) fn resize_for_attach(&mut self, id: u32, cols: usize, rows: usize) -> bool {
+        let Some((terminal, pty)) = self.terminals.get_mut(&id) else {
+            return false;
+        };
+        if terminal.resize_or_confirm_attach(cols, rows)
+            && let Some(pty) = pty
+        {
             pty.schedule_resize(terminal.resource_generation(), cols, rows);
         }
         true

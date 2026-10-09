@@ -7,6 +7,7 @@ use winit::window::WindowId;
 use crate::adapters::ui::input::synthetic::is_synthetic_key_event;
 use crate::app::timers::{Tick, min_deadline};
 use crate::app::window_access::engines_mut;
+use crate::remote::server::AttachResizeOutcome;
 use crate::stall_watchdog::{self, Site};
 use crate::view::ui::View;
 use crate::view::{RepaintSource, ViewAction, ViewCtx};
@@ -1468,12 +1469,17 @@ impl App {
         for (client_id, op_id, op, origin) in outcome.structural_ops.drain(..) {
             self.apply_forwarded_structural_op(client_id, op_id, &op, origin, hub);
         }
-        // 점유를 확인해 PTY 크기를 바꾼다. 변화가 있으면 tap이 Resize를 전송한다.
-        // 대상·점유 불일치는 별도 오류 회신이 없어 echo 부재만으로 원인을 알 수 없다.
-        for (client_id, remote_surface_id, cols, rows) in outcome.resize_requests.drain(..) {
+        // 적용·같은 크기는 tap의 Resize가, 어느 engine도 받지 않은 요청은 거절 회신이 응답한다.
+        for (client_id, sid, cols, rows) in outcome.resize_requests.drain(..) {
+            let mut answered = false;
             self.apply_on_first_engine(|engine| {
-                engine.apply_attached_workspace_resize(client_id, remote_surface_id, cols, rows)
+                let o = engine.apply_attached_workspace_resize(client_id, sid, cols, rows);
+                answered = o == AttachResizeOutcome::Answered;
+                o != AttachResizeOutcome::NotHere
             });
+            if !answered {
+                crate::remote::server::reply_resize_rejected(hub, client_id, sid, cols, rows);
+            }
         }
         // attention 해제는 저장 대상이 아니므로 레이아웃 저장은 예약하지 않는다.
         for (client_id, remote_surface_id) in outcome.attention_clear_requests.drain(..) {

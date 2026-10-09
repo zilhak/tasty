@@ -165,3 +165,41 @@ fn empty_poll_racing_final_enqueue_and_overflow_never_overtakes_prefix() {
         ));
     }
 }
+
+/// 같은 크기 요청에는 grid가 바뀌지 않아도 현재 크기의 Resize가 출력 순서 안에 남는다.
+/// 일반 resize는 같은 크기에서 아무것도 남기지 않는다.
+#[test]
+fn same_size_attach_request_confirms_the_current_size_in_order() {
+    let mut terminal = Terminal::new_detached(80, 24);
+    let mut subscription = terminal.snapshot_and_stream();
+    assert!(!terminal.resize(80, 24));
+    assert!(matches!(
+        subscription.events.try_recv(),
+        Err(mpsc::TryRecvError::Empty)
+    ));
+    terminal.feed_bytes(b"before");
+    assert!(!terminal.resize_or_confirm_attach(80, 24));
+    terminal.feed_bytes(b"after");
+    assert!(
+        matches!(subscription.events.try_recv(), Ok(AttachEvent::Output(bytes)) if bytes == b"before")
+    );
+    assert!(matches!(
+        subscription.events.try_recv(),
+        Ok(AttachEvent::Resize { cols: 80, rows: 24 })
+    ));
+    assert!(
+        matches!(subscription.events.try_recv(), Ok(AttachEvent::Output(bytes)) if bytes == b"after")
+    );
+    assert!(terminal.resize_or_confirm_attach(100, 30));
+    assert!(matches!(
+        subscription.events.try_recv(),
+        Ok(AttachEvent::Resize {
+            cols: 100,
+            rows: 30
+        })
+    ));
+    assert!(matches!(
+        subscription.events.try_recv(),
+        Err(mpsc::TryRecvError::Empty)
+    ));
+}
