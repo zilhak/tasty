@@ -41,6 +41,7 @@ pub(super) fn apply_to_explorer_panel(
         | A::ContextMenu { .. }
         | A::AddressRejected(_)
         | A::Create { .. }
-        | A::MoreMenu { .. } => {}
+        | A::MoreMenu { .. }
+        | A::Ops(_) => {}
     }
 }

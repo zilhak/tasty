@@ -10,6 +10,8 @@ mod events;
 #[cfg(feature = "gui")]
 pub(crate) mod explorer_menu;
 #[cfg(feature = "gui")]
+mod explorer_ops;
+#[cfg(feature = "gui")]
 mod explorer_path;
 #[cfg(feature = "gui")]
 mod focus;

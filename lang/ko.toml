@@ -1010,6 +1010,7 @@ queue_waiting = "대기 중"
 queue_progress = "{} / {}"
 
 [explorer.conflict]
+popup_title = "이름 충돌"
 title = "“{}”이(가) 이미 있습니다"
 title_folder = "“{}” 폴더가 이미 있습니다"
 in = "위치: {}"
@@ -1026,6 +1027,7 @@ cancel_rest = "나머지 취소"
 [explorer.result]
 copied = "{}개 항목을 {}(으)로 복사했습니다"
 moved = "{}개 항목을 {}(으)로 이동했습니다"
+trashed = "{}개 항목을 휴지통으로 옮겼습니다"
 cancelled_copy = "복사 취소됨 · {} / {} 완료"
 cancelled_move = "이동 취소됨 · {} / {} 완료"
 cancelled_trash = "휴지통 이동 취소됨 · {} / {} 완료"

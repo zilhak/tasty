@@ -81,6 +81,8 @@ pub enum ExplorerAction {
         x: f32,
         y: f32,
     },
+    /// 파일 작업 표시(진행·대기열·결과 카드)에서 고른 일.
+    Ops(view::ops::OpsAction),
 }
 
 /// 컨텍스트 메뉴의 대상 — 우클릭 위치/선택 상태에서 결정 (design §3.3 target rule).
@@ -929,7 +931,7 @@ fn content(
     if !matches!(view.state, LoadState::NoPermission) {
         handle_background_context(ui, view, body.response.rect, &root, action);
     }
-    status_line(ui, theme, view);
+    self::view::ops::footer(ui, theme, view, body.response.rect, action, status_line);
 }
 
 fn status_line(ui: &mut egui::Ui, theme: &Theme, view: &ExplorerView) {

@@ -442,6 +442,7 @@ pub(crate) fn apply_explorer_action(
                 .from_user_menu("explorer_open_file"),
             );
         }
+        A::Ops(op) => state.apply_explorer_ops(engine, sid, op.clone()),
         A::Refresh => {
             if let Some(v) = state.explorer_views.get_mut(sid) {
                 v.request_reload();

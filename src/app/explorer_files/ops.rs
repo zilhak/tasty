@@ -1,5 +1,5 @@
-//! File changes use private copy staging and atomic no-replace publication.
-//! Symlinks are copied as links; directory aliases cannot turn a copy into self-recursion.
+//! Name helpers and OS rename primitives shared by the job runner.
+//! Publication never replaces an entry unless the job runner was told to replace a file.
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -80,45 +80,6 @@ pub fn create_entry(dir: &Path, name: &str, folder: bool) -> io::Result<()> {
     }
 }
 
-/// Copies into a fresh private tree. Never follows a source symlink or merges destination trees.
-pub fn copy_recursive(src: &Path, dst: &Path) -> io::Result<()> {
-    let meta = src.symlink_metadata()?;
-    if meta.file_type().is_symlink() {
-        let target = std::fs::read_link(src)?;
-        #[cfg(unix)]
-        std::os::unix::fs::symlink(target, dst)?;
-        #[cfg(windows)]
-        {
-            use std::os::windows::fs::{FileTypeExt, symlink_dir, symlink_file};
-            if meta.file_type().is_symlink_dir() {
-                symlink_dir(target, dst)?;
-            } else {
-                symlink_file(target, dst)?;
-            }
-        }
-    } else if meta.is_dir() {
-        std::fs::create_dir(dst)?;
-        for entry in std::fs::read_dir(src)? {
-            let entry = entry?;
-            copy_recursive(&entry.path(), &dst.join(entry.file_name()))?;
-        }
-    } else if meta.is_file() {
-        let mut input = std::fs::File::open(src)?;
-        let mut output = std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(dst)?;
-        io::copy(&mut input, &mut output)?;
-        output.set_permissions(meta.permissions())?;
-    } else {
-        return Err(io::Error::new(
-            io::ErrorKind::Unsupported,
-            "cannot copy a special file",
-        ));
-    }
-    Ok(())
-}
-
 pub fn remove_path(path: &Path) -> io::Result<()> {
     if path.symlink_metadata()?.is_dir() {
         std::fs::remove_dir_all(path)
@@ -127,56 +88,8 @@ pub fn remove_path(path: &Path) -> io::Result<()> {
     }
 }
 
-pub fn transfer(src: &Path, dest_dir: &Path, cut: bool) -> io::Result<PathBuf> {
-    let name = src
-        .file_name()
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "no file name"))?;
-    let dest_dir = dest_dir.canonicalize()?;
-    let meta = src.symlink_metadata()?;
-    if meta.is_dir() && dest_dir.starts_with(src.canonicalize()?) {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "cannot paste into itself",
-        ));
-    }
-    if cut && src.parent().map(Path::canonicalize).transpose()?.as_ref() == Some(&dest_dir) {
-        return Ok(src.to_owned());
-    }
-    let mut dst = dest_dir.join(name);
-    if cut {
-        loop {
-            match rename_noreplace(src, &dst) {
-                Ok(()) => return Ok(dst),
-                Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
-                    dst = unique_dest(&dest_dir, &name.to_string_lossy())
-                }
-                Err(e) if e.kind() == io::ErrorKind::CrossesDevices => break,
-                Err(e) => return Err(e),
-            }
-        }
-    }
-    let staging = tempfile::Builder::new()
-        .prefix(".tasty-copy-")
-        .tempdir_in(&dest_dir)?;
-    let staged = staging.path().join("entry");
-    copy_recursive(src, &staged)?;
-    loop {
-        match rename_noreplace(&staged, &dst) {
-            Ok(()) => break,
-            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
-                dst = unique_dest(&dest_dir, &name.to_string_lossy())
-            }
-            Err(e) => return Err(e),
-        }
-    }
-    if cut {
-        remove_path(src)?;
-    }
-    Ok(dst)
-}
-
 /// OS primitives preserve an entry created concurrently, including dangling symlinks.
-fn rename_noreplace(src: &Path, dst: &Path) -> io::Result<()> {
+pub(super) fn rename_noreplace(src: &Path, dst: &Path) -> io::Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::ffi::OsStrExt;
@@ -232,28 +145,30 @@ fn rename_noreplace(src: &Path, dst: &Path) -> io::Result<()> {
     }
 }
 
-/// Continue independent items and retain the failed path in the first error.
-pub fn paste_all(paths: &[PathBuf], dest_dir: &Path, cut: bool) -> (usize, Option<String>) {
-    let mut ok = 0usize;
-    let mut err = None;
-    for p in paths {
-        match transfer(p, dest_dir, cut) {
-            Ok(_) => ok += 1,
-            Err(e) => {
-                if err.is_none() {
-                    err = Some(format!("{}: {e}", p.display()));
-                }
-            }
-        }
-    }
-    (ok, err)
-}
-
 #[cfg(test)]
 // 테스트는 의도적으로 무시하는 결과가 많아 let _ 사유 검사에서 제외한다.
 #[allow(clippy::let_underscore_must_use)]
 mod tests {
     use super::*;
+
+    /// 묻지 않고 Keep both 로 처리하는 작업 하나. 만든 경로나 첫 실패를 돌려준다.
+    fn transfer(src: &Path, dest_dir: &Path, cut: bool) -> io::Result<PathBuf> {
+        use super::super::job::{Choice, Shared, UndoStep, run_transfer};
+        let report = run_transfer(
+            &Shared::fixed(Choice::KeepBoth),
+            &[src.to_path_buf()],
+            dest_dir,
+            cut,
+        );
+        if let Some(failure) = report.failed.first() {
+            return Err(io::Error::other(format!("{:?}", failure.reason)));
+        }
+        Ok(match report.undo.first() {
+            Some(UndoStep::Created(p) | UndoStep::Replaced(p)) => p.clone(),
+            Some(UndoStep::Moved { to, .. }) => to.clone(),
+            None => src.to_path_buf(),
+        })
+    }
 
     #[test]
     fn unique_dest_appends_copy_suffix() {

@@ -1,5 +1,7 @@
 //! surface별 탐색기 표시 상태. 모델의 탐색 이력과 별도로 목록 캐시·선택·트리 펼침을 보관한다.
 
+pub(crate) mod ops;
+
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -7,6 +9,7 @@ use std::time::{Duration, Instant};
 use tasty_model::{ExplorerPanel, SortColumn, SortDir, SurfaceId};
 
 use super::type_ahead::TypeAhead;
+
 use crate::core::fs_list::sort_entries;
 pub(crate) use crate::core::fs_list::{DirEntryInfo, human_size};
 use crate::i18n::t;
@@ -101,6 +104,8 @@ pub struct ExplorerView {
     writable_query: Option<(PathBuf, crate::app::local_reads::Query<bool>)>,
     /// 열려 있는 Find 바.
     pub(crate) find: Option<super::find::FindState>,
+    /// 이 칸이 요청한 파일 작업의 진행·대기열·결과 표시.
+    pub(crate) ops: ops::OpsState,
 }
 
 impl ExplorerView {
@@ -206,6 +211,7 @@ impl ExplorerView {
             writable: None,
             writable_query: None,
             find: None,
+            ops: ops::OpsState::default(),
         }
     }
 

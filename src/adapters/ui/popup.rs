@@ -6,6 +6,7 @@ pub(crate) mod convert;
 pub(crate) mod dag_list;
 pub(crate) mod defs;
 mod draw;
+pub(crate) mod explorer_conflict;
 pub(crate) mod explorer_properties;
 pub(crate) mod file_handler_picker;
 pub(crate) mod file_picker;
@@ -414,6 +415,7 @@ impl PopupState {
                 | crate::adapters::ui::info_modal::INFO_MODAL_ID
                 | file_picker::FILE_PICKER_POPUP_ID
                 | crate::view::settings::ui::file_chooser::FILE_CHOOSER_POPUP_ID
+                | explorer_conflict::EXPLORER_CONFLICT_POPUP_ID
         ) {
             LogicalPx(0.0)
         } else {

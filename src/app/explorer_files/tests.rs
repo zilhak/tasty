@@ -13,6 +13,10 @@ fn paste(paths: Vec<PathBuf>, destination: PathBuf) -> Operation {
         cut: true,
     }
 }
+/// 묻지 않고 Keep both 로 처리하는 작업 상태.
+fn quiet() -> job::Shared {
+    job::Shared::fixed(job::Choice::KeepBoth)
+}
 fn clipboard() -> crate::state::ExplorerClipboard {
     crate::state::ExplorerClipboard {
         identity: Arc::new(AtomicBool::new(false)),
@@ -158,22 +162,23 @@ fn worker_copy_move_rename_preserves_partial_success() {
         destination: dest.clone(),
         cut: false,
     };
-    std::thread::spawn(move || operation.run())
+    let done = std::thread::spawn(move || operation.run(&quiet()))
         .join()
-        .unwrap()
         .unwrap();
+    assert!(done.success(), "{done:?}");
     assert_eq!(
         std::fs::read(dest.join("value")).unwrap(),
         b"original bytes"
     );
     assert!(file.exists());
     let operation = paste(vec![file.clone(), source.join("missing")], dest.clone());
+    let done = std::thread::spawn(move || operation.run(&quiet()))
+        .join()
+        .unwrap();
+    assert!(!done.success());
     assert!(
-        std::thread::spawn(move || operation.run())
-            .join()
-            .unwrap()
-            .unwrap_err()
-            .contains("1 succeeded")
+        done.error_summary().unwrap().contains("1 succeeded"),
+        "{done:?}"
     );
     assert!(!file.exists());
     assert_eq!(
@@ -184,10 +189,10 @@ fn worker_copy_move_rename_preserves_partial_success() {
         path: dest.join("value"),
         name: "renamed".into(),
     };
-    std::thread::spawn(move || operation.run())
+    let done = std::thread::spawn(move || operation.run(&quiet()))
         .join()
-        .unwrap()
         .unwrap();
+    assert!(done.success(), "{done:?}");
     assert!(!dest.join("value").exists());
     assert_eq!(
         std::fs::read(dest.join("renamed")).unwrap(),
@@ -209,7 +214,7 @@ fn shutdown_reports_a_running_worker_until_its_actual_join() {
     let (send, receive) = std::sync::mpsc::sync_channel(0);
     let worker = std::thread::spawn(move || {
         receive.recv().unwrap();
-        Ok(())
+        Done::Simple(Ok(()))
     });
     let mut owner = ExplorerFiles {
         job: Some(Job {
@@ -217,6 +222,9 @@ fn shutdown_reports_a_running_worker_until_its_actual_join() {
             engine: engine.id,
             target,
             affected: Affected::default(),
+            shared: Arc::new(quiet()),
+            undo_of: None,
+            seen: (0, 0, false),
             worker,
         }),
         stopping: false,
@@ -325,7 +333,9 @@ fn a_finished_job_reloads_other_explorers_viewing_the_folders_it_changed() {
         Operation::Trash(vec![item.clone()]),
         user(),
     );
-    let Request { target, operation } = state.explorer_file_requests.0.pop_front().unwrap();
+    let Request {
+        target, operation, ..
+    } = state.explorer_file_requests.0.pop_front().unwrap();
     let mut owner = ExplorerFiles {
         job: Some(Job {
             window: winit::window::WindowId::from(1),
@@ -333,7 +343,10 @@ fn a_finished_job_reloads_other_explorers_viewing_the_folders_it_changed() {
             target,
             affected: operation.affected(),
             // 휴지통 이동은 실패해도 같은 경로를 다시 읽어야 한다.
-            worker: std::thread::spawn(|| Err("failed".to_string())),
+            shared: Arc::new(quiet()),
+            undo_of: None,
+            seen: (0, 0, false),
+            worker: std::thread::spawn(|| Done::Simple(Err("failed".to_string()))),
         }),
         stopping: false,
     };
@@ -343,7 +356,7 @@ fn a_finished_job_reloads_other_explorers_viewing_the_folders_it_changed() {
         }
         std::thread::yield_now();
     };
-    assert!(finished.result.is_err());
+    assert!(!finished.result.success());
 
     // 요청한 surface 가 아닌 다른 explorer 가 같은 폴더를 보고 있다.
     let mut other = crate::adapters::ui::surface::explorer::view::ExplorerViewStore::default();
@@ -365,6 +378,10 @@ fn create_makes_a_folder_or_an_empty_file_and_never_replaces_an_entry() {
         name: name.into(),
         folder,
     };
+    let run = |operation: Operation| match operation.run(&quiet()) {
+        Done::Simple(result) => result,
+        other => panic!("create answers with a simple result: {other:?}"),
+    };
     assert_eq!(
         create("New folder", true).affected(),
         Affected {
@@ -372,17 +389,17 @@ fn create_makes_a_folder_or_an_empty_file_and_never_replaces_an_entry() {
             removed: Vec::new(),
         }
     );
-    create("New folder", true).run().unwrap();
+    run(create("New folder", true)).unwrap();
     assert!(dir.path().join("New folder").is_dir());
-    create("untitled.txt", false).run().unwrap();
+    run(create("untitled.txt", false)).unwrap();
     assert_eq!(std::fs::read(dir.path().join("untitled.txt")).unwrap(), b"");
     std::fs::write(dir.path().join("kept"), b"bytes").unwrap();
-    assert!(create("kept", false).run().is_err());
-    assert!(create("kept", true).run().is_err());
+    assert!(run(create("kept", false)).is_err());
+    assert!(run(create("kept", true)).is_err());
     assert_eq!(std::fs::read(dir.path().join("kept")).unwrap(), b"bytes");
-    assert!(create("New folder", true).run().is_err());
+    assert!(run(create("New folder", true)).is_err());
     for name in ["", ".", "..", "a/b"] {
-        assert!(create(name, true).run().is_err(), "{name:?}");
+        assert!(run(create(name, true)).is_err(), "{name:?}");
     }
     assert!(!dir.path().join("a").exists());
 }
@@ -436,4 +453,79 @@ fn a_created_entry_is_selected_only_while_its_folder_is_still_shown() {
             .selected
             .contains(&made)
     );
+}
+
+#[test]
+fn direct_moves_never_consume_the_clipboard() {
+    let (mut state, engine) = crate::state::tests::test_state();
+    let sid = engine.read().workspace_at(0).unwrap().all_surface_ids()[0];
+    state.explorer_clipboard = Some(clipboard());
+    state.request_explorer_file_direct(
+        &engine.read(),
+        sid,
+        paste(vec!["original".into()], "dest".into()),
+        user(),
+    );
+    let target = state.explorer_file_requests.0.pop_front().unwrap().target;
+    assert!(target.clipboard.is_none());
+    target.apply(&mut state, true);
+    assert!(
+        state.explorer_clipboard.is_some(),
+        "a drag or retry is not a paste from the clipboard"
+    );
+}
+
+#[test]
+fn queued_requests_are_listed_per_surface_and_removable() {
+    let (mut state, engine) = crate::state::tests::test_state();
+    let sid = engine.read().workspace_at(0).unwrap().all_surface_ids()[0];
+    state.request_explorer_file_direct(
+        &engine.read(),
+        sid,
+        Operation::Paste {
+            paths: vec!["a".into(), "b".into()],
+            destination: "/dest/Archive".into(),
+            cut: false,
+        },
+        user(),
+    );
+    state.request_explorer_file(&engine.read(), sid, Operation::Open("x".into()), user());
+    state.request_explorer_file_direct(
+        &engine.read(),
+        sid,
+        Operation::Trash(vec!["c".into()]),
+        user(),
+    );
+    let queued = state.explorer_file_requests.queued_for(sid);
+    // 열기는 진행 표시가 없어 대기열에 보이지 않는다.
+    assert_eq!(queued.len(), 2);
+    assert_eq!(queued[0].kind, OpKind::Copy);
+    assert_eq!(queued[0].count, 2);
+    assert_eq!(
+        queued[0].dest.as_deref(),
+        Some(std::path::Path::new("/dest/Archive"))
+    );
+    assert_eq!(queued[1].kind, OpKind::Trash);
+    assert!(state.explorer_file_requests.queued_for(sid + 1).is_empty());
+    state.explorer_file_requests.remove(queued[0].id);
+    assert_eq!(state.explorer_file_requests.len(), 2);
+    let left = state.explorer_file_requests.queued_for(sid);
+    assert_eq!(left.len(), 1);
+    assert_eq!(left[0].id, queued[1].id);
+}
+
+#[test]
+fn undo_remembers_whether_it_puts_back_a_move() {
+    let moved = Operation::Undo(vec![
+        UndoStep::Created("/a".into()),
+        UndoStep::Moved {
+            from: "/b".into(),
+            to: "/c/b".into(),
+        },
+    ]);
+    assert_eq!(moved.undo_of(), Some(OpKind::Move));
+    assert_eq!(moved.kind(), Some(OpKind::Undo));
+    let copied = Operation::Undo(vec![UndoStep::Created("/a".into())]);
+    assert_eq!(copied.undo_of(), Some(OpKind::Copy));
+    assert_eq!(Operation::Open("x".into()).kind(), None);
 }

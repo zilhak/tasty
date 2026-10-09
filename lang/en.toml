@@ -1014,6 +1014,7 @@ queue_waiting = "Queued"
 queue_progress = "{} of {}"
 
 [explorer.conflict]
+popup_title = "Name conflict"
 title = "“{}” already exists"
 title_folder = "A folder named “{}” already exists"
 in = "in {}"
@@ -1030,6 +1031,7 @@ cancel_rest = "Cancel the rest"
 [explorer.result]
 copied = "Copied {} items to {}"
 moved = "Moved {} items to {}"
+trashed = "Moved {} items to Trash"
 cancelled_copy = "Copy cancelled · {} of {} done"
 cancelled_move = "Move cancelled · {} of {} done"
 cancelled_trash = "Moving to Trash cancelled · {} of {} done"

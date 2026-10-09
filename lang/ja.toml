@@ -1010,6 +1010,7 @@ queue_waiting = "待機中"
 queue_progress = "{} / {}"
 
 [explorer.conflict]
+popup_title = "名前の衝突"
 title = "「{}」は既にあります"
 title_folder = "フォルダー「{}」は既にあります"
 in = "場所: {}"
@@ -1026,6 +1027,7 @@ cancel_rest = "残りをキャンセル"
 [explorer.result]
 copied = "{} 項目を {} にコピーしました"
 moved = "{} 項目を {} に移動しました"
+trashed = "{} 項目をゴミ箱に移動しました"
 cancelled_copy = "コピーをキャンセル · {} / {} 完了"
 cancelled_move = "移動をキャンセル · {} / {} 完了"
 cancelled_trash = "ゴミ箱への移動をキャンセル · {} / {} 完了"

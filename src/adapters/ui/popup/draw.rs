@@ -711,6 +711,7 @@ impl PopupManager {
                 | "convert_surface"
                 | super::transfer::TRANSFER_PROGRESS_POPUP_ID
                 | super::transfer::TRANSFER_ERROR_POPUP_ID
+                | super::explorer_conflict::EXPLORER_CONFLICT_POPUP_ID
         )
     }
 }
