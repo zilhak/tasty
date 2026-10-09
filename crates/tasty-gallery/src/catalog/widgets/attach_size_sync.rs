@@ -8,7 +8,8 @@ use tasty_ui_widgets::{AttachSizeSyncBannerView, attach_size_sync_banner};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::i18n::t;
 
-/// 테마 묶음 하나의 폭. 디자인은 `--tasty-size-460`을 쓴다.
+/// 테마 묶음 하나의 폭. 디자인은 `--tasty-size-460`을 쓴다. 이 폭은 시안 Stage 의 전시 치수라
+/// 값만 같은 `measure-lg` 토큰을 쓰지 않는다.
 const PANEL_W: LogicalPx = LogicalPx(460.0);
 
 fn banner(ui: &mut egui::Ui, theme: &Theme, names: &[&str], retrying: bool) {
