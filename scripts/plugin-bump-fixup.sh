@@ -14,9 +14,11 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CHECK="$SCRIPT_DIR/check-plugin-version-bump.sh"
 [ -f "$CHECK" ] || die "판정 불가: 검사 스크립트가 없다: $CHECK"
 
-git rev-parse --git-dir >/dev/null 2>&1 || die "판정 불가: git 저장소가 아니다."
-ROOT="$(git rev-parse --show-toplevel)" || die "판정 불가: 저장소 루트를 못 찾았다."
-cd "$ROOT" || die "판정 불가: 저장소 루트로 이동 실패."
+git rev-parse --git-dir >/dev/null 2>&1 || die "판정 불가: git 저장소 안에서 실행해라."
+# 작업 트리가 없는 bare 저장소에서는 루트를 얻지 못한다.
+if ! ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || ! cd "$ROOT"; then
+    die "판정 불가: 작업 트리 루트로 옮겨 가지 못했다 (bare 저장소 등)."
+fi
 
 [ "$#" -eq 0 ] || die "판정 불가: 인자를 받지 않는다 (HEAD 커밋만 다룬다)."
 git rev-parse --verify --quiet 'HEAD^{commit}' >/dev/null || die "판정 불가: HEAD 커밋이 없다."

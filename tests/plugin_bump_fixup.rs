@@ -338,6 +338,8 @@ fn undecidable_range_stops_without_touching_the_commit() {
     let r = fixup(d);
     assert_eq!(r.code, 2, "{r:?}");
     assert!(r.output.contains("앞 끝이 뒤 끝보다 새것"), "{r:?}");
+    assert!(r.output.contains("버전 검사가 종료 코드"), "{r:?}");
+    assert!(r.output.contains("종료 코드 2 로 끝났다"), "{r:?}");
     assert!(r.output.contains("판정 불가"), "{r:?}");
     assert_eq!(git_out(d, &["rev-parse", "HEAD"]), head);
     assert_eq!(git_out(d, &["status", "--porcelain"]), "");
@@ -427,6 +429,125 @@ fn lanes_that_leave_versions_alone_rebase_without_conflict() {
         assert!(r.output.contains("통과 — 판정 대상"), "{c}: {r:?}");
     }
     cargo_offline(d, &["metadata", "--locked", "--format-version", "1"]);
+}
+
+// ── 시작 조건이 맞지 않으면 아무것도 바꾸지 않고 판정 불가(2)로 멈춘다 ──────────────
+
+fn assert_refused(r: &Run, words: &str) {
+    assert_eq!(r.code, 2, "{r:?}");
+    assert!(r.output.contains(words), "{words:?} 가 없다: {r:?}");
+}
+
+#[test]
+fn fixup_takes_no_arguments() {
+    let tmp = seed();
+    let r = run_script(tmp.path(), "scripts/plugin-bump-fixup.sh", &["HEAD~1"]);
+    assert_refused(&r, "인자를 받지 않는다");
+}
+
+#[test]
+fn fixup_refuses_a_merge_commit() {
+    let tmp = seed();
+    let d = tmp.path();
+    git(d, &["checkout", "--quiet", "-b", "side"]);
+    edit_line(
+        d,
+        &main_rs_of("alpha"),
+        "fn a() {}",
+        "fn a() { let _s = 1; }",
+    );
+    commit_all(d, "side");
+    git(d, &["checkout", "--quiet", "main"]);
+    edit_line(
+        d,
+        &main_rs_of("beta"),
+        "fn a() {}",
+        "fn a() { let _m = 1; }",
+    );
+    commit_all(d, "main");
+    git(d, &["merge", "--quiet", "--no-ff", "--no-edit", "side"]);
+    let head = git_out(d, &["rev-parse", "HEAD"]);
+
+    assert_refused(&fixup(d), "merge 커밋은 다루지 않는다");
+    assert_eq!(git_out(d, &["rev-parse", "HEAD"]), head);
+}
+
+#[test]
+fn fixup_refuses_a_repository_without_commits() {
+    let tmp = tempfile::tempdir().expect("임시 디렉토리");
+    git(tmp.path(), &["init", "--quiet"]);
+    assert_refused(&fixup(tmp.path()), "HEAD 커밋이 없다");
+}
+
+#[test]
+fn fixup_refuses_outside_a_repository_and_in_a_bare_one() {
+    let plain = tempfile::tempdir().expect("임시 디렉토리");
+    assert_refused(&fixup(plain.path()), "git 저장소 안에서 실행해라");
+
+    let bare = tempfile::tempdir().expect("임시 디렉토리");
+    git(bare.path(), &["init", "--quiet", "--bare"]);
+    assert_refused(&fixup(bare.path()), "작업 트리 루트로 옮겨 가지 못했다");
+}
+
+#[test]
+fn fixup_refuses_when_the_checker_is_not_beside_it() {
+    let tmp = seed();
+    let lone = tempfile::tempdir().expect("임시 디렉토리");
+    let copy = lone.path().join("plugin-bump-fixup.sh");
+    fs::copy(repo_file("scripts/plugin-bump-fixup.sh"), &copy).expect("사본");
+    let out = Command::new("bash")
+        .arg(&copy)
+        .current_dir(tmp.path())
+        .output()
+        .expect("사본 실행");
+    let r = Run {
+        code: out.status.code().unwrap_or(-1),
+        output: String::from_utf8_lossy(&out.stderr).into_owned(),
+    };
+    assert_refused(&r, "검사 스크립트가 없다");
+}
+
+#[test]
+fn checker_refuses_a_missing_or_unwritable_violations_file() {
+    let tmp = seed();
+    let d = tmp.path();
+    let check = "scripts/check-plugin-version-bump.sh";
+    let r = run_script(d, check, &["--range", "HEAD", "HEAD", "--violations-out"]);
+    assert_refused(&r, "violations-out 에 파일 경로가 없다");
+
+    let r = run_script(
+        d,
+        check,
+        &[
+            "--range",
+            "HEAD",
+            "HEAD",
+            "--violations-out",
+            "no/such/dir/list",
+        ],
+    );
+    assert_refused(&r, "violations-out 파일을 쓸 수 없다");
+}
+
+#[test]
+fn checker_writes_the_violation_list_relative_to_the_caller() {
+    let tmp = seed();
+    let d = tmp.path();
+    edit_line(
+        d,
+        &main_rs_of("beta"),
+        "fn a() {}",
+        "fn a() { let _v = 1; }",
+    );
+    commit_all(d, "beta");
+    let sub = d.join("crates");
+    let r = run_script(
+        &sub,
+        "scripts/check-plugin-version-bump.sh",
+        &["--range", "HEAD^", "HEAD", "--violations-out", "list.txt"],
+    );
+    assert_eq!(r.code, 1, "{r:?}");
+    assert_eq!(read(&sub, "list.txt"), "crates/tasty-plugin-beta\n");
 }
 
 // ── P.1 보류 모드 ───────────────────────────────────────────────
@@ -587,7 +708,10 @@ fn pre_commit_skips_p1_in_a_deferred_lane_worktree() {
     // 검사기가 위반(1)을 낼 상황이어도 보류 모드에서는 호출하지 않는다.
     let (r, calls) = run_pre_commit(&wt, 1);
     assert_eq!(r.code, 0, "{r:?}\ncalls:\n{calls}");
-    assert!(!calls.contains("check-plugin-version-bump.sh"), "{calls}");
+    assert!(
+        !calls.contains("check-plugin-version-bump.sh --staged"),
+        "{calls}"
+    );
     assert!(r.output.contains("tasty.pluginBump=deferred"), "{r:?}");
 }
 
