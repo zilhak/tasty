@@ -11,6 +11,12 @@ use std::{
     thread::JoinHandle,
 };
 
+mod file_info;
+pub(crate) use file_info::{
+    FolderCount, ItemFacts, ItemKind, PREVIEW_MAX_BYTES, PreviewData, PropertiesFacts,
+    decodable_image_ext,
+};
+
 const MAX_RUNNING: usize = 4;
 const MAX_SCRIPT_BYTES: u64 = 8 * 1024 * 1024;
 
@@ -61,6 +67,12 @@ enum Request {
     Directory(PathBuf, mpsc::SyncSender<io::Result<Vec<DirEntryInfo>>>),
     Git(PathBuf, mpsc::SyncSender<io::Result<Option<HeadState>>>),
     Script(PathBuf, mpsc::SyncSender<io::Result<ScriptSource>>),
+    Preview(PathBuf, mpsc::SyncSender<io::Result<PreviewData>>),
+    Thumbnail(PathBuf, mpsc::SyncSender<io::Result<egui::ColorImage>>),
+    Properties(
+        PropertiesRead,
+        mpsc::SyncSender<io::Result<PropertiesFacts>>,
+    ),
     #[cfg(test)]
     Blocked(mpsc::Receiver<()>, mpsc::SyncSender<io::Result<()>>),
 }
@@ -75,6 +87,13 @@ impl Request {
                 .send(crate::core::fs_list::read_dir_entries(&path).map_err(|e| missing(&path, e)))
                 .is_ok(),
             Self::Git(path, sender) => sender.send(Ok(git_branch(&path))).is_ok(),
+            Self::Preview(path, sender) => sender.send(file_info::read_preview(&path)).is_ok(),
+            Self::Thumbnail(path, sender) => sender.send(file_info::read_thumbnail(&path)).is_ok(),
+            Self::Properties(read, sender) => {
+                file_info::read_properties(&read.paths, &read.count, &read.cancel, |facts| {
+                    sender.send(facts).is_ok()
+                })
+            }
             Self::Script(path, sender) => {
                 use std::io::Read;
                 let result = std::fs::File::open(&path).and_then(|file| {
@@ -136,6 +155,35 @@ pub(crate) fn git(path: PathBuf) -> Query<Option<HeadState>> {
 }
 pub(crate) fn script(path: PathBuf) -> Query<ScriptSource> {
     Query::new(|sender| Request::Script(path, sender))
+}
+pub(crate) fn preview(path: PathBuf) -> Query<PreviewData> {
+    Query::new(|sender| Request::Preview(path, sender))
+}
+pub(crate) fn thumbnail(path: PathBuf) -> Query<egui::ColorImage> {
+    Query::new(|sender| Request::Thumbnail(path, sender))
+}
+/// 정보를 먼저 돌려준 뒤 같은 worker 에서 폴더 크기를 `count` 에 센다. `cancel` 을 켜면 멈춘다.
+pub(crate) fn properties(
+    paths: Vec<PathBuf>,
+    count: Arc<FolderCount>,
+    cancel: Arc<std::sync::atomic::AtomicBool>,
+) -> Query<PropertiesFacts> {
+    Query::new(|sender| {
+        Request::Properties(
+            PropertiesRead {
+                paths,
+                count,
+                cancel,
+            },
+            sender,
+        )
+    })
+}
+
+struct PropertiesRead {
+    paths: Vec<PathBuf>,
+    count: Arc<FolderCount>,
+    cancel: Arc<std::sync::atomic::AtomicBool>,
 }
 
 pub(crate) struct ScriptSource {
@@ -296,6 +344,7 @@ impl crate::view::MainView {
         changed |= self.state.explorer_views.poll_local_reads(owner);
         changed |= self.state.poll_branch_read(owner);
         changed |= poll_file_picker_reads(&mut self.state, owner);
+        changed |= crate::adapters::ui::popup::explorer_properties::poll(&mut self.state, owner);
         if self.state.dialogs.pending_script_confirm.is_none()
             && let Some(result) = self
                 .state

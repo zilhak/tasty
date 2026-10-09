@@ -160,6 +160,9 @@ pub struct DialogState {
     pub(crate) transfer_progress: Option<TransferProgress>,
     /// 전송 실패 알림 큐. 맨 앞 항목을 표시하고 Dismiss로 제거한다.
     pub(crate) transfer_error: VecDeque<TransferError>,
+    /// 탐색기 Properties 팝업이 연 항목과 읽은 정보.
+    pub(crate) explorer_properties:
+        Option<crate::adapters::ui::popup::explorer_properties::ExplorerProperties>,
 }
 
 /// 변경된 Lua 소스를 실행하기 전 사용자 확인에 사용하는 상태.
@@ -229,6 +232,7 @@ impl DialogState {
             pending_script_confirm: None,
             transfer_progress: None,
             transfer_error: VecDeque::new(),
+            explorer_properties: None,
         }
     }
 

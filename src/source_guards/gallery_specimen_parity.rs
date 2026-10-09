@@ -17,6 +17,7 @@ const POPUP_SPECIMENS: &[(&str, &str)] = &[
     ("convert_surface", "components/convert.rs"),
     ("script_changed_confirm", "components/script_confirm.rs"),
     ("rename", "components/rename_popup.rs"),
+    ("explorer_properties", "components/explorer_file_info.rs"),
     ("search_bar", "components/search_bar.rs"),
     ("tools_menu", "components/tools_menu.rs"),
     ("info_modal", "components/info_modal.rs"),

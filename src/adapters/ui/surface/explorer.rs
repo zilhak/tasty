@@ -2,7 +2,9 @@
 //! 렌더 중에는 engine을 다시 가변 대여할 수 없어 사용자 동작을 모아 호출부에서 처리한다.
 
 pub mod address;
+mod preview;
 mod state_screen;
+mod thumbs;
 pub mod type_ahead;
 pub mod view;
 
@@ -403,7 +405,9 @@ fn toolbar(
         let gap = theme.spacing_sm.value();
         // 주소창 영역 뒤에 가로 item_spacing이 한 번 더 붙으므로 그만큼도 빼야 토글의 오른쪽 여백이
         // 툴바 padding과 같아진다.
-        let addr_w = (ui.available_width() - seg_w - gap - ui.spacing().item_spacing.x).max(0.0);
+        let tools_w = preview::toggle_button_width(theme) + gap;
+        let addr_w =
+            (ui.available_width() - tools_w - seg_w - gap - ui.spacing().item_spacing.x).max(0.0);
         let tab_index = panel.active;
         ui.allocate_ui_with_layout(
             egui::vec2(addr_w, ui.available_height()),
@@ -422,6 +426,8 @@ fn toolbar(
                 )
             },
         );
+        ui.add_space(gap);
+        preview::toggle_button(ui, theme, view);
         ui.add_space(gap);
         seg_toggle(ui, theme, tab.view_mode, action);
     });
@@ -869,6 +875,7 @@ fn content(
         egui::vec2(ui.available_width(), body_h),
         egui::Layout::top_down(egui::Align::Min),
         |ui| {
+            let ui = &mut preview::split(ui, theme, view, id_suffix);
             if state_screen::show_for(ui, theme, view, &root, action) {
                 return;
             }
@@ -1043,7 +1050,7 @@ fn parent_nav_target(current: &Path) -> Option<PathBuf> {
 }
 
 /// 확장자가 이미지 파일인지 — design 은 이미지 glyph 를 accent-info 로 강조한다.
-fn is_image_ext(ext: &str) -> bool {
+pub(crate) fn is_image_ext(ext: &str) -> bool {
     matches!(
         ext,
         "png"
@@ -1165,7 +1172,7 @@ fn grid_view(
             egui::vec2(theme.spacing_md.value(), theme.spacing_md.value());
         if let Some(p) = &parent {
             let dd = dotdot_entry(p.clone());
-            let resp = grid_cell(ui, theme, &dd, false, false, font);
+            let resp = grid_cell(ui, theme, &dd, false, false, font, None);
             if resp.double_clicked() && action.is_none() {
                 *action = Some(ExplorerAction::Navigate(p.clone()));
             }
@@ -1173,7 +1180,11 @@ fn grid_view(
         for e in &entries {
             let selected = view.selected.contains(&e.path);
             let cut = cut_pending.contains(&e.path);
-            let resp = grid_cell(ui, theme, e, selected, cut, font);
+            let thumb = view.thumbs.texture(ui.ctx(), e);
+            let resp = grid_cell(ui, theme, e, selected, cut, font, thumb.as_ref());
+            if ui.is_rect_visible(resp.rect) {
+                view.thumbs.want(e, view.is_remote(), &entries);
+            }
             if view.scroll_to.as_deref() == Some(e.path.as_path()) {
                 resp.scroll_to_me(Some(egui::Align::Center));
             }
@@ -1192,14 +1203,15 @@ fn grid_cell(
     selected: bool,
     cut: bool,
     font: &EffectiveFont,
+    thumb: Option<&egui::TextureHandle>,
 ) -> egui::Response {
-    let glyph = theme.icon_glyph_size_md.value(); // 16
+    let slot = theme.explorer_grid_thumb_size().value();
     let label_font = font.font_size.max(1.0).min(theme.font_size_caption.value());
     let label_line_h = (label_font * 1.3).round();
     // 고정 3줄 예약 — 짧은 이름도 3줄분 높이를 잡아 그리드 행 정렬을 균일하게 유지.
     let label_h = label_line_h * 3.0;
     let cell_h = theme.spacing_sm.value()
-        + glyph
+        + slot
         + theme.spacing_xs.value()
         + label_h
         + theme.spacing_sm.value();
@@ -1232,12 +1244,11 @@ fn grid_cell(
     let glyph_rect = egui::Rect::from_center_size(
         egui::pos2(
             rect.center().x,
-            rect.top() + theme.spacing_sm.value() + glyph / 2.0,
+            rect.top() + theme.spacing_sm.value() + slot / 2.0,
         ),
-        egui::vec2(glyph, glyph),
+        egui::vec2(slot, slot),
     );
-    icon.image(glyph, fg_dim(glyph_color))
-        .paint_at(ui, glyph_rect);
+    thumbs::paint_slot(ui, theme, glyph_rect, thumb, icon, fg_dim(glyph_color));
 
     // 이름은 위에서부터 최대 세 줄로 표시하고 넘치면 끝을 줄인다.
     let label_color = fg_dim(if selected {
@@ -1568,7 +1579,7 @@ fn tool_icon(ui: &mut egui::Ui, theme: &Theme, icon: Icon, enabled: bool, tip: &
     enabled && resp.clicked()
 }
 
-fn type_label(e: &DirEntryInfo) -> String {
+pub(crate) fn type_label(e: &DirEntryInfo) -> String {
     if e.is_dir {
         t("explorer.type.folder").to_string()
     } else if e.ext.is_empty() {

@@ -309,3 +309,52 @@ fn action_row(
     }
     clicked
 }
+
+/// 미리보기 패널 본문의 상태. 시안 `YPreview` 가 목록 상태 화면(`ExpState`)을 그대로 쓴다.
+pub(super) enum PreviewState<'a> {
+    Plain(Icon, &'a str),
+    Sub(Icon, &'a str, &'a str),
+    Loading(&'a str),
+    /// 제목과 번역하지 않은 OS 이유 문구.
+    Error(&'a str, &'a str),
+}
+
+/// 받은 영역 가운데에 미리보기 상태 블록을 그린다. 버튼은 없다.
+pub(super) fn show_preview_state(ui: &mut egui::Ui, theme: &Theme, state: PreviewState<'_>) {
+    let screen = match state {
+        PreviewState::Plain(glyph, title) => StateScreen {
+            glyph: StateGlyph::Icon(glyph),
+            tone: Tone::Neutral,
+            title,
+            sub: None,
+            reason: None,
+            actions: None,
+        },
+        PreviewState::Sub(glyph, title, sub) => StateScreen {
+            glyph: StateGlyph::Icon(glyph),
+            tone: Tone::Neutral,
+            title,
+            sub: Some(sub),
+            reason: None,
+            actions: None,
+        },
+        PreviewState::Loading(title) => StateScreen {
+            glyph: StateGlyph::Spinner,
+            tone: Tone::Neutral,
+            title,
+            sub: None,
+            reason: None,
+            actions: None,
+        },
+        PreviewState::Error(title, reason) => StateScreen {
+            glyph: StateGlyph::Icon(icons::ALERT_TRIANGLE),
+            tone: Tone::Error,
+            title,
+            sub: None,
+            reason: Some(reason),
+            actions: None,
+        },
+    };
+    // 버튼이 없으므로 돌려받을 액션도 없다.
+    show(ui, theme, &screen);
+}

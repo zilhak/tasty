@@ -88,6 +88,10 @@ pub struct ExplorerView {
     /// 이번 프레임에 화면에 보이도록 스크롤할 항목의 경로. 사용한 뒤에는 비운다.
     /// 남겨두면 매 프레임 다시 스크롤해서 사용자가 휠로 다른 곳을 볼 때 끌려간다.
     pub scroll_to: Option<PathBuf>,
+    /// 목록 오른쪽 미리보기 패널.
+    pub preview: super::preview::PreviewPane,
+    /// Grid 썸네일 캐시.
+    pub thumbs: super::thumbs::Thumbs,
 }
 
 impl ExplorerView {
@@ -147,6 +151,8 @@ impl ExplorerView {
             }
             changed = true;
         }
+        changed |= self.preview.poll(owner);
+        changed |= self.thumbs.poll(owner);
         changed
     }
     pub fn new() -> Self {
@@ -171,7 +177,14 @@ impl ExplorerView {
             outbox: Vec::new(),
             type_ahead: TypeAhead::default(),
             scroll_to: None,
+            preview: Default::default(),
+            thumbs: Default::default(),
         }
+    }
+
+    /// 원격 mirror 탐색기인가. 원격은 파일 내용을 읽지 않는다.
+    pub(crate) fn is_remote(&self) -> bool {
+        self.mirror_ws_id.is_some()
     }
 
     /// 타입어헤드 입력을 비운다. 내부 탭을 바꾸거나 추가·닫을 때처럼 목록이 통째로

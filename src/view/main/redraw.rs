@@ -1444,7 +1444,7 @@ impl MainView {
         );
         self.open_native_menu(engine, x, y, &items, move |this, engine, result| {
             // 경로 복사·복사·루트 설정은 파일시스템을 바꾸지 않아 같은 explorer 인지만 본다.
-            let read_only = matches!(result, Some(1 | 10 | 61));
+            let read_only = matches!(result, Some(1 | 10 | 61 | 70));
             if !crate::state::explorer_menu::explorer_menu_admits(
                 binding.as_ref(),
                 engine,
@@ -1490,6 +1490,13 @@ impl MainView {
                 ),
                 Some(60) => this.explorer_menu_open_in_new_tab(engine, surface_id, &paths),
                 Some(61) => this.explorer_menu_set_root(engine, surface_id, &paths),
+                Some(70) => crate::adapters::ui::popup::explorer_properties::open_from_menu(
+                    &mut this.state,
+                    engine.is_mirror_surface(surface_id),
+                    surface_id,
+                    &paths,
+                    &cwd,
+                ),
                 _ => {}
             }
         });
@@ -1589,6 +1596,12 @@ impl MainView {
                 ));
             }
         }
+        // 모든 모양의 메뉴는 Properties 로 끝난다. 빈 영역이면 현재 폴더가 대상이다.
+        items.push(MenuItem::separator());
+        items.push(MenuItem::new(
+            70,
+            crate::i18n::t("explorer.context_menu.properties"),
+        ));
         items
     }
 
@@ -2257,7 +2270,8 @@ mod tests {
     // build_explorer_context_menu(multi, is_empty_target, is_folder, has_clip, is_mirror) 의
     // 위치별 메뉴 구성을 id·separator 위치로 고정한다. id: 1=copy_path, 10=copy_files,
     // 11=cut, 12=paste/paste_into, 20=open_in_system, 30=delete, 40=rename,
-    // 50=add_to_favorites, 60=open_in_new_tab, 61=set_as_root. None=separator.
+    // 50=add_to_favorites, 60=open_in_new_tab, 61=set_as_root, 70=properties. None=separator.
+    // 모든 모양이 구분선과 Properties 로 끝나는지 여기서 확인하고, 아래 기대값은 그 앞부분만 적는다.
     fn explorer_menu_shape(
         multi: bool,
         is_empty_target: bool,
@@ -2274,13 +2288,15 @@ mod tests {
         has_clip: bool,
         is_mirror: bool,
     ) -> Vec<Option<u32>> {
-        shape(&super::MainView::build_explorer_context_menu(
+        let mut items = shape(&super::MainView::build_explorer_context_menu(
             multi,
             is_empty_target,
             is_folder,
             has_clip,
             is_mirror,
-        ))
+        ));
+        assert_eq!(items.split_off(items.len() - 2), vec![None, Some(70)]);
+        items
     }
 
     #[test]

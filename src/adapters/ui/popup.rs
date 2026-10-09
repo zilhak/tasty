@@ -6,6 +6,7 @@ pub(crate) mod convert;
 pub(crate) mod dag_list;
 pub(crate) mod defs;
 mod draw;
+pub(crate) mod explorer_properties;
 pub(crate) mod file_handler_picker;
 pub(crate) mod file_picker;
 pub(crate) mod frame;
