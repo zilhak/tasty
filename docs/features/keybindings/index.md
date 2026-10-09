@@ -212,8 +212,12 @@ Option 시퀀스·튜플 원소와 중첩 Option의 Some(None)은 표현을 다�
   한다 — overlay 와 탭 전환은 IPC 로도 일어나므로 무조건 회수하면 tasty 가 다른 앱의 OS 키보드
   포커스를 빼앗는다(불가침 원칙 1). 시점과 한계는 [WebView 호스트 계약](../../design/systems/webview.md#포커스--회수는-조건부다)이 정본이다.
 - **폴링 tick 은 Linux 에서만 세워진다.** GDK 는 winit 과 다른 X 연결로 이벤트를 받아
-  루프를 깨우지 못해, 드러난 webview 가 있고 창이 활성인 동안만 16ms tick 으로 GTK 를
-  펌프한다. macOS/Windows 는 native 키 콜백이 winit 과 같은 이벤트 루프에서 발생해 폴링이
+  루프를 깨우지 못해, 드러난 webview 가 있고 창이 활성(`host_window_has_os_focus` — `base.focused`
+  이거나 webview 자식이 X 포커스를 쥠)인 동안만 16ms tick 으로 GTK 를 펌프한다. 자식이 포커스를
+  쥐면 winit 은 부모 창에 Focused(false)를 보내므로 `base.focused` 만 보면 그 동안 폴링이 멈추고,
+  키와 클릭이 다음 깨움까지 처리되지 않는다(Xvfb 실측: 클릭이 페이지에 반영되기까지 1.46~1.95초,
+  이 판정을 쓴 뒤 0.10초). 다른 앱이 X 포커스를 가진 동안에는 폴링하지 않는다 — 창 관리자가 있으면
+  클릭이 창을 활성으로 만들어 Focused(true)가 루프를 깨운다. macOS/Windows 는 native 키 콜백이 winit 과 같은 이벤트 루프에서 발생해 폴링이
   필요 없다. **이 한정은 조건부 컴파일이 아니라 런타임 arm 분기다** — `Tick::WebviewKeyPoll`
   과 `WEBVIEW_KEY_POLL_INTERVAL`(`src/app/timers.rs`)은 `#[cfg(feature = "gui")]` 로만 게이트돼
   세 OS 모두 컴파일되고 (출처: 세 OS **컴파일** 채널 — `.github/workflows/crossplatform-check-macos.yml` 의 `check-macos`, `crossplatform-check.yml` 의 `check-windows`·`check-headless`. **런타임 동작은 그 채널 밖이다** — integration·e2e 는 Linux 뿐이다), `reschedule_webview_key_poll` 의

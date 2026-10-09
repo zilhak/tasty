@@ -19,10 +19,12 @@ impl App {
                 continue;
             }
             any_webview = true;
-            if main.webview_any_visible
-                && main.base.state.focused
-                && main.base.winit.is_minimized() != Some(true)
-            {
+            if webview_poll_needed(
+                main.webview_any_visible,
+                main.base.winit.is_minimized() == Some(true),
+                main.base.state.focused,
+                || main.webviews.values().any(|wv| wv.holds_keyboard_focus()),
+            ) {
                 needs_poll = true;
             }
         }
@@ -102,5 +104,48 @@ impl App {
         }
         // 호스트 단축키가 마지막 workspace를 닫았을 수 있어 다음 redraw 전에 닫기 요청을 처리한다.
         self.close_self_requesting_windows();
+    }
+}
+
+/// GDK 이벤트(WebView의 클릭·키)를 처리하려고 짧은 주기 폴링이 필요한지. Linux GDK는 별도 X
+/// 연결로 이벤트를 받아 winit을 깨우지 못한다. 보이는 WebView가 있고 창이 최소화되지 않았으며
+/// 창이 활성일 때 폴링한다. WebView 자식이 X 포커스를 쥐면 winit은 부모 창에 Focused(false)를
+/// 보내므로 자식이 포커스를 가진 경우도 활성으로 본다 — 빠뜨리면 클릭이 다음 깨움(약 1.5초 뒤)까지
+/// 처리되지 않는다. `webview_holds` 는 OS에 묻는 호출이라 앞 조건이 모두 참이고 winit 값이 거짓일
+/// 때만 부른다.
+fn webview_poll_needed(
+    any_visible: bool,
+    minimized: bool,
+    winit_focused: bool,
+    webview_holds: impl FnOnce() -> bool,
+) -> bool {
+    any_visible
+        && !minimized
+        && crate::view::main::redraw::host_window_has_os_focus(winit_focused, webview_holds)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::webview_poll_needed;
+
+    /// 자식 WebView가 포커스를 쥐어 winit이 창을 비활성으로 알려도 폴링한다.
+    #[test]
+    fn a_webview_holding_the_focus_keeps_the_poll_running() {
+        assert!(webview_poll_needed(true, false, false, || true));
+        assert!(webview_poll_needed(true, false, true, || false));
+        assert!(!webview_poll_needed(true, false, false, || false));
+    }
+
+    /// 보이는 WebView가 없거나 최소화됐으면 OS에 포커스를 묻지 않고 폴링하지 않는다.
+    #[test]
+    fn hidden_or_minimized_windows_do_not_poll_or_ask_the_os() {
+        let asked = std::cell::Cell::new(false);
+        let ask = || {
+            asked.set(true);
+            true
+        };
+        assert!(!webview_poll_needed(false, false, false, ask));
+        assert!(!webview_poll_needed(true, true, false, ask));
+        assert!(!asked.get());
     }
 }

@@ -195,6 +195,9 @@ holds_keyboard_focus는 위 표의 자식 focus 확인을 다시 쓰며 다른 �
 | Windows | GetFocus는 호출 스레드의 큐가 비활성이면 널을 돌려준다 |
 | macOS | first responder는 비활성 창에도 남으므로 key window 여부를 함께 확인한다 |
 
+Linux의 GTK 펌프 폴링(`webview_poll_needed`)도 같은 판정을 쓴다. base.focused만 보면 자식이 X focus를 쥔 동안
+GDK가 받은 클릭과 키가 다음 루프 깨움까지 처리되지 않는다(아래 "Linux 클릭 반영 지연").
+
 OS 조회는 base.focused가 거짓이고 회수할 대상이 있을 때만 한다. 탭 전환 경로는 회수할 surface가 없는 프레임에 조회하지 않는다.
 창 활성 판정 없이 backend의 회수 조건(자식 focus 확인)만 쓰면 macOS에서 IPC로 overlay를 열거나 탭을 바꿀 때 비활성 창의 first responder가 바뀐다.
 컴파일만으로 이 동작을 확인할 수 없으므로 활성·비활성 창에서 각각 재현한다.
@@ -229,3 +232,30 @@ macOS는 WKContentRuleList, Windows는 WebResourceRequested 거절을 사용한�
 Linux는 필터 컴파일이 끝나기 전까지 차단하지 못하는 시간이 있으며 실패하면 경고를 남긴다. 첫 로드에서 원격 리소스가 차단되는지는 실제 화면·요청으로 확인한다.
 안전 바인딩에 없는 API만 FFI로 호출하고 boxed filter handle은 Drop에서 unref한다.
 상류가 해당 API를 제공하면 직접 FFI를 대체한다.
+
+## Linux 클릭 반영 지연 — 첫 클릭은 소비되지 않는다
+
+native WebView는 winit 창의 X 자식이라 포인터는 X 서버가 자식 창에 바로 보낸다. host가 포인터를
+넘기는 경로는 없고, GDK가 자기 X 연결로 받은 이벤트를 host가 `pump_gtk_events`로 처리할 때 페이지에
+도달한다. 그래서 클릭이 늦게 보이면 원인은 펌프 시점이다.
+
+측정(Xvfb·창 관리자 없음, 2026-10-09). TOC 접기 버튼을 xdotool로 한 번 누르고, 루트 창 픽셀을 10ms마다
+읽어 펼침 상태가 바뀐 시각을 잰다. 클릭 전 X focus를 바꿔 가며 조건마다 4회 측정했다.
+
+| 클릭 전 X focus | 반영까지(수정 전) | 반영까지(현재) |
+|---|---|---|
+| PointerRoot | 0.10~0.39초 | 0.10초 |
+| host 창 | 0.10~0.38초 | 0.10초 |
+| WebView 자식 | 1.46~1.95초 | 0.10초 |
+| 다른 창 | 1.46~1.48초 | 0.46~1.47초 |
+
+- 측정한 모든 클릭(수정 전 48회, 현재 16회)이 페이지에 반영됐다. 소비되어 사라진 클릭은 없었다. 늦게 반영되는
+  동안 다시 누르면 두 번째 클릭이 첫 클릭의 결과를 되돌리거나(토글), 열린 팝업의 바깥 클릭이 되어
+  "첫 클릭이 먹힌다"처럼 보인다.
+- 주소창·본문을 눌러도 X focus는 host 창이나 PointerRoot에 그대로 남았다. WebView 자식이 focus를 쥐는
+  상태는 측정에서 `XSetInputFocus`로 만들었다.
+- 다른 창이 focus를 가진 줄은 창 관리자가 없는 Xvfb에서만 생긴다. 창 관리자가 있으면 클릭이 창을 활성화해
+  Focused(true)가 루프를 깨운다. 실제 데스크톱 세션에서는 측정하지 않았다.
+- `debug inject window-mouse`·`egui-mouse`는 host 창의 입력 경로에 들어가므로 WebView 자식에 닿지 않는다
+  (`injected:true` 를 돌려주지만 페이지는 바뀌지 않음). Xvfb에서 WebView에 클릭을 넣는 수단은 XTest(xdotool)다.
+
