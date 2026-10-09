@@ -238,9 +238,9 @@ impl FindState {
     }
 }
 
-/// 시작 폴더 기준 상대 경로.
-fn relative_path(root: &Path, path: &Path) -> String {
-    path.strip_prefix(root)
+/// 시작 폴더 기준 상대 경로. 화면에 보이는 로컬 경로라 OS 구분자를 그대로 쓴다.
+fn relative_path(start: &Path, path: &Path) -> String {
+    path.strip_prefix(start)
         .map_or_else(|_| path.display().to_string(), |p| p.display().to_string())
 }
 

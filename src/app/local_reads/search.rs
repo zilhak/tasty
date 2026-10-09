@@ -137,9 +137,10 @@ fn matches(name: &str, query: &str) -> bool {
 }
 
 /// 결과가 든 폴더를 시작 폴더 기준 상대 경로로. 시작 폴더 자신은 ".".
-pub(crate) fn relative_folder(root: &Path, hit: &Path) -> String {
+/// 화면에 보이는 로컬 경로라 OS 구분자를 그대로 쓴다. 저장소 상대 경로가 아니다.
+pub(crate) fn relative_folder(start: &Path, hit: &Path) -> String {
     let parent = hit.parent().unwrap_or(hit);
-    match parent.strip_prefix(root) {
+    match parent.strip_prefix(start) {
         Ok(rel) if rel.as_os_str().is_empty() => ".".to_string(),
         Ok(rel) => rel.display().to_string(),
         Err(_) => parent.display().to_string(),
