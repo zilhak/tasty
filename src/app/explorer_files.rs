@@ -5,6 +5,7 @@ mod ui_sync;
 pub(crate) use ui_sync::open_conflict;
 use ui_sync::{push_result, show_running};
 
+use job::leftover::Leftover;
 use job::{OpKind, Report, Shared, UndoStep};
 
 use crate::runtime::surface_binding::SurfaceBinding;
@@ -41,6 +42,11 @@ pub(crate) enum Operation {
     },
     /// 끝난 복사·이동을 되돌린다.
     Undo(Vec<UndoStep>),
+    /// 원본이 남은 이동 항목의 원본만 다시 지운다. `dest` 는 처음 이동의 목적지 폴더다.
+    RemoveLeftovers {
+        dest: Option<PathBuf>,
+        leftovers: Vec<Leftover>,
+    },
 }
 
 /// worker 가 돌려주는 결과. 복사·이동·휴지통·되돌리기는 항목별 결과를 남긴다.
@@ -77,7 +83,7 @@ impl Operation {
     pub(crate) fn kind(&self) -> Option<OpKind> {
         match self {
             Self::Paste { cut: false, .. } => Some(OpKind::Copy),
-            Self::Paste { cut: true, .. } => Some(OpKind::Move),
+            Self::Paste { cut: true, .. } | Self::RemoveLeftovers { .. } => Some(OpKind::Move),
             Self::Trash(_) => Some(OpKind::Trash),
             Self::Undo(_) => Some(OpKind::Undo),
             Self::Rename { .. } | Self::Open(_) | Self::Create { .. } => None,
@@ -91,6 +97,7 @@ impl Operation {
             } => (Some(destination.clone()), paths.len()),
             Self::Trash(paths) => (None, paths.len()),
             Self::Undo(steps) => (None, steps.len()),
+            Self::RemoveLeftovers { dest, leftovers } => (dest.clone(), leftovers.len()),
             Self::Rename { .. } | Self::Open(_) | Self::Create { .. } => (None, 1),
         }
     }
@@ -121,6 +128,17 @@ impl Operation {
                 ..
             } => paths(items) + destination.as_os_str().len(),
             Self::Trash(items) => paths(items),
+            Self::RemoveLeftovers { dest, leftovers } => {
+                dest.as_ref().map_or(0, |d| d.as_os_str().len())
+                    + leftovers
+                        .iter()
+                        .map(|l| {
+                            l.source.as_os_str().len()
+                                + l.copy.as_os_str().len()
+                                + std::mem::size_of::<Leftover>()
+                        })
+                        .sum::<usize>()
+            }
             Self::Rename { path, name } => path.as_os_str().len() + name.len(),
             Self::Open(path) => path.as_os_str().len(),
             Self::Create { dir, name, .. } => dir.as_os_str().len() + name.len(),
@@ -159,6 +177,13 @@ impl Operation {
                 changed: parents(paths),
                 removed: paths.clone(),
             },
+            Self::RemoveLeftovers { leftovers, .. } => {
+                let sources: Vec<PathBuf> = leftovers.iter().map(|l| l.source.clone()).collect();
+                Affected {
+                    changed: parents(&sources),
+                    removed: sources,
+                }
+            }
             Self::Rename { path, .. } => Affected {
                 changed: parents(std::slice::from_ref(path)),
                 removed: vec![path.clone()],
@@ -196,6 +221,9 @@ impl Operation {
             } => Done::Report(job::run_transfer(shared, &paths, &destination, cut)),
             Self::Trash(paths) => Done::Report(job::run_trash(shared, &paths)),
             Self::Undo(steps) => Done::Report(job::run_undo(shared, &steps)),
+            Self::RemoveLeftovers { dest, leftovers } => Done::Report(
+                job::leftover::run_remove_leftovers(shared, dest, &leftovers),
+            ),
             Self::Rename { path, name } => {
                 Done::Simple(ops::rename_entry(&path, &name).map_err(|e| e.to_string()))
             }

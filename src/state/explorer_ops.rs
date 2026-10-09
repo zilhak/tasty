@@ -41,8 +41,23 @@ impl super::MainViewState {
                     view.ops.queued.retain(|q| q.id != id);
                 }
             }
-            OpsAction::Retry { kind, paths, dest } => {
-                if let Some(operation) = retry_operation(kind, paths, dest) {
+            OpsAction::Retry {
+                kind,
+                paths,
+                dest,
+                leftovers,
+            } => {
+                // 원본이 남은 이동 항목은 다시 옮기지 않고 원본 삭제만 다시 한다. 결과 카드는 따로 뜬다.
+                if !leftovers.is_empty() {
+                    let operation = Operation::RemoveLeftovers {
+                        dest: dest.clone(),
+                        leftovers,
+                    };
+                    self.request_explorer_file_direct(engine, sid, operation, origin.clone());
+                }
+                if !paths.is_empty()
+                    && let Some(operation) = retry_operation(kind, paths, dest)
+                {
                     self.request_explorer_file_direct(engine, sid, operation, origin);
                 }
             }

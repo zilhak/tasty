@@ -17,7 +17,17 @@ fn report(kind: OpKind, total: usize, done: usize) -> Report {
         skipped: Vec::new(),
         cancelled: false,
         trash_unavailable: false,
+        leftovers: Vec::new(),
     }
+}
+
+/// 원본이 남은 이동 항목. 카드 시험은 파일 상태를 보지 않으므로 없는 경로로 만든다.
+fn leftover(path: &str) -> Leftover {
+    Leftover::before_remove(Path::new(path), Path::new("/tmp/Documents/copy"))
+}
+
+fn labels(text: &CardText) -> Vec<String> {
+    card_actions(text).into_iter().map(|(l, _, _)| l).collect()
 }
 
 fn card(report: Report) -> ResultCard {
@@ -58,6 +68,7 @@ fn a_partial_move_stays_and_retries_only_what_can_run_again() {
         failure("/a", Reason::Os("Permission denied".into())),
         failure("/b", Reason::SourceNotRemoved("busy".into())),
     ];
+    r.leftovers = vec![leftover("/b")];
     r.skipped = vec![PathBuf::from("/c")];
     assert!(!result_is_timed(&r));
     let text = card_text(&card(r));
@@ -67,6 +78,9 @@ fn a_partial_move_stays_and_retries_only_what_can_run_again() {
         t_args("explorer.result.partial_move", &["2", "4", "1"])
     );
     assert_eq!(text.retry, [PathBuf::from("/a"), PathBuf::from("/c")]);
+    // 원본이 남은 /b 는 다시 옮기지 않고 원본 삭제만 다시 하며, Retry 의 수에 함께 센다.
+    assert_eq!(text.leftovers, [leftover("/b")]);
+    assert_eq!(labels(&text)[0], t_fmt("explorer.result.retry", "3"));
     assert!(!text.undo, "undo is only offered when everything finished");
     assert_eq!(text.lines.len(), 3);
     assert!(text.more.is_none());
@@ -140,13 +154,14 @@ fn timed_cards_expire_and_others_stay() {
 }
 
 #[test]
-fn a_move_that_left_originals_stays_without_undo() {
+fn a_move_that_left_originals_stays_without_undo_and_retries_the_delete() {
     let mut r = report(OpKind::Move, 2, 2);
     r.undo.truncate(1);
     r.failed = vec![failure(
         "/a",
         Reason::SourceNotRemoved("Permission denied".into()),
     )];
+    r.leftovers = vec![leftover("/a")];
     assert!(
         !result_is_timed(&r),
         "a left original must not vanish on a timer"
@@ -158,7 +173,15 @@ fn a_move_that_left_originals_stays_without_undo() {
         t_args("explorer.result.source_left_move", &["2", "2", "1"])
     );
     assert!(!text.undo);
-    assert!(text.retry.is_empty());
+    assert!(text.retry.is_empty(), "the move itself is not sent again");
+    assert_eq!(text.leftovers, [leftover("/a")]);
+    assert_eq!(
+        labels(&text),
+        [
+            t_fmt("explorer.result.retry", "1"),
+            t("explorer.result.copy_paths").to_owned()
+        ]
+    );
     assert_eq!(
         text.lines[0].1,
         t_fmt("explorer.result.source_not_removed", "Permission denied")
@@ -175,4 +198,15 @@ fn an_undo_result_names_a_copy_kept_because_it_changed() {
     let text = card_text(&c);
     assert_eq!(text.title, t_fmt("explorer.result.undo_partial_copy", "1"));
     assert_eq!(text.lines[0].1, t("explorer.result.changed_kept"));
+}
+
+/// 다시 지울 때 사본이 없어 원본을 남긴 항목은 그 사유를 보인다.
+#[test]
+fn a_retried_delete_names_an_original_kept_because_the_copy_is_gone() {
+    let mut r = report(OpKind::Move, 1, 0);
+    r.undo.clear();
+    r.failed = vec![failure("/a", Reason::CopyMissing)];
+    let text = card_text(&card(r));
+    assert_eq!(text.lines[0].1, t("explorer.result.copy_missing"));
+    assert!(text.leftovers.is_empty());
 }

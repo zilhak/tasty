@@ -10,6 +10,7 @@ use std::time::{Duration, Instant, SystemTime};
 use tasty_utils::poison::{recover_mutex, recover_poisoned};
 
 use super::ops::{remove_path, rename_noreplace, unique_dest};
+use leftover::Leftover;
 
 /// 바이트 총량을 아직 모르거나 셀 수 없는 작업(휴지통)의 표시.
 pub(crate) const UNKNOWN_BYTES: u64 = u64::MAX;
@@ -270,7 +271,10 @@ pub(crate) enum Reason {
     /// Replace 로 덮어쓴 파일은 되돌릴 수 없다.
     Replaced,
     /// 작업 뒤 사본의 수정 시각이 바뀌었다. 사용자가 고친 사본으로 보고 남긴다.
+    /// 남은 원본을 다시 지울 때는 원본 파일이 바뀌어 남긴 경우에도 쓴다.
     ChangedSince,
+    /// 남은 원본을 다시 지우려는데 사본이 없거나 다른 종류로 바뀌었다. 원본을 남긴다.
+    CopyMissing,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -307,6 +311,8 @@ pub(crate) struct Report {
     pub cancelled: bool,
     /// 휴지통이 받지 않아 아무것도 지우지 못했다.
     pub trash_unavailable: bool,
+    /// 사본은 공개했지만 원본을 다 지우지 못한 이동 항목. Retry 가 원본 삭제만 다시 한다.
+    pub leftovers: Vec<Leftover>,
 }
 
 impl UndoStep {
@@ -333,9 +339,11 @@ impl Report {
             skipped: Vec::new(),
             cancelled: false,
             trash_unavailable: false,
+            leftovers: Vec::new(),
         }
     }
-    /// 다시 시도할 원래 경로: 건너뛴 항목과, 원본 미삭제를 뺀 실패 항목.
+    /// 같은 작업으로 다시 보낼 원래 경로: 건너뛴 항목과, 원본 미삭제를 뺀 실패 항목.
+    /// 원본 미삭제 항목은 [`Report::leftovers`] 로 원본 삭제만 다시 한다.
     pub(crate) fn retryable(&self) -> Vec<PathBuf> {
         self.failed
             .iter()
@@ -469,12 +477,13 @@ fn record(
             return std::ops::ControlFlow::Break(());
         }
         // 원본이 일부만 지워졌을 수 있어 사본이 하나뿐인 온전한 자료다. 되돌리기 단계로 남기지 않는다.
-        Err(ItemError::SourceNotRemoved { error }) => {
+        Err(ItemError::SourceNotRemoved { error, leftover }) => {
             report.done += 1;
             report.failed.push(Failure {
                 path: source.to_path_buf(),
                 reason: Reason::SourceNotRemoved(error),
             });
+            report.leftovers.push(leftover);
         }
         Err(ItemError::Failed(reason)) => {
             if shared.cancelled() {
@@ -510,7 +519,7 @@ fn same_parent(source: &Path, dest: &Path) -> bool {
 
 enum ItemError {
     Failed(Reason),
-    SourceNotRemoved { error: String },
+    SourceNotRemoved { error: String, leftover: Leftover },
 }
 
 impl From<io::Error> for ItemError {
@@ -692,6 +701,7 @@ impl Item<'_> {
                 Err(e) => return Err(e.into()),
             }
         };
+        let leftover = self.cut.then(|| Leftover::before_remove(source, &target));
         let step = if replaced {
             UndoStep::Replaced(target.clone())
         } else if self.cut {
@@ -702,11 +712,12 @@ impl Item<'_> {
         } else {
             UndoStep::created(target)
         };
-        if self.cut
+        if let Some(leftover) = leftover
             && let Err(e) = remove_path(source)
         {
             return Err(ItemError::SourceNotRemoved {
                 error: e.to_string(),
+                leftover,
             });
         }
         Ok(Outcome::Done(step))
@@ -904,6 +915,9 @@ fn move_back(to: &Path, from: &Path) -> Result<(), Reason> {
     }
     remove_path(to).map_err(|e| Reason::SourceNotRemoved(e.to_string()))
 }
+
+#[path = "leftover.rs"]
+pub(crate) mod leftover;
 
 #[cfg(test)]
 #[path = "job_tests.rs"]

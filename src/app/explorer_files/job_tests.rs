@@ -396,7 +396,12 @@ fn copy_reports_bytes_and_keeps_links_as_links() {
 }
 
 /// 질문 없이 한 항목을 다루는 Item. 경합·원본 삭제 실패처럼 run 으로 만들기 어려운 경로를 직접 부른다.
-fn with_item<R>(shared: &Shared, dest: &Path, cut: bool, f: impl FnOnce(&mut Item<'_>) -> R) -> R {
+pub(super) fn with_item<R>(
+    shared: &Shared,
+    dest: &Path,
+    cut: bool,
+    f: impl FnOnce(&mut Item<'_>) -> R,
+) -> R {
     let mut sticky = None;
     let mut left = 0;
     let mut item = Item {

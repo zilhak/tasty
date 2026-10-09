@@ -554,3 +554,69 @@ fn undo_remembers_whether_it_puts_back_a_move() {
     assert_eq!(copied.undo_of(), Some(OpKind::Copy));
     assert_eq!(Operation::Open("x".into()).kind(), None);
 }
+
+/// 원본이 남은 이동의 Retry 는 그 항목을 다시 옮기지 않고 원본 삭제만 따로 요청한다.
+/// 같은 카드의 다른 실패 항목은 지금처럼 같은 이동으로 다시 보낸다.
+#[test]
+fn retry_sends_left_originals_to_a_delete_only_job() {
+    use crate::explorer_ui::view::ops::OpsAction;
+    let (mut state, engine) = crate::state::tests::test_state();
+    let sid = engine.read().workspace_at(0).unwrap().all_surface_ids()[0];
+    let left = job::leftover::Leftover::before_remove(
+        std::path::Path::new("/w/src/b"),
+        std::path::Path::new("/dest/b"),
+    );
+    state.apply_explorer_ops(
+        &engine.read(),
+        sid,
+        OpsAction::Retry {
+            kind: OpKind::Move,
+            paths: vec!["/w/src/a".into()],
+            dest: Some("/dest".into()),
+            leftovers: vec![left.clone()],
+        },
+    );
+    let ops: Vec<&Operation> = state
+        .explorer_file_requests
+        .0
+        .iter()
+        .map(|r| &r.operation)
+        .collect();
+    assert!(matches!(
+        ops.as_slice(),
+        [
+            Operation::RemoveLeftovers { dest: Some(d), leftovers },
+            Operation::Paste { paths, destination, cut: true },
+        ] if d.as_path() == std::path::Path::new("/dest")
+            && *leftovers == [left.clone()]
+            && *paths == [PathBuf::from("/w/src/a")]
+            && destination.as_path() == std::path::Path::new("/dest")
+    ));
+    assert_eq!(ops[0].kind(), Some(OpKind::Move));
+    // 원본 삭제는 원본 폴더만 바꾸고 원본만 없앨 수 있다. 사본 쪽은 건드리지 않는다.
+    assert_eq!(
+        ops[0].affected(),
+        Affected {
+            changed: vec!["/w/src".into()],
+            removed: vec!["/w/src/b".into()],
+        }
+    );
+
+    // 원본이 남은 항목만 있으면 이동은 요청하지 않는다.
+    state.explorer_file_requests.0.clear();
+    state.apply_explorer_ops(
+        &engine.read(),
+        sid,
+        OpsAction::Retry {
+            kind: OpKind::Move,
+            paths: Vec::new(),
+            dest: Some("/dest".into()),
+            leftovers: vec![left],
+        },
+    );
+    assert_eq!(state.explorer_file_requests.len(), 1);
+    assert!(matches!(
+        state.explorer_file_requests.0[0].operation,
+        Operation::RemoveLeftovers { .. }
+    ));
+}

@@ -14,6 +14,7 @@ use tasty_ui_widgets::{
 
 use super::ExplorerView;
 use crate::adapters::ui::icons;
+use crate::app::explorer_files::job::leftover::Leftover;
 use crate::app::explorer_files::job::{OpKind, Reason, Report, Shared, UNKNOWN_BYTES, UndoStep};
 use crate::core::fs_list::human_size;
 use crate::i18n::{t, t_args, t_fmt, t_fmt2};
@@ -68,11 +69,13 @@ pub(crate) struct OpsState {
 pub enum OpsAction {
     /// 대기열에서 아직 시작하지 않은 작업을 뺀다.
     RemoveQueued(u64),
-    /// 건너뛰었거나 실패한 항목을 같은 작업으로 다시 요청한다.
+    /// 건너뛰었거나 실패한 항목을 같은 작업으로 다시 요청한다. 원본이 남은 이동 항목은
+    /// `leftovers` 로 받아 원본 삭제만 다시 한다.
     Retry {
         kind: OpKind,
         paths: Vec<PathBuf>,
         dest: Option<PathBuf>,
+        leftovers: Vec<Leftover>,
     },
     /// 끝난 복사·이동을 되돌린다.
     Undo(Vec<UndoStep>),
@@ -393,6 +396,8 @@ struct CardText {
     lines: Vec<(String, String)>,
     more: Option<String>,
     retry: Vec<PathBuf>,
+    /// 원본 삭제만 다시 할 이동 항목. Retry 의 수에 함께 센다.
+    leftovers: Vec<Leftover>,
     undo: bool,
 }
 
@@ -405,6 +410,7 @@ fn reason_text(reason: &Reason) -> String {
         Reason::Gone => t("explorer.result.gone").to_owned(),
         Reason::Replaced => t("explorer.result.replaced").to_owned(),
         Reason::ChangedSince => t("explorer.result.changed_kept").to_owned(),
+        Reason::CopyMissing => t("explorer.result.copy_missing").to_owned(),
     }
 }
 
@@ -539,10 +545,10 @@ fn card_text(card: &ResultCard) -> CardText {
         None => card_title(report),
     };
     let (lines, more) = card_lines(report);
-    let retry = if card.undo_of.is_some() || report.cancelled {
-        Vec::new()
+    let (retry, leftovers) = if card.undo_of.is_some() || report.cancelled {
+        (Vec::new(), Vec::new())
     } else {
-        report.retryable()
+        (report.retryable(), report.leftovers.clone())
     };
     let undo = card.undo_of.is_none()
         && !report.cancelled
@@ -556,6 +562,7 @@ fn card_text(card: &ResultCard) -> CardText {
         lines,
         more,
         retry,
+        leftovers,
         undo,
     }
 }
@@ -628,9 +635,10 @@ fn draw_cards(
 /// 카드의 동작 버튼 순서: Retry, Copy paths, Undo 중 있는 것만.
 fn card_actions(text: &CardText) -> Vec<(String, ButtonVariant, CardPick)> {
     let mut out = Vec::new();
-    if !text.retry.is_empty() {
+    let retry = text.retry.len() + text.leftovers.len();
+    if retry > 0 {
         out.push((
-            t_fmt("explorer.result.retry", &text.retry.len().to_string()),
+            t_fmt("explorer.result.retry", &retry.to_string()),
             ButtonVariant::Secondary,
             CardPick::Retry,
         ));
@@ -712,6 +720,7 @@ fn apply_pick(
                 kind: card.report.kind,
                 paths: texts[index].retry.clone(),
                 dest: card.report.dest.clone(),
+                leftovers: texts[index].leftovers.clone(),
             }));
             ops.results.retain(|c| c.id != id);
         }

@@ -1,4 +1,4 @@
-<!-- source-hash: 0324bc768595 -->
+<!-- source-hash: a517525c7af3 -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -158,11 +158,11 @@ When a name already exists, a question opens in that Explorer if it has focus. I
 
 When it finishes, a result card appears at the bottom right of the Explorer. Cards for finished jobs fade after a moment; cards with failed or skipped items stay until you close them and list those paths.
 
-- **Retry** — runs only the failed or skipped items again.
+- **Retry** — runs only the failed or skipped items again. For a move that left originals behind, it only deletes those originals again.
 - **Copy paths** — copies the card's paths to the clipboard.
 - **Undo** — shown while the card is up, after a copy or move that fully finished. Moved items go back (unless something else now sits there), and copies go to the trash. A copy you edited after the job is kept. Files you replaced can't be restored.
 
-If a move across disks can't delete all of the original (for example a subfolder you can't write to), a warning card says the original is still there, in whole or in part, and stays until you close it. The copy is then the complete data, so there is no Undo. Clean up what is left of the original yourself.
+If a move across disks can't delete all of the original (for example a subfolder you can't write to), a warning card says the original is still there, in whole or in part, and stays until you close it. The copy is then the complete data, so there is no Undo. Once whatever blocked the delete is fixed, **Retry** deletes only what is left of the originals. If the copy has gone or been replaced since, or you edited the original file, the original is kept and the card says why.
 
 ## Markdown
 
