@@ -1035,26 +1035,25 @@ fn handle_background_context(
     }
 }
 
-/// 단일/토글/범위 선택 처리 (modifiers 반영). 더블클릭이면 열기/이동.
+/// 단일/토글/범위 선택 처리 (modifiers 반영). 더블클릭이면 폴더는 이동, 파일은 연다.
+/// `..` 는 상위 이동만 하고 선택 대상이 아니다.
 fn handle_entry_interaction(
     ui: &egui::Ui,
     view: &mut ExplorerView,
     entry: &DirEntryInfo,
-    resp: &egui::Response,
+    (clicked, dbl): (bool, bool),
     action: &mut Option<ExplorerAction>,
 ) {
-    self::view::drag::note(ui, entry, resp.rect);
-    if resp.double_clicked() {
-        if entry.is_dir {
-            if action.is_none() {
-                *action = Some(ExplorerAction::Navigate(entry.path.clone()));
-            }
-        } else if action.is_none() {
-            *action = Some(ExplorerAction::OpenFile(entry.path.clone()));
+    if dbl {
+        if action.is_none() {
+            let path = entry.path.clone();
+            *action = Some(if entry.is_dir {
+                ExplorerAction::Navigate(path)
+            } else {
+                ExplorerAction::OpenFile(path)
+            });
         }
-        return;
-    }
-    if resp.clicked() {
+    } else if clicked && entry.name != ".." {
         let mods = ui.input(|i| i.modifiers);
         view.click_select(&entry.path, mods.command || mods.ctrl, mods.shift);
     }
@@ -1213,14 +1212,8 @@ fn grid_view(
 
     ui.horizontal(|ui| {
         if let Some(p) = &parent {
-            let dd = dotdot_entry(p.clone());
-            let resp = grid_cell(
-                ui,
-                &EntryCtx { query: "", ..ctx },
-                &dd,
-                (false, false),
-                None,
-            );
+            let (dd, up) = (dotdot_entry(p.clone()), EntryCtx { query: "", ..ctx });
+            let resp = grid_cell(ui, &up, &dd, (false, false), None);
             if resp.double_clicked() && action.is_none() {
                 *action = Some(ExplorerAction::Navigate(p.clone()));
             }
@@ -1232,9 +1225,7 @@ fn grid_view(
     });
 
     let pitch = gap + ctx.metrics.cell_h;
-    let target_line = target
-        .and_then(|t| t.checked_sub(in_first))
-        .map(|t| t / cols);
+    let target_line = target.and_then(|t| Some(t.checked_sub(in_first)? / cols));
     let span = open_span(ui, pitch, rest_lines, target_line);
     let shown = view.shown_range(in_first + span.start * cols..in_first + span.end * cols);
     for line in shown.chunks(cols) {
@@ -1256,10 +1247,8 @@ fn grid_entry(
     scroll_here: bool,
     action: &mut Option<ExplorerAction>,
 ) {
-    let state = (
-        view.selected.contains(&e.path),
-        ctx.cut_pending.contains(&e.path),
-    );
+    let cut = ctx.cut_pending.contains(&e.path);
+    let state = (view.selected.contains(&e.path), cut);
     let thumb = view.thumbs.texture(ui.ctx(), e);
     // 보이는 칸만 그리므로 칸의 위젯 id 를 화면 위치가 아니라 항목 경로에 묶는다.
     // 그래야 스크롤해도 누름·hover 상태가 같은 항목에 남는다.
@@ -1274,7 +1263,17 @@ fn grid_entry(
         resp.scroll_to_me(Some(egui::Align::Center));
     }
     if !handle_entry_context(view, e, &resp, ctx.root, action) {
-        handle_entry_interaction(ui, view, e, &resp, action);
+        self::view::drag::note(ui, e, resp.rect);
+        handle_entry_interaction(ui, view, e, (resp.clicked(), resp.double_clicked()), action);
+    }
+}
+
+/// 잘라내기 대기 중인 항목의 전경 색을 흐리게 한다. 선택·호버 배경에는 쓰지 않는다.
+fn cut_dim(theme: &Theme, cut: bool, c: egui::Color32) -> egui::Color32 {
+    if cut {
+        c.gamma_multiply(theme.cut_pending_opacity())
+    } else {
+        c
     }
 }
 
@@ -1301,13 +1300,7 @@ fn grid_cell(
         p.rect_filled(rect, theme.corner_radius.value(), bg);
     }
 
-    let fg_dim = |c: egui::Color32| {
-        if cut {
-            c.gamma_multiply(theme.cut_pending_opacity())
-        } else {
-            c
-        }
-    };
+    let fg_dim = |c| cut_dim(theme, cut, c);
     let (icon, glyph_color) = entry_icon(theme, e);
     let glyph_rect = egui::Rect::from_center_size(
         egui::pos2(
@@ -1340,14 +1333,11 @@ fn grid_cell(
         ..Default::default()
     };
     let galley = ui.fonts(|f| f.layout_job(job));
-    p.galley(
-        egui::pos2(
-            rect.center().x,
-            glyph_rect.bottom() + theme.spacing_xs.value(),
-        ),
-        galley,
-        label_color,
+    let label_at = egui::pos2(
+        rect.center().x,
+        glyph_rect.bottom() + theme.spacing_xs.value(),
     );
+    p.galley(label_at, galley, label_color);
 
     resp
 }
@@ -1411,7 +1401,8 @@ fn list_view(
             .inner;
         let resp = view.hit_tooltip(e, resp);
         if !handle_entry_context(view, e, &resp, root, action) {
-            handle_entry_interaction(ui, view, e, &resp, action);
+            self::view::drag::note(ui, e, resp.rect);
+            handle_entry_interaction(ui, view, e, (resp.clicked(), resp.double_clicked()), action);
         }
     }
     ui.add_space((count - span.end) as f32 * row_h);
@@ -1481,21 +1472,17 @@ fn detail_view(
                 }
                 // cut-pending 행은 전경(아이콘+텍스트)을 cut_pending_opacity(50%) 로 디밍.
                 // Table 이 그리는 선택/hover 배경은 그대로 유지.
-                let dim = |c: egui::Color32| {
-                    if cut_pending.contains(&row.path) {
-                        c.gamma_multiply(th.cut_pending_opacity())
-                    } else {
-                        c
-                    }
-                };
+                let dim = |c| cut_dim(th, cut_pending.contains(&row.path), c);
                 // 하위 폴더 검색은 Name 뒤에 Folder 를 두고 Type 을 뺀다. 열 번호를 평소 배치로 옮긴다.
                 let col = match (&search_root, col) {
                     (Some(_), 1) => 4,
                     (Some(_), c) if c > 1 => c - 1,
                     (_, c) => c,
                 };
-                match col {
-                    0 if row.name.is_empty() => editor_cell.set(Some(ui.max_rect())),
+                // `..` 행은 이름 말고는 비워 둔다.
+                let blank = row.name == "..";
+                let text = match col {
+                    0 if row.name.is_empty() => return editor_cell.set(Some(ui.max_rect())),
                     0 => {
                         self::view::drag::note_row(ui, row);
                         ui.horizontal(|ui| {
@@ -1520,56 +1507,28 @@ fn detail_view(
                                 None,
                             ));
                         });
+                        return;
                     }
                     // 오른쪽 정렬 셀의 앞 여백으로 날짜 열과 간격을 둔다.
                     1 => {
                         ui.add_space(th.spacing_sm.value());
-                        let text = if row.name == ".." {
-                            String::new()
-                        } else {
-                            human_size(row.is_dir, row.size)
-                        };
-                        ui.label(
-                            egui::RichText::new(text)
-                                .font(egui::FontId::monospace(th.font_size_caption.value()))
-                                .color(dim(th.text_muted().to_egui())),
-                        );
+                        (!blank).then(|| human_size(row.is_dir, row.size))
                     }
-                    2 => {
-                        let text = if row.name == ".." {
-                            String::new()
-                        } else {
-                            crate::core::fs_list::format_modified(row.modified)
-                        };
-                        ui.label(
-                            egui::RichText::new(text)
-                                .font(egui::FontId::monospace(th.font_size_caption.value()))
-                                .color(dim(th.text_muted().to_egui())),
-                        );
-                    }
-                    4 => {
-                        let folder = search_root
-                            .as_deref()
-                            .map(|r| find::hit_folder(r, &row.path));
-                        ui.label(
-                            egui::RichText::new(folder.unwrap_or_default())
-                                .font(egui::FontId::monospace(th.font_size_caption.value()))
-                                .color(dim(th.text_muted().to_egui())),
-                        );
-                    }
-                    _ => {
-                        let text = if row.name == ".." {
-                            String::new()
-                        } else {
-                            type_label(row)
-                        };
-                        ui.label(
-                            egui::RichText::new(text)
-                                .size(th.font_size_caption.value())
-                                .color(dim(th.text_muted().to_egui())),
-                        );
-                    }
-                }
+                    2 => (!blank).then(|| crate::core::fs_list::format_modified(row.modified)),
+                    4 => search_root
+                        .as_deref()
+                        .map(|r| find::hit_folder(r, &row.path)),
+                    _ => (!blank).then(|| type_label(row)),
+                };
+                // Type 열만 본문 글꼴 크기로, 나머지 값은 고정폭으로 쓴다.
+                let text = egui::RichText::new(text.unwrap_or_default())
+                    .color(dim(th.text_muted().to_egui()));
+                let size = th.font_size_caption.value();
+                ui.label(if col == 3 {
+                    text.size(size)
+                } else {
+                    text.font(egui::FontId::monospace(size))
+                });
             },
         );
 
@@ -1598,9 +1557,7 @@ fn detail_view(
         && e.name != ".."
     // `..` 는 컨텍스트 메뉴 대상 아님
     {
-        let pos = ui
-            .input(|inp| inp.pointer.interact_pos())
-            .unwrap_or_default();
+        let pos = ui.ctx().pointer_interact_pos().unwrap_or_default();
         emit_entry_context(view, e, pos, root, action);
     }
     if let Some(e) = &clicked {
@@ -1608,23 +1565,7 @@ fn detail_view(
             inp.pointer
                 .button_double_clicked(egui::PointerButton::Primary)
         });
-        if e.name == ".." {
-            // `..` 는 상위 이동만 (선택/열기 대상 아님).
-            if dbl && action.is_none() {
-                *action = Some(ExplorerAction::Navigate(e.path.clone()));
-            }
-        } else if dbl {
-            if e.is_dir {
-                if action.is_none() {
-                    *action = Some(ExplorerAction::Navigate(e.path.clone()));
-                }
-            } else if action.is_none() {
-                *action = Some(ExplorerAction::OpenFile(e.path.clone()));
-            }
-        } else {
-            let mods = ui.input(|inp| inp.modifiers);
-            view.click_select(&e.path, mods.command || mods.ctrl, mods.shift);
-        }
+        handle_entry_interaction(ui, view, e, (true, dbl), action);
     }
 }
 
