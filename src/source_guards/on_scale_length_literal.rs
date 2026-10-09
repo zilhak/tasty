@@ -954,7 +954,8 @@ fn the_blind_spots_are_still_the_size_they_say() {
         // 보이는 행만 그리기 시험(virtual_tests.rs)의 칸 크기 Pos2::new(1100, 600)가 test 전용 둘을 더한다.
         // 상세 보기가 화면 밖 편집 줄 자리를 vec2(0, shift) 로 옮기며 0 하나를, 같은 시험 파일의
         // 위쪽 끝 휠 시험이 test 전용 둘을 더한다.
-        (234, 600),
+        // 드래그 반전 설정 행 렌더 시험의 화면 vec2(800, 300) 중 300 한 자리가 test 전용으로 들어왔다.
+        (234, 601),
         "제외한 0과 test 전용 코드의 수가 달라졌다. 실제 사용과 수집 범위의 변경을 확인하고 기록을 갱신한다."
     );
     let roster: usize = UNIT_SPACE_SITES.iter().map(|(.., n, _)| n).sum();
