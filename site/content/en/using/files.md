@@ -1,4 +1,4 @@
-<!-- source-hash: 58b9e34f9f50 -->
+<!-- source-hash: 6e6a58d71acc -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -44,7 +44,7 @@ The file manager built into Tasty. Change a terminal with `Alt+'` > **Explorer**
 ### Screen
 
 - **Left** — the **Files** tree (fixed at the root) and **Favorites** under it.
-- **Top** — **Back** · **Forward** · **Up** · **Refresh**, the address bar, the **New folder** · **New file** buttons, the **Preview panel** toggle, and the view switch (**Grid** · **List** · **Detail**). When the Explorer cell is narrower than 440px, the command buttons fold into one **More** (`…`) button that shows the same commands as a menu.
+- **Top** — **Back** · **Forward** · **Up** · **Refresh**, the address bar, the **New folder** · **New file** buttons, the **Find** and **Preview panel** toggles, and the view switch (**Grid** · **List** · **Detail**). When the Explorer cell is narrower than 440px, the command buttons fold into one **More** (`…`) button that shows the same commands as a menu.
 - **Right** — the items in the current folder. In Grid view, local image files (1 MB or smaller) show a small thumbnail instead of an icon. `..` at the top goes to the parent folder. In Detail view, click the **Name** · **Size** · **Date modified** · **Type** column headers to sort.
 - You can keep several **New tab**s inside a Surface and view folders separately. These are separate from the Pane's Tabs.
 
@@ -74,6 +74,17 @@ Start from **New folder** · **New file** on the toolbar, the right-click menu o
 
 You can assign keys to **New folder** · **New file** in Settings > Keybindings > **Explorer**. They have no default keys.
 
+### Find · search subfolders
+
+The **Find** toggle on the toolbar (the **More** menu in a narrow cell), or `Ctrl+F` while the Explorer has focus, opens a find bar under the toolbar. `Ctrl+F` is the same shortcut as terminal search; in the Explorer it opens this bar.
+
+- As you type, only the items in the current folder whose names contain the text stay. Case is ignored and the matching part is highlighted. The right end shows how many are shown out of the total, such as "2 of 6".
+- Items that are filtered out leave the selection. Select all picks only the items shown.
+- Turn on **Subfolders** to search everything under the current folder. Results fill in as they are found, and **Stop** halts the search while keeping what was found. The Detail view shows a **Folder** column with each result's location relative to the current folder instead of the type; in the List and Grid views, hover an item to see it. Selecting a result also shows its location on the status line. Folders that can't be read are skipped and reported as, for example, "1 folders skipped"; hover it to see which. Folder links are not followed.
+- In the find field, `Esc` once clears the text and once more closes the bar. ×, or moving to another folder (Back, Up, the address bar, opening a folder), closes it too.
+- While you type in the find field, type to find and the Explorer shortcuts are off.
+- Explorers in remote workspaces filter the current folder only; they don't search subfolders.
+
 ### Preview panel
 
 Press the **Preview panel** button in the toolbar to open a panel to the right of the list that shows the one selected file. Text files show their first 64 KB in a monospace font; images are fitted to the panel without being enlarged past their own size. Other file types and folders show **No preview for this file type**, and files over 1 MB, as well as images too big to decode (such as more than 16384 pixels on a side), show **Too large to preview**. Drag the panel's left edge to set its width between 200 and 460 px. When the Explorer cell is too narrow to keep the list beside it, the panel hides while the button stays on. Explorers in remote workspaces have no preview.
@@ -90,6 +101,7 @@ Choose **Properties** at the bottom of the right-click menu to open a popup insi
 | Go to parent folder | `Alt+↑` |
 | Select all | `Ctrl+A` · `Alt+A` |
 | Copy path | `Alt+Shift+C` |
+| Find | `Ctrl+F` · `Alt+F` |
 | Copy / cut / paste | `Ctrl+C` / `Ctrl+X` / `Ctrl+V` (the same bindings as the terminal) |
 | Toggle the preview panel · Properties | No default — set them in **Settings** > **Keybindings** > **Explorer** |
 

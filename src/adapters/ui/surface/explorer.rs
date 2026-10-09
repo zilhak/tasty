@@ -4,6 +4,7 @@
 pub mod address;
 mod commands;
 mod create;
+mod find;
 mod preview;
 mod state_screen;
 mod thumbs;
@@ -16,7 +17,9 @@ use tasty_type_geometry::length::LogicalPx;
 
 use tasty_model::{ExplorerPanel, ExplorerViewMode, SortColumn, SortDir};
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::{PathField, PathFieldOutcome, Table, TableSortDir, tree_row};
+use tasty_ui_widgets::{
+    PathField, PathFieldOutcome, Table, TableSortDir, tree_row, tree_row_matching,
+};
 
 use crate::adapters::ui::icons::{self, Icon};
 use crate::core::explorer_favorites as favorites;
@@ -148,6 +151,7 @@ pub fn draw_explorer(
             remote,
             &mut action,
         );
+        find::bar(ui, theme, view, remote);
         let (sep_rect, _) = ui.allocate_exact_size(
             egui::vec2(ui.available_width(), theme.border_width.value()),
             egui::Sense::hover(),
@@ -889,7 +893,9 @@ fn content(
         egui::Layout::top_down(egui::Align::Min),
         |ui| {
             let ui = &mut preview::split(ui, theme, view, id_suffix);
-            if state_screen::show_for(ui, theme, view, &root, action) {
+            if state_screen::show_for(ui, theme, view, &root, action)
+                || state_screen::show_find(ui, theme, view, action)
+            {
                 return;
             }
             egui::ScrollArea::vertical()
@@ -938,13 +944,7 @@ fn status_line(ui: &mut egui::Ui, theme: &Theme, view: &ExplorerView) {
         rect.top(),
         egui::Stroke::new(theme.border_width.value(), theme.border_default().to_egui()),
     );
-    let n = view.entries.len();
-    let sel = view.selected.len();
-    let text = if sel > 0 {
-        t_fmt("explorer.status.selected", &sel.to_string())
-    } else {
-        t_fmt("explorer.status.items", &n.to_string())
-    };
+    let text = view.status_text();
     ui.painter().text(
         egui::pos2(rect.left() + theme.spacing_md.value(), rect.center().y),
         egui::Align2::LEFT_CENTER,
@@ -1129,7 +1129,8 @@ fn apply_type_ahead(ui: &egui::Ui, view: &mut ExplorerView, input: &ExplorerInpu
         return;
     }
 
-    let names: Vec<String> = view.entries.iter().map(|e| e.name.clone()).collect();
+    let shown = view.shown_entries();
+    let names: Vec<String> = shown.iter().map(|e| e.name.clone()).collect();
     let now = std::time::Instant::now();
     for ch in typed {
         if input.shortcut_chars.contains(&ch.to_ascii_lowercase()) {
@@ -1137,7 +1138,7 @@ fn apply_type_ahead(ui: &egui::Ui, view: &mut ExplorerView, input: &ExplorerInpu
         }
         let selected = single_selection_index(view);
         if let Some(i) = view.type_ahead.feed(ch, now, &names, selected) {
-            let path = view.entries[i].path.clone();
+            let path = shown[i].path.clone();
             view.select_only(&path);
             view.scroll_to = Some(path);
         }
@@ -1151,7 +1152,7 @@ fn single_selection_index(view: &ExplorerView) -> Option<usize> {
         return None;
     }
     let sel = view.selected.iter().next()?;
-    view.entries.iter().position(|e| &e.path == sel)
+    view.shown_entries().iter().position(|e| &e.path == sel)
 }
 
 /// 합성 `..` 엔트리. **렌더 전용** — `view.entries`/선택/상태줄/컨텍스트 메뉴에는 절대
@@ -1178,14 +1179,15 @@ fn grid_view(
     action: &mut Option<ExplorerAction>,
 ) {
     ui.add_space(theme.spacing_md.value());
-    let entries = view.entries.clone();
-    let parent = parent_nav_target(root);
+    let entries = view.shown_entries();
+    let query = view.find_query().to_owned();
+    let parent = parent_nav_target(root).filter(|_| view.search_root().is_none());
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing =
             egui::vec2(theme.spacing_md.value(), theme.spacing_md.value());
         if let Some(p) = &parent {
             let dd = dotdot_entry(p.clone());
-            let resp = grid_cell(ui, theme, &dd, false, false, font, None);
+            let resp = grid_cell(ui, theme, &dd, false, false, font, None, "");
             if resp.double_clicked() && action.is_none() {
                 *action = Some(ExplorerAction::Navigate(p.clone()));
             }
@@ -1195,7 +1197,8 @@ fn grid_view(
             let selected = view.selected.contains(&e.path);
             let cut = cut_pending.contains(&e.path);
             let thumb = view.thumbs.texture(ui.ctx(), e);
-            let resp = grid_cell(ui, theme, e, selected, cut, font, thumb.as_ref());
+            let resp = grid_cell(ui, theme, e, selected, cut, font, thumb.as_ref(), &query);
+            let resp = view.hit_tooltip(e, resp);
             if ui.is_rect_visible(resp.rect) {
                 view.thumbs.want(e, view.is_remote());
             }
@@ -1218,6 +1221,7 @@ fn grid_cell(
     cut: bool,
     font: &EffectiveFont,
     thumb: Option<&egui::TextureHandle>,
+    query: &str,
 ) -> egui::Response {
     let slot = theme.explorer_grid_thumb_size().value();
     let label_font = font.font_size.max(1.0).min(theme.font_size_caption.value());
@@ -1270,26 +1274,21 @@ fn grid_cell(
     } else {
         theme.text_secondary().to_egui()
     });
-    let mut job = egui::text::LayoutJob {
-        halign: egui::Align::Center,
-        wrap: egui::text::TextWrapping {
-            max_width: (CELL_W - theme.spacing_xs.scaled(2.0)).value(),
-            max_rows: 3,
-            overflow_character: Some('…'),
-            ..Default::default()
-        },
+    let mut job = find::name_job(
+        theme,
+        &e.name,
+        query,
+        egui::FontId::proportional(label_font),
+        label_color,
+        Some(label_line_h),
+    );
+    job.halign = egui::Align::Center;
+    job.wrap = egui::text::TextWrapping {
+        max_width: (CELL_W - theme.spacing_xs.scaled(2.0)).value(),
+        max_rows: 3,
+        overflow_character: Some('…'),
         ..Default::default()
     };
-    job.append(
-        &e.name,
-        0.0,
-        egui::TextFormat {
-            font_id: egui::FontId::proportional(label_font),
-            color: label_color,
-            line_height: Some(label_line_h),
-            ..Default::default()
-        },
-    );
     let galley = ui.fonts(|f| f.layout_job(job));
     p.galley(
         egui::pos2(
@@ -1312,8 +1311,9 @@ fn list_view(
     action: &mut Option<ExplorerAction>,
 ) {
     ui.spacing_mut().item_spacing.y = 0.0;
-    let entries = view.entries.clone();
-    if let Some(p) = parent_nav_target(root) {
+    let entries = view.shown_entries();
+    let query = view.find_query().to_owned();
+    if let Some(p) = parent_nav_target(root).filter(|_| view.search_root().is_none()) {
         let up = icons::FOLDER;
         let resp = tree_row(
             ui,
@@ -1341,7 +1341,7 @@ fn list_view(
                 if cut {
                     ui.set_opacity(theme.cut_pending_opacity());
                 }
-                tree_row(
+                tree_row_matching(
                     ui,
                     theme,
                     0,
@@ -1349,11 +1349,13 @@ fn list_view(
                     false,
                     Some(&|ui, rect, _c| icon.image(rect.height(), glyph_color).paint_at(ui, rect)),
                     &e.name,
+                    &query,
                     None,
                     selected,
                 )
             })
             .inner;
+        let resp = view.hit_tooltip(e, resp);
         if view.scroll_to.as_deref() == Some(e.path.as_path()) {
             resp.scroll_to_me(Some(egui::Align::Center));
         }
@@ -1382,20 +1384,23 @@ fn detail_view(
             size: (t("explorer.column.size"), SortColumn::Size),
             modified: (t("explorer.column.modified"), SortColumn::Modified),
             kind: (t("explorer.column.type"), SortColumn::Type),
-            folder: None,
+            folder: view.search_root().map(|_| t("explorer.type.folder")),
         },
     );
     let dir = match tab.sort_dir {
         SortDir::Asc => TableSortDir::Asc,
         SortDir::Desc => TableSortDir::Desc,
     };
-    let parent = parent_nav_target(root);
+    let search_root = view.search_root().map(Path::to_path_buf);
+    // 하위 폴더 검색 결과는 목록을 대신하므로 `..` 를 두지 않는다.
+    let parent = parent_nav_target(root).filter(|_| search_root.is_none());
+    let query = view.find_query().to_owned();
     let mut rows: Vec<DirEntryInfo> = Vec::with_capacity(view.entries.len() + 1);
     if let Some(p) = &parent {
         rows.push(dotdot_entry(p.clone()));
     }
     rows.extend(view.create.as_ref().map(|_| create::placeholder_row(root)));
-    rows.extend(view.entries.iter().cloned());
+    rows.extend(view.shown_entries());
     let editor_cell = std::cell::Cell::new(None);
     let selected: HashSet<PathBuf> = view.selected.clone();
     let cut: HashSet<PathBuf> = cut_pending.clone();
@@ -1425,6 +1430,12 @@ fn detail_view(
                         c
                     }
                 };
+                // 하위 폴더 검색은 Name 뒤에 Folder 를 두고 Type 을 뺀다. 열 번호를 평소 배치로 옮긴다.
+                let col = match (&search_root, col) {
+                    (Some(_), 1) => 4,
+                    (Some(_), c) if c > 1 => c - 1,
+                    (_, c) => c,
+                };
                 match col {
                     0 if row.name.is_empty() => editor_cell.set(Some(ui.max_rect())),
                     0 => {
@@ -1446,11 +1457,14 @@ fn detail_view(
                             } else {
                                 th.table_row_fg()
                             };
-                            ui.label(
-                                egui::RichText::new(&row.name)
-                                    .size(th.font_size_body.value())
-                                    .color(dim(name_fg.to_egui())),
-                            );
+                            ui.label(find::name_job(
+                                th,
+                                &row.name,
+                                &query,
+                                egui::FontId::proportional(th.font_size_body.value()),
+                                dim(name_fg.to_egui()),
+                                None,
+                            ));
                         });
                     }
                     // 오른쪽 정렬 셀의 앞 여백으로 날짜 열과 간격을 둔다.
@@ -1475,6 +1489,16 @@ fn detail_view(
                         };
                         ui.label(
                             egui::RichText::new(text)
+                                .font(egui::FontId::monospace(th.font_size_caption.value()))
+                                .color(dim(th.text_muted().to_egui())),
+                        );
+                    }
+                    4 => {
+                        let folder = search_root
+                            .as_deref()
+                            .map(|r| find::hit_folder(r, &row.path));
+                        ui.label(
+                            egui::RichText::new(folder.unwrap_or_default())
                                 .font(egui::FontId::monospace(th.font_size_caption.value()))
                                 .color(dim(th.text_muted().to_egui())),
                         );

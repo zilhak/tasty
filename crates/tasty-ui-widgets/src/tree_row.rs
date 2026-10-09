@@ -31,6 +31,34 @@ pub fn tree_row(
     meta: Option<&str>,
     selected: bool,
 ) -> egui::Response {
+    tree_row_matching(
+        ui,
+        theme,
+        depth,
+        has_children,
+        open,
+        icon,
+        label,
+        "",
+        meta,
+        selected,
+    )
+}
+
+/// `tree_row` 와 같고, 이름에서 `query` 와 맞는 부분(대소문자 무시)을 explorer-match-fg 로 칠한다.
+#[allow(clippy::too_many_arguments)] // 이유: tree_row 의 인자에 검색어 하나를 더했다 — 같은 순서를 지켜 호출부를 맞바꿀 수 있게 한다
+pub fn tree_row_matching(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    depth: u16,
+    has_children: bool,
+    open: bool,
+    icon: Option<IconPainter<'_>>,
+    label: &str,
+    query: &str,
+    meta: Option<&str>,
+    selected: bool,
+) -> egui::Response {
     let height = theme.tree_row_height().value();
     let pad_l = theme.tree_row_gap().value();
     let pad_r = theme.spacing_sm.value();
@@ -113,11 +141,13 @@ pub fn tree_row(
         right -= g.rect.width() + GAP;
     }
 
-    let g = ui.painter().layout_no_wrap(
-        label.to_owned(),
+    let g = ui.painter().layout_job(crate::explorer_match_job(
+        theme,
+        label,
+        query,
         egui::FontId::proportional(body),
         egui::Color32::PLACEHOLDER,
-    );
+    ));
     let label_rect = egui::Rect::from_min_max(
         egui::pos2(x, rect.top()),
         egui::pos2(right.max(x), rect.bottom()),

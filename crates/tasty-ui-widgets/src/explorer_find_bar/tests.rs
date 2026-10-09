@@ -43,3 +43,45 @@ fn the_bar_is_the_search_bar_height() {
     }));
     assert_eq!(height, theme.explorer_search_bar_height().value());
 }
+
+#[test]
+fn a_tree_row_paints_the_matching_part_of_its_label() {
+    let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
+    let match_fg = theme.explorer_match_fg().to_egui();
+    let ctx = egui::Context::default();
+    let painted = |query: &'static str| {
+        let out = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                crate::tree_row_matching(
+                    ui,
+                    &theme,
+                    0,
+                    false,
+                    false,
+                    None,
+                    "report.pdf",
+                    query,
+                    None,
+                    false,
+                );
+            });
+        });
+        out.shapes
+            .iter()
+            .filter_map(|c| match &c.shape {
+                egui::Shape::Text(text) if text.galley.text() == "report.pdf" => Some(
+                    text.galley
+                        .job
+                        .sections
+                        .iter()
+                        .map(|s| (s.byte_range.clone(), s.format.color == match_fg))
+                        .collect::<Vec<_>>(),
+                ),
+                _ => None,
+            })
+            .next()
+            .expect("label painted")
+    };
+    assert_eq!(painted("PO"), [(0..2, false), (2..4, true), (4..10, false)]);
+    assert_eq!(painted(""), [(0..10, false)]);
+}

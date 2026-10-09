@@ -216,7 +216,10 @@ impl MainView {
             ),
             "find" => {
                 // 터미널 검색만 처리한다. 다른 종류의 자체 검색을 빈 터미널 검색창으로 가리지 않는다.
-                if matches!(
+                // 탐색기는 자기 Find 바를 연다.
+                if let Some(sid) = super::focused_explorer_surface_id(state, engine) {
+                    state.open_explorer_find(sid);
+                } else if matches!(
                     state.focused_surface_type(engine),
                     crate::state::FocusedSurfaceType::Terminal
                 ) {

@@ -1,4 +1,5 @@
 //! explorer 의 새 폴더·새 파일 명령. 컨텍스트 메뉴 행, 좁은 칸의 More 메뉴, 단축키가 같은 시작점을 쓴다.
+//! More 메뉴는 툴바 view 묶음의 Find 도 함께 보인다.
 //! 명령은 이름 입력을 열기만 한다. 실제 생성은 이름을 확정한 뒤 `ExplorerAction::Create` 로 한다.
 
 use super::MainView;
@@ -7,6 +8,7 @@ use crate::runtime::engine_read::EngineRead;
 
 const NEW_FOLDER: u32 = 80;
 const NEW_FILE: u32 = 81;
+const FIND: u32 = 82;
 
 impl MainView {
     /// 생성 행 두 개. 빈 영역 메뉴는 맨 앞 묶음이라 뒤에, 폴더 메뉴는 파일 조작 묶음이라 앞에 구분선을 둔다.
@@ -73,19 +75,39 @@ impl MainView {
                 });
             }
         }
-        if items.is_empty() {
-            return;
+        if !items.is_empty() {
+            items.push(MenuItem::separator());
         }
-        self.open_native_menu(engine, x, y, &items, move |this, engine, result| {
-            if let Some(id @ (NEW_FOLDER | NEW_FILE)) = result {
-                this.state
-                    .start_explorer_create(engine, surface_id, None, id == NEW_FOLDER);
-            }
-        });
+        items.push(MenuItem::new(FIND, crate::i18n::t("explorer.command.find")));
+        self.open_native_menu(
+            engine,
+            x,
+            y,
+            &items,
+            move |this, engine, result| match result {
+                Some(id @ (NEW_FOLDER | NEW_FILE)) => {
+                    this.state
+                        .start_explorer_create(engine, surface_id, None, id == NEW_FOLDER);
+                }
+                Some(FIND) => {
+                    if let Some(view) = this.state.explorer_views.get_mut(surface_id) {
+                        view.toggle_find();
+                    }
+                }
+                _ => {}
+            },
+        );
     }
 }
 
 impl crate::state::MainViewState {
+    /// 탐색기의 Find 바를 열고 입력에 포커스를 준다.
+    pub(crate) fn open_explorer_find(&mut self, surface_id: u32) {
+        if let Some(view) = self.explorer_views.get_mut(surface_id) {
+            view.open_find();
+        }
+    }
+
     /// 이름 입력을 연다. `dir` 이 없으면 지금 보는 폴더다.
     /// 원격 explorer 와 쓸 수 없다고 확인한 폴더는 입력을 열지 않고 이유를 알린다.
     pub(crate) fn start_explorer_create(

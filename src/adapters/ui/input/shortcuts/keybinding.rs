@@ -257,6 +257,11 @@ impl MainView {
         if matches_any_binding(&kb.find, key, mods) {
             // 터미널에서만 검색 팝업을 연다. 검색창이 이미 포커스를 받았으면 egui가 처리한다.
             // webview의 자체 find는 호스트로 전달하지 않으며 다른 비터미널도 여기서는 소비하지 않는다.
+            // 탐색기는 자기 Find 바를 연다.
+            if let Some(sid) = focused_explorer_surface_id(state, engine) {
+                state.open_explorer_find(sid);
+                return true;
+            }
             if !matches!(
                 state.focused_surface_type(engine),
                 crate::state::FocusedSurfaceType::Terminal

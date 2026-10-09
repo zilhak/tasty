@@ -59,7 +59,7 @@ View 는 모델을 직접 바꾸지 않고 파일시스템도 직접 읽지 않�
 ## 저장·복원
 
 - **저장하는 값**: 내부 탭마다 cwd·current(`root`)·뷰 모드·정렬 열·정렬 방향, 그리고 활성 내부 탭 번호(`register_explorer` 의 `snapshot`). 레이아웃 journal 에 들어간다.
-- **저장하지 않는 값**: back/forward 히스토리, 목록 캐시, 선택, 트리 펼침, 주소창 편집, 타입어헤드, 파일 클립보드. 복원하면 히스토리는 비어 있고 목록은 다시 읽는다.
+- **저장하지 않는 값**: back/forward 히스토리, 목록 캐시, 선택, 트리 펼침, 주소창 편집, 타입어헤드, Find 바, 파일 클립보드. 복원하면 히스토리는 비어 있고 목록은 다시 읽는다.
 - **복원**: `restore` 가 저장한 탭으로 `ExplorerPanel` 을 만든다. 탭이 없으면 홈 하나로, 활성 번호가 범위를 넘으면 마지막 탭으로 맞춘다. 경로가 없거나 상대 경로면 홈으로 교정한다. 복원은 create 를 거치지 않으므로 설정의 뷰 모드가 아니라 저장한 탭별 값을 쓴다. 저장한 폴더가 사라졌으면 복원은 성공하고 목록 자리에 읽기 오류 화면이 나온다.
 - **즐겨찾기**는 레이아웃이 아니라 별도 파일에 저장한다(아래 "즐겨찾기").
 - mirror workspace 는 로컬에 저장하지 않는다([원격 attach](../../features/remote-attach/index.md)).
@@ -115,7 +115,7 @@ mirror explorer 에서 파일을 더블클릭하면 원격 호스트에 그 파�
   - 글리프 배치 크기는 `icon-glyph-size-md`이고 그림만 그 칸 가운데에서 1.6배로 그린다(시안 `transform: scale(1.6)`은 배치에 영향이 없다). 줄 간격은 `space-sm`이다.
 - **주소창 편집 상태**: `addr_buffer`(편집 텍스트) / `addr_editing`(포커스=편집모드) / `addr_active`(후보 드롭다운 keyboard-active 행)를 뷰가 소유한다(PathField 계약 — 상태는 호출측 소유). `sync()` 는 **비편집 시** 버퍼를 활성 탭 current(`root`) 로 재동기화하고, 편집 중이면 사용자 입력을 보존한다. 내부 탭은 surface 단위 `ExplorerView` 를 공유하므로, cwd/내부 탭을 바꾸는 액션(`Navigate/GoBack/GoForward/GoUp/NewTab/CloseTab/SelectTab`) 적용 시 `cancel_addr_edit()` 로 편집을 취소해 버퍼가 다른 탭/경로로 새지 않게 하고(다음 `sync()` 가 새 current 로 맞춘다), id_salt 는 surface+내부탭 index 로 고유화한다.
 - **타입어헤드 상태**: `type_ahead`(입력 버퍼와 마지막 입력 시각)와 `scroll_to: Option<PathBuf>`(이번 프레임에 화면에 보이게 할 항목). `scroll_to`는 한 프레임만 유지한다. 남겨두면 매 프레임 다시 스크롤해서 사용자가 휠로 다른 곳을 보는 동안 화면이 끌려간다. 순환 시작 위치, 접두사 확장, 입력 되돌리기 같은 규칙은 egui와 파일시스템에 의존하지 않는 `explorer/type_ahead.rs`에 있고, 그리는 쪽은 그 결과를 선택과 스크롤로 옮기는 일만 한다.
-- **선택**: `selected: HashSet<PathBuf>` + `anchor`(범위 선택 기준). 클릭은 그 항목만 고르고, Ctrl·Cmd+클릭은 그 항목을 넣거나 빼며, 둘 다 앵커를 그 항목으로 옮긴다. Shift+클릭은 앵커부터 클릭한 항목까지 목록 순서의 범위를 고르고, Ctrl·Cmd+Shift+클릭은 기존 선택에 그 범위를 더한다. Shift 클릭은 앵커를 옮기지 않는다. 앵커가 없거나 다시 읽은 목록에 없으면 Shift 를 뺀 클릭과 같다. grid·list·detail 이 같은 `ExplorerView::click_select` 를 쓴다. `select_all()` 은 현재 디렉토리 전체를 선택, `selected_paths_text()` 는 선택 경로를 정렬·개행 결합한 클립보드 페이로드를 만든다.
+- **선택**: `selected: HashSet<PathBuf>` + `anchor`(범위 선택 기준). 클릭은 그 항목만 고르고, Ctrl·Cmd+클릭은 그 항목을 넣거나 빼며, 둘 다 앵커를 그 항목으로 옮긴다. Shift+클릭은 앵커부터 클릭한 항목까지 목록 순서의 범위를 고르고, Ctrl·Cmd+Shift+클릭은 기존 선택에 그 범위를 더한다. Shift 클릭은 앵커를 옮기지 않는다. 앵커가 없거나 다시 읽은 목록에 없으면 Shift 를 뺀 클릭과 같다. grid·list·detail 이 같은 `ExplorerView::click_select` 를 쓴다. `select_all()` 은 보이는 항목 전체(Find 로 거르는 중이면 걸러진 항목)를 선택, `selected_paths_text()` 는 선택 경로를 정렬·개행 결합한 클립보드 페이로드를 만든다.
 - **사이드바 트리**: `expanded` 펼침 집합 + `tree_children` lazy 하위 디렉토리 캐시. 폭 196(design `ExpSidebar`). 사이드바는 **2-region 고정 분할**이다 — 상단 **Files**(트리, cwd 루트 고정)는 사이드바 본문 남는 공간 전부를 차지하며 자체 스크롤되고, 하단 **Favorites**는 계산된 고정 높이 영역에서 독립적으로 스크롤된다(Files 를 아무리 스크롤해도 Favorites 위치는 움직이지 않고, 반대도 마찬가지). 두 영역 사이 1px 구분선은 **하단 고정 영역의 상단 경계**에 고정 좌표로 그려진다 — 트리 길이와 무관하며, 트리가 짧아도 그 위 빈 공간은 배경만 남고 구분선이 따라 올라오지 않는다. 트리에서 **현재 폴더(current)** 노드는 surface-active 배경 + text-primary 로 하이라이트되고, 폴더 아이콘은 text-muted. 섹션 캡션은 monospace·micro·uppercase(design `SideHead`).
 - **Favorites 고정 높이 계산**(design `favPinHeight`): 사이드바 본문 높이가 600px 이상이면 240px 고정. 600px 미만이면 `round(본문높이 × 0.4 / 4) × 4`(4px 그리드 스냅)와 120px(하한) 중 큰 값. 임계값 전환은 보간 없는 하드 전환이다. 본문 높이가 `explorer_favorites_hide_below`(240px) 미만이면 Favorites 영역과 그 위 구분선을 그리지 않고 Files 가 본문 전체를 쓴다(design Short cell). 본문이 다시 240px 이상이 되면 위 사다리대로 돌아온다. 사이드바 자체는 숨기지 않는다. 본체 구현은 `src/adapters/ui/surface/explorer/favorites_pin.rs`.
 - **낮은 칸**: 툴바 아래 행은 칸에 남은 높이의 고정 사각형이고, 사이드바 열과 내용 열은 각자 자기 사각형 안에서만 그린다. 본문이 240px 미만이면 Favorites 를 빼므로 사이드바는 Files 캡션과 트리만 그리고, 트리는 자기 스크롤 영역 안에서 넘친다. 내용 열과 상태줄은 칸 안에 남는다. 내용 목록의 ScrollArea 는 최소 높이를 0 으로 두어 본문이 낮아도 상태줄을 밀어내지 않는다.
@@ -194,6 +194,17 @@ Grid 셀은 모두 `explorer_grid_thumb_size`(40) 슬롯을 잡아 썸네일 유
 - 성공하면 요청한 explorer 가 아직 그 폴더를 보고 있을 때만 새 항목을 선택하고, 다시 읽은 목록에 나타난 프레임에 그 자리로 스크롤한다. 같은 폴더를 보는 다른 explorer 는 다시 읽기만 한다.
 - 입력이 열려 있는 동안 타입어헤드를 끈다.
 
+### 찾기 · 하위 폴더 검색
+
+툴바 view 묶음의 Find 토글(좁은 칸은 More 메뉴의 Find, id 72)과 explorer 포커스의 `find` 단축키가 툴바 아래에 Find 바(`find.rs`, 공용 `explorer_find_bar`, 높이 `explorer-search-bar-height` 36, 칸 전체 폭)를 연다. 토글은 열려 있으면 닫고, `find` 단축키는 이미 열린 바에 포커스만 준다. 바 상태(`FindState`: 연 폴더·검색어·Subfolders·하위 폴더 검색)는 `ExplorerView::find` 에 두고 저장하지 않는다.
+
+- **거르기**: 입력하는 즉시 지금 보는 폴더의 항목을 이름의 부분 문자열(대소문자 무시, `match_range`)로 거른다. 맞는 부분은 Detail·List·Grid 모두 `explorer-match-fg` 로 칠한다(List 는 공용 `tree_row_matching`). 바 오른쪽에 `explorer.find.count`("{shown} of {total}"), 상태줄에 `explorer.find.status` 를 보인다. 맞는 항목이 없으면 목록 자리에 search 글리프와 `explorer.find.none` 상태 화면을 보인다. mirror explorer 도 거르기를 쓴다.
+- **보이는 항목만 다룬다**: 검색어나 Subfolders 가 바뀌면 보이지 않게 된 항목을 선택에서 뺀다. 전체 선택·Shift 범위 선택·타입어헤드는 보이는 항목만 대상으로 한다. 숨은 항목에 명령이 닿지 않게 하기 위해서다.
+- **Subfolders**(로컬만, mirror 는 체크박스를 숨긴다): 켜면 같은 바가 지금 폴더부터의 하위 폴더 검색이 된다. 로컬 읽기 worker(`local_reads::search`)가 너비 우선으로 폴더를 읽어 맞는 항목을 100ms 마다 묶어 보내고 화면을 깨운다. 링크로 된 폴더는 따라 들어가지 않는다. 결과는 목록을 대신하고 `..` 행을 두지 않으며 지금 정렬로 정렬한다. Detail 은 Type 대신 Name 뒤에 Folder 열(`explorer-search-folder-col-width` 160, mono caption, 시작 폴더 기준 상대 경로, 시작 폴더 자신은 ".")을 둔다. List·Grid 는 행 모양을 바꾸지 않고 든 폴더를 툴팁으로 보인다. 결과 하나를 고르면 상태줄에 시작 폴더 기준 경로를 보인다. 열기·복사·잘라내기·이름 변경·휴지통은 결과의 실제 경로를 쓴다.
+- **검색 상태**: 진행 중은 Spinner·`explorer.find.searching`·Stop, 끝나면 `explorer.find.found`, Stop 으로 멈추면 `explorer.find.stopped`(그때까지의 결과 유지). 읽지 못한 하위 폴더는 건너뛰고 `explorer.find.skipped` 를 accent-warning 으로 덧붙이며 툴팁에 그 폴더들을 적는다. 결과가 없으면 `explorer.find.none` 과 보조 줄 `explorer.find.none_sub`, 시작 폴더를 읽지 못하면 error 톤 `explorer.find.failed` 와 OS 이유, Retry(새로고침 — 새로고침은 하위 폴더 검색을 처음부터 다시 한다) 상태 화면이다.
+- **닫기**: 입력의 첫 `Esc` 는 글자를 지우고 둘째 `Esc` 는 바를 닫는다. ×·토글로도 닫는다. 연 폴더를 떠나면(뒤로·앞으로·위로·주소창·폴더 열기) 닫는다. Subfolders 를 끄면 지금 폴더 거르기로 돌아간다. 바를 닫거나 검색어를 바꾸면 이전 검색의 영수증을 버려 worker 가 다음 폴더를 읽기 전에 멈춘다.
+- 입력에 포커스가 있는 동안 타입어헤드와 explorer 목록 단축키를 끈다(`text_input_active`).
+
 ### 컨텍스트 메뉴 · 파일 조작
 
 진입점별 대상 결정, 작업별 결과·피드백, 지원하지 않는 작업은 [파일 작업 계약](file-operations.md)에 있다.
@@ -263,10 +274,11 @@ Grid 셀은 모두 `explorer_grid_thumb_size`(40) 슬롯을 잡아 썸네일 유
 | 경로 복사 | `copy_path` | `Alt+Shift+C` |
 | 새 폴더 | `explorer_new_folder` | (기본 미할당) |
 | 새 파일 | `explorer_new_file` | (기본 미할당) |
+| 찾기 | `find` | `Ctrl+F` / `Alt+F` |
 | explorer 로 변환 | `convert_to_explorer` | (기본 미할당) |
 
-직접 키 매칭은 `explorer_refresh`·`explorer_go_up`·`explorer_new_folder`·`explorer_new_file`·`explorer_toggle_preview`·`explorer_properties`·`convert_to_explorer`(포커스 surface 무관) 가 `keybinding.rs`, `select_all`·`copy_path` 가 `copy_paste.rs` 다. action-id/Command Palette `dispatch.rs` 는 아홉 모두를, 더블탭 `double_tap.rs` 는 `convert_to_explorer` 만 받는다. 설정 UI 서브탭은 `explorer_refresh`·`explorer_go_up`·`explorer_new_folder`·`explorer_new_file`·`explorer_toggle_preview`·`explorer_properties` = **Explorer**, `select_all`·`copy_path` = **Clipboard**, `convert_to_explorer` = **Surface**.
-주소창이나 새 항목 이름 입력이 키를 받는 동안(`ExplorerView::text_input_active`)에는 explorer 목록 단축키(`keybinding.rs` 의 explorer 묶음, `copy_paste.rs` 의 전체 선택·경로 복사·복사·잘라내기·붙여넣기)가 키를 소비하지 않고 글자 편집에 양보한다.
+직접 키 매칭은 `explorer_refresh`·`explorer_go_up`·`explorer_new_folder`·`explorer_new_file`·`explorer_toggle_preview`·`explorer_properties`·`find`·`convert_to_explorer`(포커스 surface 무관) 가 `keybinding.rs`, `select_all`·`copy_path` 가 `copy_paste.rs` 다. action-id/Command Palette `dispatch.rs` 는 열 모두를, 더블탭 `double_tap.rs` 는 `convert_to_explorer` 만 받는다. `find` 는 터미널 검색과 같은 바인딩이며, 포커스가 explorer 면 터미널 검색 대신 Find 바를 연다([터미널 검색](../../features/terminal-search/index.md)). 설정 UI 서브탭은 `explorer_refresh`·`explorer_go_up`·`explorer_new_folder`·`explorer_new_file`·`explorer_toggle_preview`·`explorer_properties` = **Explorer**, `select_all`·`copy_path` = **Clipboard**, `convert_to_explorer` = **Surface**.
+주소창·새 항목 이름 입력·Find 입력이 키를 받는 동안(`ExplorerView::text_input_active`)에는 explorer 목록 단축키(`keybinding.rs` 의 explorer 묶음, `copy_paste.rs` 의 전체 선택·경로 복사·복사·잘라내기·붙여넣기)가 키를 소비하지 않고 글자 편집에 양보한다.
 
 **새 탭으로 탐색기 열기(`open_explorer`, 기본 미할당)는 포커스와 무관하다** — 위 표와 달리 explorer 포커스를 요구하지 않는다. `Intent::NewTab { kind: "explorer" }` 를 발생시키므로 CLI 의 `new tab --type explorer` 와 같은 도메인 인텐트(`CreateTab`)를 쓰되 선택은 다르다 — 단축키는 새 탭을 선택하고, 에이전트(CLI/IPC)는 선택하지 않는다([ADR-0059](../../adr/0059-id-targets-and-view-owned-selection.md)). 이 액션은 경로를 안 실으므로 홈에서 열린다(명시 경로는 CLI 의 `--path` 가 받는다). 설정 UI 는 **Tab** 서브탭이다 — `open_markdown` 옆, 둘 다 새 탭 열기라서. 이 액션은 `keybinding.rs`·`double_tap.rs`·`dispatch.rs` 세 진입점 전부에서 처리한다.
 
@@ -304,6 +316,10 @@ Appearance → **Explorer** 서브탭에서 surface 폰트를 오버라이드한
 - Given 로컬 explorer 의 폴더에 "New folder" 가 있다 When 툴바의 New folder 를 누른다 Then 목록 맨 위에 "New folder 2" 가 전체 선택된 입력이 열리고, Enter 를 누르면 그 폴더가 생겨 정렬 자리에서 선택된다(`explorer_files/tests.rs` 의 `a_created_entry_is_selected_only_while_its_folder_is_still_shown`, `create/tests.rs`).
 - Given 이름 입력이 열려 있다 When 이미 있는 이름으로 Enter 를 누른다 Then 입력은 열린 채 "already exists" 오류가 보이고 디스크는 바뀌지 않는다. Esc 를 누르면 아무것도 만들지 않고 닫힌다.
 - Given 쓸 수 없는 폴더 When 툴바를 본다 Then New folder·New file 이 비활성이다. Given mirror explorer When 툴바·메뉴를 본다 Then 두 명령이 없다.
+- Given 로컬 explorer 에 Report.pdf·report-draft.txt·notes.md 가 있다 When Find 를 열고 "re" 를 입력한다 Then 두 항목만 남고 맞는 부분이 강조되며 바에 "2 of 3" 이 보인다. 첫 `Esc` 는 글자를 지우고 둘째 `Esc` 는 바를 닫는다(`find/tests.rs`).
+- Given 거르기 전 notes.md 를 골랐다 When 그 항목이 걸러진다 Then 선택에서 빠져 이후 명령이 닿지 않는다(`find/tests.rs` 의 `the_filter_hides_rows_that_do_not_match_and_counts_what_is_shown`).
+- Given 하위 폴더에 맞는 파일과 읽을 수 없는 폴더가 있다 When Subfolders 를 켠다 Then 결과가 들어오는 대로 채워지고 Detail 에 Folder 열이 생기며, 끝나면 "{n} found · 1 folders skipped" 가 보인다. 링크로 된 폴더는 들어가지 않는다(`local_reads/search/tests.rs`).
+- Given Find 바가 열려 있다 When 하위 폴더로 이동한다 Then 바가 닫힌다(`find/tests.rs` 의 `leaving_the_folder_closes_the_bar`).
 - Given 내부 탭 둘을 열고 정렬을 바꾼 explorer When 재시작한다 Then 탭·cwd·current·뷰 모드·정렬이 복원되고 히스토리와 선택은 비어 있다.
 
 ## 관련

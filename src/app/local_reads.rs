@@ -16,6 +16,8 @@ pub(crate) use file_info::{
     FolderCount, ItemFacts, ItemKind, MAX_DECODE_ALLOC, MAX_IMAGE_SIDE, PREVIEW_MAX_BYTES,
     PreviewData, PropertiesFacts, TooLarge, decodable_image_ext,
 };
+mod search;
+pub(crate) use search::{SearchEvent, SearchQuery, relative_folder, search};
 
 const MAX_RUNNING: usize = 4;
 const MAX_SCRIPT_BYTES: u64 = 8 * 1024 * 1024;
@@ -74,12 +76,18 @@ enum Request {
         mpsc::SyncSender<io::Result<PropertiesFacts>>,
     ),
     Writable(PathBuf, mpsc::SyncSender<io::Result<bool>>),
+    /// 하위 폴더 검색. 오래 걸리므로 결과를 나눠 보내며 그때마다 화면을 깨운다.
+    Search(search::SearchSpec, mpsc::Sender<SearchEvent>),
     #[cfg(test)]
     Blocked(mpsc::Receiver<()>, mpsc::SyncSender<io::Result<()>>),
 }
 impl Request {
-    fn run(self) {
+    fn run(self, wake: &dyn Fn()) {
         let delivered = match self {
+            Self::Search(spec, sender) => {
+                search::run(spec, sender, wake);
+                true
+            }
             #[cfg(test)]
             Self::Blocked(wait, sender) => {
                 sender.send(wait.recv().map_err(io::Error::other)).is_ok()
@@ -265,7 +273,7 @@ impl LocalReads {
         match std::thread::Builder::new()
             .name("local-read".into())
             .spawn(move || {
-                request.run();
+                request.run(&*wake);
                 wake();
             }) {
             Ok(job) => self.jobs.push(job),

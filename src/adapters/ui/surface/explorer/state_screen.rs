@@ -13,6 +13,7 @@ use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{ButtonVariant, StateGlyph as WidgetGlyph, StateScreenView, state_screen};
 
 use super::ExplorerAction;
+use super::find::FindScreen;
 use super::view::{ExplorerView, LoadState};
 use crate::adapters::ui::icons::{self, Icon};
 use crate::i18n::t;
@@ -103,6 +104,48 @@ pub(super) fn show_for(
             ExplorerAction::GoUp => view.go_up_action(root),
             other => other,
         });
+    }
+    true
+}
+
+/// Find 결과가 없거나 하위 폴더 검색이 실패했으면 목록 대신 상태 화면을 그리고 true 를 돌려준다.
+/// 실패 화면의 Retry 는 새로고침이고, 새로고침은 하위 폴더 검색을 처음부터 다시 한다.
+pub(super) fn show_find(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    view: &ExplorerView,
+    action: &mut Option<ExplorerAction>,
+) -> bool {
+    let title;
+    let screen = match view.find_screen() {
+        None => return false,
+        Some(FindScreen::NoMatches { folder, deep }) => {
+            title = crate::i18n::t_fmt("explorer.find.none", &folder);
+            StateScreen {
+                glyph: StateGlyph::Icon(icons::SEARCH),
+                tone: Tone::Neutral,
+                title: &title,
+                sub: deep.then(|| t("explorer.find.none_sub")),
+                reason: None,
+                actions: None,
+            }
+        }
+        Some(FindScreen::Failed(reason)) => {
+            title = reason;
+            StateScreen {
+                glyph: StateGlyph::Icon(icons::ALERT_TRIANGLE),
+                tone: Tone::Error,
+                title: t("explorer.find.failed"),
+                sub: None,
+                reason: Some(&title),
+                actions: Some(ReadErrorActions { go_up: false }),
+            }
+        }
+    };
+    if let Some(clicked) = show(ui, theme, &screen)
+        && action.is_none()
+    {
+        *action = Some(clicked);
     }
     true
 }

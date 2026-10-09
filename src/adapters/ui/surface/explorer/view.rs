@@ -51,7 +51,7 @@ pub struct ExplorerView {
     /// 정렬된 현재 디렉토리 엔트리.
     pub entries: Vec<DirEntryInfo>,
     /// `entries` 가 어떤 디렉토리/정렬 기준으로 로드됐는지 (변화 감지용).
-    loaded: Option<(PathBuf, SortColumn, SortDir)>,
+    pub(super) loaded: Option<(PathBuf, SortColumn, SortDir)>,
     local_query: Option<crate::app::local_reads::Query<Vec<DirEntryInfo>>>,
     tree_queries: HashMap<PathBuf, crate::app::local_reads::Query<Vec<DirEntryInfo>>>,
     /// 로드 결과 상태.
@@ -99,10 +99,15 @@ pub struct ExplorerView {
     /// 지금 보는 로컬 폴더에 쓸 수 있는가. 확인한 폴더와 함께 둔다.
     writable: Option<(PathBuf, bool)>,
     writable_query: Option<(PathBuf, crate::app::local_reads::Query<bool>)>,
+    /// 열려 있는 Find 바.
+    pub(crate) find: Option<super::find::FindState>,
 }
 
 impl ExplorerView {
-    fn poll_local_reads(&mut self, owner: &mut crate::app::local_reads::ReadRequests) -> bool {
+    pub(super) fn poll_local_reads(
+        &mut self,
+        owner: &mut crate::app::local_reads::ReadRequests,
+    ) -> bool {
         let mut changed = false;
         if let Some(result) = self
             .local_query
@@ -147,6 +152,7 @@ impl ExplorerView {
             // 목록이 아직 오지 않았으면 그 결과가 다시 그리게 한다.
             changed |= self.local_query.is_none();
         }
+        changed |= self.poll_find(owner);
         let ready: Vec<_> = self
             .tree_queries
             .iter_mut()
@@ -199,6 +205,7 @@ impl ExplorerView {
             reveal: None,
             writable: None,
             writable_query: None,
+            find: None,
         }
     }
 
@@ -258,20 +265,23 @@ impl ExplorerView {
         if self.selected.is_empty() {
             return;
         }
-        let listed: HashSet<&Path> = self.entries.iter().map(|e| e.path.as_path()).collect();
-        self.selected.retain(|p| listed.contains(p.as_path()));
-        if self
-            .anchor
-            .as_ref()
-            .is_some_and(|a| !listed.contains(a.as_path()))
-        {
+        let listed: HashSet<PathBuf> = self
+            .entries
+            .iter()
+            .chain(self.search_hits())
+            .map(|e| e.path.clone())
+            .collect();
+        self.selected.retain(|p| listed.contains(p));
+        if self.anchor.as_ref().is_some_and(|a| !listed.contains(a)) {
             self.anchor = None;
         }
     }
 
-    /// 주소창이나 이름 입력이 키보드를 쓰고 있다. 그동안 타입어헤드와 목록 단축키를 멈춘다.
+    /// 주소창·이름 입력·Find 입력이 키보드를 쓰고 있다. 그동안 타입어헤드와 목록 단축키를 멈춘다.
     pub(crate) fn text_input_active(&self) -> bool {
-        self.addr_editing || self.create.is_some()
+        self.addr_editing
+            || self.create.is_some()
+            || self.find.as_ref().is_some_and(|f| f.field_focused)
     }
 
     /// 지금 보이는 목록의 폴더.
@@ -310,11 +320,12 @@ impl ExplorerView {
         self.reload_requested = true;
     }
 
-    /// 현재 디렉토리의 모든 엔트리를 선택. 앵커는 마지막 엔트리로 둔다.
+    /// 보이는 엔트리를 모두 선택. 앵커는 마지막 엔트리로 둔다. Find 로 숨긴 항목은 고르지 않는다.
     pub fn select_all(&mut self) {
+        let shown = self.shown_entries();
         self.selection_identity = std::sync::Arc::new(());
-        self.selected = self.entries.iter().map(|e| e.path.clone()).collect();
-        self.anchor = self.entries.last().map(|e| e.path.clone());
+        self.selected = shown.iter().map(|e| e.path.clone()).collect();
+        self.anchor = shown.last().map(|e| e.path.clone());
     }
 
     /// 선택된 경로를 (정렬·개행 결합) 텍스트로. 선택이 없으면 None.
@@ -347,6 +358,7 @@ impl ExplorerView {
             self.addr_active = None;
         }
 
+        self.sync_find(&tab.root, false);
         self.mirror_ws_id = mirror_ws_id;
         if let Some(local_ws_id) = mirror_ws_id {
             self.local_query = None;
@@ -367,6 +379,7 @@ impl ExplorerView {
             return;
         }
         self.reload_requested = false;
+        self.sync_find(&tab.root, true);
         // 목록이 바뀌는 것이 확실한 지점이다. 정렬만 바뀌어도 인덱스가 가리키는 항목이
         // 달라지므로, 폴더 변경(`dir_changed`)보다 넓은 이 조건에서 버퍼를 비운다.
         self.reset_type_ahead();
@@ -611,15 +624,11 @@ impl ExplorerView {
 
     fn anchor_span(&self, path: &Path) -> Option<Vec<PathBuf>> {
         let anchor = self.anchor.as_deref()?;
-        let a = self.entries.iter().position(|e| e.path == anchor)?;
-        let b = self.entries.iter().position(|e| e.path == path)?;
+        let shown = self.shown_entries();
+        let a = shown.iter().position(|e| e.path == anchor)?;
+        let b = shown.iter().position(|e| e.path == path)?;
         let (lo, hi) = if a <= b { (a, b) } else { (b, a) };
-        Some(
-            self.entries[lo..=hi]
-                .iter()
-                .map(|e| e.path.clone())
-                .collect(),
-        )
+        Some(shown[lo..=hi].iter().map(|e| e.path.clone()).collect())
     }
 }
 
