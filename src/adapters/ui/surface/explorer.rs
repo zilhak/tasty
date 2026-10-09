@@ -28,7 +28,7 @@ use crate::i18n::{t, t_fmt};
 use crate::settings::EffectiveFont;
 use crate::theme;
 use view::{DirEntryInfo, ExplorerView, LoadState, human_size};
-use visible_rows::{GridMetrics, grid_metrics, scroll_target, scroll_to_line, visible_span};
+use visible_rows::{GridMetrics, grid_metrics, open_span, scroll_target};
 
 /// grid 셀 폭.
 const CELL_W: LogicalPx = LogicalPx(80.0);
@@ -1172,12 +1172,14 @@ fn dotdot_entry(parent: PathBuf) -> DirEntryInfo {
     }
 }
 
-/// 목록 항목 한 칸을 그릴 때 함께 넘기는 값.
+/// Grid 칸 하나를 그릴 때 함께 넘기는 값.
+#[derive(Clone, Copy)]
 struct EntryCtx<'a> {
     theme: &'a Theme,
     cut_pending: &'a HashSet<PathBuf>,
     query: &'a str,
     root: &'a Path,
+    metrics: GridMetrics,
 }
 
 /// 첫 줄(`..`·이름 입력 칸과 그 뒤 항목)은 늘 그리고, 그 아래 줄은 화면에 걸친 줄만 그린다.
@@ -1192,13 +1194,13 @@ fn grid_view(
 ) {
     ui.add_space(theme.spacing_md.value());
     let gap = theme.spacing_md.value();
-    let metrics = grid_metrics(theme, font);
     let query = view.find_query().to_owned();
     let ctx = EntryCtx {
         theme,
         cut_pending,
         query: &query,
         root,
+        metrics: grid_metrics(theme, font),
     };
     let parent = parent_nav_target(root).filter(|_| view.search_root().is_none());
     let lead = usize::from(parent.is_some()) + usize::from(view.create.is_some());
@@ -1209,34 +1211,37 @@ fn grid_view(
     let target = scroll_target(view);
     ui.spacing_mut().item_spacing = egui::vec2(gap, 0.0);
 
-    let first = view.shown_range(0..in_first);
     ui.horizontal(|ui| {
         if let Some(p) = &parent {
             let dd = dotdot_entry(p.clone());
-            let resp = grid_cell(ui, theme, &dd, (false, false), &metrics, None, "");
+            let resp = grid_cell(
+                ui,
+                &EntryCtx { query: "", ..ctx },
+                &dd,
+                (false, false),
+                None,
+            );
             if resp.double_clicked() && action.is_none() {
                 *action = Some(ExplorerAction::Navigate(p.clone()));
             }
         }
         create::name_row(ui, theme, view, create::Slot::Grid, action);
-        for (i, e) in first.iter().enumerate() {
-            grid_entry(ui, &ctx, view, &metrics, e, target == Some(i), action);
+        for (i, e) in view.shown_range(0..in_first).iter().enumerate() {
+            grid_entry(ui, &ctx, view, e, target == Some(i), action);
         }
     });
 
-    let pitch = gap + metrics.cell_h;
-    if let Some(t) = target.and_then(|t| t.checked_sub(in_first)) {
-        scroll_to_line(ui, pitch, t / cols, pitch);
-    }
-    let span = visible_span(ui, pitch, rest_lines);
-    let from = in_first + span.start * cols;
-    let shown = view.shown_range(from..in_first + span.end * cols);
-    ui.add_space(span.start as f32 * pitch);
+    let pitch = gap + ctx.metrics.cell_h;
+    let target_line = target
+        .and_then(|t| t.checked_sub(in_first))
+        .map(|t| t / cols);
+    let span = open_span(ui, pitch, rest_lines, target_line);
+    let shown = view.shown_range(in_first + span.start * cols..in_first + span.end * cols);
     for line in shown.chunks(cols) {
         ui.add_space(gap);
         ui.horizontal(|ui| {
             for e in line {
-                grid_entry(ui, &ctx, view, &metrics, e, false, action);
+                grid_entry(ui, &ctx, view, e, false, action);
             }
         });
     }
@@ -1247,28 +1252,19 @@ fn grid_entry(
     ui: &mut egui::Ui,
     ctx: &EntryCtx<'_>,
     view: &mut ExplorerView,
-    metrics: &GridMetrics,
     e: &DirEntryInfo,
     scroll_here: bool,
     action: &mut Option<ExplorerAction>,
 ) {
-    let selected = view.selected.contains(&e.path);
-    let cut = ctx.cut_pending.contains(&e.path);
+    let state = (
+        view.selected.contains(&e.path),
+        ctx.cut_pending.contains(&e.path),
+    );
     let thumb = view.thumbs.texture(ui.ctx(), e);
     // 보이는 칸만 그리므로 칸의 위젯 id 를 화면 위치가 아니라 항목 경로에 묶는다.
     // 그래야 스크롤해도 누름·hover 상태가 같은 항목에 남는다.
     let resp = ui
-        .push_id(&e.path, |ui| {
-            grid_cell(
-                ui,
-                ctx.theme,
-                e,
-                (selected, cut),
-                metrics,
-                thumb.as_ref(),
-                ctx.query,
-            )
-        })
+        .push_id(&e.path, |ui| grid_cell(ui, ctx, e, state, thumb.as_ref()))
         .inner;
     let resp = view.hit_tooltip(e, resp);
     if ui.is_rect_visible(resp.rect) {
@@ -1285,35 +1281,24 @@ fn grid_entry(
 /// 그리드 셀. 잘라내기 대기 중에는 전경만 흐리게 하며 선택·호버 배경은 유지한다.
 fn grid_cell(
     ui: &mut egui::Ui,
-    theme: &Theme,
+    ctx: &EntryCtx<'_>,
     e: &DirEntryInfo,
     (selected, cut): (bool, bool),
-    metrics: &GridMetrics,
     thumb: Option<&egui::TextureHandle>,
-    query: &str,
 ) -> egui::Response {
-    let GridMetrics {
-        slot,
-        label_font,
-        label_line_h,
-        cell_h,
-    } = *metrics;
+    let EntryCtx { theme, query, .. } = *ctx;
+    let GridMetrics { slot, cell_h, .. } = ctx.metrics;
     let (rect, resp) =
         ui.allocate_exact_size(egui::vec2(CELL_W.value(), cell_h), egui::Sense::click());
     let p = ui.painter_at(rect);
 
-    if selected {
-        p.rect_filled(
-            rect,
-            theme.corner_radius.value(),
-            theme.surface_active().to_egui(),
-        );
-    } else if resp.hovered() {
-        p.rect_filled(
-            rect,
-            theme.corner_radius.value(),
-            theme.overlay_hover().to_egui_premultiplied(),
-        );
+    if selected || resp.hovered() {
+        let bg = if selected {
+            theme.surface_active().to_egui()
+        } else {
+            theme.overlay_hover().to_egui_premultiplied()
+        };
+        p.rect_filled(rect, theme.corner_radius.value(), bg);
     }
 
     let fg_dim = |c: egui::Color32| {
@@ -1343,9 +1328,9 @@ fn grid_cell(
         theme,
         &e.name,
         query,
-        egui::FontId::proportional(label_font),
+        egui::FontId::proportional(ctx.metrics.label_font),
         label_color,
-        Some(label_line_h),
+        Some(ctx.metrics.label_line_h),
     );
     job.halign = egui::Align::Center;
     job.wrap = egui::text::TextWrapping {
@@ -1398,13 +1383,8 @@ fn list_view(
     create::name_row(ui, theme, view, create::Slot::List, action);
     let row_h = theme.tree_row_height().value();
     let count = view.shown_count();
-    if let Some(t) = scroll_target(view) {
-        scroll_to_line(ui, row_h, t, row_h);
-    }
-    let span = visible_span(ui, row_h, count);
-    let shown = view.shown_range(span.clone());
-    ui.add_space(span.start as f32 * row_h);
-    for e in &shown {
+    let span = open_span(ui, row_h, count, scroll_target(view));
+    for e in &view.shown_range(span.clone()) {
         let (icon, glyph_color) = entry_icon(theme, e);
         let selected = view.selected.contains(&e.path);
         let cut = cut_pending.contains(&e.path);
@@ -1478,8 +1458,6 @@ fn detail_view(
     rows.extend(lead.into_iter().chain(view.shown()).enumerate());
     let editor_cell = std::cell::Cell::new(None);
     let drawn_name_cell = std::cell::Cell::new(None);
-    let selected = &view.selected;
-    let cut = cut_pending;
     let out = Table::new(columns)
         .active_sort(tab.sort_column, dir)
         .header_fill(theme.table_header_bg().to_egui())
@@ -1494,7 +1472,9 @@ fn detail_view(
             theme,
             &rows,
             // `..`(name == "..", read_dir 은 이 이름을 반환하지 않음) 는 선택 대상 아님.
-            |(_, row): &(usize, &DirEntryInfo)| row.name != ".." && selected.contains(&row.path),
+            |(_, row): &(usize, &DirEntryInfo)| {
+                row.name != ".." && view.selected.contains(&row.path)
+            },
             |ui, th, &(index, row), col| {
                 if col == 0 && drawn_name_cell.get().is_none() {
                     drawn_name_cell.set(Some((index, ui.max_rect())));
@@ -1502,7 +1482,7 @@ fn detail_view(
                 // cut-pending 행은 전경(아이콘+텍스트)을 cut_pending_opacity(50%) 로 디밍.
                 // Table 이 그리는 선택/hover 배경은 그대로 유지.
                 let dim = |c: egui::Color32| {
-                    if cut.contains(&row.path) {
+                    if cut_pending.contains(&row.path) {
                         c.gamma_multiply(th.cut_pending_opacity())
                     } else {
                         c
@@ -1526,7 +1506,7 @@ fn detail_view(
                             let (icon, c) = entry_icon(th, row);
                             icon.image(sz, dim(c)).paint_at(ui, rect);
                             // 선택 행 이름만 text-primary, 나머지는 `table-row-fg`로 그린다.
-                            let name_fg = if row.name != ".." && selected.contains(&row.path) {
+                            let name_fg = if row.name != ".." && view.selected.contains(&row.path) {
                                 th.text_primary()
                             } else {
                                 th.table_row_fg()
@@ -1598,7 +1578,7 @@ fn detail_view(
     {
         *action = Some(ExplorerAction::SetSort(key));
     }
-    // 눌린 행만 복제해 두고 목록 참조를 놓는다. 아래 처리는 view 를 바꾼다.
+    // 눌린 행만 복제한다. 아래 처리는 view 를 바꾸므로 목록 참조를 더 쓰지 않는다.
     let row_at = |i: Option<usize>| {
         i.and_then(|i| rows.get(i))
             .filter(|(_, e)| !e.name.is_empty())
@@ -1606,7 +1586,6 @@ fn detail_view(
     };
     let secondary = row_at(out.secondary_clicked_row);
     let clicked = row_at(out.clicked_row);
-    drop(rows);
     // 편집 줄 자리가 화면 밖이라 그리지 않았으면 그린 행에서 자리를 계산한다. 입력은 화면 밖에서도
     // 그려야 포커스를 잃지 않는다. 행 높이는 표 기본값이다.
     let editor_cell = editor_cell.get().or_else(|| {

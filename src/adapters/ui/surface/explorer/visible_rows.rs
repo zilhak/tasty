@@ -6,9 +6,25 @@ use tasty_type_appearance::theme::Theme;
 use super::view::ExplorerView;
 use crate::settings::EffectiveFont;
 
-/// 위에서부터 `pitch` 간격으로 놓일 `count` 줄 가운데 지금 화면에 걸치는 줄 범위.
+/// 지금 커서부터 `pitch` 간격으로 놓일 `count` 줄 가운데 화면에 걸치는 줄 범위를 구하고, 그 위
+/// 줄들의 자리를 빈칸으로 띄운다. `target` 줄이 있으면 그 줄로 스크롤한다. 범위 아래 줄들의
+/// 빈자리는 호출자가 범위의 마지막 줄을 그린 뒤 띄운다.
+pub(super) fn open_span(
+    ui: &mut egui::Ui,
+    pitch: f32,
+    count: usize,
+    target: Option<usize>,
+) -> std::ops::Range<usize> {
+    if let Some(line) = target {
+        scroll_to_line(ui, pitch, line);
+    }
+    let span = visible_span(ui, pitch, count);
+    ui.add_space(span.start as f32 * pitch);
+    span
+}
+
 /// 화면 밖 줄은 그리지 않고 같은 높이의 빈자리로 둔다. 기준은 지금 커서 위치다.
-pub(super) fn visible_span(ui: &egui::Ui, pitch: f32, count: usize) -> std::ops::Range<usize> {
+fn visible_span(ui: &egui::Ui, pitch: f32, count: usize) -> std::ops::Range<usize> {
     if pitch <= 0.0 || count == 0 {
         return 0..0;
     }
@@ -20,11 +36,11 @@ pub(super) fn visible_span(ui: &egui::Ui, pitch: f32, count: usize) -> std::ops:
 }
 
 /// 화면 밖 줄로 스크롤한다. `line` 은 지금 커서에서 센 줄 번호다.
-pub(super) fn scroll_to_line(ui: &egui::Ui, pitch: f32, line: usize, height: f32) {
+fn scroll_to_line(ui: &egui::Ui, pitch: f32, line: usize) {
     let top = ui.cursor().top() + line as f32 * pitch;
     let rect = egui::Rect::from_min_size(
         egui::pos2(ui.max_rect().left(), top),
-        egui::vec2(ui.max_rect().width(), height),
+        egui::vec2(ui.max_rect().width(), pitch),
     );
     ui.scroll_to_rect(rect, Some(egui::Align::Center));
 }
