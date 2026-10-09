@@ -82,7 +82,8 @@ pub fn script_confirm_default_size() -> egui::Vec2 {
 }
 
 /// PopupDef.sizer — 폭은 기본 폭에 UI 배율을 곱한 값이다. 높이는 직전 프레임에 잰 콘텐츠 높이에
-/// 타이틀바와 콘텐츠 여백을 더한 값이다(최소값 없음). 아직 재지 않은 첫 프레임만 기본 높이를 쓴다.
+/// 타이틀바를 더한 값이다(최소값 없음). 콘텐츠 여백은 공용 위젯이 넣어 잰 높이에 들어 있으므로
+/// 공통 내부 여백은 이 popup 에 적용하지 않는다(`content_rect`). 아직 재지 않은 첫 프레임만 기본 높이를 쓴다.
 pub fn script_confirm_sizer(
     state: &MainViewState,
     _engine: &crate::runtime::engine_read::EngineRead<'_>,
@@ -95,7 +96,7 @@ pub fn script_confirm_sizer(
         .as_ref()
         .and_then(|p| p.content_height);
     let height = match measured {
-        Some(content) => popup::title_bar_height() + popup::content_margin().scaled(2.0) + content,
+        Some(content) => popup::title_bar_height() + content,
         None => crate::adapters::ui::zoomed_px(&th, DEFAULT_SIZE.1),
     };
     egui::vec2(width.value(), height.value())
@@ -248,11 +249,11 @@ mod sizer_wiring_tests {
         }
     }
 
-    /// 실제 popup 높이는 잰 콘텐츠에 타이틀바와 여백을 더한 값이다. 기본 높이보다 작아도 줄어든다.
+    /// 실제 popup 높이는 잰 콘텐츠(위젯 여백 포함)에 타이틀바를 더한 값이다. 기본 높이보다 작아도 줄어든다.
     #[test]
     fn a_frame_sizes_the_popup_from_the_measured_content() {
         let th = theme::theme();
-        let chrome = popup::title_bar_height() + popup::content_margin().scaled(2.0);
+        let chrome = popup::title_bar_height();
         for (content, expected) in [
             (LogicalPx(400.0), (chrome + LogicalPx(400.0)).value()),
             (LogicalPx(10.0), (chrome + LogicalPx(10.0)).value()),

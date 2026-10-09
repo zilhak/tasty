@@ -188,7 +188,9 @@ pub use remote_tool::{
     selectable_text, warn_badge, warn_badge_width,
 };
 pub use resize_grip::{modhint_resize_grip, resize_grip_segments};
-pub use script_confirm::{ScriptConfirmOutput, ScriptConfirmView, script_confirm};
+pub use script_confirm::{
+    SCRIPT_CONFIRM_PAD_X, ScriptConfirmOutput, ScriptConfirmView, script_confirm,
+};
 pub use script_trigger::{
     script_trigger_add_control, script_trigger_menu, script_trigger_menu_frame,
 };

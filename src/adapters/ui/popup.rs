@@ -408,6 +408,7 @@ impl PopupState {
                 | "remote_attach"
                 | "command_palette"
                 | "port_scanner"
+                | "script_changed_confirm"
                 | transfer::TRANSFER_PROGRESS_POPUP_ID
                 | transfer::TRANSFER_ERROR_POPUP_ID
                 | crate::adapters::ui::info_modal::INFO_MODAL_ID

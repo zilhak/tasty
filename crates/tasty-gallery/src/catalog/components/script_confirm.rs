@@ -12,25 +12,22 @@ use crate::catalog::widgets::dialog as kit;
 
 /// `popup/defs.rs` 의 `script_changed_confirm` 기본 폭.
 const POPUP_WIDTH: LogicalPx = LogicalPx(360.0);
-/// 시안 좌우 여백(`size-14`). Theme 역할에 연결하지 않은 화면 전용 고정 치수다(ADR-0035).
-const PAD_X: LogicalPx = LogicalPx(14.0);
 
 fn card(ui: &mut egui::Ui, theme: &Theme, name: &str) {
     kit::frame_card(ui, theme, POPUP_WIDTH, kit::panel_fill(theme), |ui| {
-        kit::region_sym(ui, PAD_X, theme.spacing_md, |ui| {
-            script_confirm(
-                ui,
-                theme,
-                &ScriptConfirmView {
-                    title: t("script.confirm.title"),
-                    name,
-                    changed_tag: t("script.confirm.changed_tag"),
-                    body: t("script.confirm.body"),
-                    run: t("script.confirm.run"),
-                    cancel: t("button.cancel"),
-                },
-            );
-        });
+        // 여백 12/14 는 공용 위젯이 넣는다.
+        script_confirm(
+            ui,
+            theme,
+            &ScriptConfirmView {
+                title: t("script.confirm.title"),
+                name,
+                changed_tag: t("script.confirm.changed_tag"),
+                body: t("script.confirm.body"),
+                run: t("script.confirm.run"),
+                cancel: t("button.cancel"),
+            },
+        );
     });
 }
 
