@@ -198,8 +198,9 @@ pub(super) fn kb_row_gap(ui: &mut egui::Ui, th: &tasty_type_appearance::theme::T
     ui.add_space((th.kb_row_gap().value() - auto).max(0.0));
 }
 
-/// 녹화 버튼. 다른 녹화가 대기 중이면(`enabled=false`) egui의 비활성 흐림 대신
-/// disabled 상자 role과 disabled ink로 그리고 클릭을 받지 않는다.
+/// 녹화 버튼. Import / Export 의 녹화 슬롯과 같은 모양이다 — mono caption 글자, 1px border-default 테두리.
+/// 다른 녹화가 대기 중이면(`enabled=false`) egui의 비활성 흐림 대신 disabled 상자 role과
+/// disabled ink로 그리고 클릭을 받지 않는다.
 pub(super) fn record_button(
     th: &tasty_type_appearance::theme::Theme,
     enabled: bool,
@@ -209,20 +210,24 @@ pub(super) fn record_button(
     width: LogicalPx,
     height: LogicalPx,
 ) -> egui::Button<'static> {
+    let text = egui::RichText::new(label)
+        .monospace()
+        .size(th.font_size_caption.value());
     let button = if enabled {
-        egui::Button::new(egui::RichText::new(label).color(fg).monospace()).fill(bg)
+        egui::Button::new(text.color(fg))
+            .fill(bg)
+            .stroke(egui::Stroke::new(
+                th.border_width.value(),
+                th.border_default(),
+            ))
     } else {
-        egui::Button::new(
-            egui::RichText::new(label)
-                .color(th.state_disabled_fg())
-                .monospace(),
-        )
-        .fill(th.state_disabled_fill())
-        .stroke(egui::Stroke::new(
-            th.border_width.value(),
-            th.state_disabled_border(),
-        ))
-        .sense(egui::Sense::hover())
+        egui::Button::new(text.color(th.state_disabled_fg()))
+            .fill(th.state_disabled_fill())
+            .stroke(egui::Stroke::new(
+                th.border_width.value(),
+                th.state_disabled_border(),
+            ))
+            .sense(egui::Sense::hover())
     };
     button.min_size(egui::vec2(width.value(), height.value()))
 }

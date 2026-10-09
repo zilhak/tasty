@@ -81,7 +81,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ),
             (
                 "slot",
-                "kb-record-width 140 × kb-record-height 24 mono · + (kb-record-add-width 32) adds a slot · None when empty",
+                "kb-record-width 140 × kb-record-height 24 · mono caption · 1px border-default · + (kb-record-add-width 32) adds a slot · None when empty",
             ),
             (
                 "rows",
@@ -98,6 +98,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::without_color("kb-row-gap", "→ space-sm 8"),
             TokenChip::new("text-secondary", "label", theme.text_secondary().to_egui()),
             TokenChip::new("surface-raised", "slot", theme.surface_raised().to_egui()),
+            TokenChip::new(
+                "border-default",
+                "slot edge",
+                theme.border_default().to_egui(),
+            ),
         ],
     );
 
@@ -154,8 +159,17 @@ fn row(
 
 fn slot(ui: &mut egui::Ui, theme: &Theme, text: &str, color: egui::Color32, width: LogicalPx) {
     ui.add(
-        egui::Button::new(egui::RichText::new(text).monospace().color(color))
-            .fill(theme.surface_raised().to_egui())
-            .min_size(egui::vec2(width.value(), theme.kb_record_height().value())),
+        egui::Button::new(
+            egui::RichText::new(text)
+                .monospace()
+                .size(theme.font_size_caption.value())
+                .color(color),
+        )
+        .fill(theme.surface_raised().to_egui())
+        .stroke(egui::Stroke::new(
+            theme.border_width.value(),
+            theme.border_default().to_egui(),
+        ))
+        .min_size(egui::vec2(width.value(), theme.kb_record_height().value())),
     );
 }

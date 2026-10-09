@@ -117,12 +117,15 @@ pub(super) fn draw_script_bindings(
             } else {
                 th.text_primary()
             };
-            let btn = egui::Button::new(egui::RichText::new(&display).color(fg).monospace())
-                .fill(bg)
-                .min_size(egui::vec2(
-                    th.kb_record_width().value(),
-                    th.kb_record_height().value(),
-                ));
+            let btn = super::entries::record_button(
+                &th,
+                true,
+                &display,
+                fg,
+                bg,
+                th.kb_record_width(),
+                th.kb_record_height(),
+            );
             if ui.add(btn).clicked() {
                 *recording_field = Some(RecordingSlot {
                     field_id: slot_id.clone(),

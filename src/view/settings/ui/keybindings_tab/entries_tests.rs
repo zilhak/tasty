@@ -6,8 +6,8 @@ use super::{
 };
 use crate::settings::Settings;
 
-/// 두 엔트리 행을 그리고 녹화 버튼(쉬는 채움 surface-raised) 사각형을 돌려준다.
-fn record_buttons() -> Vec<egui::Rect> {
+/// Clipboard 서브탭 엔트리를 그린 마지막 프레임의 도형.
+fn frame_shapes() -> Vec<egui::epaint::ClippedShape> {
     let th = crate::theme::theme();
     let ctx = egui::Context::default();
     tasty_egui_theme::install_cjk_fallback(&ctx);
@@ -45,10 +45,25 @@ fn record_buttons() -> Vec<egui::Rect> {
             },
         ));
     }
-    let fill = th.surface_raised().to_egui();
-    let mut rects: Vec<egui::Rect> = out
-        .expect("두 프레임을 돌렸다")
-        .shapes
+    out.expect("두 프레임을 돌렸다").shapes
+}
+
+/// 녹화 버튼(쉬는 채움 surface-raised) 도형.
+fn record_button_shapes() -> Vec<egui::epaint::RectShape> {
+    let fill = crate::theme::theme().surface_raised().to_egui();
+    frame_shapes()
+        .into_iter()
+        .filter_map(|s| match s.shape {
+            egui::Shape::Rect(r) if r.fill == fill => Some(r),
+            _ => None,
+        })
+        .collect()
+}
+
+/// 녹화 버튼 사각형을 위에서 아래, 왼쪽에서 오른쪽 순으로 돌려준다.
+fn record_buttons() -> Vec<egui::Rect> {
+    let fill = crate::theme::theme().surface_raised().to_egui();
+    let mut rects: Vec<egui::Rect> = frame_shapes()
         .iter()
         .filter_map(|s| match &s.shape {
             egui::Shape::Rect(r) if r.fill == fill => Some(r.rect),
@@ -136,5 +151,46 @@ fn shortcut_rows_are_kb_row_gap_apart_and_buttons_space_xs() {
                 "행 안 버튼 사이 간격: {row:?}"
             );
         }
+    }
+}
+
+#[test]
+fn record_buttons_have_a_border_default_edge_and_mono_caption_text() {
+    let th = crate::theme::theme();
+    let buttons = record_button_shapes();
+    assert!(!buttons.is_empty(), "녹화 버튼을 찾지 못했다");
+    for b in &buttons {
+        assert_eq!(
+            b.stroke,
+            egui::Stroke::new(th.border_width.value(), th.border_default().to_egui()),
+            "녹화 버튼 테두리: {:?}",
+            b.rect
+        );
+    }
+    // 버튼 안 글자의 크기와 글꼴 계열.
+    let fonts: Vec<egui::FontId> = frame_shapes()
+        .iter()
+        .filter_map(|s| match &s.shape {
+            egui::Shape::Text(t)
+                if buttons
+                    .iter()
+                    .any(|b| b.rect.contains_rect(t.visual_bounding_rect())) =>
+            {
+                t.galley
+                    .job
+                    .sections
+                    .first()
+                    .map(|sec| sec.format.font_id.clone())
+            }
+            _ => None,
+        })
+        .collect();
+    assert!(!fonts.is_empty(), "녹화 버튼 글자를 찾지 못했다");
+    for f in fonts {
+        assert_eq!(
+            f,
+            egui::FontId::monospace(th.font_size_caption.value()),
+            "녹화 버튼 글자"
+        );
     }
 }
