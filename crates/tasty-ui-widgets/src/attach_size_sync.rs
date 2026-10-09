@@ -394,7 +394,7 @@ mod tests {
     }
 
     #[test]
-    fn a_long_name_is_cut_at_the_name_width_and_the_fixed_copy_is_kept() {
+    fn a_long_name_is_cut_at_the_name_width_and_the_fixed_copy_is_the_last_section() {
         let long = "release-pipeline-watch-logs-eu-west-with-a-very-long-tab-title";
         let parts = sections(&view(&[long, "build"], false));
         let name = &parts
@@ -412,10 +412,131 @@ mod tests {
         );
     }
 
+    /// 프레임마다 주어진 입력을 넣고 그 프레임의 클릭과 마지막 프레임의 도형을 돌려준다.
+    fn run_frames(
+        v: &AttachSizeSyncBannerView<'_>,
+        frames: &[Vec<egui::Event>],
+    ) -> (Vec<AttachSizeSyncBannerClicks>, Vec<egui::Shape>) {
+        let theme = theme();
+        let ctx = egui::Context::default();
+        let mut clicks = Vec::new();
+        let mut shapes = Vec::new();
+        for (i, events) in frames.iter().enumerate() {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(460.0, 400.0),
+                )),
+                time: Some(i as f64 * 0.1),
+                events: events.clone(),
+                ..Default::default()
+            };
+            let mut frame = AttachSizeSyncBannerClicks::default();
+            let out = ctx.run(input, |ctx| {
+                egui::CentralPanel::default()
+                    .frame(egui::Frame::NONE)
+                    .show(ctx, |ui| {
+                        frame = attach_size_sync_banner(ui, &theme, v);
+                    });
+            });
+            clicks.push(frame);
+            shapes = out.shapes.into_iter().map(|c| c.shape).collect();
+        }
+        (clicks, shapes)
+    }
+
+    /// 라벨 글자를 감싸는 가장 작은 채움 사각형 — Retry 버튼의 rect.
+    fn retry_button_rect(shapes: &[egui::Shape]) -> egui::Rect {
+        let label = shapes
+            .iter()
+            .find_map(|s| match s {
+                egui::Shape::Text(t) if t.galley.text() == "Retry" => {
+                    Some(s.visual_bounding_rect())
+                }
+                _ => None,
+            })
+            .expect("Retry label");
+        shapes
+            .iter()
+            .filter_map(|s| match s {
+                egui::Shape::Rect(r) if r.rect.contains_rect(label) => Some(r.rect),
+                _ => None,
+            })
+            .min_by(|a, b| a.area().total_cmp(&b.area()))
+            .expect("Retry button rect")
+    }
+
+    fn click_at(pos: egui::Pos2) -> Vec<Vec<egui::Event>> {
+        let button = |pressed| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        vec![
+            vec![],
+            vec![egui::Event::PointerMoved(pos)],
+            vec![button(true)],
+            vec![button(false)],
+        ]
+    }
+
     #[test]
-    fn retrying_keeps_the_label_and_does_not_report_a_click() {
-        let (_, shapes) = render(460.0, &view(&["build"], true));
+    fn retrying_keeps_the_label_and_draws_the_spinner_inside_the_button() {
+        let theme = theme();
+        let (_, shapes) = run_frames(&view(&["build"], true), &[vec![]]);
         assert!(texts(&shapes).iter().any(|t| t == "Retry"));
+        let button = retry_button_rect(&shapes);
+        let label = shapes
+            .iter()
+            .find_map(|s| match s {
+                egui::Shape::Text(t) if t.galley.text() == "Retry" => {
+                    Some(s.visual_bounding_rect())
+                }
+                _ => None,
+            })
+            .expect("Retry label");
+        // Spinner 는 지름이 Spinner 크기인 바탕 고리와 그 위를 도는 indicator 색 호로 그린다.
+        let ink = theme.spinner_indicator().to_egui();
+        let size = theme.icon_glyph_size_sm.value();
+        let arcs: Vec<egui::Rect> = shapes
+            .iter()
+            .filter(|s| {
+                matches!(s, egui::Shape::Path(p) if p.stroke.color == egui::epaint::ColorMode::Solid(ink))
+            })
+            .map(|s| s.visual_bounding_rect())
+            .collect();
+        // 고리 둘레는 호와 같은 반지름이라 bounding box 가 Spinner 크기보다 조금 작다.
+        let ring = shapes
+            .iter()
+            .filter(|s| matches!(s, egui::Shape::Circle(c) if c.fill == egui::Color32::TRANSPARENT))
+            .map(|s| s.visual_bounding_rect())
+            .find(|r| {
+                r.width() <= size + 0.5
+                    && r.width() >= size * 0.75
+                    && arcs.iter().any(|a| r.expand(0.5).contains_rect(*a))
+            })
+            .unwrap_or_else(|| panic!("no spinner ring around the arcs {arcs:?}"));
+        assert!(button.contains_rect(ring), "{ring:?} outside {button:?}");
+        assert!(
+            ring.right() <= label.left(),
+            "{ring:?} is not before {label:?}"
+        );
+    }
+
+    #[test]
+    fn retrying_does_not_report_a_click_on_retry() {
+        // 상태마다 버튼 폭이 달라 그 상태에서 잰 Retry 가운데를 누른다.
+        let press = |retrying: bool| {
+            let v = view(&["build"], retrying);
+            let (_, shapes) = run_frames(&v, &[vec![]]);
+            run_frames(&v, &click_at(retry_button_rect(&shapes).center())).0
+        };
+        assert!(
+            press(false).iter().any(|c| c.retry),
+            "the click does not reach Retry, so the retrying case proves nothing"
+        );
+        assert!(press(true).iter().all(|c| !c.retry && !c.dismiss));
     }
 
     #[test]
