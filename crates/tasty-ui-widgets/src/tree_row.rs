@@ -13,6 +13,11 @@ const CHEVRON_SLOT: f32 = 14.0;
 const ICON_GLYPH: f32 = 14.0;
 const GAP: f32 = 6.0;
 
+/// 깊이 0 행의 왼쪽 끝에서 아이콘 가운데까지의 거리. 같은 목록에 끼는 다른 행이 아이콘을 맞출 때 쓴다.
+pub fn tree_row_icon_center(theme: &Theme) -> f32 {
+    theme.tree_row_gap().value() + CHEVRON_SLOT + GAP + ICON_GLYPH * 0.5
+}
+
 /// 트리 행. `selected` 면 surface-active. 클릭 응답 반환(행 전체 클릭).
 #[allow(clippy::too_many_arguments)]
 pub fn tree_row(

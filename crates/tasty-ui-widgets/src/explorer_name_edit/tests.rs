@@ -45,9 +45,15 @@ fn a_detail_editor_is_one_table_row_and_stays_in_the_name_column() {
 #[test]
 fn a_list_editor_grows_the_row_to_the_table_row_height() {
     let theme = theme();
-    let (row, _) = rects(ExplorerNameLayout::List);
+    let (row, field) = rects(ExplorerNameLayout::List);
     assert!(theme.table_cell_height().value() > theme.tree_row_height().value());
     assert_eq!(row.height(), theme.table_cell_height().value());
+    // 글리프 가운데가 아래 tree_row 아이콘 가운데와 같다. 입력 칸은 글리프 오른쪽 간격 뒤에서 시작한다.
+    let glyph_right = crate::tree_row_icon_center(&theme) + theme.icon_glyph_size_md.value() * 0.5;
+    assert_eq!(
+        field.left() - row.left(),
+        glyph_right + theme.spacing_sm.value()
+    );
 }
 
 #[test]

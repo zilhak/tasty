@@ -13,16 +13,11 @@ use crate::input::Input;
 pub enum ExplorerNameLayout {
     /// 줄 왼쪽에서 글리프까지 여백과 이름 열 폭. 호출자의 상세 표 행과 같은 값을 넘긴다.
     /// 입력 칸은 이름 열 안에만 둔다.
-    Detail {
-        inset: f32,
-        name_width: f32,
-    },
+    Detail { inset: f32, name_width: f32 },
+    /// 아래 `tree_row` 행들과 아이콘 가운데를 맞춘다.
     List,
     /// Grid 칸 크기와 글리프 자리 높이. 호출자의 Grid 칸과 같은 값을 넘긴다.
-    Grid {
-        cell: egui::Vec2,
-        slot: f32,
-    },
+    Grid { cell: egui::Vec2, slot: f32 },
 }
 
 /// 편집 상태. 호출자가 소유하고 프레임마다 넘긴다.
@@ -79,7 +74,11 @@ pub fn explorer_name_row(
                 ExplorerNameLayout::Detail { inset, name_width } => {
                     (0.0, inset, row.left() + name_width)
                 }
-                _ => (theme.corner_radius_sm.value(), pad, row.right()),
+                _ => (
+                    theme.corner_radius_sm.value(),
+                    crate::tree_row::tree_row_icon_center(theme) - glyph_size * 0.5,
+                    row.right(),
+                ),
             };
             ui.painter()
                 .rect_filled(row, radius, theme.surface_active().to_egui());
