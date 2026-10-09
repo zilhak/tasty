@@ -146,6 +146,7 @@ impl Builder<'_, '_> {
         let name = preset.explicit_name.clone().unwrap_or_else(|| {
             crate::runtime::surface_registry::default_tab_name_for_kind(
                 &first.kind,
+                first.cwd.as_deref().map(std::path::Path::new),
                 &first.params,
                 self.engine
                     .runtime

@@ -98,6 +98,7 @@ impl Request {
         } else {
             crate::runtime::surface_registry::default_tab_name_for_kind(
                 kind,
+                cwd.as_deref(),
                 params,
                 session.runtime.surface_registry.get_live(kind).as_deref(),
             )

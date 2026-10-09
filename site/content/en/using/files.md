@@ -1,4 +1,4 @@
-<!-- source-hash: 2d778d8c039f -->
+<!-- source-hash: 459d2b967a2d -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -48,7 +48,7 @@ The file manager built into Tasty. Change a terminal with `Alt+'` > **Explorer**
 - **Right** — the items in the current folder. In Grid view, local image files (1 MB or smaller) show a small thumbnail instead of an icon. `..` at the top goes to the parent folder. In Detail view, click the **Name** · **Size** · **Date modified** · **Type** column headers to sort.
 - You can keep several **New tab**s inside a Surface and view folders separately. These are separate from the Pane's Tabs.
 
-When you save a layout with an Explorer as a preset and apply it, each tab inside the Explorer opens the folder it was showing, with the same view and sort. If you set a working directory for it in the preset editor, it opens that one folder instead. If a saved folder no longer exists, that tab shows the read error message.
+When you save a layout with an Explorer as a preset and apply it, each tab inside the Explorer opens the folder it was showing, with the same view and sort, and the Pane's tab is titled after the active tab's folder. If you set a working directory for it in the preset editor, it opens that one folder instead of the saved tabs. If a saved folder no longer exists, that tab shows the read error message.
 
 Dragging a split line to shrink an Explorer stops at the height that still leaves the toolbar, the status line and about two rows of the list (180px). Splitting an Explorer, or splitting to make a new one, moves the split line so the Explorer keeps 180px. A cell of another kind takes the height that is left, but a split never makes it thinner than a tab strip and one row (56px). When there is no room for two Explorers to keep 180px, or for the other cell to keep 56px, nothing is split: the split menu and shortcut briefly show "Not enough room to split this pane", and `tasty split` reports the reason as an error. When the cell is so low that the left sidebar is shorter than 240px, Favorites hide and only the Files tree shows. Resizing the window can take the cell below that height. When the content area is lower than 120px, the empty folder, permission denied and read error messages turn into a single line of icon, title and buttons, and hovering the title shows the details.
 

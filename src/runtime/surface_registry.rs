@@ -17,6 +17,9 @@ pub use builtins::register_builtin_kinds;
 /// 직렬화할 데이터. None은 해당 surface를 영속화에서 제외한다.
 pub type SurfaceSnapshotFn = Arc<dyn Fn(&dyn Surface) -> Option<serde_json::Value> + Send + Sync>;
 
+/// create 에 넘길 cwd 와 params 로 탭 이름을 고른다. None 이면 종류 표시명을 쓴다.
+pub type SurfaceTabNameFn = fn(Option<&Path>, &serde_json::Value) -> Option<String>;
+
 /// plugin 필드는 params에, 내장 terminal의 cwd·startup은 PresetSurface 전용 필드에 저장한다.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PresetFieldTarget {
@@ -224,6 +227,10 @@ pub struct SurfaceKindDef {
 
     /// 이 params 키의 파일 이름을 탭 이름으로 사용한다. 없으면 종류 표시명을 쓴다.
     pub name_from_param: Option<String>,
+
+    /// `name_from_param` 키가 params 에 없을 때 create 에 넘길 cwd 와 params 로 탭 이름을 고른다.
+    /// capture 한 preset 처럼 snapshot 을 params 로 받는 종류가 쓴다. `None` 이면 종류 표시명을 쓴다.
+    pub tab_name_from_params: Option<SurfaceTabNameFn>,
 
     /// 파일 열기 진입점에서 최근 파일 목록에 기록할지 여부.
     pub records_recent: bool,
@@ -448,9 +455,11 @@ impl tasty_plugin_protocol::host_port::SurfaceRegistry for SurfaceKindRegistry {
     }
 }
 
-/// name_from_param의 마지막 경로 성분을 우선한다. 없으면 번역된 종류 이름 또는 kind 문자열을 쓴다.
+/// name_from_param의 마지막 경로 성분을 우선한다. 그 키가 없으면 종류의 tab_name_from_params 를,
+/// 그것도 없으면 번역된 종류 이름 또는 kind 문자열을 쓴다.
 pub(crate) fn default_tab_name_for_kind(
     kind: &str,
+    cwd: Option<&Path>,
     params: &serde_json::Value,
     def: Option<&SurfaceKindDef>,
 ) -> String {
@@ -469,6 +478,12 @@ pub(crate) fn default_tab_name_for_kind(
     {
         let fb = fallback();
         return basename_or(p, &fb);
+    }
+    if let Some(name) = def
+        .and_then(|d| d.tab_name_from_params)
+        .and_then(|name_of| name_of(cwd, params))
+    {
+        return name;
     }
     fallback()
 }
@@ -515,6 +530,7 @@ mod tests {
             copy_path: false,
             egui_paste: false,
             name_from_param: None,
+            tab_name_from_params: None,
             records_recent: false,
             convert_requires_input: false,
             convert_input_popup: None,
@@ -660,26 +676,28 @@ mod tests {
         assert_eq!(
             super::default_tab_name_for_kind(
                 "markdown",
+                None,
                 &serde_json::json!({"file": "/a/b/README.md"}),
                 Some(&d),
             ),
             "README.md"
         );
         assert_eq!(
-            super::default_tab_name_for_kind("markdown", &serde_json::json!({}), Some(&d),),
+            super::default_tab_name_for_kind("markdown", None, &serde_json::json!({}), Some(&d),),
             "test.dummy"
         );
         let plain = dummy_def("empty");
         assert_eq!(
             super::default_tab_name_for_kind(
                 "empty",
+                None,
                 &serde_json::json!({"file": "/x/y.md"}),
                 Some(&plain),
             ),
             "test.dummy"
         );
         assert_eq!(
-            super::default_tab_name_for_kind("plugin_x", &serde_json::json!({}), None),
+            super::default_tab_name_for_kind("plugin_x", None, &serde_json::json!({}), None),
             "plugin_x"
         );
     }

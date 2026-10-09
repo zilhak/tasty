@@ -160,6 +160,7 @@ fn build_and_register_egui_mesh_kind_def(
         copy_path: decl.copy_path,
         egui_paste: decl.egui_paste,
         name_from_param: decl.name_from_param.clone(),
+        tab_name_from_params: None,
         records_recent: decl.records_recent,
         convert_requires_input: decl.convert_requires_input,
         convert_input_popup: decl

@@ -74,6 +74,7 @@ fn register_terminal(registry: &SurfaceKindRegistry) {
         copy_path: false,
         egui_paste: false,
         name_from_param: None,
+        tab_name_from_params: None,
         records_recent: false,
         convert_requires_input: false,
         convert_input_popup: None,
@@ -168,10 +169,27 @@ fn register_explorer(registry: &SurfaceKindRegistry) {
         copy_path: true,
         egui_paste: false,
         name_from_param: Some("path".to_string()),
+        // path 가 없으면 create 와 같은 순서(cwd → capture 한 탭)로 만들어질 폴더의 이름을 쓴다.
+        tab_name_from_params: Some(explorer_tab_name),
         records_recent: false,
         convert_requires_input: false,
         convert_input_popup: None,
     });
+}
+
+/// path param 이 없을 때 create 가 열 폴더의 이름. cwd 가 있으면 그 폴더, 없고 capture 한 탭이 있으면
+/// 활성 탭의 cwd 다. 둘 다 없으면(홈을 열 때) `None` 이라 종류 표시명을 쓴다.
+fn explorer_tab_name(cwd: Option<&std::path::Path>, params: &Value) -> Option<String> {
+    let folder = match cwd {
+        Some(cwd) => resolve_root(Some(cwd.to_path_buf())),
+        None if explorer_snapshot_has_tabs(params) => {
+            explorer_panel_from_snapshot(0, params).cwd().to_path_buf()
+        }
+        None => return None,
+    };
+    folder
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
 }
 
 fn explorer_snapshot_has_tabs(data: &Value) -> bool {
@@ -281,6 +299,7 @@ fn register_empty(registry: &SurfaceKindRegistry) {
         copy_path: false,
         egui_paste: false,
         name_from_param: None,
+        tab_name_from_params: None,
         records_recent: false,
         convert_requires_input: false,
         convert_input_popup: None,
@@ -355,6 +374,7 @@ fn register_dag_graph(registry: &SurfaceKindRegistry) {
         copy_path: false,
         egui_paste: false,
         name_from_param: None,
+        tab_name_from_params: None,
         records_recent: false,
         convert_requires_input: false,
         convert_input_popup: None,
@@ -574,6 +594,48 @@ mod tests {
             .and_then(|prepared| prepared.publish())
             .unwrap();
         assert_eq!(created.source_cwd().as_deref(), Some(other.as_path()));
+    }
+
+    #[test]
+    fn a_captured_explorer_preset_names_its_tab_after_the_folder_create_opens() {
+        let reg = registry_with_builtins();
+        let def = reg.get("explorer").expect("explorer kind");
+        let project = abs_path("w/project");
+        let other = abs_path("w/other");
+        let mut s = (def.create)(5, None, &json!({ "path": project.to_string_lossy() }))
+            .and_then(|prepared| prepared.publish())
+            .unwrap();
+        s.as_any_mut()
+            .downcast_mut::<ExplorerPanel>()
+            .unwrap()
+            .add_tab();
+        {
+            let ex = s.as_any_mut().downcast_mut::<ExplorerPanel>().unwrap();
+            ex.active_tab_mut().set_cwd(other.clone());
+        }
+        let name = |cwd: Option<&std::path::Path>, params: &Value| {
+            crate::runtime::surface_registry::default_tab_name_for_kind(
+                "explorer",
+                cwd,
+                params,
+                Some(&def),
+            )
+        };
+        // 활성 탭(두 번째)의 cwd 이름이다.
+        let mut params = (def.snapshot)(s.as_ref()).unwrap();
+        assert_eq!(name(None, &params), "other");
+        params["active"] = json!(0);
+        assert_eq!(name(None, &params), "project");
+        // create 처럼 cwd·path 가 저장한 탭보다 먼저다.
+        assert_eq!(name(Some(other.as_path()), &params), "other");
+        let mut with_path = params.clone();
+        with_path["path"] = json!(abs_path("w/given").to_string_lossy());
+        assert_eq!(name(None, &with_path), "given");
+        // 둘 다 없으면 홈을 열므로 종류 이름이다.
+        assert_eq!(
+            name(None, &json!({})),
+            crate::i18n::t("surface.kind.explorer").to_string()
+        );
     }
 
     #[test]
