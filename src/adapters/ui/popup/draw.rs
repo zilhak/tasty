@@ -39,7 +39,8 @@ fn popup_shadow(popup_id: PopupId) -> Option<tasty_type_appearance::theme::Shado
 /// 팝업 종류별 배경. file_handler_picker의 배경은 default Tag 채움색과 구분해야 한다.
 /// popup_shell_fill_keeps_the_default_tag_visible에서 두 색을 비교한다.
 /// file picker(설정 창 파일 선택기 포함)는 오류 상태의 Secondary 버튼(`button-secondary-bg` = surface-raised)이 셸에
-/// 묻히지 않도록 시안 창 배경 bg-panel 을 쓴다.
+/// 묻히지 않도록 시안 창 배경 bg-panel 을 쓴다. 탐색기 Properties 도 시안 YProps 바탕이 bg-panel 이고
+/// 읽기 실패 화면의 Retry 가 같은 Secondary 버튼이다.
 fn popup_bg_fill(popup_id: PopupId, th: &tasty_type_appearance::theme::Theme) -> egui::Color32 {
     match popup_id {
         "remote_tool" | "port_scanner" | "tutorial_topics" | "remote_attach"
@@ -49,6 +50,7 @@ fn popup_bg_fill(popup_id: PopupId, th: &tasty_type_appearance::theme::Theme) ->
         | super::file_handler_picker::PICKER_POPUP_ID
         | super::file_picker::FILE_PICKER_POPUP_ID
         | crate::view::settings::ui::file_chooser::FILE_CHOOSER_POPUP_ID
+        | super::explorer_properties::EXPLORER_PROPERTIES_POPUP_ID
         | crate::adapters::ui::info_modal::INFO_MODAL_ID => th.bg_panel().into(),
         _ => th.surface_raised().into(),
     }
@@ -778,17 +780,25 @@ mod tests {
         assert_eq!(shell, egui::Color32::from(th.bg_panel()));
     }
 
-    /// file picker 오류 상태의 Retry·Reconnect(Secondary) 채움과 테두리가 셸과 달라야 버튼으로 보인다.
+    /// file picker 와 탐색기 Properties 오류 상태의 Retry·Reconnect(Secondary) 채움과 테두리가 셸과 달라야
+    /// 버튼으로 보인다.
     #[test]
     fn file_picker_shell_keeps_the_secondary_button_visible() {
         let th = theme::theme();
-        let shell: egui::Color32 =
-            popup_bg_fill(super::super::file_picker::FILE_PICKER_POPUP_ID, &th);
-        let fill: egui::Color32 = th.button_secondary_bg().into();
-        let edge: egui::Color32 = th.button_secondary_border().into();
-        assert_ne!(shell, fill, "셸과 Secondary 버튼 채움이 같은 색이다");
-        assert_ne!(shell, edge, "셸과 Secondary 버튼 테두리가 같은 색이다");
-        assert_eq!(shell, egui::Color32::from(th.bg_panel()));
+        for id in [
+            super::super::file_picker::FILE_PICKER_POPUP_ID,
+            super::super::explorer_properties::EXPLORER_PROPERTIES_POPUP_ID,
+        ] {
+            let shell: egui::Color32 = popup_bg_fill(id, &th);
+            let fill: egui::Color32 = th.button_secondary_bg().into();
+            let edge: egui::Color32 = th.button_secondary_border().into();
+            assert_ne!(shell, fill, "{id}: 셸과 Secondary 버튼 채움이 같은 색이다");
+            assert_ne!(
+                shell, edge,
+                "{id}: 셸과 Secondary 버튼 테두리가 같은 색이다"
+            );
+            assert_eq!(shell, egui::Color32::from(th.bg_panel()), "{id}");
+        }
     }
 
     // 이웃 surface는 경계만 공유하고 내부 영역은 겹치지 않는다.

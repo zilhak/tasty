@@ -172,7 +172,7 @@ Grid 셀은 모두 `explorer_grid_thumb_size`(40) 슬롯을 잡아 썸네일 유
 
 ### Properties popup
 
-`explorer_properties` popup(`src/adapters/ui/popup/explorer_properties.rs`, 시안 `YProps`)은 그 explorer surface 에 묶인(`PopupScope::Surface`) headless popup 이다. 폭은 `explorer_props_width`(360), 라벨 열은 `explorer_props_label_width`(96, caption text-muted)이고 값은 body 또는 mono caption 이다. 연 대상을 고정해 보이며, 원 explorer 가 사라지면 닫힌다.
+`explorer_properties` popup(`src/adapters/ui/popup/explorer_properties.rs`, 시안 `YProps`)은 그 explorer surface 에 묶인(`PopupScope::Surface`) headless popup 이다. 바탕은 시안 YProps 와 같은 bg-panel 이다(읽기 실패 화면의 Secondary Retry 가 surface-raised 바탕에 묻히지 않는다). 폭은 `explorer_props_width`(360), 라벨 열은 `explorer_props_label_width`(96, caption text-muted)이고 값은 body 또는 mono caption 이다. 연 대상을 고정해 보이며, 원 explorer 가 사라지면 닫힌다.
 
 - **진입**: 컨텍스트 메뉴 맨 끝 구분선 뒤 "Properties"(id 70, 모든 변형·mirror 에서도 보인다), `explorer_properties` 단축키·Command Palette. 대상 규칙은 [파일 작업 계약](file-operations.md#대상-결정-규칙)이다.
 - **종류 문구**(`kind_word`·`file_kind_word`): 폴더 "Folder", 링크 "Symbolic link", 그림 확장자(`is_image_ext`)는 `explorer.kind.image`("PNG image"), 그 밖은 `explorer.kind.ext_file`("ZIP file"), 확장자가 없으면 "File". 미리보기 머리의 종류도 같은 문구다. Detail 의 Type 열은 좁은 열이라 대문자 확장자를 그대로 쓴다.
