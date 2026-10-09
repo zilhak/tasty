@@ -303,6 +303,35 @@ pub fn draw_subfolder_search(ui: &mut egui::Ui, theme: &Theme) {
                 },
             );
         });
+        block(ui, "filter — no matches", &|ui| {
+            find_cell(
+                ui,
+                theme,
+                "rezzz",
+                Some(false),
+                ExplorerFindStatus::Text(&t_fmt2("explorer.find.count", "0", "6")),
+                &t_fmt2("explorer.find.status", "0", "6"),
+                |ui| {
+                    let none = t("explorer.find.none_filter").replace("{query}", "rezzz");
+                    CenterState::empty(icons::SEARCH, &none).show(ui, theme, None);
+                },
+            );
+        });
+        block(ui, "search — cap reached · 1 folder skipped", &|ui| {
+            find_cell(
+                ui,
+                theme,
+                ".rs",
+                Some(true),
+                ExplorerFindStatus::Skipped {
+                    text: &t("explorer.find.capped").replace("{n}", "5,000"),
+                    skipped: t("explorer.find.skipped_one"),
+                    tooltip: "~/Downloads/private",
+                },
+                &t("explorer.find.capped_hint").replace("{n}", "5,000"),
+                |ui| hit_table(ui, theme, &HITS[..1], "gallery_exp_hits_capped"),
+            );
+        });
         block(ui, "error — the start folder can't be read", &|ui| {
             find_cell(
                 ui,
@@ -348,6 +377,15 @@ pub fn draw_subfolder_search(ui: &mut egui::Ui, theme: &Theme) {
                 "no results",
                 "state screen · search glyph · “No matches in {folder}”",
             ),
+            (
+                "filter 0",
+                "bar “0 of {total}” · search glyph · “No names match “{query}”” · no sub-line",
+            ),
+            ("skipped one", "“1 folder skipped”"),
+            (
+                "cap",
+                "5,000 results · “{n}+ found · stopped” · status line hint · results kept",
+            ),
             ("error", "state screen · error tone · Retry"),
             ("stopped", "“Stopped · {n} found” · results kept"),
             ("leave", "untick → filter · Esc / × / navigation → folder"),
@@ -375,6 +413,7 @@ pub fn draw_subfolder_search(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         "i18n: explorer.find.filter_placeholder · search_placeholder · subfolders · count · \
-         searching · stop · stopped · skipped · none · failed.",
+         searching · stop · stopped · skipped · skipped_one · capped · capped_hint · none · \
+         none_filter · failed.",
     );
 }

@@ -17,7 +17,7 @@ pub(crate) use file_info::{
     PreviewData, PropertiesFacts, TooLarge, decodable_image_ext,
 };
 mod search;
-pub(crate) use search::{SearchEvent, SearchQuery, relative_folder, search};
+pub(crate) use search::{SEARCH_MAX_HITS, SearchEvent, SearchQuery, relative_folder, search};
 
 const MAX_RUNNING: usize = 4;
 const MAX_SCRIPT_BYTES: u64 = 8 * 1024 * 1024;

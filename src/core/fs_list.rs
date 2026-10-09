@@ -165,11 +165,33 @@ pub(crate) fn human_size(is_dir: bool, size: u64) -> String {
     }
 }
 
+/// 세 자리마다 쉼표를 넣는다.
+#[cfg(any(feature = "gui", test))]
+pub(crate) fn group_digits(n: u64) -> String {
+    let digits = n.to_string();
+    let mut out = String::with_capacity(digits.len() + digits.len() / 3);
+    for (i, c) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    out
+}
+
 #[cfg(test)]
 // 테스트 임시 파일의 삭제 실패는 무시한다.
 #[allow(clippy::let_underscore_must_use)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn digits_are_grouped_by_three() {
+        assert_eq!(group_digits(0), "0");
+        assert_eq!(group_digits(999), "999");
+        assert_eq!(group_digits(499_712), "499,712");
+        assert_eq!(group_digits(1_204_000), "1,204,000");
+    }
 
     #[test]
     fn human_size_units() {

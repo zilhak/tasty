@@ -67,10 +67,16 @@ fn the_filter_hides_rows_that_do_not_match_and_counts_what_is_shown() {
 
     set_query(&mut view, "zzz", false);
     assert!(view.shown_entries().is_empty());
-    assert!(matches!(
-        view.find_screen(),
-        Some(FindScreen::NoMatches { deep: false, .. })
-    ));
+    match view.find_screen() {
+        Some(FindScreen::NoFilterMatches { query }) => {
+            crate::i18n::init("en");
+            assert_eq!(
+                super::super::state_screen::no_filter_matches_title(&query),
+                "No names match “zzz”"
+            );
+        }
+        _ => panic!("a filter without matches shows its own state"),
+    }
     finish(&mut owner);
 }
 
@@ -211,7 +217,7 @@ fn a_search_that_cannot_read_its_start_folder_fails_and_nothing_found_is_a_state
     });
     assert!(matches!(
         view.find_screen(),
-        Some(FindScreen::NoMatches { deep: true, .. })
+        Some(FindScreen::NoSearchMatches { .. })
     ));
     owner.reap();
 
@@ -267,4 +273,42 @@ fn batches_inserted_in_order_match_a_full_sort() {
         let order = |v: &[DirEntryInfo]| v.iter().map(|e| e.name.clone()).collect::<Vec<_>>();
         assert_eq!(order(&hits), order(&all), "{col:?} {dir:?}");
     }
+}
+
+/// 검색 결과를 손으로 채운 Find 상태.
+fn searched(outcome: Outcome, skipped: usize) -> FindState {
+    FindState {
+        root: PathBuf::from("/srv"),
+        query: "rs".into(),
+        deep: true,
+        focus: false,
+        field_focused: false,
+        search: Some(Search {
+            receipt: None,
+            hits: Vec::new(),
+            skipped: (0..skipped)
+                .map(|i| PathBuf::from(format!("/srv/{i}")))
+                .collect(),
+            outcome,
+        }),
+    }
+}
+
+#[test]
+fn one_skipped_folder_and_the_hit_cap_have_their_own_words() {
+    crate::i18n::init("en");
+    let (text, skipped, _) = status_parts(&searched(Outcome::Done, 1), 0, 0);
+    assert_eq!(skipped, "1 folder skipped");
+    assert_eq!(text, t_fmt("explorer.find.found", "0"));
+    let (_, skipped, _) = status_parts(&searched(Outcome::Done, 2), 0, 0);
+    assert_eq!(skipped, t_fmt("explorer.find.skipped", "2"));
+
+    let (text, _, _) = status_parts(&searched(Outcome::Capped, 0), 0, 0);
+    assert_eq!(text, "5,000+ found · stopped");
+    let mut view = ExplorerView::new();
+    view.find = Some(searched(Outcome::Capped, 0));
+    assert_eq!(
+        view.status_text(),
+        "Showing the first 5,000. Type more to narrow the search."
+    );
 }

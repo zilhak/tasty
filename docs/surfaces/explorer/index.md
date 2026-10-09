@@ -201,10 +201,10 @@ Grid 셀은 모두 `explorer_grid_thumb_size`(40) 슬롯을 잡아 썸네일 유
 
 툴바 view 묶음의 Find 토글(좁은 칸은 More 메뉴의 Find, id 72)과 explorer 포커스의 `find` 단축키가 툴바 아래에 Find 바(`find.rs`, 공용 `explorer_find_bar`, 높이 `explorer-search-bar-height` 36, 칸 전체 폭)를 연다. 토글은 열려 있으면 닫고, `find` 단축키는 이미 열린 바에 포커스만 준다. 바 상태(`FindState`: 연 폴더·검색어·Subfolders·하위 폴더 검색)는 `ExplorerView::find` 에 두고 저장하지 않는다.
 
-- **거르기**: 입력하는 즉시 지금 보는 폴더의 항목을 이름의 부분 문자열(대소문자 무시, `match_range`)로 거른다. 맞는 부분은 Detail·List·Grid 모두 `explorer-match-fg` 로 칠한다(List 는 공용 `tree_row_matching`). 바 오른쪽에 `explorer.find.count`("{shown} of {total}"), 상태줄에 `explorer.find.status` 를 보인다. 맞는 항목이 없으면 목록 자리에 search 글리프와 `explorer.find.none` 상태 화면을 보인다. mirror explorer 도 거르기를 쓴다.
+- **거르기**: 입력하는 즉시 지금 보는 폴더의 항목을 이름의 부분 문자열(대소문자 무시, `match_range`)로 거른다. 맞는 부분은 Detail·List·Grid 모두 `explorer-match-fg` 로 칠한다(List 는 공용 `tree_row_matching`). 바 오른쪽에 `explorer.find.count`("{shown} of {total}"), 상태줄에 `explorer.find.status` 를 보인다. 거르는 동안에도 `..` 행은 목록 맨 위에 남는다. 이동용 행이라 이름을 맞춰 보지 않고 개수에도 넣지 않는다. 맞는 항목이 없으면 바는 "0 of N" 을 그대로 두고, 목록 자리에 search 글리프와 `explorer.find.none_filter`("No names match “{query}”", 보조 줄 없음) 상태 화면을 보인다. mirror explorer 도 거르기를 쓴다.
 - **보이는 항목만 다룬다**: 검색어나 Subfolders 가 바뀌면 보이지 않게 된 항목을 선택에서 뺀다. 전체 선택·Shift 범위 선택·타입어헤드는 보이는 항목만 대상으로 한다. 숨은 항목에 명령이 닿지 않게 하기 위해서다.
 - **Subfolders**(로컬만, mirror 는 체크박스를 숨긴다): 켜면 같은 바가 지금 폴더부터의 하위 폴더 검색이 된다. 로컬 읽기 worker(`local_reads::search`)가 너비 우선으로 폴더를 읽어 맞는 항목을 100ms 마다 묶어 보내고 화면을 깨운다. 링크로 된 폴더는 따라 들어가지 않는다. 결과는 목록을 대신하고 `..` 행을 두지 않으며 지금 정렬로 정렬한다. 새 묶음만 정렬해 이분 탐색으로 자리에 끼워 넣으므로 받을 때마다 전체를 다시 정렬하지 않는다. 상태줄·바·상태 화면은 보이는 항목을 복사하지 않고 세거나 참조한다. Detail 은 Type 대신 Name 뒤에 Folder 열(`explorer-search-folder-col-width` 160, mono caption, 시작 폴더 기준 상대 경로, 시작 폴더 자신은 ".")을 둔다. List·Grid 는 행 모양을 바꾸지 않고 든 폴더를 툴팁으로 보인다. 결과 하나를 고르면 상태줄에 시작 폴더 기준 경로를 보인다. 열기·복사·잘라내기·이름 변경·휴지통은 결과의 실제 경로를 쓴다.
-- **검색 상태**: 진행 중은 Spinner·`explorer.find.searching`·Stop, 끝나면 `explorer.find.found`, Stop 으로 멈추면 `explorer.find.stopped`(그때까지의 결과 유지). 읽지 못한 하위 폴더는 건너뛰고 `explorer.find.skipped` 를 accent-warning 으로 덧붙이며 툴팁에 그 폴더들을 적는다. 결과가 없으면 `explorer.find.none` 과 보조 줄 `explorer.find.none_sub`, 시작 폴더를 읽지 못하면 error 톤 `explorer.find.failed` 와 OS 이유, Retry(새로고침 — 새로고침은 하위 폴더 검색을 처음부터 다시 한다) 상태 화면이다.
+- **검색 상태**: 진행 중은 Spinner·`explorer.find.searching`·Stop, 끝나면 `explorer.find.found`, Stop 으로 멈추면 `explorer.find.stopped`(그때까지의 결과 유지). 결과가 5,000 개(`SEARCH_MAX_HITS`)에 닿으면 worker 가 더 읽지 않고 멈춘다. 바는 `explorer.find.capped`("5,000+ found · stopped"), 상태줄은 `explorer.find.capped_hint`(검색어를 더 입력하라는 안내)이고 찾은 결과는 남는다. 읽지 못한 하위 폴더는 건너뛰고 `explorer.find.skipped`(하나면 `explorer.find.skipped_one` "1 folder skipped")를 accent-warning 으로 덧붙이며 툴팁에 그 폴더들을 적는다. 결과가 없으면 `explorer.find.none` 과 보조 줄 `explorer.find.none_sub`, 시작 폴더를 읽지 못하면 error 톤 `explorer.find.failed` 와 OS 이유, Retry(새로고침 — 새로고침은 하위 폴더 검색을 처음부터 다시 한다) 상태 화면이다.
 - **닫기**: 입력의 첫 `Esc` 는 글자를 지우고 둘째 `Esc` 는 바를 닫는다. ×·토글로도 닫는다. 연 폴더를 떠나면(뒤로·앞으로·위로·주소창·폴더 열기) 닫는다. Subfolders 를 끄면 지금 폴더 거르기로 돌아간다. 바를 닫거나 검색어를 바꾸면 이전 검색의 영수증을 버려 worker 가 다음 폴더를 읽기 전에 멈춘다.
 - 입력에 포커스가 있는 동안 타입어헤드와 explorer 목록 단축키를 끈다(`text_input_active`).
 
@@ -323,7 +323,9 @@ Appearance → **Explorer** 서브탭에서 surface 폰트를 오버라이드한
 - Given 쓸 수 없는 폴더 When 툴바를 본다 Then New folder·New file 이 비활성이다. Given mirror explorer When 툴바·메뉴를 본다 Then 두 명령이 없다.
 - Given 로컬 explorer 에 Report.pdf·report-draft.txt·notes.md 가 있다 When Find 를 열고 "re" 를 입력한다 Then 두 항목만 남고 맞는 부분이 강조되며 바에 "2 of 3" 이 보인다. 첫 `Esc` 는 글자를 지우고 둘째 `Esc` 는 바를 닫는다(`find/tests.rs`).
 - Given 거르기 전 notes.md 를 골랐다 When 그 항목이 걸러진다 Then 선택에서 빠져 이후 명령이 닿지 않는다(`find/tests.rs` 의 `the_filter_hides_rows_that_do_not_match_and_counts_what_is_shown`).
-- Given 하위 폴더에 맞는 파일과 읽을 수 없는 폴더가 있다 When Subfolders 를 켠다 Then 결과가 들어오는 대로 채워지고 Detail 에 Folder 열이 생기며, 끝나면 "{n} found · 1 folders skipped" 가 보인다. 링크로 된 폴더는 들어가지 않는다(`local_reads/search/tests.rs`).
+- Given 하위 폴더에 맞는 파일과 읽을 수 없는 폴더가 있다 When Subfolders 를 켠다 Then 결과가 들어오는 대로 채워지고 Detail 에 Folder 열이 생기며, 끝나면 "{n} found · 1 folder skipped" 가 보인다. 링크로 된 폴더는 들어가지 않는다(`local_reads/search/tests.rs`).
+- Given 하위 폴더 검색이 5,000 개보다 많이 맞는다 When 검색이 끝난다 Then 5,000 개만 남고 바에 "5,000+ found · stopped", 상태줄에 범위를 좁히라는 안내가 보인다(`local_reads/search/tests.rs` 의 `a_search_stops_at_the_hit_cap_and_keeps_what_it_found`, `find/tests.rs` 의 `one_skipped_folder_and_the_hit_cap_have_their_own_words`).
+- Given 거르기 검색어에 맞는 이름이 없다 When 목록을 그린다 Then 바는 "0 of N", 목록 자리는 "No names match “{query}”" 이다(`find/tests.rs`).
 - Given Find 바가 열려 있다 When 하위 폴더로 이동한다 Then 바가 닫힌다(`find/tests.rs` 의 `leaving_the_folder_closes_the_bar`).
 - Given 내부 탭 둘을 열고 정렬을 바꾼 explorer When 재시작한다 Then 탭·cwd·current·뷰 모드·정렬이 복원되고 히스토리와 선택은 비어 있다.
 

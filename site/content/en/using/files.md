@@ -1,4 +1,4 @@
-<!-- source-hash: b53e9d1d839b -->
+<!-- source-hash: b25048a37e90 -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -80,9 +80,9 @@ You can assign keys to **New folder** · **New file** in Settings > Keybindings 
 
 The **Find** toggle on the toolbar (the **More** menu in a narrow cell), or `Ctrl+F` while the Explorer has focus, opens a find bar under the toolbar. `Ctrl+F` is the same shortcut as terminal search; in the Explorer it opens this bar.
 
-- As you type, only the items in the current folder whose names contain the text stay. Case is ignored and the matching part is highlighted. The right end shows how many are shown out of the total, such as "2 of 6".
+- As you type, only the items in the current folder whose names contain the text stay. Case is ignored and the matching part is highlighted. The right end shows how many are shown out of the total, such as "2 of 6". When no name matches, the list area says "No names match “…”". The `..` row that goes up a folder stays while you filter.
 - Items that are filtered out leave the selection. Select all picks only the items shown.
-- Turn on **Subfolders** to search everything under the current folder. Results fill in as they are found, and **Stop** halts the search while keeping what was found. The Detail view shows a **Folder** column with each result's location relative to the current folder instead of the type; in the List and Grid views, hover an item to see it. Selecting a result also shows its location on the status line. Folders that can't be read are skipped and reported as, for example, "1 folders skipped"; hover it to see which. Folder links are not followed.
+- Turn on **Subfolders** to search everything under the current folder. Results fill in as they are found, and **Stop** halts the search while keeping what was found. The Detail view shows a **Folder** column with each result's location relative to the current folder instead of the type; in the List and Grid views, hover an item to see it. Selecting a result also shows its location on the status line. Folders that can't be read are skipped and reported as, for example, "1 folder skipped"; hover it to see which. A search stops once it reaches 5,000 results and shows "5,000+ found · stopped". The results stay; type more to narrow the search. Folder links are not followed.
 - In the find field, `Esc` once clears the text and once more closes the bar. ×, or moving to another folder (Back, Up, the address bar, opening a folder), closes it too.
 - While you type in the find field, type to find and the Explorer shortcuts are off.
 - Explorers in remote workspaces filter the current folder only; they don't search subfolders.

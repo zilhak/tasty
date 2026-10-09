@@ -12,7 +12,7 @@ use tasty_ui_widgets::{
 
 use super::DirEntryInfo;
 use super::view::ExplorerView;
-use crate::app::local_reads::{SearchEvent, SearchQuery};
+use crate::app::local_reads::{SEARCH_MAX_HITS, SearchEvent, SearchQuery};
 use std::cmp::Ordering;
 
 use crate::core::fs_list::{compare_entries, sort_entries};
@@ -43,15 +43,20 @@ enum Outcome {
     Running,
     Done,
     Stopped,
+    /// 결과가 `SEARCH_MAX_HITS` 에 닿아 멈췄다. 찾은 결과는 남긴다.
+    Capped,
     Failed(String),
 }
 
 /// 목록 대신 보일 Find 상태 화면.
 pub(super) enum FindScreen {
-    /// 맞는 항목이 없다. 하위 폴더까지 찾았으면 true.
-    NoMatches {
+    /// 거르기에 맞는 이름이 없다. 바는 "0 of N" 을 그대로 보인다.
+    NoFilterMatches {
+        query: String,
+    },
+    /// 하위 폴더까지 찾았지만 맞는 항목이 없다.
+    NoSearchMatches {
         folder: String,
-        deep: bool,
     },
     Failed(String),
 }
@@ -172,6 +177,10 @@ impl ExplorerView {
             return t_fmt("explorer.status.selected", &sel.to_string());
         }
         match &self.find {
+            Some(FindState {
+                search: Some(search),
+                ..
+            }) if search.outcome == Outcome::Capped => capped_text("explorer.find.capped_hint"),
             Some(find) if find.search.is_some() => {
                 t_fmt("explorer.find.found", &self.shown_count().to_string())
             }
@@ -198,14 +207,13 @@ impl ExplorerView {
             Some(search) => match &search.outcome {
                 Outcome::Failed(msg) => Some(FindScreen::Failed(msg.clone())),
                 Outcome::Done if search.hits.is_empty() => {
-                    Some(FindScreen::NoMatches { folder, deep: true })
+                    Some(FindScreen::NoSearchMatches { folder })
                 }
                 _ => None,
             },
             None if !self.entries.is_empty() && self.shown().next().is_none() => {
-                Some(FindScreen::NoMatches {
-                    folder,
-                    deep: false,
+                Some(FindScreen::NoFilterMatches {
+                    query: find.query.clone(),
                 })
             }
             None => None,
@@ -233,9 +241,11 @@ impl ExplorerView {
                 },
                 SearchEvent::Skipped(dir) => search.skipped.push(dir),
                 SearchEvent::Failed(msg) => search.outcome = Outcome::Failed(msg),
-                SearchEvent::Done { stopped } => {
+                SearchEvent::Done { stopped, capped } => {
                     search.outcome = if stopped {
                         Outcome::Stopped
+                    } else if capped {
+                        Outcome::Capped
                     } else {
                         Outcome::Done
                     };
@@ -262,6 +272,14 @@ impl FindState {
             outcome: Outcome::Running,
         });
     }
+}
+
+/// 상한 문구. 번역문은 이름 붙은 `{n}` 자리로 상한(세 자리 쉼표)을 받는다.
+fn capped_text(key: &str) -> String {
+    t(key).replace(
+        "{n}",
+        &crate::core::fs_list::group_digits(SEARCH_MAX_HITS as u64),
+    )
 }
 
 /// 정렬한 결과에 새 묶음을 끼워 넣는다. 묶음만 정렬하고 자리는 이분 탐색으로 찾아,
@@ -434,9 +452,13 @@ fn status_parts(find: &FindState, shown: usize, total: usize) -> (String, String
         Outcome::Running => t_fmt("explorer.find.searching", &n),
         Outcome::Done => t_fmt("explorer.find.found", &n),
         Outcome::Stopped => t_fmt("explorer.find.stopped", &n),
+        Outcome::Capped => capped_text("explorer.find.capped"),
         Outcome::Failed(_) => "—".to_string(),
     };
-    let skipped = t_fmt("explorer.find.skipped", &search.skipped.len().to_string());
+    let skipped = match search.skipped.len() {
+        1 => t("explorer.find.skipped_one").to_string(),
+        n => t_fmt("explorer.find.skipped", &n.to_string()),
+    };
     let tooltip = search
         .skipped
         .iter()

@@ -15,7 +15,7 @@ use tasty_ui_widgets::{ControlSize, IconButton, IconButtonVariant, Spinner};
 use crate::adapters::ui::icons::{self, Icon};
 use crate::adapters::ui::popup::PopupAction;
 use crate::app::local_reads::{self, FolderCount, ItemFacts, ItemKind, PropertiesFacts, Query};
-use crate::core::fs_list::{DirEntryInfo, human_size};
+use crate::core::fs_list::{DirEntryInfo, group_digits, human_size};
 use crate::i18n::{t, t_fmt, t_fmt2};
 use crate::runtime::engine_read::EngineRead;
 use crate::state::MainViewState;
@@ -674,30 +674,9 @@ fn time_text(t: Option<SystemTime>) -> String {
     }
 }
 
-/// 세 자리마다 쉼표를 넣는다.
-fn group_digits(n: u64) -> String {
-    let digits = n.to_string();
-    let mut out = String::with_capacity(digits.len() + digits.len() / 3);
-    for (i, c) in digits.chars().enumerate() {
-        if i > 0 && (digits.len() - i).is_multiple_of(3) {
-            out.push(',');
-        }
-        out.push(c);
-    }
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn digits_are_grouped_by_three() {
-        assert_eq!(group_digits(0), "0");
-        assert_eq!(group_digits(999), "999");
-        assert_eq!(group_digits(499_712), "499,712");
-        assert_eq!(group_digits(1_204_000), "1,204,000");
-    }
 
     #[test]
     fn several_items_share_their_nearest_parent() {

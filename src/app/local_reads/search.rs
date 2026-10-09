@@ -12,6 +12,8 @@ use crate::core::fs_list::{DirEntryInfo, EntryLink, read_dir_entries};
 
 /// 결과를 모아 보내는 간격. 폴더마다 깨우면 화면을 너무 자주 다시 그린다.
 const FLUSH_EVERY: Duration = Duration::from_millis(100);
+/// 하위 폴더 검색이 모으는 결과 수. 이만큼 찾으면 멈추고 결과는 남긴다.
+pub(crate) const SEARCH_MAX_HITS: usize = 5_000;
 
 pub(crate) enum SearchEvent {
     Hits(Vec<DirEntryInfo>),
@@ -19,9 +21,10 @@ pub(crate) enum SearchEvent {
     Skipped(PathBuf),
     /// 시작 폴더를 읽지 못했다. OS 문구 그대로다.
     Failed(String),
-    /// 끝났다. Stop 으로 멈췄으면 true.
+    /// 끝났다. Stop 으로 멈췄으면 `stopped`, 결과가 `SEARCH_MAX_HITS` 에 닿아 멈췄으면 `capped`.
     Done {
         stopped: bool,
+        capped: bool,
     },
 }
 
@@ -82,6 +85,9 @@ pub(super) fn run(spec: SearchSpec, sender: mpsc::Sender<SearchEvent>, wake: &dy
     let mut queue = VecDeque::from([spec.root.clone()]);
     let mut batch = Vec::new();
     let mut last_flush = Instant::now();
+    let mut found = 0;
+    // 상한에 닿은 뒤 더 맞는 항목이 있거나 읽지 않은 폴더가 남았다.
+    let mut capped = false;
     let flush = |batch: &mut Vec<DirEntryInfo>| {
         batch.is_empty()
             || sender
@@ -90,6 +96,10 @@ pub(super) fn run(spec: SearchSpec, sender: mpsc::Sender<SearchEvent>, wake: &dy
     };
     while let Some(dir) = queue.pop_front() {
         if stopped() {
+            break;
+        }
+        if found >= SEARCH_MAX_HITS {
+            capped = true;
             break;
         }
         let entries = match read_dir_entries(&dir) {
@@ -112,7 +122,12 @@ pub(super) fn run(spec: SearchSpec, sender: mpsc::Sender<SearchEvent>, wake: &dy
                 queue.push_back(entry.path.clone());
             }
             if matches(&entry.name, &spec.query) {
-                batch.push(entry);
+                if found < SEARCH_MAX_HITS {
+                    found += 1;
+                    batch.push(entry);
+                } else {
+                    capped = true;
+                }
             }
         }
         if last_flush.elapsed() >= FLUSH_EVERY {
@@ -125,7 +140,10 @@ pub(super) fn run(spec: SearchSpec, sender: mpsc::Sender<SearchEvent>, wake: &dy
     }
     if !flush(&mut batch)
         || sender
-            .send(SearchEvent::Done { stopped: stopped() })
+            .send(SearchEvent::Done {
+                stopped: stopped(),
+                capped,
+            })
             .is_err()
     {
         tracing::debug!("explorer search receipt dropped before the search finished");

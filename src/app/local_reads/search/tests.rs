@@ -35,7 +35,10 @@ fn subfolders_are_searched_case_insensitively_and_the_end_is_reported() {
     assert_eq!(hits(&events), ["Report.pdf", "q3-report.xlsx"]);
     assert!(matches!(
         events.last(),
-        Some(SearchEvent::Done { stopped: false })
+        Some(SearchEvent::Done {
+            stopped: false,
+            capped: false
+        })
     ));
     assert_eq!(
         relative_folder(dir.path(), &deep.join("q3-report.xlsx")),
@@ -55,7 +58,10 @@ fn a_stopped_search_reads_nothing_more_and_an_unreadable_start_fails() {
     assert!(hits(&events).is_empty());
     assert!(matches!(
         events.last(),
-        Some(SearchEvent::Done { stopped: true })
+        Some(SearchEvent::Done {
+            stopped: true,
+            capped: false
+        })
     ));
     let events = collect(&dir.path().join("missing"), "report", false);
     assert!(matches!(events.as_slice(), [SearchEvent::Failed(_)]));
@@ -90,6 +96,26 @@ fn unreadable_subfolders_are_skipped_and_linked_folders_are_not_entered() {
     }
     assert!(matches!(
         events.last(),
-        Some(SearchEvent::Done { stopped: false })
+        Some(SearchEvent::Done {
+            stopped: false,
+            capped: false
+        })
+    ));
+}
+
+#[test]
+fn a_search_stops_at_the_hit_cap_and_keeps_what_it_found() {
+    let dir = tempfile::tempdir().unwrap();
+    for i in 0..=SEARCH_MAX_HITS {
+        std::fs::write(dir.path().join(format!("report-{i}")), b"").unwrap();
+    }
+    let events = collect(dir.path(), "report", false);
+    assert_eq!(hits(&events).len(), SEARCH_MAX_HITS);
+    assert!(matches!(
+        events.last(),
+        Some(SearchEvent::Done {
+            stopped: false,
+            capped: true
+        })
     ));
 }
