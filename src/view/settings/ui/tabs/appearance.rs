@@ -1618,9 +1618,9 @@ fn font_family_picker(
     // 공용 Select 에는 검색 필터가 없어 egui ComboBox 를 유지한다. 그래서 disabled 모양은
     // 아직 egui fade 를 따른다.
     ui.add_enabled_ui(enabled, |ui| {
-        // 기본 글꼴 격자는 미리보기와 반폭씩 나눈 열에 있다. 콤보가 그 열을 넘으면 오른쪽 끝(▼)이
-        // 미리보기 위에 겹쳐 클릭이 미리보기 제목으로 간다. 남은 폭 안에 묶고, 선택된 이름이
-        // 그보다 길면 콤보를 늘리지 않고 이름을 자른다(egui 기본은 글자 폭만큼 늘어난다).
+        // 좁은 설정 창에서 콤보가 남은 폭을 넘으면 오른쪽 끝(▼)이 행 밖으로 나가 다른 위젯에
+        // 가려질 수 있다. 남은 폭 안에 묶고, 선택된 이름이 그보다 길면 콤보를 늘리지 않고
+        // 이름을 자른다(egui 기본은 글자 폭만큼 늘어난다).
         let combo_w = th.field_width_lg.value().min(ui.available_width());
         tasty_egui_theme::with_popover_frame(ui, &th, |ui| {
             egui::ComboBox::from_id_salt(combo_id)
