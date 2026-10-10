@@ -307,6 +307,7 @@
   --tasty-vi-cursor-bg:           var(--tasty-color-lavender);
   --tasty-search-match-bg:        color-mix(in srgb, var(--tasty-color-yellow) 30%, transparent);
   --tasty-search-match-active-bg: color-mix(in srgb, var(--tasty-color-yellow) 70%, transparent);
+  --tasty-search-match-active-fg: var(--tasty-color-neutral-200); /* 2026-10-10: cell ink inside the ACTIVE match — dark on yellow (Mocha 6.95:1) */
 
   /* ── ANSI 16 (derived from the palette) ───────────────────── */
   --tasty-ansi-black:          var(--tasty-color-neutral-400);
@@ -338,6 +339,10 @@
    just a different shade the ramp already handles).
    ============================================================ */
 [data-theme="latte"] {
+  /* active search match (2026-10-10): Latte yellow 70% under text-primary is 3.94:1 → 50% (4.68:1) with dark ink.
+     Normal match stays 30% (5.50:1). */
+  --tasty-search-match-active-bg: color-mix(in srgb, var(--tasty-color-yellow) 50%, transparent);
+  --tasty-search-match-active-fg: var(--tasty-color-neutral-1100);
   --tasty-text-on-accent: var(--tasty-color-white);
 
   /* disabled ink — Latte's light end of the ramp is compressed (neutral-600..800

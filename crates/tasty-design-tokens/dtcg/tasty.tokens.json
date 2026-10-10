@@ -593,6 +593,10 @@
       "$type": "duration",
       "$value": "500ms"
     },
+    "duration-800": {
+      "$type": "duration",
+      "$value": "800ms"
+    },
     "duration-900": {
       "$type": "duration",
       "$value": "900ms"
@@ -1277,7 +1281,22 @@
     },
     "search-match-active-bg": {
       "$type": "color",
-      "$value": "color-mix(in srgb, var(--tasty-color-yellow) 70%, transparent)"
+      "$value": "color-mix(in srgb, var(--tasty-color-yellow) 70%, transparent)",
+      "$extensions": {
+        "com.tasty.mode": {
+          "latte": "color-mix(in srgb, var(--tasty-color-yellow) 50%, transparent)"
+        }
+      }
+    },
+    "search-match-active-fg": {
+      "$type": "color",
+      "$value": "{primitive.color-neutral-200}",
+      "$extensions": {
+        "com.tasty.mode": {
+          "latte": "{primitive.color-neutral-1100}"
+        }
+      },
+      "$description": "cell ink inside the active search match"
     },
     "ansi-black": {
       "$type": "color",
@@ -4710,6 +4729,86 @@
       "$type": "dimension",
       "$value": "{semantic.radius-sm}",
       "$description": "CLI run corner radius"
+    },
+    "boot-form-width": {
+      "$type": "dimension",
+      "$value": "{primitive.size-360}",
+      "$description": "boot error screen form column (same 360 as first-run shell setup; no card)"
+    },
+    "boot-error-glyph": {
+      "$type": "color",
+      "$value": "{semantic.accent-danger}",
+      "$description": "boot error screen leading alertCircle glyph (title stays text-primary)"
+    },
+    "approval-danger-bg": {
+      "$type": "color",
+      "$value": "color-mix(in srgb, var(--tasty-accent-danger) calc(var(--tasty-tint-fill-alpha) * 100%), var(--tasty-bg-panel))",
+      "$description": "agent approval danger choice fill — OPAQUE mix over bg-panel (Mocha 56,43,61 · Latte 236,214,222)"
+    },
+    "approval-danger-border": {
+      "$type": "color",
+      "$value": "{semantic.accent-danger}",
+      "$description": "agent approval danger choice 1px border (vs surface-raised: Mocha 5.43 · Latte 3.52)"
+    },
+    "approval-danger-fg": {
+      "$type": "color",
+      "$value": "{semantic.text-primary}",
+      "$description": "agent approval danger choice label (on fill: Mocha 9.18 · Latte 5.80)"
+    },
+    "explorer-address-pending-delay": {
+      "$type": "duration",
+      "$value": "{semantic.motion-ui-fade}",
+      "$description": "remote address check: spinner appears only after 200ms (no flash on a fast round trip)"
+    },
+    "explorer-address-pending-size": {
+      "$type": "dimension",
+      "$value": "{semantic.icon-size-sm}",
+      "$description": "remote address check spinner in the address field trailing slot"
+    },
+    "explorer-create-field-max-width": {
+      "$type": "dimension",
+      "$value": "{primitive.size-240}",
+      "$description": "create-in-folder / new item name field max width; caption follows at space-sm"
+    },
+    "explorer-drag-expand-delay": {
+      "$type": "duration",
+      "$value": "{primitive.duration-800}",
+      "$description": "dragging over a closed tree folder expands it after this hover time"
+    },
+    "explorer-props-partial-fg": {
+      "$type": "color",
+      "$value": "{semantic.accent-warning}",
+      "$description": "Properties folder size: “some folders couldn’t be read” glyph + line"
+    },
+    "explorer-preview-body-min-height": {
+      "$type": "dimension",
+      "$value": "{primitive.size-120}",
+      "$description": "preview panel body under this height → body hidden, header only"
+    },
+    "settings-row-stack-gap": {
+      "$type": "dimension",
+      "$value": "{semantic.space-xs}",
+      "$description": "settings Row stacked (narrow): label → control vertical gap"
+    },
+    "settings-row-stack-hysteresis": {
+      "$type": "dimension",
+      "$value": "{semantic.space-lg}",
+      "$description": "settings Row returns side by side only when the control fits with this much spare width"
+    },
+    "ui-code-bg-on-raised": {
+      "$type": "color",
+      "$value": "{semantic.bg-panel}",
+      "$description": "CLI run fill when the container is surface-raised (toast, tooltip, raised card) — ink on it Mocha 11.34 · Latte 7.06"
+    },
+    "kb-plugin-record-height": {
+      "$type": "dimension",
+      "$value": "{component.kb-plugin-control-height}",
+      "$description": "Keybindings › Plugins Custom record slots — 28, one height per control line"
+    },
+    "kb-os-reserved-fg": {
+      "$type": "color",
+      "$value": "{semantic.accent-warning}",
+      "$description": "“may be taken by the OS” caption on a text-entered shortcut"
     }
   }
 }

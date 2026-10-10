@@ -699,8 +699,8 @@
      These were raw --tasty-size-* reads in the spec jsx; opened as named
      component tokens so the implementing side reads tokens, not constants. */
   --tasty-kb-ie-select-column-width: var(--tasty-size-32);  /* diff-table leading checkbox column */
-  --tasty-kb-ie-action-column-width: var(--tasty-size-288); /* migration-row action label column (ja longest label measures 255) — also the indent of a row's sub-line */
-  --tasty-kb-ie-from-column-width:   var(--tasty-size-120); /* migration-row original (option-bearing) shortcut column */
+  --tasty-kb-ie-action-column-width: var(--tasty-size-288); /* DEPRECATED 2026-10-10 (option migration removed) — no live reader; kept until the implementing side drops it. Was: migration-row action label column */
+  --tasty-kb-ie-from-column-width:   var(--tasty-size-120); /* DEPRECATED 2026-10-10 (option migration removed) — no live reader. Was: migration-row original shortcut column */
   --tasty-kb-ie-slot-height:         var(--tasty-control-height-tab); /* 24 — read-only replacement slot chip */
   --tasty-kb-ie-slot-min-width:      var(--tasty-size-140); /* slot chip min width — keeps empty and filled slots the same size */
   --tasty-kb-ie-notice-inset:        var(--tasty-space-md);  /* notice / action-card inner padding, both axes (the spec jsx's 14 was off-grid — snapped to 12) */
@@ -1251,5 +1251,22 @@
   --tasty-ui-code-fg: var(--tasty-text-primary); /* CLI run ink inside UI copy */
   --tasty-ui-code-padding-x: var(--tasty-space-xs); /* CLI run side padding (no vertical padding — line height unchanged) */
   --tasty-ui-code-radius: var(--tasty-radius-sm); /* CLI run corner radius */
+  /* 2026-10-10 (batch 12) — boot error · approval danger choice · explorer address / create / drag / props / preview · settings narrow stack · code run on raised · plugin record slots */
+  --tasty-boot-form-width: var(--tasty-size-360); /* boot error screen form column (same 360 as first-run shell setup; no card) */
+  --tasty-boot-error-glyph: var(--tasty-accent-danger); /* boot error screen leading alertCircle glyph (title stays text-primary) */
+  --tasty-approval-danger-bg: color-mix(in srgb, var(--tasty-accent-danger) calc(var(--tasty-tint-fill-alpha) * 100%), var(--tasty-bg-panel)); /* agent approval danger choice fill — OPAQUE mix over bg-panel (Mocha 56,43,61 · Latte 236,214,222) */
+  --tasty-approval-danger-border: var(--tasty-accent-danger); /* agent approval danger choice 1px border (vs surface-raised: Mocha 5.43 · Latte 3.52) */
+  --tasty-approval-danger-fg: var(--tasty-text-primary); /* agent approval danger choice label (on fill: Mocha 9.18 · Latte 5.80) */
+  --tasty-explorer-address-pending-delay: var(--tasty-motion-ui-fade); /* remote address check: spinner appears only after 200ms (no flash on a fast round trip) */
+  --tasty-explorer-address-pending-size: var(--tasty-icon-size-sm); /* remote address check spinner in the address field trailing slot */
+  --tasty-explorer-create-field-max-width: var(--tasty-size-240); /* create-in-folder / new item name field max width; caption follows at space-sm */
+  --tasty-explorer-drag-expand-delay: var(--tasty-duration-800); /* dragging over a closed tree folder expands it after this hover time */
+  --tasty-explorer-props-partial-fg: var(--tasty-accent-warning); /* Properties folder size: “some folders couldn’t be read” glyph + line */
+  --tasty-explorer-preview-body-min-height: var(--tasty-size-120); /* preview panel body under this height → body hidden, header only */
+  --tasty-settings-row-stack-gap: var(--tasty-space-xs); /* settings Row stacked (narrow): label → control vertical gap */
+  --tasty-settings-row-stack-hysteresis: var(--tasty-space-lg); /* settings Row returns side by side only when the control fits with this much spare width */
+  --tasty-ui-code-bg-on-raised: var(--tasty-bg-panel); /* CLI run fill when the container is surface-raised (toast, tooltip, raised card) — ink on it Mocha 11.34 · Latte 7.06 */
+  --tasty-kb-plugin-record-height: var(--tasty-kb-plugin-control-height); /* Keybindings › Plugins Custom record slots — 28, one height per control line */
+  --tasty-kb-os-reserved-fg: var(--tasty-accent-warning); /* “may be taken by the OS” caption on a text-entered shortcut */
 }
 

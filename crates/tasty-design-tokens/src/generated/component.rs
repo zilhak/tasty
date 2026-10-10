@@ -129,6 +129,13 @@ pub mod banner {
     pub const TITLE_FONT_SIZE: LogicalPx = crate::generated::semantic::FONT_SIZE_BODY;
 }
 
+pub mod boot {
+    use tasty_type_geometry::length::LogicalPx;
+
+    /// `component.boot-form-width` → `{primitive.size-360}` = 360px
+    pub const FORM_WIDTH: LogicalPx = crate::generated::primitive::SIZE_360;
+}
+
 pub mod button {
     use tasty_type_geometry::length::LogicalPx;
 
@@ -376,11 +383,20 @@ pub mod drilldown {
 pub mod explorer {
     use tasty_type_geometry::length::LogicalPx;
 
+    /// `component.explorer-address-pending-delay` → `{semantic.motion-ui-fade}` = 200ms (ms)
+    pub const ADDRESS_PENDING_DELAY: f32 = crate::generated::semantic::MOTION_UI_FADE;
+
+    /// `component.explorer-address-pending-size` → `{semantic.icon-size-sm}` = 14px
+    pub const ADDRESS_PENDING_SIZE: LogicalPx = crate::generated::semantic::ICON_SIZE_SM;
+
     /// `component.explorer-autoscroll-zone` → `{primitive.size-24}` = 24px
     pub const AUTOSCROLL_ZONE: LogicalPx = crate::generated::primitive::SIZE_24;
 
     /// `component.explorer-conflict-width` → `{primitive.size-400}` = 400px
     pub const CONFLICT_WIDTH: LogicalPx = crate::generated::primitive::SIZE_400;
+
+    /// `component.explorer-create-field-max-width` → `{primitive.size-240}` = 240px
+    pub const CREATE_FIELD_MAX_WIDTH: LogicalPx = crate::generated::primitive::SIZE_240;
 
     /// `component.explorer-create-indent` → `{semantic.space-lg}` = 16px
     pub const CREATE_INDENT: LogicalPx = crate::generated::semantic::SPACE_LG;
@@ -390,6 +406,9 @@ pub mod explorer {
 
     /// `component.explorer-drag-chip-max-width` → `{primitive.size-240}` = 240px
     pub const DRAG_CHIP_MAX_WIDTH: LogicalPx = crate::generated::primitive::SIZE_240;
+
+    /// `component.explorer-drag-expand-delay` → `{primitive.duration-800}` = 800ms (ms)
+    pub const DRAG_EXPAND_DELAY: f32 = crate::generated::primitive::DURATION_800;
 
     /// `component.explorer-favorites-hide-below` → `{primitive.size-240}` = 240px
     pub const FAVORITES_HIDE_BELOW: LogicalPx = crate::generated::primitive::SIZE_240;
@@ -420,6 +439,9 @@ pub mod explorer {
 
     /// `component.explorer-name-error-max-width` → `{primitive.size-240}` = 240px
     pub const NAME_ERROR_MAX_WIDTH: LogicalPx = crate::generated::primitive::SIZE_240;
+
+    /// `component.explorer-preview-body-min-height` → `{primitive.size-120}` = 120px
+    pub const PREVIEW_BODY_MIN_HEIGHT: LogicalPx = crate::generated::primitive::SIZE_120;
 
     /// `component.explorer-preview-header-height` → `{primitive.size-40}` = 40px
     pub const PREVIEW_HEADER_HEIGHT: LogicalPx = crate::generated::primitive::SIZE_40;
@@ -713,6 +735,9 @@ pub mod kb {
 
     /// `component.kb-plugin-picker-width` → `{semantic.field-width-lg}` = 200px
     pub const PLUGIN_PICKER_WIDTH: LogicalPx = crate::generated::semantic::FIELD_WIDTH_LG;
+
+    /// `component.kb-plugin-record-height` → `{component.kb-plugin-control-height}` = 28px
+    pub const PLUGIN_RECORD_HEIGHT: LogicalPx = super::kb::PLUGIN_CONTROL_HEIGHT;
 
     /// `component.kb-plugin-row-min-height` → `{component.settings-row-min-height}` = 32px
     pub const PLUGIN_ROW_MIN_HEIGHT: LogicalPx = super::settings::ROW_MIN_HEIGHT;
@@ -1165,6 +1190,12 @@ pub mod settings {
 
     /// `component.settings-row-min-height` → `{primitive.size-32}` = 32px
     pub const ROW_MIN_HEIGHT: LogicalPx = crate::generated::primitive::SIZE_32;
+
+    /// `component.settings-row-stack-gap` → `{semantic.space-xs}` = 4px
+    pub const ROW_STACK_GAP: LogicalPx = crate::generated::semantic::SPACE_XS;
+
+    /// `component.settings-row-stack-hysteresis` → `{semantic.space-lg}` = 16px
+    pub const ROW_STACK_HYSTERESIS: LogicalPx = crate::generated::semantic::SPACE_LG;
 
     /// `component.settings-sidebar-width` → `{primitive.size-200}` = 200px
     pub const SIDEBAR_WIDTH: LogicalPx = crate::generated::primitive::SIZE_200;

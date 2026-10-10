@@ -25,6 +25,9 @@ pub(crate) const DURATION_200: f32 = 200.0;
 /// `primitive.duration-500` = 500ms (ms)
 pub(crate) const DURATION_500: f32 = 500.0;
 
+/// `primitive.duration-800` = 800ms (ms)
+pub(crate) const DURATION_800: f32 = 800.0;
+
 /// `primitive.duration-90` = 90ms (ms)
 pub(crate) const DURATION_90: f32 = 90.0;
 

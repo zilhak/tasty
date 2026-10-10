@@ -187,6 +187,7 @@
   --tasty-duration-150: 150ms; /* @kind other */
   --tasty-duration-200: 200ms; /* @kind other */
   --tasty-duration-500: 500ms; /* @kind other */
+  --tasty-duration-800: 800ms; /* @kind other */ /* explorer drag-over expand (2026-10-10) */
   /* spinner full-rotation period (a real UI spin, ~1 rev/s). NOT a typo of 90:
      the 90ms export was a dropped digit; see component.spinner-duration. */
   --tasty-duration-900: 900ms; /* @kind other */
