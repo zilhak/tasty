@@ -1,4 +1,4 @@
-<!-- source-hash: 692d89cf4eb1 -->
+<!-- source-hash: 1e5b372e26b0 -->
 <a id="remote-attach"></a>
 
 # Working remotely (attach)
@@ -132,7 +132,7 @@ tasty set workspace --id 5 --clear-mapping                              # remove
 ## What you can do inside a mirror
 
 - Keyboard input · mouse go straight to the remote terminal. The remote re-lays out to match the size of your Pane.
-- If the remote does not answer a new size, Tasty asks once more. If there is still no answer (about 10 seconds), a banner saying **Couldn't sync the terminal size with the remote** appears at the top of the Workspace with the affected tab names. **Retry** (**Retry all** for several) asks again, and × only closes the banner. If the remote accepts that size later, the banner goes away on its own. A remote running an older Tasty without this feature never shows the banner.
+- If the remote does not answer a new size, Tasty asks once more. If there is still no answer (about 10 seconds), a banner saying **Couldn't sync the terminal size with the remote** appears at the top of the Workspace with the affected tab names. When several tabs share a name, as split tabs do, the name appears once with a count, such as `Shell ×2`. **Retry** (**Retry all** for several) asks again, and × only closes the banner. If the remote accepts that size later, the banner goes away on its own. A remote running an older Tasty without this feature never shows the banner.
 - Splits, new Tabs, closing · reordering Tabs, Surface conversion, and reopening a closed item are **executed on the remote** and the result is reflected in the mirror. Creating a Surface of a type the remote does not have fails with a toast. When an agent requests a split, new Tab, close, move, or conversion (including a markdown navigation or an image open), or a file open without specifying where to open it, and that fails on the remote, it is only logged, with no toast.
 - **Move Surface** from the Surface context menu is executed on the remote only within the same mirror Workspace. Moving between a mirror and another Workspace is blocked.
 - Moving with **Move Tab** · **Move Pane** from the Tab context menu is not available in a mirror. If the item to move or the destination is a mirror, a toast says it was blocked and nothing changes.

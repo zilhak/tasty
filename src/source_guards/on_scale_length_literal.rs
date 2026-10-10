@@ -247,8 +247,7 @@ const AREAS: &[(&str, usize, &str)] = &[
         // 공용 상태 화면(state_screen)의 보조 줄 최대 폭 200은 시안 `ExpState` 의 `maxWidth: 200` 이며 역할 토큰이 없다.
         // 스크립트 변경 확인의 좌우 여백 14는 시안 `Padding 12/14` 이며 본체 popup 과 갤러리가 함께 쓴다. 역할 토큰이 없다.
         // 탐색기 상세 표 열의 이름 열 하한 140·크기 열 하한 64 는 본체와 갤러리가 함께 쓰는 explorer_columns 로 옮겨 왔다.
-        // attach 크기 동기 실패 배너의 이름 칸 하한 40은 시안 primitive `--tasty-size-40` 이며 역할 토큰이 없다.
-        30,
+        29,
         "공용 위젯",
     ),
     (

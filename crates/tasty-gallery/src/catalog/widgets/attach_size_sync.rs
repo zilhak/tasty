@@ -1,4 +1,4 @@
-//! 원격 attach mirror 의 터미널 크기 동기화 실패 배너 — 기본 · 다시 시도 중 · 여러 surface.
+//! 원격 attach mirror 의 터미널 크기 동기화 실패 배너 — 기본 · 다시 시도 중 · 여러 surface · 같은 이름.
 //! 배너는 본체와 같은 `tasty_ui_widgets` 함수로 그리고, 묶음 틀과 상태 캡션만 여기서 그린다.
 
 use tasty_type_appearance::theme::Theme;
@@ -49,7 +49,7 @@ fn caption(ui: &mut egui::Ui, theme: &Theme, text: &str) {
     );
 }
 
-/// 디자인 Stage 의 테마 묶음 — 기본, 다시 시도 중, 세 surface 를 차례로 쌓는다.
+/// 디자인 Stage 의 테마 묶음 — 기본, 다시 시도 중, 세 surface, 같은 이름 두 표본을 차례로 쌓는다.
 fn panel(ui: &mut egui::Ui, theme: &Theme, label: &str) {
     egui::Frame::new()
         .fill(theme.bg_app().to_egui())
@@ -75,6 +75,12 @@ fn panel(ui: &mut egui::Ui, theme: &Theme, label: &str) {
                     false,
                     PANEL_W,
                 );
+                caption(ui, theme, "split tab \u{b7} same name twice");
+                // mirror 탭 제목의 기본값이라 분할한 탭은 이 이름을 함께 쓴다.
+                let shell = t("attach.tab_title_fallback");
+                banner(ui, theme, &[shell, shell], false, PANEL_W);
+                caption(ui, theme, "duplicates + others");
+                banner(ui, theme, &[shell, shell, "build", "tests"], false, PANEL_W);
             });
         });
 }
@@ -205,7 +211,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ),
             (
                 "name",
-                "text-secondary · each name ≤ attach-sync-name-max-width 160, shrinks to fit the line down to 40 (size-40), then ellipsis; first two names, then +n; separators and +n never shrink",
+                "text-secondary · each name ≤ attach-sync-name-max-width 160, shrinks to fit the line down to attach-sync-name-min-width 40, then ellipsis · the floor applies only while shrinking: box = min(natural, max(40, shrunk)) — a short name keeps its own width · first two entries, then +n; separators, ×k and +n never shrink",
+            ),
+            (
+                "same name",
+                "equal display names collapse into one entry + “ ×k” (text-muted, never shrinks) · “N surfaces” counts surfaces · +n counts remaining entries · Retry all retries every surface",
             ),
             (
                 "retrying",
@@ -229,6 +239,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 theme.attach_sync_glyph().to_egui(),
             ),
             TokenChip::without_color("attach-sync-name-max-width", "→ size-160"),
+            TokenChip::without_color("attach-sync-name-min-width", "→ size-40"),
             TokenChip::new(
                 "banner-button-bg",
                 "Retry",

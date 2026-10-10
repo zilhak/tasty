@@ -6,7 +6,6 @@
 //! 문자열은 호출자가 주입한다. 큐·표시 범위는 본체 BannerManager가 정한다.
 
 use tasty_type_appearance::theme::Theme;
-use tasty_type_geometry::length::LogicalPx;
 
 use crate::banner::{ActionRow, action_slot, banner_close_button, banner_shell};
 use crate::button::{Button, ButtonVariant};
@@ -14,11 +13,8 @@ use crate::control::ControlSize;
 use crate::spinner::Spinner;
 use crate::tooltip::{Tooltip, tooltip_hover_delay_elapsed};
 
-/// 본문 줄에 이름으로 보이는 surface 수. 나머지는 `+n` 으로 줄인다.
+/// 본문 줄에 이름으로 보이는 항목 수. 같은 이름은 한 항목이며 나머지 항목은 `+n` 으로 줄인다.
 const SHOWN_NAMES: usize = 2;
-/// 이름 칸이 줄어드는 하한. 시안이 primitive `--tasty-size-40` 으로 적었고 대응 컴포넌트 토큰이 없어
-/// Theme 역할에 연결하지 않은 화면 전용 고정 치수로 둔다(ADR-0035). 토큰과 같이 UI 배율을 곱한다.
-const NAME_MIN_W: LogicalPx = LogicalPx(40.0);
 /// 제목은 자르지 않으므로 이 줄 수까지 감싼다.
 const MAX_TITLE_ROWS: usize = 3;
 
@@ -94,7 +90,20 @@ enum Piece<'a> {
     Name(&'a str),
 }
 
-/// 이름 줄의 조각 순서. 이름은 앞 두 개만 보이고 나머지는 ` +n` 으로 줄인다.
+/// 같은 이름을 한 항목으로 묶는다. 처음 나온 순서를 지키고 각 항목의 surface 수를 센다.
+fn name_entries<'a>(names: &[&'a str]) -> Vec<(&'a str, usize)> {
+    let mut entries: Vec<(&str, usize)> = Vec::new();
+    for &name in names {
+        match entries.iter_mut().find(|(n, _)| *n == name) {
+            Some((_, k)) => *k += 1,
+            None => entries.push((name, 1)),
+        }
+    }
+    entries
+}
+
+/// 이름 줄의 조각 순서. 앞 두 항목만 보이고 나머지 항목은 ` +n` 으로 줄인다.
+/// 같은 이름이 여럿이면 이름 뒤에 ` ×k` 를 붙인다. 수(`N surfaces`)는 항목이 아니라 surface 수다.
 fn name_pieces<'a>(view: &AttachSizeSyncBannerView<'a>) -> Vec<Piece<'a>> {
     let mut subject = Vec::new();
     let (many_before, many_after) = if view.many() {
@@ -107,13 +116,17 @@ fn name_pieces<'a>(view: &AttachSizeSyncBannerView<'a>) -> Vec<Piece<'a>> {
         (String::new(), "")
     };
     subject.push(Piece::Fixed(many_before));
-    for (i, name) in view.names.iter().take(SHOWN_NAMES).enumerate() {
+    let entries = name_entries(view.names);
+    for (i, (name, k)) in entries.iter().take(SHOWN_NAMES).enumerate() {
         if i > 0 {
             subject.push(Piece::Fixed(", ".to_owned()));
         }
         subject.push(Piece::Name(name));
+        if *k > 1 {
+            subject.push(Piece::Fixed(format!(" \u{d7}{k}")));
+        }
     }
-    let rest = view.names.len().saturating_sub(SHOWN_NAMES);
+    let rest = entries.len().saturating_sub(SHOWN_NAMES);
     if rest > 0 {
         subject.push(Piece::Fixed(format!(" +{rest}")));
     }
@@ -130,10 +143,12 @@ fn name_pieces<'a>(view: &AttachSizeSyncBannerView<'a>) -> Vec<Piece<'a>> {
     out
 }
 
-/// 이름 칸의 폭. 각 칸은 본래 폭을 `[floor, max]` 로 맞춘 값에서 출발하고, `avail` 을 넘으면
-/// 본래 폭에 비례해 줄되 `floor` 아래로는 줄지 않는다(CSS `flex: 0 1 auto` 와 min/max-width).
+/// 이름 칸의 폭. 각 칸은 본래 폭(`max` 까지)에서 출발하고, `avail` 을 넘으면 본래 폭에 비례해
+/// 줄되 `floor` 아래로는 줄지 않는다(CSS `flex: 0 1 auto` 와 min/max-width). 하한은 줄어들 때만
+/// 적용한다. 칸 = min(본래 폭, max(floor, 줄인 폭)) 이라 `floor` 보다 짧은 이름은 제 폭을 지킨다.
 fn shrink_names(natural: &[f32], floor: f32, max: f32, avail: f32) -> Vec<f32> {
-    let mut size: Vec<f32> = natural.iter().map(|w| w.clamp(floor, max)).collect();
+    let floor_of = |i: usize| natural[i].min(floor);
+    let mut size: Vec<f32> = natural.iter().map(|w| w.min(max)).collect();
     let mut open: Vec<usize> = (0..natural.len()).collect();
     loop {
         let over = size.iter().sum::<f32>() - avail;
@@ -145,7 +160,7 @@ fn shrink_names(natural: &[f32], floor: f32, max: f32, avail: f32) -> Vec<f32> {
             .map(|i| size[i] - over * natural[i] / weight)
             .collect();
         let (at_floor, rest): (Vec<usize>, Vec<usize>) =
-            open.iter().partition(|&&i| shrunk[i] <= floor);
+            open.iter().partition(|&&i| shrunk[i] <= floor_of(i));
         if at_floor.is_empty() {
             for &i in &rest {
                 size[i] = shrunk[i];
@@ -153,7 +168,7 @@ fn shrink_names(natural: &[f32], floor: f32, max: f32, avail: f32) -> Vec<f32> {
             return size;
         }
         for &i in &at_floor {
-            size[i] = floor;
+            size[i] = floor_of(i);
         }
         open = rest;
     }
@@ -193,7 +208,7 @@ fn names_galley(
         .collect();
     let boxes = shrink_names(
         &natural,
-        (NAME_MIN_W.value() * theme.ui_zoom).round(),
+        theme.attach_sync_name_min_width().value(),
         theme.attach_sync_name_max_width().value(),
         width - fixed,
     );
@@ -517,14 +532,14 @@ mod tests {
             colored(&line, theme.text_muted().to_egui()),
             ["3 surfaces — ", ", ", " +1"]
         );
-        // "build" 는 하한 40 보다 짧아 칸을 다 채우지 못하고, 뒤 " +1" 이 칸 끝에서 시작한다.
+        // "build" 는 하한 40 보다 짧지만 칸이 제 폭이라 뒤 " +1" 이 이름 바로 뒤에 붙는다.
         let plus = line
             .job
             .sections
             .iter()
             .find(|sec| &line.job.text[sec.byte_range.clone()] == " +1")
             .expect("+1");
-        assert!(plus.leading_space > 0.0, "{}", plus.leading_space);
+        assert_eq!(plus.leading_space, 0.0);
         assert!(texts(&shapes).iter().any(|t| t == "Retry all"));
     }
 
@@ -543,10 +558,16 @@ mod tests {
 
     #[test]
     fn names_shrink_by_their_width_down_to_the_floor_then_the_line_overflows() {
-        // 다 들어가면 본래 폭을 [40, 160] 으로 맞춘 값이다. 짧은 이름도 40 칸을 차지한다.
+        // 다 들어가면 본래 폭을 160 까지로 자른 값이다. 짧은 이름은 하한 40 을 채우지 않는다.
         assert_eq!(
             shrink_names(&[24.0, 300.0], 40.0, 160.0, 400.0),
-            [40.0, 160.0]
+            [24.0, 160.0]
+        );
+        // 하한보다 짧은 이름은 줄어들 때도 제 폭에서 멈추고, 나머지 칸이 부족분을 받는다.
+        let s = shrink_names(&[24.0, 300.0], 40.0, 160.0, 100.0);
+        assert!(
+            (s[0] - 24.0).abs() < 1e-3 && (s[1] - 76.0).abs() < 1e-3,
+            "{s:?}"
         );
         // 넘친 60을 본래 폭 비율(100:200)로 나눠 줄인다.
         let s = shrink_names(&[100.0, 200.0], 40.0, 160.0, 200.0);
@@ -565,6 +586,28 @@ mod tests {
             shrink_names(&[100.0, 200.0], 40.0, 160.0, 50.0),
             [40.0, 40.0]
         );
+    }
+
+    #[test]
+    fn equal_names_collapse_into_one_entry_with_a_muted_count() {
+        let theme = theme();
+        let (_, shapes) = render(460.0, &view(&["Shell", "Shell"], false));
+        let (_, line) = text_shape(&shapes, |t| t.starts_with("2 surfaces"));
+        assert_eq!(line.text(), "2 surfaces — Shell \u{d7}2");
+        assert_eq!(colored(&line, theme.text_secondary().to_egui()), ["Shell"]);
+        assert_eq!(
+            colored(&line, theme.text_muted().to_egui()),
+            ["2 surfaces — ", " \u{d7}2"]
+        );
+        assert!(texts(&shapes).iter().any(|t| t == "Retry all"));
+    }
+
+    #[test]
+    fn the_count_is_surfaces_and_the_rest_is_entries() {
+        let names = ["Shell", "build", "Shell", "tests", "Shell"];
+        let (_, shapes) = render(460.0, &view(&names, false));
+        let (_, line) = text_shape(&shapes, |t| t.starts_with("5 surfaces"));
+        assert_eq!(line.text(), "5 surfaces — Shell \u{d7}3, build +1");
     }
 
     #[test]
