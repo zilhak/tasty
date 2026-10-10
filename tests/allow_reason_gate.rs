@@ -37,9 +37,39 @@ fn synth_root() -> tempfile::TempDir {
     .expect("판정기 찾기 공용 복사");
     write_file(root, "src/zz_quiet.rs", "fn f() {}\n");
     write_file(root, "crates/zz/src/zz_quiet.rs", "fn g() {}\n");
+    set_floor(root, 1);
     git(root, &["init", "-q"]);
     git(root, &["add", "-A"]);
     dir
+}
+
+/// 합성 트리는 파일이 몇 개뿐이라 수집 하한을 시험마다 정한다.
+fn set_floor(root: &Path, floor: usize) {
+    let p = root.join("scripts/check-allow-reason.sh");
+    let text = fs::read_to_string(&p).expect("게이트 사본을 읽을 수 없다");
+    let lowered = text.replace("MIN_SCANNED=1500", &format!("MIN_SCANNED={floor}"));
+    assert_ne!(
+        lowered, text,
+        "게이트에서 MIN_SCANNED=1500을 찾지 못했다. 합성 입력에 맞춰 하한을 바꾸려면 현재 선언 형식을 확인해야 한다."
+    );
+    fs::write(&p, lowered).expect("게이트 사본 쓰기");
+}
+
+#[test]
+fn a_scan_below_the_floor_is_undecidable() {
+    let d = synth_root();
+    let p = d.path().join("scripts/check-allow-reason.sh");
+    let text = fs::read_to_string(&p).expect("게이트 사본을 읽을 수 없다");
+    fs::write(&p, text.replace("MIN_SCANNED=1\n", "MIN_SCANNED=3\n")).expect("게이트 사본 쓰기");
+    let (code, text) = run(d.path());
+    assert_eq!(
+        code, 2,
+        "수집 수가 하한보다 적은데 판정 불가로 끝나지 않았다:\n{text}"
+    );
+    assert!(
+        text.contains("수집이 일부 빠졌다"),
+        "일부 수집 누락을 알리는 진단이 없다:\n{text}"
+    );
 }
 
 fn git(root: &Path, args: &[&str]) {

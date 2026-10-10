@@ -13,6 +13,12 @@ use tasty_doc_guards::source_text::{mask_non_code, rust_sources};
 /// 2026-09-08 실측 29를 상한으로 뒀다. 빈 수집은 read_dir 자리 수가 0인지로 따로 확인한다.
 const SWALLOW_CAP: usize = 29;
 
+/// 통합 테스트 타깃 수집의 하한. 늘어나는 것은 실패가 아니다.
+/// 2026-10-10 3cba284fd 에서 tests/*.rs 와 crates/*/tests/*.rs 한 겹 타깃이 195개였다.
+/// 두세 크레이트의 시험을 옮기거나 합쳐도 남는 여유 55를 둬 타깃이 늘 때 고치지 않는다.
+/// tasty-doc-guards 의 92개가 한꺼번에 빠지는 것 같은 일부 붕괴를 잡는다.
+const MIN_TARGETS: usize = 140;
+
 #[derive(PartialEq, Eq, Debug)]
 enum Handling {
     Swallow,
@@ -54,12 +60,13 @@ fn handling_at(lines: &[&str], i: usize) -> Handling {
 fn direct_walks_do_not_swallow_failure() {
     let root = tasty_doc_guards::repo_root();
     let mut per_file: BTreeMap<String, usize> = BTreeMap::new();
-    let (mut sites, mut swallow) = (0usize, 0usize);
+    let (mut sites, mut swallow, mut targets) = (0usize, 0usize, 0usize);
     for (path, text) in rust_sources(&root, &["tests", "crates"]) {
         let rel = path.to_string_lossy().replace('\\', "/");
         if !is_target(&rel) {
             continue;
         }
+        targets += 1;
         let masked = mask_non_code(&text);
         let lines: Vec<&str> = masked.split('\n').collect();
         for (i, l) in lines.iter().enumerate() {
@@ -78,6 +85,10 @@ fn direct_walks_do_not_swallow_failure() {
         .iter()
         .map(|(f, n)| format!("  {n}  {f}"))
         .collect();
+    assert!(
+        targets >= MIN_TARGETS,
+        "통합 테스트 타깃을 {targets}개만 수집했다(하한 {MIN_TARGETS}). 수집 범위와 순회 결과를 확인한다. 하한을 내려서 통과시키지 않는다."
+    );
     assert!(
         sites > 0,
         "read_dir 자리를 하나도 찾지 못했다. 수집 범위와 판독을 확인한다."

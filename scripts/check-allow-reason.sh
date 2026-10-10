@@ -76,6 +76,17 @@ REASON_MARKERS='reason:;이유:;complexity-exempt:;SAFETY[[:space:]]*:'
 # 근거 없는 억제 수의 상한. 넘으면 실패하고 줄어든 것은 실패가 아니다.
 CAP=125
 
+# 훑은 .rs 수의 하한. 줄어든 억제 수가 수집 일부 누락 때문이 아닌지 가른다. 늘어나는 것은 실패가 아니다.
+# 2026-10-10 3cba284fd 에서 git ls-files 로 2112개였다. 가장 큰 두 단위(src/adapters 268,
+# crates/tasty-gallery 185)를 함께 옮겨도 남는 여유를 둬 파일이 늘 때 고치지 않는다.
+MIN_SCANNED=1500
+
+if [ "$scanned_count" -lt "$MIN_SCANNED" ]; then
+    echo "훑은 .rs 가 ${scanned_count}개로 하한 ${MIN_SCANNED} 보다 적다 — 수집이 일부 빠졌다." >&2
+    echo "이 상태의 억제 수로는 판정하지 않는다. 수집 범위와 명령을 확인해라. 하한을 내려서 통과시키지 마라." >&2
+    exit 2
+fi
+
 # 마스킹 도구가 없거나 실패했으면 원문 수를 CAP과 비교하지 않는다.
 if [ "$DET_ROOT" = "$ROOT" ]; then
     echo "훑을 .rs ${scanned_count}개 (좌변=${LEFT_SOURCE}) — 세지 않았다."
