@@ -266,7 +266,7 @@ pub use toast::{
 };
 pub use toggle::{checkbox, checkbox_width, switch, switch_with_label_color};
 pub use tooltip::{Tooltip, TooltipPlacement, tooltip_hover_delay_elapsed};
-pub use tree_row::{tree_row, tree_row_icon_center, tree_row_matching};
+pub use tree_row::{tree_row, tree_row_icon_center, tree_row_label_left, tree_row_matching};
 pub use two_depth::{two_depth_layout, two_depth_layout_filtered};
 pub use ui_code::{
     UiCodeTokens, UiCopySpan, paint_ui_copy, split_ui_copy, ui_code_font, ui_code_rects, ui_copy,

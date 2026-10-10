@@ -275,7 +275,8 @@ Grid 셀은 모두 `explorer_grid_thumb_size`(40) 슬롯을 잡아 썸네일 유
 목록은 `read_dir_entries`(`src/core/fs_list.rs`)가 읽는다. 링크 항목은 대상의 metadata 로 종류·크기·수정 시각을 정하고 `DirEntryInfo::link` 에 상태를 남긴다(`NotALink` / `Valid` / `Broken`).
 
 - **폴더를 가리키는 링크**는 폴더로 보이고 트리에도 나온다. 들어가면 경로는 링크 자신의 경로다. 주소창·히스토리·뒤로/위로는 대상의 실제 경로가 아니라 링크 경로를 쓴다. 따라서 링크 폴더에서 위로 가면 링크가 있던 폴더로 돌아간다.
-- **대상이 없는 링크**는 폴더로 보지 않으며 크기·수정 시각은 링크 자신의 값이다. 열면 파일을 찾지 못한 것처럼 보이지 않도록 `explorer.state.broken_link` 오류 toast 로 대상이 없다는 원인을 알린다. 주소창 입력도 같은 이유로 거부한다. 목록에서 링크·끊긴 링크를 구분해 그리는 표시는 아직 없다(디자인 대기).
+- **대상이 없는 링크**는 폴더로 보지 않으며 크기·수정 시각은 링크 자신의 값이다. 열면 파일을 찾지 못한 것처럼 보이지 않도록 `explorer.state.broken_link` 오류 toast 로 대상이 없다는 원인을 알린다. 주소창 입력도 같은 이유로 거부한다.
+- **목록 표시**(`explorer/link.rs`, Detail · List · Grid 공통): 대상이 있는 링크는 대상의 글리프(폴더·파일·그림)를 쓰고 이름 뒤 `space-xs` 자리에 link 글리프 12(`icon-size-xs`, text-muted)를 붙인다. Grid 는 이름의 마지막 줄 끝에 붙이며 그 폭만큼 이름 줄 폭을 줄인다. 대상이 없는 링크는 항목 자리에 link 글리프를 accent-warning 으로 그리고 이름은 보통 색(취소선 없음)이다. 호버하면 `explorer.link.target_missing`("Target not found: {path}")으로 `read_link` 가 돌려준 대상 경로를 보인다(호버할 때만 읽는다). 색·크기는 시안의 `explorer-link-glyph`·`explorer-link-glyph-size`·`explorer-link-broken-fg` 가 가리키는 의미 토큰을 읽는다. Type 열 낱말은 위 종류 문구다.
 - **링크 자체에 대한 조작**: 복사·붙여넣기는 링크를 링크로 복사한다. 이름 변경과 cut 의 교차 파일시스템 정리(`remove_path`)는 링크만 옮기거나 지운다. 휴지통(`trash` 크레이트)은 모든 OS 에서 부모 경로만 canonicalize 하고, Linux(freedesktop) 구현은 링크 항목 자체를 휴지통으로 옮긴다. macOS·Windows 의 링크 휴지통 동작은 실 기기에서 확인하지 않았다. 어느 조작도 대상 폴더나 그 내용을 바꾸지 않는다.
 - 원격 목록 응답은 링크 상태를 싣지 않는다. 원격 서버도 같은 함수로 목록을 만들므로 원격의 폴더 링크도 폴더로 보이지만, 끊긴 링크 구분은 원격 항목에 없다.
 

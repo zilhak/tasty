@@ -98,6 +98,8 @@ src/catalog/components/explorer_ops.rs	Markdown	explorer.kind.markdown
 src/catalog/components/explorer_ops.rs	PDF document	explorer.kind.pdf
 src/catalog/components/explorer_ops.rs	no write access	explorer.drag.no_write
 src/catalog/components/explorer_ops.rs	—	dag.detail.none,port_scanner.external_dash
+src/catalog/components/explorer_ops/kinds.rs	fallback	dag.rel.fallback
+src/catalog/components/explorer_ops/kinds.rs	—	dag.detail.none,port_scanner.external_dash
 src/catalog/components/explorer_ops/search.rs	Detail	explorer.view.detail
 src/catalog/components/explorer_ops/search.rs	PDF document	explorer.kind.pdf
 src/catalog/components/explorer_ops/search.rs	—	dag.detail.none,port_scanner.external_dash

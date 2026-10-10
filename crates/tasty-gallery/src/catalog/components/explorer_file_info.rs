@@ -440,7 +440,7 @@ const PREVIEW_TEXT: &str = "# Notes\n\n- split floor 180\n- favorites pin 240\n-
 /// 시안 `YPreview`: 288 폭 · 40 머리(이름 body · "종류 · 크기" caption muted) · bg-sidebar 바탕 본문.
 fn preview_panel(ui: &mut egui::Ui, theme: &Theme, kind: PreviewKind, height: f32) {
     let (name, facts) = match kind {
-        PreviewKind::Text | PreviewKind::Loading => ("notes.md", "MD file · 12.0 KB"),
+        PreviewKind::Text | PreviewKind::Loading => ("notes.md", "Markdown · 12.0 KB"),
         PreviewKind::Image => ("diagram.png", "PNG image · 1280 × 720 · 488.0 KB"),
         PreviewKind::None => ("archive.zip", "ZIP file · 64.0 MB"),
         PreviewKind::Large => ("server.log", "LOG file · 38.0 MB"),

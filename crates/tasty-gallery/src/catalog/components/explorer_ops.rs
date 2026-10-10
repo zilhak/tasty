@@ -21,6 +21,7 @@ use crate::catalog::spec::{StageVariant, TokenChip, meta, note, stage, wrap_item
 use crate::catalog::{Section, Spec};
 use crate::i18n::{t, t_count, t_fmt, t_fmt2};
 
+mod kinds;
 mod search;
 pub use search::search_section;
 

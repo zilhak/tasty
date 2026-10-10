@@ -6,6 +6,7 @@ mod commands;
 mod create;
 mod find;
 mod kind;
+mod link;
 mod preview;
 mod state_screen;
 mod thumbs;
@@ -1088,7 +1089,9 @@ pub(crate) fn is_image_ext(ext: &str) -> bool {
 /// 엔트리의 아이콘 + glyph 색 (design GridCell/DetailRow/ExpListMini):
 /// 폴더/파일 = text-muted, 이미지 파일 = IMAGE 아이콘 + accent-info.
 fn entry_icon(theme: &Theme, e: &DirEntryInfo) -> (Icon, egui::Color32) {
-    if e.is_dir {
+    if let Some(broken) = link::broken_icon(theme, e) {
+        broken
+    } else if e.is_dir {
         (icons::FOLDER, theme.text_muted().to_egui())
     } else if is_image_ext(&e.ext) {
         (icons::IMAGE, theme.accent_info().to_egui())
@@ -1257,7 +1260,7 @@ fn grid_entry(
     let resp = ui
         .push_id(&e.path, |ui| grid_cell(ui, ctx, e, state, thumb.as_ref()))
         .inner;
-    let resp = view.hit_tooltip(e, resp);
+    let resp = link::broken_tooltip(e, view.hit_tooltip(e, resp));
     if ui.is_rect_visible(resp.rect) {
         view.thumbs.want(e, view.is_remote());
     }
@@ -1328,8 +1331,10 @@ fn grid_cell(
         Some(ctx.metrics.label_line_h),
     );
     job.halign = egui::Align::Center;
+    // 링크는 마지막 줄 끝에 link 글리프가 들어갈 폭을 남긴다.
+    let tail = link::has_tail(e).then(|| link::glyph_size(theme) + theme.spacing_xs.value());
     job.wrap = egui::text::TextWrapping {
-        max_width: (CELL_W - theme.spacing_xs.scaled(2.0)).value(),
+        max_width: (CELL_W - theme.spacing_xs.scaled(2.0)).value() - tail.unwrap_or(0.0),
         max_rows: 3,
         overflow_character: Some('…'),
         ..Default::default()
@@ -1339,6 +1344,10 @@ fn grid_cell(
         rect.center().x,
         glyph_rect.bottom() + theme.spacing_xs.value(),
     );
+    if let (Some(_), Some(row)) = (tail, galley.rows.last()) {
+        let row = row.rect.translate(label_at.to_vec2());
+        link::paint_tail(ui, theme, row.right(), row.center().y, fg_dim);
+    }
     p.galley(label_at, galley, label_color);
 
     resp
@@ -1387,7 +1396,7 @@ fn list_view(
                 if cut {
                     ui.set_opacity(theme.cut_pending_opacity());
                 }
-                tree_row_matching(
+                let resp = tree_row_matching(
                     ui,
                     theme,
                     0,
@@ -1398,10 +1407,21 @@ fn list_view(
                     &query,
                     None,
                     selected,
-                )
+                );
+                if link::has_tail(e) {
+                    let font = egui::FontId::proportional(theme.tree_row_font_size().value());
+                    let w = ui.fonts(|f| {
+                        f.layout_no_wrap(e.name.clone(), font, egui::Color32::PLACEHOLDER)
+                            .rect
+                            .width()
+                    });
+                    let right = resp.rect.left() + tasty_ui_widgets::tree_row_label_left(theme) + w;
+                    link::paint_tail(ui, theme, right, resp.rect.center().y, |c| c);
+                }
+                resp
             })
             .inner;
-        let resp = view.hit_tooltip(e, resp);
+        let resp = link::broken_tooltip(e, view.hit_tooltip(e, resp));
         if !handle_entry_context(view, e, &resp, root, action) {
             self::view::drag::note(ui, e, resp.rect);
             handle_entry_interaction(ui, view, e, (resp.clicked(), resp.double_clicked()), action);
@@ -1500,7 +1520,7 @@ fn detail_view(
                             } else {
                                 th.table_row_fg()
                             };
-                            ui.label(find::name_job(
+                            let name = ui.label(find::name_job(
                                 th,
                                 &row.name,
                                 &query,
@@ -1508,6 +1528,11 @@ fn detail_view(
                                 dim(name_fg.to_egui()),
                                 None,
                             ));
+                            link::broken_tooltip(row, name);
+                            if link::has_tail(row) {
+                                ui.spacing_mut().item_spacing.x = th.spacing_xs.value();
+                                link::add_tail(ui, th, dim);
+                            }
                         });
                         return;
                     }

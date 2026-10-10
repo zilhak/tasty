@@ -905,6 +905,9 @@ shell = "셸 스크립트"
 link_to = "{kind} 링크"
 broken_link = "끊긴 링크"
 
+[explorer.link]
+target_missing = "대상을 찾을 수 없음: {path}"
+
 [explorer.view]
 grid = "그리드"
 list = "목록"

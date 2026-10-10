@@ -18,6 +18,11 @@ pub fn tree_row_icon_center(theme: &Theme) -> f32 {
     theme.tree_row_gap().value() + CHEVRON_SLOT + GAP + ICON_GLYPH * 0.5
 }
 
+/// 아이콘이 있는 깊이 0 행의 왼쪽 끝에서 이름 글자가 시작하는 곳까지의 거리. 이름 뒤에 표지를 붙일 때 쓴다.
+pub fn tree_row_label_left(theme: &Theme) -> f32 {
+    theme.tree_row_gap().value() + CHEVRON_SLOT + GAP + ICON_GLYPH + GAP
+}
+
 /// 트리 행. `selected` 면 surface-active. 클릭 응답 반환(행 전체 클릭).
 #[allow(clippy::too_many_arguments)]
 pub fn tree_row(

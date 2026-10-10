@@ -905,6 +905,9 @@ shell = "シェルスクリプト"
 link_to = "{kind} へのリンク"
 broken_link = "リンク切れ"
 
+[explorer.link]
+target_missing = "リンク先が見つかりません: {path}"
+
 [explorer.view]
 grid = "グリッド"
 list = "リスト"

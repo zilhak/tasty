@@ -21,6 +21,21 @@ pub fn search_section() -> Section {
                 when: Some("results stream in · Detail swaps Type for a relative Folder column"),
                 draw: draw_subfolder_search,
             },
+            // 형식 이름과 링크 표시는 목록 행의 일이라 이 절에 둔다(갤러리 목차는 동결 파일이다).
+            Spec {
+                id: "explorer-kind-words",
+                title: "Kind words — one table for Type, Kind and the preview header",
+                when: Some("format-name table · fallback {EXT} file · links say Link to {kind}"),
+                draw: super::kinds::draw_kind_words,
+            },
+            Spec {
+                id: "explorer-links",
+                title: "Links in the listing · broken link",
+                when: Some(
+                    "target glyph + trailing link glyph · broken = warning link glyph in the item slot",
+                ),
+                draw: super::kinds::draw_links,
+            },
         ],
     }
 }
