@@ -1426,24 +1426,23 @@ impl MainView {
         let multi = paths.len() > 1;
         let is_empty_target = paths.is_empty();
         let is_folder = paths.len() == 1 && single_is_dir;
-        // 원격에서 복사한 경로는 로컬에 붙여넣을 수 없으므로 붙여넣기를 보이지 않는다.
-        let has_clip = self
-            .state
-            .explorer_clipboard
-            .as_ref()
-            .is_some_and(|c| !c.paths.is_empty() && c.is_local());
+        let has_clip = self.explorer_menu_has_clip();
         // mirror 경로를 로컬 파일 작업에 사용하지 않도록 쓰기 메뉴를 숨긴다(ADR-0022).
         // 다른 호출 경로도 있으므로 각 핸들러의 검사도 유지한다.
         let is_mirror = engine.is_mirror_surface(surface_id);
         // 메뉴를 연 surface 세대를 고정한다. 그 사이 닫히거나 바뀐 surface에는 결과를 적용하지 않는다.
         let binding = crate::runtime::surface_binding::SurfaceBinding::capture(engine, surface_id);
 
-        let items = Self::build_explorer_context_menu(
-            multi,
-            is_empty_target,
-            is_folder,
-            has_clip,
-            is_mirror,
+        let items = self.with_show_in_folder(
+            surface_id,
+            &paths,
+            Self::build_explorer_context_menu(
+                multi,
+                is_empty_target,
+                is_folder,
+                has_clip,
+                is_mirror,
+            ),
         );
         self.open_native_menu(engine, x, y, &items, move |this, engine, result| {
             // 경로 복사·복사·루트 설정은 파일시스템을 바꾸지 않아 같은 explorer 인지만 본다.
@@ -1500,7 +1499,7 @@ impl MainView {
                     &paths,
                     &cwd,
                 ),
-                Some(id) => this.explorer_menu_create(engine, surface_id, id, &paths, &cwd),
+                Some(id) => this.explorer_menu_more(engine, surface_id, id, &paths, &cwd),
                 None => {}
             }
         });

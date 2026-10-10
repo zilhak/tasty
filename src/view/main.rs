@@ -7,6 +7,7 @@ pub(crate) mod debug_menu;
 mod divider_drag;
 mod egui_mesh;
 mod explorer_create;
+mod explorer_show_in_folder;
 mod file_drop;
 mod fullscreen_window;
 mod html_script_banner;

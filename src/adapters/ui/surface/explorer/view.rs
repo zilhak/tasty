@@ -104,8 +104,10 @@ pub struct ExplorerView {
     pub thumbs: super::thumbs::Thumbs,
     /// 목록 맨 위에서 이름을 받고 있는 새 항목.
     pub(crate) create: Option<super::create::CreateEdit>,
-    /// 방금 만든 항목. 다시 읽은 목록에 나타나면 그 자리로 스크롤한다.
-    reveal: Option<PathBuf>,
+    /// 방금 만든 항목이나 들어 있는 폴더에서 보일 항목. 다시 읽은 목록에 나타나면 그 자리로 스크롤한다.
+    pub(super) reveal: Option<PathBuf>,
+    /// 나타났을 때 그 항목을 고르기도 하는가(들어 있는 폴더에서 보기).
+    pub(super) reveal_select: bool,
     /// 지금 보는 로컬 폴더에 쓸 수 있는가. 확인한 폴더와 함께 둔다.
     writable: Option<(PathBuf, bool)>,
     writable_query: Option<(PathBuf, crate::app::local_reads::Query<bool>)>,
@@ -239,6 +241,7 @@ impl ExplorerView {
             thumbs: Default::default(),
             create: None,
             reveal: None,
+            reveal_select: false,
             writable: None,
             writable_query: None,
             find: None,
@@ -350,7 +353,14 @@ impl ExplorerView {
             .reveal
             .as_ref()
             .is_some_and(|p| self.entries.iter().any(|e| &e.path == p));
-        if listed { self.reveal.take() } else { None }
+        if !listed {
+            return None;
+        }
+        let path = self.reveal.take()?;
+        if std::mem::take(&mut self.reveal_select) {
+            self.select_only(&path);
+        }
+        Some(path)
     }
 
     /// 다음 렌더에서 현재 디렉토리를 다시 읽도록 표시.

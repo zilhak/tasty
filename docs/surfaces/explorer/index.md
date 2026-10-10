@@ -239,6 +239,8 @@ Grid 셀은 모두 `explorer_grid_thumb_size`(40) 슬롯을 잡아 썸네일 유
 
 진입점별 대상 결정, 작업별 결과·피드백, 지원하지 않는 작업은 [파일 작업 계약](file-operations.md)에 있다.
 
+**들어 있는 폴더에서 보기**(id 90, `view/main/explorer_show_in_folder.rs`): 대상이 하나이고 로컬 explorer 이며 `ExplorerView::enclosing_target`(`explorer/enclosing.rs`)이 폴더를 돌려줄 때 메뉴 맨 앞에 행과 구분선을 둔다. 링크(lstat 이 symlink)는 `canonicalize` 한 대상이 든 폴더, 하위 폴더 검색 결과는 결과가 든 폴더다. 대상이 없는 링크와 그 밖의 항목에는 행이 없다. 고르면 툴바 이동과 같은 `EngineAction::Explorer { Navigate }` 를 보내(히스토리에 남는다) 그 폴더를 열고, `reveal_after_load` 가 Find 를 닫은 뒤 그 폴더 목록에 항목이 나타나는 프레임에 항목 하나만 고르고 그 자리로 스크롤한다. 깜박임 같은 강조는 없다. 키보드 현재 항목(cursor ring)은 이 기능이 놓지 않는다.
+
 우클릭 컨텍스트 메뉴는 **2-단계 네이티브 메뉴 패턴**([context-menu](../../dev-guide/context-menu.md))을 따른다: 렌더 중 우클릭을 감지하면 `ExplorerAction::ContextMenu { target, cwd, x, y }` 를 모으고, `apply_explorer_action` 이 이를 `PendingNativeMenu::Explorer`/`ExplorerFavorite` 슬롯에 선점한다.
 비-terminal 컨텍스트 메뉴는 winit 이 만들지 않고 egui 프레임이 단일 생산자다 — explorer 메뉴는 같은 egui 프레임 안에서 `apply_explorer_action`(렌더 루프 종료 직후)이 generic surface fallback(`emit_surface_menu_fallback`)보다 **먼저** 슬롯을 선점하므로, fallback은 `is_none()` 확인 후 건너뛰어 explorer 전용 메뉴를 유지한다.
 이후 `MainView::process_pending_native_menu` 가 `open_native_menu` 로 OS 네이티브 메뉴를 띄우고, 선택 id 를 조작으로 번역하는 처리는 continuation 으로 예약된다(Linux 는 메뉴가 닫힌 뒤 프레임에 실행 — [context-menu](../../dev-guide/context-menu.md) · [ADR-0036](../../adr/0036-overlay-scope-and-lifetime.md)).

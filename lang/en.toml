@@ -922,6 +922,9 @@ shell = "Shell script"
 link_to = "Link to {kind}"
 broken_link = "Broken link"
 
+[explorer.menu]
+show_in_folder = "Show in enclosing folder"
+
 [explorer.link]
 target_missing = "Target not found: {path}"
 

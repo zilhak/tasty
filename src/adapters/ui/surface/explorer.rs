@@ -4,6 +4,7 @@
 pub mod address;
 mod commands;
 mod create;
+mod enclosing;
 mod find;
 mod kind;
 mod link;
