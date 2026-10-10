@@ -195,71 +195,76 @@ pub fn draw_address_states(ui: &mut egui::Ui, theme: &Theme) {
                 address_bar(ui, theme, "~/work/tasty/docs/design/systems/theme.md", true)
             });
         });
-        cluster(ui, theme, "over 1 MB — confirm scoped to the tile", |ui| {
-            let (tile, _) = ui.allocate_exact_size(
-                egui::vec2(ADDRESS_W.value(), TILE_H.value()),
-                egui::Sense::hover(),
-            );
-            let p = ui.painter();
-            p.rect_filled(tile, theme.corner_radius.value(), ec(theme.bg_panel()));
-            let mut child = ui.new_child(
-                egui::UiBuilder::new()
-                    .max_rect(tile)
-                    .layout(egui::Layout::top_down(egui::Align::Min)),
-            );
-            child.set_clip_rect(tile.intersect(ui.clip_rect()));
-            child.spacing_mut().item_spacing.y = 0.0;
-            child.push_id("tile", |ui| {
-                address_bar(ui, theme, "~/work/tasty/docs/CHANGELOG-full.md", false)
-            });
-            let bar_bottom = child.min_rect().bottom();
-            child.scope(|ui| {
-                ui.multiply_opacity(TILE_BODY_OPACITY);
-                egui::Frame::new()
-                    .inner_margin(egui::Margin::symmetric(
-                        theme.spacing_lg.value() as i8,
-                        theme.spacing_md.value() as i8,
-                    ))
-                    .show(ui, |ui| {
-                        ui.label(
-                            egui::RichText::new("Changelog")
-                                .size(theme.font_size_prose_h1.value())
-                                .color(ec(theme.text_primary())),
-                        );
-                        ui.label(
-                            egui::RichText::new("A very long history…")
-                                .size(theme.font_size_body.value())
-                                .color(ec(theme.text_secondary())),
-                        );
-                    });
-            });
-            // 막은 범위는 주소 표시줄 아래 타일뿐이다. 창 전체를 덮지 않는다.
-            let scope = egui::Rect::from_min_max(egui::pos2(tile.left(), bar_bottom), tile.max);
-            ui.painter()
-                .with_clip_rect(scope.intersect(ui.clip_rect()))
-                .rect_filled(scope, 0.0, ec(theme.scrim()));
-            // 시안 scrim 은 `alignItems: center; justifyContent: center` 다. 카드 크기를 먼저
-            // 재고 막은 범위의 정중앙에 놓는다.
-            let inner = scope.shrink(theme.spacing_md.value());
-            let mut sizing = ui.new_child(
-                egui::UiBuilder::new()
-                    .id_salt("large-file-sizing")
-                    .max_rect(inner)
-                    .layout(egui::Layout::top_down(egui::Align::Min))
-                    .sizing_pass()
-                    .invisible(),
-            );
-            md_large_file::popup_card(&mut sizing, theme);
-            let card = egui::Rect::from_center_size(inner.center(), sizing.min_rect().size());
-            let mut popup = ui.new_child(
-                egui::UiBuilder::new()
-                    .id_salt("large-file-popup")
-                    .max_rect(card)
-                    .layout(egui::Layout::top_down(egui::Align::Min)),
-            );
-            popup.set_clip_rect(scope.intersect(ui.clip_rect()));
-            md_large_file::popup_card(&mut popup, theme);
-        });
+        cluster(
+            ui,
+            theme,
+            "over 1 MiB — confirm scoped to the tile",
+            |ui| {
+                let (tile, _) = ui.allocate_exact_size(
+                    egui::vec2(ADDRESS_W.value(), TILE_H.value()),
+                    egui::Sense::hover(),
+                );
+                let p = ui.painter();
+                p.rect_filled(tile, theme.corner_radius.value(), ec(theme.bg_panel()));
+                let mut child = ui.new_child(
+                    egui::UiBuilder::new()
+                        .max_rect(tile)
+                        .layout(egui::Layout::top_down(egui::Align::Min)),
+                );
+                child.set_clip_rect(tile.intersect(ui.clip_rect()));
+                child.spacing_mut().item_spacing.y = 0.0;
+                child.push_id("tile", |ui| {
+                    address_bar(ui, theme, "~/work/tasty/docs/CHANGELOG-full.md", false)
+                });
+                let bar_bottom = child.min_rect().bottom();
+                child.scope(|ui| {
+                    ui.multiply_opacity(TILE_BODY_OPACITY);
+                    egui::Frame::new()
+                        .inner_margin(egui::Margin::symmetric(
+                            theme.spacing_lg.value() as i8,
+                            theme.spacing_md.value() as i8,
+                        ))
+                        .show(ui, |ui| {
+                            ui.label(
+                                egui::RichText::new("Changelog")
+                                    .size(theme.font_size_prose_h1.value())
+                                    .color(ec(theme.text_primary())),
+                            );
+                            ui.label(
+                                egui::RichText::new("A very long history…")
+                                    .size(theme.font_size_body.value())
+                                    .color(ec(theme.text_secondary())),
+                            );
+                        });
+                });
+                // 막은 범위는 주소 표시줄 아래 타일뿐이다. 창 전체를 덮지 않는다.
+                let scope = egui::Rect::from_min_max(egui::pos2(tile.left(), bar_bottom), tile.max);
+                ui.painter()
+                    .with_clip_rect(scope.intersect(ui.clip_rect()))
+                    .rect_filled(scope, 0.0, ec(theme.scrim()));
+                // 시안 scrim 은 `alignItems: center; justifyContent: center` 다. 카드 크기를 먼저
+                // 재고 막은 범위의 정중앙에 놓는다.
+                let inner = scope.shrink(theme.spacing_md.value());
+                let mut sizing = ui.new_child(
+                    egui::UiBuilder::new()
+                        .id_salt("large-file-sizing")
+                        .max_rect(inner)
+                        .layout(egui::Layout::top_down(egui::Align::Min))
+                        .sizing_pass()
+                        .invisible(),
+                );
+                md_large_file::popup_card(&mut sizing, theme);
+                let card = egui::Rect::from_center_size(inner.center(), sizing.min_rect().size());
+                let mut popup = ui.new_child(
+                    egui::UiBuilder::new()
+                        .id_salt("large-file-popup")
+                        .max_rect(card)
+                        .layout(egui::Layout::top_down(egui::Align::Min)),
+                );
+                popup.set_clip_rect(scope.intersect(ui.clip_rect()));
+                md_large_file::popup_card(&mut popup, theme);
+            },
+        );
     });
     meta(
         ui,

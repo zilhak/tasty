@@ -103,7 +103,7 @@ struct DispatchReq {
     /// 결과를 이 surface의 pane에 새 탭으로 연다. 생략하면 포커스된 pane을 쓴다.
     #[serde(default)]
     origin_surface_id: Option<u32>,
-    /// 대용량 markdown 확인을 건너뛴다. 기본 false이며 1MB 초과 시 확인한다.
+    /// 대용량 markdown 확인을 건너뛴다. 기본 false이며 1 MiB 초과 시 확인한다.
     #[serde(default)]
     ignore_size_limit: bool,
     /// 호출 플러그인이 소유하고 사용자의 확정 입력을 받은 팝업 인스턴스.

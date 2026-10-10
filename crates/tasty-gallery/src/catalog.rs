@@ -2367,7 +2367,7 @@ pub fn pages() -> Vec<Page> {
                         spec(
                             "markdown-address-states",
                             "Address bar states · large-file confirm",
-                            Some("idle · editing · over 1 MB confirm dims only the tile"),
+                            Some("idle · editing · over 1 MiB confirm dims only the tile"),
                             plugins_settled::draw_address_states,
                         ),
                         components::markdown_viewer::callout_kinds_spec(),

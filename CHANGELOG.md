@@ -94,6 +94,7 @@
 - **영어 화면에서 개수가 1이면 단수형으로 읽힌다.** "1 items" · "Copy 1 items to …" · "1 files" 처럼 수를 받는 영어 문구가 1일 때 "1 item" · "Copy 1 item to …" · "1 file" 로 바뀐다. 탐색기 진행 카드·결과 카드·속성 팝업(바이트 수 포함)·충돌 창, 단축키 가져오기·프리셋, DAG 목록, 포트 스캐너 하단 카운터, 플러그인 추가 창, 파일 선택기, CLI 안내(`remote check`, `events`, `plugin doctor`, `attach`)와 Claude·클립보드 뷰어 플러그인 알림에 적용된다. 한국어·일본어 문구는 그대로다. 사용자 번역 파일이나 언어팩이 `<key>` 만 바꾸고 `<key>_one` 을 두지 않으면 1일 때도 그 문구를 쓴다.
 - **탐색기가 받지 않은 파일 작업을 그 칸의 경고 카드로 알린다.** 기다리는 작업이 너무 많거나 한 번에 고른 항목이 너무 많을 때 앱 안내 대신 결과 카드 자리에 경고 카드가 잠시 뜬다. 대기열이 찼고 그 탐색기의 작업이 돌고 있으면 카드의 **Show queue** 가 대기열 목록을 연다.
 - **탐색기의 남은 원본 다시 지우기가 자기 진행·결과 문구를 쓴다.** 이동 문구를 빌리지 않고, 비교하는 동안 상태줄은 "Checking", 지우는 동안 "Removing originals" 이며, 다 지우면 "Removed n originals" 카드가 잠시 뜬다. 원본을 남긴 이유(사본 없음·사본에 없는 항목·같은 파일·취소) 문구도 확정 문구로 바뀌었다. 다시 옮길 항목과 남은 원본이 함께 있어도 Retry 한 번의 결과는 카드 하나다.
+- **마크다운 대용량 확인 문구가 이진 단위 MiB 를 쓴다.** "Over 1 MiB — rendering may be slow." 와 "This file is larger than 1 MiB and has not been loaded" 이고(ko·ja 도 같다), 기준은 그대로 1,048,576 바이트다.
 - **탐색기 미리보기의 크기 상한 문구가 이진 단위 MiB 를 쓴다.** "Over 1 MiB." 이고, 숫자와 단위가 줄바꿈으로 갈리지 않는다.
 - **탐색기 형식 열이 종류를 낱말로 쓴다.** Markdown·Text·PDF document·Archive·Shell script·PNG image 처럼 쓰고, 표에 없으면 "RS file" 이다. 링크는 "Link to Markdown", 대상이 없는 링크는 "Broken link" 다. 속성 팝업과 미리보기 머리도 같은 낱말을 쓴다. 형식 정렬도 같은 종류끼리 묶어, 보이는 낱말과 순서가 어긋나지 않는다(언어 무관).
 - **Plugins 창 Attention 상세의 메타 줄에 홈페이지 링크가 붙는다**(`http`·`https` 주소일 때). 서명이 유효하지 않은 플러그인은 설명과 홈페이지를 숨기고 설명 자리에 `Description hidden — the signature is invalid.` 를 보인다.

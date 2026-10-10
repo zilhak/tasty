@@ -631,7 +631,7 @@ pub fn draw_preview(ui: &mut egui::Ui, theme: &Theme) {
                 "loading",
                 "Spinner · “Loading preview…” — the old preview is cleared first",
             ),
-            ("too large", "> 1 MB (app limit) · “Too large to preview”"),
+            ("too large", "> 1 MiB (app limit) · “Too large to preview”"),
             (
                 "pixel limit",
                 "same screen · “Over {px} px on a side, or needs more than {mem} to decode.” · reason = real size · MiB",

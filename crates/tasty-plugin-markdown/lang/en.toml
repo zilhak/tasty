@@ -19,7 +19,7 @@ markdown = "Markdown"
 [markdown.state]
 failed = "Failed to load"
 empty = "This file is empty"
-large_deferred = "This file is larger than 1 MB and has not been loaded"
+large_deferred = "This file is larger than 1\u00A0MiB and has not been loaded"
 large_deferred_open = "Open file…"
 
 [markdown.image]
@@ -27,7 +27,7 @@ failed = "Failed to load image"
 
 [markdown.large_file]
 title = "Open large file?"
-body = "Over 1 MB — rendering may be slow."
+body = "Over 1\u00A0MiB — rendering may be slow."
 open = "Open"
 cancel = "Cancel"
 

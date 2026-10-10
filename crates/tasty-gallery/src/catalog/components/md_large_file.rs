@@ -45,7 +45,7 @@ pub(crate) fn popup_card(ui: &mut egui::Ui, theme: &Theme) {
                 ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
                 tag(ui, theme, "3.2 MB", TagVariant::Warning, false);
                 ui.label(
-                    egui::RichText::new("Over 1 MB — rendering may be slow.")
+                    egui::RichText::new("Over 1\u{a0}MiB — rendering may be slow.")
                         .size(theme.font_size_caption.value())
                         .color(theme.text_secondary().to_egui()),
                 );

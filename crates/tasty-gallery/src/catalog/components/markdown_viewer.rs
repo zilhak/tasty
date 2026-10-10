@@ -79,11 +79,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             });
         });
         // 대용량 확인을 취소한 뒤의 대기 상태. 버튼은 파일을 바로 읽지 않고 확인을 다시 띄운다.
-        spec::cluster(ui, theme, "over 1 MB — deferred", |ui| {
+        spec::cluster(ui, theme, "over 1 MiB — deferred", |ui| {
             tile(ui, theme, |ui| {
                 ui.label(rich(
                     theme,
-                    "This file is larger than 1 MB and has not been loaded",
+                    "This file is larger than 1\u{a0}MiB and has not been loaded",
                     theme.font_size_body.value(),
                     theme.text_muted().to_egui(),
                 ));
@@ -161,7 +161,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("states", "failed=accent-danger · empty=muted"),
             (
                 "deferred",
-                "line muted · Button secondary sm “Open file…” below at space-sm · raises the 1 MB confirm again",
+                "line muted · Button secondary sm “Open file…” below at space-sm · raises the 1 MiB confirm again",
             ),
             (
                 "callouts",

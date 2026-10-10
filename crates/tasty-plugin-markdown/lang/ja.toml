@@ -19,7 +19,7 @@ markdown = "Markdown"
 [markdown.state]
 failed = "読み込みに失敗しました"
 empty = "このファイルは空です"
-large_deferred = "1MBを超えるファイルのため、まだ読み込んでいません"
+large_deferred = "1\u00A0MiBを超えるファイルのため、まだ読み込んでいません"
 large_deferred_open = "ファイルを開く…"
 
 [markdown.image]
@@ -27,7 +27,7 @@ failed = "画像を読み込めませんでした"
 
 [markdown.large_file]
 title = "大きなファイルを開きますか？"
-body = "1MBを超えています。表示が遅くなる可能性があります。"
+body = "1\u00A0MiBを超えています。表示が遅くなる可能性があります。"
 open = "開く"
 cancel = "キャンセル"
 
