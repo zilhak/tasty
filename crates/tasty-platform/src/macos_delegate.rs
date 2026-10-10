@@ -326,7 +326,7 @@ fn setup_main_menu(
 /// binding 문자열 (e.g. `"alt+shift+n"`) 을 NSMenuItem 의 key equivalent + modifier mask 로 변환한다.
 /// 키 이름·수식키 매핑은 [`crate::menu_key_equivalent::menu_key_equivalent`] 가 정한다. 메뉴로 나타낼 수
 /// 없는 binding 은 key = `""` → 메뉴 항목에 단축키 미표시.
-fn binding_to_nsmenu_key(
+pub(crate) fn binding_to_nsmenu_key(
     binding: &str,
 ) -> (Retained<NSString>, objc2_app_kit::NSEventModifierFlags) {
     use objc2_app_kit::NSEventModifierFlags;

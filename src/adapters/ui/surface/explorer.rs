@@ -1126,23 +1126,14 @@ fn apply_type_ahead(ui: &egui::Ui, view: &mut ExplorerView, input: &ExplorerInpu
         if input.shortcut_chars.contains(&ch.to_ascii_lowercase()) {
             continue;
         }
-        let selected = single_selection_index(view);
+        // 선택이 하나가 아니면 어느 항목 다음부터 찾을지 정할 수 없으므로 목록 처음부터 찾는다.
+        let selected = view.single_selected_index();
         if let Some(i) = view.type_ahead.feed(ch, now, &names, selected) {
             let path = shown[i].path.clone();
             view.select_only(&path);
             view.scroll_to = Some(path);
         }
     }
-}
-
-/// 검색을 시작할 선택 인덱스를 구한다. 선택된 항목이 없거나 여러 개면 `None`을
-/// 돌려준다. 어느 항목 다음부터 찾을지 정할 수 없으므로 목록 처음부터 찾는다.
-fn single_selection_index(view: &ExplorerView) -> Option<usize> {
-    if view.selected.len() != 1 {
-        return None;
-    }
-    let sel = view.selected.iter().next()?;
-    view.shown().position(|e| &e.path == sel)
 }
 
 /// 합성 `..` 엔트리. **렌더 전용** — `view.entries`/선택/상태줄/컨텍스트 메뉴에는 절대
@@ -1197,6 +1188,7 @@ fn grid_view(
     let rest_lines = (count - in_first).div_ceil(cols);
     let target = scroll_target(view);
     ui.spacing_mut().item_spacing = egui::vec2(gap, 0.0);
+    view.note_grid(ui, (CELL_W.value(), ctx.metrics.cell_h), gap, (cols, lead));
 
     ui.horizontal(|ui| {
         if let Some(p) = &parent {
@@ -1367,6 +1359,7 @@ fn list_view(
     create::name_row(ui, theme, view, create::Slot::List, action);
     let row_h = theme.tree_row_height().value();
     let count = view.shown_count();
+    view.note_rows(ui, row_h);
     let span = open_span(ui, row_h, count, scroll_target(view));
     for e in &view.shown_range(span.clone()) {
         let (icon, glyph_color) = entry_icon(theme, e);
@@ -1558,11 +1551,17 @@ fn detail_view(
     };
     let secondary = row_at(out.secondary_clicked_row);
     let clicked = row_at(out.clicked_row);
+    let row_h = theme.table_cell_height().value();
+    view.note_detail(
+        drawn_name_cell.get(),
+        rows.len() - view.shown_count(),
+        row_h,
+    );
     // 편집 줄 자리가 화면 밖이라 그리지 않았으면 그린 행에서 자리를 계산한다. 입력은 화면 밖에서도
     // 그려야 포커스를 잃지 않는다. 행 높이는 표 기본값이다.
     let editor_cell = editor_cell.get().or_else(|| {
         let (index, cell) = drawn_name_cell.get()?;
-        let shift = (editor_row? as f32 - index as f32) * theme.table_cell_height().value();
+        let shift = (editor_row? as f32 - index as f32) * row_h;
         Some(cell.translate(egui::vec2(0.0, shift)))
     });
     create::detail_row(ui, theme, view, editor_cell, action);

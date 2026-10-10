@@ -185,7 +185,7 @@ fn a_binding_after_the_call_does_not_count() {
 }
 
 #[test]
-fn the_registration_sites_live_in_one_place() {
+fn the_registration_sites_are_the_two_macos_menus() {
     let root = repo_root();
     let mut files = Vec::new();
     rs_files(&root.join("src"), &mut files);
@@ -206,9 +206,17 @@ fn the_registration_sites_live_in_one_place() {
             );
         }
     }
-    assert!(
-        owners.len() == 1 && owners.iter().all(|o| o.contains("macos")),
-        "NSMenu key equivalent 호출이 macOS 한 파일 밖에도 있다: {owners:?}. 새 위치의 단축키 정책과 검사 범위를 확인하고 이 단정을 갱신한다."
+    // 앱 메뉴(macos_delegate)와 우클릭 메뉴의 단축키 표시(native_menu/macos) 두 곳이다.
+    let expected: BTreeSet<String> = [
+        "crates/tasty-platform/src/macos_delegate.rs",
+        "crates/tasty-platform/src/native_menu/macos.rs",
+    ]
+    .into_iter()
+    .map(String::from)
+    .collect();
+    assert_eq!(
+        owners, expected,
+        "NSMenu key equivalent 호출 위치가 바뀌었다: {owners:?}. 새 위치의 단축키 정책과 검사 범위를 확인하고 이 단정을 갱신한다."
     );
 }
 

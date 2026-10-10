@@ -67,6 +67,40 @@ pub struct KeybindingSettings {
     pub code_area_apply: Vec<String>,
     /// 여러 줄 코드 입력칸의 취소 키. 범위는 `code_area_apply` 와 같다.
     pub code_area_cancel: Vec<String>,
+    // 탐색기 목록의 현재 항목 이동. 탐색기에 포커스가 있을 때만 검사하므로
+    // [`KeybindingSettings::EXPLORER_LIST_BINDING_FIELDS`] 에 둔다.
+    /// 탐색기 현재 항목을 위로 옮기고 그 항목만 고른다.
+    pub explorer_cursor_up: Vec<String>,
+    /// 탐색기 현재 항목을 아래로 옮기고 그 항목만 고른다.
+    pub explorer_cursor_down: Vec<String>,
+    /// 탐색기 현재 항목을 왼쪽로 옮기고 그 항목만 고른다.
+    pub explorer_cursor_left: Vec<String>,
+    /// 탐색기 현재 항목을 오른쪽로 옮기고 그 항목만 고른다.
+    pub explorer_cursor_right: Vec<String>,
+    /// 탐색기 현재 항목을 맨 앞로 옮기고 그 항목만 고른다.
+    pub explorer_cursor_home: Vec<String>,
+    /// 탐색기 현재 항목을 맨 끝로 옮기고 그 항목만 고른다.
+    pub explorer_cursor_end: Vec<String>,
+    /// 탐색기 현재 항목을 한 화면 위로 옮기고 그 항목만 고른다.
+    pub explorer_cursor_page_up: Vec<String>,
+    /// 탐색기 현재 항목을 한 화면 아래로 옮기고 그 항목만 고른다.
+    pub explorer_cursor_page_down: Vec<String>,
+    /// 탐색기 현재 항목을 위로 옮기며 기준 항목부터 선택을 넓힌다.
+    pub explorer_extend_up: Vec<String>,
+    /// 탐색기 현재 항목을 아래로 옮기며 기준 항목부터 선택을 넓힌다.
+    pub explorer_extend_down: Vec<String>,
+    /// 탐색기 현재 항목을 왼쪽로 옮기며 기준 항목부터 선택을 넓힌다.
+    pub explorer_extend_left: Vec<String>,
+    /// 탐색기 현재 항목을 오른쪽로 옮기며 기준 항목부터 선택을 넓힌다.
+    pub explorer_extend_right: Vec<String>,
+    /// 탐색기 현재 항목을 맨 앞로 옮기며 기준 항목부터 선택을 넓힌다.
+    pub explorer_extend_home: Vec<String>,
+    /// 탐색기 현재 항목을 맨 끝로 옮기며 기준 항목부터 선택을 넓힌다.
+    pub explorer_extend_end: Vec<String>,
+    /// 탐색기 현재 항목을 한 화면 위로 옮기며 기준 항목부터 선택을 넓힌다.
+    pub explorer_extend_page_up: Vec<String>,
+    /// 탐색기 현재 항목을 한 화면 아래로 옮기며 기준 항목부터 선택을 넓힌다.
+    pub explorer_extend_page_down: Vec<String>,
     /// Toggle sidebar visibility (completely hidden/shown).
     pub toggle_sidebar: Vec<String>,
     /// Toggle sidebar collapse (full/compact mode).
@@ -129,6 +163,10 @@ pub struct KeybindingSettings {
     pub explorer_new_folder: Vec<String>,
     /// Start naming a new empty file at the top of the focused Explorer listing.
     pub explorer_new_file: Vec<String>,
+    /// Rename the single selected item of the focused Explorer.
+    pub explorer_rename: Vec<String>,
+    /// Move the selected items of the focused Explorer to the trash.
+    pub explorer_trash: Vec<String>,
     /// Paste clipboard content into focused terminal / paste files in Explorer.
     pub paste: Vec<String>,
     /// Increase font size.
@@ -306,3 +344,7 @@ mod presets;
 #[cfg(test)]
 #[path = "keybindings/tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "keybindings/explorer_list_tests.rs"]
+mod explorer_list_tests;

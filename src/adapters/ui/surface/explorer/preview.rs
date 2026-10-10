@@ -151,7 +151,21 @@ impl PreviewPane {
 }
 
 /// 패널이 켜져 있고 자리가 있으면 받은 ui 의 오른쪽에 패널과 경계선을 그리고, 목록을 그릴 왼쪽 ui 를 돌려준다.
+/// 목록 영역을 키보드 이동·영역 선택에 남기고, 영역 선택의 자동 스크롤 양을 목록 스크롤 입력에 넣는다.
 pub(super) fn split(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    view: &mut ExplorerView,
+    id_suffix: &str,
+) -> egui::Ui {
+    let list_ui = split_panel(ui, theme, view, id_suffix);
+    view.list_rect = Some(list_ui.max_rect().intersect(list_ui.clip_rect()));
+    view.list_layout = None;
+    view.marquee.feed_scroll(&list_ui);
+    list_ui
+}
+
+fn split_panel(
     ui: &mut egui::Ui,
     theme: &Theme,
     view: &mut ExplorerView,

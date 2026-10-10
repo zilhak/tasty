@@ -104,7 +104,7 @@ macOS 사용자를 위한 표시 커스터마이징: `GeneralSettings::{alt,opti
 
 ## OS 메뉴 key equivalent
 
-tasty 가 직접 소유하는 OS 메뉴의 key equivalent 도 **`KeybindingSettings` 의 대응 binding 에서 가져온다 — 가져올 수 없으면 비운다.** 지금 key equivalent 를 배선한 메뉴는 macOS NSMenu 하나이고, Windows AcceleratorTable · Linux Wayland 메뉴도 등록하게 되면 같은 규칙을 따른다. selector 가 OS 표준(`cut:` / `performClose:` 등)이라는 사실이 단축키 하드코딩을 정당화하지 않는다(selector 와 key equivalent 는 독립 결정). binding 이 빈 vec 이면 key equivalent 도 비워 단축키 없는 메뉴 항목으로 둔다.
+tasty 가 직접 소유하는 OS 메뉴의 key equivalent 도 **`KeybindingSettings` 의 대응 binding 에서 가져온다 — 가져올 수 없으면 비운다.** 지금 key equivalent 를 배선한 메뉴는 macOS NSMenu 하나이고, Windows AcceleratorTable · Linux Wayland 메뉴도 등록하게 되면 같은 규칙을 따른다. 탐색기 우클릭 메뉴(`tasty_platform::native_menu`)는 이름 변경·휴지통 옆에 `explorer_rename`·`explorer_trash` 의 첫 binding 을 표시만 한다(`MenuShortcut`). macOS 는 key equivalent 로, Windows 는 라벨 뒤 탭 열, Linux GTK 는 오른쪽 accelerator 라벨로 그린다. 실행은 단축키 경로가 맡는다([Explorer 파일 작업](../../surfaces/explorer/file-operations.md)). selector 가 OS 표준(`cut:` / `performClose:` 등)이라는 사실이 단축키 하드코딩을 정당화하지 않는다(selector 와 key equivalent 는 독립 결정). binding 이 빈 vec 이면 key equivalent 도 비워 단축키 없는 메뉴 항목으로 둔다.
 
 macOS NSMenu 는 binding 의 첫 항목을 `tasty_platform::menu_key_equivalent` 로 바꾼다. 수식키는 위 표의 macOS 매핑(`alt` → Command)을 따른다. 문자 키는 소문자 그대로 두고 Shift 는 수식키로 나타낸다. 이름 키는 AppKit 문자로 바꾼다:
 

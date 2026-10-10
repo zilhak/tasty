@@ -1426,24 +1426,24 @@ impl MainView {
         let multi = paths.len() > 1;
         let is_empty_target = paths.is_empty();
         let is_folder = paths.len() == 1 && single_is_dir;
-        let has_clip = self.explorer_menu_has_clip();
         // mirror 경로를 로컬 파일 작업에 사용하지 않도록 쓰기 메뉴를 숨긴다(ADR-0022).
         // 다른 호출 경로도 있으므로 각 핸들러의 검사도 유지한다.
         let is_mirror = engine.is_mirror_surface(surface_id);
         // 메뉴를 연 surface 세대를 고정한다. 그 사이 닫히거나 바뀐 surface에는 결과를 적용하지 않는다.
         let binding = crate::runtime::surface_binding::SurfaceBinding::capture(engine, surface_id);
 
-        let items = self.with_show_in_folder(
+        let mut items = self.with_show_in_folder(
             surface_id,
             &paths,
             Self::build_explorer_context_menu(
                 multi,
                 is_empty_target,
                 is_folder,
-                has_clip,
+                self.explorer_menu_has_clip(),
                 is_mirror,
             ),
         );
+        crate::state::explorer_menu::attach_shortcut_hints(&mut items, engine.settings);
         self.open_native_menu(engine, x, y, &items, move |this, engine, result| {
             // 경로 복사·복사·루트 설정은 파일시스템을 바꾸지 않아 같은 explorer 인지만 본다.
             let read_only = matches!(result, Some(1 | 10 | 61 | 70));
@@ -1619,7 +1619,7 @@ impl MainView {
     /// 의 `OpenFile` mirror 가드(`egui_panels.rs`)와 동일한 toast kind/scope. 컨텍스트
     /// 메뉴/단축키의 각 쓰기 핸들러(paste/trash/rename/open_in_system/add_favorite/
     /// open_in_new_tab/cut)가 공유한다.
-    fn toast_remote_write_unsupported(&mut self) {
+    pub(crate) fn toast_remote_write_unsupported(&mut self) {
         self.state.toasts.push(
             crate::i18n::t("explorer.state.remote_write_unsupported").to_string(),
             crate::adapters::ui::ToastKind::Info,
@@ -1750,7 +1750,7 @@ impl MainView {
     }
 
     /// 이름 변경 (아이템 40).
-    fn explorer_menu_rename(
+    pub(crate) fn explorer_menu_rename(
         &mut self,
         engine: &crate::runtime::engine_read::EngineRead<'_>,
         surface_id: u32,

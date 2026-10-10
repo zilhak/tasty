@@ -20,6 +20,44 @@ pub(crate) fn explorer_menu_admits(
     })
 }
 
+/// 단축키가 있는 explorer 메뉴 항목(이름 변경 40·휴지통 30)에 첫 바인딩을 표시로 붙인다.
+/// 바인딩이 없으면 표시하지 않는다.
+pub(crate) fn attach_shortcut_hints(
+    items: &mut [crate::platform::native_menu::MenuItem],
+    settings: &crate::settings::Settings,
+) {
+    for item in items {
+        let field = match item.id {
+            40 => "explorer_rename",
+            30 => "explorer_trash",
+            _ => continue,
+        };
+        item.shortcut = menu_shortcut(settings, field);
+    }
+}
+
+fn menu_shortcut(
+    settings: &crate::settings::Settings,
+    field: &str,
+) -> Option<crate::platform::native_menu::MenuShortcut> {
+    let binding = settings.keybindings.get_bindings(field)?.first()?;
+    Some(crate::platform::native_menu::MenuShortcut {
+        binding: binding.clone(),
+        display: menu_display(binding, &settings.general),
+    })
+}
+
+/// 메뉴 단축키 열의 표시. 키 이름은 설정 화면과 같고, 앞 지우기 키만 메뉴 관례대로 `Del` 로 줄인다.
+fn menu_display(binding: &str, general: &crate::settings::GeneralSettings) -> String {
+    let mut parts = tasty_settings::KeybindingSettings::format_display_parts(binding, general);
+    if let Some(key) = parts.last_mut()
+        && key.eq_ignore_ascii_case("delete")
+    {
+        *key = "Del".to_string();
+    }
+    parts.join("+")
+}
+
 impl super::MainViewState {
     /// 클립보드의 경로를 `destination` 에 붙여넣도록 요청한다.
     /// mirror surface 와 원격에서 복사한 클립보드는 로컬 파일 작업으로 바꾸지 않는다.

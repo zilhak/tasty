@@ -1,6 +1,9 @@
 //! surface별 탐색기 표시 상태. 모델의 탐색 이력과 별도로 목록 캐시·선택·트리 펼침을 보관한다.
 
+pub(crate) mod cursor;
 pub(crate) mod drag;
+pub(crate) mod list_layout;
+pub(crate) mod marquee;
 pub(crate) mod ops;
 pub(crate) mod poll;
 
@@ -117,6 +120,14 @@ pub struct ExplorerView {
     pub(crate) ops: ops::OpsState,
     /// 다른 프로그램이 바꾼 폴더를 찾는 주기 확인.
     poll: poll::ExternalPoll,
+    /// 키보드로 움직이는 현재 항목.
+    pub(crate) cursor: cursor::CursorState,
+    /// 빈 곳에서 끄는 영역 선택.
+    pub(crate) marquee: marquee::MarqueeState,
+    /// 이번 프레임 목록 영역(미리보기 패널 제외). 상태 화면이면 배치가 없다.
+    pub(crate) list_rect: Option<egui::Rect>,
+    /// 이번 프레임에 그린 목록의 칸 배치.
+    pub(crate) list_layout: Option<list_layout::ListLayout>,
 }
 
 /// 사이드바 트리에 두는 하위 폴더 목록. 이름 오름차순이다.
@@ -247,6 +258,10 @@ impl ExplorerView {
             find: None,
             ops: ops::OpsState::default(),
             poll: Default::default(),
+            cursor: Default::default(),
+            marquee: Default::default(),
+            list_rect: None,
+            list_layout: None,
         }
     }
 
@@ -283,6 +298,26 @@ impl ExplorerView {
     pub(crate) fn matches_selection(&self, identity: &std::sync::Weak<()>) -> bool {
         self.selection_identity().ptr_eq(identity)
     }
+    /// 선택을 통째로 바꾼다(영역 선택). 새 선택이므로 선택 식별자도 바꾼다.
+    pub(crate) fn replace_selection(
+        &mut self,
+        selected: HashSet<PathBuf>,
+        anchor: Option<PathBuf>,
+    ) {
+        self.selection_identity = std::sync::Arc::new(());
+        self.selected = selected;
+        self.anchor = anchor;
+    }
+
+    /// 하나만 골랐을 때 그 항목의 목록 번호. 타입어헤드가 그다음부터 찾는다.
+    pub(crate) fn single_selected_index(&self) -> Option<usize> {
+        if self.selected.len() != 1 {
+            return None;
+        }
+        let sel = self.selected.iter().next()?;
+        self.shown().position(|e| &e.path == sel)
+    }
+
     pub(crate) fn clear_selection(&mut self) {
         self.selection_identity = std::sync::Arc::new(());
         self.selected.clear();
@@ -347,14 +382,15 @@ impl ExplorerView {
         self.reveal = Some(path.to_path_buf());
     }
 
-    /// 만든 항목이 목록에 나타났으면 이번 프레임의 스크롤 대상으로 꺼낸다.
+    /// 만든 항목이 목록에 나타났으면 이번 프레임의 스크롤 대상으로 꺼낸다. 없으면 키보드로 옮긴
+    /// 현재 항목이 화면 밖일 때 그 항목이다.
     pub(crate) fn take_reveal(&mut self) -> Option<PathBuf> {
         let listed = self
             .reveal
             .as_ref()
             .is_some_and(|p| self.entries.iter().any(|e| &e.path == p));
         if !listed {
-            return None;
+            return self.cursor.take_scroll();
         }
         let path = self.reveal.take()?;
         if std::mem::take(&mut self.reveal_select) {

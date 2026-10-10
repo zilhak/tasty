@@ -52,6 +52,11 @@ fn show_context_menu_sync(
             ns_item.setTitle(&NSString::from_str(&item.label));
             ns_item.setTag(item.id as isize);
             ns_item.setEnabled(item.enabled);
+            if let Some(shortcut) = &item.shortcut {
+                let (key, mods) = crate::macos_delegate::binding_to_nsmenu_key(&shortcut.binding);
+                ns_item.setKeyEquivalent(&key);
+                ns_item.setKeyEquivalentModifierMask(mods);
+            }
             menu.addItem(&ns_item);
         }
     }

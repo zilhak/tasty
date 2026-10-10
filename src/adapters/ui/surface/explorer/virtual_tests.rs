@@ -346,3 +346,6 @@ fn the_item_at_the_top_edge_is_drawn_after_scrolling() {
         }
     }
 }
+
+#[path = "virtual_tests/keyboard_select.rs"]
+mod keyboard_select;

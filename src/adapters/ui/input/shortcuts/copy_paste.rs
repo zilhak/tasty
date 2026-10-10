@@ -16,6 +16,8 @@ pub(crate) enum ExplorerAction {
     CopyFiles,
     CutFiles,
     PasteFiles,
+    Rename,
+    Trash,
 }
 
 impl MainView {
@@ -97,8 +99,12 @@ impl MainView {
             ExplorerAction::CutFiles
         } else if matches_any_binding(&kb.paste, key, mods) {
             ExplorerAction::PasteFiles
+        } else if matches_any_binding(&kb.explorer_rename, key, mods) {
+            ExplorerAction::Rename
+        } else if matches_any_binding(&kb.explorer_trash, key, mods) {
+            ExplorerAction::Trash
         } else {
-            return false;
+            return self.handle_explorer_list_key(engine, key, mods);
         };
         self.run_explorer_action(engine, action)
     }
@@ -120,7 +126,9 @@ impl MainView {
         let Some(sid) = super::focused_explorer_surface_id(&self.state, engine) else {
             return true;
         };
-        if action == ExplorerAction::SelectAll {
+        if matches!(action, ExplorerAction::Rename | ExplorerAction::Trash) {
+            self.run_explorer_item_key(engine, sid, action);
+        } else if action == ExplorerAction::SelectAll {
             if let Some(view) = self.state.explorer_views.get_mut(sid) {
                 view.select_all();
             }

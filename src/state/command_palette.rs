@@ -30,6 +30,9 @@ const PALETTE_EXCLUDED: &[&str] = &[
     "copy_link",
 ];
 
+// 탐색기 목록 키 가운데 선택 항목에 하는 동작만 팔레트에 둔다. 이동 키는 팔레트에서 쓸 일이 없다.
+const PALETTE_EXPLORER_ITEM: &[&str] = &["explorer_rename", "explorer_trash"];
+
 /// 호스트 단축키와 활성 플러그인의 전역 명령을 합치고 제외 목록을 적용한다.
 pub fn all_commands(
     plugin_commands: &[crate::plugin::command_registry::PluginCommandEntry],
@@ -37,6 +40,11 @@ pub fn all_commands(
     let mut out: Vec<PaletteCommand> = KeybindingSettings::GENERAL_BINDING_FIELDS
         .iter()
         .filter(|(id, _)| !PALETTE_EXCLUDED.contains(id))
+        .chain(
+            KeybindingSettings::EXPLORER_LIST_BINDING_FIELDS
+                .iter()
+                .filter(|(id, _)| PALETTE_EXPLORER_ITEM.contains(id)),
+        )
         .map(|(id, label_key)| PaletteCommand::Host { id, label_key })
         .collect();
     out.extend(plugin_commands.iter().map(|e| PaletteCommand::Plugin {

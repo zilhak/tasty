@@ -74,6 +74,8 @@ macOS 에서 설정 화면의 표기를 `⌘` `⌥` `⇧` 심볼로 바꾸려면
 | 잘라내기 (탐색기) | `Ctrl+X` · `Alt+X` | `Ctrl+X` · `Cmd+X` |
 | 전체 선택 (탐색기) | `Ctrl+A` · `Alt+A` | `Ctrl+A` · `Cmd+A` |
 | 새로고침 · 상위 폴더로 (탐색기) | `F5` · `Alt+↑` | `F5` · `Cmd+↑` |
+| 항목 옮기기 · 선택 넓히기 (탐색기) | 방향키 · `Home` · `End` · `PageUp` · `PageDown` · 같은 키에 `Shift` | 같음 |
+| 이름 변경 · 휴지통으로 이동 (탐색기) | `F2` · `Delete` · `Alt+Backspace` | `F2` · `Delete` · `Cmd+Backspace` |
 | 확대 · 축소 · 줌 초기화 | `Ctrl+=` · `Ctrl+-` · `Ctrl+0` (`Alt` 도 됨) | `Ctrl+=` · `Ctrl+-` · `Ctrl+0` (`Cmd` 도 됨) |
 
 `Ctrl+C` 는 선택한 텍스트가 있으면 복사하고, 없으면 평소처럼 실행 중인 프로그램을 중단합니다.

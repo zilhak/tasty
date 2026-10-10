@@ -134,6 +134,16 @@ pub struct MenuItem {
     pub label: String,
     /// Whether this item is enabled (grayed out if false).
     pub enabled: bool,
+    /// 같은 동작의 단축키. 메뉴는 표시만 하고 실행은 단축키 경로가 맡는다.
+    pub shortcut: Option<MenuShortcut>,
+}
+
+/// 메뉴 항목 옆에 보일 단축키. macOS 는 `binding` 을 key equivalent 로 바꿔 AppKit 이 그리고,
+/// 다른 OS 는 호출자가 만든 `display` 문자열을 항목 오른쪽에 쓴다.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MenuShortcut {
+    pub binding: String,
+    pub display: String,
 }
 
 impl MenuItem {
@@ -142,6 +152,7 @@ impl MenuItem {
             id,
             label: label.into(),
             enabled: true,
+            shortcut: None,
         }
     }
 
@@ -150,6 +161,7 @@ impl MenuItem {
             id,
             label: label.into(),
             enabled: false,
+            shortcut: None,
         }
     }
 
@@ -158,7 +170,14 @@ impl MenuItem {
             id: 0,
             label: String::new(),
             enabled: false,
+            shortcut: None,
         }
+    }
+
+    /// 단축키 표시를 붙인다.
+    pub fn with_shortcut(mut self, shortcut: Option<MenuShortcut>) -> Self {
+        self.shortcut = shortcut;
+        self
     }
 
     pub fn is_separator(&self) -> bool {

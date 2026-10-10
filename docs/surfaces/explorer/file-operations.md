@@ -58,20 +58,20 @@
 |---|---|---|---|---|
 | 새 폴더 | 툴바(좁은 칸은 More 메뉴), 메뉴(빈 영역·단일 폴더), `explorer_new_folder` 단축키 | 지금 보는 폴더, 폴더 메뉴는 그 폴더. 시작할 때 고정한다 | 목록 맨 위 인라인 입력으로 이름을 받아 `create_dir` 로 만든다. 같은 이름이 있으면 덮어쓰지 않고 실패한다 | 입력 아래 이름 오류 상자. 쓰기 실패는 오류 토스트와 다시 읽기. 성공하면 그 폴더를 아직 보고 있을 때 새 항목을 선택한다 |
 | 새 파일 | 툴바(좁은 칸은 More 메뉴), 메뉴(빈 영역·단일 폴더), `explorer_new_file` 단축키 | 새 폴더와 같다 | 같은 입력으로 빈 파일을 `create_new` 로 만든다 | 새 폴더와 같다 |
-| 이름 변경 | 메뉴 (단일 항목) | 그 항목 | 같은 폴더 안에서 이름만 바꾼다. 새 항목 이름과 같은 검사([새 폴더 · 새 파일](index.md#새-폴더--새-파일))로 빈 이름·금지 글자·앞뒤 공백·예약 이름을 거부하고, 이미 있는 이름도 거부한다 | rename 팝업. 실패하면 오류 토스트를 띄우고 선택을 유지한 채 목록을 다시 읽는다 |
+| 이름 변경 | 메뉴 (단일 항목), `explorer_rename` 단축키, Command Palette | 그 항목. 단축키·Command Palette 는 선택이 하나일 때만 연다 | 같은 폴더 안에서 이름만 바꾼다. 새 항목 이름과 같은 검사([새 폴더 · 새 파일](index.md#새-폴더--새-파일))로 빈 이름·금지 글자·앞뒤 공백·예약 이름을 거부하고, 이미 있는 이름도 거부한다 | rename 팝업. 실패하면 오류 토스트를 띄우고 선택을 유지한 채 목록을 다시 읽는다 |
 | 복사 | 메뉴, `copy` 단축키, Command Palette | 선택 항목 | 창 단위 explorer 파일 클립보드에 경로를 담는다. 디스크는 바꾸지 않는다 | 없음 |
 | 잘라내기 | 메뉴, `cut` 단축키, Command Palette | 선택 항목 | 클립보드에 잘라내기 표시와 함께 담는다 | 붙여넣기 전까지 잘라낸 항목을 grid·list·detail 에서 흐리게 그린다 (`cut_pending_opacity`) |
 | 붙여넣기 | 메뉴 (빈 영역·"Paste into"), `paste` 단축키, Command Palette | 현재 폴더 또는 메뉴의 폴더 | 아래 [작업 실행](#작업-실행--진행충돌결과) 의 작업으로 돈다. 복사는 목적지 임시 디렉터리에서 준비한 뒤 덮어쓰기 금지 rename 으로 공개한다. 이동은 rename 하고, 다른 파일시스템이면 복사 뒤 원본을 지운다 | 상태줄 진행 표시, 이름 충돌 popup, 결과 카드 |
 | 드래그 놓기 (explorer 항목) | 항목을 끌어 폴더·트리 노드·즐겨찾기·목록 본문에 놓기. 다른 explorer 칸에도 놓을 수 있다 | 위 대상 규칙 | 같은 디스크면 이동, 다른 디스크면 복사. 드래그 반전 modifier 를 누르고 있으면 뒤집는다. 붙여넣기와 같은 작업으로 돈다. 클립보드는 쓰지도 비우지도 않는다 | 포인터 옆 칩(아래 [드래그](#드래그-앤-드롭)), 대상의 링, 그 뒤는 붙여넣기와 같다 |
 | 드래그 놓기 (OS 파일) | OS 에서 끌어 온 파일을 explorer 칸에 놓기 | 놓은 칸의 폴더 | 항상 복사한다. mirror explorer 는 거절한다. explorer 가 아닌 칸에 놓으면 [파일 핸들러](../../features/file-handler/index.md)로 연다 | 붙여넣기와 같다 |
-| 휴지통 이동 | 메뉴 | 선택 항목 또는 우클릭 항목 | OS 휴지통으로 보낸다. 확인 모달은 없다. 영구 삭제 경로는 없다. 그 드라이브에 휴지통이 없으면 아무것도 지우지 않는다 | 결과 카드. 휴지통이 없으면 "Trash isn't available on this drive. Nothing was deleted." 카드 |
+| 휴지통 이동 | 메뉴, `explorer_trash` 단축키, Command Palette | 선택 항목 또는 우클릭 항목. 단축키·Command Palette 는 선택이 없으면 아무것도 하지 않는다 | OS 휴지통으로 보낸다. 확인 모달은 없다. 영구 삭제 경로는 없다. 그 드라이브에 휴지통이 없으면 아무것도 지우지 않는다 | 결과 카드. 휴지통이 없으면 "Trash isn't available on this drive. Nothing was deleted." 카드 |
 | 실행 취소 | 끝난 복사·이동 결과 카드의 Undo | 그 작업이 만든 항목 | 이동은 원래 자리로 되돌린다(원래 자리가 비어 있을 때만). 복사로 만든 항목은 휴지통으로 보낸다. 다만 작업 뒤 수정 시각이 바뀐 사본은 사용자가 고친 것으로 보고 남긴다(폴더는 폴더 자신의 수정 시각만 본다. 수정 시각 해상도가 거친 파일시스템(FAT/exFAT 2초, HFS+ 1초)에서는 공개 직후 같은 시각 칸 안의 수정을 구분하지 못한다. 그 사본은 휴지통으로 가며 되살릴 수 있다). Replace 로 덮어쓴 파일은 되돌리지 않는다. 휴지통 이동의 복원은 OS 에서 한다 | 결과 카드. 되돌리지 못한 항목과 이유를 나열한다 |
 | 찾기 | 툴바 Find 토글(좁은 칸은 More 메뉴), `find` 단축키 | 지금 보는 폴더, Subfolders 를 켜면 그 아래 전체(로컬만) | 디스크를 바꾸지 않는다. 목록을 이름으로 거르거나 하위 폴더 검색 결과로 바꾼다. 결과에 대한 파일 작업은 결과의 실제 경로를 대상으로 한다 | Find 바의 개수·검색 상태, 상태줄 ([Explorer](index.md#찾기--하위-폴더-검색)) |
 | 속성 | 메뉴 맨 끝 "Properties"(모든 변형, mirror 포함), `explorer_properties` 단축키, Command Palette | 메뉴의 대상, 또는 위 단축키 규칙 | 디스크를 바꾸지 않는다. 열 때의 대상을 고정해 보이고, 폴더 크기는 read worker 가 배경에서 센다. 닫으면 세기를 멈춘다 | 탐색기 칸에 묶인 Properties popup ([Explorer](index.md#properties-popup)) |
 | 미리보기 | 툴바 토글, `explorer_toggle_preview` 단축키, Command Palette | 선택이 하나일 때 그 항목 | 디스크를 바꾸지 않는다. 로컬 파일만 read worker 로 읽는다 | 목록 오른쪽 미리보기 패널 ([Explorer](index.md#미리보기-패널)) |
 | Grid 썸네일 | 없음 (Grid 보기에 자동) | 화면에 보인 로컬 그림 파일 | 디스크를 바꾸지 않는다 | 셀의 40 슬롯 ([Explorer](index.md#grid-썸네일)) |
 
-이름 변경과 휴지통 이동에는 키보드 단축키가 없다. 디자인 원본의 컨텍스트 메뉴 견본은 이 두 항목에 `F2`·`Del` 을 표시하지만 `KeybindingSettings` 에 대응 필드가 없어 메뉴에도 단축키를 표시하지 않는다.
+이름 변경과 휴지통 이동의 단축키는 `explorer_rename`(기본 `F2`)·`explorer_trash`(Tasty 프리셋 기본 `delete`·`alt+backspace`. `alt+backspace` 는 위치 규칙상 macOS 에서 Finder 의 ⌘⌫ 다. macOS 프리셋은 `alt+backspace` 만, Windows·Linux 프리셋은 `delete` 만)다. 단축키와 Command Palette 는 `run_explorer_item_key`(`src/adapters/ui/input/shortcuts/explorer_keys.rs`)를 거쳐 메뉴와 같은 이름 변경 팝업을 열거나 같은 휴지통 작업을 요청한다. 우클릭 메뉴는 두 항목 옆에 각 바인딩의 첫 항목을 보인다(`attach_shortcut_hints`, `src/state/explorer_menu.rs`). macOS 는 key equivalent 로 바꿔 AppKit 이 그리고, Windows·Linux 는 설정 화면과 같은 표시에서 앞 지우기 키만 `Del` 로 줄여 항목 오른쪽에 쓴다. 바인딩이 비었으면 표시하지 않는다. 메뉴의 표시는 보이기만 하며 실행은 단축키 경로가 맡는다.
 
 ### 기본 규칙
 
@@ -153,7 +153,7 @@
 ## 인터페이스
 
 - **AI Agent (IPC/CLI)**: 없음. 위 경계 절을 따른다.
-- **사용자 트리거**: 컨텍스트 메뉴, 툴바·More 메뉴, 드래그 앤 드롭, 결과 카드의 Retry·Undo, `copy`·`cut`·`paste`·`explorer_new_folder`·`explorer_new_file`·`explorer_properties`·`explorer_toggle_preview`·`find` 바인딩, Command Palette. 단축키 표는 [Explorer](index.md#사용자-트리거-단축키--keybindingsettings) 에 있다.
+- **사용자 트리거**: 컨텍스트 메뉴, 툴바·More 메뉴, 드래그 앤 드롭, 결과 카드의 Retry·Undo, `copy`·`cut`·`paste`·`explorer_new_folder`·`explorer_new_file`·`explorer_rename`·`explorer_trash`·`explorer_properties`·`explorer_toggle_preview`·`find` 바인딩, Command Palette. 단축키 표는 [Explorer](index.md#사용자-트리거-단축키--keybindingsettings) 에 있다.
 - **원격 / 점유**: mirror explorer 는 위 원격 제한을 따른다.
 
 ## 비-목표 (Out of scope)

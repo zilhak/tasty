@@ -192,6 +192,40 @@ const ENTRY_PLACEMENT: &[(&str, KeybindingsSubTab, Option<&str>)] = &[
     ("explorer_properties", KeybindingsSubTab::Explorer, None),
     ("explorer_new_folder", KeybindingsSubTab::Explorer, None),
     ("explorer_new_file", KeybindingsSubTab::Explorer, None),
+    ("explorer_rename", KeybindingsSubTab::Explorer, None),
+    ("explorer_trash", KeybindingsSubTab::Explorer, None),
+    (
+        "explorer_cursor_up",
+        KeybindingsSubTab::Explorer,
+        Some("settings.keybindings.explorer_cursor_desc"),
+    ),
+    ("explorer_cursor_down", KeybindingsSubTab::Explorer, None),
+    ("explorer_cursor_left", KeybindingsSubTab::Explorer, None),
+    ("explorer_cursor_right", KeybindingsSubTab::Explorer, None),
+    ("explorer_cursor_home", KeybindingsSubTab::Explorer, None),
+    ("explorer_cursor_end", KeybindingsSubTab::Explorer, None),
+    ("explorer_cursor_page_up", KeybindingsSubTab::Explorer, None),
+    (
+        "explorer_cursor_page_down",
+        KeybindingsSubTab::Explorer,
+        None,
+    ),
+    (
+        "explorer_extend_up",
+        KeybindingsSubTab::Explorer,
+        Some("settings.keybindings.explorer_extend_desc"),
+    ),
+    ("explorer_extend_down", KeybindingsSubTab::Explorer, None),
+    ("explorer_extend_left", KeybindingsSubTab::Explorer, None),
+    ("explorer_extend_right", KeybindingsSubTab::Explorer, None),
+    ("explorer_extend_home", KeybindingsSubTab::Explorer, None),
+    ("explorer_extend_end", KeybindingsSubTab::Explorer, None),
+    ("explorer_extend_page_up", KeybindingsSubTab::Explorer, None),
+    (
+        "explorer_extend_page_down",
+        KeybindingsSubTab::Explorer,
+        None,
+    ),
 ];
 
 /// 그 서브탭이 바인딩 엔트리 목록을 그리는가. Scripts/Preset/Plugins/ImportExport 는 자기

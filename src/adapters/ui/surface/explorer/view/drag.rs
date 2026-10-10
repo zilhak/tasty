@@ -46,7 +46,10 @@ enum Kind {
 struct Spot {
     path: PathBuf,
     is_dir: bool,
+    /// 보이는 부분(잘린 자리).
     rect: egui::Rect,
+    /// 잘리기 전 칸 전체.
+    full: egui::Rect,
     kind: Kind,
 }
 
@@ -110,9 +113,11 @@ fn push(ui: &egui::Ui, spot: Spot) {
         return;
     }
     ui.ctx().data_mut(|d| {
-        d.get_temp_mut_or_default::<Spots>(spots_id())
-            .0
-            .push(Spot { rect, ..spot })
+        d.get_temp_mut_or_default::<Spots>(spots_id()).0.push(Spot {
+            rect,
+            full: spot.rect,
+            ..spot
+        })
     });
 }
 
@@ -127,6 +132,7 @@ pub(crate) fn note(ui: &egui::Ui, entry: &DirEntryInfo, rect: egui::Rect) {
             path: entry.path.clone(),
             is_dir: entry.is_dir,
             rect,
+            full: egui::Rect::NOTHING,
             kind: Kind::Entry { wide: false },
         },
     );
@@ -143,6 +149,7 @@ pub(crate) fn note_row(ui: &egui::Ui, entry: &DirEntryInfo) {
             path: entry.path.clone(),
             is_dir: entry.is_dir,
             rect: ui.max_rect(),
+            full: egui::Rect::NOTHING,
             kind: Kind::Entry { wide: true },
         },
     );
@@ -155,6 +162,7 @@ pub(crate) fn note_tree(ui: &egui::Ui, dir: &Path, rect: egui::Rect, open: bool)
             path: dir.to_path_buf(),
             is_dir: true,
             rect,
+            full: egui::Rect::NOTHING,
             kind: Kind::Tree { open },
         },
     );
@@ -167,6 +175,7 @@ pub(crate) fn note_favorite(ui: &egui::Ui, path: &Path, rect: egui::Rect) {
             path: path.to_path_buf(),
             is_dir: true,
             rect,
+            full: egui::Rect::NOTHING,
             kind: Kind::Favorite,
         },
     );
@@ -180,6 +189,25 @@ fn area(spot: &Spot, body: egui::Rect) -> egui::Rect {
         }
         _ => spot.rect,
     }
+}
+
+/// 이번 프레임에 그린 목록 항목. 자세히 보기 행은 본문 폭으로 넓힌다.
+fn drawn_entries(spots: &[Spot], body: egui::Rect) -> Vec<super::cursor::Drawn> {
+    spots
+        .iter()
+        .filter(|s| matches!(s.kind, Kind::Entry { .. }))
+        .map(|s| {
+            let full = Spot {
+                rect: s.full,
+                ..s.clone()
+            };
+            super::cursor::Drawn {
+                path: s.path.clone(),
+                rect: area(&full, body),
+                shown: area(s, body),
+            }
+        })
+        .collect()
 }
 
 /// 포인터 아래의 대상: 폴더면 그 폴더, 파일·빈 곳이면 보고 있는 폴더(본문 전체).
@@ -458,7 +486,14 @@ pub(crate) fn frame(
         .unwrap_or_default()
         .0;
     let me = ui.id();
+    let drawn = drawn_entries(&spots, body);
+    super::cursor::frame(ui, theme, view, &drawn);
     if view.ops.drag.blocked {
+        view.marquee = Default::default();
+    } else {
+        super::marquee::frame(ui, theme, view, &drawn);
+    }
+    if view.ops.drag.blocked || view.marquee.active() {
         view.ops.drag.hover = None;
         return;
     }

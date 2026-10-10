@@ -214,23 +214,102 @@ impl KeybindingSettings {
         ),
     ];
 
+    /// 탐색기에 포커스가 있을 때만 검사하는 목록 바인딩(현재 항목 이동·선택 넓히기·이름 변경·휴지통).
+    /// 전역 단축키 경로는 [`Self::GENERAL_BINDING_FIELDS`] 만 읽으므로 여기 둔 방향키는 터미널에서
+    /// 가로채지 않는다. 충돌 검사도 같은 목록 안에서만 한다. 탐색기 경로가 전역 바인딩보다 먼저 키를
+    /// 보므로 `explorer_rename` 의 F2 는 탐색기에서만 `rename_tab` 을 앞선다.
+    pub const EXPLORER_LIST_BINDING_FIELDS: &'static [(&'static str, &'static str)] = &[
+        (
+            "explorer_cursor_up",
+            "settings.keybindings.explorer_cursor_up_label",
+        ),
+        (
+            "explorer_cursor_down",
+            "settings.keybindings.explorer_cursor_down_label",
+        ),
+        (
+            "explorer_cursor_left",
+            "settings.keybindings.explorer_cursor_left_label",
+        ),
+        (
+            "explorer_cursor_right",
+            "settings.keybindings.explorer_cursor_right_label",
+        ),
+        (
+            "explorer_cursor_home",
+            "settings.keybindings.explorer_cursor_home_label",
+        ),
+        (
+            "explorer_cursor_end",
+            "settings.keybindings.explorer_cursor_end_label",
+        ),
+        (
+            "explorer_cursor_page_up",
+            "settings.keybindings.explorer_cursor_page_up_label",
+        ),
+        (
+            "explorer_cursor_page_down",
+            "settings.keybindings.explorer_cursor_page_down_label",
+        ),
+        (
+            "explorer_extend_up",
+            "settings.keybindings.explorer_extend_up_label",
+        ),
+        (
+            "explorer_extend_down",
+            "settings.keybindings.explorer_extend_down_label",
+        ),
+        (
+            "explorer_extend_left",
+            "settings.keybindings.explorer_extend_left_label",
+        ),
+        (
+            "explorer_extend_right",
+            "settings.keybindings.explorer_extend_right_label",
+        ),
+        (
+            "explorer_extend_home",
+            "settings.keybindings.explorer_extend_home_label",
+        ),
+        (
+            "explorer_extend_end",
+            "settings.keybindings.explorer_extend_end_label",
+        ),
+        (
+            "explorer_extend_page_up",
+            "settings.keybindings.explorer_extend_page_up_label",
+        ),
+        (
+            "explorer_extend_page_down",
+            "settings.keybindings.explorer_extend_page_down_label",
+        ),
+        (
+            "explorer_rename",
+            "settings.keybindings.explorer_rename_label",
+        ),
+        (
+            "explorer_trash",
+            "settings.keybindings.explorer_trash_label",
+        ),
+    ];
+
     /// 설정이 저장·표시하는 모든 콤보 필드(전역 + 입력칸). 설정 화면·가져오기·프리셋 비교가 쓴다.
     pub fn binding_fields() -> impl Iterator<Item = &'static (&'static str, &'static str)> {
         Self::GENERAL_BINDING_FIELDS
             .iter()
             .chain(Self::TEXT_FIELD_BINDING_FIELDS)
+            .chain(Self::EXPLORER_LIST_BINDING_FIELDS)
     }
 
     /// 필드가 속한 충돌 검사 범위. 알 수 없는 id 는 전역으로 본다.
     fn conflict_scope(field_id: &str) -> &'static [(&'static str, &'static str)] {
-        if Self::TEXT_FIELD_BINDING_FIELDS
-            .iter()
-            .any(|(id, _)| *id == field_id)
-        {
-            Self::TEXT_FIELD_BINDING_FIELDS
-        } else {
-            Self::GENERAL_BINDING_FIELDS
-        }
+        [
+            Self::TEXT_FIELD_BINDING_FIELDS,
+            Self::EXPLORER_LIST_BINDING_FIELDS,
+        ]
+        .into_iter()
+        .find(|scope| scope.iter().any(|(id, _)| *id == field_id))
+        .unwrap_or(Self::GENERAL_BINDING_FIELDS)
     }
 
     /// 필드 id로 Vec<String> 참조를 얻는다.
@@ -288,6 +367,8 @@ impl KeybindingSettings {
             "explorer_properties" => self.explorer_properties.as_slice(),
             "explorer_new_folder" => self.explorer_new_folder.as_slice(),
             "explorer_new_file" => self.explorer_new_file.as_slice(),
+            "explorer_rename" => self.explorer_rename.as_slice(),
+            "explorer_trash" => self.explorer_trash.as_slice(),
             "paste" => self.paste.as_slice(),
             "zoom_in" => self.zoom_in.as_slice(),
             "zoom_out" => self.zoom_out.as_slice(),
@@ -304,6 +385,22 @@ impl KeybindingSettings {
             "close_window" => self.close_window.as_slice(),
             "code_area_apply" => self.code_area_apply.as_slice(),
             "code_area_cancel" => self.code_area_cancel.as_slice(),
+            "explorer_cursor_up" => self.explorer_cursor_up.as_slice(),
+            "explorer_extend_up" => self.explorer_extend_up.as_slice(),
+            "explorer_cursor_down" => self.explorer_cursor_down.as_slice(),
+            "explorer_extend_down" => self.explorer_extend_down.as_slice(),
+            "explorer_cursor_left" => self.explorer_cursor_left.as_slice(),
+            "explorer_extend_left" => self.explorer_extend_left.as_slice(),
+            "explorer_cursor_right" => self.explorer_cursor_right.as_slice(),
+            "explorer_extend_right" => self.explorer_extend_right.as_slice(),
+            "explorer_cursor_home" => self.explorer_cursor_home.as_slice(),
+            "explorer_extend_home" => self.explorer_extend_home.as_slice(),
+            "explorer_cursor_end" => self.explorer_cursor_end.as_slice(),
+            "explorer_extend_end" => self.explorer_extend_end.as_slice(),
+            "explorer_cursor_page_up" => self.explorer_cursor_page_up.as_slice(),
+            "explorer_extend_page_up" => self.explorer_extend_page_up.as_slice(),
+            "explorer_cursor_page_down" => self.explorer_cursor_page_down.as_slice(),
+            "explorer_extend_page_down" => self.explorer_extend_page_down.as_slice(),
             _ => return None,
         })
     }
@@ -362,6 +459,8 @@ impl KeybindingSettings {
             "explorer_properties" => &mut self.explorer_properties,
             "explorer_new_folder" => &mut self.explorer_new_folder,
             "explorer_new_file" => &mut self.explorer_new_file,
+            "explorer_rename" => &mut self.explorer_rename,
+            "explorer_trash" => &mut self.explorer_trash,
             "paste" => &mut self.paste,
             "zoom_in" => &mut self.zoom_in,
             "zoom_out" => &mut self.zoom_out,
@@ -378,6 +477,22 @@ impl KeybindingSettings {
             "close_window" => &mut self.close_window,
             "code_area_apply" => &mut self.code_area_apply,
             "code_area_cancel" => &mut self.code_area_cancel,
+            "explorer_cursor_up" => &mut self.explorer_cursor_up,
+            "explorer_extend_up" => &mut self.explorer_extend_up,
+            "explorer_cursor_down" => &mut self.explorer_cursor_down,
+            "explorer_extend_down" => &mut self.explorer_extend_down,
+            "explorer_cursor_left" => &mut self.explorer_cursor_left,
+            "explorer_extend_left" => &mut self.explorer_extend_left,
+            "explorer_cursor_right" => &mut self.explorer_cursor_right,
+            "explorer_extend_right" => &mut self.explorer_extend_right,
+            "explorer_cursor_home" => &mut self.explorer_cursor_home,
+            "explorer_extend_home" => &mut self.explorer_extend_home,
+            "explorer_cursor_end" => &mut self.explorer_cursor_end,
+            "explorer_extend_end" => &mut self.explorer_extend_end,
+            "explorer_cursor_page_up" => &mut self.explorer_cursor_page_up,
+            "explorer_extend_page_up" => &mut self.explorer_extend_page_up,
+            "explorer_cursor_page_down" => &mut self.explorer_cursor_page_down,
+            "explorer_extend_page_down" => &mut self.explorer_extend_page_down,
             _ => return None,
         })
     }
@@ -487,6 +602,7 @@ impl KeybindingSettings {
         for scope in [
             Self::GENERAL_BINDING_FIELDS,
             Self::TEXT_FIELD_BINDING_FIELDS,
+            Self::EXPLORER_LIST_BINDING_FIELDS,
         ] {
             self.remove_conflicts_in_scope(scope, existing_keys);
         }

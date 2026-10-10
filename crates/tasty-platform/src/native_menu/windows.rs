@@ -58,12 +58,12 @@ fn show_context_menu_sync(
             } else {
                 let flags = MF_STRING | if item.enabled { MF_ENABLED } else { MF_GRAYED };
                 // Encode label as null-terminated UTF-16.
-                label_bufs.push(
-                    item.label
-                        .encode_utf16()
-                        .chain(std::iter::once(0))
-                        .collect(),
-                );
+                // 탭 뒤 글자는 Win32 메뉴가 항목 오른쪽 단축키 열에 그린다.
+                let text = match &item.shortcut {
+                    Some(shortcut) => format!("{}\t{}", item.label, shortcut.display),
+                    None => item.label.clone(),
+                };
+                label_bufs.push(text.encode_utf16().chain(std::iter::once(0)).collect());
                 let wide_ptr = label_bufs.last().unwrap().as_ptr();
                 if let Err(e) = AppendMenuW(hmenu, flags, item.id as usize, PCWSTR(wide_ptr)) {
                     tracing::warn!("AppendMenuW item '{}' failed: {e}", item.label);

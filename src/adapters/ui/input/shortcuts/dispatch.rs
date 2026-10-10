@@ -16,6 +16,7 @@ enum DeferredPaletteAction {
     Copy,
     Cut,
     Paste,
+    Explorer(ExplorerAction),
 }
 
 use super::keybinding::CellGeometry;
@@ -375,6 +376,12 @@ impl MainView {
                     super::explorer_view_shortcut(state, engine, action_id);
                 }
             }
+            "explorer_rename" => {
+                deferred = Some(DeferredPaletteAction::Explorer(ExplorerAction::Rename))
+            }
+            "explorer_trash" => {
+                deferred = Some(DeferredPaletteAction::Explorer(ExplorerAction::Trash))
+            }
             "explorer_new_folder" | "explorer_new_file" => {
                 if state.focused_surface_type(engine).is_kind("explorer")
                     && let Some(sid) = focused_explorer_surface_id(state, engine)
@@ -453,6 +460,9 @@ impl MainView {
                 if !pasted {
                     self.run_paste(engine);
                 }
+            }
+            Some(DeferredPaletteAction::Explorer(action)) => {
+                self.run_explorer_action(engine, action);
             }
             None => {}
         }

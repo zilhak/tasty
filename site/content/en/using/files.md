@@ -1,4 +1,4 @@
-<!-- source-hash: 400a7103d193 -->
+<!-- source-hash: 32186ba8d092 -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -105,9 +105,13 @@ Choose **Properties** at the bottom of the right-click menu to open a popup insi
 | Copy path | `Alt+Shift+C` |
 | Find | `Ctrl+F` · `Alt+F` |
 | Copy / cut / paste | `Ctrl+C` / `Ctrl+X` / `Ctrl+V` (the same bindings as the terminal) |
+| Move between items | Arrow keys · `Home` · `End` · `PageUp` · `PageDown` (left and right only in Grid view) |
+| Extend the selection | The same keys with `Shift` |
+| Rename (one item selected) | `F2` |
+| Move to Trash | `Delete` · `Alt+Backspace` (`Cmd+Backspace` on macOS) |
 | Toggle the preview panel · Properties | No default — set them in **Settings** > **Keybindings** > **Explorer** |
 
-Click to select, `Ctrl+click` to add, `Shift+click` to select a range. `Shift+click` selects from the last item you clicked to the one you click, and `Ctrl+Shift+click` adds that range to the current selection. On macOS use `Cmd` instead of `Ctrl`.
+Click to select, `Ctrl+click` to add, `Shift+click` to select a range. When you move with the keys, the current item gets an outline; clicking the list hides it until the next key. Drag from an empty part of the list to select every item the rectangle touches, and hold `Ctrl` or `Shift` as you start to add to the current selection. While dragging, move near the top or bottom edge of the list to scroll that way and keep selecting. `Shift+click` selects from the last item you clicked to the one you click, and `Ctrl+Shift+click` adds that range to the current selection. On macOS use `Cmd` instead of `Ctrl`.
 
 ### Type to find
 

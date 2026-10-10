@@ -86,12 +86,14 @@ fn a_file_row_falls_back_to_the_shown_folder() {
             path: p("/shown/docs"),
             is_dir: true,
             rect: row(0.0),
+            full: row(0.0),
             kind: Kind::Entry { wide: true },
         },
         Spot {
             path: p("/shown/x.txt"),
             is_dir: false,
             rect: row(24.0),
+            full: row(24.0),
             kind: Kind::Entry { wide: true },
         },
     ];

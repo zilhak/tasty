@@ -307,11 +307,15 @@ Grid 셀은 모두 `explorer_grid_thumb_size`(40) 슬롯을 잡아 썸네일 유
 | 경로 복사 | `copy_path` | `Alt+Shift+C` |
 | 새 폴더 | `explorer_new_folder` | (기본 미할당) |
 | 새 파일 | `explorer_new_file` | (기본 미할당) |
+| 현재 항목 이동 (위·아래·왼쪽·오른쪽·처음·끝·한 화면 위·아래) | `explorer_cursor_*` | 방향키 · `Home` · `End` · `PageUp` · `PageDown` |
+| 선택 넓히기 (같은 이동) | `explorer_extend_*` | 위 키에 `Shift+` |
+| 이름 변경 | `explorer_rename` | `F2` |
+| 휴지통으로 이동 | `explorer_trash` | `Delete` / `Alt+Backspace`(macOS 에서 ⌘⌫). macOS 프리셋은 `Alt+Backspace` 만, Windows·Linux 프리셋은 `Delete` 만 |
 | 찾기 | `find` | `Ctrl+F` / `Alt+F` |
 | explorer 로 변환 | `convert_to_explorer` | (기본 미할당) |
 
-직접 키 매칭은 `explorer_refresh`·`explorer_go_up`·`explorer_new_folder`·`explorer_new_file`·`explorer_toggle_preview`·`explorer_properties`·`find`·`convert_to_explorer`(포커스 surface 무관) 가 `keybinding.rs`, `select_all`·`copy_path` 가 `copy_paste.rs` 다. action-id/Command Palette `dispatch.rs` 는 열 모두를, 더블탭 `double_tap.rs` 는 `convert_to_explorer` 만 받는다. `find` 는 터미널 검색과 같은 바인딩이며, 포커스가 explorer 면 터미널 검색 대신 Find 바를 연다([터미널 검색](../../features/terminal-search/index.md)). 설정 UI 서브탭은 `explorer_refresh`·`explorer_go_up`·`explorer_new_folder`·`explorer_new_file`·`explorer_toggle_preview`·`explorer_properties` = **Explorer**, `select_all`·`copy_path` = **Clipboard**, `convert_to_explorer` = **Surface**.
-주소창·새 항목 이름 입력·Find 입력이 키를 받는 동안(`ExplorerView::text_input_active`)에는 explorer 목록 단축키(`keybinding.rs` 의 explorer 묶음, `copy_paste.rs` 의 전체 선택·경로 복사·복사·잘라내기·붙여넣기)가 키를 소비하지 않고 글자 편집에 양보한다.
+직접 키 매칭은 `explorer_refresh`·`explorer_go_up`·`explorer_new_folder`·`explorer_new_file`·`explorer_toggle_preview`·`explorer_properties`·`find`·`convert_to_explorer`(포커스 surface 무관) 가 `keybinding.rs`, `select_all`·`copy_path`·`explorer_rename`·`explorer_trash` 가 `copy_paste.rs`, 이동·넓히기가 `explorer_keys.rs` 다. 이동·넓히기·이름 변경·휴지통은 전역 목록이 아닌 탐색기 목록(`EXPLORER_LIST_BINDING_FIELDS`, [단축키](../../features/keybindings/index.md#탐색기-목록-바인딩--explorer_list_binding_fields))에 있다. action-id/Command Palette `dispatch.rs` 는 열 모두를, 더블탭 `double_tap.rs` 는 `convert_to_explorer` 만 받는다. `find` 는 터미널 검색과 같은 바인딩이며, 포커스가 explorer 면 터미널 검색 대신 Find 바를 연다([터미널 검색](../../features/terminal-search/index.md)). 설정 UI 서브탭은 `explorer_refresh`·`explorer_go_up`·`explorer_new_folder`·`explorer_new_file`·`explorer_rename`·`explorer_trash`·`explorer_toggle_preview`·`explorer_properties` = **Explorer**, `select_all`·`copy_path` = **Clipboard**, `convert_to_explorer` = **Surface**.
+주소창·새 항목 이름 입력·Find 입력이 키를 받는 동안(`ExplorerView::text_input_active`)에는 explorer 목록 단축키(`keybinding.rs` 의 explorer 묶음, `copy_paste.rs` 의 전체 선택·경로 복사·복사·잘라내기·붙여넣기·이름 변경·휴지통)가 키를 소비하지 않고 글자 편집에 양보한다.
 
 **새 탭으로 탐색기 열기(`open_explorer`, 기본 미할당)는 포커스와 무관하다** — 위 표와 달리 explorer 포커스를 요구하지 않는다. `Intent::NewTab { kind: "explorer" }` 를 발생시키므로 CLI 의 `new tab --type explorer` 와 같은 도메인 인텐트(`CreateTab`)를 쓰되 선택은 다르다 — 단축키는 새 탭을 선택하고, 에이전트(CLI/IPC)는 선택하지 않는다([ADR-0059](../../adr/0059-id-targets-and-view-owned-selection.md)). 이 액션은 경로를 안 실으므로 홈에서 열린다(명시 경로는 CLI 의 `--path` 가 받는다). 설정 UI 는 **Tab** 서브탭이다 — `open_markdown` 옆, 둘 다 새 탭 열기라서. 이 액션은 `keybinding.rs`·`double_tap.rs`·`dispatch.rs` 세 진입점 전부에서 처리한다.
 
@@ -331,6 +335,24 @@ Grid 셀은 모두 `explorer_grid_thumb_size`(40) 슬롯을 잡아 썸네일 유
 - 목록이 `LoadState::Ok`가 아니거나 비어 있다.
 
 폴더나 정렬이 바뀌어 목록을 다시 읽어 오거나(`sync`), cwd나 내부 탭을 바꾸는 액션이 적용되면(주소창 편집을 취소하는 것과 같은 자리) 버퍼를 비운다. 인덱스가 가리키는 항목이 달라지기 때문이다.
+
+### 현재 항목 · 영역 선택
+
+**현재 항목**(`view/cursor.rs`)은 선택과 따로 있는 키보드 위치다. 이동 키를 누르면 현재 항목을 옮기고 그 항목만 고른다. 넓히기 키(기본 Shift+이동)는 기준 항목(`anchor`)부터 새 현재 항목까지 고른다. 시작 위치는 키로 움직이는 중이면 현재 항목, 아니면 클릭·타입어헤드가 정한 기준 항목이고, 둘 다 목록에 없으면 첫 항목(End 는 마지막)이다.
+
+- Detail·List 의 위·아래는 한 항목, 왼쪽·오른쪽은 움직이지 않는다. Grid 의 위·아래는 한 줄(열 수)씩, 왼쪽·오른쪽은 한 칸씩이며 줄을 넘어 이어진다. 아래 줄에 같은 열 칸이 없으면 마지막 항목으로 간다.
+- 한 화면 위·아래는 목록 높이에 온전히 들어가는 줄 수 × 열 수만큼 간다. 처음·끝은 목록 양 끝이다.
+- 옮긴 항목이 지난 프레임에 온전히 보이지 않았으면 그 항목을 화면 가운데로 스크롤한다(타입어헤드와 같은 `scroll_to` 경로). 보이던 항목이면 스크롤하지 않는다.
+- 키로 움직인 뒤에만 그 칸 안쪽에 1px 테두리를 그린다(design `explorer-cursor-ring`, 선택 채움 위, 모서리 radius-sm). 목록을 누르면 다음 키까지 숨는다.
+- 주소창·이름 입력·Find 입력이 키를 받는 동안과 영역 선택 중에는 움직이지 않는다.
+
+**영역 선택**(`view/marquee.rs`)은 목록의 빈 곳(항목 칸도, 누를 수 있는 다른 위젯도 아닌 곳)을 누르고 끌 때 시작한다. 클릭만 하면 선택을 바꾸지 않는다.
+
+- 사각형에 걸친 항목을 고른다. Ctrl·Cmd·Shift 를 누르고 시작하면 그때의 선택에 더하고, 아니면 새로 고른다. 기준 항목은 걸친 항목의 첫 항목이다.
+- 시작점은 목록 좌표로 둔다. 스크롤해도 처음 누른 자리에 남고, 화면 밖 항목도 칸 배치(`view/list_layout.rs` 의 `ListLayout`: 첫 칸 자리·칸 간격·칸 크기·열 수·첫 줄 앞 `..`·이름 입력 칸 수)로 계산해 고른다. 칸 사이 간격에만 걸치면 고르지 않는다. 배치는 세 보기가 그릴 때 기록한다(Grid `note_grid`, List `note_rows`, Detail 은 처음 그린 이름 칸으로 `note_detail`).
+- 사각형은 accent-primary 의 12% 채움과 36% 1px 테두리, 모서리 없음으로 목록 영역 안에만 그린다(design `explorer-marquee-bg`·`-border`).
+- 포인터가 목록 위·아래 끝 24px 띠(design `explorer-autoscroll-zone`, 표시 없음) 안에 있으면 그 쪽으로 스크롤하고, 끝에 가까울수록 빠르다(띠 바깥 경계 0, 가장 바깥 800 px/s). 목록 밖으로 나가면 멈춘다. egui ScrollArea 가 포인터가 안에 있을 때만 스크롤 입력을 받기 때문이다. 스크롤 양은 다음 프레임 목록 ScrollArea 앞에서 휠 입력처럼 넣는다(`preview::split`).
+- 영역 선택 중에는 항목 드래그(파일 끌어 놓기)를 시작하지 않는다. 다른 위젯이 먼저 끌기를 가져갔거나 popup·modal 이 떠 있으면 시작하지 않는다.
 
 ### 폰트
 
@@ -365,6 +387,10 @@ Appearance → **Explorer** 서브탭에서 surface 폰트를 오버라이드한
 - Given 지금 폴더 항목 둘과 하위 폴더 검색에서 고른 항목 하나가 선택돼 있다 When 검색어를 바꾼다 Then 새 검색어에 맞는 지금 폴더 항목만 선택에 남고, 하위 폴더 검색 중에는 그 결과에 든 항목만 남는다(`find/tests.rs` 의 `a_new_query_keeps_only_the_selected_items_it_still_shows`, `subfolder_results_keep_only_the_selected_hits`).
 - Given Find 바가 열려 있다 When 하위 폴더로 이동한다 Then 바가 닫힌다(`find/tests.rs` 의 `leaving_the_folder_closes_the_bar`).
 - Given 항목 20,000개 폴더 When detail·list·grid 로 본다 Then 화면에 걸친 항목만 그리고(200개 미만), 15,000번째 항목을 고르거나 타입어헤드로 18,765번째로 가면 그 항목이 화면 가운데로 오고 클릭하면 그 항목이 선택된다. 이름 입력을 연 채 목록 끝으로 스크롤해도 입력은 열린 채 포커스를 유지한다(`explorer/virtual_tests.rs`).
+- Given 항목 20,000 개 폴더 When 세 보기에서 End 를 누른다 Then 마지막 항목만 선택되고 화면으로 스크롤된다. 그 뒤 PageUp 은 한 화면만큼 가고, Shift+Up 두 번은 두 줄(Grid 는 열 수 × 2)을 더한다. Detail·List 의 오른쪽 키는 움직이지 않고 Grid 는 한 칸 간다(`virtual_tests/keyboard_select.rs`).
+- Given 키로 현재 항목을 옮겨 테두리가 보인다 When 다른 항목을 클릭한다 Then 테두리가 숨고 다음 아래 키는 클릭한 항목 다음으로 간다.
+- Given 항목 10 개인 Detail·List When 목록 아래 빈 곳에서 7 번째 줄까지 끈다 Then 7~9 번째가 선택되고 놓은 뒤에도 남는다.
+- Given 항목 20,000 개 Grid When 오른쪽 빈 곳에서 아래 끝 띠로 끌고 머문다 Then 목록이 스크롤되며 선택이 화면 밖 항목까지 늘고, 처음 누른 줄은 선택에 남는다.
 - Given 내부 탭 둘을 열고 정렬을 바꾼 explorer When 재시작한다 Then 탭·cwd·current·뷰 모드·정렬이 복원되고 히스토리와 선택은 비어 있다.
 
 ## 관련

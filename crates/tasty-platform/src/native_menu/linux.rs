@@ -243,7 +243,7 @@ pub fn show_context_menu(
             let sep = gtk::SeparatorMenuItem::new();
             menu.append(&sep);
         } else {
-            let mi = gtk::MenuItem::with_label(&item.label);
+            let mi = menu_item(item);
             mi.set_sensitive(item.enabled);
             if item.enabled {
                 let id = item.id;
@@ -373,6 +373,25 @@ pub fn show_context_menu(
         watchdog,
         finished: false,
     }))
+}
+
+/// 항목 하나. 단축키가 있으면 GTK 가속키 표시와 같은 모양으로 이름 오른쪽에 붙인다.
+/// `AccelLabel` 은 키 이름을 GTK 가 정하므로 다른 OS 와 같은 표시 문자열을 직접 쓴다.
+fn menu_item(item: &MenuItem) -> gtk::MenuItem {
+    let Some(shortcut) = &item.shortcut else {
+        return gtk::MenuItem::with_label(&item.label);
+    };
+    let mi = gtk::MenuItem::new();
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    let label = gtk::Label::new(Some(&item.label));
+    label.set_xalign(0.0);
+    label.set_hexpand(true);
+    let accel = gtk::Label::new(Some(&shortcut.display));
+    accel.style_context().add_class("accelerator");
+    row.pack_start(&label, true, true, 0);
+    row.pack_end(&accel, false, false, 0);
+    mi.add(&row);
+    mi
 }
 
 #[cfg(test)]
