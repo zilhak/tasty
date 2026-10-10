@@ -939,11 +939,14 @@ remote_listing_truncated = "リモートフォルダーの項目が多すぎる�
 remote_open_unsupported = "この形式のリモートファイルはまだ開けません。"
 remote_write_unsupported = "ミラーされたリモートエクスプローラーではこの操作をまだサポートしていません。"
 remote_paste_unsupported = "ミラーされたリモートエクスプローラーでコピーしたファイルはまだ貼り付けできません。"
-queue_full = "待機中のファイル操作が多すぎます。操作が一つ終わってからもう一度お試しください。"
-request_too_large = "一度のファイル操作には項目が多すぎます。項目を減らしてもう一度お試しください。"
 broken_link = "リンクの参照先がありません: {}"
 read_error_retry = "再試行"
 read_error_go_up = "上の階層へ"
+
+[explorer.request]
+queue_full = "待機中のファイル操作が多すぎます。操作が一つ終わってからもう一度お試しください。"
+too_large = "一度のファイル操作には項目が多すぎます。項目を減らしてもう一度お試しください。"
+show_queue = "キューを表示"
 
 [explorer.command]
 new_folder = "新しいフォルダー"

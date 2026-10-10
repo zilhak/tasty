@@ -159,7 +159,7 @@ fn a_refused_user_request_tells_the_cell_why() {
     state.request_explorer_file(&engine.read(), sid, Operation::Open("path".into()), user());
     assert_eq!(
         state.toasts.messages(),
-        vec![crate::i18n::t("explorer.state.queue_full")]
+        vec![crate::i18n::t("explorer.request.queue_full")]
     );
 
     let (mut state, engine) = crate::state::tests::test_state();
@@ -169,7 +169,29 @@ fn a_refused_user_request_tells_the_cell_why() {
     assert!(state.explorer_file_requests.0.is_empty());
     assert_eq!(
         state.toasts.messages(),
-        vec![crate::i18n::t("explorer.state.request_too_large")]
+        vec![crate::i18n::t("explorer.request.too_large")]
+    );
+}
+
+/// explorer 칸이 요청했으면 앱 토스트 대신 그 칸의 경고 카드로 알린다. 같은 이유는 한 장이다.
+#[test]
+fn a_refused_request_from_an_explorer_becomes_a_card_in_that_cell() {
+    use crate::explorer_ui::view::ops::Refused;
+    let (mut state, engine) = crate::state::tests::test_state();
+    let sid = engine.read().workspace_at(0).unwrap().all_surface_ids()[0];
+    let dir = tempfile::tempdir().unwrap();
+    let panel = crate::model::ExplorerPanel::new(sid, dir.path().into());
+    state.explorer_views.get_or_init(&panel, None);
+    for _ in 0..MAX_PENDING_PER_VIEW + 2 {
+        state.request_explorer_file(&engine.read(), sid, Operation::Open("path".into()), user());
+    }
+    let many = vec![PathBuf::from("x".repeat(4096)); MAX_REQUEST_BYTES / 4096 + 1];
+    state.explorer_file_requests.0.clear();
+    state.request_explorer_file(&engine.read(), sid, Operation::Trash(many), user());
+    assert!(state.toasts.messages().is_empty());
+    assert_eq!(
+        state.explorer_views.get(sid).unwrap().ops.refused(),
+        [Refused::QueueFull, Refused::TooLarge]
     );
 }
 

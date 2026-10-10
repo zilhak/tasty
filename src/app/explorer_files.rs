@@ -8,6 +8,7 @@ use ui_sync::{push_result, show_running};
 use job::leftover::Leftover;
 use job::{OpKind, Report, Shared, UndoStep};
 
+use crate::explorer_ui::view::ops::Refused;
 use crate::runtime::surface_binding::SurfaceBinding;
 use crate::view::ui::View;
 use std::collections::VecDeque;
@@ -331,21 +332,28 @@ impl crate::state::MainViewState {
         };
         // 사용자 조작으로 들어온 요청이므로 받지 않을 때도 그 칸에 이유를 보인다.
         let refused = if self.explorer_file_requests.0.len() >= MAX_PENDING_PER_VIEW {
-            Some(crate::i18n::t("explorer.state.queue_full").to_string())
+            Some(Refused::QueueFull)
         } else if operation.bytes() > MAX_REQUEST_BYTES {
-            Some(crate::i18n::t("explorer.state.request_too_large").to_string())
+            Some(Refused::TooLarge)
         } else {
             None
         };
-        if let Some(message) = refused {
+        if let Some(refused) = refused {
             tracing::warn!(
                 "Explorer file request capacity exhausted; no filesystem operation started"
             );
-            self.toasts.push(
-                message,
-                crate::adapters::ui::ToastKind::Info,
-                crate::adapters::ui::ToastScope::Surface(surface),
-            );
+            let lifetime =
+                std::time::Duration::from_millis(engine.settings.overlay.toast_duration_ms);
+            match self.explorer_views.get_mut(surface) {
+                Some(view) => view
+                    .ops
+                    .push_refused(refused, std::time::Instant::now() + lifetime),
+                None => self.toasts.push(
+                    refused.text(),
+                    crate::adapters::ui::ToastKind::Warning,
+                    crate::adapters::ui::ToastScope::Surface(surface),
+                ),
+            }
             return;
         }
         let clipboard = match &operation {

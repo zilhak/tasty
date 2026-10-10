@@ -276,3 +276,30 @@ fn a_source_kept_as_the_same_file_shows_why_and_retry() {
     assert_eq!(text.lines[0].1, t("explorer.result.same_as_copy"));
     assert_eq!(labels(&text)[0], t_fmt("explorer.result.retry", "1"));
 }
+
+/// 받지 않은 요청 카드는 표준 시간 뒤 사라지고, 대기열 보기는 이 칸에 실행 중 작업이 있을 때만 붙는다.
+#[test]
+fn a_refused_request_card_expires_and_offers_the_queue_only_while_running() {
+    let mut ops = OpsState::default();
+    let now = Instant::now();
+    ops.push_refused(Refused::QueueFull, now + Duration::from_secs(2));
+    ops.push_refused(Refused::QueueFull, now + Duration::from_secs(3));
+    ops.push_refused(Refused::TooLarge, now + Duration::from_secs(1));
+    assert_eq!(ops.refused(), [Refused::QueueFull, Refused::TooLarge]);
+    assert_eq!(ops.next_expiry(), Some(now + Duration::from_secs(1)));
+    assert!(!notice::offers_show_queue(Refused::QueueFull, &ops));
+    ops.running = Some(Running {
+        shared: Arc::new(Shared::fixed(
+            crate::app::explorer_files::job::Choice::KeepBoth,
+        )),
+        kind: OpKind::Copy,
+        dest: None,
+        total: 1,
+    });
+    assert!(notice::offers_show_queue(Refused::QueueFull, &ops));
+    assert!(!notice::offers_show_queue(Refused::TooLarge, &ops));
+    assert!(ops.expire(now + Duration::from_millis(1500)));
+    assert_eq!(ops.refused(), [Refused::QueueFull]);
+    assert!(ops.expire(now + Duration::from_secs(3)));
+    assert!(ops.refused().is_empty());
+}

@@ -1,4 +1,4 @@
-<!-- source-hash: ac7dceb3259f -->
+<!-- source-hash: 68ea1f565d4c -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -147,7 +147,7 @@ Drag items onto a folder row or cell, a folder in the left tree, or a favorite t
 
 ### Progress and results
 
-Paste, drag and drop, and Move to Trash run one at a time, in order. The status line of the Explorer that started the job shows a progress bar, the current file and the size; **×** stops it. Stopping keeps finished items and skips the rest. Jobs waiting their turn show a **+1 queued** tag; click it to see the queue and remove waiting jobs.
+Paste, drag and drop, and Move to Trash run one at a time, in order. The status line of the Explorer that started the job shows a progress bar, the current file and the size; **×** stops it. Stopping keeps finished items and skips the rest. Jobs waiting their turn show a **+1 queued** tag; click it to see the queue and remove waiting jobs. If too many jobs are waiting, or you picked too many items for one job, the job isn't taken and a warning card in that Explorer says so; when the queue is full, **Show queue** on the card opens the list.
 
 When a name already exists, a question opens in that Explorer if it has focus. If you were looking elsewhere, click **Show** in its status line.
 

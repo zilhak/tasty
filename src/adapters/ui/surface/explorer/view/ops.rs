@@ -19,6 +19,10 @@ use crate::app::explorer_files::job::{OpKind, Reason, Report, Shared, UNKNOWN_BY
 use crate::core::fs_list::human_size;
 use crate::i18n::{t, t_args, t_count, t_fmt, t_fmt2};
 
+#[path = "ops_notice.rs"]
+mod notice;
+pub(crate) use notice::Refused;
+
 /// 결과 카드에 경로를 펼쳐 보이는 최대 수. 나머지는 "and n more" 로 줄인다.
 const MAX_RESULT_LINES: usize = 3;
 
@@ -52,6 +56,8 @@ pub(crate) struct OpsState {
     pub(crate) running: Option<Running>,
     pub(crate) queued: Vec<Queued>,
     results: Vec<ResultCard>,
+    /// 받지 않은 요청을 알리는 카드. 표준 시간 뒤 사라진다.
+    notices: Vec<notice::Notice>,
     queue_open: bool,
     next_card: u64,
     /// 충돌 카드의 "남은 충돌에도 적용" 체크 상태.
@@ -113,13 +119,19 @@ impl OpsState {
     }
     /// 수명이 지난 카드를 지운다. 지운 카드가 있으면 true.
     pub(crate) fn expire(&mut self, now: Instant) -> bool {
-        let before = self.results.len();
+        let before = self.results.len() + self.notices.len();
         self.results.retain(|c| c.expires.is_none_or(|at| at > now));
-        before != self.results.len()
+        self.notices.retain(|n| n.expires > now);
+        before != self.results.len() + self.notices.len()
     }
     /// 다음으로 사라질 카드의 시각.
     pub(crate) fn next_expiry(&self) -> Option<Instant> {
-        self.results.iter().filter_map(|c| c.expires).min()
+        let notices = self.notices.iter().map(|n| n.expires);
+        self.results
+            .iter()
+            .filter_map(|c| c.expires)
+            .chain(notices)
+            .min()
     }
     #[cfg(test)]
     pub(crate) fn result_count(&self) -> usize {
@@ -187,7 +199,8 @@ pub(crate) fn footer(
             .request_repaint_after(at.saturating_duration_since(now));
     }
     let status_top = body.bottom();
-    results(ui, theme, &mut view.ops, cell, status_top, action);
+    let cards_top = notice::draw(ui, theme, &mut view.ops, cell, status_top);
+    results(ui, theme, &mut view.ops, cell, cards_top, action);
     if view.ops.queue_open {
         queue(ui, theme, &mut view.ops, cell, status_top, action);
     }
