@@ -274,7 +274,7 @@ pub use tree_row::{
 };
 pub use two_depth::{two_depth_layout, two_depth_layout_filtered};
 pub use ui_code::{
-    UiCodeTokens, UiCopySpan, paint_ui_copy, split_ui_copy, ui_code_font, ui_code_rects, ui_copy,
-    ui_copy_job, ui_copy_size,
+    UiCodeTokens, UiCopySpan, center_ui_copy_rows, paint_ui_copy, split_ui_copy, ui_code_font,
+    ui_code_rects, ui_copy, ui_copy_job, ui_copy_size,
 };
 pub use warning_callout::warning_callout;

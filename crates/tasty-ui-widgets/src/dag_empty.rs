@@ -2,13 +2,13 @@
 //!
 //! 디자인 `DagEmpty`: 글리프(text-disabled) → space-sm → 제목(body, text-secondary) → space-sm →
 //! 안내(caption, text-muted, measure-sm 폭에서 줄바꿈)를 영역 가운데에 쌓는다. 안내의 백틱 구간
-//! (CLI 명령)은 code run으로 그린다. 문구와 글리프는 호출부가 고른다.
+//! (CLI 명령)은 code run으로 그린다. 안내는 줄마다 가운데에 맞춘다. 문구와 글리프는 호출부가 고른다.
 
 use tasty_icons::Icon;
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 
-use crate::ui_code::{paint_ui_copy, ui_copy_job, ui_copy_size};
+use crate::ui_code::{center_ui_copy_rows, paint_ui_copy, ui_copy_job, ui_copy_size};
 
 /// 빈 상태 글리프 크기. 24px 아이콘 토큰이 아직 없어 시안 값을 그대로 둔다.
 pub const DAG_EMPTY_ICON_SIZE: LogicalPx = LogicalPx(24.0);
@@ -40,6 +40,7 @@ pub fn paint_dag_empty(ui: &egui::Ui, theme: &Theme, rect: egui::Rect, view: &Da
             measure,
         ))
     });
+    let body = std::sync::Arc::new(center_ui_copy_rows(theme, &body));
     let body_w = ui_copy_size(theme, &body).x;
 
     let total = side + gap + title_h + gap + body.size().y;
