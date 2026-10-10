@@ -254,9 +254,12 @@ pub fn draw_create_in_folder(ui: &mut egui::Ui, theme: &Theme) {
         &[
             (
                 "input",
-                "under the target row · indent explorer-create-indent 16 · caption “in {folder}” caption size, text-muted",
+                "under the target row · indent explorer-create-indent 16 · field max explorer-create-field-max-width 240 · caption “in {folder}” at space-sm after it, caption size, text-muted",
             ),
-            ("target", "drop-target ring + fill while the field is open"),
+            (
+                "target",
+                "drop-target ring + fill while the field is open · same ring as drag and drop, radius",
+            ),
             (
                 "grid view",
                 "new cell right after the folder cell · no caption",
@@ -265,6 +268,7 @@ pub fn draw_create_in_folder(ui: &mut egui::Ui, theme: &Theme) {
         ],
         &[
             TokenChip::without_color("explorer-create-indent", "→ space-lg 16"),
+            TokenChip::without_color("explorer-create-field-max-width", "→ size-240"),
             TokenChip::new(
                 "explorer-drop-target-border",
                 "target",

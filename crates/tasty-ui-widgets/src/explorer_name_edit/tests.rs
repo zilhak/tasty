@@ -6,6 +6,13 @@ fn theme() -> Theme {
 
 /// 편집 줄을 두 프레임 그려 (줄, 입력 칸) rect 를 돌려준다.
 fn rects(layout: ExplorerNameLayout) -> (egui::Rect, egui::Rect) {
+    rects_in(layout, ExplorerNameOptions::default())
+}
+
+fn rects_in(
+    layout: ExplorerNameLayout,
+    options: ExplorerNameOptions<'_>,
+) -> (egui::Rect, egui::Rect) {
     let theme = theme();
     let ctx = egui::Context::default();
     let mut edit = ExplorerNameEdit::new("New folder".into(), 0..10);
@@ -21,10 +28,11 @@ fn rects(layout: ExplorerNameLayout) -> (egui::Rect, egui::Rect) {
                         egui::UiBuilder::new()
                             .max_rect(egui::Rect::from_min_size(at, egui::vec2(400.0, 300.0))),
                     );
-                    let (row, field, _) = explorer_name_row(
+                    let (row, field, _) = explorer_name_row_in(
                         ui,
                         &theme,
                         layout,
+                        options,
                         tasty_icons::FOLDER,
                         &mut edit,
                         false,
@@ -59,6 +67,28 @@ fn a_list_editor_grows_the_row_to_the_table_row_height() {
         field.left() - row.left(),
         glyph_right + theme.spacing_sm.value()
     );
+}
+
+#[test]
+fn a_field_with_the_in_folder_caption_stops_at_the_create_field_width() {
+    let theme = theme();
+    let options = ExplorerNameOptions {
+        caption: Some("in mockup-exports"),
+        ..Default::default()
+    };
+    let max = theme.explorer_create_field_max_width().value();
+    for layout in [
+        ExplorerNameLayout::List,
+        ExplorerNameLayout::Detail {
+            inset: 10.0,
+            name_width: 400.0,
+        },
+    ] {
+        let (_, field) = rects_in(layout, options);
+        assert_eq!(field.width(), max, "{layout:?}");
+        let (_, plain) = rects(layout);
+        assert!(plain.width() > max, "{layout:?}: no caption, no cap");
+    }
 }
 
 #[test]

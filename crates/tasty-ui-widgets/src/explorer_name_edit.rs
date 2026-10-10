@@ -58,7 +58,8 @@ pub struct ExplorerNameOptions<'a> {
     pub field_id: Option<egui::Id>,
     /// 글리프 앞에 더하는 들여쓰기(explorer-create-indent).
     pub indent: f32,
-    /// 입력 칸 뒤의 muted caption("in {folder}"). 칸 끝이 줄 끝에 닿으면 caption 폭만큼 칸을 줄인다.
+    /// 입력 칸 뒤의 muted caption("in {folder}"). caption 이 있으면 칸은 `explorer-create-field-max-width`
+    /// 에서 멈추고 caption 이 `space-sm` 뒤에 붙는다. 칸 끝이 줄 끝에 닿으면 caption 폭만큼 칸을 줄인다.
     pub caption: Option<&'a str>,
 }
 
@@ -133,12 +134,15 @@ pub fn explorer_name_row_in(
                 egui::vec2(glyph_size, glyph_size),
             );
             glyph.image(glyph_size, muted).paint_at(ui, glyph_rect);
+            let field_left = glyph_rect.right() + gap;
+            let mut field_end = (field_right - pad).max(field_left);
+            if caption.is_some() {
+                field_end =
+                    field_end.min(field_left + theme.explorer_create_field_max_width().value());
+            }
             let field = egui::Rect::from_min_max(
-                egui::pos2(glyph_rect.right() + gap, row.top()),
-                egui::pos2(
-                    (field_right - pad).max(glyph_rect.right() + gap),
-                    row.bottom(),
-                ),
+                egui::pos2(field_left, row.top()),
+                egui::pos2(field_end, row.bottom()),
             );
             if let Some(g) = caption {
                 let pos = egui::pos2(field.right() + gap, row.center().y - g.size().y * 0.5);
