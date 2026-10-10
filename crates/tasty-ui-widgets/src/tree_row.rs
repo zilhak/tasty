@@ -18,11 +18,6 @@ pub fn tree_row_icon_center(theme: &Theme) -> f32 {
     theme.tree_row_gap().value() + CHEVRON_SLOT + GAP + ICON_GLYPH * 0.5
 }
 
-/// 아이콘이 있는 깊이 0 행의 왼쪽 끝에서 이름 글자가 시작하는 곳까지의 거리. 이름 뒤에 표지를 붙일 때 쓴다.
-pub fn tree_row_label_left(theme: &Theme) -> f32 {
-    theme.tree_row_gap().value() + CHEVRON_SLOT + GAP + ICON_GLYPH + GAP
-}
-
 /// 트리 행. `selected` 면 surface-active. 클릭 응답 반환(행 전체 클릭).
 #[allow(clippy::too_many_arguments)]
 pub fn tree_row(
@@ -64,6 +59,65 @@ pub fn tree_row_matching(
     meta: Option<&str>,
     selected: bool,
 ) -> egui::Response {
+    let row = Row {
+        depth,
+        has_children,
+        open,
+        meta,
+        selected,
+        tail: 0.0,
+    };
+    draw(ui, theme, row, icon, label, query).0
+}
+
+/// 깊이 0 의 `tree_row_matching` 에 이름 뒤 표지 자리 `tail` 을 먼저 뺀다. 이름은 그 앞에서 잘린다.
+/// 응답과 함께 보이는 이름 글자가 끝나는 x 를 돌려준다. 표지는 그 자리부터 `tail` 폭 안에 그린다.
+pub fn tree_row_with_tail(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    icon: Option<IconPainter<'_>>,
+    label: &str,
+    query: &str,
+    selected: bool,
+    tail: f32,
+) -> (egui::Response, f32) {
+    let row = Row {
+        depth: 0,
+        has_children: false,
+        open: false,
+        meta: None,
+        selected,
+        tail,
+    };
+    draw(ui, theme, row, icon, label, query)
+}
+
+/// 행 모양. `tail` 은 이름 오른쪽에 남겨 둘 폭이다.
+struct Row<'a> {
+    depth: u16,
+    has_children: bool,
+    open: bool,
+    meta: Option<&'a str>,
+    selected: bool,
+    tail: f32,
+}
+
+fn draw(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    row: Row<'_>,
+    icon: Option<IconPainter<'_>>,
+    label: &str,
+    query: &str,
+) -> (egui::Response, f32) {
+    let Row {
+        depth,
+        has_children,
+        open,
+        meta,
+        selected,
+        tail,
+    } = row;
     let height = theme.tree_row_height().value();
     let pad_l = theme.tree_row_gap().value();
     let pad_r = theme.spacing_sm.value();
@@ -153,12 +207,49 @@ pub fn tree_row_matching(
         egui::FontId::proportional(body),
         egui::Color32::PLACEHOLDER,
     ));
-    let label_rect = egui::Rect::from_min_max(
-        egui::pos2(x, rect.top()),
-        egui::pos2(right.max(x), rect.bottom()),
-    );
+    let right = (right - tail).max(x);
+    let label_rect =
+        egui::Rect::from_min_max(egui::pos2(x, rect.top()), egui::pos2(right, rect.bottom()));
+    let label_end = (x + g.rect.width()).min(right);
     let pos = egui::pos2(x, rect.center().y - g.rect.height() * 0.5);
     ui.painter().with_clip_rect(label_rect).galley(pos, g, fg);
 
-    resp
+    (resp, label_end)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 폭 `width` 의 칸에 `label` 을 꼬리 `tail` 과 함께 그려 (행 오른쪽 끝, 이름 끝 x) 를 돌려준다.
+    fn draw_with_tail(width: f32, label: &str, tail: f32) -> (f32, f32) {
+        let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
+        let ctx = egui::Context::default();
+        let mut out = None;
+        drop(ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                ui.allocate_ui(egui::vec2(width, theme.tree_row_height().value()), |ui| {
+                    let (resp, end) = tree_row_with_tail(ui, &theme, None, label, "", false, tail);
+                    out = Some((resp.rect.right() - theme.spacing_sm.value(), end));
+                });
+            });
+        }));
+        out.expect("drawn")
+    }
+
+    #[test]
+    fn a_long_name_stops_before_the_tail() {
+        let tail = 16.0;
+        let (right, end) = draw_with_tail(120.0, &"long-link-name-".repeat(8), tail);
+        assert!(
+            (end - (right - tail)).abs() < 0.01,
+            "end {end}, right {right}"
+        );
+    }
+
+    #[test]
+    fn a_short_name_keeps_the_tail_right_after_it() {
+        let (right, end) = draw_with_tail(400.0, "a.md", 16.0);
+        assert!(end < right - 16.0 - 100.0, "end {end}, right {right}");
+    }
 }

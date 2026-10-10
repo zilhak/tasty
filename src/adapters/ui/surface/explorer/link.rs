@@ -28,6 +28,16 @@ pub(super) fn has_tail(e: &DirEntryInfo) -> bool {
     e.link == EntryLink::Valid
 }
 
+/// 이름 뒤에 남겨 둘 폭(`space-xs` + 글리프). 꼬리가 없는 항목은 0 이다. 세 보기가 이 폭을 먼저 빼고
+/// 이름을 그 앞에서 자르므로, 이름이 길어도 글리프는 보인다.
+pub(super) fn tail_width(th: &Theme, e: &DirEntryInfo) -> f32 {
+    if has_tail(e) {
+        glyph_size(th) + th.spacing_xs.value()
+    } else {
+        0.0
+    }
+}
+
 /// 글자 끝 `text_right` 에서 `space-xs` 띄운 자리에 link 글리프를 그린다. `fade` 는 잘라내기 디밍 같은 색 보정이다.
 pub(super) fn paint_tail(
     ui: &egui::Ui,

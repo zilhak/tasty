@@ -22,7 +22,7 @@ use tasty_type_geometry::length::LogicalPx;
 use tasty_model::{ExplorerPanel, ExplorerViewMode, SortColumn, SortDir};
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{
-    PathField, PathFieldOutcome, Table, TableSortDir, tree_row, tree_row_matching,
+    PathField, PathFieldOutcome, Table, TableSortDir, tree_row, tree_row_with_tail,
 };
 
 use crate::adapters::ui::icons::{self, Icon};
@@ -1315,7 +1315,7 @@ fn grid_cell(
     );
     job.halign = egui::Align::Center;
     // 링크는 마지막 줄 끝에 link 글리프가 들어갈 폭을 남긴다.
-    let tail = link::has_tail(e).then(|| link::glyph_size(theme) + theme.spacing_xs.value());
+    let tail = link::has_tail(e).then(|| link::tail_width(theme, e));
     job.wrap = egui::text::TextWrapping {
         max_width: (CELL_W - theme.spacing_xs.scaled(2.0)).value() - tail.unwrap_or(0.0),
         max_rows: 3,
@@ -1379,27 +1379,18 @@ fn list_view(
                 if cut {
                     ui.set_opacity(theme.cut_pending_opacity());
                 }
-                let resp = tree_row_matching(
+                let tail = link::tail_width(theme, e);
+                let (resp, name_end) = tree_row_with_tail(
                     ui,
                     theme,
-                    0,
-                    false,
-                    false,
                     Some(&|ui, rect, _c| icon.image(rect.height(), glyph_color).paint_at(ui, rect)),
                     &e.name,
                     &query,
-                    None,
                     selected,
+                    tail,
                 );
-                if link::has_tail(e) {
-                    let font = egui::FontId::proportional(theme.tree_row_font_size().value());
-                    let w = ui.fonts(|f| {
-                        f.layout_no_wrap(e.name.clone(), font, egui::Color32::PLACEHOLDER)
-                            .rect
-                            .width()
-                    });
-                    let right = resp.rect.left() + tasty_ui_widgets::tree_row_label_left(theme) + w;
-                    link::paint_tail(ui, theme, right, resp.rect.center().y, |c| c);
+                if tail > 0.0 {
+                    link::paint_tail(ui, theme, name_end, resp.rect.center().y, |c| c);
                 }
                 resp
             })
@@ -1503,17 +1494,28 @@ fn detail_view(
                             } else {
                                 th.table_row_fg()
                             };
-                            let name = ui.label(find::name_job(
+                            let job = find::name_job(
                                 th,
                                 &row.name,
                                 &query,
                                 egui::FontId::proportional(th.font_size_body.value()),
                                 dim(name_fg.to_egui()),
                                 None,
-                            ));
+                            );
+                            // 꼬리 글리프 폭을 먼저 빼고 이름을 그 앞에서 말줄임한다. 폭은 열의 clip 끝으로
+                            // 잰다(남은 폭을 다 채우면 이름 열이 스크롤 안에서 넓어진다).
+                            let room = ui.clip_rect().right() - ui.cursor().left();
+                            let text_w = ui.fonts(|f| f.layout_job(job.clone()).rect.width());
+                            let w = text_w.min(room - link::tail_width(th, row)).max(0.0);
+                            // 이름 뒤 간격은 이름을 놓을 때 정해지므로 꼬리의 space-xs 를 먼저 둔다.
+                            ui.spacing_mut().item_spacing.x = th.spacing_xs.value();
+                            let name = ui
+                                .allocate_ui(egui::vec2(w, th.font_size_body.value()), |ui| {
+                                    ui.add(egui::Label::new(job).truncate())
+                                })
+                                .inner;
                             link::broken_tooltip(row, name);
                             if link::has_tail(row) {
-                                ui.spacing_mut().item_spacing.x = th.spacing_xs.value();
                                 link::add_tail(ui, th, dim);
                             }
                         });
