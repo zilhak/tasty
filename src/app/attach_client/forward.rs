@@ -541,7 +541,7 @@ impl App {
 
 impl App {
     /// 목록 소비자는 wire에 없으므로 요청 ID에 기록한다. None은 picker, Some은 explorer다.
-    fn send_list_dir_request(
+    pub(super) fn send_list_dir_request(
         &mut self,
         local_ws_id: u32,
         request_id: u64,

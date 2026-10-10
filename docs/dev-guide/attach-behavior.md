@@ -610,7 +610,10 @@ client 가 mirror 를 걷어내면 원격에 `Detach` 를 보내 원격 점유(h
 
 - **`list_dir_request`/`list_dir_result`**(ADR-0022) — 원격 디렉토리 나열(file picker). host popup
   wrapper 가 요청을 소유하고 응답을 직접 소비 — 소유자가 host 프로세스 내부라 `sent_at.elapsed()`
-  로 매 프레임 soft timeout(8초)을 직접 판정할 수 있다.
+  로 매 프레임 soft timeout(8초)을 직접 판정할 수 있다. `dir` 가 비어 있으면 서버는 자기 홈을 읽고
+  응답의 `dir` 에 그 경로를 싣는다. client 는 연결·재연결마다 이 형태로 원격 홈을 한 번 묻고
+  (`home_probe.rs`), 응답을 explorer 주소창의 `~` 에 쓴다. 이 요청에는 소비자 surface 가 없고 응답의
+  목록은 버린다.
 - **`git_query_request`/`git_query_result`**(ADR-0022) — 원격 저장소 status/log/diff/worktrees 조회
   (git-viewer). 응답의 **소비자가 host 가 아니라 별도 프로세스인 plugin** 이라는 점이 file picker와
   다르다 — host(`src/app/attach_client/output.rs`)는 payload 를 해석하지 않고 그대로 `PluginManager::

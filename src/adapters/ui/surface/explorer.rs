@@ -582,7 +582,7 @@ fn address_bar(
         );
     if let PathFieldOutcome::Navigate(input) = outcome
         && action.is_none()
-        && let Some(target) = address::resolve(&input, current, remote)
+        && let Some(target) = address::resolve(&input, current, view.address_host(remote))
     {
         *action = Some(match target {
             Ok(dir) => ExplorerAction::Navigate(dir),

@@ -5,6 +5,7 @@ mod bulk;
 mod connection;
 mod dispatch;
 mod forward;
+mod home_probe;
 pub(crate) mod into_gui;
 mod navigation;
 mod output;

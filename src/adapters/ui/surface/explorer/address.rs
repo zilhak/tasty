@@ -2,7 +2,16 @@
 //! 원격 입력은 로컬 파일시스템을 보지 않고 원격 조회에 맡긴다. 규칙은 docs/surfaces/explorer/index.md의
 //! "주소 입력" 절에 있다.
 
+mod remote;
+
 use std::path::{Component, Path, PathBuf};
+
+/// 주소를 해석할 파일시스템. 원격 홈은 연결마다 한 번 조회하며 아직 모르면 None이다.
+#[derive(Clone, Copy, Debug)]
+pub enum Host<'a> {
+    Local,
+    Remote { home: Option<&'a Path> },
+}
 
 /// 주소 입력을 이동하지 않은 이유. 사용자에게 toast로 알린다.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -18,7 +27,7 @@ pub enum AddressRejection {
     },
     /// `~`를 펼칠 홈 폴더를 찾지 못했다.
     NoHome,
-    /// 원격 경로의 `~`는 원격 호스트의 홈이므로 로컬 홈으로 펼치지 않는다.
+    /// 원격 홈을 아직 모른다(조회 대기·실패). 원격 `~`는 로컬 홈으로 펼치지 않는다.
     RemoteHome,
 }
 
@@ -40,18 +49,18 @@ impl AddressRejection {
     }
 }
 
-/// 입력을 이동할 폴더로 바꾼다. 빈 입력은 None이다. `remote`면 원격 규칙을 쓴다.
+/// 입력을 이동할 폴더로 바꾼다. 빈 입력은 None이다. 원격이면 원격 규칙을 쓴다.
 pub fn resolve(
     input: &str,
     current: &Path,
-    remote: bool,
+    host: Host<'_>,
 ) -> Option<Result<PathBuf, AddressRejection>> {
     let input = input.trim();
     if input.is_empty() {
         return None;
     }
-    if remote {
-        return Some(remote_target(input, current));
+    if let Host::Remote { home } = host {
+        return Some(remote_target(input, current, home));
     }
     let home = directories::BaseDirs::new().map(|d| d.home_dir().to_path_buf());
     Some(local_path(input, current, home.as_deref()).and_then(|p| check_local_dir(&p).map(|()| p)))
@@ -134,27 +143,47 @@ fn check_local_dir(path: &Path) -> Result<(), AddressRejection> {
 }
 
 /// 원격 입력은 원격 호스트의 경로라 로컬에서 존재를 확인하지 않는다. 결과는 원격 목록 조회가 알려 준다.
-/// 절대 경로(`/…`, `\…`, `X:\…`, `X:/…`)는 그대로, 나머지는 현재 원격 폴더 기준으로 잇는다.
-fn remote_target(input: &str, current: &Path) -> Result<PathBuf, AddressRejection> {
-    if input.starts_with('~') {
-        return Err(AddressRejection::RemoteHome);
-    }
+/// `~`·`~/…`는 원격 홈, 절대 경로(`/…`, `\…`, `X:\…`, `X:/…`)는 그대로, 나머지는 현재 원격 폴더 기준이다.
+/// 그 뒤 `.`·`..`를 글자 그대로 정리한다.
+fn remote_target(
+    input: &str,
+    current: &Path,
+    home: Option<&Path>,
+) -> Result<PathBuf, AddressRejection> {
     let bytes = input.as_bytes();
     let windows_absolute = bytes.len() >= 3
         && bytes[0].is_ascii_alphabetic()
         && bytes[1] == b':'
         && matches!(bytes[2], b'\\' | b'/');
-    if input.starts_with('/') || input.starts_with('\\') || windows_absolute {
-        Ok(PathBuf::from(input))
+    let raw = if let Some(rest) = remote::home_relative(input) {
+        let home = home.ok_or(AddressRejection::RemoteHome)?;
+        remote::under_home(&home.to_string_lossy(), rest)
+    } else if input.starts_with('/') || input.starts_with('\\') || windows_absolute {
+        input.to_string()
     } else {
         let dir = current.to_string_lossy();
-        Ok(crate::adapters::ui::popup::file_picker::join_dir(true, &dir, input).into())
-    }
+        crate::adapters::ui::popup::file_picker::join_dir(true, &dir, input)
+    };
+    Ok(remote::normalize(&raw).into())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const NO_HOME: Host<'static> = Host::Remote { home: None };
+
+    fn remote_with_home(input: &str, current: &str, home: &str) -> PathBuf {
+        resolve(
+            input,
+            Path::new(current),
+            Host::Remote {
+                home: Some(Path::new(home)),
+            },
+        )
+        .unwrap()
+        .unwrap()
+    }
 
     fn local(input: &str, current: &str) -> Result<PathBuf, AddressRejection> {
         local_path(input, Path::new(current), Some(Path::new("/home/u")))
@@ -198,8 +227,8 @@ mod tests {
 
     #[test]
     fn empty_input_is_no_action() {
-        assert_eq!(resolve("   ", Path::new("/"), false), None);
-        assert_eq!(resolve("", Path::new("/"), true), None);
+        assert_eq!(resolve("   ", Path::new("/"), Host::Local), None);
+        assert_eq!(resolve("", Path::new("/"), NO_HOME), None);
     }
 
     #[test]
@@ -209,15 +238,15 @@ mod tests {
         std::fs::write(&file, b"x").unwrap();
         let cur = dir.path();
         assert_eq!(
-            resolve(" file.txt ", cur, false),
+            resolve(" file.txt ", cur, Host::Local),
             Some(Err(AddressRejection::NotADirectory(file)))
         );
         assert_eq!(
-            resolve("missing", cur, false),
+            resolve("missing", cur, Host::Local),
             Some(Err(AddressRejection::NotFound(cur.join("missing"))))
         );
         std::fs::create_dir(cur.join("sub")).unwrap();
-        assert_eq!(resolve("sub", cur, false), Some(Ok(cur.join("sub"))));
+        assert_eq!(resolve("sub", cur, Host::Local), Some(Ok(cur.join("sub"))));
     }
 
     #[cfg(unix)]
@@ -228,9 +257,12 @@ mod tests {
         std::fs::create_dir(cur.join("real")).unwrap();
         std::os::unix::fs::symlink(cur.join("real"), cur.join("link")).unwrap();
         std::os::unix::fs::symlink(cur.join("gone"), cur.join("broken")).unwrap();
-        assert_eq!(resolve("link", cur, false), Some(Ok(cur.join("link"))));
         assert_eq!(
-            resolve("broken", cur, false),
+            resolve("link", cur, Host::Local),
+            Some(Ok(cur.join("link")))
+        );
+        assert_eq!(
+            resolve("broken", cur, Host::Local),
             Some(Err(AddressRejection::BrokenLink(cur.join("broken"))))
         );
     }
@@ -239,19 +271,19 @@ mod tests {
     fn remote_input_never_looks_at_the_local_filesystem() {
         let missing_here = "/definitely/not/on/this/machine";
         assert_eq!(
-            resolve(missing_here, Path::new("/srv"), true),
+            resolve(missing_here, Path::new("/srv"), NO_HOME),
             Some(Ok(missing_here.into()))
         );
         assert_eq!(
-            resolve(r"C:\Users\x", Path::new("/srv"), true),
+            resolve(r"C:\Users\x", Path::new("/srv"), NO_HOME),
             Some(Ok(r"C:\Users\x".into()))
         );
         assert_eq!(
-            resolve("sub", Path::new("/remote/home"), true),
+            resolve("sub", Path::new("/remote/home"), NO_HOME),
             Some(Ok("/remote/home/sub".into()))
         );
         assert_eq!(
-            resolve("~/x", Path::new("/srv"), true),
+            resolve("~/x", Path::new("/srv"), NO_HOME),
             Some(Err(AddressRejection::RemoteHome))
         );
     }
@@ -259,16 +291,60 @@ mod tests {
     #[test]
     fn remote_relative_input_follows_the_separator_of_the_remote_folder() {
         assert_eq!(
-            resolve("proj", Path::new(r"C:\Users\u"), true),
+            resolve("proj", Path::new(r"C:\Users\u"), NO_HOME),
             Some(Ok(r"C:\Users\u\proj".into()))
         );
         assert_eq!(
-            resolve("proj", Path::new(r"C:\"), true),
+            resolve("proj", Path::new(r"C:\"), NO_HOME),
             Some(Ok(r"C:\proj".into()))
         );
         assert_eq!(
-            resolve("proj", Path::new("/"), true),
+            resolve("proj", Path::new("/"), NO_HOME),
             Some(Ok("/proj".into()))
+        );
+    }
+
+    #[test]
+    fn remote_tilde_is_the_remote_home_once_it_is_known() {
+        assert_eq!(
+            remote_with_home("~", "/srv", "/home/r"),
+            PathBuf::from("/home/r")
+        );
+        assert_eq!(
+            remote_with_home("~/docs/../src", "/srv", "/home/r"),
+            PathBuf::from("/home/r/src")
+        );
+        assert_eq!(
+            remote_with_home(r"~\docs", r"D:\work", r"C:\Users\r"),
+            PathBuf::from(r"C:\Users\r\docs")
+        );
+        assert_eq!(
+            remote_with_home("~other", "/srv", "/home/r"),
+            PathBuf::from("/srv/~other")
+        );
+    }
+
+    #[test]
+    fn remote_dots_are_resolved_with_the_remote_separator_not_the_local_one() {
+        assert_eq!(
+            remote_with_home("..", "/srv/a", "/h"),
+            PathBuf::from("/srv")
+        );
+        assert_eq!(
+            remote_with_home("./x/../y", "/srv/a", "/h"),
+            PathBuf::from("/srv/a/y")
+        );
+        assert_eq!(
+            remote_with_home("../../../..", "/srv/a", "/h"),
+            PathBuf::from("/")
+        );
+        assert_eq!(
+            remote_with_home(r"..\x", r"C:\Users\u", "/h"),
+            PathBuf::from(r"C:\Users\x")
+        );
+        assert_eq!(
+            remote_with_home("/etc/./ssh/..", "/srv", "/h"),
+            PathBuf::from("/etc")
         );
     }
 }

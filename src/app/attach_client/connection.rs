@@ -182,6 +182,7 @@ impl App {
         tracing::info!(
             "gui attach: mirror workspace {local_ws_id} from 127.0.0.1:{port} (remote ws {workspace})"
         );
+        self.probe_remote_home(local_ws_id);
         Ok(local_ws_id)
     }
 
@@ -364,6 +365,7 @@ impl App {
         tracing::info!(
             "gui attach: mirror workspace {local_workspace} 재연결 성공 (remote ws {workspace})"
         );
+        self.probe_remote_home(local_workspace);
         Ok(())
     }
 

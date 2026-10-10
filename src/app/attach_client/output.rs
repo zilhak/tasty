@@ -1,6 +1,8 @@
 //! Apply ordered incoming events to windowed or parked mirror engines.
 
 #[cfg(test)]
+mod home_probe_tests;
+#[cfg(test)]
 mod tests;
 use super::agent_origin;
 use super::connection::find_parked_with_workspace;
@@ -595,6 +597,14 @@ fn apply_list_dir_result_event(
                 );
             }
         }
+        return;
+    }
+    let home = if ok { dir.as_deref() } else { None };
+    if host
+        .state
+        .explorer_views
+        .finish_home_probe(request_id, home)
+    {
         return;
     }
     // 아직 열린 picker가 같은 요청을 기다릴 때만 반영한다.

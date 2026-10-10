@@ -75,6 +75,8 @@ pub struct ExplorerView {
     reload_requested: bool,
     /// 현재 폴더가 없어 읽지 못했을 때 남아 있는 가장 가까운 상위 폴더. 읽기 오류 화면의 "상위 폴더로" 가 쓴다.
     existing_ancestor: Option<PathBuf>,
+    /// 원격 mirror의 홈 폴더. 연결마다 한 번 조회하며 아직 모르면 None이다. 주소창의 `~` 가 쓴다.
+    pub(crate) remote_home: Option<PathBuf>,
     /// 주소창(PathField) 편집 버퍼. 비편집 시 `sync()` 가 활성 탭 cwd 로 재동기화한다.
     pub addr_buffer: String,
     /// 주소창 편집(=트리거 포커스) 여부. PathField 가 매 프레임 갱신.
@@ -206,6 +208,7 @@ impl ExplorerView {
             tree_children: HashMap::new(),
             reload_requested: false,
             existing_ancestor: None,
+            remote_home: None,
             addr_buffer: String::new(),
             addr_editing: false,
             addr_active: None,
@@ -665,6 +668,9 @@ impl Default for ExplorerView {
 #[derive(Default)]
 pub struct ExplorerViewStore {
     views: HashMap<SurfaceId, ExplorerView>,
+    /// mirror workspace별 원격 홈과 응답을 기다리는 홈 조회 요청. `address::remote`가 관리한다.
+    pub(super) remote_homes: HashMap<u32, PathBuf>,
+    pub(super) home_probes: HashMap<u64, u32>,
 }
 
 impl ExplorerViewStore {
@@ -690,8 +696,10 @@ impl ExplorerViewStore {
         panel: &ExplorerPanel,
         mirror_ws_id: Option<u32>,
     ) -> &mut ExplorerView {
+        let home = mirror_ws_id.and_then(|ws| self.remote_home(ws).map(Path::to_path_buf));
         let view = self.views.entry(panel.id).or_default();
         view.sync(panel, mirror_ws_id);
+        view.remote_home = home;
         view
     }
 
