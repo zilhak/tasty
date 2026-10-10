@@ -38,7 +38,7 @@ Win·Super 로 `option` 을 쓸 수 있게 되어 Windows·Linux 의 수정자 �
 - 빈 조합을 숨기면 모든 조합이 미할당일 때 아무 반응도 보이지 않는다. 역할 행처럼 꾸미면 없는 동작이 있는 것처럼 보인다.
 - 바인딩 문자열의 문자열 검색은 키 이름·대소문자·토큰 순서를 오해할 수 있다. parser를 GUI에 두면 bundle이 headless에서 쓰지 못하고, 새 크레이트는 이미 공통 의존인 settings와 별도 역할이 없다.
 
-`option` 을 macOS 전용으로 두면 macOS 에서 만든 구성을 다른 OS 로 옮길 때마다 대체 값을 골라야 하고, Windows·Linux 사용자는 Win·Super 를 단축키에 쓸 수 없다. Win·Super 에 새 토큰을 주면 같은 위치의 키가 OS 마다 다른 토큰이 되어 구성이 이식되지 않는다. `super`·`win`·`cmd` 텍스트를 `option`·`alt` 로 정규화하는 방법은 winit 의 super 가 macOS 에서는 Command(`alt` 위치), 다른 OS 에서는 Win·Super(`option` 위치)여서 같은 낱말의 뜻이 저장한 OS 에 따라 달라진다. `meta` 는 환경마다 Alt 나 Super 를 가리킨다.
+`option` 을 macOS 전용으로 두면 macOS 에서 만든 구성을 다른 OS 로 옮길 때마다 대체 값을 골라야 하고, Windows·Linux 사용자는 Win·Super 를 단축키에 쓸 수 없다. Win·Super 에 새 토큰을 주면 같은 위치의 키가 OS 마다 다른 토큰이 되어 구성이 이식되지 않는다. `super`·`win`·`cmd` 텍스트를 `option`·`alt` 로 정규화하는 방법은 winit 의 super 가 macOS 에서는 Command(`alt` 위치), 다른 OS 에서는 Win·Super(`option` 위치)여서 같은 낱말의 뜻이 저장한 OS 에 따라 달라진다. `meta` 는 환경마다 Alt 나 Super 를 가리킨다. explorer 드래그 반전 수정자의 기본값도 위치 매핑으로 비-macOS `option` 을 줄 수 있었지만, GNOME 등에서 Super+드래그는 창 이동이라 Tasty 에 드래그가 오지 않으므로 각 OS 파일 관리자의 복사 키(macOS `option`, 다른 OS `ctrl`)를 유지했다.
 
 태그 없는 설정 직렬화는 임의 TOML을 잘못 읽을 수 있고 host 설정만으로는 plugin override를 담지 못한다. JSON도 가능하지만 현재 번들 타입은 TOML로 표현되며 사용자가 다른 설정과 같은 방식으로 편집할 수 있다. 미설치 plugin override를 남기면 나중에 설치할 때 잊었던 설정이 활성화된다. 통째 교체는 로컬에만 있는 plugin 설정을 지울 수 있다.
 
