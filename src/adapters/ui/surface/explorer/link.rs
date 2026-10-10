@@ -64,11 +64,16 @@ pub(super) fn broken_tooltip(e: &DirEntryInfo, resp: egui::Response) -> egui::Re
     if e.link != EntryLink::Broken || !resp.hovered() {
         return resp;
     }
+    resp.on_hover_text(missing_target_text(e))
+}
+
+/// 끊긴 링크 툴팁 문구. 링크가 가리키던 경로를 쓰고, 그것도 읽지 못하면 링크 자신의 경로다.
+fn missing_target_text(e: &DirEntryInfo) -> String {
     let target = std::fs::read_link(&e.path).map_or_else(
         |_| e.path.display().to_string(),
         |p| p.display().to_string(),
     );
-    resp.on_hover_text(t("explorer.link.target_missing").replace("{path}", &target))
+    t("explorer.link.target_missing").replace("{path}", &target)
 }
 
 #[cfg(test)]
@@ -103,6 +108,18 @@ mod tests {
         assert_eq!(color, th.explorer_link_broken_fg().to_egui());
         assert!(broken_icon(&th, &entry(EntryLink::Valid)).is_none());
         assert!(broken_icon(&th, &entry(EntryLink::NotALink)).is_none());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_broken_link_names_its_missing_target() {
+        crate::i18n::init("en");
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let link = tmp.path().join("old-config.toml");
+        std::os::unix::fs::symlink("gone.toml", &link).expect("symlink");
+        let mut e = entry(EntryLink::Broken);
+        e.path = link;
+        assert_eq!(missing_target_text(&e), "Target not found: gone.toml");
     }
 
     #[test]
