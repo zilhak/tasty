@@ -299,6 +299,33 @@ GUI의 ui.screenshot으로 PNG를 저장할 수 있다. hover와 애니메이션
 - `cargo test … | grep '^test result:' | awk -F'[ ;]' '{f+=$6} END {print f}'` 는 실패한 타깃이 있는데도 failed 0 을 출력했다.
 - `cargo clippy … 2>&1 | grep -cE '^(warning|error)'; echo "rc=$?"` 의 `rc=0` 은 grep 의 종료 코드였다. clippy 자신은 컴파일 실패로 rc=101 이었다.
 
+## 커밋별로 검사할 때
+
+커밋마다 단독 트리를 검사할 때는 `git rebase --exec`(`-x`) 안에서 시험을 돌리지 않는다.
+linked worktree 에서 rebase 는 exec 명령에 `GIT_DIR=<공용 저장소>/.git/worktrees/<이름>` 을 넘긴다.
+이를 상속한 시험이 임시 폴더에서 `git init --bare` 를 실행하면 임시 저장소가 아니라 공용 저장소의
+config 에 `core.bare=true` 를 써서 모든 worktree 의 git 이 멈춘다. `git add`·`git commit` 도
+바깥 저장소의 index 와 이력으로 들어간다.
+병합 단계의 `git rebase --exec 'bash scripts/plugin-bump-fixup.sh'` 는 지금 저장소의 커밋을 고치는 도구라
+exec 로 실행한다([Git 훅](git-hooks.md)). 시험과 `cargo test` 는 exec 에 넣지 않는다.
+
+커밋별 측정은 다음 둘 중 하나로 한다.
+
+- 별도 임시 worktree: `git worktree add --detach <tmp> <sha>` 로 만들고 `CARGO_TARGET_DIR=<tmp>/target` 으로
+  빌드한다. 다른 worktree 의 target 을 공유하지 않는다. 끝나면 `git worktree remove` 로 지운다.
+- 같은 worktree 에서 `git switch --detach <sha>` 로 한 커밋씩 옮겨 가며 검사한다. 미커밋 변경이 없을 때만 한다.
+
+임시 폴더에 Git 저장소를 만들거나 그 안에서 git·게이트 스크립트·git 을 부르는 바이너리를 띄우는 시험은
+`tasty_doc_guards::git_env::command` 로 자식을 만든다. 이 함수는 `git rev-parse --local-env-vars` 가
+알려 주는 저장소 지정 변수(GIT_DIR·GIT_WORK_TREE·GIT_INDEX_FILE·GIT_COMMON_DIR 등)를 지운다.
+작업 트리의 저장소를 읽기만 하는 자리는 넘어온 값이 같은 저장소를 가리키므로 그대로 둔다.
+셸 시험은 `scripts/tests/pre-push-git-environment.sh` 처럼 시작할 때 같은 목록을 `unset` 한다.
+
+`bash scripts/tests/git-env-isolation.sh` 는 그런 시험 타깃을 바깥 픽스처 저장소의 GIT_DIR 를 넘긴 채
+실행하고, 바깥 저장소의 config·index·HEAD 가 그대로인지 비교한다. 타깃 목록은 스크립트 안에 있으므로
+임시 저장소를 만드는 시험 타깃을 더하면 목록에도 더한다. CI 는 이 스크립트를 실행하지 않는다.
+`TASTY_E2E_DISPLAY` 가 있으면 GUI 서버를 띄우는 `attach_git_query_loopback` 도 함께 실행한다.
+
 ## 길이 가드의 사각 계수가 달라졌을 때
 
 `on_scale_length_literal::the_blind_spots_are_still_the_size_they_say`는 테스트 전용이 아닌 코드의

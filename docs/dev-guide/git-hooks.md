@@ -60,6 +60,8 @@ for c in $(git rev-list --reverse <기준>..HEAD); do
 done
 ```
 
+exec 에는 fixup 스크립트만 넣는다. 커밋별 시험은 exec 밖에서 실행한다. 이유와 방법은 [자체 검증](self-verification.md#커밋별로-검사할-때)에 있다.
+
 lane 작업 트리에 `deferred`가 있어도 된다. amend 때 P.1은 건너뛰지만 fixup이 합친 뒤 같은 범위를 다시 검사하고, 이어지는 커밋별 검사가 착지 범위를 확인한다. 설정이 없는 작업 트리에서 rebase해도 결과는 같다.
 
 `scripts/plugin-bump-fixup.sh`는 HEAD 커밋을 부모와 비교한다. 판정은 `check-plugin-version-bump.sh --range HEAD^ HEAD --violations-out <파일>`을 그대로 쓴다.
