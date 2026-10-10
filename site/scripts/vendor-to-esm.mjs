@@ -580,14 +580,14 @@ mkdirSync(join(root, "public"), { recursive: true });
 copyFileSync(resolve(root, "../assets/icons/tasty-melon.svg"), join(root, "public/tasty-melon.svg"));
 copyFileSync(resolve(root, "../assets/icons/icon_256.png"), join(root, "public/tasty-icon.png"));
 
-// Read the latest vendor commit for the snapshot date. Exclude README edits,
-// which change instructions rather than the design snapshot. Missing history
+// Read the latest vendor commit for the snapshot date. Exclude README and
+// MANIFEST edits, which describe the copy rather than change the design snapshot. Missing history
 // or a failed Git command produces no stamp.
 const vendorStamp = () => {
   try {
     const out = execFileSync(
       "git",
-      ["log", "-1", "--format=%cs\t%h", "--", "site/vendor", ":(exclude)site/vendor/README.md"],
+      ["log", "-1", "--format=%cs\t%h", "--", "site/vendor", ":(exclude)site/vendor/README.md", ":(exclude)site/vendor/MANIFEST"],
       { cwd: resolve(root, ".."), encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
     ).trim();
     if (!out) return null;

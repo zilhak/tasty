@@ -99,7 +99,8 @@
 사이트는 오래된 사본도 정상 빌드할 수 있으므로 빌드 통과만으로 최신 여부를 판단하지 않는다.
 `site_vendor_tokens_track_the_app_export`는 두 사본의 토큰 이름을,
 `site_vendor_icons_match_the_app_transcription`은 아이콘 기하·채움·viewBox·선 굵기·
-cap/join을 비교한다. 두 검사는 `crates/tasty-doc-guards/tests/`에 있다.
+cap/join을 비교한다. `site_vendor_manifest_matches`는 사이트 사본이 `site/vendor/MANIFEST`에
+기록한 원격 해시(또는 이유를 적은 변형 해시)와 같은지 확인한다. 세 검사는 `crates/tasty-doc-guards/tests/`에 있다.
 문구·구성·컨트롤 삭제처럼 그 값들을 바꾸지 않는 변경은 검사하지 않으므로 원격 디자인과
 직접 대조해 사이트 사본도 갱신한다.
 

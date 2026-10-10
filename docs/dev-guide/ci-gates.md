@@ -211,6 +211,12 @@ GitHub 조건식의 의미나 단계 간 의존성을 증명하지 않는다.
 `check-links.mjs`는 생성 HTML의 내부 링크를 검사한다. 외부 GitHub URL로 바뀐 소스 링크의
 실재 여부까지 검사하지는 않는다. 사용자 가이드에 내부 소스 경로를 넣지 않는 규칙은 유지한다.
 
+`site/vendor/` 사본이 `site/vendor/MANIFEST`의 해시와 같은지는 pages가 아니라
+`doc-guards.yml`의 `site_vendor_manifest_matches.rs`가 확인한다. 이 워크플로는 경로 필터가 없으므로
+vendor만 바꾼 push에서도 실행된다. `MANIFEST`를 쓰는 `site/scripts/vendor-manifest.mjs`는 원격 원본을
+받은 폴더가 필요해 CI에서 실행하지 않는다. 그래서 CI 통과는 사본이 마지막 갱신 때 기록한 해시와
+같다는 뜻이며, 원격이 그 뒤에 바뀌었는지는 확인하지 않는다.
+
 재실행 뒤 성공만 보고 앞선 실패를 지우지 않는다. 실패한 잡만 재실행하면 나머지 잡은 이전
 결과를 사용한다. 시도별 jobs 응답의 `run_attempt`만으로 실제 재실행을 판단하지 말고
 `started_at`을 이전 시도와 비교한다.

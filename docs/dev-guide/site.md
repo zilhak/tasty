@@ -89,9 +89,16 @@ site/
 `site_vendor_icons_match_the_app_transcription.rs`(아이콘 기하·채움·viewBox·선 굵기·cap/join)다.
 문구·구성·컨트롤 삭제는 검사 범위 밖이므로 원격 디자인과 직접 비교한다.
 
+`site/vendor/MANIFEST`는 사본 파일마다 마지막 갱신 때 받은 원격 원본의 sha256을 적는다.
+일부러 다르게 둔 파일은 `variant` 표시와 로컬 sha256, 이유 한 줄을 함께 적는다.
+갱신 절차에서 `site/scripts/vendor-manifest.mjs --remote <받은 원본 폴더>`가 이 파일을 쓰며,
+이유 없는 차이가 있으면 쓰지 않고 실패한다. `site_vendor_manifest_matches.rs`는 사본의
+파일 집합과 해시가 `MANIFEST`와 같은지 원격 조회 없이 확인한다. 옛 판 파일이나 기록 없는
+직접 수정은 검출하지만, 원격이 마지막 갱신 뒤에 바뀐 것은 알 수 없다.
+
 갤러리와 디자인 페이지는 `VendorStamp`로 vendor의 마지막 변경 날짜를 표시한다.
-변환기가 `git log -1 -- site/vendor`에서 README를 제외한 최신 변경을 읽는다.
-README는 갱신 절차 문서이며 디자인 사본 자체가 아니기 때문이다. 문구와 스타일은
+변환기가 `git log -1 -- site/vendor`에서 README와 `MANIFEST`를 제외한 최신 변경을 읽는다.
+두 파일은 사본을 설명하는 파일이며 디자인 사본 자체가 아니기 때문이다. 문구와 스타일은
 각각 `site/src/components/design/VendorStamp.jsx`와
 `site/src/styles/vendor-stamp.css`에서 함께 관리한다.
 
