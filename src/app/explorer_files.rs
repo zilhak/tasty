@@ -2,7 +2,7 @@
 pub(crate) mod job;
 mod ops;
 mod ui_sync;
-pub(crate) use ui_sync::open_conflict;
+pub(crate) use ui_sync::{forget_press_request, open_conflict};
 use ui_sync::{push_result, show_running};
 
 use job::leftover::Leftover;
@@ -256,6 +256,8 @@ struct Target {
     clear_selection: bool,
     /// 만든 항목. 성공했고 요청한 explorer 가 아직 그 폴더를 보고 있으면 이 항목을 고른다.
     created: Option<PathBuf>,
+    /// 결과를 카드 하나로 모을 누름 번호와 이 요청의 번호.
+    press: Option<(u64, u64)>,
 }
 struct Request {
     /// 대기열에서 이 요청을 가리키는 번호.
@@ -315,6 +317,34 @@ impl crate::state::MainViewState {
     ) {
         self.enqueue_explorer_file(engine, surface, operation, origin, false);
     }
+    /// [`Self::request_explorer_file_direct`] 와 같고, 받은 요청의 번호를 돌려준다.
+    pub(crate) fn request_explorer_file_numbered(
+        &mut self,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
+        surface: u32,
+        operation: Operation,
+        origin: crate::intent::IntentOrigin,
+    ) -> Option<u64> {
+        self.enqueue_explorer_file(engine, surface, operation, origin, false)
+    }
+    /// 한 번의 누름으로 넣은 요청들의 결과를 그 칸에서 카드 하나로 모은다.
+    pub(crate) fn group_explorer_requests(
+        &mut self,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
+        surface: u32,
+        requests: Vec<u64>,
+    ) {
+        let Some(view) = self.explorer_views.get_mut(surface) else {
+            return;
+        };
+        let lifetime = std::time::Duration::from_millis(engine.settings.overlay.toast_duration_ms);
+        let press = view.ops.expect_press(requests.clone(), lifetime);
+        for request in self.explorer_file_requests.0.iter_mut() {
+            if requests.contains(&request.id) {
+                request.target.press = Some((press, request.id));
+            }
+        }
+    }
     fn enqueue_explorer_file(
         &mut self,
         engine: &crate::runtime::engine_read::EngineRead<'_>,
@@ -322,15 +352,13 @@ impl crate::state::MainViewState {
         operation: Operation,
         origin: crate::intent::IntentOrigin,
         from_clipboard: bool,
-    ) {
+    ) -> Option<u64> {
         if !matches!(origin, crate::intent::IntentOrigin::User { .. })
             || engine.is_mirror_surface(surface)
         {
-            return;
+            return None;
         }
-        let Some(binding) = SurfaceBinding::capture(engine, surface) else {
-            return;
-        };
+        let binding = SurfaceBinding::capture(engine, surface)?;
         // 사용자 조작으로 들어온 요청이므로 받지 않을 때도 그 칸에 이유를 보인다.
         let refused = if self.explorer_file_requests.0.len() >= MAX_PENDING_PER_VIEW {
             Some(Refused::QueueFull)
@@ -355,7 +383,7 @@ impl crate::state::MainViewState {
                     crate::adapters::ui::ToastScope::Surface(surface),
                 ),
             }
-            return;
+            return None;
         }
         let clipboard = match &operation {
             Operation::Paste { cut: true, .. } if from_clipboard => self
@@ -380,6 +408,7 @@ impl crate::state::MainViewState {
                 Operation::Create { dir, name, .. } => Some(dir.join(name)),
                 _ => None,
             },
+            press: None,
         };
         let requests = &mut self.explorer_file_requests;
         requests.1 += 1;
@@ -389,6 +418,7 @@ impl crate::state::MainViewState {
             target,
             operation,
         });
+        Some(id)
     }
 }
 
@@ -592,13 +622,15 @@ impl super::App {
         if let Done::Report(report) = result {
             let lifetime =
                 std::time::Duration::from_millis(session.read().settings.overlay.toast_duration_ms);
-            push_result(&mut view.state, target.surface, report, undo_of, lifetime);
-        } else if let Some(error) = failure {
-            view.state.toasts.push(
-                crate::i18n::t_fmt("explorer.state.operation_failed", &error),
-                crate::adapters::ui::ToastKind::Error,
-                crate::adapters::ui::ToastScope::Surface(target.surface),
+            push_result(
+                &mut view.state,
+                target.surface,
+                (report, target.press),
+                undo_of,
+                lifetime,
             );
+        } else {
+            ui_sync::push_failure(&mut view.state, target.surface, target.press, failure);
         }
         target.apply(&mut view.state, success);
         view.mark_dirty();
@@ -627,6 +659,9 @@ impl super::App {
                         .as_ref()
                         .is_some_and(|c| c.load(Ordering::Acquire))
                 {
+                    if let Some((_, request)) = target.press {
+                        ui_sync::forget_press_request(&mut view.state, target.surface, request);
+                    }
                     continue;
                 }
                 let affected = operation.affected();
@@ -660,6 +695,9 @@ impl super::App {
                         tracing::warn!(%error, "Explorer file worker spawn failed");
                         if let Some(v) = view.state.explorer_views.get_mut(target.surface) {
                             v.ops.running = None;
+                        }
+                        if let Some((_, request)) = target.press {
+                            ui_sync::forget_press_request(&mut view.state, target.surface, request);
                         }
                     }
                 }

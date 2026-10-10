@@ -51,18 +51,52 @@ pub(super) fn show_running(
 }
 
 /// 끝난 작업의 결과 카드를 요청한 칸에 둔다. 모두 끝났거나 취소한 결과만 `lifetime` 뒤 사라진다.
+/// 한 누름으로 묶인 작업이면 묶음의 작업이 모두 끝났을 때 합친 카드 하나를 둔다.
 pub(super) fn push_result(
     state: &mut MainViewState,
     surface: u32,
-    report: Report,
+    (report, press): (Report, Option<(u64, u64)>),
     undo_of: Option<OpKind>,
     lifetime: Duration,
 ) {
     let Some(view) = state.explorer_views.get_mut(surface) else {
         return;
     };
-    let expires = result_is_timed(&report).then(|| Instant::now() + lifetime);
-    view.ops.push_result(report, undo_of, expires);
+    let report = match press {
+        Some((press, request)) => view.ops.arrive(press, request, report),
+        None => Some(report),
+    };
+    if let Some(report) = report {
+        let expires = result_is_timed(&report).then(|| Instant::now() + lifetime);
+        view.ops.push_result(report, undo_of, expires);
+    }
+}
+
+/// 묶음의 요청이 시작하지 않고 빠졌다. 먼저 끝난 결과만 남았으면 그 카드를 둔다.
+pub(crate) fn forget_press_request(state: &mut MainViewState, surface: u32, request: u64) {
+    if let Some(view) = state.explorer_views.get_mut(surface) {
+        view.ops.forget_request(request);
+    }
+}
+
+/// 결과 없이 끝난 작업(worker panic 등)을 알린다. 한 누름으로 묶인 요청이면 묶음에서 빼서
+/// 먼저 끝난 결과의 카드가 남지 않고 나오게 한다.
+pub(super) fn push_failure(
+    state: &mut MainViewState,
+    surface: u32,
+    press: Option<(u64, u64)>,
+    failure: Option<String>,
+) {
+    if let Some((_, request)) = press {
+        forget_press_request(state, surface, request);
+    }
+    if let Some(error) = failure {
+        state.toasts.push(
+            crate::i18n::t_fmt("explorer.state.operation_failed", &error),
+            crate::adapters::ui::ToastKind::Error,
+            crate::adapters::ui::ToastScope::Surface(surface),
+        );
+    }
 }
 
 impl crate::app::App {

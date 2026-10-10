@@ -21,6 +21,8 @@ use crate::i18n::{t, t_args, t_count, t_fmt, t_fmt2};
 
 #[path = "ops_notice.rs"]
 mod notice;
+#[path = "ops_press.rs"]
+mod press;
 pub(crate) use notice::Refused;
 
 /// 결과 카드에 경로를 펼쳐 보이는 최대 수. 나머지는 "and n more" 로 줄인다.
@@ -58,6 +60,8 @@ pub(crate) struct OpsState {
     results: Vec<ResultCard>,
     /// 받지 않은 요청을 알리는 카드. 표준 시간 뒤 사라진다.
     notices: Vec<notice::Notice>,
+    /// 결과를 카드 하나로 모을 Retry 누름들.
+    presses: Vec<press::Press>,
     queue_open: bool,
     next_card: u64,
     /// 충돌 카드의 "남은 충돌에도 적용" 체크 상태.

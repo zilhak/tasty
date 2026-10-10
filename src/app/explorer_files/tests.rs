@@ -664,3 +664,87 @@ fn retry_from_a_remove_originals_card_moves_the_rest_again() {
         Operation::Paste { paths, cut: true, .. } if *paths == [PathBuf::from("/w/src/a")]
     ));
 }
+
+/// 다시 옮길 항목과 남은 원본이 함께 있는 Retry 는 두 요청을 한 누름으로 묶는다.
+#[test]
+fn a_retry_with_both_kinds_groups_its_two_requests() {
+    use crate::explorer_ui::view::ops::OpsAction;
+    let (mut state, engine) = crate::state::tests::test_state();
+    let sid = engine.read().workspace_at(0).unwrap().all_surface_ids()[0];
+    let dir = tempfile::tempdir().unwrap();
+    let panel = crate::model::ExplorerPanel::new(sid, dir.path().into());
+    state.explorer_views.get_or_init(&panel, None);
+    let left = job::leftover::Leftover::before_remove(
+        std::path::Path::new("/w/src/b"),
+        std::path::Path::new("/dest/b"),
+    );
+    state.apply_explorer_ops(
+        &engine.read(),
+        sid,
+        OpsAction::Retry {
+            kind: OpKind::Move,
+            paths: vec!["/w/src/a".into()],
+            dest: Some("/dest".into()),
+            leftovers: vec![left],
+        },
+    );
+    let presses: Vec<_> = state
+        .explorer_file_requests
+        .0
+        .iter()
+        .map(|r| r.target.press)
+        .collect();
+    let ids: Vec<u64> = state
+        .explorer_file_requests
+        .0
+        .iter()
+        .map(|r| r.id)
+        .collect();
+    assert!(
+        matches!(presses.as_slice(), [Some((p, a)), Some((q, b))] if p == q && [*a, *b] == *ids),
+        "{presses:?}"
+    );
+    // 대기열에서 하나를 빼면 묶음은 남은 하나만 기다린다.
+    let removed = ids[1];
+    state.apply_explorer_ops(&engine.read(), sid, OpsAction::RemoveQueued(removed));
+    let press = presses[0].unwrap().0;
+    let view = state.explorer_views.get_mut(sid).unwrap();
+    let shared = job::Shared::fixed(job::Choice::KeepBoth);
+    let report = job::leftover::run_remove_leftovers(&shared, None, &[]);
+    assert!(view.ops.arrive(press, ids[0], report).is_some());
+}
+
+/// 묶음의 한 요청이 결과 없이 끝나도(worker panic) 먼저 끝난 결과의 카드가 나오고 오류도 알린다.
+#[test]
+fn a_press_whose_other_job_ended_without_a_report_still_shows_the_first_card() {
+    let (mut state, engine) = crate::state::tests::test_state();
+    let sid = engine.read().workspace_at(0).unwrap().all_surface_ids()[0];
+    let dir = tempfile::tempdir().unwrap();
+    let panel = crate::model::ExplorerPanel::new(sid, dir.path().into());
+    state.explorer_views.get_or_init(&panel, None);
+    let view = state.explorer_views.get_mut(sid).unwrap();
+    let press = view
+        .ops
+        .expect_press(vec![1, 2], std::time::Duration::from_secs(5));
+    let shared = job::Shared::fixed(job::Choice::KeepBoth);
+    let first = job::leftover::run_remove_leftovers(&shared, None, &[]);
+    assert!(view.ops.arrive(press, 1, first).is_none());
+    assert_eq!(view.ops.result_count(), 0);
+
+    ui_sync::push_failure(
+        &mut state,
+        sid,
+        Some((press, 2)),
+        Some("Explorer file worker panicked".into()),
+    );
+    assert_eq!(
+        state
+            .explorer_views
+            .get_mut(sid)
+            .unwrap()
+            .ops
+            .result_count(),
+        1
+    );
+    assert_eq!(state.toasts.messages().len(), 1);
+}

@@ -38,6 +38,7 @@ impl super::MainViewState {
         match op {
             OpsAction::RemoveQueued(id) => {
                 self.explorer_file_requests.remove(id);
+                crate::app::explorer_files::forget_press_request(self, sid, id);
                 if let Some(view) = self.explorer_views.get_mut(sid) {
                     view.ops.queued.retain(|q| q.id != id);
                 }
@@ -48,18 +49,30 @@ impl super::MainViewState {
                 dest,
                 leftovers,
             } => {
-                // 원본이 남은 이동 항목은 다시 옮기지 않고 원본 삭제만 다시 한다. 결과 카드는 따로 뜬다.
+                // 원본이 남은 이동 항목은 다시 옮기지 않고 원본 삭제만 다시 한다.
+                // 다시 옮길 항목도 있으면 두 작업의 결과를 카드 하나로 모은다.
+                let mut requests = Vec::new();
                 if !leftovers.is_empty() {
                     let operation = Operation::RemoveLeftovers {
                         dest: dest.clone(),
                         leftovers,
                     };
-                    self.request_explorer_file_direct(engine, sid, operation, origin.clone());
+                    requests.extend(self.request_explorer_file_numbered(
+                        engine,
+                        sid,
+                        operation,
+                        origin.clone(),
+                    ));
                 }
                 if !paths.is_empty()
                     && let Some(operation) = retry_operation(kind, paths, dest)
                 {
-                    self.request_explorer_file_direct(engine, sid, operation, origin);
+                    requests.extend(
+                        self.request_explorer_file_numbered(engine, sid, operation, origin),
+                    );
+                }
+                if requests.len() > 1 {
+                    self.group_explorer_requests(engine, sid, requests);
                 }
             }
             OpsAction::Undo(steps) => {

@@ -380,3 +380,85 @@ fn originals_kept_again_return_to_the_source_left_card() {
     );
     assert_eq!(labels(&text)[0], t_fmt("explorer.result.retry", "1"));
 }
+
+/// 한 누름의 두 작업은 둘 다 끝나야 카드 하나가 된다. 수는 합치고 원본이 남았으면 경고 카드다.
+#[test]
+fn one_retry_press_shows_one_card_when_both_jobs_end() {
+    let mut ops = OpsState::default();
+    let press = ops.expect_press(vec![7, 8], Duration::from_secs(5));
+    let mut removed = report(OpKind::RemoveOriginals, 2, 2);
+    removed.undo.clear();
+    removed.failed = vec![failure("/a", Reason::SameAsCopy)];
+    removed.leftovers = vec![leftover("/a")];
+    // 되돌릴 수 있는 이동이 먼저 끝나도 합친 카드에는 Undo 가 없다.
+    let moved = report(OpKind::Move, 3, 3);
+    assert!(!moved.undo.is_empty());
+    assert!(
+        ops.arrive(press, 8, moved).is_none(),
+        "the removal is still running"
+    );
+    let merged = ops.arrive(press, 7, removed).expect("both ended");
+    assert_eq!(merged.kind, OpKind::Move);
+    assert_eq!((merged.done, merged.total), (5, 5));
+    assert!(merged.undo.is_empty(), "part of the press can't be undone");
+    let text = card_text(&card(merged));
+    assert_eq!(text.kind, ToastKind::Warning);
+    assert_eq!(
+        text.title,
+        t_count("explorer.result.source_left_move", 1, &["5", "5", "1"])
+    );
+    assert_eq!(labels(&text)[0], t_fmt("explorer.result.retry", "1"));
+}
+
+/// 묶음의 요청이 시작 전에 빠지면 남은 작업의 결과만으로 카드를 낸다. 취소는 실패를 가리지 않는다.
+#[test]
+fn a_press_without_its_dropped_request_still_ends_and_failures_win_over_cancel() {
+    let mut ops = OpsState::default();
+    let press = ops.expect_press(vec![1, 2], Duration::from_secs(5));
+    ops.forget_request(2);
+    assert_eq!(ops.results.len(), 0, "1 has not ended");
+    let mut cancelled = report(OpKind::Move, 2, 1);
+    cancelled.cancelled = true;
+    let alone = ops
+        .arrive(press, 1, cancelled)
+        .expect("nothing else to wait for");
+    assert!(alone.cancelled);
+
+    let press = ops.expect_press(vec![3, 4], Duration::from_secs(5));
+    let mut cancelled = report(OpKind::Move, 2, 1);
+    cancelled.cancelled = true;
+    assert!(ops.arrive(press, 3, cancelled).is_none());
+    let mut kept = report(OpKind::RemoveOriginals, 1, 1);
+    kept.failed = vec![failure("/b", Reason::RemoveCancelled)];
+    kept.leftovers = vec![leftover("/b")];
+    let merged = ops.arrive(press, 4, kept).expect("both ended");
+    assert!(!merged.cancelled);
+    assert_eq!(card_text(&card(merged)).leftovers.len(), 1);
+}
+
+/// 묶음의 남은 결과만으로 낸 카드도 누를 때의 표준 시간 뒤 사라진다. 실패가 있으면 닫을 때까지 남는다.
+#[test]
+fn a_card_left_by_a_dropped_request_follows_the_standard_time() {
+    let life = Duration::from_secs(5);
+    let mut ops = OpsState::default();
+    let press = ops.expect_press(vec![1, 2], life);
+    assert!(
+        ops.arrive(press, 1, report(OpKind::RemoveOriginals, 3, 3))
+            .is_none()
+    );
+    let before = Instant::now();
+    ops.forget_request(2);
+    assert_eq!(ops.results.len(), 1);
+    let at = ops.next_expiry().expect("a finished result is timed");
+    assert!(at >= before + life && at <= Instant::now() + life);
+    assert!(ops.expire(at));
+    assert!(ops.results.is_empty());
+
+    let press = ops.expect_press(vec![3, 4], life);
+    let mut kept = report(OpKind::RemoveOriginals, 1, 1);
+    kept.failed = vec![failure("/b", Reason::SameAsCopy)];
+    assert!(ops.arrive(press, 3, kept).is_none());
+    ops.forget_request(4);
+    assert_eq!(ops.results.len(), 1);
+    assert_eq!(ops.next_expiry(), None, "a failure stays until dismissed");
+}
