@@ -4,8 +4,8 @@
 //! 격자(제목 열 `kb-plugin-title-width` + `kb-plugin-title-gap`)를 따르므로 플러그인 Select와 모든
 //! mode Select가 같은 x에서 시작한다. 명령 행은 위아래 `kb-plugin-row-padding-y`, 명령 사이에만
 //! 1px `kb-plugin-separator` 선을 둔다. 컨트롤 줄은 최소 높이 `kb-plugin-row-min-height`이며
-//! mode Select · slot · Reset(ghost md)이 모두 `kb-plugin-control-height`로 같다. 단 Custom slot 은
-//! 다른 단축키 서브탭과 같은 녹화 슬롯([`kb_record_slot`])을 줄 가운데에 쌓으므로 `kb-record-height`다.
+//! mode Select · slot · Reset(ghost md)이 모두 `kb-plugin-control-height`로 같다. Custom slot 은
+//! 다른 단축키 서브탭과 같은 녹화 슬롯이고 높이만 `kb-plugin-record-height`(줄의 컨트롤 높이)다.
 //! 상속 결과나 키 해석 실패는 줄 아래 caption(`kb-plugin-caption-gap`)으로 붙는다.
 //!
 //! 이 view는 override를 해석하거나 저장하지 않는다. 표시할 값과 문구는 호출부가 넘기고,
@@ -15,7 +15,7 @@ use tasty_type_appearance::theme::Theme;
 
 use crate::button::{Button, ButtonVariant};
 use crate::control::ControlSize;
-use crate::kb_record::{KbRecordSlot, kb_record_slot};
+use crate::kb_record::{KbRecordSlot, kb_record_slot_sized};
 use crate::select::select_rect;
 use crate::tooltip::{Tooltip, tooltip_hover_delay_elapsed};
 
@@ -353,13 +353,14 @@ fn command_row(
                     egui::vec2(ui.available_width(), row_h),
                     egui::Layout::left_to_right(egui::Align::Center).with_main_wrap(true),
                     |ui| {
-                        // 한 흐름으로 줄을 바꾼다. 줄마다 행 최소 높이 안 가운데에 서므로, 다음 줄
-                        // 컨트롤이 앞 줄 컨트롤 아래 `space-xs` 에 오도록 가운데 여백만큼 덜 띄운다.
+                        // 한 흐름으로 줄을 바꾼다. 줄 칸은 행 최소 높이이고 컨트롤은 그 가운데에 선다.
+                        // egui 는 다음 줄을 앞 줄 칸 아래에서 시작하므로, 컨트롤 사이가 `space-xs` 가
+                        // 되도록 위·아래 가운데 여백만큼 덜 띄운다.
                         let line_h = theme.kb_plugin_control_height().value();
                         let centre_pad = (row_h - line_h) / 2.0;
                         ui.spacing_mut().item_spacing = egui::vec2(
                             theme.kb_plugin_control_gap().value(),
-                            (theme.spacing_xs.value() - centre_pad).max(0.0),
+                            (theme.spacing_xs.value() - 2.0 * centre_pad).max(0.0),
                         );
                         control_line(ui, theme, &mut slot, overridden, labels, &mut out);
                         // 다음 줄 위치는 min_rect 아래로 정해지므로 최소 높이는 줄을 다 놓은 뒤 둔다.
@@ -466,6 +467,7 @@ fn record_slots(
     let invalid = problem.as_ref().map(KbPluginKeyProblem::invalid_slot);
     let width = theme.kb_record_width();
     let add_width = theme.kb_record_add_width();
+    let height = theme.kb_plugin_record_height();
     let len = keys.len();
     let push = |out: &mut KbPluginRowOutput, resp: &egui::Response, idx: usize| {
         out.rects.slot = out.rects.slot.union(resp.rect);
@@ -493,7 +495,7 @@ fn record_slots(
             _ => KbRecordSlot::Binding(key),
         };
         set_gap(ui, false);
-        let resp = kb_record_slot(ui, theme, slot, width, can_record);
+        let resp = kb_record_slot_sized(ui, theme, slot, width, height, can_record);
         push(out, &resp, idx);
     }
     // 키가 없는 행은 None 슬롯 하나만 두고 + 를 따로 두지 않는다.
@@ -504,7 +506,7 @@ fn record_slots(
         (false, _) => (KbRecordSlot::Add, add_width),
     };
     set_gap(ui, true);
-    let resp = kb_record_slot(ui, theme, slot, w, can_record);
+    let resp = kb_record_slot_sized(ui, theme, slot, w, height, can_record);
     if can_record && tooltip_hover_delay_elapsed(ui.ctx(), theme, resp.id, resp.hovered()) {
         Tooltip::new(labels.add_hint)
             .id_source(resp.id)
@@ -717,12 +719,12 @@ mod tests {
     const ONE_KEY: &[&str] = &["Ctrl+Shift+H"];
 
     /// 수정 전 egui 기본 위젯은 ComboBox·TextEdit·small_button 높이가 서로 달랐다.
-    /// Custom 의 녹화 슬롯은 다른 서브탭과 같은 `kb-record-height` 이고 같은 줄 가운데에 선다.
+    /// Custom 의 녹화 슬롯도 `kb-plugin-record-height` 라 줄의 모든 컨트롤이 같은 높이·가운데에 선다.
     #[test]
     fn every_control_on_a_line_shares_the_control_height_and_centre() {
         let theme = tasty_themes::mocha_fallback();
         let h = theme.kb_plugin_control_height().value();
-        let record_h = theme.kb_record_height().value();
+        let record_h = theme.kb_plugin_record_height().value();
         let rows = [
             ("Open clipboard viewer", Kind::Custom(ONE_KEY, None)),
             ("Paste last entry as plain text", Kind::Inherit),
@@ -856,6 +858,17 @@ mod tests {
             .filter(|p| p[1].min.y >= p[0].max.y)
             .count();
         assert!(lines >= 2, "460 에서 줄을 바꾸지 않았다");
+        // 다음 줄 컨트롤은 앞 줄 컨트롤 아래 space-xs 에 온다.
+        for pair in items.windows(2) {
+            let (a, b) = (pair[0], pair[1]);
+            if b.min.y >= a.max.y {
+                let gap = b.min.y - a.max.y;
+                assert!(
+                    (gap - theme.spacing_xs.value()).abs() < 0.5,
+                    "줄 사이 {gap}"
+                );
+            }
+        }
         for it in &items {
             assert!(
                 it.min.x >= mode_x - 0.5 && it.max.x <= width + 0.5,
