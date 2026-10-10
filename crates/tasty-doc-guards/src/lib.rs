@@ -57,6 +57,9 @@ pub mod tracked_scope;
 /// 사본 대조용 SHA-256.
 pub mod sha256;
 
+/// 시험의 자식 프로세스가 부모의 저장소 지정 Git 환경을 상속하지 않게 한다.
+pub mod git_env;
+
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
