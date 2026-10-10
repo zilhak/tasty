@@ -15,6 +15,8 @@ use crate::catalog::icons::{self, MockGlyph};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::i18n::{t, t_args, t_count, t_fmt, t_fmt2};
 
+mod originals;
+
 /// 시안 탐색기 칸 폭(`XCell w={520}`). 전시 치수다.
 const CELL_W: LogicalPx = LogicalPx(520.0);
 /// 시안 칸 본문 높이 — 상태줄 위 목록 자리. 전시 치수다.
@@ -655,7 +657,7 @@ pub fn draw_drag(ui: &mut egui::Ui, theme: &Theme) {
 }
 
 /// explorer 절에 더하는 파일 작업 예제들. 동결된 catalog.rs 를 늘리지 않도록 여기에 둔다.
-pub fn specs() -> [crate::catalog::Spec; 5] {
+pub fn specs() -> [crate::catalog::Spec; 7] {
     use crate::catalog::Spec;
     [
         Spec {
@@ -687,6 +689,18 @@ pub fn specs() -> [crate::catalog::Spec; 5] {
             title: "Drag chip — move · copy · refused · drop target mark",
             when: Some("the chip says what the drop will do before release"),
             draw: draw_drag,
+        },
+        Spec {
+            id: "explorer-ops-refused",
+            title: "Refused request — queue full (Show queue) · too large",
+            when: Some("warning card in the cell · standard time · not a result"),
+            draw: originals::draw_refused,
+        },
+        Spec {
+            id: "explorer-ops-remove-originals",
+            title: "Retry of originals — checking · removing · removed · kept",
+            when: Some("own progress and result words · one card per Retry press"),
+            draw: originals::draw_remove_originals,
         },
     ]
 }
