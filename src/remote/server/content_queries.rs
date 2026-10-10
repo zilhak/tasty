@@ -34,6 +34,7 @@ pub(crate) fn handle_list_dir_request(
                 "dir": resolved_dir,
                 "entries": wire_entries,
                 "truncated": truncated,
+                "volume": listing_volume(&resolved_dir),
             })
         }
         Err(reason) => serde_json::json!({
@@ -77,35 +78,7 @@ fn list_dir_for_request(
 }
 
 mod list_dir_wire;
-use list_dir_wire::list_dir_entry_wire;
-
-/// entries의 직렬화 크기 제한. 프레임 상한을 넘기면 연결이 종료되므로 나머지 필드의 여유를 둔다.
-/// 전체 프레임을 다시 재는 것은 아니며 각 entry의 직렬화 크기만 합산한다.
-const LIST_DIR_ENTRIES_BYTE_BUDGET: usize = 700 * 1024;
-
-/// 예산 안에 들어가는 entry만 반환한다. 두 번째 값은 생략한 항목이 있는지다.
-fn list_dir_entries_wire_capped(
-    entries: &[crate::core::fs_list::DirEntryInfo],
-) -> (Vec<serde_json::Value>, bool) {
-    list_dir_entries_wire_capped_with_budget(entries, LIST_DIR_ENTRIES_BYTE_BUDGET)
-}
-
-fn list_dir_entries_wire_capped_with_budget(
-    entries: &[crate::core::fs_list::DirEntryInfo],
-    mut budget: usize,
-) -> (Vec<serde_json::Value>, bool) {
-    let mut out = Vec::with_capacity(entries.len());
-    for e in entries {
-        let wire = list_dir_entry_wire(e);
-        let approx_len = serde_json::to_vec(&wire).map(|b| b.len()).unwrap_or(0);
-        if approx_len > budget {
-            return (out, true);
-        }
-        budget -= approx_len;
-        out.push(wire);
-    }
-    (out, false)
-}
+use list_dir_wire::{list_dir_entries_wire_capped, listing_volume};
 
 /// workspace를 하나라도 점유한 client의 Git 조회를 처리한다.
 /// worktree_path가 있으면 그 경로를 쓰고, 없으면 서버 터미널에서 cwd를 조회한다.
@@ -731,7 +704,7 @@ mod git_query_tests {
 
 #[cfg(test)]
 mod list_dir_entries_wire_capped_tests {
-    use super::list_dir_entries_wire_capped_with_budget;
+    use super::list_dir_wire::{list_dir_entries_wire_capped_with_budget, list_dir_entry_wire};
     use crate::core::fs_list::DirEntryInfo;
 
     fn entry(name: &str) -> DirEntryInfo {
@@ -755,7 +728,7 @@ mod list_dir_entries_wire_capped_tests {
     fn stops_before_exceeding_budget() {
         // 포맷이 바뀌어도 항목 개수 경계를 검사하도록 현재 직렬화 길이로 예산을 정한다.
         let entries: Vec<_> = (0..20).map(|i| entry(&format!("file_{i:03}"))).collect();
-        let one_entry_len = serde_json::to_vec(&super::list_dir_entry_wire(&entries[0]))
+        let one_entry_len = serde_json::to_vec(&list_dir_entry_wire(&entries[0]))
             .unwrap()
             .len();
         let budget = one_entry_len * 3;
