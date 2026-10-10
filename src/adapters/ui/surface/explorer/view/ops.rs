@@ -34,6 +34,8 @@ pub(crate) struct Running {
     pub(crate) kind: OpKind,
     pub(crate) dest: Option<PathBuf>,
     pub(crate) total: usize,
+    /// 끝나면 이 칸의 되돌리기·다시 실행 이력에 반영할 작업이다.
+    pub(crate) in_history: bool,
 }
 
 /// 이 칸이 요청해 차례를 기다리는 작업.

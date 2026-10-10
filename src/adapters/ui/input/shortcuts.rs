@@ -102,7 +102,7 @@ fn explorer_history_shortcut(
     let origin = crate::intent::IntentOrigin::User {
         source: crate::intent::UserSource::Shortcut(id),
     };
-    state.explorer_history_step(engine, sid, redo, origin);
+    state.explorer_history_step(engine, sid, redo, origin, false);
 }
 
 /// 포커스된 탐색기의 주소창이나 이름 입력이 키를 받고 있다. 그동안 목록 단축키는 글자 편집에 양보한다.

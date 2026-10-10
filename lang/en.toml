@@ -1067,6 +1067,8 @@ op_copy = "copy {} items"
 op_copy_one = "copy {} item"
 op_move = "move {} items"
 op_move_one = "move {} item"
+history_busy = "Wait until the copy or move in progress finishes"
+history_changed = "The history changed. Open the menu again"
 
 [explorer.op]
 copying = "Copying {} of {} · {}"

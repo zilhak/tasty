@@ -380,6 +380,7 @@ fn a_refused_request_card_expires_and_offers_the_queue_only_while_running() {
         kind: OpKind::Copy,
         dest: None,
         total: 1,
+        in_history: false,
     });
     assert!(notice::offers_show_queue(Refused::QueueFull, &ops));
     assert!(!notice::offers_show_queue(Refused::TooLarge, &ops));

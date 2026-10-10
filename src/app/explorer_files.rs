@@ -279,6 +279,23 @@ impl Requests {
     pub(crate) fn remove(&mut self, id: u64) {
         self.0.retain(|r| r.id != id);
     }
+    /// 기다리는 되돌리기 작업들의 단계.
+    #[cfg(test)]
+    pub(crate) fn queued_steps(&self) -> Vec<Vec<UndoStep>> {
+        self.0
+            .iter()
+            .filter_map(|r| match &r.operation {
+                Operation::Undo(steps) => Some(steps.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+    /// `surface` 가 요청해 기다리는 작업 중 끝나면 이력에 반영할 것이 있는가.
+    pub(crate) fn has_history_for(&self, surface: u32) -> bool {
+        self.0
+            .iter()
+            .any(|r| r.target.surface == surface && r.recorded.is_some())
+    }
     /// `surface` 가 요청해 기다리는 작업들. 진행 표시가 없는 이름 변경·열기는 뺀다.
     fn queued_for(&self, surface: u32) -> Vec<crate::explorer_ui::view::ops::Queued> {
         self.0
@@ -705,7 +722,13 @@ impl super::App {
                 let undo_of = operation.undo_of();
                 let wake = self.view.proxy.clone();
                 let shared = Arc::new(ui_sync::interactive_shared(wake.clone()));
-                show_running(&mut view.state, target.surface, &operation, &shared);
+                show_running(
+                    &mut view.state,
+                    target.surface,
+                    &operation,
+                    &shared,
+                    recorded.is_some(),
+                );
                 let worker_shared = Arc::clone(&shared);
                 match std::thread::Builder::new()
                     .name("explorer-files".into())

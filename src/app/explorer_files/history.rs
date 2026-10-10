@@ -124,6 +124,10 @@ pub(crate) enum Recorded {
 pub(crate) struct History {
     undo: VecDeque<Entry>,
     redo: Vec<Entry>,
+    /// 이력이 바뀔 때마다 늘어나는 번호.
+    generation: u64,
+    /// 메뉴 행을 만들 때의 번호. 고른 행이 그 사이 바뀐 이력을 실행하지 않게 한다.
+    shown: Option<u64>,
 }
 
 /// 결과 카드가 Undo 를 보이는 조건과 같다: 실패·건너뜀·취소 없이 끝난 복사·이동.
@@ -143,13 +147,26 @@ impl History {
         self.redo.last()
     }
     pub(crate) fn take_undo(&mut self) -> Option<Entry> {
-        self.undo.pop_back()
+        let entry = self.undo.pop_back()?;
+        self.generation += 1;
+        Some(entry)
     }
     pub(crate) fn take_redo(&mut self) -> Option<Entry> {
-        self.redo.pop()
+        let entry = self.redo.pop()?;
+        self.generation += 1;
+        Some(entry)
+    }
+    /// 메뉴 행을 지금 이력으로 만든다고 적어 둔다.
+    pub(crate) fn show(&mut self) {
+        self.shown = Some(self.generation);
+    }
+    /// 마지막으로 만든 메뉴 행이 지금 이력과 같은가.
+    pub(crate) fn still_shown(&self) -> bool {
+        self.shown == Some(self.generation)
     }
     /// 꺼낸 단계를 요청하지 못했을 때 제자리에 돌려놓는다.
     pub(crate) fn restore(&mut self, recorded: Recorded) {
+        self.generation += 1;
         match recorded {
             Recorded::Undo(entry) => self.push_undo(entry),
             Recorded::Redo(entry) => self.redo.push(entry),
@@ -159,6 +176,7 @@ impl History {
     /// 결과 카드의 Undo 가 되돌리는 단계를 이력에서 뺀다. 이력에 없으면(오래돼 밀려났으면) None.
     pub(crate) fn take_matching(&mut self, steps: &[UndoStep]) -> Option<Entry> {
         let at = self.undo.iter().rposition(|e| e.undo == steps)?;
+        self.generation += 1;
         self.undo.remove(at)
     }
     fn push_undo(&mut self, entry: Entry) {
@@ -169,6 +187,7 @@ impl History {
     }
     /// 끝난 작업을 이력에 반영한다.
     pub(crate) fn record(&mut self, recorded: Recorded, report: &Report) {
+        self.generation += 1;
         match recorded {
             Recorded::New(source) => {
                 if report.done > 0 {

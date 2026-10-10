@@ -34,6 +34,7 @@ pub(super) fn show_running(
     surface: u32,
     operation: &Operation,
     shared: &Arc<Shared>,
+    in_history: bool,
 ) {
     let Some(kind) = operation.kind() else {
         return;
@@ -47,6 +48,7 @@ pub(super) fn show_running(
         kind,
         dest,
         total,
+        in_history,
     });
 }
 

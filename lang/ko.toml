@@ -1043,6 +1043,8 @@ redo = "다시 실행: {}"
 undo_stale = "되돌릴 수 없음: {}"
 op_copy = "{}개 복사"
 op_move = "{}개 이동"
+history_busy = "진행 중인 복사·이동이 끝난 뒤에 쓸 수 있음"
+history_changed = "기록이 바뀌었습니다. 메뉴를 다시 여세요"
 
 [explorer.op]
 copying = "복사 중 {} / {} · {}"

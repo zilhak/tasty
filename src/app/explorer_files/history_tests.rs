@@ -126,7 +126,7 @@ fn a_move_can_be_undone_and_redone_from_the_history() {
     assert_eq!(top.count(), 1);
     assert!(history(&state, sid).peek_redo().is_none());
 
-    state.explorer_history_step(&engine.read(), sid, false, user());
+    state.explorer_history_step(&engine.read(), sid, false, user(), false);
     assert!(
         history(&state, sid).peek_undo().is_none(),
         "taken when queued"
@@ -139,7 +139,7 @@ fn a_move_can_be_undone_and_redone_from_the_history() {
         Some(true)
     );
 
-    state.explorer_history_step(&engine.read(), sid, true, user());
+    state.explorer_history_step(&engine.read(), sid, true, user(), false);
     finish_next(&mut state, sid);
     assert!(dest.join("a.txt").exists() && !src.join("a.txt").exists());
     assert!(history(&state, sid).peek_redo().is_none());
@@ -156,8 +156,8 @@ fn a_move_can_be_undone_and_redone_from_the_history() {
 fn an_empty_history_requests_nothing() {
     let dir = tempfile::tempdir().unwrap();
     let (mut state, engine, sid) = explorer_state(dir.path());
-    state.explorer_history_step(&engine.read(), sid, false, user());
-    state.explorer_history_step(&engine.read(), sid, true, user());
+    state.explorer_history_step(&engine.read(), sid, false, user(), false);
+    state.explorer_history_step(&engine.read(), sid, true, user(), false);
     assert!(state.explorer_file_requests.0.is_empty());
     assert!(state.toasts.messages().is_empty());
 }
@@ -285,7 +285,7 @@ fn a_stale_top_step_stays_and_tells_the_cell_why() {
         .ops
         .history
         .record(Recorded::New(source(0)), &report(OpKind::Move, vec![stale]));
-    state.explorer_history_step(&engine.read(), sid, false, user());
+    state.explorer_history_step(&engine.read(), sid, false, user(), false);
     assert!(state.explorer_file_requests.0.is_empty());
     assert!(history(&state, sid).peek_undo().is_some());
     assert_eq!(
@@ -319,8 +319,8 @@ fn a_refused_step_goes_back_to_the_history() {
     for _ in 0..crate::app::explorer_files::MAX_PENDING_PER_VIEW {
         state.request_explorer_file(&engine.read(), sid, Operation::Open("p".into()), user());
     }
-    state.explorer_history_step(&engine.read(), sid, false, user());
-    state.explorer_history_step(&engine.read(), sid, true, user());
+    state.explorer_history_step(&engine.read(), sid, false, user(), false);
+    state.explorer_history_step(&engine.read(), sid, true, user(), false);
     assert_eq!(
         state.explorer_file_requests.0.len(),
         crate::app::explorer_files::MAX_PENDING_PER_VIEW
@@ -359,4 +359,82 @@ fn the_card_undo_takes_its_step_out_of_the_history() {
     state.apply_explorer_ops(&engine.read(), sid, OpsAction::Undo(moved(7)));
     let request = state.explorer_file_requests.0.front().expect("undo queued");
     assert!(request.recorded.is_none());
+}
+
+/// 새 복사·이동이 기다리는 동안 되돌리기는 그 이전 단계를 꺼내지 않는다. 그 작업이 끝나면 그것이
+/// 맨 위가 되어 다음 되돌리기가 그것을 되돌린다.
+#[test]
+fn undo_waits_for_a_copy_or_move_in_progress() {
+    let dir = tempfile::tempdir().unwrap();
+    let (src, dest) = (dir.path().join("src"), dir.path().join("dest"));
+    std::fs::create_dir_all(&src).unwrap();
+    std::fs::create_dir_all(&dest).unwrap();
+    std::fs::write(src.join("a.txt"), b"a").unwrap();
+    std::fs::write(src.join("b.txt"), b"b").unwrap();
+    let (mut state, engine, sid) = explorer_state(dir.path());
+    let paste = |name: &str, cut: bool| Operation::Paste {
+        paths: vec![src.join(name)],
+        destination: dest.clone(),
+        cut,
+    };
+    state.request_explorer_file_direct(&engine.read(), sid, paste("a.txt", true), user());
+    finish_next(&mut state, sid);
+
+    state.request_explorer_file_direct(&engine.read(), sid, paste("b.txt", false), user());
+    assert!(state.explorer_history_busy(sid));
+    state.explorer_history_step(&engine.read(), sid, false, user(), false);
+    assert_eq!(state.explorer_file_requests.len(), 1, "only the copy waits");
+    assert_eq!(
+        state.toasts.messages(),
+        vec![crate::i18n::t("explorer.menu.history_busy").to_owned()]
+    );
+    assert_eq!(
+        history(&state, sid).peek_undo().map(|e| e.source.cut),
+        Some(true)
+    );
+
+    finish_next(&mut state, sid);
+    assert!(!state.explorer_history_busy(sid));
+    assert_eq!(
+        history(&state, sid).peek_undo().map(|e| e.source.cut),
+        Some(false)
+    );
+    state.explorer_history_step(&engine.read(), sid, false, user(), false);
+    finish_next(&mut state, sid);
+    assert!(!dest.join("b.txt").exists(), "the copy is undone");
+    assert!(dest.join("a.txt").exists(), "the earlier move stays");
+}
+
+/// 이력에 반영할 작업이 실행 중일 때도 받지 않는다. 이력과 무관한 작업은 막지 않는다.
+#[test]
+fn a_running_history_job_blocks_undo_and_redo() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut state, engine, sid) = explorer_state(dir.path());
+    let to = dir.path().join("b");
+    std::fs::write(&to, b"x").unwrap();
+    let live = vec![UndoStep::Moved {
+        from: dir.path().join("a"),
+        to,
+    }];
+    let running = |in_history| crate::explorer_ui::view::ops::Running {
+        shared: std::sync::Arc::new(quiet()),
+        kind: OpKind::Copy,
+        dest: None,
+        total: 1,
+        in_history,
+    };
+    let view = state.explorer_views.get_mut(sid).unwrap();
+    view.ops
+        .history
+        .record(Recorded::New(source(0)), &report(OpKind::Move, live));
+    view.ops.running = Some(running(true));
+    state.explorer_history_step(&engine.read(), sid, false, user(), false);
+    state.explorer_history_step(&engine.read(), sid, true, user(), false);
+    assert!(state.explorer_file_requests.0.is_empty());
+    assert!(history(&state, sid).peek_undo().is_some());
+
+    state.explorer_views.get_mut(sid).unwrap().ops.running = Some(running(false));
+    assert!(!state.explorer_history_busy(sid));
+    state.explorer_history_step(&engine.read(), sid, false, user(), false);
+    assert_eq!(state.explorer_file_requests.0.len(), 1);
 }
