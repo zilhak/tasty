@@ -161,6 +161,28 @@ fn code_rect(row: egui::Rect, min_x: f32, max_x: f32, pad: f32) -> egui::Rect {
     )
 }
 
+/// 채움까지 포함한 문장 크기. 문장 끝의 run 은 오른쪽 여백이 글자 배치 밖에 있어 따로 더한다.
+pub fn ui_copy_size(theme: &Theme, galley: &egui::Galley) -> egui::Vec2 {
+    ui_code_rects(theme, galley)
+        .iter()
+        .fold(galley.rect, |acc, r| acc.union(*r))
+        .size()
+}
+
+/// `pos` 에 code run 채움을 칠하고 그 위에 문장을 그린다. 글자 색은 글자 배치가 정한다.
+pub fn paint_ui_copy(
+    painter: &egui::Painter,
+    theme: &Theme,
+    pos: egui::Pos2,
+    galley: std::sync::Arc<egui::Galley>,
+) {
+    let tokens = UiCodeTokens::of(theme);
+    for r in ui_code_rects(theme, &galley) {
+        painter.rect_filled(r.translate(pos.to_vec2()), tokens.radius.value(), tokens.bg);
+    }
+    painter.galley(pos, galley, tokens.fg);
+}
+
 /// 문장을 남은 폭에 맞춰 줄바꿈해 그린다. 백틱 구간은 code run 이다.
 pub fn ui_copy(
     ui: &mut egui::Ui,
@@ -171,21 +193,10 @@ pub fn ui_copy(
 ) -> egui::Response {
     let job = ui_copy_job(theme, text, size, color, ui.available_width());
     let galley = ui.fonts(|f| f.layout_job(job));
-    let rects = ui_code_rects(theme, &galley);
-    // 문장 끝의 run 은 오른쪽 여백이 글자 배치 밖에 있으므로 할당 크기에 더한다.
-    let size = rects
-        .iter()
-        .fold(galley.rect, |acc, r| acc.union(*r))
-        .size();
-    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::hover());
+    let (rect, response) =
+        ui.allocate_exact_size(ui_copy_size(theme, &galley), egui::Sense::hover());
     if ui.is_rect_visible(rect) {
-        let painter = ui.painter();
-        let fill = UiCodeTokens::of(theme).bg;
-        let radius = UiCodeTokens::of(theme).radius.value();
-        for r in &rects {
-            painter.rect_filled(r.translate(rect.min.to_vec2()), radius, fill);
-        }
-        painter.galley(rect.min, galley, color);
+        paint_ui_copy(ui.painter(), theme, rect.min, galley);
     }
     response
 }

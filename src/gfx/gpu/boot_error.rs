@@ -4,7 +4,7 @@ use winit::window::Window;
 
 use super::{BootErrorInfo, GpuState};
 use tasty_ui_widgets::tokens::STRUCT_GAP_2;
-use tasty_ui_widgets::vspace;
+use tasty_ui_widgets::{ui_copy, vspace};
 
 impl GpuState {
     /// 부팅 실패 진단을 그린다. 반환 `Ok(true)` = 사용자가 종료를 눌렀다(caller 가
@@ -62,24 +62,17 @@ impl GpuState {
                     );
                     vspace(ui, STRUCT_GAP_2);
 
-                    ui.add(
-                        egui::Label::new(
-                            egui::RichText::new(&info.body)
-                                .size(th.font_size_body.value())
-                                .color(th.text_primary()),
-                        )
-                        .wrap(),
+                    // 본문과 안내의 백틱 구간(CLI 명령·옵션)은 code run 으로 그린다.
+                    ui_copy(
+                        ui,
+                        &th,
+                        &info.body,
+                        th.font_size_body,
+                        th.text_primary().into(),
                     );
                     vspace(ui, th.spacing_md);
 
-                    ui.add(
-                        egui::Label::new(
-                            egui::RichText::new(&info.hint)
-                                .size(th.font_size_caption.value())
-                                .color(text_dim),
-                        )
-                        .wrap(),
-                    );
+                    ui_copy(ui, &th, &info.hint, th.font_size_caption, text_dim.into());
 
                     vspace(ui, th.spacing_lg);
 

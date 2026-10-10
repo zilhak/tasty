@@ -135,7 +135,7 @@ IPv6·proxy 출처 처리나 실제 메모리 제한을 추가할 때는 차단 
 3. 둘 다 없으면 탐색: `28429`부터 하나씩 올리며 bind를 시도해 처음 성공한 포트를 쓴다. 상한은 64개(`28429..=28492`, `PROBE_COUNT`).
 
 - 점유 여부는 미리 조회하지 않고 실제 bind 결과로 판단한다.
-- **명시 지정 포트를 bind하지 못하면 실행을 막는다.** 이벤트 루프·메모리 저장소·저널을 만들기 전에 판단한다. GUI는 부팅 오류 화면(제목 "Webhook port in use", Quit)을 띄우고 종료 코드 1로 끝나며, headless는 같은 문구를 오류 로그로 남기고 종료 코드 1로 끝난다. 이때 데이터 폴더에는 저널 writer 잠금 파일만 남는다(측정).
+- **명시 지정 포트를 bind하지 못하면 실행을 막는다.** 이벤트 루프·메모리 저장소·저널을 만들기 전에 판단한다. GUI는 부팅 오류 화면(제목 "Webhook port in use", Quit)을 띄우고 종료 코드 1로 끝나며, headless는 같은 문구를 오류 로그로 남기고 종료 코드 1로 끝난다. 오류 화면의 안내 문장에 들어간 CLI 명령·옵션(`--webhook-port`, `tasty webhook port --unset` 등)은 mono code run으로 그리며, 로그에는 백틱이 글자 그대로 남는다. 이때 데이터 폴더에는 저널 writer 잠금 파일만 남는다(측정).
 - 탐색 범위가 모두 막히면 리스너 없이 실행하고 경고한다(`WebhookInitReport::Unavailable`).
 - 탐색으로 `28429`가 아닌 포트를 얻었고 복원한 Persistent 웹훅이 있으면 경고한다(`MovedWithPersistent`). 새 URL은 `tasty webhook list`로 확인한다. 저장한 웹훅이 없으면 경고하지 않는다.
 - 경고는 GUI toast(Warning, Window 범위)와 headless `tracing::warn!`이다.

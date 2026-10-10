@@ -41,8 +41,8 @@ body = "이미 실행 중인 Tasty가 있습니다."
 [boot.webhook_port]
 title = "웹훅 포트 사용 중"
 body = "웹훅 포트 {}을(를) 열 수 없습니다: {}"
-hint_argument = "--webhook-port로 지정한 포트입니다. 빈 포트로 실행하거나, 옵션 없이 실행해 Tasty가 고르게 하세요."
-hint_config = "`tasty webhook port`로 저장한 포트입니다. Tasty가 실행 중이 아닐 때 `tasty webhook port --unset`으로 지우거나 `tasty webhook port <빈 포트>`로 바꾼 뒤 다시 시작하세요. 또는 한 번 --webhook-port <빈 포트>로 시작하세요."
+hint_argument = "`--webhook-port`로 지정한 포트입니다. 빈 포트로 실행하거나, 옵션 없이 실행해 Tasty가 고르게 하세요."
+hint_config = "`tasty webhook port`로 저장한 포트입니다. Tasty가 실행 중이 아닐 때 `tasty webhook port --unset`으로 지우거나 `tasty webhook port <빈 포트>`로 바꾼 뒤 다시 시작하세요. 또는 한 번 `--webhook-port <빈 포트>`로 시작하세요."
 differs = "이 데이터 폴더의 Tasty가 웹훅 포트 {}로 이미 실행 중입니다. --webhook-port {}로 실행하려면 먼저 종료하세요."
 differs_none = "이 데이터 폴더의 Tasty가 웹훅 리스너 없이 이미 실행 중입니다. --webhook-port {}로 실행하려면 먼저 종료하세요."
 
@@ -2106,7 +2106,7 @@ lead = "순환 의존성 발견 — 러너가 작업 {}개를 진행하지 못�
 
 [dag.empty]
 none = "이 워크스페이스에 작업이 없습니다"
-none_hint = "생성: tasty agent task-create --workspace-id {} ..."
+none_hint = "생성: `tasty agent task-create --workspace-id {} ...`"
 missing = "DAG 를 찾을 수 없습니다: {}"
 missing_hint = "삭제되었을 수 있습니다. 헤더에서 다른 DAG 를 선택하세요."
 

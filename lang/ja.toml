@@ -41,8 +41,8 @@ body = "Tasty はすでに実行中です。"
 [boot.webhook_port]
 title = "Webhook ポートが使用中"
 body = "Webhook ポート {} を開けませんでした: {}"
-hint_argument = "--webhook-port で指定したポートです。空いているポートで起動するか、オプションなしで起動して Tasty に選ばせてください。"
-hint_config = "`tasty webhook port` で保存したポートです。Tasty が実行されていないときに `tasty webhook port --unset` で削除するか `tasty webhook port <空きポート>` で置き換えてから、もう一度起動してください。または一度だけ --webhook-port <空きポート> で起動してください。"
+hint_argument = "`--webhook-port` で指定したポートです。空いているポートで起動するか、オプションなしで起動して Tasty に選ばせてください。"
+hint_config = "`tasty webhook port` で保存したポートです。Tasty が実行されていないときに `tasty webhook port --unset` で削除するか `tasty webhook port <空きポート>` で置き換えてから、もう一度起動してください。または一度だけ `--webhook-port <空きポート>` で起動してください。"
 differs = "このデータフォルダの Tasty は Webhook ポート {} ですでに実行中です。--webhook-port {} で起動するには、先に終了してください。"
 differs_none = "このデータフォルダの Tasty は Webhook リスナーなしですでに実行中です。--webhook-port {} で起動するには、先に終了してください。"
 
@@ -2106,7 +2106,7 @@ lead = "循環依存を検出 — ランナーはタスク {} 件を進められ
 
 [dag.empty]
 none = "このワークスペースにタスクがありません"
-none_hint = "作成: tasty agent task-create --workspace-id {} ..."
+none_hint = "作成: `tasty agent task-create --workspace-id {} ...`"
 missing = "DAG が見つかりません: {}"
 missing_hint = "削除された可能性があります。ヘッダーから別の DAG を選択してください。"
 

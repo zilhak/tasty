@@ -190,13 +190,21 @@ pub fn layout_card(
     hint: &[String],
     max_width: f32,
 ) -> (std::sync::Arc<egui::Galley>, egui::Vec2) {
-    let font = egui::FontId::proportional(theme.font_size_body.value());
     let accent_w = theme.toast_accent_width.value();
     let reserve = hint_reserve(ctx, theme, hint);
     // wrap_width 음수 방지(스코프 클램프로 max_width 가 작아질 때).
     let wrap_width = (max_width - PADDING_X * 2.0 - accent_w - reserve).max(1.0);
-    let galley = ctx.fonts(|f| f.layout(message, font, theme.text_primary().into(), wrap_width));
-    let toast_w = (galley.size().x + PADDING_X * 2.0 + accent_w + reserve).min(max_width);
+    // 본문의 백틱 구간은 code run 이다.
+    let job = crate::ui_code::ui_copy_job(
+        theme,
+        &message,
+        theme.font_size_body,
+        theme.text_primary().into(),
+        wrap_width,
+    );
+    let galley = ctx.fonts(|f| f.layout_job(job));
+    let text_w = crate::ui_code::ui_copy_size(theme, &galley).x;
+    let toast_w = (text_w + PADDING_X * 2.0 + accent_w + reserve).min(max_width);
     let hint_h = if hint.is_empty() {
         0.0
     } else {
@@ -295,7 +303,7 @@ pub fn draw_card(
             alpha,
         );
     }
-    painter.galley(text_pos, galley, colors.text);
+    crate::ui_code::paint_ui_copy(painter, theme, text_pos, galley);
 }
 
 /// 반환한 사각형이 실제로 그린 카드와 같고, 그리지 않은 카드(alpha 0)는 빠지며, 모든 값이

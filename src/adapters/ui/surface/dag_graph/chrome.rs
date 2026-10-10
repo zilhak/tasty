@@ -716,12 +716,17 @@ pub fn draw_empty(ui: &mut egui::Ui, theme: &Theme, data: &DagData, dag_id: Opti
                 .value()
                 .min(rect.width() - theme.spacing_xl.value() * 2.0)
                 .max(theme.spacing_xl.value());
-            let body = ui.painter().layout(
-                hint,
-                egui::FontId::proportional(theme.font_size_caption.value()),
-                theme.text_muted().to_egui(),
-                measure,
-            );
+            // 안내의 백틱 구간(CLI 명령)은 code run 으로 그린다.
+            let body = ui.fonts(|f| {
+                f.layout_job(tasty_ui_widgets::ui_copy_job(
+                    theme,
+                    &hint,
+                    theme.font_size_caption,
+                    theme.text_muted().to_egui(),
+                    measure,
+                ))
+            });
+            let body_w = tasty_ui_widgets::ui_copy_size(theme, &body).x;
 
             let total = side + gap + title_h + gap + body.size().y;
             let mut y = rect.center().y - total / 2.0;
@@ -741,10 +746,11 @@ pub fn draw_empty(ui: &mut egui::Ui, theme: &Theme, data: &DagData, dag_id: Opti
                 theme.text_secondary().to_egui(),
             );
             y += title_h + gap;
-            ui.painter().galley(
-                egui::pos2(rect.center().x - body.size().x / 2.0, y),
+            tasty_ui_widgets::paint_ui_copy(
+                ui.painter(),
+                theme,
+                egui::pos2(rect.center().x - body_w / 2.0, y),
                 body,
-                theme.text_muted().to_egui(),
             );
         });
 }

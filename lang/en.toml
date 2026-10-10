@@ -41,8 +41,8 @@ body = "Tasty is already running."
 [boot.webhook_port]
 title = "Webhook port in use"
 body = "The webhook port {} could not be opened: {}"
-hint_argument = "It was given with --webhook-port. Start with a free port, or without the option to let Tasty choose one."
-hint_config = "It was saved with `tasty webhook port`. While Tasty is not running, `tasty webhook port --unset` removes it and `tasty webhook port <free port>` replaces it; then start again. Or start once with --webhook-port <free port>."
+hint_argument = "It was given with `--webhook-port`. Start with a free port, or without the option to let Tasty choose one."
+hint_config = "It was saved with `tasty webhook port`. While Tasty is not running, `tasty webhook port --unset` removes it and `tasty webhook port <free port>` replaces it; then start again. Or start once with `--webhook-port <free port>`."
 differs = "Tasty is already running in this data folder with webhook port {}. Quit it first to start with --webhook-port {}."
 differs_none = "Tasty is already running in this data folder without a webhook listener. Quit it first to start with --webhook-port {}."
 
@@ -2112,7 +2112,7 @@ lead = "Cycle detected — the runner will not advance {} tasks:"
 
 [dag.empty]
 none = "No tasks in this workspace"
-none_hint = "Create one with: tasty agent task-create --workspace-id {} ..."
+none_hint = "Create one with: `tasty agent task-create --workspace-id {} ...`"
 missing = "DAG not found: {}"
 missing_hint = "It may have been deleted. Pick another from the header."
 
