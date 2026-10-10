@@ -94,6 +94,8 @@ pub struct PluginBindingInput {
 
 /// held의 수식키를 모두 포함하는 조합을 반환한다. 설정의 액션·스크립트·전환 역할과
 /// 전달된 플러그인 입력을 포함하며 빈 섹션도 유지한다.
+/// 예외로 macOS 밖에서 option(Win·Super)을 누른 동안 채워진 섹션이 하나도 없으면 빈 목록을 돌려준다
+/// ([`silent_option_hold`]).
 pub fn build_hint_sections(
     held: Combo,
     kb: &KeybindingSettings,
@@ -204,7 +206,18 @@ pub fn build_hint_sections(
         }
     }
 
+    if silent_option_hold(held, &sections, cfg!(target_os = "macos")) {
+        return Vec::new();
+    }
     sections
+}
+
+/// macOS 밖에서 Win·Super(option)를 누른 동안 option 이 든 바인딩·역할이 하나도 없으면 도움말을 띄우지 않는다.
+/// 타일링 WM 조작이나 Super+드래그 창 이동처럼 이 키를 오래 누르는 사용이 흔하다.
+/// held 에 option 이 있으면 모든 섹션이 option 조합이므로, 모두 비었다는 것은 option 바인딩이 없다는 뜻이다.
+/// macOS 의 Option 과 Alt·Ctrl·Shift 는 빈 조합도 보인다.
+fn silent_option_hold(held: Combo, sections: &[HintSection], macos: bool) -> bool {
+    !macos && held.option && sections.iter().all(HintSection::is_empty)
 }
 
 #[cfg(test)]
@@ -523,6 +536,73 @@ mod tests {
             .find(|s| s.combo == alt())
             .expect("alt 섹션 존재");
         assert!(alt_sec.is_empty());
+    }
+
+    fn option() -> Combo {
+        Combo {
+            option: true,
+            ..Combo::default()
+        }
+    }
+
+    /// 수식키 바인딩·전환 역할을 모두 비운 설정 — 빈 섹션만 남는다.
+    fn unbound_kb() -> KeybindingSettings {
+        let mut kb = KeybindingSettings::preset_tasty();
+        for (field_id, _) in KeybindingSettings::GENERAL_BINDING_FIELDS {
+            kb.clear_field(field_id);
+        }
+        kb.script_bindings.clear();
+        kb.tab_switch_modifier = "ctrl".into();
+        kb.workspace_switch_modifier = "ctrl".into();
+        kb
+    }
+
+    /// macOS 밖에서 option 바인딩이 없으면 Win·Super 를 눌러도 도움말이 없다. macOS Option 은 빈 조합도 보인다.
+    #[test]
+    fn unbound_option_hold_is_silent_only_off_macos() {
+        let kb = unbound_kb();
+        let raw: Vec<HintSection> = combos_containing_all(option())
+            .into_iter()
+            .map(|combo| HintSection {
+                combo,
+                rows: Vec::new(),
+                roles: Vec::new(),
+            })
+            .collect();
+        assert!(silent_option_hold(option(), &raw, false));
+        assert!(!silent_option_hold(option(), &raw, true));
+        let ctrl_option = Combo {
+            ctrl: true,
+            ..option()
+        };
+        assert!(silent_option_hold(ctrl_option, &raw, false));
+        // Alt 는 비어 있어도 그대로 보인다.
+        assert!(!silent_option_hold(alt(), &raw, false));
+
+        let sections = build_hint_sections(option(), &kb, "ctrl", false, &[]);
+        assert_eq!(sections.is_empty(), !cfg!(target_os = "macos"));
+        assert!(!build_hint_sections(alt(), &kb, "ctrl", false, &[]).is_empty());
+    }
+
+    /// option 바인딩이 하나라도 있으면 Win·Super 도 Alt 처럼 빈 조합까지 보인다.
+    #[test]
+    fn bound_option_hold_lists_every_option_combo() {
+        let mut kb = unbound_kb();
+        kb.new_tab = vec!["option+k".to_string()];
+        let sections = build_hint_sections(option(), &kb, "ctrl", false, &[]);
+        assert_eq!(sections.len(), combos_containing_all(option()).len());
+        assert!(
+            sections
+                .iter()
+                .any(|s| s.combo == option() && !s.is_empty())
+        );
+        assert!(!silent_option_hold(option(), &sections, false));
+
+        // 전환 역할만 option 이어도 바인딩이 있는 것으로 본다.
+        let mut kb = unbound_kb();
+        kb.workspace_switch_modifier = "option".into();
+        let sections = build_hint_sections(option(), &kb, "ctrl", false, &[]);
+        assert!(!sections.is_empty());
     }
 
     #[test]

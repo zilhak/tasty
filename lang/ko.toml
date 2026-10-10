@@ -191,7 +191,7 @@ heading = "접근성"
 reduced_motion = "모션 줄이기"
 reduced_motion_desc = "UI 페이드/슬라이드 애니메이션을 생략합니다. 토스트 페이드 인/아웃이 비활성화됩니다. 터미널 출력 애니메이션은 영향을 받지 않습니다."
 modifier_hint = "수식키 힌트 표시"
-modifier_hint_desc = "수식키(Ctrl / Alt / Shift, macOS에서는 Cmd / Option 포함)를 잠시 누르고 있으면 사용 가능한 단축키를 패널로 보여줍니다. 키에서 손을 떼면 패널이 사라집니다."
+modifier_hint_desc = "수식키(Ctrl / Alt / Shift, macOS에서는 Cmd / Option 포함, Windows·Linux에서는 이 키를 쓰는 단축키가 있을 때 Win / Super 포함)를 잠시 누르고 있으면 사용 가능한 단축키를 패널로 보여줍니다. 키에서 손을 떼면 패널이 사라집니다."
 
 [settings.number]
 range_between = "{} 이상 {} 이하입니다. 저장할 값: {}."

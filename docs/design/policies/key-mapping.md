@@ -62,6 +62,8 @@ Windows 의 Win+L·Win+D·Win+E 같은 셸 예약 조합과 GNOME·KDE 의 Super
   되돌리려면 프리셋을 재적용한다.
 - **modifier 없는 바인딩은 modifier-hint 오버레이에 뜨지 않는다** — 오버레이는 홀드 중인
   modifier 조합에 속한 바인딩만 나열하므로, 조합이 없는 바인딩은 속할 섹션이 없다.
+- **`option` 바인딩이 없으면 Win·Super 홀드는 modifier-hint 를 띄우지 않는다**(macOS 밖) — 타일링 WM·Super+드래그로
+  이 키를 오래 누르는 사용이 흔하다. Alt·Ctrl·Shift 와 macOS Option 은 빈 조합도 보인다.
 
 ## 복사/붙여넣기 키 정책
 

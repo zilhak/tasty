@@ -43,7 +43,7 @@
 
 목록은 `build_hint_sections`가 `combos_containing_all`·`Combo::contains_all`로 만든다. 호스트 액션, 사용자 스크립트, 탭·workspace 전환·마우스 캡처 우회·링크 열기 역할을 조합 크기와 우선순위로 정렬한다. 여러 키를 누르면 첫 섹션은 현재 조합과 같다. plugin 단축키는 아직 이 목록에 포함하지 않는다.
 
-바인딩과 역할이 없는 조합도 남겨 `modifier_hint.empty`로 표시한다. 키캡·아이콘·배경 없이 약한 텍스트를 사용하며 최소 높이는 20px, 내부 간격은 3px다. `combo_keycap_parts`는 표시 스타일이 symbol인 Alt·Option·Shift를 `CMD_KEY`·`OPTION_KEY`·`SHIFT_KEY` 벡터 아이콘으로 그린다. 해당 글리프가 폰트에 없을 때 빈 사각형이 되는 문제를 피한다([키 매핑](../../design/policies/key-mapping.md)).
+바인딩과 역할이 없는 조합도 남겨 `modifier_hint.empty`로 표시한다. 단 macOS 밖에서 Win·Super(`option`)를 누른 동안 `option` 바인딩·역할이 하나도 없으면 패널을 띄우지 않는다(`silent_option_hold`). 키캡·아이콘·배경 없이 약한 텍스트를 사용하며 최소 높이는 20px, 내부 간격은 3px다. `combo_keycap_parts`는 표시 스타일이 symbol인 Alt·Option·Shift를 `CMD_KEY`·`OPTION_KEY`·`SHIFT_KEY` 벡터 아이콘으로 그린다. 해당 글리프가 폰트에 없을 때 빈 사각형이 되는 문제를 피한다([키 매핑](../../design/policies/key-mapping.md)).
 
 실제 키 상태는 winit `ModifiersChanged`에서만 읽는다. `held: Option<Combo>`는 네 보조키 상태를 보관하고 `update_hold`는 조합이 바뀌면 다시 그리도록 알린다. 창 포커스를 잃으면 비운다. `reveal_delay_ms`는 Theme의 `modhint_hold_delay()`와 `motion_hold_reveal_shift()`를 사용하며, 후자의 1200ms는 대응 디자인 토큰이 없어 수기 접근자에 남아 있다.
 
