@@ -82,6 +82,19 @@ fn the_name_list_comes_from_the_shown_folder_or_the_sidebar_tree() {
     );
 }
 
+#[test]
+fn a_hidden_name_still_counts_as_taken_while_hidden_files_are_off() {
+    let mut view = ExplorerView::new();
+    let panel = crate::model::ExplorerPanel::new(1, "/w".into());
+    view.sync(&panel, None);
+    view.set_entries(vec![placeholder_named("/w", ".env")]);
+    assert!(view.entries.is_empty());
+    view.start_create("/w".into(), false);
+    let create = view.create.as_mut().expect("editor opened");
+    create.edit.buf = ".env".into();
+    assert_eq!(create.confirmable(), Err(NameError::Exists));
+}
+
 fn placeholder_named(dir: &str, name: &str) -> super::super::DirEntryInfo {
     let mut row = placeholder_row(Path::new(dir));
     row.path = Path::new(dir).join(name);

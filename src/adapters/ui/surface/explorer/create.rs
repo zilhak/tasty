@@ -158,11 +158,16 @@ impl CreateEdit {
 
 impl ExplorerView {
     /// 새 항목 이름 입력을 연다. 이미 열려 있으면 새로 시작한다.
-    /// 대상 폴더의 이름 목록은 지금 보는 목록이나 사이드바 트리에서 읽은 것만 쓴다.
+    /// 대상 폴더의 이름 목록은 지금 보는 목록(숨김 파일을 끈 동안 뺀 항목 포함)이나 사이드바 트리에서
+    /// 읽은 것만 쓴다.
     /// 화면 스레드는 파일시스템을 읽지 않으므로, 모르는 이름과 겹치면 만들 때 실패로 알린다.
     pub(crate) fn start_create(&mut self, dir: PathBuf, folder: bool) {
         let taken: Vec<String> = if self.shown_dir() == Some(dir.as_path()) {
-            self.entries.iter().map(|e| e.name.clone()).collect()
+            let shown = self.entries.iter().map(|e| e.name.as_str());
+            shown
+                .chain(self.hidden_names())
+                .map(str::to_owned)
+                .collect()
         } else {
             self.tree_children
                 .get(&dir)

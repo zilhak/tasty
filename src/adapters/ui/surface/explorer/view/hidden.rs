@@ -70,6 +70,11 @@ impl ExplorerView {
             .collect()
     }
 
+    /// 끈 동안 목록에서 뺀 숨김 항목 이름. 새 항목 이름이 겹치는지 볼 때 함께 센다.
+    pub(crate) fn hidden_names(&self) -> impl Iterator<Item = &str> {
+        self.hidden.stash.iter().map(|e| e.name.as_str())
+    }
+
     /// 숨김 파일을 끈 동안 뺀 항목이 있으면 "{n} items · {h} hidden" 처럼 수를 덧붙인다.
     pub(crate) fn hidden_status(&self, items: String) -> String {
         match self.hidden.count() {
