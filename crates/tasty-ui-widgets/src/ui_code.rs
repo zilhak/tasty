@@ -13,8 +13,10 @@ use tasty_type_geometry::length::LogicalPx;
 const NO_BREAK_SPACE: char = '\u{A0}';
 
 /// code run 의 토큰 값.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct UiCodeTokens {
+    /// `ui-code-font`.
+    pub font: egui::FontFamily,
     /// `ui-code-bg`.
     pub bg: egui::Color32,
     /// `ui-code-fg`.
@@ -26,15 +28,21 @@ pub struct UiCodeTokens {
 }
 
 impl UiCodeTokens {
-    // TODO(ui-code): batch 11 토큰 접근자가 들어오면 theme.ui_code_*() 로 바꾼다. 지금은 같은 값의 의미 토큰이다.
     pub fn of(theme: &Theme) -> Self {
         Self {
-            bg: theme.surface_raised().to_egui(),
-            fg: theme.text_primary().to_egui(),
-            padding_x: theme.spacing_xs,
-            radius: theme.corner_radius_sm,
+            font: ui_code_font(),
+            bg: theme.ui_code_bg().to_egui(),
+            fg: theme.ui_code_fg().to_egui(),
+            padding_x: theme.ui_code_padding_x(),
+            radius: theme.ui_code_radius(),
         }
     }
+}
+
+/// `ui-code-font` → `font-mono`. fontFamily 토큰은 생성기가 접근자를 만들지 않으므로 여기서 egui 의
+/// 고정폭 family 로 옮긴다. `font-mono` 의 글꼴 목록은 egui 의 Monospace family 가 담는다.
+pub fn ui_code_font() -> egui::FontFamily {
+    egui::FontFamily::Monospace
 }
 
 /// 문장의 한 구간.
@@ -89,7 +97,7 @@ pub fn ui_copy_job(
         ..Default::default()
     };
     let code_format = egui::TextFormat {
-        font_id: egui::FontId::monospace(size.value()),
+        font_id: egui::FontId::new(size.value(), ui_code_font()),
         color: UiCodeTokens::of(theme).fg,
         valign: egui::Align::Center,
         ..Default::default()
@@ -126,7 +134,7 @@ pub fn ui_code_rects(theme: &Theme, galley: &egui::Galley) -> Vec<egui::Rect> {
             .job
             .sections
             .get(section as usize)
-            .is_some_and(|s| s.format.font_id.family == egui::FontFamily::Monospace)
+            .is_some_and(|s| s.format.font_id.family == ui_code_font())
     };
     let mut rects = Vec::new();
     for row in &galley.rows {
