@@ -1,4 +1,4 @@
-//! 빈 DAG, 검색 결과 없음, 순환 경고 예제. 순환이 있어도 그래프는 계속 그린다.
+//! 빈 DAG, 사라진 DAG, 검색 결과 없음, 순환 경고 예제. 순환이 있어도 그래프는 계속 그린다.
 
 use tasty_type_appearance::theme::Theme;
 
@@ -10,7 +10,7 @@ fn empty_height(theme: &Theme) -> f32 {
     theme.dag_detail_log_max_height().value()
 }
 
-fn empty_box(ui: &mut egui::Ui, theme: &Theme, query: Option<&str>) {
+fn empty_box(ui: &mut egui::Ui, theme: &Theme, case: chrome::Empty<'_>) {
     let (rect, _) = ui.allocate_exact_size(
         egui::vec2(ui.available_width(), empty_height(theme)),
         egui::Sense::hover(),
@@ -24,15 +24,16 @@ fn empty_box(ui: &mut egui::Ui, theme: &Theme, query: Option<&str>) {
         egui::Stroke::new(theme.border_width.value(), theme.border_default().to_egui()),
         egui::StrokeKind::Inside,
     );
-    chrome::paint_empty(ui, theme, rect, query);
+    chrome::paint_empty(ui, theme, rect, case);
 }
 
-/// `states` 섹션 Spec — 빈 상태 2 종 + 사이클 경고.
+/// `states` 섹션 Spec — 빈 상태 3 종 + 사이클 경고.
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     let cycle = super::cycle_dag();
     spec::stage(ui, theme, StageVariant::Column, |ui| {
-        empty_box(ui, theme, None);
-        empty_box(ui, theme, Some("deploy"));
+        empty_box(ui, theme, chrome::Empty::Surface);
+        empty_box(ui, theme, chrome::Empty::Missing("nightly-release"));
+        empty_box(ui, theme, chrome::Empty::Search("deploy"));
         let ids = cycle.cycle.clone().unwrap_or_default();
         let (rect, _) = ui.allocate_exact_size(
             egui::vec2(ui.available_width(), theme.dag_cycle_height().value()),
@@ -48,6 +49,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("banner", "28px · pinned to canvas top"),
             ("banner copy", "names the cycle path"),
             ("empty A", "surface — how a DAG appears"),
+            (
+                "empty A′",
+                "surface — the DAG it showed is gone (host only)",
+            ),
             ("empty B", "search — echoes the query"),
         ],
         &[

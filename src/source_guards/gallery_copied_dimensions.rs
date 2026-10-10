@@ -188,11 +188,6 @@ const COPIED: &[(&str, Side, Side)] = &[
         Side::Lit(GALLERY_EXPLORER_CELLS, "CELL_W"),
     ),
     (
-        "DAG 빈 상태 아이콘 크기",
-        Side::Lit(HOST_DAG_CHROME, "EMPTY_ICON_SIZE"),
-        Side::Lit(GALLERY_DAG_CHROME, "EMPTY_ICON_SIZE"),
-    ),
-    (
         "DAG 줌 표시 폭",
         Side::Lit(HOST_DAG_CHROME, "ZOOM_READOUT_WIDTH"),
         Side::Lit(GALLERY_DAG_CHROME, "ZOOM_READOUT_WIDTH"),
@@ -383,11 +378,12 @@ fn resolve(side: &Side, theme: &str, semantic: &str, primitive: &str) -> (String
 
 #[test]
 fn the_gallery_still_agrees_with_the_dimensions_it_restates() {
-    // 등록된 비교 쌍은 38개다(단축키 바인딩 버튼 폭은 양쪽이 kb-record-width 토큰을 읽어 빠졌다). 항목을 삭제해 불일치를 숨기지 않도록 하한 대신 정확한 수를 확인한다.
+    // 등록된 비교 쌍은 37개다(단축키 바인딩 버튼 폭은 양쪽이 kb-record-width 토큰을 읽어 빠졌고,
+    // DAG 빈 상태 아이콘 크기는 양쪽이 공용 paint_dag_empty를 불러 빠졌다). 항목을 삭제해 불일치를 숨기지 않도록 하한 대신 정확한 수를 확인한다.
     assert_eq!(
         COPIED.len(),
-        38,
-        "비교 명부가 {}쌍이다(기록 38). 복사본이 실제로 사라졌는지 또는 새로 생겼는지 확인하고 명부와 기록을 함께 갱신한다.",
+        37,
+        "비교 명부가 {}쌍이다(기록 37). 복사본이 실제로 사라졌는지 또는 새로 생겼는지 확인하고 명부와 기록을 함께 갱신한다.",
         COPIED.len()
     );
     let theme = read(THEME);

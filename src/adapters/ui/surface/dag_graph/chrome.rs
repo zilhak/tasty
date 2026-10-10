@@ -342,8 +342,6 @@ const ZOOM_READOUT_WIDTH: LogicalPx = LogicalPx(46.0);
 const NARROW_ZOOM_LABEL: LogicalPx = LogicalPx(400.0);
 /// 상세를 우측 패널로 둘 수 있는 최소 surface 폭. 그 아래는 하단 시트다.
 pub const NARROW_DETAIL_SHEET: LogicalPx = LogicalPx(640.0);
-/// 빈 상태 글리프 크기. 24px 아이콘 토큰이 아직 없어 시안 값을 그대로 둔다.
-const EMPTY_ICON_SIZE: LogicalPx = LogicalPx(24.0);
 
 /// 줌 클러스터 전체 크기 — 버튼 4 개 + (판독창) + 1px 구분선.
 fn zoom_cluster_size(theme: &Theme, compact: bool) -> egui::Vec2 {
@@ -710,52 +708,12 @@ pub fn draw_empty(ui: &mut egui::Ui, theme: &Theme, data: &DagData, dag_id: Opti
         .fill(theme.dag_canvas_bg().to_egui())
         .show(ui, |ui| {
             ui.set_min_size(ui.available_size());
-            let rect = ui.max_rect();
-            let side = EMPTY_ICON_SIZE.value();
-            let gap = theme.spacing_sm.value();
-            let title_font = egui::FontId::proportional(theme.font_size_body.value());
-            let title_h = ui.fonts(|f| f.row_height(&title_font));
-            let measure = theme
-                .measure_sm
-                .value()
-                .min(rect.width() - theme.spacing_xl.value() * 2.0)
-                .max(theme.spacing_xl.value());
-            // 안내의 백틱 구간(CLI 명령)은 code run 으로 그린다.
-            let body = ui.fonts(|f| {
-                f.layout_job(tasty_ui_widgets::ui_copy_job(
-                    theme,
-                    &hint,
-                    theme.font_size_caption,
-                    theme.text_muted().to_egui(),
-                    measure,
-                ))
-            });
-            let body_w = tasty_ui_widgets::ui_copy_size(theme, &body).x;
-
-            let total = side + gap + title_h + gap + body.size().y;
-            let mut y = rect.center().y - total / 2.0;
-            icon.image(side, theme.text_disabled().to_egui()).paint_at(
-                ui,
-                egui::Rect::from_min_size(
-                    egui::pos2(rect.center().x - side / 2.0, y),
-                    egui::vec2(side, side),
-                ),
-            );
-            y += side + gap;
-            ui.painter().text(
-                egui::pos2(rect.center().x, y),
-                egui::Align2::CENTER_TOP,
-                title,
-                title_font,
-                theme.text_secondary().to_egui(),
-            );
-            y += title_h + gap;
-            tasty_ui_widgets::paint_ui_copy(
-                ui.painter(),
-                theme,
-                egui::pos2(rect.center().x - body_w / 2.0, y),
-                body,
-            );
+            let view = tasty_ui_widgets::DagEmptyView {
+                icon,
+                title: &title,
+                hint: &hint,
+            };
+            tasty_ui_widgets::paint_dag_empty(ui, theme, ui.max_rect(), &view);
         });
 }
 

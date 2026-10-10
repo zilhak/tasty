@@ -14,8 +14,6 @@ use crate::catalog::spec::{self, StageVariant, TokenChip};
 const ZOOM_READOUT_WIDTH: LogicalPx = LogicalPx(46.0);
 /// 이 폭 아래에서 판독창을 접고 28px 버튼 네 개만 남긴다 — 디자인 "compact cutoff".
 const COMPACT_CUTOFF: LogicalPx = LogicalPx(400.0);
-/// 빈 상태 글리프 크기 — 디자인 `--tasty-size-24`.
-const EMPTY_ICON_SIZE: LogicalPx = LogicalPx(24.0);
 
 /// 줌 클러스터 전체 크기. 버튼 4 개 + (판독창) + 1px 구분선.
 pub fn zoom_cluster_size(theme: &Theme, compact: bool) -> egui::Vec2 {
@@ -299,61 +297,42 @@ pub fn paint_canvas_chrome(
     paint_lod_chip(ui, theme, canvas, lod);
 }
 
-/// 빈 상태 — surface(워크스페이스에 DAG 없음) / search(필터 무매치).
-pub fn paint_empty(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, query: Option<&str>) {
-    let (icon, title, body) = match query {
-        Some(q) => (
+/// 빈 상태 예제의 경우.
+#[derive(Clone, Copy)]
+pub enum Empty<'a> {
+    /// 본체 surface — 워크스페이스에 DAG가 없다. 본체 문구(`dag.empty.none*`)를 쓴다.
+    Surface,
+    /// 본체 surface — 지정한 DAG가 사라졌다. 본체 문구(`dag.empty.missing*`)를 쓴다.
+    Missing(&'a str),
+    /// 디자인 `DagEmpty variant="search"` — 필터 무매치. 본체 popup은 이 형태를 아직 쓰지 않는다.
+    Search(&'a str),
+}
+
+/// 빈 상태를 본체와 같은 `paint_dag_empty`로 그린다.
+pub fn paint_empty(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, case: Empty<'_>) {
+    let (icon, title, hint) = match case {
+        Empty::Surface => (
+            icons::GIT_TREE,
+            crate::i18n::t("dag.empty.none").to_owned(),
+            crate::i18n::t_fmt("dag.empty.none_hint", "3"),
+        ),
+        Empty::Missing(id) => (
+            icons::SEARCH,
+            crate::i18n::t_fmt("dag.empty.missing", id),
+            crate::i18n::t("dag.empty.missing_hint").to_owned(),
+        ),
+        Empty::Search(q) => (
             icons::SEARCH,
             format!("No DAGs match \u{201c}{q}\u{201d}"),
             "Clear the filter or widen the scope to all workspaces.".to_owned(),
         ),
-        None => (
-            icons::GIT_TREE,
-            "No task DAGs in this workspace".to_owned(),
-            "An agent creates one with tasty dag add; it appears here as soon as the host \
-             registers it."
-                .to_owned(),
-        ),
     };
-    let gap = theme.spacing_sm.value();
-    let side = EMPTY_ICON_SIZE.value();
-    let title_font = egui::FontId::proportional(theme.font_size_body.value());
-    let title_h = super::node::row_height(ui, &title_font);
-    let measure = theme
-        .measure_sm
-        .value()
-        .min(rect.width() - theme.spacing_xl.value() * 2.0)
-        .max(theme.spacing_xl.value());
-    let body_galley = ui.painter().layout(
-        body,
-        egui::FontId::proportional(theme.font_size_caption.value()),
-        theme.text_muted().to_egui(),
-        measure,
-    );
-
-    let total = side + gap + title_h + gap + body_galley.size().y;
-    let mut y = rect.center().y - total / 2.0;
-    icon.image(side, theme.text_disabled().to_egui()).paint_at(
-        ui,
-        egui::Rect::from_min_size(
-            egui::pos2(rect.center().x - side / 2.0, y),
-            egui::vec2(side, side),
-        ),
-    );
-    y += side + gap;
-    ui.painter().text(
-        egui::pos2(rect.center().x, y),
-        egui::Align2::CENTER_TOP,
-        &title,
-        title_font,
-        theme.text_secondary().to_egui(),
-    );
-    y += title_h + gap;
-    ui.painter().galley(
-        egui::pos2(rect.center().x - body_galley.size().x / 2.0, y),
-        body_galley,
-        theme.text_muted().to_egui(),
-    );
+    let view = tasty_ui_widgets::DagEmptyView {
+        icon,
+        title: &title,
+        hint: &hint,
+    };
+    tasty_ui_widgets::paint_dag_empty(ui, theme, rect, &view);
 }
 
 /// `chrome` 섹션 Spec — 줌 클러스터 + 미니맵.

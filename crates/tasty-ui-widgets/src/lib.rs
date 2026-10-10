@@ -23,6 +23,7 @@ mod code_area;
 mod compact_state;
 mod control;
 pub mod crumb_alloc;
+mod dag_empty;
 mod dashed_edge;
 mod drilldown;
 mod explorer_columns;
@@ -120,6 +121,7 @@ pub use clipboard_viewer::{
 pub use code_area::{CodeArea, CodeAreaKeys, CodeAreaOutput};
 pub use compact_state::{CompactStateGlyph, CompactStateRow, compact_state_row};
 pub use control::ControlSize;
+pub use dag_empty::{DAG_EMPTY_ICON_SIZE, DagEmptyView, paint_dag_empty};
 pub use dashed_edge::paint_dashed_outline;
 pub use drilldown::{DrillDown, DrillDownActions, DrillDownOutput, DrillDownView};
 pub use explorer_columns::{
