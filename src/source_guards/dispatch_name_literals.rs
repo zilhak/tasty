@@ -337,7 +337,7 @@ fn no_delegated_router_escapes_the_roster() {
 /// 호출 인자에 request.method가 직접 나타나는지 확인한다. 모든 호출자의 값을 입증하는 검사는 아니다.
 /// 지역 변수의 정의를 추적하지 않아 canonical을 받는 should_rate_limit·record_ipc_call과
 /// 리터럴을 받는 method_scoped_resource_id는 직접 연결되지 않는다.
-/// 직접 연결 수가 0이 아닌지, 연결되지 않은 항목 수가 등록된 값과 같은지를 확인한다.
+/// 직접 연결 수가 0이 아닌지, 연결되지 않은 항목 수가 위 세 항목의 상한 3을 넘지 않는지 확인한다.
 #[test]
 fn the_roster_is_reached_from_the_request_method() {
     let (mut direct, mut indirect) = (0usize, 0usize);
@@ -377,8 +377,8 @@ fn the_roster_is_reached_from_the_request_method() {
         direct > 0,
         "호출 인자에서 `{METHOD_EXPR}`를 찾지 못해 IPC 메서드 이름과의 연결을 확인할 수 없다"
     );
-    assert_eq!(
-        indirect, 3,
-        "request.method에서 직접 연결되지 않는 명부 항목 수가 달라졌다. 호출 인자와 지역 변수 경로를 확인하고 수와 설명을 함께 갱신한다."
+    assert!(
+        indirect <= 3,
+        "request.method에서 직접 연결되지 않는 명부 항목이 {indirect}개로 상한 3을 넘었다. 호출 인자와 지역 변수 경로를 확인한다. 줄어든 것은 실패가 아니다."
     );
 }
