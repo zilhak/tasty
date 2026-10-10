@@ -642,3 +642,28 @@ fn a_truncated_remote_result_retries_what_was_sent() {
     assert_eq!(text.retry, paths);
     assert_eq!(text.leftovers, vec![leftover("/srv/d")]);
 }
+
+/// 원본 지우기 뒤에 도착한 다시 옮기기가 취소로 하지 못한 항목은 합친 카드에도 남는다. 카드는
+/// 저절로 사라지지 않고 그 항목을 Retry 한다.
+#[test]
+fn a_merged_card_keeps_the_items_the_later_job_did_not_reach() {
+    let mut ops = OpsState::default();
+    let press = ops.expect_press(vec![7, 8], Duration::from_secs(5));
+    let mut removed = report(OpKind::RemoveOriginals, 1, 1);
+    removed.undo.clear();
+    let mut moved = report(OpKind::Move, 3, 1);
+    moved.cancelled = true;
+    moved.unprocessed = vec!["/w/b".into(), "/w/c".into()];
+    assert!(ops.arrive(press, 7, removed).is_none());
+    let merged = ops.arrive(press, 8, moved).expect("both ended");
+    assert_eq!(
+        merged.unprocessed,
+        vec![PathBuf::from("/w/b"), PathBuf::from("/w/c")]
+    );
+    assert!(!result_is_timed(&merged));
+    let text = card_text(&card(merged));
+    assert_eq!(
+        text.retry,
+        vec![PathBuf::from("/w/b"), PathBuf::from("/w/c")]
+    );
+}

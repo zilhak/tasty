@@ -90,6 +90,7 @@ pub(super) fn merge(mut a: Report, b: Report) -> Report {
     a.failed.extend(b.failed);
     a.skipped.extend(b.skipped);
     a.leftovers.extend(b.leftovers);
+    a.unprocessed.extend(b.unprocessed);
     a.trash_unavailable |= b.trash_unavailable;
     a.cancelled = (a.cancelled || b.cancelled) && a.failed.is_empty() && a.skipped.is_empty();
     a
