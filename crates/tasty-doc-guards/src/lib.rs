@@ -54,6 +54,9 @@ pub mod floored_walk;
 /// 저장소 외부 경로를 수정 대상으로 안내하지 않게 한다.
 pub mod tracked_scope;
 
+/// 사본 대조용 SHA-256.
+pub mod sha256;
+
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
