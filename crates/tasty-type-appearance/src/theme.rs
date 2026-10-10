@@ -496,6 +496,10 @@ pub struct ThemeColors {
     pub vi_cursor_bg: HexColor,
     pub search_match_bg: HexColor,
     pub search_match_active_bg: HexColor,
+    /// 현재(active) 검색 매치 안 셀의 글리프 색. 그 칸에서만 SGR 글자색을 덮어쓴다.
+    /// 값이 없는 직렬화(이전 host)는 Theme 을 만들 때 도출한다.
+    #[serde(default = "crate::search_ink::unset_search_match_active_fg")]
+    pub search_match_active_fg: HexColor,
 
     // ── ANSI 16 ──
     pub ansi_black: HexColor,
@@ -587,6 +591,8 @@ pub struct PartialColors {
     pub search_match_bg: Option<HexColor>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub search_match_active_bg: Option<HexColor>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub search_match_active_fg: Option<HexColor>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ansi_black: Option<HexColor>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -731,6 +737,9 @@ impl ThemeColors {
         if let Some(v) = p.search_match_active_bg {
             self.search_match_active_bg = v;
         }
+        if let Some(v) = p.search_match_active_fg {
+            self.search_match_active_fg = v;
+        }
         if let Some(v) = p.ansi_black {
             self.ansi_black = v;
         }
@@ -827,6 +836,8 @@ pub struct Theme {
     pub vi_cursor_bg: HexColor,
     pub search_match_bg: HexColor,
     pub search_match_active_bg: HexColor,
+    /// 현재(active) 검색 매치 안 셀의 글리프 색. 그 칸에서만 SGR 글자색을 덮어쓴다.
+    pub search_match_active_fg: HexColor,
     pub ansi_black: HexColor,
     pub ansi_red: HexColor,
     pub ansi_green: HexColor,
@@ -1054,6 +1065,7 @@ impl Theme {
             vi_cursor_bg: c.vi_cursor_bg,
             search_match_bg: c.search_match_bg,
             search_match_active_bg: c.search_match_active_bg,
+            search_match_active_fg: c.resolved_search_match_active_fg(),
             ansi_black: c.ansi_black,
             ansi_red: c.ansi_red,
             ansi_green: c.ansi_green,
@@ -1193,6 +1205,7 @@ impl Theme {
             vi_cursor_bg: self.vi_cursor_bg,
             search_match_bg: self.search_match_bg,
             search_match_active_bg: self.search_match_active_bg,
+            search_match_active_fg: self.search_match_active_fg,
             ansi_black: self.ansi_black,
             ansi_red: self.ansi_red,
             ansi_green: self.ansi_green,
@@ -1262,6 +1275,7 @@ impl Theme {
             vi_cursor_bg: self.vi_cursor_bg,
             search_match_bg: self.search_match_bg,
             search_match_active_bg: self.search_match_active_bg,
+            search_match_active_fg: self.search_match_active_fg,
             ansi_black: self.ansi_black,
             ansi_red: self.ansi_red,
             ansi_green: self.ansi_green,
@@ -1846,6 +1860,7 @@ mod tests {
             vi_cursor_bg: c,
             search_match_bg: c,
             search_match_active_bg: c,
+            search_match_active_fg: c,
             ansi_black: c,
             ansi_red: c,
             ansi_green: c,

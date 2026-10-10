@@ -100,6 +100,7 @@ selection_bg = "#585b70"
 vi_cursor_bg = "#b4befe"
 search_match_bg = "#f9e2af4d"          # 8자리 = 마지막 두 자리가 투명도(그 칸의 배경 위에 섞인다)
 search_match_active_bg = "#f9e2afb3"
+search_match_active_fg = "#1e1e2e"     # 지금 결과 안의 글자색. 생략하면 이 값
 
 [ansi]
 black = "#45475a"

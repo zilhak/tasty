@@ -75,7 +75,7 @@ is_light = false      # 선택. 없으면 이전 is_light 보존
 - `hover_overlay`/`active_overlay`/`separator` 같은 반투명 의미색은 TOML 에 없다 — `is_light` 로부터 자동 도출(라이트=검정 +8%/+12%, 다크=흰색 +8%/+12%).
 - UI 크기/간격(`spacing_*`/`border_width`/`item_height_*`/`font_size_*`)도 TOML 에 없다 — 모든 테마 공통 `SIZING` const.
 - **HexColor**: `#RGB` / `#RRGGBB`(alpha=255) / `#RRGGBBAA`. 직렬화는 alpha=255 면 6자리, 아니면 8자리.
-- `[terminal]` 강조색(`selection_bg` · `vi_cursor_bg` · `search_match_bg` · `search_match_active_bg`)의 alpha 는 **그 셀의 배경 위에 합성**된다 — 창 아래가 비치는 것이 아니다([ADR-0035](../../adr/0035-shared-design-and-theme.md)).
+- `[terminal]` 강조색(`selection_bg` · `vi_cursor_bg` · `search_match_bg` · `search_match_active_bg`)의 alpha 는 **그 셀의 배경 위에 합성**된다 — 창 아래가 비치는 것이 아니다([ADR-0035](../../adr/0035-shared-design-and-theme.md)). `search_match_active_fg` 는 불투명 글자색으로, 현재 검색 매치 칸에서만 셀 글자색을 덮어쓴다. 테마 파일에 키가 없으면 Mocha 기본값을 쓰고, 이 키가 없는 직렬화 색 집합(이 필드 이전 host 가 plugin 에 보낸 테마 스냅샷)은 Theme 을 만들 때 base·text 중 active 채움(base 위 합성) 위에서 대비가 큰 색으로 도출한다.
 - **빌트인(`mocha`/`latte`) 파일은 직접 편집하지 말 것** — 앱 소유라 부팅 시 임베드 정본으로 되돌아간다. 커스텀 테마는 별도 id(예: `my-theme.toml`)로 만들고, 기존 테마 위 색 조정은 settings 의 `theme_overrides` 로 한다.
 
 ## 부팅 흐름 (`window_lifecycle.rs::boot_apply_theme`)

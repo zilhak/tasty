@@ -347,7 +347,7 @@ fn set_context_theme_snapshot_round_trips() {
         "yellow":"#f9e2af","peach":"#fab387","mauve":"#cba6f7","teal":"#94e2d5",
         "sky":"#89dceb","lavender":"#b4befe","flamingo":"#f2cdcd","pink":"#f5c2e7",
         "maroon":"#eba0ac","rosewater":"#f5e0dc","selection_bg":"#585b70",
-        "vi_cursor_bg":"#f9e2af","search_match_bg":"#f9e2af","search_match_active_bg":"#fab387",
+        "vi_cursor_bg":"#f9e2af","search_match_bg":"#f9e2af","search_match_active_bg":"#fab387","search_match_active_fg":"#1e1e2e",
         "ansi_black":"#45475a","ansi_red":"#f38ba8","ansi_green":"#a6e3a1","ansi_yellow":"#f9e2af",
         "ansi_blue":"#89b4fa","ansi_magenta":"#f5c2e7","ansi_cyan":"#94e2d5","ansi_white":"#bac2de",
         "ansi_bright_black":"#585b70","ansi_bright_red":"#f38ba8","ansi_bright_green":"#a6e3a1",
@@ -374,6 +374,43 @@ fn set_context_theme_snapshot_round_trips() {
     assert!(!t.is_light);
     assert_eq!(t.ui_zoom, 1.25);
     assert_eq!(t.colors, params.theme.unwrap().colors);
+}
+
+/// search_match_active_fg 가 생기기 전의 host 가 보낸 색 집합도 읽히고, 그 글자색은
+/// active 채움 위에서 base·text 중 대비가 큰 색으로 도출된다.
+#[test]
+fn theme_colors_without_active_match_ink_still_deserialize() {
+    use tasty_type_appearance::theme::{Theme, ThemeColors};
+    const OLD_HOST_COLORS_JSON: &str = r##"{
+        "crust":"#11111b","mantle":"#181825","base":"#1e1e2e","surface0":"#313244",
+        "surface1":"#45475a","surface2":"#585b70","overlay0":"#6c7086","overlay1":"#7f849c",
+        "overlay2":"#9399b2","text":"#cdd6f4","subtext1":"#bac2de","subtext0":"#a6adc8",
+        "placeholder":"#9399b2","blue":"#89b4fa","green":"#a6e3a1","red":"#f38ba8",
+        "yellow":"#f9e2af","peach":"#fab387","mauve":"#cba6f7","teal":"#94e2d5",
+        "sky":"#89dceb","lavender":"#b4befe","flamingo":"#f2cdcd","pink":"#f5c2e7",
+        "maroon":"#eba0ac","rosewater":"#f5e0dc","selection_bg":"#585b70",
+        "vi_cursor_bg":"#f9e2af","search_match_bg":"#f9e2af4d","search_match_active_bg":"#f9e2afb3",
+        "ansi_black":"#45475a","ansi_red":"#f38ba8","ansi_green":"#a6e3a1","ansi_yellow":"#f9e2af",
+        "ansi_blue":"#89b4fa","ansi_magenta":"#f5c2e7","ansi_cyan":"#94e2d5","ansi_white":"#bac2de",
+        "ansi_bright_black":"#585b70","ansi_bright_red":"#f38ba8","ansi_bright_green":"#a6e3a1",
+        "ansi_bright_yellow":"#f9e2af","ansi_bright_blue":"#89b4fa","ansi_bright_magenta":"#f5c2e7",
+        "ansi_bright_cyan":"#94e2d5","ansi_bright_white":"#a6adc8"
+    }"##;
+    let mocha: ThemeColors = serde_json::from_str(OLD_HOST_COLORS_JSON).unwrap();
+    let theme = Theme::with_colors(mocha.clone(), false);
+    assert_eq!(theme.search_match_active_fg, mocha.base);
+
+    // 밝은 테마(Latte 원색, 이전 host 의 70% 채움)는 text 가 고른다.
+    let latte_json = OLD_HOST_COLORS_JSON
+        .replace("\"base\":\"#1e1e2e\"", "\"base\":\"#eff1f5\"")
+        .replace("\"text\":\"#cdd6f4\"", "\"text\":\"#4c4f69\"")
+        .replace(
+            "\"search_match_active_bg\":\"#f9e2afb3\"",
+            "\"search_match_active_bg\":\"#df8e1db3\"",
+        );
+    let latte: ThemeColors = serde_json::from_str(&latte_json).unwrap();
+    let theme = Theme::with_colors(latte.clone(), true);
+    assert_eq!(theme.search_match_active_fg, latte.text);
 }
 
 #[test]

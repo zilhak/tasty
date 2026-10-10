@@ -73,6 +73,7 @@ pub struct TerminalSection {
     pub vi_cursor_bg: Option<HexColor>,
     pub search_match_bg: Option<HexColor>,
     pub search_match_active_bg: Option<HexColor>,
+    pub search_match_active_fg: Option<HexColor>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -142,6 +143,7 @@ impl ThemeFile {
             vi_cursor_bg: self.terminal.vi_cursor_bg,
             search_match_bg: self.terminal.search_match_bg,
             search_match_active_bg: self.terminal.search_match_active_bg,
+            search_match_active_fg: self.terminal.search_match_active_fg,
             ansi_black: self.ansi.black,
             ansi_red: self.ansi.red,
             ansi_green: self.ansi.green,

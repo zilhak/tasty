@@ -132,6 +132,7 @@ impl GpuState {
                         active_index: s.current_index,
                         inactive_bg: theme.search_match_bg.to_gpu_rgba(),
                         active_bg: theme.search_match_active_bg.to_gpu_rgba(),
+                        active_fg: theme.search_match_active_fg.to_gpu_rgba(),
                     });
                 let search_ref = search_highlights.as_ref();
 

@@ -396,6 +396,13 @@ pub fn terminal(ui: &mut egui::Ui, theme: &Theme) {
                 "search-match-active-bg",
                 "the current / active match",
             );
+            sem_row(
+                ui,
+                theme,
+                ec(theme.search_match_active_fg),
+                "search-match-active-fg",
+                "cell ink inside the active match",
+            );
         });
     });
 
@@ -423,6 +430,16 @@ pub fn terminal(ui: &mut egui::Ui, theme: &Theme) {
                 ec(theme.search_match_active_bg),
             ),
         ],
+    );
+    note(
+        ui,
+        theme,
+        "Active match ink. Glyphs inside the active match are drawn in search-match-active-fg, \
+         not the cell's own foreground: Mocha's light text on yellow 70% was 1.61 : 1. Mocha ink \
+         → neutral-200 (base) 6.95 : 1. Latte keeps text-primary ink and drops the active fill \
+         to 50% → 4.68 : 1 (70% was 3.94). Ordinary matches (30%) keep the cell's own colours: \
+         Mocha 4.75 · Latte 5.50. Cell colours set by the app (SGR) are overridden only inside \
+         the active match.",
     );
     dont(
         ui,
@@ -555,7 +572,7 @@ fn faux_terminal(ui: &mut egui::Ui, theme: &Theme) {
                     ui,
                     "active match",
                     Some(ec(theme.search_match_active_bg)),
-                    fg,
+                    ec(theme.search_match_active_fg),
                 );
                 seg(ui, " sit ", None, fg);
                 // vi 블록 커서: 밝은 채움 위 어두운 글리프.

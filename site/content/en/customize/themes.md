@@ -1,4 +1,4 @@
-<!-- source-hash: c2f52eb1b2d2 -->
+<!-- source-hash: 183de2a36934 -->
 # Themes
 
 Choose the light Latte theme or the dark Mocha theme. Adjust a few colours, or make your own theme in a TOML file. Theme files live in `~/.tasty/themes/`.
@@ -101,6 +101,7 @@ selection_bg = "#585b70"
 vi_cursor_bg = "#b4befe"
 search_match_bg = "#f9e2af4d"          # 8 digits = last two are opacity (blended over the cell background)
 search_match_active_bg = "#f9e2afb3"
+search_match_active_fg = "#1e1e2e"     # text inside the current match. This value when omitted
 
 [ansi]
 black = "#45475a"

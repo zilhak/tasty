@@ -29,6 +29,28 @@ pub struct SearchHighlights<'a> {
     pub active_index: usize,
     pub inactive_bg: GpuRgba,
     pub active_bg: GpuRgba,
+    /// 현재 매치 안 글리프 색. 셀 자신의 글자색(SGR)을 그 칸에서만 덮어쓴다.
+    pub active_fg: GpuRgba,
+}
+
+impl SearchHighlights<'_> {
+    /// 칸이 매치 안이면 강조색을 배경에 합성하고, 현재 매치면 글자색도 바꾼다.
+    /// 나머지 매치는 셀 자신의 글자색을 유지한다.
+    fn paint(&self, col: usize, row: usize, bg: &mut GpuRgba, fg: &mut GpuRgba) {
+        let Some(i) = self
+            .matches
+            .iter()
+            .position(|m| m.row == row && col >= m.col_start && col < m.col_end)
+        else {
+            return;
+        };
+        if i == self.active_index {
+            *bg = composite_over(self.active_bg, *bg);
+            *fg = self.active_fg;
+        } else {
+            *bg = composite_over(self.inactive_bg, *bg);
+        }
+    }
 }
 
 /// How the text cursor cell is painted, derived from DECSCUSR (`cursor_shape()`).
@@ -382,17 +404,7 @@ impl CellRenderer {
                     fg_color = link.fg;
                 }
                 if let Some(sh) = search {
-                    for (i, m) in sh.matches.iter().enumerate() {
-                        if m.row == abs_row && col_idx >= m.col_start && col_idx < m.col_end {
-                            let highlight = if i == sh.active_index {
-                                sh.active_bg
-                            } else {
-                                sh.inactive_bg
-                            };
-                            bg_color = composite_over(highlight, bg_color);
-                            break;
-                        }
-                    }
+                    sh.paint(col_idx, abs_row, &mut bg_color, &mut fg_color);
                 }
 
                 self.bg_instances.push(BgInstance {
@@ -766,4 +778,47 @@ fn clip_scissor(
     let w = (viewport.width.value().max(1.0) as u32).min(max_w).max(1);
     let h = (viewport.height.value().max(1.0) as u32).min(max_h).max(1);
     (x, y, w, h)
+}
+
+#[cfg(test)]
+mod search_paint_tests {
+    use super::*;
+    use tasty_terminal::search::SearchMatch;
+
+    fn rgba(v: f32) -> GpuRgba {
+        GpuRgba::dangerously_force_from_array([v, v, v, 1.0])
+    }
+
+    /// 현재 매치 칸만 글자색이 active-fg 로 바뀌고, 나머지 매치와 매치 밖 칸은 셀 글자색을 지킨다.
+    #[test]
+    fn only_the_active_match_overrides_the_cell_ink() {
+        let matches = [
+            SearchMatch {
+                row: 3,
+                col_start: 0,
+                col_end: 2,
+            },
+            SearchMatch {
+                row: 3,
+                col_start: 5,
+                col_end: 7,
+            },
+        ];
+        let sh = SearchHighlights {
+            epoch: tasty_terminal::ContentEpoch::default(),
+            matches: &matches,
+            active_index: 1,
+            inactive_bg: rgba(0.3),
+            active_bg: rgba(0.7),
+            active_fg: rgba(0.1),
+        };
+        let cell = |col: usize| {
+            let (mut bg, mut fg) = (rgba(0.0), rgba(0.9));
+            sh.paint(col, 3, &mut bg, &mut fg);
+            (bg, fg)
+        };
+        assert_eq!(cell(6), (rgba(0.7), rgba(0.1)));
+        assert_eq!(cell(1), (rgba(0.3), rgba(0.9)));
+        assert_eq!(cell(3), (rgba(0.0), rgba(0.9)));
+    }
 }

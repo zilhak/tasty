@@ -49,6 +49,7 @@ pub fn mocha_fallback_colors() -> ThemeColors {
         vi_cursor_bg: HexColor::from_rgb(0xb4, 0xbe, 0xfe), // = lavender
         search_match_bg: HexColor::from_rgba(0xf9, 0xe2, 0xaf, 0x4d), // yellow @ ~30%
         search_match_active_bg: HexColor::from_rgba(0xf9, 0xe2, 0xaf, 0xb3), // yellow @ ~70%
+        search_match_active_fg: HexColor::from_rgb(0x1e, 0x1e, 0x2e), // = base
         // ANSI 16
         ansi_black: HexColor::from_rgb(0x45, 0x47, 0x5a), // surface1
         ansi_red: HexColor::from_rgb(0xf3, 0x8b, 0xa8),

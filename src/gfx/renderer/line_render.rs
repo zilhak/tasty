@@ -53,17 +53,7 @@ impl CellRenderer {
             fg_color = link.fg;
         }
         if let Some(sh) = search {
-            for (i, m) in sh.matches.iter().enumerate() {
-                if m.row == absolute_row && col_idx >= m.col_start && col_idx < m.col_end {
-                    let highlight = if i == sh.active_index {
-                        sh.active_bg
-                    } else {
-                        sh.inactive_bg
-                    };
-                    bg_color = composite_over(highlight, bg_color);
-                    break;
-                }
-            }
+            sh.paint(col_idx, absolute_row, &mut bg_color, &mut fg_color);
         }
 
         let off = self.current_viewport_offset;
