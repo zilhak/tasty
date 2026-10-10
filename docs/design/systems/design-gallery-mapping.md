@@ -302,6 +302,7 @@ Spec 하나가 갤러리 예제 둘이거나, 둘이 하나이거나, 경계가 
 | `gallery/explorer-ops-parts.jsx` "Drag chip — one item · many items · move / copy / refused" · "Drop targets — folder row · grid cell · tree node · favorite · current folder" · "Files from the OS — copy into the explorer, not open" | `explorer-ops-drag` | 디자인 세 Spec ↔ 갤러리 하나. 칩은 공용 `drag_chip`, 대상 표시는 `paint_drop_target` |
 | `gallery/explorer-ops-b11.jsx` "Requests refused — queue full · request too large" | `explorer-ops-refused` | 카드는 공용 `result_card`. 본체는 칸 안 상태줄 위에 경고 카드로 띄우고, Show queue 는 그 칸의 작업이 돌 때만 붙는다 |
 | `gallery/explorer-ops-b11.jsx` "Retry of originals — its own progress words · one result card · leftover reasons" | `explorer-ops-remove-originals` | 상태줄은 공용 `op_status_line`, 카드는 `result_card` |
+| `gallery/explorer-ops-b11.jsx` "Keyboard current item" · "Drag-select rectangle" | `explorer-keyboard-select` | 디자인 두 Spec ↔ 갤러리 하나. 테두리는 공용 `paint_cursor_ring`, 사각형은 `paint_marquee`(본체 `view/cursor.rs`·`view/marquee.rs` 와 같은 함수) |
 | `gallery/plugins.jsx` "HTML — webview chrome (4 states)" | `html-chrome` | [surface viewers](#surface-viewers-plugins) |
 | `gallery/plugins.jsx` "HTML — settings (Appearance › HTML viewer)" | `plugin-settings` (Components) | [플러그인 설정 페이지](#플러그인-설정-페이지) |
 | `gallery/plugins.jsx` "Image — viewer & edit (paint) modes" | `image-viewer` · `image-paint` | [surface viewers](#surface-viewers-plugins)(디자인 한 Spec ↔ 갤러리 둘) |

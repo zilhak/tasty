@@ -146,16 +146,8 @@ fn free_spot(ctx: &egui::Context, list: egui::Rect, drawn: &[Drawn], at: egui::P
 }
 
 fn paint(ui: &egui::Ui, theme: &Theme, rect: egui::Rect, list: egui::Rect) {
-    let fill = theme.explorer_marquee_bg().to_egui();
-    let border = theme.explorer_marquee_border().to_egui();
     let painter = ui.ctx().layer_painter(ui.layer_id()).with_clip_rect(list);
-    painter.rect_filled(rect, 0.0, fill);
-    painter.rect_stroke(
-        rect,
-        0.0,
-        egui::Stroke::new(theme.border_width.value(), border),
-        egui::StrokeKind::Inside,
-    );
+    tasty_ui_widgets::paint_marquee(&painter, theme, rect);
 }
 
 #[cfg(test)]

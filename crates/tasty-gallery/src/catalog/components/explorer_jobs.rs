@@ -657,7 +657,7 @@ pub fn draw_drag(ui: &mut egui::Ui, theme: &Theme) {
 }
 
 /// explorer 절에 더하는 파일 작업 예제들. 동결된 catalog.rs 를 늘리지 않도록 여기에 둔다.
-pub fn specs() -> [crate::catalog::Spec; 7] {
+pub fn specs() -> [crate::catalog::Spec; 8] {
     use crate::catalog::Spec;
     [
         Spec {
@@ -701,6 +701,12 @@ pub fn specs() -> [crate::catalog::Spec; 7] {
             title: "Retry of originals — checking · removing · removed · kept",
             when: Some("own progress and result words · one card per Retry press"),
             draw: originals::draw_remove_originals,
+        },
+        Spec {
+            id: "explorer-keyboard-select",
+            title: "Keyboard current item · drag-select rectangle",
+            when: Some("the ring after a key · the rectangle while dragging from empty space"),
+            draw: super::explorer_select::draw,
         },
     ]
 }

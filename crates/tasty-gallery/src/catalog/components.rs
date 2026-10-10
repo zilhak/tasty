@@ -19,6 +19,7 @@ pub mod explorer_file_info;
 pub mod explorer_jobs;
 pub mod explorer_ops;
 pub mod explorer_rename_popup;
+pub mod explorer_select;
 pub mod explorer_sidebar;
 pub mod explorer_states;
 pub mod explorer_surface;

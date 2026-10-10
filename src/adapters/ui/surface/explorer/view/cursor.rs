@@ -168,17 +168,11 @@ pub(crate) fn frame(ui: &egui::Ui, theme: &Theme, view: &mut ExplorerView, drawn
     let Some(cell) = drawn.iter().find(|d| d.path == item) else {
         return;
     };
-    let width = theme.explorer_cursor_ring_width().value();
     let painter = ui
         .ctx()
         .layer_painter(ui.layer_id())
         .with_clip_rect(cell.shown);
-    painter.rect_stroke(
-        cell.rect,
-        theme.corner_radius_sm.value(),
-        egui::Stroke::new(width, theme.explorer_cursor_ring().to_egui()),
-        egui::StrokeKind::Inside,
-    );
+    tasty_ui_widgets::paint_cursor_ring(&painter, theme, cell.rect);
 }
 
 #[cfg(test)]
