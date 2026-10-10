@@ -355,7 +355,6 @@ fn draw_panel(
             .max_rect(body.shrink(pad))
             .layout(egui::Layout::top_down(egui::Align::Min)),
     );
-    let max_too_large = format!("{} MB", PREVIEW_MAX_BYTES >> 20);
     match &mut pane.body {
         Body::Text(text) => {
             let g = ui.painter().layout_no_wrap(
@@ -424,10 +423,7 @@ fn draw_panel(
         ),
         Body::TooLarge(by) => {
             let (sub, reason) = match by {
-                TooLarge::Bytes => (
-                    t_fmt("explorer.preview.too_large_sub", &max_too_large),
-                    None,
-                ),
+                TooLarge::Bytes => (bytes_sub(), None),
                 TooLarge::Pixels(size) => (pixels_sub(), size.map(pixel_size_text)),
             };
             state_screen::show_preview_state(
@@ -454,12 +450,22 @@ fn several_title(count: usize) -> String {
     t("explorer.preview.multi").replace("{n}", &count.to_string())
 }
 
+/// 이진 단위 크기. 숫자와 단위가 줄바꿈으로 갈리지 않게 NBSP 로 잇는다.
+fn mib(bytes: u64) -> String {
+    format!("{}\u{a0}MiB", bytes >> 20)
+}
+
+/// 바이트 상한 보조 줄("Over 1 MiB.").
+fn bytes_sub() -> String {
+    t_fmt("explorer.preview.too_large_sub", &mib(PREVIEW_MAX_BYTES))
+}
+
 /// 픽셀 상한 보조 줄. 디코딩 메모리는 이진 단위 MiB 로 쓴다.
 fn pixels_sub() -> String {
     t_fmt2(
         "explorer.preview.too_large_pixels_sub",
         &MAX_IMAGE_SIDE.to_string(),
-        &format!("{}\u{a0}MiB", MAX_DECODE_ALLOC >> 20),
+        &mib(MAX_DECODE_ALLOC),
     )
 }
 
@@ -510,6 +516,7 @@ mod tests {
             pixels_sub(),
             "Over 16384\u{a0}px on a side, or needs more than 256\u{a0}MiB to decode."
         );
+        assert_eq!(bytes_sub(), "Over 1\u{a0}MiB.");
         assert_eq!(pixel_size_text([20000, 14000]), "20000 × 14000\u{a0}px");
     }
 

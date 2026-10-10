@@ -530,6 +530,7 @@ fn preview_panel(ui: &mut egui::Ui, theme: &Theme, kind: PreviewKind, height: f3
                 "16384",
                 "256\u{a0}MiB",
             );
+            let bytes_sub = t_fmt("explorer.preview.too_large_sub", "1\u{a0}MiB");
             let several = t("explorer.preview.multi").replace("{n}", "3");
             let cell = match kind {
                 PreviewKind::Loading => StateCell {
@@ -544,7 +545,7 @@ fn preview_panel(ui: &mut egui::Ui, theme: &Theme, kind: PreviewKind, height: f3
                     glyph: StateGlyph::Icon(icons::FILE),
                     tone: Tone::Neutral,
                     title: t("explorer.preview.too_large"),
-                    sub: Some("Over 1 MB."),
+                    sub: Some(&bytes_sub),
                     reason: None,
                     actions: &[],
                 },
