@@ -8,6 +8,7 @@ use tasty_ui_widgets::{ControlSize, IconButton, Input, PathField, autocomplete_d
 
 use super::glyph;
 use crate::catalog::spec::{StageVariant, TokenChip, cluster, meta, stage};
+use crate::i18n::t;
 
 /// 최근 디렉토리 후보(explorer 컨텍스트).
 const PF_DIRS: &[&str] = &[
@@ -109,8 +110,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "explorer · interactive — click to edit",
                 |ui| {
                     PathField::new("pf_live_dirs")
-                        .placeholder("Go to directory…")
-                        .empty_label("No matching path")
+                        .placeholder(t("explorer.address.placeholder"))
+                        .empty_label(t("explorer.address.empty"))
                         .width(total_w)
                         .leading_icon(&folder_icon)
                         .row_icon(&folder_icon)

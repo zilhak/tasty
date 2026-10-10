@@ -127,14 +127,10 @@ src/catalog/components/explorer_states/popups.rs	Name	explorer.column.name,filep
 src/catalog/components/explorer_states/popups.rs	Rename	context_menu.rename_title,explorer.context_menu.rename,explorer.popup.rename.rename,explorer.popup.rename.title,preset.toolbar.rename
 src/catalog/components/explorer_surface.rs	Archive	explorer.kind.archive
 src/catalog/components/explorer_surface.rs	Folder	explorer.type.folder
-src/catalog/components/explorer_surface.rs	Go to directory…	explorer.address.placeholder
 src/catalog/components/explorer_surface.rs	Markdown	explorer.kind.markdown
-src/catalog/components/explorer_surface.rs	No matching path	explorer.address.empty
 src/catalog/components/explorer_surface.rs	PDF document	explorer.kind.pdf
 src/catalog/components/explorer_surface.rs	—	dag.detail.none,port_scanner.external_dash
 src/catalog/components/explorer_tab_bar.rs	close	command_palette.hint_close
-src/catalog/components/explorer_toolbar.rs	Go to directory…	explorer.address.placeholder
-src/catalog/components/explorer_toolbar.rs	No matching path	explorer.address.empty
 src/catalog/components/explorer_view_cells.rs	Date modified	explorer.column.modified
 src/catalog/components/explorer_view_cells.rs	Folder	explorer.type.folder
 src/catalog/components/explorer_view_cells.rs	Name	explorer.column.name,filepicker.column.name,remote_tool.field_name
@@ -344,7 +340,6 @@ src/catalog/components/preset_view.rs	Workspace	port_scanner.column_workspace,pr
 src/catalog/components/preset_view.rs	run	command_palette.hint_run
 src/catalog/components/preset_view.rs	saved automatically	preset.toolbar.saved
 src/catalog/components/preset_view.rs	{} presets	preset.header.count
-src/catalog/components/prim_autocomplete.rs	Go to directory…	explorer.address.placeholder
 src/catalog/components/prim_autocomplete.rs	No matching path	explorer.address.empty
 src/catalog/components/prim_button.rs	Cancel	button.cancel,explorer.op.cancel,image_viewer.cancel,preset.popup.cancel_button,quit_modal.cancel_button,remote_attach.cancel,remote_tool.cancel,transfer.progress.cancel
 src/catalog/components/prim_button.rs	Disabled	plugins.disabled
@@ -421,7 +416,6 @@ src/catalog/components/prim_nav.rs	New tab	explorer.tab.new
 src/catalog/components/prim_nav.rs	Quit	button.quit,db_error.quit,quit_modal.quit_button,settings.general.close_behavior_quit,tray.quit
 src/catalog/components/prim_nav.rs	disabled	settings.file_handler.common.disabled
 src/catalog/components/prim_path_field.rs	Go	explorer.address.go
-src/catalog/components/prim_path_field.rs	Go to directory…	explorer.address.placeholder
 src/catalog/components/prim_path_field.rs	No matching path	explorer.address.empty
 src/catalog/components/prim_spinner.rs	Collecting…	port_scanner.loading
 src/catalog/components/prim_tab.rs	close	command_palette.hint_close

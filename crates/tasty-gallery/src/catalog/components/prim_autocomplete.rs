@@ -8,6 +8,7 @@ use tasty_ui_widgets::{AutoComplete, Input, MatchMode, autocomplete_dropdown};
 
 use super::glyph;
 use crate::catalog::spec::{StageVariant, TokenChip, cluster, meta, stage};
+use crate::i18n::t;
 
 /// 최근 디렉토리 후보(explorer 컨텍스트). 뒤쪽 항목은 폭을 넘겨 middle-ellipsis 를 보여준다.
 const AC_DIRS: &[&str] = &[
@@ -199,8 +200,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     AutoComplete::new("ac_live_dirs")
                         .mono(true)
                         .match_mode(MatchMode::Substring)
-                        .placeholder("Go to directory…")
-                        .empty_label("No matching path")
+                        .placeholder(t("explorer.address.placeholder"))
+                        .empty_label(t("explorer.address.empty"))
                         .width(field_w)
                         .icon(&folder_icon)
                         .row_icon(&folder_icon)

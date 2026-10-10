@@ -903,10 +903,10 @@ up = "上へ"
 refresh = "更新"
 
 [explorer.address]
-placeholder = "ディレクトリへ移動…"
+placeholder = "フォルダーまたはファイルへ移動…"
 go = "移動"
 empty = "一致するパスがありません"
-not_found = "フォルダーが見つかりません: {}"
+not_found = "パスが見つかりません: {}"
 unreadable = "開けません: {} ({})"
 no_home = "~ を展開するホームフォルダーが見つかりません。"
 remote_home = "リモートコンピューターのホームフォルダーがまだわかりません。リモートのパスをすべて入力してください。"

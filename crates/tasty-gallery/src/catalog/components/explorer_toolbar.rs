@@ -8,6 +8,7 @@ use tasty_ui_widgets::PathField;
 use super::glyph;
 use crate::catalog::icons::{LAYOUT_DETAIL, LAYOUT_GRID, LIST, MockGlyph};
 use crate::catalog::spec::{StageVariant, TokenChip, cluster, meta, note, stage};
+use crate::i18n::t;
 
 /// 최근 디렉토리 후보(design ExpToolbar `PathField candidates`).
 const EXP_RECENT: &[&str] = &[
@@ -55,8 +56,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                         active: None,
                     });
                     PathField::new("gallery_exp_addr")
-                        .placeholder("Go to directory…")
-                        .empty_label("No matching path")
+                        .placeholder(t("explorer.address.placeholder"))
+                        .empty_label(t("explorer.address.empty"))
                         .leading_icon(&folder_icon)
                         .row_icon(&folder_icon)
                         .go_icon(&go_icon)

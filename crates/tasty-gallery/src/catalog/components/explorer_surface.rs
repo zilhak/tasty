@@ -14,6 +14,7 @@ use super::explorer_view_cells::{DetailRow, Kind, detail_table};
 use super::glyph;
 use crate::catalog::icons::{self, MockGlyph};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
+use crate::i18n::t;
 
 /// 시안 `ExplorerFrame` 의 최대 폭과 높이(`maxWidth: 760` · `height: 420`). 전시 치수다.
 const FRAME_W: LogicalPx = LogicalPx(760.0);
@@ -262,8 +263,8 @@ pub(super) fn path_field(ui: &mut egui::Ui, theme: &Theme, id: &str, path: &str)
     let mut editing = false;
     let mut active = None;
     PathField::new(id)
-        .placeholder("Go to directory…")
-        .empty_label("No matching path")
+        .placeholder(t("explorer.address.placeholder"))
+        .empty_label(t("explorer.address.empty"))
         .leading_icon(&folder_icon)
         .row_icon(&folder_icon)
         .go_icon(&go_icon)

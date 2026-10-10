@@ -903,10 +903,10 @@ up = "위로"
 refresh = "새로고침"
 
 [explorer.address]
-placeholder = "디렉토리로 이동…"
+placeholder = "폴더나 파일로 이동…"
 go = "이동"
 empty = "일치하는 경로 없음"
-not_found = "폴더를 찾을 수 없습니다: {}"
+not_found = "경로를 찾을 수 없습니다: {}"
 unreadable = "열 수 없습니다: {} ({})"
 no_home = "~ 를 펼칠 홈 폴더를 찾지 못했습니다."
 remote_home = "원격 컴퓨터의 홈 폴더를 아직 알 수 없습니다. 원격 경로를 전부 입력하세요."
