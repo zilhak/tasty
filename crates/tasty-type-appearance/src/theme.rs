@@ -230,7 +230,7 @@ pub const TINT_BORDER_ALPHA: f32 = 0.36;
 /// 불투명한 두 색의 CSS color-mix(in srgb)에 맞춰 RGB 채널을 보간한다.
 /// 반환값의 alpha는 b를 그대로 사용한다.
 #[allow(clippy::disallowed_methods)] // reason: 디자인 토큰 color-mix 식의 유일한 구현부
-fn mix_srgb(a: HexColor, ratio: f32, b: HexColor) -> HexColor {
+pub(crate) fn mix_srgb(a: HexColor, ratio: f32, b: HexColor) -> HexColor {
     let t = ratio.clamp(0.0, 1.0);
     let ch = |x: u8, y: u8| (f32::from(x) * t + f32::from(y) * (1.0 - t)).round() as u8;
     HexColor::from_rgba(ch(a.r(), b.r()), ch(a.g(), b.g()), ch(a.b(), b.b()), b.a())

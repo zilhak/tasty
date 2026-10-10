@@ -6,6 +6,7 @@
 //! 본체 호출자가 아직 없는 경우도 허용한다. 같은 UI를 다시 구현하지 않고 공용 함수를 사용한다.
 //! 기준은 docs/architecture/ui-widgets-crate.md와 docs/dev-guide/gallery-first.md를 따른다.
 
+mod approval_choice;
 mod attach_refusal;
 mod attach_size_sync;
 mod attention;
@@ -85,6 +86,7 @@ mod tree_row;
 mod two_depth;
 mod ui_code;
 mod warning_callout;
+pub use approval_choice::approval_choice;
 pub use attach_refusal::{
     AttachRefusalBannerClicks, AttachRefusalBannerView, attach_refusal_avatar_tooltip,
     attach_refusal_banner, attach_refusal_banner_content, attach_refusal_mark,

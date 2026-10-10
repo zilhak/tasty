@@ -159,13 +159,9 @@ pub fn draw_approval_view(
             } else {
                 choice.label.clone()
             };
-            let mut btn = egui::Button::new(
-                egui::RichText::new(label_text).size(theme.button_font_size().value()),
-            );
-            if choice.destructive {
-                btn = btn.fill(theme.accent_danger().to_egui().linear_multiply(0.18));
-            }
-            if ui.add(btn).clicked() {
+            if tasty_ui_widgets::approval_choice(ui, theme, &label_text, choice.destructive)
+                .clicked()
+            {
                 action = ApprovalViewAction::Chosen {
                     key: choice.key.clone(),
                 };

@@ -56,6 +56,13 @@ pub fn with_popover_frame_ring<R>(
 
 /// Theme를 egui에 적용한다. Theme에 이미 UI 배율이 반영되어 있어야 한다.
 pub fn apply_theme_to_egui(theme: &Theme, ctx: &egui::Context) {
+    ctx.set_visuals(theme_visuals(theme));
+    apply_theme_style(theme, ctx);
+}
+
+/// Theme 의 egui 색 설정. 다른 테마로 고정해 그리는 영역(갤러리의 테마별 열)은
+/// 이 값을 `Ui` 스코프에만 적용한다.
+pub fn theme_visuals(theme: &Theme) -> egui::Visuals {
     // 직접 지정하지 않는 필드도 테마 밝기에 맞도록 기본값을 선택한다.
     let mut visuals = if theme.is_light {
         egui::Visuals::light()
@@ -123,9 +130,10 @@ pub fn apply_theme_to_egui(theme: &Theme, ctx: &egui::Context) {
     // 깜박이면 포커스된 입력란이 있는 동안 유휴 상태에서도 0.5초마다 프레임을 그린다.
     visuals.text_cursor.blink = false;
     visuals.text_cursor.stroke = stroke1(theme, theme.text_primary());
+    visuals
+}
 
-    ctx.set_visuals(visuals);
-
+fn apply_theme_style(theme: &Theme, ctx: &egui::Context) {
     let mut style = (*ctx.style()).clone();
     style.text_styles.insert(
         egui::TextStyle::Body,

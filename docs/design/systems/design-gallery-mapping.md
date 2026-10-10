@@ -272,6 +272,7 @@ Spec 하나가 갤러리 예제 둘이거나, 둘이 하나이거나, 경계가 
 | `gallery/overlays-dialogs.jsx` "Scope — a surface-bound popup dims its surface, not the window" | `scrim-scope` | 디자인의 rejected 비교 두 장(window scrim·scrim 없음)은 갤러리에 없고 "window scope" 장을 둔다 |
 | `gallery/overlays-dialogs.jsx` "Both split directions, a clamped popup, and a child picker" | `scrim-scope`(top/bottom split · narrow clamp) · `scrim-scope-child` | 디자인 두 Spec 과 갤러리 두 예제의 경계가 다르다(N:M) |
 | `gallery/overlays-dialogs.jsx` "Approval popup — the mauve gate" | `approval` |  |
+| `gallery/overlays-dialogs.jsx` "Danger choice — tinted fill with readable ink (2026-10-10 b12)" | `approval` | 같은 예제 페이지 아래 단. 선택지는 본체와 같은 `approval_choice` 가 그린다 |
 | `gallery/overlays-dialogs.jsx` "New / rename category — the Rename dialog, reused" | `workspace-categories` | [workspace-category](#workspace-category-layouts--overlays) `CategoryEditFrame` 행 |
 | `gallery/overlays-popups.jsx` "Tab switch overlay — modifier held" | `switch-tab` | [switch_overlay](#switch_overlay-overlays) |
 | `gallery/overlays-popups.jsx` "Workspace switch overlay — modifier held" | `switch-ws` | [switch_overlay](#switch_overlay-overlays) |

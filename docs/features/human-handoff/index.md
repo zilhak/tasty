@@ -27,6 +27,8 @@
 
 popup 은 `pending_approval_ids` 큐의 head 를 그리고, 응답 시 pop 하고 다음으로 자동 이동. **Esc 는 의도적으로 차단**(우회 응답 방지).
 
+`destructive` 로 표시한 선택지는 위험 선택지로 그린다. 채움은 accent-danger 12% 를 bg-panel 에 섞은 불투명 색(`approval-danger-bg`)이고, 1px accent-danger 테두리(`approval-danger-border`)와 text-primary 글자(`approval-danger-fg`)를 쓴다. 뒤 배경과 관계없이 글자 대비는 Mocha 9.18 · Latte 5.80 이다. hover·누름은 일반 버튼 overlay 를 그 채움 위에 얹는다. 본체와 갤러리는 같은 `tasty_ui_widgets::approval_choice` 로 선택지를 그린다.
+
 ### 응답 규칙
 
 self-response(같은 plugin 이 자기 요청에 응답)는 `-32011`, 이미 종료된 요청은 `-32010`. `approval.await` 는 local-only(plugin 호출 deadlock 방지) — `outcome ∈ {responded, timed_out, cancelled}`.

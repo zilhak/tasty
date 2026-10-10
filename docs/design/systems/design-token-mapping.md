@@ -139,6 +139,16 @@ surface 경계 30% 존을 hover 할 때 뜨는 밴드+분할선 색. accent-prim
 | `--tasty-explorer-marquee-bg` | `color-mix(accent-primary × tint-fill-alpha, transparent)` | `Theme::explorer_marquee_bg()` = `accent_primary().with_alpha(31)` | 12%×255≈31. `EXPLORER_MARQUEE_BG_ALPHA` |
 | `--tasty-explorer-marquee-border` | `color-mix(accent-primary × tint-border-alpha, transparent)` | `Theme::explorer_marquee_border()` = `accent_primary().with_alpha(92)` | 36%×255≈92. `EXPLORER_MARQUEE_BORDER_ALPHA`. 시험이 두 알파가 `TINT_FILL_ALPHA`·`TINT_BORDER_ALPHA`의 반올림과 같은지 확인한다 |
 
+## 승인 위험 선택지
+
+`--tasty-approval-danger-bg`는 accent-danger를 tint-fill 비율로 bg-panel에 섞는 불투명 식이라 생성기가 건너뛴다. DAG 상태 채움과 같은 `mix_srgb`로 계산하는 수기 접근자를 `crates/tasty-type-appearance/src/approval_danger.rs` 에 둔다. 테두리·글자색은 생성 접근자다. 동작은 [Human handoff](../../features/human-handoff/index.md#severity-별-표시)에 있다.
+
+| 디자인 토큰 | 디자인 체인 | tasty Theme | 비고 |
+|---|---|---|---|
+| `--tasty-approval-danger-bg` | `color-mix(accent-danger × tint-fill-alpha, bg-panel)` | `Theme::approval_danger_bg()` = `mix_srgb(accent_danger(), TINT_FILL_ALPHA, bg_panel())` | 불투명. Mocha (56,43,61) · Latte (236,214,222). 시험이 두 테마 값을 확인한다 |
+| `--tasty-approval-danger-border` | `accent-danger` | `Theme::approval_danger_border()` | 생성 접근자. 1px |
+| `--tasty-approval-danger-fg` | `text-primary` | `Theme::approval_danger_fg()` | 생성 접근자 |
+
 ## preset leaf value summary (preset-editor 미선택 leaf 값 요약)
 
 디자인 `tokens/components.css:335-339`·`tokens/tasty.tokens.json:2007-2023` 의
