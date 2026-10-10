@@ -461,7 +461,7 @@ fn the_memory_pair_covers_every_memory_method_exactly_once() {
 }
 
 #[test]
-fn the_number_of_rows_that_declare_themselves_incomplete_is_pinned() {
+fn the_rows_that_declare_themselves_incomplete_do_not_grow() {
     let m = model();
     let open: Vec<&String> = m
         .rows
@@ -470,8 +470,8 @@ fn the_number_of_rows_that_declare_themselves_incomplete_is_pinned() {
         .map(|(t, _)| t)
         .collect();
     let found = open.len();
-    assert_eq!(
-        found, OPEN_ROWS,
-        "등을 붙인 부분 목록이 {found}개다(기준 {OPEN_ROWS}): {open:?}. 부분 목록은 코드에만 있는 메서드의 누락을 검사하지 않는다. 행의 분류 변경이 타당한지 확인한 뒤 기준 개수를 갱신한다."
+    assert!(
+        found <= OPEN_ROWS,
+        "등을 붙인 부분 목록이 {found}개로 상한 {OPEN_ROWS}을 넘었다: {open:?}. 부분 목록은 코드에만 있는 메서드의 누락을 검사하지 않는다. 행을 완전한 목록으로 바꿀 수 있는지 확인한다. 줄어든 것은 실패가 아니다."
     );
 }

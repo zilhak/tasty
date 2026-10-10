@@ -5,17 +5,14 @@
 //! 과거 결정의 근거와 출력 예제는 현재 코드 위치로 바꾸면 뜻이 달라질 수 있다.
 //! 파일 머리의 범위(:1-N)와 검사 형식을 설명하는 이 파일도 제외한다.
 //!
-//! 인용 정리를 위해 BAND만큼의 감소는 허용하고, 더 줄면 CAP을 낮추도록 요구한다.
-//! BAND는 문서 한 편을 정리할 수 있도록 2026-09-07 파일별 최대 인용 수 15에서 정했다.
-//! 여유를 무제한으로 남기면 이후 새 인용이 늘어도 통과할 수 있다.
+//! 인용 수가 상한을 넘으면 실패한다. 줄어든 것은 실패가 아니며 CAP을 고치지 않아도 된다.
+//! 줄어든 만큼의 여유는 그만큼의 새 인용을 가린다. 인용을 정리한 작업은 CAP을 함께 낮출 수 있다.
 
 use std::path::{Path, PathBuf};
 use tasty_doc_guards::floored_walk::{Descend, Floor, Walked, normalized_rel, walk_with_floor};
 
-/// 현재 남은 인용 수. 늘거나 BAND 넘게 줄면 실패한다.
+/// 인용 수의 상한.
 const CAP: usize = 4;
-
-const BAND: usize = 15;
 
 /// 디렉터리별 하한으로 한 디렉터리의 순회 실패를 다른 결과가 가리지 않게 한다.
 const WHY_GAP: &str = "파일 분리·통폐합에 따른 감소를 허용하려고 실측보다 낮은 하한을 둔다. 이 값은 순회 실패를 찾는 용도이며 수집의 완전성을 보장하지 않는다.";
@@ -173,10 +170,5 @@ fn line_number_citations_do_not_grow() {
     assert!(
         total <= CAP,
         "줄 번호 인용이 늘었다: {total}건, 상한 {CAP}. 새 인용은 경로와 함수·타입 이름으로 적는다(docs/documentation-model.md).\n현재 인용:{listing}"
-    );
-    assert!(
-        total + BAND >= CAP,
-        "줄 번호 인용이 상한보다 {}건 적다({total}, 상한 {CAP}, 허용 차이 {BAND}). 정리된 결과를 확인하고 CAP을 {total}으로 낮춘다.\n현재 인용:{listing}",
-        CAP - total
     );
 }

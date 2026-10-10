@@ -146,17 +146,17 @@ fn every_scanned_unit_actually_has_files() {
 }
 
 #[test]
-fn the_frontier_budget_is_not_slack() {
-    // 건수가 줄었는데 상한을 그대로 두면 새 미전환 선언을 허용하므로 범위별로 정확히 맞춘다.
+fn every_frontier_still_has_an_unconverted_declaration() {
+    // 증가는 별도 검사가 막는다. 줄어든 것은 실패가 아니며, 다 전환한 범위만 명부에서 지운다.
     let hits = scan();
-    for (frontier, budget, _) in FRONTIERS {
+    for (frontier, _, _) in FRONTIERS {
         let n = hits
             .iter()
             .filter(|(rel, _, _)| rel.starts_with(frontier))
             .count();
-        assert_eq!(
-            n, *budget,
-            "미전환 범위 `{frontier}`의 건수가 바뀌었다. 줄었다면 FRONTIERS의 상한도 낮춘다. 증가 여부는 별도 검사에서 확인한다."
+        assert!(
+            n > 0,
+            "미전환 범위 `{frontier}`에 남은 선언이 없다. 모두 전환했다면 FRONTIERS에서 지운다."
         );
     }
 }

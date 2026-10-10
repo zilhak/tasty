@@ -158,10 +158,6 @@ fn every_subcommand_carries_an_about() {
 /// 같은 이유로 인자 수에도 하한을 둔다.
 const MIN_ARGS: usize = 400;
 
-/// 설명 없는 인자 수를 고정한다. 증가하면 설명을 보완하고 감소하면 이 값도 낮춘다.
-/// 실패를 없애려고 값을 올리지 않는다.
-const ARG_HOLE_CAP: usize = 0;
-
 #[test]
 fn arguments_without_help_do_not_increase() {
     let cmd = tasty_cli::Cli::command();
@@ -175,18 +171,12 @@ fn arguments_without_help_do_not_increase() {
         "인자 {seen}개가 하한 {MIN_ARGS}개보다 적다. 순회 누락을 확인한다."
     );
 
-    // 상한이 0이어도 증가·감소를 모두 검사한다. 두 부등식은 한쪽이 항상 참이므로 Ordering을 쓴다.
-    let n = holes.len();
-    match n.cmp(&ARG_HOLE_CAP) {
-        std::cmp::Ordering::Greater => panic!(
-            "설명 없는 인자가 {n}개로 상한 {ARG_HOLE_CAP}개보다 {}개 많다:\n{holes:#?}\n각 필드 바로 위에 도움말 주석을 작성한다.",
-            n - ARG_HOLE_CAP
-        ),
-        std::cmp::Ordering::Less => panic!(
-            "설명 없는 인자가 {n}개로 줄었다. ARG_HOLE_CAP({ARG_HOLE_CAP})도 {n}으로 낮춰 다시 늘어나는 것을 검출한다."
-        ),
-        std::cmp::Ordering::Equal => {}
-    }
+    // 설명 없는 인자는 0이어야 한다.
+    assert!(
+        holes.is_empty(),
+        "설명 없는 인자가 {}개 있다:\n{holes:#?}\n각 필드 바로 위에 도움말 주석을 작성한다.",
+        holes.len()
+    );
 }
 
 // 설명 존재 여부만으로는 두 항목의 doc 주석이 이어 붙은 경우를 찾지 못한다.

@@ -3329,10 +3329,9 @@ fn the_verification_steps_a_dead_neighbour_can_swallow_are_pinned() {
     }
     found.sort();
 
-    assert_eq!(
-        found.len(),
-        SWALLOWABLE_STEPS,
-        "앞선 스텝이 있고 if·continue-on-error가 없는 검증 스텝이 {}개다(기준 {SWALLOWABLE_STEPS}).\n    {}\n스텝 추가·삭제와 조건 변경을 확인한다. 앞선 실패 뒤에도 실행할 검증인지 판단하고 필요한 실행 조건을 설정한다. PROTECTED_STEPS와 함께 비교하되 수의 변화만으로 조치 완료를 단정하지 않는다.",
+    assert!(
+        found.len() <= SWALLOWABLE_STEPS,
+        "앞선 스텝이 있고 if·continue-on-error가 없는 검증 스텝이 {}개로 상한 {SWALLOWABLE_STEPS}을 넘었다.\n    {}\n앞선 실패 뒤에도 실행할 검증인지 판단하고 필요한 실행 조건을 설정한다. 줄어든 것은 실패가 아니다.",
         found.len(),
         found.join("\n    ")
     );

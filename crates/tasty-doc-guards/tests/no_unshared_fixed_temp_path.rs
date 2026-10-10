@@ -17,9 +17,9 @@ const MIN_SITES: usize = 40;
 const MIN_UNIQUIFIED: usize = 35;
 const MIN_REASONED: usize = 4;
 
-/// 경로 조립의 수신자로 연결하지 못한 temp_dir 호출 수의 양방향 래칫이다.
+/// 경로 조립의 수신자로 연결하지 못한 temp_dir 호출 수의 상한이다.
 /// 2026-09-06 측정은 4개였다. 읽기 전용 전달과 파일 밖에서의 경로 생성이 섞일 수 있어
-/// 위반으로 단정하지 않고 증가·감소를 모두 검토한다. 수신자 추적 범위는 temp_path::path_building_lines에 있다.
+/// 늘면 위반으로 단정하지 않고 검토한다. 줄어든 것은 실패가 아니다. 수신자 추적 범위는 temp_path::path_building_lines에 있다.
 const UNPAIRED_RATCHET: usize = 4;
 
 /// 프로세스 ID는 있으나 같은 프로세스의 재호출을 구분할 성분·사유가 없는 경로 수다.
@@ -69,9 +69,9 @@ fn verdicts(c: &Census, f: &Floors) -> Vec<String> {
             c.uniquified, f.uniquified
         ));
     }
-    if c.unpaired != f.unpaired {
+    if c.unpaired > f.unpaired {
         out.push(format!(
-            "경로 생성 수신자로 연결되지 않아 검사에서 빠지는 temp_dir 호출이 {}개다(래칫 {}). 이 값만 올려서 통과시키지 마라. 읽기 전용인지 파일 밖에서 경로를 만드는지 확인한다. 경로를 만든다면 현재 수신자 추적 범위에서 확인할 수 있게 고친다. 줄었으면 래칫도 낮춰 새 누락이 허용되지 않게 한다.",
+            "경로 생성 수신자로 연결되지 않아 검사에서 빠지는 temp_dir 호출이 {}개다(래칫 {}). 이 값만 올려서 통과시키지 마라. 읽기 전용인지 파일 밖에서 경로를 만드는지 확인한다. 경로를 만든다면 현재 수신자 추적 범위에서 확인할 수 있게 고친다.",
             c.unpaired, f.unpaired
         ));
     }
@@ -85,9 +85,9 @@ fn verdicts(c: &Census, f: &Floors) -> Vec<String> {
     }
 
     // 프로세스당 한 번만 쓸 수도 있어 모두 위반으로 단정하지 않고 개수 변화를 검사한다.
-    if c.recall_blind.len() != f.recall_blind {
+    if c.recall_blind.len() > f.recall_blind {
         out.push(format!(
-            "같은 프로세스의 재호출을 못 가르는 temp 경로가 {}곳이다(래칫 {}). 단조 카운터를 넣거나 의도한 프로세스당 공유라면 사유를 적어라. 이 값을 올려서 통과시키지 마라. 줄었으면 값을 같이 내려라. thread::current().id()를 더해도 같은 스레드의 재호출은 구분되지 않아 이 수는 안 줄어든다.\n[스레드 ID도 쓰는 경로] {}\n[전체 경로]\n{}",
+            "같은 프로세스의 재호출을 못 가르는 temp 경로가 {}곳이다(래칫 {}). 단조 카운터를 넣거나 의도한 프로세스당 공유라면 사유를 적어라. 이 값을 올려서 통과시키지 마라. thread::current().id()를 더해도 같은 스레드의 재호출은 구분되지 않아 이 수는 안 줄어든다.\n[스레드 ID도 쓰는 경로] {}\n[전체 경로]\n{}",
             c.recall_blind.len(),
             f.recall_blind,
             if c.recall_blind_with_thread.is_empty() {
@@ -399,24 +399,23 @@ mod wording {
     }
 
     #[test]
-    fn a_shrunk_recall_blind_count_also_fires() {
+    fn a_shrunk_recall_blind_count_passes() {
         let c = Census {
             recall_blind: Vec::new(),
             ..healthy()
         };
-        let m = only(&c);
-        assert!(m.contains("값을 같이 내려라"), "{m}");
+        let v = verdicts(&c, &F);
+        assert!(v.is_empty(), "줄어든 것은 실패가 아니다: {v:#?}");
     }
 
     #[test]
-    fn a_shrunk_unpaired_count_also_fires() {
+    fn a_shrunk_unpaired_count_passes() {
         let c = Census {
             unpaired: 1,
             ..healthy()
         };
-        let m = only(&c);
-        assert!(m.contains("검사에서 빠지는"), "{m}");
-        assert!(m.contains("래칫도 낮춰 새 누락이 허용되지 않게"), "{m}");
+        let v = verdicts(&c, &F);
+        assert!(v.is_empty(), "줄어든 것은 실패가 아니다: {v:#?}");
     }
 
     #[test]

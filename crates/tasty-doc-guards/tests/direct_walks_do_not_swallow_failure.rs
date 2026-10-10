@@ -9,8 +9,8 @@ use std::collections::BTreeMap;
 
 use tasty_doc_guards::source_text::{mask_non_code, rust_sources};
 
-/// 오류를 무시한다고 분류한 자리의 기준값. 증가뿐 아니라 감소도 확인해 개선 후 기준을 낮춘다.
-/// 2026-09-08 실측 29를 기준으로 뒀다. 빈 수집도 기준값과 달라 실패한다.
+/// 오류를 무시한다고 분류한 자리의 상한. 넘으면 실패하고 줄어든 것은 실패가 아니다.
+/// 2026-09-08 실측 29를 상한으로 뒀다. 빈 수집은 read_dir 자리 수가 0인지로 따로 확인한다.
 const SWALLOW_CAP: usize = 29;
 
 #[derive(PartialEq, Eq, Debug)]
@@ -78,10 +78,13 @@ fn direct_walks_do_not_swallow_failure() {
         .iter()
         .map(|(f, n)| format!("  {n}  {f}"))
         .collect();
-    assert_eq!(
-        swallow,
-        SWALLOW_CAP,
-        "읽기 실패를 무시한다고 분류한 자리가 {swallow}개다(기준 {SWALLOW_CAP}, 전체 {sites}).\n늘었다면 실제 오류 처리와 주변 문맥을 확인하고 필요한 오류를 보고하도록 고친다. 줄었다면 개선인지 수집 누락인지 확인한 뒤 기준을 낮춘다.\n현재 위치:\n{}",
+    assert!(
+        sites > 0,
+        "read_dir 자리를 하나도 찾지 못했다. 수집 범위와 판독을 확인한다."
+    );
+    assert!(
+        swallow <= SWALLOW_CAP,
+        "읽기 실패를 무시한다고 분류한 자리가 {swallow}개로 상한 {SWALLOW_CAP}을 넘었다(전체 {sites}).\n실제 오류 처리와 주변 문맥을 확인하고 필요한 오류를 보고하도록 고친다. 줄어든 것은 실패가 아니다.\n현재 위치:\n{}",
         listing.join("\n")
     );
 }

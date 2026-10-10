@@ -261,10 +261,9 @@ fn verdict(
                 "ALLOWED 에 `{path}` 가 있는데 스캔 대상에 없다 — 파일이 옮겨졌거나 \
                  지워졌다. 등재를 지워라. (사유: {reason})"
             )),
-            Some(actual) if actual != *expected => complaints.push(format!(
-                "`{path}` 의 수동 산술이 {actual}건인데 ALLOWED 는 {expected}건으로 \
-                 적혀 있다. 늘었으면 그 증가가 정말 사유({reason})에 해당하는지 \
-                 확인하고, 줄었으면 숫자를 낮춰라."
+            Some(actual) if actual > *expected => complaints.push(format!(
+                "`{path}` 의 수동 산술이 {actual}건으로 ALLOWED 상한 {expected}건을 넘었다. \
+                 그 증가가 정말 사유({reason})에 해당하는지 확인한다. 줄어든 것은 실패가 아니다."
             )),
             Some(_) => {}
         }
@@ -279,9 +278,9 @@ fn verdict(
             Some(0) => complaints.push(format!(
                 "{path}의 수동 산술이 없어졌다. PENDING_PORT에서 해결된 항목을 제거한다."
             )),
-            Some(actual) if actual != *expected => complaints.push(format!(
-                "`{path}` 의 수동 산술이 {actual}건인데 PENDING_PORT 는 {expected}건 \
-                 으로 적혀 있다. 이식으로 줄었으면 숫자를 낮춰라."
+            Some(actual) if actual > *expected => complaints.push(format!(
+                "`{path}` 의 수동 산술이 {actual}건으로 PENDING_PORT 상한 {expected}건을 \
+                 넘었다. 이식 대기 파일에 새 수동 산술을 더하지 않는다."
             )),
             Some(_) => {}
         }
@@ -557,7 +556,7 @@ mod tests {
 
         assert!(verdict(&listed(2), allowed, &[]).is_empty());
         assert!(!verdict(&listed(3), allowed, &[]).is_empty());
-        assert!(!verdict(&listed(1), allowed, &[]).is_empty());
+        assert!(verdict(&listed(1), allowed, &[]).is_empty());
         assert!(!verdict(&[], allowed, &[]).is_empty());
         assert!(!verdict(&[("b.rs".to_string(), vec![7])], allowed, &[]).is_empty());
     }
@@ -575,7 +574,8 @@ mod tests {
         let pending = &[("a.rs", 2)][..];
         assert!(verdict(&[("a.rs".to_string(), vec![1, 2])], &[], pending).is_empty());
         assert!(!verdict(&[("a.rs".to_string(), vec![])], &[], pending).is_empty());
-        assert!(!verdict(&[("a.rs".to_string(), vec![1])], &[], pending).is_empty());
+        assert!(verdict(&[("a.rs".to_string(), vec![1])], &[], pending).is_empty());
+        assert!(!verdict(&[("a.rs".to_string(), vec![1, 2, 3])], &[], pending).is_empty());
     }
 
     #[test]

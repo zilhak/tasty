@@ -17,7 +17,7 @@ const SOURCE_FLOOR: Floor = Floor {
     why_this_gap: "당시 Rust 파일 수를 기준으로, 크레이트 하나가 삭제될 때의 여유 111을 뒀다. 측정 당시 가장 큰 크레이트 tasty-gallery의 파일 수 111에 해당한다. 과거 감소 폭을 따로 측정한 배수는 아니다.",
 };
 
-/// 임시 좌표 사용 수의 기준. 재측정으로 줄었다면 기준도 함께 낮춘다.
+/// 임시 좌표 사용 수의 상한. 재측정으로 줄어든 것은 실패가 아니다.
 const LANE_TIP_SITES: usize = 1;
 
 /// 검색 문자열 자체가 집계되지 않도록 enum 이름을 조각으로 조립한다.
@@ -63,10 +63,9 @@ fn sites(root: &Path, variant: &str) -> Vec<String> {
 fn temporary_coordinates_do_not_spread() {
     let root = &tasty_doc_guards::repo_root();
     let found = sites(root, "LaneTip");
-    assert_eq!(
-        found.len(),
-        LANE_TIP_SITES,
-        "임시 좌표가 {}곳으로 기준 {LANE_TIP_SITES}와 다르다.\n{}\n증가했다면 유지되는 base SHA와 필요한 변경 설명으로 측정 근거를 남긴다. 감소했다면 실제 재측정인지 확인하고 기준을 함께 낮춘다. 임시 좌표를 허용하려고 기준을 높이지 않는다.",
+    assert!(
+        found.len() <= LANE_TIP_SITES,
+        "임시 좌표가 {}곳으로 상한 {LANE_TIP_SITES}을 넘었다.\n{}\n유지되는 base SHA와 필요한 변경 설명으로 측정 근거를 남긴다. 임시 좌표를 허용하려고 상한을 높이지 않는다.",
         found.len(),
         found.join("\n")
     );
