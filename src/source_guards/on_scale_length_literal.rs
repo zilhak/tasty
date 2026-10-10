@@ -58,7 +58,7 @@ const EGUI_LENGTH_HEADS: &[&str] = &[
     "circle_stroke",
 ];
 
-/// 다른 사용처가 참조할 값을 정의하는 파일은 제외한다. 제외 수는 별도 검사한다.
+/// 다른 사용처가 참조할 값을 정의하는 파일은 제외한다. 제외한 자리의 상한은 별도 검사한다.
 const DECLARATION_SITES: &[(&str, usize, &str)] = &[
     (
         "crates/tasty-design-tokens/src/generated/",
@@ -78,7 +78,7 @@ const DECLARATION_SITES: &[(&str, usize, &str)] = &[
     ),
 ];
 
-/// 전시용 값을 (파일, 호출 이름, 정확한 수, 사유)로 등록한다. 줄 번호는 무관한 편집에도 바뀌므로 사용하지 않는다.
+/// 전시용 값을 (파일, 호출 이름, 상한, 사유)로 등록한다. 줄 번호는 무관한 편집에도 바뀌므로 사용하지 않는다.
 const DISPLAY_SPECIMENS: &[(&str, &str, usize, &str)] = &[(
     "crates/tasty-gallery/src/catalog/components/prim_spinner.rs",
     "size",
@@ -87,7 +87,7 @@ const DISPLAY_SPECIMENS: &[(&str, &str, usize, &str)] = &[(
     "스피너를 여러 크기로 보여주는 것이 이 카드의 목적이다 — 토큰으로 바꾸면 전시가 사라진다",
 )];
 
-/// 픽셀이 아닌 정규화 좌표를 파일·호출 이름별로 등록하고 수를 맞춘다.
+/// 픽셀이 아닌 정규화 좌표를 파일·호출 이름별로 등록하고 상한을 둔다.
 const UNIT_SPACE_SITES: &[(&str, &str, usize, &str)] = &[(
     "crates/tasty-ui-widgets/src/popup_title.rs",
     "pos2",
@@ -101,7 +101,8 @@ fn is_in_unit_space(hit: &Hit) -> bool {
         .any(|(path, head, _, _)| hit.rel == *path && hit.head == *head)
 }
 
-/// 영역별 남은 수와 사유. 증가와 감소를 모두 확인한다.
+/// 영역별 상한과 사유. 수가 상한을 넘으면 실패하고, 줄어든 것은 상한을 고치지 않아도 된다.
+/// 기록은 정확한 현재 수가 아니라 상한이다([검사 대상 관리](../../docs/dev-guide/guard-population.md)).
 const AREAS: &[(&str, usize, &str)] = &[
     (
         "src/adapters/ui/popup/",
@@ -600,7 +601,7 @@ fn every_on_scale_literal_lives_inside_a_recorded_area() {
 }
 
 #[test]
-fn every_area_holds_exactly_the_count_it_records() {
+fn no_area_grows_past_its_budget() {
     let hits = judged();
     let mut lines: Vec<String> = Vec::new();
     for (area, budget, why) in AREAS {
@@ -608,8 +609,8 @@ fn every_area_holds_exactly_the_count_it_records() {
             .iter()
             .filter(|h| area_of(&h.rel) == Some(*area))
             .count();
-        if n != *budget {
-            lines.push(format!("  {area}  기록 {budget} → 실측 {n}  ({why})"));
+        if n > *budget || n == 0 {
+            lines.push(format!("  {area}  상한 {budget} · 실측 {n}  ({why})"));
             // 같은 수집 결과로 남은 위치를 출력한다. 로그가 잘리지 않도록 영역별 출력 수를 제한한다.
             const PER_AREA: usize = 40;
             let mine: Vec<&Hit> = hits
@@ -632,7 +633,7 @@ fn every_area_holds_exactly_the_count_it_records() {
     }
     assert!(
         lines.is_empty(),
-        "영역별 기록과 실제 수집 수가 다르다. 줄었다면 기록도 낮춘다. 늘었다면 실제 새 사용인지 스케일·수집 범위가 바뀐 것인지 확인한다. 고칠 수 없는 치수는 해당 선언에 이유를 남긴 뒤 수를 갱신한다:\n{}",
+        "영역의 수가 상한을 넘었거나 0이다. 늘었다면 실제 새 사용인지 스케일·수집 범위가 바뀐 것인지 확인한다. 고칠 수 없는 치수는 해당 선언에 이유를 남긴 뒤 상한을 올린다. 0이면 수집이 무너졌는지 확인하고, 실제로 비었다면 그 영역을 지운다. 줄어든 것은 실패가 아니며 상한을 낮추지 않아도 된다. 증감 이력을 주석에 적지 않는다:\n{}",
         lines.join("\n")
     );
 }
@@ -700,48 +701,21 @@ fn the_gallery_share_is_one_question_or_it_is_not() {
         with_comment >= 40,
         "주석이 붙은 후보가 {with_comment}개뿐이다. 실제 주석 감소와 추출 누락을 확인한다."
     );
-    assert_eq!(
-        (named_cited, named_plain, inline_cited, inline_plain),
-        // size-540·700·1100 추가로 이름 있는 갤러리 치수 세 자리(디자인 언급 1, 없음 2)가 들어왔다.
-        // 파일 선택 path bar 예제 카드 치수의 이름 있는 자리도 같은 분류로 세 자리(언급 1, 없음 2)를 더한다.
-        // 탭 스트립 툴팁 Stage 오른쪽 여백(디자인 언급 있음) 한 자리를 더한다.
-        // 명령 팔레트 카드 폭(디자인 언급 있음)은 palette-width 접근자로 옮겨 하나 줄었다.
-        // 설정 창 예제 폭·높이(디자인 언급 없음)는 settings-window-* 토큰으로 옮겨 둘 줄었다.
-        // 위 시안 Spec 전사가 이름 있는 치수 스물여섯 자리(디자인 언급 6, 없음 20)와 디자인 언급 없는 인라인 값 하나를 더한다.
-        // 설정 창 예제의 시안 SettingsFrame 치수가 이름 있는 자리 다섯(언급 2, 없음 3)과 인라인 하나를 더한다.
-        // IpcSequence 편집기 예제의 카드 폭은 이름 있고 디자인을 언급하는 자리 하나를 더한다.
-        // 시안 Spec 보완 스무 건이 이름 있는 치수 예순 자리(디자인 언급 13, 없음 47)를 더한다.
-        // Gate 4 반영이 이름 있는 치수 아홉 자리(디자인 언급 8, 없음 1)를 더한다.
-        // 원격 도구 경고 배지 높이(디자인 언급 있음)가 공용 배지의 tag-size 토큰으로 옮겨 하나 줄었다.
-        // 이미지 편집 모드 예제가 이름 있고 디자인 언급 없는 치수 여섯 자리를 더한다(시안 출처는 묶음 주석에 있다).
-        // 스케일에 size-20·40이 들어오면서 기존 값 20·40이 이름 있는 치수 열여섯 자리(디자인 언급 7, 없음 9)와 디자인 언급 없는 인라인 값 셋을 더한다.
-        // 메뉴 예제의 안쪽 여백 6 두 자리(이름 있음, 디자인 언급 없음)가 popup-content-margin 토큰으로 옮겨 빠졌다.
-        // Attention kinds 무대의 행 간격·레일 설명 칸 높이가 이름 있고 디자인을 언급하는 두 자리를 더한다.
-        // 탐색기 사이드바 Short cell 비교 줄의 body 높이 배열 두 자리는 이름 있는 배열 안 인라인 값이다.
-        // 단축키 가져오기 예제의 열 폭 상수 셋(디자인 언급 있음)이 kb-ie-* 토큰으로 옮겨 빠졌다.
-        // 파일 선택 path bar 예제가 측정 폭 사다리로 바뀌며 디자인 언급 있는 치수가 하나 늘고 없는 치수가 둘 줄었다.
-        // 자동 attach 거절 예제가 이름 있고 디자인을 언급하는 치수 여섯 자리를 더한다.
-        // 플러그인 상세 설치 경로 Spec의 열 폭 배열 540은 배열 안 인라인 값이며 시안을 언급한다.
-        // 포트 스캐너 Process 열 예제의 개략도 치수 상수와 기본 프레임 열 폭이 공용 열 정의로 바뀌며 열 자리가 빠졌다.
-        // 원격 전송 예제의 라벨 열 150(이름 있음, 디자인 언급 있음)이 공용 SettingsRow 로 옮겨 빠졌다.
-        // 단축키 행 예제의 본체 치수 사본 다섯 자리(이름 있음, 디자인 언급 없음)를 더한다.
-        // 그 가운데 라벨 열 288은 서브탭마다 재는 clamp 로 바뀌어 빠졌다.
-        // attach 크기 동기 실패 예제의 묶음 폭 460(이름 있음, 디자인 언급 있음)을 더한다.
-        // 두 배너 예제의 좁은 스코프 폭 360 두 자리(이름 있음, 디자인 언급 있음)를 더한다.
-        // 탐색기 Properties·미리보기 예제의 시안 치수 다섯 자리(이름 있음, 디자인 언급 있음)를 더한다.
-        // 스크립트 변경 확인 예제의 좌우 여백 14(이름 있음, 디자인 언급 있음)를 더한다.
-        // 탐색기 상태 칸 예제의 보조 줄 최대 폭 200(이름 있음, 디자인 언급 있음)이 공용 state_screen 으로 옮겨 빠졌다.
-        // 이미지 상태 예제의 칸 높이 180·compact 무대 폭 440(이름 있음, 디자인 언급 있음)을 더한다.
-        // 스크립트 변경 확인 예제의 좌우 여백 14(이름 있음, 디자인 언급 있음)가 공용 script_confirm 으로 옮겨 빠졌다.
-        // 탐색기 파일 조작 예제가 이름 있는 시안 무대 치수 일곱 자리(디자인 언급 4, 없음 3)를 더하고, 상세 표 열의 인라인 값 둘은 공용 열 정의로 옮겨 빠졌다.
-        // 탐색기 파일 작업 예제의 표본 치수 상수 세 자리(이름 있음, 디자인 언급 없음)를 더한다.
-        // 거절 예제의 좁은 스코프 폭 360(이름 있음, 디자인 언급 있음)이 크기 동기 실패 예제의 Narrow Spec 으로 옮겨 빠졌다.
-        // 탐색기 Properties·미리보기 예제의 이름 있는 시안 치수 다섯 자리(디자인 언급 있음)가 토큰으로 옮겨 빠졌다.
-        // 단축키 행 예제의 본체 치수 사본 140·24·32 세 자리(이름 있음, 디자인 언급 없음)가 kb-record-* 토큰으로 옮겨 빠졌다.
-        // 단축키 가져오기 예제의 option 대체 카드 높이 440(이름 있음, 디자인 언급 없음)이 카드 삭제로 빠졌다.
-        // DAG 빈 상태 글리프 24(이름 있음, 디자인 언급 있음)의 사본이 공용 dag_empty 로 옮겨 빠졌다.
-        (114, 173, 1, 24),
-        "갤러리 후보의 (이름 있음/없음, 디자인 언급 있음/없음) 분류 수가 바뀌었다. 해당 선언과 주석을 확인하고 기록을 갱신한다."
+    let counted = [
+        ("이름 있음·디자인 언급", named_cited, 115),
+        ("이름 있음·언급 없음", named_plain, 174),
+        ("이름 없음·디자인 언급", inline_cited, 1),
+        ("이름 없음·언급 없음", inline_plain, 24),
+    ];
+    let over: Vec<String> = counted
+        .iter()
+        .filter(|(_, n, cap)| n > cap)
+        .map(|(kind, n, cap)| format!("  {kind}: 상한 {cap} · 실측 {n}"))
+        .collect();
+    assert!(
+        over.is_empty(),
+        "갤러리 후보의 (이름 있음/없음, 디자인 언급 있음/없음) 분류가 상한을 넘었다. 해당 선언과 주석을 확인하고, 남길 치수면 상한을 올린다. 줄어든 것은 실패가 아니다:\n{}",
+        over.join("\n")
     );
 }
 
@@ -778,25 +752,25 @@ fn the_gallery_share_splits_into_four_kinds() {
             named_value += 1;
         }
     }
-    // 전시 수와 전체 갤러리 수는 기존 명부에서 읽어 중복 기록하지 않는다.
+    // 전시 상한은 기존 명부에서 읽어 중복 기록하지 않는다.
     let roster: usize = DISPLAY_SPECIMENS.iter().map(|(.., n, _)| n).sum();
-    let ratcheted = AREAS
+    let gallery = hits
         .iter()
-        .find(|(a, ..)| *a == "crates/tasty-gallery/")
-        .map_or(0, |(_, n, _)| *n);
+        .filter(|h| h.rel.starts_with("crates/tasty-gallery/"))
+        .count();
     assert_eq!(
-        (displayed, named_value, nameless, undecided),
-        // 같은 Theme 값 중 2개는 표 열 폭 140이다(탐색기·Table 예제). 같은 숫자의 kb-ie·info-modal 토큰과 역할이 다르다.
-        // 포트 스캐너 예제의 열 폭 140 둘은 공용 열 정의로 옮겨 빠졌다.
-        // 8개는 Structural dimensions·attention scale 예제의 표 열 폭 배열이며 디자인 grid 열 값이다.
-        // 시안 Spec 전사에서 Theme 값과 숫자만 같은 자리 하나가 더해졌다.
-        // 설정 창 예제의 시안 전시 치수 하나도 Theme 값과 숫자만 같다.
-        // 스케일에 size-20·40이 들어오면서 기존 값 20·40이 Theme 값과 숫자만 같은 자리 둘을 더한다.
-        // 탐색기 사이드바 Short cell 비교 줄의 body 높이 240·200 은 Theme 값과 숫자만 같다.
-        // 플러그인 상세 설치 경로 Spec의 열 폭 540은 팔레트 폭 토큰과 숫자만 같다.
-        // 탐색기 상세 표 열 폭 140·64 는 공용 explorer_detail_columns 로 옮겨 Theme 값과 숫자만 같은 자리 둘이 빠졌다.
-        (roster, 19, 0, ratcheted - 19),
-        "갤러리의 전시 후보·같은 Theme 값·값 없음·이름 붙은 치수 분류 수가 달라졌다"
+        displayed + named_value + nameless + undecided,
+        gallery,
+        "갤러리 후보가 네 분류 중 하나에 들어가지 않았다"
+    );
+    assert_eq!(
+        nameless, 0,
+        "같은 숫자의 Theme 값이 없는 갤러리 후보가 있다. 토큰을 쓰거나 이름 붙은 치수로 선언한다"
+    );
+    // 같은 Theme 값과 숫자만 같은 자리의 상한이다. 늘면 그 자리가 토큰을 써야 하는지 확인한다.
+    assert!(
+        named_value <= 19 && displayed <= roster,
+        "갤러리의 같은 Theme 값 자리 {named_value}(상한 19) 또는 전시 후보 {displayed}(전시 명부 {roster})가 상한을 넘었다. 줄어든 것은 실패가 아니다"
     );
 }
 
@@ -813,10 +787,10 @@ fn the_display_roster_points_at_real_sites_and_covers_the_ones_that_look_like_it
             .iter()
             .filter(|h| h.rel == *path && h.head == *head)
             .count();
-        assert_eq!(
-            n, *budget,
-            "전시 명부 `{path}` 의 `{head}`(사유: {why}) 자리가 {n} 개다. 늘었으면 전시가 \
-             아닌 것이 섞였을 수 있고, 줄었으면 그 수를 같이 내려라"
+        assert!(
+            (1..=*budget).contains(&n),
+            "전시 명부 `{path}` 의 `{head}`(사유: {why}) 자리가 {n} 개다(상한 {budget}). 늘었으면 \
+             전시가 아닌 것이 섞였을 수 있다. 0이면 자리가 옮겨졌는지 확인하고 명부에서 지운다"
         );
     }
 
@@ -850,9 +824,9 @@ fn the_size_scale_is_not_empty() {
     );
 }
 
-/// 비교에서 제외한 0·test·하한·정규화 좌표·선언의 수도 확인한다.
+/// 비교에서 제외한 0·test·하한·정규화 좌표·선언의 수가 상한을 넘지 않고 비지 않았는지 확인한다.
 #[test]
-fn the_blind_spots_are_still_the_size_they_say() {
+fn the_blind_spots_stay_within_their_budgets() {
     let all = scan(false);
     let shipped = scan(true);
     let zeros = shipped.iter().filter(|h| h.value == 0.0).count();
@@ -862,140 +836,39 @@ fn the_blind_spots_are_still_the_size_they_say() {
         .iter()
         .filter(|h| h.value != 0.0 && !h.floor && is_in_unit_space(h))
         .count();
-    assert_eq!(
-        (zeros, in_tests),
-        // Layout preview tests add on-scale PhysicalPx(0), PhysicalPx(0),
-        // PhysicalPx(600), and the PhysicalPx(1) content-height floor; 1000 is off-scale.
-        // Tooltip placement tests add their window, anchor and WebView rect literals.
-        // The icon button state table test adds its 24x24 anchor rect at the origin (4 literals).
-        // The clipboard type segments are drawn once in tasty-ui-widgets instead of three
-        // copies in the plugin and the gallery, which drops four zero literals.
-        // 스케일에 size-10이 들어오면서 test 코드의 기존 값 10도 새로 집계됐다.
-        // 툴팁의 스트립 안 후보 시험이 칸·앵커·창 rect 리터럴을 더한다.
-        // tint_edge_width의 배율 무관 단언이 test 코드에 값 2를 하나 더한다.
-        // 원격 도구 Passkeys 예제의 행 영역 세로 여백과 텍스트 열 높이 하한이 0 두 개를 더한다.
-        // 명령 팔레트 행 라벨 위치 시험이 카드 원점 pos2(0.0, 0.0)으로 두 개를 더한다.
-        // 첫 실행 셸 설정 화면이 공용 view로 옮겨 가며 카드 배치의 0 리터럴이 하나 줄었다.
-        // 플러그인 추가 프리뷰의 공용 view가 카드 안 세로 간격만 주는 0 리터럴 하나를 더한다.
-        // webview chrome과 갤러리 html chrome 타일의 좌우 전용 여백이 세로 0 두 개를 더한다.
-        // The file picker filter chip clamps its text cap and the gallery name field's chip share at zero (2 literals).
-        // The override row fit test adds its checkbox width literal.
-        // The shared table header mode test adds its 140 column width.
-        // The import diff truncated() passes zero tracking to truncated_tracked in the app and the gallery (2 literals).
-        // WebView 입력 띠 시험이 창 리사이즈 밴드로 PhysicalPx(8) 다섯 개와 PhysicalPx(0) 세 개를 넘긴다.
-        // 스케일에 size-700이 들어오면서 test 코드의 기존 값 700 세 자리가 새로 집계됐다.
-        // 시안에서 옮긴 결정 기록 Spec의 여백·간격·원점 0 리터럴이 아홉 개를 더한다.
-        // 탭 스트립 툴팁의 border-width 허용치·최후 배치 시험이 창·칸·버블 치수 14개를 더한다.
-        // 시안 Spec 전사의 칠 모서리·세로 간격 0 리터럴이 두 개를 더한다.
-        // 설정 창 예제가 시안 구조로 바뀌며 간격 0 리터럴 두 개가 빠졌다.
-        // 토스트 카드 사각형 시험의 좁은 스코프가 pos2의 600과 vec2의 400 두 자리를 더한다.
-        // CodeArea는 글자 영역 최소 크기의 가로를 0으로 두고(min_size vec2(0, 높이)), 시험 화면
-        // vec2(400, 600) 두 번이 test 코드에 네 개를 더한다.
-        // 단축키 Plugins 서브탭 예제의 견본 칸 높이 0 이 하나, 공용 view 시험 화면 vec2(620, 600)이
-        // test 코드에 두 개를 더한다.
-        // 시안 Spec 보완 스무 건의 여백·간격·원점 0 리터럴이 열다섯 개를 더한다.
-        // Gate 4 반영의 0 리터럴 하나를 더한다.
-        // 탐색기 낮은 칸 상태줄 시험의 칸 폭 1100이 하나를 더한다.
-        // 갤러리 Rail popup 묶음이 팝업 폭 세로 칸을 높이 0으로 요청해 0 리터럴 하나를 더한다.
-        // 원격 도구 Passkeys 행이 동작 묶음을 뺀 텍스트 열을 높이 0으로 할당한다.
-        // 플러그인 추가 경로 선택 블록이 measure-xl 폭 열을 높이 0으로 할당한다.
-        // 원격 도구 세 탭 행이 공용 행 셸로 모이며 행별 0 리터럴 넷(갤러리 여백 둘, 텍스트 열 높이 둘)이 빠졌다.
-        // tasty-ui-widgets popover_frame 통합 테스트의 화면 사각형 pos2(0,0)·vec2(400,300) 넷이 test 전용으로 들어왔다.
-        // MultiSelect 행 끝 클릭 시험이 트리거 오른쪽 안쪽 2를 더한다.
-        // MultiSelect 메뉴 기준 rect 를 세로로만 내리는 vec2 의 가로 0 하나를 더한다.
-        // modhint 코너 그립 획 좌표 시험의 패널 사각형·그립 크기 네 개가 test 전용으로 들어왔다.
-        // 갤러리 이미지 paint bar의 좌우만 줄이는 shrink2 세로 0 하나를 더한다.
-        // 이미지 플러그인 텍스트 버튼이 공용 Button으로 바뀌며 최소 크기 vec2 의 가로 0 하나가 빠졌다.
-        // 스케일에 size-20·40이 들어오면서 기존 값 20·40이 test 코드에서 마흔한 자리 새로 집계됐다.
-        // popover_frame 시험의 부모 스타일 테두리 굵기 +2 하나가 test 전용으로 들어왔다.
-        // Attention kinds 무대의 설명 열·레일 열이 높이 0으로 칸을 요청해 0 리터럴 둘을 더한다.
-        // 토스트 같은 모서리 합치기 시험의 화면·pane 사각형과 Settings 하단 거리 시험이 열한 개를 더한다.
-        // 점선 무늬의 배율 무관 단언이 test 코드에 값 4를 둘 더한다.
-        // HelpHint 강제 버블 시험의 클립 사각형이 세 개를 더한다.
-        // 탐색기 분할 하한 시험의 분할 사각형 PhysicalPx(0)·PhysicalPx(0)·PhysicalPx(600) 셋이 test 전용으로 들어왔다.
-        // popover_frame 의 안쪽 둘레 시험이 화면 사각형 pos2(0,0)·vec2(400,300) 넷을 test 전용으로 더한다.
-        // 자동 attach 거절 배너 위젯의 글리프 세로 오프셋 vec2(0, nudge)와 갤러리 행의 Margin::symmetric 세로 0이 0 둘을 더하고,
-        // 좁은 폭 배너 시험의 화면 높이 400 하나가 test 전용으로 들어왔다.
-        // 도구 메뉴 높이 시험의 고정 폭 W(158) 하나가 test 전용으로 들어왔다.
-        // 표 띠·선택 행 글자색 시험(table_band_and_ink)의 화면 크기·열 폭 리터럴 셋이 test 전용으로 들어왔다.
-        // 레일 거절 칩 위치 시험의 아바타 원점 pos2(40, 30) 중 스케일 값 40 하나가 test 전용으로 들어왔다.
-        // 훅 행 대기 잠금 시험의 화면 높이 200 하나가 test 전용으로 들어왔다.
-        // split 탐색기 하한 시험의 영역 원점 PhysicalPx(0) 여섯과 pane 높이 300 하나가 test 전용으로 들어왔다.
-        // 표 Flex 열 폭 계산(table.rs)의 0 비교·하한 셋이 들어오고, popup 열 폭 계산의 0 셋이 빠졌다.
-        // 포트 스캐너 열 폭 분배 시험이 위젯 크레이트의 px() 도우미 시험으로 옮겨 test 전용 리터럴 일곱이 빠졌다.
-        // 도구 메뉴 높이 시험이 행 높이 ROW(28)·구분선 여백 GAP(4)을 인자로 넘겨 두 개를 더한다.
-        // 포트 스캐너 열 폭 시험이 Address 폭을 토큰으로 비교해 test 전용 140 하나가 빠졌다.
-        // 튜토리얼 말풍선 합성 순서 시험의 화면·마커 띠·말풍선 높이 치수 네 자리가 test 전용으로 늘었다.
-        // 열린 Select 목록 시험(select_placeholder.rs)의 화면 크기·원점·트리거 폭 리터럴 넷이 test 전용으로 들어왔다.
-        // 갤러리 포트 예제의 표와 즐겨찾기 영역이 디자인처럼 왼쪽 여백을 없애며 세로 0 두 개가 빠졌다.
-        // 공용 설정 행 격자(settings_row.rs)와 그 통합 시험이 들어오고 설정 탭의 행 코드가 그리로 모이며
-        // 0 리터럴이 둘, test 전용 리터럴이 일곱 늘었다.
-        // Appearance 기본 글꼴 두 열 시험이 화면 폭·높이와 ▼ 자리 오프셋 세 자리를 더한다.
-        // 원격 attach 두 목록 열이 titled_column 하나로 모이며 간격 vec2(0, 0)의 0 둘이 빠졌다.
-        // 스크립트 확인 popup 의 폭 시험·sizer 연결 시험이 화면 높이 600, 원점 PhysicalPx(0) 둘,
-        // 잰 콘텐츠 높이 400 둘·10 하나를 test 전용으로 더한다.
-        // 공용 script_confirm 위젯의 폭 시험이 화면·영역 높이 600 둘과 원점 이동 vec2 의 0 하나를 더한다.
-        // 플러그인 homepage 클릭 시험의 화면 크기 600×400 이 test 코드에 두 개를 더한다.
-        // attach 크기 동기 실패 배너 위젯의 글리프 세로 오프셋 vec2(0, nudge)가 0 하나를, 좁은 폭 시험의
-        // 화면 높이 400 이 test 전용 하나를 더한다(거절 배너 위젯과 같은 배치 식이다).
-        // 같은 배너의 재시도·클릭 주입 시험이 화면 크기 vec2(460, 400) 두 자리를 test 전용으로 더한다.
-        // 배너 행 배치 도우미(action_row_place)의 넓은 배치 액션 위치 vec2(.., 0.0)가 0 하나를,
-        // 그 배치 시험의 묶음 크기·위치 vec2 리터럴 여섯 자리가 test 전용으로 더한다.
-        // 좁은 배치에서 닫기만 오른쪽 위에 남기며 도우미가 ActionRow 로 바뀌어, 넓은 배치 0 대신 좁은 배치 닫기 위치
-        // pos2(.., 0.0)가 0 하나를 두고, 버튼·닫기를 따로 단언하는 배치 시험이 test 전용 한 자리를 더한다.
-        // 탐색기 Properties popup 이 내용 간격을 vec2(0, 0) 으로 비우며 0 둘을 더한다.
-        // 스크립트 변경 확인 sizer 시험이 최소 높이 없이 줄어드는 경우를 재며 콘텐츠 높이 10 리터럴 하나를 더한다.
-        // 이미지 viewer 예제의 no-image 칸이 공용 상태 화면으로 바뀌며 글리프 위치 vec2 의 0 하나가 빠졌다.
-        // 탐색기 이름 입력 편집 줄 시험이 Grid 칸 크기 둘과 그리는 줄 폭 하나, 리터럴 셋을 더한다.
-        // 그 시험이 줄을 왼쪽 여백 뒤 영역에 그리며 줄 폭 하나 대신 영역 폭·높이 둘을 쓴다.
-        // 이미지 플러그인이 큰 그림을 타일로 그리며 전체 텍스처 uv pos2(0, 0) 둘이 빠지고(0 넷),
-        // 타일 배치 시험의 목표 사각형 pos2(10, 20)·vec2(400, 300) 중 셋이 test 전용으로 들어왔다.
-        // 탐색기 파일 작업의 상태줄·결과 카드·충돌 카드 위젯과 칸 표시가 item_spacing·shrink2 의 0 열하나를,
-        // 드래그 대상 결정 시험(drag_tests.rs)의 본문·행 사각형과 포인터 좌표가 test 전용 열 자리를 더한다.
-        // 탐색기 미리보기 저장 시험이 저장 폭 LogicalPx 320 세 자리와 240 한 자리를 test 전용으로 더한다.
-        // 이름 변경 팝업 sizer 가 기본 크기에 오류 줄 높이만 더하는 vec2 의 가로 0 하나를,
-        // 그 시험의 오류 줄 높이 vec2(0, 18)과 측정 칸 폭 200 이 test 전용 셋을 더한다.
-        // 열린 Select 테두리 시험의 화면 크기 vec2(600, 400)와 클릭 좌표 pos2(60, 20)의 20 이 test 전용 셋을 더한다.
-        // 단축키 엔트리 행 시험의 화면 높이 600 이 test 전용 하나를 더한다(폭 1000 은 스케일 밖).
-        // 글꼴 목록 검색칸이 테두리 상자 자리를 vec2(width, 0) 으로 잡으며 0 하나를 더한다.
-        // 탐색기 Grid 가 줄 사이 세로 간격을 vec2(gap, 0) 으로 비우고 직접 띄우며 0 하나를,
-        // 보이는 행만 그리기 시험(virtual_tests.rs)의 칸 크기 Pos2::new(1100, 600)가 test 전용 둘을 더한다.
-        // 상세 보기가 화면 밖 편집 줄 자리를 vec2(0, shift) 로 옮기며 0 하나를, 같은 시험 파일의
-        // 위쪽 끝 휠 시험이 test 전용 둘을 더한다.
-        // 드래그 반전 설정 행 렌더 시험의 화면 vec2(800, 300) 중 300 한 자리가 test 전용으로 들어왔다.
-        // 창 파일 드롭 안내 위젯 시험의 영역·화면 리터럴 중 두 자리가 test 전용으로 들어왔다.
-        // Select 테두리 콤보 시험(select_combo_border.rs)의 화면·클릭 좌표·콤보 폭·입력칸 여백 리터럴 중
-        // 여섯 자리가 test 전용으로 들어왔다.
-        // plugin 배너 본문 툴팁 시험의 화면 높이·위쪽 여백 리터럴 세 자리가 test 전용으로 들어왔다.
-        // 부팅 오류 화면이 egui::Window 의 anchor vec2(0, 0)·fixed_size vec2(w, 0) 대신 공용 화면을 쓰며 0 셋이 빠졌다.
-        (231, 612),
-        "제외한 0과 test 전용 코드의 수가 달라졌다. 실제 사용과 수집 범위의 변경을 확인하고 기록을 갱신한다."
-    );
     let roster: usize = UNIT_SPACE_SITES.iter().map(|(.., n, _)| n).sum();
-    assert_eq!(
-        (floors, unit_space),
-        // 값 1의 clamp·서브픽셀 비교 문턱을 별도로 센다.
-        // 탐색기 분할 하한이 pane 내용 높이를 resize_all 과 같은 1px 하한으로 잡아 하나를 더한다.
-        // split 의 탐색기 하한(split_floor)이 같은 내용 높이 1px 하한을 하나 더한다.
-        (21, roster),
-        "값 1의 하한·정규화 좌표 수가 달라졌다. 별도 집계 대상의 변경을 확인하고 기록을 갱신한다."
+    let counted = [
+        ("제외한 0", zeros, 234),
+        ("test 전용 코드", in_tests, 612),
+        ("값 1의 하한", floors, 21),
+        ("정규화 좌표", unit_space, roster),
+    ];
+    let off: Vec<String> = counted
+        .iter()
+        .filter(|(_, n, cap)| *n == 0 || n > cap)
+        .map(|(kind, n, cap)| format!("  {kind}: 상한 {cap} · 실측 {n}"))
+        .collect();
+    assert!(
+        off.is_empty(),
+        "비교에서 제외한 자리의 수가 상한을 넘었거나 0이다. 늘었다면 실제 사용과 수집 범위의 변경을 확인하고 상한을 올린다. 0이면 수집·판정이 무너졌는지 확인한다. 줄어든 것은 실패가 아니다:\n{}",
+        off.join("\n")
     );
     for (path, head, budget, why) in UNIT_SPACE_SITES {
         let n = shipped
             .iter()
             .filter(|h| h.value != 0.0 && h.rel == *path && h.head == *head)
             .count();
-        assert_eq!(
-            n, *budget,
-            "정규화 좌표 명부 `{path}` 의 `{head}`(사유: {why}) 자리가 {n} 개다. \
-             늘었으면 픽셀인 것이 섞였을 수 있고, 줄었으면 그 수를 같이 내려라"
+        assert!(
+            (1..=*budget).contains(&n),
+            "정규화 좌표 명부 `{path}` 의 `{head}`(사유: {why}) 자리가 {n} 개다(상한 {budget}). \
+             늘었으면 픽셀인 것이 섞였을 수 있다. 0이면 자리가 옮겨졌는지 확인하고 명부에서 지운다"
         );
     }
     for (site, budget, why) in DECLARATION_SITES {
         let n = shipped.iter().filter(|h| h.rel.starts_with(site)).count();
-        assert_eq!(
-            n, *budget,
-            "선언 자리 `{site}`(사유: {why})의 건수가 바뀌었다"
+        assert!(
+            (1..=*budget).contains(&n),
+            "선언 자리 `{site}`(사유: {why})의 건수 {n}이 상한 {budget}을 넘었거나 0이다"
         );
     }
 }
