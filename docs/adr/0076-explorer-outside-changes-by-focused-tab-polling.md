@@ -1,0 +1,60 @@
+# ADR-0076: 탐색기는 다른 프로그램의 변경을 포커스 탭에서만 2초 주기 metadata 비교로 찾는다
+
+- **Status**: Accepted
+- **Date**: 2026-10-10
+- **Tags**: explorer, files, polling, focus, performance
+- **Group**: plugins
+
+## Context
+
+로컬 탐색기는 Tasty 안의 파일 작업이 끝나면 바뀐 폴더를 보는 View 를 다시 읽는다([파일 작업 뒤 갱신](../surfaces/explorer/file-operations.md#작업-뒤-목록-갱신)). 다른 프로그램(빌드, 에이전트, 셸 명령)이 만든 변경은 사용자가 새로고침(`F5`)을 눌러야 보였다. 에이전트가 파일을 만들고 지우는 동안 탐색기를 보고 있는 사용 방식에서는 목록이 낡은 채 남는다.
+
+조건:
+
+- Windows·macOS·Linux 에서 같은 동작이어야 한다.
+- 보이지 않는 탐색기나 열어 둔 모든 폴더 때문에 유휴 상태에서 IO 와 깨움이 늘면 안 된다.
+- 사용자의 선택·스크롤·포커스를 바꾸지 않는다([포커스 정책](../design/policies/focus.md)).
+- 원격 mirror 탐색기는 조회마다 원격 왕복이 든다([ADR-0022](0022-remote-mirror-content-and-queries.md)).
+
+## Decision
+
+OS 파일 이벤트 감시는 쓰지 않는다. 창마다 포커스를 가진 surface 가 속한 탭의 로컬 탐색기만 2 초마다 현재 폴더와 펼친 트리 폴더의 metadata(수정 시각·크기)를 읽어, 마지막으로 읽었을 때의 표지와 다르면 그 폴더만 다시 읽는다. 탭이 포커스를 얻으면 주기를 기다리지 않고 바로 한 번 확인한다. 다른 탭의 탐색기와 mirror 탐색기는 확인하지 않으며, mirror 는 새로고침으로 맞춘다.
+
+현재 폴더는 보이던 목록을 둔 채 다시 읽고 결과로 목록만 바꾼다. 목록을 읽을 때는 표지를 항목보다 먼저 읽어 그 사이의 변경을 다음 확인이 잡게 한다. 주기·대상·한계의 현재 명세는 [외부 변경 확인](../surfaces/explorer/index.md#외부-변경-확인)에 있다.
+
+이 주기와 포커스 조건은 사용자가 정했다(2026-10-10).
+
+## Consequences
+
+- 확인 비용이 보이는 폴더 수에 비례하고 포커스 탭 밖에서는 0 이다. 바뀌지 않은 폴더는 항목을 읽지 않는다.
+- 플랫폼별 감시 API 와 그 한도(inotify watch 수, macOS FSEvents 지연, Windows 핸들 점유)를 다루지 않는다.
+- 변경이 보이기까지 최대 약 2 초가 걸린다. 다른 탭에 있던 탐색기는 그 탭으로 돌아오는 순간 확인한다.
+- 폴더 수정 시각만 비교하므로 폴더 안 파일의 내용·크기만 바뀐 경우는 찾지 못한다. 시각 해상도가 거친 파일시스템에서는 같은 시각 단위 안의 변경을 놓칠 수 있다. 둘 다 새로고침으로 맞춘다.
+- 원격 mirror 탐색기는 여전히 새로고침이 필요하다.
+
+## Alternatives Considered
+
+- **OS 파일 이벤트 감시(`notify` 계열)**: 변경이 즉시 보이고 파일 단위 변경도 알 수 있다. 플랫폼마다 동작과 한도가 달라 세 OS 를 같은 수준으로 맞추고 검증하는 비용이 크고, 네트워크·FUSE 파일시스템에서는 이벤트가 오지 않을 수 있다. 사용자가 채택하지 않았다.
+- **보이는 모든 탐색기를 주기 확인**: 다른 Pane 이나 창의 탐색기도 최신으로 유지되지만, 여러 창·분할을 열어 둔 유휴 상태에서도 IO 와 깨움이 계속된다. 포커스 탭으로 줄였다.
+- **항목 목록 전체를 주기적으로 다시 읽어 비교**: 파일 크기·시각 변경도 찾지만, 큰 폴더에서 바뀌지 않아도 매번 `read_dir` 과 항목별 metadata 를 읽는다.
+- **mirror 탐색기도 확인**: 원격과 로컬 동작이 같아지지만 2 초마다 원격 왕복이 생긴다. 원격 IO 비용 때문에 제외했다.
+- **감지하지 않고 새로고침만 유지**: 비용은 없지만 외부 변경이 잦은 에이전트 작업에서 목록이 낡는다.
+
+## Reconsideration Triggers
+
+코드와 설정에서 확인:
+
+- 폴더 안 파일의 크기·수정 시각 변경도 자동으로 반영해야 한다는 요구가 생기면 항목 비교나 OS 감시를 다시 검토한다. 현재 비교 범위는 `src/app/local_reads/dir_stamp.rs` 의 `DirStamp` 다.
+- 주기나 대상(포커스 탭)을 바꾸면 `EXTERNAL_POLL_INTERVAL`(`src/adapters/ui/surface/explorer/view/poll.rs`)과 문서·사이트 가이드를 함께 바꾼다. 자동 검사는 없다.
+
+실행 결과로 확인:
+
+- 시각 해상도가 거친 파일시스템이나 네트워크 파일시스템에서 변경을 놓치는 사례가 보고되면 표지에 항목 수 등 다른 값을 더하거나 감시 방식을 검토한다.
+- 확인 IO 가 느린 파일시스템에서 local read worker 를 오래 붙잡는 것이 관측되면 확인 대상 수의 상한이나 주기를 다시 정한다.
+
+## References
+
+- [Explorer 외부 변경 확인](../surfaces/explorer/index.md#외부-변경-확인) — 현재 동작과 한계.
+- [ADR-0022](0022-remote-mirror-content-and-queries.md) — mirror 탐색기의 원격 조회.
+- `src/adapters/ui/surface/explorer/view/poll.rs`, `src/app/surface_poll.rs`, `src/app/timers.rs`(`Tick::ExplorerPoll`).
+- `crates/tasty-plugin-sdk/src/file_watch.rs` — 플러그인 파일 변경의 metadata 기반 주기 확인 선례.
