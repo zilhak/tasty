@@ -9,22 +9,18 @@ use crate::adapters::ui::icons::{self, Icon};
 use crate::core::fs_list::{DirEntryInfo, EntryLink};
 use crate::i18n::t;
 
-// TODO(tokens): batch 11 토큰이 vendor 되면 explorer_link_glyph · explorer_link_glyph_size ·
-// explorer_link_broken_fg 접근자로 바꾼다. 지금은 시안이 연결한 의미 토큰(text-muted · icon-size-xs ·
-// accent-warning)을 같은 값으로 읽는다.
-
 /// 이름 뒤 link 글리프의 크기.
 pub(super) fn glyph_size(th: &Theme) -> f32 {
-    th.icon_glyph_size_xs.value()
+    th.explorer_link_glyph_size().value()
 }
 
 fn glyph_color(th: &Theme) -> egui::Color32 {
-    th.text_muted().to_egui()
+    th.explorer_link_glyph().to_egui()
 }
 
 /// 대상이 없는 링크의 항목 글리프와 색. 링크가 아니거나 대상이 있으면 `None`.
 pub(super) fn broken_icon(th: &Theme, e: &DirEntryInfo) -> Option<(Icon, egui::Color32)> {
-    (e.link == EntryLink::Broken).then(|| (icons::LINK, th.accent_warning().to_egui()))
+    (e.link == EntryLink::Broken).then(|| (icons::LINK, th.explorer_link_broken_fg().to_egui()))
 }
 
 /// 이름 뒤에 link 글리프가 붙는 항목인지.
@@ -104,15 +100,15 @@ mod tests {
         let th = crate::theme::theme();
         let (icon, color) = broken_icon(&th, &entry(EntryLink::Broken)).expect("broken link");
         assert_eq!(icon.uri, icons::LINK.uri);
-        assert_eq!(color, th.accent_warning().to_egui());
+        assert_eq!(color, th.explorer_link_broken_fg().to_egui());
         assert!(broken_icon(&th, &entry(EntryLink::Valid)).is_none());
         assert!(broken_icon(&th, &entry(EntryLink::NotALink)).is_none());
     }
 
     #[test]
-    fn the_tail_glyph_is_the_extra_small_icon_size() {
+    fn the_tail_glyph_reads_the_link_tokens() {
         let th = crate::theme::theme();
-        assert_eq!(glyph_size(&th), th.icon_glyph_size_xs.value());
-        assert_eq!(glyph_color(&th), th.text_muted().to_egui());
+        assert_eq!(glyph_size(&th), th.explorer_link_glyph_size().value());
+        assert_eq!(glyph_color(&th), th.explorer_link_glyph().to_egui());
     }
 }

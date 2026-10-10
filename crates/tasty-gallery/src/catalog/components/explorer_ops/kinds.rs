@@ -136,7 +136,7 @@ fn cell(ui: &mut egui::Ui, th: &Theme, r: &KindRow, col: usize) {
                 let sz = th.icon_glyph_size_md.value();
                 let (rect, _) = ui.allocate_exact_size(egui::Vec2::splat(sz), egui::Sense::hover());
                 let tint = if r.broken {
-                    th.accent_warning().to_egui()
+                    th.explorer_link_broken_fg().to_egui()
                 } else if r.image {
                     th.accent_info().to_egui()
                 } else {
@@ -150,10 +150,12 @@ fn cell(ui: &mut egui::Ui, th: &Theme, r: &KindRow, col: usize) {
                 );
                 if r.link {
                     ui.spacing_mut().item_spacing.x = th.spacing_xs.value();
-                    let s = th.icon_glyph_size_xs.value();
+                    let s = th.explorer_link_glyph_size().value();
                     let (rect, _) =
                         ui.allocate_exact_size(egui::Vec2::splat(s), egui::Sense::hover());
-                    icons::LINK.image(s, muted).paint_at(ui, rect);
+                    icons::LINK
+                        .image(s, th.explorer_link_glyph().to_egui())
+                        .paint_at(ui, rect);
                 }
             });
         }
@@ -295,12 +297,12 @@ pub fn draw_links(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::new(
                 "explorer-link-glyph",
                 "→ text-muted",
-                theme.text_muted().to_egui(),
+                theme.explorer_link_glyph().to_egui(),
             ),
             TokenChip::new(
                 "explorer-link-broken-fg",
                 "→ accent-warning",
-                theme.accent_warning().to_egui(),
+                theme.explorer_link_broken_fg().to_egui(),
             ),
         ],
     );
