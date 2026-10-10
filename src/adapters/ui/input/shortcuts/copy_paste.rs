@@ -85,6 +85,9 @@ impl MainView {
         {
             return false;
         }
+        if self.cancel_explorer_address_check(engine, key, mods) {
+            return true;
+        }
         if super::focused_explorer_typing(&self.state, engine) {
             return false;
         }

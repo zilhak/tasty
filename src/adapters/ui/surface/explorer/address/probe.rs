@@ -49,6 +49,19 @@ impl ExplorerView {
         action
     }
 
+    /// 원격 확인을 기다린 시간. 기다리는 확인이 없거나 응답이 왔으면 None 이다.
+    pub(crate) fn address_waiting(&self) -> Option<std::time::Duration> {
+        self.addr_probe
+            .as_ref()
+            .filter(|p| p.answer.is_none())
+            .map(|p| p.sent_at.elapsed())
+    }
+
+    /// 기다리던 원격 확인을 버린다. 주소창은 다음 `sync` 에서 현재 폴더로 돌아간다.
+    pub(crate) fn cancel_address_probe(&mut self) {
+        self.addr_probe = None;
+    }
+
     /// 확정한 입력을 동작으로 바꾼다. 기다리던 확인은 어떤 입력이든(거부·빈 입력 포함) 버린다.
     fn address_input(
         &mut self,
@@ -221,6 +234,24 @@ mod tests {
         let action = view.address_action(&egui::Context::default(), Some("."), tmp.path(), false);
         assert_eq!(nav(action), Some(tmp.path().into()));
         assert_eq!(view.reveal, None);
+    }
+
+    #[test]
+    fn a_waiting_remote_check_keeps_the_typed_path_until_it_is_cancelled() {
+        let panel = tasty_model::ExplorerPanel::new(1, PathBuf::from("/srv"));
+        let (mut view, action, _) = remote_view_typed("a/notes.md");
+        assert!(action.is_none());
+        assert!(view.address_waiting().is_some());
+        view.addr_buffer = "a/notes.md".into();
+        view.sync(&panel, Some(7));
+        assert_eq!(
+            view.addr_buffer, "a/notes.md",
+            "the field does not snap back"
+        );
+        view.cancel_address_probe();
+        assert!(view.address_waiting().is_none());
+        view.sync(&panel, Some(7));
+        assert_eq!(view.addr_buffer, "/srv", "Esc restores the current path");
     }
 
     #[test]

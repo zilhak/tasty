@@ -194,7 +194,7 @@ pub use multi_select::{
     multi_select_summary, popup_chrome_width,
 };
 pub use override_row::{OverrideCell, override_row, override_row_fits};
-pub use path_field::{PathField, PathFieldOutcome};
+pub use path_field::{PathField, PathFieldOutcome, PathFieldPending};
 pub use plugin_add::{
     PLUGIN_ADD_INSET, PluginAddBarClicks, PluginAddBarView, PluginAddPickerOutput,
     PluginAddPickerView, PluginFingerprintLineView, PluginManifestCardOutput,

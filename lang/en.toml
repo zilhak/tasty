@@ -927,6 +927,7 @@ not_found = "Path not found: {}"
 unreadable = "Can't open {}: {}"
 no_home = "Can't find your home folder to expand ~."
 remote_home = "The remote computer's home folder isn't known yet. Enter the full remote path."
+checking = "Checking the remote path…"
 
 [explorer.sidebar]
 tree = "Files"

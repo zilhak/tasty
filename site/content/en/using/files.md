@@ -1,4 +1,4 @@
-<!-- source-hash: 7b0c6238bcfe -->
+<!-- source-hash: 673baa26f104 -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -62,7 +62,7 @@ Click the address bar to type a path directly; recently visited folders appear a
 - `~` and `~/folder` are under your home folder.
 - On Windows, a drive alone such as `C:` goes to the top of that drive, and network paths such as `\\server\share` work too.
 - If the path does not exist, the Explorer stays where it is and a notice tells you why. A link whose target is gone is treated like a file: the Explorer goes to the folder that holds the link and selects it.
-- In an Explorer in a remote Workspace, the path is looked up on the remote computer. A folder that exists only there opens, and if the remote computer can't read it, the reason shows in the list area. `~` is the remote computer's home folder, and `.` and `..` are resolved on the remote path. If Tasty hasn't learned the remote home yet right after connecting, it asks you to type the full remote path instead of `~`.
+- In an Explorer in a remote Workspace, the path is looked up on the remote computer. A folder that exists only there opens, and if the remote computer can't read it, the reason shows in the list area. `~` is the remote computer's home folder, and `.` and `..` are resolved on the remote path. If Tasty hasn't learned the remote home yet right after connecting, it asks you to type the full remote path instead of `~`. While Tasty checks whether a remote path is a file, the address bar keeps the path you typed, and if the check takes a while a spinner appears at its end. Press `Esc` then to stop the check and put the current folder back in the address bar.
 
 ### New folder · New file
 

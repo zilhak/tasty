@@ -453,8 +453,9 @@ impl ExplorerView {
         self.adopt_hidden(panel.show_hidden);
         let tab = panel.active_tab();
         self.settle_reveal(&tab.root);
-        // 편집 중에는 입력을 유지하고, 아니면 주소를 현재 cwd로 맞춘다. 목록 갱신과는 별개다.
-        if !self.addr_editing {
+        // 편집 중이거나 원격 확인을 기다리는 중에는 입력을 유지하고, 아니면 주소를 현재 cwd로 맞춘다.
+        // 목록 갱신과는 별개다.
+        if !self.addr_editing && self.addr_probe.is_none() {
             let cwd = tab.root.display().to_string();
             if self.addr_buffer != cwd {
                 self.addr_buffer = cwd;

@@ -62,6 +62,31 @@ fn list_step(
 }
 
 impl MainView {
+    /// 포커스된 탐색기가 원격 주소 확인을 기다리는 중이면 `Esc` 가 그 확인을 버린다. 주소창은 현재
+    /// 폴더로 돌아간다. 주소창을 편집 중이면 PathField 가 `Esc` 를 처리하므로 여기서 받지 않는다.
+    pub(super) fn cancel_explorer_address_check(
+        &mut self,
+        engine: &EngineRead<'_>,
+        key: &Key,
+        mods: ModifiersState,
+    ) -> bool {
+        if *key != Key::Named(winit::keyboard::NamedKey::Escape) || !mods.is_empty() {
+            return false;
+        }
+        let Some(sid) = super::focused_explorer_surface_id(&self.state, engine) else {
+            return false;
+        };
+        let Some(view) = self.state.explorer_views.get_mut(sid) else {
+            return false;
+        };
+        if view.addr_editing || view.address_waiting().is_none() {
+            return false;
+        }
+        view.cancel_address_probe();
+        self.mark_dirty();
+        true
+    }
+
     /// 포커스된 탐색기의 현재 항목을 옮긴다. 앞단(`handle_explorer_shortcut`)이 capability 와 글자
     /// 입력 중인지를 이미 확인했다. 영역 선택 중에는 키를 소비만 한다.
     pub(super) fn handle_explorer_list_key(

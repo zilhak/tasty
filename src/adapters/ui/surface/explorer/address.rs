@@ -2,6 +2,7 @@
 //! 원격 입력은 로컬 파일시스템을 보지 않고 원격 조회에 맡긴다. 규칙은 docs/surfaces/explorer/index.md의
 //! "주소 입력" 절에 있다.
 
+pub(super) mod field;
 mod probe;
 mod remote;
 

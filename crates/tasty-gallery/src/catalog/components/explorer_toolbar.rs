@@ -3,7 +3,7 @@
 use std::cell::RefCell;
 
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::PathField;
+use tasty_ui_widgets::{PathField, PathFieldPending};
 
 use super::glyph;
 use crate::catalog::icons::{LAYOUT_DETAIL, LAYOUT_GRID, LIST, MockGlyph};
@@ -74,6 +74,44 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             });
     });
 
+    // 원격 확인 대기: 입력한 경로와 포커스 테두리를 두고, 지연 뒤에는 뒤 칸에 Spinner 를 보인다.
+    for (label, spinner) in [
+        ("remote check — first 200 ms (no spinner)", None),
+        (
+            "remote check — after 200 ms (spinner)",
+            Some(theme.explorer_address_pending_size().value()),
+        ),
+    ] {
+        cluster(ui, theme, label, |ui| {
+            egui::Frame::new()
+                .fill(egui::Color32::from(theme.bg_panel()))
+                .inner_margin(egui::Margin::same(theme.spacing_sm.value() as i8))
+                .show(ui, |ui| {
+                    ui.set_width(theme.measure_md.value());
+                    let typed = "/srv/app/logs/2026-10-10.log";
+                    let mut buf = typed.to_string();
+                    let (mut editing, mut active) = (false, None);
+                    PathField::new(&format!("gallery_exp_addr_pending_{label}"))
+                        .placeholder(t("explorer.address.placeholder"))
+                        .leading_icon(&folder_icon)
+                        .go_icon(&go_icon)
+                        .pending(Some(PathFieldPending {
+                            spinner,
+                            tooltip: t("explorer.address.checking"),
+                        }))
+                        .show(
+                            ui,
+                            theme,
+                            &mut buf,
+                            &mut editing,
+                            &mut active,
+                            &[],
+                            "~/Downloads",
+                        );
+                });
+        });
+    }
+
     cluster(ui, theme, "view-mode toggle (grid / list / detail)", |ui| {
         egui::Frame::new()
             .fill(egui::Color32::from(theme.bg_panel()))
@@ -96,6 +134,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("leading", "folderOpen (input-icon-fg)"),
             ("trailing", "Go IconButton (sm) — arrow-right"),
             ("keys", "Enter/Go navigate · ↑/↓ active · Esc revert"),
+            (
+                "remote check",
+                "typed path + focus border kept · spinner (explorer-address-pending-size 12, spinner-indicator) after explorer-address-pending-delay 200 ms · Esc cancels · 8 s → typed path",
+            ),
             ("toggle", "3 icons · active segtoggle-on-bg"),
             ("height", "28 (control-height-interactive)"),
         ],

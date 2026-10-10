@@ -24,6 +24,10 @@ pub struct Input<'a> {
     /// 입력의 고정 id. `None` 이면 그린 순서로 정해진다. 그리는 자리가 프레임마다 바뀌어도 포커스를
     /// 지켜야 하는 입력이 쓴다.
     id: Option<egui::Id>,
+    /// 포커스가 없어도 포커스 테두리를 그린다. 확정한 입력의 결과를 기다리는 동안 쓴다.
+    focus_look: bool,
+    /// 입력 뒤 정사각 칸과 그 변 길이. 칸을 그리는 painter 는 input-icon-fg 색으로 불린다.
+    trailing: Option<(IconPainter<'a>, f32)>,
 }
 
 impl Default for Input<'_> {
@@ -46,6 +50,8 @@ impl<'a> Input<'a> {
             text_color: None,
             align: egui::Align::LEFT,
             id: None,
+            focus_look: false,
+            trailing: None,
         }
     }
 
@@ -105,6 +111,18 @@ impl<'a> Input<'a> {
         self
     }
 
+    /// 포커스가 없어도 포커스 테두리를 그린다.
+    pub fn focus_look(mut self, focus_look: bool) -> Self {
+        self.focus_look = focus_look;
+        self
+    }
+
+    /// 입력 뒤에 변 길이 `size` 인 칸을 두고 `paint` 로 그린다(예: 기다리는 동안의 Spinner).
+    pub fn trailing(mut self, paint: IconPainter<'a>, size: f32) -> Self {
+        self.trailing = Some((paint, size));
+        self
+    }
+
     /// 기본은 왼쪽 정렬. 숫자를 비교하는 필드는 오른쪽 정렬을 사용할 수 있다.
     pub fn align(mut self, align: egui::Align) -> Self {
         self.align = align;
@@ -157,7 +175,8 @@ impl<'a> Input<'a> {
             .as_ref()
             .map(|g| g.rect.width() + gap)
             .unwrap_or(0.0);
-        let te_w = (inner_w - icon_w - addon_w).max(0.0);
+        let trailing_w = self.trailing.map_or(0.0, |(_, size)| size + gap);
+        let te_w = (inner_w - icon_w - addon_w - trailing_w).max(0.0);
 
         let muted = if self.enabled {
             theme.input_icon_fg().to_egui()
@@ -220,8 +239,14 @@ impl<'a> Input<'a> {
                 let (arect, _) = ui.allocate_exact_size(g.rect.size(), egui::Sense::hover());
                 ui.painter().galley(arect.min, g, muted);
             }
+            if let Some((paint, size)) = self.trailing {
+                let (trect, _) =
+                    ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::hover());
+                paint(ui, trect, muted);
+            }
             r
         };
+        let focused = resp.has_focus() || (self.focus_look && self.enabled);
 
         let border = if !self.enabled {
             theme.state_disabled_border().to_egui()
@@ -233,7 +258,7 @@ impl<'a> Input<'a> {
             }
         } else if self.invalid {
             theme.input_border_invalid().to_egui()
-        } else if resp.has_focus() {
+        } else if focused {
             theme.input_border_focus().to_egui()
         } else {
             theme.input_border().to_egui()
@@ -244,7 +269,7 @@ impl<'a> Input<'a> {
             egui::Stroke::new(bw, border),
             egui::StrokeKind::Inside,
         );
-        if resp.has_focus() && !read_only {
+        if focused && !read_only {
             let ring = if self.invalid {
                 theme.input_border_invalid().to_egui()
             } else {

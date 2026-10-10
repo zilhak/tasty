@@ -20,6 +20,16 @@ pub enum PathFieldOutcome {
     Revert,
 }
 
+/// 확정한 입력의 결과를 기다리는 상태. 필드는 입력한 경로를 그대로 두고 포커스가 없어도 포커스
+/// 테두리를 유지한다. 원복·취소는 호출자가 정한다.
+#[derive(Clone, Copy, Debug)]
+pub struct PathFieldPending<'a> {
+    /// 뒤 칸에 Spinner 를 보일 때 그 변 길이. 기다림이 아직 짧아 보이지 않을 때는 `None` 이다.
+    pub spinner: Option<f32>,
+    /// Spinner 도움말.
+    pub tooltip: &'a str,
+}
+
 /// 편집/이동 결정(내부). `decide` 가 산출한다.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Decision {
@@ -68,6 +78,8 @@ pub struct PathField<'a> {
     go_tooltip: Option<&'a str>,
     /// 이번 프레임에 입력칸에 포커스를 주고 글자 전체를 고른다(주소창 포커스 단축키).
     focus: bool,
+    /// 확정한 입력의 결과를 기다린다.
+    pending: Option<PathFieldPending<'a>>,
 }
 
 impl<'a> PathField<'a> {
@@ -85,6 +97,7 @@ impl<'a> PathField<'a> {
             go_icon: None,
             go_tooltip: None,
             focus: false,
+            pending: None,
         }
     }
 
@@ -152,6 +165,12 @@ impl<'a> PathField<'a> {
         self
     }
 
+    /// 확정한 입력의 결과를 기다리는 동안의 모양. `None` 이면 평상시다.
+    pub fn pending(mut self, pending: Option<PathFieldPending<'a>>) -> Self {
+        self.pending = pending;
+        self
+    }
+
     /// 트리거(AutoComplete) + Go 버튼을 한 행에 그리고 편집/이동/원복 결정을 반환한다.
     ///
     /// - `buffer`: 편집 버퍼(트리거 텍스트). 원복 시 위젯이 `current_path` 로 되돌린다.
@@ -179,6 +198,18 @@ impl<'a> PathField<'a> {
         let row = self.row_icon.or(self.leading_icon);
 
         let mut outcome = PathFieldOutcome::None;
+        let tooltip = self.pending.map_or("", |p| p.tooltip);
+        let spinner = |ui: &mut egui::Ui, rect: egui::Rect, _: egui::Color32| {
+            crate::Spinner::new()
+                .color(theme.spinner_indicator().to_egui())
+                .paint_in(ui, theme, rect);
+            ui.interact(
+                rect,
+                ui.id().with("path_field_pending"),
+                egui::Sense::hover(),
+            )
+            .on_hover_text(tooltip);
+        };
 
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = gap;
@@ -201,6 +232,12 @@ impl<'a> PathField<'a> {
             }
             if !*editing {
                 ac = ac.trigger_text_color(theme.text_secondary().to_egui());
+            }
+            if let Some(pending) = self.pending {
+                ac = ac.focus_look(true);
+                if let Some(size) = pending.spinner {
+                    ac = ac.trailing(&spinner, size);
+                }
             }
             let out = ac.show(ui, theme, buffer, candidates, active);
             if self.focus {

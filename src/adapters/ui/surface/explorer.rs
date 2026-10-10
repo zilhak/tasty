@@ -22,9 +22,7 @@ use tasty_type_geometry::length::LogicalPx;
 
 use tasty_model::{ExplorerPanel, ExplorerViewMode, SortColumn, SortDir};
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::{
-    PathField, PathFieldOutcome, Table, TableSortDir, tree_row, tree_row_with_tail_fg,
-};
+use tasty_ui_widgets::{Table, TableSortDir, tree_row, tree_row_with_tail_fg};
 
 use crate::adapters::ui::icons::{self, Icon};
 use crate::core::explorer_favorites as favorites;
@@ -437,7 +435,7 @@ fn toolbar(
             egui::vec2(addr_w, ui.available_height()),
             egui::Layout::left_to_right(egui::Align::Center),
             |ui| {
-                address_bar(
+                address::field::address_bar(
                     ui,
                     theme,
                     panel.current_root(),
@@ -540,59 +538,6 @@ fn seg_toggle(
             *action = Some(ExplorerAction::SetViewMode(m));
         }
         sx += seg_w + gap;
-    }
-}
-
-/// 경로를 편집해 Enter·Go로 이동하는 공용 PathField. 최근 디렉터리를 후보로 전달한다.
-/// 상태는 surface별로, egui ID는 surface·내부 탭별로 구분한다.
-#[allow(clippy::too_many_arguments)]
-fn address_bar(
-    ui: &mut egui::Ui,
-    theme: &Theme,
-    current: &Path,
-    view: &mut ExplorerView,
-    id_suffix: &str,
-    tab_index: usize,
-    recent_dirs: &[String],
-    remote: bool,
-    action: &mut Option<ExplorerAction>,
-) {
-    let current_str = current.display().to_string();
-    let candidates: Vec<&str> = recent_dirs.iter().map(String::as_str).collect();
-    let folder_icon = |ui: &mut egui::Ui, rect: egui::Rect, c: egui::Color32| {
-        icons::FOLDER_OPEN
-            .image(rect.height(), c)
-            .paint_at(ui, rect);
-    };
-    let go_icon = |ui: &mut egui::Ui, rect: egui::Rect, c: egui::Color32| {
-        icons::ARROW_RIGHT
-            .image(rect.height(), c)
-            .paint_at(ui, rect);
-    };
-    let salt = format!("explorer_addr_{id_suffix}_{tab_index}");
-    let outcome = PathField::new(&salt)
-        .placeholder(t("explorer.address.placeholder"))
-        .empty_label(t("explorer.address.empty"))
-        .leading_icon(&folder_icon)
-        .row_icon(&folder_icon)
-        .go_icon(&go_icon)
-        .go_tooltip(t("explorer.address.go"))
-        .focus(std::mem::take(&mut view.focus_address))
-        .show(
-            ui,
-            theme,
-            &mut view.addr_buffer,
-            &mut view.addr_editing,
-            &mut view.addr_active,
-            &candidates,
-            &current_str,
-        );
-    let input = match outcome {
-        PathFieldOutcome::Navigate(input) => Some(input),
-        _ => None,
-    };
-    if action.is_none() {
-        *action = view.address_action(ui.ctx(), input.as_deref(), current, remote);
     }
 }
 

@@ -64,6 +64,10 @@ pub struct AutoComplete<'a> {
     highlight: bool,
     /// 드롭다운 최대 높이 override. `None` 이면 `theme.autocomplete_max_height()`(220).
     max_dropdown_height: Option<f32>,
+    /// 트리거의 포커스 테두리 유지(`Input::focus_look`).
+    focus_look: bool,
+    /// 트리거 뒤 칸(`Input::trailing`).
+    trailing: Option<(IconPainter<'a>, f32)>,
 }
 
 impl<'a> AutoComplete<'a> {
@@ -81,6 +85,8 @@ impl<'a> AutoComplete<'a> {
             match_mode: MatchMode::Substring,
             highlight: true,
             max_dropdown_height: None,
+            focus_look: false,
+            trailing: None,
         }
     }
 
@@ -147,6 +153,18 @@ impl<'a> AutoComplete<'a> {
         self
     }
 
+    /// 포커스가 없어도 트리거에 포커스 테두리를 그린다.
+    pub fn focus_look(mut self, focus_look: bool) -> Self {
+        self.focus_look = focus_look;
+        self
+    }
+
+    /// 트리거 뒤에 변 길이 `size` 인 칸을 두고 `paint` 로 그린다.
+    pub fn trailing(mut self, paint: IconPainter<'a>, size: f32) -> Self {
+        self.trailing = Some((paint, size));
+        self
+    }
+
     /// 입력 필드와 포커스 중의 후보 팝오버를 그린다.
     /// buf는 검색할 입력값, entries는 원본 후보, active는 필터된 목록의 키보드 인덱스다.
     /// 팝오버는 주변 레이아웃을 밀지 않는다.
@@ -164,7 +182,11 @@ impl<'a> AutoComplete<'a> {
             .placeholder(self.placeholder)
             .mono(self.mono)
             .enabled(self.enabled)
+            .focus_look(self.focus_look)
             .width(width);
+        if let Some((paint, size)) = self.trailing {
+            trigger = trigger.trailing(paint, size);
+        }
         if let Some(icon) = self.icon {
             trigger = trigger.icon(icon);
         }
