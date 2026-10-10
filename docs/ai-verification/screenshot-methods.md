@@ -188,6 +188,8 @@ TASTY_HOME은 빌드별 기본 경로보다 우선한다.
 가짜 브라우저 PATH/BROWSER 설정도 같은 문서에 따라 적용한다.
 캡처 IPC는 그 검증 홈의 tasty.port로 보낸다.
 
+TASTY_HOME은 휴지통도 격리하지 않는다. Linux에서 Explorer의 휴지통 이동은 `$XDG_DATA_HOME/Trash`(없으면 `~/.local/share/Trash`)를 사용한다. 휴지통에 닿는 실행에서는 XDG_DATA_HOME을 검증용 폴더로 지정해 사용자 휴지통에 파일이 남지 않게 한다.
+
 격리 CLI는 바깥의 `TASTY_SESSION_TOKEN`·`TASTY_SURFACE_ID`·`TASTY_PARENT_HOME`을 제거하고 실행한다. 외부 토큰은 격리 인스턴스에 등록되지 않아 permission_denied가 발생하며, readiness 검사에서는 기동 실패처럼 보일 수 있다. 연결한 절차처럼 launcher와 CLI 모두 환경을 분리한다. 세션 토큰이 없는 로컬 CLI는 local caller로 접속한다.
 
 직접 시작하면서 저장한 PID만 종료한다. 이름이나 명령줄 패턴으로 찾은 프로세스를 한꺼번에 종료하지 않는다. 정리할 디렉터리도 이번 검증에서 만든 경로인지 확인하고 `${VERIFY_HOME:?}`처럼 빈 값이 전달되지 않게 한다.
