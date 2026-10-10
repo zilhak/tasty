@@ -64,7 +64,9 @@ for spec in "${targets[@]}"; do
         echo "[git-env] 통과 $spec"
     else
         failed=$((failed + 1))
-        echo "[git-env] 시험 실패 $spec — 마지막 출력:" >&2
+        echo "[git-env] 시험 실패 $spec — 실패한 시험과 panic 위치:" >&2
+        grep -E '^---- |panicked at' "$fixture/$target.log" >&2 || true
+        echo "[git-env] 마지막 출력:" >&2
         tail -n 20 "$fixture/$target.log" >&2
     fi
     ran=$((ran + 1))
