@@ -284,8 +284,9 @@ DAG 목록 popup 은 surface 에 매이지 않으므로 `Tick::DagListPopup` 로
 
 탐색기 외부 변경 확인은 창 전체에서 가장 이른 확인 시각 하나로 `Tick::ExplorerPoll` 을 건다
 (`sync_explorer_poll_timer`). 확인 대상 표시도 DAG 와 같은 원리로, 패널을 그리기 전에
-`ExplorerViewStore::begin_poll_frame` 이 모든 칸의 포커스 표시를 내리고 그 프레임에 포커스 탭으로
-그려진 칸만 다시 올린다. 배경 탭으로 밀린 탐색기는 다음 프레임에 빠져 깨움이 멈춘다. 확인은 그리는
+`ExplorerViewStore::begin_poll_frame` 이 모든 칸의 포커스 표시를 내리고 그 프레임에 포커스 창의 포커스
+탭으로 그려진 칸만 다시 올린다. 배경 탭으로 밀린 탐색기와 포커스를 잃은 창의 탐색기는 다음 프레임에
+빠져 깨움이 멈춘다. 확인은 그리는
 동안 하므로 App 은 깨어난 뒤 확인할 때가 된 창을 다시 그리게 표시한다(`App::sync_surface_poll_timers`).
 규칙은 [Explorer 외부 변경 확인](../surfaces/explorer/index.md#외부-변경-확인)에 있다.
 
@@ -312,7 +313,7 @@ DAG 목록 popup 은 surface 에 매이지 않으므로 `Tick::DagListPopup` 로
 | `LayoutFlush` | `dirty_since + 디바운스` | `LAYOUT_FLUSH_DEBOUNCE` |
 | `DagGraph(sid)` | `last_poll + 폴링주기` | `POLL_INTERVAL` |
 | `DagListPopup` | `last_list_poll + 폴링주기` | `POLL_INTERVAL` |
-| `ExplorerPoll` | 포커스 탭 탐색기의 마지막 확인 시각 + 확인 주기 | `EXTERNAL_POLL_INTERVAL` |
+| `ExplorerPoll` | 포커스 창의 포커스 탭 탐색기의 마지막 확인 시각 + 확인 주기 | `EXTERNAL_POLL_INTERVAL` |
 | `Reconnect(anchor)` | `slot.next_attempt` | `RECONNECT_MIN_BACKOFF` |
 
 `NativeMenu` · `WebviewKeyPoll` · `EguiRepaint(창)` 은 예외인데, 그건 파생이 아니라 `once_after(주기)` = **상대 지연**이라

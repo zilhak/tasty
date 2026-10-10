@@ -84,7 +84,7 @@ Terminal·Pty 분리와 터미널 호환성, 입력·포커스, 점유와 원격
 | 0033 | [이벤트 피드는 짧게 보관하고 소비자가 읽은 위치를 관리한다](0033-event-feed-delivery.md) | Accepted | 2026-09-24 | plugins, runtime |
 | 0034 | [터미널 출력은 스트림과 바이트 위치로 이어 읽는다](0034-output-cursor-contract.md) | Accepted | 2026-09-24 | plugins, runtime |
 | 0053 | [HTML 문서의 스크립트는 원본 파일에서 감지하고 사용자만 문서 단위로 허용한다](0053-html-script-detection-and-per-document-allowance.md) | Accepted | 2026-09-29 | plugins, webview, html, javascript, sandbox, banner, ipc, security |
-| 0076 | [탐색기는 다른 프로그램의 변경을 포커스 탭에서만 2초 주기 metadata 비교로 찾는다](0076-explorer-outside-changes-by-focused-tab-polling.md) | Accepted | 2026-10-10 | explorer, files, polling, focus, performance |
+| 0076 | [탐색기는 다른 프로그램의 변경을 포커스 창의 포커스 탭에서만 2초 주기 metadata 비교로 찾는다](0076-explorer-outside-changes-by-focused-tab-polling.md) | Accepted | 2026-10-10 | explorer, files, polling, focus, performance |
 <!-- adr-rows:end plugins -->
 
 ## 화면·테마·국제화

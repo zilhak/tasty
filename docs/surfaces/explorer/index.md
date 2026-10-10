@@ -53,8 +53,8 @@ View 는 모델을 직접 바꾸지 않고 파일시스템도 직접 읽지 않�
 
 다른 프로그램이 바꾼 폴더는 OS 파일 감시 없이 주기 확인으로 찾는다. 결정과 대안은 [ADR-0076](../../adr/0076-explorer-outside-changes-by-focused-tab-polling.md)에 있다(`src/adapters/ui/surface/explorer/view/poll.rs`).
 
-- **대상 칸**: 창마다 포커스를 가진 surface 가 속한 탭의 로컬 explorer 만 확인한다. 같은 탭을 나눈 다른 surface 에 포커스가 있어도 그 탭의 explorer 는 확인한다. 다른 탭에 가려졌거나 다른 Pane 의 탭에 있는 explorer 는 확인하지 않는다. OS 창 포커스는 보지 않는다.
-- **주기**: 그 탭이 포커스를 얻은 프레임에 바로 한 번 확인하고, 그 뒤로는 2 초(`EXTERNAL_POLL_INTERVAL`)마다 확인한다. 포커스를 잃으면 멈추고, 다시 얻으면 주기를 기다리지 않고 확인한다. App 은 가장 이른 다음 확인 시각에 `Tick::ExplorerPoll` 로 깨어나 확인할 때가 된 창을 다시 그린다(확인은 그리는 동안 한다).
+- **대상 칸**: 입력을 받는 창(OS 창 포커스)에서 포커스를 가진 surface 가 속한 탭의 로컬 explorer 만 확인한다(`checks_outside_changes`). 같은 탭을 나눈 다른 surface 에 포커스가 있어도 그 탭의 explorer 는 확인한다. 다른 탭에 가려졌거나 다른 Pane 의 탭에 있는 explorer, 포커스가 없는 창의 explorer 는 확인하지 않는다. Tasty 가 배경 앱이면 어느 explorer 도 확인하지 않는다. 창 포커스는 egui-winit 이 winit `Focused` 이벤트로 갱신하는 `RawInput.focused` 를 읽는다.
+- **주기**: 탭이나 창이 포커스를 얻은 프레임에 바로 한 번 확인하고, 그 뒤로는 2 초(`EXTERNAL_POLL_INTERVAL`)마다 확인한다. 포커스를 잃으면 멈추고, 다시 얻으면 주기를 기다리지 않고 확인한다. 창 포커스가 바뀌면 `Focused` 이벤트가 그 창을 다시 그리게 표시하므로 그 프레임이 확인을 시작하거나 멈춘다. App 은 가장 이른 다음 확인 시각에 `Tick::ExplorerPoll` 로 깨어나 확인할 때가 된 창을 다시 그린다(확인은 그리는 동안 한다).
 - **확인 대상**: 현재 폴더와, 하위 목록을 읽어 둔 펼친 트리 폴더다. 펼치지 않은 트리 노드의 펼침 표시는 확인하지 않는다.
 - **비교**: worker 에서 폴더 metadata(수정 시각·크기)만 읽어 마지막으로 읽었을 때의 표지와 비교한다. 항목은 읽지 않으므로 바뀌지 않은 폴더는 `read_dir` 하지 않는다. 목록을 읽을 때는 표지를 항목보다 먼저 읽어, 그 사이의 변경은 다음 확인에서 다시 읽힌다. 다른 읽기를 기다리는 동안에는 그 회차를 건너뛴다.
 - **다시 읽기**: 표지가 바뀐 현재 폴더는 보이던 목록을 둔 채 다시 읽고, 결과가 오면 목록만 바꾼다. `Loading` 화면, 타입어헤드 초기화, 하위 폴더 검색 재시작은 하지 않는다. 선택·스크롤·포커스는 그대로이고, 결과 목록에 없는 항목만 선택과 anchor 에서 빠진다. 표지가 바뀐 펼친 트리 폴더는 보이던 하위 목록을 둔 채 그 폴더만 다시 읽고 결과로 바꾼다. 캐시를 먼저 비우지 않으므로 사이드바 트리의 높이와 스크롤도 그대로다. 트리에 캐시된 현재 폴더의 하위 목록은 목록 결과로 함께 바꾸므로 따로 읽지 않는다. 폴더가 사라졌으면 읽기 오류 화면이 된다.
@@ -338,6 +338,7 @@ Appearance → **Explorer** 서브탭에서 surface 폰트를 오버라이드한
 - Given 포커스를 가진 탭의 로컬 explorer When 다른 프로그램이 현재 폴더에서 항목 하나를 지우고 하나를 만든다 Then 다음 확인에서 보이던 목록을 둔 채 다시 읽어 새 목록으로 바뀌고, 선택은 사라진 항목만 빠진다(`view/poll_tests.rs` 의 `a_changed_folder_is_reread_while_the_old_list_stays`).
 - Given 포커스를 가진 탭의 로컬 explorer When 폴더가 바뀌지 않은 채 확인한다 Then 목록을 다시 읽지 않는다(`an_unchanged_folder_is_not_read_again`). 펼친 트리 폴더 둘 중 하나만 바뀌면 그 폴더만 다시 읽고, 결과가 올 때까지 보이던 하위 목록을 둔다(`only_a_changed_expanded_tree_folder_is_read_again`). 트리에 펼친 현재 폴더가 바뀌면 목록만 한 번 읽고 그 결과로 트리 항목도 바꾼다(`the_current_folder_in_the_tree_is_read_once_and_its_node_is_replaced_in_place`).
 - Given 다른 탭에 가려진 explorer 와 mirror explorer When 주기가 지난다 Then 확인하지 않고 App 도 그 때문에 깨어나지 않는다. 그 탭이 포커스를 얻으면 바로 확인한다(`a_tab_without_focus_is_never_checked`, `gaining_focus_checks_at_once_and_then_every_interval`, `a_panel_not_drawn_this_frame_stops_waking`, `a_mirror_explorer_is_not_checked`).
+- Given 포커스 탭에 로컬 explorer 가 있는 창 When 다른 앱이 포커스를 가져간 동안 주기가 지난다 Then 확인하지 않고 깨어나지도 않는다. 창이 포커스를 되찾은 프레임에 주기를 기다리지 않고 확인한 뒤 주기를 다시 시작한다(`view/poll_tests.rs` 의 `only_the_focused_tab_of_the_focused_window_is_checked_and_regaining_focus_checks_at_once`).
 - Given 로컬 explorer 가 A/B/C 를 보고 있다 When B 가 통째로 지워져 읽기 오류 화면에서 "상위 폴더로" 를 누른다 Then A 로 간다(`local_reads.rs` 의 `a_missing_folder_names_its_nearest_existing_ancestor`, `view.rs` 의 `go_up_from_a_vanished_folder_skips_vanished_parents`).
 - Given 읽기 권한이 없는 폴더 When 들어간다 Then 권한 거부 화면이 나오고 툴바·트리는 그대로 쓸 수 있다.
 - Given 폴더를 우클릭한다 When "새 탭으로 열기"를 고른다 Then 우클릭한 surface 의 pane 에 그 폴더를 cwd 로 하는 explorer Pane 탭이 생기고 원래 explorer 는 바뀌지 않는다.
