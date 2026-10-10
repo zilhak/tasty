@@ -19,7 +19,7 @@ use super::explorer_toolbar::{seg_toggle, seg_toggle_width};
 use crate::catalog::icons::{self, MockGlyph};
 use crate::catalog::spec::{StageVariant, TokenChip, meta, note, stage, wrap_item};
 use crate::catalog::{Section, Spec};
-use crate::i18n::{t, t_fmt, t_fmt2};
+use crate::i18n::{t, t_count, t_fmt, t_fmt2};
 
 mod search;
 pub use search::search_section;

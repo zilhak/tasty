@@ -325,7 +325,7 @@ pub fn draw_subfolder_search(ui: &mut egui::Ui, theme: &Theme) {
                 Some(true),
                 ExplorerFindStatus::Skipped {
                     text: &t("explorer.find.capped").replace("{n}", "5,000"),
-                    skipped: t("explorer.find.skipped_one"),
+                    skipped: &t_count("explorer.find.skipped", 1, &["1"]),
                     tooltip: "~/Downloads/private",
                 },
                 &t("explorer.find.capped_hint").replace("{n}", "5,000"),

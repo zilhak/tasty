@@ -23,6 +23,12 @@ pub fn t_fmt(key: &'static str, arg: &str) -> String {
     tasty_i18n::t_fmt(key, arg)
 }
 
+/// 수 `n` 에 맞는 영어 문자열(`<key>` 또는 단수 변형 `<key>_one`)을 `args` 로 채운다.
+pub fn t_count(key: &'static str, n: u64, args: &[&str]) -> String {
+    ensure_init();
+    tasty_i18n::t_count(key, n, args)
+}
+
 /// `key`의 영어 문자열에서 앞의 두 `{}` 를 차례로 바꾼다.
 pub fn t_fmt2(key: &'static str, arg1: &str, arg2: &str) -> String {
     ensure_init();

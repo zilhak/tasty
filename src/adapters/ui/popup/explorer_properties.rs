@@ -17,7 +17,7 @@ use crate::adapters::ui::icons::{self, Icon};
 use crate::adapters::ui::popup::PopupAction;
 use crate::app::local_reads::{self, FolderCount, ItemFacts, ItemKind, PropertiesFacts, Query};
 use crate::core::fs_list::{DirEntryInfo, group_digits, human_size};
-use crate::i18n::{t, t_fmt, t_fmt2};
+use crate::i18n::{t, t_count, t_fmt, t_fmt2};
 use crate::runtime::engine_read::EngineRead;
 use crate::state::MainViewState;
 use crate::theme::{self, Theme};
@@ -570,15 +570,14 @@ fn single_content(
                         t_fmt2("explorer.properties.counting", &items, &size),
                     )
                 }
-            } else if counted_items == 1 {
-                field(
-                    "explorer.properties.size",
-                    t_fmt("explorer.properties.folder_size_one", &size),
-                )
             } else {
                 field(
                     "explorer.properties.size",
-                    t_fmt2("explorer.properties.folder_size", &size, &items),
+                    t_count(
+                        "explorer.properties.folder_size",
+                        counted_items,
+                        &[&size, &items],
+                    ),
                 )
             });
             fields.push(mono(
@@ -696,27 +695,13 @@ fn common_parent(paths: &[PathBuf]) -> String {
 
 /// "2 files, 1 folder" 처럼 파일·폴더 수. 미리보기 패널의 여러 개 선택 머리도 쓴다.
 pub(crate) fn kinds_text(files: usize, folders: usize) -> String {
-    let count = |n: usize, one: &str, many: &str| {
-        if n == 1 {
-            t(one).to_owned()
-        } else {
-            t_fmt(many, &n.to_string())
-        }
-    };
+    let count = |n: usize, key: &str| t_count(key, n as u64, &[&n.to_string()]);
     let mut parts = Vec::new();
     if files > 0 {
-        parts.push(count(
-            files,
-            "explorer.properties.files_one",
-            "explorer.properties.files",
-        ));
+        parts.push(count(files, "explorer.properties.files"));
     }
     if folders > 0 {
-        parts.push(count(
-            folders,
-            "explorer.properties.folders_one",
-            "explorer.properties.folders",
-        ));
+        parts.push(count(folders, "explorer.properties.folders"));
     }
     parts.join(t("explorer.properties.list_separator"))
 }

@@ -17,6 +17,9 @@
 
 pub mod font;
 pub mod plugin_catalog;
+pub mod plural;
+
+pub use plural::t_count;
 
 use std::collections::HashMap;
 use std::fmt;
@@ -634,7 +637,9 @@ impl Translations {
         if code != "en"
             && let Some(toml_str) = builtin_toml(code)
         {
-            Self::parse_toml_into(&mut strings, toml_str);
+            let mut overlay = HashMap::new();
+            Self::parse_toml_into(&mut overlay, toml_str);
+            plural::extend_layer(&mut strings, overlay);
         }
         let outcome =
             match lang_dir.and_then(|dir| Self::apply_user_override(&mut strings, dir, code)) {
@@ -672,7 +677,7 @@ impl Translations {
             &format!("user override {}", path.display()),
             &format!("keep the built-in '{code}' text"),
         );
-        strings.extend(overlay);
+        plural::extend_layer(strings, overlay);
         tracing::info!("loaded user translations from {}", path.display());
         Some(path)
     }
@@ -695,7 +700,7 @@ impl Translations {
         match load_pack(&path, code) {
             Ok(pack) => {
                 let mut strings = Self::english_base();
-                strings.extend(pack.strings);
+                plural::extend_layer(&mut strings, pack.strings);
                 tracing::info!(
                     "i18n: loaded language pack '{code}' from {} (font: {:?})",
                     path.display(),

@@ -88,5 +88,5 @@ fn overlay(strings: &mut HashMap<String, String>, path: &Path, drop_blank: bool,
             "keep the preceding translation layer",
         );
     }
-    strings.extend(entries);
+    crate::plural::extend_layer(strings, entries);
 }

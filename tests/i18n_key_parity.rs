@@ -398,7 +398,11 @@ fn key_sets_match_english() {
         let en: BTreeSet<&String> = cat.by_lang["en"].keys().collect();
         for lang in &LANGS[1..] {
             let other: BTreeSet<&String> = cat.by_lang[lang].keys().collect();
-            for key in en.difference(&other) {
+            // en 단수 변형(`<key>_one`)은 한 문자열로 충분한 언어에 두지 않아도 된다.
+            for key in en
+                .difference(&other)
+                .filter(|k| one_variant_base(k, &cat.by_lang["en"]).is_none())
+            {
                 problems.push(format!("  {}/{lang}.toml: missing `{key}`", cat.rel));
             }
             for key in other.difference(&en) {
@@ -412,6 +416,49 @@ fn key_sets_match_english() {
     assert!(
         problems.is_empty(),
         "translation catalogs diverge from en (CLAUDE.md 국제화: add every key to all three files):\n{}",
+        problems.join("\n")
+    );
+}
+
+/// `key` 가 en 단수 변형이면 그 기준 키. 기준 키가 카탈로그에 없으면 `_one` 으로 끝나도 변형이 아니다.
+fn one_variant_base<'a>(key: &'a str, en: &BTreeMap<String, String>) -> Option<&'a str> {
+    key.strip_suffix(tasty_i18n::plural::ONE_SUFFIX)
+        .filter(|base| en.contains_key(*base))
+}
+
+/// 단수 변형은 기준 키와 같은 인자 칸을 받는다. 수 자리도 남겨 두면 `t_count` 가 같은 인자로 채운다.
+#[test]
+fn one_variants_take_the_slots_of_their_key() {
+    let mut problems = Vec::new();
+    let mut variants = 0usize;
+    for cat in catalogs() {
+        let en = &cat.by_lang["en"];
+        for lang in LANGS {
+            for (key, value) in &cat.by_lang[*lang] {
+                let Some(base) = one_variant_base(key, en) else {
+                    continue;
+                };
+                variants += 1;
+                let Some(base_value) = cat.by_lang[*lang].get(base) else {
+                    problems.push(format!(
+                        "  {}/{lang}.toml `{key}`: `{base}` 가 없다",
+                        cat.rel
+                    ));
+                    continue;
+                };
+                if placeholders(value) != placeholders(base_value) {
+                    problems.push(format!(
+                        "  {}/{lang}.toml `{key}`: {value:?} 의 칸이 `{base}` {base_value:?} 와 다르다",
+                        cat.rel
+                    ));
+                }
+            }
+        }
+    }
+    assert!(variants > 0, "단수 변형이 하나도 없다 — 수집을 확인한다");
+    assert!(
+        problems.is_empty(),
+        "단수 변형의 인자 칸이 기준 키와 다르다:\n{}",
         problems.join("\n")
     );
 }
@@ -1316,6 +1363,13 @@ fn every_catalog_key_has_a_consumer() {
     for key in &keys {
         // 접두사가 같은 다른 키를 사용처로 오인하지 않도록 토큰 전체가 일치해야 한다.
         if tokens.contains(key.as_str()) {
+            continue;
+        }
+        // 단수 변형은 기준 키를 `t_count` 로 읽는 곳이 함께 쓴다.
+        if let Some(base) = key.strip_suffix(tasty_i18n::plural::ONE_SUFFIX)
+            && keys.contains(base)
+            && (tokens.contains(base) || is_dynamically_assembled(base, &templates))
+        {
             continue;
         }
         if is_dynamically_assembled(key, &templates) {

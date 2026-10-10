@@ -16,7 +16,7 @@ use crate::app::local_reads::{SEARCH_MAX_HITS, SearchEvent, SearchQuery};
 use std::cmp::Ordering;
 
 use crate::core::fs_list::{compare_entries, sort_entries};
-use crate::i18n::{t, t_fmt, t_fmt2};
+use crate::i18n::{t, t_count, t_fmt, t_fmt2};
 use tasty_model::{SortColumn, SortDir};
 
 /// 열려 있는 Find 바. 연 폴더를 함께 둔다.
@@ -578,10 +578,8 @@ fn status_parts(find: &FindState, shown: usize, total: usize) -> (String, String
         Outcome::Capped => capped_text("explorer.find.capped"),
         Outcome::Failed(_) => "—".to_string(),
     };
-    let skipped = match search.skipped.len() {
-        1 => t("explorer.find.skipped_one").to_string(),
-        n => t_fmt("explorer.find.skipped", &n.to_string()),
-    };
+    let n = search.skipped.len();
+    let skipped = t_count("explorer.find.skipped", n as u64, &[&n.to_string()]);
     let tooltip = search
         .skipped
         .iter()

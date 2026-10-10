@@ -87,6 +87,14 @@ impl Translator {
         tasty_i18n::fill_args(self.t(key), args)
     }
 
+    /// 수 `n` 에 맞는 문자열(`<key>` 또는 en 단수 변형 `<key>_one`)을 골라 `args` 로 채운다.
+    /// 호스트 [`tasty_i18n::t_count`] 와 같은 규칙이다.
+    pub fn t_count(&self, key: &str, n: u64, args: &[&str]) -> String {
+        let template =
+            tasty_i18n::plural::pick(n, key, |k| self.strings.get(k).map(String::as_str));
+        tasty_i18n::fill_args(template, args)
+    }
+
     /// 키 lookup + `{0}` 토큰 치환 (multi-arg 패턴이 필요할 때).
     pub fn t_replace(&self, key: &str, token: &str, value: &str) -> String {
         self.t(key).replace(token, value)
@@ -137,6 +145,23 @@ mod tests {
             ko.t_args("e.moved", &["3", "5"]),
             tasty_i18n::fill_args("{1}개 중 {0}개 이동", &["3", "5"])
         );
+    }
+
+    /// en 은 1에 단수 변형을 쓰고, 변형이 없는 ko 는 en 변형을 물려받지 않는다.
+    #[test]
+    fn count_picks_the_english_variant_only_for_one() {
+        let dir = tempdir().unwrap();
+        fs::write(
+            dir.path().join("en.toml"),
+            "[e]\nn = \"{} items\"\nn_one = \"{} item\"\n",
+        )
+        .unwrap();
+        fs::write(dir.path().join("ko.toml"), "[e]\nn = \"{}개\"\n").unwrap();
+        let en = Translator::load(dir.path(), "en");
+        let ko = Translator::load(dir.path(), "ko");
+        assert_eq!(en.t_count("e.n", 1, &["1"]), "1 item");
+        assert_eq!(en.t_count("e.n", 2, &["2"]), "2 items");
+        assert_eq!(ko.t_count("e.n", 1, &["1"]), "1개");
     }
 
     #[test]

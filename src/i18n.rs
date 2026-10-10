@@ -7,8 +7,8 @@ use std::path::Path;
 #[allow(unused_imports)]
 pub use tasty_i18n::{
     FontDecl, LanguageEntry, LoadOutcome, LoadReport, TOAST_MAX_CHARS, available_languages,
-    current_language, init, load_report, register_namespace, t, t_args, t_fmt, t_fmt_fit, t_fmt2,
-    unregister_namespace,
+    current_language, init, load_report, register_namespace, t, t_args, t_count, t_fmt, t_fmt_fit,
+    t_fmt2, unregister_namespace,
 };
 
 pub struct BinI18nRegistrar;
