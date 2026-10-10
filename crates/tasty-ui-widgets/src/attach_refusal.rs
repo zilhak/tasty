@@ -1,6 +1,7 @@
 //! 자동 attach 매핑을 연결하지 않았을 때의 Workspace 배너 내용과 사이드바 행 표지.
 //! 배너는 행 [글리프 | 제목·본문 | 매핑 지우기 · 닫기]이며 모든 칸을 위쪽에 맞춘다.
 //! 좁은 스코프에서는 매핑 지우기 버튼만 본문 왼쪽 가장자리에 맞춰 다음 줄로 내려가고 닫기는 오른쪽 위에 남는다.
+//! 제목과 본문은 Tasty 고정 문구라 줄 수를 제한하지 않고 카드가 늘어난다.
 //! 문자열은 호출자가 주입한다. 큐·표시 범위는 본체 BannerManager가 정한다.
 
 use tasty_type_appearance::theme::Theme;
@@ -9,9 +10,6 @@ use crate::banner::{ActionRow, action_slot, banner_close_button, banner_shell};
 use crate::button::{Button, ButtonVariant};
 use crate::control::ControlSize;
 use crate::tooltip::{Tooltip, tooltip_hover_delay_elapsed};
-
-/// 제목과 본문은 각각 두 줄까지 보이고 나머지는 말줄임한다.
-const MAX_TEXT_ROWS: usize = 2;
 
 /// 배너 입력값. 제목은 번역문의 대상 자리 앞뒤와 대상으로 나눠 받아 대상만 mono로 그린다.
 pub struct AttachRefusalBannerView<'a> {
@@ -61,7 +59,6 @@ fn title_galley(
         format(egui::FontId::proportional(size)),
     );
     job.wrap.max_width = wrap_width;
-    job.wrap.max_rows = MAX_TEXT_ROWS;
     ui.fonts(|f| f.layout_job(job))
 }
 
@@ -82,7 +79,6 @@ fn body_galley(
         },
     );
     job.wrap.max_width = wrap_width;
-    job.wrap.max_rows = MAX_TEXT_ROWS;
     ui.fonts(|f| f.layout_job(job))
 }
 
@@ -355,6 +351,22 @@ mod tests {
             "{button:?} overlaps {body:?}"
         );
         assert!(button.top() < body.bottom());
+    }
+
+    #[test]
+    fn the_body_wraps_without_a_row_cap() {
+        let (_, _, shapes) = render(200.0, true);
+        let body = shapes
+            .iter()
+            .find_map(|s| match s {
+                egui::Shape::Text(t) if t.galley.text().starts_with("This mapping") => {
+                    Some(t.galley.clone())
+                }
+                _ => None,
+            })
+            .expect("body");
+        assert!(body.rows.len() > 2, "{} rows", body.rows.len());
+        assert!(!body.text().contains('\u{2026}'));
     }
 
     #[test]

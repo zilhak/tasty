@@ -3,7 +3,10 @@
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::{AttachSizeSyncBannerView, attach_size_sync_banner, banner_is_narrow};
+use tasty_ui_widgets::{
+    AttachSizeSyncBannerView, attach_size_sync_banner, banner_is_narrow, banner_shell,
+    plugin_banner_body,
+};
 
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::i18n::t;
@@ -218,6 +221,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "equal display names collapse into one entry + “ ×k” (text-muted, never shrinks) · “N surfaces” counts surfaces · +n counts remaining entries · Retry all retries every surface",
             ),
             (
+                "body lines",
+                "Tasty-owned banner copy (refusal · size sync · mouse capture) never clamps — the card grows · plugin-supplied body clamps at 3 lines, then ellipsis + full text in the tooltip",
+            ),
+            (
                 "retrying",
                 "Retry disabled + leading Spinner 14, label unchanged",
             ),
@@ -260,4 +267,43 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
          remote.size_sync.retry_all.",
     );
     draw_narrow(ui, theme);
+    draw_body_lines(ui, theme);
+}
+
+/// 시안 Meta "body lines" 의 plugin 쪽 표본. 디자인 Stage 가 없어 같은 패널 틀에 360 폭으로 둔다.
+/// 세 줄을 넘는 plugin 본문은 셋째 줄 끝에서 말줄임하고 hover 때 전체 문구를 툴팁으로 보인다.
+fn draw_body_lines(ui: &mut egui::Ui, theme: &Theme) {
+    const PLUGIN_BODY: &str = "This body comes from a plugin. It keeps going past the three \
+                               rows a plugin body may use in a banner, so the third row ends \
+                               with an ellipsis and hovering the text shows all of it in a \
+                               tooltip.";
+    spec::spec(
+        ui,
+        theme,
+        "Banner body lines",
+        Some(
+            "Tasty-owned banner copy (refusal \u{b7} size sync \u{b7} mouse capture) never \
+             clamps \u{2014} the card grows. Plugin-supplied body text clamps at 3 lines, then \
+             ellipsis, full text in the tooltip.",
+        ),
+    );
+    spec::stage(ui, theme, StageVariant::Tight, |ui| {
+        egui::Frame::new()
+            .fill(theme.bg_app().to_egui())
+            .inner_margin(egui::Margin::same(theme.spacing_lg.value() as i8))
+            .show(ui, |ui| {
+                ui.set_width(NARROW_SCOPE_W.value());
+                ui.vertical(|ui| {
+                    ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
+                    caption(
+                        ui,
+                        theme,
+                        "plugin body \u{b7} 3 lines, then ellipsis + tooltip",
+                    );
+                    banner_shell(ui, theme, 1.0, |ui| {
+                        plugin_banner_body(ui, theme, PLUGIN_BODY);
+                    });
+                });
+            });
+    });
 }

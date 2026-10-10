@@ -52,6 +52,7 @@ mod override_row;
 mod path_field;
 mod plugin_add;
 mod plugin_avatar;
+mod plugin_banner_body;
 mod plugin_detail;
 mod plugin_paths;
 mod popup_title;
@@ -192,6 +193,7 @@ pub use plugin_add::{
     plugin_manifest_card, plugin_signature_invalid_detail, plugin_trust_box, short_fingerprint,
 };
 pub use plugin_avatar::{PluginAvatarSize, paint_plugin_avatar, plugin_avatar};
+pub use plugin_banner_body::{PLUGIN_BANNER_BODY_MAX_ROWS, plugin_banner_body};
 pub use plugin_detail::{
     PluginAttentionBarAction, PluginAttentionBarView, PluginDetailBarClicks, PluginDetailBarView,
     PluginIdentityView, PluginKeycap, PluginKeycapAltStyle, PluginKeycapStyle,

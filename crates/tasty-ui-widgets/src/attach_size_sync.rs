@@ -15,8 +15,6 @@ use crate::tooltip::{Tooltip, tooltip_hover_delay_elapsed};
 
 /// 본문 줄에 이름으로 보이는 항목 수. 같은 이름은 한 항목이며 나머지 항목은 `+n` 으로 줄인다.
 const SHOWN_NAMES: usize = 2;
-/// 제목은 자르지 않으므로 이 줄 수까지 감싼다.
-const MAX_TITLE_ROWS: usize = 3;
 
 /// 배너 입력값.
 pub struct AttachSizeSyncBannerView<'a> {
@@ -281,7 +279,6 @@ fn title_galley(
         },
     );
     job.wrap.max_width = wrap_width;
-    job.wrap.max_rows = MAX_TITLE_ROWS;
     ui.fonts(|f| f.layout_job(job))
 }
 
@@ -608,6 +605,20 @@ mod tests {
         let (_, shapes) = render(460.0, &view(&names, false));
         let (_, line) = text_shape(&shapes, |t| t.starts_with("5 surfaces"));
         assert_eq!(line.text(), "5 surfaces — Shell \u{d7}3, build +1");
+    }
+
+    #[test]
+    fn the_title_wraps_without_a_row_cap() {
+        let v = AttachSizeSyncBannerView {
+            title: "Couldn't sync the terminal size with the remote, and this title keeps going \
+                    so that it needs more than three rows in a narrow card",
+            narrow: true,
+            ..view(&["build"], false)
+        };
+        let (_, shapes) = render(200.0, &v);
+        let (_, title) = text_shape(&shapes, |t| t.starts_with("Couldn't"));
+        assert!(title.rows.len() > 3, "{} rows", title.rows.len());
+        assert!(!title.text().contains('\u{2026}'));
     }
 
     #[test]
