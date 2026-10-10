@@ -423,7 +423,10 @@ pub fn draw_permissions(ui: &mut egui::Ui, theme: &Theme) {
             ("height", "140..360 · body scrolls"),
             ("paths", "text-primary (medium은 색으로만)"),
             ("lead-ins", "text-primary (semibold는 색으로만)"),
-            ("command", "mono · caption · surface-raised 배경"),
+            (
+                "command",
+                "code run · sentence size · ui-code-bg · padding-x 4 · radius-sm",
+            ),
             (
                 "buttons",
                 "Open permission settings (Secondary) · OK (Primary, rightmost)",
@@ -436,9 +439,9 @@ pub fn draw_permissions(ui: &mut egui::Ui, theme: &Theme) {
                 theme.text_primary().to_egui(),
             ),
             TokenChip::new(
-                "surface-raised",
-                "command chip",
-                theme.surface_raised().to_egui(),
+                "ui-code-bg",
+                "command run",
+                tasty_ui_widgets::UiCodeTokens::of(theme).bg,
             ),
             TokenChip::new(
                 "info-modal-scroll-edge",
@@ -522,7 +525,7 @@ pub fn draw_permission_branches(ui: &mut egui::Ui, theme: &Theme) {
             ),
             (
                 "signing aside",
-                "every notice · last · caption 12 · text-muted · command chip unchanged",
+                "every notice · last · caption 12 · text-muted · command run at caption size",
             ),
             (
                 "new strings",

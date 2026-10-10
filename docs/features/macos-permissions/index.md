@@ -153,9 +153,10 @@ FDA(`kTCCServiceSystemPolicyAllFiles`)를 허용하면 "다른 앱의 데이터"
 |---|---|---|
 | 일반 문단 | 없음 | 본문 크기 · text-secondary, 문단 사이 `info-modal-para-gap` |
 | 번호 목록 항목 | 문단 머리 `1. ` | 본문 크기 · text-primary. 번호는 줄 머리에, 글은 `space-xl` 들여쓰기에 맞춰 감싼다. 이어진 항목 사이는 `space-xs` |
-| 보조 문단 | 문단 머리 `> ` | caption 크기 · text-muted. 명령 칩 모양은 같다 |
+| 보조 문단 | 문단 머리 `> ` | caption 크기 · text-muted |
 
 번호와 `> `는 번역 문자열이 아니라 `permission_notice_body`가 붙인다.
+문단 안의 명령(`` `…` ``)은 UI 문장의 code run 과 같다. 그 문단과 같은 크기의 mono 글자, `ui-code-bg` 채움, 좌우 `ui-code-padding-x`, `ui-code-radius` 반경이며 명령 안에서는 줄을 바꾸지 않는다.
 
 **갈래를 고르는 근거** — FDA 보유를 관측하면 그때의 자기 서명 해시(cdhash)를 데이터 홈의
 `macos-fda-grant` 파일에 `cdhash=<16진>` 한 줄로 남긴다. 거부로 보이면 이 기록과 지금 해시를
@@ -262,7 +263,7 @@ Full Disk Access 행은 허용됨, 허용 안 됨, 확인 불가 세 가지를 �
 | `Revoked` | Tasty 밖에서 꺼졌으니 목록에서 다시 켜고, 목록에서 사라졌으면(`tccutil reset` 뒤 등) + 로 다시 추가하라(`full_disk_access_revoked_detail`). 한 caption 문단이며 둘째 줄 요소를 두지 않는다 |
 | `Never` | 없음 |
 
-보조 줄은 안내 본문과 다른 키다. 안내 본문의 `fda_revoked`도 같은 재추가 처방을 담지만 문장이 다르다(경로를 강조하고 `tccutil reset`을 명령 칩으로 보이며, 다시 추가한 뒤 켜라고까지 적는다). 설정 행은 강조 표기를 해석하지 않는 평문 caption이라 키를 나눠 둔다.
+보조 줄은 안내 본문과 다른 키다. 안내 본문의 `fda_revoked`도 같은 재추가 처방을 담지만 문장이 다르다(경로를 강조하고 `tccutil reset`을 code run 으로 보이며, 다시 추가한 뒤 켜라고까지 적는다). 설정 행은 강조 표기를 해석하지 않는 평문 caption이라 키를 나눠 둔다.
 
 폴더 접근 행은 보조 줄에 대상 폴더(다운로드 · 문서 · 데스크탑 · 볼륨)를 적는다. 폴더를
 확인하는 동작 자체가 프롬프트를 띄우므로 상태는 "자동 확인 불가"로 표시하고, 그 이유는 행

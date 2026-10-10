@@ -6,14 +6,15 @@
 //! 제목은 팝업 타이틀바가 그리므로 여기에는 없다.
 //!
 //! 강조는 메시지가 직접 표시한 구간에만 준다(현재 macOS 권한 안내 하나). 표기는
-//! [`parse_emphasis`]를 따르며, 번호 목록 항목과 보조 문단도 같은 표기로 고른다. egui는 굵기를 고를 수 없어 도입부·경로는 색으로만 구분되고,
-//! 명령 칩은 배경색만 칠한다(모서리 반경·좌우 여백은 글자 배치 단위에서 줄 수 없다).
+//! [`parse_emphasis`]를 따르며, 번호 목록 항목과 보조 문단도 같은 표기로 고른다. egui는 굵기를 고를 수 없어 도입부·경로는 색으로만 구분된다.
+//! 명령은 UI 문장의 code run 과 같은 모양이다(문장 크기 mono, `ui-code-*` 채움·여백·반경).
 
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 
 use crate::button::{Button, ButtonVariant};
 use crate::control::ControlSize;
+use crate::ui_code::{UiCodeTokens, ui_code_font, ui_code_rects, unbroken};
 
 /// 본문 강조 구간의 종류.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -24,7 +25,7 @@ pub enum InfoModalSpanKind {
     Lead,
     /// 설정 경로(`*…*`). 디자인은 text-primary · medium.
     Path,
-    /// 셸 명령(`` `…` ``). 디자인은 mono · caption · surface-raised 칩.
+    /// 셸 명령(`` `…` ``). 문단과 같은 크기의 code run 이다.
     Command,
 }
 
@@ -211,34 +212,56 @@ fn paragraph_job(
 ) -> egui::text::LayoutJob {
     let (size, plain) = paragraph_style(theme, kind);
     let line_height = Some(size * theme.line_height_ui);
+    let code = UiCodeTokens::of(theme);
+    let pad = code.padding_x.value();
     let mut job = egui::text::LayoutJob::default();
     job.wrap.max_width = wrap_width;
+    // 명령의 좌우 여백은 code run 처럼 명령 자신과 다음 구간의 앞 간격으로 둔다.
+    let mut after_code = false;
     for span in spans {
-        let format = match span.kind {
-            InfoModalSpanKind::Plain => egui::TextFormat {
-                font_id: egui::FontId::proportional(size),
-                color: plain,
-                line_height,
-                ..Default::default()
-            },
-            InfoModalSpanKind::Lead | InfoModalSpanKind::Path => egui::TextFormat {
-                font_id: egui::FontId::proportional(size),
-                color: theme.text_primary().to_egui(),
-                line_height,
-                ..Default::default()
-            },
-            InfoModalSpanKind::Command => egui::TextFormat {
-                font_id: egui::FontId::monospace(theme.font_size_caption.value()),
-                color: theme.text_primary().to_egui(),
-                background: theme.surface_raised().to_egui(),
-                line_height,
-                valign: egui::Align::Center,
-                ..Default::default()
-            },
+        let leading = if after_code { pad } else { 0.0 };
+        let text_format = |color| egui::TextFormat {
+            font_id: egui::FontId::proportional(size),
+            color,
+            line_height,
+            ..Default::default()
         };
-        job.append(&span.text, 0.0, format);
+        match span.kind {
+            InfoModalSpanKind::Plain => job.append(&span.text, leading, text_format(plain)),
+            InfoModalSpanKind::Lead | InfoModalSpanKind::Path => job.append(
+                &span.text,
+                leading,
+                text_format(theme.text_primary().to_egui()),
+            ),
+            InfoModalSpanKind::Command => job.append(
+                &unbroken(&span.text),
+                leading + pad,
+                egui::TextFormat {
+                    font_id: egui::FontId::new(size, ui_code_font()),
+                    color: code.fg,
+                    line_height,
+                    valign: egui::Align::Center,
+                    ..Default::default()
+                },
+            ),
+        }
+        after_code = span.kind == InfoModalSpanKind::Command;
     }
     job
+}
+
+/// 문단을 `pos` 에 그린다. 명령 채움을 먼저 칠한다.
+fn paint_paragraph(
+    painter: &egui::Painter,
+    theme: &Theme,
+    pos: egui::Pos2,
+    galley: std::sync::Arc<egui::Galley>,
+) {
+    let code = UiCodeTokens::of(theme);
+    for r in ui_code_rects(theme, &galley) {
+        painter.rect_filled(r.translate(pos.to_vec2()), code.radius.value(), code.bg);
+    }
+    painter.galley(pos, galley, egui::Color32::PLACEHOLDER);
 }
 
 /// 넘겨받은 `ui`의 남은 영역 전체에 본문과 버튼 행을 그린다.
@@ -321,10 +344,11 @@ pub fn info_modal(ui: &mut egui::Ui, theme: &Theme, view: &InfoModalView<'_>) ->
                     egui::Color32::PLACEHOLDER,
                 );
             }
-            ui.painter().galley(
+            paint_paragraph(
+                ui.painter(),
+                theme,
                 egui::pos2(rect.min.x + text_x, rect.min.y),
                 galley,
-                egui::Color32::PLACEHOLDER,
             );
         }
         ui.add_space(pad_y);
@@ -457,6 +481,42 @@ mod tests {
             ]
         );
         assert_eq!(p[3].kind, InfoModalParagraphKind::Text);
+    }
+
+    /// 명령은 문단 크기의 code run 이다. caption 크기 칩이 아니다.
+    #[test]
+    fn commands_are_code_runs_at_the_paragraph_size() {
+        let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
+        let code = UiCodeTokens::of(&theme);
+        let pad = code.padding_x.value();
+        for para in parse_emphasis(
+            "Reset with `tccutil reset`, then sign it.\n\n> Signed `x --create`.",
+            true,
+        ) {
+            let (size, _) = paragraph_style(&theme, &para.kind);
+            let job = paragraph_job(&theme, &para.kind, &para.spans, f32::INFINITY);
+            let command = job
+                .sections
+                .iter()
+                .find(|s| s.format.font_id.family == ui_code_font())
+                .expect("command section");
+            assert_eq!(command.format.font_id.size, size);
+            assert_eq!(command.format.color, code.fg);
+            assert_eq!(command.format.background, egui::Color32::TRANSPARENT);
+            assert_eq!(command.leading_space, pad);
+            let ctx = egui::Context::default();
+            drop(ctx.run(Default::default(), |ctx| {
+                let galley = ctx.fonts(|f| f.layout_job(job.clone()));
+                let rects = ui_code_rects(&theme, &galley);
+                assert_eq!(rects.len(), 1);
+                let first = galley.rows[0]
+                    .glyphs
+                    .iter()
+                    .find(|g| g.section_index == 1)
+                    .expect("command glyph");
+                assert_eq!(rects[0].min.x, first.pos.x - pad);
+            }));
+        }
     }
 
     #[test]

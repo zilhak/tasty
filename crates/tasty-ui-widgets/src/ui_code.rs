@@ -111,12 +111,8 @@ pub fn ui_copy_job(
                 after_code = false;
             }
             UiCopySpan::Code(s) => {
-                let unbroken: String = s
-                    .chars()
-                    .map(|c| if c == ' ' { NO_BREAK_SPACE } else { c })
-                    .collect();
                 job.append(
-                    &unbroken,
+                    &unbroken(s),
                     if after_code { pad * 2.0 } else { pad },
                     code_format.clone(),
                 );
@@ -125,6 +121,13 @@ pub fn ui_copy_job(
         }
     }
     job
+}
+
+/// run 안의 공백을 줄을 나누지 않는 공백으로 바꾼다.
+pub(crate) fn unbroken(s: &str) -> String {
+    s.chars()
+        .map(|c| if c == ' ' { NO_BREAK_SPACE } else { c })
+        .collect()
 }
 
 /// code run 이 차지하는 채움 사각형(galley 기준). 한 run 이 여러 줄에 걸치면 줄마다 하나다.
