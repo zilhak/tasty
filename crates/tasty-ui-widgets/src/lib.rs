@@ -40,6 +40,7 @@ mod icon_button;
 mod info_modal;
 mod input;
 mod kb_plugins;
+mod kb_record;
 mod keyboard_cursor;
 mod language_select;
 mod listctrl;
@@ -164,6 +165,7 @@ pub use kb_plugins::{
     KbPluginRowOutput, KbPluginRowRects, KbPluginRowView, KbPluginSlot, KbPluginsOutput,
     KbPluginsView, kb_plugins_subtab,
 };
+pub use kb_record::{KbRecordSlot, kb_record_slot};
 pub use language_select::{LanguageOption, LanguageSelectLabels, language_select};
 pub use listctrl::{ListCtrl, ListCtrlItem, ListCtrlOutput, ListCtrlTrailing};
 pub use mac_permissions::{

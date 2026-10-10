@@ -11,7 +11,9 @@ use crate::i18n::{t, t_fmt};
 use crate::settings::{KeybindingSettings, SwitchStep};
 
 use super::{BareTarget, FieldKind, KeyCapture, PendingBinding, RecordingSlot, RowLayout};
-use tasty_ui_widgets::{settings_label_cell, settings_label_gap, vspace};
+use tasty_ui_widgets::{
+    KbRecordSlot, kb_record_slot, settings_label_cell, settings_label_gap, vspace,
+};
 
 /// 설정의 SwitchAxis를 화면의 녹화 대상과 연결한다.
 pub(super) use tasty_settings::SwitchAxis as QuickSwitchKind;
@@ -407,28 +409,14 @@ fn slot_row(
         } else {
             KeybindingSettings::format_display(&combo, general)
         };
-        let bg = if is_recording {
-            th.surface_hover()
-        } else {
-            th.surface_raised()
-        };
-        let fg = if is_recording {
-            th.text_disabled()
+        let slot = if is_recording {
+            KbRecordSlot::Recording(&display)
         } else if combo.is_empty() {
-            th.text_muted()
+            KbRecordSlot::Empty(&display)
         } else {
-            th.text_primary()
+            KbRecordSlot::Binding(&display)
         };
-        let btn = super::entries::record_button(
-            &th,
-            can_record,
-            &display,
-            fg,
-            bg,
-            th.kb_record_width(),
-            th.kb_record_height(),
-        );
-        if ui.add(btn).clicked() {
+        if kb_record_slot(ui, &th, slot, th.kb_record_width(), can_record).clicked() {
             *recording_field = Some(RecordingSlot {
                 field_id: String::new(),
                 idx: 0,

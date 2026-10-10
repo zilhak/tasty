@@ -1,7 +1,6 @@
 use crate::i18n::t;
 use crate::settings::KeybindingSettings;
-use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::{settings_label_cell, settings_label_gap};
+use tasty_ui_widgets::{KbRecordSlot, kb_record_slot, settings_label_cell, settings_label_gap};
 
 use super::{FieldKind, KeyCapture, PendingBinding, RecordingSlot, RowLayout};
 
@@ -107,29 +106,13 @@ pub(super) fn draw_keybinding_entries(
                     } else {
                         KeybindingSettings::format_display(&current, general)
                     };
-
-                    let bg_color = if is_recording {
-                        th.surface_hover() // 녹화중 버튼 배경(값-동일: surface1)
+                    let slot = if is_recording {
+                        KbRecordSlot::Recording(&display_text)
                     } else {
-                        th.surface_raised()
-                    };
-                    let text_color = if is_recording {
-                        th.text_disabled()
-                    } else {
-                        th.text_primary()
+                        KbRecordSlot::Binding(&display_text)
                     };
 
-                    let button = record_button(
-                        &th,
-                        can_record,
-                        &display_text,
-                        text_color,
-                        bg_color,
-                        button_width,
-                        button_height,
-                    );
-
-                    if ui.add(button).clicked() {
+                    if kb_record_slot(ui, &th, slot, button_width, can_record).clicked() {
                         *recording_field = Some(RecordingSlot {
                             field_id: field_id.to_string(),
                             idx,
@@ -143,39 +126,22 @@ pub(super) fn draw_keybinding_entries(
                     recording_field,
                     Some(slot) if slot.field_id == *field_id && slot.idx == bindings_len
                 );
-                let add_label = if adding {
-                    t("settings.keybindings.hint_press_key").to_string()
+                let press_key = t("settings.keybindings.hint_press_key");
+                let none = t("settings.keybindings.hint_none");
+                // 바인딩이 없는 행은 None 슬롯 하나만 두고 + 를 따로 두지 않는다.
+                let (add_slot, add_width) = if adding {
+                    let width = if bindings_len == 0 {
+                        button_width
+                    } else {
+                        add_button_width
+                    };
+                    (KbRecordSlot::Recording(&press_key), width)
                 } else if bindings_len == 0 {
-                    t("settings.keybindings.hint_none").to_string()
+                    (KbRecordSlot::Empty(&none), button_width)
                 } else {
-                    "+".to_string()
+                    (KbRecordSlot::Add, add_button_width)
                 };
-                let add_bg = if adding {
-                    th.surface_hover() // 추가중 버튼 배경(값-동일: surface1)
-                } else {
-                    th.surface_raised()
-                };
-                let add_fg = if adding {
-                    th.text_disabled()
-                } else {
-                    th.text_muted()
-                };
-                let add_width = if bindings_len == 0 {
-                    button_width
-                } else {
-                    add_button_width
-                };
-                let add_btn = record_button(
-                    &th,
-                    can_record,
-                    &add_label,
-                    add_fg,
-                    add_bg,
-                    add_width,
-                    button_height,
-                );
-                if ui
-                    .add(add_btn)
+                if kb_record_slot(ui, &th, add_slot, add_width, can_record)
                     .on_hover_text(t("settings.keybindings.add_binding_button"))
                     .clicked()
                 {
@@ -196,38 +162,4 @@ pub(super) fn draw_keybinding_entries(
 pub(super) fn kb_row_gap(ui: &mut egui::Ui, th: &tasty_type_appearance::theme::Theme) {
     let auto = ui.spacing().item_spacing.y;
     ui.add_space((th.kb_row_gap().value() - auto).max(0.0));
-}
-
-/// 녹화 버튼. Import / Export 의 녹화 슬롯과 같은 모양이다 — mono caption 글자, 1px border-default 테두리.
-/// 다른 녹화가 대기 중이면(`enabled=false`) egui의 비활성 흐림 대신 disabled 상자 role과
-/// disabled ink로 그리고 클릭을 받지 않는다.
-pub(super) fn record_button(
-    th: &tasty_type_appearance::theme::Theme,
-    enabled: bool,
-    label: &str,
-    fg: tasty_type_appearance::color::HexColor,
-    bg: tasty_type_appearance::color::HexColor,
-    width: LogicalPx,
-    height: LogicalPx,
-) -> egui::Button<'static> {
-    let text = egui::RichText::new(label)
-        .monospace()
-        .size(th.font_size_caption.value());
-    let button = if enabled {
-        egui::Button::new(text.color(fg))
-            .fill(bg)
-            .stroke(egui::Stroke::new(
-                th.border_width.value(),
-                th.border_default(),
-            ))
-    } else {
-        egui::Button::new(text.color(th.state_disabled_fg()))
-            .fill(th.state_disabled_fill())
-            .stroke(egui::Stroke::new(
-                th.border_width.value(),
-                th.state_disabled_border(),
-            ))
-            .sense(egui::Sense::hover())
-    };
-    button.min_size(egui::vec2(width.value(), height.value()))
 }

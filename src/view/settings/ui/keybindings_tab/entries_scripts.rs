@@ -9,7 +9,8 @@ use crate::settings::{KeybindingSettings, Settings};
 
 use super::{FieldKind, KeyCapture, RecordingSlot};
 use tasty_ui_widgets::{
-    SettingsRow, settings_label_cell, settings_label_column, settings_label_gap, vspace,
+    KbRecordSlot, SettingsRow, kb_record_slot, settings_label_cell, settings_label_column,
+    settings_label_gap, vspace,
 };
 
 /// `RecordingSlot.field_id` 가 이 접두사면 스크립트 바인딩 슬롯.
@@ -105,28 +106,14 @@ pub(super) fn draw_script_bindings(
             } else {
                 KeybindingSettings::format_display(&current, &settings.general)
             };
-            let bg = if is_recording {
-                th.surface_hover() // 녹화중 버튼 배경(값-동일: surface1)
-            } else {
-                th.surface_raised()
-            };
-            let fg = if is_recording {
-                th.text_disabled()
+            let slot = if is_recording {
+                KbRecordSlot::Recording(&display)
             } else if current.is_empty() {
-                th.text_muted()
+                KbRecordSlot::Empty(&display)
             } else {
-                th.text_primary()
+                KbRecordSlot::Binding(&display)
             };
-            let btn = super::entries::record_button(
-                &th,
-                true,
-                &display,
-                fg,
-                bg,
-                th.kb_record_width(),
-                th.kb_record_height(),
-            );
-            if ui.add(btn).clicked() {
+            if kb_record_slot(ui, &th, slot, th.kb_record_width(), true).clicked() {
                 *recording_field = Some(RecordingSlot {
                     field_id: slot_id.clone(),
                     idx: 0,

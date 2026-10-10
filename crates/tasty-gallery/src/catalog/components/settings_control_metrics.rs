@@ -51,17 +51,29 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ),
             (
                 "add (+)",
-                "kb-record-add-width 32 × 24 · None slot when empty",
+                "kb-record-add-width 32 × 24 · border only (kb-record-border) · plus icon sm in text-muted",
+            ),
+            (
+                "hover",
+                "record · add · None: border → kb-record-border-hover (border-strong) · fill unchanged",
+            ),
+            (
+                "no binding",
+                "one None slot · kb-record-width × 24 · border only · kb-record-empty-fg · click records the first binding · no +",
             ),
             ("in-row gap", "space-xs 4"),
             ("row gap", "kb-row-gap 8 · no divider"),
             (
                 "drag flip row",
-                "Keybindings › General · after the entries, past a separator · Select field-width-md · caption · options of this OS, default first",
+                "Keybindings › General · last row, alone · space-sm · separator · space-xs above · Select field-width-md · caption · options of this OS, default first",
             ),
             (
                 "font combo",
                 "list max font-combo-list-max-height 300 · search field = list − 2 × font-combo-search-inset 4 · borders = Select: closed select-border, open select-border-focus (also the switch modifier combos)",
+            ),
+            (
+                "captions",
+                "Category / Tab / Workspace switch modifier rows: no caption · drag flip keeps its caption",
             ),
             ("open Select", "trigger border select-border-focus"),
         ],
@@ -69,6 +81,21 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::without_color("kb-record-width", "→ kb-ie-slot-min-width 140"),
             TokenChip::without_color("kb-record-height", "→ kb-ie-slot-height 24"),
             TokenChip::without_color("kb-record-add-width", "→ size-32"),
+            TokenChip::new(
+                "kb-record-border",
+                "→ border-default",
+                theme.border_default().to_egui(),
+            ),
+            TokenChip::new(
+                "kb-record-border-hover",
+                "→ border-strong",
+                theme.border_strong().to_egui(),
+            ),
+            TokenChip::new(
+                "kb-record-empty-fg",
+                "→ text-muted",
+                theme.text_muted().to_egui(),
+            ),
             TokenChip::without_color("kb-row-gap", "→ space-sm 8"),
             TokenChip::without_color("font-combo-list-max-height", "→ size-300"),
             TokenChip::without_color("font-combo-search-inset", "→ space-xs 4"),

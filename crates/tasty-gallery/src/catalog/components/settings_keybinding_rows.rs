@@ -8,7 +8,8 @@ use tasty_settings::keybindings::explorer_drag_flip_modifier_options;
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{
-    SettingsRow, select, settings_label_cell, settings_label_column, settings_label_gap, vspace,
+    KbRecordSlot, SettingsRow, kb_record_slot, select, settings_label_cell, settings_label_column,
+    settings_label_gap, vspace,
 };
 
 use crate::catalog::modifier_label;
@@ -90,7 +91,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ),
             (
                 "slot",
-                "kb-record-width 140 × kb-record-height 24 · mono caption · 1px border-default · + (kb-record-add-width 32) adds a slot · None when empty",
+                "kb-record-width 140 × kb-record-height 24 · mono caption · surface-raised · 1px kb-record-border, kb-record-border-hover on hover · + (kb-record-add-width 32, border only, plus icon sm) adds a slot · a row with no binding is one None slot (border only, kb-record-empty-fg, no +)",
             ),
             (
                 "rows",
@@ -112,9 +113,19 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::new("text-secondary", "label", theme.text_secondary().to_egui()),
             TokenChip::new("surface-raised", "slot", theme.surface_raised().to_egui()),
             TokenChip::new(
-                "border-default",
-                "slot edge",
+                "kb-record-border",
+                "→ border-default · slot edge",
                 theme.border_default().to_egui(),
+            ),
+            TokenChip::new(
+                "kb-record-border-hover",
+                "→ border-strong · hover",
+                theme.border_strong().to_egui(),
+            ),
+            TokenChip::new(
+                "kb-record-empty-fg",
+                "→ text-muted · None",
+                theme.text_muted().to_egui(),
             ),
         ],
     );
@@ -165,48 +176,32 @@ pub(super) fn row(
             let gap = theme.spacing_xs.value();
             ui.spacing_mut().item_spacing = egui::vec2(gap, gap);
             for combo in bindings {
-                slot(
+                kb_record_slot(
                     ui,
                     theme,
-                    combo,
-                    theme.text_primary().to_egui(),
+                    KbRecordSlot::Binding(combo),
                     theme.kb_record_width(),
+                    true,
                 );
             }
+            // 바인딩이 없는 행은 None 슬롯 하나, 있으면 끝에 + 버튼이다.
             if bindings.is_empty() {
-                slot(
+                kb_record_slot(
                     ui,
                     theme,
-                    "None",
-                    theme.text_muted().to_egui(),
+                    KbRecordSlot::Empty("None"),
                     theme.kb_record_width(),
+                    true,
                 );
             } else {
-                slot(
+                kb_record_slot(
                     ui,
                     theme,
-                    "+",
-                    theme.text_muted().to_egui(),
+                    KbRecordSlot::Add,
                     theme.kb_record_add_width(),
+                    true,
                 );
             }
         });
     });
-}
-
-fn slot(ui: &mut egui::Ui, theme: &Theme, text: &str, color: egui::Color32, width: LogicalPx) {
-    ui.add(
-        egui::Button::new(
-            egui::RichText::new(text)
-                .monospace()
-                .size(theme.font_size_caption.value())
-                .color(color),
-        )
-        .fill(theme.surface_raised().to_egui())
-        .stroke(egui::Stroke::new(
-            theme.border_width.value(),
-            theme.border_default().to_egui(),
-        ))
-        .min_size(egui::vec2(width.value(), theme.kb_record_height().value())),
-    );
 }
