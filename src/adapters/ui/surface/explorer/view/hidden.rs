@@ -3,6 +3,8 @@
 //! View 가 토글을 바로 바꿔 그리고, 바뀐 값은 `take_change` 로 model(`ExplorerPanel::show_hidden`)에
 //! 남겨 레이아웃 스냅샷에 싣는다. model 값은 미리보기 패널처럼 마지막으로 맞춘 값과 다를 때만 받는다.
 
+use std::path::Path;
+
 use crate::core::fs_list::{DirEntryInfo, sort_entries};
 
 use super::ExplorerView;
@@ -56,6 +58,16 @@ impl ExplorerView {
             entries = shown;
         }
         entries
+    }
+
+    /// 사이드바 트리에 보일 `dir` 의 하위 폴더. 끈 동안에는 숨김 폴더를 뺀다.
+    pub(super) fn tree_shown(&self, dir: &Path) -> Vec<&DirEntryInfo> {
+        self.tree_children
+            .get(dir)
+            .into_iter()
+            .flatten()
+            .filter(|e| self.hidden.show || !is_hidden(e))
+            .collect()
     }
 
     /// 숨김 파일을 끈 동안 뺀 항목이 있으면 "{n} items · {h} hidden" 처럼 수를 덧붙인다.
@@ -161,6 +173,26 @@ mod tests {
         assert_eq!(view.hidden.count(), 2);
         assert!(view.selected.contains(&PathBuf::from("/w/a.txt")));
         assert!(!view.selected.contains(&PathBuf::from("/w/.env")));
+    }
+
+    #[test]
+    fn the_sidebar_tree_follows_the_toggle_and_keeps_its_cache() {
+        let mut view = ExplorerView::new();
+        let dir = PathBuf::from("/w");
+        view.tree_children
+            .insert(dir.clone(), vec![entry(".git"), entry("src")]);
+        let tree = |view: &ExplorerView| -> Vec<String> {
+            view.tree_shown(&dir)
+                .iter()
+                .map(|e| e.name.clone())
+                .collect()
+        };
+        assert_eq!(tree(&view), ["src"]);
+        view.toggle_hidden();
+        assert_eq!(tree(&view), [".git", "src"]);
+        view.toggle_hidden();
+        assert_eq!(tree(&view), ["src"]);
+        assert_eq!(view.tree_children[&dir].len(), 2);
     }
 
     #[test]

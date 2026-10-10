@@ -638,10 +638,21 @@ impl ExplorerView {
         std::mem::take(&mut self.outbox)
     }
 
-    /// 사이드바 트리에서 `dir` 의 하위 디렉토리를 (캐시에 없으면) 읽어 반환.
+    /// 사이드바 트리에서 `dir` 의 하위 디렉토리를 (캐시에 없으면) 읽어 반환한다.
+    /// 숨김 파일을 끈 동안에는 숨김 폴더를 뺀다. 캐시에는 모두 남겨 토글만으로 다시 보인다.
     /// `mirror_ws_id` 가 `Some` 이면(ADR-0022) 동기 IO 대신 `list_dir_request` 를
-    /// 큐잉하고, 응답이 올 때까지 빈 슬라이스를 반환한다(다음 프레임들에서 자동 채움).
-    pub fn tree_children_of(&mut self, dir: &Path, mirror_ws_id: Option<u32>) -> &[DirEntryInfo] {
+    /// 큐잉하고, 응답이 올 때까지 빈 목록을 반환한다(다음 프레임들에서 자동 채움).
+    pub fn tree_children_of(
+        &mut self,
+        dir: &Path,
+        mirror_ws_id: Option<u32>,
+    ) -> Vec<&DirEntryInfo> {
+        self.request_tree_children(dir, mirror_ws_id);
+        self.tree_shown(dir)
+    }
+
+    /// 캐시에 없는 `dir` 의 하위 디렉토리 읽기를 요청하고 빈 목록을 자리로 둔다.
+    fn request_tree_children(&mut self, dir: &Path, mirror_ws_id: Option<u32>) {
         if let Some(local_ws_id) = mirror_ws_id {
             if !self.tree_children.contains_key(dir) {
                 if !self.remote_state.contains_key(dir) {
@@ -662,11 +673,7 @@ impl ExplorerView {
                 // placeholder — 응답 도착 전엔 빈 슬라이스, 매 프레임 재요청 방지.
                 self.tree_children.entry(dir.to_path_buf()).or_default();
             }
-            return self
-                .tree_children
-                .get(dir)
-                .map(|v| v.as_slice())
-                .unwrap_or(&[]);
+            return;
         }
         if !self.tree_children.contains_key(dir) && self.tree_queries.len() < 32 {
             self.tree_queries
@@ -674,10 +681,6 @@ impl ExplorerView {
                 .or_insert_with(|| crate::app::local_reads::stamped_directory(dir.to_owned()));
             self.tree_children.insert(dir.to_owned(), Vec::new());
         }
-        self.tree_children
-            .get(dir)
-            .map(Vec::as_slice)
-            .unwrap_or(&[])
     }
 
     /// 목록을 읽어 보여 주고 있는 폴더.
