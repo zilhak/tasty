@@ -46,6 +46,11 @@ fn binding_pressed_egui(binding: &str, input: &egui::InputState, super_held: boo
 /// 이번 프레임의 키 누름 중 바인딩 목록과 맞는 것을 입력에서 지우고, 하나라도 있었는지 돌려준다.
 /// 여러 줄 입력의 확정 키처럼 같은 키가 위젯 기본 동작(줄바꿈)으로 처리되면 안 될 때 위젯보다 먼저
 /// 부른다. 판정은 각 이벤트가 가진 modifier 로 하며 규칙은 [`any_binding_pressed_egui`] 와 같다.
+///
+/// 지운 키 누름 바로 뒤의 글자 이벤트도 함께 지운다. egui-winit 은 ctrl·command 가 없는 키 누름
+/// (Alt, 비-macOS 의 Super, macOS 의 Option)마다 그 키의 글자를 `Key` 바로 뒤 `Text` 로 넣으므로,
+/// 남겨 두면 바인딩이 동작하면서 입력칸에 글자도 들어간다. 맞지 않은 키(AltGr 로 친 `@` 등)의
+/// 글자는 건드리지 않는다.
 pub fn consume_binding_egui(
     bindings: &[String],
     input: &mut egui::InputState,
@@ -56,22 +61,31 @@ pub fn consume_binding_egui(
         .filter_map(|b| parse_binding(b))
         .filter_map(|p| Some((token_to_egui_key(&p.key.to_ascii_lowercase())?, p)))
         .collect();
-    let before = input.events.len();
-    input.events.retain(|e| {
-        let egui::Event::Key {
+    let matches = |e: &egui::Event| match e {
+        egui::Event::Key {
             key,
             pressed: true,
             modifiers,
             ..
-        } = e
-        else {
-            return true;
-        };
-        !wanted
+        } => wanted
             .iter()
-            .any(|(k, p)| k == key && egui_modifiers_match(p, modifiers, super_held))
-    });
-    input.events.len() != before
+            .any(|(k, p)| k == key && egui_modifiers_match(p, modifiers, super_held)),
+        _ => false,
+    };
+    let mut hit = false;
+    let mut i = 0;
+    while i < input.events.len() {
+        if !matches(&input.events[i]) {
+            i += 1;
+            continue;
+        }
+        input.events.remove(i);
+        hit = true;
+        if matches!(input.events.get(i), Some(egui::Event::Text(_))) {
+            input.events.remove(i);
+        }
+    }
+    hit
 }
 
 #[cfg(feature = "egui-input")]
@@ -472,6 +486,96 @@ mod egui_tests {
                 press(egui::Key::A, ctrl)
             ]
         );
+    }
+
+    fn consume_events(bindings: &[&str], events: Vec<egui::Event>) -> (bool, Vec<egui::Event>) {
+        let ctx = egui::Context::default();
+        let bindings: Vec<String> = bindings.iter().map(|b| (*b).into()).collect();
+        let (mut hit, mut left) = (false, Vec::new());
+        let output = ctx.run(
+            egui::RawInput {
+                events,
+                ..Default::default()
+            },
+            |ctx| {
+                ctx.input_mut(|i| {
+                    hit = consume_binding_egui(&bindings, i, false);
+                    left = i.events.clone();
+                });
+            },
+        );
+        drop(output);
+        (hit, left)
+    }
+
+    fn text(s: &str) -> egui::Event {
+        egui::Event::Text(s.into())
+    }
+
+    /// 맞는 키 누름 바로 뒤의 글자도 지운다. 앞뒤로 친 다른 글자는 남는다.
+    #[test]
+    fn consume_also_removes_the_text_of_the_matching_press() {
+        let alt = egui::Modifiers {
+            alt: true,
+            ..Default::default()
+        };
+        // macOS 에서 `option` 이 egui alt 다. 다른 OS 에서는 `alt` 가 egui alt 다.
+        let binding = if cfg!(target_os = "macos") {
+            "option+f"
+        } else {
+            "alt+f"
+        };
+        let none = egui::Modifiers::NONE;
+        let (hit, left) = consume_events(
+            &[binding],
+            vec![
+                press(egui::Key::A, none),
+                text("a"),
+                press(egui::Key::F, alt),
+                text("f"),
+                press(egui::Key::B, none),
+                text("b"),
+            ],
+        );
+        assert!(hit);
+        assert_eq!(
+            left,
+            vec![
+                press(egui::Key::A, none),
+                text("a"),
+                press(egui::Key::B, none),
+                text("b"),
+            ]
+        );
+    }
+
+    /// 맞지 않은 키의 글자는 남는다. Windows 의 AltGr 는 ctrl+alt 로 오고 그 글자(`@`)가 뒤따른다.
+    /// `alt+q` 바인딩은 ctrl 이 더 눌린 그 누름과 맞지 않으므로 글자 입력이 깨지지 않는다.
+    #[test]
+    fn an_altgr_glyph_that_matches_no_binding_is_kept() {
+        let altgr = egui::Modifiers {
+            alt: true,
+            ctrl: true,
+            command: !cfg!(target_os = "macos"),
+            ..Default::default()
+        };
+        let events = vec![press(egui::Key::Q, altgr), text("@")];
+        let (hit, left) = consume_events(&["alt+q", "option+q"], events.clone());
+        assert_eq!((hit, left), (false, events));
+    }
+
+    /// 지운 키 누름 바로 뒤가 글자가 아니면 그 뒤의 글자는 다른 키의 것이므로 남긴다.
+    #[test]
+    fn a_text_after_another_event_is_kept() {
+        let none = egui::Modifiers::NONE;
+        let events = vec![
+            press(egui::Key::Enter, none),
+            press(egui::Key::A, none),
+            text("a"),
+        ];
+        let (hit, left) = consume_events(&["enter"], events);
+        assert!(hit);
+        assert_eq!(left, vec![press(egui::Key::A, none), text("a")]);
     }
 
     /// F13~F24 는 egui 키 이름으로도 찾는다(egui 경로의 단축키가 winit 경로와 같은 키를 받는다).

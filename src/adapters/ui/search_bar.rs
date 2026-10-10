@@ -85,8 +85,21 @@ pub fn draw_search_bar(
         let reserved = 40.0 + 6.0 * btn_size + 8.0 * spacing + divider_width;
         let input_width = (ui.available_width() - reserved).max(60.0);
 
+        // find 단축키는 입력칸보다 먼저 소비한다. 입력칸이 먼저 받으면 alt·option 조합의 글자가
+        // 검색어에 들어간다.
+        let query_id = ui.make_persistent_id("search_bar_query");
+        let super_held = crate::adapters::ui::input::shortcuts::super_held(ui.ctx());
+        let find_pressed = ui.memory(|m| m.has_focus(query_id))
+            && ui.input_mut(|i| {
+                crate::adapters::ui::input::shortcuts::consume_binding_egui(
+                    &engine.settings.keybindings.find,
+                    i,
+                    super_held,
+                )
+            });
         let response = ui.add(
             egui::TextEdit::singleline(&mut state.search.query)
+                .id(query_id)
                 .hint_text(tasty_egui_theme::hint_text(
                     &crate::theme::theme(),
                     t("search.placeholder"),
@@ -103,14 +116,6 @@ pub fn draw_search_bar(
         // 실제 필드 포커스가 있을 때만 검색 키를 처리한다.
         if response.has_focus() {
             // find 단축키 → 검색창은 그대로 두고 포커스만 터미널로 되돌린다.
-            let super_held = crate::adapters::ui::input::shortcuts::super_held(ui.ctx());
-            let find_pressed = ui.input(|i| {
-                crate::adapters::ui::input::shortcuts::any_binding_pressed_egui(
-                    &engine.settings.keybindings.find,
-                    i,
-                    super_held,
-                )
-            });
             if find_pressed {
                 response.surrender_focus();
                 state.popups.set_focused("search_bar", false);

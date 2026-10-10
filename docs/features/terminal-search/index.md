@@ -37,7 +37,7 @@ OS 메뉴의 찾기와 탭 스트립의 검색 버튼도 같은 규칙을 따른
 
 ### 키보드 라우팅 (headless popup, sticky 아님)
 
-검색 바는 일반 headless `PopupDef`(sticky_focus 아님) — 포커스가 터미널이면 떠 있어도 키(Escape 포함)를 가로채지 않고 PTY 로 흘린다. 라우팅 결정자는 `PopupState.focused` 플래그이고 find 단축키가 이걸 토글. 검색 바 포커스 상태의 find 는 winit 단축키 경로(overlay 게이트)에 막히므로, 검색 바 draw fn 안에서 `KeybindingSettings.find` 바인딩을 egui 입력에 직접 매칭해 감지(하드코딩 없음). popup 시스템은 [design/systems/popup](../../design/systems/popup.md).
+검색 바는 일반 headless `PopupDef`(sticky_focus 아님) — 포커스가 터미널이면 떠 있어도 키(Escape 포함)를 가로채지 않고 PTY 로 흘린다. 라우팅 결정자는 `PopupState.focused` 플래그이고 find 단축키가 이걸 토글. 검색 바 포커스 상태의 find 는 winit 단축키 경로(overlay 게이트)에 막히므로, 검색 바 draw fn 안에서 `KeybindingSettings.find` 바인딩을 입력칸보다 먼저 egui 입력에서 소비(`consume_binding_egui`)해 감지한다(하드코딩 없음). 그 키 누름이 만든 글자도 함께 지우므로 `Alt+F` 같은 조합이 검색어에 `f` 를 넣지 않는다. popup 시스템은 [design/systems/popup](../../design/systems/popup.md).
 
 ## 인터페이스
 
