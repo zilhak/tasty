@@ -303,6 +303,21 @@ function Page() {
             specs={[["banner", "28px · pinned to canvas top"], ["banner copy", "names the cycle path"], ["empty A", "surface — how a DAG appears"], ["empty B", "search — echoes the query"]]}
             tokens={[{ tok: "--tasty-dag-cycle-bg", use: "banner wash", color: "var(--tasty-dag-cycle-bg)" }, { tok: "--tasty-dag-cycle-fg", use: "banner text", color: "var(--tasty-dag-cycle-fg)" }, { tok: "--tasty-text-disabled", use: "empty glyph" }]} />
         </Spec>
+        <Spec title="DAG list popup — empty and no match (2026-10-10 b12)"
+          when={<>The popup list uses the <b>same DagEmpty</b> as the surface (one shared function): glyph, title, hint, stacked in the <b>vertical centre</b> of the list area (not the 1/3 point). <b>No match</b> is the <code>search</code> variant and echoes the query. <b>No DAG at all</b> is its own <code>popup</code> variant: the popup spans every workspace, so the surface hint with a workspace-scoped command does not fit; it keeps the app's two strings.</>}>
+          <Stage variant="solo" style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 16, padding: 20 }}>
+            {[["popup — no DAGs", "popup", ""], ["popup — filter “deploy”", "search", "deploy"]].map(([cap, v, q]) => (
+              <div key={cap} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>{cap}</span>
+                <div style={{ display: "flex", height: 220, border: "var(--tasty-border-width) solid var(--tasty-border-default)", borderRadius: "var(--tasty-radius)", background: "var(--tasty-bg-panel)" }}><DagEmpty variant={v} query={q} /></div>
+              </div>
+            ))}
+          </Stage>
+          <Meta
+            specs={[["shared", "DagEmpty — surface · search · popup"], ["position", "centred in the list area, both axes"], ["no match", "search glyph · “No DAGs match “{q}”” · “Clear the filter or widen the scope to all workspaces.”"], ["no DAGs", "gitTree glyph · “No DAGs yet” · “Tasks grouped by dependency appear here.” (existing keys)"], ["glyph", "24 · text-disabled"]]}
+            tokens={[{ tok: "--tasty-text-disabled", use: "glyph", color: "var(--tasty-text-disabled)" }, { tok: "--tasty-text-secondary", use: "title", color: "var(--tasty-text-secondary)" }, { tok: "--tasty-text-muted", use: "hint", color: "var(--tasty-text-muted)" }]} />
+          <Note>i18n: the search title is new — <code>dag.popup.no_match</code> “No DAGs match “{"{q}"}”” / ““{"{q}"}”와 일치하는 DAG 없음” / ““{"{q}"}” に一致する DAG はありません” · hint <code>dag.popup.no_match_hint</code> “Clear the filter or widen the scope to all workspaces.” / “필터를 지우거나 범위를 모든 워크스페이스로 넓히세요.” / “フィルターを消すか、範囲をすべてのワークスペースに広げてください。”. The old “No matching DAGs” / “Try a different filter.” go.</Note>
+        </Spec>
       </Section>
 
       <Section id="surfaces" title="Surface · popup">

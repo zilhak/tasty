@@ -337,6 +337,7 @@ function Foundations() {
                 <SemRow tok="--tasty-vi-cursor-bg" role="vi-mode block cursor" />
                 <SemRow tok="--tasty-search-match-bg" role="search matches in scrollback" />
                 <SemRow tok="--tasty-search-match-active-bg" role="the current / active match" />
+                <SemRow tok="--tasty-search-match-active-fg" role="cell ink inside the active match (2026-10-10)" />
               </div>
             </div>
           </Stage>
@@ -349,6 +350,14 @@ function Foundations() {
               { tok: "--tasty-selection-bg", use: "selection fill", color: "var(--tasty-selection-bg)" },
               { tok: "--tasty-search-match-active-bg", use: "active match", color: "var(--tasty-search-match-active-bg)" },
             ]} />
+          <Note><b>Active match ink (2026-10-10 b12).</b> Glyphs inside the <b>active</b> match are drawn in <span className="tok">--tasty-search-match-active-fg</span>, not the cell's own foreground: Mocha's light text on yellow 70% was 1.61 : 1. Mocha ink → neutral-200 (base) <b>6.95 : 1</b>. Latte keeps text-primary ink and drops the active fill to <b>50%</b> → <b>4.68 : 1</b> (70% was 3.94). Ordinary matches (30%) keep the cell's own colours: Mocha 4.75 · Latte 5.50. Cell colours set by the app (SGR) are overridden only inside the active match.</Note>
+          <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+            {[["Mocha", null], ["Latte", "latte"]].map(([lab, th]) => (
+              <div key={lab} {...(th ? { "data-theme": th } : {})} style={{ padding: "8px 12px", background: "var(--tasty-surface-terminal-focused-bg)", borderRadius: "var(--tasty-radius)", fontFamily: "var(--tasty-font-mono)", fontSize: 13, color: "var(--tasty-surface-terminal-focused-fg)" }}>
+                {lab}: a <span style={{ background: "var(--tasty-search-match-bg)" }}>match</span> and the <span style={{ background: "var(--tasty-search-match-active-bg)", color: "var(--tasty-search-match-active-fg)" }}>match</span> under the cursor
+              </div>
+            ))}
+          </div>
           <Dont><b>Don't</b> use an ANSI color for UI chrome or an accent for terminal output — <span className="ic">ansi-green</span> and <span className="ic">accent-success</span> are different roles that only happen to share a hue.</Dont>
         </Spec>
       </Section>

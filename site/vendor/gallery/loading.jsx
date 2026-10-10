@@ -18,6 +18,7 @@ const NAV = [
   { id: "latte", label: "Latte variant" },
   { id: "shellsetup", label: "First-run shell setup" },
   { id: "shutdown", label: "Shutdown screen" },
+  { id: "booterror", label: "Boot error screen" },
 ];
 
 // Brand lockup — guidelines/brand-logo.html (branding exception to the 14px UI cap,
@@ -106,6 +107,37 @@ function ShellSetupFrame({ check = "valid", os = "mac", theme }) {
           <div style={{ display: "flex", justifyContent: "flex-end", gap: "var(--tasty-space-sm)", marginTop: "var(--tasty-space-sm)" }}>
             <LButton variant="secondary">Quit</LButton>
             <LButton variant="primary" disabled={check !== "valid"}>Use this shell</LButton>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+// Boot error screen (boot_error_screen) — 2026-10-10 b12. The shell-setup structure, not a card:
+// lockup → space-xl → 360 form: [alertCircle danger + title] · body · guidance · Quit (secondary, right).
+const lCode = { fontFamily: "var(--tasty-ui-code-font)", fontSize: "1em", background: "var(--tasty-ui-code-bg)", color: "var(--tasty-ui-code-fg)", padding: "0 var(--tasty-ui-code-padding-x)", borderRadius: "var(--tasty-ui-code-radius)", whiteSpace: "nowrap" };
+const BOOT_ERRORS = {
+  engine: { title: "Could not start the terminal", body: <>Tasty could not start a terminal. Details: No such file or directory (os error 2)</>, hint: <>Check <code style={lCode}>general.shell</code> in your config.toml and make sure the shell exists, then start Tasty again.</> },
+  datadir: { title: "Data folder already in use", body: <>Another Tasty is already using this data folder: /Users/hana/Library/Application Support/tasty-workspaces/personal/profile-default</>, hint: <>Use the Tasty that is already running, or start this one with a different <code style={lCode}>TASTY_HOME</code>.</> },
+  webhook: { title: "Webhook port in use", body: <>The webhook port 7420 could not be opened: Address already in use (os error 48)</>, hint: <>Stop the app that is using port 7420, or start Tasty with <code style={lCode}>--webhook-port 7421</code>. <code style={lCode}>tasty --help</code> lists the other start options.</> },
+};
+function BootErrorFrame({ kind = "engine", theme, h = 480 }) {
+  const e = BOOT_ERRORS[kind];
+  return (
+    <div style={{ display: "inline-block", border: "var(--tasty-border-width) solid var(--tasty-border-strong)", borderRadius: "var(--tasty-radius-8)", overflow: "hidden" }}>
+      <div {...(theme ? { "data-theme": theme } : {})} style={{ width: 640, height: h, background: "var(--tasty-bg-app)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+        <Lockup />
+        <div style={{ marginTop: "var(--tasty-space-xl)", width: "var(--tasty-boot-form-width)", display: "flex", flexDirection: "column", gap: "var(--tasty-space-sm)", minHeight: 0 }}>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: "var(--tasty-space-sm)" }}>
+            <span style={{ display: "inline-flex", flex: "none", marginTop: "var(--tasty-size-1)", color: "var(--tasty-boot-error-glyph)" }}><LIcon name="alertCircle" size="var(--tasty-icon-size-md)" /></span>
+            <span style={{ fontSize: "var(--tasty-font-size-max)", fontWeight: "var(--tasty-font-weight-semibold)", color: "var(--tasty-text-primary)", lineHeight: "var(--tasty-line-height-ui)" }}>{e.title}</span>
+          </div>
+          <div style={{ fontSize: "var(--tasty-font-size-body)", color: "var(--tasty-text-secondary)", lineHeight: "var(--tasty-line-height-ui)", overflowWrap: "anywhere", textWrap: "pretty" }}>{e.body}</div>
+          <div style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)", lineHeight: "var(--tasty-line-height-ui)", textWrap: "pretty" }}>{e.hint}</div>
+          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "var(--tasty-space-sm)" }}>
+            <LButton variant="secondary">Quit</LButton>
           </div>
         </div>
       </div>
@@ -239,6 +271,21 @@ function Page() {
             specs={[["surface · stack", "identical to boot (lockup → space-xl → spinner → space-lg → phase slot)"], ["1 · SavingLayout", "Saving layout…"], ["2 · ReclaimingBootWorker", "Stopping background worker…"], ["3 · ClosingSurfaces", "Closing surfaces…"], ["4 · StoppingPlugins", "Stopping plugins…"], ["nothing to wait for", "no frame — the window closes"], ["theme", "follows the saved theme, like boot"]]}
             tokens={[{ tok: "--tasty-bg-app", use: "full surface", color: "var(--tasty-bg-app)" }, { tok: "--tasty-accent-primary", use: "spinner arc", color: "var(--tasty-accent-primary)" }, { tok: "--tasty-text-muted", use: "phase", color: "var(--tasty-text-muted)" }]} />
           <Note>No new tokens. Phase copy is new i18n (<code>shutdown.saving_layout</code> · <code>shutdown.reclaiming_boot_worker</code> · <code>shutdown.closing_surfaces</code> · <code>shutdown.stopping_plugins</code>); keep the trailing ellipsis character.</Note>
+        </Spec>
+      </Section>
+      <Section id="booterror" title="Boot error screen — 2026-10-10 (b12)">
+        <Spec title="Could not start — engine · data folder in use · webhook port"
+          when={<>Shown instead of the app when Tasty cannot start. It is the <b>same boot stage</b> as the loading and first-run shell screens, so it takes the <b>same structure</b>: app-bg fill, the lockup, then a <b>360 form</b> (<span className="tok">--tasty-boot-form-width</span>). The diagnostic card goes (its 460 width, 120 × 34 Quit and 6px corner had no token). The title row leads with <b>alertCircle</b> in <span className="tok">--tasty-boot-error-glyph</span> (danger); the title itself is <b>text-primary</b> 14 / 600 like every other title — the glyph carries the tone, so danger is not repeated on the title and the button. Body (13, text-secondary) holds the sentence and the OS detail; guidance (caption, muted) says what to do, with CLI pieces as code runs. <b>Quit</b> is the shared <b>Button secondary</b> md, right-aligned, as on shell setup — there is no danger-fill variant and quitting is the only choice, not a destructive one. Esc, Enter and the window close all quit with code 1.</>}>
+          <Stage variant="solo" style={{ display: "flex", flexWrap: "wrap", gap: "var(--tasty-space-lg)", padding: "var(--tasty-space-lg)", background: "var(--tasty-bg-app)" }} eager>
+            <BootErrorFrame kind="engine" />
+            <BootErrorFrame kind="datadir" />
+            <BootErrorFrame kind="webhook" />
+            <BootErrorFrame kind="datadir" theme="latte" />
+          </Stage>
+          <Meta
+            specs={[["structure", "lockup → (space-xl) → form 360 · gaps space-sm · no card, no shadow"], ["title row", "alertCircle 16 · boot-error-glyph → accent-danger · gap space-sm · title 14 / 600 text-primary, wraps"], ["body", "font-size-body · text-secondary · line-height-ui · wraps; paths and OS errors break anywhere (overflow-wrap: anywhere)"], ["guidance", "caption · text-muted · CLI pieces = code runs (ui-code-*)"], ["Quit", "Button secondary md · right · Enter / Esc / close = Quit (exit 1)"], ["long content", "never truncated · when the stack is taller than the window − 2 × space-xl, the lockup is dropped first; past that the form scrolls (standard scrollbar), Quit stays pinned under it"], ["theme", "follows the saved theme when it could be read; else Mocha"]]}
+            tokens={[{ tok: "--tasty-boot-form-width", use: "→ size-360" }, { tok: "--tasty-boot-error-glyph", use: "→ accent-danger", color: "var(--tasty-boot-error-glyph)" }, { tok: "--tasty-text-secondary", use: "body", color: "var(--tasty-text-secondary)" }, { tok: "--tasty-text-muted", use: "guidance", color: "var(--tasty-text-muted)" }, { tok: "--tasty-ui-code-bg", use: "CLI runs", color: "var(--tasty-ui-code-bg)" }]} />
+          <Note>Copy is unchanged from the app (<code>boot_error.*</code>); the OS error and path in the samples are illustrative. The webhook guidance shown here is a sample of the longest case (three runs) — use the app's string.</Note>
         </Spec>
       </Section>
     </>

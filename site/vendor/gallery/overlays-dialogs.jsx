@@ -113,6 +113,25 @@ function Page() {
             tokens={[{ tok: "--tasty-accent-agent", use: "agent gate", color: "var(--tasty-accent-agent)" }, { tok: "--tasty-accent-danger", use: "destructive tag", color: "var(--tasty-accent-danger)" }, { tok: "--tasty-bg-panel", use: "frame", color: "var(--tasty-bg-panel)" }]} />
           <Do><b>Do</b> name the actor and show the literal command. The user is granting authority — make the stakes legible.</Do>
         </Spec>
+        <Spec title="Danger choice — tinted fill with readable ink (2026-10-10 b12)"
+          when={<>An approval request can offer a <b>danger choice</b> (the option that does the destructive thing). It was painted as accent-danger × 0.18 in code, which fell under 4.5:1 (Mocha 3.18 today, Latte 3.92 once mixed in sRGB). It now has tokens: an <b>opaque</b> fill <span className="tok">--tasty-approval-danger-bg</span> = danger at the tint-fill 12% mixed into <b>bg-panel</b> (not into whatever is behind), a 1px <span className="tok">--tasty-approval-danger-border</span> in danger so the tone survives without colour-only ink, and <b>text-primary</b> label ink (<span className="tok">--tasty-approval-danger-fg</span>). The ink stays text-primary rather than danger red: red on the tint is 3.94 in Latte.</>}>
+          <Stage variant="solo center" style={{ padding: 20, background: "var(--tasty-bg-app)", gap: 16, flexWrap: "wrap" }}>
+            {[["Mocha", null, "9.18 : 1"], ["Latte", "latte", "5.80 : 1"]].map(([lab, th, cr]) => (
+              <div key={lab} {...(th ? { "data-theme": th } : {})} style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-sm)", padding: "var(--tasty-space-md)", background: "var(--tasty-surface-raised)", borderRadius: "var(--tasty-radius)", width: 300 }}>
+                <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>{lab} · popup surface-raised · label {cr}</span>
+                {[["Allow once", false], ["Always allow in this workspace", false], ["Allow and skip future checks", true]].map(([t, dz]) => (
+                  <div key={t} style={{ height: "var(--tasty-control-height)", display: "flex", alignItems: "center", padding: "0 var(--tasty-space-md)", borderRadius: "var(--tasty-radius)", fontSize: "var(--tasty-font-size-body)",
+                    background: dz ? "var(--tasty-approval-danger-bg)" : "var(--tasty-bg-panel)", color: dz ? "var(--tasty-approval-danger-fg)" : "var(--tasty-text-primary)",
+                    border: "var(--tasty-border-width) solid " + (dz ? "var(--tasty-approval-danger-border)" : "var(--tasty-border-default)") }}>{t}</div>
+                ))}
+              </div>
+            ))}
+          </Stage>
+          <Meta
+            specs={[["fill", "color-mix(in srgb, accent-danger 12%, bg-panel) — opaque · Mocha (56,43,61) · Latte (236,214,222)"], ["label", "text-primary · Mocha 9.18 · Latte 5.80"], ["edge", "1px accent-danger · vs surface-raised Mocha 5.43 · Latte 3.52 (≥ 3 non-text)"], ["retired", "linear_multiply(0.18) in code"], ["hover", "the normal button hover overlay on top"]]}
+            tokens={[{ tok: "--tasty-approval-danger-bg", use: "fill", color: "var(--tasty-approval-danger-bg)" }, { tok: "--tasty-approval-danger-border", use: "→ accent-danger", color: "var(--tasty-approval-danger-border)" }, { tok: "--tasty-approval-danger-fg", use: "→ text-primary", color: "var(--tasty-approval-danger-fg)" }]} />
+          <Note>Contrast is WCAG 2.x relative luminance on the computed sRGB values. Choice labels in the sample are illustrative.</Note>
+        </Spec>
       </Section>
 
 <Section id="convert" title="Convert surface">

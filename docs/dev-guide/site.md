@@ -59,6 +59,7 @@ site/
 | `const { Tab } = window.TastyDesignSystem_41fd3f;` | `import { Tab } from …/ds/…` |
 | `const { Sidebar } = window.TastyKit;` | `import { Sidebar } from …/kit/…` |
 | `window.TastyKit = Object.assign(window.TastyKit \|\| {}, { A, B });` | `export { A, B };` |
+| 갤러리 함수 안의 `const T = window.TastyKit;` 와 `T.X` | 파일이 읽는 `X` 만 별칭으로 import 해 `const T = { X: Kit_X };` |
 | `pluginAttentionCount: <식>` (계산값 등록) | `const pluginAttentionCount = <식>;` + export |
 | `ReactDOM.createRoot(...).render(<App />)` (프리뷰 부트스트랩) | 제거하고 `App` 을 export |
 | `const CSS = \`…\`` + 런타임 `<style>` 주입 | 생성되는 `styles/kit.css` 로 뽑아낸다 (주입은 그대로 둔다) |

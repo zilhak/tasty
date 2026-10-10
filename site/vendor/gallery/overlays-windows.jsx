@@ -230,8 +230,10 @@ const NAV = [
   { id: "filepicker", label: "File picker" },
   { id: "preseteditor", label: "Preset editor" },
   { id: "settings", label: "Settings window" },
+  { id: "settingsnarrow", label: "Settings rows — narrow (b12)" },
   { id: "permissions", label: "General › Permissions (macOS)" },
   { id: "kbimportexport", label: "Keybindings · Import / Export" },
+  { id: "optionkey", label: "Win · Super as option (b12)" },
   { id: "pluginswindow", label: "Plugins window · avatar · disabled sites" },
   { id: "scripts", label: "Misc · Scripts" },
   { id: "gitviewer", label: "Git viewer" },
@@ -358,57 +360,6 @@ function IeGrid() {
           <span style={{ width: "var(--tasty-status-dot-size)", height: "var(--tasty-status-dot-size)", borderRadius: "50%",
             background: "var(--tasty-accent-agent)" }} />git-helper</span>)}
       {group("Script bindings", "1 changed · 2 total", false)}
-    </div>
-  );
-}
-
-// Migration card — `state`: "pending" | "resolved".
-function IeMigrateG({ state = "pending" }) {
-  const done = state === "resolved";
-  const tone = done ? "var(--tasty-accent-success)" : "var(--tasty-accent-warning)";
-  const row = (action, from, widget, trail, sub, subTone) => (
-    <div style={{ display: "flex", flexDirection: "column", gap: 4, padding: "8px 0", borderTop: "1px solid var(--tasty-separator)" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, minHeight: 28, flexWrap: "wrap" }}>
-        <span style={{ width: "var(--tasty-kb-ie-action-column-width)", flex: "none", fontSize: 13, color: "var(--tasty-text-secondary)" }}>{action}</span>
-        <span style={{ ...ieMono, width: "var(--tasty-kb-ie-from-column-width)", flex: "none", color: "var(--tasty-text-muted)" }}>{from}</span>
-        <span style={{ display: "inline-flex", color: "var(--tasty-text-muted)" }}><WIcon name="chevronRight" size={14} /></span>
-        {widget}{trail}
-      </div>
-      {sub && <div style={{ paddingLeft: 200, fontSize: 11, color: subTone || "var(--tasty-text-muted)" }}>{sub}</div>}
-    </div>
-  );
-  const slot = (label, tone2) => (
-    <span style={{ minWidth: 140, height: 24, display: "inline-flex", alignItems: "center", padding: "0 8px", ...ieMono,
-      background: "var(--tasty-surface-raised)", color: tone2 === "empty" ? "var(--tasty-text-disabled)" : "var(--tasty-text-primary)",
-      border: "1px solid " + (tone2 === "conflict" ? "var(--tasty-accent-danger)" : "var(--tasty-border-default)"),
-      borderRadius: "var(--tasty-radius)" }}>{label}</span>
-  );
-  return (
-    <div style={{ width: "100%", maxWidth: IE_W, borderRadius: "var(--tasty-radius)", padding: "12px 14px",
-      background: "color-mix(in srgb, " + tone + " 11%, transparent)",
-      border: "1px solid color-mix(in srgb, " + tone + " 36%, transparent)" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, color: tone, fontSize: 13, fontWeight: 600 }}>
-        <WIcon name={done ? "check" : "alertTriangle"} size={16} />
-        <span>{done ? "Option bindings resolved" : "Option bindings need a replacement"}</span>
-        <span style={{ marginLeft: "auto", ...ieMono, fontSize: 11, color: tone }}>{done ? "4 of 4 resolved" : "2 of 4 unresolved"}</span>
-      </div>
-      <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--tasty-text-secondary)", lineHeight: "var(--tasty-line-height-ui)" }}>
-        {done ? <>Every option-bearing binding has a replacement or is left unbound. <b>Apply</b> is enabled.</>
-          : <><span style={ieMono}>option</span> never matches on this OS — these bindings would look bound and do nothing. <b>Apply</b> stays disabled until none are left.</>}
-      </p>
-      <div style={{ marginTop: 8 }}>
-        {row("Screenshot to clipboard", "Option+Shift+4", slot("Ctrl+Shift+4"),
-          <span style={{ display: "inline-flex", color: "var(--tasty-accent-success)" }}><WIcon name="check" size={14} /></span>)}
-        {row("Category axis modifier", "Option",
-          <WSelect options={done ? ["Ctrl+Alt"] : ["Select a modifier"]} style={{ width: "var(--tasty-field-width-md)" }} />,
-          done ? <span style={{ display: "inline-flex", color: "var(--tasty-accent-success)" }}><WIcon name="check" size={14} /></span>
-            : <span style={{ fontSize: 11, color: "var(--tasty-accent-warning)" }}>Not set</span>,
-          "10 slots on this axis change with it")}
-        {!done && row("Toggle vi mode", "Option+V", slot("Ctrl+Shift+C", "conflict"), null,
-          "Also bound to Copy — the shortcut-conflict popup opens on Apply.", "var(--tasty-accent-danger)")}
-        {row("Jump to error", "Option+E", slot(done ? "Unbound" : "Not set", done ? null : "empty"),
-          done ? <WTag>Unbound — counts as resolved</WTag> : <Button variant="ghost" size="sm">Leave unbound</Button>)}
-      </div>
     </div>
   );
 }
@@ -1143,16 +1094,12 @@ function Page() {
           <Stage variant="solo" style={{ padding: 20, background: "var(--tasty-bg-panel)", gap: "var(--tasty-space-xl)", flexDirection: "column", alignItems: "flex-start" }}>
             {window.TastyKit && window.TastyKit.KbPluginsSubtab && <>
               <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-sm)", width: 620 }}>
-                <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>default (proposal) — text key entry · row 1 Custom · row 2 Inherit + caption · row 3 overridden (draft = saved, Reset enabled)</span>
+                <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>default — row 1 Custom (record slot, b12) · row 2 Inherit + caption · row 3 overridden (draft = saved, Reset enabled)</span>
                 <window.TastyKit.KbPluginsSubtab />
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-sm)", width: 620 }}>
-                <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>draft + invalid — row 1 edited to an unparsable key (dot + error) · row 2 switched to None (dot)</span>
+                <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>draft + invalid — row 1 holds unparsable config text (danger slot + error) · row 2 switched to None (dot)</span>
                 <window.TastyKit.KbPluginsSubtab saved={{}} seedDrafts={{ "clipboard-viewer/open": { mode: "custom", keys: "ctrl+shft+h" }, "clipboard-viewer/paste-plain": { mode: "none" } }} />
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-sm)", width: 620 }}>
-                <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>alternative (needs user decision) — Custom slot = record button, like the other subtabs</span>
-                <window.TastyKit.KbPluginsSubtab recordAlt />
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: "var(--tasty-space-sm)", width: 620 }}>
                 <span style={{ fontSize: "var(--tasty-font-size-caption)", color: "var(--tasty-text-muted)" }}>empty</span>
@@ -1165,6 +1112,7 @@ function Page() {
             tokens={[{ tok: "--tasty-kb-plugin-title-width", use: "150 title column" }, { tok: "--tasty-kb-plugin-mode-width", use: "160" }, { tok: "--tasty-kb-plugin-slot-width", use: "200" }, { tok: "--tasty-kb-plugin-picker-width", use: "200" }, { tok: "--tasty-kb-plugin-control-height", use: "28" }, { tok: "--tasty-kb-plugin-draft-dot", use: "draft", color: "var(--tasty-kb-plugin-draft-dot)" }, { tok: "--tasty-kb-plugin-error-fg", use: "parse error", color: "var(--tasty-kb-plugin-error-fg)" }, { tok: "--tasty-kb-plugin-separator", use: "between commands", color: "var(--tasty-kb-plugin-separator)" }]} />
           <Note>Behaviour unchanged from the app: switching to Custom fills the previous Custom value or the manifest key; switching to Inherit fills the manifest source or the first of the four; typing writes the draft at once (commas = several keys, spaces ignored); Reset clears the override in the draft. The record-button alternative is a behaviour change and is shown for the user's decision only.</Note>
         </Spec>
+        {window.OverlaysWindowsB12 && <window.OverlaysWindowsB12.KbPluginsRecordSpec />}
 
         <Spec title="General › Overlay — toast duration"
           when={<>The <b>General</b> L1 tab gains a fourth L2 section, <b>Overlay</b> (after General / Notifications / Accessibility) — the umbrella term for Toast / Banner / Modifier-hint / Marker overlays. It ships with <b>one row</b>: <b>Toast duration</b>, a mono number field (the <b>Numbers in settings</b> shape — DragValue retired 2026-10-07) that controls how long a toast stays before auto-dismissing (today hardcoded at 2000ms). Exposed in <b>seconds</b> (matches the user's mental model), stored as ms. Same Grid (label + control) and hint-text pattern as the other General sections — no new interaction invented.</>}>
@@ -1395,6 +1343,7 @@ function Page() {
         </Spec>
       </Section>
 
+      {window.OverlaysWindowsB12 && <window.OverlaysWindowsB12.SettingsNarrowSection />}
       <Section id="permissions" title="Settings › General › Permissions (macOS) — 2026-09-28">
         <Spec title="Status table, one action per row, one request button"
           when={<>macOS builds only, the last L2 under General. A three-column table: <b>permission</b> · <b>status</b> · <b>row action</b>. The four states are told apart by <b>glyph + word</b>, with colour as a third channel: <b>Granted</b> check / success, <b>Not granted</b> alertCircle / warning, <b>Unknown</b> helpCircle / muted, <b>Cannot check automatically</b> eyeOff / muted. Unknown (inference failed) and Cannot check (deliberately not looked at) share the muted ink but never the glyph, and neither can be misread as granted. The Full Disk Access shortcut moves <b>into its own row</b> as Secondary / Sm <b>[Open System Settings]</b>. What needs explaining per row now lives in HelpHints, so the two notes under the table are short. <b>[Request all permissions]</b> stays Primary / Md under the table. While requesting it is disabled and the line below becomes a spinner + <i>requesting</i> copy; the button carries no spinner. The debug-only Accessibility row carries a <b>debug</b> Tag.</>}>
@@ -1579,24 +1528,9 @@ function Page() {
           <Note><b>Apply writes the draft, Save commits it</b> — the same two-stage contract as Preset, and the intro line says so. The two never share a row: Apply sits in the back bar, Save in the window footer.</Note>
         </Spec>
 
-        <Spec title="Option migration — pending · resolved · conflict · unbound · not needed"
-          when={<>A binding containing <b>option</b> never matches on non-macOS: it looks bound and does nothing. So a mac-made configuration cannot be applied here until every option-bearing binding is resolved, and the card that collects them <b>gates Apply</b>. It sits <b>above</b> the diff table, with the dropped-plugin notice under it — everything that changes the meaning of the table reads before the table.<br /><br />Two widget kinds share one row shape, because the code allows nothing else: a <b>combo slot is recorded</b> (min 140×24, mono, surface-raised — the existing binding-capture button), while a <b>quick-switch axis modifier can only be picked</b> from a Select (capture ignores modifier-only input; non-macOS offers 7 combos). Row height, label column and the <span className="tok">→</span> gutter are identical either way, so the list reads as one thing; the widget shape is the only tell, which is honest — one takes a keystroke, the other a choice. Changing an axis modifier recomposes every slot on that axis, so the row says so.<br /><br />States: <b>not set</b> (empty slot, “Not set”, warning-toned) · <b>set</b> (value + success check) · <b>conflict</b> (danger border + inline reason; the existing shortcut-conflict popup still opens on Apply) · <b>unbound</b> (“Leave unbound” — a deliberate discard that <b>counts as resolved</b>). When the target is macOS or the file has no option bindings the card is <b>absent</b> and the intro line says “No option bindings to migrate” — no empty card, no placeholder.</>}>
-          <Stage variant="tight" grid>
-            <div style={{ display: "flex", flexDirection: "column", gap: 14, alignItems: "flex-start", padding: 14, background: "var(--tasty-bg-panel)" }}>
-              <IeBackBarG unresolved={2} />
-              <IeMigrateG state="pending" />
-              <IeMigrateG state="resolved" />
-              <IeNotices />
-            </div>
-          </Stage>
-          <Meta
-            specs={[["position", "above the diff table; notice between"], ["width", <>full-bleed — 868 at the default 1100 window (not the 620 cap) · columns 288 / 120 · <span className="tok">--tasty-kb-ie-action-column-width</span> / <span className="tok">--tasty-kb-ie-from-column-width</span></>], ["gate", "Apply disabled while any row is unresolved"], ["counter", "“{n} of {m} unresolved” in the card header + back bar"], ["widget A", "record slot — min 140 × 24, mono"], ["widget B", "modifier Select — 7 combos (non-macOS)"], ["label column", "288px — ja longest label measures 255px"], ["axis fan-out", "sub-line: “10 slots change with it”"], ["unbound", "counts as resolved, shown as a Tag"], ["not needed", "card absent + one intro sentence"], ["failure", "inline block in the detail area"]]}
-            tokens={[{ tok: "--tasty-accent-warning", use: "pending card + “Not set”", color: "var(--tasty-accent-warning)" }, { tok: "--tasty-accent-success", use: "resolved card + set check", color: "var(--tasty-accent-success)" }, { tok: "--tasty-accent-danger", use: "conflict border + parse failure", color: "var(--tasty-accent-danger)" }, { tok: "--tasty-surface-raised", use: "record slot bed", color: "var(--tasty-surface-raised)" }, { tok: "--tasty-text-disabled", use: "empty slot label", color: "var(--tasty-text-disabled)" }, { tok: "--tasty-size-24", use: "record slot height" }]} />
-          <Note><b>Two disabled Applies, two reasons.</b> Preset shows a disabled button relabelled <b>Applied</b> (nothing left to do). Here the label stays <b>Apply</b> and the reason is carried next to it as <b>“{"{n}"} unresolved”</b> plus the card counter — a disabled button whose cause is off-screen is a dead end, and relabelling would claim the import already happened. Same disabled treatment, different message.</Note>
-          <Dont><b>Don't</b> make “dropped plugin overrides” a warning callout. Nothing is wrong and there is no action — a warning triangle on an unactionable fact trains people to ignore triangles. It is one muted info line naming the plugins.</Dont>
-        </Spec>
+        {/* "Option migration" Spec removed 2026-10-10 (b12): the app deleted option migration (key-position policy — Win / Super record as option). */}
 
-        <Spec title="The six open values — failure, notices, conflicts, placeholder, tokens"
+        <Spec title="The six open values — failure, notices, conflicts, placeholder, tokens (4 · 5 belong to the removed option migration — retired 2026-10-10)"
           when={<>Six things the first pass left blank. The rule behind all of them: <b>a result with nothing to do is a toast; a result with something to do is inline, where the thing to do lives.</b><br /><br /><b>1 · Export failure</b> — success stays a toast carrying the resolved path. Failure is an inline danger block <b>inside the Export row</b> (the row that started it), with <b>Try again</b> and <b>Choose another location…</b>; the row's button goes disabled while the block is up, so there is one live retry, not two.<br /><br /><b>2 · Other bundle warnings</b> — the dropped-override <b>info line</b> stays exactly as it is (muted, no tone, no glyph weight): nothing is wrong and there is nothing to do. Everything that <i>is</i> a warning — newer schema tag, unknown actions, empty groups — collects in <b>one warning block</b>, one line per notice, count in the header, in that fixed order. Three lines show; the rest fold behind <b>Show {"{n}"} more</b>. Never a block per notice.<br /><br /><b>3 · Parsing failure with no line number</b> — the line clause is <b>replaced, not dropped</b>: the middle sentence always says why the file failed. With a position: “parsing stopped at line 1.” Without: “the file isn't TOML.” The first and last sentences never change, so the two read as one message.<br /><br /><b>4 · Several conflicts</b> — <b>count first</b>, in the card intro: “<b>3 conflicts</b> — those shortcuts are already bound.” The per-row inline reason stays on every row (it names <i>which</i> binding), so the summary never repeats the list and nothing needs collapsing. The summary line appears from <b>2</b> up; at 1 the row line alone carries it.<br /><br /><b>5 · Modifier Select placeholder</b> — <b>Select a modifier</b>, sentence case, UI font (not mono — it is not a key), <span className="tok">--tasty-text-placeholder</span>. It is a sentinel first option that leaves the list once a real combo is chosen, and the row keeps its warning-toned <b>Not set</b> trailer. Not an em-dashed pseudo-value like “— pick a modifier —”, which reads as a choice.<br /><br /><b>6 · Tokens — opened.</b> The raw <span className="tok">--tasty-size-*</span> reads in the spec jsx were a tier violation, so they now have names (below). The off-grid <b>14px</b> card inset was a slip: it snaps to <span className="tok">--tasty-space-md</span> (12). Drop the quoted constants and the raw-dimension ratchet and read the tokens.</>}>
           <Stage variant="tight" grid>
             <div style={{ display: "flex", flexDirection: "column", gap: 14, alignItems: "flex-start", padding: 14, background: "var(--tasty-bg-panel)" }}>
@@ -1635,6 +1569,7 @@ function Page() {
         </Spec>
       </Section>
 
+      {window.OverlaysWindowsB12 && <window.OverlaysWindowsB12.OptionKeySection />}
       <Section id="scripts" title="Misc · Scripts (Lua script manager)">
         <Spec title="Scripts subsection — list, states & empty"
           when={<>Settings › <b>Misc</b> › <b>Scripts</b>. A subsection (not a separate popup) that manages user <b>Lua scripts</b> run by a shortcut. Each <b>ScriptRow</b>: the display name, the absolute path (<b>middle-elided</b> — dir tail truncates, filename always shown), a bound-shortcut <span className="ic">Kbd</span> badge (or italic <b>Unbound</b>), a peach <b>changed</b> badge + help line when the file's SHA no longer matches the one recorded at registration (TOFU re-confirm on next run), and an <b>Auto-run</b> row: mono <b>trigger chips</b> for the host-lifecycle events the script fires on (click a chip to remove it) plus a dashed <b>Add trigger…</b> control offering the remaining events. Row actions: bind shortcut (→ Keybindings), rename (inline), remove (inline confirm).</>}>

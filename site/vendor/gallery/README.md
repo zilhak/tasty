@@ -19,7 +19,7 @@ exact dimensions, and the tokens it consumes — and why.
 | `overlays-tutorial.html` | **Overlays · Tutorial** | The **Marker** family (6th overlay family) — a message-less floating geometric marker (ring / glow / pulse / corners / leader) over a target; its guidance **Callout** (title · body · progress · Back/Next/Skip · 4-way tail); and the **Topic-list popup** that launches the flow. Opened from Tools → Tutorial. |
 | `layouts.html` | **Layouts** | Structural shells: full sidebar ↔ collapsed rail, pane tab strip (+ `layouts-tabstrip.jsx`: status cluster, scroll arrows, out-of-view move cue), 1-depth (list→detail), drill-down (content swap: list ⇄ detail), 2-depth (tabs→sections), multi-tier tabs, divider, surface focus states, **workspace status bar** (final items + collapse order). |
 | `dag.html` | **Surfaces · Task DAG** | The read-only **Task DAG** view: graph canvas (layered top-down, orthogonal edges, dot grid, LOD tiers, minimap + zoom chrome), node card in all **8 execution states** and 4 task kinds, the 3 edge relations, runner badge (incl. stopped-with-ready-work), DAG list row, node detail (side panel / bottom sheet with error tail), empty + cycle states, and both hosts — tab surface (wide + 320) and workspace popup, incl. the **detail view's back-bar chrome** (zoom cluster + runner badge, no second header). |
-| `loading.html` | **Chrome · Startup** | The boot / startup loading screen. |
+| `loading.html` | **Chrome · Startup** | The boot / startup loading screen, first-run shell setup, shutdown screen and the **boot error screen** (2026-10-10). |
 | `plugins.html` | **Plugins** | **Plugin surfaces** — surface kinds contributed by bundled plugins, kept off the general Layouts page because they grow without bound: Explorer (file manager), Markdown viewer, HTML (webview) viewer, Image viewer/paint. |
 | `explorer-ops.html` | **Plugins · Explorer file ops** | Explorer file-operation design (2026-10-09): toolbar create / view groups, inline new-item naming and name errors, drag & drop (chip, drop targets, OS files), progress on the status line, name-conflict prompt, results / retry / undo toasts, Properties popup, preview panel, Grid thumbnails, filter and recursive search; batch 11 kind words, refused requests, Retry of originals, undo titles and remaining states (links, keyboard item, drag-select, hidden files, show in folder, redo, create in folder) in `explorer-ops-b11.jsx`. Loads `plugins.jsx` in kit-only mode (`window.__EXPLORER_KIT_ONLY`) and reuses `window.ExplorerKit`. |
 
@@ -47,8 +47,8 @@ page commits only a few demos at a time.
 Each page loads `../styles.css` + `../_ds_bundle.js`, then `shell.jsx` (shared
 chrome + specimen primitives, exposed on `window.Gallery`) and one content
 script (`foundations.jsx` / `icons.jsx` / `components.jsx` / `layouts.jsx` /
-`dag.jsx` / `loading.jsx` / `plugins.jsx` — `explorer-ops` loads `plugins.jsx` + `explorer-ops-parts.jsx` + `explorer-ops-b11.jsx` + `explorer-ops.jsx` —, or an `overlays-*.jsx` page preceded by
-`overlays-shared.jsx`; `overlays-windows` additionally loads `preset_editor.jsx`).
+`dag.jsx` / `loading.jsx` / `plugins.jsx` — `explorer-ops` loads `plugins.jsx` + `explorer-ops-parts.jsx` + `explorer-ops-b11.jsx` + `explorer-ops-b12.jsx` + `explorer-ops.jsx` —, or an `overlays-*.jsx` page preceded by
+`overlays-shared.jsx`; `overlays-windows` additionally loads `preset_editor.jsx` and `overlays-windows-b12.jsx` (narrow settings rows · Plugins record slots · Win / Super as option)).
 No tokens or component visuals are redefined here — specimens reference the
 design system only.
 

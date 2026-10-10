@@ -15,6 +15,8 @@ const NAV = [
   { id: "followups", label: "Follow-ups (b10)" },
   { id: "followups11", label: "Follow-ups (b11)" },
   { id: "remaining", label: "Remaining states (b11)" },
+  { id: "followups12", label: "Follow-ups (b12)" },
+  { id: "remaining12", label: "Remaining UI (b12)" },
 ];
 
 // ── Progress ──────────────────────────────────────────────
@@ -474,6 +476,8 @@ function Page() {
       <FollowupsSection />
       <window.ExplorerOpsB11.FollowupsB11Section />
       <window.ExplorerOpsB11.RemainingSection />
+      <window.ExplorerOpsB12.FollowupsB12Section />
+      <window.ExplorerOpsB12.RemainingB12Section />
     </>
   );
 }

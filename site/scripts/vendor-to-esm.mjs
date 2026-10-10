@@ -262,6 +262,8 @@ const GALLERY_MODULE = {
   ExplorerKit: "./plugins.jsx",
   ExplorerOpsParts: "./explorer-ops-parts.jsx",
   ExplorerOpsB11: "./explorer-ops-b11.jsx",
+  ExplorerOpsB12: "./explorer-ops-b12.jsx",
+  OverlaysWindowsB12: "./overlays-windows-b12.jsx",
   TastyDesignSystem_41fd3f: "../ds/index.js",
   TastyDag: "../kit/dag.js",
 };
@@ -359,6 +361,13 @@ for (const name of readdirSync(join(vendor, "gallery")).sort()) {
       addKit(key, alias && alias !== key ? `${key} as ${alias}` : key);
     }
     return "";
+  });
+  // `const T = window.TastyKit;` then `T.X` — an object of only the members the file reads.
+  src = src.replace(/^([ \t]*)const\s+([A-Za-z_$][\w$]*)\s*=\s*window\.TastyKit\s*;[ \t]*$/gm, (all, indent, local) => {
+    const syms = [...new Set([...src.matchAll(new RegExp(String.raw`\b${local}\.([A-Za-z_$][\w$]*)`, "g"))].map((m) => m[1]))];
+    const found = syms.filter((sym) => addKit(sym, `${sym} as Kit_${sym}`));
+    if (found.length !== syms.length) return all;
+    return `${indent}const ${local} = { ${found.map((sym) => `${sym}: Kit_${sym}`).join(", ")} };`;
   });
   // `window.TastyKit && window.TastyKit.X` — a load-order guard; the import resolves it.
   src = src.replace(/window\.TastyKit\s*&&\s*window\.TastyKit\.([A-Za-z_$][\w$]*)/g, (all, sym) =>

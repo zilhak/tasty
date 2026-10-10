@@ -5,8 +5,8 @@
 //   • GROUP HEADERS in the diff grid (4 groups: general combos / quick-switch /
 //     script bindings / plugin overrides) — a NEW axis on that table.
 //   • A per-row SELECT column (partial apply — user decision §6-2).
-//   • An OPTION MIGRATION card that GATES Apply: `option` never matches on
-//     non-macOS, so every option-bearing binding must be resolved first.
+//   (The OPTION MIGRATION card was removed 2026-10-10 b12: Win / Super now record as `option`, so an
+//    option binding matches on every OS and nothing needs migrating.)
 // Apply writes the draft; the window footer's Save commits it (same 2-stage
 // contract as Preset). Rendered full-bleed — it owns its own scroll.
 const { Button, IconButton, Input, Select, Tag, Checkbox, DrillDown } = window.TastyDesignSystem_41fd3f;
@@ -28,7 +28,7 @@ const IE_GROUPS = [
   { id: "quickswitch", label: "Quick switch (axis summary)", rows: [
     { action: "Tab axis", cur: "Alt+1…0", next: "Ctrl+1…0", note: "10 slots follow this axis" },
     { action: "Workspace axis", cur: "Alt+Shift+1…9", next: "Alt+Shift+1…9", note: "9 slots" },
-    { action: "Category axis", cur: "Option+1…0", next: "— unresolved —", note: "10 slots · needs migration", blocked: true },
+    { action: "Category axis", cur: "Option+1…0", next: "Ctrl+Option+1…0", note: "10 slots" },
   ] },
   { id: "scripts", label: "Script bindings", rows: [
     { action: "deploy-staging.lua", cur: "Ctrl+Alt+1", next: "Ctrl+Alt+1" },
@@ -40,19 +40,8 @@ const IE_GROUPS = [
   ] },
 ];
 
-// Option-bearing bindings that cannot match on this OS. Two widget kinds:
-// "record" (a capture slot) and "modifier" (a Select — capture ignores
-// modifier-only input, so an axis modifier can only be PICKED).
+// Quick-switch modifier combos (non-macOS now includes option = Win / Super: 15 combos).
 const MODIFIER_COMBOS = ["Ctrl", "Alt", "Shift", "Ctrl+Alt", "Ctrl+Shift", "Alt+Shift", "Ctrl+Alt+Shift"];
-// Sentinel first option — a modifier Select must be able to read "not chosen
-// yet"; without it the first real combo would look like an answer.
-const IE_PICK = "Select a modifier";
-const IE_MIGRATE = [
-  { id: "m1", action: "Screenshot to clipboard", from: "Option+Shift+4", kind: "record", value: "Ctrl+Shift+4" },
-  { id: "m2", action: "Category axis modifier", from: "Option", kind: "modifier", value: "", fanout: "10 slots on this axis change with it" },
-  { id: "m3", action: "Toggle vi mode", from: "Option+V", kind: "record", value: "Ctrl+Shift+C", conflict: "Also bound to Copy" },
-  { id: "m4", action: "Jump to error", from: "Option+E", kind: "record", value: "" },
-];
 
 const IE_DISCARDED = ["k8s-lens", "s3-browser"];
 
@@ -128,95 +117,6 @@ function IeDiffTable({ groups, changedOnly, collapsed, onToggleGroup, sel, onSel
   );
 }
 
-// ── Migration row — record slot OR modifier select, one shared row shape ──
-function IeMigrateRow({ row, onSet }) {
-  const state = row.conflict ? "conflict" : row.unbound ? "unbound" : row.value ? "set" : "unset";
-  const tone = state === "conflict" ? "var(--tasty-accent-danger)"
-    : state === "unset" ? "var(--tasty-accent-warning)" : "var(--tasty-accent-success)";
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 4, padding: "var(--tasty-space-sm) 0",
-      borderTop: "var(--tasty-border-width) solid var(--tasty-separator)" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-md)", minHeight: "var(--tasty-size-28)", flexWrap: "wrap" }}>
-        {/* label column fixed at 288 — the ja longest action label measures 255px */}
-        <span style={{ width: "var(--tasty-kb-ie-action-column-width)", flex: "none", fontSize: 13, color: "var(--tasty-text-secondary)",
-          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.action}</span>
-        <span style={{ ...mono, width: "var(--tasty-kb-ie-from-column-width)", flex: "none", color: "var(--tasty-text-muted)" }}>{row.from}</span>
-        <span style={{ display: "inline-flex", flex: "none", color: "var(--tasty-text-muted)" }}><Icon name="chevronRight" size={14} /></span>
-        {/* widget kind 2 — an axis modifier can only be PICKED (capture ignores
-            modifier-only input); kind 1 — a combo is RECORDED. */}
-        {row.kind === "modifier" ? (
-          <Select options={row.value ? MODIFIER_COMBOS : [IE_PICK, ...MODIFIER_COMBOS]} value={row.value || IE_PICK}
-            onChange={(e) => onSet(row.id, e.target.value === IE_PICK ? "" : e.target.value)}
-            style={{ width: "var(--tasty-field-width-md)" }} />
-        ) : (
-          <button type="button" onClick={() => onSet(row.id, row.value ? "" : "Ctrl+Shift+9")} style={{ minWidth: "var(--tasty-kb-ie-slot-min-width)",
-            height: "var(--tasty-kb-ie-slot-height)", padding: "0 var(--tasty-space-sm)", cursor: "pointer", ...mono,
-            background: "var(--tasty-surface-raised)", color: row.value ? "var(--tasty-text-primary)" : "var(--tasty-text-disabled)",
-            border: "var(--tasty-border-width) solid " + (state === "conflict" ? "var(--tasty-accent-danger)" : "var(--tasty-border-default)"),
-            borderRadius: "var(--tasty-radius)", textAlign: "left" }}>
-            {row.unbound ? "Unbound" : row.value || "Not set"}
-          </button>
-        )}
-        {state === "set" && <span style={{ display: "inline-flex", color: tone }}><Icon name="check" size={14} /></span>}
-        {state === "unbound" && <Tag>Unbound — counts as resolved</Tag>}
-        {state === "unset" && (
-          <>
-            <span style={{ fontSize: 11, color: "var(--tasty-accent-warning)" }}>Not set</span>
-            <Button variant="ghost" size="sm" onClick={() => onSet(row.id, "__unbound")}>Leave unbound</Button>
-          </>
-        )}
-      </div>
-      {row.conflict && (
-        <div style={{ display: "flex", alignItems: "center", gap: 6, paddingLeft: "var(--tasty-kb-ie-action-column-width)", fontSize: 11, color: "var(--tasty-accent-danger)" }}>
-          <Icon name="alertTriangle" size={14} /><span>{row.conflict} — the shortcut-conflict popup opens on Apply.</span>
-        </div>
-      )}
-      {row.fanout && !row.conflict && (
-        <div style={{ paddingLeft: "var(--tasty-kb-ie-action-column-width)", fontSize: 11, color: "var(--tasty-text-muted)" }}>{row.fanout}</div>
-      )}
-    </div>
-  );
-}
-
-function IeMigrateCard({ rows, onSet }) {
-  const left = rows.filter((r) => !r.value && !r.unbound).length;
-  const conflicts = rows.filter((r) => r.conflict).length;
-  const done = left === 0;
-  const tone = done ? "var(--tasty-accent-success)" : "var(--tasty-accent-warning)";
-  return (
-    <div style={{ borderRadius: "var(--tasty-radius)", padding: "var(--tasty-kb-ie-notice-inset)",
-      background: "color-mix(in srgb, " + tone + " 11%, transparent)",
-      border: "var(--tasty-border-width) solid color-mix(in srgb, " + tone + " 36%, transparent)" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: "var(--tasty-space-sm)", color: tone, fontSize: 13, fontWeight: 600 }}>
-        <Icon name={done ? "check" : "alertTriangle"} size={16} />
-        <span>{done ? "Option bindings resolved" : "Option bindings need a replacement"}</span>
-        <span style={{ marginLeft: "auto", ...mono, fontSize: 11, color: tone }}>
-          {done ? rows.length + " of " + rows.length + " resolved" : left + " of " + rows.length + " unresolved"}
-        </span>
-      </div>
-      <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--tasty-text-secondary)", lineHeight: "var(--tasty-line-height-ui)",
-        maxWidth: "var(--tasty-measure-lg)" }}>
-        {done
-          ? <>Every option-bearing binding now has a replacement or is left unbound. <b>Apply</b> is enabled.</>
-          : <><span style={mono}>option</span> never matches on this OS — these bindings would look bound and do nothing.
-            Give each one a replacement, or leave it unbound. <b>Apply</b> stays disabled until none are left.</>}
-      </p>
-      {/* §4 — several conflicts: COUNT FIRST, from 2 up. Each row keeps its own
-          inline reason (it names which binding), so this never lists them. */}
-      {conflicts > 1 && (
-        <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--tasty-text-secondary)", lineHeight: "var(--tasty-line-height-ui)",
-          maxWidth: "var(--tasty-measure-lg)" }}>
-          <b style={{ color: "var(--tasty-accent-danger)" }}>{conflicts} conflicts</b> — those shortcuts are already bound.
-          The shortcut-conflict popup opens on Apply.
-        </p>
-      )}
-      <div style={{ marginTop: "var(--tasty-space-sm)" }}>
-        {rows.map((r) => <IeMigrateRow key={r.id} row={r} onSet={onSet} />)}
-      </div>
-    </div>
-  );
-}
-
 // ── Entry (list position) — two actions, not a list ──────────────────────
 // `notice` — §1: an export failure is told INLINE in the row that started it
 // (success is a toast; a failure carries a retry, so it must not auto-dismiss).
@@ -269,8 +169,7 @@ function IePickerPopup({ mode, onClose, onPick }) {
   );
 }
 
-// `variant` drives the specimen states: "ready" (entry), "pending" (migration
-// unresolved), "resolved", "nomigration", "failed".
+// `variant` drives the specimen states: "ready" (entry), "detail", "failed", "exportfailed".
 function KbImportExportSubtab({ variant = "ready", onFlash, failLine = 1, failCause = "readonly", osError = "os error 28: No space left on device" }) {
   const [view, setView] = React.useState(variant === "ready" || variant === "exportfailed" ? "list" : "detail");
   const [picker, setPicker] = React.useState(null);
@@ -279,20 +178,12 @@ function KbImportExportSubtab({ variant = "ready", onFlash, failLine = 1, failCa
   const [sel, setSel] = React.useState({});
   const [failed, setFailed] = React.useState(variant === "failed");
   const [exportError, setExportError] = React.useState(variant === "exportfailed" ? "~/tasty/" + IE_FILE : null);
-  const [rows, setRows] = React.useState(
-    variant === "resolved" ? IE_MIGRATE.map((r) => ({ ...r, value: r.value || "Ctrl+Shift+8", conflict: null }))
-      : variant === "nomigration" ? [] : IE_MIGRATE);
-
-  const setOne = (id, v) => setRows((rs) => rs.map((r) => r.id === id
-    ? (v === "__unbound" ? { ...r, unbound: true, value: "", conflict: null } : { ...r, value: v, unbound: false, conflict: null })
-    : r));
   const onSel = (g, next, row) => setSel((s) => {
     const c = { ...s };
     (row ? [row] : g.rows).forEach((r) => { c[g.id + r.action] = next; });
     return c;
   });
 
-  const left = rows.filter((r) => !r.value && !r.unbound).length;
   const total = IE_GROUPS.reduce((n, g) => n + g.rows.length, 0);
   const changed = IE_GROUPS.reduce((n, g) => n + g.rows.filter((r) => r.cur !== r.next).length, 0);
   const picked = IE_GROUPS.reduce((n, g) => n + g.rows.filter((r) => sel[g.id + r.action] !== false).length, 0);
@@ -325,9 +216,7 @@ function KbImportExportSubtab({ variant = "ready", onFlash, failLine = 1, failCa
         <span style={mono}>{IE_FILE}</span> — <b style={{ color: "var(--tasty-text-secondary)" }}>{changed}</b> of {total} bindings change,
         {" "}<b style={{ color: "var(--tasty-text-secondary)" }}>{picked}</b> selected. <b>Apply</b> writes the selected rows into the draft;
         nothing is saved until you press <b style={{ color: "var(--tasty-text-secondary)" }}>Save</b>.
-        {rows.length === 0 && <> No <span style={mono}>option</span> bindings to migrate.</>}
       </p>
-      {rows.length > 0 && <IeMigrateCard rows={rows} onSet={setOne} />}
       {/* Discarded plugin overrides — INFORMATION, not a warning: nothing is
           wrong and there is nothing to do. Above the table because it explains
           what the table does NOT contain. */}
@@ -352,8 +241,8 @@ function KbImportExportSubtab({ variant = "ready", onFlash, failLine = 1, failCa
             <Button variant="ghost" size="sm" onClick={() => setChangedOnly((v) => !v)}>
               {changedOnly ? "Show all " + total : "Changed only"}
             </Button>
-            {left > 0 && <span style={{ ...mono, fontSize: 11, color: "var(--tasty-accent-warning)" }}>{left} unresolved</span>}
-            <Button variant="primary" size="sm" disabled={left > 0 || picked === 0}
+
+            <Button variant="primary" size="sm" disabled={picked === 0}
               onClick={() => onFlash && onFlash("Applied to draft — press Save to commit")}>Apply</Button>
           </div>
         )}
@@ -412,6 +301,6 @@ function KbImportExportSubtab({ variant = "ready", onFlash, failLine = 1, failCa
 }
 
 window.TastyKit = Object.assign(window.TastyKit || {}, {
-  KbImportExportSubtab, IeDiffTable, IeMigrateCard, IeActionRow, IePickerPopup,
-  IE_GROUPS, IE_MIGRATE, IE_FILE, IE_DISCARDED, MODIFIER_COMBOS,
+  KbImportExportSubtab, IeDiffTable, IeActionRow, IePickerPopup,
+  IE_GROUPS, IE_FILE, IE_DISCARDED, MODIFIER_COMBOS,
 });
