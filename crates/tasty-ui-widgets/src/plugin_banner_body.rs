@@ -71,6 +71,57 @@ mod tests {
         assert!(g.elided);
     }
 
+    /// 본문 위에 포인터를 둔 채 툴팁 대기 시간보다 길게 프레임을 돌리고, 마지막 프레임에서
+    /// `text` 를 말줄임 없이 다 보이는 도형 수를 센다. 말줄임된 galley 도 `text()` 는 원문
+    /// 전체를 돌려주므로 `elided` 로 거른다.
+    /// 툴팁은 본문 위에 뜬다. 본문을 화면 맨 위에 두면 툴팁이 화면 안으로 밀려 포인터를 덮고
+    /// hover 가 끊기므로 위쪽에 툴팁 자리를 둔다.
+    fn full_text_shapes_after_hover(width: f32, text: &str) -> usize {
+        const TOP: f32 = 200.0;
+        let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
+        let ctx = egui::Context::default();
+        let mut count = 0;
+        for i in 0..20 {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(width, 600.0),
+                )),
+                time: Some(f64::from(i) * 0.25),
+                events: vec![egui::Event::PointerMoved(egui::pos2(12.0, TOP + 8.0))],
+                ..Default::default()
+            };
+            let out = ctx.run(input, |ctx| {
+                egui::CentralPanel::default()
+                    .frame(egui::Frame::NONE)
+                    .show(ctx, |ui| {
+                        ui.add_space(TOP);
+                        plugin_banner_body(ui, &theme, text);
+                    });
+            });
+            count = out
+                .shapes
+                .iter()
+                .filter(|c| {
+                    matches!(&c.shape, egui::Shape::Text(t)
+                        if t.galley.text() == text && !t.galley.elided)
+                })
+                .count();
+        }
+        count
+    }
+
+    #[test]
+    fn hovering_a_cut_body_shows_the_full_text_in_a_tooltip() {
+        assert_eq!(full_text_shapes_after_hover(160.0, LONG), 1);
+    }
+
+    #[test]
+    fn hovering_an_uncut_body_shows_no_tooltip() {
+        // 잘리지 않은 본문은 자기 도형 하나만 전체 글을 보인다.
+        assert_eq!(full_text_shapes_after_hover(400.0, "Short plugin body."), 1);
+    }
+
     #[test]
     fn a_short_body_is_not_cut() {
         let g = body(400.0, "Short plugin body.");

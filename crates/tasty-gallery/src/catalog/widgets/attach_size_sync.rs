@@ -276,7 +276,8 @@ fn draw_body_lines(ui: &mut egui::Ui, theme: &Theme) {
     const PLUGIN_BODY: &str = "This body comes from a plugin. It keeps going past the three \
                                rows a plugin body may use in a banner, so the third row ends \
                                with an ellipsis and hovering the text shows all of it in a \
-                               tooltip.";
+                               tooltip. This last sentence is only here to push the text past \
+                               the third row at the sample width.";
     spec::spec(
         ui,
         theme,

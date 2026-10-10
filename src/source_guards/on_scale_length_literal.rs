@@ -959,7 +959,8 @@ fn the_blind_spots_are_still_the_size_they_say() {
         // 창 파일 드롭 안내 위젯 시험의 영역·화면 리터럴 중 두 자리가 test 전용으로 들어왔다.
         // Select 테두리 콤보 시험(select_combo_border.rs)의 화면·클릭 좌표·콤보 폭·입력칸 여백 리터럴 중
         // 여섯 자리가 test 전용으로 들어왔다.
-        (234, 609),
+        // plugin 배너 본문 툴팁 시험의 화면 높이·위쪽 여백 리터럴 세 자리가 test 전용으로 들어왔다.
+        (234, 612),
         "제외한 0과 test 전용 코드의 수가 달라졌다. 실제 사용과 수집 범위의 변경을 확인하고 기록을 갱신한다."
     );
     let roster: usize = UNIT_SPACE_SITES.iter().map(|(.., n, _)| n).sum();
