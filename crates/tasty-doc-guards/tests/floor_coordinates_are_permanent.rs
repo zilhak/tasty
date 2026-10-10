@@ -4,9 +4,7 @@
 //! 전체 이력을 받는 워크플로가 둘 이상이 되면 직접 도달성 검사 도입을 재검토한다.
 
 use std::path::Path;
-use tasty_doc_guards::floored_walk::{
-    CountedOn, Descend, Floor, Walked, populations, walk_with_floor,
-};
+use tasty_doc_guards::floored_walk::{CountedOn, Descend, Floor, Walked, walk_with_floor};
 
 /// 저장소 Rust 파일 수집의 하한. 일부 누락이 임시 좌표 감소처럼 보이지 않도록 둔다.
 const SOURCE_FLOOR: Floor = Floor {
@@ -91,26 +89,5 @@ fn the_census_reads_real_sites_not_prose() {
     assert!(
         mine.is_empty(),
         "검사 파일 자신의 설명이 집계에 포함됐다: {mine:?}"
-    );
-}
-
-#[test]
-fn the_population_that_this_file_moves_is_current() {
-    // 측정값을 소비하는 검사도 통합 타깃 수에 포함되므로 새 파일 추가 시 기준을 갱신해야 한다.
-    let root = &tasty_doc_guards::repo_root();
-    let mut n = 0;
-    for w in sources(root) {
-        let parts: Vec<&str> = w.rel.split('/').collect();
-        if parts.len() == 4 && parts[0] == "crates" && parts[2] == "tests" {
-            n += 1;
-        }
-    }
-    assert_eq!(
-        n,
-        populations::CRATE_TEST_TARGETS.measured,
-        "`crates/*/tests/*.rs` 가 {} 개인데 선언은 {} 이다. 이 파일이 그 모수를 움직였다면 \
-         같은 커밋에서 갱신해라 — 값과 잰 트리를 함께.",
-        n,
-        populations::CRATE_TEST_TARGETS.measured
     );
 }

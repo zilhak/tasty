@@ -97,7 +97,7 @@ const HOOK_STEPS: &[(&str, &[&str])] = &[
         ],
     ),
     ("pre-merge-commit", &[]),
-    ("pre-push", &["B.4", "B.6", "B.7", "B.8", "B.9", "B.10"]),
+    ("pre-push", &["B.4", "B.6", "B.7", "B.8", "B.9"]),
 ];
 
 /// 표의 첫 열에 검사 ID를 적는 운영 문서.
@@ -224,7 +224,6 @@ fn the_pre_commit_run_list_and_its_definitions_still_agree() {
 fn run_pre_push_fixture(
     refs: &str,
     version_rc: i32,
-    population_rc: i32,
     cargo_rc: i32,
 ) -> (bool, String, String, String) {
     use std::io::Write;
@@ -252,7 +251,6 @@ bash() {
     printf '%s\n' "$*" >> "$HOOK_FIXTURE/calls"
     case "$1" in
         *check-plugin-version-bump.sh) return "$HOOK_VERSION_RC" ;;
-        *check-population-freshness.sh) return "$HOOK_POPULATION_RC" ;;
         *) return 99 ;;
     esac
 }
@@ -271,7 +269,6 @@ cargo() {
         .env("BASH_ENV", hook_path(&env_file))
         .env("HOOK_FIXTURE", hook_path(&root))
         .env("HOOK_VERSION_RC", version_rc.to_string())
-        .env("HOOK_POPULATION_RC", population_rc.to_string())
         .env("HOOK_CARGO_RC", cargo_rc.to_string())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -323,12 +320,11 @@ cargo() {
 #[test]
 fn pre_push_reports_failures_and_retains_complete_logs() {
     let refs = "refs/heads/main aaaaaaaa refs/heads/main bbbbbbbb\n";
-    let (success, output, calls, logs) = run_pre_push_fixture(refs, 0, 0, 0);
+    let (success, output, calls, logs) = run_pre_push_fixture(refs, 0, 0);
     assert!(success, "{output}");
     // Clippy covers the development targets once; release and headless remain separate.
     let expected_calls = [
         "scripts/check-plugin-version-bump.sh --range bbbbbbbb aaaaaaaa",
-        "scripts/check-population-freshness.sh --rev aaaaaaaa",
         "cargo clippy --workspace --all-targets -- -D clippy::correctness",
         "cargo check --workspace --release --locked",
         "cargo check --no-default-features",
@@ -337,7 +333,6 @@ fn pre_push_reports_failures_and_retains_complete_logs() {
     assert_eq!(calls.lines().collect::<Vec<_>>(), expected_calls);
     for title in [
         "플러그인 버전",
-        "파일 수 검사 기준",
         "cargo clippy --workspace --all-targets -- -D clippy::correctness",
         "cargo check --workspace --release --locked",
         "cargo check --no-default-features",
@@ -347,7 +342,7 @@ fn pre_push_reports_failures_and_retains_complete_logs() {
         assert!(logs.contains(&format!("통과: {title} (")), "{logs}");
     }
     assert!(!output.contains("[B."), "{output}");
-    let (success, output, calls, logs) = run_pre_push_fixture(refs, 0, 0, 101);
+    let (success, output, calls, logs) = run_pre_push_fixture(refs, 0, 101);
     assert!(!success, "{output}");
     assert_eq!(
         calls.lines().collect::<Vec<_>>(),
@@ -369,10 +364,10 @@ fn pre_push_reports_failures_and_retains_complete_logs() {
 #[test]
 fn pre_push_stops_before_builds_when_commit_checks_fail() {
     let refs = "refs/heads/main aaaaaaaa refs/heads/main bbbbbbbb\n";
-    for (version, population) in [(1, 0), (0, 1), (2, 0), (0, 2)] {
-        let (success, output, calls, _) = run_pre_push_fixture(refs, version, population, 0);
+    for version in [1, 2] {
+        let (success, output, calls, _) = run_pre_push_fixture(refs, version, 0);
         assert!(!success, "{output}");
-        assert_eq!(calls.lines().count(), 2, "{calls}");
+        assert_eq!(calls.lines().count(), 1, "{calls}");
         assert!(!calls.contains("cargo"), "{calls}");
     }
 }
@@ -383,13 +378,12 @@ fn pre_push_handles_new_deleted_multiple_and_empty_refs() {
     let refs = format!(
         "refs/heads/new aaaaaaaa refs/heads/new {null}\n(delete) {null} refs/heads/old bbbbbbbb\nrefs/heads/main cccccccc refs/heads/main dddddddd\n"
     );
-    let (success, output, calls, _) = run_pre_push_fixture(&refs, 0, 0, 0);
+    let (success, output, calls, _) = run_pre_push_fixture(&refs, 0, 0);
     assert!(success, "{output}");
     assert_eq!(calls.matches("--range").count(), 1);
     assert!(calls.contains("--range dddddddd cccccccc"));
-    assert_eq!(calls.matches("--rev").count(), 2);
     assert!(!calls.contains("bbbbbbbb"));
-    let (success, output, calls, _) = run_pre_push_fixture("", 1, 1, 101);
+    let (success, output, calls, _) = run_pre_push_fixture("", 1, 101);
     assert!(success, "{output}");
     assert!(calls.is_empty(), "{calls}");
 }

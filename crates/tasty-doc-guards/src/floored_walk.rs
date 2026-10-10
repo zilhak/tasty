@@ -68,8 +68,10 @@ pub struct Floor {
     pub why_this_gap: &'static str,
 }
 
-/// 여러 가드가 공유하는 검사 대상의 실측값.
+/// 여러 가드가 공유하는 검사 대상을 한 번 잰 값.
 /// 같은 대상의 수·날짜·측정법은 공유하고, 소비자마다 다른 하한과 여유는 Floor에 둔다.
+/// `measured`는 `counted_on` 트리에서 잰 값이며 현재 트리와 같을 필요는 없다. 실제 개수는
+/// 소비자의 순회가 실행할 때마다 세고 하한과 비교한다. 파일을 더하거나 옮겨도 갱신하지 않는다.
 pub struct Population {
     /// 마지막으로 실제로 센 값.
     pub measured: usize,
@@ -81,7 +83,7 @@ pub struct Population {
     pub how: &'static str,
 }
 
-/// 여러 가드가 함께 사용하는 저장소 대상의 실측값.
+/// 여러 가드가 함께 사용하는 저장소 대상을 잰 값. 하한을 정할 때의 근거이며 현재 개수가 아니다.
 /// 합성 트리의 하한은 그 픽스처에서 따로 정의하며 여기에 합치지 않는다.
 pub mod populations {
     use super::Population;

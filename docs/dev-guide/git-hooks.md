@@ -85,12 +85,12 @@ lane의 커밋 하나하나가 각자 patch +1을 받는다. 같은 플러그인
 
 ## pre-push
 
-먼저 push할 커밋의 플러그인 버전과 파일 수를 검사한다. 둘 중 하나라도 실패하면 컴파일을 시작하지 않고 중단한다. 두 검사에 통과하면 아래 순서대로 빌드와 문서를 검사한다. 빌드 검사 중 하나가 실패해도 나머지는 실행하여 오류를 한 번에 확인할 수 있다.
+먼저 push할 커밋의 플러그인 버전을 검사한다. 실패하면 컴파일을 시작하지 않고 중단한다. 통과하면 아래 순서대로 빌드와 문서를 검사한다. 빌드 검사 중 하나가 실패해도 나머지는 실행하여 오류를 한 번에 확인할 수 있다.
 
 Git은 훅에 `GIT_DIR`, `GIT_COMMON_DIR`, `GIT_INDEX_FILE` 같은 저장소 환경을 전달할 수 있다.
 pre-push는 먼저 원 저장소와 로그 위치를 확정하고, 각 검사를 실행하는 서브셸에서
 `git rev-parse --local-env-vars`가 열거한 변수만 해제한 뒤 원 저장소를 작업 디렉터리로 고정한다.
-B.9/B.10의 명시 ref 조회는 같은 저장소를 읽되, Cargo·도구·시험이 만드는 다른 Git 저장소에는
+B.9의 명시 ref 조회는 같은 저장소를 읽되, Cargo·도구·시험이 만드는 다른 Git 저장소에는
 push 저장소의 경로를 전달하지 않는다. 이는 [Git 훅의 저장소 환경 규칙](https://git-scm.com/docs/githooks#_description)을 따른다.
 부모 Git 프로세스의 환경은 바뀌지 않으며 사용자 HOME/PATH와 검사 argv·실패 처리도 유지한다.
 `githooks_are_pinned`의 일회용 저장소 회귀는 이 경계를 검사한다. fixture의 Cargo 대역 성공은
@@ -99,7 +99,6 @@ push 저장소의 경로를 전달하지 않는다. 이는 [Git 훅의 저장소
 | ID | 검사 |
 |----|------|
 | B.9 | `scripts/check-plugin-version-bump.sh --range <원격 커밋> <로컬 커밋>`으로 원격에 게시된 플러그인 버전과 비교한다. |
-| B.10 | `scripts/check-population-freshness.sh --rev <로컬 커밋>`으로 파일 수와 `crates/tasty-doc-guards/src/floored_walk.rs`의 검사 기준이 일치하는지 확인한다. |
 | B.4 | `cargo clippy --workspace --all-targets -- -D clippy::correctness`로 워크스페이스의 개발 빌드·테스트 코드 컴파일과 lint를 함께 검사한다. |
 | B.8 | `cargo check --workspace --release --locked` |
 | B.6 | `cargo check --no-default-features` |
@@ -110,9 +109,9 @@ push 저장소의 경로를 전달하지 않는다. 이는 [Git 훅의 저장소
 release와 headless는 컴파일 조건이 달라 각각 검사한다. 문서 가드는
 [빌드 프로필](build.md#빌드-프로필-3종)의 패키지별 최적화를 적용하며 전체 항목을 실행한다.
 
-B.9와 B.10은 Git이 전달한 ref별 커밋을 검사한다. 파일 수 기준을 수정했다면 커밋한 뒤 다시 push해야 한다. B.9에서 원격 커밋을 로컬에서 찾지 못하면 `git fetch`가 필요하다. 새 ref는 비교할 원격 버전이 없으므로 B.9를 생략하고, 삭제할 ref는 두 검사를 모두 생략한다. ref별 검사·생략 수는 로그에 남는다.
+B.9는 Git이 전달한 ref별 커밋을 검사한다. 원격 커밋을 로컬에서 찾지 못하면 `git fetch`가 필요하다. 새 ref는 비교할 원격 버전이 없고 삭제할 ref는 올릴 내용이 없으므로 B.9를 생략한다. ref별 검사·생략 수는 로그에 남는다.
 
-훅을 직접 실행하면 Git의 ref 정보가 없어 B.9와 B.10을 생략했다고 표시한다. 두 검사는 표의 명령으로 따로 실행할 수 있다. push할 ref가 없으면 빌드도 생략한다.
+훅을 직접 실행하면 Git의 ref 정보가 없어 B.9를 생략했다고 표시한다. B.9는 표의 명령으로 따로 실행할 수 있다. push할 ref가 없으면 빌드도 생략한다.
 
 빌드·문서 검사는 현재 작업 트리에서 실행한다. 따라서 다른 커밋을 지정해 push하거나 미커밋 변경이 있는 경우에는 push할 커밋의 빌드를 검증한 것으로 볼 수 없다.
 

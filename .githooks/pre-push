@@ -104,44 +104,12 @@ EOF
     return "$failed"
 }
 
-# ─
-# B.10  push할 커밋의 실제 파일 수와 검사 기준 비교
-check_published_populations() {
-    local considered=0 judged=0 failed=0 rc
-    local local_ref local_sha remote_ref remote_sha
-    while read -r local_ref local_sha remote_ref remote_sha; do
-        [ -n "${local_ref:-}" ] || continue
-        considered=$((considered + 1))
-        if [ "$local_sha" = "$GIT_NULL_SHA" ]; then
-            echo "$remote_ref: 삭제할 ref이므로 파일 수 검사를 생략합니다."
-            continue
-        fi
-        judged=$((judged + 1))
-        rc=0
-        bash scripts/check-population-freshness.sh --rev "$local_sha" || rc=$?
-        if [ "$rc" -eq 1 ]; then
-            red "$remote_ref: 실제 파일 수와 검사 기준이 다릅니다."
-            red "crates/tasty-doc-guards/src/floored_walk.rs의 해당 measured, measured_on, counted_on을 갱신해 주세요."
-            red "이 검사는 커밋을 확인합니다. 수정 사항을 커밋한 뒤 다시 push해 주세요."
-            failed=1
-        elif [ "$rc" -ne 0 ]; then
-            red "$remote_ref: 파일 수를 검사하지 못했습니다 (종료 코드 $rc). 위 오류를 확인해 주세요."
-            failed=1
-        fi
-    done <<EOF
-$PUSH_REFS
-EOF
-    echo "ref $considered개: 검사 $judged개, 생략 $((considered - judged))개"
-    return "$failed"
-}
-
 if [ "$PUSH_INVOKED_BY_GIT" -eq 1 ]; then
     if [ -z "$PUSH_REFS" ]; then
         green "push할 변경 사항이 없어 검사를 생략합니다."
         exit 0
     fi
     run_check B.9 '플러그인 버전' check_published_plugin_version
-    run_check B.10 '파일 수 검사 기준' check_published_populations
     if [ "$FAIL" -ne 0 ]; then
         yellow '커밋 검사에 실패해 빌드 검사는 실행하지 않습니다.'
         finish
@@ -150,8 +118,7 @@ if [ "$PUSH_INVOKED_BY_GIT" -eq 1 ]; then
 else
     yellow '생략: 플러그인 버전 — 직접 실행했으므로 Git의 원격 ref 정보가 없습니다.'
     yellow '직접 검사: bash scripts/check-plugin-version-bump.sh --range <원격 커밋> HEAD'
-    yellow '생략: 파일 수 검사 기준 — 직접 검사하려면 bash scripts/check-population-freshness.sh --rev HEAD'
-    printf '생략: 플러그인 버전 — Git의 ref 정보 없음\n생략: 파일 수 검사 기준 — Git의 ref 정보 없음\n' >> "$SUMMARY"
+    printf '생략: 플러그인 버전 — Git의 ref 정보 없음\n' >> "$SUMMARY"
 fi
 
 # ─
