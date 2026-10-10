@@ -588,8 +588,12 @@ impl Target {
         })
     }
     fn apply(self, state: &mut crate::state::MainViewState, success: bool) {
-        if success && self.clipboard.is_some() && self.clipboard_is_current(state) {
-            state.explorer_clipboard = None;
+        if success
+            && self.clipboard.is_some()
+            && self.clipboard_is_current(state)
+            && let Some(clip) = state.explorer_clipboard.take()
+        {
+            state.explorer_cut_consumed(&clip);
         }
         if self.reload
             && let Some(view) = state.explorer_views.get_mut(self.surface)

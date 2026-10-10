@@ -80,6 +80,9 @@ impl super::MainViewState {
             );
             return;
         }
+        if !self.explorer_take_os_clipboard() {
+            return;
+        }
         let Some(clip) = self.explorer_clipboard.clone() else {
             return;
         };
@@ -116,6 +119,7 @@ mod tests {
             paths: vec![crate::test_support::abs_path("remote/proj/a.txt")],
             cut: false,
             source,
+            os_seen: None,
         }
     }
 

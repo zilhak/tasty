@@ -189,9 +189,12 @@ pub struct MainViewState {
     #[cfg(feature = "gui")]
     pub(crate) explorer_views: crate::adapters::ui::surface::explorer::view::ExplorerViewStore,
 
-    /// Explorer의 파일 복사·잘라내기 목록. 창마다 하나이며 OS 텍스트 클립보드와 별개다. 저장하지 않는다.
+    /// Explorer의 파일 복사·잘라내기 목록. 창마다 하나이며 로컬 경로는 OS 파일 클립보드에도 올린다. 저장하지 않는다.
     #[cfg(feature = "gui")]
     pub(crate) explorer_clipboard: Option<ExplorerClipboard>,
+    /// OS 파일 클립보드. 시험 빌드에서는 메모리 대역이다.
+    #[cfg(feature = "gui")]
+    pub(crate) file_clipboard: crate::clipboard::files::Handle,
     #[cfg(feature = "gui")]
     pub(crate) explorer_file_requests: crate::app::explorer_files::Requests,
     pub(crate) script_reads: std::collections::VecDeque<crate::app::local_reads::PendingScript>,

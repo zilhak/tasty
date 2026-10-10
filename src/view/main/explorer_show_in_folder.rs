@@ -36,12 +36,9 @@ impl MainView {
         items
     }
 
-    /// 붙여넣을 로컬 클립보드가 있는가. 원격에서 복사한 경로는 로컬에 붙여넣을 수 없다.
+    /// 붙여넣을 로컬 파일이 있는가(창의 목록이나 OS 파일 클립보드). 원격에서 복사한 경로는 로컬에 붙여넣을 수 없다.
     pub(super) fn explorer_menu_has_clip(&self) -> bool {
-        self.state
-            .explorer_clipboard
-            .as_ref()
-            .is_some_and(|c| !c.paths.is_empty() && c.is_local())
+        self.state.explorer_can_paste()
     }
 
     /// 다른 행이 처리하지 않은 메뉴 결과. 들어 있는 폴더에서 보기가 아니면 생성 행이나 이력 행이다.

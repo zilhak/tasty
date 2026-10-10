@@ -5699,6 +5699,7 @@ dependencies = [
  "winit",
  "winresource",
  "x11-dl",
+ "x11rb",
  "zbus",
 ]
 

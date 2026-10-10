@@ -14,6 +14,8 @@ pub(crate) mod explorer_menu;
 #[cfg(feature = "gui")]
 mod explorer_ops;
 #[cfg(feature = "gui")]
+pub(crate) mod explorer_os_clipboard;
+#[cfg(feature = "gui")]
 mod explorer_path;
 #[cfg(feature = "gui")]
 mod focus;
@@ -122,6 +124,8 @@ pub struct ExplorerClipboard {
     pub cut: bool,
     /// 경로가 가리키는 파일시스템. 원격 경로 문자열을 로컬 경로로 해석하지 않도록 복사할 때 기록한다.
     pub source: ExplorerPathSource,
+    /// 이 목록을 정한 직후 읽은 OS 클립보드. 붙여넣을 때와 다르면 OS 쪽이 더 새롭다. 읽지 못했으면 None.
+    pub(crate) os_seen: Option<crate::clipboard::files::OsClip>,
 }
 
 /// Explorer 경로의 출처. 같은 문자열이라도 출처가 다르면 다른 파일이다.
@@ -259,6 +263,8 @@ impl RequestContext {
             explorer_views: Default::default(),
             #[cfg(feature = "gui")]
             explorer_clipboard: None,
+            #[cfg(feature = "gui")]
+            file_clipboard: Default::default(),
             #[cfg(feature = "gui")]
             explorer_file_requests: Default::default(),
             #[cfg(feature = "gui")]

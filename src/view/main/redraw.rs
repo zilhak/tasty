@@ -1676,12 +1676,8 @@ impl MainView {
         let Some(source) = crate::state::ExplorerPathSource::of_surface(engine, surface_id) else {
             return;
         };
-        self.state.explorer_clipboard = Some(crate::state::ExplorerClipboard {
-            identity: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
-            paths: paths.to_vec(),
-            cut,
-            source,
-        });
+        self.state
+            .explorer_set_clipboard(paths.to_vec(), cut, source);
     }
 
     /// 붙여넣기 (아이템 12). 컨텍스트 메뉴와 키보드 단축키 양쪽에서 공유한다.

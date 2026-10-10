@@ -60,6 +60,7 @@ mod tests {
             paths: vec!["/same/path/on/both/hosts".into()],
             cut: false,
             source: source.unwrap(),
+            os_seen: None,
         };
         assert!(!clipboard.is_local());
     }

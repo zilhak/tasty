@@ -104,6 +104,8 @@ const LITERAL_TOKEN_ALLOWLIST: &[&str] = &[
     "Tasty",
     // 프로토콜 토큰 — Windows webview 가 원격 차단에 돌려주는 HTTP 403 reason phrase
     "Blocked",
+    // Windows 클립보드 형식 이름. RegisterClipboardFormatW 에 넘기는 식별자다(Explorer 와 같아야 한다).
+    "Preferred DropEffect",
 ];
 
 /// 알려진 잔존 위반 — (파일, 리터럴, 고칠 방법). 여기 있는 동안은 실패로 치지 않되,

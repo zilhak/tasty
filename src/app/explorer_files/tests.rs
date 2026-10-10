@@ -23,6 +23,7 @@ fn clipboard() -> crate::state::ExplorerClipboard {
         paths: vec!["original".into()],
         cut: true,
         source: crate::state::ExplorerPathSource::Local,
+        os_seen: None,
     }
 }
 
@@ -74,6 +75,38 @@ fn failed_or_late_cut_does_not_consume_a_new_clipboard() {
         state.explorer_clipboard.is_none(),
         "full success consumes only its own cut list"
     );
+}
+
+/// 잘라낸 목록을 옮기면 OS 파일 클립보드도 비워 다른 앱이 같은 파일을 다시 붙여넣지 못한다.
+/// 그 사이 OS 클립보드가 다른 내용으로 바뀌었으면 건드리지 않는다.
+#[test]
+fn a_finished_cut_clears_the_os_clipboard_only_while_it_holds_that_cut() {
+    use crate::clipboard::files::{Handle, OsClip, OsFiles};
+    let (mut state, engine) = crate::state::tests::test_state();
+    let sid = engine.read().workspace_at(0).unwrap().all_surface_ids()[0];
+    let (handle, memory) = Handle::memory();
+    state.file_clipboard = handle;
+    let ours = OsClip::Files(OsFiles {
+        paths: vec!["original".into()],
+        cut: true,
+    });
+    let theirs = OsClip::Files(OsFiles {
+        paths: vec!["elsewhere".into()],
+        cut: false,
+    });
+    for (before, after) in [(ours, OsClip::Other), (theirs.clone(), theirs)] {
+        memory.set(before);
+        state.explorer_clipboard = Some(clipboard());
+        state.request_explorer_file(
+            &engine.read(),
+            sid,
+            paste(vec!["original".into()], "dest".into()),
+            user(),
+        );
+        let target = state.explorer_file_requests.0.pop_front().unwrap().target;
+        target.apply(&mut state, true);
+        assert_eq!(memory.get(), after);
+    }
 }
 
 #[test]

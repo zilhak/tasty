@@ -343,6 +343,8 @@ webkit2gtk = { version = "=2.0.2", features = ["v2_40"], optional = true }
 gtk = { version = "0.18", optional = true }
 gdkx11 = { version = "0.18", optional = true }
 x11-dl = { version = "2.21", optional = true }
+# Explorer 파일 클립보드: arboard 가 쓰지 못하는 GNOME·KDE 잘라내기 형식까지 CLIPBOARD 선택을 직접 소유하고 읽는다.
+x11rb = { version = "0.13", optional = true }
 # 단일 실행: org.freedesktop.Application 서비스와 두 번째 프로세스의 Activate 호출. rfd가 이미 같은 버전을 쓴다.
 zbus = { version = "5.14", default-features = false, features = ["async-io", "blocking-api"], optional = true }
 
@@ -389,6 +391,7 @@ gui = [
     "dep:gtk",
     "dep:gdkx11",
     "dep:x11-dl",
+    "dep:x11rb",
     "dep:zbus",
 ]
 # 선택적으로 할당을 측정하고 종료 때 dhat-heap.json을 쓴다.

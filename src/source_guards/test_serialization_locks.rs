@@ -91,6 +91,12 @@ const SERIALIZED: &[Serialized] = &[
 /// 전역 변수의 이름 비교 대신 다른 규칙으로 검사할 락과 근거.
 const OTHER_LOCKS: &[(&str, &str, &str)] = &[
     (
+        "src/clipboard/files.rs",
+        "OS_CLIPBOARD_LOCK",
+        "실제 OS 클립보드(X11 CLIPBOARD 선택). 격리된 X 서버에서 도는 ignored 시험들이 같은 선택을 \
+         잡으므로 하나씩 돌린다",
+    ),
+    (
         "crates/tasty-test-support/src/lib.rs",
         "TASTY_HOME_ENV_LOCK",
         "`TASTY_HOME` 환경변수. 획득·복원을 `TastyHomeGuard` 가 함께 맡는다",
