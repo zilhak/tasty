@@ -566,3 +566,50 @@ fn redo_is_stale_when_only_the_kind_changed_at_the_source() {
         "the same kind and time is not a change"
     );
 }
+
+/// 결과 카드의 Undo 가 대기 중인 새 작업 뒤에 들어가면, 그 작업이 끝나며 다시 실행 목록을 비운
+/// 뒤이므로 되돌린 단계를 다시 실행 목록에 올리지 않는다. 새 작업 없이 끝나면 평소처럼 올린다.
+#[test]
+fn a_card_undo_behind_a_new_job_does_not_reach_the_redo_list() {
+    let dir = tempfile::tempdir().unwrap();
+    let (src, dest) = (dir.path().join("src"), dir.path().join("dest"));
+    std::fs::create_dir_all(&src).unwrap();
+    std::fs::create_dir_all(&dest).unwrap();
+    std::fs::write(src.join("a.txt"), b"a").unwrap();
+    std::fs::write(src.join("b.txt"), b"b").unwrap();
+    let (mut state, engine, sid) = explorer_state(dir.path());
+    let paste = |name: &str, cut: bool| Operation::Paste {
+        paths: vec![src.join(name)],
+        destination: dest.clone(),
+        cut,
+    };
+    state.request_explorer_file_direct(&engine.read(), sid, paste("a.txt", true), user());
+    finish_next(&mut state, sid);
+    let move_a = history(&state, sid).peek_undo().unwrap().undo.clone();
+
+    state.request_explorer_file_direct(&engine.read(), sid, paste("b.txt", false), user());
+    state.apply_explorer_ops(&engine.read(), sid, OpsAction::Undo(move_a));
+    assert_eq!(state.explorer_file_requests.0.len(), 2);
+    finish_next(&mut state, sid);
+    finish_next(&mut state, sid);
+    assert!(src.join("a.txt").exists() && dest.join("b.txt").exists());
+    let h = history(&state, sid);
+    assert_eq!(
+        h.peek_undo().map(|e| e.source.cut),
+        Some(false),
+        "the copy is on top"
+    );
+    assert!(
+        h.peek_redo().is_none(),
+        "the older move does not come back as a redo"
+    );
+
+    let copy_b = h.peek_undo().unwrap().undo.clone();
+    state.apply_explorer_ops(&engine.read(), sid, OpsAction::Undo(copy_b));
+    finish_next(&mut state, sid);
+    assert!(!dest.join("b.txt").exists());
+    assert_eq!(
+        history(&state, sid).peek_redo().map(|e| e.source.cut),
+        Some(false)
+    );
+}

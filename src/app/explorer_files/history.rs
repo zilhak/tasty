@@ -56,6 +56,9 @@ pub(crate) struct Entry {
     pub(crate) undo: Vec<UndoStep>,
     /// 되돌리기가 끝났을 때 원본 경로마다 본 모습. 다시 실행 전에 바깥에서 바뀌었는지 비교한다.
     seen: Vec<(PathBuf, Option<Look>)>,
+    /// 되돌리려고 꺼냈을 때 [`History::cleared`] 값. 되돌리기가 끝날 때 값이 다르면 그 사이 새 작업이
+    /// 다시 실행 목록을 비운 것이라 이 단계도 올리지 않는다.
+    taken_at: u64,
 }
 
 /// 경로에 있는 항목의 종류와 수정 시각.
@@ -102,6 +105,7 @@ impl Entry {
             source,
             undo,
             seen: Vec::new(),
+            taken_at: 0,
         }
     }
     /// 다시 실행하면 되돌린 뒤 바깥에서 바뀐 항목을 옮기거나 복사하게 되는가. 바뀐 원본이 하나라도
@@ -182,6 +186,8 @@ pub(crate) struct History {
     generation: u64,
     /// 메뉴 행을 만들 때의 번호. 고른 행이 그 사이 바뀐 이력을 실행하지 않게 한다.
     shown: Option<u64>,
+    /// 새 작업이 다시 실행 목록을 비운 횟수.
+    cleared: u64,
 }
 
 /// 결과 카드가 Undo 를 보이는 조건과 같다: 실패·건너뜀·취소 없이 끝난 복사·이동.
@@ -201,8 +207,9 @@ impl History {
         self.redo.last()
     }
     pub(crate) fn take_undo(&mut self) -> Option<Entry> {
-        let entry = self.undo.pop_back()?;
+        let mut entry = self.undo.pop_back()?;
         self.generation += 1;
+        entry.taken_at = self.cleared;
         Some(entry)
     }
     pub(crate) fn take_redo(&mut self) -> Option<Entry> {
@@ -231,7 +238,9 @@ impl History {
     pub(crate) fn take_matching(&mut self, steps: &[UndoStep]) -> Option<Entry> {
         let at = self.undo.iter().rposition(|e| e.undo == steps)?;
         self.generation += 1;
-        self.undo.remove(at)
+        let mut entry = self.undo.remove(at)?;
+        entry.taken_at = self.cleared;
+        Some(entry)
     }
     fn push_undo(&mut self, entry: Entry) {
         if self.undo.len() == MAX_STEPS {
@@ -246,6 +255,7 @@ impl History {
             Recorded::New(source) => {
                 if report.done > 0 {
                     self.redo.clear();
+                    self.cleared += 1;
                 }
                 if completed(report) {
                     self.push_undo(Entry::new(source, report.undo.clone()));
@@ -257,7 +267,10 @@ impl History {
                 }
             }
             Recorded::Undo(entry) => {
-                let undone = !report.cancelled
+                // 결과 카드의 Undo 는 대기 중인 새 작업 뒤에 들어갈 수 있다. 그 작업이 먼저 끝나 다시 실행
+                // 목록을 비웠다면, 더 오래된 이 단계를 올리면 시간 순서가 뒤바뀐다.
+                let undone = entry.taken_at == self.cleared
+                    && !report.cancelled
                     && report.failed.is_empty()
                     && report.skipped.is_empty()
                     && report.done > 0;
