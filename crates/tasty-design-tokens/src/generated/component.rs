@@ -16,6 +16,9 @@ pub mod attach {
 
     /// `component.attach-sync-name-max-width` → `{primitive.size-160}` = 160px
     pub const SYNC_NAME_MAX_WIDTH: LogicalPx = crate::generated::primitive::SIZE_160;
+
+    /// `component.attach-sync-name-min-width` → `{primitive.size-40}` = 40px
+    pub const SYNC_NAME_MIN_WIDTH: LogicalPx = crate::generated::primitive::SIZE_40;
 }
 
 pub mod autocomplete {
@@ -373,8 +376,17 @@ pub mod drilldown {
 pub mod explorer {
     use tasty_type_geometry::length::LogicalPx;
 
+    /// `component.explorer-autoscroll-zone` → `{primitive.size-24}` = 24px
+    pub const AUTOSCROLL_ZONE: LogicalPx = crate::generated::primitive::SIZE_24;
+
     /// `component.explorer-conflict-width` → `{primitive.size-400}` = 400px
     pub const CONFLICT_WIDTH: LogicalPx = crate::generated::primitive::SIZE_400;
+
+    /// `component.explorer-create-indent` → `{semantic.space-lg}` = 16px
+    pub const CREATE_INDENT: LogicalPx = crate::generated::semantic::SPACE_LG;
+
+    /// `component.explorer-cursor-ring-width` → `{semantic.border-width}` = 1px
+    pub const CURSOR_RING_WIDTH: LogicalPx = crate::generated::semantic::BORDER_WIDTH;
 
     /// `component.explorer-drag-chip-max-width` → `{primitive.size-240}` = 240px
     pub const DRAG_CHIP_MAX_WIDTH: LogicalPx = crate::generated::primitive::SIZE_240;
@@ -396,6 +408,9 @@ pub mod explorer {
 
     /// `component.explorer-grid-thumb-size` → `{primitive.size-40}` = 40px
     pub const GRID_THUMB_SIZE: LogicalPx = crate::generated::primitive::SIZE_40;
+
+    /// `component.explorer-link-glyph-size` → `{semantic.icon-size-xs}` = 12px
+    pub const LINK_GLYPH_SIZE: LogicalPx = crate::generated::semantic::ICON_SIZE_XS;
 
     /// `component.explorer-list-min-width` → `{primitive.size-200}` = 200px
     pub const LIST_MIN_WIDTH: LogicalPx = crate::generated::primitive::SIZE_200;
@@ -1539,6 +1554,16 @@ pub mod trigger {
 
     /// `component.trigger-menu-min-width` → `{semantic.field-width-lg}` = 200px
     pub const MENU_MIN_WIDTH: LogicalPx = crate::generated::semantic::FIELD_WIDTH_LG;
+}
+
+pub mod ui {
+    use tasty_type_geometry::length::LogicalPx;
+
+    /// `component.ui-code-padding-x` → `{semantic.space-xs}` = 4px
+    pub const CODE_PADDING_X: LogicalPx = crate::generated::semantic::SPACE_XS;
+
+    /// `component.ui-code-radius` → `{semantic.radius-sm}` = 2px
+    pub const CODE_RADIUS: LogicalPx = crate::generated::semantic::RADIUS_SM;
 }
 
 pub mod workspace {

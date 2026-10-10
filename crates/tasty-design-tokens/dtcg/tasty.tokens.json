@@ -4615,6 +4615,101 @@
       "$type": "dimension",
       "$value": "{semantic.space-xs}",
       "$description": "search field inset inside the font list (field width = list width − 2 × this)"
+    },
+    "attach-sync-name-min-width": {
+      "$type": "dimension",
+      "$value": "{primitive.size-40}",
+      "$description": "names-line floor: a name shrinks to here before ellipsis; a shorter name keeps its own width (no padding box)"
+    },
+    "explorer-link-glyph": {
+      "$type": "color",
+      "$value": "{semantic.text-muted}",
+      "$description": "trailing link glyph after a symlink name (all views)"
+    },
+    "explorer-link-glyph-size": {
+      "$type": "dimension",
+      "$value": "{semantic.icon-size-xs}",
+      "$description": "trailing link glyph size (12)"
+    },
+    "explorer-link-broken-fg": {
+      "$type": "color",
+      "$value": "{semantic.accent-warning}",
+      "$description": "broken symlink: link glyph replaces the item glyph in this tone; name stays text-secondary"
+    },
+    "explorer-cursor-ring": {
+      "$type": "color",
+      "$value": "{semantic.border-focus}",
+      "$description": "keyboard current item: 1px inset ring (keyboard-driven only), drawn over selection too"
+    },
+    "explorer-cursor-ring-width": {
+      "$type": "dimension",
+      "$value": "{semantic.border-width}",
+      "$description": "keyboard current item ring width (1, inset — never moves layout)"
+    },
+    "explorer-marquee-bg": {
+      "$type": "color",
+      "$value": "color-mix(in srgb, var(--tasty-accent-primary) calc(var(--tasty-tint-fill-alpha) * 100%), transparent)",
+      "$description": "drag-select rectangle fill (0.12 tint-fill)"
+    },
+    "explorer-marquee-border": {
+      "$type": "color",
+      "$value": "color-mix(in srgb, var(--tasty-accent-primary) calc(var(--tasty-tint-border-alpha) * 100%), transparent)",
+      "$description": "drag-select rectangle 1px edge (0.36 tint-border)"
+    },
+    "explorer-autoscroll-zone": {
+      "$type": "dimension",
+      "$value": "{primitive.size-24}",
+      "$description": "drag-select / drag auto-scroll band at the list top and bottom edges; no visual indicator"
+    },
+    "explorer-hidden-fg": {
+      "$type": "color",
+      "$value": "{semantic.text-muted}",
+      "$description": "hidden item name + glyph while Show hidden files is on (no opacity — cut items keep 0.5)"
+    },
+    "explorer-create-indent": {
+      "$type": "dimension",
+      "$value": "{semantic.space-lg}",
+      "$description": "create-in-folder input row indent under the target folder row (16)"
+    },
+    "kb-record-border": {
+      "$type": "color",
+      "$value": "{semantic.border-default}",
+      "$description": "shortcut record button / add / None slot border at rest"
+    },
+    "kb-record-border-hover": {
+      "$type": "color",
+      "$value": "{semantic.border-strong}",
+      "$description": "shortcut record button / add / None slot border on hover (fill unchanged)"
+    },
+    "kb-record-empty-fg": {
+      "$type": "color",
+      "$value": "{semantic.text-muted}",
+      "$description": "“None” slot label on a shortcut row with no binding"
+    },
+    "ui-code-font": {
+      "$type": "fontFamily",
+      "$value": "{semantic.font-mono}",
+      "$description": "CLI command / option run inside UI copy (size = the sentence size)"
+    },
+    "ui-code-bg": {
+      "$type": "color",
+      "$value": "{semantic.surface-raised}",
+      "$description": "CLI run fill inside UI copy"
+    },
+    "ui-code-fg": {
+      "$type": "color",
+      "$value": "{semantic.text-primary}",
+      "$description": "CLI run ink inside UI copy"
+    },
+    "ui-code-padding-x": {
+      "$type": "dimension",
+      "$value": "{semantic.space-xs}",
+      "$description": "CLI run side padding (no vertical padding — line height unchanged)"
+    },
+    "ui-code-radius": {
+      "$type": "dimension",
+      "$value": "{semantic.radius-sm}",
+      "$description": "CLI run corner radius"
     }
   }
 }

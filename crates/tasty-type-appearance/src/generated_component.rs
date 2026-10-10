@@ -40,6 +40,12 @@ impl crate::theme::Theme {
         LogicalPx((160.0 * self.ui_zoom).round())
     }
 
+    /// `component.attach-sync-name-min-width` → `{primitive.size-40}` = 40px
+    #[inline]
+    pub fn attach_sync_name_min_width(&self) -> LogicalPx {
+        LogicalPx((40.0 * self.ui_zoom).round())
+    }
+
     /// `component.autocomplete-empty-fg` → `{semantic.text-muted}`
     #[inline]
     pub fn autocomplete_empty_fg(&self) -> HexColor {
@@ -1324,10 +1330,34 @@ impl crate::theme::Theme {
         self.font_size_body
     }
 
+    /// `component.explorer-autoscroll-zone` → `{primitive.size-24}` = 24px
+    #[inline]
+    pub fn explorer_autoscroll_zone(&self) -> LogicalPx {
+        LogicalPx((24.0 * self.ui_zoom).round())
+    }
+
     /// `component.explorer-conflict-width` → `{primitive.size-400}` = 400px
     #[inline]
     pub fn explorer_conflict_width(&self) -> LogicalPx {
         LogicalPx((400.0 * self.ui_zoom).round())
+    }
+
+    /// `component.explorer-create-indent` → `{semantic.space-lg}` = 16px
+    #[inline]
+    pub fn explorer_create_indent(&self) -> LogicalPx {
+        self.spacing_lg
+    }
+
+    /// `component.explorer-cursor-ring` → `{semantic.border-focus}`
+    #[inline]
+    pub fn explorer_cursor_ring(&self) -> HexColor {
+        self.border_focus()
+    }
+
+    /// `component.explorer-cursor-ring-width` → `{semantic.border-width}` = 1px
+    #[inline]
+    pub fn explorer_cursor_ring_width(&self) -> LogicalPx {
+        self.border_width
     }
 
     /// `component.explorer-drag-chip-max-width` → `{primitive.size-240}` = 240px
@@ -1394,6 +1424,30 @@ impl crate::theme::Theme {
     #[inline]
     pub fn explorer_grid_thumb_size(&self) -> LogicalPx {
         LogicalPx((40.0 * self.ui_zoom).round())
+    }
+
+    /// `component.explorer-hidden-fg` → `{semantic.text-muted}`
+    #[inline]
+    pub fn explorer_hidden_fg(&self) -> HexColor {
+        self.text_muted()
+    }
+
+    /// `component.explorer-link-broken-fg` → `{semantic.accent-warning}`
+    #[inline]
+    pub fn explorer_link_broken_fg(&self) -> HexColor {
+        self.accent_warning()
+    }
+
+    /// `component.explorer-link-glyph` → `{semantic.text-muted}`
+    #[inline]
+    pub fn explorer_link_glyph(&self) -> HexColor {
+        self.text_muted()
+    }
+
+    /// `component.explorer-link-glyph-size` → `{semantic.icon-size-xs}` = 12px
+    #[inline]
+    pub fn explorer_link_glyph_size(&self) -> LogicalPx {
+        self.icon_glyph_size_xs
     }
 
     /// `component.explorer-list-min-width` → `{primitive.size-200}` = 200px
@@ -2144,6 +2198,24 @@ impl crate::theme::Theme {
     #[inline]
     pub fn kb_record_add_width(&self) -> LogicalPx {
         LogicalPx((32.0 * self.ui_zoom).round())
+    }
+
+    /// `component.kb-record-border` → `{semantic.border-default}`
+    #[inline]
+    pub fn kb_record_border(&self) -> HexColor {
+        self.border_default()
+    }
+
+    /// `component.kb-record-border-hover` → `{semantic.border-strong}`
+    #[inline]
+    pub fn kb_record_border_hover(&self) -> HexColor {
+        self.border_strong()
+    }
+
+    /// `component.kb-record-empty-fg` → `{semantic.text-muted}`
+    #[inline]
+    pub fn kb_record_empty_fg(&self) -> HexColor {
+        self.text_muted()
     }
 
     /// `component.kb-record-height` → `{component.kb-ie-slot-height}` = 24px
@@ -4328,6 +4400,30 @@ impl crate::theme::Theme {
     #[inline]
     pub fn trigger_menu_min_width(&self) -> LogicalPx {
         self.field_width_lg
+    }
+
+    /// `component.ui-code-bg` → `{semantic.surface-raised}`
+    #[inline]
+    pub fn ui_code_bg(&self) -> HexColor {
+        self.surface_raised()
+    }
+
+    /// `component.ui-code-fg` → `{semantic.text-primary}`
+    #[inline]
+    pub fn ui_code_fg(&self) -> HexColor {
+        self.text_primary()
+    }
+
+    /// `component.ui-code-padding-x` → `{semantic.space-xs}` = 4px
+    #[inline]
+    pub fn ui_code_padding_x(&self) -> LogicalPx {
+        self.spacing_xs
+    }
+
+    /// `component.ui-code-radius` → `{semantic.radius-sm}` = 2px
+    #[inline]
+    pub fn ui_code_radius(&self) -> LogicalPx {
+        self.corner_radius_sm
     }
 
     /// `component.workspace-dot-gap` → `{semantic.space-xs}` = 4px

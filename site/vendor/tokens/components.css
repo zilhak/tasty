@@ -1231,5 +1231,25 @@
   --tasty-kb-row-gap: var(--tasty-space-sm); /* gap between shortcut rows (8 — denser than settings-row-gap 12; no divider) */
   --tasty-font-combo-list-max-height: var(--tasty-size-300); /* Appearance font search combo open list max height */
   --tasty-font-combo-search-inset: var(--tasty-space-xs); /* search field inset inside the font list (field width = list width − 2 × this) */
+  /* 2026-10-10 (batch 11) — attach names floor · explorer link / cursor / marquee / hidden / create-in · shortcut record states · CLI runs in UI copy */
+  --tasty-attach-sync-name-min-width: var(--tasty-size-40); /* names-line floor: a name shrinks to here before ellipsis; a shorter name keeps its own width (no padding box) */
+  --tasty-explorer-link-glyph: var(--tasty-text-muted); /* trailing link glyph after a symlink name (all views) */
+  --tasty-explorer-link-glyph-size: var(--tasty-icon-size-xs); /* trailing link glyph size (12) */
+  --tasty-explorer-link-broken-fg: var(--tasty-accent-warning); /* broken symlink: link glyph replaces the item glyph in this tone; name stays text-secondary */
+  --tasty-explorer-cursor-ring: var(--tasty-border-focus); /* keyboard current item: 1px inset ring (keyboard-driven only), drawn over selection too */
+  --tasty-explorer-cursor-ring-width: var(--tasty-border-width); /* keyboard current item ring width (1, inset — never moves layout) */
+  --tasty-explorer-marquee-bg: color-mix(in srgb, var(--tasty-accent-primary) calc(var(--tasty-tint-fill-alpha) * 100%), transparent); /* drag-select rectangle fill (0.12 tint-fill) */
+  --tasty-explorer-marquee-border: color-mix(in srgb, var(--tasty-accent-primary) calc(var(--tasty-tint-border-alpha) * 100%), transparent); /* drag-select rectangle 1px edge (0.36 tint-border) */
+  --tasty-explorer-autoscroll-zone: var(--tasty-size-24); /* drag-select / drag auto-scroll band at the list top and bottom edges; no visual indicator */
+  --tasty-explorer-hidden-fg: var(--tasty-text-muted); /* hidden item name + glyph while Show hidden files is on (no opacity — cut items keep 0.5) */
+  --tasty-explorer-create-indent: var(--tasty-space-lg); /* create-in-folder input row indent under the target folder row (16) */
+  --tasty-kb-record-border: var(--tasty-border-default); /* shortcut record button / add / None slot border at rest */
+  --tasty-kb-record-border-hover: var(--tasty-border-strong); /* shortcut record button / add / None slot border on hover (fill unchanged) */
+  --tasty-kb-record-empty-fg: var(--tasty-text-muted); /* “None” slot label on a shortcut row with no binding */
+  --tasty-ui-code-font: var(--tasty-font-mono); /* CLI command / option run inside UI copy (size = the sentence size) */
+  --tasty-ui-code-bg: var(--tasty-surface-raised); /* CLI run fill inside UI copy */
+  --tasty-ui-code-fg: var(--tasty-text-primary); /* CLI run ink inside UI copy */
+  --tasty-ui-code-padding-x: var(--tasty-space-xs); /* CLI run side padding (no vertical padding — line height unchanged) */
+  --tasty-ui-code-radius: var(--tasty-radius-sm); /* CLI run corner radius */
 }
 
