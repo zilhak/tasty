@@ -1,7 +1,10 @@
-//! 가져오기 경고를 스키마, 알 수 없는 액션, 빈 그룹 순으로 정리한다.
+//! 가져오기 경고를 스키마, 알 수 없는 액션, OS 가 먼저 받을 수 있는 조합 순으로 정리한다.
 //! 세 줄까지 표시하고 나머지는 접는다. 생략된 plugin은 별도 정보 줄로 표시한다.
 
-use tasty_host_plugin::keybinding_bundle::BundleWarning;
+use tasty_host_plugin::keybinding_bundle::{BundleWarning, PluginShortcutOverrides};
+use tasty_host_plugin::registry_state::ShortcutOverride;
+use tasty_settings::KeybindingSettings;
+use tasty_settings::keybindings::os_keys::{ReservedOs, is_os_reserved};
 
 /// 접기 전에 보이는 줄 수.
 pub(super) const NOTICE_FOLD_AT: usize = 3;
@@ -13,6 +16,9 @@ pub(super) enum BundleNotice {
     NewerSchema { found: u64, known: u32 },
     /// 이 빌드가 모르는 액션을 건너뛰었다 — 몇 개든 한 줄이다.
     UnknownActions(Vec<String>),
+    /// 번들의 바인딩 중 이 OS 가 먼저 받을 수 있는 조합(원문, 중복 없이) — 몇 개든 한 줄이다.
+    /// 저장은 막지 않는다.
+    OsReserved { os: ReservedOs, combos: Vec<String> },
 }
 
 impl BundleNotice {
@@ -21,6 +27,7 @@ impl BundleNotice {
         match self {
             BundleNotice::NewerSchema { .. } => 0,
             BundleNotice::UnknownActions(_) => 1,
+            BundleNotice::OsReserved { .. } => 2,
         }
     }
 }
@@ -45,6 +52,34 @@ pub(super) fn bundle_notices(warnings: &[BundleWarning]) -> Vec<BundleNotice> {
     }
     out.sort_by_key(BundleNotice::rank);
     out
+}
+
+/// 번들의 본체 바인딩과 plugin Custom 키에서 `os` 가 먼저 받을 수 있는 조합을 찾는다.
+/// macOS 처럼 목록이 없는 OS(`None`)나 해당 조합이 없으면 `None` 이다.
+pub(super) fn os_reserved_notice(
+    kb: &KeybindingSettings,
+    overrides: &PluginShortcutOverrides,
+    os: Option<ReservedOs>,
+) -> Option<BundleNotice> {
+    let os = os?;
+    let host = KeybindingSettings::binding_fields()
+        .filter_map(|(id, _)| kb.get_bindings(id))
+        .flatten();
+    let plugin = overrides
+        .values()
+        .flat_map(|cmds| cmds.values())
+        .filter_map(|o| match o {
+            ShortcutOverride::Key { value } => Some(value),
+            _ => None,
+        })
+        .flatten();
+    let mut combos: Vec<String> = Vec::new();
+    for combo in host.chain(plugin) {
+        if is_os_reserved(combo, os) && !combos.iter().any(|c| c.eq_ignore_ascii_case(combo)) {
+            combos.push(combo.clone());
+        }
+    }
+    (!combos.is_empty()).then_some(BundleNotice::OsReserved { os, combos })
 }
 
 /// 화면에 표시할 경고인지 확인한다. 나머지는 로그에만 남는다.
@@ -118,6 +153,34 @@ mod tests {
         assert_eq!(fold(3, false), (3, 0));
         assert_eq!(fold(5, false), (3, 2));
         assert_eq!(fold(5, true), (5, 0));
+    }
+
+    /// 번들의 본체 바인딩과 plugin 키에서 예약 조합을 한 번씩만 모은다. 목록이 없는 OS 는 줄이 없다.
+    #[test]
+    fn os_reserved_combos_from_the_bundle_become_one_line() {
+        let kb = KeybindingSettings {
+            new_tab: vec!["option+l".into(), "ctrl+t".into()],
+            ..Default::default()
+        };
+        let mut overrides = PluginShortcutOverrides::new();
+        overrides.entry("p".into()).or_default().insert(
+            "c".into(),
+            ShortcutOverride::Key {
+                value: vec!["Option+L".into(), "option+tab".into()],
+            },
+        );
+        assert_eq!(
+            os_reserved_notice(&kb, &overrides, Some(ReservedOs::Windows)),
+            Some(BundleNotice::OsReserved {
+                os: ReservedOs::Windows,
+                combos: vec!["option+l".into(), "option+tab".into()],
+            })
+        );
+        assert_eq!(
+            os_reserved_notice(&kb, &overrides, Some(ReservedOs::Linux)),
+            None
+        );
+        assert_eq!(os_reserved_notice(&kb, &overrides, None), None);
     }
 
     /// 한 줄만 있으면 숨겨진 줄 수는 0이다.

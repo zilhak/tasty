@@ -38,6 +38,16 @@ macOS 에서만 `alt` 토큰이 Cmd(⌘)에 매핑된다(물리 위치가 Win/Li
 
 Windows 의 Win+L·Win+D·Win+E 같은 셸 예약 조합과 GNOME·KDE 의 Super 단독·Super+문자 다수는 OS 가 먼저 처리해 Tasty 에 오지 않는다. Tasty 가 바꿀 수 없으므로 설정에 노출하는 대상이 아니다. 녹화에는 잡히지 않고, 설정 파일에 적은 경우에는 저장되지만 실행되지 않는다.
 
+예약 조합은 OS·데스크톱마다 달라 완전한 목록을 가질 수 없다. Tasty 는 짧은 힌트 목록만 두고(`tasty_settings::keybindings::os_keys::is_os_reserved`), 텍스트로 들어온 바인딩이 목록에 맞으면 "그럴 수 있다" 는 경고만 보인다. 저장·적용은 막지 않는다. 녹화한 바인딩은 OS 가 가로챈 키가 녹화기에 오지 않으므로 대상이 아니다.
+
+| OS | 힌트 목록 |
+|---|---|
+| Windows | Win 단독, Win+L · Win+D · Win+E · Win+R · Win+I · Win+Tab (다른 수정자 없이) |
+| Linux(모든 데스크톱) | Super 단독 |
+| macOS | 없음 |
+
+경고가 보이는 곳은 단축키 가져오기의 경고 블록 한 줄(`keys.os_reserved.windows` / `keys.os_reserved.linux`)이다.
+
 ## 바인딩 문자열 문법
 
 `+` 는 구분자이자 키 이름이다. 파서는 왼쪽부터 `ctrl+`·`shift+`·`alt+` 프리픽스를 벗기고 남은 전체를 키 토큰으로 본다 — `"ctrl++"` = "Ctrl + `+` 키".

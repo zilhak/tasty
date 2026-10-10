@@ -395,7 +395,8 @@ Settings › Keybindings › **Import / Export** 는 위 [이식 번들](#이식
   - **번들 경고** — 경고 톤 알림 블록 **하나**에 한 줄씩 쌓고 헤더에 개수를 단다.
     개수가 **하나면 단수형**이다 — 헤더(`ie_notices_count_one`)도, 모르는 액션 줄(`ie_notice_unknown_actions_one`)도.
     단수형은 en 의 단수 변형이고, ko·ja 는 기준 키 하나로 쓴다([i18n 가이드](../../dev-guide/i18n.md)의 단수 규칙).
-    순서는 원문 순서가 아니라 고정이다: 새 스키마(`NewerVersion`) → 모르는 액션(`UnknownKeybindingField`, 몇 개든 한 줄에 이름 목록) → 빈 그룹.
+    순서는 원문 순서가 아니라 고정이다: 새 스키마(`NewerVersion`) → 모르는 액션(`UnknownKeybindingField`, 몇 개든 한 줄에 이름 목록) → OS 예약 조합.
+    OS 예약 조합 줄은 코덱 경고가 아니라 가져온 본체 바인딩과 plugin Custom 키를 [OS 가 가로채는 조합](../../design/policies/key-mapping.md#os-가-가로채는-조합) 목록과 대조해 만든다(`bundle_notices::os_reserved_notice`). 몇 개든 한 줄이고("Windows may use Win+L, Win+Tab itself, so Tasty might not receive it."), 목록이 없는 macOS 에서는 나오지 않는다. 적용을 막지 않는다.
     세 줄까지 보이고 나머지는 **Show {n} more** 뒤로 접힌다(`import_export/bundle_notices.rs`).
     줄이 하나면 접을 것이 없어 그 링크를 표시하지 않는다.
     정보 줄은 이 블록에 들어가지 않는다 — 정렬 키가 주제가 아니라 톤이다.

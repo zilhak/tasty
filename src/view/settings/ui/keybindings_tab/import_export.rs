@@ -269,7 +269,12 @@ impl ImportExportState {
             }
         };
         let dropped = dropped_plugins(path, &decoded.warnings);
-        let notices = bundle_notices::bundle_notices(&decoded.warnings);
+        let mut notices = bundle_notices::bundle_notices(&decoded.warnings);
+        notices.extend(bundle_notices::os_reserved_notice(
+            &decoded.keybindings,
+            &decoded.plugin_keybindings,
+            tasty_settings::keybindings::os_keys::ReservedOs::current(),
+        ));
         self.preview = Some(Preview {
             file_name: path
                 .file_name()

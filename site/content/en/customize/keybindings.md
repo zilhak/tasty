@@ -1,4 +1,4 @@
-<!-- source-hash: 42d5d05b6cbb -->
+<!-- source-hash: af36ce30a543 -->
 # Keybindings
 
 Use Tasty with shortcuts that feel familiar. Choose a preset or assign your preferred keys to actions you use often. Open **Settings** > **Keybindings** to get started.
@@ -162,6 +162,7 @@ Good to know:
 - Quick-switch settings are imported as separate Tab, Workspace, and Category groups. Each group’s modifier and numbered keys are applied together.
 - Plugin keybindings that exist only on this computer are not removed just because the file lacks them. Conversely, keybindings for plugins not installed on this computer are not imported, and the comparison view says so in one line.
 - If parts of the file had to be skipped (a file written by a newer tasty, actions this version doesn't know), they are listed one per line in a **Read with warnings** box above the comparison. With four or more, three show and the rest open with **Show N more**.
+- If an imported shortcut is one the OS may take first, such as `Win+L`, `Win+D`, `Win+E`, `Win+R`, `Win+I` or `Win+Tab` on Windows, the same box adds a line like "Windows may use Win+L itself, so Tasty might not receive it." It is only a warning; the import still goes ahead. On Linux this applies to a shortcut that is `Super` alone.
 - If you pick something that isn't a keybinding file, you get **This file can't be read as keybindings** instead of the comparison, and nothing changes. Use **Choose another file** to try again.
 
 ### Importing a file made on another OS

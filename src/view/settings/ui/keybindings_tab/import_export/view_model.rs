@@ -2,7 +2,9 @@
 
 use tasty_host_plugin::keybinding_bundle::PluginShortcutOverrides;
 
-use crate::i18n::{t, t_count, t_fmt2};
+use tasty_settings::keybindings::os_keys::ReservedOs;
+
+use crate::i18n::{t, t_count, t_fmt, t_fmt2};
 use crate::settings::KeybindingSettings;
 
 use super::bundle_notices::BundleNotice;
@@ -23,6 +25,19 @@ fn notice_line(notice: &BundleNotice) -> String {
             names.len() as u64,
             &[&names.len().to_string(), &names.join(", ")],
         ),
+        BundleNotice::OsReserved { os, combos } => {
+            // 예약 목록은 option 조합뿐이고 Windows·Linux 의 option 표기는 표시 설정과 무관하다.
+            let general = tasty_settings::GeneralSettings::default();
+            let shown: Vec<String> = combos
+                .iter()
+                .map(|c| KeybindingSettings::format_display(c, &general))
+                .collect();
+            let key = match os {
+                ReservedOs::Windows => "keys.os_reserved.windows",
+                ReservedOs::Linux => "keys.os_reserved.linux",
+            };
+            t_fmt(key, &shown.join(", "))
+        }
     }
 }
 
@@ -218,5 +233,21 @@ mod tests {
         ]));
         assert_ne!(one, two, "하나와 둘이 같은 문구를 쓴다");
         assert_ne!(one, none, "빈 목록에 단수형 문구를 사용했다");
+    }
+
+    /// OS 예약 줄은 OS 마다 다른 문구를 고르고 조합을 사용자 표기로 채운다.
+    #[test]
+    fn the_os_reserved_line_names_the_os_and_shows_the_combo() {
+        let line = |os| {
+            notice_line(&BundleNotice::OsReserved {
+                os,
+                combos: vec!["option+l".into()],
+            })
+        };
+        let (win, linux) = (line(ReservedOs::Windows), line(ReservedOs::Linux));
+        assert_ne!(win, linux);
+        for l in [&win, &linux] {
+            assert!(l.contains("+L") && !l.contains("{}"), "{l}");
+        }
     }
 }
