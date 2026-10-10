@@ -557,13 +557,30 @@ fn card_title(report: &Report) -> (ToastKind, String) {
 }
 
 fn undo_title(report: &Report, undo_of: OpKind) -> (ToastKind, String) {
-    let failed = report.failed.len();
+    // 바뀌어 남긴 사본은 사용자가 고친 것이라 실패로 세지 않는다. 섞이면 지우지 못한 항목이 제목을 갖고
+    // 남긴 사본은 줄로만 보인다.
+    let kept = report
+        .failed
+        .iter()
+        .filter(|f| f.reason == Reason::ChangedSince)
+        .count();
+    let failed = report.failed.len() - kept;
     let moved = undo_of == OpKind::Move;
     if report.cancelled {
         let (done, total) = (report.done.to_string(), report.total.to_string());
         return (
             ToastKind::Info,
             t_fmt2("explorer.result.cancelled_undo", &done, &total),
+        );
+    }
+    if failed == 0 && kept > 0 {
+        return (
+            ToastKind::Warning,
+            t_count(
+                "explorer.result.undo_kept_copy",
+                kept as u64,
+                &[&kept.to_string()],
+            ),
         );
     }
     if failed == 0 {

@@ -261,11 +261,34 @@ fn an_undo_result_names_a_copy_kept_because_it_changed() {
     let mut c = card(r);
     c.undo_of = Some(OpKind::Copy);
     let text = card_text(&c);
+    assert_eq!(text.kind, ToastKind::Warning);
+    assert_eq!(
+        text.title,
+        t_count("explorer.result.undo_kept_copy", 1, &["1"])
+    );
+    assert_eq!(text.lines[0].1, t("explorer.result.changed_kept"));
+}
+
+/// 지우지 못한 사본과 바뀌어 남긴 사본이 섞이면 지우지 못한 수가 제목이 되고, 남긴 사본도 줄에 남는다.
+#[test]
+fn a_mixed_undo_result_titles_the_items_that_could_not_be_removed() {
+    let mut r = report(OpKind::Undo, 3, 1);
+    r.undo.clear();
+    r.failed = vec![
+        failure("/locked", Reason::Os("in use".into())),
+        failure("/a", Reason::ChangedSince),
+        failure("/b", Reason::ChangedSince),
+    ];
+    let mut c = card(r);
+    c.undo_of = Some(OpKind::Copy);
+    let text = card_text(&c);
+    assert_eq!(text.kind, ToastKind::Warning);
     assert_eq!(
         text.title,
         t_count("explorer.result.undo_partial_copy", 1, &["1"])
     );
-    assert_eq!(text.lines[0].1, t("explorer.result.changed_kept"));
+    assert_eq!(text.lines.len(), 3);
+    assert_eq!(text.lines[1].1, t("explorer.result.changed_kept"));
 }
 
 /// 다시 지울 때 사본이 없어 원본을 남긴 항목은 그 사유를 보인다.

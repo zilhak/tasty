@@ -479,7 +479,7 @@ pub fn draw_source_left(ui: &mut egui::Ui, theme: &Theme) {
         "Device or resource busy (os error 16)",
     );
     let left_title = t_args("explorer.result.source_left_move", &["40", "40", "2"]);
-    let undo_title = t_count("explorer.result.undo_partial_copy", 1, &["1"]);
+    let undo_title = t_count("explorer.result.undo_kept_copy", 1, &["1"]);
     let left_lines = [
         ResultLine {
             path: "~/Volumes/usb/photos/2026-09",
