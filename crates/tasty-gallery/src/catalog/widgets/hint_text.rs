@@ -6,7 +6,7 @@ use std::cell::RefCell;
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{Input, kbd};
 
-use crate::catalog::spec::{StageVariant, TokenChip, meta, stage};
+use crate::catalog::spec::{StageVariant, TokenChip, meta, note, stage};
 
 thread_local! {
     static BUF: RefCell<String> = const { RefCell::new(String::new()) };
@@ -88,6 +88,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::without_color("font-size-caption", "11px"),
             TokenChip::without_color("font-mono", "inline code"),
         ],
+    );
+    note(
+        ui,
+        theme,
+        "This is the same muted treatment used in the palette footer (↑↓ navigate), the Rename dialog hint, and every form sub-label — one consistent voice for “the quiet line.”",
     );
     // 같은 절의 두 번째 spec. 절 목록(catalog.rs)은 spec 하나로 둔다.
     super::ui_code::draw(ui, theme);
