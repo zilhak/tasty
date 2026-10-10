@@ -165,6 +165,7 @@ fn toolbar(
     path: &str,
     create: Option<bool>,
     find: bool,
+    hidden: bool,
 ) {
     let pad = theme.spacing_sm.value();
     let h = theme.item_height_interactive.value() + pad * 2.0;
@@ -196,6 +197,13 @@ fn toolbar(
     }
     child.add_space(pad - gap);
     child.spacing_mut().item_spacing.x = pad;
+    // 본체는 바인딩 표시를 설정에서 읽는다. 갤러리는 기본 바인딩의 표시를 쓴다.
+    let hidden_key = if hidden {
+        "explorer.more.hidden_hide"
+    } else {
+        "explorer.more.hidden_show"
+    };
+    let hidden_tip = format!("{} (Ctrl+Shift+.)", t(hidden_key));
     let toggles = [
         ExplorerToggle {
             command: ExplorerCommand::Find,
@@ -208,6 +216,12 @@ fn toolbar(
             icon: icons::COLUMNS,
             label: t("explorer.preview.toggle"),
             active: false,
+        },
+        ExplorerToggle {
+            command: ExplorerCommand::ToggleHidden,
+            icon: icons::EYE,
+            label: &hidden_tip,
+            active: hidden,
         },
     ];
     let view = ExplorerCommandsView {
@@ -238,13 +252,21 @@ fn toolbar(
 pub fn draw_commands(ui: &mut egui::Ui, theme: &Theme) {
     stage(ui, theme, StageVariant::Column, |ui| {
         let wide = WIDE_W.value().min(ui.available_width());
-        let rows: [(&str, &str, Option<bool>, bool); 4] = [
-            ("wide · local", "~/Downloads", Some(true), false),
-            ("wide · find on", "~/Downloads", Some(true), true),
+        let rows: [(&str, &str, Option<bool>, bool, bool); 5] = [
+            ("wide · local", "~/Downloads", Some(true), false, false),
+            ("wide · find on", "~/Downloads", Some(true), true, false),
+            (
+                "wide · hidden files shown — eye pressed",
+                "~/Downloads",
+                Some(true),
+                false,
+                true,
+            ),
             (
                 "remote (mirror) — create group hidden",
                 "build-eu:~/logs",
                 None,
+                false,
                 false,
             ),
             (
@@ -252,13 +274,16 @@ pub fn draw_commands(ui: &mut egui::Ui, theme: &Theme) {
                 "/usr/share",
                 Some(false),
                 false,
+                false,
             ),
         ];
-        for (label, path, create, find) in rows {
+        for (label, path, create, find, hidden) in rows {
             ui.vertical(|ui| {
                 ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
                 lbl(ui, theme, label);
-                framed(ui, theme, |ui| toolbar(ui, theme, wide, path, create, find));
+                framed(ui, theme, |ui| {
+                    toolbar(ui, theme, wide, path, create, find, hidden)
+                });
             });
         }
         ui.horizontal_wrapped(|ui| {
@@ -273,6 +298,7 @@ pub fn draw_commands(ui: &mut egui::Ui, theme: &Theme) {
                         NARROW_W.value(),
                         "~/Downloads",
                         Some(true),
+                        false,
                         false,
                     )
                 });
@@ -314,7 +340,7 @@ pub fn draw_commands(ui: &mut egui::Ui, theme: &Theme) {
             ),
             (
                 "view",
-                "search · columns (preview) — toggles (active state)",
+                "search · columns (preview) · eye (hidden files, last) — toggles (active state) · eye tooltip = More row words + “(Ctrl+Shift+.)” (⌘⇧. on macOS)",
             ),
             ("separator", "1px × 16 · separator · 4 each side"),
             (

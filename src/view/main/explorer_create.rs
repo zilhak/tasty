@@ -92,7 +92,7 @@ impl MainView {
         ));
         items.push(MenuItem::new(
             HIDDEN,
-            crate::i18n::t(hidden_row_key(hidden_shown)),
+            crate::i18n::t(crate::explorer_ui::view::hidden::action_key(hidden_shown)),
         ));
         self.open_native_menu(
             engine,
@@ -140,15 +140,6 @@ fn preview_row_key(open: bool) -> &'static str {
         "explorer.more.preview_hide"
     } else {
         "explorer.more.preview_show"
-    }
-}
-
-/// More 메뉴 숨김 파일 행의 문구 키.
-fn hidden_row_key(shown: bool) -> &'static str {
-    if shown {
-        "explorer.more.hidden_hide"
-    } else {
-        "explorer.more.hidden_show"
     }
 }
 
@@ -209,7 +200,13 @@ mod tests {
         assert_eq!(crate::i18n::t(find_row_key(true)), "Close find");
         assert_eq!(crate::i18n::t(preview_row_key(false)), "Show preview");
         assert_eq!(crate::i18n::t(preview_row_key(true)), "Hide preview");
-        assert_eq!(crate::i18n::t(hidden_row_key(false)), "Show hidden files");
-        assert_eq!(crate::i18n::t(hidden_row_key(true)), "Hide hidden files");
+        assert_eq!(
+            crate::i18n::t(crate::explorer_ui::view::hidden::action_key(false)),
+            "Show hidden files"
+        );
+        assert_eq!(
+            crate::i18n::t(crate::explorer_ui::view::hidden::action_key(true)),
+            "Hide hidden files"
+        );
     }
 }

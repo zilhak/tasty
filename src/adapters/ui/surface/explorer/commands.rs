@@ -10,7 +10,7 @@ use tasty_ui_widgets::{
 };
 
 use super::ExplorerAction;
-use super::view::ExplorerView;
+use super::view::{ExplorerView, hidden};
 use crate::i18n::t;
 
 fn labels() -> ExplorerCommandLabels<'static> {
@@ -22,8 +22,17 @@ fn labels() -> ExplorerCommandLabels<'static> {
     }
 }
 
+/// 숨김 파일 토글의 툴팁. More 행과 같은 동작 문구 뒤에 첫 바인딩을 괄호로 붙인다.
+fn hidden_tip(view: &ExplorerView) -> String {
+    let action = t(hidden::action_key(view.hidden.show));
+    match &view.hidden.shortcut {
+        Some(keys) => format!("{action} ({keys})"),
+        None => action.to_string(),
+    }
+}
+
 /// view 묶음. 목록 순서대로 그린다. 좁은 칸에서는 create 묶음과 함께 More 로 접힌다.
-fn toggles(view: &ExplorerView) -> [ExplorerToggle<'static>; 2] {
+fn toggles<'a>(view: &ExplorerView, hidden_tip: &'a str) -> [ExplorerToggle<'a>; 3] {
     [
         ExplorerToggle {
             command: ExplorerCommand::Find,
@@ -36,6 +45,12 @@ fn toggles(view: &ExplorerView) -> [ExplorerToggle<'static>; 2] {
             icon: crate::adapters::ui::icons::COLUMNS,
             label: t("explorer.preview.toggle"),
             active: view.preview.open,
+        },
+        ExplorerToggle {
+            command: ExplorerCommand::ToggleHidden,
+            icon: crate::adapters::ui::icons::EYE,
+            label: hidden_tip,
+            active: view.hidden.show,
         },
     ]
 }
@@ -63,7 +78,8 @@ pub(super) fn reserve(
     remote: bool,
     cell_w: f32,
 ) -> f32 {
-    let toggles = toggles(view);
+    let tip = hidden_tip(view);
+    let toggles = toggles(view, &tip);
     let w = explorer_commands_width(theme, &commands_view(theme, view, remote, cell_w, &toggles));
     if w > 0.0 {
         w + ui.spacing().item_spacing.x + theme.spacing_sm.value()
@@ -82,7 +98,8 @@ pub(super) fn show(
     cell_w: f32,
     action: &mut Option<ExplorerAction>,
 ) {
-    let toggles = toggles(view);
+    let tip = hidden_tip(view);
+    let toggles = toggles(view, &tip);
     let commands = commands_view(theme, view, remote, cell_w, &toggles);
     if explorer_commands_width(theme, &commands) <= 0.0 {
         return;
@@ -96,6 +113,7 @@ pub(super) fn show(
         }
         Some(ExplorerCommandClick::Run(ExplorerCommand::Find)) => view.toggle_find(),
         Some(ExplorerCommandClick::Run(ExplorerCommand::TogglePreview)) => view.preview.toggle(),
+        Some(ExplorerCommandClick::Run(ExplorerCommand::ToggleHidden)) => view.toggle_hidden(),
         Some(ExplorerCommandClick::More(rect)) if action.is_none() => {
             *action = Some(ExplorerAction::MoreMenu {
                 x: rect.left(),
@@ -113,17 +131,19 @@ mod tests {
     use tasty_ui_widgets::ControlSize;
 
     #[test]
-    fn preview_sits_in_the_view_group_and_folds_into_more_with_it() {
+    fn preview_and_hidden_sit_in_the_view_group_and_fold_into_more_with_it() {
         let theme = crate::theme::theme();
         let mut view = ExplorerView::new();
         view.preview.toggle();
-        let toggles = toggles(&view);
+        view.toggle_hidden();
+        let toggles = toggles(&view, "");
         let commands: Vec<_> = toggles.iter().map(|t| (t.command, t.active)).collect();
         assert_eq!(
             commands,
             [
                 (ExplorerCommand::Find, false),
-                (ExplorerCommand::TogglePreview, true)
+                (ExplorerCommand::TogglePreview, true),
+                (ExplorerCommand::ToggleHidden, true),
             ]
         );
         let narrow = theme.explorer_toolbar_compact_below().value() - 1.0;
@@ -131,7 +151,18 @@ mod tests {
         assert_eq!(
             explorer_commands_width(&theme, &folded),
             ControlSize::Sm.height(&theme),
-            "under the compact width every command, Preview included, is one More button"
+            "under the compact width every command, Preview and hidden files included, is one More button"
         );
+    }
+
+    #[test]
+    fn the_hidden_toggle_names_its_action_and_the_first_binding() {
+        crate::i18n::init("en");
+        let mut view = ExplorerView::new();
+        assert_eq!(hidden_tip(&view), "Show hidden files");
+        view.hidden.shortcut = Some("Ctrl+Shift+.".into());
+        assert_eq!(hidden_tip(&view), "Show hidden files (Ctrl+Shift+.)");
+        view.toggle_hidden();
+        assert_eq!(hidden_tip(&view), "Hide hidden files (Ctrl+Shift+.)");
     }
 }

@@ -61,7 +61,7 @@ fn find_cell(
     framed(ui, theme, |ui| {
         let w = SEARCH_W.value().min(ui.available_width());
         ui.set_width(w);
-        toolbar(ui, theme, w, "~/Downloads", Some(true), true);
+        toolbar(ui, theme, w, "~/Downloads", Some(true), true, false);
         let mut q = query.to_string();
         let mut d = deep.unwrap_or(false);
         let placeholder = if d {

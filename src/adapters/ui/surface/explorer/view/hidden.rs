@@ -26,6 +26,17 @@ pub(crate) struct HiddenFiles {
     known: Option<bool>,
     /// 사용자가 바꿔 model 에 아직 남기지 않았다.
     changed: bool,
+    /// `explorer_toggle_hidden` 의 첫 바인딩 표시. 툴바 토글의 툴팁에 붙인다. 호스트가 프레임마다 넣는다.
+    pub(crate) shortcut: Option<String>,
+}
+
+/// 토글이 할 동작의 문구 키. 보이는 중이면 숨기고, 숨긴 중이면 보인다.
+pub(crate) fn action_key(shown: bool) -> &'static str {
+    if shown {
+        "explorer.more.hidden_hide"
+    } else {
+        "explorer.more.hidden_show"
+    }
 }
 
 impl HiddenFiles {

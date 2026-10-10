@@ -212,6 +212,14 @@ pub fn draw_egui_panels(
             view.ops.drag.flip = tasty_settings::keybindings::parse::Combo::parse_modifiers(
                 &engine.settings.keybindings.explorer_drag_flip_modifier,
             );
+            view.hidden.shortcut = engine
+                .settings
+                .keybindings
+                .explorer_toggle_hidden
+                .first()
+                .map(|b| {
+                    tasty_settings::KeybindingSettings::format_display(b, &engine.settings.general)
+                });
             view.ops.drag.blocked = drag_blocked;
             view.ops.drag.os = os_hover.clone();
             let act = draw_panel_frame(
