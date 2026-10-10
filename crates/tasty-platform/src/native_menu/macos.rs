@@ -57,6 +57,9 @@ fn show_context_menu_sync(
                 ns_item.setKeyEquivalent(&key);
                 ns_item.setKeyEquivalentModifierMask(mods);
             }
+            if let Some(tooltip) = &item.tooltip {
+                ns_item.setToolTip(Some(&NSString::from_str(tooltip)));
+            }
             menu.addItem(&ns_item);
         }
     }

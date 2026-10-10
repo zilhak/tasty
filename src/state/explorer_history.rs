@@ -1,0 +1,82 @@
+//! explorer 칸 이력의 되돌리기·다시 실행 요청. 메뉴 행, 단축키, 결과 카드의 Undo 가 함께 쓴다.
+
+use crate::app::explorer_files::Operation;
+use crate::app::explorer_files::history::{Entry, Recorded};
+use crate::intent::IntentOrigin;
+use crate::runtime::engine_read::EngineRead;
+
+/// 되돌릴 수 없게 된 단계의 이유 문구. 메뉴 행의 툴팁과 단축키의 알림이 같은 문구를 쓴다.
+pub(crate) fn stale_text(entry: &Entry) -> Option<String> {
+    let reason = entry.stale_reason()?;
+    Some(crate::i18n::t_fmt(
+        "explorer.menu.undo_stale",
+        &crate::explorer_ui::view::ops::reason_text(&reason),
+    ))
+}
+
+impl super::MainViewState {
+    /// 칸 이력의 맨 위 단계를 되돌리거나(`redo` 가 거짓) 다시 실행한다. 단계가 없으면 아무 일도
+    /// 하지 않는다. 되돌릴 수 없게 된 단계는 꺼내지 않고 그 칸에 이유를 알린다.
+    pub(crate) fn explorer_history_step(
+        &mut self,
+        engine: &EngineRead<'_>,
+        sid: u32,
+        redo: bool,
+        origin: IntentOrigin,
+    ) {
+        let Some(history) = self.explorer_views.get_mut(sid).map(|v| &mut v.ops.history) else {
+            return;
+        };
+        if redo {
+            let Some(entry) = history.take_redo() else {
+                return;
+            };
+            let operation = entry.source.operation();
+            self.request_history(engine, sid, operation, origin, Recorded::Redo(entry));
+            return;
+        }
+        let Some(top) = history.peek_undo() else {
+            return;
+        };
+        if let Some(why) = stale_text(top) {
+            self.toasts.push(
+                why,
+                crate::adapters::ui::ToastKind::Info,
+                crate::adapters::ui::ToastScope::Surface(sid),
+            );
+            return;
+        }
+        let Some(entry) = history.take_undo() else {
+            return;
+        };
+        self.request_history_undo(engine, sid, entry, origin);
+    }
+
+    /// 이력의 단계 하나를 되돌린다. 끝까지 되면 다시 실행할 수 있다.
+    pub(crate) fn request_history_undo(
+        &mut self,
+        engine: &EngineRead<'_>,
+        sid: u32,
+        entry: Entry,
+        origin: IntentOrigin,
+    ) {
+        let operation = Operation::Undo(entry.undo.clone());
+        self.request_history(engine, sid, operation, origin, Recorded::Undo(entry));
+    }
+
+    fn request_history(
+        &mut self,
+        engine: &EngineRead<'_>,
+        sid: u32,
+        operation: Operation,
+        origin: IntentOrigin,
+        recorded: Recorded,
+    ) {
+        if let Some(recorded) =
+            self.request_explorer_history(engine, sid, operation, origin, recorded)
+            && let Some(view) = self.explorer_views.get_mut(sid)
+        {
+            view.ops.history.restore(recorded);
+        }
+    }
+}

@@ -604,6 +604,8 @@ explorer_new_folder_label = "New folder:"
 explorer_new_file_label = "New file:"
 explorer_rename_label = "Rename:"
 explorer_trash_label = "Move to Trash:"
+explorer_undo_label = "Undo:"
+explorer_redo_label = "Redo:"
 toggle_command_palette_label = "Command palette:"
 apply_workspace_preset_label = "Apply workspace preset:"
 apply_tab_preset_label = "Apply tab preset:"
@@ -943,9 +945,6 @@ shell = "Shell script"
 link_to = "Link to {kind}"
 broken_link = "Broken link"
 
-[explorer.menu]
-show_in_folder = "Show in enclosing folder"
-
 [explorer.link]
 target_missing = "Target not found: {path}"
 
@@ -1058,6 +1057,16 @@ none_sub = "Subfolders included."
 failed = "Search failed"
 status = "{} of {} items"
 status_one = "{} of {} item"
+
+[explorer.menu]
+show_in_folder = "Show in enclosing folder"
+undo = "Undo {}"
+redo = "Redo {}"
+undo_stale = "Can't undo: {}"
+op_copy = "copy {} items"
+op_copy_one = "copy {} item"
+op_move = "move {} items"
+op_move_one = "move {} item"
 
 [explorer.op]
 copying = "Copying {} of {} · {}"

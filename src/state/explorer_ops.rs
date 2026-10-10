@@ -76,7 +76,20 @@ impl super::MainViewState {
                 }
             }
             OpsAction::Undo(steps) => {
-                self.request_explorer_file_direct(engine, sid, Operation::Undo(steps), origin);
+                // 이력에 있는 단계면 이력으로 되돌려 다시 실행할 수 있게 한다.
+                let entry = self
+                    .explorer_views
+                    .get_mut(sid)
+                    .and_then(|v| v.ops.history.take_matching(&steps));
+                match entry {
+                    Some(entry) => self.request_history_undo(engine, sid, entry, origin),
+                    None => self.request_explorer_file_direct(
+                        engine,
+                        sid,
+                        Operation::Undo(steps),
+                        origin,
+                    ),
+                }
             }
             OpsAction::Drop { kind, paths, dest } => {
                 let origin = IntentOrigin::User {

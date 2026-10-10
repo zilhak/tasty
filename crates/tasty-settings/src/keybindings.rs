@@ -169,6 +169,10 @@ pub struct KeybindingSettings {
     pub explorer_rename: Vec<String>,
     /// Move the selected items of the focused Explorer to the trash.
     pub explorer_trash: Vec<String>,
+    /// Undo the latest copy or move in the focused Explorer's history.
+    pub explorer_undo: Vec<String>,
+    /// Redo the latest undone copy or move in the focused Explorer's history.
+    pub explorer_redo: Vec<String>,
     /// Paste clipboard content into focused terminal / paste files in Explorer.
     pub paste: Vec<String>,
     /// Increase font size.

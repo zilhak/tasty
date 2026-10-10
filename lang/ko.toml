@@ -603,6 +603,8 @@ explorer_new_folder_label = "새 폴더:"
 explorer_new_file_label = "새 파일:"
 explorer_rename_label = "이름 변경:"
 explorer_trash_label = "휴지통으로 이동:"
+explorer_undo_label = "실행 취소:"
+explorer_redo_label = "다시 실행:"
 toggle_command_palette_label = "명령 팔레트:"
 apply_workspace_preset_label = "워크스페이스 프리셋 적용:"
 apply_tab_preset_label = "탭 프리셋 적용:"
@@ -926,9 +928,6 @@ shell = "셸 스크립트"
 link_to = "{kind} 링크"
 broken_link = "끊긴 링크"
 
-[explorer.menu]
-show_in_folder = "들어 있는 폴더에서 보기"
-
 [explorer.link]
 target_missing = "대상을 찾을 수 없음: {path}"
 
@@ -1036,6 +1035,14 @@ none_filter = "“{query}”와(과) 맞는 이름이 없습니다"
 none_sub = "하위 폴더를 포함했습니다."
 failed = "찾기 실패"
 status = "{} / {}개 항목"
+
+[explorer.menu]
+show_in_folder = "들어 있는 폴더에서 보기"
+undo = "실행 취소: {}"
+redo = "다시 실행: {}"
+undo_stale = "되돌릴 수 없음: {}"
+op_copy = "{}개 복사"
+op_move = "{}개 이동"
 
 [explorer.op]
 copying = "복사 중 {} / {} · {}"

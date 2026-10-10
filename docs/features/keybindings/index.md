@@ -203,10 +203,12 @@ Option 시퀀스·튜플 원소와 중첩 Option의 Some(None)은 표현을 다�
   `PhysicalKeyExtScancode::from_scancode` 표현), 브리지가 winit 경로와 **같은 함수**
   (`shortcuts::physical_key_to_logical`)로 치환한다. 치환은 `ctrl`/`super`/`alt` 중 하나
   이상이 눌린 경우에만 — 수식 없는 키는 페이지 타이핑·IME 조합 그대로다.
-- **페이지에 남기는 것** 두 가지: ① `ctrl`/`alt`/`option` 중 하나도 없는 콤보(무수식·shift
+- **페이지에 남기는 것** 세 가지: ① `ctrl`/`alt`/`option` 중 하나도 없는 콤보(무수식·shift
   전용) — 문서 안 타이핑·IME 조합·폼 내비게이션·페이지의 Esc 를 건드리지 않기 위함.
   ② 페이지 예약 액션 `find`·`copy`·`cut`·`paste`·`select_all` — 페이지가 자체로 같은 의미를
   구현한다(markdown 의 문서 내 검색 등).
+  ③ explorer 전용 액션 `explorer_undo`·`explorer_redo` — explorer 에 포커스가 있을 때만 동작해
+  webview 위에서는 할 일이 없다. 기본값 `Ctrl+Z`·`Ctrl+Shift+Z` 는 페이지의 undo/redo 키다.
 - **key-up 은 어느 백엔드도 올리지 않는다**(press 만). host 는 실려온 modifier 값만
   읽고 자기 `base.modifiers` 를 갱신하지 않으므로 modifier stuck 이 생기지 않는다.
 - **auto-repeat 필터는 플랫폼이 갈린다** — macOS(`isARepeat`)·Windows(`WasKeyDown`)는 걸러

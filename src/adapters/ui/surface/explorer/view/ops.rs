@@ -72,6 +72,8 @@ pub(crate) struct OpsState {
     pub(crate) conflict_answered: bool,
     /// 이 칸의 드래그 앤 드롭 상태.
     pub(crate) drag: super::drag::DragState,
+    /// 이 칸의 되돌리기·다시 실행 이력.
+    pub(crate) history: crate::app::explorer_files::history::History,
 }
 
 /// 렌더 뒤 호스트가 처리할 파일 작업 조작.
@@ -429,7 +431,7 @@ struct CardText {
     undo: bool,
 }
 
-fn reason_text(reason: &Reason) -> String {
+pub(crate) fn reason_text(reason: &Reason) -> String {
     match reason {
         Reason::Os(e) => e.clone(),
         Reason::IntoItself => t("explorer.result.into_itself").to_owned(),

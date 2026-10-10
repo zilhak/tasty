@@ -8,6 +8,8 @@ mod dialogs;
 #[cfg(feature = "gui")]
 mod events;
 #[cfg(feature = "gui")]
+pub(crate) mod explorer_history;
+#[cfg(feature = "gui")]
 pub(crate) mod explorer_menu;
 #[cfg(feature = "gui")]
 mod explorer_ops;

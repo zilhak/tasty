@@ -134,6 +134,9 @@ pub struct MenuItem {
     pub label: String,
     /// Whether this item is enabled (grayed out if false).
     pub enabled: bool,
+    /// 행에 마우스를 올리면 보이는 설명. 꺼진 행의 이유를 알리는 데 쓴다. Windows 팝업 메뉴는
+    /// 항목 툴팁이 없어 보이지 않는다.
+    pub tooltip: Option<String>,
     /// 같은 동작의 단축키. 메뉴는 표시만 하고 실행은 단축키 경로가 맡는다.
     pub shortcut: Option<MenuShortcut>,
 }
@@ -153,6 +156,7 @@ impl MenuItem {
             label: label.into(),
             enabled: true,
             shortcut: None,
+            tooltip: None,
         }
     }
 
@@ -162,6 +166,7 @@ impl MenuItem {
             label: label.into(),
             enabled: false,
             shortcut: None,
+            tooltip: None,
         }
     }
 
@@ -171,7 +176,13 @@ impl MenuItem {
             label: String::new(),
             enabled: false,
             shortcut: None,
+            tooltip: None,
         }
+    }
+
+    pub fn with_tooltip(mut self, tooltip: impl Into<String>) -> Self {
+        self.tooltip = Some(tooltip.into());
+        self
     }
 
     /// 단축키 표시를 붙인다.

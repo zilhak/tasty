@@ -84,6 +84,27 @@ fn explorer_view_shortcut(
     );
 }
 
+/// 되돌리기·다시 실행 단축키. 포커스된 탐색기의 이력만 쓴다. mirror explorer 는 파일 작업을
+/// 하지 않아 이력이 비어 있다.
+fn explorer_history_shortcut(
+    state: &mut crate::state::MainViewState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
+    action: &str,
+) {
+    let Some(sid) = focused_explorer_panel(state, engine).map(|p| p.id) else {
+        return;
+    };
+    let (redo, id) = if action == "explorer_redo" {
+        (true, "explorer_redo")
+    } else {
+        (false, "explorer_undo")
+    };
+    let origin = crate::intent::IntentOrigin::User {
+        source: crate::intent::UserSource::Shortcut(id),
+    };
+    state.explorer_history_step(engine, sid, redo, origin);
+}
+
 /// 포커스된 탐색기의 주소창이나 이름 입력이 키를 받고 있다. 그동안 목록 단축키는 글자 편집에 양보한다.
 fn focused_explorer_typing(
     state: &crate::state::MainViewState,

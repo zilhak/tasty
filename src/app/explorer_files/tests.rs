@@ -271,6 +271,7 @@ fn shutdown_reports_a_running_worker_until_its_actual_join() {
             affected: Affected::default(),
             shared: Arc::new(quiet()),
             undo_of: None,
+            recorded: None,
             seen: (0, 0, false),
             worker,
         }),
@@ -392,6 +393,7 @@ fn a_finished_job_reloads_other_explorers_viewing_the_folders_it_changed() {
             // 휴지통 이동은 실패해도 같은 경로를 다시 읽어야 한다.
             shared: Arc::new(quiet()),
             undo_of: None,
+            recorded: None,
             seen: (0, 0, false),
             worker: std::thread::spawn(|| Done::Simple(Err("failed".to_string()))),
         }),

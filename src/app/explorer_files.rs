@@ -1,10 +1,12 @@
 //! Bounded local Explorer actions. Views queue fixed inputs; App owns execution and joins.
+pub(crate) mod history;
 pub(crate) mod job;
 mod ops;
 mod ui_sync;
 pub(crate) use ui_sync::{forget_press_request, open_conflict};
 use ui_sync::{push_result, show_running};
 
+use history::Recorded;
 use job::leftover::Leftover;
 use job::{OpKind, Report, Shared, UndoStep};
 
@@ -264,6 +266,7 @@ struct Request {
     id: u64,
     target: Target,
     operation: Operation,
+    recorded: Option<Recorded>,
 }
 #[derive(Default)]
 pub(crate) struct Requests(VecDeque<Request>, u64);
@@ -305,7 +308,7 @@ impl crate::state::MainViewState {
         operation: Operation,
         origin: crate::intent::IntentOrigin,
     ) {
-        self.enqueue_explorer_file(engine, surface, operation, origin, true);
+        self.enqueue_explorer_file(engine, surface, operation, origin, true, &mut None);
     }
     /// 클립보드와 무관한 사용자 작업(드래그·다시 시도·되돌리기)을 요청한다.
     pub(crate) fn request_explorer_file_direct(
@@ -315,7 +318,7 @@ impl crate::state::MainViewState {
         operation: Operation,
         origin: crate::intent::IntentOrigin,
     ) {
-        self.enqueue_explorer_file(engine, surface, operation, origin, false);
+        self.enqueue_explorer_file(engine, surface, operation, origin, false, &mut None);
     }
     /// [`Self::request_explorer_file_direct`] 와 같고, 받은 요청의 번호를 돌려준다.
     pub(crate) fn request_explorer_file_numbered(
@@ -325,7 +328,7 @@ impl crate::state::MainViewState {
         operation: Operation,
         origin: crate::intent::IntentOrigin,
     ) -> Option<u64> {
-        self.enqueue_explorer_file(engine, surface, operation, origin, false)
+        self.enqueue_explorer_file(engine, surface, operation, origin, false, &mut None)
     }
     /// 한 번의 누름으로 넣은 요청들의 결과를 그 칸에서 카드 하나로 모은다.
     pub(crate) fn group_explorer_requests(
@@ -345,6 +348,21 @@ impl crate::state::MainViewState {
             }
         }
     }
+    /// 이력의 단계를 되돌리거나 다시 실행하는 요청. 요청하지 못했으면 단계를 돌려준다.
+    pub(crate) fn request_explorer_history(
+        &mut self,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
+        surface: u32,
+        operation: Operation,
+        origin: crate::intent::IntentOrigin,
+        recorded: Recorded,
+    ) -> Option<Recorded> {
+        let mut recorded = Some(recorded);
+        self.enqueue_explorer_file(engine, surface, operation, origin, false, &mut recorded);
+        recorded
+    }
+    /// 요청을 대기열에 넣고 번호를 돌려준다. 받으면 `recorded` 의 이력 단계를 요청으로 가져가고,
+    /// 받지 않으면 그대로 둔다.
     fn enqueue_explorer_file(
         &mut self,
         engine: &crate::runtime::engine_read::EngineRead<'_>,
@@ -352,6 +370,7 @@ impl crate::state::MainViewState {
         operation: Operation,
         origin: crate::intent::IntentOrigin,
         from_clipboard: bool,
+        recorded: &mut Option<Recorded>,
     ) -> Option<u64> {
         if !matches!(origin, crate::intent::IntentOrigin::User { .. })
             || engine.is_mirror_surface(surface)
@@ -410,6 +429,10 @@ impl crate::state::MainViewState {
             },
             press: None,
         };
+        // 새 복사·이동은 끝까지 되면 이력에 쌓는다.
+        let recorded = recorded
+            .take()
+            .or_else(|| history::Source::of(&operation).map(Recorded::New));
         let requests = &mut self.explorer_file_requests;
         requests.1 += 1;
         let id = requests.1;
@@ -417,6 +440,7 @@ impl crate::state::MainViewState {
             id,
             target,
             operation,
+            recorded,
         });
         Some(id)
     }
@@ -430,6 +454,7 @@ struct Job {
     shared: Arc<Shared>,
     worker: JoinHandle<Done>,
     undo_of: Option<OpKind>,
+    recorded: Option<Recorded>,
     /// 마지막으로 다시 그린 진행 상태(끝난 항목, 바이트, 질문 여부). 바뀔 때만 다시 그린다.
     seen: (usize, u64, bool),
 }
@@ -460,6 +485,7 @@ impl ExplorerFiles {
             worker,
             shared,
             undo_of,
+            recorded,
             ..
         } = self.job.take().expect("finished job exists");
         Some(Finished {
@@ -469,6 +495,7 @@ impl ExplorerFiles {
             affected,
             shared,
             undo_of,
+            recorded,
             result: join(worker),
         })
     }
@@ -501,6 +528,7 @@ struct Finished {
     affected: Affected,
     shared: Arc<Shared>,
     undo_of: Option<OpKind>,
+    recorded: Option<Recorded>,
     result: Done,
 }
 impl Finished {
@@ -590,6 +618,7 @@ impl super::App {
             result,
             shared,
             undo_of,
+            recorded,
             ..
         } = finished;
         self.clear_explorer_running(&shared);
@@ -620,6 +649,11 @@ impl super::App {
             return;
         }
         if let Done::Report(report) = result {
+            if let Some(recorded) = recorded
+                && let Some(v) = view.state.explorer_views.get_mut(target.surface)
+            {
+                v.ops.history.record(recorded, &report);
+            }
             let lifetime =
                 std::time::Duration::from_millis(session.read().settings.overlay.toast_duration_ms);
             push_result(
@@ -647,7 +681,10 @@ impl super::App {
                 continue;
             };
             while let Some(Request {
-                target, operation, ..
+                target,
+                operation,
+                recorded,
+                ..
             }) = view.state.explorer_file_requests.0.pop_front()
             {
                 if !matches!(target.origin, crate::intent::IntentOrigin::User { .. })
@@ -688,6 +725,7 @@ impl super::App {
                             shared,
                             worker,
                             undo_of,
+                            recorded,
                             seen: (0, 0, false),
                         })
                     }

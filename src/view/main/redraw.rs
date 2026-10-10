@@ -1431,7 +1431,6 @@ impl MainView {
         let is_mirror = engine.is_mirror_surface(surface_id);
         // 메뉴를 연 surface 세대를 고정한다. 그 사이 닫히거나 바뀐 surface에는 결과를 적용하지 않는다.
         let binding = crate::runtime::surface_binding::SurfaceBinding::capture(engine, surface_id);
-
         let mut items = self.with_show_in_folder(
             surface_id,
             &paths,
@@ -1444,6 +1443,7 @@ impl MainView {
             ),
         );
         crate::state::explorer_menu::attach_shortcut_hints(&mut items, engine.settings);
+        self.push_explorer_history_items(surface_id, is_empty_target && !is_mirror, &mut items);
         self.open_native_menu(engine, x, y, &items, move |this, engine, result| {
             // 경로 복사·복사·루트 설정은 파일시스템을 바꾸지 않아 같은 explorer 인지만 본다.
             let read_only = matches!(result, Some(1 | 10 | 61 | 70));

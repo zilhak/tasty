@@ -7,6 +7,9 @@ use crate::webview::{HostShortcutPolicy, ShortcutSources};
 
 /// 페이지가 처리할 액션 ID. 키 조합을 바꿔도 해당 액션은 host로 보내지 않는다.
 const PAGE_RESERVED_FIELDS: &[&str] = &["find", "copy", "cut", "paste", "select_all"];
+/// explorer 에 포커스가 있을 때만 동작하는 액션. webview 위에서는 실행되지 않으므로 host 가
+/// 가져가지 않는다. 특히 실행 취소 키는 페이지의 undo/redo 와 같다.
+const EXPLORER_ONLY_FIELDS: &[&str] = &["explorer_undo", "explorer_redo"];
 
 /// 설정의 host 액션·quick-switch·사용자 스크립트와 플러그인 바인딩으로 키 정책을 만든다.
 /// `plugin_combos`는 매니페스트 기본값에 사용자 설정을 적용한 목록이다.
@@ -34,7 +37,7 @@ fn host_combos(kb: &KeybindingSettings) -> Vec<String> {
     let mut combos: Vec<String> = Vec::new();
 
     for (field_id, _label) in KeybindingSettings::GENERAL_BINDING_FIELDS {
-        if PAGE_RESERVED_FIELDS.contains(field_id) {
+        if PAGE_RESERVED_FIELDS.contains(field_id) || EXPLORER_ONLY_FIELDS.contains(field_id) {
             continue;
         }
         combos.extend(kb.get_bindings(field_id).unwrap_or(&[]).iter().cloned());
@@ -183,6 +186,21 @@ mod tests {
                     policy.combos()
                 );
             }
+        }
+    }
+
+    /// explorer 전용 실행 취소·다시 실행은 다른 키로 바꿔도 webview 위에서 host 가 가져가지 않는다.
+    #[test]
+    fn explorer_only_actions_are_never_claimed_over_a_page() {
+        let mut kb = kb();
+        assert!(kb.set_field("explorer_undo", "ctrl+shift+u"));
+        assert!(kb.set_field("explorer_redo", "ctrl+shift+o"));
+        let policy = webview_shortcut_policy(&kb, Vec::new());
+        for combo in ["ctrl+shift+u", "ctrl+shift+o"] {
+            assert!(
+                !policy.combos().iter().any(|c| c == combo),
+                "{combo} 를 host 가 가져간다"
+            );
         }
     }
 

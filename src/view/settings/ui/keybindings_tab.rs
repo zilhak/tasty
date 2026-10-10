@@ -227,6 +227,8 @@ const ENTRY_PLACEMENT: &[(&str, KeybindingsSubTab, Option<&str>)] = &[
         KeybindingsSubTab::Explorer,
         None,
     ),
+    ("explorer_undo", KeybindingsSubTab::Explorer, None),
+    ("explorer_redo", KeybindingsSubTab::Explorer, None),
 ];
 
 /// 그 서브탭이 바인딩 엔트리 목록을 그리는가. Scripts/Preset/Plugins/ImportExport 는 자기

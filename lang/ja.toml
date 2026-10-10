@@ -603,6 +603,8 @@ explorer_new_folder_label = "新しいフォルダー:"
 explorer_new_file_label = "新しいファイル:"
 explorer_rename_label = "名前を変更:"
 explorer_trash_label = "ゴミ箱に移動:"
+explorer_undo_label = "元に戻す:"
+explorer_redo_label = "やり直す:"
 toggle_command_palette_label = "コマンドパレット:"
 apply_workspace_preset_label = "ワークスペースプリセット適用:"
 apply_tab_preset_label = "タブプリセット適用:"
@@ -926,9 +928,6 @@ shell = "シェルスクリプト"
 link_to = "{kind} へのリンク"
 broken_link = "リンク切れ"
 
-[explorer.menu]
-show_in_folder = "含まれているフォルダで表示"
-
 [explorer.link]
 target_missing = "リンク先が見つかりません: {path}"
 
@@ -1036,6 +1035,14 @@ none_filter = "「{query}」に一致する名前はありません"
 none_sub = "サブフォルダーを含めました。"
 failed = "検索に失敗しました"
 status = "{} / {} 項目"
+
+[explorer.menu]
+show_in_folder = "含まれているフォルダで表示"
+undo = "元に戻す: {}"
+redo = "やり直す: {}"
+undo_stale = "元に戻せません: {}"
+op_copy = "{} 件のコピー"
+op_move = "{} 件の移動"
 
 [explorer.op]
 copying = "コピー中 {} / {} · {}"

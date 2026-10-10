@@ -245,6 +245,9 @@ pub fn show_context_menu(
         } else {
             let mi = menu_item(item);
             mi.set_sensitive(item.enabled);
+            if let Some(tooltip) = &item.tooltip {
+                mi.set_tooltip_text(Some(tooltip));
+            }
             if item.enabled {
                 let id = item.id;
                 let selected = Rc::clone(&selected);

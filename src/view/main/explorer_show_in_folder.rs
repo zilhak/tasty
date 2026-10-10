@@ -44,7 +44,7 @@ impl MainView {
             .is_some_and(|c| !c.paths.is_empty() && c.is_local())
     }
 
-    /// 다른 행이 처리하지 않은 메뉴 결과. 들어 있는 폴더에서 보기가 아니면 생성 행이다.
+    /// 다른 행이 처리하지 않은 메뉴 결과. 들어 있는 폴더에서 보기가 아니면 생성 행이나 이력 행이다.
     pub(super) fn explorer_menu_more(
         &mut self,
         engine: &EngineRead<'_>,
@@ -54,7 +54,7 @@ impl MainView {
         cwd: &std::path::Path,
     ) {
         if id != SHOW_IN_FOLDER {
-            return self.explorer_menu_create(engine, surface_id, id, paths, cwd);
+            return self.explorer_menu_other(engine, surface_id, id, paths, cwd);
         }
         let Some((folder, item)) = paths.first().and_then(|p| {
             self.state

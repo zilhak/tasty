@@ -653,6 +653,17 @@ impl MainView {
                 return true;
             }
         }
+        for (binding, action) in [
+            (&kb.explorer_undo, "explorer_undo"),
+            (&kb.explorer_redo, "explorer_redo"),
+        ] {
+            if matches_any_binding(binding, key, mods)
+                && state.focused_surface_type(engine).is_kind("explorer")
+            {
+                super::explorer_history_shortcut(state, engine, action);
+                return true;
+            }
+        }
         false
     }
 

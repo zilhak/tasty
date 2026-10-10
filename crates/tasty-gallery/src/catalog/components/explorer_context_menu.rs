@@ -6,13 +6,15 @@ use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{MenuItemVariant, menu_item, menu_separator};
 
 use crate::catalog::icons::{COPY, EDIT, FILE_PLUS, FOLDER_PLUS, MockGlyph, STAR, TRASH};
-use crate::catalog::spec::{StageVariant, TokenChip, meta, note, stage};
-use crate::i18n::t;
+use crate::catalog::spec::{StageVariant, TokenChip, cluster, meta, note, stage};
+use crate::i18n::{t, t_count, t_fmt};
 
 /// 메뉴 한 줄.
 pub(super) enum Mi {
     /// (leading glyph, label, danger 여부)
     Item(Option<MockGlyph>, &'static str, bool),
+    /// 문구를 조합한 행. `tooltip` 이 있으면 꺼진 행이고 이유를 툴팁으로 보인다.
+    Row(String, Option<String>),
     Sep,
 }
 
@@ -25,6 +27,30 @@ fn empty_menu() -> Vec<Mi> {
         Mi::Item(Some(STAR), "Add to favorites", false),
         Mi::Sep,
         Mi::Item(None, "Paste", false),
+    ]
+}
+
+/// 빈 영역 메뉴의 Undo · Redo 묶음. 맨 위 단계만 보이고, 되돌릴 수 없게 된 단계는 꺼진 행이다.
+fn history_menu() -> Vec<Mi> {
+    let undo = |op: &str| t_fmt("explorer.menu.undo", op);
+    vec![
+        Mi::Item(Some(COPY), "Copy path", false),
+        Mi::Sep,
+        Mi::Row(undo(&t_count("explorer.menu.op_move", 3, &["3"])), None),
+        Mi::Row(
+            t_fmt(
+                "explorer.menu.redo",
+                &t_count("explorer.menu.op_copy", 2, &["2"]),
+            ),
+            None,
+        ),
+        Mi::Sep,
+        Mi::Row(
+            undo(&t_count("explorer.menu.op_copy", 2, &["2"])),
+            Some(t_fmt("explorer.menu.undo_stale", t("explorer.result.gone"))),
+        ),
+        Mi::Sep,
+        Mi::Item(None, t("explorer.context_menu.properties"), false),
     ]
 }
 
@@ -98,6 +124,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             });
         }
     });
+    cluster(ui, theme, "empty area — undo / redo", |ui| {
+        render_menu(ui, theme, menu_w, &history_menu());
+    });
 
     meta(
         ui,
@@ -108,6 +137,14 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("separator", "menu_separator (1px)"),
             ("danger", "Delete = accent-danger label"),
             ("targets", "empty · file · folder · multi"),
+            (
+                "stale step",
+                "disabled row · tooltip “Can't undo: {reason}” (none on Windows)",
+            ),
+            (
+                "undo / redo",
+                "empty area · before Properties · latest step of 10, no list",
+            ),
             (
                 "create",
                 "empty area: New folder · New file first · folder: in the file-ops group · file / multi: none · remote: hidden",
@@ -156,6 +193,21 @@ pub(super) fn render_menu(ui: &mut egui::Ui, theme: &Theme, width: f32, items: &
             for it in items {
                 match it {
                     Mi::Sep => menu_separator(ui, theme),
+                    Mi::Row(label, tooltip) => {
+                        let row = menu_item(
+                            ui,
+                            theme,
+                            None,
+                            label,
+                            None,
+                            MenuItemVariant::Normal,
+                            false,
+                            tooltip.is_none(),
+                        );
+                        if let Some(why) = tooltip {
+                            row.on_disabled_hover_text(why);
+                        }
+                    }
                     Mi::Item(glyph, label, danger) => {
                         let variant = if *danger {
                             MenuItemVariant::Danger
