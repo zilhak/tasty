@@ -115,7 +115,7 @@ fn print_notice(n: &Notice) {
         ),
         Notice::Skipped(n) => crate::out::errln!(
             "{}",
-            tasty_i18n::t_fmt("cli.events.skipped", &n.to_string())
+            tasty_i18n::t_count("cli.events.skipped", *n, &[&n.to_string()])
         ),
     }
 }

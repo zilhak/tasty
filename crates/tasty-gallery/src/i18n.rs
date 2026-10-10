@@ -29,6 +29,12 @@ pub fn t_count(key: &'static str, n: u64, args: &[&str]) -> String {
     tasty_i18n::t_count(key, n, args)
 }
 
+/// 수 `n` 에 맞는 영어 템플릿(`<key>` 또는 `<key>_one`)을 채우지 않고 돌려준다.
+pub fn t_count_template(key: &'static str, n: u64) -> &'static str {
+    ensure_init();
+    tasty_i18n::t_count_template(key, n)
+}
+
 /// `key`의 영어 문자열에서 앞의 두 `{}` 를 차례로 바꾼다.
 pub fn t_fmt2(key: &'static str, arg1: &str, arg2: &str) -> String {
     ensure_init();

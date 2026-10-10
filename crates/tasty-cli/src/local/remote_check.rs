@@ -54,8 +54,9 @@ pub fn run_remote_check(
     match (version, ws_count) {
         (Some(v), Some(n)) => outln!(
             "{}",
-            t_args(
+            tasty_i18n::t_count(
                 "cli.remote_check.alive_full",
+                n,
                 &[dest.as_str(), &port_str, v, &n.to_string()],
             )
         )?,

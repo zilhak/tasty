@@ -15,6 +15,8 @@ pub struct MultiSelectLabels<'a> {
     pub none: &'a str,
     /// 일부 선택 상태. 첫 번째 {}만 선택 개수로 바꾸고 나머지는 유지한다.
     pub some: &'a str,
+    /// 하나만 선택했을 때의 `some`. 단수형이 따로 없는 언어는 `some` 과 같은 문구다.
+    pub some_one: &'a str,
     /// 전부 선택됐을 때. 개수를 쓰지 않는 별도 문구라 치환 자리가 없다.
     pub all: &'a str,
 }
@@ -36,7 +38,8 @@ pub fn multi_select_summary(labels: &MultiSelectLabels<'_>, selected: &[bool]) -
     } else if n == selected.len() {
         labels.all.to_owned()
     } else {
-        labels.some.replacen("{}", &n.to_string(), 1)
+        let template = if n == 1 { labels.some_one } else { labels.some };
+        template.replacen("{}", &n.to_string(), 1)
     }
 }
 

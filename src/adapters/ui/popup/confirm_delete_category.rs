@@ -3,7 +3,7 @@
 
 use crate::adapters::ui::icons;
 use crate::adapters::ui::popup::{self, PopupAction};
-use crate::i18n::{t, t_fmt2};
+use crate::i18n::{t, t_count};
 use crate::state::MainViewState;
 use crate::theme;
 use tasty_type_geometry::length::LogicalPx;
@@ -128,10 +128,10 @@ pub fn draw_confirm_delete_category(
     ui.add_space(th.spacing_sm.value());
 
     ui.label(
-        egui::RichText::new(t_fmt2(
+        egui::RichText::new(t_count(
             "workspace_category.delete_confirm_body",
-            &target.name,
-            &target.count.to_string(),
+            target.count as u64,
+            &[&target.name, &target.count.to_string()],
         ))
         .color(th.text_secondary())
         .size(th.font_size_body.value()),

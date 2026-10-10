@@ -5,7 +5,7 @@ use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{Button, ButtonVariant, ControlSize};
 
 use crate::adapters::ui::icons;
-use crate::i18n::{t, t_fmt, t_fmt2};
+use crate::i18n::{t, t_count, t_fmt, t_fmt2};
 
 use super::paint::glyph_at;
 use super::{ExportFailReason, ExportFailure, Failure, GROUP_CHEVRON_GAP};
@@ -224,15 +224,11 @@ pub(super) fn bundle_notices(
     expanded: bool,
 ) -> bool {
     let (shown, hidden) = super::bundle_notices::fold(lines.len(), expanded);
-    // 하나일 때와 여러 개일 때의 번역 키를 구분한다.
-    let count = if lines.len() == 1 {
-        t("settings.keybindings.ie_notices_count_one").to_owned()
-    } else {
-        t_fmt(
-            "settings.keybindings.ie_notices_count_many",
-            &lines.len().to_string(),
-        )
-    };
+    let count = t_count(
+        "settings.keybindings.ie_notices_count",
+        lines.len() as u64,
+        &[&lines.len().to_string()],
+    );
     let more = t_fmt(
         "settings.keybindings.ie_notices_show_more",
         &hidden.to_string(),

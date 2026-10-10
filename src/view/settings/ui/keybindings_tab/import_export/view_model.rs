@@ -2,7 +2,7 @@
 
 use tasty_host_plugin::keybinding_bundle::PluginShortcutOverrides;
 
-use crate::i18n::{t, t_args, t_fmt, t_fmt2};
+use crate::i18n::{t, t_count, t_fmt2};
 use crate::settings::KeybindingSettings;
 
 use super::bundle_notices::BundleNotice;
@@ -18,21 +18,13 @@ fn notice_line(notice: &BundleNotice) -> String {
             &found.to_string(),
             &known.to_string(),
         ),
-        BundleNotice::UnknownActions(names) if names.len() == 1 => {
-            t_fmt(UNKNOWN_ACTIONS_ONE, &names.join(", "))
-        }
-        BundleNotice::UnknownActions(names) => t_fmt2(
-            UNKNOWN_ACTIONS_MANY,
-            &names.len().to_string(),
-            &names.join(", "),
+        BundleNotice::UnknownActions(names) => t_count(
+            "settings.keybindings.ie_notice_unknown_actions",
+            names.len() as u64,
+            &[&names.len().to_string(), &names.join(", ")],
         ),
     }
 }
-
-/// 모르는 액션이 하나뿐일 때의 줄 — 개수가 문구 안에 박혀 있어 이름 하나만 받는다.
-const UNKNOWN_ACTIONS_ONE: &str = "settings.keybindings.ie_notice_unknown_actions_one";
-/// 둘 이상일 때의 줄 — 개수와 이름 목록을 받는다.
-const UNKNOWN_ACTIONS_MANY: &str = "settings.keybindings.ie_notice_unknown_actions_many";
 
 pub(super) enum Sub {
     Plugin(String),
@@ -106,9 +98,10 @@ pub(super) fn build_view_model(
                 };
                 (
                     t(action_key).to_string(),
-                    Some(Sub::Note(t_fmt(
+                    Some(Sub::Note(t_count(
                         "settings.keybindings.ie_axis_slots",
-                        &axis.slot_count().to_string(),
+                        axis.slot_count() as u64,
+                        &[&axis.slot_count().to_string()],
                     ))),
                     labels.axis_summary(*axis, current),
                     labels.axis_summary(*axis, imported),
@@ -172,8 +165,9 @@ pub(super) fn build_view_model(
         .filter(|r| !state.deselected.contains(&r.key))
         .count();
 
-    let intro = t_args(
+    let intro = t_count(
         "settings.keybindings.ie_preview_intro",
+        total as u64,
         &[
             &preview.file_name,
             &changed.to_string(),
@@ -189,7 +183,11 @@ pub(super) fn build_view_model(
             .map(|(id, _)| id.as_str())
             .collect::<Vec<_>>()
             .join(", ");
-        t_fmt2("settings.keybindings.ie_dropped", &count.to_string(), &list)
+        t_count(
+            "settings.keybindings.ie_dropped",
+            count as u64,
+            &[&count.to_string(), &list],
+        )
     });
 
     let notices = preview.notices.iter().map(notice_line).collect();

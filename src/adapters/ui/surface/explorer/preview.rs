@@ -18,7 +18,7 @@ use crate::app::local_reads::{
     self, MAX_DECODE_ALLOC, MAX_IMAGE_SIDE, PREVIEW_MAX_BYTES, PreviewData, Query, ReadRequests,
     TooLarge,
 };
-use crate::i18n::{t, t_fmt, t_fmt2};
+use crate::i18n::{t, t_count, t_fmt, t_fmt2};
 use crate::model::ExplorerPreview;
 
 /// 패널 본문 상태.
@@ -295,7 +295,11 @@ fn item_header(pane: &PreviewPane, e: &DirEntryInfo) -> (String, String) {
 fn several_header(several: Several) -> (String, String) {
     let files = several.count.saturating_sub(several.folders);
     (
-        t_fmt("explorer.properties.items", &several.count.to_string()),
+        t_count(
+            "explorer.properties.items",
+            several.count as u64,
+            &[&several.count.to_string()],
+        ),
         crate::adapters::ui::popup::explorer_properties::kinds_text(files, several.folders),
     )
 }

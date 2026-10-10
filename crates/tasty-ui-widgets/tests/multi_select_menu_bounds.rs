@@ -11,6 +11,7 @@ const WIDTH: f32 = 160.0;
 const LABELS: MultiSelectLabels<'static> = MultiSelectLabels {
     none: "No status",
     some: "{} selected",
+    some_one: "{} selected",
     all: "All statuses",
 };
 

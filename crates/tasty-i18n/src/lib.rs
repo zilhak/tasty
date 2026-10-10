@@ -19,7 +19,7 @@ pub mod font;
 pub mod plugin_catalog;
 pub mod plural;
 
-pub use plural::t_count;
+pub use plural::{t_count, t_count_template};
 
 use std::collections::HashMap;
 use std::fmt;

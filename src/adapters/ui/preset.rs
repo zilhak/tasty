@@ -30,7 +30,7 @@ use toolbar::{apply_toolbar_actions, draw_toolbar_editing, draw_toolbar_view};
 use crate::adapters::ui::icons;
 use crate::adapters::ui::input::shortcuts::any_binding_pressed_egui;
 use crate::adapters::ui::{ToastKind, ToastManager, ToastScope};
-use crate::i18n::{t, t_fmt};
+use crate::i18n::{t, t_count};
 
 use demo_cache::{
     DemoCache, drew_editing_last, load_demo, preset_key, refresh_view_cache, reload_after_conflict,
@@ -280,12 +280,8 @@ fn count_surfaces(layout: &PresetSurfaceLayout) -> usize {
 }
 
 /// 단/복수 i18n 라벨. `n==1` → `one_key`, 그 외 → `many_key`({} 치환).
-fn count_label(n: usize, one_key: &str, many_key: &str) -> String {
-    if n == 1 {
-        t(one_key).to_string()
-    } else {
-        t_fmt(many_key, &n.to_string())
-    }
+fn count_label(n: usize, key: &str) -> String {
+    t_count(key, n as u64, &[&n.to_string()])
 }
 
 /// 편집 가능한 **실제** subtitle 필드값(Workspace 만 보유). Tab/Pane 은 구조 파생
@@ -313,38 +309,18 @@ fn subtitle(store: &PresetDrafts, kind: PresetKind, name: &str) -> String {
                 if !p.subtitle.is_empty() {
                     return p.subtitle.clone();
                 }
-                let panes = count_label(
-                    count_panes(&p.layout),
-                    "preset.count.pane_one",
-                    "preset.count.pane_many",
-                );
-                let tabs = count_label(
-                    count_ws_tabs(&p.layout),
-                    "preset.count.tab_one",
-                    "preset.count.tab_many",
-                );
+                let panes = count_label(count_panes(&p.layout), "preset.count.pane");
+                let tabs = count_label(count_ws_tabs(&p.layout), "preset.count.tab");
                 format!("{panes} · {tabs}")
             })
             .unwrap_or_default(),
         PresetKind::Tab => store
             .get_tab(name)
-            .map(|p| {
-                count_label(
-                    count_surfaces(&p.tab.layout),
-                    "preset.count.surface_one",
-                    "preset.count.surface_many",
-                )
-            })
+            .map(|p| count_label(count_surfaces(&p.tab.layout), "preset.count.surface"))
             .unwrap_or_default(),
         PresetKind::Pane => store
             .get_pane(name)
-            .map(|p| {
-                count_label(
-                    p.pane.tabs.len(),
-                    "preset.count.tab_one",
-                    "preset.count.tab_many",
-                )
-            })
+            .map(|p| count_label(p.pane.tabs.len(), "preset.count.tab"))
             .unwrap_or_default(),
     }
 }
@@ -588,7 +564,11 @@ fn draw_preset_list(
         lui.add_space(theme.spacing_sm.value());
         lui.horizontal(|ui| {
             ui.add_space(LIST_INSET.value());
-            let count = t_fmt("preset.header.count", &rows.len().to_string());
+            let count = t_count(
+                "preset.header.count",
+                rows.len() as u64,
+                &[&rows.len().to_string()],
+            );
             ui.label(
                 egui::RichText::new(count.to_uppercase())
                     .monospace()

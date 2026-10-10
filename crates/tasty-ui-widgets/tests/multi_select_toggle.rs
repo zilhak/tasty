@@ -16,6 +16,7 @@ const WIDTH: f32 = 180.0;
 const LABELS: MultiSelectLabels<'static> = MultiSelectLabels {
     none: "No status",
     some: "{} selected",
+    some_one: "{} selected",
     all: "All statuses",
 };
 
@@ -338,6 +339,7 @@ fn summary_replaces_only_the_first_placeholder() {
     let labels = MultiSelectLabels {
         none: "none",
         some: "{} of {}",
+        some_one: "{} of {}",
         all: "all",
     };
     assert_eq!(multi_select_summary(&labels, &[true, false]), "1 of {}");

@@ -145,8 +145,8 @@ micro 대문자로 쓰고, 열 위치는 행과 같은 계산을 써서 값 바�
   순서로 줄인다 — 조상 한 칸씩 `…` 로 → 부모 축소 → 현재 폴더 축소 → `root › … › current` → `… › current`. 들어가면 접지 않는다. 성분 하나는 180px 에서 말줄임한다.
 - **`…` 메뉴**: `…` 를 누르면 숨긴 조상들이 메뉴로 나열되고, 고르면 그 폴더로 이동한다. 행은 다른 메뉴처럼
   간격 없이 붙인다(행 높이 `menu-item-height` 28). hover 하면
-  **누르면 무엇이 되는지**를 말한다 — `Show 3 hidden folders`(`filepicker.hidden_folders_many`),
-  하나면 단수형(`filepicker.hidden_folders_one`). 상태 서술("N folders hidden")이 아닌 이유는
+  **누르면 무엇이 되는지**를 말한다 — `Show 3 hidden folders`(`filepicker.hidden_folders`),
+  하나면 en 단수 변형(`filepicker.hidden_folders_one`). 상태 서술("N folders hidden")이 아닌 이유는
   그 툴팁이 클릭 대상 위에 뜨기 때문이다. 단수형은 영어만 갈린다 — ko·ja 는 굴절이 없다.
 - **생략은 렌더 규칙이다**: view 가 받는 `FilePickerProps.crumbs` 는 항상 root 부터 현재 폴더까지
   전체이고, 접는 판단은 그리는 순간에만 한다 — `…` 메뉴가 숨긴 조상을 열 수 있는 이유다.

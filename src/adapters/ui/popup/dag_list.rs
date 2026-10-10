@@ -24,7 +24,7 @@ use crate::adapters::ui::surface::dag_graph::{
     node::status_colors,
     view::{DagGraphView, POLL_INTERVAL},
 };
-use crate::i18n::{t, t_fmt, t_fmt2};
+use crate::i18n::{t, t_count, t_count_template, t_fmt2};
 use crate::state::MainViewState;
 
 pub const DAG_LIST_POPUP_ID: &str = "dag_list";
@@ -381,6 +381,7 @@ fn draw_list(
                 let summary = MultiSelectLabels {
                     none: t("dag_list.status_any"),
                     some: t("dag_list.status_some"),
+                    some_one: t_count_template("dag_list.status_some", 1),
                     all: t("dag_list.status_all"),
                 };
                 multi_select(
@@ -498,10 +499,10 @@ fn draw_list(
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.label(
-                        egui::RichText::new(t_fmt2(
+                        egui::RichText::new(t_count(
                             "dag_list.count",
-                            &visible.len().to_string(),
-                            &total.to_string(),
+                            total as u64,
+                            &[&visible.len().to_string(), &total.to_string()],
                         ))
                         .monospace()
                         .size(theme.font_size_caption.value())
@@ -547,7 +548,11 @@ fn draw_row_trailing(ui: &mut egui::Ui, theme: &Theme, row: &DagRow) {
             ui.label(
                 egui::RichText::new(format!(
                     "! {}",
-                    t_fmt("dag_list.awaiting", &row.awaiting.to_string())
+                    t_count(
+                        "dag_list.awaiting",
+                        row.awaiting as u64,
+                        &[&row.awaiting.to_string()]
+                    )
                 ))
                 .monospace()
                 .size(theme.font_size_caption.value())

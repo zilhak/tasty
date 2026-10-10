@@ -276,12 +276,18 @@ impl ExplorerView {
             Some(find) if find.search.is_some() => {
                 t_fmt("explorer.find.found", &self.shown_count().to_string())
             }
-            Some(find) if !find.query.is_empty() => t_fmt2(
+            Some(find) if !find.query.is_empty() => t_count(
                 "explorer.find.status",
-                &self.shown_count().to_string(),
-                &self.entries.len().to_string(),
+                self.entries.len() as u64,
+                &[
+                    &self.shown_count().to_string(),
+                    &self.entries.len().to_string(),
+                ],
             ),
-            _ => t_fmt("explorer.status.items", &self.entries.len().to_string()),
+            _ => {
+                let n = self.entries.len();
+                t_count("explorer.status.items", n as u64, &[&n.to_string()])
+            }
         }
     }
 

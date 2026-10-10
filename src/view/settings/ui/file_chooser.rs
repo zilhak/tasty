@@ -16,7 +16,7 @@ use crate::adapters::ui::popup::file_picker::{
     POPUP_HEIGHT, POPUP_WIDTH, crumb_label, draw_file_picker_view, matches_filters, path_ancestors,
 };
 use crate::core::fs_list::DirEntryInfo;
-use crate::i18n::t;
+use crate::i18n::{t, t_count_template};
 
 /// 설정 창 `PopupManager` 에 등록되는 id.
 pub(crate) const FILE_CHOOSER_POPUP_ID: &str = "settings_file_chooser";
@@ -427,8 +427,8 @@ fn draw_view(
         overwrite_warning: t("filepicker.save.overwrite_warning"),
         folder_not_save_target: t("filepicker.folder_not_save_target"),
         folder_open_enters: t("filepicker.folder_open_enters"),
-        hidden_folders_one: t("filepicker.hidden_folders_one"),
-        hidden_folders_many: t("filepicker.hidden_folders_many"),
+        hidden_folders_one: t_count_template("filepicker.hidden_folders", 1),
+        hidden_folders_many: t("filepicker.hidden_folders"),
         empty_label: t("filepicker.empty"),
         loading_label: t("filepicker.loading"),
         loading_body_local: t("filepicker.loading_body_local"),

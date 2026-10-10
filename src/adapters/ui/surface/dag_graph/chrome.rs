@@ -10,7 +10,7 @@ use tasty_ui_widgets::{ControlSize, IconButton, IconButtonVariant, hspace, margi
 use super::model::{DagData, DagGraphData, RunnerBadgeData};
 use super::view::{DagGraphView, Lod, ZOOM_MAX, ZOOM_MIN};
 use crate::adapters::ui::icons;
-use crate::i18n::{t, t_fmt, t_fmt2};
+use crate::i18n::{t, t_count, t_fmt, t_fmt2};
 
 /// 헤더·크롬에서 나온 조작.
 pub enum ChromeAction {
@@ -174,10 +174,10 @@ fn dag_picker(ui: &mut egui::Ui, theme: &Theme, data: &DagData) -> Option<String
                 ui.spacing_mut().item_spacing.y = 0.0;
                 for entry in &data.dags {
                     let selected = data.current.as_ref().is_some_and(|g| g.id == entry.id);
-                    let label = t_fmt2(
+                    let label = t_count(
                         "dag.header.entry",
-                        &entry.name,
-                        &entry.task_count.to_string(),
+                        entry.task_count as u64,
+                        &[&entry.name, &entry.task_count.to_string()],
                     );
                     let text = format!("{} {}", entry.rollup.glyph(), label);
                     if tasty_ui_widgets::menu_option(ui, theme, &text, selected).clicked() {
@@ -552,9 +552,13 @@ pub fn draw_cycle_banner(ui: &mut egui::Ui, theme: &Theme, cycle: &[String]) {
                 ui.add(icons::ALERT_TRIANGLE.image(theme.icon_glyph_size_sm.value(), fg));
                 hspace(ui, theme.spacing_sm);
                 ui.label(
-                    egui::RichText::new(t_fmt("dag.cycle.lead", &cycle.len().to_string()))
-                        .size(theme.font_size_caption.value())
-                        .color(fg),
+                    egui::RichText::new(t_count(
+                        "dag.cycle.lead",
+                        cycle.len() as u64,
+                        &[&cycle.len().to_string()],
+                    ))
+                    .size(theme.font_size_caption.value())
+                    .color(fg),
                 );
                 // 첫 ID를 끝에 다시 붙여 순환 관계를 표시한다.
                 let path = match cycle.first() {

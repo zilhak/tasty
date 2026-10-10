@@ -194,8 +194,7 @@ fn trust_box(ui: &mut egui::Ui, theme: &Theme, kind: PluginTrustKind, fingerprin
 fn grants(perms: usize) -> String {
     match perms {
         0 => "No permissions".to_owned(),
-        1 => "Grants 1 permission".to_owned(),
-        n => format!("Grants {n} permissions"),
+        n => crate::i18n::t_count("plugins.add_grants", n as u64, &[&n.to_string()]),
     }
 }
 

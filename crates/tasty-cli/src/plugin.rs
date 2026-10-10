@@ -224,9 +224,10 @@ pub fn run_plugin_doctor(plugin_id: &str) -> Result<()> {
         outln!()?;
         outln!(
             "{}",
-            tasty_i18n::t_fmt(
+            tasty_i18n::t_count(
                 "cli.plugin.doctor_unsupported_summary",
-                &total_unsupported.to_string()
+                total_unsupported as u64,
+                &[&total_unsupported.to_string()]
             )
         )?;
     }

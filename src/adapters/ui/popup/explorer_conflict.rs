@@ -8,7 +8,7 @@ use tasty_ui_widgets::{ConflictPick, ConflictProps, conflict_card};
 use super::PopupAction;
 use crate::app::explorer_files::job::{Answer, Ask, Choice, EntryFacts};
 use crate::core::fs_list::human_size;
-use crate::i18n::{t, t_fmt};
+use crate::i18n::{t, t_count, t_fmt};
 use crate::state::MainViewState;
 use crate::theme;
 
@@ -59,7 +59,8 @@ fn facts_text(facts: &EntryFacts) -> String {
         let items = facts
             .items
             .map_or_else(|| "—".to_owned(), |n| n.to_string());
-        return t_fmt("explorer.conflict.folder_items", &items);
+        let n = facts.items.unwrap_or(0) as u64;
+        return t_count("explorer.conflict.folder_items", n, &[&items]);
     }
     let size = facts.size.map(|s| human_size(false, s));
     match (size, when(facts.modified)) {
@@ -102,7 +103,11 @@ fn texts(ask: &Ask) -> Texts {
         ),
         existing: facts_text(&ask.existing),
         incoming: facts_text(&ask.incoming),
-        apply_all: t_fmt("explorer.conflict.apply_all", &ask.remaining.to_string()),
+        apply_all: t_count(
+            "explorer.conflict.apply_all",
+            ask.remaining as u64,
+            &[&ask.remaining.to_string()],
+        ),
     }
 }
 

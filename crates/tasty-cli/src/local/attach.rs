@@ -179,7 +179,7 @@ pub(crate) fn run_attach_on_port(
                 send = None;
                 crate::out::errln!(
                     "{}",
-                    tasty_i18n::t_fmt("cli.attach.resyncing", &frames.to_string())
+                    tasty_i18n::t_count("cli.attach.resyncing", frames, &[&frames.to_string()])
                 );
             }
         }
@@ -363,7 +363,7 @@ pub(crate) fn run_attach_workspace_on_port(
                 send = None;
                 crate::out::errln!(
                     "{}",
-                    tasty_i18n::t_fmt("cli.attach.resyncing", &frames.to_string())
+                    tasty_i18n::t_count("cli.attach.resyncing", frames, &[&frames.to_string()])
                 );
             }
         }
@@ -813,7 +813,7 @@ fn report_unrecovered_loss(lost: u64) {
     if lost > 0 {
         crate::out::errln!(
             "{}",
-            tasty_i18n::t_fmt("cli.attach.desync_unrecovered", &lost.to_string())
+            tasty_i18n::t_count("cli.attach.desync_unrecovered", lost, &[&lost.to_string()])
         );
     }
 }

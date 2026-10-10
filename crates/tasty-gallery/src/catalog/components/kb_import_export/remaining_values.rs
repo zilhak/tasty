@@ -119,7 +119,11 @@ fn one_notice(ui: &mut egui::Ui, theme: &Theme) {
         theme.accent_warning().to_egui(),
         icons::ALERT_TRIANGLE,
         "Read with warnings",
-        Some("1 notice"),
+        Some(&crate::i18n::t_count(
+            "settings.keybindings.ie_notices_count",
+            1,
+            &["1"],
+        )),
         |ui| notice_line(ui, theme, ONE_NOTICE),
         &[],
     );

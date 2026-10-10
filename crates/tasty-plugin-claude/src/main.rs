@@ -79,6 +79,9 @@ impl ClaudePlugin {
             message: translator.t("claude.auto_resume.message").to_string(),
             limit_title: translator.t("claude.auto_resume.limit_title").to_string(),
             limit_body: translator.t("claude.auto_resume.limit_body").to_string(),
+            limit_body_one: translator
+                .t_count_template("claude.auto_resume.limit_body", 1)
+                .to_string(),
         };
         Self {
             state: Arc::new(Mutex::new(ClaudeState::new())),

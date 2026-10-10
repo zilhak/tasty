@@ -21,6 +21,7 @@ pretty_print = "Pretty print"
 html_meta_line = "{chars} chars · {lines} line"
 html_meta_lines = "{chars} chars · {lines} lines"
 other_more_lines = "+{n} more lines"
+other_more_lines_one = "+{n} more line"
 other_unrecognized_formats = "{n} unrecognized formats"
 
 [clipboard_viewer.type]

@@ -255,13 +255,12 @@ fn hidden_crumbs(
     if resp.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
-    let resp = resp.on_hover_text(if range.len() == 1 {
-        props.hidden_folders_one.to_owned()
+    let template = if range.len() == 1 {
+        props.hidden_folders_one
     } else {
-        props
-            .hidden_folders_many
-            .replace("{}", &range.len().to_string())
-    });
+        props.hidden_folders_many
+    };
+    let resp = resp.on_hover_text(template.replace("{}", &range.len().to_string()));
     let popup_id = ui.make_persistent_id("file_picker_hidden_crumbs");
     if resp.clicked() {
         ui.memory_mut(|m| m.toggle_popup(popup_id));

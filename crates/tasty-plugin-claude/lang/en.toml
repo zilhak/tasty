@@ -58,6 +58,7 @@ unknown_event = "unknown claude hook event: '{}'"
 message = "The previous turn stopped on a temporary API error. Please continue where you left off."
 limit_title = "Claude auto-resume stopped"
 limit_body = "surface {}: stopped resuming after {} consecutive API errors ({}). Check the session and continue it yourself."
+limit_body_one = "surface {}: stopped resuming after {} consecutive API error ({}). Check the session and continue it yourself."
 
 [claude.notify]
 done_message = "surface {}: state changed (via {})"

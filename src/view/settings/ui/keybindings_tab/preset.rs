@@ -10,7 +10,7 @@ use tasty_ui_widgets::{
     TagVariant, tag,
 };
 
-use crate::i18n::{t, t_fmt, t_fmt2};
+use crate::i18n::{t, t_count, t_fmt};
 use crate::settings::{GeneralSettings, KeybindingSettings};
 
 pub(super) fn draw_preset_subtab(
@@ -121,10 +121,10 @@ pub(super) fn draw_preset_subtab(
                         let note = if is_active_sel {
                             t("settings.keybindings.preset_note_active").to_string()
                         } else {
-                            t_fmt2(
+                            t_count(
                                 "settings.keybindings.preset_note_diff",
-                                &changed.to_string(),
-                                &total.to_string(),
+                                total as u64,
+                                &[&changed.to_string(), &total.to_string()],
                             )
                         };
                         intro_note(ui, th, &note);

@@ -287,11 +287,11 @@ fn crumbs(ui: &mut egui::Ui, theme: &Theme, kind: PathKind) -> Option<HiddenCrum
 
 /// `…` 의 툴팁 — 디자인 `FpCrumbs` title. 하나면 단수형이다.
 fn hidden_tooltip(count: usize) -> String {
-    if count == 1 {
-        crate::i18n::t("filepicker.hidden_folders_one").to_owned()
-    } else {
-        format!("Show {count} hidden folders")
-    }
+    crate::i18n::t_count(
+        "filepicker.hidden_folders",
+        count as u64,
+        &[&count.to_string()],
+    )
 }
 
 /// `…` 메뉴 틀의 안쪽 여백과 테두리를 합친 좌우 폭 — 본체 `menu_chrome` 과 같다.

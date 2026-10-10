@@ -135,7 +135,10 @@ fn an_undo_result_lists_what_could_not_be_put_back() {
     c.undo_of = Some(OpKind::Move);
     let text = card_text(&c);
     assert_eq!(text.kind, ToastKind::Warning);
-    assert_eq!(text.title, t_fmt("explorer.result.undo_partial_move", "1"));
+    assert_eq!(
+        text.title,
+        t_count("explorer.result.undo_partial_move", 1, &["1"])
+    );
     assert_eq!(text.lines[0].1, t("explorer.result.newer_there"));
     assert!(!text.undo);
     assert!(text.retry.is_empty());
@@ -170,7 +173,7 @@ fn a_move_that_left_originals_stays_without_undo_and_retries_the_delete() {
     assert_eq!(text.kind, ToastKind::Warning);
     assert_eq!(
         text.title,
-        t_args("explorer.result.source_left_move", &["2", "2", "1"])
+        t_count("explorer.result.source_left_move", 1, &["2", "2", "1"])
     );
     assert!(!text.undo);
     assert!(text.retry.is_empty(), "the move itself is not sent again");
@@ -196,7 +199,10 @@ fn an_undo_result_names_a_copy_kept_because_it_changed() {
     let mut c = card(r);
     c.undo_of = Some(OpKind::Copy);
     let text = card_text(&c);
-    assert_eq!(text.title, t_fmt("explorer.result.undo_partial_copy", "1"));
+    assert_eq!(
+        text.title,
+        t_count("explorer.result.undo_partial_copy", 1, &["1"])
+    );
     assert_eq!(text.lines[0].1, t("explorer.result.changed_kept"));
 }
 
@@ -225,7 +231,7 @@ fn a_folder_original_with_items_kept_stays_a_source_left_card() {
     assert_eq!(text.kind, ToastKind::Warning);
     assert_eq!(
         text.title,
-        t_args("explorer.result.source_left_move", &["1", "1", "1"])
+        t_count("explorer.result.source_left_move", 1, &["1", "1", "1"])
     );
     assert_eq!(
         text.lines[0].1,
@@ -251,7 +257,7 @@ fn a_cancelled_delete_retry_returns_to_the_source_left_card() {
     assert_eq!(text.kind, ToastKind::Warning);
     assert_eq!(
         text.title,
-        t_args("explorer.result.source_left_move", &["3", "3", "2"])
+        t_count("explorer.result.source_left_move", 2, &["3", "3", "2"])
     );
     assert_eq!(text.lines[0].1, t("explorer.result.remove_cancelled"));
     assert_eq!(labels(&text)[0], t_fmt("explorer.result.retry", "2"));

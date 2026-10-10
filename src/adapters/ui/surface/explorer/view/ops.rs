@@ -17,7 +17,7 @@ use crate::adapters::ui::icons;
 use crate::app::explorer_files::job::leftover::Leftover;
 use crate::app::explorer_files::job::{OpKind, Reason, Report, Shared, UNKNOWN_BYTES, UndoStep};
 use crate::core::fs_list::human_size;
-use crate::i18n::{t, t_args, t_fmt, t_fmt2};
+use crate::i18n::{t, t_args, t_count, t_fmt, t_fmt2};
 
 /// 결과 카드에 경로를 펼쳐 보이는 최대 수. 나머지는 "and n more" 로 줄인다.
 const MAX_RESULT_LINES: usize = 3;
@@ -215,7 +215,10 @@ fn progress_line(
     let bytes_known = snap.bytes_total != UNKNOWN_BYTES && snap.bytes_total > 0;
     let fraction = bytes_known.then(|| snap.bytes_done as f32 / snap.bytes_total as f32);
     let text = match &ask {
-        Some(ask) => t_fmt("explorer.op.waiting", &(ask.remaining + 1).to_string()),
+        Some(ask) => {
+            let n = ask.remaining + 1;
+            t_count("explorer.op.waiting", n as u64, &[&n.to_string()])
+        }
         None => progress_text(running.kind, &snap),
     };
     let bytes = bytes_known.then(|| {
@@ -276,12 +279,14 @@ fn progress_text(kind: OpKind, snap: &crate::app::explorer_files::job::Snapshot)
 
 fn queue_title(kind: OpKind, count: usize, dest: Option<&Path>) -> String {
     let n = count.to_string();
-    match kind {
-        OpKind::Copy => t_fmt2("explorer.op.queue_copy", &n, &name_of(dest)),
-        OpKind::Move => t_fmt2("explorer.op.queue_move", &n, &name_of(dest)),
-        OpKind::Trash => t_fmt("explorer.op.queue_trash", &n),
-        OpKind::Undo => t_fmt("explorer.op.queue_undo", &n),
-    }
+    let dest = name_of(dest);
+    let (key, args): (_, &[&str]) = match kind {
+        OpKind::Copy => ("explorer.op.queue_copy", &[&n, &dest]),
+        OpKind::Move => ("explorer.op.queue_move", &[&n, &dest]),
+        OpKind::Trash => ("explorer.op.queue_trash", &[&n]),
+        OpKind::Undo => ("explorer.op.queue_undo", &[&n]),
+    };
+    t_count(key, count as u64, args)
 }
 
 fn queue(
@@ -411,7 +416,11 @@ fn reason_text(reason: &Reason) -> String {
         Reason::Replaced => t("explorer.result.replaced").to_owned(),
         Reason::ChangedSince => t("explorer.result.changed_kept").to_owned(),
         Reason::CopyMissing => t("explorer.result.copy_missing").to_owned(),
-        Reason::KeptNotInCopy(n) => t_fmt("explorer.result.kept_not_in_copy", &n.to_string()),
+        Reason::KeptNotInCopy(n) => t_count(
+            "explorer.result.kept_not_in_copy",
+            *n as u64,
+            &[&n.to_string()],
+        ),
         Reason::RemoveCancelled => t("explorer.result.remove_cancelled").to_owned(),
         Reason::SameAsCopy => t("explorer.result.same_as_copy").to_owned(),
     }
@@ -474,7 +483,10 @@ fn card_title(report: &Report) -> (ToastKind, String) {
             "explorer.result.failed_move",
             "explorer.result.failed_trash",
         );
-        return (ToastKind::Error, t_fmt(key, &hard.to_string()));
+        return (
+            ToastKind::Error,
+            t_count(key, hard as u64, &[&hard.to_string()]),
+        );
     }
     if hard > 0 {
         let key = kind_key(
@@ -500,17 +512,22 @@ fn card_title(report: &Report) -> (ToastKind, String) {
     }
     if !report.failed.is_empty() {
         // 남은 실패는 원본을 다 지우지 못한 이동뿐이다. 사본은 모두 있다.
-        let left = report.failed.len().to_string();
+        let left = report.failed.len();
         return (
             ToastKind::Warning,
-            t_args("explorer.result.source_left_move", &[&done, &total, &left]),
+            t_count(
+                "explorer.result.source_left_move",
+                left as u64,
+                &[&done, &total, &left.to_string()],
+            ),
         );
     }
     let dest = name_of(report.dest.as_deref());
+    let n = report.done as u64;
     let title = match k {
-        OpKind::Copy => t_fmt2("explorer.result.copied", &done, &dest),
-        OpKind::Trash => t_fmt("explorer.result.trashed", &done),
-        OpKind::Move | OpKind::Undo => t_fmt2("explorer.result.moved", &done, &dest),
+        OpKind::Copy => t_count("explorer.result.copied", n, &[&done, &dest]),
+        OpKind::Trash => t_count("explorer.result.trashed", n, &[&done]),
+        OpKind::Move | OpKind::Undo => t_count("explorer.result.moved", n, &[&done, &dest]),
     };
     (ToastKind::Success, title)
 }
@@ -538,7 +555,10 @@ fn undo_title(report: &Report, undo_of: OpKind) -> (ToastKind, String) {
     } else {
         "explorer.result.undo_partial_copy"
     };
-    (ToastKind::Warning, t_fmt(key, &failed.to_string()))
+    (
+        ToastKind::Warning,
+        t_count(key, failed as u64, &[&failed.to_string()]),
+    )
 }
 
 fn card_text(card: &ResultCard) -> CardText {

@@ -1,4 +1,4 @@
-use crate::i18n::{t, t_fmt};
+use crate::i18n::{t, t_count};
 use crate::terminal_link;
 use crate::theme;
 
@@ -200,8 +200,7 @@ fn draw_add_footer(ui: &mut egui::Ui, preview: Option<&AddPreview>) -> PluginAdd
 fn grants_label(count: usize) -> String {
     match count {
         0 => t("plugins.add_grants_none").to_owned(),
-        1 => t("plugins.add_grants_one").to_owned(),
-        n => t_fmt("plugins.add_grants_many", &n.to_string()),
+        n => t_count("plugins.add_grants", n as u64, &[&n.to_string()]),
     }
 }
 

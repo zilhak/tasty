@@ -528,7 +528,7 @@ fn truncate_lines(text: &str, max_lines: usize) -> (String, usize) {
 
 /// 생략한 미리보기 줄 수 안내.
 fn other_more_lines_text(tr: &Translator, n: usize) -> String {
-    tr.t("clipboard_viewer.popup.other_more_lines")
+    tr.t_count_template("clipboard_viewer.popup.other_more_lines", n as u64)
         .replace("{n}", &n.to_string())
 }
 

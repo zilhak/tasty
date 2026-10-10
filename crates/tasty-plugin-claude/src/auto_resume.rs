@@ -378,6 +378,8 @@ pub(crate) struct Texts {
     pub limit_title: String,
     /// `{}` 세 개: surface id, 시도 수, 에러 종류.
     pub limit_body: String,
+    /// 시도 수가 1일 때의 `limit_body`(단수 변형이 없는 언어는 같은 문구).
+    pub limit_body_one: String,
 }
 
 pub(crate) fn run_loop<H: HostCall>(table: Arc<Mutex<ResumeTable>>, host: H, texts: Texts) {
@@ -518,8 +520,13 @@ fn notify_limit<H: HostCall>(host: &H, texts: &Texts, surface_id: u32, attempts:
     tracing::info!(
         "claude auto-resume s{surface_id}: stopped after {attempts} consecutive API errors ({error})"
     );
+    let template = if attempts == 1 {
+        &texts.limit_body_one
+    } else {
+        &texts.limit_body
+    };
     let body = tasty_plugin_sdk::i18n::fill_args(
-        &texts.limit_body,
+        template,
         &[&surface_id.to_string(), &attempts.to_string(), error],
     );
     if let Err(e) = host.call(
@@ -1024,6 +1031,7 @@ mod tests {
             message: "resume please".into(),
             limit_title: "limit".into(),
             limit_body: "{} {} {}".into(),
+            limit_body_one: "{} {} {}".into(),
         }
     }
 

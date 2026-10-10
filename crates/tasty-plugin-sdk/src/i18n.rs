@@ -87,12 +87,15 @@ impl Translator {
         tasty_i18n::fill_args(self.t(key), args)
     }
 
+    /// 수 `n` 에 맞는 템플릿(`<key>` 또는 en 단수 변형 `<key>_one`)을 채우지 않고 돌려준다.
+    pub fn t_count_template<'a>(&'a self, key: &'a str, n: u64) -> &'a str {
+        tasty_i18n::plural::pick(n, key, |k| self.strings.get(k).map(String::as_str))
+    }
+
     /// 수 `n` 에 맞는 문자열(`<key>` 또는 en 단수 변형 `<key>_one`)을 골라 `args` 로 채운다.
     /// 호스트 [`tasty_i18n::t_count`] 와 같은 규칙이다.
     pub fn t_count(&self, key: &str, n: u64, args: &[&str]) -> String {
-        let template =
-            tasty_i18n::plural::pick(n, key, |k| self.strings.get(k).map(String::as_str));
-        tasty_i18n::fill_args(template, args)
+        tasty_i18n::fill_args(self.t_count_template(key, n), args)
     }
 
     /// 키 lookup + `{0}` 토큰 치환 (multi-arg 패턴이 필요할 때).

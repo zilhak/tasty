@@ -186,7 +186,11 @@ fn bundle_notices(ui: &mut egui::Ui, theme: &Theme, st: &mut State) {
         theme.accent_warning().to_egui(),
         icons::ALERT_TRIANGLE,
         "Read with warnings",
-        Some(&format!("{} notices", NOTICE_LINES.len())),
+        Some(&crate::i18n::t_count(
+            "settings.keybindings.ie_notices_count",
+            NOTICE_LINES.len() as u64,
+            &[&NOTICE_LINES.len().to_string()],
+        )),
         |ui| {
             for line in &NOTICE_LINES[..shown] {
                 notice_line(ui, theme, line);

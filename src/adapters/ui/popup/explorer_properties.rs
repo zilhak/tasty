@@ -535,7 +535,8 @@ fn content(props: &ExplorerProperties) -> (Icon, String, Vec<Field>, Option<&'st
         },
         mono("explorer.properties.location", location, true),
     ];
-    let title = t_fmt("explorer.properties.items", &facts.items.len().to_string());
+    let n = facts.items.len();
+    let title = t_count("explorer.properties.items", n as u64, &[&n.to_string()]);
     (icons::LAYERS, title, fields, None)
 }
 
@@ -567,7 +568,11 @@ fn single_content(
                     counting: true,
                     ..field(
                         "explorer.properties.size",
-                        t_fmt2("explorer.properties.counting", &items, &size),
+                        t_count(
+                            "explorer.properties.counting",
+                            counted_items,
+                            &[&items, &size],
+                        ),
                     )
                 }
             } else {
@@ -666,7 +671,8 @@ fn remote_content(
         field("explorer.properties.total_size", human_size(false, bytes)),
         mono("explorer.properties.location", location, true),
     ];
-    let title = t_fmt("explorer.properties.items", &entries.len().to_string());
+    let n = entries.len();
+    let title = t_count("explorer.properties.items", n as u64, &[&n.to_string()]);
     (icons::LAYERS, title, fields, note)
 }
 

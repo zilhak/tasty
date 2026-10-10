@@ -68,6 +68,7 @@ const MANY: [&str; 20] = [
 const LABELS: MultiSelectLabels<'static> = MultiSelectLabels {
     none: "No status",
     some: "{} selected",
+    some_one: "{} selected",
     all: "All",
 };
 
@@ -746,6 +747,7 @@ fn live_regressions(ui: &mut egui::Ui, theme: &Theme, st: &mut MsState) {
             let labels = MultiSelectLabels {
                 none: "None",
                 some: "{} pipelines selected — very long summary",
+                some_one: "{} pipelines selected — very long summary",
                 all: "All",
             };
             multi_select(

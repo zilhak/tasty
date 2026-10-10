@@ -52,11 +52,21 @@ impl crate::Translations {
         ns.values().find_map(|map| map.get(key).copied())
     }
 
+    /// 수 `n` 에 맞는 템플릿(`<key>` 또는 `<key>_one`). 키가 없으면 키 자체다.
+    pub fn get_count_template<'a>(&self, key: &'a str, n: u64) -> &'a str {
+        pick(n, key, |k| self.lookup(k))
+    }
+
     /// 수 `n` 에 맞는 문자열(`<key>` 또는 `<key>_one`)을 골라 `args` 를
     /// [`fill_args`](crate::fill_args) 로 채운다.
     pub fn get_count(&self, key: &str, n: u64, args: &[&str]) -> String {
         crate::fill_args(pick(n, key, |k| self.lookup(k)), args)
     }
+}
+
+/// 수 `n` 에 맞는 템플릿을 채우지 않고 돌려준다. 수를 나중에 넣는 위젯에 템플릿을 넘길 때 쓴다.
+pub fn t_count_template(key: &str, n: u64) -> &str {
+    crate::store(key).get_count_template(key, n)
 }
 
 /// 수 `n` 에 맞는 문자열을 골라 `args` 로 채운다. 수 자체도 보여야 하면 `args` 에 넣는다.

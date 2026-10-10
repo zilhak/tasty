@@ -80,7 +80,6 @@ src/catalog/components/dag/window.rs	Filter DAGs…	dag_list.search_placeholder
 src/catalog/components/dag/window.rs	Task DAGs	dag_list.title,dag_list.tools_menu_item
 src/catalog/components/dag/window.rs	This workspace only	dag_list.this_workspace_only
 src/catalog/components/dag/window.rs	{} of {} DAGs	dag_list.count
-src/catalog/components/dag/window.rs	{} statuses	dag_list.status_some
 src/catalog/components/drop_overlay.rs	Drop to open	file_drop.hover_label
 src/catalog/components/empty_surface.rs	Surface Type	convert_popup.title
 src/catalog/components/explorer_context_menu.rs	Add to favorites	explorer.popup.add_favorite.title
@@ -211,8 +210,6 @@ src/catalog/components/kb_import_export/open_values.rs	Export	settings.keybindin
 src/catalog/components/kb_import_export/open_values.rs	Export…	settings.keybindings.ie_export_button
 src/catalog/components/kb_import_export/open_values.rs	Read with warnings	settings.keybindings.ie_notices_title
 src/catalog/components/kb_import_export/open_values.rs	Try again	remote_attach.try_again,settings.keybindings.ie_export_retry
-src/catalog/components/kb_import_export/open_values.rs	{} notices	settings.keybindings.ie_notices_count_many
-src/catalog/components/kb_import_export/remaining_values.rs	1 notice	settings.keybindings.ie_notices_count_one
 src/catalog/components/kb_import_export/remaining_values.rs	Read with warnings	settings.keybindings.ie_notices_title
 src/catalog/components/kb_import_export/remaining_values.rs	Try again	remote_attach.try_again,settings.keybindings.ie_export_retry
 src/catalog/components/markdown_open.rs	Cancel	button.cancel,explorer.op.cancel,image_viewer.cancel,preset.popup.cancel_button,quit_modal.cancel_button,remote_attach.cancel,remote_tool.cancel,transfer.progress.cancel
@@ -257,7 +254,6 @@ src/catalog/components/plugins_window/add.rs	Add plugin	plugins.add_button,plugi
 src/catalog/components/plugins_window/add.rs	Already installed	plugins.add_blocked_installed
 src/catalog/components/plugins_window/add.rs	Cancel	button.cancel,explorer.op.cancel,image_viewer.cancel,preset.popup.cancel_button,quit_modal.cancel_button,remote_attach.cancel,remote_tool.cancel,transfer.progress.cancel
 src/catalog/components/plugins_window/add.rs	Find folder…	plugins.add_browse
-src/catalog/components/plugins_window/add.rs	Grants 1 permission	plugins.add_grants_one
 src/catalog/components/plugins_window/add.rs	Homepage	plugins.homepage
 src/catalog/components/plugins_window/add.rs	No permissions	plugins.add_grants_none
 src/catalog/components/plugins_window/add.rs	None	plugins.add_none,settings.keybindings.hint_none,settings.keybindings.plugins.mode_none

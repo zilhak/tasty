@@ -135,7 +135,8 @@ fn list_view(ui: &mut egui::Ui, theme: &Theme, body: egui::Rect, entries: &[Entr
             let labels: Vec<&str> = super::ROLLUP_ORDER.iter().map(|s| s.label()).collect();
             let summary = MultiSelectLabels {
                 none: "Any status",
-                some: "{} statuses",
+                some: crate::i18n::t("dag_list.status_some"),
+                some_one: crate::i18n::t_count_template("dag_list.status_some", 1),
                 all: "All statuses",
             };
             multi_select(

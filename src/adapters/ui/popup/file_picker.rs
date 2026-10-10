@@ -25,7 +25,7 @@ use crate::adapters::ui::icons;
 /// breadcrumb 구분자 크기. 대응 토큰이 없어 갤러리와 같은 별도 값을 사용한다.
 pub(super) const CRUMB_GLYPH: LogicalPx = LogicalPx(13.0);
 use crate::adapters::ui::popup::PopupAction;
-use crate::i18n::t;
+use crate::i18n::{t, t_count_template};
 use crate::state::{FilePickerResult, FpLoadState, MainViewState};
 use crate::theme::{self, Theme};
 use tasty_ui_widgets::{CenterState, ControlSize, IconButton, IconButtonVariant};
@@ -125,7 +125,7 @@ pub struct FilePickerProps<'a> {
     /// 열기 모드에서 폴더 행을 고른 상태의 안내 줄. `{name}` 은 폴더 이름(mono),
     /// `{confirm}` 은 확정 버튼 이름이다 — 그 버튼이 곧 키보드로 들어가는 길이다.
     pub folder_open_enters: &'a str,
-    /// 숨긴 조상이 하나일 때의 툴팁. 단수형 문구를 별도로 받는다.
+    /// 숨긴 조상이 하나일 때의 툴팁 — 단수 변형이 있으면 그 문구. `{}` 가 수로 치환된다.
     pub hidden_folders_one: &'a str,
     /// `…` 툴팁 — 숨긴 조상이 둘 이상일 때. `{}` 가 수로 치환된다.
     pub hidden_folders_many: &'a str,
@@ -764,8 +764,8 @@ pub fn draw_file_picker(
         overwrite_warning: t("filepicker.save.overwrite_warning"),
         folder_not_save_target: t("filepicker.folder_not_save_target"),
         folder_open_enters: t("filepicker.folder_open_enters"),
-        hidden_folders_one: t("filepicker.hidden_folders_one"),
-        hidden_folders_many: t("filepicker.hidden_folders_many"),
+        hidden_folders_one: t_count_template("filepicker.hidden_folders", 1),
+        hidden_folders_many: t("filepicker.hidden_folders"),
         empty_label,
         loading_label,
         loading_body_local,
