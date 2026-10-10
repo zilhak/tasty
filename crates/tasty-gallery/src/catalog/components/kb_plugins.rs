@@ -245,8 +245,18 @@ fn windows_reserved_caption(keys: &[&str]) -> Option<String> {
     let key = keys
         .iter()
         .find(|k| is_os_reserved(k, ReservedOs::Windows))?;
-    let shown = display_key(&key.to_ascii_lowercase().replace("option+", "win+"));
-    Some(t_fmt("keys.os_reserved.windows", &shown))
+    Some(t_fmt("keys.os_reserved.windows", &windows_display(key)))
+}
+
+/// 슬롯·caption 의 사용자 표기. 갤러리는 시안의 Windows 견본을 따라 `option` 을 `Win` 으로 적는다
+/// (본체는 `KeybindingSettings::format_display` 가 OS 마다 고른다).
+fn windows_display(key: &str) -> String {
+    let lower = key.to_ascii_lowercase();
+    if lower.starts_with("option+") || lower.contains("+option+") {
+        display_key(&lower.replace("option+", "win+"))
+    } else {
+        display_key(key)
+    }
 }
 
 /// 조합의 단어 첫 글자를 대문자로 — 본체 녹화 슬롯의 사용자 표기와 같은 모양.
@@ -317,7 +327,7 @@ fn specimen(ui: &mut egui::Ui, theme: &Theme, index: usize, s: &mut Specimen) {
         .collect();
     let displays: Vec<Vec<String>> = bufs
         .iter()
-        .map(|b| b.iter().map(|k| display_key(k)).collect())
+        .map(|b| b.iter().map(|k| windows_display(k)).collect())
         .collect();
     let display_refs: Vec<Vec<&str>> = displays
         .iter()
