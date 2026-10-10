@@ -16,6 +16,8 @@ const EXPLORER_ONLY_FIELDS: &[&str] = &[
     "explorer_back",
     "explorer_forward",
     "explorer_focus_address",
+    "explorer_new_folder",
+    "explorer_new_file",
 ];
 
 /// 설정의 host 액션·quick-switch·사용자 스크립트와 플러그인 바인딩으로 키 정책을 만든다.

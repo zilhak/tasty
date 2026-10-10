@@ -208,7 +208,7 @@ Option 시퀀스·튜플 원소와 중첩 Option의 Some(None)은 표현을 다�
   전용) — 문서 안 타이핑·IME 조합·폼 내비게이션·페이지의 Esc 를 건드리지 않기 위함.
   ② 페이지 예약 액션 `find`·`copy`·`cut`·`paste`·`select_all` — 페이지가 자체로 같은 의미를
   구현한다(markdown 의 문서 내 검색 등).
-  ③ explorer 전용 액션 `explorer_undo`·`explorer_redo`·`explorer_back`·`explorer_forward`·`explorer_focus_address` — explorer 에 포커스가 있을 때만 동작해
+  ③ explorer 전용 액션 `explorer_undo`·`explorer_redo`·`explorer_back`·`explorer_forward`·`explorer_focus_address`·`explorer_new_folder`·`explorer_new_file` — explorer 에 포커스가 있을 때만 동작해
   webview 위에서는 할 일이 없다. 기본값 `Ctrl+Z`·`Ctrl+Shift+Z` 는 페이지의 undo/redo 키이고 `Alt+←`·`Alt+→` 는 페이지의 뒤로·앞으로 키다.
 - **key-up 은 어느 백엔드도 올리지 않는다**(press 만). host 는 실려온 modifier 값만
   읽고 자기 `base.modifiers` 를 갱신하지 않으므로 modifier stuck 이 생기지 않는다.

@@ -92,12 +92,14 @@ fn item_keys_share_f2_with_tab_rename_without_a_conflict() {
     assert_eq!(kb.explorer_rename, vec!["f2".to_string()]);
 }
 
-/// 탐색기 포커스에서만 쓰는 전역 목록의 이동 키. 탐색기 키는 전역 동작과 quick-switch 보다 먼저
+/// 탐색기 포커스에서만 쓰는 전역 목록의 이동·새 항목 키. 탐색기 키는 전역 동작과 quick-switch 보다 먼저
 /// 처리되므로, 기본값은 어느 프리셋에서도 다른 바인딩이나 quick-switch 조합과 겹치면 안 된다.
-const EXPLORER_NAV: [&str; 3] = [
+const EXPLORER_NAV: [&str; 5] = [
     "explorer_back",
     "explorer_forward",
     "explorer_focus_address",
+    "explorer_new_folder",
+    "explorer_new_file",
 ];
 
 /// quick-switch 축 하나의 (modifier, 키 목록).
@@ -148,6 +150,12 @@ fn explorer_navigation_defaults_do_not_shadow_other_keys() {
         assert_eq!(
             kb.get_field("explorer_focus_address"),
             Some("alt+l"),
+            "{name}"
+        );
+        assert_eq!(kb.get_field("explorer_new_folder"), Some("f7"), "{name}");
+        assert_eq!(
+            kb.get_field("explorer_new_file"),
+            Some("shift+f4"),
             "{name}"
         );
         let axes = switch_axes(&kb);

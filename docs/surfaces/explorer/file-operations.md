@@ -73,7 +73,7 @@
 | 숨김 파일 | More 메뉴, `explorer_toggle_hidden` 단축키, Command Palette | 지금 보는 폴더에서 이름이 `.` 으로 시작하는 항목과 OS 가 숨김으로 표시한 항목(Windows 숨김 속성·macOS `UF_HIDDEN`). Linux 는 점 규칙만 쓴다. 원격 탐색기는 원격 server 가 실어 보낸 표시를 쓰고, 싣지 않는 옛 server 면 점 규칙만 쓴다 | 디스크를 바꾸지 않는다. 목록에서 빼거나 되돌린다 | 상태줄의 숨김 수, 켜면 숨김 항목을 explorer-hidden-fg 로 ([Explorer](index.md#숨김-파일)) |
 | Grid 썸네일 | 없음 (Grid 보기에 자동) | 화면에 보인 로컬 그림 파일 | 디스크를 바꾸지 않는다 | 셀의 40 슬롯 ([Explorer](index.md#grid-썸네일)) |
 
-이름 변경과 휴지통 이동의 단축키는 `explorer_rename`(기본 `F2`)·`explorer_trash`(Tasty 프리셋 기본 `delete`·`alt+backspace`. `alt+backspace` 는 위치 규칙상 macOS 에서 Finder 의 ⌘⌫ 다. macOS 프리셋은 `alt+backspace` 만, Windows·Linux 프리셋은 `delete` 만)다. 단축키와 Command Palette 는 `run_explorer_item_key`(`src/adapters/ui/input/shortcuts/explorer_keys.rs`)를 거쳐 메뉴와 같은 이름 변경 팝업을 열거나 같은 휴지통 작업을 요청한다. 우클릭 메뉴는 두 항목 옆에 각 바인딩의 첫 항목을 보인다(`attach_shortcut_hints`, `src/state/explorer_menu.rs`). macOS 는 key equivalent 로 바꿔 AppKit 이 그리고, Windows·Linux 는 설정 화면과 같은 표시에서 앞 지우기 키만 `Del` 로 줄여 항목 오른쪽에 쓴다. 바인딩이 비었으면 표시하지 않는다. 메뉴의 표시는 보이기만 하며 실행은 단축키 경로가 맡는다.
+이름 변경과 휴지통 이동의 단축키는 `explorer_rename`(기본 `F2`)·`explorer_trash`(Tasty 프리셋 기본 `delete`·`alt+backspace`. `alt+backspace` 는 위치 규칙상 macOS 에서 Finder 의 ⌘⌫ 다. macOS 프리셋은 `alt+backspace` 만, Windows·Linux 프리셋은 `delete` 만)다. 단축키와 Command Palette 는 `run_explorer_item_key`(`src/adapters/ui/input/shortcuts/explorer_keys.rs`)를 거쳐 메뉴와 같은 이름 변경 팝업을 열거나 같은 휴지통 작업을 요청한다. 우클릭 메뉴는 이 두 항목과 새 폴더(`explorer_new_folder`)·새 파일(`explorer_new_file`) 행 옆에 각 바인딩의 첫 항목을 보인다(`attach_shortcut_hints`, `src/state/explorer_menu.rs`). 바인딩이 있는 메뉴 행은 단축키를 표시한다는 디자인 결정을 따른다. macOS 는 key equivalent 로 바꿔 AppKit 이 그리고, Windows·Linux 는 설정 화면과 같은 표시에서 앞 지우기 키만 `Del` 로 줄여 항목 오른쪽에 쓴다. 바인딩이 비었으면 표시하지 않는다. 메뉴의 표시는 보이기만 하며 실행은 단축키 경로가 맡는다.
 
 ### 기본 규칙
 

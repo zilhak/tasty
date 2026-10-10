@@ -20,7 +20,8 @@ pub(crate) fn explorer_menu_admits(
     })
 }
 
-/// 단축키가 있는 explorer 메뉴 항목(이름 변경 40·휴지통 30)에 첫 바인딩을 표시로 붙인다.
+/// 단축키가 있는 explorer 메뉴 항목(이름 변경 40·휴지통 30·새 폴더 80·새 파일 81)에 첫 바인딩을
+/// 표시로 붙인다.
 /// 바인딩이 없으면 표시하지 않는다.
 pub(crate) fn attach_shortcut_hints(
     items: &mut [crate::platform::native_menu::MenuItem],
@@ -30,6 +31,8 @@ pub(crate) fn attach_shortcut_hints(
         let field = match item.id {
             40 => "explorer_rename",
             30 => "explorer_trash",
+            80 => "explorer_new_folder",
+            81 => "explorer_new_file",
             _ => continue,
         };
         item.shortcut = menu_shortcut(settings, field);
@@ -213,5 +216,29 @@ mod tests {
             &session.read(),
             false
         ));
+    }
+
+    /// 새 폴더·새 파일 행도 이름 변경·휴지통처럼 첫 바인딩을 보인다. 바인딩이 없는 행은 비운다.
+    #[test]
+    fn the_new_folder_and_new_file_rows_show_their_first_binding() {
+        use crate::platform::native_menu::MenuItem;
+        let mut settings = crate::settings::Settings::default();
+        let mut items = vec![
+            MenuItem::new(80, "New folder"),
+            MenuItem::new(81, "New file"),
+            MenuItem::new(1, "Copy path"),
+        ];
+        attach_shortcut_hints(&mut items, &settings);
+        let shown: Vec<_> = items
+            .iter()
+            .map(|i| i.shortcut.as_ref().map(|s| s.binding.as_str()))
+            .collect();
+        assert_eq!(shown, vec![Some("f7"), Some("shift+f4"), None]);
+        assert!(items[0].shortcut.as_ref().unwrap().display.ends_with("F7"));
+
+        settings.keybindings.explorer_new_folder.clear();
+        let mut items = vec![MenuItem::new(80, "New folder")];
+        attach_shortcut_hints(&mut items, &settings);
+        assert!(items[0].shortcut.is_none());
     }
 }

@@ -1,4 +1,4 @@
-<!-- source-hash: 2ddc46a49887 -->
+<!-- source-hash: 58c20127d0cf -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -74,7 +74,7 @@ Start from **New folder** · **New file** on the toolbar, the right-click menu o
 - The new item moves to its sorted place and is selected. If you moved to another folder in the meantime, the selection does not change.
 - In a folder you can't write to, both buttons are dimmed and hovering shows **Can't write to this folder**. Explorers in remote workspaces don't have these buttons or menu items.
 
-You can assign keys to **New folder** · **New file** in Settings > Keybindings > **Explorer**. They have no default keys.
+With the Explorer focused, `F7` makes a new folder and `Shift+F4` a new file. On macOS the F keys are media keys by default, so hold `Fn` with them. Change the keys in Settings > Keybindings > **Explorer**.
 
 ### Find · search subfolders
 
@@ -116,6 +116,7 @@ Choose **Properties** at the bottom of the right-click menu to open a popup insi
 | Extend the selection | The same keys with `Shift` |
 | Open (opens every file when only files are selected, enters the folder when one folder is among them, does nothing with two or more folders) | `Enter` |
 | Clear the selection | `Esc` |
+| New folder / new file | `F7` / `Shift+F4` (on macOS hold `Fn` with them by default) |
 | Rename (one item selected) | `F2` |
 | Move to Trash | `Delete` · `Alt+Backspace` (`Cmd+Backspace` on macOS) |
 | Undo / redo a copy or move | `Ctrl+Z` / `Ctrl+Shift+Z` · `Ctrl+Y` (macOS `Cmd+Z` / `Cmd+Shift+Z`) |

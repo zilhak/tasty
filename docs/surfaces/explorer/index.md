@@ -319,8 +319,8 @@ Grid 셀은 모두 `explorer_grid_thumb_size`(40) 슬롯을 잡아 썸네일 유
 | Properties 열기 | `explorer_properties` | (기본 미할당) |
 | 전체 선택 | `select_all` | `Ctrl+A` / `Alt+A` |
 | 경로 복사 | `copy_path` | `Alt+Shift+C` |
-| 새 폴더 | `explorer_new_folder` | (기본 미할당) |
-| 새 파일 | `explorer_new_file` | (기본 미할당) |
+| 새 폴더 | `explorer_new_folder` | `F7` |
+| 새 파일 | `explorer_new_file` | `Shift+F4` |
 | 현재 항목 이동 (위·아래·왼쪽·오른쪽·처음·끝·한 화면 위·아래) | `explorer_cursor_*` | 방향키 · `Home` · `End` · `PageUp` · `PageDown` |
 | 선택 넓히기 (같은 이동) | `explorer_extend_*` | 위 키에 `Shift+` |
 | 이름 변경 | `explorer_rename` | `F2` |
@@ -332,7 +332,7 @@ Grid 셀은 모두 `explorer_grid_thumb_size`(40) 슬롯을 잡아 썸네일 유
 | 찾기 | `find` | `Ctrl+F` / `Alt+F` |
 | explorer 로 변환 | `convert_to_explorer` | (기본 미할당) |
 
-뒤로·앞으로·주소창으로 이동은 네 프리셋이 같은 `alt+left`·`alt+right`·`alt+l` 이다. 탐색기 키는 전역 단축키와 quick-switch 보다 먼저 키를 보므로, 기본값은 어느 프리셋에서도 다른 바인딩이나 quick-switch 조합과 겹치지 않는 것으로 골랐다(`Cmd+[`·`Cmd+]` 는 `focus_surface_prev`·`focus_surface_next`, `Ctrl+L` 은 탭 quick-switch 의 다음 탭이다). 주소창으로 이동은 다음에 주소창을 그릴 때 입력칸에 포커스를 주고 경로 전체를 고른다(`PathField::focus`). 그다음은 주소창을 눌렀을 때와 같다. 뒤로·앞으로는 툴바의 뒤로·앞으로 버튼과 같은 `GoBack`·`GoForward` 다.
+뒤로·앞으로·주소창으로 이동·새 폴더·새 파일은 네 프리셋이 같은 `alt+left`·`alt+right`·`alt+l`·`f7`·`shift+f4` 다. 탐색기 키는 전역 단축키와 quick-switch 보다 먼저 키를 보므로, 기본값은 어느 프리셋에서도 다른 바인딩이나 quick-switch 조합과 겹치지 않는 것으로 골랐다(`Cmd+[`·`Cmd+]` 는 `focus_surface_prev`·`focus_surface_next`, `Ctrl+L` 은 탭 quick-switch 의 다음 탭, `Ctrl+Shift+N`·`Cmd+Shift+N` 은 `new_window` 다). `F7`·`Shift+F4` 는 파일 관리자(Total Commander·Far Manager)의 새 폴더·새 파일 키다. macOS 의 기본 설정에서는 F 키가 미디어 키라 `Fn` 을 함께 눌러야 한다. 주소창으로 이동은 다음에 주소창을 그릴 때 입력칸에 포커스를 주고 경로 전체를 고른다(`PathField::focus`). 그다음은 주소창을 눌렀을 때와 같다. 뒤로·앞으로는 툴바의 뒤로·앞으로 버튼과 같은 `GoBack`·`GoForward` 다.
 
 실행 취소·다시 실행의 다른 프리셋 기본은 Mac `Alt+Z`(⌘Z)·`Alt+Shift+Z`(⌘⇧Z), Windows·Linux `Ctrl+Z`·`Ctrl+Shift+Z`/`Ctrl+Y` 다. 이 둘은 explorer 에 포커스가 있을 때만 키를 받으므로 터미널의 `Ctrl+Z`·`Ctrl+Y` 와 부딪치지 않는다.
 
