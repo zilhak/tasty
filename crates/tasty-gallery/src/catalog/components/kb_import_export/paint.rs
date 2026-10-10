@@ -43,22 +43,6 @@ pub(super) fn glyph_at(ui: &mut egui::Ui, glyph: MockGlyph, size: LogicalPx, tin
     glyph.image(s, tint).paint_at(ui, rect);
 }
 
-/// 고정 폭 한 줄 라벨(말줄임).
-pub(super) fn fixed_label(
-    ui: &mut egui::Ui,
-    width: LogicalPx,
-    text: &str,
-    font: egui::FontId,
-    fg: egui::Color32,
-) {
-    let g = truncated(ui, text, font, fg, width.value());
-    let (rect, _) = ui.allocate_exact_size(
-        egui::vec2(width.value(), g.rect.height()),
-        egui::Sense::hover(),
-    );
-    ui.painter().galley(rect.min, g, egui::Color32::PLACEHOLDER);
-}
-
 pub(super) fn truncated(
     ui: &egui::Ui,
     text: &str,

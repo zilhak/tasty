@@ -2,11 +2,9 @@
 
 use std::collections::BTreeMap;
 
-use tasty_host_plugin::keybinding_bundle::option_migration::BindingSite;
-
-use crate::i18n::{t, t_fmt};
+use crate::i18n::t;
 use crate::plugin::registry_state::ShortcutOverride;
-use crate::settings::{GeneralSettings, KeybindingSettings, ScriptRegistry, SwitchStep};
+use crate::settings::{GeneralSettings, KeybindingSettings, ScriptRegistry};
 use crate::settings_ui::PluginShortcutSnapshot;
 
 /// 표시 문자열 출처 묶음.
@@ -51,62 +49,6 @@ impl Labels<'_> {
             .iter()
             .find(|r| r.plugin_id == plugin_id && r.command_id == command_id)
             .and_then(|r| r.manifest_default.as_deref())
-    }
-
-    /// 충돌 안내와 마이그레이션에 표시할 설정 항목 이름.
-    pub(super) fn site(&self, site: &BindingSite) -> String {
-        match site {
-            BindingSite::GeneralBinding { field_id, .. } => {
-                trim_label(KeybindingSettings::label_key_for(field_id).map_or(*field_id, t))
-            }
-            BindingSite::AxisModifier { axis } => trim_label(t(axis.modifier_label_key())),
-            BindingSite::DragFlipModifier => {
-                trim_label(t("settings.keybindings.explorer_drag_flip_modifier_label"))
-            }
-            BindingSite::AxisSlot { axis, index } => {
-                let key = match axis {
-                    crate::settings::SwitchAxis::Tab => {
-                        "settings.keybindings.tab_switch_slot_label"
-                    }
-                    crate::settings::SwitchAxis::Workspace => {
-                        "settings.keybindings.workspace_switch_slot_label"
-                    }
-                    crate::settings::SwitchAxis::Category => {
-                        "settings.keybindings.category_switch_slot_label"
-                    }
-                };
-                trim_label(&t_fmt(key, &(index + 1).to_string()))
-            }
-            BindingSite::AxisStep { axis, step } => {
-                let key = match (axis, step) {
-                    (crate::settings::SwitchAxis::Tab, SwitchStep::Next) => {
-                        "settings.keybindings.tab_switch_next_label"
-                    }
-                    (crate::settings::SwitchAxis::Tab, SwitchStep::Prev) => {
-                        "settings.keybindings.tab_switch_prev_label"
-                    }
-                    (crate::settings::SwitchAxis::Workspace, SwitchStep::Next) => {
-                        "settings.keybindings.workspace_switch_next_label"
-                    }
-                    (crate::settings::SwitchAxis::Workspace, SwitchStep::Prev) => {
-                        "settings.keybindings.workspace_switch_prev_label"
-                    }
-                    (crate::settings::SwitchAxis::Category, SwitchStep::Next) => {
-                        "settings.keybindings.category_switch_next_label"
-                    }
-                    (crate::settings::SwitchAxis::Category, SwitchStep::Prev) => {
-                        "settings.keybindings.category_switch_prev_label"
-                    }
-                };
-                trim_label(t(key))
-            }
-            BindingSite::ScriptBinding { script_id } => self.script_name(script_id),
-            BindingSite::PluginOverride {
-                plugin_id,
-                command_id,
-                ..
-            } => self.command_title(plugin_id, command_id),
-        }
     }
 
     pub(super) fn combo(&self, combo: &str) -> String {

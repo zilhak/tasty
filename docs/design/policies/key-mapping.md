@@ -100,34 +100,6 @@ macOS 사용자를 위한 표시 커스터마이징: `GeneralSettings::{alt,opti
 
 표시는 macOS 에서 `option_display_style`(Option·⌥)을 따르고, 다른 OS 에서는 같은 위치의 키 이름 `Win`(Windows)·`Super`(그 밖)를 쓴다(`KeybindingSettings::option_display_text`). 표시 방식 설정은 macOS 에만 노출된다.
 
-#### `option` 을 매칭하지 않는 대상으로 옮길 때
-
-`tasty_host_plugin::keybinding_bundle::option_migration` 은 `option` 을 매칭하지 않는 대상(`TargetOs::NonMac`)으로 구성을 옮길 때 Option 바인딩을 찾아 대체한다. 지금 이 판정을 부르는 화면은 없다.
-
-`parse_binding`·`Combo::parse_modifiers`로 파싱한다. 단순 문자열 검색은 키 이름, 대소문자, 토큰 순서를 오해할 수 있다. 검사 대상은 다음 여섯 곳이다.
-
-1. 일반 조합 필드의 각 항목
-2. 빠른 전환의 수정자 세 종류
-3. 개별 지정 모드인 빠른 전환의 슬롯·다음·이전. 규칙 기반 모드의 슬롯은 키 하나이므로 조합으로 보지 않는다.
-4. `script_bindings[].combo`
-5. plugin override의 `Key { value }`. `Inherit`·`None`에는 조합이 없다.
-6. explorer 드래그 반전 수정자(`explorer_drag_flip_modifier`). 빠른 전환 수정자처럼 수정자 조합을 담는다.
-
-대체 입력은 `ReplacementKind`에 따라 받는다. 일반 조합은 녹화하고, 수정자만 바꾸는 항목은 `all_modifier_combos()` 의 조합 중 고른다. 녹화는 수정자 단독 입력을 받지 않기 때문이다. `"individual"`은 수정자 조합이 아니어서 거절하며 이관 과정에서 빠른 전환 모드를 바꾸지 않는다. 대체값에 `option`이 다시 들어가도 거절한다.
-
-충돌은 적용 전후 전체 조합을 비교해 새로 생긴 것만 보고한다. 빠른 전환 수정자를 바꾸면 슬롯과 다음·이전 조합도 함께 달라지므로 해당 필드 하나만 비교하지 않는다. 호스트 액션·빠른 전환·스크립트는 한 충돌 범위로 묶고 plugin은 각각 별도로 검사한다. 호스트와 plugin, 서로 다른 plugin의 중복은 아래 우선순위 규칙을 따른다.
-
-`Resolution::Unbind`로 사용하지 않을 바인딩을 비울 수도 있다. 일반 조합은 해당 항목만 제거하고, plugin은 남은 키가 없으면 `None`, 빠른 전환의 슬롯·다음·이전은 빈값으로 둔다. 수정자 항목(빠른 전환·드래그 반전) 자체는 조합이 하나 필요하므로 비울 수 없다(`CannotUnbind`).
-
-새 충돌 처리 방법은 호출자가 `ConflictPolicy`로 선택한다.
-
-- `Reject`: 충돌 목록을 반환하고 변경하지 않는다.
-- `UnbindOther`: 이관 계획에 없는 충돌 상대를 비우고 적용한다. 설정 가져오기의 충돌 확인을 수락하면 사용한다. 양쪽 모두 계획에 포함됐다면 비울 쪽을 고를 수 없어 거절한다.
-
-`introduced_conflicts`·`preview_resolution`은 선택이 끝나지 않은 계획도 미리 확인한다. 정한 항목만 대체하고 나머지는 원래 값을 유지해 비교한다. 실제 적용인 `resolve_migration`은 모든 항목의 해결 방법이 정해져야 한다.
-
-대상이 `TargetOs::Mac` 이면 이관 목록은 비어 있다.
-
 ## OS 메뉴 key equivalent
 
 tasty 가 직접 소유하는 OS 메뉴의 key equivalent 도 **`KeybindingSettings` 의 대응 binding 에서 가져온다 — 가져올 수 없으면 비운다.** 지금 key equivalent 를 배선한 메뉴는 macOS NSMenu 하나이고, Windows AcceleratorTable · Linux Wayland 메뉴도 등록하게 되면 같은 규칙을 따른다. selector 가 OS 표준(`cut:` / `performClose:` 등)이라는 사실이 단축키 하드코딩을 정당화하지 않는다(selector 와 key equivalent 는 독립 결정). binding 이 빈 vec 이면 key equivalent 도 비워 단축키 없는 메뉴 항목으로 둔다.

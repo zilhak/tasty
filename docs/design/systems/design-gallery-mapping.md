@@ -819,11 +819,11 @@ props 를 채운다.
 
 디자인 `ui_kits/terminal/overlays/kb_import_export.jsx` + `settings_window.jsx`(`KB_L2_SEPARATED` ·
 창 자체 toast) + `gallery/overlays-windows.jsx` Section `kbimportexport` ↔ 갤러리
-`catalog/components/kb_import_export.rs`(Overlays › `kbimportexport` 섹션, Spec 5 종 — 하위 모듈은 본체와 같은 이름 `entry` · `diff_table` · `migrate` · `notices` · `paint`, 갤러리의 추가 상태 예제인 `open_values` 와 나머지 상태 예제인 `remaining_values`). 갤러리는
+`catalog/components/kb_import_export.rs`(Overlays › `kbimportexport` 섹션, Spec 4 종 — 하위 모듈은 본체와 같은 이름 `entry` · `diff_table` · `notices` · `paint`, 갤러리의 추가 상태 예제인 `open_values` 와 나머지 상태 예제인 `remaining_values`). 갤러리는
 본체 미의존이라 같은 위젯·토큰으로 미러한다. 본체는 `src/view/settings/ui/keybindings_tab/import_export.rs`
-와 그 하위 모듈(`import_export/` 의 `entry.rs` · `diff_table.rs` · `migrate.rs` · `notices.rs` · `paint.rs`, 계산은 `labels.rs` · `view_model.rs` · `model.rs` · `bundle_notices.rs`.
-`action_row` · `diff_table` · `group_header` · `action_cell` · `migrate_card` · `migrate_row` ·
-`record_slot` · `dropped_notice` · `parse_failure` 는 갤러리와 같은 이름. 갤러리의 `entry`·`detail_frame`·`notices`
+와 그 하위 모듈(`import_export/` 의 `entry.rs` · `diff_table.rs` · `notices.rs` · `paint.rs`, 계산은 `labels.rs` · `view_model.rs` · `model.rs` · `bundle_notices.rs`.
+`action_row` · `diff_table` · `group_header` · `action_cell` ·
+`dropped_notice` · `parse_failure` 는 갤러리와 같은 이름. 갤러리의 `entry`·`detail_frame`·`notices`
 자리는 `draw_import_export_subtab` 한 함수가 `DrillDown` 으로 짠다)와 `src/view/settings/ui.rs` 의 `l2_separator` 다.
 
 | 디자인 jsx | 갤러리 | 비고 |
@@ -831,15 +831,13 @@ props 를 채운다.
 | `IeL2Tail` · `KB_L2_SEPARATED` | `l2_tail` · `l2_separator` · `l2_row` | **신규 축** — L2 행 위 1px separator(margin space-sm), 필터 활성 시 숨김 |
 | `IeActionRow` ×2 (`IeEntry`) | `entry` · `action_row` | surface-raised + border-default + radius, padding `kb-ie-notice-inset`(→ space-md, 가로·세로 모두 12). Import primary · Export secondary. `notice` 자리(행 아래, gap space-sm) + trailing 버튼 비활성 축 |
 | 창 toast(export 경로) | `export_toast`(`toast_card::draw_single_card`, Success) | 설정 창 자체 `ToastManager` 의 카드 |
-| `DrillDown` detail + back bar actions | `detail_frame`(실제 `DrillDown`) | 우측 슬롯: `Show all {n}`/`Changed only` ghost · `{n} unresolved`(mono caption warning) · Apply primary(미해결 시 비활성) |
-| `IeDiffTable` (grid `size-32 minmax(0,1.6fr) 1fr 1fr`) | `diff_table` | **신규 축 둘** — 선두 선택 열(32) · 그룹 헤더 행(surface-raised, select-all · chevron · mono micro caps 그룹명 · `N changed · M total`). 변경 = accent-primary, 미해결 = accent-warning |
+| `DrillDown` detail + back bar actions | `detail_frame`(실제 `DrillDown`) | 우측 슬롯: `Show all {n}`/`Changed only` ghost · Apply primary |
+| `IeDiffTable` (grid `size-32 minmax(0,1.6fr) 1fr 1fr`) | `diff_table` | **신규 축 둘** — 선두 선택 열(32) · 그룹 헤더 행(surface-raised, select-all · chevron · mono micro caps 그룹명 · `N changed · M total`). 변경 = accent-primary |
 | plugin 행 부제 · quick-switch 축 부제 | `action_cell` | agent 점 + mono micro plugin 이름 / micro 슬롯 수 |
-| `IeMigrateCard` | `migrate_card` · `card` · `conflict_summary` | tone(warning/success) 11% 채움 · 36% 테두리, 헤더 counter mono caption. 충돌 행 2 개 이상이면 설명 아래 개수 줄(개수 danger + 나머지 text-secondary) |
-| `IeMigrateRow` | `migrate_row` · `record_slot` · `select` | 라벨 288 · 원래 조합 120 · → · 녹화 슬롯(min 140×24, mono, 충돌 시 danger 테두리) 또는 modifier `select_or_placeholder`(7 조합 + placeholder `Select a modifier`). 부제 들여쓰기 288 |
-| `IeNotices` | `notices` · `dropped_notice` · `parse_failure` | 버린 plugin = helpCircle muted 정보 줄(경고 아님) · 마이그레이션 불필요 = 안내문 한 문장 · 파싱 실패 = 알림 블록(danger) + "Choose another file" |
+| `IeNotices` | `dropped_notice` · `parse_failure` | 버린 plugin = helpCircle muted 정보 줄(경고 아님) · 파싱 실패 = 알림 블록(danger) + "Choose another file" |
 | `IeBlockG` | `notice_block` | **공통 알림 블록** — tone 12% 채움 · 35% 테두리 · 헤더(glyph 16 · 제목 13 tone · 우측 mono caption 개수) · 본문 12 text-secondary · 액션 행(gap space-sm). 파싱 실패 · 내보내기 실패(danger) · 번들 경고(warning)가 모두 이것이다 |
-| `IeExportFailG` · `IeBundleNoticesG` · `IeParseFailG` · `IeConflictSummaryG` · `IeModifierSelectG` | `open_values`(Spec 4) · `export_failure_row` · `bundle_notices` · `notice_line` | 내보내기 실패 = Export 행 안 danger 블록(Try again secondary · Choose another location… ghost, 행 버튼 비활성) · 번들 경고 = warning 블록 하나(`{n} notices`, `·` 글머리 줄, 3 줄 뒤 `Show {n} more`) · 줄 번호 없는 파싱 실패 · 충돌 개수 카드 · placeholder/선택된 modifier Select. 본체는 `notices::{export_failure, bundle_notices}` · `bundle_notices.rs`(순서·접기) |
-| `IeExportFailG reason="other"` · `IeBundleNoticesG one` | `remaining_values`(Spec 5) · `unknown_export_failure` · `os_reason_line` · `one_notice` | 사유를 모르는 내보내기 실패 — 가운데 구절은 고정 집합의 catch-all("the write didn't finish.") 이고 OS 가 낸 문장은 **문장 안에 안 들어간다**: 본문 아래 제 줄(mono caption · muted · 한 줄 말줄임 · 전문은 tooltip). 알림이 하나뿐이면 헤더와 그 줄이 모두 단수형이고 접기 링크가 없다. 본체는 `notices::{export_failure, os_reason_line, bundle_notices}` · `import_export::ExportFailReason` · `view_model::notice_line` |
+| `IeExportFailG` · `IeBundleNoticesG` · `IeParseFailG` | `open_values`(Spec 3) · `export_failure_row` · `bundle_notices` · `notice_line` | 내보내기 실패 = Export 행 안 danger 블록(Try again secondary · Choose another location… ghost, 행 버튼 비활성) · 번들 경고 = warning 블록 하나(`{n} notices`, `·` 글머리 줄, 3 줄 뒤 `Show {n} more`) · 줄 번호 없는 파싱 실패. 본체는 `notices::{export_failure, bundle_notices}` · `bundle_notices.rs`(순서·접기) |
+| `IeExportFailG reason="other"` · `IeBundleNoticesG one` | `remaining_values`(Spec 4) · `unknown_export_failure` · `os_reason_line` · `one_notice` | 사유를 모르는 내보내기 실패 — 가운데 구절은 고정 집합의 catch-all("the write didn't finish.") 이고 OS 가 낸 문장은 **문장 안에 안 들어간다**: 본문 아래 제 줄(mono caption · muted · 한 줄 말줄임 · 전문은 tooltip). 알림이 하나뿐이면 헤더와 그 줄이 모두 단수형이고 접기 링크가 없다. 본체는 `notices::{export_failure, os_reason_line, bundle_notices}` · `import_export::ExportFailReason` · `view_model::notice_line` |
 
 **전사 노트**:
 - `letter-spacing-caps` 는 mono `font-size-micro` uppercase, `fontWeight: 600` 은 색 강조로
@@ -847,10 +845,9 @@ props 를 채운다.
   `letter_spacing_caps(font_size_micro)` 를 `paint::truncated_tracked` 로 적용한다. `color-mix(tone X%, transparent)` 는 명명 const
   계수의 `gamma_multiply`.
 - 그리드 밖 값(chevron gap 6 · plugin 점 gap 5)은 가까운 값으로 바꾸지 않고 용도를 명시한 상수로 둔다([ADR-0035](../../adr/0035-shared-design-and-theme.md)).
-- 선택 열 32 · 라벨 288/120 · 슬롯 최소 폭 140 · 카드·알림 inset · 슬롯 높이는 본체와 갤러리가 모두
-  Theme 의 `kb-ie-*` 접근자(`kb_ie_select_column_width` · `kb_ie_action_column_width` ·
-  `kb_ie_from_column_width` · `kb_ie_slot_min_width` · `kb_ie_notice_inset` · `kb_ie_slot_height`)를 읽는다.
-  본체 단축키 탭의 다른 서브탭이 재는 라벨 열(150 … 240 clamp)은 마이그레이션 행이 읽지 않는다.
+- 선택 열 32 는 본체와 갤러리가 모두 Theme 의 `kb_ie_select_column_width` 를 읽는다. 나머지 `kb-ie-*` 토큰
+  (`kb-ie-action-column-width` · `kb-ie-from-column-width` · `kb-ie-slot-min-width` · `kb-ie-notice-inset` ·
+  `kb-ie-slot-height`)은 이 화면이 읽지 않는다. 그중 slot 둘은 녹화 슬롯의 `kb-record-*` 가 참조한다.
 - Import/Export 는 full-bleed 서브탭이라 620 상한을 받지 않는다. specimen 폭은 시안 `IE_W` 와 같은 868
   (기본 1100 창의 본체 설정 창 콘텐츠 컬럼)이다. 진입 화면 컬럼만 620 을 따른다.
 

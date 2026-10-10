@@ -21,7 +21,6 @@ pub fn draw_preview(ui: &mut egui::Ui, theme: &Theme) {
                 theme,
                 "kb_ie_preview",
                 PREVIEW_H,
-                0,
                 st,
                 |ui, theme, st| {
                     ui.spacing_mut().item_spacing.y = theme.spacing_md.value();
@@ -190,9 +189,7 @@ fn diff_table(ui: &mut egui::Ui, theme: &Theme, st: &mut State) {
                     mono.clone(),
                     theme.text_muted().to_egui(),
                 );
-                let fg = if r.blocked {
-                    theme.accent_warning()
-                } else if r.cur != r.next {
+                let fg = if r.cur != r.next {
                     theme.accent_primary()
                 } else {
                     theme.text_muted()

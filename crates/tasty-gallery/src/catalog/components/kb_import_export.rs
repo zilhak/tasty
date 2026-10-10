@@ -1,11 +1,10 @@
-//! 단축키 가져오기·내보내기의 진입 화면, 비교 표, 호환성 처리, 오류 안내 예제.
+//! 단축키 가져오기·내보내기의 진입 화면, 비교 표, 오류 안내 예제.
 //! 본체 바이너리에 의존하지 않고 공용 위젯으로 화면을 재현한다.
 //! em 단위 자간 토큰은 생성기가 지원하지 않아 적용하지 않으며,
 //! 굵기 차이는 글자색으로, color-mix는 알파 조절로 근사한다.
 
 mod diff_table;
 mod entry;
-mod migrate;
 mod notices;
 mod open_values;
 mod paint;
@@ -20,7 +19,6 @@ use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, DrillDown, DrillDownV
 
 pub use diff_table::draw_preview;
 pub use entry::draw_entry;
-pub use migrate::draw_migration;
 pub use open_values::draw_open_values;
 pub use remaining_values::draw_remaining_values;
 
@@ -31,15 +29,11 @@ const SPECIMEN_W: LogicalPx = LogicalPx(868.0);
 const ENTRY_W: LogicalPx = LogicalPx(620.0);
 /// 미리보기 DrillDown 높이 — back bar + 표 한 화면.
 const PREVIEW_H: LogicalPx = LogicalPx(420.0);
-/// 마이그레이션 DrillDown 높이 — back bar + 미완료 카드.
-const MIGRATION_H: LogicalPx = LogicalPx(440.0);
 /// 그룹 헤더의 chevron ↔ 그룹명, 경고 줄 글머리 ↔ 문구 간격 — jsx `gap: 6`(그리드 밖 값,
 /// 스냅하지 않는다).
 const GROUP_CHEVRON_GAP: LogicalPx = LogicalPx(6.0);
 /// plugin 행 부제의 점 ↔ plugin 이름 간격 — jsx `gap: 5`.
 const PLUGIN_DOT_GAP: LogicalPx = LogicalPx(5.0);
-/// 충돌 개수 줄이 서는 최소 충돌 수 — 하나일 때는 행의 인라인 이유가 혼자 싣는다.
-const CONFLICT_SUMMARY_FROM: usize = 2;
 /// 경고 블록이 접기 전에 보이는 줄 수.
 const NOTICE_FOLD_AT: usize = 3;
 
@@ -54,8 +48,6 @@ struct Row {
     plugin: Option<&'static str>,
     /// quick-switch 축 행의 슬롯 수 부제.
     note: Option<&'static str>,
-    /// 마이그레이션이 끝나지 않아 imported 값이 정해지지 않은 행.
-    blocked: bool,
 }
 
 const fn row(action: &'static str, cur: &'static str, next: &'static str) -> Row {
@@ -65,7 +57,6 @@ const fn row(action: &'static str, cur: &'static str, next: &'static str) -> Row
         next,
         plugin: None,
         note: None,
-        blocked: false,
     }
 }
 
@@ -101,9 +92,8 @@ const GROUPS: &[Group] = &[
                 ..row("Workspace axis", "Alt+Shift+1…9", "Alt+Shift+1…9")
             },
             Row {
-                note: Some("10 slots · needs migration"),
-                blocked: true,
-                ..row("Category axis", "Option+1…0", "— unresolved —")
+                note: Some("10 slots"),
+                ..row("Category axis", "Ctrl+Shift+1…0", "Ctrl+Shift+1…0")
             },
         ],
     },
@@ -131,59 +121,14 @@ const GROUPS: &[Group] = &[
     },
 ];
 
-/// 축 modifier Select 의 "아직 안 고름" placeholder — jsx `IE_PICK`. 값이 아니라 UI 폰트 ·
-/// `text_placeholder` 색으로 그리고, 고르면 목록에서 빠진다.
-const IE_PICK: &str = "Select a modifier";
-
-/// 축 modifier Select 의 선택지 — jsx `MODIFIER_COMBOS`(비-macOS 7 종).
-const MODIFIER_OPTIONS: &[&str] = &[
-    "Ctrl",
-    "Alt",
-    "Shift",
-    "Ctrl+Alt",
-    "Ctrl+Shift",
-    "Alt+Shift",
-    "Ctrl+Alt+Shift",
-];
-
-/// 마이그레이션 행 위젯 — 콤보는 **녹화**, 축 modifier 는 **선택**.
-#[derive(Clone, Copy)]
-enum Widget {
-    Record,
-    Modifier,
-}
-
-/// 마이그레이션 행의 상태 넷 — jsx `IeMigrateRow` 의 `state`.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum MigrateState {
-    Unset,
-    Set,
-    Conflict,
-    Unbound,
-}
-
-struct MigrateRow {
-    action: &'static str,
-    from: &'static str,
-    widget: Widget,
-    value: &'static str,
-    state: MigrateState,
-    /// 충돌 상대 — `Conflict` 일 때만.
-    conflict: Option<&'static str>,
-    /// 축 modifier 가 바뀌면 함께 바뀌는 슬롯 안내 — 충돌이 없을 때만 보인다.
-    fanout: Option<&'static str>,
-}
-
 struct State {
     changed_only: bool,
     collapsed: BTreeSet<&'static str>,
     deselected: BTreeSet<(&'static str, &'static str)>,
     l2_filter_active: bool,
-    /// 미완료 카드의 축 modifier — 처음엔 안 고른 상태라 placeholder 가 보인다.
-    pending_modifier: Option<usize>,
-    /// Spec 4 경고 블록의 접힌 줄을 펼쳤는가.
+    /// Spec 3 경고 블록의 접힌 줄을 펼쳤는가.
     notices_expanded: bool,
-    /// Spec 4 내보내기 실패 블록이 떠 있는가 — Try again · Choose another location 이 닫는다.
+    /// Spec 3 내보내기 실패 블록이 떠 있는가 — Try again · Choose another location 이 닫는다.
     export_failed: bool,
 }
 
@@ -193,19 +138,17 @@ thread_local! {
         collapsed: BTreeSet::from(["scripts"]),
         deselected: BTreeSet::new(),
         l2_filter_active: false,
-        pending_modifier: None,
         notices_expanded: false,
         export_failed: true,
     });
 }
 
-/// 미리보기 detail — 실제 `DrillDown`(Detail) + back bar actions(토글 · 미해결 수 · Apply).
+/// 미리보기 detail — 실제 `DrillDown`(Detail) + back bar actions(토글 · Apply).
 fn detail_frame(
     ui: &mut egui::Ui,
     theme: &Theme,
     id_salt: &str,
     height: LogicalPx,
-    unresolved: usize,
     st: &mut State,
     body: impl FnOnce(&mut egui::Ui, &Theme, &mut State),
 ) {
@@ -222,20 +165,10 @@ fn detail_frame(
             let (_, total) = counts();
             let changed_only = st.changed_only;
             let actions = |ui: &mut egui::Ui, th: &Theme| {
-                let enabled = unresolved == 0;
                 Button::new("Apply")
                     .variant(ButtonVariant::Primary)
                     .size(ControlSize::Sm)
-                    .enabled(enabled)
                     .show(ui, th);
-                if unresolved > 0 {
-                    ui.label(
-                        egui::RichText::new(format!("{unresolved} unresolved"))
-                            .monospace()
-                            .size(th.font_size_caption.value())
-                            .color(th.accent_warning().to_egui()),
-                    );
-                }
                 let label = if changed_only {
                     format!("Show all {total}")
                 } else {

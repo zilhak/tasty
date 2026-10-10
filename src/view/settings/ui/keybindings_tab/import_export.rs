@@ -1,14 +1,13 @@
 //! 단축키 구성을 내보내고, 가져온 파일을 미리 본 뒤 선택한 행을 적용한다.
 //! Apply는 호스트·plugin 초안만 바꾸며 설정의 Save가 저장한다(ADR-0019).
 //!
-//! 계산은 model·labels·view_model·bundle_notices, 화면은 entry·diff_table·migrate·notices에 있다.
+//! 계산은 model·labels·view_model·bundle_notices, 화면은 entry·diff_table·notices에 있다.
 //! 치수는 갤러리의 kb_import_export와 대조하므로 이 파일에 둔다.
 
 mod bundle_notices;
 mod diff_table;
 mod entry;
 mod labels;
-mod migrate;
 mod model;
 mod notices;
 mod paint;
@@ -18,9 +17,6 @@ use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use tasty_host_plugin::keybinding_bundle::option_migration::{
-    ConflictPolicy, MigrationError, resolve_migration,
-};
 use tasty_host_plugin::keybinding_bundle::{
     BundleWarning, DecodedBundle, PluginShortcutOverrides, encode,
 };
@@ -29,20 +25,16 @@ use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, DrillDown, DrillDownView};
 
 use crate::adapters::ui::icons;
-use crate::i18n::{t, t_fmt, t_fmt2};
+use crate::i18n::{t, t_fmt};
 use crate::settings::{KeybindingSettings, Settings};
 use crate::settings_ui::PluginShortcutSnapshot;
 
 pub(crate) use model::PluginShortcutDraft;
-use model::{
-    Group, MigrationRow, MigrationValue, RowKey, apply_rows, merged_overrides, plan_of, row_keys,
-};
+use model::{Group, RowKey, apply_rows, merged_overrides, row_keys};
 
-use super::{KeyCapture, RecordingSlot};
 use diff_table::diff_table;
 use entry::action_row;
 use labels::Labels;
-use migrate::migrate_card;
 use notices::{ExportFailureAction, bundle_notices, dropped_notice, export_failure, parse_failure};
 use paint::intro;
 use view_model::build_view_model;
@@ -54,15 +46,10 @@ const GROUP_CHEVRON_GAP: LogicalPx = LogicalPx(6.0);
 /// plugin 행 부제의 점 ↔ plugin 이름 간격 — jsx `gap: 5`.
 const PLUGIN_DOT_GAP: LogicalPx = LogicalPx(5.0);
 
-/// 충돌 개수 요약을 표시할 최소 개수. 한 건이면 행의 사유만 표시한다.
-const CONFLICT_SUMMARY_FROM: usize = 2;
-
 /// 내보내기 파일 선택의 결과 키.
 pub(crate) const EXPORT_CONSUMER: &str = "keybindings_export";
 /// 가져오기 파일 선택의 결과 키.
 pub(crate) const IMPORT_CONSUMER: &str = "keybindings_import";
-/// 마이그레이션 녹화 슬롯이 `recording_field` 에 남기는 필드 id — 실제 필드 이름과 겹치지 않는다.
-const RECORDING_FIELD: &str = "__keybindings_import_migration";
 
 /// 모달을 열 때 host 가 주입하는 plugin 쪽 원본 — export 는 스냅샷이 아니라 이것에서 만든다.
 #[derive(Debug, Default, Clone)]
@@ -91,7 +78,6 @@ struct Preview {
     dropped: Vec<(String, usize)>,
     /// 경고 블록에 오를 줄(고정 순서).
     notices: Vec<bundle_notices::BundleNotice>,
-    migration: Vec<MigrationRow>,
 }
 
 /// 읽지 못한 파일.
@@ -156,10 +142,6 @@ pub struct ImportExportState {
     deselected: BTreeSet<RowKey>,
     request: Option<ImportExportRequest>,
     toast: Option<String>,
-    /// Apply 가 충돌을 만나 열어야 하는 확인 문구.
-    conflict_prompt: Option<String>,
-    /// 확인 popup 의 답. 다음 draw 가 draft 를 들고 소비한다.
-    conflict_answer: Option<bool>,
 }
 
 impl Default for ImportExportState {
@@ -175,8 +157,6 @@ impl Default for ImportExportState {
             deselected: BTreeSet::new(),
             request: None,
             toast: None,
-            conflict_prompt: None,
-            conflict_answer: None,
         }
     }
 }
@@ -212,15 +192,6 @@ impl ImportExportState {
     /// 설정 창 자체 토스트로 올릴 문구(1 회).
     pub(crate) fn take_toast(&mut self) -> Option<String> {
         self.toast.take()
-    }
-
-    pub(crate) fn conflict_prompt(&self) -> Option<&str> {
-        self.conflict_prompt.as_deref()
-    }
-
-    /// 충돌 확인 popup 의 답(수락/거절)을 남긴다.
-    pub(crate) fn answer_conflict(&mut self, accepted: bool) {
-        self.conflict_answer = Some(accepted);
     }
 
     /// 현재 구성(호스트 draft + 원본 위에 얹은 plugin draft)을 `path` 에 쓴다.
@@ -274,8 +245,6 @@ impl ImportExportState {
     ) {
         self.preview = None;
         self.failure = None;
-        self.conflict_prompt = None;
-        self.conflict_answer = None;
         self.pending_files
             .push(crate::app::settings_files::SettingsFileRequest::Import {
                 path: path.to_path_buf(),
@@ -301,9 +270,6 @@ impl ImportExportState {
         };
         let dropped = dropped_plugins(path, &decoded.warnings);
         let notices = bundle_notices::bundle_notices(&decoded.warnings);
-        // option 은 모든 OS 에서 키 위치대로 동작하므로(macOS Option · Windows Win · Linux Super)
-        // 가져온 구성에 대체할 바인딩이 없다.
-        let migration = Vec::new();
         self.preview = Some(Preview {
             file_name: path
                 .file_name()
@@ -313,7 +279,6 @@ impl ImportExportState {
             overrides: decoded.plugin_keybindings,
             dropped,
             notices,
-            migration,
         });
         self.notices_expanded = false;
         self.changed_only = true;
@@ -321,60 +286,18 @@ impl ImportExportState {
         self.deselected.clear();
     }
 
-    /// 선택한 행을 두 초안에 적용한다. 충돌이 있으면 확인을 기다린다.
-    fn apply(
-        &mut self,
-        settings: &mut Settings,
-        plugin_draft: &mut PluginShortcutDraft,
-        policy: ConflictPolicy,
-        labels_src: (&PluginShortcutSnapshot, &PluginBundleContext),
-    ) {
+    /// 선택한 행을 두 초안에 적용한다.
+    fn apply(&mut self, settings: &mut Settings, plugin_draft: &mut PluginShortcutDraft) {
         let Some(preview) = self.preview.as_ref() else {
             return;
         };
-        let resolved = if preview.migration.is_empty() {
-            Ok((preview.keybindings.clone(), preview.overrides.clone()))
-        } else {
-            resolve_migration(
-                &preview.keybindings,
-                &preview.overrides,
-                &plan_of(&preview.migration),
-                policy,
-            )
-        };
-        match resolved {
-            Ok((kb, ov)) => {
-                let keys: Vec<RowKey> = row_keys(&settings.keybindings, &kb, &ov)
-                    .into_iter()
-                    .filter(|k| !self.deselected.contains(k))
-                    .collect();
-                apply_rows(&keys, &mut settings.keybindings, plugin_draft, &kb, &ov);
-                self.toast = Some(t("settings.keybindings.ie_applied_toast").to_string());
-            }
-            Err(MigrationError::Conflicts(conflicts)) if policy == ConflictPolicy::Reject => {
-                let labels = Labels {
-                    general: &settings.general,
-                    scripts: &settings.scripts,
-                    snapshot: labels_src.0,
-                    names: &labels_src.1.plugin_names,
-                };
-                let plan = plan_of(&preview.migration);
-                let message = conflicts
-                    .iter()
-                    .map(|c| {
-                        let other = if plan.contains_key(&c.a) { &c.b } else { &c.a };
-                        t_fmt2(
-                            "settings.keybindings.conflict_message",
-                            &KeybindingSettings::format_display(&c.combo, labels.general),
-                            &labels.site(other),
-                        )
-                    })
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                self.conflict_prompt = Some(message);
-            }
-            Err(e) => tracing::warn!("keybinding import apply refused: {e}"),
-        }
+        let (kb, ov) = (&preview.keybindings, &preview.overrides);
+        let keys: Vec<RowKey> = row_keys(&settings.keybindings, kb, ov)
+            .into_iter()
+            .filter(|k| !self.deselected.contains(k))
+            .collect();
+        apply_rows(&keys, &mut settings.keybindings, plugin_draft, kb, ov);
+        self.toast = Some(t("settings.keybindings.ie_applied_toast").to_string());
     }
 }
 
@@ -396,9 +319,6 @@ fn dropped_plugins(path: &Path, warnings: &[BundleWarning]) -> Vec<(String, usiz
     }
     dropped
 }
-// reason: 설정 draft · plugin draft · 녹화 슬롯 · 이 화면 상태는 호출부가 서로 다른 필드에서 따로
-// 빌리는 가변 참조다 — 한 구조체로 묶으면 `draw_keybindings_tab` 의 다른 서브탭 갈래와 빌림이 겹친다.
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn draw_import_export_subtab(
     ui: &mut egui::Ui,
     settings: &mut Settings,
@@ -406,45 +326,8 @@ pub(crate) fn draw_import_export_subtab(
     ctx: &PluginBundleContext,
     snapshot: &PluginShortcutSnapshot,
     plugin_draft: &mut PluginShortcutDraft,
-    recording_field: &mut Option<RecordingSlot>,
-    captured: &KeyCapture,
 ) {
     let th = crate::theme::theme();
-
-    // 마이그레이션 녹화 결과 — Escape 는 기존 규칙대로 "비우기"(미지정으로 되돌림).
-    if let Some(slot) = recording_field.as_ref()
-        && slot.field_id == RECORDING_FIELD
-    {
-        let idx = slot.idx;
-        let value = match captured {
-            KeyCapture::Combo(c) => Some(MigrationValue::Set(c.clone())),
-            KeyCapture::Clear => Some(MigrationValue::Unset),
-            KeyCapture::None => None,
-        };
-        if let Some(value) = value {
-            if let Some(row) = state
-                .preview
-                .as_mut()
-                .and_then(|p| p.migration.get_mut(idx))
-            {
-                row.value = value;
-            }
-            *recording_field = None;
-        }
-    }
-
-    // 충돌 확인의 답.
-    if let Some(accepted) = state.conflict_answer.take() {
-        state.conflict_prompt = None;
-        if accepted {
-            state.apply(
-                settings,
-                plugin_draft,
-                ConflictPolicy::UnbindOther,
-                (snapshot, ctx),
-            );
-        }
-    }
 
     let export_clicked = Cell::new(false);
     let import_clicked = Cell::new(false);
@@ -471,9 +354,7 @@ pub(crate) fn draw_import_export_subtab(
         } else {
             DrillDownView::List
         };
-        let (total, unresolved, picked) = vm
-            .as_ref()
-            .map_or((0, 0, 0), |vm| (vm.total, vm.unresolved, vm.picked));
+        let (total, picked) = vm.as_ref().map_or((0, 0), |vm| (vm.total, vm.picked));
         let changed_only = state.changed_only;
 
         let actions = |ui: &mut egui::Ui, th: &Theme| {
@@ -483,22 +364,11 @@ pub(crate) fn draw_import_export_subtab(
             if Button::new(t("settings.keybindings.apply_button"))
                 .variant(ButtonVariant::Primary)
                 .size(ControlSize::Sm)
-                .enabled(unresolved == 0 && picked > 0)
+                .enabled(picked > 0)
                 .show(ui, th)
                 .clicked()
             {
                 apply_clicked.set(true);
-            }
-            if unresolved > 0 {
-                ui.label(
-                    egui::RichText::new(t_fmt(
-                        "settings.keybindings.ie_unresolved_count",
-                        &unresolved.to_string(),
-                    ))
-                    .monospace()
-                    .size(th.font_size_caption.value())
-                    .color(th.accent_warning()),
-                );
             }
             let label = if changed_only {
                 t_fmt("settings.keybindings.ie_show_all", &total.to_string())
@@ -587,16 +457,6 @@ pub(crate) fn draw_import_export_subtab(
                                 return;
                             };
                             intro(ui, th, th.measure_lg, &vm.intro);
-                            if !vm.migration.is_empty() {
-                                migrate_card(
-                                    ui,
-                                    th,
-                                    vm,
-                                    state_migration(&mut state.preview),
-                                    recording_field,
-                                    &labels,
-                                );
-                            }
                             if let Some(dropped) = &vm.dropped {
                                 dropped_notice(ui, th, dropped);
                             }
@@ -648,27 +508,9 @@ pub(crate) fn draw_import_export_subtab(
     if back_clicked {
         state.preview = None;
         state.failure = None;
-        if recording_field
-            .as_ref()
-            .is_some_and(|s| s.field_id == RECORDING_FIELD)
-        {
-            *recording_field = None;
-        }
     }
     if apply_clicked.get() {
-        state.apply(
-            settings,
-            plugin_draft,
-            ConflictPolicy::Reject,
-            (snapshot, ctx),
-        );
-    }
-}
-
-fn state_migration(preview: &mut Option<Preview>) -> &mut [MigrationRow] {
-    match preview.as_mut() {
-        Some(p) => &mut p.migration,
-        None => &mut [],
+        state.apply(settings, plugin_draft);
     }
 }
 

@@ -395,8 +395,7 @@ Settings › Keybindings › **Import / Export** 는 위 [이식 번들](#이식
   - **Scripts** — 현재와 번들의 **합집합**. 번들에 없는 현재 바인딩은 적용하면 사라지는 행으로 보인다.
   - **Plugin overrides** — **번들에 있는 명령만**. 이 환경에만 있는 override 는 표에 오르지 않고 바뀌지도 않는다.
   - 기본은 변경된 행만 보인다(back bar 의 **Show all {n}** / **Changed only** 토글). 선택은 해제한 행을 기억하는 방식이라 처음에는 모든 행이 선택돼 있다 — 변경 없는 행은 적용해도 값이 같다.
-- **option 마이그레이션 카드** — 이 화면은 `option` 을 매칭하지 않는 대상으로 옮길 때 대체 값을 정하는 카드를 그릴 수 있다. 지금은 모든 OS 가 `option` 을 매칭하므로 가져오기가 대체 대상을 만들지 않아 카드가 뜨지 않는다. 카드의 동작은 다음과 같다. 자리마다 대체 값을 정한다: 콤보 자리는 녹화 슬롯, 축 modifier 자리는 조합 목록에서 선택(안 고른 상태는 값이 아니라 placeholder **Select a modifier** — UI 폰트 · `text_placeholder` 색, 고르면 목록에서 빠진다 — `select_or_placeholder`). 콤보 자리는 **Leave unbound**(비워 두기)도 해소로 센다 — 축 modifier 와 드래그 반전 modifier 는 비울 수 없다. 대체 값이 새 충돌을 만들면 행 아래에 충돌 상대가 표시된다(행마다 언제나). 충돌 행이 **2 개 이상**이면 카드 설명 아래에 개수 줄(`{n} conflicts` danger 강조 + 적용 시 충돌 확인이 뜬다는 문장)을 먼저 표시한다 — 목록을 되풀이하지 않는다. **미해결이 하나라도 있으면 Apply 가 비활성**이고, back bar 에 `{n} unresolved` 가 뜬다 — 선택 여부와 무관하게 번들 전체에 대해 요구한다.
-- **Apply** — 고른 행만 settings draft 와 `plugin_shortcuts_draft` 에 쓴다(`apply_rows`). 마이그레이션 해소는 `resolve_migration` 이 한다. 해소된 번들 안에서 새 충돌이 생기면 설정 창의 충돌 확인 popup 이 뜨고, **덮어쓰기**를 고르면 충돌 상대 중 계획 밖의 자리를 비우고 적용한다(`ConflictPolicy::UnbindOther`). 적용되면 toast 로 알린다. 디스크 커밋은 footer **Save** 가 한다(Preset 과 같은 2 단계).
+- **Apply** — 고른 행만 settings draft 와 `plugin_shortcuts_draft` 에 쓴다(`apply_rows`). 적용되면 toast 로 알린다. 디스크 커밋은 footer **Save** 가 한다(Preset 과 같은 2 단계).
 - **Cancel** — 설정 draft 와 함께 `plugin_shortcuts_draft` 도 버린다. plugin draft 는 **Save 로 닫혔을 때만** 적용된다 — 창 닫기·`toggle_settings` 로 닫혀도 버린다. Plugins 서브탭 편집도 같은 규칙이다.
 
 결정의 근거·대안·재검토 조건은 [ADR-0019](../../adr/0019-keybinding-settings-and-hints.md).
@@ -440,9 +439,8 @@ General → Workspace → Pane → Tab → Surface → Clipboard → Zoom → Ex
 
 > explorer 는 host builtin kind 라 `open_explorer`(Tab)·`convert_to_explorer`(Surface) 호스트 키바인딩이 있다. 현재 Surface 의 convert 계열은 `convert_surface`·`convert_to_markdown`·`convert_to_explorer` 다.
 
-가져오기의 충돌 검사는 변환된 번들 안에서 수행한다.
-일부 행만 선택했을 때 현재 draft에 남은 바인딩과 생기는 충돌은 이 검사에 포함되지 않는다.
-새 대체 값끼리 충돌하면 어느 쪽을 비울지 정할 수 없어 충돌 확인을 수락해도 적용하지 않는다.
+가져오기는 고른 행을 그대로 적용하며 충돌을 검사하지 않는다.
+일부 행만 선택하면 현재 draft에 남은 바인딩과 같은 조합이 생길 수 있다.
 번들과 완전히 같은 plugin override 집합으로 맞추려면 로컬에만 있는 항목은 Plugins 서브탭에서 따로 제거한다.
 
 ## 인터페이스

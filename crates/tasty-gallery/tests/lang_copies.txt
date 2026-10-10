@@ -185,13 +185,11 @@ src/catalog/components/info_modal.rs	Notifications	fullscreen.notifications.titl
 src/catalog/components/info_modal.rs	OK	button.ok
 src/catalog/components/info_modal.rs	Quit	button.quit,db_error.quit,quit_modal.quit_button,settings.general.close_behavior_quit,tray.quit
 src/catalog/components/info_modal.rs	Theme not found	theme_error.title
-src/catalog/components/kb_import_export.rs	Alt	settings.general.alt_display_style_alt,settings.terminal.link_modifier_alt
 src/catalog/components/kb_import_export.rs	Apply	port_scanner.state_filter_apply,preset.popup.apply_button,remote_tool.filter_apply,settings.file_handler.hook_handlers.seq_apply,settings.keybindings.apply_button
 src/catalog/components/kb_import_export.rs	Back	explorer.nav.back,settings.keybindings.preset_back,tutorial.btn_back
 src/catalog/components/kb_import_export.rs	Changed only	settings.keybindings.ie_changed_only
 src/catalog/components/kb_import_export.rs	Command palette	command_palette.heading
 src/catalog/components/kb_import_export.rs	Copy	dag.detail.copy,explorer.context_menu.copy_files,explorer.properties.copy,terminal_context_menu.copy,terminal_context_menu.link_copy
-src/catalog/components/kb_import_export.rs	Ctrl	settings.terminal.link_modifier_ctrl
 src/catalog/components/kb_import_export.rs	Find	explorer.command.find
 src/catalog/components/kb_import_export.rs	General bindings	settings.keybindings.ie_group_general
 src/catalog/components/kb_import_export.rs	Import keybindings	settings.keybindings.ie_detail_title
@@ -199,9 +197,6 @@ src/catalog/components/kb_import_export.rs	None	plugins.add_none,settings.keybin
 src/catalog/components/kb_import_export.rs	Paste	explorer.context_menu.paste
 src/catalog/components/kb_import_export.rs	Plugin overrides	settings.keybindings.ie_group_plugins
 src/catalog/components/kb_import_export.rs	Script bindings	settings.keybindings.ie_group_scripts
-src/catalog/components/kb_import_export.rs	Select a modifier	settings.keybindings.ie_pick_modifier
-src/catalog/components/kb_import_export.rs	Shift	settings.general.shift_display_style_shift
-src/catalog/components/kb_import_export.rs	— unresolved —	settings.keybindings.ie_unresolved_value
 src/catalog/components/kb_import_export/entry.rs	Explorer	convert_popup.explorer,settings.appearance.subtab.explorer,settings.keybindings.subtab.explorer,surface.kind.explorer
 src/catalog/components/kb_import_export/entry.rs	Export	settings.keybindings.ie_export_title
 src/catalog/components/kb_import_export/entry.rs	Export…	settings.keybindings.ie_export_button
@@ -211,15 +206,9 @@ src/catalog/components/kb_import_export/entry.rs	Import…	settings.keybindings.
 src/catalog/components/kb_import_export/entry.rs	Plugins	button.plugins,plugins.title,settings.keybindings.subtab.plugins,settings.tab.plugin
 src/catalog/components/kb_import_export/entry.rs	Preset	settings.keybindings.subtab.preset
 src/catalog/components/kb_import_export/entry.rs	Scripts	settings.misc.scripts
-src/catalog/components/kb_import_export/migrate.rs	Leave unbound	settings.keybindings.ie_leave_unbound
-src/catalog/components/kb_import_export/migrate.rs	Not set	settings.keybindings.ie_not_set
-src/catalog/components/kb_import_export/migrate.rs	Option	settings.general.option_display_style_option
-src/catalog/components/kb_import_export/migrate.rs	Unbound	settings.keybindings.ie_unbound,settings.scripts.unbound
 src/catalog/components/kb_import_export/notices.rs	Choose another file	settings.keybindings.ie_choose_another
 src/catalog/components/kb_import_export/open_values.rs	Export	settings.keybindings.ie_export_title
 src/catalog/components/kb_import_export/open_values.rs	Export…	settings.keybindings.ie_export_button
-src/catalog/components/kb_import_export/open_values.rs	Not set	settings.keybindings.ie_not_set
-src/catalog/components/kb_import_export/open_values.rs	Option	settings.general.option_display_style_option
 src/catalog/components/kb_import_export/open_values.rs	Read with warnings	settings.keybindings.ie_notices_title
 src/catalog/components/kb_import_export/open_values.rs	Try again	remote_attach.try_again,settings.keybindings.ie_export_retry
 src/catalog/components/kb_import_export/open_values.rs	{} notices	settings.keybindings.ie_notices_count_many
@@ -383,7 +372,6 @@ src/catalog/components/prim_forms.rs	Custom	dag.kind.custom,settings.keybindings
 src/catalog/components/prim_forms.rs	Default (full rc)	settings.terminal.shell_mode_default
 src/catalog/components/prim_forms.rs	Reduced motion	settings.accessibility.reduced_motion
 src/catalog/components/prim_forms.rs	Select	terminal_context_menu.link_select
-src/catalog/components/prim_forms.rs	Select a modifier	settings.keybindings.ie_pick_modifier
 src/catalog/components/prim_input.rs	Disabled	plugins.disabled
 src/catalog/components/prim_input.rs	Filter…	port_scanner.search_placeholder
 src/catalog/components/prim_layout_shell.rs	Appearance	settings.appearance.heading,settings.tab.appearance
@@ -516,7 +504,7 @@ src/catalog/components/script_manager.rs	Add script	settings.scripts.add
 src/catalog/components/script_manager.rs	Add trigger…	settings.scripts.trigger_add
 src/catalog/components/script_manager.rs	Auto-run:	settings.scripts.autorun_label
 src/catalog/components/script_manager.rs	Scripts	settings.misc.scripts
-src/catalog/components/script_manager.rs	Unbound	settings.keybindings.ie_unbound,settings.scripts.unbound
+src/catalog/components/script_manager.rs	Unbound	settings.scripts.unbound
 src/catalog/components/script_manager.rs	changed	script.confirm.changed_tag,settings.scripts.changed_badge
 src/catalog/components/segmented.rs	Edit	image_viewer.edit,preset.toolbar.edit,remote_tool.edit,settings.file_handler.hook_handlers.seq_edit
 src/catalog/components/segmented.rs	Preview	settings.appearance.preview_heading

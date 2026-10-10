@@ -1,20 +1,16 @@
-//! 내보내기 실패, 여러 경고, 줄 번호 없는 파싱 오류, 충돌, 미선택 상태 예제.
-//! 실제 그리기는 entry·notices·migrate의 공통 함수를 사용한다.
+//! 내보내기 실패, 여러 경고, 줄 번호 없는 파싱 오류 예제.
+//! 실제 그리기는 entry·notices의 공통 함수를 사용한다.
 
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::{ButtonVariant, select, select_or_placeholder};
+use tasty_ui_widgets::ButtonVariant;
 
 use crate::catalog::icons;
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
 use super::entry::action_row;
-use super::migrate::card;
 use super::notices::{dropped_notice, notice_block, notice_line, parse_failure};
-use super::paint::{caption, fixed_label, glyph_at, intro_secondary};
-use super::{
-    IE_FILE, IE_PICK, MODIFIER_OPTIONS, MigrateRow, MigrateState, NOTICE_FOLD_AT, SPECIMEN_W,
-    STATE, State, Widget,
-};
+use super::paint::{caption, intro_secondary};
+use super::{IE_FILE, NOTICE_FOLD_AT, SPECIMEN_W, STATE, State};
 
 /// 경고 블록 데모 줄 — 고정 순서(스키마 → 모르는 액션 → 빈 그룹). 넷째 줄은 접힌다.
 const NOTICE_LINES: &[&str] = &[
@@ -23,45 +19,6 @@ const NOTICE_LINES: &[&str] = &[
     "The group [keybindings.image] is empty — nothing to import from it.",
     "The group [keybindings.markdown] is empty — nothing to import from it.",
 ];
-
-/// 충돌이 여럿인 카드의 데모 행 — jsx `IeConflictSummaryG`.
-const CONFLICT_ROWS: &[MigrateRow] = &[
-    conflict_row(
-        "Toggle vi mode",
-        "Option+V",
-        "Ctrl+Shift+C",
-        "Also bound to Copy",
-    ),
-    conflict_row(
-        "Jump to error",
-        "Option+E",
-        "Ctrl+Shift+K",
-        "Also bound to Clear scrollback",
-    ),
-    conflict_row(
-        "Screenshot to clipboard",
-        "Option+Shift+4",
-        "Ctrl+Shift+P",
-        "Also bound to Command palette",
-    ),
-];
-
-const fn conflict_row(
-    action: &'static str,
-    from: &'static str,
-    value: &'static str,
-    conflict: &'static str,
-) -> MigrateRow {
-    MigrateRow {
-        action,
-        from,
-        widget: Widget::Record,
-        value,
-        state: MigrateState::Conflict,
-        conflict: Some(conflict),
-        fanout: None,
-    }
-}
 
 pub fn draw_open_values(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Tight, |ui| {
@@ -85,10 +42,6 @@ pub fn draw_open_values(ui: &mut egui::Ui, theme: &Theme) {
                 );
                 parse_failure(ui, theme, true);
                 parse_failure(ui, theme, false);
-                caption(ui, theme, "4 · several conflicts — count first, from 2 up");
-                card(ui, theme, false, CONFLICT_ROWS, (3, 4), st);
-                caption(ui, theme, "5 · modifier Select — placeholder / chosen");
-                modifier_selects(ui, theme, st);
             });
         });
     });
@@ -111,24 +64,17 @@ pub fn draw_open_values(ui: &mut egui::Ui, theme: &Theme) {
                 "parse copy",
                 "line clause replaced by “the file isn't TOML.”",
             ),
-            ("conflicts", "count-first line from 2 up; row lines always"),
-            ("placeholder", "“Select a modifier” · text-placeholder"),
         ],
         &[
             TokenChip::new(
                 "accent-warning",
-                "warning block + Not set",
+                "warning block",
                 theme.accent_warning().to_egui(),
             ),
             TokenChip::new(
                 "accent-danger",
-                "failure blocks + conflict count",
+                "failure blocks",
                 theme.accent_danger().to_egui(),
-            ),
-            TokenChip::new(
-                "text-placeholder",
-                "modifier Select before a choice",
-                theme.text_placeholder().to_egui(),
             ),
             TokenChip::without_color(
                 "kb-ie-notice-inset",
@@ -250,66 +196,5 @@ fn bundle_notices(ui: &mut egui::Ui, theme: &Theme, st: &mut State) {
     );
     if clicked.is_some() {
         st.notices_expanded = true;
-    }
-}
-
-/// jsx `IeModifierSelectG` — 원래 조합 · → · Select · trailing. 안 고른 상태는 placeholder,
-/// 고른 상태는 값 + check.
-fn modifier_selects(ui: &mut egui::Ui, theme: &Theme, st: &mut State) {
-    for chosen in [false, true] {
-        ui.horizontal(|ui| {
-            ui.set_min_height(theme.item_height_interactive.value());
-            ui.spacing_mut().item_spacing.x = theme.spacing_md.value();
-            fixed_label(
-                ui,
-                theme.kb_ie_from_column_width(),
-                "Option",
-                egui::FontId::monospace(theme.font_size_term_sm.value()),
-                theme.text_muted().to_egui(),
-            );
-            glyph_at(
-                ui,
-                icons::CHEVRON_RIGHT,
-                theme.icon_glyph_size_sm,
-                theme.text_muted().to_egui(),
-            );
-            if chosen {
-                let mut idx = MODIFIER_OPTIONS
-                    .iter()
-                    .position(|o| *o == "Ctrl+Alt")
-                    .unwrap_or(0);
-                select(
-                    ui,
-                    theme,
-                    "kb_ie_open_values_chosen",
-                    &mut idx,
-                    MODIFIER_OPTIONS,
-                    theme.field_width_md.value(),
-                    true,
-                );
-                glyph_at(
-                    ui,
-                    icons::CHECK,
-                    theme.icon_glyph_size_sm,
-                    theme.accent_success().to_egui(),
-                );
-            } else {
-                select_or_placeholder(
-                    ui,
-                    theme,
-                    "kb_ie_open_values_placeholder",
-                    &mut st.pending_modifier,
-                    MODIFIER_OPTIONS,
-                    IE_PICK,
-                    theme.field_width_md.value(),
-                    true,
-                );
-                ui.label(
-                    egui::RichText::new("Not set")
-                        .size(theme.font_size_caption.value())
-                        .color(theme.accent_warning().to_egui()),
-                );
-            }
-        });
     }
 }

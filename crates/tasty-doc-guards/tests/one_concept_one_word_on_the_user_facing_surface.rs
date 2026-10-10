@@ -48,12 +48,6 @@ struct NotAWindow {
 
 const NOT_A_WINDOW: &[NotAWindow] = &[
     NotAWindow {
-        path: "lang/ko.toml",
-        phrase: "중복 사용을 확인하는 창이 열립니다",
-        count: 2,
-        evidence: "ie_migrate_conflict와 ie_migrate_conflicts_tail은 단축키 가져오기 충돌 안내다. src/view/settings/ui.rs가 keybinding_import_conflict를 설정 윈도우 내부 PopupManager에 등록하고 연다.",
-    },
-    NotAWindow {
         path: "crates/tasty-plugin-clipboard-viewer/lang/ko.toml",
         phrase: "스냅샷 창은",
         count: 1,

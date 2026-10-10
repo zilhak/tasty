@@ -29,14 +29,14 @@ modifier hint는 지금 누른 modifier를 모두 포함하는 조합을 보여�
 
 export는 화면용 command snapshot 대신 PluginsConfig의 override 전체를 읽어 비활성 plugin 설정도 포함한다. decode는 설정 타입의 직렬화 결과로 필드를 얻고 필드마다 복원하므로 별도 필드 목록이 필요 없다. 잘못된 필드는 기본값으로 남는다.
 
-Win·Super 로 `option` 을 쓸 수 있게 되어 Windows·Linux 의 수정자 조합이 7개에서 15개로 늘었다. egui-winit 이 비-macOS 의 Super 를 egui 수정자에 담지 않으므로, egui 입력으로 판정하는 경로는 winit 이 알린 상태를 따로 받아야 한다. 이 상태는 포커스를 잃으면 비운다. 가져오기의 option 대체 카드는 대체 대상이 생기지 않아 뜨지 않는다. 그 판정 모듈과 화면은 남아 있다. option 변환은 선택하지 않은 행을 포함한 번들 전체에서 해결해야 Apply할 수 있다. 충돌은 변환된 번들 안에서 판단하므로 일부 행만 적용할 때 현재 초안과 생기는 충돌은 이 화면이 모두 잡지 못한다. TOML은 null이 없어 Option 시퀀스·튜플 원소와 중첩 Option은 포맷 검토가 필요하다. 맵의 None 값도 항목이 생략되어 같은 맵으로 복원되지 않는다.
+Win·Super 로 `option` 을 쓸 수 있게 되어 Windows·Linux 의 수정자 조합이 7개에서 15개로 늘었다. egui-winit 이 비-macOS 의 Super 를 egui 수정자에 담지 않으므로, egui 입력으로 판정하는 경로는 winit 이 알린 상태를 따로 받아야 한다. 이 상태는 포커스를 잃으면 비운다. 가져오기의 option 대체 기능(판정 모듈, 대체 카드, 적용 시 충돌 확인)은 옛 정책에서만 필요했으므로 삭제했다. 가져오기는 고른 행을 그대로 초안에 쓰고 충돌을 검사하지 않으므로, 일부 행만 적용하면 현재 초안과 같은 조합이 생길 수 있다. TOML은 null이 없어 Option 시퀀스·튜플 원소와 중첩 Option은 포맷 검토가 필요하다. 맵의 None 값도 항목이 생략되어 같은 맵으로 복원되지 않는다.
 
 ## Alternatives Considered
 
 - 첫 modifier만 기억하면 조합을 좁혀도 목록이 바뀌지 않는다. 정확히 같은 조합만 보여주면 추가로 누를 키를 발견하기 어렵다.
 - 모든 키나 명령 팔레트 실행에 타이머를 리셋하면 실제로 키를 누르고 있는 상태와 관계없는 조작까지 영향을 준다. 표시 뒤 패널을 다시 숨기면 깜빡임이 생긴다.
 - 빈 조합을 숨기면 모든 조합이 미할당일 때 아무 반응도 보이지 않는다. 역할 행처럼 꾸미면 없는 동작이 있는 것처럼 보인다.
-- option 문자열 검색은 키 이름·대소문자·토큰 순서를 오해할 수 있다. parser를 GUI에 두면 bundle이 headless에서 쓰지 못하고, 새 크레이트는 이미 공통 의존인 settings와 별도 역할이 없다.
+- 바인딩 문자열의 문자열 검색은 키 이름·대소문자·토큰 순서를 오해할 수 있다. parser를 GUI에 두면 bundle이 headless에서 쓰지 못하고, 새 크레이트는 이미 공통 의존인 settings와 별도 역할이 없다.
 
 `option` 을 macOS 전용으로 두면 macOS 에서 만든 구성을 다른 OS 로 옮길 때마다 대체 값을 골라야 하고, Windows·Linux 사용자는 Win·Super 를 단축키에 쓸 수 없다. Win·Super 에 새 토큰을 주면 같은 위치의 키가 OS 마다 다른 토큰이 되어 구성이 이식되지 않는다. `super`·`win`·`cmd` 텍스트를 `option`·`alt` 로 정규화하는 방법은 winit 의 super 가 macOS 에서는 Command(`alt` 위치), 다른 OS 에서는 Win·Super(`option` 위치)여서 같은 낱말의 뜻이 저장한 OS 에 따라 달라진다. `meta` 는 환경마다 Alt 나 Super 를 가리킨다.
 

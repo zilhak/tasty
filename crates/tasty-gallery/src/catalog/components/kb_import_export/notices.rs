@@ -5,22 +5,8 @@ use tasty_ui_widgets::{Button, ButtonVariant, ControlSize};
 
 use crate::catalog::icons::{self, MockGlyph};
 
-use super::paint::{glyph_at, intro, intro_secondary};
-use super::{GROUP_CHEVRON_GAP, IE_DISCARDED, IE_FILE};
-
-/// jsx `IeNotices` — 버린 plugin override 안내(정보, 경고 아님) · 마이그레이션 불필요 안내문 ·
-/// 파싱 실패 인라인 블록.
-pub(super) fn notices(ui: &mut egui::Ui, theme: &Theme) {
-    ui.spacing_mut().item_spacing.y = theme.spacing_md.value();
-    dropped_notice(ui, theme);
-    intro(
-        ui,
-        theme,
-        theme.measure_lg,
-        &format!("{IE_FILE} — 7 of 73 bindings change. No option bindings to migrate."),
-    );
-    parse_failure(ui, theme, true);
-}
+use super::paint::{glyph_at, intro_secondary};
+use super::{GROUP_CHEVRON_GAP, IE_DISCARDED};
 
 pub(super) fn dropped_notice(ui: &mut egui::Ui, theme: &Theme) {
     ui.horizontal_top(|ui| {

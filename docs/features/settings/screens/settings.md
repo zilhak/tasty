@@ -51,7 +51,6 @@
 - **행 격자**: 서브탭의 설정 행은 라벨 열 · 컨트롤 격자다(`tasty_ui_widgets::SettingsRow`). 라벨 열은 그 서브탭에서 가장 긴 라벨 폭을 `settings_label_width`(150) … `settings_label_max_width`(240)로 clamp 한 값이며, 더 긴 라벨은 열 안에서 줄을 바꾼다. 라벨과 컨트롤 사이는 `settings_label_gap`(16), 행과 행 사이는 `settings_row_gap`(12)이다. 한 행에 딸린 설명과 경고 callout 은 그 행 아래 `settings_row_caption_gap`(4) 자리에 `measure_md` 폭으로 붙는다. Keybindings 의 General ~ Scripts 서브탭도 같은 라벨 칸과 같은 clamp 를 쓴다. 열 폭은 그 서브탭의 단축키 라벨과 quick-switch 행 라벨(Workspace·Tab), Scripts 는 스크립트 이름으로 잰다. 열보다 긴 라벨은 줄을 바꾸고 도움말 아이콘은 마지막 단어 뒤에 붙는다.
 - **설명·빈 줄 크기**: 행 caption, 서브탭 안내문, 숫자 칸의 단위, 패널 안의 빈 줄(목록이 비었음 · 필터 결과 없음 · 이 OS 에 없는 서브탭)은 caption 11(`font_size_caption`) · `text_muted` 다. 화면 전체를 차지하는 `CenterState`(Scripts 의 빈 목록 등)는 제목을 본문 13 으로 둔다.
 - **Keybindings › Preset · Import / Export**: 이 두 서브탭만 표준 패딩/스크롤 래퍼 없이 **full-bleed** drill-down(목록⇄상세 content-swap)으로 그려진다. 그래서 위 컬럼 상한도 안 받는다 — 컬럼 자체를 자기 레이아웃으로 대체한다. 상세: [`features/keybindings/`](../../keybindings/index.md#프리셋) · [가져오기 / 내보내기](../../keybindings/index.md#가져오기--내보내기).
-- **Keybindings › Import / Export 의 충돌 확인**: 가져오기 Apply 가 새 충돌을 만들면 설정 창 자체 popup(`keybinding_import_conflict`)이 뜬다 — Cancel · Overwrite, 키보드 Enter/Y = Overwrite, Esc/N = Cancel, 타이틀바 ✕ = Cancel.
 
 ### 숫자 입력 한 모양
 

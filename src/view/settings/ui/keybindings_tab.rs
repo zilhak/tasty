@@ -413,8 +413,6 @@ pub fn draw_keybindings_tab(
                 plugin_bundle,
                 plugin_shortcuts,
                 plugin_shortcuts_draft,
-                recording_field,
-                &captured,
             );
         }
         // 바인딩 엔트리 서브탭은 위에서 그렸다.

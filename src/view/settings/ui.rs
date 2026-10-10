@@ -49,8 +49,6 @@ const SETTINGS_TITLE_DIVIDER_HEIGHT: LogicalPx = LogicalPx(20.0);
 const SETTINGS_TITLE_DIVIDER_MARGIN_R: LogicalPx = LogicalPx(14.0);
 /// 푸터 좌우 패딩. 디자인 footer `padding: space-md size-14` 의 수평값.
 const SETTINGS_FOOTER_PAD_X: i8 = 14;
-/// 단축키 가져오기 Apply 가 만난 충돌을 확인하는 popup id.
-const IMPORT_CONFLICT_POPUP_ID: &str = "keybinding_import_conflict";
 
 /// plugin 명령의 단축키 표시 자료. 저장된 override가 없으면 매니페스트 기본값을 쓴다.
 #[derive(Debug, Clone)]
@@ -413,18 +411,15 @@ impl SettingsUiState {
 
     pub fn new() -> Self {
         let mut popups = PopupManager::new();
-        // 녹화 충돌과 가져오기 충돌은 같은 모양의 확인 popup 이다. 크기는 열 때
-        // `conflict_popup_size` 가 다시 정하므로 등록 값은 첫 프레임 placeholder 다.
-        for id in ["keybinding_conflict", IMPORT_CONFLICT_POPUP_ID] {
-            popups.register(
-                PopupState::new(
-                    id,
-                    t("settings.keybindings.conflict_title"),
-                    egui::vec2(340.0, 120.0),
-                )
-                .with_close_on_outside_click(false),
-            );
-        }
+        // 크기는 열 때 `conflict_popup_size` 가 다시 정하므로 등록 값은 첫 프레임 placeholder 다.
+        popups.register(
+            PopupState::new(
+                "keybinding_conflict",
+                t("settings.keybindings.conflict_title"),
+                egui::vec2(340.0, 120.0),
+            )
+            .with_close_on_outside_click(false),
+        );
         // 타이틀은 열 때 모드에 맞춰 다시 정한다(`open_file_chooser`).
         // 메인 파일 선택기처럼 셸 타이틀바 없이 뷰의 헤더 한 줄을 이동 손잡이로 쓴다.
         popups.register(
@@ -773,32 +768,6 @@ pub fn draw_settings_panel(ctx: &egui::Context, panel: SettingsPanelCtx<'_>) -> 
                                 ui_state.popups.open_centered_focused("keybinding_conflict");
                             }
 
-                            // 단축키 가져오기 Apply 의 충돌 확인 — 문구가 서 있으면 연다.
-                            // intent-exempt: 설정 창 내부 PopupManager 의 sub-popup open(위와 같은 경로).
-                            let import_conflict_size =
-                                if ui_state.popups.is_open(IMPORT_CONFLICT_POPUP_ID) {
-                                    None
-                                } else {
-                                    ui_state.import_export.conflict_prompt().map(|msg| {
-                                        let zoom = draft.appearance.ui_scale_factor();
-                                        conflict_popup_size(ui, &th, msg.to_string(), zoom)
-                                    })
-                                };
-                            if let Some(size) = import_conflict_size {
-                                if let Some(p) = ui_state.popups.get_mut(IMPORT_CONFLICT_POPUP_ID) {
-                                    p.size = size;
-                                }
-                                ui_state
-                                    .popups
-                                    .open_centered_focused(IMPORT_CONFLICT_POPUP_ID);
-                            }
-                            if ui_state.import_export.conflict_prompt().is_none()
-                                && ui_state.popups.is_open(IMPORT_CONFLICT_POPUP_ID)
-                            {
-                                // intent-exempt: 설정 창 내부 sub-popup close.
-                                ui_state.popups.close(IMPORT_CONFLICT_POPUP_ID);
-                            }
-
                             // 충돌 팝업에서 수락/거부 처리
                             if ui_state.conflict_accepted {
                                 ui_state.conflict_accepted = false;
@@ -849,10 +818,8 @@ pub fn draw_settings_panel(ctx: &egui::Context, panel: SettingsPanelCtx<'_>) -> 
 
     // Draw popups (충돌 확인 · 파일 선택)
     let mut chooser_done = false;
-    let mut import_answer: Option<bool> = None;
     let popup_result = {
         let pending = ui_state.pending_binding.clone();
-        let import_prompt = ui_state.import_export.conflict_prompt().map(str::to_string);
         let accepted = &mut ui_state.conflict_accepted;
         let cancelled = &mut ui_state.conflict_cancelled;
         let chooser = &mut ui_state.file_chooser;
@@ -862,24 +829,6 @@ pub fn draw_settings_panel(ctx: &egui::Context, panel: SettingsPanelCtx<'_>) -> 
             &mut |id, ui| {
                 if id == file_chooser::FILE_CHOOSER_POPUP_ID {
                     chooser_done |= chooser.draw(ui, &th, chooser_owns_escape);
-                    return;
-                }
-                if id == IMPORT_CONFLICT_POPUP_ID
-                    && let Some(msg) = &import_prompt
-                {
-                    ui.label(msg.as_str());
-                    vspace(ui, th.spacing_sm);
-                    ui.horizontal(|ui| {
-                        if ui.button(t("button.cancel")).clicked() {
-                            import_answer = Some(false);
-                        }
-                        if ui
-                            .button(t("settings.keybindings.conflict_apply"))
-                            .clicked()
-                        {
-                            import_answer = Some(true);
-                        }
-                    });
                     return;
                 }
                 if id == "keybinding_conflict"
@@ -913,30 +862,9 @@ pub fn draw_settings_panel(ctx: &egui::Context, panel: SettingsPanelCtx<'_>) -> 
     if popup_result.closed.contains(&"keybinding_conflict") {
         ui_state.pending_binding = None;
     }
-    if popup_result.closed.contains(&IMPORT_CONFLICT_POPUP_ID) {
-        import_answer = Some(false);
-    }
 
     settle_file_chooser(ui_state, chooser_done, &popup_result.closed);
     apply_file_chooser_outcomes(ui_state);
-
-    if ui_state.popups.is_open(IMPORT_CONFLICT_POPUP_ID)
-        && escape_owner == Some(IMPORT_CONFLICT_POPUP_ID)
-    {
-        ctx.input(|i| {
-            if i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Y) {
-                import_answer = Some(true);
-            }
-            if i.key_pressed(egui::Key::Escape) || i.key_pressed(egui::Key::N) {
-                import_answer = Some(false);
-            }
-        });
-    }
-    if let Some(accepted) = import_answer {
-        ui_state.import_export.answer_conflict(accepted);
-        // intent-exempt: 설정 창 내부 sub-popup close.
-        ui_state.popups.close(IMPORT_CONFLICT_POPUP_ID);
-    }
 
     // 키보드로 충돌 팝업 수락/거부 — 파일 선택이 그 위에 떠 있으면 키는 그쪽 것이다.
     if ui_state.popups.is_open("keybinding_conflict") && escape_owner == Some("keybinding_conflict")
@@ -972,15 +900,11 @@ fn settle_file_chooser(
 
 /// 설정 창 popup 중 Esc 를 받을 하나 — 열린 것 중 z 순서가 가장 위인 것.
 fn settings_escape_owner(popups: &PopupManager) -> Option<&'static str> {
-    [
-        "keybinding_conflict",
-        IMPORT_CONFLICT_POPUP_ID,
-        file_chooser::FILE_CHOOSER_POPUP_ID,
-    ]
-    .into_iter()
-    .filter_map(|id| popups.open_geometry(id).map(|(z, _)| (z, id)))
-    .max_by_key(|(z, _)| *z)
-    .map(|(_, id)| id)
+    ["keybinding_conflict", file_chooser::FILE_CHOOSER_POPUP_ID]
+        .into_iter()
+        .filter_map(|id| popups.open_geometry(id).map(|(z, _)| (z, id)))
+        .max_by_key(|(z, _)| *z)
+        .map(|(_, id)| id)
 }
 
 /// 닫힌 파일 선택의 결과를 그것을 연 화면 상태로 돌려준다.

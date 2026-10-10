@@ -3,9 +3,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use tasty_host_plugin::keybinding_bundle::PluginShortcutOverrides;
-use tasty_host_plugin::keybinding_bundle::option_migration::{
-    BindingSite, Resolution, ResolutionPlan,
-};
 
 use crate::plugin::registry_state::ShortcutOverride;
 use crate::settings::{KeybindingSettings, SwitchAxis, SwitchStep};
@@ -67,59 +64,6 @@ impl RowKey {
             RowKey::Plugin { .. } => Group::Plugins,
         }
     }
-
-    /// 마이그레이션 자리가 속한 행.
-    pub(crate) fn of_site(site: &BindingSite) -> RowKey {
-        match site {
-            BindingSite::GeneralBinding { field_id, .. } => RowKey::General(field_id),
-            BindingSite::DragFlipModifier => RowKey::DragFlip,
-            BindingSite::AxisModifier { axis }
-            | BindingSite::AxisSlot { axis, .. }
-            | BindingSite::AxisStep { axis, .. } => RowKey::Axis(*axis),
-            BindingSite::ScriptBinding { script_id } => RowKey::Script(script_id.clone()),
-            BindingSite::PluginOverride {
-                plugin_id,
-                command_id,
-                ..
-            } => RowKey::Plugin {
-                plugin_id: plugin_id.clone(),
-                command_id: command_id.clone(),
-            },
-        }
-    }
-}
-
-/// 마이그레이션 행 하나의 사용자 선택.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum MigrationValue {
-    Unset,
-    Set(String),
-    /// 이 환경에서 비워 둔다 — 해소로 센다.
-    Unbound,
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct MigrationRow {
-    pub site: BindingSite,
-    pub from: String,
-    pub value: MigrationValue,
-}
-
-/// 사용자가 고른 대체값을 적용 계획으로 만든다. Unset은 제외한다.
-pub(crate) fn plan_of(rows: &[MigrationRow]) -> ResolutionPlan {
-    rows.iter()
-        .filter_map(|r| match &r.value {
-            MigrationValue::Unset => None,
-            MigrationValue::Set(v) => Some((r.site.clone(), Resolution::Replace(v.clone()))),
-            MigrationValue::Unbound => Some((r.site.clone(), Resolution::Unbind)),
-        })
-        .collect()
-}
-
-pub(crate) fn unresolved_count(rows: &[MigrationRow]) -> usize {
-    rows.iter()
-        .filter(|r| r.value == MigrationValue::Unset)
-        .count()
 }
 
 /// 디스크의 override 위에 설정 창 draft 를 얹은 현재 값 — export 의 원본이자 미리보기의
@@ -312,7 +256,7 @@ mod tests {
         assert!(override_of(&merged, "q", "b").is_some());
     }
 
-    /// 드래그 반전 modifier 는 일반 그룹의 한 행이다. 이행 자리도 그 행으로 가고, 고르면 값이 들어간다.
+    /// 드래그 반전 modifier 는 일반 그룹의 한 행이다. 고르면 값이 들어간다.
     #[test]
     fn the_drag_flip_modifier_is_its_own_general_row() {
         let mut draft = KeybindingSettings::preset_tasty();
@@ -323,10 +267,6 @@ mod tests {
 
         assert!(row_keys(&draft, &imported, &none).contains(&RowKey::DragFlip));
         assert_eq!(RowKey::DragFlip.group(), Group::General);
-        assert_eq!(
-            RowKey::of_site(&BindingSite::DragFlipModifier),
-            RowKey::DragFlip
-        );
         assert!(row_changed(
             &RowKey::DragFlip,
             &draft,
@@ -420,30 +360,5 @@ mod tests {
         let keys = row_keys(&kb, &kb, &keys_ov("p", "a", "ctrl+a"));
         let plugin_rows = keys.iter().filter(|k| k.group() == Group::Plugins).count();
         assert_eq!(plugin_rows, 1);
-    }
-
-    /// Unset 은 계획에 없고, 미해결 수로만 센다.
-    #[test]
-    fn unset_rows_stay_out_of_the_plan() {
-        let rows = vec![
-            MigrationRow {
-                site: BindingSite::GeneralBinding {
-                    field_id: "new_tab",
-                    index: 0,
-                },
-                from: "option+t".into(),
-                value: MigrationValue::Unset,
-            },
-            MigrationRow {
-                site: BindingSite::GeneralBinding {
-                    field_id: "new_tab",
-                    index: 1,
-                },
-                from: "option+y".into(),
-                value: MigrationValue::Unbound,
-            },
-        ];
-        assert_eq!(plan_of(&rows).len(), 1);
-        assert_eq!(unresolved_count(&rows), 1);
     }
 }

@@ -123,9 +123,7 @@ pub(super) fn diff_table(
                     mono.clone(),
                     th.text_muted().to_egui(),
                 );
-                let fg = if r.blocked {
-                    th.accent_warning()
-                } else if r.changed {
+                let fg = if r.changed {
                     th.accent_primary()
                 } else {
                     th.text_muted()

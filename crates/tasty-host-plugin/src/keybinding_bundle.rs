@@ -348,10 +348,6 @@ fn decode_plugin_overrides(
     out
 }
 
-/// `option` 을 매칭하지 않는 대상으로 옮길 때 Option 바인딩을 찾고 대체값을 적용한다.
-/// 현재 설정 가져오기는 부르지 않는다(모든 OS 가 `option` 을 매칭한다).
-pub mod option_migration;
-
 #[cfg(test)]
 #[path = "keybinding_bundle/tests.rs"]
 mod tests;
