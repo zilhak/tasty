@@ -86,6 +86,12 @@ const NOT_A_WINDOW: &[NotAWindow] = &[
         evidence: "낱말이 다르다 — 탐색기의 address bar 다. Window 를 가리키지 않는다",
     },
     NotAWindow {
+        path: "site/content/customize/keybindings.md",
+        phrase: "주소창으로 이동",
+        count: 1,
+        evidence: "낱말이 다르다 — 탐색기 단축키 표의 address bar 행이다. Window 를 가리키지 않는다",
+    },
+    NotAWindow {
         path: "lang/ko.toml",
         phrase: "주소창으로 이동",
         count: 1,
