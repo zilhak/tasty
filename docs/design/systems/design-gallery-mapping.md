@@ -793,7 +793,7 @@ i18n: `settings.keybindings.preset_*` 신규 10키 + `select_preset_label`/`pres
 
 디자인 `ui_kits/terminal/overlays/kb_plugins_subtab.jsx` + `gallery/overlays-windows.jsx` Spec
 "Keybindings › Plugins" ↔ 갤러리 `catalog/components/kb_plugins.rs`(Overlays › `kbplugins`, 시안 견본 넷:
-기본 · 초안과 해석 실패 · 녹화 버튼 대안 · 빈 상태). 화면은 공용 view
+기본 · 초안과 해석 실패 · 녹화 중 · 빈 상태). 화면은 공용 view
 `tasty_ui_widgets::kb_plugins_subtab`(`crates/tasty-ui-widgets/src/kb_plugins.rs`)이 그리고 본체 wrapper
 `src/view/settings/ui/keybindings_tab/plugins.rs` 의 `draw_plugins_subtab` 과 갤러리가 함께 부른다. 본체 wrapper 는 초안과
 저장된 override 를 표시값으로 풀고 결과를 `plugin_shortcuts_draft` 에 쓴다. 갤러리는 시안
@@ -806,8 +806,8 @@ props 를 채운다.
 | picker 행 | `row_grid` + `select_rect` | 제목 열 `kb-plugin-title-width` · `kb-plugin-title-gap` · Select `kb-plugin-picker-width`. 행 최소 높이 `kb-plugin-row-min-height` 안에서 세로 가운데 |
 | `KbpCommandRow` | `command_row` | 위아래 `kb-plugin-row-padding-y`, 명령 사이에만 1px `kb-plugin-separator`. 제목은 text-secondary 본문 크기로 열 안에서 줄바꿈하고 말줄임하지 않는다 |
 | 컨트롤 줄 | `control_line` | mode Select `kb-plugin-mode-width` · `kb-plugin-control-gap` · slot `kb-plugin-slot-width` · Reset(ghost md). 셋 모두 `kb-plugin-control-height`, 줄 최소 높이 `kb-plugin-row-min-height` |
-| slot | `KbPluginSlot::{Inherit, Custom, Unassigned}` | 상속 소스 Select / mono Input(placeholder `ctrl+f5`, 해석 실패면 invalid) / "(Unassigned)" `kb-plugin-none-fg` |
-| `recordAlt` | `KbPluginSlot::Record` | 녹화 버튼 대안. 사용자 결정 전이라 갤러리 견본만 쓴다 |
+| slot | `KbPluginSlot::{Inherit, Custom, Unassigned}` | 상속 소스 Select / 녹화 슬롯 줄 / "(Unassigned)" `kb-plugin-none-fg` |
+| `recordAlt` | `KbPluginSlot::Custom` → `record_slots` | 사용자 결정으로 Custom 은 녹화 방식이다. 시안의 slot 폭 Secondary 버튼 대신 다른 단축키 서브탭과 같은 `kb_record_slot`(`kb-record-width`·`kb-record-add-width`·`kb-record-height`, 슬롯 사이 `space-xs`, 키마다 슬롯 + 추가 슬롯, 키가 없으면 None 슬롯)을 쓴다. 높이는 `kb-plugin-control-height` 가 아니라 `kb-record-height` 이며 줄 가운데에 선다 |
 | caption | `caption` | 줄 아래 `kb-plugin-caption-gap`, caption 크기. Inherit 은 `kb-plugin-caption-fg` "Inherited (…)" 또는 "None", 해석 실패는 `kb-plugin-error-fg` 에 키를 mono 로 |
 | 초안 점 | `title_cell` | 제목 뒤 `space-sm`, `kb-plugin-draft-dot-size` 원 `kb-plugin-draft-dot`. hover tooltip |
 | Reset `disabled={!overridden}` | `Button::enabled(overridden)` | override 가 없으면 disabled. tooltip 은 켜져 있을 때만(시안 disabled 버튼은 `title` 이 뜨지 않는다) |

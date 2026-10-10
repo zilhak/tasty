@@ -1,4 +1,4 @@
-<!-- source-hash: e76bcf480e91 -->
+<!-- source-hash: e4f70fefa5f0 -->
 # Keybindings
 
 Use Tasty with shortcuts that feel familiar. Choose a preset or assign your preferred keys to actions you use often. Open **Settings** > **Keybindings** to get started.
@@ -187,7 +187,8 @@ Recording rules:
 In the **Plugins** sub-tab, pick a plugin from the **Plugin:** drop-down at the top. Each of its commands gets one line.
 
 - **Inherit** in the mode drop-down follows the key of one Tasty action (for example `clipboard.paste`). The key it follows right now is shown under the line.
-- **Custom** lets you type the key (for example `ctrl+f5`; separate several with commas). If a key can never match any input (for example `ctrl+shft+h`), **Unrecognized key:** appears under the field. It is still saved, but that key will not run the command.
+- **Custom** records the key the same way as the other subtabs. Click the key button and press the combination; use `+` to add another one. Pressing `Esc` while recording removes that key, and removing every key leaves the command without a shortcut. Changing the plugin or the mode, or pressing **Reset**, while recording cancels the recording.
+- If a hand-edited settings file holds a key that can never match any input (for example `ctrl+shft+h`), **Unrecognized key:** appears under the row. That key will not run the command.
 - **None** leaves the command without a keybinding.
 - A command with an unsaved change shows a dot after its name. **Reset** clears your setting and goes back to the plugin's default; it cannot be pressed when there is no setting of yours.
 - Changes apply only when you close the window with **Save**; Cancel or closing the window discards them.

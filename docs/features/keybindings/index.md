@@ -409,9 +409,14 @@ Settings › Keybindings › **Import / Export** 는 위 [이식 번들](#이식
 - **플러그인 선택** — 이름순 Select. 단축키를 등록한 플러그인이 없으면 "No plugins have registered shortcuts." 한 줄만 보인다.
 - **명령 한 줄** — 제목(제목 열 안에서 줄바꿈) · 방식 Select(Inherit / Custom / None) · slot · **Reset**.
   - Inherit: slot 은 상속할 호스트 동작 Select(`INHERITABLE_HOST_ACTIONS`). 줄 아래에 그 동작의 현재 키("Inherited (…)", 키가 없으면 "None").
-  - Custom: slot 은 mono 입력칸. 쉼표로 여러 키, 앞뒤 공백 무시. 타이핑하면 바로 초안에 쓴다.
-    `tasty_key_match::binding_key_recognized` 가 거절하는 첫 키가 있으면 입력칸이 invalid 가 되고 줄 아래에 "Unrecognized key: <키>" 가 붙는다.
-    이 표시는 경고이며 값은 그대로 초안에 쓰고 저장한다.
+  - Custom: slot 은 다른 서브탭과 같은 녹화 슬롯(`tasty_ui_widgets::kb_record_slot`)이다. 키마다 슬롯 하나를 두고 뒤에 추가(+) 슬롯을 둔다.
+    키가 없으면 "None" 슬롯 하나만 둔다. 슬롯을 누르면 "Press key combination..." 으로 바뀌고, 누른 조합이 그 슬롯을 바꾸거나(기존 슬롯) 뒤에 붙는다(추가 슬롯).
+    녹화 중 `Esc` 는 기존 슬롯이면 그 키를 지우고 새 슬롯이면 녹화만 취소한다. 키를 모두 지우면 `Key { value: [] }` 라 그 명령은 단축키가 없다.
+    캡처는 다른 서브탭과 같은 winit 경로(`capture_winit_key_combo`, `FieldKind::Combo`)를 쓰므로 녹화 규칙도 같다. 결과는 바로 초안에 쓴다.
+    녹화 슬롯 id 는 `plugin:<plugin id>/<command id>` 이고, 녹화 상태는 설정 창의 `recording_field` 하나를 다른 서브탭과 함께 쓴다.
+    플러그인 · 방식을 바꾸거나 **Reset** 을 누르면 진행 중인 plugin 녹화를 취소한다. 다른 서브탭의 충돌 확인 popup 이 떠 있으면 슬롯은 disabled 다.
+    플러그인 키는 본체 키보다 먼저 매칭하는 정책이라 녹화한 조합의 충돌은 확인하지 않는다.
+    저장값에 `tasty_key_match::binding_key_recognized` 가 거절하는 키가 있으면(설정 파일을 직접 고친 경우 등) 줄 아래에 "Unrecognized key: <키>" 가 붙는다. 이 표시는 경고이며 값은 그대로 둔다.
   - None: slot 은 "(Unassigned)".
   - 방식을 바꾸면 Custom 은 이전 Custom 값이나 매니페스트 키, Inherit 는 매니페스트 source 나 화이트리스트 첫 항목으로 시작한다.
 - **초안 점** — 초안이 저장값과 다르면 제목 뒤에 점이 선다(같은 값으로 되돌리면 초안 항목이 지워져 점도 사라진다).

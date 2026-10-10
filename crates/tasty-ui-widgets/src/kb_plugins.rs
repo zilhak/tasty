@@ -4,8 +4,9 @@
 //! 격자(제목 열 `kb-plugin-title-width` + `kb-plugin-title-gap`)를 따르므로 플러그인 Select와 모든
 //! mode Select가 같은 x에서 시작한다. 명령 행은 위아래 `kb-plugin-row-padding-y`, 명령 사이에만
 //! 1px `kb-plugin-separator` 선을 둔다. 컨트롤 줄은 최소 높이 `kb-plugin-row-min-height`이며
-//! mode Select · slot · Reset(ghost md)이 모두 `kb-plugin-control-height`로 같다. 상속 결과나
-//! 키 해석 실패는 줄 아래 caption(`kb-plugin-caption-gap`)으로 붙는다.
+//! mode Select · slot · Reset(ghost md)이 모두 `kb-plugin-control-height`로 같다. 단 Custom slot 은
+//! 다른 단축키 서브탭과 같은 녹화 슬롯([`kb_record_slot`])을 줄 가운데에 쌓으므로 `kb-record-height`다.
+//! 상속 결과나 키 해석 실패는 줄 아래 caption(`kb-plugin-caption-gap`)으로 붙는다.
 //!
 //! 이 view는 override를 해석하거나 저장하지 않는다. 표시할 값과 문구는 호출부가 넘기고,
 //! 사용자가 바꾼 것만 돌려준다.
@@ -13,9 +14,8 @@
 use tasty_type_appearance::theme::Theme;
 
 use crate::button::{Button, ButtonVariant};
-use crate::chip::{KbdKey, kbd_parts_at, kbd_parts_width, split_keys};
 use crate::control::ControlSize;
-use crate::input::Input;
+use crate::kb_record::{KbRecordSlot, kb_record_slot};
 use crate::select::select_rect;
 use crate::tooltip::{Tooltip, tooltip_hover_delay_elapsed};
 
@@ -38,14 +38,16 @@ pub struct KbPluginLabels<'a> {
     pub reset: &'a str,
     /// Reset hover tooltip.
     pub reset_hint: &'a str,
-    /// 키 입력칸 placeholder.
-    pub key_placeholder: &'a str,
     /// 초안 점 hover tooltip.
     pub draft_hint: &'a str,
     /// 해석하지 못한 키 caption 의 앞부분. 뒤에 그 키를 mono 로 붙인다.
     pub unrecognized: &'a str,
-    /// 녹화 버튼 대안의 빈 slot 문구.
-    pub record: &'a str,
+    /// 녹화 중인 슬롯의 안내 문구.
+    pub press_key: &'a str,
+    /// Custom 인데 키가 하나도 없을 때의 None 슬롯 문구.
+    pub no_key: &'a str,
+    /// 추가(+) 슬롯 hover tooltip.
+    pub add_hint: &'a str,
 }
 
 /// 명령 행의 slot. 어느 변형인지가 mode Select 의 값을 정한다.
@@ -56,13 +58,18 @@ pub enum KbPluginSlot<'a> {
         selected: usize,
         caption: &'a str,
     },
-    /// 키를 직접 입력한다. `error` 는 해석하지 못한 첫 키다.
+    /// 키를 녹화 슬롯으로 받는다. 바인딩마다 슬롯 하나, 뒤에 추가(+) 슬롯을 둔다.
+    /// 키가 없으면 None 슬롯 하나만 둔다.
     Custom {
-        keys: &'a mut String,
+        /// 표시할 키(호출부가 사용자 표기로 바꾼 것).
+        keys: &'a [&'a str],
+        /// 이 행에서 녹화 중인 슬롯. `keys.len()` 이면 새 바인딩이다.
+        recording: Option<usize>,
+        /// 확인 popup 이 떠 있으면 false — 슬롯을 disabled 로 그리고 클릭을 받지 않는다.
+        can_record: bool,
+        /// 해석하지 못한 첫 키(직접 고친 설정 파일 등).
         error: Option<&'a str>,
     },
-    /// 녹화 버튼 대안(사용자 결정 전 견본). `keys` 는 표시할 첫 조합이다.
-    Record { keys: Option<&'a str> },
     /// 단축키 없음.
     Unassigned,
 }
@@ -71,7 +78,7 @@ impl KbPluginSlot<'_> {
     fn mode(&self) -> usize {
         match self {
             KbPluginSlot::Inherit { .. } => KB_PLUGIN_MODE_INHERIT,
-            KbPluginSlot::Custom { .. } | KbPluginSlot::Record { .. } => KB_PLUGIN_MODE_CUSTOM,
+            KbPluginSlot::Custom { .. } => KB_PLUGIN_MODE_CUSTOM,
             KbPluginSlot::Unassigned => KB_PLUGIN_MODE_NONE,
         }
     }
@@ -96,10 +103,9 @@ pub struct KbPluginRowOutput {
     pub mode: Option<usize>,
     /// 새로 고른 상속 소스 인덱스.
     pub source: Option<usize>,
-    /// 키 입력칸 내용이 바뀌었다.
-    pub keys_changed: bool,
+    /// 누른 녹화 슬롯. `keys.len()` 이면 추가(+) 또는 None 슬롯이다.
+    pub record: Option<usize>,
     pub reset: bool,
-    pub record_clicked: bool,
     pub rects: KbPluginRowRects,
 }
 
@@ -110,9 +116,14 @@ pub struct KbPluginRowRects {
     pub mode: egui::Rect,
     pub slot: egui::Rect,
     pub reset: egui::Rect,
-    /// slot 입력칸의 응답 id(키 입력칸일 때만).
-    pub key_input: Option<egui::Id>,
+    /// Custom 의 녹화 슬롯 rect 들(추가·None 슬롯 포함). `slot` 은 이것들의 합이다.
+    pub record_slots: [egui::Rect; MAX_RECORDED_RECTS],
+    /// `record_slots` 중 채운 수.
+    pub record_slot_count: usize,
 }
+
+/// 레이아웃 검사가 읽는 녹화 슬롯 rect 의 최대 수. 그 뒤 슬롯은 `slot` 합에만 들어간다.
+pub const MAX_RECORDED_RECTS: usize = 4;
 
 impl Default for KbPluginRowRects {
     fn default() -> Self {
@@ -121,7 +132,8 @@ impl Default for KbPluginRowRects {
             mode: egui::Rect::NOTHING,
             slot: egui::Rect::NOTHING,
             reset: egui::Rect::NOTHING,
-            key_input: None,
+            record_slots: [egui::Rect::NOTHING; MAX_RECORDED_RECTS],
+            record_slot_count: 0,
         }
     }
 }
@@ -370,43 +382,12 @@ fn control_line(
                 out.source = Some(s);
             }
         }
-        KbPluginSlot::Custom { keys, error } => {
-            // 응답 id 는 안쪽 TextEdit 것이고 rect 는 바깥 상자다.
-            let resp = Input::new()
-                .mono(true)
-                .invalid(error.is_some())
-                .placeholder(labels.key_placeholder)
-                .width(slot_w)
-                .show(ui, theme, keys);
-            out.keys_changed = resp.changed();
-            out.rects.key_input = Some(resp.id);
-            out.rects.slot = resp.rect;
-        }
-        KbPluginSlot::Record { keys } => {
-            // block 버튼이 slot 폭만 채우도록 slot 크기의 칸 안에서 그린다.
-            let resp = ui
-                .allocate_ui(egui::vec2(slot_w, h), |ui| {
-                    Button::new(if keys.is_some() { "" } else { labels.record })
-                        .variant(ButtonVariant::Secondary)
-                        .size(ControlSize::Md)
-                        .block(true)
-                        .show(ui, theme)
-                })
-                .inner;
-            out.rects.slot = resp.rect;
-            out.record_clicked = resp.clicked();
-            if let Some(k) = keys {
-                let parts: Vec<KbdKey<'_>> = split_keys(k).into_iter().map(KbdKey::Text).collect();
-                let w = kbd_parts_width(ui.ctx(), theme, &parts).value();
-                kbd_parts_at(
-                    ui,
-                    theme,
-                    &parts,
-                    resp.rect.center().x + w * 0.5,
-                    resp.rect.center().y,
-                );
-            }
-        }
+        KbPluginSlot::Custom {
+            keys,
+            recording,
+            can_record,
+            ..
+        } => record_slots(ui, theme, keys, *recording, *can_record, labels, out),
         KbPluginSlot::Unassigned => {
             let galley = text_galley(
                 ui,
@@ -435,6 +416,57 @@ fn control_line(
     }
     out.reset = resp.clicked();
     out.rects.reset = resp.rect;
+}
+
+/// Custom 의 녹화 슬롯 줄 — 다른 단축키 서브탭(`entries`)과 같은 슬롯 모양·폭·슬롯 사이 간격.
+fn record_slots(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    keys: &[&str],
+    recording: Option<usize>,
+    can_record: bool,
+    labels: &KbPluginLabels<'_>,
+    out: &mut KbPluginRowOutput,
+) {
+    let width = theme.kb_record_width();
+    let add_width = theme.kb_record_add_width();
+    let len = keys.len();
+    let push = |out: &mut KbPluginRowOutput, resp: &egui::Response, idx: usize| {
+        out.rects.slot = out.rects.slot.union(resp.rect);
+        if out.rects.record_slot_count < MAX_RECORDED_RECTS {
+            out.rects.record_slots[out.rects.record_slot_count] = resp.rect;
+            out.rects.record_slot_count += 1;
+        }
+        if resp.clicked() {
+            out.record = Some(idx);
+        }
+    };
+    ui.scope(|ui| {
+        ui.spacing_mut().item_spacing.x = theme.spacing_xs.value();
+        for (idx, key) in keys.iter().enumerate() {
+            let slot = if recording == Some(idx) {
+                KbRecordSlot::Recording(labels.press_key)
+            } else {
+                KbRecordSlot::Binding(key)
+            };
+            let resp = kb_record_slot(ui, theme, slot, width, can_record);
+            push(out, &resp, idx);
+        }
+        // 키가 없는 행은 None 슬롯 하나만 두고 + 를 따로 두지 않는다.
+        let (slot, w) = match (recording == Some(len), len) {
+            (true, 0) => (KbRecordSlot::Recording(labels.press_key), width),
+            (true, _) => (KbRecordSlot::Recording(labels.press_key), add_width),
+            (false, 0) => (KbRecordSlot::Empty(labels.no_key), width),
+            (false, _) => (KbRecordSlot::Add, add_width),
+        };
+        let resp = kb_record_slot(ui, theme, slot, w, can_record);
+        if can_record && tooltip_hover_delay_elapsed(ui.ctx(), theme, resp.id, resp.hovered()) {
+            Tooltip::new(labels.add_hint)
+                .id_source(resp.id)
+                .show(ui, theme, resp.rect);
+        }
+        push(out, &resp, len);
+    });
 }
 
 /// 줄 아래 caption — Inherit 은 해석된 키(muted), 해석 실패는 danger 에 키를 mono 로.
@@ -532,18 +564,19 @@ mod tests {
         unassigned: "(Unassigned)",
         reset: "Reset",
         reset_hint: "Clear the override and use the manifest default.",
-        key_placeholder: "ctrl+f5",
         draft_hint: "Changed — not saved yet",
         unrecognized: "Unrecognized key:",
-        record: "Record shortcut",
+        press_key: "Press a key combination...",
+        no_key: "None",
+        add_hint: "Add a shortcut",
     };
     const SOURCES: &[&str] = &["clipboard.copy", "clipboard.paste"];
 
     #[derive(Clone, Copy, PartialEq)]
     enum Kind {
         Inherit,
-        Custom,
-        Record,
+        /// 키 목록과 녹화 중인 슬롯.
+        Custom(&'static [&'static str], Option<usize>),
         None,
     }
 
@@ -553,7 +586,6 @@ mod tests {
         theme: &Theme,
         plugin: &str,
         rows: &[(&str, Kind)],
-        bufs: &mut [String],
     ) -> (KbPluginsOutput, egui::FullOutput) {
         let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(620.0, 600.0));
         let mut out = None;
@@ -564,33 +596,28 @@ mod tests {
             },
             |ctx| {
                 egui::CentralPanel::default().show(ctx, |ui| {
-                    let mut bufs_iter = bufs.iter_mut();
                     let views = rows
                         .iter()
                         .enumerate()
-                        .map(|(i, (title, kind))| {
-                            let buf = bufs_iter.next().expect("행마다 버퍼 하나");
-                            KbPluginRowView {
-                                id: egui::Id::new((plugin, i)),
-                                title,
-                                dirty: false,
-                                overridden: true,
-                                slot: match kind {
-                                    Kind::Inherit => KbPluginSlot::Inherit {
-                                        sources: SOURCES,
-                                        selected: 0,
-                                        caption: "Inherited (Ctrl+Shift+C)",
-                                    },
-                                    Kind::Custom => KbPluginSlot::Custom {
-                                        keys: buf,
-                                        error: None,
-                                    },
-                                    Kind::Record => KbPluginSlot::Record {
-                                        keys: Some("Ctrl+Shift+H"),
-                                    },
-                                    Kind::None => KbPluginSlot::Unassigned,
+                        .map(|(i, (title, kind))| KbPluginRowView {
+                            id: egui::Id::new((plugin, i)),
+                            title,
+                            dirty: false,
+                            overridden: true,
+                            slot: match kind {
+                                Kind::Inherit => KbPluginSlot::Inherit {
+                                    sources: SOURCES,
+                                    selected: 0,
+                                    caption: "Inherited (Ctrl+Shift+C)",
                                 },
-                            }
+                                Kind::Custom(keys, recording) => KbPluginSlot::Custom {
+                                    keys,
+                                    recording: *recording,
+                                    can_record: true,
+                                    error: None,
+                                },
+                                Kind::None => KbPluginSlot::Unassigned,
+                            },
                         })
                         .collect();
                     out = Some(kb_plugins_subtab(
@@ -612,31 +639,43 @@ mod tests {
 
     fn settle(theme: &Theme, rows: &[(&str, Kind)]) -> (KbPluginsOutput, egui::FullOutput) {
         let ctx = egui::Context::default();
-        let mut bufs = vec![String::from("ctrl+shift+h"); rows.len()];
         // 첫 프레임은 폰트 준비용이다.
-        drop(draw(&ctx, theme, "p", rows, &mut bufs));
-        draw(&ctx, theme, "p", rows, &mut bufs)
+        drop(draw(&ctx, theme, "p", rows));
+        draw(&ctx, theme, "p", rows)
     }
 
+    const ONE_KEY: &[&str] = &["Ctrl+Shift+H"];
+
     /// 수정 전 egui 기본 위젯은 ComboBox·TextEdit·small_button 높이가 서로 달랐다.
+    /// Custom 의 녹화 슬롯은 다른 서브탭과 같은 `kb-record-height` 이고 같은 줄 가운데에 선다.
     #[test]
     fn every_control_on_a_line_shares_the_control_height_and_centre() {
         let theme = tasty_themes::mocha_fallback();
         let h = theme.kb_plugin_control_height().value();
+        let record_h = theme.kb_record_height().value();
         let rows = [
-            ("Open clipboard viewer", Kind::Custom),
+            ("Open clipboard viewer", Kind::Custom(ONE_KEY, None)),
             ("Paste last entry as plain text", Kind::Inherit),
             ("Clear history", Kind::None),
-            ("Stage hunk", Kind::Record),
+            ("Stage hunk", Kind::Custom(&[], None)),
         ];
         let (out, _) = settle(&theme, &rows);
         assert_eq!(out.rows.len(), rows.len());
-        for (row, (title, _)) in out.rows.iter().zip(rows) {
+        for (row, (title, kind)) in out.rows.iter().zip(rows) {
             let r = row.rects;
             let cy = r.mode.center().y;
-            for (name, rect) in [("mode", r.mode), ("slot", r.slot), ("reset", r.reset)] {
+            let slot_h = if matches!(kind, Kind::Custom(..)) {
+                record_h
+            } else {
+                h
+            };
+            for (name, rect, want) in [
+                ("mode", r.mode, h),
+                ("slot", r.slot, slot_h),
+                ("reset", r.reset, h),
+            ] {
                 assert!(
-                    (rect.height() - h).abs() < 0.5,
+                    (rect.height() - want).abs() < 0.5,
                     "{title} {name} height {}",
                     rect.height()
                 );
@@ -654,7 +693,7 @@ mod tests {
     fn picker_and_mode_selects_start_on_the_title_column() {
         let theme = tasty_themes::mocha_fallback();
         let rows = [
-            ("A", Kind::Custom),
+            ("A", Kind::Custom(ONE_KEY, None)),
             (
                 "Paste the last clipboard entry as plain text without formatting",
                 Kind::Inherit,
@@ -678,49 +717,40 @@ mod tests {
         assert!(out.rows[1].rects.title.height() > out.rows[0].rects.title.height());
     }
 
-    /// 위 행의 mode 가 바뀌어 위젯 수가 달라져도 아래 행 키 입력칸의 id 는 같다.
+    /// Custom 은 키마다 녹화 슬롯 하나와 추가(+) 슬롯을 두고, 키가 없으면 None 슬롯 하나만 둔다.
+    /// 슬롯 폭은 다른 서브탭과 같은 `kb-record-width`·`kb-record-add-width` 이상이고 Reset 은 그 뒤에 온다.
     #[test]
-    fn key_input_id_survives_a_mode_change_above() {
+    fn custom_keys_become_record_slots_with_one_trailing_slot() {
         let theme = tasty_themes::mocha_fallback();
-        let ctx = egui::Context::default();
-        let mut bufs = vec![String::new(), String::new()];
-        drop(draw(
-            &ctx,
-            &theme,
-            "p",
-            &[("A", Kind::Custom), ("B", Kind::Custom)],
-            &mut bufs,
-        ));
-        let (before, _) = draw(
-            &ctx,
-            &theme,
-            "p",
-            &[("A", Kind::Custom), ("B", Kind::Custom)],
-            &mut bufs,
-        );
-        let (after, _) = draw(
-            &ctx,
-            &theme,
-            "p",
-            &[("A", Kind::None), ("B", Kind::Custom)],
-            &mut bufs,
-        );
-        let id = |o: &KbPluginsOutput| o.rows[1].rects.key_input.expect("B 는 입력칸");
-        assert_eq!(id(&before), id(&after));
-    }
+        let width = theme.kb_record_width().value();
+        let add = theme.kb_record_add_width().value();
+        let rows = [
+            ("two", Kind::Custom(&["Ctrl+A", "Ctrl+B"], None)),
+            ("none", Kind::Custom(&[], None)),
+            ("adding", Kind::Custom(ONE_KEY, Some(1))),
+        ];
+        let (out, _) = settle(&theme, &rows);
+        let slots = |i: usize| {
+            let r = out.rows[i].rects;
+            r.record_slots[..r.record_slot_count].to_vec()
+        };
+        let two = slots(0);
+        assert_eq!(two.len(), 3);
+        assert!(two[0].width() >= width - 0.5 && two[1].width() >= width - 0.5);
+        assert!((two[2].width() - add).abs() < 0.5, "{}", two[2].width());
+        // 슬롯 사이는 다른 서브탭의 한 행 안 간격(space-xs)이다.
+        let gap = theme.spacing_xs.value();
+        assert!((two[1].min.x - two[0].max.x - gap).abs() < 0.5);
+        assert!(out.rows[0].rects.reset.min.x > two[2].max.x);
 
-    /// 플러그인을 바꾸면 같은 자리의 입력칸이라도 다른 명령의 것이므로 id 가 달라진다.
-    /// 그래야 포커스·커서가 다른 플러그인 명령의 입력칸으로 넘어가지 않는다.
-    #[test]
-    fn key_input_id_follows_the_command_not_the_position() {
-        let theme = tasty_themes::mocha_fallback();
-        let ctx = egui::Context::default();
-        let mut bufs = vec![String::new()];
-        let rows = [("A", Kind::Custom)];
-        drop(draw(&ctx, &theme, "x", &rows, &mut bufs));
-        let (x, _) = draw(&ctx, &theme, "x", &rows, &mut bufs);
-        let (y, _) = draw(&ctx, &theme, "y", &rows, &mut bufs);
-        assert_ne!(x.rows[0].rects.key_input, y.rows[0].rects.key_input);
+        let none = slots(1);
+        assert_eq!(none.len(), 1);
+        assert!(none[0].width() >= width - 0.5);
+
+        // 새 바인딩을 녹화 중이면 추가 슬롯 자리가 안내 문구로 넓어진다.
+        let adding = slots(2);
+        assert_eq!(adding.len(), 2);
+        assert!(adding[1].width() > add + 0.5, "{}", adding[1].width());
     }
 
     /// 구분선은 명령 사이에만 있다.

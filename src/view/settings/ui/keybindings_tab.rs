@@ -403,6 +403,11 @@ pub fn draw_keybindings_tab(
                 plugin_shortcuts_draft,
                 &settings.keybindings,
                 &settings.general,
+                plugins::PluginRecording {
+                    slot: recording_field,
+                    pending: pending_binding,
+                    captured: &captured,
+                },
             );
         }
         KeybindingsSubTab::ImportExport => {
@@ -419,9 +424,10 @@ pub fn draw_keybindings_tab(
         _ => {}
     }
 
+    // Plugins 서브탭의 Custom 키도 녹화 슬롯이라 같은 Esc 안내를 둔다.
     if !matches!(
         current,
-        KeybindingsSubTab::Preset | KeybindingsSubTab::Plugins | KeybindingsSubTab::ImportExport
+        KeybindingsSubTab::Preset | KeybindingsSubTab::ImportExport
     ) {
         vspace(ui, th.spacing_sm);
         ui.label(

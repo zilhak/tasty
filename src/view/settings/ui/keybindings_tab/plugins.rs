@@ -5,6 +5,37 @@ use crate::plugin_bridge::host_actions;
 use crate::settings::{GeneralSettings, KeybindingSettings};
 use crate::settings_ui::{PluginShortcutRow, PluginShortcutSnapshot};
 
+use super::{FieldKind, KeyCapture, PendingBinding, RecordingSlot};
+
+/// `RecordingSlot.field_id` 가 이 접두사면 plugin 명령의 단축키 슬롯이다. 뒤에
+/// `<plugin id>/<command id>` 가 온다. 두 id 모두 매니페스트 검증상 `/` 를 쓸 수 없어
+/// 첫 `/` 에서 나누면 되돌릴 수 있다. 설정 필드명·`script:`·가져오기 마이그레이션 id 와 겹치지 않는다.
+const PLUGIN_SLOT_PREFIX: &str = "plugin:";
+
+fn plugin_slot_id(plugin_id: &str, command_id: &str) -> String {
+    format!("{PLUGIN_SLOT_PREFIX}{plugin_id}/{command_id}")
+}
+
+fn parse_plugin_slot_id(field_id: &str) -> Option<(&str, &str)> {
+    field_id.strip_prefix(PLUGIN_SLOT_PREFIX)?.split_once('/')
+}
+
+/// 녹화 결과를 Custom 키 목록에 반영한다. 바뀌지 않으면 `None`.
+/// 기존 슬롯의 조합은 교체하고 `idx == len` 이면 뒤에 붙인다. `Esc` 는 기존 슬롯이면 지우고
+/// 새 슬롯이면 아무것도 바꾸지 않는다(녹화만 취소).
+fn keys_after_capture(keys: &[String], idx: usize, captured: &KeyCapture) -> Option<Vec<String>> {
+    let mut next = keys.to_vec();
+    match captured {
+        KeyCapture::Combo(combo) if idx < next.len() => next[idx] = combo.clone(),
+        KeyCapture::Combo(combo) => next.push(combo.clone()),
+        KeyCapture::Clear if idx < next.len() => {
+            next.remove(idx);
+        }
+        KeyCapture::Clear | KeyCapture::None => return None,
+    }
+    Some(next)
+}
+
 /// Plugin command 한 줄의 mode UI 상태.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RowMode {
@@ -56,8 +87,67 @@ fn shortcut_override_eq(a: Option<&ShortcutOverride>, b: Option<&ShortcutOverrid
     }
 }
 
+/// 이 서브탭의 녹화 상태. 녹화 슬롯은 설정 창에 하나뿐이라 다른 서브탭과 함께 쓴다.
+pub(super) struct PluginRecording<'a> {
+    pub slot: &'a mut Option<RecordingSlot>,
+    /// 다른 서브탭의 충돌 확인 popup. 떠 있는 동안은 녹화를 시작하지 않는다.
+    pub pending: &'a Option<PendingBinding>,
+    pub captured: &'a KeyCapture,
+}
+
+/// 녹화 중인 plugin 슬롯이 있으면 캡처를 그 명령의 Custom 초안에 쓰고 녹화를 끝낸다.
+fn consume_capture(
+    snapshot: &PluginShortcutSnapshot,
+    draft: &mut std::collections::BTreeMap<(String, String), Option<ShortcutOverride>>,
+    recording: &mut Option<RecordingSlot>,
+    captured: &KeyCapture,
+) {
+    let Some(slot) = recording.as_ref() else {
+        return;
+    };
+    let Some((plugin_id, command_id)) = parse_plugin_slot_id(&slot.field_id) else {
+        return;
+    };
+    if matches!(captured, KeyCapture::None) {
+        return;
+    }
+    let row = snapshot
+        .rows
+        .iter()
+        .find(|r| r.plugin_id == plugin_id && r.command_id == command_id);
+    if let Some(row) = row {
+        let keys = custom_keys(row, draft);
+        if let Some(next) = keys_after_capture(&keys, slot.idx, captured) {
+            commit_row_change(draft, row, Some(ShortcutOverride::Key { value: next }));
+        }
+    }
+    *recording = None;
+}
+
+/// 행의 현재 Custom 키 — 초안·저장값의 `Key`, 없으면 매니페스트 기본값.
+fn custom_keys(
+    row: &PluginShortcutRow,
+    draft: &std::collections::BTreeMap<(String, String), Option<ShortcutOverride>>,
+) -> Vec<String> {
+    let key = (row.plugin_id.clone(), row.command_id.clone());
+    let current = match draft.get(&key) {
+        Some(o) => o.as_ref(),
+        None => row.current_override.as_ref(),
+    };
+    match current {
+        Some(ShortcutOverride::Key { value }) => value.clone(),
+        _ => row
+            .manifest_default
+            .iter()
+            .filter(|s| !s.is_empty())
+            .cloned()
+            .collect(),
+    }
+}
+
 /// plugin 명령의 단축키 설정. 화면은 공용 view(`tasty_ui_widgets::kb_plugins_subtab`)가 그리고
 /// 여기서는 초안·override 를 표시값으로 풀고 사용자가 바꾼 것을 초안에 반영한다.
+/// Custom 키는 다른 서브탭과 같은 녹화 슬롯으로 받는다.
 pub(super) fn draw_plugins_subtab(
     ui: &mut egui::Ui,
     snapshot: &PluginShortcutSnapshot,
@@ -65,8 +155,16 @@ pub(super) fn draw_plugins_subtab(
     draft: &mut std::collections::BTreeMap<(String, String), Option<ShortcutOverride>>,
     host_kb: &KeybindingSettings,
     general: &GeneralSettings,
+    recording: PluginRecording<'_>,
 ) {
     let th = crate::theme::theme();
+    let PluginRecording {
+        slot: recording,
+        pending,
+        captured,
+    } = recording;
+    consume_capture(snapshot, draft, recording, captured);
+    let can_record = pending.is_none();
 
     let mut plugin_ids: Vec<(&str, &str)> = Vec::new();
     for row in &snapshot.rows {
@@ -100,7 +198,29 @@ pub(super) fn draw_plugins_subtab(
         .iter()
         .map(|row| RowState::new(row, draft, host_kb, general))
         .collect();
-    let mut bufs: Vec<String> = states.iter().map(|s| s.keys.clone()).collect();
+    let displays: Vec<Vec<String>> = states
+        .iter()
+        .map(|s| {
+            s.keys
+                .iter()
+                .map(|k| KeybindingSettings::format_display(k, general))
+                .collect()
+        })
+        .collect();
+    let display_refs: Vec<Vec<&str>> = displays
+        .iter()
+        .map(|d| d.iter().map(String::as_str).collect())
+        .collect();
+    let recording_idx: Vec<Option<usize>> = rows
+        .iter()
+        .map(|row| {
+            recording.as_ref().and_then(|slot| {
+                (parse_plugin_slot_id(&slot.field_id)
+                    == Some((row.plugin_id.as_str(), row.command_id.as_str())))
+                .then_some(slot.idx)
+            })
+        })
+        .collect();
     let sources: Vec<Vec<&str>> = states
         .iter()
         .map(|s| s.sources.iter().map(String::as_str).collect())
@@ -109,10 +229,11 @@ pub(super) fn draw_plugins_subtab(
     let views = rows
         .iter()
         .zip(&states)
-        .zip(bufs.iter_mut())
+        .zip(&display_refs)
         .zip(&sources)
+        .zip(&recording_idx)
         .map(
-            |(((row, state), buf), sources)| tasty_ui_widgets::KbPluginRowView {
+            |((((row, state), keys), sources), rec)| tasty_ui_widgets::KbPluginRowView {
                 id: egui::Id::new(("plugin_shortcut", &row.plugin_id, &row.command_id)),
                 title: t(&row.title_i18n_key),
                 dirty: state.dirty,
@@ -124,7 +245,9 @@ pub(super) fn draw_plugins_subtab(
                         caption: &state.caption,
                     },
                     RowMode::Custom => tasty_ui_widgets::KbPluginSlot::Custom {
-                        keys: buf,
+                        keys,
+                        recording: *rec,
+                        can_record,
                         error: state.error.as_deref(),
                     },
                     RowMode::None => tasty_ui_widgets::KbPluginSlot::Unassigned,
@@ -152,11 +275,11 @@ pub(super) fn draw_plugins_subtab(
                 unassigned: t("settings.keybindings.plugins.mode_none_label"),
                 reset: t("settings.keybindings.plugins.reset_button"),
                 reset_hint: t("settings.keybindings.plugins.reset_hint"),
-                key_placeholder: "ctrl+f5",
                 draft_hint: t("settings.keybindings.plugins.draft_hint"),
                 unrecognized: t("settings.keybindings.plugins.unrecognized_key"),
-                // 녹화 버튼 slot 은 본체가 쓰지 않는다(갤러리 대안 견본).
-                record: "",
+                press_key: t("settings.keybindings.hint_press_key"),
+                no_key: t("settings.keybindings.hint_none"),
+                add_hint: t("settings.keybindings.add_binding_button"),
             },
         },
     );
@@ -166,8 +289,33 @@ pub(super) fn draw_plugins_subtab(
     {
         *selected = Some(id.to_string());
     }
-    for (((row, state), buf), o) in rows.iter().zip(&states).zip(&bufs).zip(&out.rows) {
-        apply_row_output(row, state, buf, o, draft);
+    for (row, (state, o)) in rows.iter().zip(states.iter().zip(&out.rows)) {
+        apply_row_output(row, state, o, draft);
+        if let Some(idx) = o.record {
+            *recording = Some(RecordingSlot {
+                field_id: plugin_slot_id(&row.plugin_id, &row.command_id),
+                idx,
+                field_kind: FieldKind::Combo,
+            });
+        }
+    }
+    if cancels_recording(&out) {
+        cancel_plugin_recording(recording);
+    }
+}
+
+/// 플러그인·mode·Reset 이 바뀌면 녹화 중인 슬롯이 사라지거나 다른 값을 가리키게 된다.
+/// 그대로 두면 다음 캡처가 보이지 않는 행에 들어간다.
+fn cancels_recording(out: &tasty_ui_widgets::KbPluginsOutput) -> bool {
+    out.plugin.is_some() || out.rows.iter().any(|o| o.mode.is_some() || o.reset)
+}
+
+fn cancel_plugin_recording(recording: &mut Option<RecordingSlot>) {
+    if recording
+        .as_ref()
+        .is_some_and(|s| parse_plugin_slot_id(&s.field_id).is_some())
+    {
+        *recording = None;
     }
 }
 
@@ -183,7 +331,8 @@ struct RowState {
     sources: Vec<String>,
     source_index: usize,
     caption: String,
-    keys: String,
+    /// Custom 키. 초안·저장값의 `Key`, 없으면 매니페스트 기본값.
+    keys: Vec<String>,
     /// 해석하지 못한 첫 키.
     error: Option<String>,
 }
@@ -237,13 +386,11 @@ impl RowState {
             t_fmt("settings.keybindings.plugins.inherited", &resolved)
         };
 
-        let keys = match &current {
-            Some(ShortcutOverride::Key { value }) => value.join(", "),
-            _ => row.manifest_default.clone().unwrap_or_default(),
-        };
-        let error = parse_keys(&keys)
-            .into_iter()
-            .find(|k| !tasty_key_match::binding_key_recognized(k));
+        let keys = custom_keys(row, draft);
+        let error = keys
+            .iter()
+            .find(|k| !tasty_key_match::binding_key_recognized(k))
+            .cloned();
 
         Self {
             mode,
@@ -260,18 +407,9 @@ impl RowState {
     }
 }
 
-/// 쉼표로 여러 키를 받고 앞뒤 공백과 빈 칸은 버린다.
-fn parse_keys(buf: &str) -> Vec<String> {
-    buf.split(',')
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .collect()
-}
-
 fn apply_row_output(
     row: &PluginShortcutRow,
     state: &RowState,
-    buf: &str,
     out: &tasty_ui_widgets::KbPluginRowOutput,
     draft: &mut std::collections::BTreeMap<(String, String), Option<ShortcutOverride>>,
 ) {
@@ -297,15 +435,6 @@ fn apply_row_output(
             row,
             Some(ShortcutOverride::Inherit {
                 source: source.clone(),
-            }),
-        );
-    }
-    if out.keys_changed {
-        commit_row_change(
-            draft,
-            row,
-            Some(ShortcutOverride::Key {
-                value: parse_keys(buf),
             }),
         );
     }
@@ -393,7 +522,7 @@ mod tests {
         let r = row(BindingMode::Independent, None);
         let s = state(&r, &Default::default());
         assert_eq!(s.mode, RowMode::Custom);
-        assert_eq!(s.keys, "ctrl+shift+h");
+        assert_eq!(s.keys, ["ctrl+shift+h"]);
         assert!(!s.overridden && !s.dirty && s.error.is_none());
     }
 
@@ -415,7 +544,7 @@ mod tests {
         assert!(!state(&r, &draft).dirty);
     }
 
-    /// 해석하지 못한 첫 키를 caption 에 싣는다. 쉼표 목록의 나머지는 보지 않는다.
+    /// 해석하지 못한 첫 키를 caption 에 싣는다. 뒤의 키는 보지 않는다.
     #[test]
     fn the_first_unrecognized_key_becomes_the_error() {
         let r = row(
@@ -478,7 +607,7 @@ mod tests {
             mode: Some(tasty_ui_widgets::KB_PLUGIN_MODE_INHERIT),
             ..output()
         };
-        apply_row_output(&r, &s, &s.keys, &o, &mut draft);
+        apply_row_output(&r, &s, &o, &mut draft);
         assert_eq!(
             entry(&draft, &r),
             Some(Some(ShortcutOverride::Inherit {
@@ -491,7 +620,7 @@ mod tests {
             source: Some(1),
             ..output()
         };
-        apply_row_output(&r, &s, &s.keys, &o, &mut draft);
+        apply_row_output(&r, &s, &o, &mut draft);
         assert_eq!(
             entry(&draft, &r),
             Some(Some(ShortcutOverride::Inherit {
@@ -504,29 +633,163 @@ mod tests {
             mode: Some(tasty_ui_widgets::KB_PLUGIN_MODE_NONE),
             ..output()
         };
-        apply_row_output(&r, &s, &s.keys, &o, &mut draft);
+        apply_row_output(&r, &s, &o, &mut draft);
         assert_eq!(entry(&draft, &r), Some(Some(ShortcutOverride::None)));
     }
 
-    /// 입력칸 변경은 쉼표로 나눈 키를 초안에 쓰고, 저장값과 같아지면 초안 항목을 지운다.
+    fn strings(v: &[&str]) -> Vec<String> {
+        v.iter().map(|s| s.to_string()).collect()
+    }
+
+    /// 기존 슬롯의 캡처는 그 키를 바꾸고, 키 수와 같은 슬롯의 캡처는 뒤에 붙인다.
     #[test]
-    fn typed_keys_write_the_draft_and_matching_the_saved_value_clears_it() {
-        let r = row(BindingMode::Independent, key(&["ctrl+alt+x"]));
+    fn a_combo_replaces_its_slot_or_appends_at_the_end() {
+        let keys = strings(&["ctrl+shift+h"]);
+        let combo = KeyCapture::Combo("ctrl+alt+j".into());
+        assert_eq!(
+            keys_after_capture(&keys, 0, &combo),
+            Some(strings(&["ctrl+alt+j"]))
+        );
+        assert_eq!(
+            keys_after_capture(&keys, 1, &combo),
+            Some(strings(&["ctrl+shift+h", "ctrl+alt+j"]))
+        );
+        assert_eq!(keys_after_capture(&keys, 0, &KeyCapture::None), None);
+    }
+
+    /// `Esc` 는 기존 슬롯이면 지우고 새 슬롯이면 아무것도 바꾸지 않는다.
+    #[test]
+    fn escape_removes_an_existing_slot_and_cancels_a_new_one() {
+        let keys = strings(&["ctrl+a", "ctrl+b"]);
+        assert_eq!(
+            keys_after_capture(&keys, 0, &KeyCapture::Clear),
+            Some(strings(&["ctrl+b"]))
+        );
+        assert_eq!(keys_after_capture(&keys, 2, &KeyCapture::Clear), None);
+        // 마지막 키를 지우면 빈 Key 다 — 그 명령은 단축키가 없다.
+        assert_eq!(
+            keys_after_capture(&strings(&["ctrl+a"]), 0, &KeyCapture::Clear),
+            Some(Vec::new())
+        );
+    }
+
+    /// 슬롯 id 는 plugin id 와 명령 id 로 되돌아오고 다른 녹화 id 와 겹치지 않는다.
+    #[test]
+    fn plugin_slot_id_round_trips_and_stays_apart_from_other_slots() {
+        let id = plugin_slot_id("com.tasty.clipboard-viewer", "clipboard.open_viewer");
+        assert_eq!(
+            parse_plugin_slot_id(&id),
+            Some(("com.tasty.clipboard-viewer", "clipboard.open_viewer"))
+        );
+        for other in [
+            "toggle_sidebar",
+            "script:abc",
+            "__keybindings_import_migration",
+        ] {
+            assert_eq!(parse_plugin_slot_id(other), None, "{other}");
+        }
+    }
+
+    fn snapshot(rows: Vec<PluginShortcutRow>) -> PluginShortcutSnapshot {
+        PluginShortcutSnapshot { rows }
+    }
+
+    fn recording_of(r: &PluginShortcutRow, idx: usize) -> Option<RecordingSlot> {
+        Some(RecordingSlot {
+            field_id: plugin_slot_id(&r.plugin_id, &r.command_id),
+            idx,
+            field_kind: FieldKind::Combo,
+        })
+    }
+
+    /// 녹화한 조합은 그 명령의 Custom 초안에 들어가고 녹화가 끝난다. 다른 명령은 그대로다.
+    #[test]
+    fn a_capture_writes_only_the_recorded_command() {
+        let r = row(BindingMode::Independent, None);
+        let mut other = row(BindingMode::Independent, None);
+        other.command_id = "other".into();
+        let snap = snapshot(vec![r.clone(), other.clone()]);
         let mut draft = std::collections::BTreeMap::new();
-        let s = state(&r, &draft);
-        let o = tasty_ui_widgets::KbPluginRowOutput {
-            keys_changed: true,
-            ..output()
+        let mut rec = recording_of(&r, 0);
+        consume_capture(
+            &snap,
+            &mut draft,
+            &mut rec,
+            &KeyCapture::Combo("ctrl+alt+j".into()),
+        );
+        assert!(rec.is_none());
+        assert_eq!(entry(&draft, &r), Some(key(&["ctrl+alt+j"])));
+        assert_eq!(entry(&draft, &other), None);
+
+        // 아직 아무 키도 누르지 않았으면 녹화가 이어진다.
+        let mut rec = recording_of(&r, 0);
+        consume_capture(&snap, &mut draft, &mut rec, &KeyCapture::None);
+        assert!(rec.is_some());
+    }
+
+    /// 다른 서브탭의 녹화 슬롯 캡처는 건드리지 않는다.
+    #[test]
+    fn a_capture_for_another_slot_is_left_alone() {
+        let r = row(BindingMode::Independent, None);
+        let snap = snapshot(vec![r.clone()]);
+        let mut draft = std::collections::BTreeMap::new();
+        let mut rec = Some(RecordingSlot {
+            field_id: "toggle_sidebar".into(),
+            idx: 0,
+            field_kind: FieldKind::Combo,
+        });
+        consume_capture(
+            &snap,
+            &mut draft,
+            &mut rec,
+            &KeyCapture::Combo("ctrl+alt+j".into()),
+        );
+        assert!(rec.is_some() && draft.is_empty());
+    }
+
+    /// 플러그인·mode·Reset 변경은 진행 중인 plugin 녹화만 취소한다.
+    #[test]
+    fn changing_plugin_mode_or_reset_cancels_plugin_recording() {
+        let r = row(BindingMode::Independent, None);
+        let changed = |o: tasty_ui_widgets::KbPluginRowOutput, plugin: Option<usize>| {
+            tasty_ui_widgets::KbPluginsOutput {
+                plugin,
+                rows: vec![o],
+                picker: None,
+            }
         };
-        apply_row_output(&r, &s, " ctrl+a, ,ctrl+b ", &o, &mut draft);
-        assert_eq!(entry(&draft, &r), Some(key(&["ctrl+a", "ctrl+b"])));
-
-        apply_row_output(&r, &s, "ctrl+alt+x", &o, &mut draft);
-        assert_eq!(entry(&draft, &r), None);
-
-        // 다 지우면 빈 Key override 다(매니페스트 기본값으로 되돌리는 것은 Reset 이다).
-        apply_row_output(&r, &s, "", &o, &mut draft);
-        assert_eq!(entry(&draft, &r), Some(key(&[])));
+        let cases = [
+            changed(output(), Some(1)),
+            changed(
+                tasty_ui_widgets::KbPluginRowOutput {
+                    mode: Some(tasty_ui_widgets::KB_PLUGIN_MODE_NONE),
+                    ..output()
+                },
+                None,
+            ),
+            changed(
+                tasty_ui_widgets::KbPluginRowOutput {
+                    reset: true,
+                    ..output()
+                },
+                None,
+            ),
+        ];
+        for out in &cases {
+            assert!(cancels_recording(out));
+            let mut rec = recording_of(&r, 0);
+            cancel_plugin_recording(&mut rec);
+            assert!(rec.is_none());
+        }
+        assert!(!cancels_recording(&changed(output(), None)));
+        // 다른 서브탭의 녹화는 남는다.
+        let mut rec = Some(RecordingSlot {
+            field_id: "script:abc".into(),
+            idx: 0,
+            field_kind: FieldKind::Combo,
+        });
+        cancel_plugin_recording(&mut rec);
+        assert!(rec.is_some());
     }
 
     /// Reset 은 저장된 override 가 있으면 지움(None)을 초안에 넣고, 없으면 초안만 지운다.
@@ -540,14 +803,14 @@ mod tests {
         let saved = row(BindingMode::Independent, key(&["ctrl+alt+x"]));
         let mut draft = std::collections::BTreeMap::new();
         let s = state(&saved, &draft);
-        apply_row_output(&saved, &s, &s.keys, &o, &mut draft);
+        apply_row_output(&saved, &s, &o, &mut draft);
         assert_eq!(entry(&draft, &saved), Some(None));
 
         let unsaved = row(BindingMode::Independent, None);
         let mut draft = std::collections::BTreeMap::new();
         commit_row_change(&mut draft, &unsaved, key(&["ctrl+q"]));
         let s = state(&unsaved, &draft);
-        apply_row_output(&unsaved, &s, &s.keys, &o, &mut draft);
+        apply_row_output(&unsaved, &s, &o, &mut draft);
         assert_eq!(entry(&draft, &unsaved), None);
     }
 }

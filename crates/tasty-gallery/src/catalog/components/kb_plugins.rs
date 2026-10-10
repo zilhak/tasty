@@ -1,9 +1,10 @@
 //! 설정 › 단축키 › Plugins 서브탭 예제. 본체와 같은 `tasty_ui_widgets::kb_plugins_subtab` 을 부른다.
 //!
-//! 시안 `kb_plugins_subtab.jsx` 의 견본 넷(기본 · 초안과 해석 실패 · 녹화 버튼 대안 · 빈 상태)을
-//! 위에서부터 쌓는다. 플러그인과 명령은 시안 `KBP_PLUGINS` 와 같은 고정 데이터이고, 초안 규칙
-//! (mode 전환 시 시작값, Reset 이 override 를 지움)도 시안 동작을 따른다. 키 해석 실패는 본체와 같은
-//! `tasty_key_match::binding_key_recognized` 로 정한다.
+//! 시안 `kb_plugins_subtab.jsx` 의 견본 넷(기본 · 초안과 해석 실패 · 녹화 중 · 빈 상태)을 위에서부터
+//! 쌓는다. Custom 키는 사용자 결정대로 다른 단축키 서브탭과 같은 녹화 슬롯이다. 플러그인과 명령은
+//! 시안 `KBP_PLUGINS` 와 같은 고정 데이터이고, 초안 규칙(mode 전환 시 시작값, Reset 이 override 를
+//! 지움)도 시안 동작을 따른다. 키 해석 실패는 본체와 같은 `tasty_key_match::binding_key_recognized`
+//! 로 정한다. 갤러리는 키를 캡처하지 않으므로 슬롯을 누르면 녹화 중 모양만 보인다.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -37,6 +38,7 @@ fn resolved(source: &str) -> Option<&'static str> {
 #[derive(Clone, PartialEq, Eq, Debug)]
 enum Value {
     Inherit(&'static str),
+    /// 쉼표로 나눈 키 목록.
     Custom(String),
     None,
 }
@@ -98,11 +100,16 @@ struct Specimen {
     plugin: usize,
     saved: BTreeMap<String, Value>,
     drafts: BTreeMap<String, Value>,
-    record_alt: bool,
+    /// 녹화 중인 (명령 키, 슬롯).
+    recording: Option<(String, usize)>,
 }
 
 impl Specimen {
-    fn new(saved: &[(&str, Value)], seed: &[(&str, Value)], record_alt: bool) -> Self {
+    fn new(
+        saved: &[(&str, Value)],
+        seed: &[(&str, Value)],
+        recording: Option<(&str, usize)>,
+    ) -> Self {
         let saved: BTreeMap<String, Value> = saved
             .iter()
             .map(|(k, v)| (k.to_string(), v.clone()))
@@ -113,31 +120,38 @@ impl Specimen {
             plugin: 0,
             saved,
             drafts,
-            record_alt,
+            recording: recording.map(|(k, i)| (k.to_string(), i)),
         }
     }
 }
 
 thread_local! {
     static SPECIMENS: RefCell<[Specimen; 3]> = RefCell::new([
-        Specimen::new(&[("clipboard-viewer/clear", Value::Custom("ctrl+alt+x".into()))], &[], false),
+        Specimen::new(&[("clipboard-viewer/clear", Value::Custom("ctrl+alt+x".into()))], &[], None),
         Specimen::new(
             &[],
             &[
                 ("clipboard-viewer/open", Value::Custom("ctrl+shft+h".into())),
                 ("clipboard-viewer/paste-plain", Value::None),
             ],
-            false,
+            None,
         ),
-        Specimen::new(&[("clipboard-viewer/clear", Value::Custom("ctrl+alt+x".into()))], &[], true),
+        Specimen::new(
+            &[],
+            &[
+                ("clipboard-viewer/open", Value::Custom("ctrl+shift+h, ctrl+alt+v".into())),
+                ("clipboard-viewer/clear", Value::Custom(String::new())),
+            ],
+            Some(("clipboard-viewer/open", 2)),
+        ),
     ]);
 }
 
 /// 견본 위의 설명 줄 — 시안 각 견본의 caption.
 const CAPTIONS: [&str; 4] = [
-    "default (proposal) — text key entry · row 1 Custom · row 2 Inherit + caption · row 3 overridden (draft = saved, Reset enabled)",
-    "draft + invalid — row 1 edited to an unparsable key (dot + error) · row 2 switched to None (dot)",
-    "alternative (needs user decision) — Custom slot = record button, like the other subtabs",
+    "default — row 1 Custom (record slot + add) · row 2 Inherit + caption · row 3 overridden (draft = saved, Reset enabled)",
+    "draft + invalid — row 1 holds an unparsable key from the file (dot + error) · row 2 switched to None (dot)",
+    "recording — row 1 has two keys and is recording a third · row 3 Custom with no key (None slot)",
     "empty",
 ];
 
@@ -153,11 +167,11 @@ fn labels() -> KbPluginLabels<'static> {
         unassigned: t("settings.keybindings.plugins.mode_none_label"),
         reset: t("settings.keybindings.plugins.reset_button"),
         reset_hint: t("settings.keybindings.plugins.reset_hint"),
-        key_placeholder: "ctrl+f5",
         draft_hint: t("settings.keybindings.plugins.draft_hint"),
         unrecognized: t("settings.keybindings.plugins.unrecognized_key"),
-        // 녹화 버튼 대안은 사용자 결정 전 견본이라 본체 문구가 없다 — 시안 문구.
-        record: "Record shortcut",
+        press_key: t("settings.keybindings.hint_press_key"),
+        no_key: t("settings.keybindings.hint_none"),
+        add_hint: t("settings.keybindings.add_binding_button"),
     }
 }
 
@@ -194,11 +208,16 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     });
 }
 
-/// 첫 조합의 단어 첫 글자를 대문자로 — 시안 녹화 버튼의 Kbd 표기.
-fn record_keys(keys: &str) -> String {
-    let first = keys.split(',').next().unwrap_or("").trim();
-    first
-        .split('+')
+fn split_custom(keys: &str) -> Vec<&str> {
+    keys.split(',')
+        .map(str::trim)
+        .filter(|k| !k.is_empty())
+        .collect()
+}
+
+/// 조합의 단어 첫 글자를 대문자로 — 본체 녹화 슬롯의 사용자 표기와 같은 모양.
+fn display_key(key: &str) -> String {
+    key.split('+')
         .map(|w| {
             let mut c = w.chars();
             match c.next() {
@@ -230,11 +249,11 @@ fn specimen(ui: &mut egui::Ui, theme: &Theme, index: usize, s: &mut Specimen) {
                 .unwrap_or_else(|| c.manifest.clone())
         })
         .collect();
-    let mut bufs: Vec<String> = values
+    let bufs: Vec<Vec<&str>> = values
         .iter()
         .map(|v| match v {
-            Value::Custom(k) => k.clone(),
-            _ => String::new(),
+            Value::Custom(k) => split_custom(k),
+            _ => Vec::new(),
         })
         .collect();
     let captions: Vec<String> = values
@@ -247,24 +266,28 @@ fn specimen(ui: &mut egui::Ui, theme: &Theme, index: usize, s: &mut Specimen) {
             _ => String::new(),
         })
         .collect();
-    let errors: Vec<Option<String>> = bufs
+    let errors: Vec<Option<&str>> = bufs
         .iter()
         .map(|b| {
-            b.split(',')
-                .map(str::trim)
-                .filter(|k| !k.is_empty())
+            b.iter()
+                .copied()
                 .find(|k| !tasty_key_match::binding_key_recognized(k))
-                .map(str::to_string)
         })
         .collect();
-    let records: Vec<String> = bufs.iter().map(|b| record_keys(b)).collect();
+    let displays: Vec<Vec<String>> = bufs
+        .iter()
+        .map(|b| b.iter().map(|k| display_key(k)).collect())
+        .collect();
+    let display_refs: Vec<Vec<&str>> = displays
+        .iter()
+        .map(|d| d.iter().map(String::as_str).collect())
+        .collect();
 
     let rows = plugin
         .commands
         .iter()
         .enumerate()
-        .zip(bufs.iter_mut())
-        .map(|((i, c), buf)| KbPluginRowView {
+        .map(|(i, c)| KbPluginRowView {
             id: egui::Id::new(("kb_plugins_specimen", index, &keys[i])),
             title: c.title,
             dirty: s.drafts.get(&keys[i]) != s.saved.get(&keys[i]),
@@ -275,12 +298,14 @@ fn specimen(ui: &mut egui::Ui, theme: &Theme, index: usize, s: &mut Specimen) {
                     selected: SOURCES.iter().position(|x| x == src).unwrap_or(0),
                     caption: &captions[i],
                 },
-                Value::Custom(_) if s.record_alt => KbPluginSlot::Record {
-                    keys: (!buf.is_empty()).then_some(records[i].as_str()),
-                },
                 Value::Custom(_) => KbPluginSlot::Custom {
-                    keys: buf,
-                    error: errors[i].as_deref(),
+                    keys: &display_refs[i],
+                    recording: s
+                        .recording
+                        .as_ref()
+                        .and_then(|(k, idx)| (*k == keys[i]).then_some(*idx)),
+                    can_record: true,
+                    error: errors[i],
                 },
                 Value::None => KbPluginSlot::Unassigned,
             },
@@ -302,7 +327,11 @@ fn specimen(ui: &mut egui::Ui, theme: &Theme, index: usize, s: &mut Specimen) {
     if let Some(p) = out.plugin {
         s.plugin = p;
     }
-    for (((c, k), buf), o) in plugin.commands.iter().zip(&keys).zip(&bufs).zip(&out.rows) {
+    // 본체와 같이 플러그인·mode·Reset 이 바뀌면 녹화 중 모양을 거둔다.
+    if out.plugin.is_some() || out.rows.iter().any(|o| o.mode.is_some() || o.reset) {
+        s.recording = None;
+    }
+    for ((c, k), o) in plugin.commands.iter().zip(&keys).zip(&out.rows) {
         if let Some(m) = o.mode {
             let draft_keys = match s.drafts.get(k) {
                 Some(Value::Custom(v)) => Some(v.clone()),
@@ -326,8 +355,8 @@ fn specimen(ui: &mut egui::Ui, theme: &Theme, index: usize, s: &mut Specimen) {
         if let Some(i) = o.source {
             s.drafts.insert(k.clone(), Value::Inherit(SOURCES[i]));
         }
-        if o.keys_changed {
-            s.drafts.insert(k.clone(), Value::Custom(buf.clone()));
+        if let Some(idx) = o.record {
+            s.recording = Some((k.clone(), idx));
         }
         if o.reset {
             s.drafts.remove(k);
