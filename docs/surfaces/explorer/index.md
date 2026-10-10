@@ -195,11 +195,11 @@ Grid 셀은 모두 `explorer_grid_thumb_size`(40) 슬롯을 잡아 썸네일 유
 `explorer_properties` popup(`src/adapters/ui/popup/explorer_properties.rs`, 시안 `YProps`)은 그 explorer surface 에 묶인(`PopupScope::Surface`) headless popup 이다. 바탕은 시안 YProps 와 같은 bg-panel 이다(읽기 실패 화면의 Secondary Retry 가 surface-raised 바탕에 묻히지 않는다). 폭은 `explorer_props_width`(360), 라벨 열은 `explorer_props_label_width`(96, caption text-muted)이고 값은 body 또는 mono caption 이다. 연 대상을 고정해 보이며, 원 explorer 가 사라지면 닫힌다.
 
 - **진입**: 컨텍스트 메뉴 맨 끝 구분선 뒤 "Properties"(id 70, 모든 변형·mirror 에서도 보인다), `explorer_properties` 단축키·Command Palette. 대상 규칙은 [파일 작업 계약](file-operations.md#대상-결정-규칙)이다.
-- **종류 문구**(`explorer/kind.rs` 의 `kind_word`·`file_kind_word`): Detail 의 Type 열, Properties 의 Kind, 미리보기 머리가 같은 낱말을 쓴다.
+- **종류 문구**(`explorer/kind.rs` 의 `kind_word`·`file_kind_word`): Detail 의 Type 열, Properties 의 Kind, 미리보기 머리가 같은 낱말을 쓴다. 확장자 분류(`core/file_kind.rs` 의 `FileKind`)는 낱말과 Type 정렬이 함께 쓴다.
   - 형식 이름 표: md·markdown "Markdown", txt "Text", html·htm "HTML", json "JSON", toml "TOML", yaml·yml "YAML", csv "CSV", pdf "PDF document", zip·tar·gz·tgz·bz2·xz·zst·7z·rar "Archive", sh·bash·zsh·fish·ps1 "Shell script". HTML·JSON·TOML·YAML·CSV 는 모든 언어에서 같은 낱말이라 번역 키가 없다.
   - 표에 없는 그림 확장자(`is_image_ext`)는 `explorer.kind.image`("PNG image"), 그 밖은 `explorer.kind.ext_file`("RS file"), 확장자가 없으면 "File", 폴더는 "Folder".
   - 링크는 Type 열과 미리보기 머리에서 `explorer.kind.link_to`("Link to Markdown")이고 크기는 대상의 크기다. 링크의 종류는 링크 이름의 확장자와 대상이 폴더인지로 정한다. 대상이 없는 링크는 `explorer.kind.broken_link`("Broken link")다. Properties 의 Kind 는 lstat 결과대로 "Symbolic link" 다.
-  - Type 열은 좁아 낱말이 넘치면 말줄임하고 호버에 전체 낱말을 보인다. Type 열 정렬은 확장자 순서다.
+  - Type 열은 좁아 낱말이 넘치면 말줄임하고 호버에 전체 낱말을 보인다. Type 열 정렬(`core/fs_list.rs` 의 `type_key`)은 보이는 낱말과 같은 묶음이 붙어 있도록 링크 여부(링크 아님 · 링크 · 끊긴 링크), `FileKind` 선언 순서, 확장자, 이름 순으로 비교한다. 번역문을 비교하지 않으므로 언어와 무관하다(예: gz 와 zip 은 Archive 로 붙는다).
 - **파일**: Kind · Size(사람이 읽는 크기와 바이트 수) · Modified · Created · Location(Copy) · Permissions(Unix 는 `rwxr-xr-x` 와 read-only, 그 밖은 read-only 만).
 - **링크**: 제목 글리프 link · Kind "Symbolic link" · Link target(Copy) · Location. 링크를 따라가지 않는다.
 - **폴더**: Size 자리에 하위 항목 수와 크기를 read worker 가 배경에서 세며 Spinner 를 보인다. 링크는 따라가지 않고 읽지 못한 하위 폴더는 건너뛴다. popup 을 닫으면 세기를 멈춘다.

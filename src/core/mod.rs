@@ -5,6 +5,7 @@ pub(crate) mod attach;
 pub(crate) mod command_index;
 #[cfg(feature = "gui")]
 pub(crate) mod explorer_favorites;
+pub(crate) mod file_kind;
 pub(crate) mod fs_list;
 pub(crate) mod hook_event_registry;
 pub(crate) mod host_event;

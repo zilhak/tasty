@@ -7,6 +7,8 @@ use std::time::SystemTime;
 
 use tasty_model::{SortColumn, SortDir};
 
+use crate::core::file_kind::{FileKind, file_kind};
+
 #[derive(Clone)]
 pub(crate) struct DirEntryInfo {
     /// 원격 응답에는 없다. client가 조회 경로와 name으로 만들며 GUI에서만 사용한다.
@@ -106,15 +108,28 @@ pub(crate) fn compare_entries(
         SortColumn::Name => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
         SortColumn::Size => a.size.cmp(&b.size),
         SortColumn::Modified => a.modified.cmp(&b.modified),
-        SortColumn::Type => a
-            .ext
-            .cmp(&b.ext)
+        SortColumn::Type => type_key(a)
+            .cmp(&type_key(b))
             .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase())),
     };
     match dir {
         SortDir::Asc => ord,
         SortDir::Desc => ord.reverse(),
     }
+}
+
+/// Type 정렬 키. Type 열에 보이는 낱말과 같은 묶음이 붙어 있도록 링크 여부, 종류, 확장자 순으로 묶는다.
+/// 번역문이 아니라 분류의 선언 순서라 언어와 무관하다.
+fn type_key(e: &DirEntryInfo) -> (u8, FileKind, &str) {
+    #[cfg(feature = "gui")]
+    let link = match e.link {
+        EntryLink::NotALink => 0,
+        EntryLink::Valid => 1,
+        EntryLink::Broken => 2,
+    };
+    #[cfg(not(feature = "gui"))]
+    let link = 0;
+    (link, file_kind(&e.ext), &e.ext)
 }
 
 /// Unix epoch 일수로 UTC 날짜를 표시한다. 값이 없거나 epoch 이전이면 대시를 쓴다.
@@ -228,6 +243,51 @@ mod tests {
         ];
         sort_entries(&mut v, SortColumn::Name, SortDir::Asc);
         assert!(v[0].is_dir);
+    }
+
+    fn file(name: &str) -> DirEntryInfo {
+        DirEntryInfo {
+            #[cfg(feature = "gui")]
+            path: name.into(),
+            name: name.into(),
+            is_dir: false,
+            size: 0,
+            modified: None,
+            ext: name
+                .rsplit_once('.')
+                .map_or(String::new(), |(_, e)| e.into()),
+            #[cfg(feature = "gui")]
+            link: Default::default(),
+        }
+    }
+
+    fn names(v: &[DirEntryInfo]) -> Vec<&str> {
+        v.iter().map(|e| e.name.as_str()).collect()
+    }
+
+    #[test]
+    fn type_sort_keeps_one_kind_together() {
+        let mut v: Vec<_> = ["d.rs", "c.zip", "b.html", "a.gz", "e.yml", "f.yaml"]
+            .into_iter()
+            .map(file)
+            .collect();
+        sort_entries(&mut v, SortColumn::Type, SortDir::Asc);
+        assert_eq!(
+            names(&v),
+            ["a.gz", "c.zip", "b.html", "f.yaml", "e.yml", "d.rs"]
+        );
+    }
+
+    #[cfg(feature = "gui")]
+    #[test]
+    fn type_sort_puts_links_after_plain_files() {
+        let mut link = file("a.md");
+        link.link = EntryLink::Valid;
+        let mut broken = file("b.md");
+        broken.link = EntryLink::Broken;
+        let mut v = vec![broken, link, file("z.md"), file("y.rs")];
+        sort_entries(&mut v, SortColumn::Type, SortDir::Asc);
+        assert_eq!(names(&v), ["z.md", "y.rs", "a.md", "b.md"]);
     }
 
     #[test]

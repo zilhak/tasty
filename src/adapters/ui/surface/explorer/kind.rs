@@ -1,35 +1,28 @@
 //! 항목 종류를 낱말로 쓴다. Detail 의 Type 열, Properties 의 Kind, 미리보기 머리가 같은 낱말을 써서
-//! 세 곳이 어긋나지 않는다. 확장자를 형식 이름으로 바꾸는 작은 표가 있고, 표에 없으면 "{EXT} file" 이다.
+//! 세 곳이 어긋나지 않는다. 분류는 `core::file_kind` 의 표이고, 표에 없으면 "{EXT} file" 이다.
 //! 링크는 "Link to {kind}" 다. 다만 Properties 는 lstat 결과를 그대로 "Symbolic link" 로 쓴다.
 
+use crate::core::file_kind::{FileKind, file_kind};
 use crate::core::fs_list::{DirEntryInfo, EntryLink};
 use crate::i18n::t;
 
-use super::is_image_ext;
-
-/// 형식 이름. 번역 키를 쓰는 것과 모든 언어에서 같은 낱말을 쓰는 것이 있다.
-enum Format {
-    Key(&'static str),
-    Same(&'static str),
-}
-
-/// 표에 있는 확장자의 형식 이름. 그림은 따로 "{TYPE} image" 로 쓴다.
-fn format_of(ext: &str) -> Option<Format> {
-    Some(match ext {
-        "md" | "markdown" => Format::Key("explorer.kind.markdown"),
-        "txt" => Format::Key("explorer.kind.text"),
-        "pdf" => Format::Key("explorer.kind.pdf"),
-        "zip" | "tar" | "gz" | "tgz" | "bz2" | "xz" | "zst" | "7z" | "rar" => {
-            Format::Key("explorer.kind.archive")
-        }
-        "sh" | "bash" | "zsh" | "fish" | "ps1" => Format::Key("explorer.kind.shell"),
-        "html" | "htm" => Format::Same("HTML"),
-        "json" => Format::Same("JSON"),
-        "toml" => Format::Same("TOML"),
-        "yaml" | "yml" => Format::Same("YAML"),
-        "csv" => Format::Same("CSV"),
-        _ => return None,
-    })
+/// 종류의 형식 이름. 번역 키를 쓰는 것과 모든 언어에서 같은 낱말을 쓰는 것이 있다.
+/// 그림은 "{TYPE} image", 그 밖은 "{EXT} file" 이라 확장자를 받아야 해서 `None` 이다.
+fn format_word(kind: FileKind) -> Option<String> {
+    let key = match kind {
+        FileKind::Markdown => "explorer.kind.markdown",
+        FileKind::Text => "explorer.kind.text",
+        FileKind::Pdf => "explorer.kind.pdf",
+        FileKind::Archive => "explorer.kind.archive",
+        FileKind::Shell => "explorer.kind.shell",
+        FileKind::Html => return Some("HTML".into()),
+        FileKind::Json => return Some("JSON".into()),
+        FileKind::Toml => return Some("TOML".into()),
+        FileKind::Yaml => return Some("YAML".into()),
+        FileKind::Csv => return Some("CSV".into()),
+        FileKind::Image | FileKind::Other => return None,
+    };
+    Some(t(key).to_string())
 }
 
 /// 링크가 아닌 항목의 종류. 폴더는 "Folder", 파일은 [`file_kind_word`] 다.
@@ -57,13 +50,12 @@ pub(crate) fn file_kind_word(ext: &str) -> String {
     if ext.is_empty() {
         return t("explorer.type.file").to_string();
     }
-    let lower = ext.to_lowercase();
     let upper = ext.to_uppercase();
-    match format_of(&lower) {
-        Some(Format::Key(key)) => t(key).to_string(),
-        Some(Format::Same(word)) => word.to_string(),
-        None if is_image_ext(&lower) => t("explorer.kind.image").replace("{type}", &upper),
-        None => t("explorer.kind.ext_file").replace("{ext}", &upper),
+    let kind = file_kind(ext);
+    match (format_word(kind), kind) {
+        (Some(word), _) => word,
+        (None, FileKind::Image) => t("explorer.kind.image").replace("{type}", &upper),
+        (None, _) => t("explorer.kind.ext_file").replace("{ext}", &upper),
     }
 }
 

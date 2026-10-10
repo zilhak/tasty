@@ -27,6 +27,7 @@ use tasty_ui_widgets::{
 
 use crate::adapters::ui::icons::{self, Icon};
 use crate::core::explorer_favorites as favorites;
+pub(crate) use crate::core::file_kind::is_image_ext;
 use crate::i18n::{t, t_fmt};
 use crate::settings::EffectiveFont;
 use crate::theme;
@@ -1066,25 +1067,6 @@ fn handle_entry_interaction(
 /// current 에 부모가 있으면(파일시스템 루트 아님) `..` 상위 이동 대상 경로.
 fn parent_nav_target(current: &Path) -> Option<PathBuf> {
     current.parent().map(|p| p.to_path_buf())
-}
-
-/// 확장자가 이미지 파일인지 — design 은 이미지 glyph 를 accent-info 로 강조한다.
-pub(crate) fn is_image_ext(ext: &str) -> bool {
-    matches!(
-        ext,
-        "png"
-            | "jpg"
-            | "jpeg"
-            | "gif"
-            | "webp"
-            | "svg"
-            | "bmp"
-            | "ico"
-            | "tif"
-            | "tiff"
-            | "avif"
-            | "heic"
-    )
 }
 
 /// 엔트리의 아이콘 + glyph 색 (design GridCell/DetailRow/ExpListMini):
