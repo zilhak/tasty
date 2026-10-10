@@ -897,6 +897,13 @@ file = "ファイル"
 [explorer.kind]
 image = "{type} 画像"
 ext_file = "{ext} ファイル"
+markdown = "Markdown"
+text = "テキスト"
+pdf = "PDF 書類"
+archive = "アーカイブ"
+shell = "シェルスクリプト"
+link_to = "{kind} へのリンク"
+broken_link = "リンク切れ"
 
 [explorer.view]
 grid = "グリッド"

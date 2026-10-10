@@ -107,7 +107,7 @@ const DETAIL: &[DetailRow] = &[
         name: "report.pdf",
         size: "2.4 MB",
         modified: "06-24 09:12",
-        kind_label: "PDF",
+        kind_label: "PDF document",
         cut: false,
     },
     DetailRow {
@@ -115,7 +115,7 @@ const DETAIL: &[DetailRow] = &[
         name: "diagram.png",
         size: "488 KB",
         modified: "06-26 18:05",
-        kind_label: "PNG",
+        kind_label: "PNG image",
         cut: false,
     },
 ];

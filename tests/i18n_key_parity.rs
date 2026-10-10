@@ -22,6 +22,11 @@ const SAME_AS_ENGLISH_ALLOWLIST: &[(&str, &[&str], &str)] = &[
         "숫자 자리와 단위 기호 (× px)",
     ),
     ("app.name", &["ko", "ja"], "제품명"),
+    (
+        "explorer.kind.markdown",
+        &["ko", "ja"],
+        "형식 이름(고유 명사)",
+    ),
     ("settings.appearance.subtab.tasty", &["ko", "ja"], "제품명"),
     (
         "settings.terminal.shell_mode_tasty",

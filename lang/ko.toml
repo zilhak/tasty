@@ -897,6 +897,13 @@ file = "파일"
 [explorer.kind]
 image = "{type} 이미지"
 ext_file = "{ext} 파일"
+markdown = "Markdown"
+text = "텍스트"
+pdf = "PDF 문서"
+archive = "압축 파일"
+shell = "셸 스크립트"
+link_to = "{kind} 링크"
+broken_link = "끊긴 링크"
 
 [explorer.view]
 grid = "그리드"

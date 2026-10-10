@@ -5,6 +5,7 @@ pub mod address;
 mod commands;
 mod create;
 mod find;
+mod kind;
 mod preview;
 mod state_screen;
 mod thumbs;
@@ -27,6 +28,7 @@ use crate::core::explorer_favorites as favorites;
 use crate::i18n::{t, t_fmt};
 use crate::settings::EffectiveFont;
 use crate::theme;
+pub(crate) use kind::{file_kind_word, kind_word};
 use view::{DirEntryInfo, ExplorerView, LoadState, human_size};
 use visible_rows::{GridMetrics, grid_metrics, open_span, scroll_target};
 
@@ -1518,17 +1520,18 @@ fn detail_view(
                     4 => search_root
                         .as_deref()
                         .map(|r| find::hit_folder(r, &row.path)),
-                    _ => (!blank).then(|| type_label(row)),
+                    _ => (!blank).then(|| kind_word(row)),
                 };
                 // Type 열만 본문 글꼴 크기로, 나머지 값은 고정폭으로 쓴다.
                 let text = egui::RichText::new(text.unwrap_or_default())
                     .color(dim(th.text_muted().to_egui()));
                 let size = th.font_size_caption.value();
-                ui.label(if col == 3 {
-                    text.size(size)
+                // Type 열은 좁아 낱말을 말줄임하고, 줄였으면 호버에 전체 낱말이 보인다.
+                if col == 3 {
+                    ui.add(egui::Label::new(text.size(size)).truncate());
                 } else {
-                    text.font(egui::FontId::monospace(size))
-                });
+                    ui.label(text.font(egui::FontId::monospace(size)));
+                }
             },
         );
 
@@ -1609,40 +1612,6 @@ pub(crate) fn rename_name_error(name: &str) -> Option<String> {
         .map(|e| e.message(name))
 }
 
-/// Properties 와 미리보기 머리의 종류 문구. 폴더는 "Folder", 파일은 [`file_kind_word`] 다.
-/// Detail 의 Type 열은 좁은 열이라 [`type_label`] 의 확장자를 그대로 쓴다.
-pub(crate) fn kind_word(e: &DirEntryInfo) -> String {
-    if e.is_dir {
-        t("explorer.type.folder").to_string()
-    } else {
-        file_kind_word(&e.ext)
-    }
-}
-
-/// 파일 종류를 낱말로: 그림은 "PNG image", 그 밖은 "ZIP file", 확장자가 없으면 "File".
-/// 번역문은 이름 붙은 `{type}`·`{ext}` 자리로 대문자 확장자를 받는다.
-pub(crate) fn file_kind_word(ext: &str) -> String {
-    if ext.is_empty() {
-        return t("explorer.type.file").to_string();
-    }
-    let upper = ext.to_uppercase();
-    if is_image_ext(&ext.to_lowercase()) {
-        t("explorer.kind.image").replace("{type}", &upper)
-    } else {
-        t("explorer.kind.ext_file").replace("{ext}", &upper)
-    }
-}
-
-pub(crate) fn type_label(e: &DirEntryInfo) -> String {
-    if e.is_dir {
-        t("explorer.type.folder").to_string()
-    } else if e.ext.is_empty() {
-        t("explorer.type.file").to_string()
-    } else {
-        e.ext.to_uppercase()
-    }
-}
-
 #[cfg(test)]
 mod virtual_tests;
 
@@ -1721,14 +1690,6 @@ mod tests {
     }
 
     /// 사이드바가 칸보다 커지는 낮은 칸에서도 상태줄은 칸 안에 보인다.
-    #[test]
-    fn kinds_read_as_words() {
-        crate::i18n::init("en");
-        assert_eq!(super::file_kind_word("png"), "PNG image");
-        assert_eq!(super::file_kind_word("zip"), "ZIP file");
-        assert_eq!(super::file_kind_word(""), "File");
-    }
-
     #[test]
     fn a_short_cell_keeps_the_status_line_inside() {
         // 목록이 있으면 ScrollArea 가 본문을 채운다. 없으면 상태 화면이 채운다.

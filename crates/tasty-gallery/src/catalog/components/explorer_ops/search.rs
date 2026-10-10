@@ -109,7 +109,7 @@ pub fn draw_find_bar(ui: &mut egui::Ui, theme: &Theme) {
                             "report.pdf",
                             "2.4 MB",
                             "2026-06-24 09:12",
-                            "PDF",
+                            "PDF document",
                         ),
                         (icons::FOLDER, "mockup-exports", "—", "2026-06-20 14:30", ""),
                     ];

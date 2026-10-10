@@ -914,6 +914,13 @@ file = "File"
 [explorer.kind]
 image = "{type} image"
 ext_file = "{ext} file"
+markdown = "Markdown"
+text = "Text"
+pdf = "PDF document"
+archive = "Archive"
+shell = "Shell script"
+link_to = "Link to {kind}"
+broken_link = "Broken link"
 
 [explorer.view]
 grid = "Grid"

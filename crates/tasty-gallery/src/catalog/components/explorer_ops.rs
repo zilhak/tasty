@@ -490,14 +490,14 @@ const DETAIL_ROWS: &[(MockGlyph, &str, &str, &str, &str)] = &[
         "report.pdf",
         "2.4 MB",
         "2026-06-24 09:12",
-        "PDF",
+        "PDF document",
     ),
     (
         icons::IMAGE,
         "diagram.png",
         "488 KB",
         "2026-06-26 18:05",
-        "PNG",
+        "PNG image",
     ),
     (
         icons::FILE,

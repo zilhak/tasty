@@ -32,12 +32,13 @@ src/catalog/components/clipboard_viewer.rs	Clipboard	settings.keybindings.subtab
 src/catalog/components/clipboard_viewer.rs	Close	dag_list.close,explorer.find.close,explorer.properties.close,port_scanner.close,remote_attach.close,remote_tool.close,titlebar.close
 src/catalog/components/clipboard_viewer.rs	Files	explorer.sidebar.tree
 src/catalog/components/clipboard_viewer.rs	Image	convert_popup.image
-src/catalog/components/clipboard_viewer.rs	Text	settings.appearance.colors.group.text
+src/catalog/components/clipboard_viewer.rs	Text	explorer.kind.text,settings.appearance.colors.group.text
 src/catalog/components/command_palette.rs	Ctrl	settings.terminal.link_modifier_ctrl
 src/catalog/components/command_palette.rs	New Terminal	pane_context_menu.new_terminal
 src/catalog/components/command_palette.rs	Settings	button.settings,settings.window.title
 src/catalog/components/convert.rs	Explorer	convert_popup.explorer,settings.appearance.subtab.explorer,settings.keybindings.subtab.explorer,surface.kind.explorer
 src/catalog/components/convert.rs	Image	convert_popup.image
+src/catalog/components/convert.rs	Markdown	explorer.kind.markdown
 src/catalog/components/convert.rs	Surface Type	convert_popup.title
 src/catalog/components/convert.rs	no	explorer.properties.no
 src/catalog/components/dag.rs	Cancelled	dag.tooltip.cancelled
@@ -92,9 +93,13 @@ src/catalog/components/explorer_context_menu.rs	Rename	context_menu.rename_title
 src/catalog/components/explorer_favorite_popup.rs	Add	button.add,explorer.popup.add_favorite.add,settings.terminal.input_add,settings.terminal.mouse_capture_banner_blacklist_add_button,settings.terminal.mouse_capture_blacklist_add_button
 src/catalog/components/explorer_favorite_popup.rs	Add to favorites	explorer.popup.add_favorite.title
 src/catalog/components/explorer_favorite_popup.rs	Cancel	button.cancel,explorer.op.cancel,image_viewer.cancel,preset.popup.cancel_button,quit_modal.cancel_button,remote_attach.cancel,remote_tool.cancel,transfer.progress.cancel
+src/catalog/components/explorer_jobs.rs	Archive	explorer.kind.archive
+src/catalog/components/explorer_ops.rs	Markdown	explorer.kind.markdown
+src/catalog/components/explorer_ops.rs	PDF document	explorer.kind.pdf
 src/catalog/components/explorer_ops.rs	no write access	explorer.drag.no_write
 src/catalog/components/explorer_ops.rs	—	dag.detail.none,port_scanner.external_dash
 src/catalog/components/explorer_ops/search.rs	Detail	explorer.view.detail
+src/catalog/components/explorer_ops/search.rs	PDF document	explorer.kind.pdf
 src/catalog/components/explorer_ops/search.rs	—	dag.detail.none,port_scanner.external_dash
 src/catalog/components/explorer_rename_popup.rs	Cancel	button.cancel,explorer.op.cancel,image_viewer.cancel,preset.popup.cancel_button,quit_modal.cancel_button,remote_attach.cancel,remote_tool.cancel,transfer.progress.cancel
 src/catalog/components/explorer_rename_popup.rs	Rename	context_menu.rename_title,explorer.context_menu.rename,explorer.popup.rename.rename,explorer.popup.rename.title,preset.toolbar.rename
@@ -117,9 +122,12 @@ src/catalog/components/explorer_states/popups.rs	Add to favorites	explorer.popup
 src/catalog/components/explorer_states/popups.rs	Cancel	button.cancel,explorer.op.cancel,image_viewer.cancel,preset.popup.cancel_button,quit_modal.cancel_button,remote_attach.cancel,remote_tool.cancel,transfer.progress.cancel
 src/catalog/components/explorer_states/popups.rs	Name	explorer.column.name,filepicker.column.name,remote_tool.field_name
 src/catalog/components/explorer_states/popups.rs	Rename	context_menu.rename_title,explorer.context_menu.rename,explorer.popup.rename.rename,explorer.popup.rename.title,preset.toolbar.rename
+src/catalog/components/explorer_surface.rs	Archive	explorer.kind.archive
 src/catalog/components/explorer_surface.rs	Folder	explorer.type.folder
 src/catalog/components/explorer_surface.rs	Go to directory…	explorer.address.placeholder
+src/catalog/components/explorer_surface.rs	Markdown	explorer.kind.markdown
 src/catalog/components/explorer_surface.rs	No matching path	explorer.address.empty
+src/catalog/components/explorer_surface.rs	PDF document	explorer.kind.pdf
 src/catalog/components/explorer_surface.rs	—	dag.detail.none,port_scanner.external_dash
 src/catalog/components/explorer_tab_bar.rs	close	command_palette.hint_close
 src/catalog/components/explorer_toolbar.rs	Go to directory…	explorer.address.placeholder
@@ -127,6 +135,7 @@ src/catalog/components/explorer_toolbar.rs	No matching path	explorer.address.emp
 src/catalog/components/explorer_view_cells.rs	Date modified	explorer.column.modified
 src/catalog/components/explorer_view_cells.rs	Folder	explorer.type.folder
 src/catalog/components/explorer_view_cells.rs	Name	explorer.column.name,filepicker.column.name,remote_tool.field_name
+src/catalog/components/explorer_view_cells.rs	PDF document	explorer.kind.pdf
 src/catalog/components/explorer_view_cells.rs	Size	explorer.column.size,explorer.properties.size,filepicker.column.size
 src/catalog/components/explorer_view_cells.rs	Type	explorer.column.type,remote_tool.field_type
 src/catalog/components/explorer_view_cells.rs	—	dag.detail.none,port_scanner.external_dash
@@ -266,6 +275,7 @@ src/catalog/components/plugins_window/add.rs	Trust & add	plugins.add_trust_and_a
 src/catalog/components/plugins_window/add.rs	Verify	plugins.add_confirm_path
 src/catalog/components/plugins_window/add.rs	~/dev/my-plugin	plugins.add_path_placeholder
 src/catalog/components/plugins_window/attention.rs	Log	plugins.attn_error,plugins.log_path
+src/catalog/components/plugins_window/attention.rs	Markdown	explorer.kind.markdown
 src/catalog/components/plugins_window/attention.rs	Needs review	plugins.attn_needs_review
 src/catalog/components/plugins_window/attention.rs	Not registered	plugins.attn_not_registered
 src/catalog/components/plugins_window/attention.rs	Permission changes	plugins.attn_permission_changes
@@ -279,6 +289,7 @@ src/catalog/components/plugins_window/attention.rs	no longer used	plugins.attn_n
 src/catalog/components/plugins_window/installed.rs	(none)	plugins.none,remote_tool.passkey_none
 src/catalog/components/plugins_window/installed.rs	Commands	plugins.commands
 src/catalog/components/plugins_window/installed.rs	Install path	plugins.install_path
+src/catalog/components/plugins_window/installed.rs	Markdown	explorer.kind.markdown
 src/catalog/components/plugins_window/installed.rs	Open folder	plugins.open_folder
 src/catalog/components/plugins_window/installed.rs	Permissions	explorer.properties.permissions,plugins.permissions,settings.tab.macos_permissions
 src/catalog/components/plugins_window/installed.rs	Surface kinds	plugins.surface_kinds
@@ -304,6 +315,7 @@ src/catalog/components/port_scanner.rs	not running	port_scanner.favorites_not_ru
 src/catalog/components/port_scanner.rs	system-wide	port_scanner.favorites_system_wide
 src/catalog/components/port_scanner.rs	—	dag.detail.none,port_scanner.external_dash
 src/catalog/components/preset_editor.rs	Log	plugins.attn_error,plugins.log_path
+src/catalog/components/preset_editor.rs	Markdown	explorer.kind.markdown
 src/catalog/components/preset_editor.rs	Pane	preset.tab.pane,settings.keybindings.subtab.pane,tutorial.step_pane_title
 src/catalog/components/preset_editor.rs	Tab	port_scanner.column_tab,preset.tab.tab,settings.keybindings.subtab.tab,tutorial.step_tab_title
 src/catalog/components/preset_editor.rs	Terminal	convert_popup.terminal,settings.appearance.subtab.terminal,settings.tab.terminal,settings.terminal.heading,surface.kind.terminal
@@ -316,6 +328,7 @@ src/catalog/components/preset_surface_settings.rs	File	explorer.type.file,menu.m
 src/catalog/components/preset_surface_settings.rs	Host	remote_tool.field_host
 src/catalog/components/preset_surface_settings.rs	Image	convert_popup.image
 src/catalog/components/preset_surface_settings.rs	Kind	explorer.properties.kind,preset.edit.kind,remote_tool.field_kind
+src/catalog/components/preset_surface_settings.rs	Markdown	explorer.kind.markdown
 src/catalog/components/preset_surface_settings.rs	OK	button.ok
 src/catalog/components/preset_surface_settings.rs	Startup command	preset.edit.startup
 src/catalog/components/preset_surface_settings.rs	Terminal	convert_popup.terminal,settings.appearance.subtab.terminal,settings.tab.terminal,settings.terminal.heading,surface.kind.terminal
