@@ -216,7 +216,6 @@ Grid 셀은 모두 `explorer_grid_thumb_size`(40) 슬롯을 잡아 썸네일 유
 - **읽기 실패**: 팝업 틀을 그대로 두고, 제목은 그 항목의 글리프(탐색기 목록에서 본 종류)와 이름이다. 본문은 alertTriangle 과 `explorer.properties.unreadable`("Can't read properties", explorer-error-fg), mono muted OS 이유, Retry(secondary sm, 같은 항목을 다시 읽는다)다.
 - **제목 굵기**: 제목은 14 regular 다. 테마에 semibold UI 글꼴이 없어 크기로 제목을 구분한다.
 - **원격(mirror)**: 원격 목록에 있는 Kind · Size · Modified · Location 만 보이고 그 아래 muted 안내를 붙인다. 원격 파일시스템을 다시 읽지 않는다.
-- **오류**: 정보를 읽지 못하면 머리에 `alertTriangle` 글리프와 첫 대상 이름, "Can't read" 라벨 한 줄에 오류 문구를 mono 로 보인다.
 
 ### 새 폴더 · 새 파일
 
@@ -288,7 +287,7 @@ Grid 셀은 모두 `explorer_grid_thumb_size`(40) 슬롯을 잡아 썸네일 유
 목록은 `read_dir_entries`(`src/core/fs_list.rs`)가 읽는다. 링크 항목은 대상의 metadata 로 종류·크기·수정 시각을 정하고 `DirEntryInfo::link` 에 상태를 남긴다(`NotALink` / `Valid` / `Broken`). OS 숨김 표시는 `DirEntryInfo::os_hidden` 이다(위 "숨김 파일").
 
 - **폴더를 가리키는 링크**는 폴더로 보이고 트리에도 나온다. 들어가면 경로는 링크 자신의 경로다. 주소창·히스토리·뒤로/위로는 대상의 실제 경로가 아니라 링크 경로를 쓴다. 따라서 링크 폴더에서 위로 가면 링크가 있던 폴더로 돌아간다.
-- **대상이 없는 링크**는 폴더로 보지 않으며 크기·수정 시각은 링크 자신의 값이다. 열면 파일을 찾지 못한 것처럼 보이지 않도록 `explorer.state.broken_link` 오류 toast 로 대상이 없다는 원인을 알린다. 주소창 입력도 같은 이유로 거부한다.
+- **대상이 없는 링크**는 폴더로 보지 않으며 크기·수정 시각은 링크 자신의 값이다. 열면 파일을 찾지 못한 것처럼 보이지 않도록 `explorer.state.broken_link` 오류 toast 로 대상이 없다는 원인을 알린다. 주소창에 넣으면 거부하지 않고 파일처럼 그 링크가 든 폴더로 가서 링크를 고른다([주소 입력](#주소-입력), `address.rs` 의 `a_link_is_not_resolved_and_a_broken_link_is_picked_in_its_folder`).
 - **목록 표시**(`explorer/link.rs`, Detail · List · Grid 공통): 대상이 있는 링크는 대상의 글리프(폴더·파일·그림)를 쓰고 이름 뒤 `space-xs` 자리에 link 글리프 12를 붙인다. 세 보기 모두 꼬리 폭(`space-xs` + 글리프)을 먼저 빼고 이름을 그 앞에서 자른다. 그래서 이름이 길어도 글리프는 보인다. Detail 은 이름을 말줄임하고, List 는 이름 칸을 그 폭만큼 줄여 클립한다(공용 `tree_row_with_tail`). Grid 는 이름의 마지막 줄 끝에 붙이고, 그 폭만큼 이름 줄 폭을 줄인다. 대상이 없는 링크는 항목 자리에 link 글리프를 accent-warning 으로 그리고 이름은 보통 색(취소선 없음)이다. 호버하면 `explorer.link.target_missing`("Target not found: {path}")으로 `read_link` 가 돌려준 대상 경로를 보인다(호버할 때만 읽는다). 색·크기는 `explorer-link-glyph`(→ text-muted)·`explorer-link-glyph-size`(→ icon-size-xs 12)·`explorer-link-broken-fg`(→ accent-warning) 토큰이다. Type 열 낱말은 위 종류 문구다.
 - **링크 자체에 대한 조작**: 복사·붙여넣기는 링크를 링크로 복사한다. 이름 변경과 cut 의 교차 파일시스템 정리(`remove_path`)는 링크만 옮기거나 지운다. 휴지통(`trash` 크레이트)은 모든 OS 에서 부모 경로만 canonicalize 하고, Linux(freedesktop) 구현은 링크 항목 자체를 휴지통으로 옮긴다. macOS·Windows 의 링크 휴지통 동작은 실 기기에서 확인하지 않았다. 어느 조작도 대상 폴더나 그 내용을 바꾸지 않는다.
 - 원격 목록 응답은 링크 상태를 싣지 않는다. 원격 서버도 같은 함수로 목록을 만들므로 원격의 폴더 링크도 폴더로 보이지만, 끊긴 링크 구분은 원격 항목에 없다.

@@ -1,6 +1,6 @@
 # Explorer 파일 작업 — 대상과 결과의 계약
 
-- **Status**: Partial — 새 폴더·새 파일·이름 변경·복사·잘라내기·붙여넣기·휴지통 이동·드래그 놓기·충돌 선택·진행 취소·실행 취소는 동작한다. 속성 조회·미리보기 패널·Grid 썸네일·찾기(거르기와 하위 폴더 검색)는 파일을 바꾸지 않는 읽기로 동작한다. OS 파일 클립보드와 explorer 밖으로 끌어 내기는 없다.
+- **Status**: Partial — 새 폴더·새 파일·이름 변경·복사·잘라내기·붙여넣기·휴지통 이동·드래그 놓기·충돌 선택·진행 취소·실행 취소·다시 실행은 동작한다. 속성 조회·미리보기 패널·Grid 썸네일·찾기(거르기와 하위 폴더 검색)는 파일을 바꾸지 않는 읽기로 동작한다. OS 파일 클립보드와 explorer 밖으로 끌어 내기는 없다.
 - **주체**: 로컬 사용자 ([주체](../../concepts/actors.md)). 에이전트(IPC/CLI)는 이 문서의 파일 작업을 호출하지 않는다.
 - **ADR**: [ADR-0022](../../adr/0022-remote-mirror-content-and-queries.md) (mirror explorer 는 파일을 바꾸지 않는다)
 - **코드**: 메뉴 구성 `build_explorer_context_menu`·메뉴 핸들러 `explorer_menu_*` (`src/view/main/redraw.rs`), 단축키·Command Palette 진입 `handle_explorer_shortcut`·`run_explorer_action` (`src/adapters/ui/input/shortcuts/copy_paste.rs`), 실행 worker `src/app/explorer_files.rs`·`src/app/explorer_files/ops.rs`·작업 엔진 `src/app/explorer_files/job.rs`·화면 동기화 `src/app/explorer_files/ui_sync.rs`, 새 항목 입력 `src/adapters/ui/surface/explorer/create.rs`·툴바 More 메뉴 `src/view/main/explorer_create.rs`, 찾기 `src/adapters/ui/surface/explorer/find.rs`, 칸 표시 `src/adapters/ui/surface/explorer/view/ops.rs`·드래그 `src/adapters/ui/surface/explorer/view/drag.rs`·충돌 popup `src/adapters/ui/popup/explorer_conflict.rs`, OS 파일 드롭 `src/view/main/file_drop.rs`
@@ -70,7 +70,7 @@
 | 찾기 | 툴바 Find 토글(좁은 칸은 More 메뉴), `find` 단축키 | 지금 보는 폴더, Subfolders 를 켜면 그 아래 전체(로컬만) | 디스크를 바꾸지 않는다. 목록을 이름으로 거르거나 하위 폴더 검색 결과로 바꾼다. 결과에 대한 파일 작업은 결과의 실제 경로를 대상으로 한다 | Find 바의 개수·검색 상태, 상태줄 ([Explorer](index.md#찾기--하위-폴더-검색)) |
 | 속성 | 메뉴 맨 끝 "Properties"(모든 변형, mirror 포함), `explorer_properties` 단축키, Command Palette | 메뉴의 대상, 또는 위 단축키 규칙 | 디스크를 바꾸지 않는다. 열 때의 대상을 고정해 보이고, 폴더 크기는 read worker 가 배경에서 센다. 닫으면 세기를 멈춘다 | 탐색기 칸에 묶인 Properties popup ([Explorer](index.md#properties-popup)) |
 | 미리보기 | 툴바 토글, `explorer_toggle_preview` 단축키, Command Palette | 선택이 하나일 때 그 항목 | 디스크를 바꾸지 않는다. 로컬 파일만 read worker 로 읽는다 | 목록 오른쪽 미리보기 패널 ([Explorer](index.md#미리보기-패널)) |
-| 숨김 파일 | More 메뉴, `explorer_toggle_hidden` 단축키, Command Palette | 지금 보는 폴더의 이름이 `.` 으로 시작하는 항목 | 디스크를 바꾸지 않는다. 목록에서 빼거나 되돌린다 | 상태줄의 숨김 수, 켜면 숨김 항목을 explorer-hidden-fg 로 ([Explorer](index.md#숨김-파일)) |
+| 숨김 파일 | More 메뉴, `explorer_toggle_hidden` 단축키, Command Palette | 지금 보는 폴더에서 이름이 `.` 으로 시작하는 항목과 OS 가 숨김으로 표시한 항목(Windows 숨김 속성·macOS `UF_HIDDEN`). Linux 는 점 규칙만 쓴다. 원격 탐색기는 원격 server 가 실어 보낸 표시를 쓰고, 싣지 않는 옛 server 면 점 규칙만 쓴다 | 디스크를 바꾸지 않는다. 목록에서 빼거나 되돌린다 | 상태줄의 숨김 수, 켜면 숨김 항목을 explorer-hidden-fg 로 ([Explorer](index.md#숨김-파일)) |
 | Grid 썸네일 | 없음 (Grid 보기에 자동) | 화면에 보인 로컬 그림 파일 | 디스크를 바꾸지 않는다 | 셀의 40 슬롯 ([Explorer](index.md#grid-썸네일)) |
 
 이름 변경과 휴지통 이동의 단축키는 `explorer_rename`(기본 `F2`)·`explorer_trash`(Tasty 프리셋 기본 `delete`·`alt+backspace`. `alt+backspace` 는 위치 규칙상 macOS 에서 Finder 의 ⌘⌫ 다. macOS 프리셋은 `alt+backspace` 만, Windows·Linux 프리셋은 `delete` 만)다. 단축키와 Command Palette 는 `run_explorer_item_key`(`src/adapters/ui/input/shortcuts/explorer_keys.rs`)를 거쳐 메뉴와 같은 이름 변경 팝업을 열거나 같은 휴지통 작업을 요청한다. 우클릭 메뉴는 두 항목 옆에 각 바인딩의 첫 항목을 보인다(`attach_shortcut_hints`, `src/state/explorer_menu.rs`). macOS 는 key equivalent 로 바꿔 AppKit 이 그리고, Windows·Linux 는 설정 화면과 같은 표시에서 앞 지우기 키만 `Del` 로 줄여 항목 오른쪽에 쓴다. 바인딩이 비었으면 표시하지 않는다. 메뉴의 표시는 보이기만 하며 실행은 단축키 경로가 맡는다.
