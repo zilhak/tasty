@@ -21,7 +21,7 @@ fn names(dir: &Path) -> Vec<String> {
 }
 
 /// 원본 `src/payload` 의 하위 폴더 ro 를 지울 수 없게 해 다른 디스크 이동을 흉내 낸다.
-/// 원본이 남은 보고를 갖고, 끝나면 ro 의 권한을 되돌린다.
+/// 원본이 남은 보고를 갖고, 끝나면 ro 의 권한을 되돌린다. 사본도 폴더 권한을 이어받으므로 함께 되돌린다.
 #[cfg(unix)]
 struct Stuck {
     _dir: tempfile::TempDir,
@@ -64,20 +64,18 @@ impl Stuck {
     fn lock(&self, locked: bool) {
         use std::os::unix::fs::PermissionsExt;
         let mode = if locked { 0o555 } else { 0o755 };
-        std::fs::set_permissions(
-            self.payload.join("ro"),
-            std::fs::Permissions::from_mode(mode),
-        )
-        .expect("chmod");
+        for ro in [self.payload.join("ro"), self.copy.join("ro")] {
+            if ro.is_dir() {
+                std::fs::set_permissions(ro, std::fs::Permissions::from_mode(mode)).expect("chmod");
+            }
+        }
     }
 }
 
 #[cfg(unix)]
 impl Drop for Stuck {
     fn drop(&mut self) {
-        if self.payload.join("ro").exists() {
-            self.lock(false);
-        }
+        self.lock(false);
     }
 }
 

@@ -723,7 +723,15 @@ impl Item<'_> {
             .tempdir_in(self.dest)?;
         let staged = staging.path().join("entry");
         let mut copied = 0u64;
-        if let Err(e) = copy_tree(self.shared, source, meta, &staged, &mut copied, self.base) {
+        let mut modes = FolderModes::default();
+        if let Err(e) = copy_tree(
+            self.shared,
+            source,
+            meta,
+            &staged,
+            (&mut copied, self.base),
+            &mut modes,
+        ) {
             if self.shared.cancelled() {
                 return Ok(Outcome::Cancelled);
             }
@@ -741,7 +749,10 @@ impl Item<'_> {
                 rename_noreplace(&staged, &target)
             };
             match result {
-                Ok(()) => break replace,
+                Ok(()) => {
+                    modes.apply(&staged, &target);
+                    break replace;
+                }
                 Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
                     target = unique_dest(self.dest, &name);
                 }
@@ -773,13 +784,13 @@ fn is_dir(path: &Path) -> bool {
 }
 
 /// 새 경로에 사본을 만든다. 원본 링크를 따라가지 않고 기존 트리에 합치지 않는다.
-pub(crate) fn copy_tree(
+fn copy_tree(
     shared: &Shared,
     src: &Path,
     meta: &std::fs::Metadata,
     dst: &Path,
-    copied: &mut u64,
-    base: u64,
+    (copied, base): (&mut u64, u64),
+    modes: &mut FolderModes,
 ) -> io::Result<()> {
     if shared.cancelled() {
         return Err(cancelled_error());
@@ -808,10 +819,11 @@ pub(crate) fn copy_tree(
                 &path,
                 &meta,
                 &dst.join(entry.file_name()),
-                copied,
-                base,
+                (copied, base),
+                modes,
             )?;
         }
+        modes.push(dst, meta);
     } else if meta.is_file() {
         let mut input = std::fs::File::open(src)?;
         let mut output = std::fs::OpenOptions::new()
@@ -831,7 +843,7 @@ pub(crate) fn copy_tree(
             *copied = copied.saturating_add(n as u64);
             shared.add_bytes(n as u64);
         }
-        output.set_permissions(meta.permissions())?;
+        keep_file_meta(&output, dst, meta)?;
     } else {
         return Err(io::Error::new(
             io::ErrorKind::Unsupported,
@@ -956,15 +968,20 @@ fn move_back(to: &Path, from: &Path, made: Option<SystemTime>) -> Result<(), Rea
         .symlink_metadata()
         .map_err(|e| Reason::Os(e.to_string()))?;
     let quiet = Shared::fixed(Choice::KeepBoth);
-    copy_tree(&quiet, to, &meta, &staged, &mut 0, 0).map_err(|e| Reason::Os(e.to_string()))?;
+    let mut modes = FolderModes::default();
+    copy_tree(&quiet, to, &meta, &staged, (&mut 0, 0), &mut modes)
+        .map_err(|e| Reason::Os(e.to_string()))?;
     match rename_noreplace(&staged, from) {
-        Ok(()) => {}
+        Ok(()) => modes.apply(&staged, from),
         Err(e) if e.kind() == io::ErrorKind::AlreadyExists => return Err(Reason::NewerThere),
         Err(e) => return Err(Reason::Os(e.to_string())),
     }
     remove_path(to).map_err(|e| Reason::SourceNotRemoved(e.to_string()))
 }
 
+#[path = "copy_meta.rs"]
+mod copy_meta;
+use copy_meta::{FolderModes, keep_file_meta};
 #[path = "leftover.rs"]
 pub(crate) mod leftover;
 

@@ -1,4 +1,4 @@
-<!-- source-hash: 6cd5cc8d6d4e -->
+<!-- source-hash: 4c54c8aac85b -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -129,7 +129,7 @@ If you have bound a shortcut to a single letter with no modifier, that letter ac
 
 ### Right-click menu
 
-Renaming refuses to overwrite an existing entry and reports the failure. Copying preserves symbolic links as links. You cannot paste a folder into itself or one of its descendants through another path. Failed file operations display an error notification.
+Renaming refuses to overwrite an existing entry and reports the failure. Copying preserves symbolic links as links, keeps each file's modified time, and keeps each folder's permissions, including read-only folders. Owners and extended attributes are not copied. You cannot paste a folder into itself or one of its descendants through another path. Failed file operations display an error notification.
 
 A link to a folder opens like a folder, and the address bar keeps the link's path. Renaming a link or moving it to the trash affects only the link, not the folder it points to. Opening a link whose target is gone shows a notice that the target is missing. In the list, a link has a small link icon after its name, and a link whose target is gone shows a link icon in the warning colour in place of its icon; hover over it to see the missing target path.
 

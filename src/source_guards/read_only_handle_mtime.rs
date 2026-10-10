@@ -23,6 +23,10 @@ const EXPECTED_MTIME_SITES: &[(&str, usize)] = &[
     ("crates/tasty-plugin-agent-common/src/prompt_file.rs", 1),
     ("crates/tasty-plugin-claude/src/error_scan.rs", 1),
     ("crates/tasty-plugin-sdk/src/file_watch.rs", 1),
+    // 복사한 파일에 원본의 수정 시각을 건다. 사본을 만든 쓰기 핸들(create_new)로 건다.
+    ("src/app/explorer_files/copy_meta.rs", 1),
+    // 사본 metadata 시험이 원본의 수정 시각을 옛 시각으로 쓰기 핸들에서 바꾼다.
+    ("src/app/explorer_files/copy_meta_tests.rs", 1),
     // 이력 시험이 옮겨 간 파일과 되돌린 뒤의 원본을 고친 것처럼 쓰기 핸들로 수정 시각을 옮긴다.
     ("src/app/explorer_files/history_tests.rs", 2),
     // 되돌리기 시험이 사본을 고친 것처럼 쓰기 핸들로 수정 시각을 옮긴다.
