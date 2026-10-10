@@ -32,15 +32,9 @@
 - 비정상 종료(SIGTERM 등)에는 Tasty 가 개입할 수 없다. Linux 는 후처리를 `tasty_reaper::spawn_bound_to_host` 로 띄워 그룹 리더가 PDEATHSIG 로 SIGTERM 을 받게 한다. 리더가 직접 실행한 CLI 이면 그것으로 끝나지만, 그룹의 다른 프로세스는 신호를 받지 않아 리더가 전달하지 않으면 남는다. Windows 는 실행별 KILL_ON_JOB_CLOSE job 이 호스트 종료와 함께 닫혀 job 안의 프로세스가 끝난다. macOS 는 묶지 않는다. 그룹 전체를 끝내려면 Tasty 에 SIGTERM 처리기가 필요하고 그것은 후처리만의 문제가 아니다(기존 run 도 같다).
 - 완료 보고 밖에서 task 가 끝나면(취소 등) `attempt.postprocess.phase` 를 `finished` 로 닫는다. `run` 은 마지막으로 시작한 실행 번호다(없으면 0). 끝난 task 의 기록을 읽는 쪽이 진행 중으로 보지 않게 한다.
 - stdout 수집·stderr 보존·실행 시간·재시도 횟수와 대기에 유한한 상한을 두고, 계약 검사가 범위 밖 값을 생성 때 거절한다. stdout 은 상한을 넘으면 잘린 값으로 성공시키지 않고 실패한다. 값과 각 상한의 근거는 가이드에 있다.
-- 후처리 자식은 Tasty 프로세스의 환경을 받되, 바깥 Claude Code 세션이 남긴 표지·비밀과 바깥 Tasty 인스턴스의 신원 변수는 지운다. 남기면 후처리가 부르는 Claude Code 가 자신을 바깥 세션의 자식으로 오인하고 세션 비밀이 무관한 프로세스로 새며, 후처리 CLI 가 부른 `tasty` 가 다른 인스턴스의 신원으로 요청한다. 터미널 셸과 달리 후처리에는 자기 값으로 덮어쓸 surface 가 없다. 사용자가 넣는 설정·인증과 그 밖의 `TASTY_*` 는 그대로 넘기며, Tasty 가 task 별 변수를 더하지는 않는다. 목록은 가이드의 "runner 자식의 환경" 절에 있다.
+- Tasty 가 작업 실행을 위해 띄우는 자식(후처리 CLI, `Run` task 의 명령, reduce 의 custom 전략 셸)은 Tasty 프로세스의 환경을 받되, 바깥 Claude Code 세션의 표지·비밀과 바깥 Tasty 인스턴스의 신원 변수는 지우고 이 인스턴스의 신원도 넣지 않는다. 남기면 자식이 부른 `claude`·`tasty` 가 다른 세션·인스턴스의 신원으로 동작하기 때문이다. 목록과 이유는 [agent runner 가이드 §runner 자식의 환경](../dev-guide/agent-runner.md#runner-자식의-환경)에 있다.
 
 계약 형식, 상한, stdout 해석, 실패 원인 목록은 [agent runner 가이드](../dev-guide/agent-runner.md)의 "후처리 CLI" 절에 있다.
-
-### Run·custom 자식으로 범위 확장
-
-위 환경 결정(바깥 Claude Code 세션 표지·비밀과 바깥 Tasty 인스턴스의 신원 변수 네 개를 지우고 나머지는 넘긴다)은 후처리 CLI 만이 아니라 Tasty 가 작업 실행을 위해 띄우는 모든 자식에 적용한다: `Run` task 의 명령과 reduce 의 custom 전략 셸(`run_custom_shell`, runner 의 reduce task 와 `agent.task_reduce`). 같은 이유다. 어느 자식이든 바깥 세션의 값을 받으면 자식이 부른 `claude`·`tasty` 가 다른 세션·인스턴스의 신원으로 동작한다. 규칙은 한 곳(`tasty_agent::child_env`)에 두어 세 경로가 같이 바뀐다.
-
-자식에 이 인스턴스의 신원을 넣지는 않는다. 터미널 셸은 자기 surface 의 `TASTY_SURFACE_ID`·`TASTY_PARENT_HOME` 을 넣지만, 작업의 자식은 터미널 surface 가 아니어서 넣을 surface id 가 없고, 자식이 띄운 에이전트의 완료 알림은 그 알림을 기다리는 호출자의 것이라 `TASTY_PARENT_HOME` 을 이 인스턴스로 정할 근거가 없다.
 
 ### 재시작 뒤에도 살아 있는 후처리의 점유
 
