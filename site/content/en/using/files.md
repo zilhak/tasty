@@ -1,4 +1,4 @@
-<!-- source-hash: 698d6fd83721 -->
+<!-- source-hash: 52c863efcc59 -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -166,9 +166,9 @@ When a name already exists, a question opens in that Explorer if it has focus. I
 - Folders with the same name are never merged; for folders you can only Skip or Keep both.
 - With more conflicts left, turn on **Do this for the other conflicts** to answer them all at once.
 
-When it finishes, a result card appears at the bottom right of the Explorer. Cards for finished jobs fade after a moment; cards with failed or skipped items stay until you close them and list those paths.
+When it finishes, a result card appears at the bottom right of the Explorer. Cards for finished jobs fade after a moment; cards with failed or skipped items stay until you close them and list those paths. The card of a job you stopped with **×** also stays until you close it when items were left undone.
 
-- **Retry** — runs only the failed or skipped items again. For a move that left originals behind, it only deletes those originals again.
+- **Retry** — runs only the failed or skipped items and the items left undone when you stopped the job. Finished items are not run again. For a move that left originals behind, it only deletes those originals again.
 - **Copy paths** — copies the card's paths to the clipboard.
 - **Undo** — shown while the card is up, after a copy or move that fully finished. Moved items go back (unless something else now sits there), and copies go to the trash. A copy you edited after the job is kept. Files you replaced can't be restored.
 
