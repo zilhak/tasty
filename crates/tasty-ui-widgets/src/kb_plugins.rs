@@ -351,11 +351,19 @@ fn command_row(
                 ui.spacing_mut().item_spacing.y = theme.kb_plugin_caption_gap().value();
                 ui.allocate_ui_with_layout(
                     egui::vec2(ui.available_width(), row_h),
-                    egui::Layout::left_to_right(egui::Align::Center),
+                    egui::Layout::left_to_right(egui::Align::Center).with_main_wrap(true),
                     |ui| {
-                        ui.set_min_height(row_h);
-                        ui.spacing_mut().item_spacing.x = theme.kb_plugin_control_gap().value();
+                        // 한 흐름으로 줄을 바꾼다. 줄마다 행 최소 높이 안 가운데에 서므로, 다음 줄
+                        // 컨트롤이 앞 줄 컨트롤 아래 `space-xs` 에 오도록 가운데 여백만큼 덜 띄운다.
+                        let line_h = theme.kb_plugin_control_height().value();
+                        let centre_pad = (row_h - line_h) / 2.0;
+                        ui.spacing_mut().item_spacing = egui::vec2(
+                            theme.kb_plugin_control_gap().value(),
+                            (theme.spacing_xs.value() - centre_pad).max(0.0),
+                        );
                         control_line(ui, theme, &mut slot, overridden, labels, &mut out);
+                        // 다음 줄 위치는 min_rect 아래로 정해지므로 최소 높이는 줄을 다 놓은 뒤 둔다.
+                        ui.set_min_height(row_h);
                     },
                 );
                 caption(ui, theme, &slot, labels);
@@ -366,7 +374,8 @@ fn command_row(
     out
 }
 
-/// mode Select · slot · Reset.
+/// mode Select · slot · Reset. 줄이 모자라면 mode Select 의 x 에서 다음 줄을 이어 가고 Reset 은
+/// 늘 마지막이다. egui 는 위젯 뒤에 그 위젯을 놓을 때의 `item_spacing.x` 를 붙인다.
 fn control_line(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -468,32 +477,40 @@ fn record_slots(
             out.record = Some(idx);
         }
     };
-    ui.scope(|ui| {
-        ui.spacing_mut().item_spacing.x = theme.spacing_xs.value();
-        for (idx, key) in keys.iter().enumerate() {
-            let slot = match invalid {
-                _ if recording == Some(idx) => KbRecordSlot::Recording(labels.press_key),
-                Some((i, raw)) if i == idx => KbRecordSlot::Invalid(raw),
-                _ => KbRecordSlot::Binding(key),
-            };
-            let resp = kb_record_slot(ui, theme, slot, width, can_record);
-            push(out, &resp, idx);
-        }
-        // 키가 없는 행은 None 슬롯 하나만 두고 + 를 따로 두지 않는다.
-        let (slot, w) = match (recording == Some(len), len) {
-            (true, 0) => (KbRecordSlot::Recording(labels.press_key), width),
-            (true, _) => (KbRecordSlot::Recording(labels.press_key), add_width),
-            (false, 0) => (KbRecordSlot::Empty(labels.no_key), width),
-            (false, _) => (KbRecordSlot::Add, add_width),
+    // 슬롯 사이는 `space-xs`, 마지막 슬롯과 Reset 사이는 줄의 control gap 이다.
+    let control_gap = ui.spacing().item_spacing.x;
+    let set_gap = |ui: &mut egui::Ui, last: bool| {
+        ui.spacing_mut().item_spacing.x = if last {
+            control_gap
+        } else {
+            theme.spacing_xs.value()
         };
-        let resp = kb_record_slot(ui, theme, slot, w, can_record);
-        if can_record && tooltip_hover_delay_elapsed(ui.ctx(), theme, resp.id, resp.hovered()) {
-            Tooltip::new(labels.add_hint)
-                .id_source(resp.id)
-                .show(ui, theme, resp.rect);
-        }
-        push(out, &resp, len);
-    });
+    };
+    for (idx, key) in keys.iter().enumerate() {
+        let slot = match invalid {
+            _ if recording == Some(idx) => KbRecordSlot::Recording(labels.press_key),
+            Some((i, raw)) if i == idx => KbRecordSlot::Invalid(raw),
+            _ => KbRecordSlot::Binding(key),
+        };
+        set_gap(ui, false);
+        let resp = kb_record_slot(ui, theme, slot, width, can_record);
+        push(out, &resp, idx);
+    }
+    // 키가 없는 행은 None 슬롯 하나만 두고 + 를 따로 두지 않는다.
+    let (slot, w) = match (recording == Some(len), len) {
+        (true, 0) => (KbRecordSlot::Recording(labels.press_key), width),
+        (true, _) => (KbRecordSlot::Recording(labels.press_key), add_width),
+        (false, 0) => (KbRecordSlot::Empty(labels.no_key), width),
+        (false, _) => (KbRecordSlot::Add, add_width),
+    };
+    set_gap(ui, true);
+    let resp = kb_record_slot(ui, theme, slot, w, can_record);
+    if can_record && tooltip_hover_delay_elapsed(ui.ctx(), theme, resp.id, resp.hovered()) {
+        Tooltip::new(labels.add_hint)
+            .id_source(resp.id)
+            .show(ui, theme, resp.rect);
+    }
+    push(out, &resp, len);
 }
 
 /// 줄 아래 caption — Inherit 은 해석된 키(muted), 해석 실패는 danger 에 키를 mono 로,
@@ -628,10 +645,11 @@ mod tests {
     fn draw(
         ctx: &egui::Context,
         theme: &Theme,
-        plugin: &str,
+        width: f32,
         rows: &[(&str, Kind)],
     ) -> (KbPluginsOutput, egui::FullOutput) {
-        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(620.0, 600.0));
+        let plugin = "p";
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width, 600.0));
         let mut out = None;
         let full = ctx.run(
             egui::RawInput {
@@ -682,10 +700,18 @@ mod tests {
     }
 
     fn settle(theme: &Theme, rows: &[(&str, Kind)]) -> (KbPluginsOutput, egui::FullOutput) {
+        settle_at(theme, 620.0, rows)
+    }
+
+    fn settle_at(
+        theme: &Theme,
+        width: f32,
+        rows: &[(&str, Kind)],
+    ) -> (KbPluginsOutput, egui::FullOutput) {
         let ctx = egui::Context::default();
         // 첫 프레임은 폰트 준비용이다.
-        drop(draw(&ctx, theme, "p", rows));
-        draw(&ctx, theme, "p", rows)
+        drop(draw(&ctx, theme, width, rows));
+        draw(&ctx, theme, width, rows)
     }
 
     const ONE_KEY: &[&str] = &["Ctrl+Shift+H"];
@@ -773,7 +799,8 @@ mod tests {
             ("none", Kind::Custom(&[], None)),
             ("adding", Kind::Custom(ONE_KEY, Some(1))),
         ];
-        let (out, _) = settle(&theme, &rows);
+        // 두 키 줄이 한 줄에 들어가는 폭에서 본다. 좁으면 한 흐름으로 줄을 바꾼다(아래 시험).
+        let (out, _) = settle_at(&theme, 900.0, &rows);
         let slots = |i: usize| {
             let r = out.rows[i].rects;
             r.record_slots[..r.record_slot_count].to_vec()
@@ -795,6 +822,58 @@ mod tests {
         let adding = slots(2);
         assert_eq!(adding.len(), 2);
         assert!(adding[1].width() > add + 0.5, "{}", adding[1].width());
+    }
+
+    /// 줄이 모자라면 한 흐름으로 줄을 바꾼다 — 다음 줄은 mode Select 의 x 에서 시작하고, 모든
+    /// 컨트롤이 그 x 와 서브탭 폭 안에 있으며, Reset 은 늘 마지막이다.
+    #[test]
+    fn a_narrow_line_wraps_as_one_flow_from_the_mode_x_with_reset_last() {
+        let theme = tasty_themes::mocha_fallback();
+        const THREE: &[&str] = &["Ctrl+Shift+H", "Ctrl+Alt+V", "Ctrl+F5"];
+        let width = 460.0;
+        let (out, _) = settle_at(&theme, width, &[("open", Kind::Custom(THREE, None))]);
+        let r = out.rows[0].rects;
+        let slots = &r.record_slots[..r.record_slot_count];
+        assert_eq!(slots.len(), 4);
+        let mode_x = r.mode.min.x;
+        let mut items: Vec<egui::Rect> = vec![r.mode];
+        items.extend_from_slice(slots);
+        items.push(r.reset);
+        // 읽는 순서(위 → 아래, 왼 → 오른)가 그리는 순서와 같다 — Reset 이 마지막이다.
+        for pair in items.windows(2) {
+            let (a, b) = (pair[0], pair[1]);
+            let next_line = b.min.y >= a.max.y;
+            assert!(next_line || b.min.x > a.max.x, "{a:?} → {b:?}");
+            if next_line {
+                assert!(
+                    (b.min.x - mode_x).abs() < 0.5,
+                    "다음 줄이 mode x 에서 시작하지 않는다: {b:?}"
+                );
+            }
+        }
+        let lines = 1 + items
+            .windows(2)
+            .filter(|p| p[1].min.y >= p[0].max.y)
+            .count();
+        assert!(lines >= 2, "460 에서 줄을 바꾸지 않았다");
+        for it in &items {
+            assert!(
+                it.min.x >= mode_x - 0.5 && it.max.x <= width + 0.5,
+                "{it:?}"
+            );
+        }
+        // 같은 줄 안의 간격: 슬롯 사이 space-xs, 그 밖은 control gap.
+        let gap = theme.kb_plugin_control_gap().value();
+        let xs = theme.spacing_xs.value();
+        for (i, pair) in items.windows(2).enumerate() {
+            let (a, b) = (pair[0], pair[1]);
+            if b.min.y >= a.max.y {
+                continue;
+            }
+            let between_slots = i >= 1 && i + 1 < items.len() - 1;
+            let want = if between_slots { xs } else { gap };
+            assert!((b.min.x - a.max.x - want).abs() < 0.5, "{i}: {a:?} → {b:?}");
+        }
     }
 
     /// 구분선은 명령 사이에만 있다.

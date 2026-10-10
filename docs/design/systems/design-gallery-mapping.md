@@ -802,8 +802,9 @@ i18n: `settings.keybindings.preset_*` 신규 10키 + `select_preset_label`/`pres
 ## Settings › Keybindings › Plugins (kbplugins)
 
 디자인 `ui_kits/terminal/overlays/kb_plugins_subtab.jsx` + `gallery/overlays-windows.jsx` Spec
-"Keybindings › Plugins" ↔ 갤러리 `catalog/components/kb_plugins.rs`(Overlays › `kbplugins`, 시안 견본 넷:
-기본 · 초안과 해석 실패 · 녹화 중 · 빈 상태). 화면은 공용 view
+"Keybindings › Plugins" + `gallery/overlays-windows-b12.jsx` Spec "Keybindings › Plugins — Custom = record slots"
+↔ 갤러리 `catalog/components/kb_plugins.rs`(Overlays › `kbplugins`, 견본 다섯:
+기본 · 초안과 해석 실패(OS 키 이름 포함) · 녹화 중 · 좁은 폭 460 줄바꿈 · 빈 상태). 화면은 공용 view
 `tasty_ui_widgets::kb_plugins_subtab`(`crates/tasty-ui-widgets/src/kb_plugins.rs`)이 그리고 본체 wrapper
 `src/view/settings/ui/keybindings_tab/plugins.rs` 의 `draw_plugins_subtab` 과 갤러리가 함께 부른다. 본체 wrapper 는 초안과
 저장된 override 를 표시값으로 풀고 결과를 `plugin_shortcuts_draft` 에 쓴다. 갤러리는 시안
@@ -815,10 +816,11 @@ props 를 채운다.
 | `KbPluginsSubtab` | `kb_plugins_subtab` | picker 행 · `kb-plugin-list-gap` · 명령 행. 플러그인이 없으면 muted caption 한 줄만 두고 picker 는 없다 |
 | picker 행 | `row_grid` + `select_rect` | 제목 열 `kb-plugin-title-width` · `kb-plugin-title-gap` · Select `kb-plugin-picker-width`. 행 최소 높이 `kb-plugin-row-min-height` 안에서 세로 가운데 |
 | `KbpCommandRow` | `command_row` | 위아래 `kb-plugin-row-padding-y`, 명령 사이에만 1px `kb-plugin-separator`. 제목은 text-secondary 본문 크기로 열 안에서 줄바꿈하고 말줄임하지 않는다 |
-| 컨트롤 줄 | `control_line` | mode Select `kb-plugin-mode-width` · `kb-plugin-control-gap` · slot `kb-plugin-slot-width` · Reset(ghost md). 셋 모두 `kb-plugin-control-height`, 줄 최소 높이 `kb-plugin-row-min-height` |
+| 컨트롤 줄 | `control_line` | mode Select `kb-plugin-mode-width` · `kb-plugin-control-gap` · slot `kb-plugin-slot-width` · Reset(ghost md). 셋 모두 `kb-plugin-control-height`, 줄 최소 높이 `kb-plugin-row-min-height`. 폭이 모자라면 한 흐름으로 줄을 바꾼다 — 다음 줄은 mode Select 의 x 에서 시작하고 앞 줄 컨트롤 아래 `space-xs`, Reset 은 늘 마지막이다. 녹화 슬롯 묶음은 키 수만큼 넓어져 Reset 을 오른쪽으로 민다 |
 | slot | `KbPluginSlot::{Inherit, Custom, Unassigned}` | 상속 소스 Select / 녹화 슬롯 줄 / "(Unassigned)" `kb-plugin-none-fg` |
 | `recordAlt` | `KbPluginSlot::Custom` → `record_slots` | 사용자 결정으로 Custom 은 녹화 방식이다. 시안의 slot 폭 Secondary 버튼 대신 다른 단축키 서브탭과 같은 `kb_record_slot`(`kb-record-width`·`kb-record-add-width`·`kb-record-height`, 슬롯 사이 `space-xs`, 키마다 슬롯 + 추가 슬롯, 키가 없으면 None 슬롯)을 쓴다. 높이는 `kb-plugin-control-height` 가 아니라 `kb-record-height` 이며 줄 가운데에 선다 |
-| caption | `caption` | 줄 아래 `kb-plugin-caption-gap`, caption 크기. Inherit 은 `kb-plugin-caption-fg` "Inherited (…)" 또는 "None", 해석 실패는 `kb-plugin-error-fg` 에 키를 mono 로 |
+| caption | `caption` | 줄 아래 `kb-plugin-caption-gap`, caption 크기. Inherit 은 `kb-plugin-caption-fg` "Inherited (…)" 또는 "None", 해석 실패는 `kb-plugin-error-fg` 에 키를 mono 로, OS 키 이름은 `kb-plugin-error-fg` 의 `keys.os_key_name`(저장 토큰은 code run) |
+| 해석 실패 슬롯 | `KbRecordSlot::Invalid` | 설정 원문을 그대로 보이고 테두리만 `kb-plugin-error-fg`. 호버해도 테두리를 바꾸지 않는다 |
 | 초안 점 | `title_cell` | 제목 뒤 `space-sm`, `kb-plugin-draft-dot-size` 원 `kb-plugin-draft-dot`. hover tooltip |
 | Reset `disabled={!overridden}` | `Button::enabled(overridden)` | override 가 없으면 disabled. tooltip 은 켜져 있을 때만(시안 disabled 버튼은 `title` 이 뜨지 않는다) |
 

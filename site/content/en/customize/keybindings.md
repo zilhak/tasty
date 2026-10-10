@@ -1,4 +1,4 @@
-<!-- source-hash: af36ce30a543 -->
+<!-- source-hash: 3db629bde912 -->
 # Keybindings
 
 Use Tasty with shortcuts that feel familiar. Choose a preset or assign your preferred keys to actions you use often. Open **Settings** > **Keybindings** to get started.
@@ -190,7 +190,7 @@ Recording rules:
 In the **Plugins** sub-tab, pick a plugin from the **Plugin:** drop-down at the top. Each of its commands gets one line.
 
 - **Inherit** in the mode drop-down follows the key of one Tasty action (for example `clipboard.paste`). The key it follows right now is shown under the line.
-- **Custom** records the key the same way as the other subtabs. Click the key button and press the combination; use `+` to add another one. Pressing `Esc` while recording removes that key, and removing every key leaves the command without a shortcut. Changing the plugin or the mode, or pressing **Reset**, while recording cancels the recording.
+- **Custom** records the key the same way as the other subtabs. Click the key button and press the combination; use `+` to add another one. Pressing `Esc` while recording removes that key, and removing every key leaves the command without a shortcut. Changing the plugin or the mode, or pressing **Reset**, while recording cancels the recording. With many keys or a narrow window, the key buttons and **Reset** continue on the next line, and every key stays visible.
 - If a hand-edited settings file holds a key that can never match any input (for example `ctrl+shft+h`), that key's button shows the text as written with an error border, and **Unrecognized key:** appears under the row. That key will not run the command.
 - If the key uses an OS key name such as `cmd+k`, `super+k`, `win+k` or `meta+k`, the row instead says "Write Win, Super and Option as `option`, and Cmd as `alt`." Settings files only take key-position names so that they mean the same thing on every OS.
 - **None** leaves the command without a keybinding.

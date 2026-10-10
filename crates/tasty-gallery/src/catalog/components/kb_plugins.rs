@@ -1,7 +1,7 @@
 //! 설정 › 단축키 › Plugins 서브탭 예제. 본체와 같은 `tasty_ui_widgets::kb_plugins_subtab` 을 부른다.
 //!
-//! 시안 `kb_plugins_subtab.jsx` 의 견본 넷(기본 · 초안과 해석 실패 · 녹화 중 · 빈 상태)을 위에서부터
-//! 쌓는다. Custom 키는 사용자 결정대로 다른 단축키 서브탭과 같은 녹화 슬롯이다. 플러그인과 명령은
+//! 시안 `kb_plugins_subtab.jsx`·`overlays-windows-b12.jsx` 의 견본 다섯(기본 · 초안과 해석 실패 · 녹화 중 ·
+//! 좁은 폭 줄바꿈 · 빈 상태)을 위에서부터 쌓는다. Custom 키는 사용자 결정대로 다른 단축키 서브탭과 같은 녹화 슬롯이다. 플러그인과 명령은
 //! 시안 `KBP_PLUGINS` 와 같은 고정 데이터이고, 초안 규칙(mode 전환 시 시작값, Reset 이 override 를
 //! 지움)도 시안 동작을 따른다. 키 해석 실패와 OS 키 이름은 본체와 같은
 //! `tasty_key_match::first_text_key_problem` 으로 정한다. 갤러리는 키를 캡처하지 않으므로 슬롯을 누르면 녹화 중 모양만 보인다.
@@ -10,6 +10,7 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 
 use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{
     KB_PLUGIN_MODE_CUSTOM, KB_PLUGIN_MODE_INHERIT, KbPluginKeyProblem, KbPluginLabels,
     KbPluginRowView, KbPluginSlot, KbPluginsView, kb_plugins_subtab,
@@ -128,7 +129,7 @@ impl Specimen {
 }
 
 thread_local! {
-    static SPECIMENS: RefCell<[Specimen; 3]> = RefCell::new([
+    static SPECIMENS: RefCell<[Specimen; 4]> = RefCell::new([
         Specimen::new(&[("clipboard-viewer/clear", Value::Custom("ctrl+alt+x".into()))], &[], None),
         Specimen::new(
             &[],
@@ -147,14 +148,23 @@ thread_local! {
             ],
             Some(("clipboard-viewer/open", 2)),
         ),
+        Specimen::new(
+            &[],
+            &[(
+                "clipboard-viewer/open",
+                Value::Custom("ctrl+shift+h, ctrl+alt+v, ctrl+f5".into()),
+            )],
+            None,
+        ),
     ]);
 }
 
 /// 견본 위의 설명 줄 — 시안 각 견본의 caption.
-const CAPTIONS: [&str; 4] = [
+const CAPTIONS: [&str; 5] = [
     "default — row 1 Custom (record slot + add) · row 2 Inherit + caption · row 3 overridden (draft = saved, Reset enabled)",
     "draft + invalid — row 1 holds an unparsable key from the file (dot + error) · row 2 switched to None (dot) · row 3 holds an OS key name (how to write it)",
     "recording — row 1 has two keys and is recording a third · row 3 Custom with no key (None slot)",
+    "narrow (460) — three keys wrap from the mode x · Reset last",
     "empty",
 ];
 
@@ -179,11 +189,15 @@ fn labels() -> KbPluginLabels<'static> {
     }
 }
 
+/// 좁은 폭 견본의 서브탭 폭 — 시안 b12 견본(`KbPluginsRecordSpec`)의 460.
+const NARROW_WIDTH: LogicalPx = LogicalPx(460.0);
+
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
-    let width = theme.settings_content_max_width().value();
+    let full = theme.settings_content_max_width();
     ui.vertical(|ui| {
         ui.spacing_mut().item_spacing.y = theme.spacing_xl.value();
         for (i, caption) in CAPTIONS.iter().enumerate() {
+            let width = if i == 3 { NARROW_WIDTH } else { full }.value();
             ui.allocate_ui(egui::vec2(width, 0.0), |ui| {
                 ui.set_width(width);
                 ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
@@ -192,7 +206,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                         .size(theme.font_size_caption.value())
                         .color(theme.text_muted().to_egui()),
                 );
-                if i == 3 {
+                if i == 4 {
                     kb_plugins_subtab(
                         ui,
                         theme,

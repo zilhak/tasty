@@ -421,6 +421,7 @@ Settings › Keybindings › **Import / Export** 는 위 [이식 번들](#이식
 
 - **플러그인 선택** — 이름순 Select. 단축키를 등록한 플러그인이 없으면 "No plugins have registered shortcuts." 한 줄만 보인다.
 - **명령 한 줄** — 제목(제목 열 안에서 줄바꿈) · 방식 Select(Inherit / Custom / None) · slot · **Reset**.
+  폭이 모자라면 한 흐름으로 줄을 바꾼다. 다음 줄은 방식 Select 의 x 에서 시작하고 **Reset** 은 늘 마지막이다. 키가 많으면 녹화 슬롯이 늘어나 **Reset** 을 오른쪽으로 민다. 키는 모두 보인다.
   - Inherit: slot 은 상속할 호스트 동작 Select(`INHERITABLE_HOST_ACTIONS`). 줄 아래에 그 동작의 현재 키("Inherited (…)", 키가 없으면 "None").
   - Custom: slot 은 다른 서브탭과 같은 녹화 슬롯(`tasty_ui_widgets::kb_record_slot`)이다. 키마다 슬롯 하나를 두고 뒤에 추가(+) 슬롯을 둔다.
     키가 없으면 "None" 슬롯 하나만 둔다. 슬롯을 누르면 "Press key combination..." 으로 바뀌고, 누른 조합이 그 슬롯을 바꾸거나(기존 슬롯) 뒤에 붙는다(추가 슬롯).
