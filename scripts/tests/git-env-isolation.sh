@@ -14,6 +14,7 @@ done <<< "$local_vars"
 
 root="$(git rev-parse --show-toplevel)"
 cd "$root"
+cargo_bin="${CARGO:-$(command -v cargo)}"
 
 # 패키지:타깃. 저장소 안의 시험 중 임시 폴더에서 git 이나 git 을 부르는 스크립트·바이너리를 띄우는 것.
 targets=(
@@ -55,8 +56,11 @@ for spec in "${targets[@]}"; do
         echo "[git-env] $spec 의 시험 실행 파일을 찾지 못했다." >&2
         exit 2
     fi
-    # cargo test 처럼 패키지 디렉터리에서 실행한다.
-    if (cd "$(dirname "$manifest")" && GIT_DIR="$outer/.git" "$exe" -q > "$fixture/$target.log" 2>&1); then
+    # cargo test 처럼 패키지 디렉터리에서 실행하고 CARGO·CARGO_MANIFEST_DIR 를 넘긴다.
+    # 시험의 cargo 스텁은 CARGO 로 진짜 cargo 를 찾는다.
+    pkg_dir="$(dirname "$manifest")"
+    if (cd "$pkg_dir" && CARGO="$cargo_bin" CARGO_MANIFEST_DIR="$pkg_dir" GIT_DIR="$outer/.git" \
+        "$exe" -q > "$fixture/$target.log" 2>&1); then
         echo "[git-env] 통과 $spec"
     else
         failed=$((failed + 1))
