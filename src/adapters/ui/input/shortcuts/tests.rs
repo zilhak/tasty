@@ -275,10 +275,12 @@ fn alt_binding_matches_alt_modifier_on_non_macos() {
 
 #[test]
 #[cfg(not(target_os = "macos"))]
-fn option_binding_never_matches_on_non_macos() {
+fn option_binding_matches_win_super_on_non_macos() {
     let key = k_char("t");
+    assert!(matches_binding("option+t", &key, ModifiersState::SUPER));
     assert!(!matches_binding("option+t", &key, ModifiersState::ALT));
     assert!(!matches_binding("option+t", &key, mods_none()));
+    assert!(!matches_binding("t", &key, ModifiersState::SUPER));
 }
 
 fn fresh_state() -> (

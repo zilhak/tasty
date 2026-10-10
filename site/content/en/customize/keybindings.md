@@ -1,4 +1,4 @@
-<!-- source-hash: 2adfd53282cf -->
+<!-- source-hash: 9ec16505ab86 -->
 # Keybindings
 
 Use Tasty with shortcuts that feel familiar. Choose a preset or assign your preferred keys to actions you use often. Open **Settings** > **Keybindings** to get started.
@@ -12,9 +12,13 @@ Tasty stores keybindings by the **physical position of the key**. That is why th
 | `ctrl` | Ctrl | Control (⌃) |
 | `alt` | Alt | **Command (⌘)** |
 | `shift` | Shift | Shift (⇧) |
-| `option` | (none) | Option (⌥) |
+| `option` | Win (Windows) · Super (Linux) | Option (⌥) |
 
-⌘ on macOS sits in the same place as Alt on Windows · Linux, so the setting value `alt+t` is pressed as `Alt+T` on Windows and `Cmd+T` on macOS. The tables below fill in both columns by this rule.
+⌘ on macOS sits in the same place as Alt on Windows · Linux, so the setting value `alt+t` is pressed as `Alt+T` on Windows and `Cmd+T` on macOS. Likewise the Win key on Windows and the Super key on Linux sit where Option is on macOS, so recording `Win+K`, `Super+K`, or `⌥+K` stores `option+k`, and it works with the key in that place on all three OSes. The settings screen on Windows and Linux shows this key as `Win` and `Super`. The tables below fill in both columns by this rule.
+
+Combinations Windows reserves, such as `Win+L` and `Win+D`, and the Super combinations GNOME and KDE use (Super alone, many Super+letter keys) are taken by the operating system first and never reach Tasty. They can't be recorded, and they don't work even if you write them in the settings file.
+
+The settings file uses only four names: `ctrl`, `alt`, `option`, and `shift`. Key names such as `cmd`, `super`, `win`, and `meta` are not recognized.
 
 **Non-Latin keyboards are matched by position too.** Even on a non-Latin layout such as Russian or Greek, keybindings are recognized by the Latin position on the keycap — on a Russian layout, pressing the `H` position (the key that types `Р` in Russian) together with modifiers still triggers the `Ctrl+Shift+H` shortcut. You do not need to re-record shortcuts after switching layouts. The same holds over Markdown and web preview surfaces.
 
@@ -158,13 +162,9 @@ Good to know:
 - If parts of the file had to be skipped (a file written by a newer tasty, actions this version doesn't know), they are listed one per line in a **Read with warnings** box above the comparison. With four or more, three show and the rest open with **Show N more**.
 - If you pick something that isn't a keybinding file, you get **This file can't be read as keybindings** instead of the comparison, and nothing changes. Use **Choose another file** to try again.
 
-### Importing a file made on a Mac into Windows or Linux
+### Importing a file made on another OS
 
-Keybindings that contain the Mac `Option` key never work on Windows or Linux. If there are any, an **Option bindings need a replacement** card appears above the comparison, and **Apply** stays disabled until every one is settled.
-
-- A regular keybinding — click the slot on the right and press the combination to use instead. To not use it on this computer, press **Leave unbound**.
-- A number-switch modifier or the Explorer drag flip modifier — choose a replacement modifier combination from the dropdown (it starts empty, showing **Select a modifier**). A modifier can't be left unbound. The drag flip modifier defaults to `Option` on a Mac, so a file exported on a Mac shows this row.
-- If the combination you choose collides with another action in the file, it is shown under that row (with two or more collisions, a **N conflicts** line comes first at the top of the card), and the **Shortcut already in use** popup appears when you **Apply**. Choosing **Overwrite** clears the other action.
+A keybinding file imports as is on any OS. A keybinding made with `Option` on a Mac works with `Win` on Windows and `Super` on Linux, and the other way round. The Explorer drag flip modifier defaults to `Option` on a Mac and `Ctrl` on Windows and Linux, so after importing a file exported on a Mac you hold `Win` or `Super` while dragging to flip it on Windows or Linux.
 
 ## Changing one keybinding
 

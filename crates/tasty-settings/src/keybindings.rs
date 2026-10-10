@@ -246,8 +246,8 @@ fn default_category_switch_modifier() -> String {
     "ctrl+shift".to_string()
 }
 
-/// 누락된 드래그 반전 modifier의 기본값. 각 OS 파일 관리자의 복사 키를 따른다
-/// (macOS Option, 그 밖의 OS Ctrl).
+/// 누락된 드래그 반전 modifier의 기본값. 키 위치가 아니라 각 OS 파일 관리자의 복사 키를 따른다
+/// (macOS Option, 그 밖의 OS Ctrl). 저장된 `option` 은 다른 OS 에서 Win·Super 드래그로 동작한다.
 pub(crate) fn default_explorer_drag_flip_modifier() -> String {
     if cfg!(target_os = "macos") {
         "option".to_string()
@@ -258,7 +258,7 @@ pub(crate) fn default_explorer_drag_flip_modifier() -> String {
 
 /// 설정 화면의 드래그 반전 modifier 선택지(저장 토큰). 이 OS 의 단일 modifier 를 기본값 먼저,
 /// 나머지는 조합 정렬 순서로 둔다(macOS Option · Command · Control · Shift, 그 밖의 OS
-/// Ctrl · Alt · Shift). 설정 파일에 목록 밖의 조합(`alt+shift` 등)이 있으면 끝에 더해 그 값이
+/// Ctrl · Alt · Win/Super · Shift). 설정 파일에 목록 밖의 조합(`alt+shift` 등)이 있으면 끝에 더해 그 값이
 /// 보이고 유지되게 한다.
 pub fn explorer_drag_flip_modifier_options(current: &str) -> Vec<String> {
     let default = default_explorer_drag_flip_modifier();

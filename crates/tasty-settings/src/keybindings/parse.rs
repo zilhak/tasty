@@ -7,8 +7,8 @@ pub struct ParsedBinding<'a> {
     pub ctrl: bool,
     pub shift: bool,
     pub alt: bool,
-    /// macOS 전용: Option 키. Windows/Linux 에서는 이 값이 true 인 바인딩이 절대
-    /// 매칭되지 않는다(`crates/tasty-key-match/src/lib.rs` 의 매칭 규칙).
+    /// 하단 수정자 열의 가운데 키. macOS 는 Option, Windows·Linux 는 같은 위치의 Win·Super 다
+    /// (`crates/tasty-key-match/src/lib.rs` 의 매칭 규칙).
     pub option: bool,
     /// 키 토큰 (문자 `"+"`, `"-"`, `"a"` 또는 네임 `"plus"`, `"f1"`, `"tab"` 등).
     /// 공백/모디파이어 키워드는 거부되어 여기 오지 않는다.
@@ -92,14 +92,7 @@ pub fn bindings_equivalent(a: &str, b: &str) -> bool {
     }
 }
 
-/// `option` 축 존재 여부 — macOS 전용. 비-macOS 는 조합 공간에서 완전히 빠진다.
-#[cfg(target_os = "macos")]
-pub const OPTION_AXIS: bool = true;
-/// `option` 축 존재 여부 — macOS 전용. 비-macOS 는 조합 공간에서 완전히 빠진다.
-#[cfg(not(target_os = "macos"))]
-pub const OPTION_AXIS: bool = false;
-
-/// 네 modifier 상태. 파싱은 어느 OS에서나 option을 보존하고 실제 매칭·선택 목록이 OS 제한을 적용한다.
+/// 네 modifier 상태. option 축은 모든 OS 에 있다(macOS Option · Windows Win · Linux Super).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct Combo {
     pub ctrl: bool,
@@ -188,15 +181,10 @@ impl Combo {
 
 /// 사용 가능한 축 전체에 대한 비어있지 않은 조합 목록(정렬 전).
 fn all_axis_combos() -> Vec<Combo> {
-    let option_states: &[bool] = if OPTION_AXIS {
-        &[false, true]
-    } else {
-        &[false]
-    };
     let mut out = Vec::new();
     for ctrl in [false, true] {
         for alt in [false, true] {
-            for &option in option_states {
+            for option in [false, true] {
                 for shift in [false, true] {
                     let c = Combo {
                         ctrl,
@@ -214,8 +202,7 @@ fn all_axis_combos() -> Vec<Combo> {
     out
 }
 
-/// OS에서 사용할 수 있는 비어 있지 않은 modifier 조합을 정렬한다.
-/// macOS는 option을 포함한 15개, 다른 OS는 7개다.
+/// 비어 있지 않은 modifier 조합 15개를 정렬한다. 네 축이 모든 OS 에 있으므로 OS 와 무관하다.
 pub fn all_modifier_combos() -> Vec<Combo> {
     let mut combos = all_axis_combos();
     combos.sort_by_key(|c| c.sort_key());
@@ -224,7 +211,7 @@ pub fn all_modifier_combos() -> Vec<Combo> {
 
 /// 눌린 조합 `held` 를 부분집합으로 포함하는 모든 조합을 정렬해 반환.
 ///
-/// `held` 가 단일 축이면 그 축을 포함하는 조합 전체(macOS 8개·비-macOS 4개), 다축이면
+/// `held` 가 단일 축이면 그 축을 포함하는 조합 전체(8개), 다축이면
 /// 그 축들을 **모두** 포함하는 조합으로 좁혀진다. 정렬은 `Combo::sort_key` 규칙 —
 /// 첫 원소는 항상 `held` 자신(가장 작은 크기)이므로 헤더와 첫 섹션이 일치한다.
 pub fn combos_containing_all(held: Combo) -> Vec<Combo> {
@@ -275,8 +262,7 @@ mod tests {
 
     #[test]
     fn option_axis_survives_parsing_on_every_platform() {
-        // 파싱은 플랫폼 무관하다 — 비-macOS 에서도 `option` 축이 true 로 잡혀야
-        // 이식 판정(`keybinding_bundle`)이 그 바인딩을 찾아낼 수 있다.
+        // 파싱은 플랫폼 무관하다. option 은 비-macOS 에서 Win·Super 로 매칭된다.
         let p = parse_binding("alt+option+t").unwrap();
         assert!(p.alt && p.option);
         assert_eq!(p.key, "t");
@@ -313,8 +299,7 @@ mod tests {
 
     #[test]
     fn combo_enumeration_matches_the_option_axis() {
-        let expected = if OPTION_AXIS { 15 } else { 7 };
-        assert_eq!(all_modifier_combos().len(), expected);
+        assert_eq!(all_modifier_combos().len(), 15);
         assert!(all_modifier_combos().iter().all(|c| c.size() > 0));
     }
 

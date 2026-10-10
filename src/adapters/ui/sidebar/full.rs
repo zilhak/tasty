@@ -146,6 +146,7 @@ pub fn draw_full_sidebar(
         let mods = ctx.input(|i| i.modifiers);
         crate::adapters::ui::switch_overlay::workspace_switch_held(
             mods,
+            crate::adapters::ui::input::shortcuts::super_held(ctx),
             &engine.settings.keybindings,
         )
     };
@@ -153,6 +154,7 @@ pub fn draw_full_sidebar(
         let mods = ctx.input(|i| i.modifiers);
         crate::adapters::ui::switch_overlay::category_switch_held(
             mods,
+            crate::adapters::ui::input::shortcuts::super_held(ctx),
             &engine.settings.keybindings,
         )
     };

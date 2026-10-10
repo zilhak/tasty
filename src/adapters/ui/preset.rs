@@ -45,8 +45,9 @@ use surface_settings::{CfgOutcome, SurfaceCfg, breadcrumb, draw_surface_settings
 fn match_preset_shortcut(
     kb: &KeybindingSettings,
     input: &egui::InputState,
+    super_held: bool,
 ) -> Option<ShortcutAction> {
-    let pressed = |b: &[String]| any_binding_pressed_egui(b, input);
+    let pressed = |b: &[String]| any_binding_pressed_egui(b, input, super_held);
     if pressed(&kb.split_surface_vertical) {
         Some(ShortcutAction::SplitSurfaceVertical)
     } else if pressed(&kb.split_surface_horizontal) {

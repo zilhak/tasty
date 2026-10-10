@@ -61,20 +61,24 @@ pub fn switch_target_for(
 }
 
 /// 워크스페이스 전환 조합인지 확인한다. macOS의 alt 토큰은 egui.mac_cmd에 대응한다.
-pub fn workspace_switch_held(mods: egui::Modifiers, kb: &KeybindingSettings) -> bool {
-    #[cfg(target_os = "macos")]
-    let (alt, option) = (mods.mac_cmd, mods.alt);
-    #[cfg(not(target_os = "macos"))]
-    let (alt, option) = (mods.alt, false);
+/// `super_held` 는 egui 가 모르는 비-macOS 의 Win·Super 상태다(`tasty_key_match::super_held`).
+pub fn workspace_switch_held(
+    mods: egui::Modifiers,
+    super_held: bool,
+    kb: &KeybindingSettings,
+) -> bool {
+    let (alt, option) = tasty_key_match::token_axes_egui(&mods, super_held);
     switch_target_for(kb, mods.ctrl, mods.shift, alt, option) == Some(SwitchTarget::Workspace)
 }
 
 /// 같은 정규화로 카테고리 전환 조합을 확인한다. 카테고리 기능 사용 여부는 호출부에서 확인한다.
-pub fn category_switch_held(mods: egui::Modifiers, kb: &KeybindingSettings) -> bool {
-    #[cfg(target_os = "macos")]
-    let (alt, option) = (mods.mac_cmd, mods.alt);
-    #[cfg(not(target_os = "macos"))]
-    let (alt, option) = (mods.alt, false);
+/// `super_held` 는 egui 가 모르는 비-macOS 의 Win·Super 상태다(`tasty_key_match::super_held`).
+pub fn category_switch_held(
+    mods: egui::Modifiers,
+    super_held: bool,
+    kb: &KeybindingSettings,
+) -> bool {
+    let (alt, option) = tasty_key_match::token_axes_egui(&mods, super_held);
     switch_target_for(kb, mods.ctrl, mods.shift, alt, option) == Some(SwitchTarget::Category)
 }
 
@@ -190,8 +194,22 @@ mod tests {
     #[test]
     fn workspace_held_matches_default_alt_alone() {
         let kb = kb_with("ctrl", "alt");
-        assert!(workspace_switch_held(mods(false, true, false), &kb));
-        assert!(!workspace_switch_held(mods(true, true, false), &kb));
+        assert!(workspace_switch_held(mods(false, true, false), false, &kb));
+        assert!(!workspace_switch_held(mods(true, true, false), false, &kb));
+    }
+
+    /// 비-macOS 의 `option` 은 같은 위치의 Win·Super 다. egui 는 그 키를 몰라 `super_held` 로 받는다.
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn workspace_held_matches_option_as_super() {
+        let kb = kb_with("ctrl", "option");
+        assert!(workspace_switch_held(mods(false, false, false), true, &kb));
+        assert!(!workspace_switch_held(
+            mods(false, false, false),
+            false,
+            &kb
+        ));
+        assert!(!workspace_switch_held(mods(false, true, false), true, &kb));
     }
 
     #[cfg(target_os = "macos")]
@@ -200,18 +218,22 @@ mod tests {
         let kb = kb_with("ctrl", "alt"); // ws=alt(default) → macOS Cmd
         assert!(workspace_switch_held(
             mods_mac(false, true, false, false),
+            false,
             &kb
         ));
         assert!(!workspace_switch_held(
             mods_mac(false, false, true, false),
+            false,
             &kb
         ));
         assert!(!workspace_switch_held(
             mods_mac(true, true, false, false),
+            false,
             &kb
         ));
         assert!(!workspace_switch_held(
             mods_mac(false, true, true, false),
+            false,
             &kb
         ));
     }
@@ -219,8 +241,8 @@ mod tests {
     #[test]
     fn rebound_modifiers_follow_settings() {
         let kb = kb_with("alt", "ctrl");
-        assert!(workspace_switch_held(mods(true, false, false), &kb));
-        assert!(!workspace_switch_held(mods(false, true, false), &kb));
+        assert!(workspace_switch_held(mods(true, false, false), false, &kb));
+        assert!(!workspace_switch_held(mods(false, true, false), false, &kb));
     }
 
     #[test]

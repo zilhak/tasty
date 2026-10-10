@@ -737,10 +737,9 @@ fn combo_keycaps(c: Combo, general: &tasty_settings::GeneralSettings) -> String 
         });
     }
     if c.option {
-        parts.push(match general.option_display_style.as_str() {
-            "symbol" => "⌥",
-            _ => "Option",
-        });
+        parts.push(tasty_settings::KeybindingSettings::option_display_text(
+            general,
+        ));
     }
     if c.shift {
         parts.push(match general.shift_display_style.as_str() {
@@ -769,9 +768,13 @@ fn combo_keycap_parts(
         }
     }
     if c.option {
-        match general.option_display_style.as_str() {
-            "symbol" => parts.push(KbdKey::Icon(icons::OPTION_KEY)),
-            _ => parts.push(KbdKey::Text("Option")),
+        // 표시 방식(Option·⌥)은 macOS 설정이다. 다른 OS 는 같은 위치의 키 이름(Win·Super)을 쓴다.
+        if cfg!(target_os = "macos") && general.option_display_style == "symbol" {
+            parts.push(KbdKey::Icon(icons::OPTION_KEY));
+        } else {
+            parts.push(KbdKey::Text(
+                tasty_settings::KeybindingSettings::option_display_text(general),
+            ));
         }
     }
     if c.shift {

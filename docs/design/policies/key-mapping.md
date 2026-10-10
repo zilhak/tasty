@@ -20,14 +20,23 @@ macOS 의 **Cmd** 는 Windows/Linux 의 **Alt** 와 같은 물리적 위치다. 
 | `ctrl` | Ctrl | Ctrl | Control (⌃) |
 | `alt` | Alt | Alt | **Command (⌘)** |
 | `shift` | Shift | Shift | Shift |
-| `option` | (미사용) | (미사용) | Option (⌥) |
+| `option` | Win | Super | Option (⌥) |
 
-macOS 에서만 `alt` 토큰이 Cmd(⌘)에 매핑된다(물리 위치가 Win/Linux 의 Alt 와 동일하므로). 예: 프리셋 `new_tab = "alt+t"` 는 Win/Linux 에서 Alt+T, macOS 에서 ⌘+T 로 눌린다. 프리셋은 **하나의 바인딩 문자열 집합**을 쓰지만 OS별 매핑으로 각 OS 에서 자연스러운 조합으로 느껴진다.
+macOS 에서만 `alt` 토큰이 Cmd(⌘)에 매핑된다(물리 위치가 Win/Linux 의 Alt 와 동일하므로). 같은 이유로 `option` 은 macOS 의 Option 과 Windows·Linux 의 Win·Super 를 가리킨다. 둘 다 Ctrl 과 Alt·Cmd 사이에 있다. 예: 프리셋 `new_tab = "alt+t"` 는 Win/Linux 에서 Alt+T, macOS 에서 ⌘+T 로 눌린다. 프리셋은 **하나의 바인딩 문자열 집합**을 쓰지만 OS별 매핑으로 각 OS 에서 자연스러운 조합으로 느껴진다.
 
 ### 캡처(설정 UI) / 매칭(런타임)
 
-- **캡처**: winit `ModifiersState` → 토큰. macOS `super_key() → "alt"` · `alt_key() → "option"`, 기타 `alt_key() → "alt"`; `control_key() → "ctrl"`, `shift_key() → "shift"`. macOS 에서 ⌘+N 도, Windows 에서 Alt+N 도 동일하게 `"alt+n"` 저장.
-- **매칭**: winit `ModifiersState` 와 비교. `"ctrl" → control_key()`, `"alt" → macOS super_key() / 기타 alt_key()`, `"shift" → shift_key()`.
+- **캡처**: winit `ModifiersState` → 토큰. macOS `super_key() → "alt"` · `alt_key() → "option"`, 기타 `alt_key() → "alt"` · `super_key() → "option"`; `control_key() → "ctrl"`, `shift_key() → "shift"`. macOS 에서 ⌘+N 도, Windows 에서 Alt+N 도 동일하게 `"alt+n"` 저장. Windows 의 Win+K·Linux 의 Super+K·macOS 의 ⌥+K 는 모두 `"option+k"` 다.
+- **매칭**: winit `ModifiersState` 와 비교. `"ctrl" → control_key()`, `"alt" → macOS super_key() / 기타 alt_key()`, `"option" → macOS alt_key() / 기타 super_key()`, `"shift" → shift_key()`. 두 축의 대응은 `tasty_key_match::token_axes` 한 곳에서 정하고 녹화·단축키·전환 표시·보조키 도움말이 같이 쓴다.
+- **egui 경로**: egui-winit 은 Win·Super 를 macOS 에서만(`mac_cmd`) 담는다. 그래서 `GpuState::handle_egui_event` 가 `ModifiersChanged` 마다 `tasty_key_match::note_modifiers` 로 그 상태를 egui 문맥에 남기고, 창이 포커스를 잃으면 비운다. egui 입력으로 판정하는 단축키(`any_binding_pressed_egui`·`consume_binding_egui`)·워크스페이스 전환 키캡·explorer 드래그 반전은 `super_held` 로 그 값을 읽어 `token_axes_egui` 에 넘긴다.
+
+### OS 키 이름 토큰
+
+저장 토큰은 `ctrl`·`alt`·`option`·`shift` 넷뿐이다. `cmd`·`command`·`super`·`win`·`meta` 같은 OS 키 이름은 받지 않고 `option`·`alt` 로 바꾸지도 않는다. winit 의 `super` 는 macOS 에서 Command(`alt` 위치), 다른 OS 에서 Win·Super(`option` 위치)라 같은 낱말이 OS 마다 다른 위치를 가리키고, `meta` 는 환경마다 Alt 나 Super 를 뜻한다. 이 낱말을 정규화하면 저장 문자열의 뜻이 저장한 OS 에 따라 달라져 설정 파일이 OS 독립이 아니게 된다. 이런 바인딩은 인식되지 않는 키로 남아 어떤 입력과도 맞지 않으며, plugin 단축키 입력처럼 텍스트로 받는 곳은 인식하지 못한 키로 표시한다.
+
+### OS 가 가로채는 조합
+
+Windows 의 Win+L·Win+D·Win+E 같은 셸 예약 조합과 GNOME·KDE 의 Super 단독·Super+문자 다수는 OS 가 먼저 처리해 Tasty 에 오지 않는다. Tasty 가 바꿀 수 없으므로 설정에 노출하는 대상이 아니다. 녹화에는 잡히지 않고, 설정 파일에 적은 경우에는 저장되지만 실행되지 않는다.
 
 ## 바인딩 문자열 문법
 
@@ -69,7 +78,7 @@ macOS 에서만 `alt` 토큰이 Cmd(⌘)에 매핑된다(물리 위치가 Win/Li
 바인딩 토큰 `ctrl`/`alt`/`shift` 는 **물리적 위치를 추상화한 이름**이며 OS 가 인식하는 키 이름과 다를 수 있다. tasty 는 각 키를 OS 고유 이름으로 인식하고 바인딩 문자열과의 변환만 OS별로 다르게 한다:
 
 - macOS **Command(⌘)** 은 Command 다. Alt 가 아니다. **Option(⌥)** 은 Option 이다. Alt 가 아니다.
-- Windows **Alt** 는 Alt, **Win** 은 Win 이다.
+- Windows **Alt** 는 Alt, **Win** 은 Win 이다. Linux 의 **Super** 는 Super 다.
 
 토큰 `"alt"` 가 macOS 에서 Command 에 매핑되는 것은 OS 고유 키를 다른 이름으로 부르는 게 아니라 **물리적 위치 기반 추상화**다.
 
@@ -85,9 +94,15 @@ macOS 사용자를 위한 표시 커스터마이징: `GeneralSettings::{alt,opti
 
 ### 이식 시 `option` 처리
 
-`option`은 macOS의 물리적 Option 키를 뜻하며 다른 OS에서는 매칭되지 않는다. `tasty-key-match`의 winit·egui 경로 모두 비-macOS에서 `option_matches = !parsed.option`을 사용한다. macOS 구성을 Windows·Linux로 가져오면 해당 바인딩은 화면에 표시돼도 실행되지 않는다. `alt` 등 다른 토큰은 OS별 매핑을 그대로 사용할 수 있다.
+`option` 은 모든 OS 에서 위 표의 키로 매칭되므로 그대로 옮겨 쓸 수 있다. macOS 에서 ⌥+K 로 녹화한 `option+k` 는 Windows 에서 Win+K, Linux 에서 Super+K 로 실행되고, 반대 방향도 같다. 수정자 조합 목록(`all_modifier_combos`)은 어느 OS 에서나 네 축의 15개다. 설정 가져오기는 `option` 바인딩을 대체 대상으로 보지 않는다.
 
-네 기본 프리셋에는 `option` 바인딩이 없다. 예외는 explorer 드래그 반전 수정자(`explorer_drag_flip_modifier`)로, macOS 기본값이 `option` 이다. 사용자가 macOS에서 녹화하거나 수정자로 지정한 바인딩과 이 기본값을 이관 대상으로 검사한다. 판정과 대체는 `tasty_host_plugin::keybinding_bundle::option_migration`이 담당한다.
+네 기본 프리셋에는 `option` 바인딩이 없다. explorer 드래그 반전 수정자(`explorer_drag_flip_modifier`)의 기본값은 키 위치가 아니라 각 OS 파일 관리자의 복사 키를 따라 macOS `option`, 다른 OS `ctrl` 이다. macOS 에서 저장한 `option` 을 다른 OS 로 가져오면 Win·Super 를 누른 채 끄는 동작이 된다.
+
+표시는 macOS 에서 `option_display_style`(Option·⌥)을 따르고, 다른 OS 에서는 같은 위치의 키 이름 `Win`(Windows)·`Super`(그 밖)를 쓴다(`KeybindingSettings::option_display_text`). 표시 방식 설정은 macOS 에만 노출된다.
+
+#### `option` 을 매칭하지 않는 대상으로 옮길 때
+
+`tasty_host_plugin::keybinding_bundle::option_migration` 은 `option` 을 매칭하지 않는 대상(`TargetOs::NonMac`)으로 구성을 옮길 때 Option 바인딩을 찾아 대체한다. 지금 이 판정을 부르는 화면은 없다.
 
 `parse_binding`·`Combo::parse_modifiers`로 파싱한다. 단순 문자열 검색은 키 이름, 대소문자, 토큰 순서를 오해할 수 있다. 검사 대상은 다음 여섯 곳이다.
 
@@ -98,7 +113,7 @@ macOS 사용자를 위한 표시 커스터마이징: `GeneralSettings::{alt,opti
 5. plugin override의 `Key { value }`. `Inherit`·`None`에는 조합이 없다.
 6. explorer 드래그 반전 수정자(`explorer_drag_flip_modifier`). 빠른 전환 수정자처럼 수정자 조합을 담는다.
 
-대체 입력은 `ReplacementKind`에 따라 받는다. 일반 조합은 녹화하고, 수정자만 바꾸는 항목은 `all_modifier_combos()`의 비-macOS 조합 7개 중 고른다. 녹화는 수정자 단독 입력을 받지 않기 때문이다. `"individual"`은 수정자 조합이 아니어서 거절하며 이관 과정에서 빠른 전환 모드를 바꾸지 않는다. 대체값에 `option`이 다시 들어가도 거절한다.
+대체 입력은 `ReplacementKind`에 따라 받는다. 일반 조합은 녹화하고, 수정자만 바꾸는 항목은 `all_modifier_combos()` 의 조합 중 고른다. 녹화는 수정자 단독 입력을 받지 않기 때문이다. `"individual"`은 수정자 조합이 아니어서 거절하며 이관 과정에서 빠른 전환 모드를 바꾸지 않는다. 대체값에 `option`이 다시 들어가도 거절한다.
 
 충돌은 적용 전후 전체 조합을 비교해 새로 생긴 것만 보고한다. 빠른 전환 수정자를 바꾸면 슬롯과 다음·이전 조합도 함께 달라지므로 해당 필드 하나만 비교하지 않는다. 호스트 액션·빠른 전환·스크립트는 한 충돌 범위로 묶고 plugin은 각각 별도로 검사한다. 호스트와 plugin, 서로 다른 plugin의 중복은 아래 우선순위 규칙을 따른다.
 
@@ -111,7 +126,7 @@ macOS 사용자를 위한 표시 커스터마이징: `GeneralSettings::{alt,opti
 
 `introduced_conflicts`·`preview_resolution`은 선택이 끝나지 않은 계획도 미리 확인한다. 정한 항목만 대체하고 나머지는 원래 값을 유지해 비교한다. 실제 적용인 `resolve_migration`은 모든 항목의 해결 방법이 정해져야 한다.
 
-대상 OS는 `cfg!(target_os = "macos")`로 판단한다. macOS이면 이관 목록은 비어 있다.
+대상이 `TargetOs::Mac` 이면 이관 목록은 비어 있다.
 
 ## OS 메뉴 key equivalent
 

@@ -45,29 +45,6 @@ pub fn capture_winit_key_combo(
         return KeyCapture::None;
     };
 
-    // modifier 조합
-    let mut parts = Vec::new();
-    if modifiers.control_key() {
-        parts.push("ctrl");
-    }
-    // macOS: Cmd(⌘) = "alt" (물리적 위치가 Win/Linux Alt와 동일)
-    #[cfg(target_os = "macos")]
-    if modifiers.super_key() {
-        parts.push("alt");
-    }
-    #[cfg(not(target_os = "macos"))]
-    if modifiers.alt_key() {
-        parts.push("alt");
-    }
-    // macOS: Option 키 = "option"
-    #[cfg(target_os = "macos")]
-    if modifiers.alt_key() {
-        parts.push("option");
-    }
-    if modifiers.shift_key() {
-        parts.push("shift");
-    }
-
     // modifier 없는 타이핑 키는 단축키로 등록 불가
     let is_typing_key = matches!(
         event.physical_key,
@@ -113,6 +90,30 @@ pub fn capture_winit_key_combo(
                 | KeyCode::Equal
         )
     );
+    combo_decision(modifiers, key_name, is_typing_key)
+}
+
+/// 눌린 수식키와 키 이름으로 녹화 결과를 정한다. alt·option 은 키 위치로 정한다
+/// (macOS Command·Option, 다른 OS Alt·Win/Super).
+fn combo_decision(
+    modifiers: winit::keyboard::ModifiersState,
+    key_name: &str,
+    is_typing_key: bool,
+) -> KeyCapture {
+    let mut parts = Vec::new();
+    if modifiers.control_key() {
+        parts.push("ctrl");
+    }
+    let (alt, option) = tasty_key_match::token_axes(modifiers);
+    if alt {
+        parts.push("alt");
+    }
+    if option {
+        parts.push("option");
+    }
+    if modifiers.shift_key() {
+        parts.push("shift");
+    }
     if is_typing_key && parts.is_empty() {
         return KeyCapture::None;
     }
@@ -332,7 +333,9 @@ fn named_key_to_name(key: &winit::keyboard::Key) -> Option<&'static str> {
 
 #[cfg(test)]
 mod tests {
-    use super::{KeyCapture, bare_key_decision, named_key_to_name, physical_key_to_name};
+    use super::{
+        KeyCapture, bare_key_decision, combo_decision, named_key_to_name, physical_key_to_name,
+    };
     use winit::keyboard::{Key, KeyCode, ModifiersState, NamedKey, PhysicalKey};
 
     /// 녹화가 F1~F24 전부를 물리 키·논리 키 두 경로 모두 `f<n>` 으로 저장하고, 그 이름을 매칭 규칙이 받는다.
@@ -378,6 +381,39 @@ mod tests {
         }
         assert_eq!(physical_key_to_name(&PhysicalKey::Code(KeyCode::F25)), None);
         assert_eq!(named_key_to_name(&Key::Named(NamedKey::F25)), None);
+    }
+
+    /// 비-macOS 에서 Win·Super+K 는 `option+k` 로 녹화되고, 녹화한 문자열이 같은 입력에 맞는다.
+    /// macOS 는 Option 이 `option`, Command 가 `alt` 그대로다.
+    #[test]
+    fn the_option_position_key_records_as_option() {
+        let (option_key, alt_key) = if cfg!(target_os = "macos") {
+            (ModifiersState::ALT, ModifiersState::SUPER)
+        } else {
+            (ModifiersState::SUPER, ModifiersState::ALT)
+        };
+        let recorded = combo_decision(option_key, "k", true);
+        assert_eq!(recorded, KeyCapture::Combo("option+k".into()));
+        assert_eq!(
+            combo_decision(alt_key, "k", true),
+            KeyCapture::Combo("alt+k".into())
+        );
+        assert_eq!(
+            combo_decision(option_key | ModifiersState::CONTROL, "k", true),
+            KeyCapture::Combo("ctrl+option+k".into())
+        );
+        let KeyCapture::Combo(binding) = recorded else {
+            unreachable!()
+        };
+        assert!(tasty_key_match::matches_binding(
+            &binding,
+            &Key::Character("k".into()),
+            option_key
+        ));
+        assert_eq!(
+            combo_decision(ModifiersState::empty(), "k", true),
+            KeyCapture::None
+        );
     }
 
     #[test]

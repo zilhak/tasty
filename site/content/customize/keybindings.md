@@ -11,9 +11,13 @@ Tasty 는 단축키를 **키의 물리적 위치** 기준으로 저장합니다.
 | `ctrl` | Ctrl | Control (⌃) |
 | `alt` | Alt | **Command (⌘)** |
 | `shift` | Shift | Shift (⇧) |
-| `option` | (없음) | Option (⌥) |
+| `option` | Win (Windows) · Super (Linux) | Option (⌥) |
 
-macOS 의 ⌘ 는 Windows · Linux 의 Alt 와 같은 자리에 있어서, 설정값 `alt+t` 는 Windows 에서 `Alt+T`, macOS 에서 `Cmd+T` 로 눌립니다. 아래 표는 이 규칙으로 두 열을 적었습니다.
+macOS 의 ⌘ 는 Windows · Linux 의 Alt 와 같은 자리에 있어서, 설정값 `alt+t` 는 Windows 에서 `Alt+T`, macOS 에서 `Cmd+T` 로 눌립니다. 마찬가지로 Windows 의 Win 키와 Linux 의 Super 키는 macOS 의 Option 과 같은 자리라서, `Win+K` · `Super+K` · `⌥+K` 를 녹화하면 모두 `option+k` 로 저장되고 세 OS 어디서나 그 자리의 키로 동작합니다. Windows · Linux 의 설정 화면은 이 키를 `Win` · `Super` 로 표시합니다. 아래 표는 이 규칙으로 두 열을 적었습니다.
+
+`Win+L` · `Win+D` 처럼 Windows 가 예약한 조합과, GNOME · KDE 가 쓰는 Super 조합(Super 단독, Super+문자 다수)은 운영체제가 먼저 가져가서 Tasty 에 오지 않습니다. 이런 조합은 녹화되지 않고, 설정 파일에 적어도 동작하지 않습니다.
+
+설정 파일에는 `ctrl` · `alt` · `option` · `shift` 네 이름만 씁니다. `cmd` · `super` · `win` · `meta` 같은 키 이름은 인식하지 않습니다.
 
 **비라틴 키보드에서도 위치로 맞춥니다.** 러시아어 · 그리스어처럼 라틴 문자가 아닌 배열을 써도 단축키는 키캡의 라틴 위치로 인식됩니다 — 러시아어 배열에서 `H` 자리(러시아어로는 `Р` 가 나오는 키)를 수식키와 함께 누르면 `Ctrl+Shift+H` 단축키가 그대로 동작합니다. 배열을 바꿔도 단축키를 다시 잡을 필요가 없습니다. 마크다운 · 웹 미리보기 화면 위에서도 같습니다.
 
@@ -157,13 +161,9 @@ macOS 에서 설정 화면의 표기를 `⌘` `⌥` `⇧` 심볼로 바꾸려면
 - 파일을 읽으면서 건너뛴 부분이 있으면(더 새 버전의 tasty 가 쓴 파일, 이 버전이 모르는 동작 등) 비교 화면 위에 **경고와 함께 읽었습니다** <!-- en: Read with warnings --> 상자에 한 줄씩 모여 표시됩니다. 네 줄 이상이면 세 줄만 보이고 나머지는 **N개 더 보기** <!-- en: Show N more --> 로 펼칩니다.
 - 단축키 파일이 아닌 것을 고르면 비교 화면 대신 **이 파일은 단축키로 읽을 수 없습니다** <!-- en: This file can't be read as keybindings --> 가 뜨고 아무것도 바뀌지 않습니다. **다른 파일 고르기** <!-- en: Choose another file --> 로 다시 고릅니다.
 
-### Mac 에서 만든 파일을 Windows · Linux 로 가져올 때
+### 다른 OS 에서 만든 파일을 가져올 때
 
-Mac 의 `Option` 키가 든 단축키는 Windows · Linux 에서 절대 동작하지 않습니다. 그런 단축키가 있으면 비교 화면 위에 **option 바인딩에 대체 조합이 필요합니다** <!-- en: Option bindings need a replacement --> 카드가 뜨고, 모두 정하기 전에는 **적용** 이 눌리지 않습니다.
-
-- 일반 단축키 자리 — 오른쪽 칸을 클릭하고 대신 쓸 조합을 누릅니다. 이 컴퓨터에서 쓰지 않으려면 **비워 두기** <!-- en: Leave unbound --> 를 누릅니다.
-- 번호 전환 수식키와 탐색기 드래그 반전 수식키 자리 — 드롭다운(처음에는 **modifier 선택** <!-- en: Select a modifier --> 으로 비어 있습니다)에서 대신 쓸 수식키 조합을 고릅니다. 수식키는 비워 둘 수 없습니다. 드래그 반전 수식키는 Mac 기본값이 `Option` 이라, Mac 에서 내보낸 파일이면 이 자리가 나옵니다.
-- 정한 조합이 파일 안의 다른 동작과 겹치면 그 행 아래에 표시되고(겹친 행이 둘 이상이면 카드 위쪽에 **충돌 N건** 이 먼저 보입니다), **적용** 할 때 **단축키 중복** 팝업이 뜹니다. **덮어쓰기** 를 고르면 겹친 다른 동작 쪽이 비워집니다.
+단축키 파일은 OS 와 관계없이 그대로 가져올 수 있습니다. Mac 에서 `Option` 으로 만든 단축키는 Windows 에서 `Win`, Linux 에서 `Super` 를 누르면 동작하고, 반대도 같습니다. 탐색기 드래그 반전 수식키의 기본값은 Mac 이 `Option`, Windows · Linux 가 `Ctrl` 이라, Mac 에서 내보낸 파일을 가져오면 Windows · Linux 에서는 `Win` · `Super` 를 누른 채 끌어야 반전됩니다.
 
 ## 단축키 하나 바꾸기
 

@@ -285,9 +285,9 @@ mod tests {
         assert_eq!(names.first().map(String::as_str), Some("ctrl+shift"));
     }
 
-    #[cfg(target_os = "macos")]
+    /// option 축은 모든 OS 에 있다(macOS Option · Windows Win · Linux Super).
     #[test]
-    fn combos_for_alt_are_sorted_by_size_then_priority_macos() {
+    fn combos_for_alt_are_sorted_by_size_then_priority() {
         let combos = combos_containing_all(alt());
         assert_eq!(
             names(&combos),
@@ -304,16 +304,6 @@ mod tests {
         );
     }
 
-    #[cfg(not(target_os = "macos"))]
-    #[test]
-    fn combos_for_alt_are_sorted_by_size_then_priority_non_macos() {
-        let combos = combos_containing_all(alt());
-        assert_eq!(
-            names(&combos),
-            ["alt", "ctrl+alt", "alt+shift", "ctrl+alt+shift"]
-        );
-    }
-
     #[test]
     fn combos_for_ctrl_start_with_single_ctrl_then_size_two() {
         let combos = combos_containing_all(ctrl());
@@ -321,19 +311,15 @@ mod tests {
         assert!(combos.iter().all(|c| c.ctrl));
     }
 
-    #[cfg(not(target_os = "macos"))]
     #[test]
-    fn non_macos_never_generates_option_combos() {
-        for held in [ctrl(), alt(), shift()] {
-            for c in combos_containing_all(held) {
-                assert!(!c.option, "option 축이 비-macOS 에서 생성됨: {}", c.name());
-            }
-        }
+    fn option_held_alone_lists_every_option_combo() {
         let option = Combo {
             option: true,
             ..Default::default()
         };
-        assert!(combos_containing_all(option).is_empty());
+        let combos = combos_containing_all(option);
+        assert_eq!(combos.len(), 8);
+        assert_eq!(combos.first().map(Combo::name), Some("option".to_string()));
     }
 
     #[test]

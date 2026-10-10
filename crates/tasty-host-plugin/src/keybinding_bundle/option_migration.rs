@@ -1,4 +1,6 @@
-//! macOS 밖에서 사용할 수 없는 Option 바인딩을 찾고 대체값을 적용한다.
+//! `option` 을 매칭하지 않는 대상으로 구성을 옮길 때 Option 바인딩을 찾고 대체값을 적용한다.
+//! 현재 Tasty 는 모든 OS 에서 `option` 을 키 위치대로 매칭하므로(macOS Option · Windows Win ·
+//! Linux Super) 설정 가져오기는 이 검사를 부르지 않는다.
 //! 대소문자나 토큰 순서를 직접 검색하지 않고 실제 키 파서를 사용한다.
 //! 관련 정책: docs/design/policies/key-mapping.md.
 
@@ -11,24 +13,13 @@ use tasty_settings::{KeybindingSettings, SwitchAxis, SwitchStep};
 use super::PluginShortcutOverrides;
 use crate::registry_state::ShortcutOverride;
 
-/// 구성을 가져올 플랫폼.
+/// 구성을 옮길 대상.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TargetOs {
     /// `option` 이 그대로 동작한다 — 마이그레이션이 필요 없다.
     Mac,
-    /// `option` 바인딩이 절대 매칭되지 않는다.
+    /// `option` 바인딩을 매칭하지 않는 대상.
     NonMac,
-}
-
-impl TargetOs {
-    /// 현재 빌드의 플랫폼. macOS 밖에서는 Option 바인딩을 사용할 수 없다.
-    pub fn host() -> Self {
-        if cfg!(target_os = "macos") {
-            Self::Mac
-        } else {
-            Self::NonMac
-        }
-    }
 }
 
 /// 바인딩이 저장된 위치. AxisModifier만 완전한 키 조합 대신 수식키 조합을 담는다.
@@ -213,7 +204,7 @@ pub fn scan_option_bindings(
     }
     let mut found = Vec::new();
 
-    // 입력칸 키(TEXT_FIELD_BINDING_FIELDS)도 option 이면 비-macOS 에서 매칭되지 않으므로 함께 본다.
+    // 입력칸 키(TEXT_FIELD_BINDING_FIELDS)도 option 이면 대상에서 매칭되지 않으므로 함께 본다.
     for &(field_id, _label) in KeybindingSettings::binding_fields() {
         let Some(bindings) = kb.get_bindings(field_id) else {
             continue;

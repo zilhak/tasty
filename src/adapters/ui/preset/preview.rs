@@ -86,7 +86,8 @@ pub(super) fn draw_preview_editing(
     let key_outcome = if ui.ctx().wants_keyboard_input() {
         ShowOutcome::None
     } else {
-        match ui.input(|i| match_preset_shortcut(kb, i)) {
+        let super_held = crate::adapters::ui::input::shortcuts::super_held(ui.ctx());
+        match ui.input(|i| match_preset_shortcut(kb, i, super_held)) {
             Some(action) => layout.apply_shortcut(action, selected_node, catalog),
             None => ShowOutcome::None,
         }

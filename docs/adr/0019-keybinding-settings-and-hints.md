@@ -19,6 +19,8 @@ modifier hint는 지금 누른 modifier를 모두 포함하는 조합을 보여�
 
 단축키 번들은 schema="tasty.keybindings"와 버전을 가진 TOML 파일 하나로 저장한다. host 설정과 plugin override를 모두 아는 tasty-host-plugin이 코덱을 소유한다. 전체 설정 파일을 옮기지 않는다. 알 수 없는 필드·높은 버전·복원 불가능한 필드는 경고로 알려주고 읽을 수 있는 값은 복원한다. 잘못된 TOML이나 다른 schema는 거절한다. 미설치 plugin과 없는 스크립트 대상은 경고하고 버린다.
 
+`option` 토큰은 키 위치로 매핑한다. 하단 수정자 열에서 Ctrl 과 Alt·Cmd 사이의 키, 곧 macOS 의 Option 과 Windows·Linux 의 Win·Super 다. 녹화·매칭·조합 목록·표시가 모두 이 대응을 따르므로 `option` 바인딩은 어느 OS 로 옮겨도 그대로 동작한다. 이전에는 `option` 을 macOS 전용으로 두고 다른 OS 로 가져올 때 대체 값을 고르게 했다. 2026-10-10 에 사용자가 위치 매핑으로 바꾸기로 정했다. `cmd`·`super`·`win`·`meta` 같은 OS 키 이름은 저장 토큰으로 받지 않으며 `option`·`alt` 로 정규화하지도 않는다. OS 가 가로채는 조합은 Tasty 가 제어할 수 없어 설정 노출 대상이 아니다.
+
 가져오기의 Apply는 선택한 행을 편집 중인 초안에 쓰며, 하단 Save가 실제로 저장한다. plugin 행은 번들에 있는 명령만 반영해 로컬에만 있는 override를 보존한다. 스크립트 행은 현재와 번들의 합집합이며 번들에 없는 현재 항목은 선택 적용 시 제거할 수 있다. Cancel·창 닫기는 plugin 설정 초안도 버린다.
 
 ## Consequences
@@ -27,7 +29,7 @@ modifier hint는 지금 누른 modifier를 모두 포함하는 조합을 보여�
 
 export는 화면용 command snapshot 대신 PluginsConfig의 override 전체를 읽어 비활성 plugin 설정도 포함한다. decode는 설정 타입의 직렬화 결과로 필드를 얻고 필드마다 복원하므로 별도 필드 목록이 필요 없다. 잘못된 필드는 기본값으로 남는다.
 
-option 변환은 선택하지 않은 행을 포함한 번들 전체에서 해결해야 Apply할 수 있다. 충돌은 변환된 번들 안에서 판단하므로 일부 행만 적용할 때 현재 초안과 생기는 충돌은 이 화면이 모두 잡지 못한다. TOML은 null이 없어 Option 시퀀스·튜플 원소와 중첩 Option은 포맷 검토가 필요하다. 맵의 None 값도 항목이 생략되어 같은 맵으로 복원되지 않는다.
+Win·Super 로 `option` 을 쓸 수 있게 되어 Windows·Linux 의 수정자 조합이 7개에서 15개로 늘었다. egui-winit 이 비-macOS 의 Super 를 egui 수정자에 담지 않으므로, egui 입력으로 판정하는 경로는 winit 이 알린 상태를 따로 받아야 한다. 이 상태는 포커스를 잃으면 비운다. 가져오기의 option 대체 카드는 대체 대상이 생기지 않아 뜨지 않는다. 그 판정 모듈과 화면은 남아 있다. option 변환은 선택하지 않은 행을 포함한 번들 전체에서 해결해야 Apply할 수 있다. 충돌은 변환된 번들 안에서 판단하므로 일부 행만 적용할 때 현재 초안과 생기는 충돌은 이 화면이 모두 잡지 못한다. TOML은 null이 없어 Option 시퀀스·튜플 원소와 중첩 Option은 포맷 검토가 필요하다. 맵의 None 값도 항목이 생략되어 같은 맵으로 복원되지 않는다.
 
 ## Alternatives Considered
 
@@ -36,11 +38,15 @@ option 변환은 선택하지 않은 행을 포함한 번들 전체에서 해결
 - 빈 조합을 숨기면 모든 조합이 미할당일 때 아무 반응도 보이지 않는다. 역할 행처럼 꾸미면 없는 동작이 있는 것처럼 보인다.
 - option 문자열 검색은 키 이름·대소문자·토큰 순서를 오해할 수 있다. parser를 GUI에 두면 bundle이 headless에서 쓰지 못하고, 새 크레이트는 이미 공통 의존인 settings와 별도 역할이 없다.
 
+`option` 을 macOS 전용으로 두면 macOS 에서 만든 구성을 다른 OS 로 옮길 때마다 대체 값을 골라야 하고, Windows·Linux 사용자는 Win·Super 를 단축키에 쓸 수 없다. Win·Super 에 새 토큰을 주면 같은 위치의 키가 OS 마다 다른 토큰이 되어 구성이 이식되지 않는다. `super`·`win`·`cmd` 텍스트를 `option`·`alt` 로 정규화하는 방법은 winit 의 super 가 macOS 에서는 Command(`alt` 위치), 다른 OS 에서는 Win·Super(`option` 위치)여서 같은 낱말의 뜻이 저장한 OS 에 따라 달라진다. `meta` 는 환경마다 Alt 나 Super 를 가리킨다.
+
 태그 없는 설정 직렬화는 임의 TOML을 잘못 읽을 수 있고 host 설정만으로는 plugin override를 담지 못한다. JSON도 가능하지만 현재 번들 타입은 TOML로 표현되며 사용자가 다른 설정과 같은 방식으로 편집할 수 있다. 미설치 plugin override를 남기면 나중에 설치할 때 잊었던 설정이 활성화된다. 통째 교체는 로컬에만 있는 plugin 설정을 지울 수 있다.
 
 ## Reconsideration Triggers
 
 표시 지연이나 빈 조합이 방해된다는 피드백, plugin 바인딩으로 늘어난 목록, macOS Option 조합 문제가 생기면 표시 정책을 검토한다. NSMenu나 PTY 키도 타이머를 리셋해야 한다면 실제 소비 경로를 추가한다. 파서가 플랫폼별 문법을 필요로 하거나 중복 정의가 생기면 경계를 다시 검토한다.
+
+Win·Super 조합 대부분을 OS 가 가로채 실제로 쓸 수 있는 `option` 조합이 거의 없다는 피드백이 있거나, Option 과 Win·Super 의 위치가 다른 키보드 배열이 주된 사용 환경이 되면 `option` 의 위치 매핑을 다시 검토한다. egui 가 비-macOS 의 Super 를 수정자로 담게 되면 별도 전달 경로를 없앤다.
 
 번들 타입에 TOML로 표현하기 어려운 None 값이 추가되거나 필드 단위 복구가 자주 부족하면 포맷·복구 단위를 검토한다. 새 바인딩 종류는 코덱·행 모델·마이그레이션을 함께 확인한다. 전체 초안의 충돌 검사나 번들과 완전히 같게 맞추는 요구가 생기면 적용 규칙을 재검토한다.
 

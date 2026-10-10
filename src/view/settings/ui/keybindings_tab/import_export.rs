@@ -19,7 +19,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use tasty_host_plugin::keybinding_bundle::option_migration::{
-    ConflictPolicy, MigrationError, TargetOs, resolve_migration, scan_option_bindings,
+    ConflictPolicy, MigrationError, resolve_migration,
 };
 use tasty_host_plugin::keybinding_bundle::{
     BundleWarning, DecodedBundle, PluginShortcutOverrides, encode,
@@ -301,18 +301,9 @@ impl ImportExportState {
         };
         let dropped = dropped_plugins(path, &decoded.warnings);
         let notices = bundle_notices::bundle_notices(&decoded.warnings);
-        let migration = scan_option_bindings(
-            &decoded.keybindings,
-            &decoded.plugin_keybindings,
-            TargetOs::host(),
-        )
-        .into_iter()
-        .map(|found| MigrationRow {
-            site: found.site,
-            from: found.current,
-            value: MigrationValue::Unset,
-        })
-        .collect();
+        // option 은 모든 OS 에서 키 위치대로 동작하므로(macOS Option · Windows Win · Linux Super)
+        // 가져온 구성에 대체할 바인딩이 없다.
+        let migration = Vec::new();
         self.preview = Some(Preview {
             file_name: path
                 .file_name()

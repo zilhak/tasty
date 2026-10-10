@@ -768,6 +768,7 @@ fn draw_seq_editor(
             .image(rect.width(), c)
             .paint_at(ui, rect);
     };
+    let super_held = crate::adapters::ui::input::shortcuts::super_held(ui.ctx());
     let check = |text: &str| {
         parse_sequence(text)
             .map(|calls| calls.len())
@@ -782,8 +783,8 @@ fn draw_seq_editor(
         alert_icon: &alert,
         check: &check,
         keys: Some(CodeAreaKeys {
-            submit: &|i| consume_binding_egui(&kb.code_area_apply, i),
-            cancel: &|i| consume_binding_egui(&kb.code_area_cancel, i),
+            submit: &|i| consume_binding_egui(&kb.code_area_apply, i, super_held),
+            cancel: &|i| consume_binding_egui(&kb.code_area_cancel, i, super_held),
         }),
     };
     let action = sequence_editor(

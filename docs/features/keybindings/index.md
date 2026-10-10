@@ -60,13 +60,13 @@ modifier 는 세 축 각자의 독립 필드 `tab_switch_modifier`/`workspace_sw
 
 세 축 모두 슬롯 + 다음/이전을 대칭으로 갖는다. 카테고리 modifier 기본값 `ctrl+shift` 는 macOS 스크린샷 예약(`⌘⇧3/4/5`, tasty 가 가로챌 수 없음)과 겹치지 않게 고른 값이고, 카테고리 next/prev 기본 raw 키 `j`/`k` 는 4 프리셋 전수 대조로 다른 액션과 무충돌임을 확인한 값이다(워크스페이스 축과 문자는 같지만 modifier 가 달라 합성 콤보는 겹치지 않는다 — `ctrl+shift+j` vs `alt+j`). slot/next/prev 필드는 모두 필드별 `#[serde(default = "…")]` 를 가져 신규 필드가 없는 구버전 config 를 읽어도 빈 값이 아니라 위 기본값으로 복원된다(`category_switch_modifier` 도 동일 — `"ctrl+shift"` default). 자유 콤보용 `next_tab`/`prev_tab` 필드와는 별개다(Command Palette·더블탭 경로 전용, quick-switch 가 건드리지 않음).
 
-`explorer_drag_flip_modifier`(`String`, 기본 macOS `"option"`·다른 OS `"ctrl"`)도 콤보 필드가 아닌 modifier 조합이다. explorer 드래그 중 이 조합을 누르고 있으면 놓기 동작(같은 디스크 이동, 다른 디스크 복사)을 뒤집는다. 눌린 modifier 가 이 조합을 모두 포함하면 누른 것으로 본다. 필드가 없는 config 는 기본값으로 읽는다(`#[serde(default)]`). 설정 UI 는 General 서브탭 끝, 엔트리 아래 구분선 뒤의 한 행이다. 라벨 · modifier Select(`field-width-md`) · caption 모양이고, 선택지는 이 OS 의 단일 modifier 를 기본값 먼저 둔 목록이다(macOS Option · Command · Control · Shift, 다른 OS Ctrl · Alt · Shift, `explorer_drag_flip_modifier_options`). config.toml 에 목록 밖의 조합(`alt+shift` 등)이 있으면 목록 끝에 더해 그대로 보이고 유지된다. 라벨 열 폭에도 이 행 라벨이 들어간다. 단축키 가져오기 표에서는 General 그룹의 한 행이고, 비-macOS 로 가져온 `option` 은 option 마이그레이션 대상이다(축 modifier 처럼 7 조합 중 선택, 비울 수 없음). 동작은 [Explorer 파일 작업](../../surfaces/explorer/file-operations.md#드래그-앤-드롭)에 있다.
+`explorer_drag_flip_modifier`(`String`, 기본 macOS `"option"`·다른 OS `"ctrl"`)도 콤보 필드가 아닌 modifier 조합이다. explorer 드래그 중 이 조합을 누르고 있으면 놓기 동작(같은 디스크 이동, 다른 디스크 복사)을 뒤집는다. 눌린 modifier 가 이 조합을 모두 포함하면 누른 것으로 본다. 필드가 없는 config 는 기본값으로 읽는다(`#[serde(default)]`). 설정 UI 는 General 서브탭 끝, 엔트리 아래 구분선 뒤의 한 행이다. 라벨 · modifier Select(`field-width-md`) · caption 모양이고, 선택지는 이 OS 의 단일 modifier 를 기본값 먼저 둔 목록이다(macOS Option · Command · Control · Shift, 다른 OS Ctrl · Alt · Win/Super · Shift, `explorer_drag_flip_modifier_options`). config.toml 에 목록 밖의 조합(`alt+shift` 등)이 있으면 목록 끝에 더해 그대로 보이고 유지된다. 라벨 열 폭에도 이 행 라벨이 들어간다. 단축키 가져오기 표에서는 General 그룹의 한 행이다. 다른 OS 에서 가져온 `option` 은 그 OS 의 같은 위치 키(macOS Option · Windows Win · Linux Super)로 동작한다. 동작은 [Explorer 파일 작업](../../surfaces/explorer/file-operations.md#드래그-앤-드롭)에 있다.
 
 #### quick-switch 섹션 UI (Tab/Workspace 서브탭)
 
 Tab 서브탭(탭 축)과 Workspace 서브탭(워크스페이스 축 + 카테고리 축)의 일반 콤보 목록 아래에 **quick-switch 섹션**이 있다(`keybindings_tab/quick_switch.rs`). 구성:
 
-1. **modifier 드롭다운** — 해당 축 modifier 를 **OS-aware 허용 조합 리스트**(`tasty_settings::keybindings::parse::all_modifier_combos`, 비-macOS 7개·macOS option 축 포함 15개)와 **"개별 지정" sentinel 옵션** 중에서 고른다. 규칙 기반 값은 열거된 유효 조합만 노출해 잘못된 조합의 저장을 막고(표시는 `format_display`, `"ctrl+shift"` → `Ctrl+Shift`), "개별 지정"은 별도 번역 라벨로 표시된다.
+1. **modifier 드롭다운** — 해당 축 modifier 를 **OS-aware 허용 조합 리스트**(`tasty_settings::keybindings::parse::all_modifier_combos`, option 축을 포함한 15개 — option 은 macOS Option · Windows Win · Linux Super)와 **"개별 지정" sentinel 옵션** 중에서 고른다. 규칙 기반 값은 열거된 유효 조합만 노출해 잘못된 조합의 저장을 막고(표시는 `format_display`, `"ctrl+shift"` → `Ctrl+Shift`), "개별 지정"은 별도 번역 라벨로 표시된다.
 2. **슬롯 1~N 버튼** — 탭 1~10번 / 워크스페이스 1~9번 / 카테고리 1~10번. 규칙 기반 축은 저장된 raw 키를 현재 modifier 조합과 **표시 시점에 합성**한 `"{Modifier}+{Key}"`(예: `Ctrl+Shift+1`) 라벨을 보여주고, 개별 지정 축은 슬롯 필드에 이미 저장된 **완전 콤보**를 그대로 표시한다.
 3. **다음/이전 버튼 2개** — `*_next_key`/`*_prev_key`(세 축 모두).
 
@@ -89,7 +89,7 @@ modifier 드롭다운에서 **"개별 지정"**(sentinel `KeybindingSettings::IN
 **개별 지정 축**은 규칙 기반 판정보다 먼저 검사한다(세 축 각각 modifier == sentinel 이면 그 축의 next/prev·슬롯을 `matches_binding` 으로 직접 매칭 — 위 "개별 지정 모드" 참조, 카테고리 축은 folders 게이트도 함께 적용).
 규칙 기반 축은 `Key::Character` 이면(슬롯 키가 `"q"` 같은 문자일 수 있으므로 숫자 여부를 따지지 않는다) 대상(Tab/Workspace/Category)을 switch-number 오버레이와 **단일 소스**인 `switch_target_for(kb, ctrl, shift, alt, option)` 로 판정한다 — 세 축 각각의 modifier 조합(`Combo::parse_modifiers`)과 현재 눌린 조합이 **정확히 일치**할 때만 그 대상을 선택한다(단일 토큰은 조합의 부분집합이라 그대로 동작, `ctrl` 단독 ≠ `ctrl+shift`).
 정확 일치라 다른 대상의 조합과 섞이지 않고 우선순위 로직이 없다.
-`alt` 는 `"alt"` 토큰(macOS 물리 ⌘=super, 그 외 Alt), `option` 은 `"option"` 토큰(macOS 물리 ⌥, 그 외 항상 false)으로 플랫폼 정규화된 값을 받는다.
+`alt` 는 `"alt"` 토큰(macOS 물리 ⌘=super, 그 외 Alt), `option` 은 `"option"` 토큰(macOS 물리 ⌥, 그 외 Win·Super)으로 플랫폼 정규화된 값을 받는다(`tasty_key_match::token_axes`).
 대상이 잡히면 **next/prev 키를 먼저**(커스텀 슬롯 키가 next/prev 키와 겹칠 때 next/prev 우선), 그 다음 슬롯 배열을 `position` 검색한다.
 매칭 결과:
 
@@ -151,7 +151,7 @@ Option 시퀀스·튜플 원소와 중첩 Option의 Some(None)은 표현을 다�
 맵의 None 값도 키가 사라져 같은 맵으로 복원되지 않는다.
 새 최상위 번들 필드는 BUNDLE_KEYS와 함께 수정하고 비호환 형식 변경은 BUNDLE_VERSION을 올린다.
 
-다른 OS에서 사용할 option 바인딩은 [키 매핑](../../design/policies/key-mapping.md)의 이식 절차를 따른다.
+`option` 바인딩은 모든 OS 에서 같은 위치의 키로 동작한다([키 매핑](../../design/policies/key-mapping.md#이식-시-option-처리)).
 선택 이유는 [단축키 설정 결정](../../adr/0019-keybinding-settings-and-hints.md)에 있다.
 
 ### webview surface(markdown/html)에서의 단축키 — native 자식 창에서 host 로 포워딩
@@ -395,7 +395,7 @@ Settings › Keybindings › **Import / Export** 는 위 [이식 번들](#이식
   - **Scripts** — 현재와 번들의 **합집합**. 번들에 없는 현재 바인딩은 적용하면 사라지는 행으로 보인다.
   - **Plugin overrides** — **번들에 있는 명령만**. 이 환경에만 있는 override 는 표에 오르지 않고 바뀌지도 않는다.
   - 기본은 변경된 행만 보인다(back bar 의 **Show all {n}** / **Changed only** 토글). 선택은 해제한 행을 기억하는 방식이라 처음에는 모든 행이 선택돼 있다 — 변경 없는 행은 적용해도 값이 같다.
-- **option 마이그레이션 카드** — 비-macOS 에서 번들에 `option` 바인딩이 있으면 표 위에 카드가 뜬다. 자리마다 대체 값을 정한다: 콤보 자리는 녹화 슬롯, 축 modifier 자리는 7 조합 중 선택(안 고른 상태는 값이 아니라 placeholder **Select a modifier** — UI 폰트 · `text_placeholder` 색, 고르면 목록에서 빠진다 — `select_or_placeholder`). 콤보 자리는 **Leave unbound**(비워 두기)도 해소로 센다 — 축 modifier 와 드래그 반전 modifier 는 비울 수 없다. 드래그 반전 modifier 도 축 modifier 처럼 7 조합 중 고른다. 대체 값이 새 충돌을 만들면 행 아래에 충돌 상대가 표시된다(행마다 언제나). 충돌 행이 **2 개 이상**이면 카드 설명 아래에 개수 줄(`{n} conflicts` danger 강조 + 적용 시 충돌 확인이 뜬다는 문장)을 먼저 표시한다 — 목록을 되풀이하지 않는다. **미해결이 하나라도 있으면 Apply 가 비활성**이고, back bar 에 `{n} unresolved` 가 뜬다 — 선택 여부와 무관하게 번들 전체에 대해 요구한다.
+- **option 마이그레이션 카드** — 이 화면은 `option` 을 매칭하지 않는 대상으로 옮길 때 대체 값을 정하는 카드를 그릴 수 있다. 지금은 모든 OS 가 `option` 을 매칭하므로 가져오기가 대체 대상을 만들지 않아 카드가 뜨지 않는다. 카드의 동작은 다음과 같다. 자리마다 대체 값을 정한다: 콤보 자리는 녹화 슬롯, 축 modifier 자리는 조합 목록에서 선택(안 고른 상태는 값이 아니라 placeholder **Select a modifier** — UI 폰트 · `text_placeholder` 색, 고르면 목록에서 빠진다 — `select_or_placeholder`). 콤보 자리는 **Leave unbound**(비워 두기)도 해소로 센다 — 축 modifier 와 드래그 반전 modifier 는 비울 수 없다. 대체 값이 새 충돌을 만들면 행 아래에 충돌 상대가 표시된다(행마다 언제나). 충돌 행이 **2 개 이상**이면 카드 설명 아래에 개수 줄(`{n} conflicts` danger 강조 + 적용 시 충돌 확인이 뜬다는 문장)을 먼저 표시한다 — 목록을 되풀이하지 않는다. **미해결이 하나라도 있으면 Apply 가 비활성**이고, back bar 에 `{n} unresolved` 가 뜬다 — 선택 여부와 무관하게 번들 전체에 대해 요구한다.
 - **Apply** — 고른 행만 settings draft 와 `plugin_shortcuts_draft` 에 쓴다(`apply_rows`). 마이그레이션 해소는 `resolve_migration` 이 한다. 해소된 번들 안에서 새 충돌이 생기면 설정 창의 충돌 확인 popup 이 뜨고, **덮어쓰기**를 고르면 충돌 상대 중 계획 밖의 자리를 비우고 적용한다(`ConflictPolicy::UnbindOther`). 적용되면 toast 로 알린다. 디스크 커밋은 footer **Save** 가 한다(Preset 과 같은 2 단계).
 - **Cancel** — 설정 draft 와 함께 `plugin_shortcuts_draft` 도 버린다. plugin draft 는 **Save 로 닫혔을 때만** 적용된다 — 창 닫기·`toggle_settings` 로 닫혀도 버린다. Plugins 서브탭 편집도 같은 규칙이다.
 

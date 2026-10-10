@@ -113,7 +113,24 @@ fn the_flip_modifier_is_matched_as_held_keys() {
         shift: true,
         ..Default::default()
     };
-    assert!(held(mods, ctrl));
-    assert!(!held(egui::Modifiers::default(), ctrl));
-    assert!(!held(mods, None));
+    assert!(held(mods, false, ctrl));
+    assert!(!held(egui::Modifiers::default(), false, ctrl));
+    assert!(!held(mods, false, None));
+}
+
+/// 비-macOS 에서 `option` 반전은 Win·Super 를 누른 채 끌 때 켜진다. macOS 는 egui alt(Option)다.
+#[test]
+fn the_option_flip_follows_the_key_position() {
+    let option = Combo::parse_modifiers("option");
+    if cfg!(target_os = "macos") {
+        let alt = egui::Modifiers {
+            alt: true,
+            ..Default::default()
+        };
+        assert!(held(alt, false, option));
+        assert!(!held(egui::Modifiers::default(), true, option));
+    } else {
+        assert!(held(egui::Modifiers::default(), true, option));
+        assert!(!held(egui::Modifiers::default(), false, option));
+    }
 }

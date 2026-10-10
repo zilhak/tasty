@@ -16,17 +16,24 @@ pub fn matches_any_binding(bindings: &[String], key: &Key, mods: ModifiersState)
 /// egui 입력(`InputState`) 기준으로 바인딩 목록 중 하나라도 이번 프레임에 눌렸는지
 /// 판정한다. winit 단축키 경로가 닿지 않는 egui 위젯(검색 바 등) 안에서
 /// `KeybindingSettings` 바인딩을 그대로 매칭하기 위한 진입점.
-pub fn any_binding_pressed_egui(bindings: &[String], input: &egui::InputState) -> bool {
-    bindings.iter().any(|b| binding_pressed_egui(b, input))
+/// egui 는 비-macOS 의 Win·Super 를 모르므로 `super_held` 는 [`super_held`] 로 구해 넘긴다.
+pub fn any_binding_pressed_egui(
+    bindings: &[String],
+    input: &egui::InputState,
+    super_held: bool,
+) -> bool {
+    bindings
+        .iter()
+        .any(|b| binding_pressed_egui(b, input, super_held))
 }
 
 #[cfg(feature = "egui-input")]
 /// 단일 바인딩 문자열이 egui 입력에서 이번 프레임에 눌렸는지 판정.
-fn binding_pressed_egui(binding: &str, input: &egui::InputState) -> bool {
+fn binding_pressed_egui(binding: &str, input: &egui::InputState, super_held: bool) -> bool {
     let Some(parsed) = parse_binding(binding) else {
         return false;
     };
-    if !egui_modifiers_match(&parsed, &input.modifiers) {
+    if !egui_modifiers_match(&parsed, &input.modifiers, super_held) {
         return false;
     }
     match token_to_egui_key(&parsed.key.to_ascii_lowercase()) {
@@ -39,7 +46,11 @@ fn binding_pressed_egui(binding: &str, input: &egui::InputState) -> bool {
 /// 이번 프레임의 키 누름 중 바인딩 목록과 맞는 것을 입력에서 지우고, 하나라도 있었는지 돌려준다.
 /// 여러 줄 입력의 확정 키처럼 같은 키가 위젯 기본 동작(줄바꿈)으로 처리되면 안 될 때 위젯보다 먼저
 /// 부른다. 판정은 각 이벤트가 가진 modifier 로 하며 규칙은 [`any_binding_pressed_egui`] 와 같다.
-pub fn consume_binding_egui(bindings: &[String], input: &mut egui::InputState) -> bool {
+pub fn consume_binding_egui(
+    bindings: &[String],
+    input: &mut egui::InputState,
+    super_held: bool,
+) -> bool {
     let wanted: Vec<_> = bindings
         .iter()
         .filter_map(|b| parse_binding(b))
@@ -58,20 +69,65 @@ pub fn consume_binding_egui(bindings: &[String], input: &mut egui::InputState) -
         };
         !wanted
             .iter()
-            .any(|(k, p)| k == key && egui_modifiers_match(p, modifiers))
+            .any(|(k, p)| k == key && egui_modifiers_match(p, modifiers, super_held))
     });
     input.events.len() != before
 }
 
 #[cfg(feature = "egui-input")]
-/// modifier 매핑은 winit 경로(`matches_binding`)와 동일한 플랫폼 규칙을 따른다.
-/// macOS: 바인딩 "alt" → Cmd(mac_cmd), "option" → Option(alt). 그 외: "alt" → alt.
-fn egui_modifiers_match(parsed: &ParsedBinding<'_>, mods: &egui::Modifiers) -> bool {
-    #[cfg(target_os = "macos")]
-    let (alt_matches, option_matches) = (mods.mac_cmd == parsed.alt, mods.alt == parsed.option);
-    #[cfg(not(target_os = "macos"))]
-    let (alt_matches, option_matches) = (mods.alt == parsed.alt, !parsed.option);
-    mods.ctrl == parsed.ctrl && mods.shift == parsed.shift && alt_matches && option_matches
+/// modifier 매핑은 winit 경로(`matches_binding`)와 같은 [`token_axes_egui`] 규칙을 따른다.
+fn egui_modifiers_match(
+    parsed: &ParsedBinding<'_>,
+    mods: &egui::Modifiers,
+    super_held: bool,
+) -> bool {
+    let (alt, option) = token_axes_egui(mods, super_held);
+    mods.ctrl == parsed.ctrl
+        && mods.shift == parsed.shift
+        && alt == parsed.alt
+        && option == parsed.option
+}
+
+/// 저장 토큰 `alt`·`option` 에 해당하는 수정자가 눌렸는지 돌려준다. 하단 수정자 열의 위치로
+/// 정한다. macOS 는 `alt` = Command(winit super), `option` = Option(winit alt)이고, 다른 OS 는
+/// `alt` = Alt, `option` = 같은 위치의 Win·Super 다.
+pub fn token_axes(mods: ModifiersState) -> (bool, bool) {
+    if cfg!(target_os = "macos") {
+        (mods.super_key(), mods.alt_key())
+    } else {
+        (mods.alt_key(), mods.super_key())
+    }
+}
+
+#[cfg(feature = "egui-input")]
+/// [`token_axes`] 의 egui 판. egui 는 비-macOS 에서 Win·Super 를 담지 않으므로(egui-winit 이
+/// `mac_cmd` 를 macOS 에서만 채운다) 그 값은 `super_held` 로 받는다.
+pub fn token_axes_egui(mods: &egui::Modifiers, super_held: bool) -> (bool, bool) {
+    if cfg!(target_os = "macos") {
+        (mods.mac_cmd, mods.alt)
+    } else {
+        (mods.alt, super_held)
+    }
+}
+
+#[cfg(feature = "egui-input")]
+fn super_held_id() -> egui::Id {
+    egui::Id::new("tasty_key_match.super_held")
+}
+
+#[cfg(feature = "egui-input")]
+/// winit 의 `ModifiersChanged` 마다 불러 Win·Super(macOS Command) 상태를 egui 문맥에 남긴다.
+/// egui 입력 안에서 판정하는 단축키·전환 표시·드래그 반전이 [`super_held`] 로 읽는다.
+pub fn note_modifiers(ctx: &egui::Context, mods: ModifiersState) {
+    let held = mods.super_key();
+    ctx.data_mut(|d| d.insert_temp(super_held_id(), held));
+}
+
+#[cfg(feature = "egui-input")]
+/// [`note_modifiers`] 가 마지막으로 남긴 Win·Super 상태. 기록이 없으면 false 다.
+/// `ctx.input` 안에서 부르면 문맥 잠금이 겹치므로 그 밖에서 구해 넘긴다.
+pub fn super_held(ctx: &egui::Context) -> bool {
+    ctx.data(|d| d.get_temp(super_held_id())).unwrap_or(false)
 }
 
 /// 바인딩 키 토큰(소문자)을 egui `Key` 로 변환. named/function 토큰은 명시 매핑하고,
@@ -139,25 +195,12 @@ pub fn matches_binding(binding: &str, key: &Key, mods: ModifiersState) -> bool {
         return false;
     }
 
-    // Check modifiers match exactly.
-    // On macOS, "alt" in binding maps to Cmd (super_key) since the physical
-    // position of Cmd on macOS keyboards matches Alt on Windows/Linux keyboards.
-    // "option" maps to the macOS Option key (alt_key in winit).
-    #[cfg(target_os = "macos")]
-    let alt_matches = mods.super_key() == parsed.alt;
-    #[cfg(not(target_os = "macos"))]
-    let alt_matches = mods.alt_key() == parsed.alt;
-
-    // option 바인딩은 macOS에서만 매칭한다.
-    #[cfg(target_os = "macos")]
-    let option_matches = mods.alt_key() == parsed.option;
-    #[cfg(not(target_os = "macos"))]
-    let option_matches = !parsed.option; // option binding은 non-macOS에서 항상 불일치
-
+    // 수정자는 정확히 같아야 한다. alt·option 축은 키 위치로 정한다(`token_axes`).
+    let (alt, option) = token_axes(mods);
     if mods.control_key() != parsed.ctrl
         || mods.shift_key() != parsed.shift
-        || !alt_matches
-        || !option_matches
+        || alt != parsed.alt
+        || option != parsed.option
     {
         return false;
     }
@@ -415,7 +458,7 @@ mod egui_tests {
             },
             |ctx| {
                 ctx.input_mut(|i| {
-                    hit = Some(consume_binding_egui(&["ctrl+enter".into()], i));
+                    hit = Some(consume_binding_egui(&["ctrl+enter".into()], i, false));
                     left = i.events.clone();
                 });
             },
@@ -452,8 +495,8 @@ mod egui_tests {
             |ctx| {
                 ctx.input_mut(|i| {
                     hit = Some(
-                        consume_binding_egui(&[], i)
-                            || consume_binding_egui(&["ctrl+enter".into()], i),
+                        consume_binding_egui(&[], i, false)
+                            || consume_binding_egui(&["ctrl+enter".into()], i, false),
                     );
                     n = i.events.len();
                 });
@@ -461,6 +504,49 @@ mod egui_tests {
         );
         drop(output);
         assert_eq!((hit, n), (Some(false), 1));
+    }
+
+    /// egui 판정도 winit 과 같은 위치 규칙을 쓴다. 비-macOS 의 Win·Super 는 `super_held` 로 온다.
+    #[test]
+    fn egui_option_axis_follows_the_key_position() {
+        let none = egui::Modifiers::NONE;
+        let alt = egui::Modifiers {
+            alt: true,
+            ..Default::default()
+        };
+        if cfg!(target_os = "macos") {
+            assert_eq!(token_axes_egui(&alt, false), (false, true));
+            assert_eq!(token_axes_egui(&none, true), (false, false));
+        } else {
+            assert_eq!(token_axes_egui(&none, true), (false, true));
+            assert_eq!(token_axes_egui(&alt, false), (true, false));
+        }
+    }
+
+    /// `note_modifiers` 로 남긴 Win·Super 상태를 `super_held` 가 읽고, egui 판정에 넘기면
+    /// option 바인딩이 맞는다.
+    #[test]
+    fn noted_super_key_reaches_the_egui_option_binding() {
+        let ctx = egui::Context::default();
+        assert!(!super_held(&ctx));
+        note_modifiers(&ctx, ModifiersState::SUPER);
+        assert!(super_held(&ctx));
+        let held = super_held(&ctx);
+        let mut hit = None;
+        let output = ctx.run(
+            egui::RawInput {
+                events: vec![press(egui::Key::K, egui::Modifiers::NONE)],
+                ..Default::default()
+            },
+            |ctx| {
+                ctx.input(|i| hit = Some(any_binding_pressed_egui(&["option+k".into()], i, held)));
+            },
+        );
+        drop(output);
+        // macOS 의 Super 는 Command(`alt`)이므로 option 바인딩에 맞지 않는다.
+        assert_eq!(hit, Some(!cfg!(target_os = "macos")));
+        note_modifiers(&ctx, ModifiersState::empty());
+        assert!(!super_held(&ctx));
     }
 }
 
@@ -483,7 +569,12 @@ mod tests {
         ] {
             assert!(binding_key_recognized(b), "{b}");
         }
+        // OS 키 이름은 OS 마다 위치가 달라 저장 토큰으로 받지 않는다(key-mapping.md).
         for b in [
+            "super+k",
+            "win+k",
+            "meta+k",
+            "command+k",
             "ctrl+shft+h",
             "cmd+k",
             "f25",
@@ -494,6 +585,30 @@ mod tests {
         ] {
             assert!(!binding_key_recognized(b), "{b}");
         }
+    }
+
+    /// 비-macOS 의 Win·Super 는 `option` 이고 Alt 는 `alt` 다. macOS 는 Option 이 `option`,
+    /// Command(winit super)가 `alt` 로 바뀌지 않는다.
+    #[test]
+    fn option_matches_the_key_at_the_option_position() {
+        let k = Key::Character("k".into());
+        let (option_key, alt_key) = if cfg!(target_os = "macos") {
+            (ModifiersState::ALT, ModifiersState::SUPER)
+        } else {
+            (ModifiersState::SUPER, ModifiersState::ALT)
+        };
+        assert!(matches_binding("option+k", &k, option_key));
+        assert!(!matches_binding("option+k", &k, alt_key));
+        assert!(!matches_binding("k", &k, option_key));
+        assert!(matches_binding("alt+k", &k, alt_key));
+        assert!(!matches_binding("alt+k", &k, option_key));
+        assert!(matches_binding(
+            "ctrl+option+shift+k",
+            &k,
+            option_key | ModifiersState::CONTROL | ModifiersState::SHIFT
+        ));
+        assert_eq!(token_axes(option_key), (false, true));
+        assert_eq!(token_axes(alt_key), (true, false));
     }
 
     #[test]

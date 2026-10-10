@@ -548,11 +548,8 @@ impl MainView {
     ) -> bool {
         let ctrl = mods.control_key();
         let shift = mods.shift_key();
-        // alt는 macOS의 Command, 다른 OS의 Alt다. option은 macOS에서만 사용한다.
-        #[cfg(target_os = "macos")]
-        let (alt, option) = (mods.super_key(), mods.alt_key());
-        #[cfg(not(target_os = "macos"))]
-        let (alt, option) = (mods.alt_key(), false);
+        // alt는 macOS의 Command, 다른 OS의 Alt다. option은 macOS의 Option, 다른 OS의 Win·Super다.
+        let (alt, option) = tasty_key_match::token_axes(mods);
 
         let terminal_rect = self.compute_terminal_rect();
         let cell_w = self.base.gpu.cell_width();

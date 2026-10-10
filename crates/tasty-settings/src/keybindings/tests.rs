@@ -315,9 +315,29 @@ fn format_display_mac_option_symbol_style() {
         option_display_style: "symbol".to_string(),
         ..GeneralSettings::default()
     };
+    // 표시 방식 설정은 macOS 에만 적용된다. 다른 OS 는 같은 위치의 키 이름을 쓴다.
     assert_eq!(
         KeybindingSettings::format_display("option+n", &general),
-        "⌥+N"
+        format!("{}+N", option_word("⌥"))
+    );
+}
+
+/// macOS 에서는 `mac` 을, Windows 는 `Win`, 그 밖의 OS 는 `Super` 를 돌려준다.
+fn option_word(mac: &str) -> String {
+    if cfg!(target_os = "macos") {
+        mac.to_string()
+    } else if cfg!(target_os = "windows") {
+        "Win".to_string()
+    } else {
+        "Super".to_string()
+    }
+}
+
+#[test]
+fn format_display_names_the_option_position_key_of_this_os() {
+    assert_eq!(
+        KeybindingSettings::format_display_parts("option+k", &GeneralSettings::default()),
+        vec![option_word("Option"), "K".to_string()]
     );
 }
 
@@ -356,7 +376,7 @@ fn format_display_default_style_is_plain_text() {
     assert_eq!(general.shift_display_style, "shift");
     assert_eq!(
         KeybindingSettings::format_display("alt+option+shift+n", &general),
-        "Alt+Option+Shift+N"
+        format!("Alt+{}+Shift+N", option_word("Option"))
     );
 }
 
@@ -1069,7 +1089,7 @@ fn drag_flip_options_put_the_default_first_and_list_single_modifiers() {
     let expected: &[&str] = if cfg!(target_os = "macos") {
         &["option", "ctrl", "alt", "shift"]
     } else {
-        &["ctrl", "alt", "shift"]
+        &["ctrl", "alt", "option", "shift"]
     };
     assert_eq!(options, expected);
 }

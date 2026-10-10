@@ -490,12 +490,8 @@ impl MainView {
                 let mods = self.base.state.modifiers;
                 let ctrl = mods.control_key();
                 let shift = mods.shift_key();
-                // `alt` = "alt" 토큰(macOS super/그 외 alt), `option` = "option" 토큰
-                // (macOS 물리 ⌥/그 외 항상 false). switch-overlay·modifier-hint 공통 축.
-                #[cfg(target_os = "macos")]
-                let (alt, option) = (mods.super_key(), mods.alt_key());
-                #[cfg(not(target_os = "macos"))]
-                let (alt, option) = (mods.alt_key(), false);
+                // `alt`·`option` 토큰 축(키 위치 기준). switch-overlay·modifier-hint 공통 축.
+                let (alt, option) = tasty_key_match::token_axes(mods);
                 let kb = &engine.settings.keybindings;
                 if self
                     .state

@@ -267,14 +267,11 @@ fn writable(dir: &Path) -> bool {
     std::fs::metadata(dir).is_ok()
 }
 
-fn held(mods: egui::Modifiers, flip: Option<Combo>) -> bool {
+fn held(mods: egui::Modifiers, super_held: bool, flip: Option<Combo>) -> bool {
     let Some(flip) = flip else {
         return false;
     };
-    #[cfg(target_os = "macos")]
-    let (alt, option) = (mods.mac_cmd, mods.alt);
-    #[cfg(not(target_os = "macos"))]
-    let (alt, option) = (mods.alt, false);
+    let (alt, option) = tasty_key_match::token_axes_egui(&mods, super_held);
     let now = Combo {
         ctrl: mods.ctrl,
         alt,
@@ -491,7 +488,8 @@ pub(crate) fn frame(
     };
     ctx.data_mut(|d| d.insert_temp(claim_id(), Claim(pass)));
     expand_after_hover(&ctx, view, Some((&dest, kind)));
-    let flip = held(ctx.input(|i| i.modifiers), view.ops.drag.flip);
+    let super_held = crate::adapters::ui::input::shortcuts::super_held(&ctx);
+    let flip = held(ctx.input(|i| i.modifiers), super_held, view.ops.drag.flip);
     let remote = view.is_remote();
     let first = payload.paths.first().cloned().unwrap_or_default();
     let probed = probe(&mut view.ops.drag, &dest, &first);

@@ -719,10 +719,7 @@ impl KeybindingSettings {
             "symbol" => "⌘",
             _ => "Alt",
         };
-        let option_text = match general.option_display_style.as_str() {
-            "symbol" => "⌥",
-            _ => "Option",
-        };
+        let option_text = Self::option_display_text(general);
         let shift_text = match general.shift_display_style.as_str() {
             "symbol" => "⇧",
             _ => "Shift",
@@ -759,6 +756,21 @@ impl KeybindingSettings {
         }
 
         parts
+    }
+
+    /// `option` 토큰의 표시 문자열. macOS 는 표시 방식 설정(Option·⌥)을 따르고, 다른 OS 는 같은
+    /// 위치의 키 이름(Windows `Win`, 그 밖 `Super`)을 쓴다. 표시 방식 설정은 macOS 에만 노출된다.
+    pub fn option_display_text(general: &GeneralSettings) -> &'static str {
+        if cfg!(target_os = "macos") {
+            match general.option_display_style.as_str() {
+                "symbol" => "⌥",
+                _ => "Option",
+            }
+        } else if cfg!(target_os = "windows") {
+            "Win"
+        } else {
+            "Super"
+        }
     }
 
     /// modifier 를 뺀 키 이름 하나의 표시 문자열. `plus`·`minus`·`equals` 별칭은 기호로 바꾸고,

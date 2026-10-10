@@ -442,16 +442,6 @@ fn a_conflict_that_was_already_there_does_not_block() {
     assert_eq!(kb2.get_field("open_tutorial"), Some(dup));
 }
 
-#[test]
-fn the_host_target_matches_the_build() {
-    let expected = if cfg!(target_os = "macos") {
-        TargetOs::Mac
-    } else {
-        TargetOs::NonMac
-    };
-    assert_eq!(TargetOs::host(), expected);
-}
-
 // ── resolve_migration — 버리기 · 충돌 상대 비우기 · 부분 계획의 충돌 ────────────────
 
 /// 버린 자리는 해소로 세고, 그 바인딩만 사라진다. 같은 필드의 다른 바인딩은 남는다.

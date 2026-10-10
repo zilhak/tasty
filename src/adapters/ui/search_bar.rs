@@ -103,10 +103,12 @@ pub fn draw_search_bar(
         // 실제 필드 포커스가 있을 때만 검색 키를 처리한다.
         if response.has_focus() {
             // find 단축키 → 검색창은 그대로 두고 포커스만 터미널로 되돌린다.
+            let super_held = crate::adapters::ui::input::shortcuts::super_held(ui.ctx());
             let find_pressed = ui.input(|i| {
                 crate::adapters::ui::input::shortcuts::any_binding_pressed_egui(
                     &engine.settings.keybindings.find,
                     i,
+                    super_held,
                 )
             });
             if find_pressed {
