@@ -31,6 +31,8 @@ struct ListDirResultWire {
     truncated: bool,
     #[serde(default)]
     reason: Option<String>,
+    #[serde(default)]
+    volume: Option<u64>,
 }
 
 pub(super) fn parse_list_dir_result(payload: &[u8]) -> Option<MirrorEvent> {
@@ -60,6 +62,7 @@ pub(super) fn parse_list_dir_result(payload: &[u8]) -> Option<MirrorEvent> {
         entries,
         truncated: wire.truncated,
         reason: wire.reason,
+        volume: wire.volume,
     })
 }
 
@@ -102,5 +105,21 @@ mod tests {
             ],
         }));
         assert_eq!(marks, [false, false]);
+    }
+
+    /// 새 server 는 폴더의 디스크 식별값을 싣는다. 옛 server 의 응답에는 없다.
+    #[test]
+    fn the_listing_volume_is_read_when_present() {
+        let volume = |payload: serde_json::Value| match parse_list_dir_result(
+            &serde_json::to_vec(&payload).unwrap(),
+        ) {
+            Some(MirrorEvent::ListDirResult { volume, .. }) => volume,
+            _ => panic!("not a list_dir_result"),
+        };
+        let base = serde_json::json!({"event": "list_dir_result", "request_id": 1, "ok": true, "entries": []});
+        assert_eq!(volume(base.clone()), None);
+        let mut new = base;
+        new["volume"] = 42.into();
+        assert_eq!(volume(new), Some(42));
     }
 }

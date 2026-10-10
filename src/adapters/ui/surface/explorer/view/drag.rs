@@ -28,6 +28,8 @@ pub(crate) struct Payload {
     source: egui::Id,
     /// 경로가 있는 컴퓨터. 로컬이면 None, 원격이면 그 mirror workspace 다. 같은 곳에만 놓는다.
     origin: Option<u32>,
+    /// 원격 경로가 있는 디스크의 서버 쪽 식별값. 모르면 None 이고 놓을 때 복사가 기본이다.
+    volume: Option<u64>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -228,6 +230,10 @@ fn target(
     }
 }
 
+fn first_parent(paths: &[PathBuf]) -> Option<&Path> {
+    paths.first().and_then(|p| p.parent())
+}
+
 /// 이 칸에 `origin` 의 경로를 놓을 수 없는 이유. 다른 컴퓨터의 경로는 놓지 않고, 원격 쓰기를 받지 않는
 /// 서버의 칸에도 놓지 않는다.
 fn blocked(view: &ExplorerView, origin: Option<u32>) -> Option<&'static str> {
@@ -362,6 +368,7 @@ fn start(
         vec![spot.path.clone()]
     };
     let single_dir = paths.len() == 1 && spot.is_dir;
+    let volume = first_parent(&paths).and_then(|dir| view.remote_volume_of(dir));
     view.ops.drag.started = true;
     egui::DragAndDrop::set_payload(
         ctx,
@@ -370,6 +377,7 @@ fn start(
             single_dir,
             source: me,
             origin: view.mirror_ws_id,
+            volume,
         },
     );
 }
@@ -566,9 +574,11 @@ pub(crate) fn frame(
     let flip = held(ctx.input(|i| i.modifiers), super_held, view.ops.drag.flip);
     let blocked = blocked(view, payload.origin);
     let first = payload.paths.first().cloned().unwrap_or_default();
-    // 원격 경로는 이 컴퓨터에서 읽지 않는다. 원격 끌기의 기본 동작은 복사이고 쓰기 거부는 서버가 알린다.
+    // 원격 경로는 이 컴퓨터에서 읽지 않는다. 서버가 알린 디스크 식별값이 같을 때만 이동이 기본이고,
+    // 쓰기 거부는 서버가 알린다.
     let (same_volume, writable) = if view.is_remote() {
-        (false, true)
+        let here = view.remote_volume_of(&dest);
+        (payload.volume.is_some() && payload.volume == here, true)
     } else {
         let probed = probe(&mut view.ops.drag, &dest, &first);
         (probed.same_volume, probed.writable)

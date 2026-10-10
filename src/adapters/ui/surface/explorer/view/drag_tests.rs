@@ -163,3 +163,21 @@ fn drops_stay_on_one_computer_and_need_remote_write() {
     view.writes_allowed = false;
     assert_eq!(blocked(&view, Some(3)), Some("explorer.drag.remote"));
 }
+
+/// 원격 끌기는 서버가 알린 디스크 식별값이 같을 때만 이동을 기본으로 한다. 읽지 않은 하위 폴더는
+/// 상위 폴더의 값을 쓰고, 값을 싣지 않는 옛 서버의 목록은 모르는 것으로 둔다.
+#[test]
+fn remote_volumes_come_from_the_listing_or_its_parent() {
+    let mut view = ExplorerView::new();
+    view.note_remote_volume(p("/srv/a"), Some(7));
+    view.note_remote_volume(p("/mnt/b"), Some(9));
+    assert_eq!(view.remote_volume_of(&p("/srv/a")), Some(7));
+    assert_eq!(view.remote_volume_of(&p("/srv/a/sub")), Some(7));
+    assert_eq!(view.remote_volume_of(&p("/srv/a/sub/deeper")), None);
+    assert_ne!(
+        view.remote_volume_of(&p("/srv/a")),
+        view.remote_volume_of(&p("/mnt/b"))
+    );
+    view.note_remote_volume(p("/srv/a"), None);
+    assert_eq!(view.remote_volume_of(&p("/srv/a")), None);
+}

@@ -53,6 +53,8 @@ pub enum MirrorEvent {
         /// 서버가 프레임 크기 때문에 목록을 잘랐으면 사용자에게 알린다.
         truncated: bool,
         reason: Option<String>,
+        /// 폴더가 있는 디스크의 서버 쪽 식별값. 같은 값이면 같은 디스크다. 옛 서버는 싣지 않는다.
+        volume: Option<u64>,
     },
     /// 재조립된 mesh frame. bytes는 서버가 footer를 제거한 payload다.
     Mesh(u32, u64, u64, bool, Vec<u8>),

@@ -2,6 +2,7 @@
 
 #[cfg(test)]
 mod home_probe_tests;
+mod list_dir;
 mod remote_entry;
 #[cfg(test)]
 mod remote_entry_tests;
@@ -454,33 +455,7 @@ fn apply_one_mirror_event(
         MirrorEvent::CaptureResult { ok, path, reason } => {
             show_mirror_capture_result(host, ok, path, reason);
         }
-        MirrorEvent::ListDirResult {
-            request_id,
-            ok,
-            dir,
-            entries,
-            truncated,
-            reason,
-        } => {
-            let entries = entries.map(|entries| {
-                entries
-                    .into_iter()
-                    .map(|entry| remote_entry::from_remote(dir.as_deref(), entry))
-                    .collect()
-            });
-            apply_list_dir_result_event(
-                sess,
-                host,
-                MirrorResultEnvelope {
-                    request_id,
-                    ok,
-                    truncated,
-                    reason,
-                },
-                dir,
-                entries,
-            );
-        }
+        ev @ MirrorEvent::ListDirResult { .. } => list_dir::apply(sess, host, ev),
         MirrorEvent::GitQueryResult {
             request_id,
             ok,
@@ -550,97 +525,6 @@ struct MirrorResultEnvelope {
 }
 
 /// 요청 때 기록한 소비자로 목록을 전달한다. 요청 기록이 없으면 오래된 회신으로 보고 무시한다.
-fn apply_list_dir_result_event(
-    sess: &mut AttachClientSession,
-    host: &mut MirrorHost<'_, '_>,
-    envelope: MirrorResultEnvelope,
-    dir: Option<String>,
-    entries: Option<Vec<crate::core::fs_list::DirEntryInfo>>,
-) {
-    let MirrorResultEnvelope {
-        request_id,
-        ok,
-        truncated,
-        reason,
-    } = envelope;
-    let consumer = sess
-        .state
-        .pending_list_dir_consumers
-        .remove(&request_id)
-        .flatten();
-    if let Some(surface_id) = consumer {
-        let result = if ok {
-            Ok(entries.unwrap_or_default())
-        } else {
-            Err(reason.unwrap_or_default())
-        };
-        if let Some(panel) = host
-            .engine
-            .find_surface_by_id(surface_id)
-            .and_then(|s| s.as_any().downcast_ref::<crate::model::ExplorerPanel>())
-        {
-            let is_err = result.is_err();
-            host.state
-                .explorer_views
-                .apply_remote_list_dir_result(surface_id, request_id, panel, result);
-            if !is_err && truncated {
-                host.toast(
-                    crate::i18n::t("explorer.state.remote_listing_truncated").to_string(),
-                    crate::adapters::ui::ToastKind::Warning,
-                );
-            }
-        }
-        return;
-    }
-    let home = if ok { dir.as_deref() } else { None };
-    if host
-        .state
-        .explorer_views
-        .finish_home_probe(request_id, home)
-    {
-        return;
-    }
-    // 아직 열린 picker가 같은 요청을 기다릴 때만 반영한다.
-    let Some(picker) = host.state.dialogs.file_picker.as_mut() else {
-        return;
-    };
-    let is_pending = matches!(
-        &picker.load,
-        crate::state::FpLoadState::Loading { request_id: rid, .. } if *rid == request_id
-    );
-    if !is_pending {
-        return;
-    }
-    if ok {
-        let es = entries.unwrap_or_default();
-        if let Some(d) = dir {
-            picker.current_dir = d;
-        }
-        picker.load = if es.is_empty() {
-            crate::state::FpLoadState::Empty
-        } else {
-            crate::state::FpLoadState::Loaded
-        };
-        picker.entries = es;
-        if picker.remote_host.is_none() {
-            picker.remote_host = Some(sess.state.remote_label.clone());
-        }
-        if truncated {
-            host.toast(
-                crate::i18n::t("filepicker.remote_listing_truncated").to_string(),
-                crate::adapters::ui::ToastKind::Warning,
-            );
-        }
-    } else {
-        let reason_str = reason.unwrap_or_default();
-        picker.load = if reason_str == "permission denied" {
-            crate::state::FpLoadState::ErrorPerm(reason_str)
-        } else {
-            crate::state::FpLoadState::ErrorConn(reason_str)
-        };
-    }
-}
-
 fn apply_git_query_result_event(
     plugin_manager: &mut Option<crate::plugin::PluginManager>,
     state: &mut crate::state::MainViewState,

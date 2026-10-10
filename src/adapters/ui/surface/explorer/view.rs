@@ -102,6 +102,8 @@ pub struct ExplorerView {
     remote_state: HashMap<PathBuf, RemoteLoadState>,
     /// 이 칸의 파일을 바꿀 수 있는가. 로컬은 늘 참이고, 원격은 그 서버가 원격 쓰기를 알린 동안 참이다.
     pub(crate) writes_allowed: bool,
+    /// 원격 폴더가 있는 디스크의 서버 쪽 식별값. 끌어 놓기의 기본 동작(이동·복사)을 정한다.
+    remote_volumes: HashMap<PathBuf, u64>,
     /// (ADR-0022) 이번 프레임 새로 만든 원격 요청 — 렌더 루프 종료 후 drain.
     pub(super) outbox: Vec<ExplorerListRequest>,
     /// 영숫자로 항목을 선택하는 타입어헤드의 입력 버퍼. 동작 규칙은 `type_ahead`
@@ -261,6 +263,7 @@ impl ExplorerView {
             mirror_ws_id: None,
             remote_state: HashMap::new(),
             writes_allowed: true,
+            remote_volumes: HashMap::new(),
             outbox: Vec::new(),
             type_ahead: TypeAhead::default(),
             scroll_to: None,
@@ -829,12 +832,18 @@ impl ExplorerViewStore {
         surface_id: SurfaceId,
         request_id: u64,
         panel: &ExplorerPanel,
-        result: Result<Vec<DirEntryInfo>, String>,
+        result: Result<(Vec<DirEntryInfo>, Option<u64>), String>,
     ) -> bool {
-        self.views
-            .get_mut(&surface_id)
-            .map(|v| v.apply_remote_list_dir_result(request_id, panel, result))
-            .unwrap_or(false)
+        let Some(view) = self.views.get_mut(&surface_id) else {
+            return false;
+        };
+        let result = result.map(|(entries, volume)| {
+            if let Some(dir) = view.find_pending_dir(request_id) {
+                view.note_remote_volume(dir, volume);
+            }
+            entries
+        });
+        view.apply_remote_list_dir_result(request_id, panel, result)
     }
 
     /// 모든 view 에서 이번 프레임 새로 만든 원격 list_dir 요청을 `(surface_id, request)`

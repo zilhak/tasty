@@ -1,5 +1,5 @@
-//! 원격 작업 뒤 원격 목록 캐시를 낡은 것으로 표시한다. 로컬 작업의 `invalidate_local` 과 같은 규칙을
-//! 같은 mirror workspace 의 explorer 에 적용한다.
+//! 원격 목록 캐시의 쓰기용 보조. 원격 작업 뒤 목록을 낡은 것으로 표시하고(로컬 작업의
+//! `invalidate_local` 과 같은 규칙), 끌어 놓기가 쓰는 폴더별 디스크 식별값을 기억한다.
 
 use std::path::{Path, PathBuf};
 
@@ -47,5 +47,24 @@ impl super::ExplorerViewStore {
         if self.remote_writable != *workspaces {
             self.remote_writable.clone_from(workspaces);
         }
+    }
+}
+
+impl super::ExplorerView {
+    /// 받은 원격 목록의 디스크 식별값을 기억한다. 옛 서버처럼 값이 없으면 잊는다.
+    pub(super) fn note_remote_volume(&mut self, dir: PathBuf, volume: Option<u64>) {
+        match volume {
+            Some(volume) => self.remote_volumes.insert(dir, volume),
+            None => self.remote_volumes.remove(&dir),
+        };
+    }
+
+    /// `dir` 의 원격 디스크 식별값. 아직 읽지 않은 폴더는 상위 폴더의 값을 쓴다(그 안의 하위 폴더에
+    /// 놓을 때). 모르면 None 이다.
+    pub(crate) fn remote_volume_of(&self, dir: &Path) -> Option<u64> {
+        self.remote_volumes
+            .get(dir)
+            .or_else(|| dir.parent().and_then(|p| self.remote_volumes.get(p)))
+            .copied()
     }
 }
