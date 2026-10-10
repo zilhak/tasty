@@ -37,7 +37,7 @@ pub(crate) enum Tick {
     /// egui가 지연 repaint를 요청한 창. 발화하면 그 창을 다시 그리고 자동 제거된다.
     #[cfg(feature = "gui")]
     EguiRepaint(winit::window::WindowId),
-    /// 포커스 탭 탐색기의 가장 이른 외부 변경 확인 시각에 깨운다. 확인할 창 표시는 sync_surface_poll_timers가 한다.
+    /// 포커스 탭 탐색기의 가장 이른 외부 변경 확인 시각에 깨운다. 확인은 sync_surface_poll_timers가 그리지 않고 시작한다.
     #[cfg(feature = "gui")]
     ExplorerPoll,
     /// anchor 재연결 backoff 시각에 깨운다. workspace로 돌아온 순간의 재시도 판정은 별도다.

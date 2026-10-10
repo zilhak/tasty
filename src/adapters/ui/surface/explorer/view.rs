@@ -129,6 +129,8 @@ impl ExplorerView {
         &mut self,
         owner: &mut crate::app::local_reads::ReadRequests,
     ) -> bool {
+        // 확인 결과가 건 다시 읽기를 아래에서 같은 차례에 worker 로 넘긴다.
+        self.poll_external_result(owner);
         let mut changed = false;
         if let Some(result) = self
             .local_query
@@ -199,7 +201,6 @@ impl ExplorerView {
             }
             changed = true;
         }
-        changed |= self.poll_external_result(owner);
         changed |= self.preview.poll(owner);
         changed |= self.thumbs.poll(owner);
         changed
@@ -414,11 +415,6 @@ impl ExplorerView {
         let explicit = self.reload_requested;
         let need = explicit || self.loaded.as_ref() != Some(&key);
         if !need {
-            if self.poll.take_quiet_reload() && self.local_query.is_none() {
-                // 다른 프로그램이 바꾼 폴더. 보이던 목록을 둔 채 다시 읽고 결과로 바꾼다.
-                self.local_query =
-                    Some(crate::app::local_reads::stamped_directory(tab.root.clone()));
-            }
             return;
         }
         self.reload_requested = false;

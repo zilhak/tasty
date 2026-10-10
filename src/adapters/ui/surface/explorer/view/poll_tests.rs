@@ -29,6 +29,22 @@ fn settle(view: &mut ExplorerView, panel: &ExplorerPanel, owner: &mut LocalReads
     });
 }
 
+/// 걸린 확인이 끝날 때까지 돌린다. 그동안 다시 그리라는 신호가 있었는지 돌려준다.
+fn finish_check(view: &mut ExplorerView, owner: &mut LocalReads) -> bool {
+    let mut redraw = false;
+    loop {
+        owner.reap();
+        owner.drive(|requests| {
+            redraw |= view.poll_local_reads(requests);
+            true
+        });
+        if view.poll.check.is_none() {
+            return redraw;
+        }
+        std::thread::yield_now();
+    }
+}
+
 fn shutdown(mut owner: LocalReads) {
     while owner.poll_shutdown() != 0 {
         std::thread::yield_now();
@@ -71,16 +87,21 @@ fn gaining_focus_checks_at_once_and_then_every_interval() {
     view.poll.check = None;
     assert_eq!(store.next_poll_at(), Some(t0 + EXTERNAL_POLL_INTERVAL));
 
-    frame(&mut store, &panel, true, t0 + EXTERNAL_POLL_INTERVAL / 2);
-    assert!(
-        store.get(1).expect("view").poll.check.is_none(),
-        "주기 전에는 다시 확인하지 않는다"
-    );
     frame(&mut store, &panel, true, t0 + EXTERNAL_POLL_INTERVAL);
     assert!(
-        store.get(1).expect("view").poll.check.is_some(),
-        "주기가 지나면 확인한다"
+        store.get(1).expect("view").poll.check.is_none(),
+        "주기 확인은 프레임이 시작하지 않는다"
     );
+    assert!(
+        !store.start_due_checks(t0 + EXTERNAL_POLL_INTERVAL / 2),
+        "주기 전에는 다시 확인하지 않는다"
+    );
+    assert!(
+        store.start_due_checks(t0 + EXTERNAL_POLL_INTERVAL),
+        "주기가 지나면 그리지 않고 확인한다"
+    );
+    assert!(store.get(1).expect("view").poll.check.is_some());
+    assert_eq!(store.next_poll_at(), Some(t0 + EXTERNAL_POLL_INTERVAL * 2));
 
     // 다른 탭으로 갔다가 돌아오면 주기를 기다리지 않는다.
     store.get_mut(1).expect("view").poll.check = None;
@@ -155,11 +176,12 @@ fn an_unchanged_folder_is_not_read_again() {
 
     view.poll_external(true, Instant::now());
     assert!(view.poll.check.is_some());
-    settle(&mut view, &panel, &mut owner);
-    assert!(!view.poll.quiet_reload);
-    view.sync(&panel, None);
     assert!(
-        view.local_query.is_none(),
+        !finish_check(&mut view, &mut owner),
+        "바뀐 것이 없으면 다시 그리지 않는다"
+    );
+    assert!(
+        view.local_query.is_none() && view.tree_queries.is_empty(),
         "표지가 같으면 목록을 읽지 않는다"
     );
     shutdown(owner);
@@ -182,11 +204,11 @@ fn a_changed_folder_is_reread_while_the_old_list_stays() {
     std::fs::remove_file(dir.path().join("gone")).expect("remove");
     std::fs::write(dir.path().join("new"), b"x").expect("write");
     view.poll_external(true, Instant::now());
-    run_until(&mut view, &mut owner, |v| v.poll.check.is_none());
-    assert!(view.poll.quiet_reload);
-
-    view.sync(&panel, None);
-    assert!(view.local_query.is_some());
+    assert!(
+        !finish_check(&mut view, &mut owner),
+        "확인 결과만으로는 다시 그리지 않는다"
+    );
+    assert!(view.local_query.is_some(), "바뀐 폴더를 바로 다시 읽는다");
     assert_eq!(
         view.entries_gen, generation,
         "읽는 동안 보이던 목록을 그대로 둔다"
@@ -225,10 +247,10 @@ fn only_a_changed_expanded_tree_folder_is_read_again() {
     let changed = dir.path().join("changed");
     std::fs::create_dir(changed.join("inner")).expect("mkdir");
     view.poll_external(true, Instant::now());
-    run_until(&mut view, &mut owner, |v| v.poll.check.is_none());
+    finish_check(&mut view, &mut owner);
     assert!(view.tree_queries.contains_key(&changed));
     assert!(!view.tree_queries.contains_key(&dir.path().join("same")));
-    assert!(!view.poll.quiet_reload, "현재 폴더는 바뀌지 않았다");
+    assert!(view.local_query.is_none(), "현재 폴더는 바뀌지 않았다");
     assert_eq!(
         tree_names(&view, &changed),
         ["old"],
@@ -255,8 +277,7 @@ fn the_current_folder_in_the_tree_is_read_once_and_its_node_is_replaced_in_place
     std::thread::sleep(Duration::from_millis(20));
     std::fs::create_dir(root.join("new")).expect("mkdir");
     view.poll_external(true, Instant::now());
-    run_until(&mut view, &mut owner, |v| v.poll.check.is_none());
-    view.sync(&panel, None);
+    finish_check(&mut view, &mut owner);
     assert!(view.local_query.is_some(), "목록은 다시 읽는다");
     assert!(
         view.tree_queries.is_empty(),

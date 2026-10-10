@@ -286,8 +286,8 @@ DAG 목록 popup 은 surface 에 매이지 않으므로 `Tick::DagListPopup` 로
 (`sync_explorer_poll_timer`). 확인 대상 표시도 DAG 와 같은 원리로, 패널을 그리기 전에
 `ExplorerViewStore::begin_poll_frame` 이 모든 칸의 포커스 표시를 내리고 그 프레임에 포커스 창의 포커스
 탭으로 그려진 칸만 다시 올린다. 배경 탭으로 밀린 탐색기와 포커스를 잃은 창의 탐색기는 다음 프레임에
-빠져 깨움이 멈춘다. 확인은 그리는
-동안 하므로 App 은 깨어난 뒤 확인할 때가 된 창을 다시 그리게 표시한다(`App::sync_surface_poll_timers`).
+빠져 깨움이 멈춘다. 주기 확인은 창을 그리지 않는다. 깨어난 App 이 `App::sync_surface_poll_timers` 에서
+확인을 시작해 바로 worker 로 넘기고, 바뀐 폴더를 다시 읽은 결과가 올 때만 그 창을 그린다.
 규칙은 [Explorer 외부 변경 확인](../surfaces/explorer/index.md#외부-변경-확인)에 있다.
 
 <a id="파생-데드라인은-반드시-바닥친다--누수보다-스핀이-비싸다"></a>
