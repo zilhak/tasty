@@ -5,6 +5,8 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::process::Command;
 
+use tasty_doc_guards::git_env;
+
 use tasty_doc_guards::temp_scratch::Scratch;
 
 const INDEX: &str = "# ADR\n\n## g\n\n머리말: 0001 → 0002 → 0003.\n\n\
@@ -18,7 +20,7 @@ fn adr(num: &str, title: &str, body: &str) -> String {
 }
 
 fn git(root: &Path, args: &[&str]) -> String {
-    let out = Command::new("git")
+    let out = git_env::command("git")
         .arg("-C")
         .arg(root)
         .args([
@@ -93,7 +95,7 @@ fn run(root: &Path, map: &str, write: bool) -> (Option<i32>, String, String) {
         root.file_name().and_then(|n| n.to_str()).expect("name")
     ));
     std::fs::write(&map_path, map).expect("map");
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_adr-renumber"));
+    let mut cmd = git_env::command(env!("CARGO_BIN_EXE_adr-renumber"));
     cmd.arg(&map_path).arg("--root").arg(root);
     if write {
         cmd.arg("--write");

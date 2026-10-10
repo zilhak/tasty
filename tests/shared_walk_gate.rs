@@ -6,7 +6,8 @@
 
 use std::fs;
 use std::path::Path;
-use std::process::Command;
+
+use tasty_doc_guards::git_env;
 
 fn gate_src() -> String {
     format!(
@@ -39,7 +40,7 @@ fn synth_root() -> tempfile::TempDir {
 }
 
 fn git(root: &Path, args: &[&str]) {
-    let out = Command::new("git")
+    let out = git_env::command("git")
         .args(args)
         .current_dir(root)
         .output()
@@ -86,7 +87,7 @@ fn install_stub_masker(root: &Path) -> std::path::PathBuf {
 
 fn run(root: &Path) -> (i32, String) {
     let stub = install_stub_masker(root);
-    let out = Command::new("bash")
+    let out = git_env::command("bash")
         .arg(root.join("scripts/check-shared-walk-ratchet.sh"))
         .current_dir(root)
         .env("TASTY_MASK_SOURCE_BIN", &stub)

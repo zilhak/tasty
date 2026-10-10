@@ -11,7 +11,8 @@ mod gate_env;
 
 use std::fs;
 use std::path::Path;
-use std::process::Command;
+
+use tasty_doc_guards::git_env;
 
 fn script() -> String {
     format!(
@@ -21,7 +22,7 @@ fn script() -> String {
 }
 
 fn run_git(dir: &Path, args: &[&str]) {
-    let out = Command::new("git")
+    let out = git_env::command("git")
         .args(args)
         .current_dir(dir)
         .output()
@@ -41,7 +42,7 @@ fn write(dir: &Path, rel: &str, body: &str) {
 
 /// 기본 경로로 대체되지 않는 명시적 부재 경로를 주어 test 전용 코드 제외 도구가 없는 상태를 재현한다.
 fn check_without_the_stripper(dir: &Path, args: &[&str]) -> (i32, String) {
-    let out = Command::new("bash")
+    let out = git_env::command("bash")
         .arg(script())
         .args(args)
         .current_dir(dir)
@@ -53,7 +54,7 @@ fn check_without_the_stripper(dir: &Path, args: &[&str]) -> (i32, String) {
 }
 
 fn check(dir: &Path, args: &[&str]) -> (i32, String) {
-    let out = Command::new("bash")
+    let out = git_env::command("bash")
         .arg(script())
         .args(args)
         .current_dir(dir)
@@ -85,7 +86,7 @@ fn widened_script(d: &Path, root: &str) -> String {
 }
 
 fn check_with(gate: &str, dir: &Path, args: &[&str]) -> (i32, String) {
-    let out = Command::new("bash")
+    let out = git_env::command("bash")
         .arg(gate)
         .args(args)
         .current_dir(dir)
@@ -790,7 +791,7 @@ fn an_unreadable_member_roster_is_undecidable_and_says_why() {
     )
     .expect("스텁 작성");
 
-    let out = Command::new("bash")
+    let out = git_env::command("bash")
         .arg(script())
         .args(["--range", "HEAD^", "HEAD"])
         .current_dir(d)
@@ -839,7 +840,7 @@ fn an_unreadable_dependency_closure_is_undecidable_and_says_why() {
     )
     .expect("스텁 작성");
 
-    let out = Command::new("bash")
+    let out = git_env::command("bash")
         .arg(script())
         .args(["--range", "HEAD^", "HEAD"])
         .current_dir(d)
@@ -957,7 +958,7 @@ fn a_missing_rustfmt_is_undecidable_not_a_pass() {
     let tmp = seed_repo();
     // git은 남기고 rustfmt만 PATH에서 제외한다. 다른 오류와 구별할 진단도 확인한다.
     let path = gate_env::only(&["bash", "git"]);
-    let out = Command::new("bash")
+    let out = git_env::command("bash")
         .arg(script())
         .args(["--staged"])
         .current_dir(tmp.path())

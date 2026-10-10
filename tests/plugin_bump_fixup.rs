@@ -8,12 +8,14 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
+use tasty_doc_guards::git_env;
+
 fn repo_file(rel: &str) -> String {
     format!("{}/{rel}", env!("CARGO_MANIFEST_DIR"))
 }
 
 fn git_out(dir: &Path, args: &[&str]) -> String {
-    let out = Command::new("git")
+    let out = git_env::command("git")
         .args(args)
         .current_dir(dir)
         .output()
@@ -41,7 +43,7 @@ fn read(dir: &Path, rel: &str) -> String {
 }
 
 fn cargo_offline(dir: &Path, args: &[&str]) {
-    let out = Command::new("cargo")
+    let out = git_env::command("cargo")
         .args(args)
         .arg("--offline")
         .current_dir(dir)
@@ -66,7 +68,7 @@ impl std::fmt::Debug for Run {
 }
 
 fn run_script(dir: &Path, rel: &str, args: &[&str]) -> Run {
-    let out = Command::new("bash")
+    let out = git_env::command("bash")
         .arg(repo_file(rel))
         .args(args)
         .current_dir(dir)
@@ -438,7 +440,7 @@ fn exec_fixup() -> String {
 }
 
 fn rebase_status(d: &Path) -> Run {
-    let out = Command::new("git")
+    let out = git_env::command("git")
         .args(["rebase", "--exec", &exec_fixup(), "main"])
         .current_dir(d)
         .output()
@@ -654,7 +656,7 @@ fn fixup_refuses_when_the_checker_is_not_beside_it() {
     let lone = tempfile::tempdir().expect("임시 디렉토리");
     let copy = lone.path().join("plugin-bump-fixup.sh");
     fs::copy(repo_file("scripts/plugin-bump-fixup.sh"), &copy).expect("사본");
-    let out = Command::new("bash")
+    let out = git_env::command("bash")
         .arg(&copy)
         .current_dir(tmp.path())
         .output()
@@ -712,7 +714,7 @@ fn checker_writes_the_violation_list_relative_to_the_caller() {
 // ── P.1 보류 모드 ───────────────────────────────────────────────
 
 fn mode(dir: &Path) -> Run {
-    let out = Command::new("bash")
+    let out = git_env::command("bash")
         .arg("-c")
         .arg(format!(
             ". '{}' && plugin_bump_mode",
@@ -822,7 +824,7 @@ cargo() {
 "#,
     )
     .expect("스텁 쓰기");
-    let out = Command::new("bash")
+    let out = git_env::command("bash")
         .arg(repo_file(".githooks/pre-commit"))
         .current_dir(dir)
         .env("BASH_ENV", &env_file)

@@ -13,7 +13,8 @@ mod gate_env;
 
 use std::fs;
 use std::path::Path;
-use std::process::Command;
+
+use tasty_doc_guards::git_env;
 
 fn gate_src() -> String {
     format!(
@@ -42,7 +43,7 @@ fn synth_root() -> tempfile::TempDir {
 }
 
 fn git(root: &Path, args: &[&str]) {
-    let out = Command::new("git")
+    let out = git_env::command("git")
         .args(args)
         .current_dir(root)
         .output()
@@ -107,7 +108,7 @@ fn run_inner(root: &Path, with_rg: bool) -> (i32, String) {
     let tools = gate_env::only(&[
         "bash", "git", "dirname", "wc", "mktemp", "rm", "mkdir", "cp", "find", "sed", "awk",
     ]);
-    let mut cmd = Command::new("bash");
+    let mut cmd = git_env::command("bash");
     cmd.arg(root.join("scripts/check-allow-reason.sh"))
         .current_dir(root)
         .env("TASTY_MASK_SOURCE_BIN", &stub)

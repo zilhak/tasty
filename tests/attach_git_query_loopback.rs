@@ -9,7 +9,8 @@ mod attach_common;
 mod common;
 
 use std::net::TcpStream;
-use std::process::Command;
+
+use tasty_doc_guards::git_env;
 
 use attach_common::{
     TAG_CONTROL, open_stream_without_attach, open_workspace_attach, read_frame, write_control_frame,
@@ -33,7 +34,7 @@ fn wait_for_git_query_result(stream: &mut TcpStream, request_id: u64) -> Value {
 
 fn git(dir: &std::path::Path, args: &[&str]) {
     // Git stderr를 다른 병렬 시험 출력과 섞지 않고 실패 진단에 담는다.
-    let out = Command::new("git")
+    let out = git_env::command("git")
         .args(args)
         .current_dir(dir)
         .env("GIT_AUTHOR_NAME", "Tasty Test")
