@@ -126,9 +126,8 @@ pub(super) fn callout_box(
     body: &str,
     folded: bool,
 ) {
-    // WebView 는 반투명 강조색을 문서 바탕(md-doc-bg) 위에 sRGB 값으로 섞는다. egui 에 반투명
-    // 색을 넘기면 감마 보정 premultiply 때문에 약 3배 진해지므로, 같은 바탕 위에서 sRGB 로
-    // 미리 섞은 불투명 색을 칠한다.
+    // WebView 는 반투명 강조색을 문서 바탕(md-doc-bg) 위에 sRGB 값으로 섞는다. 같은 바탕 위에서
+    // sRGB 로 미리 섞은 불투명 색을 칠해 그 결과와 맞춘다.
     let fill = theme
         .surface("markdown")
         .focused_bg

@@ -104,7 +104,7 @@ pub fn apply_theme_to_egui(theme: &Theme, ctx: &egui::Context) {
     visuals.widgets.open.bg_stroke = stroke1(theme, theme.surface2);
     visuals.widgets.open.fg_stroke = stroke1(theme, theme.text);
 
-    // Straight RGBA는 to_egui()에서 gamma-aware premultiply로 변환된다.
+    // Straight RGBA는 to_egui()에서 sRGB 바이트에 알파를 곱해 premultiplied 색이 된다.
     const SELECTION_BG_ALPHA: u8 = 80;
     visuals.selection.bg_fill = theme
         .accent_primary()

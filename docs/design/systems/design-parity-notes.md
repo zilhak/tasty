@@ -334,8 +334,11 @@ State 셀은 `status_dot`(점 `status_dot_size` 8 + `space-xs` 4 + caption 11px 
 - **근거**: 두 케이스가 각각 구현돼 있다. 불투명 블렌드는
   `crates/tasty-type-appearance/src/theme.rs` 의 `mix_srgb(a, ratio, b)` — 그 파일의 wash
   접근자들이 유일한 호출자다. 알파 감소는 `HexColor::with_alpha`(`crates/tasty-type-appearance/src/color.rs`)
-  로 상수 알파를 얹는 형태이고, 최종 변환이 `Color32::from_rgba_unmultiplied` 다
-  (`HexColor::to_egui`, 같은 파일). Tag 의 `gamma_multiply(0.4)` 는
+  로 상수 알파를 얹는 형태이고, 최종 변환 `HexColor::to_egui`(같은 파일)가 sRGB 바이트에 알파를
+  곱해 premultiplied 색을 만든다. egui 렌더러가 sRGB 바이트 공간에서 합성하므로 CSS
+  `color-mix(in srgb …, transparent)` 를 배경에 올린 값과 같다. 선형 공간에서 곱하는
+  `Color32::from_rgba_unmultiplied` 는 어두운 배경에서 진하게 나온다(accent 12% 가 (43,48,70) 대신
+  (75,93,136)). Tag 의 `gamma_multiply(0.4)` 는
   `crates/tasty-ui-widgets/src/chip.rs` 의 `TagVariant::Info` 보더에 살아 있다.
 
 ---

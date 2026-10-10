@@ -139,7 +139,7 @@ Toast 위에서 마우스 클릭/드래그해도 토스트는 무시하고 이�
   정하고, 줄바꿈 폭·패딩·accent 바·높이는 여기서 한 번만 정한다.
 - `toast_card_colors(theme, kind, alpha)` — alpha 를 반영한 fill · border · accent · 글자 색.
   alpha 를 곱하는 순서가 여기 고정돼 있다 — 테마 색(straight)에 곱한 뒤 `Color32` 로 바꾼다.
-  `Color32` 로 바꾼 뒤 곱하면 감마 공간 곱이 돼 alpha < 1 에서 색이 달라진다.
+  두 순서 모두 sRGB 바이트 공간의 곱이지만 `Color32` 로 바꾼 뒤 곱하면 반올림이 한 번 더 일어난다.
 - `draw_toast_single_card(ui, theme, kind, message, alpha)` — 스택 없이 카드 한 장만
   그려야 하는 자리용(갤러리의 Toast · Toast stack specimen). 치수와 색은 위 두 함수에서 온다.
 - `draw_toast_card` / `ToastCardColors` — 카드 chrome 만 그리는 하위 함수. 치수·색을

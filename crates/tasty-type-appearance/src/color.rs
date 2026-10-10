@@ -20,8 +20,8 @@ use serde::{Deserialize, Serialize};
 ///
 /// alpha 채널은 0(투명) ~ 255(불투명) 사이의 straight 값이며, GPU/egui 등으로 보낼 때
 /// 변환 헬퍼([`Self::to_egui`], [`Self::to_gpu_rgba`])를 사용한다.
-/// egui는 내부적으로 premultiplied 표현을 쓰므로 [`Self::to_egui`]는
-/// `Color32::from_rgba_unmultiplied`를 호출한다.
+/// egui는 내부적으로 premultiplied 표현을 쓰므로 [`Self::to_egui`]는 sRGB 바이트에 알파를 곱해
+/// 넘긴다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct HexColor {
     pub r: u8,
@@ -107,18 +107,19 @@ impl HexColor {
         GpuRgb::from_hex_color(self)
     }
 
-    /// Convert to `egui::Color32` (gamma-aware premultiplication via
-    /// `Color32::from_rgba_unmultiplied`). 일반적인 변환은 이 메서드를 쓴다.
+    /// `egui::Color32`로 바꾼다. 일반적인 변환은 이 메서드를 쓴다.
     ///
-    /// alpha < 255인 경우 egui가 sRGB → linear → premultiply → sRGB 순서로
-    /// 변환하므로, RGB 채널이 단순히 `r * a / 255`가 아니라 감마 보정된 값으로
-    /// 저장된다.
+    /// alpha < 255면 sRGB 바이트에 그대로 알파를 곱해 premultiplied 색을 만든다(`r * a / 255`).
+    /// egui 렌더러는 sRGB 바이트 공간에서 섞으므로 결과가 디자인의 CSS `color-mix(in srgb, C a%,
+    /// transparent)`를 배경 위에 올린 값과 같다. `Color32::from_rgba_unmultiplied`는 선형 공간에서
+    /// 곱한 뒤 sRGB로 돌려 이 섞기와 맞지 않아 어두운 배경에서 색이 진해진다.
     ///
     /// egui-compat 기능을 켠 경우에만 제공한다.
     #[cfg(feature = "egui-compat")]
     #[allow(clippy::disallowed_methods)] // reason: HexColor → egui 변환 헬퍼의 정의 본거지
     pub fn to_egui(self) -> egui::Color32 {
-        egui::Color32::from_rgba_unmultiplied(self.r, self.g, self.b, self.a)
+        let [r, g, b] = [self.r, self.g, self.b].map(|c| premultiply_srgb(c, self.a));
+        egui::Color32::from_rgba_premultiplied(r, g, b, self.a)
     }
 
     /// Serialize to `#RRGGBB` (alpha=255) or `#RRGGBBAA` (otherwise).
@@ -248,6 +249,12 @@ macro_rules! hex {
         };
         COLOR
     }};
+}
+
+/// sRGB 바이트 한 채널에 알파 바이트를 곱해 반올림한다. 알파 255면 그대로, 0이면 0이다.
+#[cfg(feature = "egui-compat")]
+const fn premultiply_srgb(c: u8, a: u8) -> u8 {
+    ((c as u16 * a as u16 + 127) / 255) as u8
 }
 
 #[cfg(feature = "egui-compat")]
@@ -526,10 +533,10 @@ mod tests {
     #[cfg(feature = "egui-compat")]
     #[test]
     fn straight_alpha_round_trip_via_egui() {
+        // 흰색 8%는 도출 overlay(PremulColor 20,20,20,20)와 같은 바이트가 된다.
         let c = HexColor::from_rgba(255, 255, 255, 20);
         let e = c.to_egui();
-        assert_eq!(e.a(), 20);
-        assert!(e.r() > 20 && e.r() < 100);
+        assert_eq!((e.r(), e.g(), e.b(), e.a()), (20, 20, 20, 20));
 
         let c = HexColor::from_rgba(0, 0, 0, 20);
         let e = c.to_egui();
@@ -543,6 +550,42 @@ mod tests {
         assert_eq!(opaque.g(), 0x34);
         assert_eq!(opaque.b(), 0x56);
         assert_eq!(opaque.a(), 255);
+    }
+
+    /// egui 렌더러의 source-over(sRGB 바이트 공간, premultiplied)를 한 픽셀에 재현한다.
+    #[cfg(feature = "egui-compat")]
+    fn over(src: egui::Color32, dst: (u8, u8, u8)) -> (u8, u8, u8) {
+        let k = |s: u8, d: u8| {
+            (f32::from(s) + f32::from(d) * (1.0 - f32::from(src.a()) / 255.0)).round() as u8
+        };
+        (k(src.r(), dst.0), k(src.g(), dst.1), k(src.b(), dst.2))
+    }
+
+    /// Mocha accent-primary 12%를 base(#1e1e2e) 위에 올리면 CSS `color-mix(in srgb, accent 12%,
+    /// transparent)`의 합성값 (43,48,70)이 나와야 한다. 선형 공간 premultiply는 (75,93,136)을 냈다.
+    #[cfg(feature = "egui-compat")]
+    #[test]
+    fn a_tinted_fill_composites_like_css_color_mix() {
+        let fill = HexColor::from_rgb(0x89, 0xb4, 0xfa)
+            .with_alpha(crate::theme::EXPLORER_DROP_TARGET_BG_ALPHA)
+            .to_egui();
+        assert_eq!(over(fill, (0x1e, 0x1e, 0x2e)), (43, 48, 70));
+        let latte = HexColor::from_rgb(0x1e, 0x66, 0xf5)
+            .with_alpha(crate::theme::EXPLORER_DROP_TARGET_BG_ALPHA)
+            .to_egui();
+        // Latte base #eff1f5 위 기대값은 CSS 처럼 sRGB 바이트를 선형 보간해 구한다.
+        let css = |c: u8, bg: u8| {
+            (f32::from(bg)
+                + (f32::from(c) - f32::from(bg))
+                    * f32::from(crate::theme::EXPLORER_DROP_TARGET_BG_ALPHA)
+                    / 255.0)
+                .round() as u8
+        };
+        let want = (css(0x1e, 0xef), css(0x66, 0xf1), css(0xf5, 0xf5));
+        let got = over(latte, (0xef, 0xf1, 0xf5));
+        for (g, w) in [(got.0, want.0), (got.1, want.1), (got.2, want.2)] {
+            assert!(g.abs_diff(w) <= 1, "got {got:?} want {want:?}");
+        }
     }
 
     #[test]

@@ -183,7 +183,7 @@ pub const BRAND: HexColor = hex!("#89b4fa");          // OK (alpha·3-digit shor
 ### 새 색 도입 시
 
 1. **테마 색**: 빌트인은 `crates/tasty-themes/themes/*.toml`/`mocha_fallback_colors()`, 사용자는 `~/.tasty/themes/*.toml`. UI 는 `theme().X.into()`(egui) / `theme().X.to_gpu_rgba()`(GPU).
-2. **alpha 변형**: `theme().X.with_alpha(N).to_egui()`.
+2. **alpha 변형**: `theme().X.with_alpha(N).to_egui()`. `to_egui()`는 sRGB 바이트에 알파를 곱해 premultiplied 색을 만든다. egui 렌더러가 sRGB 바이트 공간에서 합성하므로 결과는 디자인의 `color-mix(in srgb, C N%, transparent)`를 배경에 올린 값과 같다(Mocha accent 12% on base = (43,48,70)). `Color32::from_rgba_unmultiplied`와 `Color32::linear_multiply`는 선형 공간에서 곱해 이 합성과 맞지 않고 어두운 배경에서 색이 진해지므로 테마 색에 쓰지 않는다. 이미 만든 `Color32`를 더 옅게 할 때는 `gamma_multiply`를 쓴다. 승인 팝업의 위험 선택지 채움은 대응 토큰이 없어 기존 `linear_multiply(0.18)`이 남아 있다.
 3. **외부 입력**: `dangerously_force_from_array` + 주석 + `#[allow]`.
 
 host UI와 공용 위젯은 semantic 색 접근자를 사용한다. 원시 팔레트 예외와 소스 검사는 위 [UI 코드의 색상 접근](#ui-코드의-색상-접근)을 따른다.
