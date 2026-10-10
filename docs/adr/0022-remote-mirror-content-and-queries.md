@@ -25,7 +25,9 @@ mirror 크기는 client pane에서 요청하고 서버가 실제 PTY를 resize�
 
 원격 explorer는 파일 피커의 list_dir 요청을 재사용한다. 각 view가 경로별 대기 요청과 캐시를 관리한다. 파일 피커의 단일 요청 상태를 여러 explorer가 공유하거나 host에 중복 registry를 만들지 않는다. 주소창의 `~`에 필요한 원격 홈도 새 질의를 만들지 않고, 연결마다 빈 경로의 list_dir를 한 번 보내 서버가 돌려준 경로로 얻는다(2026-10-10 보강). 홈 목록 한 번을 더 받는 비용이 프로토콜 이벤트를 하나 늘리는 것보다 작다고 봤다. 주소창에 넣은 원격 경로가 파일인지도 같은 이유로 새 질의 없이 이동 전에 부모 폴더의 list_dir를 한 번 받아 같은 이름 항목의 종류로 판단한다(2026-10-10 보강).
 
-원격 explorer의 파일 더블클릭은 client가 판정하고 결과만 원격에 보낸다. 식별은 `DetectDepth::Name`으로 파일 이름의 확장자·path glob만 본다. 디렉터리 확인을 포함해 client 파일시스템을 읽지 않으며, 파일 여부는 원격 목록이 알려 준 값을 믿는다. 원격에 열 수 있는 핸들러는 `OpenSurface`이면서 그 kind와 client 등록 plugin 쌍이 원문 전달(`is_attach_content_allowed`)이나 mesh mirror(`is_egui_mesh_allowed`) 허용 목록에 있는 것뿐이다. 1순위가 원격에 열 수 있으면 바로 실행한다. 아니면 사용자 요청과 사용자 입력을 증명하지 못한 plugin 중계 요청(PluginUnverified)에는 원격에 열 수 있는 후보만 담은 기존 핸들러 picker를 띄워 사용자가 고르게 하고, 외부 IPC의 에이전트 요청은 사용자 화면에 팝업을 띄우지 않도록 그중 첫 핸들러를 실행한다. 사용자가 정한 1순위를 조용히 건너뛰지 않기 위해서다. 실행은 기존 구조 변경 forward(`CreateTab` → `StructuralOp::NewTab`)를 요청 origin대로 표시해 보낸다. 사용자 요청이면 사용자 origin으로 표시해 새 탭으로 선택을 옮길 수 있게 하고, 에이전트 요청과 PluginUnverified 요청이면 에이전트 origin으로 표시해 실패를 toast 대신 로그로 남긴다. PluginUnverified 요청은 picker에서 확정해도 이 origin을 유지한다. 서버의 markdown plugin이 서버 파일을 읽고, client는 기존 markdown mirror로 원문을 받는다. 원격에 열 수 있는 핸들러가 없으면(System·Ipc 핸들러뿐, placeholder로 보이는 kind(html), 매칭 없음) 로컬 fallback picker 없이 끝난다. 사용자 요청과 PluginUnverified 요청이면 안내 toast를, 에이전트 요청이면 warn 로그를 남긴다. 요청 분류와 PluginUnverified를 둔 이유는 [ADR-0031](0031-file-handler-routing.md)에 있다. 원격 경로는 로컬 최근 목록에 기록하지 않는다. mirror origin을 가진 `file_handler.dispatch`도 같은 규칙을 따른다. 파일 변경(이름 변경·삭제·붙여넣기)은 아직 제공하지 않는다. 터미널 링크와 파일 선택 창의 원격 경로는 이 경로를 쓰지 않는다.
+원격 explorer의 파일 변경(새 폴더·새 파일·이름 변경·휴지통·붙여넣기·끌어 놓기)은 서버가 자기 파일 작업 엔진으로 실행한다(2026-10-11 보강). client는 작업 내용을 Control 메시지로 보내고, 서버가 보낸 진행·이름 충돌 질문·결과를 로컬 작업과 같은 진행 표시·충돌 popup·결과 카드로 보인다. 충돌의 답과 취소는 같은 연결로 돌려보낸다. 서버는 `ipc.stream.explorer-write` capability를 attach descriptor와 system.info에 싣고, client는 이 capability를 알린 연결에서만 쓰기를 연다. 요청은 그 서버의 workspace를 점유한 연결만 보낼 수 있고, 신뢰 경계는 attach와 같은 SSH다. 엔진은 GUI 없이도 빌드되므로 headless 서버도 같은 작업을 받는다. 서버는 연결마다 한 번에 하나만 실행하고 나머지는 거절하며, 대기열은 client가 로컬 작업과 같은 한도로 둔다. 연결이 끊기면 서버가 작업을 취소하고, client는 결과를 모른다고 알린 뒤 목록을 다시 읽게 한다. 작업은 같은 연결 안에서만 한다. 경로는 출처(로컬 또는 mirror workspace)와 함께 다루고, 다른 컴퓨터의 경로를 붙여넣거나 끌어 놓는 요청은 거절한다. 끌어 놓기의 이동·복사 기본값은 서버가 list_dir 응답에 싣는 디스크 식별값으로 정하고, 값이 없으면 복사한다. 원격 작업은 실행 취소 이력에 넣지 않으며 결과 카드의 Undo만 쓴다. 메시지 형식은 [attach 동작](../dev-guide/attach-behavior.md)에, 사용자 동작은 [파일 작업 계약](../surfaces/explorer/file-operations.md)에 있다.
+
+원격 explorer의 파일 더블클릭은 client가 판정하고 결과만 원격에 보낸다. 식별은 `DetectDepth::Name`으로 파일 이름의 확장자·path glob만 본다. 디렉터리 확인을 포함해 client 파일시스템을 읽지 않으며, 파일 여부는 원격 목록이 알려 준 값을 믿는다. 원격에 열 수 있는 핸들러는 `OpenSurface`이면서 그 kind와 client 등록 plugin 쌍이 원문 전달(`is_attach_content_allowed`)이나 mesh mirror(`is_egui_mesh_allowed`) 허용 목록에 있는 것뿐이다. 1순위가 원격에 열 수 있으면 바로 실행한다. 아니면 사용자 요청과 사용자 입력을 증명하지 못한 plugin 중계 요청(PluginUnverified)에는 원격에 열 수 있는 후보만 담은 기존 핸들러 picker를 띄워 사용자가 고르게 하고, 외부 IPC의 에이전트 요청은 사용자 화면에 팝업을 띄우지 않도록 그중 첫 핸들러를 실행한다. 사용자가 정한 1순위를 조용히 건너뛰지 않기 위해서다. 실행은 기존 구조 변경 forward(`CreateTab` → `StructuralOp::NewTab`)를 요청 origin대로 표시해 보낸다. 사용자 요청이면 사용자 origin으로 표시해 새 탭으로 선택을 옮길 수 있게 하고, 에이전트 요청과 PluginUnverified 요청이면 에이전트 origin으로 표시해 실패를 toast 대신 로그로 남긴다. PluginUnverified 요청은 picker에서 확정해도 이 origin을 유지한다. 서버의 markdown plugin이 서버 파일을 읽고, client는 기존 markdown mirror로 원문을 받는다. 원격에 열 수 있는 핸들러가 없으면(System·Ipc 핸들러뿐, placeholder로 보이는 kind(html), 매칭 없음) 로컬 fallback picker 없이 끝난다. 사용자 요청과 PluginUnverified 요청이면 안내 toast를, 에이전트 요청이면 warn 로그를 남긴다. 요청 분류와 PluginUnverified를 둔 이유는 [ADR-0031](0031-file-handler-routing.md)에 있다. 원격 경로는 로컬 최근 목록에 기록하지 않는다. mirror origin을 가진 `file_handler.dispatch`도 같은 규칙을 따른다. 파일 변경은 아래 원격 쓰기 단락을 따른다. 터미널 링크와 파일 선택 창의 원격 경로는 이 경로를 쓰지 않는다.
 
 이 선택은 2026-09-28에 바뀌었다. 처음(2026-09-24)에는 원격 explorer가 디렉터리 탐색만 지원하고 파일 변경·더블클릭 내용 열기를 제공하지 않았다. 당시 이유는 기록되지 않았고, 단계적으로 아직 구현하지 않은 상태였다(사용자 확인 2026-09-28). 사용자가 내용 열기를 요구해 이번에 추가했다. 이번 구현이 해결해야 했던 제약은 로컬 식별·핸들러를 원격 경로에 그대로 적용하면 client의 같은 경로 파일을 읽거나 client에서 원격 경로를 여는 것이었다. 이름만 보는 식별과 원격에 열 수 있는 핸들러 조건이 이 제약을 막는다. 새 권한은 필요하지 않다. 원격 탭 생성은 점유 holder가 보내는 기존 구조 변경 경로이며 원문 조회도 기존 점유 인가를 따른다.
 
@@ -63,6 +65,8 @@ handshake 직후에는 plugin snapshot이 아직 없어 파일 경로가 비어 
 
 cwd는 terminal만의 값이 아니므로 kind 전환과 모든 mirror 정리에서 cache를 제거한다. 구 server가 push하지 않아도 서버측 cwd 해소는 유지한다. 원격 cwd로 로컬 디스크를 검색하던 status bar 값은 표시하지 않는다. macOS cwd 조회의 실측 비용은 기존 자료에서 확인되지 않았다.
 
+원격 파일 작업은 결과가 오기 전에 연결이 끊기면 어디까지 했는지 client가 알 수 없다. 서버는 지금 항목에서 멈추고 준비 중 사본을 지우지만, 사용자는 다시 연결한 뒤 폴더를 직접 확인해야 한다. 결과 프레임이 상한을 넘으면 되돌리기 단계와 남은 원본을 빼고 목록을 줄이므로 그 결과 카드에는 Undo가 없고, Retry는 줄인 목록 대신 client가 보냈던 경로 전체를 다시 보낸다. 이미 끝난 항목은 다시 충돌 질문을 거치거나 실패로 남는다. 연결이 끊기면 아직 보내지 않은 대기 요청은 실행하지 않고, 칸마다 그 수를 원격 실패 토스트로 알린다. 옛 서버에 연결하면 원격 쓰기 항목이 나오지 않는다. 원격 작업은 실행 취소 이력에 없으므로 `explorer_undo` 단축키로 되돌릴 수 없다.
+
 끊긴 동안은 예전 원문도 볼 수 없다. anchor 없는 세션은 workspace 자체를 정리하므로 이 끊김 문서 상태는 재연결을 기다리는 세션에서만 보인다. host는 plugin의 pending ID를 대신 관리하지 않고 changed만 전달한다.
 
 ## Alternatives Considered
@@ -79,6 +83,8 @@ Git 핸들 자체를 직렬화할 수 없으므로 조회 결과 데이터만 �
 
 원격 explorer의 파일 열기에서 DispatchFile 자체를 원격에 보내 서버가 식별·실행하게 하면 서버 detector와 파일을 써서 식별은 더 정확하다. 하지만 headless 서버는 file_handler.dispatch를 지원하지 않고(`-32017`), 매칭이 없을 때의 picker가 서버 화면에 떠 원격 사용자의 조작이 로컬 사용자의 화면을 바꾼다. client의 Deep 식별이나 `Cheap`을 쓰면 같은 경로의 client 파일·디렉터리를 읽는다.
 
+원격 파일 변경을 client가 sftp나 SSH 명령으로 직접 하면 SSH 프로필 없는 attach에서 쓸 수 없고, 휴지통·충돌 질문·부분 실패 보고를 로컬과 다르게 다시 만들어야 한다. 서버에 연결별 대기열을 두면 client의 대기열 표시와 빼기를 서버 상태로 맞춰야 하므로, 서버는 하나만 실행하고 대기열은 client에 둔다. 진행과 충돌 질문을 별도 이벤트로 나누지 않고 진행 통지에 질문을 함께 실은 것은 두 통지의 순서를 맞출 필요를 없애기 위해서다. 원격 작업을 실행 취소 이력에 넣으려면 연결이 바뀐 뒤의 단계 유효성과 서버 쪽 재확인 규칙이 필요해 별도 단계로 미뤘다.
+
 mirror Terminal의 cached_cwd에 원격 경로를 넣으면 출처를 잃고 비terminal에는 저장할 수 없다. PathBuf와 bool을 나누면 bool을 무시한 사용이 가능하다. 소비자별 질문이나 OSC 7만 사용하면 같은 비동기 조회를 반복하거나 OSC 7 없는 셸을 놓친다.
 
 ## Reconsideration Triggers
@@ -87,7 +93,7 @@ mirror Terminal의 cached_cwd에 원격 경로를 넣으면 출처를 잃고 비
 
 고지연 환경에서 resize 반응이 문제가 되거나 여러 holder를 허용하면 화면 크기 협상을 다시 정한다. 초기 크기 협상과 원격 파일 내용 가져오기 요구, 점유별 읽기·쓰기 권한 분리가 생겨도 해당 프로토콜을 검토한다.
 
-비-Tasty 호스트나 매우 큰 파일에서 native 전송이 불리하면 다른 프로토콜을 비교한다. bulk 인가·수명이 attach와 어긋나면 결속 방식을 검토한다. Git soft timeout·잘림 안내·동시 popup 격리 요구가 생기면 요청 상태를 보강한다. list_dir 소비자가 늘거나 파일 변경 요구가 생기면 라우팅과 권한을 함께 검토한다. 터미널 링크나 파일 선택 창도 원격 열기로 확장할 때, `OpenSurface` 외 action(System·Ipc)을 원격에서 실행해야 할 때, 확장자로 정할 수 없는 형식 때문에 원격 Deep 식별이 필요해질 때 원격 파일 열기 판정 위치를 다시 검토한다.
+비-Tasty 호스트나 매우 큰 파일에서 native 전송이 불리하면 다른 프로토콜을 비교한다. bulk 인가·수명이 attach와 어긋나면 결속 방식을 검토한다. Git soft timeout·잘림 안내·동시 popup 격리 요구가 생기면 요청 상태를 보강한다. list_dir 소비자가 늘면 라우팅과 권한을 함께 검토한다. 이 컴퓨터와 원격 사이의 파일 전송, 원격 작업의 실행 취소 이력, 점유별 쓰기 권한 분리나 한 연결에서 여러 원격 작업을 동시에 실행해야 하는 요구가 생기면 원격 쓰기 프로토콜을 다시 검토한다. 터미널 링크나 파일 선택 창도 원격 열기로 확장할 때, `OpenSurface` 외 action(System·Ipc)을 원격에서 실행해야 할 때, 확장자로 정할 수 없는 형식 때문에 원격 Deep 식별이 필요해질 때 원격 파일 열기 판정 위치를 다시 검토한다.
 
 다른 kind에 원문 전달을 확장하거나 markdown이 mesh 후보로도 들어오면 역할 분류를 검토한다. 원격 상대 자산·편집 요구는 별도 전송·쓰기 정책이 필요하다. 예산에 자주 걸리면 프레임 상한만 높이지 말고 청크 전달을 검토한다.
 

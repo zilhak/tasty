@@ -649,7 +649,8 @@ client 가 mirror 를 걷어내면 원격에 `Detach` 를 보내 원격 점유(h
   - **결과**: `{"event":"explorer_op_result","op_id","result"}`. `result` 는 항목별 결과
     `{"report":{"report","truncated"}}`, 이름 변경·새 항목의 `{"simple":{"error"}}`, 시작하지 않은
     `{"refused":{"reason"}}`(`not_holder`·`busy`·`invalid`·`unavailable`) 중 하나다. 항목별 결과가 700 KiB 를
-    넘으면 되돌리기 단계와 남은 원본을 빼고 목록을 반씩 줄여 `truncated: true` 로 보낸다.
+    넘으면 되돌리기 단계와 남은 원본을 빼고 목록을 반씩 줄여 `truncated: true` 로 보낸다. client 는 줄인 결과의
+    Retry 에 줄인 목록이 아니라 자기가 보냈던 경로와 남은 원본(`Report::resend`)을 그대로 다시 보낸다.
   - **인가**: 디렉토리 조회와 같이 `client_holds_workspace(client_id)` 하나다. 경로를 점유 workspace 안으로
     제한하지 않는다. SSH 로 그 호스트에 셸을 쓸 수 있는 사용자가 이미 할 수 있는 일이다. 서버 사용자의 파일
     권한이 그대로 적용되고 권한 거부는 항목별 실패가 된다.

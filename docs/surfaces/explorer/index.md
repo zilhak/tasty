@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: 로컬 사용자 · AI Agent ([주체](../../concepts/actors.md))
-- **ADR**: [ADR-0022](../../adr/0022-remote-mirror-content-and-queries.md) (원격 attach mirror 브라우징 — list_dir 채널 재사용, 파일 변경 미지원, 더블클릭은 원격 탭 열기)
+- **ADR**: [ADR-0022](../../adr/0022-remote-mirror-content-and-queries.md) (원격 attach mirror 브라우징 — list_dir 채널 재사용, 파일 변경은 원격 쓰기를 알린 server 가 실행, 더블클릭은 원격 탭 열기)
 - **코드**: surface kind 등록 `register_explorer` (`src/runtime/surface_registry/builtins.rs`), 모델 `ExplorerPanel`/`ExplorerTab` (`crates/tasty-model/src/explorer_panel.rs`), 뷰 스토어 `ExplorerView`/`ExplorerViewStore` (`src/adapters/ui/surface/explorer/view.rs`), 렌더 `draw_explorer` (`src/adapters/ui/surface/explorer.rs`), deferred action 적용 `apply_explorer_action` (`src/adapters/ui/egui_panels.rs`)
 - **화면**: 호스트 내장 egui surface
 
@@ -44,7 +44,7 @@ View 는 모델을 직접 바꾸지 않고 파일시스템도 직접 읽지 않�
 - **목록 갱신**: View 를 그릴 때 `sync` 가 활성 탭의 (current, 정렬) 이 마지막으로 읽은 값과 다르거나 새로고침이 요청됐으면 읽기 요청을 새로 만든다. 상태는 `Loading` 이 되고, 이전 요청의 receipt 는 버린다. 버린 receipt 의 결과는 새 목록에 반영되지 않는다. 폴더가 바뀌었을 때만 선택을 비운다. 같은 폴더를 다시 읽으면 결과 목록에 없는 경로만 선택과 범위 선택 기준(anchor)에서 뺀다. 남은 선택은 같은 선택으로 본다(선택 식별자를 바꾸지 않는다). 폴더가 바뀌었거나 새로고침(`F5`·툴바·Retry)이 요청됐으면 사이드바 트리 캐시도 비워, 펼친 하위 폴더를 다시 읽는다. mirror 의 새로고침은 응답을 기다리는 경로를 빼고 경로별 결과를 지워 현재 폴더와 펼친 트리를 다시 요청한다.
 - **결과 상태**: 읽은 목록은 `Ok`(항목 0개면 빈 폴더 화면), 권한 거부는 `NoPermission`, 그 밖의 실패(경로 없음·폴더 아님·IO 오류·worker 끊김)는 `Error` 다. 자동 재시도는 없고 Retry(새로고침)가 같은 경로를 다시 읽는다. mirror 는 응답이 8초 안에 오지 않으면 `Error`(시간 초과)로 바꾼다.
 - **보이지 않는 동안**: 읽기 요청은 View 를 그릴 때만 만든다. 이미 보낸 요청의 결과는 그 View 가 남아 있는 한 다른 탭에 가려져 있어도 받아 둔다.
-- **파일 작업 뒤 갱신**: 로컬 파일 작업이 끝나면 성공·실패와 관계없이 모든 윈도우의 로컬 explorer 중 작업이 바꿀 수 있는 폴더를 보는 View 를 다시 읽고, 그 폴더의 트리 캐시를 지운다. 범위는 [파일 조작](file-operations.md#작업-뒤-목록-갱신) 에 있다. mirror explorer 는 원격 파일을 보므로 제외한다.
+- **파일 작업 뒤 갱신**: 로컬 파일 작업이 끝나면 성공·실패와 관계없이 모든 윈도우의 로컬 explorer 중 작업이 바꿀 수 있는 폴더를 보는 View 를 다시 읽고, 그 폴더의 트리 캐시를 지운다. 범위는 [파일 조작](file-operations.md#작업-뒤-목록-갱신) 에 있다. 원격 파일 작업은 같은 mirror workspace 의 explorer 만 같은 규칙으로 다시 읽게 한다.
 - **현재 폴더가 사라짐**: 다시 읽은 결과가 경로 없음이면 읽기 오류 화면(다시 시도 · 상위 폴더로)을 보인다. 다른 경로로 자동으로 옮기지 않는다. 상위 폴더도 함께 사라졌으면 "상위 폴더로" 는 남아 있는 가장 가까운 상위 폴더로 간다. 다른 프로그램이 지웠다면 아래 [외부 변경 확인](#외부-변경-확인)이 찾았을 때 같은 화면이 된다.
 - **늦은 결과**: 목록 결과는 receipt 를 가진 View 에만 들어간다. 그 사이 사용자가 바꾼 선택은 지우지 않는다. 파일 작업 완료의 선택 정리와 결과 카드·오류 토스트는 원 View 와 binding 이 유효할 때만 낸다. 실패한 rename·trash 는 선택을 유지하고 목록을 다시 읽는다. 부분 성공한 붙여넣기는 결과 카드에 실패 경로를 보이고 cut 클립보드를 유지한다. 사용자가 그 사이 새로 담은 클립보드는 건드리지 않는다.
 - **종료**: surface 를 닫으면 engine 이 모델을 지우고, 창은 `release_surface_views` 로 그 surface 의 `ExplorerView` 를 지운다. 대기 중인 로컬 읽기의 receipt 도 함께 버려지고, 늦게 온 원격 응답은 기다리는 View 가 없어 버려진다. 아직 시작하지 않은 파일 작업 요청은 binding 이 더는 그 surface 를 가리키지 않아 시작하지 않는다. 이미 시작한 작업은 끝까지 실행되고 결과 카드·목록 갱신만 생략된다. 단, 이름 충돌 답을 기다리던 작업은 물을 칸이 없어졌으므로 취소한다(`src/app/explorer_files.rs`·`src/app/explorer_files/ui_sync.rs`). 진행·충돌·결과 표시는 [파일 작업](file-operations.md#작업-실행--진행충돌결과)에 있다.
@@ -92,17 +92,18 @@ explorer 는 일반 surface 생성 메커니즘으로 다룬다 (전용 IPC 추�
 ## headless·원격 제약
 
 - **headless**: kind 는 GUI 와 관계없이 부팅 때 등록된다. 생성·조회·닫기·변환·저장·복원은 모델만으로 동작한다. 목록 읽기·화면·컨텍스트 메뉴·파일 작업은 View 가 있는 창에서만 일어난다.
-- **mirror**: 목록은 원격 조회로 받고 로컬 파일시스템을 읽지 않는다. 파일 변경과 즐겨찾기 추가는 막고, 파일 열기는 원격에 탭을 만든다. 아래 "mirror(attach) explorer 의 파일 변경 차단"과 "mirror explorer 의 파일 열기"에 있다.
+- **mirror**: 목록은 원격 조회로 받고 로컬 파일시스템을 읽지 않는다. 파일 변경은 원격 쓰기를 알린 server 에 요청하고, 즐겨찾기 추가는 막으며, 파일 열기는 원격에 탭을 만든다. 아래 "mirror(attach) explorer 의 파일 변경"과 "mirror explorer 의 파일 열기"에 있다.
 
-### mirror(attach) explorer 의 파일 변경 차단
+### mirror(attach) explorer 의 파일 변경
 
-ADR-0022에 따라 mirror explorer 는 파일 변경(rename/delete/새 폴더 만들기 등)을 아직 지원하지 않으며, 이 제한은 컨텍스트 메뉴·키보드 단축키 레벨까지 강제된다. 파일 더블클릭 열기(`OpenFile`)는 로컬과 같은 `DispatchFile` 로 가고, origin 이 mirror surface 라 원격 열기 규칙을 따른다(아래 "mirror explorer 의 파일 열기"). mirror 워크스페이스(`ws.mirror`)에 속한 explorer surface 에서는:
+ADR-0022에 따라 mirror explorer 의 파일 변경(새 폴더·새 파일·이름 변경·휴지통·같은 연결 안의 붙여넣기·드래그 놓기)은 원격 server 가 실행한다. 이쪽은 요청을 보내고 server 가 돌려준 진행·충돌 질문·결과를 로컬 작업과 같은 진행 표시·충돌 popup·결과 카드로 보인다. 동작 규칙은 [파일 작업 계약](file-operations.md)에 있다. 파일 더블클릭 열기(`OpenFile`)는 로컬과 같은 `DispatchFile` 로 가고, origin 이 mirror surface 라 원격 열기 규칙을 따른다(아래 "mirror explorer 의 파일 열기"). mirror 워크스페이스(`ws.mirror`)에 속한 explorer surface 에서는:
 
-- **컨텍스트 메뉴에서부터 숨김**: 새 폴더/새 파일/붙여넣기/잘라내기/이름 변경/휴지통으로 이동/시스템에서 열기/새 탭으로 열기 항목이 `build_explorer_context_menu`(즐겨찾기 행은 `handle_explorer_favorite_native_menu`)에서 아예 노출되지 않는다. copy_path/복사/즐겨찾기 추가/이 폴더로 루트 설정은 그대로 노출된다.
-- **액션별 개별 가드**: 메뉴가 아닌 다른 경로(키보드 단축키 등)로 같은 핸들러가 호출되는 경우를 방어하기 위해, 각 핸들러(`explorer_menu_paste`/`_trash`/`_rename`/`_open_in_system`/`_add_favorite`/`_open_in_new_tab`, `explorer_menu_set_clipboard`의 `cut=true`)가 진입부에서 `CoreState::is_mirror_surface(surface_id)` 로 재확인하고, mirror 면 로컬 fs 를 건드리지 않고 `explorer.state.remote_write_unsupported` toast 로 안내한 뒤 반환한다.
-- **rename 팝업의 대상 게이트**(`rename_target_exists`, `src/adapters/ui/dialog.rs`)는 메뉴 시점 세대가 그대로이고 경로가 남아 있을 때만 팝업을 유지한다. mirror 경로는 위 가드가 먼저 막아 팝업이 열리지 않는다.
+- **원격 쓰기 지원 여부**: 연결의 server 가 attach descriptor 에 원격 쓰기 capability 를 알렸고 연결이 살아 있으면 쓰기를 허용한다. App 이 매 회차 세션에서 이 목록을 engine 과 explorer View 에 맞추고, 메뉴·단축키·툴바·끌기는 `EngineRead::blocks_explorer_write` 와 View 의 `writes_allowed` 로 판정한다.
+- **받지 않는 server**: 새 폴더/새 파일/붙여넣기/잘라내기/이름 변경/휴지통으로 이동 항목을 `build_explorer_context_menu` 에서 숨기고 툴바의 create 묶음도 숨긴다. 메뉴가 아닌 경로(키보드 단축키 등)로 같은 핸들러가 불리면(`explorer_menu_paste`/`_trash`/`_rename`, `explorer_menu_set_clipboard`의 `cut=true`) 진입부에서 다시 확인하고 `explorer.state.remote_write_unsupported` toast 로 안내한 뒤 반환한다. copy_path/복사/이 폴더로 루트 설정은 그대로 노출된다.
+- **시스템에서 열기·즐겨찾기 추가·새 탭으로 열기**: server 의 쓰기 지원과 관계없이 mirror 에서는 숨기고 핸들러에서 막는다(`CoreState::is_mirror_surface`).
+- **rename 팝업의 대상 게이트**(`rename_target_exists`, `src/adapters/ui/dialog.rs`)는 메뉴 시점 세대가 그대로일 때만 팝업을 유지한다. 로컬 경로는 경로가 남아 있는지도 확인하고, 원격 경로는 이 컴퓨터에서 확인하지 않는다. 이름 규칙은 원격 경로의 모양(드라이브 문자·UNC 면 Windows 규칙, 아니면 POSIX 규칙)으로 고르고 최종 판정은 server 가 한다.
 - **즐겨찾기**: `~/.tasty/explorer-favorites.toml` 는 surface/host 무관 전역 저장소다. mirror explorer 의 경로(원격 호스트 경로)가 이 전역 목록에 섞이면 로컬/다른 호스트 explorer 의 사이드바를 오염시키므로, 즐겨찾기 추가는 mirror 에서 팝업을 열기 전에 차단된다.
-- **새 탭으로 열기**: 메뉴 숨김(탐색기 항목 메뉴와 즐겨찾기 행 메뉴)과 핸들러 가드(`explorer_menu_open_in_new_tab`, `remote_write_unsupported` 토스트)로 막는다. 파일을 바꾸는 작업이 아니므로 ADR-0022 의 파일 변경 미지원과는 별개의 제한이다. 이 메뉴가 쓰는 `DomainIntent::CreateTab` 은 mirror pane 이면 App 이 원격 `StructuralOp::NewTab` 으로 전달하므로(`src/app/services/impl_mirror.rs`) 탭이 로컬에만 생기는 경로는 없다. 이 제한을 유지할지는 정해지지 않았다.
+- **새 탭으로 열기**: 메뉴 숨김(탐색기 항목 메뉴와 즐겨찾기 행 메뉴)과 핸들러 가드(`explorer_menu_open_in_new_tab`, `remote_write_unsupported` 토스트)로 막는다. 파일을 바꾸는 작업이 아니므로 원격 쓰기 지원과는 별개의 제한이다. 이 메뉴가 쓰는 `DomainIntent::CreateTab` 은 mirror pane 이면 App 이 원격 `StructuralOp::NewTab` 으로 전달하므로(`src/app/services/impl_mirror.rs`) 탭이 로컬에만 생기는 경로는 없다. 이 제한을 유지할지는 정해지지 않았다.
 
 ### mirror explorer 의 파일 열기
 
@@ -219,9 +220,9 @@ Grid 셀은 모두 `explorer_grid_thumb_size`(40) 슬롯을 잡아 썸네일 유
 
 ### 새 폴더 · 새 파일
 
-툴바의 명령 묶음(`commands.rs`, 공용 `tasty_ui_widgets::explorer_commands`)이 주소창과 보기 전환 사이에 create 묶음(New folder·New file)과 1px 구분선, view 묶음(Find·Preview·숨김 파일 토글)을 icon-only sm 버튼으로 둔다. 숨김 파일 토글은 view 묶음 맨 끝의 `eye` 버튼이고, 숨김 파일을 보이는 동안 눌린(active) 모양이다. 툴팁은 More 행과 같은 동작 문구(`explorer.more.hidden_show`·`hidden_hide`) 뒤에 괄호로 `explorer_toggle_hidden` 의 첫 바인딩을 붙인다(예: "Show hidden files (Ctrl+Shift+.)"). 바인딩 표시는 설정 화면과 같은 `KeybindingSettings::format_display` 이고, 호스트가 프레임마다 `HiddenFiles::shortcut` 에 넣는다(`egui_panels.rs`). 바인딩이 없으면 괄호를 붙이지 않는다. 네이티브 More 메뉴의 숨김 행에는 단축키 칸을 두지 않는다. 칸 폭이 `explorer-toolbar-compact-below`(440)보다 좁으면 두 묶음을 More(`…`) 하나로 접고, 누르면 `ExplorerAction::MoreMenu` → `PendingNativeMenu::ExplorerMore` 로 같은 명령의 네이티브 메뉴를 연다(`src/view/main/explorer_create.rs`, New folder 80 · New file 81 · Find 82 · Preview 83 · 숨김 파일 84). 네이티브 메뉴에는 체크 표시가 없으므로 view 묶음의 행은 누르면 할 동작을 쓴다. Find 바가 열려 있으면 `explorer.more.find_close`("Close find"), 아니면 "Find"이고, 미리보기는 `explorer.more.preview_show`·`preview_hide`, 숨김 파일은 `explorer.more.hidden_show`·`hidden_hide` 다(아래 "숨김 파일"). mirror explorer 는 create 묶음을 숨긴다. 로컬 explorer 는 폴더를 읽을 때 읽기 worker 에 쓰기 가능 여부를 함께 묻고(`local_reads::writable`, Unix 는 `access(W_OK)`, 그 밖의 OS 는 확인하지 않고 쓸 수 있다고 본다), 쓸 수 없으면 두 버튼을 비활성으로 두고 툴팁을 `explorer.command.cannot_write` 로 바꾼다. 화면 스레드는 파일시스템을 읽지 않는다.
+툴바의 명령 묶음(`commands.rs`, 공용 `tasty_ui_widgets::explorer_commands`)이 주소창과 보기 전환 사이에 create 묶음(New folder·New file)과 1px 구분선, view 묶음(Find·Preview·숨김 파일 토글)을 icon-only sm 버튼으로 둔다. 숨김 파일 토글은 view 묶음 맨 끝의 `eye` 버튼이고, 숨김 파일을 보이는 동안 눌린(active) 모양이다. 툴팁은 More 행과 같은 동작 문구(`explorer.more.hidden_show`·`hidden_hide`) 뒤에 괄호로 `explorer_toggle_hidden` 의 첫 바인딩을 붙인다(예: "Show hidden files (Ctrl+Shift+.)"). 바인딩 표시는 설정 화면과 같은 `KeybindingSettings::format_display` 이고, 호스트가 프레임마다 `HiddenFiles::shortcut` 에 넣는다(`egui_panels.rs`). 바인딩이 없으면 괄호를 붙이지 않는다. 네이티브 More 메뉴의 숨김 행에는 단축키 칸을 두지 않는다. 칸 폭이 `explorer-toolbar-compact-below`(440)보다 좁으면 두 묶음을 More(`…`) 하나로 접고, 누르면 `ExplorerAction::MoreMenu` → `PendingNativeMenu::ExplorerMore` 로 같은 명령의 네이티브 메뉴를 연다(`src/view/main/explorer_create.rs`, New folder 80 · New file 81 · Find 82 · Preview 83 · 숨김 파일 84). 네이티브 메뉴에는 체크 표시가 없으므로 view 묶음의 행은 누르면 할 동작을 쓴다. Find 바가 열려 있으면 `explorer.more.find_close`("Close find"), 아니면 "Find"이고, 미리보기는 `explorer.more.preview_show`·`preview_hide`, 숨김 파일은 `explorer.more.hidden_show`·`hidden_hide` 다(아래 "숨김 파일"). 원격 쓰기를 받지 않는 server 의 mirror explorer 는 create 묶음을 숨긴다. 로컬 explorer 는 폴더를 읽을 때 읽기 worker 에 쓰기 가능 여부를 함께 묻고(`local_reads::writable`, Unix 는 `access(W_OK)`, 그 밖의 OS 는 확인하지 않고 쓸 수 있다고 본다), 쓸 수 없으면 두 버튼을 비활성으로 두고 툴팁을 `explorer.command.cannot_write` 로 바꾼다. 화면 스레드는 파일시스템을 읽지 않는다.
 
-진입점은 툴바 버튼, More 메뉴, 컨텍스트 메뉴(빈 영역 메뉴의 첫 묶음, 단일 폴더 메뉴의 잘라내기·붙여넣기 뒤 묶음 — id 80·81), 단축키 `explorer_new_folder`·`explorer_new_file` 이다. 모두 이름 입력만 연다(`MainViewState::start_explorer_create` → `ExplorerView::start_create`). 대상 폴더는 시작할 때 고정한다. 폴더 메뉴는 그 폴더, 나머지는 지금 보는 폴더다. mirror 는 `remote_write_unsupported` 토스트, 쓸 수 없다고 확인한 현재 폴더는 `cannot_write` 토스트로 거절한다.
+진입점은 툴바 버튼, More 메뉴, 컨텍스트 메뉴(빈 영역 메뉴의 첫 묶음, 단일 폴더 메뉴의 잘라내기·붙여넣기 뒤 묶음 — id 80·81), 단축키 `explorer_new_folder`·`explorer_new_file` 이다. 모두 이름 입력만 연다(`MainViewState::start_explorer_create` → `ExplorerView::start_create`). 대상 폴더는 시작할 때 고정한다. 폴더 메뉴는 그 폴더, 나머지는 지금 보는 폴더다. 원격 쓰기를 받지 않는 server 의 mirror 는 `remote_write_unsupported` 토스트, 쓸 수 없다고 확인한 로컬 현재 폴더는 `cannot_write` 토스트로 거절한다. 원격 폴더의 쓰기 권한은 server 의 결과로 알린다.
 
 이름 입력(`create.rs`, 공용 `explorer_name_row`)은 목록 맨 위(`..` 다음)에 열린다. Detail 은 표에 빈 이름의 자리 행을 하나 넣고 그 위에 겹쳐 그리며, 자리 행은 선택·클릭·메뉴 대상이 아니다. List 는 행 높이 28 의 줄, Grid 는 칸 글리프 아래 160 폭 입력이며 입력이 목록의 보이는 영역 밖으로 나가면 안으로 민다. 처음 프레임에 입력에 포커스를 주고 기본 이름을 고르며 그 줄로 스크롤한다.
 
@@ -260,22 +261,22 @@ Grid 셀은 모두 `explorer_grid_thumb_size`(40) 슬롯을 잡아 썸네일 유
 
 **surface의 나머지 영역**: 위 위치별 핸들러가 처리하지 못한 우클릭(툴바/주소창/내부 탭바/상태줄/빈 사이드바 등 chrome 영역)은 `draw_explorer` 끝의 **표면 전체 rect catch-all** 이 `Empty`(현재 폴더) target 으로 처리한다. 하위 위젯이 이미 `action`을 만들었으면 건너뛰므로 파일/폴더/다중 선택 메뉴를 유지한다. 이로써 generic surface fallback("터미널 ID 복사")이 explorer 표면 어디에서도 뜨지 않는다(불가침 원칙 §1·§2). 예외: 권한 거부 루트(`LoadState::NoPermission`)는 붙여넣기가 무의미하므로 catch-all 을 건너뛴다(content 빈영역 규칙과 동일).
 
-- **새 폴더 / 새 파일** (빈 영역·단일 폴더, mirror 에서 숨김) — 위 "새 폴더 · 새 파일".
+- **새 폴더 / 새 파일** (빈 영역·단일 폴더, 원격 쓰기를 받지 않는 mirror 에서 숨김) — 위 "새 폴더 · 새 파일".
 - **경로 복사** (`copy_path`, 다중은 개행 결합) → OS 텍스트 클립보드 + `toast.copied_path` 토스트(단축키/Command Palette/우클릭 메뉴 모두 동일).
 - **복사 / 잘라내기 / 붙여넣기** — explorer 파일 클립보드(`MainViewState::explorer_clipboard`, 앱의 모든 창이 함께 쓰는 단일 슬롯·세션 종료 시 폐기)에 경로+cut 플래그를 담고, 붙여넣기에서 소비한다. 로컬 경로는 OS 파일 클립보드에도 올리고, 붙여넣기는 Tasty 목록과 OS 쪽 중 나중에 복사한 쪽을 쓴다([OS 파일 클립보드](file-operations.md#os-파일-클립보드)).
   파일 복사·이동·휴지통·이름 변경·시스템 열기는 View가 고정 경로와 원 surface/View identity를 요청으로 넘기고 App의 `explorer_files` worker가 실행한다. 파일 이동 헬퍼는 `src/app/file_jobs/ops.rs`에 있으며 충돌 시 `(copy)` 접미사를 붙이며 목적지 공개는 OS의 덮어쓰기 금지 rename으로 수행한다. 복사는 목적지의 전용 임시 디렉터리에서 준비하고 실패 시 제거한다. 심볼릭 링크는 따라가지 않고 링크로 복사하며 별칭을 해소한 실제 하위 디렉터리로의 복사는 거부한다. cut은 교차 파일시스템 오류일 때만 copy+remove로 전환한다.
-  View별 대기 요청은 8개, 요청 경로·이름 자료는 1MiB 이내이며 App은 한 작업씩 실행한다. 이 상한에 걸린 사용자 요청은 나누어 보내지 않고 받지 않으며, 그 칸에 경고 카드로 이유를 보인다(대기열이 차면 `explorer.request.queue_full`, 자료가 1MiB 를 넘으면 `explorer.request.too_large`, [파일 작업](file-operations.md)). 시작 전 원 대상과 mirror 제한을 다시 검사한다. 완료 뒤 원 View/surface가 살아 있을 때만 목록 갱신을 요청하고, 변경된 선택이나 새 클립보드는 지우지 않는다. cut은 전부 성공한 원 클립보드만 소진하며 부분 성공은 기존 목록을 유지한다. 소진은 앱 공용 슬롯에서 하므로 원 View/surface 가 닫혔어도 일어난다.
+  View별 대기 요청은 8개, 요청 경로·이름 자료는 1MiB 이내이며 App은 로컬 작업을 한 번에 하나, 원격 작업을 연결마다 하나씩 실행한다. 이 상한에 걸린 사용자 요청은 나누어 보내지 않고 받지 않으며, 그 칸에 경고 카드로 이유를 보인다(대기열이 차면 `explorer.request.queue_full`, 자료가 1MiB 를 넘으면 `explorer.request.too_large`, [파일 작업](file-operations.md)). 시작 전 원 대상과 mirror 제한을 다시 검사한다. 완료 뒤 원 View/surface가 살아 있을 때만 목록 갱신을 요청하고, 변경된 선택이나 새 클립보드는 지우지 않는다. cut은 전부 성공한 원 클립보드만 소진하며 부분 성공은 기존 목록을 유지한다. 소진은 앱 공용 슬롯에서 하므로 원 View/surface 가 닫혔어도 일어난다.
   종료는 신규 실행을 막고 최대 5초 실제 worker join을 관측한다. 기한이 지나도 작업 취소나 완료로 기록하지 않으며 남은 worker를 경고한다. 로컬 목록·트리 읽기는 이 worker 와 분리된 읽기 worker 가 맡아 대형 복사가 목록 조회를 막지 않는다.
   잘라내기는 이동 성공 시 클립보드를 비운다.
   우클릭 메뉴뿐 아니라 키보드 단축키(기본 `copy`/`cut`/`paste` 바인딩, explorer 포커스 시)로도 동일하게 동작한다 — `handle_explorer_shortcut`(`src/adapters/ui/input/shortcuts/copy_paste.rs`)가 선택 항목을 모아 컨텍스트 메뉴와 같은 `explorer_menu_set_clipboard`/`explorer_menu_paste` 를 호출하므로 fs 동작이 두 경로에서 갈라지지 않는다.
   단축키 붙여넣기 대상은 현재 폴더(current)다(선택된 폴더 안으로의 paste-into 는 컨텍스트 메뉴 전용).
-  **복사(cut=false)** 는 fs 접근이 없어 mirror explorer 에서도 그대로 동작하지만, **잘라내기(cut=true)/붙여넣기**는 mirror 에서 메뉴·단축키 모두 차단된다(위 "mirror(attach) explorer 의 파일 변경 차단" 참고).
-  클립보드는 경로와 함께 그 경로의 출처(`ExplorerPathSource`: 로컬 또는 mirror workspace)를 기록한다(`src/state/explorer_path.rs`). mirror explorer 에서 복사한 경로는 원격 호스트의 경로이므로, 로컬 explorer 의 붙여넣기는 메뉴에 나오지 않고 단축키로 실행해도 `explorer.state.remote_paste_unsupported` toast 로 거부한다. 같은 문자열의 로컬 파일을 대신 복사하지 않는다.
-- **휴지통으로 이동** (`delete`) — `trash` 크레이트로 OS 휴지통에 보낸다(가역적이라 확인 모달 없음). mirror 에서 차단.
-- **이름 변경** (`rename`, 단일만) — 공용 rename 팝업(`PopupDef`)을 재사용한다. 이름은 드라이브 접두어·경로 구분자 없는 단일 파일명이어야 하며 기존 항목을 덮어쓰지 않는다. mirror 에서 차단(가드가 먼저 막아 팝업 자체가 열리지 않는다).
+  **복사(cut=false)** 는 fs 접근이 없어 어느 mirror explorer 에서도 그대로 동작하고, **잘라내기(cut=true)/붙여넣기**는 원격 쓰기를 받지 않는 server 의 mirror 에서 메뉴·단축키 모두 차단된다(위 "mirror(attach) explorer 의 파일 변경" 참고).
+  클립보드는 경로와 함께 그 경로의 출처(`ExplorerPathSource`: 로컬 또는 mirror workspace)를 기록한다(`src/state/explorer_path.rs`). 붙여넣기는 같은 출처의 칸에서만 한다. mirror explorer 에서 복사한 경로를 로컬 explorer 나 다른 연결에 붙여넣으면 메뉴에 나오지 않고 단축키는 `explorer.state.remote_paste_unsupported` toast 로, 로컬에서 복사한 경로를 mirror explorer 에 붙여넣으면 `explorer.state.cross_computer_paste_unsupported` toast 로 거부한다. 같은 문자열의 다른 컴퓨터 파일을 대신 복사하지 않는다.
+- **휴지통으로 이동** (`delete`) — `trash` 크레이트로 OS 휴지통에 보낸다(가역적이라 확인 모달 없음). 원격은 server 의 휴지통으로 보낸다. 원격 쓰기를 받지 않는 mirror 에서 차단.
+- **이름 변경** (`rename`, 단일만) — 공용 rename 팝업(`PopupDef`)을 재사용한다. 이름은 드라이브 접두어·경로 구분자 없는 단일 파일명이어야 하며 기존 항목을 덮어쓰지 않는다. 원격 쓰기를 받지 않는 mirror 에서 차단(가드가 먼저 막아 팝업 자체가 열리지 않는다).
 - **OS 기본 앱으로 열기** (`open_in_system`, 단일 폴더만) — `platform::reveal::open_path`(Windows `explorer` / macOS `open` / Linux `xdg-open`). mirror 에서 차단.
 - **즐겨찾기 추가** (`add_to_favorites`, 단일 폴더 또는 빈 영역) — 아래 참조. mirror 에서 차단.
-- **새 탭으로 열기** (`open_in_new_tab`, 단일 폴더) — 그 폴더를 cwd 로 하는 새 explorer 를 **Pane 탭**(explorer 내부 탭이 아님)으로 연다. 우클릭 대상 surface 의 **소유 pane** 에 추가해(`RequestContext::add_kind_tab_by_owner`) focused pane 이 아니어도 올바른 pane 에 열린다. 기존 explorer 는 불변. mirror 에서 메뉴 자체가 숨겨지고 핸들러도 막는다(위 "mirror(attach) explorer 의 파일 변경 차단").
+- **새 탭으로 열기** (`open_in_new_tab`, 단일 폴더) — 그 폴더를 cwd 로 하는 새 explorer 를 **Pane 탭**(explorer 내부 탭이 아님)으로 연다. 우클릭 대상 surface 의 **소유 pane** 에 추가해(`RequestContext::add_kind_tab_by_owner`) focused pane 이 아니어도 올바른 pane 에 열린다. 기존 explorer 는 불변. mirror 에서 메뉴 자체가 숨겨지고 핸들러도 막는다(위 "mirror(attach) explorer 의 파일 변경").
 - **이 폴더로 루트 설정** (`set_as_root`, 단일 폴더) — **현재 explorer** 의 cwd 를 그 폴더로 이동한다(`RequestContext::set_explorer_cwd` 가 `EngineAction::ExplorerCwd` 를 보내고 App 이 `ExplorerTab::set_cwd` 를 적용: 좌측 트리 루트·current 이동 + 히스토리 초기화 + 뷰 리로드). 파일시스템을 바꾸지 않으므로 mirror 에서도 그대로 동작.
 
 ### 경로 출처와 작업 대상
@@ -294,7 +295,7 @@ Grid 셀은 모두 `explorer_grid_thumb_size`(40) 슬롯을 잡아 썸네일 유
 
 ### 즐겨찾기 (favorites)
 
-전역(surface 무관)·영속 즐겨찾기 — **로컬 client 파일시스템 경로 전용**. `~/.tasty/explorer-favorites.toml`(`[[favorite]]` 배열, label+path)에 저장된다. 프로세스에 원본 하나(`RuntimeRegistries::explorer_favorites`)를 두고 윈도우마다 있는 engine 은 그리기용 사본만 가진다. 추가·제거는 `EngineAction` 이 `EngineRuntime::explorer_favorites.change` 로 원본을 바꾸고 원본 전체를 파일에 쓴다. 그래서 한 윈도우의 저장이 다른 윈도우에서 추가한 항목을 지우지 않고, 그리기 밖에서 적용되는 제거(Favorites 행 네이티브 메뉴)도 다른 윈도우에 바로 보인다. 사본 갱신·다른 윈도우 다시 그리기·파일 재읽기 시점은 [App·Engine·View 상태 소유권](../../dev-guide/app-state-ownership.md#윈도우가-함께-쓰는-영속-목록)을 따른다. 메모리 mutator(`add`/`remove`)는 순수하고 디스크 반영은 호출처가 `save()` 로 한다(테스트가 디스크를 건드리지 않게 분리). mirror(attach 원격 점유) explorer 의 경로는 원격 호스트의 경로라 이 전역 목록에 섞일 수 없다 — "즐겨찾기 추가"는 mirror explorer 에서 차단된다(위 "mirror(attach) explorer 의 파일 변경 차단" 참고).
+전역(surface 무관)·영속 즐겨찾기 — **로컬 client 파일시스템 경로 전용**. `~/.tasty/explorer-favorites.toml`(`[[favorite]]` 배열, label+path)에 저장된다. 프로세스에 원본 하나(`RuntimeRegistries::explorer_favorites`)를 두고 윈도우마다 있는 engine 은 그리기용 사본만 가진다. 추가·제거는 `EngineAction` 이 `EngineRuntime::explorer_favorites.change` 로 원본을 바꾸고 원본 전체를 파일에 쓴다. 그래서 한 윈도우의 저장이 다른 윈도우에서 추가한 항목을 지우지 않고, 그리기 밖에서 적용되는 제거(Favorites 행 네이티브 메뉴)도 다른 윈도우에 바로 보인다. 사본 갱신·다른 윈도우 다시 그리기·파일 재읽기 시점은 [App·Engine·View 상태 소유권](../../dev-guide/app-state-ownership.md#윈도우가-함께-쓰는-영속-목록)을 따른다. 메모리 mutator(`add`/`remove`)는 순수하고 디스크 반영은 호출처가 `save()` 로 한다(테스트가 디스크를 건드리지 않게 분리). mirror(attach 원격 점유) explorer 의 경로는 원격 호스트의 경로라 이 전역 목록에 섞일 수 없다 — "즐겨찾기 추가"는 mirror explorer 에서 차단된다(위 "mirror(attach) explorer 의 파일 변경" 참고).
 
 - **추가**: 컨텍스트 메뉴 "Add to favorites" → rename 팝업과 동일 골격의 입력 팝업(`RenameTarget::ExplorerAddFavorite`, 확정 버튼 라벨만 "Add")으로 라벨을 받아 등록(같은 경로 재등록 시 라벨만 갱신).
 - **표시/이동**: 사이드바 하단 고정(pin) "Favorites" 영역(사이드바 본문이 240px 이상이면 캡션 **항상 표시**)에 **채운 별(STAR_FILL) + accent-warning(골드)** 행으로 나열, 클릭 시 해당 경로로 이동. 현재 폴더인 즐겨찾기는 surface-active 하이라이트. 이 영역은 위 "사이드바 트리"에 서술한 고정 높이로 보이며 자체 스크롤된다. 본문이 240px 미만인 낮은 칸에서는 영역 전체를 숨긴다.

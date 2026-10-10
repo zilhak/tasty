@@ -1,9 +1,9 @@
 # Explorer 파일 작업 — 대상과 결과의 계약
 
-- **Status**: Partial — 새 폴더·새 파일·이름 변경·복사·잘라내기·붙여넣기·휴지통 이동·드래그 놓기·충돌 선택·진행 취소·실행 취소·다시 실행은 동작한다. 속성 조회·미리보기 패널·Grid 썸네일·찾기(거르기와 하위 폴더 검색)는 파일을 바꾸지 않는 읽기로 동작한다. 복사·잘라내기·붙여넣기는 OS 파일 클립보드와 이어진다(Linux 는 X11 선택, Wayland 세션은 XWayland 경유. Windows·macOS 는 실 기기 미측정). explorer 밖으로 끌어 내기는 없다.
+- **Status**: Partial — 새 폴더·새 파일·이름 변경·복사·잘라내기·붙여넣기·휴지통 이동·드래그 놓기·충돌 선택·진행 취소·실행 취소·다시 실행은 동작한다. 속성 조회·미리보기 패널·Grid 썸네일·찾기(거르기와 하위 폴더 검색)는 파일을 바꾸지 않는 읽기로 동작한다. 복사·잘라내기·붙여넣기는 OS 파일 클립보드와 이어진다(Linux 는 X11 선택, Wayland 세션은 XWayland 경유. Windows·macOS 는 실 기기 미측정). 원격(mirror) explorer 에서도 그 서버가 원격 쓰기를 알리면 새 폴더·새 파일·이름 변경·휴지통 이동·같은 연결 안의 붙여넣기·드래그 놓기·충돌 선택·진행 취소·결과 카드의 Retry·Undo 가 동작한다. 원격 작업의 실행 취소 이력, 이 컴퓨터와 원격 사이의 전송, explorer 밖으로 끌어 내기는 없다.
 - **주체**: 로컬 사용자 ([주체](../../concepts/actors.md)). 에이전트(IPC/CLI)는 이 문서의 파일 작업을 호출하지 않는다.
-- **ADR**: [ADR-0022](../../adr/0022-remote-mirror-content-and-queries.md) (mirror explorer 는 파일을 바꾸지 않는다), [ADR-0077](../../adr/0077-explorer-shares-files-through-the-os-clipboard.md) (OS 파일 클립보드 공유와 나중 복사 우선)
-- **코드**: 메뉴 구성 `build_explorer_context_menu`·메뉴 핸들러 `explorer_menu_*` (`src/view/main/redraw.rs`), 단축키·Command Palette 진입 `handle_explorer_shortcut`·`run_explorer_action` (`src/adapters/ui/input/shortcuts/copy_paste.rs`), 실행 worker `src/app/explorer_files.rs`·`src/app/file_jobs/ops.rs`·작업 엔진 `src/app/file_jobs/job.rs`·화면 동기화 `src/app/explorer_files/ui_sync.rs`, 새 항목 입력 `src/adapters/ui/surface/explorer/create.rs`·툴바 More 메뉴 `src/view/main/explorer_create.rs`, 찾기 `src/adapters/ui/surface/explorer/find.rs`, 칸 표시 `src/adapters/ui/surface/explorer/view/ops.rs`·드래그 `src/adapters/ui/surface/explorer/view/drag.rs`·충돌 popup `src/adapters/ui/popup/explorer_conflict.rs`, OS 파일 드롭 `src/view/main/file_drop.rs`, OS 파일 클립보드 `src/clipboard/files.rs`·창 목록과의 조정 `src/state/explorer_os_clipboard.rs`
+- **ADR**: [ADR-0022](../../adr/0022-remote-mirror-content-and-queries.md) (mirror explorer 의 파일 작업은 원격 server 가 실행한다), [ADR-0077](../../adr/0077-explorer-shares-files-through-the-os-clipboard.md) (OS 파일 클립보드 공유와 나중 복사 우선)
+- **코드**: 메뉴 구성 `build_explorer_context_menu`·메뉴 핸들러 `explorer_menu_*` (`src/view/main/redraw.rs`), 단축키·Command Palette 진입 `handle_explorer_shortcut`·`run_explorer_action` (`src/adapters/ui/input/shortcuts/copy_paste.rs`), 실행 worker `src/app/explorer_files.rs`·`src/app/file_jobs/ops.rs`·작업 엔진 `src/app/file_jobs/job.rs`·화면 동기화 `src/app/explorer_files/ui_sync.rs`·원격 요청 `src/app/explorer_files/remote.rs`·원격 server 실행 `src/app/file_jobs/remote.rs`, 새 항목 입력 `src/adapters/ui/surface/explorer/create.rs`·툴바 More 메뉴 `src/view/main/explorer_create.rs`, 찾기 `src/adapters/ui/surface/explorer/find.rs`, 칸 표시 `src/adapters/ui/surface/explorer/view/ops.rs`·드래그 `src/adapters/ui/surface/explorer/view/drag.rs`·충돌 popup `src/adapters/ui/popup/explorer_conflict.rs`, OS 파일 드롭 `src/view/main/file_drop.rs`, OS 파일 클립보드 `src/clipboard/files.rs`·창 목록과의 조정 `src/state/explorer_os_clipboard.rs`
 - **화면**: [Explorer](index.md) 의 컨텍스트 메뉴·rename 팝업·토스트, 상태줄 진행 표시·대기열 팝오버·충돌 popup·결과 카드·드래그 칩 (갤러리 `explorer-ops-*` 예제)
 
 ## 목적
@@ -49,7 +49,8 @@
 - **대상은 요청할 때 고정한다.** 메뉴·단축키·팝업이 대상 경로와 surface 를 정한 순간의 값을 쓴다. 그 사이 포커스·explorer 내부 탭·선택이 바뀌어도 대상은 바뀌지 않는다. 사용자가 그 사이 다른 폴더로 가도 대상은 바뀌지 않는다.
 - **실행 직전에 surface 세대를 다시 확인한다.** 메뉴는 열 때 그 surface 의 세대(`SurfaceBinding`)를 고정하고, 고른 항목은 `explorer_menu_admits`(`src/state/explorer_menu.rs`)가 허용할 때만 실행한다. 파일을 바꾸는 항목은 세대 전체(surface activation·자원·mirror projection)가 그대로여야 한다. 파일을 바꾸지 않는 항목(경로 복사·복사·이 폴더로 루트 설정)은 같은 explorer surface 이기만 하면 되고, mirror projection 이 다시 만들어진 것은 따지지 않는다. 이름 변경은 메뉴의 세대를 rename 팝업에 그대로 실어, 팝업이 떠 있는 사이 surface 가 바뀌면 팝업을 닫고 확정해도 실행하지 않는다.
 - **worker 도 다시 확인한다.** View 는 대상 경로와 원 surface·View identity 를 고정해 App 의 `explorer_files` worker 에 넘긴다. worker 는 시작 직전에 원 대상과 mirror 제한을 다시 확인하고, 완료 뒤 원 View 와 surface 가 남아 있을 때만 목록 갱신을 요청한다. 사용자가 그 사이 바꾼 선택이나 새로 담은 클립보드는 건드리지 않는다. 대기 요청 상한과 종료 처리는 [Explorer](index.md#컨텍스트-메뉴--파일-조작) 에 있다.
-- **원격 쓰기는 진입점마다 같은 방식으로 거부한다.** mirror explorer 에서는 메뉴 항목을 숨기고, 단축키와 메뉴 핸들러는 `explorer.state.remote_write_unsupported` 로 거부하며, worker 는 대상이 mirror 면 시작하지 않는다. 원격에서 복사한 경로는 로컬 explorer 의 메뉴에 붙여넣기로 나오지 않고, 단축키 붙여넣기는 `explorer.state.remote_paste_unsupported` 로 거부한다. 같은 경로의 로컬 파일을 대신 복사하지 않는다. OS 에서 끌어 온 파일을 mirror explorer 칸에 놓으면 거절하고 이유를 토스트로 보인다. explorer 가 아닌 칸에 놓은 파일은 로컬 파일 열기(`DispatchFile`)로 처리한다.
+- **원격 쓰기는 그 서버가 받을 때만 한다.** mirror explorer 의 쓰기는 연결의 server 가 attach descriptor 에 원격 쓰기 capability 를 알렸고 연결이 살아 있을 때만 허용한다(`EngineRead::blocks_explorer_write`). 받지 않는 server(옛 버전)의 mirror explorer 에서는 메뉴의 쓰기 항목을 숨기고, 단축키와 메뉴 핸들러는 `explorer.state.remote_write_unsupported` 로 거부하며, worker 는 시작하지 않는다.
+- **경로는 그 컴퓨터 안에서만 쓴다.** 클립보드의 경로는 같은 출처의 칸에만 붙여넣는다. 원격에서 복사한 경로를 로컬 explorer 나 다른 연결에 붙여넣으면 `explorer.state.remote_paste_unsupported`, 로컬에서 복사한 경로를 mirror explorer 에 붙여넣으면 `explorer.state.cross_computer_paste_unsupported` 로 거부하고, 메뉴에도 붙여넣기가 나오지 않는다. 같은 문자열의 다른 컴퓨터 파일을 대신 쓰지 않는다. OS 에서 끌어 온 파일을 mirror explorer 칸에 놓으면 거절한다. explorer 가 아닌 칸에 놓은 파일은 로컬 파일 열기(`DispatchFile`)로 처리한다.
 - **주소 입력과 링크**는 [Explorer](index.md) 의 [주소 입력](index.md#주소-입력)·[심볼릭 링크](index.md#심볼릭-링크) 절을 따른다. 로컬 경로는 절대 경로로 확정해 다루고, 원격 경로는 로컬 파일시스템으로 확인하지 않는다.
 
 ### 작업별 계약
@@ -101,7 +102,8 @@
 | 부분 성공 | 결과 카드가 실패·건너뛴 경로를 보이고 닫을 때까지 남는다. 잘라내기 클립보드는 남긴다. 성공한 항목을 되돌리지 않는다 |
 | 이름 충돌 | 항목마다 충돌 popup 으로 묻는다. 기본은 Keep both(`(copy)` 접미사 새 이름)이고 기존 항목을 덮어쓰지 않는다. 같은 이름의 폴더는 합치지 않는다 |
 | 취소 | 상태줄의 취소(×)는 지금 항목을 멈추고 남은 항목을 하지 않는다. 끝난 항목은 그대로 두고, 멈춘 항목의 준비 중 사본은 지운다. 대기열의 작업은 팝오버에서 뺄 수 있다. 앱 종료는 새 작업을 막고 worker 를 최대 5초 기다리며, 기한이 지나도 작업을 취소로 기록하지 않는다 |
-| 원격 제한 | mirror explorer 는 쓰기 항목을 메뉴에서 숨기고, 단축키로 부르면 `explorer.state.remote_write_unsupported` 토스트를 띄운다. 복사(Tasty 목록에 담기만 하고 OS 에는 올리지 않음)·경로 복사·이 폴더로 루트 설정은 그대로 된다. mirror explorer 에서 복사한 클립보드는 원격 출처로 기록되어, 어느 창의 로컬 explorer 에서도 붙여넣기 메뉴가 나오지 않고 단축키는 `explorer.state.remote_paste_unsupported` 토스트만 띄운다 |
+| 원격 제한 | 원격 쓰기를 받지 않는 server 의 mirror explorer 는 쓰기 항목을 메뉴에서 숨기고, 단축키로 부르면 `explorer.state.remote_write_unsupported` 토스트를 띄운다. 복사(Tasty 목록에 담기만 하고 OS 에는 올리지 않음)·경로 복사·이 폴더로 루트 설정은 어느 server 에서나 된다. mirror explorer 에서 복사한 클립보드는 원격 출처로 기록되어 같은 연결의 칸에만 붙여넣는다. 어느 창의 로컬 explorer 나 다른 연결의 칸에서는 붙여넣기 메뉴가 나오지 않고 단축키는 `explorer.state.remote_paste_unsupported` 토스트만 띄운다(위 경로 규칙). 원격 작업은 실행 취소 이력에 쌓지 않는다 |
+| 원격 결과 모름 | 결과를 받기 전에 연결이 끊기거나 바뀌면 server 는 작업을 멈추지만(지금 항목에서 멈추고 준비 중 사본은 지운다) 이쪽은 어디까지 했는지 모른다. `explorer.state.remote_result_unknown` 오류 토스트를 띄우고 그 연결의 원격 목록을 다시 읽게 한다. 요청을 보내지 못했으면 `explorer.state.remote_send_failed`, server 가 거절했으면 `explorer.state.remote_refused` 토스트를 띄운다. 연결이 끊기면 그 연결로 아직 보내지 않은 대기 요청은 시작하지 않고 버리며, 칸마다 버린 수를 `explorer.state.remote_queue_dropped` 오류 토스트로 알린다. server 가 결과 목록을 줄여 보냈으면(`truncated`) 카드의 Retry 는 줄인 목록 대신 처음 보낸 경로와 남은 원본을 그대로 다시 요청한다 |
 
 ### OS 파일 클립보드
 
@@ -116,7 +118,7 @@
 - **Wayland**: 텍스트 클립보드와 같이 X11 경로만 쓴다. Wayland 세션에서는 XWayland 가 Wayland 클립보드와 잇는다. X 서버에 연결하지 못하면 OS 쪽 없이 Tasty 목록만 쓴다.
 - **우선순위 — 나중 복사가 이긴다**: Tasty 목록을 정한 직후 OS 클립보드를 한 번 읽어 둔다. 붙여넣을 때 OS 클립보드가 그때와 같으면 Tasty 목록(잘라내기 표시와 원격 출처 포함)을 쓴다. 다르면 다른 앱이 나중에 복사한 것이다. 파일 목록이면 그 목록을 Tasty 목록으로 삼아 붙여넣고, 글자 등 파일이 아닌 내용이면 오래된 Tasty 목록을 버리고 아무것도 하지 않는다. OS 클립보드에 접근하지 못하면(X 서버 연결 실패 등) Tasty 목록을 쓴다.
 - **응답하지 않는 소유자**: Linux 에서 다른 프로그램이 클립보드를 가졌는데 읽기 한도 안에 내용을 주지 않으면, 그 프로그램이 나중에 복사한 것으로 본다. Tasty 목록을 버리고 붙여넣지 않는다. 메뉴는 붙여넣기를 숨기고, 단축키·Command Palette 는 `explorer.state.os_paste_unreadable` 토스트를 띄운다. 복사 직후 읽었을 때도 같은 소유자가 응답하지 않았다면 바뀐 것이 없으므로 Tasty 목록을 쓴다.
-- **원격 출처**: mirror explorer 에서 복사한 경로는 OS 클립보드에 올리지 않는다. 다른 앱이 같은 문자열을 로컬 파일로 읽지 않게 하기 위해서다. OS 쪽 목록에 로컬 파일이 아닌 항목(다른 호스트의 `file://`, `sftp://`, macOS pasteboard 의 웹 주소 등, 절대 경로가 아닌 항목)이 하나라도 있으면 일부만 붙여넣지 않는다. 메뉴는 붙여넣기를 숨기고, 단축키·Command Palette 는 `explorer.state.os_paste_not_local` 토스트를 띄운다.
+- **원격 출처**: mirror explorer 에서 복사한 경로는 OS 클립보드에 올리지 않는다. 다른 앱이 같은 문자열을 로컬 파일로 읽지 않게 하기 위해서다. OS 쪽 목록이 나중이면 로컬 파일이므로 mirror explorer 칸에서는 붙여넣기 메뉴가 나오지 않고 단축키는 `explorer.state.cross_computer_paste_unsupported` 토스트를 띄운다. OS 쪽 목록에 로컬 파일이 아닌 항목(다른 호스트의 `file://`, `sftp://`, macOS pasteboard 의 웹 주소 등, 절대 경로가 아닌 항목)이 하나라도 있으면 일부만 붙여넣지 않는다. 메뉴는 붙여넣기를 숨기고, 단축키·Command Palette 는 `explorer.state.os_paste_not_local` 토스트를 띄운다.
 - **잘라내기 소비**: 잘라낸 목록을 모두 옮기면 OS 클립보드가 아직 그 목록일 때만 비운다. 비교는 그 OS 에서 읽히는 모양으로 한다 — macOS 는 표지 없이 복사로 읽히므로 경로만 같으면 비운다. 다른 앱이 같은 파일을 다시 붙여넣지 못하게 하고, 그 사이 새로 복사한 내용은 지키기 위해서다. 다른 앱이 Tasty 가 올린 잘라내기를 붙여넣어 옮긴 뒤 클립보드를 바꾸면, Tasty 목록은 위 우선순위에 따라 버려진다.
 - **수명**: Linux 에서 올린 목록은 Tasty 프로세스가 내준다. 다른 앱이 클립보드를 가져가면 내주기를 멈추고, Tasty 가 끝나면 사라진다(클립보드 관리자가 따로 보관하지 않는 한). 한 X11 요청보다 큰 목록은 내주지 않는다(INCR 분할 송신 없음, 읽기는 INCR 를 받는다).
 - **창 사이**: Tasty 목록은 앱에 하나이고 모든 창이 같은 목록을 쓴다. 한 창에서 복사·잘라내기한 목록은 OS 클립보드 없이도 다른 창에서 붙여넣으며, 원격 출처 표시도 그대로 따라간다(다른 창의 로컬 explorer 에도 붙여넣지 않는다). 한 창에서 잘라낸 목록을 다른 창에서 옮기면 목록이 비고, 다른 창의 흐린 표시도 그 창을 다시 그릴 때 사라진다. 붙여넣은 창이나 대상 surface 가 작업 중에 닫혀도 끝난 잘라내기는 공용 목록과 OS 클립보드에서 지운다. 나중 복사 판정도 같은 목록 하나로 한다.
@@ -124,7 +126,7 @@
 
 ### 작업 실행 — 진행·충돌·결과
 
-복사·이동·휴지통·실행 취소는 요청마다 작업 하나로 돈다. 작업은 앱 전체에서 한 번에 하나만 실행하고, 나머지는 요청 순서대로 기다린다. 진행·충돌·결과는 작업을 요청한 explorer 칸에만 보인다. 드래그로 놓은 작업은 놓은 칸의 것이다.
+복사·이동·휴지통·실행 취소는 요청마다 작업 하나로 돈다. 로컬 작업은 앱 전체에서 한 번에 하나만 실행하고, 원격 작업은 연결(mirror workspace)마다 하나씩 실행한다. 나머지는 요청 순서대로 기다리며, 로컬 작업과 원격 작업은 서로 기다리지 않는다. 진행·충돌·결과는 작업을 요청한 explorer 칸에만 보인다. 드래그로 놓은 작업은 놓은 칸의 것이다.
 
 - **진행**: 요청한 칸의 상태줄이 진행 표시로 바뀐다. 위쪽 가장자리의 2px 막대, "Copying i of n · 파일 이름", 바이트(합계를 아는 경우), 기다리는 작업이 있으면 "+n queued" Tag, 취소(×). Tag 를 누르면 상태줄 위에 대기열 팝오버가 열리고 실행 중인 작업과 기다리는 작업을 보인다. 기다리는 작업은 ×로 뺀다.
 - **이름 충돌**: 목적지에 같은 이름이 있으면 작업이 그 항목에서 멈추고 묻는다. 그 칸에 포커스가 있으면 칸 범위 popup(본문 위 scrim, 너비 `explorer-conflict-width`)이 뜨고, 아니면 상태줄이 "Waiting for your answer" 와 Show 를 보인다. 선택지는 Keep both(기본, Enter)·Skip·Replace(파일끼리만)·Cancel the rest(Esc, popup 을 닫아도 같다). 남은 충돌이 있으면 "Do this for the other n conflicts" 로 남은 충돌에 같은 답을 쓴다. 폴더 충돌은 Skip·Keep both 만 고를 수 있고, 남은 충돌에 Replace 를 고른 경우에도 폴더에서는 다시 묻는다. 질문하는 동안 그 칸이 사라지면 작업을 취소한다.
@@ -163,18 +165,18 @@ explorer 칸마다 최근 10 단계(`history::MAX_STEPS`)의 되돌리기 이력
 
 ### 드래그 앤 드롭
 
-- **시작**: 목록·격자·자세히 보기의 항목을 누른 채 끈다. mirror explorer 에서는 시작하지 않는다. popup·modal 이나 충돌 popup 이 떠 있는 동안은 시작하지도 놓지도 않는다.
+- **시작**: 목록·격자·자세히 보기의 항목을 누른 채 끈다. mirror explorer 에서도 시작한다. popup·modal 이나 충돌 popup 이 떠 있는 동안은 시작하지도 놓지도 않는다.
 - **칩**: 포인터 오른쪽 아래(`space-md`)에 칩이 따라온다. 1줄은 항목 이름 또는 "n items", 2줄은 "Move to 폴더"·"Copy to 폴더" 또는 "Can't drop — 이유" 를 동작 색으로 쓴다.
-- **동작**: 같은 디스크면 이동, 다른 디스크면 복사. `KeybindingSettings::explorer_drag_flip_modifier`(기본 macOS `option`, 다른 OS `ctrl`)를 누르고 있으면 뒤집는다. OS 파일은 항상 복사한다.
+- **동작**: 같은 디스크면 이동, 다른 디스크면 복사. 원격 경로는 server 가 폴더 목록과 함께 알린 디스크 식별값으로 비교하고, 아직 읽지 않은 하위 폴더는 상위 폴더의 값을 쓴다. 값을 알리지 않는 옛 server 이거나 모르면 복사한다. `KeybindingSettings::explorer_drag_flip_modifier`(기본 macOS `option`, 다른 OS `ctrl`)를 누르고 있으면 뒤집는다. OS 파일은 항상 복사한다.
 - **대상 표시**: 놓을 수 있는 대상에 1px 안쪽 링과 틴트(`explorer-drop-target-*`)를 그린다. 파일 행이나 빈 곳이면 목록 본문 전체가 대상이다. 닫힌 트리 폴더 위에 800ms 머물면 펼친다.
-- **거절**: 폴더를 자기 자신이나 그 하위로(`a folder can't go inside itself`), 이미 있는 폴더로 이동(`already in this folder`, 복사는 허용), mirror explorer 로(`remote folders are read-only`), 쓰기 권한이 없는 폴더로(`no write access`). 거절된 대상에는 링을 그리지 않는다. explorer 가 아닌 곳에서는 시작한 칸이 "Can't drop" 칩만 보인다.
+- **거절**: 폴더를 자기 자신이나 그 하위로(`a folder can't go inside itself`), 이미 있는 폴더로 이동(`already in this folder`, 복사는 허용), 다른 컴퓨터의 칸으로(`it is on a different computer` — 로컬과 원격 사이, 서로 다른 연결 사이, OS 파일을 mirror explorer 로), 원격 쓰기를 받지 않는 server 의 mirror explorer 로(`remote folders are read-only`), 쓰기 권한이 없는 로컬 폴더로(`no write access`). 원격 폴더의 쓰기 권한은 이 컴퓨터에서 확인하지 않고 server 의 결과로 알린다. 거절된 대상에는 링을 그리지 않는다. explorer 가 아닌 곳에서는 시작한 칸이 "Can't drop" 칩만 보인다.
 - **취소**: Esc 를 누르면 드래그를 취소하고, 버튼을 놓을 때까지 다시 시작하지 않는다.
 - **OS 파일**: explorer 칸 위에서는 창 전체의 drop overlay 를 그리지 않고, 칸이 링과 "Copy to" 칩을 보인다. 이 표시는 드래그 중 포인터 위치를 아는 동안만 나온다. winit 0.30 의 X11 은 XDND 중 위치를 알려 주지 않아 표시 없이 창 overlay 가 남고, 놓은 뒤의 포인터 위치로 대상 칸을 정한다. 다른 곳에 놓은 파일은 지금처럼 연다.
 - **꺼내기**: explorer 에서 다른 앱이나 터미널로 끌어 내는 기능은 없다.
 
 ### 작업 뒤 목록 갱신
 
-작업이 끝나면 성공·실패·부분 성공과 관계없이 실제 상태를 다시 읽는다. 요청한 surface 가 그 사이 닫혔어도 다른 explorer 는 갱신한다. 대상은 모든 윈도우의 로컬 explorer 이며 mirror explorer 는 제외한다.
+작업이 끝나면 성공·실패·부분 성공과 관계없이 실제 상태를 다시 읽는다. 요청한 surface 가 그 사이 닫혔어도 다른 explorer 는 갱신한다. 로컬 작업의 대상은 모든 윈도우의 로컬 explorer 이고, 원격 작업의 대상은 같은 mirror workspace 의 explorer 다. 원격 explorer 는 해당 폴더의 목록 캐시를 지우고 응답을 기다리는 폴더는 그대로 둔다.
 
 | 작업 | 다시 읽는 폴더 | 사라질 수 있는 경로 |
 |---|---|---|
@@ -203,11 +205,12 @@ explorer 칸마다 최근 10 단계(`history::MAX_STEPS`)의 되돌리기 이력
 
 - **AI Agent (IPC/CLI)**: 없음. 위 경계 절을 따른다.
 - **사용자 트리거**: 컨텍스트 메뉴, 툴바·More 메뉴, 드래그 앤 드롭, 결과 카드의 Retry·Undo, `copy`·`cut`·`paste`·`explorer_new_folder`·`explorer_new_file`·`explorer_rename`·`explorer_trash`·`explorer_properties`·`explorer_toggle_preview`·`explorer_toggle_hidden`·`find` 바인딩, Command Palette. 단축키 표는 [Explorer](index.md#사용자-트리거-단축키--keybindingsettings) 에 있다.
-- **원격 / 점유**: mirror explorer 는 위 원격 제한을 따른다.
+- **원격 / 점유**: mirror explorer 는 위 원격 제한을 따른다. 원격 쓰기 요청은 그 server 의 workspace 를 점유한 연결만 보낼 수 있고, server 는 연결마다 한 번에 하나를 실행한다. 메시지 형식은 [attach 동작](../../dev-guide/attach-behavior.md)의 사용자 정의 이벤트 절에 있다.
 
 ## 비-목표 (Out of scope)
 
-- 원격 호스트의 파일 쓰기·전송. mirror explorer 는 탐색과 열기만 한다 (ADR-0022).
+- 이 컴퓨터와 원격 호스트 사이의 파일 전송(복사·이동·드래그). 원격 쓰기는 같은 연결 안에서만 한다 (ADR-0022).
+- 원격 작업의 실행 취소 이력. 결과 카드의 Undo 만 쓴다.
 - surface 이동. [surface-move](../../features/surface-move/index.md) 가 맡는다.
 
 ## 수용 기준
@@ -255,7 +258,11 @@ explorer 칸마다 최근 10 단계(`history::MAX_STEPS`)의 되돌리기 이력
 - Given 같은 디스크의 항목을 폴더 행으로 끈다, When 놓는다, Then 이동하고, 드래그 반전 modifier 를 누른 채 놓으면 복사한다.
 - Given 항목을 끌고 있다, When Esc 를 누른 뒤 놓는다, Then 아무것도 바뀌지 않는다.
 - Given OS 에서 파일을 끌어 왔다, When 로컬 explorer 칸에 놓는다, Then 그 칸이 보고 있는 폴더로 복사하고 파일 핸들러를 열지 않는다.
-- Given mirror explorer 다, When `cut` 또는 `paste` 를 누른다, Then 로컬 파일시스템은 바뀌지 않고 원격 쓰기 미지원 토스트가 뜬다.
+- Given 원격 쓰기를 알리지 않는 옛 server 의 mirror explorer 다, When `cut` 또는 `paste` 를 누른다, Then 어느 파일시스템도 바뀌지 않고 원격 쓰기 미지원 토스트가 뜬다.
+- Given 원격 쓰기를 알린 server 의 mirror explorer 다, When 새 폴더를 만들거나 이름을 바꾸거나 휴지통으로 보낸다, Then 원격 호스트의 파일이 바뀌고 같은 연결의 explorer 가 그 폴더를 다시 읽으며 로컬 파일시스템은 바뀌지 않는다.
+- Given 원격 붙여넣기가 이름 충돌로 멈췄다, When 충돌 popup 에서 답한다, Then server 의 작업이 그 답으로 이어지고 결과 카드가 이 칸에 뜬다.
+- Given 원격 작업이 실행 중이다, When 연결이 끊긴다, Then server 는 작업을 멈추고 이 칸에는 결과를 모른다는 토스트가 뜬다.
+- Given 로컬 explorer 에서 항목을 복사했다, When mirror explorer 에서 `paste` 를 누르거나 그 항목을 mirror explorer 로 끈다, Then 아무것도 바뀌지 않고 다른 컴퓨터라는 이유를 보인다.
 - Given 두 윈도우에서 같은 폴더를 연 로컬 explorer 가 있다, When 한쪽에서 항목을 휴지통으로 보낸다, Then 두 explorer 모두 그 폴더를 다시 읽어 항목이 사라진다.
 - Given 한 explorer 가 폴더 A 안을 보고 있다, When 다른 explorer 에서 A 를 휴지통으로 보낸다, Then 앞의 explorer 는 읽기 오류 화면을 보이고 경로는 A 안 그대로다.
 - Given 붙여넣기가 진행 중이다, When 사용자가 다른 폴더로 이동한다, Then 작업 대상은 요청 시점의 폴더이고 포커스는 바뀌지 않는다.

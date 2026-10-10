@@ -1,4 +1,4 @@
-<!-- source-hash: 3ef825c6e8b6 -->
+<!-- source-hash: c2bb14562347 -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -72,7 +72,7 @@ Start from **New folder** · **New file** on the toolbar, the right-click menu o
 - Clicking outside the row creates it when the name is valid and cancels when it is empty or invalid.
 - An empty name (including one with only spaces), a character that can't be used (`/`, and on Windows also `\ : * ? " < > |`), a name that starts or ends with a space, a name Windows reserves (`CON`, `NUL`, …), or on Windows a name ending in a dot shows the reason under the field right away. A name that already exists is reported when you press `Enter`; the row stays open with your text. Nothing is overwritten.
 - The new item moves to its sorted place and is selected. If you moved to another folder in the meantime, the selection does not change.
-- In a folder you can't write to, both buttons are dimmed and hovering shows **Can't write to this folder**. Explorers in remote workspaces don't have these buttons or menu items.
+- In a folder you can't write to, both buttons are dimmed and hovering shows **Can't write to this folder**. They work in Explorers in remote workspaces too. If the remote computer runs an older Tasty, these buttons and menu items don't appear.
 
 With the Explorer focused, `F7` makes a new folder and `Shift+F4` a new file. On macOS the F keys are media keys by default, so hold `Fn` with them. Change the keys in Settings > Keybindings > **Explorer**.
 
@@ -151,16 +151,19 @@ A link to a folder opens like a folder, and the address bar keeps the link's pat
 - **Add to Favorites** — gives it a name and puts it in the list at the bottom left. Favorites are shared by all Explorers and saved in `~/.tasty/explorer-favorites.toml`. Favorites added or removed in another window show up right away.
 - **Properties** — opens the [Properties](#properties) popup above. It also appears in remote Explorers.
 
-The last chosen view mode is remembered and applied to new Explorers too. The Explorer font is set separately in the **Explorer** item under **Settings** > **Appearance**. In an Explorer in a remote Workspace, items that change files do not appear. Items copied in a remote Explorer can't be pasted into a local Explorer: Paste does not appear in the menu, and the paste shortcut only shows a notice. Tasty never copies a local file with the same path instead. Double-clicking a markdown file opens a tab for it on the remote computer; if the type's default handler can't be used remotely, only the handlers that can are offered, and a type with no such handler only shows a notice.
+The last chosen view mode is remembered and applied to new Explorers too. The Explorer font is set separately in the **Explorer** item under **Settings** > **Appearance**. An Explorer in a remote Workspace can also create folders and files, rename, move to the trash, copy, cut, paste and drag. The remote computer's Tasty does the work, and the progress line, name conflict question and result card look the same as for local files. The trash is the remote computer's trash. Remote operations don't go into the **Undo** list, so use the result card's **Undo**. If the remote computer runs an older Tasty, items that change files do not appear. If the connection drops during an operation, the remote computer stops it, but a notice says Tasty can't tell how far it got, so check the folder after you reconnect. Operations still waiting for that connection don't run, and a notice says how many. Open in System, Open in New Tab and Add to Favorites don't appear in a remote Explorer.
+
+You can't paste or drag files between your computer and a remote one, or between two remote computers: Paste does not appear in the menu, and the paste shortcut only shows a notice. Tasty never copies a file with the same path on the other computer instead. Double-clicking a markdown file opens a tab for it on the remote computer; if the type's default handler can't be used remotely, only the handlers that can are offered, and a type with no such handler only shows a notice.
 
 ### Drag and drop
 
 Drag items onto a folder row or cell, a folder in the left tree, or a favorite to put them in that folder. Dropped on a file or on empty space, they go to the folder the Explorer is showing. You can drag into another Explorer next to it too.
 
 - On the same disk the drop **moves**; across disks it **copies**. Hold `Ctrl` (macOS `Option`) while dropping to do the opposite. Change that key with **Explorer drag flip modifier** at the bottom of **Settings** > **Keybindings** > **General** (the same value as `explorer_drag_flip_modifier` under `[keybindings]` in `config.toml`).
-- While dragging, the label by the pointer says **Move to** or **Copy to** and the folder. Where you can't drop, it says **Can't drop** and why (into itself, already in this folder, remote folder, no write access).
+- While dragging, the label by the pointer says **Move to** or **Copy to** and the folder. Where you can't drop, it says **Can't drop** and why (into itself, already in this folder, on a different computer, remote folder is read-only, no write access).
+- Inside a remote Explorer, a drag **moves** only between folders the remote computer reports as the same disk, and **copies** otherwise.
 - Hover over a closed tree folder for a moment to expand it. Press `Esc` to cancel the drag.
-- Files dragged in from your OS file manager and dropped on an Explorer cell are **copied** into its folder (never moved). A remote Explorer refuses them. On Linux (X11) the whole-window hint stays while you drag, but dropping on an Explorer cell still copies.
+- Files dragged in from your OS file manager and dropped on an Explorer cell are **copied** into its folder (never moved). A remote Explorer refuses them, because they are on a different computer. On Linux (X11) the whole-window hint stays while you drag, but dropping on an Explorer cell still copies.
 
 ### Progress and results
 
