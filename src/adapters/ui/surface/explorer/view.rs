@@ -894,7 +894,7 @@ mod tests {
                 size: 0,
                 modified: None,
                 ext: String::new(),
-                link: Default::default(),
+                ..Default::default()
             })
             .collect();
         v
@@ -975,7 +975,7 @@ mod tests {
                 size: 1,
                 modified: None,
                 ext: String::new(),
-                link: Default::default(),
+                ..Default::default()
             },
             DirEntryInfo {
                 path: "/a".into(),
@@ -984,7 +984,7 @@ mod tests {
                 size: 0,
                 modified: None,
                 ext: String::new(),
-                link: Default::default(),
+                ..Default::default()
             },
         ];
         sort_entries(&mut v, SortColumn::Name, SortDir::Asc);
@@ -1107,7 +1107,7 @@ mod tests {
             size: 0,
             modified: None,
             ext: String::new(),
-            link: Default::default(),
+            ..Default::default()
         }];
         let applied = view.apply_remote_list_dir_result(request_id, &panel, Ok(entries.clone()));
         assert!(applied);
@@ -1153,6 +1153,7 @@ mod tests {
             modified: None,
             ext: String::new(),
             link,
+            ..Default::default()
         };
         view.entries = vec![
             entry("gone", crate::core::fs_list::EntryLink::Broken),

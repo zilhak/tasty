@@ -191,7 +191,7 @@ mirror(원격) explorer:
 
 ### 숨김 파일
 
-이름이 `.` 으로 시작하는 항목(`..` 행 제외)을 숨김 파일로 본다(`explorer/view/hidden.rs` 의 `is_hidden`). Windows 의 숨김 속성과 macOS 의 `UF_HIDDEN` 플래그는 보지 않는다. 기본은 끔이다. 끈 동안 `set_entries` 가 새 목록에서 숨김 항목을 빼 따로 두고(`HiddenFiles`), 상태줄은 "{n} items · {h} hidden"(`explorer.status.hidden`)처럼 뺀 수를 덧붙인다. 뺀 항목이 없으면 덧붙이지 않는다. 켜면 뺀 항목을 목록에 되돌려 정렬 자리로 넣고, 세 보기 모두 숨김 항목의 이름과 글리프를 explorer-hidden-fg(→ text-muted)로 그린다. 불투명도로 흐리게 하지 않는다. 선택한 항목의 이름은 선택 색(text-primary)이다. 색 규칙은 `explorer/entry_style.rs` 가 세 보기에 공통으로 정하고, List 보기는 공용 `tasty_ui_widgets::tree_row_with_tail_fg` 로 평상시 이름 색만 바꾼다(링크 꼬리 자리도 그대로 뺀다). 대상이 없는 링크는 숨김 항목이어도 링크 경고 글리프와 색을 쓴다. 끄면 숨김 항목의 선택을 푼다. 사이드바 트리도 같은 토글을 따라, 끈 동안 숨김 폴더를 뺀다(`tree_children_of` → `tree_shown`). 트리 캐시에는 모두 남겨 토글만으로 다시 읽지 않고 보인다. 하위 폴더 검색 결과는 이 토글과 관계없이 숨김 폴더·파일을 그대로 보인다.
+이름이 `.` 으로 시작하는 항목(`..` 행 제외)과 OS 가 숨김으로 표시한 항목을 숨김 파일로 본다(`explorer/view/hidden.rs` 의 `is_hidden`). OS 표시는 Windows 의 파일 속성 `FILE_ATTRIBUTE_HIDDEN` 과 macOS 의 BSD 파일 플래그 `UF_HIDDEN`(`chflags hidden`)이다. 목록을 읽을 때 `read_dir_entries` 가 항목 자신의 metadata(링크면 대상이 아니라 링크 자신)에서 읽어 `DirEntryInfo::os_hidden` 에 남긴다(`src/core/fs_list/os_hidden.rs`). Linux 에는 OS 표시가 없어 점 규칙만 쓴다. 점 규칙은 세 OS 모두 적용한다. 원격 탐색기 응답은 이 값을 싣지 않으므로 원격 항목은 점 규칙만 쓴다. 기본은 끔이다. 끈 동안 `set_entries` 가 새 목록에서 숨김 항목을 빼 따로 두고(`HiddenFiles`), 상태줄은 "{n} items · {h} hidden"(`explorer.status.hidden`)처럼 뺀 수를 덧붙인다. 뺀 항목이 없으면 덧붙이지 않는다. 켜면 뺀 항목을 목록에 되돌려 정렬 자리로 넣고, 세 보기 모두 숨김 항목의 이름과 글리프를 explorer-hidden-fg(→ text-muted)로 그린다. 불투명도로 흐리게 하지 않는다. 선택한 항목의 이름은 선택 색(text-primary)이다. 색 규칙은 `explorer/entry_style.rs` 가 세 보기에 공통으로 정하고, List 보기는 공용 `tasty_ui_widgets::tree_row_with_tail_fg` 로 평상시 이름 색만 바꾼다(링크 꼬리 자리도 그대로 뺀다). 대상이 없는 링크는 숨김 항목이어도 링크 경고 글리프와 색을 쓴다. 끄면 숨김 항목의 선택을 푼다. 사이드바 트리도 같은 토글을 따라, 끈 동안 숨김 폴더를 뺀다(`tree_children_of` → `tree_shown`). 트리 캐시에는 모두 남겨 토글만으로 다시 읽지 않고 보인다. 하위 폴더 검색 결과는 이 토글과 관계없이 숨김 폴더·파일을 그대로 보인다.
 
 토글 경로는 More 메뉴의 행(id 84, 지금 상태가 아니라 할 동작을 쓴다: `explorer.more.hidden_show` "Show hidden files" · `hidden_hide` "Hide hidden files")과 단축키 `explorer_toggle_hidden` 이다. 툴바가 넓어 More 버튼이 없는 칸에서는 단축키로만 바꾼다. View 가 값을 바로 바꿔 그리고, 렌더 뒤 `EngineAction::ExplorerHidden` 으로 model(`ExplorerPanel::show_hidden`)에 남겨 레이아웃 snapshot 에 싣는다. model 값을 받는 규칙은 미리보기 패널과 같다(마지막으로 맞춘 값과 다를 때만, 처음 그릴 때는 복원한 값).
 
@@ -285,7 +285,7 @@ Grid 셀은 모두 `explorer_grid_thumb_size`(40) 슬롯을 잡아 썸네일 유
 
 ### 심볼릭 링크
 
-목록은 `read_dir_entries`(`src/core/fs_list.rs`)가 읽는다. 링크 항목은 대상의 metadata 로 종류·크기·수정 시각을 정하고 `DirEntryInfo::link` 에 상태를 남긴다(`NotALink` / `Valid` / `Broken`).
+목록은 `read_dir_entries`(`src/core/fs_list.rs`)가 읽는다. 링크 항목은 대상의 metadata 로 종류·크기·수정 시각을 정하고 `DirEntryInfo::link` 에 상태를 남긴다(`NotALink` / `Valid` / `Broken`). OS 숨김 표시는 `DirEntryInfo::os_hidden` 이다(위 "숨김 파일").
 
 - **폴더를 가리키는 링크**는 폴더로 보이고 트리에도 나온다. 들어가면 경로는 링크 자신의 경로다. 주소창·히스토리·뒤로/위로는 대상의 실제 경로가 아니라 링크 경로를 쓴다. 따라서 링크 폴더에서 위로 가면 링크가 있던 폴더로 돌아간다.
 - **대상이 없는 링크**는 폴더로 보지 않으며 크기·수정 시각은 링크 자신의 값이다. 열면 파일을 찾지 못한 것처럼 보이지 않도록 `explorer.state.broken_link` 오류 toast 로 대상이 없다는 원인을 알린다. 주소창 입력도 같은 이유로 거부한다.
@@ -400,6 +400,7 @@ Appearance → **Explorer** 서브탭에서 surface 폰트를 오버라이드한
 - Given 칸 폭이 440 보다 좁다 When 툴바를 그린다 Then New folder·New file·Find·Preview 가 모두 More 하나로 접히고, 메뉴의 view 행은 지금 상태에 따라 Find·Close find, Show preview·Hide preview 를 쓴다(`commands.rs` 의 `preview_sits_in_the_view_group_and_folds_into_more_with_it`, `explorer_create.rs` 의 `more_rows_name_the_action_they_take`).
 - Given 로컬 explorer 에 .env·.git·a.txt·b.txt 가 있다 When 숨김 파일이 꺼진 채(기본) 목록을 그린다 Then a.txt·b.txt 만 보이고 상태줄은 "2 items · 2 hidden" 이다. When 숨김 파일 단축키를 누른다 Then 네 항목이 이름 순으로 보이고 .env·.git 의 이름·글리프가 text-muted 다. 다시 끄면 숨김 항목의 선택이 풀린다(`view/hidden.rs` 의 `hidden_items_leave_the_listing_until_shown_then_return_in_sort_order`).
 - Given 숨김 파일을 켠 explorer When 레이아웃을 저장하고 다시 연다 Then 켜진 채 복원되고, 끔(기본)이면 snapshot 에 `show_hidden` 키가 없다(`builtins.rs` 의 `explorer_hidden_files_toggle_rides_the_snapshot_and_a_preset`).
+- Given 이름에 점이 없는 항목에 Windows 숨김 속성이나 macOS `UF_HIDDEN` 이 있다 When 숨김 파일이 꺼진 채 목록을 그린다 Then 그 항목은 목록에서 빠지고 숨김 수에 들어간다. 비트 해석은 `fs_list/os_hidden.rs` 의 단위 시험, 목록 판정은 `hidden.rs` 의 `an_os_hidden_mark_hides_a_name_without_a_dot` 이 확인한다. 실제 표시를 읽는 배선은 같은 파일의 OS 전용 시험이 확인한다. Windows 는 숨김 속성으로 만든 파일, macOS 는 `chflags hidden` 한 파일과 그 파일을 가리키는 링크(링크는 숨김 아님)를 목록으로 읽으며, 그 OS 의 CI 에서만 돈다. Linux 에서는 OS 표시가 늘 거짓이다.
 - Given 하위 폴더 검색이 5,000 개보다 많이 맞는다 When 검색이 끝난다 Then 5,000 개만 남고 바에 "5,000+ found · stopped", 상태줄에 범위를 좁히라는 안내가 보인다(`local_reads/search/tests.rs` 의 `a_search_stops_at_the_hit_cap_and_keeps_what_it_found`, `find/tests.rs` 의 `one_skipped_folder_and_the_hit_cap_have_their_own_words`).
 - Given 거르기 검색어에 맞는 이름이 없다 When 목록을 그린다 Then 바는 "0 of N", 목록 자리는 "No names match “{query}”" 이다(`find/tests.rs`).
 - Given 거르는 중이다 When 검색어와 목록이 그대로인 채 프레임이 이어진다 Then 다시 거르지 않고, 검색어나 목록이 바뀌면 다시 거른다(`find/tests.rs` 의 `the_filter_is_not_run_again_while_the_query_and_the_list_stay`, `a_new_query_or_a_new_list_filters_again`).

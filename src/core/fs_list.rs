@@ -1,5 +1,8 @@
 //! Explorer와 로컬·원격 파일 선택기가 공유하는 디렉터리 조회·정렬·표시 함수.
 
+#[cfg(feature = "gui")]
+mod os_hidden;
+
 use std::path::Path;
 #[cfg(feature = "gui")]
 use std::path::PathBuf;
@@ -9,7 +12,8 @@ use tasty_model::{SortColumn, SortDir};
 
 use crate::core::file_kind::{FileKind, file_kind};
 
-#[derive(Clone)]
+/// `Default` 는 OS 에서 읽지 않은 항목(`..` 행·원격 응답·시험 견본)을 만들 때 나머지 칸을 채운다.
+#[derive(Clone, Default)]
 pub(crate) struct DirEntryInfo {
     /// 원격 응답에는 없다. client가 조회 경로와 name으로 만들며 GUI에서만 사용한다.
     #[cfg(feature = "gui")]
@@ -25,6 +29,10 @@ pub(crate) struct DirEntryInfo {
     /// 읽는 쪽이 GUI의 탐색기뿐이라 `path`처럼 GUI에서만 둔다.
     #[cfg(feature = "gui")]
     pub(crate) link: EntryLink,
+    /// OS 가 숨김으로 표시했는가(Windows 숨김 속성, macOS `UF_HIDDEN`). 이름 앞 점 규칙은 담지 않는다.
+    /// 원격 응답은 이 값을 싣지 않으므로 원격 항목은 거짓이다. `link` 처럼 GUI 에서만 둔다.
+    #[cfg(feature = "gui")]
+    pub(crate) os_hidden: bool,
 }
 
 /// 목록 항목의 링크 상태. 링크는 `path`(링크 자신의 경로)로 탐색하고 조작한다.
@@ -74,6 +82,10 @@ pub(crate) fn read_dir_entries(dir: &Path) -> std::io::Result<Vec<DirEntryInfo>>
                 .map(|e| e.to_lowercase())
                 .unwrap_or_default()
         };
+        // 대상이 있는 링크의 `meta` 는 대상의 값이라 OS 표시는 링크 자신에게서 따로 읽는다.
+        #[cfg(feature = "gui")]
+        let os_hidden =
+            os_hidden::is_os_hidden(&entry, meta.as_ref().filter(|_| link != EntryLink::Valid));
         out.push(DirEntryInfo {
             #[cfg(feature = "gui")]
             path,
@@ -84,6 +96,8 @@ pub(crate) fn read_dir_entries(dir: &Path) -> std::io::Result<Vec<DirEntryInfo>>
             ext,
             #[cfg(feature = "gui")]
             link,
+            #[cfg(feature = "gui")]
+            os_hidden,
         });
     }
     Ok(out)
@@ -222,23 +236,15 @@ mod tests {
                 #[cfg(feature = "gui")]
                 path: "/z".into(),
                 name: "z".into(),
-                is_dir: false,
                 size: 1,
-                modified: None,
-                ext: String::new(),
-                #[cfg(feature = "gui")]
-                link: Default::default(),
+                ..Default::default()
             },
             DirEntryInfo {
                 #[cfg(feature = "gui")]
                 path: "/a".into(),
                 name: "a".into(),
                 is_dir: true,
-                size: 0,
-                modified: None,
-                ext: String::new(),
-                #[cfg(feature = "gui")]
-                link: Default::default(),
+                ..Default::default()
             },
         ];
         sort_entries(&mut v, SortColumn::Name, SortDir::Asc);
@@ -250,14 +256,10 @@ mod tests {
             #[cfg(feature = "gui")]
             path: name.into(),
             name: name.into(),
-            is_dir: false,
-            size: 0,
-            modified: None,
             ext: name
                 .rsplit_once('.')
                 .map_or(String::new(), |(_, e)| e.into()),
-            #[cfg(feature = "gui")]
-            link: Default::default(),
+            ..Default::default()
         }
     }
 

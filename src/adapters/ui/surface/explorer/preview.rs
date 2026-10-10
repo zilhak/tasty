@@ -502,7 +502,7 @@ mod tests {
             size: 2048,
             modified: None,
             ext: "tif".into(),
-            link: Default::default(),
+            ..Default::default()
         };
         let mut pane = PreviewPane {
             body: Body::TooLarge(TooLarge::Pixels(Some([20000, 14000]))),

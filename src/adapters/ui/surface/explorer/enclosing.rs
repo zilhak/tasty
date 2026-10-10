@@ -92,7 +92,7 @@ mod tests {
                 size: 0,
                 modified: None,
                 ext: String::new(),
-                link: Default::default(),
+                ..Default::default()
             })
             .collect();
     }
@@ -195,11 +195,7 @@ mod tests {
         let listed = Ok(vec![DirEntryInfo {
             path: "/srv/a/n.md".into(),
             name: "n.md".into(),
-            is_dir: false,
-            size: 0,
-            modified: None,
-            ext: String::new(),
-            link: Default::default(),
+            ..Default::default()
         }]);
         assert!(view.apply_remote_list_dir_result(id, &panel, listed));
         assert_eq!(view.take_reveal(), None);

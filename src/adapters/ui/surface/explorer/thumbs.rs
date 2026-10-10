@@ -190,7 +190,7 @@ mod tests {
             size: 0,
             modified: None,
             ext: "png".into(),
-            link: Default::default(),
+            ..Default::default()
         }
     }
 

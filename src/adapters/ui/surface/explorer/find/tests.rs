@@ -243,7 +243,7 @@ fn batches_inserted_in_order_match_a_full_sort() {
         size,
         modified: None,
         ext: String::new(),
-        link: crate::core::fs_list::EntryLink::NotALink,
+        ..Default::default()
     };
     let batches = vec![
         vec![
@@ -322,7 +322,7 @@ fn file(i: usize) -> DirEntryInfo {
         size: 0,
         modified: None,
         ext: "txt".into(),
-        link: Default::default(),
+        ..Default::default()
     }
 }
 

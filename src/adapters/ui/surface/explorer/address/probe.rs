@@ -153,10 +153,7 @@ mod tests {
             path: Path::new(dir).join(name),
             name: name.into(),
             is_dir,
-            size: 0,
-            modified: None,
-            ext: String::new(),
-            link: Default::default(),
+            ..Default::default()
         }
     }
 

@@ -49,7 +49,7 @@ impl Harness {
                 size: 0,
                 modified: None,
                 ext: "txt".into(),
-                link: Default::default(),
+                ..Default::default()
             })
             .collect();
         Self {

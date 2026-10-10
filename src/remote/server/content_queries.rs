@@ -751,12 +751,7 @@ mod list_dir_entries_wire_capped_tests {
             #[cfg(feature = "gui")]
             path: name.into(),
             name: name.to_string(),
-            is_dir: false,
-            size: 0,
-            modified: None,
-            ext: String::new(),
-            #[cfg(feature = "gui")]
-            link: Default::default(),
+            ..Default::default()
         }
     }
 

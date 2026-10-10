@@ -2,6 +2,7 @@
 
 #[cfg(test)]
 mod home_probe_tests;
+mod remote_entry;
 #[cfg(test)]
 mod tests;
 use super::agent_origin;
@@ -461,18 +462,7 @@ fn apply_one_mirror_event(
             let entries = entries.map(|entries| {
                 entries
                     .into_iter()
-                    .map(|entry| crate::core::fs_list::DirEntryInfo {
-                        path: dir
-                            .as_deref()
-                            .map(|dir| std::path::Path::new(dir).join(&entry.name))
-                            .unwrap_or_else(|| std::path::PathBuf::from(&entry.name)),
-                        name: entry.name,
-                        is_dir: entry.is_dir,
-                        size: entry.size,
-                        modified: entry.modified,
-                        ext: entry.ext,
-                        link: Default::default(),
-                    })
+                    .map(|entry| remote_entry::from_remote(dir.as_deref(), entry))
                     .collect()
             });
             apply_list_dir_result_event(

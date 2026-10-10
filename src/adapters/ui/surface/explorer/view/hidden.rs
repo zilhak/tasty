@@ -1,4 +1,4 @@
-//! 숨김 파일 표시. 이름이 점으로 시작하는 항목을 숨김 파일로 본다(`..` 는 제외).
+//! 숨김 파일 표시. 이름이 점으로 시작하는 항목(`..` 는 제외)과 OS 가 숨김으로 표시한 항목을 숨김 파일로 본다.
 //! 끄면 목록(`entries`)에서 빼 따로 두고 상태줄에 그 수를 보인다. 켜면 되돌려 넣고 정렬 자리로 보낸다.
 //! View 가 토글을 바로 바꿔 그리고, 바뀐 값은 `take_change` 로 model(`ExplorerPanel::show_hidden`)에
 //! 남겨 레이아웃 스냅샷에 싣는다. model 값은 미리보기 패널처럼 마지막으로 맞춘 값과 다를 때만 받는다.
@@ -9,9 +9,10 @@ use crate::core::fs_list::{DirEntryInfo, sort_entries};
 
 use super::ExplorerView;
 
-/// 숨김 파일인가.
+/// 숨김 파일인가. 이름이 점으로 시작하거나(`..` 행 제외) OS 가 숨김으로 표시했다
+/// (Windows 숨김 속성·macOS `UF_HIDDEN`, `DirEntryInfo::os_hidden`).
 pub(crate) fn is_hidden(entry: &DirEntryInfo) -> bool {
-    entry.name.starts_with('.') && entry.name != ".."
+    entry.os_hidden || (entry.name.starts_with('.') && entry.name != "..")
 }
 
 /// 숨김 파일 표시 상태.
@@ -134,7 +135,7 @@ mod tests {
             size: 0,
             modified: None,
             ext: String::new(),
-            link: crate::core::fs_list::EntryLink::NotALink,
+            ..Default::default()
         }
     }
 
@@ -149,6 +150,20 @@ mod tests {
         assert!(!is_hidden(&entry("..")));
         assert!(!is_hidden(&entry("notes.md")));
         assert!(!is_hidden(&entry("a.b")));
+    }
+
+    #[test]
+    fn an_os_hidden_mark_hides_a_name_without_a_dot() {
+        let marked = DirEntryInfo {
+            os_hidden: true,
+            ..entry("desktop.ini")
+        };
+        assert!(is_hidden(&marked));
+        assert!(!is_hidden(&entry("desktop.ini")));
+        let mut view = ExplorerView::new();
+        view.set_entries(vec![marked, entry("a.txt")]);
+        assert_eq!(names(&view), ["a.txt"]);
+        assert_eq!(view.hidden.count(), 1);
     }
 
     #[test]

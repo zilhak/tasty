@@ -100,6 +100,7 @@ mod tests {
             modified: None,
             ext: "toml".into(),
             link,
+            ..Default::default()
         }
     }
 

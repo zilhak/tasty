@@ -75,6 +75,7 @@ mod tests {
                 .rsplit_once('.')
                 .map_or(String::new(), |(_, e)| e.to_string()),
             link,
+            ..Default::default()
         }
     }
 
