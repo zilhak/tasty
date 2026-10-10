@@ -8,6 +8,8 @@ mod dialogs;
 #[cfg(feature = "gui")]
 mod events;
 #[cfg(feature = "gui")]
+pub(crate) mod explorer_clipboard_slot;
+#[cfg(feature = "gui")]
 pub(crate) mod explorer_history;
 #[cfg(feature = "gui")]
 pub(crate) mod explorer_menu;
@@ -262,7 +264,7 @@ impl RequestContext {
             #[cfg(feature = "gui")]
             explorer_views: Default::default(),
             #[cfg(feature = "gui")]
-            explorer_clipboard: None,
+            explorer_clipboard: Default::default(),
             #[cfg(feature = "gui")]
             file_clipboard: Default::default(),
             #[cfg(feature = "gui")]

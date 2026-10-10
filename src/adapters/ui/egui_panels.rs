@@ -129,12 +129,8 @@ pub fn draw_egui_panels(
     let mut dag_views = std::mem::take(&mut state.dag_graph_views);
     let explorer_favorites = engine.explorer_favorites;
     // cut 대기 경로를 어둡게 표시한다. 복사·붙여넣기 완료·취소 후에는 빈 목록으로 해제된다.
-    let explorer_cut_pending: std::collections::HashSet<std::path::PathBuf> = state
-        .explorer_clipboard
-        .as_ref()
-        .filter(|c| c.cut)
-        .map(|c| c.paths.iter().cloned().collect())
-        .unwrap_or_default();
+    let explorer_cut_pending: std::collections::HashSet<std::path::PathBuf> =
+        state.explorer_clipboard.cut_paths();
     // 렌더 중 state를 빌리기 전에 최근 폴더를 한 번 읽어 둔다.
     let explorer_recent_dirs: Vec<String> = state.recent_files.get(EXPLORER_RECENT_KIND);
     // 타입어헤드를 허용할지 판단하는 값들. 셋 다 `state`와 `engine`을 읽어야 해서

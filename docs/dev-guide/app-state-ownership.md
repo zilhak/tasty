@@ -79,7 +79,7 @@ CoreState만 필요한 함수에는 구조 참조를, 실행 adapter에는 `Engi
 | `pending_host_events` | View 필드 아님. EngineRuntime 및 AppState의 별도 큐 | engine/process 요청 | 확정 결과·표시 관측 → Event Bus, hook 완료 | EngineRuntime drain |
 | `last_focused_surface_id` · `last_active_workspace_id` · `last_focused_tab` · `last_tab_locations` | 실행 자원 (변화 감지 기준값) | 세션 | GUI tick 의 감지 → 같은 자리 | 없음 |
 | `explorer_views` · `dag_graph_views` | 사용자 view 상태 | 열림 (surface 수명) | surface 그리기 → surface 닫힘 | 없음 |
-| `explorer_clipboard` | 사용자 view 상태 | 세션 | explorer 복사·잘라내기 → 잘라내기 붙여넣기 성공 | 없음 |
+| `explorer_clipboard` | 사용자 view 상태. AppServices 공용 슬롯의 핸들로 모든 창이 같은 값을 본다 | 세션 (process) | 어느 창의 explorer 복사·잘라내기 → 잘라내기 붙여넣기 성공(붙여넣은 창이나 surface 가 그 사이 닫혔어도 App 이 공용 슬롯에서 정리) | 없음 |
 | `branch_cache` | 사용자 view 상태 (상태바 표시 cache) | 세션 | busy tick 이 포커스 surface 로 갱신 → 다음 busy tick 이 덮어씀 | 없음 |
 | `shell_integration_hint_shown` | 사용자 view 상태 (배너 표시 기록) | 열림 (surface 수명) | 셸 통합 안내 cascade → surface 닫힘(`release_surface_views`) | 없음 |
 | `tool_registry` · `palette_plugin_commands` | 도메인 사실의 사본 (plugin 기여 목록) | 세션 | plugin 활성 → 재계산 | 없음 |

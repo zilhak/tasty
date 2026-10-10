@@ -29,6 +29,12 @@ pub(crate) struct AppServices {
     /// Process-wide services. Engine and View owners carry neither copies nor lookup authority.
     #[cfg(feature = "gui")]
     pub(crate) navigation_proofs: Arc<crate::app::html_runtime::NavigationProofs>,
+    /// 모든 창이 함께 쓰는 Explorer 복사·잘라내기 목록. 창의 View 상태를 만들 때 같은 슬롯을 넘긴다.
+    #[cfg(feature = "gui")]
+    pub(crate) explorer_clipboard: crate::state::explorer_clipboard_slot::ExplorerClipboardSlot,
+    /// OS 파일 클립보드. 창마다 같은 핸들을 넘기고, 창이 닫힌 뒤 끝난 잘라내기도 이것으로 정리한다.
+    #[cfg(feature = "gui")]
+    pub(crate) file_clipboard: crate::clipboard::files::Handle,
     pub(crate) profile_detections: tasty_remote::profile_detection::ProfileDetections,
     pub(crate) approval_store: Arc<tasty_approval::ApprovalStore>,
     pub(crate) telemetry_seq: Arc<tasty_telemetry::TelemetrySeq>,

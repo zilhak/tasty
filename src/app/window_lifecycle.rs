@@ -291,12 +291,11 @@ impl App {
         &mut self,
         restored_idx_after_layout: Option<crate::model::RestoredPresentation>,
     ) -> Result<crate::state::MainViewState, String> {
-        let preset_store = self.services.preset_store.clone();
         let engine = self
             .engines
             .pending_mut()
             .ok_or("no pending engine is available to assemble the View")?;
-        let mut state = crate::state::MainViewState::new(&engine.read(), preset_store);
+        let mut state = self.services.window_state(&engine.read());
         if let Some(restored_idx) = restored_idx_after_layout {
             state
                 .navigation

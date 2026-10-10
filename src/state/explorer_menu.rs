@@ -83,7 +83,7 @@ impl super::MainViewState {
         if !self.explorer_take_os_clipboard() {
             return;
         }
-        let Some(clip) = self.explorer_clipboard.clone() else {
+        let Some(clip) = self.explorer_clipboard.get() else {
             return;
         };
         // 원격 경로를 같은 문자열의 로컬 파일로 복사하지 않는다.
@@ -132,7 +132,9 @@ mod tests {
     #[test]
     fn a_clipboard_copied_from_a_remote_explorer_is_not_pasted_locally() {
         let (mut state, session, sid, root) = crate::state::tests::explorer_fixture(false);
-        state.explorer_clipboard = Some(clipboard(ExplorerPathSource::Remote { workspace: 9 }));
+        state
+            .explorer_clipboard
+            .set(Some(clipboard(ExplorerPathSource::Remote { workspace: 9 })));
         state.explorer_paste(&session.read(), sid, root.clone(), user());
         assert_eq!(state.explorer_file_requests.len(), 0);
         assert_eq!(
@@ -140,7 +142,9 @@ mod tests {
             vec![crate::i18n::t("explorer.state.remote_paste_unsupported")]
         );
 
-        state.explorer_clipboard = Some(clipboard(ExplorerPathSource::Local));
+        state
+            .explorer_clipboard
+            .set(Some(clipboard(ExplorerPathSource::Local)));
         state.explorer_paste(&session.read(), sid, root, user());
         assert_eq!(
             state.explorer_file_requests.len(),

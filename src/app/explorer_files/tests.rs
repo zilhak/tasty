@@ -31,7 +31,7 @@ fn clipboard() -> crate::state::ExplorerClipboard {
 fn failed_or_late_cut_does_not_consume_a_new_clipboard() {
     let (mut state, engine) = crate::state::tests::test_state();
     let sid = engine.read().workspace_at(0).unwrap().all_surface_ids()[0];
-    state.explorer_clipboard = Some(clipboard());
+    state.explorer_clipboard.set(Some(clipboard()));
     state.request_explorer_file(
         &engine.read(),
         sid,
@@ -39,9 +39,9 @@ fn failed_or_late_cut_does_not_consume_a_new_clipboard() {
         user(),
     );
     let target = state.explorer_file_requests.0.pop_front().unwrap().target;
-    target.apply(&mut state, false);
+    target.finish(&mut state, false);
     assert!(
-        state.explorer_clipboard.is_some(),
+        state.explorer_clipboard.get().is_some(),
         "partial failure retains the cut list"
     );
     state.request_explorer_file(
@@ -51,12 +51,12 @@ fn failed_or_late_cut_does_not_consume_a_new_clipboard() {
         user(),
     );
     let target = state.explorer_file_requests.0.pop_front().unwrap().target;
-    state.explorer_clipboard = Some(clipboard());
-    let replacement = Arc::clone(&state.explorer_clipboard.as_ref().unwrap().identity);
-    target.apply(&mut state, true);
+    state.explorer_clipboard.set(Some(clipboard()));
+    let replacement = Arc::clone(&state.explorer_clipboard.get().unwrap().identity);
+    target.finish(&mut state, true);
     assert!(Arc::ptr_eq(
         &replacement,
-        &state.explorer_clipboard.as_ref().unwrap().identity
+        &state.explorer_clipboard.get().unwrap().identity
     ));
     state.request_explorer_file(
         &engine.read(),
@@ -70,11 +70,76 @@ fn failed_or_late_cut_does_not_consume_a_new_clipboard() {
         .pop_front()
         .unwrap()
         .target
-        .apply(&mut state, true);
+        .finish(&mut state, true);
     assert!(
-        state.explorer_clipboard.is_none(),
+        state.explorer_clipboard.get().is_none(),
         "full success consumes only its own cut list"
     );
+}
+
+/// 다른 창에서 잘라낸 목록을 이 창에서 옮기면 공용 슬롯이 비어 원래 창의 흐린 표시도 사라진다.
+#[test]
+fn a_cut_moved_in_another_window_clears_the_dim_in_the_first() {
+    let (first, engine) = crate::state::tests::test_state();
+    let store = Arc::new(std::sync::Mutex::new(
+        tasty_presets::PresetStore::load_default(),
+    ));
+    let mut second = crate::state::MainViewState::for_window(
+        &engine.read(),
+        store,
+        first.explorer_clipboard.clone(),
+        first.file_clipboard.clone(),
+    );
+    let sid = engine.read().workspace_at(0).unwrap().all_surface_ids()[0];
+    first.explorer_clipboard.set(Some(clipboard()));
+    assert!(!first.explorer_clipboard.cut_paths().is_empty());
+    second.request_explorer_file(
+        &engine.read(),
+        sid,
+        paste(vec!["original".into()], "dest".into()),
+        user(),
+    );
+    let target = second.explorer_file_requests.0.pop_front().unwrap().target;
+    target.finish(&mut second, true);
+    assert!(first.explorer_clipboard.cut_paths().is_empty());
+}
+
+/// 붙여넣은 창이 작업 중에 닫혀도 끝난 잘라내기는 앱의 공용 목록과 OS 클립보드에서 지운다.
+/// 앱은 View 를 찾기 전에 공용 슬롯과 OS 핸들로 `settle_cut` 을 부른다.
+#[test]
+fn a_cut_finished_after_its_window_closed_is_still_consumed() {
+    use crate::clipboard::files::{Handle, OsClip, OsFiles};
+    let (mut first, engine) = crate::state::tests::test_state();
+    let (os, memory) = Handle::memory();
+    first.file_clipboard = os.clone();
+    let store = Arc::new(std::sync::Mutex::new(
+        tasty_presets::PresetStore::load_default(),
+    ));
+    let mut second = crate::state::MainViewState::for_window(
+        &engine.read(),
+        store,
+        first.explorer_clipboard.clone(),
+        os.clone(),
+    );
+    let sid = engine.read().workspace_at(0).unwrap().all_surface_ids()[0];
+    first.explorer_clipboard.set(Some(clipboard()));
+    memory.set(OsClip::Files(OsFiles {
+        paths: vec!["original".into()],
+        cut: true,
+    }));
+    second.request_explorer_file(
+        &engine.read(),
+        sid,
+        paste(vec!["original".into()], "dest".into()),
+        user(),
+    );
+    let target = second.explorer_file_requests.0.pop_front().unwrap().target;
+    // 붙여넣은 창이 닫혔다. 그 창의 View 상태는 더 없다.
+    drop(second);
+    target.settle_cut(&first.explorer_clipboard, &os, true);
+    assert!(first.explorer_clipboard.get().is_none());
+    assert!(first.explorer_clipboard.cut_paths().is_empty());
+    assert_eq!(memory.get(), OsClip::Other);
 }
 
 /// 잘라낸 목록을 옮기면 OS 파일 클립보드도 비워 다른 앱이 같은 파일을 다시 붙여넣지 못한다.
@@ -96,7 +161,7 @@ fn a_finished_cut_clears_the_os_clipboard_only_while_it_holds_that_cut() {
     });
     for (before, after) in [(ours, OsClip::Other), (theirs.clone(), theirs)] {
         memory.set(before);
-        state.explorer_clipboard = Some(clipboard());
+        state.explorer_clipboard.set(Some(clipboard()));
         state.request_explorer_file(
             &engine.read(),
             sid,
@@ -104,7 +169,7 @@ fn a_finished_cut_clears_the_os_clipboard_only_while_it_holds_that_cut() {
             user(),
         );
         let target = state.explorer_file_requests.0.pop_front().unwrap().target;
-        target.apply(&mut state, true);
+        target.finish(&mut state, true);
         assert_eq!(memory.get(), after);
     }
 }
@@ -136,7 +201,7 @@ fn late_selection_and_replaced_view_are_not_modified() {
         .get_mut(sid)
         .unwrap()
         .select_only(&next);
-    target.apply(&mut state, true);
+    target.finish(&mut state, true);
     assert!(
         state
             .explorer_views
@@ -347,7 +412,7 @@ fn failed_rename_preserves_original_selection() {
         .pop_front()
         .unwrap()
         .target
-        .apply(&mut state, false);
+        .finish(&mut state, false);
     assert!(
         state
             .explorer_views
@@ -506,7 +571,7 @@ fn a_created_entry_is_selected_only_while_its_folder_is_still_shown() {
         );
         state.explorer_file_requests.0.pop_front().unwrap().target
     };
-    request(&mut state, dir.path()).apply(&mut state, true);
+    request(&mut state, dir.path()).finish(&mut state, true);
     let made = dir.path().join("made");
     assert!(
         state
@@ -517,7 +582,7 @@ fn a_created_entry_is_selected_only_while_its_folder_is_still_shown() {
             .contains(&made)
     );
     let elsewhere = dir.path().join("other");
-    request(&mut state, &elsewhere).apply(&mut state, true);
+    request(&mut state, &elsewhere).finish(&mut state, true);
     assert!(
         !state
             .explorer_views
@@ -526,7 +591,7 @@ fn a_created_entry_is_selected_only_while_its_folder_is_still_shown() {
             .selected
             .contains(&elsewhere.join("made"))
     );
-    request(&mut state, dir.path()).apply(&mut state, false);
+    request(&mut state, dir.path()).finish(&mut state, false);
     assert!(
         state
             .explorer_views
@@ -541,7 +606,7 @@ fn a_created_entry_is_selected_only_while_its_folder_is_still_shown() {
 fn direct_moves_never_consume_the_clipboard() {
     let (mut state, engine) = crate::state::tests::test_state();
     let sid = engine.read().workspace_at(0).unwrap().all_surface_ids()[0];
-    state.explorer_clipboard = Some(clipboard());
+    state.explorer_clipboard.set(Some(clipboard()));
     state.request_explorer_file_direct(
         &engine.read(),
         sid,
@@ -550,9 +615,9 @@ fn direct_moves_never_consume_the_clipboard() {
     );
     let target = state.explorer_file_requests.0.pop_front().unwrap().target;
     assert!(target.clipboard.is_none());
-    target.apply(&mut state, true);
+    target.finish(&mut state, true);
     assert!(
-        state.explorer_clipboard.is_some(),
+        state.explorer_clipboard.get().is_some(),
         "a drag or retry is not a paste from the clipboard"
     );
 }

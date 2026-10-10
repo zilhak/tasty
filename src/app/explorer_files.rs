@@ -428,7 +428,7 @@ impl crate::state::MainViewState {
         let clipboard = match &operation {
             Operation::Paste { cut: true, .. } if from_clipboard => self
                 .explorer_clipboard
-                .as_ref()
+                .get()
                 .map(|c| Arc::clone(&c.identity)),
             _ => None,
         };
@@ -579,22 +579,38 @@ impl Target {
     fn view_is_current(&self, view: &crate::view::main::MainView) -> bool {
         self.matches_view(&view.base.state)
     }
-    fn clipboard_is_current(&self, state: &crate::state::MainViewState) -> bool {
+    fn clipboard_is_current(
+        &self,
+        slot: &crate::state::explorer_clipboard_slot::ExplorerClipboardSlot,
+    ) -> bool {
         self.clipboard.as_ref().is_none_or(|old| {
-            state
-                .explorer_clipboard
-                .as_ref()
+            slot.get()
                 .is_some_and(|current| Arc::ptr_eq(old, &current.identity))
         })
     }
-    fn apply(self, state: &mut crate::state::MainViewState, success: bool) {
+    /// 잘라낸 목록을 모두 옮겼으면 앱 공용 목록과 OS 클립보드에서 지운다. 창이나 대상 surface 가
+    /// 그 사이 닫혀도 해야 하므로 View 와 무관하게 앱 상태로 처리한다.
+    fn settle_cut(
+        &self,
+        slot: &crate::state::explorer_clipboard_slot::ExplorerClipboardSlot,
+        os: &crate::clipboard::files::Handle,
+        success: bool,
+    ) {
         if success
             && self.clipboard.is_some()
-            && self.clipboard_is_current(state)
-            && let Some(clip) = state.explorer_clipboard.take()
+            && self.clipboard_is_current(slot)
+            && let Some(clip) = slot.take()
         {
-            state.explorer_cut_consumed(&clip);
+            crate::state::explorer_os_clipboard::cut_consumed(os, &clip);
         }
+    }
+    /// 시험용: 앱이 하는 순서대로 잘라내기를 정리한 뒤 View 에 반영한다.
+    #[cfg(test)]
+    fn finish(self, state: &mut crate::state::MainViewState, success: bool) {
+        self.settle_cut(&state.explorer_clipboard, &state.file_clipboard, success);
+        self.apply(state, success);
+    }
+    fn apply(self, state: &mut crate::state::MainViewState, success: bool) {
         if self.reload
             && let Some(view) = state.explorer_views.get_mut(self.surface)
         {
@@ -652,6 +668,11 @@ impl super::App {
         if success && let Some(clipboard) = &target.clipboard {
             clipboard.store(true, Ordering::Release);
         }
+        target.settle_cut(
+            &self.services.explorer_clipboard,
+            &self.services.file_clipboard,
+            success,
+        );
         report_result(&result);
         if self.engines.of_window(window) != Some(engine) {
             return;

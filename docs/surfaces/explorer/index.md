@@ -23,7 +23,7 @@ OS 파일 관리자에 의존하지 않고 tasty surface 안에서 디렉토리�
 | 내비게이션 모델 `ExplorerPanel`(내부 탭·cwd·current·히스토리·뷰 모드·정렬·미리보기 토글과 폭) | engine 의 surface 실행 객체(`EngineRuntime::surfaces`) | View 가 `EngineAction::Explorer`·`EngineAction::ExplorerCwd`·`EngineAction::ExplorerPreview` 로 요청하고, App 이 요청에 담긴 `SurfaceBinding` 이 아직 그 surface 를 가리킬 때만 적용한 뒤 레이아웃을 dirty 로 표시한다(`src/app/engine_action.rs`) |
 | 즐겨찾기 목록 | 프로세스 원본 `RuntimeRegistries::explorer_favorites`(`SharedList<ExplorerFavorites>`). engine 의 `EngineRuntime::explorer_favorites` 는 그리기용 사본(`Replica`) | `EngineAction::AddExplorerFavorite`·`RemoveExplorerFavorite` 가 원본을 바꾸고 바로 파일에 쓴다(아래 "즐겨찾기") |
 | 목록 캐시·로딩 상태·선택·트리 펼침·주소창 편집·타입어헤드 | 창의 View 상태 `MainViewState::explorer_views`(surface id 별 `ExplorerView`) | View 가 직접 바꾼다. 저장하지 않는다 |
-| 파일 클립보드 | 창의 View 상태 `MainViewState::explorer_clipboard`, OS 쪽은 `MainViewState::file_clipboard` | 복사·잘라내기가 채우고 로컬 경로는 OS 파일 클립보드에도 올린다. 붙여넣기는 나중에 복사한 쪽을 쓰고 잘라내기를 소비한다([OS 파일 클립보드](file-operations.md#os-파일-클립보드)). 저장하지 않는다 |
+| 파일 클립보드 | 앱 공용 슬롯 `AppServices::explorer_clipboard`(창마다 `MainViewState::explorer_clipboard` 로 같은 슬롯을 받는다), OS 쪽은 `MainViewState::file_clipboard` | 복사·잘라내기가 채우고 로컬 경로는 OS 파일 클립보드에도 올린다. 붙여넣기는 나중에 복사한 쪽을 쓰고 잘라내기를 소비한다([OS 파일 클립보드](file-operations.md#os-파일-클립보드)). 저장하지 않는다 |
 | 로컬 디렉터리 읽기 | App 의 읽기 worker(`src/app/local_reads.rs`, 동시 실행 최대 4개) | View 가 요청을 만들고 받은 receipt 로 결과를 가져간다 |
 | 파일 변경 작업 | App 의 `explorer_files` worker(한 번에 한 작업) | View 가 대상 경로와 binding 을 고정한 요청을 넘긴다([파일 작업 계약](file-operations.md)) |
 | mirror 목록 조회 | 원격 attach 채널(`list_dir_request`/`list_dir_result`) | View 가 요청을 outbox 에 쌓고 렌더 뒤 App 이 원격으로 보낸다 |
@@ -262,9 +262,9 @@ Grid 셀은 모두 `explorer_grid_thumb_size`(40) 슬롯을 잡아 썸네일 유
 
 - **새 폴더 / 새 파일** (빈 영역·단일 폴더, mirror 에서 숨김) — 위 "새 폴더 · 새 파일".
 - **경로 복사** (`copy_path`, 다중은 개행 결합) → OS 텍스트 클립보드 + `toast.copied_path` 토스트(단축키/Command Palette/우클릭 메뉴 모두 동일).
-- **복사 / 잘라내기 / 붙여넣기** — explorer 파일 클립보드(`MainViewState::explorer_clipboard`, 창마다 단일 슬롯·세션 종료 시 폐기)에 경로+cut 플래그를 담고, 붙여넣기에서 소비한다. 로컬 경로는 OS 파일 클립보드에도 올리고, 붙여넣기는 창의 목록과 OS 쪽 중 나중에 복사한 쪽을 쓴다([OS 파일 클립보드](file-operations.md#os-파일-클립보드)).
+- **복사 / 잘라내기 / 붙여넣기** — explorer 파일 클립보드(`MainViewState::explorer_clipboard`, 앱의 모든 창이 함께 쓰는 단일 슬롯·세션 종료 시 폐기)에 경로+cut 플래그를 담고, 붙여넣기에서 소비한다. 로컬 경로는 OS 파일 클립보드에도 올리고, 붙여넣기는 Tasty 목록과 OS 쪽 중 나중에 복사한 쪽을 쓴다([OS 파일 클립보드](file-operations.md#os-파일-클립보드)).
   파일 복사·이동·휴지통·이름 변경·시스템 열기는 View가 고정 경로와 원 surface/View identity를 요청으로 넘기고 App의 `explorer_files` worker가 실행한다. 파일 이동 헬퍼는 `src/app/explorer_files/ops.rs`에 있으며 충돌 시 `(copy)` 접미사를 붙이며 목적지 공개는 OS의 덮어쓰기 금지 rename으로 수행한다. 복사는 목적지의 전용 임시 디렉터리에서 준비하고 실패 시 제거한다. 심볼릭 링크는 따라가지 않고 링크로 복사하며 별칭을 해소한 실제 하위 디렉터리로의 복사는 거부한다. cut은 교차 파일시스템 오류일 때만 copy+remove로 전환한다.
-  View별 대기 요청은 8개, 요청 경로·이름 자료는 1MiB 이내이며 App은 한 작업씩 실행한다. 이 상한에 걸린 사용자 요청은 나누어 보내지 않고 받지 않으며, 그 칸에 경고 카드로 이유를 보인다(대기열이 차면 `explorer.request.queue_full`, 자료가 1MiB 를 넘으면 `explorer.request.too_large`, [파일 작업](file-operations.md)). 시작 전 원 대상과 mirror 제한을 다시 검사한다. 완료 뒤 원 View/surface가 살아 있을 때만 목록 갱신을 요청하고, 변경된 선택이나 새 클립보드는 지우지 않는다. cut은 전부 성공한 원 클립보드만 소진하며 부분 성공은 기존 목록을 유지한다.
+  View별 대기 요청은 8개, 요청 경로·이름 자료는 1MiB 이내이며 App은 한 작업씩 실행한다. 이 상한에 걸린 사용자 요청은 나누어 보내지 않고 받지 않으며, 그 칸에 경고 카드로 이유를 보인다(대기열이 차면 `explorer.request.queue_full`, 자료가 1MiB 를 넘으면 `explorer.request.too_large`, [파일 작업](file-operations.md)). 시작 전 원 대상과 mirror 제한을 다시 검사한다. 완료 뒤 원 View/surface가 살아 있을 때만 목록 갱신을 요청하고, 변경된 선택이나 새 클립보드는 지우지 않는다. cut은 전부 성공한 원 클립보드만 소진하며 부분 성공은 기존 목록을 유지한다. 소진은 앱 공용 슬롯에서 하므로 원 View/surface 가 닫혔어도 일어난다.
   종료는 신규 실행을 막고 최대 5초 실제 worker join을 관측한다. 기한이 지나도 작업 취소나 완료로 기록하지 않으며 남은 worker를 경고한다. 로컬 목록·트리 읽기는 이 worker 와 분리된 읽기 worker 가 맡아 대형 복사가 목록 조회를 막지 않는다.
   잘라내기는 이동 성공 시 클립보드를 비운다.
   우클릭 메뉴뿐 아니라 키보드 단축키(기본 `copy`/`cut`/`paste` 바인딩, explorer 포커스 시)로도 동일하게 동작한다 — `handle_explorer_shortcut`(`src/adapters/ui/input/shortcuts/copy_paste.rs`)가 선택 항목을 모아 컨텍스트 메뉴와 같은 `explorer_menu_set_clipboard`/`explorer_menu_paste` 를 호출하므로 fs 동작이 두 경로에서 갈라지지 않는다.

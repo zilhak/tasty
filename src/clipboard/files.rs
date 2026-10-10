@@ -96,6 +96,12 @@ impl Handle {
         self.0.write(files)
     }
 
+    /// 두 핸들이 같은 클립보드를 가리키는가.
+    #[cfg(test)]
+    pub(crate) fn same(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+
     pub(crate) fn read(&self) -> Result<OsClip, String> {
         self.0.read()
     }

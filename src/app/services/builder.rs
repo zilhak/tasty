@@ -148,6 +148,10 @@ impl AppServicesBuilder {
             registries,
             #[cfg(feature = "gui")]
             navigation_proofs: Default::default(),
+            #[cfg(feature = "gui")]
+            explorer_clipboard: Default::default(),
+            #[cfg(feature = "gui")]
+            file_clipboard: Default::default(),
             profile_detections: Default::default(),
             approval_store: Arc::new(tasty_approval::ApprovalStore::new()),
             telemetry_seq: Arc::new(tasty_telemetry::TelemetrySeq::new()),
