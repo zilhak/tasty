@@ -1,4 +1,4 @@
-//! 빈 DAG, 사라진 DAG, 검색 결과 없음, 순환 경고 예제. 순환이 있어도 그래프는 계속 그린다.
+//! 빈 DAG, 사라진 DAG, popup 의 DAG 없음·검색 결과 없음, 순환 경고 예제. 순환이 있어도 그래프는 계속 그린다.
 
 use tasty_type_appearance::theme::Theme;
 
@@ -27,12 +27,13 @@ fn empty_box(ui: &mut egui::Ui, theme: &Theme, case: chrome::Empty<'_>) {
     chrome::paint_empty(ui, theme, rect, case);
 }
 
-/// `states` 섹션 Spec — 빈 상태 3 종 + 사이클 경고.
+/// `states` 섹션 Spec — 빈 상태 4 종 + 사이클 경고.
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     let cycle = super::cycle_dag();
     spec::stage(ui, theme, StageVariant::Column, |ui| {
         empty_box(ui, theme, chrome::Empty::Surface);
         empty_box(ui, theme, chrome::Empty::Missing("nightly-release"));
+        empty_box(ui, theme, chrome::Empty::Popup);
         empty_box(ui, theme, chrome::Empty::Search("deploy"));
         let ids = cycle.cycle.clone().unwrap_or_default();
         let (rect, _) = ui.allocate_exact_size(
@@ -53,7 +54,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "empty A′",
                 "surface — the DAG it showed is gone (host only)",
             ),
-            ("empty B", "search — echoes the query"),
+            ("empty C", "popup — no DAG in any workspace"),
+            ("empty B", "popup search — echoes the query"),
+            ("popup position", "centre of the list area"),
         ],
         &[
             TokenChip::new(

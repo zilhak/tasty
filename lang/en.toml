@@ -2202,6 +2202,11 @@ none_hint = "Create one with: `tasty agent task-create --workspace-id {} ...`"
 missing = "DAG not found: {}"
 missing_hint = "It may have been deleted. Pick another from the header."
 
+[dag.popup]
+# DAG 목록 popup 의 검색 무매치. 자리표시자는 검색어다.
+no_match = "No DAGs match “{}”"
+no_match_hint = "Clear the filter or widen the scope to all workspaces."
+
 [dag.status]
 waiting = "WAITING"
 ready = "READY"

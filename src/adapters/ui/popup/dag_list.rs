@@ -24,7 +24,7 @@ use crate::adapters::ui::surface::dag_graph::{
     node::status_colors,
     view::{DagGraphView, POLL_INTERVAL},
 };
-use crate::i18n::{t, t_count, t_count_template, t_fmt2};
+use crate::i18n::{t, t_count, t_count_template, t_fmt, t_fmt2};
 use crate::state::MainViewState;
 
 pub const DAG_LIST_POPUP_ID: &str = "dag_list";
@@ -432,15 +432,17 @@ fn draw_list(
 
     let mut picked = None;
     ui.allocate_ui(egui::vec2(full.width(), list_h), |ui| {
+        if visible.is_empty() {
+            let (rect, _) =
+                ui.allocate_exact_size(egui::vec2(full.width(), list_h), egui::Sense::hover());
+            draw_empty(ui, theme, rect, total, &dag.query);
+            return;
+        }
         egui::ScrollArea::vertical()
             .id_salt("dag_list_rows")
             .auto_shrink([false, false])
             .drag_to_scroll(false)
             .show(ui, |ui| {
-                if visible.is_empty() {
-                    draw_empty(ui, theme, total);
-                    return;
-                }
                 // ListCtrlItem이 빌리는 문자열·클로저를 항목보다 먼저 만든다.
                 let prepared: Vec<(String, &DagRow)> = visible
                     .iter()
@@ -565,27 +567,40 @@ fn draw_row_trailing(ui: &mut egui::Ui, theme: &Theme, row: &DagRow) {
     });
 }
 
-/// DAG가 없는 경우와 필터 결과가 없는 경우를 구분해 안내한다.
-fn draw_empty(ui: &mut egui::Ui, theme: &Theme, total: usize) {
-    let (title, hint) = if total == 0 {
-        ("dag_list.empty_none", "dag_list.empty_none_hint")
-    } else {
-        ("dag_list.empty_filtered", "dag_list.empty_filtered_hint")
+/// DAG가 없는 경우와 필터 결과가 없는 경우를 구분해 목록 영역 가운데에 안내한다.
+/// 검색어가 있으면 그 검색어를 되비추고, 검색어 없이 상태·범위 필터만 걸렀으면 일반 무매치 문구를 쓴다.
+fn draw_empty(ui: &egui::Ui, theme: &Theme, rect: egui::Rect, total: usize, query: &str) {
+    let (icon, title, hint) = empty_copy(total, query);
+    let view = tasty_ui_widgets::DagEmptyView {
+        icon,
+        title: &title,
+        hint: &hint,
     };
-    ui.vertical_centered(|ui| {
-        ui.add_space(ui.available_height() / 3.0);
-        ui.label(
-            egui::RichText::new(t(title))
-                .size(theme.font_size_body.value())
-                .color(theme.text_primary().to_egui()),
-        );
-        ui.add_space(theme.spacing_xs.value());
-        ui.label(
-            egui::RichText::new(t(hint))
-                .size(theme.font_size_caption.value())
-                .color(theme.text_muted().to_egui()),
-        );
-    });
+    tasty_ui_widgets::paint_dag_empty(ui, theme, rect, &view);
+}
+
+/// 빈 목록의 글리프와 문구. `total`은 필터 전 DAG 수다.
+fn empty_copy(total: usize, query: &str) -> (icons::Icon, String, String) {
+    let needle = query.trim();
+    if total == 0 {
+        (
+            icons::GIT_TREE,
+            t("dag_list.empty_none").to_owned(),
+            t("dag_list.empty_none_hint").to_owned(),
+        )
+    } else if needle.is_empty() {
+        (
+            icons::SEARCH,
+            t("dag_list.empty_filtered").to_owned(),
+            t("dag_list.empty_filtered_hint").to_owned(),
+        )
+    } else {
+        (
+            icons::SEARCH,
+            t_fmt("dag.popup.no_match", needle),
+            t("dag.popup.no_match_hint").to_owned(),
+        )
+    }
 }
 
 /// surface와 같은 그래프를 그린다. 노드 상세의 배치는 가용 폭에 따라 정해진다.
@@ -620,6 +635,20 @@ pub fn on_close_dag_list_popup(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn empty_copy_picks_none_then_filter_then_query_echo() {
+        let (_, title, hint) = empty_copy(0, "deploy");
+        assert_eq!(title, t("dag_list.empty_none"));
+        assert_eq!(hint, t("dag_list.empty_none_hint"));
+
+        let (_, title, _) = empty_copy(3, "   ");
+        assert_eq!(title, t("dag_list.empty_filtered"));
+
+        let (_, title, hint) = empty_copy(3, " deploy ");
+        assert_eq!(title, t_fmt("dag.popup.no_match", "deploy"));
+        assert_eq!(hint, t("dag.popup.no_match_hint"));
+    }
 
     fn row(id: &str, updated_at: u64, workspace_id: u32) -> DagRow {
         DagRow {

@@ -140,11 +140,14 @@ popup 상태에서 받는다. popup 폭 560은 상세 도킹 기준 640보다 �
 
 | 상태 | 화면 |
 |------|------|
-| DAG 가 하나도 없음 | "No DAGs yet" + 의존 관계로 묶인 task 가 여기 나타난다는 안내 |
-| 필터가 전부 걸러냄 | "No matching DAGs" + 조건을 바꾸라는 안내 |
+| DAG 가 하나도 없음 | gitTree 글리프 + "No DAGs yet" + 의존 관계로 묶인 task 가 여기 나타난다는 안내. 워크스페이스 id 가 든 명령은 넣지 않는다 |
+| 검색어에 맞는 DAG 가 없음 | search 글리프 + "No DAGs match “{검색어}”" + 필터를 지우거나 범위를 모든 워크스페이스로 넓히라는 안내 |
+| 검색어 없이 상태 필터·범위만으로 전부 걸러냄 | search 글리프 + "No matching DAGs" + 조건을 바꾸라는 안내 |
 | 목록 폴링 실패 | 마지막으로 성공한 목록을 그대로 둔다(그래프 폴링과 같은 계약) |
 | 다른 workspace 활성 | popup 자체가 그려지지 않는다. 복귀 시 상태 그대로 다시 뜬다 |
 | 디테일 안의 상태들 | [그래프 surface 문서](../../../surfaces/dag-graph/screens/graph.md#상태별-시각) 와 동일 |
+
+빈 목록 세 경우는 DAG surface 와 같은 공용 `tasty_ui_widgets::paint_dag_empty`로 목록 영역(검색 줄·토글 줄과 푸터 사이)의 세로 가운데에 그린다. 갤러리 `dag-states` 예제가 DAG 없음과 검색 무매치 두 경우를 같은 함수와 같은 문구 키로 보여 준다.
 
 ## 갱신과 비용
 

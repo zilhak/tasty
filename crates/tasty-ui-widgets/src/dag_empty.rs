@@ -1,4 +1,4 @@
-//! Task DAG 빈 상태. 본체 DAG surface와 갤러리가 함께 호출한다.
+//! Task DAG 빈 상태. 본체 DAG surface·DAG 목록 popup과 갤러리가 함께 호출한다.
 //!
 //! 디자인 `DagEmpty`: 글리프(text-disabled) → space-sm → 제목(body, text-secondary) → space-sm →
 //! 안내(caption, text-muted, measure-sm 폭에서 줄바꿈)를 영역 가운데에 쌓는다. 안내의 백틱 구간

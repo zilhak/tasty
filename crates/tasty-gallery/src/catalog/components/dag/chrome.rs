@@ -304,7 +304,9 @@ pub enum Empty<'a> {
     Surface,
     /// 본체 surface — 지정한 DAG가 사라졌다. 본체 문구(`dag.empty.missing*`)를 쓴다.
     Missing(&'a str),
-    /// 디자인 `DagEmpty variant="search"` — 필터 무매치. 본체 popup은 이 형태를 아직 쓰지 않는다.
+    /// 본체 DAG 목록 popup — 어느 워크스페이스에도 DAG가 없다. 디자인 `DagEmpty variant="popup"`.
+    Popup,
+    /// 본체 DAG 목록 popup — 검색어에 맞는 DAG가 없다. 디자인 `DagEmpty variant="search"`.
     Search(&'a str),
 }
 
@@ -321,10 +323,15 @@ pub fn paint_empty(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, case: Emp
             crate::i18n::t_fmt("dag.empty.missing", id),
             crate::i18n::t("dag.empty.missing_hint").to_owned(),
         ),
+        Empty::Popup => (
+            icons::GIT_TREE,
+            crate::i18n::t("dag_list.empty_none").to_owned(),
+            crate::i18n::t("dag_list.empty_none_hint").to_owned(),
+        ),
         Empty::Search(q) => (
             icons::SEARCH,
-            format!("No DAGs match \u{201c}{q}\u{201d}"),
-            "Clear the filter or widen the scope to all workspaces.".to_owned(),
+            crate::i18n::t_fmt("dag.popup.no_match", q),
+            crate::i18n::t("dag.popup.no_match_hint").to_owned(),
         ),
     };
     let view = tasty_ui_widgets::DagEmptyView {
