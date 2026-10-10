@@ -853,6 +853,8 @@ props 를 채운다.
 - 선택 열 32 는 본체와 갤러리가 모두 Theme 의 `kb_ie_select_column_width` 를 읽는다. 나머지 `kb-ie-*` 토큰
   (`kb-ie-action-column-width` · `kb-ie-from-column-width` · `kb-ie-slot-min-width` · `kb-ie-notice-inset` ·
   `kb-ie-slot-height`)은 이 화면이 읽지 않는다. 그중 slot 둘은 녹화 슬롯의 `kb-record-*` 가 참조한다.
+  `kb-ie-action-column-width` · `kb-ie-from-column-width` 는 옵션 이전 카드가 사라져 디자인이 deprecated 로
+  표시했다. 읽는 곳이 없지만 디자인이 지울 때까지 토큰과 생성 접근자를 그대로 둔다.
 - Import/Export 는 full-bleed 서브탭이라 620 상한을 받지 않는다. specimen 폭은 시안 `IE_W` 와 같은 868
   (기본 1100 창의 본체 설정 창 콘텐츠 컬럼)이다. 진입 화면 컬럼만 620 을 따른다.
 
