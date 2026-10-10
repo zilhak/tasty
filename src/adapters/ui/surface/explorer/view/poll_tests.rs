@@ -21,11 +21,16 @@ fn run_until(
     }
 }
 
-/// 패널을 그리고 읽기·확인 결과가 모두 돌아올 때까지 기다린다.
+/// 패널을 그리고 읽기·확인 결과가 모두 돌아올 때까지 기다린다. `sync` 가 목록과 함께 거는
+/// 쓰기 가능 확인도 기다린다. 그 결과가 뒤에 오면 다시 그리라는 신호가 되어, 확인만의 신호를
+/// 재는 시험이 worker 순서에 따라 갈린다.
 fn settle(view: &mut ExplorerView, panel: &ExplorerPanel, owner: &mut LocalReads) {
     view.sync(panel, None);
     run_until(view, owner, |v| {
-        v.local_query.is_none() && v.tree_queries.is_empty() && v.poll.check.is_none()
+        v.local_query.is_none()
+            && v.writable_query.is_none()
+            && v.tree_queries.is_empty()
+            && v.poll.check.is_none()
     });
 }
 
