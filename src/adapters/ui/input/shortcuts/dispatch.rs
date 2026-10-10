@@ -371,6 +371,11 @@ impl MainView {
                     );
                 }
             }
+            "explorer_back" | "explorer_forward" | "explorer_focus_address" => {
+                if state.focused_surface_type(engine).is_kind("explorer") {
+                    super::explorer_nav_shortcut(state, engine, action_id);
+                }
+            }
             "explorer_toggle_preview" | "explorer_toggle_hidden" | "explorer_properties" => {
                 if state.focused_surface_type(engine).is_kind("explorer") {
                     super::explorer_view_shortcut(state, engine, action_id);

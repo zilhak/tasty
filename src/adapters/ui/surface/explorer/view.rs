@@ -90,6 +90,8 @@ pub struct ExplorerView {
     pub addr_editing: bool,
     /// 주소창 후보 드롭다운의 keyboard-active 행(필터된 가시 목록 기준).
     pub addr_active: Option<usize>,
+    /// 주소창 포커스 단축키를 눌렀다. 다음에 주소창을 그릴 때 포커스를 주고 소비한다.
+    pub(crate) focus_address: bool,
     /// 파일인지 확인하려고 부모 폴더 목록을 기다리는 원격 주소 입력.
     pub(super) addr_probe: Option<super::address::AddressProbe>,
     /// (ADR-0022) 이 surface 가 원격 mirror 인가 — `Some(local_ws_id)` 면 원격, `None`
@@ -251,6 +253,7 @@ impl ExplorerView {
             addr_buffer: String::new(),
             addr_editing: false,
             addr_active: None,
+            focus_address: false,
             addr_probe: None,
             mirror_ws_id: None,
             remote_state: HashMap::new(),

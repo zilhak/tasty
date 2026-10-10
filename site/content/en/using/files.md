@@ -1,4 +1,4 @@
-<!-- source-hash: 2ca3eca4d6ad -->
+<!-- source-hash: 2ddc46a49887 -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -105,6 +105,8 @@ Choose **Properties** at the bottom of the right-click menu to open a popup insi
 |---------|--------|
 | Refresh | `F5` |
 | Go to parent folder | `Alt+↑` |
+| Back / forward | `Alt+←` / `Alt+→` (macOS `Cmd+←` / `Cmd+→`) |
+| Go to the address bar (selects the whole path) | `Alt+L` (macOS `Cmd+L`) |
 | Select all | `Ctrl+A` · `Alt+A` |
 | Copy path | `Alt+Shift+C` |
 | Find | `Ctrl+F` · `Alt+F` |

@@ -66,6 +66,8 @@ pub struct PathField<'a> {
     go_icon: Option<IconPainter<'a>>,
     /// Go 버튼 hover tooltip(디자인 aria-label 대체). `None` 이면 tooltip 없음.
     go_tooltip: Option<&'a str>,
+    /// 이번 프레임에 입력칸에 포커스를 주고 글자 전체를 고른다(주소창 포커스 단축키).
+    focus: bool,
 }
 
 impl<'a> PathField<'a> {
@@ -82,7 +84,14 @@ impl<'a> PathField<'a> {
             row_icon: None,
             go_icon: None,
             go_tooltip: None,
+            focus: false,
         }
+    }
+
+    /// 이번 프레임에 입력칸에 포커스를 주고 글자 전체를 고른다. 바로 고쳐 쓰거나 지울 수 있다.
+    pub fn focus(mut self, focus: bool) -> Self {
+        self.focus = focus;
+        self
     }
 
     pub fn placeholder(mut self, placeholder: &'a str) -> Self {
@@ -194,6 +203,9 @@ impl<'a> PathField<'a> {
                 ac = ac.trigger_text_color(theme.text_secondary().to_egui());
             }
             let out = ac.show(ui, theme, buffer, candidates, active);
+            if self.focus {
+                focus_all(ui.ctx(), &out.response, buffer);
+            }
 
             // 창 포커스가 없는 재그리기에서도 편집 상태를 유지하도록 egui Memory의 위젯 포커스를 읽는다.
             // viewport 포커스에 따라 달라지는 has_focus는 편집 상태 판단에 사용하지 않는다.
@@ -230,6 +242,20 @@ impl<'a> PathField<'a> {
             *active = None;
         }
         outcome
+    }
+}
+
+/// 입력칸에 포커스를 주고 글자 전체를 고른다.
+fn focus_all(ctx: &egui::Context, response: &egui::Response, buffer: &str) {
+    response.request_focus();
+    if let Some(mut state) = egui::TextEdit::load_state(ctx, response.id) {
+        state
+            .cursor
+            .set_char_range(Some(egui::text::CCursorRange::two(
+                egui::text::CCursor::new(0),
+                egui::text::CCursor::new(buffer.chars().count()),
+            )));
+        state.store(ctx, response.id);
     }
 }
 
@@ -319,5 +345,43 @@ mod tests {
             decide(&AutoCompleteAction::Pick("/a".to_string()), true, true),
             Decision::NavigatePick("/a".to_string())
         );
+    }
+
+    /// 포커스 요청이 있는 프레임에 편집 상태가 되고 경로 전체를 고른다. 요청이 없으면 편집하지 않는다.
+    #[test]
+    fn a_focus_request_edits_with_the_whole_path_selected() {
+        let theme = Theme::with_colors_and_zoom(tasty_themes::mocha_fallback_colors(), false, 1.0);
+        let ctx = egui::Context::default();
+        let mut buffer = String::from("/home/me/한글");
+        let mut editing = false;
+        let mut active = None;
+        let mut run = |focus: bool, editing: &mut bool| {
+            let mut id = None;
+            drop(ctx.run(egui::RawInput::default(), |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    PathField::new("t").focus(focus).show(
+                        ui,
+                        &theme,
+                        &mut buffer,
+                        editing,
+                        &mut active,
+                        &[],
+                        "/home/me/한글",
+                    );
+                    id = ui.ctx().memory(|m| m.focused());
+                });
+            }));
+            id
+        };
+        run(false, &mut editing);
+        assert!(!editing);
+        let focused = run(true, &mut editing).expect("the field takes the focus");
+        assert!(editing);
+        let range = egui::TextEdit::load_state(&ctx, focused)
+            .and_then(|s| s.cursor.char_range())
+            .expect("a selection");
+        let chars = "/home/me/한글".chars().count();
+        assert_eq!(range.primary.index.max(range.secondary.index), chars);
+        assert_eq!(range.primary.index.min(range.secondary.index), 0);
     }
 }

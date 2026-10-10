@@ -577,6 +577,7 @@ fn address_bar(
         .row_icon(&folder_icon)
         .go_icon(&go_icon)
         .go_tooltip(t("explorer.address.go"))
+        .focus(std::mem::take(&mut view.focus_address))
         .show(
             ui,
             theme,

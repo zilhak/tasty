@@ -188,6 +188,9 @@ const ENTRY_PLACEMENT: &[(&str, KeybindingsSubTab, Option<&str>)] = &[
     // Explorer
     ("explorer_refresh", KeybindingsSubTab::Explorer, None),
     ("explorer_go_up", KeybindingsSubTab::Explorer, None),
+    ("explorer_back", KeybindingsSubTab::Explorer, None),
+    ("explorer_forward", KeybindingsSubTab::Explorer, None),
+    ("explorer_focus_address", KeybindingsSubTab::Explorer, None),
     ("explorer_toggle_preview", KeybindingsSubTab::Explorer, None),
     ("explorer_toggle_hidden", KeybindingsSubTab::Explorer, None),
     ("explorer_properties", KeybindingsSubTab::Explorer, None),

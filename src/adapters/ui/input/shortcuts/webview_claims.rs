@@ -8,8 +8,15 @@ use crate::webview::{HostShortcutPolicy, ShortcutSources};
 /// 페이지가 처리할 액션 ID. 키 조합을 바꿔도 해당 액션은 host로 보내지 않는다.
 const PAGE_RESERVED_FIELDS: &[&str] = &["find", "copy", "cut", "paste", "select_all"];
 /// explorer 에 포커스가 있을 때만 동작하는 액션. webview 위에서는 실행되지 않으므로 host 가
-/// 가져가지 않는다. 특히 실행 취소 키는 페이지의 undo/redo 와 같다.
-const EXPLORER_ONLY_FIELDS: &[&str] = &["explorer_undo", "explorer_redo"];
+/// 가져가지 않는다. 특히 실행 취소 키는 페이지의 undo/redo 와, 뒤로·앞으로 키(Alt+←·Alt+→)는
+/// 페이지의 뒤로·앞으로와 같다.
+const EXPLORER_ONLY_FIELDS: &[&str] = &[
+    "explorer_undo",
+    "explorer_redo",
+    "explorer_back",
+    "explorer_forward",
+    "explorer_focus_address",
+];
 
 /// 설정의 host 액션·quick-switch·사용자 스크립트와 플러그인 바인딩으로 키 정책을 만든다.
 /// `plugin_combos`는 매니페스트 기본값에 사용자 설정을 적용한 목록이다.

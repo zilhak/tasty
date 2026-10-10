@@ -159,6 +159,12 @@ pub struct KeybindingSettings {
     pub explorer_refresh: Vec<String>,
     /// Navigate the focused Explorer to the parent directory.
     pub explorer_go_up: Vec<String>,
+    /// Go back in the focused Explorer's navigation history.
+    pub explorer_back: Vec<String>,
+    /// Go forward in the focused Explorer's navigation history.
+    pub explorer_forward: Vec<String>,
+    /// Put the keyboard focus in the focused Explorer's address bar with its text selected.
+    pub explorer_focus_address: Vec<String>,
     /// Show or hide the preview panel of the focused Explorer.
     pub explorer_toggle_preview: Vec<String>,
     /// Show or hide hidden files (names starting with a dot) in the focused Explorer.

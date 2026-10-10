@@ -640,6 +640,18 @@ impl MainView {
             }
             return true;
         }
+        for (binding, action) in [
+            (&kb.explorer_back, "explorer_back"),
+            (&kb.explorer_forward, "explorer_forward"),
+            (&kb.explorer_focus_address, "explorer_focus_address"),
+        ] {
+            if matches_any_binding(binding, key, mods)
+                && state.focused_surface_type(engine).is_kind("explorer")
+            {
+                super::explorer_nav_shortcut(state, engine, action);
+                return true;
+            }
+        }
         for (binding, folder) in [
             (&kb.explorer_new_folder, true),
             (&kb.explorer_new_file, false),

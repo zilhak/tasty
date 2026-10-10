@@ -84,6 +84,29 @@ fn explorer_view_shortcut(
     );
 }
 
+/// 뒤로·앞으로·주소창 포커스 단축키. 포커스된 탐색기만 바꾼다. 주소창 포커스는 다음에 주소창을
+/// 그릴 때 준다.
+fn explorer_nav_shortcut(
+    state: &mut crate::state::MainViewState,
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
+    action: &str,
+) {
+    let Some(sid) = focused_explorer_surface_id(state, engine) else {
+        return;
+    };
+    let nav = match action {
+        "explorer_back" => crate::explorer_ui::ExplorerAction::GoBack,
+        "explorer_forward" => crate::explorer_ui::ExplorerAction::GoForward,
+        _ => {
+            if let Some(view) = state.explorer_views.get_mut(sid) {
+                view.focus_address = true;
+            }
+            return;
+        }
+    };
+    crate::adapters::ui::egui_panels::apply_explorer_action(state, engine, sid, nav);
+}
+
 /// 되돌리기·다시 실행 단축키. 포커스된 탐색기의 이력만 쓴다. mirror explorer 는 파일 작업을
 /// 하지 않아 이력이 비어 있다.
 fn explorer_history_shortcut(

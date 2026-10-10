@@ -91,3 +91,77 @@ fn item_keys_share_f2_with_tab_rename_without_a_conflict() {
     kb.remove_conflicts_from_defaults(&existing);
     assert_eq!(kb.explorer_rename, vec!["f2".to_string()]);
 }
+
+/// 탐색기 포커스에서만 쓰는 전역 목록의 이동 키. 탐색기 키는 전역 동작과 quick-switch 보다 먼저
+/// 처리되므로, 기본값은 어느 프리셋에서도 다른 바인딩이나 quick-switch 조합과 겹치면 안 된다.
+const EXPLORER_NAV: [&str; 3] = [
+    "explorer_back",
+    "explorer_forward",
+    "explorer_focus_address",
+];
+
+/// quick-switch 축 하나의 (modifier, 키 목록).
+fn switch_axes(kb: &KeybindingSettings) -> Vec<(String, Vec<String>)> {
+    let keys = |slots: &[String], next: &str, prev: &str| {
+        let mut out: Vec<String> = slots.to_vec();
+        out.push(next.to_string());
+        out.push(prev.to_string());
+        out
+    };
+    vec![
+        (
+            kb.tab_switch_modifier.clone(),
+            keys(
+                &kb.tab_switch_slot_keys,
+                kb.tab_next_key(),
+                kb.tab_prev_key(),
+            ),
+        ),
+        (
+            kb.workspace_switch_modifier.clone(),
+            keys(
+                &kb.workspace_switch_slot_keys,
+                kb.workspace_next_key(),
+                kb.workspace_prev_key(),
+            ),
+        ),
+        (
+            kb.category_switch_modifier.clone(),
+            keys(
+                &kb.category_switch_slot_keys,
+                kb.category_next_key(),
+                kb.category_prev_key(),
+            ),
+        ),
+    ]
+}
+
+#[test]
+fn explorer_navigation_defaults_do_not_shadow_other_keys() {
+    for (name, kb) in presets() {
+        assert_eq!(kb.get_field("explorer_back"), Some("alt+left"), "{name}");
+        assert_eq!(
+            kb.get_field("explorer_forward"),
+            Some("alt+right"),
+            "{name}"
+        );
+        assert_eq!(
+            kb.get_field("explorer_focus_address"),
+            Some("alt+l"),
+            "{name}"
+        );
+        let axes = switch_axes(&kb);
+        for id in EXPLORER_NAV {
+            for combo in kb.get_bindings(id).unwrap_or(&[]) {
+                assert_eq!(kb.find_conflict(id, combo), None, "{name} {id}");
+                let (mods, key) = combo.rsplit_once('+').unwrap_or(("", combo));
+                for (modifier, keys) in &axes {
+                    assert!(
+                        !(mods == modifier && keys.iter().any(|k| k == key)),
+                        "{name} {id} {combo} is a quick-switch combo"
+                    );
+                }
+            }
+        }
+    }
+}
