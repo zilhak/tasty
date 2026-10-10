@@ -1,6 +1,6 @@
 # ADR-0067: 타입 계약을 가진 task는 별도 저장 namespace에 버전 envelope로 둔다
 
-- **Status**: Accepted — 실행 중 세부 단계는 `TaskState` 를 늘리지 않고 조회의 `phase` 로 보인다([작업 러너 §실행 회차와 완료](../dev-guide/agent-runner.md#실행-회차와-완료)). 단계 변화는 사건으로 내보내지 않는다(아래 Decision 의 마지막 절, 2026-10-08 보강). 입력 바인딩과 IPC·CLI 생성(그래프 제출)은 [ADR-0068](0068-typed-task-graphs-activate-through-a-graph-record.md)
+- **Status**: Accepted — 실행 중 세부 단계는 `TaskState` 를 늘리지 않고 조회의 `phase` 로 보인다([작업 러너 §실행 회차와 완료](../dev-guide/agent-runner.md#실행-회차와-완료)). 단계 변화를 사건으로 내보내지 않는 결정은 [ADR-0033](0033-event-feed-delivery.md#v2-task-의-단계-변화)에 있다. 입력 바인딩과 IPC·CLI 생성(그래프 제출)은 [ADR-0068](0068-typed-task-graphs-activate-through-a-graph-record.md)
 - **Date**: 2026-10-06
 - **Tags**: agents, tasks, types, compatibility, storage
 - **Group**: agents
@@ -27,16 +27,9 @@ task에 선택적 계약 `contract_version: 2`를 둔다. 계약이 없으면 v1
 - 확정된 출력은 선언 타입을 아는 값(`TypedValue`)으로 든다. 메모리 안에서 int64는 i64이고, 이 타입의 `Serialize`가 항상 10진 문자열로 쓴다(proto3 JSON 관례). 직렬화 경로(저장, IPC, CLI, 결과만 내보내는 API)와 무관하게 같은 wire 형식이 나온다. 역직렬화는 스키마가 있어야 하며(`TypedValueSeed`), 문자열과 JSON 정수 토큰을 모두 받고 범위 초과와 소수는 거절한다. 스키마가 int64를 알려 주므로 string 타입과 혼동되지 않는다.
 - reduce `all` 레코드의 `output`과 custom reducer stdin에는 각 입력의 선언 타입대로 직렬화한 값을 넣는다. `json` 타입 값은 무타입이라 안의 숫자를 바꾸지 않는다. 2^53을 넘는 정수의 정밀도가 필요하면 `int64`로 선언한다.
 - v1이 v2 결과를 읽는 경로는 생성에서 거절한다. v1 출력 placeholder(`${task.<id>.output}`)가 v2 task를 가리키는 경우, v1 `Reduce`의 입력에 v2 task가 있는 경우, 단발 reduce에 v2 task를 준 경우다. v2 결과의 의미(계약 타입, run의 종료 코드)가 v1 경로로 조용히 바뀌어 넘어가지 않게 하기 위해서다. 허용 범위는 입력 binding이 정한다.
-- 값 한도는 스키마 깊이 32, 값 깊이 64, 직렬화 크기 256KiB로 시작한다(`MAX_SCHEMA_DEPTH`·`MAX_VALUE_DEPTH`·`MAX_VALUE_BYTES`). memory 값 하나의 한도가 1MiB이고 v2 레코드에는 출력 외에 계약·raw 응답(run은 stdout·stderr 각 64KiB tail)·v1 투영이 함께 실리므로, 출력 하나를 그 4분의 1로 두었다. 깊이는 검증·직렬화가 재귀하는 깊이를 막는 값이며 사람이 쓰는 스키마·결과에 충분한 여유를 둔 초기값이다.
+- 출력 값 하나의 직렬화 크기는 memory 값 한도의 4분의 1로 둔다. v2 레코드에는 출력 외에 계약·raw 응답·v1 투영이 함께 실리기 때문이다. 스키마·값 깊이에도 재귀를 막는 상한을 둔다. 수치는 [작업 러너 §v2 타입 계약](../dev-guide/agent-runner.md#v2-타입-계약-contract_version-2)에 있다.
+- v2 task 의 세부 단계는 조회(`task_get`·`task_list`)의 `phase` 로만 보이고 사건으로 내보내지 않는다. 근거는 [ADR-0033](0033-event-feed-delivery.md#v2-task-의-단계-변화).
 - 그 밖의 암묵 변환은 하지 않는다. 형식과 규칙은 [작업 러너 §v2 타입 계약](../dev-guide/agent-runner.md#v2-타입-계약-contract_version-2)에 있다.
-
-### 단계(phase) 변화는 사건으로 내보내지 않는다
-
-v2 task 의 세부 단계(`executing`·`postprocessing`·`retry_wait`·`awaiting_input`, Ready 의 `waiting_previous_attempt`)는 `task_get`·`task_list` 조회로만 보인다. 단계가 바뀔 때 이벤트 피드나 플러그인 이벤트를 발행하지 않는다. task 사건은 지금처럼 종결(`agent.task_finished`)과 barrier 닫힘뿐이다([ADR-0033](0033-event-feed-delivery.md)).
-
-- 단계는 저장된 상태가 아니라 조회 때 계산하는 투영이다. 후처리 단계는 회차의 후처리 진행에서, `awaiting_input` 은 agent 회차의 세션 연결에서, `waiting_previous_attempt` 는 handle 키가 남았는지에서 읽는다. 변화를 사건으로 내려면 이 값을 바꾸는 모든 쓰기 경로(러너 dispatch, 후처리 실행, agent 턴 보고, handle 정리)에 발행 지점을 두거나 tick 마다 전후를 비교해야 한다.
-- 새 사건 종류는 번들 플러그인이 공유하는 프로토콜 크레이트에 들어가므로 모든 번들 플러그인의 버전을 올려야 한다.
-- 진행 신호가 필요하면 DAG 에 신호를 보내는 task 를 끼운다. 예를 들어 앞 task 뒤에 `tasty notify` 나 webhook 호출(`curl`)을 실행하는 `run` task 를 둔다. 그 task 는 앞 task 가 끝난 뒤 실행되므로 단계 경계의 신호가 된다. 실행 중 단계 자체를 지켜봐야 하면 `task_get` 을 조회한다.
 
 ## Consequences
 
@@ -48,8 +41,6 @@ int64 출력은 JavaScript를 지나도 정확하고, Rust 소비자(reducer, �
 
 ## Alternatives Considered
 
-- 단계 변화를 사건(`agent.task_phase_changed` 같은 새 종류, 또는 단계를 싣는 범용 갱신 사건)으로 발행: 단계를 바꾸는 쓰기 경로마다 발행 지점이 필요하고 번들 플러그인 전부의 버전이 바뀐다. 신호가 필요한 DAG 는 신호 task 로 같은 일을 할 수 있어 기각했다.
-
 - 같은 namespace에 버전 필드만 추가: 구버전이 계약을 무시하고 v2 task를 v1로 실행한다. 시험 `typed_tasks_live_outside_the_v1_namespace_and_old_readers_cannot_run_them`이 envelope 없는 레코드를 구버전 모델이 run으로 읽는 것을 보인다.
 - 같은 namespace에 envelope: 구버전 목록 조회가 그 레코드를 해석하지 못해 그 workspace의 v1 task 목록 전체가 실패한다.
 - 기존 v1 레코드를 v2로 이전: 저장된 DAG의 의미가 소급해 바뀌고, 이전 후에는 구버전으로 돌아갈 수 없다.
@@ -57,8 +48,6 @@ int64 출력은 JavaScript를 지나도 정확하고, Rust 소비자(reducer, �
 - int64를 문자열로만 입력받기: 정수 토큰을 보내는 기존 도구가 모두 바뀌어야 한다. 읽을 때는 두 형식을 받고 쓸 때만 문자열로 정했다.
 
 ## Reconsideration Triggers
-
-- 단계가 레코드의 저장 필드가 되어 한 쓰기 지점에서 바뀌게 되거나, 신호 task 로는 표현할 수 없는 요구(실행 중 단계 진입을 바로 알아야 하는 소비자)가 실제로 나오면 단계 사건을 다시 검토한다.
 
 - JSON 숫자를 정확히 다루는 표준 수단(예: 대상 소비자 전부의 BigInt 대응)이 생기면 int64 문자열 표기를 다시 검토한다.
 - 실제 결과가 256KiB 한도에 걸린다는 보고가 나오거나, raw를 별도 키로 옮겨 레코드 여유가 바뀌면 크기 한도를 다시 정한다. 깊이 한도는 정상 스키마가 걸릴 때 올린다.

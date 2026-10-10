@@ -658,6 +658,8 @@ task 는 선택적으로 타입 계약(`TaskContract`)을 가진다. 계약이 �
 - `nullable` 은 값 자리에 null 을 허용한다. `unit`·`json` 에는 쓸 수 없다. 필드 전용 키는 `optional`(생략 가능)과 `default`(생략 시 채울 값)다. 기본값은 선언할 때 그 필드 타입으로 검사한다.
 - 선언하지 않은 필드는 오류다. int64 의 10진 문자열(아래) 외에는 암묵 변환이 없다. `42.0` 은 int64 가 아니고 정수는 float64 로 바꾸지 않는다.
 - 한도: 스키마 깊이 32, 값 깊이 64, 값의 직렬화 크기 256KiB(`types.rs` 의 `MAX_SCHEMA_DEPTH`·`MAX_VALUE_DEPTH`·`MAX_VALUE_BYTES`). 근거는 ADR-0067.
+  - 크기: memory 값 하나의 한도가 1MiB이고 v2 레코드에는 출력 외에 계약·raw 응답(run은 stdout·stderr 각 64KiB tail)·v1 투영이 함께 실리므로, 출력 하나를 그 4분의 1로 두었다.
+  - 깊이: 검증·직렬화가 재귀하는 깊이를 막는 값이며 사람이 쓰는 스키마·결과에 충분한 여유를 둔 초기값이다.
 - 오류(`TypeError`)는 종류, JSON Pointer 경로, 기대 타입, 실제 값 요약을 가진다. 결과 검증 실패는 task id 도 싣는다. IPC 는 `AgentError::TypeContract` 를 `-32602` 로 돌려주고 `error.data` 에 실패 단계와 타입 오류를 싣는다.
 
 ### int64 와 JSON 숫자
