@@ -521,6 +521,8 @@ mod preset_capture;
 #[cfg(feature = "gui")]
 pub(crate) mod explorer_files;
 #[cfg(feature = "gui")]
+pub(crate) mod file_jobs;
+#[cfg(feature = "gui")]
 mod port_scans;
 
 #[cfg(feature = "gui")]

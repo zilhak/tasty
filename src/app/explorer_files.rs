@@ -1,9 +1,8 @@
 //! Bounded local Explorer actions. Views queue fixed inputs; App owns execution and joins.
 pub(crate) mod history;
-pub(crate) mod job;
-mod named;
-mod ops;
 mod ui_sync;
+pub(crate) use super::file_jobs::job;
+use super::file_jobs::named;
 pub(crate) use ui_sync::{forget_press_request, open_conflict};
 use ui_sync::{push_result, show_running};
 

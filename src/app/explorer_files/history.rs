@@ -11,6 +11,7 @@ use std::time::SystemTime;
 
 use super::Operation;
 use super::job::{OpKind, Reason, Report, UndoStep};
+pub(super) use crate::app::file_jobs::named::blocked;
 
 /// 칸 하나가 기억하는 단계 수.
 pub(crate) const MAX_STEPS: usize = 10;
@@ -231,25 +232,6 @@ impl Entry {
             }
         }
         first
-    }
-}
-
-/// 이 단계를 지금 되돌릴 수 없는 이유. 되돌릴 수 있으면 None. 메뉴 행과 되돌리기 작업이 함께 쓴다.
-pub(super) fn blocked(step: &UndoStep) -> Option<Reason> {
-    match step {
-        UndoStep::Created(path, made) => match path.symlink_metadata() {
-            Err(_) => Some(Reason::Gone),
-            Ok(meta) if meta.modified().ok() != *made => Some(Reason::ChangedSince),
-            Ok(_) => None,
-        },
-        UndoStep::Made(path, made) => super::named::made_blocked(path, *made),
-        UndoStep::Moved { from, to, made } => match to.symlink_metadata() {
-            Err(_) => Some(Reason::Gone),
-            Ok(_) if super::named::taken(from, to) => Some(Reason::NewerThere),
-            Ok(meta) if meta.modified().ok() != *made => Some(Reason::ChangedAfterMove),
-            Ok(_) => None,
-        },
-        UndoStep::Replaced(_) => Some(Reason::Replaced),
     }
 }
 

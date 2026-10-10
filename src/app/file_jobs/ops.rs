@@ -184,6 +184,7 @@ mod tests {
         let d2 = unique_dest(&dir, "a.txt");
         assert_eq!(d2, dir.join("a (copy 2).txt"));
         assert_eq!(unique_dest(&dir, "z.txt"), dir.join("z.txt"));
+        // 시험 정리다. 임시 폴더가 남아도 결과에는 영향이 없다.
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -194,6 +195,7 @@ mod tests {
         std::fs::create_dir_all(&sub).unwrap();
         assert!(transfer(&dir, &sub, true).is_err());
         assert!(transfer(&dir, &dir, false).is_err());
+        // 시험 정리다. 임시 폴더가 남아도 결과에는 영향이 없다.
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -209,6 +211,7 @@ mod tests {
         assert!(f.exists()); // 복사라 원본 유지.
         remove_path(&out).unwrap();
         assert!(!out.exists());
+        // 시험 정리다. 임시 폴더가 남아도 결과에는 영향이 없다.
         let _ = std::fs::remove_dir_all(&dir);
     }
     #[test]

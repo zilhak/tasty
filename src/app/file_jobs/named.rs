@@ -11,12 +11,12 @@ use std::path::Path;
 use std::time::SystemTime;
 
 use super::job::leftover::same_file_id;
-use super::job::{Reason, UndoStep, modified_at};
-use super::ops;
+use super::job::{Reason, UndoStep};
 
 /// 항목의 이름을 바꾼다. 같은 이름이면 아무것도 하지 않고 단계도 없다.
-pub(super) fn rename(path: &Path, name: &str) -> Result<Option<UndoStep>, String> {
-    ops::rename_entry(path, name).map_err(|e| e.to_string())?;
+#[cfg(feature = "gui")]
+pub(crate) fn rename(path: &Path, name: &str) -> Result<Option<UndoStep>, String> {
+    super::ops::rename_entry(path, name).map_err(|e| e.to_string())?;
     let Some(parent) = path.parent() else {
         return Ok(None);
     };
@@ -24,7 +24,7 @@ pub(super) fn rename(path: &Path, name: &str) -> Result<Option<UndoStep>, String
     if to == path {
         return Ok(None);
     }
-    let made = modified_at(&to);
+    let made = super::job::modified_at(&to);
     Ok(Some(UndoStep::Moved {
         from: path.to_path_buf(),
         to,
@@ -33,17 +33,18 @@ pub(super) fn rename(path: &Path, name: &str) -> Result<Option<UndoStep>, String
 }
 
 /// 새 폴더나 빈 파일을 만든다.
-pub(super) fn create(dir: &Path, name: &str, folder: bool) -> Result<Option<UndoStep>, String> {
-    ops::create_entry(dir, name, folder).map_err(|e| e.to_string())?;
+#[cfg(feature = "gui")]
+pub(crate) fn create(dir: &Path, name: &str, folder: bool) -> Result<Option<UndoStep>, String> {
+    super::ops::create_entry(dir, name, folder).map_err(|e| e.to_string())?;
     let path = dir.join(name);
-    let made = modified_at(&path);
+    let made = super::job::modified_at(&path);
     Ok(Some(UndoStep::Made(path, made)))
 }
 
 /// 되돌릴 원래 자리 `from` 을 다른 항목이 차지했는가. 대소문자를 무시하는 파일시스템에서 대소문자만
 /// 바꾼 이름 변경은 원래 이름이 옮긴 항목 `to` 자신을 가리키므로 비어 있는 것으로 본다. 이름이
 /// 대소문자만 다르고 같은 파일(Unix dev·inode, Windows 볼륨·파일 번호)일 때만 그렇게 본다.
-pub(super) fn taken(from: &Path, to: &Path) -> bool {
+pub(crate) fn taken(from: &Path, to: &Path) -> bool {
     from.symlink_metadata().is_ok() && !(case_only(from, to) && same_file_id(from, to))
 }
 
@@ -57,7 +58,7 @@ fn case_only(a: &Path, b: &Path) -> bool {
 }
 
 /// 새로 만든 항목을 지금 되돌릴 수 없는 이유. 되돌릴 수 있으면 None.
-pub(super) fn made_blocked(path: &Path, made: Option<SystemTime>) -> Option<Reason> {
+pub(crate) fn made_blocked(path: &Path, made: Option<SystemTime>) -> Option<Reason> {
     let Ok(meta) = path.symlink_metadata() else {
         return Some(Reason::Gone);
     };
@@ -67,4 +68,23 @@ pub(super) fn made_blocked(path: &Path, made: Option<SystemTime>) -> Option<Reas
         meta.is_file() && meta.len() == 0
     };
     (!empty || meta.modified().ok() != made).then_some(Reason::ChangedSince)
+}
+
+/// 이 단계를 지금 되돌릴 수 없는 이유. 되돌릴 수 있으면 None. 메뉴 행과 되돌리기 작업이 함께 쓴다.
+pub(crate) fn blocked(step: &UndoStep) -> Option<Reason> {
+    match step {
+        UndoStep::Created(path, made) => match path.symlink_metadata() {
+            Err(_) => Some(Reason::Gone),
+            Ok(meta) if meta.modified().ok() != *made => Some(Reason::ChangedSince),
+            Ok(_) => None,
+        },
+        UndoStep::Made(path, made) => made_blocked(path, *made),
+        UndoStep::Moved { from, to, made } => match to.symlink_metadata() {
+            Err(_) => Some(Reason::Gone),
+            Ok(_) if taken(from, to) => Some(Reason::NewerThere),
+            Ok(meta) if meta.modified().ok() != *made => Some(Reason::ChangedAfterMove),
+            Ok(_) => None,
+        },
+        UndoStep::Replaced(_) => Some(Reason::Replaced),
+    }
 }

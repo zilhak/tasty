@@ -370,7 +370,7 @@ impl UndoStep {
     }
 }
 
-pub(super) fn modified_at(path: &Path) -> Option<SystemTime> {
+pub(crate) fn modified_at(path: &Path) -> Option<SystemTime> {
     path.symlink_metadata().and_then(|m| m.modified()).ok()
 }
 
@@ -914,7 +914,7 @@ pub(crate) fn run_undo(shared: &Shared, steps: &[UndoStep]) -> Report {
         let (path, result) = match step {
             UndoStep::Created(path, _) | UndoStep::Made(path, _) => {
                 shared.set_current(path);
-                let result = match super::history::blocked(step) {
+                let result = match super::named::blocked(step) {
                     Some(reason) => Err(reason),
                     None => trash::delete(path).map_err(|e| Reason::Os(e.to_string())),
                 };
