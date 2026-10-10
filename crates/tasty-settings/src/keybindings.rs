@@ -157,6 +157,8 @@ pub struct KeybindingSettings {
     pub explorer_go_up: Vec<String>,
     /// Show or hide the preview panel of the focused Explorer.
     pub explorer_toggle_preview: Vec<String>,
+    /// Show or hide hidden files (names starting with a dot) in the focused Explorer.
+    pub explorer_toggle_hidden: Vec<String>,
     /// Open Properties for the focused Explorer's selection, or its folder when nothing is selected.
     pub explorer_properties: Vec<String>,
     /// Start naming a new folder at the top of the focused Explorer listing.

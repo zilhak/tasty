@@ -70,6 +70,12 @@ fn explorer_view_shortcut(
         }
         return;
     }
+    if action == "explorer_toggle_hidden" {
+        if let Some(view) = state.explorer_views.get_mut(sid) {
+            view.toggle_hidden();
+        }
+        return;
+    }
     crate::adapters::ui::popup::explorer_properties::open_for_shortcut(
         state,
         engine.is_mirror_surface(sid),

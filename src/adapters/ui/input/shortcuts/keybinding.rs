@@ -617,6 +617,7 @@ impl MainView {
         }
         for (binding, action) in [
             (&kb.explorer_toggle_preview, "explorer_toggle_preview"),
+            (&kb.explorer_toggle_hidden, "explorer_toggle_hidden"),
             (&kb.explorer_properties, "explorer_properties"),
         ] {
             if matches_any_binding(binding, key, mods)

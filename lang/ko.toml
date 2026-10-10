@@ -597,6 +597,7 @@ rename_workspace_subtitle_label = "워크스페이스 부제목 변경:"
 explorer_refresh_label = "새로고침:"
 explorer_go_up_label = "상위 폴더로:"
 explorer_toggle_preview_label = "미리보기 패널:"
+explorer_toggle_hidden_label = "숨김 파일:"
 explorer_properties_label = "속성:"
 explorer_new_folder_label = "새 폴더:"
 explorer_new_file_label = "새 파일:"
@@ -945,6 +946,7 @@ type = "형식"
 [explorer.status]
 items = "{}개 항목"
 selected = "{}개 선택됨"
+hidden = "숨김 {}개"
 
 [explorer.tab]
 new = "새 탭"
@@ -999,6 +1001,8 @@ cannot_write = "이 폴더에 쓸 수 없습니다"
 find_close = "찾기 닫기"
 preview_show = "미리보기 표시"
 preview_hide = "미리보기 숨기기"
+hidden_show = "숨김 파일 보기"
+hidden_hide = "숨김 파일 숨기기"
 
 [explorer.new]
 folder_default = "새 폴더"

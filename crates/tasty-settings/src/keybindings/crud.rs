@@ -149,6 +149,10 @@ impl KeybindingSettings {
             "settings.keybindings.explorer_toggle_preview_label",
         ),
         (
+            "explorer_toggle_hidden",
+            "settings.keybindings.explorer_toggle_hidden_label",
+        ),
+        (
             "explorer_properties",
             "settings.keybindings.explorer_properties_label",
         ),
@@ -364,6 +368,7 @@ impl KeybindingSettings {
             "explorer_refresh" => self.explorer_refresh.as_slice(),
             "explorer_go_up" => self.explorer_go_up.as_slice(),
             "explorer_toggle_preview" => self.explorer_toggle_preview.as_slice(),
+            "explorer_toggle_hidden" => self.explorer_toggle_hidden.as_slice(),
             "explorer_properties" => self.explorer_properties.as_slice(),
             "explorer_new_folder" => self.explorer_new_folder.as_slice(),
             "explorer_new_file" => self.explorer_new_file.as_slice(),
@@ -456,6 +461,7 @@ impl KeybindingSettings {
             "explorer_refresh" => &mut self.explorer_refresh,
             "explorer_go_up" => &mut self.explorer_go_up,
             "explorer_toggle_preview" => &mut self.explorer_toggle_preview,
+            "explorer_toggle_hidden" => &mut self.explorer_toggle_hidden,
             "explorer_properties" => &mut self.explorer_properties,
             "explorer_new_folder" => &mut self.explorer_new_folder,
             "explorer_new_file" => &mut self.explorer_new_file,

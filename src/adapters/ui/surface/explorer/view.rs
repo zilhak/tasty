@@ -2,6 +2,7 @@
 
 pub(crate) mod cursor;
 pub(crate) mod drag;
+pub(crate) mod hidden;
 pub(crate) mod list_layout;
 pub(crate) mod marquee;
 pub(crate) mod ops;
@@ -128,6 +129,8 @@ pub struct ExplorerView {
     pub(crate) list_rect: Option<egui::Rect>,
     /// 이번 프레임에 그린 목록의 칸 배치.
     pub(crate) list_layout: Option<list_layout::ListLayout>,
+    /// 숨김 파일 표시 여부와 끈 동안 뺀 항목.
+    pub(crate) hidden: hidden::HiddenFiles,
 }
 
 /// 사이드바 트리에 두는 하위 폴더 목록. 이름 오름차순이다.
@@ -218,9 +221,9 @@ impl ExplorerView {
         changed |= self.thumbs.poll(owner);
         changed
     }
-    /// 목록을 바꾸고 세대를 올린다.
+    /// 목록을 바꾸고 세대를 올린다. 숨김 파일을 끈 동안에는 숨김 항목을 따로 둔다.
     pub(super) fn set_entries(&mut self, entries: Vec<DirEntryInfo>) {
-        self.entries = entries;
+        self.entries = self.split_hidden(entries);
         self.entries_gen += 1;
     }
 
@@ -262,6 +265,7 @@ impl ExplorerView {
             marquee: Default::default(),
             list_rect: None,
             list_layout: None,
+            hidden: Default::default(),
         }
     }
 
@@ -433,6 +437,7 @@ impl ExplorerView {
     /// 경로별 pending 상태로 진행 상황을 추적한다. 디렉토리가 바뀌면 선택을 초기화한다.
     pub fn sync(&mut self, panel: &ExplorerPanel, mirror_ws_id: Option<u32>) {
         self.preview.adopt(&panel.preview);
+        self.adopt_hidden(panel.show_hidden);
         let tab = panel.active_tab();
         // 편집 중에는 입력을 유지하고, 아니면 주소를 현재 cwd로 맞춘다. 목록 갱신과는 별개다.
         if !self.addr_editing {
@@ -556,6 +561,7 @@ impl ExplorerView {
             Some(RemoteLoadState::Error(msg)) => {
                 // `msg` 가 `remote_state` 를 빌리고 있어 `set_entries` 대신 두 필드를 직접 바꾼다.
                 self.entries.clear();
+                self.hidden.forget();
                 self.entries_gen += 1;
                 if msg == "permission denied" {
                     LoadState::NoPermission

@@ -111,8 +111,9 @@ fn register_explorer(registry: &SurfaceKindRegistry) {
                 .map(ExplorerViewMode::from_str)
                 .unwrap_or(ExplorerViewMode::Detail);
             let mut panel = ExplorerPanel::new_with_mode(sid, root, view_mode);
-            // preset 이 snapshot 의 preview 를 params 로 실어 오면 그대로 쓴다.
+            // preset 이 snapshot 의 preview·show_hidden 을 params 로 실어 오면 그대로 쓴다.
             panel.preview = explorer_preview_from_json(params.get("preview"));
+            panel.show_hidden = explorer_show_hidden_from_json(params);
             Ok(crate::runtime::surface_registry::PreparedKind::local(
                 Box::new(panel) as Box<dyn Surface>,
             ))
@@ -140,6 +141,10 @@ fn register_explorer(registry: &SurfaceKindRegistry) {
             let mut snap = json!({ "tabs": tabs, "active": ex.active });
             if let Some(preview) = explorer_preview_to_json(&ex.preview) {
                 snap["preview"] = preview;
+            }
+            // 기본값(끔)이면 키를 싣지 않는다. preset 은 TOML 이라 false 도 굳이 남기지 않는다.
+            if ex.show_hidden {
+                snap["show_hidden"] = Value::Bool(true);
             }
             Some(snap)
         }),
@@ -210,7 +215,15 @@ fn explorer_panel_from_snapshot(sid: u32, data: &Value) -> ExplorerPanel {
         .unwrap_or_default();
     let mut panel = ExplorerPanel::from_tabs(sid, tabs, active);
     panel.preview = explorer_preview_from_json(data.get("preview"));
+    panel.show_hidden = explorer_show_hidden_from_json(data);
     panel
+}
+
+/// 없거나 bool 이 아니면 끔이다.
+fn explorer_show_hidden_from_json(data: &Value) -> bool {
+    data.get("show_hidden")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
 }
 
 /// 기본값(닫힘·기본 폭)이면 키를 싣지 않는다. 값이 없는 칸도 null 대신 키를 뺀다.
@@ -531,6 +544,51 @@ mod tests {
             .and_then(|prepared| prepared.publish())
             .unwrap();
         assert_eq!(get(restored.as_ref()), ExplorerPreview::default());
+    }
+
+    #[test]
+    fn explorer_hidden_files_toggle_rides_the_snapshot_and_a_preset() {
+        let reg = registry_with_builtins();
+        let def = reg.get("explorer").expect("explorer kind");
+        let root = abs_path("tmp/exp");
+        let mut s = (def.create)(5, None, &json!({ "path": root.to_string_lossy() }))
+            .and_then(|prepared| prepared.publish())
+            .unwrap();
+        let get = |s: &dyn Surface| {
+            s.as_any()
+                .downcast_ref::<ExplorerPanel>()
+                .unwrap()
+                .show_hidden
+        };
+        // 기본값(끔)이면 키를 싣지 않는다.
+        assert!(!get(s.as_ref()));
+        let snap = (def.snapshot)(s.as_ref()).unwrap();
+        assert!(snap.get("show_hidden").is_none(), "{snap}");
+
+        s.as_any_mut()
+            .downcast_mut::<ExplorerPanel>()
+            .unwrap()
+            .show_hidden = true;
+        let snap = (def.snapshot)(s.as_ref()).unwrap();
+        let restored = (def.restore)(6, &snap)
+            .and_then(|prepared| prepared.publish())
+            .unwrap();
+        assert!(get(restored.as_ref()), "{snap}");
+        let toml_text = toml::to_string(&snap).expect("snapshot is TOML-safe");
+        let params: Value = toml::from_str::<toml::Value>(&toml_text)
+            .map(|v| serde_json::to_value(v).unwrap())
+            .unwrap();
+        let created = (def.create)(7, None, &params)
+            .and_then(|prepared| prepared.publish())
+            .unwrap();
+        assert!(get(created.as_ref()), "{params}");
+
+        // bool 이 아니면 끔이다.
+        let bad = json!({"tabs": [], "active": 0, "show_hidden": "yes"});
+        let restored = (def.restore)(8, &bad)
+            .and_then(|prepared| prepared.publish())
+            .unwrap();
+        assert!(!get(restored.as_ref()));
     }
 
     #[test]

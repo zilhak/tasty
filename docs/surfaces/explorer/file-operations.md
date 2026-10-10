@@ -69,6 +69,7 @@
 | 찾기 | 툴바 Find 토글(좁은 칸은 More 메뉴), `find` 단축키 | 지금 보는 폴더, Subfolders 를 켜면 그 아래 전체(로컬만) | 디스크를 바꾸지 않는다. 목록을 이름으로 거르거나 하위 폴더 검색 결과로 바꾼다. 결과에 대한 파일 작업은 결과의 실제 경로를 대상으로 한다 | Find 바의 개수·검색 상태, 상태줄 ([Explorer](index.md#찾기--하위-폴더-검색)) |
 | 속성 | 메뉴 맨 끝 "Properties"(모든 변형, mirror 포함), `explorer_properties` 단축키, Command Palette | 메뉴의 대상, 또는 위 단축키 규칙 | 디스크를 바꾸지 않는다. 열 때의 대상을 고정해 보이고, 폴더 크기는 read worker 가 배경에서 센다. 닫으면 세기를 멈춘다 | 탐색기 칸에 묶인 Properties popup ([Explorer](index.md#properties-popup)) |
 | 미리보기 | 툴바 토글, `explorer_toggle_preview` 단축키, Command Palette | 선택이 하나일 때 그 항목 | 디스크를 바꾸지 않는다. 로컬 파일만 read worker 로 읽는다 | 목록 오른쪽 미리보기 패널 ([Explorer](index.md#미리보기-패널)) |
+| 숨김 파일 | More 메뉴, `explorer_toggle_hidden` 단축키, Command Palette | 지금 보는 폴더의 이름이 `.` 으로 시작하는 항목 | 디스크를 바꾸지 않는다. 목록에서 빼거나 되돌린다 | 상태줄의 숨김 수, 켜면 숨김 항목을 explorer-hidden-fg 로 ([Explorer](index.md#숨김-파일)) |
 | Grid 썸네일 | 없음 (Grid 보기에 자동) | 화면에 보인 로컬 그림 파일 | 디스크를 바꾸지 않는다 | 셀의 40 슬롯 ([Explorer](index.md#grid-썸네일)) |
 
 이름 변경과 휴지통 이동의 단축키는 `explorer_rename`(기본 `F2`)·`explorer_trash`(Tasty 프리셋 기본 `delete`·`alt+backspace`. `alt+backspace` 는 위치 규칙상 macOS 에서 Finder 의 ⌘⌫ 다. macOS 프리셋은 `alt+backspace` 만, Windows·Linux 프리셋은 `delete` 만)다. 단축키와 Command Palette 는 `run_explorer_item_key`(`src/adapters/ui/input/shortcuts/explorer_keys.rs`)를 거쳐 메뉴와 같은 이름 변경 팝업을 열거나 같은 휴지통 작업을 요청한다. 우클릭 메뉴는 두 항목 옆에 각 바인딩의 첫 항목을 보인다(`attach_shortcut_hints`, `src/state/explorer_menu.rs`). macOS 는 key equivalent 로 바꿔 AppKit 이 그리고, Windows·Linux 는 설정 화면과 같은 표시에서 앞 지우기 키만 `Del` 로 줄여 항목 오른쪽에 쓴다. 바인딩이 비었으면 표시하지 않는다. 메뉴의 표시는 보이기만 하며 실행은 단축키 경로가 맡는다.
@@ -153,7 +154,7 @@
 ## 인터페이스
 
 - **AI Agent (IPC/CLI)**: 없음. 위 경계 절을 따른다.
-- **사용자 트리거**: 컨텍스트 메뉴, 툴바·More 메뉴, 드래그 앤 드롭, 결과 카드의 Retry·Undo, `copy`·`cut`·`paste`·`explorer_new_folder`·`explorer_new_file`·`explorer_rename`·`explorer_trash`·`explorer_properties`·`explorer_toggle_preview`·`find` 바인딩, Command Palette. 단축키 표는 [Explorer](index.md#사용자-트리거-단축키--keybindingsettings) 에 있다.
+- **사용자 트리거**: 컨텍스트 메뉴, 툴바·More 메뉴, 드래그 앤 드롭, 결과 카드의 Retry·Undo, `copy`·`cut`·`paste`·`explorer_new_folder`·`explorer_new_file`·`explorer_rename`·`explorer_trash`·`explorer_properties`·`explorer_toggle_preview`·`explorer_toggle_hidden`·`find` 바인딩, Command Palette. 단축키 표는 [Explorer](index.md#사용자-트리거-단축키--keybindingsettings) 에 있다.
 - **원격 / 점유**: mirror explorer 는 위 원격 제한을 따른다.
 
 ## 비-목표 (Out of scope)

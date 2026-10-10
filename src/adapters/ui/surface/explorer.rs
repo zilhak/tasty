@@ -5,6 +5,7 @@ pub mod address;
 mod commands;
 mod create;
 mod enclosing;
+mod entry_style;
 mod find;
 mod kind;
 mod link;
@@ -22,7 +23,7 @@ use tasty_type_geometry::length::LogicalPx;
 use tasty_model::{ExplorerPanel, ExplorerViewMode, SortColumn, SortDir};
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{
-    PathField, PathFieldOutcome, Table, TableSortDir, tree_row, tree_row_with_tail,
+    PathField, PathFieldOutcome, Table, TableSortDir, tree_row, tree_row_with_tail_fg,
 };
 
 use crate::adapters::ui::icons::{self, Icon};
@@ -1069,20 +1070,6 @@ fn parent_nav_target(current: &Path) -> Option<PathBuf> {
     current.parent().map(|p| p.to_path_buf())
 }
 
-/// 엔트리의 아이콘 + glyph 색 (design GridCell/DetailRow/ExpListMini):
-/// 폴더/파일 = text-muted, 이미지 파일 = IMAGE 아이콘 + accent-info.
-fn entry_icon(theme: &Theme, e: &DirEntryInfo) -> (Icon, egui::Color32) {
-    if let Some(broken) = link::broken_icon(theme, e) {
-        broken
-    } else if e.is_dir {
-        (icons::FOLDER, theme.text_muted().to_egui())
-    } else if is_image_ext(&e.ext) {
-        (icons::IMAGE, theme.accent_info().to_egui())
-    } else {
-        (icons::FILE, theme.text_muted().to_egui())
-    }
-}
-
 /// 이번 프레임에 들어온 문자 입력을 타입어헤드로 처리해 선택할 항목과 스크롤 대상을
 /// 정한다.
 ///
@@ -1281,7 +1268,7 @@ fn grid_cell(
     }
 
     let fg_dim = |c| cut_dim(theme, cut, c);
-    let (icon, glyph_color) = entry_icon(theme, e);
+    let (icon, glyph_color) = entry_style::entry_icon(theme, e);
     let glyph_rect = egui::Rect::from_center_size(
         egui::pos2(
             rect.center().x,
@@ -1292,11 +1279,8 @@ fn grid_cell(
     thumbs::paint_slot(ui, theme, glyph_rect, thumb, icon, fg_dim(glyph_color));
 
     // 이름은 위에서부터 최대 세 줄로 표시하고 넘치면 끝을 줄인다.
-    let label_color = fg_dim(if selected {
-        theme.text_primary().to_egui()
-    } else {
-        theme.text_secondary().to_egui()
-    });
+    let rest = theme.text_secondary().to_egui();
+    let label_color = fg_dim(entry_style::name_fg(theme, e, selected, rest));
     let mut job = find::name_job(
         theme,
         &e.name,
@@ -1362,7 +1346,7 @@ fn list_view(
     view.note_rows(ui, row_h);
     let span = open_span(ui, row_h, count, scroll_target(view));
     for e in &view.shown_range(span.clone()) {
-        let (icon, glyph_color) = entry_icon(theme, e);
+        let (icon, glyph_color) = entry_style::entry_icon(theme, e);
         let selected = view.selected.contains(&e.path);
         let cut = cut_pending.contains(&e.path);
         // cut-pending 행은 행 전체를 cut_pending_opacity(50%) 로 디밍(스코프 opacity 로 통째 디밍).
@@ -1373,7 +1357,7 @@ fn list_view(
                     ui.set_opacity(theme.cut_pending_opacity());
                 }
                 let tail = link::tail_width(theme, e);
-                let (resp, name_end) = tree_row_with_tail(
+                let (resp, name_end) = tree_row_with_tail_fg(
                     ui,
                     theme,
                     Some(&|ui, rect, _c| icon.image(rect.height(), glyph_color).paint_at(ui, rect)),
@@ -1381,6 +1365,7 @@ fn list_view(
                     &query,
                     selected,
                     tail,
+                    entry_style::rest_fg(theme, e),
                 );
                 if tail > 0.0 {
                     link::paint_tail(ui, theme, name_end, resp.rect.center().y, |c| c);
@@ -1479,20 +1464,17 @@ fn detail_view(
                             let sz = th.icon_glyph_size_md.value();
                             let (rect, _) =
                                 ui.allocate_exact_size(egui::vec2(sz, sz), egui::Sense::hover());
-                            let (icon, c) = entry_icon(th, row);
+                            let (icon, c) = entry_style::entry_icon(th, row);
                             icon.image(sz, dim(c)).paint_at(ui, rect);
-                            // 선택 행 이름만 text-primary, 나머지는 `table-row-fg`로 그린다.
-                            let name_fg = if row.name != ".." && view.selected.contains(&row.path) {
-                                th.text_primary()
-                            } else {
-                                th.table_row_fg()
-                            };
+                            let sel = row.name != ".." && view.selected.contains(&row.path);
+                            let name_fg =
+                                entry_style::name_fg(th, row, sel, th.table_row_fg().to_egui());
                             let job = find::name_job(
                                 th,
                                 &row.name,
                                 &query,
                                 egui::FontId::proportional(th.font_size_body.value()),
-                                dim(name_fg.to_egui()),
+                                dim(name_fg),
                                 None,
                             );
                             // 꼬리 글리프 폭을 먼저 빼고 이름을 그 앞에서 말줄임한다. 폭은 열의 clip 끝으로

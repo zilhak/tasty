@@ -1,6 +1,6 @@
 //! explorer 의 새 폴더·새 파일 명령. 컨텍스트 메뉴 행, 좁은 칸의 More 메뉴, 단축키가 같은 시작점을 쓴다.
-//! More 메뉴는 툴바 view 묶음의 Find · Preview 도 함께 보인다. 네이티브 메뉴에는 체크 표시가 없어
-//! 이 두 행은 지금 상태가 아니라 누르면 할 동작을 쓴다(Find ↔ Close find, Show ↔ Hide preview).
+//! More 메뉴는 툴바 view 묶음의 Find · Preview · 숨김 파일도 함께 보인다. 네이티브 메뉴에는 체크 표시가 없어
+//! 이 행들은 지금 상태가 아니라 누르면 할 동작을 쓴다(Find ↔ Close find, Show ↔ Hide preview·hidden files).
 //! 명령은 이름 입력을 열기만 한다. 실제 생성은 이름을 확정한 뒤 `ExplorerAction::Create` 로 한다.
 
 use super::MainView;
@@ -11,6 +11,7 @@ const NEW_FOLDER: u32 = 80;
 const NEW_FILE: u32 = 81;
 const FIND: u32 = 82;
 const PREVIEW: u32 = 83;
+const HIDDEN: u32 = 84;
 
 impl MainView {
     /// 생성 행 두 개. 빈 영역 메뉴는 맨 앞 묶음이라 뒤에, 폴더 메뉴는 파일 조작 묶음이라 앞에 구분선을 둔다.
@@ -81,12 +82,17 @@ impl MainView {
             items.push(MenuItem::separator());
         }
         let view = self.state.explorer_views.get(surface_id);
-        let (find_open, preview_open) =
-            view.map_or((false, false), |v| (v.find.is_some(), v.preview.open));
+        let (find_open, preview_open, hidden_shown) = view.map_or((false, false, false), |v| {
+            (v.find.is_some(), v.preview.open, v.hidden.show)
+        });
         items.push(MenuItem::new(FIND, crate::i18n::t(find_row_key(find_open))));
         items.push(MenuItem::new(
             PREVIEW,
             crate::i18n::t(preview_row_key(preview_open)),
+        ));
+        items.push(MenuItem::new(
+            HIDDEN,
+            crate::i18n::t(hidden_row_key(hidden_shown)),
         ));
         self.open_native_menu(
             engine,
@@ -106,6 +112,11 @@ impl MainView {
                 Some(PREVIEW) => {
                     if let Some(view) = this.state.explorer_views.get_mut(surface_id) {
                         view.preview.toggle();
+                    }
+                }
+                Some(HIDDEN) => {
+                    if let Some(view) = this.state.explorer_views.get_mut(surface_id) {
+                        view.toggle_hidden();
                     }
                 }
                 _ => {}
@@ -129,6 +140,15 @@ fn preview_row_key(open: bool) -> &'static str {
         "explorer.more.preview_hide"
     } else {
         "explorer.more.preview_show"
+    }
+}
+
+/// More 메뉴 숨김 파일 행의 문구 키.
+fn hidden_row_key(shown: bool) -> &'static str {
+    if shown {
+        "explorer.more.hidden_hide"
+    } else {
+        "explorer.more.hidden_show"
     }
 }
 
@@ -189,5 +209,7 @@ mod tests {
         assert_eq!(crate::i18n::t(find_row_key(true)), "Close find");
         assert_eq!(crate::i18n::t(preview_row_key(false)), "Show preview");
         assert_eq!(crate::i18n::t(preview_row_key(true)), "Hide preview");
+        assert_eq!(crate::i18n::t(hidden_row_key(false)), "Show hidden files");
+        assert_eq!(crate::i18n::t(hidden_row_key(true)), "Hide hidden files");
     }
 }

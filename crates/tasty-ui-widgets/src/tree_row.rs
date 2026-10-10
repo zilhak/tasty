@@ -66,6 +66,7 @@ pub fn tree_row_matching(
         meta,
         selected,
         tail: 0.0,
+        rest_fg: None,
     };
     draw(ui, theme, row, icon, label, query).0
 }
@@ -81,6 +82,22 @@ pub fn tree_row_with_tail(
     selected: bool,
     tail: f32,
 ) -> (egui::Response, f32) {
+    tree_row_with_tail_fg(ui, theme, icon, label, query, selected, tail, None)
+}
+
+/// `tree_row_with_tail` 과 같고, 선택·호버가 아닐 때의 이름 색을 `rest_fg` 로 바꿀 수 있다.
+/// 탐색기가 숨김 항목을 explorer-hidden-fg 로 그릴 때 쓴다.
+#[allow(clippy::too_many_arguments)] // 이유: tree_row_with_tail 의 인자 순서를 그대로 두고 색 하나를 끝에 더했다
+pub fn tree_row_with_tail_fg(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    icon: Option<IconPainter<'_>>,
+    label: &str,
+    query: &str,
+    selected: bool,
+    tail: f32,
+    rest_fg: Option<egui::Color32>,
+) -> (egui::Response, f32) {
     let row = Row {
         depth: 0,
         has_children: false,
@@ -88,11 +105,12 @@ pub fn tree_row_with_tail(
         meta: None,
         selected,
         tail,
+        rest_fg,
     };
     draw(ui, theme, row, icon, label, query)
 }
 
-/// 행 모양. `tail` 은 이름 오른쪽에 남겨 둘 폭이다.
+/// 행 모양. `tail` 은 이름 오른쪽에 남겨 둘 폭이고, `rest_fg` 는 선택·호버가 아닐 때의 이름 색이다.
 struct Row<'a> {
     depth: u16,
     has_children: bool,
@@ -100,6 +118,7 @@ struct Row<'a> {
     meta: Option<&'a str>,
     selected: bool,
     tail: f32,
+    rest_fg: Option<egui::Color32>,
 }
 
 fn draw(
@@ -117,6 +136,7 @@ fn draw(
         meta,
         selected,
         tail,
+        rest_fg,
     } = row;
     let height = theme.tree_row_height().value();
     let pad_l = theme.tree_row_gap().value();
@@ -142,7 +162,7 @@ fn draw(
     let fg = if selected || resp.hovered() {
         theme.tree_row_fg_active().to_egui()
     } else {
-        theme.tree_row_fg().to_egui()
+        rest_fg.unwrap_or_else(|| theme.tree_row_fg().to_egui())
     };
     let muted = theme.text_muted().to_egui();
 

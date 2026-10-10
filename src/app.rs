@@ -496,6 +496,8 @@ pub(crate) use view_mesh::MeshBootstrap;
 #[cfg(feature = "gui")]
 mod explorer_action;
 #[cfg(feature = "gui")]
+pub(crate) mod explorer_hidden;
+#[cfg(feature = "gui")]
 mod surface_poll;
 
 pub(crate) mod telemetry;

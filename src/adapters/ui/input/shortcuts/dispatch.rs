@@ -371,7 +371,7 @@ impl MainView {
                     );
                 }
             }
-            "explorer_toggle_preview" | "explorer_properties" => {
+            "explorer_toggle_preview" | "explorer_toggle_hidden" | "explorer_properties" => {
                 if state.focused_surface_type(engine).is_kind("explorer") {
                     super::explorer_view_shortcut(state, engine, action_id);
                 }

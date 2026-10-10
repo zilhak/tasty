@@ -597,6 +597,7 @@ rename_workspace_subtitle_label = "ワークスペースのサブタイトルを
 explorer_refresh_label = "更新:"
 explorer_go_up_label = "上の階層へ:"
 explorer_toggle_preview_label = "プレビューパネル:"
+explorer_toggle_hidden_label = "隠しファイル:"
 explorer_properties_label = "プロパティ:"
 explorer_new_folder_label = "新しいフォルダー:"
 explorer_new_file_label = "新しいファイル:"
@@ -945,6 +946,7 @@ type = "種類"
 [explorer.status]
 items = "{} 項目"
 selected = "{} 件選択"
+hidden = "非表示 {}"
 
 [explorer.tab]
 new = "新しいタブ"
@@ -999,6 +1001,8 @@ cannot_write = "このフォルダーには書き込めません"
 find_close = "検索を閉じる"
 preview_show = "プレビューを表示"
 preview_hide = "プレビューを隠す"
+hidden_show = "隠しファイルを表示"
+hidden_hide = "隠しファイルを非表示"
 
 [explorer.new]
 folder_default = "新しいフォルダー"

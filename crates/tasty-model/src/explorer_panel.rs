@@ -251,6 +251,8 @@ pub struct ExplorerPanel {
     pub active: usize,
     /// 미리보기 패널. 레이아웃 스냅샷에 실려 재시작 뒤에도 남는다.
     pub preview: ExplorerPreview,
+    /// 숨김 파일을 목록에 보이는가. 기본은 끔이며 레이아웃 스냅샷에 실려 재시작 뒤에도 남는다.
+    pub show_hidden: bool,
 }
 
 impl ExplorerPanel {
@@ -261,6 +263,7 @@ impl ExplorerPanel {
             tabs: vec![ExplorerTab::new(root)],
             active: 0,
             preview: ExplorerPreview::default(),
+            show_hidden: false,
         }
     }
 
@@ -271,6 +274,7 @@ impl ExplorerPanel {
             tabs: vec![ExplorerTab::new_with_mode(root, view_mode)],
             active: 0,
             preview: ExplorerPreview::default(),
+            show_hidden: false,
         }
     }
 
@@ -287,6 +291,7 @@ impl ExplorerPanel {
             tabs,
             active,
             preview: ExplorerPreview::default(),
+            show_hidden: false,
         }
     }
 

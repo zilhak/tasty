@@ -1,4 +1,4 @@
-<!-- source-hash: 32186ba8d092 -->
+<!-- source-hash: f488707582c9 -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -44,7 +44,7 @@ The file manager built into Tasty. Change a terminal with `Alt+'` > **Explorer**
 ### Screen
 
 - **Left** — the **Files** tree (fixed at the root) and **Favorites** under it.
-- **Top** — **Back** · **Forward** · **Up** · **Refresh**, the address bar, the **New folder** · **New file** buttons, the **Find** and **Preview panel** toggles, and the view switch (**Grid** · **List** · **Detail**). When the Explorer cell is narrower than 440px, the command buttons fold into one **More** (`…`) button that shows the same commands as a menu. In that menu the find and preview rows say what they do: **Find** ↔ **Close find**, **Show preview** ↔ **Hide preview**.
+- **Top** — **Back** · **Forward** · **Up** · **Refresh**, the address bar, the **New folder** · **New file** buttons, the **Find** and **Preview panel** toggles, and the view switch (**Grid** · **List** · **Detail**). When the Explorer cell is narrower than 440px, the command buttons fold into one **More** (`…`) button that shows the same commands as a menu. In that menu the find and preview rows say what they do: **Find** ↔ **Close find**, **Show preview** ↔ **Hide preview**, **Show hidden files** ↔ **Hide hidden files**.
 - **Right** — the items in the current folder. In Grid view, local image files (1 MiB or smaller) show a small thumbnail instead of an icon. `..` at the top goes to the parent folder. In Detail view, click the **Name** · **Size** · **Date modified** · **Type** column headers to sort. The Type column names the kind in words, such as "Markdown", "PDF document", "Archive" or "PNG image" ("RS file" for anything else), and a link says what it points to, such as "Link to Markdown". Properties and the preview header use the same words, and sorting by Type keeps each kind together, so archives such as .gz and .zip sit side by side.
 - You can keep several **New tab**s inside a Surface and view folders separately. These are separate from the Pane's Tabs.
 
@@ -91,6 +91,10 @@ The **Find** toggle on the toolbar (the **More** menu in a narrow cell), or `Ctr
 
 Press the **Preview panel** button in the toolbar to open a panel to the right of the list that shows the one selected file. Text files show their first 64 KB in a monospace font; images are fitted to the panel without being enlarged past their own size. Other file types and folders show **No preview for this file type**, and files over 1 MiB, as well as images too big to decode (such as more than 16384 pixels on a side), show **Too large to preview**. An image over the pixel limit also shows its actual size. With several files selected, the panel says how many and asks you to pick one. Drag the panel's left edge to set its width between 200 and 460 px. Each Explorer remembers whether the panel is on and its width, across restarts and in presets you save. When the Explorer cell is too narrow to keep the list beside it, the panel hides while the button stays on. Explorers in remote workspaces have no preview.
 
+### Hidden files
+
+Files and folders whose names start with a dot (`.`) are left out of the list at first, and the status line below says how many, such as **2 hidden**. Press `Ctrl+Shift+.` (`Cmd+Shift+.` on macOS) or choose **Show hidden files** in the **More** menu to show them; hidden items then show their name and icon in a dimmer text color. Do the same to hide them again. Each Explorer remembers the setting across restarts and in presets you save. The folder tree on the left and subfolder search results always include hidden items.
+
 ### Properties
 
 Choose **Properties** at the bottom of the right-click menu to open a popup inside the Explorer cell. A file shows its kind, size (with bytes), modified and created dates, location and permissions; a link shows its target. Copy the location or link target with the copy button beside it. For a folder, a spinner turns while the items and size are counted in the background, and closing the popup stops the count. Several selected items show the count, kinds, total size and common location, and right-clicking an empty area shows the current folder. In a remote Explorer only the kind, size, modified date and location from the list are shown. If the details can't be read, the popup shows the reason and a **Retry** button.
@@ -104,6 +108,7 @@ Choose **Properties** at the bottom of the right-click menu to open a popup insi
 | Select all | `Ctrl+A` · `Alt+A` |
 | Copy path | `Alt+Shift+C` |
 | Find | `Ctrl+F` · `Alt+F` |
+| Show or hide hidden files | `Ctrl+Shift+.` |
 | Copy / cut / paste | `Ctrl+C` / `Ctrl+X` / `Ctrl+V` (the same bindings as the terminal) |
 | Move between items | Arrow keys · `Home` · `End` · `PageUp` · `PageDown` (left and right only in Grid view) |
 | Extend the selection | The same keys with `Shift` |

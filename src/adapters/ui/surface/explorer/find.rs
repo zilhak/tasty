@@ -286,7 +286,11 @@ impl ExplorerView {
             ),
             _ => {
                 let n = self.entries.len();
-                t_count("explorer.status.items", n as u64, &[&n.to_string()])
+                self.hidden_status(t_count(
+                    "explorer.status.items",
+                    n as u64,
+                    &[&n.to_string()],
+                ))
             }
         }
     }

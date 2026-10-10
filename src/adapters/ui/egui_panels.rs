@@ -111,6 +111,7 @@ pub fn draw_egui_panels(
     // engine을 빌린 렌더 루프가 끝난 뒤 탐색기 액션을 적용한다.
     let mut pending_explorer_action: Option<(u32, crate::explorer_ui::ExplorerAction)> = None;
     let mut pending_explorer_previews: Vec<(u32, crate::model::ExplorerPreview)> = Vec::new();
+    let mut pending_explorer_hidden: Vec<(u32, bool)> = Vec::new();
 
     let explorer_font = engine
         .settings
@@ -246,6 +247,9 @@ pub fn draw_egui_panels(
             }
             if let Some(preview) = view.preview.take_change() {
                 pending_explorer_previews.push((ex_panel.id, preview));
+            }
+            if let Some(show) = view.hidden.take_change() {
+                pending_explorer_hidden.push((ex_panel.id, show));
             }
         } else if let Some(dag) = surface.dag() {
             let view = dag_views.get_or_init(dag.id);
@@ -390,6 +394,19 @@ pub fn draw_egui_panels(
             state.dispatch_intent(
                 crate::intent::Intent::Engine(
                     crate::app::engine_action::EngineAction::ExplorerPreview { target, preview },
+                )
+                .from_user_context_menu(),
+            );
+        }
+    }
+
+    // 숨김 파일 토글도 view 가 바로 바꾸고 model 에 남겨 레이아웃 스냅샷에 싣는다.
+    for (sid, show) in pending_explorer_hidden {
+        if let Some(target) = crate::runtime::surface_binding::SurfaceBinding::capture(engine, sid)
+        {
+            state.dispatch_intent(
+                crate::intent::Intent::Engine(
+                    crate::app::engine_action::EngineAction::ExplorerHidden { target, show },
                 )
                 .from_user_context_menu(),
             );

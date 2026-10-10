@@ -138,6 +138,12 @@ pub(crate) enum EngineAction {
         target: SurfaceBinding,
         preview: crate::model::ExplorerPreview,
     },
+    /// 탐색기의 숨김 파일 표시 여부를 model 에 남겨 레이아웃 스냅샷에 싣는다.
+    #[cfg(feature = "gui")]
+    ExplorerHidden {
+        target: SurfaceBinding,
+        show: bool,
+    },
     #[cfg(feature = "gui")]
     DagSelection {
         target: SurfaceBinding,
@@ -235,6 +241,10 @@ impl EngineAction {
             Self::Explorer { .. } => self.apply_explorer(engine),
             #[cfg(feature = "gui")]
             Self::ExplorerPreview { .. } => self.apply_explorer_preview(engine),
+            #[cfg(feature = "gui")]
+            Self::ExplorerHidden { target, show } => {
+                crate::app::explorer_hidden::apply(engine, target, *show)
+            }
             #[cfg(feature = "gui")]
             Self::DagSelection { .. } => self.apply_dag_selection(engine),
             #[cfg(feature = "gui")]
