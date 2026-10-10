@@ -46,7 +46,10 @@ Windows 의 Win+L·Win+D·Win+E 같은 셸 예약 조합과 GNOME·KDE 의 Super
 | Linux(모든 데스크톱) | Super 단독 |
 | macOS | 없음 |
 
-경고가 보이는 곳은 단축키 가져오기의 경고 블록 한 줄(`keys.os_reserved.windows` / `keys.os_reserved.linux`)이다.
+경고(`keys.os_reserved.windows` / `keys.os_reserved.linux`)가 보이는 곳은 두 군데다.
+
+- 단축키 가져오기의 경고 블록 한 줄.
+- 설정 › 단축키 › 플러그인의 Custom 줄 아래 caption(설정 파일에서 들어온 키). 해석 실패나 OS 키 이름 안내가 있으면 그쪽이 먼저다.
 
 ## 바인딩 문자열 문법
 

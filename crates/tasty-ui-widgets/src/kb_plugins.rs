@@ -85,14 +85,18 @@ pub enum KbPluginKeyProblem<'a> {
     /// 저장 토큰 대신 OS 키 이름을 적은 키. 슬롯은 `Unrecognized` 와 같고 caption 은
     /// [`KbPluginLabels::os_key_name`] 이다.
     OsKeyName { slot: usize, raw: &'a str },
+    /// 해석은 되지만 OS 가 먼저 받을 수 있는 조합. 슬롯은 그대로 두고 경고 caption(완성 문구)만
+    /// `kb-os-reserved-fg` 로 보인다. 저장은 막지 않는다.
+    OsReserved(&'a str),
 }
 
 impl KbPluginKeyProblem<'_> {
-    /// 원문을 오류 테두리로 보일 슬롯과 그 원문.
-    fn invalid_slot(&self) -> (usize, &str) {
+    /// 원문을 오류 테두리로 보일 슬롯과 그 원문. 예약 조합 경고는 슬롯을 바꾸지 않는다.
+    fn invalid_slot(&self) -> Option<(usize, &str)> {
         match *self {
             KbPluginKeyProblem::Unrecognized { slot, raw }
-            | KbPluginKeyProblem::OsKeyName { slot, raw } => (slot, raw),
+            | KbPluginKeyProblem::OsKeyName { slot, raw } => Some((slot, raw)),
+            KbPluginKeyProblem::OsReserved(_) => None,
         }
     }
 }
@@ -464,7 +468,7 @@ fn record_slots(
     else {
         return;
     };
-    let invalid = problem.as_ref().map(KbPluginKeyProblem::invalid_slot);
+    let invalid = problem.as_ref().and_then(KbPluginKeyProblem::invalid_slot);
     let width = theme.kb_record_width();
     let add_width = theme.kb_record_add_width();
     let height = theme.kb_plugin_record_height();
@@ -516,8 +520,16 @@ fn record_slots(
 }
 
 /// 줄 아래 caption — Inherit 은 해석된 키(muted), 해석 실패는 danger 에 키를 mono 로,
-/// OS 키 이름은 danger 에 저장 토큰을 code run 으로.
+/// OS 키 이름은 danger 에 저장 토큰을 code run 으로, OS 예약 조합은 경고 아이콘과 경고 글자로.
 fn caption(ui: &mut egui::Ui, theme: &Theme, slot: &KbPluginSlot<'_>, labels: &KbPluginLabels<'_>) {
+    if let KbPluginSlot::Custom {
+        problem: Some(KbPluginKeyProblem::OsReserved(text)),
+        ..
+    } = slot
+    {
+        os_reserved_caption(ui, theme, text);
+        return;
+    }
     if let KbPluginSlot::Custom {
         problem: Some(KbPluginKeyProblem::OsKeyName { .. }),
         ..
@@ -581,6 +593,40 @@ fn caption(ui: &mut egui::Ui, theme: &Theme, slot: &KbPluginSlot<'_>, labels: &K
         .galley(rect.min, galley, egui::Color32::PLACEHOLDER);
 }
 
+/// 경고 아이콘(`icon-glyph-size-xs`) · `space-xs` · 줄바꿈하는 caption. 둘 다 `kb-os-reserved-fg` 이고
+/// 아이콘은 첫 줄 가운데에 선다.
+fn os_reserved_caption(ui: &mut egui::Ui, theme: &Theme, text: &str) {
+    let color = theme.kb_os_reserved_fg().to_egui();
+    let glyph = theme.icon_glyph_size_xs.value();
+    let gap = theme.spacing_xs.value();
+    let galley = text_galley(
+        ui,
+        theme,
+        text,
+        theme.font_size_caption.value(),
+        color,
+        (ui.available_width() - glyph - gap).max(1.0),
+    );
+    let first_h = galley
+        .rows
+        .first()
+        .map_or(galley.size().y, |r| r.rect.height());
+    let size = egui::vec2(glyph + gap + galley.size().x, galley.size().y.max(glyph));
+    let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+    let glyph_rect = egui::Rect::from_center_size(
+        egui::pos2(rect.left() + glyph / 2.0, rect.top() + first_h / 2.0),
+        egui::vec2(glyph, glyph),
+    );
+    tasty_icons::ALERT_TRIANGLE
+        .image(glyph, color)
+        .paint_at(ui, glyph_rect);
+    ui.painter().galley(
+        egui::pos2(rect.left() + glyph + gap, rect.top()),
+        galley,
+        egui::Color32::PLACEHOLDER,
+    );
+}
+
 fn separator(ui: &mut egui::Ui, theme: &Theme) {
     let bw = theme.border_width.value();
     let (rect, _) =
@@ -640,6 +686,8 @@ mod tests {
         Inherit,
         /// 키 목록과 녹화 중인 슬롯.
         Custom(&'static [&'static str], Option<usize>),
+        /// 키 목록과 그 키의 문제.
+        Problem(&'static [&'static str], KbPluginKeyProblem<'static>),
         None,
     }
 
@@ -679,6 +727,12 @@ mod tests {
                                     recording: *recording,
                                     can_record: true,
                                     problem: None,
+                                },
+                                Kind::Problem(keys, problem) => KbPluginSlot::Custom {
+                                    keys,
+                                    recording: None,
+                                    can_record: true,
+                                    problem: Some(*problem),
                                 },
                                 Kind::None => KbPluginSlot::Unassigned,
                             },
@@ -736,7 +790,7 @@ mod tests {
         for (row, (title, kind)) in out.rows.iter().zip(rows) {
             let r = row.rects;
             let cy = r.mode.center().y;
-            let slot_h = if matches!(kind, Kind::Custom(..)) {
+            let slot_h = if matches!(kind, Kind::Custom(..) | Kind::Problem(..)) {
                 record_h
             } else {
                 h
@@ -887,6 +941,68 @@ mod tests {
             let want = if between_slots { xs } else { gap };
             assert!((b.min.x - a.max.x - want).abs() < 0.5, "{i}: {a:?} → {b:?}");
         }
+    }
+
+    /// 슬롯 테두리 색. `RectShape` 의 stroke 를 그대로 본다.
+    fn stroke_colors(full: &egui::FullOutput) -> Vec<egui::Color32> {
+        full.shapes
+            .iter()
+            .filter_map(|c| match &c.shape {
+                egui::Shape::Rect(r) => Some(r.stroke.color),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// 글자 조각의 색.
+    fn text_colors(full: &egui::FullOutput) -> Vec<egui::Color32> {
+        full.shapes
+            .iter()
+            .filter_map(|c| match &c.shape {
+                egui::Shape::Text(t) => Some(t.galley.job.sections.iter().map(|s| s.format.color)),
+                _ => None,
+            })
+            .flatten()
+            .collect()
+    }
+
+    /// OS 예약 조합은 슬롯을 그대로 두고 경고 색 caption 만 붙인다. 해석 실패는 슬롯에 원문과
+    /// 오류 테두리를 보인다.
+    #[test]
+    fn a_reserved_combo_warns_below_while_a_bad_key_marks_its_slot() {
+        let theme = tasty_themes::mocha_fallback();
+        let warn = theme.kb_os_reserved_fg().to_egui();
+        let error = theme.kb_plugin_error_fg().to_egui();
+        let reserved = [(
+            "lock",
+            Kind::Problem(
+                &["Win+L"],
+                KbPluginKeyProblem::OsReserved("Windows may use Win+L itself."),
+            ),
+        )];
+        let (_, full) = settle_at(&theme, 900.0, &reserved);
+        assert!(text_colors(&full).contains(&warn), "경고 caption 이 없다");
+        assert!(
+            !stroke_colors(&full).contains(&error),
+            "예약 조합 슬롯에 오류 테두리"
+        );
+
+        let bad = [(
+            "bad",
+            Kind::Problem(
+                &["Ctrl+Shft+H"],
+                KbPluginKeyProblem::Unrecognized {
+                    slot: 0,
+                    raw: "ctrl+shft+h",
+                },
+            ),
+        )];
+        let (_, full) = settle_at(&theme, 900.0, &bad);
+        assert!(
+            stroke_colors(&full).contains(&error),
+            "해석 실패 슬롯에 오류 테두리가 없다"
+        );
+        assert!(!text_colors(&full).contains(&warn));
     }
 
     /// 구분선은 명령 사이에만 있다.

@@ -4,6 +4,7 @@ use crate::plugin::registry_state::ShortcutOverride;
 use crate::plugin_bridge::host_actions;
 use crate::settings::{GeneralSettings, KeybindingSettings};
 use crate::settings_ui::{PluginShortcutRow, PluginShortcutSnapshot};
+use tasty_settings::keybindings::os_keys::{ReservedOs, is_os_reserved};
 
 use super::{FieldKind, KeyCapture, PendingBinding, RecordingSlot};
 
@@ -336,6 +337,8 @@ struct RowState {
     keys: Vec<String>,
     /// 해석하지 못하는 첫 키의 위치와 이유.
     error: Option<(usize, tasty_key_match::TextKeyProblem)>,
+    /// 해석 문제가 없을 때 OS 가 먼저 받을 수 있는 첫 키의 경고 문구.
+    reserved: Option<String>,
 }
 
 impl RowState {
@@ -389,6 +392,7 @@ impl RowState {
 
         let keys = custom_keys(row, draft);
         let error = tasty_key_match::first_text_key_problem(&keys);
+        let reserved = os_reserved_caption(&keys, ReservedOs::current(), general);
 
         Self {
             mode,
@@ -401,8 +405,28 @@ impl RowState {
             caption,
             keys,
             error,
+            reserved,
         }
     }
+}
+
+/// `keys` 중 `os` 가 먼저 받을 수 있는 첫 키의 경고 문구. 녹화한 키는 OS 가 가로챈 조합이 녹화기에
+/// 오지 않으므로, 여기 걸리는 키는 설정 파일 등 텍스트로 들어온 것이다.
+fn os_reserved_caption(
+    keys: &[String],
+    os: Option<ReservedOs>,
+    general: &GeneralSettings,
+) -> Option<String> {
+    let os = os?;
+    let key = keys.iter().find(|k| is_os_reserved(k, os))?;
+    let template = match os {
+        ReservedOs::Windows => "keys.os_reserved.windows",
+        ReservedOs::Linux => "keys.os_reserved.linux",
+    };
+    Some(t_fmt(
+        template,
+        &KeybindingSettings::format_display(key, general),
+    ))
 }
 
 impl RowState {
@@ -410,7 +434,9 @@ impl RowState {
     fn problem(&self) -> Option<tasty_ui_widgets::KbPluginKeyProblem<'_>> {
         use tasty_key_match::TextKeyProblem;
         use tasty_ui_widgets::KbPluginKeyProblem;
-        let (slot, why) = self.error?;
+        let Some((slot, why)) = self.error else {
+            return self.reserved.as_deref().map(KbPluginKeyProblem::OsReserved);
+        };
         let raw = self.keys.get(slot)?.as_str();
         Some(match why {
             TextKeyProblem::OsKeyName => KbPluginKeyProblem::OsKeyName { slot, raw },
@@ -585,6 +611,27 @@ mod tests {
         // 비운 입력은 오류가 아니다.
         let r = row(BindingMode::Independent, key(&[]));
         assert!(state(&r, &Default::default()).error.is_none());
+    }
+
+    /// OS 가 먼저 받을 수 있는 키는 해석 문제가 없을 때만 경고 caption 이 된다. 목록이 없는 OS 는 없다.
+    #[test]
+    fn a_reserved_combo_becomes_a_warning_only_without_a_parse_problem() {
+        let general = GeneralSettings::default();
+        let keys = vec!["ctrl+k".to_string(), "option+l".to_string()];
+        let win =
+            os_reserved_caption(&keys, Some(ReservedOs::Windows), &general).expect("Windows 예약");
+        assert!(win.contains("+L") && !win.contains("{}"), "{win}");
+        assert_eq!(
+            os_reserved_caption(&keys, Some(ReservedOs::Linux), &general),
+            None
+        );
+        assert_eq!(os_reserved_caption(&keys, None, &general), None);
+
+        let r = row(BindingMode::Independent, key(&["cmd+k", "option+l"]));
+        assert!(matches!(
+            state(&r, &Default::default()).problem(),
+            Some(tasty_ui_widgets::KbPluginKeyProblem::OsKeyName { .. })
+        ));
     }
 
     /// 상속 source 는 화이트리스트에서 고르고, 목록에 없는 값이면 뒤에 붙여 그대로 보인다.

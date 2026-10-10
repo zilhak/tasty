@@ -804,7 +804,7 @@ i18n: `settings.keybindings.preset_*` 신규 10키 + `select_preset_label`/`pres
 디자인 `ui_kits/terminal/overlays/kb_plugins_subtab.jsx` + `gallery/overlays-windows.jsx` Spec
 "Keybindings › Plugins" + `gallery/overlays-windows-b12.jsx` Spec "Keybindings › Plugins — Custom = record slots"
 ↔ 갤러리 `catalog/components/kb_plugins.rs`(Overlays › `kbplugins`, 견본 다섯:
-기본 · 초안과 해석 실패(OS 키 이름 포함) · 녹화 중 · 좁은 폭 460 줄바꿈 · 빈 상태). 화면은 공용 view
+기본 · 초안과 해석 실패(OS 키 이름 포함) · 녹화 중 · 좁은 폭 460 줄바꿈 · OS 예약 조합(Windows 표기) · 빈 상태). 화면은 공용 view
 `tasty_ui_widgets::kb_plugins_subtab`(`crates/tasty-ui-widgets/src/kb_plugins.rs`)이 그리고 본체 wrapper
 `src/view/settings/ui/keybindings_tab/plugins.rs` 의 `draw_plugins_subtab` 과 갤러리가 함께 부른다. 본체 wrapper 는 초안과
 저장된 override 를 표시값으로 풀고 결과를 `plugin_shortcuts_draft` 에 쓴다. 갤러리는 시안
@@ -819,7 +819,7 @@ props 를 채운다.
 | 컨트롤 줄 | `control_line` | mode Select `kb-plugin-mode-width` · `kb-plugin-control-gap` · slot `kb-plugin-slot-width` · Reset(ghost md). 셋 모두 `kb-plugin-control-height`, 줄 최소 높이 `kb-plugin-row-min-height`. 폭이 모자라면 한 흐름으로 줄을 바꾼다 — 다음 줄은 mode Select 의 x 에서 시작하고 앞 줄 컨트롤 아래 `space-xs`, Reset 은 늘 마지막이다. 녹화 슬롯 묶음은 키 수만큼 넓어져 Reset 을 오른쪽으로 민다 |
 | slot | `KbPluginSlot::{Inherit, Custom, Unassigned}` | 상속 소스 Select / 녹화 슬롯 줄 / "(Unassigned)" `kb-plugin-none-fg` |
 | `recordAlt` | `KbPluginSlot::Custom` → `record_slots` | 사용자 결정으로 Custom 은 녹화 방식이다. 시안의 slot 폭 Secondary 버튼 대신 다른 단축키 서브탭과 같은 `kb_record_slot_sized`(`kb-record-width`·`kb-record-add-width`, 슬롯 사이 `space-xs`, 키마다 슬롯 + 추가 슬롯, 키가 없으면 None 슬롯)을 쓴다. 높이는 줄의 다른 컨트롤과 같은 `kb-plugin-record-height`(→ `kb-plugin-control-height`)다 |
-| caption | `caption` | 줄 아래 `kb-plugin-caption-gap`, caption 크기. Inherit 은 `kb-plugin-caption-fg` "Inherited (…)" 또는 "None", 해석 실패는 `kb-plugin-error-fg` 에 키를 mono 로, OS 키 이름은 `kb-plugin-error-fg` 의 `keys.os_key_name`(저장 토큰은 code run) |
+| caption | `caption` | 줄 아래 `kb-plugin-caption-gap`, caption 크기. Inherit 은 `kb-plugin-caption-fg` "Inherited (…)" 또는 "None", 해석 실패는 `kb-plugin-error-fg` 에 키를 mono 로, OS 키 이름은 `kb-plugin-error-fg` 의 `keys.os_key_name`(저장 토큰은 code run), OS 예약 조합은 `alertTriangle` `icon-glyph-size-xs` · `space-xs` · caption, 둘 다 `kb-os-reserved-fg` |
 | 해석 실패 슬롯 | `KbRecordSlot::Invalid` | 설정 원문을 그대로 보이고 테두리만 `kb-plugin-error-fg`. 호버해도 테두리를 바꾸지 않는다 |
 | 초안 점 | `title_cell` | 제목 뒤 `space-sm`, `kb-plugin-draft-dot-size` 원 `kb-plugin-draft-dot`. hover tooltip |
 | Reset `disabled={!overridden}` | `Button::enabled(overridden)` | override 가 없으면 disabled. tooltip 은 켜져 있을 때만(시안 disabled 버튼은 `title` 이 뜨지 않는다) |

@@ -1,7 +1,7 @@
 //! 설정 › 단축키 › Plugins 서브탭 예제. 본체와 같은 `tasty_ui_widgets::kb_plugins_subtab` 을 부른다.
 //!
-//! 시안 `kb_plugins_subtab.jsx`·`overlays-windows-b12.jsx` 의 견본 다섯(기본 · 초안과 해석 실패 · 녹화 중 ·
-//! 좁은 폭 줄바꿈 · 빈 상태)을 위에서부터 쌓는다. Custom 키는 사용자 결정대로 다른 단축키 서브탭과 같은 녹화 슬롯이다. 플러그인과 명령은
+//! 시안 `kb_plugins_subtab.jsx`·`overlays-windows-b12.jsx` 의 견본 여섯(기본 · 초안과 해석 실패 · 녹화 중 ·
+//! 좁은 폭 줄바꿈 · OS 예약 조합 · 빈 상태)을 위에서부터 쌓는다. OS 예약 견본은 시안대로 Windows 표기다. Custom 키는 사용자 결정대로 다른 단축키 서브탭과 같은 녹화 슬롯이다. 플러그인과 명령은
 //! 시안 `KBP_PLUGINS` 와 같은 고정 데이터이고, 초안 규칙(mode 전환 시 시작값, Reset 이 override 를
 //! 지움)도 시안 동작을 따른다. 키 해석 실패와 OS 키 이름은 본체와 같은
 //! `tasty_key_match::first_text_key_problem` 으로 정한다. 갤러리는 키를 캡처하지 않으므로 슬롯을 누르면 녹화 중 모양만 보인다.
@@ -17,6 +17,7 @@ use tasty_ui_widgets::{
 };
 
 use tasty_key_match::TextKeyProblem;
+use tasty_settings::keybindings::os_keys::{ReservedOs, is_os_reserved};
 
 use crate::i18n::{t, t_fmt};
 
@@ -129,7 +130,7 @@ impl Specimen {
 }
 
 thread_local! {
-    static SPECIMENS: RefCell<[Specimen; 4]> = RefCell::new([
+    static SPECIMENS: RefCell<[Specimen; 5]> = RefCell::new([
         Specimen::new(&[("clipboard-viewer/clear", Value::Custom("ctrl+alt+x".into()))], &[], None),
         Specimen::new(
             &[],
@@ -156,15 +157,21 @@ thread_local! {
             )],
             None,
         ),
+        Specimen::new(
+            &[],
+            &[("clipboard-viewer/clear", Value::Custom("option+l".into()))],
+            None,
+        ),
     ]);
 }
 
 /// 견본 위의 설명 줄 — 시안 각 견본의 caption.
-const CAPTIONS: [&str; 5] = [
+const CAPTIONS: [&str; 6] = [
     "default — row 1 Custom (record slot + add) · row 2 Inherit + caption · row 3 overridden (draft = saved, Reset enabled)",
     "draft + invalid — row 1 holds an unparsable key from the file (dot + error) · row 2 switched to None (dot) · row 3 holds an OS key name (how to write it)",
     "recording — row 1 has two keys and is recording a third · row 3 Custom with no key (None slot)",
     "narrow (460) — three keys wrap from the mode x · Reset last",
+    "OS-reserved (Windows sample) — row 3 holds Win+L from the file · warning caption, saving is not blocked",
     "empty",
 ];
 
@@ -206,7 +213,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                         .size(theme.font_size_caption.value())
                         .color(theme.text_muted().to_egui()),
                 );
-                if i == 4 {
+                if i == 5 {
                     kb_plugins_subtab(
                         ui,
                         theme,
@@ -231,6 +238,15 @@ fn split_custom(keys: &str) -> Vec<&str> {
         .map(str::trim)
         .filter(|k| !k.is_empty())
         .collect()
+}
+
+/// 시안의 Windows 견본처럼 Windows 예약 목록으로 경고 문구를 만든다. `option` 은 Windows 의 `Win` 으로 적는다.
+fn windows_reserved_caption(keys: &[&str]) -> Option<String> {
+    let key = keys
+        .iter()
+        .find(|k| is_os_reserved(k, ReservedOs::Windows))?;
+    let shown = display_key(&key.to_ascii_lowercase().replace("option+", "win+"));
+    Some(t_fmt("keys.os_reserved.windows", &shown))
 }
 
 /// 조합의 단어 첫 글자를 대문자로 — 본체 녹화 슬롯의 사용자 표기와 같은 모양.
@@ -284,10 +300,14 @@ fn specimen(ui: &mut egui::Ui, theme: &Theme, index: usize, s: &mut Specimen) {
             _ => String::new(),
         })
         .collect();
+    let reserved: Vec<Option<String>> = bufs.iter().map(|b| windows_reserved_caption(b)).collect();
     let problems: Vec<Option<KbPluginKeyProblem<'_>>> = bufs
         .iter()
-        .map(|b| {
-            let (slot, why) = tasty_key_match::first_text_key_problem(b)?;
+        .zip(&reserved)
+        .map(|(b, reserved)| {
+            let Some((slot, why)) = tasty_key_match::first_text_key_problem(b) else {
+                return reserved.as_deref().map(KbPluginKeyProblem::OsReserved);
+            };
             let raw = b[slot];
             Some(match why {
                 TextKeyProblem::OsKeyName => KbPluginKeyProblem::OsKeyName { slot, raw },

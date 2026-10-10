@@ -432,6 +432,7 @@ Settings › Keybindings › **Import / Export** 는 위 [이식 번들](#이식
     플러그인 키는 본체 키보다 먼저 매칭하는 정책이라 녹화한 조합의 충돌은 확인하지 않는다.
     저장값에 `tasty_key_match::binding_key_recognized` 가 거절하는 키가 있으면(설정 파일을 직접 고친 경우 등) 그 키의 슬롯은 표시용 이름 대신 설정 원문을 오류 테두리(`kb-plugin-error-fg`)로 보이고, 줄 아래에 caption 이 붙는다. 첫 문제 키 하나만 보인다(`tasty_key_match::first_text_key_problem`).
     키에 OS 키 이름(`cmd`·`super`·`win`·`meta`)이 있으면 caption 은 적는 법 안내("Write Win, Super and Option as `option`, and Cmd as `alt`.", 저장 토큰은 code run)이고, 그 밖의 실패는 "Unrecognized key: <키>" 다. 이 표시는 경고이며 값은 그대로 둔다.
+    해석 문제가 없고 [OS 가 가로채는 조합](../../design/policies/key-mapping.md#os-가-가로채는-조합) 목록에 맞는 키가 있으면, 슬롯은 그대로 두고 줄 아래에 경고 아이콘과 "Windows may use Win+L itself, so Tasty might not receive it."(Linux 는 "Your desktop may use …") caption 을 `kb-os-reserved-fg` 로 붙인다. 저장은 막지 않는다.
   - None: slot 은 "(Unassigned)".
   - 방식을 바꾸면 Custom 은 이전 Custom 값이나 매니페스트 키, Inherit 는 매니페스트 source 나 화이트리스트 첫 항목으로 시작한다.
 - **초안 점** — 초안이 저장값과 다르면 제목 뒤에 점이 선다(같은 값으로 되돌리면 초안 항목이 지워져 점도 사라진다).
