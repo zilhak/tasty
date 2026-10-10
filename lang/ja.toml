@@ -859,7 +859,7 @@ multi = "{n} 項目を選択中"
 multi_sub = "プレビューするにはファイルを 1 つ選択してください。"
 too_large = "大きすぎてプレビューできません"
 too_large_sub = "{} を超えています。"
-too_large_pixels_sub = "一辺が {} px を超えるか、デコードに {} を超えるメモリが必要です。"
+too_large_pixels_sub = "一辺が {}\u00A0px を超えるか、デコードに {} を超えるメモリが必要です。"
 unreadable = "このファイルを読み取れません"
 
 [explorer.properties]

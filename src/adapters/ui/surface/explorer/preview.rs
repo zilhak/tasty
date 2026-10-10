@@ -455,13 +455,13 @@ fn pixels_sub() -> String {
     t_fmt2(
         "explorer.preview.too_large_pixels_sub",
         &MAX_IMAGE_SIDE.to_string(),
-        &format!("{} MiB", MAX_DECODE_ALLOC >> 20),
+        &format!("{}\u{a0}MiB", MAX_DECODE_ALLOC >> 20),
     )
 }
 
 /// 상한을 넘은 그림의 실제 크기 줄.
 fn pixel_size_text([w, h]: [u32; 2]) -> String {
-    format!("{w} × {h} px")
+    format!("{w} × {h}\u{a0}px")
 }
 
 #[cfg(test)]
@@ -504,9 +504,9 @@ mod tests {
         assert_eq!(facts, "2 files, 1 folder");
         assert_eq!(
             pixels_sub(),
-            "Over 16384 px on a side, or needs more than 256 MiB to decode."
+            "Over 16384\u{a0}px on a side, or needs more than 256\u{a0}MiB to decode."
         );
-        assert_eq!(pixel_size_text([20000, 14000]), "20000 × 14000 px");
+        assert_eq!(pixel_size_text([20000, 14000]), "20000 × 14000\u{a0}px");
     }
 
     #[test]

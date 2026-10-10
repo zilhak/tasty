@@ -525,7 +525,11 @@ fn preview_panel(ui: &mut egui::Ui, theme: &Theme, kind: PreviewKind, height: f3
             );
         }
         _ => {
-            let pixels_sub = t_fmt2("explorer.preview.too_large_pixels_sub", "16384", "256 MiB");
+            let pixels_sub = t_fmt2(
+                "explorer.preview.too_large_pixels_sub",
+                "16384",
+                "256\u{a0}MiB",
+            );
             let several = t("explorer.preview.multi").replace("{n}", "3");
             let cell = match kind {
                 PreviewKind::Loading => StateCell {
@@ -549,7 +553,7 @@ fn preview_panel(ui: &mut egui::Ui, theme: &Theme, kind: PreviewKind, height: f3
                     tone: Tone::Neutral,
                     title: t("explorer.preview.too_large"),
                     sub: Some(&pixels_sub),
-                    reason: Some("20000 × 14000 px"),
+                    reason: Some("20000 × 14000\u{a0}px"),
                     actions: &[],
                 },
                 PreviewKind::Several => StateCell {

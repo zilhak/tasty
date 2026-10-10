@@ -140,8 +140,8 @@ const CANVAS_STATES: &[CanvasState] = &[
         icon: icons::IMAGE,
         tone: StateTone::TooLarge,
         title: Title::Plugin("Image is too large to open"),
-        sub: Some("Over 16384 px on a side, or needs more than 512 MiB to decode."),
-        reason: Some("20000 × 300 px"),
+        sub: Some("Over 16384\u{a0}px on a side, or needs more than 512\u{a0}MiB to decode."),
+        reason: Some("20000 × 300\u{a0}px"),
         retry: false,
     },
 ];
@@ -256,6 +256,10 @@ fn draw_states(ui: &mut egui::Ui, theme: &Theme) {
                 "image glyph · title text-primary · sub with the limits · reason = real size “{w} × {h} px” · no Retry (same file, same result)",
             ),
             ("units", "binary — MiB (also the explorer preview: 256 MiB)"),
+            (
+                "line breaks",
+                "number + unit joined by NBSP in every language (“512 MiB”, “16384 px”) · state title + sub use balanced wrap (lines of near-equal length) · same rule for the explorer preview state",
+            ),
             ("gallery grid", "3 per row — never five in one row"),
             ("permission", "lock · accent-warning (same as explorer)"),
             (

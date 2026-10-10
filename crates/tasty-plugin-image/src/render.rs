@@ -771,7 +771,7 @@ fn canvas_state(
         "image.state.too_large_sub",
         &[
             &MAX_IMAGE_SIDE.to_string(),
-            &format!("{} MiB", MAX_DECODE_ALLOC >> 20),
+            &format!("{}\u{a0}MiB", MAX_DECODE_ALLOC >> 20),
         ],
     );
     let too_large_size = match &doc.load_failure {

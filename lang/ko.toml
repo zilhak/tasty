@@ -859,7 +859,7 @@ multi = "항목 {n}개 선택됨"
 multi_sub = "미리 보려면 파일 하나를 선택하세요."
 too_large = "너무 커서 미리 볼 수 없습니다"
 too_large_sub = "{}를 넘습니다."
-too_large_pixels_sub = "한 변이 {} px를 넘거나 디코딩에 {}보다 많은 메모리가 필요합니다."
+too_large_pixels_sub = "한 변이 {}\u00A0px를 넘거나 디코딩에 {}보다 많은 메모리가 필요합니다."
 unreadable = "이 파일을 읽을 수 없습니다"
 
 [explorer.properties]
