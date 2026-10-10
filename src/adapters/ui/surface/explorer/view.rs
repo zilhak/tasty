@@ -2,6 +2,7 @@
 
 pub(crate) mod drag;
 pub(crate) mod ops;
+pub(crate) mod poll;
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -11,6 +12,7 @@ use tasty_model::{ExplorerPanel, SortColumn, SortDir, SurfaceId};
 
 use super::type_ahead::TypeAhead;
 
+use crate::app::local_reads::StampedListing;
 use crate::core::fs_list::sort_entries;
 pub(crate) use crate::core::fs_list::{DirEntryInfo, human_size};
 use crate::i18n::t;
@@ -58,8 +60,8 @@ pub struct ExplorerView {
     pub(super) entries_gen: u64,
     /// `entries` 가 어떤 디렉토리/정렬 기준으로 로드됐는지 (변화 감지용).
     pub(super) loaded: Option<(PathBuf, SortColumn, SortDir)>,
-    local_query: Option<crate::app::local_reads::Query<Vec<DirEntryInfo>>>,
-    tree_queries: HashMap<PathBuf, crate::app::local_reads::Query<Vec<DirEntryInfo>>>,
+    local_query: Option<crate::app::local_reads::Query<StampedListing>>,
+    tree_queries: HashMap<PathBuf, crate::app::local_reads::Query<StampedListing>>,
     /// 로드 결과 상태.
     pub state: LoadState,
     /// 선택된 엔트리 경로 집합.
@@ -111,6 +113,15 @@ pub struct ExplorerView {
     pub(crate) find: Option<super::find::FindState>,
     /// 이 칸이 요청한 파일 작업의 진행·대기열·결과 표시.
     pub(crate) ops: ops::OpsState,
+    /// 다른 프로그램이 바꾼 폴더를 찾는 주기 확인.
+    poll: poll::ExternalPoll,
+}
+
+/// 사이드바 트리에 두는 하위 폴더 목록. 이름 오름차순이다.
+fn tree_dirs(dirs: impl Iterator<Item = DirEntryInfo>) -> Vec<DirEntryInfo> {
+    let mut dirs: Vec<DirEntryInfo> = dirs.collect();
+    sort_entries(&mut dirs, SortColumn::Name, SortDir::Asc);
+    dirs
 }
 
 impl ExplorerView {
@@ -127,9 +138,14 @@ impl ExplorerView {
             self.local_query = None;
             if self.mirror_ws_id.is_none() {
                 match result {
-                    Ok(mut entries) => {
-                        if let Some((_, col, dir)) = &self.loaded {
+                    Ok(StampedListing { stamp, mut entries }) => {
+                        if let Some((root, col, dir)) = &self.loaded {
                             sort_entries(&mut entries, *col, *dir);
+                            self.poll.note_read(root, stamp);
+                            // 트리가 이 폴더의 하위 목록을 캐시해 두었으면 같은 결과로 바꾼다.
+                            if let Some(children) = self.tree_children.get_mut(root) {
+                                *children = tree_dirs(entries.iter().filter(|e| e.is_dir).cloned());
+                            }
                         }
                         self.set_entries(entries);
                         self.state = LoadState::Ok;
@@ -171,10 +187,10 @@ impl ExplorerView {
         for (path, result) in ready {
             self.tree_queries.remove(&path);
             match result {
-                Ok(mut entries) => {
-                    entries.retain(|entry| entry.is_dir);
-                    sort_entries(&mut entries, SortColumn::Name, SortDir::Asc);
-                    self.tree_children.insert(path, entries);
+                Ok(StampedListing { stamp, entries }) => {
+                    self.poll.note_read(&path, stamp);
+                    let children = tree_dirs(entries.into_iter().filter(|entry| entry.is_dir));
+                    self.tree_children.insert(path, children);
                 }
                 Err(error) => {
                     tracing::debug!(%error, path=%path.display(), "Explorer tree read failed");
@@ -183,6 +199,7 @@ impl ExplorerView {
             }
             changed = true;
         }
+        changed |= self.poll_external_result(owner);
         changed |= self.preview.poll(owner);
         changed |= self.thumbs.poll(owner);
         changed
@@ -225,6 +242,7 @@ impl ExplorerView {
             writable_query: None,
             find: None,
             ops: ops::OpsState::default(),
+            poll: Default::default(),
         }
     }
 
@@ -396,6 +414,11 @@ impl ExplorerView {
         let explicit = self.reload_requested;
         let need = explicit || self.loaded.as_ref() != Some(&key);
         if !need {
+            if self.poll.take_quiet_reload() && self.local_query.is_none() {
+                // 다른 프로그램이 바꾼 폴더. 보이던 목록을 둔 채 다시 읽고 결과로 바꾼다.
+                self.local_query =
+                    Some(crate::app::local_reads::stamped_directory(tab.root.clone()));
+            }
             return;
         }
         self.reload_requested = false;
@@ -407,7 +430,7 @@ impl ExplorerView {
             self.clear_selection();
         }
         self.existing_ancestor = None;
-        self.local_query = Some(crate::app::local_reads::directory(tab.root.clone()));
+        self.local_query = Some(crate::app::local_reads::stamped_directory(tab.root.clone()));
         self.writable_query = Some((
             tab.root.clone(),
             crate::app::local_reads::writable(tab.root.clone()),
@@ -600,7 +623,7 @@ impl ExplorerView {
         if !self.tree_children.contains_key(dir) && self.tree_queries.len() < 32 {
             self.tree_queries
                 .entry(dir.to_owned())
-                .or_insert_with(|| crate::app::local_reads::directory(dir.to_owned()));
+                .or_insert_with(|| crate::app::local_reads::stamped_directory(dir.to_owned()));
             self.tree_children.insert(dir.to_owned(), Vec::new());
         }
         self.tree_children

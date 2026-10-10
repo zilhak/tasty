@@ -37,6 +37,9 @@ pub(crate) enum Tick {
     /// egui가 지연 repaint를 요청한 창. 발화하면 그 창을 다시 그리고 자동 제거된다.
     #[cfg(feature = "gui")]
     EguiRepaint(winit::window::WindowId),
+    /// 포커스 탭 탐색기의 가장 이른 외부 변경 확인 시각에 깨운다. 확인할 창 표시는 sync_surface_poll_timers가 한다.
+    #[cfg(feature = "gui")]
+    ExplorerPoll,
     /// anchor 재연결 backoff 시각에 깨운다. workspace로 돌아온 순간의 재시도 판정은 별도다.
     #[cfg(feature = "gui")]
     Reconnect(u32),
@@ -220,6 +223,27 @@ pub(crate) fn sync_dag_list_popup_timer(
             Precision::Strict,
         ),
         None => hub.cancel(Tick::DagListPopup),
+    }
+}
+
+/// 포커스 탭 탐색기가 없으면 취소한다. 지난 시각은 다음 주기로 미뤄 즉시 재깨움을 막는다.
+#[cfg(feature = "gui")]
+pub(crate) fn sync_explorer_poll_timer(
+    hub: &mut TimerHub<Tick>,
+    next_poll: Option<Instant>,
+    now: Instant,
+) {
+    use crate::explorer_ui::view::poll::EXTERNAL_POLL_INTERVAL;
+    match next_poll {
+        Some(at) => arm_derived(
+            hub,
+            Tick::ExplorerPoll,
+            at,
+            now,
+            EXTERNAL_POLL_INTERVAL,
+            Precision::Strict,
+        ),
+        None => hub.cancel(Tick::ExplorerPoll),
     }
 }
 
@@ -646,6 +670,24 @@ mod tests {
         assert!(hub.is_registered(Tick::DagListPopup));
         sync_dag_list_popup_timer(&mut hub, None, t0);
         assert!(!hub.is_registered(Tick::DagListPopup));
+    }
+
+    #[cfg(feature = "gui")]
+    #[test]
+    fn explorer_poll_timer_follows_the_focused_explorer_and_floors_a_stale_deadline() {
+        use crate::explorer_ui::view::poll::EXTERNAL_POLL_INTERVAL;
+        let t0 = Instant::now();
+        let mut hub = TimerHub::new();
+        sync_explorer_poll_timer(&mut hub, Some(t0 + Duration::from_millis(500)), t0);
+        assert_eq!(hub.next_deadline(), Some(t0 + Duration::from_millis(500)));
+        sync_explorer_poll_timer(&mut hub, Some(t0 - Duration::from_secs(1)), t0);
+        assert_eq!(
+            hub.next_deadline(),
+            Some(t0 + EXTERNAL_POLL_INTERVAL),
+            "그리지 못한 창이 지난 시각으로 루프를 계속 깨우지 않는다"
+        );
+        sync_explorer_poll_timer(&mut hub, None, t0);
+        assert!(!hub.is_registered(Tick::ExplorerPoll));
     }
 
     #[cfg(feature = "gui")]

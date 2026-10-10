@@ -429,8 +429,8 @@ impl ApplicationHandler<AppEvent> for App {
                 Tick::DagGraph(sid) => self.mark_dag_graph_window_dirty(sid),
                 Tick::DagListPopup => self.mark_dag_list_popup_windows_dirty(),
                 Tick::EguiRepaint(window_id) => self.deliver_egui_repaint(window_id),
-                // 이 타이머는 루프만 깨우며 아래 poll_auto_attach가 재연결 여부를 판단한다.
-                Tick::Reconnect(_) => {}
+                // 루프만 깨운다. 아래 poll_auto_attach가 재연결을, sync_surface_poll_timers가 탐색기 확인을 판단한다.
+                Tick::Reconnect(_) | Tick::ExplorerPoll => {}
                 // 아래 poll_attach_resize_sync가 마감을 처리한다.
                 Tick::AttachResizeAck => {}
                 // 아래의 메뉴 폴링이 실행되도록 깨운다.
@@ -534,7 +534,7 @@ impl ApplicationHandler<AppEvent> for App {
         let dirty_since = self.earliest_layout_dirty_since();
         crate::app::timers::sync_layout_flush_timer(&mut self.timers, dirty_since, now);
 
-        self.sync_dag_poll_timers(now);
+        self.sync_surface_poll_timers(now);
 
         self.sync_reconnect_timers(now);
 
@@ -2117,7 +2117,7 @@ impl App {
     }
 
     /// 보이는 DAG만 폴링을 예약하고 숨겨진 뷰의 기존 예약은 취소한다.
-    fn sync_dag_poll_timers(&mut self, now: std::time::Instant) {
+    pub(super) fn sync_dag_poll_timers(&mut self, now: std::time::Instant) {
         use crate::adapters::ui::popup::dag_list::DAG_LIST_POPUP_ID;
 
         let mut active: Vec<(u32, std::time::Instant)> = Vec::new();

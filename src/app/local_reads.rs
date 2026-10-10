@@ -16,6 +16,8 @@ pub(crate) use file_info::{
     FolderCount, ItemFacts, ItemKind, MAX_DECODE_ALLOC, MAX_IMAGE_SIDE, PREVIEW_MAX_BYTES,
     PreviewData, PropertiesFacts, TooLarge, decodable_image_ext,
 };
+mod dir_stamp;
+pub(crate) use dir_stamp::{DirStamp, StampedListing};
 mod search;
 pub(crate) use search::{SEARCH_MAX_HITS, SearchEvent, SearchQuery, relative_folder, search};
 
@@ -67,6 +69,8 @@ impl ReadRequests {
 
 enum Request {
     Directory(PathBuf, mpsc::SyncSender<io::Result<Vec<DirEntryInfo>>>),
+    StampedDirectory(PathBuf, mpsc::SyncSender<io::Result<StampedListing>>),
+    DirStamps(Vec<PathBuf>, mpsc::SyncSender<io::Result<DirStamps>>),
     Git(PathBuf, mpsc::SyncSender<io::Result<Option<HeadState>>>),
     Script(PathBuf, mpsc::SyncSender<io::Result<ScriptSource>>),
     Preview(PathBuf, u32, mpsc::SyncSender<io::Result<PreviewData>>),
@@ -95,6 +99,12 @@ impl Request {
             Self::Directory(path, sender) => sender
                 .send(crate::core::fs_list::read_dir_entries(&path).map_err(|e| missing(&path, e)))
                 .is_ok(),
+            Self::StampedDirectory(path, sender) => sender
+                .send(dir_stamp::read_stamped(&path, |dir| {
+                    crate::core::fs_list::read_dir_entries(dir).map_err(|e| missing(dir, e))
+                }))
+                .is_ok(),
+            Self::DirStamps(dirs, sender) => sender.send(Ok(dir_stamp::read_stamps(dirs))).is_ok(),
             Self::Git(path, sender) => sender.send(Ok(git_branch(&path))).is_ok(),
             Self::Preview(path, fit_width, sender) => sender
                 .send(file_info::read_preview(&path, fit_width))
@@ -162,6 +172,15 @@ fn missing(path: &std::path::Path, error: io::Error) -> io::Error {
 pub(crate) fn directory(path: PathBuf) -> Query<Vec<DirEntryInfo>> {
     Query::new(|sender| Request::Directory(path, sender))
 }
+/// 탐색기 목록. 읽기 직전의 폴더 표지를 함께 돌려준다.
+pub(crate) fn stamped_directory(path: PathBuf) -> Query<StampedListing> {
+    Query::new(|sender| Request::StampedDirectory(path, sender))
+}
+/// 폴더 표지만 읽는다. 항목은 읽지 않는다.
+pub(crate) fn dir_stamps(dirs: Vec<PathBuf>) -> Query<DirStamps> {
+    Query::new(|sender| Request::DirStamps(dirs, sender))
+}
+pub(crate) type DirStamps = Vec<(PathBuf, Option<DirStamp>)>;
 pub(crate) fn writable(path: PathBuf) -> Query<bool> {
     Query::new(|sender| Request::Writable(path, sender))
 }
