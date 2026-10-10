@@ -49,7 +49,13 @@ fn a_command_row_is_one_settings_row_tall_including_its_bottom_line() {
     let theme = theme();
     for keys in [Some("Ctrl+Shift+V"), None] {
         let rect = drawn_rect(380.0, |ui, theme| {
-            plugin_command_row(ui, theme, "Open clipboard viewer", keys);
+            plugin_command_row(
+                ui,
+                theme,
+                "Open clipboard viewer",
+                keys,
+                &PluginKeycapStyle::default(),
+            );
         });
         assert_eq!(
             rect.height(),
@@ -67,6 +73,7 @@ fn a_long_command_title_stays_inside_the_column() {
             theme,
             "a very long command title that cannot fit in the detail column at all",
             Some("Ctrl+Alt+G"),
+            &PluginKeycapStyle::default(),
         );
     });
     assert!(rect.width() <= 200.0 + 0.5, "width {}", rect.width());
@@ -477,4 +484,120 @@ fn the_attention_bar_spans_the_column_without_a_button() {
         });
         assert_eq!(rect.width(), 540.0, "action {}", action.is_some());
     }
+}
+
+fn caps(chord: &str, style: &PluginKeycapStyle) -> Vec<PluginKeycap> {
+    plugin_keycap_parts(chord, style)
+}
+
+fn text(t: &str) -> PluginKeycap {
+    PluginKeycap::Text(t.to_owned())
+}
+
+/// Windows·Linux 는 매니페스트 순서 그대로 낱말 키캡이다. 표시 스타일 값이 있어도 따르지 않는다.
+#[test]
+fn other_platforms_keep_word_keycaps_in_manifest_order() {
+    let symbols = PluginKeycapStyle::from_setting_names(false, "symbol", "symbol", "symbol");
+    for style in [PluginKeycapStyle::default(), symbols] {
+        assert_eq!(
+            caps("ctrl + shift + h", &style),
+            [text("Ctrl"), text("Shift"), text("H")]
+        );
+        assert_eq!(caps("alt + k", &style), [text("Alt"), text("K")]);
+        assert_eq!(
+            caps("shift+ctrl+h", &style),
+            [text("Shift"), text("Ctrl"), text("H")]
+        );
+    }
+}
+
+/// macOS 는 수식키를 ⌃ ⌥ ⇧ ⌘ 순서로 놓고 키를 맨 뒤에 둔다. 매니페스트 순서와 대소문자는 상관없다.
+#[test]
+fn macos_sorts_modifiers_in_apple_order() {
+    let style = PluginKeycapStyle::from_setting_names(true, "alt", "option", "shift");
+    assert_eq!(
+        caps("Shift + ALT + k + ctrl + option", &style),
+        [
+            text("Ctrl"),
+            text("Option"),
+            text("Shift"),
+            text("Alt"),
+            text("K")
+        ]
+    );
+    assert_eq!(caps("ctrl++", &style), [text("Ctrl"), text("+")]);
+}
+
+/// macOS 수식키는 사용자 표시 스타일을 따른다. Ctrl 은 어느 스타일에서도 낱말이다.
+#[test]
+fn macos_modifiers_follow_the_display_style_and_ctrl_stays_a_word() {
+    let words = PluginKeycapStyle::from_setting_names(true, "cmd", "option", "shift");
+    assert_eq!(
+        caps("ctrl + shift + h", &words),
+        [text("Ctrl"), text("Shift"), text("H")]
+    );
+    assert_eq!(caps("alt + k", &words), [text("Cmd"), text("K")]);
+
+    let symbols = PluginKeycapStyle::from_setting_names(true, "symbol", "symbol", "symbol");
+    assert_eq!(
+        caps("ctrl + shift + h", &symbols),
+        [
+            text("Ctrl"),
+            PluginKeycap::Icon(tasty_icons::SHIFT_KEY),
+            text("H")
+        ]
+    );
+    assert_eq!(
+        caps("option + alt + k", &symbols),
+        [
+            PluginKeycap::Icon(tasty_icons::OPTION_KEY),
+            PluginKeycap::Icon(tasty_icons::CMD_KEY),
+            text("K")
+        ]
+    );
+}
+
+/// 모르는 설정 값은 키바인딩 표시처럼 낱말로 본다.
+#[test]
+fn unknown_style_names_fall_back_to_words() {
+    let style = PluginKeycapStyle::from_setting_names(true, "bogus", "bogus", "");
+    assert_eq!(style.alt, PluginKeycapAltStyle::Alt);
+    assert_eq!(style.option, PluginKeycapWordStyle::Word);
+    assert_eq!(style.shift, PluginKeycapWordStyle::Word);
+}
+
+/// 행이 그리는 키캡도 스타일을 따른다. macOS 기호 표기에서 낱말 `Cmd` 대신 아이콘 키캡이 그려진다.
+#[test]
+fn the_command_row_draws_the_styled_keycaps() {
+    let theme = theme();
+    let draw = |style: PluginKeycapStyle| {
+        let ctx = egui::Context::default();
+        let mut texts = Vec::new();
+        for _ in 0..2 {
+            let full = ctx.run(egui::RawInput::default(), |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    plugin_command_row(ui, &theme, "Open", Some("alt + k"), &style);
+                });
+            });
+            texts = text_rects(&full.shapes)
+                .into_iter()
+                .map(|(t, _)| t)
+                .collect::<Vec<_>>();
+        }
+        texts
+    };
+    let words = draw(PluginKeycapStyle::from_setting_names(
+        true, "cmd", "option", "shift",
+    ));
+    assert!(words.iter().any(|t| t == "Cmd"), "{words:?}");
+    let symbols = draw(PluginKeycapStyle::from_setting_names(
+        true, "symbol", "option", "shift",
+    ));
+    assert!(
+        !symbols.iter().any(|t| t == "Cmd" || t == "Alt"),
+        "{symbols:?}"
+    );
+    assert!(symbols.iter().any(|t| t == "K"), "{symbols:?}");
+    let other = draw(PluginKeycapStyle::default());
+    assert!(other.iter().any(|t| t == "Alt"), "{other:?}");
 }

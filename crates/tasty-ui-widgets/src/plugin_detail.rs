@@ -5,6 +5,7 @@
 mod attention_bar;
 mod confirm;
 mod identity;
+mod keycaps;
 
 pub use attention_bar::{PluginAttentionBarAction, PluginAttentionBarView, plugin_attention_bar};
 
@@ -13,11 +14,15 @@ pub use confirm::{
     plugin_uninstall_confirm_bar_height,
 };
 pub use identity::{PluginIdentityView, plugin_detail_identity};
+pub use keycaps::{
+    PluginKeycap, PluginKeycapAltStyle, PluginKeycapStyle, PluginKeycapWordStyle,
+    plugin_keycap_parts,
+};
 
 use tasty_type_appearance::theme::Theme;
 
 use crate::button::{Button, ButtonVariant};
-use crate::chip::{TagVariant, kbd, kbd_width, split_keys, tag};
+use crate::chip::{KbdKey, TagVariant, kbd_parts, kbd_parts_width, split_keys, tag};
 use crate::control::ControlSize;
 use crate::plugin_add::PLUGIN_ADD_INSET;
 use crate::toggle::switch_with_label_color;
@@ -219,34 +224,36 @@ pub fn plugin_keycaps(chord: &str) -> String {
         .into_iter()
         .map(str::trim)
         .filter(|k| !k.is_empty())
-        .map(|k| {
-            let mut chars = k.chars();
-            match chars.next() {
-                Some(c) if chars.as_str().is_empty() => c.to_uppercase().collect(),
-                Some(c) => c
-                    .to_uppercase()
-                    .chain(chars.as_str().to_lowercase().chars())
-                    .collect(),
-                None => String::new(),
-            }
-        })
+        .map(keycaps::title_case)
         .collect();
     keys.join("+")
 }
 
 /// Command 절의 한 행. 왼쪽에 명령 제목(mono term-sm · text-secondary), 오른쪽에 단축키 Kbd 를 두고
 /// 행 아래에 구분선을 긋는다. 행 높이는 아래 선을 포함해 `settings_row_min_height` 이고 아래 여백을
-/// 더하지 않는다. 단축키는 [`plugin_keycaps`] 규칙으로 다듬어 그린다.
-pub fn plugin_command_row(ui: &mut egui::Ui, theme: &Theme, title: &str, keys: Option<&str>) {
+/// 더하지 않는다. 단축키는 [`plugin_keycap_parts`] 가 `style` 의 플랫폼·표시 스타일로 바꿔 그린다.
+pub fn plugin_command_row(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    title: &str,
+    keys: Option<&str>,
+    style: &PluginKeycapStyle,
+) {
     let bw = theme.border_width.value();
     let height = theme.settings_row_min_height().value();
     let width = ui.available_width();
     let row_h = height - bw;
     let gap = theme.spacing_lg.value();
-    let keys = keys.map(plugin_keycaps).filter(|k| !k.is_empty());
-    let keys = keys.as_deref();
+    let caps = keys
+        .map(|k| plugin_keycap_parts(k, style))
+        .filter(|caps| !caps.is_empty());
+    let keys: Option<Vec<KbdKey<'_>>> = caps
+        .as_ref()
+        .map(|caps| caps.iter().map(PluginKeycap::as_kbd_key).collect());
     // 키캡은 왼쪽에서 오른쪽으로 그려야 순서가 맞으므로, 키캡 폭을 먼저 재서 제목 칸 폭을 정한다.
-    let kbd_w = keys.map(|k| kbd_width(ui.ctx(), theme, k).value());
+    let kbd_w = keys
+        .as_deref()
+        .map(|k| kbd_parts_width(ui.ctx(), theme, k).value());
     let title_w = (width - kbd_w.map(|w| w + gap).unwrap_or(0.0)).max(0.0);
     let response = ui
         .allocate_ui_with_layout(
@@ -271,8 +278,8 @@ pub fn plugin_command_row(ui: &mut egui::Ui, theme: &Theme, title: &str, keys: O
                         );
                     },
                 );
-                if let Some(keys) = keys {
-                    kbd(ui, theme, keys);
+                if let Some(keys) = keys.as_deref() {
+                    kbd_parts(ui, theme, keys);
                 }
             },
         )

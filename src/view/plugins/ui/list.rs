@@ -5,10 +5,11 @@ use super::{PluginsAction, PluginsSnapshot, PluginsUiState};
 use tasty_ui_widgets::tokens::{PLUGIN_LIST_ROW_HEIGHT, STRUCT_GAP_2};
 use tasty_ui_widgets::{
     PluginAvatarSize, PluginDetailBarView, PluginIdentityView, PluginInstallPathsView,
-    PluginMetaView, PluginUninstallConfirmView, TagVariant, margin_sym, paint_plugin_avatar,
-    plugin_command_row, plugin_detail_bar, plugin_detail_bar_height, plugin_detail_description,
-    plugin_detail_identity, plugin_detail_section, plugin_detail_section_gap, plugin_install_paths,
-    plugin_uninstall_confirm_bar, plugin_uninstall_confirm_bar_height, tag, vspace,
+    PluginKeycapStyle, PluginMetaView, PluginUninstallConfirmView, TagVariant, margin_sym,
+    paint_plugin_avatar, plugin_command_row, plugin_detail_bar, plugin_detail_bar_height,
+    plugin_detail_description, plugin_detail_identity, plugin_detail_section,
+    plugin_detail_section_gap, plugin_install_paths, plugin_uninstall_confirm_bar,
+    plugin_uninstall_confirm_bar_height, tag, vspace,
 };
 
 pub(super) fn draw_list_tab(
@@ -205,7 +206,7 @@ pub(super) fn draw_list_tab(
                 .auto_shrink([false, false])
                 .drag_to_scroll(false)
                 .show(&mut body, |ui| {
-                    draw_detail_body(ui, &th, entry, actions);
+                    draw_detail_body(ui, &th, entry, &snapshot.keycap_style, actions);
                 });
 
             let mut bar_ui = ui.new_child(egui::UiBuilder::new().max_rect(
@@ -276,6 +277,7 @@ fn draw_detail_body(
     ui: &mut egui::Ui,
     th: &theme::Theme,
     entry: &super::PluginEntry,
+    keycap_style: &PluginKeycapStyle,
     actions: &mut Vec<PluginsAction>,
 ) {
     // identity — 아바타 오른쪽에 이름 줄과 `작성자 · id · homepage` 메타 줄. Attention 과 같은 위젯이다.
@@ -343,7 +345,13 @@ fn draw_detail_body(
         plugin_detail_section_gap(ui, th);
         plugin_detail_section(ui, th, t("plugins.commands"), |ui| {
             for cmd in &entry.commands {
-                plugin_command_row(ui, th, t(&cmd.title_key), cmd.keybinding.as_deref());
+                plugin_command_row(
+                    ui,
+                    th,
+                    t(&cmd.title_key),
+                    cmd.keybinding.as_deref(),
+                    keycap_style,
+                );
             }
         });
     }

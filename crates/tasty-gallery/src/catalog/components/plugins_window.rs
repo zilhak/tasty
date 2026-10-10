@@ -532,6 +532,16 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             spec::stage(ui, theme, StageVariant::Solo, |ui| window(ui, theme, tab));
         });
     }
+    spec::cluster(
+        ui,
+        theme,
+        "Installed detail — command keycaps per platform (macOS: ⌃ ⌥ ⇧ ⌘ order, user display style, Ctrl stays a word)",
+        |ui| {
+            spec::stage(ui, theme, StageVariant::Solo, |ui| {
+                installed::keycap_platforms(ui, theme);
+            });
+        },
+    );
     let latte = crate::host_shell::latte_theme();
     let mocha = tasty_themes::mocha_fallback();
     spec::cluster(

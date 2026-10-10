@@ -7,10 +7,11 @@ use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::tokens::{PLUGIN_LIST_ROW_HEIGHT, STRUCT_GAP_2};
 use tasty_ui_widgets::{
     PluginAvatarSize, PluginDetailBarView, PluginIdentityView, PluginInstallPathsView,
-    PluginMetaView, PluginUninstallConfirmView, TagVariant, margin_sym, paint_plugin_avatar,
-    plugin_command_row, plugin_detail_bar, plugin_detail_bar_height, plugin_detail_description,
-    plugin_detail_identity, plugin_detail_section, plugin_detail_section_gap, plugin_install_paths,
-    plugin_uninstall_confirm_bar, plugin_uninstall_confirm_bar_height, tag,
+    PluginKeycapStyle, PluginMetaView, PluginUninstallConfirmView, TagVariant, margin_sym,
+    paint_plugin_avatar, plugin_command_row, plugin_detail_bar, plugin_detail_bar_height,
+    plugin_detail_description, plugin_detail_identity, plugin_detail_section,
+    plugin_detail_section_gap, plugin_install_paths, plugin_uninstall_confirm_bar,
+    plugin_uninstall_confirm_bar_height, tag,
 };
 
 /// 상세 컬럼이 그릴 것 — 본체는 선택 상태와 uninstall 확인 상태로 갈린다.
@@ -244,7 +245,8 @@ fn commands(ui: &mut egui::Ui, theme: &Theme, row: &Row) {
     plugin_detail_section_gap(ui, theme);
     plugin_detail_section(ui, theme, "Commands", |ui| {
         for (title, kb) in row.commands {
-            plugin_command_row(ui, theme, title, Some(kb));
+            // 본체 비-macOS 기본 표기. macOS 표기는 `keycap_platforms` 예제에서 따로 보인다.
+            plugin_command_row(ui, theme, title, Some(kb), &PluginKeycapStyle::default());
         }
     });
 }
@@ -418,4 +420,42 @@ pub fn draw_install_paths(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::without_color("space-sm", "8 row gap"),
         ],
     );
+}
+
+/// 디자인 Spec "Installed detail — command keycaps per platform". 매니페스트 `ctrl + shift + h` 와
+/// `alt + k` 를 Windows·Linux, macOS 낱말 표기, macOS 기호 표기로 그린다. 키캡은 본체와 같은
+/// [`plugin_keycap_parts`] 를 거친다.
+pub(super) fn keycap_platforms(ui: &mut egui::Ui, theme: &Theme) {
+    use tasty_ui_widgets::{PluginKeycap, kbd_parts, plugin_keycap_parts};
+    let rows = [
+        ("Windows / Linux", PluginKeycapStyle::default()),
+        (
+            "macOS · style text",
+            PluginKeycapStyle::from_setting_names(true, "cmd", "option", "shift"),
+        ),
+        (
+            "macOS · style symbol",
+            PluginKeycapStyle::from_setting_names(true, "symbol", "symbol", "symbol"),
+        ),
+    ];
+    egui::Grid::new("plugins_keycap_platforms")
+        .spacing(egui::vec2(
+            theme.spacing_lg.value(),
+            theme.spacing_md.value(),
+        ))
+        .show(ui, |ui| {
+            for (label, style) in rows {
+                ui.label(
+                    egui::RichText::new(label)
+                        .size(theme.font_size_caption.value())
+                        .color(theme.text_muted().to_egui()),
+                );
+                for chord in ["ctrl + shift + h", "alt + k"] {
+                    let caps = plugin_keycap_parts(chord, &style);
+                    let keys: Vec<_> = caps.iter().map(PluginKeycap::as_kbd_key).collect();
+                    ui.horizontal(|ui| kbd_parts(ui, theme, &keys));
+                }
+                ui.end_row();
+            }
+        });
 }

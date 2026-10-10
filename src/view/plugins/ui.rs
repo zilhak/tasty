@@ -52,6 +52,8 @@ pub struct PluginsSnapshot {
     /// 등록 거부(서명/신뢰) 또는 실행 실패(health error) 로 "확인 필요" 한
     /// plugin 들. `Attention` 탭 목록 + 사이드바 경고 배지가 소비.
     pub attention: Vec<AttentionEntry>,
+    /// Commands 절 키캡의 플랫폼과 수식키 표시 스타일(설정 › 일반).
+    pub keycap_style: tasty_ui_widgets::PluginKeycapStyle,
 }
 
 /// "확인 필요" 사유 — `host-plugin` 의 `RejectionReason` + health error 를 합친 것.

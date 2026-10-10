@@ -1,4 +1,4 @@
-<!-- source-hash: 30b9621aa19a -->
+<!-- source-hash: e505f41dad1c -->
 # Plugins
 
 Use plugins for tools such as Markdown and image viewers or AI agent integrations. Explore the bundled plugins, add new ones, and manage which tools run and what permissions they have.
@@ -47,7 +47,7 @@ The **Installed** tab. Pick one from the list on the left and the details appear
 - The line under the name at the top of the details shows the authors and the plugin id. If the plugin has a homepage, it appears at the end of the same line. An `http://` or `https://` address is an underlined link that opens in your browser; any other value is shown as plain text.
 - Rows in the list are marked **Disabled** or **Running**. If a plugin is enabled but fails to run, a red marker appears with the notice **Failed to connect. Check the plugin's configuration in Settings.**
 - **Permissions** — The list of permissions this plugin has been granted. Read-only here; it cannot be changed.
-- **Commands** — Keybinding commands added by the plugin, one command and its shortcut per line. Change the keys under **Settings** > **Keybindings** > **Plugins**.
+- **Commands** — Keybinding commands added by the plugin, one command and its shortcut per line. On macOS the shortcut shows the keys you actually press, in the order Ctrl · Option · Shift · Command, and Option, Shift and Command follow the modifier display style (word or symbol) under **Settings** > **General**. Change the keys under **Settings** > **Keybindings** > **Plugins**.
 - **Install path** · **Log** — The last section of the details. A long path wraps so it is shown in full, and you can drag to select and copy it. **Open folder** on the right of the heading row opens the install folder in your file manager.
 - The bar under the details stays visible while you scroll the details.
   - The switch on the left — The label next to it shows **Enabled** / **Disabled**. Clicking the label also toggles it. Turning it off cleans up the process; turning it on starts it again.

@@ -265,3 +265,41 @@ fn the_uninstall_confirm_focuses_cancel_when_it_opens() {
         "Enter uninstalled instead of cancelling: {actions:?}"
     );
 }
+
+/// Commands 절 키캡은 snapshot 의 표시 스타일을 따른다. macOS 낱말 표기면 매니페스트 `alt` 가 `Cmd`
+/// 로 보이고, 기본(비-macOS)이면 `Alt` 로 보인다.
+#[test]
+fn command_keycaps_follow_the_snapshot_style() {
+    crate::i18n::init("en");
+    let mut plugin = entry();
+    plugin.commands = vec![crate::view::plugins::ui::PluginCommandEntry {
+        title_key: "plugins.commands".into(),
+        keybinding: Some("alt + k".into()),
+    }];
+    let id = plugin.id.clone();
+    let draw = |style: tasty_ui_widgets::PluginKeycapStyle| {
+        let snapshot = PluginsSnapshot {
+            plugins: vec![plugin.clone()],
+            keycap_style: style,
+            ..Default::default()
+        };
+        let ctx = egui::Context::default();
+        let mut ui_state = PluginsUiState {
+            selected_id: Some(id.clone()),
+            ..Default::default()
+        };
+        let mut actions = Vec::new();
+        let mut texts = Vec::new();
+        for _ in 0..2 {
+            texts = run_frame(&ctx, &snapshot, &mut ui_state, &mut actions, Vec::new());
+        }
+        texts
+    };
+    let has = |texts: &[(String, egui::Rect)], label: &str| texts.iter().any(|(t, _)| t == label);
+    let mac = draw(tasty_ui_widgets::PluginKeycapStyle::from_setting_names(
+        true, "cmd", "option", "shift",
+    ));
+    assert!(has(&mac, "Cmd") && !has(&mac, "Alt"), "{mac:?}");
+    let other = draw(tasty_ui_widgets::PluginKeycapStyle::default());
+    assert!(has(&other, "Alt") && !has(&other, "Cmd"), "{other:?}");
+}

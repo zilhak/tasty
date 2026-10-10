@@ -117,6 +117,33 @@ impl App {
             })
         }));
 
-        plugins_ui::PluginsSnapshot { plugins, attention }
+        plugins_ui::PluginsSnapshot {
+            plugins,
+            attention,
+            keycap_style: self.plugin_keycap_style(),
+        }
+    }
+}
+
+impl App {
+    /// Plugins 창 키캡 표기. 모든 세션이 같은 설정을 받으므로 첫 엔진의 설정 › 일반 값을 쓴다.
+    /// macOS 경로는 `cfg!(target_os = "macos")` 로 고른다.
+    fn plugin_keycap_style(&self) -> tasty_ui_widgets::PluginKeycapStyle {
+        let macos = cfg!(target_os = "macos");
+        match self.engines().windowed_and_parked().next() {
+            Some(engine) => {
+                let general = &engine.runtime.settings.general;
+                tasty_ui_widgets::PluginKeycapStyle::from_setting_names(
+                    macos,
+                    &general.alt_display_style,
+                    &general.option_display_style,
+                    &general.shift_display_style,
+                )
+            }
+            None => tasty_ui_widgets::PluginKeycapStyle {
+                macos,
+                ..Default::default()
+            },
+        }
     }
 }
