@@ -1,6 +1,6 @@
 # ADR-0074: macOS Full Disk Access 보유 기록은 안내 원인을 고르는 데만 쓰고 cdhash로 앱을 식별한다
 
-- **Status**: Accepted — 기록·cdhash 취득과 세 갈래 판정은 macOS 실 기기에서 debug 빌드로 실제 실행해 확인했다. 재빌드와 시스템 설정 토글로 권한을 잃는 실제 경로는 아래 재검토 조건에 남아 있다
+- **Status**: Accepted — 재빌드와 시스템 설정 토글로 권한을 잃는 실제 경로는 실 기기 미확인이다. 확인한 범위는 [macOS 권한](../features/macos-permissions/index.md#full-disk-access--추정과-안내)에 있다
 - **Date**: 2026-10-08
 - **Tags**: macos, permissions, tcc, full-disk-access, boot, codesign, adr-0052
 - **Group**: foundation
@@ -52,14 +52,8 @@ FDA 추정 자체가 경로 접근 우회 판정이라 그 한계(오탐)는 그
 
 실행 결과로 확인:
 
-- 재빌드로 cdhash가 바뀐 Tasty.app에서 TCC가 실제로 권한을 거두는지, 그때 안내가 `Stale` 문단을 보이는지 본다. 시스템 설정에서 토글만 껐을 때 `Revoked`가, `tccutil reset` 뒤에 다시 추가 처방이 보이는지도 본다. 아래 확인은 기록 파일을 바꿔 갈래를 고른 것이라 TCC의 실제 동작은 포함하지 않는다.
+- 재빌드로 cdhash가 바뀐 Tasty.app에서 TCC가 실제로 권한을 거두는지, 그때 안내가 `Stale` 문단을 보이는지 본다. 시스템 설정에서 토글만 껐을 때 `Revoked`가, `tccutil reset` 뒤에 다시 추가 처방이 보이는지도 본다. 기능 문서에 적은 실 기기 확인은 기록 파일을 바꿔 갈래를 고른 것이라 TCC의 실제 동작은 포함하지 않는다.
 - 설정 탭 FDA 행에 갈래별 처방 줄이 보이는지 본다.
-
-2026-10-08 macOS 27.0.1 실 기기(arm64, ad-hoc 서명 `target/debug/tasty`)에서 확인한 것:
-
-- FDA를 가진 앱의 자식으로 부팅하면 기록 파일이 `cdhash=8df309b5a1c9ba05454791f4388afe017c5adada`로 채워졌고 `codesign -dvvv`의 `CDHash`와 같았다. Security.framework 링크와 기본 플래그(0)의 `kSecCodeInfoUnique` 취득이 동작한다.
-- launchd로 띄워 자기 자신이 TCC 판정 대상이 되게 하면 프로브가 거부(`Denied`)를 봤다. 시스템 경로 TCC.db는 FDA 없이 열리지 않는다.
-- 그 상태에서 기록 해시가 같으면 `Revoked`, 기록 해시를 다른 값으로 바꾸면 `Stale`, 기록을 지우면 `Never`가 골라졌다. `Revoked` 안내 모달에 다시 켜기와 `tccutil reset` 뒤 다시 추가 처방 문단이 보였다.
 
 ## References
 

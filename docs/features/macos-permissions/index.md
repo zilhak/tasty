@@ -176,6 +176,14 @@ FDA(`kTCCServiceSystemPolicyAllFiles`)를 허용하면 "다른 앱의 데이터"
   언제나 `Never`다.
 
 결정의 근거와 대안은 [ADR-0074](../../adr/0074-macos-fda-grant-record-picks-the-notice-cause.md)에 있다.
+
+**실 기기 확인 범위** — 2026-10-08 macOS 27.0.1 실 기기(arm64, ad-hoc 서명 `target/debug/tasty`)에서 debug 빌드를 실제 실행해 확인한 것:
+
+- FDA를 가진 앱의 자식으로 부팅하면 기록 파일이 `cdhash=8df309b5a1c9ba05454791f4388afe017c5adada`로 채워졌고 `codesign -dvvv`의 `CDHash`와 같았다. Security.framework 링크와 기본 플래그(0)의 `kSecCodeInfoUnique` 취득이 동작한다.
+- launchd로 띄워 자기 자신이 TCC 판정 대상이 되게 하면 프로브가 거부(`Denied`)를 봤다. 시스템 경로 TCC.db는 FDA 없이 열리지 않는다.
+- 그 상태에서 기록 해시가 같으면 `Revoked`, 기록 해시를 다른 값으로 바꾸면 `Stale`, 기록을 지우면 `Never`가 골라졌다. `Revoked` 안내 모달에 다시 켜기와 `tccutil reset` 뒤 다시 추가 처방 문단이 보였다.
+
+재빌드로 cdhash가 바뀐 Tasty.app에서 TCC가 실제로 권한을 거두는지, 시스템 설정 토글·`tccutil reset` 뒤에 각 갈래가 보이는지는 실 기기에서 확인하지 않았다. 위 확인은 기록 파일을 바꿔 갈래를 고른 것이라 TCC의 실제 동작은 포함하지 않는다.
 배포 DMG도 직접 빌드도 ad-hoc 서명이라 앱이 둘을 가를 수 없으므로 서명 문단은 모든 안내에 넣는다.
 
 **안내 문구가 지켜야 할 것** — FDA 는 파일 접근 프롬프트만 없앤다. **Automation(다른 앱 제어) · 화면 기록 · 손쉬운 사용은 FDA 와 별개 TCC 서비스라 그대로 남는다.** 문구가 "모든 프롬프트가 사라진다" 로 읽히면 안 된다. 또 배포 DMG 와 직접 빌드 모두 ad-hoc 서명이라 업데이트·재빌드마다 다른 앱으로 인식돼 FDA 행이 더 이상 적용되지 않는다. 서명 문단은 이 사실을 배포본 사용자도 자기 이야기로 읽게 쓰고, 직접 빌드하는 사용자에게는 `Tasty Dev` 인증서 서명을 권한다([build.md](../../dev-guide/build.md) 참조).
