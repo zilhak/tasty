@@ -23,6 +23,9 @@ mod explorer_marquee;
 /// 승인 위험 선택지 채움의 color-mix 수기 접근자 (`impl Theme`).
 mod approval_danger;
 
+/// DAG 표시 색의 color-mix 수기 접근자 (`impl Theme`).
+mod dag_mix;
+
 /// `tasty-design-tokens` 생성기가 산출하는 semantic 색 접근자 (`impl Theme`).
 /// DO NOT EDIT — `cargo run -p tasty-design-tokens --bin generate` 로 재생성.
 mod semantic_color_generated;
