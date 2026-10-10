@@ -317,18 +317,18 @@ fn a_count_over_the_cap_is_a_violation() {
 }
 
 #[test]
-fn a_count_under_the_cap_is_also_a_violation() {
+fn a_count_under_the_cap_passes() {
     let d = synth_root();
     bare_probe(d.path(), 2);
     set_cap(d.path(), 3);
     let (code, text) = run(d.path());
     assert_eq!(
-        code, 1,
-        "억제 수가 줄었는데 남은 상한을 낮추도록 실패하지 않았다:\n{text}"
+        code, 0,
+        "값이 CAP보다 작은데 실패했다. 줄어든 것은 실패가 아니다:\n{text}"
     );
     assert!(
-        text.contains("CAP 을"),
-        "상한을 내리라는 처방이 없다:\n{text}"
+        text.contains("줄어든 것은 실패가 아니며"),
+        "감소가 실패가 아니라는 안내가 없다:\n{text}"
     );
 }
 

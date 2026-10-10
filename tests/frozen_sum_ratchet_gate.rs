@@ -184,12 +184,12 @@ fn growing_past_one_file_worth_fails() {
 }
 
 #[test]
-fn shrinking_below_the_budget_also_fails() {
+fn shrinking_below_the_budget_passes() {
     let d = root_with(Some(BUDGET), &[P]);
     assert_eq!(
         run(d.path(), &reports(P, BUDGET - 1)),
-        1,
-        "합이 예산 아래로 내려가면 예산을 내리라고 실패해야 한다"
+        0,
+        "합이 예산 아래로 내려간 것은 실패가 아니다"
     );
 }
 
@@ -620,7 +620,7 @@ fn a_tokei_that_fails_is_shadowed_by_the_parser() {
     );
 }
 
-/// 예산 미달만으로 실제 코드 감소를 단정하지 않도록 원인별 안내와 파일 내역을 검사한다.
+/// 예산 미달은 통과지만, 예산을 낮출 때 실제 코드 감소를 단정하지 않도록 원인별 안내와 파일 내역을 검사한다.
 /// 허용 목록 변경, 수집 오류, 측정 방식 보정도 구별해야 한다. 보정 근거는 complexity-gate 가이드의 계측용 사본과 측정값 보정 절을 따른다.
 #[test]
 fn the_under_budget_branch_does_not_name_a_cause() {
@@ -655,8 +655,8 @@ fn the_under_budget_branch_does_not_name_a_cause() {
     );
     assert_eq!(
         out.status.code().unwrap_or(-1),
-        1,
-        "예산 아래인데 위반이 아니다:\n{text}"
+        0,
+        "예산 아래인데 통과가 아니다. 줄어든 것은 실패가 아니다:\n{text}"
     );
     assert!(
         text.contains("원인을 말하지 않는다"),
