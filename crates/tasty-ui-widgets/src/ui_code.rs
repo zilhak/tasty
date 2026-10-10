@@ -13,12 +13,22 @@ use tasty_type_geometry::length::LogicalPx;
 /// 줄을 나누지 않는 공백. egui 는 이 글자에서 줄을 바꾸지 않는다.
 const NO_BREAK_SPACE: char = '\u{A0}';
 
+/// code run 이 놓이는 용기. 채움은 용기와 한 단계 다른 색이다.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum UiCodeContainer {
+    /// 패널·앱 배경처럼 surface-raised 가 아닌 용기. 채움은 `ui-code-bg`(surface-raised)다.
+    #[default]
+    Panel,
+    /// 토스트 카드·툴팁처럼 surface-raised 용기. 채움은 `ui-code-bg-on-raised`(bg-panel)다.
+    Raised,
+}
+
 /// code run 의 토큰 값.
 #[derive(Clone, Debug, PartialEq)]
 pub struct UiCodeTokens {
     /// `ui-code-font`.
     pub font: egui::FontFamily,
-    /// `ui-code-bg`.
+    /// 용기에 맞춘 채움. `ui-code-bg` 또는 `ui-code-bg-on-raised`.
     pub bg: egui::Color32,
     /// `ui-code-fg`.
     pub fg: egui::Color32,
@@ -29,10 +39,20 @@ pub struct UiCodeTokens {
 }
 
 impl UiCodeTokens {
+    /// 패널 위 code run 의 토큰.
     pub fn of(theme: &Theme) -> Self {
+        Self::on(theme, UiCodeContainer::Panel)
+    }
+
+    /// `container` 위 code run 의 토큰.
+    pub fn on(theme: &Theme, container: UiCodeContainer) -> Self {
+        let bg = match container {
+            UiCodeContainer::Panel => theme.ui_code_bg(),
+            UiCodeContainer::Raised => theme.ui_code_bg_on_raised(),
+        };
         Self {
             font: ui_code_font(),
-            bg: theme.ui_code_bg().to_egui(),
+            bg: bg.to_egui(),
             fg: theme.ui_code_fg().to_egui(),
             padding_x: theme.ui_code_padding_x(),
             radius: theme.ui_code_radius(),
@@ -251,24 +271,38 @@ pub fn ui_copy_size(theme: &Theme, galley: &egui::Galley) -> egui::Vec2 {
         .size()
 }
 
-/// `pos` 에 code run 채움을 칠하고 그 위에 문장을 그린다. 글자 색은 글자 배치가 정한다.
+/// `pos` 에 code run 채움을 칠하고 그 위에 문장을 그린다. 채움은 `container` 에 맞추고,
+/// 글자 색은 글자 배치가 정한다.
 pub fn paint_ui_copy(
     painter: &egui::Painter,
     theme: &Theme,
+    container: UiCodeContainer,
     pos: egui::Pos2,
     galley: std::sync::Arc<egui::Galley>,
 ) {
-    let tokens = UiCodeTokens::of(theme);
+    let tokens = UiCodeTokens::on(theme, container);
     for r in ui_code_rects(theme, &galley) {
         painter.rect_filled(r.translate(pos.to_vec2()), tokens.radius.value(), tokens.bg);
     }
     painter.galley(pos, galley, tokens.fg);
 }
 
-/// 문장을 남은 폭에 맞춰 줄바꿈해 그린다. 백틱 구간은 code run 이다.
+/// 패널 위 문장을 남은 폭에 맞춰 줄바꿈해 그린다. 백틱 구간은 code run 이다.
 pub fn ui_copy(
     ui: &mut egui::Ui,
     theme: &Theme,
+    text: &str,
+    size: LogicalPx,
+    color: egui::Color32,
+) -> egui::Response {
+    ui_copy_in(ui, theme, UiCodeContainer::Panel, text, size, color)
+}
+
+/// `container` 위 문장을 남은 폭에 맞춰 줄바꿈해 그린다. 백틱 구간은 code run 이다.
+pub fn ui_copy_in(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    container: UiCodeContainer,
     text: &str,
     size: LogicalPx,
     color: egui::Color32,
@@ -278,7 +312,7 @@ pub fn ui_copy(
     let (rect, response) =
         ui.allocate_exact_size(ui_copy_size(theme, &galley), egui::Sense::hover());
     if ui.is_rect_visible(rect) {
-        paint_ui_copy(ui.painter(), theme, rect.min, galley);
+        paint_ui_copy(ui.painter(), theme, container, rect.min, galley);
     }
     response
 }

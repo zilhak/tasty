@@ -303,7 +303,14 @@ pub fn draw_card(
             alpha,
         );
     }
-    crate::ui_code::paint_ui_copy(painter, theme, text_pos, galley);
+    // 카드가 surface-raised 라 code run 채움은 한 단계 다른 bg-panel 이다.
+    crate::ui_code::paint_ui_copy(
+        painter,
+        theme,
+        crate::ui_code::UiCodeContainer::Raised,
+        text_pos,
+        galley,
+    );
 }
 
 /// 반환한 사각형이 실제로 그린 카드와 같고, 그리지 않은 카드(alpha 0)는 빠지며, 모든 값이
@@ -330,6 +337,23 @@ mod card_rect_tests {
     fn draw(scope_rect: Rect, entries: Vec<ToastEntryView>) -> (Vec<Rect>, Vec<Rect>) {
         let theme = tasty_themes::mocha_fallback();
         let bg = card_colors(&theme, ToastKind::Info, 1.0).bg;
+        let (returned, shapes) = paint(&theme, scope_rect, entries);
+        let painted: Vec<Rect> = shapes
+            .iter()
+            .filter_map(|c| match &c.shape {
+                egui::epaint::Shape::Rect(r) if r.fill == bg => Some(r.rect),
+                _ => None,
+            })
+            .collect();
+        (returned, painted)
+    }
+
+    /// 두 프레임을 그려 마지막 프레임의 반환값과 도형을 돌려준다.
+    fn paint(
+        theme: &tasty_type_appearance::theme::Theme,
+        scope_rect: Rect,
+        entries: Vec<ToastEntryView>,
+    ) -> (Vec<Rect>, Vec<egui::epaint::ClippedShape>) {
         let ctx = egui::Context::default();
         let scopes = [ToastScopeView {
             scope_rect,
@@ -354,7 +378,7 @@ mod card_rect_tests {
                     returned = draw_toast_scopes(
                         &painter,
                         &ToastViewProps {
-                            theme: &theme,
+                            theme,
                             scopes: &scopes,
                         },
                     );
@@ -362,14 +386,43 @@ mod card_rect_tests {
             );
             shapes = out.shapes;
         }
-        let painted: Vec<Rect> = shapes
-            .iter()
-            .filter_map(|c| match &c.shape {
-                egui::epaint::Shape::Rect(r) if r.fill == bg => Some(r.rect),
-                _ => None,
-            })
-            .collect();
-        (returned, painted)
+        (returned, shapes)
+    }
+
+    /// 카드가 surface-raised 라 code run 채움은 `ui-code-bg-on-raised` 다. 두 테마 모두
+    /// 카드 색(`ui-code-bg` 와 같은 surface-raised)과 다르다.
+    #[test]
+    fn a_code_run_on_the_card_uses_the_on_raised_fill() {
+        let latte = {
+            let file = tasty_themes::ThemeFile::parse(tasty_themes::LATTE_TOML_TEXT)
+                .expect("builtin latte.toml ships valid");
+            let (partial, is_light) = file.to_partial();
+            let mut colors = tasty_themes::mocha_fallback_colors();
+            colors.apply_partial(&partial);
+            tasty_type_appearance::theme::Theme::with_colors(colors, is_light.unwrap_or(true))
+        };
+        for theme in [tasty_themes::mocha_fallback(), latte] {
+            let on_raised: egui::Color32 = theme.ui_code_bg_on_raised().into();
+            let panel_fill: egui::Color32 = theme.ui_code_bg().into();
+            assert_ne!(on_raised, panel_fill);
+            let scope = Rect::from_min_size(Pos2::ZERO, vec2(1280.0, 800.0));
+            let (_, shapes) = paint(
+                &theme,
+                scope,
+                vec![entry("Run `tasty agent task-list` now", 1.0)],
+            );
+            let fills: Vec<egui::Color32> = shapes
+                .iter()
+                .filter_map(|c| match &c.shape {
+                    egui::epaint::Shape::Rect(r) => Some(r.fill),
+                    _ => None,
+                })
+                .collect();
+            assert!(fills.contains(&on_raised), "{fills:?}");
+            // surface-raised 는 카드 배경 하나뿐이다. run 채움이 같은 색이면 둘이 된다.
+            let raised = fills.iter().filter(|f| **f == panel_fill).count();
+            assert_eq!(raised, 1, "{fills:?}");
+        }
     }
 
     fn sorted(mut rects: Vec<Rect>) -> Vec<Rect> {

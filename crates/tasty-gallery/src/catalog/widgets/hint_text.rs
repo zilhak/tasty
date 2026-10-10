@@ -94,6 +94,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         theme,
         "This is the same muted treatment used in the palette footer (↑↓ navigate), the Rename dialog hint, and every form sub-label — one consistent voice for “the quiet line.”",
     );
-    // 같은 절의 두 번째 spec. 절 목록(catalog.rs)은 spec 하나로 둔다.
+    // 같은 절의 두 번째·세 번째 spec. 절 목록(catalog.rs)은 spec 하나로 둔다.
     super::ui_code::draw(ui, theme);
+    super::ui_code::draw_followups(ui, theme);
 }

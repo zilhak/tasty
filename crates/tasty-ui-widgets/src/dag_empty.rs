@@ -8,7 +8,9 @@ use tasty_icons::Icon;
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 
-use crate::ui_code::{center_ui_copy_rows, paint_ui_copy, ui_copy_job, ui_copy_size};
+use crate::ui_code::{
+    UiCodeContainer, center_ui_copy_rows, paint_ui_copy, ui_copy_job, ui_copy_size,
+};
 
 /// 빈 상태 글리프 크기. 24px 아이콘 토큰이 아직 없어 시안 값을 그대로 둔다.
 pub const DAG_EMPTY_ICON_SIZE: LogicalPx = LogicalPx(24.0);
@@ -66,6 +68,7 @@ pub fn paint_dag_empty(ui: &egui::Ui, theme: &Theme, rect: egui::Rect, view: &Da
     paint_ui_copy(
         ui.painter(),
         theme,
+        UiCodeContainer::Panel,
         egui::pos2(rect.center().x - body_w / 2.0, y),
         body,
     );

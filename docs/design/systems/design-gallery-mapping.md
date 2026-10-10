@@ -629,17 +629,19 @@ UI 글꼴은 하이픈 두 개를 대시 하나로 이어 그리므로, UI 문�
 |---|---|---|
 | `font-family: var(--tasty-ui-code-font)` · `font-size: 1em` | `ui-code-font` → `font-mono`, 크기는 문장과 같다 | 손 접근자 `ui_code_font()`(egui Monospace family) · 크기는 문장 크기 |
 | `background: var(--tasty-ui-code-bg)` | `ui-code-bg` → `surface-raised` | 줄 높이 전체를 칠하는 사각형 |
+| `background: var(--tasty-ui-code-bg-on-raised)`(b12 Spec 의 토스트 카드) | `ui-code-bg-on-raised` → `bg-panel` | 채움은 용기와 한 단계 다른 색이다. 호출자가 `UiCodeContainer`(`Panel`·`Raised`)로 용기를 알린다. 토스트 카드는 `Raised`, 그 밖의 현재 호출처는 `Panel` |
 | `color: var(--tasty-ui-code-fg)` | `ui-code-fg` → `text-primary` | run 글자 색 |
 | `padding: 0 var(--tasty-ui-code-padding-x)` | `ui-code-padding-x` → `space-xs`(4) | 앞뒤 구간의 `leading_space`, 세로 여백 없음 |
 | `border-radius: var(--tasty-ui-code-radius)` | `ui-code-radius` → `radius-sm`(2) | 채움 사각형 반경 |
 | `white-space: nowrap` | — | run 안의 공백을 줄을 나누지 않는 공백으로 바꾼다 |
 
-토큰은 `UiCodeTokens::of`가 `Theme::ui_code_bg`·`ui_code_fg`·`ui_code_padding_x`·`ui_code_radius`로 읽는다. fontFamily 토큰은 생성기가 접근자를 만들지 않으므로 `ui_code_font()`가 대신한다.
+토큰은 `UiCodeTokens::on(theme, container)`가 `Theme::ui_code_bg`(또는 `ui_code_bg_on_raised`)·`ui_code_fg`·`ui_code_padding_x`·`ui_code_radius`로 읽고, `UiCodeTokens::of`는 `Panel` 용기다. fontFamily 토큰은 생성기가 접근자를 만들지 않으므로 `ui_code_font()`가 대신한다.
 egui 글자 배치의 배경색은 여백과 반경을 줄 수 없어 위젯이 run 의 글리프 범위로 사각형을 계산해 먼저 칠하고 그 위에 글자를 그린다.
 줄 머리에서 시작하는 run 은 글자를 글 단 왼쪽 끝에 두고 채움만 `ui-code-padding-x` 만큼 단 바깥으로 낸다. egui 는 줄을 나눈 뒤 글자를 옮길 수 없고, 디자인은 이 모양을 허용했다(글을 담는 용기의 안쪽 여백이 4 보다 넓다).
 가운데 정렬 안내는 왼쪽 정렬로 배치한 뒤 `center_ui_copy_rows` 로 줄마다 가운데에 옮긴다. 줄 폭은 줄 끝 공백을 빼고 run 채움을 넣어 재므로 CSS `text-align: center` 처럼 채움까지 보이는 모양이 가운데에 온다. 이동 거리는 픽셀에 맞춘다.
 run 하나가 줄 폭보다 길면 egui 가 run 안에서도 자른다. 갤러리는 시안처럼 13 body(text-secondary)와 11 caption(text-muted) 두 예문을 그리며,
-Spec 설명 문장의 `--webhook-port`도 같은 위젯으로 그린다. 카탈로그 등록은 Hint text Section 의 spec 하나가 두 Spec 을 이어 그린다.
+Spec 설명 문장의 `--webhook-port`도 같은 위젯으로 그린다. 세 번째 Spec "Code runs — on raised containers · info modal chips · line start · centred hints"(`draw_followups`)는
+토스트 카드(`toast-bg` 위 `Raised` run), 안내 모달 문단(두 명령, 두 번째가 줄 머리), 가운데 정렬 caption 안내를 그린다. 가운데 안내는 DAG 빈 화면처럼 `measure-sm` 폭에서 줄을 바꾼다(시안 예문은 260). 카탈로그 등록은 Hint text Section 의 spec 하나가 세 Spec 을 이어 그린다.
 
 ## warning-callout (Components)
 
