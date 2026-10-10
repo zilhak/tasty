@@ -66,7 +66,7 @@ pub(super) fn under_home(home: &str, rest: &str) -> String {
 }
 
 /// 드라이브 접두(`C:`)나 `\` 가 있으면 Windows 형식으로 본다.
-fn is_windows_style(path: &str) -> bool {
+pub(crate) fn is_windows_style(path: &str) -> bool {
     let b = path.as_bytes();
     path.contains('\\') || (b.len() >= 2 && b[0].is_ascii_alphabetic() && b[1] == b':')
 }

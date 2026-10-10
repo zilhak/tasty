@@ -36,9 +36,10 @@ impl MainView {
         items
     }
 
-    /// 붙여넣을 로컬 파일이 있는가(창의 목록이나 OS 파일 클립보드). 원격에서 복사한 경로는 로컬에 붙여넣을 수 없다.
-    pub(super) fn explorer_menu_has_clip(&self) -> bool {
-        self.state.explorer_can_paste()
+    /// 이 칸에 붙여넣을 수 있는 목록이 있는가. 다른 컴퓨터의 경로는 붙여넣지 않는다.
+    pub(super) fn explorer_menu_has_clip(&self, engine: &EngineRead<'_>, surface_id: u32) -> bool {
+        crate::state::ExplorerPathSource::of_surface(engine, surface_id)
+            .is_some_and(|target| self.state.explorer_can_paste_into(target))
     }
 
     /// 다른 행이 처리하지 않은 메뉴 결과. 들어 있는 폴더에서 보기가 아니면 생성 행이나 이력 행이다.

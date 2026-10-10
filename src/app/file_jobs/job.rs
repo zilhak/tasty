@@ -185,6 +185,29 @@ impl Shared {
         *lock(&self.answer) = Some(answer);
         self.answered.notify_all();
     }
+    /// 원격 서버가 보낸 진행·질문을 이 상태에 옮긴다. 원격 작업의 진행 표시와 충돌 popup 이
+    /// 로컬 작업과 같은 값을 읽게 한다. 새 질문이 오면 이전 답은 버린다.
+    #[cfg(feature = "gui")]
+    pub(crate) fn mirror(&self, snap: &Snapshot, ask: Option<Ask>) {
+        self.items_total.store(snap.items_total, Ordering::Release);
+        self.items_done.store(snap.items_done, Ordering::Release);
+        self.bytes_total.store(snap.bytes_total, Ordering::Release);
+        self.bytes_done.store(snap.bytes_done, Ordering::Release);
+        *lock(&self.current) = snap.current.clone();
+        self.removing.store(snap.removing, Ordering::Release);
+        let mut pending = lock(&self.ask);
+        if ask.is_some() && *pending != ask {
+            *lock(&self.answer) = None;
+        }
+        *pending = ask;
+    }
+    /// 사용자가 원격 질문에 준 답을 꺼낸다. 꺼내면 질문도 거둔다. 서버의 다음 진행 통지가 상태를 맞춘다.
+    #[cfg(feature = "gui")]
+    pub(crate) fn take_answer(&self) -> Option<Answer> {
+        let answer = lock(&self.answer).take()?;
+        *lock(&self.ask) = None;
+        Some(answer)
+    }
     fn wake_now(&self) {
         self.last_wake_ms
             .store(self.elapsed_ms(), Ordering::Release);
@@ -359,6 +382,17 @@ pub(crate) struct Report {
     pub leftovers: Vec<Leftover>,
     /// 취소로 하지 않은 원래 경로. 취소 때 멈춘 항목도 준비 중 사본을 지웠으므로 여기 든다.
     pub unprocessed: Vec<PathBuf>,
+    /// Retry 가 위 목록 대신 그대로 다시 보낼 원래 요청. 원격 서버가 목록을 줄여 보낸 결과에는 빠진 항목이
+    /// 있으므로 client 가 보냈던 목록을 쓴다. 연결로 보내지 않는다.
+    #[serde(skip)]
+    pub resend: Option<Resend>,
+}
+
+/// 줄어든 원격 결과의 Retry 가 다시 보낼, client 가 처음 보낸 경로와 남은 원본.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct Resend {
+    pub paths: Vec<PathBuf>,
+    pub leftovers: Vec<Leftover>,
 }
 
 impl UndoStep {
@@ -392,12 +426,16 @@ impl Report {
             trash_unavailable: false,
             leftovers: Vec::new(),
             unprocessed: Vec::new(),
+            resend: None,
         }
     }
     /// 같은 작업으로 다시 보낼 원래 경로: 건너뛴 항목, 원본 미삭제를 뺀 실패 항목, 취소로 하지 않은 항목.
     /// 원본 미삭제 항목은 [`Report::leftovers`] 로 원본 삭제만 다시 한다.
     #[cfg(any(feature = "gui", test))]
     pub(crate) fn retryable(&self) -> Vec<PathBuf> {
+        if let Some(resend) = &self.resend {
+            return resend.paths.clone();
+        }
         self.failed
             .iter()
             .filter(|f| !f.reason.leaves_original())
@@ -405,6 +443,14 @@ impl Report {
             .chain(self.skipped.iter().cloned())
             .chain(self.unprocessed.iter().cloned())
             .collect()
+    }
+    /// Retry 가 원본 삭제만 다시 할 항목.
+    #[cfg(feature = "gui")]
+    pub(crate) fn retry_leftovers(&self) -> Vec<Leftover> {
+        match &self.resend {
+            Some(resend) => resend.leftovers.clone(),
+            None => self.leftovers.clone(),
+        }
     }
 }
 

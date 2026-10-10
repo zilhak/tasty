@@ -60,7 +60,7 @@ impl MainView {
         y: f32,
     ) {
         let mut items = Vec::new();
-        if !engine.is_mirror_surface(surface_id) {
+        if !engine.blocks_explorer_write(surface_id) {
             let writable = self
                 .state
                 .explorer_views
@@ -163,7 +163,7 @@ impl crate::state::MainViewState {
         if !engine.has_surface(surface_id) {
             return;
         }
-        if engine.is_mirror_surface(surface_id) {
+        if engine.blocks_explorer_write(surface_id) {
             self.toasts.push(
                 crate::i18n::t("explorer.state.remote_write_unsupported").to_string(),
                 crate::adapters::ui::ToastKind::Info,

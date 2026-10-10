@@ -11,11 +11,11 @@ fn same_disk_moves_and_other_disk_copies() {
     let paths = [p("/a/x.txt")];
     let dest = p("/b");
     assert_eq!(
-        verdict(&paths, &dest, true, true, false, false),
+        verdict(&paths, &dest, true, true, false, None),
         Verdict::Go(OpKind::Move)
     );
     assert_eq!(
-        verdict(&paths, &dest, false, true, false, false),
+        verdict(&paths, &dest, false, true, false, None),
         Verdict::Go(OpKind::Copy)
     );
 }
@@ -25,11 +25,11 @@ fn the_modifier_flips_the_default() {
     let paths = [p("/a/x.txt")];
     let dest = p("/b");
     assert_eq!(
-        verdict(&paths, &dest, true, true, true, false),
+        verdict(&paths, &dest, true, true, true, None),
         Verdict::Go(OpKind::Copy)
     );
     assert_eq!(
-        verdict(&paths, &dest, false, true, true, false),
+        verdict(&paths, &dest, false, true, true, None),
         Verdict::Go(OpKind::Move)
     );
 }
@@ -39,13 +39,13 @@ fn a_folder_cannot_go_into_itself_or_its_subfolder() {
     let paths = [p("/a/src")];
     for dest in [p("/a/src"), p("/a/src/lib")] {
         assert_eq!(
-            verdict(&paths, &dest, true, true, false, false),
+            verdict(&paths, &dest, true, true, false, None),
             Verdict::No("explorer.drag.into_itself")
         );
     }
     // 이름만 앞부분이 같은 형제 폴더는 대상이 될 수 있다.
     assert_eq!(
-        verdict(&paths, &p("/a/src2"), true, true, false, false),
+        verdict(&paths, &p("/a/src2"), true, true, false, None),
         Verdict::Go(OpKind::Move)
     );
 }
@@ -55,11 +55,11 @@ fn moving_into_the_folder_it_is_already_in_is_refused_but_copying_is_not() {
     let paths = [p("/a/x.txt"), p("/a/y.txt")];
     let dest = p("/a");
     assert_eq!(
-        verdict(&paths, &dest, true, true, false, false),
+        verdict(&paths, &dest, true, true, false, None),
         Verdict::No("explorer.drag.same_folder")
     );
     assert_eq!(
-        verdict(&paths, &dest, true, true, true, false),
+        verdict(&paths, &dest, true, true, true, None),
         Verdict::Go(OpKind::Copy)
     );
 }
@@ -68,11 +68,18 @@ fn moving_into_the_folder_it_is_already_in_is_refused_but_copying_is_not() {
 fn remote_and_read_only_targets_are_refused() {
     let paths = [p("/a/x.txt")];
     assert_eq!(
-        verdict(&paths, &p("/b"), true, true, false, true),
+        verdict(
+            &paths,
+            &p("/b"),
+            true,
+            true,
+            false,
+            Some("explorer.drag.remote")
+        ),
         Verdict::No("explorer.drag.remote")
     );
     assert_eq!(
-        verdict(&paths, &p("/b"), true, false, false, false),
+        verdict(&paths, &p("/b"), true, false, false, None),
         Verdict::No("explorer.drag.no_write")
     );
 }
@@ -135,4 +142,24 @@ fn the_option_flip_follows_the_key_position() {
         assert!(held(egui::Modifiers::default(), true, option));
         assert!(!held(egui::Modifiers::default(), false, option));
     }
+}
+
+/// 같은 컴퓨터 안에서만 놓는다. 원격 칸은 그 서버가 원격 쓰기를 받을 때만 받는다.
+#[test]
+fn drops_stay_on_one_computer_and_need_remote_write() {
+    let mut view = ExplorerView::new();
+    assert_eq!(blocked(&view, None), None);
+    assert_eq!(
+        blocked(&view, Some(3)),
+        Some("explorer.drag.other_computer")
+    );
+    view.mirror_ws_id = Some(3);
+    assert_eq!(blocked(&view, None), Some("explorer.drag.other_computer"));
+    assert_eq!(
+        blocked(&view, Some(4)),
+        Some("explorer.drag.other_computer")
+    );
+    assert_eq!(blocked(&view, Some(3)), None);
+    view.writes_allowed = false;
+    assert_eq!(blocked(&view, Some(3)), Some("explorer.drag.remote"));
 }

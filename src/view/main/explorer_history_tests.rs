@@ -179,6 +179,7 @@ fn report(
         trash_unavailable: false,
         leftovers: Vec::new(),
         unprocessed: Vec::new(),
+        resend: None,
     }
 }
 

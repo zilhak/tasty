@@ -1,7 +1,7 @@
 //! 파일 작업 표시의 결과 문구·수명 시험.
 
 use super::*;
-use crate::app::explorer_files::job::Failure;
+use crate::app::explorer_files::job::{Failure, Resend};
 use std::time::Duration;
 
 fn report(kind: OpKind, total: usize, done: usize) -> Report {
@@ -19,6 +19,7 @@ fn report(kind: OpKind, total: usize, done: usize) -> Report {
         trash_unavailable: false,
         leftovers: Vec::new(),
         unprocessed: Vec::new(),
+        resend: None,
     }
 }
 
@@ -608,4 +609,36 @@ fn a_card_left_by_a_dropped_request_follows_the_standard_time() {
     ops.forget_request(4);
     assert_eq!(ops.results.len(), 1);
     assert_eq!(ops.next_expiry(), None, "a failure stays until dismissed");
+}
+
+/// 원격 서버가 줄여 보낸 결과의 Retry 는 남은 실패 목록이 아니라 처음 보낸 목록을 그대로 다시 보낸다.
+/// 한 누름으로 합친 결과에서도 줄인 쪽은 보낸 목록, 나머지는 자기 목록을 쓴다.
+#[test]
+fn a_truncated_remote_result_retries_what_was_sent() {
+    let mut cut = report(OpKind::Copy, 3, 0);
+    cut.undo.clear();
+    cut.failed = vec![failure("/srv/a", Reason::SameAsCopy)];
+    cut.skipped = vec!["/srv/b".into()];
+    cut.resend = Some(Resend {
+        paths: vec!["/srv/a".into(), "/srv/b".into(), "/srv/c".into()],
+        leftovers: vec![leftover("/srv/d")],
+    });
+    let text = card_text(&card(cut.clone()));
+    assert_eq!(text.retry, cut.resend.as_ref().unwrap().paths);
+    assert_eq!(text.leftovers, vec![leftover("/srv/d")]);
+
+    let mut ops = OpsState::default();
+    let press = ops.expect_press(vec![1, 2], Duration::from_secs(5));
+    let mut whole = report(OpKind::Copy, 1, 0);
+    whole.undo.clear();
+    whole.skipped = vec!["/w/e".into()];
+    assert!(ops.arrive(press, 1, cut).is_none());
+    let merged = ops.arrive(press, 2, whole).expect("both ended");
+    let text = card_text(&card(merged));
+    let paths: Vec<PathBuf> = ["/srv/a", "/srv/b", "/srv/c", "/w/e"]
+        .into_iter()
+        .map(PathBuf::from)
+        .collect();
+    assert_eq!(text.retry, paths);
+    assert_eq!(text.leftovers, vec![leftover("/srv/d")]);
 }

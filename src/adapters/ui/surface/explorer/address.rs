@@ -4,7 +4,7 @@
 
 pub(super) mod field;
 mod probe;
-mod remote;
+pub(super) mod remote;
 
 pub(super) use probe::AddressProbe;
 

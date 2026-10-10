@@ -1,5 +1,6 @@
 //! Bounded local Explorer actions. Views queue fixed inputs; App owns execution and joins.
 pub(crate) mod history;
+pub(crate) mod remote;
 mod ui_sync;
 pub(crate) use super::file_jobs::job;
 use super::file_jobs::named;
@@ -392,8 +393,10 @@ impl crate::state::MainViewState {
         from_clipboard: bool,
         recorded: &mut Option<Recorded>,
     ) -> Option<u64> {
+        let remote = engine.mirror_workspace_of(surface).is_some();
         if !matches!(origin, crate::intent::IntentOrigin::User { .. })
-            || engine.is_mirror_surface(surface)
+            || engine.blocks_explorer_write(surface)
+            || (remote && matches!(operation, Operation::Open(_)))
         {
             return None;
         }
@@ -449,10 +452,11 @@ impl crate::state::MainViewState {
             },
             press: None,
         };
-        // 새 복사·이동·이름 변경·새 항목은 된 항목이 있으면 이력에 쌓는다.
+        // 새 복사·이동·이름 변경·새 항목은 된 항목이 있으면 이력에 쌓는다. 원격 작업은 이력에 넣지 않는다.
         let recorded = recorded
             .take()
-            .or_else(|| history::Source::of(&operation).map(Recorded::New));
+            .or_else(|| history::Source::of(&operation).map(Recorded::New))
+            .filter(|_| !remote);
         let requests = &mut self.explorer_file_requests;
         requests.1 += 1;
         let id = requests.1;
@@ -483,6 +487,10 @@ struct Job {
 #[derive(Default)]
 pub(crate) struct ExplorerFiles {
     job: Option<Job>,
+    /// 결과를 기다리는 원격 작업. mirror workspace 마다 하나다.
+    remote: Vec<remote::RemoteJob>,
+    /// 원격 작업 번호. 연결과 함께 쓰므로 프로세스 안에서 구별되면 된다.
+    next_op: u64,
     stopping: bool,
 }
 impl ExplorerFiles {
@@ -511,6 +519,7 @@ impl ExplorerFiles {
         Some(Finished {
             window,
             engine,
+            remote: None,
             target,
             affected,
             shared,
@@ -544,6 +553,8 @@ impl Drop for ExplorerFiles {
 struct Finished {
     window: winit::window::WindowId,
     engine: crate::runtime::engine_session::EngineId,
+    /// 원격 작업이면 그 mirror workspace.
+    remote: Option<u32>,
     target: Target,
     affected: Affected,
     shared: Arc<Shared>,
@@ -552,13 +563,20 @@ struct Finished {
     result: Done,
 }
 impl Finished {
-    /// 이 작업이 바꿀 수 있는 경로를 보는 로컬 explorer 를 다시 읽게 한다. 다시 읽은 View 가 있으면 true.
+    /// 이 작업이 바꿀 수 있는 경로를 보는 explorer 를 다시 읽게 한다. 다시 읽은 View 가 있으면 true.
+    /// 원격 작업은 같은 mirror workspace 의 explorer 만 본다.
     fn reload_views(
         &self,
         store: &mut crate::adapters::ui::surface::explorer::view::ExplorerViewStore,
     ) -> bool {
         let Affected { changed, removed } = &self.affected;
-        (!changed.is_empty() || !removed.is_empty()) && store.invalidate_local(changed, removed)
+        if changed.is_empty() && removed.is_empty() {
+            return false;
+        }
+        match self.remote {
+            Some(ws) => store.invalidate_remote(ws, changed, removed),
+            None => store.invalidate_local(changed, removed),
+        }
     }
 }
 fn join(worker: JoinHandle<Done>) -> Done {
@@ -631,19 +649,22 @@ impl Target {
 }
 impl super::App {
     pub(crate) fn poll_explorer_files(&mut self) {
-        self.finish_explorer_file();
-        if !self.explorer_files.stopping && self.explorer_files.job.is_none() {
+        self.sync_remote_write_support();
+        if let Some(finished) = self.explorer_files.take_finished() {
+            self.finish_explorer_file(finished);
+        }
+        for finished in self.explorer_files.poll_remote(&mut self.remote.sessions) {
+            self.finish_explorer_file(finished);
+        }
+        if !self.explorer_files.stopping {
             self.start_explorer_file();
         }
         self.sync_explorer_ops();
     }
-    fn finish_explorer_file(&mut self) {
-        let Some(finished) = self.explorer_files.take_finished() else {
-            return;
-        };
+    fn finish_explorer_file(&mut self, finished: Finished) {
         // 같은 폴더를 보는 다른 explorer 도 다시 읽는다. 실패·부분 성공도 실제 상태를 다시 읽어야 하고,
         // 요청한 surface 가 그 사이 닫혔어도 다른 윈도우의 목록은 낡은 채로 남으면 안 된다.
-        // mirror explorer 는 원격 파일을 보므로 `invalidate_local` 이 건너뛴다.
+        // 원격 작업은 같은 mirror workspace 의 explorer 만, 로컬 작업은 로컬 explorer 만 다시 읽는다.
         for view in self.view.views.values_mut() {
             if let Some(view) = view.as_main_mut()
                 && finished.reload_views(&mut view.state.explorer_views)
@@ -726,7 +747,10 @@ impl super::App {
         target.apply(&mut view.state, success);
         view.mark_dirty();
     }
+    /// 기다리는 요청을 시작한다. 로컬 작업은 앱 전체에서 하나, 원격 작업은 mirror workspace 마다 하나씩
+    /// 실행하고 서로 기다리지 않는다. 시작할 수 없게 된 요청(칸·클립보드가 바뀜, 원격 쓰기를 잃음)은 버린다.
     fn start_explorer_file(&mut self) {
+        let mut local_free = self.explorer_files.job.is_none();
         for (&window, view) in &mut self.view.views {
             let Some(view) = view.as_main_mut() else {
                 continue;
@@ -737,34 +761,56 @@ impl super::App {
             let Some(session) = self.engines.get(engine) else {
                 continue;
             };
-            while let Some(Request {
-                target,
-                operation,
-                recorded,
-                ..
-            }) = view.state.explorer_file_requests.0.pop_front()
-            {
-                if !matches!(target.origin, crate::intent::IntentOrigin::User { .. })
+            let mut i = 0;
+            let mut lost_requests = ui_sync::LostRequests::default();
+            while let Some(request) = view.state.explorer_file_requests.0.get(i) {
+                let target = &request.target;
+                let read = session.read();
+                let remote = read.mirror_workspace_of(target.surface);
+                // mirror 칸이 원격 쓰기를 잃었다면 연결이 끊긴 것이다.
+                let lost = read.blocks_explorer_write(target.surface);
+                let stale = !matches!(target.origin, crate::intent::IntentOrigin::User { .. })
                     || !target.view_is_current(view)
                     || !target.binding.current(&session)
-                    || session.read().is_mirror_surface(target.surface)
+                    || lost
                     || target
                         .clipboard
                         .as_ref()
-                        .is_some_and(|c| c.load(Ordering::Acquire))
-                {
+                        .is_some_and(|c| c.load(Ordering::Acquire));
+                let startable = match remote {
+                    None => local_free,
+                    Some(ws) => !self.explorer_files.remote_busy(ws),
+                };
+                drop(read);
+                if !stale && !startable {
+                    i += 1;
+                    continue;
+                }
+                let Request {
+                    target,
+                    operation,
+                    recorded,
+                    ..
+                } = view
+                    .state
+                    .explorer_file_requests
+                    .0
+                    .remove(i)
+                    .expect("request at index exists");
+                if stale {
                     if let Some((_, request)) = target.press {
                         ui_sync::forget_press_request(&mut view.state, target.surface, request);
                     }
+                    if lost {
+                        lost_requests.add(target.surface);
+                    }
                     continue;
                 }
-                let affected = operation.affected();
-                let undo_of = match &recorded {
-                    Some(Recorded::Undo(entry)) => Some(entry.undo_of()),
-                    _ => operation.undo_of(),
-                };
                 let wake = self.view.proxy.clone();
-                let shared = Arc::new(ui_sync::interactive_shared(wake.clone()));
+                let shared = Arc::new(match remote {
+                    Some(_) => Shared::interactive(|| {}),
+                    None => ui_sync::interactive_shared(wake.clone()),
+                });
                 show_running(
                     &mut view.state,
                     target.surface,
@@ -772,42 +818,107 @@ impl super::App {
                     &shared,
                     recorded.is_some(),
                 );
-                let worker_shared = Arc::clone(&shared);
-                match std::thread::Builder::new()
-                    .name("explorer-files".into())
-                    .spawn(move || {
-                        let result = operation.run(&worker_shared);
-                        if wake.send_event(crate::AppEvent::TimerTick).is_err() {
-                            tracing::debug!("Explorer file completion after event loop closed");
-                        }
-                        result
-                    }) {
-                    Ok(worker) => {
-                        self.explorer_files.job = Some(Job {
+                let started = match remote {
+                    Some(workspace) => self.explorer_files.start_remote(
+                        &self.remote.sessions,
+                        remote::Start {
                             window,
                             engine,
+                            workspace,
                             target,
-                            affected,
+                            operation,
+                        },
+                        shared,
+                    ),
+                    None => {
+                        local_free = false;
+                        spawn_local(
+                            &mut self.explorer_files,
+                            wake,
+                            (window, engine),
+                            Request {
+                                id: 0,
+                                target,
+                                operation,
+                                recorded,
+                            },
                             shared,
-                            worker,
-                            undo_of,
-                            recorded,
-                            seen: (0, 0, false),
-                        })
+                        )
                     }
-                    Err(error) => {
-                        tracing::warn!(%error, "Explorer file worker spawn failed");
-                        if let Some(v) = view.state.explorer_views.get_mut(target.surface) {
-                            v.ops.running = None;
-                            v.ops.quiet_step = None;
-                        }
-                        if let Some((_, request)) = target.press {
-                            ui_sync::forget_press_request(&mut view.state, target.surface, request);
-                        }
+                };
+                if let Err(target) = started {
+                    if let Some(v) = view.state.explorer_views.get_mut(target.surface) {
+                        v.ops.running = None;
+                        v.ops.quiet_step = None;
+                    }
+                    if let Some((_, request)) = target.press {
+                        ui_sync::forget_press_request(&mut view.state, target.surface, request);
+                    }
+                    // 원격 연결로 보내지 못했으면 서버는 아무것도 하지 않았다.
+                    if remote.is_some() {
+                        ui_sync::push_failure(
+                            &mut view.state,
+                            target.surface,
+                            None,
+                            Some(crate::i18n::t("explorer.state.remote_send_failed").to_string()),
+                        );
                     }
                 }
-                return;
             }
+            lost_requests.notify(&mut view.state);
+        }
+    }
+}
+
+/// 로컬 작업 스레드를 띄운다. 띄우지 못하면 요청의 대상을 돌려준다.
+fn spawn_local(
+    files: &mut ExplorerFiles,
+    wake: winit::event_loop::EventLoopProxy<crate::AppEvent>,
+    (window, engine): (
+        winit::window::WindowId,
+        crate::runtime::engine_session::EngineId,
+    ),
+    request: Request,
+    shared: Arc<Shared>,
+) -> Result<(), Target> {
+    let Request {
+        target,
+        operation,
+        recorded,
+        ..
+    } = request;
+    let affected = operation.affected();
+    let undo_of = match &recorded {
+        Some(Recorded::Undo(entry)) => Some(entry.undo_of()),
+        _ => operation.undo_of(),
+    };
+    let worker_shared = Arc::clone(&shared);
+    match std::thread::Builder::new()
+        .name("explorer-files".into())
+        .spawn(move || {
+            let result = operation.run(&worker_shared);
+            if wake.send_event(crate::AppEvent::TimerTick).is_err() {
+                tracing::debug!("Explorer file completion after event loop closed");
+            }
+            result
+        }) {
+        Ok(worker) => {
+            files.job = Some(Job {
+                window,
+                engine,
+                target,
+                affected,
+                shared,
+                worker,
+                undo_of,
+                recorded,
+                seen: (0, 0, false),
+            });
+            Ok(())
+        }
+        Err(error) => {
+            tracing::warn!(%error, "Explorer file worker spawn failed");
+            Err(target)
         }
     }
 }

@@ -28,6 +28,7 @@ fn report(kind: OpKind, undo: Vec<UndoStep>) -> Report {
         trash_unavailable: false,
         leftovers: Vec::new(),
         unprocessed: Vec::new(),
+        resend: None,
     }
 }
 

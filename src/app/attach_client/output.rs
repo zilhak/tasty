@@ -450,6 +450,7 @@ fn apply_one_mirror_event(
                 }
             }
         }
+        MirrorEvent::ExplorerOp(value) => sess.transport.explorer_inbox.push(value),
         MirrorEvent::CaptureResult { ok, path, reason } => {
             show_mirror_capture_result(host, ok, path, reason);
         }

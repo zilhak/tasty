@@ -63,7 +63,7 @@ fn menu_display(binding: &str, general: &crate::settings::GeneralSettings) -> St
 
 impl super::MainViewState {
     /// 클립보드의 경로를 `destination` 에 붙여넣도록 요청한다.
-    /// mirror surface 와 원격에서 복사한 클립보드는 로컬 파일 작업으로 바꾸지 않는다.
+    /// 원격 쓰기를 받지 않는 mirror 와 다른 컴퓨터의 클립보드는 거절한다.
     pub(crate) fn explorer_paste(
         &mut self,
         engine: &EngineRead<'_>,
@@ -71,8 +71,8 @@ impl super::MainViewState {
         destination: std::path::PathBuf,
         origin: crate::intent::IntentOrigin,
     ) {
-        // 표시된 경로는 원격 호스트의 경로다(ADR-0022). 같은 문자열의 로컬 경로를 바꾸지 않는다.
-        if engine.is_mirror_surface(surface_id) {
+        // 표시된 경로는 원격 호스트의 경로다(ADR-0022). 원격 쓰기는 그 서버가 알린 연결에서만 한다.
+        if engine.blocks_explorer_write(surface_id) {
             self.toasts.push(
                 crate::i18n::t("explorer.state.remote_write_unsupported").to_string(),
                 crate::adapters::ui::ToastKind::Info,
@@ -86,10 +86,15 @@ impl super::MainViewState {
         let Some(clip) = self.explorer_clipboard.get() else {
             return;
         };
-        // 원격 경로를 같은 문자열의 로컬 파일로 복사하지 않는다.
-        if !clip.is_local() {
+        // 다른 컴퓨터의 경로를 같은 문자열의 이 컴퓨터 파일로 읽지 않는다.
+        if !clip.pastes_into(engine, surface_id) {
+            let key = if clip.is_local() {
+                "explorer.state.cross_computer_paste_unsupported"
+            } else {
+                "explorer.state.remote_paste_unsupported"
+            };
             self.toasts.push(
-                crate::i18n::t("explorer.state.remote_paste_unsupported").to_string(),
+                crate::i18n::t(key).to_string(),
                 crate::adapters::ui::ToastKind::Info,
                 crate::adapters::ui::ToastScope::Window,
             );

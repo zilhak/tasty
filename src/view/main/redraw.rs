@@ -1428,7 +1428,10 @@ impl MainView {
         let is_folder = paths.len() == 1 && single_is_dir;
         // mirror 경로를 로컬 파일 작업에 사용하지 않도록 쓰기 메뉴를 숨긴다(ADR-0022).
         // 다른 호출 경로도 있으므로 각 핸들러의 검사도 유지한다.
-        let is_mirror = engine.is_mirror_surface(surface_id);
+        let (is_mirror, no_write) = (
+            engine.is_mirror_surface(surface_id),
+            engine.blocks_explorer_write(surface_id),
+        );
         // 메뉴를 연 surface 세대를 고정한다. 그 사이 닫히거나 바뀐 surface에는 결과를 적용하지 않는다.
         let binding = crate::runtime::surface_binding::SurfaceBinding::capture(engine, surface_id);
         let mut items = self.with_show_in_folder(
@@ -1438,8 +1441,8 @@ impl MainView {
                 multi,
                 is_empty_target,
                 is_folder,
-                self.explorer_menu_has_clip(),
-                is_mirror,
+                self.explorer_menu_has_clip(engine, surface_id),
+                (is_mirror, no_write),
             ),
         );
         crate::state::explorer_menu::attach_shortcut_hints(&mut items, engine.settings);
@@ -1514,7 +1517,7 @@ impl MainView {
         is_empty_target: bool,
         is_folder: bool,
         has_clip: bool,
-        is_mirror: bool,
+        (is_mirror, no_write): (bool, bool),
     ) -> Vec<crate::platform::native_menu::MenuItem> {
         use crate::platform::native_menu::MenuItem;
         let copy_path_label = if multi {
@@ -1523,7 +1526,7 @@ impl MainView {
             crate::i18n::t("explorer.context_menu.copy_path")
         };
         let mut items = Vec::new();
-        if is_empty_target && !is_mirror {
+        if is_empty_target && !no_write {
             Self::push_explorer_create_items(&mut items, true);
         }
         items.push(MenuItem::new(1, copy_path_label));
@@ -1550,8 +1553,8 @@ impl MainView {
             ));
         }
         if is_empty_target {
-            // 빈 영역(cwd): 붙여넣기만 (클립보드가 있을 때, mirror 가 아닐 때).
-            if has_clip && !is_mirror {
+            // 빈 영역(cwd): 붙여넣기만 (붙여넣을 수 있는 클립보드가 있고 쓸 수 있을 때).
+            if has_clip && !no_write {
                 items.push(MenuItem::separator());
                 items.push(MenuItem::new(
                     12,
@@ -1559,39 +1562,37 @@ impl MainView {
                 ));
             }
         } else {
-            // 파일/폴더/다중: 복사 · 잘라내기. 잘라내기는 mirror 에서 숨김(원격
-            // 경로가 전역 클립보드에 남아 다른 로컬 explorer 붙여넣기를 오염시킴).
-            // 복사는 fs 접근이 없어 mirror 에서도 안전하게 노출.
+            // 파일/폴더/다중: 복사 · 잘라내기. 잘라내기는 쓸 수 없는 원격에서 숨긴다.
+            // 원격 클립보드는 출처 workspace 를 함께 적어 다른 곳에 붙여넣지 않는다.
             items.push(MenuItem::new(
                 10,
                 crate::i18n::t("explorer.context_menu.copy_files"),
             ));
-            if !is_mirror {
+            if !no_write {
                 items.push(MenuItem::new(
                     11,
                     crate::i18n::t("explorer.context_menu.cut"),
                 ));
             }
-            if is_folder && has_clip && !is_mirror {
+            if is_folder && has_clip && !no_write {
                 items.push(MenuItem::new(
                     12,
                     crate::i18n::t("explorer.context_menu.paste_into"),
                 ));
             }
-            if is_folder && !is_mirror {
+            if is_folder && !no_write {
                 Self::push_explorer_create_items(&mut items, false);
             }
-            // 이름 변경 (단일 파일/폴더만, mirror 가 아닐 때).
-            if !multi && !is_mirror {
+            // 이름 변경 (단일 파일/폴더만, 쓸 수 있을 때).
+            if !multi && !no_write {
                 items.push(MenuItem::new(
                     40,
                     crate::i18n::t("explorer.context_menu.rename"),
                 ));
             }
-            // 휴지통으로 이동 (파일/폴더/다중 공통, mirror 가 아닐 때) — 앞선
-            // separator 도 함께 숨겨 mirror 에서 항목 없는 trailing separator 를
-            // 남기지 않는다.
-            if !is_mirror {
+            // 휴지통으로 이동 (파일/폴더/다중 공통, 쓸 수 있을 때) — 앞선
+            // separator 도 함께 숨겨 항목 없는 trailing separator 를 남기지 않는다.
+            if !no_write {
                 items.push(MenuItem::separator());
                 items.push(MenuItem::new(
                     30,
@@ -1658,10 +1659,9 @@ impl MainView {
 
     /// 복사(cut=false, 아이템 10) / 잘라내기(cut=true, 아이템 11) 클립보드 설정.
     /// 컨텍스트 메뉴와 키보드 단축키(`handle_explorer_shortcut`) 양쪽에서 공유한다.
-    /// 잘라내기(cut=true)만 mirror 에서 차단한다 — 원격 경로가 창의 모든 explorer 가 공유하는
-    /// `explorer_clipboard` 에 남으면 이후 무관한 로컬(비-mirror) explorer 에
-    /// 붙여넣을 때 그 원격 경로 문자열이 소스로 쓰인다. 복사(cut=false)는 fs 접근이
-    /// 없어 무해하므로 그대로 둔다.
+    /// 잘라내기는 원격 쓰기를 받지 않는 칸에서만 막는다. 클립보드는 앱의 모든 explorer 가 공유하므로
+    /// 담은 칸의 컴퓨터(`source`)를 함께 적고, 다른 컴퓨터 칸의 붙여넣기는
+    /// [`ExplorerClipboard::pastes_into`](crate::state::ExplorerClipboard::pastes_into) 가 막는다.
     pub(crate) fn explorer_menu_set_clipboard(
         &mut self,
         engine: &crate::runtime::engine_read::EngineRead<'_>,
@@ -1669,7 +1669,7 @@ impl MainView {
         paths: &[std::path::PathBuf],
         cut: bool,
     ) {
-        if cut && engine.is_mirror_surface(surface_id) {
+        if cut && engine.blocks_explorer_write(surface_id) {
             self.toast_remote_write_unsupported();
             return;
         }
@@ -1706,8 +1706,8 @@ impl MainView {
         surface_id: u32,
         paths: &[std::path::PathBuf],
     ) {
-        // (ADR-0022) mirror explorer 는 파일 변경을 지원하지 않는다.
-        if engine.is_mirror_surface(surface_id) {
+        // (ADR-0022) 원격 쓰기를 알리지 않은 서버의 mirror explorer 는 파일을 바꾸지 않는다.
+        if engine.blocks_explorer_write(surface_id) {
             self.toast_remote_write_unsupported();
             return;
         }
@@ -1753,10 +1753,9 @@ impl MainView {
         paths: &[std::path::PathBuf],
         binding: crate::runtime::surface_binding::SurfaceBinding,
     ) {
-        // (ADR-0022) mirror explorer 는 파일 변경을 지원하지 않는다 — 이 가드가 먼저 막아서
-        // rename 팝업(`draw_rename_popup`) 자체가 열리지 않는다(팝업의
-        // `path.exists()` 게이트까지 도달하지 않음).
-        if engine.is_mirror_surface(surface_id) {
+        // (ADR-0022) 원격 쓰기를 알리지 않은 서버의 mirror explorer 는 파일을 바꾸지 않는다.
+        // 이 가드가 먼저 막아 rename 팝업(`draw_rename_popup`) 자체가 열리지 않는다.
+        if engine.blocks_explorer_write(surface_id) {
             self.toast_remote_write_unsupported();
             return;
         }
@@ -2300,7 +2299,7 @@ mod tests {
             is_empty_target,
             is_folder,
             has_clip,
-            is_mirror,
+            (is_mirror, is_mirror),
         ));
         assert_eq!(items.split_off(items.len() - 2), vec![None, Some(70)]);
         items

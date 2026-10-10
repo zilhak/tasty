@@ -133,14 +133,21 @@ impl MainViewState {
         false
     }
 
-    /// 붙여넣기 메뉴를 켤 것인가. Tasty 의 로컬 목록이나 OS 클립보드의 로컬 파일이 있으면 참이다.
-    pub(crate) fn explorer_can_paste(&self) -> bool {
+    /// 경로 출처가 `target` 인 칸에서 붙여넣기 메뉴를 켤 것인가. 붙여넣기가 쓸 목록(나중에 복사한 쪽)이
+    /// 같은 컴퓨터의 경로일 때만 참이다. OS 클립보드 쪽은 늘 로컬 파일이다.
+    pub(crate) fn explorer_can_paste_into(&self, target: ExplorerPathSource) -> bool {
         let tasty = self.explorer_clipboard.get();
         match paste_from(tasty.as_ref(), self.file_clipboard.read()) {
-            PasteFrom::Tasty => tasty.is_some_and(|c| !c.paths.is_empty() && c.is_local()),
-            PasteFrom::Os(_) => true,
+            PasteFrom::Tasty => tasty.is_some_and(|c| !c.paths.is_empty() && c.source == target),
+            PasteFrom::Os(_) => target == ExplorerPathSource::Local,
             PasteFrom::NotLocal | PasteFrom::Unreadable | PasteFrom::Nothing => false,
         }
+    }
+
+    /// 로컬 칸의 붙여넣기 메뉴.
+    #[cfg(test)]
+    pub(crate) fn explorer_can_paste(&self) -> bool {
+        self.explorer_can_paste_into(ExplorerPathSource::Local)
     }
 }
 

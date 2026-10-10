@@ -36,6 +36,7 @@ pub fn attach_handshake(
     let write_half = conn.try_clone_writer()?;
     Ok(AttachHandshake {
         resize_acks: descriptor_has_capability(&ctrl, stream::RESIZE_ACK_CAPABILITY),
+        explorer_write: descriptor_has_capability(&ctrl, tasty_ipc::explorer_op::CAPABILITY),
         conn,
         client_id,
         write_half,
@@ -55,6 +56,8 @@ pub struct AttachHandshake {
     pub tree: Value,
     /// 서버가 모든 크기 요청에 응답한다. 구 서버 descriptor에는 이 기능이 없다.
     pub resize_acks: bool,
+    /// 서버가 원격 explorer 파일 작업을 받는다.
+    pub explorer_write: bool,
 }
 
 /// descriptor의 기능 목록에 `name`이 있는지. 목록이 없는 구 서버는 false다.
@@ -366,6 +369,7 @@ impl PreparedConnection {
             surfaces,
             tree,
             resize_acks,
+            explorer_write,
         } = attach_handshake(port, workspace, "remote pending connection", &cancel)?;
         let control = write_half.try_clone()?;
         let (frame_tx, frame_rx) = super::connection::channel();
@@ -399,6 +403,8 @@ impl PreparedConnection {
                 disconnected,
                 frame_tx,
                 tunnel,
+                explorer_write,
+                explorer_inbox: Vec::new(),
             },
         })
     }

@@ -106,6 +106,30 @@ pub(super) fn push_failure(
     }
 }
 
+/// 연결이 끊겨 보내지 못하고 버린 원격 요청 수(칸별). 서버에 닿지 않았으므로 아무것도 바뀌지 않았다.
+#[derive(Default)]
+pub(super) struct LostRequests(Vec<(u32, usize)>);
+
+impl LostRequests {
+    pub(super) fn add(&mut self, surface: u32) {
+        match self.0.iter_mut().find(|(s, _)| *s == surface) {
+            Some((_, n)) => *n += 1,
+            None => self.0.push((surface, 1)),
+        }
+    }
+    /// 칸마다 원격 실패와 같은 토스트로 알린다.
+    pub(super) fn notify(self, state: &mut MainViewState) {
+        for (surface, n) in self.0 {
+            let text = crate::i18n::t_count(
+                "explorer.state.remote_queue_dropped",
+                n as u64,
+                &[&n.to_string()],
+            );
+            push_failure(state, surface, None, Some(text));
+        }
+    }
+}
+
 impl crate::app::App {
     /// 끝난 작업의 진행 표시를 모든 칸에서 거둔다. 요청한 칸이 다른 윈도우로 옮겨 갔어도 남지 않는다.
     pub(super) fn clear_explorer_running(&mut self, shared: &Arc<Shared>) {
@@ -157,40 +181,67 @@ impl crate::app::App {
                 view.mark_dirty();
             }
         }
-        let Some(job) = self.explorer_files.job.as_mut() else {
-            return;
-        };
-        let snap = job.shared.snapshot();
-        let asking = job.shared.pending_ask().is_some();
-        let seen = (snap.items_done, snap.bytes_done, asking);
-        let changed = seen != job.seen;
-        job.seen = seen;
-        let (window, surface, engine) = (job.window, job.target.surface, job.engine);
-        let view = self
-            .view
-            .views
-            .get_mut(&window)
-            .and_then(|v| v.as_main_mut());
-        // 질문을 띄울 칸이 사라졌으면 답할 곳이 없으므로 남은 항목을 멈춘다.
-        let Some(view) = view.filter(|v| v.state.explorer_views.get(surface).is_some()) else {
-            if asking {
-                job.shared.cancel();
-            }
-            return;
-        };
-        if changed {
-            view.mark_dirty();
+        let files = &mut self.explorer_files;
+        let local = files.job.iter_mut().map(|j| {
+            (
+                (j.window, j.target.surface, j.engine),
+                &j.shared,
+                &mut j.seen,
+            )
+        });
+        let remote = files.remote.iter_mut().map(|j| {
+            (
+                (j.window, j.target.surface, j.engine),
+                &j.shared,
+                &mut j.seen,
+            )
+        });
+        for (place, shared, seen) in local.chain(remote) {
+            sync_job(&mut self.view, &self.engines, place, shared, seen);
         }
-        if !asking || view.state.popups.is_open(EXPLORER_CONFLICT_POPUP_ID) {
-            return;
+    }
+}
+
+/// 실행 중인 작업 하나의 진행을 다시 그리고, 포커스된 칸이면 충돌 질문을 띄운다.
+fn sync_job(
+    registry: &mut crate::view::ViewRegistry,
+    engines: &crate::app::engine_registry::EngineRegistry,
+    (window, surface, engine): (
+        winit::window::WindowId,
+        u32,
+        crate::runtime::engine_session::EngineId,
+    ),
+    shared: &Arc<Shared>,
+    seen: &mut (usize, u64, bool),
+) {
+    let snap = shared.snapshot();
+    let asking = shared.pending_ask().is_some();
+    let now = (snap.items_done, snap.bytes_done, asking);
+    let changed = now != *seen;
+    *seen = now;
+    let view = registry
+        .views
+        .get_mut(&window)
+        .and_then(|v| v.as_main_mut());
+    // 질문을 띄울 칸이 사라졌으면 답할 곳이 없으므로 남은 항목을 멈춘다.
+    let Some(view) = view.filter(|v| v.state.explorer_views.get(surface).is_some()) else {
+        if asking {
+            shared.cancel();
         }
-        let Some(session) = self.engines.get(engine) else {
-            return;
-        };
-        if view.state.focused_surface_id(&session.read()) == Some(surface) {
-            open_conflict(&mut view.state, surface, "explorer_conflict_focus");
-            view.mark_dirty();
-        }
+        return;
+    };
+    if changed {
+        view.mark_dirty();
+    }
+    if !asking || view.state.popups.is_open(EXPLORER_CONFLICT_POPUP_ID) {
+        return;
+    }
+    let Some(session) = engines.get(engine) else {
+        return;
+    };
+    if view.state.focused_surface_id(&session.read()) == Some(surface) {
+        open_conflict(&mut view.state, surface, "explorer_conflict_focus");
+        view.mark_dirty();
     }
 }
 

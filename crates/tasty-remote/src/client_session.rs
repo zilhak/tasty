@@ -79,6 +79,9 @@ pub enum MirrorEvent {
     MarkdownChanged {
         surface_id: u32,
     },
+    /// 원격 explorer 파일 작업의 진행·결과(`explorer_op_progress`·`explorer_op_result`).
+    /// 작업 엔진을 가진 호스트가 해석하므로 JSON 그대로 전달한다.
+    ExplorerOp(Value),
     /// 서버 전송 손실. 데이터가 연속이라는 가정을 버리고 재동기화를 요청한다.
     Desynced {
         frames: u64,
@@ -282,6 +285,10 @@ pub struct ClientTransport {
     pub disconnected: Arc<AtomicBool>,
     pub frame_tx: SharedFrameSender,
     pub tunnel: Option<tasty_ssh::SshTunnel>,
+    /// 서버가 원격 explorer 파일 작업을 받는다. 구 서버 descriptor 에는 이 기능이 없다.
+    pub explorer_write: bool,
+    /// 받은 원격 explorer 작업 통지. 작업 상태를 가진 App 이 도착 순서대로 꺼낸다.
+    pub explorer_inbox: Vec<Value>,
 }
 pub struct ClientSessionState {
     pub structure_ids: MirrorStructureIds,
@@ -402,6 +409,7 @@ impl MirrorEvent {
                 |sum, value| sum.saturating_add(json(value)),
             ),
             Self::CaptureResult { path, reason, .. } => text(path).saturating_add(text(reason)),
+            Self::ExplorerOp(value) => json(value),
             Self::ListDirResult {
                 dir,
                 entries,

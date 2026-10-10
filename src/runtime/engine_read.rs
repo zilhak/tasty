@@ -30,6 +30,8 @@ pub(crate) struct EngineRead<'a> {
     pub(crate) port_favorites: &'a [crate::core::port_favorites::PortFavorite],
     #[cfg(feature = "gui")]
     pub(crate) attach_mesh_frames: &'a crate::remote::mesh_frames::AttachMeshFrameStore,
+    #[cfg(feature = "gui")]
+    explorer_writable: &'a HashSet<u32>,
     surfaces: &'a HashMap<u32, Box<dyn Surface>>,
     mirror_cwd: &'a HashMap<u32, crate::core::state::RemoteCwd>,
     mirror_busy: &'a HashSet<u32>,
@@ -91,6 +93,8 @@ impl<'a> EngineRef<'a> {
             port_favorites: &self.runtime.port_favorites.items,
             #[cfg(feature = "gui")]
             attach_mesh_frames: &self.remote.attach_mesh_frames,
+            #[cfg(feature = "gui")]
+            explorer_writable: &self.remote.explorer_writable,
             surfaces: &self.runtime.surfaces,
             mirror_cwd: &self.remote.mirror_surface_cwd,
             mirror_busy: &self.remote.mirror_busy_surfaces,
@@ -101,6 +105,24 @@ impl<'a> EngineRef<'a> {
         }
     }
 }
+#[cfg(feature = "gui")]
+impl EngineRead<'_> {
+    /// surface 가 든 mirror workspace 의 로컬 ID. 로컬 surface 거나 찾지 못하면 None.
+    pub(crate) fn mirror_workspace_of(&self, surface_id: u32) -> Option<u32> {
+        let (idx, _) = self.find_workspace_index_for_surface(surface_id)?;
+        self.workspace_at(idx)
+            .filter(|ws| ws.mirror)
+            .map(|ws| ws.id)
+    }
+
+    /// 이 explorer 칸의 파일을 바꿀 수 없는가. 원격 칸인데 그 연결의 서버가 원격 쓰기를 알리지 않았거나
+    /// 연결이 끊긴 때다. 로컬 칸은 false 다.
+    pub(crate) fn blocks_explorer_write(&self, surface_id: u32) -> bool {
+        self.mirror_workspace_of(surface_id)
+            .is_some_and(|ws| !self.explorer_writable.contains(&ws))
+    }
+}
+
 impl Deref for EngineRead<'_> {
     type Target = CoreState;
     fn deref(&self) -> &CoreState {

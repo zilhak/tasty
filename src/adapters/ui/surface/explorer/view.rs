@@ -8,6 +8,7 @@ pub(crate) mod list_layout;
 pub(crate) mod marquee;
 pub(crate) mod ops;
 pub(crate) mod poll;
+mod remote_reload;
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -99,6 +100,8 @@ pub struct ExplorerView {
     pub(super) mirror_ws_id: Option<u32>,
     /// (ADR-0022) 경로별 원격 요청 상태 — 로컬 surface 는 항상 비어 있다.
     remote_state: HashMap<PathBuf, RemoteLoadState>,
+    /// 이 칸의 파일을 바꿀 수 있는가. 로컬은 늘 참이고, 원격은 그 서버가 원격 쓰기를 알린 동안 참이다.
+    pub(crate) writes_allowed: bool,
     /// (ADR-0022) 이번 프레임 새로 만든 원격 요청 — 렌더 루프 종료 후 drain.
     pub(super) outbox: Vec<ExplorerListRequest>,
     /// 영숫자로 항목을 선택하는 타입어헤드의 입력 버퍼. 동작 규칙은 `type_ahead`
@@ -257,6 +260,7 @@ impl ExplorerView {
             addr_probe: None,
             mirror_ws_id: None,
             remote_state: HashMap::new(),
+            writes_allowed: true,
             outbox: Vec::new(),
             type_ahead: TypeAhead::default(),
             scroll_to: None,
@@ -774,6 +778,8 @@ pub struct ExplorerViewStore {
     /// mirror workspace별 원격 홈과 응답을 기다리는 홈 조회 요청. `address::remote`가 관리한다.
     pub(super) remote_homes: HashMap<u32, PathBuf>,
     pub(super) home_probes: HashMap<u64, u32>,
+    /// 서버가 원격 쓰기를 받는 mirror workspace. App 이 연결 상태에서 맞춘다.
+    remote_writable: std::collections::HashSet<u32>,
 }
 
 impl ExplorerViewStore {
@@ -800,9 +806,11 @@ impl ExplorerViewStore {
         mirror_ws_id: Option<u32>,
     ) -> &mut ExplorerView {
         let home = mirror_ws_id.and_then(|ws| self.remote_home(ws).map(Path::to_path_buf));
+        let writable = mirror_ws_id.is_none_or(|ws| self.remote_writable.contains(&ws));
         let view = self.views.entry(panel.id).or_default();
         view.sync(panel, mirror_ws_id);
         view.remote_home = home;
+        view.writes_allowed = writable;
         view
     }
 

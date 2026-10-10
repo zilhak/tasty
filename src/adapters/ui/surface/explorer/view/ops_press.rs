@@ -3,7 +3,7 @@
 
 use std::time::{Duration, Instant};
 
-use crate::app::explorer_files::job::{OpKind, Report};
+use crate::app::explorer_files::job::{OpKind, Report, Resend};
 
 use super::OpsState;
 
@@ -73,6 +73,13 @@ impl OpsState {
 /// 두 결과를 합친다. 다시 옮긴 작업이 있으면 이동 결과로 보이고, 일부만 되돌릴 수 있으므로 Undo 는 없다.
 /// 원본이 남았거나 실패한 항목이 있으면 취소보다 그쪽을 보인다.
 pub(super) fn merge(mut a: Report, b: Report) -> Report {
+    if a.resend.is_some() || b.resend.is_some() {
+        let mut paths = a.retryable();
+        paths.extend(b.retryable());
+        let mut leftovers = a.retry_leftovers();
+        leftovers.extend(b.retry_leftovers());
+        a.resend = Some(Resend { paths, leftovers });
+    }
     if b.kind == OpKind::Move {
         a.kind = OpKind::Move;
     }

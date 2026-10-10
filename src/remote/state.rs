@@ -42,6 +42,9 @@ pub(crate) struct RemoteState {
     /// 원격 디렉터리 조회 요청만 담는다. 응답은 MirrorEvent로 따로 들어온다.
     #[cfg(feature = "gui")]
     pub(crate) pending_list_dir_forward: Vec<crate::core::PendingListDirForward>,
+    /// 서버가 원격 explorer 파일 작업을 받는 mirror workspace(로컬 ID). App 이 연결 상태에서 맞춘다.
+    #[cfg(feature = "gui")]
+    pub(crate) explorer_writable: std::collections::HashSet<u32>,
     /// 원격 Git 조회 요청. 응답은 MirrorEvent로 따로 들어온다.
     #[cfg(feature = "gui")]
     pub(crate) pending_git_query_forward: Vec<crate::core::PendingGitQueryForward>,
@@ -104,6 +107,8 @@ impl RemoteState {
             pending_attention_clear_forward: std::collections::HashSet::new(),
             #[cfg(feature = "gui")]
             pending_list_dir_forward: Vec::new(),
+            #[cfg(feature = "gui")]
+            explorer_writable: std::collections::HashSet::new(),
             #[cfg(feature = "gui")]
             pending_git_query_forward: Vec::new(),
             #[cfg(feature = "gui")]

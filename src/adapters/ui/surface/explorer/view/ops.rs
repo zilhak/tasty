@@ -626,7 +626,7 @@ fn card_text(card: &ResultCard) -> CardText {
     let (retry, leftovers) = if card.undo_of.is_some() {
         (Vec::new(), Vec::new())
     } else {
-        (report.retryable(), report.leftovers.clone())
+        (report.retryable(), report.retry_leftovers())
     };
     let undo = card.undo_of.is_none()
         && !report.cancelled

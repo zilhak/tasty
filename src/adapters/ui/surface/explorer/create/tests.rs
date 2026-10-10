@@ -39,12 +39,12 @@ fn a_taken_default_name_gets_the_next_free_number_before_the_extension() {
 
 #[test]
 fn the_folder_default_selects_all_and_the_file_default_selects_the_stem() {
-    let folder = CreateEdit::new("/w".into(), true, Vec::new());
+    let folder = CreateEdit::new("/w".into(), true, Vec::new(), false);
     assert_eq!(
         folder.edit.initial_selection,
         Some(0..folder.edit.buf.chars().count())
     );
-    let file = CreateEdit::new("/w".into(), false, Vec::new());
+    let file = CreateEdit::new("/w".into(), false, Vec::new(), false);
     let stem = split_ext(&file.edit.buf).0.chars().count();
     assert_eq!(file.edit.initial_selection, Some(0..stem));
     assert!(stem < file.edit.buf.chars().count());
@@ -52,7 +52,7 @@ fn the_folder_default_selects_all_and_the_file_default_selects_the_stem() {
 
 #[test]
 fn an_existing_name_is_refused_on_enter_and_cleared_by_typing() {
-    let mut create = CreateEdit::new("/w".into(), true, vec!["Documents".into()]);
+    let mut create = CreateEdit::new("/w".into(), true, vec!["Documents".into()], false);
     create.edit.buf = "Documents".into();
     assert_eq!(create.error(), None);
     assert_eq!(create.confirmable(), Err(NameError::Exists));

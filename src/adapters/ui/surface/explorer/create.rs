@@ -26,6 +26,8 @@ pub(crate) struct CreateEdit {
     taken: Vec<String>,
     /// Enter 에서 이미 있다고 확인한 이름. 글자를 바꾸면 이 오류는 사라진다.
     exists: Option<String>,
+    /// Windows 이름 규칙을 쓰는가. 원격 폴더면 그 경로의 형식, 로컬이면 이 OS 를 따른다.
+    windows: bool,
 }
 
 /// 이름 오류.
@@ -77,9 +79,14 @@ fn reserved_on_windows(name: &str) -> bool {
             && upper.as_bytes()[3] != b'0')
 }
 
-/// 이 OS 의 검사.
-fn check_here(name: &str) -> Result<(), NameError> {
-    check_name(name, cfg!(windows))
+/// `dir` 에 만들 이름에 Windows 규칙을 쓰는가. 원격 폴더는 서버 OS 를 모르므로 경로 형식으로 고르고,
+/// 서버가 최종 판정한다.
+pub(crate) fn windows_rules(dir: &Path, remote: bool) -> bool {
+    if remote {
+        super::address::remote::is_windows_style(&dir.to_string_lossy())
+    } else {
+        cfg!(windows)
+    }
 }
 
 impl NameError {
@@ -116,7 +123,7 @@ fn split_ext(name: &str) -> (&str, &str) {
 }
 
 impl CreateEdit {
-    fn new(dir: PathBuf, folder: bool, taken: Vec<String>) -> Self {
+    fn new(dir: PathBuf, folder: bool, taken: Vec<String>, remote: bool) -> Self {
         let base = if folder {
             t("explorer.new.folder_default")
         } else {
@@ -130,6 +137,7 @@ impl CreateEdit {
             split_ext(&name).0.chars().count()
         };
         Self {
+            windows: windows_rules(&dir, remote),
             dir,
             folder,
             edit: ExplorerNameEdit::new(name, 0..selected),
@@ -141,14 +149,14 @@ impl CreateEdit {
     /// 지금 보일 오류. 입력하는 동안의 검사와 Enter 에서 확인한 "이미 있음" 이다.
     fn error(&self) -> Option<NameError> {
         let name = self.edit.buf.as_str();
-        check_here(name)
+        check_name(name, self.windows)
             .err()
             .or_else(|| (self.exists.as_deref() == Some(name)).then_some(NameError::Exists))
     }
 
     /// 확정할 수 있는 이름이면 그대로, 아니면 오류.
     fn confirmable(&self) -> Result<(), NameError> {
-        check_here(&self.edit.buf)?;
+        check_name(&self.edit.buf, self.windows)?;
         if self.taken.iter().any(|n| n == &self.edit.buf) {
             return Err(NameError::Exists);
         }
@@ -174,7 +182,7 @@ impl ExplorerView {
                 .map(|children| children.iter().map(|e| e.name.clone()).collect())
                 .unwrap_or_default()
         };
-        self.create = Some(CreateEdit::new(dir, folder, taken));
+        self.create = Some(CreateEdit::new(dir, folder, taken, self.is_remote()));
     }
 }
 

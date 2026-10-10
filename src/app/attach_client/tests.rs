@@ -75,17 +75,30 @@ pub(super) fn test_session(
     local_workspace: u32,
     remote_to_local: HashMap<u32, u32>,
 ) -> AttachClientSession {
-    let (tx, _rx) = tasty_remote::connection::channel();
+    test_session_with_frames(local_workspace, remote_to_local).0
+}
+
+/// 보낸 프레임을 받는 쪽을 함께 돌려주는 시험 세션. 받는 쪽을 버리면 전송이 실패한다.
+pub(crate) fn test_session_with_frames(
+    local_workspace: u32,
+    remote_to_local: HashMap<u32, u32>,
+) -> (
+    AttachClientSession,
+    std::sync::mpsc::Receiver<tasty_remote::connection::QueuedFrame>,
+) {
+    let (tx, rx) = tasty_remote::connection::channel();
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let control = std::net::TcpStream::connect(listener.local_addr().unwrap()).unwrap();
     let (_peer, _) = listener.accept().unwrap();
-    AttachClientSession {
+    let session = AttachClientSession {
         transport: ClientTransport {
             workers: tasty_remote::transport::ConnectionWorkers::new(control, Vec::new()),
             output: MirrorOutbox::new(tx.epoch()),
             disconnected: Arc::new(AtomicBool::new(false)),
             frame_tx: tx,
             tunnel: None,
+            explorer_write: true,
+            explorer_inbox: Vec::new(),
         },
         state: ClientSessionState {
             structure_ids: Default::default(),
@@ -107,7 +120,8 @@ pub(super) fn test_session(
             resync_pending: None,
             resync_awaiting_window: false,
         },
-    }
+    };
+    (session, rx)
 }
 
 /// 실제 kind 등록 경로를 사용하며 플러그인 프로세스 대신 채널 수신자로 명령을 확인한다.

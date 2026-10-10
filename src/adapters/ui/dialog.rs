@@ -95,7 +95,9 @@ pub fn draw_rename_popup(
     let (validation_error, save_enabled) = {
         let buffer = &state.dialogs.rename.as_ref().unwrap().1;
         match target {
-            RenameTarget::ExplorerEntry { .. } => explorer_validation(buffer),
+            RenameTarget::ExplorerEntry {
+                surface_id, path, ..
+            } => explorer_validation(buffer, explorer_name_rules(engine, *surface_id, path)),
             _ => category_validation(target, buffer, engine),
         }
     };
@@ -228,11 +230,31 @@ pub fn draw_rename_popup_view(
 }
 
 /// 탐색기 항목 이름은 새 항목 입력과 같은 규칙으로 검사하고 이유를 보인다.
-fn explorer_validation(buffer: &str) -> (Option<String>, bool) {
-    match crate::adapters::ui::surface::explorer::rename_name_error(buffer) {
+fn explorer_validation(buffer: &str, windows: bool) -> (Option<String>, bool) {
+    match explorer_name_error(buffer, windows) {
         Some(error) => (Some(error), false),
         None => (None, true),
     }
+}
+
+/// 이름 변경에 Windows 이름 규칙을 쓰는가. 원격 항목은 그 경로의 형식을 따른다.
+fn explorer_name_rules(
+    engine: &crate::runtime::engine_read::EngineRead<'_>,
+    surface_id: u32,
+    path: &std::path::Path,
+) -> bool {
+    crate::adapters::ui::surface::explorer::create::windows_rules(
+        path,
+        engine.mirror_workspace_of(surface_id).is_some(),
+    )
+}
+
+/// 이름 바꾸기 대화상자의 이름 검사. 새 항목 입력과 같은 규칙(빈 이름·금지 글자·앞뒤 공백·예약 이름)이다.
+/// 문제가 없으면 `None`, 있으면 보일 문구다. 이미 있는지는 실제 이름 바꾸기가 알린다.
+fn explorer_name_error(name: &str, windows: bool) -> Option<String> {
+    crate::adapters::ui::surface::explorer::create::check_name(name, windows)
+        .err()
+        .map(|e| e.message(name))
 }
 
 /// 빈 카테고리 이름은 확인만 막고 오류 문구는 숨긴다. rename에서 자기 이름은 중복으로 보지 않는다.
@@ -284,8 +306,14 @@ fn rename_target_exists(
             engine.find_workspace_index_for_id(*workspace_id).is_some()
         }
         RenameTarget::TabName { tab_id } => engine.find_pane_for_tab(*tab_id).is_some(),
-        RenameTarget::ExplorerEntry { path, binding, .. } => {
-            binding.current_in(engine) && path.exists()
+        // 원격 항목은 이 컴퓨터에서 확인할 수 없다. 없으면 서버의 이름 변경이 실패로 알린다.
+        RenameTarget::ExplorerEntry {
+            path,
+            binding,
+            surface_id,
+        } => {
+            binding.current_in(engine)
+                && (engine.mirror_workspace_of(*surface_id).is_some() || path.exists())
         }
         RenameTarget::ExplorerAddFavorite { path } => path.exists(),
         RenameTarget::NewCategory => true,
@@ -314,9 +342,8 @@ fn apply_rename(
         } => {
             // 팝업이 떠 있는 동안 surface 가 바뀌었으면 새 surface 에 요청하지 않는다.
             // 확인 버튼은 직전 프레임 입력으로 막으므로, 같은 프레임의 Enter 도 여기서 다시 검사한다.
-            if binding.current_in(engine)
-                && crate::adapters::ui::surface::explorer::rename_name_error(&buffer).is_none()
-            {
+            let windows = explorer_name_rules(engine, surface_id, &path);
+            if binding.current_in(engine) && explorer_name_error(&buffer, windows).is_none() {
                 apply_rename_explorer_entry(state, engine, surface_id, path, buffer)
             }
         }
@@ -668,15 +695,15 @@ mod tests {
     #[test]
     fn an_explorer_rename_uses_the_new_item_name_rules() {
         crate::i18n::init("en");
-        assert_eq!(explorer_validation("b.txt"), (None, true));
+        assert_eq!(explorer_validation("b.txt", false), (None, true));
         assert_eq!(
-            explorer_validation("b.txt "),
+            explorer_validation("b.txt ", false),
             (
                 Some("Names can't start or end with a space.".to_string()),
                 false
             )
         );
-        assert!(!explorer_validation("   ").1);
+        assert!(!explorer_validation("   ", false).1);
 
         let (mut state, session) = crate::state::tests::test_state();
         let sid = session.read().workspace_at(0).unwrap().all_surface_ids()[0];

@@ -26,6 +26,8 @@ pub(crate) struct Payload {
     paths: Vec<PathBuf>,
     single_dir: bool,
     source: egui::Id,
+    /// 경로가 있는 컴퓨터. 로컬이면 None, 원격이면 그 mirror workspace 다. 같은 곳에만 놓는다.
+    origin: Option<u32>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -226,17 +228,30 @@ fn target(
     }
 }
 
-/// 같은 디스크면 이동, 다른 디스크면 복사. `flip` 이면 뒤집는다.
+/// 이 칸에 `origin` 의 경로를 놓을 수 없는 이유. 다른 컴퓨터의 경로는 놓지 않고, 원격 쓰기를 받지 않는
+/// 서버의 칸에도 놓지 않는다.
+fn blocked(view: &ExplorerView, origin: Option<u32>) -> Option<&'static str> {
+    if origin != view.mirror_ws_id {
+        Some("explorer.drag.other_computer")
+    } else if !view.writes_allowed {
+        Some("explorer.drag.remote")
+    } else {
+        None
+    }
+}
+
+/// 같은 디스크면 이동, 다른 디스크면 복사. `flip` 이면 뒤집는다. `blocked` 는 경로를 보지 않고 거절하는
+/// 이유(다른 컴퓨터, 쓸 수 없는 원격)의 번역 키다.
 pub(crate) fn verdict(
     paths: &[PathBuf],
     dest: &Path,
     same_volume: bool,
     writable: bool,
     flip: bool,
-    remote: bool,
+    blocked: Option<&'static str>,
 ) -> Verdict {
-    if remote {
-        return Verdict::No("explorer.drag.remote");
+    if let Some(reason) = blocked {
+        return Verdict::No(reason);
     }
     if paths.iter().any(|p| dest.starts_with(p)) {
         return Verdict::No("explorer.drag.into_itself");
@@ -325,7 +340,7 @@ fn start(
     if !ctx.input(|i| i.pointer.primary_down()) {
         view.ops.drag.started = false;
     }
-    if !dragging || view.ops.drag.started || ctx.dragged_id().is_some() || view.is_remote() {
+    if !dragging || view.ops.drag.started || ctx.dragged_id().is_some() {
         return;
     }
     let Some(origin) = origin else {
@@ -354,6 +369,7 @@ fn start(
             paths,
             single_dir,
             source: me,
+            origin: view.mirror_ws_id,
         },
     );
 }
@@ -548,17 +564,16 @@ pub(crate) fn frame(
     expand_after_hover(&ctx, view, Some((&dest, kind)));
     let super_held = crate::adapters::ui::input::shortcuts::super_held(&ctx);
     let flip = held(ctx.input(|i| i.modifiers), super_held, view.ops.drag.flip);
-    let remote = view.is_remote();
+    let blocked = blocked(view, payload.origin);
     let first = payload.paths.first().cloned().unwrap_or_default();
-    let probed = probe(&mut view.ops.drag, &dest, &first);
-    let decided = verdict(
-        &payload.paths,
-        &dest,
-        probed.same_volume,
-        probed.writable,
-        flip,
-        remote,
-    );
+    // 원격 경로는 이 컴퓨터에서 읽지 않는다. 원격 끌기의 기본 동작은 복사이고 쓰기 거부는 서버가 알린다.
+    let (same_volume, writable) = if view.is_remote() {
+        (false, true)
+    } else {
+        let probed = probe(&mut view.ops.drag, &dest, &first);
+        (probed.same_volume, probed.writable)
+    };
+    let decided = verdict(&payload.paths, &dest, same_volume, writable, flip, blocked);
     if let Verdict::Go(_) = decided {
         let radius = if kind == Kind::Body {
             0.0
@@ -604,10 +619,11 @@ fn os_frame(
         view.ops.drag.os_target = None;
         return;
     };
-    let remote = view.is_remote();
+    // OS 에서 온 파일은 이 컴퓨터의 경로다.
+    let blocked = blocked(view, None);
     let first = os.paths.first().cloned().unwrap_or_default();
-    let writable = probe(&mut view.ops.drag, &dest, &first).writable;
-    let decided = verdict(&os.paths, &dest, false, writable, false, remote);
+    let writable = blocked.is_some() || probe(&mut view.ops.drag, &dest, &first).writable;
+    let decided = verdict(&os.paths, &dest, false, writable, false, blocked);
     let ctx = ui.ctx();
     if let Verdict::Go(_) = decided {
         let radius = if kind == Kind::Body {
@@ -662,13 +678,14 @@ pub(crate) fn shown_drop(
 ) -> Option<(PathBuf, Verdict)> {
     let view = views.get(sid)?;
     let dest = view.loaded_dir()?.to_path_buf();
+    let blocked = blocked(view, None);
     let decided = verdict(
         paths,
         &dest,
         false,
-        writable(&dest),
+        blocked.is_some() || writable(&dest),
         false,
-        view.is_remote(),
+        blocked,
     );
     Some((dest, decided))
 }

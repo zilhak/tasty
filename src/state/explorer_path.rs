@@ -25,6 +25,16 @@ impl ExplorerClipboard {
     pub(crate) fn is_local(&self) -> bool {
         self.source == ExplorerPathSource::Local
     }
+
+    /// `surface_id` 칸에 붙여넣을 수 있는가. 같은 컴퓨터의 경로만 붙여넣는다. 원격 경로는 같은 mirror
+    /// workspace(같은 연결)의 칸에만 붙여넣고, 로컬 경로는 원격 칸에 붙여넣지 않는다.
+    pub(crate) fn pastes_into(
+        &self,
+        engine: &crate::runtime::engine_read::EngineRead<'_>,
+        surface_id: u32,
+    ) -> bool {
+        ExplorerPathSource::of_surface(engine, surface_id) == Some(self.source)
+    }
 }
 
 #[cfg(test)]

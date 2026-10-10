@@ -17,7 +17,7 @@ mod survivors;
 mod wire;
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 /// 번들 git-viewer 매니페스트의 ID와 일치해야 한다.
 const GIT_VIEWER_PLUGIN_ID: &str = "com.tasty.git-viewer";

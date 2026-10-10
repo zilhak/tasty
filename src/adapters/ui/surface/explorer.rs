@@ -3,7 +3,7 @@
 
 pub mod address;
 mod commands;
-mod create;
+pub(crate) mod create;
 mod enclosing;
 mod entry_style;
 mod find;
@@ -1548,14 +1548,6 @@ fn tool_icon(ui: &mut egui::Ui, theme: &Theme, icon: Icon, enabled: bool, tip: &
         resp
     };
     enabled && resp.clicked()
-}
-
-/// 이름 바꾸기 대화상자의 이름 검사. 새 항목 입력과 같은 규칙(빈 이름·금지 글자·앞뒤 공백·예약 이름)이다.
-/// 문제가 없으면 `None`, 있으면 보일 문구다. 이미 있는지는 실제 이름 바꾸기가 알린다.
-pub(crate) fn rename_name_error(name: &str) -> Option<String> {
-    create::check_name(name, cfg!(windows))
-        .err()
-        .map(|e| e.message(name))
 }
 
 #[cfg(test)]

@@ -52,7 +52,8 @@ pub(super) fn mirror_event_from_control(payload: &[u8]) -> Option<MirrorEvent> {
             .or_else(|| parse_list_dir_result(payload))
             .or_else(|| parse_git_query_result(payload))
             .or_else(|| parse_markdown_content_result(payload))
-            .or_else(|| parse_markdown_changed(payload)),
+            .or_else(|| parse_markdown_changed(payload))
+            .or_else(|| crate::app::explorer_files::remote::mirror_event(payload)),
     }
 }
 

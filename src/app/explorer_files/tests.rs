@@ -374,6 +374,8 @@ fn shutdown_reports_a_running_worker_until_its_actual_join() {
             worker,
         }),
         stopping: false,
+        remote: Vec::new(),
+        next_op: 0,
     };
     assert_eq!(owner.poll_shutdown(), 1);
     assert!(owner.stopping);
@@ -496,6 +498,8 @@ fn a_finished_job_reloads_other_explorers_viewing_the_folders_it_changed() {
             worker: std::thread::spawn(|| Done::Simple(Err("failed".to_string()))),
         }),
         stopping: false,
+        remote: Vec::new(),
+        next_op: 0,
     };
     let finished = loop {
         if let Some(finished) = owner.take_finished() {
