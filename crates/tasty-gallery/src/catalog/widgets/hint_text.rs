@@ -89,4 +89,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::without_color("font-mono", "inline code"),
         ],
     );
+    // 같은 절의 두 번째 spec. 절 목록(catalog.rs)은 spec 하나로 둔다.
+    super::ui_code::draw(ui, theme);
 }

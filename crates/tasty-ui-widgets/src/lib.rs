@@ -77,6 +77,7 @@ pub mod tokens;
 mod tooltip;
 mod tree_row;
 mod two_depth;
+mod ui_code;
 mod warning_callout;
 pub use attach_refusal::{
     AttachRefusalBannerClicks, AttachRefusalBannerView, attach_refusal_avatar_tooltip,
@@ -257,4 +258,5 @@ pub use toggle::{checkbox, checkbox_width, switch, switch_with_label_color};
 pub use tooltip::{Tooltip, TooltipPlacement, tooltip_hover_delay_elapsed};
 pub use tree_row::{tree_row, tree_row_icon_center, tree_row_matching};
 pub use two_depth::{two_depth_layout, two_depth_layout_filtered};
+pub use ui_code::{UiCodeTokens, UiCopySpan, split_ui_copy, ui_code_rects, ui_copy, ui_copy_job};
 pub use warning_callout::warning_callout;

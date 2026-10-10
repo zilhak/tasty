@@ -13,4 +13,5 @@ pub mod layout_2depth;
 pub mod multi_tab_layout;
 pub mod toast;
 pub mod tutorial;
+pub mod ui_code;
 pub mod warning_callout;

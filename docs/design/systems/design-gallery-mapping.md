@@ -613,6 +613,26 @@ inset banner`, `banner` Section 다음). 배너와 마커는 본체가 호출할
 글리프 nudge 1과 제목↔본문 간격 2는 디자인이 primitive `size-1`·`size-2`를 직접 써서 역할 토큰이 없으므로
 위젯의 이름 붙은 상수에 배율만 적용한다. 재로드 커밋 뒤 120ms 페이드는 정적 예제에서 재현하지 않는다.
 
+## ui-code (Components)
+
+디자인 `gallery/components.jsx`의 Hint text Section 두 번째 Spec "CLI runs inside UI copy" ↔ 위젯
+`crates/tasty-ui-widgets/src/ui_code.rs::ui_copy` ↔ 갤러리 `catalog/widgets/ui_code.rs::draw`.
+UI 글꼴은 하이픈 두 개를 대시 하나로 이어 그리므로, UI 문장 안의 CLI 명령·옵션·인자는 code run 으로 그린다.
+번역 문자열은 그 구간을 백틱으로 감싸고 옵션 글자는 그대로 둔다.
+
+| 디자인 jsx (css) | 토큰 | 위젯/갤러리 |
+|---|---|---|
+| `font-family: var(--tasty-ui-code-font)` · `font-size: 1em` | `ui-code-font` → `font-mono`, 크기는 문장과 같다 | `FontId::monospace(size)` |
+| `background: var(--tasty-ui-code-bg)` | `ui-code-bg` → `surface-raised` | 줄 높이 전체를 칠하는 사각형 |
+| `color: var(--tasty-ui-code-fg)` | `ui-code-fg` → `text-primary` | run 글자 색 |
+| `padding: 0 var(--tasty-ui-code-padding-x)` | `ui-code-padding-x` → `space-xs`(4) | 앞뒤 구간의 `leading_space`, 세로 여백 없음 |
+| `border-radius: var(--tasty-ui-code-radius)` | `ui-code-radius` → `radius-sm`(2) | 채움 사각형 반경 |
+| `white-space: nowrap` | — | run 안의 공백을 줄을 나누지 않는 공백으로 바꾼다 |
+
+egui 글자 배치의 배경색은 여백과 반경을 줄 수 없어 위젯이 run 의 글리프 범위로 사각형을 계산해 먼저 칠하고 그 위에 글자를 그린다.
+run 하나가 줄 폭보다 길면 egui 가 run 안에서도 자른다. 갤러리는 시안처럼 13 body(text-secondary)와 11 caption(text-muted) 두 예문을 그리며,
+Spec 설명 문장의 `--webhook-port`도 같은 위젯으로 그린다. 카탈로그 등록은 Hint text Section 의 spec 하나가 두 Spec 을 이어 그린다.
+
 ## warning-callout (Components)
 
 디자인 `ui_kits/terminal/overlays/settings_window.jsx:623-632` (Settings › Terminal ›
