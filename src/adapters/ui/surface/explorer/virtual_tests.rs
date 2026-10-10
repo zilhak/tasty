@@ -347,5 +347,41 @@ fn the_item_at_the_top_edge_is_drawn_after_scrolling() {
     }
 }
 
+#[test]
+fn a_new_item_inside_a_folder_opens_right_after_that_folder() {
+    for mode in MODES {
+        let mut h = Harness::new(mode);
+        h.view.entries[3].is_dir = true;
+        h.frame(Vec::new());
+        h.view.start_create(path(3), false);
+        let drawn = h.settle();
+        assert!(
+            h.ctx.memory(|m| m.focused()).is_some(),
+            "{mode:?}: the name input takes focus"
+        );
+        let at = |i| on_screen(&drawn, i).unwrap_or_else(|| panic!("{mode:?}: item {i}"));
+        // 편집 줄(칸)은 폴더(3) 바로 다음에 끼어 3 과 4 사이만 벌어진다. 맨 앞(0 앞)에는 없다.
+        let (before, inside) = match mode {
+            ExplorerViewMode::Grid => (
+                at(3).center().x - at(2).center().x,
+                at(4).center().x - at(3).center().x,
+            ),
+            _ => (
+                at(3).center().y - at(2).center().y,
+                at(4).center().y - at(3).center().y,
+            ),
+        };
+        let first = match mode {
+            ExplorerViewMode::Grid => at(1).center().x - at(0).center().x,
+            _ => at(1).center().y - at(0).center().y,
+        };
+        assert!(
+            (first - before).abs() < 1.0,
+            "{mode:?}: {first} vs {before}"
+        );
+        assert!(inside > before + 1.0, "{mode:?}: {inside} vs {before}");
+    }
+}
+
 #[path = "virtual_tests/keyboard_select.rs"]
 mod keyboard_select;

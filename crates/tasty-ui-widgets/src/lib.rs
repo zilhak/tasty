@@ -139,7 +139,8 @@ pub use explorer_find_bar::{
     explorer_find_bar_height, explorer_match_job, match_range,
 };
 pub use explorer_name_edit::{
-    ExplorerNameEdit, ExplorerNameEvent, ExplorerNameLayout, explorer_name_error, explorer_name_row,
+    ExplorerNameEdit, ExplorerNameEvent, ExplorerNameLayout, ExplorerNameOptions,
+    explorer_name_error, explorer_name_row, explorer_name_row_in,
 };
 pub use explorer_ops::{
     ConflictPick, ConflictProps, DragChipProps, DragOp, OpStatusProps, OpStatusResponse,

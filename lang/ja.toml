@@ -1008,6 +1008,9 @@ hidden_hide = "隠しファイルを非表示"
 folder_default = "新しいフォルダー"
 file_default = "無題.txt"
 
+[explorer.create]
+in_folder = "{} 内"
+
 [explorer.name]
 empty = "名前を入力してください。"
 invalid_char = "名前に「{}」は使えません。"

@@ -470,6 +470,28 @@ fn chip(
         });
 }
 
+/// 폴더 행 아래에 이름 입력이 열려 있으면 그 폴더에 놓을 대상 표시를 한다. 끌기 대상과 같은 링·틴트다.
+fn create_target(
+    ui: &egui::Ui,
+    theme: &Theme,
+    view: &ExplorerView,
+    spots: &[Spot],
+    body: egui::Rect,
+) {
+    if super::super::create::place::target_row(view).is_none() {
+        return;
+    }
+    let Some(dir) = view.create.as_ref().map(|c| c.dir.as_path()) else {
+        return;
+    };
+    let entry = |s: &&Spot| matches!(s.kind, Kind::Entry { .. }) && s.path == dir;
+    if let Some(spot) = spots.iter().find(entry) {
+        let ring = area(spot, body);
+        let painter = ui.ctx().layer_painter(ui.layer_id()).with_clip_rect(ring);
+        paint_drop_target(&painter, theme, ring, theme.corner_radius.value());
+    }
+}
+
 /// 칸의 드래그 처리. 본문과 상태줄을 그린 뒤 한 번 부른다.
 pub(crate) fn frame(
     ui: &egui::Ui,
@@ -485,6 +507,7 @@ pub(crate) fn frame(
         .data_mut(|d| d.remove_temp::<Spots>(spots_id()))
         .unwrap_or_default()
         .0;
+    create_target(ui, theme, view, &spots, body);
     let me = ui.id();
     let drawn = drawn_entries(&spots, body);
     super::cursor::frame(ui, theme, view, &drawn);

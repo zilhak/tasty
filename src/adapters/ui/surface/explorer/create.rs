@@ -6,12 +6,15 @@ use std::path::{Path, PathBuf};
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{
-    ExplorerNameEdit, ExplorerNameEvent, ExplorerNameLayout, explorer_name_error, explorer_name_row,
+    ExplorerNameEdit, ExplorerNameEvent, ExplorerNameLayout, ExplorerNameOptions,
+    explorer_name_error, explorer_name_row_in,
 };
 
 use super::ExplorerAction;
 use super::view::ExplorerView;
 use crate::i18n::{t, t_fmt};
+
+pub(super) mod place;
 
 /// 이름을 받고 있는 새 항목. 대상 폴더는 명령을 시작할 때 정한다.
 #[derive(Clone, Debug)]
@@ -207,6 +210,24 @@ pub(super) fn name_row(
     slot: Slot,
     action: &mut Option<ExplorerAction>,
 ) {
+    // 폴더 행 아래에 열면 들여 쓰고 "in {folder}" 를 붙인다(Grid 는 칸 자리만 바뀐다).
+    let caption = place::target_row(view).and(view.create.as_ref()).map(|c| {
+        let name = c.dir.file_name().map(|n| n.to_string_lossy().into_owned());
+        t_fmt(
+            "explorer.create.in_folder",
+            name.as_deref().unwrap_or_default(),
+        )
+    });
+    let options = ExplorerNameOptions {
+        // 대상 폴더가 멀리 있으면 줄을 화면 밖 자리에 따로 그린다. 그리는 순서가 바뀌어도 같은 입력이다.
+        field_id: view
+            .create
+            .as_ref()
+            .map(|c| egui::Id::new(("explorer_create_field", &c.dir, c.folder))),
+        // explorer-create-indent. 디자인 토큰이 Theme 에 등록되기 전까지 같은 값인 space-lg 를 쓴다.
+        indent: caption.as_ref().map_or(0.0, |_| theme.spacing_lg.value()),
+        caption: caption.as_deref(),
+    };
     let Some(create) = view.create.as_mut() else {
         return;
     };
@@ -225,10 +246,11 @@ pub(super) fn name_row(
                 inset: name_cell.left() - row.left(),
                 name_width: name_cell.right() - row.left(),
             };
-            let (_, field, event) = explorer_name_row(
+            let (_, field, event) = explorer_name_row_in(
                 &mut child,
                 theme,
                 layout,
+                options,
                 glyph,
                 &mut create.edit,
                 error.is_some(),
@@ -236,10 +258,11 @@ pub(super) fn name_row(
             (field, event)
         }
         Slot::List => {
-            let (_, field, event) = explorer_name_row(
+            let (_, field, event) = explorer_name_row_in(
                 ui,
                 theme,
                 ExplorerNameLayout::List,
+                options,
                 glyph,
                 &mut create.edit,
                 error.is_some(),
@@ -254,10 +277,11 @@ pub(super) fn name_row(
                 super::CELL_W.value(),
                 pad + slot + theme.spacing_xs.value() + theme.input_height().value() + pad,
             );
-            let (_, field, event) = explorer_name_row(
+            let (_, field, event) = explorer_name_row_in(
                 ui,
                 theme,
                 ExplorerNameLayout::Grid { cell, slot },
+                options,
                 glyph,
                 &mut create.edit,
                 error.is_some(),

@@ -1008,6 +1008,9 @@ hidden_hide = "숨김 파일 숨기기"
 folder_default = "새 폴더"
 file_default = "제목 없음.txt"
 
+[explorer.create]
+in_folder = "{} 안에"
+
 [explorer.name]
 empty = "이름을 입력하세요."
 invalid_char = "이름에 “{}” 문자를 쓸 수 없습니다."

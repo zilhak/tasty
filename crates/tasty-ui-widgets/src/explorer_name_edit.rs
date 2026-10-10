@@ -50,11 +50,44 @@ pub enum ExplorerNameEvent {
     Blur,
 }
 
+/// 편집 줄의 덧붙임. `indent`·`caption` 은 폴더 행 아래에 여는 줄이 Detail·List 에서 쓰고 Grid 는
+/// 무시한다.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ExplorerNameOptions<'a> {
+    /// 입력의 고정 id. 화면 밖으로 나간 줄을 다른 자리에 그려도 포커스를 지킨다.
+    pub field_id: Option<egui::Id>,
+    /// 글리프 앞에 더하는 들여쓰기(explorer-create-indent).
+    pub indent: f32,
+    /// 입력 칸 뒤의 muted caption("in {folder}"). 칸 끝이 줄 끝에 닿으면 caption 폭만큼 칸을 줄인다.
+    pub caption: Option<&'a str>,
+}
+
 /// 편집 줄을 그린다. 차지한 줄 rect 와 입력 칸 rect, 이벤트를 돌려준다.
 pub fn explorer_name_row(
     ui: &mut egui::Ui,
     theme: &Theme,
     layout: ExplorerNameLayout,
+    glyph: Icon,
+    edit: &mut ExplorerNameEdit,
+    invalid: bool,
+) -> (egui::Rect, egui::Rect, ExplorerNameEvent) {
+    explorer_name_row_in(
+        ui,
+        theme,
+        layout,
+        ExplorerNameOptions::default(),
+        glyph,
+        edit,
+        invalid,
+    )
+}
+
+/// `explorer_name_row` 에 입력 id, 폴더 안 만들기의 들여쓰기와 caption 을 더한다.
+pub fn explorer_name_row_in(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    layout: ExplorerNameLayout,
+    options: ExplorerNameOptions<'_>,
     glyph: Icon,
     edit: &mut ExplorerNameEdit,
     invalid: bool,
@@ -82,6 +115,19 @@ pub fn explorer_name_row(
             };
             ui.painter()
                 .rect_filled(row, radius, theme.surface_active().to_egui());
+            let inset = inset + options.indent;
+            let caption = options.caption.map(|text| {
+                ui.painter().layout_no_wrap(
+                    text.to_owned(),
+                    egui::FontId::proportional(theme.font_size_caption.value()),
+                    muted,
+                )
+            });
+            let field_right = match &caption {
+                // 칸 끝(field_right - pad) 뒤에 gap·caption·pad 가 줄 안에 들어오게 한다.
+                Some(g) => field_right.min(row.right() - g.size().x - gap),
+                None => field_right,
+            };
             let glyph_rect = egui::Rect::from_center_size(
                 egui::pos2(row.left() + inset + glyph_size * 0.5, row.center().y),
                 egui::vec2(glyph_size, glyph_size),
@@ -94,7 +140,11 @@ pub fn explorer_name_row(
                     row.bottom(),
                 ),
             );
-            let event = field_ui(ui, theme, field, edit, invalid);
+            if let Some(g) = caption {
+                let pos = egui::pos2(field.right() + gap, row.center().y - g.size().y * 0.5);
+                ui.painter().with_clip_rect(row).galley(pos, g, muted);
+            }
+            let event = field_ui(ui, theme, field, edit, invalid, options.field_id);
             (row, field, event)
         }
         ExplorerNameLayout::Grid { cell, slot } => {
@@ -121,7 +171,7 @@ pub fn explorer_name_row(
             );
             let field = field
                 .translate(egui::Vec2::X * inside_shift(field.x_range(), ui.clip_rect().x_range()));
-            let event = field_ui(ui, theme, field, edit, invalid);
+            let event = field_ui(ui, theme, field, edit, invalid, options.field_id);
             (rect, field, event)
         }
     }
@@ -144,17 +194,19 @@ fn field_ui(
     field: egui::Rect,
     edit: &mut ExplorerNameEdit,
     invalid: bool,
+    id: Option<egui::Id>,
 ) -> ExplorerNameEvent {
     let mut child = ui.new_child(
         egui::UiBuilder::new()
             .max_rect(field)
             .layout(egui::Layout::left_to_right(egui::Align::Center)),
     );
-    let resp =
-        Input::new()
-            .invalid(invalid)
-            .width(field.width())
-            .show(&mut child, theme, &mut edit.buf);
+    let input = Input::new().invalid(invalid).width(field.width());
+    let input = match id {
+        Some(id) => input.id(id),
+        None => input,
+    };
+    let resp = input.show(&mut child, theme, &mut edit.buf);
     if let Some(range) = edit.initial_selection.take() {
         resp.request_focus();
         if let Some(mut state) = egui::TextEdit::load_state(ui.ctx(), resp.id) {

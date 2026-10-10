@@ -1028,6 +1028,9 @@ hidden_hide = "Hide hidden files"
 folder_default = "New folder"
 file_default = "untitled.txt"
 
+[explorer.create]
+in_folder = "in {}"
+
 [explorer.name]
 empty = "Enter a name."
 invalid_char = "A name can't contain “{}”."

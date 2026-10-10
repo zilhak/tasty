@@ -21,6 +21,9 @@ pub struct Input<'a> {
     text_color: Option<egui::Color32>,
     /// 글자 정렬. 기본은 좌측이고, 숫자 필드만 우측을 쓴다.
     align: egui::Align,
+    /// 입력의 고정 id. `None` 이면 그린 순서로 정해진다. 그리는 자리가 프레임마다 바뀌어도 포커스를
+    /// 지켜야 하는 입력이 쓴다.
+    id: Option<egui::Id>,
 }
 
 impl Default for Input<'_> {
@@ -42,7 +45,13 @@ impl<'a> Input<'a> {
             addon: None,
             text_color: None,
             align: egui::Align::LEFT,
+            id: None,
         }
+    }
+
+    pub fn id(mut self, id: egui::Id) -> Self {
+        self.id = Some(id);
+        self
     }
 
     pub fn placeholder(mut self, placeholder: &'a str) -> Self {
@@ -202,6 +211,10 @@ impl<'a> Input<'a> {
                 .horizontal_align(self.align)
                 .text_color(text_color)
                 .interactive(self.enabled);
+            let te = match self.id {
+                Some(id) => te.id(id),
+                None => te,
+            };
             let r = ui.add(te);
             if let Some(g) = addon_galley {
                 let (arect, _) = ui.allocate_exact_size(g.rect.size(), egui::Sense::hover());

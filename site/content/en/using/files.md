@@ -1,4 +1,4 @@
-<!-- source-hash: f488707582c9 -->
+<!-- source-hash: 5d4a88937cfb -->
 # Opening files
 
 Read a README or check an image beside your terminal. Tasty can open an Explorer, Markdown documents, images, and HTML pages, with a Git viewer for reviewing changes.
@@ -66,7 +66,7 @@ Click the address bar to type a path directly; recently visited folders appear a
 
 ### New folder · New file
 
-Start from **New folder** · **New file** on the toolbar, the right-click menu on empty space, or the right-click menu on a folder (which creates inside that folder). A name row opens at the top of the list with "New folder" fully selected, or "untitled.txt" selected up to the extension. If the name is taken, it starts with a numbered name such as "New folder 2".
+Start from **New folder** · **New file** on the toolbar, the right-click menu on empty space, or the right-click menu on a folder (which creates inside that folder). A name row opens at the top of the list. Started from a folder's menu, it opens right under that folder instead (in Grid, in the cell right after it), indented, with **in {folder}** after the field and the folder highlighted; the list you are looking at stays where it is. The name row starts with "New folder" fully selected, or "untitled.txt" selected up to the extension. If the name is taken, it starts with a numbered name such as "New folder 2".
 
 - `Enter` creates it and `Esc` cancels. Nothing is written to disk when you cancel.
 - Clicking outside the row creates it when the name is valid and cancels when it is empty or invalid.

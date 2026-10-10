@@ -1168,14 +1168,16 @@ fn grid_view(
         metrics: grid_metrics(theme, font),
     };
     let parent = parent_nav_target(root).filter(|_| view.search_root().is_none());
-    let lead = usize::from(parent.is_some()) + usize::from(view.create.is_some());
-    let count = view.shown_count();
+    let lead = usize::from(parent.is_some());
+    let at = create::place::slot_index(view);
+    let count = view.shown_count() + usize::from(at.is_some());
     let cols = (((ui.available_width() + gap) / (CELL_W.value() + gap)).floor() as usize).max(1);
     let in_first = cols.saturating_sub(lead).min(count);
     let rest_lines = (count - in_first).div_ceil(cols);
-    let target = scroll_target(view);
+    let target = scroll_target(view).map(|t| create::place::virtual_index(at, t));
     ui.spacing_mut().item_spacing = egui::vec2(gap, 0.0);
     view.note_grid(ui, (CELL_W.value(), ctx.metrics.cell_h), gap, (cols, lead));
+    create::place::fit_layout(view, at, |l| l.lead += 1);
 
     ui.horizontal(|ui| {
         if let Some(p) = &parent {
@@ -1185,24 +1187,20 @@ fn grid_view(
                 *action = Some(ExplorerAction::Navigate(p.clone()));
             }
         }
-        create::name_row(ui, theme, view, create::Slot::Grid, action);
-        for (i, e) in view.shown_range(0..in_first).iter().enumerate() {
-            grid_entry(ui, &ctx, view, e, target == Some(i), action);
-        }
+        create::place::grid_run(ui, &ctx, view, at, 0..in_first, target, action);
     });
 
     let pitch = gap + ctx.metrics.cell_h;
     let target_line = target.and_then(|t| Some(t.checked_sub(in_first)? / cols));
     let span = open_span(ui, pitch, rest_lines, target_line);
-    let shown = view.shown_range(in_first + span.start * cols..in_first + span.end * cols);
-    for line in shown.chunks(cols) {
-        ui.add_space(gap);
-        ui.horizontal(|ui| {
-            for e in line {
-                grid_entry(ui, &ctx, view, e, false, action);
-            }
-        });
-    }
+    let lines = create::place::GridLines {
+        at,
+        in_first,
+        cols,
+        count,
+        gap,
+    };
+    create::place::grid_lines(ui, &ctx, view, lines, span.clone(), action);
     ui.add_space((rest_lines - span.end) as f32 * pitch);
 }
 
@@ -1340,12 +1338,20 @@ fn list_view(
             *action = Some(ExplorerAction::Navigate(p));
         }
     }
-    create::name_row(ui, theme, view, create::Slot::List, action);
     let row_h = theme.tree_row_height().value();
-    let count = view.shown_count();
+    let at = create::place::slot_index(view);
+    let count = view.shown_count() + usize::from(at.is_some());
     view.note_rows(ui, row_h);
-    let span = open_span(ui, row_h, count, scroll_target(view));
-    for e in &view.shown_range(span.clone()) {
+    let editor_h = theme.table_cell_height().value();
+    create::place::fit_layout(view, at, |l| l.origin.y += editor_h);
+    let target = scroll_target(view).map(|t| create::place::virtual_index(at, t));
+    let span = open_span(ui, row_h, count, target);
+    let (real, edit) = create::place::list_span(ui, theme, view, (at, row_h), &span, action);
+    let items = view.shown_range(real);
+    for (i, e) in items.iter().enumerate() {
+        if edit == Some(i) {
+            create::name_row(ui, theme, view, create::Slot::List, action);
+        }
         let (icon, glyph_color) = entry_style::entry_icon(theme, e);
         let selected = view.selected.contains(&e.path);
         let cut = cut_pending.contains(&e.path);
@@ -1378,6 +1384,9 @@ fn list_view(
             self::view::drag::note(ui, e, resp.rect);
             handle_entry_interaction(ui, view, e, (resp.clicked(), resp.double_clicked()), action);
         }
+    }
+    if edit == Some(items.len()) {
+        create::name_row(ui, theme, view, create::Slot::List, action);
     }
     ui.add_space((count - span.end) as f32 * row_h);
 }
@@ -1416,11 +1425,16 @@ fn detail_view(
     // 화면 밖으로 나간 편집 줄 자리를 그린 행에서 계산한다.
     let dotdot = parent.map(dotdot_entry);
     let placeholder = view.create.as_ref().map(|_| create::placeholder_row(root));
-    let lead: Vec<&DirEntryInfo> = dotdot.iter().chain(placeholder.iter()).collect();
-    let editor_row = placeholder.as_ref().map(|_| lead.len() - 1);
-    let scroll_row = scroll_target(view).map(|i| lead.len() + i);
-    let mut rows: Vec<(usize, &DirEntryInfo)> = Vec::with_capacity(lead.len() + view.shown_count());
-    rows.extend(lead.into_iter().chain(view.shown()).enumerate());
+    // 편집 줄 자리 행은 목록 맨 앞이나 대상 폴더 행 바로 다음에 끼운다.
+    let at = create::place::slot_index(view);
+    let lead = usize::from(dotdot.is_some());
+    let editor_row = at.map(|a| lead + a);
+    let scroll_row = scroll_target(view).map(|i| lead + create::place::virtual_index(at, i));
+    let mut list: Vec<&DirEntryInfo> = dotdot.iter().chain(view.shown()).collect();
+    if let (Some(row), Some(p)) = (editor_row, placeholder.as_ref()) {
+        list.insert(row, p);
+    }
+    let rows: Vec<(usize, &DirEntryInfo)> = list.into_iter().enumerate().collect();
     let editor_cell = std::cell::Cell::new(None);
     let drawn_name_cell = std::cell::Cell::new(None);
     let out = Table::new(columns)
@@ -1539,6 +1553,7 @@ fn detail_view(
         rows.len() - view.shown_count(),
         row_h,
     );
+    create::place::fit_layout(view, at, |_| {});
     // 편집 줄 자리가 화면 밖이라 그리지 않았으면 그린 행에서 자리를 계산한다. 입력은 화면 밖에서도
     // 그려야 포커스를 잃지 않는다. 행 높이는 표 기본값이다.
     let editor_cell = editor_cell.get().or_else(|| {
