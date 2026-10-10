@@ -145,6 +145,8 @@ pub(crate) struct App {
     pub(crate) stream_inbound_tx: std::sync::mpsc::Sender<tasty_ipc::stream_hub::StreamInbound>,
     /// Receiver drained by the main loop on `AppEvent::StreamReady`.
     pub(crate) stream_inbound_rx: std::sync::mpsc::Receiver<tasty_ipc::stream_hub::StreamInbound>,
+    /// attach holder 가 요청한 원격 explorer 파일 작업. 연결마다 하나씩 실행한다.
+    pub(crate) remote_file_jobs: file_jobs::remote::RemoteJobs,
     #[cfg(feature = "gui")]
     pub(crate) view: ViewRegistry,
     /// 모든 engine과 창·parked·임시 관계. 창을 모두 닫아도 engine과 PTY는 여기 남는다.
@@ -315,6 +317,7 @@ impl App {
             stream_hub: tasty_ipc::stream_hub::StreamHub::new(),
             stream_inbound_tx,
             stream_inbound_rx,
+            remote_file_jobs: Default::default(),
             view: ViewRegistry::new(proxy.clone()),
             engines: engine_registry::EngineRegistry::default(),
             boot: None,
@@ -376,6 +379,7 @@ impl App {
             stream_hub: tasty_ipc::stream_hub::StreamHub::new(),
             stream_inbound_tx,
             stream_inbound_rx,
+            remote_file_jobs: Default::default(),
             plugin_manager: None,
             lua_engine: crate::hooks::lua::init_engine(),
             lua_autofire: crate::hooks::autofire::AutofireGuard::new(),
@@ -520,7 +524,6 @@ mod preset_capture;
 
 #[cfg(feature = "gui")]
 pub(crate) mod explorer_files;
-#[cfg(feature = "gui")]
 pub(crate) mod file_jobs;
 #[cfg(feature = "gui")]
 mod port_scans;

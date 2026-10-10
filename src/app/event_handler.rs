@@ -100,7 +100,7 @@ impl ApplicationHandler<AppEvent> for App {
                 }
             }
             AppEvent::StreamReady => {
-                let outcome = self.stream_hub.pump_inbound(&self.stream_inbound_rx);
+                let outcome = self.pump_stream_inbound();
                 self.apply_stream_outcome(outcome);
             }
             #[cfg(all(windows, feature = "gui"))]

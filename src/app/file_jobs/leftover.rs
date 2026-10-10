@@ -17,7 +17,8 @@ use super::super::ops::remove_path;
 use super::{COPY_CHUNK, Failure, OpKind, Reason, Report, Shared};
 
 /// 경로가 가리키는 항목의 종류. 링크는 따라가지 않는다.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub(crate) enum EntryKind {
     File,
     Dir,
@@ -39,7 +40,7 @@ impl EntryKind {
 }
 
 /// 원본 파일을 지우려던 때의 모습. 다시 지울 때 달라졌으면 그 뒤 고친 원본으로 보고 남긴다.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 struct FileStamp {
     modified: Option<SystemTime>,
     len: u64,
@@ -148,7 +149,7 @@ fn stamp_apart(source: &Path, copy: &Path) -> io::Result<Option<EntryStamp>> {
 }
 
 /// 사본은 공개했지만 원본을 다 지우지 못한 이동 항목.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Leftover {
     /// 남은 원본의 경로.
     pub source: PathBuf,

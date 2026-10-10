@@ -21,7 +21,8 @@ const ANSWER_POLL: Duration = Duration::from_millis(100);
 /// 파일 복사 한 번에 읽는 크기. 이 단위마다 취소와 진행을 확인한다.
 const COPY_CHUNK: usize = 256 * 1024;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub(crate) enum OpKind {
     Copy,
     Move,
@@ -33,7 +34,8 @@ pub(crate) enum OpKind {
 }
 
 /// 이름 충돌에 대한 사용자의 답.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub(crate) enum Choice {
     KeepBoth,
     Skip,
@@ -50,7 +52,7 @@ pub(crate) struct Answer {
 }
 
 /// 충돌한 두 항목의 비교 정보.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct EntryFacts {
     pub is_dir: bool,
     /// 파일의 바이트 수. 폴더는 None.
@@ -76,7 +78,7 @@ impl EntryFacts {
 }
 
 /// 이름 충돌 질문. 작업은 답을 받을 때까지 멈춘다.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Ask {
     pub name: String,
     pub folder: PathBuf,
@@ -97,7 +99,7 @@ enum Asker {
 }
 
 /// 진행 표시가 읽는 값.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Snapshot {
     pub items_done: usize,
     pub items_total: usize,
@@ -265,7 +267,8 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 }
 
 /// 항목이 실패한 이유. 화면 문구는 App 이 번역한다.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub(crate) enum Reason {
     /// OS 오류 문구(번역하지 않는다).
     Os(String),
@@ -309,7 +312,7 @@ impl Reason {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Failure {
     /// 실패한 원래 항목의 경로.
     pub path: PathBuf,
@@ -317,7 +320,8 @@ pub(crate) struct Failure {
 }
 
 /// 끝난 항목을 되돌리는 방법.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub(crate) enum UndoStep {
     /// 새로 만든 사본과 공개 직후의 수정 시각. 되돌리면 휴지통으로 보내되,
     /// 수정 시각이 달라졌으면 남긴다. 폴더는 자기 수정 시각만 보므로 안쪽 파일을 고친 것은 모른다.
@@ -337,7 +341,7 @@ pub(crate) enum UndoStep {
 }
 
 /// 작업 결과.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Report {
     pub kind: OpKind,
     /// 복사·이동의 목적지 폴더.
@@ -392,6 +396,7 @@ impl Report {
     }
     /// 같은 작업으로 다시 보낼 원래 경로: 건너뛴 항목, 원본 미삭제를 뺀 실패 항목, 취소로 하지 않은 항목.
     /// 원본 미삭제 항목은 [`Report::leftovers`] 로 원본 삭제만 다시 한다.
+    #[cfg(any(feature = "gui", test))]
     pub(crate) fn retryable(&self) -> Vec<PathBuf> {
         self.failed
             .iter()

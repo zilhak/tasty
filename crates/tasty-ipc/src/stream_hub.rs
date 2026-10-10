@@ -100,6 +100,8 @@ pub struct PumpOutcome {
     pub git_query_requests: Vec<(StreamClientId, GitQueryRequestMsg)>,
     /// 원격 markdown 원문 조회. 별도의 event 태그를 가진 Control JSON이다.
     pub markdown_content_requests: Vec<(StreamClientId, MarkdownContentRequestMsg)>,
+    /// 원격 explorer 파일 작업의 요청·답·취소. 별도의 event 태그를 가진 Control JSON이다.
+    pub explorer_ops: Vec<(StreamClientId, crate::explorer_op::ExplorerOpMsg)>,
     /// bulk begin·chunk·commit을 도착 순서대로 보관한다. 태그별로 나누면 같은 배치의
     /// chunk를 begin보다 먼저 처리할 수 있다. 결속 workspace는 연결의 bulk_workspace에서 찾는다.
     pub bulk_events: Vec<(StreamClientId, BulkEvent)>,
@@ -727,6 +729,12 @@ impl StreamHub {
                                         )
                                     {
                                         out.markdown_content_requests.push((client_id, msg));
+                                    } else if let Ok(msg) =
+                                        serde_json::from_slice::<crate::explorer_op::ExplorerOpMsg>(
+                                            &frame.payload,
+                                        )
+                                    {
+                                        out.explorer_ops.push((client_id, msg));
                                     }
                                 }
                             }
@@ -1502,6 +1510,35 @@ mod tests {
         assert!(out.structural_ops.is_empty());
         assert!(out.resize_requests.is_empty());
         assert!(out.input_frames.is_empty());
+    }
+
+    #[test]
+    fn pump_inbound_classifies_explorer_op_messages() {
+        use crate::explorer_op::ExplorerOpMsg;
+        let hub = StreamHub::new();
+        let (tx, inbound_rx) = mpsc::channel();
+        for msg in [
+            serde_json::json!({"event": "explorer_op_request", "op_id": 1, "op": {"kind": "trash", "paths": []}}),
+            serde_json::json!({"event": "explorer_op_cancel", "op_id": 1}),
+        ] {
+            tx.send(StreamInbound::Frame {
+                client_id: 4,
+                frame: frame(StreamTag::Control, msg.to_string().as_bytes()),
+            })
+            .unwrap();
+        }
+        let out = hub.pump_inbound(&inbound_rx);
+        assert_eq!(out.explorer_ops.len(), 2);
+        assert!(matches!(
+            out.explorer_ops[0],
+            (4, ExplorerOpMsg::ExplorerOpRequest { op_id: 1, .. })
+        ));
+        assert_eq!(
+            out.explorer_ops[1],
+            (4, ExplorerOpMsg::ExplorerOpCancel { op_id: 1 })
+        );
+        assert!(out.list_dir_requests.is_empty());
+        assert!(out.markdown_content_requests.is_empty());
     }
 
     #[test]

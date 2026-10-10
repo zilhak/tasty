@@ -39,6 +39,7 @@ fn apply(
     apply_mesh_requests(app, engine, outcome);
     apply_capture_uploads(app, engine, outcome);
     apply_file_requests(app, engine, outcome);
+    apply_explorer_ops(app, engine, outcome);
     apply_bulk_events(app, engine, outcome);
     apply_disconnects(engine, outcome);
     // 직접 구조 op 외의 변경도 점유 client에 전달한다.
@@ -377,6 +378,18 @@ fn apply_bulk_events(app: &mut App, engine: &mut EngineMut<'_>, outcome: &mut Pu
                 );
             }
         }
+    }
+}
+
+/// 원격 explorer 파일 작업. 점유 확인은 디렉터리 조회와 같다. 끊긴 연결의 작업은 취소한다.
+fn apply_explorer_ops(app: &App, engine: &EngineMut<'_>, outcome: &mut PumpOutcome) {
+    for (client_id, msg) in std::mem::take(&mut outcome.explorer_ops) {
+        let holder = engine.live.occupancy.client_holds_workspace(client_id);
+        app.remote_file_jobs
+            .handle(&app.stream_hub, client_id, holder, msg);
+    }
+    for &client_id in &outcome.disconnected {
+        app.remote_file_jobs.forget_client(client_id);
     }
 }
 

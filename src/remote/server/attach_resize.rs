@@ -259,7 +259,10 @@ mod tests {
         );
         assert_eq!(
             descriptor[tasty_ipc::stream::DESCRIPTOR_CAPABILITIES],
-            serde_json::json!([tasty_ipc::stream::RESIZE_ACK_CAPABILITY])
+            serde_json::json!([
+                tasty_ipc::stream::RESIZE_ACK_CAPABILITY,
+                tasty_ipc::explorer_op::CAPABILITY
+            ])
         );
     }
 }

@@ -630,6 +630,30 @@ client 가 mirror 를 걷어내면 원격에 `Detach` 를 보내 원격 점유(h
   가 dirty 상태 변경시에만 나가 비동기 push 만으로는 다음 프레임 렌더가 보장되지 않으므로,
   `MainViewState.plugin_mesh_popup_pending_repaint: HashSet<u64>` 로 강제 repaint 를 예약한다
   (`popup_render.rs` 의 dirty OR-체인에 합류).
+- **`explorer_op_request`/`explorer_op_answer`/`explorer_op_cancel` → `explorer_op_progress`/`explorer_op_result`**
+  (ADR-0022) — 원격 explorer 의 파일 작업(새 폴더·새 파일·이름 변경·휴지통·복사·이동·되돌리기·남은
+  원본 지우기). 조회와 달리 서버 파일을 바꾸므로 서버가 descriptor 의 `stream_capabilities` 에
+  `ipc.stream.explorer-write`(버전 1)를 알리고, client 는 그 목록이 있는 연결에만 보낸다. 구 서버는
+  이 event 를 조용히 버려 응답이 오지 않기 때문이다.
+  - **실행**: 서버는 로컬 explorer 와 같은 작업 엔진(`src/app/file_jobs/`)을 작업 스레드에서 돌린다
+    (`file_jobs::remote::RemoteJobs`). gui·headless 서버 모두 같다. 연결마다 한 번에 하나만 실행하고,
+    실행 중에 온 요청은 `busy` 로 거절한다. client 가 결과를 받은 뒤 다음 요청을 보낸다.
+  - **요청**: `{"event":"explorer_op_request","op_id","op"}`. `op` 는 `{"kind":"paste","paths","destination","cut"}`·
+    `trash{paths}`·`rename{path,name}`·`create{dir,name,folder}`·`undo{steps}`·`remove_leftovers{dest,leftovers}`
+    이다(`file_jobs::remote::RemoteOp`). 경로는 서버 경로다.
+  - **진행·질문**: 엔진이 진행 표시를 깨울 때마다(최소 100ms 간격, 질문을 띄우고 거둘 때는 바로)
+    `{"event":"explorer_op_progress","op_id","progress","ask"}` 를 보낸다. `ask` 가 null 이 아니면 이름
+    충돌의 답을 기다리는 중이다. client 는 `{"event":"explorer_op_answer","op_id","choice","apply_all"}`
+    (`choice`: `keep_both`·`skip`·`replace`·`cancel_rest`)로 답하고 `explorer_op_cancel` 로 남은 항목을 멈춘다.
+  - **결과**: `{"event":"explorer_op_result","op_id","result"}`. `result` 는 항목별 결과
+    `{"report":{"report","truncated"}}`, 이름 변경·새 항목의 `{"simple":{"error"}}`, 시작하지 않은
+    `{"refused":{"reason"}}`(`not_holder`·`busy`·`invalid`·`unavailable`) 중 하나다. 항목별 결과가 700 KiB 를
+    넘으면 되돌리기 단계와 남은 원본을 빼고 목록을 반씩 줄여 `truncated: true` 로 보낸다.
+  - **인가**: 디렉토리 조회와 같이 `client_holds_workspace(client_id)` 하나다. 경로를 점유 workspace 안으로
+    제한하지 않는다. SSH 로 그 호스트에 셸을 쓸 수 있는 사용자가 이미 할 수 있는 일이다. 서버 사용자의 파일
+    권한이 그대로 적용되고 권한 거부는 항목별 실패가 된다.
+  - **끊김**: 연결이 끊기면 서버는 그 연결의 작업을 취소한다. 엔진의 취소 규칙대로 지금 항목에서 멈추고 준비
+    중 사본은 지운다. 답을 기다리던 작업도 멈춘다. 서버가 내려갈 때는 실행 중인 작업을 취소하고 2초까지 기다린다.
 - **조회할 cwd 선택**: 두 API는 경로를 얻는 방식이 다르다.
   `list_dir_request`는 클라이언트가 보낸 `dir` 문자열을 그대로 사용한다.
   `git_query_request`는 `worktree_path`가 없으면 서버가 `surface_id`로 해당 PTY를 찾아
