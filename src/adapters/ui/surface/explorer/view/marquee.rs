@@ -10,10 +10,8 @@ use tasty_type_appearance::theme::Theme;
 use super::ExplorerView;
 use super::cursor::Drawn;
 
-/// 가장자리 띠 가장 바깥에서의 자동 스크롤 속도(논리 px/초). 띠 안쪽 경계에서 0 이고 가장자리로 갈수록
-/// 선형으로 빨라진다.
-// TODO(design-request): 디자인 회신은 속도를 정하지 않았다. 값을 받으면 토큰 접근자로 바꾼다.
-const AUTOSCROLL_MAX_SPEED: f32 = 800.0;
+/// 목록 끝과 그 밖에서의 자동 스크롤 속도(보기의 줄/초). 디자인이 토큰 없는 규칙 상수로 정했다.
+const AUTOSCROLL_SPEED_ROWS_PER_SEC: f32 = 20.0;
 
 #[derive(Default)]
 pub(crate) struct MarqueeState {
@@ -37,30 +35,35 @@ impl MarqueeState {
         self.press.as_ref().is_some_and(|p| p.active)
     }
 
-    /// 목록 ScrollArea 를 그리기 전에 부른다. 띠 안에서 끌고 있으면 휠 입력처럼 스크롤 양을 넣는다.
+    /// 목록 ScrollArea 를 그리기 전에 부른다. 띠 안이나 목록 밖에서 끌고 있으면 스크롤 양을 넣는다.
+    /// 휠 입력과 달리 포인터가 목록 밖에 있어도 다음에 닫히는 ScrollArea(목록)가 받는다.
     pub(crate) fn feed_scroll(&mut self, ui: &egui::Ui) {
         let dy = std::mem::take(&mut self.scroll);
         if dy != 0.0 && self.active() {
-            // egui 는 휠 아래 방향을 음수로 받는다.
-            ui.ctx().input_mut(|i| i.smooth_scroll_delta.y -= dy);
+            // egui 는 내용이 아래로 움직이는 방향을 양수로 받는다.
+            ui.scroll_with_delta_animation(
+                egui::vec2(0.0, -dy),
+                egui::style::ScrollAnimation::none(),
+            );
         }
     }
 }
 
-/// 띠 안 깊이에 비례한 이번 프레임 스크롤 양. 위 띠면 음수, 아래 띠면 양수, 그 밖이면 0 이다.
-/// 목록 밖도 0 이다. egui ScrollArea 는 포인터가 자기 안에 있을 때만 스크롤 입력을 받는다.
-pub(crate) fn autoscroll(list: egui::Rangef, y: f32, zone: f32, dt: f32) -> f32 {
-    if zone <= 0.0 || list.span() <= zone * 2.0 || !list.contains(y) {
+/// 이번 프레임 스크롤 양(논리 px). 위 띠면 음수, 아래 띠면 양수, 띠 사이면 0 이다.
+/// 속도는 `20 줄/초 × t²` 이고 t 는 띠 안쪽 경계에서 0, 목록 끝에서 1 이다. 목록 밖에서는 t 를 1 로
+/// 둔다. 줄은 보기의 한 줄(Detail·List 행, Grid 칸 줄)이라 `row` 는 줄 간격이다.
+pub(crate) fn autoscroll(list: egui::Rangef, y: f32, zone: f32, row: f32, dt: f32) -> f32 {
+    if zone <= 0.0 || list.span() <= zone * 2.0 {
         return 0.0;
     }
     let depth = if y < list.min + zone {
-        -(list.min + zone - y) / zone
+        -((list.min + zone - y) / zone).min(1.0)
     } else if y > list.max - zone {
-        (y - (list.max - zone)) / zone
+        ((y - (list.max - zone)) / zone).min(1.0)
     } else {
         0.0
     };
-    depth * AUTOSCROLL_MAX_SPEED * dt
+    depth.signum() * depth * depth * AUTOSCROLL_SPEED_ROWS_PER_SEC * row * dt
 }
 
 /// 본문을 그린 뒤 한 번 부른다. `drawn` 은 이번 프레임에 그린 항목이다.
@@ -127,7 +130,7 @@ pub(crate) fn frame(ui: &egui::Ui, theme: &Theme, view: &mut ExplorerView, drawn
     }
     view.marquee.press = Some(press);
     let zone = theme.explorer_autoscroll_zone().value();
-    view.marquee.scroll = autoscroll(list.y_range(), pos.y, zone, dt);
+    view.marquee.scroll = autoscroll(list.y_range(), pos.y, zone, layout.step.y, dt);
     ctx.request_repaint();
     paint(ui, theme, area.translate(layout.origin.to_vec2()), list);
 }
@@ -155,20 +158,26 @@ mod tests {
     use super::*;
 
     #[test]
-    fn autoscroll_runs_only_inside_the_edge_band_and_grows_toward_the_edge() {
+    fn autoscroll_speeds_up_by_the_square_and_keeps_full_speed_past_the_edge() {
         let list = egui::Rangef::new(100.0, 500.0);
-        let dt = 0.1;
-        assert_eq!(autoscroll(list, 300.0, 24.0, dt), 0.0);
-        assert_eq!(autoscroll(list, 124.0, 24.0, dt), 0.0);
-        let half = autoscroll(list, 112.0, 24.0, dt);
-        let edge = autoscroll(list, 100.0, 24.0, dt);
-        assert!(half < 0.0 && edge < half, "{half} {edge}");
-        assert_eq!(edge, -AUTOSCROLL_MAX_SPEED * dt);
-        assert!(autoscroll(list, 490.0, 24.0, dt) > 0.0);
-        assert_eq!(autoscroll(list, 500.0, 24.0, dt), AUTOSCROLL_MAX_SPEED * dt);
-        // 목록 밖에서는 스크롤하지 않는다.
-        assert_eq!(autoscroll(list, 900.0, 24.0, dt), 0.0);
+        let (zone, row, dt) = (24.0, 22.0, 0.1);
+        let full = AUTOSCROLL_SPEED_ROWS_PER_SEC * row * dt;
+        assert_eq!(autoscroll(list, 300.0, zone, row, dt), 0.0);
+        assert_eq!(autoscroll(list, 124.0, zone, row, dt), 0.0);
+        // 띠 가운데(t = 0.5)는 최고 속도의 1/4 이다.
+        assert!((autoscroll(list, 112.0, zone, row, dt) + full / 4.0).abs() < 1e-4);
+        assert!((autoscroll(list, 488.0, zone, row, dt) - full / 4.0).abs() < 1e-4);
+        assert_eq!(autoscroll(list, 100.0, zone, row, dt), -full);
+        assert_eq!(autoscroll(list, 500.0, zone, row, dt), full);
+        // 목록 밖에서는 거리와 관계없이 최고 속도를 유지한다.
+        assert_eq!(autoscroll(list, 40.0, zone, row, dt), -full);
+        assert_eq!(autoscroll(list, 900.0, zone, row, dt), full);
+        // 줄 단위라 줄이 높은 보기(Grid)는 같은 시간에 같은 수의 줄을 지난다.
+        assert_eq!(autoscroll(list, 500.0, zone, 2.0 * row, dt), 2.0 * full);
         // 띠 둘이 겹칠 만큼 낮은 목록은 스크롤하지 않는다.
-        assert_eq!(autoscroll(egui::Rangef::new(0.0, 40.0), 1.0, 24.0, dt), 0.0);
+        assert_eq!(
+            autoscroll(egui::Rangef::new(0.0, 40.0), 1.0, zone, row, dt),
+            0.0
+        );
     }
 }

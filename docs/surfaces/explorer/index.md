@@ -400,7 +400,8 @@ Grid 셀은 모두 `explorer_grid_thumb_size`(40) 슬롯을 잡아 썸네일 유
 - 사각형에 걸친 항목을 고른다. Ctrl·Cmd·Shift 를 누르고 시작하면 그때의 선택에 더하고, 아니면 새로 고른다. 기준 항목은 걸친 항목의 첫 항목이다.
 - 시작점은 목록 좌표로 둔다. 스크롤해도 처음 누른 자리에 남고, 화면 밖 항목도 칸 배치(`view/list_layout.rs` 의 `ListLayout`: 첫 칸 자리·칸 간격·칸 크기·열 수·첫 줄 앞 `..`·이름 입력 칸 수)로 계산해 고른다. 칸 사이 간격에만 걸치면 고르지 않는다. 배치는 세 보기가 그릴 때 기록한다(Grid `note_grid`, List `note_rows`, Detail 은 처음 그린 이름 칸으로 `note_detail`).
 - 사각형은 `explorer_marquee_bg`(accent-primary 12%) 채움과 `explorer_marquee_border`(36%) 1px 테두리, 모서리 없음으로 목록 영역 안에만 그린다([수기 접근자](../../design/systems/design-token-mapping.md#explorer-영역-선택-사각형)).
-- 포인터가 목록 위·아래 끝 `explorer_autoscroll_zone`(24px, 표시 없음) 띠 안에 있으면 그 쪽으로 스크롤하고, 끝에 가까울수록 빠르다(띠 안쪽 경계에서 0, 목록 끝에서 800 px/s. 디자인이 속도를 정하지 않아 임시 값이다). 목록 밖으로 나가면 멈춘다. egui ScrollArea 가 포인터가 안에 있을 때만 스크롤 입력을 받기 때문이다. 스크롤 양은 다음 프레임 목록 ScrollArea 앞에서 휠 입력처럼 넣는다(`preview::split`).
+- 포인터가 목록 위·아래 끝 `explorer_autoscroll_zone`(24px, 표시 없음) 띠 안에 있으면 그 쪽으로 스크롤한다. 속도는 `20 줄/초 × t²` 이다. t 는 띠 안쪽 경계에서 0, 목록 끝에서 1 이고, 줄은 지금 보기의 한 줄(Detail·List 행, Grid 칸 줄)이라 세 보기가 같은 시간에 같은 수의 줄을 지난다. 포인터가 목록 밖으로 나가면 거리와 관계없이 20 줄/초를 유지한다. 규칙 상수이며 토큰이 없다.
+- 스크롤 양은 다음 프레임 목록 ScrollArea 앞에서 `Ui::scroll_with_delta_animation`(애니메이션 없음)으로 넣는다(`preview::split`). 휠 입력과 달리 포인터가 목록 밖에 있어도 목록 ScrollArea 가 받는다.
 - 영역 선택 중에는 항목 드래그(파일 끌어 놓기)를 시작하지 않는다. 다른 위젯이 먼저 끌기를 가져갔거나 popup·modal 이 떠 있으면 시작하지 않는다.
 
 ### 폰트
