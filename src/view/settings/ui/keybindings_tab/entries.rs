@@ -135,9 +135,9 @@ pub(super) fn draw_keybinding_entries(
                     } else {
                         add_button_width
                     };
-                    (KbRecordSlot::Recording(&press_key), width)
+                    (KbRecordSlot::Recording(press_key), width)
                 } else if bindings_len == 0 {
-                    (KbRecordSlot::Empty(&none), button_width)
+                    (KbRecordSlot::Empty(none), button_width)
                 } else {
                     (KbRecordSlot::Add, add_button_width)
                 };
