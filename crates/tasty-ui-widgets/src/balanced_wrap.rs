@@ -9,7 +9,7 @@ const BISECT_STEPS: usize = 12;
 
 /// `text` 를 `max_w` 안에서 가운데 정렬로 배치하되, 여러 줄이면 줄 길이가 고르게 되는 폭을 쓴다.
 /// 한 줄에 들어가면 그대로 둔다. 같은 입력은 같은 폭들로 배치하므로 egui 배치 캐시를 그대로 탄다.
-pub fn balanced_galley(
+pub(crate) fn balanced_galley(
     ctx: &egui::Context,
     text: &str,
     font: egui::FontId,
@@ -50,8 +50,14 @@ mod tests {
         ctx
     }
 
+    /// 상태 화면 보조 줄과 같은 caption 크기.
     fn font() -> egui::FontId {
-        egui::FontId::proportional(11.0)
+        let theme = tasty_type_appearance::theme::Theme::with_colors_and_zoom(
+            tasty_themes::mocha_fallback_colors(),
+            false,
+            1.0,
+        );
+        egui::FontId::proportional(theme.font_size_caption.value())
     }
 
     fn row_texts(g: &egui::Galley) -> Vec<String> {
