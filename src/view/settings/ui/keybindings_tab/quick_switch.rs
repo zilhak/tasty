@@ -11,9 +11,7 @@ use crate::i18n::{t, t_fmt};
 use crate::settings::{KeybindingSettings, SwitchStep};
 
 use super::{BareTarget, FieldKind, KeyCapture, PendingBinding, RecordingSlot, RowLayout};
-use tasty_ui_widgets::{
-    KbRecordSlot, kb_record_slot, settings_label_cell, settings_label_gap, vspace,
-};
+use tasty_ui_widgets::{KbRecordSlot, StackRow, kb_record_slot, settings_stack_row, vspace};
 
 /// 설정의 SwitchAxis를 화면의 녹화 대상과 연결한다.
 pub(super) use tasty_settings::SwitchAxis as QuickSwitchKind;
@@ -232,17 +230,17 @@ pub(super) fn draw_quick_switch_section(
     let old_modifier = kind.modifier(keybindings).to_string();
 
     // 수식키 행도 아래 슬롯 행과 같은 라벨 열을 쓴다.
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 0.0;
-        settings_label_cell(
-            ui,
-            &th,
-            label_col,
-            th.kb_record_height(),
-            t(kind.modifier_label_key()),
-            None,
-        );
-        settings_label_gap(ui, &th);
+    let frame = StackRow {
+        id: ui
+            .id()
+            .with(("kb_switch_modifier", kind.modifier_field_id())),
+        label_col,
+        row_h: th.kb_record_height(),
+        label: t(kind.modifier_label_key()),
+        hint: None,
+        align_top: false,
+    };
+    settings_stack_row(ui, &th, frame, |ui| {
         let modifier = match kind {
             QuickSwitchKind::Tab => &mut keybindings.tab_switch_modifier,
             QuickSwitchKind::Workspace => &mut keybindings.workspace_switch_modifier,
@@ -390,12 +388,17 @@ fn slot_row(
         Some(slot) if slot.field_kind == field_kind
     );
 
-    ui.horizontal_top(|ui| {
-        // 서브탭 공유 폭의 라벨 열(entries.rs 와 같은 칸).
-        let label = format!("{}:", bare_display_label(target));
-        settings_label_cell(ui, &th, label_col, th.kb_record_height(), &label, None);
-        settings_label_gap(ui, &th);
-
+    // 서브탭 공유 폭의 라벨 열(entries.rs 와 같은 칸). 버튼이 라벨 옆에 들어가지 않으면 쌓는다.
+    let label = format!("{}:", bare_display_label(target));
+    let frame = StackRow {
+        id: ui.id().with(("kb_switch_slot", &label)),
+        label_col,
+        row_h: th.kb_record_height(),
+        label: &label,
+        hint: None,
+        align_top: true,
+    };
+    settings_stack_row(ui, &th, frame, |ui| {
         let combo = bare_combo(keybindings, target);
         let display = if is_recording {
             let hint_key = if is_individual {

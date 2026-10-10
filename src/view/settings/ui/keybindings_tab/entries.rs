@@ -1,6 +1,6 @@
 use crate::i18n::t;
 use crate::settings::KeybindingSettings;
-use tasty_ui_widgets::{KbRecordSlot, kb_record_slot, settings_label_cell, settings_label_gap};
+use tasty_ui_widgets::{KbRecordSlot, StackRow, kb_record_slot, settings_stack_row};
 
 use super::{FieldKind, KeyCapture, PendingBinding, RecordingSlot, RowLayout};
 
@@ -68,18 +68,17 @@ pub(super) fn draw_keybinding_entries(
     let in_row_gap = th.spacing_xs;
 
     for (field_id, label_key, desc_key) in entries.iter() {
-        ui.horizontal_top(|ui| {
-            // 서브탭 공유 폭의 라벨 열. 라벨이 짧아도 열 폭을 그대로 차지하고 도움말 아이콘은 열 안에 둔다.
-            settings_label_cell(
-                ui,
-                &th,
-                label_col,
-                button_height,
-                t(label_key),
-                desc_key.map(t),
-            );
-            settings_label_gap(ui, &th);
-
+        // 서브탭 공유 폭의 라벨 열. 라벨이 짧아도 열 폭을 그대로 차지하고 도움말 아이콘은 열 안에 둔다.
+        // 첫 버튼도 라벨 옆에 들어가지 않으면 행을 쌓는다.
+        let frame = StackRow {
+            id: ui.id().with(("kb_entry", *field_id)),
+            label_col,
+            row_h: button_height,
+            label: t(label_key),
+            hint: desc_key.map(t),
+            align_top: true,
+        };
+        settings_stack_row(ui, &th, frame, |ui| {
             // 버튼 영역: 남은 폭을 모두 사용. 폭을 초과하면 자동 줄바꿈.
             ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing = egui::vec2(in_row_gap.value(), in_row_gap.value());

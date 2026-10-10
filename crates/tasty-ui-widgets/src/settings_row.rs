@@ -2,7 +2,8 @@
 //!
 //! 라벨 열은 서브탭에서 가장 긴 라벨에 맞추고 `settings-label-width` … `settings-label-max-width`
 //! 로 clamp 한다. 열보다 긴 라벨은 열 안에서 줄을 바꾼다. 열 폭은 egui 가 자식 영역을 내용 폭으로
-//! 줄이지 않도록 정확한 크기로 할당한다.
+//! 줄이지 않도록 정확한 크기로 할당한다. 컨트롤이 라벨 옆에 들어가지 않는 행은 쌓는다
+//! ([`crate::settings_row_stack`]).
 
 use std::sync::Arc;
 
@@ -11,6 +12,7 @@ use tasty_type_geometry::length::LogicalPx;
 
 use crate::help_hint::HelpHint;
 use crate::icon_button::IconPainter;
+use crate::settings_row_stack::{StackRow, settings_stack_row};
 use crate::tooltip::TooltipPlacement;
 use crate::warning_callout::warning_callout;
 
@@ -75,6 +77,7 @@ impl<'a> SettingsRow<'a> {
     }
 
     /// 행을 그린다. caption·callout 이 있으면 행과 `settings-row-caption-gap` 만큼 띄운다.
+    /// 쌓임 상태는 부모 Ui id 와 라벨로 기억한다.
     pub fn show(
         self,
         ui: &mut egui::Ui,
@@ -84,15 +87,15 @@ impl<'a> SettingsRow<'a> {
     ) -> egui::Response {
         ui.scope(|ui| {
             ui.spacing_mut().item_spacing.y = theme.settings_row_caption_gap().value();
-            let row_h = theme.settings_row_min_height();
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 0.0;
-                let label_h = label_cell_height(ui, theme, label_col, self.label, self.hint);
-                ui.set_min_height(row_h.max(label_h).value());
-                settings_label_cell(ui, theme, label_col, row_h, self.label, self.hint);
-                ui.add_space(theme.settings_label_gap().value());
-                control(ui);
-            });
+            let row = StackRow {
+                id: ui.id().with(("settings_row", self.label)),
+                label_col,
+                row_h: theme.settings_row_min_height(),
+                label: self.label,
+                hint: self.hint,
+                align_top: false,
+            };
+            settings_stack_row(ui, theme, row, control);
             match self.below {
                 Below::None => {}
                 Below::Caption(text) => settings_row_caption(ui, theme, text),
@@ -199,7 +202,8 @@ fn hint_width(theme: &Theme, has_hint: bool) -> LogicalPx {
     }
 }
 
-fn label_cell_height(
+/// 라벨 칸이 `label_col` 폭에서 줄을 바꿨을 때의 글자 높이(도움말 아이콘 자리 포함).
+pub(crate) fn label_cell_height(
     ui: &egui::Ui,
     theme: &Theme,
     label_col: LogicalPx,

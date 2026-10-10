@@ -162,4 +162,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         theme,
         "Copy is the app's shipped text (settings.general.*). Every settings subtab draws this grid with tasty_ui_widgets::SettingsRow: the column is measured per subtab and locale.",
     );
+    // 좁은 폭에서 행이 쌓이는 모습은 같은 행 격자의 연장이라 이 페이지 끝에 둔다.
+    super::settings_narrow_rows::draw(ui, theme);
 }

@@ -33,6 +33,14 @@
 
 L2 섹션은 좌측에 목록으로 뜨고 **필터 텍스트로 검색** 가능 (L1 전환 시 클리어).
 
+### 좁은 창의 행 쌓기
+
+설정 행은 라벨 열(서브탭 최장 라벨을 150 … 240 으로 clamp) · `settings-label-gap` · 컨트롤로 나란히 놓인다. 지원 최소 창(1100 × 700)보다 좁아 컨트롤이 라벨 옆 남은 폭에 들어가지 않으면 그 행만 쌓는다 — 라벨은 행 전체 폭에서 줄을 바꾸고, 컨트롤은 그 아래 행 시작 x 에 `settings-row-stack-gap`(4) 띄워 둔다. 쌓인 행은 컨트롤이 `settings-row-stack-hysteresis`(16) 만큼 여유를 두고 들어갈 때만 다시 나란히 둔다. 한 서브탭 안에서 나란한 행과 쌓인 행이 섞일 수 있다.
+
+- 판단은 행마다 지난 프레임에 잰 컨트롤 자연 폭으로 하고, 판단이 바뀐 프레임은 다시 그린다(`tasty_ui_widgets::settings_stack_row`).
+- 컨트롤 안의 기존 줄바꿈(여러 단축키 버튼, 숫자 칸의 단위)은 그대로다. 줄을 바꾸는 컨트롤은 첫 조각이 남은 폭보다 넓을 때만 쌓인다.
+- 적용 범위는 `SettingsRow::show` 로 그리는 모든 행과 단축키 서브탭의 엔트리 · 빠른 전환(수식키·슬롯) · 스크립트 행이다. 글꼴 override 격자처럼 컨트롤 줄을 직접 짜는 행(`SettingsRow::show_label`)은 쌓지 않는다.
+
 ### 플러그인 기여 설정 (generic 컨트롤)
 
 플러그인이 `[[contributes.settings_pages]]` 로 기여한 페이지를 host 가 `draw_plugin_settings_page` 로 렌더한다. manifest item `kind` 별로 generic 컨트롤을 그린다 — `toggle` → Switch, `select` → Select(드롭다운), `number` → text Input(mono, + `suffix_key` 단위), `font_override` → surface 폰트 섹션. `toggle`/`select`/`number` 값은 `plugin_settings.<plugin_id>.<storage_key>` 슬롯(`PluginSettingValue` = Bool/Number/Text)에 저장·영속되며(`font_override` 의 전역 `plugin_font_overrides` 와 별개 네임스페이스), 변경 즉시 write + persist 된다. 첫 소비자는 `com.tasty.html` — Appearance 에 HTML viewer 설정(zoom / color scheme / allow remote content / sandbox scripts)을 이 방식으로 노출한다.
@@ -97,6 +105,7 @@ L2 섹션은 좌측에 목록으로 뜨고 **필터 텍스트로 검색** 가능
 - Given 설정 창이 열려 있다 When agent IPC 가 입력 규칙·원격 전송 폴더·웹훅 외부 허용을 바꾼 뒤 창에서 다른 항목을 바꾸고 Save 한다 Then IPC 가 바꾼 값과 창의 변경이 모두 남는다(`merge.rs` 의 `fields_the_window_did_not_change_keep_their_current_values`, `input_rules_merge_per_app`).
 - Given 창과 다른 경로가 같은 필드를 다른 값으로 바꿨다 When Save 한다 Then 창의 값이 남고 그 경로가 warn 로그에 남는다(`a_field_changed_on_both_sides_takes_the_windows_value_and_is_reported`).
 - Keybindings 에서 키 조합 녹화 시 충돌이 있으면 확인 팝업이 뜬다.
+- Given 설정 창이 좁아 한 행의 컨트롤이 라벨 옆에 들어가지 않는다 When 그 서브탭을 연다 Then 그 행만 라벨 아래 행 시작 x 로 컨트롤이 내려가고, 창을 넓혀 16 이상 여유가 생기면 다시 나란해진다(`crates/tasty-ui-widgets/tests/settings_row_stack.rs`, `entries_tests::a_narrow_subtab_stacks_rows_and_starts_buttons_at_the_row_start`).
 - 플러그인이 설정 페이지를 contribute 하면 Plugins 탭/Appearance sub-tab 에 나타난다.
 
 > 모달 창이라 시각 검증은 스크린샷, draft/save·plugin page 등록은 시나리오로 검증.

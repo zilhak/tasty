@@ -70,6 +70,7 @@ mod select;
 mod select_combo;
 mod sequence_editor;
 mod settings_row;
+mod settings_row_stack;
 mod shell_setup;
 mod spacing;
 mod spinner;
@@ -253,6 +254,7 @@ pub use settings_row::{
     SettingsRow, settings_label_cell, settings_label_column, settings_label_gap,
     settings_row_caption,
 };
+pub use settings_row_stack::{StackRow, row_should_stack, settings_stack_row};
 pub use shell_setup::{
     SHELL_SETUP_FORM_WIDTH, ShellSetupCheck, ShellSetupOutput, ShellSetupView, shell_setup_screen,
 };

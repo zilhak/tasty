@@ -9,8 +9,8 @@ use crate::settings::{KeybindingSettings, Settings};
 
 use super::{FieldKind, KeyCapture, RecordingSlot};
 use tasty_ui_widgets::{
-    KbRecordSlot, SettingsRow, kb_record_slot, settings_label_cell, settings_label_column,
-    settings_label_gap, vspace,
+    KbRecordSlot, SettingsRow, StackRow, kb_record_slot, settings_label_column, settings_stack_row,
+    vspace,
 };
 
 /// `RecordingSlot.field_id` 가 이 접두사면 스크립트 바인딩 슬롯.
@@ -94,11 +94,17 @@ pub(super) fn draw_script_bindings(
             .unwrap_or("")
             .to_string();
 
-        ui.horizontal_top(|ui| {
-            // 서브탭 공유 폭의 라벨 열. 긴 사용자 스크립트 이름은 열 안에서 줄을 바꾼다.
-            settings_label_cell(ui, &th, label_col, th.kb_record_height(), name, None);
-            settings_label_gap(ui, &th);
-
+        // 서브탭 공유 폭의 라벨 열. 긴 사용자 스크립트 이름은 열 안에서 줄을 바꾸고, 버튼이 라벨 옆에
+        // 들어가지 않으면 행을 쌓는다.
+        let frame = StackRow {
+            id: ui.id().with(("kb_script", id)),
+            label_col,
+            row_h: th.kb_record_height(),
+            label: name,
+            hint: None,
+            align_top: true,
+        };
+        settings_stack_row(ui, &th, frame, |ui| {
             let display = if is_recording {
                 t("settings.keybindings.hint_press_key").to_string()
             } else if current.is_empty() {

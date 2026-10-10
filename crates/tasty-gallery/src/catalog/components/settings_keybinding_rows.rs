@@ -2,14 +2,15 @@
 //!
 //! 라벨 열은 다른 설정 행과 같이 서브탭의 가장 긴 라벨을 150 … 240 으로 clamp 한 폭이다. 라벨이 짧아도
 //! 열을 그대로 차지해 바인딩 버튼이 같은 x 에서 시작한다. 열보다 긴 라벨과 사용자 스크립트 이름은 열
-//! 안에서 줄을 바꾸고, 도움말 아이콘은 마지막 단어 뒤에 붙는다.
+//! 안에서 줄을 바꾸고, 도움말 아이콘은 마지막 단어 뒤에 붙는다. 첫 버튼이 라벨 옆에 들어가지 않는
+//! 좁은 폭에서는 행이 쌓인다(본체와 같은 `settings_stack_row`).
 
 use tasty_settings::keybindings::explorer_drag_flip_modifier_options;
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::{
-    KbRecordSlot, SettingsRow, kb_record_slot, select, settings_label_cell, settings_label_column,
-    settings_label_gap, vspace,
+    KbRecordSlot, SettingsRow, StackRow, kb_record_slot, select, settings_label_column,
+    settings_stack_row, vspace,
 };
 
 use crate::catalog::modifier_label;
@@ -169,9 +170,15 @@ pub(super) fn row(
     hint: Option<&str>,
     bindings: &[&str],
 ) {
-    ui.horizontal_top(|ui| {
-        settings_label_cell(ui, theme, col, theme.kb_record_height(), label, hint);
-        settings_label_gap(ui, theme);
+    let frame = StackRow {
+        id: ui.id().with(("gallery_kb_row", label)),
+        label_col: col,
+        row_h: theme.kb_record_height(),
+        label,
+        hint,
+        align_top: true,
+    };
+    settings_stack_row(ui, theme, frame, |ui| {
         ui.horizontal_wrapped(|ui| {
             let gap = theme.spacing_xs.value();
             ui.spacing_mut().item_spacing = egui::vec2(gap, gap);

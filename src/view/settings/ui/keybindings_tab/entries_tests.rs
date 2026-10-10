@@ -12,6 +12,15 @@ fn frame_shapes_with(
     edit: impl FnOnce(&mut Settings),
     pointer: Option<egui::Pos2>,
 ) -> Vec<egui::epaint::ClippedShape> {
+    frame_shapes_in(1000.0, edit, pointer)
+}
+
+/// [`frame_shapes_with`] 를 화면 폭 `width` 에서 그린다.
+fn frame_shapes_in(
+    width: f32,
+    edit: impl FnOnce(&mut Settings),
+    pointer: Option<egui::Pos2>,
+) -> Vec<egui::epaint::ClippedShape> {
     let th = crate::theme::theme();
     let ctx = egui::Context::default();
     tasty_egui_theme::install_cjk_fallback(&ctx);
@@ -30,7 +39,7 @@ fn frame_shapes_with(
             egui::RawInput {
                 screen_rect: Some(egui::Rect::from_min_size(
                     egui::Pos2::ZERO,
-                    egui::vec2(1000.0, 600.0),
+                    egui::vec2(width, 600.0),
                 )),
                 events: pointer.map(egui::Event::PointerMoved).into_iter().collect(),
                 ..Default::default()
@@ -114,6 +123,33 @@ fn rows(rects: &[egui::Rect]) -> Vec<Vec<egui::Rect>> {
         }
     }
     rows
+}
+
+/// 첫 버튼도 라벨 옆에 들어가지 않는 좁은 폭에서는 행마다 쌓여, 모든 행의 첫 버튼이 행 시작 x 에 선다.
+#[test]
+fn a_narrow_subtab_stacks_rows_and_starts_buttons_at_the_row_start() {
+    let th = crate::theme::theme();
+    let side = |shapes: &[egui::epaint::ClippedShape]| -> Vec<f32> {
+        let mut rects: Vec<egui::Rect> = slot_shapes(shapes).iter().map(|r| r.rect).collect();
+        rects.sort_by(|a, b| {
+            a.top()
+                .total_cmp(&b.top())
+                .then(a.left().total_cmp(&b.left()))
+        });
+        rows(&rects).iter().map(|r| r[0].left()).collect()
+    };
+    let wide = side(&frame_shapes());
+    let narrow = side(&frame_shapes_in(260.0, |_| {}, None));
+    assert!(!wide.is_empty() && !narrow.is_empty());
+    let shift = th.settings_label_width().value() + th.settings_label_gap().value();
+    for x in &narrow {
+        assert!((x - narrow[0]).abs() < 0.5, "{narrow:?}");
+        assert!(
+            (wide[0] - x - shift).abs() < 0.5,
+            "넓을 때 {} · 좁을 때 {x}",
+            wide[0]
+        );
+    }
 }
 
 #[test]
